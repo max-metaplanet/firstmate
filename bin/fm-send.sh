@@ -199,7 +199,9 @@
 # in this home's status log per status_open_decisions (bin/fm-classify-lib.sh), or
 # a still-open captain-held task resolved as above. A key in neither is refused
 # before sending, so a mistyped key cannot deliver an answer while silently
-# orphaning the decision. A failed or unconfirmed send never closes a key; a
+# orphaning the decision. That refusal states what the lookups FOUND - a key the
+# log closed names the verb that closed it, a key no line ever stated says so -
+# and never asserts that an unfound decision was answered. A failed or unconfirmed send never closes a key; a
 # delivered answer whose closing append fails exits nonzero with the exact
 # manual close command, leaving the decision open to re-surface (the safe
 # direction). A send without the flag never closes anything: a routine steer,
@@ -560,6 +562,7 @@ RESOLVE_STATUS_FILE=
 # longer owns also keeps the common path free of any backlog read.
 RESOLVE_STATUS_KEYS=
 RESOLVE_HOLD_KEYS=
+resolve_closing_verb=
 RESOLVE_CLOSE_MAX=$FM_LINE_CAP_DEFAULT
 
 # Resolve a --resolve-key key that the status log no longer owns to the
@@ -643,7 +646,26 @@ if [ -n "$RESOLVE_KEYS" ]; then
       RESOLVE_HOLD_KEYS="${RESOLVE_HOLD_KEYS}${RESOLVE_HOLD_KEYS:+ }$resolved_hold_id"
       continue
     fi
-    echo "error: --resolve-key '$k': no open decision or blocker with that key in $RESOLVE_STATUS_FILE, and no captain-held task '$k' or '$RESOLVE_TASK_ID-decision-$k' still open (already closed or mistyped). Re-check the OPEN DECISIONS listing, then resend without that key or with the right one; nothing was sent." >&2
+    # Report what the two lookups actually FOUND, not a guess about why. The
+    # old wording asserted "already closed or mistyped" - a claim about the
+    # record - when all this code knows is that its own lookups came back
+    # empty. It said that even while the decision sat unanswered in the log,
+    # and that false certainty is what nearly let a dropped decision go.
+    # status_key_closing_verb reads the same fold and can tell the two apart:
+    # a key the log closed names the verb that closed it, a key the log never
+    # mentions names nothing, and each gets its own sentence.
+    resolve_closing_verb=$(status_key_closing_verb "$RESOLVE_STATUS_FILE" "$k")
+    case "$resolve_closing_verb" in
+    "${FM_CLASSIFY_RESOLVE_VERB:-$FM_CLASSIFY_RESOLVE_VERB_DEFAULT}" | "${FM_CLASSIFY_CAPTAIN_HELD_VERB:-$FM_CLASSIFY_CAPTAIN_HELD_VERB_DEFAULT}")
+      echo "error: --resolve-key '$k': that decision is already closed - $RESOLVE_STATUS_FILE carries a '$resolve_closing_verb' line for the key, and no captain-held task '$k' or '$RESOLVE_TASK_ID-decision-$k' is still open. Resend without that key; nothing was sent." >&2
+      ;;
+    needs-decision | blocked)
+      echo "error: --resolve-key '$k': $RESOLVE_STATUS_FILE last records that key as still open, but this home's decision fold does not hold it, so the close this send would write could not take effect. That is a defect in the reader, not your key - report it rather than working around it; nothing was sent." >&2
+      ;;
+    *)
+      echo "error: --resolve-key '$k': this lookup found nothing to answer - no line in $RESOLVE_STATUS_FILE ever opened or closed that key, and no captain-held task '$k' or '$RESOLVE_TASK_ID-decision-$k' exists and is still open. That means the key is mistyped, belongs to a different task, or was never opened; it does NOT prove the decision was answered. Check the log itself before assuming it was, then resend with the right key; nothing was sent." >&2
+      ;;
+    esac
     exit 1
   done
   # The decision-answer partition (the header's "Answering a decision"

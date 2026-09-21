@@ -257,11 +257,26 @@ test_routine_steer_never_closes() {
   out=$(drain_out "$home")
   printf '%s' "$out" | grep -F '[key=schema]' >/dev/null \
     || fail "a routine steer or later working line cleared an unanswered captain decision: $out"
+  # The reported defect (#5203): the worker reports the parts it DID finish
+  # while the captain's question is still unanswered - the two routinely land
+  # on one log, and the worker's own done: line even says so. That line must
+  # not retire the decision, and the supported way to answer it must still
+  # work; refusing here is what shut the only answering route while the
+  # question sat open in the log.
   printf 'done: task complete\nnote: cleanup complete\n' >> "$home/state/t3.status"
-  run_send "$fb" "$home" "$log" t3 --resolve-key schema "answer to a stale decision" > "$dir/terminal.out" 2> "$dir/terminal.err"; rc=$?
-  expect_code 1 "$rc" "an answer to a terminally superseded decision must refuse"
-  [ ! -e "$home/state/t3.inbox/002.msg" ] || fail "a stale decision answer was delivered"
-  pass "fm-send preserves decisions through routine work and refuses superseded terminal decisions"
+  out=$(drain_out "$home")
+  printf '%s' "$out" | grep -F '[key=schema]' >/dev/null \
+    || fail "a done: line retired an unanswered captain decision: $out"
+  run_send "$fb" "$home" "$log" t3 --resolve-key schema "split it" > "$dir/terminal.out" 2> "$dir/terminal.err"; rc=$?
+  expect_code 0 "$rc" "a decision left open under a later done: line must still be answerable: $(cat "$dir/terminal.err")"
+  [ -e "$home/state/t3.inbox/002.msg" ] || fail "the answer to a still-open decision was not delivered"
+  grep -F 'resolved [key=schema]' "$home/state/t3.status" >/dev/null \
+    || fail "answering the decision did not close it: $(cat "$home/state/t3.status")"
+  out=$(drain_out "$home")
+  if printf '%s' "$out" | grep -F '[key=schema]' >/dev/null; then
+    fail "the answered decision stayed open: $out"
+  fi
+  pass "fm-send preserves decisions through routine work and a later done: line, and still answers them"
 }
 
 test_not_open_key_refuses_before_send() {
@@ -279,6 +294,12 @@ test_not_open_key_refuses_before_send() {
   [ "$rc" -ne 0 ] || fail "a not-open key should refuse"
   assert_contains "$(cat "$err")" "--resolve-key 'mistyped'" "the refusal should name the bad key"
   assert_contains "$(cat "$err")" "nothing was sent" "the refusal should state nothing was sent"
+  # The refusal must report what this lookup FOUND, never assert a fact about
+  # the record it did not establish (#5203). A key no line ever stated is not
+  # evidence that the decision was answered, and saying "already closed" here
+  # is what sent an operator away from a decision that was still open.
+  assert_contains "$(cat "$err")" "no line in" "the refusal should say what it actually looked for"
+  assert_not_contains "$(cat "$err")" "already closed" "the refusal claimed the decision was closed without establishing it"
   [ ! -s "$log" ] || fail "a refused answer still typed text: $(cat "$log")"
   [ ! -d "$home/state/t4.inbox" ] || fail "a refused answer still enqueued an inbox record"
   if grep -F 'resolved' "$home/state/t4.status" >/dev/null; then
@@ -287,7 +308,17 @@ test_not_open_key_refuses_before_send() {
   out=$(drain_out "$home")
   printf '%s' "$out" | grep -F '[key=real-key]' >/dev/null \
     || fail "the real decision disappeared after a refused answer: $out"
-  pass "fm-send --resolve-key: a key that is not open refuses loudly before anything is sent"
+  # A key the log really did close is the case this code CAN establish, and it
+  # says so plainly, naming the verb that closed it.
+  printf 'resolved [key=real-key]: answered: chosen\n' >> "$home/state/t4.status"
+  : > "$err"
+  env PATH="$fb:$PATH" \
+    FM_ROOT_OVERRIDE="$home" FM_HOME="$home" FM_SEND_LOG="$log" FM_SEND_SETTLE=0 \
+    "$SEND" t4 --resolve-key real-key "the answer again" >/dev/null 2>"$err"; rc=$?
+  [ "$rc" -ne 0 ] || fail "answering an already-closed key should refuse"
+  assert_contains "$(cat "$err")" "already closed" "a genuinely closed key should be reported as closed"
+  assert_contains "$(cat "$err")" "'resolved' line" "the refusal should name the verb that closed the key"
+  pass "fm-send --resolve-key: refusals report what the lookup found, separating a closed key from one never stated"
 }
 
 # The close is an enqueue-time fact: the durable record IS the delivery, so a
