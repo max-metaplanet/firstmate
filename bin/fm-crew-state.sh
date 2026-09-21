@@ -32,10 +32,14 @@
 # itself rather than answer for the crew with a confident-sounding `unknown`.
 # The run-step reader mints it today; the other sources still report `unknown`
 # and are unchanged by that rule.
-# Consumers that act on a state word match `working`, `paused`, `parked`,
+# Consumers that act on a CREW claim match `working`, `paused`, `parked`,
 # `done`, or `failed` positively (fm-classify-lib.sh's crew_absorb_class,
 # fm-inactive-reconcile.sh), so `unreadable` is handled exactly as `unknown`
-# was: no absorb, no terminal claim, surface the wake.
+# was: no absorb, no terminal claim, surface the wake. One consumer instead
+# matches the unread verdict itself positively - fm-fleet-snapshot.sh's
+# secondmate home summary, which reports a child whose current state could not
+# be read as `child_current_unavailable` - so it accepts BOTH words, and any
+# new consumer of the unread verdict must too.
 #
 # Logic, in order:
 #   1. Resolve worktree + backend target + kind from state/<id>.meta. A meta
