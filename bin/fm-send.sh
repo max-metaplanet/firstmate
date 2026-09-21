@@ -651,13 +651,26 @@ if [ -n "$RESOLVE_KEYS" ]; then
     # record - when all this code knows is that its own lookups came back
     # empty. It said that even while the decision sat unanswered in the log,
     # and that false certainty is what nearly let a dropped decision go.
-    # status_key_closing_verb reads the same fold and can tell the two apart:
+    # status_key_closing_verb reads the same fold and can tell the cases apart:
     # a key the log closed names the verb that closed it, a key the log never
     # mentions names nothing, and each gets its own sentence.
+    #
+    # The two closing verbs get SEPARATE sentences because they mean opposite
+    # things to whoever is holding the answer. A `resolved` close settles the
+    # question. A `captain-held` close only TRANSFERS it to a durable task, so
+    # the answer may still be owed; saying "already closed" there would repeat
+    # the very mistake this refusal was rewritten to stop making. The lookup
+    # above searched the decision slug and the legacy derived id, and a
+    # transferred row is commonly keyed by neither, so it reports what it
+    # searched and sends the caller to the transfer line rather than claiming
+    # the question is settled.
     resolve_closing_verb=$(status_key_closing_verb "$RESOLVE_STATUS_FILE" "$k")
     case "$resolve_closing_verb" in
-    "${FM_CLASSIFY_RESOLVE_VERB:-$FM_CLASSIFY_RESOLVE_VERB_DEFAULT}" | "${FM_CLASSIFY_CAPTAIN_HELD_VERB:-$FM_CLASSIFY_CAPTAIN_HELD_VERB_DEFAULT}")
+    "${FM_CLASSIFY_RESOLVE_VERB:-$FM_CLASSIFY_RESOLVE_VERB_DEFAULT}")
       echo "error: --resolve-key '$k': that decision is already closed - $RESOLVE_STATUS_FILE carries a '$resolve_closing_verb' line for the key, and no captain-held task '$k' or '$RESOLVE_TASK_ID-decision-$k' is still open. Resend without that key; nothing was sent." >&2
+      ;;
+    "${FM_CLASSIFY_CAPTAIN_HELD_VERB:-$FM_CLASSIFY_CAPTAIN_HELD_VERB_DEFAULT}")
+      echo "error: --resolve-key '$k': this ledger can no longer answer that decision - $RESOLVE_STATUS_FILE carries a '$resolve_closing_verb' line for the key, which TRANSFERS the question to a durable captain-held task rather than settling it. This lookup searched only the task ids '$k' and '$RESOLVE_TASK_ID-decision-$k', and neither is open; a transferred row is often keyed by neither, so the question may still be owed. Read that '$resolve_closing_verb' line for the task it names and answer it there; nothing was sent." >&2
       ;;
     needs-decision | blocked)
       echo "error: --resolve-key '$k': $RESOLVE_STATUS_FILE last records that key as still open, but this home's decision fold does not hold it, so the close this send would write could not take effect. That is a defect in the reader, not your key - report it rather than working around it; nothing was sent." >&2

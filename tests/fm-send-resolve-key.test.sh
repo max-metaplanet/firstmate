@@ -318,7 +318,24 @@ test_not_open_key_refuses_before_send() {
   [ "$rc" -ne 0 ] || fail "answering an already-closed key should refuse"
   assert_contains "$(cat "$err")" "already closed" "a genuinely closed key should be reported as closed"
   assert_contains "$(cat "$err")" "'resolved' line" "the refusal should name the verb that closed the key"
-  pass "fm-send --resolve-key: refusals report what the lookup found, separating a closed key from one never stated"
+  # The third shape, seen in the field: the decision was TRANSFERRED to a
+  # durable captain-held task, which closes the status ledger without settling
+  # the question. The transferred row is commonly keyed by neither id this
+  # lookup searches, so the refusal must not report a settlement it has not
+  # established - it names the transfer, names what it searched, and says the
+  # answer may still be owed.
+  printf 'needs-decision [key=moved]: declare or drop\ncaptain-held [key=moved]: tracked by sample-origins-call\n' \
+    >> "$home/state/t4.status"
+  : > "$err"
+  env PATH="$fb:$PATH" \
+    FM_ROOT_OVERRIDE="$home" FM_HOME="$home" FM_SEND_LOG="$log" FM_SEND_SETTLE=0 \
+    "$SEND" t4 --resolve-key moved "declare it" >/dev/null 2>"$err"; rc=$?
+  [ "$rc" -ne 0 ] || fail "a transferred key should refuse"
+  assert_contains "$(cat "$err")" "TRANSFERS the question" "the refusal should name the transfer, not a settlement"
+  assert_contains "$(cat "$err")" "may still be owed" "the refusal should not imply the question is answered"
+  assert_contains "$(cat "$err")" "searched only the task ids" "the refusal should say what it actually searched"
+  assert_not_contains "$(cat "$err")" "already closed" "a transfer is not a settlement and must not be reported as one"
+  pass "fm-send --resolve-key: refusals separate a settled key, a transferred key, and one never stated"
 }
 
 # The close is an enqueue-time fact: the durable record IS the delivery, so a
