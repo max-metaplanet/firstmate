@@ -25,21 +25,31 @@
 #   state: <working|parked|done|blocked|paused|failed|unreadable|unknown> · source: <run-step|pane|status-log|remote-endpoint|none> · <detail>
 #
 # Every state word but `unreadable` is a claim about the CREW. `unreadable` is
-# the reader's claim about ITSELF: this reader could not read that source, and
-# nothing follows about what the crew is doing. It is minted only where a read
-# failed, its detail always opens with what could not be read and why, and it
-# never carries a bare verdict - a reader that cannot see has to say so about
-# itself rather than answer for the crew with a confident-sounding `unknown`.
+# the reader's claim about ITSELF: NO CREW CLAIM COULD BE ESTABLISHED here, and
+# nothing follows about what the crew is doing. That class is wider than a
+# failed read. It covers a source this reader could not read at all, and
+# equally a source it read perfectly that still settled nothing: records that
+# read fine and contradict each other, two live runs that cannot be told apart,
+# a record read whole but not tied to this task copy, a status or outcome word
+# read exactly as written and outside this reader's vocabulary, and a record
+# left unverified because the daemon probe answered down. Its detail always
+# opens with what specifically could not be ESTABLISHED and why - a read that
+# failed says so; a read that succeeded names the thing it could not settle
+# instead of claiming a failure that did not happen - and it never carries a
+# bare verdict. A reader that cannot see has to say so about itself rather than
+# answer for the crew with a confident-sounding `unknown`, and a reader that
+# may report at a coarser grain than it knows must not advertise a precision it
+# does not have.
 # The run-step reader mints it today; the other sources still report `unknown`
 # and are unchanged by that rule.
 # Consumers that act on a CREW claim match `working`, `paused`, `parked`,
 # `done`, or `failed` positively (fm-classify-lib.sh's crew_absorb_class,
 # fm-inactive-reconcile.sh), so `unreadable` is handled exactly as `unknown`
 # was: no absorb, no terminal claim, surface the wake. One consumer instead
-# matches the unread verdict itself positively - fm-fleet-snapshot.sh's
+# matches the unreadable verdict itself positively - fm-fleet-snapshot.sh's
 # secondmate home summary, which reports a child whose current state could not
 # be read as `child_current_unavailable` - so it accepts BOTH words, and any
-# new consumer of the unread verdict must too.
+# new consumer of the unreadable verdict must too.
 #
 # Logic, in order:
 #   1. Resolve worktree + backend target + kind from state/<id>.meta. A meta
@@ -902,7 +912,7 @@ if [ "$KIND" = ship ] && [ -n "$CREW_BRANCH" ] && command -v no-mistakes >/dev/n
         fi
         case "$(strip_quotes "$(nm_field status)")" in
           pending|running|fixing|ci|awaiting_approval|fix_review|completed|failed|cancelled) ;;
-          *) emit unreadable run-step "could not read the selected run's status: it reports a word this reader does not recognize; run ids: $candidate_ids" ;;
+          *) emit unreadable run-step "could not settle the selected run's status: it reports a word this reader does not recognize; run ids: $candidate_ids" ;;
         esac
         if fm_nm_run_is_active "$RUN_OUT"; then current_class=live; else current_class=terminal; fi
         if [ "$(fm_nm_run_status_class "$selected_status")" != "$current_class" ]; then
@@ -1016,7 +1026,7 @@ if [ "$HAVE_RUN" = 1 ]; then
           RUN_STATE=failed; RUN_DETAIL="run failed"
         fi ;;
       cancelled) RUN_STATE=failed;  RUN_DETAIL="run cancelled" ;;
-      *)         RUN_STATE=unreadable; RUN_DETAIL="could not read the run ledger: it reports a status this reader does not recognize ($COARSE_STATUS)" ;;
+      *)         RUN_STATE=unreadable; RUN_DETAIL="could not settle this run's state: the ledger reports a status this reader does not recognize ($COARSE_STATUS)" ;;
     esac
   else
     status=$(strip_quotes "$(nm_field status)")
@@ -1036,7 +1046,7 @@ if [ "$HAVE_RUN" = 1 ]; then
             RUN_STATE=failed; RUN_DETAIL="run failed"
           fi ;;
         cancelled)     RUN_STATE=failed; RUN_DETAIL="run cancelled" ;;
-        *)             RUN_STATE=unreadable; RUN_DETAIL="could not read the run outcome: it reports a result this reader does not recognize ($outcome)" ;;
+        *)             RUN_STATE=unreadable; RUN_DETAIL="could not settle this run's outcome: it reports a result this reader does not recognize ($outcome)" ;;
       esac
     elif [ -n "$awaiting" ] || [ "$status" = awaiting_approval ] || [ "$status" = fix_review ] || [ -n "$gate_status" ] || [ "$has_gate" = 1 ]; then
       if [ "$has_gate" = 1 ]; then

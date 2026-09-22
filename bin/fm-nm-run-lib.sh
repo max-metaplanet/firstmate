@@ -243,7 +243,7 @@ fm_nm_select_run() {  # <branch> <axi-overview> <worktree> [timeout_secs]
         print "unknown|could not read the runs table: its rows contradict its own count header; run ids: " ids
       else if ((shown+0) < (total+0)) print "incomplete|" ids
       else if (invalid_run) print "unknown|could not read the runs table: a same-branch row is malformed or repeats a run id; run ids: " ids
-      else if (unknown_status) print "unknown|could not read the runs table: it lists a run status this reader does not recognize; run ids: " ids
+      else if (unknown_status) print "unknown|could not settle the run status for this branch: the runs table lists a word this reader does not recognize; run ids: " ids
       else if (first == "") print "absent"
       else if ((first_status == "running" || first_status == "pending") && live > 1)
         print "unknown|could not tell which run on this branch is current: two are recorded live at once; run ids: " ids
