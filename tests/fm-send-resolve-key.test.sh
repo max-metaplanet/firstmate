@@ -333,7 +333,7 @@ test_not_open_key_refuses_before_send() {
   [ "$rc" -ne 0 ] || fail "a transferred key should refuse"
   assert_contains "$(cat "$err")" "TRANSFERS the question" "the refusal should name the transfer, not a settlement"
   assert_contains "$(cat "$err")" "may still be owed" "the refusal should not imply the question is answered"
-  assert_contains "$(cat "$err")" "searched only the task ids" "the refusal should say what it actually searched"
+  assert_contains "$(cat "$err")" "the captain-hold ledger was searched for task ids" "the refusal should say what it actually searched"
   assert_not_contains "$(cat "$err")" "already closed" "a transfer is not a settlement and must not be reported as one"
   pass "fm-send --resolve-key: refusals separate a settled key, a transferred key, and one never stated"
 }
@@ -896,6 +896,94 @@ test_decision_answer_partition_relocates_under_the_record() {
   pass "fm-send --resolve-key: a decision answer refuses the attended branch before sending, a blocked: key stays steering, and the away-posture record relocates the answer"
 }
 
+# A refusal may report only what its lookups actually established. When
+# tasks-axi is absent the captain-hold ledger is never consulted at all, so a
+# refusal that still reported it empty would assert a lookup result it does not
+# hold - the same substitution of a fact about itself for a fact about the world
+# that produced "already closed or mistyped" (#5203).
+test_unreadable_hold_ledger_is_not_reported_as_empty() {
+  local dir fb log home err rc nolookup nopath p
+  dir="$TMP_ROOT/hold-unreadable"; mkdir -p "$dir"
+  fb=$(make_stubs "$dir"); log="$dir/send.log"; err="$dir/send.err"
+  home=$(setup_home hold-unreadable)
+  fm_write_meta "$home/state/t4.meta" "window=sess:fm-t4" "kind=ship"
+  printf 'needs-decision [key=real-key]: choose\n' > "$home/state/t4.status"
+
+  # Drop only the PATH entries that actually carry tasks-axi, so the rest of
+  # the script keeps every ordinary tool it needs and `command -v tasks-axi`
+  # is the single thing that fails.
+  nolookup="$dir/nolookup"; mkdir -p "$nolookup"
+  nopath=""
+  while IFS= read -r p; do
+    [ -n "$p" ] || continue
+    [ -x "$p/tasks-axi" ] && continue
+    nopath="${nopath}${nopath:+:}$p"
+  done <<EOF
+$(printf '%s' "$PATH" | tr ':' '\n')
+EOF
+  command -v tasks-axi >/dev/null 2>&1 && PATH="$nopath" command -v tasks-axi >/dev/null 2>&1 \
+    && fail "could not build a PATH without tasks-axi"
+  : > "$log"
+  env PATH="$fb:$nolookup:$nopath" \
+    FM_ROOT_OVERRIDE="$home" FM_HOME="$home" FM_SEND_LOG="$log" FM_SEND_SETTLE=0 \
+    "$SEND" t4 --resolve-key mistyped "the answer" >/dev/null 2>"$err"; rc=$?
+  [ "$rc" -ne 0 ] || fail "a not-open key should refuse"
+  assert_contains "$(cat "$err")" "could not be read" \
+    "an unconsulted captain-hold ledger must be reported as unread, not as empty"
+  assert_contains "$(cat "$err")" "UNKNOWN" \
+    "the refusal must mark the unread ledger's contents unknown"
+  assert_not_contains "$(cat "$err")" "was searched" \
+    "the refusal claimed a captain-hold search that never ran"
+  assert_not_contains "$(cat "$err")" "held neither open" \
+    "the refusal asserted an empty captain-hold ledger it never read"
+  [ ! -s "$log" ] || fail "a refused answer still typed text: $(cat "$log")"
+
+  # With tasks-axi reachable the lookup really does run and come back empty,
+  # and only then may the refusal say so.
+  printf '#!/usr/bin/env bash\nexit 1\n' > "$nolookup/tasks-axi"
+  chmod +x "$nolookup/tasks-axi"
+  : > "$err"
+  env PATH="$fb:$nolookup:$nopath" \
+    FM_ROOT_OVERRIDE="$home" FM_HOME="$home" FM_SEND_LOG="$log" FM_SEND_SETTLE=0 \
+    "$SEND" t4 --resolve-key mistyped "the answer" >/dev/null 2>"$err"; rc=$?
+  [ "$rc" -ne 0 ] || fail "a not-open key should still refuse when the ledger is readable"
+  assert_contains "$(cat "$err")" "was searched" \
+    "a captain-hold lookup that really ran should report that it searched"
+  assert_not_contains "$(cat "$err")" "could not be read" \
+    "a readable ledger must not be reported as unreadable"
+
+  pass "fm-send --resolve-key: an unread captain-hold ledger is reported as unread, never as empty"
+}
+
+# The fold and this lookup share _fm_decision_fold_line, so no non-racing input
+# reaches fm-send with a key the fold still holds open. The branch that used to
+# tell an operator they had found a reader defect is therefore gone: a key that
+# IS open answers normally rather than reporting a bug that is not there.
+test_open_key_answers_instead_of_reporting_a_reader_defect() {
+  local dir fb log home err rc
+  dir="$TMP_ROOT/no-reader-defect"; mkdir -p "$dir"
+  fb=$(make_stubs "$dir"); log="$dir/send.log"; err="$dir/send.err"
+  home=$(setup_home no-reader-defect)
+  fm_write_meta "$home/state/t4.meta" "window=sess:fm-t4" "kind=ship"
+  # The capture's shape: an unkeyed decision, a keyed one, and a terminal line
+  # after both. The keyed decision must still be answerable through its key.
+  printf 'needs-decision: unkeyed question\n' > "$home/state/t4.status"
+  printf 'needs-decision [key=execsql-drop]: drop it or keep it\n' >> "$home/state/t4.status"
+  printf 'done: finished the parts that were ready\n' >> "$home/state/t4.status"
+
+  : > "$log"; : > "$err"
+  env PATH="$fb:$PATH" \
+    FM_ROOT_OVERRIDE="$home" FM_HOME="$home" FM_SEND_LOG="$log" FM_SEND_SETTLE=0 \
+    "$SEND" t4 --resolve-key execsql-drop "drop it" >/dev/null 2>"$err"; rc=$?
+  expect_code 0 "$rc" "a decision still open after a done: line must be answerable by its key"
+  assert_not_contains "$(cat "$err")" "defect in the reader" \
+    "an answerable key was reported as a reader defect"
+  sed -E 's/ \[at=[0-9]+\]//' "$home/state/t4.status" \
+    | grep -qF 'resolved [key=execsql-drop]: answered: drop it' \
+    || fail "the answer did not close the key: $(cat "$home/state/t4.status")"
+  pass "fm-send --resolve-key: a key still open after a terminal line answers normally"
+}
+
 test_answer_send_closes_open_decision
 test_answer_close_is_self_announced
 test_colon_first_key_position_is_answerable
@@ -919,3 +1007,5 @@ test_stamped_close_line_stays_within_the_status_line_cap
 test_failed_close_recovery_command_is_shell_safe
 test_remote_reserved_pending_reply_key_closes_locally
 test_decision_answer_partition_relocates_under_the_record
+test_unreadable_hold_ledger_is_not_reported_as_empty
+test_open_key_answers_instead_of_reporting_a_reader_defect
