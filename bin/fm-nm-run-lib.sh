@@ -160,7 +160,8 @@ fm_nm_primary_checkout() {  # <worktree>
 # database can never outlast the caller's per-read budget.
 # If that reader or inventory is unavailable, report what could not be read and
 # why, with available candidate ids, rather than treating the displayed window
-# as complete.
+# as complete; a read that SUCCEEDED and still settled nothing opens with
+# `could not settle` instead, so no reason claims a failure that did not happen.
 # Structural completeness applies to the whole table; semantic validation
 # applies only to the requested branch, after complete identity lookup when
 # capped. Branch names are matched exactly without a character whitelist.

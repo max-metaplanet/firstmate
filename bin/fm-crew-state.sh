@@ -742,7 +742,7 @@ nm_daemon_probe_down() {
 
 # 0 only when the probe ANSWERED and that answer was "down". Suppressing a LIVE
 # record needs this stricter question: `not provably up` above is fail-closed,
-# which is safe when it degrades a terminal record to unknown, but on a live
+# which is safe when it degrades a terminal record to unreadable, but on a live
 # record it would drop a working crew back to a possibly-stale status log every
 # time the probe merely ran slow - the crew would flap between working and
 # failed on probe latency alone. 124 is the bounded call's own did-not-answer
@@ -1017,7 +1017,7 @@ if [ "$HAVE_RUN" = 1 ]; then
     RUN_DETAIL=$RUN_DEAD_DAEMON
   elif [ "$RUN_SOURCE" = coarse ]; then
     # No step/gate detail is available from the plain runs list - only ever
-    # working, done, failed, or unknown. Gate detail requires the identity-aware
+    # working, done, failed, or unreadable. Gate detail requires the identity-aware
     # read above. The status event span remains independently available to the
     # supervisor through fm-classify-lib.sh's status_span_first_actionable.
     case "$COARSE_STATUS" in
