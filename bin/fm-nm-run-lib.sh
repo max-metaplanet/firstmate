@@ -331,11 +331,11 @@ except (Unreadable, Unsettled, ValueError, OSError, sqlite3.Error) as error:
     else:
         opening = "could not read"
         reason = "the no-mistakes state database could not be read (%s)" % type(error).__name__
-    print("unknown|%s the complete run inventory for this branch: %s; run ids: %s"
+    print("unknown|%s this branch's run inventory: %s; run ids: %s"
           % (opening, reason, ", ".join(ids)))
 PY
   ); then
-    printf 'unknown|could not read the complete run inventory for this branch: the state-database reader (python3) did not run here; run ids: %s\n' "$available_ids"
+    printf "unknown|could not read this branch's run inventory: the state-database reader (python3) could not be run or did not finish; run ids: %s\n" "$available_ids"
     return
   fi
   case "$inventory" in
@@ -344,7 +344,7 @@ PY
   esac
   case "$selection" in
     selected\|*|unknown\|*|absent) printf '%s\n' "$selection" ;;
-    *) printf 'unknown|could not read the complete run inventory for this branch: the recovered inventory did not parse; run ids: %s\n' "$available_ids" ;;
+    *) printf "unknown|could not read this branch's run inventory: the recovered inventory did not parse; run ids: %s\n" "$available_ids" ;;
   esac
 }
 

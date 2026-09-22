@@ -899,7 +899,9 @@ if [ "$KIND" = ship ] && [ -n "$CREW_BRANCH" ] && command -v no-mistakes >/dev/n
         selected\|*)   overview_ids=${run_choice##*|} ;;
         *)             overview_ids="" ;;
       esac
-      emit unreadable run-step "could not read the run inventory: \`no-mistakes axi\` failed; run ids: $(strip_quotes "$(nm_field id)")${overview_ids:+, $overview_ids}"
+      run_ids=$(strip_quotes "$(nm_field id)")
+      [ -z "$overview_ids" ] || run_ids="${run_ids:+$run_ids, }$overview_ids"
+      emit unreadable run-step "could not read the run inventory: \`no-mistakes axi\` failed; run ids: $run_ids"
     fi
     case "$run_choice" in
       unknown\|*)

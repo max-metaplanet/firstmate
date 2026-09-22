@@ -3450,8 +3450,8 @@ SH
   unset FM_CREW_STATE_NM_TIMEOUT
   [ "$elapsed" -lt 10 ] || fail "the capped inventory reader ran unbounded for ${elapsed}s"
   assert_contains "$out" 'state: unreadable' 'an unreachable inventory reader cannot establish a verdict'
-  assert_contains "$out" 'the state-database reader (python3) did not run here' \
-    'a killed reader names the reader itself as what could not be run'
+  assert_contains "$out" "the state-database reader (python3) could not be run or did not finish" \
+    'a reader killed by the budget still names the reader itself as what did not finish'
   pass 'the capped inventory reader is bounded by the crew read budget'
 }
 
@@ -3487,7 +3487,7 @@ test_capped_inventory_canonicalizes_the_task_copy_path() {
   local d=$TMP_ROOT/capped-noncanonical out
   fm_write_meta "$d/state/competing.meta" "window=fm:fm-competing" "worktree=$d/wt/./" "kind=ship"
   out=$(run_crew_state "$d" competing)
-  assert_not_contains "$out" 'could not read the complete run inventory' \
+  assert_not_contains "$out" "could not read this branch's run inventory" \
     'a non-canonical spelling of a recorded repository is still readable'
   assert_contains "$out" '01NEW' 'the recovered inventory names the hidden run'
   assert_contains "$out" '01OLD' 'the recovered inventory names the older hidden run'
