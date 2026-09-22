@@ -893,7 +893,14 @@ if [ "$KIND" = ship ] && [ -n "$CREW_BRANCH" ] && command -v no-mistakes >/dev/n
     run_overview=$(fm_nm_run_checked "$WT" "$NM_TIMEOUT" axi) || overview_ok=0
     [ -n "$run_overview" ] || emit unreadable run-step "could not read the run inventory: \`no-mistakes axi\` returned nothing; run id: $(strip_quotes "$(nm_field id)")"
     run_choice=$(fm_nm_select_run "$CREW_BRANCH" "$run_overview" "$WT" "$NM_TIMEOUT")
-    [ "$overview_ok" = 1 ] || emit unreadable run-step "could not read the run inventory: \`no-mistakes axi\` failed; run ids: $(strip_quotes "$(nm_field id)"), ${run_choice##*|}"
+    if [ "$overview_ok" != 1 ]; then
+      case "$run_choice" in
+        *'run ids: '*) overview_ids=${run_choice##*run ids: } ;;
+        selected\|*)   overview_ids=${run_choice##*|} ;;
+        *)             overview_ids="" ;;
+      esac
+      emit unreadable run-step "could not read the run inventory: \`no-mistakes axi\` failed; run ids: $(strip_quotes "$(nm_field id)")${overview_ids:+, $overview_ids}"
+    fi
     case "$run_choice" in
       unknown\|*)
         known_run_id=""

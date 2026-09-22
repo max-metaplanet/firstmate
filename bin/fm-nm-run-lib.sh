@@ -269,6 +269,10 @@ class Unreadable(Exception):
     """Names what this reader could not read, in its own voice."""
 
 
+class Unsettled(Exception):
+    """Names what this reader read whole but still could not settle."""
+
+
 branch, worktree, primary_checkout, available_ids = sys.argv[1:]
 ids = available_ids.split(", ") if available_ids else []
 # The task worktree first, then the primary checkout that owns it: a linked
@@ -309,7 +313,7 @@ try:
         if isinstance(row[0], str) and re.fullmatch(r"[A-Za-z0-9_-]+", row[0]) and row[0] not in ids:
             ids.append(row[0])
     if not displayed_ids.issubset(row[0] for row in rows):
-        raise Unreadable("the displayed runs table names runs the state database does not have")
+        raise Unsettled("the displayed runs table names runs the state database does not have")
     for row in rows:
         if (not all(isinstance(value, str) for value in row)
                 or not re.fullmatch(r"[A-Za-z0-9_-]+", row[0]) or row[1] != branch
@@ -319,11 +323,16 @@ try:
     print("runs[%d]{id,branch,status,head,pr}:" % len(rows))
     for row in rows:
         print("  " + ",".join(json.dumps(value, ensure_ascii=False) for value in row) + ',""')
-except (Unreadable, ValueError, OSError, sqlite3.Error) as error:
-    reason = str(error) if isinstance(error, Unreadable) else \
-        "the no-mistakes state database could not be read (%s)" % type(error).__name__
-    print("unknown|could not read the complete run inventory for this branch: "
-          + reason + "; run ids: " + ", ".join(ids))
+except (Unreadable, Unsettled, ValueError, OSError, sqlite3.Error) as error:
+    if isinstance(error, Unsettled):
+        opening, reason = "could not settle", str(error)
+    elif isinstance(error, Unreadable):
+        opening, reason = "could not read", str(error)
+    else:
+        opening = "could not read"
+        reason = "the no-mistakes state database could not be read (%s)" % type(error).__name__
+    print("unknown|%s the complete run inventory for this branch: %s; run ids: %s"
+          % (opening, reason, ", ".join(ids)))
 PY
   ); then
     printf 'unknown|could not read the complete run inventory for this branch: the state-database reader (python3) did not run here; run ids: %s\n' "$available_ids"
