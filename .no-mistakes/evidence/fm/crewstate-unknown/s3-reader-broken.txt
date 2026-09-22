@@ -1,0 +1,10 @@
+=== S3a: python3 on PATH exits 1 (reader broken); crew has own run below cap
+--- (base)
+state: unknown · source: run-step · complete same-branch run inventory reader unavailable; run ids: ; last reported run id: 01LABOWN000000000000000000
+--- (target)
+state: unreadable · source: run-step · could not read this branch's run inventory: the state-database reader (python3) could not be run or did not finish; run ids: ; last reported run id: 01LABOWN000000000000000000
+=== S3b: python3 hangs; reader killed by per-read budget (FM_CREW_STATE_NM_TIMEOUT if honored)
+203:NM_TIMEOUT=${FM_CREW_STATE_NM_TIMEOUT:-10}
+204:case "$NM_TIMEOUT" in ''|*[!0-9]*) NM_TIMEOUT=10 ;; esac
+state: unreadable · source: run-step · could not read this branch's run inventory: the state-database reader (python3) could not be run or did not finish; run ids: ; last reported run id: 01LABOWN000000000000000000
+elapsed 11s

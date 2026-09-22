@@ -1,0 +1,12 @@
+=== S1: crew branch fm/lab-crew has NO run; 11 runs on other branches; linked worktree /tmp/fmlab.5TdD/wt of primary /tmp/fmlab.5TdD/primary
+--- sqlite repos (isolated NM_HOME)
+f75ace03534e|/private/tmp/fmlab.5TdD/primary
+--- real CLI: no-mistakes axi (from linked worktree)
+repo: /private/tmp/fmlab.5TdD/primary
+current_branch: fm/lab-crew
+count: 10 of 11 total
+runs[10]{id,branch,status,head,pr}:
+--- fm-crew-state.sh labcrew (base)
+state: unknown · source: run-step · complete same-branch run inventory unreadable; run ids: 
+--- fm-crew-state.sh labcrew (target)
+state: unknown · source: none · no backend target recorded

@@ -1,0 +1,10 @@
+=== S2: crew branch fm/lab-crew has its own completed run 01LABOWN..., older than the 10 displayed rows
+repo: /private/tmp/fmlab.5TdD/primary
+current_branch: fm/lab-crew
+count: 10 of 12 total
+--- real CLI id-addressed read
+outcome: passed
+--- fm-crew-state.sh labcrew (base)
+state: unknown · source: run-step · complete same-branch run inventory unreadable; run ids: ; last reported run id: 01LABOWN000000000000000000
+--- fm-crew-state.sh labcrew (target)
+state: done · source: run-step · run passed: PR state unknown (no PR identity) · run: 01LABOWN000000000000000000

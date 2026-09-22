@@ -1,0 +1,21 @@
+ok - home summary reports an unreadable child state as current-state-unavailable
+ok - a repository recorded under neither path reads unreadable and says why
+ok - a non-canonical task copy path still reaches its recorded repository
+ok - a task worktree whose branch has no run reads absent, not unreadable
+ok - a run hidden beyond the CLI cap is recovered for a task worktree
+ok - an unreadable run inventory reports the read failure and its reason
+ok - missing complete-inventory failure reports unknown
+ok - corrupt complete-inventory failure reports unknown
+ok - schema complete-inventory failure reports unknown
+ok - repo complete-inventory failure reports unknown
+ok - count complete-inventory failure reports unknown
+ok - competing live runs report unknown with both run ids
+ok - missing run selection reports unknown with candidate ids
+ok - wrong-id run selection reports unknown with candidate ids
+ok - wrong-branch run selection reports unknown with candidate ids
+ok - wrong-head run selection reports unknown with candidate ids
+ok - missing-status run selection reports unknown with candidate ids
+ok - malformed-table run selection reports unknown with candidate ids
+ok - inventory-error run selection reports unknown with candidate ids
+ok - selected-error run selection reports unknown with candidate ids
+rc=0
