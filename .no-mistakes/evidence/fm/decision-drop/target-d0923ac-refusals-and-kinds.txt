@@ -1,0 +1,58 @@
+### A. mistyped key while the real decision sits open behind a done: line
+--- [typo] fm-send t1 --resolve-key eng2403-execsql-dorp  (tasks-axi on PATH: yes)
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the requested message WILL still be sent.
+●  watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+error: --resolve-key 'eng2403-execsql-dorp': this lookup found nothing to answer - no line in /tmp/fmdrop.8ggA/ref-typo/state/t1.status ever opened or closed that key, and the captain-hold ledger was searched for task ids 'eng2403-execsql-dorp' and 't1-decision-eng2403-execsql-dorp' and held neither open. That means the key is mistyped, belongs to a different task, or was never opened; it does NOT prove the decision was answered. Check the log itself before assuming it was, then resend with the right key; nothing was sent.
+exit=1  inbox-records=0
+--- [typo] fm-send t1 --resolve-key eng2403-execsql-dorp  (tasks-axi on PATH: no)
+error: --resolve-key 'eng2403-execsql-dorp': this lookup found nothing to answer - no line in /tmp/fmdrop.8ggA/ref-typo/state/t1.status ever opened or closed that key, and the captain-hold ledger could not be read here (tasks-axi is not on PATH), so whether a captain-held task 'eng2403-execsql-dorp' or 't1-decision-eng2403-execsql-dorp' is open is UNKNOWN. That means the key is mistyped, belongs to a different task, or was never opened; it does NOT prove the decision was answered. Check the log itself before assuming it was, then resend with the right key; nothing was sent.
+exit=1  inbox-records=0
+
+### B. key already answered by a resolved line
+--- [resolved] fm-send t1 --resolve-key k1  (tasks-axi on PATH: yes)
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the requested message WILL still be sent.
+●  watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+error: --resolve-key 'k1': that decision is already closed - /tmp/fmdrop.8ggA/ref-resolved/state/t1.status carries a 'resolved' line for the key, and the captain-hold ledger was searched for task ids 'k1' and 't1-decision-k1' and held neither open. Resend without that key; nothing was sent.
+exit=1  inbox-records=0
+--- [resolved] fm-send t1 --resolve-key k1  (tasks-axi on PATH: no)
+error: --resolve-key 'k1': that decision is already closed - /tmp/fmdrop.8ggA/ref-resolved/state/t1.status carries a 'resolved' line for the key, and the captain-hold ledger could not be read here (tasks-axi is not on PATH), so whether a captain-held task 'k1' or 't1-decision-k1' is open is UNKNOWN. Resend without that key; nothing was sent.
+exit=1  inbox-records=0
+
+### C. key transferred to a captain-held task (not settled)
+--- [held] fm-send t1 --resolve-key moved  (tasks-axi on PATH: yes)
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the requested message WILL still be sent.
+●  watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+error: --resolve-key 'moved': this ledger can no longer answer that decision - /tmp/fmdrop.8ggA/ref-held/state/t1.status carries a 'captain-held' line for the key, which TRANSFERS the question to a durable captain-held task rather than settling it. the captain-hold ledger was searched for task ids 'moved' and 't1-decision-moved' and held neither open; a transferred row is often keyed by neither, so the question may still be owed. Read that 'captain-held' line for the task it names and answer it there; nothing was sent.
+exit=1  inbox-records=0
+--- [held] fm-send t1 --resolve-key moved  (tasks-axi on PATH: no)
+error: --resolve-key 'moved': this ledger can no longer answer that decision - /tmp/fmdrop.8ggA/ref-held/state/t1.status carries a 'captain-held' line for the key, which TRANSFERS the question to a durable captain-held task rather than settling it. the captain-hold ledger could not be read here (tasks-axi is not on PATH), so whether a captain-held task 'moved' or 't1-decision-moved' is open is UNKNOWN; a transferred row is often keyed by neither, so the question may still be owed. Read that 'captain-held' line for the task it names and answer it there; nothing was sent.
+exit=1  inbox-records=0
+
+### D. failed: terminal and other kinds keep the decision open and answerable
+--- kind=ship terminal=done: drain lists -> t1 [key=need-creds] blocked: need prod creds
+    fm-send exit=0  closing line: resolved [key=need-creds]: answered: creds in vault
+--- kind=ship terminal=failed: drain lists -> t1 [key=need-creds] blocked: need prod creds
+    fm-send exit=0  closing line: resolved [key=need-creds]: answered: creds in vault
+--- kind=scout terminal=done: drain lists -> t1 [key=need-creds] blocked: need prod creds
+    fm-send exit=0  closing line: resolved [key=need-creds]: answered: creds in vault
+--- kind=scout terminal=failed: drain lists -> t1 [key=need-creds] blocked: need prod creds
+    fm-send exit=0  closing line: resolved [key=need-creds]: answered: creds in vault
+--- kind=secondmate terminal=done: drain lists -> t1 [key=need-creds] blocked: need prod creds
+    fm-send exit=0  closing line: resolved [key=need-creds]: answered: creds in vault
+--- kind=secondmate terminal=failed: drain lists -> t1 [key=need-creds] blocked: need prod creds
+    fm-send exit=0  closing line: resolved [key=need-creds]: answered: creds in vault

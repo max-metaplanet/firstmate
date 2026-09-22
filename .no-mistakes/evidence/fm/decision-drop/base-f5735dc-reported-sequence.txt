@@ -1,0 +1,24 @@
+=== [base] status log t1 ===
+needs-decision [key=eng2403-execsql-drop]: drop the execsql path or keep it?
+working: continuing on the parts not blocked
+done: the other parts shipped; ruling 2 still awaits approval
+=== [base] fm-wake-drain.sh OPEN DECISIONS ===
+OPEN DECISIONS (still open, folded from the durable status logs - not just the latest line):
+t2 [key=other-item] needs-decision: unrelated question
+OPEN DECISIONS: close one by answering it: bin/fm-send.sh <task> --resolve-key <key> '<answer>'
+=== [base] fm-send.sh t1 --resolve-key eng2403-execsql-drop ===
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+error: --resolve-key 'eng2403-execsql-drop': no open decision or blocker with that key in /tmp/fmdrop.8ggA/home-base/state/t1.status, and no captain-held task 'eng2403-execsql-drop' or 't1-decision-eng2403-execsql-drop' still open (already closed or mistyped). Re-check the OPEN DECISIONS listing, then resend without that key or with the right one; nothing was sent.
+exit=1
+=== [base] inbox after send ===
+(no inbox record - nothing sent)
+=== [base] status log t1 after send ===
+needs-decision [key=eng2403-execsql-drop]: drop the execsql path or keep it?
+working: continuing on the parts not blocked
+done: the other parts shipped; ruling 2 still awaits approval
+=== [base] fm-wake-drain.sh OPEN DECISIONS after send ===
+OPEN DECISIONS (still open, folded from the durable status logs - not just the latest line):
+t2 [key=other-item] needs-decision: unrelated question
+OPEN DECISIONS: close one by answering it: bin/fm-send.sh <task> --resolve-key <key> '<answer>'
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+=== [base] real pane fm-t1 contents ===

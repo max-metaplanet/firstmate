@@ -1,0 +1,34 @@
+=== [target] status log t1 ===
+needs-decision [key=eng2403-execsql-drop]: drop the execsql path or keep it?
+working: continuing on the parts not blocked
+done: the other parts shipped; ruling 2 still awaits approval
+=== [target] fm-wake-drain.sh OPEN DECISIONS ===
+OPEN DECISIONS (still open, folded from the durable status logs - not just the latest line):
+t1 [key=eng2403-execsql-drop] needs-decision: drop the execsql path or keep it?
+t2 [key=other-item] needs-decision: unrelated question
+OPEN DECISIONS: close one by answering it: bin/fm-send.sh <task> --resolve-key <key> '<answer>'
+=== [target] fm-send.sh t1 --resolve-key eng2403-execsql-drop ===
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+exit=0
+=== [target] inbox after send ===
+001.msg
+handled
+schema=fm-task-inbox.v1
+at=2026-09-22T18:58:42Z
+--
+keep it; drop only the legacy shim=== [target] status log t1 after send ===
+needs-decision [key=eng2403-execsql-drop]: drop the execsql path or keep it?
+working: continuing on the parts not blocked
+done: the other parts shipped; ruling 2 still awaits approval
+resolved [key=eng2403-execsql-drop] [at=1790103522]: answered: keep it; drop only the legacy shim
+=== [target] fm-wake-drain.sh OPEN DECISIONS after send ===
+OPEN DECISIONS (still open, folded from the durable status logs - not just the latest line):
+t2 [key=other-item] needs-decision: unrelated question
+OPEN DECISIONS: close one by answering it: bin/fm-send.sh <task> --resolve-key <key> '<answer>'
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+=== [target] real pane fm-t1 contents ===
+ox'/*.msg and, in numeric order, read and act on each, then mv each handled file
+ to '/tmp/fmdrop.8ggA/home-target/state/t1.inbox'/handled/.
+: Firstmate instruction waiting: list '/tmp/fmdrop.8ggA/home-target/state/t1.inb
+ox'/*.msg and, in numeric order, read and act on each, then mv each handled file
+ to '/tmp/fmdrop.8ggA/home-target/state/t1.inbox'/handled/.
