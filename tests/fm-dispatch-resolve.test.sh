@@ -787,6 +787,12 @@ for pair in \
   'k8s/service.yaml|Kubernetes manifest directory' \
   'kubernetes/koslink-ai/deployment.yaml|Kubernetes or ingress manifest' \
   'argocd/koslink-ai.yaml|ArgoCD manifest directory' \
+  'deploy/argo/app.yaml|ArgoCD manifest directory' \
+  'template.yaml|CloudFormation template' \
+  'services/api/template.yml|CloudFormation template' \
+  'infra/network.template|CloudFormation template' \
+  'infra/network.template.json|CloudFormation template' \
+  'infra/network.template.yaml|CloudFormation template' \
   'charts/api/values.yaml|Helm chart manifest' \
   'charts/api/Chart.yaml|Helm chart manifest' \
   'helm/api/service.yaml|Helm chart directory' \
@@ -810,7 +816,7 @@ pass "every deployment-configuration path class in the fact list forces the care
 # through to the model unchanged. A path under tests/ is a deliberate match
 # above, because forcing is the safe direction and the list carries no
 # exclusions; a docs page or a UI chart directory is not.
-for near in docs/deployment.md README.md src/charts/bar.tsx app/terraform-notes.md src/deploy_helper.py .github/workflows/ci.yml; do
+for near in docs/deployment.md docs/template-guide.md src/application.yaml src/argonaut/app.yaml README.md src/charts/bar.tsx app/terraform-notes.md src/deploy_helper.py .github/workflows/ci.yml; do
   brief_with_paths "$near"
   reset_log
   write_careful_response "$RESPONSE" rule_1

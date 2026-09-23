@@ -248,7 +248,8 @@ fm_dispatch_path_class() {  # <path> -> prints the matched pattern label, or exi
   case "$base" in
     vercel.json) printf 'vercel.json\n'; return 0 ;;
     *.tf|*.tfvars) printf '*.tf or *.tfvars\n'; return 0 ;;
-    *.cfn.yaml|*.cfn.yml|*.cfn.json|cloudformation*.yaml|cloudformation*.yml|cloudformation*.json)
+    *.cfn.yaml|*.cfn.yml|*.cfn.json|cloudformation*.yaml|cloudformation*.yml|cloudformation*.json|\
+    template.yaml|template.yml|*.template|*.template.json|*.template.yaml)
       printf 'CloudFormation template\n'; return 0 ;;
     chart.yaml|chart.yml|values.yaml|values.yml|values-*.yaml|values-*.yml)
       printf 'Helm chart manifest\n'; return 0 ;;
@@ -259,7 +260,7 @@ fm_dispatch_path_class() {  # <path> -> prints the matched pattern label, or exi
   case "/$lower" in
     */cloudformation/*) printf 'CloudFormation template directory\n'; return 0 ;;
     */k8s/*|*/kubernetes/*) printf 'Kubernetes manifest directory\n'; return 0 ;;
-    */argocd/*|*/argo-cd/*) printf 'ArgoCD manifest directory\n'; return 0 ;;
+    */argocd/*|*/argo-cd/*|*/argo/*) printf 'ArgoCD manifest directory\n'; return 0 ;;
     */helm/*) printf 'Helm chart directory\n'; return 0 ;;
     */scripts/deploy*) printf 'deploy or release script\n'; return 0 ;;
   esac
