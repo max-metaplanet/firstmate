@@ -72,6 +72,7 @@ A switch rewrites one setting that only a fresh spawn reads.
 - **New workers** launch on the new seat.
 - **Running workers** keep the seat they started on. Their seat is recorded in their own task record at launch, and nothing rewrites it.
 - **Relaunches** of an existing task reuse that recorded seat, never the current setting. Relaunch is the one path that starts a replacement agent for a task that already exists, so it is the one place this could have gone wrong. This matters beyond billing: a task's session history lives under its profile directory, so moving a task between seats would strand it.
+- **Harness-changing relaunches** follow the harness. A task relaunched from another harness onto Claude has no Claude history yet, so it counts as a new worker and gets the active seat, never the default login. A task relaunched from Claude onto another harness records no seat any more.
 
 `bin/fm-seat.sh status` shows the active seat alongside every task's own recorded seat, which is how to confirm a switch left running work alone.
 
@@ -99,7 +100,10 @@ A rotation with no other logged-in seat under the seats root refuses rather than
 
 ## Secondmate homes
 
-All three seat settings are inherited into secondmate homes through the primary-authoritative configuration contract, so a secondmate's own Claude crewmates launch on the same seat as the primary's.
+All three seat settings are inherited into this machine's local secondmate homes through the primary-authoritative configuration contract, so a secondmate's own Claude crewmates launch on the same seat as the primary's.
+Every switch, manual or automatic, runs `bin/fm-config-push.sh` right after it changes the primary's seat, so running local secondmates pick up the new seat without being stopped, and the switch prints which homes were updated and which were not.
+A failed push never undoes the primary's switch: it is reported, those homes keep spawning on their previous seat, and re-running `bin/fm-config-push.sh` retries them.
+Remote secondmate homes on other machines never receive seat settings, because a seat is a Keychain-backed profile logged in on this machine only; a remote home keeps its own login exactly as before seats existed.
 The seats themselves live outside any firstmate home - by default under `~/.claude-seats` - so the owner logs into a seat once and every home on the machine reaches the same profile.
 A home that needs its own set of seats overrides `config/claude-seats-root`.
 

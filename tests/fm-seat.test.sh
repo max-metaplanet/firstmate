@@ -270,6 +270,113 @@ test_switch_back_to_default_clears_the_setting() {
   pass "switching to the default seat clears the setting and restores ambient behaviour"
 }
 
+# add_local_secondmate <home> <fakebin> <id> -> echoes a seeded local secondmate
+# home the primary <home> records as live. A fake tmux on <fakebin> absorbs the
+# config reread nudge so it can never reach a real tmux server.
+add_local_secondmate() {
+  local home=$1 fakebin=$2 id=$3 sm
+  fm_fake_exit0 "$fakebin" tmux
+  sm="$(dirname "$home")/sm-$id"
+  mkdir -p "$sm/config" "$sm/data" "$sm/state" "$sm/bin"
+  printf '%s\n' "$id" > "$sm/.fm-secondmate-home"
+  printf 'instructions\n' > "$sm/AGENTS.md"
+  {
+    printf 'window=firstmate:fm-%s\n' "$id"
+    printf 'kind=secondmate\n'
+    printf 'home=%s\n' "$sm"
+  } > "$home/state/$id.meta"
+  printf '%s\n' "$sm"
+}
+
+test_switch_reaches_running_local_secondmate_homes() {
+  local rec out sm
+  rec=$(make_seat_case switch-secondmate)
+  read_seat_case "$rec"
+  mkdir -p "$SEATS_DIR/work"
+  seat_logged_in "$SPEC_DIR" '(default)' "$SEATS_DIR/work"
+  sm=$(add_local_secondmate "$HOME_DIR" "$FAKEBIN" smseat)
+
+  out=$(TMUX='' run_seat "$HOME_DIR" "$FAKEBIN" switch work)
+  assert_contains "$out" "switched: default -> work" "the primary switch must be reported"
+  [ "$(cat "$sm/config/claude-seat" 2>/dev/null)" = work ] \
+    || fail "a switch must carry the new seat to a running local secondmate home: $out"
+  assert_contains "$out" "secondmate smseat ($sm)" "the switch must name each secondmate home it reached"
+  assert_contains "$out" "claude-seat: pushed" "the switch must report the home as updated"
+
+  out=$(TMUX='' run_seat "$HOME_DIR" "$FAKEBIN" switch default)
+  assert_absent "$sm/config/claude-seat" "returning to the default seat must clear it in the secondmate home too"
+  pass "a seat switch reaches running local secondmate homes and reports each one"
+}
+
+test_failed_secondmate_push_does_not_undo_the_switch() {
+  local rec out sm
+  if [ "$(id -u)" = 0 ]; then
+    printf '# skip - an unwritable secondmate config requires a non-root user\n'
+    return
+  fi
+  rec=$(make_seat_case switch-secondmate-fail)
+  read_seat_case "$rec"
+  mkdir -p "$SEATS_DIR/work"
+  seat_logged_in "$SPEC_DIR" '(default)' "$SEATS_DIR/work"
+  sm=$(add_local_secondmate "$HOME_DIR" "$FAKEBIN" smfail)
+  chmod 500 "$sm/config"
+
+  out=$(TMUX='' run_seat "$HOME_DIR" "$FAKEBIN" switch work)
+  expect_code 0 "$?" "a failed secondmate push must not fail the primary switch: $out"
+  chmod 700 "$sm/config"
+  assert_grep "work" "$HOME_DIR/config/claude-seat" "the primary switch must stand when a secondmate push fails"
+  assert_absent "$sm/config/claude-seat" "precondition: the secondmate home was not updated"
+  assert_contains "$out" "not every secondmate home was updated" "a failed push must be reported plainly"
+  pass "a failed secondmate push is reported and never undoes the primary switch"
+}
+
+test_remote_route_never_receives_seat_settings() {
+  local rec out remote payload hash
+  rec=$(make_seat_case remote-inherit)
+  read_seat_case "$rec"
+  remote="$CASE_DIR/remote-home"
+  mkdir -p "$remote/config" "$remote/data" "$remote/state"
+  printf 'work\n' > "$HOME_DIR/config/claude-seat"
+  printf '15\n' > "$HOME_DIR/config/claude-seat-threshold"
+  printf 'codex\n' > "$HOME_DIR/config/crew-harness"
+  printf -- '- remsm - Remote route (host: inherit-host; root: %s; home: %s; scope: test; projects: ; added 2026-09-23)\n' \
+    "$ROOT" "$remote" > "$HOME_DIR/data/secondmates.md"
+  cat > "$FAKEBIN/inherit-ssh" <<'SH'
+#!/usr/bin/env bash
+set -eu
+while [ "$#" -gt 0 ]; do
+  case "$1" in -o) shift 2 ;; --) shift; break ;; *) exit 90 ;; esac
+done
+[ "$#" -eq 6 ] && [ "$1" = inherit-host ] && [ "$2" = fm-remote-entrypoint.sh ] || exit 91
+remote_root=$(printf '%s' "$4" | base64 --decode)
+remote_home=$(printf '%s' "$5" | base64 --decode)
+args=()
+while IFS= read -r -d '' arg; do args+=("$arg"); done < <(printf '%s' "$6" | base64 --decode)
+FM_HOME="$remote_home" FM_STATE_OVERRIDE="$remote_home/state" \
+  exec "$remote_root/bin/${args[0]}" "${args[@]:1}"
+SH
+  chmod +x "$FAKEBIN/inherit-ssh"
+
+  out=$(FM_HOME="$HOME_DIR" FM_ROOT_OVERRIDE="$ROOT" FM_CONFIG_OVERRIDE="$HOME_DIR/config" \
+    FM_DATA_OVERRIDE="$HOME_DIR/data" FM_SSH_BIN="$FAKEBIN/inherit-ssh" \
+    "$ROOT/bin/fm-remote-inherit-push.sh" remsm 1 2>&1)
+  expect_code 0 "$?" "the remote inheritance push should succeed: $out"
+  [ "$(cat "$remote/config/crew-harness" 2>/dev/null)" = codex ] \
+    || fail "precondition: the remote push must still carry ordinary inherited config: $out"
+  assert_absent "$remote/config/claude-seat" "a remote route must never receive the active seat"
+  assert_absent "$remote/config/claude-seat-threshold" "a remote route must never receive the seat threshold"
+  assert_not_contains "$out" "claude-seat" "the remote push must not transfer any seat setting"
+
+  payload="$CASE_DIR/seat-payload"
+  printf 'work\n' > "$payload"
+  hash=$(shasum -a 256 "$payload" 2>/dev/null | awk '{print $1}' || sha256sum "$payload" | awk '{print $1}')
+  out=$(FM_HOME="$remote" FM_STATE_OVERRIDE="$remote/state" \
+    "$ROOT/bin/fm-remote-inherit.sh" put config/claude-seat 5 "$hash" 2 < "$payload" 2>&1)
+  expect_code 1 "$?" "the remote receiver must refuse a seat setting: $out"
+  assert_absent "$remote/config/claude-seat" "a refused seat setting must not land in the remote home"
+  pass "seat settings reach local secondmate homes only and never cross to a remote route"
+}
+
 test_threshold_is_configurable_and_absent_by_default() {
   local rec out
   rec=$(make_seat_case threshold-config)
@@ -716,6 +823,9 @@ test_forced_switch_cannot_override_a_proven_negative
 test_rate_limited_seat_is_undecided_and_forceable
 test_unreadable_store_is_undecided_and_force_may_cross_it
 test_switch_back_to_default_clears_the_setting
+test_switch_reaches_running_local_secondmate_homes
+test_failed_secondmate_push_does_not_undo_the_switch
+test_remote_route_never_receives_seat_settings
 test_threshold_is_configurable_and_absent_by_default
 test_threshold_reached_is_edge_triggered_by_the_configured_percent
 test_unreadable_quota_never_reports_the_threshold_reached

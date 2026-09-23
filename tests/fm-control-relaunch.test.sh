@@ -805,6 +805,49 @@ test_relaunch_of_a_pre_seats_task_keeps_the_ambient_profile() {
   pass "fm-control relaunch: a task that predates seats keeps the ambient profile, not the home's new seat"
 }
 
+test_relaunch_from_another_harness_onto_claude_takes_the_active_seat() {
+  local dir out rc seats
+  dir=$(new_case seatonto rl-seat4)
+  add_ship_task "$dir" rl-seat4 codex
+  printf 'codex' > "$dir/fake/command"
+  seats="$dir/seats"
+  mkdir -p "$seats/spare" "$dir/home/config" "$dir/ambient-profile"
+  printf '%s\n' "$seats" > "$dir/home/config/claude-seats-root"
+  printf 'spare\n' > "$dir/home/config/claude-seat"
+  # A codex task records no seat. Relaunched onto claude it has no Claude
+  # history to protect, so it is a new worker for seat purposes and must take
+  # the active seat, never firstmate's ambient default profile.
+  out=$(FM_TEST_CLAUDE_CONFIG_DIR="$dir/ambient-profile" run_control "$dir" rl-seat4 relaunch --harness claude --note "switching runtime"); rc=$?
+  expect_code 0 "$rc" "a codex-to-claude relaunch should succeed"$'\n'"$out"
+  assert_grep "CLAUDE_CONFIG_DIR='$seats/spare'" "$dir/fake/literal" \
+    "a codex-to-claude relaunch must launch on the active seat"
+  assert_no_grep "$dir/ambient-profile" "$dir/fake/literal" \
+    "a codex-to-claude relaunch must not fall back to the ambient profile"
+  [ "$(meta_field "$dir" rl-seat4 claude_seat)" = "$seats/spare" ] \
+    || fail "a codex-to-claude relaunch must record the seat it launched on, got '$(meta_field "$dir" rl-seat4 claude_seat)'"
+  pass "fm-control relaunch: a relaunch onto claude from another harness takes and records the active seat"
+}
+
+test_relaunch_from_claude_onto_another_harness_drops_the_seat() {
+  local dir out rc seats
+  dir=$(new_case seatoff rl-seat5)
+  add_ship_task "$dir" rl-seat5 claude
+  seats="$dir/seats"
+  mkdir -p "$seats/work" "$dir/home/config"
+  printf '%s\n' "$seats" > "$dir/home/config/claude-seats-root"
+  printf 'work\n' > "$dir/home/config/claude-seat"
+  printf 'claude_seat=%s\n' "$seats/work" >> "$dir/home/state/rl-seat5.meta"
+  printf 'codex' > "$dir/fake/becomes"
+  out=$(run_control "$dir" rl-seat5 relaunch --harness codex --note "switching runtime"); rc=$?
+  expect_code 0 "$rc" "a claude-to-codex relaunch should succeed"$'\n'"$out"
+  [ "$(meta_field "$dir" rl-seat5 harness)" = codex ] || fail "the record should follow the harness switch"
+  ! grep -q '^claude_seat=' "$dir/home/state/rl-seat5.meta" \
+    || fail "a claude-to-codex relaunch must drop the claude_seat line"
+  assert_no_grep "CLAUDE_CONFIG_DIR=" "$dir/fake/literal" \
+    "a codex replacement must not launch with a Claude profile"
+  pass "fm-control relaunch: a relaunch from claude onto another harness records no seat"
+}
+
 test_native_ultra_relaunch_preserves_profile_and_rejects_before_stop() {
   local dir out rc id=rl-ultra
   dir=$(new_case native-ultra "$id")
@@ -2285,6 +2328,8 @@ test_same_harness_relaunch_keeps_the_profile_axes
 test_relaunch_keeps_the_recorded_claude_seat_after_a_seat_switch
 test_relaunch_without_a_recorded_seat_adds_no_config_dir
 test_relaunch_of_a_pre_seats_task_keeps_the_ambient_profile
+test_relaunch_from_another_harness_onto_claude_takes_the_active_seat
+test_relaunch_from_claude_onto_another_harness_drops_the_seat
 test_native_ultra_relaunch_preserves_profile_and_rejects_before_stop
 test_explicit_model_wins_over_the_recorded_one
 test_relaunch_onto_an_unverified_harness_is_refused

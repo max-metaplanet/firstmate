@@ -388,12 +388,14 @@ The optional local, gitignored `config/claude-seat` holds the active seat NAME f
 Absent, empty, or malformed means the reserved seat `default`: no `CLAUDE_CONFIG_DIR` is added and launches stay byte-for-byte as they were before seats existed.
 The optional `config/claude-seats-root` holds one absolute path, the directory holding one subdirectory per named seat, and defaults to `$HOME/.claude-seats`; seats live outside the firstmate home so the owner logs into a seat once and every home on the machine reaches the same profile.
 The optional `config/claude-seat-threshold` holds one percentage between 0 and 100, the remaining quota at which an armed watch switches future workers to the next logged-in seat; absent means no automatic switching, and there is deliberately no default that would move accounts on a home that never asked for it.
-All three are inherited into secondmate homes through the primary-authoritative configuration contract, so a secondmate's own Claude crewmates launch on the same seat.
+All three are inherited into local secondmate homes through the primary-authoritative configuration contract, so a secondmate's own Claude crewmates launch on the same seat; a switch runs `bin/fm-config-push.sh` to carry the change to running local secondmates at once.
+They are never sent to a remote secondmate route, because a seat is a profile logged in on this machine only.
 
 A switch changes only which seat the NEXT worker gets.
 `bin/fm-spawn.sh` resolves the seat once per fresh Claude spawn (other harnesses record no seat), prefers the active seat over firstmate's own ambient `CLAUDE_CONFIG_DIR`, pre-registers Claude workspace trust in that same profile, and records the resolved directory as `claude_seat=` in the task's own record.
-Every relaunch reads that record instead of re-resolving the setting, so a switch never moves a live or relaunched worker; a task's session history lives under its profile directory, which makes the recorded value a correctness requirement rather than only a billing one.
+Every Claude-to-Claude relaunch reads that record instead of re-resolving the setting, so a switch never moves a live or relaunched worker; a task's session history lives under its profile directory, which makes the recorded value a correctness requirement rather than only a billing one.
 A task whose record carries no `claude_seat=` line, including every task created before seats existed, keeps the ambient default and is never retroactively moved onto a seat.
+A relaunch that switches a task from another harness onto Claude has no Claude history to protect, so it resolves and records the active seat exactly as a fresh spawn does; a relaunch onto any other harness drops the `claude_seat=` line.
 
 ## Lavish server address (config/lavish-axi-host)
 

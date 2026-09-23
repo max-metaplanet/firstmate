@@ -25,7 +25,9 @@
 #            owner's own interactive login and can change account under them.
 #            Refuses a seat that is not logged in, because a worker launched
 #            there fails on its first message; --force overrides that refusal
-#            when the probe itself cannot reach a verdict.
+#            when the probe itself cannot reach a verdict. After the switch it
+#            runs bin/fm-config-push.sh so this machine's running local
+#            secondmate homes take the new seat too, reporting each home.
 # probe      Report whether a seat is logged in. Exit 0 logged in, 1 not logged
 #            in, 2 undecided.
 # add        Create an empty profile directory for a new seat and print the exact
@@ -263,6 +265,21 @@ cmd_switch() {
   write_active "$name"
   printf 'switched: %s -> %s\n' "$prior" "$name"
   printf 'applies to NEW claude workers only; running workers keep their own seat\n'
+  propagate_to_secondmates
+}
+
+# propagate_to_secondmates
+# Carry the switch to this machine's live secondmate homes through the one
+# existing convergence, bin/fm-config-push.sh, which reports every home as
+# updated, unchanged, skipped, or failed. Remote routes never receive seat
+# settings (bin/fm-config-inherit-lib.sh). A failed push never undoes the
+# primary's switch; it is reported, and the push can be re-run on its own.
+propagate_to_secondmates() {
+  if FM_HOME="$FM_HOME" FM_ROOT_OVERRIDE="$FM_ROOT" FM_STATE_OVERRIDE="$STATE" \
+    FM_CONFIG_OVERRIDE="$CONFIG" "$SCRIPT_DIR/fm-config-push.sh"; then
+    return 0
+  fi
+  printf 'warning: seat switched here, but not every secondmate home was updated (see above); those homes keep spawning on their previous seat until bin/fm-config-push.sh succeeds\n' >&2
 }
 
 cmd_add() {

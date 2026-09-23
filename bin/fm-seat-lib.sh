@@ -20,7 +20,8 @@
 # not only a billing one.
 #
 # Three settings, all optional, all one line, all gitignored, and all inherited
-# by secondmate homes (FM_INHERITABLE_CONFIG in bin/fm-config-inherit-lib.sh):
+# by LOCAL secondmate homes but never by a remote route
+# (FM_MACHINE_LOCAL_INHERITABLE_CONFIG in bin/fm-config-inherit-lib.sh):
 #   config/claude-seat            active seat NAME for new claude workers
 #   config/claude-seats-root      where seat profile directories live
 #   config/claude-seat-threshold  percent remaining that trips an auto switch

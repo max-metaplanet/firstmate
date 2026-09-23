@@ -1561,10 +1561,14 @@ RAW_LAUNCH=0
 # validation teardown uses, so a malformed, ambiguous, or foreign record
 # refuses here exactly as it refuses there.
 RELAUNCH_PRIOR_HARNESS=
+# The claude_seat line from the task's own record on a relaunch, empty when it
+# has none.
+RELAUNCH_SEAT=
 # The Claude profile directory THIS task launches with, empty for the ambient
-# default. A fresh spawn resolves it from the home's active seat below; a
-# relaunch adopts the task's recorded value instead (bin/fm-seat-lib.sh).
+# default, and the value its record carries as claude_seat. Both are resolved
+# once the harness is known, below (bin/fm-seat-lib.sh).
 SEAT_CONFIG_DIR=
+SEAT_RECORD=
 # 1 when the recorded endpoint is authoritatively gone and this relaunch must
 # create a fresh one for the task rather than adopt its recorded address.
 RELAUNCH_REBIND=0
@@ -1652,18 +1656,7 @@ if [ "$RELAUNCH" -eq 1 ]; then
       ;;
   esac
   RELAUNCH_PRIOR_HARNESS=$(fm_meta_get "$RELAUNCH_META" harness)
-  # The task's OWN recorded Claude seat, never the home's current setting. A
-  # seat switch between the original spawn and this relaunch must not move the
-  # task to another account: its session history lives under the recorded
-  # profile directory, so re-resolving here would strand it and silently change
-  # which account the work bills to.
-  SEAT_CONFIG_DIR=$(fm_meta_get "$RELAUNCH_META" claude_seat)
-  # An absent line means the task predates seats. Its launches took firstmate's
-  # OWN ambient CLAUDE_CONFIG_DIR, so that is what this relaunch must keep
-  # giving it: falling through to the bare default here would move exactly the
-  # task this whole mechanism exists to leave alone. The home's active seat is
-  # still never consulted, so a switch cannot reach the task either way.
-  [ -n "$SEAT_CONFIG_DIR" ] || SEAT_CONFIG_DIR=${CLAUDE_CONFIG_DIR:-}
+  RELAUNCH_SEAT=$(fm_meta_get "$RELAUNCH_META" claude_seat)
   KIND=$(fm_meta_get "$RELAUNCH_META" kind)
   [ -n "$KIND" ] || KIND=ship
   # A secondmate whose endpoint is gone already has ONE owner for that
@@ -3943,16 +3936,28 @@ if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" != secondmate ]; then
   freshen_spawn_worktree_base "$WT" || exit 1
 fi
 
-# Resolve the Claude seat for a FRESH spawn: the home's active seat, else
-# firstmate's own ambient CLAUDE_CONFIG_DIR, else the single-store default
-# (bin/fm-seat-lib.sh owns that order). A relaunch already adopted the task's
-# recorded value above and must not re-resolve, so this runs only on a fresh
-# spawn, and only for a claude worker: no other harness reads a Claude profile,
-# so recording one for it would misreport which workers a switch left alone.
-# Resolving here, before trust pre-registration, is what lets the trust entry
-# land in the same profile the worker will actually read.
-if [ "$RELAUNCH" -eq 0 ] && [ "$HARNESS" = claude ]; then
-  SEAT_CONFIG_DIR=$(fm_seat_spawn_config_dir)
+# Resolve the Claude seat, only for a claude worker: no other harness reads a
+# Claude profile, so recording one for it would misreport which workers a
+# switch left alone, and a relaunch onto another harness drops the line.
+# A claude-to-claude relaunch keeps the task's OWN recorded seat, never the
+# home's current setting: its session history lives under that profile, so
+# re-resolving would strand it and silently change which account the work
+# bills to. An absent line there means the task predates seats and took
+# firstmate's own ambient CLAUDE_CONFIG_DIR, which it keeps getting. Every
+# other claude launch - a fresh spawn, or a relaunch from another harness,
+# which has no Claude history to protect - is a new worker for seat purposes
+# and resolves the home's active seat exactly as a fresh spawn does
+# (bin/fm-seat-lib.sh owns that order), so it never lands on the ambient
+# default that rotation avoids. Resolving here, before trust pre-registration,
+# is what lets the trust entry land in the same profile the worker will read.
+if [ "$HARNESS" = claude ]; then
+  if [ "$RELAUNCH" -eq 1 ] && [ "$RELAUNCH_PRIOR_HARNESS" = claude ]; then
+    SEAT_RECORD=$RELAUNCH_SEAT
+    SEAT_CONFIG_DIR=${RELAUNCH_SEAT:-${CLAUDE_CONFIG_DIR:-}}
+  else
+    SEAT_CONFIG_DIR=$(fm_seat_spawn_config_dir)
+    SEAT_RECORD=$SEAT_CONFIG_DIR
+  fi
 fi
 
 # Pre-register Claude's workspace trust for the directory this launch starts in,
@@ -4486,7 +4491,7 @@ SPAWN_META_PATH=$SPAWN_META_TMP
 preserve_relaunch_meta() {
   awk -F= '
     BEGIN {
-      split("window endpoint_task_id worktree project harness kind mode yolo tasktmp model effort busy_gen spawn_gen traceparent backend herdr_session herdr_workspace_id herdr_tab_id herdr_pane_id zellij_session zellij_tab_id zellij_pane_id orca_worktree_id terminal cmux_workspace_id cmux_surface_id home projects control_relaunch_tx", keys, " ")
+      split("window endpoint_task_id worktree project harness kind mode yolo tasktmp model effort busy_gen spawn_gen claude_seat traceparent backend herdr_session herdr_workspace_id herdr_tab_id herdr_pane_id zellij_session zellij_tab_id zellij_pane_id orca_worktree_id terminal cmux_workspace_id cmux_surface_id home projects control_relaunch_tx", keys, " ")
       for (i in keys) owned[keys[i]] = 1
     }
     !($1 in owned)
@@ -4504,13 +4509,11 @@ preserve_relaunch_meta() {
   echo "tasktmp=$TASK_TMP"
   echo "model=${MODEL:-default}"
   echo "effort=${EFFORT:-default}"
-  # The seat this task launched on, written once on the fresh spawn and then
-  # carried forward verbatim by preserve_relaunch_meta, which is why claude_seat
-  # is deliberately NOT in its owned-key list. That is the whole mechanism by
-  # which a later seat switch cannot move this task: every relaunch reads this
-  # line back instead of re-resolving the home's current setting. Absent means
-  # the ambient default store, which is also what a pre-seats record has.
-  [ "$RELAUNCH" -eq 1 ] || [ -z "$SEAT_CONFIG_DIR" ] || echo "claude_seat=$SEAT_CONFIG_DIR"
+  # The seat this task launched on. A claude-to-claude relaunch rewrites the
+  # value it read back from this same line, which is the whole mechanism by
+  # which a later seat switch cannot move this task. Absent means the ambient
+  # default store, which is also what a pre-seats record has.
+  [ -z "$SEAT_RECORD" ] || echo "claude_seat=$SEAT_RECORD"
   [ -z "${BUSY_GEN:-}" ] || echo "busy_gen=$BUSY_GEN"
   echo "spawn_gen=$SPAWN_GEN"
   # Default-off writes no traceparent= line.
