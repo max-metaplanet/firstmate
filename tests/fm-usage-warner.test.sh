@@ -246,21 +246,25 @@ test_slow_quota_axi_is_reported_as_a_timeout() {
   mkdir -p "$fakebin"
   cat > "$fakebin/quota-axi" <<'EOF'
 #!/usr/bin/env bash
-sleep 5
+sleep 60
 EOF
   chmod +x "$fakebin/quota-axi"
   printf 'five_hour:80\n' > "$home/config/usage-warner"
-  out=$(FM_USAGE_WARNER_TIMEOUT_SECS=1 PATH="$fakebin:$PATH" FM_HOME="$home" "$WARNER" check </dev/null 2>&1)
-  assert_contains "$out" "did not finish within the 1s budget" "a hung read is bounded and reported, not left to hang the watcher"
+  out=$(run_check "$home" "$fakebin" 2>&1)
+  assert_contains "$out" "did not finish within the 10s budget" "a hung read is bounded and reported, not left to hang the watcher"
   pass "fm-usage-warner: a slow read is bounded and reported as a timeout"
 }
 
-test_invalid_timeout_env_is_refused() {
-  local out rc=0
-  out=$(FM_USAGE_WARNER_TIMEOUT_SECS=0 "$WARNER" --help 2>&1) || rc=$?
-  expect_code 2 "$rc" "a zero timeout must be refused"
-  assert_contains "$out" "FM_USAGE_WARNER_TIMEOUT_SECS" "the refusal names the offending variable"
-  pass "fm-usage-warner: an invalid timeout override is refused loudly"
+test_unconfigured_invocation_ignores_unused_environment() {
+  local home out rc=0
+  home=$(make_home unused-env)
+  out=$(FM_USAGE_WARNER_TIMEOUT_SECS=0 FM_CHECK_TIMEOUT=bogus FM_HOME="$home" "$WARNER" check </dev/null 2>&1) || rc=$?
+  expect_code 0 "$rc" "an unconfigured check must not fail on environment it does not use"
+  [ -z "$out" ] || fail "an unconfigured check must stay silent whatever the environment: $out"
+  rc=0
+  out=$(FM_USAGE_WARNER_TIMEOUT_SECS=0 FM_CHECK_TIMEOUT=bogus "$WARNER" --help 2>&1) || rc=$?
+  expect_code 0 "$rc" "--help must not fail on environment it does not use"
+  pass "fm-usage-warner: an unconfigured invocation never fails on unused environment"
 }
 
 test_arm_refuses_without_a_configured_threshold() {
@@ -350,7 +354,7 @@ test_quota_axi_missing_is_reported_once
 test_jq_missing_is_reported
 test_malformed_quota_axi_output_is_reported
 test_slow_quota_axi_is_reported_as_a_timeout
-test_invalid_timeout_env_is_refused
+test_unconfigured_invocation_ignores_unused_environment
 test_arm_refuses_without_a_configured_threshold
 test_arm_refuses_on_a_non_macos_platform
 test_arm_writes_and_binds_the_check_and_disarm_removes_it

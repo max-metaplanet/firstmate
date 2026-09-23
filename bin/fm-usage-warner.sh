@@ -118,21 +118,10 @@ die_usage() {
   exit 2
 }
 
-# The watcher's per-check bound, read from this check's own environment because
-# the watcher runs the check as a direct child. quota-axi's read is a single
-# local call, not a multi-tool sweep, so this only needs a safety bound, not a
-# cadence gate of its own on top of the watcher's normal FM_CHECK_INTERVAL.
-TIMEOUT_SECS=${FM_USAGE_WARNER_TIMEOUT_SECS:-15}
-case "$TIMEOUT_SECS" in
-  ''|*[!0-9]*|0)
-    printf 'fm-usage-warner: FM_USAGE_WARNER_TIMEOUT_SECS must be a whole number from 1 to 60\n' >&2
-    exit 2
-    ;;
-esac
-if [ "$TIMEOUT_SECS" -gt 60 ]; then
-  printf 'fm-usage-warner: FM_USAGE_WARNER_TIMEOUT_SECS must be a whole number from 1 to 60\n' >&2
-  exit 2
-fi
+# quota-axi's read is a single local call, so it gets one fixed bound that sits
+# well inside the watcher's default FM_CHECK_TIMEOUT of 30 seconds, leaving room
+# for the record write and the notification after it.
+READ_TIMEOUT_SECS=10
 
 # --- config -------------------------------------------------------------
 # Prints "<window-id>\t<percent>" once per valid directive in config/usage-warner,
@@ -190,10 +179,10 @@ usage_warner_read() {
     printf 'jq is not installed\n'
     return 1
   }
-  json=$(fm_run_timed "$TIMEOUT_SECS" quota-axi --provider "$PROVIDER" --json --full --no-credential-refresh 2>/dev/null)
+  json=$(fm_run_timed "$READ_TIMEOUT_SECS" quota-axi --provider "$PROVIDER" --json --full --no-credential-refresh 2>/dev/null)
   rc=$?
   if [ "$rc" -eq 124 ]; then
-    printf 'quota-axi read did not finish within the %ss budget\n' "$TIMEOUT_SECS"
+    printf 'quota-axi read did not finish within the %ss budget\n' "$READ_TIMEOUT_SECS"
     return 1
   elif [ "$rc" -ne 0 ] || [ -z "$json" ]; then
     printf 'quota-axi read failed\n'
