@@ -169,10 +169,17 @@ fm_seat_logged_in() {
     | .source == "oauth"
   ' >/dev/null 2>&1 && return 0
   # Tell a clean "not logged in" apart from a probe that could not decide, so a
-  # switch refuses on the first and reports uncertainty on the second.
+  # switch refuses on the first and reports uncertainty on the second. Only a
+  # report where every source was skipped at the credential lookup proves the
+  # profile holds no login. A signed-in seat whose quota endpoint is rate
+  # limited is also "unavailable", but its keychain attempt got past the lookup
+  # and failed afterwards, so that stays undecided and --force can proceed.
   printf '%s\n' "$out" | jq -e '
     (.providers // []) | map(select(.provider == "claude")) | .[0] // empty
     | .source == "unavailable"
+      and ((.attempts // []) | length > 0
+        and all(.status == "skipped"
+          and (.error == "credentials_missing" or .error == "keychain_unreachable")))
   ' >/dev/null 2>&1 && return 1
   return 2
 }

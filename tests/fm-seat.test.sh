@@ -25,6 +25,8 @@ TMP_ROOT=$(fm_test_tmproot fm-seat)
 # A fake quota-axi whose verdict per profile directory is driven by files the
 # test writes. <spec> is a directory holding one file per state:
 #   <spec>/oauth        newline-separated CLAUDE_CONFIG_DIR values that are logged in
+#   <spec>/rate_limited newline-separated CLAUDE_CONFIG_DIR values that are signed
+#                       in but whose quota endpoint is rate limiting them
 #   <spec>/remaining    percent remaining reported for a logged-in profile's
 #                       account-level (all_models) window
 #   <spec>/availability optional JSON array replacing the whole
@@ -44,6 +46,12 @@ key="\${CLAUDE_CONFIG_DIR:-}"
 remaining=\$(cat "\$spec/remaining" 2>/dev/null || printf '80')
 availability=\$(cat "\$spec/availability" 2>/dev/null ||
   printf '[{"scope":"all_models","status":"known","effectivePercentRemaining":%s,"runway":{"status":"through_reset"}}]' "\$remaining")
+if [ -f "\$spec/rate_limited" ] && grep -Fxq "\$key" "\$spec/rate_limited"; then
+  cat <<'JSON'
+{"generatedAt":"2026-01-01T00:00:00Z","schemaVersion":5,"providers":[{"provider":"claude","label":"Claude","source":"unavailable","windows":[],"state":{"status":"rate_limited","error":"Claude quota endpoint rate limited"},"attempts":[{"source":"oauth-file","status":"skipped","error":"credentials_missing"},{"source":"keychain","status":"failed","error":"Claude quota endpoint rate limited"}],"quotaSemantics":{"status":"unknown","effectiveAvailability":[]}}]}
+JSON
+  exit 1
+fi
 if [ -f "\$spec/oauth" ] && grep -Fxq "\$key" "\$spec/oauth"; then
   cat <<JSON
 {"generatedAt":"2026-01-01T00:00:00Z","schemaVersion":5,"providers":[{"provider":"claude","label":"Claude","source":"oauth","account":{"email":"seat-\$(printf '%s' "\$key" | tr -c 'a-zA-Z0-9' '-')@example.test"},"quotaSemantics":{"status":"known","effectiveAvailability":\$availability}}]}
@@ -51,7 +59,7 @@ JSON
   exit 0
 fi
 cat <<'JSON'
-{"generatedAt":"2026-01-01T00:00:00Z","schemaVersion":5,"providers":[{"provider":"claude","label":"Claude","source":"unavailable","windows":[],"state":{"status":"error","error":"keychain_unreachable"},"quotaSemantics":{"status":"unknown","effectiveAvailability":[]}}]}
+{"generatedAt":"2026-01-01T00:00:00Z","schemaVersion":5,"providers":[{"provider":"claude","label":"Claude","source":"unavailable","windows":[],"state":{"status":"error","error":"keychain_unreachable"},"attempts":[{"source":"oauth-file","status":"skipped","error":"credentials_missing"},{"source":"keychain","status":"skipped","error":"keychain_unreachable"}],"quotaSemantics":{"status":"unknown","effectiveAvailability":[]}}]}
 JSON
 exit 1
 SH
@@ -163,6 +171,30 @@ test_forced_switch_cannot_override_a_proven_negative() {
   assert_contains "$out" "not logged in" "the forced refusal must still name the cause"
   assert_absent "$HOME_DIR/config/claude-seat" "a refused forced switch must change nothing"
   pass "--force does not override a seat proven to be logged out"
+}
+
+test_rate_limited_seat_is_undecided_and_forceable() {
+  local rec out status
+  rec=$(make_seat_case switch-rate-limited)
+  read_seat_case "$rec"
+  mkdir -p "$SEATS_DIR/busy"
+  seat_logged_in "$SPEC_DIR" '(default)'
+  printf '%s\n' "$SEATS_DIR/busy" > "$SPEC_DIR/rate_limited"
+
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" probe busy)
+  status=$?
+  expect_code 2 "$status" "a rate-limited signed-in seat must probe as undecided, not logged out"
+  assert_not_contains "$out" "not-logged-in" "a rate limit must not be reported as a missing login"
+
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" switch busy)
+  expect_code 1 "$?" "an unforced switch onto an undecided seat must still refuse"
+  assert_contains "$out" "--force" "the refusal must point at --force"
+  assert_absent "$HOME_DIR/config/claude-seat" "a refused switch must change nothing"
+
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" switch busy --force)
+  expect_code 0 "$?" "--force must switch onto a seat whose quota read was rate limited"
+  assert_grep "busy" "$HOME_DIR/config/claude-seat" "the forced switch must record the seat"
+  pass "a rate-limited signed-in seat is undecided, and --force switches onto it"
 }
 
 test_switch_back_to_default_clears_the_setting() {
@@ -625,6 +657,7 @@ test_absent_setting_is_the_default_seat
 test_switch_to_logged_in_seat_updates_only_the_setting
 test_switch_to_seat_that_is_not_logged_in_is_refused
 test_forced_switch_cannot_override_a_proven_negative
+test_rate_limited_seat_is_undecided_and_forceable
 test_switch_back_to_default_clears_the_setting
 test_threshold_is_configurable_and_absent_by_default
 test_threshold_reached_is_edge_triggered_by_the_configured_percent
