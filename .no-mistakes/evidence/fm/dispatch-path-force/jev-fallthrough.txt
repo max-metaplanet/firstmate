@@ -1,0 +1,50 @@
+==================================================================
+## fallthrough: prose names vercel.json but no Target paths line
+--- brief:
+    # Task
+    Fix a typo in the vercel.json rewrites comment and the ArgoCD application manifest.
+--- fm-dispatch-resolve.sh output:
+dispatch-resolve:
+  status: escalate
+  model: jev-1.13.0   latency_ms: 490   tokens: 505/53
+  rule: rule_2 (The task is a trivial mechanical edit such as a rote rename,)   confidence: 1.0
+  probabilities: rule_3=0.0 rule_2=1.0 default=0.0 rule_1=0.0
+  reason: no rankable eligible candidate
+  note: rule matched
+  candidate: claude:haiku  provider=claude  scope=all_models  remaining=-%  spendPriority=-  runway=unknown  -> eligible, unranked: provider claude unmeasured (unknown): disclosed uncertainty
+    [exit 0]
+--- outbound calls to Jev: 1
+==================================================================
+## fallthrough: near-miss declared paths
+--- brief:
+    # Task
+    Fix a typo in the docs.
+    Target paths: src/application.yaml docs/template-guide.md
+--- fm-dispatch-resolve.sh output:
+dispatch-resolve:
+  status: escalate
+  model: jev-1.13.0   latency_ms: 273   tokens: 504/53
+  rule: rule_2 (The task is a trivial mechanical edit such as a rote rename,)   confidence: 1.0
+  probabilities: rule_3=0.0 rule_2=1.0 rule_1=0.0 default=0.0
+  reason: no rankable eligible candidate
+  note: rule matched
+  candidate: claude:haiku  provider=claude  scope=all_models  remaining=-%  spendPriority=-  runway=unknown  -> eligible, unranked: provider claude unmeasured (unknown): disclosed uncertainty
+    [exit 0]
+--- outbound calls to Jev: 1
+==================================================================
+## fallthrough: no rule declares path_force (inert)
+--- brief:
+    # Task
+    Fix a typo in the rewrites comment.
+    Target paths: vercel.json
+--- fm-dispatch-resolve.sh output:
+dispatch-resolve:
+  status: escalate
+  model: jev-1.13.0   latency_ms: 278   tokens: 502/53
+  rule: rule_2 (The task is a trivial mechanical edit such as a rote rename,)   confidence: 1.0
+  probabilities: default=0.0 rule_3=0.0 rule_1=0.0 rule_2=1.0
+  reason: no rankable eligible candidate
+  note: rule matched
+  candidate: claude:haiku  provider=claude  scope=all_models  remaining=-%  spendPriority=-  runway=unknown  -> eligible, unranked: provider claude unmeasured (unknown): disclosed uncertainty
+    [exit 0]
+--- outbound calls to Jev: 1

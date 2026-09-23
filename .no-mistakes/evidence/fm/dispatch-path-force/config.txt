@@ -1,0 +1,18 @@
+==================================================================
+## config error: unknown path_force value
+--- brief:
+    x
+    Target paths: vercel.json
+--- fm-dispatch-resolve.sh output:
+error: malformed rules file: /tmp/fm-dispatch-live.8Mfe/home/config/crew-dispatch.json - path_force must be "deployment-config" when present
+    [exit 2]
+--- outbound calls to Jev: 0
+==================================================================
+## config error: two rules declare path_force
+--- brief:
+    x
+    Target paths: vercel.json
+--- fm-dispatch-resolve.sh output:
+error: malformed rules file: /tmp/fm-dispatch-live.8Mfe/home/config/crew-dispatch.json - at most one rule may declare path_force
+    [exit 2]
+--- outbound calls to Jev: 0

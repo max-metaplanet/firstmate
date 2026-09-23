@@ -1,0 +1,34 @@
+==================================================================
+## recheck forced: Target paths: vercel.json
+--- brief:
+    # Task
+    Tidy a typo.
+    Target paths: vercel.json
+--- fm-dispatch-resolve.sh output:
+dispatch-resolve:
+  status: escalate
+  decided_by: path-forced
+  rule: rule_3 (The task is a big or ambiguous multi-file feature, a risky r)
+  forced_path: vercel.json   forced_pattern: vercel.json
+  reason: no rankable eligible candidate
+  note: rule matched
+  candidate: claude:claude-sonnet-5  provider=claude  scope=all_models  remaining=-%  spendPriority=-  runway=unknown  -> eligible, unranked: provider claude unmeasured (unknown): disclosed uncertainty
+  candidate: codex:gpt-5.5  provider=codex  -> eligible, unranked: provider codex unmeasured (unknown): disclosed uncertainty
+    [exit 0]
+--- outbound calls to Jev: 0
+==================================================================
+## recheck fallthrough: prose only
+--- brief:
+    # Task
+    Fix a typo in the vercel.json rewrites comment.
+--- fm-dispatch-resolve.sh output:
+dispatch-resolve:
+  status: escalate
+  model: jev-1.13.0   latency_ms: 506   tokens: 498/53
+  rule: rule_2 (The task is a trivial mechanical edit such as a rote rename,)   confidence: 1.0
+  probabilities: default=0.0 rule_2=1.0 rule_1=0.0 rule_3=0.0
+  reason: no rankable eligible candidate
+  note: rule matched
+  candidate: claude:haiku  provider=claude  scope=all_models  remaining=-%  spendPriority=-  runway=unknown  -> eligible, unranked: provider claude unmeasured (unknown): disclosed uncertainty
+    [exit 0]
+--- outbound calls to Jev: 1

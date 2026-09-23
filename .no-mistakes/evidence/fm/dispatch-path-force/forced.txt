@@ -1,0 +1,413 @@
+==================================================================
+## forced: Target paths: vercel.json
+--- brief:
+    # Task
+    Tidy a typo in the config comment.
+    Target paths: vercel.json
+--- fm-dispatch-resolve.sh output:
+dispatch-resolve:
+  status: escalate
+  decided_by: path-forced
+  rule: rule_3 (The task is a big or ambiguous multi-file feature, a risky r)
+  forced_path: vercel.json   forced_pattern: vercel.json
+  reason: no rankable eligible candidate
+  note: rule matched
+  candidate: claude:claude-sonnet-5  provider=claude  scope=all_models  remaining=-%  spendPriority=-  runway=unknown  -> eligible, unranked: provider claude unmeasured (unknown): disclosed uncertainty
+  candidate: codex:gpt-5.5  provider=codex  -> eligible, unranked: provider codex unmeasured (unknown): disclosed uncertainty
+    [exit 0]
+--- outbound calls to Jev: 0
+==================================================================
+## forced: Target paths: infra/main.tf
+--- brief:
+    # Task
+    Tidy a typo in the config comment.
+    Target paths: infra/main.tf
+--- fm-dispatch-resolve.sh output:
+dispatch-resolve:
+  status: escalate
+  decided_by: path-forced
+  rule: rule_3 (The task is a big or ambiguous multi-file feature, a risky r)
+  forced_path: infra/main.tf   forced_pattern: *.tf or *.tfvars
+  reason: no rankable eligible candidate
+  note: rule matched
+  candidate: claude:claude-sonnet-5  provider=claude  scope=all_models  remaining=-%  spendPriority=-  runway=unknown  -> eligible, unranked: provider claude unmeasured (unknown): disclosed uncertainty
+  candidate: codex:gpt-5.5  provider=codex  -> eligible, unranked: provider codex unmeasured (unknown): disclosed uncertainty
+    [exit 0]
+--- outbound calls to Jev: 0
+==================================================================
+## forced: Target paths: env/prod.tfvars
+--- brief:
+    # Task
+    Tidy a typo in the config comment.
+    Target paths: env/prod.tfvars
+--- fm-dispatch-resolve.sh output:
+dispatch-resolve:
+  status: escalate
+  decided_by: path-forced
+  rule: rule_3 (The task is a big or ambiguous multi-file feature, a risky r)
+  forced_path: env/prod.tfvars   forced_pattern: *.tf or *.tfvars
+  reason: no rankable eligible candidate
+  note: rule matched
+  candidate: claude:claude-sonnet-5  provider=claude  scope=all_models  remaining=-%  spendPriority=-  runway=unknown  -> eligible, unranked: provider claude unmeasured (unknown): disclosed uncertainty
+  candidate: codex:gpt-5.5  provider=codex  -> eligible, unranked: provider codex unmeasured (unknown): disclosed uncertainty
+    [exit 0]
+--- outbound calls to Jev: 0
+==================================================================
+## forced: Target paths: template.yaml
+--- brief:
+    # Task
+    Tidy a typo in the config comment.
+    Target paths: template.yaml
+--- fm-dispatch-resolve.sh output:
+dispatch-resolve:
+  status: escalate
+  decided_by: path-forced
+  rule: rule_3 (The task is a big or ambiguous multi-file feature, a risky r)
+  forced_path: template.yaml   forced_pattern: CloudFormation template
+  reason: no rankable eligible candidate
+  note: rule matched
+  candidate: claude:claude-sonnet-5  provider=claude  scope=all_models  remaining=-%  spendPriority=-  runway=unknown  -> eligible, unranked: provider claude unmeasured (unknown): disclosed uncertainty
+  candidate: codex:gpt-5.5  provider=codex  -> eligible, unranked: provider codex unmeasured (unknown): disclosed uncertainty
+    [exit 0]
+--- outbound calls to Jev: 0
+==================================================================
+## forced: Target paths: stack/template.yml
+--- brief:
+    # Task
+    Tidy a typo in the config comment.
+    Target paths: stack/template.yml
+--- fm-dispatch-resolve.sh output:
+dispatch-resolve:
+  status: escalate
+  decided_by: path-forced
+  rule: rule_3 (The task is a big or ambiguous multi-file feature, a risky r)
+  forced_path: stack/template.yml   forced_pattern: CloudFormation template
+  reason: no rankable eligible candidate
+  note: rule matched
+  candidate: claude:claude-sonnet-5  provider=claude  scope=all_models  remaining=-%  spendPriority=-  runway=unknown  -> eligible, unranked: provider claude unmeasured (unknown): disclosed uncertainty
+  candidate: codex:gpt-5.5  provider=codex  -> eligible, unranked: provider codex unmeasured (unknown): disclosed uncertainty
+    [exit 0]
+--- outbound calls to Jev: 0
+==================================================================
+## forced: Target paths: app.template
+--- brief:
+    # Task
+    Tidy a typo in the config comment.
+    Target paths: app.template
+--- fm-dispatch-resolve.sh output:
+dispatch-resolve:
+  status: escalate
+  decided_by: path-forced
+  rule: rule_3 (The task is a big or ambiguous multi-file feature, a risky r)
+  forced_path: app.template   forced_pattern: CloudFormation template
+  reason: no rankable eligible candidate
+  note: rule matched
+  candidate: claude:claude-sonnet-5  provider=claude  scope=all_models  remaining=-%  spendPriority=-  runway=unknown  -> eligible, unranked: provider claude unmeasured (unknown): disclosed uncertainty
+  candidate: codex:gpt-5.5  provider=codex  -> eligible, unranked: provider codex unmeasured (unknown): disclosed uncertainty
+    [exit 0]
+--- outbound calls to Jev: 0
+==================================================================
+## forced: Target paths: infra/api.template.json
+--- brief:
+    # Task
+    Tidy a typo in the config comment.
+    Target paths: infra/api.template.json
+--- fm-dispatch-resolve.sh output:
+dispatch-resolve:
+  status: escalate
+  decided_by: path-forced
+  rule: rule_3 (The task is a big or ambiguous multi-file feature, a risky r)
+  forced_path: infra/api.template.json   forced_pattern: CloudFormation template
+  reason: no rankable eligible candidate
+  note: rule matched
+  candidate: claude:claude-sonnet-5  provider=claude  scope=all_models  remaining=-%  spendPriority=-  runway=unknown  -> eligible, unranked: provider claude unmeasured (unknown): disclosed uncertainty
+  candidate: codex:gpt-5.5  provider=codex  -> eligible, unranked: provider codex unmeasured (unknown): disclosed uncertainty
+    [exit 0]
+--- outbound calls to Jev: 0
+==================================================================
+## forced: Target paths: net.template.yaml
+--- brief:
+    # Task
+    Tidy a typo in the config comment.
+    Target paths: net.template.yaml
+--- fm-dispatch-resolve.sh output:
+dispatch-resolve:
+  status: escalate
+  decided_by: path-forced
+  rule: rule_3 (The task is a big or ambiguous multi-file feature, a risky r)
+  forced_path: net.template.yaml   forced_pattern: CloudFormation template
+  reason: no rankable eligible candidate
+  note: rule matched
+  candidate: claude:claude-sonnet-5  provider=claude  scope=all_models  remaining=-%  spendPriority=-  runway=unknown  -> eligible, unranked: provider claude unmeasured (unknown): disclosed uncertainty
+  candidate: codex:gpt-5.5  provider=codex  -> eligible, unranked: provider codex unmeasured (unknown): disclosed uncertainty
+    [exit 0]
+--- outbound calls to Jev: 0
+==================================================================
+## forced: Target paths: cloudformation/stack.json
+--- brief:
+    # Task
+    Tidy a typo in the config comment.
+    Target paths: cloudformation/stack.json
+--- fm-dispatch-resolve.sh output:
+dispatch-resolve:
+  status: escalate
+  decided_by: path-forced
+  rule: rule_3 (The task is a big or ambiguous multi-file feature, a risky r)
+  forced_path: cloudformation/stack.json   forced_pattern: CloudFormation template directory
+  reason: no rankable eligible candidate
+  note: rule matched
+  candidate: claude:claude-sonnet-5  provider=claude  scope=all_models  remaining=-%  spendPriority=-  runway=unknown  -> eligible, unranked: provider claude unmeasured (unknown): disclosed uncertainty
+  candidate: codex:gpt-5.5  provider=codex  -> eligible, unranked: provider codex unmeasured (unknown): disclosed uncertainty
+    [exit 0]
+--- outbound calls to Jev: 0
+==================================================================
+## forced: Target paths: k8s/web.yaml
+--- brief:
+    # Task
+    Tidy a typo in the config comment.
+    Target paths: k8s/web.yaml
+--- fm-dispatch-resolve.sh output:
+dispatch-resolve:
+  status: escalate
+  decided_by: path-forced
+  rule: rule_3 (The task is a big or ambiguous multi-file feature, a risky r)
+  forced_path: k8s/web.yaml   forced_pattern: Kubernetes manifest directory
+  reason: no rankable eligible candidate
+  note: rule matched
+  candidate: claude:claude-sonnet-5  provider=claude  scope=all_models  remaining=-%  spendPriority=-  runway=unknown  -> eligible, unranked: provider claude unmeasured (unknown): disclosed uncertainty
+  candidate: codex:gpt-5.5  provider=codex  -> eligible, unranked: provider codex unmeasured (unknown): disclosed uncertainty
+    [exit 0]
+--- outbound calls to Jev: 0
+==================================================================
+## forced: Target paths: deploy/web-ingress.yaml
+--- brief:
+    # Task
+    Tidy a typo in the config comment.
+    Target paths: deploy/web-ingress.yaml
+--- fm-dispatch-resolve.sh output:
+dispatch-resolve:
+  status: escalate
+  decided_by: path-forced
+  rule: rule_3 (The task is a big or ambiguous multi-file feature, a risky r)
+  forced_path: deploy/web-ingress.yaml   forced_pattern: Kubernetes or ingress manifest
+  reason: no rankable eligible candidate
+  note: rule matched
+  candidate: claude:claude-sonnet-5  provider=claude  scope=all_models  remaining=-%  spendPriority=-  runway=unknown  -> eligible, unranked: provider claude unmeasured (unknown): disclosed uncertainty
+  candidate: codex:gpt-5.5  provider=codex  -> eligible, unranked: provider codex unmeasured (unknown): disclosed uncertainty
+    [exit 0]
+--- outbound calls to Jev: 0
+==================================================================
+## forced: Target paths: argocd/app.yaml
+--- brief:
+    # Task
+    Tidy a typo in the config comment.
+    Target paths: argocd/app.yaml
+--- fm-dispatch-resolve.sh output:
+dispatch-resolve:
+  status: escalate
+  decided_by: path-forced
+  rule: rule_3 (The task is a big or ambiguous multi-file feature, a risky r)
+  forced_path: argocd/app.yaml   forced_pattern: ArgoCD manifest directory
+  reason: no rankable eligible candidate
+  note: rule matched
+  candidate: claude:claude-sonnet-5  provider=claude  scope=all_models  remaining=-%  spendPriority=-  runway=unknown  -> eligible, unranked: provider claude unmeasured (unknown): disclosed uncertainty
+  candidate: codex:gpt-5.5  provider=codex  -> eligible, unranked: provider codex unmeasured (unknown): disclosed uncertainty
+    [exit 0]
+--- outbound calls to Jev: 0
+==================================================================
+## forced: Target paths: argo/app.yaml
+--- brief:
+    # Task
+    Tidy a typo in the config comment.
+    Target paths: argo/app.yaml
+--- fm-dispatch-resolve.sh output:
+dispatch-resolve:
+  status: escalate
+  decided_by: path-forced
+  rule: rule_3 (The task is a big or ambiguous multi-file feature, a risky r)
+  forced_path: argo/app.yaml   forced_pattern: ArgoCD manifest directory
+  reason: no rankable eligible candidate
+  note: rule matched
+  candidate: claude:claude-sonnet-5  provider=claude  scope=all_models  remaining=-%  spendPriority=-  runway=unknown  -> eligible, unranked: provider claude unmeasured (unknown): disclosed uncertainty
+  candidate: codex:gpt-5.5  provider=codex  -> eligible, unranked: provider codex unmeasured (unknown): disclosed uncertainty
+    [exit 0]
+--- outbound calls to Jev: 0
+==================================================================
+## forced: Target paths: argo-cd/root.yaml
+--- brief:
+    # Task
+    Tidy a typo in the config comment.
+    Target paths: argo-cd/root.yaml
+--- fm-dispatch-resolve.sh output:
+dispatch-resolve:
+  status: escalate
+  decided_by: path-forced
+  rule: rule_3 (The task is a big or ambiguous multi-file feature, a risky r)
+  forced_path: argo-cd/root.yaml   forced_pattern: ArgoCD manifest directory
+  reason: no rankable eligible candidate
+  note: rule matched
+  candidate: claude:claude-sonnet-5  provider=claude  scope=all_models  remaining=-%  spendPriority=-  runway=unknown  -> eligible, unranked: provider claude unmeasured (unknown): disclosed uncertainty
+  candidate: codex:gpt-5.5  provider=codex  -> eligible, unranked: provider codex unmeasured (unknown): disclosed uncertainty
+    [exit 0]
+--- outbound calls to Jev: 0
+==================================================================
+## forced: Target paths: charts/web/Chart.yaml
+--- brief:
+    # Task
+    Tidy a typo in the config comment.
+    Target paths: charts/web/Chart.yaml
+--- fm-dispatch-resolve.sh output:
+dispatch-resolve:
+  status: escalate
+  decided_by: path-forced
+  rule: rule_3 (The task is a big or ambiguous multi-file feature, a risky r)
+  forced_path: charts/web/Chart.yaml   forced_pattern: Helm chart manifest
+  reason: no rankable eligible candidate
+  note: rule matched
+  candidate: claude:claude-sonnet-5  provider=claude  scope=all_models  remaining=-%  spendPriority=-  runway=unknown  -> eligible, unranked: provider claude unmeasured (unknown): disclosed uncertainty
+  candidate: codex:gpt-5.5  provider=codex  -> eligible, unranked: provider codex unmeasured (unknown): disclosed uncertainty
+    [exit 0]
+--- outbound calls to Jev: 0
+==================================================================
+## forced: Target paths: helm/web/templates/svc.yaml
+--- brief:
+    # Task
+    Tidy a typo in the config comment.
+    Target paths: helm/web/templates/svc.yaml
+--- fm-dispatch-resolve.sh output:
+dispatch-resolve:
+  status: escalate
+  decided_by: path-forced
+  rule: rule_3 (The task is a big or ambiguous multi-file feature, a risky r)
+  forced_path: helm/web/templates/svc.yaml   forced_pattern: Helm chart directory
+  reason: no rankable eligible candidate
+  note: rule matched
+  candidate: claude:claude-sonnet-5  provider=claude  scope=all_models  remaining=-%  spendPriority=-  runway=unknown  -> eligible, unranked: provider claude unmeasured (unknown): disclosed uncertainty
+  candidate: codex:gpt-5.5  provider=codex  -> eligible, unranked: provider codex unmeasured (unknown): disclosed uncertainty
+    [exit 0]
+--- outbound calls to Jev: 0
+==================================================================
+## forced: Target paths: values-prod.yaml
+--- brief:
+    # Task
+    Tidy a typo in the config comment.
+    Target paths: values-prod.yaml
+--- fm-dispatch-resolve.sh output:
+dispatch-resolve:
+  status: escalate
+  decided_by: path-forced
+  rule: rule_3 (The task is a big or ambiguous multi-file feature, a risky r)
+  forced_path: values-prod.yaml   forced_pattern: Helm chart manifest
+  reason: no rankable eligible candidate
+  note: rule matched
+  candidate: claude:claude-sonnet-5  provider=claude  scope=all_models  remaining=-%  spendPriority=-  runway=unknown  -> eligible, unranked: provider claude unmeasured (unknown): disclosed uncertainty
+  candidate: codex:gpt-5.5  provider=codex  -> eligible, unranked: provider codex unmeasured (unknown): disclosed uncertainty
+    [exit 0]
+--- outbound calls to Jev: 0
+==================================================================
+## forced: Target paths: scripts/deploy-prod.sh
+--- brief:
+    # Task
+    Tidy a typo in the config comment.
+    Target paths: scripts/deploy-prod.sh
+--- fm-dispatch-resolve.sh output:
+dispatch-resolve:
+  status: escalate
+  decided_by: path-forced
+  rule: rule_3 (The task is a big or ambiguous multi-file feature, a risky r)
+  forced_path: scripts/deploy-prod.sh   forced_pattern: deploy or release script
+  reason: no rankable eligible candidate
+  note: rule matched
+  candidate: claude:claude-sonnet-5  provider=claude  scope=all_models  remaining=-%  spendPriority=-  runway=unknown  -> eligible, unranked: provider claude unmeasured (unknown): disclosed uncertainty
+  candidate: codex:gpt-5.5  provider=codex  -> eligible, unranked: provider codex unmeasured (unknown): disclosed uncertainty
+    [exit 0]
+--- outbound calls to Jev: 0
+==================================================================
+## forced: Target paths: bin/deploy.ps1
+--- brief:
+    # Task
+    Tidy a typo in the config comment.
+    Target paths: bin/deploy.ps1
+--- fm-dispatch-resolve.sh output:
+dispatch-resolve:
+  status: escalate
+  decided_by: path-forced
+  rule: rule_3 (The task is a big or ambiguous multi-file feature, a risky r)
+  forced_path: bin/deploy.ps1   forced_pattern: deploy or release script
+  reason: no rankable eligible candidate
+  note: rule matched
+  candidate: claude:claude-sonnet-5  provider=claude  scope=all_models  remaining=-%  spendPriority=-  runway=unknown  -> eligible, unranked: provider claude unmeasured (unknown): disclosed uncertainty
+  candidate: codex:gpt-5.5  provider=codex  -> eligible, unranked: provider codex unmeasured (unknown): disclosed uncertainty
+    [exit 0]
+--- outbound calls to Jev: 0
+==================================================================
+## forced: Target paths: .github/workflows/release.yml
+--- brief:
+    # Task
+    Tidy a typo in the config comment.
+    Target paths: .github/workflows/release.yml
+--- fm-dispatch-resolve.sh output:
+dispatch-resolve:
+  status: escalate
+  decided_by: path-forced
+  rule: rule_3 (The task is a big or ambiguous multi-file feature, a risky r)
+  forced_path: .github/workflows/release.yml   forced_pattern: release workflow
+  reason: no rankable eligible candidate
+  note: rule matched
+  candidate: claude:claude-sonnet-5  provider=claude  scope=all_models  remaining=-%  spendPriority=-  runway=unknown  -> eligible, unranked: provider claude unmeasured (unknown): disclosed uncertainty
+  candidate: codex:gpt-5.5  provider=codex  -> eligible, unranked: provider codex unmeasured (unknown): disclosed uncertainty
+    [exit 0]
+--- outbound calls to Jev: 0
+==================================================================
+## forced: bullet + backticks + commas, match on 2nd path
+--- brief:
+    # Task
+    Rename a label.
+    - Target paths: `src/app.ts`, `vercel.json`
+--- fm-dispatch-resolve.sh output:
+dispatch-resolve:
+  status: escalate
+  decided_by: path-forced
+  rule: rule_3 (The task is a big or ambiguous multi-file feature, a risky r)
+  forced_path: vercel.json   forced_pattern: vercel.json
+  reason: no rankable eligible candidate
+  note: rule matched
+  candidate: claude:claude-sonnet-5  provider=claude  scope=all_models  remaining=-%  spendPriority=-  runway=unknown  -> eligible, unranked: provider claude unmeasured (unknown): disclosed uncertainty
+  candidate: codex:gpt-5.5  provider=codex  -> eligible, unranked: provider codex unmeasured (unknown): disclosed uncertainty
+    [exit 0]
+--- outbound calls to Jev: 0
+==================================================================
+## forced: rule order moved (careful rule now rule_1)
+--- brief:
+    # Task
+    Tidy a typo.
+    Target paths: vercel.json
+--- fm-dispatch-resolve.sh output:
+dispatch-resolve:
+  status: escalate
+  decided_by: path-forced
+  rule: rule_1 (The task is a big or ambiguous multi-file feature, a risky r)
+  forced_path: vercel.json   forced_pattern: vercel.json
+  reason: no rankable eligible candidate
+  note: rule matched
+  candidate: claude:claude-sonnet-5  provider=claude  scope=all_models  remaining=-%  spendPriority=-  runway=unknown  -> eligible, unranked: provider claude unmeasured (unknown): disclosed uncertainty
+  candidate: codex:gpt-5.5  provider=codex  -> eligible, unranked: provider codex unmeasured (unknown): disclosed uncertainty
+    [exit 0]
+--- outbound calls to Jev: 0
+==================================================================
+## forced onto captain-approval rule keeps the approval gate
+--- brief:
+    # Task
+    Tidy a typo.
+    Target paths: vercel.json
+--- fm-dispatch-resolve.sh output:
+dispatch-resolve:
+  status: escalate
+  decided_by: path-forced
+  rule: rule_3 (The task is a big or ambiguous multi-file feature, a risky r)
+  forced_path: vercel.json   forced_pattern: vercel.json
+  reason: rule requires the captain's explicit approval before dispatch
+  candidate: claude:claude-sonnet-5  provider=claude  scope=all_models  remaining=-%  spendPriority=-  runway=unknown  -> eligible, unranked: provider claude unmeasured (unknown): disclosed uncertainty
+  candidate: codex:gpt-5.5  provider=codex  -> eligible, unranked: provider codex unmeasured (unknown): disclosed uncertainty
+    [exit 0]
+--- outbound calls to Jev: 0
