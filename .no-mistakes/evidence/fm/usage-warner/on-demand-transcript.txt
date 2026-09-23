@@ -1,0 +1,55 @@
+== live quota-axi windows (real read) ==
+[{"id":"five_hour","percentUsed":22},{"id":"seven_day","percentUsed":3},{"id":"model:fable","percentUsed":0},{"id":"extra_usage","percentUsed":0}]
+
+== S1 unconfigured home: check silent, arm refuses, nothing written ==
+$ fm-usage-warner.sh check
+[exit=0]
+[exit=0 with quota-axi absent from PATH and bogus FM_CHECK_TIMEOUT]
+$ fm-usage-warner.sh arm
+fm-usage-warner: no threshold configured at /private/tmp/fm-uw-live.XexVYC/home/config/usage-warner
+[exit=1]
+state dir: (empty means nothing written)
+
+== S2 configure five_hour:20 (live reads above), seven_day:90, model:fable:50 ==
+$ fm-usage-warner.sh check
+usage-warner: five_hour at 22% (>=20%)
+[exit=0]
+notifications so far:        1
+NOTIFY argv-last=five_hour at 22% (>=20%)
+--- de-dupe record ---
+fm-usage-warner-v1
+reported=usage-warner: five_hour at 22% (>=20%)
+notified-begin
+five_hour
+notified-end
+
+== S3 repeat on-demand check while still above: stays quiet ==
+$ fm-usage-warner.sh check
+[exit=0]
+$ fm-usage-warner.sh check
+[exit=0]
+notifications so far:        1
+
+== S4 window reads below threshold (threshold raised to 99) then crosses again (back to 20) ==
+$ fm-usage-warner.sh check
+[exit=0]
+--- record after drop ---
+fm-usage-warner-v1
+reported=
+notified-begin
+notified-end
+$ fm-usage-warner.sh check
+usage-warner: five_hour at 22% (>=20%)
+[exit=0]
+notifications so far:        2
+NOTIFY argv-last=five_hour at 22% (>=20%)
+NOTIFY argv-last=five_hour at 22% (>=20%)
+
+== S5 every quota-axi invocation argv (read-only proof) ==
+--provider claude --json --full --no-credential-refresh
+--provider claude --json --full --no-credential-refresh
+--provider claude --json --full --no-credential-refresh
+--provider claude --json --full --no-credential-refresh
+--provider claude --json --full --no-credential-refresh
+no --allow-keychain-prompt in any call
+calls missing --no-credential-refresh: 0

@@ -1,0 +1,1 @@
+usage-warner: five_hour at 22% (>=20%)

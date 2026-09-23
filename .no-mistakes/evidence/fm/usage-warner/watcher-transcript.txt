@@ -1,0 +1,43 @@
+== S6 arm in a configured home ==
+armed: state/usage-warner.check.sh
+[exit=0]
+-rw-------@ 1 max  wheel   84 Sep 23 15:56 usage-warner.check-trust
+-rwx------@ 1 max  wheel  334 Sep 23 15:56 usage-warner.check.sh
+
+== S6 real watcher sweep #1 dispatches the armed check (live quota read) ==
+[watcher ran 2s] stdout:
+  | check: /private/tmp/fm-uw-watch.STl1wG/home/state/usage-warner.check.sh: usage-warner: five_hour at 22% (>=20%)
+notifications: NOTIFY five_hour at 22% (>=20%)
+
+== S6 real watcher sweep #2: already crossed, check silent (edge-triggered) ==
+[watcher ran 1s] stdout:
+  | check: rearm-resurface
+notifications count:        1
+
+== S7 adversarial: FM_CHECK_TIMEOUT=5 and a hanging quota-axi under the real watcher ==
+armed: state/usage-warner.check.sh
+[watcher ran 4s] stdout:
+  | check: /private/tmp/fm-uw-watch.STl1wG/home2/state/usage-warner.check.sh: usage-warner: quota-axi read did not finish within the 2s budget
+--- record ---
+fm-usage-warner-v1
+reported=usage-warner: quota-axi read did not finish within the 2s budget
+notified-begin
+notified-end
+
+== S7b FM_CHECK_TIMEOUT=2 (no room) with hanging read, on demand ==
+usage-warner: quota-axi read not measured: FM_CHECK_TIMEOUT of 2s leaves no room for a read
+[exit=0 after 0s]
+fm-usage-warner-v1
+reported=usage-warner: quota-axi read not measured: FM_CHECK_TIMEOUT of 2s leaves no room for a read
+notified-begin
+notified-end
+
+== S8 disarm ==
+disarmed: state/usage-warner.check.sh
+[exit=0]
+no usage-warner shim, trust, or record left in state/
+
+== S8 real watcher sweep after disarm: no usage-warner dispatch ==
+[watcher ran 1s] stdout:
+  | check: rearm-resurface
+notifications count:        0
