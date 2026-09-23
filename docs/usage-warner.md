@@ -24,15 +24,11 @@ feature.
 
 ## Configuring thresholds (config/usage-warner)
 
-Thresholds live in `config/usage-warner`, local and gitignored.
-One `<window-id>:<percent>` directive per non-empty, non-comment line, split
-on the **last** colon so a per-model window id such as `model:fable` still
-parses correctly.
-
-`<window-id>` is exactly the `id` field `quota-axi`'s own `--json` output
-already uses - `five_hour`, `seven_day`, `model:<name>`, and so on - so this
-never invents a second vocabulary for what `quota-axi` already names.
-`<percent>` is a whole number from 1 to 100.
+Thresholds live in `config/usage-warner`, local and gitignored; its
+`<window-id>:<percent>` schema is owned by
+[`configuration.md`](configuration.md#local-claude-usage-warner-configusage-warner).
+`<window-id>` reuses `quota-axi`'s own `--json` `id` vocabulary - `five_hour`,
+`seven_day`, `model:<name>`, and so on - rather than inventing a second one.
 A configured window id the account does not return is silently never
 compared: this is a local convenience feature, not a critical monitor, so a
 stale or unavailable id is not treated as a misconfiguration to flag.
@@ -59,11 +55,13 @@ this).
 Multiple windows crossing in the same read are batched into one notification
 rather than one per window.
 A standing read failure (`quota-axi` missing, `jq` missing, a malformed
-response, or a read that does not finish inside its bound of 10 seconds, cut
-to 3 seconds under `FM_CHECK_TIMEOUT` when that is lower, or skipped as not
-measured when `FM_CHECK_TIMEOUT` leaves no room) is reported once until it changes, the same contract
+response, or a read that does not finish inside its bound) is reported once
+until it changes, the same contract
 `bin/fm-mail-check.sh` and `bin/fm-tool-update-check.sh` already use for their
 own standing checks.
+The read bound is 10 seconds, or `FM_CHECK_TIMEOUT` minus 3 seconds when that
+is lower, so the watcher never kills the check first; when that leaves under
+1 second the read is skipped and reported as not measured.
 
 ## Notification path
 
@@ -86,23 +84,10 @@ Notification Center is macOS-only, so `arm` refuses on any other platform.
 
 ## Arming
 
-```
-bin/fm-usage-warner.sh arm
-```
-
-Writes `state/usage-warner.check.sh` and binds its bytes with
-`bin/fm-check-register.sh`, so the existing watcher polls it on its normal
-cadence and turns a crossing into a `check:` wake; no separate schedule is
-involved.
-`arm` refuses without at least one valid threshold configured, and refuses on
-any platform other than macOS.
-
-```
-bin/fm-usage-warner.sh disarm
-```
-
-Removes the shim, its trust binding, and the de-dupe record
-(`state/.usage-warner`).
+Arm once per home with `bin/fm-usage-warner.sh arm` and remove it with
+`bin/fm-usage-warner.sh disarm`; what each writes or removes, and when `arm`
+refuses, is owned by
+[`configuration.md`](configuration.md#local-claude-usage-warner-configusage-warner).
 
 ## What this never does
 
