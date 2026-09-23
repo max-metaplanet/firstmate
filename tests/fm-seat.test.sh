@@ -25,7 +25,10 @@ TMP_ROOT=$(fm_test_tmproot fm-seat)
 # A fake quota-axi whose verdict per profile directory is driven by files the
 # test writes. <spec> is a directory holding one file per state:
 #   <spec>/oauth        newline-separated CLAUDE_CONFIG_DIR values that are logged in
-#   <spec>/remaining    percent remaining reported for a logged-in profile
+#   <spec>/remaining    percent remaining reported for a logged-in profile's
+#                       account-level (all_models) window
+#   <spec>/availability optional JSON array replacing the whole
+#                       effectiveAvailability list, for scope-specific cases
 # An empty CLAUDE_CONFIG_DIR is spelled "(default)" in the oauth list.
 # The fake reproduces the real tool's contract that matters here: an unavailable
 # provider still prints a valid report AND exits non-zero.
@@ -39,9 +42,11 @@ spec="$spec"
 key="\${CLAUDE_CONFIG_DIR:-}"
 [ -n "\$key" ] || key='(default)'
 remaining=\$(cat "\$spec/remaining" 2>/dev/null || printf '80')
+availability=\$(cat "\$spec/availability" 2>/dev/null ||
+  printf '[{"scope":"all_models","status":"known","effectivePercentRemaining":%s,"runway":{"status":"through_reset"}}]' "\$remaining")
 if [ -f "\$spec/oauth" ] && grep -Fxq "\$key" "\$spec/oauth"; then
   cat <<JSON
-{"generatedAt":"2026-01-01T00:00:00Z","schemaVersion":5,"providers":[{"provider":"claude","label":"Claude","source":"oauth","account":{"email":"seat-\$(printf '%s' "\$key" | tr -c 'a-zA-Z0-9' '-')@example.test"},"quotaSemantics":{"status":"known","effectiveAvailability":[{"status":"known","effectivePercentRemaining":\$remaining,"runway":{"status":"through_reset"}}]}}]}
+{"generatedAt":"2026-01-01T00:00:00Z","schemaVersion":5,"providers":[{"provider":"claude","label":"Claude","source":"oauth","account":{"email":"seat-\$(printf '%s' "\$key" | tr -c 'a-zA-Z0-9' '-')@example.test"},"quotaSemantics":{"status":"known","effectiveAvailability":\$availability}}]}
 JSON
   exit 0
 fi
@@ -75,11 +80,13 @@ EOF
 }
 
 # run_seat <home> <fakebin> [args...]
+# firstmate's own CLAUDE_CONFIG_DIR is pinned empty unless a test opts in
+# through SEAT_TEST_AMBIENT_CONFIG_DIR.
 run_seat() {
   local home=$1 fakebin=$2
   shift 2
   FM_HOME="$home" FM_CONFIG_OVERRIDE="$home/config" FM_STATE_OVERRIDE="$home/state" \
-    FM_DATA_OVERRIDE="$home/data" CLAUDE_CONFIG_DIR='' \
+    FM_DATA_OVERRIDE="$home/data" CLAUDE_CONFIG_DIR="${SEAT_TEST_AMBIENT_CONFIG_DIR:-}" \
     PATH="$fakebin:$PATH" "$SEAT" "$@" 2>&1
 }
 
@@ -247,6 +254,51 @@ test_unreadable_quota_never_reports_the_threshold_reached() {
   run_seat "$HOME_DIR" "$FAKEBIN" threshold-reached >/dev/null
   expect_code 2 "$?" "an unreadable quota must be an error, never a fired condition"
   pass "an unreadable quota never trips an automatic switch"
+}
+
+test_model_scoped_window_alone_does_not_trip_the_threshold() {
+  local rec
+  rec=$(make_seat_case threshold-scope)
+  read_seat_case "$rec"
+  seat_logged_in "$SPEC_DIR" '(default)'
+  run_seat "$HOME_DIR" "$FAKEBIN" threshold 10 >/dev/null
+
+  # An Opus-only window nearly spent while the account-level window has plenty
+  # left: only workers on that model are constrained, so no switch.
+  cat > "$SPEC_DIR/availability" <<'JSON'
+[{"scope":"all_models","status":"known","effectivePercentRemaining":60,"runway":{"status":"through_reset"}},
+ {"scope":"model:opus","status":"known","effectivePercentRemaining":5,"runway":{"status":"through_reset"}}]
+JSON
+  run_seat "$HOME_DIR" "$FAKEBIN" threshold-reached >/dev/null
+  expect_code 1 "$?" "a model-scoped window below the threshold must not trip the account-level condition"
+
+  # A report with no account-level window at all is undecidable, never a true.
+  cat > "$SPEC_DIR/availability" <<'JSON'
+[{"scope":"model:opus","status":"known","effectivePercentRemaining":5,"runway":{"status":"through_reset"}}]
+JSON
+  run_seat "$HOME_DIR" "$FAKEBIN" threshold-reached >/dev/null
+  expect_code 2 "$?" "a report with no account-level window must be an error, not a fired condition"
+  pass "only account-level quota windows count toward the auto-switch threshold"
+}
+
+test_default_seat_probes_the_ambient_profile_workers_get() {
+  local rec out ambient
+  rec=$(make_seat_case default-ambient)
+  read_seat_case "$rec"
+  ambient="$CASE_DIR/ambient-profile"
+  # Only firstmate's own ambient profile is logged in; the bare ~/.claude is not.
+  seat_logged_in "$SPEC_DIR" "$ambient"
+  run_seat "$HOME_DIR" "$FAKEBIN" threshold 20 >/dev/null
+  printf '5\n' > "$SPEC_DIR/remaining"
+
+  out=$(SEAT_TEST_AMBIENT_CONFIG_DIR="$ambient" run_seat "$HOME_DIR" "$FAKEBIN" probe default)
+  expect_code 0 "$?" "the default seat must probe the ambient profile a new worker would get: $out"
+  out=$(SEAT_TEST_AMBIENT_CONFIG_DIR="$ambient" run_seat "$HOME_DIR" "$FAKEBIN" status)
+  assert_contains "$out" "active profile: $ambient" "status must name the ambient profile for the default seat"
+  assert_contains "$out" "login state: logged-in" "status must report the ambient profile's login state"
+  SEAT_TEST_AMBIENT_CONFIG_DIR="$ambient" run_seat "$HOME_DIR" "$FAKEBIN" threshold-reached >/dev/null
+  expect_code 0 "$?" "the threshold must be read against the ambient profile default-seat workers spend"
+  pass "the default seat's probe and threshold read the ambient profile new workers launch with"
 }
 
 test_rotation_picks_the_next_logged_in_seat() {
@@ -526,6 +578,28 @@ test_ambient_config_dir_still_reaches_workers_when_no_seat_is_set() {
   pass "an ambient CLAUDE_CONFIG_DIR still reaches workers and is recorded per task"
 }
 
+test_non_claude_spawn_records_no_seat() {
+  local rec id out launch
+  id=seat-codex-1
+  rec=$(spawn_case spawn-codex-seat "$id")
+  read_spawn_case "$rec"
+  printf 'codex\n' > "$HOME_DIR/config/crew-harness"
+  mkdir -p "$SEATS_DIR/work"
+  printf 'work\n' > "$HOME_DIR/config/claude-seat"
+
+  out=$(run_spawn_here "$HOME_DIR" "$WT_DIR" "$FAKEBIN" "$LAUNCH_LOG" "$id" "$PROJ_DIR")
+  expect_code 0 "$?" "a codex spawn with a named seat active should succeed: $out"
+  launch=$(cat "$LAUNCH_LOG")
+  assert_not_contains "$launch" "CLAUDE_CONFIG_DIR=" "a non-claude launch must carry no Claude profile"
+  assert_no_grep "claude_seat=" "$HOME_DIR/state/$id.meta" \
+    "a non-claude task must not record a Claude seat"
+  make_quota_fake "$FAKEBIN" "$CASE_DIR/quota-spec"
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" status)
+  assert_not_contains "$(printf '%s\n' "$out" | grep "$id")" "$SEATS_DIR/work" \
+    "status must not list a non-claude task as running on a seat"
+  pass "a non-claude spawn records no Claude seat while a named seat is active"
+}
+
 test_active_seat_overrides_the_ambient_config_dir() {
   local rec id out launch
   id=seat-override-1
@@ -555,6 +629,8 @@ test_switch_back_to_default_clears_the_setting
 test_threshold_is_configurable_and_absent_by_default
 test_threshold_reached_is_edge_triggered_by_the_configured_percent
 test_unreadable_quota_never_reports_the_threshold_reached
+test_model_scoped_window_alone_does_not_trip_the_threshold
+test_default_seat_probes_the_ambient_profile_workers_get
 test_rotation_picks_the_next_logged_in_seat
 test_rotation_never_targets_the_default_profile
 test_rotation_reads_the_seat_set_fresh
@@ -568,5 +644,6 @@ test_switching_seats_does_not_move_a_running_worker
 test_a_later_spawn_uses_the_new_seat_while_the_old_task_keeps_its_own
 test_ambient_config_dir_still_reaches_workers_when_no_seat_is_set
 test_active_seat_overrides_the_ambient_config_dir
+test_non_claude_spawn_records_no_seat
 
 echo "# all fm-seat tests passed"

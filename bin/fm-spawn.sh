@@ -3947,9 +3947,11 @@ fi
 # firstmate's own ambient CLAUDE_CONFIG_DIR, else the single-store default
 # (bin/fm-seat-lib.sh owns that order). A relaunch already adopted the task's
 # recorded value above and must not re-resolve, so this runs only on a fresh
-# spawn. Resolving here, before trust pre-registration, is what lets the trust
-# entry land in the same profile the worker will actually read.
-if [ "$RELAUNCH" -eq 0 ]; then
+# spawn, and only for a claude worker: no other harness reads a Claude profile,
+# so recording one for it would misreport which workers a switch left alone.
+# Resolving here, before trust pre-registration, is what lets the trust entry
+# land in the same profile the worker will actually read.
+if [ "$RELAUNCH" -eq 0 ] && [ "$HARNESS" = claude ]; then
   SEAT_CONFIG_DIR=$(fm_seat_spawn_config_dir)
 fi
 

@@ -91,23 +91,31 @@ fm_seat_active() {
   printf '%s\n' "$name"
 }
 
-# fm_seat_spawn_config_dir
-# The CLAUDE_CONFIG_DIR a NEW claude worker should launch with, or empty for the
-# ambient default. Resolution order, most specific first:
-#   1. the configured active seat, when it is not the default seat
+# fm_seat_config_dir <name>
+# The CLAUDE_CONFIG_DIR a claude worker launched on seat <name> gets, or empty
+# for the ambient default. Resolution order, most specific first:
+#   1. the named seat's profile directory, when <name> is not the default seat
 #   2. firstmate's OWN ambient CLAUDE_CONFIG_DIR, which predates seats and is
 #      how a home running under a non-default profile already hands that same
 #      store to its workers
 #   3. empty - the single-store default, which adds no launch prefix at all
-# Only a fresh spawn calls this. A relaunch reads the task's recorded value.
-fm_seat_spawn_config_dir() {
-  local name dir
-  name=$(fm_seat_active)
+# The login probe and the threshold read resolve through this too, so they
+# always inspect the same profile a worker on that seat would spend.
+fm_seat_config_dir() {
+  local name=${1-} dir
   if [ "$name" != "$FM_SEAT_DEFAULT_NAME" ] && dir=$(fm_seat_dir "$name"); then
     printf '%s\n' "$dir"
     return 0
   fi
   printf '%s\n' "${CLAUDE_CONFIG_DIR:-}"
+}
+
+# fm_seat_spawn_config_dir
+# The CLAUDE_CONFIG_DIR a NEW claude worker should launch with: the active
+# seat's, resolved by fm_seat_config_dir. Only a fresh spawn calls this. A
+# relaunch reads the task's recorded value.
+fm_seat_spawn_config_dir() {
+  fm_seat_config_dir "$(fm_seat_active)"
 }
 
 # fm_seat_list

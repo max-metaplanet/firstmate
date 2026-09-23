@@ -90,7 +90,9 @@ The seat set is read fresh at each step, so nothing assumes which seats exist.
 It runs on the supervision cycle that already exists rather than a daemon of its own, and it fires **at most once**, which is what makes it edge-triggered.
 Re-arm after it fires to watch the next crossing.
 
-An unreadable quota is treated as an error, never as a threshold crossing, so a failed read never switches accounts.
+Only the account-level windows (`all_models` and `all_products`) count toward the threshold, the same scopes the dispatch chooser applies to a worker with no specific model; a model- or product-only window such as an Opus weekly limit does not trip a switch on its own.
+For the `default` seat the condition reads the same profile a new worker on it gets, which is firstmate's own `CLAUDE_CONFIG_DIR` when that is set.
+An unreadable quota, or one that reports no account-level window, is treated as an error, never as a threshold crossing, so a failed read never switches accounts.
 A rotation with no other logged-in seat under the seats root refuses rather than pretending to switch, and never falls back to the default profile.
 
 `bin/fm-seat.sh threshold off` clears the threshold, and `bin/fm-seat.sh retire` stops the watch.

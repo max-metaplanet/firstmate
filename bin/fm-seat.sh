@@ -61,6 +61,8 @@ CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
 
 # shellcheck source=bin/fm-seat-lib.sh
 . "$SCRIPT_DIR/fm-seat-lib.sh"
+# shellcheck source=bin/fm-quota-axi-lib.sh
+. "$SCRIPT_DIR/fm-quota-axi-lib.sh"
 
 usage() {
   awk '
@@ -75,10 +77,11 @@ die() { printf 'error: %s\n' "$1" >&2; exit 1; }
 # login_state <name>
 # Print "logged-in", "not-logged-in", or "unknown" for a seat name.
 login_state() {
-  local name=$1 dir='' rc
+  local name=$1 dir rc
   if [ "$name" != "$FM_SEAT_DEFAULT_NAME" ]; then
-    dir=$(fm_seat_dir "$name") || { printf 'unknown\n'; return; }
+    fm_seat_dir "$name" >/dev/null || { printf 'unknown\n'; return; }
   fi
+  dir=$(fm_seat_config_dir "$name")
   fm_seat_logged_in "$dir"
   rc=$?
   case "$rc" in
@@ -101,8 +104,7 @@ cmd_list() {
   printf 'seats root: %s\n' "$(fm_seat_root)"
   while IFS= read -r name; do
     [ -n "$name" ] || continue
-    dir=
-    [ "$name" = "$FM_SEAT_DEFAULT_NAME" ] || dir=$(fm_seat_dir "$name")
+    dir=$(fm_seat_config_dir "$name")
     state=$(login_state "$name")
     account=$(fm_seat_account "$dir" 2>/dev/null) || account=
     printf '%s%s\t%s\t%s\t%s\n' \
@@ -128,14 +130,11 @@ live_task_seats() {
 }
 
 cmd_status() {
-  local active threshold rows
+  local active profile threshold rows
   active=$(fm_seat_active)
   printf 'active seat for NEW workers: %s\n' "$active"
-  if [ "$active" != "$FM_SEAT_DEFAULT_NAME" ]; then
-    printf 'active profile: %s\n' "$(fm_seat_dir "$active")"
-  else
-    printf 'active profile: (ambient default login)\n'
-  fi
+  profile=$(fm_seat_config_dir "$active")
+  printf 'active profile: %s\n' "${profile:-(ambient default login)}"
   printf 'login state: %s\n' "$(login_state "$active")"
   if threshold=$(fm_seat_threshold); then
     printf 'auto-switch threshold: %s%% remaining\n' "$threshold"
@@ -322,33 +321,37 @@ cmd_threshold() {
 }
 
 # The condition half of the automatic switch. It reads the SAME quota surface
-# the rest of the fleet reads (quota-axi), against the profile the active seat
-# names, and never opens a poll loop of its own: the when-runner owns cadence.
+# the rest of the fleet reads (quota-axi), against the profile a new worker on
+# the active seat would get, and never opens a poll loop of its own: the
+# when-runner owns cadence.
 cmd_threshold_reached() {
-  local threshold name dir='' out remaining
+  local threshold name dir out remaining
   threshold=$(fm_seat_threshold) || return 2
   command -v quota-axi >/dev/null 2>&1 || return 2
   command -v jq >/dev/null 2>&1 || return 2
   name=$(fm_seat_active)
   if [ "$name" != "$FM_SEAT_DEFAULT_NAME" ]; then
-    dir=$(fm_seat_dir "$name") || return 2
+    fm_seat_dir "$name" >/dev/null || return 2
   fi
+  dir=$(fm_seat_config_dir "$name")
   # Exit status is ignored for the same reason fm_seat_logged_in ignores it: an
   # unavailable provider still prints the report that says so, and that report
   # is what decides. Unreadable output stays an error, never a true.
   out=$(CLAUDE_CONFIG_DIR="$dir" quota-axi --provider claude --no-credential-refresh --full --json 2>/dev/null </dev/null || true)
   [ -n "$out" ] || return 2
   printf '%s\n' "$out" | jq -e . >/dev/null 2>&1 || return 2
-  # The tightest KNOWN remaining percentage across the active seat's quota
-  # scopes. An exhausted runway counts as reached even when no percentage is
-  # readable; anything else unreadable is an error, never a true.
-  remaining=$(printf '%s\n' "$out" | jq -r '
-    [.providers[]? | select(.provider == "claude")
-      | .quotaSemantics.effectiveAvailability[]?] as $a
-    | if ($a | length) == 0 then "error"
-      elif any($a[]; (.runway.status // "") == "exhausted_now") then "0"
-      else ($a | map(select(.status == "known")))
-           | if length == 0 then "error" else (min_by(.effectivePercentRemaining).effectivePercentRemaining | tostring) end
+  # The tightest remaining percentage across the active seat's ACCOUNT-level
+  # scopes (all_models/all_products), read through the same quota_effective the
+  # dispatch chooser uses. A model- or product-only window does not count: it
+  # constrains only workers on that model. An exhausted runway counts as reached
+  # even when no percentage is readable; no applicable row, or anything else
+  # unreadable, is an error, never a true.
+  remaining=$(printf '%s\n' "$out" | jq -r "$FM_QUOTA_ROW_JQ"'
+    quota_effective(quota_row(.; "claude"; ""); "default")
+    | if (.runway.status // "") == "exhausted_now" then "0"
+      elif .status == "known" and (.effectivePercentRemaining | type) == "number"
+      then (.effectivePercentRemaining | tostring)
+      else "error"
       end
   ' 2>/dev/null) || return 2
   [ -n "$remaining" ] && [ "$remaining" != error ] || return 2

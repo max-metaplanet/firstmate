@@ -391,7 +391,7 @@ The optional `config/claude-seat-threshold` holds one percentage between 0 and 1
 All three are inherited into secondmate homes through the primary-authoritative configuration contract, so a secondmate's own Claude crewmates launch on the same seat.
 
 A switch changes only which seat the NEXT worker gets.
-`bin/fm-spawn.sh` resolves the seat once per fresh spawn, prefers the active seat over firstmate's own ambient `CLAUDE_CONFIG_DIR`, pre-registers Claude workspace trust in that same profile, and records the resolved directory as `claude_seat=` in the task's own record.
+`bin/fm-spawn.sh` resolves the seat once per fresh Claude spawn (other harnesses record no seat), prefers the active seat over firstmate's own ambient `CLAUDE_CONFIG_DIR`, pre-registers Claude workspace trust in that same profile, and records the resolved directory as `claude_seat=` in the task's own record.
 Every relaunch reads that record instead of re-resolving the setting, so a switch never moves a live or relaunched worker; a task's session history lives under its profile directory, which makes the recorded value a correctness requirement rather than only a billing one.
 A task whose record carries no `claude_seat=` line, including every task created before seats existed, keeps the ambient default and is never retroactively moved onto a seat.
 
