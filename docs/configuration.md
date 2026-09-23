@@ -378,6 +378,23 @@ Any other value, or an unreadable file, refuses every spawn from that home, whic
 The file is a captain-wide safety preference, so it is inherited into secondmate homes under the [`secondmate-provisioning`](../.agents/skills/secondmate-provisioning/SKILL.md) inherited-local-material contract; a secondmate's own Claude crewmates then launch on the same posture.
 The [Claude adapter reference](../.agents/skills/harness-adapters/references/harness/claude.md) records the verified shape of both launches and which once-per-machine dialog each one can meet.
 
+## Claude seats (config/claude-seat, config/claude-seats-root, config/claude-seat-threshold)
+
+A "seat" is one Claude account, reached through a Claude Code profile directory named by `CLAUDE_CONFIG_DIR`.
+Claude Code derives that profile's macOS Keychain service name from a hash of the directory path, so two seats never share a credential store: a worker pointed at a profile that was never logged in stops with `Not logged in` instead of quietly spending the default account.
+`bin/fm-seat.sh` is the one command that reads and writes these three files, and [`docs/claude-seats.md`](claude-seats.md) owns the operator procedure, including the login steps only the account owner can perform.
+
+The optional local, gitignored `config/claude-seat` holds the active seat NAME for new Claude workers, as the file's whitespace-trimmed first line.
+Absent, empty, or malformed means the reserved seat `default`: no `CLAUDE_CONFIG_DIR` is added and launches stay byte-for-byte as they were before seats existed.
+The optional `config/claude-seats-root` holds one absolute path, the directory holding one subdirectory per named seat, and defaults to `$HOME/.claude-seats`; seats live outside the firstmate home so the owner logs into a seat once and every home on the machine reaches the same profile.
+The optional `config/claude-seat-threshold` holds one percentage between 0 and 100, the remaining quota at which an armed watch switches future workers to the next logged-in seat; absent means no automatic switching, and there is deliberately no default that would move accounts on a home that never asked for it.
+All three are inherited into secondmate homes through the primary-authoritative configuration contract, so a secondmate's own Claude crewmates launch on the same seat.
+
+A switch changes only which seat the NEXT worker gets.
+`bin/fm-spawn.sh` resolves the seat once per fresh spawn, prefers the active seat over firstmate's own ambient `CLAUDE_CONFIG_DIR`, pre-registers Claude workspace trust in that same profile, and records the resolved directory as `claude_seat=` in the task's own record.
+Every relaunch reads that record instead of re-resolving the setting, so a switch never moves a live or relaunched worker; a task's session history lives under its profile directory, which makes the recorded value a correctness requirement rather than only a billing one.
+A task whose record carries no `claude_seat=` line, including every task created before seats existed, keeps the ambient default and is never retroactively moved onto a seat.
+
 ## Lavish server address (config/lavish-axi-host)
 
 The optional local, gitignored `config/lavish-axi-host` contains one non-empty address without whitespace for the per-machine Lavish server.

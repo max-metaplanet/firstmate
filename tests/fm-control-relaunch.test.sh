@@ -734,6 +734,50 @@ test_same_harness_relaunch_keeps_the_profile_axes() {
   pass "fm-control relaunch: a same-harness relaunch keeps the profile axes it was running with"
 }
 
+test_relaunch_keeps_the_recorded_claude_seat_after_a_seat_switch() {
+  local dir out rc seats
+  dir=$(new_case seatkeep rl-seat)
+  add_ship_task "$dir" rl-seat claude
+  seats="$dir/seats"
+  mkdir -p "$seats/work" "$seats/spare" "$dir/home/config"
+  printf '%s\n' "$seats" > "$dir/home/config/claude-seats-root"
+  # The task launched on the work seat and its record says so.
+  printf 'claude_seat=%s\n' "$seats/work" >> "$dir/home/state/rl-seat.meta"
+  # The home has since switched to another seat. The relaunch must NOT follow
+  # it: the task's session history lives under the recorded profile, so moving
+  # the replacement agent to the new seat would strand it and silently change
+  # which account the work bills to.
+  printf 'spare\n' > "$dir/home/config/claude-seat"
+
+  out=$(run_control "$dir" rl-seat relaunch --note "stopped mid-task"); rc=$?
+  expect_code 0 "$rc" "a relaunch after a seat switch should succeed"$'\n'"$out"
+  assert_grep "CLAUDE_CONFIG_DIR='$seats/work'" "$dir/fake/literal" \
+    "the replacement must launch on the seat the task's record names"
+  assert_no_grep "$seats/spare" "$dir/fake/literal" \
+    "the replacement must not launch on the newly active seat"
+  [ "$(meta_field "$dir" rl-seat claude_seat)" = "$seats/work" ] \
+    || fail "the relaunch must preserve the recorded seat, got '$(meta_field "$dir" rl-seat claude_seat)'"
+  pass "fm-control relaunch: a relaunch keeps the seat its task launched on, not the home's new one"
+}
+
+test_relaunch_without_a_recorded_seat_adds_no_config_dir() {
+  local dir out rc seats
+  dir=$(new_case seatnone rl-seat2)
+  add_ship_task "$dir" rl-seat2 claude
+  seats="$dir/seats"
+  mkdir -p "$seats/spare" "$dir/home/config"
+  printf '%s\n' "$seats" > "$dir/home/config/claude-seats-root"
+  # A task recorded before seats existed carries no claude_seat line. Switching
+  # the home must not retroactively move it onto a seat.
+  printf 'spare\n' > "$dir/home/config/claude-seat"
+
+  out=$(run_control "$dir" rl-seat2 relaunch --note "stopped mid-task"); rc=$?
+  expect_code 0 "$rc" "a relaunch of a pre-seats task should succeed"$'\n'"$out"
+  assert_no_grep "CLAUDE_CONFIG_DIR=" "$dir/fake/literal" \
+    "a task with no recorded seat must relaunch with no config-dir prefix"
+  pass "fm-control relaunch: a task with no recorded seat is never moved onto one"
+}
+
 test_native_ultra_relaunch_preserves_profile_and_rejects_before_stop() {
   local dir out rc id=rl-ultra
   dir=$(new_case native-ultra "$id")
@@ -2211,6 +2255,8 @@ test_harness_switch_does_not_carry_the_old_profile_axes
 test_harness_switch_resolves_a_prefixed_recorded_harness
 test_prefixed_recorded_harness_requires_explicit_replacement
 test_same_harness_relaunch_keeps_the_profile_axes
+test_relaunch_keeps_the_recorded_claude_seat_after_a_seat_switch
+test_relaunch_without_a_recorded_seat_adds_no_config_dir
 test_native_ultra_relaunch_preserves_profile_and_rejects_before_stop
 test_explicit_model_wins_over_the_recorded_one
 test_relaunch_onto_an_unverified_harness_is_refused
