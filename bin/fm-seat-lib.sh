@@ -170,16 +170,32 @@ fm_seat_logged_in() {
   ' >/dev/null 2>&1 && return 0
   # Tell a clean "not logged in" apart from a probe that could not decide, so a
   # switch refuses on the first and reports uncertainty on the second. Only a
-  # report where every source was skipped at the credential lookup proves the
-  # profile holds no login. A signed-in seat whose quota endpoint is rate
-  # limited is also "unavailable", but its keychain attempt got past the lookup
-  # and failed afterwards, so that stays undecided and --force can proceed.
+  # report where every credential source was actually consulted and came back
+  # empty proves the profile holds no login.
+  #
+  # `keychain_unreachable` is NOT such a report: it says the store could not be
+  # read, not that it is empty. Measured read-only against the installed
+  # quota-axi on macOS, a profile that was never logged into and a profile that
+  # IS signed in but whose one-time Keychain approval has not been granted yet
+  # produce the same shape - every source skipped, the keychain unreachable. So
+  # that shape cannot distinguish them and must stay undecided; treating it as
+  # proof of absence would refuse a correctly signed-in seat with no way
+  # through, exactly the state an owner is in moments after logging a seat in.
+  # A signed-in seat whose quota endpoint is rate limited is also "unavailable",
+  # and stays undecided for the same reason: its keychain attempt got past the
+  # lookup and failed afterwards.
+  #
+  # An undecided read (2) is what `switch --force` may cross, and crossing it is
+  # safe: a forced switch to a genuinely empty seat stops the next worker on its
+  # first message with "Not logged in" rather than spending another account.
+  # A proven-empty read (1) is never crossable. On a file-backed credential
+  # store, where an empty profile really can be read and found empty, 1 remains
+  # reachable; on macOS it correctly is not.
   printf '%s\n' "$out" | jq -e '
     (.providers // []) | map(select(.provider == "claude")) | .[0] // empty
     | .source == "unavailable"
       and ((.attempts // []) | length > 0
-        and all(.status == "skipped"
-          and (.error == "credentials_missing" or .error == "keychain_unreachable")))
+        and all(.status == "skipped" and .error == "credentials_missing"))
   ' >/dev/null 2>&1 && return 1
   return 2
 }

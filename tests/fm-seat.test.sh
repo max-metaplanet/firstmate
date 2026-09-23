@@ -58,6 +58,17 @@ if [ -f "\$spec/oauth" ] && grep -Fxq "\$key" "\$spec/oauth"; then
 JSON
   exit 0
 fi
+if [ -f "\$spec/proven_empty" ] && grep -Fxq "\$key" "\$spec/proven_empty"; then
+  # A file-backed credential store that was actually read and found empty: the
+  # only shape that establishes absence. No keychain attempt is reported.
+  cat <<'JSON'
+{"generatedAt":"2026-01-01T00:00:00Z","schemaVersion":5,"providers":[{"provider":"claude","label":"Claude","source":"unavailable","windows":[],"state":{"status":"error","error":"credentials_missing"},"attempts":[{"source":"oauth-file","status":"skipped","error":"credentials_missing"}],"quotaSemantics":{"status":"unknown","effectiveAvailability":[]}}]}
+JSON
+  exit 1
+fi
+# Default: the store could not be READ. On macOS this is what both a
+# never-logged-in profile and a signed-in-but-unapproved one report, so it
+# establishes nothing and must read as undecided.
 cat <<'JSON'
 {"generatedAt":"2026-01-01T00:00:00Z","schemaVersion":5,"providers":[{"provider":"claude","label":"Claude","source":"unavailable","windows":[],"state":{"status":"error","error":"keychain_unreachable"},"attempts":[{"source":"oauth-file","status":"skipped","error":"credentials_missing"},{"source":"keychain","status":"skipped","error":"keychain_unreachable"}],"quotaSemantics":{"status":"unknown","effectiveAvailability":[]}}]}
 JSON
@@ -106,6 +117,17 @@ seat_logged_in() {
   printf '%s\n' "$@" > "$spec/oauth"
 }
 
+# seat_proven_empty <spec> <value...>
+# Declare which profiles the fake reports as PROVEN to hold no login, as a
+# file-backed store that was read and found empty does. Any profile not listed
+# here and not logged in falls through to the unreadable-store shape, which
+# establishes nothing.
+seat_proven_empty() {
+  local spec=$1
+  shift
+  printf '%s\n' "$@" > "$spec/proven_empty"
+}
+
 test_absent_setting_is_the_default_seat() {
   local rec out
   rec=$(make_seat_case absent-default)
@@ -148,6 +170,8 @@ test_switch_to_seat_that_is_not_logged_in_is_refused() {
   read_seat_case "$rec"
   mkdir -p "$SEATS_DIR/spare"
   seat_logged_in "$SPEC_DIR" '(default)'
+  # Proven empty, not merely unreadable: only that establishes absence.
+  seat_proven_empty "$SPEC_DIR" "$SEATS_DIR/spare"
 
   out=$(run_seat "$HOME_DIR" "$FAKEBIN" switch spare)
   status=$?
@@ -164,6 +188,7 @@ test_forced_switch_cannot_override_a_proven_negative() {
   read_seat_case "$rec"
   mkdir -p "$SEATS_DIR/spare"
   seat_logged_in "$SPEC_DIR" '(default)'
+  seat_proven_empty "$SPEC_DIR" "$SEATS_DIR/spare"
 
   out=$(run_seat "$HOME_DIR" "$FAKEBIN" switch spare --force)
   status=$?
@@ -195,6 +220,37 @@ test_rate_limited_seat_is_undecided_and_forceable() {
   expect_code 0 "$?" "--force must switch onto a seat whose quota read was rate limited"
   assert_grep "busy" "$HOME_DIR/config/claude-seat" "the forced switch must record the seat"
   pass "a rate-limited signed-in seat is undecided, and --force switches onto it"
+}
+
+test_unreadable_store_is_undecided_and_force_may_cross_it() {
+  local rec out status
+  rec=$(make_seat_case unreadable-store)
+  read_seat_case "$rec"
+  mkdir -p "$SEATS_DIR/pending"
+  seat_logged_in "$SPEC_DIR" '(default)'
+  # 'pending' is neither logged in nor proven empty, so the fake returns the
+  # unreadable-store shape. On macOS that is what BOTH a never-logged-in seat
+  # and a signed-in seat still awaiting its one-time Keychain approval report,
+  # so it must establish nothing.
+
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" probe pending)
+  status=$?
+  expect_code 2 "$status" "an unreadable credential store must probe as undecided, not as logged out"
+  assert_contains "$out" "unknown" "the probe must report the seat as unknown"
+
+  # A plain switch still refuses, because nothing confirmed the seat is usable.
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" switch pending)
+  expect_code 1 "$?" "a plain switch must refuse a seat that could not be confirmed"
+  assert_absent "$HOME_DIR/config/claude-seat" "a refused switch must change nothing"
+
+  # --force is the owner accepting that uncertainty, and must get through. A
+  # forced switch to a seat that turns out to be empty fails safely on the
+  # worker's first message rather than spending another account.
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" switch pending --force)
+  expect_code 0 "$?" "--force must cross an undecided probe: $out"
+  assert_contains "$out" "-> pending" "the forced switch must take effect"
+  assert_grep "pending" "$HOME_DIR/config/claude-seat" "the forced switch must record the seat"
+  pass "an unreadable credential store reads as undecided and --force may cross it"
 }
 
 test_switch_back_to_default_clears_the_setting() {
@@ -658,6 +714,7 @@ test_switch_to_logged_in_seat_updates_only_the_setting
 test_switch_to_seat_that_is_not_logged_in_is_refused
 test_forced_switch_cannot_override_a_proven_negative
 test_rate_limited_seat_is_undecided_and_forceable
+test_unreadable_store_is_undecided_and_force_may_cross_it
 test_switch_back_to_default_clears_the_setting
 test_threshold_is_configurable_and_absent_by_default
 test_threshold_reached_is_edge_triggered_by_the_configured_percent
