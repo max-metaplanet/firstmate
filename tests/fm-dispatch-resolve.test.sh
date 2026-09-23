@@ -843,16 +843,15 @@ assert_not_contains "$out" 'decided_by' "a rules file declaring no path_force ne
 assert_present "$LOG/argv" "an undeclared home keeps the model call"
 pass "only an explicit Target paths line and a declared careful rule force a route"
 
-# Line forms an author actually writes, and the existing status semantics on
-# the forced rule.
+# Only the documented line form declares paths, and the existing status
+# semantics hold on the forced rule.
 cp "$CAREFUL_RULES" "$RULES"
-# shellcheck disable=SC2016  # the literal backticks are the markdown a brief author writes
-for line in '`infra/main.tf`' 'src/app.ts, infra/main.tf' 'README.md infra/main.tf'; do
-  brief_with_paths "$line"
-  reset_log
-  TYPESAFE_API_KEY=$KEY run code out err "$PATH_BRIEF"
-  assert_contains "$out" '  forced_path: infra/main.tf   forced_pattern: *.tf or *.tfvars' "a declared path list is read token by token: $line"
-done
+brief_with_paths 'README.md infra/main.tf'
+reset_log
+TYPESAFE_API_KEY=$KEY run code out err "$PATH_BRIEF"
+assert_contains "$out" '  decided_by: path-forced' "the exact target-paths form forces the careful rule"
+assert_contains "$out" '  forced_path: infra/main.tf   forced_pattern: *.tf or *.tfvars' "a declared path list is read token by token"
+assert_absent "$LOG/argv" "the exact form makes no model call"
 mkdir -p "$TMP_ROOT/globcwd/infra"
 : > "$TMP_ROOT/globcwd/infra/one.tf"
 : > "$TMP_ROOT/globcwd/infra/two.tf"
@@ -861,10 +860,16 @@ reset_log
 glob_out=$(cd "$TMP_ROOT/globcwd" && PATH="$FAKEBIN:$BASE_PATH" FM_HOME="$HOME_DIR" TYPESAFE_API_KEY=$KEY "$TOOL" "$PATH_BRIEF" 2>/dev/null)
 assert_contains "$glob_out" '  forced_path: infra/*.tf   forced_pattern: *.tf or *.tfvars' "a declared path is never expanded against the working directory"
 
-{ cat "$BRIEF"; printf '\n- Target paths: infra/main.tf\n'; } > "$PATH_BRIEF"
-reset_log
-TYPESAFE_API_KEY=$KEY run code out err "$PATH_BRIEF"
-assert_contains "$out" '  decided_by: path-forced' "a bulleted target-paths line is read"
+# shellcheck disable=SC2016  # the literal backticks are the markdown a brief author might write
+for line in '- Target paths: infra/main.tf' 'Target paths: `infra/main.tf`' 'Target paths: infra/main.tf, src/app.ts'; do
+  { cat "$BRIEF"; printf '\n%s\n' "$line"; } > "$PATH_BRIEF"
+  reset_log
+  write_careful_response "$RESPONSE" rule_1
+  TYPESAFE_API_KEY=$KEY run code out err "$PATH_BRIEF"
+  assert_not_contains "$out" 'decided_by' "an undocumented line form never forces: $line"
+  assert_contains "$out" '  rule: rule_1 (A trivial mechanical edit.)   confidence: 0.99' "an undocumented line form resolves from the model answer: $line"
+  assert_present "$LOG/argv" "an undocumented line form still calls the model: $line"
+done
 
 brief_with_paths 'infra/main.tf'
 jq '.rules[2].approval = "captain"' "$CAREFUL_RULES" > "$RULES"
@@ -882,7 +887,7 @@ assert_contains "$out" '  note: rule rule_3 floor model:fable below 80%: fall th
 assert_contains "$out" "  profile: --harness 'claude' --model 'sonnet' --effort 'medium'" "a forced rule below its floor resolves among the default profiles"
 assert_absent "$LOG/argv" "floor fall-through on a forced route makes no model call"
 cp "$BASE_RULES" "$RULES"
-pass "declared line forms parse, and approval and floor semantics hold on a forced route"
+pass "only the documented line form declares paths, and approval and floor semantics hold on a forced route"
 
 # --- configuration errors exit 2 and select nothing ----------------------------------
 reset_log

@@ -281,13 +281,9 @@ fm_dispatch_target_paths() {  # <brief-file>
     # read -a splits on whitespace without expanding a declared glob such as *.tf
     read -r -a tokens <<< "$line"
     for token in ${tokens[@]+"${tokens[@]}"}; do
-      token=${token%,}
-      token=${token#\`}
-      token=${token%\`}
-      token=${token%,}
-      [ -n "$token" ] && printf '%s\n' "$token"
+      printf '%s\n' "$token"
     done
-  done < <(awk 'match($0, /^[[:space:]]*(- )?Target paths:[[:space:]]*/) { print substr($0, RSTART + RLENGTH) }' "$1")
+  done < <(awk 'match($0, /^Target paths:[[:space:]]*/) { print substr($0, RSTART + RLENGTH) }' "$1")
 }
 
 FORCED_RULE=$(jq -r '
