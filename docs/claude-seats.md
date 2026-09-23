@@ -119,6 +119,7 @@ The probe cannot tell those two apart, so it reports `unknown` for both, and a p
 To settle it, the owner runs `quota-axi --allow-keychain-prompt` once with that seat's `CLAUDE_CONFIG_DIR` set and answers the prompt with "Always Allow"; after that a signed-in seat probes as `logged-in`.
 In the meantime `switch --force` accepts the uncertainty: if the seat turns out to be empty, the next worker stops on its first message with `Not logged in` rather than spending another account.
 `--force` never overrides `not-logged-in`, which the probe reports only when the evidence positively shows no login.
+`--force` also never switches to a seat with no profile directory under the seats root; create it with `fm-seat.sh add <name>` first.
 On macOS that means `not-logged-in` is rarely seen, because an absent Keychain entry reads as unreadable rather than as read-and-empty; on a file-backed credential store, where an empty profile really can be read and found empty, it is reported normally.
 
 Two things in the setup flow above are **written from Claude Code's documented behaviour and the isolation this change verified, not from an observed sign-in**, because verifying them would mean logging in, which this work deliberately does not do:

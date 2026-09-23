@@ -226,7 +226,7 @@ write_active() {
 }
 
 cmd_switch() {
-  local name='' force=0 rotate=0 prior state
+  local name='' force=0 rotate=0 prior state dir
   while [ "$#" -gt 0 ]; do
     case "$1" in
       --next) rotate=1; shift ;;
@@ -242,7 +242,10 @@ cmd_switch() {
   [ -n "$name" ] || usage
   if [ "$name" != "$FM_SEAT_DEFAULT_NAME" ]; then
     fm_seat_name_valid "$name" || die "invalid seat name: $name"
-    fm_seat_dir "$name" >/dev/null || die "seat '$name' does not resolve to a profile directory"
+    dir=$(fm_seat_dir "$name") || die "seat '$name' does not resolve to a profile directory"
+    # A missing profile probes as undecided, which --force would cross; refuse
+    # it outright so a typo cannot point every new worker at nothing.
+    [ -d "$dir" ] || die "seat '$name' has no profile directory at $dir; run 'fm-seat.sh add $name' first"
   fi
   prior=$(fm_seat_active)
   if [ "$name" = "$prior" ]; then

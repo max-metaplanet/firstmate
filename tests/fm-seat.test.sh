@@ -253,6 +253,21 @@ test_unreadable_store_is_undecided_and_force_may_cross_it() {
   pass "an unreadable credential store reads as undecided and --force may cross it"
 }
 
+test_forced_switch_refuses_a_seat_with_no_profile_directory() {
+  local rec out
+  rec=$(make_seat_case missing-seat-dir)
+  read_seat_case "$rec"
+  seat_logged_in "$SPEC_DIR" '(default)'
+  # No directory named 'nosuch' exists under the seats root: a typo. A missing
+  # profile probes as undecided, so without its own check --force would cross
+  # it and send every new worker to a profile that was never set up.
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" switch nosuch --force)
+  expect_code 1 "$?" "a forced switch must refuse a seat with no profile directory: $out"
+  assert_contains "$out" "fm-seat.sh add nosuch" "the refusal must point at how to create the seat"
+  assert_absent "$HOME_DIR/config/claude-seat" "a refused switch must change nothing"
+  pass "a forced switch refuses a seat whose profile directory does not exist"
+}
+
 test_switch_back_to_default_clears_the_setting() {
   local rec out
   rec=$(make_seat_case switch-back)
@@ -891,6 +906,7 @@ test_switch_to_seat_that_is_not_logged_in_is_refused
 test_forced_switch_cannot_override_a_proven_negative
 test_rate_limited_seat_is_undecided_and_forceable
 test_unreadable_store_is_undecided_and_force_may_cross_it
+test_forced_switch_refuses_a_seat_with_no_profile_directory
 test_switch_back_to_default_clears_the_setting
 test_switch_reaches_running_local_secondmate_homes
 test_failed_secondmate_push_does_not_undo_the_switch
