@@ -110,7 +110,7 @@ Note that `quota-axi --profile-only` is **not** a usable probe here: that flag r
 
 A newly logged-in seat gets its own Keychain entry, and reading it from a different tool can require a one-time macOS approval.
 Until that approval is given, the probe may report `unknown` for a seat that is in fact signed in.
-Answer the prompt once with "Always Allow" - `quota-axi --allow-keychain-prompt` with the seat's `CLAUDE_CONFIG_DIR` set is the read that raises it - and the probe settles afterwards.
+To settle it, the owner runs `quota-axi --allow-keychain-prompt` once with that seat's `CLAUDE_CONFIG_DIR` set and answers the prompt with "Always Allow"; after that the probe reads `logged-in`.
 While it is unresolved, `switch --force` proceeds past that uncertainty; `--force` never overrides a seat proven to have no credentials.
 
 Two things in the setup flow above are **written from Claude Code's documented behaviour and the isolation this change verified, not from an observed sign-in**, because verifying them would mean logging in, which this work deliberately does not do:
