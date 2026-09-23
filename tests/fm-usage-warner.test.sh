@@ -18,8 +18,10 @@ WARNER="$ROOT/bin/fm-usage-warner.sh"
 TMP_ROOT=$(fm_test_tmproot fm-usage-warner)
 BASE_PATH=${FM_TEST_BASE_PATH:-/usr/bin:/bin:/usr/sbin:/sbin}
 
-# arm is macOS-only, so every arm case runs with a uname stub reporting Darwin
-# first on PATH; the cases stay meaningful on a Linux CI runner.
+# arm is macOS-only. Its threshold gate runs before any platform-specific file
+# handling, so that refusal case uses a uname stub reporting Darwin and stays
+# meaningful on a Linux CI runner. The cases that write the shim go through the
+# BSD stat helpers the real macOS host provides, so they run only on Darwin.
 DARWIN_BIN="$TMP_ROOT/darwin-bin"
 mkdir -p "$DARWIN_BIN"
 printf '#!/bin/sh\necho Darwin\n' > "$DARWIN_BIN/uname"
@@ -342,7 +344,7 @@ test_arm_writes_and_binds_the_check_and_disarm_removes_it() {
   local home out
   home=$(make_home arm-ok)
   printf 'five_hour:80\n' > "$home/config/usage-warner"
-  out=$(PATH="$DARWIN_BIN:$PATH" FM_HOME="$home" "$WARNER" arm 2>&1) || fail "arm must succeed: $out"
+  out=$(FM_HOME="$home" "$WARNER" arm 2>&1) || fail "arm must succeed: $out"
   assert_contains "$out" "armed: state/usage-warner.check.sh" "arm names the shim it wrote"
   assert_present "$home/state/usage-warner.check.sh" "arm writes the check shim"
   assert_present "$home/state/usage-warner.check-trust" "arm registers a trust binding"
@@ -367,7 +369,7 @@ test_arm_refuses_a_symlink_at_the_shim_path() {
   mkdir -p "$(dirname "$target")"
   printf '#!/usr/bin/env bash\n' > "$target"
   ln -s "$target" "$home/state/usage-warner.check.sh"
-  out=$(PATH="$DARWIN_BIN:$PATH" FM_HOME="$home" "$WARNER" arm 2>&1) || rc=$?
+  out=$(FM_HOME="$home" "$WARNER" arm 2>&1) || rc=$?
   expect_code 1 "$rc" "arm must refuse a symlink at the shim path"
   assert_contains "$out" "could not write" "arm reports the shim write failure"
   assert_absent "$home/state/usage-warner.check-trust" "no trust binding is left behind by a refused arm"
@@ -384,7 +386,7 @@ test_armed_shim_runs_a_real_check() {
   fake_osascript_recorder "$fakebin" "$notify_log"
   fake_quota_axi "$fakebin" '{"id":"five_hour","percentUsed":92}'
   printf 'five_hour:80\n' > "$home/config/usage-warner"
-  PATH="$DARWIN_BIN:$PATH" FM_HOME="$home" "$WARNER" arm >/dev/null 2>&1 || fail "arm must succeed"
+  FM_HOME="$home" "$WARNER" arm >/dev/null 2>&1 || fail "arm must succeed"
   out=$(PATH="$fakebin:$PATH" "$home/state/usage-warner.check.sh" </dev/null)
   assert_contains "$out" "five_hour at 92%" "the armed shim, run the way the watcher runs it, performs a real check"
   pass "fm-usage-warner: the armed shim is exactly what the watcher would dispatch"
@@ -406,6 +408,10 @@ test_no_room_for_a_read_is_recorded_as_not_measured
 test_unconfigured_invocation_ignores_unused_environment
 test_arm_refuses_without_a_configured_threshold
 test_arm_refuses_on_a_non_macos_platform
-test_arm_writes_and_binds_the_check_and_disarm_removes_it
-test_arm_refuses_a_symlink_at_the_shim_path
-test_armed_shim_runs_a_real_check
+if [ "$(uname)" = Darwin ]; then
+  test_arm_writes_and_binds_the_check_and_disarm_removes_it
+  test_arm_refuses_a_symlink_at_the_shim_path
+  test_armed_shim_runs_a_real_check
+else
+  printf 'ok - fm-usage-warner: shim-writing arm cases are macOS-only; skipping on %s\n' "$(uname)"
+fi
