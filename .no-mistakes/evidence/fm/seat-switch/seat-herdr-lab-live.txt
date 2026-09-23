@@ -1,0 +1,43 @@
+lab session: fm-lab-seatlive-74929-16540
+$ fm-seat.sh switch work --force
+switched: default -> work
+applies to NEW claude workers only; running workers keep their own seat
+config-push: no live secondmate homes found
+[exit 0]
+$ fm-spawn.sh seat-lab-a <proj> --backend herdr   (harness claude)
+[exit 0]
+warning: /private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-seat-lab.SSrUhg/home/data/seat-lab-a/launch-brief.md records no delivery contract line (scaffolded before ship briefs recorded one); launching on the explicit --mode no-mistakes - confirm its definition of done matches
+spawned seat-lab-a harness=claude kind=ship mode=no-mistakes yolo=off window=fm-lab-seatlive-74929-16540:w1:p2 worktree=/Users/max/.treehouse/proj-dfded3/1/proj
+task A record: harness=claude claude_seat=/private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-seat-lab.SSrUhg/seats/work 
+task A live claude process:
+pid 84731 cwd=/Users/max/.treehouse/proj-dfded3/1/proj CLAUDE_CONFIG_DIR=/private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-seat-lab.SSrUhg/seats/work
+$ fm-seat.sh switch spare --force
+switched: work -> spare
+applies to NEW claude workers only; running workers keep their own seat
+config-push: no live secondmate homes found
+[exit 0]
+$ fm-spawn.sh seat-lab-b <proj> --backend herdr   (harness claude)
+[exit 0]
+warning: /private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-seat-lab.SSrUhg/home/data/seat-lab-b/launch-brief.md records no delivery contract line (scaffolded before ship briefs recorded one); launching on the explicit --mode no-mistakes - confirm its definition of done matches
+spawned seat-lab-b harness=claude kind=ship mode=no-mistakes yolo=off window=fm-lab-seatlive-74929-16540:w1:p3 worktree=/Users/max/.treehouse/proj-dfded3/2/proj
+task B record: claude_seat=/private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-seat-lab.SSrUhg/seats/spare
+task B live claude process:
+pid 93546 cwd=/Users/max/.treehouse/proj-dfded3/2/proj CLAUDE_CONFIG_DIR=/private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-seat-lab.SSrUhg/seats/spare
+task A record AFTER switch: claude_seat=/private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-seat-lab.SSrUhg/seats/work
+task A live claude process AFTER switch:
+pid 84731 cwd=/Users/max/.treehouse/proj-dfded3/1/proj CLAUDE_CONFIG_DIR=/private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-seat-lab.SSrUhg/seats/work
+$ fm-seat.sh status
+active seat for NEW workers: spare
+active profile: /private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-seat-lab.SSrUhg/seats/spare
+login state: unknown
+auto-switch threshold: (unset - no automatic switching)
+auto-switch watch: not armed
+
+live workers keep the seat they launched with:
+  seat-lab-a	/private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-seat-lab.SSrUhg/seats/work
+  seat-lab-b	/private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-seat-lab.SSrUhg/seats/spare
+[exit 0]
+seat profile dirs got trust entries? work: .claude.json backups cache sessions  | spare: .claude.json backups cache sessions 
+
+### teardown
+lab teardown exit 0

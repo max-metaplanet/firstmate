@@ -1,0 +1,59 @@
+# isolated home, seats root /tmp/fmseatB.2qkZ/seats
+$ fm-seat.sh add lab-a
+seat profile directory: /tmp/fmseatB.2qkZ/seats/lab-a
+
+This created an empty profile directory and nothing else. No credential
+was read, copied, or written, and the Keychain was not touched.
+
+The account owner now logs this seat in, personally, in a terminal:
+
+  CLAUDE_CONFIG_DIR=/tmp/fmseatB.2qkZ/seats/lab-a claude
+
+then runs /login inside that session and signs in as the account this
+seat should bill to. Claude Code stores those credentials under a
+Keychain entry derived from this directory path, so they never mix with
+the default login. Confirm with:
+
+  bin/fm-seat.sh probe lab-a
+
+and then make it the active seat with:
+
+  bin/fm-seat.sh switch lab-a
+exit=0
+$ ls -la seats/lab-a
+total 0
+drwx------@ 2 max  wheel  64 Sep 23 17:12 .
+drwxr-xr-x@ 3 max  wheel  96 Sep 23 17:12 ..
+$ fm-seat.sh add default
+error: 'default' names the ambient login, not a seat directory; choose another name
+exit=1
+$ fm-seat.sh add ../evil
+error: invalid seat name: ../evil
+exit=1
+$ fm-seat.sh probe lab-a   # never logged in
+lab-a	unknown
+exit=2
+$ fm-seat.sh switch lab-a
+error: could not confirm seat 'lab-a' is logged in (quota read gave no verdict); re-run with --force to switch anyway
+exit=1
+$ fm-seat.sh switch nosuch --force
+switched: default -> nosuch
+applies to NEW claude workers only; running workers keep their own seat
+config-push: no live secondmate homes found
+exit=0
+$ fm-seat.sh switch lab-a --force
+switched: nosuch -> lab-a
+applies to NEW claude workers only; running workers keep their own seat
+config-push: no live secondmate homes found
+exit=0
+$ fm-seat.sh switch --next   # only lab-a exists
+error: no other logged-in seat under the seats root to rotate to; add and log into a second seat first (docs/claude-seats.md). The default profile is never a rotation target, so switch to it by name if that is what you want
+exit=1
+$ fm-seat.sh threshold 50; fm-seat.sh arm
+auto-switch threshold: 50% remaining
+error: no other logged-in seat under the seats root to rotate to, so an automatic switch would have nowhere to go; add and log into a second seat first (docs/claude-seats.md). The default profile is never a rotation target
+exit=1
+$ fm-seat.sh threshold-reached  # lab-a has no quota
+exit=2
+$ cat config/claude-seat
+lab-a

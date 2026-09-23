@@ -1,0 +1,64 @@
+== lab session: fm-lab-seatlab-94718-30252  home: /private/tmp/fmseatlab.C1jm/home
+$ fm-seat.sh switch lab-a --force
+switched: default -> lab-a
+applies to NEW claude workers only; running workers keep their own seat
+config-push: no live secondmate homes found
+$ fm-spawn.sh w1 ... --harness claude --backend herdr
+notice: w1 ships mode=local-only while the standing posture for proj is no-mistakes - less rigor than the captain's standing posture; proceed only on a current explicit captain instruction or an intake judgment you can state
+spawned w1 harness=claude kind=ship mode=local-only yolo=off window=fm-lab-seatlab-94718-30252:w1:p2 worktree=/Users/max/.treehouse/proj-a1009f/1/proj
+spawn rc=0
+$ meta w1
+worktree=/Users/max/.treehouse/proj-a1009f/1/proj
+harness=claude
+claude_seat=/private/tmp/fmseatlab.C1jm/seats/lab-a
+herdr_pane_id=w1:p2
+$ fm-seat.sh switch lab-b --force   # switch NOW while w1 runs
+switched: lab-a -> lab-b
+applies to NEW claude workers only; running workers keep their own seat
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+config-push: no live secondmate homes found
+$ fm-spawn.sh w2 ...
+notice: w2 ships mode=local-only while the standing posture for proj is no-mistakes - less rigor than the captain's standing posture; proceed only on a current explicit captain instruction or an intake judgment you can state
+spawned w2 harness=claude kind=ship mode=local-only yolo=off window=fm-lab-seatlab-94718-30252:w1:p3 worktree=/Users/max/.treehouse/proj-a1009f/2/proj
+spawn rc=0
+$ meta w2
+worktree=/Users/max/.treehouse/proj-a1009f/2/proj
+harness=claude
+claude_seat=/private/tmp/fmseatlab.C1jm/seats/lab-b
+herdr_pane_id=w1:p3
+$ meta w1 (after switch)
+worktree=/Users/max/.treehouse/proj-a1009f/1/proj
+harness=claude
+claude_seat=/private/tmp/fmseatlab.C1jm/seats/lab-a
+herdr_pane_id=w1:p2
+$ fm-seat.sh status
+active seat for NEW workers: lab-b
+active profile: /private/tmp/fmseatlab.C1jm/seats/lab-b
+login state: unknown
+auto-switch threshold: (unset - no automatic switching)
+auto-switch watch: not armed
+
+live workers keep the seat they launched with:
+  w1	/private/tmp/fmseatlab.C1jm/seats/lab-a
+  w2	/private/tmp/fmseatlab.C1jm/seats/lab-b
+
+== trust entries (which profile store received each worktree trust)
+-- lab-a/.claude.json projects:
+/Users/max/.treehouse/proj-a1009f/1/proj
+/private/tmp/fmseatlab.C1jm/proj
+-- lab-b/.claude.json projects:
+/Users/max/.treehouse/proj-a1009f/2/proj
+/private/tmp/fmseatlab.C1jm/proj
+
+== w1 pane process info
+pane pids: 
+
+== w2 pane process info
+pane pids: 
+

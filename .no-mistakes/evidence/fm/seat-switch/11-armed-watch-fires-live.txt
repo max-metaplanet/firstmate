@@ -1,0 +1,36 @@
+Wed Sep 23 21:25:02 UTC 2026
+# active seat: seat-max2
+$ fm-seat.sh threshold 60
+auto-switch threshold: 60% remaining
+$ fm-seat.sh arm --interval 20 --stable 1
+armed: when-claude-seat
+starts on the watcher's next cycle; or run: bin/fm-procevent.sh reconcile
+reminder: deterministic, safe, reversible actions only; judgment and destructive actions stay on the wake-and-decide path
+armed: automatic switch at 60% remaining
+fires once; re-arm after it fires to watch the next crossing
+arm rc=0
+$ fm-procevent-when.sh run when-claude-seat
+when: when-claude-seat
+status: fired
+detail: the condition held and the action exited 0
+condition_polls: 1
+action_exit: 0
+output:
+switched: seat-max2 -> seat-max
+applies to NEW claude workers only; running workers keep their own seat
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 process-event source(s) registered, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+config-push: no live secondmate homes found
+runner rc=0
+$ cat config/claude-seat   # after the watch
+seat-max
+$ fm-seat.sh retire
+warning: the action had fired but no outcome was captured; verify its effect manually
+retired: when-claude-seat
+retired: when-claude-seat
+auto-switch threshold cleared

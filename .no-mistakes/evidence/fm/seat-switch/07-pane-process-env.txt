@@ -1,0 +1,8 @@
+== /tmp/fm-w1+0e867b04af71b91bc88d28ab6dbf279c31b6c713b43de14eac4d6534fb9af4a3/launch.s1790198018.95586.21852.sh
+1:export COMPACT_ADVISER_DISABLE=1; CLAUDE_CONFIG_DIR='/private/tmp/fmseatlab.C1jm/seats/lab-a' env -u CURSOR_AGENT -u CURSOR_INVOKED_AS -u GEMINI_CLI CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false CLAUDE_CODE_SEND_FEEDBACK=0 claude --dangerously-skip-permissions --settings '{"feedbackDrafts":"off","att
+== /tmp/fm-w2+0e867b04af71b91bc88d28ab6dbf279c31b6c713b43de14eac4d6534fb9af4a3/launch.s1790198030.3748.24672.sh
+1:export COMPACT_ADVISER_DISABLE=1; CLAUDE_CONFIG_DIR='/private/tmp/fmseatlab.C1jm/seats/lab-b' env -u CURSOR_AGENT -u CURSOR_INVOKED_AS -u GEMINI_CLI CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false CLAUDE_CODE_SEND_FEEDBACK=0 claude --dangerously-skip-permissions --settings '{"feedbackDrafts":"off","att
+
+== live claude processes and their CLAUDE_CONFIG_DIR env
+pid 13303: CLAUDE_CONFIG_DIR=/private/tmp/fmseatlab.C1jm/seats/lab-b
+pid 2658: CLAUDE_CONFIG_DIR=/private/tmp/fmseatlab.C1jm/seats/lab-a

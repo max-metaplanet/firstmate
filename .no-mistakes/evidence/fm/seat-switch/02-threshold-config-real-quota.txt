@@ -1,0 +1,111 @@
+$ fm-seat.sh threshold-reached   # no threshold configured
+exit=2 (2 = error, never a switch)
+$ fm-seat.sh threshold 'abc'
+error: threshold must be a percent between 0 and 100, or 'off'
+exit=1
+$ fm-seat.sh threshold '0'
+error: threshold must be a percent between 0 and 100, or 'off'
+exit=1
+$ fm-seat.sh threshold '101'
+error: threshold must be a percent between 0 and 100, or 'off'
+exit=1
+$ fm-seat.sh threshold '-5'
+error: threshold must be a percent between 0 and 100, or 'off'
+exit=1
+$ fm-seat.sh threshold '15%'
+error: threshold must be a percent between 0 and 100, or 'off'
+exit=1
+$ fm-seat.sh threshold 15
+auto-switch threshold: 15% remaining
+exit=0
+$ fm-seat.sh threshold
+15
+
+# real account-level remaining for seat-max, via quota-axi:
+{"source":"oauth","account":"max@metaplanet.jp","scopes":[]}
+
+$ fm-seat.sh threshold-reached   # threshold 15
+exit=2 (1 = not reached)
+$ fm-seat.sh threshold 100
+auto-switch threshold: 100% remaining
+$ fm-seat.sh threshold-reached   # threshold 100
+exit=2 (0 = reached)
+{
+  "source": "cache",
+  "state": {
+    "status": "stale",
+    "stale": true,
+    "refreshedAt": "2026-09-23T21:12:07.882Z",
+    "error": "Claude quota endpoint rate limited",
+    "retryAfter": "2026-09-23T21:17:08.768Z",
+    "sourcesTried": [
+      "oauth-file",
+      "keychain",
+      "cache"
+    ]
+  },
+  "effectiveAvailability": [
+    {
+      "scope": "all_models",
+      "status": "unknown",
+      "boundedBy": [
+        "five_hour",
+        "seven_day"
+      ],
+      "runway": {
+        "status": "unknown",
+        "unmeasurableWindowIds": [
+          "five_hour",
+          "seven_day"
+        ]
+      },
+      "selection": {
+        "status": "unknown",
+        "unmeasurableWindowIds": [
+          "five_hour",
+          "seven_day"
+        ]
+      },
+      "pace": {
+        "status": "unknown",
+        "unknownWindowIds": [
+          "five_hour",
+          "seven_day"
+        ]
+      }
+    },
+    {
+      "scope": "model:fable",
+      "status": "unknown",
+      "boundedBy": [
+        "five_hour",
+        "seven_day",
+        "model:fable"
+      ],
+      "runway": {
+        "status": "unknown",
+        "unmeasurableWindowIds": [
+          "five_hour",
+          "seven_day",
+          "model:fable"
+        ]
+      },
+      "selection": {
+        "status": "unknown",
+        "unmeasurableWindowIds": [
+          "five_hour",
+          "seven_day",
+          "model:fable"
+        ]
+      },
+      "pace": {
+        "status": "unknown",
+        "unknownWindowIds": [
+          "five_hour",
+          "seven_day",
+          "model:fable"
+        ]
+      }
+    }
+  ]
+}

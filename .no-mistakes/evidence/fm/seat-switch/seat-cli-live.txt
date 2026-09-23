@@ -1,0 +1,195 @@
+### Part A: REAL installed quota-axi (/Users/max/.local/state/fnm_multishells/15215_1789844557659/bin/quota-axi), empty profiles, no sign-in
+
+$ fm-seat.sh status
+active seat for NEW workers: default
+active profile: (ambient default login)
+login state: logged-in
+auto-switch threshold: (unset - no automatic switching)
+auto-switch watch: not armed
+
+live workers keep the seat they launched with:
+  (no task records)
+[exit 0]
+
+$ fm-seat.sh add work
+seat profile directory: /var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-seat-live.d3DzlG/seats/work
+
+This created an empty profile directory and nothing else. No credential
+was read, copied, or written, and the Keychain was not touched.
+
+The account owner now logs this seat in, personally, in a terminal:
+
+  CLAUDE_CONFIG_DIR=/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-seat-live.d3DzlG/seats/work claude
+
+then runs /login inside that session and signs in as the account this
+seat should bill to. Claude Code stores those credentials under a
+Keychain entry derived from this directory path, so they never mix with
+the default login. Confirm with:
+
+  bin/fm-seat.sh probe work
+
+and then make it the active seat with:
+
+  bin/fm-seat.sh switch work
+[exit 0]
+
+$ fm-seat.sh add spare
+seat profile directory: /var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-seat-live.d3DzlG/seats/spare
+
+This created an empty profile directory and nothing else. No credential
+was read, copied, or written, and the Keychain was not touched.
+
+The account owner now logs this seat in, personally, in a terminal:
+
+  CLAUDE_CONFIG_DIR=/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-seat-live.d3DzlG/seats/spare claude
+
+then runs /login inside that session and signs in as the account this
+seat should bill to. Claude Code stores those credentials under a
+Keychain entry derived from this directory path, so they never mix with
+the default login. Confirm with:
+
+  bin/fm-seat.sh probe spare
+
+and then make it the active seat with:
+
+  bin/fm-seat.sh switch spare
+[exit 0]
+(profile dirs now: spare work  ; files inside work: 0)
+
+$ fm-seat.sh list
+seats root: /var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-seat-live.d3DzlG/seats
+* default	logged-in	-	(ambient default login)
+  spare	unknown	-	/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-seat-live.d3DzlG/seats/spare
+  work	unknown	-	/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-seat-live.d3DzlG/seats/work
+[exit 0]
+
+$ fm-seat.sh probe work
+work	unknown
+[exit 2]
+
+$ fm-seat.sh switch work
+error: could not confirm seat 'work' is logged in (quota read gave no verdict); re-run with --force to switch anyway
+[exit 1]
+(config/claude-seat after refused switch: <absent>)
+
+$ fm-seat.sh switch work --force
+switched: default -> work
+applies to NEW claude workers only; running workers keep their own seat
+config-push: no live secondmate homes found
+[exit 0]
+(config/claude-seat: work)
+
+$ fm-seat.sh switch nosuch --force
+error: seat 'nosuch' has no profile directory at /var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-seat-live.d3DzlG/seats/nosuch; run 'fm-seat.sh add nosuch' first
+[exit 1]
+
+$ fm-seat.sh switch ../escape --force
+error: invalid seat name: ../escape
+[exit 1]
+(config/claude-seat still: work)
+
+$ fm-seat.sh threshold
+(unset - no automatic switching)
+[exit 0]
+
+$ fm-seat.sh threshold-reached
+[exit 2]
+
+$ fm-seat.sh threshold 15
+auto-switch threshold: 15% remaining
+[exit 0]
+
+$ fm-seat.sh threshold
+15
+[exit 0]
+
+$ fm-seat.sh threshold-reached
+[exit 2]
+
+$ fm-seat.sh switch default
+error: could not confirm seat 'default' is logged in (quota read gave no verdict); re-run with --force to switch anyway
+[exit 1]
+(config/claude-seat: work)
+
+### Part B: stub quota-axi reporting work+spare signed in; remaining quota driven by a file
+
+$ fm-seat.sh list
+seats root: /var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-seat-live.d3DzlG/seats
+  default	unknown	-	(ambient default login)
+  spare	logged-in	spare@example.test	/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-seat-live.d3DzlG/seats/spare
+* work	logged-in	work@example.test	/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-seat-live.d3DzlG/seats/work
+[exit 0]
+
+$ fm-seat.sh switch work
+seat unchanged: work
+[exit 0]
+
+$ fm-seat.sh status
+active seat for NEW workers: work
+active profile: /var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-seat-live.d3DzlG/seats/work
+login state: logged-in
+auto-switch threshold: 15% remaining
+auto-switch watch: not armed
+
+live workers keep the seat they launched with:
+  (no task records)
+[exit 0]
+(work all_models=50%, model:opus=1%, threshold 15)
+
+$ fm-seat.sh threshold-reached
+[exit 1]
+(work all_models=12%, threshold 15)
+
+$ fm-seat.sh threshold-reached
+[exit 0]
+
+$ fm-seat.sh switch --next
+switched: work -> spare
+applies to NEW claude workers only; running workers keep their own seat
+config-push: no live secondmate homes found
+[exit 0]
+
+$ fm-seat.sh switch --next
+switched: spare -> work
+applies to NEW claude workers only; running workers keep their own seat
+config-push: no live secondmate homes found
+[exit 0]
+
+### Part C: automatic path - arm the watch and run its real blocking child once
+
+$ fm-seat.sh switch work
+seat unchanged: work
+[exit 0]
+
+$ fm-seat.sh arm --interval 1 --stable 1
+armed: when-claude-seat
+starts on the watcher's next cycle; or run: bin/fm-procevent.sh reconcile
+reminder: deterministic, safe, reversible actions only; judgment and destructive actions stay on the wake-and-decide path
+armed: automatic switch at 15% remaining
+fires once; re-arm after it fires to watch the next crossing
+[exit 0]
+
+$ fm-seat.sh status
+active seat for NEW workers: work
+active profile: /var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-seat-live.d3DzlG/seats/work
+login state: logged-in
+auto-switch threshold: 15% remaining
+auto-switch watch: armed
+
+live workers keep the seat they launched with:
+  (no task records)
+[exit 0]
+$ fm-procevent-when.sh run when-claude-seat   (the watcher's child, bounded to 30s)
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+config-push: no live secondmate homes found
+[exit 0]
+(config/claude-seat after the watch fired: spare)
+
+$ fm-seat.sh retire
+warning: the action had fired but no outcome was captured; verify its effect manually
+retired: when-claude-seat
+retired: when-claude-seat
+[exit 0]

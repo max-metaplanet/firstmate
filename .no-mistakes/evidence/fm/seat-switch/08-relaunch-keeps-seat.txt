@@ -1,0 +1,31 @@
+# w1 claude process (lab-a) stopped; active seat for new workers is lab-b
+active seat for NEW workers: lab-b
+active profile: /private/tmp/fmseatlab.C1jm/seats/lab-b
+$ fm-spawn.sh w1 --relaunch
+notice: w1 ships mode=local-only while the standing posture for proj is no-mistakes - less rigor than the captain's standing posture; proceed only on a current explicit captain instruction or an intake judgment you can state
+spawned w1 harness=claude kind=ship mode=local-only yolo=off window=fm-lab-seatlab-94718-30252:w1:p2 worktree=/Users/max/.treehouse/proj-a1009f/1/proj
+relaunch rc=0
+$ meta w1
+harness=claude
+claude_seat=/private/tmp/fmseatlab.C1jm/seats/lab-a
+herdr_pane_id=w1:p2
+$ launch scripts for w1, oldest first
+/tmp/fm-w1+0e867b04af71b91bc88d28ab6dbf279c31b6c713b43de14eac4d6534fb9af4a3/launch.s1790198018.95586.21852.sh: CLAUDE_CONFIG_DIR='/private/tmp/fmseatlab.C1jm/seats/lab-a'
+/tmp/fm-w1+0e867b04af71b91bc88d28ab6dbf279c31b6c713b43de14eac4d6534fb9af4a3/launch.s1790198185.95654.12286.sh: CLAUDE_CONFIG_DIR='/private/tmp/fmseatlab.C1jm/seats/lab-a'
+$ live claude processes
+pid 13303: CLAUDE_CONFIG_DIR=/private/tmp/fmseatlab.C1jm/seats/lab-b
+pid 97871: CLAUDE_CONFIG_DIR=/private/tmp/fmseatlab.C1jm/seats/lab-a
+$ fm-seat.sh status
+active seat for NEW workers: lab-b
+active profile: /private/tmp/fmseatlab.C1jm/seats/lab-b
+login state: unknown
+auto-switch threshold: (unset - no automatic switching)
+auto-switch watch: not armed
+
+live workers keep the seat they launched with:
+  w1	/private/tmp/fmseatlab.C1jm/seats/lab-a
+  w2	/private/tmp/fmseatlab.C1jm/seats/lab-b
+returned /Users/max/.treehouse/proj-a1009f/1/proj rc=0
+returned /Users/max/.treehouse/proj-a1009f/2/proj rc=0
+teardown rc=0
+leftover check done
