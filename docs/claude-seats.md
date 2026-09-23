@@ -65,7 +65,7 @@ A switch rewrites one setting that only a fresh spawn reads.
 
 - **New workers** launch on the new seat.
 - **Running workers** keep the seat they started on. Their seat is recorded in their own task record at launch, and nothing rewrites it.
-- **Relaunches and resumes** of an existing task reuse that recorded seat, never the current setting. This matters beyond billing: a task's session history lives under its profile directory, so moving a task between seats would strand it.
+- **Relaunches** of an existing task reuse that recorded seat, never the current setting. Relaunch is the one path that starts a replacement agent for a task that already exists, so it is the one place this could have gone wrong. This matters beyond billing: a task's session history lives under its profile directory, so moving a task between seats would strand it.
 
 `bin/fm-seat.sh status` shows the active seat alongside every task's own recorded seat, which is how to confirm a switch left running work alone.
 
@@ -97,7 +97,12 @@ A home that needs its own set of seats overrides `config/claude-seats-root`.
 ## Limits worth knowing
 
 The login probe runs `quota-axi` against the seat's profile and treats an `oauth` source as logged in.
-When that read cannot reach a verdict at all, `switch` reports the uncertainty and `--force` is available; `--force` never overrides a seat proven to have no credentials.
+Note that `quota-axi --profile-only` is **not** a usable probe here: that flag reads only a credential file and never the Keychain, so on macOS it reports "credentials missing" for a perfectly good seat.
+
+A newly logged-in seat gets its own Keychain entry, and reading it from a different tool can require a one-time macOS approval.
+Until that approval is given, the probe may report `unknown` for a seat that is in fact signed in.
+Answer the prompt once with "Always Allow" - `quota-axi --allow-keychain-prompt` with the seat's `CLAUDE_CONFIG_DIR` set is the read that raises it - and the probe settles afterwards.
+While it is unresolved, `switch --force` proceeds past that uncertainty; `--force` never overrides a seat proven to have no credentials.
 
 Seat switching covers Claude workers only.
 Other harnesses have their own credential stores and are unaffected by these settings.
