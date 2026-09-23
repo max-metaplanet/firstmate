@@ -1,0 +1,124 @@
+HEAD=00f937635dfaafe2af80a403a803f7f60fdb3a77
+lab session: fm-lab-fmseat-7134-8885   scratch: /private/tmp/fmseat-live.bV3W
+== 1. switch to alpha (quota-axi hidden from PATH -> undecided probe -> --force)
+$ fm-seat.sh switch alpha --force
+switched: default -> alpha
+applies to NEW claude workers only; running workers keep their own seat
+exit=0
+== 2. spawn task t-alpha on active seat alpha
+$ fm-spawn.sh t-alpha <proj> --scout --harness claude --backend herdr
+warning: herdr presentation parent is absent or ambiguous; using the ordinary flat layout without projection
+spawned t-alpha harness=claude kind=scout window=fm-lab-fmseat-7134-8885:w1:p2 worktree=/Users/max/.treehouse/proj-95b83b/1/proj
+spawn rc=0
+--- t-alpha.meta claude_seat: claude_seat=/private/tmp/fmseat-live.bV3W/seats/alpha
+--- t-alpha pane (fm-lab-fmseat-7134-8885:w1:p2) contents:
+proj  master
+> treehouse get
+A new version of treehouse is available: v0.0.0-20260914233138-6d33753e94ac → v2.3.0
+Run "treehouse update" to update
+
+🌳 Setting up worktree...
+🌳 Entered worktree at ~/.treehouse/proj-95b83b/1/proj. Type 'exit' to return.
+export GOTMPDIR=/tmp/fm-t-alpha/gotmp
+export COMPACT_ADVISER_DISABLE=1
+export FM_TASK_ID=t-alpha
+. '/tmp/fm-t-alpha+fc846fdb448002f265ab5d8f5af0534d18cc015128bf29d82920254b1acd903b/launch.s1790193387.7640.9718.sh'
+
+proj  HEAD
+> export GOTMPDIR=/tmp/fm-t-alpha/gotmp
+
+proj  HEAD
+> export COMPACT_ADVISER_DISABLE=1
+
+proj  HEAD
+> export FM_TASK== 3. switch now to beta while t-alpha exists
+$ fm-seat.sh switch beta --force
+switched: alpha -> beta
+applies to NEW claude workers only; running workers keep their own seat
+exit=0
+== 4. spawn task t-beta
+$ fm-spawn.sh t-beta <proj> --scout --harness claude --backend herdr
+spawned t-beta harness=claude kind=scout window=fm-lab-fmseat-7134-8885:w2:p2 worktree=/Users/max/.treehouse/proj-95b83b/2/proj
+spawn rc=0
+--- t-beta.meta claude_seat: claude_seat=/private/tmp/fmseat-live.bV3W/seats/beta
+--- t-beta pane (fm-lab-fmseat-7134-8885:w2:p2) contents:
+treehouse get
+
+proj  master
+> treehouse get
+A new version of treehouse is available: v0.0.0-20260914233138-6d33753e94ac → v2.3.0
+Run "treehouse update" to update
+
+🌳 Setting up worktree...
+🌳 Entered worktree at ~/.treehouse/proj-95b83b/2/proj. Type 'exit' to return.
+
+proj  HEAD
+> export GOTMPDIR=/tmp/fm-t-beta/gotmp
+export COMPACT_ADVISER_DISABLE=1
+export FM_TASK_ID=t-beta
+
+proj  HEAD
+> export COMPACT_ADVISER_DISABLE=1
+
+proj  HEAD
+> export FM_TASK_ID=t-beta
+
+proj  HEAD
+> . '/tmp/fm-t-beta+fc846fdb448002f265ab5d8f5af0534d18cc015128bf29d82920254b1acd903b/launch.s1790193400.12423.24028.sh'== 5. status
+$ fm-seat.sh status
+active seat for NEW workers: beta
+active profile: /private/tmp/fmseat-live.bV3W/seats/beta
+login state: unknown
+auto-switch threshold: (unset - no automatic switching)
+auto-switch watch: not armed
+
+live workers keep the seat they launched with:
+  t-alpha	/private/tmp/fmseat-live.bV3W/seats/alpha
+  t-beta	/private/tmp/fmseat-live.bV3W/seats/beta
+exit=0
+== 6. relaunch t-alpha after the switch (must stay on alpha)
+window=fm-lab-fmseat-7134-8885:w1:p2
+backend=herdr
+closing the old agent-free pane w1:p2 so relaunch must rebind
+pane close rc=0
+spawned t-alpha harness=claude kind=scout window=fm-lab-fmseat-7134-8885:w3:p2 worktree=/Users/max/.treehouse/proj-95b83b/1/proj
+relaunch rc=0
+--- t-alpha.meta claude_seat after relaunch: claude_seat=/private/tmp/fmseat-live.bV3W/seats/alpha
+--- t-alpha pane (fm-lab-fmseat-7134-8885:w3:p2) contents:
+
+proj  HEAD
+> export GOTMPDIR=/tmp/fm-t-alpha/gotmp
+export COMPACT_ADVISER_DISABLE=1
+export FM_TASK_ID=t-alpha
+
+proj  HEAD
+> export COMPACT_ADVISER_DISABLE=1
+
+proj  HEAD
+> export FM_TASK_ID=t-alpha
+
+proj  HEAD
+> . '/tmp/fm-t-alpha+fc846fdb448002f265ab5d8f5af0534d18cc015128bf29d82920254b1acd903b/launch.s1790193411.20448.30011.sh'
+
+Welcome to Claude Code v2.1.281
+..........................................................
+
+     *                                       █████▓▓░
+                                 *         ███▓░     ░░
+            ░░░░░░      == 7. codex spawn while beta active records no seat
+spawned t-codex harness=codex kind=scout window=fm-lab-fmseat-7134-8885:w4:p2 worktree=/Users/max/.treehouse/proj-95b83b/3/proj
+codex spawn rc=0
+--- t-codex.meta claude_seat: (none)
+$ fm-seat.sh status
+active seat for NEW workers: beta
+active profile: /private/tmp/fmseat-live.bV3W/seats/beta
+login state: unknown
+auto-switch threshold: (unset - no automatic switching)
+auto-switch watch: not armed
+
+live workers keep the seat they launched with:
+  t-alpha	/private/tmp/fmseat-live.bV3W/seats/alpha
+  t-beta	/private/tmp/fmseat-live.bV3W/seats/beta
+  t-codex	(ambient default login)
+exit=0
+teardown rc=0

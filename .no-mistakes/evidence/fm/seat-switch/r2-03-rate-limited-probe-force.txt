@@ -1,0 +1,25 @@
+HEAD=00f937635dfaafe2af80a403a803f7f60fdb3a77 Wed Sep 23 19:58:02 UTC 2026  scratch FM_HOME=/tmp/fmseat-rl.Rk3q, seats root ~/.claude-seats (real signed-in seat-max)
+$ CLAUDE_CONFIG_DIR=~/.claude-seats/seat-max quota-axi ... | jq source,state,attempts
+{"source":"cache","state":{"status":"stale","error":"Claude quota endpoint rate limited"},"attempts":[{"source":"oauth-file","status":"skipped","error":"credentials_missing"},{"source":"keychain","status":"failed","error":"Claude quota endpoint rate limited"}]}
+$ fm-seat.sh probe seat-max
+seat-max	unknown
+exit=2
+$ fm-seat.sh list
+seats root: /Users/max/.claude-seats
+* default	unknown	-	(ambient default login)
+  seat-max	unknown	-	/Users/max/.claude-seats/seat-max
+  seat-max2	logged-in	max2@metaplanet.jp	/Users/max/.claude-seats/seat-max2
+exit=0
+$ fm-seat.sh switch seat-max
+error: could not confirm seat 'seat-max' is logged in (quota read gave no verdict); re-run with --force to switch anyway
+exit=1
+$ fm-seat.sh switch seat-max --force
+switched: default -> seat-max
+applies to NEW claude workers only; running workers keep their own seat
+exit=0
+--- config/claude-seat: seat-max
+$ fm-seat.sh threshold 50
+auto-switch threshold: 50% remaining
+exit=0
+$ fm-seat.sh threshold-reached
+exit=2

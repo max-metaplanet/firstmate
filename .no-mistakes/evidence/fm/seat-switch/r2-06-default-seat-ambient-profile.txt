@@ -1,0 +1,37 @@
+HEAD=00f937635dfaafe2af80a403a803f7f60fdb3a77  scratch FM_HOME=/tmp/fmseat-def.0K6S (active seat: default)
+## ambient CLAUDE_CONFIG_DIR = real signed-in profile ~/.claude-seats/seat-max
+$ env CLAUDE_CONFIG_DIR=/Users/max/.claude-seats/seat-max /Users/max/.no-mistakes/worktrees/61c6dd39b831/01M37V0BXMCRP7HK3XS5G7VH3S/bin/fm-seat.sh probe default
+default	logged-in
+exit=0
+$ env CLAUDE_CONFIG_DIR=/Users/max/.claude-seats/seat-max /Users/max/.no-mistakes/worktrees/61c6dd39b831/01M37V0BXMCRP7HK3XS5G7VH3S/bin/fm-seat.sh status
+active seat for NEW workers: default
+active profile: /Users/max/.claude-seats/seat-max
+login state: logged-in
+auto-switch threshold: (unset - no automatic switching)
+auto-switch watch: not armed
+
+live workers keep the seat they launched with:
+  (no task records)
+exit=0
+## ambient CLAUDE_CONFIG_DIR = never-logged-in empty profile
+$ env CLAUDE_CONFIG_DIR=/tmp/fmseat-def.0K6S/empty-profile /Users/max/.no-mistakes/worktrees/61c6dd39b831/01M37V0BXMCRP7HK3XS5G7VH3S/bin/fm-seat.sh probe default
+default	not-logged-in
+exit=1
+$ env CLAUDE_CONFIG_DIR=/tmp/fmseat-def.0K6S/empty-profile /Users/max/.no-mistakes/worktrees/61c6dd39b831/01M37V0BXMCRP7HK3XS5G7VH3S/bin/fm-seat.sh switch default
+seat unchanged: default
+exit=0
+## threshold-reached on default seat follows ambient profile
+$ /Users/max/.no-mistakes/worktrees/61c6dd39b831/01M37V0BXMCRP7HK3XS5G7VH3S/bin/fm-seat.sh threshold 100
+auto-switch threshold: 100% remaining
+exit=0
+$ env CLAUDE_CONFIG_DIR=/Users/max/.claude-seats/seat-max /Users/max/.no-mistakes/worktrees/61c6dd39b831/01M37V0BXMCRP7HK3XS5G7VH3S/bin/fm-seat.sh threshold-reached
+exit=0
+$ env CLAUDE_CONFIG_DIR=/tmp/fmseat-def.0K6S/empty-profile /Users/max/.no-mistakes/worktrees/61c6dd39b831/01M37V0BXMCRP7HK3XS5G7VH3S/bin/fm-seat.sh threshold-reached
+exit=2
+$ /Users/max/.no-mistakes/worktrees/61c6dd39b831/01M37V0BXMCRP7HK3XS5G7VH3S/bin/fm-seat.sh threshold 1
+auto-switch threshold: 1% remaining
+exit=0
+$ env CLAUDE_CONFIG_DIR=/Users/max/.claude-seats/seat-max /Users/max/.no-mistakes/worktrees/61c6dd39b831/01M37V0BXMCRP7HK3XS5G7VH3S/bin/fm-seat.sh threshold-reached
+exit=0
+## raw account-level vs model-scoped rows for seat-max
+{"source":"oauth","rows":[{"scope":null,"effectivePercentRemaining":null,"percentRemaining":58},{"scope":null,"effectivePercentRemaining":null,"percentRemaining":0},{"scope":null,"effectivePercentRemaining":null,"percentRemaining":100},{"scope":null,"effectivePercentRemaining":null,"percentRemaining":86}]}

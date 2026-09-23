@@ -1,0 +1,30 @@
+HEAD=00f937635dfaafe2af80a403a803f7f60fdb3a77 Wed Sep 23 19:58:18 UTC 2026  scratch FM_HOME=/tmp/fmseat-sw.75xp, seats root ~/.claude-seats
+$ fm-seat.sh probe seat-max2
+seat-max2	logged-in
+exit=0
+$ fm-seat.sh switch seat-max2
+switched: default -> seat-max2
+applies to NEW claude workers only; running workers keep their own seat
+exit=0
+--- config/claude-seat: seat-max2
+$ fm-seat.sh status
+active seat for NEW workers: seat-max2
+active profile: /Users/max/.claude-seats/seat-max2
+login state: logged-in
+auto-switch threshold: (unset - no automatic switching)
+auto-switch watch: not armed
+
+live workers keep the seat they launched with:
+  (no task records)
+exit=0
+$ fm-seat.sh switch default
+error: could not confirm seat 'default' is logged in (quota read gave no verdict); re-run with --force to switch anyway
+exit=1
+$ fm-seat.sh switch --next
+error: no other logged-in seat under the seats root to rotate to; add and log into a second seat first (docs/claude-seats.md). The default profile is never a rotation target, so switch to it by name if that is what you want
+exit=1
+--- config/claude-seat: seat-max2
+$ fm-seat.sh switch --next
+error: no other logged-in seat under the seats root to rotate to; add and log into a second seat first (docs/claude-seats.md). The default profile is never a rotation target, so switch to it by name if that is what you want
+exit=1
+--- config/claude-seat: seat-max2

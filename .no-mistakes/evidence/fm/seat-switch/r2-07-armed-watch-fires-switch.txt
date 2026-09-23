@@ -1,0 +1,39 @@
+HEAD=00f937635dfaafe2af80a403a803f7f60fdb3a77 Wed Sep 23 20:07:01 UTC 2026  scratch FM_HOME=/tmp/fmseat-arm.7AS8, seats root ~/.claude-seats (real seats)
+$ fm-seat.sh switch seat-max --force
+switched: default -> seat-max
+applies to NEW claude workers only; running workers keep their own seat
+exit=0
+$ fm-seat.sh threshold 15
+auto-switch threshold: 15% remaining
+exit=0
+$ fm-seat.sh list
+seats root: /Users/max/.claude-seats
+  default	logged-in	max2@metaplanet.jp	(ambient default login)
+* seat-max	logged-in	max@metaplanet.jp	/Users/max/.claude-seats/seat-max
+  seat-max2	logged-in	max2@metaplanet.jp	/Users/max/.claude-seats/seat-max2
+exit=0
+$ fm-seat.sh threshold-reached
+exit=0
+$ fm-seat.sh arm --interval 5 --stable 1
+armed: when-claude-seat
+starts on the watcher's next cycle; or run: bin/fm-procevent.sh reconcile
+reminder: deterministic, safe, reversible actions only; judgment and destructive actions stay on the wake-and-decide path
+armed: automatic switch at 15% remaining
+fires once; re-arm after it fires to watch the next crossing
+exit=0
+$ fm-procevent-when.sh run when-claude-seat
+when: when-claude-seat
+status: fired
+detail: the condition held and the action exited 0
+condition_polls: 1
+action_exit: 0
+output:
+switched: seat-max -> seat-max2
+applies to NEW claude workers only; running workers keep their own seat
+exit=0
+--- config/claude-seat after: seat-max2
+$ fm-seat.sh retire
+warning: the action had fired but no outcome was captured; verify its effect manually
+retired: when-claude-seat
+retired: when-claude-seat
+exit=0

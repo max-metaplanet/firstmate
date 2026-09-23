@@ -1,0 +1,20 @@
+# Real Claude Code launched by the lab spawns/relaunch wrote its profile state into the seat dirs, not the ambient dir
+== /private/tmp/fmseat-live.bV3W/seats/alpha:
+.claude.json
+backups
+cache
+sessions
+== /private/tmp/fmseat-live.bV3W/seats/beta:
+.claude.json
+backups
+cache
+sessions
+== /private/tmp/fmseat-live.bV3W/ambient:
+== fm-t-alpha+f/launch.s1790193387.7640.9718.sh
+CLAUDE_CONFIG_DIR='/private/tmp/fmseat-live.bV3W/seats/alpha'
+== fm-t-alpha+f/launch.s1790193411.20448.30011.sh
+CLAUDE_CONFIG_DIR='/private/tmp/fmseat-live.bV3W/seats/alpha'
+== fm-t-beta+fc/launch.s1790193400.12423.24028.sh
+CLAUDE_CONFIG_DIR='/private/tmp/fmseat-live.bV3W/seats/beta'
+== fm-t-codex+f/launch.s1790193423.25765.11804.sh
+(no CLAUDE_CONFIG_DIR prefix)

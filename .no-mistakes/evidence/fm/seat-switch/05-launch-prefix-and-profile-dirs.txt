@@ -1,0 +1,20 @@
+# launch scripts fm-spawn wrote for t-alpha (fresh spawn, then --relaunch after 'switch beta')
+## /tmp/fm-t-alpha+8f2fbe237100c3cb65ecb5d97c9bc8145f763ffc690379f85383f352d9767a34/launch.s1790192644.12739.17448.sh
+CLAUDE_CONFIG_DIR='/private/tmp/fmseat-live.8FWJ/seats/alpha'
+## /tmp/fm-t-alpha+8f2fbe237100c3cb65ecb5d97c9bc8145f763ffc690379f85383f352d9767a34/launch.s1790192668.24378.30125.sh
+CLAUDE_CONFIG_DIR='/private/tmp/fmseat-live.8FWJ/seats/alpha'
+## /tmp/fm-t-beta+8f2fbe237100c3cb65ecb5d97c9bc8145f763ffc690379f85383f352d9767a34/launch.s1790192657.20291.342.sh
+CLAUDE_CONFIG_DIR='/private/tmp/fmseat-live.8FWJ/seats/beta'
+
+# profile dirs after the real Claude Code launched in the lab panes
+## seats/alpha
+.claude.json
+backups
+cache
+sessions
+## seats/beta
+.claude.json
+backups
+cache
+sessions
+## ambient

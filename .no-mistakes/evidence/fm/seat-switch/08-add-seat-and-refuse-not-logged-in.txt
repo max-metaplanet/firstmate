@@ -1,0 +1,52 @@
+$ fm-seat.sh add default
+error: 'default' names the ambient login, not a seat directory; choose another name
+exit=1
+$ fm-seat.sh add ../evil
+error: invalid seat name: ../evil
+exit=1
+$ fm-seat.sh add work
+seat profile directory: /tmp/fmseatlab2.TmA4/seats/work
+
+This created an empty profile directory and nothing else. No credential
+was read, copied, or written, and the Keychain was not touched.
+
+The account owner now logs this seat in, personally, in a terminal:
+
+  CLAUDE_CONFIG_DIR=/tmp/fmseatlab2.TmA4/seats/work claude
+
+then runs /login inside that session and signs in as the account this
+seat should bill to. Claude Code stores those credentials under a
+Keychain entry derived from this directory path, so they never mix with
+the default login. Confirm with:
+
+  bin/fm-seat.sh probe work
+
+and then make it the active seat with:
+
+  bin/fm-seat.sh switch work
+exit=0
+--- contents of new seat dir: []  mode: 700
+$ fm-seat.sh probe work
+work	not-logged-in
+exit=1
+$ fm-seat.sh switch work
+error: seat 'work' is not logged in; run 'fm-seat.sh add work' for the owner's login steps (docs/claude-seats.md)
+exit=1
+$ fm-seat.sh switch work --force
+error: seat 'work' is not logged in; run 'fm-seat.sh add work' for the owner's login steps (docs/claude-seats.md)
+exit=1
+--- config/claude-seat exists? no
+$ fm-seat.sh list
+seats root: /tmp/fmseatlab2.TmA4/seats
+* default	logged-in	max2@metaplanet.jp	(ambient default login)
+  work	not-logged-in	-	/tmp/fmseatlab2.TmA4/seats/work
+exit=0
+$ fm-seat.sh switch --next
+error: no other logged-in seat under the seats root to rotate to; add and log into a second seat first (docs/claude-seats.md). The default profile is never a rotation target, so switch to it by name if that is what you want
+exit=1
+$ fm-seat.sh threshold 20
+auto-switch threshold: 20% remaining
+exit=0
+$ fm-seat.sh arm
+error: no other logged-in seat under the seats root to rotate to, so an automatic switch would have nowhere to go; add and log into a second seat first (docs/claude-seats.md). The default profile is never a rotation target
+exit=1

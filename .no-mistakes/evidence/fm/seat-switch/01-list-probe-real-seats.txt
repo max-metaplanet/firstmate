@@ -1,0 +1,15 @@
+$ fm-seat.sh list
+seats root: /Users/max/.claude-seats
+* default	logged-in	max2@metaplanet.jp	(ambient default login)
+  seat-max	logged-in	max@metaplanet.jp	/Users/max/.claude-seats/seat-max
+  seat-max2	logged-in	max2@metaplanet.jp	/Users/max/.claude-seats/seat-max2
+exit=0
+$ fm-seat.sh probe seat-max
+seat-max	logged-in
+exit=0
+$ fm-seat.sh probe seat-max2
+seat-max2	logged-in
+exit=0
+$ fm-seat.sh probe default
+default	logged-in
+exit=0

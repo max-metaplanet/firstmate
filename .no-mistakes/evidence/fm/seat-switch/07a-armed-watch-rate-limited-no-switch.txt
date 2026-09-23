@@ -1,0 +1,53 @@
+Wed Sep 23 19:46:02 UTC 2026
+$ fm-seat.sh arm
+error: no auto-switch threshold configured; set one with 'fm-seat.sh threshold <percent>' first
+exit=1
+$ fm-seat.sh switch seat-max
+switched: seat-max2 -> seat-max
+applies to NEW claude workers only; running workers keep their own seat
+exit=0
+$ fm-seat.sh threshold 15
+auto-switch threshold: 15% remaining
+exit=0
+$ fm-seat.sh arm --interval 1 --stable 1
+armed: when-claude-seat
+starts on the watcher's next cycle; or run: bin/fm-procevent.sh reconcile
+reminder: deterministic, safe, reversible actions only; judgment and destructive actions stay on the wake-and-decide path
+armed: automatic switch at 15% remaining
+fires once; re-arm after it fires to watch the next crossing
+exit=0
+$ fm-seat.sh status
+active seat for NEW workers: seat-max
+active profile: /Users/max/.claude-seats/seat-max
+login state: logged-in
+auto-switch threshold: 15% remaining
+auto-switch watch: armed
+
+live workers keep the seat they launched with:
+  (no task records)
+exit=0
+source id: when-claude-seat
+$ fm-procevent-when.sh run when-claude-seat   # the runner's blocking child, one watcher cycle
+when: when-claude-seat
+status: condition-error
+detail: the condition exited 2 on 3 consecutive polls; the action was not run
+condition_polls: 3
+output:
+run exit=0
+--- config/claude-seat now: seat-max
+when-claude-seat.spec
+when-claude-seat.trust
+$ fm-seat.sh status
+active seat for NEW workers: seat-max
+active profile: /Users/max/.claude-seats/seat-max
+login state: unknown
+auto-switch threshold: 15% remaining
+auto-switch watch: armed
+
+live workers keep the seat they launched with:
+  (no task records)
+exit=0
+$ fm-seat.sh retire
+retired: when-claude-seat
+retired: when-claude-seat
+exit=0

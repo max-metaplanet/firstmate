@@ -1,0 +1,46 @@
+Wed Sep 23 19:45:42 UTC 2026
+# real quota for each seat (account-level + model scopes)
+seat-max: {"source":"oauth","scopes":[{"scope":"all_models","effectivePercentRemaining":0},{"scope":"model:fable","effectivePercentRemaining":0}]}
+seat-max2: {"source":"oauth","scopes":[{"scope":"all_models","effectivePercentRemaining":83},{"scope":"model:fable","effectivePercentRemaining":83}]}
+$ fm-seat.sh threshold
+(unset - no automatic switching)
+exit=0
+$ fm-seat.sh threshold abc
+error: threshold must be a percent between 0 and 100, or 'off'
+exit=1
+$ fm-seat.sh threshold 0
+error: threshold must be a percent between 0 and 100, or 'off'
+exit=1
+$ fm-seat.sh threshold 150
+error: threshold must be a percent between 0 and 100, or 'off'
+exit=1
+$ fm-seat.sh threshold-reached
+exit=2
+$ fm-seat.sh threshold 15
+auto-switch threshold: 15% remaining
+exit=0
+$ fm-seat.sh threshold
+15
+exit=0
+$ fm-seat.sh switch seat-max
+switched: default -> seat-max
+applies to NEW claude workers only; running workers keep their own seat
+exit=0
+$ fm-seat.sh threshold-reached
+exit=0
+$ fm-seat.sh switch --next
+switched: seat-max -> seat-max2
+applies to NEW claude workers only; running workers keep their own seat
+exit=0
+$ fm-seat.sh threshold-reached
+exit=1
+$ fm-seat.sh threshold 100
+auto-switch threshold: 100% remaining
+exit=0
+$ fm-seat.sh threshold-reached
+exit=0
+$ fm-seat.sh threshold off
+auto-switch threshold cleared
+exit=0
+$ fm-seat.sh threshold-reached
+exit=2

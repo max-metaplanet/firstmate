@@ -1,0 +1,18 @@
+Wed Sep 23 19:38:13 UTC 2026
+$ CLAUDE_CONFIG_DIR=~/.claude-seats/seat-max quota-axi ... | jq state,attempts
+{"source":"unavailable","state":{"status":"rate_limited","stale":false,"error":"Claude quota endpoint rate limited","retryAfter":"2026-09-23T19:42:55.942Z","sourcesTried":["oauth-file","keychain"]},"attempts":[{"source":"oauth-file","status":"skipped","error":"credentials_missing"},{"source":"keychain","status":"failed","error":"Claude quota endpoint rate limited"}]}
+$ fm-seat.sh probe seat-max
+seat-max	not-logged-in
+exit=1
+$ fm-seat.sh list
+seats root: /Users/max/.claude-seats
+* default	logged-in	-	(ambient default login)
+  seat-max	not-logged-in	-	/Users/max/.claude-seats/seat-max
+  seat-max2	not-logged-in	-	/Users/max/.claude-seats/seat-max2
+exit=0
+$ fm-seat.sh switch seat-max
+error: seat 'seat-max' is not logged in; run 'fm-seat.sh add seat-max' for the owner's login steps (docs/claude-seats.md)
+exit=1
+$ fm-seat.sh switch seat-max --force
+error: seat 'seat-max' is not logged in; run 'fm-seat.sh add seat-max' for the owner's login steps (docs/claude-seats.md)
+exit=1

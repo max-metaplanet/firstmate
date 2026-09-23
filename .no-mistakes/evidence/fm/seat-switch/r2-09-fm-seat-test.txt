@@ -1,0 +1,16 @@
+ok - rotation chooses the next logged-in seat under the root and skips ones with no credentials
+ok - rotation never targets the default profile, even when it is the only other logged-in store
+ok - rotation never assumes which seats exist and picks up seats added later
+ok - rotation refuses rather than pretending to switch when no other seat is usable
+ok - adding a seat creates an empty profile directory and prints the owner's login steps
+ok - a directory named 'default' is never offered, added, or rotated to
+ok - seat names that are not a single safe path component are refused
+ok - an unset seat setting leaves the launch and the task record exactly as before
+ok - a spawn launches on the active seat and records it in the task's own record
+ok - switching seats leaves a running worker's recorded profile unchanged
+ok - after a switch new workers get the new seat while existing ones keep theirs
+ok - an ambient CLAUDE_CONFIG_DIR still reaches workers and is recorded per task
+ok - a configured seat takes precedence over firstmate's own ambient config dir
+ok - a non-claude spawn records no Claude seat while a named seat is active
+# all fm-seat tests passed
+rc=
