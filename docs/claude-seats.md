@@ -52,7 +52,8 @@ bin/fm-seat.sh probe work
 ```
 
 `logged-in` means the seat is ready.
-`not-logged-in` means step 2 has not completed for this directory.
+`not-logged-in` means the profile was read and holds no login, so step 2 has not completed.
+`unknown` means the probe could not decide; on macOS that is how a seat reads both before step 2 and after it until the one-time Keychain approval described under [Limits worth knowing](#limits-worth-knowing).
 
 ## Switching now
 
@@ -63,7 +64,7 @@ bin/fm-seat.sh switch work
 That is the whole manual switch, and it takes effect immediately for the next worker launched.
 `bin/fm-seat.sh switch default` returns to the ambient login.
 
-A switch is refused when the target seat has no credentials, because every worker sent there would fail on its first message.
+A switch is refused when the target seat is not confirmed logged in, because every worker sent there would fail on its first message; `--force` crosses only an `unknown` verdict.
 
 ## What a switch does and does not touch
 
@@ -119,8 +120,8 @@ The probe cannot tell those two apart, so it reports `unknown` for both, and a p
 To settle it, the owner runs `quota-axi --allow-keychain-prompt` once with that seat's `CLAUDE_CONFIG_DIR` set and answers the prompt with "Always Allow"; after that a signed-in seat probes as `logged-in`.
 In the meantime `switch --force` accepts the uncertainty: if the seat turns out to be empty, the next worker stops on its first message with `Not logged in` rather than spending another account.
 `--force` never overrides `not-logged-in`, which the probe reports only when the evidence positively shows no login.
-`--force` also never switches to a seat with no profile directory under the seats root; create it with `fm-seat.sh add <name>` first.
 On macOS that means `not-logged-in` is rarely seen, because an absent Keychain entry reads as unreadable rather than as read-and-empty; on a file-backed credential store, where an empty profile really can be read and found empty, it is reported normally.
+`--force` also never switches to a seat with no profile directory under the seats root; create it with `fm-seat.sh add <name>` first.
 
 Two things in the setup flow above are **written from Claude Code's documented behaviour and the isolation this change verified, not from an observed sign-in**, because verifying them would mean logging in, which this work deliberately does not do:
 
