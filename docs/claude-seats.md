@@ -13,6 +13,12 @@ It derives that profile's macOS Keychain service name from a hash of the directo
 A seat is therefore just a directory, and switching seats is just choosing which directory the next worker launches with.
 Firstmate never logs in, never copies a credential between profiles, and never touches the Keychain: only the account owner signs a seat in, personally.
 
+**Keep every seat under the seats root, and leave the default profile out of the rotation.**
+The default profile (`~/.claude`) is the account owner's own interactive login.
+It changes whenever they sign in somewhere else, and nothing here can tell which account it currently holds, so an automatic switch must never land workers on it.
+`switch --next` and the threshold watch therefore rotate only among named seats under the seats root; `switch default` remains available as an explicit, manual choice.
+Creating one named seat per account, and leaving the default alone, keeps every account Firstmate uses identifiable and stable.
+
 ## Adding a second seat
 
 Three steps, and only the second one needs the account owner.
@@ -79,12 +85,13 @@ bin/fm-seat.sh threshold 15     # switch when the active seat drops to 15% remai
 bin/fm-seat.sh arm
 ```
 
-`arm` registers one condition-to-action watch: the condition reads the same quota surface the rest of the fleet reads, and the action is `switch --next`, which rotates to the next logged-in seat.
+`arm` registers one condition-to-action watch: the condition reads the same quota surface the rest of the fleet reads, and the action is `switch --next`, which rotates to the next logged-in seat under the seats root.
+The seat set is read fresh at each step, so nothing assumes which seats exist.
 It runs on the supervision cycle that already exists rather than a daemon of its own, and it fires **at most once**, which is what makes it edge-triggered.
 Re-arm after it fires to watch the next crossing.
 
 An unreadable quota is treated as an error, never as a threshold crossing, so a failed read never switches accounts.
-A rotation with no other logged-in seat refuses rather than pretending to switch.
+A rotation with no other logged-in seat under the seats root refuses rather than pretending to switch, and never falls back to the default profile.
 
 `bin/fm-seat.sh threshold off` clears the threshold, and `bin/fm-seat.sh retire` stops the watch.
 
@@ -103,6 +110,14 @@ A newly logged-in seat gets its own Keychain entry, and reading it from a differ
 Until that approval is given, the probe may report `unknown` for a seat that is in fact signed in.
 Answer the prompt once with "Always Allow" - `quota-axi --allow-keychain-prompt` with the seat's `CLAUDE_CONFIG_DIR` set is the read that raises it - and the probe settles afterwards.
 While it is unresolved, `switch --force` proceeds past that uncertainty; `--force` never overrides a seat proven to have no credentials.
+
+Two things in the setup flow above are **written from Claude Code's documented behaviour and the isolation this change verified, not from an observed sign-in**, because verifying them would mean logging in, which this work deliberately does not do:
+
+- the exact prompts `/login` shows in a brand-new empty profile, and
+- whether signing into a second account affects an already running session on the default profile.
+
+Treat step 2 as the shape of the flow rather than a transcript, and expect the sign-in screens to be whatever the installed Claude Code shows.
+What *was* verified directly is the part the mechanism depends on: a profile directory that was never logged into does not fall back to the default account, it stops with `Not logged in`, and each profile gets its own Keychain entry derived from its directory path.
 
 Seat switching covers Claude workers only.
 Other harnesses have their own credential stores and are unaffected by these settings.

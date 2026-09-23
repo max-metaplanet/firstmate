@@ -232,11 +232,15 @@ run_control() {  # <case-dir> <args...>
   # A claude spawn pre-registers workspace trust in the launching user's own
   # store (bin/fm-claude-trust.sh), and a relaunch reaches it through fm-control.sh, so this runs against a throwaway HOME;
   # without it this suite would write the developer's real ~/.claude.json.
+  # CLAUDE_CONFIG_DIR is pinned EMPTY for the same reason, so a value inherited
+  # from the developer's shell cannot beat that throwaway HOME or change any
+  # launch-shape assertion. A test that needs the set case opts in through
+  # FM_TEST_CLAUDE_CONFIG_DIR.
   mkdir -p "$dir/user-home"
   env -u HERDR_ENV -u HERDR_PANE_ID -u HERDR_SESSION -u HERDR_SOCKET_PATH \
     -u HERDR_TAB_ID -u HERDR_WORKSPACE_ID \
     PATH="$dir/fakebin:$PATH" FM_HOME="$dir/home" FM_FAKE_DIR="$dir/fake" \
-    HOME="$dir/user-home" CLAUDE_CONFIG_DIR='' \
+    HOME="$dir/user-home" CLAUDE_CONFIG_DIR="${FM_TEST_CLAUDE_CONFIG_DIR:-}" \
     FM_SPAWN_NO_GUARD=1 GROK_HOME="$dir/grokhome" \
     FM_CONTROL_POLL=0.01 FM_CONTROL_EXIT_WAIT=0.05 FM_CONTROL_LAUNCH_WAIT=0.05 \
     FM_REAL_GIT="${FM_REAL_GIT:-}" FM_FAKE_GIT_FAILURE="${FM_FAKE_GIT_FAILURE:-}" \
@@ -776,6 +780,29 @@ test_relaunch_without_a_recorded_seat_adds_no_config_dir() {
   assert_no_grep "CLAUDE_CONFIG_DIR=" "$dir/fake/literal" \
     "a task with no recorded seat must relaunch with no config-dir prefix"
   pass "fm-control relaunch: a task with no recorded seat is never moved onto one"
+}
+
+test_relaunch_of_a_pre_seats_task_keeps_the_ambient_profile() {
+  local dir out rc seats
+  dir=$(new_case seatambient rl-seat3)
+  add_ship_task "$dir" rl-seat3 claude
+  seats="$dir/seats"
+  mkdir -p "$seats/spare" "$dir/home/config" "$dir/ambient-profile"
+  printf '%s\n' "$seats" > "$dir/home/config/claude-seats-root"
+  # A task that predates seats carries no claude_seat line, and this home runs
+  # under its own ambient CLAUDE_CONFIG_DIR. Its launches always took that
+  # profile, so the relaunch must keep taking it: falling through to the bare
+  # default would move the very task the recorded-seat rule exists to protect.
+  # The home has also switched seats, which must still not reach this task.
+  printf 'spare\n' > "$dir/home/config/claude-seat"
+
+  out=$(FM_TEST_CLAUDE_CONFIG_DIR="$dir/ambient-profile" run_control "$dir" rl-seat3 relaunch --note "stopped mid-task"); rc=$?
+  expect_code 0 "$rc" "a relaunch of a pre-seats task should succeed"$'\n'"$out"
+  assert_grep "CLAUDE_CONFIG_DIR='$dir/ambient-profile'" "$dir/fake/literal" \
+    "a pre-seats task must relaunch on the ambient profile it has always used"
+  assert_no_grep "$seats/spare" "$dir/fake/literal" \
+    "the home's newly active seat must not reach a pre-seats task"
+  pass "fm-control relaunch: a task that predates seats keeps the ambient profile, not the home's new seat"
 }
 
 test_native_ultra_relaunch_preserves_profile_and_rejects_before_stop() {
@@ -2257,6 +2284,7 @@ test_prefixed_recorded_harness_requires_explicit_replacement
 test_same_harness_relaunch_keeps_the_profile_axes
 test_relaunch_keeps_the_recorded_claude_seat_after_a_seat_switch
 test_relaunch_without_a_recorded_seat_adds_no_config_dir
+test_relaunch_of_a_pre_seats_task_keeps_the_ambient_profile
 test_native_ultra_relaunch_preserves_profile_and_rejects_before_stop
 test_explicit_model_wins_over_the_recorded_one
 test_relaunch_onto_an_unverified_harness_is_refused

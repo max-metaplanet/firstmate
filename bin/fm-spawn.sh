@@ -1656,9 +1656,14 @@ if [ "$RELAUNCH" -eq 1 ]; then
   # seat switch between the original spawn and this relaunch must not move the
   # task to another account: its session history lives under the recorded
   # profile directory, so re-resolving here would strand it and silently change
-  # which account the work bills to. An absent line means the task launched
-  # before seats existed, or on the ambient default, and both stay that way.
+  # which account the work bills to.
   SEAT_CONFIG_DIR=$(fm_meta_get "$RELAUNCH_META" claude_seat)
+  # An absent line means the task predates seats. Its launches took firstmate's
+  # OWN ambient CLAUDE_CONFIG_DIR, so that is what this relaunch must keep
+  # giving it: falling through to the bare default here would move exactly the
+  # task this whole mechanism exists to leave alone. The home's active seat is
+  # still never consulted, so a switch cannot reach the task either way.
+  [ -n "$SEAT_CONFIG_DIR" ] || SEAT_CONFIG_DIR=${CLAUDE_CONFIG_DIR:-}
   KIND=$(fm_meta_get "$RELAUNCH_META" kind)
   [ -n "$KIND" ] || KIND=ship
   # A secondmate whose endpoint is gone already has ONE owner for that

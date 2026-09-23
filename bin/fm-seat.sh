@@ -20,9 +20,12 @@
 # switch     Point future claude workers at <name>. `default` clears the setting
 #            and returns to the ambient login. `--next` rotates to the next
 #            logged-in seat after the active one, which is what the threshold
-#            watch fires. Refuses a seat that is not logged in, because a worker
-#            launched there fails on its first message; --force overrides that
-#            refusal when the probe itself cannot reach a verdict.
+#            watch fires. Rotation covers only named seats under the seats root:
+#            the default profile is never a rotation target, because it is the
+#            owner's own interactive login and can change account under them.
+#            Refuses a seat that is not logged in, because a worker launched
+#            there fails on its first message; --force overrides that refusal
+#            when the probe itself cannot reach a verdict.
 # probe      Report whether a seat is logged in. Exit 0 logged in, 1 not logged
 #            in, 2 undecided.
 # add        Create an empty profile directory for a new seat and print the exact
@@ -175,17 +178,27 @@ cmd_probe() {
 # The seat after the active one, in list order, that is logged in. Rotation
 # wraps, and the active seat is never chosen, so a rotation with no other
 # logged-in seat refuses rather than pretending to switch.
+#
+# Rotation covers ONLY named seats under the seats root. The default profile is
+# deliberately excluded: it is the account owner's own interactive login, it
+# changes under them whenever they sign in somewhere else, and nothing here can
+# tell which account it currently holds. An automatic switch must not land
+# workers on a store whose identity moved without anyone asking. `switch
+# default` stays available as an explicit, manual choice.
+#
+# The seat set is read fresh from the seats root on every call, so this never
+# assumes which seats exist or that any particular one is present.
 next_seat() {
   local active seats n i idx name
   active=$(fm_seat_active)
-  mapfile -t seats < <(all_seats)
+  mapfile -t seats < <(fm_seat_list)
   n=${#seats[@]}
-  [ "$n" -gt 1 ] || return 1
-  idx=0
+  [ "$n" -gt 0 ] || return 1
+  idx=-1
   for i in "${!seats[@]}"; do
     [ "${seats[$i]}" = "$active" ] && idx=$i
   done
-  for ((i = 1; i < n; i++)); do
+  for ((i = 1; i <= n; i++)); do
     name=${seats[$(((idx + i) % n))]}
     [ "$name" != "$active" ] || continue
     if [ "$(login_state "$name")" = logged-in ]; then
@@ -223,7 +236,7 @@ cmd_switch() {
   done
   if [ "$rotate" -eq 1 ]; then
     [ -z "$name" ] || usage
-    name=$(next_seat) || die "no other logged-in seat to rotate to; add and log into a second seat first (docs/claude-seats.md)"
+    name=$(next_seat) || die "no other logged-in seat under the seats root to rotate to; add and log into a second seat first (docs/claude-seats.md). The default profile is never a rotation target, so switch to it by name if that is what you want"
   fi
   [ -n "$name" ] || usage
   if [ "$name" != "$FM_SEAT_DEFAULT_NAME" ]; then
@@ -353,7 +366,7 @@ cmd_arm() {
   threshold=$(fm_seat_threshold) ||
     die "no auto-switch threshold configured; set one with 'fm-seat.sh threshold <percent>' first"
   next_seat >/dev/null ||
-    die "no other logged-in seat to rotate to, so an automatic switch would have nowhere to go; add and log into a second seat first (docs/claude-seats.md)"
+    die "no other logged-in seat under the seats root to rotate to, so an automatic switch would have nowhere to go; add and log into a second seat first (docs/claude-seats.md). The default profile is never a rotation target"
   "$SCRIPT_DIR/fm-procevent-when.sh" arm claude-seat \
     --interval "$interval" --stable "$stable" \
     --condition "$SCRIPT_DIR/fm-seat.sh" threshold-reached \

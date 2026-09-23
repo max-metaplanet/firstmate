@@ -253,19 +253,42 @@ test_rotation_picks_the_next_logged_in_seat() {
   local rec out
   rec=$(make_seat_case rotate)
   read_seat_case "$rec"
-  mkdir -p "$SEATS_DIR/work" "$SEATS_DIR/spare"
-  # 'spare' has no credentials, so rotation must skip it and choose 'work'.
-  seat_logged_in "$SPEC_DIR" '(default)' "$SEATS_DIR/work"
+  mkdir -p "$SEATS_DIR/work" "$SEATS_DIR/spare" "$SEATS_DIR/third"
+  # 'spare' has no credentials, so rotation must skip it.
+  seat_logged_in "$SPEC_DIR" '(default)' "$SEATS_DIR/work" "$SEATS_DIR/third"
 
   out=$(run_seat "$HOME_DIR" "$FAKEBIN" switch --next)
   expect_code 0 "$?" "rotation to a logged-in seat should succeed"
-  assert_contains "$out" "-> work" "rotation must skip the seat that is not logged in"
+  assert_contains "$out" "-> third" "rotation must skip the seat that is not logged in"
 
-  # From 'work', the only other logged-in seat is the default.
   out=$(run_seat "$HOME_DIR" "$FAKEBIN" switch --next)
-  expect_code 0 "$?" "rotation should wrap to the default seat"
-  assert_contains "$out" "-> default" "rotation must wrap to the remaining logged-in seat"
-  pass "rotation chooses the next logged-in seat and skips ones with no credentials"
+  expect_code 0 "$?" "rotation should continue to the other logged-in seat"
+  assert_contains "$out" "-> work" "rotation must move on to the remaining logged-in seat"
+
+  # And it wraps, still without ever choosing the default profile.
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" switch --next)
+  expect_code 0 "$?" "rotation should wrap"
+  assert_contains "$out" "-> third" "rotation must wrap among the seats under the root"
+  pass "rotation chooses the next logged-in seat under the root and skips ones with no credentials"
+}
+
+test_rotation_never_targets_the_default_profile() {
+  local rec out status
+  rec=$(make_seat_case rotate-not-default)
+  read_seat_case "$rec"
+  mkdir -p "$SEATS_DIR/work"
+  # The default profile is logged in and is the only other candidate, but it is
+  # the owner's own interactive login and its account can change under them, so
+  # an automatic rotation must never land workers on it.
+  seat_logged_in "$SPEC_DIR" '(default)' "$SEATS_DIR/work"
+  printf 'work\n' > "$HOME_DIR/config/claude-seat"
+
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" switch --next)
+  status=$?
+  expect_code 1 "$status" "rotation must refuse rather than fall back to the default profile"
+  assert_not_contains "$out" "-> default" "rotation must never choose the default profile"
+  assert_grep "work" "$HOME_DIR/config/claude-seat" "a refused rotation must leave the active seat in place"
+  pass "rotation never targets the default profile, even when it is the only other logged-in store"
 }
 
 test_rotation_refuses_when_there_is_nowhere_to_go() {
@@ -281,6 +304,28 @@ test_rotation_refuses_when_there_is_nowhere_to_go() {
   assert_contains "$out" "no other logged-in seat" "the refusal must name the cause"
   assert_absent "$HOME_DIR/config/claude-seat" "a refused rotation must change nothing"
   pass "rotation refuses rather than pretending to switch when no other seat is usable"
+}
+
+test_rotation_reads_the_seat_set_fresh() {
+  local rec out
+  rec=$(make_seat_case rotate-fresh)
+  read_seat_case "$rec"
+  mkdir -p "$SEATS_DIR/work"
+  seat_logged_in "$SPEC_DIR" "$SEATS_DIR/work"
+  printf 'work\n' > "$HOME_DIR/config/claude-seat"
+
+  # Nothing else exists yet, so there is nowhere to rotate.
+  run_seat "$HOME_DIR" "$FAKEBIN" switch --next >/dev/null 2>&1
+  expect_code 1 "$?" "precondition: a single seat leaves nowhere to rotate"
+
+  # A seat added afterwards must be picked up without anything being re-armed:
+  # the seat set is never assumed or cached.
+  mkdir -p "$SEATS_DIR/later"
+  seat_logged_in "$SPEC_DIR" "$SEATS_DIR/work" "$SEATS_DIR/later"
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" switch --next)
+  expect_code 0 "$?" "a seat created after the first attempt should be found"
+  assert_contains "$out" "-> later" "rotation must read the seat set fresh each time"
+  pass "rotation never assumes which seats exist and picks up seats added later"
 }
 
 test_add_creates_the_profile_directory_without_touching_credentials() {
@@ -484,6 +529,8 @@ test_threshold_is_configurable_and_absent_by_default
 test_threshold_reached_is_edge_triggered_by_the_configured_percent
 test_unreadable_quota_never_reports_the_threshold_reached
 test_rotation_picks_the_next_logged_in_seat
+test_rotation_never_targets_the_default_profile
+test_rotation_reads_the_seat_set_fresh
 test_rotation_refuses_when_there_is_nowhere_to_go
 test_add_creates_the_profile_directory_without_touching_credentials
 test_seat_names_that_escape_the_seats_root_are_refused
