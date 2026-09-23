@@ -268,6 +268,8 @@ cmd_switch() {
 
 cmd_add() {
   local name=$1 dir
+  [ "$name" != "$FM_SEAT_DEFAULT_NAME" ] ||
+    die "'$FM_SEAT_DEFAULT_NAME' names the ambient login, not a seat directory; choose another name"
   fm_seat_name_valid "$name" || die "invalid seat name: $name"
   dir=$(fm_seat_dir "$name") || die "seat '$name' does not resolve to a profile directory"
   mkdir -p "$dir" || die "could not create $dir"

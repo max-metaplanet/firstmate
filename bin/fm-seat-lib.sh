@@ -112,8 +112,14 @@ fm_seat_spawn_config_dir() {
 
 # fm_seat_list
 # Every seat name that has a profile directory under the root, one per line, in
-# a stable order. The default seat is not listed here: it has no directory, and
-# callers that present it add it themselves.
+# a stable order. The set is read from the filesystem on every call, so nothing
+# assumes which seats exist.
+#
+# The default seat is not listed here: it has no directory, and callers that
+# present it add it themselves. A directory literally NAMED "default" is skipped
+# for the same reason - that name is reserved for the ambient login, so such a
+# directory can never be selected, and listing it would show a seat that every
+# switch then refuses.
 fm_seat_list() {
   local root entry name
   root=$(fm_seat_root)
@@ -121,6 +127,7 @@ fm_seat_list() {
   for entry in "$root"/*; do
     [ -d "$entry" ] || continue
     name=${entry##*/}
+    [ "$name" != "$FM_SEAT_DEFAULT_NAME" ] || continue
     fm_seat_name_valid "$name" || continue
     printf '%s\n' "$name"
   done

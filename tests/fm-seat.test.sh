@@ -344,6 +344,33 @@ test_add_creates_the_profile_directory_without_touching_credentials() {
   pass "adding a seat creates an empty profile directory and prints the owner's login steps"
 }
 
+test_a_directory_named_default_is_not_offered_as_a_seat() {
+  local rec out status
+  rec=$(make_seat_case reserved-default)
+  read_seat_case "$rec"
+  # "default" names the ambient login, so a directory of that name can never be
+  # selected. Listing it would offer a seat that every switch then refuses.
+  mkdir -p "$SEATS_DIR/default" "$SEATS_DIR/work"
+  seat_logged_in "$SPEC_DIR" '(default)' "$SEATS_DIR/work" "$SEATS_DIR/default"
+
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" list)
+  [ "$(printf '%s\n' "$out" | grep -c '[[:space:]]default[[:space:]]')" -eq 1 ] \
+    || fail "the reserved default seat must appear exactly once, not also as a directory"$'\n'"$out"
+  assert_not_contains "$out" "$SEATS_DIR/default" \
+    "a directory named 'default' must not be listed as a seat profile"
+
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" add default)
+  status=$?
+  expect_code 1 "$status" "adding a seat named 'default' must be refused"
+  assert_contains "$out" "ambient login" "the refusal must say why the name is reserved"
+
+  # Rotation must not offer it either.
+  printf 'work\n' > "$HOME_DIR/config/claude-seat"
+  run_seat "$HOME_DIR" "$FAKEBIN" switch --next >/dev/null 2>&1
+  expect_code 1 "$?" "a directory named 'default' must not become a rotation target"
+  pass "a directory named 'default' is never offered, added, or rotated to"
+}
+
 test_seat_names_that_escape_the_seats_root_are_refused() {
   local rec name
   rec=$(make_seat_case seat-names)
@@ -533,6 +560,7 @@ test_rotation_never_targets_the_default_profile
 test_rotation_reads_the_seat_set_fresh
 test_rotation_refuses_when_there_is_nowhere_to_go
 test_add_creates_the_profile_directory_without_touching_credentials
+test_a_directory_named_default_is_not_offered_as_a_seat
 test_seat_names_that_escape_the_seats_root_are_refused
 test_spawn_without_a_seat_sets_no_config_dir
 test_spawn_uses_the_active_seat_and_records_it
