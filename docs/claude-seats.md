@@ -109,9 +109,11 @@ The login probe runs `quota-axi` against the seat's profile and treats an `oauth
 Note that `quota-axi --profile-only` is **not** a usable probe here: that flag reads only a credential file and never the Keychain, so on macOS it reports "credentials missing" for a perfectly good seat.
 
 A newly logged-in seat gets its own Keychain entry, and reading it from a different tool can require a one-time macOS approval.
-Until that approval is given, the probe may report `unknown` for a seat that is in fact signed in.
-To settle it, the owner runs `quota-axi --allow-keychain-prompt` once with that seat's `CLAUDE_CONFIG_DIR` set and answers the prompt with "Always Allow"; after that the probe reads `logged-in`.
-While it is unresolved, `switch --force` proceeds past that uncertainty; `--force` never overrides a seat proven to have no credentials.
+Until that approval is given, the Keychain read is refused, and that refusal looks the same whether the seat was never logged into or is signed in but not yet approved.
+The probe cannot tell those two apart, so it reports `unknown` for both, and a plain `switch` refuses.
+To settle it, the owner runs `quota-axi --allow-keychain-prompt` once with that seat's `CLAUDE_CONFIG_DIR` set and answers the prompt with "Always Allow"; after that a signed-in seat probes as `logged-in`.
+In the meantime `switch --force` accepts the uncertainty: if the seat turns out to be empty, the next worker stops on its first message with `Not logged in` rather than spending another account.
+`--force` never overrides `not-logged-in`, which the probe reports only when the evidence positively shows no login.
 
 Two things in the setup flow above are **written from Claude Code's documented behaviour and the isolation this change verified, not from an observed sign-in**, because verifying them would mean logging in, which this work deliberately does not do:
 
