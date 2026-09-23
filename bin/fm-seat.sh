@@ -26,7 +26,7 @@
 #            Refuses a seat that is not logged in, because a worker launched
 #            there fails on its first message; --force overrides that refusal
 #            when the probe itself cannot reach a verdict. After the switch it
-#            runs bin/fm-config-push.sh so this machine's running local
+#            runs bin/fm-config-push.sh --local-only so this machine's running local
 #            secondmate homes take the new seat too, reporting each home.
 # probe      Report whether a seat is logged in. Exit 0 logged in, 1 not logged
 #            in, 2 undecided.
@@ -276,10 +276,10 @@ cmd_switch() {
 # primary's switch; it is reported, and the push can be re-run on its own.
 propagate_to_secondmates() {
   if FM_HOME="$FM_HOME" FM_ROOT_OVERRIDE="$FM_ROOT" FM_STATE_OVERRIDE="$STATE" \
-    FM_CONFIG_OVERRIDE="$CONFIG" "$SCRIPT_DIR/fm-config-push.sh"; then
+    FM_CONFIG_OVERRIDE="$CONFIG" "$SCRIPT_DIR/fm-config-push.sh" --local-only; then
     return 0
   fi
-  printf 'warning: seat switched here, but not every secondmate home was updated (see above); those homes keep spawning on their previous seat until bin/fm-config-push.sh succeeds\n' >&2
+  printf 'warning: seat switched here, but not every secondmate home was updated (see above); those homes keep spawning on their previous seat until bin/fm-config-push.sh --local-only succeeds\n' >&2
 }
 
 cmd_add() {

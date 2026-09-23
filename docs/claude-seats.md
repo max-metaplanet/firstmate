@@ -101,8 +101,9 @@ A rotation with no other logged-in seat under the seats root refuses rather than
 ## Secondmate homes
 
 All three seat settings are inherited into this machine's local secondmate homes through the primary-authoritative configuration contract, so a secondmate's own Claude crewmates launch on the same seat as the primary's.
-Every switch, manual or automatic, runs `bin/fm-config-push.sh` right after it changes the primary's seat, so running local secondmates pick up the new seat without being stopped, and the switch prints which homes were updated and which were not.
-A failed push never undoes the primary's switch: it is reported, those homes keep spawning on their previous seat, and re-running `bin/fm-config-push.sh` retries them.
+Every switch, manual or automatic, runs `bin/fm-config-push.sh --local-only` right after it changes the primary's seat, so running local secondmates pick up the new seat without being stopped, and the switch prints which homes were updated and which were not.
+A failed push never undoes the primary's switch: it is reported, those homes keep spawning on their previous seat, and re-running `bin/fm-config-push.sh --local-only` retries them.
+The push skips remote routes entirely, so a switch never opens SSH, never waits on another machine, and reports only this machine's homes.
 Remote secondmate homes on other machines never receive seat settings, because a seat is a Keychain-backed profile logged in on this machine only; a remote home keeps its own login exactly as before seats existed.
 The seats themselves live outside any firstmate home - by default under `~/.claude-seats` - so the owner logs into a seat once and every home on the machine reaches the same profile.
 A home that needs its own set of seats overrides `config/claude-seats-root`.

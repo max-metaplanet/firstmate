@@ -330,6 +330,75 @@ test_failed_secondmate_push_does_not_undo_the_switch() {
   pass "a failed secondmate push is reported and never undoes the primary switch"
 }
 
+# add_unreachable_remote_secondmate <home> <fakebin> <id> -> echoes the path of
+# a log that records every SSH attempt to the remote route, which always fails.
+add_unreachable_remote_secondmate() {
+  local home=$1 fakebin=$2 id=$3 log
+  log="$(dirname "$home")/ssh-$id.log"
+  : > "$log"
+  cat > "$fakebin/unreachable-ssh" <<SH
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >> "$log"
+exit 255
+SH
+  chmod +x "$fakebin/unreachable-ssh"
+  {
+    printf 'window=firstmate:fm-%s\n' "$id"
+    printf 'kind=secondmate\n'
+    printf 'home=/remote/home-%s\n' "$id"
+    printf 'remote_host=down-host\n'
+  } > "$home/state/$id.meta"
+  printf -- '- %s - Remote route (host: down-host; root: /remote/root; home: /remote/home-%s; scope: test; projects: ; added 2026-09-23)\n' \
+    "$id" "$id" >> "$home/data/secondmates.md"
+  printf '%s\n' "$log"
+}
+
+test_switch_never_contacts_remote_routes() {
+  local rec out sm log
+  rec=$(make_seat_case switch-remote-down)
+  read_seat_case "$rec"
+  mkdir -p "$SEATS_DIR/work"
+  seat_logged_in "$SPEC_DIR" '(default)' "$SEATS_DIR/work"
+  sm=$(add_local_secondmate "$HOME_DIR" "$FAKEBIN" smlocal)
+  log=$(add_unreachable_remote_secondmate "$HOME_DIR" "$FAKEBIN" smremote)
+
+  out=$(TMUX='' FM_SSH_BIN="$FAKEBIN/unreachable-ssh" run_seat "$HOME_DIR" "$FAKEBIN" switch work)
+  expect_code 0 "$?" "a switch with an unreachable remote route should succeed: $out"
+  [ "$(cat "$sm/config/claude-seat" 2>/dev/null)" = work ] \
+    || fail "the local secondmate home must still take the new seat: $out"
+  [ ! -s "$log" ] || fail "a seat switch must never open SSH to a remote route: $(cat "$log")"
+  assert_not_contains "$out" "smremote" "a switch must report only this machine's homes"
+  assert_not_contains "$out" "not every secondmate home was updated" \
+    "an unreachable remote route must not make a switch report a home stuck on its previous seat"
+  pass "a seat switch pushes only local secondmate homes and never waits on a remote route"
+}
+
+test_config_push_without_local_only_still_reaches_remote_routes() {
+  local rec out sm log
+  rec=$(make_seat_case push-no-flag)
+  read_seat_case "$rec"
+  printf 'codex\n' > "$HOME_DIR/config/crew-harness"
+  sm=$(add_local_secondmate "$HOME_DIR" "$FAKEBIN" smlocal)
+  log=$(add_unreachable_remote_secondmate "$HOME_DIR" "$FAKEBIN" smremote)
+  out=$(TMUX='' PATH="$FAKEBIN:$PATH" FM_HOME="$HOME_DIR" FM_CONFIG_OVERRIDE="$HOME_DIR/config" \
+    FM_STATE_OVERRIDE="$HOME_DIR/state" FM_DATA_OVERRIDE="$HOME_DIR/data" \
+    FM_SSH_BIN="$FAKEBIN/unreachable-ssh" "$ROOT/bin/fm-config-push.sh" 2>&1)
+  expect_code 1 "$?" "a plain config push must still report the unreachable remote route: $out"
+  [ -s "$log" ] || fail "a plain config push must still attempt the remote route: $out"
+  assert_contains "$out" "secondmate smremote (down-host:" "a plain config push must report the remote route"
+  [ "$(cat "$sm/config/crew-harness" 2>/dev/null)" = codex ] \
+    || fail "a plain config push must still update the local home: $out"
+
+  : > "$log"
+  out=$(TMUX='' PATH="$FAKEBIN:$PATH" FM_HOME="$HOME_DIR" FM_CONFIG_OVERRIDE="$HOME_DIR/config" \
+    FM_STATE_OVERRIDE="$HOME_DIR/state" FM_DATA_OVERRIDE="$HOME_DIR/data" \
+    FM_SSH_BIN="$FAKEBIN/unreachable-ssh" "$ROOT/bin/fm-config-push.sh" --local-only 2>&1)
+  expect_code 0 "$?" "a local-only config push must skip the remote route: $out"
+  [ ! -s "$log" ] || fail "a local-only config push must not open SSH: $(cat "$log")"
+  assert_contains "$out" "secondmate smlocal (" "a local-only config push must still report the local home"
+  pass "fm-config-push reaches remote routes by default and skips them only with --local-only"
+}
+
 test_remote_route_never_receives_seat_settings() {
   local rec out remote payload hash
   rec=$(make_seat_case remote-inherit)
@@ -826,6 +895,8 @@ test_switch_back_to_default_clears_the_setting
 test_switch_reaches_running_local_secondmate_homes
 test_failed_secondmate_push_does_not_undo_the_switch
 test_remote_route_never_receives_seat_settings
+test_switch_never_contacts_remote_routes
+test_config_push_without_local_only_still_reaches_remote_routes
 test_threshold_is_configurable_and_absent_by_default
 test_threshold_reached_is_edge_triggered_by_the_configured_percent
 test_unreadable_quota_never_reports_the_threshold_reached
