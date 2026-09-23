@@ -118,10 +118,17 @@ die_usage() {
   exit 2
 }
 
-# quota-axi's read is a single local call, so it gets one fixed bound that sits
-# well inside the watcher's default FM_CHECK_TIMEOUT of 30 seconds, leaving room
-# for the record write and the notification after it.
-READ_TIMEOUT_SECS=10
+# The watcher's per check bound, read from this check's own environment because
+# the watcher runs the check as a direct child. fm_run_timed counts a whole
+# second before it alarms and allows a second of kill grace, so the read bound
+# leaves that margin below it, and never exceeds 10 seconds for a single local
+# call. A bound that leaves no room is reported as a read not measured.
+CHECK_TIMEOUT=${FM_CHECK_TIMEOUT:-30}
+case "$CHECK_TIMEOUT" in
+  ''|*[!0-9]*|0) CHECK_TIMEOUT=30 ;;
+esac
+READ_TIMEOUT_SECS=$((CHECK_TIMEOUT - 3))
+[ "$READ_TIMEOUT_SECS" -le 10 ] || READ_TIMEOUT_SECS=10
 
 # --- config -------------------------------------------------------------
 # Prints "<window-id>\t<percent>" once per valid directive in config/usage-warner,
@@ -179,6 +186,10 @@ usage_warner_read() {
     printf 'jq is not installed\n'
     return 1
   }
+  if [ "$READ_TIMEOUT_SECS" -lt 1 ]; then
+    printf 'quota-axi read not measured: FM_CHECK_TIMEOUT of %ss leaves no room for a read\n' "$CHECK_TIMEOUT"
+    return 1
+  fi
   json=$(fm_run_timed "$READ_TIMEOUT_SECS" quota-axi --provider "$PROVIDER" --json --full --no-credential-refresh 2>/dev/null)
   rc=$?
   if [ "$rc" -eq 124 ]; then

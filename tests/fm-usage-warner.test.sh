@@ -255,6 +255,46 @@ EOF
   pass "fm-usage-warner: a slow read is bounded and reported as a timeout"
 }
 
+test_read_bound_fits_a_lowered_check_timeout() {
+  local home fakebin out start elapsed
+  home=$(make_home low-check-timeout)
+  fakebin="$TMP_ROOT/low-check-timeout/fakebin"
+  mkdir -p "$fakebin"
+  cat > "$fakebin/quota-axi" <<'EOF'
+#!/usr/bin/env bash
+sleep 60
+EOF
+  chmod +x "$fakebin/quota-axi"
+  printf 'five_hour:80\n' > "$home/config/usage-warner"
+  start=$(date +%s)
+  out=$(FM_CHECK_TIMEOUT=6 PATH="$fakebin:$PATH" FM_HOME="$home" "$WARNER" check </dev/null 2>&1)
+  elapsed=$(( $(date +%s) - start ))
+  [ "$elapsed" -lt 6 ] || fail "the read must end inside a lowered watcher bound, took ${elapsed}s"
+  assert_contains "$out" "did not finish within the 3s budget" "the read bound is cut to fit FM_CHECK_TIMEOUT"
+  pass "fm-usage-warner: the read bound is cut to fit a lowered FM_CHECK_TIMEOUT"
+}
+
+test_no_room_for_a_read_is_recorded_as_not_measured() {
+  local home fakebin out rc=0 start elapsed
+  home=$(make_home no-room)
+  fakebin="$TMP_ROOT/no-room/fakebin"
+  mkdir -p "$fakebin"
+  cat > "$fakebin/quota-axi" <<'EOF'
+#!/usr/bin/env bash
+sleep 60
+EOF
+  chmod +x "$fakebin/quota-axi"
+  printf 'five_hour:80\n' > "$home/config/usage-warner"
+  start=$(date +%s)
+  out=$(FM_CHECK_TIMEOUT=2 PATH="$fakebin:$PATH" FM_HOME="$home" "$WARNER" check </dev/null 2>&1) || rc=$?
+  elapsed=$(( $(date +%s) - start ))
+  expect_code 0 "$rc" "a watcher bound too small for a read must not fail the check"
+  [ "$elapsed" -lt 2 ] || fail "a skipped read must return inside the watcher bound, took ${elapsed}s"
+  assert_contains "$out" "not measured" "a skipped read is reported as not measured"
+  assert_contains "$(cat "$home/state/.usage-warner")" "not measured" "the de-dupe record keeps the not-measured report"
+  pass "fm-usage-warner: a watcher bound with no room for a read is recorded as not measured"
+}
+
 test_unconfigured_invocation_ignores_unused_environment() {
   local home out rc=0
   home=$(make_home unused-env)
@@ -354,6 +394,8 @@ test_quota_axi_missing_is_reported_once
 test_jq_missing_is_reported
 test_malformed_quota_axi_output_is_reported
 test_slow_quota_axi_is_reported_as_a_timeout
+test_read_bound_fits_a_lowered_check_timeout
+test_no_room_for_a_read_is_recorded_as_not_measured
 test_unconfigured_invocation_ignores_unused_environment
 test_arm_refuses_without_a_configured_threshold
 test_arm_refuses_on_a_non_macos_platform

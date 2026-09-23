@@ -59,8 +59,9 @@ this).
 Multiple windows crossing in the same read are batched into one notification
 rather than one per window.
 A standing read failure (`quota-axi` missing, `jq` missing, a malformed
-response, or a read that does not finish inside its fixed 10-second bound,
-which sits inside the watcher's default `FM_CHECK_TIMEOUT`) is reported once until it changes, the same contract
+response, or a read that does not finish inside its bound of 10 seconds, cut
+to 3 seconds under `FM_CHECK_TIMEOUT` when that is lower, or skipped as not
+measured when `FM_CHECK_TIMEOUT` leaves no room) is reported once until it changes, the same contract
 `bin/fm-mail-check.sh` and `bin/fm-tool-update-check.sh` already use for their
 own standing checks.
 
