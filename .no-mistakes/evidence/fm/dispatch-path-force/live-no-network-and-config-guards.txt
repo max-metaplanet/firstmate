@@ -1,0 +1,22 @@
+===== forced home, vercel.json declared, PATH has NO curl (command -v curl: absent)
+dispatch-resolve:
+  status: escalate
+  decided_by: path-forced
+  rule: rule_3 (The task changes a database migration, a generated schema ar)
+  forced_path: vercel.json   forced_pattern: vercel.json
+  reason: no rankable eligible candidate
+  note: rule matched
+  candidate: claude:claude-opus-5  provider=claude  scope=all_models  remaining=-%  spendPriority=-  runway=unknown  -> eligible, unranked: provider claude unmeasured (unknown): disclosed uncertainty
+exit=0
+===== same PATH without curl, non-forced brief (src/pager.ts) -> Jev path runs and reports curl missing
+dispatch-resolve: error (curl not installed)
+dispatch-resolve:
+  status: error
+  reason: curl not installed
+exit=0
+===== config guard: path_force with an unknown value
+error: malformed rules file: /tmp/fm-pathforce-lab.oc9N/bad1/config/crew-dispatch.json - path_force must be "deployment-config" when present
+exit=2
+===== config guard: two rules declare path_force
+error: malformed rules file: /tmp/fm-pathforce-lab.oc9N/bad2/config/crew-dispatch.json - at most one rule may declare path_force
+exit=2

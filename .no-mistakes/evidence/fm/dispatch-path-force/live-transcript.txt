@@ -1,0 +1,185 @@
+===== home=forced brief=vercel (Target paths: vercel.json)
+dispatch-resolve:
+  status: clear
+  decided_by: path-forced
+  rule: rule_3 (The task changes a database migration, a generated schema ar)
+  forced_path: vercel.json   forced_pattern: vercel.json
+  note: rule matched
+  candidate: claude:claude-opus-5  provider=claude  scope=all_models  remaining=19%  spendPriority=3.7459  runway=projected_exhaustion  -> eligible
+  profile: --harness 'claude' --model 'claude-opus-5' --effort 'high'
+exit=0
+===== home=forced brief=tf (Target paths: infra/main.tf)
+dispatch-resolve:
+  status: clear
+  decided_by: path-forced
+  rule: rule_3 (The task changes a database migration, a generated schema ar)
+  forced_path: infra/main.tf   forced_pattern: *.tf or *.tfvars
+  note: rule matched
+  candidate: claude:claude-opus-5  provider=claude  scope=all_models  remaining=19%  spendPriority=3.746  runway=projected_exhaustion  -> eligible
+  profile: --harness 'claude' --model 'claude-opus-5' --effort 'high'
+exit=0
+===== home=forced brief=tfvars (Target paths: env/prod.tfvars)
+dispatch-resolve:
+  status: clear
+  decided_by: path-forced
+  rule: rule_3 (The task changes a database migration, a generated schema ar)
+  forced_path: env/prod.tfvars   forced_pattern: *.tf or *.tfvars
+  note: rule matched
+  candidate: claude:claude-opus-5  provider=claude  scope=all_models  remaining=19%  spendPriority=3.746  runway=projected_exhaustion  -> eligible
+  profile: --harness 'claude' --model 'claude-opus-5' --effort 'high'
+exit=0
+===== home=forced brief=cfn (Target paths: template.yaml)
+dispatch-resolve:
+  status: clear
+  decided_by: path-forced
+  rule: rule_3 (The task changes a database migration, a generated schema ar)
+  forced_path: template.yaml   forced_pattern: CloudFormation template
+  note: rule matched
+  candidate: claude:claude-opus-5  provider=claude  scope=all_models  remaining=19%  spendPriority=3.746  runway=projected_exhaustion  -> eligible
+  profile: --harness 'claude' --model 'claude-opus-5' --effort 'high'
+exit=0
+===== home=forced brief=cfnjson (Target paths: stacks/api.template.json)
+dispatch-resolve:
+  status: clear
+  decided_by: path-forced
+  rule: rule_3 (The task changes a database migration, a generated schema ar)
+  forced_path: stacks/api.template.json   forced_pattern: CloudFormation template
+  note: rule matched
+  candidate: claude:claude-opus-5  provider=claude  scope=all_models  remaining=19%  spendPriority=3.7461  runway=projected_exhaustion  -> eligible
+  profile: --harness 'claude' --model 'claude-opus-5' --effort 'high'
+exit=0
+===== home=forced brief=k8s (Target paths: deploy/web-ingress.yaml)
+dispatch-resolve:
+  status: escalate
+  decided_by: path-forced
+  rule: rule_3 (The task changes a database migration, a generated schema ar)
+  forced_path: deploy/web-ingress.yaml   forced_pattern: Kubernetes or ingress manifest
+  reason: no rankable eligible candidate
+  note: rule matched
+  candidate: claude:claude-opus-5  provider=claude  scope=all_models  remaining=-%  spendPriority=-  runway=unknown  -> eligible, unranked: provider claude unmeasured (unknown): disclosed uncertainty
+exit=0
+===== home=forced brief=argo (Target paths: argo/app.yaml)
+dispatch-resolve:
+  status: escalate
+  decided_by: path-forced
+  rule: rule_3 (The task changes a database migration, a generated schema ar)
+  forced_path: argo/app.yaml   forced_pattern: ArgoCD manifest directory
+  reason: no rankable eligible candidate
+  note: rule matched
+  candidate: claude:claude-opus-5  provider=claude  scope=all_models  remaining=-%  spendPriority=-  runway=unknown  -> eligible, unranked: provider claude unmeasured (unknown): disclosed uncertainty
+exit=0
+===== home=forced brief=helm (Target paths: charts/web/values-prod.yaml)
+dispatch-resolve:
+  status: escalate
+  decided_by: path-forced
+  rule: rule_3 (The task changes a database migration, a generated schema ar)
+  forced_path: charts/web/values-prod.yaml   forced_pattern: Helm chart manifest
+  reason: no rankable eligible candidate
+  note: rule matched
+  candidate: claude:claude-opus-5  provider=claude  scope=all_models  remaining=-%  spendPriority=-  runway=unknown  -> eligible, unranked: provider claude unmeasured (unknown): disclosed uncertainty
+exit=0
+===== home=forced brief=deploysh (Target paths: scripts/deploy-web.sh)
+dispatch-resolve:
+  status: escalate
+  decided_by: path-forced
+  rule: rule_3 (The task changes a database migration, a generated schema ar)
+  forced_path: scripts/deploy-web.sh   forced_pattern: deploy or release script
+  reason: no rankable eligible candidate
+  note: rule matched
+  candidate: claude:claude-opus-5  provider=claude  scope=all_models  remaining=-%  spendPriority=-  runway=unknown  -> eligible, unranked: provider claude unmeasured (unknown): disclosed uncertainty
+exit=0
+===== home=forced brief=ps1 (Target paths: tools/deploy.ps1)
+dispatch-resolve:
+  status: escalate
+  decided_by: path-forced
+  rule: rule_3 (The task changes a database migration, a generated schema ar)
+  forced_path: tools/deploy.ps1   forced_pattern: deploy or release script
+  reason: no rankable eligible candidate
+  note: rule matched
+  candidate: claude:claude-opus-5  provider=claude  scope=all_models  remaining=-%  spendPriority=-  runway=unknown  -> eligible, unranked: provider claude unmeasured (unknown): disclosed uncertainty
+exit=0
+===== home=forced brief=relwf (Target paths: .github/workflows/release.yml)
+dispatch-resolve:
+  status: escalate
+  decided_by: path-forced
+  rule: rule_3 (The task changes a database migration, a generated schema ar)
+  forced_path: .github/workflows/release.yml   forced_pattern: release workflow
+  reason: no rankable eligible candidate
+  note: rule matched
+  candidate: claude:claude-opus-5  provider=claude  scope=all_models  remaining=-%  spendPriority=-  runway=unknown  -> eligible, unranked: provider claude unmeasured (unknown): disclosed uncertainty
+exit=0
+===== home=forced brief=multi (Target paths: src/util.ts README.md vercel.json)
+dispatch-resolve:
+  status: escalate
+  decided_by: path-forced
+  rule: rule_3 (The task changes a database migration, a generated schema ar)
+  forced_path: vercel.json   forced_pattern: vercel.json
+  reason: no rankable eligible candidate
+  note: rule matched
+  candidate: claude:claude-opus-5  provider=claude  scope=all_models  remaining=-%  spendPriority=-  runway=unknown  -> eligible, unranked: provider claude unmeasured (unknown): disclosed uncertainty
+exit=0
+===== home=forced brief=prose (no Target paths line)
+dispatch-resolve:
+  status: escalate
+  model: jev-1.13.0   latency_ms: 471   tokens: 774/71
+  rule: rule_3 (The task changes a database migration, a generated schema ar)   confidence: 0.81
+  probabilities: rule_2=0.0 rule_3=0.84 rule_4=0.0 rule_5=0.07 default=0.08 rule_1=0.01
+  reason: no rankable eligible candidate
+  note: rule matched
+  candidate: claude:claude-opus-5  provider=claude  scope=all_models  remaining=-%  spendPriority=-  runway=unknown  -> eligible, unranked: provider claude unmeasured (unknown): disclosed uncertainty
+exit=0
+===== home=forced brief=nomatch (Target paths: src/pager.ts)
+dispatch-resolve:
+  status: escalate
+  model: jev-1.13.0   latency_ms: 295   tokens: 777/69
+  rule: default (No listed rule applies to this task.)   confidence: 0.72
+  probabilities: rule_1=0.22 default=0.77 rule_4=0.0 rule_3=0.0 rule_5=0.0 rule_2=0.01
+  reason: no rankable eligible candidate
+  note: no rule matched
+  candidate: claude:claude-sonnet-5  provider=claude  scope=all_models  remaining=-%  spendPriority=-  runway=unknown  -> eligible, unranked: provider claude unmeasured (unknown): disclosed uncertainty
+exit=0
+===== home=forced brief=nearmiss (Target paths: src/application.yaml docs/template-guide.md)
+dispatch-resolve:
+  status: ambiguous
+  model: jev-1.13.0   latency_ms: 287   tokens: 765/71
+  rule: rule_5 (The task is a large or ambiguous multi-file change, a risky )   confidence: 0.2
+  probabilities: rule_3=0.07 rule_5=0.33 rule_4=0.19 default=0.25 rule_1=0.16 rule_2=0.0
+  reason: confidence 0.2 below floor 0.6
+  candidate: claude:claude-opus-5  provider=claude  scope=all_models  remaining=-%  spendPriority=-  runway=unknown  -> eligible, unranked: provider claude unmeasured (unknown): disclosed uncertainty
+exit=0
+===== home=forced brief=bullet (- Target paths: vercel.json)
+dispatch-resolve:
+  status: ambiguous
+  model: jev-1.13.0   latency_ms: 379   tokens: 761/71
+  rule: rule_3 (The task changes a database migration, a generated schema ar)   confidence: 0.54
+  probabilities: rule_1=0.22 rule_2=0.0 rule_5=0.01 default=0.14 rule_4=0.01 rule_3=0.62
+  reason: confidence 0.54 below floor 0.6
+  candidate: claude:claude-opus-5  provider=claude  scope=all_models  remaining=-%  spendPriority=-  runway=unknown  -> eligible, unranked: provider claude unmeasured (unknown): disclosed uncertainty
+exit=0
+===== home=forced brief=backtick (Target paths: `vercel.json`)
+dispatch-resolve:
+  status: ambiguous
+  model: jev-1.13.0   latency_ms: 347   tokens: 761/71
+  rule: rule_3 (The task changes a database migration, a generated schema ar)   confidence: 0.56
+  probabilities: rule_3=0.64 rule_1=0.18 rule_2=0.0 rule_4=0.01 default=0.16 rule_5=0.01
+  reason: confidence 0.56 below floor 0.6
+  candidate: claude:claude-opus-5  provider=claude  scope=all_models  remaining=-%  spendPriority=-  runway=unknown  -> eligible, unranked: provider claude unmeasured (unknown): disclosed uncertainty
+exit=0
+===== home=forced brief=comma (Target paths: vercel.json, src/a.ts)
+dispatch-resolve:
+  status: ambiguous
+  model: jev-1.13.0   latency_ms: 380   tokens: 764/71
+  rule: rule_3 (The task changes a database migration, a generated schema ar)   confidence: 0.34
+  probabilities: rule_5=0.1 rule_3=0.46 rule_4=0.01 rule_2=0.0 default=0.25 rule_1=0.18
+  reason: confidence 0.34 below floor 0.6
+  candidate: claude:claude-opus-5  provider=claude  scope=all_models  remaining=-%  spendPriority=-  runway=unknown  -> eligible, unranked: provider claude unmeasured (unknown): disclosed uncertainty
+exit=0
+===== home=inert brief=vercel (Target paths: vercel.json)
+dispatch-resolve:
+  status: ambiguous
+  model: jev-1.13.0   latency_ms: 239   tokens: 768/71
+  rule: rule_3 (The task changes a database migration, a generated schema ar)   confidence: 0.55
+  probabilities: rule_3=0.63 rule_2=0.0 rule_5=0.01 rule_4=0.0 rule_1=0.1 default=0.26
+  reason: confidence 0.55 below floor 0.6
+  candidate: claude:claude-opus-5  provider=claude  scope=all_models  remaining=-%  spendPriority=-  runway=unknown  -> eligible, unranked: provider claude unmeasured (unknown): disclosed uncertainty
+exit=0
