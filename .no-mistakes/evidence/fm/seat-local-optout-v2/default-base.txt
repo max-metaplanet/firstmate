@@ -1,0 +1,126 @@
+== S1 default: no opt-out anywhere; switch work
+switched: default -> work
+applies to NEW claude workers only; running workers keep their own seat
+config-push: /var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/tmp.3e0UYMwbo4/sb/primary -> live secondmate homes
+secondmate client (/private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/tmp.3e0UYMwbo4/sb/sm-client):
+  crew-dispatch.json: unchanged
+  crew-harness: unchanged
+  backlog-backend: unchanged
+  backend: unchanged
+  herdr-presentation-spaces: unchanged
+  startup-memory-budget: unchanged
+  trace-context: unchanged - session-scoped
+  launch-env-allowlist: unchanged
+  claude-permission-mode: unchanged
+  lavish-axi-host: unchanged
+  claude-seat: pushed
+  claude-seats-root: pushed
+  claude-seat-threshold: unchanged
+  data/captain-shared.md: unchanged
+CONFIG_REREAD: secondmate client: send failed: error: no-mistakes gate agent must not drive the fleet (NO_MISTAKES_GATE set)
+secondmate fleet-a (/private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/tmp.3e0UYMwbo4/sb/sm-fleet-a):
+  crew-dispatch.json: unchanged
+  crew-harness: unchanged
+  backlog-backend: unchanged
+  backend: unchanged
+  herdr-presentation-spaces: unchanged
+  startup-memory-budget: unchanged
+  trace-context: unchanged - session-scoped
+  launch-env-allowlist: unchanged
+  claude-permission-mode: unchanged
+  lavish-axi-host: unchanged
+  claude-seat: pushed
+  claude-seats-root: pushed
+  claude-seat-threshold: unchanged
+  data/captain-shared.md: unchanged
+CONFIG_REREAD: secondmate fleet-a: send failed: error: no-mistakes gate agent must not drive the fleet (NO_MISTAKES_GATE set)
+secondmate fleet-b (/private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/tmp.3e0UYMwbo4/sb/sm-fleet-b):
+  crew-dispatch.json: unchanged
+  crew-harness: unchanged
+  backlog-backend: unchanged
+  backend: unchanged
+  herdr-presentation-spaces: unchanged
+  startup-memory-budget: unchanged
+  trace-context: unchanged - session-scoped
+  launch-env-allowlist: unchanged
+  claude-permission-mode: unchanged
+  lavish-axi-host: unchanged
+  claude-seat: pushed
+  claude-seats-root: pushed
+  claude-seat-threshold: unchanged
+  data/captain-shared.md: unchanged
+CONFIG_REREAD: secondmate fleet-b: send failed: error: no-mistakes gate agent must not drive the fleet (NO_MISTAKES_GATE set)
+warning: seat switched here, but not every secondmate home was updated (see above); those homes keep spawning on their previous seat until bin/fm-config-push.sh --local-only succeeds
+[exit 0]
+  sm-client      claude-seat=work      seats-root=/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/tmp.3e0UYMwbo4/sb/seats threshold=<absent> optout=no
+  sm-fleet-a     claude-seat=work      seats-root=/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/tmp.3e0UYMwbo4/sb/seats threshold=<absent> optout=no
+  sm-fleet-b     claude-seat=work      seats-root=/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/tmp.3e0UYMwbo4/sb/seats threshold=<absent> optout=no
+== S1b status with no opt-out
+active seat for NEW workers: work
+active profile: /var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/tmp.3e0UYMwbo4/sb/seats/work
+login state: logged-in
+auto-switch threshold: (unset - no automatic switching)
+auto-switch watch: not armed
+
+live workers keep the seat they launched with:
+  client	(ambient default login)
+  fleet-a	(ambient default login)
+  fleet-b	(ambient default login)
+[exit 0]
+== S1c switch default
+switched: work -> default
+applies to NEW claude workers only; running workers keep their own seat
+config-push: /var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/tmp.3e0UYMwbo4/sb/primary -> live secondmate homes
+secondmate client (/private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/tmp.3e0UYMwbo4/sb/sm-client):
+  crew-dispatch.json: unchanged
+  crew-harness: unchanged
+  backlog-backend: unchanged
+  backend: unchanged
+  herdr-presentation-spaces: unchanged
+  startup-memory-budget: unchanged
+  trace-context: unchanged - session-scoped
+  launch-env-allowlist: unchanged
+  claude-permission-mode: unchanged
+  lavish-axi-host: unchanged
+  claude-seat: pushed - mirrored primary absence
+  claude-seats-root: unchanged
+  claude-seat-threshold: unchanged
+  data/captain-shared.md: unchanged
+CONFIG_REREAD: secondmate client: send failed: error: no-mistakes gate agent must not drive the fleet (NO_MISTAKES_GATE set)
+secondmate fleet-a (/private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/tmp.3e0UYMwbo4/sb/sm-fleet-a):
+  crew-dispatch.json: unchanged
+  crew-harness: unchanged
+  backlog-backend: unchanged
+  backend: unchanged
+  herdr-presentation-spaces: unchanged
+  startup-memory-budget: unchanged
+  trace-context: unchanged - session-scoped
+  launch-env-allowlist: unchanged
+  claude-permission-mode: unchanged
+  lavish-axi-host: unchanged
+  claude-seat: pushed - mirrored primary absence
+  claude-seats-root: unchanged
+  claude-seat-threshold: unchanged
+  data/captain-shared.md: unchanged
+CONFIG_REREAD: secondmate fleet-a: send failed: error: no-mistakes gate agent must not drive the fleet (NO_MISTAKES_GATE set)
+secondmate fleet-b (/private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/tmp.3e0UYMwbo4/sb/sm-fleet-b):
+  crew-dispatch.json: unchanged
+  crew-harness: unchanged
+  backlog-backend: unchanged
+  backend: unchanged
+  herdr-presentation-spaces: unchanged
+  startup-memory-budget: unchanged
+  trace-context: unchanged - session-scoped
+  launch-env-allowlist: unchanged
+  claude-permission-mode: unchanged
+  lavish-axi-host: unchanged
+  claude-seat: pushed - mirrored primary absence
+  claude-seats-root: unchanged
+  claude-seat-threshold: unchanged
+  data/captain-shared.md: unchanged
+CONFIG_REREAD: secondmate fleet-b: send failed: error: no-mistakes gate agent must not drive the fleet (NO_MISTAKES_GATE set)
+warning: seat switched here, but not every secondmate home was updated (see above); those homes keep spawning on their previous seat until bin/fm-config-push.sh --local-only succeeds
+[exit 0]
+  sm-client      claude-seat=<absent>  seats-root=/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/tmp.3e0UYMwbo4/sb/seats threshold=<absent> optout=no
+  sm-fleet-a     claude-seat=<absent>  seats-root=/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/tmp.3e0UYMwbo4/sb/seats threshold=<absent> optout=no
+  sm-fleet-b     claude-seat=<absent>  seats-root=/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/tmp.3e0UYMwbo4/sb/seats threshold=<absent> optout=no

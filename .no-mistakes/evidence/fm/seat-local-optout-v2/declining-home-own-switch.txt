@@ -1,0 +1,12 @@
+$ (in declining home sm-client) fm-seat.sh switch personal
+switched: client -> personal
+applies to NEW claude workers only; running workers keep their own seat
+config-push: no live secondmate homes found
+$ (in sm-client) fm-seat.sh threshold 30
+auto-switch threshold: 30% remaining
+sm-client claude-seat=personal threshold=30
+primary claude-seat=team threshold=<absent>
+sm-fleet claude-seat=team
+$ (primary) fm-seat.sh status
+local secondmate homes declining inherited seats:
+  client	personal	/private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/ownsw/sb/sm-client
