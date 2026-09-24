@@ -1,0 +1,30 @@
+===== BIN_ROOT=/tmp/fm-base MODE=command
+----- pane before ring (after Escape):
+gs '{"feedbackDrafts":"off","editorMode":"vim"}'
+ ▐▛███▛█   Claude Code v2.1.282
+▝▜██████▀  Opus 5.5 · Claude Team
+ ▝▝   ▝▝   /private/tmp/fm-base
+
+
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⚠ Transcript saving is off — inherited CLAUDE_CODE_CHILD_SESSION marker · restart with CLAUDE_CODE_FORCE_SESSION_P…
+  Opus 5.5 | p/t/fm-base | ⚙️22 | ⚡100% | P15=E18=U22=J07:40:15                                   ◐ medium · /effort
+  ⏵⏵ bypass permissions on (shift+tab to cycle)
+----- fm_task_inbox_ring rc=2 (0 rang, 2 failed)
+----- pane after ring:
+/private/tmp/fm-base
+> CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false CLAUDE_CODE_SEND_FEEDBACK=0 claude --dangerously-skip-permissions --settin
+gs '{"feedbackDrafts":"off","editorMode":"vim"}'
+ ▐▛███▛█   Claude Code v2.1.282
+▝▜██████▀  Opus 5.5 · Claude Team
+ ▝▝   ▝▝   /private/tmp/fm-base
+
+
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⚠ Transcript saving is off — inherited CLAUDE_CODE_CHILD_SESSION marker · restart with CLAUDE_CODE_FORCE_SESSION_P…
+  Opus 5.5 | p/t/fm-base | ⚙️24 | ⚡100% | P15=E18=U22=J07:40:19                         Ctrl+Y to paste deleted text
+  -- INSERT -- ⏵⏵ bypass permissions on (shift+tab to cycle)

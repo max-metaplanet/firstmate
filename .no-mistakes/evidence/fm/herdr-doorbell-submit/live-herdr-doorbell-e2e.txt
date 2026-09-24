@@ -1,0 +1,5 @@
+ok - live Herdr submit confirm: Claude Code (2.1.282 (Claude Code)) on herdr 0.9.1 reports empty and renders the requested reply in isolated session fm-lab-herdr-submit-con-26355-32528
+ok - live Herdr submit confirm: Claude Code (2.1.282 (Claude Code)) on herdr 0.9.1 submits a U+2063 away-supervisor payload whose read-back drops the mark
+ok - live Herdr doorbell: Claude Code (2.1.282 (Claude Code)) on herdr 0.9.1 submits the doorbell to a vim-mode composer taking text
+ok - live Herdr doorbell: Claude Code (2.1.282 (Claude Code)) on herdr 0.9.1 recovers and submits the doorbell to a vim-mode composer an interrupt key left in command mode
+ok - live Herdr doorbell: Claude Code (2.1.282 (Claude Code)) on herdr 0.9.1 submits the doorbell to a Claude composer with no modal editor

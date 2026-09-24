@@ -1,0 +1,30 @@
+===== BIN_ROOT=/Users/max/.no-mistakes/worktrees/61c6dd39b831/01M3AQJYASTNY35A3R4TH5WR30 MODE=transcript
+----- pane before ring (after Escape):
+
+⏺ marker
+  -- INSERT --
+
+✻ Brewed for 5s · done 6:41 PM
+
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⚠ Transcript saving is off — inherited CLAUDE_CODE_CHILD_SESSION marker · restart with CLAUDE_CODE_FORCE_SESSION_P…
+  Opus 5.5 | ~/./w/6/01M3AQJYASTNY35A3R4TH5WR30 [HEAD ✓] | 🔴43.5¢ 17.1s | ⚙️21 | ⚡100% | P15=E18=U22=J07:41:06
+  ⏵⏵ bypass permissions on (shift+tab to cycle)
+----- fm_task_inbox_ring rc=0 (0 rang, 2 failed)
+----- pane after ring:
+
+❯ : Firstmate instruction waiting: list '/tmp/fm-vimbell.KmjkWL/guard-task.inbox'/*.msg and, in numeric order, read
+  and act on each, then mv each handled file to '/tmp/fm-vimbell.KmjkWL/guard-task.inbox'/handled/.
+
+· Swirling… (2s · ↓ 24 tokens)
+  ⎿  Tip: Name your conversations with /rename to find them easily in /resume later
+
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⚠ Transcript saving is off — inherited CLAUDE_CODE_CHILD_SESSION marker · restart with CLAUDE_CODE_FORCE_SESSION_P…
+  Opus 5.5 | ~/./w/6/01M3AQJYASTNY35A3R4TH5WR30 [HEAD ✓] | 🔴43.5¢ 20.3s | ⚙️24 | ⚡100% | P15=E18=U22=J07:41:10
+  -- INSERT -- ⏵⏵ bypass permissions on (shift+tab to cycle)
+                                                                                         Ctrl+Y to paste deleted text
