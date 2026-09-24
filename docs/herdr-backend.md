@@ -236,9 +236,9 @@ That comparison ignores whitespace and U+2063, the invisible mark that starts op
 A composer that holds a shorter suffix, or a placeholder plus a literal remainder, does not receive Enter.
 The adapter presses Ctrl+U until the shared classifier reads the composer as empty, so a resend starts from a clean composer.
 Ctrl+C is not used for this, because Claude documents it as interrupting a running operation.
-If the composer cannot be verified empty again, the submit reports `unknown` instead, because text may still be in the composer.
+If the composer cannot be verified empty again, the submit reports `unaccounted` instead: Enter was never pressed and text this send typed may still be in the composer, so the steering doorbell counts that ring as failed rather than rung.
 A cleared refusal then gets exactly one recovery, because the commonest cause of this exact shape is Claude's modal composer: with `editorMode: vim` a composer left in command mode consumes the head of the payload as editor commands and inserts only the remainder.
-The recovery reads the harness's text-entry indicator first and types nothing when it is rendered, because a payload the composer ate usually ends on an insert command and has already restored text entry itself; only an absent indicator makes the adapter type the text-entry key, and that counts only when the indicator appears while the composer still reads empty.
+The recovery reads the harness's text-entry indicator in the composer footer first and types nothing when it is rendered, because a payload the composer ate usually ends on an insert command and has already restored text entry itself; only an absent indicator makes the adapter type the text-entry key, and that counts only when the indicator appears while the composer still reads empty.
 The payload is then typed and proven a second time, and a payload still refused after that reports `send-failed`.
 A Claude composer that already holds text, or cannot be read, before the send is refused with nothing typed.
 Other harnesses, and panes with no native identity, skip this proof and keep the type-then-Enter path, because their paste placeholders and composer shapes are not live-verified.
