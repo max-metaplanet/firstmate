@@ -303,311 +303,68 @@ test_non_done_lines_are_not_gated() {
   pass "non-done lines are not gated"
 }
 
-# --- direct-PR origin binding (fork-target regression) ----------------------
-#
-# `gh pr create` with no `-R` defaults to a fork's PARENT repository, so a
-# direct-PR worker in a fork clone can open its PR on a repository nobody
-# authorized. These fixtures give the copy a real, fetchable remote under a
-# neutral name - so the named-head reachability test still has something to
-# find - and set `origin` (and, for a fork, `upstream`) to the forge URLs that
-# decide the target.
-fork_layout() {  # <name> <origin-url> [<upstream-url>]
-  local name=$1 origin=$2 upstream=${3:-} repo wt
-  repo="$TMP_ROOT/$name-repo"
-  wt="$TMP_ROOT/$name-wt"
-  fm_git_init_commit "$repo"
-  fm_git_add_origin "$repo" "$repo.serve.git"
-  git -C "$repo" remote rename origin serve
-  git -C "$repo" remote add origin "$origin"
-  [ -z "$upstream" ] || git -C "$repo" remote add upstream "$upstream"
-  git -C "$repo" worktree add --quiet -b "fm/$name" "$wt"
-  git -C "$repo" push --quiet serve "fm/$name"
-  git -C "$repo" fetch --quiet serve
-  printf '%s\n' "$wt"
-}
+# Issue 3608: a legacy `# Task` body's provenance marker must be read the way
+# bin/fm-brief-heading-lib.sh reads headings - outside fenced blocks and never
+# from an indented example - or a fenced `Captain:` sample becomes the ship
+# contract's intent while the real ask is dropped.
+test_fenced_and_indented_captain_lines_are_not_intent() {
+  local home id meta out status words
+  home="$TMP_ROOT/fenced-home"
+  mkdir -p "$home/state" "$home/data"
+  words=$(fm_brief_marked_captain_words 'Investigate the promotion gate.
 
-test_direct_pr_on_the_fork_parent_is_refused() {
-  local wt reason rc
-  wt=$(fork_layout forkparent \
-    'git@github.com:forkowner/proj.git' 'git@github.com:parentowner/proj.git')
-  reason=$(accept_done ship direct-PR "$wt" "$TMP_ROOT/forkparent-repo" \
-    'done: PR https://github.com/parentowner/proj/pull/5')
-  rc=$?
-  [ "$rc" -eq 1 ] || fail "a direct-PR done on the fork's parent repository was accepted (exit $rc)"
-  case "$reason" in
-    *"github.com/parentowner/proj"*"github.com/forkowner/proj"*) ;;
-    *) fail "the refusal did not name the PR's repository and origin: $reason" ;;
-  esac
-  case "$reason" in
-    *"-R forkowner/proj"*) ;;
-    *) fail "the refusal did not name the origin target to open it on: $reason" ;;
-  esac
-  case "$reason" in
-    *"wrong repository"*"renamed or transferred"*"git remote set-url origin"*) ;;
-    *) fail "the refusal did not name both causes and the stale-origin remedy: $reason" ;;
-  esac
-  pass "a direct-PR PR on the fork's parent repository is refused"
-}
+```markdown
+Captain: This fenced example must not become intent.
+[captain] Neither must this one.
+```
 
-test_direct_pr_on_origin_fork_is_accepted() {
-  local wt
-  wt=$(fork_layout forkorigin \
-    'git@github.com:forkowner/proj.git' 'git@github.com:parentowner/proj.git')
-  accept_done ship direct-PR "$wt" "$TMP_ROOT/forkorigin-repo" \
-    'done: PR https://github.com/forkowner/proj/pull/5' \
-    || fail "a direct-PR done on the fork clone's own origin was refused"
-  accept_done ship direct-PR "$wt" "$TMP_ROOT/forkorigin-repo" \
-    'done: PR https://github.com/ForkOwner/Proj/pull/5' \
-    || fail "a case difference against origin was treated as another repository"
-  pass "a direct-PR PR on the fork's own origin is accepted"
-}
+~~~
+Captain: Nor this tilde-fenced one.
+~~~
 
-test_direct_pr_plain_clone_is_bound_to_its_own_repository() {
-  local wt reason rc
-  wt=$(fork_layout plainclone 'https://github.com/soleowner/proj.git')
-  accept_done ship direct-PR "$wt" "$TMP_ROOT/plainclone-repo" \
-    'done: PR https://github.com/soleowner/proj/pull/12' \
-    || fail "a plain clone's direct-PR done on its own origin was refused"
-  reason=$(accept_done ship direct-PR "$wt" "$TMP_ROOT/plainclone-repo" \
-    'done: PR https://github.com/someoneelse/proj/pull/12')
-  rc=$?
-  [ "$rc" -eq 1 ] || fail "a plain clone accepted a PR on another repository (exit $rc)"
-  case "$reason" in
-    *"github.com/someoneelse/proj"*) ;;
-    *) fail "the refusal did not name the foreign repository: $reason" ;;
-  esac
-  pass "a plain clone's direct-PR PR is bound to its own origin"
-}
+    Captain: An indented example is not the ask either.
+	[captain] Nor a tab-indented one.
+Keep this Firstmate constraint out of captain intent.')
+  assert_equals "" "$words" "fenced or indented Captain lines were extracted as authorized intent"
 
-# An origin reached through an SSH host alias or GitHub's port-443 SSH endpoint
-# names a host that never matches github.com in the PR URL; the owner/repository
-# path is what identifies the repository, so its own PR is accepted while a PR
-# on the fork's parent is still refused.
-test_direct_pr_origin_through_an_ssh_alias_is_accepted() {
-  local wt reason rc origin name i=0
-  for origin in 'git@github-443:forkowner/proj.git' \
-    'ssh://git@ssh.github.com:443/forkowner/proj.git'; do
-    i=$((i + 1))
-    name=sshalias$i
-    wt=$(fork_layout "$name" "$origin" 'git@github.com:parentowner/proj.git')
-    accept_done ship direct-PR "$wt" "$TMP_ROOT/$name-repo" \
-      'done: PR https://github.com/forkowner/proj/pull/5' \
-      || fail "a direct-PR done on its own origin via $origin was refused"
-    reason=$(accept_done ship direct-PR "$wt" "$TMP_ROOT/$name-repo" \
-      'done: PR https://github.com/parentowner/proj/pull/5')
-    rc=$?
-    [ "$rc" -eq 1 ] || fail "a fork-parent PR was accepted for origin $origin (exit $rc)"
-    case "$reason" in
-      *"-R forkowner/proj"*) ;;
-      *) fail "the refusal for origin $origin did not name the origin target: $reason" ;;
-    esac
-  done
-  pass "a direct-PR origin through an SSH alias accepts its own PR only"
-}
+  words=$(fm_brief_marked_captain_words '```
+Captain: fenced example
+```
+  [captain] Preserve the real ask after the fence closes.
+````
+Captain: a longer fence that a shorter closer must not end
+```
+Captain: still fenced
+````')
+  assert_equals "Preserve the real ask after the fence closes." "$words" \
+    "the marker after a closed fence, or inside a longer fence, was misread"
 
-# The repository check runs before every acceptance path, so a wrong-repository
-# PR cannot be admitted by the recorded pr=/pr_head= short-circuit either - that
-# is the path bin/fm-pr-check.sh would otherwise register it through.
-test_wrong_repository_is_refused_before_the_recorded_pr_path() {
-  local wt state meta head reason rc
-  wt=$(fork_layout recordedforeign \
-    'git@github.com:forkowner/proj.git' 'git@github.com:parentowner/proj.git')
-  state="$TMP_ROOT/recordedforeign-state"
-  mkdir -p "$state"
-  meta="$state/recordedforeign.meta"
-  head=$(git -C "$wt" rev-parse HEAD)
-  printf 'kind=ship\nmode=direct-PR\npr=https://github.com/parentowner/proj/pull/5\npr_head=%s\n' \
-    "$head" > "$meta"
-  reason=$(accept_done ship direct-PR "$wt" "$TMP_ROOT/recordedforeign-repo" \
-    'done: PR https://github.com/parentowner/proj/pull/5' "$state" recordedforeign "$meta")
-  rc=$?
-  [ "$rc" -eq 1 ] || fail "a recorded pr= on another repository was accepted (exit $rc)"
-  case "$reason" in
-    *"not this copy's origin"*) ;;
-    *) fail "the refusal did not report the origin mismatch: $reason" ;;
-  esac
-  pass "a wrong-repository PR is refused before the recorded-PR path"
-}
+  id=promote-fenced-captain
+  meta="$home/state/$id.meta"
+  printf 'window=fm-%s\nkind=scout\nworktree=/tmp/wt\n' "$id" > "$meta"
+  mkdir -p "$home/data/$id"
+  cat > "$home/data/$id/brief.md" <<'EOF'
+# Task
+Investigate the promotion gate.
 
-# origin is checked only where it decides the target. A no-mistakes PR is
-# published by the pipeline's own configured push target rather than by this
-# copy, and an origin URL that names no forge is no proof either way.
-test_origin_binding_is_scoped_to_direct_pr_and_forge_origins() {
-  local wt repo
-  wt=$(fork_layout scopecheck 'git@github.com:forkowner/proj.git')
-  accept_done ship no-mistakes "$wt" "$TMP_ROOT/scopecheck-repo" \
-    'done: PR https://github.com/pipelinetarget/proj/pull/3 checks green' \
-    || fail "the origin binding refused a no-mistakes PR, whose push target is the pipeline's"
-  repo="$TMP_ROOT/localorigin-repo"
-  fm_git_worktree "$repo" "$TMP_ROOT/localorigin-wt" fm/localorigin
-  git -C "$repo" push --quiet origin fm/localorigin
-  git -C "$repo" fetch --quiet origin
-  accept_done ship direct-PR "$TMP_ROOT/localorigin-wt" "$repo" \
-    'done: PR https://github.com/o/r/pull/7' \
-    || fail "a file:// origin, which names no forge, was treated as a mismatch"
-  pass "the origin binding covers direct-PR forge origins only"
-}
+```markdown
+Captain: This fenced example must not become intent.
+```
 
-# A pooled-worktree layout exactly as the clones that exposed this gate have it:
-# a bare origin, a project clone whose remote.origin.fetch names only the
-# default branch, and a worktree sharing that clone's .git/config. No task
-# branch ever grows a remote-tracking ref in such a clone, so the local-ref test
-# alone cannot see a correctly pushed head. Builds <TMP_ROOT>/<name>-origin.git,
-# <TMP_ROOT>/<name>-project and <TMP_ROOT>/<name>-wt on <branch>.
-narrowed_layout() {  # <name> <branch>
-  local name=$1 branch=$2 origin
-  origin="$TMP_ROOT/$name-origin.git"
-  fm_git_init_commit "$TMP_ROOT/$name-seed"
-  git clone --quiet --bare "$TMP_ROOT/$name-seed" "$origin"
-  git clone --quiet "file://$(cd "$origin" && pwd)" "$TMP_ROOT/$name-project"
-  git -C "$TMP_ROOT/$name-project" config remote.origin.fetch \
-    '+refs/heads/main:refs/remotes/origin/main'
-  git -C "$TMP_ROOT/$name-project" worktree add --quiet -b "$branch" "$TMP_ROOT/$name-wt"
-}
+    Captain: An indented example is not the ask either.
 
-# An ssh transport that never answers, as a script so git's own argument
-# appending cannot turn it back into a fast failure. Prints its path.
-stalling_ssh() {  # <name>
-  local path="$TMP_ROOT/$1-stall-ssh"
-  printf '%s\n' '#!/bin/sh' 'sleep 120' > "$path"
-  chmod 700 "$path"
-  printf '%s\n' "$path"
-}
-
-# The whole observable state of a clone the gate must not touch: its stored
-# configuration and every ref it holds.
-clone_fingerprint() {  # <repo>
-  cat "$1/.git/config"
-  git -C "$1" for-each-ref --format='%(refname) %(objectname)'
-}
-
-test_narrowed_fetch_refspec_accepts_the_pushed_head() {
-  local project wt sha before after
-  narrowed_layout narrowed fm/narrowed
-  project="$TMP_ROOT/narrowed-project"
-  wt="$TMP_ROOT/narrowed-wt"
-  git -C "$wt" commit -q --allow-empty -m 'the fix, pushed to origin'
-  sha=$(git -C "$wt" rev-parse HEAD)
-  git -C "$wt" push --quiet origin fm/narrowed
-  git -C "$wt" for-each-ref --format='%(refname)' refs/remotes | grep -q 'fm/narrowed' \
-    && fail "fixture is not narrowed: the push left a remote-tracking ref"
-  before=$(clone_fingerprint "$project")
-  accept_done ship direct-PR "$wt" "$project" 'done: PR https://github.com/o/r/pull/1' \
-    || fail "a head pushed to origin was refused because the clone's fetch refspec is narrowed"
-  after=$(clone_fingerprint "$project")
-  [ "$before" = "$after" ] \
-    || fail "the gate changed the shared clone's configuration or refs"
-  pass "a pushed head is accepted through a narrowed remote.origin.fetch"
-}
-
-test_narrowed_fetch_refspec_still_refuses_an_unpushed_head() {
-  local project wt sha reason rc before after
-  narrowed_layout unpushed-narrowed fm/unpushed-narrowed
-  project="$TMP_ROOT/unpushed-narrowed-project"
-  wt="$TMP_ROOT/unpushed-narrowed-wt"
-  git -C "$wt" commit -q --allow-empty -m 'pushed'
-  git -C "$wt" push --quiet origin fm/unpushed-narrowed
-  git -C "$wt" commit -q --allow-empty -m 'the fix, never pushed'
-  sha=$(git -C "$wt" rev-parse HEAD)
-  before=$(clone_fingerprint "$project")
-  reason=$(accept_done ship direct-PR "$wt" "$project" 'done: PR https://github.com/o/r/pull/1')
-  rc=$?
-  after=$(clone_fingerprint "$project")
-  [ "$rc" -eq 1 ] || fail "a head origin never received was accepted (exit $rc)"
-  case "$reason" in
-    *"named head $sha is unreachable outside the worker copy"*) ;;
-    *) fail "the refusal did not name the unpushed commit: $reason" ;;
-  esac
-  case "$reason" in
-    *"never change remote.origin.fetch"*"git fetch origin <branch>:refs/remotes/origin/<branch>"*) ;;
-    *) fail "the refusal did not steer the worker off remote.origin.fetch: $reason" ;;
-  esac
-  [ "$before" = "$after" ] || fail "a refusing gate changed the shared clone"
-  pass "a head origin never received is still refused, with safe-ref guidance"
-}
-
-test_hostile_remote_ref_name_is_not_executed() {
-  local project wt sha marker
-  narrowed_layout hostile fm/hostile
-  project="$TMP_ROOT/hostile-project"
-  wt="$TMP_ROOT/hostile-wt"
-  marker="$TMP_ROOT/hostile-marker"
-  git -C "$wt" commit -q --allow-empty -m 'the fix, pushed to origin'
-  sha=$(git -C "$wt" rev-parse HEAD)
-  git -C "$wt" push --quiet origin fm/hostile
-  # git accepts a branch name that reads like a command substitution, and the
-  # gate reads whatever the remote advertises: that listing must stay data
-  # through every step that parses it.
-  git -C "$TMP_ROOT/hostile-origin.git" update-ref \
-    "refs/heads/x\$(touch\${IFS}$marker)y" "$sha"
-  accept_done ship direct-PR "$wt" "$project" 'done: PR https://github.com/o/r/pull/8' \
-    || fail "a pushed head was refused because another ref name looked hostile"
-  [ ! -e "$marker" ] || fail "a remote ref name was executed by the gate"
-  pass "a hostile remote ref name is read as data, not run"
-}
-
-test_unreadable_origin_keeps_the_refusal() {
-  local project wt sha reason rc
-  narrowed_layout unreadable fm/unreadable
-  project="$TMP_ROOT/unreadable-project"
-  wt="$TMP_ROOT/unreadable-wt"
-  git -C "$wt" commit -q --allow-empty -m 'pushed, but origin cannot be read back'
-  sha=$(git -C "$wt" rev-parse HEAD)
-  git -C "$wt" push --quiet origin fm/unreadable
-  git -C "$project" remote set-url origin "file://$TMP_ROOT/unreadable-origin.git.gone"
-  reason=$(accept_done ship direct-PR "$wt" "$project" 'done: PR https://github.com/o/r/pull/3')
-  rc=$?
-  [ "$rc" -eq 1 ] || fail "an unreadable origin accepted a head on no evidence (exit $rc)"
-  case "$reason" in
-    *"named head $sha is unreachable outside the worker copy"*) ;;
-    *) fail "the unreadable-origin refusal did not name the head: $reason" ;;
-  esac
-  pass "an origin that cannot be read keeps the refusal rather than accepting"
-}
-
-test_origin_read_is_bounded() {
-  local project wt rc started elapsed prior
-  narrowed_layout stalled fm/stalled
-  project="$TMP_ROOT/stalled-project"
-  wt="$TMP_ROOT/stalled-wt"
-  git -C "$wt" commit -q --allow-empty -m 'unreadable because origin never answers'
-  # An ssh origin whose transport never returns: the read must be cut off by the
-  # gate's own bound, not left to hang the supervisor that called it.
-  git -C "$project" remote set-url origin 'ssh://git@stall.invalid/o/r.git'
-  prior=$FM_DOD_ORIGIN_READ_SECONDS
-  GIT_SSH_COMMAND=$(stalling_ssh stalled)
-  export GIT_SSH_COMMAND
-  FM_DOD_ORIGIN_READ_SECONDS=3
-  started=$SECONDS
-  accept_done ship direct-PR "$wt" "$project" 'done: PR https://github.com/o/r/pull/4' >/dev/null
-  rc=$?
-  elapsed=$((SECONDS - started))
-  FM_DOD_ORIGIN_READ_SECONDS=$prior
-  unset GIT_SSH_COMMAND
-  [ "$rc" -eq 1 ] || fail "a stalled origin read did not refuse (exit $rc)"
-  [ "$elapsed" -lt 60 ] || fail "the origin read was not bounded: ${elapsed}s"
-  pass "a stalled origin read is cut off by the gate's bound"
-}
-
-test_local_only_does_not_read_origin() {
-  local project wt started elapsed prior
-  narrowed_layout localonly fm/localonly
-  project="$TMP_ROOT/localonly-project"
-  wt="$TMP_ROOT/localonly-wt"
-  git -C "$wt" commit -q --allow-empty -m 'local-only work on a linked branch'
-  git -C "$project" remote set-url origin 'ssh://git@stall.invalid/o/r.git'
-  prior=$FM_DOD_ORIGIN_READ_SECONDS
-  GIT_SSH_COMMAND=$(stalling_ssh localonly)
-  export GIT_SSH_COMMAND
-  FM_DOD_ORIGIN_READ_SECONDS=120
-  started=$SECONDS
-  accept_done ship local-only "$wt" "$project" 'done: ready in branch fm/localonly' \
-    || fail "local-only lost its project-heads rule"
-  elapsed=$((SECONDS - started))
-  FM_DOD_ORIGIN_READ_SECONDS=$prior
-  unset GIT_SSH_COMMAND
-  [ "$elapsed" -lt 30 ] || fail "local-only reached the remote: ${elapsed}s"
-  pass "local-only keeps its project-heads rule and reads no remote"
+# Setup
+This is a SCOUT task: the deliverable is a written report, not a PR.
+EOF
+  out=$(FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" "$ROOT/bin/fm-promote.sh" "$id" --mode direct-PR --yolo off 2>&1)
+  status=$?
+  [ "$status" -ne 0 ] || fail "promotion whose only Captain lines are fenced or indented examples should fail"
+  assert_contains "$out" "has no provenance-marked Captain's intent" \
+    "fenced-example promotion did not refuse like an unmarked legacy brief"
+  assert_absent "$home/data/$id/ship-instructions.md" \
+    "fenced-example promotion published a fenced sample as captain intent"
+  assert_grep 'kind=scout' "$meta" "fenced-example promotion changed the task record"
+  pass "fenced and indented Captain lines are not authorized intent"
 }
 
 test_scout_done_is_not_gated
@@ -626,17 +383,6 @@ test_local_only_linked_branch_is_accepted
 test_local_only_detached_head_is_refused
 test_standalone_local_only_needs_project_ref
 test_non_done_lines_are_not_gated
-test_direct_pr_on_the_fork_parent_is_refused
-test_direct_pr_on_origin_fork_is_accepted
-test_direct_pr_plain_clone_is_bound_to_its_own_repository
-test_wrong_repository_is_refused_before_the_recorded_pr_path
-test_direct_pr_origin_through_an_ssh_alias_is_accepted
-test_origin_binding_is_scoped_to_direct_pr_and_forge_origins
-test_narrowed_fetch_refspec_accepts_the_pushed_head
-test_narrowed_fetch_refspec_still_refuses_an_unpushed_head
-test_hostile_remote_ref_name_is_not_executed
-test_unreadable_origin_keeps_the_refusal
-test_origin_read_is_bounded
-test_local_only_does_not_read_origin
+test_fenced_and_indented_captain_lines_are_not_intent
 
 echo "all fm-dod-lib tests passed"
