@@ -1533,7 +1533,7 @@ test_the_watch_reports_the_policy_consequence_when_no_seat_qualifies() {
 
   out=$(run_seat "$HOME_DIR" "$FAKEBIN" auto)
   assert_contains "$out" "no seat has enough headroom" "the wake must say why no switch happened"
-  assert_contains "$out" "held rather than started on paid extra usage" \
+  assert_contains "$out" "will be held once this seat's plan quota runs out" \
     "the wake must name the policy consequence, not just the failed switch"
   assert_contains "$out" "A worker already running is not stopped" \
     "the wake must state the limit plainly"
@@ -1543,6 +1543,33 @@ test_the_watch_reports_the_policy_consequence_when_no_seat_qualifies() {
   out=$(run_seat "$HOME_DIR" "$FAKEBIN" auto)
   [ -z "$out" ] || fail "an unchanged unqualified crossing must not wake again: $out"
   pass "with no seat qualifying the watch reports the policy consequence once and switches nothing"
+}
+
+test_the_watch_and_status_agree_while_plan_quota_remains() {
+  local rec wake st
+  rec=$(make_seat_case auto-agrees-with-status)
+  read_seat_case "$rec"
+  mkdir -p "$SEATS_DIR/alpha" "$SEATS_DIR/beta"
+  seat_logged_in "$SPEC_DIR" "$SEATS_DIR/alpha" "$SEATS_DIR/beta"
+  printf 'alpha\n' > "$HOME_DIR/config/claude-seat"
+  run_seat "$HOME_DIR" "$FAKEBIN" threshold 15 >/dev/null
+  run_seat "$HOME_DIR" "$FAKEBIN" destination-min 30 >/dev/null
+  run_seat "$HOME_DIR" "$FAKEBIN" extra-usage stop >/dev/null
+  seat_remaining "$SPEC_DIR" "$SEATS_DIR/alpha" 11
+  seat_remaining "$SPEC_DIR" "$SEATS_DIR/beta" 20
+
+  wake=$(run_seat "$HOME_DIR" "$FAKEBIN" auto)
+  st=$(run_seat "$HOME_DIR" "$FAKEBIN" status)
+  assert_contains "$wake" "no seat has enough headroom" "precondition: the crossing must find nowhere to go"
+  assert_contains "$st" "new Claude dispatch: allowed" \
+    "precondition: with plan quota still left, status must report dispatch allowed: $st"
+  case "$wake" in
+    *"is held"*|*"held rather"*) fail "the wake claims work is already held while status says dispatch is allowed: $wake" ;;
+  esac
+  assert_contains "$wake" "once this seat's plan quota runs out" \
+    "the wake must say when the hold will begin"
+  assert_contains "$wake" "A worker already running is not stopped" "the wake must still state the limit"
+  pass "the watch's wake line and status agree while the seat still has plan quota"
 }
 
 test_the_watch_switches_once_a_candidate_recovers_after_a_crossing_with_nowhere_to_go() {
@@ -1815,6 +1842,7 @@ test_allow_policy_proceeds_under_the_cap_and_holds_at_it
 test_an_unreadable_quota_holds_dispatch_rather_than_guessing
 test_the_watch_keeps_firing_across_crossings_and_never_twice_on_one
 test_the_watch_reports_the_policy_consequence_when_no_seat_qualifies
+test_the_watch_and_status_agree_while_plan_quota_remains
 test_the_watch_switches_once_a_candidate_recovers_after_a_crossing_with_nowhere_to_go
 test_the_watch_keeps_every_quota_read_inside_the_check_budget
 test_the_watch_never_switches_on_an_unreadable_active_quota

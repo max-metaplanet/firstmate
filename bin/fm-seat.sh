@@ -713,10 +713,10 @@ auto_trigger() {
   auto_record_set blocked "$active"
   case "$policy" in
     stop)
-      printf 'claude-seat: %s is at %s%% left and no seat has enough headroom to switch to; new Claude work is held rather than started on paid extra usage. A worker already running is not stopped.\n' \
+      printf 'claude-seat: %s is at %s%% left and no seat has enough headroom to switch to; new Claude work will be held once this seat'\''s plan quota runs out, rather than started on paid extra usage. A worker already running is not stopped.\n' \
         "$active" "$remaining" ;;
     allow\ *)
-      printf 'claude-seat: %s is at %s%% left and no seat has enough headroom to switch to; new Claude work continues on paid extra usage up to $%s, then holds.\n' \
+      printf 'claude-seat: %s is at %s%% left and no seat has enough headroom to switch to; once this seat'\''s plan quota runs out, new Claude work continues on paid extra usage up to $%s, then will be held.\n' \
         "$active" "$remaining" "${policy#allow }" ;;
     *)
       printf 'claude-seat: %s is at %s%% left and no seat has enough headroom to switch to; no extra-usage policy is set, so nothing is held.\n' \
