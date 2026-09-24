@@ -1,0 +1,287 @@
+=== S1 default: no opt-out anywhere, switch reaches every home ===
+$ FM_HOME=/tmp/fm-seat-optout.d2SnET/primary fm-seat.sh switch work
+switched: default -> work
+applies to NEW claude workers only; running workers keep their own seat
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  2 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+config-push: /tmp/fm-seat-optout.d2SnET/primary -> live secondmate homes
+secondmate fleet1 (/private/tmp/fm-seat-optout.d2SnET/sm-fleet1):
+  crew-dispatch.json: unchanged
+  crew-harness: unchanged
+  backlog-backend: unchanged
+  backend: unchanged
+  herdr-presentation-spaces: unchanged
+  startup-memory-budget: unchanged
+  trace-context: unchanged - session-scoped
+  launch-env-allowlist: unchanged
+  claude-permission-mode: unchanged
+  lavish-axi-host: unchanged
+  claude-seat: pushed
+  claude-seats-root: pushed
+  claude-seat-threshold: unchanged
+  data/captain-shared.md: unchanged
+CONFIG_REREAD: secondmate fleet1: send failed: error: no-mistakes gate agent must not drive the fleet (NO_MISTAKES_GATE set)
+secondmate fleet2 (/private/tmp/fm-seat-optout.d2SnET/sm-fleet2):
+  crew-dispatch.json: unchanged
+  crew-harness: unchanged
+  backlog-backend: unchanged
+  backend: unchanged
+  herdr-presentation-spaces: unchanged
+  startup-memory-budget: unchanged
+  trace-context: unchanged - session-scoped
+  launch-env-allowlist: unchanged
+  claude-permission-mode: unchanged
+  lavish-axi-host: unchanged
+  claude-seat: pushed
+  claude-seats-root: pushed
+  claude-seat-threshold: unchanged
+  data/captain-shared.md: unchanged
+CONFIG_REREAD: secondmate fleet2: send failed: error: no-mistakes gate agent must not drive the fleet (NO_MISTAKES_GATE set)
+warning: seat switched here, but not every secondmate home was updated (see above); those homes keep spawning on their previous seat until bin/fm-config-push.sh --local-only succeeds
+[exit 0]
+    sm-fleet1/config/claude-seat = work
+    sm-fleet1/config/claude-seats-root = /tmp/fm-seat-optout.d2SnET/seats
+    sm-fleet1/config/claude-seat-threshold = <absent>
+    sm-fleet2/config/claude-seat = work
+    sm-fleet2/config/claude-seats-root = /tmp/fm-seat-optout.d2SnET/seats
+    sm-fleet2/config/claude-seat-threshold = <absent>
+local secondmate homes declining inherited seats:
+  (none - every local home takes this seat)
+[exit 0]
+
+=== S2 one home declines (touch config/claude-seat-local) with its own personal seat ===
+$ FM_HOME=/tmp/fm-seat-optout.d2SnET/primary fm-seat.sh switch team2
+switched: work -> team2
+applies to NEW claude workers only; running workers keep their own seat
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+config-push: /tmp/fm-seat-optout.d2SnET/primary -> live secondmate homes
+secondmate client (/private/tmp/fm-seat-optout.d2SnET/sm-client):
+  crew-dispatch.json: unchanged
+  crew-harness: unchanged
+  backlog-backend: unchanged
+  backend: unchanged
+  herdr-presentation-spaces: unchanged
+  startup-memory-budget: unchanged
+  trace-context: unchanged - session-scoped
+  launch-env-allowlist: unchanged
+  claude-permission-mode: unchanged
+  lavish-axi-host: unchanged
+  claude-seat: skipped - home declines inherited seat settings (config/claude-seat-local)
+  claude-seats-root: skipped - home declines inherited seat settings (config/claude-seat-local)
+  claude-seat-threshold: skipped - home declines inherited seat settings (config/claude-seat-local)
+  data/captain-shared.md: unchanged
+secondmate fleet1 (/private/tmp/fm-seat-optout.d2SnET/sm-fleet1):
+  crew-dispatch.json: unchanged
+  crew-harness: unchanged
+  backlog-backend: unchanged
+  backend: unchanged
+  herdr-presentation-spaces: unchanged
+  startup-memory-budget: unchanged
+  trace-context: unchanged - session-scoped
+  launch-env-allowlist: unchanged
+  claude-permission-mode: unchanged
+  lavish-axi-host: unchanged
+  claude-seat: pushed
+  claude-seats-root: unchanged
+  claude-seat-threshold: unchanged
+  data/captain-shared.md: unchanged
+CONFIG_REREAD: secondmate fleet1: send failed: error: no-mistakes gate agent must not drive the fleet (NO_MISTAKES_GATE set)
+secondmate fleet2 (/private/tmp/fm-seat-optout.d2SnET/sm-fleet2):
+  crew-dispatch.json: unchanged
+  crew-harness: unchanged
+  backlog-backend: unchanged
+  backend: unchanged
+  herdr-presentation-spaces: unchanged
+  startup-memory-budget: unchanged
+  trace-context: unchanged - session-scoped
+  launch-env-allowlist: unchanged
+  claude-permission-mode: unchanged
+  lavish-axi-host: unchanged
+  claude-seat: pushed
+  claude-seats-root: unchanged
+  claude-seat-threshold: unchanged
+  data/captain-shared.md: unchanged
+CONFIG_REREAD: secondmate fleet2: send failed: error: no-mistakes gate agent must not drive the fleet (NO_MISTAKES_GATE set)
+warning: seat switched here, but not every secondmate home was updated (see above); those homes keep spawning on their previous seat until bin/fm-config-push.sh --local-only succeeds
+[exit 0]
+    sm-fleet1/config/claude-seat = team2
+    sm-fleet1/config/claude-seats-root = /tmp/fm-seat-optout.d2SnET/seats
+    sm-fleet1/config/claude-seat-threshold = <absent>
+    sm-fleet2/config/claude-seat = team2
+    sm-fleet2/config/claude-seats-root = /tmp/fm-seat-optout.d2SnET/seats
+    sm-fleet2/config/claude-seat-threshold = <absent>
+    sm-client/config/claude-seat = personal
+    sm-client/config/claude-seats-root = /tmp/fm-seat-optout.d2SnET/personal-seats
+    sm-client/config/claude-seat-threshold = 40
+
+=== S3 status shows the declining home and its real seat ===
+$ FM_HOME=/tmp/fm-seat-optout.d2SnET/primary fm-seat.sh status
+active seat for NEW workers: team2
+active profile: /tmp/fm-seat-optout.d2SnET/seats/team2
+login state: logged-in
+auto-switch threshold: (unset - no automatic switching)
+auto-switch watch: not armed
+
+live workers keep the seat they launched with:
+  client	(ambient default login)
+  fleet1	(ambient default login)
+  fleet2	(ambient default login)
+
+local secondmate homes declining inherited seats:
+  client	personal	/private/tmp/fm-seat-optout.d2SnET/sm-client
+[exit 0]
+
+=== S4 declining home runs its own switch; primary untouched ===
+$ FM_HOME=/tmp/fm-seat-optout.d2SnET/sm-client fm-seat.sh switch client
+switched: personal -> client
+applies to NEW claude workers only; running workers keep their own seat
+config-push: no live secondmate homes found
+[exit 0]
+    sm-client/config/claude-seat = client
+    sm-client/config/claude-seats-root = /tmp/fm-seat-optout.d2SnET/personal-seats
+    sm-client/config/claude-seat-threshold = 40
+    primary claude-seat = team2
+
+=== S5 adversarial: flag contains 'off'; flag is a dir; flag is dangling symlink; no own seat ===
+$ FM_HOME=/tmp/fm-seat-optout.d2SnET/primary fm-seat.sh switch default
+switched: team2 -> default
+applies to NEW claude workers only; running workers keep their own seat
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+config-push: /tmp/fm-seat-optout.d2SnET/primary -> live secondmate homes
+secondmate client (/private/tmp/fm-seat-optout.d2SnET/sm-client):
+  crew-dispatch.json: unchanged
+  crew-harness: unchanged
+  backlog-backend: unchanged
+  backend: unchanged
+  herdr-presentation-spaces: unchanged
+  startup-memory-budget: unchanged
+  trace-context: unchanged - session-scoped
+  launch-env-allowlist: unchanged
+  claude-permission-mode: unchanged
+  lavish-axi-host: unchanged
+  claude-seat: skipped - home declines inherited seat settings (config/claude-seat-local)
+  claude-seats-root: skipped - home declines inherited seat settings (config/claude-seat-local)
+  claude-seat-threshold: skipped - home declines inherited seat settings (config/claude-seat-local)
+  data/captain-shared.md: unchanged
+secondmate fleet1 (/private/tmp/fm-seat-optout.d2SnET/sm-fleet1):
+  crew-dispatch.json: unchanged
+  crew-harness: unchanged
+  backlog-backend: unchanged
+  backend: unchanged
+  herdr-presentation-spaces: unchanged
+  startup-memory-budget: unchanged
+  trace-context: unchanged - session-scoped
+  launch-env-allowlist: unchanged
+  claude-permission-mode: unchanged
+  lavish-axi-host: unchanged
+  claude-seat: skipped - home declines inherited seat settings (config/claude-seat-local)
+  claude-seats-root: skipped - home declines inherited seat settings (config/claude-seat-local)
+  claude-seat-threshold: skipped - home declines inherited seat settings (config/claude-seat-local)
+  data/captain-shared.md: unchanged
+CONFIG_REREAD: secondmate fleet1: send failed: error: no-mistakes gate agent must not drive the fleet (NO_MISTAKES_GATE set)
+secondmate fleet2 (/private/tmp/fm-seat-optout.d2SnET/sm-fleet2):
+  crew-dispatch.json: unchanged
+  crew-harness: unchanged
+  backlog-backend: unchanged
+  backend: unchanged
+  herdr-presentation-spaces: unchanged
+  startup-memory-budget: unchanged
+  trace-context: unchanged - session-scoped
+  launch-env-allowlist: unchanged
+  claude-permission-mode: unchanged
+  lavish-axi-host: unchanged
+  claude-seat: skipped - home declines inherited seat settings (config/claude-seat-local)
+  claude-seats-root: skipped - home declines inherited seat settings (config/claude-seat-local)
+  claude-seat-threshold: skipped - home declines inherited seat settings (config/claude-seat-local)
+  data/captain-shared.md: unchanged
+CONFIG_REREAD: secondmate fleet2: send failed: error: no-mistakes gate agent must not drive the fleet (NO_MISTAKES_GATE set)
+warning: seat switched here, but not every secondmate home was updated (see above); those homes keep spawning on their previous seat until bin/fm-config-push.sh --local-only succeeds
+[exit 0]
+    sm-fleet1/config/claude-seat = <absent>
+    sm-fleet1/config/claude-seats-root = <absent>
+    sm-fleet1/config/claude-seat-threshold = <absent>
+    sm-fleet2/config/claude-seat = <absent>
+    sm-fleet2/config/claude-seats-root = <absent>
+    sm-fleet2/config/claude-seat-threshold = <absent>
+    sm-client/config/claude-seat = client
+    sm-client/config/claude-seats-root = /tmp/fm-seat-optout.d2SnET/personal-seats
+    sm-client/config/claude-seat-threshold = 40
+local secondmate homes declining inherited seats:
+  client	client	/private/tmp/fm-seat-optout.d2SnET/sm-client
+  fleet1	default	/private/tmp/fm-seat-optout.d2SnET/sm-fleet1
+  fleet2	default	/private/tmp/fm-seat-optout.d2SnET/sm-fleet2
+[exit 0]
+
+=== S6 removing the flag restores fleet-wide default ===
+$ FM_HOME=/tmp/fm-seat-optout.d2SnET/primary fm-seat.sh switch work
+switched: default -> work
+applies to NEW claude workers only; running workers keep their own seat
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+config-push: /tmp/fm-seat-optout.d2SnET/primary -> live secondmate homes
+secondmate client (/private/tmp/fm-seat-optout.d2SnET/sm-client):
+  crew-dispatch.json: unchanged
+  crew-harness: unchanged
+  backlog-backend: unchanged
+  backend: unchanged
+  herdr-presentation-spaces: unchanged
+  startup-memory-budget: unchanged
+  trace-context: unchanged - session-scoped
+  launch-env-allowlist: unchanged
+  claude-permission-mode: unchanged
+  lavish-axi-host: unchanged
+  claude-seat: pushed
+  claude-seats-root: pushed
+  claude-seat-threshold: pushed - mirrored primary absence
+  data/captain-shared.md: unchanged
+CONFIG_REREAD: secondmate client: send failed: error: no-mistakes gate agent must not drive the fleet (NO_MISTAKES_GATE set)
+secondmate fleet1 (/private/tmp/fm-seat-optout.d2SnET/sm-fleet1):
+  crew-dispatch.json: unchanged
+  crew-harness: unchanged
+  backlog-backend: unchanged
+  backend: unchanged
+  herdr-presentation-spaces: unchanged
+  startup-memory-budget: unchanged
+  trace-context: unchanged - session-scoped
+  launch-env-allowlist: unchanged
+  claude-permission-mode: unchanged
+  lavish-axi-host: unchanged
+  claude-seat: pushed
+  claude-seats-root: pushed
+  claude-seat-threshold: unchanged
+  data/captain-shared.md: unchanged
+CONFIG_REREAD: secondmate fleet1: send failed: error: no-mistakes gate agent must not drive the fleet (NO_MISTAKES_GATE set)
+secondmate fleet2 (/private/tmp/fm-seat-optout.d2SnET/sm-fleet2):
+  crew-dispatch.json: unchanged
+  crew-harness: unchanged
+  backlog-backend: unchanged
+  backend: unchanged
+  herdr-presentation-spaces: unchanged
+  startup-memory-budget: unchanged
+  trace-context: unchanged - session-scoped
+  launch-env-allowlist: unchanged
+  claude-permission-mode: unchanged
+  lavish-axi-host: unchanged
+  claude-seat: pushed
+  claude-seats-root: pushed
+  claude-seat-threshold: unchanged
+  data/captain-shared.md: unchanged
+CONFIG_REREAD: secondmate fleet2: send failed: error: no-mistakes gate agent must not drive the fleet (NO_MISTAKES_GATE set)
+warning: seat switched here, but not every secondmate home was updated (see above); those homes keep spawning on their previous seat until bin/fm-config-push.sh --local-only succeeds
+[exit 0]
+    sm-fleet1/config/claude-seat = work
+    sm-fleet1/config/claude-seats-root = /tmp/fm-seat-optout.d2SnET/seats
+    sm-fleet1/config/claude-seat-threshold = <absent>
+    sm-fleet2/config/claude-seat = work
+    sm-fleet2/config/claude-seats-root = /tmp/fm-seat-optout.d2SnET/seats
+    sm-fleet2/config/claude-seat-threshold = <absent>
+    sm-client/config/claude-seat = work
+    sm-client/config/claude-seats-root = /tmp/fm-seat-optout.d2SnET/seats
+    sm-client/config/claude-seat-threshold = <absent>
+local secondmate homes declining inherited seats:
+  (none - every local home takes this seat)
+[exit 0]
