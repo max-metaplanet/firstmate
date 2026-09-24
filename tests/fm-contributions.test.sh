@@ -551,11 +551,14 @@ wrap_forge() { # home: log gh calls and apply per-call faults from $FORGE/fault
 #!/usr/bin/env bash
 set -eu
 # Advance the mock clock by publishing a whole value. A bare
-# `printf > "$FORGE/clock"` truncates in place, so a concurrent reader - a
-# sibling parallel forge read taking its own `date +%s`, or a second faulting
-# call - can read the file mid-write, get an empty string, and collapse the
-# clock to the bare offset. That silently rewinds the poll's remaining budget
-# by decades and makes a reserved deadline look unreached.
+# `printf > "$FORGE/clock"` truncates in place, so another writer running
+# concurrently in the same parallel read wave can read the file mid-write, get
+# an empty string, compute $(( + N )), and collapse the clock to the bare
+# offset. The pair that raced was the issues/<n>/comments and issues/<n>/events
+# reads observe() runs in parallel for an issue, back when the reserve fault
+# matched both. The narrowed reserve pattern below removes that pair for the
+# reserve test, but exhaust and fail-late still advance the clock from inside
+# a parallel wave, so the primitive itself must be safe.
 advance_clock() { # seconds
   local current
   current=$(cat "$FORGE/clock")
