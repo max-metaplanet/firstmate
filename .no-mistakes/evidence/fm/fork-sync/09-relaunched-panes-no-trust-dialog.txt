@@ -1,0 +1,14 @@
+=== pane w1:p2
+  ❯ No, disable external imports
+> export GOTMPDIR=/tmp/fm-live-a/gotmp
+> export COMPACT_ADVISER_DISABLE=1
+> export FM_TASK_ID=live-a
+> . '/tmp/fm-live-a+e2a5ece682412ea46e5c2049e2bcc0d7908164ceca8084f745ff7d61d2a3a48f/launch.s1790224272.17903.4776.sh'
+  Allow external CLAUDE.md file imports?
+=== pane w3:p2
+  ❯ No, disable external imports
+> export GOTMPDIR=/tmp/fm-live-c/gotmp
+> export COMPACT_ADVISER_DISABLE=1
+> export FM_TASK_ID=live-c
+> . '/tmp/fm-live-c+e2a5ece682412ea46e5c2049e2bcc0d7908164ceca8084f745ff7d61d2a3a48f/launch.s1790224336.49996.12730.sh'
+  Allow external CLAUDE.md file imports?

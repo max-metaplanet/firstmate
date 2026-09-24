@@ -1,0 +1,8 @@
+$ fm-seat.sh switch seat-a   (real quota-axi: synthetic apiKeyHelper seat has no oauth login)
+error: seat 'seat-a' is not logged in; run 'fm-seat.sh add seat-a' for the owner's login steps (docs/claude-seats.md)
+rc=1
+$ fm-seat.sh switch seat-a --force
+error: seat 'seat-a' is not logged in; run 'fm-seat.sh add seat-a' for the owner's login steps (docs/claude-seats.md)
+rc=1
+$ ls config/claude-seat
+ls: /private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-seat-live.iIb9DA/home/config/claude-seat: No such file or directory

@@ -1,0 +1,22 @@
+project  HEAD
+> export FM_TASK_ID=live-a
+
+project  HEAD
+> . '/tmp/fm-live-a+e2a5ece682412ea46e5c2049e2bcc0d7908164ceca8084f745ff7d61d2a3a48f/launch.s1790224130.36982.32160.sh'
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  Allow external CLAUDE.md file imports?
+
+  This project's CLAUDE.md imports files outside the current working directory. Never allow this for third-party
+  repositories.
+
+  External imports:
+    /Users/max/.claude/RTK.md
+
+  Important: Only use Claude Code with files you trust. Accessing untrusted files may pose security risks
+  https://code.claude.com/docs/en/security
+
+  ❯ No, disable external imports
+    Yes, allow external imports
+
+  Enter to confirm · Esc to cancel

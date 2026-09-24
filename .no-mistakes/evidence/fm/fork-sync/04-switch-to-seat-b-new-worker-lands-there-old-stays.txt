@@ -1,0 +1,43 @@
+# live worker A after spawn on seat-a
+  pid=44168 comm=claude CLAUDE_CONFIG_DIR=$LAB/seats/seat-a
+  seat-a/sessions: 44168.fb73d334625a5ca24068760848ec0bc6ebe925b782a291bf10221e890bf2c07b.key
+
+$ fm-seat.sh switch seat-b
+switched: seat-a -> seat-b
+applies to NEW claude workers only; running workers keep their own seat
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: 301s ago, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+config-push: no live secondmate homes found
+rc=0
+
+$ grep claude_seat state/live-a.meta   (after switch, before B)
+claude_seat=$LAB/seats/seat-a
+
+$ fm-spawn.sh live-b <project> --backend herdr --mode no-mistakes --yolo off
+warning: $LAB/home/data/live-b/launch-brief.md records no delivery contract line (scaffolded before ship briefs recorded one); launching on the explicit --mode no-mistakes - confirm its definition of done matches
+spawned live-b harness=claude kind=ship mode=no-mistakes yolo=off window=fm-lab-seat-live-9746-28597:w2:p2 worktree=/Users/max/.treehouse/project-264922/2/project
+rc=0
+
+# task records
+  live-a: claude_seat=$LAB/seats/seat-a  window=fm-lab-seat-live-9746-28597:w1:p2
+  live-b: claude_seat=$LAB/seats/seat-b  window=fm-lab-seat-live-9746-28597:w2:p2
+
+# live claude processes and their CLAUDE_CONFIG_DIR
+  pid=44168 comm=claude CLAUDE_CONFIG_DIR=$LAB/seats/seat-a
+  pid=72427 comm=claude CLAUDE_CONFIG_DIR=$LAB/seats/seat-b
+
+$ fm-seat.sh status
+active seat for NEW workers: seat-b
+active profile: $LAB/seats/seat-b
+login state: logged-in
+auto-switch threshold: (unset - no automatic switching)
+auto-switch watch: not armed
+
+live workers keep the seat they launched with:
+  live-a	$LAB/seats/seat-a
+  live-b	$LAB/seats/seat-b

@@ -1,0 +1,27 @@
+# worker A stopped again; home now: no seat file, pin -> $LAB/seats/seat-a (the task's own recorded dir)
+$ fm-spawn.sh live-a --relaunch
+warning: $LAB/home/data/live-a/launch-brief.md records no delivery contract line (scaffolded before ship briefs recorded one); launching on the explicit --mode no-mistakes - confirm its definition of done matches
+spawned live-a harness=claude kind=ship mode=no-mistakes yolo=off window=fm-lab-seat-live-9746-28597:w1:p2 worktree=/Users/max/.treehouse/project-264922/1/project account=$LAB/seats/seat-a
+rc=0
+live-a record: claude_seat=$LAB/seats/seat-a
+# live claude processes:
+  pid=22734 comm=claude CLAUDE_CONFIG_DIR=$LAB/seats/seat-a
+
+# pin-only home: config/claude-account -> $LAB/pin-root, no seat file; fresh task live-c, then stop and relaunch it
+$ fm-spawn.sh live-c <project> --backend herdr --mode no-mistakes --yolo off
+warning: $LAB/home/data/live-c/launch-brief.md records no delivery contract line (scaffolded before ship briefs recorded one); launching on the explicit --mode no-mistakes - confirm its definition of done matches
+spawned live-c harness=claude kind=ship mode=no-mistakes yolo=off window=fm-lab-seat-live-9746-28597:w3:p2 worktree=/Users/max/.treehouse/project-264922/3/project account=$LAB/pin-root
+rc=0
+live-c record: claude_seat=$LAB/pin-root
+  pid=22734 comm=claude CLAUDE_CONFIG_DIR=$LAB/seats/seat-a
+  pid=72427 comm=claude CLAUDE_CONFIG_DIR=$LAB/seats/seat-b
+  pid=45672 comm=claude CLAUDE_CONFIG_DIR=$LAB/pin-root
+
+# stopped live-c's claude (pid 45672); relaunch with the pin unchanged
+$ fm-spawn.sh live-c --relaunch
+warning: $LAB/home/data/live-c/launch-brief.md records no delivery contract line (scaffolded before ship briefs recorded one); launching on the explicit --mode no-mistakes - confirm its definition of done matches
+spawned live-c harness=claude kind=ship mode=no-mistakes yolo=off window=fm-lab-seat-live-9746-28597:w3:p2 worktree=/Users/max/.treehouse/project-264922/3/project account=$LAB/pin-root
+rc=0
+  pid=22734 comm=claude CLAUDE_CONFIG_DIR=$LAB/seats/seat-a
+  pid=72427 comm=claude CLAUDE_CONFIG_DIR=$LAB/seats/seat-b
+  pid=54921 comm=claude CLAUDE_CONFIG_DIR=$LAB/pin-root

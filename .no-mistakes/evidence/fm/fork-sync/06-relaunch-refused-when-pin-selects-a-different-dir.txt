@@ -1,0 +1,14 @@
+# worker A's claude process was stopped (agent-free pane); home now: no seat file, pin -> $LAB/pin-root
+config/claude-account=$LAB/pin-root; config/claude-seat: absent
+live-a record: claude_seat=$LAB/seats/seat-a
+
+$ fm-spawn.sh live-a --relaunch
+error: task live-a was launched on the Claude seat $LAB/seats/seat-a, and this home's worker account pin selects a different Claude configuration directory:
+  $LAB/home/config/claude-account
+a relaunch keeps the seat its task was launched on, so it cannot also follow the pin; relaunch it with the pin absent or pointing at that seat, or finish it and spawn the work as a new task
+rc=1
+
+# after: record unchanged? yes
+# live claude processes:
+  pid=72427 comm=claude CLAUDE_CONFIG_DIR=$LAB/seats/seat-b
+panes: ["w1:p2","w2:p2"]

@@ -1,0 +1,11 @@
+# home now: no pin, active seat = seat-b; live-a record: claude_seat=$LAB/seats/seat-a
+
+$ fm-spawn.sh live-a --relaunch
+warning: $LAB/home/data/live-a/launch-brief.md records no delivery contract line (scaffolded before ship briefs recorded one); launching on the explicit --mode no-mistakes - confirm its definition of done matches
+spawned live-a harness=claude kind=ship mode=no-mistakes yolo=off window=fm-lab-seat-live-9746-28597:w1:p2 worktree=/Users/max/.treehouse/project-264922/1/project
+rc=0
+
+live-a record: claude_seat=$LAB/seats/seat-a
+# live claude processes:
+  pid=4650 comm=claude CLAUDE_CONFIG_DIR=$LAB/seats/seat-a
+  pid=72427 comm=claude CLAUDE_CONFIG_DIR=$LAB/seats/seat-b

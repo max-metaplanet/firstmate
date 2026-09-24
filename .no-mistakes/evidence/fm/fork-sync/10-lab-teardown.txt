@@ -1,0 +1,2 @@
+$ fm-herdr-lab.sh teardown fm-lab-seat-live-9746-28597
+rc=0

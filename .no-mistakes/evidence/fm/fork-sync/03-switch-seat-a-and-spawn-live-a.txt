@@ -1,0 +1,8 @@
+$ fm-seat.sh switch seat-a
+switched: default -> seat-a   (earlier step)
+
+$ fm-spawn.sh live-a <project> --backend herdr --mode no-mistakes --yolo off
+warning: /private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-seat-live.iIb9DA/home/data/live-a/launch-brief.md records no delivery contract line (scaffolded before ship briefs recorded one); launching on the explicit --mode no-mistakes - confirm its definition of done matches
+warning: herdr presentation parent is absent or ambiguous; using the ordinary flat layout without projection
+spawned live-a harness=claude kind=ship mode=no-mistakes yolo=off window=fm-lab-seat-live-9746-28597:w1:p2 worktree=/Users/max/.treehouse/project-264922/1/project
+rc=0

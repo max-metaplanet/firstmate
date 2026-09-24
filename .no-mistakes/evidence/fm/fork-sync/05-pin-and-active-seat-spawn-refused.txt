@@ -1,0 +1,21 @@
+# home config: seat-b active AND an account pin
+config/claude-seat=seat-b  config/claude-account=ordinary
+
+# before
+panes: ["w1:p2","w2:p2"]
+treehouse slots: 1 2 treehouse-state.json treehouse-state.key treehouse-state.lock 
+state metas: live-a.meta live-b.meta 
+
+$ fm-spawn.sh live-c <project> --backend herdr --mode no-mistakes --yolo off
+error: this home configures a worker account pin and an active Claude seat, and both choose a Claude worker's configuration directory:
+  $LAB/home/config/claude-account
+  $LAB/home/config/claude-seat
+remove either file to resolve the conflict
+rc=
+
+# after
+panes: ["w1:p2","w2:p2"]
+treehouse slots: 1 2 treehouse-state.json treehouse-state.key treehouse-state.lock 
+state metas: live-a.meta live-b.meta 
+ls: $LAB/home/state/live-c.meta: No such file or directory
+exit code of the refused spawn: 1
