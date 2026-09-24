@@ -65,10 +65,11 @@ die() { printf 'error: %s\n' "$1" >&2; exit 1; }
 # html_escape <text>
 html_escape() {
   local s=$1
-  s=${s//&/&amp;}
-  s=${s//</&lt;}
-  s=${s//>/&gt;}
-  s=${s//\"/&quot;}
+  # Quoted replacements: bash 5.2+ patsub_replacement treats a bare & as the match.
+  s=${s//&/'&amp;'}
+  s=${s//</'&lt;'}
+  s=${s//>/'&gt;'}
+  s=${s//\"/'&quot;'}
   printf '%s' "$s"
 }
 

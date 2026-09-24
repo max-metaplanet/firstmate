@@ -230,6 +230,24 @@ test_the_cache_is_scoped_to_each_seats_config_dir_not_its_name() {
   pass "the cache is scoped to each seat's config dir, not its name"
 }
 
+test_render_escapes_markup_in_quota_axi_text() {
+  local rec out
+  rec=$(make_board_case escaping)
+  read_board_case "$rec"
+  # The email_map value is spliced raw into the fake's JSON, so \" is a JSON
+  # escape that quota-axi reports as a literal double quote.
+  printf '(default)\tme <b>x</b> & \\"q\n' > "$SPEC_DIR/email_map"
+  printf '(default)\n' > "$SPEC_DIR/oauth"
+
+  out=$(run_board "$HOME_DIR" "$FAKEBIN" "$CASE_DIR/cache")
+  expect_grep 'me &lt;b&gt;x&lt;/b&gt; &amp; &quot;q' "$out" \
+    "markup in quota-axi's text must be HTML-escaped"
+  if printf %s "$out" | grep -F -- '<b>x</b>' >/dev/null; then
+    fail "raw markup from quota-axi must never reach the page"
+  fi
+  pass "render escapes markup in quota-axi text"
+}
+
 test_serve_rejects_a_missing_or_non_numeric_port() {
   local rc
   "$BOARD" serve --port >/dev/null 2>&1
@@ -248,6 +266,7 @@ test_render_shows_a_rate_limited_seats_error_as_is
 test_a_reload_within_the_cache_window_does_not_read_quota_axi_again
 test_render_reads_quota_axi_without_refreshing_or_prompting_for_credentials
 test_the_cache_is_scoped_to_each_seats_config_dir_not_its_name
+test_render_escapes_markup_in_quota_axi_text
 test_serve_rejects_a_missing_or_non_numeric_port
 
 echo "# all fm-seat-board tests passed"
