@@ -1,0 +1,47 @@
+## S10 usage-warner setter, percent LEFT, same shape as fm-seat.sh threshold
+$ fm-usage-warner.sh threshold
+(unset - no window is watched, so this home warns about nothing)
+[exit 0]
+$ fm-usage-warner.sh threshold five_hour 20
+threshold: five_hour at 20% left (which is 80% used)
+[exit 0]
+$ fm-usage-warner.sh threshold seven_day 10
+threshold: seven_day at 10% left (which is 90% used)
+[exit 0]
+$ fm-usage-warner.sh threshold five_hour 150
+fm-usage-warner: percent left must be a whole number from 1 to 100, or "off"
+[exit 1]
+$ fm-usage-warner.sh threshold
+five_hour	20% left (warns once at or below 20% left, which is 80% used)
+seven_day	10% left (warns once at or below 10% left, which is 90% used)
+[exit 0]
+--- config/usage-warner:
+five_hour:20
+seven_day:10
+$ fm-usage-warner.sh threshold seven_day off
+threshold cleared: seven_day
+[exit 0]
+$ fm-usage-warner.sh threshold
+five_hour	20% left (warns once at or below 20% left, which is 80% used)
+[exit 0]
+
+## S11 arm registers a repeating watch, status shows it, retire removes it
+$ fm-seat.sh arm
+armed: automatic switch at 15% left on the active seat
+keeps watching after each switch; one crossing fires at most once per seat
+[exit 0]
+$ fm-seat.sh status | grep watch
+auto-switch watch: armed (keeps watching after each switch)
+/tmp/fmseat-lab.8XNv/home/config/claude-seat-threshold
+/tmp/fmseat-lab.8XNv/home/config/claude-seat-extra-usage
+/tmp/fmseat-lab.8XNv/home/config/claude-seat
+/tmp/fmseat-lab.8XNv/home/config/claude-seats-root
+/tmp/fmseat-lab.8XNv/home/config/claude-seat-destination-min
+/tmp/fmseat-lab.8XNv/home/state/.claude-seat-auto
+/tmp/fmseat-lab.8XNv/home/state/claude-seat.check-trust
+/tmp/fmseat-lab.8XNv/home/state/claude-seat.check.sh
+$ fm-seat.sh retire
+retired: the automatic Claude seat watch
+[exit 0]
+$ fm-seat.sh status | grep watch
+auto-switch watch: not armed

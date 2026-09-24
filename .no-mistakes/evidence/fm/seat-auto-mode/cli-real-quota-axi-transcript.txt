@@ -1,0 +1,28 @@
+## S13 real quota-axi (read-only, --no-credential-refresh), ambient default profile, throwaway FM_HOME
+quota-axi: /Users/max/.local/state/fnm_multishells/5987_1790218021223/bin/quota-axi
+$ fm-seat.sh threshold 15
+auto-switch threshold: 15% left
+[exit 0]
+$ fm-seat.sh extra-usage stop
+$ fm-seat.sh threshold-reached
+[exit 0]
+$ fm-seat.sh status
+active seat for NEW workers: default
+active profile: (ambient default login)
+login state: logged-in
+auto-switch trigger: at or below 15% left on the active seat
+destination minimum: (unset - any logged-in seat is a valid destination)
+extra-usage policy: stop - hold new Claude dispatch rather than start work on paid extra usage
+auto-switch watch: not armed
+new Claude dispatch: allowed
+  the active Claude seat still has 11% of its plan quota left
+
+live workers keep the seat they launched with:
+  (no task records)
+
+local secondmate homes declining inherited seats:
+  (none - every local home takes this seat)
+[exit 0]
+$ fm-seat.sh auto
+claude-seat: default is at 11% left and no seat has enough headroom to switch to; new Claude work is held rather than started on paid extra usage. A worker already running is not stopped.
+[exit 0]

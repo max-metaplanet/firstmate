@@ -1,0 +1,23 @@
+ok - fm-usage-warner: help and usage plumbing
+ok - fm-usage-warner: an unconfigured home sees no behaviour change
+ok - fm-usage-warner: config parsing keeps only valid directives, including colon-containing ids
+ok - fm-usage-warner: edge-triggered de-dupe crosses once, stays quiet, and re-arms on drop
+ok - fm-usage-warner: multiple crossings in one read batch into a single notification
+ok - fm-usage-warner: a configured but absent window id is silently skipped
+ok - fm-usage-warner: the read is always strictly read-only
+ok - fm-usage-warner: a missing quota-axi is reported once until it changes
+ok - fm-usage-warner: a missing jq is reported by name
+ok - fm-usage-warner: a malformed quota-axi response is reported
+ok - fm-usage-warner: a slow read is bounded and reported as a timeout
+ok - fm-usage-warner: the read bound is cut to fit a lowered FM_CHECK_TIMEOUT
+ok - fm-usage-warner: a watcher bound with no room for a read is recorded as not measured
+ok - fm-usage-warner: an unconfigured invocation never fails on unused environment
+ok - fm-usage-warner: the threshold setter writes, lists, replaces, and clears directives in percent left
+ok - fm-usage-warner: the threshold setter refuses an out-of-range or non-numeric percent and changes nothing
+ok - fm-usage-warner: notify exposes the home's single notification path for another feature to speak through
+ok - fm-usage-warner: arm refuses without a configured threshold, mirroring the opt-in gate
+ok - fm-usage-warner: arm refuses on a platform with no Notification Center path
+ok - fm-usage-warner: arm writes a bound shim the watcher can run, disarm removes it cleanly
+ok - fm-usage-warner: arm refuses a symlink at the shim path instead of following it
+ok - fm-usage-warner: the armed shim is exactly what the watcher would dispatch
+bash tests/fm-usage-warner.test.sh  3.84s user 11.25s system 30% cpu 49.418 total

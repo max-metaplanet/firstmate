@@ -1,0 +1,34 @@
+## (continuing) note: S5 above had no poll observing alpha healthy after landing on it, so fired=alpha correctly suppressed it (destination-below-trigger guard). Re-drive with a real intermediate poll:
+## S5 alpha observed healthy on a poll, then crosses; no destination qualifies
+   (quota: alpha=95)
+$ fm-seat.sh auto
+[exit 0]
+   (quota: alpha=5 beta=20 gamma=25)
+$ fm-seat.sh auto
+claude-seat: alpha is at 5% left and no seat has enough headroom to switch to; new Claude work is held rather than started on paid extra usage. A worker already running is not stopped.
+[exit 0]
+active: alpha
+## S5b repeated poll with nothing changed: silent (one wake per crossing)
+$ fm-seat.sh auto
+[exit 0]
+## S5c candidate beta resets to 100% while alpha still below trigger -> switched without re-arm
+   (quota: beta=100)
+$ fm-seat.sh auto
+claude-seat: switched from alpha at 5% left to beta; new workers launch there
+[exit 0]
+active: beta
+
+## S6 unreadable active quota (beta) never switches
+   (quota: alpha=90 gamma=90)
+$ fm-seat.sh auto
+[exit 0]
+$ fm-seat.sh threshold-reached
+[exit 2]
+$ fm-seat.sh auto
+[exit 0]
+active: beta
+
+## S7 slow quota endpoint bounded inside FM_CHECK_TIMEOUT
+$ fm-seat.sh auto
+[exit 0]
+pass took 6s with FM_CHECK_TIMEOUT=8 and a 60s endpoint; active: beta

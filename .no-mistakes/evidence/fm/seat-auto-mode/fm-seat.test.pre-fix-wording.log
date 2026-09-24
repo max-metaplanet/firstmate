@@ -1,0 +1,36 @@
+ok - an unset seat setting is the ambient default and configures no automatic switching
+ok - a switch to a logged-in seat records the seat and nothing else
+ok - a switch to a profile that is not logged in is refused and changes nothing
+ok - --force does not override a seat proven to be logged out
+ok - a rate-limited signed-in seat is undecided, and --force switches onto it
+ok - an unreadable credential store reads as undecided and --force may cross it
+ok - a forced switch refuses a seat whose profile directory does not exist
+ok - switching to the default seat clears the setting and restores ambient behaviour
+ok - a seat switch reaches running local secondmate homes and reports each one
+ok - a failed secondmate push is reported and never undoes the primary switch
+ok - a local home that declines keeps its own three seat settings through a switch
+ok - one home's decline leaves every other local home taking the switch
+ok - status names every local home that declined and the seat it is really on
+ok - a decline flag of any type declines and shows in status
+ok - seat settings reach local secondmate homes only and never cross to a remote route
+ok - a seat switch pushes only local secondmate homes and never waits on a remote route
+ok - fm-config-push reaches remote routes by default and skips them only with --local-only
+ok - the auto-switch threshold is configurable, validated, clearable, and unset by default
+ok - the threshold condition turns true exactly at the configured percent
+ok - an unreadable quota never trips an automatic switch
+ok - only account-level quota windows count toward the auto-switch threshold
+ok - the default seat's probe and threshold read the ambient profile new workers launch with
+ok - a home that configures none of the automatic settings behaves exactly as before they existed
+ok - the dispatch gate reads no quota at all until an extra-usage policy is configured
+ok - the destination minimum is settable by command, validated, clearable, and unset by default
+ok - a switch skips a logged-in seat below the destination minimum and lands on one above it
+ok - no switch happens when every candidate is below the destination minimum
+ok - a candidate whose quota gives no verdict is skipped, never guessed at as headroom
+ok - the extra-usage policy is settable by command, validated, clearable, and unset by default
+ok - the stop policy holds new dispatch only once the active seat's plan quota is gone
+ok - the allow policy dispatches under its dollar cap and holds once the spend reaches it
+ok - an unreadable quota holds dispatch instead of guessing, and the hold lifts once it reads again
+ok - the watch keeps running after a switch, fires once per crossing, and catches the next seat's own
+not ok - the wake must name the policy consequence, not just the failed switch (missing: 'will be held once this seat's plan quota runs out')
+--- output ---
+claude-seat: alpha is at 10% left and no seat has enough headroom to switch to; new Claude work is held rather than started on paid extra usage. A worker already running is not stopped.

@@ -1,0 +1,63 @@
+ok - an unset seat setting is the ambient default and configures no automatic switching
+ok - a switch to a logged-in seat records the seat and nothing else
+ok - a switch to a profile that is not logged in is refused and changes nothing
+ok - --force does not override a seat proven to be logged out
+ok - a rate-limited signed-in seat is undecided, and --force switches onto it
+ok - an unreadable credential store reads as undecided and --force may cross it
+ok - a forced switch refuses a seat whose profile directory does not exist
+ok - switching to the default seat clears the setting and restores ambient behaviour
+ok - a seat switch reaches running local secondmate homes and reports each one
+ok - a failed secondmate push is reported and never undoes the primary switch
+ok - a local home that declines keeps its own three seat settings through a switch
+ok - one home's decline leaves every other local home taking the switch
+ok - status names every local home that declined and the seat it is really on
+ok - a decline flag of any type declines and shows in status
+ok - seat settings reach local secondmate homes only and never cross to a remote route
+ok - a seat switch pushes only local secondmate homes and never waits on a remote route
+ok - fm-config-push reaches remote routes by default and skips them only with --local-only
+ok - the auto-switch threshold is configurable, validated, clearable, and unset by default
+ok - the threshold condition turns true exactly at the configured percent
+ok - an unreadable quota never trips an automatic switch
+ok - only account-level quota windows count toward the auto-switch threshold
+ok - the default seat's probe and threshold read the ambient profile new workers launch with
+ok - a home that configures none of the automatic settings behaves exactly as before they existed
+ok - the dispatch gate reads no quota at all until an extra-usage policy is configured
+ok - the destination minimum is settable by command, validated, clearable, and unset by default
+ok - a switch skips a logged-in seat below the destination minimum and lands on one above it
+ok - no switch happens when every candidate is below the destination minimum
+ok - a candidate whose quota gives no verdict is skipped, never guessed at as headroom
+ok - the extra-usage policy is settable by command, validated, clearable, and unset by default
+ok - the stop policy holds new dispatch only once the active seat's plan quota is gone
+ok - the allow policy dispatches under its dollar cap and holds once the spend reaches it
+ok - an unreadable quota holds dispatch instead of guessing, and the hold lifts once it reads again
+ok - the watch keeps running after a switch, fires once per crossing, and catches the next seat's own
+ok - with no seat qualifying the watch reports the policy consequence once and switches nothing
+ok - after a crossing with nowhere to go, the watch keeps looking and switches once a seat recovers
+ok - every quota read one automatic pass makes stays inside the watcher's per-check budget
+ok - the watch switches nothing when the active seat's quota gives no verdict
+ok - arm registers a repeating watch the watcher can run, and retire removes it cleanly
+ok - status reports all three automatic settings, every percentage counting percent left
+ok - rotation chooses the next logged-in seat under the root and skips ones with no credentials
+ok - rotation never targets the default profile, even when it is the only other logged-in store
+ok - rotation never assumes which seats exist and picks up seats added later
+ok - rotation refuses rather than pretending to switch when no other seat is usable
+ok - adding a seat creates an empty profile directory and prints the owner's login steps
+ok - a directory named 'default' is never offered, added, or rotated to
+ok - seat names that are not a single safe path component are refused
+ok - an unset seat setting leaves the launch and the task record exactly as before
+ok - a spawn launches on the active seat and records it in the task's own record
+ok - switching seats leaves a running worker's recorded profile unchanged
+ok - after a switch new workers get the new seat while existing ones keep theirs
+ok - an ambient CLAUDE_CONFIG_DIR still reaches workers and is recorded per task
+ok - a configured seat takes precedence over firstmate's own ambient config dir
+ok - a non-claude spawn records no Claude seat while a named seat is active
+ok - a home configuring both an account pin and an active seat is refused before anything exists
+ok - an account pin refuses relaunching a task recorded on a seat before anything is touched
+ok - a pin-only home with no seat file still relaunches a claude task under its pin
+ok - a pin pointing at a seat directory still relaunches a task recorded on that directory
+ok - a stop policy holds a fresh claude spawn, names the override, and changes nothing when overridden
+ok - the spawn gate holds at the dollar cap and on an unreadable quota, and dispatches under the cap
+ok - the dispatch hold covers fresh claude spawns only and never strands a task already under way
+ok - the Claude extra-usage hold never reaches a worker on another harness
+# all fm-seat tests passed
+bash tests/fm-seat.test.sh  25.71s user 43.33s system 36% cpu 3:11.37 total

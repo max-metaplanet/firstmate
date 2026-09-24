@@ -1,0 +1,29 @@
+## S8 stop policy, active seat's plan quota gone -> status shows hold, fresh claude spawn refused
+$ fm-seat.sh status
+active seat for NEW workers: beta
+active profile: /tmp/fmseat-lab.8XNv/seats/beta
+login state: logged-in
+auto-switch trigger: at or below 15% left on the active seat
+destination minimum: only switch to a seat above 30% left
+extra-usage policy: stop - hold new Claude dispatch rather than start work on paid extra usage
+auto-switch watch: not armed
+new Claude dispatch: HELD (bin/fm-spawn.sh --ignore-seat-hold starts one task anyway)
+  the active Claude seat has no plan quota left and the extra-usage policy is stop, so no new Claude worker is started on paid extra usage
+$ fm-spawn.sh gate-demo-1 /tmp/fmseat-lab.8XNv/home/projects/demo --harness claude --mode no-mistakes --yolo off
+error: no-mistakes gate agent must not drive the fleet (NO_MISTAKES_GATE set)
+[exit ]
+(eval):10: no matches found: /tmp/fmseat-lab.8XNv/home/state/*.meta
+(note: fm-spawn refused on its no-mistakes gate-agent guard, not the seat hold; the spawn gate is evidenced by tests/fm-seat.test.sh instead)
+
+## S9 allow policy under cap vs at cap
+$ fm-seat.sh extra-usage allow 25
+extra-usage policy: allow up to $25, then hold
+Measured against the spend the account itself reports for this seat.
+[exit 0]
+new Claude dispatch: allowed
+  $10 of extra usage spent on the active Claude seat, under the $25 cap
+new Claude dispatch: HELD (bin/fm-spawn.sh --ignore-seat-hold starts one task anyway)
+  $25 of extra usage is already spent on the active Claude seat, at or over the $25 cap
+$ fm-spawn.sh gate-demo-2 /tmp/fmseat-lab.8XNv/home/projects/demo --harness claude --mode no-mistakes --yolo off
+error: no-mistakes gate agent must not drive the fleet (NO_MISTAKES_GATE set)
+[exit ]

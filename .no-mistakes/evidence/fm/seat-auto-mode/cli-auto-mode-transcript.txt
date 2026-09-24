@@ -1,0 +1,92 @@
+## S1 settings in percent left, validated
+$ fm-seat.sh threshold 15
+auto-switch threshold: 15% left
+[exit 0]
+$ fm-seat.sh destination-min 30
+destination minimum: 30% left
+[exit 0]
+$ fm-seat.sh extra-usage stop
+extra-usage policy: stop
+new Claude workers are held once the active seat has no plan quota left.
+This stops STARTING new work. It cannot stop a worker already running from
+drawing extra usage mid-task, so it is not a guarantee of zero spend.
+[exit 0]
+$ fm-seat.sh threshold 150
+error: auto-switch threshold must be a percent left between 0 and 100, or 'off'
+[exit 1]
+$ fm-seat.sh destination-min abc
+error: destination minimum must be a percent left between 0 and 100, or 'off'
+[exit 1]
+$ fm-seat.sh extra-usage allow
+error: 'allow' needs a dollar cap, for example: extra-usage allow 25
+[exit 1]
+$ fm-seat.sh extra-usage allow -5
+error: 'allow' needs a dollar cap, for example: extra-usage allow 25
+[exit 1]
+$ fm-seat.sh switch alpha
+switched: default -> alpha
+applies to NEW claude workers only; running workers keep their own seat
+config-push: no live secondmate homes found
+[exit 0]
+$ fm-seat.sh status
+active seat for NEW workers: alpha
+active profile: /tmp/fmseat-lab.8XNv/seats/alpha
+login state: logged-in
+auto-switch trigger: at or below 15% left on the active seat
+destination minimum: only switch to a seat above 30% left
+extra-usage policy: stop - hold new Claude dispatch rather than start work on paid extra usage
+auto-switch watch: not armed
+new Claude dispatch: allowed
+  the active Claude seat still has 80% of its plan quota left
+
+live workers keep the seat they launched with:
+  (no task records)
+
+local secondmate homes declining inherited seats:
+  (none - every local home takes this seat)
+[exit 0]
+
+## S2 trigger not met -> auto is quiet
+   (quota: alpha=50 beta=90 gamma=90)
+$ fm-seat.sh auto
+[exit 0]
+alpha
+
+## S3 trigger met, skip beta below destination-min, land on gamma
+   (quota: alpha=10 beta=20 gamma=70)
+$ fm-seat.sh auto
+claude-seat: switched from alpha at 10% left to gamma; new workers launch there
+[exit 0]
+active: gamma
+## S3b next poll, same state: no second switch
+$ fm-seat.sh auto
+[exit 0]
+active: gamma
+
+## S4 keeps watching: gamma crosses its own trigger, alpha recovered -> switches again with no re-arm
+   (quota: alpha=95 beta=20 gamma=12)
+$ fm-seat.sh auto
+claude-seat: switched from gamma at 12% left to alpha; new workers launch there
+[exit 0]
+active: alpha
+
+## S5 no destination qualifies -> no switch, stop policy consequence reported
+   (quota: alpha=5 beta=20 gamma=25)
+$ fm-seat.sh auto
+[exit 0]
+active: alpha
+## S5b repeated poll with nothing changed: silent
+$ fm-seat.sh auto
+[exit 0]
+## S5c candidate (beta) resets while active still below trigger -> watch picks it up
+   (quota: beta=100)
+$ fm-seat.sh auto
+[exit 0]
+active: alpha
+
+## S6 unreadable active quota never switches
+$ fm-seat.sh threshold-reached
+[exit 0]
+$ fm-seat.sh auto
+[exit 0]
+active: alpha

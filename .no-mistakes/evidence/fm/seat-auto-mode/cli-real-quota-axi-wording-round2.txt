@@ -1,0 +1,61 @@
+## Round 2: real quota-axi (read-only --no-credential-refresh), ambient default profile, throwaway FM_HOME, target 3e73df4
+## threshold 100 guarantees the real seat is at/below trigger; no named seats exist so no destination qualifies
+$ fm-seat.sh threshold 100
+auto-switch threshold: 100% left
+[exit 0]
+$ fm-seat.sh extra-usage stop
+extra-usage policy: stop
+new Claude workers are held once the active seat has no plan quota left.
+This stops STARTING new work. It cannot stop a worker already running from
+drawing extra usage mid-task, so it is not a guarantee of zero spend.
+[exit 0]
+$ fm-seat.sh threshold-reached
+[exit 0]
+$ fm-seat.sh auto
+claude-seat: switched from default at 9% left to seat-max; new workers launch there
+[exit 0]
+$ fm-seat.sh status
+active seat for NEW workers: seat-max
+active profile: /Users/max/.claude-seats/seat-max
+login state: logged-in
+auto-switch trigger: at or below 100% left on the active seat
+destination minimum: (unset - any logged-in seat is a valid destination)
+extra-usage policy: stop - hold new Claude dispatch rather than start work on paid extra usage
+auto-switch watch: not armed
+new Claude dispatch: allowed
+  the active Claude seat still has 97% of its plan quota left
+
+live workers keep the seat they launched with:
+  (no task records)
+
+local secondmate homes declining inherited seats:
+  (none - every local home takes this seat)
+[exit 0]
+## repeat poll, nothing changed: expect silence
+$ fm-seat.sh auto
+[exit 0]
+## switch policy to allow $25 and clear the de-dupe record for a fresh crossing
+$ fm-seat.sh extra-usage allow 25
+extra-usage policy: allow up to $25, then hold
+Measured against the spend the account itself reports for this seat.
+[exit 0]
+$ fm-seat.sh auto
+[exit 0]
+$ fm-seat.sh status
+active seat for NEW workers: seat-max
+active profile: /Users/max/.claude-seats/seat-max
+login state: unknown
+auto-switch trigger: at or below 100% left on the active seat
+destination minimum: (unset - any logged-in seat is a valid destination)
+extra-usage policy: allow up to $25 of paid extra usage, then hold
+auto-switch watch: not armed
+new Claude dispatch: HELD (bin/fm-spawn.sh --ignore-seat-hold starts one task anyway)
+  the active Claude seat quota could not be read, so whether this worker would run on paid extra usage is unknown, and the policy makes no guess
+  this holds only work not yet started; a worker already running keeps its own seat and can still draw extra usage mid-task
+
+live workers keep the seat they launched with:
+  (no task records)
+
+local secondmate homes declining inherited seats:
+  (none - every local home takes this seat)
+[exit 0]
