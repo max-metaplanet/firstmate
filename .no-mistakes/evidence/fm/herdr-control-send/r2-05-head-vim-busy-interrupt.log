@@ -1,0 +1,33 @@
+[04:08:23] lab=fm-lab-mc-busy-interrup-5161-18575 pane=w1:p1 code=/Users/max/.no-mistakes/worktrees/61c6dd39b831/01M396EP9RP6ZBAJXX87NCC9ZK mode=vim flow=busy-interrupt herdr=herdr 0.9.1 claude=2.1.281 (Claude Code)
+[04:08:32] claude ready; footer:
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⚠ Transcript saving is off — inherited CLAUDE_CODE_CHILD_SESSION marker · restart with CLAUDE_CODE_FORCE_SESSION_P…
+  Haiku 4.5 | p/v/f/1/g/T/f/wt [mc1 ✓] | ⚙️20 | ⚡80% | P01=E04=U08=J17:08:29    auto mode unavailable for this model
+  -- INSERT -- ⏵⏵ bypass permissions on (shift+tab to cycle)
+[04:08:32] submitting a long prompt so claude is mid-turn
+[04:08:34] agent status before interrupt: working
+[04:08:34] $ fm-control.sh mc1 interrupt
+interrupt-delivered mc1 harness=claude backend=herdr verified=agent-alive cancel=unconfirmed
+[04:08:38] interrupt rc=0
+[04:08:40] footer after interrupt:
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⚠ Transcript saving is off — inherited CLAUDE_CODE_CHILD_SESSION marker · restart with CLAUDE_CODE_FORCE_SESSION_P…
+  Haiku 4.5 | p/v/f/1/g/T/f/wt [mc1 ✓] | 3.5¢ 12.7s | ⚙️48 | ⚡80% | P01=E04=U08=J17:08:38
+  -- INSERT -- ⏵⏵ bypass permissions on (shift+tab to cycle)
+[04:08:40] typing 'MCTOKEN24226' raw to prove the composer takes text
+[04:08:42] composer shows MCTOKEN24226 verbatim: TEXT ENTRY OK
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⚠ Transcript saving is off — inherited CLAUDE_CODE_CHILD_SESSION marker · restart with CLAUDE_CODE_FORCE_SESSION_P…
+  Haiku 4.5 | p/v/f/1/g/T/f/wt [mc1 ✓] | 3.5¢ 12.7s | ⚙️48 | ⚡80% | P01=E04=U08=J17:08:38
+  -- INSERT -- ⏵⏵ bypass permissions on (shift+tab to cycle)
+[04:08:43] $ fm-control.sh mc1 exit
+stopped mc1 harness=claude backend=herdr endpoint=fm-lab-mc-busy-interrup-5161-18575:w1:p1 worktree=/private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-mc-live.UyWlik/wt
+[04:08:52] exit rc=0
+[04:08:53] agent status after exit: 
+[04:08:53] footer after exit:
+  /skill-creator                                 Create new skills, modify and improve existing skills, and measure
+                                                 skill performance. Use when users want to create a skill from scrat…
+wt  mc1 took 25s
+>
+[04:08:53] FLOW RESULT: PASS
+[04:08:53] teardown fm-lab-mc-busy-interrup-5161-18575

@@ -1,0 +1,17 @@
+[03:58:17] lab=fm-lab-mc-plain-exit-76852-19483 pane=w1:p1 code=/Users/max/.no-mistakes/worktrees/61c6dd39b831/01M396EP9RP6ZBAJXX87NCC9ZK mode=novim flow=plain-exit herdr=herdr 0.9.1 claude=2.1.281 (Claude Code)
+[03:58:26] claude ready; footer:
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⚠ Transcript saving is off — inherited CLAUDE_CODE_CHILD_SESSION marker · restart with CLAUDE_CODE_FORCE_SESSION_P…
+  Haiku 4.5 | p/v/f/1/g/T/f/wt [mc1 ✓] | ⚙️19 | ⚡80% | P00=E03=U07=J16:58:23    auto mode unavailable for this model
+  ⏵⏵ bypass permissions on (shift+tab to cycle)
+[03:58:26] $ fm-control.sh mc1 exit
+error: the exit command could not be sent to task mc1 on herdr
+[03:58:30] exit rc=1
+[03:58:31] agent status after exit: idle
+[03:58:31] footer after exit:
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⚠ Transcript saving is off — inherited CLAUDE_CODE_CHILD_SESSION marker · restart with CLAUDE_CODE_FORCE_SESSION_P…
+  Haiku 4.5 | p/v/f/1/g/T/f/wt [mc1 ✓] | ⚙️16 | ⚡80% | P00=E03=U07=J16:58:30            Ctrl+Y to paste deleted text
+  ⏵⏵ bypass permissions on (shift+tab to cycle)
+[03:58:31] FLOW RESULT: FAIL
+[03:58:31] teardown fm-lab-mc-plain-exit-76852-19483

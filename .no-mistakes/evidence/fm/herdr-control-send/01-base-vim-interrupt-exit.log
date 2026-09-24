@@ -1,0 +1,25 @@
+[03:57:06] lab=fm-lab-mc-interrupt-exi-38487-179 pane=w1:p1 code=/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-base-73ae45e.Twf3 mode=vim flow=interrupt-exit herdr=herdr 0.9.1 claude=2.1.281 (Claude Code)
+[03:57:15] claude ready; footer:
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⚠ Transcript saving is off — inherited CLAUDE_CODE_CHILD_SESSION marker · restart with CLAUDE_CODE_FORCE_SESSION_P…
+  Haiku 4.5 | p/v/f/1/g/T/f/wt [mc1 ✓] | ⚙️13 | ⚡80% | P00=E03=U07=J16:57:12    auto mode unavailable for this model
+  -- INSERT -- ⏵⏵ bypass permissions on (shift+tab to cycle)
+[03:57:15] $ fm-control.sh mc1 interrupt
+interrupt-delivered mc1 harness=claude backend=herdr verified=agent-alive cancel=unconfirmed
+[03:57:16] interrupt rc=0
+[03:57:18] footer after interrupt:
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⚠ Transcript saving is off — inherited CLAUDE_CODE_CHILD_SESSION marker · restart with CLAUDE_CODE_FORCE_SESSION_P…
+  Haiku 4.5 | p/v/f/1/g/T/f/wt [mc1 ✓] | ⚙️16 | ⚡80% | P00=E03=U07=J16:57:17    auto mode unavailable for this model
+  ⏵⏵ bypass permissions on (shift+tab to cycle)
+[03:57:18] $ fm-control.sh mc1 exit
+error: the exit command could not be sent to task mc1 on herdr
+[03:57:22] exit rc=1
+[03:57:23] agent status after exit: idle
+[03:57:23] footer after exit:
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⚠ Transcript saving is off — inherited CLAUDE_CODE_CHILD_SESSION marker · restart with CLAUDE_CODE_FORCE_SESSION_P…
+  Haiku 4.5 | p/v/f/1/g/T/f/wt [mc1 ✓] | ⚙️19 | ⚡80% | P00=E03=U07=J16:57:20
+  -- INSERT -- ⏵⏵ bypass permissions on (shift+tab to cycle)
+[03:57:23] FLOW RESULT: FAIL
+[03:57:23] teardown fm-lab-mc-interrupt-exi-38487-179

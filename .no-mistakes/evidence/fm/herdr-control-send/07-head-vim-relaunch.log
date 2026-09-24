@@ -1,0 +1,33 @@
+[03:59:52] lab=fm-lab-mc-relaunch-28096-24973 pane=w1:p1 code=/Users/max/.no-mistakes/worktrees/61c6dd39b831/01M396EP9RP6ZBAJXX87NCC9ZK mode=vim flow=relaunch herdr=herdr 0.9.1 claude=2.1.281 (Claude Code)
+[04:00:01] claude ready; footer:
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⚠ Transcript saving is off — inherited CLAUDE_CODE_CHILD_SESSION marker · restart with CLAUDE_CODE_FORCE_SESSION_P…
+  Haiku 4.5 | p/v/f/1/g/T/f/wt [mc1 ✓] | ⚙️26 | ⚡80% | P00=E03=U07=J16:59:59    auto mode unavailable for this model
+  -- INSERT -- ⏵⏵ bypass permissions on (shift+tab to cycle)
+[04:00:01] $ fm-control.sh mc1 interrupt
+interrupt-delivered mc1 harness=claude backend=herdr verified=agent-alive cancel=unconfirmed
+[04:00:04] interrupt rc=0
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⚠ Transcript saving is off — inherited CLAUDE_CODE_CHILD_SESSION marker · restart with CLAUDE_CODE_FORCE_SESSION_P…
+  Haiku 4.5 | p/v/f/1/g/T/f/wt [mc1 ✓] | ⚙️28 | ⚡80% | P01=E04=U08=J17:00:04    auto mode unavailable for this model
+  -- INSERT -- ⏵⏵ bypass permissions on (shift+tab to cycle)
+[04:00:05] $ fm-control.sh mc1 relaunch --note 'lab relaunch'
+error: the exit command could not be sent to task mc1 on herdr
+error: relaunch of mc1 failed while stopping the old agent, which is still running; its original instructions were restored
+[04:00:09] relaunch rc=1
+[04:00:12] agent status after relaunch: idle
+[04:00:12] screen after relaunch:
+> cd '/private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-mc-live.b19Tbt/wt' && CLAUDE_CODE_ENABLE_PROMPT_SUGGE
+STION=false CLAUDE_CODE_SEND_FEEDBACK=0 claude --dangerously-skip-permissions --model haiku --settings '{"feedbackDraft
+s":"off","editorMode":"vim"}'
+ ▐▛███▛█   Claude Code v2.1.281
+▝▜██████▀  Haiku 4.5 · Claude Team
+  ▝▝ ▝▝    /private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-mc-live.b19Tbt/wt
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⚠ Transcript saving is off — inherited CLAUDE_CODE_CHILD_SESSION marker · restart with CLAUDE_CODE_FORCE_SESSION_P…
+  Haiku 4.5 | p/v/f/1/g/T/f/wt [mc1 ✓] | ⚙️26 | ⚡80% | P01=E04=U08=J17:00:09            Ctrl+Y to paste deleted text
+  -- INSERT -- ⏵⏵ bypass permissions on (shift+tab to cycle)
+[04:00:12] FLOW RESULT: FAIL
+[04:00:12] teardown fm-lab-mc-relaunch-28096-24973

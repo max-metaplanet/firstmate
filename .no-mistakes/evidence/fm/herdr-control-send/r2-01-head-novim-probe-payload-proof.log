@@ -1,0 +1,46 @@
+[04:05:21] lab=fm-lab-mc-probe-proof-10682-4779 pane=w1:p1 code=/Users/max/.no-mistakes/worktrees/61c6dd39b831/01M396EP9RP6ZBAJXX87NCC9ZK mode=novim flow=probe-proof herdr=herdr 0.9.1 claude=2.1.281 (Claude Code)
+[04:05:30] claude ready; footer:
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⚠ Transcript saving is off — inherited CLAUDE_CODE_CHILD_SESSION marker · restart with CLAUDE_CODE_FORCE_SESSION_P…
+  Haiku 4.5 | p/v/f/1/g/T/f/wt [mc1 ✓] | ⚙️19 | ⚡80% | P01=E04=U08=J17:05:28    auto mode unavailable for this model
+  ⏵⏵ bypass permissions on (shift+tab to cycle)
+[04:05:30] send_literal '/exit' (unsubmitted), then read what the Claude payload proof reads
+[04:05:32] composer_content rc=0: [/exit]
+[04:05:32] payload_shown('/exit') = YES
+[04:05:32] visible screen tail:
+  /vercel:next-upgrade                           (vercel) Upgrade Next.js to the latest version following official
+                                                 migration guides and codemods. Use when upgrading Next.js versions,…
+  /pptx                                          Use this skill any time a .pptx or .potx file is involved in any way
+                                                 — as input, output, or both. This includes: creating slide decks, p…
+  /usage-credits                                 Configure usage credits or request them from your admin when you hit
+                                                 a limit
+  /docs                                          docs (living docs people share, comment on and edit; use only when
+                                                 the user asks for one: names a doc, document, page, memo, spec, PRD…
+  /doctor                                        Health-check the user's Claude Code setup and fix issues: diagnose
+                                                 installation health — what the `claude doctor` terminal diagnostics…
+  /skill-creator                                 Create new skills, modify and improve existing skills, and measure
+                                                 skill performance. Use when users want to create a skill from scrat…
+{"error":{"code":"invalid_key","message":"unsupported key C-u"},"id":"cli:request"}
+{"error":{"code":"invalid_key","message":"unsupported key C-u"},"id":"cli:request"}
+{"error":{"code":"invalid_key","message":"unsupported key C-u"},"id":"cli:request"}
+[04:05:34] send_literal 'hello world' (unsubmitted), then read what the Claude payload proof reads
+[04:05:36] composer_content rc=0: [/exithello world]
+[04:05:36] payload_shown('hello world') = NO -> send_text_submit would refuse with send-failed
+[04:05:36] visible screen tail:
+> cd '/private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-mc-live.wVLon9/wt' && CLAUDE_CODE_ENABLE_PROMPT_SUGGE
+STION=false CLAUDE_CODE_SEND_FEEDBACK=0 claude --dangerously-skip-permissions --model haiku --settings '{"feedbackDraft
+s":"off","editorMode":"normal"}'
+ ▐▛███▛█   Claude Code v2.1.281
+▝▜██████▀  Haiku 4.5 · Claude Team
+  ▝▝ ▝▝    /private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-mc-live.wVLon9/wt
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ /exithello world
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⚠ Transcript saving is off — inherited CLAUDE_CODE_CHILD_SESSION marker · restart with CLAUDE_CODE_FORCE_SESSION_P…
+  Haiku 4.5 | p/v/f/1/g/T/f/wt [mc1 ✓] | ⚙️20 | ⚡80% | P01=E04=U08=J17:05:34
+  ⏵⏵ bypass permissions on (shift+tab to cycle)
+{"error":{"code":"invalid_key","message":"unsupported key C-u"},"id":"cli:request"}
+{"error":{"code":"invalid_key","message":"unsupported key C-u"},"id":"cli:request"}
+{"error":{"code":"invalid_key","message":"unsupported key C-u"},"id":"cli:request"}
+[04:05:37] FLOW RESULT: PASS
+[04:05:37] teardown fm-lab-mc-probe-proof-10682-4779

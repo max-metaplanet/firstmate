@@ -1,0 +1,17 @@
+[04:06:15] lab=fm-lab-mc-plain-exit-38616-16810 pane=w1:p1 code=/Users/max/.no-mistakes/worktrees/61c6dd39b831/01M396EP9RP6ZBAJXX87NCC9ZK mode=novim flow=plain-exit herdr=herdr 0.9.1 claude=2.1.281 (Claude Code)
+[04:06:24] claude ready; footer:
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⚠ Transcript saving is off — inherited CLAUDE_CODE_CHILD_SESSION marker · restart with CLAUDE_CODE_FORCE_SESSION_P…
+  Haiku 4.5 | p/v/f/1/g/T/f/wt [mc1 ✓] | ⚙️21 | ⚡80% | P01=E04=U08=J17:06:21    auto mode unavailable for this model
+  ⏵⏵ bypass permissions on (shift+tab to cycle)
+[04:06:24] $ fm-control.sh mc1 exit
+stopped mc1 harness=claude backend=herdr endpoint=fm-lab-mc-plain-exit-38616-16810:w1:p1 worktree=/private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-mc-live.0CuFEP/wt
+[04:06:29] exit rc=0
+[04:06:31] agent status after exit: 
+[04:06:31] footer after exit:
+  /skill-creator                                 Create new skills, modify and improve existing skills, and measure
+                                                 skill performance. Use when users want to create a skill from scrat…
+wt  mc1 took 12s
+>
+[04:06:31] FLOW RESULT: PASS
+[04:06:31] teardown fm-lab-mc-plain-exit-38616-16810

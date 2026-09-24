@@ -1,0 +1,34 @@
+[04:06:55] lab=fm-lab-mc-busy-interrup-62943-5744 pane=w1:p1 code=/Users/max/.no-mistakes/worktrees/61c6dd39b831/01M396EP9RP6ZBAJXX87NCC9ZK mode=vim flow=busy-interrupt herdr=herdr 0.9.1 claude=2.1.281 (Claude Code)
+[04:07:05] claude ready; footer:
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⚠ Transcript saving is off — inherited CLAUDE_CODE_CHILD_SESSION marker · restart with CLAUDE_CODE_FORCE_SESSION_P…
+  Haiku 4.5 | p/v/f/1/g/T/f/wt [mc1 ✓] | ⚙️25 | ⚡80% | P01=E04=U08=J17:07:02    auto mode unavailable for this model
+  -- INSERT -- ⏵⏵ bypass permissions on (shift+tab to cycle)
+[04:07:05] submitting a long prompt so claude is mid-turn
+[04:07:06] agent status before interrupt: working
+[04:07:06] $ fm-control.sh mc1 interrupt
+interrupt-delivered mc1 harness=claude backend=herdr verified=agent-alive cancel=unconfirmed
+[04:07:10] interrupt rc=0
+[04:07:12] footer after interrupt:
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⚠ Transcript saving is off — inherited CLAUDE_CODE_CHILD_SESSION marker · restart with CLAUDE_CODE_FORCE_SESSION_P…
+  Haiku 4.5 | p/v/f/1/g/T/f/wt [mc1 ✓] | 3.5¢ 14.0s | ⚙️21 | ⚡80% | P01=E04=U08=J17:07:11
+  -- INSERT -- ⏵⏵ bypass permissions on (shift+tab to cycle)
+[04:07:12] typing 'MCTOKEN30894' raw to prove the composer takes text
+[04:07:14] composer shows MCTOKEN30894 verbatim: TEXT ENTRY OK
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⚠ Transcript saving is off — inherited CLAUDE_CODE_CHILD_SESSION marker · restart with CLAUDE_CODE_FORCE_SESSION_P…
+  Haiku 4.5 | p/v/f/1/g/T/f/wt [mc1 ✓] | 3.5¢ 14.0s | ⚙️21 | ⚡80% | P01=E04=U08=J17:07:11
+  -- INSERT -- ⏵⏵ bypass permissions on (shift+tab to cycle)
+{"error":{"code":"invalid_key","message":"unsupported key C-u"},"id":"cli:request"}
+[04:07:14] $ fm-control.sh mc1 exit
+error: task mc1's composer visibly holds pending text; refusing to type the /exit exit command because it would concatenate onto that text. Clear or submit the pending text, then retry 'exit'
+[04:07:16] exit rc=1
+[04:07:17] agent status after exit: idle
+[04:07:17] footer after exit:
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⚠ Transcript saving is off — inherited CLAUDE_CODE_CHILD_SESSION marker · restart with CLAUDE_CODE_FORCE_SESSION_P…
+  Haiku 4.5 | p/v/f/1/g/T/f/wt [mc1 ✓] | 3.5¢ 14.0s | ⚙️21 | ⚡80% | P01=E04=U08=J17:07:11
+  -- INSERT -- ⏵⏵ bypass permissions on (shift+tab to cycle)
+[04:07:17] FLOW RESULT: FAIL
+[04:07:17] teardown fm-lab-mc-busy-interrup-62943-5744
