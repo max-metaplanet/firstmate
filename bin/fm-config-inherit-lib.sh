@@ -98,24 +98,14 @@ fm_config_inherit_item_machine_local() {  # <item>
 }
 
 # fm_config_inherit_seat_optout <dest-config-dir>
-# Whether the destination home declines the machine-local seat items:
-#   0 - it declines: a plain regular config/<FM_SEAT_LOCAL_OPTOUT_FILE> is there
-#   1 - it does not: no such file, which is the fleet-wide default
-#   2 - the flag exists but is not a plain regular file, so the home's intent
-#       cannot be read
-# Verdict 2 is never resolved either way by guessing. Reading it as absent would
-# push a seat into a home that tried to decline, and reading it as present would
-# hold a home back on a file nobody meant as a setting; both are the silent
-# behavior this setting exists to prevent, so the caller reports an error per
-# seat item and pushes none of them.
+# True when the destination home declines the machine-local seat items: any
+# config/<FM_SEAT_LOCAL_OPTOUT_FILE> path is there, whatever its type, including
+# a directory or a dangling symlink. False is the fleet-wide default.
 fm_config_inherit_seat_optout() {
-  local dest_config=${1-} flag present
+  local dest_config=${1-} flag
   [ -n "$dest_config" ] || return 1
   flag="$dest_config/$FM_SEAT_LOCAL_OPTOUT_FILE"
-  present=$(fm_config_source_present "$flag" 2>/dev/null) || return 2
-  [ "$present" = 1 ] || return 1
-  [ -f "$flag" ] && [ ! -L "$flag" ] || return 2
-  return 0
+  [ -e "$flag" ] || [ -L "$flag" ]
 }
 
 # Items whose value is a home-SESSION enablement decision rather than durable
@@ -504,7 +494,7 @@ propagate_secondmate_inheritance() {
 }
 
 propagate_inheritable_config() {
-  local src_config=$1 dest_config=$2 item src dest source_present reason rc seat_optout
+  local src_config=$1 dest_config=$2 item src dest source_present reason rc seat_optout=0
   [ -n "$src_config" ] || return 1
   [ -n "$dest_config" ] || return 1
   rc=0
@@ -512,22 +502,14 @@ propagate_inheritable_config() {
   # considered. Every local convergence point reaches the seat items through
   # this loop, so honoring it here is what makes a declining home's choice hold
   # on a post-switch push, a session-start sweep, and a secondmate launch alike.
-  fm_config_inherit_seat_optout "$dest_config"
-  seat_optout=$?
+  fm_config_inherit_seat_optout "$dest_config" && seat_optout=1
   for item in $FM_INHERITABLE_CONFIG; do
     case "$item" in
       ''|/*|.|..|../*|*/../*|*/..) return 1 ;;
     esac
-    if [ "$seat_optout" != 1 ] && fm_config_inherit_item_machine_local "$item"; then
-      if [ "$seat_optout" = 0 ]; then
-        reason="home declines inherited seat settings (config/$FM_SEAT_LOCAL_OPTOUT_FILE)"
-        record_inheritable_config_result "$item" skipped "$reason"
-      else
-        reason="cannot read the seat opt-out flag config/$FM_SEAT_LOCAL_OPTOUT_FILE (not a regular file), so refused"
-        warn_inheritable_config_error "$item" "$dest_config/$FM_SEAT_LOCAL_OPTOUT_FILE" "$reason"
-        record_inheritable_config_result "$item" error "$reason"
-        rc=1
-      fi
+    if [ "$seat_optout" = 1 ] && fm_config_inherit_item_machine_local "$item"; then
+      reason="home declines inherited seat settings (config/$FM_SEAT_LOCAL_OPTOUT_FILE)"
+      record_inheritable_config_result "$item" skipped "$reason"
       continue
     fi
     if [ "${FM_CONFIG_INHERIT_LIVE:-0}" = 1 ] && fm_config_inherit_item_session_scoped "$item"; then

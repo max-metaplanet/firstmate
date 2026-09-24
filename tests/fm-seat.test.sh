@@ -450,27 +450,40 @@ test_status_names_every_local_home_that_declined() {
   pass "status names every local home that declined and the seat it is really on"
 }
 
-test_an_unreadable_decline_flag_refuses_the_seat_items() {
-  local rec out sm
-  rec=$(make_seat_case decline-malformed)
+test_a_non_file_decline_flag_still_declines() {
+  local rec out sm_dir sm_link kind
+  rec=$(make_seat_case decline-non-file)
   read_seat_case "$rec"
   mkdir -p "$SEATS_DIR/work"
   seat_logged_in "$SPEC_DIR" '(default)' "$SEATS_DIR/work"
-  sm=$(add_local_secondmate "$HOME_DIR" "$FAKEBIN" smbroken)
-  mkdir -p "$sm/config/claude-seat-local"
+  sm_dir=$(add_local_secondmate "$HOME_DIR" "$FAKEBIN" smdirflag)
+  sm_link=$(add_local_secondmate "$HOME_DIR" "$FAKEBIN" smlinkflag)
+  mkdir -p "$sm_dir/config/claude-seat-local"
+  mkdir -p "$sm_link/config"
+  ln -s "$CASE_DIR/nowhere" "$sm_link/config/claude-seat-local"
+  printf 'personal\n' > "$sm_link/config/claude-seat"
 
   out=$(TMUX='' run_seat "$HOME_DIR" "$FAKEBIN" switch work 2>&1)
-  expect_code 0 "$?" "a switch must not fail because one home's flag is unreadable: $out"
+  expect_code 0 "$?" "a switch must succeed with non-file decline flags on the machine: $out"
   assert_grep "work" "$HOME_DIR/config/claude-seat" "the primary switch must still stand"
-  assert_absent "$sm/config/claude-seat" \
-    "an unreadable flag must not be read as absent and pushed through"
-  assert_contains "$out" "cannot read the seat opt-out flag" \
-    "an unreadable flag must be reported, never resolved silently"
+  assert_absent "$sm_dir/config/claude-seat" \
+    "a directory flag must decline, not let the seat through"
+  [ "$(cat "$sm_link/config/claude-seat" 2>/dev/null)" = personal ] \
+    || fail "a dangling symlink flag must decline and keep the home's own seat"
+  assert_not_contains "$out" "not every secondmate home was updated" \
+    "a non-file decline flag is a decline, not a push failure"
+  for kind in smdirflag smlinkflag; do
+    assert_contains "$out" "secondmate $kind" "the switch must report the declining home $kind"
+  done
+  assert_contains "$out" "claude-seat: skipped - home declines inherited seat settings" \
+    "a non-file flag must be reported as a decline"
 
   out=$(run_seat "$HOME_DIR" "$FAKEBIN" status)
-  assert_contains "$out" "smbroken	(unreadable - config/claude-seat-local is not a regular file)" \
-    "status must name the home whose flag could not be read"
-  pass "a decline flag that is not a regular file refuses the seat items loudly"
+  assert_contains "$out" "smdirflag	default	$sm_dir" \
+    "status must list a directory-flag home as declined"
+  assert_contains "$out" "smlinkflag	personal	$sm_link" \
+    "status must list a dangling-symlink-flag home as declined"
+  pass "a decline flag of any type declines and shows in status"
 }
 
 # add_unreachable_remote_secondmate <home> <fakebin> <id> -> echoes the path of
@@ -1168,7 +1181,7 @@ test_failed_secondmate_push_does_not_undo_the_switch
 test_a_declining_home_keeps_its_own_seat_through_a_switch
 test_a_switch_still_reaches_every_home_that_did_not_decline
 test_status_names_every_local_home_that_declined
-test_an_unreadable_decline_flag_refuses_the_seat_items
+test_a_non_file_decline_flag_still_declines
 test_remote_route_never_receives_seat_settings
 test_switch_never_contacts_remote_routes
 test_config_push_without_local_only_still_reaches_remote_routes
