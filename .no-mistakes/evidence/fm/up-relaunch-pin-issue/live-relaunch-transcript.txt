@@ -1,0 +1,35 @@
+lab root: /private/tmp/fmlive.wBWH   tmux server: /private/tmp/fmlive.wBWH/tmuxdir (private)
+task record account=: account=/private/tmp/fmlive.wBWH/work
+pane before: claude pid=95193
+
+=== S1 pin moved to another account -> fm-control relaunch
+error: task rl-live was launched on account /private/tmp/fmlive.wBWH/work, but config/claude-account now selects account /private/tmp/fmlive.wBWH/other; relaunching would move the task to a different account directory, and the replacement would start without the outgoing worker's session state, which stays under the recorded account. Set config/claude-account back to '/private/tmp/fmlive.wBWH/work' to relaunch this task, or leave it and start a fresh task on the new account
+exit=1
+pane after: claude pid=95193
+record unchanged: yes
+
+=== S2 pin file removed -> fm-control relaunch
+error: task rl-live was launched on account /private/tmp/fmlive.wBWH/work, but config/claude-account is now absent, so the relaunch would use the ordinary account (~/.claude with CLAUDE_CONFIG_DIR unset); relaunching would move the task to a different account directory, and the replacement would start without the outgoing worker's session state, which stays under the recorded account. Set config/claude-account back to '/private/tmp/fmlive.wBWH/work' to relaunch this task, or leave it and start a fresh task on the new account
+exit=1
+pane after: claude pid=95193
+record unchanged: yes
+
+=== S3 pin names the recorded account by a symlinked path -> guard passes, reaches the real claude sign-in check
+error: config/claude-account pins Claude workers to /private/tmp/fmlive.wBWH/work-link, which is not signed in (claude auth status); sign in with CLAUDE_CONFIG_DIR=/private/tmp/fmlive.wBWH/work-link claude, then /login, or change the pin
+exit=1
+pane after: claude pid=95193
+record unchanged: yes
+
+=== S4 launch owner reached directly: fm-spawn --relaunch with moved pin on an agent-free pane
+pane now: zsh pid=95193
+error: task rl-live was launched on account /private/tmp/fmlive.wBWH/work, but config/claude-account now selects account /private/tmp/fmlive.wBWH/other; relaunching would move the task to a different account directory, and the replacement would start without the outgoing worker's session state, which stays under the recorded account. Set config/claude-account back to '/private/tmp/fmlive.wBWH/work' to relaunch this task, or leave it and start a fresh task on the new account
+exit=1
+pane after: zsh pid=95193
+record unchanged: yes
+pane transcript tail:
+/private/tmp/fmlive.wBWH/agentbin/claude 100000
+telos% /private/tmp/fmlive.wBWH/agentbin/claude 100000
+^C
+telos%
+
+torn down: private tmux server killed, /private/tmp/fmlive.wBWH removed

@@ -1,0 +1,5 @@
+ok - fm-control relaunch: a signed-out worker account pin refuses before the old agent stops
+ok - fm-control relaunch: a pin that has moved off the task's recorded account refuses and changes nothing
+ok - fm-control relaunch: a pin still on the task's recorded account relaunches it
+ok - fm-control relaunch: a removed pin that would move the task off its recorded account refuses and changes nothing
+ok - fm-control relaunch: a home that never pinned the runner relaunches unchanged
