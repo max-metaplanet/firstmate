@@ -23,7 +23,7 @@
 #
 # Read-only: this script never switches, arms, or edits any seat setting. It
 # only reads. Every quota read goes through bin/fm-seat-lib.sh's own
-# fm_seat_quota_read, which passes --no-credential-refresh and never
+# fm_seat_quota_json, which passes --no-credential-refresh and never
 # --allow-keychain-prompt, exactly as every other seat probe in this repo.
 #
 # Caching: the Claude quota endpoint rate-limits frequent polling, so each
@@ -72,8 +72,8 @@ html_escape() {
   printf '%s' "$s"
 }
 
-# cache_key <seat-name>
-# A filesystem-safe cache filename for one seat name.
+# cache_key <config-dir>
+# A filesystem-safe cache filename for one seat's resolved config directory.
 cache_key() {
   printf '%s' "$1" | tr -c 'A-Za-z0-9_-' '_'
 }
@@ -87,14 +87,14 @@ file_age_seconds() {
   printf '%s\n' "$((now - mtime))"
 }
 
-# seat_quota_cached <seat-name> <config-dir>
+# seat_quota_cached <config-dir>
 # This seat's quota-axi --full --json report, read at most once every
 # FM_SEAT_BOARD_CACHE_SECONDS. Prints the cached or freshly read report, or
 # nothing when neither a fresh read nor a usable cache file exists.
 seat_quota_cached() {
-  local name=$1 dir=$2 cache_file age out
+  local dir=$1 cache_file age out
   mkdir -p "$FM_SEAT_BOARD_CACHE_DIR" 2>/dev/null || true
-  cache_file="$FM_SEAT_BOARD_CACHE_DIR/$(cache_key "$name").json"
+  cache_file="$FM_SEAT_BOARD_CACHE_DIR/$(cache_key "${dir:-default}").json"
   if [ -f "$cache_file" ]; then
     age=$(file_age_seconds "$cache_file") || age=$((FM_SEAT_BOARD_CACHE_SECONDS + 1))
     if [ "$age" -lt "$FM_SEAT_BOARD_CACHE_SECONDS" ]; then
@@ -102,8 +102,7 @@ seat_quota_cached() {
       return 0
     fi
   fi
-  out=$(fm_seat_quota_read "$dir") || out=
-  if [ -n "$out" ] && printf '%s' "$out" | jq -e . >/dev/null 2>&1; then
+  if out=$(fm_seat_quota_json "$dir"); then
     printf '%s' "$out" > "$cache_file.tmp" 2>/dev/null && mv "$cache_file.tmp" "$cache_file" 2>/dev/null
     printf '%s' "$out"
     return 0
@@ -131,7 +130,7 @@ CSS
 seat_section_html() {
   local name=$1 active=$2 dir json marker email src state_err attention extra spent limit
   dir=$(fm_seat_config_dir "$name")
-  json=$(seat_quota_cached "$name" "$dir")
+  json=$(seat_quota_cached "$dir")
   marker=
   [ "$name" != "$active" ] || marker=' <span class="active">active for new workers</span>'
   printf '<section class="seat">\n'
@@ -203,7 +202,9 @@ cmd_serve() {
   while [ $# -gt 0 ]; do
     case "$1" in
       --port)
-        port=${2:-}
+        [ $# -ge 2 ] || usage
+        case "$2" in '' | *[!0-9]*) usage ;; esac
+        port=$2
         shift 2
         ;;
       *)
@@ -236,6 +237,9 @@ cmd_serve() {
 case "${1:-serve}" in
   serve)
     shift || true
+    cmd_serve "$@"
+    ;;
+  --port)
     cmd_serve "$@"
     ;;
   render)

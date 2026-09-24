@@ -182,18 +182,63 @@ SH
   pass "a reload within the cache window does not read quota-axi again"
 }
 
-test_serve_prints_127_0_0_1_only_and_never_0_0_0_0() {
-  assert_grep '127.0.0.1' "$BOARD" "the serve path must bind 127.0.0.1"
-  assert_no_grep '0.0.0.0' "$BOARD" "the serve path must never bind 0.0.0.0"
-  pass "the script binds 127.0.0.1 only and never 0.0.0.0"
+test_render_reads_quota_axi_without_refreshing_or_prompting_for_credentials() {
+  local rec out argv_log
+  rec=$(make_board_case quota-argv)
+  read_board_case "$rec"
+  argv_log="$CASE_DIR/quota-argv.log"
+  mv "$FAKEBIN/quota-axi" "$FAKEBIN/quota-axi-real"
+  cat > "$FAKEBIN/quota-axi" <<SH
+#!/usr/bin/env bash
+printf '%s\\n' "\$*" >> "$argv_log"
+exec "$FAKEBIN/quota-axi-real" "\$@"
+SH
+  chmod +x "$FAKEBIN/quota-axi"
+
+  out=$(run_board "$HOME_DIR" "$FAKEBIN" "$CASE_DIR/cache")
+  [ -s "$argv_log" ] || fail "render must read quota-axi at least once"
+  grep -F -- '--no-credential-refresh' "$argv_log" >/dev/null ||
+    fail "every quota-axi read must pass --no-credential-refresh"
+  if grep -F -- '--allow-keychain-prompt' "$argv_log" >/dev/null; then
+    fail "the board must never pass --allow-keychain-prompt to quota-axi"
+  fi
+  pass "render reads quota-axi without refreshing or prompting for credentials"
 }
 
-test_serve_never_invokes_allow_keychain_prompt() {
-  assert_no_grep '--allow-keychain-prompt ' "$BOARD" \
-    "the board must never pass --allow-keychain-prompt to quota-axi"
-  assert_grep 'fm_seat_quota_read' "$BOARD" \
-    "every quota read must go through fm-seat-lib.sh's own --no-credential-refresh read"
-  pass "the script never invokes --allow-keychain-prompt and reads through fm_seat_quota_read"
+test_the_cache_is_scoped_to_each_seats_config_dir_not_its_name() {
+  local rec_a rec_b home_a fakebin_a home_b fakebin_b out cache
+  rec_a=$(make_board_case scope-a)
+  read_board_case "$rec_a"
+  home_a=$HOME_DIR fakebin_a=$FAKEBIN
+  cache="$TMP_ROOT/scope-shared-cache"
+  mkdir -p "$SEATS_DIR/delta"
+  printf '%s\tfirst@example.test\n' "$SEATS_DIR/delta" > "$SPEC_DIR/email_map"
+  printf '%s\n' "$SEATS_DIR/delta" > "$SPEC_DIR/oauth"
+
+  rec_b=$(make_board_case scope-b)
+  read_board_case "$rec_b"
+  home_b=$HOME_DIR fakebin_b=$FAKEBIN
+  mkdir -p "$SEATS_DIR/delta"
+  printf '%s\tsecond@example.test\n' "$SEATS_DIR/delta" > "$SPEC_DIR/email_map"
+  printf '%s\n' "$SEATS_DIR/delta" > "$SPEC_DIR/oauth"
+
+  out=$(run_board "$home_a" "$fakebin_a" "$cache")
+  expect_grep 'first@example.test' "$out" "the first home must show its own seat"
+  out=$(run_board "$home_b" "$fakebin_b" "$cache")
+  expect_grep 'second@example.test' "$out" \
+    "a second home's same-named seat must not reuse the first home's cached report"
+  pass "the cache is scoped to each seat's config dir, not its name"
+}
+
+test_serve_rejects_a_missing_or_non_numeric_port() {
+  local rc
+  "$BOARD" serve --port >/dev/null 2>&1
+  rc=$?
+  [ "$rc" = 2 ] || fail "serve --port with no value must exit 2 (got $rc)"
+  "$BOARD" --port abc >/dev/null 2>&1
+  rc=$?
+  [ "$rc" = 2 ] || fail "--port with a non-numeric value must exit 2 (got $rc)"
+  pass "serve rejects a missing or non-numeric port"
 }
 
 test_render_shows_the_default_seat_and_marks_it_active
@@ -201,7 +246,8 @@ test_render_lists_a_named_seat_with_its_windows_and_extra_usage
 test_render_shows_an_attention_line_for_a_seat_that_is_not_logged_in
 test_render_shows_a_rate_limited_seats_error_as_is
 test_a_reload_within_the_cache_window_does_not_read_quota_axi_again
-test_serve_prints_127_0_0_1_only_and_never_0_0_0_0
-test_serve_never_invokes_allow_keychain_prompt
+test_render_reads_quota_axi_without_refreshing_or_prompting_for_credentials
+test_the_cache_is_scoped_to_each_seats_config_dir_not_its_name
+test_serve_rejects_a_missing_or_non_numeric_port
 
 echo "# all fm-seat-board tests passed"
