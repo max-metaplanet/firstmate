@@ -46,6 +46,12 @@
 # the seats root, and switching to it clears config/claude-seat.
 FM_SEAT_DEFAULT_NAME=default
 
+# The fm_seat_logged_in verdict for a seat whose session is intact but whose
+# access token has lapsed and can still be renewed. It is a fourth exit status
+# rather than a widened 0 so that every caller has to say what it does with a
+# seat that is usable for a launch but has no readable quota.
+FM_SEAT_LOGIN_EXPIRED_RENEWABLE=3
+
 # fm_seat_root
 # Absolute directory holding one subdirectory per named seat. Seats live outside
 # the firstmate home on purpose: the account owner logs into a seat once and
@@ -162,8 +168,9 @@ fm_seat_list() {
 }
 
 # fm_seat_logged_in [config-dir]
-# Exit 0 when the profile holds usable Claude credentials, 1 when it plainly
-# does not, and 2 when the probe could not reach a verdict.
+# Exit 0 when the profile holds usable Claude credentials, 3 when its session is
+# signed in but its access token has lapsed and can still be renewed, 1 when it
+# plainly holds no login, and 2 when the probe could not reach a verdict.
 #
 # The probe is `quota-axi --provider claude`, run with the profile's own
 # CLAUDE_CONFIG_DIR, and a logged-in profile is the one that reports an oauth
@@ -172,6 +179,17 @@ fm_seat_list() {
 # its credentials in the Keychain, so --profile-only reports "credentials
 # missing" for a perfectly good seat. --no-credential-refresh keeps the read
 # from delegating a token renewal to the vendor CLI.
+#
+# FM_SEAT_LOGIN_EXPIRED_RENEWABLE (3) is a USABLE seat, not a degraded one. A
+# Claude access token lives eight hours from its last refresh, so a seat that
+# nothing has launched on since yesterday reads this way for most of the window
+# it spends as a rotation candidate. The session behind it is intact: launching
+# a claude worker there makes Claude Code perform the refresh exchange against
+# its own stored refresh token and rewrite the store, which is exactly how such
+# a seat recovers. Firstmate must never do that renewal itself - the refresh
+# token is single-use and a second refresher racing the session that owns it is
+# how a holder ends up presenting a spent token - so every read here stays
+# non-renewing and the launch remains the only thing that renews.
 fm_seat_logged_in() {
   local dir=${1-} out
   command -v quota-axi >/dev/null 2>&1 || return 2
@@ -188,6 +206,32 @@ fm_seat_logged_in() {
     (.providers // []) | map(select(.provider == "claude")) | .[0] // empty
     | .source == "oauth"
   ' >/dev/null 2>&1 && return 0
+  # Soft expiry, read from the one field quota-axi publishes for it. Its own
+  # type declares the contract this relies on: "Machine-readable local auth
+  # usability, distinct from quota freshness. Callers must not infer logout from
+  # provider status alone when this is set." The surrounding error text is NOT
+  # that signal - the same state was measured reporting both "Claude access
+  # token expired" and "Claude credential expired", depending on whether the
+  # quota endpoint rate limited the read first - so this matches the field and
+  # never the message.
+  printf '%s\n' "$out" | jq -e '
+    (.providers // []) | map(select(.provider == "claude")) | .[0] // empty
+    | .state.authStatus == "expired_refreshable"
+  ' >/dev/null 2>&1 && return "$FM_SEAT_LOGIN_EXPIRED_RENEWABLE"
+  # A definitive sign-out, and the only shape on a Keychain-backed store that
+  # proves one. quota-axi sets `auth_required` only when every credential source
+  # was actually consulted and each came back missing or invalid; a withheld or
+  # unreachable Keychain is replaced with that Keychain error instead, so this
+  # status can never stand for a store the probe merely failed to read.
+  #
+  # This is the shape a seat lands in after Anthropic definitively rejects its
+  # refresh token: Claude Code clears the session in place, leaving the Keychain
+  # item present but emptied, which reads as `credentials_invalid` rather than
+  # as the absent credential the attempts test below looks for.
+  printf '%s\n' "$out" | jq -e '
+    (.providers // []) | map(select(.provider == "claude")) | .[0] // empty
+    | .state.status == "auth_required"
+  ' >/dev/null 2>&1 && return 1
   # Tell a clean "not logged in" apart from a probe that could not decide, so a
   # switch refuses on the first and reports uncertainty on the second. Only a
   # report where every credential source was actually consulted and came back
@@ -208,9 +252,10 @@ fm_seat_logged_in() {
   # An undecided read (2) is what `switch --force` may cross, and crossing it is
   # safe: a forced switch to a genuinely empty seat stops the next worker on its
   # first message with "Not logged in" rather than spending another account.
-  # A proven-empty read (1) is never crossable. On a file-backed credential
-  # store, where an empty profile really can be read and found empty, 1 remains
-  # reachable; on macOS it correctly is not.
+  # A proven-empty read (1) is never crossable. This attempts test reaches it on
+  # a file-backed store, where an absent profile really can be read and found
+  # empty; on a Keychain-backed store the `auth_required` test above is what
+  # reaches it, so a genuinely signed-out seat is refused on either store.
   printf '%s\n' "$out" | jq -e '
     (.providers // []) | map(select(.provider == "claude")) | .[0] // empty
     | .source == "unavailable"

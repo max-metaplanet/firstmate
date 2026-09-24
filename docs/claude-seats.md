@@ -57,8 +57,12 @@ bin/fm-seat.sh probe work
 ```
 
 `logged-in` means the seat is ready.
+`expired-renewable` means the seat is signed in but its access token has lapsed; it is still ready, because the next worker launched there renews it.
+See [Idle seats and lapsed tokens](#idle-seats-and-lapsed-tokens).
 `not-logged-in` means the profile was read and holds no login, so step 2 has not completed.
 `unknown` means the probe could not decide; on macOS that is how a seat reads both before step 2 and after it until the one-time Keychain approval described under [Limits worth knowing](#limits-worth-knowing).
+
+`probe` exits 0 for a usable seat, which includes `expired-renewable`, 1 for `not-logged-in`, and 2 for `unknown`.
 
 ## Switching now
 
@@ -69,7 +73,9 @@ bin/fm-seat.sh switch work
 That is the whole manual switch, and it takes effect immediately for the next worker launched.
 `bin/fm-seat.sh switch default` returns to the ambient login.
 
-A switch is refused when the target seat is not confirmed logged in, because every worker sent there would fail on its first message; `--force` crosses only an `unknown` verdict.
+A switch is refused when the target seat is not confirmed usable, because every worker sent there would fail on its first message; `--force` crosses only an `unknown` verdict.
+A `not-logged-in` seat is refused outright and `--force` cannot cross it.
+An `expired-renewable` seat needs no `--force`: the switch says the token lapsed and proceeds.
 
 ## What a switch does and does not touch
 
@@ -151,6 +157,29 @@ A rotation with no qualifying seat refuses rather than pretending to switch, and
 
 `bin/fm-seat.sh threshold off`, `destination-min off`, and `extra-usage off` each clear their own setting.
 
+## Idle seats and lapsed tokens
+
+A Claude access token lives eight hours from its last refresh.
+A seat nothing has launched on for that long still holds its session, but its access token has lapsed, and it reads as `expired-renewable` rather than `logged-in`.
+With two seats and a working day, the seat you are not using is in that state for most of the time it spends as a rotation candidate, so it is the normal reading for an idle seat rather than a fault.
+
+Such a seat is usable.
+Launching a claude worker on it makes Claude Code perform the refresh exchange against its own stored refresh token and rewrite the store, which is how the seat recovers; no operator step is needed.
+So `probe` reports it usable, `switch` accepts it with no `--force`, and rotation treats it as a destination.
+
+Firstmate never performs that renewal itself.
+Every quota read it makes passes `--no-credential-refresh`, which keeps the read from delegating a token renewal to the vendor CLI.
+That is deliberate and load-bearing: the refresh token behind a session is single-use, so a second refresher racing the Claude Code session that owns it can leave one holder presenting a spent token and sign the account out.
+The worker launch is the only thing that renews a seat.
+
+One consequence is worth planning around.
+A lapsed seat has **no readable quota** until something renews it, so it cannot answer a headroom comparison.
+With `destination-min` set, a lapsed seat is therefore skipped as a rotation destination - reported as unreadable headroom, not as a login problem - which means a home that sets a destination minimum will rotate only onto seats something has read recently.
+If you want rotation to reach idle seats, leave `destination-min` unset so the gate stays login-only.
+
+A seat that is genuinely signed out is a different state and is still refused.
+When Anthropic definitively rejects a refresh token, Claude Code clears the session in place, and the seat reads `not-logged-in`; `--force` cannot cross that, and the seat needs the owner's login steps again.
+
 ## Secondmate homes
 
 All five seat settings are inherited into this machine's local secondmate homes through the primary-authoritative configuration contract, so a secondmate's own Claude crewmates launch on the same seat as the primary's.
@@ -183,6 +212,8 @@ Put the flag only in the home it belongs to: it is never inherited, so one home'
 ## Limits worth knowing
 
 The login probe runs `quota-axi` against the seat's profile and treats an `oauth` source as logged in.
+It also reads two machine-readable fields that report credential usability separately from quota freshness: an `expired_refreshable` auth status is the lapsed-token state above, and an `auth_required` status is a definitive sign-out.
+Both are read as fields, never as error text, because the same lapsed state is reported with different messages depending on whether the quota endpoint rate limited the read first.
 Note that `quota-axi --profile-only` is **not** a usable probe here: that flag reads only a credential file and never the Keychain, so on macOS it reports "credentials missing" for a perfectly good seat.
 
 A newly logged-in seat gets its own Keychain entry, and reading it from a different tool can require a one-time macOS approval.
@@ -191,7 +222,9 @@ The probe cannot tell those two apart, so it reports `unknown` for both, and a p
 To settle it, the owner runs `quota-axi --allow-keychain-prompt` once with that seat's `CLAUDE_CONFIG_DIR` set and answers the prompt with "Always Allow"; after that a signed-in seat probes as `logged-in`.
 In the meantime `switch --force` accepts the uncertainty: if the seat turns out to be empty, the next worker stops on its first message with `Not logged in` rather than spending another account.
 `--force` never overrides `not-logged-in`, which the probe reports only when the evidence positively shows no login.
-On macOS that means `not-logged-in` is rarely seen, because an absent Keychain entry reads as unreadable rather than as read-and-empty; on a file-backed credential store, where an empty profile really can be read and found empty, it is reported normally.
+On macOS a seat that was **never** logged into still reads `unknown` rather than `not-logged-in`, because an absent Keychain entry reads as unreadable rather than as read-and-empty.
+A seat that was logged in and later signed out is different: Claude Code clears the session in place, leaving an entry that can be read and is empty, and that reads `not-logged-in`.
+On a file-backed credential store both cases are reported normally.
 `--force` also never switches to a seat with no profile directory under the seats root; create it with `fm-seat.sh add <name>` first.
 
 Two things in the setup flow above are **written from Claude Code's documented behaviour and the isolation this change verified, not from an observed sign-in**, because verifying them would mean logging in, which this work deliberately does not do:
