@@ -1,0 +1,3 @@
+clock=[] -> gh exit=1 stderr=[fixture clock is not an epoch: []] clock-after=[] leftover-tmp=0
+clock=[garbage] -> gh exit=1 stderr=[fixture clock is not an epoch: [garbage]] clock-after=[garbage] leftover-tmp=0
+clock=[1790000000] -> gh exit=0 stderr=[] clock-after=[1790000006] leftover-tmp=0

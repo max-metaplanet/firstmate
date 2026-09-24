@@ -1,0 +1,7 @@
+s1-head-reserve-150.log: RESULT failures=0 runs=150
+s2-head-exhaust-faillate-50.log: RESULT failures=0 runs=100
+s3-old-wide-natural-150.log: RESULT failures=6 runs=150
+s4-new-wide-natural-150.log: RESULT failures=0 runs=150
+s5-old-wide-forced-30.log: RESULT failures=16 runs=30
+s6-new-wide-forced-30.log: RESULT failures=0 runs=30
+s7-guard-non-epoch.log: 

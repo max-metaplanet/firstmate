@@ -1,0 +1,7 @@
+FAIL rep=36 test_reservation_defers_later_url_when_fifteen_seconds_do_not_remain: not ok - a later PR began without the fifteen-second observation reservation
+FAIL rep=111 test_reservation_defers_later_url_when_fifteen_seconds_do_not_remain: not ok - a later PR began without the fifteen-second observation reservation
+FAIL rep=115 test_reservation_defers_later_url_when_fifteen_seconds_do_not_remain: not ok - a later PR began without the fifteen-second observation reservation
+FAIL rep=122 test_reservation_defers_later_url_when_fifteen_seconds_do_not_remain: not ok - a later PR began without the fifteen-second observation reservation
+FAIL rep=133 test_reservation_defers_later_url_when_fifteen_seconds_do_not_remain: not ok - a later PR began without the fifteen-second observation reservation
+FAIL rep=144 test_reservation_defers_later_url_when_fifteen_seconds_do_not_remain: not ok - a later PR began without the fifteen-second observation reservation
+RESULT failures=6 runs=150

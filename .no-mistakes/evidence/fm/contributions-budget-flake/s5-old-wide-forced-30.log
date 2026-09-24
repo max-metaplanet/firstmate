@@ -1,0 +1,17 @@
+FAIL rep=1 test_reservation_defers_later_url_when_fifteen_seconds_do_not_remain: not ok - reservation poll failed
+FAIL rep=2 test_reservation_defers_later_url_when_fifteen_seconds_do_not_remain: not ok - a later PR began without the fifteen-second observation reservation
+FAIL rep=3 test_reservation_defers_later_url_when_fifteen_seconds_do_not_remain: not ok - a later PR began without the fifteen-second observation reservation
+FAIL rep=4 test_reservation_defers_later_url_when_fifteen_seconds_do_not_remain: not ok - a later PR began without the fifteen-second observation reservation
+FAIL rep=6 test_reservation_defers_later_url_when_fifteen_seconds_do_not_remain: not ok - a later PR began without the fifteen-second observation reservation
+FAIL rep=8 test_reservation_defers_later_url_when_fifteen_seconds_do_not_remain: not ok - a later PR began without the fifteen-second observation reservation
+FAIL rep=11 test_reservation_defers_later_url_when_fifteen_seconds_do_not_remain: not ok - a later PR began without the fifteen-second observation reservation
+FAIL rep=13 test_reservation_defers_later_url_when_fifteen_seconds_do_not_remain: not ok - a later PR began without the fifteen-second observation reservation
+FAIL rep=15 test_reservation_defers_later_url_when_fifteen_seconds_do_not_remain: not ok - a later PR began without the fifteen-second observation reservation
+FAIL rep=16 test_reservation_defers_later_url_when_fifteen_seconds_do_not_remain: not ok - a later PR began without the fifteen-second observation reservation
+FAIL rep=19 test_reservation_defers_later_url_when_fifteen_seconds_do_not_remain: not ok - a later PR began without the fifteen-second observation reservation
+FAIL rep=21 test_reservation_defers_later_url_when_fifteen_seconds_do_not_remain: not ok - reservation poll printed an unavailable wake: contributions: observation unavailable for https://github.com/o/r/pull/8
+FAIL rep=24 test_reservation_defers_later_url_when_fifteen_seconds_do_not_remain: not ok - a later PR began without the fifteen-second observation reservation
+FAIL rep=27 test_reservation_defers_later_url_when_fifteen_seconds_do_not_remain: not ok - a later PR began without the fifteen-second observation reservation
+FAIL rep=29 test_reservation_defers_later_url_when_fifteen_seconds_do_not_remain: not ok - a later PR began without the fifteen-second observation reservation
+FAIL rep=30 test_reservation_defers_later_url_when_fifteen_seconds_do_not_remain: not ok - a later PR began without the fifteen-second observation reservation
+RESULT failures=16 runs=30
