@@ -1010,11 +1010,18 @@ test_modal_entry_facts_refuse_an_unverified_harness() {
   pass "fm_composer_modal_entry_signal/key: an unverified harness is refused, never answered with silence"
 }
 
+# The rows claude 2.x draws: an empty composer between two rules, and the
+# footer beneath it carrying <footer>. [transcript] is drawn above.
+claude_modal_screen() {  # <footer> [transcript]
+  [ -z "${2-}" ] || printf '%s\n' "$2"
+  printf '%s\n' '──────────' $'❯\u00a0' '──────────' "  $1"
+}
+
 test_modal_entry_shown_needs_the_indicator_on_the_screen() {
   local sig insert command_mode
   sig=$(fm_composer_modal_entry_signal claude)
-  insert='  -- INSERT -- bypass permissions on (shift+tab to cycle)'
-  command_mode='  bypass permissions on (shift+tab to cycle)'
+  insert=$(claude_modal_screen '-- INSERT -- bypass permissions on (shift+tab to cycle)')
+  command_mode=$(claude_modal_screen 'bypass permissions on (shift+tab to cycle)')
   fm_composer_modal_entry_shown "$sig" "$insert" \
     || fail "a rendered indicator must read as text entry"
   fm_composer_modal_entry_shown "$sig" "$command_mode" \
@@ -1022,6 +1029,25 @@ test_modal_entry_shown_needs_the_indicator_on_the_screen() {
   fm_composer_modal_entry_shown "$sig" '' \
     && fail "an unreadable screen must never read as text entry"
   pass "fm_composer_modal_entry_shown: only a rendered indicator reads as text entry"
+}
+
+# The indicator is proof only in the composer's own footer. A transcript above
+# the composer quoting it - a worker that just read this library - says nothing
+# about the composer's mode, and a screen with no composer to anchor the footer
+# proves nothing either.
+test_modal_entry_shown_reads_only_the_composer_footer() {
+  local sig quoted
+  sig=$(fm_composer_modal_entry_signal claude)
+  quoted="    claude) printf '%s' '-- INSERT --' ;;"
+  fm_composer_modal_entry_shown "$sig" \
+    "$(claude_modal_screen 'bypass permissions on (shift+tab to cycle)' "$quoted")" \
+    && fail "an indicator quoted in the transcript above a command-mode composer must not read as text entry"
+  fm_composer_modal_entry_shown "$sig" \
+    "$(claude_modal_screen '-- INSERT -- bypass permissions on (shift+tab to cycle)' "$quoted")" \
+    || fail "a footer indicator must still read as text entry beneath a transcript that quotes it"
+  fm_composer_modal_entry_shown "$sig" '  -- INSERT -- bypass permissions on (shift+tab to cycle)' \
+    && fail "an indicator with no composer above it must not read as text entry"
+  pass "fm_composer_modal_entry_shown: only the composer's own footer is text-entry proof"
 }
 
 # A harness with no modal composer reports an empty indicator; matching the
@@ -1038,4 +1064,5 @@ test_modal_entry_shown_never_matches_an_empty_signal() {
 test_modal_entry_facts_are_claude_only
 test_modal_entry_facts_refuse_an_unverified_harness
 test_modal_entry_shown_needs_the_indicator_on_the_screen
+test_modal_entry_shown_reads_only_the_composer_footer
 test_modal_entry_shown_never_matches_an_empty_signal

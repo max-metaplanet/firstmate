@@ -385,16 +385,17 @@ test_ring_submits_its_own_stuck_doorbell() {
   pass "inbox: the ring submits its own stuck doorbell, skips other pending text, and retries a lost Enter once on both paths"
 }
 
-# An unproven doorbell must be REPORTED unproven. The delivery a backend
-# refused typed nothing the worker can act on, and a delivery it could not
-# account for may have left our own half-typed line in the composer - which
-# then answers every later ring with the pending skip above, so the record
-# stalls until the ladder escalates. Reporting both as a failed ring is what
-# makes fm-send say so instead of claiming the doorbell was delivered.
+# A doorbell the backend DISPROVED or could not account for must be reported
+# as a failed ring. A refused delivery typed nothing the worker can act on, and
+# an unaccounted one never pressed Enter and may have left our own half-typed
+# line in the composer - which then answers every later ring with the pending
+# skip above, so the record stalls until the ladder escalates. An `unknown`
+# verdict is different: Enter was pressed and only the confirmation is missing,
+# so it still counts as rung, exactly as before.
 # The ladder is time-based and re-rings either way; this is the honesty of the
 # report, not the trigger for the retry.
 test_ring_reports_a_delivery_the_backend_could_not_prove() {
-  local dir state rec log rc
+  local dir state rec log rc verdict want
   dir="$TMP_ROOT/ring-unproven"
   state="$dir/state"
   mkdir -p "$dir/fakebin" "$state"
@@ -430,10 +431,11 @@ SH
   rc=0
   PATH="$dir/fakebin:$PATH" FM_SEND_LOG="$log" \
     inbox_lib "$state" fm_task_inbox_ring tmux sess:fm-t1 "$rec" fm-t1 || rc=$?
-  [ "$rc" = 2 ] || fail "a delivery the backend could not account for should report a failed ring, got $rc"
+  [ "$rc" = 0 ] || fail "an unknown submit after Enter was pressed should still count as rung, got $rc"
   grep -qF 'Firstmate instruction waiting' "$log" \
-    || fail "the unproven case should still have typed the doorbell (it is the unproven part that is reported)"
-  [ -f "$rec" ] || fail "an unproven ring must leave the durable record in place"
+    || fail "the unknown case should have typed the doorbell"
+  grep -qx 'Enter' "$log" || fail "the unknown case should have pressed Enter:"$'\n'"$(cat "$log")"
+  [ -f "$rec" ] || fail "an unconfirmed ring must leave the durable record in place"
 
   : > "$log"
   rc=0
@@ -442,7 +444,21 @@ SH
   [ "$rc" = 2 ] || fail "a backend that refused to type the doorbell should report a failed ring, got $rc"
   [ ! -s "$log" ] || fail "a refused literal send must not have submitted anything:"$'\n'"$(cat "$log")"
   [ -f "$rec" ] || fail "a refused ring must leave the durable record in place"
-  pass "inbox: a doorbell the backend refused or could not account for is reported as a failed ring, never as delivered"
+
+  # The verdict vocabulary, independent of which backend produced it.
+  for verdict in unknown:0 unaccounted:2 send-failed:2 pending:0 empty:0; do
+    want=${verdict#*:}
+    verdict=${verdict%%:*}
+    rc=0
+    PATH="$dir/fakebin:$PATH" FM_SEND_LOG="$log" FM_FAKE_VERDICT="$verdict" FM_STATE_OVERRIDE="$state" \
+      bash -c '
+        . "$1"
+        fm_backend_send_text_submit() { printf "%s" "$FM_FAKE_VERDICT"; }
+        fm_task_inbox_ring tmux sess:fm-t1 "$2" fm-t1
+      ' _ "$ROOT/bin/fm-task-inbox-lib.sh" "$rec" || rc=$?
+    [ "$rc" = "$want" ] || fail "a '$verdict' submit verdict should ring with $want, got $rc"
+  done
+  pass "inbox: a doorbell the backend refused or could not account for is a failed ring, while an unconfirmed Enter still counts as rung"
 }
 
 test_idempotent_write_dedups_exact_body() {

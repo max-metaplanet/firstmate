@@ -3155,8 +3155,9 @@ fm_backend_herdr_rendered_busy_state() {  # <target> [harness] -> busy|idle|unkn
 # after the composer shows the payload (fm_backend_herdr_composer_payload_shown).
 # A missing read, a shorter suffix, or a paste placeholder followed by a
 # literal remainder does not press Enter: the composer is cleared back to
-# empty and the verdict is send-failed, or unknown when the clear cannot be
-# verified. A cleared refusal gets exactly one recovery first, through
+# empty and the verdict is send-failed, or unaccounted when the clear cannot
+# be verified: Enter was never pressed, and text this send typed may still sit
+# in the composer. A cleared refusal gets exactly one recovery first, through
 # fm_backend_herdr_modal_entry_ensure: a composer in claude's vim command mode
 # eats the head of the payload as editor commands and inserts only the
 # remainder, and once the composer is proven to be taking text again the
@@ -3231,8 +3232,8 @@ fm_backend_herdr_rendered_busy_state() {  # <target> [harness] -> busy|idle|unkn
 # footer may supply the same generating signal because live Claude never leaves
 # idle. The policy is fm_composer_queued_enter_verdict; this adapter only
 # supplies the busy primitive.
-# Echoes empty|pending|unknown|send-failed, a subset of the proof-carrying
-# submit vocabulary. Empty means confirmed submitted for every backend; how
+# Echoes empty|pending|unknown|send-failed|unaccounted, a subset of the
+# proof-carrying submit vocabulary. Empty means confirmed submitted for every backend; how
 # each backend confirms it is an internal decision.
 #
 # fm_backend_herdr_queued_enter_busy: delivery-busy for the shared queued-Enter
@@ -3404,13 +3405,13 @@ fm_backend_herdr_send_text_submit() {  # <target> <text> <retries> <enter-sleep>
       && fm_backend_herdr_composer_payload_shown "$text" "$content"; then
       break
     fi
-    fm_backend_herdr_composer_clear "$target" "$text" || { printf 'unknown'; return 0; }
+    fm_backend_herdr_composer_clear "$target" "$text" || { printf 'unaccounted'; return 0; }
     [ "$recovered" = 0 ] || { printf 'send-failed'; return 0; }
     recovered=1
     fm_backend_herdr_modal_entry_ensure "$target" "$harness" "$settle"
     case $? in
       0) continue ;;
-      2) printf 'unknown'; return 0 ;;
+      2) printf 'unaccounted'; return 0 ;;
       *) printf 'send-failed'; return 0 ;;
     esac
   done

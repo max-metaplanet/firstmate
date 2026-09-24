@@ -1789,13 +1789,22 @@ fm_composer_modal_entry_key() {  # <harness>
   esac
 }
 
-# fm_composer_modal_entry_shown: 0 when <screen> renders <signal>. The one
-# matcher, so the control plane and the adapters cannot drift on how the
-# indicator is recognized. An empty signal never matches: a harness with no
-# modal composer has no text-entry proof to read.
+# fm_composer_modal_entry_shown: 0 when <screen> renders <signal> in the
+# composer's own footer. The one matcher, so the control plane and the adapters
+# cannot drift on how the indicator is recognized. Only the rows below the
+# bottom-most glyph-proven composer envelope (THE COMPOSER FOOTER ZONE) are
+# read, because a transcript above the composer can quote the indicator - a
+# worker that just read this file does - while the composer itself sits in
+# command mode. No proven envelope, like an empty signal, never matches: a
+# harness with no modal composer has no text-entry proof to read.
 fm_composer_modal_entry_shown() {  # <signal> <screen>
+  local plain
   [ -n "${1-}" ] || return 1
-  printf '%s\n' "${2-}" | grep -Fq -- "$1"
+  plain=$(printf '%s\n' "${2-}" | fm_composer_strip_ansi)
+  _fm_composer_scan_screen "$plain" ''
+  _fm_composer_locate_footer_zone "$plain" || :
+  [ "$FM_COMPOSER_FOOTER_AFTER" -ge 0 ] || return 1
+  printf '%s\n' "$plain" | sed -n "$((FM_COMPOSER_FOOTER_AFTER + 2)),\$p" | grep -Fq -- "$1"
 }
 
 _fm_composer_classify_pi_rows() {  # <screen> <styled>

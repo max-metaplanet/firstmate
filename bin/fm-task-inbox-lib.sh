@@ -321,16 +321,17 @@ fm_task_inbox_ring() {  # <backend> <target> <record-path> [expected-label]
   # The verdict is read only to separate a delivery the backend DISPROVED or
   # could not account for from every other outcome; no value here is proof of
   # delivery, which only the acknowledgement move gives. send-failed typed
-  # nothing the agent can act on, and unknown means the backend could neither
-  # confirm the submission nor confirm that its own half-typed text is gone -
-  # a composer still holding that fragment answers every later ring with the
-  # pending skip above, so the ring must be reported failed rather than
-  # counted. Both are the caller's cue that the ladder's re-ring is expected.
-  # pending is deliberately NOT one of them: there the composer provably holds
-  # our own COMPLETE doorbell, which the pending branch above submits on the
-  # next ring, so it is the self-healing swallow rather than this defect.
+  # nothing the agent can act on, and unaccounted means Enter was never
+  # pressed and the backend could not confirm that its own half-typed text is
+  # gone - a composer still holding that fragment answers every later ring
+  # with the pending skip above, so the ring must be reported failed rather
+  # than counted. unknown is deliberately NOT one of them: it is also the
+  # answer when Enter was pressed and only the confirmation is missing, which
+  # is the likely-delivered ring. Neither is pending: there the composer
+  # provably holds our own COMPLETE doorbell, which the pending branch above
+  # submits on the next ring.
   case "$verdict" in
-    send-failed|unknown) return 2 ;;
+    send-failed|unaccounted) return 2 ;;
   esac
   return 0
 }
