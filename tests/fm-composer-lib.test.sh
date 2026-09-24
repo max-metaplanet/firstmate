@@ -974,3 +974,68 @@ test_queued_enter_verdict_does_not_convert_other_states() {
 test_queued_enter_verdict_busy_pending_is_empty
 test_queued_enter_verdict_idle_pending_stays_pending
 test_queued_enter_verdict_does_not_convert_other_states
+
+# --- The modal composer (claude's optional vim editor mode) -------------------
+#
+# A modal composer has a command mode in which typed characters are editor
+# commands, not text: the steering doorbell's `: Firstma` prefix is eaten and
+# only its remainder is inserted. The indicator, the key that returns the
+# composer to text entry, and how the indicator is recognized live here once,
+# for both bin/fm-control.sh's lifecycle restore and the backend adapters'
+# send recovery.
+
+test_modal_entry_facts_are_claude_only() {
+  local harness sig key
+  sig=$(fm_composer_modal_entry_signal claude) \
+    || fail "claude must have a text-entry indicator"
+  [ "$sig" = '-- INSERT --' ] || fail "claude's text-entry indicator should be '-- INSERT --', got '$sig'"
+  key=$(fm_composer_modal_entry_key claude) || fail "claude must have a text-entry key"
+  [ "$key" = i ] || fail "claude's text-entry key should be 'i', got '$key'"
+  for harness in codex opencode pi pi-signed omp grok kimi cursor gemini muse rovo agy devin; do
+    sig=$(fm_composer_modal_entry_signal "$harness") \
+      || fail "$harness is verified and must answer the modal-entry question"
+    [ -z "$sig" ] || fail "$harness has no modal composer and must report no indicator, got '$sig'"
+    key=$(fm_composer_modal_entry_key "$harness") \
+      || fail "$harness is verified and must answer the modal-entry key question"
+    [ -z "$key" ] || fail "$harness has no modal composer and must report no key, got '$key'"
+  done
+  pass "fm_composer_modal_entry_signal/key: claude carries the indicator and insert key, every other verified harness carries neither"
+}
+
+test_modal_entry_facts_refuse_an_unverified_harness() {
+  fm_composer_modal_entry_signal notaharness >/dev/null 2>&1 \
+    && fail "an unverified harness must not silently report no modal composer"
+  fm_composer_modal_entry_key notaharness >/dev/null 2>&1 \
+    && fail "an unverified harness must not silently report no text-entry key"
+  pass "fm_composer_modal_entry_signal/key: an unverified harness is refused, never answered with silence"
+}
+
+test_modal_entry_shown_needs_the_indicator_on_the_screen() {
+  local sig insert command_mode
+  sig=$(fm_composer_modal_entry_signal claude)
+  insert='  -- INSERT -- bypass permissions on (shift+tab to cycle)'
+  command_mode='  bypass permissions on (shift+tab to cycle)'
+  fm_composer_modal_entry_shown "$sig" "$insert" \
+    || fail "a rendered indicator must read as text entry"
+  fm_composer_modal_entry_shown "$sig" "$command_mode" \
+    && fail "a footer without the indicator must never read as text entry"
+  fm_composer_modal_entry_shown "$sig" '' \
+    && fail "an unreadable screen must never read as text entry"
+  pass "fm_composer_modal_entry_shown: only a rendered indicator reads as text entry"
+}
+
+# A harness with no modal composer reports an empty indicator; matching the
+# empty string against a screen would otherwise say every harness is always in
+# text entry, which would authorize the mode key on composers that have none.
+test_modal_entry_shown_never_matches_an_empty_signal() {
+  fm_composer_modal_entry_shown '' '  -- INSERT -- bypass permissions on' \
+    && fail "an absent indicator must not match any screen"
+  fm_composer_modal_entry_shown '' '' \
+    && fail "an absent indicator must not match an empty screen"
+  pass "fm_composer_modal_entry_shown: a harness with no modal composer never reports text entry"
+}
+
+test_modal_entry_facts_are_claude_only
+test_modal_entry_facts_refuse_an_unverified_harness
+test_modal_entry_shown_needs_the_indicator_on_the_screen
+test_modal_entry_shown_never_matches_an_empty_signal

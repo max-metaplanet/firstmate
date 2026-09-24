@@ -1152,6 +1152,26 @@ Observed 2026-08-19:
 ok - live Herdr submit confirm: Claude Code (2.1.236 (Claude Code)) on herdr 0.8.0 reports empty for a landed idle steer
 ```
 
+### Modal composer delivery
+
+Measured 2026-09-24 against Herdr 0.9.1 and Claude Code 2.1.282 in an isolated `fm-lab-` session, with `editorMode` pinned per pane rather than inherited.
+
+Claude renders `-- INSERT --` only while its vim-mode composer takes typed text, and renders no indicator in command mode or with `editorMode: normal`.
+A composer an Escape left in command mode consumes the head of a typed payload as editor commands: the steering doorbell's `: Firstma` became the space, find-backwards, replace, till and append commands, so the composer held `te instruction waiting: list '…'` and the pre-Enter payload proof refused it.
+The append command is also what leaves the composer taking text again, which is why the recovery reads the indicator before typing anything.
+A bare Enter still submits in command mode, so only typing is affected.
+The same capture width as before PR #10 (`fm_backend_herdr_proof_lines`, 20 rows for that payload) refused the identical fragment, so the 200-row proof read is not involved.
+
+Refresh the live proof with the same command as the section above; it covers text-entry mode, command mode after an Escape, and a non-modal composer.
+
+Observed 2026-09-24:
+
+```text
+ok - live Herdr doorbell: Claude Code (2.1.282 (Claude Code)) on herdr 0.9.1 submits the doorbell to a vim-mode composer taking text
+ok - live Herdr doorbell: Claude Code (2.1.282 (Claude Code)) on herdr 0.9.1 recovers and submits the doorbell to a vim-mode composer an interrupt key left in command mode
+ok - live Herdr doorbell: Claude Code (2.1.282 (Claude Code)) on herdr 0.9.1 submits the doorbell to a Claude composer with no modal editor
+```
+
 ### Prune and respawn
 
 The real label-collision reproduction is owned by:

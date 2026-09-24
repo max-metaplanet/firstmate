@@ -1747,6 +1747,57 @@ fm_composer_queued_enter_verdict() {  # <composer-state> <busy|idle|unknown>
   fi
 }
 
+# THE MODAL COMPOSER (claude's optional vim editor mode) ----------------------
+# A modal composer has a command mode in which typed characters are editor
+# commands rather than text. Anything typed there is silently consumed: the
+# steering doorbell's `: Firstma` prefix is eaten as the space, find-backwards,
+# replace, till and append commands, and only the remainder is inserted. Every
+# plane that types into a composer needs the same three facts, so they live
+# here once: bin/fm-control.sh's lifecycle restore and bin/backends/herdr.sh's
+# send recovery both read them.
+
+# fm_composer_modal_entry_signal: the rendered proof that a harness's composer
+# is in its text-entry mode, for the one verified harness whose composer has a
+# modal editor; empty for every harness whose composer always takes typed text.
+# Claude's vim editor mode renders `-- INSERT --` in its footer while typed
+# characters are inserted, and renders NO mode indicator at all in command mode
+# - which is exactly what a Claude WITHOUT vim mode renders too. The
+# indicator's presence is therefore positive proof of text-entry mode, while
+# its absence on its own proves nothing, so a caller may only act on a
+# disappearance it watched happen or on a send the composer already refused.
+# Verified live on claude 2.1.x with `editorMode: vim`, through Herdr 0.9.1.
+fm_composer_modal_entry_signal() {  # <harness>
+  case "${1-}" in
+    claude) printf '%s' '-- INSERT --' ;;
+    codex|opencode|pi|pi-signed|omp|grok|kimi|cursor|gemini|muse|rovo|agy|devin) ;;
+    *) return 1 ;;
+  esac
+}
+
+# fm_composer_modal_entry_key: the literal character that returns a modal
+# composer to its text-entry mode, or nothing when the harness has no modal
+# composer. Claude's vim command mode takes `i` as the insert command and
+# CONSUMES it, leaving the composer empty and the `-- INSERT --` indicator
+# rendered (verified live, same build). It is sent raw and unsubmitted, and
+# only where the indicator proves it was consumed rather than typed, because
+# the same character in a composer already taking text is just the letter i.
+fm_composer_modal_entry_key() {  # <harness>
+  case "${1-}" in
+    claude) printf 'i' ;;
+    codex|opencode|pi|pi-signed|omp|grok|kimi|cursor|gemini|muse|rovo|agy|devin) ;;
+    *) return 1 ;;
+  esac
+}
+
+# fm_composer_modal_entry_shown: 0 when <screen> renders <signal>. The one
+# matcher, so the control plane and the adapters cannot drift on how the
+# indicator is recognized. An empty signal never matches: a harness with no
+# modal composer has no text-entry proof to read.
+fm_composer_modal_entry_shown() {  # <signal> <screen>
+  [ -n "${1-}" ] || return 1
+  printf '%s\n' "${2-}" | grep -Fq -- "$1"
+}
+
 _fm_composer_classify_pi_rows() {  # <screen> <styled>
   local screen=$1 styled=$2 row raw content
   row=$((FM_COMPOSER_SCAN_PI_OPEN + 1))

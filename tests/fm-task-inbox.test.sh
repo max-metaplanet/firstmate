@@ -385,6 +385,66 @@ test_ring_submits_its_own_stuck_doorbell() {
   pass "inbox: the ring submits its own stuck doorbell, skips other pending text, and retries a lost Enter once on both paths"
 }
 
+# An unproven doorbell must be REPORTED unproven. The delivery a backend
+# refused typed nothing the worker can act on, and a delivery it could not
+# account for may have left our own half-typed line in the composer - which
+# then answers every later ring with the pending skip above, so the record
+# stalls until the ladder escalates. Reporting both as a failed ring is what
+# makes fm-send say so instead of claiming the doorbell was delivered.
+# The ladder is time-based and re-rings either way; this is the honesty of the
+# report, not the trigger for the retry.
+test_ring_reports_a_delivery_the_backend_could_not_prove() {
+  local dir state rec log rc
+  dir="$TMP_ROOT/ring-unproven"
+  state="$dir/state"
+  mkdir -p "$dir/fakebin" "$state"
+  # A pane whose capture is a BARE shell prompt: the shared classifier reads
+  # that as unknown (a dead shell, never an empty composer), so the submit
+  # verdict is unknown rather than a proven empty.
+  cat > "$dir/fakebin/tmux" <<'SH'
+#!/usr/bin/env bash
+set -u
+case "${1:-}" in
+  send-keys)
+    shift
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        -t) shift 2 ;;
+        -l) [ -z "${FM_FAKE_REFUSE_LITERAL:-}" ] || exit 1; shift ;;
+        *) break ;;
+      esac
+    done
+    printf '%s\n' "${1:-}" >> "$FM_SEND_LOG"
+    exit 0 ;;
+  display-message)
+    case "$*" in *cursor_y*) printf '0\n'; exit 0 ;; esac
+    printf 'fakepane\n'; exit 0 ;;
+  capture-pane) printf '$ \n'; exit 0 ;;
+  list-windows) printf 'fm-t1\n'; exit 0 ;;
+esac
+exit 0
+SH
+  chmod +x "$dir/fakebin/tmux"
+  rec=$(inbox_lib "$state" fm_task_inbox_write "$state" t1 "please continue")
+  log="$dir/send.log"; : > "$log"
+  rc=0
+  PATH="$dir/fakebin:$PATH" FM_SEND_LOG="$log" \
+    inbox_lib "$state" fm_task_inbox_ring tmux sess:fm-t1 "$rec" fm-t1 || rc=$?
+  [ "$rc" = 2 ] || fail "a delivery the backend could not account for should report a failed ring, got $rc"
+  grep -qF 'Firstmate instruction waiting' "$log" \
+    || fail "the unproven case should still have typed the doorbell (it is the unproven part that is reported)"
+  [ -f "$rec" ] || fail "an unproven ring must leave the durable record in place"
+
+  : > "$log"
+  rc=0
+  PATH="$dir/fakebin:$PATH" FM_SEND_LOG="$log" FM_FAKE_REFUSE_LITERAL=1 \
+    inbox_lib "$state" fm_task_inbox_ring tmux sess:fm-t1 "$rec" fm-t1 || rc=$?
+  [ "$rc" = 2 ] || fail "a backend that refused to type the doorbell should report a failed ring, got $rc"
+  [ ! -s "$log" ] || fail "a refused literal send must not have submitted anything:"$'\n'"$(cat "$log")"
+  [ -f "$rec" ] || fail "a refused ring must leave the durable record in place"
+  pass "inbox: a doorbell the backend refused or could not account for is reported as a failed ring, never as delivered"
+}
+
 test_idempotent_write_dedups_exact_body() {
   local state r1 r2 r3 r4 count text
   state="$TMP_ROOT/idem/state"; mkdir -p "$state"
@@ -803,6 +863,7 @@ test_doorbell_is_a_shell_noop
 test_doorbell_rejects_terminal_controls
 test_ring_skips_dead_agent
 test_ring_submits_its_own_stuck_doorbell
+test_ring_reports_a_delivery_the_backend_could_not_prove
 test_idempotent_write_dedups_exact_body
 test_idempotent_write_follows_concurrent_ack
 test_handled_mv_dedups_by_sequence

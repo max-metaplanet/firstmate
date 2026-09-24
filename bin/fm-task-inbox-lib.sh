@@ -272,12 +272,14 @@ fm_task_inbox_doorbell_line() {  # <record-path>
 
 # Ring the doorbell, best-effort: one endpoint-liveness pre-check, one advisory
 # composer pre-check, then the backend's submit machinery with a minimal retry
-# budget, verdict discarded.
+# budget, whose verdict is read only for the two outcomes below that disprove
+# the delivery or leave it unaccounted for.
 # Returns 0 rang, 1 skipped because the composer PROVENLY holds pending text
-# other than our own doorbell (the watcher re-rings later), 2 the backend send
-# failed, 3 skipped because the endpoint is positively dead or missing (nothing
-# typed; recovery owns the record). No return value is delivery proof; the
-# acknowledgement move is the only delivery signal.
+# other than our own doorbell (the watcher re-rings later), 2 the backend
+# disproved the send or could not account for it, 3 skipped because the
+# endpoint is positively dead or missing (nothing typed; recovery owns the
+# record). No return value is delivery proof; the acknowledgement move is the
+# only delivery signal.
 # The skip is deliberately narrow: only an exact `pending` verdict can defer,
 # because there our Enter could submit someone's real half-typed content.
 # `pending-unproven` and `unknown` still ring - the worst outcome is a garbled
@@ -316,9 +318,20 @@ fm_task_inbox_ring() {  # <backend> <target> <record-path> [expected-label]
   if ! verdict=$(fm_backend_send_text_submit "$backend" "$target" "$line" 2 0.4 0.3 "$label" 2>/dev/null); then
     return 2
   fi
-  # The verdict is read only to report a failed keystroke; every other value
-  # (empty, pending, unknown, ...) is deliberately ignored, never proof.
-  [ "$verdict" != send-failed ] || return 2
+  # The verdict is read only to separate a delivery the backend DISPROVED or
+  # could not account for from every other outcome; no value here is proof of
+  # delivery, which only the acknowledgement move gives. send-failed typed
+  # nothing the agent can act on, and unknown means the backend could neither
+  # confirm the submission nor confirm that its own half-typed text is gone -
+  # a composer still holding that fragment answers every later ring with the
+  # pending skip above, so the ring must be reported failed rather than
+  # counted. Both are the caller's cue that the ladder's re-ring is expected.
+  # pending is deliberately NOT one of them: there the composer provably holds
+  # our own COMPLETE doorbell, which the pending branch above submits on the
+  # next ring, so it is the self-healing swallow rather than this defect.
+  case "$verdict" in
+    send-failed|unknown) return 2 ;;
+  esac
   return 0
 }
 
