@@ -127,6 +127,7 @@ test_render_lists_a_named_seat_with_its_windows_and_extra_usage() {
   expect_grep '<h2>alpha</h2>' "$out" "the named seat's own heading must appear"
   expect_grep 'alpha@example.test' "$out" "the named seat's account email must appear"
   expect_grep '63%' "$out" "the named seat's percent left must appear"
+  # shellcheck disable=SC2016 # Literal dollar sign in the expected text.
   expect_grep 'extra usage: $12.5' "$out" "the named seat's extra-usage spend must appear"
   pass "render lists a named seat with its windows and extra-usage spend"
 }
