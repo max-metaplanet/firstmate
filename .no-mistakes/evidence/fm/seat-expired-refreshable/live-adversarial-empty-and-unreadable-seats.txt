@@ -1,0 +1,36 @@
+Thu Sep 24 16:22:25 EDT 2026
+$ bin/fm-seat.sh list
+seats root: /tmp/fmseat-lab2.UHKL/seats
+* default	logged-in	max2@metaplanet.jp	(ambient default login)
+  seat-empty	unknown	-	/tmp/fmseat-lab2.UHKL/seats/seat-empty
+  seat-fakeexp	unknown	-	/tmp/fmseat-lab2.UHKL/seats/seat-fakeexp
+exit=0
+$ bin/fm-seat.sh probe seat-empty
+seat-empty	unknown
+exit=2
+$ bin/fm-seat.sh probe seat-fakeexp
+seat-fakeexp	unknown
+exit=2
+$ bin/fm-seat.sh switch seat-empty
+error: could not confirm seat 'seat-empty' is logged in (quota read gave no verdict); re-run with --force to switch anyway
+exit=1
+$ bin/fm-seat.sh switch seat-empty --force
+switched: default -> seat-empty
+applies to NEW claude workers only; running workers keep their own seat
+config-push: no live secondmate homes found
+exit=0
+config/claude-seat: seat-empty
+$ bin/fm-seat.sh switch seat-fakeexp
+error: could not confirm seat 'seat-fakeexp' is logged in (quota read gave no verdict); re-run with --force to switch anyway
+exit=1
+$ bin/fm-seat.sh switch seat-fakeexp --force
+switched: seat-empty -> seat-fakeexp
+applies to NEW claude workers only; running workers keep their own seat
+config-push: no live secondmate homes found
+exit=0
+config/claude-seat: seat-fakeexp
+$ bin/fm-seat.sh switch --next
+seat seat-empty: skipped, its login state could not be confirmed
+error: no seat under the seats root qualifies as a destination (each skipped seat and its reason is printed above); add and log into a second seat, or lower 'fm-seat.sh destination-min' (docs/claude-seats.md). The default profile is never a rotation target, so switch to it by name if that is what you want
+exit=1
+config/claude-seat: seat-fakeexp

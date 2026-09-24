@@ -1,0 +1,14 @@
+$ date
+Thu Sep 24 16:21:44 EDT 2026
+$ FM_HOME=/tmp/fmseat-lab.iflw bin/fm-seat.sh list
+seats root: /Users/max/.claude-seats
+* default	logged-in	max2@metaplanet.jp	(ambient default login)
+  seat-max	logged-in	max@metaplanet.jp	/Users/max/.claude-seats/seat-max
+  seat-max2	logged-in	max2@metaplanet.jp	/Users/max/.claude-seats/seat-max2
+exit=0
+$ FM_HOME=/tmp/fmseat-lab.iflw bin/fm-seat.sh probe seat-max
+seat-max	logged-in
+exit=0
+$ FM_HOME=/tmp/fmseat-lab.iflw bin/fm-seat.sh probe seat-max2
+seat-max2	logged-in
+exit=0
