@@ -593,32 +593,11 @@ fm_backlog_directory_present "$STATE" "state directory" || {
 . "$SCRIPT_DIR/fm-timeout-lib.sh"
 # shellcheck source=bin/fm-worker-account-lib.sh
 . "$SCRIPT_DIR/fm-worker-account-lib.sh"
+# shellcheck source=bin/fm-quota-axi-lib.sh
+. "$SCRIPT_DIR/fm-quota-axi-lib.sh"
 # shellcheck source=bin/fm-seat-lib.sh
 . "$SCRIPT_DIR/fm-seat-lib.sh"
 
-# cmd_seat_dispatch_report
-# Exit 0 to dispatch, 1 to hold, printing the operator-facing reason for a hold.
-# bin/fm-seat-lib.sh owns the decision; this only renders it.
-cmd_seat_dispatch_report() {
-  local decision verb reason a b
-  decision=$(fm_seat_dispatch_decision)
-  read -r verb reason a b <<< "$decision"
-  [ "$verb" != allow ] || return 0
-  case "$reason" in
-    quota-unreadable)
-      printf '  the active Claude seat quota could not be read, so whether this worker would run on paid extra usage is unknown, and the policy makes no guess\n' ;;
-    extra-usage-stop)
-      printf '  the active Claude seat has no plan quota left and the extra-usage policy is stop\n' ;;
-    extra-usage-spend-unreadable)
-      printf '  the active Claude seat has no plan quota left and its extra-usage spend could not be read, so it cannot be compared against the $%s cap\n' "$a" ;;
-    extra-usage-cap)
-      printf '  $%s of extra usage is already spent on the active Claude seat, at or over the $%s cap\n' "$a" "$b" ;;
-    *)
-      printf '  the extra-usage policy holds new Claude dispatch\n' ;;
-  esac
-  printf '  this holds only work not yet started; a worker already running keeps its own seat and can still draw extra usage mid-task\n'
-  return 1
-}
 # Fail closed before any fleet mutation: a no-mistakes gate agent must never spawn
 # a direct report (see bin/fm-gate-refuse-lib.sh).
 fm_refuse_if_gate_agent
@@ -2331,10 +2310,10 @@ fi
 # --ignore-seat-hold is the deliberate override for a task the operator wants
 # started anyway; it never changes the setting, so the next spawn is gated again.
 if [ "$HARNESS" = claude ] && [ "$RELAUNCH" -eq 0 ] && [ "$IGNORE_SEAT_HOLD" -eq 0 ]; then
-  if ! SEAT_DISPATCH=$(cmd_seat_dispatch_report); then
+  if ! SEAT_DISPATCH=$(fm_seat_dispatch_reason "$(fm_seat_dispatch_decision)"); then
     {
       echo "error: this home holds new Claude work rather than starting it on paid extra usage:"
-      printf '%s\n' "$SEAT_DISPATCH"
+      printf '%s\n' "$SEAT_DISPATCH" | sed 's/^/  /'
       echo "re-run with --ignore-seat-hold to start this task anyway, or change the policy with bin/fm-seat.sh extra-usage"
     } >&2
     exit 1

@@ -41,6 +41,8 @@ TMP_ROOT=$(fm_test_tmproot fm-seat)
 #   <spec>/extra_map    optional "<CLAUDE_CONFIG_DIR><TAB><spentUsd>" rows adding
 #                       an extra_usage window (kind credits) to that profile's
 #                       report, which is where paid overflow spend is observed
+#   <spec>/slow         optional seconds every read sleeps before answering, for
+#                       a quota endpoint slower than the watcher's budget
 # An empty CLAUDE_CONFIG_DIR is spelled "(default)" in the oauth list.
 # The fake reproduces the real tool's contract that matters here: an unavailable
 # provider still prints a valid report AND exits non-zero.
@@ -53,6 +55,7 @@ set -u
 spec="$spec"
 key="\${CLAUDE_CONFIG_DIR:-}"
 [ -n "\$key" ] || key='(default)'
+[ ! -f "\$spec/slow" ] || sleep "\$(cat "\$spec/slow")"
 remaining=\$(cat "\$spec/remaining" 2>/dev/null || printf '80')
 if [ -f "\$spec/remaining_map" ]; then
   mapped=\$(awk -F'\t' -v k="\$key" '\$1==k{print \$2; exit}' "\$spec/remaining_map")
@@ -1242,8 +1245,8 @@ test_an_unconfigured_home_reads_no_candidate_quota_and_holds_nothing() {
   expect_code 0 "$?" "with no destination minimum, rotation must ignore a candidate's quota entirely"
   assert_contains "$out" "-> spare" "an unconfigured home must rotate exactly as it did before"
 
-  out=$(run_seat "$HOME_DIR" "$FAKEBIN" dispatch-check)
-  expect_code 0 "$?" "with no extra-usage policy, dispatch must never be held"
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" status)
+  assert_contains "$out" "new Claude dispatch: allowed" "with no extra-usage policy, dispatch must never be held"
   assert_contains "$out" "no extra-usage policy is configured" \
     "the gate must say it read nothing rather than implying a quota verdict"
   assert_absent "$HOME_DIR/config/claude-seat-destination-min" \
@@ -1261,8 +1264,9 @@ test_dispatch_gate_needs_no_quota_reader_when_unconfigured() {
   # dispatch, which proves the gate reads nothing rather than failing open on a
   # read it attempted and could not make.
   bare=$(fm_fakebin "$CASE_DIR/bare")
-  out=$(run_seat "$HOME_DIR" "$bare" dispatch-check)
-  expect_code 0 "$?" "an unconfigured gate must allow dispatch with no quota reader present at all"
+  out=$(run_seat "$HOME_DIR" "$bare" status)
+  assert_contains "$out" "new Claude dispatch: allowed" \
+    "an unconfigured gate must allow dispatch with no quota reader present at all"
   assert_contains "$out" "no extra-usage policy" "the allow must name the unset policy as its reason"
   pass "the dispatch gate reads no quota at all until an extra-usage policy is configured"
 }
@@ -1405,17 +1409,19 @@ test_stop_policy_holds_dispatch_only_once_the_plan_quota_is_gone() {
   # Plan quota still left: the gate exists to guard paid overflow, not to
   # ration the plan, so this must allow.
   seat_remaining "$SPEC_DIR" "$SEATS_DIR/alpha" 8
-  out=$(run_seat "$HOME_DIR" "$FAKEBIN" dispatch-check)
-  expect_code 0 "$?" "plan quota still remaining must never be held by the extra-usage policy"
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" status)
+  assert_contains "$out" "new Claude dispatch: allowed" \
+    "plan quota still remaining must never be held by the extra-usage policy"
   assert_contains "$out" "8% of its plan quota left" "the allow must name the remaining plan quota"
 
   # Plan quota gone: any further work runs on paid extra usage.
   printf '%s\t0\n' "$SEATS_DIR/alpha" > "$SPEC_DIR/remaining_map"
-  out=$(run_seat "$HOME_DIR" "$FAKEBIN" dispatch-check)
-  expect_code 1 "$?" "with the plan quota gone and the policy set to stop, dispatch must be held"
-  assert_contains "$out" "no NEW Claude worker is started on paid extra usage" \
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" status)
+  assert_contains "$out" "new Claude dispatch: HELD" \
+    "with the plan quota gone and the policy set to stop, dispatch must be held"
+  assert_contains "$out" "no new Claude worker is started on paid extra usage" \
     "the hold must say what it is preventing"
-  assert_contains "$out" "A worker already running keeps its own" \
+  assert_contains "$out" "a worker already running keeps its own seat" \
     "the hold must state plainly that a running worker is not stopped"
   pass "the stop policy holds new dispatch only once the active seat's plan quota is gone"
 }
@@ -1431,15 +1437,16 @@ test_allow_policy_proceeds_under_the_cap_and_holds_at_it() {
   run_seat "$HOME_DIR" "$FAKEBIN" extra-usage allow 25 >/dev/null
 
   seat_extra_spend "$SPEC_DIR" "$SEATS_DIR/alpha" 10
-  out=$(run_seat "$HOME_DIR" "$FAKEBIN" dispatch-check)
-  expect_code 0 "$?" "spend below the cap must keep dispatching: $out"
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" status)
+  assert_contains "$out" "new Claude dispatch: allowed" "spend below the cap must keep dispatching: $out"
   # shellcheck disable=SC2016  # literal dollar signs in the expected output, not expansions
-  assert_contains "$out" '$10 of extra usage spent, under the $25 cap' \
+  assert_contains "$out" '$10 of extra usage spent on the active Claude seat, under the $25 cap' \
     "the allow must name the spend and the cap it was compared against"
 
   printf '%s\t25\n' "$SEATS_DIR/alpha" > "$SPEC_DIR/extra_map"
-  out=$(run_seat "$HOME_DIR" "$FAKEBIN" dispatch-check)
-  expect_code 1 "$?" "spend at the cap must hold, so the cap is a ceiling and not a target to pass"
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" status)
+  assert_contains "$out" "new Claude dispatch: HELD" \
+    "spend at the cap must hold, so the cap is a ceiling and not a target to pass"
   # shellcheck disable=SC2016  # literal dollar signs in the expected output, not expansions
   assert_contains "$out" 'at or over the $25 cap' "the hold must name the cap it reached"
   pass "the allow policy dispatches under its dollar cap and holds once the spend reaches it"
@@ -1455,16 +1462,18 @@ test_an_unreadable_quota_holds_dispatch_rather_than_guessing() {
   seat_quota_unreadable "$SPEC_DIR" "$SEATS_DIR/alpha"
   run_seat "$HOME_DIR" "$FAKEBIN" extra-usage stop >/dev/null
 
-  out=$(run_seat "$HOME_DIR" "$FAKEBIN" dispatch-check)
-  expect_code 1 "$?" "a quota that gives no verdict must hold rather than dispatch on a guess"
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" status)
+  assert_contains "$out" "new Claude dispatch: HELD" \
+    "a quota that gives no verdict must hold rather than dispatch on a guess"
   assert_contains "$out" "makes no guess" "the hold must say it refused to guess"
 
   # Once the plan quota can be read again the hold lifts on its own, so this is
   # a condition that clears rather than a state an operator must reset.
   rm -f "$SPEC_DIR/unreadable_quota"
   seat_remaining "$SPEC_DIR" "$SEATS_DIR/alpha" 40
-  out=$(run_seat "$HOME_DIR" "$FAKEBIN" dispatch-check)
-  expect_code 0 "$?" "a readable quota with plan headroom must lift the hold with no operator action"
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" status)
+  assert_contains "$out" "new Claude dispatch: allowed" \
+    "a readable quota with plan headroom must lift the hold with no operator action"
   pass "an unreadable quota holds dispatch instead of guessing, and the hold lifts once it reads again"
 }
 
@@ -1534,6 +1543,56 @@ test_the_watch_reports_the_policy_consequence_when_no_seat_qualifies() {
   out=$(run_seat "$HOME_DIR" "$FAKEBIN" auto)
   [ -z "$out" ] || fail "an unchanged unqualified crossing must not wake again: $out"
   pass "with no seat qualifying the watch reports the policy consequence once and switches nothing"
+}
+
+test_the_watch_switches_once_a_candidate_recovers_after_a_crossing_with_nowhere_to_go() {
+  local rec out
+  rec=$(make_seat_case auto-recovers)
+  read_seat_case "$rec"
+  mkdir -p "$SEATS_DIR/alpha" "$SEATS_DIR/beta"
+  seat_logged_in "$SPEC_DIR" "$SEATS_DIR/alpha" "$SEATS_DIR/beta"
+  printf 'alpha\n' > "$HOME_DIR/config/claude-seat"
+  run_seat "$HOME_DIR" "$FAKEBIN" threshold 15 >/dev/null
+  run_seat "$HOME_DIR" "$FAKEBIN" destination-min 30 >/dev/null
+  run_seat "$HOME_DIR" "$FAKEBIN" extra-usage stop >/dev/null
+  printf '%s\t5\n%s\t20\n' "$SEATS_DIR/alpha" "$SEATS_DIR/beta" > "$SPEC_DIR/remaining_map"
+
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" auto)
+  assert_contains "$out" "no seat has enough headroom" "precondition: the crossing must find nowhere to go"
+
+  # beta's window resets while alpha is still below its trigger. The watch must
+  # look again rather than stay silent until alpha itself recovers.
+  printf '%s\t5\n%s\t100\n' "$SEATS_DIR/alpha" "$SEATS_DIR/beta" > "$SPEC_DIR/remaining_map"
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" auto)
+  assert_contains "$out" "switched from alpha at 5% left to beta" \
+    "a candidate that recovers after a crossing with nowhere to go must be switched to"
+  assert_grep "beta" "$HOME_DIR/config/claude-seat" "the recovered candidate must become the active seat"
+
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" auto)
+  [ -z "$out" ] || fail "a completed switch must not wake again on the next poll: $out"
+  pass "after a crossing with nowhere to go, the watch keeps looking and switches once a seat recovers"
+}
+
+test_the_watch_keeps_every_quota_read_inside_the_check_budget() {
+  local rec out started elapsed
+  rec=$(make_seat_case auto-slow-reads)
+  read_seat_case "$rec"
+  mkdir -p "$SEATS_DIR/alpha" "$SEATS_DIR/beta"
+  seat_logged_in "$SPEC_DIR" "$SEATS_DIR/alpha" "$SEATS_DIR/beta"
+  printf 'alpha\n' > "$HOME_DIR/config/claude-seat"
+  run_seat "$HOME_DIR" "$FAKEBIN" threshold 15 >/dev/null
+  run_seat "$HOME_DIR" "$FAKEBIN" extra-usage stop >/dev/null
+  printf '%s\t5\n%s\t90\n' "$SEATS_DIR/alpha" "$SEATS_DIR/beta" > "$SPEC_DIR/remaining_map"
+  printf 'task=t1\nharness=claude\nclaude_seat=%s\n' "$SEATS_DIR/alpha" > "$HOME_DIR/state/t1.meta"
+  printf '30\n' > "$SPEC_DIR/slow"
+
+  started=$(date +%s)
+  out=$(FM_CHECK_TIMEOUT=8 run_seat "$HOME_DIR" "$FAKEBIN" auto)
+  elapsed=$(($(date +%s) - started))
+  [ "$elapsed" -lt 8 ] || fail "a pass with slow quota reads must finish inside FM_CHECK_TIMEOUT, took ${elapsed}s"
+  [ -z "$out" ] || fail "a read cut short must give no verdict and no wake: $out"
+  assert_grep "alpha" "$HOME_DIR/config/claude-seat" "a read cut short must never switch accounts"
+  pass "every quota read one automatic pass makes stays inside the watcher's per-check budget"
 }
 
 test_the_watch_never_switches_on_an_unreadable_active_quota() {
@@ -1627,6 +1686,7 @@ test_a_stop_policy_holds_a_fresh_claude_spawn_and_the_override_gets_through() {
   out=$(run_spawn_here "$HOME_DIR" "$WT_DIR" "$FAKEBIN" "$LAUNCH_LOG" "$id" "$PROJ_DIR" 2>&1)
   expect_code 1 "$?" "a fresh claude spawn must be held once the seat has no plan quota left"
   assert_contains "$out" "holds new Claude work" "the refusal must say the work was held, not that it failed"
+  assert_contains "$out" "the extra-usage policy is stop" "the refusal must give the reason the gate held it"
   assert_contains "$out" "--ignore-seat-hold" "the refusal must name the override"
   assert_absent "$HOME_DIR/state/$id.meta" "a held spawn must create no task record"
   [ ! -s "$LAUNCH_LOG" ] || fail "a held spawn must launch nothing: $(cat "$LAUNCH_LOG")"
@@ -1637,6 +1697,38 @@ test_a_stop_policy_holds_a_fresh_claude_spawn_and_the_override_gets_through() {
   assert_grep "stop" "$HOME_DIR/config/claude-seat-extra-usage" \
     "the override must change no setting, so the next spawn is gated again"
   pass "a stop policy holds a fresh claude spawn, names the override, and changes nothing when overridden"
+}
+
+test_the_spawn_gate_holds_at_the_cap_and_on_an_unreadable_quota() {
+  local rec id out spec
+  id=seat-hold-cap-1
+  rec=$(spawn_case spawn-extra-usage-cap "$id")
+  read_spawn_case "$rec"
+  spec="$CASE_DIR/quota-spec"
+  make_quota_fake "$FAKEBIN" "$spec"
+  mkdir -p "$SEATS_DIR/alpha"
+  printf '%s\n' "$SEATS_DIR/alpha" > "$spec/oauth"
+  printf 'alpha\n' > "$HOME_DIR/config/claude-seat"
+  printf '%s\t0\n' "$SEATS_DIR/alpha" > "$spec/remaining_map"
+  printf '%s\t25\n' "$SEATS_DIR/alpha" > "$spec/extra_map"
+  printf 'allow 25\n' > "$HOME_DIR/config/claude-seat-extra-usage"
+
+  out=$(run_spawn_here "$HOME_DIR" "$WT_DIR" "$FAKEBIN" "$LAUNCH_LOG" "$id" "$PROJ_DIR" 2>&1)
+  expect_code 1 "$?" "a fresh claude spawn must be held once extra-usage spend reaches the cap"
+  # shellcheck disable=SC2016  # literal dollar signs in the expected output, not expansions
+  assert_contains "$out" 'at or over the $25 cap' "the spawn refusal must name the cap it reached"
+  assert_absent "$HOME_DIR/state/$id.meta" "a held spawn must create no task record"
+
+  printf '%s\n' "$SEATS_DIR/alpha" > "$spec/unreadable_quota"
+  out=$(run_spawn_here "$HOME_DIR" "$WT_DIR" "$FAKEBIN" "$LAUNCH_LOG" "$id" "$PROJ_DIR" 2>&1)
+  expect_code 1 "$?" "a fresh claude spawn must be held when the quota gives no verdict"
+  assert_contains "$out" "makes no guess" "the spawn refusal must say it refused to guess"
+
+  rm -f "$spec/unreadable_quota"
+  printf '%s\t10\n' "$SEATS_DIR/alpha" > "$spec/extra_map"
+  out=$(run_spawn_here "$HOME_DIR" "$WT_DIR" "$FAKEBIN" "$LAUNCH_LOG" "$id" "$PROJ_DIR" 2>&1)
+  expect_code 0 "$?" "spend under the cap must let the spawn through: $out"
+  pass "the spawn gate holds at the dollar cap and on an unreadable quota, and dispatches under the cap"
 }
 
 test_a_hold_never_blocks_a_relaunch_or_another_harness() {
@@ -1723,6 +1815,8 @@ test_allow_policy_proceeds_under_the_cap_and_holds_at_it
 test_an_unreadable_quota_holds_dispatch_rather_than_guessing
 test_the_watch_keeps_firing_across_crossings_and_never_twice_on_one
 test_the_watch_reports_the_policy_consequence_when_no_seat_qualifies
+test_the_watch_switches_once_a_candidate_recovers_after_a_crossing_with_nowhere_to_go
+test_the_watch_keeps_every_quota_read_inside_the_check_budget
 test_the_watch_never_switches_on_an_unreadable_active_quota
 test_arm_registers_a_repeating_watch_and_retire_removes_it
 test_status_reports_every_automatic_setting_in_percent_left
@@ -1745,6 +1839,7 @@ test_account_pin_and_recorded_seat_refuse_the_relaunch
 test_pin_only_home_still_relaunches_a_claude_task
 test_pin_at_a_seat_directory_still_relaunches_a_claude_task
 test_a_stop_policy_holds_a_fresh_claude_spawn_and_the_override_gets_through
+test_the_spawn_gate_holds_at_the_cap_and_on_an_unreadable_quota
 test_a_hold_never_blocks_a_relaunch_or_another_harness
 test_a_non_claude_spawn_is_never_held_by_the_claude_policy
 

@@ -12,13 +12,14 @@
 #   fm-seat.sh destination-min [<percent-left>|off]
 #   fm-seat.sh extra-usage [stop|allow <usd>|off]
 #   fm-seat.sh threshold-reached
-#   fm-seat.sh dispatch-check [--quiet]
 #   fm-seat.sh auto
 #   fm-seat.sh arm
 #   fm-seat.sh retire
 #
-# status     Print the active seat, all three automatic-mode settings and
-#            whether the watch is armed, every live task's OWN recorded seat, so
+# status     Print the active seat, all three automatic-mode settings, whether
+#            the watch is armed, whether new Claude dispatch is held right now
+#            and why (the same reason bin/fm-spawn.sh prints when it refuses a
+#            spawn), every live task's OWN recorded seat, so
 #            a switch can be read against the workers it did not touch, and every
 #            local secondmate home that declines inherited seat settings, with
 #            the seat that home is actually on, so a decline is never invisible.
@@ -59,11 +60,6 @@
 #            the configured percent left, 1 when it is not, and 2 when no
 #            threshold is configured or the read failed. Exit 2 is an error,
 #            never a true, so an unreadable quota never switches accounts.
-# dispatch-check
-#            The dispatch gate bin/fm-spawn.sh consults before launching a NEW
-#            claude worker: exit 0 to dispatch, 1 to hold. With no extra-usage
-#            policy configured it exits 0 without reading any quota at all.
-#            --quiet prints nothing and reports only through the exit status.
 # auto       One pass of the automatic mode, run by the armed check shim: read
 #            the active seat, switch when the trigger is met and a seat with
 #            headroom exists, and print one line when firstmate should know.
@@ -104,6 +100,8 @@ STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
 DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
 
+# shellcheck source=bin/fm-timeout-lib.sh
+. "$SCRIPT_DIR/fm-timeout-lib.sh"
 # shellcheck source=bin/fm-seat-lib.sh
 . "$SCRIPT_DIR/fm-seat-lib.sh"
 # shellcheck source=bin/fm-quota-axi-lib.sh
@@ -210,7 +208,7 @@ declining_secondmate_homes() {
 }
 
 cmd_status() {
-  local active profile threshold minimum policy rows
+  local active profile threshold minimum policy reason rows
   active=$(fm_seat_active)
   printf 'active seat for NEW workers: %s\n' "$active"
   profile=$(fm_seat_config_dir "$active")
@@ -239,6 +237,12 @@ cmd_status() {
   else
     printf 'auto-switch watch: not armed\n'
   fi
+  if reason=$(fm_seat_dispatch_reason "$(fm_seat_dispatch_decision)"); then
+    printf 'new Claude dispatch: allowed\n'
+  else
+    printf 'new Claude dispatch: HELD (bin/fm-spawn.sh --ignore-seat-hold starts one task anyway)\n'
+  fi
+  printf '%s\n' "$reason" | sed 's/^/  /'
   printf '\nlive workers keep the seat they launched with:\n'
   rows=$(live_task_seats)
   if [ -z "$rows" ]; then
@@ -553,58 +557,16 @@ cmd_threshold_reached() {
     '($r | tonumber) <= ($t | tonumber)' >/dev/null 2>&1
 }
 
-# The DISPATCH GATE. bin/fm-spawn.sh runs this before launching a NEW claude
-# worker. Exit 0 means dispatch, exit 1 means hold.
-#
-# With no extra-usage policy configured it exits 0 having read nothing at all,
-# so an unconfigured home pays nothing for the feature and behaves byte for byte
-# as it did before the gate existed.
-#
-# A hold is deliberately taken on a quota that cannot be read. The whole purpose
-# of the policy is to keep new work off paid extra usage, and launching anyway
-# on an unreadable quota is exactly the guess the operator asked this not to
-# make. The hold names what it could not read, and clearing or widening the
-# policy is the way through - never a silent proceed.
-cmd_dispatch_check() {
-  local quiet=0 decision verb reason a b
-  [ "${1-}" != --quiet ] || quiet=1
-  decision=$(fm_seat_dispatch_decision)
-  read -r verb reason a b <<< "$decision"
-  if [ "$verb" = allow ]; then
-    [ "$quiet" -eq 1 ] || case "$reason" in
-      policy-unset) printf 'dispatch allowed: no extra-usage policy is configured\n' ;;
-      plan-quota-remaining) printf 'dispatch allowed: the active seat still has %s%% of its plan quota left\n' "$a" ;;
-      extra-usage-under-cap) printf 'dispatch allowed: $%s of extra usage spent, under the $%s cap\n' "$a" "$b" ;;
-      *) printf 'dispatch allowed\n' ;;
-    esac
-    return 0
-  fi
-  [ "$quiet" -eq 1 ] || {
-    case "$reason" in
-      quota-unreadable)
-        printf 'dispatch HELD: the active seat quota could not be read, so whether new work would run on paid extra usage is unknown, and this makes no guess\n' ;;
-      extra-usage-stop)
-        printf 'dispatch HELD: the active seat has no plan quota left and the policy is stop, so no NEW Claude worker is started on paid extra usage\n' ;;
-      extra-usage-spend-unreadable)
-        printf 'dispatch HELD: the active seat has no plan quota left and its extra-usage spend could not be read, so it cannot be compared against the $%s cap\n' "$a" ;;
-      extra-usage-cap)
-        printf 'dispatch HELD: $%s of extra usage spent, at or over the $%s cap\n' "$a" "$b" ;;
-      *) printf 'dispatch HELD\n' ;;
-    esac
-    printf 'This holds only work not yet STARTED. A worker already running keeps its own\n'
-    printf 'seat and can still draw extra usage mid-task; only the account admin setting\n'
-    printf 'stops that. Clear the hold with: fm-seat.sh extra-usage off\n'
-  }
-  return 1
-}
-
 # --- automatic mode ----------------------------------------------------------
-# The de-dupe record. `fired=<seat>` names the seat a crossing has already been
-# acted on for, which is what keeps one crossing to one action: the same seat
-# sitting below its threshold poll after poll stays silent, the record clears
-# the moment that seat reads back above the threshold, and a switch rewrites it
-# to the new seat so that seat's OWN later crossing fires again with nothing to
-# re-arm by hand.
+# The de-dupe record. `fired=<seat>` names the seat a switch last landed on, so
+# a destination that itself sits below the trigger is not switched away from
+# on the very next poll; a switch rewrites it to the new seat, so that seat's
+# OWN later crossing fires again with nothing to re-arm by hand.
+# `blocked=<seat>` names the seat whose crossing has already been reported as
+# having nowhere to go, or as a switch that failed. It silences only that
+# report: every later poll still looks for a destination, so a candidate whose
+# window resets is switched to at once. Both clear the moment the active seat
+# reads back above the threshold.
 # It also carries `extra=<seats>`, the set of seats last seen drawing paid extra
 # usage, so that warning fires on ENTRY rather than on every poll for as long as
 # the spend lasts.
@@ -616,26 +578,24 @@ auto_record_get() {
 }
 
 # auto_record_set <key> <value>
-# Replace one field, preserving the other. The record is small and rewritten
-# whole, so a partial write can never leave a half-updated pair behind.
+# Replace one field, preserving the others. The record is small and rewritten
+# whole, so a partial write can never leave a half-updated record behind.
 auto_record_set() {
-  local key=$1 value=$2 fired extra tmp
+  local key=$1 value=$2 fired blocked extra tmp
   fired=$(auto_record_get fired) || fired=''
+  blocked=$(auto_record_get blocked) || blocked=''
   extra=$(auto_record_get extra) || extra=''
   case "$key" in
     fired) fired=$value ;;
+    blocked) blocked=$value ;;
     extra) extra=$value ;;
   esac
   mkdir -p "$STATE" 2>/dev/null || return 1
   tmp=$(umask 077; mktemp "$STATE/.fm-seat-auto.XXXXXX" 2>/dev/null) || return 1
-  { printf 'fired=%s\n' "$fired"; printf 'extra=%s\n' "$extra"; } > "$tmp" ||
+  { printf 'fired=%s\n' "$fired"; printf 'blocked=%s\n' "$blocked"; printf 'extra=%s\n' "$extra"; } > "$tmp" ||
     { rm -f -- "$tmp"; return 1; }
   mv -f -- "$tmp" "$AUTO_RECORD" || { rm -f -- "$tmp"; return 1; }
 }
-
-auto_record_fired() { auto_record_get fired; }
-auto_record_write() { auto_record_set fired "${1-}"; }
-auto_record_clear() { auto_record_set fired ''; }
 
 # warn_extra_usage_entry
 # The loud half of the stop policy. Firstmate cannot stop a running worker from
@@ -645,7 +605,7 @@ auto_record_clear() { auto_record_set fired ''; }
 # (bin/fm-usage-warner.sh notify) naming the seats now spending. Reported on
 # stdout too, because that line is what wakes firstmate.
 warn_extra_usage_entry() {
-  local meta seat task_seats='' out spending='' summary previous
+  local meta seat label task_seats='' out spending='' summary previous
   [ -d "$STATE" ] || return 0
   # Only a CLAUDE task's recorded profile is a Claude seat. A task on any other
   # harness records no seat and reads no Claude profile, so including it would
@@ -661,13 +621,20 @@ warn_extra_usage_entry() {
   done
   task_seats=$(printf '%s' "$task_seats" | sort -u)
   [ -n "$task_seats" ] || return 0
+  previous=$(auto_record_get extra) || previous=''
+  # A seat whose read gave no verdict, including one the pass ran out of time
+  # for, keeps its previous state rather than reading as having left extra
+  # usage, so a slow read can never re-arm the warning and wake twice.
   while IFS= read -r seat; do
-    out=$(fm_seat_quota_json "$seat") || continue
-    fm_seat_in_extra_usage_from "$out" || continue
-    spending="${spending}${seat:-default profile} "
+    label=${seat:-default profile}
+    if out=$(fm_seat_quota_json "$seat"); then
+      fm_seat_in_extra_usage_from "$out" || continue
+    else
+      case " $previous " in *" $label "*) ;; *) continue ;; esac
+    fi
+    spending="${spending}${label} "
   done <<< "$task_seats"
   spending=${spending% }
-  previous=$(auto_record_get extra) || previous=''
   [ "$spending" != "$previous" ] || return 0
   auto_record_set extra "$spending"
   # Only entry speaks. A seat that leaves extra usage updates the record
@@ -681,13 +648,33 @@ warn_extra_usage_entry() {
 # One pass of the automatic mode. Prints a line ONLY when firstmate should know,
 # and is otherwise completely silent, because it runs on the watcher's cadence
 # and every line it prints becomes a wake.
+#
+# The watcher kills a check that outlives FM_CHECK_TIMEOUT, so the pass sets a
+# read deadline a few seconds inside it (the margin bin/fm-usage-warner.sh
+# leaves) that every quota read it makes respects, and runs the trigger and
+# switch before the extra-usage scan, so that scan can never spend the switch's
+# budget. A read the deadline cuts short gives no verdict, like any other
+# unreadable quota.
 cmd_auto() {
-  local threshold active dir remaining target fired policy out
+  local threshold policy check_timeout
   threshold=$(fm_seat_threshold) || return 0
+  check_timeout=${FM_CHECK_TIMEOUT:-30}
+  case "$check_timeout" in
+    ''|*[!0-9]*|0) check_timeout=30 ;;
+  esac
+  FM_SEAT_READ_DEADLINE=$(($(date +%s) + check_timeout - 3))
+  export FM_SEAT_READ_DEADLINE
+  policy=$(fm_seat_extra_usage_policy) || policy=''
+  auto_trigger "$threshold" "$policy"
+  [ -z "$policy" ] || warn_extra_usage_entry
+}
+
+# auto_trigger <threshold> <policy>
+# The trigger and switch half of one automatic pass.
+auto_trigger() {
+  local threshold=$1 policy=$2 active dir remaining target fired blocked out
   active=$(fm_seat_active)
   dir=$(fm_seat_config_dir "$active")
-  policy=$(fm_seat_extra_usage_policy) || policy=''
-  [ -z "$policy" ] || warn_extra_usage_entry
   if ! remaining=$(fm_seat_remaining "$dir"); then
     # Silent: an unreadable quota is a transient condition on a poll that runs
     # every cycle, and reporting it on each one would be noise, not a wake.
@@ -696,11 +683,13 @@ cmd_auto() {
   fi
   if ! jq -en --arg r "$remaining" --arg t "$threshold" \
     '($r | tonumber) <= ($t | tonumber)' >/dev/null 2>&1; then
-    auto_record_clear
+    auto_record_set fired ''
+    auto_record_set blocked ''
     return 0
   fi
-  fired=$(auto_record_fired) || fired=''
+  fired=$(auto_record_get fired) || fired=''
   [ "$fired" != "$active" ] || return 0
+  blocked=$(auto_record_get blocked) || blocked=''
   if target=$(next_seat 2>/dev/null); then
     # Re-invoked as a subprocess so a refusal inside the switch ends that call
     # rather than this poll, and with this home's own resolution forwarded so
@@ -708,17 +697,20 @@ cmd_auto() {
     if out=$(FM_HOME="$FM_HOME" FM_ROOT_OVERRIDE="$FM_ROOT" FM_STATE_OVERRIDE="$STATE" \
       FM_CONFIG_OVERRIDE="$CONFIG" FM_DATA_OVERRIDE="$DATA" \
       "$SCRIPT_DIR/fm-seat.sh" switch "$target" 2>&1); then
-      auto_record_write "$target"
+      auto_record_set fired "$target"
+      auto_record_set blocked ''
       printf 'claude-seat: switched from %s at %s%% left to %s; new workers launch there\n' \
         "$active" "$remaining" "$target"
       return 0
     fi
-    auto_record_write "$active"
+    [ "$blocked" != "$active" ] || return 0
+    auto_record_set blocked "$active"
     printf 'claude-seat: %s is at %s%% left and the switch to %s failed: %s\n' \
       "$active" "$remaining" "$target" "$(printf '%s' "$out" | tail -1)"
     return 0
   fi
-  auto_record_write "$active"
+  [ "$blocked" != "$active" ] || return 0
+  auto_record_set blocked "$active"
   case "$policy" in
     stop)
       printf 'claude-seat: %s is at %s%% left and no seat has enough headroom to switch to; new Claude work is held rather than started on paid extra usage. A worker already running is not stopped.\n' \
@@ -782,7 +774,6 @@ case "${1-}" in
   destination-min)   shift; cmd_destination_min "${1-}" ;;
   extra-usage)       shift; cmd_extra_usage "${1-}" "${2-}" ;;
   threshold-reached) shift; cmd_threshold_reached ;;
-  dispatch-check)    shift; cmd_dispatch_check "${1-}" ;;
   auto)              shift; cmd_auto ;;
   arm)               shift; cmd_arm "$@" ;;
   retire)            shift; cmd_retire "$@" ;;

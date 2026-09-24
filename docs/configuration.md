@@ -435,7 +435,7 @@ Three optional files drive the automatic mode, and every percentage in them coun
 Each is absent by default, and a home that configures none of them behaves exactly as it did before they existed: no quota is read for a candidate seat, and no dispatch is ever held.
 An unreadable or ambiguous quota is never guessed at - it skips a candidate, blocks a switch, and holds dispatch, each saying so rather than implying a number.
 A hold stops work being STARTED; a worker already running keeps its own seat and can still draw extra usage mid-task, which only the account admin setting prevents, so `stop` is never a guarantee of zero spend.
-`bin/fm-spawn.sh --ignore-seat-hold` pushes one spawn through a hold without changing the setting.
+`bin/fm-spawn.sh --ignore-seat-hold` pushes one spawn through a hold without changing the setting, and `bin/fm-seat.sh status` reports whether dispatch is held right now and why.
 All five are inherited into local secondmate homes through the primary-authoritative configuration contract, so a secondmate's own Claude crewmates launch on the same seat; a switch runs `bin/fm-config-push.sh --local-only` to carry the change to running local secondmates at once without contacting remote routes.
 They are never sent to a remote secondmate route, because a seat is a profile logged in on this machine only.
 

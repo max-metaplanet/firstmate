@@ -1,6 +1,8 @@
 # shellcheck shell=bash
 # Shared Claude seat resolution, used by bin/fm-seat.sh and bin/fm-spawn.sh.
-# Usage: . bin/fm-seat-lib.sh   (after FM_ROOT, FM_HOME, and CONFIG are set)
+# Usage: . bin/fm-seat-lib.sh   (after FM_ROOT, FM_HOME, and CONFIG are set, and
+#        after bin/fm-timeout-lib.sh, which bounds every quota read, and
+#        bin/fm-quota-axi-lib.sh, which owns the quota row join)
 #
 # A "seat" is one Claude account, reached through a Claude Code profile
 # directory named by CLAUDE_CONFIG_DIR. Claude Code derives that profile's
@@ -179,7 +181,7 @@ fm_seat_logged_in() {
   # verdict this probe needs. So the exit status is deliberately ignored and the
   # decision comes from the document; only unreadable or invalid output is
   # undecided.
-  out=$(CLAUDE_CONFIG_DIR="$dir" quota-axi --provider claude --no-credential-refresh --full --json 2>/dev/null </dev/null || true)
+  out=$(fm_seat_quota_read "$dir") || return 2
   [ -n "$out" ] || return 2
   printf '%s\n' "$out" | jq -e . >/dev/null 2>&1 || return 2
   printf '%s\n' "$out" | jq -e '
@@ -225,7 +227,7 @@ fm_seat_account() {
   local dir=${1-} out
   command -v quota-axi >/dev/null 2>&1 || return 1
   command -v jq >/dev/null 2>&1 || return 1
-  out=$(CLAUDE_CONFIG_DIR="$dir" quota-axi --provider claude --no-credential-refresh --full --json 2>/dev/null </dev/null || true)
+  out=$(fm_seat_quota_read "$dir") || return 1
   [ -n "$out" ] || return 1
   printf '%s\n' "$out" | jq -er '
     (.providers // []) | map(select(.provider == "claude")) | .[0] // empty
@@ -304,19 +306,52 @@ fm_seat_extra_usage_policy() {
   return 1
 }
 
+# fm_seat_read_bound
+# Seconds one quota read may take: 10, or less when FM_SEAT_READ_DEADLINE (an
+# epoch second) is set and closer than that. Returns 1 when the deadline leaves
+# no whole second, so the read is not made at all. bin/fm-seat.sh auto sets the
+# deadline from the watcher's per-check budget, so every read one pass makes,
+# including those of a switch it runs as a child, fits inside that budget.
+fm_seat_read_bound() {
+  local bound=10 deadline=${FM_SEAT_READ_DEADLINE:-} left
+  case "$deadline" in
+    '') ;;
+    *[!0-9]*) return 1 ;;
+    *)
+      left=$((deadline - $(date +%s)))
+      [ "$left" -ge "$bound" ] || bound=$left
+      ;;
+  esac
+  [ "$bound" -ge 1 ] || return 1
+  printf '%s\n' "$bound"
+}
+
+# fm_seat_quota_read <config-dir>
+# The one bounded quota-axi call every seat probe and quota read makes, printed
+# raw. Returns 1 when quota-axi is missing, no time is left, or the bound was
+# hit, which every caller treats as no verdict.
+#
+# The exit status of quota-axi is otherwise deliberately ignored: an unavailable
+# provider still prints the report that says so, and that report is what
+# decides.
+fm_seat_quota_read() {
+  local dir=${1-} bound out
+  command -v quota-axi >/dev/null 2>&1 || return 1
+  bound=$(fm_seat_read_bound) || return 1
+  out=$(fm_run_timed "$bound" env CLAUDE_CONFIG_DIR="$dir" \
+    quota-axi --provider claude --no-credential-refresh --full --json 2>/dev/null </dev/null)
+  ! fm_timed_out "$?" || return 1
+  printf '%s\n' "$out"
+}
+
 # fm_seat_quota_json <config-dir>
 # One quota-axi read against a seat's own profile, printed raw. Returns 1 when
-# the read could not be made or did not parse, which every caller must treat as
-# "no verdict" rather than as any particular number.
-#
-# The exit status of quota-axi is deliberately ignored, for the same reason
-# fm_seat_logged_in ignores it: an unavailable provider still prints the report
-# that says so, and that report is what decides.
+# the read could not be made, ran out of time, or did not parse, which every
+# caller must treat as "no verdict" rather than as any particular number.
 fm_seat_quota_json() {
   local dir=${1-} out
-  command -v quota-axi >/dev/null 2>&1 || return 1
   command -v jq >/dev/null 2>&1 || return 1
-  out=$(CLAUDE_CONFIG_DIR="$dir" quota-axi --provider claude --no-credential-refresh --full --json 2>/dev/null </dev/null || true)
+  out=$(fm_seat_quota_read "$dir") || return 1
   [ -n "$out" ] || return 1
   printf '%s\n' "$out" | jq -e . >/dev/null 2>&1 || return 1
   printf '%s\n' "$out"
@@ -451,4 +486,40 @@ fm_seat_dispatch_decision() {
     return 0
   fi
   printf 'hold extra-usage-cap %s %s\n' "$spent" "$cap"
+}
+
+# fm_seat_dispatch_reason <decision-line>
+# The operator-facing reason for one fm_seat_dispatch_decision line, the single
+# place its wording lives. Exit 0 for an allow and 1 for a hold, so the spawn
+# gate and `bin/fm-seat.sh status` both render and branch on the same text.
+fm_seat_dispatch_reason() {
+  local verb reason a b
+  read -r verb reason a b <<< "${1-}"
+  if [ "$verb" = allow ]; then
+    case "$reason" in
+      policy-unset)
+        printf 'no extra-usage policy is configured, so no quota is read and nothing holds\n' ;;
+      plan-quota-remaining)
+        printf 'the active Claude seat still has %s%% of its plan quota left\n' "$a" ;;
+      extra-usage-under-cap)
+        printf '$%s of extra usage spent on the active Claude seat, under the $%s cap\n' "$a" "$b" ;;
+      *)
+        printf 'the extra-usage policy allows new Claude dispatch\n' ;;
+    esac
+    return 0
+  fi
+  case "$reason" in
+    quota-unreadable)
+      printf 'the active Claude seat quota could not be read, so whether this worker would run on paid extra usage is unknown, and the policy makes no guess\n' ;;
+    extra-usage-stop)
+      printf 'the active Claude seat has no plan quota left and the extra-usage policy is stop, so no new Claude worker is started on paid extra usage\n' ;;
+    extra-usage-spend-unreadable)
+      printf 'the active Claude seat has no plan quota left and its extra-usage spend could not be read, so it cannot be compared against the $%s cap\n' "$a" ;;
+    extra-usage-cap)
+      printf '$%s of extra usage is already spent on the active Claude seat, at or over the $%s cap\n' "$a" "$b" ;;
+    *)
+      printf 'the extra-usage policy holds new Claude dispatch\n' ;;
+  esac
+  printf 'this holds only work not yet started; a worker already running keeps its own seat and can still draw extra usage mid-task\n'
+  return 1
 }

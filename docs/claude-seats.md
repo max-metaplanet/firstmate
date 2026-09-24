@@ -112,7 +112,7 @@ Without this setting the rotation gate is login-only and no candidate's quota is
 
 Spend is read from the `extra_usage` window the account itself reports, and the cap is a firstmate-side figure compared against it - deliberately a smaller, separate number from the account's own extra-usage ceiling.
 
-`bin/fm-seat.sh status` prints all three settings and whether the watch is armed, and `bin/fm-seat.sh dispatch-check` answers the gate's question on demand.
+`bin/fm-seat.sh status` prints all three settings, whether the watch is armed, and whether new Claude dispatch is held right now, with the same reason `bin/fm-spawn.sh` gives when it refuses a spawn.
 
 ### What the automatic mode cannot do
 
@@ -132,6 +132,8 @@ A single spawn can be pushed through a hold with `--ignore-seat-hold`; that chan
 
 `arm` registers the automatic pass as this home's repeating Claude-seat check, so it runs on the supervision cycle that already exists rather than a daemon of its own.
 It **keeps watching after a switch**: one crossing fires at most once per seat, and when the seat it moved to later crosses its own threshold, that fires again with nothing re-armed by hand.
+A crossing with nowhere to go is reported once, but every later poll still looks for a destination, so a seat whose window resets is switched to on the next poll while the active seat stays below its trigger.
+Each pass keeps every quota read inside the watcher's per-check timeout (`FM_CHECK_TIMEOUT`), capping one read at 10 seconds, and a read cut short counts as unreadable.
 `bin/fm-seat.sh retire` stops it and removes its record.
 
 ### What never trips a switch
