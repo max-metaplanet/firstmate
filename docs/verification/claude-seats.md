@@ -9,7 +9,8 @@ It records only the vendor-emitted facts that must be re-established when quota-
 Claude Code changes.
 Task chronology and incident transcripts stay in private reports or PR evidence.
 
-The classifier reads two machine-readable fields rather than any error string, because
+The classifier reads machine-readable fields - `state.authStatus` and each attempt's
+`status` and `error` - rather than any error string, because
 the same credential state is reported with different messages depending on which route
 produced it.
 The fixtures in [`tests/fm-seat.test.sh`](../../tests/fm-seat.test.sh) reproduce the
@@ -77,7 +78,7 @@ Claude Code cleared the session in place: the Keychain item survived with
 ```json
 {"source":"unavailable","status":"auth_required","error":"credentials_invalid",
  "attempts":["oauth-file:skipped:credentials_missing",
-             "keychain:skipped:credentials_invalid","credentialPresent":true]}
+             "keychain:skipped:credentials_invalid (credentialPresent)"]}
 ```
 
 This is NOT the every-attempt-`credentials_missing` shape the older attempts test looked
@@ -133,8 +134,8 @@ it.
 ## Refreshing this record
 
 Re-run the two reads above against the installed quota-axi after a quota-axi or Claude
-Code upgrade, and confirm `state.authStatus` and `state.status` still carry these
+Code upgrade, and confirm `state.authStatus` and the per-attempt `status` and `error` still carry these
 values.
-If either field is renamed or dropped, the classifier falls back to reporting `unknown`
+If any of these fields is renamed or dropped, the classifier falls back to reporting `unknown`
 for both states, which is the pre-existing behaviour rather than an unsafe one, and
 `tests/fm-seat.test.sh`'s fixtures must be re-captured.
