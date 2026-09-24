@@ -36,6 +36,9 @@ TMP_ROOT=$(fm_test_tmproot fm-seat)
 #   <spec>/signed_out   values that are genuinely signed out on a Keychain-backed
 #                       store, the shape Claude Code leaves after Anthropic
 #                       rejects a refresh token
+#   <spec>/rejected_401 values whose locally valid credential the usage
+#                       endpoint rejected with a 401, which quota-axi reports as
+#                       auth_required with a failed keychain attempt
 #   <spec>/remaining    percent remaining reported for a logged-in profile's
 #                       account-level (all_models) window
 #   <spec>/availability optional JSON array replacing the whole
@@ -112,9 +115,18 @@ if [ -f "\$spec/signed_out" ] && grep -Fxq "\$key" "\$spec/signed_out"; then
   # Keychain item present but emptied. Captured from quota-axi 0.1.53 after
   # exactly that happened to a throwaway seat. Note it is NOT the
   # every-attempt-credentials_missing shape - the Keychain attempt reports
-  # credentials_invalid - so only state.status establishes this one.
+  # credentials_invalid.
   cat <<'JSON'
 {"generatedAt":"2026-01-01T00:00:00Z","schemaVersion":5,"providers":[{"provider":"claude","label":"Claude","source":"unavailable","windows":[],"state":{"status":"auth_required","stale":false,"error":"credentials_invalid","sourcesTried":["oauth-file","keychain"]},"attempts":[{"source":"oauth-file","status":"skipped","error":"credentials_missing"},{"source":"keychain","status":"skipped","error":"credentials_invalid","credentialPresent":true}],"quotaSemantics":{"status":"unknown","effectiveAvailability":[]}}]}
+JSON
+  exit 1
+fi
+if [ -f "\$spec/rejected_401" ] && grep -Fxq "\$key" "\$spec/rejected_401"; then
+  # The usage endpoint answered 401 for a credential that is locally unexpired
+  # and still holds a refresh token. quota-axi raises auth_required for any 401,
+  # so the status matches the signed-out shape while the store proves nothing.
+  cat <<'JSON'
+{"generatedAt":"2026-01-01T00:00:00Z","schemaVersion":5,"providers":[{"provider":"claude","label":"Claude","source":"unavailable","windows":[],"state":{"status":"auth_required","stale":false,"error":"Claude sign-in required","sourcesTried":["oauth-file","keychain"]},"attempts":[{"source":"oauth-file","status":"skipped","error":"credentials_missing"},{"source":"keychain","status":"failed","error":"Claude sign-in required"}],"quotaSemantics":{"status":"unknown","effectiveAvailability":[]}}]}
 JSON
   exit 1
 fi
@@ -977,6 +989,27 @@ test_a_signed_out_seat_is_never_a_rotation_destination() {
   assert_contains "$out" "dead: skipped, not logged in" \
     "rotation must report the signed-out seat as skipped for its own reason"
   pass "rotation separates a signed-out seat from a merely lapsed one"
+}
+
+test_a_rejected_request_is_not_a_sign_out_and_force_may_cross_it() {
+  local rec out
+  rec=$(make_seat_case rejected-401)
+  read_seat_case "$rec"
+  mkdir -p "$SEATS_DIR/revoked"
+  seat_logged_in "$SPEC_DIR" '(default)'
+  printf '%s\n' "$SEATS_DIR/revoked" > "$SPEC_DIR/rejected_401"
+
+  # auth_required from a 401 says the endpoint refused a presented credential,
+  # not that the store is empty, so it must not be the uncrossable refusal.
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" probe revoked)
+  expect_code 2 "$?" "a 401 against a stored credential must probe as undecided"
+  assert_contains "$out" "unknown" "the probe must report the seat as unknown"
+  assert_not_contains "$out" "not-logged-in" "a 401 must not be reported as a sign-out"
+
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" switch revoked --force)
+  expect_code 0 "$?" "--force must cross a 401 read: $out"
+  assert_grep "revoked" "$HOME_DIR/config/claude-seat" "the forced switch must record the seat"
+  pass "an auth_required read from a rejected request is undecided and --force may cross it"
 }
 
 test_rotation_never_targets_the_default_profile() {
@@ -2065,6 +2098,7 @@ test_a_lapsed_seat_is_a_rotation_destination
 test_a_lapsed_seat_is_skipped_for_unknown_headroom_under_a_destination_minimum
 test_a_signed_out_seat_is_refused_and_force_cannot_cross_it
 test_a_signed_out_seat_is_never_a_rotation_destination
+test_a_rejected_request_is_not_a_sign_out_and_force_may_cross_it
 test_rotation_never_targets_the_default_profile
 test_rotation_reads_the_seat_set_fresh
 test_rotation_refuses_when_there_is_nowhere_to_go

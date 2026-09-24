@@ -212,8 +212,9 @@ Put the flag only in the home it belongs to: it is never inherited, so one home'
 ## Limits worth knowing
 
 The login probe runs `quota-axi` against the seat's profile and treats an `oauth` source as logged in.
-It also reads two machine-readable fields that report credential usability separately from quota freshness: an `expired_refreshable` auth status is the lapsed-token state above, and an `auth_required` status is a definitive sign-out.
-Both are read as fields, never as error text, because the same lapsed state is reported with different messages depending on whether the quota endpoint rate limited the read first.
+It also reads an `expired_refreshable` auth status, a machine-readable field that reports credential usability separately from quota freshness, as the lapsed-token state above.
+It is read as a field, never as error text, because the same lapsed state is reported with different messages depending on whether the quota endpoint rate limited the read first.
+A seat counts as definitively signed out only when every credential source was inspected and found missing or invalid; an `auth_required` status on its own does not count, because quota-axi also reports it for any rejected request against a credential that may still renew.
 Note that `quota-axi --profile-only` is **not** a usable probe here: that flag reads only a credential file and never the Keychain, so on macOS it reports "credentials missing" for a perfectly good seat.
 
 A newly logged-in seat gets its own Keychain entry, and reading it from a different tool can require a one-time macOS approval.

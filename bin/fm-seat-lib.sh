@@ -218,20 +218,6 @@ fm_seat_logged_in() {
     (.providers // []) | map(select(.provider == "claude")) | .[0] // empty
     | .state.authStatus == "expired_refreshable"
   ' >/dev/null 2>&1 && return "$FM_SEAT_LOGIN_EXPIRED_RENEWABLE"
-  # A definitive sign-out, and the only shape on a Keychain-backed store that
-  # proves one. quota-axi sets `auth_required` only when every credential source
-  # was actually consulted and each came back missing or invalid; a withheld or
-  # unreachable Keychain is replaced with that Keychain error instead, so this
-  # status can never stand for a store the probe merely failed to read.
-  #
-  # This is the shape a seat lands in after Anthropic definitively rejects its
-  # refresh token: Claude Code clears the session in place, leaving the Keychain
-  # item present but emptied, which reads as `credentials_invalid` rather than
-  # as the absent credential the attempts test below looks for.
-  printf '%s\n' "$out" | jq -e '
-    (.providers // []) | map(select(.provider == "claude")) | .[0] // empty
-    | .state.status == "auth_required"
-  ' >/dev/null 2>&1 && return 1
   # Tell a clean "not logged in" apart from a probe that could not decide, so a
   # switch refuses on the first and reports uncertainty on the second. Only a
   # report where every credential source was actually consulted and came back
@@ -252,15 +238,21 @@ fm_seat_logged_in() {
   # An undecided read (2) is what `switch --force` may cross, and crossing it is
   # safe: a forced switch to a genuinely empty seat stops the next worker on its
   # first message with "Not logged in" rather than spending another account.
-  # A proven-empty read (1) is never crossable. This attempts test reaches it on
-  # a file-backed store, where an absent profile really can be read and found
-  # empty; on a Keychain-backed store the `auth_required` test above is what
-  # reaches it, so a genuinely signed-out seat is refused on either store.
+  # A proven-empty read (1) is never crossable. It is reached only when every
+  # credential source was inspected and found missing or invalid: a file-backed
+  # store with no profile, or a Keychain item Claude Code emptied in place after
+  # Anthropic rejected its refresh token, which reads as `credentials_invalid`.
+  # A 401 from the usage endpoint is deliberately NOT accepted as that proof,
+  # even though quota-axi reports it as `auth_required`: quota-axi raises that
+  # status for any 401, including one against a locally valid credential whose
+  # refresh token a launch would still try. Such a read has a `failed` attempt,
+  # because a credential was presented and rejected, so it stays undecided.
   printf '%s\n' "$out" | jq -e '
     (.providers // []) | map(select(.provider == "claude")) | .[0] // empty
     | .source == "unavailable"
       and ((.attempts // []) | length > 0
-        and all(.status == "skipped" and .error == "credentials_missing"))
+        and all(.status == "skipped"
+          and (.error == "credentials_missing" or .error == "credentials_invalid")))
   ' >/dev/null 2>&1 && return 1
   return 2
 }

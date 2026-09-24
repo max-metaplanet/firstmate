@@ -80,15 +80,18 @@ Claude Code cleared the session in place: the Keychain item survived with
              "keychain:skipped:credentials_invalid","credentialPresent":true]}
 ```
 
-This is NOT the every-attempt-`credentials_missing` shape the older attempts test looks
-for, which is why `state.status == "auth_required"` is what establishes a sign-out on a
-Keychain-backed store.
+This is NOT the every-attempt-`credentials_missing` shape the older attempts test looked
+for, which is why the attempts test also accepts `credentials_invalid`: a sign-out is
+established when every attempt was skipped because its store was inspected and found
+missing or invalid.
 Before this was read, both this state and the lapsed state above reported the same
 `unknown` verdict and `--force` could cross either.
 
-`auth_required` is safe as a hard refusal because quota-axi sets it only when every
-credential source was consulted and each came back missing or invalid; a withheld or
-unreachable Keychain is replaced with that Keychain error instead.
+`auth_required` alone is NOT safe as a hard refusal, and the classifier ignores it.
+quota-axi 0.1.53 also raises `auth_required` for any 401 from the usage endpoint
+(`rejectUnusableUsageResponse`), including one against a locally valid credential that
+still holds a refresh token; that read carries a `failed` keychain attempt and stays
+undecided, so `--force` may cross it.
 
 ## Access token lifetime
 
