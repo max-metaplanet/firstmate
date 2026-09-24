@@ -154,23 +154,17 @@ live_task_seats() {
 # One tab-separated row per LOCAL secondmate home that declines inherited seat
 # settings: id, the seat that home is on, and its path. A decline that produced
 # no visible row would be a setting that silently does nothing, which is the one
-# failure this opt-out exists to avoid, so a flag that cannot be read is listed
-# too, named as unreadable rather than quietly dropped or treated as a decline.
+# failure this opt-out exists to avoid.
 # Remote routes never receive seat settings at all, so they are not listed.
 declining_secondmate_homes() {
-  local id home _window meta rc
+  local id home _window meta
   [ -d "$STATE" ] || return 0
   while IFS='|' read -r id home _window meta; do
     [ -n "$id" ] && [ -n "$home" ] || continue
     [ -z "$(fm_meta_get "$meta" remote_host)" ] || continue
     validate_secondmate_home "$id" "$home" || continue
-    fm_config_inherit_seat_optout "$VALIDATED_HOME/config"
-    rc=$?
-    case "$rc" in
-      0) printf '%s\t%s\t%s\n' "$id" "$(fm_seat_active "$VALIDATED_HOME/config")" "$VALIDATED_HOME" ;;
-      2) printf '%s\t%s\t%s\n' "$id" \
-           "(unreadable - config/$FM_SEAT_LOCAL_OPTOUT_FILE is not a regular file)" "$VALIDATED_HOME" ;;
-    esac
+    fm_config_inherit_seat_optout "$VALIDATED_HOME/config" || continue
+    printf '%s\t%s\t%s\n' "$id" "$(fm_seat_active "$VALIDATED_HOME/config")" "$VALIDATED_HOME"
   done < <(live_secondmate_meta_records "$STATE" "$DATA/secondmates.md")
 }
 
