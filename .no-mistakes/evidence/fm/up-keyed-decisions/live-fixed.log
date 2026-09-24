@@ -1,0 +1,72 @@
+
+########## [fixed] S1 ship: needs-decision [key=schema] then bare done: line
+needs-decision [key=schema]: split the table or keep one?
+working: other parts
+done: the other parts shipped; schema still awaits a ruling
+
+########## [fixed] S1 wake drain output
+OPEN DECISIONS (still open, folded from the durable status logs - not just the latest line):
+t4 [key=schema] needs-decision: split the table or keep one?
+OPEN DECISIONS: close one by answering it: bin/fm-send.sh <task> --resolve-key <key> '<answer>'
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+lines mentioning key=schema: 1
+
+########## [fixed] S2 fm-send t4 --resolve-key schema 'split it'
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+exit=0
+--- inbox:
+001.msg
+handled
+schema=fm-task-inbox.v1
+at=2026-09-24T00:27:05Z
+--
+split it--- status log now:
+needs-decision [key=schema]: split the table or keep one?
+working: other parts
+done: the other parts shipped; schema still awaits a ruling
+resolved [key=schema] [at=1790209625]: answered: split it
+--- real worker pane (tmux capture-pane):
+: Firstmate instruction waiting: list '/tmp/fm-live-fixed.vIE9/home/state/t4.inbox'/*.msg and, in numeric order, read and act on each, then mv each handled file to '/tmp/fm-live-fixed.vIE9/home/state/
+t4.inbox'/handled/.
+: Firstmate instruction waiting: list '/tmp/fm-live-fixed.vIE9/home/state/t4.inbox'/*.msg and, in numeric order, read and act on each, then mv each handled file to '/tmp/fm-live-fixed.vIE9/home/state/
+t4.inbox'/handled/.
+
+########## [fixed] S2 wake drain after answer
+(no open decision for key=schema)
+
+########## [fixed] S3 scout: needs-decision [key=scope] then failed: line
+t5 [key=scope] blocked: need access decision
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+exit=0
+blocked [key=scope]: need access decision
+resolved [key=scope] [at=1790209642]: answered: grant read-only
+
+########## [fixed] S4 mistyped key refusal
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+error: --resolve-key 'mistyped': this lookup found nothing to answer - no line in /tmp/fm-live-fixed.vIE9/home/state/t6.status ever opened or closed that key, and the captain-hold ledger was searched for task ids 'mistyped' and 't6-decision-mistyped' and held neither open. That means the key is mistyped, belongs to a different task, or was never opened; it does NOT prove the decision was answered. Check the log itself before assuming it was, then resend with the right key; nothing was sent.
+exit=1
+(no inbox record: nothing sent)
+
+########## [fixed] S5 genuinely closed key refusal
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+error: --resolve-key 'real-key': that decision is already closed - /tmp/fm-live-fixed.vIE9/home/state/t6.status carries a 'resolved' line for the key, and the captain-hold ledger was searched for task ids 'real-key' and 't6-decision-real-key' and held neither open. Resend without that key; nothing was sent.
+exit=1
+
+########## [fixed] S6 captain-held transferred key refusal
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+error: --resolve-key 'moved': this ledger can no longer answer that decision - /tmp/fm-live-fixed.vIE9/home/state/t6.status carries a 'captain-held' line for the key, which TRANSFERS the question to a durable captain-held task rather than settling it. the captain-hold ledger was searched for task ids 'moved' and 't6-decision-moved' and held neither open; a transferred row is often keyed by neither, so the question may still be owed. Read that 'captain-held' line for the task it names and answer it there; nothing was sent.
+exit=1
+
+########## [fixed] S7 mistyped key with tasks-axi absent from PATH
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+error: --resolve-key 'mistyped': this lookup found nothing to answer - no line in /tmp/fm-live-fixed.vIE9/home/state/t6.status ever opened or closed that key, and the captain-hold ledger could not be read here (tasks-axi is not on PATH), so whether a captain-held task 'mistyped' or 't6-decision-mistyped' is open is UNKNOWN. That means the key is mistyped, belongs to a different task, or was never opened; it does NOT prove the decision was answered. Check the log itself before assuming it was, then resend with the right key; nothing was sent.
+exit=1
+(no inbox record: nothing sent)
+
+[fixed] tmux lab torn down

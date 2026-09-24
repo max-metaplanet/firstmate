@@ -1,0 +1,39 @@
+== fm-send-resolve-key
+ok - fm-send --resolve-key: a remote secondmate reserved-key close is the same local ledger append
+ok - fm-send --resolve-key: a decision answer refuses the attended branch before sending, a blocked: key stays steering, and the away-posture record relocates the answer
+ok - fm-send --resolve-key: an unread captain-hold ledger is reported as unread, never as empty
+ok - fm-send --resolve-key: a key still open after a terminal line answers normally
+rc=
+== fm-classify-decision-key
+ok - a done: line retires neither the unkeyed nor the keyed decision around it
+ok - both documented key positions close a decision that outlived a terminal line
+ok - neither prose nor a genuine terminal declaration closes a decision
+ok - only a colon-bearing or keyed line is a decision transition in the fold
+rc=
+== fm-wake-drain-open-decisions-cursor
+ok - a cursor-cache read failure refolds decisions without replaying handled unread status
+ok - a pre-fix cursor is rebuilt so a previously skipped corr-tagged decision surfaces
+ok - an old fold cache is rebuilt once before same-version incremental reads resume
+ok - a buried decision survives many growing drains with bounded read cost, and resolution durably clears it at bounded cost too
+rc=
+== fm-captain-hold-lifecycle
+not ok - refusal must be explicit
+rc=
+== fm-fleet-snapshot-view
+ok - snapshot includes durable scout reports after teardown
+ok - snapshot parses tasks-axi rows and respects operational overrides
+ok - fleet view renders the snapshot without secondmate peek guidance
+ok - fleet view renders secondmate agent liveness
+rc=
+== fm-classify-corr-token
+ok - reading through the token does not weaken the reserved-key namespace rule
+ok - the cursor-backed fold and the whole-file fold agree on every correlated transition
+ok - a cursor persisted under the previous reading is discarded and refolded
+ok - both real correlation-token writers produce lines this classifier reads through
+rc=
+== fm-crew-state
+ok - inventory-error run selection reports unknown with candidate ids
+ok - selected-error run selection reports unknown with candidate ids
+ok - legacy conflicting run records report unknown
+all fm-crew-state tests passed
+rc=

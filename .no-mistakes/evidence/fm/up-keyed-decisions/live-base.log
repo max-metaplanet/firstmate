@@ -1,0 +1,53 @@
+
+########## [base] S1 ship: needs-decision [key=schema] then bare done: line
+needs-decision [key=schema]: split the table or keep one?
+working: other parts
+done: the other parts shipped; schema still awaits a ruling
+
+########## [base] S1 wake drain output
+lines mentioning key=schema: 0
+
+########## [base] S2 fm-send t4 --resolve-key schema 'split it'
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+error: --resolve-key 'schema': no open decision or blocker with that key in /tmp/fm-live-base.qdZb/home/state/t4.status, and no captain-held task 'schema' or 't4-decision-schema' still open (already closed or mistyped). Re-check the OPEN DECISIONS listing, then resend without that key or with the right one; nothing was sent.
+exit=1
+--- inbox:
+--- status log now:
+needs-decision [key=schema]: split the table or keep one?
+working: other parts
+done: the other parts shipped; schema still awaits a ruling
+--- real worker pane (tmux capture-pane):
+
+########## [base] S2 wake drain after answer
+(no open decision for key=schema)
+
+########## [base] S3 scout: needs-decision [key=scope] then failed: line
+(no open decision for key=scope)
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+error: --resolve-key 'scope': no open decision or blocker with that key in /tmp/fm-live-base.qdZb/home/state/t5.status, and no captain-held task 'scope' or 't5-decision-scope' still open (already closed or mistyped). Re-check the OPEN DECISIONS listing, then resend without that key or with the right one; nothing was sent.
+exit=1
+blocked [key=scope]: need access decision
+
+########## [base] S4 mistyped key refusal
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+error: --resolve-key 'mistyped': no open decision or blocker with that key in /tmp/fm-live-base.qdZb/home/state/t6.status, and no captain-held task 'mistyped' or 't6-decision-mistyped' still open (already closed or mistyped). Re-check the OPEN DECISIONS listing, then resend without that key or with the right one; nothing was sent.
+exit=1
+(no inbox record: nothing sent)
+
+########## [base] S5 genuinely closed key refusal
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+error: --resolve-key 'real-key': no open decision or blocker with that key in /tmp/fm-live-base.qdZb/home/state/t6.status, and no captain-held task 'real-key' or 't6-decision-real-key' still open (already closed or mistyped). Re-check the OPEN DECISIONS listing, then resend without that key or with the right one; nothing was sent.
+exit=1
+
+########## [base] S6 captain-held transferred key refusal
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+error: --resolve-key 'moved': no open decision or blocker with that key in /tmp/fm-live-base.qdZb/home/state/t6.status, and no captain-held task 'moved' or 't6-decision-moved' still open (already closed or mistyped). Re-check the OPEN DECISIONS listing, then resend without that key or with the right one; nothing was sent.
+exit=1
+
+########## [base] S7 mistyped key with tasks-axi absent from PATH
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+error: --resolve-key 'mistyped': no open decision or blocker with that key in /tmp/fm-live-base.qdZb/home/state/t6.status, and no captain-held task 'mistyped' or 't6-decision-mistyped' still open (already closed or mistyped). Re-check the OPEN DECISIONS listing, then resend without that key or with the right one; nothing was sent.
+exit=1
+(no inbox record: nothing sent)
+
+[base] tmux lab torn down
