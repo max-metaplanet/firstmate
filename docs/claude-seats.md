@@ -131,7 +131,7 @@ Only that home is left alone - every other local home still takes each switch, a
 The decline is visible from the primary, because a setting that silently does nothing is the failure worth avoiding here.
 `bin/fm-seat.sh status` lists every local secondmate home that declined, with the seat that home is actually on, and each switch names the seat items it skipped for that home and why.
 Put the flag only in the home it belongs to: it is never inherited, so one home's billing choice is never decided for it elsewhere.
-Any `config/claude-seat-local` path declines, whatever its type - a directory or a symlink, even a dangling one, counts the same as a plain file.
+[Configuration](configuration.md#claude-seats-configclaude-seat-configclaude-seats-root-configclaude-seat-threshold-configclaude-seat-local) owns the flag's schema.
 
 ## Limits worth knowing
 

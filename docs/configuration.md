@@ -433,10 +433,9 @@ They are never sent to a remote secondmate route, because a seat is a profile lo
 
 The optional `config/claude-seat-local` is how one local home declines that inheritance, for an operator who wants a single home spending a separate account - a personal or client account while the rest of the machine runs on the team account.
 It is a presence flag placed in the declining home's own `config/`, its content is never read, and it is deliberately not inheritable itself, so one home's billing choice is never set for it from another home.
-A home that carries it keeps its own `claude-seat`, `claude-seats-root`, and `claude-seat-threshold` exactly as they are, including absent, at every local convergence point - the post-switch push, the session-start secondmate sweep, and every secondmate launch and relaunch - and keeps full use of `bin/fm-seat.sh switch`, `threshold`, and `arm` against itself.
-With the flag nowhere on the machine, every local home still takes each switch together, byte for byte as before it existed.
-A decline is never silent: `bin/fm-seat.sh status` lists each declining home with the seat it is actually on, and a switch names every seat item it skipped for that home and why.
+A home that carries it keeps its own `claude-seat`, `claude-seats-root`, and `claude-seat-threshold` exactly as they are, including absent, at every local convergence point; with the flag nowhere on the machine, every local home still takes each switch together, byte for byte as before it existed.
 Any `config/claude-seat-local` path declines, whatever its type: a directory or a symlink, even a dangling one, counts the same as a plain file.
+[One home on a separate account](claude-seats.md#one-home-on-a-separate-account) owns the operator procedure and how `bin/fm-seat.sh status` and each switch report a declining home.
 
 A switch changes only which seat the NEXT worker gets.
 `bin/fm-spawn.sh` resolves the seat once per fresh Claude spawn (other harnesses record no seat), prefers the active seat over firstmate's own ambient `CLAUDE_CONFIG_DIR`, pre-registers Claude workspace trust in that same profile, and records the resolved directory as `claude_seat=` in the task's own record.
