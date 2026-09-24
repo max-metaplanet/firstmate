@@ -1,0 +1,8 @@
+## serve --port (no value)
+exit=2
+## --port (no value, no serve)
+exit=2
+## serve --port abc
+exit=2
+## bogus
+exit=2

@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<title>Claude seats</title>
+<meta http-equiv="refresh" content="5">
+<style>body { font-family: -apple-system, system-ui, sans-serif; margin: 2rem; color: #1a1a1a; }
+h1 { font-size: 1.4rem; }
+.generated { color: #666; font-size: 0.85rem; }
+section.seat { border: 1px solid #ccc; border-radius: 6px; padding: 0.75rem 1rem; margin-bottom: 1rem; }
+section.seat h2 { font-size: 1.05rem; margin: 0 0 0.35rem; }
+.active { color: #0a7a2f; font-weight: bold; font-size: 0.8rem; }
+.account { color: #444; margin: 0.1rem 0; }
+.attention { color: #b30000; font-weight: bold; }
+table.windows { border-collapse: collapse; margin-top: 0.4rem; }
+table.windows th, table.windows td { text-align: left; padding: 0.15rem 0.6rem 0.15rem 0; }
+.extra { color: #444; }</style>
+</head><body>
+<h1>Claude seats</h1>
+<p class="generated">generated 2026-09-24T18:21:52Z</p>
+<section class="seat">
+<h2>default</h2>
+<p class="account">me@example.com <lt;b>gt;x<lt;/b>gt;</p>
+<table class="windows">
+<tr><th>window</th><th>left</th><th>resets</th></tr>
+<tr><td>session</td><td>90%</td><td>2026-09-24T19:00:00Z</td></tr>
+</table>
+</section>
+<section class="seat">
+<h2>personal</h2>
+<p class="attention">Claude quota endpoint rate limited</p>
+<table class="windows">
+<tr><th>window</th><th>left</th><th>resets</th></tr>
+</table>
+</section>
+<section class="seat">
+<h2>spare</h2>
+<p class="attention">not logged in</p>
+<table class="windows">
+<tr><th>window</th><th>left</th><th>resets</th></tr>
+</table>
+</section>
+<section class="seat">
+<h2>work <span class="active">active for new workers</span></h2>
+<p class="account">work@example.com</p>
+<table class="windows">
+<tr><th>window</th><th>left</th><th>resets</th></tr>
+<tr><td>session</td><td>42%</td><td>2026-09-24T18:00:00Z</td></tr>
+<tr><td>weekly</td><td>71%</td><td>2026-09-29T00:00:00Z</td></tr>
+</table>
+<p class="extra">extra usage: $12.5 of $100</p>
+</section>
+</body></html>

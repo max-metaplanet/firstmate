@@ -1,0 +1,10 @@
+$ fm-seat-board.sh serve --port
+exit=2 (usage=2; 142 would mean hung past 5s)
+$ fm-seat-board.sh --port
+exit=2 (usage=2; 142 would mean hung past 5s)
+$ fm-seat-board.sh serve --port abc
+exit=2 (usage=2; 142 would mean hung past 5s)
+$ fm-seat-board.sh --port 45x
+exit=2 (usage=2; 142 would mean hung past 5s)
+$ fm-seat-board.sh bogus
+exit=2 (usage=2; 142 would mean hung past 5s)

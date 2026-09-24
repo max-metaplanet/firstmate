@@ -1,0 +1,7 @@
+$ fm-seat-board.sh   (no args)
+Seat board: http://127.0.0.1:4405/
+Ctrl-C to stop.
+Serving HTTP on 127.0.0.1 port 4405 (http://127.0.0.1:4405/) ...
+curl http://127.0.0.1:4405/ -> 200
+after Ctrl-C: waitpid -> 0 status 0
+curl after Ctrl-C -> 000

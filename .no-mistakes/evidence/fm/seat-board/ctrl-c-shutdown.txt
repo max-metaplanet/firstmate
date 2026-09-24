@@ -1,0 +1,8 @@
+terminal output: Seat board: http://127.0.0.1:4493/
+Ctrl-C to stop.
+Serving HTTP on 127.0.0.1 port 4493 (http://127.0.0.1:4493/) ...
+before Ctrl-C: HTTP 200 | scratch docroot created: True
+board process exited: False
+after Ctrl-C: HTTP refused (URLError)
+leftover processes: none
+scratch docroot removed: True

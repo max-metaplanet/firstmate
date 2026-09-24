@@ -1,0 +1,9 @@
+## cache: 5 reloads + 1 render within 60s
+quota-axi calls before=       4 after=       5
+## read-only: seat config unchanged
+claude-seat
+claude-seats-root
+work
+burner
+spare
+work

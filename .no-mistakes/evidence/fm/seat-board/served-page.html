@@ -1,0 +1,55 @@
+HTTP/1.0 200 OK
+Server: SimpleHTTP/0.6 Python/3.14.3
+Date: Thu, 24 Sep 2026 18:26:14 GMT
+Content-type: text/html
+Content-Length: 1970
+Last-Modified: Thu, 24 Sep 2026 18:26:11 GMT
+
+<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<title>Claude seats</title>
+<meta http-equiv="refresh" content="60">
+<style>body { font-family: -apple-system, system-ui, sans-serif; margin: 2rem; color: #1a1a1a; }
+h1 { font-size: 1.4rem; }
+.generated { color: #666; font-size: 0.85rem; }
+section.seat { border: 1px solid #ccc; border-radius: 6px; padding: 0.75rem 1rem; margin-bottom: 1rem; }
+section.seat h2 { font-size: 1.05rem; margin: 0 0 0.35rem; }
+.active { color: #0a7a2f; font-weight: bold; font-size: 0.8rem; }
+.account { color: #444; margin: 0.1rem 0; }
+.attention { color: #b30000; font-weight: bold; }
+table.windows { border-collapse: collapse; margin-top: 0.4rem; }
+table.windows th, table.windows td { text-align: left; padding: 0.15rem 0.6rem 0.15rem 0; }
+.extra { color: #444; }</style>
+</head><body>
+<h1>Claude seats</h1>
+<p class="generated">generated 2026-09-24T18:26:11Z</p>
+<section class="seat">
+<h2>default</h2>
+<p class="account">owner@example.com</p>
+<table class="windows">
+<tr><th>window</th><th>left</th><th>resets</th></tr>
+<tr><td>session</td><td>62%</td><td>2026-09-24T15:00:00Z</td></tr>
+<tr><td>week</td><td>41%</td><td>2026-09-28T00:00:00Z</td></tr>
+</table>
+</section>
+<section class="seat">
+<h2>burner</h2>
+<p class="attention">no quota data (quota-axi unavailable or the read timed out)</p>
+</section>
+<section class="seat">
+<h2>spare</h2>
+<p class="attention">Claude quota endpoint rate limited &lt;script&gt;alert(1)&lt;/script&gt;</p>
+<table class="windows">
+<tr><th>window</th><th>left</th><th>resets</th></tr>
+</table>
+</section>
+<section class="seat">
+<h2>work <span class="active">active for new workers</span></h2>
+<p class="account">work@example.com &lt;b&gt;x&lt;/b&gt; &amp; &quot;q&quot;</p>
+<table class="windows">
+<tr><th>window</th><th>left</th><th>resets</th></tr>
+<tr><td>session</td><td>12%</td><td>2026-09-24T14:00:00Z</td></tr>
+</table>
+<p class="extra">extra usage: $17.5 of $50</p>
+</section>
+</body></html>
