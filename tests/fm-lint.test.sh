@@ -287,7 +287,9 @@ fm_lint_write_diff_file() {
 # selected without depending on real ShellCheck findings. When
 # FM_TEST_MODE_LOG is set, it records the effective analysis mode, treating
 # ShellCheck's default as full analysis. When FM_TEST_FLAG_LOG is set, it
-# records whether --external-sources was passed and the --exclude value.
+# records whether --external-sources was passed and the --exclude value. When
+# FM_TEST_INVOCATION_LOG is set, it records how many roots each single
+# invocation received, which is how the per-root memory bound is observed.
 fm_lint_stub_shellcheck() {
   local fakebin=$1 log=$2
   : > "$log"
@@ -319,6 +321,9 @@ if [ -n "\${FM_TEST_FLAG_LOG:-}" ]; then
   printf 'external-sources=%s\nexclude=%s\n' "\$follow" "\$exclude" >> "\$FM_TEST_FLAG_LOG"
 fi
 [ "\$#" -eq 0 ] || shift
+if [ -n "\${FM_TEST_INVOCATION_LOG:-}" ]; then
+  printf '%s\n' "\$#" >> "\$FM_TEST_INVOCATION_LOG"
+fi
 printf '%s\n' "\$@" >> "$log"
 exit 0
 SH
@@ -1257,6 +1262,42 @@ SH
   pass "jobs=1 and jobs=2 preserve deterministic diagnostics, failures, cleanup bounds, and quiet telemetry"
 }
 
+# The CI lint job runs at the edge of the runner's memory when one ShellCheck
+# process carries a whole shard: that process keeps the heap its heaviest root
+# needed for as long as it runs, so two concurrent workers each hold a
+# worst-root high-water mark for the length of the job. Analyzing one root per
+# process caps a worker at a single root's analysis, and that bound does not
+# move when a new file reshuffles the byte-weight packing.
+test_source_aware_lint_analyzes_one_root_per_process() {
+  local tmp fakebin log invocations flag_log out canonical roots_seen oversized
+  tmp=$(fm_test_tmproot fm-lint-per-root)
+  fakebin=$(fm_fakebin "$tmp")
+  log="$tmp/shellcheck.log"
+  invocations="$tmp/invocations.log"
+  flag_log="$tmp/flags.log"
+  : > "$invocations"
+  fm_lint_stub_shellcheck "$fakebin" "$log"
+
+  out=$(PATH="$fakebin:$PATH" CI=true GITHUB_ACTIONS=true FM_LINT_JOBS=2 \
+    FM_TEST_INVOCATION_LOG="$invocations" FM_TEST_FLAG_LOG="$flag_log" \
+    "$LINT" --partition 1of2 2>&1) \
+    || fail "source-aware partition lint failed"$'\n'"$out"
+
+  oversized=$(awk '$1 != 1' "$invocations" | wc -l | tr -d '[:space:]')
+  [ "$oversized" -eq 0 ] \
+    || fail "$oversized ShellCheck processes carried more than one root, so a shard's peak memory is still its worst root"
+  assert_grep 'external-sources=yes' "$flag_log" \
+    "per-root analysis dropped CI source following"
+
+  canonical=$(PATH="$fakebin:$PATH" CI=true "$LINT" --partition 1of2 --list-files | LC_ALL=C sort)
+  roots_seen=$(LC_ALL=C sort "$log")
+  [ "$canonical" = "$roots_seen" ] \
+    || fail "per-root analysis lost or duplicated canonical roots"
+  [ "$(wc -l < "$invocations" | tr -d '[:space:]')" -eq "$(printf '%s\n' "$canonical" | wc -l | tr -d '[:space:]')" ] \
+    || fail "ShellCheck process count does not match the partition's root count"
+  pass "source-aware lint gives every root its own ShellCheck process without losing coverage"
+}
+
 test_worker_trees_stop_on_signal() {
   local tmp fakebin fixture jobs telemetry lint_tmp pid_file out_file telemetry_file
   local parent_pid shellcheck_pid i parent_rc survivor
@@ -1426,6 +1467,7 @@ test_rejects_direct_beads_cli_in_explicit_core_path
 test_ignores_ambient_shellcheck_opts
 test_clean_fixture_passes
 test_jobs_are_deterministic_and_complete
+test_source_aware_lint_analyzes_one_root_per_process
 test_worker_trees_stop_on_signal
 test_seeded_module_boundary_parity
 test_changed_mode_lints_only_the_changed_file
