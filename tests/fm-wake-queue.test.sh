@@ -797,7 +797,9 @@ install_secondmate_alive_tmux() {  # <fakebin>
 set -u
 case "${1:-}" in
   list-windows) printf '%s\n' 'fm-mate' ;;
-  capture-pane) exit 0 ;;
+  capture-pane)
+    [ -z "${FM_FAKE_TMUX_CAPTURE:-}" ] || printf '%s\n' "$FM_FAKE_TMUX_CAPTURE"
+    exit 0 ;;
   display-message)
     case "$*" in
       *pane_current_command*) printf 'claude\n' ;;
@@ -1021,6 +1023,53 @@ test_secondmate_genuine_stall_after_idle_ring_still_alarms() {
   cmp -s "$row_before" "$sub/state/.wake-queue" \
     || fail "the parent alarm path rewrote the foreign queue"
   pass "a leftover row that survives a proven-idle ring still surfaces as a genuine stall"
+}
+
+# A ring whose Enter was pressed but whose submit the backend could not
+# confirm - a bare shell prompt the classifier reads as unknown - is still a
+# rung doorbell: the watcher records the ring and waits another interval for
+# the mate to drain instead of raising the stall alarm straight away. Only a
+# delivery the backend disproved or could not account for is a failed ring.
+test_secondmate_unconfirmed_ring_still_counts_as_rung() {
+  local dir state sub fakebin
+  dir=$(make_case secondmate-unconfirmed-ring)
+  state="$dir/state"
+  sub="$dir/secondmate"
+  fakebin="$dir/fakebin"
+  mkdir -p "$sub/state"
+  printf 'mate\n' > "$sub/.fm-secondmate-home"
+  printf 'window=firstmate:fm-mate\nkind=secondmate\nharness=claude\nbackend=tmux\nhome=%s\n' \
+    "$sub" > "$state/mate.meta"
+  printf '100\t7\tcheck\trouted\tcheck: routed row\n' > "$sub/state/.wake-queue"
+  install_secondmate_alive_tmux "$fakebin"
+  install_secondmate_stall_date "$fakebin"
+  "$ROOT/bin/fm-busy-event.sh" arm "$state" mate >/dev/null \
+    || fail "could not arm the mate's busy contract"
+  "$ROOT/bin/fm-busy-event.sh" apply "$state" mate idle --current-gen \
+    --source claude-hook --event stop >/dev/null \
+    || fail "could not mark the mate idle"
+
+  printf '1000\n' > "$dir/now"
+  PATH="$fakebin:$PATH" FM_FAKE_NOW_FILE="$dir/now" FM_HOME="$dir" FM_ROOT_OVERRIDE="$ROOT" \
+    FM_STATE_OVERRIDE="$state" FM_FAKE_TMUX_SENT="$dir/sent" FM_FAKE_TMUX_CAPTURE='$ ' \
+    FM_SECONDMATE_WAKE_STALL_SECS=1 FM_POLL=1 FM_SIGNAL_GRACE=0 \
+    FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
+    secondmate_stall_watch_leg "$dir" "first" progress mate "$(printf '1000\t100-7')"
+
+  printf '1002\n' > "$dir/now"
+  PATH="$fakebin:$PATH" FM_FAKE_NOW_FILE="$dir/now" FM_HOME="$dir" FM_ROOT_OVERRIDE="$ROOT" \
+    FM_STATE_OVERRIDE="$state" FM_FAKE_TMUX_SENT="$dir/sent" FM_FAKE_TMUX_CAPTURE='$ ' \
+    FM_SECONDMATE_WAKE_STALL_SECS=1 FM_POLL=1 FM_SIGNAL_GRACE=0 \
+    FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
+    secondmate_stall_watch_leg "$dir" "ring" ring mate 100-7
+  grep -F '[ENTER]' "$dir/sent" >/dev/null \
+    || fail "the unconfirmed-ring fixture never pressed Enter: $(cat "$dir/sent" 2>/dev/null)"
+  ! grep -F 'secondmate wake-loop stalled' "$dir/watch-ring.out" >/dev/null \
+    || fail "an unconfirmed ring raised the stall alarm instead of waiting an interval: $(cat "$dir/watch-ring.out")"
+  [ ! -s "$state/.wake-queue" ] || fail "an unconfirmed ring published a durable stall notification"
+  [ "$(cat "$state/.secondmate-wake-ring-mate" 2>/dev/null || true)" = "100-7" ] \
+    || fail "an unconfirmed ring was not recorded as rung"
+  pass "a ring whose submit the backend could not confirm still counts as rung for the drain path"
 }
 
 test_secondmate_stall_marker_rejects_symlink() {
@@ -2703,6 +2752,7 @@ test_secondmate_long_lived_mate_mid_turn_is_not_a_stall
 test_secondmate_proven_idle_ring_lets_the_child_drain
 test_secondmate_busy_and_unknown_panes_are_not_rung
 test_secondmate_genuine_stall_after_idle_ring_still_alarms
+test_secondmate_unconfirmed_ring_still_counts_as_rung
 test_secondmate_stall_marker_rejects_symlink
 test_acknowledged_stall_publication_survives_pre_marker_crash
 test_empty_prefix_mate_preserves_other_mate_receipt

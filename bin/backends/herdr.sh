@@ -3155,8 +3155,14 @@ fm_backend_herdr_rendered_busy_state() {  # <target> [harness] -> busy|idle|unkn
 # after the composer shows the payload (fm_backend_herdr_composer_payload_shown).
 # A missing read, a shorter suffix, or a paste placeholder followed by a
 # literal remainder does not press Enter: the composer is cleared back to
-# empty and the verdict is send-failed, or unknown when the clear cannot be
-# verified. Other harnesses skip this proof. Verified hazard
+# empty and the verdict is send-failed, or unaccounted when the clear cannot
+# be verified: Enter was never pressed, and text this send typed may still sit
+# in the composer. A cleared refusal gets exactly one recovery first, through
+# fm_backend_herdr_modal_entry_ensure: a composer in claude's vim command mode
+# eats the head of the payload as editor commands and inserts only the
+# remainder, and once the composer is proven to be taking text again the
+# payload is typed and proven once more.
+# Other harnesses skip this proof. Verified hazard
 # (herdr-verification-p2.md "slash/$ autocomplete popup"): a `/`- or
 # `$`-prefixed send opens a completion popup within ~0.1s, exactly like tmux's
 # claude/codex popups, so the caller's <settle> before the first Enter matters
@@ -3226,8 +3232,8 @@ fm_backend_herdr_rendered_busy_state() {  # <target> [harness] -> busy|idle|unkn
 # footer may supply the same generating signal because live Claude never leaves
 # idle. The policy is fm_composer_queued_enter_verdict; this adapter only
 # supplies the busy primitive.
-# Echoes empty|pending|unknown|send-failed, a subset of the proof-carrying
-# submit vocabulary. Empty means confirmed submitted for every backend; how
+# Echoes empty|pending|unknown|send-failed|unaccounted, a subset of the
+# proof-carrying submit vocabulary. Empty means confirmed submitted for every backend; how
 # each backend confirms it is an internal decision.
 #
 # fm_backend_herdr_queued_enter_busy: delivery-busy for the shared queued-Enter
@@ -3326,9 +3332,45 @@ fm_backend_herdr_composer_clear() {  # <target> <text>
   return 1
 }
 
+# fm_backend_herdr_modal_entry_ensure: leave a composer this adapter has just
+# cleared back to empty PROVEN to be taking typed text, so the payload can be
+# typed into it again. bin/fm-composer-lib.sh owns the per-harness indicator
+# and key.
+# A rendered indicator is the whole answer and nothing is typed: a payload a
+# modal command mode ate usually contains an insert command itself (the
+# doorbell's `: Firstma` ends on vim's append), so the composer is already back
+# in text entry by the time the refusal is handled. Only when the indicator is
+# absent is the key typed, and the restore then counts only if the indicator is
+# rendered afterwards AND the composer still reads empty: together those prove
+# the character was consumed as a mode change rather than inserted as text.
+# That conjunction is what makes the attempt safe without knowing in advance
+# whether the composer is modal - a composer with no modal editor simply holds
+# the character, which is not a restore and is cleared again here.
+# 0 proven taking text, 1 not proven and the composer is empty again, 2 not
+# proven and a character this call typed could not be cleared back out.
+fm_backend_herdr_modal_entry_ensure() {  # <target> <harness> <settle>
+  local target=$1 harness=$2 settle=$3 signal key
+  signal=$(fm_composer_modal_entry_signal "$harness") || return 1
+  key=$(fm_composer_modal_entry_key "$harness") || return 1
+  [ -n "$signal" ] && [ -n "$key" ] || return 1
+  fm_composer_modal_entry_shown "$signal" "$(fm_backend_herdr_visible_capture "$target")" && return 0
+  fm_backend_herdr_send_literal "$target" "$key" || return 1
+  sleep "$settle"
+  # A composer that is not empty took the character as text, which settles the
+  # question without reading the footer again; an unreadable one is the same
+  # refusal, because a character this call typed is then unaccounted for.
+  if [ "$(fm_backend_herdr_composer_state "$target")" != empty ]; then
+    fm_backend_herdr_composer_clear "$target" "$key" || return 2
+    return 1
+  fi
+  fm_composer_modal_entry_shown "$signal" "$(fm_backend_herdr_visible_capture "$target")" || return 1
+  return 0
+}
+
 fm_backend_herdr_send_text_submit() {  # <target> <text> <retries> <enter-sleep> <settle>
   local target=$1 text=$2 retries=$3 sleep_s=$4 settle=$5 i=0 verdict baseline confirm_sleep
-  local raw_status footer_baseline='' allow_rendered=0 enter_sent=0 identity proof=0 content
+  local raw_status footer_baseline='' allow_rendered=0 enter_sent=0 identity harness proof=0 content
+  local recovered=0
   fm_backend_herdr_parse_target "$target" || { printf 'unknown'; return 0; }
   # Claude on Herdr is the live-verified truncation shape: Enter is withheld
   # unless the composer, empty before the send, shows this payload. A suffix
@@ -3339,25 +3381,40 @@ fm_backend_herdr_send_text_submit() {  # <target> <text> <retries> <enter-sleep>
   # skills that list alone fills any short tail read. The extraction still
   # selects the lowest composer shape.
   identity=$(fm_backend_herdr_agent_identity_raw "$FM_BACKEND_HERDR_SESSION" "$FM_BACKEND_HERDR_PANE") || identity=
-  if [ "${identity%%$'\t'*}" = claude ]; then
+  harness=${identity%%$'\t'*}
+  if [ "$harness" = claude ]; then
     proof=1
     content=$(fm_backend_herdr_composer_content "$target" 200) \
       || { printf 'send-failed'; return 0; }
     [ -z "${content//[$' \t\r\n\v\f']/}" ] || { printf 'send-failed'; return 0; }
   fi
-  fm_backend_herdr_send_literal "$target" "$text" || { printf 'send-failed'; return 0; }
-  sleep "$settle"
-  if [ "$proof" = 1 ]; then
-    if ! content=$(fm_backend_herdr_composer_content "$target" 200) \
-      || ! fm_backend_herdr_composer_payload_shown "$text" "$content"; then
-      if fm_backend_herdr_composer_clear "$target" "$text"; then
-        printf 'send-failed'
-      else
-        printf 'unknown'
-      fi
-      return 0
+  # Type, prove, and - exactly once - recover a refusal a modal composer
+  # caused. A composer in claude's vim command mode consumes the head of the
+  # payload as editor commands and inserts only the remainder, which is the
+  # same fragment shape the proof already refuses; the refusal is what
+  # authorizes acting on the mode at all, since the indicator's absence alone
+  # proves nothing (bin/fm-composer-lib.sh). Nothing is retyped until the
+  # composer has been cleared back to the proven-empty state the first send
+  # started from, so the retype is a first delivery rather than a concatenation,
+  # and only text this send itself typed is ever cleared.
+  while :; do
+    fm_backend_herdr_send_literal "$target" "$text" || { printf 'send-failed'; return 0; }
+    sleep "$settle"
+    [ "$proof" = 1 ] || break
+    if content=$(fm_backend_herdr_composer_content "$target" 200) \
+      && fm_backend_herdr_composer_payload_shown "$text" "$content"; then
+      break
     fi
-  fi
+    fm_backend_herdr_composer_clear "$target" "$text" || { printf 'unaccounted'; return 0; }
+    [ "$recovered" = 0 ] || { printf 'send-failed'; return 0; }
+    recovered=1
+    fm_backend_herdr_modal_entry_ensure "$target" "$harness" "$settle"
+    case $? in
+      0) continue ;;
+      2) printf 'unaccounted'; return 0 ;;
+      *) printf 'send-failed'; return 0 ;;
+    esac
+  done
   raw_status=$(fm_backend_herdr_agent_status_raw "$FM_BACKEND_HERDR_SESSION" "$FM_BACKEND_HERDR_PANE")
   baseline=$(fm_backend_herdr_classify_submit_agent_status "$raw_status")
   confirm_sleep=$(fm_backend_herdr_submit_confirm_budget "$sleep_s")

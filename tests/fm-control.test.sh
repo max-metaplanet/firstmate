@@ -110,9 +110,9 @@ D=$FM_FAKE_DIR
 # The rows a vim-mode claude renders. The mode indicator is present only while
 # the composer takes typed text (live capture, claude 2.1.x on Herdr 0.9.1).
 claude_vim_screen() {  # <insert|normal>
-  printf '\xe2\x95\xad\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x95\xae\n'
-  printf '\xe2\x94\x82 %s  \xe2\x94\x82\n' "$(cat "$D/composer" 2>/dev/null || true)"
-  printf '\xe2\x95\xb0\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x95\xaf\n'
+  printf '%s\n' '──────────'
+  printf '\xe2\x9d\xaf\xc2\xa0%s\n' "$(cat "$D/composer" 2>/dev/null || true)"
+  printf '%s\n' '──────────'
   if [ "$1" = insert ]; then
     printf '  -- INSERT -- bypass permissions on (shift+tab to cycle)\n'
   else
