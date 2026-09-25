@@ -1,0 +1,6 @@
+== fix ==
+ok - source-aware lint gives every root its own ShellCheck process without losing coverage
+rc=0
+== base (65fc15d bin/fm-lint.sh) ==
+not ok - 2 ShellCheck processes carried more than one root, so a shard's peak memory is still its worst root
+rc=1
