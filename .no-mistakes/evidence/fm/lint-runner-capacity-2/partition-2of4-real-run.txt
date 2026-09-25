@@ -1,0 +1,24 @@
+$ CI=true FM_LINT_JOBS=2 /usr/bin/time -l bin/fm-lint.sh --partition 2of4 --jobs 2 --telemetry telemetry.tsv
+fm-lint.sh: ShellCheck 0.11.0 (pinned 0.11.0)
+fm-lint.sh: full ShellCheck extended analysis enabled
+fm-lint-workflows.sh: actionlint 1.7.12 (pinned 1.7.12)
+fm-lint-workflows.sh: 3 workflow files valid
+      276.76 real       238.85 user        25.70 sys
+          4023271424  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+             9534162  page reclaims
+                2863  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                 193  signals received
+               11068  voluntary context switches
+              430922  involuntary context switches
+          1202512460  instructions retired
+           693886622  cycles elapsed
+             3490272  peak memory footprint
+exit=0

@@ -1,0 +1,14 @@
+partition 1of4:      108 roots
+partition 2of4:      108 roots
+partition 3of4:      108 roots
+partition 4of4:      108 roots
+canonical total:      432
+duplicated roots: 0
+--partition 0of4 -> exit 2 : fm-lint.sh: --partition must be <n>of<total> with 1 <= n <= total, got 0of4.
+--partition 5of4 -> exit 2 : fm-lint.sh: --partition must be <n>of<total> with 1 <= n <= total, got 5of4.
+--partition of4 -> exit 2 : fm-lint.sh: --partition must be <n>of<total> with 1 <= n <= total, got of4.
+--partition 1of -> exit 2 : fm-lint.sh: --partition must be <n>of<total> with 1 <= n <= total, got 1of.
+--partition xof4 -> exit 2 : fm-lint.sh: --partition must be <n>of<total> with 1 <= n <= total, got xof4.
+--partition 1of4x -> exit 2 : fm-lint.sh: --partition must be <n>of<total> with 1 <= n <= total, got 1of4x.
+fm-lint.sh: --partition requires full canonical lint; omit --fast and explicit paths.
+--partition 1of4 --fast -> exit 2
