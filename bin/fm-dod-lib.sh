@@ -417,12 +417,8 @@ Delivery contract: mode=direct-PR
 Ship branch: $branch
 This task ships **direct-PR**: you raise the PR yourself, without the no-mistakes pipeline.
 The task is complete only when committed on your branch.
-When it is implemented and committed, push your branch to \`origin\` and open a PR there that is ready for review, not a draft.
-Resolve the PR target from \`origin\` first and name it on the create - never leave the repository for \`gh\` to pick, because \`gh pr create\` with no \`-R\` defaults to a FORK's parent repository, and on a fork clone that opens the PR on a repository nobody authorized:
-1. \`git remote get-url origin\` - the \`<owner>/<repo>\` it names is your PR target, and \`origin\` is the only remote you push to.
-2. \`git symbolic-ref --quiet --short refs/remotes/origin/HEAD\` - drop the leading \`origin/\` for your base branch; when it prints nothing, read the \`HEAD branch:\` line of \`git remote show origin\`.
-3. \`git push -u origin fm/$id\`, then \`gh-axi pr create -R <owner>/<repo> --base <default branch> --head fm/$id --title ... --body ...\`.
-Before you report done, read the PR back from the forge and confirm it is not a draft (\`gh pr view <url> --json isDraft\` must print false); if it is a draft, mark it ready with \`gh-axi pr ready\`.
+When it is implemented and committed, push your branch and open a PR with \`gh-axi\` that is ready for review, not a draft.
+Before you report done, read the PR back from the forge and confirm it is not a draft (\`gh-axi pr view <number>\` must print \`draft: no\`, where <number> is the PR number from your PR URL); if it is a draft, mark it ready with \`gh-axi pr ready <number>\`.
 A draft cannot be merged, so a done report on one leaves the merge unasked.
 Then append \`done [at=<epoch>]: PR {url}\` to the status file and stop.
 That \`done:\` is accepted only when the PR is on the repository \`origin\` names and this copy's HEAD - your latest commit - is pushed to your PR branch; the check tests that commit, not merely that a branch moved.
@@ -458,7 +454,7 @@ EOF
       fm_nm_driving_block "$forge"
       cat <<EOF
 
-After /no-mistakes reports CI green (the CI-ready return point - do not wait for it to keep monitoring in the background until merge), read the PR back from the forge and confirm it is not a draft (\`gh pr view <url> --json isDraft\` must print false); if it is a draft, mark it ready with \`gh-axi pr ready\`.
+After /no-mistakes reports CI green (the CI-ready return point - do not wait for it to keep monitoring in the background until merge), read the PR back from the forge and confirm it is not a draft (\`gh-axi pr view <number>\` must print \`draft: no\`, where <number> is the PR number from your PR URL); if it is a draft, mark it ready with \`gh-axi pr ready <number>\`.
 A draft cannot be merged, so a done report on one leaves the merge unasked.
 Then append \`done [at=<epoch>]: PR {url} checks green\` and stop. You are finished.
 That CI-ready \`done:\` is accepted only when this copy's HEAD - your latest commit - is one the /no-mistakes run pushed, so commit nothing after the run; the check tests that commit, not merely that a branch moved.
