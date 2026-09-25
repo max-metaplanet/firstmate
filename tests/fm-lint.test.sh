@@ -212,6 +212,10 @@ test_canonical_partitions_preserve_full_lint() {
     [ "$rc" = 2 ] || fail "invalid partition $option was not refused"
   done
   rc=0
+  "$LINT" --partition > "$tmp/refused" 2>&1 || rc=$?
+  [ "$rc" = 2 ] || fail "missing partition value was not refused"
+  grep -q '<n>of<total>' "$tmp/refused" || fail "missing partition value refusal omits the <n>of<total> format"
+  rc=0
   "$LINT" --partition 1of4 --fast > "$tmp/refused" 2>&1 || rc=$?
   [ "$rc" = 2 ] || fail "partition accepted --fast"
   rc=0

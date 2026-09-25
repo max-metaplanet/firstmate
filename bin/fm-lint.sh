@@ -432,7 +432,7 @@ while [ "$#" -gt 0 ]; do
       shift
       ;;
     --partition)
-      [ "$#" -ge 2 ] || { printf 'fm-lint.sh: --partition requires 1of2 or 2of2.\n' >&2; exit 2; }
+      [ "$#" -ge 2 ] || { printf 'fm-lint.sh: --partition requires <n>of<total>, such as 1of4.\n' >&2; exit 2; }
       PARTITION=$2
       PARTITION_REQUESTED=1
       shift 2
