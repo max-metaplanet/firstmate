@@ -2116,20 +2116,31 @@ teardown_record_released_claim() {  # <record-meta>
 # to return (the scan itself is bin/fm-slot-record-lib.sh's, shared with the
 # launch path that refuses to hand out a claimed copy in the first place).
 require_exclusive_worktree_slot_record() {
-  local record_meta=$1 record_id=$2 record_state=$3 worktree=$4 rc=0
-  ! teardown_record_released_claim "$record_meta" || return 0
-  fm_slot_record_other_claim "$record_meta" "$record_state" "$worktree" || rc=$?
-  case "$rc" in
-    1) return 0 ;;
-    2)
-      echo "REFUSED: $FM_SLOT_RECORD_ERROR; nothing was changed" >&2
-      return 1
-      ;;
-  esac
-  echo "REFUSED: task $record_id's recorded worktree $FM_SLOT_RECORD_SLOT is also task $FM_SLOT_RECORD_OTHER_ID's recorded $FM_SLOT_RECORD_OTHER_FIELD$(fm_slot_record_other_home_hint "$record_state")." >&2
-  echo "Returning that pool slot would kill $FM_SLOT_RECORD_OTHER_ID's processes and reset its copy, so nothing was changed - not even with --force." >&2
-  echo "Reconcile whichever record is wrong (bin/fm-crew-state.sh $record_id; bin/fm-crew-state.sh $FM_SLOT_RECORD_OTHER_ID). If both records really do name the same copy, bin/fm-slot-release.sh releases the stale one's claim once that copy is proved to hold no unlanded work, then re-run teardown." >&2
-  return 1
+  local record_meta=$1 record_id=$2 record_state=$3 worktree=$4
+  local slot state_dir other other_id field other_path other_slot
+  slot=$(canonical_existing_dir "$worktree") || return 0
+  collect_local_firstmate_states "$record_state" || return 1
+  for state_dir in "${TREEHOUSE_OWNER_STATES[@]}"; do
+    for other in "$state_dir"/*.meta; do
+      [ -f "$other" ] && [ ! -L "$other" ] || continue
+      # Identity, not spelling: the same record reached through a differently
+      # resolved state dir (e.g. a symlinked $FM_HOME) is still this record. A
+      # differently named hardlink is another task's record, so the name must
+      # match too.
+      [ "${other##*/}" = "${record_meta##*/}" ] && [ "$other" -ef "$record_meta" ] && continue
+      other_id=$(basename "$other" .meta)
+      for field in worktree home; do
+        other_path=$(fm_meta_get "$other" "$field")
+        [ -n "$other_path" ] || continue
+        other_slot=$(canonical_existing_dir "$other_path") || continue
+        [ "$other_slot" = "$slot" ] || continue
+        echo "REFUSED: task $record_id's recorded worktree $slot is also task $other_id's recorded $field." >&2
+        echo "Returning that pool slot would kill $other_id's processes and reset its copy, so nothing was changed - not even with --force." >&2
+        echo "Reconcile whichever record is wrong (bin/fm-crew-state.sh $record_id; bin/fm-crew-state.sh $other_id), then re-run teardown." >&2
+        return 1
+      done
+    done
+  done
 }
 
 require_exclusive_task_worktree_slot() {
