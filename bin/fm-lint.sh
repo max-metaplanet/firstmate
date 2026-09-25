@@ -44,13 +44,15 @@
 # Lint defaults to two bounded workers over two stable logical shards.
 # Diagnostics replay in stable shard/root order. FM_LINT_JOBS=1 changes
 # concurrency, not diagnostics or exit selection.
-# Every root is analyzed in its own ShellCheck process, so a worker's peak
-# memory is one root's analysis rather than the heaviest root in its shard.
-# That bound does not depend on how the byte-weight packing groups roots, so
-# adding or removing files cannot push a partition over the runner.
-# --partition 1of2/2of2 splits the entire canonical inventory across
-# two CI runners, each with those same bounded workers. Partitions are complete,
-# disjoint, and byte-weight balanced; --list-files exposes their actual roots.
+# --partition <n>of<total> splits the entire canonical inventory across that
+# many CI runners. Partitions are complete, disjoint, and byte-weight balanced;
+# --list-files exposes their actual roots.
+# A partition always runs ONE ShellCheck at a time. ShellCheck sizes its heap to
+# the memory it can see rather than to a fixed per-root cost, so two workers
+# sharing a runner both expand toward the whole machine and can collide with its
+# OOM killer, while one worker expands into that same runner safely. Partition
+# count, not worker count, is therefore what bounds a partition's wall time, and
+# raising the CI matrix is the supported way to make partitions finish sooner.
 # Partition mode is always full source-aware analysis, never changed-only or
 # --fast, and does not accept explicit paths. Each partition also runs workflow
 # lint and backend-purity checks, keeping either invocation independently useful.
@@ -63,7 +65,7 @@
 #   fm-lint.sh --fast [path]...       local lint with extended analysis disabled
 #   fm-lint.sh <path>...               lint explicit roots with the same config
 #   fm-lint.sh --jobs <1|2> [path]...  override bounded worker count
-#   fm-lint.sh --partition <1of2|2of2> lint one full-rigor canonical CI partition
+#   fm-lint.sh --partition <n>of<total>  lint one full-rigor canonical CI partition
 #   fm-lint.sh --telemetry <path> ...  write a quiet metrics snapshot
 #   fm-lint.sh --required-version      print the ShellCheck pin
 #   fm-lint.sh --list-files            print the file set that would be linted
@@ -113,23 +115,23 @@ fm_lint_worker() {  # <manifest> <output-dir> <shard-index>
       shellcheck_args+=(--extended-analysis=false)
     fi
     : > "$output.out"
-    # One ShellCheck process per root, in every analysis mode. A process given
-    # several roots keeps the heap its heaviest root needed for as long as it
-    # runs, so a shard's resident set is the worst root it has ever seen rather
-    # than the one it is checking. Per-root processes cap a worker at one
-    # root's analysis and return it at exit, which is what keeps the two
-    # concurrent workers inside the runner no matter how the byte-weight
-    # packing groups roots.
-    for path in "${roots[@]}"; do
-      invocation_rc=0
-      "$FM_LINT_SHELLCHECK" "${shellcheck_args[@]}" -- "$path" >> "$output.out" 2>&1 &
+    if [ "${FM_LINT_INTERNAL_FOLLOW_SOURCES:-1}" -eq 1 ]; then
+      "$FM_LINT_SHELLCHECK" "${shellcheck_args[@]}" -- "${roots[@]}" >> "$output.out" 2>&1 &
       FM_LINT_WORKER_SHELLCHECK_PID=$!
-      wait "$FM_LINT_WORKER_SHELLCHECK_PID" || invocation_rc=$?
+      wait "$FM_LINT_WORKER_SHELLCHECK_PID" || rc=$?
       FM_LINT_WORKER_SHELLCHECK_PID=
-      if [ "$rc" -eq 0 ] && [ "$invocation_rc" -ne 0 ]; then
-        rc=$invocation_rc
-      fi
-    done
+    else
+      for path in "${roots[@]}"; do
+        invocation_rc=0
+        "$FM_LINT_SHELLCHECK" "${shellcheck_args[@]}" -- "$path" >> "$output.out" 2>&1 &
+        FM_LINT_WORKER_SHELLCHECK_PID=$!
+        wait "$FM_LINT_WORKER_SHELLCHECK_PID" || invocation_rc=$?
+        FM_LINT_WORKER_SHELLCHECK_PID=
+        if [ "$rc" -eq 0 ] && [ "$invocation_rc" -ne 0 ]; then
+          rc=$invocation_rc
+        fi
+      done
+    fi
     trap - HUP INT TERM
   else
     : > "$output.out"
@@ -466,21 +468,39 @@ case "$JOBS" in
   *) printf 'fm-lint.sh: jobs must be 1 or 2, got %s.\n' "$JOBS" >&2; exit 2 ;;
 esac
 
-case "$PARTITION" in
-  '')
-    if [ "$PARTITION_REQUESTED" -eq 1 ]; then
-      printf 'fm-lint.sh: --partition requires 1of2 or 2of2.\n' >&2
-      exit 2
-    fi
-    ;;
-  1of2|2of2)
-    if [ "$FAST" -eq 1 ] || [ "$#" -gt 0 ]; then
-      printf 'fm-lint.sh: --partition requires full canonical lint; omit --fast and explicit paths.\n' >&2
-      exit 2
-    fi
-    ;;
-  *) printf 'fm-lint.sh: --partition must be 1of2 or 2of2, got %s.\n' "$PARTITION" >&2; exit 2 ;;
-esac
+PARTITION_INDEX=
+PARTITION_TOTAL=
+if [ -z "$PARTITION" ]; then
+  if [ "$PARTITION_REQUESTED" -eq 1 ]; then
+    printf 'fm-lint.sh: --partition requires <n>of<total>, such as 1of4.\n' >&2
+    exit 2
+  fi
+else
+  case "$PARTITION" in
+    *of*)
+      PARTITION_INDEX=${PARTITION%%of*}
+      PARTITION_TOTAL=${PARTITION#*of}
+      ;;
+  esac
+  case "${PARTITION_INDEX:-}" in ''|*[!0-9]*) PARTITION_INDEX= ;; esac
+  case "${PARTITION_TOTAL:-}" in ''|*[!0-9]*) PARTITION_TOTAL= ;; esac
+  if [ -z "$PARTITION_INDEX" ] || [ -z "$PARTITION_TOTAL" ] \
+    || [ "$PARTITION_TOTAL" -lt 1 ] || [ "$PARTITION_INDEX" -lt 1 ] \
+    || [ "$PARTITION_INDEX" -gt "$PARTITION_TOTAL" ]; then
+    printf 'fm-lint.sh: --partition must be <n>of<total> with 1 <= n <= total, got %s.\n' "$PARTITION" >&2
+    exit 2
+  fi
+  if [ "$FAST" -eq 1 ] || [ "$#" -gt 0 ]; then
+    printf 'fm-lint.sh: --partition requires full canonical lint; omit --fast and explicit paths.\n' >&2
+    exit 2
+  fi
+  # A CI partition runs one ShellCheck at a time. ShellCheck sizes its heap to
+  # the memory it can see rather than to a fixed per-root cost, so two workers
+  # sharing a runner both expand toward the whole machine and collide; one
+  # worker expands into the same runner safely. Partition count, not worker
+  # count, is what bounds a partition's wall time.
+  JOBS=1
+fi
 
 if [ "$FAST" -eq 1 ] && { [ "${GITHUB_ACTIONS:-}" = true ] || [ "${CI:-}" = true ]; }; then
   printf 'fm-lint.sh: --fast is local-only; CI uses full ShellCheck analysis.\n' >&2
@@ -585,8 +605,13 @@ if [ -n "$PARTITION" ]; then
   partition_weights=$(fm_lint_root_weights) || exit $?
   while IFS="$TAB" read -r index path; do
     PARTITION_ROOTS+=("$path")
-  done < <(printf '%s\n' "$partition_weights" | LC_ALL=C sort -t "$TAB" -k1,1nr -k2,2n | awk -F '\t' -v want="${PARTITION%%of*}" '
-    { shard=(load[2] < load[1]) ? 2 : 1; load[shard]+=$1; if (shard == want) print $2 "\t" $3 }
+  done < <(printf '%s\n' "$partition_weights" | LC_ALL=C sort -t "$TAB" -k1,1nr -k2,2n | awk -F '\t' -v want="$PARTITION_INDEX" -v total="$PARTITION_TOTAL" '
+    {
+      shard=1
+      for (candidate=2; candidate <= total; candidate++) if (load[candidate] < load[shard]) shard=candidate
+      load[shard]+=$1
+      if (shard == want) print $2 "\t" $3
+    }
   ' | LC_ALL=C sort -t "$TAB" -k1,1n)
   ROOTS=("${PARTITION_ROOTS[@]}")
 fi

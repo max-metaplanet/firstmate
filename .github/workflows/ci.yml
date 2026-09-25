@@ -35,7 +35,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        partition: [1, 2]
+        # Each partition runs one ShellCheck at a time so it never competes with
+        # a sibling worker for the runner's memory (bin/fm-lint.sh owns why).
+        # Partition count is what keeps a partition's wall time down, so this
+        # matrix is the dial to turn when the canonical set grows.
+        partition: [1, 2, 3, 4]
     steps:
       - uses: actions/checkout@v6
       - name: Install pinned ShellCheck

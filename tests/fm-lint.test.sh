@@ -185,7 +185,7 @@ test_canonical_partitions_preserve_full_lint() {
   mkdir -p "$fakebin"
   all=$(CI=true "$LINT" --list-files | LC_ALL=C sort)
   : > "$tmp/union"
-  for part in 1of2 2of2; do
+  for part in 1of4 2of4 3of4 4of4; do
     selected=$(CI=false GITHUB_ACTIONS=false "$LINT" --partition "$part" --list-files) \
       || fail "partition $part must select full canonical roots even on a local branch"
     [ -n "$selected" ] || fail "empty lint partition $part"
@@ -206,18 +206,59 @@ test_canonical_partitions_preserve_full_lint() {
     [ "$(LC_ALL=C sort -u "$mode")" = on ] || fail "partition $part disabled full analysis"
   done
   [ "$(LC_ALL=C sort "$tmp/union")" = "$all" ] || fail "lint partitions lose or duplicate canonical roots"
-  for option in 0of2 3of2 1of3; do
+  for option in 0of2 3of2 2of1 of2 1of xof2 1of2x; do
     rc=0
     "$LINT" --partition "$option" --list-files > "$tmp/refused" 2>&1 || rc=$?
     [ "$rc" = 2 ] || fail "invalid partition $option was not refused"
   done
   rc=0
-  "$LINT" --partition 1of2 --fast > "$tmp/refused" 2>&1 || rc=$?
+  "$LINT" --partition 1of4 --fast > "$tmp/refused" 2>&1 || rc=$?
   [ "$rc" = 2 ] || fail "partition accepted --fast"
   rc=0
-  "$LINT" --partition 1of2 bin/fm-lint.sh > "$tmp/refused" 2>&1 || rc=$?
+  "$LINT" --partition 1of4 bin/fm-lint.sh > "$tmp/refused" 2>&1 || rc=$?
   [ "$rc" = 2 ] || fail "partition accepted an explicit subset"
-  pass "two canonical lint partitions preserve complete source-aware coverage and reject weakened modes"
+  pass "canonical lint partitions preserve complete source-aware coverage and reject weakened modes"
+}
+
+# A CI lint job was killed by the runner's OOM killer (exit 143, no findings
+# printed) whenever the byte-weight packing happened to give one partition two
+# expensive shards. ShellCheck sizes its heap to the memory it can see rather
+# than to a fixed per-root cost, so two workers sharing a runner both expand
+# toward the whole machine; one worker expands into that same runner safely.
+# A partition must therefore run a single ShellCheck at a time, and a caller
+# must not be able to re-enable concurrency underneath that guarantee.
+test_partition_runs_one_shellcheck_at_a_time() {
+  local tmp fakebin log telemetry out
+  tmp=$(fm_test_tmproot fm-lint-partition-workers)
+  fakebin=$(fm_fakebin "$tmp")
+  log="$tmp/shellcheck.log"
+  telemetry="$tmp/telemetry.tsv"
+  fm_lint_stub_shellcheck "$fakebin" "$log"
+
+  out=$(PATH="$fakebin:$PATH" "$LINT" --partition 1of4 --telemetry "$telemetry" 2>&1) \
+    || fail "canonical partition lint failed"$'\n'"$out"
+  assert_grep $'jobs\t1' "$telemetry" \
+    "a CI partition must run one ShellCheck at a time so it cannot race a sibling worker for runner memory"
+
+  # An explicit --jobs override must not reintroduce the concurrency the
+  # partition exists to avoid.
+  out=$(PATH="$fakebin:$PATH" "$LINT" --partition 2of4 --jobs 2 --telemetry "$telemetry" 2>&1) \
+    || fail "canonical partition lint with an explicit --jobs failed"$'\n'"$out"
+  assert_grep $'jobs\t1' "$telemetry" \
+    "--jobs must not raise a partition above one concurrent ShellCheck"
+
+  # FM_LINT_JOBS is the same lever by another name.
+  out=$(PATH="$fakebin:$PATH" FM_LINT_JOBS=2 "$LINT" --partition 3of4 --telemetry "$telemetry" 2>&1) \
+    || fail "canonical partition lint with FM_LINT_JOBS failed"$'\n'"$out"
+  assert_grep $'jobs\t1' "$telemetry" \
+    "FM_LINT_JOBS must not raise a partition above one concurrent ShellCheck"
+
+  # Outside partition mode the two bounded workers are still available.
+  out=$(PATH="$fakebin:$PATH" CI=true "$LINT" --telemetry "$telemetry" 2>&1) \
+    || fail "full canonical lint failed"$'\n'"$out"
+  assert_grep $'jobs\t2' "$telemetry" \
+    "the non-partitioned lint should keep its two bounded workers"
+  pass "a CI partition runs one ShellCheck at a time and no caller flag can raise it"
 }
 
 # fm_lint_stub_git <fakebin-dir>: install a git stub for the changed-file mode
@@ -287,9 +328,7 @@ fm_lint_write_diff_file() {
 # selected without depending on real ShellCheck findings. When
 # FM_TEST_MODE_LOG is set, it records the effective analysis mode, treating
 # ShellCheck's default as full analysis. When FM_TEST_FLAG_LOG is set, it
-# records whether --external-sources was passed and the --exclude value. When
-# FM_TEST_INVOCATION_LOG is set, it records how many roots each single
-# invocation received, which is how the per-root memory bound is observed.
+# records whether --external-sources was passed and the --exclude value.
 fm_lint_stub_shellcheck() {
   local fakebin=$1 log=$2
   : > "$log"
@@ -321,9 +360,6 @@ if [ -n "\${FM_TEST_FLAG_LOG:-}" ]; then
   printf 'external-sources=%s\nexclude=%s\n' "\$follow" "\$exclude" >> "\$FM_TEST_FLAG_LOG"
 fi
 [ "\$#" -eq 0 ] || shift
-if [ -n "\${FM_TEST_INVOCATION_LOG:-}" ]; then
-  printf '%s\n' "\$#" >> "\$FM_TEST_INVOCATION_LOG"
-fi
 printf '%s\n' "\$@" >> "$log"
 exit 0
 SH
@@ -1262,42 +1298,6 @@ SH
   pass "jobs=1 and jobs=2 preserve deterministic diagnostics, failures, cleanup bounds, and quiet telemetry"
 }
 
-# The CI lint job runs at the edge of the runner's memory when one ShellCheck
-# process carries a whole shard: that process keeps the heap its heaviest root
-# needed for as long as it runs, so two concurrent workers each hold a
-# worst-root high-water mark for the length of the job. Analyzing one root per
-# process caps a worker at a single root's analysis, and that bound does not
-# move when a new file reshuffles the byte-weight packing.
-test_source_aware_lint_analyzes_one_root_per_process() {
-  local tmp fakebin log invocations flag_log out canonical roots_seen oversized
-  tmp=$(fm_test_tmproot fm-lint-per-root)
-  fakebin=$(fm_fakebin "$tmp")
-  log="$tmp/shellcheck.log"
-  invocations="$tmp/invocations.log"
-  flag_log="$tmp/flags.log"
-  : > "$invocations"
-  fm_lint_stub_shellcheck "$fakebin" "$log"
-
-  out=$(PATH="$fakebin:$PATH" CI=true GITHUB_ACTIONS=true FM_LINT_JOBS=2 \
-    FM_TEST_INVOCATION_LOG="$invocations" FM_TEST_FLAG_LOG="$flag_log" \
-    "$LINT" --partition 1of2 2>&1) \
-    || fail "source-aware partition lint failed"$'\n'"$out"
-
-  oversized=$(awk '$1 != 1' "$invocations" | wc -l | tr -d '[:space:]')
-  [ "$oversized" -eq 0 ] \
-    || fail "$oversized ShellCheck processes carried more than one root, so a shard's peak memory is still its worst root"
-  assert_grep 'external-sources=yes' "$flag_log" \
-    "per-root analysis dropped CI source following"
-
-  canonical=$(PATH="$fakebin:$PATH" CI=true "$LINT" --partition 1of2 --list-files | LC_ALL=C sort)
-  roots_seen=$(LC_ALL=C sort "$log")
-  [ "$canonical" = "$roots_seen" ] \
-    || fail "per-root analysis lost or duplicated canonical roots"
-  [ "$(wc -l < "$invocations" | tr -d '[:space:]')" -eq "$(printf '%s\n' "$canonical" | wc -l | tr -d '[:space:]')" ] \
-    || fail "ShellCheck process count does not match the partition's root count"
-  pass "source-aware lint gives every root its own ShellCheck process without losing coverage"
-}
-
 test_worker_trees_stop_on_signal() {
   local tmp fakebin fixture jobs telemetry lint_tmp pid_file out_file telemetry_file
   local parent_pid shellcheck_pid i parent_rc survivor
@@ -1448,6 +1448,7 @@ SH
 test_help_reports_the_complete_interface
 test_list_files_reports_the_shell_inventory
 test_canonical_partitions_preserve_full_lint
+test_partition_runs_one_shellcheck_at_a_time
 test_fast_mode_disables_extended_analysis
 test_ci_defaults_to_full_analysis
 test_ci_rejects_explicit_fast_mode
@@ -1467,7 +1468,6 @@ test_rejects_direct_beads_cli_in_explicit_core_path
 test_ignores_ambient_shellcheck_opts
 test_clean_fixture_passes
 test_jobs_are_deterministic_and_complete
-test_source_aware_lint_analyzes_one_root_per_process
 test_worker_trees_stop_on_signal
 test_seeded_module_boundary_parity
 test_changed_mode_lints_only_the_changed_file

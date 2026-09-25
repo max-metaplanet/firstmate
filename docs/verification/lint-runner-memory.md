@@ -1,49 +1,61 @@
 # CI lint memory ceiling
 
-`bin/fm-lint.sh` analyzes every root in its own ShellCheck process, so a worker's peak memory is one root's analysis rather than the heaviest root in its shard.
-This record holds the measurement that makes that ceiling checkable.
+A CI lint partition was killed by the runner's OOM killer (exit 143, no findings printed) whenever the byte-weight packing gave it two expensive shards.
+This record holds the measurements that identify why, and why `bin/fm-lint.sh` bounds concurrency rather than how roots are grouped.
 
-Measured 2026-09-24 against the tree at commit `8c1679adddc07f32b83c801d5f216cb290930c99` with the repository-pinned ShellCheck 0.11.0, full extended analysis, and `--external-sources`.
+Measured 2026-09-25 against the tree at commit `65fc15d96c28324d03bdb1d37f8a32da8f6dcdab` with the repository-pinned ShellCheck 0.11.0, full extended analysis, and `--external-sources`.
+That build reports GHC 9.8.2 with the vanilla, non-threaded RTS.
 
-Per-root peak resident set across all 432 canonical roots, on Darwin aarch64:
+## Peak memory is opportunistic, not a fixed per-root cost
 
-| Statistic | Peak RSS |
-| --- | ---: |
-| median | 0.11 GiB |
-| p90 | 1.06 GiB |
-| p99 | 3.25 GiB |
-| maximum (`bin/fm-watch.sh`) | 4.07 GiB |
+ShellCheck sizes its heap to the memory it can see, so the same root has no single peak figure.
+Running `bin/fm-watch.sh` on Linux x86_64 under different container memory limits:
 
-Two sampled roots were re-measured on the other supported platforms to check that the ceiling is a property of the analysis rather than of the runner:
+| Limit | ShellCheck exit | Wall | Peak RSS |
+| --- | --- | ---: | ---: |
+| 3 GiB | 137 (OOM-killed) | 118s | 3.00 GiB |
+| 5 GiB | 0 | 64s | 5.00 GiB |
+| 7 GiB | 0 | 59s | 5.72 GiB |
+| 16 GB runner | 0 | - | about 11.6 GiB |
 
-| Root | Darwin aarch64 | Linux x86_64 | Linux aarch64 |
-| --- | ---: | ---: | ---: |
-| `bin/fm-wake-grant.sh` | 0.55 GiB | 0.54 GiB | 0.56 GiB |
-| `bin/fm-remote-inherit.sh` | 0.73 GiB | 0.73 GiB | 0.89 GiB |
+It expands to fill what is available and trades memory for speed, down to a floor between 3 and 5 GiB for this root.
 
-Linux x86_64, which is what `ubuntu-latest` runs, matched Darwin aarch64 on both roots; Linux aarch64 ran up to 0.16 GiB higher.
+This is why grouping cannot bound the peak.
+Splitting a shard's roots into one ShellCheck process per root moved the runner's reported peak by 0.009% (12,128,056 to 12,126,940 KiB on partition 1), because each process still expanded into the same free memory.
+Partition count and shard packing have the same non-effect for the same reason.
 
-Peak memory tracks the sourced-library fan-out, not file size: `bin/fm-backlog-handoff.sh` is 42 KB and peaks at 3.27 GiB, while `bin/fm-procevent.sh` is 110 KB and peaks at 1.50 GiB.
-Byte weight is therefore a scheduling proxy only, and packing roots by it cannot bound memory.
+Two workers sharing a runner both expand toward the whole machine, which is the collision.
+One worker expands into that same runner safely, so `bin/fm-lint.sh` runs a single ShellCheck per CI partition and uses partition count to bound wall time.
 
-Two bounded workers run concurrently per partition, so the worst case a partition can present to a runner is the sum of the two heaviest roots its shards hold.
-That worst case does not move when a new file reshuffles the byte-weight packing, because no process ever holds more than one root.
+## A GHC heap cap is not available
+
+Capping the heap per process would bound each worker without changing concurrency, but this binary refuses it.
+`GHCRTS` does reach the program, since `GHCRTS=--info shellcheck --norc -- <path>` prints the RTS table.
+Both `GHCRTS=-M6g` and `shellcheck --norc +RTS -M6g -RTS` fail with:
+
+```text
+shellcheck: Most RTS options are disabled. Link with -rtsopts to enable them.
+```
+
+Re-test this after a ShellCheck upgrade.
+A build linked with `-rtsopts`, or one shipping a larger permitted option subset, would make a per-process cap the smaller fix.
 
 ## Reproduction
 
-Install the pinned binary with `bin/fm-install-shellcheck.sh`, put it first on `PATH`, and run the sweep from the repository root.
+Install the pinned binary with `bin/fm-install-shellcheck.sh` and run the limit sweep on Linux x86_64, which is what `ubuntu-latest` provides.
 
 ```bash
 set -eu
-[ "$(bin/fm-lint.sh --required-version)" = "$(shellcheck --version | awk '/^version:/ {print $2; exit}')" ]
-for root in $(CI=true bin/fm-lint.sh --list-files); do
-  /usr/bin/time -l -o /tmp/fm-lint-root.time \
-    shellcheck --norc --external-sources -- "$root" >/dev/null 2>&1 || true
-  awk -v root="$root" '/maximum resident set size/ {printf "%s\t%.0f\n", root, $1}' \
-    /tmp/fm-lint-root.time
+for limit in 3g 5g 7g; do
+  docker run --rm --platform linux/amd64 -m "$limit" -v "$PWD":/w -w /w ubuntu:24.04 \
+    bash -c 'apt-get update -qq >/dev/null 2>&1
+      DEBIAN_FRONTEND=noninteractive apt-get install -y -qq curl xz-utils time >/dev/null 2>&1
+      bin/fm-install-shellcheck.sh /usr/local/bin >/dev/null
+      /usr/bin/time -f "%e %M" -o /tmp/t \
+        shellcheck --norc --external-sources -- bin/fm-watch.sh >/dev/null 2>&1
+      echo "rc=$? $(cat /tmp/t)"'
 done
 ```
 
-That form reads BSD `/usr/bin/time -l`, which reports bytes.
-On GNU coreutils use `/usr/bin/time -f '%M'`, which reports kibibytes instead.
-Peak RSS moves with the ShellCheck version and with each root's source graph, so re-run the sweep after a version bump or a large change to the shared libraries rather than quoting these figures forward.
+`/usr/bin/time -f '%M'` reports kibibytes, and for a process with children it reports the largest single child rather than their sum.
+Peak RSS moves with the ShellCheck version, with each root's source graph, and with the memory the host makes available, so re-run the sweep after a version bump rather than quoting these figures forward.
