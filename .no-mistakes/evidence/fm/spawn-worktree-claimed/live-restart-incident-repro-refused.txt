@@ -1,0 +1,13 @@
+## Simulate the restart: fresh-c1's worker and pane die, its record remains
+$ ls state/*.meta
+/tmp/fmlive.EulL/home/state/fresh-c1.meta
+$ treehouse status   # slot reads free although fresh-c1's record names it
+base  main  (repository default)
+1     available    /tmp/fmlive.EulL/pool/.treehouse/project-6ec27b/1/project  (detached)
+$ fm-spawn.sh second-c2 project --mode no-mistakes --yolo off
+error: worktree /private/tmp/fmlive.EulL/pool/.treehouse/project-6ec27b/1/project is already task fresh-c1's recorded worktree (in Firstmate home /private/tmp/fmlive.EulL/home); refusing to launch task second-c2 into a copy another task record still names, because two workers in one copy overwrite each other and neither record could then be cleaned up. Inspect target firstmate:fm-second-c2
+Reconcile that record first (bin/fm-crew-state.sh fresh-c1), then clean it up (bin/fm-teardown.sh fresh-c1) or, if it is stale and its copy holds no unlanded work, release its claim (bin/fm-slot-release.sh fresh-c1).
+$ ls state/*.meta
+/tmp/fmlive.EulL/home/state/fresh-c1.meta
+agent processes (codex stub):
+none

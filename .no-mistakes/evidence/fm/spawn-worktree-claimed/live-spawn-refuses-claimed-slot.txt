@@ -1,0 +1,28 @@
+$ git rev-parse HEAD (product under test)
+15a859ee88a956571ca020cd695871e7d023a248
+$ treehouse status  # before
+base  main  (repository default)
+1     available    /tmp/fmlive.EulL/pool/.treehouse/project-6ec27b/1/project  (detached)
+$ cat state/stale-scout.meta
+window=firstmate:fm-stale-scout
+endpoint_task_id=stale-scout
+worktree=/tmp/fmlive.EulL/pool/.treehouse/project-6ec27b/1/project
+project=/tmp/fmlive.EulL/project
+harness=claude
+kind=scout
+mode=no-mistakes
+yolo=off
+$ fm-spawn.sh fresh-c1 project --mode no-mistakes --yolo off   # real tmux (isolated server) + real treehouse get
+warning: /tmp/fmlive.EulL/home/data/fresh-c1/launch-brief.md records no delivery contract line (scaffolded before ship briefs recorded one); launching on the explicit --mode no-mistakes - confirm its definition of done matches
+error: worktree /private/tmp/fmlive.EulL/pool/.treehouse/project-6ec27b/1/project is already task stale-scout's recorded worktree (in Firstmate home /private/tmp/fmlive.EulL/home); refusing to launch task fresh-c1 into a copy another task record still names, because two workers in one copy overwrite each other and neither record could then be cleaned up. Inspect target firstmate:fm-fresh-c1
+Reconcile that record first (bin/fm-crew-state.sh stale-scout), then clean it up (bin/fm-teardown.sh stale-scout) or, if it is stale and its copy holds no unlanded work, release its claim (bin/fm-slot-release.sh stale-scout).
+exit=1
+$ ls state/
+stale-scout.meta
+$ tmux list-windows
+firstmate:zsh /Users/max/.no-mistakes/worktrees/61c6dd39b831/01M3EA1PQ5H4Z5AVG8H8QEHXPQ
+firstmate:fm-fresh-c1 /private/tmp/fmlive.EulL/pool/.treehouse/project-6ec27b/1/project
+$ treehouse status  # after
+base  main  (repository default)
+1     in-use       /tmp/fmlive.EulL/pool/.treehouse/project-6ec27b/1/project  (detached)
+                   zsh (77820)

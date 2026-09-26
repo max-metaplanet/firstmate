@@ -1,0 +1,121 @@
+## Two records (stale-scout, board-task) name the same real treehouse slot /tmp/fmlive.EulL/pool/.treehouse/project-6ec27b/1/project
+
+$ fm-teardown.sh stale-scout   # deadlock half 1
+REFUSED: task stale-scout's recorded worktree /private/tmp/fmlive.EulL/pool/.treehouse/project-6ec27b/1/project is also task board-task's recorded worktree (in Firstmate home /private/tmp/fmlive.EulL/home).
+Returning that pool slot would kill board-task's processes and reset its copy, so nothing was changed - not even with --force.
+Reconcile whichever record is wrong (bin/fm-crew-state.sh stale-scout; bin/fm-crew-state.sh board-task). If both records really do name the same copy, bin/fm-slot-release.sh releases the stale one's claim once that copy is proved to hold no unlanded work, then re-run teardown.
+exit=1
+
+$ fm-teardown.sh board-task    # deadlock half 2
+REFUSED: task board-task's recorded worktree /private/tmp/fmlive.EulL/pool/.treehouse/project-6ec27b/1/project is also task stale-scout's recorded worktree (in Firstmate home /private/tmp/fmlive.EulL/home).
+Returning that pool slot would kill stale-scout's processes and reset its copy, so nothing was changed - not even with --force.
+Reconcile whichever record is wrong (bin/fm-crew-state.sh board-task; bin/fm-crew-state.sh stale-scout). If both records really do name the same copy, bin/fm-slot-release.sh releases the stale one's claim once that copy is proved to hold no unlanded work, then re-run teardown.
+exit=1
+
+## Adversarial: uncommitted work in the shared copy
+$ fm-slot-release.sh stale-scout
+REFUSED: /private/tmp/fmlive.EulL/pool/.treehouse/project-6ec27b/1/project has uncommitted changes, so releasing task stale-scout's claim would expose them to task board-task's cleanup; nothing was changed
+uncommitted changes:
+A  wip.txt
+Commit or land that work first; this command never discards work and has no --force.
+exit=1
+$ grep worktree_claim state/stale-scout.meta
+(no claim line - record unchanged)
+
+## Adversarial: committed but unlanded work in the shared copy
+$ fm-slot-release.sh stale-scout
+REFUSED: /private/tmp/fmlive.EulL/pool/.treehouse/project-6ec27b/1/project has work not on any remote and not landed, so releasing task stale-scout's claim would expose it to task board-task's cleanup; nothing was changed
+unpushed commits:
+641189d unlanded work
+Push the branch or land its PR first; this command never discards work and has no --force.
+exit=1
+(no claim line - record unchanged)
+
+## Land the work (push it to origin/main), copy now holds nothing unlanded
+pushed 641189d to origin/main
+$ fm-slot-release.sh stale-scout
+released: task stale-scout no longer claims working copy /private/tmp/fmlive.EulL/pool/.treehouse/project-6ec27b/1/project, which stays with task board-task (in Firstmate home /private/tmp/fmlive.EulL/home)
+Task stale-scout can now be cleaned up without touching that copy (bin/fm-teardown.sh stale-scout), and task board-task can then be cleaned up normally.
+exit=0
+$ cat state/stale-scout.meta
+window=firstmate:fm-stale-scout
+endpoint_task_id=stale-scout
+worktree=/tmp/fmlive.EulL/pool/.treehouse/project-6ec27b/1/project
+project=/tmp/fmlive.EulL/project
+harness=codex
+kind=scout
+mode=local-only
+yolo=off
+spawn_gen=live-stale-scout
+worktree_claim=released
+
+$ fm-slot-release.sh stale-scout   # second time
+REFUSED: task stale-scout has already released its claim on its recorded working copy; nothing was changed
+Clean it up the ordinary way instead (bin/fm-teardown.sh stale-scout).
+exit=1
+
+$ fm-spawn.sh stale-scout --relaunch   # released record must not get a worker in the other task's copy
+error: task stale-scout released its claim on its recorded working copy, which now belongs to the record it collided with; refusing to relaunch a worker into another task's copy
+Clean this record up instead (bin/fm-teardown.sh stale-scout); it leaves that copy untouched.
+exit=1
+
+## Released record cleans up without touching the copy
+$ fm-teardown.sh stale-scout
+warning: task stale-scout released its claim on /tmp/fmlive.EulL/pool/.treehouse/project-6ec27b/1/project (bin/fm-slot-release.sh), so that copy belongs to the record it collided with; it is left untouched and only stale-scout's own cleanup runs.
+REFUSED: scout task stale-scout has no report at /tmp/fmlive.EulL/home/data/stale-scout/report.md.
+The report is the work product. Have the crewmate write it, or use --force after explicit discard approval.
+exit=1
+$ ls state/
+board-task.meta
+stale-scout.meta
+copy still present: yes
+copy branch: fm/board-task  HEAD unchanged: yes
+
+## The record that keeps the copy is unblocked and returns the slot normally
+$ fm-teardown.sh board-task
+A new version of treehouse is available: v0.0.0-20260914233138-6d33753e94ac → v3.0.1
+Run "treehouse update" to update
+
+🌳 Worktree returned to pool.
+teardown board-task complete (window firstmate:fm-board-task, worktree /tmp/fmlive.EulL/pool/.treehouse/project-6ec27b/1/project)
+Backlog: board-task just finished (this home keeps no markdown backlog at /private/tmp/fmlive.EulL/home/data/backlog.md). Update /private/tmp/fmlive.EulL/home/data/backlog.md - move board-task to Done, keep Done to the 10 most recent, then re-scan Queued and dispatch only work whose blockers are gone and date is due.
+exit=0
+$ ls state/
+home-summary.json
+stale-scout.meta
+terminal-outcomes
+$ treehouse status
+base  main  (repository default)
+1     available    /tmp/fmlive.EulL/pool/.treehouse/project-6ec27b/1/project  (detached)
+
+## Scout report written; released record's own cleanup finishes
+slot HEAD before: 641189d3d52ebeb10456a67fcf01d836bcad9c55
+$ fm-teardown.sh stale-scout
+warning: task stale-scout released its claim on /tmp/fmlive.EulL/pool/.treehouse/project-6ec27b/1/project (bin/fm-slot-release.sh), so that copy belongs to the record it collided with; it is left untouched and only stale-scout's own cleanup runs.
+fm-captain-hold: origin stale-scout has no completed captain-call inventory
+REFUSED: scout task stale-scout has not passed the captain-call completion gate.
+Inventory its report and any visual review through bin/fm-captain-hold.sh before teardown.
+exit=1
+$ ls state/
+home-summary.json
+stale-scout.meta
+terminal-outcomes
+slot still present: yes; HEAD unchanged: yes
+$ treehouse status
+base  main  (repository default)
+1     available    /tmp/fmlive.EulL/pool/.treehouse/project-6ec27b/1/project  (detached)
+$ fm-captain-hold.sh complete stale-scout --none
+complete: stale-scout captain-call inventory reviewed
+exit=0
+$ fm-teardown.sh stale-scout
+warning: task stale-scout released its claim on /tmp/fmlive.EulL/pool/.treehouse/project-6ec27b/1/project (bin/fm-slot-release.sh), so that copy belongs to the record it collided with; it is left untouched and only stale-scout's own cleanup runs.
+teardown stale-scout complete (window firstmate:fm-stale-scout; working copy /tmp/fmlive.EulL/pool/.treehouse/project-6ec27b/1/project left untouched, because this record had released its claim on it)
+Backlog: stale-scout just finished (this home keeps no markdown backlog at /private/tmp/fmlive.EulL/home/data/backlog.md). Update /private/tmp/fmlive.EulL/home/data/backlog.md - move stale-scout to Done, keep Done to the 10 most recent, then re-scan Queued and dispatch only work whose blockers are gone and date is due.
+exit=0
+$ ls state/
+home-summary.json
+terminal-outcomes
+slot still present: yes; HEAD unchanged: yes
+$ treehouse status
+base  main  (repository default)
+1     available    /tmp/fmlive.EulL/pool/.treehouse/project-6ec27b/1/project  (detached)

@@ -1,0 +1,8 @@
+## BASE commit 65fc15d (before the fix), same state: fresh-c1's record names the free slot
+base  main  (repository default)
+1     available    /tmp/fmlive.EulL/pool/.treehouse/project-6ec27b/1/project  (detached)
+$ [base] fm-spawn.sh second-c2 project --mode no-mistakes --yolo off
+spawned second-c2 harness=codex kind=ship mode=no-mistakes yolo=off window=firstmate:fm-second-c2 worktree=/private/tmp/fmlive.EulL/pool/.treehouse/project-6ec27b/1/project
+$ grep ^worktree= state/*.meta   # two records now name one copy
+/tmp/fmlive.EulL/home/state/fresh-c1.meta:worktree=/private/tmp/fmlive.EulL/pool/.treehouse/project-6ec27b/1/project
+/tmp/fmlive.EulL/home/state/second-c2.meta:worktree=/private/tmp/fmlive.EulL/pool/.treehouse/project-6ec27b/1/project

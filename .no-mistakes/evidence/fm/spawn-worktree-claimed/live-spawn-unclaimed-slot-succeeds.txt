@@ -1,0 +1,15 @@
+$ ls state/
+home-summary.json
+terminal-outcomes
+$ fm-spawn.sh fresh-c1 project --mode no-mistakes --yolo off   # no record names the slot now
+warning: /tmp/fmlive.EulL/home/data/fresh-c1/launch-brief.md records no delivery contract line (scaffolded before ship briefs recorded one); launching on the explicit --mode no-mistakes - confirm its definition of done matches
+spawned fresh-c1 harness=codex kind=ship mode=no-mistakes yolo=off window=firstmate:fm-fresh-c1 worktree=/private/tmp/fmlive.EulL/pool/.treehouse/project-6ec27b/1/project
+exit=
+$ grep worktree state/fresh-c1.meta
+worktree=/private/tmp/fmlive.EulL/pool/.treehouse/project-6ec27b/1/project
+harness=codex
+kind=ship
+$ treehouse status
+base  main  (repository default)
+1     in-use       /tmp/fmlive.EulL/pool/.treehouse/project-6ec27b/1/project  (detached)
+                   zsh (62032), sleep (66830)
