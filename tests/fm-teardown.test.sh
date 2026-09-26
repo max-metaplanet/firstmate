@@ -2162,6 +2162,44 @@ run_teardown_for() {  # <case-dir> <task-id> [args...]
     "$TEARDOWN" "$id" "$@"
 }
 
+# A home reached through a symlink used to put ONE state directory into the scan
+# set under two spellings, and the own-record exclusion compared raw paths - so
+# the resolved spelling of a task's own record read as a second record and the
+# task was refused because of itself. A lone record must never be its own
+# collision, whichever way its home is spelled.
+test_a_lone_record_in_a_symlinked_home_is_not_its_own_collision() {
+  local case_dir pool slot link rc out
+  case_dir=$(make_case slot-symlinked-home)
+  pool="$case_dir/pool"
+  slot="$pool/1/repo"
+  mkdir -p "$pool"
+  printf '{}\n' > "$pool/treehouse-state.json"
+  git -C "$case_dir/project" worktree add -q -b fm/symlinked-home "$slot" main
+  fm_write_meta "$case_dir/state/task-x1.meta" \
+    "window=firstmate:fm-task-x1" \
+    "endpoint_task_id=task-x1" \
+    "worktree=$slot" \
+    "project=$case_dir/project" \
+    "kind=ship" \
+    "mode=local-only" \
+    "spawn_gen=teardown-test-task-x1"
+  link="$TMP_ROOT/slot-symlinked-home-link"
+  ln -sfn "$case_dir" "$link"
+
+  set +e
+  out=$(FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$link" FM_STATE_OVERRIDE="$link/state" \
+    FM_DATA_OVERRIDE="$link/data" FM_CONFIG_OVERRIDE="$link/config" \
+    PATH="$case_dir/fakebin:$PATH" "$TEARDOWN" task-x1 2>&1)
+  rc=$?
+  set -e
+  expect_code 0 "$rc" "symlinked-home: a lone record should tear down: $out"
+  assert_not_contains "$out" "is also task task-x1" \
+    "symlinked-home: the record was reported as colliding with itself"
+  assert_absent "$case_dir/state/task-x1.meta" \
+    "symlinked-home: the record survived its teardown"
+  pass "a lone record reached through a symlinked home is not treated as its own collision"
+}
+
 # Order 1: the record that KEEPS the copy is unblocked the moment the other
 # record releases, with that record still on disk. This is what makes the
 # release useful - the operator does not have to tear the stale record down
@@ -4010,6 +4048,7 @@ test_local_only_force_overrides_unpushed
 test_secondmate_pr_registration_publishes_ready_line
 test_secondmate_home_teardown_delivers_final_line_or_refuses
 test_teardown_missing_busy_sidecar_completes
+test_a_lone_record_in_a_symlinked_home_is_not_its_own_collision
 test_released_claim_unblocks_the_record_that_keeps_the_copy
 test_a_released_record_cleans_up_without_touching_the_copy
 test_herdr_teardown_clears_escalation_marker

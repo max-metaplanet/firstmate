@@ -3490,10 +3490,13 @@ else
     # it stands up a DIFFERENT home's own workspace by design - so it asks for
     # the per-home container instead of inheriting this launcher's.
     HERDR_LABEL_HOME=$FM_HOME
-    HERDR_LAUNCHER_RELATIONSHIP=launcher-home
+    # Quoted because these are literals, not arithmetic: unquoted `other-home`
+    # reads as a subtraction to ShellCheck (SC2100) whenever names like `other`
+    # and `home` are in scope through a sourced library.
+    HERDR_LAUNCHER_RELATIONSHIP="launcher-home"
     if [ "$KIND" = secondmate ]; then
       HERDR_LABEL_HOME=$PROJ_ABS
-      HERDR_LAUNCHER_RELATIONSHIP=other-home
+      HERDR_LAUNCHER_RELATIONSHIP="other-home"
     fi
     HERDR_PRESENTATION_JOURNAL=$(fm_backend_herdr_projection_journal_path "$STATE" "$ID")
     HERDR_PROJECTED=0

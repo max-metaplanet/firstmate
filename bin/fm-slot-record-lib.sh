@@ -44,11 +44,41 @@ FM_SLOT_RECORD_ERROR=
 # registry entry is skipped - its records live on another machine and cannot
 # name a copy here. Returns non-zero with FM_SLOT_RECORD_ERROR set.
 FM_SLOT_RECORD_STATES=()
+# Add one state directory to the scan set, keyed by its RESOLVED path so a
+# directory reached through a symlink cannot enter the set twice. One directory
+# under two spellings is what let the own-record exclusion below miss: the
+# caller's spelling was excluded while the resolved spelling was not, so a lone
+# task was reported as colliding with ITSELF and a symlinked home refused its
+# own cleanup. A path that cannot be resolved is kept as given - it holds no
+# readable records to scan, so keeping it changes nothing but preserves the
+# previous behaviour for an unreadable state directory.
+fm_slot_record_add_state() {  # <state-dir>
+  local candidate=$1 resolved existing
+  resolved=$(fm_slot_record_canonical_dir "$candidate") || resolved=$candidate
+  for existing in ${FM_SLOT_RECORD_STATES[@]+"${FM_SLOT_RECORD_STATES[@]}"}; do
+    [ "$existing" != "$resolved" ] || return 0
+  done
+  FM_SLOT_RECORD_STATES+=("$resolved")
+}
+
+# One record's identity, independent of how its home was spelled: the resolved
+# directory plus the file name. Comparing raw paths let <link>/state/x.meta and
+# <real>/state/x.meta read as two different records.
+fm_slot_record_meta_key() {  # <meta-path>
+  local meta=$1 dir base resolved
+  base=${meta##*/}
+  dir=${meta%/*}
+  [ "$dir" != "$meta" ] || dir=.
+  resolved=$(fm_slot_record_canonical_dir "$dir") || resolved=$dir
+  printf '%s/%s\n' "$resolved" "$base"
+}
+
 fm_slot_record_local_states() {  # <record-state>
   local record_state=$1 root home reg line child known existing i=0
   local -a homes
   FM_SLOT_RECORD_ERROR=
-  FM_SLOT_RECORD_STATES=("$record_state")
+  FM_SLOT_RECORD_STATES=()
+  fm_slot_record_add_state "$record_state"
   root=$(fm_firstmate_root_home "$FM_HOME") || {
     FM_SLOT_RECORD_ERROR="cannot resolve the root Firstmate home"
     return 1
@@ -57,11 +87,7 @@ fm_slot_record_local_states() {  # <record-state>
   while [ "$i" -lt "${#homes[@]}" ]; do
     home=${homes[$i]}
     i=$((i + 1))
-    known=0
-    for existing in "${FM_SLOT_RECORD_STATES[@]}"; do
-      [ "$existing" != "$home/state" ] || known=1
-    done
-    [ "$known" = 1 ] || FM_SLOT_RECORD_STATES+=("$home/state")
+    fm_slot_record_add_state "$home/state"
     reg="$home/data/secondmates.md"
     [ ! -e "$reg" ] && [ ! -L "$reg" ] && continue
     [ -f "$reg" ] && [ ! -L "$reg" ] || {
@@ -129,7 +155,7 @@ FM_SLOT_RECORD_OTHER_META=
 FM_SLOT_RECORD_SLOT=
 fm_slot_record_other_claim() {  # <record-meta> <record-state> <copy>
   local record_meta=$1 record_state=$2 copy=$3
-  local slot state_dir other other_id field other_path other_slot
+  local slot state_dir other other_id field other_path other_slot record_key
   FM_SLOT_RECORD_OTHER_ID=
   FM_SLOT_RECORD_OTHER_FIELD=
   FM_SLOT_RECORD_OTHER_META=
@@ -138,10 +164,14 @@ fm_slot_record_other_claim() {  # <record-meta> <record-state> <copy>
   # shellcheck disable=SC2034 # Output global, read by the sourcing caller.
   FM_SLOT_RECORD_SLOT=$slot
   fm_slot_record_local_states "$record_state" || return 2
+  # Every scanned directory is resolved, so each candidate path is already in
+  # resolved form and one resolution of the caller's own record is enough to
+  # compare them by identity rather than by spelling.
+  record_key=$(fm_slot_record_meta_key "$record_meta")
   for state_dir in "${FM_SLOT_RECORD_STATES[@]}"; do
     for other in "$state_dir"/*.meta; do
       [ -f "$other" ] && [ ! -L "$other" ] || continue
-      [ "$other" != "$record_meta" ] || continue
+      [ "$other" != "$record_key" ] || continue
       other_id=$(basename "$other" .meta)
       [ "$(fm_meta_get "$other" worktree_claim)" != released ] || continue
       for field in worktree home; do
