@@ -1,0 +1,9 @@
+ok - a record that collides with nothing is refused and sent back to cleanup
+ok - an uncommitted change in the shared copy refuses the release
+ok - a commit that is neither pushed nor landed refuses the release
+ok - a commit that is unpushed but already landed does not block the release
+ok - a clean copy releases exactly one record's claim and clears the deadlock
+ok - a record that already released is refused rather than released twice
+ok - the record a copy's own claim names is refused, and the other one is named instead
+ok - a second mate's home record is refused and routed to its own retirement path
+# all fm-slot-release tests passed

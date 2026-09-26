@@ -1,0 +1,129 @@
+# Live Herdr lab (fm-lab-claimed-12635-7286), real bin/fm-spawn.sh + real Treehouse pool at $TMP/pool
+
+## 1. taska spawned (fresh) with fixed code
+spawned taska harness=sh kind=ship mode=no-mistakes yolo=off window=fm-lab-claimed-12635-7286:w1:p2 worktree=$TMP/pool/.treehouse/project-bcf557/1/project
+
+## taska's worker exited; Treehouse now reads the slot free while taska.meta still names it
+
+base  main  (repository default)
+1     available    $TMP/pool/.treehouse/project-bcf557/1/project  (detached)
+
+## 2. taskb fresh spawn with FIXED code -> refused
+error: worktree $TMP/pool/.treehouse/project-bcf557/1/project is already task taska's recorded worktree; refusing to launch task taskb into a copy another task record still names, because two workers in one copy overwrite each other and neither record could then be cleaned up. Inspect target fm-lab-claimed-12635-7286:w1:p3
+Reconcile that record first (bin/fm-crew-state.sh taska), then clean it up (bin/fm-teardown.sh taska) or, if it is stale and its copy holds no unlanded work, release its claim (bin/fm-slot-release.sh taska).
+state/ after: home-summary.json taska.meta (no taskb.meta); slot-owner claim still task=taska
+
+## 3. taskb fresh spawn with BASE commit 65fc15d code -> collision created (pre-fix behaviour)
+spawned taskb harness=sh kind=ship mode=no-mistakes yolo=off window=fm-lab-claimed-12635-7286:w1:p4 worktree=$TMP/pool/.treehouse/project-bcf557/1/project
+
+## 4. fixed teardown on the collided pair -> symmetric deadlock
+== fm-teardown.sh taskb
+REFUSED: task taskb's recorded worktree $TMP/pool/.treehouse/project-bcf557/1/project is also task taska's recorded worktree.
+Returning that pool slot would kill taska's processes and reset its copy, so nothing was changed - not even with --force.
+Reconcile whichever record is wrong (bin/fm-crew-state.sh taskb; bin/fm-crew-state.sh taska). If both records really do name the same copy, bin/fm-slot-release.sh releases the stale one's claim once that copy is proved to hold no unlanded work, then re-run teardown.
+rc=1
+== fm-teardown.sh taska
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+REFUSED: task taska's recorded worktree $TMP/pool/.treehouse/project-bcf557/1/project is also task taskb's recorded worktree.
+Returning that pool slot would kill taskb's processes and reset its copy, so nothing was changed - not even with --force.
+Reconcile whichever record is wrong (bin/fm-crew-state.sh taska; bin/fm-crew-state.sh taskb). If both records really do name the same copy, bin/fm-slot-release.sh releases the stale one's claim once that copy is proved to hold no unlanded work, then re-run teardown.
+rc=1
+
+## 5. fm-slot-release adversarial + clean
+## (a) release the slot's proven claimant
+$ fm-slot-release.sh taskb
+REFUSED: $TMP/pool/.treehouse/project-bcf557/1/project's own slot-owner claim names task taskb, so this record is the copy's proven owner and releasing it would strand the slot; nothing was changed
+Release the other record instead: task taska (bin/fm-slot-release.sh taska).
+rc=1
+
+## (b) copy has an uncommitted change
+$ fm-slot-release.sh taska
+REFUSED: $TMP/pool/.treehouse/project-bcf557/1/project has uncommitted changes, so releasing task taska's claim would expose them to task taskb's cleanup; nothing was changed
+uncommitted changes:
+?? wip.txt
+Commit or land that work first; this command never discards work and has no --force.
+rc=1
+
+## (c) copy has an unlanded commit
+$ fm-slot-release.sh taska
+REFUSED: $TMP/pool/.treehouse/project-bcf557/1/project has work not on any remote and not landed, so releasing task taska's claim would expose it to task taskb's cleanup; nothing was changed
+unpushed commits:
+a6376a1 unlanded work
+Push the branch or land its PR first; this command never discards work and has no --force.
+rc=1
+
+## record state after refusals
+(no worktree_claim line in any record)
+
+## (d) clean copy: release the stale record
+$ fm-slot-release.sh taska
+released: task taska no longer claims working copy $TMP/pool/.treehouse/project-bcf557/1/project, which stays with task taskb
+Task taska can now be cleaned up without touching that copy (bin/fm-teardown.sh taska), and task taskb can then be cleaned up normally.
+rc=0
+
+$TMP/home/state/taska.meta:worktree_claim=released
+
+## 6. relaunch refused, released teardown leaves copy + other worker, other record tears down normally
+## relaunch the released record
+$ fm-spawn.sh taska --relaunch
+error: task taska released its claim on its recorded working copy, which now belongs to the record it collided with; refusing to relaunch a worker into another task's copy
+Clean this record up instead (bin/fm-teardown.sh taska); it leaves that copy untouched.
+rc=
+
+## slot processes before taska teardown
+
+base  main  (repository default)
+1     in-use       $TMP/pool/.treehouse/project-bcf557/1/project  (detached)
+                   zsh (72732)
+
+$ fm-teardown.sh taska
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+warning: task taska released its claim on $TMP/pool/.treehouse/project-bcf557/1/project (bin/fm-slot-release.sh), so that copy belongs to the record it collided with; it is left untouched and only taska's own cleanup runs.
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+$TMP/project: already current
+teardown taska complete (window fm-lab-claimed-12635-7286:w1:p2; working copy $TMP/pool/.treehouse/project-bcf557/1/project left untouched, because this record had released its claim on it)
+Backlog: taska just finished (this home keeps no markdown backlog at $TMP/home/data/backlog.md). Update $TMP/home/data/backlog.md - move taska to Done, keep Done to the 10 most recent, then re-scan Queued and dispatch only work whose blockers are gone and date is due.
+rc=
+
+## after taska teardown: records, slot, claim, processes
+home-summary.json
+taskb.meta
+terminal-outcomes
+$TMP/pool/.treehouse/project-bcf557/1/project
+task=taskb
+home=$TMP/home
+
+base  main  (repository default)
+1     in-use       $TMP/pool/.treehouse/project-bcf557/1/project  (detached)
+                   zsh (72732)
+
+$ fm-teardown.sh taskb
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+teardown: reaping leaked worktree process(es) for taskb: 72732
+teardown: force-killing leaked worktree process(es) for taskb: 72732
+A new version of treehouse is available: v0.0.0-20260914233138-6d33753e94ac → v3.0.1
+Run "treehouse update" to update
+
+🌳 Worktree returned to pool.
+$TMP/project: already current
+teardown taskb complete (window fm-lab-claimed-12635-7286:w1:p4, worktree $TMP/pool/.treehouse/project-bcf557/1/project)
+Backlog: taskb just finished (this home keeps no markdown backlog at $TMP/home/data/backlog.md). Update $TMP/home/data/backlog.md - move taskb to Done, keep Done to the 10 most recent, then re-scan Queued and dispatch only work whose blockers are gone and date is due.
+rc=
+
+## after taskb teardown
+home-summary.json
+terminal-outcomes
+
+base  main  (repository default)
+1     available    $TMP/pool/.treehouse/project-bcf557/1/project  (detached)
+.
+..
+project
+
+## 7. fresh spawn into the now-unclaimed slot succeeds
+$ fm-spawn.sh taskc (fresh, after the collision was resolved)
+spawned taskc harness=sh kind=ship mode=no-mistakes yolo=off window=fm-lab-claimed-12635-7286:w2:p2 worktree=$TMP/pool/.treehouse/project-bcf557/1/project
+rc=0
+task=taskc
+home=$TMP/home
+teardown taskc complete (window fm-lab-claimed-12635-7286:w2:p2, worktree $TMP/pool/.treehouse/project-bcf557/1/project)
