@@ -342,6 +342,10 @@ test_direct_pr_on_the_fork_parent_is_refused() {
     *"-R forkowner/proj"*) ;;
     *) fail "the refusal did not name the origin target to open it on: $reason" ;;
   esac
+  case "$reason" in
+    *"wrong repository"*"renamed or transferred"*"git remote set-url origin"*) ;;
+    *) fail "the refusal did not name both causes and the stale-origin remedy: $reason" ;;
+  esac
   pass "a direct-PR PR on the fork's parent repository is refused"
 }
 

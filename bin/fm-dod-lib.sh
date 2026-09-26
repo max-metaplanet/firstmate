@@ -746,7 +746,7 @@ fm_dod_pr_url_on_origin() {  # <mode> <worktree> <project> <url>
     || origin=$(fm_dod_origin_forge_identity "$project") \
     || return 0
   fm_dod_forge_path_equal "${origin#*/}" "$FM_PR_PATH" && return 0
-  printf '%s\n' "the PR $url is on $target, not this copy's origin $origin: open it on origin with \`gh-axi pr create -R ${origin#*/} --base <default branch>\`, because \`gh pr create\` with no -R targets a fork's parent repository"
+  printf '%s\n' "the PR $url is on $target, not this copy's origin $origin: either the PR was opened on the wrong repository - open it on origin with \`gh-axi pr create -R ${origin#*/} --base <default branch>\`, because \`gh pr create\` with no -R targets a fork's parent repository - or origin still uses a renamed or transferred repository's old name - run \`git remote set-url origin <the repository's current URL>\` and report again"
   return 1
 }
 
