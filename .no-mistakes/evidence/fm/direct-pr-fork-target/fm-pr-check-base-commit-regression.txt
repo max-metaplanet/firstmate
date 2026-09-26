@@ -1,0 +1,7 @@
+## BASE COMMIT 65fc15d scenario: BASE-A-fork-origin-upstream-pr
+$ git remote get-url origin  -> git@github.com:max-metaplanet/firstmate.git
+$ mode=direct-PR  FM_HOME=/tmp/fmlive.6E0j/BASE-A-fork-origin-upstream-pr bin/fm-pr-check.sh live-task https://github.com/kunchenguid/firstmate/pull/5555
+armed: state/live-task.check.sh
+exit=0
+recorded meta pr= line: pr=https://github.com/kunchenguid/firstmate/pull/5555
+
