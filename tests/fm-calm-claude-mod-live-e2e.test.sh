@@ -3,18 +3,14 @@
 # (.claude/mods/firstmate-calm) in a real Claude Code TUI under tmux, mirroring the
 # Pi interactive case in tests/fm-calm-pi-extension.test.sh. It proves, against the
 # installed Claude Code and the shipped project auto-load path (.claude/skills):
-#   1. With neither FM_CALM_ENABLED nor its deprecated alias enabling the mod, the mod
-#      is a complete no-op even though Claude Code loads its hooks module and the
-#      per-home preference is already on: /calm is not a command, the stock working row
-#      shows, the boat never appears, and tool rows draw as stock. The module-loaded
-#      assertion is the point of the gate: Claude Code no longer withholds the surface,
-#      so the mod's own flag is the only thing keeping it inert.
-#   2. With FM_CALM_ENABLED=1 and the deprecated alias off, the sailboat replaces the
-#      working row and moves, tool rows draw at zero height, /calm restores them and
-#      persists off, /calm hides them again and persists on, all without a Calm output
-#      row in the transcript. The zero-height operational user row is not reachable from
-#      a terminal on this Claude Code, which strips the envelope's invisible marker in
-#      the composer; phase 5 is the tripwire for restoring that case.
+#   1. With CLAUDE_CODE_ENABLE_FUNCTION_HOOKS unset, the mod is a complete no-op even
+#      with the per-home preference already on: no hooks module loads, /calm is not a
+#      command, the stock working row shows, and tool rows draw as stock.
+#   2. With the flag on, the sailboat replaces the working row and moves, tool rows and
+#      a record-backed operational doorbell (the carrier Firstmate types into Claude
+#      Code, which strips U+2063 from submitted prompts) draw at zero height, /calm
+#      restores them and persists off, /calm hides them again and persists on, all
+#      without a Calm output row in the transcript.
 #   3. `claude --continue` restores the transcript with those rows still hidden.
 #   4. The deprecated CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1 alone still activates the mod,
 #      so an unmigrated session keeps Calm, and FM_CALM_ENABLED=0 beside that alias
@@ -255,12 +251,18 @@ wait_settled() {  # <what> [iterations]
   fail "Claude Code $CLAUDE_VERSION never settled $what"
 }
 
-# --- 1. Gate off: a complete no-op even with the preference on --------------------
-launch "$DEBUG_LOG_OFF" "$GATE_OFF"
+# Claude Code 2.1.280 logs `hooks module firstmate-calm@<source> loaded`; 2.1.272 had no
+# source suffix.
+MODULE_LOADED='hooks module firstmate-calm(@[^ ]+)? loaded'
+
+# --- 1. Flag off: a complete no-op even with the preference on --------------------
+launch "$DEBUG_LOG_OFF" 0
 wait_idle
-# The module loads: Claude Code no longer withholds the surface, so this phase proves
-# the mod's own gate, not the platform's.
-wait_module_loaded "$DEBUG_LOG_OFF"
+grep -q 'hooks modules not loaded' "$DEBUG_LOG_OFF" \
+  || fail "Claude Code $CLAUDE_VERSION did not report hooks modules off with the flag unset"
+if grep -Eq "$MODULE_LOADED" "$DEBUG_LOG_OFF"; then
+  fail "Claude Code $CLAUDE_VERSION loaded the Calm hooks module although the flag was unset"
+fi
 if command_listed calm; then
   fail "Claude Code $CLAUDE_VERSION lists /calm although neither FM_CALM_ENABLED nor the deprecated alias enables the mod"
 fi
@@ -310,7 +312,13 @@ pass "Claude Code $CLAUDE_VERSION with the gate off: the hooks module loads and 
 # --- 2. Gate on: the boat, the hidden rows, the toggle, the persisted choice -------
 launch "$DEBUG_LOG_ON" "$GATE_ON"
 wait_idle
-wait_module_loaded "$DEBUG_LOG_ON"
+i=0
+while [ "$i" -lt 100 ] && ! grep -Eq "$MODULE_LOADED" "$DEBUG_LOG_ON"; do
+  sleep 0.1
+  i=$((i + 1))
+done
+grep -Eq "$MODULE_LOADED" "$DEBUG_LOG_ON" \
+  || fail "Claude Code $CLAUDE_VERSION did not load the Calm hooks module from the project's .claude/skills path with the flag on"
 # The engine logs one benign notice for every options-less hooks module ("options
 # requested but its manifest declares no userConfig"); anything else is a real problem.
 if grep -E '\[(WARN|ERROR)\].*firstmate-calm' "$DEBUG_LOG_ON" | grep -v 'declares no userConfig' >&2; then
@@ -352,12 +360,54 @@ case "$on_settled" in
     ;;
 esac
 
+# Claude Code strips U+2063 from submitted prompts, so Firstmate types a plain doorbell
+# naming a record that holds the envelope; that doorbell row draws at zero height while
+# the answer stays visible. The answer token lives only in the record.
+DOORBELL_TEXT='Firstmate operational input waiting'
+operational=$(printf 'signal: %s/state/probe.status changed. Reply with exactly OPERATIONAL_PROCESSED and nothing else.' "$LAB" \
+  | FM_HOME="$FM_HOME_DIR" "$OPERATIONAL_INPUT" record watcher) \
+  || fail "could not publish the operational probe record"
+case "$operational" in
+  *"$DOORBELL_TEXT"*) : ;;
+  *) fail "the operational probe is not a record-backed doorbell: $operational" ;;
+esac
+send "$operational"
+sleep 1
+enter
+# A long line typed in one burst can leave Claude Code's first Enter inside its paste
+# handling; like Firstmate's own submit primitive, retry Enter only, never retype.
+i=0
+while [ "$i" -lt 4 ]; do
+  sleep 2
+  case "$(screen)" in
+    *"❯ : $DOORBELL_TEXT"*) enter ;;
+    *) break ;;
+  esac
+  i=$((i + 1))
+done
+wait_screen 'OPERATIONAL_PROCESSED' 'the operational answer' 600
+sleep 1
+operational_screen=$(screen)
+case "$operational_screen" in
+  *"$DOORBELL_TEXT"*|*'invisible character'*)
+    printf '%s\n' "$operational_screen" >&2
+    fail "the operational doorbell row drew while Calm was on"
+    ;;
+esac
+
 # /calm off: rows restore, the preference persists off, no Calm output row.
 send '/calm'
 enter
 wait_screen 'shell command' 'the restored tool row after /calm off' 200
 [ "$(cat "$FM_HOME_DIR/config/calm")" = off ] || fail "/calm did not persist off"
 restored=$(screen)
+case "$restored" in
+  *"$DOORBELL_TEXT"*) : ;;
+  *)
+    printf '%s\n' "$restored" >&2
+    fail "/calm off did not restore the operational user row"
+    ;;
+esac
 # The toggle answers with a transient toast under the prompt, never a transcript row:
 # the plugin's name must leave the screen once the toast expires.
 case "$restored" in
@@ -393,14 +443,14 @@ i=0
 while [ "$i" -lt 200 ]; do
   hidden_again=$(screen)
   case "$hidden_again" in
-    *'Bash('*|*'shell command'*) ;;
+    *'Bash('*|*'shell command'*|*"$DOORBELL_TEXT"*) ;;
     *) break ;;
   esac
   sleep 0.1
   i=$((i + 1))
 done
 case "$hidden_again" in
-  *'Bash('*|*'shell command'*)
+  *'Bash('*|*'shell command'*|*"$DOORBELL_TEXT"*)
     printf '%s\n' "$hidden_again" >&2
     fail "/calm on did not hide the rows again"
     ;;
@@ -414,7 +464,7 @@ esac
 send '/exit'
 enter
 sleep 2
-pass "Claude Code $CLAUDE_VERSION with FM_CALM_ENABLED=1 and the deprecated alias off: the mod auto-loads from .claude/skills, /calm exists, the sailboat replaces and moves in the working row, tool rows draw at zero height, and /calm restores and re-hides them while persisting the shared preference"
+pass "Claude Code $CLAUDE_VERSION with the flag on: the mod auto-loads from .claude/skills, /calm exists, the sailboat replaces and moves in the working row, tool rows and the record-backed operational doorbell draw at zero height, /calm restores and re-hides them while persisting the shared preference"
 
 # --- 3. Resume: the restored transcript keeps the hidden rows hidden ---------------
 launch "$DEBUG_LOG_RESUME" "$GATE_ON" --continue
@@ -422,7 +472,7 @@ wait_screen 'gamma' 'the resumed transcript' 400
 sleep 1
 resumed=$(screen)
 case "$resumed" in
-  *'Bash('*|*'shell command'*|*'notes.txt)'*)
+  *'Bash('*|*'shell command'*|*"$DOORBELL_TEXT"*)
     printf '%s\n' "$resumed" >&2
     fail "the resumed transcript drew a row Calm hides"
     ;;

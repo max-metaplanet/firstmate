@@ -34,10 +34,10 @@
 # Firstmate's contract: a message that starts with the current prefix, a
 # legacy bare-marker daemon escalation, or a doorbell whose record this home
 # holds (a verbatim pasted copy of a live doorbell included) is internal (stay
-# afk); any other message means the captain is back (exit afk, flush catch-up,
-# resume per-wake responsiveness). The prefix and busy-guard solve the same
-# problem - the daemon and the human share one input channel - so they live
-# together under /afk.
+# afk); any other message means the captain is back
+# (exit afk, flush catch-up, resume per-wake responsiveness). The prefix and busy-guard solve the same problem - the
+# daemon and the human share one input channel - so they live together under
+# /afk.
 #
 # Reliability model (see the /afk skill):
 #   - Nothing is lost in away mode: while state/.afk exists, the watcher reverts
@@ -311,10 +311,10 @@ should_exit_afk() {  # <state> <message-text>
 
 # message_is_injection: 0 if the given message text starts with the sentinel
 # marker, or is a record-backed doorbell whose record sits in <state>'s own
-# operational inbox (a daemon escalation), 1 otherwise (a real user message).
-# Firstmate's afk-exit contract uses this: a marker or backed doorbell stays
-# afk; other messages return the captain. Bias ambiguous cases toward exit
-# (a false exit is self-correcting).
+# operational inbox (a daemon escalation), 1 otherwise (a real user message). Firstmate's
+# afk-exit contract uses this: a marker or backed doorbell stays afk; other
+# messages return the captain. Bias ambiguous cases toward exit (a false exit
+# is self-correcting).
 message_is_injection() {  # <message-text> [state]
   # The record resolver writes its validated kind through this output variable.
   # shellcheck disable=SC2034
@@ -1410,7 +1410,7 @@ window_for_task() {  # <task-key> [state]
 #     line, or a previous injection's unsent text), defer entirely - injecting
 #     would merge with the human's text.
 inject_msg() {  # <message> [state]
-  local msg=$1 state target backend retries sleep_s verdict composer encoded bytes errf err=''
+  local msg=$1 state target backend retries sleep_s verdict composer encoded bytes errf err='' body
   state="${2:-$(_state_root)}"
   # (1) Presence-gate: inject ONLY when afk is active. When afk is off, the
   # daemon self-handles and stays quiet; firstmate drives the normal always-on
@@ -1425,6 +1425,7 @@ inject_msg() {  # <message> [state]
   msg=$(_collapse_newlines "$msg")
   fm_operational_input_encode away-supervisor "$msg" encoded \
     || { INJECT_LAST_FAILURE="the digest could not be encoded"; log "inject failed: $INJECT_LAST_FAILURE"; return 1; }
+  body=$msg
   msg=$encoded
   target="${FM_SUPERVISOR_TARGET:-$FM_SUPERVISOR_TARGET_DEFAULT}"
   # BACKEND-AWARE (previously a raw `tmux display-message` pane-exists probe):
@@ -1462,7 +1463,8 @@ inject_msg() {  # <message> [state]
   #      captain. The record is written only once every guard has passed.
   if fm_operational_harness_needs_record "$(fm_daemon_primary_harness)"; then
     if ! fm_operational_record_write "$state" away-supervisor "$body" msg; then
-      log "inject failed: could not publish the away-supervisor record under $state"
+      INJECT_LAST_FAILURE="could not publish the away-supervisor record under $state"
+      log "inject failed: $INJECT_LAST_FAILURE"
       return 1
     fi
   fi

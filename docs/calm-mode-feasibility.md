@@ -806,7 +806,7 @@ A typed operational envelope first shows `Removed 1 invisible character · revie
 No setting or environment variable turns the removal off.
 For the current delivery and presentation contracts, see [`fm-operational-input.sh`](../bin/fm-operational-input.sh) and [`calm.md`](calm.md#claude-code).
 
-2.1.280 also logs the module load as `hooks module firstmate-calm@<source> loaded` (`@skills-dir` for the project auto-load path).
+2.1.280 also logs the module load as `hooks module firstmate-calm@<source> loaded` (`@skills-dir` for the project auto-load path), so the live guard matches either form.
 
 Observed on 2.1.280 with the flag on, beyond the live guard:
 
@@ -823,7 +823,7 @@ ok - Claude Code 2.1.280 (Claude Code) validates the Calm mod strictly at its fo
 ok - Claude Code 2.1.280 (Claude Code) runs the Calm mod's plugin test suites clean: persisted toggle, hidden rows, working notes, and the clock-driven working ship
 ```
 
-The live guard's 2.1.282 run is recorded in the next section; its current form is recorded in the [2026-10-06 record](#2026-10-06-claude-code-21291-activation-gate-rename).
+The live guard in its current form is recorded on 2.1.282 in the next section.
 
 ## 2026-09-25 Claude Code 2.1.282 reproduction on the installed build
 
@@ -842,62 +842,3 @@ ok - Claude Code 2.1.282 (Claude Code) with the flag unset: no hooks module, no 
 ok - Claude Code 2.1.282 (Claude Code) with the flag on: the mod auto-loads from .claude/skills, /calm exists, the sailboat replaces and moves in the working row, tool rows and the record-backed operational doorbell draw at zero height, /calm restores and re-hides them while persisting the shared preference
 ok - Claude Code 2.1.282 (Claude Code) resumes the transcript with Calm's hidden rows still hidden and the preference intact
 ```
-
-## 2026-10-06 Claude Code 2.1.291 activation gate rename
-
-The [2026-09-15 record](#2026-09-15-claude-code-21272-mods-feasibility-and-the-shipped-mod) above stands as the state of Claude Code 2.1.272: that release withheld hooks modules behind its own rollout flag or `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS`, and the shipped mod reused the same variable as its opt-in.
-Claude Code 2.1.287 and later ignore that variable and ask for it to be removed, so on 2.1.291 the surface no longer gates anything and the shared name was the mod's only activation check.
-The mod now carries its own firstmate-owned gate, `FM_CALM_ENABLED`, and reads `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS` only as a deprecated alias when `FM_CALM_ENABLED` is unset or empty, so a session that still exports only the old name keeps Calm; [`calm.md`](calm.md#claude-code) owns that contract, the deprecation, and the rule that `FM_CALM_ENABLED` decides whenever the two disagree.
-
-```text
-$ claude --version
-2.1.291 (Claude Code)
-$ tmux -V
-tmux 3.6a
-```
-
-A trusted project's hooks module loads with no activation variable set at all, which is what makes the mod's own gate the whole no-op guarantee.
-From a 160 by 44 tmux TUI in an isolated project and `FM_HOME`, launched with only `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=0` through `--settings`, the debug log shows the load while `/calm` is absent from the command typeahead:
-
-```text
-hooks module firstmate-calm@skills-dir loaded (worker, environment 3, tier user); events: session.start,command.run,config.set,turn.step,ui.render
-```
-
-`--settings` outranks every settings file on the host, so each live phase pins both names itself rather than inheriting whatever a captain's own settings export.
-Strict validation and the mod's own plugin suites, neither of which needs either name exported:
-
-```text
-$ claude plugin validate --strict .claude/mods/firstmate-calm
-  ❯ ./register.ts hooks: session.start, command.run{command=calm}, config.set{key=theme}, turn.step, ui.render{component=Spinner}, ui.render{component=ToolUse}, ui.render{component=ToolResult}, ui.render{component=ToolGroup}, ui.render{component=UserMessage}, ui.render{component=AssistantMessage}
-  ❯ ./register.ts calls: $.clock.every (via load), $.command.register, $.config.list (via readTheme), $.env.get (via load, readActivation), $.fs.read (via readPreference), $.fs.write, $.session.messages (via load), $.ui.blit (via repaintShip), $.ui.invalidate, $.ui.resolve, $.ui.toast
-  ❯ ./register.ts env writes: nothing
-  ❯ ./register.ts env reads: CLAUDE_CODE_ENABLE_FUNCTION_HOOKS, FM_CALM_ENABLED, FM_CONFIG_OVERRIDE, FM_HOME, FM_ROOT_OVERRIDE
-✔ Validation passed
-
-$ claude plugin test .claude/mods/firstmate-calm
- 46 pass
- 0 fail
-Ran 46 tests across 2 files.
-```
-
-The four gate cases the suites cover are the new flag alone, the deprecated alias alone, neither name enabling the mod, and the two disagreeing; the empty-value and non-`1`-value readings sit beside them.
-
-The opt-in live guard, run on this host through the shipped `.claude/skills` auto-load path with an isolated project and `FM_HOME` and the preference already `on` before the gate-off session:
-
-```text
-$ FM_CLAUDE_CALM_LIVE_E2E=1 tests/fm-calm-claude-mod-live-e2e.test.sh
-ok - Claude Code 2.1.291 (Claude Code) with the gate off: the hooks module loads and still does nothing - no /calm, stock working row, stock tool rows, no boat, preference on ignored
-ok - Claude Code 2.1.291 (Claude Code) with FM_CALM_ENABLED=1 and the deprecated alias off: the mod auto-loads from .claude/skills, /calm exists, the sailboat replaces and moves in the working row, tool rows draw at zero height, and /calm restores and re-hides them while persisting the shared preference
-ok - Claude Code 2.1.291 (Claude Code) resumes the transcript with Calm's hidden rows still hidden and the preference intact
-ok - Claude Code 2.1.291 (Claude Code) activates the Calm mod on the deprecated CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1 alone, so a session that has not moved to FM_CALM_ENABLED keeps Calm
-ok - Claude Code 2.1.291 (Claude Code) leaves the Calm mod inert when FM_CALM_ENABLED=0 disagrees with the deprecated CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1, so the firstmate-owned flag decides
-ok - Claude Code 2.1.291 (Claude Code) strips an exact operational envelope's invisible marker out of the composer, so the live zero-height operational-row case is unreachable from a terminal and its coverage stays in the mod's own suites
-
-$ tests/fm-calm-claude-mod-plugin.test.sh
-ok - Claude Code 2.1.291 (Claude Code) validates the Calm mod strictly at its folder and its auto-load path, hooking exactly the working row, tool, user, and assistant drawings and /calm
-ok - Claude Code 2.1.291 (Claude Code) runs the Calm mod's plugin test suites clean: the FM_CALM_ENABLED gate and its deprecated alias, the persisted toggle, hidden rows, working notes, and the clock-driven working ship
-```
-
-A second, unrelated 2.1.291 behavior bounds what the live guard can still prove: the composer strips an invisible character out of submitted input and asks for a second Enter, so an exact operational envelope typed or pasted into a Claude Code TUI arrives as plain ASCII the canonical classifier correctly reads as non-operational.
-Both `tmux send-keys -l` and a bracketed `tmux paste-buffer` lose the marker the same way, so the zero-height operational-row case is no longer reachable from a terminal; it keeps its coverage in the mod's plugin suites and the classifier parity corpus, and the live guard now asserts the sanitizing itself as the tripwire for restoring the case.
-Delivering that marker to a Claude pane is firstmate's own input concern rather than Calm's; the [record-backed doorbell](#2026-09-25-claude-code-21280-verification-and-the-record-backed-operational-doorbell) is how Firstmate's Claude-bound producers now carry it.
