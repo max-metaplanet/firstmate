@@ -303,6 +303,121 @@ test_non_done_lines_are_not_gated() {
   pass "non-done lines are not gated"
 }
 
+# --- direct-PR origin binding (fork-target regression) ----------------------
+#
+# `gh pr create` with no `-R` defaults to a fork's PARENT repository, so a
+# direct-PR worker in a fork clone can open its PR on a repository nobody
+# authorized. These fixtures give the copy a real, fetchable remote under a
+# neutral name - so the named-head reachability test still has something to
+# find - and set `origin` (and, for a fork, `upstream`) to the forge URLs that
+# decide the target.
+fork_layout() {  # <name> <origin-url> [<upstream-url>]
+  local name=$1 origin=$2 upstream=${3:-} repo wt
+  repo="$TMP_ROOT/$name-repo"
+  wt="$TMP_ROOT/$name-wt"
+  fm_git_init_commit "$repo"
+  fm_git_add_origin "$repo" "$repo.serve.git"
+  git -C "$repo" remote rename origin serve
+  git -C "$repo" remote add origin "$origin"
+  [ -z "$upstream" ] || git -C "$repo" remote add upstream "$upstream"
+  git -C "$repo" worktree add --quiet -b "fm/$name" "$wt"
+  git -C "$repo" push --quiet serve "fm/$name"
+  git -C "$repo" fetch --quiet serve
+  printf '%s\n' "$wt"
+}
+
+test_direct_pr_on_the_fork_parent_is_refused() {
+  local wt reason rc
+  wt=$(fork_layout forkparent \
+    'git@github.com:forkowner/proj.git' 'git@github.com:parentowner/proj.git')
+  reason=$(accept_done ship direct-PR "$wt" "$TMP_ROOT/forkparent-repo" \
+    'done: PR https://github.com/parentowner/proj/pull/5')
+  rc=$?
+  [ "$rc" -eq 1 ] || fail "a direct-PR done on the fork's parent repository was accepted (exit $rc)"
+  case "$reason" in
+    *"github.com/parentowner/proj"*"github.com/forkowner/proj"*) ;;
+    *) fail "the refusal did not name the PR's repository and origin: $reason" ;;
+  esac
+  case "$reason" in
+    *"-R forkowner/proj"*) ;;
+    *) fail "the refusal did not name the origin target to open it on: $reason" ;;
+  esac
+  pass "a direct-PR PR on the fork's parent repository is refused"
+}
+
+test_direct_pr_on_origin_fork_is_accepted() {
+  local wt
+  wt=$(fork_layout forkorigin \
+    'git@github.com:forkowner/proj.git' 'git@github.com:parentowner/proj.git')
+  accept_done ship direct-PR "$wt" "$TMP_ROOT/forkorigin-repo" \
+    'done: PR https://github.com/forkowner/proj/pull/5' \
+    || fail "a direct-PR done on the fork clone's own origin was refused"
+  accept_done ship direct-PR "$wt" "$TMP_ROOT/forkorigin-repo" \
+    'done: PR https://github.com/ForkOwner/Proj/pull/5' \
+    || fail "a case difference against origin was treated as another repository"
+  pass "a direct-PR PR on the fork's own origin is accepted"
+}
+
+test_direct_pr_plain_clone_is_bound_to_its_own_repository() {
+  local wt reason rc
+  wt=$(fork_layout plainclone 'https://github.com/soleowner/proj.git')
+  accept_done ship direct-PR "$wt" "$TMP_ROOT/plainclone-repo" \
+    'done: PR https://github.com/soleowner/proj/pull/12' \
+    || fail "a plain clone's direct-PR done on its own origin was refused"
+  reason=$(accept_done ship direct-PR "$wt" "$TMP_ROOT/plainclone-repo" \
+    'done: PR https://github.com/someoneelse/proj/pull/12')
+  rc=$?
+  [ "$rc" -eq 1 ] || fail "a plain clone accepted a PR on another repository (exit $rc)"
+  case "$reason" in
+    *"github.com/someoneelse/proj"*) ;;
+    *) fail "the refusal did not name the foreign repository: $reason" ;;
+  esac
+  pass "a plain clone's direct-PR PR is bound to its own origin"
+}
+
+# The repository check runs before every acceptance path, so a wrong-repository
+# PR cannot be admitted by the recorded pr=/pr_head= short-circuit either - that
+# is the path bin/fm-pr-check.sh would otherwise register it through.
+test_wrong_repository_is_refused_before_the_recorded_pr_path() {
+  local wt state meta head reason rc
+  wt=$(fork_layout recordedforeign \
+    'git@github.com:forkowner/proj.git' 'git@github.com:parentowner/proj.git')
+  state="$TMP_ROOT/recordedforeign-state"
+  mkdir -p "$state"
+  meta="$state/recordedforeign.meta"
+  head=$(git -C "$wt" rev-parse HEAD)
+  printf 'kind=ship\nmode=direct-PR\npr=https://github.com/parentowner/proj/pull/5\npr_head=%s\n' \
+    "$head" > "$meta"
+  reason=$(accept_done ship direct-PR "$wt" "$TMP_ROOT/recordedforeign-repo" \
+    'done: PR https://github.com/parentowner/proj/pull/5' "$state" recordedforeign "$meta")
+  rc=$?
+  [ "$rc" -eq 1 ] || fail "a recorded pr= on another repository was accepted (exit $rc)"
+  case "$reason" in
+    *"not this copy's origin"*) ;;
+    *) fail "the refusal did not report the origin mismatch: $reason" ;;
+  esac
+  pass "a wrong-repository PR is refused before the recorded-PR path"
+}
+
+# origin is checked only where it decides the target. A no-mistakes PR is
+# published by the pipeline's own configured push target rather than by this
+# copy, and an origin URL that names no forge is no proof either way.
+test_origin_binding_is_scoped_to_direct_pr_and_forge_origins() {
+  local wt repo
+  wt=$(fork_layout scopecheck 'git@github.com:forkowner/proj.git')
+  accept_done ship no-mistakes "$wt" "$TMP_ROOT/scopecheck-repo" \
+    'done: PR https://github.com/pipelinetarget/proj/pull/3 checks green' \
+    || fail "the origin binding refused a no-mistakes PR, whose push target is the pipeline's"
+  repo="$TMP_ROOT/localorigin-repo"
+  fm_git_worktree "$repo" "$TMP_ROOT/localorigin-wt" fm/localorigin
+  git -C "$repo" push --quiet origin fm/localorigin
+  git -C "$repo" fetch --quiet origin
+  accept_done ship direct-PR "$TMP_ROOT/localorigin-wt" "$repo" \
+    'done: PR https://github.com/o/r/pull/7' \
+    || fail "a file:// origin, which names no forge, was treated as a mismatch"
+  pass "the origin binding covers direct-PR forge origins only"
+}
+
 test_scout_done_is_not_gated
 test_unpushed_ship_done_is_refused
 test_no_mistakes_prevalidation_done_is_not_gated
@@ -319,5 +434,10 @@ test_local_only_linked_branch_is_accepted
 test_local_only_detached_head_is_refused
 test_standalone_local_only_needs_project_ref
 test_non_done_lines_are_not_gated
+test_direct_pr_on_the_fork_parent_is_refused
+test_direct_pr_on_origin_fork_is_accepted
+test_direct_pr_plain_clone_is_bound_to_its_own_repository
+test_wrong_repository_is_refused_before_the_recorded_pr_path
+test_origin_binding_is_scoped_to_direct_pr_and_forge_origins
 
 echo "all fm-dod-lib tests passed"
