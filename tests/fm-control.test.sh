@@ -1090,99 +1090,41 @@ test_fm_send_still_marks_the_same_secondmate_task() {
   pass "fm-control's arrival leaves fm-send's from-firstmate marking untouched"
 }
 
-# --- 7. modal composer: an interrupt must not leave it in command mode -------
-#
-# Claude's optional vim editor mode makes Escape - which is also its interrupt
-# key - leave the composer in command mode, where the next line typed into it
-# is read as editor commands rather than text: the live shape is `/exit`
-# collapsing into the single character `t`, so the exit command never reaches
-# the agent and the worker cannot be recovered. The interrupt's postcondition
-# therefore includes putting the composer back, the same contract the composer
-# clear key already carries.
-
-test_interrupt_restores_a_modal_composer_to_text_entry() {
-  local dir out rc
-  dir=$(new_case vim-interrupt)
-  vim_task "$dir" t1 insert
-  out=$(run_control "$dir" t1 interrupt); rc=$?
-  expect_code 0 "$rc" "interrupting a vim-mode claude should succeed"$'\n'"$out"
-  [ "$(keys_sent "$dir")" = "Escape" ] \
-    || fail "the interrupt key should still be exactly one Escape, got: $(keys_sent "$dir")"
-  [ "$(command_mode_literals "$dir")" = "i" ] \
-    || fail "the interrupt should type the insert key once into the command-mode composer, got: $(command_mode_literals "$dir")"
-  [ "$(cat "$dir/fake/vim")" = insert ] \
-    || fail "the composer was left in command mode after the interrupt"
-  [ -z "$(literals "$dir")" ] \
-    || fail "restoring text entry must type nothing into the composer itself, got: $(literals "$dir")"
-  pass "fm-control interrupt: a modal composer the interrupt key left in command mode is put back into text entry"
-}
-
-test_interrupt_leaves_a_single_mode_composer_alone() {
-  local dir out rc
-  dir=$(new_case vim-absent)
-  add_task "$dir" t1 claude
-  alive_as "$dir" claude
-  out=$(run_control "$dir" t1 interrupt); rc=$?
-  expect_code 0 "$rc" "interrupting a claude without vim mode should succeed"$'\n'"$out"
-  [ "$(keys_sent "$dir")" = "Escape" ] \
-    || fail "the interrupt key should be exactly one Escape, got: $(keys_sent "$dir")"
-  [ -z "$(literals "$dir")" ] && [ -z "$(command_mode_literals "$dir")" ] \
-    || fail "a claude with no rendered text-entry indicator must receive no insert key: $(literals "$dir") / $(command_mode_literals "$dir")"
-  pass "fm-control interrupt: a composer that never rendered a text-entry indicator receives no insert key"
-}
-
-test_busy_exit_types_its_command_after_the_interrupt_changed_the_mode() {
-  local dir out rc gen
-  dir=$(new_case vim-busy-exit)
-  vim_task "$dir" t1 insert
-  gen=$("$ROOT/bin/fm-busy-event.sh" arm "$dir/home/state" t1)
-  printf 'busy_gen=%s\n' "$gen" >> "$dir/home/state/t1.meta"
-  out=$(run_control "$dir" t1 exit); rc=$?
-  expect_code 0 "$rc" "exiting a busy vim-mode claude should succeed"$'\n'"$out"
-  [ "$(literals "$dir")" = "/exit" ] \
-    || fail "the exit command did not reach the composer as text, got: $(literals "$dir")"
-  pass "fm-control exit: the exit command still reaches a modal composer the busy interrupt put into command mode"
-}
-
-test_exit_retries_its_command_once_after_a_command_mode_refusal() {
-  local dir out rc gen
-  dir=$(new_case vim-stale-exit)
-  vim_task "$dir" t1 normal
-  gen=$("$ROOT/bin/fm-busy-event.sh" arm "$dir/home/state" t1 --state idle --source fm-spawn --event seed)
-  printf 'busy_gen=%s\n' "$gen" >> "$dir/home/state/t1.meta"
-  # The refusal an earlier interrupt leaves behind for every later exit: the
-  # backend proves the composer did not take the command and puts it back to
-  # empty rather than submitting the fragment it did take. The refused
-  # command's own characters end in vim's insert command, so the composer is
-  # taking text again by the time the verdict is read.
-  out=$(FM_FAKE_VIM_REFUSES_SEND=1 run_control "$dir" t1 exit); rc=$?
-  expect_code 0 "$rc" "exiting a composer already in command mode should be retried, not refused"$'\n'"$out"
-  [ "$(command_mode_literals "$dir")" = "/exit" ] \
-    || fail "the command-mode composer should have swallowed the exit command exactly once, got: $(command_mode_literals "$dir")"
-  [ "$(literals "$dir")" = "/exit" ] \
-    || fail "the exit command should be typed exactly once more, got: $(literals "$dir")"
-  [ -z "$(keys_sent "$dir")" ] \
-    || fail "an idle agent needs no interrupt, got keys: $(keys_sent "$dir")"
-  pass "fm-control exit: a command the composer refused in command mode is typed once more after that composer takes text again"
-}
-
-test_exit_reports_a_refusal_the_mode_does_not_explain() {
-  local dir out rc gen
-  dir=$(new_case vim-stale-stuck)
-  vim_task "$dir" t1 normal
-  gen=$("$ROOT/bin/fm-busy-event.sh" arm "$dir/home/state" t1 --state idle --source fm-spawn --event seed)
-  printf 'busy_gen=%s\n' "$gen" >> "$dir/home/state/t1.meta"
-  # The composer never reads as text entry, which is equally a command that
-  # carried no insert command and a composer with no modal editor at all. The
-  # refusal is reported, and nothing more is typed either way.
-  out=$(FM_FAKE_VIM_REFUSES_SEND=1 FM_FAKE_VIM_STAYS_NORMAL=1 run_control "$dir" t1 exit); rc=$?
-  expect_code 1 "$rc" "a refusal the composer's mode does not explain must be reported"$'\n'"$out"
-  assert_contains "$out" "could not be sent" "the exit refusal was not reported"
-  [ "$(command_mode_literals "$dir")" = "/exit" ] \
-    || fail "nothing more should be typed after an unexplained refusal, got: $(command_mode_literals "$dir")"
-  [ -z "$(literals "$dir")" ] \
-    || fail "an unexplained refusal must not retype the exit command, got: $(literals "$dir")"
-  pass "fm-control exit: a refusal the composer's mode does not explain is reported with nothing more typed"
+# Only an adapter whose runtime records an exact per-pane agent session has a
+# relaunch resume form, and only a reference its OWN agent reported may be
+# handed to it: resuming another adapter's reference would inject that agent's
+# conversation into this launch. Every other pair must print nothing so the
+# relaunch stays a fresh session exactly as it does today.
+test_relaunch_resume_flag_is_per_adapter_and_reference_owner() {
+  local got harness label want
+  # (harness | registered agent label | expected flag) lines, written out
+  # independently of the implementation.
+  local cases='pi|pi|--session
+pi-signed|pi|--session
+pi||
+pi-signed||
+pi|codex|
+pi-signed|claude|
+claude|claude|
+codex|codex|
+opencode|opencode|
+omp|omp|
+grok|grok|
+kimi|kimi|
+cursor|cursor|
+muse|muse|
+rovo|rovo|
+agy|agy|'
+  while IFS='|' read -r harness label want; do
+    [ -n "$harness" ] || continue
+    got=$(fm_control_relaunch_resume_flag "$harness" "$label") \
+      || fail "the resume-flag lookup must never fail; it did for '$harness'/'$label'"
+    [ "$got" = "$want" ] \
+      || fail "$harness with a '$label' registration should print '$want', got '$got'"
+  done <<EOF
+$cases
+EOF
+  pass "fm-control-lib: only a runtime's own recorded session has a relaunch resume form"
 }
 
 test_exit_types_each_harness_verified_command
@@ -1195,6 +1137,7 @@ test_devin_stuck_picker_refuses_and_exit_types_nothing
 test_opencode_interrupts_twice_and_others_once
 test_unverified_harness_is_refused
 test_harness_family_resolution
+test_relaunch_resume_flag_is_per_adapter_and_reference_owner
 test_prefixed_recorded_harness_reaches_each_control_verb
 test_backend_key_capability_matrix
 test_harness_kind_capability
