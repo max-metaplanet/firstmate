@@ -101,6 +101,21 @@ run_spawn() {
     fm_test_run_spawn "$home" "$wt" "$fakebin" "$@"
 }
 
+# A batch launches each task for real, and each one really gets its OWN pool
+# copy. Pointing every window at a single copy would make the second launch
+# refuse it as already claimed - correctly, because the pool never hands one
+# copy to two live records. Give each task its own worktree, keyed by the window
+# name the spawn creates, and echo the directory for FM_FAKE_PANE_PATH_BY_WINDOW.
+batch_pane_paths() {  # <task-id>...
+  local panes="$CASE_DIR/panes" batch_id
+  mkdir -p "$panes"
+  for batch_id in "$@"; do
+    git -C "$PROJ_DIR" worktree add --quiet -b "wt-$batch_id" "$CASE_DIR/wt-$batch_id"
+    printf '%s\n' "$CASE_DIR/wt-$batch_id" > "$panes/fm-$batch_id"
+  done
+  printf '%s\n' "$panes"
+}
+
 # Ship spawns carry an explicit delivery contract (AGENTS.md section 7); these
 # tests are about profile resolution, so they pass a fixed valid one.
 run_ship_spawn() {
@@ -212,6 +227,11 @@ test_home_defaults_preserve_absolute_or_resolve_relative_paths() {
 
   linked_home="$CASE_DIR/home-link"
   ln -s "$HOME_DIR" "$linked_home"
+  # This case launches a second task into the same fake copy to compare path
+  # spellings. A pool hands a copy on only after the previous task's record is
+  # gone, so retire it: two live records naming one copy is the collision
+  # bin/fm-spawn.sh refuses by design, and this case is about spellings.
+  rm -f "$HOME_DIR/state/$relative_id.meta"
   : > "$LAUNCH_LOG"
   out=$(
     FM_ROOT_OVERRIDE='' FM_HOME="$linked_home" \
@@ -695,11 +715,12 @@ test_native_pi_ultra_is_explicit_and_model_scoped() {
 }
 
 test_batch_preserves_native_ultra() {
-  local rec id1=ultra-batch-a id2=ultra-batch-b out launch
+  local rec id1=ultra-batch-a id2=ultra-batch-b out launch panes
   rec=$(make_spawn_case ultra-batch pi "$id1" "$id2")
   read_case_record "$rec"
   enable_dispatch_profile "$HOME_DIR"
-  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+  panes=$(batch_pane_paths "$id1" "$id2")
+  out=$(FM_FAKE_PANE_PATH_BY_WINDOW="$panes" run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
     "$id1=$PROJ_DIR" "$id2=$PROJ_DIR" --harness pi --model codex-native/gpt-6-astra --effort ultra)
   expect_code 0 "$?" "native Ultra batch failed: $out"
   assert_meta_profile "$HOME_DIR/state/$id1.meta" pi codex-native/gpt-6-astra ultra
@@ -852,14 +873,15 @@ test_pi_signed_persistent_secondmate_uses_pi_extensions_and_identity() {
 }
 
 test_batch_forwards_shared_profile_flags() {
-  local rec id1 id2 out status
+  local rec id1 id2 out status panes
   id1=profile-batch-a-z9
   id2=profile-batch-b-z10
   rec=$(make_spawn_case profile-batch claude "$id1" "$id2")
   read_case_record "$rec"
   enable_dispatch_profile "$HOME_DIR"
+  panes=$(batch_pane_paths "$id1" "$id2")
 
-  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+  out=$(FM_FAKE_PANE_PATH_BY_WINDOW="$panes" run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
     "$id1=$PROJ_DIR" "$id2=$PROJ_DIR" --harness codex --model gpt-5 --effort high)
   status=$?
   expect_code 0 "$status" "batch spawn with shared profile flags should succeed"

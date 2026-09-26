@@ -108,7 +108,31 @@ fm_test_fake_tmux_spawn() {
 #!/usr/bin/env bash
 set -u
 case "$*" in
-  *"#{pane_current_path}"*) printf '%s\n' "${FM_FAKE_PANE_PATH:-}"; exit 0 ;;
+  *"#{pane_current_path}"*)
+    # Opt-in per-window pane paths: a batch spawn launches several tasks, and
+    # each really gets its OWN pool copy, so a suite that needs that shape
+    # points FM_FAKE_PANE_PATH_BY_WINDOW at a directory holding one file per
+    # window name whose contents is that window's path. Unset, every window
+    # keeps reporting the single FM_FAKE_PANE_PATH exactly as before.
+    if [ -n "${FM_FAKE_PANE_PATH_BY_WINDOW:-}" ]; then
+      fm_target=
+      fm_prev=
+      for fm_a in "$@"; do
+        [ "$fm_prev" != "-t" ] || fm_target=$fm_a
+        fm_prev=$fm_a
+      done
+      case "$fm_target" in
+        @*) fm_win=${fm_target#@} ;;
+        *) fm_win=${fm_target##*:} ;;
+      esac
+      if [ -n "$fm_win" ] && [ -f "$FM_FAKE_PANE_PATH_BY_WINDOW/$fm_win" ]; then
+        cat "$FM_FAKE_PANE_PATH_BY_WINDOW/$fm_win"
+        exit 0
+      fi
+    fi
+    printf '%s\n' "${FM_FAKE_PANE_PATH:-}"
+    exit 0
+    ;;
 esac
 case "${1:-}" in
   display-message) printf 'firstmate\n'; exit 0 ;;
@@ -118,7 +142,22 @@ case "${1:-}" in
     fi
     exit 0
     ;;
-  has-session|new-session|new-window|kill-window|set-window-option) exit 0 ;;
+  new-window)
+    # Only under the opt-in above does this answer with a window id, so the
+    # per-window lookup has a target to key on; otherwise it stays silent and
+    # the spawn resolves an empty target exactly as it does today.
+    if [ -n "${FM_FAKE_PANE_PATH_BY_WINDOW:-}" ]; then
+      fm_name=
+      fm_prev=
+      for fm_a in "$@"; do
+        [ "$fm_prev" != "-n" ] || fm_name=$fm_a
+        fm_prev=$fm_a
+      done
+      [ -z "$fm_name" ] || printf '@%s\n' "$fm_name"
+    fi
+    exit 0
+    ;;
+  has-session|new-session|kill-window|set-window-option) exit 0 ;;
   send-keys)
     if [ -n "${FM_FAKE_LAUNCH_LOG:-}" ]; then
       prev=

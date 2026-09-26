@@ -1191,6 +1191,59 @@ test_spawn_relaunch_without_a_harness_reuses_the_recorded_one() {
   pass "fm-spawn --relaunch: with no explicit harness it reuses the task's recorded one, never the crew default"
 }
 
+# A relaunch acquires no working copy: it reuses the one the record already
+# names. bin/fm-spawn.sh's claimed-copy refusal therefore must not reach it -
+# not even when a SECOND record names that same copy, which is precisely the
+# state a relaunch has to be able to recover from. Refusing there would strand
+# the work in the copy behind the very collision the operator is resolving.
+test_spawn_relaunch_is_not_refused_by_the_claimed_copy_guard() {
+  local dir out
+  dir=$(new_case relaunchclaimed rl40)
+  add_ship_task "$dir" rl40 claude
+  {
+    echo "window=fmses:fm-rl40-collider"
+    echo "endpoint_task_id=rl40-collider"
+    echo "worktree=$dir/wt"
+    echo "project=$dir/proj"
+    echo "harness=claude"
+    echo "kind=scout"
+    echo "mode=no-mistakes"
+    echo "yolo=off"
+  } > "$dir/home/state/rl40-collider.meta"
+  printf 'zsh' > "$dir/fake/command"
+
+  out=$(run_spawn "$dir" rl40 --relaunch)
+  assert_contains "$out" "spawned rl40" \
+    "a relaunch into the task's own recorded copy must still launch"
+  assert_not_contains "$out" "refusing to launch task rl40 into a copy another task record still names" \
+    "the claimed-copy refusal fired on a relaunch, which acquires no copy"
+  assert_grep "worktree=$dir/wt" "$dir/home/state/rl40.meta" \
+    "the relaunch lost the task's recorded copy"
+  pass "fm-spawn --relaunch: the claimed-copy refusal never fires on a copy the task already owns"
+}
+
+# The mirror case: once a record has RELEASED its claim, the copy belongs to the
+# record it collided with, so a relaunch must refuse rather than drop a fresh
+# agent into another task's copy. The record still carries the copy path -
+# endpoint validation needs one - so nothing else would catch this.
+test_spawn_relaunch_refuses_a_record_that_released_its_copy() {
+  local dir out rc
+  dir=$(new_case relaunchreleased rl41)
+  add_ship_task "$dir" rl41 claude
+  printf 'worktree_claim=released\n' >> "$dir/home/state/rl41.meta"
+  printf 'zsh' > "$dir/fake/command"
+
+  rc=0
+  out=$(run_spawn "$dir" rl41 --relaunch) || rc=$?
+  [ "$rc" -ne 0 ] || fail "a relaunch put a worker into a copy this record had released"$'\n'"$out"
+  assert_contains "$out" "released its claim on its recorded working copy" \
+    "the refusal did not say the copy is no longer this record's"
+  assert_contains "$out" "bin/fm-teardown.sh rl41" \
+    "the refusal did not point at the one remaining step for this record"
+  assert_not_contains "$out" "spawned rl41" "the refused relaunch still launched"
+  pass "fm-spawn --relaunch: a record that released its copy is refused, not relaunched into another task's copy"
+}
+
 test_promoted_scout_relaunch_receives_the_current_delivery_contract() {
   local dir home id brief launch out mode rule
   for mode in no-mistakes direct-PR local-only; do
@@ -2451,6 +2504,8 @@ test_secondmate_relaunch_onto_a_crewmate_only_adapter_refuses_before_stop
 test_explicit_secondmate_harness_ignores_configured_profile_axes
 test_ship_relaunch_ignores_the_crew_harness_config
 test_spawn_relaunch_without_a_harness_reuses_the_recorded_one
+test_spawn_relaunch_is_not_refused_by_the_claimed_copy_guard
+test_spawn_relaunch_refuses_a_record_that_released_its_copy
 test_promoted_scout_relaunch_receives_the_current_delivery_contract
 test_prefixed_prior_harness_wiring_is_still_retired
 test_muse_session_binding_is_retired_on_a_harness_switch

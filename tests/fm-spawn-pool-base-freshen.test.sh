@@ -185,6 +185,11 @@ test_stale_pool_base_refreshes_before_branching() {
 
   id='pool-current-base-repeat-r1'
   fm_test_spawn_brief "$HOME_DIR" "$id"
+  # The pool hands one slot to the next task only after the previous task's
+  # cleanup returned it and removed its record. Retire that record here so the
+  # repeat models a real reuse; leaving it would be two live records naming one
+  # copy, which the launch refuses by design.
+  rm -f "$HOME_DIR/state/pool-current-base-r1.meta"
   out=$(run_spawn "$id" --mode no-mistakes --yolo off)
   status=$?
   expect_code 0 "$status" "repeating the base refresh should be idempotent"
@@ -528,6 +533,11 @@ strand_submodule_pin_via_spawn() {  # <seed-id>
     || fail "the first spawn did not move the pooled base across the moved submodule pin"
   [ "$(git -C "$POOL_DIR/ui" rev-parse HEAD)" = "$SUBPIN1" ] \
     || fail "the first spawn did not strand the submodule on the pin the old base recorded"
+  # The seed exists to leave residue in the slot, not to hold it. The pool hands
+  # a slot on only after the previous task's cleanup removed its record, so
+  # retire the seed's: leaving it would make the next spawn refuse the copy as
+  # already claimed, before it ever inspects the submodule pin under test.
+  rm -f "$HOME_DIR/state/$id.meta"
 }
 
 test_stale_submodule_pin_explains_itself() {

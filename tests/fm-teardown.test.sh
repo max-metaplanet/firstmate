@@ -2113,6 +2113,159 @@ test_secondmate_home_teardown_delivers_final_line_or_refuses() {
   pass "a secondmate home's teardown delivers the child's final line or refuses until it can"
 }
 
+# --- released slot claims -----------------------------------------------------
+#
+# Two task records naming one pool slot deadlock each other: the record-
+# exclusivity refusal is symmetric, so neither can be cleaned up while the other
+# exists (observed 2026-09-24). bin/fm-slot-release.sh is the supported way out,
+# and the two cases below are the end-to-end proof that it clears the deadlock
+# rather than moving it - one per cleanup order, because the release has to hold
+# whichever record the operator tears down first.
+
+# Build the collision: a pool-shaped slot, and two records naming it.
+# Echoes the slot path.
+make_pool_slot_collision() {  # <case-dir> -> echoes the slot path
+  local case_dir=$1 pool="$1/pool" slot
+  slot="$pool/1/repo"
+  mkdir -p "$pool"
+  # fm_treehouse_pool_slot's evidence: the pool's own state file beside the
+  # <pool>/<slot>/<repo> layout, plus a git common dir shared with the project.
+  printf '{}\n' > "$pool/treehouse-state.json"
+  git -C "$case_dir/project" worktree add -q -b fm/slot-collision "$slot" main
+  local id
+  for id in task-x1 collider; do
+    fm_write_meta "$case_dir/state/$id.meta" \
+      "window=firstmate:fm-$id" \
+      "endpoint_task_id=$id" \
+      "worktree=$slot" \
+      "project=$case_dir/project" \
+      "kind=ship" \
+      "mode=local-only" \
+      "spawn_gen=teardown-test-$id"
+  done
+  printf '%s\n' "$slot"
+}
+
+release_slot_claim() {  # <case-dir> <task-id>
+  FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$1" FM_STATE_OVERRIDE="$1/state" \
+    PATH="$1/fakebin:$PATH" "$ROOT/bin/fm-slot-release.sh" "$2" 2>&1
+}
+
+run_teardown_for() {  # <case-dir> <task-id> [args...]
+  local case_dir=$1 id=$2; shift 2
+  FM_ROOT_OVERRIDE="$ROOT" \
+  FM_HOME="$case_dir" \
+  FM_STATE_OVERRIDE="$case_dir/state" \
+  FM_DATA_OVERRIDE="$case_dir/data" \
+  FM_CONFIG_OVERRIDE="$case_dir/config" \
+  PATH="$case_dir/fakebin:$PATH" \
+    "$TEARDOWN" "$id" "$@"
+}
+
+# A home reached through a symlink used to put ONE state directory into the scan
+# set under two spellings, and the own-record exclusion compared raw paths - so
+# the resolved spelling of a task's own record read as a second record and the
+# task was refused because of itself. A lone record must never be its own
+# collision, whichever way its home is spelled.
+test_a_lone_record_in_a_symlinked_home_is_not_its_own_collision() {
+  local case_dir pool slot link rc out
+  case_dir=$(make_case slot-symlinked-home)
+  pool="$case_dir/pool"
+  slot="$pool/1/repo"
+  mkdir -p "$pool"
+  printf '{}\n' > "$pool/treehouse-state.json"
+  git -C "$case_dir/project" worktree add -q -b fm/symlinked-home "$slot" main
+  fm_write_meta "$case_dir/state/task-x1.meta" \
+    "window=firstmate:fm-task-x1" \
+    "endpoint_task_id=task-x1" \
+    "worktree=$slot" \
+    "project=$case_dir/project" \
+    "kind=ship" \
+    "mode=local-only" \
+    "spawn_gen=teardown-test-task-x1"
+  link="$TMP_ROOT/slot-symlinked-home-link"
+  ln -sfn "$case_dir" "$link"
+
+  set +e
+  out=$(FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$link" FM_STATE_OVERRIDE="$link/state" \
+    FM_DATA_OVERRIDE="$link/data" FM_CONFIG_OVERRIDE="$link/config" \
+    PATH="$case_dir/fakebin:$PATH" "$TEARDOWN" task-x1 2>&1)
+  rc=$?
+  set -e
+  expect_code 0 "$rc" "symlinked-home: a lone record should tear down: $out"
+  assert_not_contains "$out" "is also task task-x1" \
+    "symlinked-home: the record was reported as colliding with itself"
+  assert_absent "$case_dir/state/task-x1.meta" \
+    "symlinked-home: the record survived its teardown"
+  pass "a lone record reached through a symlinked home is not treated as its own collision"
+}
+
+# Order 1: the record that KEEPS the copy is unblocked the moment the other
+# record releases, with that record still on disk. This is what makes the
+# release useful - the operator does not have to tear the stale record down
+# first, and the two cleanups are independent again.
+test_released_claim_unblocks_the_record_that_keeps_the_copy() {
+  local case_dir slot rc out
+  case_dir=$(make_case slot-collision-unblock)
+  slot=$(make_pool_slot_collision "$case_dir")
+
+  set +e
+  out=$(run_teardown_for "$case_dir" task-x1 2>&1); rc=$?
+  set -e
+  [ "$rc" -ne 0 ] || fail "slot-unblock: teardown of task-x1 should refuse while collider names the same copy"
+  assert_contains "$out" "is also task collider's recorded worktree" \
+    "slot-unblock: the refusal did not name the colliding record"
+  set +e
+  out=$(run_teardown_for "$case_dir" collider 2>&1); rc=$?
+  set -e
+  [ "$rc" -ne 0 ] || fail "slot-unblock: teardown of collider should refuse while task-x1 names the same copy"
+  assert_contains "$out" "is also task task-x1's recorded worktree" \
+    "slot-unblock: the mirror refusal did not name the colliding record"
+
+  out=$(release_slot_claim "$case_dir" collider) \
+    || fail "slot-unblock: releasing collider's claim should succeed: $out"
+
+  [ -f "$case_dir/state/collider.meta" ] \
+    || fail "slot-unblock: the released record must still exist for this case to mean anything"
+  set +e
+  out=$(run_teardown_for "$case_dir" task-x1 2>&1); rc=$?
+  set -e
+  expect_code 0 "$rc" "slot-unblock: the record that keeps the copy should clean up: $out"
+  assert_not_contains "$out" "is also task" \
+    "slot-unblock: the cross-record refusal survived a release by the other record"
+  assert_absent "$case_dir/state/task-x1.meta" "slot-unblock: the record survived its teardown"
+  pass "releasing one record's claim unblocks the record that keeps the copy, without tearing the released one down first"
+}
+
+# Order 2: the RELEASED record cleans itself up while the copy is still the
+# other record's. It must remove its own records and touch nothing in the copy -
+# no branch deletion, no reset, no return to the pool.
+test_a_released_record_cleans_up_without_touching_the_copy() {
+  local case_dir slot rc out head
+  case_dir=$(make_case slot-collision-untouched)
+  slot=$(make_pool_slot_collision "$case_dir")
+  head=$(git -C "$slot" rev-parse HEAD)
+
+  out=$(release_slot_claim "$case_dir" collider) \
+    || fail "slot-untouched: releasing collider's claim should succeed: $out"
+
+  set +e
+  out=$(run_teardown_for "$case_dir" collider 2>&1); rc=$?
+  set -e
+  expect_code 0 "$rc" "slot-untouched: the released record should clean up: $out"
+  assert_contains "$out" "released its claim" \
+    "slot-untouched: the teardown did not say why it left the copy alone"
+  assert_absent "$case_dir/state/collider.meta" "slot-untouched: the released record survived its teardown"
+  [ -d "$slot" ] || fail "slot-untouched: the released record's teardown removed the shared copy"
+  [ "$(git -C "$slot" rev-parse HEAD 2>/dev/null)" = "$head" ] \
+    || fail "slot-untouched: the released record's teardown moved the shared copy's HEAD"
+  [ "$(git -C "$slot" rev-parse --abbrev-ref HEAD 2>/dev/null)" = fm/slot-collision ] \
+    || fail "slot-untouched: the released record's teardown dropped the shared copy's branch"
+  assert_grep "worktree=$slot" "$case_dir/state/task-x1.meta" \
+    "slot-untouched: the released record's teardown disturbed the record that keeps the copy"
+  pass "a released record cleans up without touching the copy that stayed with the other record"
+}
+
 test_teardown_missing_busy_sidecar_completes() {
   local case_dir gen rc
   case_dir=$(make_case missing-busy-sidecar)
@@ -3895,6 +4048,9 @@ test_local_only_force_overrides_unpushed
 test_secondmate_pr_registration_publishes_ready_line
 test_secondmate_home_teardown_delivers_final_line_or_refuses
 test_teardown_missing_busy_sidecar_completes
+test_a_lone_record_in_a_symlinked_home_is_not_its_own_collision
+test_released_claim_unblocks_the_record_that_keeps_the_copy
+test_a_released_record_cleans_up_without_touching_the_copy
 test_herdr_teardown_clears_escalation_marker
 test_herdr_flat_teardown_refuses_orphaning_records_then_retry_completes
 test_herdr_flat_teardown_refuses_records_on_unparseable_presence

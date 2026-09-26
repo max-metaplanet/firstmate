@@ -94,9 +94,25 @@ signed_in_claude_root() {
 
 # spawn_ship <id> [fm-spawn args...]: a ship spawn from HOME_DIR whose invoking
 # process carries an ambient signed-in Claude root and an ambient API key.
+# Retire any record still naming this case's single fake copy. A pool hands one
+# copy to the next task only after the previous task's cleanup returned it and
+# removed its record; two live records naming one copy is the collision
+# bin/fm-spawn.sh refuses by design, so a case that launches task after task
+# into one copy has to model the cleanup that really happens between them.
+retire_records_naming_the_case_copy() {
+  local stale
+  for stale in "$HOME_DIR"/state/*.meta; do
+    [ -f "$stale" ] || continue
+    if grep -qxF "worktree=$WT" "$stale" 2>/dev/null; then
+      rm -f "$stale"
+    fi
+  done
+}
+
 spawn_ship() {
   local id=$1
   shift
+  retire_records_naming_the_case_copy
   fm_test_spawn_brief "$HOME_DIR" "$id"
   signed_in_claude_root "$CASE/ambient-claude"
   : > "$CASE/launch.log"
