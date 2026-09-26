@@ -1088,6 +1088,47 @@ test_home_brief_include_is_appended_last() {
   pass "fm-brief.sh: the home brief include lands last on ship and scout, verbatim, and fails closed"
 }
 
+# A direct-PR worker raises the PR itself, and `gh pr create` with no `-R`
+# defaults to a FORK's parent repository. The scaffold must therefore resolve
+# owner/repository and the base branch from the copy's own `origin` and name
+# both on the create, and must say that a PR on any other repository is refused.
+# no-mistakes publishes through the pipeline and local-only opens no PR, so
+# neither carries the instruction.
+test_direct_pr_dod_binds_the_pr_target_to_origin() {
+  local home mode id brief
+  home="$TMP_ROOT/origin-target-home"
+  mkdir -p "$home/data"
+  for mode in direct-PR no-mistakes local-only; do
+    id="brief-origin-$mode"
+    FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj --mode "$mode" >/dev/null 2>&1
+    brief="$home/data/$id/brief.md"
+    assert_present "$brief" "$mode: brief was not scaffolded"
+    if [ "$mode" != direct-PR ]; then
+      assert_no_grep 'gh-axi pr create -R' "$brief" \
+        "$mode: only direct-PR raises its own PR, so it must not carry the origin-target create"
+      continue
+    fi
+    # shellcheck disable=SC2016  # single quotes are deliberate: the backticks must stay literal
+    assert_grep 'git remote get-url origin' "$brief" \
+      "$mode: the PR target must be resolved from origin, not left to gh"
+    # shellcheck disable=SC2016  # single quotes are deliberate: the backticks must stay literal
+    assert_grep 'git symbolic-ref --quiet --short refs/remotes/origin/HEAD' "$brief" \
+      "$mode: the base branch must be resolved from origin"
+    # shellcheck disable=SC2016  # single quotes are deliberate: the backticks must stay literal
+    assert_grep 'gh-axi pr create -R <owner>/<repo> --base <default branch>' "$brief" \
+      "$mode: the create must name the repository and base branch explicitly"
+    assert_grep "defaults to a FORK's parent repository" "$brief" \
+      "$mode: the brief must say why an unnamed repository is unsafe"
+    # shellcheck disable=SC2016  # single quotes are deliberate: the backticks must stay literal
+    assert_grep 'accepted only when the PR is on the repository `origin` names' "$brief" \
+      "$mode: the brief must state that the done gate checks the PR's repository"
+    # shellcheck disable=SC2016  # single quotes are deliberate: the backticks must stay literal
+    assert_grep 'never push to any remote but `origin`' "$brief" \
+      "$mode: rule 1 must keep the push on origin"
+  done
+  pass "fm-brief.sh: the direct-PR DOD binds the PR target and base branch to origin"
+}
+
 test_worker_role_scope
 test_script_parses
 test_no_heredoc_in_command_substitution
@@ -1100,6 +1141,7 @@ test_faster_paths_use_configured_authority_without_stacked_review
 test_no_mistakes_dod_wording
 test_no_mistakes_dod_green_detection
 test_pr_based_dod_requires_non_draft
+test_direct_pr_dod_binds_the_pr_target_to_origin
 test_ask_user_escalation_format
 test_ship_project_memory_wording
 test_herdr_lab_contract_is_explicit_and_complete
