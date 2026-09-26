@@ -1075,6 +1075,58 @@ test_ship_teardown_removes_orca_worktree_when_id_path_matches() {
   pass "fm-teardown.sh backend=orca: ship teardown requires a matching Orca id path"
 }
 
+test_released_orca_record_teardown_leaves_the_shared_worktree() {
+  local proj wt data state config id keeper out rc neutral head
+  id="orcareleasedz8"
+  keeper="orcakeeperz8"
+  proj="$TMP_ROOT/released-project"
+  wt="$TMP_ROOT/released-wt"
+  data="$TMP_ROOT/released-data"
+  state="$TMP_ROOT/released-state"
+  config="$TMP_ROOT/released-config"
+  fm_git_worktree "$proj" "$wt" "fm/$keeper"
+  mkdir -p "$data/$id" "$state" "$config"
+  touch "$state/.last-watcher-beat"
+  fm_write_meta "$state/$id.meta" \
+    "window=fm-$id" "endpoint_task_id=$id" "terminal=term-released" "worktree=$wt" "project=$proj" \
+    "harness=claude" "kind=ship" "mode=local-only" "yolo=off" \
+    "backend=orca" "orca_worktree_id=wt-shared::/orca/wt-shared" "worktree_claim=released"
+  fm_write_meta "$state/$keeper.meta" \
+    "window=fm-$keeper" "endpoint_task_id=$keeper" "terminal=term-keeper" "worktree=$wt" "project=$proj" \
+    "harness=claude" "kind=ship" "mode=local-only" "yolo=off" \
+    "backend=orca" "orca_worktree_id=wt-shared::/orca/wt-shared"
+  printf 'keeper work\n' > "$wt/keeper.txt"
+  git -C "$wt" add keeper.txt
+  git -C "$wt" -c user.name=t -c user.email=t@t commit -qm "keeper work"
+  head=$(git -C "$wt" rev-parse HEAD)
+  orca_case released-shared
+  printf '{"ok":true,"result":{"worktree":{"id":"wt-shared::/orca/wt-shared","path":"%s"}}}\n' "$wt" > "$RESP/1.out"
+  neutral=$(neutral_fm_root "$CASE_DIR/neutral")
+  set +e
+  out=$( PATH="$FB:$PATH" FM_ORCA_LOG="$LOG" FM_ORCA_RESPONSES="$RESP" \
+    FM_ROOT_OVERRIDE="$neutral" FM_STATE_OVERRIDE="$state" FM_DATA_OVERRIDE="$data" FM_CONFIG_OVERRIDE="$config" \
+    "$ROOT/bin/fm-teardown.sh" "$id" 2>&1 )
+  rc=$?
+  set -e
+  expect_code 0 "$rc" "a released Orca record should tear down while another record keeps the copy"$'\n'"$out"
+  assert_contains "$(cat "$LOG")" $'orca\x1f''terminal'$'\x1f''close'$'\x1f''--terminal'$'\x1f''term-released'$'\x1f''--json' \
+    "a released Orca record's teardown did not close its own terminal"
+  assert_not_contains "$(cat "$LOG")" $'orca\x1f''worktree'$'\x1f''rm' \
+    "a released Orca record's teardown removed the shared Orca worktree"
+  assert_not_contains "$(cat "$LOG")" $'orca\x1f''terminal'$'\x1f''close'$'\x1f''--terminal'$'\x1f''term-keeper' \
+    "a released Orca record's teardown closed the keeper's terminal"
+  [ -d "$wt" ] || fail "a released Orca record's teardown deleted the shared copy"
+  [ "$(git -C "$wt" rev-parse --abbrev-ref HEAD 2>/dev/null)" = "fm/$keeper" ] \
+    || fail "a released Orca record's teardown detached or dropped the keeper's branch"
+  [ "$(git -C "$wt" rev-parse HEAD 2>/dev/null)" = "$head" ] \
+    || fail "a released Orca record's teardown moved the shared copy's HEAD"
+  assert_absent "$state/$id.meta" "the released Orca record survived its teardown"
+  assert_present "$state/$keeper.meta" "a released Orca record's teardown removed the keeper's record"
+  assert_contains "$(cat "$state/$keeper.meta")" "worktree=$wt" \
+    "a released Orca record's teardown disturbed the keeper's record"
+  pass "fm-teardown.sh backend=orca: a released record cleans up without touching the shared worktree"
+}
+
 test_ship_teardown_refuses_orca_unresolvable_worktree_id() {
   local proj wt data state config id out rc neutral
   id="orcashipunresolvedz1"
@@ -1393,6 +1445,7 @@ test_teardown_preserves_metadata_when_orca_remove_error_json
 test_scout_teardown_refuses_orca_missing_report_when_path_missing
 test_ship_teardown_refuses_orca_missing_worktree_path
 test_ship_teardown_removes_orca_worktree_when_id_path_matches
+test_released_orca_record_teardown_leaves_the_shared_worktree
 test_ship_teardown_refuses_orca_unresolvable_worktree_id
 test_ship_teardown_refuses_orca_id_path_mismatch
 test_teardown_refuses_orca_missing_worktree_id
