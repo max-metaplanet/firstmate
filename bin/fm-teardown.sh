@@ -86,7 +86,12 @@
 # cleanup step, teardown verifies record exclusivity: no OTHER task record in
 # this home or any locally registered Firstmate home may name the same live path
 # in its worktree= or home=. One live path with two task records is the reuse
-# collision itself, whichever record is stale.
+# collision itself, whichever record is stale. bin/fm-slot-record-lib.sh owns
+# that scan, shared with bin/fm-spawn.sh, which refuses to hand a launch a copy
+# another record already names and so stops the pair forming at all. The refusal
+# here is symmetric, so a pair that already exists deadlocks both records;
+# bin/fm-slot-release.sh is the supported way out, releasing one record's claim
+# only once the copy is proved to hold no unlanded work.
 # That scan alone cannot prove THIS record is the current owner, because the task
 # that took the slot next may leave no record it can reach - its own worker may
 # have exited and its record been cleaned up, or it may live in a home this
@@ -338,6 +343,10 @@ fm_backlog_directory_present "$STATE" "state directory" || {
 }
 # shellcheck source=bin/fm-wake-lib.sh
 . "$SCRIPT_DIR/fm-wake-lib.sh"
+# shellcheck source=bin/fm-slot-record-lib.sh
+. "$SCRIPT_DIR/fm-slot-record-lib.sh"
+# shellcheck source=bin/fm-unlanded-work-lib.sh
+. "$SCRIPT_DIR/fm-unlanded-work-lib.sh"
 # Supervision lease guard: post-landing cleanup is overlap territory between
 # the two Pi supervision actors; refuse while the OTHER actor holds this
 # task's live lease (contract: bin/fm-lease-lib.sh; no-op in homes without
@@ -1244,20 +1253,9 @@ elif [ "$FORCE" != "--force" ] && fm_pf_relay_active "$FM_HOME"; then
   PUBLIC_FOLLOWUP_RELAY_ACTIVE=1
 fi
 
+# This task's project default branch (contract: bin/fm-unlanded-work-lib.sh).
 default_branch() {
-  local ref branch
-  ref=$(git -C "$PROJ" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null || true)
-  if [ -n "$ref" ]; then
-    echo "${ref#origin/}"
-    return 0
-  fi
-  for branch in main master; do
-    if git -C "$PROJ" show-ref --verify --quiet "refs/heads/$branch"; then
-      echo "$branch"
-      return 0
-    fi
-  done
-  return 1
+  fm_unlanded_default_branch "$PROJ"
 }
 
 meta_value() {
@@ -1369,150 +1367,13 @@ remove_pr_poll_artifacts() {
     "$state_dir/$id.merge-authority" "$state_dir/$id.check-trust" || return 1
 }
 
-# Resolve the PR number for a worktree branch via gh-axi. Echoes the number on a
-# single match and returns 0; returns non-zero on no match or any lookup failure,
-# so the caller treats it as "no PR found" (fail-safe).
-pr_number_from_branch() {
-  local branch=$1 out n
-  [ -n "$branch" ] && [ "$branch" != HEAD ] || return 1
-  out=$( cd "$WT" && gh-axi pr list --state all --head "$branch" --limit 1 2>/dev/null ) || return 1
-  n=$(printf '%s\n' "$out" | sed -n 's/^[[:space:]]*\([0-9][0-9]*\),.*/\1/p' | head -1)
-  [ -n "$n" ] || return 1
-  printf '%s' "$n"
-}
-
-pr_number_from_target() {
-  local target=$1 n
-  case "$target" in
-    '' ) return 1 ;;
-    *"/pull/"*)
-      n=${target##*/pull/}
-      n=${n%%[!0-9]*}
-      ;;
-    [0-9]*)
-      n=${target%%[!0-9]*}
-      ;;
-    *) return 1 ;;
-  esac
-  [ -n "$n" ] || return 1
-  printf '%s' "$n"
-}
-
-ensure_commit_object() {
-  local target=$1 commit=$2 n
-  git -C "$WT" cat-file -e "$commit^{commit}" 2>/dev/null && return 0
-  n=$(pr_number_from_target "$target") || return 1
-  git -C "$WT" remote get-url origin >/dev/null 2>&1 || return 1
-  git -C "$WT" fetch --quiet origin "refs/pull/$n/head" >/dev/null 2>&1 || return 1
-  git -C "$WT" cat-file -e "$commit^{commit}" 2>/dev/null
-}
-
-patch_id_for_commit() {
-  local commit=$1
-  git -C "$WT" show --pretty=medium --no-ext-diff "$commit" 2>/dev/null \
-    | git patch-id --stable 2>/dev/null \
-    | awk 'NR == 1 { print $1 }'
-}
-
-unpushed_patches_are_in_pr_head() {
-  local pr_head=$1 current base pr_patch_ids commit patch_id unpushed
-  current=$(git -C "$WT" rev-parse --verify HEAD 2>/dev/null) || return 1
-  base=$(git -C "$WT" merge-base "$current" "$pr_head" 2>/dev/null) || return 1
-  pr_patch_ids=$(
-    git -C "$WT" log --format=%H "$base..$pr_head" -- 2>/dev/null \
-      | while IFS= read -r commit; do
-          patch_id_for_commit "$commit"
-        done \
-      | sed '/^$/d' \
-      | sort -u
-  ) || return 1
-  [ -n "$pr_patch_ids" ] || return 1
-  unpushed=$(git -C "$WT" log --format=%H HEAD --not --remotes -- 2>/dev/null) || return 1
-  [ -n "$unpushed" ] || return 1
-  while IFS= read -r commit; do
-    [ -n "$commit" ] || continue
-    patch_id=$(patch_id_for_commit "$commit") || return 1
-    [ -n "$patch_id" ] || return 1
-    printf '%s\n' "$pr_patch_ids" | grep -qxF "$patch_id" || return 1
-  done <<EOF
-$unpushed
-EOF
-}
-
-# Is the worktree's PR merged for local work contained in that PR? Resolves the
-# PR from the recorded pr= URL first, then from the branch name, and asks GitHub
-# for both the PR state and head. Returns non-zero when the PR is not merged, the
-# current work is not contained in the PR head, no PR is found, or any gh error
-# occurs - the caller then falls back to the content check.
-pr_is_merged() {
-  local branch=$1 target view state remainder head resolved_url current landed=0
-  if [ -n "$PR_URL" ]; then
-    target=$PR_URL
-  else
-    target=$(pr_number_from_branch "$branch") || return 1
-  fi
-  [ -n "$target" ] || return 1
-  view=$(cd "$WT" && gh pr view "$target" --json state,headRefOid,url -q '.state + "\t" + .headRefOid + "\t" + .url' 2>/dev/null) || return 1
-  state=${view%%$'\t'*}
-  remainder=${view#*$'\t'}
-  [ "$state" != "$view" ] || return 1
-  head=${remainder%%$'\t'*}
-  resolved_url=${remainder#*$'\t'}
-  [ "$head" != "$remainder" ] || return 1
-  case "$state" in
-    MERGED|merged) ;;
-    *) return 1 ;;
-  esac
-  [ -n "$head" ] || return 1
-  ensure_commit_object "$target" "$head" || return 1
-  current=$(git -C "$WT" rev-parse --verify HEAD 2>/dev/null) || return 1
-  if git -C "$WT" merge-base --is-ancestor "$current" "$head" 2>/dev/null; then
-    landed=1
-  elif unpushed_patches_are_in_pr_head "$head"; then
-    landed=1
-  fi
-  [ "$landed" = 1 ] || return 1
-  if [ -z "$PR_URL" ]; then
-    [ -n "$resolved_url" ] || return 1
-    PR_URL=$resolved_url
-  fi
-  return 0
-}
-
-# Is the branch's content already present in the up-to-date default branch? Fetches
-# first, then 3-way merges the default branch with HEAD: when HEAD introduces nothing
-# the default branch does not already contain (e.g. its change landed via squash) the
-# merged tree equals the default branch's tree. This isolates branch-only changes, so
-# unrelated commits the default branch gained past the merge-base do not count as
-# "added". Returns non-zero when inconclusive (no default ref, or a merge conflict),
-# so the caller refuses rather than guesses.
-content_in_default() {
-  local name ref default_tree merged_tree
-  name=$(default_branch) || return 1
-  if git -C "$WT" remote get-url origin >/dev/null 2>&1; then
-    git -C "$WT" fetch --quiet origin "+refs/heads/$name:refs/remotes/origin/$name" >/dev/null 2>&1 || return 1
-    ref="refs/remotes/origin/$name"
-  elif git -C "$WT" rev-parse --quiet --verify "refs/heads/$name" >/dev/null 2>&1; then
-    ref="refs/heads/$name"
-  else
-    return 1
-  fi
-  default_tree=$(git -C "$WT" rev-parse --quiet --verify "$ref^{tree}" 2>/dev/null) || return 1
-  [ -n "$default_tree" ] || return 1
-  merged_tree=$(git -C "$WT" merge-tree --write-tree "$ref" HEAD 2>/dev/null) || return 1
-  merged_tree=$(printf '%s\n' "$merged_tree" | head -1)
-  [ "$merged_tree" = "$default_tree" ]
-}
-
-# Has the worktree's committed work actually LANDED, though its commits are not
-# reachable from any remote-tracking branch? True when a merged PR proves the
-# current local work is contained in the PR head, OR the content is already in the
-# default branch (fallback, which also covers the no-PR and gh-error paths). False
-# only for genuinely unlanded work.
+# Has this task's committed work actually landed (contract:
+# bin/fm-unlanded-work-lib.sh)? A PR resolved from the branch name is recorded
+# on PR_URL, which the backlog completion link then reads.
 work_is_landed() {
   local branch=$1
-  pr_is_merged "$branch" && return 0
-  content_in_default
+  fm_unlanded_work_is_landed "$WT" "$PROJ" "$branch" "$PR_URL" || return 1
+  PR_URL=$FM_UNLANDED_PR_URL
 }
 
 # The completion links this teardown already holds locally. A scout's
@@ -2224,74 +2085,34 @@ teardown_live_slot_path() {
   canonical_existing_dir "$WT"
 }
 
-collect_local_firstmate_states() {
-  local record_state=$1 root home reg line child known existing i=0
-  local -a homes
-  TREEHOUSE_OWNER_STATES=("$record_state")
-  root=$(fm_firstmate_root_home "$FM_HOME") || {
-    echo "REFUSED: cannot resolve the root Firstmate home; nothing was changed" >&2
-    return 1
-  }
-  homes=("$root")
-  while [ "$i" -lt "${#homes[@]}" ]; do
-    home=${homes[$i]}
-    i=$((i + 1))
-    known=0
-    for existing in "${TREEHOUSE_OWNER_STATES[@]}"; do
-      [ "$existing" != "$home/state" ] || known=1
-    done
-    [ "$known" = 1 ] || TREEHOUSE_OWNER_STATES+=("$home/state")
-    reg="$home/data/secondmates.md"
-    [ ! -e "$reg" ] && [ ! -L "$reg" ] && continue
-    [ -f "$reg" ] && [ ! -L "$reg" ] || {
-      echo "REFUSED: local Firstmate registry is unsafe at $reg; nothing was changed" >&2
-      return 1
-    }
-    while IFS= read -r line || [ -n "$line" ]; do
-      case "$line" in
-        "- "*)
-          secondmate_registry_parse_line "$line" || {
-            echo "REFUSED: malformed local Firstmate registry entry in $reg; nothing was changed" >&2
-            return 1
-          }
-          [ "$SECONDMATE_REGISTRY_REMOTE" -eq 0 ] || continue
-          child=$(canonical_existing_dir "$SECONDMATE_REGISTRY_HOME") || {
-            echo "REFUSED: registered local Firstmate home is unavailable: $SECONDMATE_REGISTRY_HOME; nothing was changed" >&2
-            return 1
-          }
-          known=0
-          for existing in "${homes[@]}"; do
-            [ "$existing" != "$child" ] || known=1
-          done
-          [ "$known" = 1 ] || homes+=("$child")
-          ;;
-      esac
-    done < "$reg"
-  done
+# Has this record explicitly disclaimed its recorded copy? bin/fm-slot-release.sh
+# writes that line to break a collision, and only once the copy is proved to
+# hold no unlanded work. The copy path itself stays on the record because
+# bin/fm-backend.sh's endpoint validation refuses a record without one, so the
+# disclaimer is what the slot steps read instead.
+teardown_record_released_claim() {  # <record-meta>
+  [ -n "$1" ] || return 1
+  [ "$(fm_meta_get "$1" worktree_claim)" = released ]
 }
 
+# No OTHER task record on this machine may name the slot this teardown is about
+# to return (the scan itself is bin/fm-slot-record-lib.sh's, shared with the
+# launch path that refuses to hand out a claimed copy in the first place).
 require_exclusive_worktree_slot_record() {
-  local record_meta=$1 record_id=$2 record_state=$3 worktree=$4
-  local slot state_dir other other_id field other_path other_slot
-  slot=$(canonical_existing_dir "$worktree") || return 0
-  collect_local_firstmate_states "$record_state" || return 1
-  for state_dir in "${TREEHOUSE_OWNER_STATES[@]}"; do
-    for other in "$state_dir"/*.meta; do
-      [ -f "$other" ] && [ ! -L "$other" ] || continue
-      [ "$other" != "$record_meta" ] || continue
-      other_id=$(basename "$other" .meta)
-      for field in worktree home; do
-        other_path=$(fm_meta_get "$other" "$field")
-        [ -n "$other_path" ] || continue
-        other_slot=$(canonical_existing_dir "$other_path") || continue
-        [ "$other_slot" = "$slot" ] || continue
-        echo "REFUSED: task $record_id's recorded worktree $slot is also task $other_id's recorded $field." >&2
-        echo "Returning that pool slot would kill $other_id's processes and reset its copy, so nothing was changed - not even with --force." >&2
-        echo "Reconcile whichever record is wrong (bin/fm-crew-state.sh $record_id; bin/fm-crew-state.sh $other_id), then re-run teardown." >&2
-        return 1
-      done
-    done
-  done
+  local record_meta=$1 record_id=$2 record_state=$3 worktree=$4 rc=0
+  ! teardown_record_released_claim "$record_meta" || return 0
+  fm_slot_record_other_claim "$record_meta" "$record_state" "$worktree" || rc=$?
+  case "$rc" in
+    1) return 0 ;;
+    2)
+      echo "REFUSED: $FM_SLOT_RECORD_ERROR; nothing was changed" >&2
+      return 1
+      ;;
+  esac
+  echo "REFUSED: task $record_id's recorded worktree $FM_SLOT_RECORD_SLOT is also task $FM_SLOT_RECORD_OTHER_ID's recorded $FM_SLOT_RECORD_OTHER_FIELD$(fm_slot_record_other_home_hint "$record_state")." >&2
+  echo "Returning that pool slot would kill $FM_SLOT_RECORD_OTHER_ID's processes and reset its copy, so nothing was changed - not even with --force." >&2
+  echo "Reconcile whichever record is wrong (bin/fm-crew-state.sh $record_id; bin/fm-crew-state.sh $FM_SLOT_RECORD_OTHER_ID). If both records really do name the same copy, bin/fm-slot-release.sh releases the stale one's claim once that copy is proved to hold no unlanded work, then re-run teardown." >&2
+  return 1
 }
 
 require_exclusive_task_worktree_slot() {
@@ -2348,6 +2169,13 @@ TEARDOWN_SLOT_REASSIGNED_TO=
 TEARDOWN_SLOT_REASSIGNED_HOME=
 require_owned_task_worktree_slot() {
   local slot rc=0
+  # Checked ahead of the pool-slot read so a disclaimed copy of any kind - a
+  # pool slot, an Orca worktree, a plain checkout - is skipped the same way.
+  if teardown_record_released_claim "$META"; then
+    TEARDOWN_SLOT_REASSIGNED=1
+    echo "warning: task $ID released its claim on $WT (bin/fm-slot-release.sh), so that copy belongs to the record it collided with; it is left untouched and only $ID's own cleanup runs." >&2
+    return 0
+  fi
   slot=$(teardown_live_slot_path) || return 0
   require_owned_worktree_slot_record "$ID" "$slot" || rc=$?
   case "$rc" in
@@ -3717,6 +3545,10 @@ if [ "$TEARDOWN_LEGACY_ACCEPTED" = 1 ]; then
   echo "teardown $ID complete (window ${T:-none}, worktree $WT, legacy record accepted without spawn_gen: endpoint $TEARDOWN_LEGACY_ENDPOINT, incarnation $TEARDOWN_META_SPAWN_GEN)"
 elif teardown_owns_worktree; then
   echo "teardown $ID complete (window ${T:-none}, worktree $WT)"
+elif [ -z "$TEARDOWN_SLOT_REASSIGNED_TO" ]; then
+  # No claimant recorded means the record disclaimed the copy itself rather
+  # than losing it to a later task.
+  echo "teardown $ID complete (window ${T:-none}; working copy $WT left untouched, because this record had released its claim on it)"
 else
   echo "teardown $ID complete (window ${T:-none}; pool slot $WT left to task $TEARDOWN_SLOT_REASSIGNED_TO${TEARDOWN_SLOT_REASSIGNED_HOME:+ (home $TEARDOWN_SLOT_REASSIGNED_HOME)}, which it was reassigned to)"
 fi

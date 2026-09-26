@@ -563,6 +563,13 @@ fi
 . "$SCRIPT_DIR/fm-ff-lib.sh"
 # shellcheck source=bin/fm-wake-lib.sh
 . "$SCRIPT_DIR/fm-wake-lib.sh"
+# The registry parser is already in scope through fm-ff-lib.sh above; naming it
+# here too keeps the claimed-copy scan's dependency explicit, and re-sourcing a
+# definitions-only library is a no-op.
+# shellcheck source=bin/fm-secondmate-registry-lib.sh
+. "$SCRIPT_DIR/fm-secondmate-registry-lib.sh"
+# shellcheck source=bin/fm-slot-record-lib.sh
+. "$SCRIPT_DIR/fm-slot-record-lib.sh"
 # shellcheck source=bin/fm-classify-lib.sh
 . "$SCRIPT_DIR/fm-classify-lib.sh"
 fm_backlog_directory_present "$STATE" "state directory" || {
@@ -1629,6 +1636,17 @@ if [ "$RELAUNCH" -eq 1 ]; then
     echo "error: --relaunch refused: $FM_BACKLOG_TRANSITION_ERROR" >&2
     exit 1
   }
+  # A record that released its claim on its recorded copy has handed that copy
+  # to the record it collided with (bin/fm-slot-release.sh). It still carries
+  # the copy PATH, because endpoint validation needs one, so a relaunch would
+  # otherwise put a fresh agent straight into another task's copy. Refused
+  # before anything is launched or adopted; the record is on its way out, so
+  # cleanup is the next step, not a replacement worker.
+  if [ "$(fm_meta_get "$RELAUNCH_META" worktree_claim)" = released ]; then
+    echo "error: task $ID released its claim on its recorded working copy, which now belongs to the record it collided with; refusing to relaunch a worker into another task's copy" >&2
+    echo "Clean this record up instead (bin/fm-teardown.sh $ID); it leaves that copy untouched." >&2
+    exit 1
+  fi
   SPAWN_META_LOCK=$(fm_meta_lock_path "$RELAUNCH_META") || exit 1
   fm_lock_acquire_wait "$SPAWN_META_LOCK"
   SPAWN_META_LOCK_HELD=1
@@ -3089,6 +3107,36 @@ validate_spawn_worktree() { # <source> <inspect-target>
   fi
 }
 
+# The copy this launch was just handed must be named by no OTHER task record on
+# this machine. Treehouse cannot answer that: its in-use flag reports the
+# processes running under a slot, so a slot whose worker exited reads free while
+# a task record still names it, and the next spawn is handed the same copy. Two
+# workers in one copy then overwrite each other, and because bin/fm-teardown.sh
+# refuses symmetrically on exactly the same evidence, NEITHER record can be
+# cleaned up afterwards. Refusing here costs the launch and nothing else: no
+# work exists in the copy yet. The check itself is the one teardown uses
+# (bin/fm-slot-record-lib.sh), asked at the other end of the slot's life.
+#
+# Only a fresh acquisition reaches this. A relaunch reuses the task's own
+# recorded copy and acquires nothing, so a record that already names its copy is
+# never refused into being unrecoverable.
+validate_spawn_worktree_unclaimed() { # <inspect-target>
+  local inspect_target=$1 rc=0
+  fm_slot_record_other_claim "$STATE/$ID.meta" "$STATE" "$WT" || rc=$?
+  case "$rc" in
+    1) return 0 ;;
+    2)
+      echo "error: cannot tell whether another task already records worktree '$WT' ($FM_SLOT_RECORD_ERROR); refusing to launch task $ID into a copy that cannot be proved unclaimed. Inspect target $inspect_target" >&2
+      exit 1
+      ;;
+  esac
+  local other_home
+  other_home=$(fm_slot_record_other_home_hint "$STATE")
+  echo "error: worktree $FM_SLOT_RECORD_SLOT is already task $FM_SLOT_RECORD_OTHER_ID's recorded $FM_SLOT_RECORD_OTHER_FIELD$other_home; refusing to launch task $ID into a copy another task record still names, because two workers in one copy overwrite each other and neither record could then be cleaned up. Inspect target $inspect_target" >&2
+  echo "Reconcile that record first (bin/fm-crew-state.sh $FM_SLOT_RECORD_OTHER_ID), then clean it up (bin/fm-teardown.sh $FM_SLOT_RECORD_OTHER_ID) or, if it is stale and its copy holds no unlanded work, release its claim (bin/fm-slot-release.sh $FM_SLOT_RECORD_OTHER_ID)." >&2
+  exit 1
+}
+
 # A pooled slot whose only deviation is a submodule gitlink is stale, not dirty:
 # an earlier refresh moved the superproject and left the submodule checkout on
 # the pin the previous base recorded. The refusal still stands and this gate
@@ -4078,6 +4126,7 @@ elif [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ]; then
   fi
 
   validate_spawn_worktree "treehouse get" "$T"
+  validate_spawn_worktree_unclaimed "$T"
 
   # Claim the pool slot for this task. The interactive `treehouse get` sent to
   # the pane above records only a process lease (Treehouse's durable
