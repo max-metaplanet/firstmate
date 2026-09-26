@@ -375,6 +375,32 @@ test_direct_pr_plain_clone_is_bound_to_its_own_repository() {
   pass "a plain clone's direct-PR PR is bound to its own origin"
 }
 
+# An origin reached through an SSH host alias or GitHub's port-443 SSH endpoint
+# names a host that never matches github.com in the PR URL; the owner/repository
+# path is what identifies the repository, so its own PR is accepted while a PR
+# on the fork's parent is still refused.
+test_direct_pr_origin_through_an_ssh_alias_is_accepted() {
+  local wt reason rc origin name i=0
+  for origin in 'git@github-443:forkowner/proj.git' \
+    'ssh://git@ssh.github.com:443/forkowner/proj.git'; do
+    i=$((i + 1))
+    name=sshalias$i
+    wt=$(fork_layout "$name" "$origin" 'git@github.com:parentowner/proj.git')
+    accept_done ship direct-PR "$wt" "$TMP_ROOT/$name-repo" \
+      'done: PR https://github.com/forkowner/proj/pull/5' \
+      || fail "a direct-PR done on its own origin via $origin was refused"
+    reason=$(accept_done ship direct-PR "$wt" "$TMP_ROOT/$name-repo" \
+      'done: PR https://github.com/parentowner/proj/pull/5')
+    rc=$?
+    [ "$rc" -eq 1 ] || fail "a fork-parent PR was accepted for origin $origin (exit $rc)"
+    case "$reason" in
+      *"-R forkowner/proj"*) ;;
+      *) fail "the refusal for origin $origin did not name the origin target: $reason" ;;
+    esac
+  done
+  pass "a direct-PR origin through an SSH alias accepts its own PR only"
+}
+
 # The repository check runs before every acceptance path, so a wrong-repository
 # PR cannot be admitted by the recorded pr=/pr_head= short-circuit either - that
 # is the path bin/fm-pr-check.sh would otherwise register it through.
@@ -438,6 +464,7 @@ test_direct_pr_on_the_fork_parent_is_refused
 test_direct_pr_on_origin_fork_is_accepted
 test_direct_pr_plain_clone_is_bound_to_its_own_repository
 test_wrong_repository_is_refused_before_the_recorded_pr_path
+test_direct_pr_origin_through_an_ssh_alias_is_accepted
 test_origin_binding_is_scoped_to_direct_pr_and_forge_origins
 
 echo "all fm-dod-lib tests passed"

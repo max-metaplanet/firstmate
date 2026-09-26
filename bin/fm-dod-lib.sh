@@ -708,10 +708,14 @@ fm_dod_origin_forge_identity() {  # <repo>
   printf '%s/%s\n' "$host" "$path"
 }
 
-# 0 when two forge identities name the same repository. Forge hosts and the
-# owner/repository they serve are case-insensitive, so a case difference between
-# a remote URL and the URL the forge printed is not a different repository.
-fm_dod_forge_identity_equal() {  # <a> <b>
+# 0 when two forge repository paths name the same repository. Only the path is
+# compared: an origin often reaches its forge through an SSH host alias or a
+# separate SSH endpoint (`github-443`, `ssh.github.com`) whose name never matches
+# the host in the forge's web URL, while a fork and its parent always differ in
+# owner/repository. Paths are case-insensitive on the forge, so a case
+# difference between a remote URL and the URL the forge printed is not a
+# different repository.
+fm_dod_forge_path_equal() {  # <a> <b>
   local a b
   a=$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')
   b=$(printf '%s' "$2" | tr '[:upper:]' '[:lower:]')
@@ -741,7 +745,7 @@ fm_dod_pr_url_on_origin() {  # <mode> <worktree> <project> <url>
   origin=$(fm_dod_origin_forge_identity "$wt") \
     || origin=$(fm_dod_origin_forge_identity "$project") \
     || return 0
-  fm_dod_forge_identity_equal "$origin" "$target" && return 0
+  fm_dod_forge_path_equal "${origin#*/}" "$FM_PR_PATH" && return 0
   printf '%s\n' "the PR $url is on $target, not this copy's origin $origin: open it on origin with \`gh-axi pr create -R ${origin#*/} --base <default branch>\`, because \`gh pr create\` with no -R targets a fork's parent repository"
   return 1
 }
