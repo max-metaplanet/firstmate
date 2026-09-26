@@ -185,7 +185,7 @@ test_canonical_partitions_preserve_full_lint() {
   mkdir -p "$fakebin"
   all=$(CI=true "$LINT" --list-files | LC_ALL=C sort)
   : > "$tmp/union"
-  for part in 1of2 2of2; do
+  for part in 1of4 2of4 3of4 4of4; do
     selected=$(CI=false GITHUB_ACTIONS=false "$LINT" --partition "$part" --list-files) \
       || fail "partition $part must select full canonical roots even on a local branch"
     [ -n "$selected" ] || fail "empty lint partition $part"
@@ -206,18 +206,63 @@ test_canonical_partitions_preserve_full_lint() {
     [ "$(LC_ALL=C sort -u "$mode")" = on ] || fail "partition $part disabled full analysis"
   done
   [ "$(LC_ALL=C sort "$tmp/union")" = "$all" ] || fail "lint partitions lose or duplicate canonical roots"
-  for option in 0of2 3of2 1of3; do
+  for option in 0of2 3of2 2of1 of2 1of xof2 1of2x; do
     rc=0
     "$LINT" --partition "$option" --list-files > "$tmp/refused" 2>&1 || rc=$?
     [ "$rc" = 2 ] || fail "invalid partition $option was not refused"
   done
   rc=0
-  "$LINT" --partition 1of2 --fast > "$tmp/refused" 2>&1 || rc=$?
+  "$LINT" --partition > "$tmp/refused" 2>&1 || rc=$?
+  [ "$rc" = 2 ] || fail "missing partition value was not refused"
+  grep -q '<n>of<total>' "$tmp/refused" || fail "missing partition value refusal omits the <n>of<total> format"
+  rc=0
+  "$LINT" --partition 1of4 --fast > "$tmp/refused" 2>&1 || rc=$?
   [ "$rc" = 2 ] || fail "partition accepted --fast"
   rc=0
-  "$LINT" --partition 1of2 bin/fm-lint.sh > "$tmp/refused" 2>&1 || rc=$?
+  "$LINT" --partition 1of4 bin/fm-lint.sh > "$tmp/refused" 2>&1 || rc=$?
   [ "$rc" = 2 ] || fail "partition accepted an explicit subset"
-  pass "two canonical lint partitions preserve complete source-aware coverage and reject weakened modes"
+  pass "canonical lint partitions preserve complete source-aware coverage and reject weakened modes"
+}
+
+# A CI lint job was killed by the runner's OOM killer (exit 143, no findings
+# printed) whenever the byte-weight packing happened to give one partition two
+# expensive shards. ShellCheck sizes its heap to the memory it can see rather
+# than to a fixed per-root cost, so two workers sharing a runner both expand
+# toward the whole machine; one worker expands into that same runner safely.
+# A partition must therefore run a single ShellCheck at a time, and a caller
+# must not be able to re-enable concurrency underneath that guarantee.
+test_partition_runs_one_shellcheck_at_a_time() {
+  local tmp fakebin log telemetry out
+  tmp=$(fm_test_tmproot fm-lint-partition-workers)
+  fakebin=$(fm_fakebin "$tmp")
+  log="$tmp/shellcheck.log"
+  telemetry="$tmp/telemetry.tsv"
+  fm_lint_stub_shellcheck "$fakebin" "$log"
+
+  out=$(PATH="$fakebin:$PATH" "$LINT" --partition 1of4 --telemetry "$telemetry" 2>&1) \
+    || fail "canonical partition lint failed"$'\n'"$out"
+  assert_grep $'jobs\t1' "$telemetry" \
+    "a CI partition must run one ShellCheck at a time so it cannot race a sibling worker for runner memory"
+
+  # An explicit --jobs override must not reintroduce the concurrency the
+  # partition exists to avoid.
+  out=$(PATH="$fakebin:$PATH" "$LINT" --partition 2of4 --jobs 2 --telemetry "$telemetry" 2>&1) \
+    || fail "canonical partition lint with an explicit --jobs failed"$'\n'"$out"
+  assert_grep $'jobs\t1' "$telemetry" \
+    "--jobs must not raise a partition above one concurrent ShellCheck"
+
+  # FM_LINT_JOBS is the same lever by another name.
+  out=$(PATH="$fakebin:$PATH" FM_LINT_JOBS=2 "$LINT" --partition 3of4 --telemetry "$telemetry" 2>&1) \
+    || fail "canonical partition lint with FM_LINT_JOBS failed"$'\n'"$out"
+  assert_grep $'jobs\t1' "$telemetry" \
+    "FM_LINT_JOBS must not raise a partition above one concurrent ShellCheck"
+
+  # Outside partition mode the two bounded workers are still available.
+  out=$(PATH="$fakebin:$PATH" CI=true "$LINT" --telemetry "$telemetry" 2>&1) \
+    || fail "full canonical lint failed"$'\n'"$out"
+  assert_grep $'jobs\t2' "$telemetry" \
+    "the non-partitioned lint should keep its two bounded workers"
+  pass "a CI partition runs one ShellCheck at a time and no caller flag can raise it"
 }
 
 # fm_lint_stub_git <fakebin-dir>: install a git stub for the changed-file mode
@@ -1407,6 +1452,7 @@ SH
 test_help_reports_the_complete_interface
 test_list_files_reports_the_shell_inventory
 test_canonical_partitions_preserve_full_lint
+test_partition_runs_one_shellcheck_at_a_time
 test_fast_mode_disables_extended_analysis
 test_ci_defaults_to_full_analysis
 test_ci_rejects_explicit_fast_mode
