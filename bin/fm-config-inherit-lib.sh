@@ -3,7 +3,8 @@
 # set of LOCAL (gitignored) config items down into each secondmate home's
 # config/, so a secondmate's OWN crewmates inherit the primary's settings
 # (e.g. primary config/crew-dispatch.json makes a secondmate use the same dispatch
-# profile rules, primary config/crew-harness=codex makes a secondmate's crewmates
+# profile rules and primary config/dispatch-never-send keeps the same values
+# out of its dispatch resolver requests, primary config/crew-harness=codex makes a secondmate's crewmates
 # spawn on codex too, primary config/backlog-backend=manual makes that home
 # hand-edit backlog files too, primary config/backend pins that home's local
 # runtime-backend default for future spawns, primary config/startup-memory-budget
@@ -79,42 +80,7 @@ FM_SHARED_CAPTAIN_MODE="444"
 # The declared inheritable set (space-separated, config-dir-relative item paths).
 # Extend here to inherit more of the primary's local config; override via the
 # environment only in tests. Items must not contain whitespace.
-FM_INHERITABLE_CONFIG="${FM_INHERITABLE_CONFIG:-crew-dispatch.json crew-harness backlog-backend backend herdr-presentation-spaces startup-memory-budget trace-context launch-env-allowlist claude-permission-mode lavish-axi-host claude-seat claude-seats-root claude-seat-threshold claude-seat-destination-min claude-seat-extra-usage claude-seat-auto-exclude}"
-
-# Items that name something that exists only on THIS machine, so they reach local
-# secondmate homes but never cross to a remote route. A Claude seat is a
-# per-machine, Keychain-backed profile the owner logged in here; a remote home
-# handed its name would resolve a profile nobody logged in there, so it keeps
-# its own login exactly as before seats existed (docs/claude-seats.md).
-FM_MACHINE_LOCAL_INHERITABLE_CONFIG="claude-seat claude-seats-root claude-seat-threshold claude-seat-destination-min claude-seat-extra-usage claude-seat-auto-exclude"
-
-# The one per-home decline from those machine-local seat items, read in the
-# DESTINATION home's own config dir and deliberately not inheritable itself, so
-# a home's billing choice is never set for it from another home. Its presence
-# alone is the whole setting and its content is never read. A home that carries
-# it keeps its own six seat files exactly as they are, including absent, while
-# every other local home still moves together on each switch. With the file
-# nowhere on the machine, propagation is exactly what it was before it existed.
-FM_SEAT_LOCAL_OPTOUT_FILE="claude-seat-local"
-
-# True when <item> names something that exists only on THIS machine.
-fm_config_inherit_item_machine_local() {  # <item>
-  local item=${1-}
-  [ -n "$item" ] || return 1
-  case " $FM_MACHINE_LOCAL_INHERITABLE_CONFIG " in *" $item "*) return 0 ;; esac
-  return 1
-}
-
-# fm_config_inherit_seat_optout <dest-config-dir>
-# True when the destination home declines the machine-local seat items: any
-# config/<FM_SEAT_LOCAL_OPTOUT_FILE> path is there, whatever its type, including
-# a directory or a dangling symlink. False is the fleet-wide default.
-fm_config_inherit_seat_optout() {
-  local dest_config=${1-} flag
-  [ -n "$dest_config" ] || return 1
-  flag="$dest_config/$FM_SEAT_LOCAL_OPTOUT_FILE"
-  [ -e "$flag" ] || [ -L "$flag" ]
-}
+FM_INHERITABLE_CONFIG="${FM_INHERITABLE_CONFIG:-crew-dispatch.json dispatch-never-send crew-harness backlog-backend backend herdr-presentation-spaces startup-memory-budget trace-context launch-env-allowlist claude-permission-mode lavish-axi-host}"
 
 # Items whose value is a home-SESSION enablement decision rather than durable
 # local configuration. They are inherited at the launch convergence point, where
