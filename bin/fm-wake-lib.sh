@@ -2,7 +2,7 @@
 # Shared durable wake queue and portable lock helpers.
 # docs/watcher-continuity.md owns the recovery-episode state contract.
 
-FM_WAKE_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+FM_WAKE_LIB_DIR="$(d=${BASH_SOURCE[0]%/*}; [ "$d" != "${BASH_SOURCE[0]}" ] || d=.; cd "${d:-/}" && pwd)"
 FM_WAKE_DEFAULT_ROOT="$(cd "$FM_WAKE_LIB_DIR/.." && pwd)"
 FM_ROOT="${FM_ROOT_OVERRIDE:-${FM_ROOT:-$FM_WAKE_DEFAULT_ROOT}}"
 FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
@@ -10,6 +10,8 @@ STATE="${FM_STATE_OVERRIDE:-${STATE:-$FM_HOME/state}}"
 FM_WAKE_QUEUE="${FM_WAKE_QUEUE:-$STATE/.wake-queue}"
 FM_WAKE_QUEUE_LOCK="${FM_WAKE_QUEUE_LOCK:-$STATE/.wake-queue.lock}"
 FM_LOCK_STALE_AFTER="${FM_LOCK_STALE_AFTER:-2}"
+# shellcheck source=bin/fm-path-lib.sh
+. "$FM_WAKE_LIB_DIR/fm-path-lib.sh"
 # Resolved once at source time: fm_pid_identity and fm_path_mtime run inside 0.2s
 # confirm and 0.5s attach polls, and forking uname per call is a measurable cost on
 # the platform (Git Bash/MSYS) that already pays the highest fork price.
@@ -45,6 +47,15 @@ fm_current_pid() {  # [output-variable]
     printf '%s\n' "$fm_pid"
   fi
 }
+
+# Fork-free stand-in for `$(date +%s)` on the watcher, drain, and lock paths
+# that read the clock every cycle.
+# printf's %(...)T is a bash 4.2 builtin; stock macOS Bash 3.2 still forks date.
+if [ "${BASH_VERSINFO[0]}" -gt 4 ] || { [ "${BASH_VERSINFO[0]}" -eq 4 ] && [ "${BASH_VERSINFO[1]}" -ge 2 ]; }; then
+  fm_epoch_seconds_to() { printf -v "$1" '%(%s)T' -1; }
+else
+  fm_epoch_seconds_to() { printf -v "$1" '%s' "$(date +%s)"; }
+fi
 
 fm_pid_alive() {
   local pid=$1
@@ -105,9 +116,10 @@ fm_path_mtime() {
 }
 
 fm_path_age() {
-  local path=$1 m
+  local path=$1 m now
   m=$(fm_path_mtime "$path") || { echo 999999; return; }
-  echo $(( $(date +%s) - m ))
+  fm_epoch_seconds_to now
+  echo $(( now - m ))
 }
 
 # fm_poll_derived_grace [poll-seconds]
@@ -470,8 +482,8 @@ fm_lock_role() {
 
 fm_lock_abs_path() {
   local path=$1 dir base
-  dir=$(dirname "$path")
-  base=$(basename "$path")
+  fm_dirname_to dir "$path"
+  fm_basename_to base "$path"
   dir=$(cd "$dir" 2>/dev/null && pwd -P) || return 1
   printf '%s/%s\n' "$dir" "$base"
 }
@@ -637,12 +649,11 @@ FM_WAKE_APPEND_RECOVERY_PUBLISHED_TOKEN=
 # docs/watcher-continuity.md owns the recovery-episode contract, including the
 # once-per-generation announcement rule for unacknowledged downtime.
 fm_recovery_marker_read() {
-  local marker=$1 line count
+  local marker=$1 line extra
   FM_RECOVERY_MARKER_TOKEN=
   [ -f "$marker" ] && [ ! -L "$marker" ] || return 1
-  count=$(wc -l < "$marker" 2>/dev/null | tr -d '[:space:]') || return 1
-  [ "$count" = 1 ] || return 1
-  IFS= read -r line < "$marker" || return 1
+  # Exactly one newline byte: the first line is terminated and no second is.
+  { IFS= read -r line && ! IFS= read -r extra; } < "$marker" || return 1
   case "$line" in
     pending:handling:*|pending:downtime:*|announced:handling:*|announced:downtime:*|acked:handling:*|acked:downtime:*) ;;
     *) return 1 ;;
@@ -2319,13 +2330,8 @@ fm_wake_signal_sig() {  # <file> -> reported-state signature
 
 fm_wake_signal_seen_path() {  # <state> <file>
   local task
-  case "$2" in
-    *.status)
-      task=$(basename "$2"); task=${task%.status}
-      printf '%s/.seen-%s' "$1" "$(printf '%s.status' "$task" | tr '.' '_')"
-      ;;
-    *) printf '%s/.seen-%s' "$1" "$(basename "$2" | tr '.' '_')" ;;
-  esac
+  fm_basename_to task "$2"
+  printf '%s/.seen-%s' "$1" "${task//./_}"
 }
 
 # The byte size recorded in <file>'s seen marker, or 0 when no marker exists, it
