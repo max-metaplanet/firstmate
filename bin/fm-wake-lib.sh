@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Shared durable wake queue and portable lock helpers.
+# docs/watcher-continuity.md owns the recovery-episode state contract.
 
 FM_WAKE_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FM_WAKE_DEFAULT_ROOT="$(cd "$FM_WAKE_LIB_DIR/.." && pwd)"
@@ -628,6 +629,9 @@ fm_lock_recheck_stale_owner() {
 
 FM_RECOVERY_MARKER_TOKEN=
 FM_RECOVERY_MARKER_ACTION='none'
+FM_RECOVERY_MARKER_WRITTEN_TOKEN=
+FM_WAKE_APPEND_RECOVERY_PREVIOUS_TOKEN=
+FM_WAKE_APPEND_RECOVERY_PUBLISHED_TOKEN=
 
 # Token grammar (one owner): <pending|announced|acked>:<handling|downtime>:<generation>
 # docs/watcher-continuity.md owns the recovery-episode contract, including the
@@ -660,9 +664,10 @@ _fm_recovery_marker_write_locked() {
   # tests/fm-wake-queue.test.sh).
   # Pid/date failures stay unchecked like the pre-fix sibling assignment so a
   # grammar-valid token is still minted and the durable wake row still appends.
-  local marker=$1 kind=$2 generation=${3:-} status=${4:-pending} tmp pid epoch
+  local marker=$1 kind=$2 generation=${3:-} status=${4:-pending} tmp pid epoch token
+  FM_RECOVERY_MARKER_WRITTEN_TOKEN=
   case "$kind" in handling|downtime) ;; *) return 1 ;; esac
-  case "$status" in pending|announced) ;; *) return 1 ;; esac
+  case "$status" in pending|announced|acked) ;; *) return 1 ;; esac
   tmp=$(mktemp "${marker}.tmp.XXXXXX") || return 1
   if [ -z "$generation" ]; then
     # Prefer fm_current_pid's output-var form so the pid is not itself a $().
@@ -670,22 +675,27 @@ _fm_recovery_marker_write_locked() {
     epoch=$(date +%s)
     generation="${pid}.${epoch}.${tmp##*.}"
   fi
-  if ! printf '%s:%s:%s\n' "$status" "$kind" "$generation" > "$tmp" \
+  token="$status:$kind:$generation"
+  if ! printf '%s\n' "$token" > "$tmp" \
     || ! chmod 0600 "$tmp" \
     || ! _fm_atomic_replace "$tmp" "$marker"; then
     rm -f -- "$tmp"
     return 1
   fi
+  FM_RECOVERY_MARKER_WRITTEN_TOKEN=$token
 }
 
-# Preserve a pending or announced episode's generation across downtime
-# republication so its outstanding acknowledgement remains usable, and keep an
-# already-announced generation announced so it cannot be re-presented until a
-# new down stretch mints a new generation.
-# docs/watcher-continuity.md owns the recovery contract and sequence-safety rationale.
+# Apply the downtime republication states owned by docs/watcher-continuity.md
+# while preserving an outstanding generation-bound acknowledgement.
 _fm_recovery_marker_publish() {
-  local marker=$1 kind=${2:-downtime} bound=${3:-} lock saved_token generation='' status=pending
+  local marker=$1 kind=${2:-downtime} bound=${3:-} source=${4:-watcher}
+  local lock saved_token generation='' status=pending previous_append_token=''
   case "$kind" in handling|downtime) ;; *) return 1 ;; esac
+  case "$source" in watcher|append) ;; *) return 1 ;; esac
+  if [ "$source" = append ]; then
+    FM_WAKE_APPEND_RECOVERY_PREVIOUS_TOKEN=
+    FM_WAKE_APPEND_RECOVERY_PUBLISHED_TOKEN=
+  fi
   lock="${marker}.lock"
   if [ -n "$bound" ]; then
     fm_lock_acquire_wait_max "$lock" "$bound" || return 1
@@ -702,14 +712,23 @@ _fm_recovery_marker_publish() {
     # The token is restored because publishing owns no snapshot of its own.
     saved_token=$FM_RECOVERY_MARKER_TOKEN
     if fm_recovery_marker_read "$marker"; then
+      if [ "$source" = append ]; then
+        previous_append_token=$FM_RECOVERY_MARKER_TOKEN
+      fi
       case "$FM_RECOVERY_MARKER_TOKEN" in
         pending:handling:*|pending:downtime:*)
           generation=${FM_RECOVERY_MARKER_TOKEN##*:}
           status=pending
           ;;
-        announced:handling:*|announced:downtime:*)
+        announced:handling:*)
           generation=${FM_RECOVERY_MARKER_TOKEN##*:}
-          status=announced
+          status=pending
+          ;;
+        announced:downtime:*)
+          if [ "$source" = watcher ]; then
+            generation=${FM_RECOVERY_MARKER_TOKEN##*:}
+            status=announced
+          fi
           ;;
       esac
     fi
@@ -719,6 +738,39 @@ _fm_recovery_marker_publish() {
     fm_lock_release "$lock"
     return 1
   fi
+  if [ -n "$previous_append_token" ] \
+    && [ "$previous_append_token" != "$FM_RECOVERY_MARKER_WRITTEN_TOKEN" ]; then
+    FM_WAKE_APPEND_RECOVERY_PREVIOUS_TOKEN=$previous_append_token
+    FM_WAKE_APPEND_RECOVERY_PUBLISHED_TOKEN=$FM_RECOVERY_MARKER_WRITTEN_TOKEN
+  fi
+  fm_lock_release "$lock"
+}
+
+_fm_recovery_marker_restore_token_locked() {
+  local marker=$1 token=$2 status kind_and_generation kind generation
+  status=${token%%:*}
+  kind_and_generation=${token#*:}
+  kind=${kind_and_generation%%:*}
+  generation=${token##*:}
+  _fm_recovery_marker_write_locked "$marker" "$kind" "$generation" "$status"
+}
+
+_fm_wake_append_recovery_restore_locked() {
+  local marker="$STATE/.watcher-down" lock previous=$FM_WAKE_APPEND_RECOVERY_PREVIOUS_TOKEN
+  [ -n "$previous" ] || return 0
+  lock="${marker}.lock"
+  fm_lock_acquire_wait "$lock" || return 1
+  if ! fm_recovery_marker_read "$marker" \
+    || [ "$FM_RECOVERY_MARKER_TOKEN" != "$FM_WAKE_APPEND_RECOVERY_PUBLISHED_TOKEN" ]; then
+    fm_lock_release "$lock"
+    return 1
+  fi
+  if ! _fm_recovery_marker_restore_token_locked "$marker" "$previous"; then
+    fm_lock_release "$lock"
+    return 1
+  fi
+  FM_WAKE_APPEND_RECOVERY_PREVIOUS_TOKEN=
+  FM_WAKE_APPEND_RECOVERY_PUBLISHED_TOKEN=
   fm_lock_release "$lock"
 }
 
@@ -867,27 +919,33 @@ _fm_recovery_marker_arm_check() {
   fm_lock_release "$FM_WAKE_QUEUE_LOCK"
 }
 
-# A non-successor watcher start after an announced-but-unacked episode is a new
-# down stretch: mint a fresh pending generation so a still-open decision or
-# buried note can be presented once more. Handling successors must not call
-# this, because Option B re-arm is not a new down stretch.
+# Apply the owner-documented announced-episode arm transition atomically with
+# the queue read. Handling successors must not call this transition.
 _fm_recovery_marker_reopen_announced() {
   local marker=$1 lock
   lock="${marker}.lock"
-  fm_lock_acquire_wait "$lock" || return 1
+  fm_lock_acquire_wait "$FM_WAKE_QUEUE_LOCK" || return 1
+  if ! fm_lock_acquire_wait "$lock"; then
+    fm_lock_release "$FM_WAKE_QUEUE_LOCK"
+    return 1
+  fi
   if ! fm_recovery_marker_read "$marker"; then
     fm_lock_release "$lock"
+    fm_lock_release "$FM_WAKE_QUEUE_LOCK"
     return 0
   fi
   case "$FM_RECOVERY_MARKER_TOKEN" in
     announced:*)
-      if ! _fm_recovery_marker_write_locked "$marker" downtime ""; then
+      if [ -s "$FM_WAKE_QUEUE" ] \
+        && ! _fm_recovery_marker_write_locked "$marker" downtime ""; then
         fm_lock_release "$lock"
+        fm_lock_release "$FM_WAKE_QUEUE_LOCK"
         return 1
       fi
       ;;
   esac
   fm_lock_release "$lock"
+  fm_lock_release "$FM_WAKE_QUEUE_LOCK"
 }
 
 fm_recovery_transition() {
@@ -1943,7 +2001,7 @@ fm_wake_append_locked() {
   recovery_marker="$STATE/.watcher-down"
   status=0
 
-  _fm_recovery_marker_publish "$recovery_marker" downtime || status=$?
+  _fm_recovery_marker_publish "$recovery_marker" downtime "" append || status=$?
   if [ "$status" -eq 0 ]; then
     seq=$(cat "$seq_file" 2>/dev/null || echo 0)
     case "$seq" in
@@ -1954,6 +2012,12 @@ fm_wake_append_locked() {
   fi
   if [ "$status" -eq 0 ]; then
     printf '%s\t%s\t%s\t%s\t%s\n' "$epoch" "$seq" "$kind" "$clean_key" "$clean_payload" >> "$FM_WAKE_QUEUE" || status=$?
+  fi
+  if [ "$status" -ne 0 ]; then
+    _fm_wake_append_recovery_restore_locked || true
+  else
+    FM_WAKE_APPEND_RECOVERY_PREVIOUS_TOKEN=
+    FM_WAKE_APPEND_RECOVERY_PUBLISHED_TOKEN=
   fi
   return "$status"
 }
