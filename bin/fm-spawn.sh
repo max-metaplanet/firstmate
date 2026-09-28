@@ -74,9 +74,11 @@
 #   rebind is a recovery, never a teardown. Only a crewmate or scout rebinds: a
 #   secondmate whose endpoint is gone is respawned by its own owner
 #   (`--secondmate`, driven by the session-start liveness sweep).
-#   The replacement still never starts outside the copy
-#   holding the work: a Herdr shell that has drifted out of the recorded
-#   worktree is told once to return, and only a shell that will not go refuses.
+#   Every fresh ship/scout launch and replacement explicitly enters the recorded
+#   worktree immediately before trust setup and brief delivery, and a pre-launch
+#   cwd check refuses any endpoint that still reports another copy; a Herdr shell
+#   that has drifted out of the recorded worktree is told once to return, and
+#   only a shell that will not go refuses.
 #   --harness <name> is the explicit per-spawn harness/profile adapter. The old
 #   positional harness arg still works for back-compat.
 #   --model <name> and --effort <low|medium|high|xhigh|max|ultra> are concrete profile
@@ -3982,6 +3984,38 @@ spawn_send_key() { # <target> <key>
   esac
 }
 
+# Enter the exact copy recorded for this task immediately before trust setup and
+# launch. Herdr restores a pane's shell cwd from its durable tab layout, so a
+# treehouse subshell's foreground cwd is not enough to keep a later pane restart
+# out of the primary checkout. The same explicit cd gives every backend one
+# launch boundary and makes a dropped or ignored cwd change a refusal.
+spawn_enter_recorded_worktree() {
+  [ "$KIND" = secondmate ] && return 0
+  spawn_send_text_line "$WT_TARGET" "cd -- $(shell_quote "$WT")" || {
+    echo "error: task $ID's endpoint could not be moved into its recorded worktree '$WT'; refusing to launch outside the copy holding its work" >&2
+    exit 1
+  }
+}
+
+# Verify the endpoint's cwd after the explicit handoff but before any harness
+# starts. Zellij and cmux implement this read with a shell probe, so keeping it
+# before launch prevents the probe from becoming input to a live worker.
+spawn_assert_agent_worktree() {
+  local expected seen i
+  [ "$KIND" = secondmate ] && return 0
+  [ "$BACKEND" = orca ] && return 0
+  expected=$(real_path_or_raw "$WT")
+  for i in $(seq 1 20); do
+    seen=$(spawn_current_path "$WT_TARGET" || true)
+    if [ -n "$seen" ] && [ "$(real_path_or_raw "$seen")" = "$expected" ]; then
+      return 0
+    fi
+    [ "$i" -ge 20 ] || sleep 0.5
+  done
+  echo "error: task $ID's worker started in '${seen:-unknown}', not its recorded worktree '$WT'; refusing to continue outside the copy holding its work" >&2
+  exit 1
+}
+
 kimi_capture() {
   fm_backend_capture "$BACKEND" "$T" 120 "$W" 2>/dev/null || true
 }
@@ -4276,7 +4310,9 @@ agy_spawn_fail() {  # <detail>
   rovo_endpoint_cleanup
 }
 
-if [ "$RELAUNCH" -eq 1 ]; then
+if [ "$RELAUNCH" -eq 1 ] && [ "$BACKEND" = orca ]; then
+  [ "$KIND" = secondmate ] || validate_spawn_worktree "relaunch" "$T"
+elif [ "$RELAUNCH" -eq 1 ]; then
   # No worktree is acquired: the recorded one is reused as-is. What must be
   # proven instead is that the adopted endpoint's shell is actually sitting in
   # that worktree, so the replacement agent starts where the work is rather
@@ -4396,29 +4432,12 @@ if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" != secondmate ]; then
   freshen_spawn_worktree_base "$WT" || exit 1
 fi
 
-# Resolve the Claude seat, only for a claude worker: no other harness reads a
-# Claude profile, so recording one for it would misreport which workers a
-# switch left alone, and a relaunch onto another harness drops the line.
-# A claude-to-claude relaunch keeps the task's OWN recorded seat, never the
-# home's current setting: its session history lives under that profile, so
-# re-resolving would strand it and silently change which account the work
-# bills to. An absent line there means the task predates seats and took
-# firstmate's own ambient CLAUDE_CONFIG_DIR, which it keeps getting. Every
-# other claude launch - a fresh spawn, or a relaunch from another harness,
-# which has no Claude history to protect - is a new worker for seat purposes
-# and resolves the home's active seat exactly as a fresh spawn does
-# (bin/fm-seat-lib.sh owns that order), so it never lands on the ambient
-# default that rotation avoids. Resolving here, before trust pre-registration,
-# is what lets the trust entry land in the same profile the worker will read.
-if [ "$HARNESS" = claude ]; then
-  if [ "$RELAUNCH" -eq 1 ] && [ "$RELAUNCH_PRIOR_HARNESS" = claude ]; then
-    SEAT_RECORD=$RELAUNCH_SEAT
-    SEAT_CONFIG_DIR=${RELAUNCH_SEAT:-${CLAUDE_CONFIG_DIR:-}}
-  else
-    SEAT_CONFIG_DIR=$(fm_seat_spawn_config_dir)
-    SEAT_RECORD=$SEAT_CONFIG_DIR
-  fi
-fi
+# Re-assert the durable task copy after either treehouse acquisition or endpoint
+# adoption. This also updates Herdr's restored pane shell before any harness is
+# started, so a later host restart inherits the task worktree rather than the
+# tab's original project directory.
+spawn_enter_recorded_worktree
+spawn_assert_agent_worktree
 
 # Pre-register Claude's workspace trust for the directory this launch starts in,
 # at the first point that directory is known and before any per-task state is
@@ -5509,6 +5528,7 @@ if [ "$HARNESS" = agy ]; then
     exit 1
   fi
 fi
+
 if [ "$KIND" = secondmate ] && [ "${FM_SKIP_SECONDMATE_INHERIT:-0}" != 1 ]; then
   if ! fm_config_reread_discard_pending "$PROJ_ABS" "$ID" "$FM_HOME"; then
     if fm_config_reread_quarantine_pending "$PROJ_ABS" "$ID" "$FM_HOME"; then
