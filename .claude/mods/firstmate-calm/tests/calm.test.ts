@@ -22,16 +22,16 @@ import {
 const sessionStart = { cwd: "/work", surface: "terminal" as const, isInteractive: true };
 
 describe("activation", () => {
-  // The world's own default is the active `FM_CALM_ENABLED=1` with no legacy alias set,
-  // so every other suite below exercises the firstmate-owned flag.
-  type Flags = { calmEnabled?: string | undefined; legacyFunctionHooks?: string | undefined };
-
-  async function expectInert($: Engine, on: Parameters<typeof world>[0], flags: Flags) {
-    const { clock, journal } = world(on, {
-      ...flags,
+  async function expectInert($: Engine, on: Parameters<typeof world>[0], functionHooks: string | undefined) {
+    const { clock, files, journal } = world(on, {
+      functionHooks,
       preference: "on\n",
       messages: [{ role: "assistant", text: "Working", toolUses: [{ name: "Bash" }] }],
     });
+    files.set(
+      `${HOME}/state/.branch-outcomes-tail.jsonl`,
+      '{"seq":1,"epoch":0,"task":"fm-x","wake":"","verdict":"captain","summary":"PR ready","silent":false}\n',
+    );
     await $.session.start(sessionStart);
     const drawings = await Promise.all([
       $.ui.render(spinner()),
@@ -42,12 +42,13 @@ describe("activation", () => {
       $.ui.render(assistantMessage("Working")),
     ]);
     expect(drawings.every(isStock)).toBe(true);
-    await clock.advance(220 * 8);
+    await clock.advance(220 * 16);
     expect(journal.commands).toHaveLength(0);
     expect(journal.blits).toHaveLength(0);
     expect(journal.invalidations).toHaveLength(0);
     expect(journal.toasts).toHaveLength(0);
     expect(journal.fsReads).toHaveLength(0);
+    expect(journal.logs).toHaveLength(0);
     expect(journal.sessionMessageReads).toBe(0);
     expect(journal.configLists).toBe(0);
   }
@@ -407,7 +408,7 @@ describe("mid-turn working notes", () => {
       result: { answer: "Done.", toolUses: [{ name: "Bash", input: {} }], stopReason: "tool_use" },
     });
     await runStep($);
-    expect(journal.fsReads).toHaveLength(2);
+    expect(journal.fsReads.filter((path) => path === PREFERENCE)).toHaveLength(2);
     expect(journal.sessionMessageReads).toBe(2);
     expect(isHidden(await $.ui.render(assistantMessage("Done.", "session-two-note")))).toBe(true);
   });
