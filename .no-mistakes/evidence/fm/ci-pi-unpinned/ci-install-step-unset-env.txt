@@ -1,0 +1,4 @@
+## tests-portable-serial install step with PI_PACKAGE_VERSION unset
+bash: line 2: PI_PACKAGE_VERSION: unbound variable
+exit=1
+ls: /tmp/nm-pi-unset/lib/node_modules: No such file or directory

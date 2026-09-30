@@ -1,0 +1,14 @@
+## job=tests-portable-parallel-1: executing workflow step with workflow-level env PI_PACKAGE_VERSION=0.87.1
+
+added 144 packages in 4s
+/tmp/nm-pi-step0/lib -> ./
+└── @earendil-works/pi-coding-agent@0.87.1
+
+exit=
+## job=tests-portable-serial: executing workflow step with workflow-level env PI_PACKAGE_VERSION=0.87.1
+
+added 144 packages in 4s
+/tmp/nm-pi-step1/lib -> ./
+└── @earendil-works/pi-coding-agent@0.87.1
+
+exit=
