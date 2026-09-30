@@ -104,7 +104,7 @@ run_home() {  # <bin> [args...]
   shift
   FM_HOME="$HOME_DIR" FM_ROOT_OVERRIDE="$ROOT" FM_STATE_OVERRIDE="$HOME_DIR/state" \
     FM_CONFIG_OVERRIDE="$HOME_DIR/config" FM_DATA_OVERRIDE="$HOME_DIR/data" \
-    CLAUDE_CONFIG_DIR= PATH="$FAKEBIN:$PATH" "$bin" "$@" 2>&1
+    CLAUDE_CONFIG_DIR='' PATH="$FAKEBIN:$PATH" "$bin" "$@" 2>&1
 }
 
 # Run a command AS the session that holds this home: a claude-named process
@@ -282,7 +282,7 @@ test_only_the_lead_may_replace_the_lead() {
 }
 
 test_launch_command_is_established_only_when_it_round_trips() {
-  local rec out dir script
+  local rec out dir
   rec=$(make_case launch-argv); read_case "$rec"
   stub_pane_exists "$FAKEBIN"
   dir=$CASE_DIR
@@ -629,7 +629,7 @@ lab_restart() {
 }
 
 test_the_lead_is_replaced_in_its_own_terminal_with_supervision_unbroken() {
-  local lab pane old new watcher out
+  local lab pane old new watcher out msgs
   command -v tmux >/dev/null 2>&1 || { echo "ok - # skip: tmux not found, the real-terminal swap needs one"; return 0; }
   start_lab swap
   lab=$LAB pane=$LAB_PANE old=$LAB_OLD
@@ -672,6 +672,9 @@ test_the_lead_is_replaced_in_its_own_terminal_with_supervision_unbroken() {
   grep -q "^target=$pane\$" "$lab/home/state/.lock-runtime" ||
     fail "the new lead is not in the same terminal: $(cat "$lab/home/state/.lock-runtime")"
   [ ! -f "$lab/home/state/.lock-handover" ] || fail "the reservation outlived the completed handover"
+  # The stand-in lead is a bash symlink named claude running a script path, so
+  # it is counted by its full argument vector.
+  # shellcheck disable=SC2009
   [ "$(ps -eo pid=,args= | grep -c "[c]laude $lab/lead.sh")" -eq 1 ] ||
     fail "more than one lead is running: $(ps -eo pid=,args= | grep "[c]laude $lab/lead.sh")"
   kill -0 "$watcher" 2>/dev/null || fail "the supervision cycle was killed with the lead"
@@ -680,8 +683,9 @@ test_the_lead_is_replaced_in_its_own_terminal_with_supervision_unbroken() {
 
   grep -q "session=lead-session-1 profile=$lab/seats/beta crew_notices=1\$" "$lab/lead.log" ||
     fail "the crew was not told before the replacement started: $(cat "$lab/lead.log")"
+  msgs=("$lab/home/state/crew1.inbox/"*.msg)
   bash -c '. "$1"; fm_task_inbox_is_fire_and_forget "$2"' _ "$ROOT/bin/fm-task-inbox-lib.sh" \
-    "$(ls "$lab/home/state/crew1.inbox/"*.msg | head -1)" ||
+    "${msgs[0]}" ||
     fail "the crew notice was sent as a tracked steer that the re-ring ladder would chase"
   case "$out" in
     *"could not be delivered to: crew2"*) ;;
