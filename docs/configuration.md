@@ -451,6 +451,10 @@ Every Claude-to-Claude relaunch reads that record instead of re-resolving the se
 A task whose record carries no `claude_seat=` line, including every task created before seats existed, keeps the ambient default and is never retroactively moved onto a seat.
 A relaunch that switches a task from another harness onto Claude has no Claude history to protect, so it resolves and records the active seat exactly as a fresh spawn does; a relaunch onto any other harness drops the `claude_seat=` line.
 
+Firstmate itself is not a worker and no switch moves it: it keeps the account its own process launched on, so its seat and `config/claude-seat` drift apart by design.
+It changes account only by being replaced, which `bin/fm-seat.sh lead-restart` does through `bin/fm-lead-restart.sh`, and [Moving firstmate itself](claude-seats.md#moving-firstmate-itself) owns that procedure and its refusals.
+The armed watch asks the same threshold question about firstmate's own seat, and reports that crossing to firstmate with the exact command rather than acting on it, because replacing firstmate drops the conversation whose open work has to be written down first.
+
 ## Lavish server address (config/lavish-axi-host)
 
 The optional local, gitignored `config/lavish-axi-host` contains one non-empty address without whitespace for the per-machine Lavish server.

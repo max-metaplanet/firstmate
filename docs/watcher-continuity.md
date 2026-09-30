@@ -52,6 +52,11 @@ No adapter starts a replacement with shell `&`.
 
 The turn-end guard remains the final backstop rather than the normal continuity mechanism and cooperates with the auto-arm in its `--claude` mode.
 
+A lead self-restart onto another Claude seat (`bin/fm-lead-restart.sh`) relies on that ownership model rather than adding to it.
+It ends the lock-owning process by pid and never the watcher, so the running cycle is orphaned rather than stopped and keeps its beacon and its singleton lock across the swap; the successor's own arm then attaches to that verified healthy watcher instead of starting a second one.
+The count therefore goes from one to one, and anything arriving in between is held by the durable wake queue exactly as during any other quiet stretch.
+`tests/fm-lead-restart.test.sh` pins that property against real processes in a real terminal: a cycle started inside the outgoing lead's own process tree must still be alive and reporting after the swap.
+
 ## Recovery episode acknowledgement
 
 A recovery episode is one generation of `state/.watcher-down`, and it is retired only by the generation-bound acknowledgement the drain prints as `WAKE_ACK_REQUIRED`.

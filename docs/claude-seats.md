@@ -157,6 +157,40 @@ A rotation with no qualifying seat refuses rather than pretending to switch, and
 
 `bin/fm-seat.sh threshold off`, `destination-min off`, and `extra-usage off` each clear their own setting.
 
+## Moving firstmate itself
+
+Everything above moves **workers**.
+Firstmate itself is not a worker, and no switch moves it.
+It keeps the account its own process launched on, so after a few switches firstmate is commonly on a different seat from the one new workers get; `bin/fm-seat.sh status` prints both.
+
+No running Claude Code process can change credential store, so firstmate changes account only by being replaced:
+
+```
+bin/fm-seat.sh lead-restart --check              # establish the move, change nothing
+bin/fm-seat.sh lead-restart --persisted          # do it
+```
+
+Another `claude` starts on the new seat in the same terminal, resuming the same session, and the current process ends.
+A seat is a profile directory whose contents symlink the shared `~/.claude` body, which is what lets any seat resume the same session: the seat is the brain, the sessions and settings are the body.
+Without `--to`, the destination is the ordinary rotation, anchored on the seat firstmate is on rather than the seat new workers get.
+
+**Running workers are untouched and are told nothing.** Their steering is a durable inbox, their status is a durable log, and each keeps the seat recorded in its own task record.
+Supervision is a separate process with its own lock and is deliberately not stopped, so the cycle count goes from one to one across the swap.
+
+**`--persisted` is a gate, not a flag.** The replacement drops firstmate's conversation and keeps every durable record, so the open work held only in that conversation has to be written down first - the same persist step a second mate gets before its restart.
+The command refuses without it.
+
+**It refuses rather than guesses.** A destination that is not proven signed in, a firstmate that is not a Claude session, a terminal or launch command that cannot be established from the running process, or a caller that is not this home's firstmate each refuse before anything is touched, leaving the current session running and in charge.
+For the launch command that means an argument vector this machine can only read back flattened - where a multi-word argument is indistinguishable from two arguments - is reported as not established rather than split; state it exactly with `--launch-command` when that happens.
+
+**Automatically**, the armed watch asks the same threshold question about firstmate's own seat.
+It reports that crossing with the exact command instead of acting on it, because the poll runs in a separate process and cannot write firstmate's conversation down for it.
+It reports nothing unless the move is actually available, so a crossing with no signed-in destination, or no established terminal, names that blocker instead.
+
+**If it fails after the previous process has ended** there is no going back to it: the outcome is recorded in `state/.lead-restart.result`, the home's reservation is dropped, and firstmate is woken.
+Recovery is one command in that same terminal, printed in that record and staged as a file to source.
+Nothing else is affected, because the command only ever replaced one process: every task, local copy, PR, and durable record is exactly as it was.
+
 ## Idle seats and lapsed tokens
 
 A Claude access token lives eight hours from its last refresh.
