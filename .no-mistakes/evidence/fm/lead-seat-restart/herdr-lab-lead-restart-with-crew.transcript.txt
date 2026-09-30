@@ -1,0 +1,90 @@
+lab session: fm-lab-leadrestart-68393-4240  lab dir: /tmp/fmlr/lab.Sqrw
+lead pane: w1:p1
+--- before: lock pid=69804
+pid=69804
+profile=/tmp/fmlr/lab.Sqrw/seats/alpha
+backend=herdr
+target=fm-lab-leadrestart-68393-4240:w1:p1
+--- herdr agent get for lead pane:
+{"id":"cli:agent:get","result":{"agent":{"agent":"claude","agent_status":"unknown","cwd":"/private/tmp/fmlr/lab.Sqrw","focused":true,"foreground_cwd":"/private/tmp/fmlr/lab.Sqrw","pane_id":"w1:p1","revision":0,"state_change_seq":0,"tab_id":"w1:t1","terminal_id":"term_65cb936a456c31","workspace_id":"w1"},"type":"agent_info"}}
+--- crew1 pane w2:p1 agent:
+{"id":"cli:agent:get","result":{"agent":{"agent":"claude","agent_status":"unknown","cwd":"/private/tmp/fmlr/lab.Sqrw","focused":false,"foreground_cwd":"/private/tmp/fmlr/lab.Sqrw","pane_id":"w2:p1","revision":0,"state_change_seq":0,"tab_id":"w2:t1","terminal_id":"term_65cb936c6e3cc2","workspace_id":"w2"},"type":"agent_info"}}
+--- check:
+lead seat: alpha
+destination seat: beta (/tmp/fmlr/lab.Sqrw/seats/beta)
+session resumed: lead-session-1
+terminal: herdr fm-lab-leadrestart-68393-4240:w1:p1
+replacement command: CLAUDE_CONFIG_DIR=/tmp/fmlr/lab.Sqrw/seats/beta /tmp/fmlr/lab.Sqrw/hb/claude /tmp/fmlr/lab.Sqrw/lead.sh --resume lead-session-1
+[rc=0]
+--- restart:
+handover armed (worker 78300)
+lead seat: alpha
+destination seat: beta (/tmp/fmlr/lab.Sqrw/seats/beta)
+session resumed: lead-session-1
+terminal: herdr fm-lab-leadrestart-68393-4240:w1:p1
+replacement command: CLAUDE_CONFIG_DIR=/tmp/fmlr/lab.Sqrw/seats/beta /tmp/fmlr/lab.Sqrw/hb/claude /tmp/fmlr/lab.Sqrw/lead.sh --resume lead-session-1
+this session ends in 2s; the replacement starts in the same terminal on seat beta
+[rc=0]
+--- result:
+state=done
+at=1790800442
+detail=the firstmate session moved to Claude seat beta in the same terminal, resuming the same session; the restart notice could not be delivered to: crew2
+command=CLAUDE_CONFIG_DIR=/tmp/fmlr/lab.Sqrw/seats/beta /tmp/fmlr/lab.Sqrw/hb/claude /tmp/fmlr/lab.Sqrw/lead.sh --resume lead-session-1
+launch_file=/tmp/fmlr/lab.Sqrw/home/state/.lead-restart.launch
+--- after: lock pid=83131 (old 69804 alive? no)
+pid=83131
+profile=/tmp/fmlr/lab.Sqrw/seats/beta
+backend=herdr
+target=fm-lab-leadrestart-68393-4240:w1:p1
+--- successor argv:
+/tmp/fmlr/lab.Sqrw/hb/claude /tmp/fmlr/lab.Sqrw/lead.sh --resume lead-session-1
+--- lead.log:
+lead pid=69804 session=lead-session-1 profile=/tmp/fmlr/lab.Sqrw/seats/alpha argv=
+lead pid=83131 session=lead-session-1 profile=/tmp/fmlr/lab.Sqrw/seats/beta argv=
+--- reservation present? no
+--- crew1 pane screen:
+'/tmp/fmlr/lab.Sqrw/hb/claude' -c 'echo STAND-IN CREW1 WORKER; while :; do sleep 1; done'
+
+tmp/fmlr/lab.Sqrw
+> '/tmp/fmlr/lab.Sqrw/hb/claude' -c 'echo STAND-IN CREW1 WORKER; while :; do sleep 1; done'
+STAND-IN CREW1 WORKER
+
+--- crew1 inbox:
+001.msg
+handled
+schema=fm-task-inbox.v1
+at=2026-09-30T20:33:50Z
+delivery=fire-and-forget
+--
+The lead first mate is restarting onto another Claude seat (beta). Your own work, seat, and steering inbox are unaffected: carry on, and do not reply to this notice.--- running stand-in leads:
+83131 /tmp/fmlr/lab.Sqrw/hb/claude /tmp/fmlr/lab.Sqrw/lead.sh --resume lead-session-1
+--- pane screen:
+export PATH='/tmp/fmlr/lab.Sqrw/fakebin':$PATH; CLAUDE_CONFIG_DIR='/tmp/fmlr/lab.Sqrw/seats/alpha' '/tmp/fmlr/lab.Sqrw/
+hb/claude' '/tmp/fmlr/lab.Sqrw/lead.sh'
+
+tmp/fmlr/lab.Sqrw
+> export PATH='/tmp/fmlr/lab.Sqrw/fakebin':$PATH; CLAUDE_CONFIG_DIR='/tmp/fmlr/lab.Sqrw/seats/alpha' '/tmp/fmlr/lab.Sqr
+w/hb/claude' '/tmp/fmlr/lab.Sqrw/lead.sh'
+STAND-IN FIRSTMATE pid=69804 session=lead-session-1 seat=alpha
+lead seat: alpha
+destination seat: beta (/tmp/fmlr/lab.Sqrw/seats/beta)
+session resumed: lead-session-1
+terminal: herdr fm-lab-leadrestart-68393-4240:w1:p1
+replacement command: CLAUDE_CONFIG_DIR=/tmp/fmlr/lab.Sqrw/seats/beta /tmp/fmlr/lab.Sqrw/hb/claude /tmp/fmlr/lab.Sqrw/le
+ad.sh --resume lead-session-1
+[rc=0]
+handover armed (worker 78300)
+lead seat: alpha
+destination seat: beta (/tmp/fmlr/lab.Sqrw/seats/beta)
+session resumed: lead-session-1
+terminal: herdr fm-lab-leadrestart-68393-4240:w1:p1
+replacement command: CLAUDE_CONFIG_DIR=/tmp/fmlr/lab.Sqrw/seats/beta /tmp/fmlr/lab.Sqrw/hb/claude /tmp/fmlr/lab.Sqrw/le
+ad.sh --resume lead-session-1
+this session ends in 2s; the replacement starts in the same terminal on seat beta
+[rc=0]
+zsh: terminated  CLAUDE_CONFIG_DIR='/tmp/fmlr/lab.Sqrw/seats/alpha'
+
+tmp/fmlr/lab.Sqrw took 17s
+> . /tmp/fmlr/lab.Sqrw/home/state/.lead-restart.launch
+STAND-IN FIRSTMATE pid=83131 session=lead-session-1 seat=beta
+teardown rc=0

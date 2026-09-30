@@ -1,0 +1,48 @@
+lab session: fm-lab-leadrestart-49646-2615  lab dir: /tmp/fmlr/lab.A47R
+lead pane: w1:p1
+--- before: lock pid=51969
+pid=51969
+profile=/tmp/fmlr/lab.A47R/seats/alpha
+backend=herdr
+target=fm-lab-leadrestart-49646-2615:w1:p1
+--- herdr agent get for lead pane:
+{"id":"cli:agent:get","result":{"agent":{"agent":"claude","agent_status":"unknown","cwd":"/private/tmp/fmlr/lab.A47R","focused":true,"foreground_cwd":"/private/tmp/fmlr/lab.A47R","pane_id":"w1:p1","revision":0,"state_change_seq":0,"tab_id":"w1:t1","terminal_id":"term_65cb9343858ad1","workspace_id":"w1"},"type":"agent_info"}}
+--- check:
+lead seat: alpha
+destination seat: beta (/tmp/fmlr/lab.A47R/seats/beta)
+session resumed: lead-session-1
+terminal: herdr fm-lab-leadrestart-49646-2615:w1:p1
+replacement command: CLAUDE_CONFIG_DIR=/tmp/fmlr/lab.A47R/seats/beta /tmp/fmlr/lab.A47R/hb/claude /tmp/fmlr/lab.A47R/lead.sh --resume lead-session-1
+[rc=0]
+--- restart:
+handover armed (worker 57107)
+lead seat: alpha
+destination seat: beta (/tmp/fmlr/lab.A47R/seats/beta)
+session resumed: lead-session-1
+terminal: herdr fm-lab-leadrestart-49646-2615:w1:p1
+replacement command: CLAUDE_CONFIG_DIR=/tmp/fmlr/lab.A47R/seats/beta /tmp/fmlr/lab.A47R/hb/claude /tmp/fmlr/lab.A47R/lead.sh --resume lead-session-1
+this session ends in 2s; the replacement starts in the same terminal on seat beta
+[rc=0]
+--- result:
+state=done
+at=1790800394
+detail=the firstmate session moved to Claude seat beta in the same terminal, resuming the same session; the restart notice could not be delivered to: crew1
+command=CLAUDE_CONFIG_DIR=/tmp/fmlr/lab.A47R/seats/beta /tmp/fmlr/lab.A47R/hb/claude /tmp/fmlr/lab.A47R/lead.sh --resume lead-session-1
+launch_file=/tmp/fmlr/lab.A47R/home/state/.lead-restart.launch
+--- after: lock pid=59824 (old 51969 alive? no)
+pid=59824
+profile=/tmp/fmlr/lab.A47R/seats/beta
+backend=herdr
+target=fm-lab-leadrestart-49646-2615:w1:p1
+--- successor argv:
+/tmp/fmlr/lab.A47R/hb/claude /tmp/fmlr/lab.A47R/lead.sh --resume lead-session-1
+--- lead.log:
+lead pid=51969 session=lead-session-1 profile=/tmp/fmlr/lab.A47R/seats/alpha argv=
+lead pid=59824 session=lead-session-1 profile=/tmp/fmlr/lab.A47R/seats/beta argv=
+--- reservation present? no
+--- crew1 inbox:
+ls: /tmp/fmlr/lab.A47R/home/state/crew1.inbox: No such file or directory
+--- running stand-in leads:
+59824 /tmp/fmlr/lab.A47R/hb/claude /tmp/fmlr/lab.A47R/lead.sh --resume lead-session-1
+--- pane screen:
+teardown rc=0
