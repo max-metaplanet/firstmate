@@ -402,13 +402,18 @@ if [ ! -f "$LOCK" ] || [ -L "$LOCK" ] || [ "$written" != "$me" ]; then
   exit 1
 fi
 commit_lock_session
+publish_lock_runtime
 # The successor proved the nonce, so the handover is complete and the
 # reservation has nothing left to protect. Only the nonce proof clears it: the
 # outgoing lead is admitted by session id too, and clearing on that would drop
 # the reservation before the swap it exists to cover.
+#
+# It is dropped LAST, after the runtime record is published, because its
+# disappearance is what the handover stage reads as the swap completing; clearing
+# it earlier would publish that completion while the new owner's own record was
+# still missing.
 if [ "$FM_SESSION_LOCK_HANDOVER_CLAIMED" -eq 1 ]; then
   rm -f "$LOCK_HANDOVER" 2>/dev/null || true
 fi
-publish_lock_runtime
 release_claim_lock
 echo "lock acquired: harness pid $me"

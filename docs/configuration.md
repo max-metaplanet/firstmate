@@ -453,7 +453,8 @@ A relaunch that switches a task from another harness onto Claude has no Claude h
 
 Firstmate itself is not a worker and no switch moves it: it keeps the account its own process launched on, so its seat and `config/claude-seat` drift apart by design.
 It changes account only by being replaced, which `bin/fm-seat.sh lead-restart` does through `bin/fm-lead-restart.sh`, and [Moving firstmate itself](claude-seats.md#moving-firstmate-itself) owns that procedure and its refusals.
-The armed watch asks the same threshold question about firstmate's own seat, and reports that crossing to firstmate with the exact command rather than acting on it, because replacing firstmate drops the conversation whose open work has to be written down first.
+The armed watch asks the same threshold question about firstmate's own seat, and firstmate carries that move out itself on the resulting wake without captain approval.
+The watch hands it over with the exact command rather than performing it, because replacing firstmate drops the conversation whose open work has to be written down first and only firstmate can write it.
 
 ## Lavish server address (config/lavish-axi-host)
 

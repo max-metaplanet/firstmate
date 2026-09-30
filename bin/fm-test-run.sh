@@ -1439,7 +1439,10 @@ families_for_changed_path() {
     bin/fm-session-start.sh|bin/fm-fleet-sync.sh|\
     bin/fm-sessionstart-nudge.sh|bin/fm-startup-network.sh|bin/fm-tangle*|bin/fm-update.sh|\
     bin/fm-gate-refuse*|bin/fm-lock*)
+      # bin/fm-lock.sh also owns the lead-restart handover reservation and the
+      # lock-owner runtime record, so its suite runs beside the bootstrap family.
       printf '%s\n' session-bootstrap
+      printf '%s\n' "__script__:fm-lead-restart.test.sh"
       ;;
     bin/fm-bootstrap.sh)
       printf '%s\n' session-bootstrap
@@ -1457,6 +1460,10 @@ families_for_changed_path() {
     bin/fm-seat.sh|bin/fm-seat-lib.sh)
       printf '%s\n' "__script__:fm-seat.test.sh"
       printf '%s\n' "__script__:fm-control-relaunch.test.sh"
+      printf '%s\n' "__script__:fm-lead-restart.test.sh"
+      ;;
+    bin/fm-lead-restart.sh)
+      printf '%s\n' "__script__:fm-lead-restart.test.sh"
       ;;
     bin/fm-quota-choose.sh)
       printf '%s\n' "__script__:fm-quota-choose.test.sh"

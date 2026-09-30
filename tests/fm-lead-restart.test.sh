@@ -446,7 +446,7 @@ test_the_lead_trigger_fires_once_per_seat_and_hands_over_the_gate() {
   run_home "$SEAT" threshold 15 >/dev/null
   out=$(run_home "$SEAT" auto)
   case "$out" in
-    *"firstmate itself is at 5% left on alpha and can move to beta"*) ;;
+    *"firstmate itself is at 5% left on alpha and moves to beta now"*) ;;
     *) fail "the lead's own crossing was not reported: $out" ;;
   esac
   case "$out" in
@@ -457,6 +457,22 @@ test_the_lead_trigger_fires_once_per_seat_and_hands_over_the_gate() {
     *"lead-restart --to beta --persisted"*) ;;
     *) fail "the report does not name the exact command: $out" ;;
   esac
+  # The wake is an INSTRUCTION firstmate acts on, not an option to put to the
+  # captain: the captain set the threshold, so the threshold firing is the
+  # instruction. It must say so itself, because the line has to be complete with
+  # no skill loaded, and it must name the skill that owns the handling.
+  case "$out" in
+    *"without asking the captain"*) ;;
+    *) fail "the wake does not say firstmate acts on it without captain approval: $out" ;;
+  esac
+  case "$out" in
+    *"claude-seat-lead-restart"*) ;;
+    *) fail "the wake does not name the skill that owns this handling: $out" ;;
+  esac
+  case "$out" in
+    *"FIRST persist the open work"*"THEN run exactly"*) ;;
+    *) fail "the wake does not order the persist step before the command: $out" ;;
+  esac
   [ -z "$(run_home "$SEAT" auto)" ] || fail "the same crossing was reported twice"
   # Back above the trigger, the crossing re-arms rather than staying spent.
   printf '%s\t50\n%s\t90\n' "$SEATS_DIR/alpha" "$SEATS_DIR/beta" > "$SPEC_DIR/remaining_map"
@@ -464,12 +480,12 @@ test_the_lead_trigger_fires_once_per_seat_and_hands_over_the_gate() {
   printf '%s\t5\n%s\t90\n' "$SEATS_DIR/alpha" "$SEATS_DIR/beta" > "$SPEC_DIR/remaining_map"
   out=$(run_home "$SEAT" auto)
   case "$out" in
-    *"can move to beta"*) ;;
+    *"moves to beta now"*) ;;
     *) fail "the crossing did not re-arm after the seat recovered: $out" ;;
   esac
   kill -0 "$LEAD_PID" 2>/dev/null || fail "the automatic pass disturbed the lead"
   stop_case
-  pass "the lead's own crossing is reported once per seat, with the persist gate and the exact command"
+  pass "the lead's own crossing hands over a binding move once per seat, with the persist gate and the exact command"
 }
 
 test_the_lead_trigger_reports_the_blocker_rather_than_an_impossible_move() {
@@ -569,7 +585,10 @@ SH
 
   tmux -L "$sock" send-keys -t "$pane" \
     "CLAUDE_CONFIG_DIR='$lab/seats/alpha' '$FAKE_CLAUDE' '$lab/lead.sh'" Enter
-  wait_for 20 "[ -s '$lab/home/state/.lock' ]" || fail "the stand-in lead never took the home's lock"
+  # The lead's readiness marker, not the lock file: the lock's first line lands
+  # before the runtime record beside it, so gating on the lock alone races the
+  # record this test then reads.
+  wait_for 30 "[ -f '$lab/ready' ]" || fail "the stand-in lead never took the home's lock"
   old=$(cat "$lab/home/state/.lock")
   grep -q "^target=$pane\$" "$lab/home/state/.lock-runtime" ||
     fail "the lead did not record its own pane: $(cat "$lab/home/state/.lock-runtime")"

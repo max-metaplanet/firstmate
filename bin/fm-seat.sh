@@ -812,13 +812,20 @@ cmd_auto() {
 # config/claude-seat moves under it, so the two can be on different seats and
 # cross at different times.
 #
-# It REPORTS rather than acts, and that is the design, not a shortcut. Replacing
-# the lead drops its conversation, so the open work held only there has to be
-# written down first - the same persist gate bin/fm-secondmate-restart.sh puts
-# in front of every second mate's restart. This poll is a separate process from
-# the lead and cannot write that conversation down, so the only correct thing it
-# can do is hand the lead the gate and the exact command, which is how a second
-# mate's restart is sequenced too.
+# This poll hands the move to the LEAD rather than performing it, and that is
+# about which process can do it, not about who decides. Replacing the lead drops
+# its conversation, so the open work held only there has to be written down first
+# - the same persist gate bin/fm-secondmate-restart.sh puts in front of every
+# second mate's restart. This poll is a separate process from the lead and cannot
+# write that conversation down, so the only correct thing it can do is hand the
+# lead the gate and the exact command, which is how a second mate's restart is
+# sequenced too.
+#
+# The line it prints is an INSTRUCTION, not an option to put to the captain. The
+# captain set the threshold, so the threshold firing is the instruction, and the
+# lead carries the move out on that wake like any other actionable check result.
+# The claude-seat-lead-restart skill owns that handling; the line stays
+# self-sufficient so it is still complete with no skill loaded.
 #
 # Nothing is reported unless the move is actually available: the destination is
 # chosen by the ordinary rotation and then put through the whole restart
@@ -850,7 +857,7 @@ auto_lead_trigger() {  # <threshold>
       "$remaining" "$seat" "$target" "$(printf '%s' "$out" | sed -n '/./{s/^error: //;s/[[:space:]]\{1,\}/ /g;p;q;}')"
     return 0
   fi
-  printf 'claude-seat: firstmate itself is at %s%% left on %s and can move to %s. Replacing it drops this conversation and keeps every durable record, so first %s Then run: %s/bin/fm-seat.sh lead-restart --to %s --persisted\n' \
+  printf 'claude-seat: firstmate itself is at %s%% left on %s and moves to %s now, on this wake, without asking the captain (load the claude-seat-lead-restart skill). Replacing this session drops its conversation and keeps every durable record, so FIRST %s THEN run exactly: %s/bin/fm-seat.sh lead-restart --to %s --persisted\n' \
     "$remaining" "$seat" "$target" "$FM_PERSIST_OPEN_RECORDS_CONTRACT" "$FM_ROOT" "$target"
 }
 
