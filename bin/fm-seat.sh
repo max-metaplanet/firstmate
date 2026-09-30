@@ -67,9 +67,10 @@
 #            process can change credential store. So the lead is REPLACED -
 #            another claude starts on the new seat in the same terminal,
 #            resuming the same session, and the current process ends. Running
-#            workers are untouched and are told nothing: their steering,
-#            status, and recorded seat are all durable, and supervision is a
-#            separate process that is deliberately left alone. `--check`
+#            workers get one fire-and-forget notice and are otherwise
+#            untouched: their steering, status, and recorded seat are all
+#            durable, and supervision is a separate process that is
+#            deliberately left alone. `--check`
 #            establishes everything and changes nothing. Without `--to` the
 #            destination is chosen by the same rotation a switch uses, anchored
 #            on the seat the LEAD is on rather than the seat new workers get.
@@ -702,8 +703,11 @@ cmd_threshold_reached() {
 # reads back above the threshold.
 # It also carries `extra=<seats>`, the set of seats last seen drawing paid extra
 # usage, so that warning fires on ENTRY rather than on every poll for as long as
-# the spend lasts, and `lead=<seat>`, the seat whose crossing was last reported
-# for FIRSTMATE ITSELF, so that report fires once per seat and not on every poll.
+# the spend lasts, and `lead=<seat>`, the seat whose move instruction was last
+# handed to FIRSTMATE ITSELF, so that instruction fires once per seat and not on
+# every poll. A crossing that could not move records `lead=blocked:<seat>:<to>`
+# instead, which silences only that same blocker: every poll still re-asks, so
+# the instruction goes out as soon as the move becomes available.
 AUTO_RECORD="$STATE/.claude-seat-auto"
 
 auto_record_get() {
@@ -844,8 +848,9 @@ auto_lead_trigger() {  # <threshold>
   fi
   reported=$(auto_record_get lead) || reported=''
   [ "$reported" != "$seat" ] || return 0
-  auto_record_set lead "$seat"
   if ! target=$(next_seat "$seat" 2>/dev/null); then
+    [ "$reported" != "blocked:$seat:" ] || return 0
+    auto_record_set lead "blocked:$seat:"
     printf 'claude-seat: firstmate itself is at %s%% left on %s and no seat qualifies as a destination, so it stays where it is\n' \
       "$remaining" "$seat"
     return 0
@@ -853,10 +858,13 @@ auto_lead_trigger() {  # <threshold>
   if ! out=$(FM_HOME="$FM_HOME" FM_ROOT_OVERRIDE="$FM_ROOT" FM_STATE_OVERRIDE="$STATE" \
     FM_CONFIG_OVERRIDE="$CONFIG" FM_DATA_OVERRIDE="$DATA" \
     "$SCRIPT_DIR/fm-lead-restart.sh" --check --to "$target" 2>&1); then
+    [ "$reported" != "blocked:$seat:$target" ] || return 0
+    auto_record_set lead "blocked:$seat:$target"
     printf 'claude-seat: firstmate itself is at %s%% left on %s and cannot move to %s: %s\n' \
       "$remaining" "$seat" "$target" "$(printf '%s' "$out" | sed -n '/./{s/^error: //;s/[[:space:]]\{1,\}/ /g;p;q;}')"
     return 0
   fi
+  auto_record_set lead "$seat"
   printf 'claude-seat: firstmate itself is at %s%% left on %s and moves to %s now, on this wake, without asking the captain (load the claude-seat-lead-restart skill). Replacing this session drops its conversation and keeps every durable record, so FIRST %s THEN run exactly: %s/bin/fm-seat.sh lead-restart --to %s --persisted\n' \
     "$remaining" "$seat" "$target" "$FM_PERSIST_OPEN_RECORDS_CONTRACT" "$FM_ROOT" "$target"
 }

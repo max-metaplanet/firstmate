@@ -505,6 +505,31 @@ test_the_lead_trigger_reports_the_blocker_rather_than_an_impossible_move() {
   pass "a crossing the lead cannot act on names the blocker instead of offering a restart"
 }
 
+test_a_transient_blocker_does_not_spend_the_crossing() {
+  local rec out
+  rec=$(make_case auto-lead-transient alpha tmux ''); read_case "$rec"
+  printf '%s\t5\n%s\t90\n' "$SEATS_DIR/alpha" "$SEATS_DIR/beta" > "$SPEC_DIR/remaining_map"
+  run_home "$SEAT" threshold 15 >/dev/null
+  out=$(run_home "$SEAT" auto)
+  case "$out" in
+    *"cannot move to beta"*) ;;
+    *) fail "the first blocked poll did not name its blocker: $out" ;;
+  esac
+  [ -z "$(run_home "$SEAT" auto)" ] || fail "the same blocker was reported on every poll"
+  # The blocker clears while the seat is still below the trigger: the next poll
+  # must hand over the move rather than stay silent for the rest of the crossing.
+  printf 'target=%%9\n' >> "$HOME_DIR/state/.lock-runtime"
+  stub_pane_exists "$FAKEBIN"
+  out=$(run_home "$SEAT" auto)
+  case "$out" in
+    *"moves to beta now"*) ;;
+    *) fail "a crossing whose blocker cleared never handed over the move: $out" ;;
+  esac
+  [ -z "$(run_home "$SEAT" auto)" ] || fail "the move instruction was handed over twice"
+  stop_case
+  pass "a crossing that was blocked hands over the move as soon as it becomes available"
+}
+
 # --- layer 4: the real swap, in a real terminal ------------------------------
 
 wait_for() {  # <seconds> <shell-test>
@@ -537,7 +562,8 @@ done
 export CLAUDE_CODE_SESSION_ID="$sess"
 export CLAUDE_PID=$$
 FM_HOME="$LAB/home" FM_STATE_OVERRIDE="$LAB/home/state" "$ROOT/bin/fm-lock.sh" >> "$LAB/lock.out" 2>&1
-printf 'lead pid=%s session=%s profile=%s\n' "$$" "$sess" "${CLAUDE_CONFIG_DIR:-none}" >> "$LAB/lead.log"
+notices=$(ls "$LAB/home/state/crew1.inbox/"*.msg 2>/dev/null | wc -l | tr -d ' ')
+printf 'lead pid=%s session=%s profile=%s crew_notices=%s\n' "$$" "$sess" "${CLAUDE_CONFIG_DIR:-none}" "$notices" >> "$LAB/lead.log"
 : > "$LAB/cmd.in"
 # Published only once the command file is initialized, so a caller can never
 # write a command into the moment before this truncates it.
@@ -560,38 +586,61 @@ lead_run() {  # <lab> <command>
   wait_for 30 "[ ! -s '$1/cmd.in' ]" || fail "the stand-in lead never picked up its command"
 }
 
-test_the_lead_is_replaced_in_its_own_terminal_with_supervision_unbroken() {
-  local lab sock pane old new watcher out
-  command -v tmux >/dev/null 2>&1 || { echo "ok - # skip: tmux not found, the real-terminal swap needs one"; return 0; }
-  lab="$TMP_ROOT/swap"
-  mkdir -p "$lab/home/state" "$lab/home/config" "$lab/home/data" "$lab/seats/alpha" "$lab/seats/beta" "$lab/fake"
-  FAKEBIN=$(fm_fakebin "$lab/fake")
-  fm_test_make_quota_fake "$FAKEBIN" "$lab/spec"
-  printf '%s\n%s\n' "$lab/seats/alpha" "$lab/seats/beta" > "$lab/spec/oauth"
-  printf '90\n' > "$lab/spec/remaining"
-  printf '%s\n' "$lab/seats" > "$lab/home/config/claude-seats-root"
-  write_stand_in_lead "$lab/lead.sh" "$lab"
+# start_lab <name>
+# A home in a real tmux on a private socket, with the stand-in lead running in
+# its first pane on seat alpha and holding the lock. Sets LAB, LAB_SOCK,
+# LAB_PANE, LAB_OLD (the lead's pid), and FAKEBIN.
+start_lab() {  # <name>
+  LAB="$TMP_ROOT/$1"
+  mkdir -p "$LAB/home/state" "$LAB/home/config" "$LAB/home/data" "$LAB/seats/alpha" "$LAB/seats/beta" "$LAB/fake"
+  FAKEBIN=$(fm_fakebin "$LAB/fake")
+  fm_test_make_quota_fake "$FAKEBIN" "$LAB/spec"
+  printf '%s\n%s\n' "$LAB/seats/alpha" "$LAB/seats/beta" > "$LAB/spec/oauth"
+  printf '90\n' > "$LAB/spec/remaining"
+  printf '%s\n' "$LAB/seats" > "$LAB/home/config/claude-seats-root"
+  write_stand_in_lead "$LAB/lead.sh" "$LAB"
 
-  sock="fm-lead-restart-$$"
-  CLEAN_TMUX+=("$sock")
-  tmux -L "$sock" new-session -d -s lab -x 200 -y 50 || fail "could not start the test tmux server"
-  pane=$(tmux -L "$sock" list-panes -a -F '#{pane_id}' | head -1)
+  LAB_SOCK="fm-lead-restart-$1-$$"
+  CLEAN_TMUX+=("$LAB_SOCK")
+  tmux -L "$LAB_SOCK" new-session -d -s lab -x 200 -y 50 || fail "could not start the test tmux server"
+  LAB_PANE=$(tmux -L "$LAB_SOCK" list-panes -a -F '#{pane_id}' | head -1)
   # Every bare `tmux` the backend adapter runs must reach this private server.
   cat > "$FAKEBIN/tmux" <<SH
 #!/usr/bin/env bash
-exec $(command -v tmux) -L "$sock" "\$@"
+exec $(command -v tmux) -L "$LAB_SOCK" "\$@"
 SH
   chmod +x "$FAKEBIN/tmux"
 
-  tmux -L "$sock" send-keys -t "$pane" \
-    "CLAUDE_CONFIG_DIR='$lab/seats/alpha' '$FAKE_CLAUDE' '$lab/lead.sh'" Enter
+  tmux -L "$LAB_SOCK" send-keys -t "$LAB_PANE" \
+    "CLAUDE_CONFIG_DIR='$LAB/seats/alpha' '$FAKE_CLAUDE' '$LAB/lead.sh'" Enter
   # The lead's readiness marker, not the lock file: the lock's first line lands
   # before the runtime record beside it, so gating on the lock alone races the
   # record this test then reads.
-  wait_for 30 "[ -f '$lab/ready' ]" || fail "the stand-in lead never took the home's lock"
-  old=$(cat "$lab/home/state/.lock")
-  grep -q "^target=$pane\$" "$lab/home/state/.lock-runtime" ||
-    fail "the lead did not record its own pane: $(cat "$lab/home/state/.lock-runtime")"
+  wait_for 30 "[ -f '$LAB/ready' ]" || fail "the stand-in lead never took the home's lock"
+  LAB_OLD=$(cat "$LAB/home/state/.lock")
+  grep -q "^target=$LAB_PANE\$" "$LAB/home/state/.lock-runtime" ||
+    fail "the lead did not record its own pane: $(cat "$LAB/home/state/.lock-runtime")"
+}
+
+lab_restart() {
+  lead_run "$LAB" "FM_HOME=$LAB/home FM_STATE_OVERRIDE=$LAB/home/state FM_CONFIG_OVERRIDE=$LAB/home/config FM_DATA_OVERRIDE=$LAB/home/data PATH=$FAKEBIN:\$PATH $SEAT lead-restart --to beta --persisted"
+  wait_for 30 "grep -q 'handover armed' '$LAB/cmd.log' 2>/dev/null" ||
+    fail "the restart was never armed: $(cat "$LAB/cmd.log" 2>/dev/null)"
+}
+
+test_the_lead_is_replaced_in_its_own_terminal_with_supervision_unbroken() {
+  local lab pane old new watcher out
+  command -v tmux >/dev/null 2>&1 || { echo "ok - # skip: tmux not found, the real-terminal swap needs one"; return 0; }
+  start_lab swap
+  lab=$LAB pane=$LAB_PANE old=$LAB_OLD
+
+  # Two direct reports in a crew window of their own: one the notice reaches,
+  # and one whose steering inbox cannot be written, which must not hold up the
+  # swap and must be named in its outcome.
+  tmux -L "$LAB_SOCK" new-window -d -t lab -n crew 'sleep 600'
+  fm_write_meta "$lab/home/state/crew1.meta" "window=lab:crew" "kind=ship" "harness=claude"
+  fm_write_meta "$lab/home/state/crew2.meta" "window=lab:crew" "kind=ship" "harness=claude"
+  : > "$lab/home/state/crew2.inbox"
 
   # A supervision cycle, started where the real one is: inside the lead's own
   # process tree. It must survive the swap, because the cycle count may never
@@ -600,9 +649,7 @@ SH
   wait_for 20 "[ -s '$lab/watcher.pid' ] && [ -s '$lab/beat' ]" || fail "the stand-in supervision cycle never started"
   watcher=$(cat "$lab/watcher.pid")
 
-  lead_run "$lab" "FM_HOME=$lab/home FM_STATE_OVERRIDE=$lab/home/state FM_CONFIG_OVERRIDE=$lab/home/config FM_DATA_OVERRIDE=$lab/home/data PATH=$FAKEBIN:\$PATH $SEAT lead-restart --to beta --persisted"
-  wait_for 30 "grep -q 'handover armed' '$lab/cmd.log' 2>/dev/null" ||
-    fail "the restart was never armed: $(cat "$lab/cmd.log" 2>/dev/null)"
+  lab_restart
   [ -f "$lab/home/state/.lock-handover" ] ||
     fail "the home was not reserved while the outgoing lead still held it"
 
@@ -631,8 +678,39 @@ SH
   [ "$(cat "$lab/beat")" -ge "$(( $(date +%s) - 10 ))" ] ||
     fail "the supervision cycle stopped reporting across the swap"
 
+  grep -q "session=lead-session-1 profile=$lab/seats/beta crew_notices=1\$" "$lab/lead.log" ||
+    fail "the crew was not told before the replacement started: $(cat "$lab/lead.log")"
+  bash -c '. "$1"; fm_task_inbox_is_fire_and_forget "$2"' _ "$ROOT/bin/fm-task-inbox-lib.sh" \
+    "$(ls "$lab/home/state/crew1.inbox/"*.msg | head -1)" ||
+    fail "the crew notice was sent as a tracked steer that the re-ring ladder would chase"
+  case "$out" in
+    *"could not be delivered to: crew2"*) ;;
+    *) fail "the worker the notice could not reach is not named in the outcome: $out" ;;
+  esac
+
   kill "$new" "$watcher" 2>/dev/null || true
   pass "the lead is replaced in its own terminal, on the new seat, resuming the same session, with one holder throughout"
+}
+
+test_a_replacement_that_never_comes_up_is_reported_stranded() {
+  local out
+  command -v tmux >/dev/null 2>&1 || { echo "ok - # skip: tmux not found, the real-terminal swap needs one"; return 0; }
+  start_lab stranded
+  # A launch command that exits at once: the pane returns to its shell, so no
+  # agent ever comes up there and the outcome must say so rather than claim a
+  # running replacement.
+  lead_run "$LAB" "FM_LEAD_RESTART_START_WAIT=4 FM_LEAD_RESTART_CLAIM_WAIT=5 FM_HOME=$LAB/home FM_STATE_OVERRIDE=$LAB/home/state FM_CONFIG_OVERRIDE=$LAB/home/config FM_DATA_OVERRIDE=$LAB/home/data PATH=$FAKEBIN:\$PATH $SEAT lead-restart --to beta --persisted --launch-command '$FAKE_CLAUDE /bin/true'"
+  wait_for 30 "grep -q 'handover armed' '$LAB/cmd.log' 2>/dev/null" ||
+    fail "the restart was never armed: $(cat "$LAB/cmd.log" 2>/dev/null)"
+  wait_for 90 "grep -q '^state=' '$LAB/home/state/.lead-restart.result' 2>/dev/null" ||
+    fail "the failed swap never reported an outcome"
+  out=$(cat "$LAB/home/state/.lead-restart.result")
+  case "$out" in
+    *"state=stranded"*"no agent came up there"*) ;;
+    *) fail "a replacement that never came up was not reported stranded: $out" ;;
+  esac
+  [ ! -f "$LAB/home/state/.lock-handover" ] || fail "a stranded swap left the home reserved"
+  pass "a replacement that exits at once is reported stranded, not running"
 }
 
 test_check_establishes_every_part_of_the_move
@@ -650,6 +728,8 @@ test_only_the_lock_holder_may_reserve_the_home
 test_the_detached_stage_can_drop_the_reservation_it_armed
 test_the_lead_trigger_fires_once_per_seat_and_hands_over_the_gate
 test_the_lead_trigger_reports_the_blocker_rather_than_an_impossible_move
+test_a_transient_blocker_does_not_spend_the_crossing
 test_the_lead_is_replaced_in_its_own_terminal_with_supervision_unbroken
+test_a_replacement_that_never_comes_up_is_reported_stranded
 
 echo "# all fm-lead-restart tests passed"

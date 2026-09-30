@@ -170,11 +170,13 @@ bin/fm-seat.sh lead-restart --check              # establish the move, change no
 bin/fm-seat.sh lead-restart --persisted          # do it
 ```
 
-Another `claude` starts on the new seat in the same terminal, resuming the same session, and the current process ends.
+Firstmate tells its crew it is about to restart, another `claude` starts on the new seat in the same terminal, resuming the same session, and the current process ends.
 A seat is a profile directory whose contents symlink the shared `~/.claude` body, which is what lets any seat resume the same session: the seat is the brain, the sessions and settings are the body.
 Without `--to`, the destination is the ordinary rotation, anchored on the seat firstmate is on rather than the seat new workers get.
 
-**Running workers are untouched and are told nothing.** Their steering is a durable inbox, their status is a durable log, and each keeps the seat recorded in its own task record.
+**Running workers are told, and are otherwise untouched.** Before the current process ends, each live worker gets one short notice that firstmate is restarting onto another seat, that its own work, seat, and steering inbox are unaffected, and that it should carry on without replying.
+The notice is cheap because nothing changes for a worker: its steering is a durable inbox, its status is a durable log, and it keeps the seat recorded in its own task record.
+So it is sent fire-and-forget, with no acknowledgement expected and no re-ring spanning the swap, and a worker it cannot reach never blocks the restart; that worker is named in `state/.lead-restart.result` instead.
 Supervision is a separate process with its own lock and is deliberately not stopped, so the cycle count goes from one to one across the swap.
 
 **`--persisted` is a gate, not a flag.** The replacement drops firstmate's conversation and keeps every durable record, so the open work held only in that conversation has to be written down first - the same persist step a second mate gets before its restart.

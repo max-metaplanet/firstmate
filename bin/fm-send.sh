@@ -121,7 +121,9 @@
 # unmarked captain input never creates one. A marked secondmate instruction
 # sent with --fire-and-forget <16-hex-delivery-id> uses the same inbox transport
 # without creating a reply expectation; its delivery id makes uncertain retries
-# idempotent while allowing a later identical instruction to be distinct.
+# idempotent while allowing a later identical instruction to be distinct. A
+# crewmate or scout task may be sent one too: it stays unmarked and is written
+# as an ordinary fire-and-forget inbox record, outside the re-ring ladder.
 #
 # Remote secondmate delivery: the send crosses fm-on.sh to a host-local leg
 # (bin/fm-remote-secondmate-control.sh cmd_send) that writes the message as a
@@ -636,9 +638,9 @@ if [ -n "$FIRE_AND_FORGET_ID" ]; then
       echo "error: --fire-and-forget delivery id must be 16 lowercase hex characters" >&2
       exit 1
     }
-  [ "$MARK_FROM_FIRSTMATE" = 1 ] ||
+  [ -n "$TARGET_SELECTOR" ] && [ -n "$TARGET_META" ] ||
     {
-      echo "error: --fire-and-forget requires a recorded secondmate task selector" >&2
+      echo "error: --fire-and-forget requires a task selector recorded in this home" >&2
       exit 1
     }
   [ -z "$RESOLVE_KEYS" ] ||

@@ -12,21 +12,26 @@
 # anything running - including the lead, which keeps the account it launched on
 # until something replaces its process. There is no way to move a running Claude
 # Code process to another credential store, so the only way the lead itself
-# changes account is to be replaced: tell nothing to wind down, start another
-# claude on the new seat in the same terminal, resuming the same session, and
-# end the old process. A seat is a profile directory whose contents symlink the
+# changes account is to be replaced: tell the crew, start another claude on the
+# new seat in the same terminal, resuming the same session, and end the old
+# process. A seat is a profile directory whose contents symlink the
 # shared ~/.claude body, so the session the successor resumes is the same
 # session: the seat is the brain, the sessions and settings are the body.
 #
-# WHAT DELIBERATELY DOES NOT HAPPEN. Running workers are not told anything and
-# are not moved. Steering is a durable inbox, status is a durable log, and every
-# task keeps the seat recorded in its own task record, so a lead swap is
-# invisible to them; a crew notification step would be a message that changes
-# nothing. The one real worker-facing effect is supervision, and it is handled
-# by NOT touching it: the watcher is a separate process with its own singleton
-# lock, it is never in the kill below, and the successor's own arm attaches to a
-# live watcher instead of starting a second one. So the cycle count goes from
-# one to one, and the durable wake queue holds anything that arrives meanwhile.
+# WHAT THE CREW IS TOLD, AND WHY IT IS CHEAP. Before the old process is ended,
+# each live direct report of this home gets one short notice that the lead is
+# restarting onto another seat, that its own work, seat, and steering inbox are
+# unaffected, and that it should carry on without replying. Nothing changes for
+# a worker - steering is a durable inbox, status is a durable log, and every task
+# keeps the seat recorded in its own task record - so the notice is sent
+# fire-and-forget: no acknowledgement is expected and no re-ring ladder spans
+# the swap. A worker the notice cannot reach never blocks the restart; it is
+# named in the result instead. Workers are not moved. The one real worker-facing
+# effect is supervision, and it is handled by NOT touching it: the watcher is a
+# separate process with its own singleton lock, it is never in the kill below,
+# and the successor's own arm attaches to a live watcher instead of starting a
+# second one. So the cycle count goes from one to one, and the durable wake
+# queue holds anything that arrives meanwhile.
 #
 # THE FIVE THINGS THAT MUST BE ESTABLISHED, never guessed. Any one of them
 # missing is a refusal, and a refusal at this stage leaves the old lead running
@@ -111,6 +116,7 @@ GRACE=${FM_LEAD_RESTART_GRACE:-5}
 EXIT_WAIT=${FM_LEAD_RESTART_EXIT_WAIT:-30}
 START_WAIT=${FM_LEAD_RESTART_START_WAIT:-120}
 CLAIM_WAIT=${FM_LEAD_RESTART_CLAIM_WAIT:-300}
+NOTICE_WAIT=30
 
 # --- establishment -----------------------------------------------------------
 
@@ -328,18 +334,23 @@ report_plan() {
 
 # --- the armed handover ------------------------------------------------------
 
-mint_nonce() {
-  LC_ALL=C tr -dc 'a-f0-9' < /dev/urandom 2>/dev/null | head -c 32
+mint_hex() {  # <length>
+  LC_ALL=C tr -dc 'a-f0-9' < /dev/urandom 2>/dev/null | head -c "$1"
 }
 
 arm_handover() {
-  local nonce window stage_file pid
-  nonce=$(mint_nonce)
+  local nonce window stage_file pid crew=0 meta
+  nonce=$(mint_hex 32)
   case "$nonce" in
     ????????????????????????????????) ;;
     *) die "could not mint a handover token" ;;
   esac
-  window=$(( GRACE + EXIT_WAIT + START_WAIT + CLAIM_WAIT ))
+  for meta in "$STATE"/*.meta; do
+    [ -e "$meta" ] && crew=$((crew + 1))
+  done
+  # Every bounded step the stage can spend before the successor claims: the crew
+  # notice, the grace, both exit waits, the pane settling, the start, the claim.
+  window=$(( crew * NOTICE_WAIT + GRACE + EXIT_WAIT + 10 + 10 + START_WAIT + CLAIM_WAIT ))
 
   stage_file="$STATE/.lead-restart.launch"
   # A previous attempt's outcome would otherwise be read as this one's below.
@@ -412,25 +423,62 @@ plan_field() {  # <key>
   sed -n "s/^$1=//p" "$PLAN_FILE" 2>/dev/null | tail -1
 }
 
+CREW_UNREACHED=''
 record_result() {  # <state> <detail>
+  local detail=$2
+  [ -z "$CREW_UNREACHED" ] ||
+    detail="$detail; the restart notice could not be delivered to: $CREW_UNREACHED"
   (umask 077; {
     printf 'state=%s\n' "$1"
     printf 'at=%s\n' "$(date +%s)"
-    printf 'detail=%s\n' "$2"
+    printf 'detail=%s\n' "$detail"
     printf 'command=%s\n' "$P_COMMAND"
     printf 'launch_file=%s\n' "$P_LAUNCH_FILE"
   } > "$RESULT") || true
 }
 
+# Tell every live direct report of this home that the lead is about to restart.
+# A task whose pane reads confidently dead has no one to tell; every other
+# recorded task, remote ones included, gets one fire-and-forget notice with its
+# own fresh delivery id. Sets CREW_UNREACHED to the ids that could not be told.
+notify_crew() {  # <to-seat>
+  local meta id did text
+  text="The lead first mate is restarting onto another Claude seat ($1). Your own work, seat, and steering inbox are unaffected: carry on, and do not reply to this notice."
+  CREW_UNREACHED=''
+  for meta in "$STATE"/*.meta; do
+    [ -e "$meta" ] || continue
+    id=${meta##*/}
+    id=${id%.meta}
+    [ "$(fm_backend_agent_alive "$(fm_backend_of_meta "$meta")" "$(fm_backend_target_of_meta "$meta")")" != dead ] ||
+      continue
+    did=$(mint_hex 16)
+    fm_run_timed "$NOTICE_WAIT" "$SCRIPT_DIR/fm-send.sh" "$id" --fire-and-forget "$did" "$text" >/dev/null 2>&1 ||
+      CREW_UNREACHED="${CREW_UNREACHED:+$CREW_UNREACHED }$id"
+  done
+}
+
+# True once the lock names a live session other than the one replaced and the
+# runtime record bound to it puts that session on the destination profile. That
+# is the successor holding this home, which a reservation that merely reached
+# its deadline cannot fake.
+successor_holds_lock() {  # <old-pid> <to-profile>
+  local profile
+  fm_session_lock_inspect "$STATE"
+  [ "$FM_LOCK_INSPECT_STATE" = held ] && [ "$FM_LOCK_INSPECT_PID" != "$1" ] || return 1
+  profile=$(fm_session_lock_runtime_field "$STATE" profile) || return 1
+  [ "$profile" = "$2" ]
+}
+
 handover_stage() {  # <plan-file>
   PLAN_FILE=$1
   [ -f "$PLAN_FILE" ] || exit 1
-  local nonce pid backend target to_seat grace exit_wait start_wait claim_wait waited
+  local nonce pid backend target to_seat to_profile grace exit_wait start_wait claim_wait waited
   nonce=$(plan_field nonce)
   pid=$(plan_field pid)
   backend=$(plan_field backend)
   target=$(plan_field target)
   to_seat=$(plan_field to_seat)
+  to_profile=$(plan_field to_profile)
   grace=$(plan_field grace)
   exit_wait=$(plan_field exit_wait)
   start_wait=$(plan_field start_wait)
@@ -440,6 +488,7 @@ handover_stage() {  # <plan-file>
   case "$pid" in ''|*[!0-9]*) exit 1 ;; esac
   case "$grace$exit_wait$start_wait$claim_wait" in ''|*[!0-9]*) exit 1 ;; esac
 
+  notify_crew "$to_seat"
   sleep "$grace"
 
   # End the old lead, and nothing else. The watcher is a separate process with
@@ -472,6 +521,21 @@ handover_stage() {  # <plan-file>
 
   # From here the old process is gone. Everything durable survives it, so the
   # worst outcome below is a terminal that needs one command typed into it.
+  # The lock anchor is not necessarily the process that owns the pane, so the
+  # pane itself must read back as a bare shell before anything is typed there:
+  # a front-end that outlived its anchor would take the line as a prompt.
+  waited=0
+  while [ "$(fm_backend_agent_alive "$backend" "$target")" != dead ] && [ "$waited" -lt 10 ]; do
+    sleep 1
+    waited=$((waited + 1))
+  done
+  if [ "$(fm_backend_agent_alive "$backend" "$target")" != dead ]; then
+    clear_reservation "$nonce"
+    record_result stranded "the previous firstmate process ended but its terminal did not return to a shell, so nothing was typed into it; if no firstmate is running there, run '. $P_LAUNCH_FILE' in it"
+    fm_wake_append check lead-restart \
+      "check: lead-restart: the previous firstmate process ended but its terminal did not return to a shell, so the replacement was not started; the exact command to run there is in $RESULT" || true
+    exit 1
+  fi
   # The literal send and the Enter are separated the same way bin/fm-spawn.sh
   # separates them, so the terminal has settled before the line is submitted.
   if ! fm_backend_send_literal "$backend" "$target" ". $P_LAUNCH_FILE" ||
@@ -486,11 +550,11 @@ handover_stage() {  # <plan-file>
 
   waited=0
   while [ "$waited" -lt "$start_wait" ]; do
-    fm_backend_agent_alive "$backend" "$target" && break
+    [ "$(fm_backend_agent_alive "$backend" "$target")" != alive ] || break
     sleep 2
     waited=$((waited + 2))
   done
-  if ! fm_backend_agent_alive "$backend" "$target"; then
+  if [ "$(fm_backend_agent_alive "$backend" "$target")" != alive ]; then
     clear_reservation "$nonce"
     record_result stranded "the replacement was sent to the terminal but no agent came up there within ${start_wait}s; run '. $P_LAUNCH_FILE' there"
     fm_wake_append check lead-restart \
@@ -498,16 +562,15 @@ handover_stage() {  # <plan-file>
     exit 1
   fi
 
-  # The reservation clears itself when the successor proves the nonce at its own
-  # lock acquisition, so its disappearance is the handover completing rather
-  # than anything this stage does.
+  # The handover is complete only when the lock record itself names the
+  # successor; a reservation that is merely gone may just have lapsed.
   waited=0
   while [ "$waited" -lt "$claim_wait" ]; do
-    fm_session_lock_handover_live "$STATE" || break
+    successor_holds_lock "$pid" "$to_profile" && break
     sleep 5
     waited=$((waited + 5))
   done
-  if fm_session_lock_handover_live "$STATE"; then
+  if ! successor_holds_lock "$pid" "$to_profile"; then
     record_result started "the replacement is running on seat $to_seat but has not taken this home's lock yet; the reservation lapses on its own"
     exit 0
   fi
