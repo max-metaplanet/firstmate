@@ -270,21 +270,6 @@ TO_PROFILE=''
 LAUNCH_ARGV=''
 SUCCESSOR_CMD=''
 
-# Name the seat a profile directory belongs to, or the default seat for the
-# ambient profile. A profile outside the seats root is reported by its path, so
-# a lead running on an unmanaged profile still reads honestly.
-seat_name_of_profile() {  # <profile-dir>
-  local profile=$1 name
-  [ -n "$profile" ] || { printf '%s\n' "$FM_SEAT_DEFAULT_NAME"; return 0; }
-  while IFS= read -r name; do
-    [ -n "$name" ] || continue
-    [ "$(fm_seat_dir "$name")" = "$profile" ] || continue
-    printf '%s\n' "$name"
-    return 0
-  done < <(fm_seat_list)
-  printf '%s\n' "$profile"
-}
-
 preflight() {  # <launch-command-override>
   local override=$1 state
   [ -n "$TO_SEAT" ] || die "no destination seat was named; bin/fm-seat.sh owns which seat to move to and passes it here"
@@ -297,7 +282,7 @@ preflight() {  # <launch-command-override>
   LEAD_PID=$(established_lock_pid) || exit 1
   SESSION_ID=$(established_session_id) || exit 1
   LEAD_PROFILE=$(established_lead_profile) || exit 1
-  LEAD_SEAT=$(seat_name_of_profile "$LEAD_PROFILE")
+  LEAD_SEAT=$(fm_seat_name_of_profile "$LEAD_PROFILE")
   [ "$LEAD_PROFILE" != "$TO_PROFILE" ] ||
     die "the lead is already running on seat '$TO_SEAT'"
   established_pane || exit 1

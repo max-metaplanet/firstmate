@@ -268,7 +268,7 @@ cmd_status() {
   # what new workers get and leaves the running lead where it launched, so the
   # two drift apart by design and only `lead-restart` closes that gap.
   if profile=$(lead_profile); then
-    printf 'firstmate itself is running on: %s\n' "$(lead_seat "$profile")"
+    printf 'firstmate itself is running on: %s\n' "$(fm_seat_name_of_profile "$profile")"
   else
     printf 'firstmate itself is running on: (not recorded for this session)\n'
   fi
@@ -343,7 +343,8 @@ cmd_probe() {
 # on. The anchor defaults to the active seat, which is every existing caller;
 # the lead restart passes the seat the LEAD is on instead, because that is the
 # seat it is rotating away from. The selection RULES below are identical either
-# way - only the starting point differs. Rotation wraps, and the active seat is never chosen, so a rotation with no
+# way - only the starting point differs.
+# Rotation wraps, and the anchor seat is never chosen, so a rotation with no
 # other usable seat refuses rather than pretending to switch.
 #
 # `seat_usable` owns which states qualify, so a seat whose access token has
@@ -551,22 +552,6 @@ lead_profile() {
   fm_session_lock_runtime_field "$STATE" profile
 }
 
-# lead_seat
-# That profile's seat NAME, or the default seat for the ambient profile. A
-# profile outside the seats root has no seat name and is reported by its path,
-# which is how a lead on an unmanaged profile still reads honestly.
-lead_seat() {
-  local profile=$1 name
-  [ -n "$profile" ] || { printf '%s\n' "$FM_SEAT_DEFAULT_NAME"; return 0; }
-  while IFS= read -r name; do
-    [ -n "$name" ] || continue
-    [ "$(fm_seat_dir "$name")" = "$profile" ] || continue
-    printf '%s\n' "$name"
-    return 0
-  done < <(fm_seat_list)
-  printf '%s\n' "$profile"
-}
-
 # The operator surface for replacing the lead itself. Seat SELECTION stays here,
 # where every other rotation decision lives, and the restart transaction stays
 # in bin/fm-lead-restart.sh, which owns every refusal and what a failure leaves.
@@ -583,7 +568,7 @@ cmd_lead_restart() {
   if [ -z "$to" ]; then
     profile=$(lead_profile) ||
       die "the account firstmate itself runs on is not recorded for this session, so there is no seat to rotate away from; it is recorded at the next session start"
-    anchor=$(lead_seat "$profile")
+    anchor=$(fm_seat_name_of_profile "$profile")
     to=$(next_seat "$anchor") ||
       die "no seat under the seats root qualifies as a destination for firstmate itself (each skipped seat and its reason is printed above); add and log into another seat, or lower 'fm-seat.sh destination-min' (docs/claude-seats.md)"
   fi
@@ -843,7 +828,7 @@ cmd_auto() {
 auto_lead_trigger() {  # <threshold>
   local threshold=$1 profile seat remaining target reported out
   profile=$(lead_profile) || return 0
-  seat=$(lead_seat "$profile")
+  seat=$(fm_seat_name_of_profile "$profile")
   remaining=$(fm_seat_remaining "$profile") || return 0
   if ! jq -en --arg r "$remaining" --arg t "$threshold" \
     '($r | tonumber) <= ($t | tonumber)' >/dev/null 2>&1; then
