@@ -21,89 +21,10 @@ set -u
 SEAT="$ROOT/bin/fm-seat.sh"
 TMP_ROOT=$(fm_test_tmproot fm-seat)
 
-# make_quota_fake <fakebin> <spec>
-# A fake quota-axi whose verdict per profile directory is driven by files the
-# test writes. <spec> is a directory holding one file per state:
-#   <spec>/oauth        newline-separated CLAUDE_CONFIG_DIR values that are logged in
-#   <spec>/rate_limited newline-separated CLAUDE_CONFIG_DIR values that are signed
-#                       in but whose quota endpoint is rate limiting them
-#   <spec>/remaining    percent remaining reported for a logged-in profile's
-#                       account-level (all_models) window
-#   <spec>/availability optional JSON array replacing the whole
-#                       effectiveAvailability list, for scope-specific cases
-#   <spec>/remaining_map  optional "<CLAUDE_CONFIG_DIR><TAB><percent>" rows,
-#                       giving a profile its OWN percent remaining so a case can
-#                       drive candidate seats apart; a profile with no row falls
-#                       back to <spec>/remaining
-#   <spec>/unreadable_quota  newline-separated CLAUDE_CONFIG_DIR values that are
-#                       logged in but whose account-level availability cannot be
-#                       read, which must never be guessed at as headroom
-#   <spec>/extra_map    optional "<CLAUDE_CONFIG_DIR><TAB><spentUsd>" rows adding
-#                       an extra_usage window (kind credits) to that profile's
-#                       report, which is where paid overflow spend is observed
-#   <spec>/slow         optional seconds every read sleeps before answering, for
-#                       a quota endpoint slower than the watcher's budget
-# An empty CLAUDE_CONFIG_DIR is spelled "(default)" in the oauth list.
-# The fake reproduces the real tool's contract that matters here: an unavailable
-# provider still prints a valid report AND exits non-zero.
-make_quota_fake() {
-  local fakebin=$1 spec=$2
-  mkdir -p "$spec"
-  cat > "$fakebin/quota-axi" <<SH
-#!/usr/bin/env bash
-set -u
-spec="$spec"
-key="\${CLAUDE_CONFIG_DIR:-}"
-[ -n "\$key" ] || key='(default)'
-[ ! -f "\$spec/slow" ] || sleep "\$(cat "\$spec/slow")"
-remaining=\$(cat "\$spec/remaining" 2>/dev/null || printf '80')
-if [ -f "\$spec/remaining_map" ]; then
-  mapped=\$(awk -F'\t' -v k="\$key" '\$1==k{print \$2; exit}' "\$spec/remaining_map")
-  [ -z "\$mapped" ] || remaining=\$mapped
-fi
-availability=\$(cat "\$spec/availability" 2>/dev/null ||
-  printf '[{"scope":"all_models","status":"known","effectivePercentRemaining":%s,"runway":{"status":"through_reset"}}]' "\$remaining")
-if [ -f "\$spec/unreadable_quota" ] && grep -Fxq "\$key" "\$spec/unreadable_quota"; then
-  availability='[]'
-fi
-windows='[]'
-if [ -f "\$spec/extra_map" ]; then
-  spent=\$(awk -F'\t' -v k="\$key" '\$1==k{print \$2; exit}' "\$spec/extra_map")
-  [ -z "\$spent" ] ||
-    windows=\$(printf '[{"id":"extra_usage","kind":"credits","percentUsed":1,"spentUsd":%s,"limitUsd":10000}]' "\$spent")
-fi
-if [ -f "\$spec/rate_limited" ] && grep -Fxq "\$key" "\$spec/rate_limited"; then
-  cat <<'JSON'
-{"generatedAt":"2026-01-01T00:00:00Z","schemaVersion":5,"providers":[{"provider":"claude","label":"Claude","source":"unavailable","windows":[],"state":{"status":"rate_limited","error":"Claude quota endpoint rate limited"},"attempts":[{"source":"oauth-file","status":"skipped","error":"credentials_missing"},{"source":"keychain","status":"failed","error":"Claude quota endpoint rate limited"}],"quotaSemantics":{"status":"unknown","effectiveAvailability":[]}}]}
-JSON
-  exit 1
-fi
-if [ -f "\$spec/oauth" ] && grep -Fxq "\$key" "\$spec/oauth"; then
-  semantics_status=known
-  [ "\$availability" != '[]' ] || semantics_status=unknown
-  cat <<JSON
-{"generatedAt":"2026-01-01T00:00:00Z","schemaVersion":5,"providers":[{"provider":"claude","label":"Claude","source":"oauth","account":{"email":"seat-\$(printf '%s' "\$key" | tr -c 'a-zA-Z0-9' '-')@example.test"},"windows":\$windows,"quotaSemantics":{"status":"\$semantics_status","effectiveAvailability":\$availability}}]}
-JSON
-  exit 0
-fi
-if [ -f "\$spec/proven_empty" ] && grep -Fxq "\$key" "\$spec/proven_empty"; then
-  # A file-backed credential store that was actually read and found empty: the
-  # only shape that establishes absence. No keychain attempt is reported.
-  cat <<'JSON'
-{"generatedAt":"2026-01-01T00:00:00Z","schemaVersion":5,"providers":[{"provider":"claude","label":"Claude","source":"unavailable","windows":[],"state":{"status":"error","error":"credentials_missing"},"attempts":[{"source":"oauth-file","status":"skipped","error":"credentials_missing"}],"quotaSemantics":{"status":"unknown","effectiveAvailability":[]}}]}
-JSON
-  exit 1
-fi
-# Default: the store could not be READ. On macOS this is what both a
-# never-logged-in profile and a signed-in-but-unapproved one report, so it
-# establishes nothing and must read as undecided.
-cat <<'JSON'
-{"generatedAt":"2026-01-01T00:00:00Z","schemaVersion":5,"providers":[{"provider":"claude","label":"Claude","source":"unavailable","windows":[],"state":{"status":"error","error":"keychain_unreachable"},"attempts":[{"source":"oauth-file","status":"skipped","error":"credentials_missing"},{"source":"keychain","status":"skipped","error":"keychain_unreachable"}],"quotaSemantics":{"status":"unknown","effectiveAvailability":[]}}]}
-JSON
-exit 1
-SH
-  chmod +x "$fakebin/quota-axi"
-}
+# The quota fake every seat case runs against lives in tests/fixtures.sh as
+# fm_test_make_quota_fake, because tests/fm-lead-restart.test.sh drives the same
+# seat surface and must not carry a second copy of it.
+make_quota_fake() { fm_test_make_quota_fake "$@"; }
 
 # make_seat_case <name>
 # A home with a seats root of its own plus a fake quota-axi. Echoes a record.

@@ -11,6 +11,8 @@
 #   fm-seat.sh threshold [<percent-left>|off]
 #   fm-seat.sh destination-min [<percent-left>|off]
 #   fm-seat.sh extra-usage [stop|allow <usd>|off]
+#   fm-seat.sh lead-restart [--to <name>] [--check] [--persisted]
+#                           [--launch-command <cmd>]
 #   fm-seat.sh threshold-reached
 #   fm-seat.sh auto
 #   fm-seat.sh arm
@@ -55,6 +57,23 @@
 #            extra-usage spend reaches that dollar cap and holds after it;
 #            `off` clears the policy and holds nothing. Absent means no hold of
 #            any kind.
+# lead-restart
+#            Move FIRSTMATE ITSELF to another seat, which `switch` cannot do: a
+#            switch moves only what the next spawn reads, and no running Claude
+#            process can change credential store. So the lead is REPLACED -
+#            another claude starts on the new seat in the same terminal,
+#            resuming the same session, and the current process ends. Running
+#            workers get one fire-and-forget notice and are otherwise
+#            untouched: their steering, status, and recorded seat are all
+#            durable, and supervision is a separate process that is
+#            deliberately left alone. `--check`
+#            establishes everything and changes nothing. Without `--to` the
+#            destination is chosen by the same rotation a switch uses, anchored
+#            on the seat the LEAD is on rather than the seat new workers get.
+#            It refuses until `--persisted` says the open work held only in this
+#            conversation is written down, because the replacement drops that
+#            conversation. bin/fm-lead-restart.sh owns the transaction, its
+#            refusals, and what a failure leaves.
 # threshold-reached
 #            The trigger predicate: exit 0 when the active seat is at or below
 #            the configured percent left, 1 when it is not, and 2 when no
@@ -114,6 +133,14 @@ DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
 . "$SCRIPT_DIR/fm-backend.sh"
 # shellcheck source=bin/fm-config-inherit-lib.sh
 . "$SCRIPT_DIR/fm-config-inherit-lib.sh"
+# The lead's OWN seat is recorded beside the session lock, not in
+# config/claude-seat; this is the one owner of reading that record.
+# shellcheck source=bin/fm-session-lock-lib.sh
+. "$SCRIPT_DIR/fm-session-lock-lib.sh"
+# The persist gate the lead trigger below hands over is the same one a second
+# mate's restart applies; this file owns that contract.
+# shellcheck source=bin/fm-persist-request-lib.sh
+. "$SCRIPT_DIR/fm-persist-request-lib.sh"
 # The arm/retire half rides the same registered check shim every other repeating
 # firstmate poll uses; bin/fm-check-shim-lib.sh owns its write, binding, and
 # rollback, and needs these two sourced first.
@@ -214,6 +241,14 @@ cmd_status() {
   profile=$(fm_seat_config_dir "$active")
   printf 'active profile: %s\n' "${profile:-(ambient default login)}"
   printf 'login state: %s\n' "$(login_state "$active")"
+  # The lead's own seat is a separate fact from the active one: a switch moves
+  # what new workers get and leaves the running lead where it launched, so the
+  # two drift apart by design and only `lead-restart` closes that gap.
+  if profile=$(lead_profile); then
+    printf 'firstmate itself is running on: %s\n' "$(fm_seat_name_of_profile "$profile")"
+  else
+    printf 'firstmate itself is running on: (not recorded for this session)\n'
+  fi
   if threshold=$(fm_seat_threshold); then
     printf 'auto-switch trigger: at or below %s%% left on the active seat\n' "$threshold"
   else
@@ -278,10 +313,19 @@ cmd_probe() {
   esac
 }
 
-# next_seat
-# The seat after the active one, in list order, that is logged in. Rotation
-# wraps, and the active seat is never chosen, so a rotation with no other
-# logged-in seat refuses rather than pretending to switch.
+# next_seat [<anchor-seat>]
+# The seat after the anchor seat, in list order, that a worker can be launched
+# on. The anchor defaults to the active seat, which is every existing caller;
+# the lead restart passes the seat the LEAD is on instead, because that is the
+# seat it is rotating away from. The selection RULES below are identical either
+# way - only the starting point differs.
+# Rotation wraps, and the anchor seat is never chosen, so a rotation with no
+# other usable seat refuses rather than pretending to switch.
+#
+# `seat_usable` owns which states qualify, so a seat whose access token has
+# merely lapsed is a destination like any other: its session is intact and the
+# worker launched there renews it. Rotating past every idle seat would leave the
+# fleet on its most-spent account for no reason.
 #
 # Rotation covers ONLY named seats under the seats root. The default profile is
 # deliberately excluded: it is the account owner's own interactive login, it
@@ -304,8 +348,8 @@ cmd_probe() {
 # Every rejected candidate is reported on stderr with its reason, so a refusal
 # to switch always says which seats were considered and why none qualified.
 next_seat() {
-  local active seats n i idx name minimum='' remaining
-  active=$(fm_seat_active)
+  local active seats n i idx name minimum='' remaining state
+  active=${1:-$(fm_seat_active)}
   minimum=$(fm_seat_destination_min) || minimum=''
   mapfile -t seats < <(fm_seat_list)
   n=${#seats[@]}
@@ -444,6 +488,40 @@ cmd_add() {
   printf '  bin/fm-seat.sh switch %s\n' "$name"
 }
 
+# lead_profile
+# The Claude profile the LEAD itself runs under, from the record beside the
+# session lock. Empty output with a zero status is the ambient default profile,
+# which is a real answer; a nonzero status means this home has not recorded one
+# for its current lead, so nothing here may guess.
+lead_profile() {
+  fm_session_lock_runtime_field "$STATE" profile
+}
+
+# The operator surface for replacing the lead itself. Seat SELECTION stays here,
+# where every other rotation decision lives, and the restart transaction stays
+# in bin/fm-lead-restart.sh, which owns every refusal and what a failure leaves.
+cmd_lead_restart() {
+  local to='' profile anchor forwarded=()
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --to) [ "$#" -ge 2 ] || usage; to=$2; shift 2 ;;
+      --check | --persisted) forwarded+=("$1"); shift ;;
+      --launch-command | --grace) [ "$#" -ge 2 ] || usage; forwarded+=("$1" "$2"); shift 2 ;;
+      *) usage ;;
+    esac
+  done
+  if [ -z "$to" ]; then
+    profile=$(lead_profile) ||
+      die "the account firstmate itself runs on is not recorded for this session, so there is no seat to rotate away from; it is recorded at the next session start"
+    anchor=$(fm_seat_name_of_profile "$profile")
+    to=$(next_seat "$anchor") ||
+      die "no seat under the seats root qualifies as a destination for firstmate itself (each skipped seat and its reason is printed above); add and log into another seat, or lower 'fm-seat.sh destination-min' (docs/claude-seats.md)"
+  fi
+  FM_HOME="$FM_HOME" FM_ROOT_OVERRIDE="$FM_ROOT" FM_STATE_OVERRIDE="$STATE" \
+    FM_CONFIG_OVERRIDE="$CONFIG" FM_DATA_OVERRIDE="$DATA" \
+    "$SCRIPT_DIR/fm-lead-restart.sh" --to "$to" ${forwarded[@]+"${forwarded[@]}"}
+}
+
 # write_percent_setting <file-name> <label> <value>
 # The shared setter behind `threshold` and `destination-min`: both hold one
 # percent LEFT, both clear with `off`, and both refuse a value outside 0-100
@@ -569,7 +647,11 @@ cmd_threshold_reached() {
 # reads back above the threshold.
 # It also carries `extra=<seats>`, the set of seats last seen drawing paid extra
 # usage, so that warning fires on ENTRY rather than on every poll for as long as
-# the spend lasts.
+# the spend lasts, and `lead=<seat>`, the seat whose move instruction was last
+# handed to FIRSTMATE ITSELF, so that instruction fires once per seat and not on
+# every poll. A crossing that could not move records `lead=blocked:<seat>:<to>`
+# instead, which silences only that same blocker: every poll still re-asks, so
+# the instruction goes out as soon as the move becomes available.
 AUTO_RECORD="$STATE/.claude-seat-auto"
 
 auto_record_get() {
@@ -581,18 +663,20 @@ auto_record_get() {
 # Replace one field, preserving the others. The record is small and rewritten
 # whole, so a partial write can never leave a half-updated record behind.
 auto_record_set() {
-  local key=$1 value=$2 fired blocked extra tmp
+  local key=$1 value=$2 fired blocked extra lead tmp
   fired=$(auto_record_get fired) || fired=''
   blocked=$(auto_record_get blocked) || blocked=''
   extra=$(auto_record_get extra) || extra=''
+  lead=$(auto_record_get lead) || lead=''
   case "$key" in
     fired) fired=$value ;;
     blocked) blocked=$value ;;
     extra) extra=$value ;;
+    lead) lead=$value ;;
   esac
   mkdir -p "$STATE" 2>/dev/null || return 1
   tmp=$(umask 077; mktemp "$STATE/.fm-seat-auto.XXXXXX" 2>/dev/null) || return 1
-  { printf 'fired=%s\n' "$fired"; printf 'blocked=%s\n' "$blocked"; printf 'extra=%s\n' "$extra"; } > "$tmp" ||
+  { printf 'fired=%s\n' "$fired"; printf 'blocked=%s\n' "$blocked"; printf 'extra=%s\n' "$extra"; printf 'lead=%s\n' "$lead"; } > "$tmp" ||
     { rm -f -- "$tmp"; return 1; }
   mv -f -- "$tmp" "$AUTO_RECORD" || { rm -f -- "$tmp"; return 1; }
 }
@@ -666,7 +750,67 @@ cmd_auto() {
   export FM_SEAT_READ_DEADLINE
   policy=$(fm_seat_extra_usage_policy) || policy=''
   auto_trigger "$threshold" "$policy"
+  auto_lead_trigger "$threshold"
   [ -z "$policy" ] || warn_extra_usage_entry
+}
+
+# auto_lead_trigger <threshold>
+# The same crossing, asked about FIRSTMATE'S OWN seat. It is a separate question
+# from auto_trigger's because the lead keeps the account it launched on while
+# config/claude-seat moves under it, so the two can be on different seats and
+# cross at different times.
+#
+# This poll hands the move to the LEAD rather than performing it, and that is
+# about which process can do it, not about who decides. Replacing the lead drops
+# its conversation, so the open work held only there has to be written down first
+# - the same persist gate bin/fm-secondmate-restart.sh puts in front of every
+# second mate's restart. This poll is a separate process from the lead and cannot
+# write that conversation down, so the only correct thing it can do is hand the
+# lead the gate and the exact command, which is how a second mate's restart is
+# sequenced too.
+#
+# The line it prints is an INSTRUCTION, not an option to put to the captain. The
+# captain set the threshold, so the threshold firing is the instruction, and the
+# lead carries the move out on that wake like any other actionable check result.
+# The claude-seat-lead-restart skill owns that handling; the line stays
+# self-sufficient so it is still complete with no skill loaded.
+#
+# Nothing is reported unless the move is actually available: the destination is
+# chosen by the ordinary rotation and then put through the whole restart
+# preflight, so a crossing with no signed-in destination, no established launch
+# command, session, or terminal, says exactly that instead of offering a
+# restart that would refuse.
+auto_lead_trigger() {  # <threshold>
+  local threshold=$1 profile seat remaining target reported out
+  profile=$(lead_profile) || return 0
+  seat=$(fm_seat_name_of_profile "$profile")
+  remaining=$(fm_seat_remaining "$profile") || return 0
+  if ! jq -en --arg r "$remaining" --arg t "$threshold" \
+    '($r | tonumber) <= ($t | tonumber)' >/dev/null 2>&1; then
+    auto_record_set lead ''
+    return 0
+  fi
+  reported=$(auto_record_get lead) || reported=''
+  [ "$reported" != "$seat" ] || return 0
+  if ! target=$(next_seat "$seat" 2>/dev/null); then
+    [ "$reported" != "blocked:$seat:" ] || return 0
+    auto_record_set lead "blocked:$seat:"
+    printf 'claude-seat: firstmate itself is at %s%% left on %s and no seat qualifies as a destination, so it stays where it is\n' \
+      "$remaining" "$seat"
+    return 0
+  fi
+  if ! out=$(FM_HOME="$FM_HOME" FM_ROOT_OVERRIDE="$FM_ROOT" FM_STATE_OVERRIDE="$STATE" \
+    FM_CONFIG_OVERRIDE="$CONFIG" FM_DATA_OVERRIDE="$DATA" \
+    "$SCRIPT_DIR/fm-lead-restart.sh" --check --to "$target" 2>&1); then
+    [ "$reported" != "blocked:$seat:$target" ] || return 0
+    auto_record_set lead "blocked:$seat:$target"
+    printf 'claude-seat: firstmate itself is at %s%% left on %s and cannot move to %s: %s\n' \
+      "$remaining" "$seat" "$target" "$(printf '%s' "$out" | sed -n '/./{s/^error: //;s/[[:space:]]\{1,\}/ /g;p;q;}')"
+    return 0
+  fi
+  auto_record_set lead "$seat"
+  printf 'claude-seat: firstmate itself is at %s%% left on %s and moves to %s now, on this wake, without asking the captain (load the claude-seat-lead-restart skill). Replacing this session drops its conversation and keeps every durable record, so FIRST %s THEN run exactly: %s/bin/fm-seat.sh lead-restart --to %s --persisted\n' \
+    "$remaining" "$seat" "$target" "$FM_PERSIST_OPEN_RECORDS_CONTRACT" "$FM_ROOT" "$target"
 }
 
 # auto_trigger <threshold> <policy>
@@ -773,6 +917,7 @@ case "${1-}" in
   threshold)         shift; cmd_threshold "${1-}" ;;
   destination-min)   shift; cmd_destination_min "${1-}" ;;
   extra-usage)       shift; cmd_extra_usage "${1-}" "${2-}" ;;
+  lead-restart)      shift; cmd_lead_restart "$@" ;;
   threshold-reached) shift; cmd_threshold_reached ;;
   auto)              shift; cmd_auto ;;
   arm)               shift; cmd_arm "$@" ;;
