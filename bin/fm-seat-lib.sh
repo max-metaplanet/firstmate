@@ -136,6 +136,24 @@ fm_seat_config_dir() {
   printf '%s\n' "${CLAUDE_CONFIG_DIR:-}"
 }
 
+# fm_seat_name_of_profile <profile-dir>
+# The inverse of fm_seat_config_dir: the seat NAME a profile directory belongs
+# to. The empty profile is the ambient default seat, which is a real answer; a
+# profile outside the seats root has no seat name and is reported by its own
+# path, so a home running on an unmanaged profile still reads honestly rather
+# than being labelled with a seat it is not on.
+fm_seat_name_of_profile() {
+  local profile=${1-} name
+  [ -n "$profile" ] || { printf '%s\n' "$FM_SEAT_DEFAULT_NAME"; return 0; }
+  while IFS= read -r name; do
+    [ -n "$name" ] || continue
+    [ "$(fm_seat_dir "$name")" = "$profile" ] || continue
+    printf '%s\n' "$name"
+    return 0
+  done < <(fm_seat_list)
+  printf '%s\n' "$profile"
+}
+
 # fm_seat_spawn_config_dir
 # The CLAUDE_CONFIG_DIR a NEW claude worker should launch with: the active
 # seat's, resolved by fm_seat_config_dir. Only a fresh spawn calls this. A

@@ -373,6 +373,7 @@ family_for_basename() {
     fm-herdr-session-cleanup.test.sh|fm-send-resolve-key.test.sh|fm-send-strict.test.sh|\
     fm-send-inbox.test.sh|fm-spawn-batch.test.sh|\
     fm-spawn-dispatch-profile.test.sh|fm-claude-trust.test.sh|fm-seat.test.sh|\
+    fm-lead-restart.test.sh|\
     fm-worker-account.test.sh|\
     fm-trace-context-spawn.test.sh|fm-spawn-worktree-settle.test.sh|\
     fm-spawn-compact-adviser-disable.test.sh|\
@@ -743,6 +744,7 @@ tests/fm-herdr-version-floor-live-e2e.test.sh 72
 tests/fm-home-summary-refresh.test.sh 37264
 tests/fm-inactive-reconcile.test.sh 53178
 tests/fm-kimi-harness.test.sh 19151
+tests/fm-lead-restart.test.sh 30000
 tests/fm-lint-workflows.test.sh 785
 tests/fm-live-gate.test.sh 1755
 tests/fm-mail-check.test.sh 9162
@@ -1437,7 +1439,10 @@ families_for_changed_path() {
     bin/fm-session-start.sh|bin/fm-fleet-sync.sh|\
     bin/fm-sessionstart-nudge.sh|bin/fm-startup-network.sh|bin/fm-tangle*|bin/fm-update.sh|\
     bin/fm-gate-refuse*|bin/fm-lock*)
+      # bin/fm-lock.sh also owns the lead-restart handover reservation and the
+      # lock-owner runtime record, so its suite runs beside the bootstrap family.
       printf '%s\n' session-bootstrap
+      printf '%s\n' "__script__:fm-lead-restart.test.sh"
       ;;
     bin/fm-bootstrap.sh)
       printf '%s\n' session-bootstrap
@@ -1455,6 +1460,10 @@ families_for_changed_path() {
     bin/fm-seat.sh|bin/fm-seat-lib.sh)
       printf '%s\n' "__script__:fm-seat.test.sh"
       printf '%s\n' "__script__:fm-control-relaunch.test.sh"
+      printf '%s\n' "__script__:fm-lead-restart.test.sh"
+      ;;
+    bin/fm-lead-restart.sh)
+      printf '%s\n' "__script__:fm-lead-restart.test.sh"
       ;;
     bin/fm-quota-choose.sh)
       printf '%s\n' "__script__:fm-quota-choose.test.sh"

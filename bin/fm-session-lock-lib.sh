@@ -382,3 +382,94 @@ fm_session_lock_inspect() {  # <state>
   # shellcheck disable=SC2034 # Output global, read by lock status and inbox ready.
   FM_LOCK_INSPECT_LIVE_HARNESS=false
 }
+
+# --- lead handover reservation -----------------------------------------------
+# A lead self-restart replaces the process that holds this home's session lock.
+# Between the old lead's exit and the successor's own acquisition the lock names
+# a dead pid, which every other session reads as reclaimable. A reservation
+# closes that window: while it is live, only the outgoing session or the exact
+# successor it named may take the lock, and every other session is refused.
+#
+# It is deliberately NOT a second ownership record. Line 1 and the sidecar keep
+# their whole meaning; this only narrows WHO may reclaim a lock whose recorded
+# pid has died, for a bounded time, and it is ignored the moment it expires so a
+# failed handover can never wedge a home permanently.
+#
+# The record is one key=value per line in state/.lock-handover:
+#   session=<the trusted Claude session id the successor resumes>
+#   nonce=<unguessable token handed to the successor as FM_LEAD_HANDOVER>
+#   deadline=<epoch second after which this reservation means nothing>
+#   pid=<the outgoing lead's recorded anchor pid, for diagnostics>
+# bin/fm-lock.sh is its only writer; bin/fm-lead-restart.sh asks for it through
+# that writer rather than composing the file itself.
+fm_session_lock_handover_field() {  # <state> <key>
+  local state=$1 key=$2 value
+  [ -f "$state/.lock-handover" ] && [ ! -L "$state/.lock-handover" ] || return 1
+  value=$(sed -n "s/^$key=//p" "$state/.lock-handover" 2>/dev/null | tail -1) || return 1
+  [ -n "$value" ] || return 1
+  printf '%s\n' "$value"
+}
+
+# True when state dir $1 carries a handover reservation that has not expired.
+# A missing, symlinked, malformed, or past-deadline record is no reservation at
+# all, so nothing below can hold a home shut on a corrupt file.
+fm_session_lock_handover_live() {  # <state>
+  local deadline
+  deadline=$(fm_session_lock_handover_field "$1" deadline) || return 1
+  case "$deadline" in ''|*[!0-9]*) return 1 ;; esac
+  [ "$(date +%s)" -lt "$deadline" ]
+}
+
+# True when THIS process may acquire a lock reserved by state dir $1. Either
+# proof is enough:
+#   - FM_LEAD_HANDOVER carries the reserved nonce. Only the successor command
+#     the outgoing lead composed is given it, so this is the successor's own
+#     positive proof and the one that clears the reservation.
+#   - the trusted Claude session id equals the reserved session. The outgoing
+#     lead still holds that id, so it keeps confirming its own lock for as long
+#     as it is alive, and the successor resuming that session (never
+#     --fork-session, which mints a new id) satisfies it too.
+# Sets FM_SESSION_LOCK_HANDOVER_CLAIMED=1 only on the nonce proof.
+FM_SESSION_LOCK_HANDOVER_CLAIMED=0
+fm_session_lock_handover_admits() {  # <state> [<ancestry-pids>]
+  local state=$1 nonce session trusted
+  FM_SESSION_LOCK_HANDOVER_CLAIMED=0
+  if nonce=$(fm_session_lock_handover_field "$state" nonce) \
+    && [ -n "${FM_LEAD_HANDOVER:-}" ] && [ "$FM_LEAD_HANDOVER" = "$nonce" ]; then
+    # shellcheck disable=SC2034 # Output global, read by bin/fm-lock.sh.
+    FM_SESSION_LOCK_HANDOVER_CLAIMED=1
+    return 0
+  fi
+  session=$(fm_session_lock_handover_field "$state" session) || return 1
+  trusted=$(fm_session_lock_trusted_session_id "${2:-}") || return 1
+  [ "$trusted" = "$session" ]
+}
+
+# --- lock-owner runtime record ------------------------------------------------
+# What the lock-owning session itself is running in: which Claude profile, and
+# which pane. Neither is derivable elsewhere. The lead's own seat is not
+# config/claude-seat, which names the seat NEW workers get and moves without the
+# lead; and neither the profile nor the pane can be read out of a running
+# process's environment portably. So the owning session records both beside the
+# lock, bound to the pid on line 1, and a record that does not name the current
+# owner is no evidence at all rather than a stale guess.
+#
+# One key=value per line in state/.lock-runtime:
+#   pid=<the anchor pid on lock line 1 when this was written>
+#   profile=<its CLAUDE_CONFIG_DIR; absent means the ambient default profile>
+#   backend=<tmux|herdr> and target=<pane>, both absent unless the pane was
+#           established rather than guessed (bin/fm-supervisor-target-lib.sh)
+# bin/fm-lock.sh is its only writer.
+fm_session_lock_runtime_field() {  # <state> <key>
+  local state=$1 key=$2 recorded lock_pid
+  [ -f "$state/.lock-runtime" ] && [ ! -L "$state/.lock-runtime" ] || return 1
+  recorded=$(sed -n 's/^pid=//p' "$state/.lock-runtime" 2>/dev/null | tail -1)
+  case "$recorded" in ''|*[!0-9]*) return 1 ;; esac
+  lock_pid=$(head -n 1 "$state/.lock" 2>/dev/null || true)
+  [ "$recorded" = "$lock_pid" ] || return 1
+  # An absent key and a key recorded as empty are different answers: `profile=`
+  # with nothing after it IS the ambient default profile, while no profile line
+  # at all means this record cannot answer the question.
+  grep -q "^$key=" "$state/.lock-runtime" 2>/dev/null || return 1
+  sed -n "s/^$key=//p" "$state/.lock-runtime" 2>/dev/null | tail -1
+}

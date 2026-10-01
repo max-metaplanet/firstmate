@@ -157,6 +157,25 @@ fm_backend_tmux_window_inventory() {  # <session-target>
   return 1
 }
 
+# fm_backend_tmux_pane_inventory: every pane id on the server, classified the
+# same way as the window inventory above. A pane id (`%N`) is how a session that
+# discovered its own pane from $TMUX_PANE records it, and it names exactly one
+# pane server-wide, so its presence in this list is the exact-identity proof a
+# window name gets from its session's inventory.
+fm_backend_tmux_pane_inventory() {
+  local panes
+  if panes=$(LC_ALL=C tmux list-panes -a -F '#{pane_id}' 2>&1); then
+    printf '%s\n' "$panes"
+    return 0
+  fi
+  case "$panes" in
+    *"no server running on "*|*"error connecting to "*" (No such file or directory)"|*"error connecting to "*" (Connection refused)")
+      return 2
+      ;;
+  esac
+  return 1
+}
+
 # fm_backend_tmux_kill: remove one explicitly named task window.
 # Empty, omitted, and malformed targets return nonzero before invoking tmux so
 # tmux can never interpret an empty target as the caller's current window.
@@ -306,7 +325,8 @@ fm_backend_tmux_foreground_argv0s() {  # <target>
 # shared state vocabulary and docs/tmux-backend.md "Agent liveness probe" for
 # the empirical basis. Tmux silently falls back to the active window when a
 # named target is absent, so the exact recorded window must appear in a
-# successful session inventory before its foreground command can be trusted.
+# successful session inventory before its foreground command can be trusted;
+# a pane-id target must appear in the server's pane inventory the same way.
 # An omitted window or a definitive missing-session/server response is
 # `missing`; any other inventory or pane read failure is `unreadable`, so a
 # transient tmux problem never licenses a duplicate.
@@ -323,14 +343,21 @@ fm_backend_tmux_agent_state() {  # <target>
   local target=$1 comm session window windows inventory_status
   local foreground argv0s name pid fg_seen=0 fg_shell=0 fg_other=0
   case "$target" in
+    %*[!0-9]*|%) printf 'unreadable'; return 0 ;;
+    %*)
+      windows=$(fm_backend_tmux_pane_inventory)
+      inventory_status=$?
+      window=$target
+      ;;
     *:*:*|'':*|*:'') printf 'unreadable'; return 0 ;;
-    *:*) ;;
+    *:*)
+      session=${target%%:*}
+      window=${target#*:}
+      windows=$(fm_backend_tmux_window_inventory "$session")
+      inventory_status=$?
+      ;;
     *) printf 'unreadable'; return 0 ;;
   esac
-  session=${target%%:*}
-  window=${target#*:}
-  windows=$(fm_backend_tmux_window_inventory "$session")
-  inventory_status=$?
   if [ "$inventory_status" -ne 0 ]; then
     if [ "$inventory_status" -eq 2 ]; then
       printf 'missing'
