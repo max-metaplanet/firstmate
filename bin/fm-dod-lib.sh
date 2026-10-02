@@ -109,7 +109,7 @@
 
 # The bound on the one live `git ls-remote origin` the named-head gate makes.
 # Overridable so a test can prove a stalled remote refuses rather than hangs.
-: "${FM_DOD_ORIGIN_READ_SECONDS:=10}"
+: "${FM_DOD_ORIGIN_READ_SECONDS:=5}"
 
 fm_brief_worker_role() {  # <state-dir> <task-id>
   local state=$1 task_id=$2
@@ -677,18 +677,13 @@ fm_dod_nm_custody_returned() {  # <worktree>
 # <worktree> and <project> whose `origin` resolves is read exactly once, so an
 # unreachable remote costs one timeout rather than two. This gate only reads: it
 # never writes configuration, fetches objects, or creates a ref.
-# A ref the remote advertises AT <sha> proves the commit exists outside the copy
-# without this copy holding the object. When no tip is the head itself,
-# containment is decided against the advertised tips this copy already holds, in
-# one walk that stops at the first commit `--not` leaves - an empty result means
-# every path from the head is already covered by a tip. A tip this copy never
-# fetched cannot be walked here, so it proves nothing either way.
+# Only a ref the remote advertises AT <sha> counts: it proves the commit exists
+# outside the copy without this copy holding the object.
 # 1 when the remote does not carry <sha> AND when it could not be read, which
 # keeps an unreachable remote on today's verdict rather than accepting a head on
 # no evidence.
 fm_dod_named_head_on_origin() {  # <worktree> <project> <sha>
-  local wt=$1 project=$2 sha=$3 repo='' candidate listing tip refname held walk
-  local tips=()
+  local wt=$1 project=$2 sha=$3 repo='' candidate listing tip refname
   [ -n "$sha" ] || return 1
   for candidate in "$wt" "$project"; do
     [ -n "$candidate" ] && [ -d "$candidate" ] || continue
@@ -710,16 +705,8 @@ fm_dod_named_head_on_origin() {  # <worktree> <project> <sha>
       *) continue ;;
     esac
     [ "$tip" = "$sha" ] && return 0
-    tips+=("$tip")
   done <<< "$listing"
-  [ "${#tips[@]}" -gt 0 ] || return 1
-  held=$(printf '%s\n' "${tips[@]}" \
-    | git -C "$repo" cat-file --batch-check='%(objectname) %(objecttype)' 2>/dev/null \
-    | awk '$2 == "commit" { print $1 }')
-  [ -n "$held" ] || return 1
-  # shellcheck disable=SC2086  # held is a deliberate whitespace-separated rev list.
-  walk=$(git -C "$repo" rev-list --max-count=1 "$sha" --not $held 2>/dev/null) || return 1
-  [ -z "$walk" ]
+  return 1
 }
 
 # 0 when <sha> is reachable from something that survives the disposable

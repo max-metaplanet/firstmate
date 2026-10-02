@@ -526,23 +526,6 @@ test_narrowed_fetch_refspec_still_refuses_an_unpushed_head() {
   pass "a head origin never received is still refused, with safe-ref guidance"
 }
 
-test_advertised_tip_this_copy_holds_contains_the_named_head() {
-  local project wt sha
-  narrowed_layout contained fm/contained
-  project="$TMP_ROOT/contained-project"
-  wt="$TMP_ROOT/contained-wt"
-  git -C "$wt" commit -q --allow-empty -m 'the named head'
-  sha=$(git -C "$wt" rev-parse HEAD)
-  # origin's branch moves on past the named head, and this copy already holds
-  # that newer tip - it made it - but has no remote-tracking ref for it.
-  git -C "$wt" commit -q --allow-empty -m 'a later commit on the same branch'
-  git -C "$wt" push --quiet origin fm/contained
-  git -C "$wt" reset -q --hard "$sha"
-  accept_done ship direct-PR "$wt" "$project" 'done: PR https://github.com/o/r/pull/2' \
-    || fail "a head contained in an advertised tip this copy holds was refused"
-  pass "an advertised tip this copy holds proves the named head reached origin"
-}
-
 test_hostile_remote_ref_name_is_not_executed() {
   local project wt sha marker
   narrowed_layout hostile fm/hostile
@@ -651,7 +634,6 @@ test_direct_pr_origin_through_an_ssh_alias_is_accepted
 test_origin_binding_is_scoped_to_direct_pr_and_forge_origins
 test_narrowed_fetch_refspec_accepts_the_pushed_head
 test_narrowed_fetch_refspec_still_refuses_an_unpushed_head
-test_advertised_tip_this_copy_holds_contains_the_named_head
 test_hostile_remote_ref_name_is_not_executed
 test_unreadable_origin_keeps_the_refusal
 test_origin_read_is_bounded
