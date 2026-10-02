@@ -1,0 +1,15 @@
+ok - standalone local-only done: requires the named head in the project clone
+ok - non-done lines are not gated
+ok - a direct-PR PR on the fork's parent repository is refused
+ok - a direct-PR PR on the fork's own origin is accepted
+ok - a plain clone's direct-PR PR is bound to its own origin
+ok - a wrong-repository PR is refused before the recorded-PR path
+ok - a direct-PR origin through an SSH alias accepts its own PR only
+ok - the origin binding covers direct-PR forge origins only
+ok - a pushed head is accepted through a narrowed remote.origin.fetch
+ok - a head origin never received is still refused, with safe-ref guidance
+ok - a hostile remote ref name is read as data, not run
+ok - an origin that cannot be read keeps the refusal rather than accepting
+ok - a stalled origin read is cut off by the gate's bound
+ok - local-only keeps its project-heads rule and reads no remote
+all fm-dod-lib tests passed

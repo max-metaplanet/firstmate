@@ -1,0 +1,46 @@
+===== CHANGE (eaad160) case=unpushed
+--- layout: project remote.origin.fetch = +refs/heads/main:refs/remotes/origin/main
+--- worktree tracking refs: refs/remotes/origin/HEAD refs/remotes/origin/main 
+--- origin advertises: fm/t1=aab6c23 main=5332664 
+--- worker HEAD: 99f83e4
+--- $ fm-pr-check.sh t1 https://github.com/o/r/pull/1   (exit 1, 2s)
+    error: named head 99f83e4d9be85a85d5173ff90092dabbd26a698b is unreachable outside the worker copy: no ref either copy holds carries it and origin does not advertise it, or origin could not be read - push that commit and report again; never change remote.origin.fetch, which rewrites the clone configuration every pooled worktree shares and breaks later worktree creation once the branch is deleted, and if you need a local ref fetch it once with `git fetch origin <branch>:refs/remotes/origin/<branch>`
+--- elapsed: 1s
+--- shared clone config+refs: UNCHANGED
+ROOT=/tmp/fmdod/run.9QZK
+
+===== CHANGE (eaad160) case=unreadable
+--- layout: project remote.origin.fetch = +refs/heads/main:refs/remotes/origin/main
+--- worktree tracking refs: refs/remotes/origin/HEAD refs/remotes/origin/main 
+--- origin advertises: fm/t1=2818dcc main=86dbcbd 
+--- worker HEAD: 2818dcc
+--- $ fm-pr-check.sh t1 https://github.com/o/r/pull/1   (exit 1, 2s)
+    error: named head 2818dcc1d9615fda5a53b4f8f81c4fc07fc654e7 is unreachable outside the worker copy: no ref either copy holds carries it and origin does not advertise it, or origin could not be read - push that commit and report again; never change remote.origin.fetch, which rewrites the clone configuration every pooled worktree shares and breaks later worktree creation once the branch is deleted, and if you need a local ref fetch it once with `git fetch origin <branch>:refs/remotes/origin/<branch>`
+--- elapsed: 1s
+--- shared clone config+refs: UNCHANGED
+ROOT=/tmp/fmdod/run.Q5Gd
+
+===== CHANGE (eaad160) case=stalled
+--- layout: project remote.origin.fetch = +refs/heads/main:refs/remotes/origin/main
+--- worktree tracking refs: refs/remotes/origin/HEAD refs/remotes/origin/main 
+--- origin advertises: main=20ddb14 
+--- worker HEAD: afb2af6
+--- $ fm-pr-check.sh t1 https://github.com/o/r/pull/1   (exit 1, 7s)
+    error: named head afb2af64ac598e0a01e1122297baaae62d705c7e is unreachable outside the worker copy: no ref either copy holds carries it and origin does not advertise it, or origin could not be read - push that commit and report again; never change remote.origin.fetch, which rewrites the clone configuration every pooled worktree shares and breaks later worktree creation once the branch is deleted, and if you need a local ref fetch it once with `git fetch origin <branch>:refs/remotes/origin/<branch>`
+--- elapsed: 6s
+--- shared clone config+refs: UNCHANGED
+ROOT=/tmp/fmdod/run.rrva
+
+===== CHANGE (eaad160) case=localonly
+--- layout: project remote.origin.fetch = +refs/heads/main:refs/remotes/origin/main
+--- worktree tracking refs: refs/remotes/origin/HEAD refs/remotes/origin/main 
+--- origin advertises: main=e37544d 
+--- worker HEAD: 30016ba
+--- $ fm-pr-check.sh t1 https://github.com/o/r/pull/1   (exit 0, 2s)
+    fm-contributions: data directory unavailable
+    armed: state/t1.check.sh
+--- elapsed: 2s
+--- shared clone config+refs: UNCHANGED
+--- meta pr= recorded: pr=https://github.com/o/r/pull/1
+ROOT=/tmp/fmdod/run.nBSO
+

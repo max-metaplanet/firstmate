@@ -1,0 +1,39 @@
+===== BASE (e73254a) case=pushed
+--- layout: project remote.origin.fetch = +refs/heads/main:refs/remotes/origin/main
+--- worktree tracking refs: refs/remotes/origin/HEAD refs/remotes/origin/main 
+--- origin advertises: fm/t1=2bbab69 main=95785f8 
+--- worker HEAD: 2bbab69
+--- $ fm-pr-check.sh t1 https://github.com/o/r/pull/1   (exit 1, 2s)
+    ●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    ●  WATCHER DOWN - SUPERVISION IS OFF
+    ●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+    ●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+    ●  This is a supervision warning only; the guarded operation WILL still run.
+    ●  watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.
+    ●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    error: named head 2bbab6993a9f878ec94f318b89c2994b18651637 is unreachable outside the worker copy
+--- elapsed: 1s
+--- shared clone config+refs: UNCHANGED
+ROOT=/tmp/fmdod/run.vNzw
+
+===== CHANGE (eaad160) case=pushed
+--- layout: project remote.origin.fetch = +refs/heads/main:refs/remotes/origin/main
+--- worktree tracking refs: refs/remotes/origin/HEAD refs/remotes/origin/main 
+--- origin advertises: fm/t1=e537756 main=019171f 
+--- worker HEAD: e537756
+--- $ fm-pr-check.sh t1 https://github.com/o/r/pull/1   (exit 0, 3s)
+    ●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    ●  WATCHER DOWN - SUPERVISION IS OFF
+    ●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+    ●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+    ●  This is a supervision warning only; the guarded operation WILL still run.
+    ●  watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.
+    ●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    fm-contributions: data directory unavailable
+    armed: state/t1.check.sh
+--- elapsed: 2s
+--- shared clone config+refs: UNCHANGED
+--- meta pr= recorded: pr=https://github.com/o/r/pull/1
+--- simulate merge: delete fm/t1 on origin, then create a new pooled worktree from the clone
+    new worktree created OK (fetch + worktree add succeeded)
+ROOT=/tmp/fmdod/run.2ufn

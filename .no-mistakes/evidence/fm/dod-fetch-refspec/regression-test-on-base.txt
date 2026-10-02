@@ -1,0 +1,1 @@
+not ok - a head pushed to origin was refused because the clone's fetch refspec is narrowed
