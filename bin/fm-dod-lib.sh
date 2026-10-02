@@ -10,9 +10,15 @@
 # bin/fm-pr-check.sh (PR registration), and bin/fm-inactive-reconcile.sh
 # (secondmate ledger-first publish of a child done). A ship `done:` is not
 # accepted while the named head exists only in the worker's disposable copy.
-# The check tests that head, not whether some branch moved. In no-mistakes
-# mode the pre-validation `done: {summary}` is the pipeline handoff and is
-# not gated; only the later CI-ready `done: PR <url> checks green` is, or on a
+# The check tests that head, not whether some branch moved. Reachability is
+# decided against a remote-tracking ref either copy already holds OR against
+# `origin` itself on one bounded live read, because a pooled worktree shares a
+# clone whose remote.origin.fetch may be narrowed to the default branch and
+# therefore never grows a tracking ref for the task branch;
+# fm_dod_named_head_on_origin owns that read and why no worker may widen that
+# shared refspec. In no-mistakes mode the pre-validation `done: {summary}` is
+# the pipeline handoff and is not gated; only the later CI-ready
+# `done: PR <url> checks green` is, or on a
 # Gerrit project the later `done: PR <change url> published for review`. The
 # named head is the worker copy's HEAD, except that a done naming the task's
 # recorded pr= passes when the forge holds that head: a forge-reported
@@ -100,6 +106,10 @@
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/fm-classify-lib.sh"
 # shellcheck source=bin/fm-nm-run-lib.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/fm-nm-run-lib.sh"
+
+# The bound on the one live `git ls-remote origin` the named-head gate makes.
+# Overridable so a test can prove a stalled remote refuses rather than hangs.
+: "${FM_DOD_ORIGIN_READ_SECONDS:=10}"
 
 fm_brief_worker_role() {  # <state-dir> <task-id>
   local state=$1 task_id=$2
@@ -656,13 +666,75 @@ fm_dod_nm_custody_returned() {  # <worktree>
   return 0
 }
 
-# 0 when <sha> is reachable from a ref that survives the disposable worktree:
-# any remote-tracking ref, or - for local-only - heads in the project clone.
+# 0 when `origin` itself carries <sha>, read live with ONE bounded `git
+# ls-remote` and no local remote-tracking ref. A pooled worktree shares its
+# clone's `.git/config`, and a clone whose `remote.origin.fetch` is narrowed to
+# the default branch never grows a tracking ref for a task branch, so a
+# correctly pushed head reads as absent to a local-ref test alone. The remote is
+# the authority on what it holds, and asking it keeps a worker from widening
+# that shared refspec to satisfy the gate - a write that outlives the task and
+# breaks every later worktree creation once the branch is deleted. The first of
+# <worktree> and <project> whose `origin` resolves is read exactly once, so an
+# unreachable remote costs one timeout rather than two. This gate only reads: it
+# never writes configuration, fetches objects, or creates a ref.
+# A ref the remote advertises AT <sha> proves the commit exists outside the copy
+# without this copy holding the object. When no tip is the head itself,
+# containment is decided against the advertised tips this copy already holds, in
+# one walk that stops at the first commit `--not` leaves - an empty result means
+# every path from the head is already covered by a tip. A tip this copy never
+# fetched cannot be walked here, so it proves nothing either way.
+# 1 when the remote does not carry <sha> AND when it could not be read, which
+# keeps an unreachable remote on today's verdict rather than accepting a head on
+# no evidence.
+fm_dod_named_head_on_origin() {  # <worktree> <project> <sha>
+  local wt=$1 project=$2 sha=$3 repo='' candidate listing tip refname held walk
+  local tips=()
+  [ -n "$sha" ] || return 1
+  for candidate in "$wt" "$project"; do
+    [ -n "$candidate" ] && [ -d "$candidate" ] || continue
+    git -C "$candidate" remote get-url origin >/dev/null 2>&1 || continue
+    repo=$candidate
+    break
+  done
+  [ -n "$repo" ] || return 1
+  # GIT_TERMINAL_PROMPT=0 keeps a credential prompt from consuming the bound,
+  # and fm_run_timed bounds every other way the read can stall.
+  listing=$(GIT_TERMINAL_PROMPT=0 fm_run_timed "$FM_DOD_ORIGIN_READ_SECONDS" \
+    git -C "$repo" ls-remote origin 2>/dev/null) || return 1
+  [ -n "$listing" ] || return 1
+  # A ref name may legally carry `$`, backticks and parentheses, so the
+  # listing is fed in quoted and read with -r: it stays data at every step.
+  while read -r tip refname; do
+    case "$refname" in
+      refs/*|HEAD) ;;
+      *) continue ;;
+    esac
+    [ "$tip" = "$sha" ] && return 0
+    tips+=("$tip")
+  done <<< "$listing"
+  [ "${#tips[@]}" -gt 0 ] || return 1
+  held=$(printf '%s\n' "${tips[@]}" \
+    | git -C "$repo" cat-file --batch-check='%(objectname) %(objecttype)' 2>/dev/null \
+    | awk '$2 == "commit" { print $1 }')
+  [ -n "$held" ] || return 1
+  # shellcheck disable=SC2086  # held is a deliberate whitespace-separated rev list.
+  walk=$(git -C "$repo" rev-list --max-count=1 "$sha" --not $held 2>/dev/null) || return 1
+  [ -z "$walk" ]
+}
+
+# 0 when <sha> is reachable from something that survives the disposable
+# worktree: a remote-tracking ref either copy already holds, `origin` itself on
+# a live read, or - for local-only, which publishes nothing and therefore never
+# reads a remote - heads in the project clone.
 fm_dod_named_head_reachable_outside_worktree() {  # <worktree> <project> <mode> <sha>
   local wt=$1 project=$2 mode=$3 sha=$4
   fm_dod_ref_contains "$wt" refs/remotes "$sha" && return 0
   fm_dod_ref_contains "$project" refs/remotes "$sha" && return 0
-  [ "$mode" = local-only ] && fm_dod_ref_contains "$project" refs/heads "$sha"
+  if [ "$mode" = local-only ]; then
+    fm_dod_ref_contains "$project" refs/heads "$sha"
+    return
+  fi
+  fm_dod_named_head_on_origin "$wt" "$project" "$sha"
 }
 
 # The forge identity of <repo>'s `origin` remote as `<host>/<path>` - the same
@@ -805,6 +877,6 @@ fm_dod_accept_ship_done() {  # <kind> <mode> <worktree> <project> <line> [<state
   if fm_dod_named_head_reachable_outside_worktree "$wt" "$project" "$mode" "$sha"; then
     return 0
   fi
-  printf '%s\n' "named head $sha is unreachable outside the worker copy"
+  printf '%s\n' "named head $sha is unreachable outside the worker copy: no ref either copy holds carries it and origin does not advertise it, or origin could not be read - push that commit and report again; never change remote.origin.fetch, which rewrites the clone configuration every pooled worktree shares and breaks later worktree creation once the branch is deleted, and if you need a local ref fetch it once with \`git fetch origin <branch>:refs/remotes/origin/<branch>\`"
   return 1
 }
