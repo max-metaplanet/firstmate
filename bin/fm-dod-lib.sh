@@ -131,6 +131,10 @@
 # shellcheck source=bin/fm-brief-heading-lib.sh
 . "$(d=${BASH_SOURCE[0]%/*}; [ "$d" != "${BASH_SOURCE[0]}" ] || d=.; cd "${d:-/}" && pwd)/fm-brief-heading-lib.sh"
 
+# The bound on the one live `git ls-remote origin` the named-head gate makes.
+# Overridable so a test can prove a stalled remote refuses rather than hangs.
+: "${FM_DOD_ORIGIN_READ_SECONDS:=5}"
+
 fm_brief_worker_role() {  # <state-dir> <task-id> <code-root>
   local state=$1 task_id=$2 root=$3
   cat <<'EOF'
@@ -754,91 +758,6 @@ fm_dod_named_head_reachable_outside_worktree() {  # <worktree> <project> <mode> 
     return
   fi
   fm_dod_named_head_on_origin "$wt" "$project" "$sha"
-}
-
-# The forge identity of <repo>'s `origin` remote as `<host>/<path>` - the same
-# shape fm_pr_url_parse reports as FM_PR_HOST/FM_PR_PATH - or 1 when there is no
-# origin or its URL names no forge. It maps the scp-like `git@host:owner/repo`
-# form and the ssh://, git://, http:// and https:// forms; a local path,
-# file://, or any other transport yields no identity, and the caller then has no
-# proof either way rather than a mismatch. The host is lowercased and a trailing
-# `.git` or `/` dropped, because those differ freely between a remote URL and
-# the forge's own web URL without naming a different repository.
-fm_dod_origin_forge_identity() {  # <repo>
-  local repo=$1 url rest host path
-  [ -n "$repo" ] && [ -d "$repo" ] || return 1
-  url=$(git -C "$repo" remote get-url origin 2>/dev/null) || return 1
-  case "$url" in
-    '') return 1 ;;
-    *[[:space:]]*) return 1 ;;
-    ssh://*|git://*|http://*|https://*)
-      rest=${url#*://}
-      rest=${rest#*@}
-      host=${rest%%/*}
-      [ "$host" != "$rest" ] || return 1
-      host=${host%%:*}
-      path=${rest#*/}
-      ;;
-    file://*|/*|.*|*://*) return 1 ;;
-    *:*)
-      host=${url%%:*}
-      host=${host##*@}
-      path=${url#*:}
-      ;;
-    *) return 1 ;;
-  esac
-  host=$(printf '%s' "$host" | tr '[:upper:]' '[:lower:]')
-  path=${path#/}
-  path=${path%/}
-  path=${path%.git}
-  path=${path%/}
-  case "$path" in
-    ''|*/) return 1 ;;
-  esac
-  [ -n "$host" ] || return 1
-  printf '%s/%s\n' "$host" "$path"
-}
-
-# 0 when two forge repository paths name the same repository. Only the path is
-# compared: an origin often reaches its forge through an SSH host alias or a
-# separate SSH endpoint (`github-443`, `ssh.github.com`) whose name never matches
-# the host in the forge's web URL, while a fork and its parent always differ in
-# owner/repository. Paths are case-insensitive on the forge, so a case
-# difference between a remote URL and the URL the forge printed is not a
-# different repository.
-fm_dod_forge_path_equal() {  # <a> <b>
-  local a b
-  a=$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')
-  b=$(printf '%s' "$2" | tr '[:upper:]' '[:lower:]')
-  [ "$a" = "$b" ]
-}
-
-# 0 when a direct-PR ship done: may proceed on <url>; 1 when that URL names a
-# pull request on a repository that is NOT this copy's `origin`, with the
-# one-line reason on stdout. `gh pr create` with no `-R` defaults to a FORK's
-# parent repository, so a fork clone can raise its PR on a repository nobody
-# authorized; this refuses that claim instead of recording it, including at
-# bin/fm-pr-check.sh's registration. Only direct-PR is gated: a no-mistakes PR
-# is published by the pipeline's own configured push target rather than by this
-# copy, and local-only opens no PR at all. A Gerrit change keeps its own
-# published-tree check, because a change's project path and an origin URL
-# legitimately differ. When origin names no forge there is no proof either way,
-# and the claim goes on to the named-head gate unchanged. A deliberate upstream
-# contribution from a fork is refused here too: it needs the captain's word, not
-# a silent exception.
-fm_dod_pr_url_on_origin() {  # <mode> <worktree> <project> <url>
-  local mode=$1 wt=$2 project=$3 url=$4 origin target
-  [ "$mode" = direct-PR ] || return 0
-  [ -n "$url" ] || return 0
-  fm_pr_url_parse "$url" || return 0
-  [ "$FM_PR_PROVIDER" != gerrit ] || return 0
-  target="$FM_PR_HOST/$FM_PR_PATH"
-  origin=$(fm_dod_origin_forge_identity "$wt") \
-    || origin=$(fm_dod_origin_forge_identity "$project") \
-    || return 0
-  fm_dod_forge_path_equal "${origin#*/}" "$FM_PR_PATH" && return 0
-  printf '%s\n' "the PR $url is on $target, not this copy's origin $origin: either the PR was opened on the wrong repository - open it on origin with \`gh-axi pr create -R ${origin#*/} --base <default branch>\`, because \`gh pr create\` with no -R targets a fork's parent repository - or origin still uses a renamed or transferred repository's old name - run \`git remote set-url origin <the repository's current URL>\` and report again"
-  return 1
 }
 
 # The forge identity of <repo>'s `origin` remote as `<host>/<path>` - the same

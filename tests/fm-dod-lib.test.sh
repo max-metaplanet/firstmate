@@ -569,6 +569,168 @@ test_origin_binding_is_scoped_to_direct_pr_and_forge_origins() {
   pass "the origin binding covers direct-PR forge origins only"
 }
 
+# A pooled-worktree layout exactly as the clones that exposed this gate have it:
+# a bare origin, a project clone whose remote.origin.fetch names only the
+# default branch, and a worktree sharing that clone's .git/config. No task
+# branch ever grows a remote-tracking ref in such a clone, so the local-ref test
+# alone cannot see a correctly pushed head. Builds <TMP_ROOT>/<name>-origin.git,
+# <TMP_ROOT>/<name>-project and <TMP_ROOT>/<name>-wt on <branch>.
+narrowed_layout() {  # <name> <branch>
+  local name=$1 branch=$2 origin
+  origin="$TMP_ROOT/$name-origin.git"
+  fm_git_init_commit "$TMP_ROOT/$name-seed"
+  git clone --quiet --bare "$TMP_ROOT/$name-seed" "$origin"
+  git clone --quiet "file://$(cd "$origin" && pwd)" "$TMP_ROOT/$name-project"
+  git -C "$TMP_ROOT/$name-project" config remote.origin.fetch \
+    '+refs/heads/main:refs/remotes/origin/main'
+  git -C "$TMP_ROOT/$name-project" worktree add --quiet -b "$branch" "$TMP_ROOT/$name-wt"
+}
+
+# An ssh transport that never answers, as a script so git's own argument
+# appending cannot turn it back into a fast failure. Prints its path.
+stalling_ssh() {  # <name>
+  local path="$TMP_ROOT/$1-stall-ssh"
+  printf '%s\n' '#!/bin/sh' 'sleep 120' > "$path"
+  chmod 700 "$path"
+  printf '%s\n' "$path"
+}
+
+# The whole observable state of a clone the gate must not touch: its stored
+# configuration and every ref it holds.
+clone_fingerprint() {  # <repo>
+  cat "$1/.git/config"
+  git -C "$1" for-each-ref --format='%(refname) %(objectname)'
+}
+
+test_narrowed_fetch_refspec_accepts_the_pushed_head() {
+  local project wt sha before after
+  narrowed_layout narrowed fm/narrowed
+  project="$TMP_ROOT/narrowed-project"
+  wt="$TMP_ROOT/narrowed-wt"
+  git -C "$wt" commit -q --allow-empty -m 'the fix, pushed to origin'
+  sha=$(git -C "$wt" rev-parse HEAD)
+  git -C "$wt" push --quiet origin fm/narrowed
+  git -C "$wt" for-each-ref --format='%(refname)' refs/remotes | grep -q 'fm/narrowed' \
+    && fail "fixture is not narrowed: the push left a remote-tracking ref"
+  before=$(clone_fingerprint "$project")
+  accept_done ship direct-PR "$wt" "$project" 'done: PR https://github.com/o/r/pull/1' \
+    || fail "a head pushed to origin was refused because the clone's fetch refspec is narrowed"
+  after=$(clone_fingerprint "$project")
+  [ "$before" = "$after" ] \
+    || fail "the gate changed the shared clone's configuration or refs"
+  pass "a pushed head is accepted through a narrowed remote.origin.fetch"
+}
+
+test_narrowed_fetch_refspec_still_refuses_an_unpushed_head() {
+  local project wt sha reason rc before after
+  narrowed_layout unpushed-narrowed fm/unpushed-narrowed
+  project="$TMP_ROOT/unpushed-narrowed-project"
+  wt="$TMP_ROOT/unpushed-narrowed-wt"
+  git -C "$wt" commit -q --allow-empty -m 'pushed'
+  git -C "$wt" push --quiet origin fm/unpushed-narrowed
+  git -C "$wt" commit -q --allow-empty -m 'the fix, never pushed'
+  sha=$(git -C "$wt" rev-parse HEAD)
+  before=$(clone_fingerprint "$project")
+  reason=$(accept_done ship direct-PR "$wt" "$project" 'done: PR https://github.com/o/r/pull/1')
+  rc=$?
+  after=$(clone_fingerprint "$project")
+  [ "$rc" -eq 1 ] || fail "a head origin never received was accepted (exit $rc)"
+  case "$reason" in
+    *"named head $sha is unreachable outside the worker copy"*) ;;
+    *) fail "the refusal did not name the unpushed commit: $reason" ;;
+  esac
+  case "$reason" in
+    *"never change remote.origin.fetch"*"git fetch origin <branch>:refs/remotes/origin/<branch>"*) ;;
+    *) fail "the refusal did not steer the worker off remote.origin.fetch: $reason" ;;
+  esac
+  [ "$before" = "$after" ] || fail "a refusing gate changed the shared clone"
+  pass "a head origin never received is still refused, with safe-ref guidance"
+}
+
+test_hostile_remote_ref_name_is_not_executed() {
+  local project wt sha marker
+  narrowed_layout hostile fm/hostile
+  project="$TMP_ROOT/hostile-project"
+  wt="$TMP_ROOT/hostile-wt"
+  marker="$TMP_ROOT/hostile-marker"
+  git -C "$wt" commit -q --allow-empty -m 'the fix, pushed to origin'
+  sha=$(git -C "$wt" rev-parse HEAD)
+  git -C "$wt" push --quiet origin fm/hostile
+  # git accepts a branch name that reads like a command substitution, and the
+  # gate reads whatever the remote advertises: that listing must stay data
+  # through every step that parses it.
+  git -C "$TMP_ROOT/hostile-origin.git" update-ref \
+    "refs/heads/x\$(touch\${IFS}$marker)y" "$sha"
+  accept_done ship direct-PR "$wt" "$project" 'done: PR https://github.com/o/r/pull/8' \
+    || fail "a pushed head was refused because another ref name looked hostile"
+  [ ! -e "$marker" ] || fail "a remote ref name was executed by the gate"
+  pass "a hostile remote ref name is read as data, not run"
+}
+
+test_unreadable_origin_keeps_the_refusal() {
+  local project wt sha reason rc
+  narrowed_layout unreadable fm/unreadable
+  project="$TMP_ROOT/unreadable-project"
+  wt="$TMP_ROOT/unreadable-wt"
+  git -C "$wt" commit -q --allow-empty -m 'pushed, but origin cannot be read back'
+  sha=$(git -C "$wt" rev-parse HEAD)
+  git -C "$wt" push --quiet origin fm/unreadable
+  git -C "$project" remote set-url origin "file://$TMP_ROOT/unreadable-origin.git.gone"
+  reason=$(accept_done ship direct-PR "$wt" "$project" 'done: PR https://github.com/o/r/pull/3')
+  rc=$?
+  [ "$rc" -eq 1 ] || fail "an unreadable origin accepted a head on no evidence (exit $rc)"
+  case "$reason" in
+    *"named head $sha is unreachable outside the worker copy"*) ;;
+    *) fail "the unreadable-origin refusal did not name the head: $reason" ;;
+  esac
+  pass "an origin that cannot be read keeps the refusal rather than accepting"
+}
+
+test_origin_read_is_bounded() {
+  local project wt rc started elapsed prior
+  narrowed_layout stalled fm/stalled
+  project="$TMP_ROOT/stalled-project"
+  wt="$TMP_ROOT/stalled-wt"
+  git -C "$wt" commit -q --allow-empty -m 'unreadable because origin never answers'
+  # An ssh origin whose transport never returns: the read must be cut off by the
+  # gate's own bound, not left to hang the supervisor that called it.
+  git -C "$project" remote set-url origin 'ssh://git@stall.invalid/o/r.git'
+  prior=$FM_DOD_ORIGIN_READ_SECONDS
+  GIT_SSH_COMMAND=$(stalling_ssh stalled)
+  export GIT_SSH_COMMAND
+  FM_DOD_ORIGIN_READ_SECONDS=3
+  started=$SECONDS
+  accept_done ship direct-PR "$wt" "$project" 'done: PR https://github.com/o/r/pull/4' >/dev/null
+  rc=$?
+  elapsed=$((SECONDS - started))
+  FM_DOD_ORIGIN_READ_SECONDS=$prior
+  unset GIT_SSH_COMMAND
+  [ "$rc" -eq 1 ] || fail "a stalled origin read did not refuse (exit $rc)"
+  [ "$elapsed" -lt 60 ] || fail "the origin read was not bounded: ${elapsed}s"
+  pass "a stalled origin read is cut off by the gate's bound"
+}
+
+test_local_only_does_not_read_origin() {
+  local project wt started elapsed prior
+  narrowed_layout localonly fm/localonly
+  project="$TMP_ROOT/localonly-project"
+  wt="$TMP_ROOT/localonly-wt"
+  git -C "$wt" commit -q --allow-empty -m 'local-only work on a linked branch'
+  git -C "$project" remote set-url origin 'ssh://git@stall.invalid/o/r.git'
+  prior=$FM_DOD_ORIGIN_READ_SECONDS
+  GIT_SSH_COMMAND=$(stalling_ssh localonly)
+  export GIT_SSH_COMMAND
+  FM_DOD_ORIGIN_READ_SECONDS=120
+  started=$SECONDS
+  accept_done ship local-only "$wt" "$project" 'done: ready in branch fm/localonly' \
+    || fail "local-only lost its project-heads rule"
+  elapsed=$((SECONDS - started))
+  FM_DOD_ORIGIN_READ_SECONDS=$prior
+  unset GIT_SSH_COMMAND
+  [ "$elapsed" -lt 30 ] || fail "local-only reached the remote: ${elapsed}s"
+  pass "local-only keeps its project-heads rule and reads no remote"
+}
+
 test_scout_done_is_not_gated
 test_unpushed_ship_done_is_refused
 test_no_mistakes_prevalidation_done_is_not_gated
@@ -615,5 +777,11 @@ test_direct_pr_plain_clone_is_bound_to_its_own_repository
 test_wrong_repository_is_refused_before_the_recorded_pr_path
 test_direct_pr_origin_through_an_ssh_alias_is_accepted
 test_origin_binding_is_scoped_to_direct_pr_and_forge_origins
+test_narrowed_fetch_refspec_accepts_the_pushed_head
+test_narrowed_fetch_refspec_still_refuses_an_unpushed_head
+test_hostile_remote_ref_name_is_not_executed
+test_unreadable_origin_keeps_the_refusal
+test_origin_read_is_bounded
+test_local_only_does_not_read_origin
 
 echo "all fm-dod-lib tests passed"
