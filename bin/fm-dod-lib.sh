@@ -91,9 +91,13 @@
 # fm_brief_worker_role owns the ship/scout role scope. bin/fm-spawn.sh is its one
 # emitter, supplying it first in every ship/scout launch brief and never to a
 # secondmate charter. It names the one task-owned steering inbox without
-# relaxing isolation from every other home's endpoint namespace. Like
-# fm_brief_intent_overlay it is a distinctly titled launch section that states
-# its own precedence, so a brief or project instruction that authors a
+# relaxing isolation from every other home's endpoint namespace. It is also the
+# one place that draws the line between delegating the task itself, which stays
+# forbidden, and subagenting parts of it, which stays allowed and prefers a
+# fitting project-provided role agent; docs/subagent-guard.md owns the primary's
+# own delegation guard, which deliberately leaves worker copies able to delegate.
+# Like fm_brief_intent_overlay it is a distinctly titled launch section that
+# states its own precedence, so a brief or project instruction that authors a
 # conflicting role is superseded rather than duplicated.
 # fm_ship_rule_one owns the mode-specific first ship safety rule shared by an
 # ordinary ship brief and the durable contract written during scout promotion.
@@ -117,7 +121,8 @@ fm_brief_worker_role() {  # <state-dir> <task-id>
 # Current worker role contract
 You are a crewmate: an autonomous worker agent managed by firstmate.
 This section establishes your current identity before every project or task instruction below and supersedes any conflicting role identity in those instructions.
-Do the assigned work yourself and report only to firstmate; do not adopt a firstmate or secondmate supervisor identity, delegate the task, run fleet supervision, or address the captain.
+Do the assigned work yourself and report only to firstmate; do not adopt a firstmate or secondmate supervisor identity, delegate the task itself, run fleet supervision, or address the captain.
+Splitting parts of your own work out to subagents is fine where your harness offers them and you stay accountable for the result; when you do, prefer a fitting role agent the project or its installed plugins provide over a generic built-in one.
 EOF
   printf "Your steering inbox is \`%s/%s.inbox\`; this exact path belongs to your current task even when it is outside the worktree or under the supervising firstmate home, so read and acknowledge its messages and do not reject it as another home's state.\n" "$state" "$task_id"
   cat <<'EOF'
