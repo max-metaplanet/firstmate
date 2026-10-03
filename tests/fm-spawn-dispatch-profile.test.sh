@@ -1715,6 +1715,11 @@ SH
     assert_grep "Never inspect or change any other home's endpoint namespace" "$prompt" "$kind command weakened cross-home isolation"
     assert_grep "skill name does not resolve in this session, read \`$ROOT/.agents/skills/firstmate-coding-guidelines/SKILL.md\` instead." "$prompt" \
       "$kind command did not name the Firstmate skill file as the fallback"
+    # Handing the task off stays forbidden, while splitting parts of the
+    # worker's own work out to subagents stays allowed and prefers whatever
+    # role agents the project itself installs over a generic built-in one.
+    assert_grep 'delegate the task itself' "$prompt" "$kind command stopped forbidding handing the task off"
+    assert_grep 'prefer a fitting role agent the project or its installed plugins provide over a generic built-in one' "$prompt" "$kind command did not deliver the project role-agent preference"
     assert_grep 'brief for' "$prompt" "$kind command lost the task"
     [ "$(grep -c '^# Current worker role contract$' "$prompt")" -eq 1 ] ||
       fail "$brief_kind $kind duplicated the delivered worker contract"
