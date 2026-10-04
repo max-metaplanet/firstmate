@@ -11,6 +11,8 @@
 #   fm-seat.sh threshold [<percent-left>|off]
 #   fm-seat.sh destination-min [<percent-left>|off]
 #   fm-seat.sh extra-usage [stop|allow <usd>|off]
+#   fm-seat.sh auto-exclude [<name>]
+#   fm-seat.sh auto-include <name>
 #   fm-seat.sh lead-restart [--to <name>] [--check] [--persisted]
 #                           [--launch-command <cmd>]
 #   fm-seat.sh threshold-reached
@@ -18,14 +20,15 @@
 #   fm-seat.sh arm
 #   fm-seat.sh retire
 #
-# status     Print the active seat, all three automatic-mode settings, whether
+# status     Print the active seat, every automatic-mode setting, whether
 #            the watch is armed, whether new Claude dispatch is held right now
 #            and why (the same reason bin/fm-spawn.sh prints when it refuses a
 #            spawn), every live task's OWN recorded seat, so
 #            a switch can be read against the workers it did not touch, and every
 #            local secondmate home that declines inherited seat settings, with
 #            the seat that home is actually on, so a decline is never invisible.
-# list       Print every seat with its login state and account identity.
+# list       Print every seat with its login state and account identity, and
+#            mark each seat held out of automatic rotation.
 # switch     Point future claude workers at <name>. `default` clears the setting
 #            and returns to the ambient login. `--next` rotates to the next
 #            qualifying seat after the active one, which is what the automatic
@@ -57,6 +60,16 @@
 #            extra-usage spend reaches that dollar cap and holds after it;
 #            `off` clears the policy and holds nothing. Absent means no hold of
 #            any kind.
+# auto-exclude
+#            Hold a seat out of AUTOMATIC rotation: `switch --next`, the armed
+#            watch, and the lead-restart destination all skip it, while
+#            `switch <name>` still reaches it. With no name, print the seats
+#            currently excluded. Idempotent, and it never moves the active seat:
+#            excluding the seat in use only stops it being a future automatic
+#            destination.
+# auto-include
+#            Put a seat back into automatic rotation. A seat that was not
+#            excluded is already in rotation, so that is a success and no error.
 # lead-restart
 #            Move FIRSTMATE ITSELF to another seat, which `switch` cannot do: a
 #            switch moves only what the next spawn reads, and no running Claude
@@ -186,7 +199,7 @@ all_seats() {
 }
 
 cmd_list() {
-  local name state account dir active
+  local name state account dir active note
   active=$(fm_seat_active)
   printf 'seats root: %s\n' "$(fm_seat_root)"
   while IFS= read -r name; do
@@ -194,9 +207,13 @@ cmd_list() {
     dir=$(fm_seat_config_dir "$name")
     state=$(login_state "$name")
     account=$(fm_seat_account "$dir" 2>/dev/null) || account=
-    printf '%s%s\t%s\t%s\t%s\n' \
+    # The note is appended only for an excluded seat, so a home that excludes
+    # nothing reads exactly as it did before the setting existed.
+    note=''
+    fm_seat_auto_excluded "$name" && note=$'\t'"excluded from automatic rotation"
+    printf '%s%s\t%s\t%s\t%s%s\n' \
       "$([ "$name" = "$active" ] && printf '* ' || printf '  ')" \
-      "$name" "$state" "${account:--}" "${dir:-(ambient default login)}"
+      "$name" "$state" "${account:--}" "${dir:-(ambient default login)}" "$note"
   done < <(all_seats)
 }
 
@@ -235,7 +252,7 @@ declining_secondmate_homes() {
 }
 
 cmd_status() {
-  local active profile threshold minimum policy reason rows
+  local active profile threshold minimum policy reason rows excluded
   active=$(fm_seat_active)
   printf 'active seat for NEW workers: %s\n' "$active"
   profile=$(fm_seat_config_dir "$active")
@@ -266,6 +283,13 @@ cmd_status() {
     esac
   else
     printf 'extra-usage policy: (unset - nothing holds Claude dispatch)\n'
+  fi
+  excluded=$(fm_seat_auto_exclude_list | tr '\n' ' ')
+  excluded=${excluded% }
+  if [ -n "$excluded" ]; then
+    printf 'excluded from automatic rotation: %s (switch <name> still reaches them)\n' "$excluded"
+  else
+    printf 'excluded from automatic rotation: (none - every seat under the root is a rotation candidate)\n'
   fi
   if fm_check_shim_armed; then
     printf 'auto-switch watch: armed (keeps watching after each switch)\n'
@@ -327,6 +351,13 @@ cmd_probe() {
 # worker launched there renews it. Rotating past every idle seat would leave the
 # fleet on its most-spent account for no reason.
 #
+# AUTOMATIC-ROTATION EXCLUSION. This is the one place a candidate set is built,
+# so every automatic path - `switch --next`, the armed watch's switch, the
+# watch's instruction to move the lead, the lead-restart destination, and the
+# feasibility check `arm` makes - reads the same exclusion here and none of them
+# can skip it. An explicit `switch <name>` does not come through this function
+# at all, which is exactly why an excluded seat stays manually reachable.
+#
 # Rotation covers ONLY named seats under the seats root. The default profile is
 # deliberately excluded: it is the account owner's own interactive login, it
 # changes under them whenever they sign in somewhere else, and nothing here can
@@ -361,8 +392,27 @@ next_seat() {
   for ((i = 1; i <= n; i++)); do
     name=${seats[$(((idx + i) % n))]}
     [ "$name" != "$active" ] || continue
-    if [ "$(login_state "$name")" != logged-in ]; then
-      printf 'seat %s: skipped, not logged in\n' "$name" >&2
+    # The exclusion is checked before anything is read about the seat, so a seat
+    # held out of rotation costs no quota call and is reported as withheld on
+    # purpose rather than as a seat that failed a check.
+    if fm_seat_auto_excluded "$name"; then
+      printf 'seat %s: skipped, excluded from automatic rotation (fm-seat.sh auto-include %s puts it back; switch %s still reaches it)\n' \
+        "$name" "$name" "$name" >&2
+      continue
+    fi
+    state=$(login_state "$name")
+    if ! seat_usable "$state"; then
+      # Each unusable state gets its own reason. Only a seat proven to hold no
+      # login is reported as not logged in; an undecided read says exactly that
+      # instead, because claiming a seat has no login when its store could not
+      # be read is the same wrong assertion this change removes for a lapsed
+      # seat, reached through a different branch.
+      case "$state" in
+        not-logged-in)
+          printf 'seat %s: skipped, not logged in\n' "$name" >&2 ;;
+        *)
+          printf 'seat %s: skipped, its login state could not be confirmed\n' "$name" >&2 ;;
+      esac
       continue
     fi
     if [ -z "$minimum" ]; then
@@ -411,7 +461,7 @@ cmd_switch() {
   done
   if [ "$rotate" -eq 1 ]; then
     [ -z "$name" ] || usage
-    name=$(next_seat) || die "no seat under the seats root qualifies as a destination (each skipped seat and its reason is printed above); add and log into a second seat, or lower 'fm-seat.sh destination-min' (docs/claude-seats.md). The default profile is never a rotation target, so switch to it by name if that is what you want"
+    name=$(next_seat) || die "no seat under the seats root qualifies as a destination (each skipped seat and its reason is printed above); add and log into a second seat, put an excluded seat back with 'fm-seat.sh auto-include <name>', or lower 'fm-seat.sh destination-min' (docs/claude-seats.md). The default profile is never a rotation target, so switch to it by name if that is what you want"
   fi
   [ -n "$name" ] || usage
   if [ "$name" != "$FM_SEAT_DEFAULT_NAME" ]; then
@@ -515,7 +565,7 @@ cmd_lead_restart() {
       die "the account firstmate itself runs on is not recorded for this session, so there is no seat to rotate away from; it is recorded at the next session start"
     anchor=$(fm_seat_name_of_profile "$profile")
     to=$(next_seat "$anchor") ||
-      die "no seat under the seats root qualifies as a destination for firstmate itself (each skipped seat and its reason is printed above); add and log into another seat, or lower 'fm-seat.sh destination-min' (docs/claude-seats.md)"
+      die "no seat under the seats root qualifies as a destination for firstmate itself (each skipped seat and its reason is printed above); add and log into another seat, put an excluded seat back with 'fm-seat.sh auto-include <name>', or lower 'fm-seat.sh destination-min' (docs/claude-seats.md)"
   fi
   FM_HOME="$FM_HOME" FM_ROOT_OVERRIDE="$FM_ROOT" FM_STATE_OVERRIDE="$STATE" \
     FM_CONFIG_OVERRIDE="$CONFIG" FM_DATA_OVERRIDE="$DATA" \
@@ -614,6 +664,94 @@ cmd_extra_usage() {
     printf 'extra-usage policy: allow up to $%s, then hold\n' "$amount"
     printf 'Measured against the spend the account itself reports for this seat.\n'
   fi
+}
+
+# write_auto_exclude <name...>
+# Replace config/claude-seat-auto-exclude atomically with the given names, or
+# remove it when none are left, so an empty exclusion is the absent file rather
+# than an empty one that reads the same but looks configured.
+write_auto_exclude() {
+  local tmp
+  mkdir -p "$CONFIG" || die "could not create $CONFIG"
+  if [ "$#" -eq 0 ]; then
+    rm -f "$CONFIG/claude-seat-auto-exclude" ||
+      die "could not clear the automatic-rotation exclusions"
+    return 0
+  fi
+  tmp="$CONFIG/.claude-seat-auto-exclude.$$"
+  printf '%s\n' "$@" > "$tmp" || die "could not write $tmp"
+  mv -f "$tmp" "$CONFIG/claude-seat-auto-exclude" ||
+    die "could not publish the automatic-rotation exclusions"
+}
+
+# print_auto_exclude
+# The current exclusions, or the explicit unset line, so `auto-exclude` with no
+# argument answers the same question `status` does without the rest of it.
+print_auto_exclude() {
+  local rows
+  rows=$(fm_seat_auto_exclude_list)
+  if [ -z "$rows" ]; then
+    printf '(none - every seat under the root is an automatic rotation candidate)\n'
+    return 0
+  fi
+  printf '%s\n' "$rows"
+}
+
+# cmd_auto_exclude [<name>]
+# Hold one seat out of every automatic path while leaving `switch <name>` alone.
+# It refuses a name with no seat directory, because an exclusion that matches
+# nothing is a typo that would silently keep rotating onto the seat it meant to
+# withhold.
+cmd_auto_exclude() {
+  local name=${1-} kept=() entry
+  if [ -z "$name" ]; then
+    print_auto_exclude
+    return 0
+  fi
+  [ "$name" != "$FM_SEAT_DEFAULT_NAME" ] ||
+    die "'$FM_SEAT_DEFAULT_NAME' names the ambient login, which is never an automatic rotation target, so there is nothing to exclude"
+  fm_seat_name_valid "$name" || die "invalid seat name: $name"
+  fm_seat_dir "$name" >/dev/null || die "seat '$name' does not resolve to a profile directory"
+  [ -d "$(fm_seat_dir "$name")" ] ||
+    die "seat '$name' has no profile directory under $(fm_seat_root); run 'fm-seat.sh add $name' first, or check the name against 'fm-seat.sh list'"
+  if fm_seat_auto_excluded "$name"; then
+    printf 'already excluded from automatic rotation: %s\n' "$name"
+    return 0
+  fi
+  while IFS= read -r entry; do
+    kept+=("$entry")
+  done < <(fm_seat_auto_exclude_list)
+  kept+=("$name")
+  write_auto_exclude ${kept[@]+"${kept[@]}"}
+  printf 'excluded from automatic rotation: %s\n' "$name"
+  printf "'fm-seat.sh switch %s' still switches to it; only the automatic paths skip it\n" "$name"
+  # Excluding the seat in use withholds it as a future DESTINATION and moves
+  # nothing, which is worth saying where it is easy to read as a switch away.
+  [ "$name" != "$(fm_seat_active)" ] ||
+    printf 'it is the active seat and stays active; new workers keep launching there until something switches\n'
+}
+
+# cmd_auto_include <name>
+# Put a seat back into automatic rotation. A name that is not excluded is
+# already in rotation, so this reports that and succeeds; it deliberately does
+# not require the seat to still exist, so a stale entry can always be cleared.
+cmd_auto_include() {
+  local name=${1-} kept=() entry removed=0
+  [ -n "$name" ] || usage
+  if ! fm_seat_auto_excluded "$name"; then
+    printf 'not excluded from automatic rotation: %s\n' "$name"
+    return 0
+  fi
+  while IFS= read -r entry; do
+    if [ "$entry" = "$name" ]; then
+      removed=1
+      continue
+    fi
+    kept+=("$entry")
+  done < <(fm_seat_auto_exclude_list)
+  [ "$removed" -eq 1 ] || die "could not remove '$name' from the automatic-rotation exclusions"
+  write_auto_exclude ${kept[@]+"${kept[@]}"}
+  printf 'back in automatic rotation: %s\n' "$name"
 }
 
 # The TRIGGER half of the automatic switch. It reads the SAME quota surface the
@@ -889,8 +1027,11 @@ cmd_arm() {
   fi
   threshold=$(fm_seat_threshold) ||
     die "no auto-switch threshold configured; set one with 'fm-seat.sh threshold <percent-left>' first"
-  next_seat >/dev/null 2>&1 ||
-    die "no seat under the seats root qualifies as a destination right now, so an automatic switch would have nowhere to go; add and log into a second seat, or lower 'fm-seat.sh destination-min' (docs/claude-seats.md). The default profile is never a rotation target"
+  # stdout only is discarded: each candidate's own skip reason belongs on
+  # stderr beside the refusal, the same way every other rotation refusal reads,
+  # so arming after an exclusion says which seats were withheld.
+  next_seat >/dev/null ||
+    die "no seat under the seats root qualifies as a destination right now, so an automatic switch would have nowhere to go (each skipped seat and its reason is printed above); add and log into a second seat, put an excluded seat back with 'fm-seat.sh auto-include <name>', or lower 'fm-seat.sh destination-min' (docs/claude-seats.md). The default profile is never a rotation target"
   fm_check_shim_arm "$FM_HOME" "$SCRIPT_DIR/fm-seat.sh" auto || exit 1
   printf 'armed: automatic switch at %s%% left on the active seat\n' "$threshold"
   printf 'keeps watching after each switch; one crossing fires at most once per seat\n'
@@ -917,6 +1058,8 @@ case "${1-}" in
   threshold)         shift; cmd_threshold "${1-}" ;;
   destination-min)   shift; cmd_destination_min "${1-}" ;;
   extra-usage)       shift; cmd_extra_usage "${1-}" "${2-}" ;;
+  auto-exclude)      shift; cmd_auto_exclude "${1-}" ;;
+  auto-include)      shift; cmd_auto_include "${1-}" ;;
   lead-restart)      shift; cmd_lead_restart "$@" ;;
   threshold-reached) shift; cmd_threshold_reached ;;
   auto)              shift; cmd_auto ;;
