@@ -21,8 +21,8 @@
 # the profile directory, so the recorded value is a correctness requirement and
 # not only a billing one.
 #
-# Five settings, all optional, all one line, all gitignored, and all inherited
-# by LOCAL secondmate homes but never by a remote route
+# Six settings, all optional, all gitignored, and all inherited by LOCAL
+# secondmate homes but never by a remote route
 # (FM_MACHINE_LOCAL_INHERITABLE_CONFIG in bin/fm-config-inherit-lib.sh):
 #   config/claude-seat            active seat NAME for new claude workers
 #   config/claude-seats-root      where seat profile directories live
@@ -34,10 +34,14 @@
 #   config/claude-seat-extra-usage
 #                                 what to do when no seat has headroom: `stop`
 #                                 or `allow <usd>`
+#   config/claude-seat-auto-exclude
+#                                 seat names, one per line, held out of
+#                                 AUTOMATIC rotation while `switch <name>` still
+#                                 reaches them
 # Every percentage counts percent LEFT, the same direction the quota viewer
-# reports, so no setting has to be inverted against another. All five are off
+# reports, so no setting has to be inverted against another. All six are off
 # when absent; see the automatic-mode section at the foot of this file.
-# A local home declines all five for itself with config/claude-seat-local, so it
+# A local home declines all six for itself with config/claude-seat-local, so it
 # can spend a separate account; bin/fm-config-inherit-lib.sh owns that decline.
 # docs/configuration.md "Claude seats" owns their schema.
 
@@ -358,6 +362,43 @@ fm_seat_extra_usage_policy() {
       return 0
       ;;
   esac
+  return 1
+}
+
+# fm_seat_auto_exclude_list
+# Every seat name held out of AUTOMATIC rotation, one per line, in the order the
+# file records them. Absent, empty, or whitespace-only means nothing is
+# excluded, which is the fleet-wide default.
+#
+# Lines are compared as plain strings and never validated here. A line that
+# names no seat simply matches nothing, so a hand-edited file can hold a stale
+# or misspelled name without either excluding a seat it did not name or
+# suppressing the exclusions beside it.
+fm_seat_auto_exclude_list() {
+  local path="$CONFIG/claude-seat-auto-exclude" line
+  [ -f "$path" ] || return 0
+  while IFS= read -r line || [ -n "$line" ]; do
+    line=${line#"${line%%[![:space:]]*}"}
+    line=${line%"${line##*[![:space:]]}"}
+    [ -n "$line" ] || continue
+    printf '%s\n' "$line"
+  done < "$path"
+}
+
+# fm_seat_auto_excluded <name>
+# True when <name> is held out of automatic rotation. This is the one owner of
+# that question, so the candidate filter, the listing, and the status report can
+# never disagree about which seats an automatic switch may land on.
+#
+# It is deliberately NOT consulted by `switch <name>`: the exclusion withholds a
+# seat from the automatic paths only, and naming it explicitly stays a valid
+# manual choice (docs/claude-seats.md).
+fm_seat_auto_excluded() {
+  local name=${1-} excluded
+  [ -n "$name" ] || return 1
+  while IFS= read -r excluded; do
+    [ "$excluded" = "$name" ] && return 0
+  done < <(fm_seat_auto_exclude_list)
   return 1
 }
 

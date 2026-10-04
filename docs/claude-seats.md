@@ -17,6 +17,7 @@ Firstmate never logs in, never copies a credential between profiles, and never t
 The default profile (`~/.claude`) is the account owner's own interactive login.
 It changes whenever they sign in somewhere else, and nothing here can tell which account it currently holds, so an automatic switch must never land workers on it.
 `switch --next` and the threshold watch therefore rotate only among named seats under the seats root; `switch default` remains available as an explicit, manual choice.
+A named seat can be held out of that rotation the same way, by [excluding it](#keeping-a-seat-out-of-automatic-rotation), while staying reachable by name.
 Creating one named seat per account, and leaving the default alone, keeps every account Firstmate uses identifiable and stable.
 
 ## Adding a second seat
@@ -98,10 +99,11 @@ Every percentage counts **percent left**, the same direction the quota viewer re
 bin/fm-seat.sh threshold 15          # switch when the ACTIVE seat drops to 15% left
 bin/fm-seat.sh destination-min 30    # only switch onto a seat with MORE than 30% left
 bin/fm-seat.sh extra-usage stop      # when no seat qualifies, hold new work
+bin/fm-seat.sh auto-exclude personal # keep one seat out of rotation entirely
 bin/fm-seat.sh arm
 ```
 
-### The three controls
+### The four controls
 
 **Trigger** (`threshold`) is when to look for a new seat: the active seat has dropped to or below that percent left.
 
@@ -118,7 +120,10 @@ Without this setting the rotation gate is login-only and no candidate's quota is
 
 Spend is read from the `extra_usage` window the account itself reports, and the cap is a firstmate-side figure compared against it - deliberately a smaller, separate number from the account's own extra-usage ceiling.
 
-`bin/fm-seat.sh status` prints all three settings, whether the watch is armed, and whether new Claude dispatch is held right now, with the same reason `bin/fm-spawn.sh` gives when it refuses a spawn.
+**Rotation exclusion** (`auto-exclude`) is which seats an automatic switch may not land on at all, whatever their headroom.
+It is the subject of [Keeping a seat out of automatic rotation](#keeping-a-seat-out-of-automatic-rotation) below.
+
+`bin/fm-seat.sh status` prints all four settings, whether the watch is armed, and whether new Claude dispatch is held right now, with the same reason `bin/fm-spawn.sh` gives when it refuses a spawn.
 
 ### What the automatic mode cannot do
 
@@ -153,9 +158,40 @@ An unreadable or ambiguous quota is never guessed at, in either direction:
 - A **candidate** seat's quota unreadable means that seat is skipped, and the output says the quota could not be read rather than implying a number.
 - With an extra-usage policy configured, an unreadable quota **holds** dispatch, because launching anyway would be exactly the guess the policy was set to avoid. The hold lifts on its own once the quota reads again.
 
-A rotation with no qualifying seat refuses rather than pretending to switch, and never falls back to the default profile.
+A rotation with no qualifying seat refuses rather than pretending to switch, and never falls back to the default profile or onto a seat held out of rotation.
 
-`bin/fm-seat.sh threshold off`, `destination-min off`, and `extra-usage off` each clear their own setting.
+`bin/fm-seat.sh threshold off`, `destination-min off`, and `extra-usage off` each clear their own setting, and `auto-include <name>` clears one exclusion.
+
+## Keeping a seat out of automatic rotation
+
+The other three controls all turn on *how much is left*.
+This one does not: it holds a seat out of every automatic path regardless of headroom, while leaving it available by name.
+
+```
+bin/fm-seat.sh auto-exclude personal    # automatic switches may no longer land here
+bin/fm-seat.sh auto-include personal    # put it back
+bin/fm-seat.sh auto-exclude             # list what is currently held out
+```
+
+The case it exists for is a seat that is genuinely usable on this machine but belongs to a different payer - a personal account alongside the team ones.
+Such a seat should be reachable deliberately and never be picked up by an automatic switch nobody was present for.
+`destination-min` cannot express that, because it is about a seat being nearly empty rather than about whose account it is.
+
+**What an exclusion changes, and what it does not.**
+
+- `switch --next`, the armed watch's switch, the watch's instruction to move firstmate itself, and the `lead-restart` destination all skip an excluded seat. They read one shared candidate list, so none of them can be the one that forgets.
+- `switch <name>` still reaches it. That is the point: the seat stays a deliberate choice and stops being an automatic one.
+- An excluded seat is listed with its reason whenever a rotation refuses, so a switch that found nowhere to go never leaves you guessing which seats were withheld.
+- Nothing moves when you exclude a seat. Excluding the **active** seat keeps it active and keeps new workers launching there; it only stops being a future automatic destination. Nothing moves a worker already running on it either.
+- A seat is excluded regardless of how much it has left, so an exclusion is never lifted by a quota reading.
+
+`bin/fm-seat.sh status` names every excluded seat, and `bin/fm-seat.sh list` marks each one on its own row, so an exclusion is never a setting you have to remember you made.
+
+Both commands are idempotent: excluding an already-excluded seat and including one that was never excluded each succeed and say so.
+`auto-exclude` refuses a name with no seat directory under the root, because an exclusion that matches nothing would silently keep rotating onto the seat it was meant to withhold; `auto-include` accepts any name, so a stale entry can always be cleared even after its seat is gone.
+Excluding the `default` login is refused outright, because it is never an automatic rotation target in the first place.
+
+If you exclude every candidate, nothing new happens: rotation falls through to the ordinary refusal that it has nowhere to go, naming each withheld seat, and `arm` refuses for the same reason rather than arming a watch that could never fire.
 
 ## Moving firstmate itself
 
@@ -172,7 +208,7 @@ bin/fm-seat.sh lead-restart --persisted          # do it
 
 Firstmate tells its crew it is about to restart, another `claude` starts on the new seat in the same terminal, resuming the same session, and the current process ends.
 A seat is a profile directory whose contents symlink the shared `~/.claude` body, which is what lets any seat resume the same session: the seat is the brain, the sessions and settings are the body.
-Without `--to`, the destination is the ordinary rotation, anchored on the seat firstmate is on rather than the seat new workers get.
+Without `--to`, the destination is the ordinary rotation, anchored on the seat firstmate is on rather than the seat new workers get, and it skips an excluded seat like every other automatic path.
 
 **Running workers are told, and are otherwise untouched.** Before the current process ends, each live worker gets one short notice that firstmate is restarting onto another seat, that its own work, seat, and steering inbox are unaffected, and that it should carry on without replying.
 The notice is cheap because nothing changes for a worker: its steering is a durable inbox, its status is a durable log, and it keeps the seat recorded in its own task record.
@@ -219,7 +255,7 @@ When Anthropic definitively rejects a refresh token, Claude Code clears the sess
 
 ## Secondmate homes
 
-All five seat settings are inherited into this machine's local secondmate homes through the primary-authoritative configuration contract, so a secondmate's own Claude crewmates launch on the same seat as the primary's.
+All six seat settings are inherited into this machine's local secondmate homes through the primary-authoritative configuration contract, so a secondmate's own Claude crewmates launch on the same seat as the primary's and no local home automatically rotates onto a seat the primary held out.
 Every switch, manual or automatic, runs `bin/fm-config-push.sh --local-only` right after it changes the primary's seat, so running local secondmates pick up the new seat without being stopped, and the switch prints which homes were updated and which were not.
 A failed push never undoes the primary's switch: it is reported, those homes keep spawning on their previous seat, and re-running `bin/fm-config-push.sh --local-only` retries them.
 The push skips remote routes entirely, so a switch never opens SSH, never waits on another machine, and reports only this machine's homes.
@@ -237,14 +273,14 @@ touch <that home>/config/claude-seat-local
 ```
 
 The file's presence is the whole setting; nothing reads its content.
-From then on that home keeps its own `claude-seat`, `claude-seats-root`, `claude-seat-threshold`, `claude-seat-destination-min`, and `claude-seat-extra-usage` untouched, including when it has none, and no local convergence overwrites them: not a switch's push, not the session-start secondmate sweep, and not that home's own launch or relaunch.
-The declining home still runs `bin/fm-seat.sh switch`, `threshold`, `destination-min`, `extra-usage`, and `arm` normally; those act on itself alone.
+From then on that home keeps its own `claude-seat`, `claude-seats-root`, `claude-seat-threshold`, `claude-seat-destination-min`, `claude-seat-extra-usage`, and `claude-seat-auto-exclude` untouched, including when it has none, and no local convergence overwrites them: not a switch's push, not the session-start secondmate sweep, and not that home's own launch or relaunch.
+The declining home still runs `bin/fm-seat.sh switch`, `threshold`, `destination-min`, `extra-usage`, `auto-exclude`, and `arm` normally; those act on itself alone.
 Only that home is left alone - every other local home still takes each switch, and a machine with no such file anywhere behaves exactly as it did before the flag existed.
 
 The decline is visible from the primary, because a setting that silently does nothing is the failure worth avoiding here.
 `bin/fm-seat.sh status` lists every local secondmate home that declined, with the seat that home is actually on, and each switch names the seat items it skipped for that home and why.
 Put the flag only in the home it belongs to: it is never inherited, so one home's billing choice is never decided for it elsewhere.
-[Configuration](configuration.md#claude-seats-configclaude-seat-configclaude-seats-root-configclaude-seat-threshold-configclaude-seat-destination-min-configclaude-seat-extra-usage-configclaude-seat-local) owns the flag's schema.
+[Configuration](configuration.md#claude-seats-configclaude-seat-configclaude-seats-root-configclaude-seat-threshold-configclaude-seat-destination-min-configclaude-seat-extra-usage-configclaude-seat-auto-exclude-configclaude-seat-local) owns the flag's schema.
 
 ## Glancing at every seat at once
 
