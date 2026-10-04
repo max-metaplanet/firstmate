@@ -1,0 +1,58 @@
+## throwaway home: lead recorded on seat-max, active seat seat-max, threshold 100% (always crossed)
+$ fm-seat.sh auto-exclude seat-max2
+excluded from automatic rotation: seat-max2
+'fm-seat.sh switch seat-max2' still switches to it; only the automatic paths skip it
+[exit 0]
+
+$ fm-seat.sh auto-exclude
+seat-max-gmail
+seat-max2
+[exit 0]
+
+$ fm-seat.sh status
+active seat for NEW workers: seat-max
+active profile: /Users/max/.claude-seats/seat-max
+login state: logged-in
+firstmate itself is running on: seat-max
+auto-switch trigger: at or below 100% left on the active seat
+destination minimum: (unset - any logged-in seat is a valid destination)
+extra-usage policy: (unset - nothing holds Claude dispatch)
+excluded from automatic rotation: seat-max-gmail seat-max2 (switch <name> still reaches them)
+auto-switch watch: not armed
+new Claude dispatch: allowed
+  no extra-usage policy is configured, so no quota is read and nothing holds
+
+live workers keep the seat they launched with:
+  (no task records)
+
+local secondmate homes declining inherited seats:
+  (none - every local home takes this seat)
+[exit 0]
+
+## lead-restart destination with every other seat excluded
+$ fm-seat.sh lead-restart --check
+seat seat-max-gmail: skipped, excluded from automatic rotation (fm-seat.sh auto-include seat-max-gmail puts it back; switch seat-max-gmail still reaches it)
+seat seat-max2: skipped, excluded from automatic rotation (fm-seat.sh auto-include seat-max2 puts it back; switch seat-max2 still reaches it)
+error: no seat under the seats root qualifies as a destination for firstmate itself (each skipped seat and its reason is printed above); add and log into another seat, put an excluded seat back with 'fm-seat.sh auto-include <name>', or lower 'fm-seat.sh destination-min' (docs/claude-seats.md)
+[exit 1]
+
+## one watch pass (the armed watch's body) with every other seat excluded
+$ fm-seat.sh auto
+claude-seat: seat-max is at 0% left and no seat has enough headroom to switch to; no extra-usage policy is set, so nothing is held.
+claude-seat: firstmate itself is at 0% left on seat-max and no seat qualifies as a destination, so it stays where it is
+[exit 0]
+
+--- active seat after watch pass:
+seat-max
+
+## include seat-max2 and re-ask the lead-restart destination
+$ fm-seat.sh auto-include seat-max2
+back in automatic rotation: seat-max2
+[exit 0]
+
+$ fm-seat.sh lead-restart --check
+seat seat-max-gmail: skipped, excluded from automatic rotation (fm-seat.sh auto-include seat-max-gmail puts it back; switch seat-max-gmail still reaches it)
+seat seat-max2: skipped, its login state could not be confirmed
+error: no seat under the seats root qualifies as a destination for firstmate itself (each skipped seat and its reason is printed above); add and log into another seat, put an excluded seat back with 'fm-seat.sh auto-include <name>', or lower 'fm-seat.sh destination-min' (docs/claude-seats.md)
+[exit 1]
+

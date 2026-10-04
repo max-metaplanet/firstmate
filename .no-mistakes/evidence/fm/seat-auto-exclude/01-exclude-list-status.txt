@@ -1,0 +1,82 @@
+$ fm-seat.sh list
+seats root: /Users/max/.claude-seats
+* default	logged-in	max@metaplanet.jp	(ambient default login)
+  seat-max	logged-in	max@metaplanet.jp	/Users/max/.claude-seats/seat-max
+  seat-max-gmail	unknown	-	/Users/max/.claude-seats/seat-max-gmail
+  seat-max2	logged-in	max2@metaplanet.jp	/Users/max/.claude-seats/seat-max2
+[exit 0]
+
+$ fm-seat.sh status
+active seat for NEW workers: default
+active profile: (ambient default login)
+login state: logged-in
+firstmate itself is running on: (not recorded for this session)
+auto-switch trigger: (unset - no automatic switching)
+destination minimum: (unset - any logged-in seat is a valid destination)
+extra-usage policy: (unset - nothing holds Claude dispatch)
+excluded from automatic rotation: (none - every seat under the root is a rotation candidate)
+auto-switch watch: not armed
+new Claude dispatch: allowed
+  no extra-usage policy is configured, so no quota is read and nothing holds
+
+live workers keep the seat they launched with:
+  (no task records)
+
+local secondmate homes declining inherited seats:
+  (none - every local home takes this seat)
+[exit 0]
+
+$ fm-seat.sh auto-exclude
+(none - every seat under the root is an automatic rotation candidate)
+[exit 0]
+
+$ fm-seat.sh switch seat-max
+switched: default -> seat-max
+applies to NEW claude workers only; running workers keep their own seat
+config-push: no live secondmate homes found
+[exit 0]
+
+$ fm-seat.sh auto-exclude seat-max-gmail
+excluded from automatic rotation: seat-max-gmail
+'fm-seat.sh switch seat-max-gmail' still switches to it; only the automatic paths skip it
+[exit 0]
+
+$ fm-seat.sh auto-exclude seat-max-gmail
+already excluded from automatic rotation: seat-max-gmail
+[exit 0]
+
+$ fm-seat.sh auto-exclude
+seat-max-gmail
+[exit 0]
+
+--- config file:
+seat-max-gmail
+
+$ fm-seat.sh list
+seats root: /Users/max/.claude-seats
+  default	logged-in	max@metaplanet.jp	(ambient default login)
+* seat-max	logged-in	max@metaplanet.jp	/Users/max/.claude-seats/seat-max
+  seat-max-gmail	unknown	-	/Users/max/.claude-seats/seat-max-gmail	excluded from automatic rotation
+  seat-max2	logged-in	max2@metaplanet.jp	/Users/max/.claude-seats/seat-max2
+[exit 0]
+
+$ fm-seat.sh status
+active seat for NEW workers: seat-max
+active profile: /Users/max/.claude-seats/seat-max
+login state: logged-in
+firstmate itself is running on: (not recorded for this session)
+auto-switch trigger: (unset - no automatic switching)
+destination minimum: (unset - any logged-in seat is a valid destination)
+extra-usage policy: (unset - nothing holds Claude dispatch)
+excluded from automatic rotation: seat-max-gmail (switch <name> still reaches them)
+auto-switch watch: not armed
+new Claude dispatch: allowed
+  no extra-usage policy is configured, so no quota is read and nothing holds
+
+live workers keep the seat they launched with:
+  (no task records)
+
+local secondmate homes declining inherited seats:
+  (none - every local home takes this seat)
+[exit 0]
+

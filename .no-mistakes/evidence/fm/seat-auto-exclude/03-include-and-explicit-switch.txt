@@ -1,0 +1,44 @@
+## retry: excluded seat-max-gmail, seat-max2 included again; rotation from seat-max
+$ fm-seat.sh switch --next
+seat seat-max-gmail: skipped, excluded from automatic rotation (fm-seat.sh auto-include seat-max-gmail puts it back; switch seat-max-gmail still reaches it)
+seat seat-max2: skipped, its login state could not be confirmed
+error: no seat under the seats root qualifies as a destination (each skipped seat and its reason is printed above); add and log into a second seat, put an excluded seat back with 'fm-seat.sh auto-include <name>', or lower 'fm-seat.sh destination-min' (docs/claude-seats.md). The default profile is never a rotation target, so switch to it by name if that is what you want
+[exit 1]
+
+## explicit manual switch to the excluded seat-max-gmail (login unconfirmed on this machine, so --force as the CLI instructs)
+$ fm-seat.sh switch seat-max-gmail
+error: could not confirm seat 'seat-max-gmail' is logged in (quota read gave no verdict); re-run with --force to switch anyway
+[exit 1]
+
+$ fm-seat.sh switch --force seat-max-gmail
+switched: seat-max -> seat-max-gmail
+applies to NEW claude workers only; running workers keep their own seat
+config-push: no live secondmate homes found
+[exit 0]
+
+$ fm-seat.sh status
+active seat for NEW workers: seat-max-gmail
+active profile: /Users/max/.claude-seats/seat-max-gmail
+login state: unknown
+firstmate itself is running on: (not recorded for this session)
+auto-switch trigger: at or below 100% left on the active seat
+destination minimum: (unset - any logged-in seat is a valid destination)
+extra-usage policy: (unset - nothing holds Claude dispatch)
+excluded from automatic rotation: seat-max-gmail (switch <name> still reaches them)
+auto-switch watch: not armed
+new Claude dispatch: allowed
+  no extra-usage policy is configured, so no quota is read and nothing holds
+
+live workers keep the seat they launched with:
+  (no task records)
+
+local secondmate homes declining inherited seats:
+  (none - every local home takes this seat)
+[exit 0]
+
+$ fm-seat.sh switch seat-max
+switched: seat-max-gmail -> seat-max
+applies to NEW claude workers only; running workers keep their own seat
+config-push: no live secondmate homes found
+[exit 0]
+

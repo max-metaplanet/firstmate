@@ -1,0 +1,67 @@
+## active=seat-max, excluded=seat-max-gmail; rotation should skip gmail and land on seat-max2
+$ fm-seat.sh switch --next
+seat seat-max-gmail: skipped, excluded from automatic rotation (fm-seat.sh auto-include seat-max-gmail puts it back; switch seat-max-gmail still reaches it)
+switched: seat-max -> seat-max2
+applies to NEW claude workers only; running workers keep their own seat
+config-push: no live secondmate homes found
+[exit 0]
+
+$ fm-seat.sh switch seat-max
+switched: seat-max2 -> seat-max
+applies to NEW claude workers only; running workers keep their own seat
+config-push: no live secondmate homes found
+[exit 0]
+
+## adversarial: exclude seat-max2 too -> no automatic destination at all
+$ fm-seat.sh auto-exclude seat-max2
+excluded from automatic rotation: seat-max2
+'fm-seat.sh switch seat-max2' still switches to it; only the automatic paths skip it
+[exit 0]
+
+$ fm-seat.sh switch --next
+seat seat-max-gmail: skipped, excluded from automatic rotation (fm-seat.sh auto-include seat-max-gmail puts it back; switch seat-max-gmail still reaches it)
+seat seat-max2: skipped, excluded from automatic rotation (fm-seat.sh auto-include seat-max2 puts it back; switch seat-max2 still reaches it)
+error: no seat under the seats root qualifies as a destination (each skipped seat and its reason is printed above); add and log into a second seat, put an excluded seat back with 'fm-seat.sh auto-include <name>', or lower 'fm-seat.sh destination-min' (docs/claude-seats.md). The default profile is never a rotation target, so switch to it by name if that is what you want
+[exit 1]
+
+--- active seat file after refused rotation:
+seat-max
+
+$ fm-seat.sh threshold 100
+auto-switch threshold: 100% left
+[exit 0]
+
+$ fm-seat.sh arm
+seat seat-max-gmail: skipped, excluded from automatic rotation (fm-seat.sh auto-include seat-max-gmail puts it back; switch seat-max-gmail still reaches it)
+seat seat-max2: skipped, excluded from automatic rotation (fm-seat.sh auto-include seat-max2 puts it back; switch seat-max2 still reaches it)
+error: no seat under the seats root qualifies as a destination right now, so an automatic switch would have nowhere to go (each skipped seat and its reason is printed above); add and log into a second seat, put an excluded seat back with 'fm-seat.sh auto-include <name>', or lower 'fm-seat.sh destination-min' (docs/claude-seats.md). The default profile is never a rotation target
+[exit 1]
+
+## explicit manual switch to an excluded seat still works
+$ fm-seat.sh switch seat-max2
+error: could not confirm seat 'seat-max2' is logged in (quota read gave no verdict); re-run with --force to switch anyway
+[exit 1]
+
+$ fm-seat.sh switch seat-max
+seat unchanged: seat-max
+[exit 0]
+
+## auto-include puts seat-max2 back
+$ fm-seat.sh auto-include seat-max2
+back in automatic rotation: seat-max2
+[exit 0]
+
+$ fm-seat.sh auto-include seat-max2
+not excluded from automatic rotation: seat-max2
+[exit 0]
+
+$ fm-seat.sh auto-exclude
+seat-max-gmail
+[exit 0]
+
+$ fm-seat.sh switch --next
+seat seat-max-gmail: skipped, excluded from automatic rotation (fm-seat.sh auto-include seat-max-gmail puts it back; switch seat-max-gmail still reaches it)
+seat seat-max2: skipped, its login state could not be confirmed
+error: no seat under the seats root qualifies as a destination (each skipped seat and its reason is printed above); add and log into a second seat, put an excluded seat back with 'fm-seat.sh auto-include <name>', or lower 'fm-seat.sh destination-min' (docs/claude-seats.md). The default profile is never a rotation target, so switch to it by name if that is what you want
+[exit 1]
+
