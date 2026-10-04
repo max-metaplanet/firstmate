@@ -945,6 +945,269 @@ test_rotation_reads_the_seat_set_fresh() {
   pass "rotation never assumes which seats exist and picks up seats added later"
 }
 
+# --- holding a seat out of automatic rotation --------------------------------
+# The property these cover: one shared candidate filter, so every AUTOMATIC path
+# skips an excluded seat, while `switch <name>` keeps reaching it. The seat that
+# motivated it is a personal account on a work machine - usable deliberately,
+# never billed by a rotation nobody watched.
+
+test_auto_exclude_and_include_round_trip() {
+  local rec out
+  rec=$(make_seat_case auto-exclude-roundtrip)
+  read_seat_case "$rec"
+  mkdir -p "$SEATS_DIR/work" "$SEATS_DIR/personal"
+  seat_logged_in "$SPEC_DIR" "$SEATS_DIR/work" "$SEATS_DIR/personal"
+
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" auto-exclude)
+  assert_contains "$out" "(none" "no seat may be excluded before anything asks for it"
+  assert_absent "$HOME_DIR/config/claude-seat-auto-exclude" \
+    "an unconfigured home must carry no exclusion file at all"
+
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" auto-exclude personal)
+  expect_code 0 "$?" "excluding an existing seat should succeed"
+  assert_contains "$out" "excluded from automatic rotation: personal" "the exclusion must be reported"
+  assert_grep "personal" "$HOME_DIR/config/claude-seat-auto-exclude" "the exclusion must be recorded"
+
+  # Idempotent: a second exclusion is a success that changes nothing.
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" auto-exclude personal)
+  expect_code 0 "$?" "excluding an already-excluded seat must succeed"
+  assert_contains "$out" "already excluded" "a repeat exclusion must say it changed nothing"
+  [ "$(grep -c . "$HOME_DIR/config/claude-seat-auto-exclude")" = 1 ] ||
+    fail "a repeat exclusion must not record the seat twice"
+
+  # A second seat joins the first rather than replacing it.
+  run_seat "$HOME_DIR" "$FAKEBIN" auto-exclude work >/dev/null
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" auto-exclude)
+  assert_contains "$out" "personal" "an earlier exclusion must survive a later one"
+  assert_contains "$out" "work" "the later exclusion must be recorded beside it"
+
+  # Including a seat that was never excluded is a no-op success, not an error.
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" auto-include never-excluded)
+  expect_code 0 "$?" "including a seat that is already in rotation must succeed"
+  assert_contains "$out" "not excluded from automatic rotation" \
+    "including a seat that was never excluded must say so rather than fail"
+
+  run_seat "$HOME_DIR" "$FAKEBIN" auto-include work >/dev/null
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" auto-include personal)
+  expect_code 0 "$?" "including the last excluded seat should succeed"
+  assert_contains "$out" "back in automatic rotation: personal" "the return to rotation must be reported"
+  assert_absent "$HOME_DIR/config/claude-seat-auto-exclude" \
+    "clearing the last exclusion must remove the file rather than leave an empty one"
+  pass "auto-exclude and auto-include round trip idempotently and leave no empty record behind"
+}
+
+test_auto_exclude_refuses_a_name_that_is_not_a_seat() {
+  local rec out status
+  rec=$(make_seat_case auto-exclude-unknown)
+  read_seat_case "$rec"
+  mkdir -p "$SEATS_DIR/work"
+  seat_logged_in "$SPEC_DIR" "$SEATS_DIR/work"
+
+  # An exclusion that matches no seat would silently keep rotating onto the seat
+  # it was meant to withhold, so a typo must be refused rather than recorded.
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" auto-exclude wrok)
+  status=$?
+  expect_code 1 "$status" "excluding a name with no seat directory must refuse"
+  assert_contains "$out" "has no profile directory" "the refusal must name the cause"
+  assert_absent "$HOME_DIR/config/claude-seat-auto-exclude" \
+    "a refused exclusion must record nothing"
+
+  # The default login is never an automatic destination, so excluding it would
+  # be a setting that does nothing; that is refused too rather than accepted.
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" auto-exclude default)
+  status=$?
+  expect_code 1 "$status" "excluding the default login must refuse"
+  assert_contains "$out" "never an automatic rotation target" "the refusal must say why"
+  assert_absent "$HOME_DIR/config/claude-seat-auto-exclude" \
+    "refusing the default login must record nothing"
+  pass "auto-exclude refuses a name that is not a seat and the default login that is never a target"
+}
+
+test_status_and_list_report_an_excluded_seat() {
+  local rec out
+  rec=$(make_seat_case auto-exclude-reporting)
+  read_seat_case "$rec"
+  mkdir -p "$SEATS_DIR/work" "$SEATS_DIR/personal"
+  seat_logged_in "$SPEC_DIR" "$SEATS_DIR/work" "$SEATS_DIR/personal"
+  printf 'work\n' > "$HOME_DIR/config/claude-seat"
+
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" status)
+  assert_contains "$out" "excluded from automatic rotation: (none" \
+    "status must say when no seat is excluded"
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" list)
+  assert_not_contains "$out" "excluded from automatic rotation" \
+    "list must mark nothing while no seat is excluded"
+
+  run_seat "$HOME_DIR" "$FAKEBIN" auto-exclude personal >/dev/null
+
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" status)
+  assert_contains "$out" "excluded from automatic rotation: personal" \
+    "status must name every excluded seat"
+  assert_contains "$out" "switch <name> still reaches them" \
+    "status must say the exclusion is automatic-only"
+
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" list)
+  assert_contains "$out" "excluded from automatic rotation" "list must mark the excluded seat"
+  printf '%s\n' "$out" | grep -q '^  personal.*excluded from automatic rotation$' ||
+    fail "list must mark the excluded seat on its own row: $out"
+  printf '%s\n' "$out" | grep -q '^\* work' ||
+    fail "list must still mark the active seat: $out"
+  printf '%s\n' "$out" | grep '^\* work' | grep -q 'excluded' &&
+    fail "list must not mark a seat that is still in rotation: $out"
+  pass "status and list both report which seats are held out of automatic rotation"
+}
+
+test_rotation_skips_an_excluded_seat() {
+  local rec out
+  rec=$(make_seat_case auto-exclude-rotation)
+  read_seat_case "$rec"
+  mkdir -p "$SEATS_DIR/alpha" "$SEATS_DIR/beta" "$SEATS_DIR/personal"
+  # Every seat is logged in, so the ONLY reason to pass one over is the
+  # exclusion: nothing else in the rotation gate can account for the result.
+  seat_logged_in "$SPEC_DIR" "$SEATS_DIR/alpha" "$SEATS_DIR/beta" "$SEATS_DIR/personal"
+  printf 'alpha\n' > "$HOME_DIR/config/claude-seat"
+  run_seat "$HOME_DIR" "$FAKEBIN" auto-exclude personal >/dev/null
+
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" switch --next)
+  expect_code 0 "$?" "rotation past an excluded seat should still succeed"
+  assert_contains "$out" "-> beta" "rotation must land on the seat that is still in rotation"
+
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" switch --next)
+  expect_code 0 "$?" "rotation should wrap"
+  assert_contains "$out" "-> alpha" "rotation must wrap past the excluded seat rather than onto it"
+  assert_contains "$out" "seat personal: skipped, excluded from automatic rotation" \
+    "the skipped seat must be reported with the exclusion as its reason"
+
+  # And it comes straight back once the exclusion is lifted.
+  run_seat "$HOME_DIR" "$FAKEBIN" auto-include personal >/dev/null
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" switch --next)
+  assert_contains "$out" "-> beta" "rotation order must be unchanged once the seat is back"
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" switch --next)
+  assert_contains "$out" "-> personal" "an included seat must become a rotation destination again"
+  pass "switch --next skips an excluded seat and reaches it again once it is included"
+}
+
+test_an_explicit_switch_still_reaches_an_excluded_seat() {
+  local rec out
+  rec=$(make_seat_case auto-exclude-explicit)
+  read_seat_case "$rec"
+  mkdir -p "$SEATS_DIR/work" "$SEATS_DIR/personal"
+  seat_logged_in "$SPEC_DIR" "$SEATS_DIR/work" "$SEATS_DIR/personal"
+  printf 'work\n' > "$HOME_DIR/config/claude-seat"
+  run_seat "$HOME_DIR" "$FAKEBIN" auto-exclude personal >/dev/null
+
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" switch personal)
+  expect_code 0 "$?" "an explicit switch to an excluded seat must be allowed"
+  assert_contains "$out" "switched: work -> personal" "the explicit switch must take effect"
+  assert_grep "personal" "$HOME_DIR/config/claude-seat" "the excluded seat must become active"
+
+  # Still excluded afterwards: being switched to by hand does not re-enter it
+  # into rotation, which is the whole point of keeping the two independent.
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" status)
+  assert_contains "$out" "active seat for NEW workers: personal" "the manual choice must hold"
+  assert_contains "$out" "excluded from automatic rotation: personal" \
+    "an explicit switch must not put the seat back into automatic rotation"
+  pass "an excluded seat stays manually switchable and stays out of automatic rotation"
+}
+
+test_excluding_the_active_seat_never_switches_away_from_it() {
+  local rec out
+  rec=$(make_seat_case auto-exclude-active)
+  read_seat_case "$rec"
+  mkdir -p "$SEATS_DIR/work" "$SEATS_DIR/spare"
+  seat_logged_in "$SPEC_DIR" "$SEATS_DIR/work" "$SEATS_DIR/spare"
+  printf 'work\n' > "$HOME_DIR/config/claude-seat"
+
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" auto-exclude work)
+  expect_code 0 "$?" "excluding the active seat must be allowed"
+  assert_grep "work" "$HOME_DIR/config/claude-seat" \
+    "excluding the active seat must leave it active"
+  assert_contains "$out" "stays active" "the report must say the active seat did not move"
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" status)
+  assert_contains "$out" "active seat for NEW workers: work" "new workers must keep launching there"
+  pass "excluding the active seat withholds it as a future destination and moves nothing"
+}
+
+test_excluding_every_candidate_keeps_the_existing_no_destination_refusal() {
+  local rec out status
+  rec=$(make_seat_case auto-exclude-nowhere)
+  read_seat_case "$rec"
+  mkdir -p "$SEATS_DIR/work" "$SEATS_DIR/personal"
+  seat_logged_in "$SPEC_DIR" '(default)' "$SEATS_DIR/work" "$SEATS_DIR/personal"
+  printf 'work\n' > "$HOME_DIR/config/claude-seat"
+  run_seat "$HOME_DIR" "$FAKEBIN" auto-exclude personal >/dev/null
+
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" switch --next)
+  status=$?
+  expect_code 1 "$status" "rotation with every candidate excluded must refuse"
+  assert_contains "$out" "no seat under the seats root qualifies" \
+    "the existing no-destination refusal must be the one that fires"
+  assert_contains "$out" "seat personal: skipped, excluded from automatic rotation" \
+    "the refusal must name the exclusion as the reason"
+  assert_not_contains "$out" "-> default" "it must still never fall back to the default profile"
+  assert_grep "work" "$HOME_DIR/config/claude-seat" "a refused rotation must change nothing"
+
+  # And arming refuses for the same reason rather than arming a watch with
+  # nowhere to go.
+  run_seat "$HOME_DIR" "$FAKEBIN" threshold 15 >/dev/null
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" arm)
+  status=$?
+  expect_code 1 "$status" "arming with every candidate excluded must refuse"
+  assert_contains "$out" "nowhere to go" "the arm refusal must name the cause"
+  assert_contains "$out" "auto-include" "the arm refusal must point at the way back"
+  pass "excluding every candidate falls through to the existing no-destination refusal"
+}
+
+test_the_watch_never_switches_onto_an_excluded_seat() {
+  local rec out
+  rec=$(make_seat_case auto-exclude-watch)
+  read_seat_case "$rec"
+  mkdir -p "$SEATS_DIR/work" "$SEATS_DIR/personal" "$SEATS_DIR/spare"
+  seat_logged_in "$SPEC_DIR" "$SEATS_DIR/work" "$SEATS_DIR/personal" "$SEATS_DIR/spare"
+  printf 'work\n' > "$HOME_DIR/config/claude-seat"
+  run_seat "$HOME_DIR" "$FAKEBIN" threshold 15 >/dev/null
+  run_seat "$HOME_DIR" "$FAKEBIN" auto-exclude personal >/dev/null
+  # 'personal' has the most headroom by far, so an automatic pass that ignored
+  # the exclusion would land there; 'spare' is the only seat it may take.
+  printf '%s\t5\n%s\t100\n%s\t60\n' \
+    "$SEATS_DIR/work" "$SEATS_DIR/personal" "$SEATS_DIR/spare" > "$SPEC_DIR/remaining_map"
+
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" auto)
+  assert_contains "$out" "switched from work at 5% left to spare" \
+    "the armed watch must switch onto the seat that is still in rotation"
+  assert_not_contains "$out" "to personal" "the armed watch must never land on an excluded seat"
+  assert_grep "spare" "$HOME_DIR/config/claude-seat" "the switch must land on the included seat"
+  pass "the armed watch skips an excluded seat even when it has the most headroom"
+}
+
+test_the_lead_restart_destination_skips_an_excluded_seat() {
+  local rec out status
+  rec=$(make_seat_case auto-exclude-lead)
+  read_seat_case "$rec"
+  mkdir -p "$SEATS_DIR/work" "$SEATS_DIR/personal"
+  seat_logged_in "$SPEC_DIR" "$SEATS_DIR/work" "$SEATS_DIR/personal"
+  # Firstmate itself is on 'work'. The destination for a lead restart is chosen
+  # by the same rotation, anchored on the seat the LEAD is on, so the exclusion
+  # has to reach that choice too.
+  printf '4242424\n' > "$HOME_DIR/state/.lock"
+  { printf 'pid=4242424\n'; printf 'profile=%s\n' "$SEATS_DIR/work"; } > "$HOME_DIR/state/.lock-runtime"
+
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" status)
+  assert_contains "$out" "firstmate itself is running on: work" \
+    "precondition: the lead's own seat must be established"
+
+  run_seat "$HOME_DIR" "$FAKEBIN" auto-exclude personal >/dev/null
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" lead-restart --check)
+  status=$?
+  expect_code 1 "$status" "a lead restart with its only destination excluded must refuse"
+  assert_contains "$out" "no seat under the seats root qualifies as a destination for firstmate itself" \
+    "the lead restart must refuse through the ordinary no-destination path"
+  assert_contains "$out" "seat personal: skipped, excluded from automatic rotation" \
+    "the lead restart must report the exclusion as the reason"
+  assert_not_contains "$out" "--to personal" "the lead restart must never choose an excluded seat"
+  pass "the lead-restart destination choice skips an excluded seat like every other automatic path"
+}
+
 test_add_creates_the_profile_directory_without_touching_credentials() {
   local rec out
   rec=$(make_seat_case add-seat)
@@ -1971,6 +2234,15 @@ test_a_rejected_request_is_not_a_sign_out_and_force_may_cross_it
 test_rotation_never_targets_the_default_profile
 test_rotation_reads_the_seat_set_fresh
 test_rotation_refuses_when_there_is_nowhere_to_go
+test_auto_exclude_and_include_round_trip
+test_auto_exclude_refuses_a_name_that_is_not_a_seat
+test_status_and_list_report_an_excluded_seat
+test_rotation_skips_an_excluded_seat
+test_an_explicit_switch_still_reaches_an_excluded_seat
+test_excluding_the_active_seat_never_switches_away_from_it
+test_excluding_every_candidate_keeps_the_existing_no_destination_refusal
+test_the_watch_never_switches_onto_an_excluded_seat
+test_the_lead_restart_destination_skips_an_excluded_seat
 test_add_creates_the_profile_directory_without_touching_credentials
 test_a_directory_named_default_is_not_offered_as_a_seat
 test_seat_names_that_escape_the_seats_root_are_refused

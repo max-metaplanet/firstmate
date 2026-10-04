@@ -417,7 +417,7 @@ Pins are not inherited into secondmate homes: a local secondmate agent launches 
 A remote secondmate is launched on its host from its own home's configuration, so create the file in that remote home.
 [`bin/fm-worker-account-lib.sh`](../bin/fm-worker-account-lib.sh) owns parsing, the sign-in check, and the full list of credentials a Claude launch unsets; [runtime backend verification](verification/runtime-backends.md#worker-account-pin-sign-in-check) records the check against the real runners.
 
-## Claude seats (config/claude-seat, config/claude-seats-root, config/claude-seat-threshold, config/claude-seat-destination-min, config/claude-seat-extra-usage, config/claude-seat-local)
+## Claude seats (config/claude-seat, config/claude-seats-root, config/claude-seat-threshold, config/claude-seat-destination-min, config/claude-seat-extra-usage, config/claude-seat-auto-exclude, config/claude-seat-local)
 
 A "seat" is one Claude account, reached through a Claude Code profile directory named by `CLAUDE_CONFIG_DIR`.
 Claude Code derives that profile's macOS Keychain service name from a hash of the directory path, so two seats never share a credential store: a worker pointed at a profile that was never logged in stops with `Not logged in` instead of quietly spending the default account.
@@ -427,21 +427,28 @@ Seats and the worker account pin above are mutually exclusive, because both choo
 The optional local, gitignored `config/claude-seat` holds the active seat NAME for new Claude workers, as the file's whitespace-trimmed first line.
 Absent, empty, or malformed means the reserved seat `default`: no `CLAUDE_CONFIG_DIR` is added and launches stay byte-for-byte as they were before seats existed.
 The optional `config/claude-seats-root` holds one absolute path, the directory holding one subdirectory per named seat, and defaults to `$HOME/.claude-seats`; seats live outside the firstmate home so the owner logs into a seat once and every home on the machine reaches the same profile.
-Three optional files drive the automatic mode, and every percentage in them counts percent LEFT, the same direction the quota viewer reports.
+Four optional files drive the automatic mode.
+Three of them hold a percentage, and every percentage counts percent LEFT, the same direction the quota viewer reports.
 `config/claude-seat-threshold` holds one percentage between 0 and 100: the percent left on the ACTIVE seat at or below which an armed watch switches future workers to another seat.
 `config/claude-seat-destination-min` holds one percentage between 0 and 100: the percent left a candidate seat must EXCEED to be a switch destination, so a switch never lands on a nearly empty seat; absent, the rotation gate is login-only and no candidate's quota is read at all.
 `config/claude-seat-extra-usage` holds one directive, either `stop` or `allow <usd>`: what to do when no seat has headroom and the active seat's plan quota is gone, so further work would run on paid extra usage.
 `stop` holds new Claude dispatch; `allow <usd>` keeps dispatching while that seat's extra-usage spend, read from the `extra_usage` window the account reports, is below that firstmate-side dollar cap, and holds once it reaches it.
-Each is absent by default, and a home that configures none of them behaves exactly as it did before they existed: no quota is read for a candidate seat, and no dispatch is ever held.
+The fourth, `config/claude-seat-auto-exclude`, holds seat names rather than a number, one per whitespace-trimmed line: the seats held out of AUTOMATIC rotation only.
+Blank lines are ignored, and a line naming no seat simply matches nothing, so a stale entry never excludes a seat it did not name; absent or empty means every named seat under the root is a rotation candidate.
+It withholds a seat regardless of headroom, which is what the percentage settings cannot express: the case is an account usable on this machine that should nonetheless never be picked up by an automatic switch, such as a personal account on a work machine.
+`bin/fm-seat.sh auto-exclude <name>` and `auto-include <name>` are the only writers of that last file; both are idempotent, an exclusion is refused for a name with no seat directory and for the `default` login that is never an automatic target, and `bin/fm-seat.sh status` and `list` each report which seats are excluded.
+Every automatic path reads the exclusion through one shared candidate filter - `switch --next`, the armed watch's switch, the watch's instruction to move firstmate itself, the lead-restart destination, and the feasibility check `arm` makes - while an explicit `switch <name>` does not consult it at all, so an excluded seat stays manually reachable.
+Excluding every candidate falls through to the existing no-destination refusal rather than any new behaviour, and excluding the active seat withholds it as a future destination without moving any worker off it.
+Each is absent by default, and a home that configures none of them behaves exactly as it did before they existed: no quota is read for a candidate seat, nothing is withheld from rotation, and no dispatch is ever held.
 An unreadable or ambiguous quota is never guessed at - it skips a candidate, blocks a switch, and holds dispatch, each saying so rather than implying a number.
 A hold stops work being STARTED; a worker already running keeps its own seat and can still draw extra usage mid-task, which only the account admin setting prevents, so `stop` is never a guarantee of zero spend.
 `bin/fm-spawn.sh --ignore-seat-hold` pushes one spawn through a hold without changing the setting, and `bin/fm-seat.sh status` reports whether dispatch is held right now and why.
-All five are inherited into local secondmate homes through the primary-authoritative configuration contract, so a secondmate's own Claude crewmates launch on the same seat; a switch runs `bin/fm-config-push.sh --local-only` to carry the change to running local secondmates at once without contacting remote routes.
+All six are inherited into local secondmate homes through the primary-authoritative configuration contract, so a secondmate's own Claude crewmates launch on the same seat and no local home automatically rotates onto a seat the primary withheld; a switch runs `bin/fm-config-push.sh --local-only` to carry the change to running local secondmates at once without contacting remote routes.
 They are never sent to a remote secondmate route, because a seat is a profile logged in on this machine only.
 
 The optional `config/claude-seat-local` is how one local home declines that inheritance, for an operator who wants a single home spending a separate account - a personal or client account while the rest of the machine runs on the team account.
 It is a presence flag placed in the declining home's own `config/`, its content is never read, and it is deliberately not inheritable itself, so one home's billing choice is never set for it from another home.
-A home that carries it keeps its own `claude-seat`, `claude-seats-root`, `claude-seat-threshold`, `claude-seat-destination-min`, and `claude-seat-extra-usage` exactly as they are, including absent, at every local convergence point; with the flag nowhere on the machine, every local home still takes each switch together, byte for byte as before it existed.
+A home that carries it keeps its own `claude-seat`, `claude-seats-root`, `claude-seat-threshold`, `claude-seat-destination-min`, `claude-seat-extra-usage`, and `claude-seat-auto-exclude` exactly as they are, including absent, at every local convergence point; with the flag nowhere on the machine, every local home still takes each switch together, byte for byte as before it existed.
 Any `config/claude-seat-local` path declines, whatever its type: a directory or a symlink, even a dangling one, counts the same as a plain file.
 [One home on a separate account](claude-seats.md#one-home-on-a-separate-account) owns the operator procedure and how `bin/fm-seat.sh status` and each switch report a declining home.
 
@@ -754,7 +761,7 @@ This section is the single owner of the canonical schema.
 
 One directive per non-empty, non-comment line, split on the last colon so a per-model window id such as `model:fable` still parses.
 `<window-id>` is exactly the `id` field `quota-axi`'s own `--json` output already uses; `<percent>` is a whole number from 1 to 100.
-`<percent>` counts percent LEFT, and a window warns when it drops to or below it, the same direction [Claude seats](#claude-seats-configclaude-seat-configclaude-seats-root-configclaude-seat-threshold-configclaude-seat-destination-min-configclaude-seat-extra-usage-configclaude-seat-local) and the quota viewer count.
+`<percent>` counts percent LEFT, and a window warns when it drops to or below it, the same direction [Claude seats](#claude-seats-configclaude-seat-configclaude-seats-root-configclaude-seat-threshold-configclaude-seat-destination-min-configclaude-seat-extra-usage-configclaude-seat-auto-exclude-configclaude-seat-local) and the quota viewer count.
 That is the opposite of how these directives were read before, when they counted percent USED and warned on rising past the number, so every line this feature prints names both figures - `8% left (92% used)` - and a config carried over from the old reading announces itself the first time it speaks.
 `bin/fm-usage-warner.sh threshold <window-id> <percent-left>` writes a directive, `threshold <window-id> off` clears one, and a bare `threshold` lists them, so nothing here needs this file's path or line format to be remembered.
 `bin/fm-usage-warner.sh notify <summary>` posts one banner through this home's single notification path, which is how `bin/fm-seat.sh`'s automatic mode warns that a seat a worker is running on has entered paid extra usage.
