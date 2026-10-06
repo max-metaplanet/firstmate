@@ -2287,7 +2287,7 @@ herdr_case_or_skip() {  # <name> <id> [session] [surviving-pane]
 }
 
 test_herdr_relaunch_resumes_only_the_registered_pi_session() {
-  local dir out rc=0 command registered
+  local dir out rc=0 command registered meta
   for registered in pi claude; do
     herdr_case_or_skip "resume-$registered" "resume-$registered" || {
       echo "skip - herdr relaunch needs jq (the herdr adapter parses JSON with it)"
@@ -2295,7 +2295,11 @@ test_herdr_relaunch_resumes_only_the_registered_pi_session() {
     }
     dir=$HERDR_CASE_DIR
     rm -f "$dir/fake/herdr-stopped"
-    sed -i 's/^harness=claude$/harness=pi/' "$dir/home/state/resume-$registered.meta"
+    # BSD sed takes -i's suffix as a separate argument, so the GNU spelling reads the
+    # file as its script and leaves the meta untouched. Rewrite through a temp file,
+    # the same portable shape the rest of the suite's helpers use.
+    meta=$dir/home/state/resume-$registered.meta
+    sed 's/^harness=claude$/harness=pi/' "$meta" > "$meta.tmp" && mv -f "$meta.tmp" "$meta"
     # Keep the pane's status authority registered to an existing Pi session,
     # while process-info proves that its previous agent has exited.
     printf '{"result":{"agent":{"agent":"%s","agent_status":"idle","agent_session":{"kind":"path","value":"/tmp/pi-bound-session.jsonl"}}}}\n' \
