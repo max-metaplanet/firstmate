@@ -1,0 +1,45 @@
+                                                                                        │                                                                     ✕
+ ▐▛███▛█   Claude Code v2.1.291                                                         │> beta ship working (lab-override) 8772h
+▝▜██████▀  Opus 5.5 · API Usage Billing                                                 │    event: working [at=1759700000]: beta under way
+ ▝▝   ▝▝   /private/tmp/fm-fleet-lab.rx34/work                                          │r: Refresh
+                                                                                        │
+⚠ Remote managed settings failed to load (authentication rejected (401)) · no remote    │
+  policy applied · /status for details                                                  │
+                                                                                        │
+                                                                                        │
+                                                                                        │
+                                                                                        │
+                                                                                        │
+                                                                                        │
+                                                                                        │
+                                                                                        │
+                                                                                        │
+                                                                                        │
+                                                                                        │
+                                                                                        │
+                                                                                        │
+                                                                                        │
+                                                                                        │
+                                                                                        │
+                                                                                        │
+                                                                                        │
+                                                                                        │
+                                                                                        │
+                                                                                        │
+                                                                                        │
+                                                                                        │
+                                                                                        │
+                                                                                        │
+                                                                                        │
+                                                                                        │
+                                                                                        │
+                                                                                        │
+                                                                                        │
+                                                                                        │
+                                                                                        │
+                                                                                        │
+                                                                                        │
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ 
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏸ manual mode on · ? for shortcuts · ← for agents

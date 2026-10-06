@@ -1,0 +1,3 @@
+$ (FM_FLEET_ENABLED unset) claude -p "/fleet" --plugin-dir .claude/mods/firstmate-fleet
+Failed to authenticate. API Error: 401 API key is invalid.
+runs.log (fleet reader invocations):

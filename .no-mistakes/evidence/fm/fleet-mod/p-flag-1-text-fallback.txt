@@ -1,0 +1,12 @@
+$ FM_FLEET_ENABLED=1 claude -p "/fleet" --plugin-dir .claude/mods/firstmate-fleet   (reader delayed 3s)
+firstmate-fleet: fleet (3):
+2 waiting on you: alpha (decision), scope-call (decision)
+? alpha ship · unknown (none) · 8772h
+    event: blocked [at=1759700100] [key=k1]: needs a credential
+> beta ship · working (lab-override) · 8772h
+    event: working [at=1759700000]: beta under way
+? scope-call held · waiting on you (backlog) · ?
+    event: needs a call on scope
+runs.log (fleet reader invocations):
+start 73627 1791279240
+end 73627 1791279245 rc=0

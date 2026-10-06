@@ -1,0 +1,45 @@
+                                                                                ╭─────────────────╮│                                                                              ✕
+ ▐▛███▛█   Claude Code v2.1.291                                                 │ firstmate-fleet ││1 waiting on you: alpha (blocker)
+▝▜██████▀  Opus 5.5 · Claude Max                                                │ alpha: blocked  ││? alpha ship blocked (tmux) 8772h
+ ▝▝   ▝▝   ~/.no-mistakes/worktrees/61c6dd39b831/01M487VG849J0JBB67CYNRYEEM     ╰─────────────────╯│    event: blocked [at=1759700100] [key=k1]: needs a credential
+                                                                                                   │> beta ship working (tmux) 8772h
+                                                                                                   │    event: working [at=1759700000]: beta under way
+                                                                                                   │r: Refresh
+                                                                                                   │
+                                                                                                   │
+                                                                                                   │
+                                                                                                   │
+                                                                                                   │
+                                                                                                   │
+                                                                                                   │
+                                                                                                   │
+                                                                                                   │
+                                                                                                   │
+                                                                                                   │
+                                                                                                   │
+                                                                                                   │
+                                                                                                   │
+                                                                                                   │
+                                                                                                   │
+                                                                                                   │
+                                                                                                   │
+                                                                                                   │
+                                                                                                   │
+                                                                                                   │
+                                                                                                   │
+                                                                                                   │
+                                                                                                   │
+                                                                                                   │
+                                                                                                   │
+                                                                                                   │
+                                                                                                   │
+                                                                                                   │
+                                                                                                   │
+                                                                                                   │
+1 waiting on you: alpha (blocker)                                                              [-] │
+                                                                                                   │
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ 
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  Opus 5.5 | ~/./w/6/01M487VG849J0JBB67CYNRYEEM [HEAD ✓] | ⚙️20 | ⚡100% | P02=E05=U09=J18:49:31
+  -- INSERT -- ⏵⏵ auto mode on (shift+tab to cycle) · ← for agents

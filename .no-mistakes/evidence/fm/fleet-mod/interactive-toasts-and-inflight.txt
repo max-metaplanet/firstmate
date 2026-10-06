@@ -1,0 +1,58 @@
+# Live interactive Claude Code 2.1.291 session, FM_FLEET_ENABLED=1; lab reader overrides beta's current_state between 60s timer readings.
+## override schedule (seq.log)
+after reading 4 (1791279386): set beta=working
+after reading 5 (1791279445): set beta=blocked
+after reading 6 (1791279504): set beta=working
+after reading 7 (1791279564): set beta=blocked
+after reading 8 (1791279625): set beta=done
+final reading 9 landed 1791279684
+## reader runs (runs.log: start/end epoch; no two overlap)
+start 83133 1791279261
+end 83133 1791279283 rc=0
+start 98988 1791279287
+end 98988 1791279309 rc=0
+start 12740 1791279321
+end 12740 1791279346 rc=0
+start 35421 1791279381
+end 35421 1791279385 rc=0
+start 68455 1791279441
+end 68455 1791279444 rc=0
+start 9388 1791279501
+end 9388 1791279503 rc=0
+start 44194 1791279561
+end 44194 1791279563 rc=0
+start 74887 1791279621
+end 74887 1791279624 rc=0
+start 8268 1791279681
+end 8268 1791279683 rc=0
+## notice frames seen on screen (tmux captured every 0.5s; count, epoch, text)
+   1 1791279386 beta: blocked   
+   1 1791279387 beta: blocked   
+   1 1791279388 beta: blocked   
+   1 1791279389 beta: blocked   
+   1 1791279683 beta: done      
+   1 1791279684 beta: done      
+   2 1791279685 beta: done      
+   1 1791279686 beta: done      
+   1 1791279687 beta: done      
+## one full frame with the done notice
+=== 1791279684.606
+                                                                     ╭─────────────────╮│                                                                     ✕
+ ▐▛███▛█   Claude Code v2.1.291                                      │ firstmate-fleet ││2 waiting on you: alpha (decision), scope-call (decision)
+▝▜██████▀  Opus 5.5 · API Usage Billing                              │ beta: done      ││? alpha ship unknown (none) 8772h
+ ▝▝   ▝▝   /private/tmp/fm-fleet-lab.rx34/work                       ╰─────────────────╯│    event: blocked [at=1759700100] [key=k1]: needs a credential
+                                                                                        │· beta ship done (lab-override) 8772h
+⚠ Remote managed settings failed to load (authentication rejected (401)) · no remote    │    event: working [at=1759700000]: beta under way
+  policy applied · /status for details                                                  │? scope-call held waiting on you (backlog) ?
+                                                                                        │    event: needs a call on scope
+                                                                                        │r: Refresh
+                                                                                        │
+                                                                                        │
+                                                                                        │
+                                                                                        │
+                                                                                        │
+                                                                                        │
+                                                                                        │
+                                                                                        │
+                                                                                        │
+                                                                                        │

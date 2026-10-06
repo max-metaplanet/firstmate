@@ -1,0 +1,4 @@
+ok - the Fleet mod is one hooks module, linked into the project's auto-load path, with no command, skill, agent, or classic hook path that bypasses its activation flag
+ok - the Fleet mod activates on the exact value 1 alone, and on no other value, empty, or unset name, and resolves its reader from the tracked code root rather than from the home FM_HOME selects
+ok - the Fleet mod's reader parses bin/fm-fleet-snapshot.sh --json as the producer actually writes it: task state, the last event as an event, the open-decision set, and the producer's own live-versus-dated captain-hold classification
+ok - the Fleet mod's reading policy holds: a reading that is not this snapshot refuses, only decisions, merge asks and blockers wait on the captain, a failed or aged reading is named rather than drawn as an empty healthy fleet, the text answer carries every row the pane draws, and a notice fires once per real transition

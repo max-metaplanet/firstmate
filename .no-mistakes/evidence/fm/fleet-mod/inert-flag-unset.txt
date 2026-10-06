@@ -1,0 +1,45 @@
+
+ ▐▛███▛█   Claude Code v2.1.291
+▝▜██████▀  Opus 5.5 · Claude Max
+ ▝▝   ▝▝   ~/.no-mistakes/worktrees/61c6dd39b831/01M487VG849J0JBB67CYNRYEEM
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  ❯ /claude-fleet                                 Spawn and manage a fleet of parallel Claude Code sessions in tmux — an orchestrator (conductor) plus worker threads — in ANY
+                                                  project, cross-platform on Linux and macOS. Use when the user wants to run multiple Claude Code sessions in parallel, spawn/lau…
+    /feedback                                     Send feedback to Anthropic or report a bug
+    /bearings                                     Generate a "pick up where I left off" fleet digest from firstmate's live fleet state. Use when the captain invokes /bearings or
+                                                  asks for a bearings report, morning brief, status report, catch-up, "where did I leave off", or "what's in the works". Plain /b…
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ /flee
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⚠ Transcript saving is off — inherited CLAUDE_CODE_CHILD_SESSION marker · restart with CLAUDE_CODE_FORCE_SESSION_PERSISTENCE=1 to keep future transcripts
+  Opus 5.5 | ~/./w/6/01M487VG849J0JBB67CYNRYEEM [HEAD ✓] | ⚙️50 | ⚡100% | P02=E05=U09=J18:55:45
+  -- INSERT -- ⏵⏵ auto mode on (shift+tab to cycle)

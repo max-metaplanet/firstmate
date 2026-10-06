@@ -1,0 +1,11 @@
+$ FM_FLEET_ENABLED=1 FM_HOME=<lab-home> claude -p "/fleet"
+firstmate-fleet: fleet (3):
+2 waiting on you: alpha (decision), scope-call (decision)
+? alpha ship · unknown (none) · 8772h
+    event: blocked [at=1759700100] [key=k1]: needs a credential
+· beta ship · unknown (none) · 8772h
+    event: working [at=1759700000]: beta under way
+? scope-call held · waiting on you (backlog) · ?
+    event: needs a call on scope
+( FM_FLEET_ENABLED=1 FM_HOME=$H claude -p "/fleet" 2>&1; )  3.78s user 1.57s system 93% cpu 5.750 total
+exit=0

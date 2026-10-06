@@ -1,0 +1,30 @@
+# Live hot reload of firstmate-fleet (lab copy, --plugin-dir) in an interactive Claude Code 2.1.291 session
+session start reading at 1791279745; reload triggered at 1791279766 by appending a comment to hooks/register.ts
+## reader runs after reload (60s cadence continues; one timer, not two)
+start 37663 1791279745
+end 37663 1791279748 rc=0
+start 49375 1791279767
+end 49375 1791279772 rc=0
+start 75998 1791279827
+end 75998 1791279834 rc=0
+start 99455 1791279888
+end 99455 1791279891 rc=0
+## /fleet at 1791279782 (after reload) opened the PANE (canDraw survived in $.state), not the text fallback:
+=== 1791279783.434
+        │                                                                     ✕
+        │2 waiting on you: alpha (decision), scope-call (decision)
+        │? alpha ship unknown (none) 8772h
+        │    event: blocked [at=1759700100] [key=k1]: needs a credential
+        │> beta ship working (lab-override) 8772h
+mote    │    event: working [at=1759700000]: beta under way
+        │? scope-call held waiting on you (backlog) ?
+        │    event: needs a call on scope
+        │r: Refresh
+## screen after the post-reload readings (band restored, other mod's line kept above it)
+⏺ firstmate-fleet: reloaded (3 hooks: session.start, command.run, ui.render)
+OTHER-MOD BAND LINE                                                                                                                                         [-]
+2 waiting on you: alpha (decision), scope-call (decision)
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ 
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏸ manual mode on · ? for shortcuts · ← for agents

@@ -1,0 +1,12 @@
+# Lab stub fm-fleet-snapshot.sh run log, first interactive session (FM_FLEET_ENABLED=1, stub delay 25s then 2s)
+# session start read; /fleet opened and "r" pressed 3x while the 25s read was in flight -> joined, no second start until it ended
+start 1791280171 pid=48480
+end   1791280196 pid=48480
+start 1791280198 pid=63224   # one r after the first landed starts exactly one new read; other presses join it
+end   1791280223 pid=63224
+start 1791280228 ... end 1791280230 / start 1791280230 ... end 1791280233 / start 1791280236 ... end 1791280238 / start 1791280240 ... end 1791280243
+# never two starts without an end between them
+# after the live hot reload (/reload-plugins, ~1791280290): one ticker, 60s cadence, no overlap
+start 1791280299 end 1791280301
+start 1791280359 end 1791280361
+start 1791280419 end 1791280421

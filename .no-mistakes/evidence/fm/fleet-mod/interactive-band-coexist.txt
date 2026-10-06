@@ -1,0 +1,45 @@
+
+ ▐▛███▛█   Claude Code v2.1.291
+▝▜██████▀  Opus 5.5 · API Usage Billing
+ ▝▝   ▝▝   /private/tmp/fm-fleet-lab.rx34/work
+
+⚠ Remote managed settings failed to load (authentication rejected (401)) · no remote policy applied · /status for details
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+OTHER-MOD BAND LINE                                                                                                                                         [-]
+2 waiting on you: alpha (decision), scope-call (decision)
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ Try "write a test for <filepath>"
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏸ manual mode on · ? for shortcuts · ← for agents

@@ -1,0 +1,3 @@
+$ FM_FLEET_ENABLED=true claude -p "/fleet" ...
+Failed to authenticate. API Error: 401 API key is invalid.
+runs.log:
