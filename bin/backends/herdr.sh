@@ -3471,7 +3471,8 @@ fm_backend_herdr_modal_entry_ensure() {  # <target> <harness> <settle>
 
 fm_backend_herdr_send_text_submit() {  # <target> <text> <retries> <enter-sleep> <settle>
   local target=$1 text=$2 retries=$3 sleep_s=$4 settle=$5 i=0 verdict baseline confirm_sleep
-  local raw_status footer_baseline='' allow_rendered=0 enter_sent=0 identity proof=0 content
+  local raw_status footer_baseline='' allow_rendered=0 enter_sent=0 identity harness proof=0 content
+  local recovered=0
   fm_backend_herdr_parse_target "$target" || { printf 'unknown'; return 0; }
   # Claude on Herdr is the live-verified truncation shape: Enter is withheld
   # unless the composer, empty before the send, shows this payload. A suffix
@@ -3489,17 +3490,22 @@ fm_backend_herdr_send_text_submit() {  # <target> <text> <retries> <enter-sleep>
       || { printf 'send-failed'; return 0; }
     [ -z "${content//[$' \t\r\n\v\f']/}" ] || { printf 'send-failed'; return 0; }
   fi
-  fm_backend_herdr_send_literal "$target" "$text" || { printf 'send-failed'; return 0; }
-  sleep "$settle"
-  if [ "$proof" = 1 ]; then
-    if ! content=$(fm_backend_herdr_composer_content "$target") \
-      || ! fm_backend_herdr_composer_payload_shown "$text" "$content"; then
-      if fm_backend_herdr_composer_clear "$target" "$text"; then
-        printf 'send-failed'
-      else
-        printf 'unknown'
-      fi
-      return 0
+  # Type, prove, and - exactly once - recover a refusal a modal composer
+  # caused. A composer in claude's vim command mode consumes the head of the
+  # payload as editor commands and inserts only the remainder, which is the
+  # same fragment shape the proof already refuses; the refusal is what
+  # authorizes acting on the mode at all, since the indicator's absence alone
+  # proves nothing (bin/fm-composer-lib.sh). Nothing is retyped until the
+  # composer has been cleared back to the proven-empty state the first send
+  # started from, so the retype is a first delivery rather than a concatenation,
+  # and only text this send itself typed is ever cleared.
+  while :; do
+    fm_backend_herdr_send_literal "$target" "$text" || { printf 'send-failed'; return 0; }
+    sleep "$settle"
+    [ "$proof" = 1 ] || break
+    if content=$(fm_backend_herdr_composer_content "$target") \
+      && fm_backend_herdr_composer_payload_shown "$text" "$content"; then
+      break
     fi
     fm_backend_herdr_composer_clear "$target" "$text" || { printf 'unaccounted'; return 0; }
     [ "$recovered" = 0 ] || { printf 'send-failed'; return 0; }
