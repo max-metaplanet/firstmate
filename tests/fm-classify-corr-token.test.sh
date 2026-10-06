@@ -776,7 +776,7 @@ test_malformed_event_time_never_moves_the_decision_fold() {
     [ -z "$(status_open_decisions "$status")" ] \
       || fail "malformed tag $tag opened a phantom decision: [$(status_open_decisions "$status")]"
   done
-  # A terminal line is not a close (#5203): the decision outlives it, and only
+  # A terminal line is not a close: the decision outlives it, and only
   # the resolution retires it - through a well-formed stamp, so the tolerance
   # above did not disarm real transition parsing.
   printf '%s\n%s\n' \

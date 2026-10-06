@@ -348,7 +348,7 @@ test_previous_fold_cache_is_refolded_under_current_semantics() {
 }
 
 # A terminal declaration retires nothing, and no cached fold may make it look
-# like it did (#5203). The cache-migration half is the point here: a drain that
+# like it did. The cache-migration half is the point here: a drain that
 # answers from a persisted cursor must reach the SAME verdict as a full re-fold,
 # so an old cursor can neither resurrect a closed decision nor hide an open one.
 test_terminal_declarations_never_retire_a_decision_through_caches() {

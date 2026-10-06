@@ -1290,8 +1290,8 @@ EOF
 # The completion gate is the last thing standing between an unanswered captain
 # call and teardown, and it asks the shared fold what is still open. While a
 # terminal line discarded that set, the gate passed vacuously on exactly the
-# logs that needed it (#5203): the worker reported what it finished, the blocker
-# it never resolved went quiet, and --none attested an empty inventory over a
+# logs that needed it: the worker reported what it finished, the blocker it
+# never resolved went quiet, and --none attested an empty inventory over a
 # question still owed. The gate must refuse until the key is really closed.
 test_terminal_declaration_does_not_satisfy_the_completion_gate() {
   local home id open secondmate

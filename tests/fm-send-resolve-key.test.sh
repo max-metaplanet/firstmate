@@ -314,7 +314,7 @@ test_routine_steer_never_closes() {
   out=$(drain_out "$home")
   printf '%s' "$out" | grep -F '[key=schema]' >/dev/null \
     || fail "a routine steer or later working line cleared an unanswered captain decision: $out"
-  # The reported defect (#5203): the worker reports the parts it DID finish
+  # The reported defect: the worker reports the parts it DID finish
   # while the captain's question is still unanswered - the two routinely land
   # on one log, and the worker's own done: line even says so. That line must
   # not retire the decision, and the supported way to answer it must still
@@ -352,7 +352,7 @@ test_not_open_key_refuses_before_send() {
   assert_contains "$(cat "$err")" "--resolve-key 'mistyped'" "the refusal should name the bad key"
   assert_contains "$(cat "$err")" "nothing was sent" "the refusal should state nothing was sent"
   # The refusal must report what this lookup FOUND, never assert a fact about
-  # the record it did not establish (#5203). A key no line ever stated is not
+  # the record it did not establish. A key no line ever stated is not
   # evidence that the decision was answered, and saying "already closed" here
   # is what sent an operator away from a decision that was still open.
   assert_contains "$(cat "$err")" "no line in" "the refusal should say what it actually looked for"
@@ -957,7 +957,7 @@ test_decision_answer_partition_relocates_under_the_record() {
 # tasks-axi is absent the captain-hold ledger is never consulted at all, so a
 # refusal that still reported it empty would assert a lookup result it does not
 # hold - the same substitution of a fact about itself for a fact about the world
-# that produced "already closed or mistyped" (#5203).
+# that produced "already closed or mistyped".
 test_unreadable_hold_ledger_is_not_reported_as_empty() {
   local dir fb log home err rc nolookup nopath p
   dir="$TMP_ROOT/hold-unreadable"; mkdir -p "$dir"
@@ -1022,21 +1022,21 @@ test_open_key_answers_instead_of_reporting_a_reader_defect() {
   fb=$(make_stubs "$dir"); log="$dir/send.log"; err="$dir/send.err"
   home=$(setup_home no-reader-defect)
   fm_write_meta "$home/state/t4.meta" "window=sess:fm-t4" "kind=ship"
-  # The capture's shape: an unkeyed decision, a keyed one, and a terminal line
+  # The reported shape: an unkeyed decision, a keyed one, and a terminal line
   # after both. The keyed decision must still be answerable through its key.
   printf 'needs-decision: unkeyed question\n' > "$home/state/t4.status"
-  printf 'needs-decision [key=execsql-drop]: drop it or keep it\n' >> "$home/state/t4.status"
+  printf 'needs-decision [key=legacy-index]: drop it or keep it\n' >> "$home/state/t4.status"
   printf 'done: finished the parts that were ready\n' >> "$home/state/t4.status"
 
   : > "$log"; : > "$err"
   env PATH="$fb:$PATH" \
     FM_ROOT_OVERRIDE="$home" FM_HOME="$home" FM_SEND_LOG="$log" FM_SEND_SETTLE=0 \
-    "$SEND" t4 --resolve-key execsql-drop "drop it" >/dev/null 2>"$err"; rc=$?
+    "$SEND" t4 --resolve-key legacy-index "drop it" >/dev/null 2>"$err"; rc=$?
   expect_code 0 "$rc" "a decision still open after a done: line must be answerable by its key"
   assert_not_contains "$(cat "$err")" "defect in the reader" \
     "an answerable key was reported as a reader defect"
   sed -E 's/ \[at=[0-9]+\]//' "$home/state/t4.status" \
-    | grep -qF 'resolved [key=execsql-drop]: answered: drop it' \
+    | grep -qF 'resolved [key=legacy-index]: answered: drop it' \
     || fail "the answer did not close the key: $(cat "$home/state/t4.status")"
   pass "fm-send --resolve-key: a key still open after a terminal line answers normally"
 }

@@ -200,7 +200,8 @@
 # before sending, so a mistyped key cannot deliver an answer while silently
 # orphaning the decision. That refusal states what the lookups FOUND - a key the
 # log closed names the verb that closed it, a key no line ever stated says so -
-# and never asserts that an unfound decision was answered. A failed or unconfirmed send never closes a key; a
+# and never asserts that an unfound decision was answered.
+# A failed or unconfirmed send never closes a key; a
 # delivered answer whose closing append fails exits nonzero with the exact
 # manual close command, leaving the decision open to re-surface (the safe
 # direction). A send without the flag never closes anything: a routine steer,
@@ -578,8 +579,8 @@ RESOLVE_CLOSE_MAX=$FM_LINE_CAP_DEFAULT
 #
 # Set once in the caller's own shell rather than inside the lookup, because the
 # lookup runs in a command substitution: a value assigned there would die with
-# the subshell and the clause would report a search that never happened - this
-# task's own defect in miniature.
+# the subshell and the clause would report a search that never happened - the
+# same false certainty, one scope down.
 RESOLVE_HOLD_LOOKUP=
 
 fm_send_hold_lookup_state() {
@@ -682,7 +683,7 @@ if [ -n "$RESOLVE_KEYS" ]; then
     # old wording asserted "already closed or mistyped" - a claim about the
     # record - when all this code knows is that its own lookups came back
     # empty. It said that even while the decision sat unanswered in the log,
-    # and that false certainty is what nearly let a dropped decision go.
+    # which sends whoever is holding the answer away from a live question.
     # status_key_closing_verb reads the same fold and can tell the cases apart:
     # a key the log closed names the verb that closed it, a key the log never
     # mentions names nothing, and each gets its own sentence.

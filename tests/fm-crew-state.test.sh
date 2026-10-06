@@ -2860,9 +2860,9 @@ test_newest_open_decision_supplies_the_reported_detail() {
 }
 
 # A terminal declaration reports what the worker finished; it does not answer
-# the captain's outstanding question, and #5203 showed the two land on one log
-# routinely. So the crew reading stays on the open decision until that decision
-# is really closed, and only then falls back to the log's latest event.
+# the captain's outstanding question, and the two land on one log routinely.
+# So the crew reading stays on the open decision until that decision is really
+# closed, and only then falls back to the log's latest event.
 test_single_owner_terminal_declaration_keeps_the_open_decision() {
   reset_fakes
   local d kind opener terminal out key expected

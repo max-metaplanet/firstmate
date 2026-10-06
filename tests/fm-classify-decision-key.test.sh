@@ -397,7 +397,7 @@ test_closing_verb_filters_unrelated_history_without_subshell_growth() {
   pass "per-key reads retain resolutions without subprocess work growing with unrelated history"
 }
 
-# A terminal declaration is not a close, on any task kind (#5203). It says what
+# A terminal declaration is not a close, on any task kind. It says what
 # the worker finished; only a resolution or a verified captain-held transfer
 # naming the key answers the question. This walks every kind, both key shapes
 # (stated and the unkeyed "default" bucket, which is the historical shape most
@@ -444,40 +444,40 @@ test_closing_verb_filters_unrelated_history_without_subshell_growth
 test_closing_verb_honors_overridden_transition_verbs
 test_terminal_declarations_never_close_a_decision
 
-# The reported sequence (#5203), in the shape it actually arrived: an UNKEYED
-# decision, a done: line reporting the finished parts, a keyed decision, and a
-# second done: whose own note says the keyed one is still awaiting approval.
-# Before the fix the first ship done: discarded the whole set, so both the
-# historical "default" bucket and the stated key vanished from every reader
-# while the questions sat unanswered in the log. The unkeyed half matters most:
-# an unkeyed decision is the historical default shape, so this was never a
-# keyed-decision edge case.
+# The reported sequence, in the shape it arrives on a real log: an UNKEYED
+# decision, a done: line reporting the parts that were finished, a keyed
+# decision, and a second done: whose own note says the keyed one is still
+# awaiting approval. Before the fix the first ship done: discarded the whole
+# set, so both the historical "default" bucket and the stated key vanished from
+# every reader while the questions sat unanswered in the log. The unkeyed half
+# matters most: an unkeyed decision is the historical default shape, so this was
+# never a keyed-decision edge case.
 test_a_terminal_line_never_retires_the_decisions_around_it() {
   local dir f open
   dir=$(case_dir reported-sequence)
   f="$dir/task.status"
   printf 'kind=ship\n' > "$dir/task.meta"
   cat > "$f" <<'STATUS'
-working: starting the origin investigation
-needs-decision: museum pair declare-vs-drop is yours
-done: 4 origins established from the migration ledger
-working: promoted to ship; building rulings 1+3
-needs-decision [key=execsql-drop]: ruling 2 approval - not run
-done: rulings 1+3 committed. Ruling 2 awaits the approval above.
+working: starting the schema investigation
+needs-decision: keep or drop the legacy index is yours
+done: 4 call sites established from the migration log
+working: promoted to ship; building steps 1+3
+needs-decision [key=legacy-index]: step 2 approval - not run
+done: steps 1+3 committed. Step 2 awaits the approval above.
 STATUS
-  open=$(printf 'default\tneeds-decision\tmuseum pair declare-vs-drop is yours\nexecsql-drop\tneeds-decision\truling 2 approval - not run\n')
+  open=$(printf 'default\tneeds-decision\tkeep or drop the legacy index is yours\nlegacy-index\tneeds-decision\tstep 2 approval - not run\n')
   assert_fold "$f" "$open" 'the reported sequence'
   [ "$(status_key_closing_verb "$f" default)" = needs-decision ] \
     || fail "the unkeyed decision was retired by a later done: line"
-  [ "$(status_key_closing_verb "$f" execsql-drop)" = needs-decision ] \
+  [ "$(status_key_closing_verb "$f" legacy-index)" = needs-decision ] \
     || fail "the keyed decision was retired by a later done: line"
 
   # Answering closes it, in EITHER documented key position, and closes only the
-  # key it names. The capture's hand-written close used the colon-first spelling.
-  printf 'resolved: [key=execsql-drop] captain approved the drop\n' >> "$f"
-  assert_fold "$f" "$(printf 'default\tneeds-decision\tmuseum pair declare-vs-drop is yours\n')" \
+  # key it names. A hand-written close commonly uses the colon-first spelling.
+  printf 'resolved: [key=legacy-index] approved the drop\n' >> "$f"
+  assert_fold "$f" "$(printf 'default\tneeds-decision\tkeep or drop the legacy index is yours\n')" \
     'after a colon-first resolution'
-  printf 'resolved: the museum pair is declared\n' >> "$f"
+  printf 'resolved: the legacy index is kept\n' >> "$f"
   assert_fold "$f" '' 'after the unkeyed resolution'
   pass "a done: line retires neither the unkeyed nor the keyed decision around it"
 }
@@ -517,7 +517,7 @@ test_bare_prose_cannot_impersonate_a_terminal_declaration() {
       assert_fold "$f" "$open" "$kind: bare '$word' prose"
       [ "$(status_key_closing_verb "$f" route)" = needs-decision ] \
         || fail "$kind: bare '$word' prose closed a still-open key"
-      # A GENUINE terminal declaration does not close it either (#5203): the
+      # A GENUINE terminal declaration does not close it either: the
       # worker is reporting what it finished, not answering the question.
       f="$dir/$kind-$word-real.status"
       printf 'kind=%s\n' "$kind" > "$dir/$kind-$word-real.meta"

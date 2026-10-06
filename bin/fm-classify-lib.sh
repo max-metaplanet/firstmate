@@ -578,9 +578,9 @@ status_event_recorded() {  # <status-file> <new-status-line>
 # captain-held backlog transfer referencing that key CLOSES it.
 # NOTHING ELSE closes one, on any task kind. A terminal `done:` or `failed:`
 # declaration describes the work the worker finished; it does not answer a
-# question the captain was asked, and the two routinely arrive on the same log
-# ("done: the other parts shipped" while ruling 2 still awaits approval). Until
-# #5203 a ship's or scout's terminal line discarded the WHOLE open set, so an
+# question the supervisor was asked, and the two routinely arrive on the same
+# log ("done: the other parts shipped" while one ruling still awaits approval).
+# A ship's or scout's terminal line used to discard the WHOLE open set, so an
 # unanswered decision stopped being listed, bin/fm-send.sh --resolve-key could
 # no longer find its key to answer it, and bin/fm-captain-hold.sh's completion
 # gate saw an empty set and let the task tear down with the question still owed.
@@ -1128,12 +1128,13 @@ EOF
 # of how much new unrelated log content has since been folded in. Only a line the
 # shared fold rule retires removes one.
 #
-# The cursor format is `version` (FM_OPEN_DECISIONS_FOLD_VERSION plus the task
-# kind, as `<n>:<kind>`), `offset`, `ident`, then the folded open set.
+# The cursor format is `version` (FM_OPEN_DECISIONS_FOLD_VERSION), `offset`,
+# `ident`, then the folded open set.
 # FM_OPEN_DECISIONS_FOLD_VERSION must be bumped whenever
 # _fm_decision_fold_line semantics change, so persisted state from an older
-# interpretation is discarded and rebuilt from byte 0; the kind suffix does the
-# same when a task kind changes, because kind changes the fold below.
+# interpretation is discarded and rebuilt from byte 0. The version carries no
+# task-kind suffix because the fold below is kind-independent: a decision opens
+# and closes by its own key on every kind of task alike.
 #
 # Cursor invalidation is deliberately minimal, matching how status files are
 # ACTUALLY used in this repo: every one is created once (`>`) and only ever
