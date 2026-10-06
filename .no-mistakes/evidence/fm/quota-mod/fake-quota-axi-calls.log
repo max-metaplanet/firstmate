@@ -1,0 +1,5 @@
+1791278091 CLAUDE_CONFIG_DIR=/tmp/fmq-live.6lIr/seats/max2 --provider claude --no-credential-refresh --full --json
+1791278091 CLAUDE_CONFIG_DIR=/tmp/fmq-live.6lIr/seats/max-gmail --provider claude --no-credential-refresh --full --json
+1791278092 CLAUDE_CONFIG_DIR= --provider claude --no-credential-refresh --full --json
+1791278092 CLAUDE_CONFIG_DIR=/tmp/fmq-live.6lIr/seats/max-gmail --provider claude --no-credential-refresh --full --json
+1791278094 CLAUDE_CONFIG_DIR=/tmp/fmq-live.6lIr/seats/max2 --provider claude --no-credential-refresh --full --json

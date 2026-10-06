@@ -1,0 +1,13 @@
+$ FM_QUOTA_ENABLED=1 claude -p /seats --output-format json   (fake seat home: max2 cache 1m old, max-gmail cache 10 days old; real Claude Code 2.1.291)
+{
+  "result": "firstmate-quota: /Users/max/.claude-seats/seat-max-gmail (this session): no rate-limit reading yet\ndefault: no quota data (quota-axi unavailable or the read timed out) (no reading)\nmax-gmail: credentials_missing (10d old, stale)\nmax2 [new workers] seat-max2@example.com: session 37% · week 71% (1m old, stale)\ncached figures older than 60s are shown as stale; this session's own figures are live",
+  "num_turns": 0,
+  "total_cost_usd": 0
+}
+
+quota-axi calls made during the /seats run: 0
+
+$ env -u FM_QUOTA_ENABLED claude -p /seats --max-turns 1 --output-format json
+(gate off: no mod command answers; the prompt falls through to the model, num_turns>0, cost>0, and the mod made no seat read)
+{"subtype":"error_max_turns","num_turns":2,"total_cost_usd":0.4460146,"stop_reason":"tool_use"}
+quota-axi calls after gate-off run: 0

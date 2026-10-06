@@ -1,0 +1,22 @@
+$ # 1. cold cache, cached-only read (must make zero quota-axi calls)
+$ fm-seat-board.sh json --cached-only
+{"liveSeat":"default","activeSeat":"max2","cacheSeconds":60,"seats":[{"name":"default","hasData":false,"ageSeconds":null,"attention":"no quota data (quota-axi unavailable or the read timed out)","windows":0},{"name":"max-gmail","hasData":false,"ageSeconds":null,"attention":"no quota data (quota-axi unavailable or the read timed out)","windows":0},{"name":"max2","hasData":false,"ageSeconds":null,"attention":"no quota data (quota-axi unavailable or the read timed out)","windows":0}]}
+(eval):8: no such file or directory: /tmp/fmq-live.6lIr/calls.log
+quota-axi calls so far: 0
+
+$ # 2. refreshing read fills the cache
+$ CLAUDE_CONFIG_DIR=<seats>/max2 fm-seat-board.sh json
+{"liveSeat":"max2","activeSeat":"max2","seats":[{"name":"default","active":false,"hasData":true,"ageSeconds":0,"account":"seat-max2@example.com","attention":null,"windows":[{"label":"session","percentRemaining":37},{"label":"week","percentRemaining":71}]},{"name":"max-gmail","active":false,"hasData":true,"ageSeconds":0,"account":null,"attention":"credentials_missing","windows":[]},{"name":"max2","active":true,"hasData":true,"ageSeconds":0,"account":"seat-max2@example.com","attention":null,"windows":[{"label":"session","percentRemaining":37},{"label":"week","percentRemaining":71}]}]}
+quota-axi calls so far:        2
+
+$ # 3. age the cache files 10 days, then cached-only read again
+[{"name":"default","hasData":false,"ageSeconds":null,"windows":[]},{"name":"max-gmail","hasData":true,"ageSeconds":864052,"windows":[]},{"name":"max2","hasData":true,"ageSeconds":864052,"windows":[37,71]}]
+quota-axi calls so far:        2  (unchanged => cached-only never reached quota-axi)
+
+$ # 4. refreshing read on the 10-day-old cache refills it
+[{"name":"default","ageSeconds":0},{"name":"max-gmail","ageSeconds":1},{"name":"max2","ageSeconds":0}]
+quota-axi calls so far:        5
+
+$ # 5. a second refreshing read inside the 60s window re-uses the cache
+[{"name":"default","ageSeconds":3},{"name":"max-gmail","ageSeconds":3},{"name":"max2","ageSeconds":1}]
+quota-axi calls so far:        5

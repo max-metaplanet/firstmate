@@ -1,0 +1,29 @@
+=== tests/fm-quota-claude-mod-plugin.test.sh
+ok - Claude Code 2.1.291 (Claude Code) validates the Quota mod strictly at its folder and its auto-load path, hooking exactly the account measurement, the band, the seats pane, and /seats
+ok - Claude Code 2.1.291 (Claude Code) runs the Quota mod's plugin test suites clean: the activation gate, the live band, the dated seats pane, its text fallback, and the refresh cadence
+ok - the seat reader prints schema 1 with every seat dated, and its cached-only form makes no quota call
+exit=
+=== tests/fm-quota-claude-mod.test.sh
+ok - the Quota mod declares one hooks module, nothing that loads on its own, and is reachable from the project auto-load path
+ok - the live-seat policy converts percent used to percent left, clamps nonsense, draws nothing for an empty reading, and never guesses a reset
+ok - the all-seats policy dates every figure, calls anything past the board's cache window stale, says when a seat has no reading, and refuses a reading of another schema
+ok - the refresh cadence defaults to ten minutes, cannot be driven below its floor, and spends one interval on one read however often it is asked
+# all fm-quota-claude-mod tests passed
+exit=
+=== tests/fm-seat-board.test.sh
+ok - render lists a named seat with its windows and extra-usage spend
+ok - render shows an attention line for a seat that is not logged in
+ok - render shows a rate-limited seat's error as-is
+ok - a reload within the cache window does not read quota-axi again
+ok - render reads quota-axi without refreshing or prompting for credentials
+ok - the cache is scoped to each seat's config dir, not its name
+ok - render escapes markup in quota-axi text
+ok - serve rejects a missing or non-numeric port
+ok - json reports every seat with its own cache age and the window those ages are judged against
+ok - json marks the active seat, the live seat, and a seat held out of automatic rotation
+ok - json reports a seat with no usable report as absent rather than as a zero
+ok - json --cached-only reports an empty cache as no data and never reads quota-axi
+ok - json --cached-only serves an expired cached report with its real age, so a reader can call it stale
+ok - json rejects an unknown flag
+# all fm-seat-board tests passed
+exit=

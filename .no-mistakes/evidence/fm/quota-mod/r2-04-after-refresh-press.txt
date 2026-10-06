@@ -1,0 +1,15 @@
+                                                                      │                                              ✕
+ ▐▛███▛█   Claude Code v2.1.291                                       │seat-max-gmail 5h 83% · 7d 60% (5d 20h)  live
+▝▜██████▀  Opus 5.5 · Claude Max                                      │defa [new     session 85% · week 60% · (2m old,
+ ▝▝   ▝▝   ~/…/worktrees/61c6dd39b831/01M4862X6MG5M49F15PE5RCEGF      │ult  workers] Fable week 99%           stale)
+                                                                      │seat-m session 100% · week 3% ·      (10d old,
+                                                                      │ax     Fable week 100%               stale)
+                                                                      │seat-max [this s session 85% · week 60% (2m old,
+                                                                      │-gmail   ession] · Fable week 99%       stale)
+                                                                      │seat-m session 97% · week 24% ·      (2m old,
+                                                                      │ax2    Fable week 100%               stale)
+                                                                      │cached readings over 60s old are stale; only th…
+                                                                      │read 0s ago; next live refresh in 9m
+                                                                      │r: Refresh
+                                                                      │
+Tue Oct  6 05:19:58 EDT 2026
