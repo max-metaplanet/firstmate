@@ -54,11 +54,32 @@ Read such a line as "these two records disagree", never as "the captain ruled an
 Reconcile it with what actually happened - `answer` when the captain's own words exist to record, and a fresh `needs-decision` line re-opening the status decision when that resolution was not the captain's word.
 The absence of a routed work item is not a divergence and the guard never requires one: when the decision IS the deliverable there is nothing to route.
 
+## The checked: requirement
+
+A captain call must carry the read-only check behind it, because a claim nobody read is not evidence.
+In this fleet's own status logs roughly a fifth of escalated questions either were answerable by a read-only check outright or hid a checkable fact inside a judgement, and the failure that produces is silent: a call recorded as "confirmed" with no query, output, or date behind it reads exactly like a verified one while other records contradict it.
+
+Three records carry the requirement, each for new entries only - nothing already written is reworded:
+
+- the reason passed to `bin/fm-captain-hold.sh hold`,
+- a worker's `needs-decision` status line,
+- every questions-for-the-captain list in a scout report.
+
+Each one states what was read and what it showed, before the question itself.
+The part is one line and contains no parentheses, so it is already valid inside a hold reason as that wrapper accepts it today; in report prose it opens the sentence as `Checked:`, which is the same part.
+
+- hold reason: `checked: tasks-axi show eng-2531 records the ruling as confirmed but files no query or date, and two reports read the column the other way. Rule on which meaning holds`
+- needs-decision line: `needs-decision [at=1791270000]: checked: grep for the old flag across bin/ returns only its defining script, so nothing else depends on the rename. Rename it or keep a compatibility alias`
+
+When no read-only check exists, write `checked: none possible - <why>`.
+That form is the whole point of the requirement: an absent check must read as absent rather than as a settled fact, and a stated reason is honest where silence is not.
+A check that contradicts the question's premise usually dissolves the call instead of answering it, which is an evidence-backed `reconcile close` rather than a hold.
+
 ## Operating sequence
 
 1. Read the complete investigation result and complete the visual review before declaring either complete.
-2. Inventory only genuine unresolved choices that require the captain, and find the task each one gates.
-3. Hold that task - or create one captain-held task for the review's open questions - with a concise reason carrying the question and options.
+2. Inventory only genuine unresolved choices that require the captain, run the read-only check behind each one, and find the task each one gates.
+3. Hold that task - or create one captain-held task for the review's open questions - with a concise reason carrying the check, the question, and the options.
 4. Run `complete` with the full captain-held inventory for that review pass.
 5. Relay the choices to the captain as decisions from Bearings' Captain's Call section under `AGENTS.md` section 9; do not use the word hold in captain chat.
 6. Close each call only through `answer` (or a channel that feeds `answers`), close a board-requested moot call through evidence-backed `reconcile close`, record a still-active reconciliation through `reconcile note`, use `--until` when the captain defers it, or confirm a channel already closed it.
