@@ -331,7 +331,12 @@ action_check() {
   while IFS=$'\t' read -r id threshold; do
     [ -n "$id" ] || continue
     left=$(lookup_value "$windows_out" "$id")
-    [ -n "$left" ] || continue
+    if [ -z "$left" ]; then
+      # A window missing from this read has not reset, so it stays notified.
+      ! id_in_list "$RECORD_NOTIFIED" "$id" || notified_new="${notified_new}${id}
+"
+      continue
+    fi
     used=$(lookup_value "$windows_out" "$id" 3)
     # A window is crossed once it has dropped TO OR BELOW the configured percent
     # left. It stays crossed while it remains there and re-arms the moment it

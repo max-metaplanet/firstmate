@@ -127,7 +127,9 @@ fm_seat_active() {
 #   1. the named seat's profile directory, when <name> is not the default seat
 #   2. firstmate's OWN ambient CLAUDE_CONFIG_DIR, which predates seats and is
 #      how a home running under a non-default profile already hands that same
-#      store to its workers
+#      store to its workers. A lead moved by bin/fm-lead-restart.sh runs on
+#      its destination seat, so that restart carries the ambient it started
+#      from in FM_AMBIENT_CLAUDE_CONFIG_DIR, which wins when set
 #   3. empty - the single-store default, which adds no launch prefix at all
 # The login probe and the threshold read resolve through this too, so they
 # always inspect the same profile a worker on that seat would spend.
@@ -137,7 +139,7 @@ fm_seat_config_dir() {
     printf '%s\n' "$dir"
     return 0
   fi
-  printf '%s\n' "${CLAUDE_CONFIG_DIR:-}"
+  printf '%s\n' "${FM_AMBIENT_CLAUDE_CONFIG_DIR-${CLAUDE_CONFIG_DIR:-}}"
 }
 
 # fm_seat_name_of_profile <profile-dir>
@@ -557,7 +559,17 @@ fm_seat_dispatch_decision() {
     return 0
   }
   remaining=$(fm_seat_remaining_from "$out") || {
-    printf 'hold quota-unreadable\n'
+    # A lapsed token reads no quota until a launch renews it, so holding on it
+    # would hold every spawn for good. The field is the one fm_seat_logged_in
+    # reads for the same state.
+    if printf '%s\n' "$out" | jq -e '
+      (.providers // []) | map(select(.provider == "claude")) | .[0] // empty
+      | .state.authStatus == "expired_refreshable"
+    ' >/dev/null 2>&1; then
+      printf 'allow login-renewable\n'
+    else
+      printf 'hold quota-unreadable\n'
+    fi
     return 0
   }
   # Plan quota still left means no extra usage is in play, whatever the policy
@@ -599,6 +611,8 @@ fm_seat_dispatch_reason() {
         printf 'the active Claude seat still has %s%% of its plan quota left\n' "$a" ;;
       extra-usage-under-cap)
         printf '$%s of extra usage spent on the active Claude seat, under the $%s cap\n' "$a" "$b" ;;
+      login-renewable)
+        printf 'the active Claude seat access token has lapsed, so its quota cannot be read until this launch renews it\n' ;;
       *)
         printf 'the extra-usage policy allows new Claude dispatch\n' ;;
     esac

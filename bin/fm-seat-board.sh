@@ -128,26 +128,35 @@ seat_cache_file() {
 # data instead of being refilled: the read makes no quota-axi call at all. That
 # is what lets a caller poll far more often than the endpoint tolerates.
 seat_quota_cached() {
-  local dir=$1 cached_only=${2-} cache_file age out
-  mkdir -p "$FM_SEAT_BOARD_CACHE_DIR" 2>/dev/null || true
+  local dir=$1 cached_only=${2-} cache_file age out tmp
+  (umask 077 && mkdir -p "$FM_SEAT_BOARD_CACHE_DIR") 2>/dev/null || true
+  chmod 700 "$FM_SEAT_BOARD_CACHE_DIR" 2>/dev/null || true
   cache_file=$(seat_cache_file "$dir")
   if [ -n "$cached_only" ]; then
-    [ -f "$cache_file" ] && cat "$cache_file"
+    seat_cache_read "$cache_file"
     return 0
   fi
   if [ -f "$cache_file" ]; then
     age=$(file_age_seconds "$cache_file") || age=$((FM_SEAT_BOARD_CACHE_SECONDS + 1))
-    if [ "$age" -lt "$FM_SEAT_BOARD_CACHE_SECONDS" ]; then
-      cat "$cache_file"
+    if [ "$age" -lt "$FM_SEAT_BOARD_CACHE_SECONDS" ] && seat_cache_read "$cache_file"; then
       return 0
     fi
   fi
   if out=$(fm_seat_quota_json "$dir"); then
-    printf '%s' "$out" > "$cache_file.tmp" 2>/dev/null && mv "$cache_file.tmp" "$cache_file" 2>/dev/null
+    if tmp=$(mktemp "$cache_file.XXXXXX" 2>/dev/null); then
+      { printf '%s' "$out" > "$tmp" && mv "$tmp" "$cache_file"; } 2>/dev/null || rm -f "$tmp"
+    fi
     printf '%s' "$out"
     return 0
   fi
-  [ -f "$cache_file" ] && cat "$cache_file"
+  seat_cache_read "$cache_file"
+}
+
+# seat_cache_read <cache-file>
+# Print a cache file only when it holds a whole JSON document, so a torn or
+# foreign file reads as no data rather than as a seat with no login.
+seat_cache_read() {
+  [ -f "$1" ] && jq -e . "$1" >/dev/null 2>&1 && cat "$1"
 }
 
 board_css() {

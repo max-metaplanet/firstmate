@@ -944,8 +944,8 @@ test_open_decision_clears_on_keyed_resolution() {
 
 # Decisions come purely from the keyed fold; report PROSE never opens or reopens
 # one. That is the surviving half of the Lavish-103 defect, and it still holds.
-# What changed with #5203 is how a finished scout stops being pending: its
-# decision must actually be CLOSED - answered, or transferred to a durable
+# What changed is how a finished scout stops being pending: its decision must
+# actually be CLOSED - answered, or transferred to a durable
 # captain-held task - rather than discarded by the `done:` line itself. A
 # finishing worker routinely reports the parts it completed while the captain's
 # question is still owed, so clearing it there is what made an unanswered

@@ -243,8 +243,8 @@ establish_launch_argv() {  # <pid>
 # would be ambiguous and --fork-session would mint a NEW session id, which is
 # exactly the successor that could not take this handover: the reservation and
 # the lock sidecar both name the id being resumed.
-compose_successor_command() {  # <profile-dir> <session-id>  (argv on stdin)
-  local profile=$1 session=$2 token drop_value=0 out=''
+compose_successor_command() {  # <profile-dir> <session-id> <ambient-profile>  (argv on stdin)
+  local profile=$1 session=$2 ambient=$3 token drop_value=0 out=''
   while IFS= read -r token; do
     [ -n "$token" ] || continue
     if [ "$drop_value" -eq 1 ]; then
@@ -262,7 +262,7 @@ compose_successor_command() {  # <profile-dir> <session-id>  (argv on stdin)
     esac
     out="$out $(printf '%q' "$token")"
   done
-  printf 'CLAUDE_CONFIG_DIR=%q%s --resume %q\n' "$profile" "$out" "$session"
+  printf 'FM_AMBIENT_CLAUDE_CONFIG_DIR=%q CLAUDE_CONFIG_DIR=%q%s --resume %q\n' "$ambient" "$profile" "$out" "$session"
 }
 
 # --- shared preflight --------------------------------------------------------
@@ -321,7 +321,7 @@ preflight() {  # <launch-command-override>
     LAUNCH_ARGV=$(establish_launch_argv "$LEAD_PID") ||
       die "the lead's own launch command could not be established from its running process, so the replacement could not be started with the same flags; re-run with --launch-command '<the exact command this session was started with>'"
   fi
-  SUCCESSOR_CMD=$(printf '%s\n' "$LAUNCH_ARGV" | compose_successor_command "$TO_PROFILE" "$SESSION_ID")
+  SUCCESSOR_CMD=$(printf '%s\n' "$LAUNCH_ARGV" | compose_successor_command "$TO_PROFILE" "$SESSION_ID" "${FM_AMBIENT_CLAUDE_CONFIG_DIR-$LEAD_PROFILE}")
 }
 
 report_plan() {
@@ -485,6 +485,7 @@ handover_stage() {  # <plan-file>
   claim_wait=$(plan_field claim_wait)
   P_COMMAND=$(plan_field command)
   P_LAUNCH_FILE=$(plan_field launch_file)
+  P_SOURCE_LINE=". $(printf '%q' "$P_LAUNCH_FILE")"
   case "$pid" in ''|*[!0-9]*) exit 1 ;; esac
   case "$grace$exit_wait$start_wait$claim_wait" in ''|*[!0-9]*) exit 1 ;; esac
 
@@ -531,18 +532,18 @@ handover_stage() {  # <plan-file>
   done
   if [ "$(fm_backend_agent_alive "$backend" "$target")" != dead ]; then
     clear_reservation "$nonce"
-    record_result stranded "the previous firstmate process ended but its terminal did not return to a shell, so nothing was typed into it; if no firstmate is running there, run '. $P_LAUNCH_FILE' in it"
+    record_result stranded "the previous firstmate process ended but its terminal did not return to a shell, so nothing was typed into it; if no firstmate is running there, run '$P_SOURCE_LINE' in it"
     fm_wake_append check lead-restart \
       "check: lead-restart: the previous firstmate process ended but its terminal did not return to a shell, so the replacement was not started; the exact command to run there is in $RESULT" || true
     exit 1
   fi
   # The literal send and the Enter are separated the same way bin/fm-spawn.sh
   # separates them, so the terminal has settled before the line is submitted.
-  if ! fm_backend_send_literal "$backend" "$target" ". $P_LAUNCH_FILE" ||
+  if ! fm_backend_send_literal "$backend" "$target" "$P_SOURCE_LINE" ||
     ! sleep 0.3 ||
     ! fm_backend_send_key "$backend" "$target" Enter; then
     clear_reservation "$nonce"
-    record_result stranded "the previous firstmate session ended but the replacement command could not be delivered to its terminal; run '. $P_LAUNCH_FILE' there"
+    record_result stranded "the previous firstmate session ended but the replacement command could not be delivered to its terminal; run '$P_SOURCE_LINE' there"
     fm_wake_append check lead-restart \
       "check: lead-restart: the previous firstmate session ended but its replacement could not be started in that terminal; the exact command to run there is in $RESULT" || true
     exit 1
@@ -556,7 +557,7 @@ handover_stage() {  # <plan-file>
   done
   if [ "$(fm_backend_agent_alive "$backend" "$target")" != alive ]; then
     clear_reservation "$nonce"
-    record_result stranded "the replacement was sent to the terminal but no agent came up there within ${start_wait}s; run '. $P_LAUNCH_FILE' there"
+    record_result stranded "the replacement was sent to the terminal but no agent came up there within ${start_wait}s; run '$P_SOURCE_LINE' there"
     fm_wake_append check lead-restart \
       "check: lead-restart: the replacement firstmate did not come up in its terminal; the exact command to run there is in $RESULT" || true
     exit 1

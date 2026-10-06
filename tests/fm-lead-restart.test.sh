@@ -321,6 +321,10 @@ test_launch_command_is_established_only_when_it_round_trips() {
     *"CLAUDE_CONFIG_DIR=$SEATS_DIR/beta"*) ;;
     *) fail "the composed command does not run under the destination profile: $out" ;;
   esac
+  case "$out" in
+    *"FM_AMBIENT_CLAUDE_CONFIG_DIR=$SEATS_DIR/alpha CLAUDE_CONFIG_DIR=$SEATS_DIR/beta"*) ;;
+    *) fail "the composed command does not carry the profile the lead started on, so default-seat spawns would follow it to beta: $out" ;;
+  esac
   stop_case
   pass "a launch command is established only when it provably round-trips, and composition leaves exactly one resume"
 }

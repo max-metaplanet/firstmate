@@ -25,6 +25,8 @@ set -u
 . "$ROOT/bin/fm-control-lib.sh"
 # shellcheck source=/dev/null
 . "$ROOT/bin/fm-trace-context-lib.sh"
+# shellcheck source=/dev/null
+. "$ROOT/bin/fm-tasks-axi-lib.sh"
 
 CONTROL="$ROOT/bin/fm-control.sh"
 SPAWN="$ROOT/bin/fm-spawn.sh"
@@ -387,6 +389,7 @@ test_same_harness_relaunch_keeps_identity_and_reuses_the_endpoint() {
   [ "$(journal_field "$dir" rl1 phase)" = complete ] \
     || fail "the transaction journal should end complete"
   assert_grep "/exit" "$dir/fake/literal" "the previous agent should have been exited"
+  assert_grep "cd -- '$dir/wt'" "$dir/fake/keys" "the replacement launch must enter the recorded worktree"
   assert_grep "Firstmate operational input waiting: read" "$dir/fake/literal" "the replacement should have been launched"
   pass "fm-control relaunch: a same-harness relaunch replaces the agent in the same endpoint and worktree"
 }
@@ -1191,6 +1194,25 @@ test_spawn_relaunch_without_a_harness_reuses_the_recorded_one() {
   pass "fm-spawn --relaunch: with no explicit harness it reuses the task's recorded one, never the crew default"
 }
 
+# A promoted scout records kind=ship and a custom ship branch in its meta, but
+# its brief is the scout scaffold: it never gained a Ship branch line, and a
+# relaunch cannot regenerate the brief (--branch-prefix is refused there). The
+# recorded branch is authoritative, so the relaunch must proceed on it.
+test_spawn_relaunch_of_promoted_scout_uses_the_recorded_branch() {
+  local dir out
+  dir=$(new_case promotebranch rl42)
+  add_ship_task "$dir" rl42 claude
+  printf 'branch=fix/rl42\n' >> "$dir/home/state/rl42.meta"
+  printf 'zsh' > "$dir/fake/command"
+  out=$(run_spawn "$dir" rl42 --relaunch)
+  assert_contains "$out" "spawned rl42" "the relaunch should complete on the recorded branch"
+  assert_contains "$out" "records no ship branch" "the brief gap should be reported, not silent"
+  assert_contains "$out" "recorded branch fix/rl42" "the relaunch should name the branch it adopted"
+  [ "$(meta_field "$dir" rl42 branch)" = "fix/rl42" ] \
+    || fail "the recorded branch must survive the relaunch"
+  pass "fm-spawn --relaunch: a promoted scout with a recorded custom branch relaunches on it instead of being refused"
+}
+
 # A relaunch acquires no working copy: it reuses the one the record already
 # names. bin/fm-spawn.sh's claimed-copy refusal therefore must not reach it -
 # not even when a SECOND record names that same copy, which is precisely the
@@ -1772,6 +1794,7 @@ test_concurrent_relaunch_is_refused() {
     i=$((i + 1))
   done
   [ -e "$lock" ] || { kill "$holder" 2>/dev/null; fail "could not stage a held control lock"; }
+  printf 'held\n' > "$dir/home/state/rl19.composer-dialog"
   out=$(run_control "$dir" rl19 relaunch --note "concurrent"); rc=$?
   kill "$holder" 2>/dev/null || true
   wait "$holder" 2>/dev/null || true
@@ -1780,6 +1803,8 @@ test_concurrent_relaunch_is_refused() {
     "the refusal should name the concurrent action"
   [ "$(cat "$dir/fake/command")" = claude ] \
     || fail "a refused concurrent relaunch must not stop the agent"
+  [ "$(cat "$dir/home/state/rl19.composer-dialog" 2>/dev/null)" = held ] \
+    || fail "a refused concurrent relaunch must not remove the lock holder's dialog file"
   pass "fm-control relaunch: two control actions on one task serialize instead of interleaving"
 }
 
@@ -2125,7 +2150,9 @@ case "${1:-} ${2:-}" in
     fi
     exit 0 ;;
   'agent get')
-    if [ -f "$D/herdr-agent-live" ]; then
+    if [ -f "$D/herdr-agent-registration" ]; then
+      cat "$D/herdr-agent-registration"
+    elif [ -f "$D/herdr-agent-live" ]; then
       # The agent came back with its server. Nothing here is reclaimable.
       printf '{"result":{"agent":{"agent_status":"idle"}}}\n'
     else
@@ -2134,9 +2161,15 @@ case "${1:-} ${2:-}" in
     fi
     exit 0 ;;
   'pane process-info')
-    # Only asked for once an agent IS registered, to prove it at process level.
-    printf '{"result":{"type":"pane_process_info","process_info":{"pane_id":"%s","shell_pid":4242,"foreground_processes":[{"pid":4243,"name":"claude","argv":["claude"],"cmdline":"claude"}]}}}\n' \
-      "$(cat "$D/herdr-pane")"
+    # A retained registration with a shell-only pane models an exited agent
+    # whose Herdr status authority still belongs to its previous session.
+    if [ -f "$D/herdr-agent-registration" ]; then
+      printf '{"result":{"type":"pane_process_info","process_info":{"pane_id":"%s","shell_pid":4242,"foreground_processes":[]}}}\n' \
+        "$(cat "$D/herdr-pane")"
+    else
+      printf '{"result":{"type":"pane_process_info","process_info":{"pane_id":"%s","shell_pid":4242,"foreground_processes":[{"pid":4243,"name":"claude","argv":["claude"],"cmdline":"claude"}]}}}\n' \
+        "$(cat "$D/herdr-pane")"
+    fi
     exit 0 ;;
   'pane send-text')
     # Mirrors the tmux fake's `becomes`: delivering the launch brief is what
@@ -2150,7 +2183,9 @@ case "${1:-} ${2:-}" in
       ". '"*"'") staged=${payload#". '"}; staged=${staged%"'"}; [ ! -f "$staged" ] || payload=$(cat "$staged") ;;
     esac
     case "$payload" in
-      *'encode launch-brief'* | *'Firstmate operational input waiting: read'*) : > "$D/herdr-agent-live" ;;
+      *'encode launch-brief'* | *'Firstmate operational input waiting: read'*)
+        printf '%s\n' "$payload" > "$D/launched-command"
+        : > "$D/herdr-agent-live" ;;
     esac
     exit 0 ;;
   'workspace list')
@@ -2178,6 +2213,19 @@ esac
 exit 0
 SH
   chmod +x "$fb/herdr"
+  cat > "$fb/ps" <<'SH'
+#!/usr/bin/env bash
+if [ -f "$FM_FAKE_DIR/herdr-agent-registration" ]; then
+  case "$*" in
+    '-axo pid=,ppid=,comm=') printf '4242 1 bash\n' ;;
+    '-p 4242 -o args=') printf 'bash\n' ;;
+    *) exec /bin/ps "$@" ;;
+  esac
+else
+  exec /bin/ps "$@"
+fi
+SH
+  chmod +x "$fb/ps"
 }
 
 # add_herdr_ship_task <case-dir> <id> [session] [surviving-pane]: a ship task
@@ -2236,6 +2284,39 @@ herdr_case_or_skip() {  # <name> <id> [session] [surviving-pane]
   add_herdr_ship_task "$HERDR_CASE_DIR" "$2" "${3:-fmlab}" "${4:-%7}"
   make_herdr_stub "$HERDR_CASE_DIR"
   return 0
+}
+
+test_herdr_relaunch_resumes_only_the_registered_pi_session() {
+  local dir out rc=0 command registered meta
+  for registered in pi claude; do
+    herdr_case_or_skip "resume-$registered" "resume-$registered" || {
+      echo "skip - herdr relaunch needs jq (the herdr adapter parses JSON with it)"
+      return 0
+    }
+    dir=$HERDR_CASE_DIR
+    rm -f "$dir/fake/herdr-stopped"
+    # BSD sed takes -i's suffix as a separate argument, so the GNU spelling reads the
+    # file as its script and leaves the meta untouched. Rewrite through a temp file,
+    # the same portable shape the rest of the suite's helpers use.
+    meta=$dir/home/state/resume-$registered.meta
+    sed 's/^harness=claude$/harness=pi/' "$meta" > "$meta.tmp" && mv -f "$meta.tmp" "$meta"
+    # Keep the pane's status authority registered to an existing Pi session,
+    # while process-info proves that its previous agent has exited.
+    printf '{"result":{"agent":{"agent":"%s","agent_status":"idle","agent_session":{"kind":"path","value":"/tmp/pi-bound-session.jsonl"}}}}\n' \
+      "$registered" > "$dir/fake/herdr-agent-registration"
+    out=$(run_spawn "$dir" "resume-$registered" --relaunch --harness pi) || rc=$?
+    expect_code 0 "$rc" "Herdr Pi relaunch should complete ($registered registration)"$'\n'"$out"
+    command=$(cat "$dir/fake/launched-command")
+    if [ "$registered" = pi ]; then
+      assert_contains "$command" "--session '/tmp/pi-bound-session.jsonl'" \
+        "the replacement Pi must resume the session that owns Herdr status authority"
+    else
+      assert_not_contains "$command" "--session" \
+        "a Pi replacement must not resume a foreign adapter's conversation"
+    fi
+    rc=0
+  done
+  pass "fm-spawn --relaunch: resumes the bound Pi session only for a Pi registration"
 }
 
 test_herdr_reclaim_adopts_a_pane_that_outlived_its_server() {
@@ -2442,6 +2523,10 @@ test_relaunch_reverifies_an_already_in_flight_item_instead_of_rewriting_it() {
     pass "skipped: tasks-axi is not installed, so the backlog transition is inert"
     return 0
   }
+  fm_tasks_axi_compatible || {
+    pass "skipped: installed tasks-axi predates ${FM_TASKS_AXI_MIN}, so dispatch refuses automatic backlog transitions"
+    return 0
+  }
   dir=$(new_case reverify rl40)
   add_ship_task "$dir" rl40 claude
   seed_backlog "$dir" rl40 in_flight
@@ -2460,6 +2545,10 @@ test_relaunch_moves_a_drifted_item_back_in_flight() {
     pass "skipped: tasks-axi is not installed, so the backlog transition is inert"
     return 0
   }
+  fm_tasks_axi_compatible || {
+    pass "skipped: installed tasks-axi predates ${FM_TASKS_AXI_MIN}, so dispatch refuses automatic backlog transitions"
+    return 0
+  }
   dir=$(new_case drifted rl41)
   add_ship_task "$dir" rl41 claude
   seed_backlog "$dir" rl41 queued
@@ -2471,6 +2560,57 @@ test_relaunch_moves_a_drifted_item_back_in_flight() {
   pass "relaunch heals an item that drifted out of In flight while the task stayed live"
 }
 
+test_exit_and_relaunch_remove_the_dialog_file() {
+  local dir out rc
+  dir=$(new_case dialog-file-exit rl70)
+  add_ship_task "$dir" rl70 claude
+  out=$(run_control "$dir" rl70 exit); rc=$?
+  expect_code 0 "$rc" "exit should stop the agent"$'\n'"$out"
+  [ ! -e "$dir/home/state/rl70.composer-dialog" ] \
+    || fail "exit should remove the dialog file"
+
+  dir=$(new_case dialog-file-relaunch rl71)
+  add_ship_task "$dir" rl71 claude
+  out=$(run_control "$dir" rl71 relaunch --note "replace the agent"); rc=$?
+  expect_code 0 "$rc" "relaunch should replace the agent"$'\n'"$out"
+  [ ! -e "$dir/home/state/rl71.composer-dialog" ] \
+    || fail "relaunch should remove the dialog file"
+  pass "fm-control removes the dialog file after exit and after relaunch"
+}
+
+# The lock release removes paths at or under the control lock with rm, so a
+# recording rm sees the state directory at the moment of release without a
+# second overlapping command.
+test_exit_removes_the_dialog_file_before_releasing_the_lock() {
+  local dir out rc lock sink trace
+  dir=$(new_case dialog-file-order rl72)
+  add_ship_task "$dir" rl72 claude
+  lock="$dir/home/state/.control-rl72.lock"
+  sink="$dir/home/state/rl72.composer-dialog"
+  trace="$dir/fake/rm-trace"
+  cat > "$dir/fakebin/rm" <<SH
+#!/usr/bin/env bash
+for arg in "\$@"; do
+  case "\$arg" in
+    "$lock"|"$lock"/*)
+      if [ -e "$sink" ]; then echo present; else echo absent; fi >> "$trace"
+      break
+      ;;
+  esac
+done
+exec "$(command -v rm)" "\$@"
+SH
+  chmod +x "$dir/fakebin/rm"
+  out=$(run_control "$dir" rl72 exit); rc=$?
+  expect_code 0 "$rc" "exit should stop the agent"$'\n'"$out"
+  [ ! -e "$lock" ] || fail "exit should release the control lock"
+  [ "$(tail -n 1 "$trace" 2>/dev/null)" = absent ] \
+    || fail "the dialog file must be gone when the control lock is released, got: $(cat "$trace" 2>/dev/null)"
+  pass "fm-control exit removes the dialog file before it releases the control lock"
+}
+
+test_exit_and_relaunch_remove_the_dialog_file
+test_exit_removes_the_dialog_file_before_releasing_the_lock
 test_same_harness_relaunch_keeps_identity_and_reuses_the_endpoint
 test_relaunch_refuses_before_exit_when_the_composer_holds_pending_text
 test_relaunch_refuses_before_exit_when_the_composer_state_is_unproven
@@ -2504,6 +2644,7 @@ test_secondmate_relaunch_onto_a_crewmate_only_adapter_refuses_before_stop
 test_explicit_secondmate_harness_ignores_configured_profile_axes
 test_ship_relaunch_ignores_the_crew_harness_config
 test_spawn_relaunch_without_a_harness_reuses_the_recorded_one
+test_spawn_relaunch_of_promoted_scout_uses_the_recorded_branch
 test_spawn_relaunch_is_not_refused_by_the_claimed_copy_guard
 test_spawn_relaunch_refuses_a_record_that_released_its_copy
 test_promoted_scout_relaunch_receives_the_current_delivery_contract
@@ -2539,6 +2680,7 @@ test_tmux_refuses_a_window_missing_from_its_session
 test_tmux_refuses_a_session_that_cannot_be_found
 test_tmux_refuses_when_the_server_is_gone
 test_reclaim_refuses_an_unreadable_endpoint
+test_herdr_relaunch_resumes_only_the_registered_pi_session
 test_herdr_reclaim_adopts_a_pane_that_outlived_its_server
 test_herdr_exit_reports_already_stopped_when_the_pane_outlived_its_server
 test_herdr_rebind_stays_in_the_recorded_session

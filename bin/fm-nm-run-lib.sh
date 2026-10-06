@@ -65,6 +65,20 @@ fm_nm_strip_quotes() {
   fm_nm_trim "$s"
 }
 
+# Path of no-mistakes' local state database as the CLI would see it from
+# worktree $1: <NM_HOME>/state.sqlite, with NM_HOME defaulting to
+# ~/.no-mistakes and a relative NM_HOME resolving from that worktree. Readers
+# open it with SQLite's mode=ro, so a missing database is never created.
+fm_nm_state_db() {  # <worktree>
+  local root=${NM_HOME:-}
+  [ -n "$root" ] || root=~/.no-mistakes
+  case "$root" in
+    /*) ;;
+    *) root="$1/$root" ;;
+  esac
+  printf '%s/state.sqlite\n' "$root"
+}
+
 # Scalar value of a TOON key in captured `axi status` output $1.
 fm_nm_field() {  # <toon-output> <key>
   printf '%s\n' "$1" | sed -n "s/^[[:space:]]*$2:[[:space:]]*\(.*\)/\1/p" | head -1
@@ -145,13 +159,8 @@ fm_nm_primary_checkout() {  # <worktree>
 
 # Select from a complete `no-mistakes axi` overview with the existing awk
 # toolchain. A capped overview requires an optional Python 3 sqlite3 reader
-# for a read-only same-branch query of NM_HOME/state.sqlite (default:
-# ~/.no-mistakes/state.sqlite; relative NM_HOME resolves from the worktree).
-# The ten-row cap on that overview is the CLI's own (tests/captures/
-# no-mistakes-v1.70.1/README.md; reproduced live against v1.72.0 on
-# 2026-09-21), and the CLI declares it in its own `count: <shown> of <total>
-# total` line - nothing here truncates the table, and this reader must never
-# treat the displayed window as the whole one.
+# for a read-only same-branch query of the state database fm_nm_state_db
+# locates for the worktree.
 # Repo identity is asked for in three exact spellings, in order: the overview's
 # own top-level `repo:` line, which every axi release emits and is the
 # `working_path` the CLI itself resolved for the queried worktree; then the task
@@ -265,7 +274,7 @@ fm_nm_select_run() {  # <branch> <axi-overview> <worktree> [timeout_secs]
     *) printf '%s\n' "$selection"; return ;;
   esac
   primary_checkout=$(fm_nm_primary_checkout "$3")
-  if ! inventory=$(fm_nm_bounded "$3" "$timeout_secs" python3 - "$1" "$2" "$3" "$primary_checkout" "$available_ids" 2>/dev/null <<'PY'
+  if ! inventory=$(fm_nm_bounded "$3" "$timeout_secs" python3 - "$1" "$2" "$3" "$primary_checkout" "$available_ids" "$(fm_nm_state_db "$3")" 2>/dev/null <<'PY'
 import json
 import os
 import re
@@ -284,7 +293,7 @@ class Unsettled(Exception):
     """Names what this reader read whole but still could not settle."""
 
 
-branch, overview, worktree, primary_checkout, available_ids = sys.argv[1:]
+branch, overview, worktree, primary_checkout, available_ids, database = sys.argv[1:]
 ids = available_ids.split(", ") if available_ids else []
 # The overview's own `repo:` line first - it is the working_path the CLI itself
 # resolved for this worktree - then the task worktree and the primary checkout
@@ -306,12 +315,8 @@ for path in (overview_repo, worktree, primary_checkout):
 try:
     if not candidates:
         raise Unreadable("this task copy has no path to look its repository up by")
-    root = Path(os.environ.get("NM_HOME") or Path.home() / ".no-mistakes")
-    if not root.is_absolute():
-        root = Path(worktree) / root
-    database = root / "state.sqlite"
     try:
-        connection = sqlite3.connect(database.as_uri() + "?mode=ro", uri=True, timeout=30)
+        connection = sqlite3.connect(Path(database).as_uri() + "?mode=ro", uri=True, timeout=30)
     except (OSError, sqlite3.Error):
         raise Unreadable("the no-mistakes state database %s could not be opened" % database)
     with closing(connection) as db:

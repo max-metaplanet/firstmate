@@ -161,9 +161,12 @@ fm_unlanded_pr_is_merged() {  # <copy> <branch> <pr-url>
 # gained past the merge-base do not count as "added". Returns non-zero when
 # inconclusive (no default ref, or a merge conflict), so the caller refuses
 # rather than guesses.
-fm_unlanded_content_in_default() {  # <copy> <project>
-  local copy=$1 project=$2 name ref default_tree merged_tree
-  name=$(fm_unlanded_default_branch "$project") || return 1
+fm_unlanded_content_in_default() {  # <copy> <project> [<base-branch>]
+  local copy=$1 project=$2 name=${3:-} ref default_tree merged_tree
+  # A task started from a named base landed its work there, not on the project
+  # default, so that base is what the content is compared against when the caller
+  # names one.
+  [ -n "$name" ] || name=$(fm_unlanded_default_branch "$project") || return 1
   if git -C "$copy" remote get-url origin >/dev/null 2>&1; then
     git -C "$copy" fetch --quiet origin "+refs/heads/$name:refs/remotes/origin/$name" >/dev/null 2>&1 || return 1
     ref="refs/remotes/origin/$name"
@@ -186,9 +189,9 @@ fm_unlanded_content_in_default() {  # <copy> <project>
 # False only for genuinely unlanded work. FM_UNLANDED_PR_URL carries the PR URL
 # the caller passed in, replaced by the resolved one when a branch lookup found
 # it.
-fm_unlanded_work_is_landed() {  # <copy> <project> <branch> <pr-url>
-  local copy=$1 project=$2 branch=$3 pr_url=$4
+fm_unlanded_work_is_landed() {  # <copy> <project> <branch> <pr-url> [<base-branch>]
+  local copy=$1 project=$2 branch=$3 pr_url=$4 base=${5:-}
   FM_UNLANDED_PR_URL=$pr_url
   fm_unlanded_pr_is_merged "$copy" "$branch" "$pr_url" && return 0
-  fm_unlanded_content_in_default "$copy" "$project"
+  fm_unlanded_content_in_default "$copy" "$project" "$base"
 }

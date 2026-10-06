@@ -93,6 +93,7 @@ fi
 
 WT=$(fm_meta_get "$META" worktree)
 PROJ=$(fm_meta_get "$META" project)
+BASE_BRANCH=$(fm_meta_get "$META" base_branch)
 PR_URL=$(fm_meta_get "$META" pr)
 if [ -z "$WT" ]; then
   echo "REFUSED: task $ID's record names no working copy, so it holds no claim to release; nothing was changed" >&2
@@ -190,7 +191,7 @@ UNPUSHED_RAW=$(git -C "$WT" log --oneline HEAD --not --remotes -- 2>/dev/null) |
 UNPUSHED=$(printf '%s\n' "$UNPUSHED_RAW" | sed '/^$/d' | head -5)
 if [ -n "$UNPUSHED" ]; then
   BRANCH=$(git -C "$WT" rev-parse --abbrev-ref HEAD 2>/dev/null || echo HEAD)
-  if ! fm_unlanded_work_is_landed "$WT" "$PROJ" "$BRANCH" "$PR_URL"; then
+  if ! fm_unlanded_work_is_landed "$WT" "$PROJ" "$BRANCH" "$PR_URL" "$BASE_BRANCH"; then
     echo "REFUSED: $SLOT has work not on any remote and not landed, so releasing task $ID's claim would expose it to task $OTHER_ID's cleanup; nothing was changed" >&2
     printf 'unpushed commits:\n%s\n' "$UNPUSHED" >&2
     echo "Push the branch or land its PR first; this command never discards work and has no --force." >&2
