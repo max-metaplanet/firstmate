@@ -2474,7 +2474,7 @@ fi
 # worker against a store that holds no trust entry for its own copy. Refuse the
 # spawn here, before any endpoint, worktree, or record exists, rather than
 # letting either mechanism quietly take the other's launch.
-if [ -f "$CONFIG/claude-account" ] && [ "$(fm_seat_active)" != "$FM_SEAT_DEFAULT_NAME" ]; then
+if [ "$HARNESS" = claude ] && [ -f "$CONFIG/claude-account" ] && [ "$(fm_seat_active)" != "$FM_SEAT_DEFAULT_NAME" ]; then
   {
     echo "error: this home configures a worker account pin and an active Claude seat, and both choose a Claude worker's configuration directory:"
     echo "  $CONFIG/claude-account"
@@ -4547,7 +4547,10 @@ spawn_assert_agent_worktree
 if [ "$HARNESS" = claude ]; then
   if [ "$RELAUNCH" -eq 1 ] && [ "$RELAUNCH_PRIOR_HARNESS" = claude ]; then
     SEAT_RECORD=$RELAUNCH_SEAT
-    SEAT_CONFIG_DIR=${RELAUNCH_SEAT:-${CLAUDE_CONFIG_DIR:-}}
+    SEAT_CONFIG_DIR=${RELAUNCH_SEAT:-$(fm_seat_config_dir "$FM_SEAT_DEFAULT_NAME")}
+  elif [ "$KIND" = secondmate ] && fm_config_inherit_seat_optout "$PROJ_ABS/config"; then
+    SEAT_CONFIG_DIR=$(CONFIG="$PROJ_ABS/config"; fm_seat_spawn_config_dir)
+    SEAT_RECORD=$SEAT_CONFIG_DIR
   else
     SEAT_CONFIG_DIR=$(fm_seat_spawn_config_dir)
     SEAT_RECORD=$SEAT_CONFIG_DIR

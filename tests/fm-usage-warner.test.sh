@@ -199,6 +199,30 @@ test_check_ignores_a_window_the_account_does_not_return() {
   pass "fm-usage-warner: a configured but absent window id is silently skipped"
 }
 
+test_check_keeps_a_briefly_missing_window_notified() {
+  local home fakebin notify_log out
+  home=$(make_home missing-then-back)
+  fakebin="$TMP_ROOT/missing-then-back/fakebin"
+  notify_log="$TMP_ROOT/missing-then-back/notify.log"
+  : > "$notify_log"
+  fake_osascript_recorder "$fakebin" "$notify_log"
+  printf 'five_hour:20\n' > "$home/config/usage-warner"
+
+  fake_quota_axi "$fakebin" '{"id":"five_hour","percentUsed":90}'
+  out=$(run_check "$home" "$fakebin")
+  assert_contains "$out" "five_hour at 10% left" "precondition: the first crossing is reported"
+
+  fake_quota_axi "$fakebin" '{"id":"seven_day","percentUsed":10}'
+  run_check "$home" "$fakebin" >/dev/null
+
+  : > "$notify_log"
+  fake_quota_axi "$fakebin" '{"id":"five_hour","percentUsed":92}'
+  out=$(run_check "$home" "$fakebin")
+  [ -z "$out" ] || fail "a window missing from one read and back still below its threshold must not report again: $out"
+  [ ! -s "$notify_log" ] || fail "a window missing from one read must not notify again on its return"
+  pass "fm-usage-warner: a window briefly missing from a read stays notified"
+}
+
 test_check_never_requests_a_refresh() {
   local home fakebin out argv
   home=$(make_home no-refresh)
@@ -483,6 +507,7 @@ test_config_parses_comments_whitespace_and_model_ids
 test_check_crosses_notifies_stays_quiet_then_rearms
 test_check_batches_multiple_crossings_into_one_notification
 test_check_ignores_a_window_the_account_does_not_return
+test_check_keeps_a_briefly_missing_window_notified
 test_check_never_requests_a_refresh
 test_quota_axi_missing_is_reported_once
 test_jq_missing_is_reported

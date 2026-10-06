@@ -775,8 +775,10 @@ do_exit() {
     verdict=$(fm_backend_send_text_submit "$BACKEND" "$T" "$cmd" "$EXIT_RETRIES" "$POLL" 1.2 "$LABEL") \
       || die "the exit command could not be sent to task $ID on $BACKEND"
   fi
-  [ "$verdict" != send-failed ] \
-    || die "the exit command could not be sent to task $ID on $BACKEND"
+  case "$verdict" in
+    send-failed) die "the exit command could not be sent to task $ID on $BACKEND" ;;
+    unaccounted) die "the exit command was not submitted to task $ID on $BACKEND, and the text it typed could not be confirmed cleared from the composer; inspect the composer before retrying '$VERB'" ;;
+  esac
   # The submitting Enter can open the picker. The agent is still alive, and
   # another Enter would confirm the selected row. A dead agent may leave the
   # same text behind; that is not a prompt still waiting.

@@ -3107,6 +3107,8 @@ cleanup_firstmate_home_children() {
         cleanup_firstmate_home_children "$child_home" || return $?
         remove_firstmate_home "$child_home" "child firstmate home" "$child_id" || return $?
       fi
+    elif teardown_record_released_claim "$child_meta"; then
+      echo "warning: child $child_id released its claim on $child_wt (bin/fm-slot-release.sh), so that copy belongs to the record it collided with; it is left untouched and only $child_id's own cleanup runs." >&2
     elif [ "$child_backend" = orca ]; then
       if [ -n "$child_wt" ] && [ -d "$child_wt" ]; then
         validate_child_worktree_for_removal "$child_wt" "$child_proj" >/dev/null || return 1

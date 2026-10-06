@@ -975,11 +975,13 @@ auto_trigger() {
   if target=$(next_seat 2>/dev/null); then
     # Re-invoked as a subprocess so a refusal inside the switch ends that call
     # rather than this poll, and with this home's own resolution forwarded so
-    # the switch lands in the home the watcher is polling for.
+    # the switch lands in the home the watcher is polling for. The destination
+    # is recorded as fired BEFORE the switch runs, so a pass the watcher kills
+    # after the switch wrote the seat cannot rotate that seat again next pass.
+    auto_record_set fired "$target"
     if out=$(FM_HOME="$FM_HOME" FM_ROOT_OVERRIDE="$FM_ROOT" FM_STATE_OVERRIDE="$STATE" \
       FM_CONFIG_OVERRIDE="$CONFIG" FM_DATA_OVERRIDE="$DATA" \
       "$SCRIPT_DIR/fm-seat.sh" switch "$target" 2>&1); then
-      auto_record_set fired "$target"
       auto_record_set blocked ''
       printf 'claude-seat: switched from %s at %s%% left to %s; new workers launch there\n' \
         "$active" "$remaining" "$target"

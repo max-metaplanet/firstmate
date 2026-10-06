@@ -622,6 +622,40 @@ test_spawn_honours_a_homes_seat_decline() {
   pass "B5a spawn: a home's seat decline holds at secondmate launch; every other home still inherits"
 }
 
+# The declining home's own lead launches on the home's OWN seat setting, not on
+# the primary's active seat, which is what lets it spend a separate account.
+test_spawn_launches_a_declining_home_on_its_own_seat() {
+  local w declining fakebin launchlog launch rc=0
+  w="$TMP_ROOT/spawn-seat-decline-launch"
+  declining="$w/sm-optout"
+  launchlog="$w/launch.log"
+  mkdir -p "$w/home/config" "$w/home/state" "$w/home/data" "$w/home/projects" "$w/fleet-seats/work"
+  printf 'work\n' > "$w/home/config/claude-seat"
+  printf '%s\n' "$w/fleet-seats" > "$w/home/config/claude-seats-root"
+  make_seeded_home "$declining" sm-optout
+  mkdir -p "$declining/config"
+  : > "$declining/config/claude-seat-local"
+  fakebin=$(make_launch_capturing_tmux "$w/tmux")
+  : > "$launchlog"
+  PATH="$fakebin:$BLIND_BIN:$BASE_PATH" TMUX='' CLAUDECODE=1 \
+    FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$w/home" HOME="$w/home/user-home" CLAUDE_CONFIG_DIR='' \
+    FM_STATE_OVERRIDE="$w/home/state" FM_DATA_OVERRIDE="$w/home/data" \
+    FM_PROJECTS_OVERRIDE="$w/home/projects" FM_CONFIG_OVERRIDE="$w/home/config" \
+    FM_SPAWN_NO_GUARD=1 FM_FAKE_LAUNCH_LOG="$launchlog" FM_FAKE_PANE_PATH="$declining" \
+    "$ROOT/bin/fm-spawn.sh" sm-optout "$declining" claude --secondmate >/dev/null 2>&1 || rc=$?
+
+  [ "$rc" -eq 0 ] || fail "seat decline launch: the secondmate spawn failed (rc=$rc)"
+  launch=$(cat "$launchlog")
+  [ -n "$launch" ] || fail "seat decline launch: no launch command was captured"
+  case "$launch" in
+    *"$w/fleet-seats/work"*) fail "seat decline launch: the declining home's lead launched on the primary's seat: $launch" ;;
+  esac
+  case "$(grep '^claude_seat=' "$w/home/state/sm-optout.meta" 2>/dev/null)" in
+    *"$w/fleet-seats/work"*) fail "seat decline launch: the declining home's record claims the primary's seat" ;;
+  esac
+  pass "B5b spawn: a home that declines inherited seats launches its lead on its own seat"
+}
+
 # An explicit per-spawn harness arg wins over config/secondmate-harness.
 test_spawn_explicit_harness_wins() {
   local w sm meta
@@ -2765,6 +2799,7 @@ test_spawn_split_and_inherit
 test_spawn_backward_compat_crew_fallback
 test_spawn_bare_backward_compat
 test_spawn_honours_a_homes_seat_decline
+test_spawn_launches_a_declining_home_on_its_own_seat
 test_spawn_explicit_harness_wins
 test_spawn_unverified_secondmate_harness_refused
 test_spawn_cursor_secondmate_launches_with_its_primary_contract

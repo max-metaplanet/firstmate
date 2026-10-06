@@ -52,6 +52,9 @@ class SeatBoardHandler(http.server.BaseHTTPRequestHandler):
     # server's page path, route and allowed hosts.
     server: "SeatBoardServer"
 
+    # An idle or slow connection is dropped rather than holding its thread.
+    timeout = 10
+
     # Answer with a bare product token, so the refusal surface does not also
     # report this host's Python version.
     server_version = "fm-seat-board"

@@ -1259,6 +1259,29 @@ test_active_seat_overrides_the_ambient_config_dir() {
   pass "a configured seat takes precedence over firstmate's own ambient config dir"
 }
 
+test_a_restarted_lead_spawns_the_default_seat_on_its_original_ambient() {
+  local rec id out launch
+  id=seat-restarted-lead-1
+  rec=$(spawn_case spawn-restarted-lead "$id")
+  read_spawn_case "$rec"
+  mkdir -p "$SEATS_DIR/beta"
+
+  # A lead moved to beta by bin/fm-lead-restart.sh runs with beta as its own
+  # CLAUDE_CONFIG_DIR and carries the ambient it started from.
+  : > "$LAUNCH_LOG"
+  out=$(FM_TEST_CLAUDE_CONFIG_DIR="$SEATS_DIR/beta" \
+    FM_AMBIENT_CLAUDE_CONFIG_DIR="$CASE_DIR/ambient-profile" \
+    FM_FAKE_LAUNCH_LOG="$LAUNCH_LOG" \
+    fm_test_run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN" "$id" "$PROJ_DIR" --mode no-mistakes --yolo off 2>&1)
+  expect_code 0 "$?" "a default-seat spawn from a restarted lead should succeed: $out"
+  launch=$(cat "$LAUNCH_LOG")
+  assert_contains "$launch" "CLAUDE_CONFIG_DIR='$CASE_DIR/ambient-profile'" \
+    "a default-seat worker must launch on the lead's original ambient profile"
+  assert_not_contains "$launch" "$SEATS_DIR/beta" \
+    "a default-seat worker must not follow the lead onto the seat it was restarted on"
+  pass "after a lead restart, default-seat spawns stay on the original ambient profile"
+}
+
 # Two mechanisms select a Claude worker's configuration directory: this home's
 # seat and the worker account pin (config/claude-account). Composed, the pin's
 # `env` launch consumes the seat's assignment and silently wins, while trust is
@@ -1285,6 +1308,22 @@ test_account_pin_and_active_seat_refuse_the_spawn() {
   assert_absent "$HOME_DIR/state/$id.meta" "a refused spawn must leave no task record"
   [ ! -s "$LAUNCH_LOG" ] || fail "a refused spawn must launch no worker endpoint"
   pass "a home configuring both an account pin and an active seat is refused before anything exists"
+}
+
+test_account_pin_and_active_seat_do_not_refuse_another_harness() {
+  local rec id out
+  id=seat-account-codex-1
+  rec=$(spawn_case spawn-account-codex "$id")
+  read_spawn_case "$rec"
+  printf 'codex\n' > "$HOME_DIR/config/crew-harness"
+  mkdir -p "$SEATS_DIR/work"
+  printf 'work\n' > "$HOME_DIR/config/claude-seat"
+  printf 'ordinary\n' > "$HOME_DIR/config/claude-account"
+
+  out=$(run_spawn_here "$HOME_DIR" "$WT_DIR" "$FAKEBIN" "$LAUNCH_LOG" "$id" "$PROJ_DIR" 2>&1)
+  expect_code 0 "$?" "a codex spawn reads no Claude profile, so the pin and seat conflict must not refuse it: $out"
+  assert_not_contains "$out" "remove either file" "a non-claude spawn must not report the Claude profile conflict"
+  pass "the account pin and seat conflict refuses only a claude spawn"
 }
 
 # make_dead_endpoint_tmux <fakebin> <window>
@@ -1623,6 +1662,22 @@ test_an_unreadable_quota_holds_dispatch_rather_than_guessing() {
   assert_contains "$out" "new Claude dispatch: allowed" \
     "a readable quota with plan headroom must lift the hold with no operator action"
   pass "an unreadable quota holds dispatch instead of guessing, and the hold lifts once it reads again"
+}
+
+test_a_lapsed_seat_is_not_held_for_its_unreadable_quota() {
+  local rec out
+  rec=$(make_seat_case extra-usage-lapsed)
+  read_seat_case "$rec"
+  mkdir -p "$SEATS_DIR/alpha"
+  seat_expired_refreshable "$SPEC_DIR" "$SEATS_DIR/alpha"
+  printf 'alpha\n' > "$HOME_DIR/config/claude-seat"
+  run_seat "$HOME_DIR" "$FAKEBIN" extra-usage stop >/dev/null
+
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" status)
+  assert_contains "$out" "new Claude dispatch: allowed" \
+    "a lapsed token reads no quota until a launch renews it, so holding on it would hold every spawn: $out"
+  assert_contains "$out" "access token has lapsed" "the allow must name the lapsed token"
+  pass "a lapsed but renewable seat is not held by the extra-usage policy for its unreadable quota"
 }
 
 test_the_watch_keeps_firing_across_crossings_and_never_twice_on_one() {
@@ -1988,6 +2043,7 @@ test_extra_usage_policy_is_configurable_validated_and_clearable
 test_stop_policy_holds_dispatch_only_once_the_plan_quota_is_gone
 test_allow_policy_proceeds_under_the_cap_and_holds_at_it
 test_an_unreadable_quota_holds_dispatch_rather_than_guessing
+test_a_lapsed_seat_is_not_held_for_its_unreadable_quota
 test_the_watch_keeps_firing_across_crossings_and_never_twice_on_one
 test_the_watch_reports_the_policy_consequence_when_no_seat_qualifies
 test_the_watch_and_status_agree_while_plan_quota_remains
@@ -2018,8 +2074,10 @@ test_switching_seats_does_not_move_a_running_worker
 test_a_later_spawn_uses_the_new_seat_while_the_old_task_keeps_its_own
 test_ambient_config_dir_still_reaches_workers_when_no_seat_is_set
 test_active_seat_overrides_the_ambient_config_dir
+test_a_restarted_lead_spawns_the_default_seat_on_its_original_ambient
 test_non_claude_spawn_records_no_seat
 test_account_pin_and_active_seat_refuse_the_spawn
+test_account_pin_and_active_seat_do_not_refuse_another_harness
 test_pin_only_home_still_relaunches_a_claude_task
 test_pin_at_a_seat_directory_still_relaunches_a_claude_task
 test_a_stop_policy_holds_a_fresh_claude_spawn_and_the_override_gets_through
