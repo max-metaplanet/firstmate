@@ -660,11 +660,8 @@ fm_backlog_directory_present "$STATE" "state directory" || {
 . "$SCRIPT_DIR/fm-timeout-lib.sh"
 # shellcheck source=bin/fm-worker-account-lib.sh
 . "$SCRIPT_DIR/fm-worker-account-lib.sh"
-# shellcheck source=bin/fm-quota-axi-lib.sh
-. "$SCRIPT_DIR/fm-quota-axi-lib.sh"
 # shellcheck source=bin/fm-seat-lib.sh
 . "$SCRIPT_DIR/fm-seat-lib.sh"
-
 # Fail closed before any fleet mutation: a no-mistakes gate agent must never spawn
 # a direct report (see bin/fm-gate-refuse-lib.sh).
 fm_refuse_if_gate_agent
@@ -4530,6 +4527,30 @@ fi
 spawn_enter_recorded_worktree
 spawn_assert_agent_worktree
 
+# Resolve the Claude seat, only for a claude worker: no other harness reads a
+# Claude profile, so recording one for it would misreport which workers a
+# switch left alone, and a relaunch onto another harness drops the line.
+# A claude-to-claude relaunch keeps the task's OWN recorded seat, never the
+# home's current setting: its session history lives under that profile, so
+# re-resolving would strand it and silently change which account the work
+# bills to. An absent line there means the task predates seats and took
+# firstmate's own ambient CLAUDE_CONFIG_DIR, which it keeps getting. Every
+# other claude launch - a fresh spawn, or a relaunch from another harness,
+# which has no Claude history to protect - is a new worker for seat purposes
+# and resolves the home's active seat exactly as a fresh spawn does
+# (bin/fm-seat-lib.sh owns that order), so it never lands on the ambient
+# default that rotation avoids. Resolving here, before trust pre-registration,
+# is what lets the trust entry land in the same profile the worker will read.
+if [ "$HARNESS" = claude ]; then
+  if [ "$RELAUNCH" -eq 1 ] && [ "$RELAUNCH_PRIOR_HARNESS" = claude ]; then
+    SEAT_RECORD=$RELAUNCH_SEAT
+    SEAT_CONFIG_DIR=${RELAUNCH_SEAT:-${CLAUDE_CONFIG_DIR:-}}
+  else
+    SEAT_CONFIG_DIR=$(fm_seat_spawn_config_dir)
+    SEAT_RECORD=$SEAT_CONFIG_DIR
+  fi
+fi
+
 # Pre-register Claude's workspace trust for the directory this launch starts in,
 # at the first point that directory is known and before any per-task state is
 # created below. The dialog gates the pane before the brief is ever read, and it
@@ -5083,7 +5104,7 @@ SPAWN_META_PATH=$SPAWN_META_TMP
 preserve_relaunch_meta() {
   awk -F= '
     BEGIN {
-      split("window endpoint_task_id worktree project harness kind mode yolo branch tasktmp base_branch model effort account account_provider busy_gen spawn_gen traceparent backend herdr_session herdr_workspace_id herdr_tab_id herdr_pane_id zellij_session zellij_tab_id zellij_pane_id orca_worktree_id terminal cmux_workspace_id cmux_surface_id home projects control_relaunch_tx", keys, " ")
+      split("window endpoint_task_id worktree project harness kind mode yolo branch tasktmp base_branch model effort account account_provider busy_gen spawn_gen claude_seat traceparent backend herdr_session herdr_workspace_id herdr_tab_id herdr_pane_id zellij_session zellij_tab_id zellij_pane_id orca_worktree_id terminal cmux_workspace_id cmux_surface_id home projects control_relaunch_tx", keys, " ")
       for (i in keys) owned[keys[i]] = 1
     }
     !($1 in owned)
@@ -5333,10 +5354,9 @@ esac
 # A home's worker account pin replaces that forwarding: the launch names the
 # pinned root (or unsets the variable for the ordinary Claude account) and
 # sheds the environment credentials Claude ranks above the root's login.
-# The pin and an active seat, or a relaunch's recorded seat, are mutually
-# exclusive - a home configuring both is refused far above, before any
-# endpoint, worktree or record exists - so these branches can never both want
-# CLAUDE_CONFIG_DIR at once. The seat branch
+# The pin and an active seat are mutually exclusive - a home configuring both
+# is refused far above, before any endpoint, worktree or record exists - so
+# these branches can never both want CLAUDE_CONFIG_DIR at once. The seat branch
 # also carries the plain ambient forwarding described above, because
 # fm_seat_config_dir falls back to firstmate's own CLAUDE_CONFIG_DIR when no
 # named seat is active; a separate ambient branch would only re-assign the same
