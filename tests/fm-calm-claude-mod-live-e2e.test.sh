@@ -70,18 +70,19 @@ printf 'alpha\nbeta\ngamma\n' >"$PROJECT/notes.txt"
 printf 'on\n' >"$FM_HOME_DIR/config/calm"
 
 # Claude Code refuses to nest inside another Claude session, so the inherited session
-# markers are dropped from the lab's environment; the activation names are set per
-# launch through --settings only, never written into a settings file on disk.
+# markers are dropped from the lab's environment, along with any FM_CALM_ENABLED the caller
+# exports; the activation names are set per launch through --settings only, never
+# written into a settings file on disk.
 unset_inherited() {
   local name
   while IFS= read -r name; do
     printf -- '-u %s ' "$name"
-  done < <(env | grep -E '^(CLAUDECODE|CLAUDE_CODE_[A-Z_]+|CLAUDE_CONFIG_DIR)=' | cut -d= -f1 | sort -u)
+  done < <(env | grep -E '^(CLAUDECODE|CLAUDE_CODE_[A-Z_]+|CLAUDE_CONFIG_DIR|FM_CALM_ENABLED)=' | cut -d= -f1 | sort -u)
 }
 
-# The activation names this launch exports, as a settings `env` object. A name left out
-# of <gate> is genuinely unset for that session; --settings outranks the host's own
-# settings files, whose env block may still carry the deprecated alias.
+# The activation names this launch exports, as a settings `env` object. --settings
+# outranks the host's own settings files, whose env block may carry either name, so every
+# gate pins both.
 settings_json() {  # <gate: name=value...>
   local gate pair json=''
   for gate in $1; do
@@ -101,10 +102,11 @@ launch() {  # <debug-log> <gate: name=value...> [claude args...]
 }
 
 # The gate values each phase launches with: the deprecated alias is pinned off wherever
-# the firstmate flag is the subject, so neither case can pass on the other's value.
-GATE_OFF='CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=0'
+# the firstmate flag is the subject, and the firstmate flag is pinned empty, which the
+# gate reads as unset, wherever it is not, so neither case can pass on the other's value.
+GATE_OFF='FM_CALM_ENABLED= CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=0'
 GATE_ON='FM_CALM_ENABLED=1 CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=0'
-GATE_LEGACY_ONLY='CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1'
+GATE_LEGACY_ONLY='FM_CALM_ENABLED= CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1'
 GATE_DISAGREEING='FM_CALM_ENABLED=0 CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1'
 
 # Wait until Claude Code reports this session's own load of the Calm hooks module, which
