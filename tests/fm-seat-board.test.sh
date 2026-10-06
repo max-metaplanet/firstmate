@@ -392,6 +392,168 @@ SH
   pass "json --cached-only serves an expired cached report with its real age, so a reader can call it stale"
 }
 
+# --- real server cases ------------------------------------------------------
+#
+# A board started here keeps running until the test kills it, so every pid is
+# tracked and swept on the way out, including on a mid-file failure.
+
+BOARD_SERVER_PIDS=
+BOARD_PID=
+BOARD_PORT=
+BOARD_ROUTE=
+
+board_servers_cleanup() {
+  local pid
+  for pid in $BOARD_SERVER_PIDS; do
+    kill "$pid" 2>/dev/null || true
+  done
+  fm_test_cleanup
+}
+trap board_servers_cleanup EXIT
+trap 'board_servers_cleanup; exit 130' INT
+trap 'board_servers_cleanup; exit 143' TERM
+
+# board_http <port> <path> <host>
+# One raw HTTP/1.0 GET against the running board, printed whole: status line,
+# headers and body. A test can then assert the refusal code AND that no page
+# content was sent with it.
+board_http() {
+  python3 - "$1" "$2" "$3" <<'PYREQ'
+import socket
+import sys
+
+port, path, host = int(sys.argv[1]), sys.argv[2], sys.argv[3]
+request = "GET %s HTTP/1.0\r\nHost: %s\r\nConnection: close\r\n\r\n" % (path, host)
+sock = socket.create_connection(("127.0.0.1", port), 10)
+sock.sendall(request.encode("ascii"))
+blocks = []
+while True:
+    block = sock.recv(65536)
+    if not block:
+        break
+    blocks.append(block)
+sock.close()
+sys.stdout.write(b"".join(blocks).decode("utf-8", "replace"))
+PYREQ
+}
+
+# board_port_closed <port>: succeeds once nothing accepts a connection there.
+board_port_closed() {
+  python3 - "$1" <<'PYPORT'
+import socket
+import sys
+
+try:
+    socket.create_connection(("127.0.0.1", int(sys.argv[1])), 2).close()
+except OSError:
+    sys.exit(0)
+sys.exit(1)
+PYPORT
+}
+
+# start_board <home> <fakebin> <cache-dir> <log>
+# Starts a real `serve` on a kernel-chosen port and sets BOARD_PID, BOARD_PORT
+# and BOARD_ROUTE by reading back the URL that server printed. Nothing here
+# assumes the port or the token: the test drives exactly what an operator would
+# open.
+start_board() {
+  local home=$1 fakebin=$2 cache=$3 log=$4 url='' waited=0
+  FM_HOME="$home" FM_CONFIG_OVERRIDE="$home/config" FM_STATE_OVERRIDE="$home/state" \
+    FM_DATA_OVERRIDE="$home/data" CLAUDE_CONFIG_DIR="" \
+    FM_SEAT_BOARD_CACHE_DIR="$cache" FM_SEAT_BOARD_CACHE_SECONDS=60 \
+    PATH="$fakebin:$PATH" "$BOARD" serve --port 0 > "$log" 2>&1 &
+  BOARD_PID=$!
+  BOARD_SERVER_PIDS="$BOARD_SERVER_PIDS $BOARD_PID"
+  while [ "$waited" -lt 200 ]; do
+    url=$(sed -n 's|^Seat board: \(http://127\.0\.0\.1:[0-9]*/[^ /]*/\)$|\1|p' "$log" | head -1)
+    [ -z "$url" ] || break
+    waited=$((waited + 1))
+    sleep 0.05
+  done
+  [ -n "$url" ] || fail "serve printed no board URL within 10s (log: $(cat "$log" 2>/dev/null))"
+  BOARD_PORT=${url#http://127.0.0.1:}
+  BOARD_PORT=${BOARD_PORT%%/*}
+  BOARD_ROUTE=${url#"http://127.0.0.1:$BOARD_PORT"}
+}
+
+test_serve_answers_a_loopback_host_and_refuses_a_rebinding_one() {
+  local rec out
+  rec=$(make_board_case serve-host-check)
+  read_board_case "$rec"
+  printf '(default)\thost-check@example.test\n' > "$SPEC_DIR/email_map"
+  printf '(default)\n' > "$SPEC_DIR/oauth"
+
+  start_board "$HOME_DIR" "$FAKEBIN" "$CASE_DIR/cache" "$CASE_DIR/serve.log"
+
+  out=$(board_http "$BOARD_PORT" "$BOARD_ROUTE" "127.0.0.1:$BOARD_PORT")
+  expect_grep '200 OK' "$out" "a Host of 127.0.0.1 with the board's own port must be served"
+  expect_grep 'host-check@example.test' "$out" "the served page must be the board itself"
+
+  out=$(board_http "$BOARD_PORT" "$BOARD_ROUTE" "localhost:$BOARD_PORT")
+  expect_grep '200 OK' "$out" "a Host of localhost with the board's own port must be served"
+
+  # The rebinding shape: the browser connects to loopback, but what reaches the
+  # server as Host is the hostile page's own re-pointed domain.
+  out=$(board_http "$BOARD_PORT" "$BOARD_ROUTE" "rebound.example:$BOARD_PORT")
+  expect_grep '403 Forbidden' "$out" "a request carrying a foreign Host must be refused"
+  case "$out" in
+    *host-check@example.test*)
+      fail "a refused request was still answered with board content: $out"
+      ;;
+  esac
+
+  kill "$BOARD_PID" 2>/dev/null || true
+  pass "serve answers a loopback Host and refuses a rebinding page's foreign Host"
+}
+
+test_serve_serves_the_board_only_under_the_path_token_it_printed() {
+  local rec out
+  rec=$(make_board_case serve-path-token)
+  read_board_case "$rec"
+  printf '(default)\ttoken@example.test\n' > "$SPEC_DIR/email_map"
+  printf '(default)\n' > "$SPEC_DIR/oauth"
+
+  start_board "$HOME_DIR" "$FAKEBIN" "$CASE_DIR/cache" "$CASE_DIR/serve.log"
+
+  out=$(board_http "$BOARD_PORT" / "127.0.0.1:$BOARD_PORT")
+  expect_grep '404 Not Found' "$out" "the server root must not serve the board"
+  case "$out" in
+    *token@example.test*)
+      fail "a request without the printed path token was answered with board content: $out"
+      ;;
+  esac
+
+  out=$(board_http "$BOARD_PORT" /index.html "127.0.0.1:$BOARD_PORT")
+  expect_grep '404 Not Found' "$out" "the page's own filename must not be a second way in"
+
+  out=$(board_http "$BOARD_PORT" "$BOARD_ROUTE" "127.0.0.1:$BOARD_PORT")
+  expect_grep 'token@example.test' "$out" "the printed URL's path must serve the board"
+
+  kill "$BOARD_PID" 2>/dev/null || true
+  pass "serve serves the board only under the per-run path token it printed"
+}
+
+test_stopping_serve_leaves_nothing_listening_on_its_port() {
+  local rec waited=0
+  rec=$(make_board_case serve-stop)
+  read_board_case "$rec"
+  printf '(default)\tstop@example.test\n' > "$SPEC_DIR/email_map"
+  printf '(default)\n' > "$SPEC_DIR/oauth"
+
+  start_board "$HOME_DIR" "$FAKEBIN" "$CASE_DIR/cache" "$CASE_DIR/serve.log"
+  ! board_port_closed "$BOARD_PORT" || fail "the board was not listening after start"
+
+  kill "$BOARD_PID" 2>/dev/null || true
+  while [ "$waited" -lt 200 ]; do
+    board_port_closed "$BOARD_PORT" && break
+    waited=$((waited + 1))
+    sleep 0.05
+  done
+  board_port_closed "$BOARD_PORT" ||
+    fail "stopping serve left a server still listening on port $BOARD_PORT"
+  pass "stopping serve leaves nothing listening on its port"
+}
+
 test_json_rejects_an_unknown_flag() {
   local rc
   "$BOARD" json --fresh >/dev/null 2>&1
@@ -415,5 +577,8 @@ test_json_reports_a_seat_with_no_report_as_absent_rather_than_zero
 test_json_cached_only_never_reads_quota_axi
 test_json_cached_only_serves_an_expired_cache_with_its_real_age
 test_json_rejects_an_unknown_flag
+test_serve_answers_a_loopback_host_and_refuses_a_rebinding_one
+test_serve_serves_the_board_only_under_the_path_token_it_printed
+test_stopping_serve_leaves_nothing_listening_on_its_port
 
 echo "# all fm-seat-board tests passed"

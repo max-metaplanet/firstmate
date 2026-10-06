@@ -1540,6 +1540,11 @@ families_for_changed_path() {
       printf '%s\n' "__script__:fm-seat-board.test.sh"
       printf '%s\n' "__script__:fm-quota-claude-mod.test.sh"
       ;;
+    bin/fm-seat-board-server.py)
+      # Only the board's `serve` runs this, and only fm-seat-board.test.sh drives
+      # a real one, so its Host check and path token are covered there alone.
+      printf '%s\n' "__script__:fm-seat-board.test.sh"
+      ;;
     bin/fm-lead-restart.sh)
       printf '%s\n' "__script__:fm-lead-restart.test.sh"
       ;;

@@ -77,6 +77,31 @@ seat_proven_empty() {
   printf '%s\n' "$@" > "$spec/proven_empty"
 }
 
+# seat_expired_refreshable <spec> <value...>
+# Declare which profiles are signed in with a lapsed but renewable access token.
+seat_expired_refreshable() {
+  local spec=$1
+  shift
+  printf '%s\n' "$@" > "$spec/expired_refreshable"
+}
+
+# seat_expired_refreshable_confirmed <spec> <value...>
+# The same state as seat_expired_refreshable, reported through quota-axi's
+# rate-limited-then-confirmed route, whose error text and attempts differ.
+seat_expired_refreshable_confirmed() {
+  local spec=$1
+  shift
+  printf '%s\n' "$@" > "$spec/expired_refreshable_confirmed"
+}
+
+# seat_signed_out <spec> <value...>
+# Declare which profiles are genuinely signed out on a Keychain-backed store.
+seat_signed_out() {
+  local spec=$1
+  shift
+  printf '%s\n' "$@" > "$spec/signed_out"
+}
+
 test_absent_setting_is_the_default_seat() {
   local rec out
   rec=$(make_seat_case absent-default)
@@ -697,6 +722,165 @@ test_rotation_picks_the_next_logged_in_seat() {
   pass "rotation chooses the next logged-in seat under the root and skips ones with no credentials"
 }
 
+test_a_lapsed_seat_reads_as_usable_rather_than_unknown() {
+  local rec out
+  rec=$(make_seat_case lapsed-usable)
+  read_seat_case "$rec"
+  mkdir -p "$SEATS_DIR/idle"
+  seat_logged_in "$SPEC_DIR" '(default)'
+  seat_expired_refreshable "$SPEC_DIR" "$SEATS_DIR/idle"
+
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" list)
+  assert_contains "$out" "expired-renewable" \
+    "a signed-in seat whose access token lapsed must read as expired-renewable"
+  assert_not_contains "$out" "idle	unknown" \
+    "a lapsed seat must not be reported as an unreadable one"
+
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" probe idle)
+  expect_code 0 "$?" "probe must report a lapsed seat as usable, because a launch there renews it"
+  assert_contains "$out" "expired-renewable" "probe must name the lapsed state"
+  pass "a lapsed but renewable seat reads as usable instead of unknown"
+}
+
+test_the_lapsed_verdict_comes_from_the_field_not_the_message() {
+  local rec out
+  rec=$(make_seat_case lapsed-other-route)
+  read_seat_case "$rec"
+  mkdir -p "$SEATS_DIR/idle"
+  seat_logged_in "$SPEC_DIR" '(default)'
+  # Same state, quota-axi's other route: different error text, an extra failed
+  # attempt, and a rate-limit message that on its own would read as undecided.
+  seat_expired_refreshable_confirmed "$SPEC_DIR" "$SEATS_DIR/idle"
+
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" probe idle)
+  expect_code 0 "$?" \
+    "the lapsed verdict must survive a different error message, because only authStatus is stable"
+  assert_contains "$out" "expired-renewable" \
+    "the second route to the same state must produce the same verdict"
+  pass "the lapsed verdict is read from authStatus, not from the error text"
+}
+
+test_switching_to_a_lapsed_seat_needs_no_force() {
+  local rec out
+  rec=$(make_seat_case lapsed-switch)
+  read_seat_case "$rec"
+  mkdir -p "$SEATS_DIR/idle"
+  seat_logged_in "$SPEC_DIR" '(default)'
+  seat_expired_refreshable "$SPEC_DIR" "$SEATS_DIR/idle"
+
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" switch idle)
+  expect_code 0 "$?" "a switch to a lapsed seat must not require --force"
+  assert_contains "$out" "-> idle" "the switch must land on the lapsed seat"
+  assert_contains "$out" "access token has lapsed" \
+    "the switch must say the token lapsed and that the next worker renews it"
+  assert_equals "idle" "$(cat "$HOME_DIR/config/claude-seat")" \
+    "the active seat must be recorded"
+  pass "switching to a lapsed seat succeeds without --force"
+}
+
+test_a_lapsed_seat_is_a_rotation_destination() {
+  local rec out
+  rec=$(make_seat_case lapsed-rotate)
+  read_seat_case "$rec"
+  mkdir -p "$SEATS_DIR/idle"
+  seat_logged_in "$SPEC_DIR" '(default)'
+  seat_expired_refreshable "$SPEC_DIR" "$SEATS_DIR/idle"
+
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" switch --next)
+  expect_code 0 "$?" \
+    "rotation must accept a lapsed seat, because a launch there renews it"
+  assert_contains "$out" "-> idle" "rotation must land on the lapsed seat"
+  assert_not_contains "$out" "not logged in" \
+    "rotation must never describe a signed-in seat as not logged in"
+  pass "rotation treats a lapsed seat as a destination when no destination minimum is set"
+}
+
+test_a_lapsed_seat_is_skipped_for_unknown_headroom_under_a_destination_minimum() {
+  local rec out
+  rec=$(make_seat_case lapsed-destination-min)
+  read_seat_case "$rec"
+  mkdir -p "$SEATS_DIR/idle"
+  seat_logged_in "$SPEC_DIR" '(default)'
+  seat_expired_refreshable "$SPEC_DIR" "$SEATS_DIR/idle"
+  printf '20\n' > "$HOME_DIR/config/claude-seat-destination-min"
+
+  # A lapsed seat has no readable quota until something renews it, so it cannot
+  # answer a headroom comparison and must be skipped - but for that reason, not
+  # for its login state.
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" switch --next)
+  expect_code 1 "$?" "a lapsed seat cannot satisfy a destination minimum it has no number for"
+  assert_contains "$out" "headroom cannot be read" \
+    "the skip must name the unreadable headroom as the reason"
+  assert_not_contains "$out" "not logged in" \
+    "the skip must not claim a signed-in seat has no login"
+  pass "a destination minimum skips a lapsed seat for unknown headroom, not for its login state"
+}
+
+test_a_signed_out_seat_is_refused_and_force_cannot_cross_it() {
+  local rec out
+  rec=$(make_seat_case signed-out)
+  read_seat_case "$rec"
+  mkdir -p "$SEATS_DIR/dead"
+  seat_logged_in "$SPEC_DIR" '(default)'
+  seat_signed_out "$SPEC_DIR" "$SEATS_DIR/dead"
+
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" probe dead)
+  expect_code 1 "$?" "a seat whose store was read and holds no login must be proven not logged in"
+  assert_contains "$out" "not-logged-in" "probe must name the signed-out state"
+
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" switch dead)
+  expect_code 1 "$?" "a switch to a signed-out seat must refuse"
+  assert_contains "$out" "is not logged in" "the refusal must say the seat holds no login"
+
+  # The point of separating this from an undecided read: --force exists to cross
+  # uncertainty, never a proven negative.
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" switch dead --force)
+  expect_code 1 "$?" "--force must not cross a proven signed-out seat"
+  assert_contains "$out" "is not logged in" "the forced refusal must give the same reason"
+  assert_absent "$HOME_DIR/config/claude-seat" "no active seat may be recorded by a refused switch"
+  pass "a genuinely signed-out seat is refused and --force cannot cross it"
+}
+
+test_a_signed_out_seat_is_never_a_rotation_destination() {
+  local rec out
+  rec=$(make_seat_case signed-out-rotate)
+  read_seat_case "$rec"
+  mkdir -p "$SEATS_DIR/dead" "$SEATS_DIR/idle"
+  seat_logged_in "$SPEC_DIR" '(default)'
+  seat_signed_out "$SPEC_DIR" "$SEATS_DIR/dead"
+  seat_expired_refreshable "$SPEC_DIR" "$SEATS_DIR/idle"
+
+  # Both seats read as something other than a clean login, and they must not be
+  # treated alike: the lapsed one is launchable and the signed-out one is not.
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" switch --next)
+  expect_code 0 "$?" "rotation should still find the lapsed seat"
+  assert_contains "$out" "-> idle" "rotation must choose the lapsed seat over the signed-out one"
+  assert_contains "$out" "dead: skipped, not logged in" \
+    "rotation must report the signed-out seat as skipped for its own reason"
+  pass "rotation separates a signed-out seat from a merely lapsed one"
+}
+
+test_a_rejected_request_is_not_a_sign_out_and_force_may_cross_it() {
+  local rec out
+  rec=$(make_seat_case rejected-401)
+  read_seat_case "$rec"
+  mkdir -p "$SEATS_DIR/revoked"
+  seat_logged_in "$SPEC_DIR" '(default)'
+  printf '%s\n' "$SEATS_DIR/revoked" > "$SPEC_DIR/rejected_401"
+
+  # auth_required from a 401 says the endpoint refused a presented credential,
+  # not that the store is empty, so it must not be the uncrossable refusal.
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" probe revoked)
+  expect_code 2 "$?" "a 401 against a stored credential must probe as undecided"
+  assert_contains "$out" "unknown" "the probe must report the seat as unknown"
+  assert_not_contains "$out" "not-logged-in" "a 401 must not be reported as a sign-out"
+
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" switch revoked --force)
+  expect_code 0 "$?" "--force must cross a 401 read: $out"
+  assert_grep "revoked" "$HOME_DIR/config/claude-seat" "the forced switch must record the seat"
+  pass "an auth_required read from a rejected request is undecided and --force may cross it"
+}
+
 test_rotation_never_targets_the_default_profile() {
   local rec out status
   rec=$(make_seat_case rotate-not-default)
@@ -720,17 +904,23 @@ test_rotation_refuses_when_there_is_nowhere_to_go() {
   local rec out status
   rec=$(make_seat_case rotate-nowhere)
   read_seat_case "$rec"
-  mkdir -p "$SEATS_DIR/spare"
+  # Two seats rejected for genuinely different reasons: 'spare' falls through to
+  # the unreadable-store shape, which establishes nothing, while 'dead' was read
+  # and proven to hold no login. Each must be reported as what it actually is.
+  mkdir -p "$SEATS_DIR/spare" "$SEATS_DIR/dead"
   seat_logged_in "$SPEC_DIR" '(default)'
+  seat_signed_out "$SPEC_DIR" "$SEATS_DIR/dead"
 
   out=$(run_seat "$HOME_DIR" "$FAKEBIN" switch --next)
   status=$?
-  expect_code 1 "$status" "rotation with no other logged-in seat must refuse"
+  expect_code 1 "$status" "rotation with no other usable seat must refuse"
   assert_contains "$out" "no seat under the seats root qualifies" "the refusal must name the cause"
-  assert_contains "$out" "seat spare: skipped, not logged in" \
-    "the refusal must say which seat was rejected and why"
+  assert_contains "$out" "seat spare: skipped, its login state could not be confirmed" \
+    "a seat whose store could not be read must not be reported as having no login"
+  assert_contains "$out" "seat dead: skipped, not logged in" \
+    "only a seat proven to hold no login may be reported as not logged in"
   assert_absent "$HOME_DIR/config/claude-seat" "a refused rotation must change nothing"
-  pass "rotation refuses rather than pretending to switch when no other seat is usable"
+  pass "rotation refuses with an accurate reason per seat rather than pretending to switch"
 }
 
 test_rotation_reads_the_seat_set_fresh() {
@@ -2053,6 +2243,14 @@ test_the_watch_never_switches_on_an_unreadable_active_quota
 test_arm_registers_a_repeating_watch_and_retire_removes_it
 test_status_reports_every_automatic_setting_in_percent_left
 test_rotation_picks_the_next_logged_in_seat
+test_a_lapsed_seat_reads_as_usable_rather_than_unknown
+test_the_lapsed_verdict_comes_from_the_field_not_the_message
+test_switching_to_a_lapsed_seat_needs_no_force
+test_a_lapsed_seat_is_a_rotation_destination
+test_a_lapsed_seat_is_skipped_for_unknown_headroom_under_a_destination_minimum
+test_a_signed_out_seat_is_refused_and_force_cannot_cross_it
+test_a_signed_out_seat_is_never_a_rotation_destination
+test_a_rejected_request_is_not_a_sign_out_and_force_may_cross_it
 test_rotation_never_targets_the_default_profile
 test_rotation_reads_the_seat_set_fresh
 test_rotation_refuses_when_there_is_nowhere_to_go

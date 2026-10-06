@@ -22,15 +22,6 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
-# Pi is pinned because the Pi extension tests compare firstmate's rendering
-# against stock Pi's own renderers, and Pi 0.99 changed how Pi renders, so the
-# latest release fails tests/fm-calm-pi-extension.test.sh and
-# tests/fm-pi-branch-extension.test.sh on every run. 0.87.1 is the last release
-# CI was green on. Lifting the pin waits on updating the Calm Pi extension for
-# Pi 0.99.
-env:
-  PI_PACKAGE_VERSION: '0.87.1'
-
 # Timeout policy: docs/fm-test-portable-shards.md "Timeouts" owns the three
 # tiers and their rationale; tests/fm-ci-workflow.test.sh guards this workflow.
 # Each job comment identifies the tier implemented by its executable value.
@@ -128,7 +119,7 @@ jobs:
       - name: Install the Pi package for the Pi extension tests
         run: |
           set -eu
-          npm install -g "@earendil-works/pi-coding-agent@$PI_PACKAGE_VERSION"
+          npm install -g @earendil-works/pi-coding-agent
           npm ls -g --depth 0 @earendil-works/pi-coding-agent
       - name: Run portable parallel shard 1
         run: |
@@ -232,7 +223,7 @@ jobs:
       - name: Install the Pi package for the Pi extension tests
         run: |
           set -eu
-          npm install -g "@earendil-works/pi-coding-agent@$PI_PACKAGE_VERSION"
+          npm install -g @earendil-works/pi-coding-agent
           npm ls -g --depth 0 @earendil-works/pi-coding-agent
       - name: Run portable serial shard ${{ matrix.shard }}
         env:

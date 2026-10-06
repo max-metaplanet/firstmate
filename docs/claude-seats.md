@@ -22,6 +22,9 @@ Creating one named seat per account, and leaving the default alone, keeps every 
 
 ## Adding a second seat
 
+If your machine is set up from the metaplanet-dev repository, build the seat with that repository's `claude-seats.sh setup`, documented in its `SETUP.md`, and then continue at step 2 below.
+That script creates the seat directory and symlinks the shared body into it from your own `~/.claude`, so the seat carries your settings, hooks, skills, and agents while billing to its own account; it also verifies that two seats are not logged into the same account, and can undo itself.
+
 Three steps, and only the second one needs the account owner.
 
 **1. Create the seat.**
@@ -32,6 +35,8 @@ bin/fm-seat.sh add work
 
 This creates an empty profile directory (by default `~/.claude-seats/work`) and prints the login command for step 2.
 It writes nothing else and reads no credential.
+`add` creates a bare directory and nothing more: a seat built this way has **none** of the owner's settings, hooks, skills, or agents, so it works but starts empty.
+Use the `claude-seats.sh setup` route above when the seat should carry the shared body.
 
 **2. The account owner logs in.**
 
@@ -53,8 +58,12 @@ bin/fm-seat.sh probe work
 ```
 
 `logged-in` means the seat is ready.
+`expired-renewable` means the seat is signed in but its access token has lapsed; it is still ready, because the next worker launched there renews it.
+See [Idle seats and lapsed tokens](#idle-seats-and-lapsed-tokens).
 `not-logged-in` means the profile was read and holds no login, so step 2 has not completed.
 `unknown` means the probe could not decide; on macOS that is how a seat reads both before step 2 and after it until the one-time Keychain approval described under [Limits worth knowing](#limits-worth-knowing).
+
+`probe` exits 0 for a usable seat, which includes `expired-renewable`, 1 for `not-logged-in`, and 2 for `unknown`.
 
 ## Switching now
 
@@ -65,7 +74,9 @@ bin/fm-seat.sh switch work
 That is the whole manual switch, and it takes effect immediately for the next worker launched.
 `bin/fm-seat.sh switch default` returns to the ambient login.
 
-A switch is refused when the target seat is not confirmed logged in, because every worker sent there would fail on its first message; `--force` crosses only an `unknown` verdict.
+A switch is refused when the target seat is not confirmed usable, because every worker sent there would fail on its first message; `--force` crosses only an `unknown` verdict.
+A `not-logged-in` seat is refused outright and `--force` cannot cross it.
+An `expired-renewable` seat needs no `--force`: the switch says the token lapsed and proceeds.
 
 ## What a switch does and does not touch
 
@@ -277,14 +288,23 @@ Put the flag only in the home it belongs to: it is never inherited, so one home'
 ## Glancing at every seat at once
 
 `bin/fm-seat-board.sh` serves one read-only local page showing every seat's quota-axi report side by side: account email, each window's percent left and reset time, extra-usage spend against its cap, any attention line quota-axi reports, and which seat is active for new workers.
-Run it and open the printed `http://127.0.0.1:<port>/` URL; Ctrl-C stops it.
+Run it and open the URL it prints; Ctrl-C stops it.
+That URL carries a random path segment generated for that run, so open the printed one rather than a `http://127.0.0.1:<port>/` typed from memory, and `--port 0` takes a free port from the kernel and names it there too.
 It never switches, arms, or edits anything, and it caches each seat's read for a minute so a page reload does not hit the quota endpoint again.
 `bin/fm-seat-board.sh render` prints one generated page to stdout without starting a server, and `bin/fm-seat-board.sh json` prints the same reading as JSON for a reader that is not a browser.
 Inside Claude Code, the same seats appear as a band and a `/seats` pane through the `firstmate-quota` mod, which [`quota-mod.md`](quota-mod.md) owns.
 
+The page is for that machine's own browser and nothing else.
+The server answers only a request whose `Host` header is `127.0.0.1` or `localhost` with its own port, and refuses anything else with a 403 and no page content.
+Binding loopback on its own would not be enough: under DNS rebinding a hostile page re-points its own domain at 127.0.0.1, which makes it same-origin to the browser, and the account emails and quota figures on this page are exactly what it would then read.
+`bin/fm-seat-board-server.py` owns that check and is the only thing that serves the page.
+
 ## Limits worth knowing
 
 The login probe runs `quota-axi` against the seat's profile and treats an `oauth` source as logged in.
+It also reads an `expired_refreshable` auth status, a machine-readable field that reports credential usability separately from quota freshness, as the lapsed-token state above.
+It is read as a field, never as error text, because the same lapsed state is reported with different messages depending on whether the quota endpoint rate limited the read first.
+A seat counts as definitively signed out only when every credential source was inspected and found missing or invalid; an `auth_required` status on its own does not count, because quota-axi also reports it for any rejected request against a credential that may still renew.
 Note that `quota-axi --profile-only` is **not** a usable probe here: that flag reads only a credential file and never the Keychain, so on macOS it reports "credentials missing" for a perfectly good seat.
 
 A newly logged-in seat gets its own Keychain entry, and reading it from a different tool can require a one-time macOS approval.
@@ -293,7 +313,9 @@ The probe cannot tell those two apart, so it reports `unknown` for both, and a p
 To settle it, the owner runs `quota-axi --allow-keychain-prompt` once with that seat's `CLAUDE_CONFIG_DIR` set and answers the prompt with "Always Allow"; after that a signed-in seat probes as `logged-in`.
 In the meantime `switch --force` accepts the uncertainty: if the seat turns out to be empty, the next worker stops on its first message with `Not logged in` rather than spending another account.
 `--force` never overrides `not-logged-in`, which the probe reports only when the evidence positively shows no login.
-On macOS that means `not-logged-in` is rarely seen, because an absent Keychain entry reads as unreadable rather than as read-and-empty; on a file-backed credential store, where an empty profile really can be read and found empty, it is reported normally.
+On macOS a seat that was **never** logged into still reads `unknown` rather than `not-logged-in`, because an absent Keychain entry reads as unreadable rather than as read-and-empty.
+A seat that was logged in and later signed out is different: Claude Code clears the session in place, leaving an entry that can be read and is empty, and that reads `not-logged-in`.
+On a file-backed credential store both cases are reported normally.
 `--force` also never switches to a seat with no profile directory under the seats root; create it with `fm-seat.sh add <name>` first.
 
 Two things in the setup flow above are **written from Claude Code's documented behaviour and the isolation this change verified, not from an observed sign-in**, because verifying them would mean logging in, which this work deliberately does not do:
@@ -303,6 +325,9 @@ Two things in the setup flow above are **written from Claude Code's documented b
 
 Treat step 2 as the shape of the flow rather than a transcript, and expect the sign-in screens to be whatever the installed Claude Code shows.
 What *was* verified directly is the part the mechanism depends on: a profile directory that was never logged into does not fall back to the default account, it stops with `Not logged in`, and each profile gets its own Keychain entry derived from its directory path.
+
+This page is verified on macOS only, and its probe and login behaviour are described in terms of the macOS Keychain: seats are separated because Claude Code derives a Keychain service name from the profile directory's path, and the `unknown` verdict and one-time approval above are Keychain behaviours.
+On Linux, where Claude Code keeps credentials in a file inside the profile directory rather than in the Keychain, the same directory separation applies but those Keychain-specific readings do not; that platform is unverified here, and Windows is out of scope.
 
 Seat switching covers Claude workers only.
 Other harnesses have their own credential stores and are unaffected by these settings.

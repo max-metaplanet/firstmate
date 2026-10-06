@@ -2540,27 +2540,6 @@ if [ -n "$WORKER_ACCOUNT" ] && [ "$HARNESS" = claude ]; then
     unset CLAUDE_CONFIG_DIR
   fi
 fi
-# A claude relaunch keeps the directory its task's record names whatever the
-# home now configures (below), and pre-registers workspace trust there, while
-# the pin launches the worker on the directory it selects. Refuse, still before
-# any endpoint, worktree, or record is touched, only when those are different
-# stores - the split that would leave the worker without a trust entry.
-spawn_same_dir() {
-  local a=$1 b=$2
-  [ -z "$a" ] || a=$(cd "$a" 2>/dev/null && pwd -P) || a=$1
-  [ -z "$b" ] || b=$(cd "$b" 2>/dev/null && pwd -P) || b=$2
-  [ "$a" = "$b" ]
-}
-if [ -n "$WORKER_ACCOUNT" ] && [ "$HARNESS" = claude ] && [ "$RELAUNCH" -eq 1 ] \
-  && [ "$RELAUNCH_PRIOR_HARNESS" = claude ] && [ -n "$RELAUNCH_SEAT" ] \
-  && ! spawn_same_dir "$RELAUNCH_SEAT" "$WORKER_ACCOUNT_ROOT"; then
-  {
-    echo "error: task $ID was launched on the Claude seat $RELAUNCH_SEAT, and this home's worker account pin selects a different Claude configuration directory:"
-    echo "  $CONFIG/claude-account"
-    echo "a relaunch keeps the seat its task was launched on, so it cannot also follow the pin; relaunch it with the pin absent or pointing at that seat, or finish it and spawn the work as a new task"
-  } >&2
-  exit 1
-fi
 
 secondmate_registry_value() {
   secondmate_registry_field "$DATA/secondmates.md" "$1" "$2"

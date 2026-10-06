@@ -37,12 +37,16 @@
 #            owner's own interactive login and can change account under them.
 #            Refuses a seat that is not logged in, because a worker launched
 #            there fails on its first message; --force overrides that refusal
-#            when the probe itself cannot reach a verdict. After the switch it
+#            when the probe itself cannot reach a verdict. A seat whose access
+#            token has merely lapsed is accepted with no --force, because the
+#            worker launched there renews it. After the switch it
 #            runs bin/fm-config-push.sh --local-only so this machine's running local
 #            secondmate homes take the new seat too, reporting each home, and
 #            naming each seat item a declining home skipped and why.
-# probe      Report whether a seat is logged in. Exit 0 logged in, 1 not logged
-#            in, 2 undecided.
+# probe      Report whether a worker can be launched on a seat. Exit 0 usable
+#            (`logged-in`, or `expired-renewable` for a signed-in seat whose
+#            access token lapsed and which the next launch renews), 1 proven not
+#            logged in, 2 undecided.
 # add        Create an empty profile directory for a new seat and print the exact
 #            login command the account owner runs. It never logs in, never reads
 #            or writes any credential, and never touches the Keychain.
@@ -175,7 +179,15 @@ usage() {
 die() { printf 'error: %s\n' "$1" >&2; exit 1; }
 
 # login_state <name>
-# Print "logged-in", "not-logged-in", or "unknown" for a seat name.
+# Print "logged-in", "expired-renewable", "not-logged-in", or "unknown" for a
+# seat name. bin/fm-seat-lib.sh's fm_seat_logged_in owns which evidence produces
+# which verdict; this only names them.
+#
+# "expired-renewable" is a seat a worker can be launched on: its session is
+# intact and the launch itself renews the lapsed token. It is reported under its
+# own name rather than folded into "logged-in" because its quota is unreadable
+# until something renews it, which is what keeps it out of a destination-minimum
+# comparison it cannot answer.
 login_state() {
   local name=$1 dir rc
   if [ "$name" != "$FM_SEAT_DEFAULT_NAME" ]; then
@@ -186,9 +198,21 @@ login_state() {
   rc=$?
   case "$rc" in
     0) printf 'logged-in\n' ;;
+    "$FM_SEAT_LOGIN_EXPIRED_RENEWABLE") printf 'expired-renewable\n' ;;
     1) printf 'not-logged-in\n' ;;
     *) printf 'unknown\n' ;;
   esac
+}
+
+# seat_usable <state>
+# Whether a login_state verdict means a claude worker can be launched on that
+# seat. The one owner of that question, so `switch` and rotation can never drift
+# apart on which seats are launchable.
+seat_usable() {
+  case "${1-}" in
+    logged-in | expired-renewable) return 0 ;;
+  esac
+  return 1
 }
 
 # all_seats
@@ -330,8 +354,10 @@ cmd_probe() {
   fi
   state=$(login_state "$name")
   printf '%s\t%s\n' "$name" "$state"
+  # A renewable seat exits 0 with any caller: it is launchable, which is the
+  # question `probe` answers. Its state word is what says the token has lapsed.
+  seat_usable "$state" && return 0
   case "$state" in
-    logged-in) return 0 ;;
     not-logged-in) return 1 ;;
     *) return 2 ;;
   esac
@@ -375,6 +401,11 @@ cmd_probe() {
 # of headroom, and switching onto it would be the guess this refuses to make.
 # With the setting absent no candidate quota is read at all and the gate is
 # login-only, byte for byte the behaviour that predates it.
+#
+# A seat whose access token has lapsed always falls in that skipped class while
+# the setting is set, because its quota genuinely cannot be read until a launch
+# renews it. So this setting and idle seats interact: a home that sets a
+# destination minimum will rotate only onto seats something has read recently.
 #
 # Every rejected candidate is reported on stderr with its reason, so a refusal
 # to switch always says which seats were considered and why none qualified.
@@ -420,7 +451,15 @@ next_seat() {
       return 0
     fi
     if ! remaining=$(fm_seat_remaining "$(fm_seat_config_dir "$name")"); then
-      printf 'seat %s: skipped, its quota could not be read, so its headroom is unknown and this makes no guess\n' "$name" >&2
+      # A renewable seat lands here by construction: nothing can read its quota
+      # until something renews it, so it has no headroom figure to compare and
+      # is skipped for that reason rather than for its login state. Saying which
+      # is what stops an operator reading a merely idle seat as a broken one.
+      if [ "$state" = expired-renewable ]; then
+        printf 'seat %s: skipped, signed in but its access token has lapsed, so its headroom cannot be read until a worker launched there renews it\n' "$name" >&2
+      else
+        printf 'seat %s: skipped, its quota could not be read, so its headroom is unknown and this makes no guess\n' "$name" >&2
+      fi
       continue
     fi
     if jq -en --arg r "$remaining" --arg m "$minimum" \
@@ -479,6 +518,12 @@ cmd_switch() {
   state=$(login_state "$name")
   case "$state" in
     logged-in) ;;
+    expired-renewable)
+      # No --force needed. The session is signed in and the next worker launched
+      # here renews it; refusing would send the operator to --force for a seat
+      # that is simply idle, which is how most seats read after eight hours.
+      printf "seat '%s' is signed in but its access token has lapsed; the next claude worker launched there renews it\\n" "$name"
+      ;;
     not-logged-in)
       # A hard refusal: this profile has no credentials, so every worker sent
       # there would fail on its first message. --force cannot override a proven
