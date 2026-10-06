@@ -1501,6 +1501,39 @@ FM_SEND_MARKER_HERDR_E2E=1 \
   tests/fm-send-secondmate-marker-herdr-e2e.test.sh
 ```
 
+### Operational-marker carrier selection
+
+Whether a harness keeps or removes U+2063 from submitted input is a vendor behavior, and `FM_OPERATIONAL_RECORD_HARNESSES` in [`bin/fm-operational-input.sh`](../../bin/fm-operational-input.sh) is where Firstmate records it: a harness it names gets the record-backed doorbell, and a harness it omits keeps the typed envelope.
+Both halves of that selection are proven against the real installed binaries, and the guard refuses a pass that checked nothing:
+
+```sh
+FM_OPERATIONAL_MARKER_LIVE_E2E=1 tests/fm-operational-marker-live-e2e.test.sh
+```
+
+Verdicts come from two records of the prompt AS SUBMITTED, neither rendered nor model-reported - the `UserPromptSubmit` hook payload and the stored session transcript's own user row - and the guard fails loudly if they disagree.
+Claude Code's rendered removal notice is read only as corroboration and can never carry a verdict alone.
+
+Run on 2026-10-06 on tmux 3.6a, macOS arm64 (Darwin 27.0.0), on an isolated private tmux socket with a disposable base checkout and linked worktree, trust pre-registered through [`bin/fm-claude-trust.sh`](../../bin/fm-claude-trust.sh) exactly as a spawn does:
+
+```text
+$ claude --version
+2.1.291 (Claude Code)
+
+$ FM_OPERATIONAL_MARKER_LIVE_E2E=1 tests/fm-operational-marker-live-e2e.test.sh
+ok - claude (2.1.291 (Claude Code)): strips the operational marker from submitted input, so the record-backed doorbell carrier is required (submitted-prompt hook and session transcript agree; rendered removal notice present)
+ok - claude (2.1.291 (Claude Code)): a typed record-backed doorbell reaches the agent recognizably - it opened the record and carried out the operational input the envelope holds
+# codex: not installed on this machine; its carrier selection is UNVERIFIED by this run
+# opencode: not installed on this machine; its carrier selection is UNVERIFIED by this run
+# pi: not installed on this machine; its carrier selection is UNVERIFIED by this run
+# grok: not installed on this machine; its carrier selection is UNVERIFIED by this run
+# verified the carrier selection against 1 installed harness(es)
+```
+
+Claude Code 2.1.291 removes the marker on all three input routes, so none of them can carry it: the launch-prompt argument (the vendor states it, `Removed 1 invisible character from the launch prompt before sending it`), `tmux send-keys -l` typing through Firstmate's own submit primitive, and a bracketed `tmux paste-buffer`.
+The `UserPromptSubmit` payload and the session transcript both recorded the away-supervisor envelope as bare `FIRSTMATE_OP: v1 away-supervisor: ...` with no U+2063 byte, while the envelope body round-tripped exactly - so the marker was genuinely removed rather than the probe being mangled.
+A `SessionStart` hook's stdout is the one Claude-bound route that KEEPS the marker: the transcript's `hook_success` attachment held `\u2063FIRSTMATE_OP: v1 session-start: ...` verbatim, which is why [`bin/fm-sessionstart-nudge.sh`](../../bin/fm-sessionstart-nudge.sh) still emits the typed envelope.
+The constant steering doorbell in [`bin/fm-task-inbox-lib.sh`](../../bin/fm-task-inbox-lib.sh) is printable ASCII and carries no marker, so `fm-send`'s steering plane was never affected; inbox and operational records are files and keep their bytes.
+
 ### Native blocked event
 
 The protocol-16 event path was measured on 2026-07-11 with Herdr 0.7.3 and Python 3.13:
