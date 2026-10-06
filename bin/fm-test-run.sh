@@ -296,7 +296,7 @@ family_for_basename() {
     fm-kimi-harness.test.sh|fm-devin-harness.test.sh|fm-muse-harness.test.sh|fm-rovo-harness.test.sh|fm-agy-harness.test.sh|fm-omp-harness.test.sh|fm-herdr-lab.test.sh|fm-lint.test.sh|\
     fm-lint-workflows.test.sh|\
     fm-operational-input.test.sh|fm-pi-primary-types.test.sh|\
-    fm-calm-claude-mod.test.sh|fm-quota-claude-mod.test.sh|fm-fleet-mod.test.sh|\
+    fm-calm-claude-mod.test.sh|fm-quota-claude-mod.test.sh|\
     fm-harness-adapter-references.test.sh|\
     fm-send-popup-settle.test.sh|fm-send-settle.test.sh|\
     fm-subagent-pretool-check.test.sh|\
@@ -380,6 +380,7 @@ family_for_basename() {
     fm-send-inbox-doorbell-live-e2e.test.sh|\
     fm-calm-claude-mod-plugin.test.sh|fm-calm-claude-mod-live-e2e.test.sh|\
     fm-calm-pi-queue-retention-live-e2e.test.sh|\
+    fm-quota-claude-mod-plugin.test.sh|\
     fm-herdr-submit-confirm-live-e2e.test.sh)
       printf '%s\n' live-harness-optin
       ;;
@@ -1529,8 +1530,15 @@ families_for_changed_path() {
       ;;
     bin/fm-seat.sh|bin/fm-seat-lib.sh)
       printf '%s\n' "__script__:fm-seat.test.sh"
+      printf '%s\n' "__script__:fm-seat-board.test.sh"
       printf '%s\n' "__script__:fm-control-relaunch.test.sh"
       printf '%s\n' "__script__:fm-lead-restart.test.sh"
+      ;;
+    bin/fm-seat-board.sh)
+      # The board owns the per-seat quota cache, and its `json` action is what the
+      # Claude Code Quota mod reads, so that mod's portable checks ride along.
+      printf '%s\n' "__script__:fm-seat-board.test.sh"
+      printf '%s\n' "__script__:fm-quota-claude-mod.test.sh"
       ;;
     bin/fm-lead-restart.sh)
       printf '%s\n' "__script__:fm-lead-restart.test.sh"

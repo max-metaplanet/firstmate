@@ -271,6 +271,14 @@ The decline is visible from the primary, because a setting that silently does no
 Put the flag only in the home it belongs to: it is never inherited, so one home's billing choice is never decided for it elsewhere.
 [Configuration](configuration.md#claude-seats-configclaude-seat-configclaude-seats-root-configclaude-seat-threshold-configclaude-seat-destination-min-configclaude-seat-extra-usage-configclaude-seat-auto-exclude-configclaude-seat-local) owns the flag's schema.
 
+## Glancing at every seat at once
+
+`bin/fm-seat-board.sh` serves one read-only local page showing every seat's quota-axi report side by side: account email, each window's percent left and reset time, extra-usage spend against its cap, any attention line quota-axi reports, and which seat is active for new workers.
+Run it and open the printed `http://127.0.0.1:<port>/` URL; Ctrl-C stops it.
+It never switches, arms, or edits anything, and it caches each seat's read for a minute so a page reload does not hit the quota endpoint again.
+`bin/fm-seat-board.sh render` prints one generated page to stdout without starting a server, and `bin/fm-seat-board.sh json` prints the same reading as JSON for a reader that is not a browser.
+Inside Claude Code, the same seats appear as a band and a `/seats` pane through the `firstmate-quota` mod, which [`quota-mod.md`](quota-mod.md) owns.
+
 ## Limits worth knowing
 
 The login probe runs `quota-axi` against the seat's profile and treats an `oauth` source as logged in.
