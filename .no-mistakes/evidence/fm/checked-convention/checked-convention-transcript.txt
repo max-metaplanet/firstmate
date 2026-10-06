@@ -1,0 +1,59 @@
+=== S1: ship briefs (needs-decision rule) ===
+--- no-mistakes: /tmp/fm-checked-vdBu/home/data/ship-no-mistakes/brief.md
+48:   append `needs-decision [at=<epoch>]: {summary of options}` and stop. Firstmate will reply with the decision.
+49-   Open that summary with `checked: <what you read and what it showed>` - the read-only check
+50-   behind the facts in your question - or `checked: none possible - <why>` when no such check
+51-   exists, so an unchecked claim never reads as settled.
+52-   For a no-mistakes ask-user gate specifically, escalate all ask-user findings as one event plus one snapshot file, using that same shape even when the gate holds only a single ask-user finding: write only the ask-user findings, verbatim and unparaphrased (id, severity, file, line, description, authority), to `/tmp/fm-checked-vdBu/home/data/ship-no-mistakes/nm-<run>-findings.txt`, then report the gate with
+--- direct-PR: /tmp/fm-checked-vdBu/home/data/ship-direct-PR/brief.md
+47:   append `needs-decision [at=<epoch>]: {summary of options}` and stop. Firstmate will reply with the decision.
+48-   Open that summary with `checked: <what you read and what it showed>` - the read-only check
+49-   behind the facts in your question - or `checked: none possible - <why>` when no such check
+50-   exists, so an unchecked claim never reads as settled.
+51-
+--- local-only: /tmp/fm-checked-vdBu/home/data/ship-local-only/brief.md
+47:   append `needs-decision [at=<epoch>]: {summary of options}` and stop. Firstmate will reply with the decision.
+48-   Open that summary with `checked: <what you read and what it showed>` - the read-only check
+49-   behind the facts in your question - or `checked: none possible - <why>` when no such check
+50-   exists, so an unchecked claim never reads as settled.
+51-
+
+=== S2: scout brief (needs-decision + report contract) ===
+43:   append `needs-decision [at=<epoch>]: {summary of options}` and stop. Firstmate will reply with the decision.
+44-   Open that summary with `checked: <what you read and what it showed>` - the read-only check
+45-   behind the facts in your question - or `checked: none possible - <why>` when no such check
+46-   exists, so an unchecked claim never reads as settled.
+47-   A decision or blocker you opened stays open until a `resolved` line carrying its exact key lands; a later `done:` or `working:` line never closes it, even when the answer is what started that work.
+69-The report must stand alone: what you did, what you found, the evidence (commands run, output, file:line references), and what you recommend.
+70:Precede every question you leave for the captain with `Checked: <what you read and what it showed>`, or `Checked: none possible - <why>`, before the question and your recommendation, so an unverified premise never reads as a settled fact.
+71-If your deliverable is a visual artifact the captain will review and iterate on, use the lavish-axi rule: arm your board with bin/fm-procevent-lavish.sh arm <artifact.html> --for <task-id>; never run lavish-axi poll yourself. Re-arm with the reply after each nonterminal round to acknowledge it, route the board feedback through your steering inbox, write needs-decision [key=board-review] with the live board URL when the captain owes a decision, and stop at session_ended or an empty End without re-arming - acknowledge that final round with bin/fm-procevent.sh handled <source-id> <sequence> to conclude and retire your board.
+
+=== S3: secondmate charter (decision only, not blocker) ===
+58:When you escalate a decision, carry the `checked:` part the shared captain-call policy requires: the read-only check behind the facts you state, or `checked: none possible - <why>`.
+count of 'decision or blocker, carry': 0
+blocked line requires checked?: 0
+
+=== S4: hold with the skill's documented checked: example reason ===
+checked-call
+exit=0
+4:- [ ] checked-call - Choose column meaning (repo: sample) (kind: captain) (since 2026-10-06) (hold: checked: tasks-axi show eng-2531 records the ruling as confirmed but files no query or date, and two reports read the column the other way. Rule on which meaning holds) (hold-kind: captain)
+5-  Captain hold set: 2026-10-06T07:58:19Z
+6-## Done
+
+=== S5: hold with 'checked: none possible - <why>' ===
+none-call
+exit=0
+6:- [ ] none-call - Pick vendor (repo: sample) (kind: captain) (since 2026-10-06) (hold: checked: none possible - the vendor quote exists only in the captain's email. Pick vendor A or B) (hold-kind: captain)
+7-  Captain hold set: 2026-10-06T07:58:29Z
+8-## Done
+
+=== S6 adversarial: hold WITHOUT checked: is still accepted - not enforced yet ===
+bare-call
+exit=0
+8:- [ ] bare-call - Bare call (repo: sample) (kind: captain) (since 2026-10-06) (hold: captain must pick north or south) (hold-kind: captain)
+9-  Captain hold set: 2026-10-06T07:58:56Z
+10-## Done
+
+=== S7 adversarial: checked: part with parentheses is refused by the existing one-line contract ===
+fm-captain-hold: reason must not contain parentheses (tasks-axi hold contract)
+exit=1
