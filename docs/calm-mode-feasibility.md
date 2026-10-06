@@ -756,7 +756,7 @@ A typed operational envelope first shows `Removed 1 invisible character · revie
 No setting or environment variable turns the removal off.
 For the current delivery and presentation contracts, see [`fm-operational-input.sh`](../bin/fm-operational-input.sh) and [`calm.md`](calm.md#claude-code).
 
-2.1.280 also logs the module load as `hooks module firstmate-calm@<source> loaded` (`@skills-dir` for the project auto-load path), so the live guard matches either form.
+2.1.280 also logs the module load as `hooks module firstmate-calm@<source> loaded` (`@skills-dir` for the project auto-load path).
 
 Observed on 2.1.280 with the flag on, beyond the live guard:
 
@@ -773,7 +773,7 @@ ok - Claude Code 2.1.280 (Claude Code) validates the Calm mod strictly at its fo
 ok - Claude Code 2.1.280 (Claude Code) runs the Calm mod's plugin test suites clean: persisted toggle, hidden rows, working notes, and the clock-driven working ship
 ```
 
-The live guard in its current form is recorded on 2.1.282 in the next section.
+The live guard's 2.1.282 run is recorded in the next section; its current form is recorded in the [2026-10-06 record](#2026-10-06-claude-code-21291-activation-gate-rename).
 
 ## 2026-09-25 Claude Code 2.1.282 reproduction on the installed build
 
@@ -850,4 +850,4 @@ ok - Claude Code 2.1.291 (Claude Code) runs the Calm mod's plugin test suites cl
 
 A second, unrelated 2.1.291 behavior bounds what the live guard can still prove: the composer strips an invisible character out of submitted input and asks for a second Enter, so an exact operational envelope typed or pasted into a Claude Code TUI arrives as plain ASCII the canonical classifier correctly reads as non-operational.
 Both `tmux send-keys -l` and a bracketed `tmux paste-buffer` lose the marker the same way, so the zero-height operational-row case is no longer reachable from a terminal; it keeps its coverage in the mod's plugin suites and the classifier parity corpus, and the live guard now asserts the sanitizing itself as the tripwire for restoring the case.
-Delivering that marker to a Claude pane is firstmate's own input concern rather than Calm's, and is not resolved here.
+Delivering that marker to a Claude pane is firstmate's own input concern rather than Calm's; the [record-backed doorbell](#2026-09-25-claude-code-21280-verification-and-the-record-backed-operational-doorbell) is how Firstmate's Claude-bound producers now carry it.
