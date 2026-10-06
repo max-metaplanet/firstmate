@@ -2497,7 +2497,9 @@ fi
 # seat that launch uses (spawn_seat_config).
 spawn_seat_dispatch_gate() {
   [ "$HARNESS" = claude ] && [ "$RELAUNCH" -eq 0 ] && [ "$IGNORE_SEAT_HOLD" -eq 0 ] || return 0
-  if ! SEAT_DISPATCH=$(fm_seat_dispatch_reason "$(CONFIG=$(spawn_seat_config); fm_seat_dispatch_decision)"); then
+  local seat_config
+  seat_config=$(spawn_seat_config)
+  if ! SEAT_DISPATCH=$(fm_seat_dispatch_reason "$(CONFIG=$seat_config fm_seat_dispatch_decision)"); then
     {
       echo "error: this home holds new Claude work rather than starting it on paid extra usage:"
       printf '%s\n' "$SEAT_DISPATCH" | sed 's/^/  /'
@@ -4566,7 +4568,8 @@ if [ "$HARNESS" = claude ]; then
     SEAT_RECORD=$RELAUNCH_SEAT
     SEAT_CONFIG_DIR=${RELAUNCH_SEAT:-$(fm_seat_config_dir "$FM_SEAT_DEFAULT_NAME")}
   else
-    SEAT_CONFIG_DIR=$(CONFIG=$(spawn_seat_config); fm_seat_spawn_config_dir)
+    SEAT_CONFIG=$(spawn_seat_config)
+    SEAT_CONFIG_DIR=$(CONFIG=$SEAT_CONFIG fm_seat_spawn_config_dir)
     SEAT_RECORD=$SEAT_CONFIG_DIR
   fi
 fi
