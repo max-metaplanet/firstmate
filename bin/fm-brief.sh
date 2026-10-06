@@ -391,7 +391,7 @@ Work you landed includes a merge you performed yourself under standing merge aut
 This is also how you return the answer to a marked from-firstmate request above.
 A marked request requires one correlated answer after the work; it does not require a separate receipt or start acknowledgement.
 Never append \`working:\` merely to acknowledge receipt or announce that a marked request has started.
-When you escalate a decision or blocker, carry the \`checked:\` part the shared captain-call policy requires: the read-only check behind the facts you state, or \`checked: none possible - <why>\`.
+When you escalate a decision, carry the \`checked:\` part the shared captain-call policy requires: the read-only check behind the facts you state, or \`checked: none possible - <why>\`.
 When a routed-work phase has a supervisor-actionable material change worth reporting under the rule above, give that reported phase a stable key.
 If its first reportable event is \`working [key=<work-slug>]: {material phase}\`, use the same key on its later \`$PAUSED_VERB\`, \`done\`, \`failed\`, \`needs-decision\`, or \`blocked\` event so the earlier working phase is superseded.
 When a keyed phase ends without another reportable state, append \`resolved [key=<work-slug>] [at=<epoch>]: {why it is no longer active}\`.
