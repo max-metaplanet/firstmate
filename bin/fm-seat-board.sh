@@ -10,8 +10,10 @@
 #
 # serve   Default action. Regenerates the page into a scratch directory, at
 #         most once every FM_SEAT_BOARD_CACHE_SECONDS (60), and serves it on
-#         127.0.0.1 only through `python3 -m http.server`, until Ctrl-C. Prints
-#         the URL on start, plus its port, which defaults to 4405.
+#         127.0.0.1 only, through bin/fm-seat-board-server.py, until Ctrl-C.
+#         Prints the URL to open on start, including the per-run path token
+#         that server requires. The port defaults to 4405; --port 0 takes a
+#         free port from the kernel and names it in that printed URL.
 # render  Prints one generated page to stdout and exits, using the same
 #         per-seat cache. Used by the test suite and for a one-shot look
 #         without starting a server.
@@ -42,6 +44,10 @@
 # only reads. Every quota read goes through bin/fm-seat-lib.sh's own
 # fm_seat_quota_json, which passes --no-credential-refresh and never
 # --allow-keychain-prompt, exactly as every other seat probe in this repo.
+#
+# Not reachable from a web page: bin/fm-seat-board-server.py is the only thing
+# here that serves the page, and its header owns the DNS-rebinding defence
+# (Host check and per-run path token).
 #
 # Caching: the Claude quota endpoint rate-limits frequent polling, so each
 # seat's quota-axi report is cached for FM_SEAT_BOARD_CACHE_SECONDS (default
@@ -331,7 +337,7 @@ cmd_json() {
 }
 
 cmd_serve() {
-  local port=$FM_SEAT_BOARD_PORT_DEFAULT docroot gen_pid=
+  local port=$FM_SEAT_BOARD_PORT_DEFAULT docroot server gen_pid='' srv_pid=''
   while [ $# -gt 0 ]; do
     case "$1" in
       --port)
@@ -348,8 +354,11 @@ cmd_serve() {
   command -v python3 >/dev/null 2>&1 || die "python3 not found"
   command -v jq >/dev/null 2>&1 || die "jq not found"
   command -v quota-axi >/dev/null 2>&1 || die "quota-axi not found"
+  server="$SCRIPT_DIR/fm-seat-board-server.py"
+  [ -f "$server" ] || die "$server not found"
   docroot=$(mktemp -d "${TMPDIR:-/tmp}/fm-seat-board.XXXXXX") || die "could not create a scratch directory"
   cleanup() {
+    [ -z "${srv_pid:-}" ] || kill "$srv_pid" 2>/dev/null || true
     [ -z "${gen_pid:-}" ] || kill "$gen_pid" 2>/dev/null || true
     rm -rf "$docroot"
   }
@@ -362,9 +371,13 @@ cmd_serve() {
     done
   ) &
   gen_pid=$!
-  printf 'Seat board: http://127.0.0.1:%s/\n' "$port"
-  printf 'Ctrl-C to stop.\n'
-  python3 -m http.server "$port" --bind 127.0.0.1 --directory "$docroot"
+  # The server prints the URL to open, because only it knows the per-run path
+  # token, and the port too once --port 0 let the kernel choose one. Backgrounded
+  # so cleanup can reach it: a background job starts with SIGINT ignored, so
+  # Ctrl-C is handled by the INT trap, whose cleanup stops the server.
+  python3 "$server" "$port" "$docroot/index.html" &
+  srv_pid=$!
+  wait "$srv_pid"
 }
 
 case "${1:-serve}" in

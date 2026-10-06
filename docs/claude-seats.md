@@ -285,10 +285,16 @@ Put the flag only in the home it belongs to: it is never inherited, so one home'
 ## Glancing at every seat at once
 
 `bin/fm-seat-board.sh` serves one read-only local page showing every seat's quota-axi report side by side: account email, each window's percent left and reset time, extra-usage spend against its cap, any attention line quota-axi reports, and which seat is active for new workers.
-Run it and open the printed `http://127.0.0.1:<port>/` URL; Ctrl-C stops it.
+Run it and open the URL it prints; Ctrl-C stops it.
+That URL carries a random path segment generated for that run, so open the printed one rather than a `http://127.0.0.1:<port>/` typed from memory, and `--port 0` takes a free port from the kernel and names it there too.
 It never switches, arms, or edits anything, and it caches each seat's read for a minute so a page reload does not hit the quota endpoint again.
 `bin/fm-seat-board.sh render` prints one generated page to stdout without starting a server, and `bin/fm-seat-board.sh json` prints the same reading as JSON for a reader that is not a browser.
 Inside Claude Code, the same seats appear as a band and a `/seats` pane through the `firstmate-quota` mod, which [`quota-mod.md`](quota-mod.md) owns.
+
+The page is for that machine's own browser and nothing else.
+The server answers only a request whose `Host` header is `127.0.0.1` or `localhost` with its own port, and refuses anything else with a 403 and no page content.
+Binding loopback on its own would not be enough: under DNS rebinding a hostile page re-points its own domain at 127.0.0.1, which makes it same-origin to the browser, and the account emails and quota figures on this page are exactly what it would then read.
+`bin/fm-seat-board-server.py` owns that check and is the only thing that serves the page.
 
 ## Limits worth knowing
 
