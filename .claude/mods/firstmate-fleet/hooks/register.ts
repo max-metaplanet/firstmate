@@ -68,6 +68,9 @@ const FLEET_SNAPSHOT_TIMEOUT_MS = 90_000;
 /** How much of its 10s budget the /fleet text answer keeps back to answer in. */
 const FLEET_TEXT_MARGIN_MS = 2_000;
 
+/** How often the /fleet text answer looks again for a reading it joined. */
+const FLEET_TEXT_POLL_MS = 500;
+
 // One module environment holds one cached reading; a hot reload starts a fresh one.
 let activation: Promise<boolean> | undefined;
 let loading: Promise<void> | undefined;
@@ -220,14 +223,25 @@ async function refresh($: EngineInterface): Promise<void> {
  * Wait for a reading the text answer can carry, inside this hook's budget.
  *
  * A reading this hook starts is its own `$.process.run`, which the budget does not count.
- * Joining one the clock started is waiting on the module's own promise, which it does,
- * so that wait ends short of the budget and the answer says the reading is under way.
+ * One the clock started is joined, never run a second time, and looked for again after
+ * each short `$.clock.sleep` until it lands. The loop ends at the reading's own timeout,
+ * or once the budget, read afresh each pass, nears its end, whichever comes first; the
+ * answer then says the reading is under way.
  */
 async function readForText($: EngineInterface, budget: NextBudget): Promise<void> {
   if (inFlight === undefined) return refresh($);
-  const spareMs = budget.remainingMs - FLEET_TEXT_MARGIN_MS;
-  if (!Number.isFinite(spareMs)) return refresh($);
-  await Promise.race([refresh($), $.clock.sleep(Math.max(0, spareMs)).catch(() => undefined)]);
+  let landed = false;
+  void refresh($).then(() => {
+    landed = true;
+  });
+  let waitedMs = 0;
+  while (!landed && waitedMs < FLEET_SNAPSHOT_TIMEOUT_MS) {
+    const spareMs = budget.remainingMs - FLEET_TEXT_MARGIN_MS;
+    if (spareMs <= 0) return;
+    const stepMs = Math.min(FLEET_TEXT_POLL_MS, spareMs);
+    await $.clock.sleep(stepMs).catch(() => undefined);
+    waitedMs += stepMs;
+  }
 }
 
 function paneTree($: EngineInterface, e: RenderInput, fleet: FleetView): RenderElement {

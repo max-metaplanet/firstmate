@@ -400,21 +400,37 @@ describe("notices", () => {
 });
 
 describe("/fleet", () => {
-  test("joins the clock's reading rather than starting a second", async ($, on) => {
+  test("keeps waiting on the clock's reading past a few seconds and answers with its rows", async ($, on) => {
     const { clock, journal, hold: holdRuns } = world(on);
     await $.session.start(SESSION_START_HEADLESS);
     const held = holdRuns();
     await clock.advance(60_000);
-    expect(journal.runs).toHaveLength(1);
     let answered: string | undefined;
     void $.command.run(fleetCommand()).then((result) => {
       answered = result.text;
     });
-    await clock.advance(0);
-    expect(journal.runs).toHaveLength(1);
+    for (let second = 0; second < 15; second += 1) await clock.advance(1_000);
+    expect(answered).toBeUndefined();
     await held.release();
-    await clock.advance(0);
+    await clock.advance(500);
+    await clock.advance(500);
     expect(answered).toContain("fleet (2):");
+    expect(journal.runs).toHaveLength(1);
+  });
+
+  test("answers that the fleet is still being read once the wait's bound elapses", async ($, on) => {
+    const { clock, journal, hold: holdRuns } = world(on);
+    await $.session.start(SESSION_START_HEADLESS);
+    holdRuns();
+    await clock.advance(60_000);
+    let answered: string | undefined;
+    void $.command.run(fleetCommand()).then((result) => {
+      answered = result.text;
+    });
+    for (let second = 0; second < 95; second += 1) await clock.advance(1_000);
+    expect(answered).toContain("reading the fleet…");
+    expect(answered).not.toContain("fleet (0)");
+    expect(journal.runs).toHaveLength(1);
   });
 
   test("opens the pane and prints no transcript row where the session can draw", async ($, on) => {

@@ -51,7 +51,8 @@ The one data source is `bin/fm-fleet-snapshot.sh --json`, measured at 17.7-21.6s
 So it runs only from a 60s timer, one un-awaited reading at the start of a session that can draw, and the `/fleet` text answer's own reading in a session that cannot, all behind a single in-flight promise, and a drawing hook never starts it and only ever draws the cached result.
 The in-flight promise is not an optimization: two overlapping runs of that command were measured at 72s wall where one run takes 18s.
 `/fleet` asked as text before any reading has landed takes that reading itself, inside its own `$.process.run`, which the hook budget does not count.
-If the timer's reading is already under way it joins that one rather than starting a second, waits only as long as the hook budget allows, and otherwise answers that the fleet is still being read, never with an empty fleet.
+If the timer's reading is already under way it joins that one rather than starting a second, and looks again every half second until it lands.
+That wait is bounded by the reading's own timeout and by the hook budget, read afresh on each pass; past either bound it answers that the fleet is still being read, never with an empty fleet.
 
 A reading that fails, times out, or is not this snapshot's schema is never drawn as a healthy fleet with nothing in it:
 
