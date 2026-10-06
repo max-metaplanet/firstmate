@@ -232,14 +232,15 @@ function seatsText(): string {
 /** One seat's row in the pane. */
 function seatElement($: EngineInterface, e: RenderInput, row: SeatRow): RenderElement {
   const { Box, Text } = $.ui.resolve(e);
-  const marks = row.marks.length === 0 ? "" : ` [${row.marks.join(", ")}]`;
   const stale = row.freshness === "stale" || row.freshness === "none" || row.freshness === "unknown";
+  const marks =
+    row.marks.length === 0 ? [] : [Text({ dimColor: true, children: [`[${row.marks.join(", ")}]`] })];
   return Box({
     flexDirection: "row",
     columnGap: 1,
     children: [
       Text({ bold: row.live, children: [row.name] }),
-      Text({ dimColor: true, children: [marks === "" ? "" : marks.trim()] }),
+      ...marks,
       Text({ dimColor: stale, children: [seatFiguresText(row)] }),
       Text({
         color: stale ? "yellow" : undefined,

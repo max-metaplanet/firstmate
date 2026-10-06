@@ -71,15 +71,26 @@ export function tensionOf(percentLeft: number): QuotaTension {
 }
 
 /**
+ * The longest wait worth drawing, in milliseconds.
+ *
+ * No rate-limit window resets a month out, so a wait past this is not a long window: it
+ * is a disagreement between the clock and the timestamp, and drawing it would put a
+ * figure like `20732d 9h` in front of the captain. Such a wait is reported as unreadable
+ * instead, which draws nothing.
+ */
+export const QUOTA_RESET_HORIZON_MS = 30 * 24 * 60 * 60 * 1000;
+
+/**
  * How long until a reset, as a short relative wait: `2h 10m`, `14m`, or `due`.
  *
- * An absent, unparseable, or already-past timestamp yields the empty string rather than
- * a guess, so the band says nothing instead of inventing a wait.
+ * An absent, unparseable, already-past, or implausibly distant timestamp yields the
+ * empty string rather than a guess, so the band says nothing instead of inventing a wait.
  */
 export function resetsIn(resetsAt: string | undefined, nowMs: number): string {
   if (resetsAt === undefined || resetsAt === "") return "";
   const at = Date.parse(resetsAt);
   if (!Number.isFinite(at)) return "";
+  if (at - nowMs > QUOTA_RESET_HORIZON_MS) return "";
   const seconds = Math.round((at - nowMs) / 1000);
   if (seconds <= 0) return "due";
   const minutes = Math.floor(seconds / 60);

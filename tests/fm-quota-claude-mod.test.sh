@@ -101,6 +101,11 @@ check(live.resetsIn("2026-10-06T00:14:00Z", now) === "14m", "a wait under an hou
 check(live.resetsIn("2026-10-06T02:30:00Z", now) === "2h 30m", "a wait over an hour must read in hours and minutes");
 check(live.resetsIn("2026-10-06T03:00:00Z", now) === "3h", "a whole-hour wait must omit the minutes");
 check(live.resetsIn("2026-10-09T00:00:00Z", now) === "3d", "a multi-day wait must read in days");
+// No window resets a month out, so a wait past the horizon is a clock or timestamp
+// disagreement and must draw nothing rather than a figure like 20732d 9h.
+check(live.resetsIn("2026-12-06T00:00:00Z", now) === "", "a wait past the horizon must draw nothing");
+check(live.resetsIn("2026-10-06T00:00:00Z", 0) === "", "a reset read against an unset clock must draw nothing");
+check(live.resetsIn("2026-11-04T00:00:00Z", now) !== "", "a wait just inside the horizon must still be drawn");
 
 // Only the tightest window carries its reset, so the band stays one line.
 const windows = live.liveWindows(
