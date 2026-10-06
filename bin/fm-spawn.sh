@@ -2493,8 +2493,11 @@ fi
 # mid-flight for a spend decision its own launch already made.
 # --ignore-seat-hold is the deliberate override for a task the operator wants
 # started anyway; it never changes the setting, so the next spawn is gated again.
-if [ "$HARNESS" = claude ] && [ "$RELAUNCH" -eq 0 ] && [ "$IGNORE_SEAT_HOLD" -eq 0 ]; then
-  if ! SEAT_DISPATCH=$(fm_seat_dispatch_reason "$(fm_seat_dispatch_decision)"); then
+# A secondmate's gate runs once its home is resolved, against the config whose
+# seat that launch uses (spawn_seat_config).
+spawn_seat_dispatch_gate() {
+  [ "$HARNESS" = claude ] && [ "$RELAUNCH" -eq 0 ] && [ "$IGNORE_SEAT_HOLD" -eq 0 ] || return 0
+  if ! SEAT_DISPATCH=$(fm_seat_dispatch_reason "$(CONFIG=$(spawn_seat_config); fm_seat_dispatch_decision)"); then
     {
       echo "error: this home holds new Claude work rather than starting it on paid extra usage:"
       printf '%s\n' "$SEAT_DISPATCH" | sed 's/^/  /'
@@ -2502,7 +2505,20 @@ if [ "$HARNESS" = claude ] && [ "$RELAUNCH" -eq 0 ] && [ "$IGNORE_SEAT_HOLD" -eq
     } >&2
     exit 1
   fi
-fi
+}
+
+# The config dir whose seat settings a claude launch of this task uses: a
+# secondmate home that declines inherited seats uses its own, every other
+# launch this home's.
+spawn_seat_config() {
+  if [ "$KIND" = secondmate ] && fm_config_inherit_seat_optout "$PROJ_ABS/config"; then
+    printf '%s\n' "$PROJ_ABS/config"
+  else
+    printf '%s\n' "$CONFIG"
+  fi
+}
+
+[ "$KIND" = secondmate ] || spawn_seat_dispatch_gate
 
 # Worker account pin (header above): resolved before any endpoint, worktree, or
 # record exists. An absent pin selects nothing and leaves every later launch
@@ -3082,6 +3098,7 @@ if [ "$KIND" = secondmate ]; then
     exit 1
   }
   PROJ_ABS=$(validate_firstmate_home_for_spawn "$ID" "$FIRSTMATE_HOME")
+  spawn_seat_dispatch_gate
   if [ -e "$DATA/secondmates.md" ] || [ -L "$DATA/secondmates.md" ]; then
     if ! secondmate_registry_validate_bindings "$DATA/secondmates.md" resolve_path "$ID" "$FIRSTMATE_HOME"; then
       echo "error: $SECONDMATE_REGISTRY_ERROR" >&2
@@ -4548,11 +4565,8 @@ if [ "$HARNESS" = claude ]; then
   if [ "$RELAUNCH" -eq 1 ] && [ "$RELAUNCH_PRIOR_HARNESS" = claude ]; then
     SEAT_RECORD=$RELAUNCH_SEAT
     SEAT_CONFIG_DIR=${RELAUNCH_SEAT:-$(fm_seat_config_dir "$FM_SEAT_DEFAULT_NAME")}
-  elif [ "$KIND" = secondmate ] && fm_config_inherit_seat_optout "$PROJ_ABS/config"; then
-    SEAT_CONFIG_DIR=$(CONFIG="$PROJ_ABS/config"; fm_seat_spawn_config_dir)
-    SEAT_RECORD=$SEAT_CONFIG_DIR
   else
-    SEAT_CONFIG_DIR=$(fm_seat_spawn_config_dir)
+    SEAT_CONFIG_DIR=$(CONFIG=$(spawn_seat_config); fm_seat_spawn_config_dir)
     SEAT_RECORD=$SEAT_CONFIG_DIR
   fi
 fi

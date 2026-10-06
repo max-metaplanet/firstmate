@@ -632,6 +632,9 @@ test_spawn_launches_a_declining_home_on_its_own_seat() {
   mkdir -p "$w/home/config" "$w/home/state" "$w/home/data" "$w/home/projects" "$w/fleet-seats/work"
   printf 'work\n' > "$w/home/config/claude-seat"
   printf '%s\n' "$w/fleet-seats" > "$w/home/config/claude-seats-root"
+  # The primary's own extra-usage gate would hold here (stop, no readable
+  # quota); the declining home sets no policy, so its launch is not held.
+  printf 'stop\n' > "$w/home/config/claude-seat-extra-usage"
   make_seeded_home "$declining" sm-optout
   mkdir -p "$declining/config"
   : > "$declining/config/claude-seat-local"
@@ -644,7 +647,7 @@ test_spawn_launches_a_declining_home_on_its_own_seat() {
     FM_SPAWN_NO_GUARD=1 FM_FAKE_LAUNCH_LOG="$launchlog" FM_FAKE_PANE_PATH="$declining" \
     "$ROOT/bin/fm-spawn.sh" sm-optout "$declining" claude --secondmate >/dev/null 2>&1 || rc=$?
 
-  [ "$rc" -eq 0 ] || fail "seat decline launch: the secondmate spawn failed (rc=$rc)"
+  [ "$rc" -eq 0 ] || fail "seat decline launch: the secondmate spawn failed (rc=$rc); the primary's extra-usage gate must not hold a home that uses its own seat"
   launch=$(cat "$launchlog")
   [ -n "$launch" ] || fail "seat decline launch: no launch command was captured"
   case "$launch" in

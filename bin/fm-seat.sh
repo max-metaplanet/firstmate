@@ -987,6 +987,7 @@ auto_trigger() {
         "$active" "$remaining" "$target"
       return 0
     fi
+    auto_record_set fired "$fired"
     [ "$blocked" != "$active" ] || return 0
     auto_record_set blocked "$active"
     printf 'claude-seat: %s is at %s%% left and the switch to %s failed: %s\n' \
