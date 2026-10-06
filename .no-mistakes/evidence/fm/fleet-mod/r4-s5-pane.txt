@@ -1,0 +1,40 @@
+                                                                      │                                              ✕
+ ▐▛███▛█   Claude Code v2.1.291                                       │1 waiting on you: alpha (decision/blocker)
+▝▜██████▀  Opus 5.5 · Claude Max                                      │? alpha ship blocked (status-log) 2m
+ ▝▝   ▝▝   ~/…/worktrees/61c6dd39b831/01M487VG849J0JBB67CYNRYEEM      │    event: blocked: needs a credential
+                                                                      │> beta ship working (liveness) 30s
+                                                                      │    event: working: beta under way
+                                                                      │r: Refresh
+                                                                      │
+                                                                      │
+                                                                      │
+                                                                      │
+                                                                      │
+                                                                      │
+                                                                      │
+                                                                      │
+                                                                      │
+                                                                      │
+                                                                      │
+                                                                      │
+                                                                      │
+                                                                      │
+                                                                      │
+                                                                      │
+                                                                      │
+                                                                      │
+                                                                      │
+                                                                      │
+                                                                      │
+                                                                      │
+                                                                      │
+                                                                      │
+                                                                      │
+1 waiting on you: alpha (decision/blocker)                        [-] │
+                                                                      │
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⚠ Transcript saving is off — inherited CLAUDE_CODE_CHILD_SESSION marker · restart with CLAUDE_CODE_FORCE_SESSION_P…
+  Opus 5.5 | ~/./w/6/01M487VG849J0JBB67CYNRYEEM [HEAD ✓] | ⚙️28 | ⚡100% | P03=E06=U10=J19:45:12
+  -- INSERT -- ⏵⏵ auto mode on (shift+tab to cycle)

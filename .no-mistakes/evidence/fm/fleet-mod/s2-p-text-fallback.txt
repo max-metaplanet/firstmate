@@ -1,0 +1,11 @@
+### S2: FM_FLEET_ENABLED=1 claude -p /fleet
+firstmate-fleet: fleet (2):
+1 waiting on you: alpha (decision)
+? alpha ship · unknown (none) · 8773h
+    event: blocked [at=1759700100] [key=k1]: needs a credential
+· beta ship · unknown (none) · 8773h
+    event: working [at=1759700000]: beta under way
+env FM_FLEET_ENABLED=1 FM_HOME=$L/home FM_ROOT_OVERRIDE=$L/root claude -p   3.97s user 1.76s system 82% cpu 6.945 total
+--- reader runs:
+1791281996 start
+1791281998 end rc=0

@@ -1,0 +1,15 @@
+### R4-S3b: same session shape, reader delay 20s, /fleet asked 15s into the reading (lands ~5s after ask)
+clock reading started at +62.9s after launch
+asked /fleet 15.1s into the reading (reader delay 20s)
+answered 5.60s after ask; duration_ms=5573; is_error=False
+answer text:
+firstmate-fleet: fleet (2):
+1 waiting on you: alpha (decision/blocker)
+? alpha ship · blocked (status-log) · 2m
+    event: blocked: needs a credential
+> beta ship · working (liveness) · 30s
+    event: working: beta under way
+--- reader runs:
+1791283231.734778000 start
+1791283252 end rc=0
+

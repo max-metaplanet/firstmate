@@ -1,0 +1,12 @@
+[1791282817]  ▐▛███▛█   Claude Code v2.1.291                                                               │fleet unavailable: the fleet reading exited 3: lab: reader forced to fail
+[1791282818]  ▐▛███▛█   Claude Code v2.1.291                   │ firstmate-fleet                          ││fleet unavailable: the fleet reading exited 3: lab: reader forced to fail
+[1791282818] ▝▜██████▀  Opus 5.5 · Claude Max                  │ fleet cannot be read: the fleet reading  ││r: Refresh
+[1791282819]  ▐▛███▛█   Claude Code v2.1.291                   │ firstmate-fleet                          ││fleet unavailable: the fleet reading exited 3: lab: reader forced to fail
+[1791282819] ▝▜██████▀  Opus 5.5 · Claude Max                  │ fleet cannot be read: the fleet reading  ││r: Refresh
+[1791282820]  ▐▛███▛█   Claude Code v2.1.291                   │ firstmate-fleet                          ││fleet unavailable: the fleet reading exited 3: lab: reader forced to fail
+[1791282820] ▝▜██████▀  Opus 5.5 · Claude Max                  │ fleet cannot be read: the fleet reading  ││r: Refresh
+[1791282821]  ▐▛███▛█   Claude Code v2.1.291                                                               │fleet unavailable: the fleet reading exited 3: lab: reader forced to fail
+[1791282821]  ▐▛███▛█   Claude Code v2.1.291                   │ firstmate-fleet                          ││fleet unavailable: the fleet reading exited 3: lab: reader forced to fail
+[1791282821] ▝▜██████▀  Opus 5.5 · Claude Max                  │ fleet cannot be read: the fleet reading  ││r: Refresh
+[1791282822]  ▐▛███▛█   Claude Code v2.1.291                                                               │fleet unavailable: the fleet reading exited 3: lab: reader forced to fail
+[1791282823]  ▐▛███▛█   Claude Code v2.1.291                                                               │fleet unavailable: the fleet reading exited 3: lab: reader forced to fail

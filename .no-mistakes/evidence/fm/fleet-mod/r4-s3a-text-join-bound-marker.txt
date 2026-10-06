@@ -1,0 +1,10 @@
+### R4-S3a: non-drawing stream-json session @ fc12da2, reader delay 25s, /fleet asked ~1s into the clock's reading (lands ~24s after ask)
+clock reading started at +63.1s after launch
+asked /fleet 1.1s into the reading (reader delay 25s)
+answered 8.09s after ask; duration_ms=8060; is_error=False
+answer text:
+firstmate-fleet: fleet: reading the fleet…
+--- reader runs:
+1791283136.571720000 start
+1791283161 end rc=0
+

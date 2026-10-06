@@ -1,0 +1,24 @@
+S3 FAIL: non-drawing stream-json session (claude -p --input-format stream-json), FM_FLEET_ENABLED=1, lab reader delayed 25s.
+The 60s clock reading starts; /fleet is asked ~1s later while it is in flight.
+Run A (unmodified mod): reader start 1791282118, ask 1791282119, answer 1791282129 (duration_ms 10039), reading landed 1791282145.
+Answer text:
+  firstmate-fleet registered /fleet but no command.run hook answered it: add on("command.run", { command: "fleet" }, ($, e) => ({ text: ... })) to the plugin.
+
+Run B (scratch copy outside the worktree, same code plus one log line per loop pass): next.budget.remainingMs per pass:
+1791282309822 remainingMs=9999 waited=0
+1791282310331 remainingMs=9999 waited=500
+1791282310843 remainingMs=9999 waited=1000
+1791282311353 remainingMs=9999 waited=1500
+1791282311871 remainingMs=9999 waited=2000
+1791282312386 remainingMs=9999 waited=2500
+  ...
+1791282335133 remainingMs=9999 waited=23500
+1791282335645 remainingMs=9999 waited=24000
+  -> remainingMs never moves during $.clock.sleep, so 'if (spareMs <= 0) return' never fires; the engine still cuts the hook at ~10s wall (duration_ms 10657) and answers with its own error.
+  Engine types (.claude-plugin/types/claude-code/index.d.ts, HookBudget): 'the clock stops while ... any $ call ... is in flight (a $.clock wait excepted)'; clock.sleep: 'its budget runs on through it'.
+
+Run C (reading lands exactly 10s after ask): duration_ms 10051, same engine error answer.
+
+Control D (ask 5s before the joined reading lands): answered in duration_ms 6079 with the rows; reader runs:
+  1791282543 start / 1791282564 ask / 1791282569 end rc=0  (one reader run only, no second overlapping read)
+  firstmate-fleet: fleet (2): / 1 waiting on you: alpha (decision) / ? alpha ... / · beta ...

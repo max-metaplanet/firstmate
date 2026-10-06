@@ -1,0 +1,6 @@
+### R4-S1: flag unset / =true -> inert
+FM_FLEET_ENABLED=''
+Error: Reached max turns (1)
+FM_FLEET_ENABLED='true'
+Error: Reached max turns (1)
+--- reader runs (expect none):

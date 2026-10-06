@@ -1,0 +1,3 @@
+### S1: FM_FLEET_ENABLED=0 claude -p /fleet --max-turns 1
+Error: Reached max turns (1)### S1: FM_FLEET_ENABLED=true claude -p /fleet --max-turns 1
+Error: Reached max turns (1)--- reader runs (expect none):

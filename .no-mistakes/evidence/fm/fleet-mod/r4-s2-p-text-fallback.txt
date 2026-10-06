@@ -1,0 +1,13 @@
+### R4-S2: FM_FLEET_ENABLED=1 claude -p /fleet (non-drawing, no reading yet; reader takes 3s) @ fc12da2
+firstmate-fleet: fleet (2):
+1 waiting on you: alpha (decision/blocker)
+? alpha ship · blocked (status-log) · 2m
+    event: blocked: needs a credential
+> beta ship · working (liveness) · 30s
+    event: working: beta under way
+real 9.72
+user 4.15
+sys 1.37
+--- reader runs:
+1791283030.651491000 start
+1791283033 end rc=0
