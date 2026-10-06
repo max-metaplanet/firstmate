@@ -117,6 +117,24 @@ describe("the reading", () => {
     await clock.advance(0);
     expect(journal.runs.length).toBeGreaterThan(before);
   });
+  test("resolves the reading and starts the clock from a hook reached before session start", async ($, on) => {
+    const { clock, journal } = world(on);
+    // A hot reload can reach a drawing before session.start; the render itself never reads.
+    expect(isStock(await $.ui.render(band()))).toBe(true);
+    expect(journal.runs).toHaveLength(0);
+    await clock.advance(60_000);
+    expect(journal.runs).toHaveLength(1);
+    expect(journal.runs[0]!.argv).toEqual(SNAPSHOT_ARGV);
+    expect(flatten(await $.ui.render(pane()))).toContain("alpha");
+  });
+
+  test("answers /fleet as text when no session start has said the session can draw", async ($, on) => {
+    const { clock, journal } = world(on);
+    const answer = await $.command.run(fleetCommand());
+    await clock.advance(0);
+    expect(journal.opens).toHaveLength(0);
+    expect(answer.text).toContain("fleet (2):");
+  });
 });
 
 describe("the pane", () => {
@@ -317,6 +335,35 @@ describe("notices", () => {
     await clock.advance(60_000);
     await clock.advance(60_000);
     expect(journal.toasts).toHaveLength(2);
+  });
+
+  test("announces a task flapping between blocked and working only once", async ($, on) => {
+    const { clock, journal, answer } = world(on, {
+      reading: { exitCode: 0, stdout: snapshotJson([task({ id: "alpha" })]), stderr: "" },
+    });
+    await $.session.start(SESSION_START);
+    await clock.advance(0);
+    for (const state of ["blocked", "working", "blocked", "working", "blocked"]) {
+      answer({ exitCode: 0, stdout: snapshotJson([task({ id: "alpha", state })]), stderr: "" });
+      await clock.advance(60_000);
+    }
+    expect(journal.toasts).toEqual(["alpha: blocked"]);
+    answer({ exitCode: 0, stdout: snapshotJson([task({ id: "alpha", state: "done" })]), stderr: "" });
+    await clock.advance(60_000);
+    expect(journal.toasts).toEqual(["alpha: blocked", "alpha: done"]);
+  });
+
+  test("announces again for a task that left the fleet and came back", async ($, on) => {
+    const { clock, journal, answer } = world(on, {
+      reading: { exitCode: 0, stdout: snapshotJson([task({ id: "alpha", state: "blocked" })]), stderr: "" },
+    });
+    await $.session.start(SESSION_START);
+    await clock.advance(0);
+    answer({ exitCode: 0, stdout: snapshotJson([]), stderr: "" });
+    await clock.advance(60_000);
+    answer({ exitCode: 0, stdout: snapshotJson([task({ id: "alpha", state: "blocked" })]), stderr: "" });
+    await clock.advance(60_000);
+    expect(journal.toasts).toEqual(["alpha: blocked"]);
   });
 
   test("announces nothing for a move back to work", async ($, on) => {

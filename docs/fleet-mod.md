@@ -33,7 +33,9 @@ Work the captain's standing posture lets Firstmate merge itself is not a merge a
 
 A notice names a task the first time a reading finds it done, blocked, or failed.
 The first reading of a session announces nothing, however much it finds already finished or blocked, so a session does not open with a burst of notices about work the captain already knows about.
-Afterwards each real change earns one notice; a task that settles and is re-opened earns one per change rather than one per reading.
+Afterwards a notice fires only when a task reaches a word different from the one last announced for it, so a task flapping between blocked and working earns one notice, while blocked then done earns two.
+A re-block after a recovery earns no second notice; the line above the prompt is the persistent signal for it.
+A task that leaves the fleet drops its record.
 
 Other mods keep their band content: when the Fleet mod draws, it nests their drawing above its own line rather than replacing it.
 

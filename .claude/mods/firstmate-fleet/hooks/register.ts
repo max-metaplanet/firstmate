@@ -29,6 +29,11 @@
 // aged read is described - lives in ../lib/fm-fleet-view.ts, and which transitions earn
 // a notice in ../lib/fm-fleet-toasts.ts, so the policy is testable under Node and the
 // engine glue under `claude plugin test`.
+//
+// Loading is lazy and cached within a module environment: a hot reload can reach any
+// hook before `session.start`, so every activated hook awaits the load that resolves the
+// reading command and starts the clock. Whether the session can draw is the one fact
+// only `session.start` knows; it is kept in `$.state`, which a reload leaves alone.
 import type { EngineInterface, Register, RenderElement, RenderInput } from "claude-code";
 import { fleetActivationFromEnv } from "../lib/fm-fleet-activation.ts";
 import {
@@ -60,10 +65,9 @@ const FLEET_SNAPSHOT_TIMEOUT_MS = 90_000;
 
 // One module environment holds one cached reading; a hot reload starts a fresh one.
 let activation: Promise<boolean> | undefined;
-/** The resolved reading command, or an empty array before the session has resolved it. */
+let loading: Promise<void> | undefined;
+/** The resolved reading command, or an empty array before the load has resolved it. */
 let snapshotCommand: string[] = [];
-/** False in a `-p` run or the SDK, where nothing a mod draws is ever seen. */
-let canDraw = false;
 let snapshot: FleetSnapshot | undefined;
 let snapshotAtMs: number | null = null;
 let readError = "";
@@ -83,6 +87,27 @@ async function readActivation($: EngineInterface): Promise<boolean> {
 function isActivated($: EngineInterface): Promise<boolean> {
   if (activation === undefined) activation = readActivation($);
   return activation;
+}
+
+/** False in a `-p` run or the SDK, where nothing a mod draws is ever seen. */
+const canDraw = { plugin: "firstmate-fleet", key: "canDraw" } as const;
+
+async function load($: EngineInterface): Promise<void> {
+  snapshotCommand = fleetSnapshotCommand(
+    await $.env.get("FM_ROOT_OVERRIDE").catch(() => undefined),
+    $.plugin.root,
+  );
+  ticker ??= $.clock.every(FLEET_REFRESH_MS, () => {
+    void refresh($);
+  });
+}
+
+/** Whether the mod is on, with the reading command and the clock in place when it is. */
+async function isReady($: EngineInterface): Promise<boolean> {
+  if (!(await isActivated($))) return false;
+  if (loading === undefined) loading = load($);
+  await loading;
+  return true;
 }
 
 /** The cached reading as the drawing functions take it. */
@@ -137,7 +162,7 @@ async function readFleet($: EngineInterface): Promise<void> {
       snapshotAtMs = null;
     }
     const round = fleetToasts(announced, outcome.rows);
-    announced = round.states;
+    announced = round.announced;
     for (const toast of round.toasts) $.ui.toast(toast.text);
   }
   // Every reading redraws, a failed one included, so a drawing never goes on claiming
@@ -221,19 +246,10 @@ function paneTree($: EngineInterface, e: RenderInput, fleet: FleetView): RenderE
 
 export const register: Register = (on) => {
   on("session.start", async ($, e, next) => {
-    if (!(await isActivated($))) return next(e);
-    snapshotCommand = fleetSnapshotCommand(
-      await $.env.get("FM_ROOT_OVERRIDE").catch(() => undefined),
-      $.plugin.root,
-    );
+    if (!(await isReady($))) return next(e);
     // `$.ui.open` answers placed even in a `-p` run, where nothing can draw, so the
     // only sound test of "will a person see this" is the session's own isInteractive.
-    canDraw = e.isInteractive === true;
-    if (ticker === undefined) {
-      ticker = $.clock.every(FLEET_REFRESH_MS, () => {
-        void refresh($);
-      });
-    }
+    await $.state.set(canDraw, e.isInteractive === true).catch(() => undefined);
     // Un-awaited: the session must not wait out a 17.7-21.6s command to start.
     void refresh($);
     // Last, and guarded: a taken name throws and would take the rest of this hook with
@@ -250,8 +266,8 @@ export const register: Register = (on) => {
   });
 
   on("command.run", { command: FLEET_PANE }, async ($, e, next) => {
-    if (!(await isActivated($))) return next(e);
-    if (canDraw) {
+    if (!(await isReady($))) return next(e);
+    if ((await $.state.get(canDraw)).value === true) {
       await $.ui.open({ id: FLEET_PANE, title: "Fleet", focus: true, closeOnEscape: true });
       return {};
     }
@@ -262,14 +278,14 @@ export const register: Register = (on) => {
   });
 
   on("ui.render", { component: "Pane" }, async ($, e, next) => {
-    if (!(await isActivated($))) return next(e);
+    if (!(await isReady($))) return next(e);
     if (e.requestId !== FLEET_PANE) return next(e);
     // The cache only: the reading behind it is far past this hook's budget.
     return paneTree($, e, await view($));
   });
 
   on("ui.render", { component: "AbovePrompt" }, async ($, e, next) => {
-    if (!(await isActivated($))) return next(e);
+    if (!(await isReady($))) return next(e);
     const band = fleetBand(await view($));
     // Nothing waiting and a reading that can say so: draw nothing whatsoever.
     if (band === undefined) return next(e);

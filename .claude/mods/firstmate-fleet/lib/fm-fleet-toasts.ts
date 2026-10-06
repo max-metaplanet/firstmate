@@ -1,13 +1,16 @@
-// Which state changes earn a transient notice, decided from the previous reading alone.
+// Which state changes earn a transient notice, decided from the words already announced.
 //
 // The rule that matters is the first one: a mod that announced everything it found on
 // the first reading would open every session with a burst of notices about work the
-// captain already knows about. So the first reading only records what is there, and a
-// notice is owed only once the mod has a previous reading to compare against.
+// captain already knows about. So the first reading announces nothing and only records
+// the done, blocked, or failed words it found as if they had been announced.
 //
-// The second rule is the deduplicating one: the recorded word is the one last
-// announced, so a task that settles and is then re-opened earns one notice per real
-// change rather than one per refresh.
+// The second rule is the deduplicating one: what is carried per task is the word last
+// announced for it, changed only when a notice fires, so a task flapping between
+// blocked and working earns one notice rather than one per return. A different
+// announced word still earns one (blocked, then done). A re-block after a real
+// recovery earns none: the band above the prompt is the persistent signal for that.
+// A task that leaves the fleet drops its record.
 import type { FleetRow } from "./fm-fleet-view.ts";
 
 /** The state words worth a notice when a task newly reaches one. */
@@ -21,8 +24,8 @@ export type FleetToast = {
 export type FleetToastRound = {
   /** The notices this reading earned, in the snapshot's own order. */
   toasts: FleetToast[];
-  /** The state words to carry into the next reading. */
-  states: Map<string, string>;
+  /** The word last announced per task, to carry into the next reading. */
+  announced: Map<string, string>;
 };
 
 /**
@@ -35,16 +38,18 @@ export function fleetToasts(
   known: ReadonlyMap<string, string> | undefined,
   rows: readonly FleetRow[],
 ): FleetToastRound {
-  const states = new Map<string, string>();
+  const announced = new Map<string, string>();
   const toasts: FleetToast[] = [];
   for (const row of rows) {
-    states.set(row.id, row.state);
-    if (known === undefined) continue;
-    if (known.get(row.id) === row.state) continue;
-    if (!ANNOUNCED_STATES.has(row.state)) continue;
-    toasts.push({ id: row.id, text: fleetToastText(row) });
+    const last = known?.get(row.id);
+    if (!ANNOUNCED_STATES.has(row.state) || last === row.state) {
+      if (last !== undefined) announced.set(row.id, last);
+      continue;
+    }
+    announced.set(row.id, row.state);
+    if (known !== undefined) toasts.push({ id: row.id, text: fleetToastText(row) });
   }
-  return { toasts, states };
+  return { toasts, announced };
 }
 
 /** What one notice says: the outcome, and the PR when the task has one to review. */
