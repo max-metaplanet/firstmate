@@ -21,9 +21,13 @@ import {
 const sessionStart = { cwd: "/work", surface: "terminal" as const, isInteractive: true };
 
 describe("activation", () => {
-  async function expectInert($: Engine, on: Parameters<typeof world>[0], functionHooks: string | undefined) {
+  // The world's own default is the active `FM_CALM_ENABLED=1` with no legacy alias set,
+  // so every other suite below exercises the firstmate-owned flag.
+  type Flags = { calmEnabled?: string | undefined; legacyFunctionHooks?: string | undefined };
+
+  async function expectInert($: Engine, on: Parameters<typeof world>[0], flags: Flags) {
     const { clock, journal } = world(on, {
-      functionHooks,
+      ...flags,
       preference: "on\n",
       messages: [{ role: "assistant", text: "Working", toolUses: [{ name: "Bash" }] }],
     });
@@ -47,12 +51,42 @@ describe("activation", () => {
     expect(journal.configLists).toBe(0);
   }
 
-  test("is fully inert when the function-hooks opt-in is absent", async ($, on) => {
-    await expectInert($, on, undefined);
+  // Active means the gate let the mod through: it serves /calm and draws the persisted
+  // Calm on, rather than passing every row to the engine.
+  async function expectActive($: Engine, on: Parameters<typeof world>[0], flags: Flags) {
+    const { journal } = world(on, { ...flags, preference: "on\n" });
+    await $.session.start(sessionStart);
+    expect(journal.commands).toEqual(["calm"]);
+    expect(isHidden(await $.ui.render(toolUse()))).toBe(true);
+    expect(isHidden(await $.ui.render(toolResult()))).toBe(true);
+  }
+
+  test("activates on the firstmate flag alone", async ($, on) => {
+    await expectActive($, on, { calmEnabled: "1" });
   });
 
-  test("is fully inert when the function-hooks opt-in is not exactly one", async ($, on) => {
-    await expectInert($, on, "true");
+  test("is fully inert when neither the firstmate flag nor the deprecated alias is set", async ($, on) => {
+    await expectInert($, on, { calmEnabled: undefined });
+  });
+
+  test("is fully inert when the firstmate flag is not exactly one", async ($, on) => {
+    await expectInert($, on, { calmEnabled: "true" });
+  });
+
+  test("activates on the deprecated alias alone, so an unmigrated session keeps Calm", async ($, on) => {
+    await expectActive($, on, { calmEnabled: undefined, legacyFunctionHooks: "1" });
+  });
+
+  test("reads an empty firstmate flag as unset, so the deprecated alias still decides", async ($, on) => {
+    await expectActive($, on, { calmEnabled: "", legacyFunctionHooks: "1" });
+  });
+
+  test("lets the firstmate flag override the deprecated alias when the two disagree", async ($, on) => {
+    await expectInert($, on, { calmEnabled: "0", legacyFunctionHooks: "1" });
+  });
+
+  test("is fully inert when only the deprecated alias is set to a value other than one", async ($, on) => {
+    await expectInert($, on, { calmEnabled: undefined, legacyFunctionHooks: "true" });
   });
 
   test("registers /calm at session start and stays a pass-through while off", async ($, on) => {

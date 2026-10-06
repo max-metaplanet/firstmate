@@ -8,8 +8,10 @@
 # guard runs by default wherever `claude` is installed; the portable checks that need
 # no Claude Code binary live in tests/fm-calm-claude-mod.test.sh.
 #
-# The early-access function-hooks surface is default-off; the flag is set on this
-# test's own processes only and never written into any settings file.
+# Neither the mod's own `FM_CALM_ENABLED` gate nor its deprecated
+# `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS` alias is needed here: `claude plugin validate`
+# only scans the module, and each plugin test suite mocks its own environment, so this
+# guard exports neither name and never writes one into a settings file.
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -37,7 +39,7 @@ expect_in_report() {
 test_validate_strict() {
   local path report
   for path in "$MOD" "$AUTOLOAD_PATH"; do
-    if ! report=$(CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1 claude plugin validate --strict "$path" 2>&1); then
+    if ! report=$(claude plugin validate --strict "$path" 2>&1); then
       printf '%s\n' "$report" >&2
       fail "Claude Code $CLAUDE_VERSION refused the Calm mod at $path under strict validation"
     fi
@@ -50,7 +52,7 @@ test_validate_strict() {
     expect_in_report "$report" "ui.render{component=UserMessage}" "the scan of $path does not hook user rows"
     expect_in_report "$report" "ui.render{component=AssistantMessage}" "the scan of $path does not hook assistant rows"
     expect_in_report "$report" "command.run{command=calm}" "the scan of $path does not serve /calm"
-    expect_in_report "$report" "env reads: CLAUDE_CODE_ENABLE_FUNCTION_HOOKS, FM_CONFIG_OVERRIDE, FM_HOME, FM_ROOT_OVERRIDE" "the scan of $path reads a different environment"
+    expect_in_report "$report" "env reads: CLAUDE_CODE_ENABLE_FUNCTION_HOOKS, FM_CALM_ENABLED, FM_CONFIG_OVERRIDE, FM_HOME, FM_ROOT_OVERRIDE" "the scan of $path reads a different environment"
     expect_in_report "$report" "env writes: nothing" "the scan of $path writes the environment"
     case "$report" in
       *"process.run"*|*"http.fetch"*|*"env.set"*|*"prompt."*|*"tool.call"*)
@@ -64,7 +66,7 @@ test_validate_strict() {
 
 test_plugin_suites() {
   local report
-  if ! report=$(cd "$TMP_ROOT" && CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1 claude plugin test "$MOD" 2>&1); then
+  if ! report=$(cd "$TMP_ROOT" && claude plugin test "$MOD" 2>&1); then
     printf '%s\n' "$report" >&2
     fail "Claude Code $CLAUDE_VERSION failed the Calm mod's plugin test suites"
   fi
@@ -76,7 +78,7 @@ test_plugin_suites() {
     printf '%s\n' "$report" >&2
     fail "Claude Code $CLAUDE_VERSION reported Calm mod plugin test failures"
   }
-  pass "Claude Code $CLAUDE_VERSION runs the Calm mod's plugin test suites clean: persisted toggle, hidden rows, working notes, and the clock-driven working ship"
+  pass "Claude Code $CLAUDE_VERSION runs the Calm mod's plugin test suites clean: the FM_CALM_ENABLED gate and its deprecated alias, the persisted toggle, hidden rows, working notes, and the clock-driven working ship"
 }
 
 test_validate_strict

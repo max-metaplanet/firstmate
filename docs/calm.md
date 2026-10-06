@@ -1,7 +1,7 @@
 # Calm mode
 
 Calm is Firstmate's conversation-only transcript presentation toggle.
-It is fully supported on Pi, and available on Claude Code behind that harness's default-off early-access function-hooks flag, as the [Claude Code](#claude-code) section below describes.
+It is fully supported on Pi, and available on Claude Code behind the mod's own `FM_CALM_ENABLED` opt-in, as the [Claude Code](#claude-code) section below describes.
 It is off by default, and the last `/calm` choice persists for the effective Firstmate home across session starts and resumes on either harness, through the one shared preference file [`configuration.md`](configuration.md#calm-preference-configcalm) owns.
 Across both harnesses, Calm evaluates each settled assistant text block from a model step that stopped to call tools, or exhausted its token limit while carrying tool calls.
 It hides a block only when its raw text contains no newline and its trimmed length is below `CALM_PRESERVE_MIN_CHARS` (240); a newline or at least 240 trimmed characters preserves the block as substantive captain-facing content, while streaming text and the genuine reply that ends a response remain visible.
@@ -66,11 +66,15 @@ FM_PI_LIVE_E2E=1 tests/fm-pi-primary-live-e2e.test.sh
 ## Claude Code
 
 Calm on Claude Code is the `firstmate-calm` mod under `.claude/mods/firstmate-calm`: a Claude Code plugin whose whole behavior lives in one function-hooks module.
-Claude Code's early-access function-hooks surface is off by default and can load modules through its rollout flag or per session with `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`; the mod independently requires that environment variable to equal `1` before doing anything.
-Firstmate never sets that flag in any project or user settings; enabling it is each captain's own explicit opt-in, and without that exact value the mod is a complete no-op even if Claude Code's rollout flag loads the module: there is no `/calm` command, no preference or transcript read, no timer, and every drawing stays exactly as Claude Code draws it, whatever `config/calm` says.
+Claude Code loads hooks modules on its own terms, so Calm carries its own gate: the mod requires the environment variable `FM_CALM_ENABLED` to equal `1` before doing anything.
+Firstmate never sets that variable in any project or user settings; enabling it is each captain's own explicit opt-in, and without it the mod is a complete no-op even though Claude Code loads the module: there is no `/calm` command, no preference or transcript read, no timer, and every drawing stays exactly as Claude Code draws it, whatever `config/calm` says.
+`FM_CALM_ENABLED` is the only switch for whether the mod runs at all, while `config/calm` stays the shared cross-harness choice `/calm` toggles; the two are not interchangeable, because the gate must be decided with no file read at all and `config/calm` is also Pi's preference, where Calm needs no gate.
+`CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1` is still read as a deprecated alias, so a session that carries only that older name keeps Calm rather than silently losing it; move to the new name by exporting `FM_CALM_ENABLED=1` wherever that variable was set.
+The alias is deprecated because Claude Code 2.1.287 and later ignore it and its own documentation asks for it to be removed, so a captain tidying it away would otherwise turn Calm off with no error anywhere.
+When the two disagree, `FM_CALM_ENABLED` decides alone: it is consulted first and only an unset or empty value falls back to the alias, so `FM_CALM_ENABLED=0` deactivates Calm even where the alias is still exported.
 The trusted project auto-loads the mod through the `.claude/skills/firstmate-calm` entry (a symlink into `.claude/mods`), so no `--plugin-dir` or marketplace install is needed.
 
-With the flag on, the mod registers `/calm`, which toggles the same per-home preference Pi's `/calm` uses, so one choice applies on both harnesses.
+With the gate on, the mod registers `/calm`, which toggles the same per-home preference Pi's `/calm` uses, so one choice applies on both harnesses.
 The toggle answers with a transient "Calm on" or "Calm off" notice under the prompt rather than a transcript row, and a preference that cannot be written leaves the current choice unchanged and says so in that notice.
 While Calm is on, the stock working row (`Sauteing... (12s · 300 tokens)`) becomes the same two-row sailboat Pi draws, from the same shared sprite geometry: it fills the row inside the transcript margin, repaints on the boat's 220ms cadence with the hull moving every 880ms, reflows on resize, and appears and disappears exactly where the stock row would.
 On Claude Code the boat is painted in Claude Code's own theme colors rather than Pi's standard ANSI codes: every water cell takes the spinner blue of the active theme family (`#93a5ff` on a dark theme, `#5769f7` on a light one) and the whole boat, both sail halves, mast, and hull, takes the Claude orange of the stock spinner (`#d77757`).
@@ -81,9 +85,9 @@ Assistant text follows the shared per-block preservation rule above, including w
 Toggling Calm redraws every hooked row already on screen, so rows drawn before the toggle hide or restore retroactively, and the preference is read before the first row draws.
 Nothing is rewritten: hidden rows remain in the message, model context, session storage, and exports, and the mod never touches tool execution, prompts, or the stored transcript.
 
-Bounds of the Claude Code support, each recorded with evidence in [`calm-mode-feasibility.md`](calm-mode-feasibility.md#2026-09-15-claude-code-21272-mods-feasibility-and-the-shipped-mod):
+Bounds of the Claude Code support, each recorded with evidence in [`calm-mode-feasibility.md`](calm-mode-feasibility.md#2026-09-15-claude-code-21272-mods-feasibility-and-the-shipped-mod), whose [2026-10-06 record](calm-mode-feasibility.md#2026-10-06-claude-code-21291-activation-gate-rename) owns the current surface state and the activation gate:
 
-- The function-hooks surface is early access and default-off, and Claude Code states that its API may change between releases without notice; the mod is verified on Claude Code 2.1.272 and refuses nothing newer.
+- The function-hooks surface the mod draws through states in its own generated declarations that its API may change between releases without notice; the mod is verified on Claude Code 2.1.291, refuses nothing newer, and pins no version.
 - On the main-screen layout (not the fullscreen alternate screen), a toggle redraws the live screen by clearing and reprinting it, and the terminal's own scrollback keeps the earlier rendering above it; the fullscreen layout has no such stale copy.
 - The sailboat is painted through Claude Code's Raster element, whose colors are RGB quantized to 256-color escapes rather than the standard 16-color ANSI codes Pi's widget emits.
 - The detailed transcript view (`ctrl+o`) keeps its per-message timestamp and model headers where hidden assistant rows sat, because those headers are not a hookable drawing.

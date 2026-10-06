@@ -44,8 +44,10 @@ export type WorldOptions = {
   preference?: string;
   /** Extra environment beside FM_HOME; pass `{}` with `home: undefined` to unset FM_HOME. */
   env?: Record<string, string>;
-  /** Function-hooks opt-in value; omitted options default to the active value `1`. */
-  functionHooks?: string | undefined;
+  /** The firstmate activation flag's value; omitted options default to the active value `1`. */
+  calmEnabled?: string | undefined;
+  /** The deprecated `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS` alias; omitted means unset. */
+  legacyFunctionHooks?: string | undefined;
   /** The Firstmate home FM_HOME names; undefined leaves FM_HOME unset. */
   home?: string | undefined;
   /** What `$.session.messages()` answers. */
@@ -59,11 +61,13 @@ export const STOCK_TEXT = "STOCK-DRAWING";
 
 export function world(on: On, options: WorldOptions = {}): World {
   const home = "home" in options ? options.home : HOME;
-  const functionHooks = "functionHooks" in options ? options.functionHooks : "1";
+  const calmEnabled = "calmEnabled" in options ? options.calmEnabled : "1";
+  const legacy = options.legacyFunctionHooks;
   mock.env(on, {
     ...(home === undefined ? {} : { FM_HOME: home }),
     ...(options.env ?? {}),
-    ...(functionHooks === undefined ? {} : { CLAUDE_CODE_ENABLE_FUNCTION_HOOKS: functionHooks }),
+    ...(calmEnabled === undefined ? {} : { FM_CALM_ENABLED: calmEnabled }),
+    ...(legacy === undefined ? {} : { CLAUDE_CODE_ENABLE_FUNCTION_HOOKS: legacy }),
   });
   const clock = mock.clock(on);
   const files = new Map<string, string>();
