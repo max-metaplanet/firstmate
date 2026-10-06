@@ -1,0 +1,33 @@
+ok - scout done: is not gated
+ok - unpushed ship done: is refused
+ok - no-mistakes pre-validation done: is not gated
+ok - named head on a remote-tracking ref is accepted
+ok - a moved remote branch that lacks the named head is refused
+ok - a 40-hex token in the note is not the named head
+ok - a recorded merged PR satisfies the gate after prune
+ok - the merged-PR short-circuit applies only to the recorded PR the done line names
+ok - a forge-recorded head for the named PR is accepted without a local object
+ok - a direct-PR recorded head does not cover a later unpushed commit
+ok - no-mistakes CI-ready done: with extra text is gated
+ok - keyed and spaced ship done: lines are gated
+ok - local-only linked named branch is reachable from the project clone
+ok - local-only detached HEAD only in the disposable copy is refused
+ok - standalone local-only done: requires the named head in the project clone
+ok - non-done lines are not gated
+ok - fenced and indented Captain lines are not authorized intent
+ok - PR-based DoD draft check uses gh-axi
+ok - promotion keeps a scout's recorded base branch and refuses local-only for it
+ok - worker role names the skill and its fallback skill file
+ok - a direct-PR PR on the fork's parent repository is refused
+ok - a direct-PR PR on the fork's own origin is accepted
+ok - a plain clone's direct-PR PR is bound to its own origin
+ok - a wrong-repository PR is refused before the recorded-PR path
+ok - a direct-PR origin through an SSH alias accepts its own PR only
+ok - the origin binding covers direct-PR forge origins only
+ok - a pushed head is accepted through a narrowed remote.origin.fetch
+ok - a head origin never received is still refused, with safe-ref guidance
+ok - a hostile remote ref name is read as data, not run
+ok - an origin that cannot be read keeps the refusal rather than accepting
+ok - a stalled origin read is cut off by the gate's bound
+ok - local-only keeps its project-heads rule and reads no remote
+all fm-dod-lib tests passed
