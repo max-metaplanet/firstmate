@@ -38,6 +38,8 @@ export type World = {
   failBoard: (exitCode: number) => void;
   /** Only the reads whose argv asked for a refresh, so a cached read is not counted. */
   refreshingRuns: () => string[][];
+  /** Holds every seat read from now on in flight until the returned release is called. */
+  holdBoard: () => () => void;
 };
 
 export type WorldOptions = {
@@ -120,9 +122,11 @@ export function world(on: On, options: WorldOptions = {}): World {
   const journal: Journal = { commands: [], runs: [], invalidations: [], opens: [], stock: [] };
   let stdout = options.board ?? FIXTURE_BOARD;
   let exitCode = 0;
+  let held: Promise<void> | undefined;
 
   on("process.run", async (_$, e) => {
     journal.runs.push([...e.argv]);
+    if (held !== undefined) await held;
     return { value: { exitCode, stdout: exitCode === 0 ? stdout : "", stderr: "", isStdoutTruncated: false, isStderrTruncated: false } };
   });
   on("command.register", async (_$, e) => {
@@ -155,6 +159,16 @@ export function world(on: On, options: WorldOptions = {}): World {
       exitCode = code;
     },
     refreshingRuns: () => journal.runs.filter((argv) => !argv.includes("--cached-only")),
+    holdBoard: () => {
+      let release = () => {};
+      held = new Promise<void>((resolve) => {
+        release = () => {
+          held = undefined;
+          resolve();
+        };
+      });
+      return release;
+    },
   };
 }
 

@@ -311,18 +311,46 @@ describe("the pane's Refresh", () => {
   });
 
   test("never reaches the quota endpoint, even once the live interval has elapsed", async ($, on) => {
-    const { clock, refreshingRuns } = world(on, { refreshSeconds: "600" });
+    // A 630s interval elapses between the timer's ticks at 600s and 660s, so a press in
+    // that gap meets an elapsed interval with no tick of its own to blame.
+    const { clock, journal, refreshingRuns } = world(on, { refreshSeconds: "630" });
     await $.session.start(SESSION_START);
     await clock.settle();
     for (let count = 0; count < 5; count += 1) {
       await pressRefresh($);
       await clock.settle();
     }
-    await clock.advance(599_000);
+    await clock.advance(640_000);
     expect(refreshingRuns()).toEqual([]);
+    expect(textOf(await $.ui.render({ ...PANE, plugin: PLUGIN }))).toContain("a live refresh is due");
+    const before = journal.runs.length;
     await pressRefresh($);
     await clock.settle();
+    expect(journal.runs.length).toBe(before + 1);
     expect(refreshingRuns()).toEqual([]);
+    // The timer's own tick is what refreshes, once.
+    await clock.advance(20_000);
+    expect(refreshingRuns().length).toBe(1);
+  });
+
+  test("does not spend the live refresh when the timer fires during its cached read", async ($, on) => {
+    const { clock, holdBoard, refreshingRuns } = world(on, { refreshSeconds: "600" });
+    await $.session.start(SESSION_START);
+    await clock.settle();
+    await clock.advance(540_000);
+    const release = holdBoard();
+    await pressRefresh($);
+    // The tick at 600s finds the interval elapsed while the cached read is still running.
+    await clock.advance(60_000);
+    expect(refreshingRuns()).toEqual([]);
+    release();
+    await clock.settle();
+    expect(refreshingRuns().length).toBe(1);
+    // That refresh claimed the interval, so the next one waits its full length.
+    await clock.advance(540_000);
+    expect(refreshingRuns().length).toBe(1);
+    await clock.advance(60_000);
+    expect(refreshingRuns().length).toBe(2);
   });
 });
 

@@ -77,6 +77,7 @@ let board: SeatBoard | undefined;
 let boardReadAtMs = 0;
 let boardError = "";
 let reading: Promise<void> | undefined;
+let readingRefreshing = false;
 let lastClaimedAtMs: number | undefined;
 
 /**
@@ -153,6 +154,7 @@ async function read($: EngineInterface, refreshing: boolean): Promise<void> {
  */
 function startRead($: EngineInterface, refreshing: boolean): void {
   if (reading !== undefined) return;
+  readingRefreshing = refreshing;
   reading = read($, refreshing).then(
     () => {
       reading = undefined;
@@ -176,13 +178,16 @@ async function tick($: EngineInterface): Promise<void> {
   // Every age on screen is derived from the clock, so a redraw is what moves it.
   if (board !== undefined) $.ui.invalidate("ui.render");
   const decision = refreshDecision(
-    { lastClaimedAtMs, inFlight: reading !== undefined },
+    { lastClaimedAtMs, inFlight: reading !== undefined && readingRefreshing },
     now,
     refreshEvery,
   );
   if (decision === "wait") return;
   lastClaimedAtMs = now;
   if (decision === "claim-only") return;
+  // A cached read in flight touches no network, so the refresh waits it out rather
+  // than being dropped and slipping a whole interval.
+  while (reading !== undefined && !readingRefreshing) await reading;
   startRead($, true);
 }
 
@@ -195,6 +200,7 @@ async function load($: EngineInterface, isInteractive: boolean): Promise<void> {
   boardReadAtMs = 0;
   boardError = "";
   reading = undefined;
+  readingRefreshing = false;
   // The gate opens one whole interval after the session starts, not on the first tick:
   // a session that has just read the cache has no reason to spend a quota call yet.
   lastClaimedAtMs = await $.clock.now();
