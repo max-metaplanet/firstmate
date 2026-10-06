@@ -199,15 +199,13 @@ check(view.fleetFreshness(at({ snapshot: snap([]), snapshotAtMs: 1000, nowMs: 10
 check(view.fleetFreshness(at({ snapshot: snap([]), snapshotAtMs: 0, nowMs: view.FLEET_STALE_AFTER_MS + 1 })).kind === "stale", "a reading past the stale bound is not stale");
 check(view.fleetFreshness(at({ snapshot: snap([]), snapshotAtMs: 0, nowMs: view.FLEET_STALE_AFTER_MS })).kind === "fresh", "a reading at the stale bound is already stale");
 
-// The band: silent only when it can say that nothing waits.
+// The band: silent whenever nothing waits, even over a stale or failed reading.
 check(view.fleetBand(at({ snapshot: snap([row({})]), snapshotAtMs: 1000, nowMs: 1000 })) === undefined, "the band drew with nothing waiting");
 check(view.fleetBand(at({})) === undefined, "the band drew before the first reading landed");
 const asking = view.fleetBand(at({ snapshot: snap([row({ id: "a", state: "blocked" })]), snapshotAtMs: 1000, nowMs: 1000 }));
 check(asking.tone === "red" && asking.text.includes("1 waiting on you: a (blocker)"), \`band said \${JSON.stringify(asking)}\`);
-const unavailable = view.fleetBand(at({ error: "boom" }));
-check(unavailable.tone === "yellow" && unavailable.text.includes("fleet unavailable: boom"), \`band said \${JSON.stringify(unavailable)}\`);
-const stale = view.fleetBand(at({ snapshot: snap([row({})]), snapshotAtMs: 0, nowMs: 600_000 }));
-check(stale.tone === "yellow" && stale.text.includes("old: no fresh reading"), \`band said \${JSON.stringify(stale)}\`);
+check(view.fleetBand(at({ error: "boom" })) === undefined, "the band drew over an unavailable reading with nothing waiting");
+check(view.fleetBand(at({ snapshot: snap([row({})]), snapshotAtMs: 0, nowMs: 600_000 })) === undefined, "the band drew over a stale reading with nothing waiting");
 // A failed reading over a waiting fleet still names the waiting, and says it is stale.
 const both = view.fleetBand(at({ snapshot: snap([row({ id: "a", state: "blocked" })]), snapshotAtMs: 1000, nowMs: 1000, error: "boom" }));
 check(both.text.includes("a (blocker)") && both.text.includes("boom"), \`band said \${JSON.stringify(both)}\`);

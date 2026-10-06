@@ -284,13 +284,27 @@ describe("the band", () => {
     expect(drawn).not.toContain("later-call");
   });
 
-  test("says the fleet cannot be read rather than drawing a quiet all-clear", async ($, on) => {
-    const { clock } = world(on, { reading: { exitCode: 2, stdout: "", stderr: "boom" } });
+  test("stays silent over an unreadable fleet with nothing waiting, and says so once in a notice", async ($, on) => {
+    const { clock, journal, answer } = world(on, { reading: { exitCode: 2, stdout: "", stderr: "boom" } });
     await $.session.start(SESSION_START);
     await clock.advance(0);
-    const drawn = flatten(await $.ui.render(band()));
-    expect(drawn).toMatch(/fleet unavailable/);
+    const drawn = await $.ui.render(band());
     expect(isStock(drawn)).toBe(true);
+    expect(flatten(drawn)).not.toMatch(/fleet unavailable/);
+    expect(flatten(await $.ui.render(pane()))).toMatch(/fleet unavailable: the fleet reading exited 2: boom/);
+    expect(journal.toasts).toEqual(["fleet unavailable: the fleet reading exited 2: boom"]);
+    await clock.advance(60_000);
+    await clock.advance(60_000);
+    expect(journal.toasts).toHaveLength(1);
+    answer({ exitCode: 0, stdout: snapshotJson(), stderr: "" });
+    await clock.advance(60_000);
+    answer({ reject: "timed out after 90000ms" });
+    await clock.advance(60_000);
+    expect(journal.toasts).toEqual([
+      "fleet unavailable: the fleet reading exited 2: boom",
+      "fleet unavailable: firstmate-fleet: $.process.run: timed out after 90000ms",
+    ]);
+    expect(isStock(await $.ui.render(band()))).toBe(true);
   });
 });
 
@@ -379,6 +393,23 @@ describe("notices", () => {
 });
 
 describe("/fleet", () => {
+  test("joins the clock's reading rather than starting a second", async ($, on) => {
+    const { clock, journal, hold: holdRuns } = world(on);
+    await $.session.start(SESSION_START_HEADLESS);
+    const held = holdRuns();
+    await clock.advance(60_000);
+    expect(journal.runs).toHaveLength(1);
+    let answered: string | undefined;
+    void $.command.run(fleetCommand()).then((result) => {
+      answered = result.text;
+    });
+    await clock.advance(0);
+    expect(journal.runs).toHaveLength(1);
+    await held.release();
+    await clock.advance(0);
+    expect(answered).toContain("fleet (2):");
+  });
+
   test("opens the pane and prints no transcript row where the session can draw", async ($, on) => {
     const { clock, journal } = world(on);
     await $.session.start(SESSION_START);
@@ -417,12 +448,12 @@ describe("/fleet", () => {
     }
   });
 
-  test("joins the reading already in flight when asked before the first one lands", async ($, on) => {
+  test("takes the first reading itself where the session cannot draw", async ($, on) => {
     const { clock, journal, hold: holdRuns } = world(on);
     const held = holdRuns();
-    void $.session.start(SESSION_START_HEADLESS);
+    await $.session.start(SESSION_START_HEADLESS);
     await clock.advance(0);
-    expect(journal.runs).toHaveLength(1);
+    expect(journal.runs).toHaveLength(0);
     let answered: string | undefined;
     void $.command.run(fleetCommand()).then((result) => {
       answered = result.text;

@@ -48,16 +48,18 @@ Whether the session can draw is decided from the session start's own `isInteract
 ## How the reading works
 
 The one data source is `bin/fm-fleet-snapshot.sh --json`, measured at 17.7-21.6s against a 10s budget for one hook.
-So it runs only from a 60s timer and one un-awaited reading at session start, both behind a single in-flight promise, and a drawing hook never starts it and only ever draws the cached result.
+So it runs only from a 60s timer, one un-awaited reading at the start of a session that can draw, and the `/fleet` text answer's own reading in a session that cannot, all behind a single in-flight promise, and a drawing hook never starts it and only ever draws the cached result.
 The in-flight promise is not an optimization: two overlapping runs of that command were measured at 72s wall where one run takes 18s.
-`/fleet` asked before the first reading has landed joins the reading already under way rather than starting a second.
+`/fleet` asked as text before any reading has landed takes that reading itself, inside its own `$.process.run`, which the hook budget does not count.
+If the timer's reading is already under way it joins that one rather than starting a second, waits only as long as the hook budget allows, and otherwise answers that the fleet is still being read, never with an empty fleet.
 
 A reading that fails, times out, or is not this snapshot's schema is never drawn as a healthy fleet with nothing in it:
 
 - With no earlier reading to fall back on, every surface says the fleet is unavailable and why.
 - With an earlier reading, its rows stay and are marked stale with their age and the reason.
 - A reading more than three refresh periods old is stale even when nothing has failed.
-- The band draws in all three cases, because silence there would claim that nothing waits.
+- The band stays silent in all three cases unless something waits; when something does, its line carries the age and reason.
+- So that a broken reader never reads as a quiet all-clear, the pane keeps the unavailable or stale marker with its reason, and one notice fires when readings start failing, not repeated while they keep failing, and owed again only after a good reading has landed.
 
 ## Bounds
 

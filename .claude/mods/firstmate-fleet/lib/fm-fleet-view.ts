@@ -277,17 +277,16 @@ export function fleetFreshnessLine(freshness: FleetFreshness): string {
 }
 
 export type FleetBand = {
-  tone: "red" | "yellow";
+  tone: "red";
   text: string;
 };
 
 /**
  * The band's own line, or undefined when the band must draw nothing at all.
  *
- * Nothing waiting and a fresh reading is the quiet case, and quiet means no row: an
- * always-present band would make the one case that matters invisible. A reading that
- * cannot answer the question still draws, because silence there would be a claim that
- * nothing waits.
+ * Nothing waiting is the quiet case, and quiet means no row, even over a stale or failed
+ * reading: an always-present band would make the one case that matters invisible. A
+ * broken reader is said by the pane and by one notice instead.
  */
 export function fleetBand(view: FleetView): FleetBand | undefined {
   const freshness = fleetFreshness(view);
@@ -300,9 +299,6 @@ export function fleetBand(view: FleetView): FleetBand | undefined {
       ? ""
       : ` · ${fleetFreshnessLine(freshness)}`;
     return { tone: "red", text: `${waiting.length} waiting on you: ${named}${suffix}` };
-  }
-  if (freshness.kind === "stale" || freshness.kind === "unavailable") {
-    return { tone: "yellow", text: fleetFreshnessLine(freshness) };
   }
   return undefined;
 }

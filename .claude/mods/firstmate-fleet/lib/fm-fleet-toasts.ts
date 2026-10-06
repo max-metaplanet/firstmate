@@ -52,6 +52,11 @@ export function fleetToasts(
   return { toasts, announced };
 }
 
+/** The one notice a reader that has stopped answering earns, until a reading lands again. */
+export function fleetOutageText(reason: string): string {
+  return `fleet unavailable: ${reason}`;
+}
+
 /** What one notice says: the outcome, and the PR when the task has one to review. */
 export function fleetToastText(row: FleetRow): string {
   if (row.state === "done") {

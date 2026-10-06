@@ -15,14 +15,16 @@
 //                decision, a merge, or a blocker - and nothing at all when the set is
 //                empty, so the one case that matters stays visible.
 //   notices      a transient line the moment a task first reaches done, blocked, or
-//                failed, never for a state the session already found on its first read.
+//                failed, never for a state the session already found on its first read,
+//                and one when the reader stops answering.
 //
 // The one data source is `bin/fm-fleet-snapshot.sh --json`, the only reader that
 // reconciles the append-only status EVENT log against liveness. It is measured at
 // 17.7-21.6s against a 10s hook budget, and two overlapping runs were measured at 72s
 // where one takes 18s. Both facts shape this file: the command runs only from the 60s
-// timer and one un-awaited read at session start, both behind a single in-flight
-// promise, and a `ui.render` hook never starts it and only ever draws the cache.
+// timer, one un-awaited read at the start of a session that can draw, and /fleet's own
+// read in one that cannot, all behind a single in-flight promise, and a `ui.render` hook
+// never starts it and only ever draws the cache.
 //
 // This file is the only place the engine interface `$` is touched. Every reading
 // decision - what a state word may claim, what waits on the captain, how a failed or
@@ -34,7 +36,7 @@
 // hook before `session.start`, so every activated hook awaits the load that resolves the
 // reading command and starts the clock. Whether the session can draw is the one fact
 // only `session.start` knows; it is kept in `$.state`, which a reload leaves alone.
-import type { EngineInterface, Register, RenderElement, RenderInput } from "claude-code";
+import type { EngineInterface, NextBudget, Register, RenderElement, RenderInput } from "claude-code";
 import { fleetActivationFromEnv } from "../lib/fm-fleet-activation.ts";
 import {
   fleetBand,
@@ -47,7 +49,7 @@ import {
   type FleetSnapshot,
   type FleetView,
 } from "../lib/fm-fleet-view.ts";
-import { fleetToasts } from "../lib/fm-fleet-toasts.ts";
+import { fleetOutageText, fleetToasts } from "../lib/fm-fleet-toasts.ts";
 
 /** The pane's id, and the slash command that opens it. */
 const FLEET_PANE = "fleet";
@@ -63,6 +65,9 @@ const FLEET_REFRESH_MS = 60_000;
  */
 const FLEET_SNAPSHOT_TIMEOUT_MS = 90_000;
 
+/** How much of its 10s budget the /fleet text answer keeps back to answer in. */
+const FLEET_TEXT_MARGIN_MS = 2_000;
+
 // One module environment holds one cached reading; a hot reload starts a fresh one.
 let activation: Promise<boolean> | undefined;
 let loading: Promise<void> | undefined;
@@ -75,6 +80,10 @@ let readError = "";
 let inFlight: Promise<void> | undefined;
 /** The state word last announced per task, or undefined before the first reading. */
 let announced: Map<string, string> | undefined;
+/** Whether the current run of failed readings has had its one notice. */
+let outageAnnounced = false;
+/** session.start's own isInteractive, or undefined before it has run in this module. */
+let drawable: boolean | undefined;
 let ticker: { cancel(): void } | undefined;
 
 async function readActivation($: EngineInterface): Promise<boolean> {
@@ -100,6 +109,16 @@ async function load($: EngineInterface): Promise<void> {
   ticker ??= $.clock.every(FLEET_REFRESH_MS, () => {
     void refresh($);
   });
+}
+
+/**
+ * Whether anything drawn is seen. The module's own copy outlives a /clear, which resets
+ * `$.state`; the `$.state` copy outlives a hot reload, which resets the module.
+ */
+async function sessionCanDraw($: EngineInterface): Promise<boolean> {
+  if (drawable !== undefined) return drawable;
+  const held = await $.state.get(canDraw).catch(() => undefined);
+  return held?.value === true;
 }
 
 /** Whether the mod is on, with the reading command and the clock in place when it is. */
@@ -153,7 +172,14 @@ async function readFleet($: EngineInterface): Promise<void> {
   if (typeof outcome === "string") {
     // The last good rows stay; the surfaces mark them stale with this reason.
     readError = outcome;
+    // The band stays silent when nothing waits, so a reader that stopped answering is
+    // said once here, and again only after a good reading has landed in between.
+    if (!outageAnnounced) {
+      outageAnnounced = true;
+      $.ui.toast(fleetOutageText(outcome));
+    }
   } else {
+    outageAnnounced = false;
     snapshot = outcome;
     readError = "";
     try {
@@ -192,6 +218,20 @@ async function refresh($: EngineInterface): Promise<void> {
   }
 }
 
+/**
+ * Wait for a reading the text answer can carry, inside this hook's budget.
+ *
+ * A reading this hook starts is its own `$.process.run`, which the budget does not count.
+ * Joining one the clock started is waiting on the module's own promise, which it does,
+ * so that wait ends short of the budget and the answer says the reading is under way.
+ */
+async function readForText($: EngineInterface, budget: NextBudget): Promise<void> {
+  if (inFlight === undefined) return refresh($);
+  const spareMs = budget.remainingMs - FLEET_TEXT_MARGIN_MS;
+  if (!Number.isFinite(spareMs)) return refresh($);
+  await Promise.race([refresh($), $.clock.sleep(Math.max(0, spareMs)).catch(() => undefined)]);
+}
+
 function paneTree($: EngineInterface, e: RenderInput, fleet: FleetView): RenderElement {
   const { Box, Text, Button } = $.ui.resolve(e);
   const width = typeof e.props.bodyColumns === "number" ? e.props.bodyColumns : 80;
@@ -200,8 +240,10 @@ function paneTree($: EngineInterface, e: RenderInput, fleet: FleetView): RenderE
   const band = fleetBand(fleet);
   if (band !== undefined) {
     children.push(Text({ color: band.tone, wrap: "truncate-end", children: [band.text] }));
-  } else if (freshness.kind !== "fresh") {
+  } else if (freshness.kind === "unread") {
     children.push(Text({ dimColor: true, children: [fleetFreshnessLine(freshness)] }));
+  } else if (freshness.kind !== "fresh") {
+    children.push(Text({ color: "yellow", wrap: "truncate-end", children: [fleetFreshnessLine(freshness)] }));
   }
   for (const line of fleetLines(fleet)) {
     const color = line.tone === "plain" ? undefined : line.tone;
@@ -249,9 +291,11 @@ export const register: Register = (on) => {
     if (!(await isReady($))) return next(e);
     // `$.ui.open` answers placed even in a `-p` run, where nothing can draw, so the
     // only sound test of "will a person see this" is the session's own isInteractive.
-    await $.state.set(canDraw, e.isInteractive === true).catch(() => undefined);
-    // Un-awaited: the session must not wait out a 17.7-21.6s command to start.
-    void refresh($);
+    drawable = e.isInteractive === true;
+    await $.state.set(canDraw, drawable).catch(() => undefined);
+    // Un-awaited: the session must not wait out a 17.7-21.6s command to start. A session
+    // that cannot draw has nothing to show it in, so /fleet takes that reading itself.
+    if (drawable) void refresh($);
     // Last, and guarded: a taken name throws and would take the rest of this hook with
     // it, leaving the timer above unstarted.
     try {
@@ -267,13 +311,13 @@ export const register: Register = (on) => {
 
   on("command.run", { command: FLEET_PANE }, async ($, e, next) => {
     if (!(await isReady($))) return next(e);
-    if ((await $.state.get(canDraw)).value === true) {
+    if (await sessionCanDraw($)) {
       await $.ui.open({ id: FLEET_PANE, title: "Fleet", focus: true, closeOnEscape: true });
       return {};
     }
     // Nothing drawn is seen here, so the same rows go back as text. This is also the
     // one place a reading may be awaited: the captain asked for it and is waiting.
-    if (snapshot === undefined && readError === "") await refresh($);
+    if (snapshot === undefined && readError === "") await readForText($, next.budget);
     return { text: fleetTextReport(await view($)) };
   });
 
