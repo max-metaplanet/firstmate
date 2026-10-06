@@ -224,9 +224,9 @@ async function refresh($: EngineInterface): Promise<void> {
  *
  * A reading this hook starts is its own `$.process.run`, which the budget does not count.
  * One the clock started is joined, never run a second time, and looked for again after
- * each short `$.clock.sleep` until it lands. The loop ends at the reading's own timeout,
- * or once the budget, read afresh each pass, nears its end, whichever comes first; the
- * answer then says the reading is under way.
+ * each short `$.clock.sleep` until it lands. Those sleeps do count against the budget, yet
+ * `remainingMs` does not fall through them, so the loop sums its own sleeps against the
+ * budget it was handed and stops short of it; the answer then says the reading is under way.
  */
 async function readForText($: EngineInterface, budget: NextBudget): Promise<void> {
   if (inFlight === undefined) return refresh($);
@@ -234,9 +234,10 @@ async function readForText($: EngineInterface, budget: NextBudget): Promise<void
   void refresh($).then(() => {
     landed = true;
   });
+  const boundMs = budget.remainingMs - FLEET_TEXT_MARGIN_MS;
   let waitedMs = 0;
-  while (!landed && waitedMs < FLEET_SNAPSHOT_TIMEOUT_MS) {
-    const spareMs = budget.remainingMs - FLEET_TEXT_MARGIN_MS;
+  while (!landed) {
+    const spareMs = Math.min(boundMs - waitedMs, budget.remainingMs - FLEET_TEXT_MARGIN_MS);
     if (spareMs <= 0) return;
     const stepMs = Math.min(FLEET_TEXT_POLL_MS, spareMs);
     await $.clock.sleep(stepMs).catch(() => undefined);

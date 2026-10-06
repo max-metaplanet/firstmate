@@ -400,7 +400,7 @@ describe("notices", () => {
 });
 
 describe("/fleet", () => {
-  test("keeps waiting on the clock's reading past a few seconds and answers with its rows", async ($, on) => {
+  test("keeps waiting on the clock's reading across its sleeps and answers with its rows", async ($, on) => {
     const { clock, journal, hold: holdRuns } = world(on);
     await $.session.start(SESSION_START_HEADLESS);
     const held = holdRuns();
@@ -409,7 +409,7 @@ describe("/fleet", () => {
     void $.command.run(fleetCommand()).then((result) => {
       answered = result.text;
     });
-    for (let second = 0; second < 15; second += 1) await clock.advance(1_000);
+    for (let second = 0; second < 6; second += 1) await clock.advance(1_000);
     expect(answered).toBeUndefined();
     await held.release();
     await clock.advance(500);
@@ -418,7 +418,7 @@ describe("/fleet", () => {
     expect(journal.runs).toHaveLength(1);
   });
 
-  test("answers that the fleet is still being read once the wait's bound elapses", async ($, on) => {
+  test("answers that the fleet is still being read before its sleeps outrun the hook budget", async ($, on) => {
     const { clock, journal, hold: holdRuns } = world(on);
     await $.session.start(SESSION_START_HEADLESS);
     holdRuns();
@@ -427,7 +427,8 @@ describe("/fleet", () => {
     void $.command.run(fleetCommand()).then((result) => {
       answered = result.text;
     });
-    for (let second = 0; second < 95; second += 1) await clock.advance(1_000);
+    // The engine cuts the hook at 10s of wall time, sleeps included.
+    for (let step = 0; step < 19; step += 1) await clock.advance(500);
     expect(answered).toContain("reading the fleet…");
     expect(answered).not.toContain("fleet (0)");
     expect(journal.runs).toHaveLength(1);

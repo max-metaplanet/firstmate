@@ -52,7 +52,7 @@ So it runs only from a 60s timer, one un-awaited reading at the start of a sessi
 The in-flight promise is not an optimization: two overlapping runs of that command were measured at 72s wall where one run takes 18s.
 `/fleet` asked as text before any reading has landed takes that reading itself, inside its own `$.process.run`, which the hook budget does not count.
 If the timer's reading is already under way it joins that one rather than starting a second, and looks again every half second until it lands.
-That wait is bounded by the reading's own timeout and by the hook budget, read afresh on each pass; past either bound it answers that the fleet is still being read, never with an empty fleet.
+Those sleeps count against the hook budget even though its `remainingMs` does not fall through them, so the wait sums its own sleeps and stops 2s short of the budget it was handed; past that bound it answers that the fleet is still being read, never with an empty fleet.
 
 A reading that fails, times out, or is not this snapshot's schema is never drawn as a healthy fleet with nothing in it:
 
