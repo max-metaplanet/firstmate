@@ -1473,7 +1473,7 @@ test_direct_pr_dod_binds_the_pr_target_to_origin() {
     assert_grep 'git symbolic-ref --quiet --short refs/remotes/origin/HEAD' "$brief" \
       "$mode: the base branch must be resolved from origin"
     # shellcheck disable=SC2016  # single quotes are deliberate: the backticks must stay literal
-    assert_grep 'gh-axi pr create -R <owner>/<repo> --base <default branch>' "$brief" \
+    assert_grep 'gh-axi pr create -R <owner>/<repo> --base <base branch>' "$brief" \
       "$mode: the create must name the repository and base branch explicitly"
     assert_grep "defaults to a FORK's parent repository" "$brief" \
       "$mode: the brief must say why an unnamed repository is unsafe"
