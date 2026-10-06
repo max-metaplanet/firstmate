@@ -41,61 +41,23 @@
 # invocations in the core bin/ and bin/backends/ scripts so every configured
 # backlog backend follows the same tasks-axi lifecycle path.
 #
-# Lint defaults to two concurrency-limited workers over two stable logical
-# shards, and each worker runs ONE canonical root per ShellCheck process, so a
-# run holds at most JOBS concurrent ShellCheck processes. Diagnostics replay
-# in stable shard/root order. FM_LINT_JOBS=1 changes concurrency, not diagnostics
-# or exit selection.
-# --partition 1of2/2of2 splits the entire canonical inventory across
-# two CI runners, each with those same concurrency-limited workers.
-# Partitions are complete, disjoint, and byte-weight balanced; --list-files
-# exposes their actual roots.
-# Partition mode starts with full source-aware analysis, never changed-only
-# or --fast, and does not accept explicit paths. Each partition also runs
-# workflow lint and backend-purity checks, keeping either invocation
-# independently useful.
-#
-# With FM_LINT_REQUIRE_BOUNDS=1, which CI sets, every per-root ShellCheck
-# process runs under an enforced envelope: a wall deadline
-# (FM_LINT_ROOT_SECONDS, default 1200), a terminate-then-kill cleanup grace
-# (FM_LINT_ROOT_GRACE, default 5), and a per-process address-space limit
-# (FM_LINT_ROOT_MEMORY_KIB, default 12582912 = 12 GiB of virtual address
-# space per analysis process). The sizing rationale and RSS reduction threshold
-# live beside ROOT_MEMORY_KIB below. This is not a resident-memory ceiling;
-# check aggregate runner RSS in CI. The watchdog uses the shared
-# bin/fm-timeout-lib.sh group-kill pattern, so a deadline or an interrupt
-# removes the owned process group. Bounds mode proves the watchdog can
-# actually bound a probe command and that the host accepts the memory limit
-# BEFORE any root starts; when either check fails the run refuses with a
-# named error, so a required-bounds run never lints uncapped. Without
-# FM_LINT_REQUIRE_BOUNDS (a local developer lint, where hosts like macOS
-# cannot apply the address-space limit at all) each root still runs in its
-# own ShellCheck process with identical diagnostics, just unbounded.
-#
-# If a source-following root exits with a memory failure, it is retried once
-# without --external-sources under the same memory limit and only the time
-# left in that root's original deadline; with under a second left, the
-# memory failure stands without a retry. A clean retry passes
-# with an explicit memory-fallback reason and warning; only the same
-# cross-file-dependent codes omitted in local no-source lint are excluded.
-# Other findings and failed retries still fail lint. The retry's diagnostics
-# replace the failed attempt's output; peak RSS is the maximum of both attempts.
-#
-# Per-root evidence is incremental: workers append begin/end records (root,
-# mode, shard, start, end, duration, final exit status, reason, peak RSS when
-# measured, and whether the final attempt followed sources) to a roots log
-# as each root completes, so a mid-run kill still leaves the completed record
-# and names the root in flight as begun-but-unfinished. With --telemetry the
-# log is retained at
-# <telemetry-without-.tsv>.roots.tsv (or <telemetry>.roots.tsv if there is no
-# .tsv suffix); otherwise it lives only in the
-# run's scratch dir. Reason values are ok, findings, memory-fallback,
-# timeout, memory, signal:<sig>, limit-unavailable, or error:<rc>.
-# Memory requires process-level evidence (a GHC exhaustion status or runtime
-# error on stderr), not an echoed source excerpt or an OOM phrase in a
-# filename. In partition mode begin/end
-# lines also stream to stderr, and an abnormal root end is always reported
-# there.
+# Lint defaults to two bounded workers over two stable logical shards, and each
+# worker runs ONE canonical root per ShellCheck process, so a default run holds at
+# most JOBS concurrent ShellCheck processes. Diagnostics replay in stable
+# shard/root order. FM_LINT_JOBS=1 changes concurrency, not diagnostics or exit
+# selection.
+# --partition <n>of<total> splits the entire canonical inventory across that
+# many CI runners. Partitions are complete, disjoint, and byte-weight balanced;
+# --list-files exposes their actual roots.
+# A partition always runs ONE ShellCheck at a time. ShellCheck sizes its heap to
+# the memory it can see rather than to a fixed per-root cost, so two workers
+# sharing a runner both expand toward the whole machine and can collide with its
+# OOM killer, while one worker expands into that same runner safely. Partition
+# count, not worker count, is therefore what bounds a partition's wall time, and
+# raising the CI matrix is the supported way to make partitions finish sooner.
+# Partition mode is always full source-aware analysis, never changed-only or
+# --fast, and does not accept explicit paths. Each partition also runs workflow
+# lint and backend-purity checks, keeping either invocation independently useful.
 #
 # Optional quiet telemetry writes one bounded TSV snapshot of content and source
 # graph identity, wall/CPU/RSS, shard load, and competing ShellCheck processes.
@@ -106,8 +68,8 @@
 #   fm-lint.sh                         lint the context-selected file set (see above)
 #   fm-lint.sh --fast [path]...       local lint with extended analysis disabled
 #   fm-lint.sh <path>...               lint explicit roots with the same config
-#   fm-lint.sh --jobs <1|2> [path]...  override concurrent worker count
-#   fm-lint.sh --partition <1of2|2of2> lint one canonical CI partition (see fallback above)
+#   fm-lint.sh --jobs <1|2> [path]...  override bounded worker count
+#   fm-lint.sh --partition <n>of<total>  lint one full-rigor canonical CI partition
 #   fm-lint.sh --telemetry <path> ...  write a quiet metrics snapshot
 #   fm-lint.sh --required-version      print the ShellCheck pin
 #   fm-lint.sh --list-files            print the file set that would be linted
