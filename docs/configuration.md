@@ -1072,6 +1072,7 @@ This section is the single owner of the canonical schema and its per-field seman
       "when": "<natural-language condition describing a kind of task>",
       "approval": "captain",
       "min_confidence": 0.85,
+      "path_force": "deployment-config",
       "floor": { "scope": "<quota-axi scope>", "min_percent": 20, "provider": "<quota-axi provider>" },
       "use": [
         { "harness": "<adapter>", "model": "<optional model>", "effort": "<low|medium|high|xhigh|max|ultra, optional>", "provider": "<optional quota-axi provider>", "floor": { "scope": "<quota-axi scope>", "min_percent": 50 } }
@@ -1097,10 +1098,13 @@ This section is the single owner of the canonical schema and its per-field seman
 
 **Fields applied only by typed resolution**
 
-Rule `approval`, `min_confidence`, and `floor`, and profile `provider` and `floor` are optional declarations that only [typed dispatch resolution](#typed-dispatch-resolution-env-typesafe_api_key) applies in code; without that opt-in they are inert, and firstmate's own intake reads them as ordinary hints.
+Rule `approval`, `min_confidence`, `path_force`, and `floor`, and profile `provider` and `floor` are optional declarations that only [typed dispatch resolution](#typed-dispatch-resolution-env-typesafe_api_key) applies in code; without that opt-in they are inert, and firstmate's own intake reads them as ordinary hints.
 The resolver supplies the fixed neutral Choice option `No listed rule applies to this task.` for work that matches no listed rule.
 
 - `approval` accepts only `"captain"` and means a task the rule matches is never dispatched from the tool's answer alone.
+- `path_force` accepts only `"deployment-config"` and marks the one rule that deployment-configuration work belongs to, so [typed dispatch resolution](#typed-dispatch-resolution-env-typesafe_api_key) can route that work by a path fact instead of by rule wording.
+- At most one rule may declare it, and the resolver finds that rule by the declaration rather than by its position, so homes whose rules sit in a different order route identically.
+- Path forcing does nothing until some rule declares `path_force`: a home that declares it on no rule keeps today's routing, and every brief, including one whose declared paths name deployment configuration, still goes to Jev.
 
 `min_confidence` is a number from 0 through 1.
 The rule's own probability in the answer must reach it, replacing the resolver's global 0.6 floor on the answer's confidence.
@@ -1116,7 +1120,7 @@ Set it high when a wrong pick is costly and low when the rule is a safe runner-u
 **Provider identifiers and mappings**
 
 A profile `provider` optionally names the quota-axi provider family whose rows apply to that profile; when present, profile and rule-floor provider IDs must match the strict whole-string pattern `^[a-z0-9]+(-[a-z0-9]+)*\z`.
-Bootstrap validates resolver-only `approval`, `min_confidence`, `floor`, and present `provider` values only while typed resolution is active; without the key those inert fields and the pre-existing verified-harness baseline preserve bootstrap behavior.
+Bootstrap validates resolver-only `approval`, `min_confidence`, `path_force`, `floor`, and present `provider` values only while typed resolution is active; without the key those inert fields and the pre-existing verified-harness baseline preserve bootstrap behavior.
 
 Typed resolution additively recognizes `gemini` because AGENTS.md section 4 verifies it for crewmate and scout dispatch.
 
@@ -1150,7 +1154,7 @@ See [`docs/examples/crew-dispatch.json`](examples/crew-dispatch.json) for a star
 - When the file exists, bootstrap validates it with `jq`.
 - Valid files stay silent by default; with `FM_BOOTSTRAP_VERBOSE_FACTS=1`, bootstrap emits `BOOTSTRAP_INFO: crew dispatch active config/crew-dispatch.json`, one `BOOTSTRAP_INFO:` fact per rule, and one fact for the optional default profile set.
 - Malformed JSON, malformed rules, an empty or malformed profile array, an unverified harness, or an effort value unsupported by that harness is reported as `CREW_DISPATCH: invalid config/crew-dispatch.json - ...`.
-- While typed resolution is active, malformed `approval`, `min_confidence`, `floor`, and present `provider` declarations receive the same diagnostic; without the key those inert declarations preserve the pre-existing bootstrap behavior.
+- While typed resolution is active, malformed `approval`, `min_confidence`, `path_force`, `floor`, and present `provider` declarations receive the same diagnostic; without the key those inert declarations preserve the pre-existing bootstrap behavior.
 - Missing `jq` is reported through the normal `MISSING: jq` install-consent flow.
 - While the file remains present, no crewmate or scout spawn may proceed without an explicit resolved harness; malformed configuration must be reported and corrected rather than selected around.
 
@@ -1176,6 +1180,17 @@ bin/fm-dispatch-resolve.sh data/<id>/brief.md --project <name>        # TOON blo
 
 Firstmate invokes the resolve path directly after writing the brief, without a preflight; the absent-key off line is handled exactly like every other non-clear outcome.
 
+**Path forcing before the model call**
+
+Before any model call, the resolver checks one path fact.
+A brief may state the paths the task changes or targets on its own line, `Target paths: <path> [<path>...]`, beginning exactly `Target paths:` with the paths separated by whitespace; a line in any other shape, such as a Markdown bullet or backticked or comma-separated paths, is not a declaration; several such lines are read together, and a path containing whitespace cannot be declared this way.
+Those declared paths are the only paths the resolver reads: it never scans a brief's prose for path-shaped words, because inferring paths would restore exactly the ambiguity this check exists to remove.
+When one declared path matches the resolver's deployment-configuration list - `vercel.json`, `*.tf` and `*.tfvars`, CloudFormation templates (including `template.yaml`, `template.yml`, and `*.template`, `*.template.json`, and `*.template.yaml`), Kubernetes, ArgoCD (under an `argocd/`, `argo-cd/`, or `argo/` directory), ingress, and Helm manifests, deploy scripts (`scripts/deploy*`, `*deploy*.sh`, `*deploy*.ps1`), and deploy, release, or publish workflows under `.github/workflows/`, as [`bin/fm-dispatch-resolve.sh`](../bin/fm-dispatch-resolve.sh) enumerates them in one place - the rule declaring `path_force` is selected in code with no request to Jev.
+A match forces the declared rule because that is the safe direction, so the list carries no exclusions and a path under `tests/` that names a deploy script still forces; a documentation page or a UI `charts/` component that merely reads like deployment work does not match and changes nothing.
+A forced result replaces the model, confidence, and probability lines with `decided_by: path-forced`, the forced rule and its `when` excerpt, and `forced_path`/`forced_pattern`, so a forced route is never mistaken for a classified one; a result without a `decided_by:` line was decided by the model.
+Everything after the rule choice is identical: the rule's `approval` and `floor`, each candidate's `provider` and `floor`, the same `quota-axi` snapshot, and the same `spendPriority` argmax.
+Without a rule declaring `path_force` this check is inert, whatever paths a brief declares.
+A brief with no `Target paths:` line, no matching path, or a home whose rules declare no `path_force` leaves the Jev request and its output unchanged, so only some briefs carry this fact and the rest route exactly as before.
 **What the model receives**
 
 When on and at least one rule exists, the tool sends the project name and the brief's task-specific text as state and asks one Choice question whose options are every rule's `when` plus the fixed neutral option for no matching rule; the model never sees quota, catalogs, `why`, `use`, approvals, or confidence floors.

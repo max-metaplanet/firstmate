@@ -1145,6 +1145,9 @@ for bad in \
   '{"rules":[{"when":"x","use":{"harness":"claude"},"select":"mystery"}]}|unknown select: mystery' \
   '{"rules":[{"when":"x","use":{"harness":"claude"},"min_confidence":"high"}]}|min_confidence must be a number from 0 through 1 when present' \
   '{"rules":[{"when":"x","use":{"harness":"claude"},"min_confidence":1.5}]}|min_confidence must be a number from 0 through 1 when present' \
+  '{"rules":[{"when":"x","use":{"harness":"claude"},"path_force":true}]}|path_force must be "deployment-config" when present' \
+  '{"rules":[{"when":"x","use":{"harness":"claude"},"path_force":"deploy"}]}|path_force must be "deployment-config" when present' \
+  '{"rules":[{"when":"x","use":{"harness":"claude"},"path_force":"deployment-config"},{"when":"y","use":{"harness":"claude"},"path_force":"deployment-config"}]}|at most one rule may declare path_force' \
   '{"rules":[{"when":"x","use":{"harness":"claude"},"floor":{"scope":"model:fable","min_percent":20}}]}|rule floor needs scope, min_percent 0..100, and provider matching ^[a-z0-9]+(-[a-z0-9]+)*\z' \
   '{"rules":[{"when":"x","use":{"harness":"claude"},"floor":{"scope":"model:fable","min_percent":20,"provider":"CLAUDE"}}]}|rule floor needs scope, min_percent 0..100, and provider matching ^[a-z0-9]+(-[a-z0-9]+)*\z' \
   '{"rules":[{"when":"x","use":{"harness":"claude","provider":""}}]}|each use profile needs harness; model, effort, and floor must be well formed, and provider must match ^[a-z0-9]+(-[a-z0-9]+)*\z when present' \

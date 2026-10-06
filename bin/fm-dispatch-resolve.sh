@@ -59,6 +59,9 @@
 #     status: clear | ambiguous | escalate | error
 #     model/latency_ms/tokens, rule (when excerpt) and confidence, probabilities
 #     fallback: <runner-up rule taken when the picked rule missed its own floor>
+#       (a Jev-decided result only)
+#     decided_by: path-forced, rule (when excerpt), forced_path/forced_pattern
+#       (a path-forced result only; no decided_by line means Jev decided)
 #     reason: <why the status is not clear>
 #     candidate: <harness>:<model> provider=.. scope=.. remaining=..% spendPriority=.. runway=.. -> eligible | eligible, unranked: <reason> | not eligible: <reason>
 #     profile: --harness <h> [--model <m>] [--effort <e>]     (status clear only)
@@ -385,7 +388,8 @@ else
   cp "$BRIEF" "$TASK_TEXT" || die "could not read brief: $BRIEF"
 fi
 LAT_MS=null
-command -v curl >/dev/null 2>&1 || emit_error "curl not installed"
+if [ "$FORCED" = null ]; then
+  command -v curl >/dev/null 2>&1 || emit_error "curl not installed"
   REQUEST=$(jq -n --rawfile brief "$TASK_TEXT" --arg project "$PROJECT" --arg model "$TS_MODEL" \
     --arg none_criterion "$DEFAULT_WHEN" --slurpfile rules "$RULES" '
     ($rules[0]) as $cfg |
@@ -514,14 +518,17 @@ RESULT=$(jq -n --arg floor "$CONFIDENCE_FLOOR" --argjson lat "$LAT_MS" --arg non
     else null end;
   def declared_confidence($c): rule_at($c) as $x | $x != null and ($x | has("min_confidence"));
   def confidence_floor($c): if declared_confidence($c) then rule_at($c).min_confidence else ($floor | tonumber) end;
-  ($a.choice) as $picked |
+  (if $forced == null then $a.choice else $forced.rule end) as $picked |
   (confidence_floor($picked)) as $picked_floor |
   # A declared floor is checked against the probability of that option whether
   # it is the pick or a runner-up, so a runner-up never needs weaker support
   # than it would as the pick. Only a rule that declares its own floor falls
   # through to a runner-up, so a file with no declared floors keeps the single
   # global floor on the answer confidence exactly.
-  (if declared_confidence($picked) | not then
+  # A path-forced choice is not scored at all: no model answered, so there is no
+  # confidence or probability to hold to a floor, and no runner-up to fall to.
+  (if $forced != null then {below: false}
+   elif declared_confidence($picked) | not then
      (if $a.confidence >= $picked_floor then {below: false} else {below: true, global: true} end)
    elif $a.probabilities[$picked] >= $picked_floor then {below: false}
    else
@@ -546,14 +553,22 @@ RESULT=$(jq -n --arg floor "$CONFIDENCE_FLOOR" --argjson lat "$LAT_MS" --arg non
      then {source: "default", use: profiles($cfg.default // null), note: "rule \($choice) floor \($rule.floor.scope) below \($rule.floor.min_percent)%: fall through to default"}
    else {source: $choice, use: profiles($rule.use), note: "rule matched"} end) as $sel |
   def when_of($c): (if rule_at($c) == null then $none_criterion else rule_at($c).when end | .[0:60]);
-  {
-    model: $r.model, latency_ms: $lat, tokens: ($r.usage // null),
-    rule: $picked,
-    rule_when: when_of($picked),
-    confidence: $a.confidence, probabilities: $a.probabilities
-  }
-  + (if $fb.to then {fallback: "\($choice) (\(when_of($choice))) probability \($fb.p) clears its floor \($fb.to_floor); \($picked) probability \($a.probabilities[$picked]) is below its floor \($picked_floor)"} else {} end)
-  as $ev |
+  (if $forced == null then
+     {
+       model: $r.model, latency_ms: $lat, tokens: ($r.usage // null),
+       rule: $picked,
+       rule_when: when_of($picked),
+       confidence: $a.confidence, probabilities: $a.probabilities
+     }
+     + (if $fb.to then {fallback: "\($choice) (\(when_of($choice))) probability \($fb.p) clears its floor \($fb.to_floor); \($picked) probability \($a.probabilities[$picked]) is below its floor \($picked_floor)"} else {} end)
+   else
+     {
+       decided_by: "path-forced",
+       rule: $choice,
+       rule_when: when_of($choice),
+       forced_path: $forced.path, forced_pattern: $forced.pattern
+     }
+   end) as $ev |
   if $sel.invalid then $ev + {status: "error", reason: $sel.invalid}
   elif $fb.below and $fb.global then
     $ev + {status: "ambiguous", reason: "confidence \($a.confidence) below floor \($floor)", candidates: ($answer_use | map(evaluate(.)))}
@@ -585,10 +600,16 @@ TEXT=$(jq -r '
   def shell_arg: flat | @sh;
   "dispatch-resolve:",
   "  status: \(.status | flat)",
-  "  model: \(show(.model))   latency_ms: \(show(.latency_ms))   tokens: \(show(.tokens.input_tokens))/\(show(.tokens.output_tokens))",
-  "  rule: \(.rule | flat) (\(.rule_when | flat))   confidence: \(.confidence | flat)",
-  "  probabilities: \([.probabilities | to_entries[] | "\(.key | flat)=\(.value | flat)"] | join(" "))",
-  (if .fallback then "  fallback: \(.fallback | flat)" else empty end),
+  (if .decided_by then
+     ("  decided_by: \(.decided_by | flat)",
+      "  rule: \(.rule | flat) (\(.rule_when | flat))",
+      "  forced_path: \(.forced_path | flat)   forced_pattern: \(.forced_pattern | flat)")
+   else
+     ("  model: \(show(.model))   latency_ms: \(show(.latency_ms))   tokens: \(show(.tokens.input_tokens))/\(show(.tokens.output_tokens))",
+      "  rule: \(.rule | flat) (\(.rule_when | flat))   confidence: \(.confidence | flat)",
+      "  probabilities: \([.probabilities | to_entries[] | "\(.key | flat)=\(.value | flat)"] | join(" "))",
+      (if .fallback then "  fallback: \(.fallback | flat)" else empty end))
+   end),
   (if .reason then "  reason: \(.reason | flat)" else empty end),
   (if .note then "  note: \(.note | flat)" else empty end),
   (if .unranked_note then "  note: \(.unranked_note | flat)" else empty end),
