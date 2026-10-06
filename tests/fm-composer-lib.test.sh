@@ -1081,94 +1081,157 @@ test_queued_enter_verdict_busy_pending_is_empty
 test_queued_enter_verdict_idle_pending_stays_pending
 test_queued_enter_verdict_does_not_convert_other_states
 
-# --- The modal composer (claude's optional vim editor mode) -------------------
-#
-# A modal composer has a command mode in which typed characters are editor
-# commands, not text: the steering doorbell's `: Firstma` prefix is eaten and
-# only its remainder is inserted. The indicator, the key that returns the
-# composer to text entry, and how the indicator is recognized live here once,
-# for both bin/fm-control.sh's lifecycle restore and the backend adapters'
-# send recovery.
-
-test_modal_entry_facts_are_claude_only() {
-  local harness sig key
-  sig=$(fm_composer_modal_entry_signal claude) \
-    || fail "claude must have a text-entry indicator"
-  [ "$sig" = '-- INSERT --' ] || fail "claude's text-entry indicator should be '-- INSERT --', got '$sig'"
-  key=$(fm_composer_modal_entry_key claude) || fail "claude must have a text-entry key"
-  [ "$key" = i ] || fail "claude's text-entry key should be 'i', got '$key'"
-  for harness in codex opencode pi pi-signed omp grok kimi cursor gemini muse rovo agy devin; do
-    sig=$(fm_composer_modal_entry_signal "$harness") \
-      || fail "$harness is verified and must answer the modal-entry question"
-    [ -z "$sig" ] || fail "$harness has no modal composer and must report no indicator, got '$sig'"
-    key=$(fm_composer_modal_entry_key "$harness") \
-      || fail "$harness is verified and must answer the modal-entry key question"
-    [ -z "$key" ] || fail "$harness has no modal composer and must report no key, got '$key'"
-  done
-  pass "fm_composer_modal_entry_signal/key: claude carries the indicator and insert key, every other verified harness carries neither"
+# The selected row sits on cursor row 1 so a tmux read whose cursor is that
+# row, and a cursorless read, both still see unsubmitted text.
+exit_picker_screen() {
+  printf '%s\n' \
+    'Background work is running' \
+    '❯ 1. Exit and stop tasks' \
+    'The following will stop when you exit:' \
+    'shell · sleep 300' \
+    '  2. Move to background and exit' \
+    '  3. Stay' \
+    'Enter to confirm · Esc to cancel'
 }
 
-test_modal_entry_facts_refuse_an_unverified_harness() {
-  fm_composer_modal_entry_signal notaharness >/dev/null 2>&1 \
-    && fail "an unverified harness must not silently report no modal composer"
-  fm_composer_modal_entry_key notaharness >/dev/null 2>&1 \
-    && fail "an unverified harness must not silently report no text-entry key"
-  pass "fm_composer_modal_entry_signal/key: an unverified harness is refused, never answered with silence"
+fm_test_picker_send() {
+  printf 'Enter\n' >> "$FM_TEST_PICKER_ENTERS"
 }
 
-# The rows claude 2.x draws: an empty composer between two rules, and the
-# footer beneath it carrying <footer>. [transcript] is drawn above.
-claude_modal_screen() {  # <footer> [transcript]
-  [ -z "${2-}" ] || printf '%s\n' "$2"
-  printf '%s\n' '──────────' $'❯\u00a0' '──────────' "  $1"
+fm_test_picker_state() {
+  fm_composer_classify_screen 'styled=1' "$FM_TEST_PICKER_SCREEN" 1
 }
 
-test_modal_entry_shown_needs_the_indicator_on_the_screen() {
-  local sig insert command_mode
-  sig=$(fm_composer_modal_entry_signal claude)
-  insert=$(claude_modal_screen '-- INSERT -- bypass permissions on (shift+tab to cycle)')
-  command_mode=$(claude_modal_screen 'bypass permissions on (shift+tab to cycle)')
-  fm_composer_modal_entry_shown "$sig" "$insert" \
-    || fail "a rendered indicator must read as text entry"
-  fm_composer_modal_entry_shown "$sig" "$command_mode" \
-    && fail "a footer without the indicator must never read as text entry"
-  fm_composer_modal_entry_shown "$sig" '' \
-    && fail "an unreadable screen must never read as text entry"
-  pass "fm_composer_modal_entry_shown: only a rendered indicator reads as text entry"
+test_background_exit_picker_stays_pending_and_blocks_retry() {
+  local screen out rc sink enters
+  screen=$(exit_picker_screen)
+  out=$(fm_composer_blocking_dialog "$screen"); rc=$?
+  [ "$rc" -eq 0 ] || fail "the recorded picker should match"
+  [ "$out" = 'Claude background-task exit picker' ] || fail "dialog name was '$out'"
+  out=$(fm_composer_blocking_dialog 'Background work is running'); rc=$?
+  [ "$rc" -eq 1 ] || fail "a heading alone must not match"
+  [ -z "$out" ] || fail "a miss must print nothing, got '$out'"
+  out=$(fm_composer_blocking_dialog "$(printf '%s\n' 'Background work is running' 'Exit and stop tasks')"); rc=$?
+  [ "$rc" -eq 1 ] || fail "two of the three strings must not match"
+  out=$(fm_composer_blocking_dialog "$(printf '%s\n' "$screen" '' '')"); rc=$?
+  [ "$rc" -eq 0 ] || fail "blank rows below the footer should still match"
+  sink=$(mktemp)
+  FM_COMPOSER_DIALOG_SINK=$sink
+  out=$(fm_composer_classify_screen 'styled=1' "$screen" 1)
+  [ "$out" = pending ] || fail "cursor on the selected row should stay pending, got '$out'"
+  [ "$(cat "$sink")" = 'Claude background-task exit picker' ] || fail "classify should note the dialog, got '$(cat "$sink")'"
+  out=$(fm_composer_classify_screen 'styled=1' "$screen")
+  [ "$out" = pending ] || fail "a styled cursorless picker should stay pending, got '$out'"
+  unset FM_COMPOSER_DIALOG_SINK
+  rm -f "$sink"
+  FM_TEST_PICKER_SCREEN=$screen
+  FM_TEST_PICKER_ENTERS=$(mktemp)
+  : > "$FM_TEST_PICKER_ENTERS"
+  fm_composer_dialog_sink_prepare || fail "the dialog sink could not be prepared"
+  sink=$FM_COMPOSER_DIALOG_SINK
+  out=$(fm_composer_submit_retry_core fm_test_picker_send fm_test_picker_state win 3 0)
+  fm_composer_dialog_sink_release
+  [ ! -e "$sink" ] || fail "the release should remove a sink that prepare created"
+  [ -z "${FM_COMPOSER_DIALOG_SINK:-}" ] || fail "the release should unset a sink that prepare created"
+  enters=$(grep -c '^Enter$' "$FM_TEST_PICKER_ENTERS" || true)
+  [ "$out" = unknown ] || fail "a picker must stop the retry as unknown, got '$out'"
+  [ "$enters" -eq 1 ] || fail "a picker must receive one Enter, got $enters"
+  rm -f "$FM_TEST_PICKER_ENTERS"
+  unset FM_TEST_PICKER_SCREEN FM_TEST_PICKER_ENTERS
+  pass "the Claude background-task exit picker stays pending and receives no confirming Enter"
 }
 
-# The indicator is proof only in the composer's own footer. A transcript above
-# the composer quoting it - a worker that just read this library - says nothing
-# about the composer's mode, and a screen with no composer to anchor the footer
-# proves nothing either.
-test_modal_entry_shown_reads_only_the_composer_footer() {
-  local sig quoted
-  sig=$(fm_composer_modal_entry_signal claude)
-  quoted="    claude) printf '%s' '-- INSERT --' ;;"
-  fm_composer_modal_entry_shown "$sig" \
-    "$(claude_modal_screen 'bypass permissions on (shift+tab to cycle)' "$quoted")" \
-    && fail "an indicator quoted in the transcript above a command-mode composer must not read as text entry"
-  fm_composer_modal_entry_shown "$sig" \
-    "$(claude_modal_screen '-- INSERT -- bypass permissions on (shift+tab to cycle)' "$quoted")" \
-    || fail "a footer indicator must still read as text entry beneath a transcript that quotes it"
-  fm_composer_modal_entry_shown "$sig" '  -- INSERT -- bypass permissions on (shift+tab to cycle)' \
-    && fail "an indicator with no composer above it must not read as text entry"
-  pass "fm_composer_modal_entry_shown: only the composer's own footer is text-entry proof"
+# The picker's own text, shown the way a worker pane shows it when it prints
+# this repository's diff, verification note, or a test fixture: quoted above a
+# normal composer. No picker is open, so the next Enter confirms nothing.
+quoted_exit_picker_screen() {
+  printf '%s\n' \
+    '● Here is the fixture the test uses:' \
+    "+    'Background work is running' \\" \
+    "+    '❯ 1. Exit and stop tasks' \\" \
+    "+    'Enter to confirm · Esc to cancel'" \
+    '  The selected row is "❯ 1. Exit and stop tasks" and the footer is "Enter to confirm · Esc to cancel".' \
+    'Background work is running' \
+    '❯ 1. Exit and stop tasks' \
+    'Enter to confirm · Esc to cancel' \
+    '' \
+    '╭──────────────╮' \
+    '│ > next steer │' \
+    '╰──────────────╯'
 }
 
-# A harness with no modal composer reports an empty indicator; matching the
-# empty string against a screen would otherwise say every harness is always in
-# text entry, which would authorize the mode key on composers that have none.
-test_modal_entry_shown_never_matches_an_empty_signal() {
-  fm_composer_modal_entry_shown '' '  -- INSERT -- bypass permissions on' \
-    && fail "an absent indicator must not match any screen"
-  fm_composer_modal_entry_shown '' '' \
-    && fail "an absent indicator must not match an empty screen"
-  pass "fm_composer_modal_entry_shown: a harness with no modal composer never reports text entry"
+test_dialog_heading_and_footer_must_be_the_recorded_lines() {
+  local screen out rc
+  screen=$(printf '%s\n' \
+    'The fixture mentions Background work is running in a sentence' \
+    '❯ 1. Exit and stop tasks' \
+    'Enter to confirm · Esc to cancel')
+  out=$(fm_composer_blocking_dialog "$screen"); rc=$?
+  [ "$rc" -eq 1 ] || fail "a heading buried in a sentence must not match"
+  [ -z "$out" ] || fail "a miss must print nothing, got '$out'"
+  screen=$(printf '%s\n' \
+    'Background work is running' \
+    '❯ 1. Exit and stop tasks' \
+    'Enter to confirm the deployment')
+  out=$(fm_composer_blocking_dialog "$screen"); rc=$?
+  [ "$rc" -eq 1 ] || fail "a last line that only starts with the confirm words must not match"
+  [ -z "$out" ] || fail "a miss must print nothing, got '$out'"
+  pass "a buried heading or a different last line is not the exit picker"
 }
 
-test_modal_entry_facts_are_claude_only
-test_modal_entry_facts_refuse_an_unverified_harness
-test_modal_entry_shown_needs_the_indicator_on_the_screen
-test_modal_entry_shown_reads_only_the_composer_footer
-test_modal_entry_shown_never_matches_an_empty_signal
+test_dialog_note_skips_the_match_when_no_sink_is_set() {
+  local screen out rc before after
+  screen=$(exit_picker_screen)
+  unset FM_COMPOSER_DIALOG_SINK
+  out=$(fm_composer_note_blocking_dialog "$screen"); rc=$?
+  [ "$rc" -eq 1 ] || fail "a note without a sink should return 1, got $rc"
+  [ -z "$out" ] || fail "a note without a sink should print nothing, got '$out'"
+  [ -z "${FM_COMPOSER_DIALOG_SINK:-}" ] || fail "a note without a sink must not create one"
+  out=$(fm_composer_classify_screen 'styled=1' "$screen" 1)
+  [ "$out" = pending ] || fail "classify without a sink should stay pending, got '$out'"
+  trap 'true' RETURN
+  before=$(trap -p RETURN)
+  fm_composer_dialog_sink_prepare || fail "the dialog sink could not be prepared"
+  fm_composer_dialog_sink_release
+  after=$(trap -p RETURN)
+  trap - RETURN
+  [ "$before" = "$after" ] || fail "release replaced the caller RETURN trap: $after"
+  pass "a dialog note without a sink skips the match, and release leaves a caller RETURN trap"
+}
+
+test_quoted_exit_picker_text_is_not_a_dialog() {
+  local screen out rc sink enters
+  screen=$(quoted_exit_picker_screen)
+  out=$(fm_composer_blocking_dialog "$screen"); rc=$?
+  [ "$rc" -eq 1 ] || fail "picker text quoted above a normal composer must not match"
+  [ -z "$out" ] || fail "a miss must print nothing, got '$out'"
+  out=$(fm_composer_blocking_dialog "$(printf '%s\n' \
+    'Background work is running' \
+    "+    '❯ 1. Exit and stop tasks' \\" \
+    'Enter to confirm · Esc to cancel')"); rc=$?
+  [ "$rc" -eq 1 ] || fail "a selected row that is not alone on its row must not match"
+  out=$(fm_composer_blocking_dialog "$(printf '%s\n' \
+    '❯ 1. Exit and stop tasks' \
+    'Background work is running' \
+    'Enter to confirm · Esc to cancel')"); rc=$?
+  [ "$rc" -eq 1 ] || fail "a selected row above the heading must not match"
+  FM_TEST_PICKER_SCREEN=$screen
+  FM_TEST_PICKER_ENTERS=$(mktemp)
+  : > "$FM_TEST_PICKER_ENTERS"
+  fm_composer_dialog_sink_prepare || fail "the dialog sink could not be prepared"
+  sink=$FM_COMPOSER_DIALOG_SINK
+  out=$(fm_composer_submit_retry_core fm_test_picker_send fm_test_picker_state win 3 0)
+  [ ! -s "$sink" ] || fail "quoted picker text must not be noted as a dialog, got '$(cat "$sink")'"
+  fm_composer_dialog_sink_release
+  enters=$(grep -c '^Enter$' "$FM_TEST_PICKER_ENTERS" || true)
+  [ "$out" = pending ] || fail "quoted picker text must keep the ordinary pending verdict, got '$out'"
+  [ "$enters" -eq 3 ] || fail "quoted picker text must keep the ordinary Enter retries, got $enters"
+  rm -f "$FM_TEST_PICKER_ENTERS"
+  unset FM_TEST_PICKER_SCREEN FM_TEST_PICKER_ENTERS
+  pass "picker text quoted above a normal composer is not read as a live picker"
+}
+
+test_background_exit_picker_stays_pending_and_blocks_retry
+test_dialog_heading_and_footer_must_be_the_recorded_lines
+test_dialog_note_skips_the_match_when_no_sink_is_set
+test_quoted_exit_picker_text_is_not_a_dialog
