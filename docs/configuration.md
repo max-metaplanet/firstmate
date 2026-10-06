@@ -36,6 +36,7 @@ The values they write are `on` and `off`, each followed by one newline; an absen
 Each `/calm` command persists the new choice before changing live presentation, so a failed write leaves the current choice unchanged rather than claiming persistence; Pi replaces the file atomically, while the Claude Code mod writes it through the plugin API's plain file write.
 The Pi extension reloads this preference on every Pi `session_start`, including startup, new, resume, fork, and reload reasons.
 The Claude Code mod likewise reloads it on every `session.start`, including same-process session replacement, and also loads it lazily before any row that can draw ahead of that event, including during `claude --continue` restoration.
+This preference is only the on/off choice, never the Claude Code mod's activation gate: that gate is the `FM_CALM_ENABLED` environment variable [`calm.md`](calm.md#claude-code) owns, and this file says nothing about whether the mod runs.
 This preference is local to each Firstmate home and is not part of secondmate inherited configuration.
 
 ## Pi supervision branch

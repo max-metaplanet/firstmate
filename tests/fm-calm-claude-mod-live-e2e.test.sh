@@ -3,14 +3,26 @@
 # (.claude/mods/firstmate-calm) in a real Claude Code TUI under tmux, mirroring the
 # Pi interactive case in tests/fm-calm-pi-extension.test.sh. It proves, against the
 # installed Claude Code and the shipped project auto-load path (.claude/skills):
-#   1. With CLAUDE_CODE_ENABLE_FUNCTION_HOOKS unset, the mod is a complete no-op even
-#      with the per-home preference already on: no hooks module loads, /calm is not a
-#      command, the stock working row shows, and tool rows draw as stock.
-#   2. With the flag on, the sailboat replaces the working row and moves, tool rows and
-#      an exact operational user row draw at zero height, /calm restores them and
+#   1. With neither FM_CALM_ENABLED nor its deprecated alias enabling the mod, the mod
+#      is a complete no-op even though Claude Code loads its hooks module and the
+#      per-home preference is already on: /calm is not a command, the stock working row
+#      shows, the boat never appears, and tool rows draw as stock. The module-loaded
+#      assertion is the point of the gate: Claude Code no longer withholds the surface,
+#      so the mod's own flag is the only thing keeping it inert.
+#   2. With FM_CALM_ENABLED=1 and the deprecated alias off, the sailboat replaces the
+#      working row and moves, tool rows draw at zero height, /calm restores them and
 #      persists off, /calm hides them again and persists on, all without a Calm output
-#      row in the transcript.
+#      row in the transcript. The zero-height operational user row is not reachable from
+#      a terminal on this Claude Code, which strips the envelope's invisible marker in
+#      the composer; phase 5 is the tripwire for restoring that case.
 #   3. `claude --continue` restores the transcript with those rows still hidden.
+#   4. The deprecated CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1 alone still activates the mod,
+#      so an unmigrated session keeps Calm, and FM_CALM_ENABLED=0 beside that alias
+#      deactivates it, so the firstmate-owned flag decides when the two disagree.
+#   5. The composer still strips an exact operational envelope's invisible marker, which
+#      is why 2's hidden-row case is not live coverage any more.
+# Both names are set per launch through --settings, which outranks every settings file
+# on the host, so no phase depends on what this machine's own settings export.
 # The project and FM_HOME are isolated; Claude keeps using its existing managed
 # authentication and one trusted temporary folder. A few Haiku turns are submitted.
 # shellcheck disable=SC2016 # the model, not this test shell, reads the prompt text
@@ -31,6 +43,9 @@ FM_HOME_DIR="$LAB/fmhome"
 DEBUG_LOG_OFF="$LAB/debug-off.log"
 DEBUG_LOG_ON="$LAB/debug-on.log"
 DEBUG_LOG_RESUME="$LAB/debug-resume.log"
+DEBUG_LOG_LEGACY="$LAB/debug-legacy.log"
+DEBUG_LOG_DISAGREE="$LAB/debug-disagree.log"
+DEBUG_LOG_MARKER="$LAB/debug-marker.log"
 SOCKET="fm-calm-claude-$$"
 SESSION="fm-calm-claude-e2e"
 HULL='╲▁▁▁╱'
@@ -55,21 +70,56 @@ printf 'alpha\nbeta\ngamma\n' >"$PROJECT/notes.txt"
 printf 'on\n' >"$FM_HOME_DIR/config/calm"
 
 # Claude Code refuses to nest inside another Claude session, so the inherited session
-# markers are dropped from the lab's environment; the flag is set per launch only.
+# markers are dropped from the lab's environment, along with any FM_CALM_ENABLED the caller
+# exports; the activation names are set per launch through --settings only, never
+# written into a settings file on disk.
 unset_inherited() {
   local name
   while IFS= read -r name; do
     printf -- '-u %s ' "$name"
-  done < <(env | grep -E '^(CLAUDECODE|CLAUDE_CODE_[A-Z_]+|CLAUDE_CONFIG_DIR)=' | cut -d= -f1 | sort -u)
+  done < <(env | grep -E '^(CLAUDECODE|CLAUDE_CODE_[A-Z_]+|CLAUDE_CONFIG_DIR|FM_CALM_ENABLED)=' | cut -d= -f1 | sort -u)
 }
 
-launch() {  # <debug-log> <flag: 1|0> [claude args...]
-  local log=$1 flag=$2 flag_env=''
+# The activation names this launch exports, as a settings `env` object. --settings
+# outranks the host's own settings files, whose env block may carry either name, so every
+# gate pins both.
+settings_json() {  # <gate: name=value...>
+  local gate pair json=''
+  for gate in $1; do
+    pair="\"${gate%%=*}\":\"${gate#*=}\""
+    json="${json:+$json,}$pair"
+  done
+  printf '{\"feedbackDrafts\":\"off\",\"env\":{%s}}' "$json"
+}
+
+launch() {  # <debug-log> <gate: name=value...> [claude args...]
+  local log=$1 settings
+  settings=$(settings_json "$2")
   shift 2
-  [ "$flag" = 1 ] && flag_env="CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1"
   tmux -L "$SOCKET" kill-session -t "$SESSION" 2>/dev/null || true
   tmux -L "$SOCKET" new-session -d -s "$SESSION" -x 160 -y 44 -c "$PROJECT" \
-    "env $(unset_inherited) $flag_env FM_HOME='$FM_HOME_DIR' CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false CLAUDE_CODE_SEND_FEEDBACK=0 claude --model haiku --dangerously-skip-permissions --settings '{\"feedbackDrafts\":\"off\"}' --debug-file '$log' $*; printf '\nCLAUDE_EXIT=%s\n' \"\$?\"; sleep 30"
+    "env $(unset_inherited) FM_HOME='$FM_HOME_DIR' CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false CLAUDE_CODE_SEND_FEEDBACK=0 claude --model haiku --dangerously-skip-permissions --settings '$settings' --debug-file '$log' $*; printf '\nCLAUDE_EXIT=%s\n' \"\$?\"; sleep 30"
+}
+
+# The gate values each phase launches with: the deprecated alias is pinned off wherever
+# the firstmate flag is the subject, and the firstmate flag is pinned empty, which the
+# gate reads as unset, wherever it is not, so neither case can pass on the other's value.
+GATE_OFF='FM_CALM_ENABLED= CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=0'
+GATE_ON='FM_CALM_ENABLED=1 CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=0'
+GATE_LEGACY_ONLY='FM_CALM_ENABLED= CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1'
+GATE_DISAGREEING='FM_CALM_ENABLED=0 CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1'
+
+# Wait until Claude Code reports this session's own load of the Calm hooks module, which
+# every phase needs: with the surface no longer withheld, an unloaded module would make
+# an inert phase prove nothing.
+wait_module_loaded() {  # <debug-log>
+  local log=$1 i=0
+  while [ "$i" -lt 200 ] && ! grep -q 'hooks module firstmate-calm@skills-dir loaded' "$log"; do
+    sleep 0.1
+    i=$((i + 1))
+  done
+  grep -q 'hooks module firstmate-calm@skills-dir loaded' "$log" \
+    || fail "Claude Code $CLAUDE_VERSION did not load the Calm hooks module from the project's .claude/skills path"
 }
 
 screen() {
@@ -205,16 +255,14 @@ wait_settled() {  # <what> [iterations]
   fail "Claude Code $CLAUDE_VERSION never settled $what"
 }
 
-# --- 1. Flag off: a complete no-op even with the preference on --------------------
-launch "$DEBUG_LOG_OFF" 0
+# --- 1. Gate off: a complete no-op even with the preference on --------------------
+launch "$DEBUG_LOG_OFF" "$GATE_OFF"
 wait_idle
-grep -q 'hooks modules not loaded' "$DEBUG_LOG_OFF" \
-  || fail "Claude Code $CLAUDE_VERSION did not report hooks modules off with the flag unset"
-if grep -q 'hooks module firstmate-calm loaded' "$DEBUG_LOG_OFF"; then
-  fail "Claude Code $CLAUDE_VERSION loaded the Calm hooks module although the flag was unset"
-fi
+# The module loads: Claude Code no longer withholds the surface, so this phase proves
+# the mod's own gate, not the platform's.
+wait_module_loaded "$DEBUG_LOG_OFF"
 if command_listed calm; then
-  fail "Claude Code $CLAUDE_VERSION lists /calm although the flag is unset"
+  fail "Claude Code $CLAUDE_VERSION lists /calm although neither FM_CALM_ENABLED nor the deprecated alias enables the mod"
 fi
 send "$PROMPT"
 enter
@@ -227,11 +275,11 @@ while [ "$i" -lt 600 ]; do
   case "$off_frame" in
     *"$HULL"*|*"$SAIL"*)
       printf '%s\n' "$off_frame" >&2
-      fail "the working ship appeared although the flag is unset"
+      fail "the working ship appeared although the gate is off"
       ;;
     *'CLAUDE_EXIT='*)
       printf '%s\n' "$off_frame" >&2
-      fail "Claude Code $CLAUDE_VERSION exited during the flag-off turn"
+      fail "Claude Code $CLAUDE_VERSION exited during the gate-off turn"
       ;;
   esac
   if working_row_shown "$off_frame"; then
@@ -244,37 +292,31 @@ while [ "$i" -lt 600 ]; do
   sleep 0.1
   i=$((i + 1))
 done
-[ "$saw_working" -eq 1 ] || fail "Claude Code $CLAUDE_VERSION showed no stock working row during the flag-off turn, so the no-op case cannot be judged"
-wait_settled 'the turn with the flag off'
+[ "$saw_working" -eq 1 ] || fail "Claude Code $CLAUDE_VERSION showed no stock working row during the gate-off turn, so the no-op case cannot be judged"
+wait_settled 'the turn with the gate off'
 off_settled=$(screen)
 case "$off_settled" in
   *'Bash('*|*'shell command'*) : ;;
   *)
     printf '%s\n' "$off_settled" >&2
-    fail "the stock tool row did not draw with the flag unset"
+    fail "the stock tool row did not draw while the gate is off"
     ;;
 esac
 send '/exit'
 enter
 sleep 2
-pass "Claude Code $CLAUDE_VERSION with the flag unset: no hooks module, no /calm, stock working row, stock tool rows, preference on ignored"
+pass "Claude Code $CLAUDE_VERSION with the gate off: the hooks module loads and still does nothing - no /calm, stock working row, stock tool rows, no boat, preference on ignored"
 
-# --- 2. Flag on: the boat, the hidden rows, the toggle, the persisted choice -------
-launch "$DEBUG_LOG_ON" 1
+# --- 2. Gate on: the boat, the hidden rows, the toggle, the persisted choice -------
+launch "$DEBUG_LOG_ON" "$GATE_ON"
 wait_idle
-i=0
-while [ "$i" -lt 100 ] && ! grep -q 'hooks module firstmate-calm loaded' "$DEBUG_LOG_ON"; do
-  sleep 0.1
-  i=$((i + 1))
-done
-grep -q 'hooks module firstmate-calm loaded' "$DEBUG_LOG_ON" \
-  || fail "Claude Code $CLAUDE_VERSION did not load the Calm hooks module from the project's .claude/skills path with the flag on"
+wait_module_loaded "$DEBUG_LOG_ON"
 # The engine logs one benign notice for every options-less hooks module ("options
 # requested but its manifest declares no userConfig"); anything else is a real problem.
 if grep -E '\[(WARN|ERROR)\].*firstmate-calm' "$DEBUG_LOG_ON" | grep -v 'declares no userConfig' >&2; then
   fail "Claude Code $CLAUDE_VERSION loaded the Calm mod with a warning or error"
 fi
-command_listed calm || fail "Claude Code $CLAUDE_VERSION does not list /calm with the flag on"
+command_listed calm || fail "Claude Code $CLAUDE_VERSION does not list /calm with FM_CALM_ENABLED=1"
 send "$PROMPT"
 enter
 wait_screen "$HULL" 'the working ship during a real turn' 200
@@ -300,7 +342,7 @@ while [ "$i" -lt 120 ]; do
 done
 [ -n "$column_two" ] && [ "$column_two" != "$column_one" ] \
   || fail "the working ship never moved (hull stayed at column $column_one)"
-wait_settled 'the turn with the flag on'
+wait_settled 'the turn with FM_CALM_ENABLED=1'
 on_settled=$(screen)
 case "$on_settled" in
   *"$HULL"*|*"$SAIL"*) fail "the working ship stayed on screen after the turn settled" ;;
@@ -310,34 +352,12 @@ case "$on_settled" in
     ;;
 esac
 
-# An exact operational user row draws at zero height while the answer stays visible.
-operational=$(printf 'signal: %s/state/probe.status changed. Reply with exactly OPERATIONAL_PROCESSED and nothing else.' "$LAB" | "$OPERATIONAL_INPUT" encode watcher) \
-  || fail "could not encode the operational probe"
-send "$operational"
-enter
-wait_screen 'OPERATIONAL_PROCESSED' 'the operational answer' 600
-sleep 1
-operational_screen=$(screen)
-case "$operational_screen" in
-  *'probe.status changed'*)
-    printf '%s\n' "$operational_screen" >&2
-    fail "the operational user row drew while Calm was on"
-    ;;
-esac
-
 # /calm off: rows restore, the preference persists off, no Calm output row.
 send '/calm'
 enter
 wait_screen 'shell command' 'the restored tool row after /calm off' 200
 [ "$(cat "$FM_HOME_DIR/config/calm")" = off ] || fail "/calm did not persist off"
 restored=$(screen)
-case "$restored" in
-  *'probe.status changed'*) : ;;
-  *)
-    printf '%s\n' "$restored" >&2
-    fail "/calm off did not restore the operational user row"
-    ;;
-esac
 # The toggle answers with a transient toast under the prompt, never a transcript row:
 # the plugin's name must leave the screen once the toast expires.
 case "$restored" in
@@ -364,42 +384,45 @@ case "$restored" in
     ;;
 esac
 
-# /calm on: rows hide again, the preference persists on.
+# /calm on: rows hide again, the preference persists on. The loop watches the same
+# restored tool row the wait above matched, so it cannot fall through on a row spelling
+# this build never draws and then race the toggle.
 send '/calm'
 enter
 i=0
 while [ "$i" -lt 200 ]; do
   hidden_again=$(screen)
   case "$hidden_again" in
-    *'Bash('*|*'probe.status changed'*) ;;
+    *'Bash('*|*'shell command'*) ;;
     *) break ;;
   esac
   sleep 0.1
   i=$((i + 1))
 done
 case "$hidden_again" in
-  *'Bash('*|*'probe.status changed'*)
+  *'Bash('*|*'shell command'*)
     printf '%s\n' "$hidden_again" >&2
     fail "/calm on did not hide the rows again"
     ;;
 esac
 [ "$(cat "$FM_HOME_DIR/config/calm")" = on ] || fail "/calm did not persist on"
 case "$hidden_again" in
-  *'gamma'*|*'OPERATIONAL_PROCESSED'*) : ;;
+  *'gamma'*) : ;;
   *) fail "Calm on hid a genuine assistant reply" ;;
 esac
+
 send '/exit'
 enter
 sleep 2
-pass "Claude Code $CLAUDE_VERSION with the flag on: the mod auto-loads from .claude/skills, /calm exists, the sailboat replaces and moves in the working row, tool and operational rows draw at zero height, /calm restores and re-hides them while persisting the shared preference"
+pass "Claude Code $CLAUDE_VERSION with FM_CALM_ENABLED=1 and the deprecated alias off: the mod auto-loads from .claude/skills, /calm exists, the sailboat replaces and moves in the working row, tool rows draw at zero height, and /calm restores and re-hides them while persisting the shared preference"
 
 # --- 3. Resume: the restored transcript keeps the hidden rows hidden ---------------
-launch "$DEBUG_LOG_RESUME" 1 --continue
+launch "$DEBUG_LOG_RESUME" "$GATE_ON" --continue
 wait_screen 'gamma' 'the resumed transcript' 400
 sleep 1
 resumed=$(screen)
 case "$resumed" in
-  *'Bash('*|*'probe.status changed'*)
+  *'Bash('*|*'shell command'*|*'notes.txt)'*)
     printf '%s\n' "$resumed" >&2
     fail "the resumed transcript drew a row Calm hides"
     ;;
@@ -409,3 +432,48 @@ send '/exit'
 enter
 sleep 1
 pass "Claude Code $CLAUDE_VERSION resumes the transcript with Calm's hidden rows still hidden and the preference intact"
+
+# --- 4. Migration: the deprecated alias still activates, the new flag overrules it ---
+# Both cases are judged by whether the mod serves /calm, so neither submits a turn.
+launch "$DEBUG_LOG_LEGACY" "$GATE_LEGACY_ONLY"
+wait_idle
+wait_module_loaded "$DEBUG_LOG_LEGACY"
+command_listed calm \
+  || fail "Claude Code $CLAUDE_VERSION does not list /calm on the deprecated CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1 alone, so an unmigrated session would lose Calm"
+send '/exit'
+enter
+sleep 2
+pass "Claude Code $CLAUDE_VERSION activates the Calm mod on the deprecated CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1 alone, so a session that has not moved to FM_CALM_ENABLED keeps Calm"
+
+launch "$DEBUG_LOG_DISAGREE" "$GATE_DISAGREEING"
+wait_idle
+wait_module_loaded "$DEBUG_LOG_DISAGREE"
+if command_listed calm; then
+  fail "Claude Code $CLAUDE_VERSION lists /calm although FM_CALM_ENABLED=0 beside the deprecated alias must deactivate the mod"
+fi
+send '/exit'
+enter
+sleep 2
+pass "Claude Code $CLAUDE_VERSION leaves the Calm mod inert when FM_CALM_ENABLED=0 disagrees with the deprecated CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1, so the firstmate-owned flag decides"
+
+# --- 5. The bound on phase 2: an operational envelope cannot reach a row from here ----
+# This Claude Code strips an invisible character out of submitted composer input and
+# asks for a second Enter, so an exact operational envelope typed or pasted into the TUI
+# would arrive as plain ASCII that the canonical classifier correctly reads as
+# non-operational. The zero-height operational row therefore keeps its coverage in the
+# mod's own plugin suites and in the classifier parity corpus of
+# tests/fm-calm-claude-mod.test.sh, and this phase is the tripwire for that bound: the
+# moment Claude Code stops sanitizing the marker, this step fails and says to restore
+# the live hidden-row case in phase 2. Delivering that marker to a Claude pane is
+# firstmate's own input concern, not Calm's, and is not this guard's subject. It runs
+# last, submits no turn, and never clears the composer, so the envelope it leaves there
+# cannot reach another step.
+launch "$DEBUG_LOG_MARKER" "$GATE_ON"
+wait_idle
+wait_module_loaded "$DEBUG_LOG_MARKER"
+operational=$(printf 'signal: %s/state/probe.status changed' "$LAB" | "$OPERATIONAL_INPUT" encode watcher) \
+  || fail "could not encode the operational probe"
+send "$operational"
+enter
+wait_screen 'invisible character' "the composer stripping the operational envelope's marker; if Claude Code now submits it intact, restore phase 2's live zero-height operational-row case" 200
+pass "Claude Code $CLAUDE_VERSION strips an exact operational envelope's invisible marker out of the composer, so the live zero-height operational-row case is unreachable from a terminal and its coverage stays in the mod's own suites"

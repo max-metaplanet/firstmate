@@ -1,9 +1,11 @@
 // Firstmate Calm for Claude Code: the hooks module of the `firstmate-calm` mod.
 //
 // A Claude Code "mod" is a plugin whose behavior lives in one hooks module. Claude Code
-// may load this module through its rollout flag or `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS`,
-// but every handler requires that environment variable to equal `1`, so rollout-only
-// loading remains a complete no-op.
+// loads hooks modules on its own terms, so this mod carries its own firstmate-owned gate:
+// every handler requires `FM_CALM_ENABLED` to equal `1`, and loading the module without
+// that opt-in remains a complete no-op. `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS` is read only
+// as a deprecated alias when `FM_CALM_ENABLED` is unset, so a session that still carries
+// only the old platform flag keeps Calm; docs/calm.md owns that migration.
 // The plugin carries no command, skill, agent, or classic hook of its own; the `/calm`
 // command below exists only once this module has registered it. docs/calm.md owns the
 // captain-facing contract and docs/calm-mode-feasibility.md the version-scoped evidence.
@@ -70,13 +72,23 @@ let palette: CalmShipRasterPalette = CALM_SHIP_RASTER_PALETTES.light;
 // Raster size a blit must repeat exactly.
 const sites = new Map<string, { columns: number; rows: number }>();
 
+/**
+ * The firstmate-owned activation gate, resolved once per module environment.
+ *
+ * `FM_CALM_ENABLED` decides alone whenever it is set to anything, so an explicit `0`
+ * deactivates Calm even where the deprecated alias is still exported. Only an unset or
+ * empty `FM_CALM_ENABLED` falls back to that alias. An unreadable name reads as unset,
+ * and two unreadable names leave the mod inactive.
+ */
+async function readActivation($: EngineInterface): Promise<boolean> {
+  const own = await $.env.get("FM_CALM_ENABLED").catch(() => undefined);
+  if (own !== undefined && own !== "") return own === "1";
+  const legacy = await $.env.get("CLAUDE_CODE_ENABLE_FUNCTION_HOOKS").catch(() => undefined);
+  return legacy === "1";
+}
+
 function isActivated($: EngineInterface): Promise<boolean> {
-  if (activation === undefined) {
-    activation = $.env.get("CLAUDE_CODE_ENABLE_FUNCTION_HOOKS").then(
-      (value) => value === "1",
-      () => false,
-    );
-  }
+  if (activation === undefined) activation = readActivation($);
   return activation;
 }
 
