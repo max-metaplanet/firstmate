@@ -1,0 +1,6 @@
+ok - Claude Code 2.1.291 (Claude Code) with the gate off: the hooks module loads and still does nothing - no /calm, stock working row, stock tool rows, no boat, preference on ignored
+ok - Claude Code 2.1.291 (Claude Code) with FM_CALM_ENABLED=1 and the deprecated alias off: the mod auto-loads from .claude/skills, /calm exists, the sailboat replaces and moves in the working row, tool rows draw at zero height, and /calm restores and re-hides them while persisting the shared preference
+ok - Claude Code 2.1.291 (Claude Code) resumes the transcript with Calm's hidden rows still hidden and the preference intact
+ok - Claude Code 2.1.291 (Claude Code) activates the Calm mod on the deprecated CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1 alone, so a session that has not moved to FM_CALM_ENABLED keeps Calm
+ok - Claude Code 2.1.291 (Claude Code) leaves the Calm mod inert when FM_CALM_ENABLED=0 disagrees with the deprecated CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1, so the firstmate-owned flag decides
+ok - Claude Code 2.1.291 (Claude Code) strips an exact operational envelope's invisible marker out of the composer, so the live zero-height operational-row case is unreachable from a terminal and its coverage stays in the mod's own suites

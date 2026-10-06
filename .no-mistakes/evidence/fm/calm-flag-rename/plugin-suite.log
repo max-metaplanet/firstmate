@@ -1,0 +1,2 @@
+ok - Claude Code 2.1.291 (Claude Code) validates the Calm mod strictly at its folder and its auto-load path, hooking exactly the working row, tool, user, and assistant drawings and /calm
+ok - Claude Code 2.1.291 (Claude Code) runs the Calm mod's plugin test suites clean: the FM_CALM_ENABLED gate and its deprecated alias, the persisted toggle, hidden rows, working notes, and the clock-driven working ship
