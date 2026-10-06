@@ -378,8 +378,8 @@ cmd_serve() {
   gen_pid=$!
   # The server prints the URL to open, because only it knows the per-run path
   # token, and the port too once --port 0 let the kernel choose one. Backgrounded
-  # so cleanup can reach it: without job control it stays in this process group,
-  # so Ctrl-C still reaches it directly.
+  # so cleanup can reach it: a background job starts with SIGINT ignored, so
+  # Ctrl-C is handled by the INT trap, whose cleanup stops the server.
   python3 "$server" "$port" "$docroot/index.html" &
   srv_pid=$!
   wait "$srv_pid"

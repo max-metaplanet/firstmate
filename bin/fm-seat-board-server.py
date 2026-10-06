@@ -43,16 +43,8 @@ UNREADABLE_PAGE = b"The seat board page could not be read.\n"
 
 
 def allowed_hosts(port):
-    """Every Host value this server answers for, lowercased.
-
-    A browser omits the port from Host only for a scheme's default port, which
-    loopback HTTP reaches just on port 80, so the bare forms are added only
-    there rather than accepted for every port.
-    """
-    hosts = {"127.0.0.1:%d" % port, "localhost:%d" % port}
-    if port == 80:
-        hosts |= {"127.0.0.1", "localhost"}
-    return frozenset(hosts)
+    """Every Host value this server answers for, lowercased."""
+    return frozenset({"127.0.0.1:%d" % port, "localhost:%d" % port})
 
 
 class SeatBoardHandler(http.server.BaseHTTPRequestHandler):
