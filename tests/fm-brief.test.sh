@@ -1095,6 +1095,54 @@ test_wait_no_turns_absent_keeps_the_previous_brief() {
   pass "fm-brief: without config/wait-no-turns the brief and drive text stay as they were"
 }
 
+# Every record that can raise a question with the captain must name the
+# read-only check behind it or say none was possible, so an unchecked claim
+# cannot pass as a settled fact. The guidance is asserted through the public
+# interface - scaffold a brief, read the generated file - never against the
+# script source.
+test_checked_convention_reaches_every_escalation_path() {
+  local home mode id brief
+  home="$TMP_ROOT/checked-convention-home"
+  mkdir -p "$home/data"
+
+  for mode in no-mistakes direct-PR local-only; do
+    id="brief-checked-$mode"
+    FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj --mode "$mode" >/dev/null 2>&1 \
+      || fail "$mode: ship scaffold exited non-zero"
+    brief="$home/data/$id/brief.md"
+    # shellcheck disable=SC2016  # single quotes are deliberate: the backticks must stay literal
+    assert_grep 'Open that summary with `checked: <what you read and what it showed>`' "$brief" \
+      "$mode: the needs-decision rule did not require the read-only check"
+    # shellcheck disable=SC2016  # single quotes are deliberate: the backticks must stay literal
+    assert_grep '`checked: none possible - <why>`' "$brief" \
+      "$mode: the needs-decision rule did not offer the explicit no-check form"
+  done
+
+  FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" \
+    "$ROOT/bin/fm-brief.sh" brief-checked-scout some-proj --scout >/dev/null 2>&1 \
+    || fail "scout scaffold exited non-zero"
+  brief="$home/data/brief-checked-scout/brief.md"
+  # shellcheck disable=SC2016  # single quotes are deliberate: the backticks must stay literal
+  assert_grep 'Open that summary with `checked: <what you read and what it showed>`' "$brief" \
+    "scout: the needs-decision rule did not require the read-only check"
+  # shellcheck disable=SC2016  # single quotes are deliberate: the backticks must stay literal
+  assert_grep 'Precede every question you leave for the captain with `Checked:' "$brief" \
+    "scout: the report contract did not require a check before each captain question"
+  # shellcheck disable=SC2016  # single quotes are deliberate: the backticks must stay literal
+  assert_grep '`Checked: none possible - <why>`' "$brief" \
+    "scout: the report contract did not offer the explicit no-check form"
+
+  FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" FM_SECONDMATE_CHARTER='sample reviews' \
+    "$ROOT/bin/fm-brief.sh" brief-checked-mate --secondmate --no-projects >/dev/null 2>&1 \
+    || fail "secondmate scaffold exited non-zero"
+  brief="$home/data/brief-checked-mate/brief.md"
+  # shellcheck disable=SC2016  # single quotes are deliberate: the backticks must stay literal
+  assert_grep 'carry the `checked:` part the shared captain-call policy requires' "$brief" \
+    "secondmate charter did not point its escalations at the checked convention"
+
+  pass "fm-brief.sh: ship, scout, and secondmate escalation paths all require the checked part"
+}
+
 test_worker_role_scope() {
   local kind home brief
   home="$TMP_ROOT/worker-role"
@@ -1544,3 +1592,4 @@ test_branch_prefix_is_refused_where_it_does_not_apply
 test_branch_prefix_value_is_validated
 test_branch_prefix_command_is_shell_safe
 test_crewmate_scaffolds_forbid_pool_administration
+test_checked_convention_reaches_every_escalation_path
