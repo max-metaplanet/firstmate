@@ -13,3 +13,8 @@ __pycache__/
 config/
 
 .tools/
+
+# Type declarations and the tsconfig that `claude --plugin-dir <mod>` writes into a
+# Claude Code mod while it hot-reloads; generated, never committed.
+.claude/mods/*/.claude-plugin/types/
+.claude/mods/*/tsconfig.json
