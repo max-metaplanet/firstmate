@@ -25,8 +25,9 @@
 # conversation, bounded, from the tracked code root, with the environment the
 # caller exported (the host exports the branch actor, the lease holder pid,
 # the primary-harness pin, and the report-turn id) and on the Claude seat the
-# lead itself is running on, resolved at the launch rather than inherited
-# (fm_supervision_engine_seat). The runner returns the
+# lead itself is running on, which the caller resolves once per turn
+# (fm_supervision_engine_seat) and passes in rather than letting the launch
+# inherit it. The runner returns the
 # process exit status; the host separately requires a complete successful
 # result, a durable report, and acknowledgement before counting a wake handled.
 # The turn is bounded by fm_exec_timed
@@ -376,7 +377,7 @@ fm_supervision_engine_seat() {
 
 # fm_supervision_engine_turn <engine> <model> <prompt-file> <message-file>
 #     <session-id> <new|resume> <timeout-seconds> <result-file> <error-file>
-#     [<pid-file>]
+#     <profile> [<pid-file>]
 # Runs one bounded engine turn from $FM_ROOT and returns the engine's exit
 # status (124 or 137 when the bound was hit, 127 when the engine could not
 # run). <result-file> receives the engine's machine-readable result and
@@ -384,13 +385,16 @@ fm_supervision_engine_seat() {
 # holds the bounded process's pid and identity, so a restarted host can stop
 # an engine its crashed predecessor left running.
 #
-# A Claude turn resolves its own seat (fm_supervision_engine_seat) and launches
-# under exactly that profile, so no launch can inherit the host process's
-# CLAUDE_CONFIG_DIR; a seat that cannot be resolved returns 127 with the
-# reason in <error-file> rather than launching on whatever the host holds.
+# <profile> is the seat the caller resolved for this turn
+# (fm_supervision_engine_seat), empty for the ambient default login. A Claude
+# turn launches under exactly that profile, so the launch, the conversation
+# the caller chose for that seat, and the seat it recorded cannot disagree,
+# and no launch can inherit the host process's CLAUDE_CONFIG_DIR; a Claude
+# turn given no <profile> argument returns 127 rather than launching on
+# whatever the host holds.
 fm_supervision_engine_turn() {
   local engine=$1 model=$2 prompt=$3 message=$4 session=$5 mode=$6 timeout=$7 result=$8 errors=$9
-  local pid_file=${10:-} bin grace i ledger watched rc home_phys root_phys state_phys identity recorded
+  local pid_file=${11:-} bin grace i ledger watched rc home_phys root_phys state_phys identity recorded
   local profile='' profile_set=0
   local -a args
   bin=$(fm_supervision_engine_bin "$engine" 2>"$errors") || return 127
@@ -420,11 +424,11 @@ fm_supervision_engine_turn() {
       else
         args+=(--resume "$session")
       fi
-      fm_supervision_engine_seat "$STATE" || {
-        printf '%s\n' "$FM_SUPERVISION_ENGINE_SEAT_PROBLEM" > "$errors"
+      if [ -z "${10+set}" ]; then
+        printf 'no Claude seat was passed for this engine turn\n' > "$errors"
         return 127
-      }
-      profile=$FM_SUPERVISION_ENGINE_PROFILE
+      fi
+      profile=${10}
       profile_set=1
       ;;
     *)

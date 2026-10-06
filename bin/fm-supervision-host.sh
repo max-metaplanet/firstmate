@@ -907,9 +907,10 @@ handle_wake() {  # <reason-lines>
     HANDLE_WHY="this session no longer owns supervision"
     return 1
   fi
-  # The seat the engine spends is resolved before every turn, from the record
-  # of the seat this session itself runs on, so a host that outlived a lead
-  # restart stops spending the seat the lead left (THE ENGINE'S SEAT above).
+  # The seat the engine spends is resolved once before every turn, from the
+  # record of the seat this session itself runs on, so a host that outlived a
+  # lead restart stops spending the seat the lead left (THE ENGINE'S SEAT
+  # above); the conversation choice and the launch both use this one value.
   if ! fm_supervision_engine_seat "$STATE"; then
     "$SCRIPT_DIR/fm-wake-grant.sh" release "$GEN" >/dev/null 2>&1 || true
     HANDLE_WHY=$FM_SUPERVISION_ENGINE_SEAT_PROBLEM
@@ -990,7 +991,7 @@ handle_wake() {  # <reason-lines>
     export FM_BRANCH_REPORT_TURN="$turn"
     fm_supervision_engine_turn "$FM_SUPERVISION_ENGINE" "$FM_SUPERVISION_ENGINE_MODEL" \
       "$PROMPT_FILE" "$WAKE_FILE" "$ENGINE_SESSION" "$ENGINE_MODE" "$TURN_TIMEOUT" \
-      "$result" "$errors" "$ENGINE_PID_FILE"
+      "$result" "$errors" "$ENGINE_PROFILE" "$ENGINE_PID_FILE"
   ) &
   ENGINE_SUBSHELL=$!
   wait "$ENGINE_SUBSHELL"
