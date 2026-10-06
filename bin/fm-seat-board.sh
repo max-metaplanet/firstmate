@@ -45,14 +45,9 @@
 # fm_seat_quota_json, which passes --no-credential-refresh and never
 # --allow-keychain-prompt, exactly as every other seat probe in this repo.
 #
-# Not reachable from a web page: binding 127.0.0.1 stops a remote connection
-# but not DNS rebinding, so the server also answers only when the request's
-# Host header is exactly 127.0.0.1 or localhost with its own port, and only
-# under the random per-run path segment in the URL printed above. A hostile
-# page whose own domain is re-pointed at 127.0.0.1 is same-origin to the
-# browser and could otherwise read this board's account emails and quota
-# figures. bin/fm-seat-board-server.py owns that check and is the only thing
-# here that serves the page.
+# Not reachable from a web page: bin/fm-seat-board-server.py is the only thing
+# here that serves the page, and its header owns the DNS-rebinding defence
+# (Host check and per-run path token).
 #
 # Caching: the Claude quota endpoint rate-limits frequent polling, so each
 # seat's quota-axi report is cached for FM_SEAT_BOARD_CACHE_SECONDS (default
