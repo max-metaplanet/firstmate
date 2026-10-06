@@ -1,0 +1,41 @@
+before: docroot=/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-seat-board.UiQmOB exists=yes
+  PID COMMAND
+44395 bash bin/fm-seat-board.sh serve --port 0
+44512 bash bin/fm-seat-board.sh serve --port 0
+44513 /opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/Resources/Python.app/Contents/MacOS/Python /Users/max/.no-mistakes/worktrees/61c6dd39b831/01M48FCYNPB66EXBQ9XRAFCDC7/bin/fm-seat-board-server.py 0 /var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-seat-board.UiQmOB/index.html
+44514 sleep 60
+### kill -INT -44395 (Ctrl-C to the foreground process group)
+### processes in group after:
+  PID COMMAND
+44514 sleep 60
+### listener on 58527 after:
+(none)
+### docroot exists after: no
+### serve.log:
+Seat board: http://127.0.0.1:58527/UyZjl892838GS2dKGsZ1m9RO/
+Ctrl-C to stop.
+fm-seat-board: "GET /UyZjl892838GS2dKGsZ1m9RO/ HTTP/1.1" 200 -
+fm-seat-board: "GET /UyZjl892838GS2dKGsZ1m9RO/ HTTP/1.1" 200 -
+fm-seat-board: "GET /UyZjl892838GS2dKGsZ1m9RO/ HTTP/1.1" 200 -
+fm-seat-board: "GET /UyZjl892838GS2dKGsZ1m9RO/ HTTP/1.1" 200 -
+fm-seat-board: "GET /UyZjl892838GS2dKGsZ1m9RO/ HTTP/1.1" 403 -
+fm-seat-board: "GET /UyZjl892838GS2dKGsZ1m9RO/ HTTP/1.1" 403 -
+fm-seat-board: "GET /UyZjl892838GS2dKGsZ1m9RO/ HTTP/1.1" 403 -
+fm-seat-board: "GET /UyZjl892838GS2dKGsZ1m9RO/ HTTP/1.1" 403 -
+fm-seat-board: "GET /UyZjl892838GS2dKGsZ1m9RO/ HTTP/1.1" 403 -
+fm-seat-board: "GET /UyZjl892838GS2dKGsZ1m9RO/ HTTP/1.0" 403 -
+fm-seat-board: "GET / HTTP/1.1" 404 -
+fm-seat-board: "GET /index.html HTTP/1.1" 404 -
+fm-seat-board: "GET /AAAAAAAAAAAAAAAAAAAAAAAA/ HTTP/1.1" 404 -
+fm-seat-board: "GET /UyZjl892838GS2dKGsZ1m9RO//../../etc/passwd HTTP/1.1" 404 -
+fm-seat-board: "GET /UyZjl892838GS2dKGsZ1m9RO/?x=1 HTTP/1.1" 200 -
+fm-seat-board: code 501, message Unsupported method ('POST')
+fm-seat-board: "POST /UyZjl892838GS2dKGsZ1m9RO/ HTTP/1.1" 501 -
+fm-seat-board: "HEAD /UyZjl892838GS2dKGsZ1m9RO/ HTTP/1.1" 200 -
+fm-seat-board: "HEAD /UyZjl892838GS2dKGsZ1m9RO/ HTTP/1.1" 403 -
+fm-seat-board: "GET /UyZjl892838GS2dKGsZ1m9RO/ HTTP/1.1" 200 -
+fm-seat-board: "GET /favicon.ico HTTP/1.1" 404 -
+fm-seat-board: "GET /UyZjl892838GS2dKGsZ1m9RO/ HTTP/1.1" 403 -
+fm-seat-board: "GET /favicon.ico HTTP/1.1" 403 -
+fm-seat-board: "GET /UyZjl892838GS2dKGsZ1m9RO/ HTTP/1.1" 403 -
+bin/fm-seat-board.sh: line 368: docroot: unbound variable

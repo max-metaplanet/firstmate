@@ -1,0 +1,81 @@
+### printed URL: http://127.0.0.1:58527/UyZjl892838GS2dKGsZ1m9RO/
+### GET http://127.0.0.1:58527/UyZjl892838GS2dKGsZ1m9RO/
+200
+### GET http://localhost:58527/UyZjl892838GS2dKGsZ1m9RO/
+200
+### GET http://LOCALHOST:58527/UyZjl892838GS2dKGsZ1m9RO/
+200
+### body contains seat email via printed URL?
+live-seat@example.test
+### DNS rebinding: attacker.example resolved to 127.0.0.1 (curl --resolve), same port+token
+HTTP/1.0 403 Forbidden
+Server: fm-seat-board 
+Date: Tue, 06 Oct 2026 11:30:10 GMT
+Content-Type: text/plain; charset=utf-8
+Content-Length: 55
+Cache-Control: no-store
+X-Content-Type-Options: nosniff
+
+Host not allowed: this board answers on loopback only.
+
+### Host header 127.0.0.1 without port
+HTTP/1.0 403 Forbidden
+Server: fm-seat-board 
+Date: Tue, 06 Oct 2026 11:30:10 GMT
+Content-Type: text/plain; charset=utf-8
+Content-Length: 55
+Cache-Control: no-store
+X-Content-Type-Options: nosniff
+
+Host not allowed: this board answers on loopback only.
+
+### Host header localhost:80
+403
+### Host 127.0.0.1 with wrong port
+403
+### Host 127.0.0.1.nip.io:58527 (rebinding service style)
+403
+### Missing Host header (HTTP/1.0)
+403
+### Right host, root path
+HTTP/1.0 404 Not Found
+Server: fm-seat-board 
+Date: Tue, 06 Oct 2026 11:30:10 GMT
+Content-Type: text/plain; charset=utf-8
+Content-Length: 59
+Cache-Control: no-store
+X-Content-Type-Options: nosniff
+
+Not found: open the URL fm-seat-board.sh printed on start.
+
+### Right host, /index.html
+404
+### Right host, guessed token
+404
+### Path traversal
+404
+### Token with query string
+200
+### POST to token
+501
+### HEAD with right host
+HTTP/1.0 200 OK
+Server: fm-seat-board 
+Date: Tue, 06 Oct 2026 11:30:10 GMT
+Content-Type: text/html; charset=utf-8
+Content-Length: 1262
+Cache-Control: no-store
+X-Content-Type-Options: nosniff
+
+### HEAD with rebinding host
+HTTP/1.0 403 Forbidden
+Server: fm-seat-board 
+Date: Tue, 06 Oct 2026 11:30:10 GMT
+Content-Type: text/plain; charset=utf-8
+Content-Length: 55
+Cache-Control: no-store
+X-Content-Type-Options: nosniff
+
+### Remote interface: bind check
+COMMAND   PID USER   FD   TYPE             DEVICE SIZE/OFF NODE NAME
+Python  44513  max    3u  IPv4 0x714ee4693f3f41c6      0t0  TCP 127.0.0.1:58527 (LISTEN)
