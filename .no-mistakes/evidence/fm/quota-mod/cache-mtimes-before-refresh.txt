@@ -1,0 +1,6 @@
+total 64
+-rw-r--r--@ 1 max  staff  5348 Sep 26 00:40:36 2026 _Users_max__claude-seats_seat-max.json
+-rw-r--r--@ 1 max  staff  5776 Sep 26 00:40:38 2026 _Users_max__claude-seats_seat-max2.json
+-rw-r--r--@ 1 max  staff  5776 Sep 26 00:40:35 2026 default.json
+-rw-r--r--@ 1 max  staff  1033 Sep 24 16:07:49 2026 seat-max.json
+-rw-r--r--@ 1 max  staff  3852 Sep 24 16:07:49 2026 seat-max2.json

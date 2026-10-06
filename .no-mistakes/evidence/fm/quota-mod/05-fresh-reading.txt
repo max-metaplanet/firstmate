@@ -1,0 +1,40 @@
+                                                                      │                                               ✕
+ ▐▛███▛█   Claude Code v2.1.291                                       │seat-max-gmail 5h 86% · 7d 61% (5d 20h)  live
+▝▜██████▀  Opus 5.5 · Claude Max                                      │defau [new      session 85% · week 60% ·   (13s
+ ▝▝   ▝▝   ~/…/worktrees/61c6dd39b831/01M4862X6MG5M49F15PE5RCEGF      │lt    workers]  Fable week 99%             old)
+                                                                      │seat-ma session 100% · week 3% · Fable    (13s
+                                                                      │x       week 100%                         old)
+                                                                      │seat-max [this     session 85% · week 60% · (13s
+                                                                      │-gmail   session]  Fable week 99%           old)
+                                                                      │seat-ma session 97% · week 24% · Fable    (14s
+                                                                      │x2      week 100%                         old)
+                                                                      │cached readings over 60s old are stale; only thi…
+                                                                      │read 9s ago; next live refresh in 10m
+                                                                      │r: Refresh
+                                                                      │
+                                                                      │
+                                                                      │
+                                                                      │
+                                                                      │
+                                                                      │
+                                                                      │
+                                                                      │
+                                                                      │
+                                                                      │
+                                                                      │
+                                                                      │
+                                                                      │
+                                                                      │
+                                                                      │
+                                                                      │
+                                                                      │
+                                                                      │
+                                                                      │
+seat-max-gmail 5h 86% · 7d 61% (5d 20h)  │  others tightest seat… [-] │
+                                                                      │
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⚠ Transcript saving is off — inherited CLAUDE_CODE_CHILD_SESSION marker · restart with CLAUDE_CODE_FORCE_SESSION_PE…
+  Opus 5.5 | ~/./w/6/01M4862X6MG5M49F15PE5RCEGF [HEAD ✓] | ⚙️30 | ⚡100% | P02=E05=U09=J18:07:41
+  -- INSERT -- ⏵⏵ auto mode on (shift+tab to cycle)

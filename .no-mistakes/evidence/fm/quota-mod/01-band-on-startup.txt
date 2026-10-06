@@ -1,0 +1,40 @@
+
+ ▐▛███▛█   Claude Code v2.1.291
+▝▜██████▀  Opus 5.5 · Claude Max
+ ▝▝   ▝▝   ~/.no-mistakes/worktrees/61c6dd39b831/01M4862X6MG5M49F15PE5RCEGF
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+seat-max-gmail 5h 87% · 7d 61% (5d 21h)  │  others tightest seat-max2 10% (10d old, stale)                         [-]
+
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ Try "fix typecheck errors"
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⚠ Transcript saving is off — inherited CLAUDE_CODE_CHILD_SESSION marker · restart with CLAUDE_CODE_FORCE_SESSION_P…
+  Opus 5.5 | ~/./w/6/01M4862X6MG5M49F15PE5RCEGF [HEAD ✓] | ⚙️29 | ⚡100% | P01=E04=U08=J17:59:54
+  -- INSERT -- ⏵⏵ auto mode on (shift+tab to cycle)

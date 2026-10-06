@@ -1,0 +1,17 @@
+ok - render shows the default seat and marks it active
+ok - render lists a named seat with its windows and extra-usage spend
+ok - render shows an attention line for a seat that is not logged in
+ok - render shows a rate-limited seat's error as-is
+ok - a reload within the cache window does not read quota-axi again
+ok - render reads quota-axi without refreshing or prompting for credentials
+ok - the cache is scoped to each seat's config dir, not its name
+ok - render escapes markup in quota-axi text
+ok - serve rejects a missing or non-numeric port
+ok - json reports every seat with its own cache age and the window those ages are judged against
+ok - json marks the active seat, the live seat, and a seat held out of automatic rotation
+ok - json reports a seat with no usable report as absent rather than as a zero
+ok - json --cached-only reports an empty cache as no data and never reads quota-axi
+ok - json --cached-only serves an expired cached report with its real age, so a reader can call it stale
+ok - json rejects an unknown flag
+# all fm-seat-board tests passed
+EXIT=0

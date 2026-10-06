@@ -1,0 +1,4 @@
+ok - Claude Code 2.1.291 (Claude Code) validates the Quota mod strictly at its folder and its auto-load path, hooking exactly the account measurement, the band, the seats pane, and /seats
+ok - Claude Code 2.1.291 (Claude Code) runs the Quota mod's plugin test suites clean: the activation gate, the live band, the dated seats pane, its text fallback, and the refresh cadence
+ok - the seat reader prints schema 1 with every seat dated, and its cached-only form makes no quota call
+EXIT=0

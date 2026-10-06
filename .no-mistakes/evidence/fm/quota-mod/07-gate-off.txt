@@ -1,0 +1,10 @@
+ ▐▛███▛█   Claude Code v2.1.291
+▝▜██████▀  Opus 5.5 · Claude Max
+ ▝▝   ▝▝   ~/.no-mistakes/worktrees/61c6dd39b831/01M4862X6MG5M49F15PE5RCEGF
+    /usage                                        Show session cost, plan usage, and activity stats
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ /seats
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⚠ Transcript saving is off — inherited CLAUDE_CODE_CHILD_SESSION marker · restart with CLAUDE_CODE_FORCE_SESSION_PE…
+  Opus 5.5 | ~/./w/6/01M4862X6MG5M49F15PE5RCEGF [HEAD ✓] | ⚙️31 | ⚡100% | P02=E05=U09=J18:09:32
+  -- INSERT -- ⏵⏵ auto mode on (shift+tab to cycle)

@@ -1,0 +1,6 @@
+ok - the Quota mod declares one hooks module, nothing that loads on its own, and is reachable from the project auto-load path
+ok - the live-seat policy converts percent used to percent left, clamps nonsense, draws nothing for an empty reading, and never guesses a reset
+ok - the all-seats policy dates every figure, calls anything past the board's cache window stale, says when a seat has no reading, and refuses a reading of another schema
+ok - the refresh cadence defaults to ten minutes, cannot be driven below its floor, and spends one interval on one read however often it is asked
+# all fm-quota-claude-mod tests passed
+EXIT=0
