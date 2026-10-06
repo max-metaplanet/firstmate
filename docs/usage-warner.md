@@ -68,6 +68,8 @@ two programs, and there is no daemon and no schedule of its own.
 A window that crosses its configured threshold notifies once, stays quiet
 while it remains at or below that percent left, and re-arms the moment it next
 reads back above it (an account-level window's own reset does exactly this).
+A window missing from one read has not reset, so it stays notified rather than
+notifying again when it reappears.
 Multiple windows crossing in the same read are batched into one notification
 rather than one per window.
 A standing read failure (`quota-axi` missing, `jq` missing, a malformed

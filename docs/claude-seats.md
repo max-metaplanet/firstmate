@@ -145,7 +145,7 @@ An unreadable or ambiguous quota is never guessed at, in either direction:
 
 - The **active** seat's quota unreadable means no switch, and the watch stays silent rather than waking on every poll.
 - A **candidate** seat's quota unreadable means that seat is skipped, and the output says the quota could not be read rather than implying a number.
-- With an extra-usage policy configured, an unreadable quota **holds** dispatch, because launching anyway would be exactly the guess the policy was set to avoid. The hold lifts on its own once the quota reads again.
+- With an extra-usage policy configured, an unreadable quota **holds** dispatch, because launching anyway would be exactly the guess the policy was set to avoid. The hold lifts on its own once the quota reads again. The one exception is an active seat whose token has [lapsed](#idle-seats-and-lapsed-tokens): only a launch renews it, so holding would hold every spawn for good, and dispatch is allowed instead.
 
 A rotation with no qualifying seat refuses rather than pretending to switch, and never falls back to the default profile or onto a seat held out of rotation.
 
@@ -196,6 +196,7 @@ bin/fm-seat.sh lead-restart --persisted          # do it
 ```
 
 Firstmate tells its crew it is about to restart, another `claude` starts on the new seat in the same terminal, resuming the same session, and the current process ends.
+The replacement carries the ambient login the previous process started from, so the `default` seat still names that login for workers launched afterwards rather than the seat firstmate moved to.
 A seat is a profile directory whose contents symlink the shared `~/.claude` body, which is what lets any seat resume the same session: the seat is the brain, the sessions and settings are the body.
 Without `--to`, the destination is the ordinary rotation, anchored on the seat firstmate is on rather than the seat new workers get, and it skips an excluded seat like every other automatic path.
 
@@ -238,6 +239,7 @@ One consequence is worth planning around.
 A lapsed seat has **no readable quota** until something renews it, so it cannot answer a headroom comparison.
 With `destination-min` set, a lapsed seat is therefore skipped as a rotation destination - reported as unreadable headroom, not as a login problem - which means a home that sets a destination minimum will rotate only onto seats something has read recently.
 If you want rotation to reach idle seats, leave `destination-min` unset so the gate stays login-only.
+The extra-usage dispatch gate does not hold on a lapsed active seat for the same reason: the launch it would hold is the only thing that can renew the token.
 
 A seat that is genuinely signed out is a different state and is still refused.
 When Anthropic definitively rejects a refresh token, Claude Code clears the session in place, and the seat reads `not-logged-in`; `--force` cannot cross that, and the seat needs the owner's login steps again.
@@ -263,6 +265,7 @@ touch <that home>/config/claude-seat-local
 
 The file's presence is the whole setting; nothing reads its content.
 From then on that home keeps its own `claude-seat`, `claude-seats-root`, `claude-seat-threshold`, `claude-seat-destination-min`, `claude-seat-extra-usage`, and `claude-seat-auto-exclude` untouched, including when it has none, and no local convergence overwrites them: not a switch's push, not the session-start secondmate sweep, and not that home's own launch or relaunch.
+When the primary launches or relaunches that home's own firstmate, the launch uses that home's active seat, and the extra-usage dispatch gate reads that home's seat and policy rather than the primary's.
 The declining home still runs `bin/fm-seat.sh switch`, `threshold`, `destination-min`, `extra-usage`, `auto-exclude`, and `arm` normally; those act on itself alone.
 Only that home is left alone - every other local home still takes each switch, and a machine with no such file anywhere behaves exactly as it did before the flag existed.
 
