@@ -317,6 +317,10 @@
       "audience": "maintainer-architecture"
     },
     {
+      "path": "docs/quota-mod.md",
+      "audience": "operator-current"
+    },
+    {
       "path": "docs/claude-seats.md",
       "audience": "operator-current"
     },
