@@ -655,10 +655,17 @@ case "$fault" in latency) sleep "${FORGE_LATENCY:-2}" ;; esac
 # can publish a half-written value (or the 6 an emptied read computes), and a
 # caller then evaluates DEADLINE against torn arithmetic. Publish every new
 # value by rename so each reader always sees one complete old-or-new clock.
-clock_bump() {
-  local tmp
+# A torn read is also checked for, not only prevented: an emptied or
+# non-numeric clock fails the fixture loudly instead of collapsing to the bare
+# offset through $(( + N )).
+clock_bump() {  # seconds
+  local current tmp
+  current=$(cat "$FORGE/clock")
+  case "$current" in
+    '' | *[!0-9]*) printf 'fixture clock is not an epoch: [%s]\n' "$current" >&2; exit 1 ;;
+  esac
   tmp=$(mktemp "$FORGE/clock.XXXXXX")
-  printf '%s\n' "$(( $(cat "$FORGE/clock") + $1 ))" > "$tmp"
+  printf '%s\n' "$(( current + $1 ))" > "$tmp"
   mv -f "$tmp" "$FORGE/clock"
 }
 case "$fault:$*" in
