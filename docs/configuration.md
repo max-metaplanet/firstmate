@@ -157,6 +157,7 @@ The Pi extension reloads this preference on every Pi `session_start`, including 
 
 The Claude Code mod reloads it on every `session.start`, including same-process session replacement.
 It also loads the preference lazily before any row that can draw ahead of that event, including during `claude --continue` restoration.
+This preference is only the on/off choice, never the Claude Code mod's activation gate: that gate is the `FM_CALM_ENABLED` environment variable [`calm.md`](calm.md#claude-code) owns, and this file says nothing about whether the mod runs.
 This preference is local to each Firstmate home and is not part of secondmate inherited configuration.
 
 ## Pi supervision branch

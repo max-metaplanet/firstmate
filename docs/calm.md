@@ -8,7 +8,7 @@ This page is for operators who turn Calm on and need to know what it hides and k
 | Harness | Support |
 | --- | --- |
 | Pi | Fully supported. |
-| Claude Code | Available behind that harness's default-off early-access function-hooks flag, as the [Claude Code](#claude-code) section below describes. |
+| Claude Code | Available behind the Calm mod's own `FM_CALM_ENABLED` opt-in, as the [Claude Code](#claude-code) section below describes. |
 
 Calm is off by default.
 The last `/calm` choice persists for the effective Firstmate home across session starts and resumes on either harness.
@@ -179,15 +179,18 @@ Calm on Claude Code is the mod under `.claude/mods/firstmate-calm`, whose plugin
 The mod is a Claude Code plugin whose whole behavior lives in one function-hooks module.
 The trusted project auto-loads the mod through the `.claude/skills/firstmate-calm` entry (a symlink into `.claude/mods`), so no `--plugin-dir` or marketplace install is needed.
 
-### Enabling function hooks
+### Enabling the Calm mod
 
-Claude Code's early-access function-hooks surface is off by default.
-Claude Code can load modules through its rollout flag, or per session with `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`.
-The mod independently requires that environment variable to equal `1` before doing anything.
-Firstmate never sets that flag in any project or user settings.
+Claude Code loads hooks modules on its own terms, so Calm carries its own gate: the mod requires the environment variable `FM_CALM_ENABLED` to equal `1` before doing anything.
+Firstmate never sets that variable in any project or user settings.
 Enabling it is each captain's own explicit opt-in.
 
-Without that exact value, the mod is a complete no-op, even if Claude Code's rollout flag loads the module:
+`FM_CALM_ENABLED` is the only switch for whether the mod runs at all, while `config/calm` stays the shared cross-harness choice `/calm` toggles, so the two are not interchangeable.
+`CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1` is still read as a deprecated alias, so a session that carries only that older name keeps Calm rather than silently losing it.
+The alias is deprecated because Claude Code 2.1.287 and later ignore it and its own documentation asks for it to be removed, so a captain tidying it away would otherwise turn Calm off with no error.
+When the two disagree, `FM_CALM_ENABLED` decides alone: it is consulted first and only an unset or empty value falls back to the alias, so `FM_CALM_ENABLED=0` deactivates Calm even where the alias is set.
+
+Without that gate, the mod is a complete no-op, even though Claude Code loads the module:
 
 - There is no `/calm` command.
 - The mod reads neither the preference nor the transcript.
@@ -278,11 +281,10 @@ The mod never touches tool execution or prompts, and adds to the stored transcri
 ### Claude Code support bounds
 
 The bounds of the Claude Code support below are recorded with evidence in [`calm-mode-feasibility.md`](calm-mode-feasibility.md#2026-09-15-claude-code-21272-mods-feasibility-and-the-shipped-mod).
-Evidence for 2.1.280 and the record-backed doorbell is also in its [2026-09-25 record](calm-mode-feasibility.md#2026-09-25-claude-code-21280-verification-and-the-record-backed-operational-doorbell) and [2.1.282 reproduction](calm-mode-feasibility.md#2026-09-25-claude-code-21282-reproduction-on-the-installed-build), and for the supervision notes in the [2.1.283 record](calm-mode-feasibility.md#2026-09-28-claude-code-21283-supervision-notes) and their label in the [2.1.284 record](calm-mode-feasibility.md#2026-09-28-claude-code-21284-supervision-note-label-and-the-fm-plugin-name).
+Evidence for 2.1.280 and the record-backed doorbell is also in its [2026-09-25 record](calm-mode-feasibility.md#2026-09-25-claude-code-21280-verification-and-the-record-backed-operational-doorbell) and [2.1.282 reproduction](calm-mode-feasibility.md#2026-09-25-claude-code-21282-reproduction-on-the-installed-build), and for the supervision notes in the [2.1.283 record](calm-mode-feasibility.md#2026-09-28-claude-code-21283-supervision-notes) and their label in the [2.1.284 record](calm-mode-feasibility.md#2026-09-28-claude-code-21284-supervision-note-label-and-the-fm-plugin-name), and for the mod's own activation gate in the [2026-10-06 record](calm-mode-feasibility.md#2026-10-06-claude-code-21291-activation-gate-rename).
 
-- The function-hooks surface is early access and default-off.
-  Claude Code states that its API may change between releases without notice.
-  The mod is verified on Claude Code 2.1.272, 2.1.280, 2.1.282, 2.1.283, and 2.1.284 and refuses nothing newer.
+- The function-hooks surface the mod draws through states in its own generated declarations that its API may change between releases without notice.
+  The mod is verified on Claude Code 2.1.272, 2.1.280, 2.1.282, 2.1.283, 2.1.284, and 2.1.291 and refuses nothing newer.
 - Firstmate's typed producers bound for a Claude Code pane ride the record-backed doorbell, so they hide like any operational row.
   Those producers are the away-mode daemon's escalations and a worker's launch brief.
   Only an envelope that reaches Claude Code some other way, as bare typed or launch-prompt text, arrives without its U+2063 and stays visible.

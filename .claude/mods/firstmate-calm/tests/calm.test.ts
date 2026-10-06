@@ -22,9 +22,13 @@ import {
 const sessionStart = { cwd: "/work", surface: "terminal" as const, isInteractive: true };
 
 describe("activation", () => {
-  async function expectInert($: Engine, on: Parameters<typeof world>[0], functionHooks: string | undefined) {
+  // The world's own default is the active `FM_CALM_ENABLED=1` with no legacy alias set,
+  // so every other suite below exercises the firstmate-owned flag.
+  type Flags = { calmEnabled?: string | undefined; legacyFunctionHooks?: string | undefined };
+
+  async function expectInert($: Engine, on: Parameters<typeof world>[0], flags: Flags) {
     const { clock, files, journal } = world(on, {
-      functionHooks,
+      ...flags,
       preference: "on\n",
       messages: [{ role: "assistant", text: "Working", toolUses: [{ name: "Bash" }] }],
     });

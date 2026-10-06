@@ -52,7 +52,7 @@ test_validate_strict() {
     expect_in_report "$report" "ui.render{component=UserMessage}" "the scan of $path does not hook user rows"
     expect_in_report "$report" "ui.render{component=AssistantMessage}" "the scan of $path does not hook assistant rows"
     expect_in_report "$report" "command.run{command=calm}" "the scan of $path does not serve /calm"
-    expect_in_report "$report" "env reads: CLAUDE_CODE_ENABLE_FUNCTION_HOOKS, FM_CONFIG_OVERRIDE, FM_HOME, FM_ROOT_OVERRIDE, FM_STATE_OVERRIDE" "the scan of $path reads a different environment"
+    expect_in_report "$report" "env reads: CLAUDE_CODE_ENABLE_FUNCTION_HOOKS, FM_CALM_ENABLED, FM_CONFIG_OVERRIDE, FM_HOME, FM_ROOT_OVERRIDE, FM_STATE_OVERRIDE" "the scan of $path reads a different environment"
     expect_in_report "$report" "env writes: nothing" "the scan of $path writes the environment"
     expect_in_report "$report" '$.ui.log (via' "the scan of $path does not write supervision notes to the transcript"
     case "$report" in
@@ -79,7 +79,7 @@ test_plugin_suites() {
     printf '%s\n' "$report" >&2
     fail "Claude Code $CLAUDE_VERSION reported Calm mod plugin test failures"
   }
-  pass "Claude Code $CLAUDE_VERSION runs the Calm mod's plugin test suites clean: persisted toggle, hidden rows, working notes, the clock-driven working ship, and supervision notes"
+  pass "Claude Code $CLAUDE_VERSION runs the Calm mod's plugin test suites clean: the FM_CALM_ENABLED gate and its deprecated alias, the persisted toggle, hidden rows, working notes, the clock-driven working ship, and supervision notes"
 }
 
 test_validate_strict
