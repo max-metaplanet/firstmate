@@ -59,8 +59,13 @@ if (!existsSync(\`\${mod}/hooks/register.ts\`)) throw new Error("the hooks modul
 // hot-reloads; both are gitignored, so a maintainer mid-reload still passes this.
 const generated = new Set([".claude-plugin", "tsconfig.json"]);
 const entries = readdirSync(mod).filter((name) => !generated.has(name)).sort();
-if (JSON.stringify(entries) !== JSON.stringify(["hooks", "lib", "tests"])) {
-  throw new Error(\`the mod folder holds \${entries.join(", ")}: only hooks, lib, and tests may exist\`);
+if (JSON.stringify(entries) !== JSON.stringify(["hooks", "lib", "tests", "types"])) {
+  throw new Error(\`the mod folder holds \${entries.join(", ")}: only hooks, lib, tests, and types may exist\`);
+}
+// types/ holds only the ambient declaration of the mod's \$.state keys: no runtime code.
+const types = readdirSync(\`\${mod}/types\`).sort();
+if (JSON.stringify(types) !== JSON.stringify(["index.d.ts"])) {
+  throw new Error(\`types/ holds \${types.join(", ")}: only the index.d.ts declaration may exist\`);
 }
 console.log("shape-ok");
 JS
@@ -234,17 +239,28 @@ check(!view.fleetTextReport(at({ error: "boom" })).includes("fleet (0)"), "an un
 // Notices: the first reading records, and later readings announce real changes only.
 const first = toasts.fleetToasts(undefined, [row({ id: "a", state: "done" }), row({ id: "b", state: "blocked" })]);
 check(first.toasts.length === 0, \`the first reading announced \${first.toasts.length} notices\`);
-check(first.states.get("a") === "done" && first.states.get("b") === "blocked", "the first reading recorded nothing");
-const second = toasts.fleetToasts(first.states, [row({ id: "a", state: "done" }), row({ id: "b", state: "working" })]);
+check(first.announced.get("a") === "done" && first.announced.get("b") === "blocked", "the first reading recorded nothing");
+const second = toasts.fleetToasts(first.announced, [row({ id: "a", state: "done" }), row({ id: "b", state: "working" })]);
 check(second.toasts.length === 0, "an unchanged state or a return to work announced something");
-const third = toasts.fleetToasts(second.states, [row({ id: "a", state: "failed" }), row({ id: "b", state: "done", pr: "u" })]);
+const third = toasts.fleetToasts(second.announced, [row({ id: "a", state: "failed" }), row({ id: "b", state: "done", pr: "u" })]);
 check(third.toasts.length === 2, \`\${third.toasts.length} notices for two changes\`);
 check(third.toasts[0].text === "a: failed", \`notice \${third.toasts[0].text}\`);
 check(third.toasts[1].text === "b: done · u", \`notice \${third.toasts[1].text}\`);
-const fourth = toasts.fleetToasts(third.states, [row({ id: "a", state: "failed" }), row({ id: "b", state: "done", pr: "u" })]);
+const fourth = toasts.fleetToasts(third.announced, [row({ id: "a", state: "failed" }), row({ id: "b", state: "done", pr: "u" })]);
 check(fourth.toasts.length === 0, "the same states announced twice");
 const decided = toasts.fleetToasts(new Map([["a", "working"]]), [row({ id: "a", state: "blocked", pendingDecision: true })]);
 check(decided.toasts[0].text === "a: blocked (needs your decision)", \`notice \${decided.toasts[0].text}\`);
+// A task flapping between blocked and working earns one notice, not one per return.
+let carried = new Map([["f", "working"]]);
+let flapNotices = 0;
+for (const state of ["blocked", "working", "blocked", "working", "blocked"]) {
+  const round = toasts.fleetToasts(carried, [row({ id: "f", state })]);
+  flapNotices += round.toasts.length;
+  carried = round.announced;
+}
+check(flapNotices === 1, \`a flapping task earned \${flapNotices} notices\`);
+const left = toasts.fleetToasts(new Map([["gone", "done"]]), [row({ id: "f", state: "working" })]);
+check(!left.announced.has("gone"), "a task that left the fleet kept its announced word");
 console.log("policy-ok");
 JS
   out=$(run_node "$TMP_ROOT/policy.mjs" 2>&1) || fail "reading policy: $out"
