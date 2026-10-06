@@ -215,6 +215,7 @@ Without `--to`, the destination is the ordinary rotation, anchored on the seat f
 The notice is cheap because nothing changes for a worker: its steering is a durable inbox, its status is a durable log, and it keeps the seat recorded in its own task record.
 So it is sent fire-and-forget, with no acknowledgement expected and no re-ring spanning the swap, and a worker it cannot reach never blocks the restart; that worker is named in `state/.lead-restart.result` instead.
 Supervision is a separate process with its own lock and is deliberately not stopped, so the cycle count goes from one to one across the swap.
+Its engine still follows the move, at its next turn; see [The engine's seat](supervision-host.md#the-engines-seat).
 
 **`--persisted` is a gate, not a flag.** The replacement drops firstmate's conversation and keeps every durable record, so the open work held only in that conversation has to be written down first - the same persist step a second mate gets before its restart.
 The command refuses without it.
