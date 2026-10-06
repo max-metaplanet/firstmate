@@ -1,0 +1,42 @@
+## host process environment: CLAUDE_CONFIG_DIR=/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.cZBWJv/seats/seat-a (the seat it was started on)
+## lead takes the lock on seat-a via real bin/fm-lock.sh
+lock acquired: harness pid 56785
+--- state/.lock-runtime:
+pid=56785
+profile=/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.cZBWJv/seats/seat-a
+== turn 1 (lead on seat-a)
+resolved seat: '/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.cZBWJv/seats/seat-a'
+turn rc=0 
+## lead moves to seat-b: real bin/fm-lock.sh republishes the record
+lock acquired: harness pid 56785
+--- state/.lock-runtime:
+pid=56785
+profile=/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.cZBWJv/seats/seat-b
+== turn 2 (host env still seat-a, lead on seat-b)
+resolved seat: '/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.cZBWJv/seats/seat-b'
+turn rc=0 
+## lead on the ambient default login (no CLAUDE_CONFIG_DIR)
+lock acquired: harness pid 56785
+--- state/.lock-runtime:
+pid=56785
+profile=
+== turn 3 (ambient default; host env still seat-a)
+resolved seat: ''
+turn rc=0 
+## adversarial: record names a departed lead pid
+== turn 4 (stale record)
+no verdict -> wake goes to main: the record of the Claude seat this session runs on does not name the current lock owner, so the seat the engine must spend is unknown
+## adversarial: record removed
+== turn 5 (no record)
+no verdict -> wake goes to main: the record of the Claude seat this session runs on does not name the current lock owner, so the seat the engine must spend is unknown
+## adversarial: record names a missing profile dir
+== turn 6 (missing dir)
+no verdict -> wake goes to main: the Claude seat this session runs on has no profile directory at /var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.cZBWJv/seats/gone
+## adversarial: a Claude turn called with no profile argument
+turn rc=127 err=no Claude seat was passed for this engine turn
+
+===== launches recorded by the claude executable =====
+-- turn 1 (lead on seat-a): launched claude: CLAUDE_CONFIG_DIR=/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.cZBWJv/seats/seat-a  mode=--session-id
+-- turn 2 (host env still seat-a, lead on seat-b): launched claude: CLAUDE_CONFIG_DIR=/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.cZBWJv/seats/seat-b  mode=--session-id
+-- turn 3 (ambient default; host env still seat-a): launched claude: CLAUDE_CONFIG_DIR=<unset>  mode=--session-id
+-- turn 7 (no profile arg): (not launched)

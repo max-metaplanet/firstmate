@@ -1,0 +1,9 @@
+# tests/fm-supervision-host.test.sh — seat tests plus neighbors, run in isolation against target 70003037
+ok - host: an away wake is handled on the engine through the branch contract and never reaches main
+ok - host: a lead seat move moves the next engine launch and opens a new conversation
+ok - host: an unreadable record of the lead's own seat hands the wake to main instead of guessing a seat
+ok - host: a record left by a departed lead never decides which seat the engine spends
+ok - host: a restarted host stops, by recorded identity, the cycle a killed predecessor left running
+
+# same seat-move test against base 2c8732b6 bin/ (regression reproduction)
+not ok - the first turn must launch on the seat the lead itself runs on
