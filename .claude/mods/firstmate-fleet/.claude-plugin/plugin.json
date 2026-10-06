@@ -1,0 +1,9 @@
+{
+  "name": "firstmate-fleet",
+  "version": "1.0.0",
+  "description": "Firstmate Fleet for Claude Code: the /fleet pane, one above-prompt line naming what waits on the captain, and a transient notice when a task first reaches done, blocked, or failed, all read from bin/fm-fleet-snapshot.sh on a timer. Claude Code loads its hooks module on its own terms, but the mod activates only when FM_FLEET_ENABLED is exactly 1 and is otherwise a complete no-op.",
+  "author": {
+    "name": "Firstmate",
+    "url": "https://github.com/kunchenguid/firstmate"
+  }
+}

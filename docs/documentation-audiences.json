@@ -397,6 +397,10 @@
       "audience": "operator-current"
     },
     {
+      "path": "docs/fleet-mod.md",
+      "audience": "operator-current"
+    },
+    {
       "path": "docs/herdr-backend.md",
       "audience": "operator-current"
     },

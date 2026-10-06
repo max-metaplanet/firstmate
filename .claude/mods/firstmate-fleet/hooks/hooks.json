@@ -1,0 +1,4 @@
+{
+  "description": "Firstmate Fleet hooks module: activates only when FM_FLEET_ENABLED is exactly 1 and is otherwise a complete no-op",
+  "modules": ["./register.ts"]
+}
