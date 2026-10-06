@@ -1,0 +1,9 @@
+{
+  "name": "firstmate-quota",
+  "version": "1.0.0",
+  "description": "Firstmate Quota for Claude Code: one band line for this session's own Claude seat from the engine's native rate-limit readings, and a /seats pane covering every configured seat from the cached per-seat quota reports firstmate already keeps, each dated and labelled stale past its cache window. Claude Code loads its hooks module on its own terms, but the mod activates only when FM_QUOTA_ENABLED is exactly 1 and is otherwise a complete no-op.",
+  "author": {
+    "name": "Firstmate",
+    "url": "https://github.com/kunchenguid/firstmate"
+  }
+}

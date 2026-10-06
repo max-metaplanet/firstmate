@@ -6,6 +6,7 @@
 # Usage:
 #   fm-seat-board.sh [serve] [--port <n>]
 #   fm-seat-board.sh render
+#   fm-seat-board.sh json [--cached-only]
 #
 # serve   Default action. Regenerates the page into a scratch directory, at
 #         most once every FM_SEAT_BOARD_CACHE_SECONDS (60), and serves it on
@@ -14,6 +15,22 @@
 # render  Prints one generated page to stdout and exits, using the same
 #         per-seat cache. Used by the test suite and for a one-shot look
 #         without starting a server.
+# json    Prints the same reading as one JSON object instead of a page, for a
+#         reader that is not a browser. Schema 1:
+#           { schemaVersion, generatedAt, cacheSeconds, activeSeat, liveSeat,
+#             seats: [ { name, configDir, active, autoExcluded, cacheFile,
+#                        hasData, ageSeconds, account, attention,
+#                        windows: [ { id, label, percentRemaining, resetsAt } ],
+#                        extraUsage } ] }
+#         ageSeconds is the age of that seat's own cache file, so a reader can
+#         say how old each figure is instead of implying every one is current;
+#         it is null when no cache file can be read. hasData false means no
+#         report was obtained at all, and every absent figure is null rather
+#         than 0, so "unknown" can never be read as "nothing left". liveSeat
+#         names the seat of the CLAUDE_CONFIG_DIR this process itself received,
+#         through fm_seat_name_of_profile, so a caller does not re-derive it.
+#         --cached-only reads only existing cache files and never shells out to
+#         quota-axi, so a caller on a fast cadence cannot poll the endpoint.
 #
 # The page shows, per seat (the default login plus every named seat from
 # bin/fm-seat.sh's own listing): the account email, each quota window's
@@ -88,14 +105,30 @@ file_age_seconds() {
   printf '%s\n' "$((now - mtime))"
 }
 
-# seat_quota_cached <config-dir>
+# seat_cache_file <config-dir>
+# The cache file one seat's report is stored in. Keyed by the resolved config
+# directory rather than the seat name, so two homes whose same-named seats point
+# at different profiles never share a cached report.
+seat_cache_file() {
+  printf '%s\n' "$FM_SEAT_BOARD_CACHE_DIR/$(cache_key "${1:-default}").json"
+}
+
+# seat_quota_cached <config-dir> [cached-only]
 # This seat's quota-axi --full --json report, read at most once every
 # FM_SEAT_BOARD_CACHE_SECONDS. Prints the cached or freshly read report, or
 # nothing when neither a fresh read nor a usable cache file exists.
+#
+# With a non-empty <cached-only>, an expired or absent cache is reported as no
+# data instead of being refilled: the read makes no quota-axi call at all. That
+# is what lets a caller poll far more often than the endpoint tolerates.
 seat_quota_cached() {
-  local dir=$1 cache_file age out
+  local dir=$1 cached_only=${2-} cache_file age out
   mkdir -p "$FM_SEAT_BOARD_CACHE_DIR" 2>/dev/null || true
-  cache_file="$FM_SEAT_BOARD_CACHE_DIR/$(cache_key "${dir:-default}").json"
+  cache_file=$(seat_cache_file "$dir")
+  if [ -n "$cached_only" ]; then
+    [ -f "$cache_file" ] && cat "$cache_file"
+    return 0
+  fi
   if [ -f "$cache_file" ]; then
     age=$(file_age_seconds "$cache_file") || age=$((FM_SEAT_BOARD_CACHE_SECONDS + 1))
     if [ "$age" -lt "$FM_SEAT_BOARD_CACHE_SECONDS" ]; then
@@ -176,6 +209,88 @@ seat_section_html() {
   printf '</section>\n'
 }
 
+# seat_json <seat-name> <active-seat-name> <cached-only>
+# One seat's record for the `json` action, as the schema in this script's header
+# states it. The cache file's own age travels with the figures so a reader can
+# date them, and a seat with no report prints hasData false with null figures
+# rather than zeros a reader could mistake for an empty quota.
+seat_json() {
+  local name=$1 active=$2 cached_only=$3 dir json cache_file age flags
+  dir=$(fm_seat_config_dir "$name")
+  cache_file=$(seat_cache_file "$dir")
+  json=$(seat_quota_cached "$dir" "$cached_only")
+  age=$(file_age_seconds "$cache_file") || age=null
+  flags=$(fm_seat_auto_excluded "$name" && printf true || printf false)
+  if [ -z "$json" ]; then
+    jq -n \
+      --arg name "$name" --arg dir "$dir" --arg cache "$cache_file" \
+      --argjson active "$([ "$name" = "$active" ] && printf true || printf false)" \
+      --argjson excluded "$flags" \
+      '{
+        name: $name, configDir: $dir, active: $active, autoExcluded: $excluded,
+        cacheFile: $cache, hasData: false, ageSeconds: null, account: null,
+        attention: "no quota data (quota-axi unavailable or the read timed out)",
+        windows: [], extraUsage: null
+      }'
+    return 0
+  fi
+  printf '%s' "$json" | jq \
+    --arg name "$name" --arg dir "$dir" --arg cache "$cache_file" \
+    --argjson active "$([ "$name" = "$active" ] && printf true || printf false)" \
+    --argjson excluded "$flags" \
+    --argjson age "$age" \
+    '
+    ([.providers[]? | select(.provider == "claude")] | first) as $p |
+    {
+      name: $name, configDir: $dir, active: $active, autoExcluded: $excluded,
+      cacheFile: $cache, hasData: true, ageSeconds: $age,
+      account: ($p.account.email // null),
+      attention: (
+        if $p == null then "no claude row in the quota report"
+        elif ($p.source // "") == "oauth" then null
+        else (($p.state.error // "") | if . == "" then "not logged in" else . end)
+        end
+      ),
+      windows: [
+        ($p.windows // [])[] | select(.id != "extra_usage") |
+        {
+          id: .id, label: (.label // .id),
+          percentRemaining: (.percentRemaining // null),
+          resetsAt: (.resetsAt // null)
+        }
+      ],
+      extraUsage: (
+        [($p.windows // [])[] | select(.id == "extra_usage")] |
+        if length == 0 then null
+        else { spentUsd: (.[0].spentUsd // null), limitUsd: (.[0].limitUsd // null) }
+        end
+      )
+    }'
+}
+
+# render_json <cached-only>
+# Every seat's record as one JSON object, the default login first and then each
+# named seat in fm_seat_list's own order.
+render_json() {
+  local cached_only=$1 active name
+  active=$(fm_seat_active)
+  {
+    seat_json "$FM_SEAT_DEFAULT_NAME" "$active" "$cached_only"
+    while IFS= read -r name; do
+      [ -n "$name" ] || continue
+      seat_json "$name" "$active" "$cached_only"
+    done < <(fm_seat_list)
+  } | jq -s \
+      --arg generated "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+      --arg active "$active" \
+      --arg live "$(fm_seat_name_of_profile "${CLAUDE_CONFIG_DIR:-}")" \
+      --argjson cacheSeconds "$FM_SEAT_BOARD_CACHE_SECONDS" \
+      '{
+        schemaVersion: 1, generatedAt: $generated, cacheSeconds: $cacheSeconds,
+        activeSeat: $active, liveSeat: $live, seats: .
+      }'
+}
+
 render_page() {
   local active name
   active=$(fm_seat_active)
@@ -196,6 +311,23 @@ render_page() {
 
 cmd_render() {
   render_page
+}
+
+cmd_json() {
+  local cached_only=
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --cached-only)
+        cached_only=1
+        shift
+        ;;
+      *)
+        usage
+        ;;
+    esac
+  done
+  command -v jq >/dev/null 2>&1 || die "jq not found"
+  render_json "$cached_only"
 }
 
 cmd_serve() {
@@ -245,6 +377,10 @@ case "${1:-serve}" in
     ;;
   render)
     cmd_render
+    ;;
+  json)
+    shift
+    cmd_json "$@"
     ;;
   -h | --help)
     usage

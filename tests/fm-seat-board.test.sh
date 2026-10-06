@@ -90,14 +90,16 @@ EOF
 
 # run_board <home> <fakebin> <cache-dir> [args...]
 # firstmate's own ambient CLAUDE_CONFIG_DIR is pinned empty and every read goes
-# through a per-test cache directory so no test shares another's cache.
+# through a per-test cache directory so no test shares another's cache. With no
+# args the action is `render`, which is what most tests here drive.
 run_board() {
   local home=$1 fakebin=$2 cache=$3
   shift 3
+  [ $# -gt 0 ] || set -- render
   FM_HOME="$home" FM_CONFIG_OVERRIDE="$home/config" FM_STATE_OVERRIDE="$home/state" \
     FM_DATA_OVERRIDE="$home/data" CLAUDE_CONFIG_DIR="" \
     FM_SEAT_BOARD_CACHE_DIR="$cache" FM_SEAT_BOARD_CACHE_SECONDS=60 \
-    PATH="$fakebin:$PATH" "$BOARD" render 2>&1
+    PATH="$fakebin:$PATH" "$BOARD" "$@" 2>&1
 }
 
 test_render_shows_the_default_seat_and_marks_it_active() {
@@ -260,6 +262,141 @@ test_serve_rejects_a_missing_or_non_numeric_port() {
   pass "serve rejects a missing or non-numeric port"
 }
 
+# The `json` action: the same reading as the page, for a reader that is not a
+# browser. Its one consumer today is the firstmate-quota Claude Code mod, whose
+# whole purpose is to date every figure it draws, so what is pinned here is that
+# the reading carries each seat's own age and never turns an absent figure into
+# a zero.
+
+test_json_reports_every_seat_with_its_own_cache_age() {
+  local rec out
+  rec=$(make_board_case json-ages)
+  read_board_case "$rec"
+  mkdir -p "$SEATS_DIR/alpha"
+  printf '(default)\tdefault@example.test\n%s\talpha@example.test\n' "$SEATS_DIR/alpha" > "$SPEC_DIR/email_map"
+  printf '(default)\n%s\n' "$SEATS_DIR/alpha" > "$SPEC_DIR/oauth"
+  printf '%s\t63\n' "$SEATS_DIR/alpha" > "$SPEC_DIR/remaining_map"
+
+  out=$(run_board "$HOME_DIR" "$FAKEBIN" "$CASE_DIR/cache" json)
+  printf '%s' "$out" | jq -e '.schemaVersion == 1' >/dev/null ||
+    fail "json must print schema 1 (got: $out)"
+  printf '%s' "$out" | jq -e '[.seats[].name] == ["default", "alpha"]' >/dev/null ||
+    fail "json must list the default login first and then each named seat (got: $out)"
+  printf '%s' "$out" | jq -e 'all(.seats[]; .hasData == true and (.ageSeconds | type) == "number")' >/dev/null ||
+    fail "json must date every seat it reports figures for (got: $out)"
+  printf '%s' "$out" | jq -e 'any(.seats[]; .name == "alpha" and .windows[0].percentRemaining == 63)' >/dev/null ||
+    fail "json must carry each seat's percent left (got: $out)"
+  printf '%s' "$out" | jq -e '.cacheSeconds == 60' >/dev/null ||
+    fail "json must report the cache window its ages are judged against (got: $out)"
+  pass "json reports every seat with its own cache age and the window those ages are judged against"
+}
+
+test_json_marks_the_active_seat_the_live_seat_and_an_excluded_seat() {
+  local rec out
+  rec=$(make_board_case json-marks)
+  read_board_case "$rec"
+  mkdir -p "$SEATS_DIR/alpha" "$SEATS_DIR/bravo"
+  printf '%s\n%s\n' "$SEATS_DIR/alpha" "$SEATS_DIR/bravo" > "$SPEC_DIR/oauth"
+  printf 'alpha\n' > "$HOME_DIR/config/claude-seat"
+  printf 'bravo\n' > "$HOME_DIR/config/claude-seat-auto-exclude"
+
+  out=$(run_board "$HOME_DIR" "$FAKEBIN" "$CASE_DIR/cache" json)
+  printf '%s' "$out" | jq -e '.activeSeat == "alpha"' >/dev/null ||
+    fail "json must name the seat new workers launch on (got: $out)"
+  printf '%s' "$out" | jq -e 'any(.seats[]; .name == "alpha" and .active == true)' >/dev/null ||
+    fail "json must mark the active seat's own record (got: $out)"
+  printf '%s' "$out" | jq -e 'any(.seats[]; .name == "bravo" and .autoExcluded == true)' >/dev/null ||
+    fail "json must mark a seat held out of automatic rotation (got: $out)"
+  printf '%s' "$out" | jq -e 'any(.seats[]; .name == "alpha" and .autoExcluded == false)' >/dev/null ||
+    fail "json must not mark a seat that is in rotation as excluded (got: $out)"
+  # The live seat is resolved from the profile the reader itself received, which
+  # run_board pins empty, so it is the default login.
+  printf '%s' "$out" | jq -e '.liveSeat == "default"' >/dev/null ||
+    fail "json must name the seat of the profile it was run with (got: $out)"
+  pass "json marks the active seat, the live seat, and a seat held out of automatic rotation"
+}
+
+test_json_reports_a_seat_with_no_report_as_absent_rather_than_zero() {
+  local rec out
+  rec=$(make_board_case json-missing)
+  read_board_case "$rec"
+  mkdir -p "$SEATS_DIR/charlie"
+
+  out=$(run_board "$HOME_DIR" "$FAKEBIN" "$CASE_DIR/cache" json)
+  printf '%s' "$out" | jq -e 'any(.seats[]; .name == "charlie" and .attention != null)' >/dev/null ||
+    fail "a never-logged-in seat must carry an attention line (got: $out)"
+  printf '%s' "$out" | jq -e 'any(.seats[]; .name == "charlie" and (.windows | length) == 0)' >/dev/null ||
+    fail "a seat with no usable report must carry no window (got: $out)"
+  printf '%s' "$out" | jq -e '[.seats[] | select(.windows[]?.percentRemaining == 0)] | length == 0' >/dev/null ||
+    fail "an absent figure must never be reported as 0 (got: $out)"
+  pass "json reports a seat with no usable report as absent rather than as a zero"
+}
+
+test_json_cached_only_never_reads_quota_axi() {
+  local rec out
+  rec=$(make_board_case json-cached-only)
+  read_board_case "$rec"
+  mkdir -p "$SEATS_DIR/alpha"
+  printf '%s\n' "$SEATS_DIR/alpha" > "$SPEC_DIR/oauth"
+  printf '%s\talpha@example.test\n' "$SEATS_DIR/alpha" > "$SPEC_DIR/email_map"
+
+  # Nothing is cached yet, and a cached-only read must not fill it: a reader on a
+  # fast cadence must be unable to reach the rate-limited endpoint at all.
+  rm -f "$FAKEBIN/quota-axi"
+  cat > "$FAKEBIN/quota-axi" <<'SH'
+#!/usr/bin/env bash
+echo "quota-axi must not be called by a cached-only read" >&2
+exit 9
+SH
+  chmod +x "$FAKEBIN/quota-axi"
+
+  out=$(run_board "$HOME_DIR" "$FAKEBIN" "$CASE_DIR/cache" json --cached-only)
+  printf '%s' "$out" | jq -e '.schemaVersion == 1' >/dev/null ||
+    fail "a cached-only read must still print a whole reading (got: $out)"
+  printf '%s' "$out" | jq -e 'all(.seats[]; .hasData == false and .ageSeconds == null)' >/dev/null ||
+    fail "a cached-only read of an empty cache must report no data for every seat (got: $out)"
+  case "$out" in
+    *"must not be called"*) fail "a cached-only read reached quota-axi (got: $out)" ;;
+  esac
+  pass "json --cached-only reports an empty cache as no data and never reads quota-axi"
+}
+
+test_json_cached_only_serves_an_expired_cache_with_its_real_age() {
+  local rec out age
+  rec=$(make_board_case json-expired)
+  read_board_case "$rec"
+  printf '(default)\tcached@example.test\n' > "$SPEC_DIR/email_map"
+  printf '(default)\n' > "$SPEC_DIR/oauth"
+
+  # Fill the cache, then age the file well past the cache window and make every
+  # further quota read fail. A cached-only read must still answer, and must say
+  # how old the answer is rather than presenting it as current.
+  run_board "$HOME_DIR" "$FAKEBIN" "$CASE_DIR/cache" json >/dev/null
+  touch -t 202001010000 "$CASE_DIR/cache/default.json"
+  rm -f "$FAKEBIN/quota-axi"
+  cat > "$FAKEBIN/quota-axi" <<'SH'
+#!/usr/bin/env bash
+exit 9
+SH
+  chmod +x "$FAKEBIN/quota-axi"
+
+  out=$(run_board "$HOME_DIR" "$FAKEBIN" "$CASE_DIR/cache" json --cached-only)
+  printf '%s' "$out" | jq -e 'any(.seats[]; .account == "cached@example.test" and .hasData == true)' >/dev/null ||
+    fail "a cached-only read must still serve an expired cached report (got: $out)"
+  age=$(printf '%s' "$out" | jq -r '[.seats[] | select(.account == "cached@example.test") | .ageSeconds] | first')
+  [ "$age" -gt 60 ] ||
+    fail "an expired cached report must carry an age past the cache window, got $age"
+  pass "json --cached-only serves an expired cached report with its real age, so a reader can call it stale"
+}
+
+test_json_rejects_an_unknown_flag() {
+  local rc
+  "$BOARD" json --fresh >/dev/null 2>&1
+  rc=$?
+  [ "$rc" = 2 ] || fail "json with an unknown flag must exit 2 (got $rc)"
+  pass "json rejects an unknown flag"
+}
+
 test_render_shows_the_default_seat_and_marks_it_active
 test_render_lists_a_named_seat_with_its_windows_and_extra_usage
 test_render_shows_an_attention_line_for_a_seat_that_is_not_logged_in
@@ -269,5 +406,11 @@ test_render_reads_quota_axi_without_refreshing_or_prompting_for_credentials
 test_the_cache_is_scoped_to_each_seats_config_dir_not_its_name
 test_render_escapes_markup_in_quota_axi_text
 test_serve_rejects_a_missing_or_non_numeric_port
+test_json_reports_every_seat_with_its_own_cache_age
+test_json_marks_the_active_seat_the_live_seat_and_an_excluded_seat
+test_json_reports_a_seat_with_no_report_as_absent_rather_than_zero
+test_json_cached_only_never_reads_quota_axi
+test_json_cached_only_serves_an_expired_cache_with_its_real_age
+test_json_rejects_an_unknown_flag
 
 echo "# all fm-seat-board tests passed"

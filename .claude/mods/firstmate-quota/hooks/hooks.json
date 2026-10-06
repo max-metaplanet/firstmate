@@ -1,0 +1,4 @@
+{
+  "description": "Firstmate Quota hooks module: activates only when FM_QUOTA_ENABLED is exactly 1 and is otherwise a complete no-op",
+  "modules": ["./register.ts"]
+}
