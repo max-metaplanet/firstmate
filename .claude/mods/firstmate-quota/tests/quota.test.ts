@@ -149,6 +149,19 @@ describe("every other seat", () => {
     expect(pane).toContain("10d old, stale");
   });
 
+  test("ages a reading with the clock, so a figure that was fresh turns stale", async ($, on) => {
+    const { clock, journal } = world(on, { refreshSeconds: "3600" });
+    await $.session.start(SESSION_START);
+    await clock.settle();
+    expect(textOf(await $.ui.render({ ...PANE, plugin: PLUGIN }))).toContain("(30s old)");
+    await clock.advance(31_000);
+    const pane = textOf(await $.ui.render({ ...PANE, plugin: PLUGIN }));
+    expect(pane).toContain("(1m old, stale)");
+    expect(pane).not.toContain("(30s old)");
+    // Nothing was reread: the age moved with the clock alone.
+    expect(journal.runs.length).toBe(1);
+  });
+
   test("says a seat has no reading rather than drawing a zero", async ($, on) => {
     const { clock } = world(on, {
       board: boardReading([
@@ -272,6 +285,44 @@ describe("the cadence that protects the quota endpoint", () => {
       await $.ui.render({ ...PANE, plugin: PLUGIN });
     }
     expect(journal.runs.length).toBe(before);
+  });
+});
+
+describe("the pane's Refresh", () => {
+  async function pressRefresh($: Engine) {
+    await $.ui.render({ ...PANE, plugin: PLUGIN });
+    await $.ui.press({ plugin: PLUGIN, key: "refresh", requestId: PANE.requestId });
+  }
+
+  test("rereads only the cache at once and says when the next live refresh is allowed", async ($, on) => {
+    const { clock, journal, refreshingRuns, setBoard } = world(on, { refreshSeconds: "600" });
+    await $.session.start(SESSION_START);
+    await clock.settle();
+    await clock.advance(120_000);
+    setBoard(boardReading([seat("alpha"), seat("bravo", { ageSeconds: 3, windows: [{ id: "five_hour", label: "session", percentRemaining: 41 }] })]));
+    await pressRefresh($);
+    await clock.settle();
+    expect(journal.runs.length).toBe(2);
+    expect(refreshingRuns()).toEqual([]);
+    const pane = textOf(await $.ui.render({ ...PANE, plugin: PLUGIN }));
+    expect(pane).toContain("session 41%");
+    expect(pane).toContain("read 0s ago");
+    expect(pane).toContain("next live refresh in 8m");
+  });
+
+  test("never reaches the quota endpoint, even once the live interval has elapsed", async ($, on) => {
+    const { clock, refreshingRuns } = world(on, { refreshSeconds: "600" });
+    await $.session.start(SESSION_START);
+    await clock.settle();
+    for (let count = 0; count < 5; count += 1) {
+      await pressRefresh($);
+      await clock.settle();
+    }
+    await clock.advance(599_000);
+    expect(refreshingRuns()).toEqual([]);
+    await pressRefresh($);
+    await clock.settle();
+    expect(refreshingRuns()).toEqual([]);
   });
 });
 

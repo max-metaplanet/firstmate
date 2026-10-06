@@ -70,10 +70,14 @@ After that, a refreshing read is allowed at most once every ten minutes, behind 
 Across four seats the default is under one call per seat every ten minutes, against the per-seat-per-minute rate a naive poll would produce.
 
 An expired cache that cannot be refreshed is still shown, with its real age, rather than being dropped.
+Each age keeps advancing with the clock between reads, so a figure that was fresh when read is called stale once it passes the board's cache window.
+
+The pane's Refresh (`r`) rereads the cache at once and never reaches the quota endpoint, so it cannot bring the next refreshing read any sooner; the pane says when that next refreshing read is allowed.
 
 ## What it never does
 
-- It never writes: no seat setting, no configuration, no file at all.
+- It never changes a seat setting or any configuration.
+  The only thing it writes is the board's own quota cache, which a refreshing read refills through `bin/fm-seat-board.sh`.
 - It never polls the quota endpoint per seat per render or per minute, and a cached read never reaches it even once.
 - It never refuses to start a worker on a low seat.
   That is a real lever and it needs the captain's own explicit say-so first; `bin/fm-seat.sh` already owns automatic seat switching and the extra-usage policy.

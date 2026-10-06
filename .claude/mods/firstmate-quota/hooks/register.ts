@@ -21,13 +21,14 @@
 //     response, and a missing figure must never draw as a zero.
 //   - Every other seat comes from the per-seat reports firstmate already caches.
 //     `bin/fm-seat-board.sh json` owns that cache and dates every seat separately, so
-//     each row carries its own age and anything past the cache window says it is stale.
+//     each row carries its own age, advanced by the engine's clock from the moment it was
+//     read, and anything past the cache window says it is stale.
 //     The Claude quota endpoint rate-limits frequent polling, so a refreshing read is
 //     allowed at most once every ten minutes behind an in-flight guard, and no drawing
-//     ever triggers one.
+//     ever triggers one. The pane's Refresh takes only a cached read.
 //
-// Nothing here writes: every call is `$.process.run` of the read-only board reader, and
-// the mod changes no seat setting and no file at all.
+// The mod changes no seat setting and no configuration. The only thing it writes is the
+// board's own quota cache, which a refreshing read refills through bin/fm-seat-board.sh.
 import type { EngineInterface, Register, RenderElement, RenderInput } from "claude-code";
 import {
   liveBandSegment,
@@ -39,6 +40,7 @@ import {
   type QuotaTension,
 } from "../lib/fm-quota-live.ts";
 import {
+  ageWord,
   codeRootFromPluginRoot,
   freshnessWord,
   parseSeatBoard,
@@ -51,6 +53,7 @@ import {
   type SeatRow,
 } from "../lib/fm-quota-seats.ts";
 import {
+  nextRefreshWord,
   refreshDecision,
   refreshIntervalMs,
   QUOTA_CACHED_TIMEOUT_MS,
@@ -71,6 +74,7 @@ let ticker: { cancel(): void } | undefined;
 let live: LiveWindow[] = [];
 // The last reading of every seat, and why there is none when there is none.
 let board: SeatBoard | undefined;
+let boardReadAtMs = 0;
 let boardError = "";
 let reading: Promise<void> | undefined;
 let lastClaimedAtMs: number | undefined;
@@ -134,6 +138,7 @@ async function read($: EngineInterface, refreshing: boolean): Promise<void> {
       return;
     }
     board = parsed;
+    boardReadAtMs = await $.clock.now();
     boardError = "";
   } catch (error) {
     boardError = error instanceof Error ? error.message : String(error);
@@ -168,6 +173,8 @@ function startRead($: EngineInterface, refreshing: boolean): void {
  */
 async function tick($: EngineInterface): Promise<void> {
   const now = await $.clock.now();
+  // Every age on screen is derived from the clock, so a redraw is what moves it.
+  if (board !== undefined) $.ui.invalidate("ui.render");
   const decision = refreshDecision(
     { lastClaimedAtMs, inFlight: reading !== undefined },
     now,
@@ -185,6 +192,7 @@ async function load($: EngineInterface, isInteractive: boolean): Promise<void> {
   refreshEvery = refreshIntervalMs(await $.env.get("FM_QUOTA_REFRESH_SECONDS").catch(() => undefined));
   live = [];
   board = undefined;
+  boardReadAtMs = 0;
   boardError = "";
   reading = undefined;
   // The gate opens one whole interval after the session starts, not on the first tick:
@@ -201,8 +209,8 @@ async function load($: EngineInterface, isInteractive: boolean): Promise<void> {
 }
 
 /** The band's one line, or undefined when there is nothing honest to say. */
-function bandLine(): { readonly text: string; readonly tension: QuotaTension } | undefined {
-  const rows = board === undefined ? [] : seatRows(board);
+function bandLine(nowMs: number): { readonly text: string; readonly tension: QuotaTension } | undefined {
+  const rows = board === undefined ? [] : seatRows(board, boardReadAtMs, nowMs);
   const ours = liveBandSegment(liveSeatLabel(), live);
   const theirs = seatsBandSegment(rows);
   const parts = [ours, theirs].filter((part): part is string => part !== undefined);
@@ -211,7 +219,7 @@ function bandLine(): { readonly text: string; readonly tension: QuotaTension } |
 }
 
 /** The pane's rows as plain lines, which is also the text a session that cannot draw gets. */
-function seatsText(): string {
+function seatsText(nowMs: number): string {
   const lines: string[] = [...liveTextLines(liveSeatLabel(), live)];
   if (board === undefined) {
     lines.push(
@@ -221,7 +229,7 @@ function seatsText(): string {
     );
     return lines.join("\n");
   }
-  for (const row of seatRows(board)) lines.push(seatLine(row));
+  for (const row of seatRows(board, boardReadAtMs, nowMs)) lines.push(seatLine(row));
   if (boardError !== "") lines.push(`last read failed: ${boardError}`);
   lines.push(
     `cached figures older than ${board.cacheSeconds}s are shown as stale; this session's own figures are live`,
@@ -284,7 +292,7 @@ export const register: Register = (on) => {
     if (!canDraw) {
       if (board === undefined && reading === undefined) startRead($, false);
       if (reading !== undefined) await reading;
-      return { text: seatsText() };
+      return { text: seatsText(await $.clock.now()) };
     }
     await $.ui.open({ id: SEATS_COMMAND, title: "Claude seats", focus: true, closeOnEscape: true });
     return {};
@@ -294,6 +302,7 @@ export const register: Register = (on) => {
     if (!(await isActivated($))) return next(e);
     if (e.requestId !== SEATS_COMMAND) return next(e);
     const { Box, Text, Button } = $.ui.resolve(e);
+    const now = await $.clock.now();
     const children: unknown[] = [];
     const ours = liveBandSegment(liveSeatLabel(), live);
     children.push(
@@ -315,7 +324,7 @@ export const register: Register = (on) => {
         }),
       );
     } else {
-      for (const row of seatRows(board)) children.push(seatElement($, e, row));
+      for (const row of seatRows(board, boardReadAtMs, now)) children.push(seatElement($, e, row));
       if (boardError !== "") {
         children.push(Text({ color: "red", wrap: "truncate-end", children: [`last read failed: ${boardError}`] }));
       }
@@ -329,6 +338,16 @@ export const register: Register = (on) => {
         }),
       );
     }
+    const lastRead = board === undefined ? "" : `read ${ageWord((now - boardReadAtMs) / 1000)} ago; `;
+    children.push(
+      Text({
+        dimColor: true,
+        wrap: "truncate-end",
+        children: [`${lastRead}${nextRefreshWord(lastClaimedAtMs, now, refreshEvery)}`],
+      }),
+    );
+    // Refresh rereads only the cache, so pressing it can never reach the quota endpoint
+    // or move the live refresh any sooner.
     children.push(
       Button({
         key: "refresh",
@@ -336,7 +355,7 @@ export const register: Register = (on) => {
         hotkey: "r",
         plain: true,
         onPress: () => {
-          void tick($);
+          startRead($, false);
         },
       }),
     );
@@ -345,7 +364,7 @@ export const register: Register = (on) => {
 
   on("ui.render", { component: "AbovePrompt" }, async ($, e, next) => {
     if (!(await isActivated($))) return next(e);
-    const line = bandLine();
+    const line = bandLine(await $.clock.now());
     if (line === undefined) return next(e);
     const { Box, Text } = $.ui.resolve(e);
     // Another mod's band content survives: take theirs and draw ours beneath it.

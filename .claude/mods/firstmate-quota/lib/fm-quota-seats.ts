@@ -180,17 +180,33 @@ export function ageWord(seconds: number): string {
 }
 
 /**
- * How fresh one seat's cached figures are.
+ * How old one seat's cached figures are at `nowMs`, in seconds, or null when undatable.
+ *
+ * The board dates each seat as of the moment it was read, and the reading then sits in
+ * memory until the next one, so the time since `readAtMs` is added: an age frozen at
+ * read time would keep calling a figure fresh long after it had gone stale.
+ */
+export function seatAgeSeconds(seat: SeatRecord, readAtMs: number, nowMs: number): number | null {
+  if (seat.ageSeconds === null) return null;
+  return seat.ageSeconds + Math.max(0, nowMs - readAtMs) / 1000;
+}
+
+/**
+ * How fresh one seat's cached figures are, at the age `seatAgeSeconds` gives them.
  *
  * `none` means no report at all, `unknown` means a report whose cache file could not be
  * dated, and anything older than the board's own cache window is `stale`. The window is
  * the board's, not this mod's: the board is what decides when a cached report has
  * expired, so the two can never disagree about what current means.
  */
-export function seatFreshness(seat: SeatRecord, cacheSeconds: number): SeatFreshness {
+export function seatFreshness(
+  seat: SeatRecord,
+  ageSeconds: number | null,
+  cacheSeconds: number,
+): SeatFreshness {
   if (!seat.hasData) return "none";
-  if (seat.ageSeconds === null) return "unknown";
-  return seat.ageSeconds > cacheSeconds ? "stale" : "fresh";
+  if (ageSeconds === null) return "unknown";
+  return ageSeconds > cacheSeconds ? "stale" : "fresh";
 }
 
 /** How a row's age reads: `10d old, stale`, `40s old`, or an honest absence. */
@@ -208,14 +224,16 @@ export function freshnessWord(freshness: SeatFreshness, ageWordText: string): st
 }
 
 /**
- * Every seat as a row to draw, the board's own order kept.
+ * Every seat as a row to draw at `nowMs`, the board's own order kept, for a reading
+ * taken at `readAtMs`.
  *
  * The live seat's row is marked but keeps its cached figures: the engine's exact
  * readings go in the band, and showing both says plainly which number came from where.
  */
-export function seatRows(board: SeatBoard): SeatRow[] {
+export function seatRows(board: SeatBoard, readAtMs: number, nowMs: number): SeatRow[] {
   return board.seats.map((seat) => {
-    const freshness = seatFreshness(seat, board.cacheSeconds);
+    const age = seatAgeSeconds(seat, readAtMs, nowMs);
+    const freshness = seatFreshness(seat, age, board.cacheSeconds);
     const live = seat.name === board.liveSeat;
     const marks: string[] = [];
     if (live) marks.push("this session");
@@ -227,7 +245,7 @@ export function seatRows(board: SeatBoard): SeatRow[] {
       active: seat.active,
       autoExcluded: seat.autoExcluded,
       freshness,
-      ageWord: seat.ageSeconds === null ? "" : ageWord(seat.ageSeconds),
+      ageWord: age === null ? "" : ageWord(age),
       account: seat.account ?? "",
       attention: seat.attention ?? "",
       windows: seat.windows.flatMap((window) =>

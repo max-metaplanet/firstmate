@@ -173,18 +173,32 @@ check(board.cacheSeconds === 60 && board.liveSeat === "alpha", "the reading's ow
 // Freshness is measured against the BOARD's cache window, so the two owners of what
 // "current" means can never disagree.
 const seatOf = (text) => seats.parseSeatBoard(text).seats[0];
-check(seats.seatFreshness(seatOf(reading({}, { ageSeconds: 12 })), 60) === "fresh", "a reading inside the window is fresh");
-check(seats.seatFreshness(seatOf(reading({}, { ageSeconds: 61 })), 60) === "stale", "a reading past the window is stale");
-check(seats.seatFreshness(seatOf(reading({}, { ageSeconds: 864000 })), 60) === "stale", "a ten-day-old reading is stale");
-check(seats.seatFreshness(seatOf(reading({}, { ageSeconds: 12 })), 86400) === "fresh", "a wider window keeps it fresh");
-check(seats.seatFreshness(seatOf(reading({}, { ageSeconds: null })), 60) === "unknown", "a reading that cannot be dated is unknown");
-check(seats.seatFreshness(seatOf(reading({}, { hasData: false })), 60) === "none", "no report at all is no reading");
+const freshness = (fields, cacheSeconds) => {
+  const record = seatOf(reading({}, fields));
+  return seats.seatFreshness(record, record.ageSeconds, cacheSeconds);
+};
+check(freshness({ ageSeconds: 12 }, 60) === "fresh", "a reading inside the window is fresh");
+check(freshness({ ageSeconds: 61 }, 60) === "stale", "a reading past the window is stale");
+check(freshness({ ageSeconds: 864000 }, 60) === "stale", "a ten-day-old reading is stale");
+check(freshness({ ageSeconds: 12 }, 86400) === "fresh", "a wider window keeps it fresh");
+check(freshness({ ageSeconds: null }, 60) === "unknown", "a reading that cannot be dated is unknown");
+check(freshness({ hasData: false }, 60) === "none", "no report at all is no reading");
 
 // Each wording carries the age, so no figure is ever presented as current when it is not.
 check(seats.freshnessWord("stale", "10d") === "10d old, stale", "a stale reading must say both its age and that it is stale");
 check(seats.freshnessWord("fresh", "12s") === "12s old", "a fresh reading must still carry its age");
 check(seats.freshnessWord("unknown", "") === "age unknown", "an undatable reading must say so");
 check(seats.freshnessWord("none", "") === "no reading", "a seat with no report must say so");
+
+// An age keeps moving after the read: a reading 30s old at read time is stale once the
+// board's 60s window has passed, without any second read.
+const aging = seats.parseSeatBoard(reading({}, { ageSeconds: 30 }));
+check(seats.seatAgeSeconds(aging.seats[0], 1000, 32000) === 61, "an age must add the time since the read");
+check(seats.seatAgeSeconds(aging.seats[0], 5000, 1000) === 30, "a clock behind the read must not make a reading younger");
+check(seats.seatRows(aging, 1000, 1000)[0].freshness === "fresh", "a reading inside the window at read time is fresh");
+const agedRow = seats.seatRows(aging, 1000, 32000)[0];
+check(agedRow.freshness === "stale" && agedRow.ageWord === "1m", \`a reading past the window by render time must be stale, got \${agedRow.freshness} \${agedRow.ageWord}\`);
+check(seats.seatRows(seats.parseSeatBoard(reading({}, { ageSeconds: null })), 0, 99000)[0].freshness === "unknown", "an undatable reading stays unknown however long it sits");
 
 check(seats.ageWord(0) === "0s" && seats.ageWord(45) === "45s", "seconds read as seconds");
 check(seats.ageWord(600) === "10m", "minutes read as minutes");
@@ -195,6 +209,8 @@ check(seats.ageWord(-1) === "", "a negative age reads as nothing");
 // A seat with no figure must never be drawn as a zero.
 const missing = seats.seatRows(
   seats.parseSeatBoard(reading({}, { hasData: false, ageSeconds: null, account: null, attention: "not logged in", windows: [] })),
+  0,
+  0,
 )[0];
 check(missing.windows.length === 0, "a seat with no report must carry no figure");
 check(seats.seatFiguresText(missing) === "not logged in", "a seat with no report must show why, not a number");
@@ -203,6 +219,8 @@ check(!seats.seatLine(missing).includes("%"), \`a seat with no report must print
 // A window the reader could not read is dropped rather than rounded to zero.
 const nulled = seats.seatRows(
   seats.parseSeatBoard(reading({}, { windows: [{ id: "five_hour", label: "session", percentRemaining: null, resetsAt: null }] })),
+  0,
+  0,
 )[0];
 check(nulled.windows.length === 0, "a null percentage must be dropped, not drawn as 0%");
 check(seats.seatFiguresText(nulled) === "no figures", "a seat whose windows are unreadable must say there are no figures");
@@ -223,6 +241,8 @@ const rows = seats.seatRows(
       ],
     }),
   ),
+  0,
+  0,
 );
 check(rows[0].live === true && rows[0].marks.includes("this session"), "the live seat must be marked");
 check(rows[1].marks.includes("new workers"), "the seat new workers launch on must be marked");
@@ -245,6 +265,8 @@ const noFigures = seats.seatRows(
       ],
     }),
   ),
+  0,
+  0,
 );
 check(seats.seatsBandSegment(noFigures) === "1 other seats: no reading", "other seats with no reading must say so, not show a zero");
 
@@ -282,7 +304,13 @@ check(cadence.refreshIntervalMs("0") === 120000, "a zero interval must be held t
 check(cadence.refreshIntervalMs("-600") === 120000, "a negative interval must be held to the floor");
 check(cadence.QUOTA_REFRESH_SECONDS_MIN >= 120, "the floor must stay at or above two minutes");
 
+check(cadence.nextRefreshWord(0, 120000, 600000) === "next live refresh in 8m", "the pane must say when the next live refresh is allowed");
+check(cadence.nextRefreshWord(0, 599500, 600000) === "next live refresh in 1s", "a wait under a second must still read as a wait");
+check(cadence.nextRefreshWord(0, 600000, 600000) === "a live refresh is due", "an elapsed interval must say a refresh is due");
+check(cadence.nextRefreshWord(undefined, 5, 600000) === "a live refresh is due", "no claim yet must say a refresh is due");
+
 const decide = (state, now, interval = 600000) => cadence.refreshDecision(state, now, interval);
+
 check(decide({ lastClaimedAtMs: undefined, inFlight: false }, 0) === "read", "a first read is due at once");
 check(decide({ lastClaimedAtMs: 0, inFlight: false }, 599999) === "wait", "nothing is due inside the interval");
 check(decide({ lastClaimedAtMs: 0, inFlight: false }, 600000) === "read", "a read is due once the interval has passed");

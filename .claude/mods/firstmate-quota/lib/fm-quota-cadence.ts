@@ -17,6 +17,7 @@
 // memory, so no hook spends its ten-second budget on a process and no redraw can turn
 // into a quota call. ../hooks/register.ts applies this through `$`; everything here is
 // pure, so the tests run it with no engine.
+import { ageWord } from "./fm-quota-seats.ts";
 
 /** How long the mod waits between refreshing reads, when nothing says otherwise. */
 export const QUOTA_REFRESH_SECONDS_DEFAULT = 600;
@@ -81,6 +82,22 @@ export function refreshDecision(
     state.lastClaimedAtMs === undefined || nowMs - state.lastClaimedAtMs >= intervalMs;
   if (!due) return "wait";
   return state.inFlight ? "claim-only" : "read";
+}
+
+/**
+ * When the next refreshing read is allowed, worded for the pane.
+ *
+ * The pane's Refresh only ever takes a cached read, so this is what tells the captain
+ * when fresher figures can actually arrive rather than leaving the button looking inert.
+ */
+export function nextRefreshWord(
+  lastClaimedAtMs: number | undefined,
+  nowMs: number,
+  intervalMs: number,
+): string {
+  const waitMs = lastClaimedAtMs === undefined ? 0 : lastClaimedAtMs + intervalMs - nowMs;
+  if (waitMs <= 0) return "a live refresh is due";
+  return `next live refresh in ${ageWord(Math.ceil(waitMs / 1000))}`;
 }
 
 /**
