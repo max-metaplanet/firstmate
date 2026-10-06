@@ -1,0 +1,29 @@
+# Claude Code: 2.1.291 (Claude Code)
+# S1 submitted prompt: FIRSTMATE_OP: v1 away-supervisor: Supervisor escalate: [baseline] fake-1 done. No action needed; reply OK.
+# S1 marker kept by Claude Code: no
+PASS - S1 reproduce: pre-fix typed U+2063 envelope arrives stripped and the away-mode check reads it as the CAPTAIN RETURNING (the reported bug)
+# S2 submitted prompt: : Firstmate operational input waiting: read '/private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-nm-opmark.Bv34JD/state/operational-inbox/1791279307-037c604bbb834d15.msg' and handle its contents as Firstmate operational input.
+# S2 doorbell-kind of submitted prompt: away-supervisor
+PASS - S2 away escalation via doorbell survives Claude's submit and stays afk (not read as captain return)
+# S2 record body via open: Supervisor escalate: [doorbell] fake-2 done. No action needed; reply OK.
+# S2 pane after doorbell turn:
+#   ✻ Sautéed for 3s · done 5:35 AM
+#   ❯ : Firstmate operational input waiting: read '/private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-nm-opmark.Bv34JD/state/operational-inbox/1791279307-037c604bbb834d15.msg' and handle its
+#     contents as Firstmate operational input.
+#     Read 1 file
+#   ⏺ OK
+#   ✻ Cooked for 8s · done 5:35 AM
+#                                                                                                        tmux detected · scroll with PgUp/PgDn · or add 'set -g mouse on' to ~/.tmux.conf for wheel scroll
+#   ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+#   ❯ 
+#   ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+#     Opus 5.5 | p/v/f/1/g/T/f/wt [nm-opmark ⚠1] | 🔴22.0¢ 23.5s | ⚙️24 | ⚡100% | P02=E05=U09=J18:35:18
+#     -- INSERT -- ⏵⏵ bypass permissions on (shift+tab to cycle) · ← for agents
+PASS - S3 captain-typed 'plain' (as submitted to Claude) reads as the captain returning
+PASS - S3 captain-typed 'forged-missing-record' (as submitted to Claude) reads as the captain returning
+PASS - S3 captain-typed 'foreign-home-record' (as submitted to Claude) reads as the captain returning
+PASS - S3 captain-typed 'stripped-envelope' (as submitted to Claude) reads as the captain returning
+# S4 submitted launch prompt: : Firstmate operational input waiting: read '/private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-nm-opmark.Bv34JD/state/operational-inbox/1791279364-e63be16cbbc877cf.msg' and handle its contents as Firstmate operational input.
+PASS - S4 launch-prompt doorbell arrives intact and its record classifies as launch-brief
+PASS - S4 the Claude worker opened the record and carried out the launch brief
+failures=0

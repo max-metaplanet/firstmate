@@ -1,0 +1,7 @@
+ok - claude (2.1.291 (Claude Code)): strips the operational marker from submitted input, so the record-backed doorbell carrier is required (submitted-prompt hook and session transcript agree; rendered removal notice present)
+ok - claude (2.1.291 (Claude Code)): a typed record-backed doorbell reaches the agent recognizably - it opened the record and carried out the operational input the envelope holds
+# codex: not installed on this machine; its carrier selection is UNVERIFIED by this run
+# opencode: not installed on this machine; its carrier selection is UNVERIFIED by this run
+# pi: not installed on this machine; its carrier selection is UNVERIFIED by this run
+# grok: not installed on this machine; its carrier selection is UNVERIFIED by this run
+# verified the carrier selection against 1 installed harness(es)
