@@ -461,12 +461,11 @@ dismiss_interrupt_hazard() {  # <key> <ere>
 # insert_mode_state <signal>: whether the viewport renders the composer's
 # text-entry indicator. `unreadable` is its own answer, never folded into
 # `other`, because acting on a missing read would type a mode key blind.
-# bin/fm-composer-lib.sh owns both the indicator and how it is recognized.
 insert_mode_state() {  # <signal>
   local screen
   screen=$(fm_backend_visible_capture "$BACKEND" "$T" "$LABEL" 2>/dev/null) \
     || { printf 'unreadable'; return 0; }
-  if fm_composer_modal_entry_shown "$1" "$screen"; then
+  if printf '%s\n' "$screen" | grep -Eq -- "$1"; then
     printf 'insert'
   else
     printf 'other'
@@ -488,8 +487,8 @@ insert_mode_state() {  # <signal>
 # command would otherwise concatenate onto it.
 restore_insert_mode() {
   local signal key composer_state
-  signal=$(fm_composer_modal_entry_signal "$HARNESS") || return 1
-  key=$(fm_composer_modal_entry_key "$HARNESS") || return 1
+  signal=$(fm_control_interrupt_insert_signal "$HARNESS") || return 1
+  key=$(fm_control_interrupt_insert_key "$HARNESS") || return 1
   [ -n "$signal" ] && [ -n "$key" ] || return 1
   fm_backend_visible_capture_supported "$BACKEND" || return 1
   [ "$(insert_mode_state "$signal")" = other ] || return 1
@@ -531,7 +530,7 @@ send_interrupt_keys() {
   arm=$(fm_control_interrupt_arm_signal "$HARNESS")
   hazard=$(fm_control_interrupt_hazard_signal "$HARNESS")
   gap=$(fm_control_interrupt_press_gap "$HARNESS")
-  insert=$(fm_composer_modal_entry_signal "$HARNESS")
+  insert=$(fm_control_interrupt_insert_signal "$HARNESS")
   fm_control_backend_supports_key "$BACKEND" "$key" \
     || die "harness $HARNESS interrupts with $key, which the $BACKEND backend cannot deliver; refusing to send a different key"
   [ -z "$clear" ] || fm_control_backend_supports_key "$BACKEND" "$clear" \
@@ -657,7 +656,7 @@ retire_busy_incarnation() {
 # do_exit: stop the running agent, preserving endpoint and worktree. Prints
 # `already-stopped`, `endpoint-gone`, or `stopped`.
 do_exit() {
-  local state cmd hazard verdict composer_state cancel absence interrupt_result=not-needed dialog
+  local state cmd hazard verdict composer_state cancel absence insert_signal entry_before=insert interrupt_result=not-needed dialog
   require_state_verified_backend exit
   state=$(agent_state)
   case "$state" in
@@ -746,7 +745,7 @@ do_exit() {
   # A modal composer's mode before the command is typed, so a refusal can be
   # attributed to it afterwards. Read only, and only where the viewport can be
   # read: nothing is typed to find this out.
-  insert_signal=$(fm_composer_modal_entry_signal "$HARNESS") || insert_signal=
+  insert_signal=$(fm_control_interrupt_insert_signal "$HARNESS") || insert_signal=
   if [ -n "$insert_signal" ] && fm_backend_visible_capture_supported "$BACKEND"; then
     entry_before=$(insert_mode_state "$insert_signal")
   fi

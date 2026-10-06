@@ -5314,167 +5314,24 @@ test_send_text_submit_non_claude_skips_the_payload_proof() {
 # vim's leave-text-entry key, so a composer an interrupt already touched reads
 # the next typed line as editor commands. `/exit` is then consumed as the
 # search, end-of-word, delete-char and insert commands, and only the trailing
-# `t` reaches the composer. The payload proof keeps that fragment out of the
-# transcript, and the adapter then recovers: the fragment is cleared, the
-# text-entry key is proven to be consumed as a mode change, and the command is
-# typed and proven a second time before Enter.
-test_send_text_submit_claude_command_mode_fragment_is_recovered() {
+# `t` reaches the composer. The payload proof is what keeps that fragment from
+# being submitted as a prompt; bin/fm-control.sh owns putting the composer
+# back and retrying the command once.
+test_send_text_submit_claude_command_mode_fragment_is_refused() {
   local dir log resp fb out enter_count text
   dir="$TMP_ROOT/submit-claude-command-mode"; mkdir -p "$dir/responses"; log="$dir/log"; resp="$dir/responses"; : > "$log"
   text='/exit'
   herdr_submit_claude_prefix "$resp" "$text"
   printf '  \xe2\x9d\xaf t\n' > "$resp/4.out"
   printf '  \xe2\x9d\xaf\n' > "$resp/6.out"
-  herdr_submit_modal_entry_already "$resp" 6 "$(printf '  \xe2\x9d\xaf %s\n' "$text")"
-  printf '{"result":{"agent":{"agent_status":"idle"}}}\n' > "$resp/10.out"
-  printf '{"result":{"agent":{"agent_status":"working"}}}\n' > "$resp/12.out"
   fb=$(make_herdr_fakebin "$dir")
   out=$( PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" FM_BACKEND_HERDR_SUBMIT_POLLS=1 \
     bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_send_text_submit default:w1:p2 "$1" 3 0.01 0.01' "$ROOT" "$text" )
-  [ "$out" = empty ] || fail "an exit command a vim command-mode composer ate should be retyped into a restored composer and submitted, got '$out'"
+  [ "$out" = send-failed ] || fail "an exit command a vim command-mode composer reduced to a stray character should report send-failed, got '$out'"
   enter_count=$(grep -c $'\x1f''pane'$'\x1f''send-keys'$'\x1f''w1:p2'$'\x1f''enter' "$log")
-  [ "$enter_count" -eq 1 ] || fail "only the proven retype should be submitted, sent $enter_count Enter(s)"
-  [ "$(grep -c $'\x1f''pane'$'\x1f''send-text'$'\x1f''w1:p2'$'\x1f'"$text" "$log")" -eq 2 ] || fail "the command should be typed once before the refusal and once after the restore"
-  [ "$(grep -c $'\x1f''pane'$'\x1f''send-text'$'\x1f''w1:p2'$'\x1f''i'$'\x1f' "$log")" -eq 0 ] \
-    || fail "a composer the payload's own commands already left taking text must not be typed into to restore it"
-  [ "$(herdr_ctrl_u_count "$log")" -eq 1 ] || fail "only the refused fragment should be cleared, sent $(herdr_ctrl_u_count "$log") Ctrl+U"
-  pass "fm_backend_herdr_send_text_submit: a payload a modal composer ate as editor commands is cleared and retyped into the composer its own commands left taking text"
-}
-
-# The doorbell line is the fleet's most-typed payload and the live shape that
-# exposed this: a composer in vim command mode eats `: Firstma` as the space,
-# find-backwards, replace, till and append commands - the append is what leaves
-# the composer taking text - so only the remainder is inserted. The recovery
-# must submit the WHOLE line, because a submitted remainder is a different
-# instruction from the one firstmate enqueued.
-test_send_text_submit_claude_command_mode_doorbell_is_recovered_whole() {
-  local dir log resp fb out text remainder
-  dir="$TMP_ROOT/submit-claude-doorbell-mode"; mkdir -p "$dir/responses"; log="$dir/log"; resp="$dir/responses"; : > "$log"
-  text=": Firstmate instruction waiting: list '/tmp/t.inbox'/*.msg and, in numeric order, read and act on each, then mv each handled file to '/tmp/t.inbox'/handled/."
-  remainder=${text#: Firstma}
-  herdr_submit_claude_prefix "$resp" "$text"
-  printf '  \xe2\x9d\xaf %s\n' "$remainder" > "$resp/4.out"
-  printf '  \xe2\x9d\xaf\n' > "$resp/6.out"
-  herdr_submit_modal_entry_already "$resp" 6 "$(printf '  \xe2\x9d\xaf %s\n' "$text")"
-  printf '{"result":{"agent":{"agent_status":"idle"}}}\n' > "$resp/10.out"
-  printf '{"result":{"agent":{"agent_status":"working"}}}\n' > "$resp/12.out"
-  fb=$(make_herdr_fakebin "$dir")
-  out=$( PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" FM_BACKEND_HERDR_SUBMIT_POLLS=1 \
-    bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_send_text_submit default:w1:p2 "$1" 3 0.01 0.01' "$ROOT" "$text" )
-  [ "$out" = empty ] || fail "a doorbell a vim command-mode composer ate should be recovered and submitted, got '$out'"
-  [ "$(grep -cF $'\x1f''pane'$'\x1f''send-text'$'\x1f''w1:p2'$'\x1f'"$text" "$log")" -eq 2 ] \
-    || fail "the whole doorbell line, not its remainder, should be typed again after the restore"
-  [ "$(grep -cF $'\x1f''pane'$'\x1f''send-text'$'\x1f''w1:p2'$'\x1f'"$remainder" "$log")" -eq 0 ] \
-    || fail "the remainder must never be typed as a payload of its own"
-  pass "fm_backend_herdr_send_text_submit: a doorbell a modal composer ate is recovered and submitted whole, never as its remainder"
-}
-
-# The other modal shape: a payload whose consumed commands never reach an
-# insert command leaves the composer EMPTY and still in command mode, so the
-# proof refuses a composer that shows nothing at all and the payload's own
-# characters cannot have restored text entry. Here the text-entry key is typed,
-# and it counts only because the composer stays empty AND the indicator
-# appears - the conjunction that separates a consumed mode change from a
-# character a non-modal composer simply held.
-test_send_text_submit_modal_recovery_types_the_entry_key_when_needed() {
-  local dir log resp fb out text
-  dir="$TMP_ROOT/submit-modal-key"; mkdir -p "$dir/responses"; log="$dir/log"; resp="$dir/responses"; : > "$log"
-  text='xxx'
-  herdr_submit_claude_prefix "$resp" "$text"
-  printf '  \xe2\x9d\xaf\n' > "$resp/4.out"
-  printf '  \xe2\x9d\xaf\n' > "$resp/6.out"
-  herdr_submit_modal_probe_restored "$resp" 6 "$(printf '  \xe2\x9d\xaf %s\n' "$text")"
-  printf '{"result":{"agent":{"agent_status":"idle"}}}\n' > "$resp/13.out"
-  printf '{"result":{"agent":{"agent_status":"working"}}}\n' > "$resp/15.out"
-  fb=$(make_herdr_fakebin "$dir")
-  out=$( PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" FM_BACKEND_HERDR_SUBMIT_POLLS=1 \
-    bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_send_text_submit default:w1:p2 "$1" 3 0.01 0.01' "$ROOT" "$text" )
-  [ "$out" = empty ] || fail "a payload a command-mode composer swallowed whole should be recovered and submitted, got '$out'"
-  [ "$(grep -c $'\x1f''pane'$'\x1f''send-text'$'\x1f''w1:p2'$'\x1f''i'$'\x1f' "$log")" -eq 1 ] \
-    || fail "the text-entry key should be typed exactly once when the payload did not restore text entry itself"
-  [ "$(grep -cF $'\x1f''pane'$'\x1f''send-text'$'\x1f''w1:p2'$'\x1f'"$text" "$log")" -eq 2 ] \
-    || fail "the payload should be typed once before the refusal and once after the restore"
-  [ "$(grep -c $'\x1f''pane'$'\x1f''send-keys'$'\x1f''w1:p2'$'\x1f''enter' "$log")" -eq 1 ] \
-    || fail "the recovered payload should be submitted exactly once"
-  pass "fm_backend_herdr_send_text_submit: a payload that left the composer empty and in command mode is recovered by typing the proven text-entry key"
-}
-
-# A transcript above the composer can quote the indicator - a worker that just
-# read the composer library does - while the composer itself sits in command
-# mode. Only the composer's own footer is text-entry proof, so the quoted line
-# must not stop the text-entry key from being typed.
-test_send_text_submit_modal_recovery_ignores_an_indicator_in_the_transcript() {
-  local dir log resp fb out text
-  dir="$TMP_ROOT/submit-modal-transcript"; mkdir -p "$dir/responses"; log="$dir/log"; resp="$dir/responses"; : > "$log"
-  text='xxx'
-  herdr_submit_claude_prefix "$resp" "$text"
-  printf '  \xe2\x9d\xaf\n' > "$resp/4.out"
-  printf '  \xe2\x9d\xaf\n' > "$resp/6.out"
-  herdr_submit_modal_probe_restored "$resp" 6 "$(printf '  \xe2\x9d\xaf %s\n' "$text")"
-  herdr_claude_vim_viewport '' "    claude) printf '%s' '-- INSERT --' ;;" > "$resp/7.out"
-  printf '{"result":{"agent":{"agent_status":"idle"}}}\n' > "$resp/13.out"
-  printf '{"result":{"agent":{"agent_status":"working"}}}\n' > "$resp/15.out"
-  fb=$(make_herdr_fakebin "$dir")
-  out=$( PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" FM_BACKEND_HERDR_SUBMIT_POLLS=1 \
-    bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_send_text_submit default:w1:p2 "$1" 3 0.01 0.01' "$ROOT" "$text" )
-  [ "$out" = empty ] || fail "a command-mode composer under a transcript quoting the indicator should be recovered and submitted, got '$out'"
-  [ "$(grep -c $'\x1f''pane'$'\x1f''send-text'$'\x1f''w1:p2'$'\x1f''i'$'\x1f' "$log")" -eq 1 ] \
-    || fail "an indicator quoted in the transcript must not be read as the composer taking text"
-  [ "$(grep -c $'\x1f''pane'$'\x1f''send-keys'$'\x1f''w1:p2'$'\x1f''enter' "$log")" -eq 1 ] \
-    || fail "the recovered payload should be submitted exactly once"
-  pass "fm_backend_herdr_send_text_submit: an indicator quoted in the transcript above a command-mode composer is not text-entry proof"
-}
-
-# The one outcome the recovery must never dress up as a clean refusal: its own
-# text-entry character stayed in the composer. send-failed would claim nothing
-# was typed, and the ring's caller would leave that character to concatenate.
-test_send_text_submit_modal_probe_that_will_not_clear_is_unaccounted() {
-  local dir log resp fb out text cap n
-  dir="$TMP_ROOT/submit-modal-probe-stuck"; mkdir -p "$dir/responses"; log="$dir/log"; resp="$dir/responses"; : > "$log"
-  text=$(herdr_long_payload 60)
-  herdr_submit_claude_prefix "$resp" "$text"
-  printf '  \xe2\x9d\xaf %s\n' "${text: -20}" > "$resp/4.out"
-  printf '  \xe2\x9d\xaf\n' > "$resp/6.out"
-  # No indicator at slot 7, the key is typed at 8, and every composer read from
-  # slot 9 onward still shows it, so the clear can never be verified.
-  cap=$(( 1 / 40 + 8 ))
-  for ((n = 9; n <= 9 + 2 * cap; n += 2)); do
-    printf '  \xe2\x9d\xaf i\n' > "$resp/$n.out"
-  done
-  fb=$(make_herdr_fakebin "$dir")
-  out=$( PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" FM_BACKEND_HERDR_SUBMIT_POLLS=1 \
-    bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_send_text_submit default:w1:p2 "$1" 3 0.01 0.01' "$ROOT" "$text" )
-  [ "$out" = unaccounted ] || fail "a probe character the composer will not give back must not report send-failed, got '$out'"
-  [ "$(grep -c $'\x1f''pane'$'\x1f''send-keys'$'\x1f''w1:p2'$'\x1f''enter' "$log")" -eq 0 ] \
-    || fail "nothing may be submitted while the composer still holds the probe character"
-  pass "fm_backend_herdr_send_text_submit: a text-entry probe character that cannot be cleared reports unaccounted, not send-failed"
-}
-
-# The recovery is one attempt, not a loop: a composer that refuses the payload
-# again after a proven restore is a genuine refusal, and retyping forever would
-# hammer a pane that cannot take the text.
-test_send_text_submit_modal_recovery_is_attempted_once() {
-  local dir log resp fb out text
-  dir="$TMP_ROOT/submit-modal-once"; mkdir -p "$dir/responses"; log="$dir/log"; resp="$dir/responses"; : > "$log"
-  text=$(herdr_long_payload 60)
-  herdr_submit_claude_prefix "$resp" "$text"
-  printf '  \xe2\x9d\xaf %s\n' "${text: -20}" > "$resp/4.out"
-  printf '  \xe2\x9d\xaf\n' > "$resp/6.out"
-  # The composer is already taking text, so the retype happens at once - and is
-  # refused the same way, then cleared again.
-  herdr_submit_modal_entry_already "$resp" 6 "$(printf '  \xe2\x9d\xaf %s\n' "${text: -20}")"
-  printf '  \xe2\x9d\xaf\n' > "$resp/11.out"
-  fb=$(make_herdr_fakebin "$dir")
-  out=$( PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" FM_BACKEND_HERDR_SUBMIT_POLLS=1 \
-    bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_send_text_submit default:w1:p2 "$1" 3 0.01 0.01' "$ROOT" "$text" )
-  [ "$out" = send-failed ] || fail "a payload still refused after a proven restore should report send-failed, got '$out'"
-  [ "$(grep -c $'\x1f''pane'$'\x1f''send-text'$'\x1f''w1:p2'$'\x1f'"$text" "$log")" -eq 2 ] \
-    || fail "the payload should be typed exactly twice: once before the restore and once after"
-  [ "$(grep -c $'\x1f''pane'$'\x1f''send-text'$'\x1f''w1:p2'$'\x1f''i'$'\x1f' "$log")" -eq 0 ] \
-    || fail "a composer already taking text must not be typed into to restore it"
-  [ "$(grep -c $'\x1f''pane'$'\x1f''send-keys'$'\x1f''w1:p2'$'\x1f''enter' "$log")" -eq 0 ] \
-    || fail "a twice-refused payload must never be submitted"
-  pass "fm_backend_herdr_send_text_submit: the modal recovery is attempted exactly once, and a payload still refused after it is send-failed"
+  [ "$enter_count" -eq 0 ] || fail "the stray character must never be submitted as a prompt, sent $enter_count Enter(s)"
+  [ "$(herdr_ctrl_u_count "$log")" -eq 1 ] || fail "the refused fragment should be cleared out of the composer"
+  pass "fm_backend_herdr_send_text_submit: an exit command a modal composer reduced to a stray character is refused, not submitted"
 }
 
 # Live Claude 2.1.281 on Herdr 0.9.1: typing `/exit` opens the slash-command
@@ -6336,12 +6193,7 @@ test_send_text_submit_multiline_paste_placeholder_submits_the_long_payload
 test_send_text_submit_refuses_placeholder_followed_by_a_literal_remainder
 test_send_text_submit_three_paste_placeholders_submit_the_long_payload
 test_send_text_submit_non_claude_skips_the_payload_proof
-test_send_text_submit_claude_command_mode_fragment_is_recovered
-test_send_text_submit_claude_command_mode_doorbell_is_recovered_whole
-test_send_text_submit_modal_recovery_types_the_entry_key_when_needed
-test_send_text_submit_modal_recovery_ignores_an_indicator_in_the_transcript
-test_send_text_submit_modal_probe_that_will_not_clear_is_unaccounted
-test_send_text_submit_modal_recovery_is_attempted_once
+test_send_text_submit_claude_command_mode_fragment_is_refused
 test_send_text_submit_claude_slash_completion_list_below_composer_submits
 test_dispatch_routes_herdr_send_literal
 test_dispatch_routes_herdr_backend
