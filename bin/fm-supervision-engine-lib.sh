@@ -359,6 +359,7 @@ _fm_engine_reap() {
 # seat. A profile directory that is not there is still refused here, and a
 # profile whose credentials are genuinely gone fails the launch itself, which
 # the host already hands to main and counts toward its latch.
+# shellcheck disable=SC2034 # Output globals, read by the sourcing caller.
 fm_supervision_engine_seat() {
   local state_dir=${1-} profile
   FM_SUPERVISION_ENGINE_PROFILE=''
