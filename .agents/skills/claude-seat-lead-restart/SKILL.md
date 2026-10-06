@@ -44,6 +44,9 @@ The wake line is self-sufficient and carries the exact command; run the steps in
    The command prints what will happen and the process ends a few seconds later.
    Do not start new work, do not promise the captain a follow-up from this session, and do not wait for the swap: the successor picks up from durable records at its own session start, and anything arriving meanwhile is held by the durable wake queue.
 
+Supervision needs nothing from you across the move.
+The supervision host reads the seat it spends from the record the successor leaves beside the home's lock, so it follows the move at its next engine turn with no restart; [docs/supervision-host.md](../../../docs/supervision-host.md#the-engines-seat) owns that behavior and what it does when the seat cannot be resolved.
+
 A crossing the move cannot act on is reported as a blocker instead, naming what could not be established.
 Treat that as an ordinary blocker: it is captain-facing only when the captain has to act, such as a destination seat that needs their login.
 

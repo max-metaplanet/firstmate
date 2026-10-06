@@ -24,7 +24,9 @@
 # ONE ENGINE TURN (fm_supervision_engine_turn). One prompt to one engine
 # conversation, bounded, from the tracked code root, with the environment the
 # caller exported (the host exports the branch actor, the lease holder pid,
-# the primary-harness pin, and the report-turn id). The runner returns the
+# the primary-harness pin, and the report-turn id) and on the Claude seat the
+# lead itself is running on, resolved at the launch rather than inherited
+# (fm_supervision_engine_seat). The runner returns the
 # process exit status; the host separately requires a complete successful
 # result, a durable report, and acknowledgement before counting a wake handled.
 # The turn is bounded by fm_exec_timed
@@ -327,6 +329,51 @@ _fm_engine_reap() {
   done
 }
 
+# fm_supervision_engine_seat <state-dir>
+# The Claude seat the engine's NEXT launch must spend, read from the one
+# record that names the seat this firstmate session itself runs on: the
+# lock-owner runtime record's profile field (bin/fm-session-lock-lib.sh, which
+# must be sourced first). Sets FM_SUPERVISION_ENGINE_PROFILE to that profile
+# directory, or to empty for the ambient default login, and returns 0. On no
+# verdict it leaves the profile empty, sets
+# FM_SUPERVISION_ENGINE_SEAT_PROBLEM to one plain sentence, and returns 1.
+#
+# WHY THE RECORD AND NEVER THE ENVIRONMENT. A host process is started by a
+# primary's arm owner and can outlive the session that started it, including
+# across a lead restart onto another seat (bin/fm-lead-restart.sh,
+# .agents/skills/claude-seat-lead-restart/SKILL.md). An engine launch that
+# inherited CLAUDE_CONFIG_DIR from that host process would keep spending the
+# seat the lead has just left - usually the seat it left because its quota was
+# low - so the seat is resolved from the record at every launch instead. The
+# record is bound to the pid on the lock's first line, so the departed lead's
+# own record is no verdict rather than a stale answer, and the lead's seat
+# cannot be read off config/claude-seat either: that file names the seat NEW
+# workers get and moves without the lead.
+#
+# WHY NO LOGIN PROBE. The profile this resolves is the one the live
+# lock-holding Claude session is running on, so that session IS the evidence
+# the seat holds a usable login, and a `quota-axi` probe (fm_seat_logged_in)
+# would spend a bounded read per wake to re-derive it while reporting
+# "undecided" for a rate-limited or Keychain-gated read of a perfectly good
+# seat. A profile directory that is not there is still refused here, and a
+# profile whose credentials are genuinely gone fails the launch itself, which
+# the host already hands to main and counts toward its latch.
+fm_supervision_engine_seat() {
+  local state_dir=${1-} profile
+  FM_SUPERVISION_ENGINE_PROFILE=''
+  FM_SUPERVISION_ENGINE_SEAT_PROBLEM=''
+  if ! profile=$(fm_session_lock_runtime_field "$state_dir" profile); then
+    FM_SUPERVISION_ENGINE_SEAT_PROBLEM="the record of the Claude seat this session runs on does not name the current lock owner, so the seat the engine must spend is unknown"
+    return 1
+  fi
+  if [ -n "$profile" ] && [ ! -d "$profile" ]; then
+    FM_SUPERVISION_ENGINE_SEAT_PROBLEM="the Claude seat this session runs on has no profile directory at $profile"
+    return 1
+  fi
+  FM_SUPERVISION_ENGINE_PROFILE=$profile
+  return 0
+}
+
 # fm_supervision_engine_turn <engine> <model> <prompt-file> <message-file>
 #     <session-id> <new|resume> <timeout-seconds> <result-file> <error-file>
 #     [<pid-file>]
@@ -336,9 +383,15 @@ _fm_engine_reap() {
 # <error-file> its diagnostics. While the turn runs, <pid-file> (when given)
 # holds the bounded process's pid and identity, so a restarted host can stop
 # an engine its crashed predecessor left running.
+#
+# A Claude turn resolves its own seat (fm_supervision_engine_seat) and launches
+# under exactly that profile, so no launch can inherit the host process's
+# CLAUDE_CONFIG_DIR; a seat that cannot be resolved returns 127 with the
+# reason in <error-file> rather than launching on whatever the host holds.
 fm_supervision_engine_turn() {
   local engine=$1 model=$2 prompt=$3 message=$4 session=$5 mode=$6 timeout=$7 result=$8 errors=$9
   local pid_file=${10:-} bin grace i ledger watched rc home_phys root_phys state_phys identity recorded
+  local profile='' profile_set=0
   local -a args
   bin=$(fm_supervision_engine_bin "$engine" 2>"$errors") || return 127
   case "$timeout" in ''|0*|*[!0-9]*) timeout=1200 ;; esac
@@ -367,6 +420,12 @@ fm_supervision_engine_turn() {
       else
         args+=(--resume "$session")
       fi
+      fm_supervision_engine_seat "$STATE" || {
+        printf '%s\n' "$FM_SUPERVISION_ENGINE_SEAT_PROBLEM" > "$errors"
+        return 127
+      }
+      profile=$FM_SUPERVISION_ENGINE_PROFILE
+      profile_set=1
       ;;
     *)
       printf 'no engine turn is defined for %s\n' "$engine" > "$errors"
@@ -376,6 +435,15 @@ fm_supervision_engine_turn() {
   ledger=$(mktemp "$STATE/.supervision-host-descendants.XXXXXX") || return 127
   (
     cd "$FM_ROOT" || exit 127
+    # The seat is applied to this launch alone, and an ambient-default seat
+    # clears the variable rather than leaving the host's own inherited.
+    if [ "$profile_set" -eq 1 ]; then
+      if [ -n "$profile" ]; then
+        export CLAUDE_CONFIG_DIR="$profile"
+      else
+        unset CLAUDE_CONFIG_DIR
+      fi
+    fi
     fm_exec_timed "$timeout" "$grace" "$bin" "${args[@]}"
   ) </dev/null >"$result" 2>"$errors" &
   watched=$!

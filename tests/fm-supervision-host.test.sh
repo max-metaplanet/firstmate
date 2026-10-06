@@ -67,8 +67,9 @@ STATE=${FM_STATE_OVERRIDE:-$FM_HOME/state}
 mode=$(cat "$FM_HOME/stub-mode" 2>/dev/null || echo handle)
 n=$(( $(ls "$FM_HOME"/engine-call.* 2>/dev/null | wc -l) + 1 ))
 {
-  printf 'mode=%s\nactor=%s\nholder=%s\nprimary=%s\nturn=%s\n' "$mode" "${FM_SUPERVISION_ACTOR:-}" \
-    "${FM_LEASE_HOLDER_PID:-}" "${FM_SUPERVISION_PRIMARY_HARNESS:-}" "${FM_BRANCH_REPORT_TURN:-}"
+  printf 'mode=%s\nactor=%s\nholder=%s\nprimary=%s\nturn=%s\nprofile=%s\n' "$mode" "${FM_SUPERVISION_ACTOR:-}" \
+    "${FM_LEASE_HOLDER_PID:-}" "${FM_SUPERVISION_PRIMARY_HARNESS:-}" "${FM_BRANCH_REPORT_TURN:-}" \
+    "${CLAUDE_CONFIG_DIR:-}"
   for a in "$@"; do printf 'arg=%s\n' "$a"; done
 } > "$FM_HOME/engine-call.$n"
 case "$mode" in held|captain-held) printf 'ready\n' > "$FM_HOME/stub-ready" ;; esac
@@ -200,6 +201,11 @@ trap suite_cleanup EXIT
 make_home() {  # <name> <attended|away|quiet> [config line]
   local home="$TMP_ROOT/$1"
   mkdir -p "$home/state" "$home/config" "$home/fakebin"
+  # The Claude seat this home's main session runs on, as a profile directory
+  # the fake harness records beside the lock the way bin/fm-lock.sh does. A
+  # test moves the lead onto another seat by rewriting that record.
+  mkdir -p "$home/seats/seat-a" "$home/seats/seat-b"
+  printf '%s\n' "$home/seats/seat-a" > "$home/lead-profile"
   # An unreachable backend: the watcher reads no endpoint as dead, so the only
   # wakes are the status appends each case makes.
   printf '#!/usr/bin/env bash\nexit 1\n' > "$home/fakebin/tmux"
@@ -244,6 +250,8 @@ start_host() {  # <home> [park options...]
   FM_HOME="$home" FM_CREW_STATE_BIN="$home/fakebin/fm-crew-state.sh" PATH="$home/fakebin:$PATH" \
     MIRROR_ROOT="$MIRROR_ROOT" "$FAKE_CLAUDE" -c '
       printf "%s\n" "$$" > "$FM_HOME/state/.lock"
+      printf "pid=%s\nprofile=%s\n" "$$" "$(cat "$FM_HOME/lead-profile" 2>/dev/null || true)" \
+        > "$FM_HOME/state/.lock-runtime"
       printf "%s\n" "$$" >> "$FM_HOME/claude-pids"
       rm -f "$FM_HOME/host.rc"
       for seed in "$FM_HOME"/mirror-seed.*; do
@@ -1057,6 +1065,8 @@ test_attended_close_with_unidentified_main_session_passes_to_main() {
   FM_HOME="$home" FM_CREW_STATE_BIN="$home/fakebin/fm-crew-state.sh" PATH="$home/fakebin:$PATH" \
     "$FAKE_CLAUDE" -c '
       printf "%s\n" "$$" > "$FM_HOME/state/.lock"
+      printf "pid=%s\nprofile=%s\n" "$$" "$(cat "$FM_HOME/lead-profile" 2>/dev/null || true)" \
+        > "$FM_HOME/state/.lock-runtime"
       printf "%s\n" "$$" >> "$FM_HOME/claude-pids"
       mkdir -p "$FM_HOME/proc/$$"
       printf "%s (claude) S\n" "$$" > "$FM_HOME/proc/$$/stat"
@@ -1151,6 +1161,8 @@ start_hook_session() {  # <home>
   FM_HOME="$home" FM_ROOT_OVERRIDE="$home" FM_CREW_STATE_BIN="$home/fakebin/fm-crew-state.sh" \
     PATH="$home/fakebin:$PATH" "$FAKE_CLAUDE" -c '
       printf "%s\n" "$$" > "$FM_HOME/state/.lock"
+      printf "pid=%s\nprofile=%s\n" "$$" "$(cat "$FM_HOME/lead-profile" 2>/dev/null || true)" \
+        > "$FM_HOME/state/.lock-runtime"
       printf "%s\n" "$$" >> "$FM_HOME/claude-pids"
       for seed in "$FM_HOME"/mirror-seed.*; do
         [ -f "$seed" ] || continue
@@ -2064,6 +2076,85 @@ test_away_turn_without_a_report_hands_the_wake_to_main() {
   pass "host: an engine turn that records no outcome hands its durable wake to main"
 }
 
+# The lead moves onto another Claude seat while the host is parked: the next
+# engine launch spends the new seat rather than the one it inherited, and it
+# opens a new conversation, because the old conversation lives under the old
+# seat's profile.
+test_lead_seat_move_moves_the_next_engine_launch() {
+  local home seat_a seat_b lock_pid first second first_session second_session
+  home=$(make_home seat-move away)
+  seat_a="$home/seats/seat-a"
+  seat_b="$home/seats/seat-b"
+  start_host "$home"
+  wait_until 150 watcher_live "$home" || fail "seat-move: the host never started a watcher cycle: $(cat "$home/host.out")"
+  append_status "$home" 'step one'
+  wait_until 250 handled_at_least "$home" 1 || fail "seat-move: the first wake was not handled: $(cat "$home/state/.supervision-host.log")"
+  first="$home/engine-call.1"
+  assert_re "^profile=$seat_a\$" "$first" "the first turn must launch on the seat the lead itself runs on"
+  assert_re '^arg=--session-id$' "$first" "the first turn must open a new conversation"
+  assert_grep "profile=$seat_a" "$home/state/.supervision-host-engine" "the conversation must record the seat it was opened on"
+
+  # The lead restarts onto seat-b: the successor records that seat beside the
+  # lock, as bin/fm-lead-restart.sh leaves it. The host process is the one from
+  # before the move, so its own environment still names seat-a.
+  lock_pid=$(cat "$home/state/.lock")
+  printf 'pid=%s\nprofile=%s\n' "$lock_pid" "$seat_b" > "$home/state/.lock-runtime"
+  append_status "$home" 'step two'
+  wait_until 250 handled_at_least "$home" 2 || fail "seat-move: the second wake was not handled: $(cat "$home/state/.supervision-host.log")"
+  second="$home/engine-call.2"
+  assert_re "^profile=$seat_b\$" "$second" "the next launch after a seat move must spend the new seat"
+  assert_no_re "^profile=$seat_a\$" "$second" "the next launch must not keep spending the seat the lead left"
+  assert_re '^arg=--session-id$' "$second" "a launch on a new seat must open a new conversation"
+  assert_no_re '^arg=--resume$' "$second" "a conversation opened on the old seat must not be resumed on the new one"
+  first_session=$(sed -n '/^arg=--session-id$/{n;s/^arg=//p;}' "$first")
+  second_session=$(sed -n '/^arg=--session-id$/{n;s/^arg=//p;}' "$second")
+  [ -n "$second_session" ] && [ "$second_session" != "$first_session" ] \
+    || fail "the new conversation reused the old session id ($first_session)"
+  assert_grep "profile=$seat_b" "$home/state/.supervision-host-engine" "the conversation must record the new seat"
+  pass "host: a lead seat move moves the next engine launch and opens a new conversation"
+}
+
+# The record of the seat the lead runs on is gone, so which seat the engine
+# would spend is unknown: the wake goes to main with that reason and no engine
+# launches at all.
+test_unreadable_lead_seat_record_hands_the_wake_to_main() {
+  local home
+  home=$(make_home seat-unreadable away)
+  start_host "$home"
+  wait_until 150 watcher_live "$home" || fail "seat-unreadable: the host never started a watcher cycle"
+  rm -f "$home/state/.lock-runtime"
+  append_status "$home" 'needs a look'
+  wait_until 250 host_exited "$home" || fail "seat-unreadable: the host did not hand the wake to main"
+  expect_code 0 "$(cat "$home/host.rc")" "a handed-back wake must exit 0 for the owner to deliver"
+  assert_re '^signal: .*demo.status' "$home/host.out" "the handed-back close must carry the reason line"
+  assert_re '^supervision-host: .*the record of the Claude seat this session runs on' "$home/host.out" \
+    "the handback must name the unknown seat as the cause"
+  [ "$(engine_calls "$home")" -eq 0 ] \
+    || fail "an engine launched although the seat it would spend is unknown"
+  assert_grep 'demo.status' "$home/state/.wake-queue" "the unhandled wake must stay durable for main"
+  pass "host: an unreadable record of the lead's own seat hands the wake to main instead of guessing a seat"
+}
+
+# A record left behind by the lead that has already gone names a pid the lock
+# no longer holds, so it is no verdict rather than a stale answer: the wake
+# goes to main and the seat that record names is never spent.
+test_departed_leads_seat_record_is_never_spent() {
+  local home seat_a
+  home=$(make_home seat-stale away)
+  seat_a="$home/seats/seat-a"
+  start_host "$home"
+  wait_until 150 watcher_live "$home" || fail "seat-stale: the host never started a watcher cycle"
+  printf 'pid=%s\nprofile=%s\n' 999999 "$seat_a" > "$home/state/.lock-runtime"
+  append_status "$home" 'needs a look'
+  wait_until 250 host_exited "$home" || fail "seat-stale: the host did not hand the wake to main"
+  assert_re '^supervision-host: .*the record of the Claude seat this session runs on' "$home/host.out" \
+    "the handback must name the unknown seat as the cause"
+  [ "$(engine_calls "$home")" -eq 0 ] \
+    || fail "an engine launched on the seat a record the lock no longer owns names"
+  assert_grep 'demo.status' "$home/state/.wake-queue" "the unhandled wake must stay durable for main"
+  pass "host: a record left by a departed lead never decides which seat the engine spends"
+}
+
 test_return_during_an_engine_turn_hands_its_outcomes_to_main() {
   local home
   home=$(make_home away-return away)
@@ -2605,6 +2696,8 @@ start_session() {  # <home>
   FM_HOME="$home" FM_CREW_STATE_BIN="$home/fakebin/fm-crew-state.sh" PATH="$home/fakebin:$PATH" \
     MIRROR_ROOT="$MIRROR_ROOT" "$FAKE_CLAUDE" -c '
       printf "%s\n" "$$" > "$FM_HOME/state/.lock"
+      printf "pid=%s\nprofile=%s\n" "$$" "$(cat "$FM_HOME/lead-profile" 2>/dev/null || true)" \
+        > "$FM_HOME/state/.lock-runtime"
       printf "%s\n" "$$" >> "$FM_HOME/claude-pids"
       while [ ! -e "$FM_HOME/session.stop" ]; do
         if [ -e "$FM_HOME/park.go" ]; then
@@ -2857,6 +2950,8 @@ test_superseded_host_leaves_the_owner_untouched() {
   FM_HOME="$home" FM_CREW_STATE_BIN="$home/fakebin/fm-crew-state.sh" PATH="$home/fakebin:$PATH" \
     "$FAKE_CLAUDE" -c '
       printf "%s\n" "$$" > "$FM_HOME/state/.lock"
+      printf "pid=%s\nprofile=%s\n" "$$" "$(cat "$FM_HOME/lead-profile" 2>/dev/null || true)" \
+        > "$FM_HOME/state/.lock-runtime"
       printf "%s\n" "$$" >> "$FM_HOME/claude-pids"
       "$0" park > "$FM_HOME/host.out" 2>&1 &
       while [ ! -e "$FM_HOME/go-second" ]; do sleep 0.1; done
@@ -2936,6 +3031,9 @@ test_undelivered_dialog_is_fed_again_on_the_next_turn
 test_attended_wake_with_an_unreadable_mirror_reaches_main
 test_away_wake_is_handled_on_the_engine_and_never_reaches_main
 test_away_turn_without_a_report_hands_the_wake_to_main
+test_lead_seat_move_moves_the_next_engine_launch
+test_unreadable_lead_seat_record_hands_the_wake_to_main
+test_departed_leads_seat_record_is_never_spent
 test_return_during_an_engine_turn_hands_its_outcomes_to_main
 test_silent_outcomes_are_not_relayed_when_the_captain_returns
 test_large_turn_relays_an_early_visible_outcome
