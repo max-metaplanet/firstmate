@@ -1,0 +1,3 @@
+     fired=beta
+STEP1 FAIL: fired=beta left stale
+STEP2 FAIL: watcher silent about beta

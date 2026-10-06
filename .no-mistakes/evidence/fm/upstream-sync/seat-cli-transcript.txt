@@ -1,0 +1,95 @@
+$ fm-seat.sh list
+seats root: /tmp/fmlive.Qa0J/seats
+* default	logged-in	default@example.test	(ambient default login)
+  alpha	logged-in	alpha@example.test	/tmp/fmlive.Qa0J/seats/alpha
+  bravo	logged-in	bravo@example.test	/tmp/fmlive.Qa0J/seats/bravo
+  charlie	not-logged-in	-	/tmp/fmlive.Qa0J/seats/charlie
+[exit 0]
+$ fm-seat.sh status
+active seat for NEW workers: default
+active profile: (ambient default login)
+login state: logged-in
+firstmate itself is running on: (not recorded for this session)
+auto-switch trigger: (unset - no automatic switching)
+destination minimum: (unset - any logged-in seat is a valid destination)
+extra-usage policy: (unset - nothing holds Claude dispatch)
+excluded from automatic rotation: (none - every seat under the root is a rotation candidate)
+auto-switch watch: not armed
+new Claude dispatch: allowed
+  no extra-usage policy is configured, so no quota is read and nothing holds
+
+live workers keep the seat they launched with:
+  (no task records)
+
+local secondmate homes declining inherited seats:
+  (none - every local home takes this seat)
+[exit 0]
+$ fm-seat.sh switch charlie
+error: seat 'charlie' is not logged in; run 'fm-seat.sh add charlie' for the owner's login steps (docs/claude-seats.md)
+[exit 1]
+$ fm-seat.sh switch alpha
+switched: default -> alpha
+applies to NEW claude workers only; running workers keep their own seat
+config-push: no live secondmate homes found
+[exit 0]
+$ fm-seat.sh status
+active seat for NEW workers: alpha
+active profile: /tmp/fmlive.Qa0J/seats/alpha
+login state: logged-in
+firstmate itself is running on: (not recorded for this session)
+auto-switch trigger: (unset - no automatic switching)
+destination minimum: (unset - any logged-in seat is a valid destination)
+extra-usage policy: (unset - nothing holds Claude dispatch)
+excluded from automatic rotation: (none - every seat under the root is a rotation candidate)
+auto-switch watch: not armed
+new Claude dispatch: allowed
+  no extra-usage policy is configured, so no quota is read and nothing holds
+
+live workers keep the seat they launched with:
+  (no task records)
+
+local secondmate homes declining inherited seats:
+  (none - every local home takes this seat)
+[exit 0]
+$ fm-seat.sh threshold 30
+auto-switch threshold: 30% left
+[exit 0]
+$ fm-seat.sh destination-min 60
+destination minimum: 60% left
+[exit 0]
+$ fm-seat.sh auto-exclude bravo
+excluded from automatic rotation: bravo
+'fm-seat.sh switch bravo' still switches to it; only the automatic paths skip it
+[exit 0]
+$ fm-seat.sh switch --next
+seat bravo: skipped, excluded from automatic rotation (fm-seat.sh auto-include bravo puts it back; switch bravo still reaches it)
+seat charlie: skipped, not logged in
+error: no seat under the seats root qualifies as a destination (each skipped seat and its reason is printed above); add and log into a second seat, put an excluded seat back with 'fm-seat.sh auto-include <name>', or lower 'fm-seat.sh destination-min' (docs/claude-seats.md). The default profile is never a rotation target, so switch to it by name if that is what you want
+[exit 1]
+$ fm-seat.sh auto-include bravo
+back in automatic rotation: bravo
+[exit 0]
+$ fm-seat.sh switch --next
+seat bravo: skipped, 55% left is not above the 60% destination minimum
+seat charlie: skipped, not logged in
+error: no seat under the seats root qualifies as a destination (each skipped seat and its reason is printed above); add and log into a second seat, put an excluded seat back with 'fm-seat.sh auto-include <name>', or lower 'fm-seat.sh destination-min' (docs/claude-seats.md). The default profile is never a rotation target, so switch to it by name if that is what you want
+[exit 1]
+$ fm-seat.sh status
+active seat for NEW workers: alpha
+active profile: /tmp/fmlive.Qa0J/seats/alpha
+login state: logged-in
+firstmate itself is running on: (not recorded for this session)
+auto-switch trigger: at or below 30% left on the active seat
+destination minimum: only switch to a seat above 60% left
+extra-usage policy: (unset - nothing holds Claude dispatch)
+excluded from automatic rotation: (none - every seat under the root is a rotation candidate)
+auto-switch watch: not armed
+new Claude dispatch: allowed
+  no extra-usage policy is configured, so no quota is read and nothing holds
+
+live workers keep the seat they launched with:
+  (no task records)
+
+local secondmate homes declining inherited seats:
+  (none - every local home takes this seat)
+[exit 0]

@@ -1,0 +1,18 @@
+## correct URL, Host 127.0.0.1:49346
+200
+## DNS-rebinding: same socket, Host: evil.example:49346
+Host not allowed: this board answers on loopback only.
+
+403
+## Host localhost with wrong port
+Host not allowed: this board answers on loopback only.
+
+403
+## right Host, guessed path /
+Not found: open the URL fm-seat-board.sh printed on start.
+
+404
+## POST to page
+501
+## bound address
+Python  49159  max    3u  IPv4 0x70f2538f3365c655      0t0  TCP 127.0.0.1:49346 (LISTEN)

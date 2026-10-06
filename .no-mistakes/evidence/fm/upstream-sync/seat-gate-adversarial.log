@@ -1,0 +1,17 @@
+== S-A declining home with own stop policy, primary none: rc=1
+   stderr: error: this home holds new Claude work rather than starting it on paid extra usage:
+   stderr:   the active Claude seat quota could not be read, so whether this worker would run on paid extra usage is unknown, and the policy makes no guess
+   stderr:   this holds only work not yet started; a worker already running keeps its own seat and can still draw extra usage mid-task
+   stderr: re-run with --ignore-seat-hold to start this task anyway, or change the policy with bin/fm-seat.sh extra-usage
+S-A PASS: held by the home's own gate
+S-A: no task record written
+== S-B same with --ignore-seat-hold: rc=0
+S-B PASS: override starts it
+== S-C inheriting secondmate, primary stop: rc=1
+   stderr: error: this home holds new Claude work rather than starting it on paid extra usage:
+   stderr:   the active Claude seat quota could not be read, so whether this worker would run on paid extra usage is unknown, and the policy makes no guess
+   stderr:   this holds only work not yet started; a worker already running keeps its own seat and can still draw extra usage mid-task
+   stderr: re-run with --ignore-seat-hold to start this task anyway, or change the policy with bin/fm-seat.sh extra-usage
+S-C PASS: held by primary gate
+== S-D declining home, primary stop, home none: rc=0
+S-D PASS: not held by primary's gate

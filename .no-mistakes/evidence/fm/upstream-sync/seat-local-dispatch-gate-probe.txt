@@ -1,0 +1,12 @@
+== A: primary-policy='stop' primary-seat=0% | own-policy='unset' own-seat=80% -> rc=0
+   launch CLAUDE_CONFIG_DIR: CLAUDE_CONFIG_DIR='<w>/own-seats/mine'
+== B: primary-policy='unset' primary-seat=80% | own-policy='stop' own-seat=0% -> rc=1
+error: this home holds new Claude work rather than starting it on paid extra usage:
+  the active Claude seat has no plan quota left and the extra-usage policy is stop, so no new Claude worker is started on paid extra usage
+  this holds only work not yet started; a worker already running keeps its own seat and can still draw extra usage mid-task
+   launch CLAUDE_CONFIG_DIR: 
+== C: primary-policy='stop' primary-seat=80% | own-policy='stop' own-seat=0% -> rc=1
+error: this home holds new Claude work rather than starting it on paid extra usage:
+  the active Claude seat has no plan quota left and the extra-usage policy is stop, so no new Claude worker is started on paid extra usage
+  this holds only work not yet started; a worker already running keeps its own seat and can still draw extra usage mid-task
+   launch CLAUDE_CONFIG_DIR: 

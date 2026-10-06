@@ -1,0 +1,98 @@
+## alpha active, 70% left, policy stop
+$ fm-seat.sh extra-usage stop
+extra-usage policy: stop
+new Claude workers are held once the active seat has no plan quota left.
+This stops STARTING new work. It cannot stop a worker already running from
+drawing extra usage mid-task, so it is not a guarantee of zero spend.
+[exit ]
+$ fm-seat.sh status
+active seat for NEW workers: alpha
+active profile: /tmp/fmlive.Qa0J/seats/alpha
+login state: logged-in
+--
+auto-switch trigger: at or below 30% left on the active seat
+destination minimum: only switch to a seat above 60% left
+extra-usage policy: stop - hold new Claude dispatch rather than start work on paid extra usage
+excluded from automatic rotation: (none - every seat under the root is a rotation candidate)
+auto-switch watch: not armed
+new Claude dispatch: allowed
+  the active Claude seat still has 70% of its plan quota left
+
+[exit ]
+## alpha exhausted (0% left) on paid extra usage spend 12.5
+$ fm-seat.sh status
+active seat for NEW workers: alpha
+active profile: /tmp/fmlive.Qa0J/seats/alpha
+login state: logged-in
+--
+auto-switch trigger: at or below 30% left on the active seat
+destination minimum: only switch to a seat above 60% left
+extra-usage policy: stop - hold new Claude dispatch rather than start work on paid extra usage
+excluded from automatic rotation: (none - every seat under the root is a rotation candidate)
+auto-switch watch: not armed
+new Claude dispatch: HELD (bin/fm-spawn.sh --ignore-seat-hold starts one task anyway)
+  the active Claude seat has no plan quota left and the extra-usage policy is stop, so no new Claude worker is started on paid extra usage
+  this holds only work not yet started; a worker already running keeps its own seat and can still draw extra usage mid-task
+
+[exit ]
+## policy allow 20 (cap above spend)
+$ fm-seat.sh extra-usage allow 20
+extra-usage policy: allow up to $20, then hold
+Measured against the spend the account itself reports for this seat.
+[exit ]
+$ fm-seat.sh status
+active seat for NEW workers: alpha
+active profile: /tmp/fmlive.Qa0J/seats/alpha
+login state: logged-in
+--
+auto-switch trigger: at or below 30% left on the active seat
+destination minimum: only switch to a seat above 60% left
+extra-usage policy: allow up to $20 of paid extra usage, then hold
+excluded from automatic rotation: (none - every seat under the root is a rotation candidate)
+auto-switch watch: not armed
+new Claude dispatch: allowed
+  $12.5 of extra usage spent on the active Claude seat, under the $20 cap
+
+[exit ]
+## policy allow 10 (spend over cap)
+$ fm-seat.sh extra-usage allow 10
+extra-usage policy: allow up to $10, then hold
+Measured against the spend the account itself reports for this seat.
+[exit ]
+$ fm-seat.sh status
+active seat for NEW workers: alpha
+active profile: /tmp/fmlive.Qa0J/seats/alpha
+login state: logged-in
+--
+auto-switch trigger: at or below 30% left on the active seat
+destination minimum: only switch to a seat above 60% left
+extra-usage policy: allow up to $10 of paid extra usage, then hold
+excluded from automatic rotation: (none - every seat under the root is a rotation candidate)
+auto-switch watch: not armed
+new Claude dispatch: HELD (bin/fm-spawn.sh --ignore-seat-hold starts one task anyway)
+  $12.5 of extra usage is already spent on the active Claude seat, at or over the $10 cap
+  this holds only work not yet started; a worker already running keeps its own seat and can still draw extra usage mid-task
+[exit ]
+## alpha access token lapsed but renewable, policy stop
+$ fm-seat.sh extra-usage stop
+extra-usage policy: stop
+new Claude workers are held once the active seat has no plan quota left.
+This stops STARTING new work. It cannot stop a worker already running from
+drawing extra usage mid-task, so it is not a guarantee of zero spend.
+[exit ]
+$ fm-seat.sh probe alpha
+[exit ]
+$ fm-seat.sh status
+active seat for NEW workers: alpha
+active profile: /tmp/fmlive.Qa0J/seats/alpha
+login state: expired-renewable
+--
+auto-switch trigger: at or below 30% left on the active seat
+destination minimum: only switch to a seat above 60% left
+extra-usage policy: stop - hold new Claude dispatch rather than start work on paid extra usage
+excluded from automatic rotation: (none - every seat under the root is a rotation candidate)
+auto-switch watch: not armed
+new Claude dispatch: allowed
+  the active Claude seat access token has lapsed, so its quota cannot be read until this launch renews it
+
+[exit ]
