@@ -46,6 +46,7 @@ State all five of these elements in one concise, evidence-first escalation:
 4. The concrete consequences of accepting and declining the expansion.
 5. A recommendation with the reason it best serves the accepted intent.
 
+Open that escalation with the `checked:` part `captain-hold-lifecycle` requires - the read-only check behind the facts you state, or `checked: none possible - <why>`.
 Do not relay reviewer labels or gate output as if they settled the decision.
 
 ## Classification examples

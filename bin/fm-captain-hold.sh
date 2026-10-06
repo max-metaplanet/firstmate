@@ -40,7 +40,10 @@
 # task first when no work item exists to hold (--title required to create; the
 # optional --origin records provenance in the new task's body and supplies the
 # default repo from that origin's metadata). Prefer holding the work item the
-# question gates over minting a new row. Creating a missing row uses
+# question gates over minting a new row. The reason carries the `checked:`
+# part the policy above requires, naming the read-only check behind the
+# question or `checked: none possible - <why>`; this command does not yet
+# refuse a reason without it. Creating a missing row uses
 # `tasks-axi add --kind captain`: that kind is backlog metadata, and the Beads
 # adapter maps it to native issue type `task`. Captain holds have no due
 # semantics (`--until` is the optional hold deferral), so the create waives
