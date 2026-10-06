@@ -11,7 +11,7 @@
 // announced word still earns one (blocked, then done). A re-block after a real
 // recovery earns none: the band above the prompt is the persistent signal for that.
 // A task that leaves the fleet drops its record.
-import type { FleetRow } from "./fm-fleet-view.ts";
+import { fleetAgeWord, fleetFreshness, type FleetRow, type FleetView } from "./fm-fleet-view.ts";
 
 /** The state words worth a notice when a task newly reaches one. */
 const ANNOUNCED_STATES = new Set(["done", "blocked", "failed"]);
@@ -52,9 +52,17 @@ export function fleetToasts(
   return { toasts, announced };
 }
 
-/** The one notice a reader that has stopped answering earns, until a reading lands again. */
-export function fleetOutageText(reason: string): string {
-  return `fleet unavailable: ${reason}`;
+/** Consecutive failed readings that make an outage worth its one notice. */
+export const FLEET_OUTAGE_AFTER_FAILURES = 2;
+
+/**
+ * The one notice an outage earns, worded by what the pane still shows: rows from an
+ * earlier reading are named with their age, and only a fleet never read is unreadable.
+ */
+export function fleetOutageText(view: FleetView): string {
+  if (view.snapshot === undefined) return `fleet cannot be read: ${view.error}`;
+  const age = fleetAgeWord(fleetFreshness(view).ageSeconds);
+  return `fleet reading failing; rows shown are ${age} old: ${view.error}`;
 }
 
 /** What one notice says: the outcome, and the PR when the task has one to review. */

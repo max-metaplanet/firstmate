@@ -284,7 +284,7 @@ describe("the band", () => {
     expect(drawn).not.toContain("later-call");
   });
 
-  test("stays silent over an unreadable fleet with nothing waiting, and says so once in a notice", async ($, on) => {
+  test("stays silent over an unreadable fleet with nothing waiting, and says so once per outage", async ($, on) => {
     const { clock, journal, answer } = world(on, { reading: { exitCode: 2, stdout: "", stderr: "boom" } });
     await $.session.start(SESSION_START);
     await clock.advance(0);
@@ -292,18 +292,25 @@ describe("the band", () => {
     expect(isStock(drawn)).toBe(true);
     expect(flatten(drawn)).not.toMatch(/fleet unavailable/);
     expect(flatten(await $.ui.render(pane()))).toMatch(/fleet unavailable: the fleet reading exited 2: boom/);
-    expect(journal.toasts).toEqual(["fleet unavailable: the fleet reading exited 2: boom"]);
+    // A lone failed reading stays quiet.
+    expect(journal.toasts).toHaveLength(0);
     await clock.advance(60_000);
+    expect(journal.toasts).toEqual(["fleet cannot be read: the fleet reading exited 2: boom"]);
     await clock.advance(60_000);
     expect(journal.toasts).toHaveLength(1);
     answer({ exitCode: 0, stdout: snapshotJson(), stderr: "" });
     await clock.advance(60_000);
     answer({ reject: "timed out after 90000ms" });
     await clock.advance(60_000);
+    expect(journal.toasts).toHaveLength(1);
+    await clock.advance(60_000);
     expect(journal.toasts).toEqual([
-      "fleet unavailable: the fleet reading exited 2: boom",
-      "fleet unavailable: firstmate-fleet: $.process.run: timed out after 90000ms",
+      "fleet cannot be read: the fleet reading exited 2: boom",
+      "fleet reading failing; rows shown are 2m old: firstmate-fleet: $.process.run: timed out after 90000ms",
     ]);
+    await clock.advance(60_000);
+    expect(journal.toasts).toHaveLength(2);
+    expect(flatten(await $.ui.render(pane()))).toContain("alpha");
     expect(isStock(await $.ui.render(band()))).toBe(true);
   });
 });

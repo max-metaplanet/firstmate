@@ -59,7 +59,9 @@ A reading that fails, times out, or is not this snapshot's schema is never drawn
 - With an earlier reading, its rows stay and are marked stale with their age and the reason.
 - A reading more than three refresh periods old is stale even when nothing has failed.
 - The band stays silent in all three cases unless something waits; when something does, its line carries the age and reason.
-- So that a broken reader never reads as a quiet all-clear, the pane keeps the unavailable or stale marker with its reason, and one notice fires when readings start failing, not repeated while they keep failing, and owed again only after a good reading has landed.
+- So that a broken reader never reads as a quiet all-clear, the pane keeps the unavailable or stale marker with its reason, and one notice fires on the second failed reading in a row, not repeated while they keep failing, and owed again only after a good reading has landed.
+A lone failed reading stays quiet.
+The notice names the age of the rows still shown when an earlier reading landed, and says the fleet cannot be read when none ever has.
 
 ## Bounds
 

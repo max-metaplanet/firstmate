@@ -49,7 +49,7 @@ import {
   type FleetSnapshot,
   type FleetView,
 } from "../lib/fm-fleet-view.ts";
-import { fleetOutageText, fleetToasts } from "../lib/fm-fleet-toasts.ts";
+import { FLEET_OUTAGE_AFTER_FAILURES, fleetOutageText, fleetToasts } from "../lib/fm-fleet-toasts.ts";
 
 /** The pane's id, and the slash command that opens it. */
 const FLEET_PANE = "fleet";
@@ -80,8 +80,8 @@ let readError = "";
 let inFlight: Promise<void> | undefined;
 /** The state word last announced per task, or undefined before the first reading. */
 let announced: Map<string, string> | undefined;
-/** Whether the current run of failed readings has had its one notice. */
-let outageAnnounced = false;
+/** Failed readings since the last good one. */
+let failedReadings = 0;
 /** session.start's own isInteractive, or undefined before it has run in this module. */
 let drawable: boolean | undefined;
 let ticker: { cancel(): void } | undefined;
@@ -172,14 +172,12 @@ async function readFleet($: EngineInterface): Promise<void> {
   if (typeof outcome === "string") {
     // The last good rows stay; the surfaces mark them stale with this reason.
     readError = outcome;
-    // The band stays silent when nothing waits, so a reader that stopped answering is
-    // said once here, and again only after a good reading has landed in between.
-    if (!outageAnnounced) {
-      outageAnnounced = true;
-      $.ui.toast(fleetOutageText(outcome));
-    }
+    // The band stays silent when nothing waits, so a reader that keeps failing is said
+    // once here; a lone failure stays quiet, and only a good reading re-arms the notice.
+    failedReadings += 1;
+    if (failedReadings === FLEET_OUTAGE_AFTER_FAILURES) $.ui.toast(fleetOutageText(await view($)));
   } else {
-    outageAnnounced = false;
+    failedReadings = 0;
     snapshot = outcome;
     readError = "";
     try {
