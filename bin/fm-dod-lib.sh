@@ -217,7 +217,7 @@ fm_ship_rule_one() {  # <no-mistakes|direct-PR|local-only> <task-id> [branch] [<
   fi
   case "$mode" in
     direct-PR)
-      printf '%s\n' "1. Never push to $target (push only your \`$branch\` branch). Never merge a PR."
+      printf '%s\n' "1. Never push to $target and never push to any remote but \`origin\` (push only your \`$branch\` branch, to \`origin\`). Never merge a PR."
       ;;
     local-only)
       printf '%s\n' "1. Never push to any remote and never open a PR. Work only on your \`$branch\` branch; firstmate handles the merge into local \`main\`."
@@ -483,7 +483,11 @@ Delivery contract: mode=direct-PR
 Ship branch: $branch
 This task ships **direct-PR**: you raise the PR yourself, without the no-mistakes pipeline.
 The task is complete only when committed on your branch.
-When it is implemented and committed, push your branch and open a PR with \`gh-axi\` that is ready for review, not a draft$pr_base.
+When it is implemented and committed, push your branch to \`origin\` and open a PR there that is ready for review, not a draft$pr_base.
+Resolve the PR target from \`origin\` first and name it on the create - never leave the repository for \`gh\` to pick, because \`gh pr create\` with no \`-R\` defaults to a FORK's parent repository, and on a fork clone that opens the PR on a repository nobody authorized:
+1. \`git remote get-url origin\` - the \`<owner>/<repo>\` it names is your PR target, and \`origin\` is the only remote you push to.
+2. \`git symbolic-ref --quiet --short refs/remotes/origin/HEAD\` - drop the leading \`origin/\` for your base branch; when it prints nothing, read the \`HEAD branch:\` line of \`git remote show origin\`. When the Delivery contract above names a base branch, use that branch instead of the default.
+3. \`git push -u origin $branch\`, then \`gh-axi pr create -R <owner>/<repo> --base <base branch> --head $branch --title ... --body ...\`.
 Before you report done, read the PR back from the forge and confirm it is not a draft (\`gh-axi pr view <number>\` must print \`draft: no\`, where <number> is the PR number from your PR URL); if it is a draft, mark it ready with \`gh-axi pr ready <number>\`.
 A draft cannot be merged, so a done report on one leaves the merge unasked.
 Then append \`done [at=<epoch>]: PR {url}\` to the status file and stop.
@@ -750,6 +754,91 @@ fm_dod_named_head_reachable_outside_worktree() {  # <worktree> <project> <mode> 
     return
   fi
   fm_dod_named_head_on_origin "$wt" "$project" "$sha"
+}
+
+# The forge identity of <repo>'s `origin` remote as `<host>/<path>` - the same
+# shape fm_pr_url_parse reports as FM_PR_HOST/FM_PR_PATH - or 1 when there is no
+# origin or its URL names no forge. It maps the scp-like `git@host:owner/repo`
+# form and the ssh://, git://, http:// and https:// forms; a local path,
+# file://, or any other transport yields no identity, and the caller then has no
+# proof either way rather than a mismatch. The host is lowercased and a trailing
+# `.git` or `/` dropped, because those differ freely between a remote URL and
+# the forge's own web URL without naming a different repository.
+fm_dod_origin_forge_identity() {  # <repo>
+  local repo=$1 url rest host path
+  [ -n "$repo" ] && [ -d "$repo" ] || return 1
+  url=$(git -C "$repo" remote get-url origin 2>/dev/null) || return 1
+  case "$url" in
+    '') return 1 ;;
+    *[[:space:]]*) return 1 ;;
+    ssh://*|git://*|http://*|https://*)
+      rest=${url#*://}
+      rest=${rest#*@}
+      host=${rest%%/*}
+      [ "$host" != "$rest" ] || return 1
+      host=${host%%:*}
+      path=${rest#*/}
+      ;;
+    file://*|/*|.*|*://*) return 1 ;;
+    *:*)
+      host=${url%%:*}
+      host=${host##*@}
+      path=${url#*:}
+      ;;
+    *) return 1 ;;
+  esac
+  host=$(printf '%s' "$host" | tr '[:upper:]' '[:lower:]')
+  path=${path#/}
+  path=${path%/}
+  path=${path%.git}
+  path=${path%/}
+  case "$path" in
+    ''|*/) return 1 ;;
+  esac
+  [ -n "$host" ] || return 1
+  printf '%s/%s\n' "$host" "$path"
+}
+
+# 0 when two forge repository paths name the same repository. Only the path is
+# compared: an origin often reaches its forge through an SSH host alias or a
+# separate SSH endpoint (`github-443`, `ssh.github.com`) whose name never matches
+# the host in the forge's web URL, while a fork and its parent always differ in
+# owner/repository. Paths are case-insensitive on the forge, so a case
+# difference between a remote URL and the URL the forge printed is not a
+# different repository.
+fm_dod_forge_path_equal() {  # <a> <b>
+  local a b
+  a=$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')
+  b=$(printf '%s' "$2" | tr '[:upper:]' '[:lower:]')
+  [ "$a" = "$b" ]
+}
+
+# 0 when a direct-PR ship done: may proceed on <url>; 1 when that URL names a
+# pull request on a repository that is NOT this copy's `origin`, with the
+# one-line reason on stdout. `gh pr create` with no `-R` defaults to a FORK's
+# parent repository, so a fork clone can raise its PR on a repository nobody
+# authorized; this refuses that claim instead of recording it, including at
+# bin/fm-pr-check.sh's registration. Only direct-PR is gated: a no-mistakes PR
+# is published by the pipeline's own configured push target rather than by this
+# copy, and local-only opens no PR at all. A Gerrit change keeps its own
+# published-tree check, because a change's project path and an origin URL
+# legitimately differ. When origin names no forge there is no proof either way,
+# and the claim goes on to the named-head gate unchanged. A deliberate upstream
+# contribution from a fork is refused here too: it needs the captain's word, not
+# a silent exception.
+fm_dod_pr_url_on_origin() {  # <mode> <worktree> <project> <url>
+  local mode=$1 wt=$2 project=$3 url=$4 origin target
+  [ "$mode" = direct-PR ] || return 0
+  [ -n "$url" ] || return 0
+  fm_pr_url_parse "$url" || return 0
+  [ "$FM_PR_PROVIDER" != gerrit ] || return 0
+  target="$FM_PR_HOST/$FM_PR_PATH"
+  origin=$(fm_dod_origin_forge_identity "$wt") \
+    || origin=$(fm_dod_origin_forge_identity "$project") \
+    || return 0
+  fm_dod_forge_path_equal "${origin#*/}" "$FM_PR_PATH" && return 0
+  printf '%s\n' "the PR $url is on $target, not this copy's origin $origin: either the PR was opened on the wrong repository - open it on origin with \`gh-axi pr create -R ${origin#*/} --base <default branch>\`, because \`gh pr create\` with no -R targets a fork's parent repository - or origin still uses a renamed or transferred repository's old name - run \`git remote set-url origin <the repository's current URL>\` and report again"
+  return 1
 }
 
 # The forge identity of <repo>'s `origin` remote as `<host>/<path>` - the same
