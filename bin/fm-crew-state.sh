@@ -1111,7 +1111,7 @@ if [ "$HAVE_RUN" = 1 ]; then
           RUN_STATE=failed; RUN_DETAIL="run failed"
         fi ;;
       cancelled) RUN_STATE=unknown; RUN_DETAIL="run cancelled: no verdict" ;;
-      *)         RUN_STATE=unknown; RUN_DETAIL="runs list status: $COARSE_STATUS" ;;
+      *)         RUN_STATE=unreadable; RUN_DETAIL="could not settle this run's state: the ledger reports a status this reader does not recognize ($COARSE_STATUS)" ;;
     esac
   else
     status=$(strip_quotes "$(nm_field status)")
@@ -1135,7 +1135,7 @@ if [ "$HAVE_RUN" = 1 ]; then
           if nm_reclassify_failed_run_as_held_green; then :; else
             RUN_STATE=unknown; RUN_DETAIL="run cancelled: no verdict"
           fi ;;
-        *)             RUN_STATE=unknown; RUN_DETAIL="outcome: $outcome" ;;
+        *)             RUN_STATE=unreadable; RUN_DETAIL="could not settle this run's outcome: it reports a result this reader does not recognize ($outcome)" ;;
       esac
     elif [ -n "$awaiting" ] || [ "$status" = awaiting_approval ] || [ "$status" = fix_review ] || [ -n "$gate_status" ] || [ "$has_gate" = 1 ]; then
       if [ "$has_gate" = 1 ]; then
