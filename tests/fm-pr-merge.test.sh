@@ -143,6 +143,41 @@ write_github_rollup_json() {
 JSON
 }
 
+# One live GitHub view, staged for a single pre-merge read: the merge state,
+# head, fork pushability, and rollup entries GitHub would report at that
+# moment. A pushability value of "-" leaves that field out the way a read that
+# could not resolve it does. Args: file head merge_state cross maintainer
+# [<rollup-entry-json>...]
+write_github_view_state() {
+  local file=$1 head=$2 merge_state=$3 cross=$4 maintainer=$5 entry rollup=''
+  shift 5
+  for entry in "$@"; do
+    rollup="${rollup:+$rollup,}$entry"
+  done
+  {
+    printf '{"state":"OPEN","isDraft":false,"mergeable":"MERGEABLE",'
+    printf '"mergeStateStatus":"%s","headRefOid":"%s","baseRefName":"main",' \
+      "$merge_state" "$head"
+    [ "$cross" = - ] || printf '"isCrossRepository":%s,' "$cross"
+    [ "$maintainer" = - ] || printf '"maintainerCanModify":%s,' "$maintainer"
+    printf '"statusCheckRollup":[%s]}\n' "$rollup"
+  } > "$file"
+}
+
+# The views the gh mock serves, one per pre-merge read, in order; the last one
+# answers every further read. Args: case_dir <view-file>...
+queue_github_views() {
+  local case_dir=$1
+  shift
+  printf '%s\n' "$@" > "$case_dir/view-queue"
+}
+
+# The branch updates gh was asked to run, so a case asserts the exact count
+# rather than a substring of the whole log. Args: case_dir
+gh_update_branch_calls() {
+  grep -c '^pr update-branch ' "$1/gh.log" || true
+}
+
 assert_logged_gh_merge() {
   local case_dir=$1 number=$2 repo=$3 head line extra=
   shift 3
@@ -174,6 +209,19 @@ case "${1:-} ${2:-}" in
   "pr view")
     case " $* " in
       *statusCheckRollup*)
+        # One staged live view per pre-merge read, so a case can walk the
+        # states a branch update moves through; the last one answers every
+        # further read, and the head follows the view it served.
+        if [ -s "${FM_TEST_GH_VIEW_QUEUE:-}" ]; then
+          view_next=$(head -n1 "$FM_TEST_GH_VIEW_QUEUE")
+          if [ "$(wc -l < "$FM_TEST_GH_VIEW_QUEUE")" -gt 1 ]; then
+            tail -n +2 "$FM_TEST_GH_VIEW_QUEUE" > "$FM_TEST_GH_VIEW_QUEUE.next"
+            cat "$FM_TEST_GH_VIEW_QUEUE.next" > "$FM_TEST_GH_VIEW_QUEUE"
+            rm -f "$FM_TEST_GH_VIEW_QUEUE.next"
+          fi
+          cat "$view_next" > "$FM_TEST_GH_VIEW_JSON"
+          jq -r '.headRefOid' "$view_next" > "$FM_TEST_GH_HEAD"
+        fi
         if [ -n "${FM_TEST_GH_MERGEABLE_SEQUENCE:-}" ]; then
           call_n=$(( $(cat "$FM_TEST_GH_MERGEABLE_CALLS" 2>/dev/null || echo 0) + 1 ))
           printf '%s\n' "$call_n" > "$FM_TEST_GH_MERGEABLE_CALLS"
@@ -205,6 +253,14 @@ case "${1:-} ${2:-}" in
         exit 0
         ;;
     esac
+    ;;
+  "pr update-branch")
+    if [ -f "${FM_TEST_GH_UPDATE_FAIL:-}" ]; then
+      cat "$FM_TEST_GH_UPDATE_FAIL" >&2
+      exit 1
+    fi
+    printf 'Updated branch fm/task-x1\n'
+    exit 0
     ;;
   "pr merge")
     if [ -n "${FM_TEST_META_AT_MERGE:-}" ] && [ -f "${FM_STATE_OVERRIDE:-}/task-x1.meta" ]; then
@@ -460,6 +516,8 @@ run_pr_merge() {
   FM_TEST_GH_OUTCOME="$case_dir/github-outcome" \
   FM_TEST_GH_RULES="$case_dir/github-rules" \
   FM_TEST_GH_VIEW_JSON="$case_dir/github-view.json" \
+  FM_TEST_GH_VIEW_QUEUE="$case_dir/view-queue" \
+  FM_TEST_GH_UPDATE_FAIL="$case_dir/github-update-fail" \
   FM_TEST_GH_MERGEABLE_SEQUENCE="${FM_TEST_GH_MERGEABLE_SEQUENCE:-}" \
   FM_TEST_GH_MERGEABLE_CALLS="$case_dir/mergeable-calls" \
   FM_TEST_GH_HEAD="$case_dir/github-head" \
@@ -773,6 +831,406 @@ test_github_mergeable_conflicting_is_not_retried() {
   assert_no_grep 'pr merge' "$case_dir/gh.log" \
     "github-mergeable-conflicting: gh pr merge ran on a conflicting PR"
   pass "fm-pr-merge refuses a genuine mergeable conflict immediately, without retrying"
+}
+
+# A pull request whose base branch has moved past its head went green against
+# a base it was never checked against, and an --admin merge skips GitHub's own
+# up-to-date rule, so this gate updates the branch and re-verifies everything at
+# the new head. The lanes the update's push re-triggers are waited for: first
+# the required check has not reported there at all, then it is still running,
+# and only the green read merges - pinned to the new head, not the stale one.
+test_behind_branch_is_updated_then_merged_at_the_new_head() {
+  local case_dir rc stale fresh
+  stale=1111111111111111111111111111111111111111
+  fresh=2222222222222222222222222222222222222222
+  case_dir=$(make_case github-behind-updates-then-merges)
+  mkdir -p "$case_dir/wt"
+  add_gh_mocks "$case_dir" "$stale"
+  write_github_required "$case_dir" classic:ci
+  write_github_view_state "$case_dir/view-behind" "$stale" BEHIND false true \
+    "$(check_run ci COMPLETED SUCCESS)"
+  write_github_view_state "$case_dir/view-unreported" "$fresh" CLEAN false true
+  write_github_view_state "$case_dir/view-running" "$fresh" CLEAN false true \
+    "$(check_run ci IN_PROGRESS -)"
+  write_github_view_state "$case_dir/view-green" "$fresh" CLEAN false true \
+    "$(check_run ci COMPLETED SUCCESS)"
+  queue_github_views "$case_dir" \
+    "$case_dir/view-behind" "$case_dir/view-unreported" \
+    "$case_dir/view-running" "$case_dir/view-green"
+  : > "$case_dir/gh-axi.log"
+  : > "$case_dir/gh.log"
+
+  set +e
+  FM_PR_GITHUB_FRESHNESS_POLL=0 \
+    run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/90 \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 0 "$rc" "github-behind-updates-then-merges: the merge should succeed at the updated head"
+  [ "$(gh_update_branch_calls "$case_dir")" -eq 1 ] \
+    || fail "github-behind-updates-then-merges: expected exactly 1 branch update, got $(gh_update_branch_calls "$case_dir")"
+  assert_grep 'was behind base branch main' "$case_dir/stderr" \
+    "github-behind-updates-then-merges: the branch update was not reported"
+  assert_logged_gh_merge "$case_dir" 90 example/repo --squash
+  grep -qxF "pr merge 90 --repo example/repo --match-head-commit $fresh --squash" "$case_dir/gh.log" \
+    || fail "github-behind-updates-then-merges: the merge was not pinned to the updated head $fresh"
+  assert_no_grep "match-head-commit $stale" "$case_dir/gh.log" \
+    "github-behind-updates-then-merges: a merge was pinned to the stale head"
+  assert_no_grep 'refusing to merge' "$case_dir/stderr" \
+    "github-behind-updates-then-merges: a condition that was only still reporting was refused"
+  pass "fm-pr-merge updates a behind branch, waits for the re-triggered checks, and merges the new head"
+}
+
+# Two pull requests updated at once both go green, the first merges, and the
+# second is behind again. The cap is what keeps that from looping forever: two
+# updates, then a refusal that says another merge keeps landing first.
+test_behind_again_after_two_updates_refuses() {
+  local case_dir rc
+  case_dir=$(make_case github-behind-after-two-updates)
+  mkdir -p "$case_dir/wt"
+  add_gh_mocks "$case_dir" 3131313131313131313131313131313131313131
+  write_github_view_state "$case_dir/view-behind-1" \
+    3131313131313131313131313131313131313131 BEHIND false true \
+    "$(check_run ci COMPLETED SUCCESS)"
+  write_github_view_state "$case_dir/view-behind-2" \
+    3232323232323232323232323232323232323232 BEHIND false true \
+    "$(check_run ci COMPLETED SUCCESS)"
+  write_github_view_state "$case_dir/view-behind-3" \
+    3333333333333333333333333333333333333333 BEHIND false true \
+    "$(check_run ci COMPLETED SUCCESS)"
+  queue_github_views "$case_dir" "$case_dir/view-behind-1" \
+    "$case_dir/view-behind-2" "$case_dir/view-behind-3"
+  : > "$case_dir/gh-axi.log"
+  : > "$case_dir/gh.log"
+
+  set +e
+  FM_PR_GITHUB_FRESHNESS_POLL=0 \
+    run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/91 \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 1 "$rc" "github-behind-after-two-updates: a pull request that stays behind must refuse"
+  [ "$(gh_update_branch_calls "$case_dir")" -eq 2 ] \
+    || fail "github-behind-after-two-updates: expected exactly 2 branch updates, got $(gh_update_branch_calls "$case_dir")"
+  assert_grep 'behind base branch main again after 2 branch updates' "$case_dir/stderr" \
+    "github-behind-after-two-updates: the refusal did not name the spent update cap"
+  assert_no_grep 'pr merge' "$case_dir/gh.log" \
+    "github-behind-after-two-updates: a merge was attempted while still behind"
+  pass "fm-pr-merge refuses after two branch updates leave the pull request behind again"
+}
+
+# --admin is what makes freshness load-bearing: it bypasses GitHub's own
+# up-to-date rule, so an attended override must still update and re-verify.
+test_admin_merge_still_updates_a_behind_branch() {
+  local case_dir rc fresh
+  fresh=4141414141414141414141414141414141414141
+  case_dir=$(make_case github-admin-still-updates)
+  mkdir -p "$case_dir/wt"
+  add_gh_mocks "$case_dir" 4040404040404040404040404040404040404040
+  write_github_view_state "$case_dir/view-behind" \
+    4040404040404040404040404040404040404040 BEHIND false true \
+    "$(check_run ci COMPLETED SUCCESS)"
+  write_github_view_state "$case_dir/view-green" "$fresh" CLEAN false true \
+    "$(check_run ci COMPLETED SUCCESS)"
+  queue_github_views "$case_dir" "$case_dir/view-behind" "$case_dir/view-green"
+  : > "$case_dir/gh-axi.log"
+  : > "$case_dir/gh.log"
+
+  set +e
+  FM_PR_GITHUB_FRESHNESS_POLL=0 \
+    run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/92 \
+    --attended-override -- --admin \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 0 "$rc" "github-admin-still-updates: the attended admin merge should succeed at the updated head"
+  [ "$(gh_update_branch_calls "$case_dir")" -eq 1 ] \
+    || fail "github-admin-still-updates: an admin merge skipped the branch update"
+  grep -qxF "pr merge 92 --repo example/repo --match-head-commit $fresh --squash --admin" \
+    "$case_dir/gh.log" \
+    || fail "github-admin-still-updates: the admin merge was not pinned to the updated head"$'\n'"got: $(grep '^pr merge ' "$case_dir/gh.log" || true)"
+  pass "fm-pr-merge updates a behind branch even for an attended --admin merge"
+}
+
+# The update is a real push to the head branch, so it is impossible where this
+# run cannot push: a fork that does not allow it, or a pushability read that
+# did not resolve. Both refuse naming which, and neither calls the forge.
+test_behind_branch_that_cannot_be_updated_refuses() {
+  local case_dir rc
+  case_dir=$(make_case github-behind-fork-no-push)
+  mkdir -p "$case_dir/wt"
+  add_gh_mocks "$case_dir" 5050505050505050505050505050505050505050
+  write_github_view_state "$case_dir/github-view.json" \
+    5050505050505050505050505050505050505050 BEHIND true false \
+    "$(check_run ci COMPLETED SUCCESS)"
+  : > "$case_dir/gh-axi.log"
+  : > "$case_dir/gh.log"
+
+  set +e
+  run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/93 \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 1 "$rc" "github-behind-fork-no-push: an unupdatable behind branch must refuse"
+  assert_grep 'behind base branch main and its head branch is on a fork this run cannot push to' \
+    "$case_dir/stderr" \
+    "github-behind-fork-no-push: the refusal did not name the fork it cannot push to"
+  assert_no_grep 'pr update-branch' "$case_dir/gh.log" \
+    "github-behind-fork-no-push: a branch update was attempted on an unpushable fork"
+  assert_no_grep 'pr merge' "$case_dir/gh.log" \
+    "github-behind-fork-no-push: a stale merge was attempted"
+
+  case_dir=$(make_case github-behind-pushability-unreadable)
+  mkdir -p "$case_dir/wt"
+  add_gh_mocks "$case_dir" 5151515151515151515151515151515151515151
+  write_github_view_state "$case_dir/github-view.json" \
+    5151515151515151515151515151515151515151 BEHIND true - \
+    "$(check_run ci COMPLETED SUCCESS)"
+  : > "$case_dir/gh-axi.log"
+  : > "$case_dir/gh.log"
+
+  set +e
+  run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/94 \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 1 "$rc" "github-behind-pushability-unreadable: an unreadable pushability must refuse"
+  assert_grep 'could not be read' "$case_dir/stderr" \
+    "github-behind-pushability-unreadable: the refusal did not name the unreadable pushability"
+  assert_no_grep 'pr update-branch' "$case_dir/gh.log" \
+    "github-behind-pushability-unreadable: a branch update was attempted on an unreadable read"
+  assert_no_grep 'pr merge' "$case_dir/gh.log" \
+    "github-behind-pushability-unreadable: a stale merge was attempted"
+  pass "fm-pr-merge refuses a behind branch it cannot update, naming the fork or the unreadable read"
+}
+
+# A failed update is final for the run, and a conflict with the base branch is
+# reported apart from any other failure because it leaves the operator
+# somewhere different. Either way the forge's own words are quoted.
+test_failed_branch_update_refuses_naming_the_conflict() {
+  local case_dir rc
+  case_dir=$(make_case github-update-conflicts)
+  mkdir -p "$case_dir/wt"
+  add_gh_mocks "$case_dir" 6060606060606060606060606060606060606060
+  write_github_view_state "$case_dir/github-view.json" \
+    6060606060606060606060606060606060606060 BEHIND false true \
+    "$(check_run ci COMPLETED SUCCESS)"
+  printf 'merge conflict between base and head\n' > "$case_dir/github-update-fail"
+  : > "$case_dir/gh-axi.log"
+  : > "$case_dir/gh.log"
+
+  set +e
+  run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/95 \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 1 "$rc" "github-update-conflicts: a conflicting update must refuse"
+  assert_grep 'updating its branch conflicts with that branch' "$case_dir/stderr" \
+    "github-update-conflicts: the refusal did not name the conflict"
+  assert_grep 'error: > merge conflict between base and head' "$case_dir/stderr" \
+    "github-update-conflicts: the forge's own output was not quoted"
+  assert_no_grep 'pr merge' "$case_dir/gh.log" \
+    "github-update-conflicts: a stale merge was attempted after a failed update"
+
+  case_dir=$(make_case github-update-fails)
+  mkdir -p "$case_dir/wt"
+  add_gh_mocks "$case_dir" 6161616161616161616161616161616161616161
+  write_github_view_state "$case_dir/github-view.json" \
+    6161616161616161616161616161616161616161 BEHIND false true \
+    "$(check_run ci COMPLETED SUCCESS)"
+  printf 'HTTP 403: Resource not accessible by integration\n' > "$case_dir/github-update-fail"
+  : > "$case_dir/gh-axi.log"
+  : > "$case_dir/gh.log"
+
+  set +e
+  run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/96 \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 1 "$rc" "github-update-fails: a failed update must refuse"
+  assert_grep 'updating its branch failed' "$case_dir/stderr" \
+    "github-update-fails: the refusal did not name the failed update"
+  assert_no_grep 'conflicts with that branch' "$case_dir/stderr" \
+    "github-update-fails: an unrelated failure was reported as a conflict"
+  assert_no_grep 'pr merge' "$case_dir/gh.log" \
+    "github-update-fails: a stale merge was attempted after a failed update"
+  pass "fm-pr-merge refuses a failed branch update, telling a base conflict apart from any other failure"
+}
+
+# The re-verify at the new head is the same gate, so a check that comes back red
+# there refuses exactly as it would have before the update, reported once.
+test_red_check_at_the_updated_head_refuses() {
+  local case_dir rc
+  case_dir=$(make_case github-red-at-updated-head)
+  mkdir -p "$case_dir/wt"
+  add_gh_mocks "$case_dir" 7070707070707070707070707070707070707070
+  write_github_view_state "$case_dir/view-behind" \
+    7070707070707070707070707070707070707070 BEHIND false true \
+    "$(check_run ci COMPLETED SUCCESS)"
+  write_github_view_state "$case_dir/view-red" \
+    7171717171717171717171717171717171717171 CLEAN false true \
+    "$(check_run ci COMPLETED FAILURE)"
+  queue_github_views "$case_dir" "$case_dir/view-behind" "$case_dir/view-red"
+  : > "$case_dir/gh-axi.log"
+  : > "$case_dir/gh.log"
+
+  set +e
+  FM_PR_GITHUB_FRESHNESS_POLL=0 \
+    run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/97 \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 1 "$rc" "github-red-at-updated-head: a red check at the new head must refuse"
+  [ "$(gh_update_branch_calls "$case_dir")" -eq 1 ] \
+    || fail "github-red-at-updated-head: expected exactly 1 branch update, got $(gh_update_branch_calls "$case_dir")"
+  assert_grep "check 'ci' is not green" "$case_dir/stderr" \
+    "github-red-at-updated-head: the red check at the new head was not reported"
+  [ "$(grep -c "check 'ci' is not green" "$case_dir/stderr")" -eq 1 ] \
+    || fail "github-red-at-updated-head: the refusal was reported more than once"
+  assert_no_grep 'pr merge' "$case_dir/gh.log" \
+    "github-red-at-updated-head: a red head was merged"
+  pass "fm-pr-merge refuses a red check at the updated head without merging it"
+}
+
+# The wait is bounded, and a spent bound has to say both that it waited and
+# what never became ready, without reading the pull request again.
+test_freshness_wait_bound_refuses_with_the_pending_condition() {
+  local case_dir rc
+  case_dir=$(make_case github-freshness-bound-spent)
+  mkdir -p "$case_dir/wt"
+  add_gh_mocks "$case_dir" 8080808080808080808080808080808080808080
+  write_github_view_state "$case_dir/view-behind" \
+    8080808080808080808080808080808080808080 BEHIND false true \
+    "$(check_run ci COMPLETED SUCCESS)"
+  write_github_view_state "$case_dir/view-running" \
+    8181818181818181818181818181818181818181 CLEAN false true \
+    "$(check_run ci IN_PROGRESS -)"
+  queue_github_views "$case_dir" "$case_dir/view-behind" "$case_dir/view-running"
+  : > "$case_dir/gh-axi.log"
+  : > "$case_dir/gh.log"
+
+  set +e
+  FM_PR_GITHUB_FRESHNESS_TIMEOUT=0 FM_PR_GITHUB_FRESHNESS_POLL=0 \
+    run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/98 \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 1 "$rc" "github-freshness-bound-spent: a spent wait must refuse"
+  assert_grep '0 seconds after its branch was updated from base branch main' "$case_dir/stderr" \
+    "github-freshness-bound-spent: the refusal did not name the spent wait"
+  assert_grep "check 'ci' is not green" "$case_dir/stderr" \
+    "github-freshness-bound-spent: the refusal did not name what never became ready"
+  assert_no_grep 'pr merge' "$case_dir/gh.log" \
+    "github-freshness-bound-spent: a merge was attempted after the wait was spent"
+  pass "fm-pr-merge refuses plainly when the post-update wait is spent, naming what stayed unready"
+}
+
+# GitHub can still answer the pre-update head right after the update's push.
+# Merging then would pin the very commit the base moved past, so a verified
+# state at that head counts as still reporting until the head moves.
+test_update_that_has_not_landed_yet_is_not_merged_stale() {
+  local case_dir rc fresh
+  fresh=9191919191919191919191919191919191919191
+  case_dir=$(make_case github-update-not-visible-yet)
+  mkdir -p "$case_dir/wt"
+  add_gh_mocks "$case_dir" 9090909090909090909090909090909090909090
+  write_github_view_state "$case_dir/view-behind" \
+    9090909090909090909090909090909090909090 BEHIND false true \
+    "$(check_run ci COMPLETED SUCCESS)"
+  write_github_view_state "$case_dir/view-stale-clean" \
+    9090909090909090909090909090909090909090 CLEAN false true \
+    "$(check_run ci COMPLETED SUCCESS)"
+  write_github_view_state "$case_dir/view-green" "$fresh" CLEAN false true \
+    "$(check_run ci COMPLETED SUCCESS)"
+  queue_github_views "$case_dir" "$case_dir/view-behind" \
+    "$case_dir/view-stale-clean" "$case_dir/view-green"
+  : > "$case_dir/gh-axi.log"
+  : > "$case_dir/gh.log"
+
+  set +e
+  FM_PR_GITHUB_FRESHNESS_POLL=0 \
+    run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/99 \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 0 "$rc" "github-update-not-visible-yet: the merge should succeed once the head moves"
+  [ "$(gh_update_branch_calls "$case_dir")" -eq 1 ] \
+    || fail "github-update-not-visible-yet: expected exactly 1 branch update, got $(gh_update_branch_calls "$case_dir")"
+  grep -qxF "pr merge 99 --repo example/repo --match-head-commit $fresh --squash" "$case_dir/gh.log" \
+    || fail "github-update-not-visible-yet: the merge was not pinned to the moved head"
+  assert_no_grep 'match-head-commit 9090' "$case_dir/gh.log" \
+    "github-update-not-visible-yet: the pre-update head was merged"
+  pass "fm-pr-merge never merges the pre-update head while the branch update is not visible yet"
+}
+
+# The read right after the update can also still answer BEHIND at the
+# pre-update head. That is the same push not being visible yet, so it waits
+# rather than spending a second update round on a branch already updated.
+test_behind_read_before_the_update_lands_waits_instead_of_updating_again() {
+  local case_dir rc stale fresh
+  stale=9292929292929292929292929292929292929292
+  fresh=9393939393939393939393939393939393939393
+  case_dir=$(make_case github-update-still-behind-at-old-head)
+  mkdir -p "$case_dir/wt"
+  add_gh_mocks "$case_dir" "$stale"
+  write_github_view_state "$case_dir/view-behind" "$stale" BEHIND false true \
+    "$(check_run ci COMPLETED SUCCESS)"
+  write_github_view_state "$case_dir/view-green" "$fresh" CLEAN false true \
+    "$(check_run ci COMPLETED SUCCESS)"
+  queue_github_views "$case_dir" "$case_dir/view-behind" \
+    "$case_dir/view-behind" "$case_dir/view-behind" "$case_dir/view-green"
+  : > "$case_dir/gh-axi.log"
+  : > "$case_dir/gh.log"
+
+  set +e
+  FM_PR_GITHUB_FRESHNESS_POLL=0 \
+    run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/97 \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 0 "$rc" "github-update-still-behind-at-old-head: the merge should succeed once the head moves"
+  [ "$(gh_update_branch_calls "$case_dir")" -eq 1 ] \
+    || fail "github-update-still-behind-at-old-head: expected exactly 1 branch update, got $(gh_update_branch_calls "$case_dir")"
+  grep -qxF "pr merge 97 --repo example/repo --match-head-commit $fresh --squash" "$case_dir/gh.log" \
+    || fail "github-update-still-behind-at-old-head: the merge was not pinned to the moved head"
+  assert_no_grep 'refusing to merge' "$case_dir/stderr" \
+    "github-update-still-behind-at-old-head: a read that had not seen the update yet was refused"
+
+  case_dir=$(make_case github-update-still-behind-bound-spent)
+  mkdir -p "$case_dir/wt"
+  add_gh_mocks "$case_dir" "$stale"
+  write_github_view_state "$case_dir/view-behind" "$stale" BEHIND false true \
+    "$(check_run ci COMPLETED SUCCESS)"
+  queue_github_views "$case_dir" "$case_dir/view-behind"
+  : > "$case_dir/gh-axi.log"
+  : > "$case_dir/gh.log"
+
+  set +e
+  FM_PR_GITHUB_FRESHNESS_TIMEOUT=0 FM_PR_GITHUB_FRESHNESS_POLL=0 \
+    run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/97 \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 1 "$rc" "github-update-still-behind-bound-spent: a spent wait must refuse"
+  [ "$(gh_update_branch_calls "$case_dir")" -eq 1 ] \
+    || fail "github-update-still-behind-bound-spent: expected exactly 1 branch update, got $(gh_update_branch_calls "$case_dir")"
+  assert_grep "the branch update has not moved the head past $stale yet" "$case_dir/stderr" \
+    "github-update-still-behind-bound-spent: the refusal did not name the unmoved head"
+  assert_no_grep 'pr merge' "$case_dir/gh.log" \
+    "github-update-still-behind-bound-spent: a merge was attempted at the pre-update head"
+  pass "fm-pr-merge waits out a BEHIND read at the pre-update head instead of updating again"
 }
 
 test_github_unreadable_outcome_keeps_pr_bookkeeping() {
@@ -2370,6 +2828,15 @@ test_github_mergeable_unknown_retries_then_succeeds
 test_github_mergeable_unknown_exhausts_bound_and_reports_pending
 test_github_mergeable_unknown_retry_rechecks_checks
 test_github_mergeable_conflicting_is_not_retried
+test_behind_branch_is_updated_then_merged_at_the_new_head
+test_behind_again_after_two_updates_refuses
+test_admin_merge_still_updates_a_behind_branch
+test_behind_branch_that_cannot_be_updated_refuses
+test_failed_branch_update_refuses_naming_the_conflict
+test_red_check_at_the_updated_head_refuses
+test_freshness_wait_bound_refuses_with_the_pending_condition
+test_update_that_has_not_landed_yet_is_not_merged_stale
+test_behind_read_before_the_update_lands_waits_instead_of_updating_again
 test_github_unreadable_outcome_keeps_pr_bookkeeping
 test_github_refusal_quotes_the_forge_output
 test_github_unreadable_outcome_refusal_quotes_the_forge_output
