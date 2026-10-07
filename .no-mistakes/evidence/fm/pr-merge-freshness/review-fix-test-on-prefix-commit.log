@@ -1,0 +1,2 @@
+not ok - github-update-still-behind-at-old-head: the merge should succeed once the head moves: expected exit 0, got 1
+exit=

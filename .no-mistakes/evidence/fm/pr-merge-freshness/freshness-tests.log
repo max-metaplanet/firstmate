@@ -1,0 +1,10 @@
+ok - fm-pr-merge updates a behind branch, waits for the re-triggered checks, and merges the new head
+ok - fm-pr-merge refuses after two branch updates leave the pull request behind again
+ok - fm-pr-merge updates a behind branch even for an attended --admin merge
+ok - fm-pr-merge refuses a behind branch it cannot update, naming the fork or the unreadable read
+ok - fm-pr-merge refuses a failed branch update, telling a base conflict apart from any other failure
+ok - fm-pr-merge refuses a red check at the updated head without merging it
+ok - fm-pr-merge refuses plainly when the post-update wait is spent, naming what stayed unready
+ok - fm-pr-merge never merges the pre-update head while the branch update is not visible yet
+ok - fm-pr-merge waits out a BEHIND read at the pre-update head instead of updating again
+ok - fm-pr-merge merges when every required check reported and is green
