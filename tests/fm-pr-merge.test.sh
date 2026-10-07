@@ -205,6 +205,11 @@ SH
   cat > "$case_dir/fakebin/gh" <<'SH'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$FM_TEST_GH_LOG"
+# One ordered log shared by every concurrent case, so a serialization test can
+# read the real interleaving of forge calls instead of inferring it from two
+# separate logs. Each line is a single small append, which O_APPEND keeps whole.
+[ -z "${FM_TEST_GH_ORDER_LOG:-}" ] \
+  || printf '%s %s\n' "${FM_TEST_GH_ORDER_LABEL:-?}" "$*" >> "$FM_TEST_GH_ORDER_LOG"
 case "${1:-} ${2:-}" in
   "pr view")
     case " $* " in
@@ -539,6 +544,11 @@ run_pr_merge() {
   FM_TEST_AWAY_MUTATE_RC="$case_dir/away-mutate-rc" \
   FM_TEST_AWAY_WORDS_AT_MERGE="$case_dir/away-words-at-merge" \
   FM_TEST_REAL_MV="$REAL_MV" \
+  FM_TEST_GH_ORDER_LOG="${FM_TEST_GH_ORDER_LOG:-}" \
+  FM_TEST_GH_ORDER_LABEL="${FM_TEST_GH_ORDER_LABEL:-}" \
+  FM_PR_MERGE_LINE_ROOT="${FM_TEST_PR_MERGE_LINE_ROOT:-$case_dir/merge-line}" \
+  FM_PR_MERGE_LINE_TIMEOUT="${FM_PR_MERGE_LINE_TIMEOUT:-}" \
+  FM_PR_MERGE_LINE_POLL="${FM_PR_MERGE_LINE_POLL:-}" \
   FM_TEST_GLAB_LOG="$case_dir/glab.log" \
   FM_TEST_GLAB_JSON="$case_dir/mr.json" \
   HOME="${FM_TEST_USER_HOME:-$case_dir/user-home}" \
@@ -4299,6 +4309,282 @@ test_allow_missing_follows_the_allow_red_rules() {
   pass "fm-pr-merge --allow-missing is single use, attended-only, and GitHub-only like --allow-red"
 }
 
+# --- the per-repository merge line ------------------------------------------
+# bin/fm-pr-merge-line-lib.sh serializes firstmate's own merges so one merge
+# cannot invalidate another firstmate pull request's CI mid-run. The cases
+# below drive it through fm-pr-merge.sh itself, with a real holder taken
+# through the library's own public entry points rather than a hand-built lock.
+
+# A standalone holder of one repository's turn, so a test can put a genuine
+# occupant in front of fm-pr-merge.sh. It signals readiness by creating the
+# ready flag and leaves only when the release flag appears.
+write_line_holder() {
+  local file=$1
+  cat > "$file" <<'SH'
+#!/usr/bin/env bash
+set -u
+. "$FM_TEST_ROOT/bin/fm-wake-lib.sh"
+. "$FM_TEST_ROOT/bin/fm-pr-merge-line-lib.sh"
+fm_pr_merge_line_enter "$1" "$2" "$3" "$4" "$5" || exit 1
+: > "$6"
+while [ ! -e "$7" ]; do sleep 0.05; done
+fm_pr_merge_line_release
+SH
+  chmod +x "$file"
+}
+
+# Start a holder for <host>/<path> on <root> and block until it holds the turn.
+# Echoes its pid. Args: root state_dir script host path url ready ready_flag
+# release_flag
+start_line_holder() {
+  local root=$1 state=$2 script=$3 host=$4 path=$5 url=$6 ready=$7
+  local ready_flag=$8 release_flag=$9 pid waited=0
+  rm -f "$ready_flag" "$release_flag"
+  # The holder outlives the command substitution that starts it, so its output
+  # must not stay on that substitution's pipe: an open writer would keep the
+  # capture - and the whole test - waiting for a process designed not to exit.
+  FM_TEST_ROOT="$ROOT" FM_ROOT_OVERRIDE="$ROOT" FM_STATE_OVERRIDE="$state" \
+    FM_PR_MERGE_LINE_ROOT="$root" \
+    "$script" github "$host" "$path" "$url" "$ready" "$ready_flag" "$release_flag" \
+    > "$ready_flag.log" 2>&1 < /dev/null &
+  pid=$!
+  while [ ! -e "$ready_flag" ]; do
+    kill -0 "$pid" 2>/dev/null || fail "the merge-line holder exited before taking the turn"
+    waited=$((waited + 1))
+    [ "$waited" -lt 600 ] || fail "the merge-line holder never took the turn"
+    sleep 0.05
+  done
+  printf '%s\n' "$pid"
+}
+
+# Block until <count> runs are enrolled in the line under <root>, so a test
+# releases a holder only once every waiter is really queued behind it.
+wait_for_line_depth() {
+  local root=$1 count=$2 waited=0 dir found
+  while :; do
+    found=0
+    for dir in "$root"/*.line; do
+      [ -d "$dir" ] || continue
+      found=$(find "$dir" -type f ! -name '.*' | wc -l | tr -d ' ')
+    done
+    [ "$found" -lt "$count" ] || return 0
+    waited=$((waited + 1))
+    [ "$waited" -lt 1200 ] || fail "only $found of $count merges joined the line"
+    sleep 0.05
+  done
+}
+
+# A pull request's recorded ready report, which is the durable record the line
+# orders by. Args: status_file epoch url
+write_ready_status() {
+  printf 'done [at=%s]: PR %s checks green\n' "$2" "$3" >> "$1"
+}
+
+# The whole point of the line: while another firstmate merge on the same
+# repository is in flight, this run must change nothing on the forge - no
+# branch update, no merge - and must say plainly why it gave up.
+test_merge_waiting_for_its_turn_refuses_without_touching_the_forge() {
+  local case_dir rc root holder_pid
+  case_dir=$(make_case github-line-wait-times-out)
+  mkdir -p "$case_dir/wt"
+  add_gh_mocks "$case_dir" 7171717171717171717171717171717171717171
+  write_github_view_state "$case_dir/view-behind" \
+    7171717171717171717171717171717171717171 BEHIND false true \
+    "$(check_run ci COMPLETED SUCCESS)"
+  queue_github_views "$case_dir" "$case_dir/view-behind"
+  : > "$case_dir/gh.log"
+  root="$case_dir/shared-line"
+  write_line_holder "$case_dir/holder.sh"
+  holder_pid=$(start_line_holder "$root" "$case_dir/holder-state" \
+    "$case_dir/holder.sh" github.com example/repo \
+    https://github.com/example/repo/pull/700 1700000000 \
+    "$case_dir/holder-ready" "$case_dir/holder-release")
+
+  set +e
+  FM_TEST_PR_MERGE_LINE_ROOT="$root" \
+  FM_PR_MERGE_LINE_TIMEOUT=0 FM_PR_MERGE_LINE_POLL=0 \
+    run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/701 \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  : > "$case_dir/holder-release"
+  wait "$holder_pid" 2>/dev/null || true
+
+  expect_code 1 "$rc" "github-line-wait-times-out: a spent turn wait must refuse"
+  assert_grep 'another firstmate merge on github.com/example/repo was still ahead of it' \
+    "$case_dir/stderr" \
+    "github-line-wait-times-out: the refusal did not plainly name the merge ahead"
+  assert_grep 'https://github.com/example/repo/pull/700' "$case_dir/stderr" \
+    "github-line-wait-times-out: the refusal did not name which merge was ahead"
+  [ "$(gh_update_branch_calls "$case_dir")" -eq 0 ] \
+    || fail "github-line-wait-times-out: a waiting merge updated its branch"
+  assert_no_grep '^pr merge ' "$case_dir/gh.log" \
+    "github-line-wait-times-out: a waiting merge called the forge"
+  pass "fm-pr-merge refuses a spent turn wait without updating a branch or merging"
+}
+
+# The line is per repository, so a merge elsewhere is not firstmate's own merge
+# into this base branch and must not be delayed by one. A zero bound proves it:
+# any wait at all would refuse instead of merging.
+test_a_merge_on_another_repository_never_waits() {
+  local case_dir rc root holder_pid
+  case_dir=$(make_case github-line-other-repo)
+  mkdir -p "$case_dir/wt"
+  add_gh_mocks "$case_dir" 7272727272727272727272727272727272727272
+  : > "$case_dir/gh.log"
+  root="$case_dir/shared-line"
+  write_line_holder "$case_dir/holder.sh"
+  holder_pid=$(start_line_holder "$root" "$case_dir/holder-state" \
+    "$case_dir/holder.sh" github.com example/alpha \
+    https://github.com/example/alpha/pull/1 1700000000 \
+    "$case_dir/holder-ready" "$case_dir/holder-release")
+
+  set +e
+  FM_TEST_PR_MERGE_LINE_ROOT="$root" \
+  FM_PR_MERGE_LINE_TIMEOUT=0 FM_PR_MERGE_LINE_POLL=0 \
+    run_pr_merge "$case_dir" task-x1 https://github.com/example/beta/pull/2 \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  : > "$case_dir/holder-release"
+  wait "$holder_pid" 2>/dev/null || true
+
+  expect_code 0 "$rc" "github-line-other-repo: a merge on another repository waited on this line"
+  assert_logged_gh_merge "$case_dir" 2 example/beta --squash
+  pass "fm-pr-merge does not make a merge on one repository wait on another repository's line"
+}
+
+# A crashed run must not hold the line for longer than its own process lives.
+# The holder here is killed mid-turn, leaving both its place in the line and
+# the turn itself behind; the next merge recovers both and never waits.
+test_a_crashed_holder_never_wedges_the_line() {
+  local case_dir rc root holder_pid
+  case_dir=$(make_case github-line-stale-holder)
+  mkdir -p "$case_dir/wt"
+  add_gh_mocks "$case_dir" 7373737373737373737373737373737373737373
+  : > "$case_dir/gh.log"
+  root="$case_dir/shared-line"
+  write_line_holder "$case_dir/holder.sh"
+  holder_pid=$(start_line_holder "$root" "$case_dir/holder-state" \
+    "$case_dir/holder.sh" github.com example/repo \
+    https://github.com/example/repo/pull/710 1700000000 \
+    "$case_dir/holder-ready" "$case_dir/holder-release")
+  kill -KILL "$holder_pid" 2>/dev/null || true
+  wait "$holder_pid" 2>/dev/null || true
+  while kill -0 "$holder_pid" 2>/dev/null; do sleep 0.05; done
+
+  set +e
+  FM_TEST_PR_MERGE_LINE_ROOT="$root" \
+  FM_PR_MERGE_LINE_TIMEOUT=0 FM_PR_MERGE_LINE_POLL=0 \
+    run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/711 \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 0 "$rc" "github-line-stale-holder: a dead holder wedged the line"
+  assert_logged_gh_merge "$case_dir" 711 example/repo --squash
+  pass "fm-pr-merge recovers a crashed holder's place in the line rather than waiting on it"
+}
+
+# Two pull requests on one repository, ready at once and waiting behind the
+# same occupant. The younger one enrolls first and still goes second, because
+# the line is ordered by the recorded ready time; and the younger one issues
+# its branch update only after the older one's merge, which is the thrashing
+# this whole mechanism exists to stop.
+test_two_ready_pull_requests_merge_oldest_first_and_one_at_a_time() {
+  local root order older younger holder_pid younger_pid older_pid
+  local older_rc=0 younger_rc=0 merge_at update_at
+  local stale=7474747474747474747474747474747474747474
+  local fresh=7575757575757575757575757575757575757575
+  older=$(make_case github-line-older)
+  younger=$(make_case github-line-younger)
+  mkdir -p "$older/wt" "$younger/wt"
+  root="$TMP_ROOT/github-line-shared"
+  order="$TMP_ROOT/github-line-order.log"
+  : > "$order"
+
+  # The older pull request is green and up to date, so its merge needs no
+  # branch update of its own and the only update in the log is the younger
+  # one's.
+  add_gh_mocks "$older" 7676767676767676767676767676767676767676
+  : > "$older/gh.log"
+  write_ready_status "$older/state/task-x1.status" 1700000100 \
+    https://github.com/example/repo/pull/801
+
+  # The younger pull request is behind, so it must update and re-verify - but
+  # only once it is at the head of the line.
+  add_gh_mocks "$younger" "$stale"
+  write_github_view_state "$younger/view-behind" "$stale" BEHIND false true \
+    "$(check_run ci COMPLETED SUCCESS)"
+  write_github_view_state "$younger/view-green" "$fresh" CLEAN false true \
+    "$(check_run ci COMPLETED SUCCESS)"
+  queue_github_views "$younger" "$younger/view-behind" "$younger/view-green"
+  : > "$younger/gh.log"
+  write_ready_status "$younger/state/task-x1.status" 1700000900 \
+    https://github.com/example/repo/pull/802
+
+  write_line_holder "$TMP_ROOT/github-line-holder.sh"
+  holder_pid=$(start_line_holder "$root" "$TMP_ROOT/github-line-holder-state" \
+    "$TMP_ROOT/github-line-holder.sh" github.com example/repo \
+    https://github.com/example/repo/pull/800 1700000000 \
+    "$TMP_ROOT/github-line-ready" "$TMP_ROOT/github-line-release")
+
+  # The younger pull request joins the line first; the older one joins second
+  # and must still merge first.
+  # shellcheck disable=SC2030,SC2031 # each subshell's exports configure that one backgrounded run; nothing outside reads them back
+  (
+    export FM_TEST_PR_MERGE_LINE_ROOT="$root"
+    export FM_TEST_GH_ORDER_LOG="$order" FM_TEST_GH_ORDER_LABEL=younger
+    export FM_PR_MERGE_LINE_TIMEOUT=180 FM_PR_MERGE_LINE_POLL=1
+    export FM_PR_GITHUB_FRESHNESS_POLL=0
+    run_pr_merge "$younger" task-x1 https://github.com/example/repo/pull/802 \
+      > "$younger/stdout" 2> "$younger/stderr"
+  ) &
+  younger_pid=$!
+  wait_for_line_depth "$root" 2
+  # shellcheck disable=SC2030,SC2031 # as above: these exports belong to this run alone
+  (
+    export FM_TEST_PR_MERGE_LINE_ROOT="$root"
+    export FM_TEST_GH_ORDER_LOG="$order" FM_TEST_GH_ORDER_LABEL=older
+    export FM_PR_MERGE_LINE_TIMEOUT=180 FM_PR_MERGE_LINE_POLL=1
+    run_pr_merge "$older" task-x1 https://github.com/example/repo/pull/801 \
+      > "$older/stdout" 2> "$older/stderr"
+  ) &
+  older_pid=$!
+  wait_for_line_depth "$root" 3
+
+  # Both are queued behind an occupied turn, so neither may have touched the
+  # forge's write paths yet.
+  assert_no_grep '^pr update-branch ' "$younger/gh.log" \
+    "github-line-order: the younger pull request updated its branch while waiting"
+  assert_no_grep '^pr merge ' "$younger/gh.log" \
+    "github-line-order: the younger pull request merged while waiting"
+  assert_no_grep '^pr merge ' "$older/gh.log" \
+    "github-line-order: the older pull request merged while waiting"
+
+  : > "$TMP_ROOT/github-line-release"
+  wait "$holder_pid" 2>/dev/null || true
+  wait "$older_pid" || older_rc=$?
+  wait "$younger_pid" || younger_rc=$?
+
+  expect_code 0 "$older_rc" "github-line-order: the older pull request should merge"$'\n'"$(cat "$older/stderr")"
+  expect_code 0 "$younger_rc" "github-line-order: the younger pull request should merge after it"$'\n'"$(cat "$younger/stderr")"
+  merge_at=$(grep -n '^older pr merge ' "$order" | head -n1 | cut -d: -f1)
+  update_at=$(grep -n '^younger pr update-branch ' "$order" | head -n1 | cut -d: -f1)
+  [ -n "$merge_at" ] || fail "github-line-order: the older pull request never merged"$'\n'"$(cat "$order")"
+  [ -n "$update_at" ] || fail "github-line-order: the younger pull request never updated its branch"$'\n'"$(cat "$order")"
+  [ "$merge_at" -lt "$update_at" ] \
+    || fail "github-line-order: the younger pull request updated its branch before the older one merged"$'\n'"$(cat "$order")"
+  sed -n "1,${merge_at}p" "$order" > "$TMP_ROOT/github-line-order-head.log"
+  assert_no_grep '^younger pr merge ' "$TMP_ROOT/github-line-order-head.log" \
+    "github-line-order: the younger pull request merged out of turn"
+  [ "$(gh_update_branch_calls "$older")" -eq 0 ] \
+    || fail "github-line-order: the older pull request updated a branch it did not need to"
+  [ "$(gh_update_branch_calls "$younger")" -eq 1 ] \
+    || fail "github-line-order: the younger pull request updated its branch $(gh_update_branch_calls "$younger") times"
+  pass "fm-pr-merge merges one pull request per repository at a time, oldest ready first"
+}
+
 test_gitlab_head_override_args_refuse_before_recording
 test_secondmate_merge_reports_upward_once
 test_secondmate_merge_reports_on_the_local_route
@@ -4353,3 +4639,8 @@ test_allow_missing_follows_the_allow_red_rules
 test_required_producer_identity
 test_app_bound_required_status_context_matches_by_name
 test_required_partial_reads_report_all_failures
+
+test_merge_waiting_for_its_turn_refuses_without_touching_the_forge
+test_a_merge_on_another_repository_never_waits
+test_a_crashed_holder_never_wedges_the_line
+test_two_ready_pull_requests_merge_oldest_first_and_one_at_a_time

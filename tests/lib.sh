@@ -279,6 +279,14 @@ fm_test_tmproot() {
   printf '%s\n' "$root"
 }
 
+# Any suite that reaches a GitHub merge joins the machine-wide per-repository
+# merge line (bin/fm-pr-merge-line-lib.sh). Point it at a per-run fixture root
+# so no test writes into the real user's state directory, and two suites
+# running in parallel never queue behind each other's fixture merges.
+FM_PR_MERGE_LINE_ROOT=${FM_PR_MERGE_LINE_ROOT:-$FM_TEST_TMPDIR/fm-test-pr-merge-line.$$}
+export FM_PR_MERGE_LINE_ROOT
+printf '%s\n' "$FM_PR_MERGE_LINE_ROOT" >> "$FM_TEST_CLEANUP_REGISTRY"
+
 trap fm_test_cleanup EXIT
 trap 'fm_test_cleanup; exit 130' INT
 trap 'fm_test_cleanup; exit 143' TERM
