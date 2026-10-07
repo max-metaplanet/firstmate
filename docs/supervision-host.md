@@ -240,6 +240,7 @@ So the owner's next arm starts from the same state as without the host, and the 
 - An unreadable queue.
 - Rows main already claimed.
 - A missing engine or node.
+- A seat the engine cannot be launched on; see [The engine's seat](#the-engines-seat).
 - A dialog mirror that cannot be read, on an attended wake.
 - A session latched after repeated engine errors, inside its cooldown; see [The broken-session latch](#the-broken-session-latch).
 - A turn that timed out or failed.
@@ -321,14 +322,30 @@ Because that bound is not a harness timeout, the checkpoint also sets `FM_SUPERV
 That setting lets an engine turn that starts before the boundary finish after it.
 A captain message typed during the park waits for the checkpoint to return, at most the bound plus one engine turn, unless the captain interrupts it.
 
+## The engine's seat
+
+The engine spends a Claude account, so which seat it launches on is resolved before every turn and never inherited from the host process.
+The seat is read from the one record that names the account this firstmate session itself is running on: the profile recorded beside the home's session lock, which is bound to the lock's current owner.
+`config/claude-seat` is not that record, because it names the seat new workers get and moves without the lead.
+
+This matters because a host process outlives the turn that started it.
+When the lead moves onto another seat ([claude-seats.md](claude-seats.md#moving-firstmate-itself)), the successor session records its own seat beside the lock, and the host picks it up at its next engine launch; no host restart is needed, and a record left by the lead that has already gone names a pid the lock no longer owns, so it is no verdict rather than a stale answer.
+Without that resolution the host would keep spending the seat the lead has just left, which is usually the seat it left because its quota was low.
+
+A launch on a seat other than the one the recorded conversation was opened on starts a new conversation, because a conversation lives under the profile directory of the seat it was opened on.
+
+The host hands the wake to main, with the reason on its `supervision-host:` line, when that record names no current lock owner or names a profile directory that is not there.
+No login is probed: the profile it resolves is the one the live lock-holding session is running on, so that session is the evidence the seat holds a usable login, and a seat whose credentials are genuinely gone fails the launch itself, which is already a [path that hands the wake back](#paths-that-hand-the-wake-back) and counts toward [the latch](#the-broken-session-latch).
+
 ## Engine conversations
 
 The engine keeps one conversation across wakes so the byte-stable prompt stays cached.
 That conversation is keyed to the current main session.
-A new one opens in two cases:
+A new one opens in three cases:
 
 - At every main session start.
 - Every `FM_SUPERVISION_HOST_ROTATE_TURNS` turns, because each wake adds history and the per-wake cost grows with it.
+- Whenever the lead's seat has changed since it was opened; see [The engine's seat](#the-engines-seat).
 
 Nothing captain-facing rides on that conversation, because the outcome store carries every result.
 The captain context it acts on is the [dialog mirror](#the-dialog-mirror) at the head of every attended wake and the away record's read-back at the tail of every away wake.

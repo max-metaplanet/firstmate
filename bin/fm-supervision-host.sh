@@ -102,6 +102,15 @@
 # THE LATCH. An opted-in host persists engine health across short-lived
 # parks; docs/supervision-host.md "The broken-session latch" owns the policy.
 #
+# THE ENGINE'S SEAT. Before every turn the host resolves the Claude seat the
+# engine must spend from the record of the seat this session itself runs on
+# (fm_supervision_engine_seat), never from its own inherited
+# CLAUDE_CONFIG_DIR, and a seat it cannot resolve hands the wake to main with
+# that reason. A seat that differs from the one the recorded conversation was
+# opened on starts a new conversation, because that conversation lives under
+# the old seat's profile. docs/supervision-host.md "The engine's seat" owns
+# the policy and its interaction with a lead restart.
+#
 # THE PARK BOUNDARY. Claude drops the exit 2 of a Stop hook it terminated at
 # the hook's configured timeout (docs/verification/supervision.md), Cursor's
 # stop hook carries the same tracked 28800-second registration, and a host
@@ -144,9 +153,10 @@
 #
 # STATE (all under state/, owned here): .supervision-host (this host's pid and
 # the processes it runs), .supervision-host-engine (the engine conversation:
-# engine, model, session id, main-session key, turn count, running cost),
-# .supervision-host-turn and .supervision-host-receipts (the current turn's
-# report scope and the reports it recorded), .supervision-host-prompt and
+# engine, model, session id, main-session key, seat profile, turn count, and
+# running cost), .supervision-host-turn and .supervision-host-receipts (the
+# current turn's report scope and the reports it recorded),
+# .supervision-host-prompt and
 # .supervision-host-wake (the prompt and wake text of the current turn),
 # .supervision-host-mirror (the dialog-mirror feed while an attended wake is
 # rendered), .supervision-host-left (the pid and identity of the successor arm a
@@ -250,6 +260,9 @@ TURN_SEQ=0
 LAST_TURN=
 TURN_POSTURE=
 ENGINE_ERROR=0
+# The Claude profile this turn's engine launch spends, resolved from the record
+# of the seat this session itself runs on before every turn.
+ENGINE_PROFILE=
 HEALTH_NOTE=
 GRANT_ACTIVE=0
 ARM_PID=
@@ -711,19 +724,24 @@ leave_successor_for_main() {
 }
 
 # The engine conversation for this turn: the recorded one while it belongs to
-# this main session and has turns left, otherwise a new one. Sets ENGINE_SESSION
-# and ENGINE_MODE (new|resume).
+# this main session, this seat, and has turns left, otherwise a new one. Sets
+# ENGINE_SESSION and ENGINE_MODE (new|resume). A conversation lives under the
+# profile directory of the seat it was opened on, so one opened on the seat the
+# lead has since left cannot be resumed on the seat it moved to; needs
+# ENGINE_PROFILE resolved first.
 choose_conversation() {
-  local key recorded_key recorded_session recorded_engine recorded_model turns
+  local key recorded_key recorded_session recorded_engine recorded_model recorded_profile turns
   key=$(fm_supervision_host_main_key "$STATE") || key=
   recorded_key=$(sed -n 's/^key=//p' "$ENGINE_RECORD" 2>/dev/null | head -n 1)
   recorded_session=$(sed -n 's/^session=//p' "$ENGINE_RECORD" 2>/dev/null | head -n 1)
   recorded_engine=$(sed -n 's/^engine=//p' "$ENGINE_RECORD" 2>/dev/null | head -n 1)
   recorded_model=$(sed -n 's/^model=//p' "$ENGINE_RECORD" 2>/dev/null | head -n 1)
+  recorded_profile=$(sed -n 's/^profile=//p' "$ENGINE_RECORD" 2>/dev/null | head -n 1)
   turns=$(numeric_or "$(sed -n 's/^turns=//p' "$ENGINE_RECORD" 2>/dev/null | head -n 1)" 0)
   if [ -n "$key" ] && [ -n "$recorded_session" ] && [ "$recorded_key" = "$key" ] \
     && [ "$recorded_engine" = "$FM_SUPERVISION_ENGINE" ] \
     && [ "$recorded_model" = "$FM_SUPERVISION_ENGINE_MODEL" ] \
+    && [ "$recorded_profile" = "$ENGINE_PROFILE" ] \
     && [ "$turns" -lt "$ROTATE_TURNS" ] && [ -s "$PROMPT_FILE" ]; then
     ENGINE_SESSION=$recorded_session
     ENGINE_MODE=resume
@@ -755,8 +773,9 @@ choose_conversation() {
 write_engine_record() {  # <turns> <conversation-cost>
   local tmp
   tmp=$(mktemp "$ENGINE_RECORD.tmp.XXXXXX") || return 1
-  printf 'engine=%s\nmodel=%s\nsession=%s\nkey=%s\nturns=%s\nconversation_cost=%s\n' \
-    "$FM_SUPERVISION_ENGINE" "$FM_SUPERVISION_ENGINE_MODEL" "$ENGINE_SESSION" "$ENGINE_KEY" "$1" "$2" > "$tmp" \
+  printf 'engine=%s\nmodel=%s\nsession=%s\nkey=%s\nprofile=%s\nturns=%s\nconversation_cost=%s\n' \
+    "$FM_SUPERVISION_ENGINE" "$FM_SUPERVISION_ENGINE_MODEL" "$ENGINE_SESSION" "$ENGINE_KEY" \
+    "$ENGINE_PROFILE" "$1" "$2" > "$tmp" \
     && mv -f "$tmp" "$ENGINE_RECORD"
 }
 
@@ -888,6 +907,16 @@ handle_wake() {  # <reason-lines>
     HANDLE_WHY="this session no longer owns supervision"
     return 1
   fi
+  # The seat the engine spends is resolved once before every turn, from the
+  # record of the seat this session itself runs on, so a host that outlived a
+  # lead restart stops spending the seat the lead left (THE ENGINE'S SEAT
+  # above); the conversation choice and the launch both use this one value.
+  if ! fm_supervision_engine_seat "$STATE"; then
+    "$SCRIPT_DIR/fm-wake-grant.sh" release "$GEN" >/dev/null 2>&1 || true
+    HANDLE_WHY=$FM_SUPERVISION_ENGINE_SEAT_PROBLEM
+    return 1
+  fi
+  ENGINE_PROFILE=$FM_SUPERVISION_ENGINE_PROFILE
   if ! choose_conversation; then
     "$SCRIPT_DIR/fm-wake-grant.sh" release "$GEN" >/dev/null 2>&1 || true
     HANDLE_WHY="the branch prompt or engine conversation could not be prepared"
@@ -962,7 +991,7 @@ handle_wake() {  # <reason-lines>
     export FM_BRANCH_REPORT_TURN="$turn"
     fm_supervision_engine_turn "$FM_SUPERVISION_ENGINE" "$FM_SUPERVISION_ENGINE_MODEL" \
       "$PROMPT_FILE" "$WAKE_FILE" "$ENGINE_SESSION" "$ENGINE_MODE" "$TURN_TIMEOUT" \
-      "$result" "$errors" "$ENGINE_PID_FILE"
+      "$result" "$errors" "$ENGINE_PROFILE" "$ENGINE_PID_FILE"
   ) &
   ENGINE_SUBSHELL=$!
   wait "$ENGINE_SUBSHELL"
