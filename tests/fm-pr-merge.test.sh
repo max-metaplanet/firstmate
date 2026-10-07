@@ -4567,6 +4567,85 @@ SH
   pass "fm-pr-merge keeps a live ticket whose identity is momentarily unreadable"
 }
 
+# A turn left by a run that died without releasing it, whose pid the OS then
+# gave to an unrelated process, belongs to no ticket in the line. The head of
+# the line reclaims it rather than waiting on a holder that no longer exists.
+test_a_reused_pid_never_keeps_a_dead_holders_turn() {
+  local case_dir rc root slug stranger_pid waited=0
+  case_dir=$(make_case github-line-reused-turn)
+  mkdir -p "$case_dir/wt"
+  add_gh_mocks "$case_dir" 7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a
+  : > "$case_dir/gh.log"
+  root="$case_dir/shared-line"
+  slug=$(bash -c '. "$1/bin/fm-pr-merge-line-lib.sh"; fm_pr_merge_line_slug github github.com example/repo' \
+    _ "$ROOT")
+  mkdir -p "$root"
+  # The lock is taken by this very pid, which then becomes an unrelated
+  # process: exactly a dead holder's pid reused by the OS.
+  FM_ROOT_OVERRIDE="$ROOT" FM_STATE_OVERRIDE="$case_dir/stranger-state" \
+    bash -c '. "$1/bin/fm-wake-lib.sh"; fm_lock_try_acquire "$2" || exit 1; exec sleep 60' \
+    _ "$ROOT" "$root/$slug.turn" > /dev/null 2>&1 < /dev/null &
+  stranger_pid=$!
+  until [ -L "$root/$slug.turn" ] && [ "$(/bin/ps -p "$stranger_pid" -o comm= 2>/dev/null)" = sleep ]; do
+    kill -0 "$stranger_pid" 2>/dev/null || fail "github-line-reused-turn: the stranger never took the turn"
+    waited=$((waited + 1))
+    [ "$waited" -lt 600 ] || fail "github-line-reused-turn: the stranger never took the turn"
+    sleep 0.05
+  done
+
+  set +e
+  FM_TEST_PR_MERGE_LINE_ROOT="$root" \
+  FM_PR_MERGE_LINE_TIMEOUT=0 FM_PR_MERGE_LINE_POLL=0 \
+    run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/751 \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  kill "$stranger_pid" 2>/dev/null || true
+  wait "$stranger_pid" 2>/dev/null || true
+
+  expect_code 0 "$rc" "github-line-reused-turn: a turn kept by a reused pid wedged the line"$'\n'"$(cat "$case_dir/stderr")"
+  assert_logged_gh_merge "$case_dir" 751 example/repo --squash
+  pass "fm-pr-merge reclaims a turn whose pid now belongs to a process outside the line"
+}
+
+# A run at the head of the line can still find the turn held by a live merge
+# that started before it enrolled. Its refusal must say that, not claim that
+# another merge was ahead of it in the line.
+test_a_head_of_line_refusal_names_the_held_turn() {
+  local case_dir rc root holder_pid
+  case_dir=$(make_case github-line-head-refusal)
+  mkdir -p "$case_dir/wt"
+  add_gh_mocks "$case_dir" 7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b
+  : > "$case_dir/gh.log"
+  root="$case_dir/shared-line"
+  write_ready_status "$case_dir/state/task-x1.status" 1700000100 \
+    https://github.com/example/repo/pull/761
+  write_line_holder "$case_dir/holder.sh"
+  holder_pid=$(start_line_holder "$root" "$case_dir/holder-state" \
+    "$case_dir/holder.sh" github.com example/repo \
+    https://github.com/example/repo/pull/760 1700000900 \
+    "$case_dir/holder-ready" "$case_dir/holder-release")
+
+  set +e
+  FM_TEST_PR_MERGE_LINE_ROOT="$root" \
+  FM_PR_MERGE_LINE_TIMEOUT=0 FM_PR_MERGE_LINE_POLL=0 \
+    run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/761 \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  : > "$case_dir/holder-release"
+  wait "$holder_pid" 2>/dev/null || true
+
+  expect_code 1 "$rc" "github-line-head-refusal: a held turn must refuse at a spent bound"
+  assert_grep 'it was first in the firstmate merge line for github.com/example/repo, but a merge that started before it kept the turn' \
+    "$case_dir/stderr" "github-line-head-refusal: the refusal did not say the turn was held"
+  assert_no_grep 'stayed ahead of it' "$case_dir/stderr" \
+    "github-line-head-refusal: the refusal claimed a merge was ahead of the head of the line"
+  assert_no_grep '^pr merge ' "$case_dir/gh.log" \
+    "github-line-head-refusal: a run without the turn called the forge"
+  pass "fm-pr-merge says plainly when the head of the line found the turn held"
+}
+
 # The wait bound is per turn: a waiter behind two runs that each take most of
 # the bound must keep its place and merge, because every change of head is the
 # line making progress. Its total wait exceeds the bound; no single turn does.
@@ -4778,5 +4857,7 @@ test_a_merge_on_another_repository_never_waits
 test_a_crashed_holder_never_wedges_the_line
 test_a_reused_pid_never_keeps_a_dead_ticket_in_line
 test_an_unreadable_identity_never_evicts_a_live_ticket
+test_a_reused_pid_never_keeps_a_dead_holders_turn
+test_a_head_of_line_refusal_names_the_held_turn
 test_the_turn_wait_restarts_whenever_the_line_moves
 test_two_ready_pull_requests_merge_oldest_first_and_one_at_a_time

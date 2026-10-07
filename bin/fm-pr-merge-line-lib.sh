@@ -69,9 +69,12 @@
 #   - Every stale ticket - a dead pid, a live pid whose identity reads back
 #     different from the recorded one, or a ticket this library did not write -
 #     is pruned under the line lock before the head is read, so a crashed run
-#     cannot hold the line any longer than its own process lives. A live pid
-#     whose identity cannot be read right now keeps its ticket: an unreadable
-#     identity is no proof of staleness, as in fm_autoarm_claim_abandoned.
+#     cannot hold the line any longer than its own process lives. The turn
+#     follows the same rule: a turn whose recorded pid belongs to no surviving
+#     ticket is reclaimed by the head of the line, so a reused pid cannot keep
+#     a dead holder's turn either. A live pid whose identity cannot be read
+#     right now keeps its ticket: an unreadable identity is no proof of
+#     staleness, as in fm_autoarm_claim_abandoned.
 #
 # Sourced by bin/fm-pr-merge.sh after bin/fm-wake-lib.sh. Callers must have the
 # lock helpers available or let the lazy fallback below source them. No side
@@ -171,12 +174,14 @@ _fm_pr_merge_line_ticket_fields() {
 
 # _fm_pr_merge_line_head <line-dir>: prune every stale ticket, then set
 # FM_PR_MERGE_LINE_HEAD_NAME and FM_PR_MERGE_LINE_HEAD_URL to the oldest-ready
-# survivor. Non-zero when the line is empty. Caller holds the line lock.
+# survivor and FM_PR_MERGE_LINE_PIDS to every survivor's pid, space-delimited.
+# Non-zero when the line is empty. Caller holds the line lock.
 _fm_pr_merge_line_head() {
   local dir=$1 entry name recorded current
   local best_class='' best_epoch='' best_pid='' better
   FM_PR_MERGE_LINE_HEAD_NAME=
   FM_PR_MERGE_LINE_HEAD_URL=
+  FM_PR_MERGE_LINE_PIDS=' '
   for entry in "$dir"/*; do
     [ -f "$entry" ] || continue
     name=${entry##*/}
@@ -194,6 +199,7 @@ _fm_pr_merge_line_head() {
       rm -f -- "$entry"
       continue
     fi
+    FM_PR_MERGE_LINE_PIDS="$FM_PR_MERGE_LINE_PIDS$FM_PR_MERGE_LINE_F_PID "
     better=false
     if [ -z "$best_class" ]; then
       better=true
@@ -216,6 +222,23 @@ _fm_pr_merge_line_head() {
     fi
   done
   [ -n "$FM_PR_MERGE_LINE_HEAD_NAME" ]
+}
+
+# _fm_pr_merge_line_take_turn <turn>: take the turn for the head of the line.
+# Every turn is taken under the line lock by a run holding a ticket, and a
+# holder drops its ticket only on its way out, so a turn whose recorded pid is
+# alive but belongs to no surviving ticket was left by a run that died without
+# releasing it and whose pid the OS has since reused. That turn is reclaimed;
+# a holder already mid-release loses nothing, since fm_lock_release only
+# removes a turn that still records its own pid. Caller holds the line lock
+# and has just run _fm_pr_merge_line_head.
+_fm_pr_merge_line_take_turn() {
+  local turn=$1
+  fm_lock_try_acquire "$turn" && return 0
+  [ -n "$FM_LOCK_HELD_PID" ] || return 1
+  case "$FM_PR_MERGE_LINE_PIDS" in *" $FM_LOCK_HELD_PID "*) return 1 ;; esac
+  fm_lock_remove_path "$turn" || return 1
+  fm_lock_try_acquire "$turn"
 }
 
 # fm_pr_merge_line_enter <provider> <host> <path> <url> <ready-epoch|''>
@@ -289,7 +312,7 @@ fm_pr_merge_line_enter() {
     fm_lock_acquire_wait "$lock"
     if _fm_pr_merge_line_head "$dir" \
       && [ "$FM_PR_MERGE_LINE_HEAD_NAME" = "${FM_PR_MERGE_LINE_TICKET##*/}" ] \
-      && fm_lock_try_acquire "$turn"; then
+      && _fm_pr_merge_line_take_turn "$turn"; then
       FM_PR_MERGE_LINE_HELD=1
       fm_lock_release "$lock"
       return 0
@@ -300,6 +323,13 @@ fm_pr_merge_line_enter() {
     if [ "$FM_PR_MERGE_LINE_HEAD_NAME" != "$head_seen" ]; then
       head_seen=$FM_PR_MERGE_LINE_HEAD_NAME
       deadline=$((now + timeout))
+    fi
+    if [ "$now" -ge "$deadline" ] \
+      && [ "$FM_PR_MERGE_LINE_HEAD_NAME" = "${FM_PR_MERGE_LINE_TICKET##*/}" ]; then
+      printf 'error: refusing to merge %s: it was first in the firstmate merge line for %s/%s, but a merge that started before it kept the turn for %s seconds, so its branch was never updated and nothing was merged; retry once that merge finishes\n' \
+        "$url" "$host" "$path" "$timeout" >&2
+      fm_pr_merge_line_release
+      return 1
     fi
     if [ "$now" -ge "$deadline" ]; then
       printf 'error: refusing to merge %s: another firstmate merge on %s/%s stayed ahead of it for %s seconds without the line moving, so its branch was never updated and nothing was merged; retry once that merge finishes\n' \
