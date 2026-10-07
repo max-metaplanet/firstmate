@@ -41,8 +41,10 @@
 #     a KNOWN ready time and sorts ahead of class 1, an UNKNOWN one; within a
 #     class the older epoch wins, and the pid breaks a remaining tie. So the
 #     order is oldest-ready first, with runs whose ready time is unknown behind
-#     every known one in the order they enrolled. The ticket's one content line
-#     is the pull request URL, used only to name who is ahead in a refusal.
+#     every known one in the order they enrolled. The ticket's first line is
+#     the pull request URL, used only to name who is ahead in a refusal; its
+#     second is the enrolling process's fm_pid_identity, so a pid the OS has
+#     since handed to another process does not keep the ticket alive.
 #   - Ready time comes from an existing durable record - the [at=] stamp of the
 #     earliest status event naming that pull request, which is the ready report
 #     bin/fm-pr-check.sh registered - and is never inferred when that record is
@@ -52,16 +54,22 @@
 #   - Only the ticket at the head of the line attempts the turn, so a run
 #     waiting its turn changes nothing on the forge: no branch update and no
 #     merge.
-#   - The wait is bounded by FM_PR_MERGE_LINE_TIMEOUT seconds (default 480,
-#     polled every FM_PR_MERGE_LINE_POLL seconds, default 20) and a spent bound
-#     refuses in plain words naming the repository and the pull request ahead.
-#     The default is the one ordinary round a holder ahead needs - one branch
-#     update and its re-triggered lanes - and matches
-#     FM_PR_GITHUB_FRESHNESS_TIMEOUT for that reason. A refusal is retryable:
-#     nothing was merged and the next run re-enters the line.
-#   - Every stale ticket - a dead pid, or a name that does not parse - is
+#   - The wait is bounded per turn, not once: FM_PR_MERGE_LINE_TIMEOUT seconds
+#     (polled every FM_PR_MERGE_LINE_POLL seconds, default 20) restart every
+#     time the head of the line changes, because a new head is the observable
+#     sign that the line moved. A waiter therefore refuses only when the run
+#     ahead of it made no progress for one whole bound, however many runs were
+#     ahead of it when it joined, and keeps its place for as long as the line
+#     keeps moving. The default is one full holder turn: two freshness rounds
+#     of FM_PR_GITHUB_FRESHNESS_TIMEOUT each - the cap bin/fm-pr-merge.sh puts
+#     on branch updates - plus a third as margin for its mergeable retries and
+#     the merge itself. A spent bound refuses in plain words naming the
+#     repository and the pull request ahead. A refusal is retryable: nothing
+#     was merged and the next run re-enters the line.
+#   - Every stale ticket - a dead pid, a live pid whose identity no longer
+#     matches the recorded one, or a ticket this library did not write - is
 #     pruned under the line lock before the head is read, so a crashed run
-#     cannot hold the line any longer than its own pid lives.
+#     cannot hold the line any longer than its own process lives.
 #
 # Sourced by bin/fm-pr-merge.sh after bin/fm-wake-lib.sh. Callers must have the
 # lock helpers available or let the lazy fallback below source them. No side
@@ -163,7 +171,7 @@ _fm_pr_merge_line_ticket_fields() {
 # FM_PR_MERGE_LINE_HEAD_NAME and FM_PR_MERGE_LINE_HEAD_URL to the oldest-ready
 # survivor. Non-zero when the line is empty. Caller holds the line lock.
 _fm_pr_merge_line_head() {
-  local dir=$1 entry name
+  local dir=$1 entry name recorded current
   local best_class='' best_epoch='' best_pid='' better
   FM_PR_MERGE_LINE_HEAD_NAME=
   FM_PR_MERGE_LINE_HEAD_URL=
@@ -174,7 +182,9 @@ _fm_pr_merge_line_head() {
       rm -f -- "$entry"
       continue
     fi
-    if ! fm_pid_alive "$FM_PR_MERGE_LINE_F_PID"; then
+    recorded=$(sed -n '2p' "$entry" 2>/dev/null || true)
+    current=$(fm_pid_identity "$FM_PR_MERGE_LINE_F_PID" 2>/dev/null || true)
+    if [ -z "$recorded" ] || [ "$current" != "$recorded" ]; then
       rm -f -- "$entry"
       continue
     fi
@@ -208,13 +218,19 @@ _fm_pr_merge_line_head() {
 # been merged or updated at that point, so the caller simply refuses too.
 fm_pr_merge_line_enter() {
   local provider=$1 host=$2 path=$3 url=$4 ready=$5
-  local root slug dir lock turn pid now deadline class key tmp timeout poll ahead
+  local root slug dir lock turn pid identity now deadline class key tmp timeout
+  local poll ahead head_seen freshness
   _fm_pr_merge_line_helpers
 
-  timeout=${FM_PR_MERGE_LINE_TIMEOUT:-480}
+  freshness=${FM_PR_GITHUB_FRESHNESS_TIMEOUT:-480}
+  case "$freshness" in
+    ''|*[!0-9]*) freshness=480 ;;
+    *) [ "${#freshness}" -le 5 ] || freshness=480 ;;
+  esac
+  timeout=${FM_PR_MERGE_LINE_TIMEOUT:-$((3 * freshness))}
   case "$timeout" in
-    ''|*[!0-9]*) timeout=480 ;;
-    *) [ "${#timeout}" -le 5 ] || timeout=480 ;;
+    ''|*[!0-9]*) timeout=$((3 * freshness)) ;;
+    *) [ "${#timeout}" -le 5 ] || timeout=$((3 * freshness)) ;;
   esac
   poll=${FM_PR_MERGE_LINE_POLL:-20}
   case "$poll" in
@@ -235,6 +251,11 @@ fm_pr_merge_line_enter() {
   fi
 
   fm_current_pid pid || return 1
+  if ! identity=$(fm_pid_identity "$pid") || [ -z "$identity" ]; then
+    printf 'error: refusing to merge %s: this run could not record its own process identity for the firstmate merge line for %s/%s; nothing was merged\n' \
+      "$url" "$host" "$path" >&2
+    return 1
+  fi
   fm_epoch_seconds_to now
   if [ -n "$ready" ]; then
     class=0
@@ -246,7 +267,7 @@ fm_pr_merge_line_enter() {
   FM_PR_MERGE_LINE_TURN=$turn
   FM_PR_MERGE_LINE_TICKET="$dir/$key-$pid"
   tmp="$dir/.ticket.$pid"
-  if ! printf '%s\n' "$url" > "$tmp" || ! chmod 0600 "$tmp" \
+  if ! printf '%s\n%s\n' "$url" "$identity" > "$tmp" || ! chmod 0600 "$tmp" \
     || ! mv -f -- "$tmp" "$FM_PR_MERGE_LINE_TICKET"; then
     rm -f -- "$tmp"
     FM_PR_MERGE_LINE_TICKET=
@@ -257,6 +278,7 @@ fm_pr_merge_line_enter() {
 
   deadline=$((now + timeout))
   ahead=
+  head_seen=
   while :; do
     fm_lock_acquire_wait "$lock"
     if _fm_pr_merge_line_head "$dir" \
@@ -269,8 +291,12 @@ fm_pr_merge_line_enter() {
     ahead=$FM_PR_MERGE_LINE_HEAD_URL
     fm_lock_release "$lock"
     fm_epoch_seconds_to now
+    if [ "$FM_PR_MERGE_LINE_HEAD_NAME" != "$head_seen" ]; then
+      head_seen=$FM_PR_MERGE_LINE_HEAD_NAME
+      deadline=$((now + timeout))
+    fi
     if [ "$now" -ge "$deadline" ]; then
-      printf 'error: refusing to merge %s: another firstmate merge on %s/%s was still ahead of it after %s seconds, so its branch was never updated and nothing was merged; retry once that merge finishes\n' \
+      printf 'error: refusing to merge %s: another firstmate merge on %s/%s stayed ahead of it for %s seconds without the line moving, so its branch was never updated and nothing was merged; retry once that merge finishes\n' \
         "$url" "$host" "$path" "$timeout" >&2
       if [ -n "$ahead" ] && [ "$ahead" != "$url" ]; then
         printf 'error: the merge ahead of it is %s\n' "$ahead" >&2

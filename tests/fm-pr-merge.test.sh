@@ -4411,7 +4411,7 @@ test_merge_waiting_for_its_turn_refuses_without_touching_the_forge() {
   wait "$holder_pid" 2>/dev/null || true
 
   expect_code 1 "$rc" "github-line-wait-times-out: a spent turn wait must refuse"
-  assert_grep 'another firstmate merge on github.com/example/repo was still ahead of it' \
+  assert_grep 'another firstmate merge on github.com/example/repo stayed ahead of it' \
     "$case_dir/stderr" \
     "github-line-wait-times-out: the refusal did not plainly name the merge ahead"
   assert_grep 'https://github.com/example/repo/pull/700' "$case_dir/stderr" \
@@ -4484,6 +4484,92 @@ test_a_crashed_holder_never_wedges_the_line() {
   expect_code 0 "$rc" "github-line-stale-holder: a dead holder wedged the line"
   assert_logged_gh_merge "$case_dir" 711 example/repo --squash
   pass "fm-pr-merge recovers a crashed holder's place in the line rather than waiting on it"
+}
+
+# A pid the OS handed to an unrelated process after a run was killed without
+# its cleanup must not keep that run's ticket at the head of the line: the
+# ticket records its process identity, and a live pid that no longer matches it
+# is as stale as a dead one.
+test_a_reused_pid_never_keeps_a_dead_ticket_in_line() {
+  local case_dir rc root slug stranger_pid
+  case_dir=$(make_case github-line-reused-pid)
+  mkdir -p "$case_dir/wt"
+  add_gh_mocks "$case_dir" 7777777777777777777777777777777777777777
+  : > "$case_dir/gh.log"
+  root="$case_dir/shared-line"
+  slug=$(bash -c '. "$1/bin/fm-pr-merge-line-lib.sh"; fm_pr_merge_line_slug github github.com example/repo' \
+    _ "$ROOT")
+  mkdir -p "$root/$slug.line"
+  sleep 60 &
+  stranger_pid=$!
+  printf '%s\n%s\n' https://github.com/example/repo/pull/720 'lstart-of-a-process-long-gone' \
+    > "$root/$slug.line/0$(printf '%020d' 1600000000)-$stranger_pid"
+
+  set +e
+  FM_TEST_PR_MERGE_LINE_ROOT="$root" \
+  FM_PR_MERGE_LINE_TIMEOUT=0 FM_PR_MERGE_LINE_POLL=0 \
+    run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/721 \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  kill "$stranger_pid" 2>/dev/null || true
+  wait "$stranger_pid" 2>/dev/null || true
+
+  expect_code 0 "$rc" "github-line-reused-pid: a ticket kept alive by a reused pid wedged the line"$'\n'"$(cat "$case_dir/stderr")"
+  assert_logged_gh_merge "$case_dir" 721 example/repo --squash
+  pass "fm-pr-merge prunes a ticket whose pid now belongs to another process"
+}
+
+# The wait bound is per turn: a waiter behind two runs that each take most of
+# the bound must keep its place and merge, because every change of head is the
+# line making progress. Its total wait exceeds the bound; no single turn does.
+test_the_turn_wait_restarts_whenever_the_line_moves() {
+  local case_dir rc=0 root first_pid second_pid run_pid
+  case_dir=$(make_case github-line-per-turn)
+  mkdir -p "$case_dir/wt"
+  add_gh_mocks "$case_dir" 7878787878787878787878787878787878787878
+  : > "$case_dir/gh.log"
+  root="$case_dir/shared-line"
+  write_line_holder "$case_dir/holder.sh"
+  first_pid=$(start_line_holder "$root" "$case_dir/first-state" \
+    "$case_dir/holder.sh" github.com example/repo \
+    https://github.com/example/repo/pull/730 1700000000 \
+    "$case_dir/first-ready" "$case_dir/first-release")
+  rm -f "$case_dir/second-ready" "$case_dir/second-release"
+  FM_TEST_ROOT="$ROOT" FM_ROOT_OVERRIDE="$ROOT" FM_STATE_OVERRIDE="$case_dir/second-state" \
+    FM_PR_MERGE_LINE_ROOT="$root" FM_PR_MERGE_LINE_POLL=0 \
+    "$case_dir/holder.sh" github github.com example/repo \
+    https://github.com/example/repo/pull/731 1700000050 \
+    "$case_dir/second-ready" "$case_dir/second-release" \
+    > "$case_dir/second-ready.log" 2>&1 < /dev/null &
+  second_pid=$!
+  wait_for_line_depth "$root" 2
+
+  # shellcheck disable=SC2030,SC2031 # these exports configure this one backgrounded run
+  (
+    export FM_TEST_PR_MERGE_LINE_ROOT="$root"
+    export FM_PR_MERGE_LINE_TIMEOUT=5 FM_PR_MERGE_LINE_POLL=1
+    run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/732 \
+      > "$case_dir/stdout" 2> "$case_dir/stderr"
+  ) &
+  run_pid=$!
+  wait_for_line_depth "$root" 3
+
+  sleep 3
+  : > "$case_dir/first-release"
+  wait "$first_pid" 2>/dev/null || true
+  while [ ! -e "$case_dir/second-ready" ]; do
+    kill -0 "$second_pid" 2>/dev/null || fail "github-line-per-turn: the second holder never took the turn"
+    sleep 0.05
+  done
+  sleep 3
+  : > "$case_dir/second-release"
+  wait "$second_pid" 2>/dev/null || true
+  wait "$run_pid" || rc=$?
+
+  expect_code 0 "$rc" "github-line-per-turn: a waiter behind a moving line refused"$'\n'"$(cat "$case_dir/stderr")"
+  assert_logged_gh_merge "$case_dir" 732 example/repo --squash
+  pass "fm-pr-merge restarts its turn wait each time the line moves"
 }
 
 # Two pull requests on one repository, ready at once and waiting behind the
@@ -4643,4 +4729,6 @@ test_required_partial_reads_report_all_failures
 test_merge_waiting_for_its_turn_refuses_without_touching_the_forge
 test_a_merge_on_another_repository_never_waits
 test_a_crashed_holder_never_wedges_the_line
+test_a_reused_pid_never_keeps_a_dead_ticket_in_line
+test_the_turn_wait_restarts_whenever_the_line_moves
 test_two_ready_pull_requests_merge_oldest_first_and_one_at_a_time
