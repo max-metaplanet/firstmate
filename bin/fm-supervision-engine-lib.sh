@@ -437,19 +437,23 @@ fm_supervision_engine_turn() {
       return 127
       ;;
   esac
+  # The seat rides in on an env prefix rather than an assignment, so it applies
+  # to this launch alone and nothing in this shell's environment is rewritten:
+  # an assignment here would also make CLAUDE_CONFIG_DIR a variable ShellCheck
+  # sees modified in a subshell, which it then reports against every other
+  # reader of that name across the tracked tree.
+  local -a launch=()
+  if [ "$profile_set" -eq 1 ]; then
+    if [ -n "$profile" ]; then
+      launch=(env "CLAUDE_CONFIG_DIR=$profile")
+    else
+      launch=(env -u CLAUDE_CONFIG_DIR)
+    fi
+  fi
   ledger=$(mktemp "$STATE/.supervision-host-descendants.XXXXXX") || return 127
   (
     cd "$FM_ROOT" || exit 127
-    # The seat is applied to this launch alone, and an ambient-default seat
-    # clears the variable rather than leaving the host's own inherited.
-    if [ "$profile_set" -eq 1 ]; then
-      if [ -n "$profile" ]; then
-        export CLAUDE_CONFIG_DIR="$profile"
-      else
-        unset CLAUDE_CONFIG_DIR
-      fi
-    fi
-    fm_exec_timed "$timeout" "$grace" "$bin" "${args[@]}"
+    fm_exec_timed "$timeout" "$grace" "${launch[@]}" "$bin" "${args[@]}"
   ) </dev/null >"$result" 2>"$errors" &
   watched=$!
   recorded=
