@@ -27,8 +27,8 @@
 # every condition above is re-verified at the new head before any merge. That
 # update is a real push, so the required lanes rerun at the new head: the
 # re-verify waits while a condition is still reporting, refuses a red check
-# exactly as it would otherwise, and never merges a head the update has not
-# moved yet. The wait is bounded by FM_PR_GITHUB_FRESHNESS_TIMEOUT seconds
+# exactly as it would otherwise, and never merges or updates again a head the
+# update has not moved yet. The wait is bounded by FM_PR_GITHUB_FRESHNESS_TIMEOUT seconds
 # (default 480, polled every FM_PR_GITHUB_FRESHNESS_POLL seconds, default 20)
 # and a spent bound refuses naming the conditions that never became ready. That
 # default leaves margin over the three to four minutes a rerun at a new head
@@ -1576,11 +1576,14 @@ case "$PROVIDER" in
     while :; do
       mergeable_status=0
       github_verify_mergeable || mergeable_status=$?
-      # A verified state at the head the update was meant to move is the push
-      # not having shown up in this read yet: merging would pin the very head
-      # the base branch already moved past, so it counts as still reporting.
-      if [ "$mergeable_status" -eq 0 ] && [ -n "$freshness_stale_head" ] \
-        && [ "$FM_PR_MERGE_HEAD" = "$freshness_stale_head" ]; then
+      # A verified or BEHIND state at the head the update was meant to move is
+      # the push not having shown up in this read yet: merging would pin the
+      # very head the base branch already moved past, and updating again would
+      # spend a round on an update already pushed, so it counts as still
+      # reporting.
+      if { [ "$mergeable_status" -eq 0 ] || [ "$mergeable_status" -eq 4 ]; } \
+        && [ -n "$freshness_stale_head" ] \
+        && [ "$FM_PR_GITHUB_VERIFY_HEAD" = "$freshness_stale_head" ]; then
         mergeable_status=5
         FM_PR_VERIFY_REFUSAL_REPORT="error: refusing to merge $URL
   - the branch update has not moved the head past $freshness_stale_head yet"

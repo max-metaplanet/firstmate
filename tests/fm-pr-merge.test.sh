@@ -1173,6 +1173,66 @@ test_update_that_has_not_landed_yet_is_not_merged_stale() {
   pass "fm-pr-merge never merges the pre-update head while the branch update is not visible yet"
 }
 
+# The read right after the update can also still answer BEHIND at the
+# pre-update head. That is the same push not being visible yet, so it waits
+# rather than spending a second update round on a branch already updated.
+test_behind_read_before_the_update_lands_waits_instead_of_updating_again() {
+  local case_dir rc stale fresh
+  stale=9292929292929292929292929292929292929292
+  fresh=9393939393939393939393939393939393939393
+  case_dir=$(make_case github-update-still-behind-at-old-head)
+  mkdir -p "$case_dir/wt"
+  add_gh_mocks "$case_dir" "$stale"
+  write_github_view_state "$case_dir/view-behind" "$stale" BEHIND false true \
+    "$(check_run ci COMPLETED SUCCESS)"
+  write_github_view_state "$case_dir/view-green" "$fresh" CLEAN false true \
+    "$(check_run ci COMPLETED SUCCESS)"
+  queue_github_views "$case_dir" "$case_dir/view-behind" \
+    "$case_dir/view-behind" "$case_dir/view-behind" "$case_dir/view-green"
+  : > "$case_dir/gh-axi.log"
+  : > "$case_dir/gh.log"
+
+  set +e
+  FM_PR_GITHUB_FRESHNESS_POLL=0 \
+    run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/97 \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 0 "$rc" "github-update-still-behind-at-old-head: the merge should succeed once the head moves"
+  [ "$(gh_update_branch_calls "$case_dir")" -eq 1 ] \
+    || fail "github-update-still-behind-at-old-head: expected exactly 1 branch update, got $(gh_update_branch_calls "$case_dir")"
+  grep -qxF "pr merge 97 --repo example/repo --match-head-commit $fresh --squash" "$case_dir/gh.log" \
+    || fail "github-update-still-behind-at-old-head: the merge was not pinned to the moved head"
+  assert_no_grep 'refusing to merge' "$case_dir/stderr" \
+    "github-update-still-behind-at-old-head: a read that had not seen the update yet was refused"
+
+  case_dir=$(make_case github-update-still-behind-bound-spent)
+  mkdir -p "$case_dir/wt"
+  add_gh_mocks "$case_dir" "$stale"
+  write_github_view_state "$case_dir/view-behind" "$stale" BEHIND false true \
+    "$(check_run ci COMPLETED SUCCESS)"
+  queue_github_views "$case_dir" "$case_dir/view-behind"
+  : > "$case_dir/gh-axi.log"
+  : > "$case_dir/gh.log"
+
+  set +e
+  FM_PR_GITHUB_FRESHNESS_TIMEOUT=0 FM_PR_GITHUB_FRESHNESS_POLL=0 \
+    run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/97 \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 1 "$rc" "github-update-still-behind-bound-spent: a spent wait must refuse"
+  [ "$(gh_update_branch_calls "$case_dir")" -eq 1 ] \
+    || fail "github-update-still-behind-bound-spent: expected exactly 1 branch update, got $(gh_update_branch_calls "$case_dir")"
+  assert_grep "the branch update has not moved the head past $stale yet" "$case_dir/stderr" \
+    "github-update-still-behind-bound-spent: the refusal did not name the unmoved head"
+  assert_no_grep 'pr merge' "$case_dir/gh.log" \
+    "github-update-still-behind-bound-spent: a merge was attempted at the pre-update head"
+  pass "fm-pr-merge waits out a BEHIND read at the pre-update head instead of updating again"
+}
+
 test_github_unreadable_outcome_keeps_pr_bookkeeping() {
   local case_dir rc
   case_dir=$(make_case github-outcome-read-fails)
@@ -2776,6 +2836,7 @@ test_failed_branch_update_refuses_naming_the_conflict
 test_red_check_at_the_updated_head_refuses
 test_freshness_wait_bound_refuses_with_the_pending_condition
 test_update_that_has_not_landed_yet_is_not_merged_stale
+test_behind_read_before_the_update_lands_waits_instead_of_updating_again
 test_github_unreadable_outcome_keeps_pr_bookkeeping
 test_github_refusal_quotes_the_forge_output
 test_github_unreadable_outcome_refusal_quotes_the_forge_output
