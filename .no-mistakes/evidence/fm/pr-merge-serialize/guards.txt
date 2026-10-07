@@ -1,0 +1,16 @@
+=== 1. waiter whose bound is spent refuses with nothing updated or merged
+exit=1 after 7s
+error: refusing to merge https://github.com/example/repo/pull/951: another firstmate merge on github.com/example/repo stayed ahead of it for 3 seconds without the line moving, so its branch was never updated and nothing was merged; retry once that merge finishes
+error: the merge ahead of it is https://github.com/example/repo/pull/950
+forge writes by the waiter: 0
+
+=== 2. a SIGKILLed holder never wedges the line
+holder 2710 SIGKILLed; left behind: 000000000001700000000-2710 turn=1
+next run exit=0 after 5s; merge call: pr merge 961 --repo example/repo --match-head-commit 5555555555555555555555555555555555555555 --squash
+
+=== 3. a merge on another repository never waits behind an occupied line
+example/other exit=0 after 5s while example/repo turn held; merge call: pr merge 5 --repo example/other --match-head-commit 6666666666666666666666666666666666666666 --squash
+
+=== 4. GitLab never enters a line, even with a GitHub turn held on the same path
+gitlab exit=0 after 8s; merge: GITLAB_HOST=gitlab.example mr merge 7 -R https://gitlab.example/group/subgroup/project --sha aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --yes
+line root entries (none should be gitlab-*): github-example-other-8d16cef4.line github-example-repo-0f1dda28.line github-example-repo-0f1dda28.turn github-example-repo-0f1dda28.turn.owner.dHjQQi github-group-subgroup-project-c0eb4ff4.line github-group-subgroup-project-c0eb4ff4.turn github-group-subgroup-project-c0eb4ff4.turn.owner.dirX1W 

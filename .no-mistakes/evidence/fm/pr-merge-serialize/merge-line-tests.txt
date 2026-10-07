@@ -1,0 +1,9 @@
+ok - fm-pr-merge refuses a spent turn wait without updating a branch or merging
+ok - fm-pr-merge does not make a merge on one repository wait on another repository's line
+ok - fm-pr-merge recovers a crashed holder's place in the line rather than waiting on it
+ok - fm-pr-merge prunes a ticket whose pid now belongs to another process
+ok - fm-pr-merge keeps a live ticket whose identity is momentarily unreadable
+ok - fm-pr-merge reclaims a turn whose pid now belongs to a process outside the line
+ok - fm-pr-merge says plainly when the head of the line found the turn held
+ok - fm-pr-merge restarts its turn wait each time the line moves
+ok - fm-pr-merge merges one pull request per repository at a time, oldest ready first

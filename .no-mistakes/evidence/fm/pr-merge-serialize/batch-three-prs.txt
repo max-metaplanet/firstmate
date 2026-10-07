@@ -1,0 +1,19 @@
+holder (pull/900, ready 1700000000) holds the turn
+C (ready 1700000300) joined
+B (ready 1700000200) joined
+A (ready 1700000100) joined
+--- line tickets while queued:
+  000000000001700000000-36326 -> https://github.com/example/repo/pull/900
+  000000000001700000100-52312 -> https://github.com/example/repo/pull/901
+  000000000001700000200-44121 -> https://github.com/example/repo/pull/902
+  000000000001700000300-38358 -> https://github.com/example/repo/pull/903
+--- forge write calls while queued: 0
+/Users/max/.no-mistakes/evidence/01M4C13V6870VXRNTBVHEHM9PQ/harness/batch.sh: line 31: wait: pid 36326 is not a child of this shell
+--- exit codes: A=0 B=0 C=0
+--- ordered forge write calls across all three runs:
+  A pr merge 901 --repo example/repo --match-head-commit 1111111111111111111111111111111111111111 --squash
+  B pr update-branch 902 --repo example/repo
+  B pr merge 902 --repo example/repo --match-head-commit 22222222222222222222222222222222222222ff --squash
+  C pr update-branch 903 --repo example/repo
+  C pr merge 903 --repo example/repo --match-head-commit 33333333333333333333333333333333333333ff --squash
+--- line dir after: 0 tickets; turn present: 0
