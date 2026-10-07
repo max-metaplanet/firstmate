@@ -21,6 +21,34 @@
 # re-checks every condition after a short bounded wait instead of refusing;
 # once that bound is spent it reports mergeability still pending rather than
 # unmergeable, with the same nonzero exit as any other refusal.
+# Staleness is handled rather than refused or merged. When the live
+# mergeStateStatus is BEHIND, the base branch has moved past the head this pull
+# request's checks ran on, so the branch is updated with gh pr update-branch and
+# every condition above is re-verified at the new head before any merge. That
+# update is a real push, so the required lanes rerun at the new head: the
+# re-verify waits while a condition is still reporting, refuses a red check
+# exactly as it would otherwise, and never merges a head the update has not
+# moved yet. The wait is bounded by FM_PR_GITHUB_FRESHNESS_TIMEOUT seconds
+# (default 480, polled every FM_PR_GITHUB_FRESHNESS_POLL seconds, default 20)
+# and a spent bound refuses naming the conditions that never became ready. That
+# default leaves margin over the three to four minutes a rerun at a new head
+# typically takes while still returning inside a supervised caller's own command
+# budget; a caller that can wait longer, or not that long, sets its own bound.
+# The
+# live state is read again after the wait, so a merge that landed meanwhile and
+# left this pull request BEHIND again starts another update round, capped at two
+# updates before refusing. A BEHIND pull request whose branch cannot be updated
+# at all is refused outright naming which case it is: a conflict with the base
+# branch, or a head branch on a fork this run cannot push to. The caller's flags
+# never reach this gate, and an attended --attended-override -- --admin merge is
+# exactly why it exists: --admin bypasses GitHub's own review and up-to-date
+# rules, so this is the only thing left that keeps such a merge from landing
+# against a base the pull request was never checked against. The whole freshness
+# wait runs before the away record is locked and holds only the task's own
+# control lock, so it never blocks another task's merge. A branch update moves
+# the head past the recorded pr_head, which is left as it was: the new head
+# still carries that commit's work, which is all the landed-work check reads it
+# for, and the update is reported with both commits named.
 # A required check that never reported is absent from the checks
 # list rather than red, so github_read_required_contexts below reads the
 # required set from classic branch protection and active rulesets. Check-run
@@ -577,6 +605,13 @@ FIELDS
 # The reported name is also what --allow-red matches. An unnamed check run is
 # grouped alone and can neither supersede nor be superseded, because unrelated
 # unnamed checks must not be treated as one.
+#
+# Each line is the check's state, a tab, then that reported name. The state is
+# "pending" when every non-green run behind the name is one GitHub has not
+# finished - a queued or running check run, a PENDING or EXPECTED status context
+# - and "red" as soon as one of them has. That distinction is what lets the
+# freshness re-verify wait for the lanes the branch update re-triggered without
+# a second check evaluator, while a red check refuses either way.
 github_checks_not_green() {
   local json=$1
   printf '%s' "$json" | jq -r '
@@ -598,14 +633,19 @@ github_checks_not_green() {
             }
             | . + {group: (if .name == "" then ["", $i] else [.name, -1] end)}
           else
-            {kind: "status_context", name: (.context // ""), ok: (.state == "SUCCESS")}
+            {
+              kind: "status_context",
+              name: (.context // ""),
+              ok: (.state == "SUCCESS"),
+              pending: (.state == "PENDING" or .state == "EXPECTED")
+            }
           end
       ]
     | . as $entries
     | (
         ($entries[]
           | select(.kind == "status_context" and (.ok | not))
-          | .name
+          | {name, pending}
         ),
         ($entries
           | [.[] | select(.kind == "check_run")]
@@ -623,10 +663,12 @@ github_checks_not_green() {
                 or ([.reds[] | .at] | max) >= .newest_green
               )
             )
-          | .name
+          | {name, pending: all(.reds[]; .completed | not)}
         )
       )
-    | if . == "" then "(unnamed check)" else . end
+    | (if .pending then "pending" else "red" end)
+      + "\t"
+      + (if .name == "" then "(unnamed check)" else .name end)
   ' 2>/dev/null || return 1
 }
 
@@ -715,26 +757,49 @@ github_required_checks_missing() {
 }
 
 # Pre-merge conditions from a live PR view, base requirements, and head producers.
-# Sets FM_PR_MERGE_HEAD to the verified head on success. Returns 3, rather than
-# the usual 1, when mergeable=UNKNOWN is the only failing condition, so the
-# caller can retry a still-computing mergeability read instead of refusing.
+# Sets FM_PR_MERGE_HEAD to the verified head on success. Four non-zero statuses
+# say what the caller may do about the failure, rather than leaving it to guess
+# from a refusal it would have to parse:
+#   1 a condition no wait can clear, already reported.
+#   3 mergeable=UNKNOWN is the only failing condition, so a still-computing
+#     mergeability read can be retried instead of refused.
+#   4 the pull request is behind its base branch and nothing else refuses, so
+#     its branch can be updated and the whole gate re-verified at the new head.
+#   5 every failing condition is still reporting - a check GitHub has not
+#     finished, or a required check that has not reported at this head - so a
+#     caller already waiting out a branch update may keep waiting.
+# Statuses 1 and 5 compose the same refusal; FM_PR_VERIFY_QUIET suppresses
+# printing it during that wait, and FM_PR_VERIFY_REFUSAL_REPORT keeps it so a
+# spent bound can report what never became ready without another live read.
+FM_PR_VERIFY_QUIET=false
+FM_PR_VERIFY_REFUSAL_REPORT=
+FM_PR_GITHUB_VERIFY_HEAD=
+FM_PR_GITHUB_VERIFY_BASE=
+FM_PR_GITHUB_CROSS_REPO=
+FM_PR_GITHUB_MAINTAINER_CAN_MODIFY=
 github_verify_mergeable() {
-  local json fields line red name covered missing unreported producers runs
+  local json fields line red name check_state covered missing unreported producers runs
   local total=0 named=0 refusals='' mergeable_refusal=''
   local state='' draft='' mergeable='' merge_state='' live_head='' base=''
+  local cross='' maintainer='' behind=false hard_condition=false
 
-  if ! json=$(gh pr view "$URL" --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup 2>/dev/null) \
+  if ! json=$(gh pr view "$URL" --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,isCrossRepository,maintainerCanModify,statusCheckRollup 2>/dev/null) \
     || [ -z "$json" ]; then
     echo "error: could not read the GitHub pull request state before merging" >&2
     return 1
   fi
+  # tostring rather than `// ""` for the two pushability fields: `false // ""`
+  # is "" in jq, which would read a false the same way as an absent field, and
+  # the BEHIND path below has to tell those apart.
   if ! fields=$(printf '%s' "$json" | jq -r '
       if type == "object" then
         "state=" + ((.state // "") | tostring),
         "mergeable=" + ((.mergeable // "") | tostring),
         "merge_state=" + ((.mergeStateStatus // "") | tostring),
         "head=" + ((.headRefOid // "") | tostring),
-        "base=" + ((.baseRefName // "") | tostring)
+        "base=" + ((.baseRefName // "") | tostring),
+        "cross=" + (.isCrossRepository | tostring),
+        "maintainer=" + (.maintainerCanModify | tostring)
       else
         error("pull request payload is not an object")
       end' 2>/dev/null); then
@@ -749,13 +814,15 @@ github_verify_mergeable() {
       merge_state=*) merge_state=${line#merge_state=} ;;
       head=*) live_head=${line#head=} ;;
       base=*) base=${line#base=} ;;
+      cross=*) cross=${line#cross=} ;;
+      maintainer=*) maintainer=${line#maintainer=} ;;
       *) continue ;;
     esac
     named=$((named + 1))
   done <<FIELDS
 $fields
 FIELDS
-  if [ "$named" -ne 5 ] || [ "$total" -ne 5 ] || [ -z "$base" ]; then
+  if [ "$named" -ne 7 ] || [ "$total" -ne 7 ] || [ -z "$base" ]; then
     echo "error: could not read the GitHub pull request state before merging" >&2
     return 1
   fi
@@ -769,27 +836,42 @@ FIELDS
     echo "error: could not read the GitHub pull request state before merging" >&2
     return 1
   fi
+  FM_PR_GITHUB_VERIFY_HEAD=$live_head
+  FM_PR_GITHUB_VERIFY_BASE=$base
+  FM_PR_GITHUB_CROSS_REPO=$cross
+  FM_PR_GITHUB_MAINTAINER_CAN_MODIFY=$maintainer
 
   case "$state" in
     [oO][pP][eE][nN]) ;;
     *)
       refusals="$refusals  - state is \"${state:-unreadable}\", not open
 "
+      hard_condition=true
       ;;
   esac
-  [ "$draft" = false ] \
-    || refusals="$refusals  - the pull request is a draft
+  if [ "$draft" != false ]; then
+    refusals="$refusals  - the pull request is a draft
 "
+    hard_condition=true
+  fi
   [ "$mergeable" = MERGEABLE ] \
     || mergeable_refusal="  - mergeable is \"${mergeable:-unreadable}\", not MERGEABLE
 "
-  [ "$merge_state" != DIRTY ] \
-    || refusals="$refusals  - mergeStateStatus is DIRTY (conflicts)
+  if [ "$merge_state" = DIRTY ]; then
+    refusals="$refusals  - mergeStateStatus is DIRTY (conflicts)
 "
+    hard_condition=true
+  fi
+  # BEHIND is the base branch having moved past this head, which is the one
+  # unready state that is acted on instead of reported: it joins no refusal
+  # here and becomes status 4 below unless something else refuses first.
+  [ "$merge_state" != BEHIND ] || behind=true
 
   uncovered=''
-  while IFS= read -r name; do
-    [ -n "$name" ] || continue
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    check_state=${line%%$'\t'*}
+    name=${line#*$'\t'}
     covered=0
     if [ "${#ALLOW_RED[@]}" -gt 0 ]; then
       for check in "${ALLOW_RED[@]}"; do
@@ -800,6 +882,7 @@ FIELDS
       refusals="$refusals  - check '$name' is not green
 "
       uncovered="${uncovered:+$uncovered, }$name"
+      [ "$check_state" = pending ] || hard_condition=true
     }
   done <<EOF
 $red
@@ -807,6 +890,7 @@ EOF
 
   unreported=''
   if ! github_read_required_contexts "$base"; then
+    hard_condition=true
     while IFS= read -r line; do
       refusals="$refusals  - $line, so a required check that has not reported cannot be ruled out
 "
@@ -825,11 +909,13 @@ EOF
       producers='[]'
       refusals="$refusals  - required check producers at head $live_head could not be read
 "
+      hard_condition=true
     fi
   fi
   if ! missing=$(github_required_checks_missing "$json" "$FM_PR_GITHUB_REQUIRED" "$producers"); then
     refusals="$refusals  - the GitHub pull request check rollup could not be read
 "
+    hard_condition=true
   else
     while IFS= read -r name; do
       [ -n "$name" ] || continue
@@ -843,23 +929,134 @@ EOF
   fi
 
   if [ -n "$mergeable_refusal" ]; then
-    if [ -z "$refusals" ] && [ "$mergeable" = UNKNOWN ]; then
-      return 3
+    if [ "$mergeable" = UNKNOWN ]; then
+      if [ -z "$refusals" ] && [ "$behind" = false ]; then
+        FM_PR_VERIFY_REFUSAL_REPORT=$(printf 'error: refusing to merge %s\n%s' "$URL" "$mergeable_refusal")
+        return 3
+      fi
+      refusals="$refusals$mergeable_refusal"
+    else
+      refusals="$refusals$mergeable_refusal"
+      hard_condition=true
     fi
-    refusals="$refusals$mergeable_refusal"
   fi
 
-  if [ -n "$refusals" ]; then
-    printf 'error: refusing to merge %s\n' "$URL" >&2
-    printf '%s' "$refusals" >&2
-    [ -z "$uncovered" ] || printf 'error: these checks are not green: %s\n' "$uncovered" >&2
-    [ -z "$unreported" ] || printf 'error: these required checks have not reported: %s\n' "$unreported" >&2
-    return 1
+  # A still-reporting condition is carried rather than reported while the pull
+  # request is also BEHIND, because the branch update re-triggers those lanes
+  # anyway and the caller is about to run it.
+  if [ -n "$refusals" ] && { [ "$hard_condition" = true ] || [ "$behind" = false ]; }; then
+    FM_PR_VERIFY_REFUSAL_REPORT=$({
+      printf 'error: refusing to merge %s\n' "$URL"
+      printf '%s' "$refusals"
+      [ -z "$uncovered" ] || printf 'error: these checks are not green: %s\n' "$uncovered"
+      [ -z "$unreported" ] || printf 'error: these required checks have not reported: %s\n' "$unreported"
+    })
+    [ "$FM_PR_VERIFY_QUIET" = true ] || printf '%s\n' "$FM_PR_VERIFY_REFUSAL_REPORT" >&2
+    [ "$hard_condition" = false ] || return 1
+    return 5
+  fi
+  if [ "$behind" = true ]; then
+    FM_PR_VERIFY_REFUSAL_REPORT=
+    return 4
   fi
   printf 'verified: %s is open and mergeable, with every unwaived required check reported and every unwaived check green at head %s\n' \
     "$URL" "$live_head" >&2
   FM_PR_MERGE_HEAD=$live_head
   FM_PR_GITHUB_BASE=$base
+}
+
+# Why a BEHIND pull request's branch cannot be updated at all, on stdout, or
+# non-zero when nothing in the live state says it cannot. gh pr update-branch
+# pushes the base branch into the head branch, so a head branch on a fork is
+# updatable only while that fork lets the base repository's maintainers push to
+# it. The field is read for a cross-repository pull request alone, and a value
+# that is neither true nor false refuses rather than being guessed at, because
+# guessing here is what would merge a stale head.
+github_update_branch_blocked_reason() {
+  case "$FM_PR_GITHUB_CROSS_REPO" in
+    false) return 1 ;;
+    true)
+      case "$FM_PR_GITHUB_MAINTAINER_CAN_MODIFY" in
+        true) return 1 ;;
+        false)
+          printf '%s' "its head branch is on a fork this run cannot push to (maintainerCanModify is false)"
+          ;;
+        *)
+          printf '%s' "whether its head branch on a fork can be pushed to could not be read (maintainerCanModify is \"${FM_PR_GITHUB_MAINTAINER_CAN_MODIFY:-unreadable}\")"
+          ;;
+      esac
+      ;;
+    *)
+      printf '%s' "whether its head branch belongs to a fork could not be read (isCrossRepository is \"${FM_PR_GITHUB_CROSS_REPO:-unreadable}\")"
+      ;;
+  esac
+}
+
+# Quote a forge CLI's own output under the given header, kept apart from this
+# script's verdict so an operator can tell which one said what.
+github_quote_forge_output() {
+  local output=$1 header=$2 line
+  [ -n "$output" ] || return 0
+  printf 'error: %s\n' "$header" >&2
+  while IFS= read -r line; do
+    printf 'error: > %s\n' "$line" >&2
+  done <<OUTPUT
+$output
+OUTPUT
+}
+
+# Update a BEHIND pull request's branch from its base so every required lane
+# reruns at a head that carries the base branch's new commits. Refuses without
+# touching the forge when the live state already proves the update impossible,
+# and refuses on a failed update naming a conflict with the base branch apart
+# from any other failure, because those leave the operator somewhere different.
+# A refusal here is final for this run: nothing this script can do makes an
+# unupdatable branch mergeable against a base it was never checked against.
+github_update_for_freshness() {
+  local blocked output status=0
+  if blocked=$(github_update_branch_blocked_reason); then
+    printf 'error: refusing to merge %s: it is behind base branch %s and %s, so its branch cannot be updated; nothing was merged\n' \
+      "$URL" "$FM_PR_GITHUB_VERIFY_BASE" "$blocked" >&2
+    return 1
+  fi
+  output=$(gh pr update-branch "$PR_NUMBER" --repo "$PR_OWNER/$PR_REPO" 2>&1) || status=$?
+  if [ "$status" -ne 0 ]; then
+    if printf '%s' "$output" | grep -qi conflict; then
+      printf 'error: refusing to merge %s: it is behind base branch %s and updating its branch conflicts with that branch; nothing was merged\n' \
+        "$URL" "$FM_PR_GITHUB_VERIFY_BASE" >&2
+    else
+      printf 'error: refusing to merge %s: it is behind base branch %s and updating its branch failed; nothing was merged\n' \
+        "$URL" "$FM_PR_GITHUB_VERIFY_BASE" >&2
+    fi
+    github_quote_forge_output "$output" \
+      "the branch update command's own output follows, quoted; it is the forge CLI's report, not this script's verdict:"
+    return 1
+  fi
+  printf 'notice: %s was behind base branch %s, so its branch was updated from that branch; re-verifying every condition at the new head (pr_head stays the pre-update commit %s, whose work the new head carries)\n' \
+    "$URL" "$FM_PR_GITHUB_VERIFY_BASE" "$FM_PR_GITHUB_VERIFY_HEAD" >&2
+}
+
+# One poll interval of the post-update re-verify, or a refusal once the bound
+# is spent. Every condition being waited on is still reporting, so the spent
+# bound names them from the report the re-verify kept rather than reading the
+# pull request again. An unreadable clock refuses rather than waiting forever.
+FM_PR_FRESHNESS_DEADLINE=0
+FM_PR_FRESHNESS_TIMEOUT=480
+FM_PR_FRESHNESS_POLL=20
+github_freshness_wait() {
+  local now
+  now=$(date +%s 2>/dev/null || true)
+  case "$now" in
+    ''|*[!0-9]*) now='' ;;
+  esac
+  if [ -z "$now" ] || [ "$now" -ge "$FM_PR_FRESHNESS_DEADLINE" ]; then
+    printf 'error: refusing to merge %s: %s seconds after its branch was updated from base branch %s it is still not ready to merge; nothing was merged\n' \
+      "$URL" "$FM_PR_FRESHNESS_TIMEOUT" "$FM_PR_GITHUB_VERIFY_BASE" >&2
+    [ -z "$FM_PR_VERIFY_REFUSAL_REPORT" ] \
+      || printf '%s\n' "$FM_PR_VERIFY_REFUSAL_REPORT" >&2
+    return 1
+  fi
+  sleep "$FM_PR_FRESHNESS_POLL"
 }
 
 # Read one live GitHub pull request view after gh returns. The selected
@@ -1210,15 +1407,10 @@ github_merge_command_succeeded() {
 }
 
 github_report_forge_output() {
-  local output=$1 line
+  local output=$1
   github_merge_command_succeeded || return 0
-  [ -n "$output" ] || return 0
-  echo "error: the merge command's own output follows, quoted; it is the forge CLI's report, not this script's verdict:" >&2
-  while IFS= read -r line; do
-    printf 'error: > %s\n' "$line" >&2
-  done <<OUTPUT
-$output
-OUTPUT
+  github_quote_forge_output "$output" \
+    "the merge command's own output follows, quoted; it is the forge CLI's report, not this script's verdict:"
 }
 
 github_state_is_open() {
@@ -1358,19 +1550,92 @@ case "$PROVIDER" in
       [0-9] | 10) ;;
       *) mergeable_retry_delay=3 ;;
     esac
+    # Freshness. A base branch that advanced past this head is what lets a
+    # merge land against a base the checks never ran on, so a BEHIND pull
+    # request has its branch updated and every condition re-verified at the new
+    # head. The update is a push, so the re-verify waits while the lanes it
+    # re-triggered report; the cap is two updates, because a third round means
+    # merges keep landing first and the operator should hear that instead of
+    # being waited on indefinitely. The bound and the poll interval are
+    # overridable so the tests exercise this without sleeping.
+    freshness_max_rounds=2
+    FM_PR_FRESHNESS_TIMEOUT=${FM_PR_GITHUB_FRESHNESS_TIMEOUT:-480}
+    case "$FM_PR_FRESHNESS_TIMEOUT" in
+      ''|*[!0-9]*) FM_PR_FRESHNESS_TIMEOUT=480 ;;
+      *) [ "${#FM_PR_FRESHNESS_TIMEOUT}" -le 5 ] || FM_PR_FRESHNESS_TIMEOUT=480 ;;
+    esac
+    FM_PR_FRESHNESS_POLL=${FM_PR_GITHUB_FRESHNESS_POLL:-20}
+    case "$FM_PR_FRESHNESS_POLL" in
+      ''|*[!0-9]*) FM_PR_FRESHNESS_POLL=20 ;;
+      *) [ "${#FM_PR_FRESHNESS_POLL}" -le 4 ] || FM_PR_FRESHNESS_POLL=20 ;;
+    esac
+    freshness_rounds=0
+    freshness_waiting=false
+    freshness_stale_head=
     mergeable_attempt=1
     while :; do
       mergeable_status=0
       github_verify_mergeable || mergeable_status=$?
-      if [ "$mergeable_status" -eq 0 ]; then
-        break
+      # A verified state at the head the update was meant to move is the push
+      # not having shown up in this read yet: merging would pin the very head
+      # the base branch already moved past, so it counts as still reporting.
+      if [ "$mergeable_status" -eq 0 ] && [ -n "$freshness_stale_head" ] \
+        && [ "$FM_PR_MERGE_HEAD" = "$freshness_stale_head" ]; then
+        mergeable_status=5
+        FM_PR_VERIFY_REFUSAL_REPORT="error: refusing to merge $URL
+  - the branch update has not moved the head past $freshness_stale_head yet"
       fi
-      if [ "$mergeable_status" -ne 3 ] || [ "$mergeable_attempt" -ge 5 ]; then
-        break
-      fi
-      sleep "$mergeable_retry_delay"
-      mergeable_attempt=$((mergeable_attempt + 1))
+      case "$mergeable_status" in
+        0) break ;;
+        4)
+          if [ "$freshness_rounds" -ge "$freshness_max_rounds" ]; then
+            printf 'error: refusing to merge %s: it is behind base branch %s again after %s branch updates, so another merge keeps landing first; nothing was merged\n' \
+              "$URL" "$FM_PR_GITHUB_VERIFY_BASE" "$freshness_rounds" >&2
+            mergeable_status=1
+            break
+          fi
+          freshness_stale_head=$FM_PR_GITHUB_VERIFY_HEAD
+          if ! github_update_for_freshness; then
+            mergeable_status=1
+            break
+          fi
+          freshness_rounds=$((freshness_rounds + 1))
+          freshness_waiting=true
+          FM_PR_VERIFY_QUIET=true
+          freshness_now=$(date +%s 2>/dev/null || true)
+          case "$freshness_now" in
+            ''|*[!0-9]*) freshness_now=0 ;;
+          esac
+          FM_PR_FRESHNESS_DEADLINE=$((freshness_now + FM_PR_FRESHNESS_TIMEOUT))
+          ;;
+        3|5)
+          if [ "$freshness_waiting" = true ]; then
+            if ! github_freshness_wait; then
+              mergeable_status=1
+              break
+            fi
+            continue
+          fi
+          # Outside a branch update the two statuses keep their own meanings:
+          # a still-computing mergeability read is retried on its own bound,
+          # and anything else has already been reported as a refusal.
+          if [ "$mergeable_status" -eq 5 ]; then
+            mergeable_status=1
+            break
+          fi
+          [ "$mergeable_attempt" -lt 5 ] || break
+          sleep "$mergeable_retry_delay"
+          mergeable_attempt=$((mergeable_attempt + 1))
+          ;;
+        *)
+          if [ "$FM_PR_VERIFY_QUIET" = true ] && [ -n "$FM_PR_VERIFY_REFUSAL_REPORT" ]; then
+            printf '%s\n' "$FM_PR_VERIFY_REFUSAL_REPORT" >&2
+          fi
+          break
+          ;;
+      esac
     done
+    FM_PR_VERIFY_QUIET=false
     if [ "$mergeable_status" -ne 0 ]; then
       if [ "$mergeable_status" -eq 3 ]; then
         printf 'error: mergeability for %s is still being computed by GitHub; retry shortly\n' "$URL" >&2
