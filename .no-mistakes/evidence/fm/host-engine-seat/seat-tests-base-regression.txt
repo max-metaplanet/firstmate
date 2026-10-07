@@ -1,0 +1,8 @@
+## test_lead_seat_move_moves_the_next_engine_launch (base bin)
+not ok - the conversation must record the seat it was opened on
+## test_ambient_default_lead_seat_clears_the_hosts_inherited_seat (base bin)
+not ok - a lead on the ambient default login must launch the engine with CLAUDE_CONFIG_DIR cleared
+## test_unreadable_lead_seat_record_hands_the_wake_to_main (base bin)
+not ok - seat-unreadable: the host did not hand the wake to main
+## test_departed_leads_seat_record_is_never_spent (base bin)
+not ok - seat-stale: the host did not hand the wake to main

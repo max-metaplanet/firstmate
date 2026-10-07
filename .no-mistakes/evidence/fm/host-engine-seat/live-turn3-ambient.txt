@@ -1,0 +1,18 @@
+== turn 3 (lead record profile= empty, ambient default) ==
+pid=15959
+profile=
+backend=tmux
+target=%0
+host 59135 env: CLAUDE_CONFIG_DIR=/Users/max/.claude-seats/seat-max2
+engine claude pid 58936 CLAUDE_CONFIG_DIR entries: []
+launch:
+env -u CLAUDE_CONFIG_DIR /Users/max/.local/bin/claude -p
+--session-id 19452b5d-6818-4ae9-9fd8-c41cba5000af
+1791336666	handled	turn=host-59135-1791336327.3	posture=away	rc=0	reports=1	error=0 cost=0.020519 conversation_cost=0.020519 input=8 cache_read=52574 cache_write=907 output=636 turns=4	signal: /var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.2bCdcC/state/demo.status
+engine=claude
+model=sonnet
+session=19452b5d-6818-4ae9-9fd8-c41cba5000af
+key=15959:179255008:4196115036
+profile=
+turns=1
+conversation_cost=0.020519

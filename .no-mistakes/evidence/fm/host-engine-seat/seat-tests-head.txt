@@ -1,0 +1,5 @@
+ok - host: an away wake is handled on the engine through the branch contract and never reaches main
+ok - host: a lead seat move moves the next engine launch and opens a new conversation
+ok - host: a lead on the ambient default login clears the seat the host inherited
+ok - host: an unreadable record of the lead's own seat hands the wake to main instead of guessing a seat
+ok - host: a record left by a departed lead never decides which seat the engine spends

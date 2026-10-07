@@ -1,0 +1,13 @@
+== turn 4 (record unchanged, ambient default) ==
+launch:
+env -u CLAUDE_CONFIG_DIR /Users/max/.local/bin/claude -p
+--resume 19452b5d-6818-4ae9-9fd8-c41cba5000af
+1791336666	handled	turn=host-59135-1791336327.3	posture=away	rc=0	reports=1	error=0 cost=0.020519 conversation_cost=0.020519 input=8 cache_read=52574 cache_write=907 output=636 turns=4	signal: /var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.2bCdcC/state/demo.status
+session=19452b5d-6818-4ae9-9fd8-c41cba5000af
+profile=
+turns=1
+1791336666	handled	turn=host-59135-1791336327.3	posture=away	rc=0	reports=1	error=0 cost=0.020519 conversation_cost=0.020519 input=8 cache_read=52574 cache_write=907 output=636 turns=4	signal: /var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.2bCdcC/state/demo.status
+1791336735	handled	turn=host-59135-1791336327.4	posture=away	rc=0	reports=1	error=0 cost=0.021161 conversation_cost=0.04168 input=6 cache_read=43576 cache_write=1626 output=593 turns=3	signal: /var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.2bCdcC/state/demo.status
+session=19452b5d-6818-4ae9-9fd8-c41cba5000af
+profile=
+turns=2

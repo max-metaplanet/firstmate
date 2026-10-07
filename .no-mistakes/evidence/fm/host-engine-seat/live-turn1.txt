@@ -1,0 +1,18 @@
+== turn 1 (lead record profile=seat-max2) ==
+lock-runtime:
+pid=15959
+profile=/Users/max/.claude-seats/seat-max2
+backend=tmux
+target=%0
+host 59135 env: CLAUDE_CONFIG_DIR=/Users/max/.claude-seats/seat-max2
+engine claude pid 38095 env: 
+launch argv (trimmed):
+/Users/max/.claude-seats/seat-max2/projects/-private-var-folders-1l-gg6b5zsx0qn753wwhcmmq8cr0000gn-T-fm-lab-2bCdcC-root/1e070b82-88bc-429e-8bf4-b3d4df29c215.jsonl
+engine=claude
+model=sonnet
+session=1e070b82-88bc-429e-8bf4-b3d4df29c215
+key=15959:179255008:4196115036
+profile=/Users/max/.claude-seats/seat-max2
+turns=1
+conversation_cost=0.06071
+1791336473	handled	turn=host-59135-1791336327.1	posture=away	rc=0	reports=1	error=0 cost=0.06071 conversation_cost=0.06071 input=8 cache_read=41801 cache_write=11676 output=563 turns=4	signal: /var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.2bCdcC/state/demo.status

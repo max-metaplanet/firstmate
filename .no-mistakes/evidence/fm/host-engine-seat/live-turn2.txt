@@ -1,0 +1,21 @@
+== turn 2 (lead record moved to seat-max) ==
+pid=15959
+profile=/Users/max/.claude-seats/seat-max
+backend=tmux
+target=%0
+host 59135 env: CLAUDE_CONFIG_DIR=/Users/max/.claude-seats/seat-max2
+engine claude pid 13077 env: CLAUDE_CONFIG_DIR=/Users/max/.claude-seats/seat-max
+launch:
+env CLAUDE_CONFIG_DIR=/Users/max/.claude-seats/seat-max /Users/max/.local/bin/claude -p
+--session-id 2deed3c5-067f-4521-b1f2-b8bdcf06755e
+1791336581	handled	turn=host-59135-1791336327.2	posture=away	rc=0	reports=1	error=0 cost=0.023204 conversation_cost=0.023204 input=8 cache_read=50802 cache_write=2332 output=370 turns=4	signal: /var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.2bCdcC/state/demo.status
+engine=claude
+model=sonnet
+session=2deed3c5-067f-4521-b1f2-b8bdcf06755e
+key=15959:179255008:4196115036
+profile=/Users/max/.claude-seats/seat-max
+turns=1
+conversation_cost=0.023204
+/Users/max/.claude-seats/seat-max/projects/-private-var-folders-1l-gg6b5zsx0qn753wwhcmmq8cr0000gn-T-fm-lab-2bCdcC-root/2deed3c5-067f-4521-b1f2-b8bdcf06755e.jsonl
+seat-max2 check: /Users/max/.claude-seats/seat-max2/projects/-private-var-folders-1l-gg6b5zsx0qn753wwhcmmq8cr0000gn-T-fm-lab-2bCdcC-root/2deed3c5-067f-4521-b1f2-b8bdcf06755e.jsonl
+note: seat-max/projects and seat-max2/projects are both symlinks to ~/.claude/projects, so transcript location is shared; per-seat .claude.json mtimes: seat-max Oct  6 21:29:40 2026, seat-max2 Oct  6 21:27:39 2026

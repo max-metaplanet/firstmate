@@ -1,0 +1,12 @@
+== wake 5 (record names pid 999999, not lock owner 15959) ==
+record at wake time: pid=999999 profile=/Users/max/.claude-seats/seat-max2
+engine launched during wake: no
+host 59135 alive: no
+handled count before=4 after=4
+--- host log tail:
+1791336666	handled	turn=host-59135-1791336327.3	posture=away	rc=0	reports=1	error=0 cost=0.020519 conversation_cost=0.020519 input=8 cache_read=52574 cache_write=907 output=636 turns=4	signal: /var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.2bCdcC/state/demo.status
+1791336735	handled	turn=host-59135-1791336327.4	posture=away	rc=0	reports=1	error=0 cost=0.021161 conversation_cost=0.04168 input=6 cache_read=43576 cache_write=1626 output=593 turns=3	signal: /var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.2bCdcC/state/demo.status
+1791336833	to-main	the away session could not take this wake: the record of the Claude seat this session runs on does not name the current lock owner, so the seat the engine must spend is unknown; this wake is yours
+--- wake-queue tail:
+1791336827	9	signal	demo.status	signal: /var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.2bCdcC/state/demo.status
+1791336828	10	signal	demo.status	signal: /var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.2bCdcC/state/demo.status

@@ -1,0 +1,1 @@
+host-env: CLAUDE_CONFIG_DIR=/Users/max/.claude-seats/seat-max2
