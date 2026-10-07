@@ -26,7 +26,8 @@
 # mechanism: that lock already records its holder's pid, already elects exactly
 # one reaper for a dead holder, and already resolves the steal races a hand-
 # rolled lease would have to re-derive. A crashed holder is therefore recovered
-# by the primitive's own rules, and the line cannot wedge on it.
+# by the primitive's own rules, plus the line's own reclaim of a turn no
+# surviving ticket owns (see CONTRACT), and the line cannot wedge on it.
 #
 # CONTRACT.
 #   - Root: $FM_PR_MERGE_LINE_ROOT, else
