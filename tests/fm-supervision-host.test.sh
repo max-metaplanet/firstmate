@@ -243,11 +243,13 @@ ln -s "$ROOT/bin" "$MIRROR_ROOT/bin"
 
 # Run the host under the fake harness that holds the home's session lock.
 # Every hook payload in $home/mirror-seed.* is first written to the dialog
-# mirror by that same session, as its prompt and Stop hooks would.
+# mirror by that same session, as its prompt and Stop hooks would. The host
+# process itself always carries seat-a in CLAUDE_CONFIG_DIR, the seat it was
+# started on, never the test runner's own.
 start_host() {  # <home> [park options...]
   local home=$1
   shift
-  FM_HOME="$home" FM_CREW_STATE_BIN="$home/fakebin/fm-crew-state.sh" PATH="$home/fakebin:$PATH" \
+  CLAUDE_CONFIG_DIR="$home/seats/seat-a" FM_HOME="$home" FM_CREW_STATE_BIN="$home/fakebin/fm-crew-state.sh" PATH="$home/fakebin:$PATH" \
     MIRROR_ROOT="$MIRROR_ROOT" "$FAKE_CLAUDE" -c '
       printf "%s\n" "$$" > "$FM_HOME/state/.lock"
       printf "pid=%s\nprofile=%s\n" "$$" "$(cat "$FM_HOME/lead-profile" 2>/dev/null || true)" \
@@ -2096,7 +2098,8 @@ test_lead_seat_move_moves_the_next_engine_launch() {
 
   # The lead restarts onto seat-b: the successor records that seat beside the
   # lock, as bin/fm-lead-restart.sh leaves it. The host process is the one from
-  # before the move, so its own environment still names seat-a.
+  # before the move, and start_host started it with CLAUDE_CONFIG_DIR naming
+  # seat-a, so its own environment still names the seat the lead left.
   lock_pid=$(cat "$home/state/.lock")
   printf 'pid=%s\nprofile=%s\n' "$lock_pid" "$seat_b" > "$home/state/.lock-runtime"
   append_status "$home" 'step two'
@@ -2112,6 +2115,23 @@ test_lead_seat_move_moves_the_next_engine_launch() {
     || fail "the new conversation reused the old session id ($first_session)"
   assert_grep "profile=$seat_b" "$home/state/.supervision-host-engine" "the conversation must record the new seat"
   pass "host: a lead seat move moves the next engine launch and opens a new conversation"
+}
+
+# The lead runs on the ambient default login, so its record names no profile,
+# while the host process still carries seat-a in its own environment: the
+# engine launch clears CLAUDE_CONFIG_DIR rather than spending seat-a.
+test_ambient_default_lead_seat_clears_the_hosts_inherited_seat() {
+  local home first
+  home=$(make_home seat-ambient away)
+  : > "$home/lead-profile"
+  start_host "$home"
+  wait_until 150 watcher_live "$home" || fail "seat-ambient: the host never started a watcher cycle: $(cat "$home/host.out")"
+  append_status "$home" 'step one'
+  wait_until 250 handled_at_least "$home" 1 || fail "seat-ambient: the wake was not handled: $(cat "$home/state/.supervision-host.log")"
+  first="$home/engine-call.1"
+  assert_re '^profile=$' "$first" "a lead on the ambient default login must launch the engine with CLAUDE_CONFIG_DIR cleared"
+  assert_no_re "^profile=$home/seats/seat-a\$" "$first" "the launch must not inherit the seat in the host's own environment"
+  pass "host: a lead on the ambient default login clears the seat the host inherited"
 }
 
 # The record of the seat the lead runs on is gone, so which seat the engine
@@ -3032,6 +3052,7 @@ test_attended_wake_with_an_unreadable_mirror_reaches_main
 test_away_wake_is_handled_on_the_engine_and_never_reaches_main
 test_away_turn_without_a_report_hands_the_wake_to_main
 test_lead_seat_move_moves_the_next_engine_launch
+test_ambient_default_lead_seat_clears_the_hosts_inherited_seat
 test_unreadable_lead_seat_record_hands_the_wake_to_main
 test_departed_leads_seat_record_is_never_spent
 test_return_during_an_engine_turn_hands_its_outcomes_to_main
