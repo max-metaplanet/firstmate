@@ -66,10 +66,12 @@
 #     the merge itself. A spent bound refuses in plain words naming the
 #     repository and the pull request ahead. A refusal is retryable: nothing
 #     was merged and the next run re-enters the line.
-#   - Every stale ticket - a dead pid, a live pid whose identity no longer
-#     matches the recorded one, or a ticket this library did not write - is
-#     pruned under the line lock before the head is read, so a crashed run
-#     cannot hold the line any longer than its own process lives.
+#   - Every stale ticket - a dead pid, a live pid whose identity reads back
+#     different from the recorded one, or a ticket this library did not write -
+#     is pruned under the line lock before the head is read, so a crashed run
+#     cannot hold the line any longer than its own process lives. A live pid
+#     whose identity cannot be read right now keeps its ticket: an unreadable
+#     identity is no proof of staleness, as in fm_autoarm_claim_abandoned.
 #
 # Sourced by bin/fm-pr-merge.sh after bin/fm-wake-lib.sh. Callers must have the
 # lock helpers available or let the lazy fallback below source them. No side
@@ -183,8 +185,12 @@ _fm_pr_merge_line_head() {
       continue
     fi
     recorded=$(sed -n '2p' "$entry" 2>/dev/null || true)
+    if [ -z "$recorded" ] || ! fm_pid_alive "$FM_PR_MERGE_LINE_F_PID"; then
+      rm -f -- "$entry"
+      continue
+    fi
     current=$(fm_pid_identity "$FM_PR_MERGE_LINE_F_PID" 2>/dev/null || true)
-    if [ -z "$recorded" ] || [ "$current" != "$recorded" ]; then
+    if [ -n "$current" ] && [ "$current" != "$recorded" ]; then
       rm -f -- "$entry"
       continue
     fi

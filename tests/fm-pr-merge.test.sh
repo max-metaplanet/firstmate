@@ -4520,6 +4520,53 @@ test_a_reused_pid_never_keeps_a_dead_ticket_in_line() {
   pass "fm-pr-merge prunes a ticket whose pid now belongs to another process"
 }
 
+# A live run whose identity cannot be read at this moment - ps failing under
+# load - has not been proven stale, so its ticket keeps its place in line and
+# the merge behind it waits instead of evicting it.
+test_an_unreadable_identity_never_evicts_a_live_ticket() {
+  local case_dir rc root slug waiter_pid ticket
+  case_dir=$(make_case github-line-unreadable-identity)
+  mkdir -p "$case_dir/wt"
+  add_gh_mocks "$case_dir" 7979797979797979797979797979797979797979
+  : > "$case_dir/gh.log"
+  root="$case_dir/shared-line"
+  slug=$(bash -c '. "$1/bin/fm-pr-merge-line-lib.sh"; fm_pr_merge_line_slug github github.com example/repo' \
+    _ "$ROOT")
+  mkdir -p "$root/$slug.line"
+  sleep 60 &
+  waiter_pid=$!
+  ticket="$root/$slug.line/0$(printf '%020d' 1600000000)-$waiter_pid"
+  printf '%s\n%s\n' https://github.com/example/repo/pull/740 'identity-recorded-at-enrollment' \
+    > "$ticket"
+  cat > "$case_dir/fakebin/ps" <<'SH'
+#!/usr/bin/env bash
+case " $* " in
+  *" -p $FM_TEST_PS_UNREADABLE_PID "*) exit 1 ;;
+esac
+exec /bin/ps "$@"
+SH
+  chmod +x "$case_dir/fakebin/ps"
+
+  set +e
+  FM_PROC_ROOT_OVERRIDE="$case_dir/no-proc" FM_TEST_PS_UNREADABLE_PID="$waiter_pid" \
+  FM_TEST_PR_MERGE_LINE_ROOT="$root" \
+  FM_PR_MERGE_LINE_TIMEOUT=0 FM_PR_MERGE_LINE_POLL=0 \
+    run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/741 \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  [ -f "$ticket" ] || fail "github-line-unreadable-identity: a live ticket was evicted on an unreadable identity"
+  kill "$waiter_pid" 2>/dev/null || true
+  wait "$waiter_pid" 2>/dev/null || true
+
+  expect_code 1 "$rc" "github-line-unreadable-identity: the merge behind a live ticket did not wait its turn"
+  assert_grep 'https://github.com/example/repo/pull/740' "$case_dir/stderr" \
+    "github-line-unreadable-identity: the refusal did not name the live ticket ahead"
+  assert_no_grep '^pr merge ' "$case_dir/gh.log" \
+    "github-line-unreadable-identity: the merge behind a live ticket called the forge"
+  pass "fm-pr-merge keeps a live ticket whose identity is momentarily unreadable"
+}
+
 # The wait bound is per turn: a waiter behind two runs that each take most of
 # the bound must keep its place and merge, because every change of head is the
 # line making progress. Its total wait exceeds the bound; no single turn does.
@@ -4730,5 +4777,6 @@ test_merge_waiting_for_its_turn_refuses_without_touching_the_forge
 test_a_merge_on_another_repository_never_waits
 test_a_crashed_holder_never_wedges_the_line
 test_a_reused_pid_never_keeps_a_dead_ticket_in_line
+test_an_unreadable_identity_never_evicts_a_live_ticket
 test_the_turn_wait_restarts_whenever_the_line_moves
 test_two_ready_pull_requests_merge_oldest_first_and_one_at_a_time
