@@ -44,8 +44,18 @@
 # exactly why it exists: --admin bypasses GitHub's own review and up-to-date
 # rules, so this is the only thing left that keeps such a merge from landing
 # against a base the pull request was never checked against. The whole freshness
-# wait runs before the away record is locked and holds only the task's own
-# control lock, so it never blocks another task's merge. A branch update moves
+# wait runs before the away record is locked and holds the task's own control
+# lock and the repository's merge turn. That turn is the deliberate serializer:
+# firstmate merges one pull request per repository at a time, oldest-ready
+# first, machine-wide across every home on this machine, so firstmate's own
+# next merge cannot put another of its pull requests behind mid-CI, and a pull
+# request waiting its turn changes nothing on the forge and never updates its
+# branch.
+# The wait for a turn is bounded and refuses in plain words with nothing
+# merged, and a crashed holder is recovered rather than wedging the line.
+# bin/fm-pr-merge-line-lib.sh owns that whole contract, including where the
+# ready time it orders by is read from. GitLab and Gerrit never enter a line.
+# A branch update moves
 # the head past the recorded pr_head, which is left as it was: the new head
 # still carries that commit's work, which is all the landed-work check reads it
 # for, and the update is reported with both commits named.
@@ -412,6 +422,9 @@ META="$STATE/$ID.meta"
 # shellcheck source=bin/fm-lease-lib.sh
 . "$SCRIPT_DIR/fm-lease-lib.sh"
 fm_lease_forbid_branch "PR merge (fm-pr-merge)" --away-relocated
+# The machine-wide per-repository merge line, which owns its whole contract.
+# shellcheck source=bin/fm-pr-merge-line-lib.sh
+. "$SCRIPT_DIR/fm-pr-merge-line-lib.sh"
 
 if [ ! -f "$META" ] || [ -L "$META" ]; then
   echo "error: task metadata is unavailable" >&2
@@ -427,6 +440,7 @@ MERGE_CONTROL_LOCK=
 MERGE_META_LOCK=
 merge_control_cleanup() {
   [ -z "$MERGE_META_LOCK" ] || fm_lock_release "$MERGE_META_LOCK" || true
+  fm_pr_merge_line_release || true
   fm_afk_contract_lock_release || true
   [ -z "$MERGE_CONTROL_LOCK" ] || fm_lock_release "$MERGE_CONTROL_LOCK" || true
 }
@@ -1550,6 +1564,18 @@ case "$PROVIDER" in
       [0-9] | 10) ;;
       *) mergeable_retry_delay=3 ;;
     esac
+    # Serialization comes first, because the freshness loop below is exactly
+    # what must not run out of turn: every firstmate merge into this base
+    # branch puts firstmate's other pull requests behind it, so a branch update
+    # issued while another firstmate merge is still in flight restarts CI on a
+    # head that merge is about to invalidate. Waiting here means this run
+    # changes nothing on the forge until it is next in line, and a spent bound
+    # refuses with nothing merged and nothing updated. bin/fm-pr-merge-line-lib.sh owns
+    # the line, its ordering, its bounds and its stale-holder recovery; the
+    # ready time it orders by is read from this task's own recorded status
+    # events, and an unrecorded one is left unknown rather than invented.
+    merge_line_ready=$(fm_pr_merge_line_ready_epoch "$STATE/$ID.status" "$URL" || true)
+    fm_pr_merge_line_enter github "$PR_HOST" "$PR_PATH" "$URL" "$merge_line_ready" || exit 1
     # Freshness. A base branch that advanced past this head is what lets a
     # merge land against a base the checks never ran on, so a BEHIND pull
     # request has its branch updated and every condition re-verified at the new
