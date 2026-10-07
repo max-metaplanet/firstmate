@@ -28,14 +28,14 @@
 # update is a real push, so the required lanes rerun at the new head: the
 # re-verify waits while a condition is still reporting, refuses a red check
 # exactly as it would otherwise, and never merges or updates again a head the
-# update has not moved yet. The wait is bounded by FM_PR_GITHUB_FRESHNESS_TIMEOUT seconds
-# (default 480, polled every FM_PR_GITHUB_FRESHNESS_POLL seconds, default 20)
-# and a spent bound refuses naming the conditions that never became ready. That
-# default leaves margin over the three to four minutes a rerun at a new head
-# typically takes while still returning inside a supervised caller's own command
-# budget; a caller that can wait longer, or not that long, sets its own bound.
-# The
-# live state is read again after the wait, so a merge that landed meanwhile and
+# update has not moved yet. The wait is bounded by
+# FM_PR_GITHUB_FRESHNESS_TIMEOUT seconds (default 480, polled every
+# FM_PR_GITHUB_FRESHNESS_POLL seconds, default 20) and a spent bound refuses
+# naming the conditions that never became ready. That default leaves margin
+# over the three to four minutes a rerun at a new head typically takes while
+# still returning inside a supervised caller's own command budget; a caller
+# that can wait longer, or not that long, sets its own bound. The live state
+# is read again after the wait, so a merge that landed meanwhile and
 # left this pull request BEHIND again starts another update round, capped at two
 # updates before refusing. A BEHIND pull request whose branch cannot be updated
 # at all is refused outright naming which case it is: a conflict with the base
