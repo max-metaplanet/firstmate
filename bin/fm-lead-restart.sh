@@ -424,6 +424,8 @@ plan_field() {  # <key>
 }
 
 CREW_UNREACHED=''
+# Written whole and renamed into place, so a reader polling for state= never
+# sees the state line without the detail that explains it.
 record_result() {  # <state> <detail>
   local detail=$2
   [ -z "$CREW_UNREACHED" ] ||
@@ -434,7 +436,7 @@ record_result() {  # <state> <detail>
     printf 'detail=%s\n' "$detail"
     printf 'command=%s\n' "$P_COMMAND"
     printf 'launch_file=%s\n' "$P_LAUNCH_FILE"
-  } > "$RESULT") || true
+  } > "$RESULT.tmp.$$" && mv -f "$RESULT.tmp.$$" "$RESULT") || true
 }
 
 # Tell every live direct report of this home that the lead is about to restart.
