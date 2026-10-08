@@ -2572,8 +2572,202 @@ test_a_lapsed_seat_comes_back_provisionally_only_once_its_recorded_reset_has_pas
   out=$(run_seat "$HOME_DIR" "$FAKEBIN" auto)
   assert_contains "$out" "beta comes back into automatic rotation provisionally" \
     "a lapsed seat whose reset has passed must come back provisionally: $out"
-  assert_absent "$HOME_DIR/config/claude-seat-resting" "nothing may still be recorded as resting"
+  [ "$(jq -r '.seats.beta.provisional' "$HOME_DIR/config/claude-seat-resting")" = true ] ||
+    fail "a seat back provisionally must keep its entry, marked provisional"
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" auto)
+  [ -z "$out" ] || fail "a seat already back provisionally must not be announced again: $out"
   pass "a seat whose token lapsed while resting comes back only once the reset it was waiting for has passed"
+}
+
+# rest_beta_then_go_provisional
+# Rest beta on a week whose reset has already passed, then lapse its token, so
+# the next pass brings it back provisionally.
+rest_beta_then_go_provisional() {
+  run_seat "$HOME_DIR" "$FAKEBIN" floor-dwell 0 >/dev/null
+  seat_windows_clear "$SPEC_DIR"
+  seat_windows "$SPEC_DIR" "$SEATS_DIR/alpha" 80 2026-10-08T02:40:00Z 60 2026-10-14T21:00:00Z
+  seat_windows "$SPEC_DIR" "$SEATS_DIR/beta" 70 2020-01-01T00:00:00Z 2 2020-01-02T00:00:00Z
+  run_seat "$HOME_DIR" "$FAKEBIN" auto >/dev/null
+  seat_expired_refreshable "$SPEC_DIR" "$SEATS_DIR/beta"
+  run_seat "$HOME_DIR" "$FAKEBIN" auto >/dev/null
+}
+
+test_a_provisional_seat_is_a_candidate_and_is_shown_as_provisionally_back() {
+  local out
+  floor_case floor-provisional-candidate
+  rest_beta_then_go_provisional
+  [ "$(jq -r '.seats.beta.provisional' "$HOME_DIR/config/claude-seat-resting")" = true ] ||
+    fail "precondition: beta must be back provisionally"
+
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" list)
+  printf '%s\n' "$out" | grep -q '^  beta.*back in automatic rotation provisionally' ||
+    fail "list must show the seat as provisionally back rather than resting: $out"
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" status)
+  assert_contains "$out" "back provisionally" "status must show the seat as provisionally back"
+
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" switch beta)
+  case "$out" in
+    *"is resting below the quota floor"*) fail "a provisional seat is not resting and must not warn as one: $out" ;;
+  esac
+  printf 'alpha\n' > "$HOME_DIR/config/claude-seat"
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" switch --next)
+  expect_code 0 "$?" "a seat back provisionally must be a rotation destination: $out"
+  assert_grep "beta" "$HOME_DIR/config/claude-seat" "rotation must land on the provisional seat"
+  pass "a seat back provisionally is a rotation candidate and every surface shows it as provisionally back"
+}
+
+test_the_first_readable_reading_settles_a_provisional_seat() {
+  local out
+  floor_case floor-provisional-settles
+  rest_beta_then_go_provisional
+
+  # Still low on real figures: it rests again, from now.
+  rm -f "$SPEC_DIR/expired_refreshable"
+  seat_windows_clear "$SPEC_DIR"
+  seat_windows "$SPEC_DIR" "$SEATS_DIR/alpha" 80 2026-10-08T02:40:00Z 60 2026-10-14T21:00:00Z
+  seat_windows "$SPEC_DIR" "$SEATS_DIR/beta" 70 2099-01-01T00:00:00Z 3 2099-01-02T00:00:00Z
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" auto)
+  assert_contains "$out" "beta is resting" "a provisional seat still at the floor must rest again: $out"
+  [ "$(jq -r '.seats.beta.provisional' "$HOME_DIR/config/claude-seat-resting")" = false ] ||
+    fail "a seat rested again must no longer be provisional"
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" switch --next)
+  expect_code 1 "$?" "a seat rested again must leave rotation: $out"
+
+  # Above the floor on real figures: the entry is simply cleared.
+  floor_case floor-provisional-clears
+  rest_beta_then_go_provisional
+  rm -f "$SPEC_DIR/expired_refreshable"
+  seat_windows_clear "$SPEC_DIR"
+  seat_windows "$SPEC_DIR" "$SEATS_DIR/alpha" 80 2026-10-08T02:40:00Z 60 2026-10-14T21:00:00Z
+  seat_windows "$SPEC_DIR" "$SEATS_DIR/beta" 70 2099-01-01T00:00:00Z 60 2099-01-02T00:00:00Z
+  run_seat "$HOME_DIR" "$FAKEBIN" auto >/dev/null
+  assert_absent "$HOME_DIR/config/claude-seat-resting" \
+    "a provisional seat read above the floor must leave the record entirely"
+  pass "the first readable reading either rests a provisional seat again or clears its entry"
+}
+
+test_clearing_the_floor_wakes_every_resting_seat_here_and_in_secondmates() {
+  local out sm
+  floor_case floor-off-wakes
+  sm=$(add_local_secondmate "$HOME_DIR" "$FAKEBIN" smflooroff)
+  TMUX='' rest_beta >/dev/null
+  assert_present "$sm/config/claude-seat-resting" "precondition: the secondmate must hold the record"
+
+  out=$(TMUX='' run_seat "$HOME_DIR" "$FAKEBIN" floor off)
+  assert_contains "$out" "back in automatic rotation" "clearing the floor must say the rested seats are back"
+  assert_absent "$HOME_DIR/config/claude-seat-resting" "clearing the floor must clear the resting record"
+  assert_absent "$sm/config/claude-seat-resting" "a secondmate's copy of the record must be cleared too"
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" switch --next)
+  expect_code 0 "$?" "with the floor cleared, the seat it rested must be a destination again: $out"
+  pass "clearing the floor clears the resting record here and in local secondmate homes"
+}
+
+test_a_resting_record_withholds_nothing_while_no_floor_is_configured() {
+  local out
+  floor_case floor-stale-record
+  rest_beta >/dev/null
+  # A record left behind with the floor file gone, by hand or by an older build.
+  rm -f "$HOME_DIR/config/claude-seat-floor"
+  assert_present "$HOME_DIR/config/claude-seat-resting" "precondition: a stale record must exist"
+
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" list)
+  case "$out" in
+    *resting*) fail "no seat may read as resting while no floor is configured: $out" ;;
+  esac
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" switch --next)
+  expect_code 0 "$?" "a stale record must never withhold a seat while the floor is off: $out"
+  assert_grep "beta" "$HOME_DIR/config/claude-seat" "rotation must reach the seat the stale record names"
+  pass "a resting record withholds nothing while no floor is configured"
+}
+
+test_a_readd_level_at_or_below_the_floor_is_refused_and_ignored() {
+  local out
+  floor_case floor-readd-below
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" floor-readd 5)
+  expect_code 1 "$?" "a re-add level at the floor must be refused: $out"
+  assert_contains "$out" "above the 5% floor" "the refusal must name the floor"
+  assert_absent "$HOME_DIR/config/claude-seat-floor-readd" "a refused re-add level must record nothing"
+
+  # Set above the floor, then the floor is raised past it: the derived level applies.
+  run_seat "$HOME_DIR" "$FAKEBIN" floor-readd 10 >/dev/null
+  run_seat "$HOME_DIR" "$FAKEBIN" floor 12 >/dev/null
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" floor-readd)
+  assert_contains "$out" "36 (derived from the floor; the configured 10" \
+    "a re-add level the floor overtook must fall back to the derived one: $out"
+
+  # And a seat rested at the raised floor does not wake at the stale level.
+  run_seat "$HOME_DIR" "$FAKEBIN" floor-dwell 0 >/dev/null
+  rest_beta >/dev/null
+  seat_windows_clear "$SPEC_DIR"
+  seat_windows "$SPEC_DIR" "$SEATS_DIR/alpha" 80 2026-10-08T02:40:00Z 60 2026-10-14T21:00:00Z
+  seat_windows "$SPEC_DIR" "$SEATS_DIR/beta" 11 2026-10-08T06:00:00Z 50 2026-10-16T11:00:00Z
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" auto)
+  case "$out" in
+    *"comes back"*) fail "a seat still at the floor must not wake on a stale re-add level: $out" ;;
+  esac
+  assert_present "$HOME_DIR/config/claude-seat-resting" "the seat must stay resting"
+  pass "a re-add level at or below the floor is refused, and one the floor overtook is ignored"
+}
+
+test_a_hand_wake_during_a_pass_is_not_undone_by_it() {
+  local out pid
+  floor_case floor-wake-race
+  rest_beta >/dev/null
+  # A slow pass that will rest alpha, so it has something of its own to write.
+  seat_windows_clear "$SPEC_DIR"
+  seat_windows "$SPEC_DIR" "$SEATS_DIR/alpha" 80 2026-10-08T02:40:00Z 3 2026-10-14T21:00:00Z
+  seat_windows "$SPEC_DIR" "$SEATS_DIR/beta" 70 2026-10-08T01:00:00Z 2 2026-10-09T11:00:00Z
+  printf '2\n' > "$SPEC_DIR/slow"
+  run_seat "$HOME_DIR" "$FAKEBIN" auto > "$CASE_DIR/pass.out" &
+  pid=$!
+  sleep 1
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" resting wake beta)
+  assert_contains "$out" "back in automatic rotation: beta" "precondition: the hand wake must land mid-pass"
+  wait "$pid"
+  rm -f "$SPEC_DIR/slow"
+  assert_contains "$(cat "$CASE_DIR/pass.out")" "alpha is resting" "precondition: the pass must have rested alpha"
+  [ "$(jq -r '.seats | has("beta")' "$HOME_DIR/config/claude-seat-resting")" = false ] ||
+    fail "a pass must not restore a seat the operator woke while it ran"
+  [ "$(jq -r '.seats | has("alpha")' "$HOME_DIR/config/claude-seat-resting")" = true ] ||
+    fail "the pass's own change must still be written"
+  pass "a seat woken by hand during a pass stays woken"
+}
+
+test_arm_keeps_the_refusal_when_a_candidate_is_withheld_for_another_reason() {
+  local out
+  floor_case floor-arm-mixed
+  mkdir -p "$SEATS_DIR/gamma"
+  run_seat "$HOME_DIR" "$FAKEBIN" threshold 15 >/dev/null
+  rest_beta >/dev/null
+  # gamma has a directory but no login, so the watch will never bring it back.
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" arm)
+  expect_code 1 "$?" "arm must refuse when a candidate is out for a reason the watch never lifts: $out"
+  case "$out" in
+    *"every candidate seat is resting"*) fail "arm must not claim every candidate is resting: $out" ;;
+  esac
+  pass "arm keeps its refusal unless every rejected candidate is merely resting"
+}
+
+test_a_killed_pass_leaves_no_memo_directory_behind() {
+  local pid tmp
+  floor_case floor-memo-cleanup
+  tmp="$CASE_DIR/tmp"
+  mkdir -p "$tmp"
+  seat_windows_clear "$SPEC_DIR"
+  seat_windows "$SPEC_DIR" "$SEATS_DIR/alpha" 80 2026-10-08T02:40:00Z 60 2026-10-14T21:00:00Z
+  printf '2\n' > "$SPEC_DIR/slow"
+  TMPDIR="$tmp" FM_HOME="$HOME_DIR" FM_CONFIG_OVERRIDE="$HOME_DIR/config" \
+    FM_STATE_OVERRIDE="$HOME_DIR/state" FM_DATA_OVERRIDE="$HOME_DIR/data" \
+    PATH="$FAKEBIN:$PATH" "$SEAT" auto >/dev/null 2>&1 &
+  pid=$!
+  sleep 1
+  ls -d "$tmp"/fm-seat-pass.* >/dev/null 2>&1 || fail "precondition: the pass must have made its memo directory"
+  kill -TERM "$pid"
+  wait "$pid" 2>/dev/null
+  rm -f "$SPEC_DIR/slow"
+  ! ls -d "$tmp"/fm-seat-pass.* >/dev/null 2>&1 ||
+    fail "a pass killed at its timeout must not leave its memo directory behind"
+  pass "a pass the watcher kills leaves no memo directory behind"
 }
 
 test_one_floor_pass_reads_each_seat_once_and_stays_inside_the_check_budget() {
@@ -2835,6 +3029,14 @@ test_the_session_share_is_measured_from_co_movement_inside_one_window
 test_an_unmeasured_session_share_uses_the_assumed_figure_and_says_so
 test_an_unreadable_reading_never_rests_a_seat_and_never_wakes_one
 test_a_lapsed_seat_comes_back_provisionally_only_once_its_recorded_reset_has_passed
+test_a_provisional_seat_is_a_candidate_and_is_shown_as_provisionally_back
+test_the_first_readable_reading_settles_a_provisional_seat
+test_clearing_the_floor_wakes_every_resting_seat_here_and_in_secondmates
+test_a_resting_record_withholds_nothing_while_no_floor_is_configured
+test_a_readd_level_at_or_below_the_floor_is_refused_and_ignored
+test_a_hand_wake_during_a_pass_is_not_undone_by_it
+test_arm_keeps_the_refusal_when_a_candidate_is_withheld_for_another_reason
+test_a_killed_pass_leaves_no_memo_directory_behind
 test_one_floor_pass_reads_each_seat_once_and_stays_inside_the_check_budget
 test_the_resting_record_reaches_local_secondmates_and_a_declining_home_keeps_its_own
 test_arm_warns_rather_than_refusing_when_every_candidate_is_merely_resting

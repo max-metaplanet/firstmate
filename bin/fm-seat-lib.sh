@@ -649,15 +649,19 @@ fm_seat_floor() {
 # fm_seat_floor_readd
 # The percent LEFT BOTH windows must regain before a resting seat may wake.
 # Configured explicitly, or derived as min(100, max(3 x floor, floor + 10)) so a
-# floor on its own already carries hysteresis: 15 for a floor of 5. Returns 1
-# when no floor is configured, because there is then nothing to come back from.
+# floor on its own already carries hysteresis: 15 for a floor of 5. A configured
+# level at or below the floor - say the floor was raised after it was set - is
+# ignored for the derived one, because waking a seat the next reading rests
+# again would flap it every rest period. Returns 1 when no floor is configured,
+# because there is then nothing to come back from.
 fm_seat_floor_readd() {
   local floor readd
-  if readd=$(fm_seat_percent_file "$CONFIG/claude-seat-floor-readd"); then
+  floor=$(fm_seat_floor) || return 1
+  if readd=$(fm_seat_percent_file "$CONFIG/claude-seat-floor-readd") &&
+    jq -en --arg r "$readd" --arg f "$floor" '($r | tonumber) > ($f | tonumber)' >/dev/null 2>&1; then
     printf '%s\n' "$readd"
     return 0
   fi
-  floor=$(fm_seat_floor) || return 1
   jq -rn --arg f "$floor" \
     '[100, ([(($f | tonumber) * 3), (($f | tonumber) + 10)] | max)] | min | tostring' 2>/dev/null
 }
@@ -833,10 +837,13 @@ fm_seat_resting_record() {
 }
 
 # fm_seat_resting_entry <name>
-# One seat's entry, or 1 when that seat is not resting.
+# One seat's entry, including one back provisionally, or 1 when the record holds
+# none. With no floor configured every seat reads as having none, so a stale or
+# hand-placed record can never withhold a seat while the feature is off.
 fm_seat_resting_entry() {
   local name=${1-} entry
   [ -n "$name" ] || return 1
+  fm_seat_floor >/dev/null || return 1
   entry=$(fm_seat_resting_record | jq -c --arg n "$name" '.seats[$n] // empty' 2>/dev/null) || return 1
   [ -n "$entry" ] || return 1
   printf '%s\n' "$entry"
@@ -847,10 +854,15 @@ fm_seat_resting_entry() {
 # owner of that question, so the candidate filter, the listing, the status
 # report, and the board can never disagree.
 #
+# A seat back PROVISIONALLY still has an entry but is not resting: it is a
+# candidate again, and only the next readable reading clears or re-rests it.
+#
 # Like the manual exclusion, it is deliberately NOT consulted by
 # `switch <name>`: resting withholds a seat from the automatic paths only.
 fm_seat_resting() {
-  fm_seat_resting_entry "${1-}" >/dev/null 2>&1
+  local entry
+  entry=$(fm_seat_resting_entry "${1-}" 2>/dev/null) || return 1
+  printf '%s\n' "$entry" | jq -e '(.provisional // false) | not' >/dev/null 2>&1
 }
 
 # fm_seat_resting_write <record-json>

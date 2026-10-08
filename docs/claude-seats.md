@@ -208,7 +208,7 @@ The floor is about *how much is left on it*, and unlike every other setting here
 bin/fm-seat.sh floor 5            # rest a seat at or below 5% left on either window
 bin/fm-seat.sh resting            # what is resting right now, and why
 bin/fm-seat.sh resting wake beta  # put one back by hand
-bin/fm-seat.sh floor off          # stop resting anything
+bin/fm-seat.sh floor off          # stop resting anything, and put back every seat it rested
 ```
 
 With a floor set, each pass of the armed watch reads every candidate seat and **rests** one whose session (`five_hour`) or weekly (`seven_day`) window is at or below it.
@@ -222,7 +222,7 @@ A seat you held out by hand is not even read by the floor pass, is reported as h
 **Coming back takes more than the figure that rested it.**
 A resting seat returns only when a fresh reading shows all of:
 
-- both windows at or above the **re-add level**, which is `floor-readd` when set and otherwise `min(100, max(3 x floor, floor + 10))` - 15 for a floor of 5,
+- both windows at or above the **re-add level**, which is `floor-readd` when set and otherwise `min(100, max(3 x floor, floor + 10))` - 15 for a floor of 5; `floor-readd` refuses a level at or below the floor, and one the floor was later raised past is ignored for the derived level,
 - the week at or above that level **plus one whole session's share of a week**, so a seat whose remaining week a full session would overrun stays down even when its session has just refreshed, and
 - at least `floor-dwell` seconds of rest, 600 by default; `0` means no minimum.
 
@@ -239,7 +239,8 @@ Until then the share is the assumed `session-share`, 20% of a week by default, a
 An unreadable quota leaves a seat exactly where it was in either direction; the record notes since when it could not be read, and that note changes nothing by itself.
 One case needs care: a resting seat is never launched on, so after eight hours its token [lapses](#idle-seats-and-lapsed-tokens) and its quota becomes unreadable for good until something renews it.
 Such a seat comes back **provisionally** once the reset it was waiting for has passed, and never before its weekly reset when the week was the limiting window.
-The first worker launched there renews the token, and the next pass reads real figures and rests it again if they are still low.
+Its record entry stays, marked provisional, so `status`, `list`, and the board show it as provisionally back while every automatic path treats it as a candidate again.
+The first worker launched there renews the token, and the next pass reads real figures and either rests it again or clears the entry.
 
 **What the floor does to dispatch.**
 With `extra-usage stop` and a floor set, new Claude dispatch is held once the *active* seat is at or below the floor, rather than only once its plan quota reaches nothing.

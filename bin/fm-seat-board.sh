@@ -175,16 +175,21 @@ seat_cache_read() {
 
 # seat_resting_line <seat-name>
 # One sentence saying why the quota floor is resting a seat and when it is
-# expected back, or 1 when it is not resting.
+# expected back, or that it is back provisionally, or 1 when it has no entry.
 seat_resting_line() {
   local entry
   entry=$(fm_seat_resting_entry "${1-}") || return 1
   printf '%s' "$entry" | jq -r '
     (.limitingWindow // "?") as $w |
-    "resting: " + $w + " " + ((.windows[$w].remaining // "?") | tostring)
-    + "% left, at or below the quota floor, expected back "
-    + (.expectedBack // "unknown")
-    + (if .provisional then " (returning provisionally: its access token lapsed while it rested)" else "" end)
+    if .provisional then
+      "in rotation provisionally: it rested at " + $w + " "
+      + ((.windows[$w].remaining // "?") | tostring)
+      + "% left, its access token lapsed while it rested, and the reset it was waiting for has passed, so the next launch there reads it again"
+    else
+      "resting: " + $w + " " + ((.windows[$w].remaining // "?") | tostring)
+      + "% left, at or below the quota floor, expected back "
+      + (.expectedBack // "unknown")
+    end
     + (if (.unreadableSince // null) == null then ""
        else " (its quota has been unreadable since " + ((.unreadableSince) | tostring) + ")" end)
   ' 2>/dev/null
@@ -242,9 +247,11 @@ seat_section_html() {
     printf '<p class="rotation">never an automatic rotation target (the ambient login)</p>\n'
   elif fm_seat_auto_excluded "$name"; then
     printf '<p class="rotation">held out of automatic rotation by hand</p>\n'
-  elif resting=$(seat_resting_line "$name"); then
+  elif fm_seat_resting "$name" && resting=$(seat_resting_line "$name"); then
     limiting=$(fm_seat_resting_entry "$name" | jq -r '.limitingWindow // ""' 2>/dev/null)
     printf '<p class="rotation resting">%s</p>\n' "$(html_escape "$resting")"
+  elif resting=$(seat_resting_line "$name"); then
+    printf '<p class="rotation">%s</p>\n' "$(html_escape "$resting")"
   else
     printf '<p class="rotation">in rotation</p>\n'
   fi
@@ -338,7 +345,7 @@ seat_json() {
   # the seat back, because that is the question every reader of it asks; the
   # exclusion object beside it is what says which of the two it was.
   flags=false
-  { [ "$manual" = false ] && [ "$resting" = null ]; } || flags=true
+  { [ "$manual" = false ] && ! fm_seat_resting "$name"; } || flags=true
   if [ -z "$json" ]; then
     jq -n \
       --arg name "$name" --arg dir "$dir" --arg cache "$cache_file" \

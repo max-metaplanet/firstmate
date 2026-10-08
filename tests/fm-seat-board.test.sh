@@ -636,6 +636,29 @@ test_render_shows_a_resting_seat_its_reason_and_the_floor_settings() {
   pass "render shows a resting seat with its reason and the floor settings it was judged against"
 }
 
+test_a_seat_back_provisionally_reads_as_in_rotation_with_its_marker() {
+  local rec out record
+  rec=$(make_board_case provisional)
+  read_board_case "$rec"
+  mkdir -p "$SEATS_DIR/alpha" "$SEATS_DIR/bravo"
+  printf '%s\n%s\n' "$SEATS_DIR/alpha" "$SEATS_DIR/bravo" > "$SPEC_DIR/oauth"
+  printf 'alpha\n' > "$HOME_DIR/config/claude-seat"
+  printf '5\n' > "$HOME_DIR/config/claude-seat-floor"
+  rest_seat_on_board "$HOME_DIR" bravo seven_day 2 2026-10-09T11:00:00Z
+  record="$HOME_DIR/config/claude-seat-resting"
+  jq '.seats.bravo.provisional = true' "$record" > "$record.tmp" && mv "$record.tmp" "$record"
+
+  out=$(run_board "$HOME_DIR" "$FAKEBIN" "$CASE_DIR/cache" json)
+  printf '%s' "$out" | jq -e 'any(.seats[]; .name == "bravo" and .autoExcluded == false
+      and .exclusion.resting.provisional == true)' >/dev/null ||
+    fail "a provisional seat must read as one a switch may land on, with its marker (got: $out)"
+  out=$(run_board "$HOME_DIR" "$FAKEBIN" "$CASE_DIR/cache")
+  expect_grep 'in rotation provisionally' "$out" "the page must show the seat as provisionally back"
+  printf '%s' "$out" | grep -q 'class="rotation resting"' &&
+    fail "a provisional seat must not be styled as resting"
+  pass "a seat back provisionally reads as in rotation, with the provisional marker"
+}
+
 test_json_rejects_an_unknown_flag() {
   local rc
   "$BOARD" json --fresh >/dev/null 2>&1
@@ -662,6 +685,7 @@ test_json_rejects_an_unknown_flag
 test_json_tells_a_hand_held_seat_from_a_resting_one_and_reports_the_floor
 test_json_reports_no_floor_when_none_is_configured
 test_render_shows_a_resting_seat_its_reason_and_the_floor_settings
+test_a_seat_back_provisionally_reads_as_in_rotation_with_its_marker
 test_serve_answers_a_loopback_host_and_refuses_a_rebinding_one
 test_serve_serves_the_board_only_under_the_path_token_it_printed
 test_stopping_serve_leaves_nothing_listening_on_its_port
