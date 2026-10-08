@@ -1158,9 +1158,11 @@ EOF
     "project=alpha" \
     "harness=claude" \
     "kind=ship" \
-    "mode=no-mistakes"
+    "mode=no-mistakes" \
+    "pr=https://github.com/o/terminal/pull/1" \
+    "pr_head=0123456789abcdef0123456789abcdef01234567"
   record_claude_idle "$home/state" terminal-ship
-  printf 'done: complete\n' > "$home/state/terminal-ship.status"
+  printf 'done: PR https://github.com/o/terminal/pull/1 checks green\n' > "$home/state/terminal-ship.status"
   out=$(PATH="$fakebin:$PATH" FM_HOME="$home" "$SNAPSHOT" --secondmate-home-summary)
   printf '%s' "$out" | jq -e '
     .valid == false
