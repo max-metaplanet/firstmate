@@ -1,0 +1,44 @@
+=== head fm/nm1 2c84431 NOT pushed ===
+[A1] mode=no-mistakes  status=done: implementation complete, ready for /no-mistakes
+     new  -> state: blocked · source: status-log · this no-mistakes done: reports no PR, so nothing is shipped: a local commit does not finish a no-mistakes task - run /no-mistakes from this copy, drive the run to its outcome, and report `done: PR <url> checks green`, or on a Gerrit project `done: PR <change url> published for review`
+     base -> state: done · source: status-log · implementation complete, ready for /no-mistakes
+[B1] mode=no-mistakes  status=done [key=fix]: committed on fm/nm1; pre-commit failed, used --no-verify
+     new  -> state: blocked · source: status-log · this no-mistakes done: reports no PR, so nothing is shipped: a local commit does not finish a no-mistakes task - run /no-mistakes from this copy, drive the run to its outcome, and report `done: PR <url> checks green`, or on a Gerrit project `done: PR <change url> published for review`
+     base -> state: done · source: status-log · committed on fm/nm1; pre-commit failed, used --no-verify
+[C1] mode=no-mistakes  status=done: PR checks green
+     new  -> state: blocked · source: status-log · this no-mistakes done: reports no PR, so nothing is shipped: a local commit does not finish a no-mistakes task - run /no-mistakes from this copy, drive the run to its outcome, and report `done: PR <url> checks green`, or on a Gerrit project `done: PR <change url> published for review`
+     base -> state: blocked · source: status-log · named head 2c844319500780b1a4f954532dbf89bcfd390cbf is unreachable outside the worker copy: no ref either copy holds carries it and origin does not advertise it, or origin could not be read - push that commit and report again; never change remote.origin.fetch, which rewrites the clone configuration every pooled worktree shares and breaks later worktree creation once the branch is deleted, and if you need a local ref fetch it once with `git fetch origin <branch>:refs/remotes/origin/<branch>`
+[H1] mode=no-mistakes  status=done: validation finished, PR https://github.com/o/r/pull/7 checks green
+     new  -> state: blocked · source: status-log · named head 2c844319500780b1a4f954532dbf89bcfd390cbf is unreachable outside the worker copy: no ref either copy holds carries it and origin does not advertise it, or origin could not be read - push that commit and report again; never change remote.origin.fetch, which rewrites the clone configuration every pooled worktree shares and breaks later worktree creation once the branch is deleted, and if you need a local ref fetch it once with `git fetch origin <branch>:refs/remotes/origin/<branch>`
+     base -> state: blocked · source: status-log · named head 2c844319500780b1a4f954532dbf89bcfd390cbf is unreachable outside the worker copy: no ref either copy holds carries it and origin does not advertise it, or origin could not be read - push that commit and report again; never change remote.origin.fetch, which rewrites the clone configuration every pooled worktree shares and breaks later worktree creation once the branch is deleted, and if you need a local ref fetch it once with `git fetch origin <branch>:refs/remotes/origin/<branch>`
+=== head pushed to origin (as the pipeline would) ===
+[A2] mode=no-mistakes  status=done: implementation complete, ready for /no-mistakes
+     new  -> state: blocked · source: status-log · this no-mistakes done: reports no PR, so nothing is shipped: a local commit does not finish a no-mistakes task - run /no-mistakes from this copy, drive the run to its outcome, and report `done: PR <url> checks green`, or on a Gerrit project `done: PR <change url> published for review`
+     base -> state: done · source: status-log · implementation complete, ready for /no-mistakes
+[C2] mode=no-mistakes  status=done: PR checks green
+     new  -> state: blocked · source: status-log · this no-mistakes done: reports no PR, so nothing is shipped: a local commit does not finish a no-mistakes task - run /no-mistakes from this copy, drive the run to its outcome, and report `done: PR <url> checks green`, or on a Gerrit project `done: PR <change url> published for review`
+     base -> state: done · source: status-log · PR checks green
+[D2] mode=no-mistakes  status=done: pipeline finished, PR step skipped, checks green
+     new  -> state: blocked · source: status-log · this no-mistakes done: reports no PR, so nothing is shipped: a local commit does not finish a no-mistakes task - run /no-mistakes from this copy, drive the run to its outcome, and report `done: PR <url> checks green`, or on a Gerrit project `done: PR <change url> published for review`
+     base -> state: done · source: status-log · pipeline finished, PR step skipped, checks green
+[L2] mode=no-mistakes  status=done: opened PR https://github.com/o/r/pull/7, waiting on review
+     new  -> state: blocked · source: status-log · this no-mistakes done: reports no PR, so nothing is shipped: a local commit does not finish a no-mistakes task - run /no-mistakes from this copy, drive the run to its outcome, and report `done: PR <url> checks green`, or on a Gerrit project `done: PR <change url> published for review`
+     base -> state: done · source: status-log · opened PR https://github.com/o/r/pull/7, waiting on review
+[G2] mode=no-mistakes  status=done [at=1791400000]: PR https://github.com/o/r/pull/7 checks green
+     new  -> state: done · source: status-log · PR https://github.com/o/r/pull/7 checks green
+     base -> state: done · source: status-log · PR https://github.com/o/r/pull/7 checks green
+[H2] mode=no-mistakes  status=done: validation finished, PR https://github.com/o/r/pull/7 checks green
+     new  -> state: done · source: status-log · validation finished, PR https://github.com/o/r/pull/7 checks green
+     base -> state: done · source: status-log · validation finished, PR https://github.com/o/r/pull/7 checks green
+[I2] mode=no-mistakes  status=done: PR https://gerrit.example.test/c/proj/+/123 published for review
+     new  -> state: blocked · source: status-log · the no-mistakes run for this copy could not be read, so its fixes cannot be proven recovered
+     base -> state: blocked · source: status-log · the no-mistakes run for this copy could not be read, so its fixes cannot be proven recovered
+[J2] mode=<empty>  status=done: implementation complete
+     new  -> state: blocked · source: status-log · this no-mistakes done: reports no PR, so nothing is shipped: a local commit does not finish a no-mistakes task - run /no-mistakes from this copy, drive the run to its outcome, and report `done: PR <url> checks green`, or on a Gerrit project `done: PR <change url> published for review`
+     base -> state: done · source: status-log · implementation complete
+[K2] mode=direct-PR  status=done: implementation complete
+     new  -> state: done · source: status-log · implementation complete
+     base -> state: done · source: status-log · implementation complete
+[M2] mode=local-only  status=done: committed on fm/nm1
+     new  -> state: done · source: status-log · committed on fm/nm1
+     base -> state: done · source: status-log · committed on fm/nm1

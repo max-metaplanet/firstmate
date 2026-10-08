@@ -1,0 +1,20 @@
+--- meta mode=no-mistakes forge=gerrit (head pushed) ---
+[H] new  status=done:\ PR\ https://review.example.test/c/r/+/123\ published\ for\ review
+       -> state: blocked · source: status-log · the no-mistakes run for this copy could not be read, so its fixes cannot be proven recovered
+[H] old  status=done:\ PR\ https://review.example.test/c/r/+/123\ published\ for\ review
+       -> state: blocked · source: status-log · the no-mistakes run for this copy could not be read, so its fixes cannot be proven recovered
+[I] new  status=done:\ PR\ change\ published\ for\ review
+       -> state: blocked · source: status-log · this no-mistakes done: reports no PR, so nothing is shipped: a local commit does not finish a no-mistakes task - run /no-mistakes from this copy, drive the run to its outcome, and report `done: PR <url> checks green`, or on a Gerrit project `done: PR <change url> published for review`
+[I] old  status=done:\ PR\ change\ published\ for\ review
+       -> state: blocked · source: status-log · the published-for-review report does not name a Gerrit change in the canonical https://<host>/c/<project>/+/<number> form
+--- meta mode=direct-PR forge=none (head pushed) ---
+[J] new  status=done:\ implemented\ and\ pushed
+       -> state: done · source: status-log · implemented and pushed
+[J] old  status=done:\ implemented\ and\ pushed
+       -> state: done · source: status-log · implemented and pushed
+--- meta mode= forge=none (head pushed) ---
+[K] new  status=done:\ implementation\ complete
+       -> state: blocked · source: status-log · this no-mistakes done: reports no PR, so nothing is shipped: a local commit does not finish a no-mistakes task - run /no-mistakes from this copy, drive the run to its outcome, and report `done: PR <url> checks green`, or on a Gerrit project `done: PR <change url> published for review`
+[K] old  status=done:\ implementation\ complete
+       -> state: done · source: status-log · implementation complete
+--- meta mode=no-mistakes forge=none (head pushed) ---

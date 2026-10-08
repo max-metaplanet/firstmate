@@ -1,0 +1,29 @@
+[A] new  status=done:\ implementation\ complete\,\ ready\ for\ /no-mistakes
+       -> state: blocked · source: status-log · this no-mistakes done: reports no PR, so nothing is shipped: a local commit does not finish a no-mistakes task - run /no-mistakes from this copy, drive the run to its outcome, and report `done: PR <url> checks green`, or on a Gerrit project `done: PR <change url> published for review`
+[A] old  status=done:\ implementation\ complete\,\ ready\ for\ /no-mistakes
+       -> state: done · source: status-log · implementation complete, ready for /no-mistakes
+[B] new  status=done\ \[key=fix\]:\ committed\ on\ fm/nmtask-none\;\ pre-commit\ failed\,\ used\ --no-verify
+       -> state: blocked · source: status-log · this no-mistakes done: reports no PR, so nothing is shipped: a local commit does not finish a no-mistakes task - run /no-mistakes from this copy, drive the run to its outcome, and report `done: PR <url> checks green`, or on a Gerrit project `done: PR <change url> published for review`
+[B] old  status=done\ \[key=fix\]:\ committed\ on\ fm/nmtask-none\;\ pre-commit\ failed\,\ used\ --no-verify
+       -> state: done · source: status-log · committed on fm/nmtask-none; pre-commit failed, used --no-verify
+[C] new  status=done:\ PR\ checks\ green
+       -> state: blocked · source: status-log · this no-mistakes done: reports no PR, so nothing is shipped: a local commit does not finish a no-mistakes task - run /no-mistakes from this copy, drive the run to its outcome, and report `done: PR <url> checks green`, or on a Gerrit project `done: PR <change url> published for review`
+[C] old  status=done:\ PR\ checks\ green
+       -> state: blocked · source: status-log · named head f78f59240bd8089c975ed46b964ee16c95d1b128 is unreachable outside the worker copy: no ref either copy holds carries it and origin does not advertise it, or origin could not be read - push that commit and report again; never change remote.origin.fetch, which rewrites the clone configuration every pooled worktree shares and breaks later worktree creation once the branch is deleted, and if you need a local ref fetch it once with `git fetch origin <branch>:refs/remotes/origin/<branch>`
+[D] new  status=done:\ pipeline\ finished\,\ PR\ step\ skipped\,\ checks\ green
+       -> state: blocked · source: status-log · this no-mistakes done: reports no PR, so nothing is shipped: a local commit does not finish a no-mistakes task - run /no-mistakes from this copy, drive the run to its outcome, and report `done: PR <url> checks green`, or on a Gerrit project `done: PR <change url> published for review`
+[D] old  status=done:\ pipeline\ finished\,\ PR\ step\ skipped\,\ checks\ green
+       -> state: blocked · source: status-log · named head f78f59240bd8089c975ed46b964ee16c95d1b128 is unreachable outside the worker copy: no ref either copy holds carries it and origin does not advertise it, or origin could not be read - push that commit and report again; never change remote.origin.fetch, which rewrites the clone configuration every pooled worktree shares and breaks later worktree creation once the branch is deleted, and if you need a local ref fetch it once with `git fetch origin <branch>:refs/remotes/origin/<branch>`
+--- push head to origin (as the pipeline would) ---
+[E] new  status=done:\ implementation\ complete
+       -> state: blocked · source: status-log · this no-mistakes done: reports no PR, so nothing is shipped: a local commit does not finish a no-mistakes task - run /no-mistakes from this copy, drive the run to its outcome, and report `done: PR <url> checks green`, or on a Gerrit project `done: PR <change url> published for review`
+[E] old  status=done:\ implementation\ complete
+       -> state: done · source: status-log · implementation complete
+[F] new  status=done:\ PR\ checks\ green
+       -> state: blocked · source: status-log · this no-mistakes done: reports no PR, so nothing is shipped: a local commit does not finish a no-mistakes task - run /no-mistakes from this copy, drive the run to its outcome, and report `done: PR <url> checks green`, or on a Gerrit project `done: PR <change url> published for review`
+[F] old  status=done:\ PR\ checks\ green
+       -> state: done · source: status-log · PR checks green
+[G] new  status=done\ \[at=1791400000\]:\ PR\ https://github.com/o/r/pull/7\ checks\ green
+       -> state: done · source: status-log · PR https://github.com/o/r/pull/7 checks green
+[G] old  status=done\ \[at=1791400000\]:\ PR\ https://github.com/o/r/pull/7\ checks\ green
+       -> state: done · source: status-log · PR https://github.com/o/r/pull/7 checks green

@@ -1,0 +1,5 @@
+mode=no-mistakes
+[L] status=done:\ validation\ finished\,\ PR\ https://github.com/o/r/pull/7\ checks\ green
+     -> state: blocked · source: status-log · this no-mistakes done: reports no PR, so nothing is shipped: a local commit does not finish a no-mistakes task - run /no-mistakes from this copy, drive the run to its outcome, and report `done: PR <url> checks green`, or on a Gerrit project `done: PR <change url> published for review`
+[M] status=done:\ PR\ https://github.com/o/r/pull/7\ checks\ green
+     -> state: done · source: status-log · PR https://github.com/o/r/pull/7 checks green
