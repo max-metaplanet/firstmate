@@ -1,0 +1,37 @@
+$ bin/fm-config-push.sh --local-only
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+config-push: /var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.XCfIFT -> live secondmate homes
+secondmate smlab (/private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab-sm.9t5MqJ):
+  crew-dispatch.json: unchanged
+  dispatch-never-send: unchanged
+  crew-harness: unchanged
+  backlog-backend: unchanged
+  backend: unchanged
+  herdr-presentation-spaces: unchanged
+  startup-memory-budget: unchanged
+  trace-context: unchanged - session-scoped
+  launch-env-allowlist: unchanged
+  claude-permission-mode: unchanged
+  lavish-axi-host: unchanged
+  keep-ai-trailers: unchanged
+  supervision-host-off: unchanged
+  claude-seat: pushed
+  claude-seats-root: pushed
+  claude-seat-threshold: unchanged
+  claude-seat-destination-min: unchanged
+  claude-seat-extra-usage: pushed
+  claude-seat-auto-exclude: unchanged
+  claude-seat-floor: pushed
+  claude-seat-floor-readd: pushed
+  claude-seat-floor-dwell: pushed
+  claude-seat-session-share: unchanged
+  claude-seat-resting: unchanged
+  data/captain-shared.md: unchanged
+CONFIG_REREAD: secondmate smlab: send failed: error: refusing fleet lifecycle from inside a no-mistakes gate worktree (/Users/max/.no-mistakes/repos/61c6dd39b831.git)
+[exit 0]
+$ secondmate home config:
+  claude-seat = seat-max2
+  claude-seat-floor = 5
+  claude-seat-floor-readd = 15
+  claude-seat-floor-dwell = 0
+  claude-seat-extra-usage = stop
