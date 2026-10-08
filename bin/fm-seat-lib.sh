@@ -21,7 +21,7 @@
 # the profile directory, so the recorded value is a correctness requirement and
 # not only a billing one.
 #
-# Six settings, all optional, all gitignored, and all inherited by LOCAL
+# Eleven settings, all optional, all gitignored, and all inherited by LOCAL
 # secondmate homes but never by a remote route
 # (FM_MACHINE_LOCAL_INHERITABLE_CONFIG in bin/fm-config-inherit-lib.sh):
 #   config/claude-seat            active seat NAME for new claude workers
@@ -38,10 +38,22 @@
 #                                 seat names, one per line, held out of
 #                                 AUTOMATIC rotation while `switch <name>` still
 #                                 reaches them
+#   config/claude-seat-floor      percent LEFT at or below which a seat is
+#                                 RESTED out of automatic rotation
+#   config/claude-seat-floor-readd
+#                                 percent LEFT both windows must regain
+#   config/claude-seat-floor-dwell
+#                                 seconds a seat must rest before it may wake
+#   config/claude-seat-session-share
+#                                 assumed percent of a WEEK one session costs
+#   config/claude-seat-resting    which seats the floor is resting, written only
+#                                 by the watch
 # Every percentage counts percent LEFT, the same direction the quota viewer
-# reports, so no setting has to be inverted against another. All six are off
-# when absent; see the automatic-mode section at the foot of this file.
-# A local home declines all six for itself with config/claude-seat-local, so it
+# reports, so no setting has to be inverted against another, except
+# claude-seat-session-share, which is a share of a week and says so where it is
+# defined. All of them are off when absent; see the automatic-mode and
+# quota-floor sections at the foot of this file.
+# A local home declines them all for itself with config/claude-seat-local, so it
 # can spend a separate account; bin/fm-config-inherit-lib.sh owns that decline.
 # docs/configuration.md "Claude seats" owns their schema.
 
@@ -424,6 +436,18 @@ fm_seat_read_bound() {
   printf '%s\n' "$bound"
 }
 
+# fm_seat_memo_key <config-dir>
+# A filesystem-safe name for one profile's memo entry, so two seats never share
+# one and no profile path can escape the memo directory. The AMBIENT profile is
+# the empty string and gets a name of its own rather than an empty one, which
+# would name the memo directory itself; every other key is prefixed, so no
+# profile path can ever sanitize into that name.
+fm_seat_memo_key() {
+  local dir=${1-}
+  [ -n "$dir" ] || { printf 'ambient'; return 0; }
+  printf 'profile-%s' "$(printf '%s' "$dir" | tr -c 'A-Za-z0-9_-' '_')"
+}
+
 # fm_seat_quota_read <config-dir>
 # The one bounded quota-axi call every seat probe and quota read makes, printed
 # raw. Returns 1 when quota-axi is missing, no time is left, or the bound was
@@ -432,13 +456,34 @@ fm_seat_read_bound() {
 # The exit status of quota-axi is otherwise deliberately ignored: an unavailable
 # provider still prints the report that says so, and that report is what
 # decides.
+#
+# THE PER-PASS MEMO. With FM_SEAT_READ_MEMO_DIR set, the first read of a profile
+# is stored there and every later read of the SAME profile in that pass reuses
+# it, including the reads a `switch` run as a child makes, because the variable
+# is exported. One automatic pass therefore makes exactly one quota call per
+# seat however many questions it asks about it. A read that gave no verdict is
+# memoed as such, so a seat whose store is slow or unreachable cannot spend the
+# pass's whole budget twice. Only a pass sets the memo; no long-lived caller
+# does, so nothing outside one pass ever reads a figure it did not take itself.
 fm_seat_quota_read() {
-  local dir=${1-} bound out
+  local dir=${1-} bound out memo=''
+  if [ -n "${FM_SEAT_READ_MEMO_DIR:-}" ] && [ -d "${FM_SEAT_READ_MEMO_DIR:-}" ]; then
+    memo="$FM_SEAT_READ_MEMO_DIR/$(fm_seat_memo_key "$dir")"
+    [ ! -f "$memo.fail" ] || return 1
+    if [ -f "$memo" ]; then
+      cat "$memo"
+      return 0
+    fi
+  fi
   command -v quota-axi >/dev/null 2>&1 || return 1
   bound=$(fm_seat_read_bound) || return 1
   out=$(fm_run_timed "$bound" env CLAUDE_CONFIG_DIR="$dir" \
     quota-axi --provider claude --no-credential-refresh --full --json 2>/dev/null </dev/null)
-  ! fm_timed_out "$?" || return 1
+  if fm_timed_out "$?"; then
+    [ -z "$memo" ] || : > "$memo.fail" 2>/dev/null || true
+    return 1
+  fi
+  [ -z "$memo" ] || printf '%s\n' "$out" > "$memo" 2>/dev/null || true
   printf '%s\n' "$out"
 }
 
@@ -540,6 +585,421 @@ fm_seat_in_extra_usage_from() {
   jq -en --arg s "$spent" '($s | tonumber) > 0' >/dev/null 2>&1
 }
 
+# --- quota floor --------------------------------------------------------------
+# The floor takes a seat OUT of automatic rotation when one of its account-level
+# windows reads at or below it - the seat is "resting" - and brings it back only
+# when a fresh reading proves it recovered. It is a separate record from
+# config/claude-seat-auto-exclude on purpose: that file holds the operator's
+# standing choice and is never lifted automatically, while this one is written
+# only by the watch. docs/claude-seats.md owns the operator procedure and
+# docs/configuration.md "Claude seats" owns the five files.
+#
+#   config/claude-seat-floor        percent LEFT at or below which a seat rests
+#   config/claude-seat-floor-readd  percent LEFT both windows must regain
+#   config/claude-seat-floor-dwell  seconds a seat must rest before it may wake
+#   config/claude-seat-session-share  assumed percent of a WEEK one whole
+#                                   session window costs, until it is measured
+#   config/claude-seat-resting      the record of which seats are resting
+
+# The assumed share of a week one whole session costs, used until the share has
+# been measured on that account twice. Measured co-movement on the live plan
+# bounded one session at 15-19% of a week, so 20 is the conservative side of it.
+FM_SEAT_SESSION_SHARE_DEFAULT=20
+# Seconds a seat must have been resting before any reading may wake it. Two
+# watch sweeps at the default FM_CHECK_INTERVAL, so one odd reading cannot
+# round-trip a seat inside a single cycle.
+FM_SEAT_FLOOR_DWELL_DEFAULT=600
+# The allowance applied wherever a LOCAL epoch is compared against a resetsAt
+# the service stamped. The service's own clock is not exposed, so skew cannot be
+# measured and a fixed margin is the honest substitute for measuring it.
+# shellcheck disable=SC2034 # read by bin/fm-seat.sh's floor pass, not here.
+FM_SEAT_RESET_MARGIN=300
+# The two account-level windows the floor reads, in the id vocabulary quota-axi
+# itself publishes. Model- and product-scoped windows and extra_usage are never
+# floor inputs: they constrain a different thing from the plan quota a rotation
+# destination needs.
+FM_SEAT_SESSION_WINDOW=five_hour
+FM_SEAT_WEEK_WINDOW=seven_day
+
+# fm_seat_seconds_file <path>
+# The reader for a one-line whole-second setting: prints the number, or returns
+# 1 for absent, empty, or malformed, so a setting that silently became something
+# else reads as unset rather than as some other duration. Zero is a real value -
+# for the rest time it means no minimum rest - and is deliberately not folded
+# into "unset", which would silently restore the default instead.
+fm_seat_seconds_file() {
+  local path=${1-} v=
+  [ -f "$path" ] || return 1
+  v=$(sed -n '1p' "$path" 2>/dev/null | tr -d '[:space:]')
+  [ -n "$v" ] || return 1
+  local LC_ALL=C
+  [[ "$v" =~ ^[0-9]+$ ]] || return 1
+  printf '%s\n' "$v"
+}
+
+# fm_seat_floor
+# The percent LEFT at or below which a seat is taken out of automatic rotation,
+# or empty when unset. Absent is off: no seat is ever rested, no extra quota is
+# read, and every automatic path behaves exactly as it did before the floor
+# existed.
+fm_seat_floor() {
+  fm_seat_percent_file "$CONFIG/claude-seat-floor"
+}
+
+# fm_seat_floor_readd
+# The percent LEFT BOTH windows must regain before a resting seat may wake.
+# Configured explicitly, or derived as min(100, max(3 x floor, floor + 10)) so a
+# floor on its own already carries hysteresis: 15 for a floor of 5. A configured
+# level at or below the floor - say the floor was raised after it was set - is
+# ignored for the derived one, because waking a seat the next reading rests
+# again would flap it every rest period. Returns 1 when no floor is configured,
+# because there is then nothing to come back from.
+fm_seat_floor_readd() {
+  local floor readd
+  floor=$(fm_seat_floor) || return 1
+  if readd=$(fm_seat_percent_file "$CONFIG/claude-seat-floor-readd") &&
+    jq -en --arg r "$readd" --arg f "$floor" '($r | tonumber) > ($f | tonumber)' >/dev/null 2>&1; then
+    printf '%s\n' "$readd"
+    return 0
+  fi
+  jq -rn --arg f "$floor" \
+    '[100, ([(($f | tonumber) * 3), (($f | tonumber) + 10)] | max)] | min | tostring' 2>/dev/null
+}
+
+# fm_seat_floor_dwell
+# Seconds a seat must have been resting before any reading may wake it.
+fm_seat_floor_dwell() {
+  local v
+  v=$(fm_seat_seconds_file "$CONFIG/claude-seat-floor-dwell") || v=$FM_SEAT_FLOOR_DWELL_DEFAULT
+  printf '%s\n' "$v"
+}
+
+# fm_seat_session_share_setting
+# The ASSUMED share of a week one whole session costs, as configured or as the
+# built-in default. It is used until the share has been measured on an account,
+# and it is the one percentage here that does not count percent left.
+fm_seat_session_share_setting() {
+  local v
+  v=$(fm_seat_percent_file "$CONFIG/claude-seat-session-share") || v=$FM_SEAT_SESSION_SHARE_DEFAULT
+  printf '%s\n' "$v"
+}
+
+# fm_seat_iso_to_epoch <timestamp>
+# Epoch seconds for one quota-axi reset time, or 1 for any shape this cannot
+# read, so a malformed time is refused rather than read as "now". quota-axi
+# stamps them as 2026-10-08T01:00:00.339725+00:00, so the fractional second is
+# dropped and the offset is applied arithmetically; a bare Z is accepted too.
+#
+# The parse lives here rather than reusing bin/fm-classify-lib.sh's reader
+# because nothing on the seat path - this library, the spawn gate, or the seat
+# board - sources that library, and pulling it in for one date shape would cost
+# every one of them the whole wake classifier.
+fm_seat_iso_to_epoch() {
+  local ts=${1-} sign='' offset='' hh mm base
+  [ -n "$ts" ] || return 1
+  local LC_ALL=C
+  # Take the zone designator off first, then drop any fractional second, so the
+  # remaining text is one shape whichever way the service stamped it.
+  case "$ts" in
+    *Z) ts=${ts%Z} ;;
+    *+[0-9][0-9]:[0-9][0-9]) sign=+; offset=${ts##*+}; ts=${ts%+*} ;;
+    *-[0-9][0-9]:[0-9][0-9]) sign=-; offset=${ts##*-}; ts=${ts%-*} ;;
+    *) return 1 ;;
+  esac
+  ts=${ts%%.*}
+  case "$ts" in
+    [0-9][0-9][0-9][0-9]-[0-1][0-9]-[0-3][0-9]T[0-2][0-9]:[0-5][0-9]) ts="$ts:00" ;;
+    [0-9][0-9][0-9][0-9]-[0-1][0-9]-[0-3][0-9]T[0-2][0-9]:[0-5][0-9]:[0-5][0-9]) ;;
+    *) return 1 ;;
+  esac
+  base=$(date -u -j -f '%Y-%m-%dT%H:%M:%S' "$ts" +%s 2>/dev/null) \
+    || base=$(date -u -d "${ts}Z" +%s 2>/dev/null) \
+    || return 1
+  if [ -n "$offset" ]; then
+    hh=${offset%%:*}
+    mm=${offset##*:}
+    # An offset says how far the stamped wall clock runs AHEAD of UTC, so
+    # reading it as UTC overshoots by exactly that much; the correction inverts.
+    if [ "$sign" = + ]; then
+      base=$((base - (10#$hh * 3600 + 10#$mm * 60)))
+    else
+      base=$((base + (10#$hh * 3600 + 10#$mm * 60)))
+    fi
+  fi
+  printf '%s\n' "$base"
+}
+
+# fm_seat_windows_from <quota-json>
+# The two account-level windows the floor reads, one row each, as
+# `id<TAB>percentRemaining<TAB>resetsAt<TAB>windowSeconds`. A window the report
+# does not carry prints no row at all, and an absent field prints empty, so a
+# caller can tell "not reported" from a number. This is the one owner of that
+# extraction, so the watch and the board can never disagree about which windows
+# the floor is about.
+fm_seat_windows_from() {
+  local out=${1-}
+  [ -n "$out" ] || return 1
+  printf '%s\n' "$out" | jq -r "$FM_QUOTA_ROW_JQ"'
+    quota_row(.; "claude"; "") as $row
+    | if ($row // null) == null then empty else
+        ($row.windows // [])[]
+        | select(.id == "five_hour" or .id == "seven_day")
+        | [ .id,
+            ((.percentRemaining // "") | tostring),
+            (.resetsAt // ""),
+            ((.windowSeconds // "") | tostring) ]
+        | @tsv
+      end
+  ' 2>/dev/null
+}
+
+# fm_seat_window_field <windows-text> <window-id> <column>
+# One field of one fm_seat_windows_from row, or 1 when that window or field is
+# not reported.
+fm_seat_window_field() {
+  local rows=${1-} id=${2-} col=${3-} v
+  v=$(printf '%s\n' "$rows" | awk -F'\t' -v id="$id" -v c="$col" '$1 == id { print $c; exit }')
+  [ -n "$v" ] || return 1
+  printf '%s\n' "$v"
+}
+
+# fm_seat_limiting_window_from <quota-json>
+# Which of the two windows is the one holding the seat down: the id quota-axi
+# itself names as limiting when it names one of these two, and otherwise the
+# window with less left. Returns 1 when neither window was reported.
+fm_seat_limiting_window_from() {
+  local out=${1-} named rows session week
+  [ -n "$out" ] || return 1
+  named=$(printf '%s\n' "$out" | jq -r "$FM_QUOTA_ROW_JQ"'
+    quota_effective(quota_row(.; "claude"; ""); "default")
+    | (.limitingWindowIds // [])[0] // ""
+  ' 2>/dev/null) || named=''
+  case "$named" in
+    "$FM_SEAT_SESSION_WINDOW" | "$FM_SEAT_WEEK_WINDOW")
+      printf '%s\n' "$named"
+      return 0
+      ;;
+  esac
+  rows=$(fm_seat_windows_from "$out") || return 1
+  session=$(fm_seat_window_field "$rows" "$FM_SEAT_SESSION_WINDOW" 2) || session=''
+  week=$(fm_seat_window_field "$rows" "$FM_SEAT_WEEK_WINDOW" 2) || week=''
+  if [ -n "$session" ] && [ -n "$week" ]; then
+    if jq -en --arg s "$session" --arg w "$week" '($w | tonumber) <= ($s | tonumber)' >/dev/null 2>&1; then
+      printf '%s\n' "$FM_SEAT_WEEK_WINDOW"
+    else
+      printf '%s\n' "$FM_SEAT_SESSION_WINDOW"
+    fi
+    return 0
+  fi
+  [ -n "$session" ] && { printf '%s\n' "$FM_SEAT_SESSION_WINDOW"; return 0; }
+  [ -n "$week" ] && { printf '%s\n' "$FM_SEAT_WEEK_WINDOW"; return 0; }
+  return 1
+}
+
+# fm_seat_login_renewable_from <quota-json>
+# Exit 0 when the report says this profile's session is signed in and only its
+# ACCESS TOKEN has lapsed. The one owner of that test, read from the machine-
+# readable field rather than from any message, because the same state is
+# reported with different error text depending on which route reached it.
+fm_seat_login_renewable_from() {
+  local out=${1-}
+  [ -n "$out" ] || return 1
+  printf '%s\n' "$out" | jq -e '
+    (.providers // []) | map(select(.provider == "claude")) | .[0] // empty
+    | .state.authStatus == "expired_refreshable"
+  ' >/dev/null 2>&1
+}
+
+# --- the resting record -------------------------------------------------------
+# config/claude-seat-resting, written only by the watch pass and by
+# `bin/fm-seat.sh resting wake <name>`. It is CONFIG rather than state for one
+# reason: a local secondmate home's own rotation must skip a seat the primary's
+# watch rested, and inherited config is the only thing that crosses homes.
+# Schema 1:
+#   { schemaVersion, updatedAt,
+#     seats: { "<name>": { since, account, limitingWindow, provisional,
+#                          expectedBack, lastRead, unreadableSince,
+#                          windows: { "<id>": { remaining, resetsAt,
+#                                               windowSeconds } } } } }
+# Absent means nothing is resting, which is also what an unreadable or foreign
+# file reads as: a torn record must not strand every seat out of rotation.
+
+# fm_seat_resting_record
+# The whole document, always valid JSON.
+fm_seat_resting_record() {
+  local path="$CONFIG/claude-seat-resting"
+  if [ -f "$path" ] && jq -e 'type == "object" and (.seats | type) == "object"' \
+    "$path" >/dev/null 2>&1; then
+    cat "$path"
+    return 0
+  fi
+  printf '{"schemaVersion":1,"seats":{}}\n'
+}
+
+# fm_seat_resting_entry <name>
+# One seat's entry, including one back provisionally, or 1 when the record holds
+# none. With no floor configured every seat reads as having none, so a stale or
+# hand-placed record can never withhold a seat while the feature is off.
+fm_seat_resting_entry() {
+  local name=${1-} entry
+  [ -n "$name" ] || return 1
+  fm_seat_floor >/dev/null || return 1
+  entry=$(fm_seat_resting_record | jq -c --arg n "$name" '.seats[$n] // empty' 2>/dev/null) || return 1
+  [ -n "$entry" ] || return 1
+  printf '%s\n' "$entry"
+}
+
+# fm_seat_resting <name>
+# True when the floor is holding this seat out of automatic rotation. The one
+# owner of that question, so the candidate filter, the listing, the status
+# report, and the board can never disagree.
+#
+# A seat back PROVISIONALLY still has an entry but is not resting: it is a
+# candidate again, and only the next readable reading clears or re-rests it.
+#
+# Like the manual exclusion, it is deliberately NOT consulted by
+# `switch <name>`: resting withholds a seat from the automatic paths only.
+fm_seat_resting() {
+  local entry
+  entry=$(fm_seat_resting_entry "${1-}" 2>/dev/null) || return 1
+  printf '%s\n' "$entry" | jq -e '(.provisional // false) | not' >/dev/null 2>&1
+}
+
+# fm_seat_resting_write <record-json>
+# Publish a whole record atomically, or remove the file when no seat is resting,
+# so "nothing is resting" is the absent file rather than an empty one that reads
+# the same but looks configured.
+fm_seat_resting_write() {
+  local record=${1-} tmp
+  printf '%s\n' "$record" | jq -e . >/dev/null 2>&1 || return 1
+  mkdir -p "$CONFIG" 2>/dev/null || return 1
+  if printf '%s\n' "$record" | jq -e '(.seats | length) == 0' >/dev/null 2>&1; then
+    rm -f "$CONFIG/claude-seat-resting" || return 1
+    return 0
+  fi
+  tmp=$(umask 077; mktemp "$CONFIG/.claude-seat-resting.XXXXXX" 2>/dev/null) || return 1
+  printf '%s\n' "$record" | jq -S . > "$tmp" 2>/dev/null || { rm -f -- "$tmp"; return 1; }
+  mv -f -- "$tmp" "$CONFIG/claude-seat-resting" || { rm -f -- "$tmp"; return 1; }
+}
+
+# --- the session share --------------------------------------------------------
+# How many weekly percentage points one WHOLE session window costs. quota-axi
+# exposes no absolute budget, only a percentage per window, so the ratio can
+# only be measured from co-movement: inside one session window on one account,
+# every point the session spends also moves the week.
+#
+# The samples are STATE, not config: only the home running the watch measures
+# and only it wakes seats, so a secondmate never needs them.
+# state/claude-seat-session-share.json, schema 1:
+#   { schemaVersion,
+#     accounts: { "<email>": { open: { sessionResetsAt, weekResetsAt,
+#                                      firstSessionUsed, firstWeekUsed,
+#                                      lastSessionUsed, lastWeekUsed },
+#                              samples: [ ... ], updatedAt } } }
+
+# fm_seat_session_share_file
+# Where the samples live, or 1 when this caller has no state directory, which
+# makes every share assumed rather than measured.
+fm_seat_session_share_file() {
+  [ -n "${STATE:-}" ] || return 1
+  printf '%s\n' "$STATE/claude-seat-session-share.json"
+}
+
+# fm_seat_session_share_doc
+# The whole samples document, always valid JSON.
+fm_seat_session_share_doc() {
+  local path
+  if path=$(fm_seat_session_share_file) && [ -f "$path" ] &&
+    jq -e 'type == "object" and (.accounts | type) == "object"' "$path" >/dev/null 2>&1; then
+    cat "$path"
+    return 0
+  fi
+  printf '{"schemaVersion":1,"accounts":{}}\n'
+}
+
+# fm_seat_session_share_value [<account>]
+# The share to use for one account, as `percent<TAB>source<TAB>samples`, where
+# source is `measured` or `assumed`. Two samples are required before a measured
+# figure is trusted; with one, the larger of it and the assumed share is used
+# and the source still reads assumed. The maximum sample is taken rather than
+# the mean, because over-estimating the share only keeps a seat resting longer
+# while under-estimating it wakes a seat whose week cannot carry a session.
+#
+# With no account named, every account's samples count, which gives the most
+# conservative figure this machine has evidence for. That is what the settings
+# surface and the board report, because neither is asking about one account.
+fm_seat_session_share_value() {
+  local account=${1-} assumed samples count value source
+  assumed=$(fm_seat_session_share_setting)
+  samples=$(fm_seat_session_share_doc | jq -c --arg a "$account" '
+    if $a == "" then [.accounts[]?.samples[]?] else (.accounts[$a].samples // []) end
+  ' 2>/dev/null) || samples='[]'
+  [ -n "$samples" ] || samples='[]'
+  count=$(printf '%s' "$samples" | jq -r 'length' 2>/dev/null) || count=0
+  case "$count" in ''|*[!0-9]*) count=0 ;; esac
+  if [ "$count" -ge 2 ]; then
+    value=$(printf '%s' "$samples" | jq -r 'max | tostring')
+    source=measured
+  else
+    value=$(printf '%s' "$samples" |
+      jq -r --arg d "$assumed" '([(($d | tonumber))] + .) | max | tostring')
+    source=assumed
+  fi
+  printf '%s\t%s\t%s\n' "$value" "$source" "$count"
+}
+
+# fm_seat_session_share_observe <account> <session-left> <session-resets> <week-left> <week-resets>
+# Record one reading toward the measurement. A sample is produced only when the
+# session window has ROLLED while the week's has not, and only when the closed
+# window spent at least 20 points, so integer rounding can move the result by at
+# most about five points. A week that resets inside an open session restarts
+# that session's measurement, since its week figures no longer share a baseline.
+# Reset detection is by the reading itself, never by a clock. Silent and best-effort: a home with no state directory simply never
+# measures.
+fm_seat_session_share_observe() {
+  local account=${1-} s_left=${2-} s_reset=${3-} w_left=${4-} w_reset=${5-} path doc tmp
+  path=$(fm_seat_session_share_file) || return 0
+  [ -n "$account" ] && [ -n "$s_reset" ] && [ -n "$w_reset" ] || return 0
+  local LC_ALL=C
+  [[ "$s_left" =~ ^[0-9]+(\.[0-9]+)?$ ]] || return 0
+  [[ "$w_left" =~ ^[0-9]+(\.[0-9]+)?$ ]] || return 0
+  doc=$(fm_seat_session_share_doc | jq -c \
+    --arg a "$account" --arg sr "$s_reset" --arg wr "$w_reset" \
+    --arg sl "$s_left" --arg wl "$w_left" --argjson now "$(date +%s)" '
+    def ceil_: if . == floor then . else floor + 1 end;
+    (100 - ($sl | tonumber)) as $su |
+    (100 - ($wl | tonumber)) as $wu |
+    (.accounts[$a] // null) as $cur |
+    ($cur.open // null) as $open |
+    {sessionResetsAt: $sr, weekResetsAt: $wr,
+     firstSessionUsed: $su, firstWeekUsed: $wu,
+     lastSessionUsed: $su, lastWeekUsed: $wu} as $fresh |
+    if $open == null or $open.sessionResetsAt != $sr then
+      (if $open != null and $open.weekResetsAt == $wr
+          and ($open.lastSessionUsed - $open.firstSessionUsed) >= 20
+       then ((100 * ($open.lastWeekUsed - $open.firstWeekUsed)
+              / ($open.lastSessionUsed - $open.firstSessionUsed)) | ceil_)
+       else 0 end) as $sample |
+      .accounts[$a] = {
+        open: $fresh,
+        samples: ((($cur.samples // []) + (if $sample >= 1 then [$sample] else [] end)) | .[-5:]),
+        updatedAt: $now}
+    elif $open.weekResetsAt != $wr then
+      .accounts[$a] = ($cur | .open = $fresh | .updatedAt = $now)
+    else
+      .accounts[$a] = ($cur
+        | .open.lastSessionUsed = $su
+        | .open.lastWeekUsed = $wu
+        | .updatedAt = $now)
+    end' 2>/dev/null) || return 0
+  [ -n "$doc" ] || return 0
+  mkdir -p "$STATE" 2>/dev/null || return 0
+  tmp=$(umask 077; mktemp "$STATE/.claude-seat-session-share.XXXXXX" 2>/dev/null) || return 0
+  printf '%s\n' "$doc" > "$tmp" 2>/dev/null || { rm -f -- "$tmp"; return 0; }
+  mv -f -- "$tmp" "$path" 2>/dev/null || rm -f -- "$tmp"
+  return 0
+}
+
 # fm_seat_dispatch_decision
 # The dispatch gate, printed as one line: `allow <reason>` or `hold <reason>`.
 #
@@ -551,8 +1011,12 @@ fm_seat_in_extra_usage_from() {
 #
 # With no policy configured this returns `allow policy-unset` without reading
 # any quota at all, so an unconfigured home pays nothing for the feature.
+#
+# The quota floor layers one branch onto the `stop` policy and nothing onto
+# `allow <usd>`: with a floor set, `stop` holds once the active seat is at or
+# below it rather than waiting for the plan quota to reach nothing.
 fm_seat_dispatch_decision() {
-  local policy cap out remaining spent
+  local policy cap out remaining spent floor
   policy=$(fm_seat_extra_usage_policy) || { printf 'allow policy-unset\n'; return 0; }
   out=$(fm_seat_quota_json "$(fm_seat_spawn_config_dir)") || {
     printf 'hold quota-unreadable\n'
@@ -572,6 +1036,17 @@ fm_seat_dispatch_decision() {
     fi
     return 0
   }
+  # With a floor configured, the `stop` policy holds at the floor rather than at
+  # nothing left. The floor is the operator's own definition of "effectively
+  # empty", and an active seat sitting below it with nowhere to go would
+  # otherwise keep starting workers until it reached zero and then hold anyway,
+  # spending the last few percent that interactive use needs.
+  if [ "$policy" = stop ] && floor=$(fm_seat_floor) &&
+    jq -en --arg r "$remaining" --arg f "$floor" \
+      '($r | tonumber) <= ($f | tonumber)' >/dev/null 2>&1; then
+    printf 'hold floor-stop %s %s\n' "$remaining" "$floor"
+    return 0
+  fi
   # Plan quota still left means no extra usage is in play, whatever the policy
   # says: the gate exists to guard paid overflow, not to ration the plan.
   if jq -en --arg r "$remaining" '($r | tonumber) > 0' >/dev/null 2>&1; then
@@ -623,6 +1098,8 @@ fm_seat_dispatch_reason() {
       printf 'the active Claude seat quota could not be read, so whether this worker would run on paid extra usage is unknown, and the policy makes no guess\n' ;;
     extra-usage-stop)
       printf 'the active Claude seat has no plan quota left and the extra-usage policy is stop, so no new Claude worker is started on paid extra usage\n' ;;
+    floor-stop)
+      printf 'the active Claude seat is at %s%% left, at or below the %s%% quota floor, and the extra-usage policy is stop, so no new Claude worker is started on what is left of it\n' "$a" "$b" ;;
     extra-usage-spend-unreadable)
       printf 'the active Claude seat has no plan quota left and its extra-usage spend could not be read, so it cannot be compared against the $%s cap\n' "$a" ;;
     extra-usage-cap)
