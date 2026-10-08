@@ -591,7 +591,10 @@ fm_dod_should_gate_ship_done() {  # <kind> <mode> <line>
 # the CI-ready PR and, on a Gerrit project, the published change, and both name
 # the PR's URL; anything else is a local commit reported as a finished task.
 fm_dod_nm_done_reports_shipped_work() {  # <note>
-  fm_dod_pr_url_from_done_note "$1" >/dev/null || return 1
+  case "$1" in
+    *PR\ https://*|*PR\ http://*) ;;
+    *) return 1 ;;
+  esac
   fm_dod_note_reports_ci_ready "$1" && return 0
   fm_dod_note_reports_published_change "$1" && return 0
   return 1

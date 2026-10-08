@@ -131,6 +131,9 @@ test_no_mistakes_ci_ready_done_passes_the_pr_check() {
   accept_done ship no-mistakes "$wt" "$repo" \
     'done: PR https://example.test/o/r/pull/7 checks green' \
     || fail "a CI-ready no-mistakes done: on a reachable head was refused"
+  accept_done ship no-mistakes "$wt" "$repo" \
+    'done: validation finished, PR https://example.test/o/r/pull/7 checks green' \
+    || fail "a CI-ready no-mistakes done: naming its PR after prose was refused"
   pass "a CI-ready no-mistakes done: is not caught by the no-PR refusal"
 }
 
