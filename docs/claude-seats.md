@@ -231,7 +231,7 @@ A seat rested for its **week** therefore stays down until the week itself recove
 
 **The session's share of a week is measured, not assumed, once there is evidence.**
 The quota report carries no absolute budget, only a percentage per window, so the share is measured from co-movement: inside one session window on one account, every point the session spends also moves the week.
-When a session window rolls over while the week's does not, and the closed window spent at least 20 points, that ratio is kept as a sample; the largest of the last five is used once two exist.
+When a session window rolls over while the week's does not, and the closed window spent at least 20 points, that ratio is kept as a sample; a week that resets inside the open session restarts its measurement instead, and the largest of the last five samples is used once two exist.
 Until then the share is the assumed `session-share`, 20% of a week by default, and every surface that prints it says `measured` or `assumed` with the sample count.
 `bin/fm-seat.sh session-share` prints the figure in force, per account.
 
@@ -240,7 +240,7 @@ An unreadable quota leaves a seat exactly where it was in either direction; the 
 One case needs care: a resting seat is never launched on, so after eight hours its token [lapses](#idle-seats-and-lapsed-tokens) and its quota becomes unreadable for good until something renews it.
 Such a seat comes back **provisionally** once the reset it was waiting for has passed, and never before its weekly reset when the week was the limiting window.
 Its record entry stays, marked provisional, so `status`, `list`, and the board show it as provisionally back while every automatic path treats it as a candidate again.
-The first worker launched there renews the token, and the next pass reads real figures and either rests it again or clears the entry.
+The first worker launched there renews the token, and the next pass reads real figures and applies the full wake test above: only a reading that passes it clears the entry, and any other rests the seat again, so a refreshed session alone never returns a seat whose week has meanwhile run short.
 
 **What the floor does to dispatch.**
 With `extra-usage stop` and a floor set, new Claude dispatch is held once the *active* seat is at or below the floor, rather than only once its plan quota reaches nothing.
