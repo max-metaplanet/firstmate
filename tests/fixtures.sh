@@ -422,8 +422,21 @@ make_stubs() {
 #   <spec>/extra_map    optional "<CLAUDE_CONFIG_DIR><TAB><spentUsd>" rows adding
 #                       an extra_usage window (kind credits) to that profile's
 #                       report, which is where paid overflow spend is observed
+#   <spec>/windows_map  optional
+#                       "<CLAUDE_CONFIG_DIR><TAB><five_hour left><TAB><five_hour
+#                       resetsAt><TAB><seven_day left><TAB><seven_day resetsAt>"
+#                       rows giving a profile the two ACCOUNT-level windows the
+#                       quota floor reads, with percentUsed, percentRemaining,
+#                       resetsAt and windowSeconds. A row also derives that
+#                       profile's effectiveAvailability from the tighter of the
+#                       two, naming it in limitingWindowIds, so the floor and
+#                       the existing percent-left reads agree by construction.
+#                       A profile with no row reports no such windows, which is
+#                       what every case written before the floor existed assumes
 #   <spec>/slow         optional seconds every read sleeps before answering, for
 #                       a quota endpoint slower than the watcher's budget
+# The fake APPENDS one line per call to <spec>/calls, naming the profile it was
+# asked about, so a case can count how many quota reads a pass actually made.
 # An empty CLAUDE_CONFIG_DIR is spelled "(default)" in the oauth list.
 # The fake reproduces the real tool's contract that matters here: an unavailable
 # provider still prints a valid report AND exits non-zero.
@@ -436,22 +449,39 @@ set -u
 spec="$spec"
 key="\${CLAUDE_CONFIG_DIR:-}"
 [ -n "\$key" ] || key='(default)'
+printf '%s\n' "\$key" >> "\$spec/calls"
 [ ! -f "\$spec/slow" ] || sleep "\$(cat "\$spec/slow")"
 remaining=\$(cat "\$spec/remaining" 2>/dev/null || printf '80')
 if [ -f "\$spec/remaining_map" ]; then
   mapped=\$(awk -F'\t' -v k="\$key" '\$1==k{print \$2; exit}' "\$spec/remaining_map")
   [ -z "\$mapped" ] || remaining=\$mapped
 fi
+unreadable=
 availability=\$(cat "\$spec/availability" 2>/dev/null ||
   printf '[{"scope":"all_models","status":"known","effectivePercentRemaining":%s,"runway":{"status":"through_reset"}}]' "\$remaining")
 if [ -f "\$spec/unreadable_quota" ] && grep -Fxq "\$key" "\$spec/unreadable_quota"; then
   availability='[]'
+  unreadable=1
 fi
 windows='[]'
+if [ -z "\$unreadable" ] && [ -f "\$spec/windows_map" ]; then
+  row=\$(awk -F'\t' -v k="\$key" '\$1==k{print \$2"\t"\$3"\t"\$4"\t"\$5; exit}' "\$spec/windows_map")
+  if [ -n "\$row" ]; then
+    IFS=\$'\t' read -r fh_left fh_reset sd_left sd_reset <<< "\$row"
+    windows=\$(printf '[{"id":"five_hour","kind":"session","label":"session","percentUsed":%s,"percentRemaining":%s,"resetsAt":"%s","windowSeconds":18000},{"id":"seven_day","kind":"weekly","label":"week","percentUsed":%s,"percentRemaining":%s,"resetsAt":"%s","windowSeconds":604800}]' \
+      "\$((100 - fh_left))" "\$fh_left" "\$fh_reset" "\$((100 - sd_left))" "\$sd_left" "\$sd_reset")
+    limiting=seven_day
+    tighter=\$sd_left
+    if [ "\$fh_left" -lt "\$sd_left" ]; then limiting=five_hour; tighter=\$fh_left; fi
+    availability=\$(printf '[{"scope":"all_models","status":"known","effectivePercentRemaining":%s,"limitingWindowIds":["%s"],"runway":{"status":"through_reset"}}]' \
+      "\$tighter" "\$limiting")
+  fi
+fi
 if [ -f "\$spec/extra_map" ]; then
   spent=\$(awk -F'\t' -v k="\$key" '\$1==k{print \$2; exit}' "\$spec/extra_map")
   [ -z "\$spent" ] ||
-    windows=\$(printf '[{"id":"extra_usage","kind":"credits","percentUsed":1,"spentUsd":%s,"limitUsd":10000}]' "\$spent")
+    windows=\$(printf '%s' "\$windows" | jq -c --argjson w \
+      "\$(printf '{"id":"extra_usage","kind":"credits","percentUsed":1,"spentUsd":%s,"limitUsd":10000}' "\$spent")" '. + [\$w]')
 fi
 if [ -f "\$spec/rate_limited" ] && grep -Fxq "\$key" "\$spec/rate_limited"; then
   cat <<'JSON'

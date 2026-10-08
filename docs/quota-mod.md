@@ -56,6 +56,7 @@ Another mod's band content survives: the mod takes what the plugins beneath it d
 
 `/seats` opens a pane listing every configured seat: its name, which of them this session is on, which one new workers launch on, which are held out of automatic rotation, the account, the figures, and each reading's age.
 The seat this session is on and the seat new workers launch on are shown separately because they are genuinely different facts: switching the active seat never moves a running worker.
+A seat the [quota floor](claude-seats.md#resting-a-seat-below-a-quota-floor) is resting carries the same "held out of automatic rotation" mark as one held out by hand, because the mod reads the one flag that answers whether an automatic switch may land there; the seat board's own page and `bin/fm-seat.sh status` are where the two are told apart.
 
 Nothing a mod draws is visible in a `claude -p` run, an SDK session, or the VS Code chat panel, so in a session that cannot draw `/seats` answers with the same content as text instead.
 

@@ -100,10 +100,11 @@ bin/fm-seat.sh threshold 15          # switch when the ACTIVE seat drops to 15% 
 bin/fm-seat.sh destination-min 30    # only switch onto a seat with MORE than 30% left
 bin/fm-seat.sh extra-usage stop      # when no seat qualifies, hold new work
 bin/fm-seat.sh auto-exclude personal # keep one seat out of rotation entirely
+bin/fm-seat.sh floor 5               # rest a seat that drops to 5% left, and wake it later
 bin/fm-seat.sh arm
 ```
 
-### The four controls
+### The five controls
 
 **Trigger** (`threshold`) is when to look for a new seat: the active seat has dropped to or below that percent left.
 
@@ -123,7 +124,11 @@ Spend is read from the `extra_usage` window the account itself reports, and the 
 **Rotation exclusion** (`auto-exclude`) is which seats an automatic switch may not land on at all, whatever their headroom.
 It is the subject of [Keeping a seat out of automatic rotation](#keeping-a-seat-out-of-automatic-rotation) below.
 
-`bin/fm-seat.sh status` prints all four settings, whether the watch is armed, and whether new Claude dispatch is held right now, with the same reason `bin/fm-spawn.sh` gives when it refuses a spawn.
+**Quota floor** (`floor`) is when a seat stops being a candidate at all: a seat whose session or weekly window has run down to that percent left is *rested* out of rotation until a reading proves it recovered.
+It is the subject of [Resting a seat below a quota floor](#resting-a-seat-below-a-quota-floor) below.
+`destination-min` asks the same question one switch at a time; the floor is the standing answer, and with a floor set the minimum is largely redundant.
+
+`bin/fm-seat.sh status` prints all five settings, whether the watch is armed, which seats are resting and why, and whether new Claude dispatch is held right now, with the same reason `bin/fm-spawn.sh` gives when it refuses a spawn.
 
 ### What the automatic mode cannot do
 
@@ -150,6 +155,7 @@ Each pass keeps every quota read inside the watcher's per-check timeout (`FM_CHE
 ### What never trips a switch
 
 Only the account-level windows (`all_models` and `all_products`) count toward the trigger, the same scopes the dispatch chooser applies to a worker with no specific model; a model- or product-only window such as an Opus weekly limit does not trip a switch on its own.
+The quota floor reads the same two account-level windows by name (`five_hour` and `seven_day`) and ignores every model- and product-scoped window and `extra_usage` for the same reason: extra-usage credits are not plan quota, and a model limit does not bound a worker that is not on that model.
 For the `default` seat the condition reads the same profile a new worker on it gets, which is firstmate's own `CLAUDE_CONFIG_DIR` when that is set.
 
 An unreadable or ambiguous quota is never guessed at, in either direction:
@@ -160,7 +166,7 @@ An unreadable or ambiguous quota is never guessed at, in either direction:
 
 A rotation with no qualifying seat refuses rather than pretending to switch, and never falls back to the default profile or onto a seat held out of rotation.
 
-`bin/fm-seat.sh threshold off`, `destination-min off`, and `extra-usage off` each clear their own setting, and `auto-include <name>` clears one exclusion.
+`bin/fm-seat.sh threshold off`, `destination-min off`, `extra-usage off`, and `floor off` each clear their own setting, and `auto-include <name>` clears one exclusion.
 
 ## Keeping a seat out of automatic rotation
 
@@ -192,6 +198,60 @@ Both commands are idempotent: excluding an already-excluded seat and including o
 Excluding the `default` login is refused outright, because it is never an automatic rotation target in the first place.
 
 If you exclude every candidate, nothing new happens: rotation falls through to the ordinary refusal that it has nowhere to go, naming each withheld seat, and `arm` refuses for the same reason rather than arming a watch that could never fire.
+
+## Resting a seat below a quota floor
+
+An exclusion is a standing choice about *whose account* a seat is.
+The floor is about *how much is left on it*, and unlike every other setting here it is lifted again on its own.
+
+```
+bin/fm-seat.sh floor 5            # rest a seat at or below 5% left on either window
+bin/fm-seat.sh resting            # what is resting right now, and why
+bin/fm-seat.sh resting wake beta  # put one back by hand
+bin/fm-seat.sh floor off          # stop resting anything
+```
+
+With a floor set, each pass of the armed watch reads every candidate seat and **rests** one whose session (`five_hour`) or weekly (`seven_day`) window is at or below it.
+A resting seat is skipped by every automatic path, exactly as an excluded one is, and `switch <name>` still reaches it, with a warning naming the window and the figure.
+The floor pass runs before the switch trigger in the same pass, so a switch can never land on a seat that pass just rested.
+
+**Resting is recorded separately from an exclusion, and the exclusion wins.**
+The watch writes `config/claude-seat-resting` and never touches `config/claude-seat-auto-exclude`.
+A seat you held out by hand is not even read by the floor pass, is reported as held out rather than as resting, and is never put back by a reading - only `auto-include` returns it.
+
+**Coming back takes more than the figure that rested it.**
+A resting seat returns only when a fresh reading shows all of:
+
+- both windows at or above the **re-add level**, which is `floor-readd` when set and otherwise `min(100, max(3 x floor, floor + 10))` - 15 for a floor of 5,
+- the week at or above that level **plus one whole session's share of a week**, so a seat whose remaining week a full session would overrun stays down even when its session has just refreshed, and
+- at least `floor-dwell` seconds of rest, 600 by default; `0` means no minimum.
+
+The second condition is the one worth stating plainly: a session window refreshes every few hours, and without it a seat with 2% of its week left would be returned to rotation several times a day.
+A seat rested for its **week** therefore stays down until the week itself recovers, because no session reset can satisfy that condition.
+
+**The session's share of a week is measured, not assumed, once there is evidence.**
+The quota report carries no absolute budget, only a percentage per window, so the share is measured from co-movement: inside one session window on one account, every point the session spends also moves the week.
+When a session window rolls over while the week's does not, and the closed window spent at least 20 points, that ratio is kept as a sample; the largest of the last five is used once two exist.
+Until then the share is the assumed `session-share`, 20% of a week by default, and every surface that prints it says `measured` or `assumed` with the sample count.
+`bin/fm-seat.sh session-share` prints the figure in force, per account.
+
+**Nothing is ever rested or woken on a reading that could not be made.**
+An unreadable quota leaves a seat exactly where it was in either direction; the record notes since when it could not be read, and that note changes nothing by itself.
+One case needs care: a resting seat is never launched on, so after eight hours its token [lapses](#idle-seats-and-lapsed-tokens) and its quota becomes unreadable for good until something renews it.
+Such a seat comes back **provisionally** once the reset it was waiting for has passed, and never before its weekly reset when the week was the limiting window.
+The first worker launched there renews the token, and the next pass reads real figures and rests it again if they are still low.
+
+**What the floor does to dispatch.**
+With `extra-usage stop` and a floor set, new Claude dispatch is held once the *active* seat is at or below the floor, rather than only once its plan quota reaches nothing.
+The floor is the operator's own definition of "effectively empty", and holding there keeps the last few percent for interactive use rather than spending it on workers.
+`allow <usd>` is unchanged, and `--ignore-seat-hold` still pushes one spawn through.
+
+**Waking a seat by hand is temporary by construction.**
+`resting wake <name>` removes it from the record and returns it to rotation at once; the next pass reads that seat again and rests it again if it is still at or below the floor.
+
+A floor can be armed on its own, with no `threshold`: the watch then rests and wakes seats and switches nothing.
+`arm` warns rather than refusing when every candidate happens to be resting, because the watch is exactly what brings them back.
+Nothing here moves a worker already running on a seat that starts resting: it keeps the profile recorded in its own task record, as it does through every other change.
 
 ## Moving firstmate itself
 
@@ -253,12 +313,17 @@ With `destination-min` set, a lapsed seat is therefore skipped as a rotation des
 If you want rotation to reach idle seats, leave `destination-min` unset so the gate stays login-only.
 The extra-usage dispatch gate does not hold on a lapsed active seat for the same reason: the launch it would hold is the only thing that can renew the token.
 
+A seat the [quota floor](#resting-a-seat-below-a-quota-floor) is resting is never launched on, so its token lapses while it rests and nothing can prove it recovered.
+That is why such a seat is returned provisionally once the reset it was waiting for has passed: the launch is the only thing that can renew it, and a seat rested for its week still waits for the week.
+
 A seat that is genuinely signed out is a different state and is still refused.
 When Anthropic definitively rejects a refresh token, Claude Code clears the session in place, and the seat reads `not-logged-in`; `--force` cannot cross that, and the seat needs the owner's login steps again.
 
 ## Secondmate homes
 
-All six seat settings are inherited into this machine's local secondmate homes through the primary-authoritative configuration contract, so a secondmate's own Claude crewmates launch on the same seat as the primary's and no local home automatically rotates onto a seat the primary held out.
+All eleven seat settings are inherited into this machine's local secondmate homes through the primary-authoritative configuration contract, so a secondmate's own Claude crewmates launch on the same seat as the primary's and no local home automatically rotates onto a seat the primary held out or the floor is resting.
+The resting record is one of them, and is config rather than state for exactly that reason: a secondmate's own rotation has to skip a seat the primary's watch rested, and inherited configuration is the only thing that crosses homes.
+Only the home running the watch writes it, and only that home measures the session share, whose samples stay in its own state and are never inherited.
 Every switch, manual or automatic, runs `bin/fm-config-push.sh --local-only` right after it changes the primary's seat, so running local secondmates pick up the new seat without being stopped, and the switch prints which homes were updated and which were not.
 A failed push never undoes the primary's switch: it is reported, those homes keep spawning on their previous seat, and re-running `bin/fm-config-push.sh --local-only` retries them.
 The push skips remote routes entirely, so a switch never opens SSH, never waits on another machine, and reports only this machine's homes.
@@ -276,19 +341,19 @@ touch <that home>/config/claude-seat-local
 ```
 
 The file's presence is the whole setting; nothing reads its content.
-From then on that home keeps its own `claude-seat`, `claude-seats-root`, `claude-seat-threshold`, `claude-seat-destination-min`, `claude-seat-extra-usage`, and `claude-seat-auto-exclude` untouched, including when it has none, and no local convergence overwrites them: not a switch's push, not the session-start secondmate sweep, and not that home's own launch or relaunch.
+From then on that home keeps its own `claude-seat`, `claude-seats-root`, `claude-seat-threshold`, `claude-seat-destination-min`, `claude-seat-extra-usage`, `claude-seat-auto-exclude`, `claude-seat-floor`, `claude-seat-floor-readd`, `claude-seat-floor-dwell`, `claude-seat-session-share`, and `claude-seat-resting` untouched, including when it has none, and no local convergence overwrites them: not a switch's push, not the session-start secondmate sweep, and not that home's own launch or relaunch.
 When the primary launches or relaunches that home's own firstmate, the launch uses that home's active seat, and the extra-usage dispatch gate reads that home's seat and policy rather than the primary's.
-The declining home still runs `bin/fm-seat.sh switch`, `threshold`, `destination-min`, `extra-usage`, `auto-exclude`, and `arm` normally; those act on itself alone.
+The declining home still runs `bin/fm-seat.sh switch`, `threshold`, `destination-min`, `extra-usage`, `auto-exclude`, `floor`, and `arm` normally; those act on itself alone.
 Only that home is left alone - every other local home still takes each switch, and a machine with no such file anywhere behaves exactly as it did before the flag existed.
 
 The decline is visible from the primary, because a setting that silently does nothing is the failure worth avoiding here.
 `bin/fm-seat.sh status` lists every local secondmate home that declined, with the seat that home is actually on, and each switch names the seat items it skipped for that home and why.
 Put the flag only in the home it belongs to: it is never inherited, so one home's billing choice is never decided for it elsewhere.
-[Configuration](configuration.md#claude-seats-configclaude-seat-configclaude-seats-root-configclaude-seat-threshold-configclaude-seat-destination-min-configclaude-seat-extra-usage-configclaude-seat-auto-exclude-configclaude-seat-local) owns the flag's schema.
+[Configuration](configuration.md#claude-seats-configclaude-seat-configclaude-seats-root-configclaude-seat-threshold-configclaude-seat-destination-min-configclaude-seat-extra-usage-configclaude-seat-auto-exclude-configclaude-seat-floor-configclaude-seat-floor-readd-configclaude-seat-floor-dwell-configclaude-seat-session-share-configclaude-seat-resting-configclaude-seat-local) owns the flag's schema.
 
 ## Glancing at every seat at once
 
-`bin/fm-seat-board.sh` serves one read-only local page showing every seat's quota-axi report side by side: account email, each window's percent left and reset time, extra-usage spend against its cap, any attention line quota-axi reports, and which seat is active for new workers.
+`bin/fm-seat-board.sh` serves one read-only local page showing every seat's quota-axi report side by side: account email, each window's percent left and reset time, extra-usage spend against its cap, any attention line quota-axi reports, which seat is active for new workers, and whether an automatic switch may land on each seat - held out by hand, resting below the quota floor with the window holding it down and when it is expected back, or in rotation.
 Run it and open the URL it prints; Ctrl-C stops it.
 That URL carries a random path segment generated for that run, so open the printed one rather than a `http://127.0.0.1:<port>/` typed from memory, and `--port 0` takes a free port from the kernel and names it there too.
 It never switches, arms, or edits anything, and it caches each seat's read for a minute so a page reload does not hit the quota endpoint again.

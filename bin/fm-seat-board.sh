@@ -20,10 +20,20 @@
 # json    Prints the same reading as one JSON object instead of a page, for a
 #         reader that is not a browser. Schema 1:
 #           { schemaVersion, generatedAt, cacheSeconds, activeSeat, liveSeat,
+#             floor: null | { removeAt, readdAt, dwellSeconds,
+#                             sessionShare: { percent, source, samples } },
 #             seats: [ { name, configDir, active, autoExcluded, cacheFile,
 #                        hasData, ageSeconds, account, attention,
+#                        exclusion: { manual, resting: null | {
+#                          limitingWindow, remaining, since, resetsAt,
+#                          expectedBack, provisional, unreadableSince } },
 #                        windows: [ { id, label, percentRemaining, resetsAt } ],
 #                        extraUsage } ] }
+#         autoExcluded is true when an automatic switch may not land on that
+#         seat for EITHER reason, which is the question every reader of it asks;
+#         `exclusion` is what says which reason, so a seat held out by hand is
+#         never shown as one the quota floor rested. `floor` is null when no
+#         quota floor is configured, which is the default.
 #         ageSeconds is the age of that seat's own cache file, so a reader can
 #         say how old each figure is instead of implying every one is current;
 #         it is null when no cache file can be read. hasData false means no
@@ -38,7 +48,9 @@
 # bin/fm-seat.sh's own listing): the account email, each quota window's
 # percent LEFT and reset time, extra-usage spend against its cap, any
 # attention line quota-axi reports (not logged in, rate limited, ...) shown
-# as-is, and which seat is active for new workers.
+# as-is, which seat is active for new workers, and whether an automatic switch
+# may land on that seat - held out by hand, resting below the quota floor with
+# the window holding it down and when it is expected back, or in rotation.
 #
 # Read-only: this script never switches, arms, or edits any seat setting. It
 # only reads. Every quota read goes through bin/fm-seat-lib.sh's own
@@ -63,6 +75,8 @@ FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 # shellcheck disable=SC2034  # read by the sourced fm-seat-lib.sh functions
 CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
+# shellcheck disable=SC2034  # read by the sourced fm-seat-lib.sh functions
+STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 
 # shellcheck source=bin/fm-timeout-lib.sh
 . "$SCRIPT_DIR/fm-timeout-lib.sh"
@@ -159,6 +173,39 @@ seat_cache_read() {
   [ -f "$1" ] && jq -e . "$1" >/dev/null 2>&1 && cat "$1"
 }
 
+# seat_resting_line <seat-name>
+# One sentence saying why the quota floor is resting a seat and when it is
+# expected back, or 1 when it is not resting.
+seat_resting_line() {
+  local entry
+  entry=$(fm_seat_resting_entry "${1-}") || return 1
+  printf '%s' "$entry" | jq -r '
+    (.limitingWindow // "?") as $w |
+    "resting: " + $w + " " + ((.windows[$w].remaining // "?") | tostring)
+    + "% left, at or below the quota floor, expected back "
+    + (.expectedBack // "unknown")
+    + (if .provisional then " (returning provisionally: its access token lapsed while it rested)" else "" end)
+    + (if (.unreadableSince // null) == null then ""
+       else " (its quota has been unreadable since " + ((.unreadableSince) | tostring) + ")" end)
+  ' 2>/dev/null
+}
+
+# floor_footer_html
+# The floor's own settings under the seats, so the page says what resting means
+# here rather than leaving the reader to guess the figures.
+floor_footer_html() {
+  local floor percent source samples
+  floor=$(fm_seat_floor) || {
+    printf '<p class="floor">no quota floor is configured, so no seat is ever rested out of automatic rotation</p>\n'
+    return 0
+  }
+  IFS=$'\t' read -r percent source samples < <(fm_seat_session_share_value '')
+  printf '<p class="floor">quota floor: rest at or below %s%% left, back only above %s%% on both windows after %ss, and only when the week can still absorb a whole session (%s%% of a week, %s, %s sample(s))</p>\n' \
+    "$(html_escape "$floor")" "$(html_escape "$(fm_seat_floor_readd)")" \
+    "$(html_escape "$(fm_seat_floor_dwell)")" "$(html_escape "$percent")" \
+    "$(html_escape "$source")" "$(html_escape "$samples")"
+}
+
 board_css() {
   cat <<'CSS'
 body { font-family: -apple-system, system-ui, sans-serif; margin: 2rem; color: #1a1a1a; }
@@ -172,18 +219,35 @@ section.seat h2 { font-size: 1.05rem; margin: 0 0 0.35rem; }
 table.windows { border-collapse: collapse; margin-top: 0.4rem; }
 table.windows th, table.windows td { text-align: left; padding: 0.15rem 0.6rem 0.15rem 0; }
 .extra { color: #444; }
+.rotation { color: #444; font-size: 0.85rem; margin: 0.1rem 0; }
+.resting { color: #9a5b00; font-weight: bold; }
+.floor { color: #666; font-size: 0.85rem; margin-top: 1rem; }
 CSS
 }
 
 # seat_section_html <seat-name> <active-seat-name>
 seat_section_html() {
   local name=$1 active=$2 dir json marker email src state_err attention extra spent limit
+  local resting limiting=''
   dir=$(fm_seat_config_dir "$name")
   json=$(seat_quota_cached "$dir")
   marker=
   [ "$name" != "$active" ] || marker=' <span class="active">active for new workers</span>'
   printf '<section class="seat">\n'
   printf '<h2>%s%s</h2>\n' "$(html_escape "$name")" "$marker"
+  # Whether an automatic switch may land here, and which of the two reasons it
+  # is, because an operator reading "not in rotation" needs to know whether they
+  # withheld this seat themselves or the quota floor is resting it.
+  if [ "$name" = "$FM_SEAT_DEFAULT_NAME" ]; then
+    printf '<p class="rotation">never an automatic rotation target (the ambient login)</p>\n'
+  elif fm_seat_auto_excluded "$name"; then
+    printf '<p class="rotation">held out of automatic rotation by hand</p>\n'
+  elif resting=$(seat_resting_line "$name"); then
+    limiting=$(fm_seat_resting_entry "$name" | jq -r '.limitingWindow // ""' 2>/dev/null)
+    printf '<p class="rotation resting">%s</p>\n' "$(html_escape "$resting")"
+  else
+    printf '<p class="rotation">in rotation</p>\n'
+  fi
   if [ -z "$json" ]; then
     printf '<p class="attention">no quota data (quota-axi unavailable or the read timed out)</p>\n'
     printf '</section>\n'
@@ -204,6 +268,7 @@ seat_section_html() {
   printf '<table class="windows">\n<tr><th>window</th><th>left</th><th>resets</th></tr>\n'
   while IFS=$'\t' read -r wid label pct resets; do
     [ -n "$wid" ] || continue
+    [ "$wid" != "$limiting" ] || label="${label:-$wid} (holding this seat down)"
     printf '<tr><td>%s</td><td>%s%%</td><td>%s</td></tr>\n' \
       "$(html_escape "${label:-$wid}")" "$(html_escape "$pct")" "$(html_escape "$resets")"
   done < <(printf '%s' "$json" | jq -r '
@@ -224,25 +289,65 @@ seat_section_html() {
   printf '</section>\n'
 }
 
+# seat_resting_json <seat-name>
+# The resting detail for one seat as JSON, or the literal null when the quota
+# floor is not holding it. bin/fm-seat-lib.sh owns the record; this only hoists
+# the limiting window's own figures beside it so a reader needs no second lookup.
+seat_resting_json() {
+  local entry
+  entry=$(fm_seat_resting_entry "${1-}") || { printf 'null'; return 0; }
+  printf '%s' "$entry" | jq -c '
+    (.limitingWindow // "") as $w |
+    { limitingWindow: (.limitingWindow // null),
+      remaining: (.windows[$w].remaining // null),
+      since: (.since // null),
+      resetsAt: (.windows[$w].resetsAt // null),
+      expectedBack: (.expectedBack // null),
+      provisional: (.provisional // false),
+      unreadableSince: (.unreadableSince // null) }' 2>/dev/null || printf 'null'
+}
+
+# floor_json
+# The quota floor's own settings and the session share in force, or the literal
+# null when no floor is configured, which is the default.
+floor_json() {
+  local floor percent source samples
+  floor=$(fm_seat_floor) || { printf 'null'; return 0; }
+  IFS=$'\t' read -r percent source samples < <(fm_seat_session_share_value '')
+  jq -cn --arg f "$floor" --arg r "$(fm_seat_floor_readd)" \
+    --argjson d "$(fm_seat_floor_dwell)" \
+    --arg p "$percent" --arg s "$source" --argjson n "${samples:-0}" \
+    '{ removeAt: ($f | tonumber), readdAt: ($r | tonumber), dwellSeconds: $d,
+       sessionShare: { percent: ($p | tonumber), source: $s, samples: $n } }'
+}
+
 # seat_json <seat-name> <active-seat-name> <cached-only>
 # One seat's record for the `json` action, as the schema in this script's header
 # states it. The cache file's own age travels with the figures so a reader can
 # date them, and a seat with no report prints hasData false with null figures
 # rather than zeros a reader could mistake for an empty quota.
 seat_json() {
-  local name=$1 active=$2 cached_only=$3 dir json cache_file age flags
+  local name=$1 active=$2 cached_only=$3 dir json cache_file age flags manual resting
   dir=$(fm_seat_config_dir "$name")
   cache_file=$(seat_cache_file "$dir")
   json=$(seat_quota_cached "$dir" "$cached_only")
   age=$(file_age_seconds "$cache_file") || age=null
-  flags=$(fm_seat_auto_excluded "$name" && printf true || printf false)
+  manual=$(fm_seat_auto_excluded "$name" && printf true || printf false)
+  resting=$(seat_resting_json "$name")
+  # One flag for "an automatic switch may not land here", whatever is holding
+  # the seat back, because that is the question every reader of it asks; the
+  # exclusion object beside it is what says which of the two it was.
+  flags=false
+  { [ "$manual" = false ] && [ "$resting" = null ]; } || flags=true
   if [ -z "$json" ]; then
     jq -n \
       --arg name "$name" --arg dir "$dir" --arg cache "$cache_file" \
       --argjson active "$([ "$name" = "$active" ] && printf true || printf false)" \
       --argjson excluded "$flags" \
+      --argjson manual "$manual" --argjson resting "$resting" \
       '{
         name: $name, configDir: $dir, active: $active, autoExcluded: $excluded,
+        exclusion: { manual: $manual, resting: $resting },
         cacheFile: $cache, hasData: false, ageSeconds: null, account: null,
         attention: "no quota data (quota-axi unavailable or the read timed out)",
         windows: [], extraUsage: null
@@ -253,11 +358,13 @@ seat_json() {
     --arg name "$name" --arg dir "$dir" --arg cache "$cache_file" \
     --argjson active "$([ "$name" = "$active" ] && printf true || printf false)" \
     --argjson excluded "$flags" \
+    --argjson manual "$manual" --argjson resting "$resting" \
     --argjson age "$age" \
     '
     ([.providers[]? | select(.provider == "claude")] | first) as $p |
     {
       name: $name, configDir: $dir, active: $active, autoExcluded: $excluded,
+      exclusion: { manual: $manual, resting: $resting },
       cacheFile: $cache, hasData: true, ageSeconds: $age,
       account: ($p.account.email // null),
       attention: (
@@ -300,9 +407,10 @@ render_json() {
       --arg active "$active" \
       --arg live "$(fm_seat_name_of_profile "${CLAUDE_CONFIG_DIR:-}")" \
       --argjson cacheSeconds "$FM_SEAT_BOARD_CACHE_SECONDS" \
+      --argjson floor "$(floor_json)" \
       '{
         schemaVersion: 1, generatedAt: $generated, cacheSeconds: $cacheSeconds,
-        activeSeat: $active, liveSeat: $live, seats: .
+        activeSeat: $active, liveSeat: $live, floor: $floor, seats: .
       }'
 }
 
@@ -321,6 +429,7 @@ render_page() {
     [ -n "$name" ] || continue
     seat_section_html "$name" "$active"
   done < <(fm_seat_list)
+  floor_footer_html
   printf '</body></html>\n'
 }
 

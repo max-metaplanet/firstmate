@@ -13,6 +13,11 @@
 #   fm-seat.sh extra-usage [stop|allow <usd>|off]
 #   fm-seat.sh auto-exclude [<name>]
 #   fm-seat.sh auto-include <name>
+#   fm-seat.sh floor [<percent-left>|off]
+#   fm-seat.sh floor-readd [<percent-left>|off]
+#   fm-seat.sh floor-dwell [<seconds>|off]
+#   fm-seat.sh session-share [<percent-of-a-week>|off]
+#   fm-seat.sh resting [wake <name>]
 #   fm-seat.sh lead-restart [--to <name>] [--check] [--persisted]
 #                           [--launch-command <cmd>]
 #   fm-seat.sh threshold-reached
@@ -74,6 +79,28 @@
 # auto-include
 #            Put a seat back into automatic rotation. A seat that was not
 #            excluded is already in rotation, so that is a success and no error.
+# floor      QUOTA FLOOR. Print, set, or clear the percent LEFT at or below
+#            which the armed watch RESTS a seat: every automatic path then skips
+#            it until a reading proves it recovered, while `switch <name>` still
+#            reaches it with a warning. Absent means no seat is ever rested.
+#            Resting is recorded separately from `auto-exclude`, which is the
+#            operator's own standing choice and is never lifted automatically.
+# floor-readd
+#            The percent LEFT BOTH windows must regain before a resting seat
+#            comes back. Absent, it is derived from the floor as
+#            min(100, max(3 x floor, floor + 10)).
+# floor-dwell
+#            Seconds a seat must have rested before any reading may wake it. 0
+#            means no minimum rest; `off` restores the built-in default.
+# session-share
+#            The assumed percent of a WEEK one whole session window costs, used
+#            until it has been measured on that account. It is the one setting
+#            here that is not a percent left. With no argument it also prints
+#            the share in force per account and whether it was measured.
+# resting    Print which seats the floor is resting and why, or, with
+#            `wake <name>`, put one back by hand. A hand wake is temporary by
+#            construction: the next pass reads that seat again and rests it
+#            again if it is still at or below the floor.
 # lead-restart
 #            Move FIRSTMATE ITSELF to another seat, which `switch` cannot do: a
 #            switch moves only what the next spawn reads, and no running Claude
@@ -96,9 +123,11 @@
 #            the configured percent left, 1 when it is not, and 2 when no
 #            threshold is configured or the read failed. Exit 2 is an error,
 #            never a true, so an unreadable quota never switches accounts.
-# auto       One pass of the automatic mode, run by the armed check shim: read
-#            the active seat, switch when the trigger is met and a seat with
-#            headroom exists, and print one line when firstmate should know.
+# auto       One pass of the automatic mode, run by the armed check shim: rest
+#            or wake seats against the quota floor, read the active seat, switch
+#            when the trigger is met and a seat with headroom exists, and print
+#            one line when firstmate should know. The floor runs first, so a
+#            switch in the same pass can never land on a seat that pass rested.
 #            Never run it in a loop of its own; `arm` gives it the watcher's.
 # arm        Register `auto` as this home's repeating Claude-seat check through
 #            bin/fm-check-register.sh, so it runs on the watcher's existing
@@ -223,7 +252,7 @@ all_seats() {
 }
 
 cmd_list() {
-  local name state account dir active note
+  local name state account dir active note resting
   active=$(fm_seat_active)
   printf 'seats root: %s\n' "$(fm_seat_root)"
   while IFS= read -r name; do
@@ -231,10 +260,16 @@ cmd_list() {
     dir=$(fm_seat_config_dir "$name")
     state=$(login_state "$name")
     account=$(fm_seat_account "$dir" 2>/dev/null) || account=
-    # The note is appended only for an excluded seat, so a home that excludes
-    # nothing reads exactly as it did before the setting existed.
+    # The note is appended only for a seat something is withholding, so a home
+    # that withholds nothing reads exactly as it did before these settings
+    # existed. A seat that is both held out and resting reads as held out: the
+    # operator's own choice is the one that is never lifted by a reading.
     note=''
-    fm_seat_auto_excluded "$name" && note=$'\t'"excluded from automatic rotation"
+    if fm_seat_auto_excluded "$name"; then
+      note=$'\t'"held out of automatic rotation by hand"
+    elif resting=$(resting_summary "$name"); then
+      note=$'\t'"resting below the quota floor: $resting"
+    fi
     printf '%s%s\t%s\t%s\t%s%s\n' \
       "$([ "$name" = "$active" ] && printf '* ' || printf '  ')" \
       "$name" "$state" "${account:--}" "${dir:-(ambient default login)}" "$note"
@@ -276,7 +311,7 @@ declining_secondmate_homes() {
 }
 
 cmd_status() {
-  local active profile threshold minimum policy reason rows excluded
+  local active profile threshold minimum policy reason rows excluded floor
   active=$(fm_seat_active)
   printf 'active seat for NEW workers: %s\n' "$active"
   profile=$(fm_seat_config_dir "$active")
@@ -311,10 +346,18 @@ cmd_status() {
   excluded=$(fm_seat_auto_exclude_list | tr '\n' ' ')
   excluded=${excluded% }
   if [ -n "$excluded" ]; then
-    printf 'excluded from automatic rotation: %s (switch <name> still reaches them)\n' "$excluded"
+    printf 'held out of automatic rotation by hand: %s (switch <name> still reaches them)\n' "$excluded"
   else
-    printf 'excluded from automatic rotation: (none - every seat under the root is a rotation candidate)\n'
+    printf 'held out of automatic rotation by hand: (none - every seat under the root is a rotation candidate)\n'
   fi
+  if floor=$(fm_seat_floor); then
+    printf 'quota floor: rest a seat at or below %s%% left, back only above %s%% on BOTH windows after %ss and with room for a whole session\n' \
+      "$floor" "$(fm_seat_floor_readd)" "$(fm_seat_floor_dwell)"
+  else
+    printf 'quota floor: (unset - no seat is ever rested out of automatic rotation)\n'
+  fi
+  printf 'resting below the quota floor:\n'
+  print_resting | sed 's/^/  /'
   if fm_check_shim_armed; then
     printf 'auto-switch watch: armed (keeps watching after each switch)\n'
   else
@@ -384,6 +427,12 @@ cmd_probe() {
 # can skip it. An explicit `switch <name>` does not come through this function
 # at all, which is exactly why an excluded seat stays manually reachable.
 #
+# A seat RESTING below the quota floor is withheld the same way and through the
+# same two lines, from its own record rather than from the operator's exclusion
+# file. The two are deliberately separate: an exclusion is the operator's
+# standing choice and is never lifted by a reading, while resting is written and
+# lifted only by the watch.
+#
 # Rotation covers ONLY named seats under the seats root. The default profile is
 # deliberately excluded: it is the account owner's own interactive login, it
 # changes under them whenever they sign in somewhere else, and nothing here can
@@ -410,7 +459,7 @@ cmd_probe() {
 # Every rejected candidate is reported on stderr with its reason, so a refusal
 # to switch always says which seats were considered and why none qualified.
 next_seat() {
-  local active seats n i idx name minimum='' remaining state
+  local active seats n i idx name minimum='' remaining state resting
   active=${1:-$(fm_seat_active)}
   minimum=$(fm_seat_destination_min) || minimum=''
   mapfile -t seats < <(fm_seat_list)
@@ -429,6 +478,14 @@ next_seat() {
     if fm_seat_auto_excluded "$name"; then
       printf 'seat %s: skipped, excluded from automatic rotation (fm-seat.sh auto-include %s puts it back; switch %s still reaches it)\n' \
         "$name" "$name" "$name" >&2
+      continue
+    fi
+    # Resting is checked second and separately, so a seat held out by hand is
+    # always reported as held out and the floor never speaks for the operator's
+    # own choice. Like the exclusion it costs no quota call.
+    if resting=$(resting_summary "$name"); then
+      printf 'seat %s: skipped, resting below the quota floor (%s; fm-seat.sh resting wake %s returns it early; switch %s still reaches it)\n' \
+        "$name" "$resting" "$name" "$name" >&2
       continue
     fi
     state=$(login_state "$name")
@@ -489,7 +546,7 @@ write_active() {
 }
 
 cmd_switch() {
-  local name='' force=0 rotate=0 prior state dir
+  local name='' force=0 rotate=0 prior state dir resting
   while [ "$#" -gt 0 ]; do
     case "$1" in
       --next) rotate=1; shift ;;
@@ -514,6 +571,13 @@ cmd_switch() {
   if [ "$name" = "$prior" ]; then
     printf 'seat unchanged: %s\n' "$name"
     return 0
+  fi
+  # An explicit switch still reaches a resting seat, exactly as it reaches one
+  # held out by hand; it only says what it is landing on, because the floor
+  # withholds a seat from the AUTOMATIC paths and not from a deliberate choice.
+  if resting=$(resting_summary "$name"); then
+    printf 'warning: %s is resting below the quota floor (%s); switching to it anyway\n' \
+      "$name" "$resting" >&2
   fi
   state=$(login_state "$name")
   case "$state" in
@@ -923,18 +987,36 @@ warn_extra_usage_entry() {
 # budget. A read the deadline cuts short gives no verdict, like any other
 # unreadable quota.
 cmd_auto() {
-  local threshold policy check_timeout
-  threshold=$(fm_seat_threshold) || return 0
+  local threshold floor policy check_timeout memo
+  threshold=$(fm_seat_threshold) || threshold=''
+  floor=$(fm_seat_floor) || floor=''
+  # A home that configured neither pays nothing: no quota is read at all.
+  [ -n "$threshold" ] || [ -n "$floor" ] || return 0
   check_timeout=${FM_CHECK_TIMEOUT:-30}
   case "$check_timeout" in
     ''|*[!0-9]*|0) check_timeout=30 ;;
   esac
   FM_SEAT_READ_DEADLINE=$(($(date +%s) + check_timeout - 3))
   export FM_SEAT_READ_DEADLINE
+  # One read per seat for the whole pass, including the reads the child `switch`
+  # makes, so adding the floor costs no extra quota call. The memo lives only as
+  # long as the pass: nothing outside it ever reads a figure it did not take.
+  if memo=$(mktemp -d "${TMPDIR:-/tmp}/fm-seat-pass.XXXXXX" 2>/dev/null); then
+    FM_SEAT_READ_MEMO_DIR=$memo
+    export FM_SEAT_READ_MEMO_DIR
+  else
+    memo=''
+  fi
   policy=$(fm_seat_extra_usage_policy) || policy=''
-  auto_trigger "$threshold" "$policy"
-  auto_lead_trigger "$threshold"
+  # The floor runs FIRST, so a switch in this same pass can never land on a seat
+  # this pass just rested.
+  auto_floor
+  if [ -n "$threshold" ]; then
+    auto_trigger "$threshold" "$policy"
+    auto_lead_trigger "$threshold"
+  fi
   [ -z "$policy" ] || warn_extra_usage_entry
+  [ -z "$memo" ] || rm -rf -- "$memo"
 }
 
 # auto_lead_trigger <threshold>
@@ -1054,6 +1136,384 @@ auto_trigger() {
   esac
 }
 
+# --- the quota floor ---------------------------------------------------------
+# The floor rests a seat whose session or weekly window has run down, and wakes
+# it only on a reading that proves it recovered. bin/fm-seat-lib.sh owns the
+# settings, the record, and the session-share measurement; this half owns the
+# pass, the operator surface, and every line either of them prints.
+
+cmd_floor() {
+  local v=${1-} readd
+  if [ -z "$v" ]; then
+    if v=$(fm_seat_floor); then
+      printf '%s\n' "$v"
+      return 0
+    fi
+    printf '(unset - no seat is ever rested out of automatic rotation)\n'
+    return 0
+  fi
+  write_percent_setting claude-seat-floor 'quota floor' "$v"
+  [ "$v" != off ] || return 0
+  readd=$(fm_seat_floor_readd) || return 0
+  printf 'a rested seat comes back only above %s%% left on BOTH windows, after at least %ss of rest, and only when its week can still absorb a whole session\n' \
+    "$readd" "$(fm_seat_floor_dwell)"
+  # Warnings, never refusals: both are judgements about tuning, and an operator
+  # who means them should not have to fight the setter.
+  local threshold share
+  if threshold=$(fm_seat_threshold) &&
+    jq -en --arg f "$v" --arg t "$threshold" '($f | tonumber) >= ($t | tonumber)' >/dev/null 2>&1; then
+    printf 'warning: the floor is at or above the auto-switch trigger of %s%%, so the active seat will rest before anything switches away from it; a floor BELOW the trigger is the usual order\n' \
+      "$threshold" >&2
+  fi
+  share=$(fm_seat_session_share_value '' | cut -f1)
+  if jq -en --arg r "$readd" --arg s "$share" '(($r | tonumber) + ($s | tonumber)) >= 95' >/dev/null 2>&1; then
+    printf 'warning: coming back needs %s%% left on the week plus a whole session (%s%%), which a week rarely has, so seats will rest for a long time\n' \
+      "$readd" "$share" >&2
+  fi
+}
+
+cmd_floor_readd() {
+  local v=${1-}
+  if [ -z "$v" ]; then
+    if v=$(fm_seat_percent_file "$CONFIG/claude-seat-floor-readd"); then
+      printf '%s\n' "$v"
+      return 0
+    fi
+    if v=$(fm_seat_floor_readd); then
+      printf '%s (derived from the floor)\n' "$v"
+      return 0
+    fi
+    printf '(unset - no floor is configured, so nothing is ever resting)\n'
+    return 0
+  fi
+  write_percent_setting claude-seat-floor-readd 'quota floor re-add level' "$v"
+}
+
+cmd_floor_dwell() {
+  local v=${1-} tmp
+  if [ -z "$v" ]; then
+    if v=$(fm_seat_seconds_file "$CONFIG/claude-seat-floor-dwell"); then
+      printf '%s\n' "$v"
+      return 0
+    fi
+    printf '%s (default)\n' "$FM_SEAT_FLOOR_DWELL_DEFAULT"
+    return 0
+  fi
+  mkdir -p "$CONFIG" || die "could not create $CONFIG"
+  if [ "$v" = off ]; then
+    rm -f "$CONFIG/claude-seat-floor-dwell" || die "could not clear the quota floor rest time"
+    printf 'quota floor rest time cleared; the default of %ss applies\n' "$FM_SEAT_FLOOR_DWELL_DEFAULT"
+    return 0
+  fi
+  local LC_ALL=C
+  [[ "$v" =~ ^[0-9]+$ ]] ||
+    die "the quota floor rest time must be a whole number of seconds, 0 for no minimum rest, or 'off'"
+  tmp="$CONFIG/.claude-seat-floor-dwell.$$"
+  printf '%s\n' "$v" > "$tmp" || die "could not write $tmp"
+  mv -f "$tmp" "$CONFIG/claude-seat-floor-dwell" || die "could not publish the quota floor rest time"
+  printf 'quota floor rest time: %ss\n' "$v"
+}
+
+cmd_session_share() {
+  local v=${1-} row
+  if [ -z "$v" ]; then
+    if v=$(fm_seat_percent_file "$CONFIG/claude-seat-session-share"); then
+      printf '%s%% of a week per session (set by hand)\n' "$v"
+    else
+      printf '%s%% of a week per session (built-in default)\n' "$FM_SEAT_SESSION_SHARE_DEFAULT"
+    fi
+    while IFS= read -r row; do
+      [ -n "$row" ] || continue
+      printf '%s\n' "$row"
+    done < <(session_share_rows)
+    return 0
+  fi
+  write_percent_setting claude-seat-session-share 'assumed session share of a week' "$v"
+}
+
+# session_share_rows
+# One line per account the samples record knows, naming the share in force for
+# it and whether it was measured. This is the only percentage here that is not a
+# percent left, so every surface that prints it says what it is.
+session_share_rows() {
+  local account value source count
+  while IFS= read -r account; do
+    [ -n "$account" ] || continue
+    IFS=$'\t' read -r value source count < <(fm_seat_session_share_value "$account")
+    printf '  %s: %s%% of a week per session (%s, %s sample(s))\n' \
+      "$account" "$value" "$source" "$count"
+  done < <(fm_seat_session_share_doc | jq -r '(.accounts // {}) | keys[]' 2>/dev/null)
+}
+
+# resting_summary <name>
+# Why a seat is resting and when it is expected back, as one phrase, or 1 when
+# it is not resting. The one owner of that wording, so the rotation skip reason,
+# `status`, `list`, and the warning an explicit switch prints cannot disagree.
+resting_summary() {
+  local name=${1-} entry window remaining expected provisional unreadable line
+  entry=$(fm_seat_resting_entry "$name") || return 1
+  IFS=$'\t' read -r window remaining expected provisional unreadable < <(
+    printf '%s\n' "$entry" | jq -r '
+      (.limitingWindow // "") as $w |
+      [ (if $w == "" then "?" else $w end),
+        ((.windows[$w].remaining // "?") | tostring),
+        (.expectedBack // "unknown"),
+        (if .provisional then "yes" else "" end),
+        ((.unreadableSince // "") | tostring) ] | @tsv' 2>/dev/null)
+  line="$window $remaining% left, expected back $expected"
+  [ "$provisional" != yes ] ||
+    line="$line (back provisionally: its access token lapsed while resting, so the next launch there is what reads it again)"
+  [ -z "$unreadable" ] || [ "$unreadable" = null ] ||
+    line="$line (its quota has been unreadable since $unreadable, which changes nothing by itself)"
+  printf '%s\n' "$line"
+}
+
+# print_resting
+# Every resting seat with its reason, or the explicit unset line.
+print_resting() {
+  local floor rows='' name summary
+  if ! floor=$(fm_seat_floor); then
+    printf '(none - no quota floor is configured, so no seat is ever rested)\n'
+    return 0
+  fi
+  while IFS= read -r name; do
+    [ -n "$name" ] || continue
+    summary=$(resting_summary "$name") || continue
+    rows="${rows}${name}: ${summary}
+"
+  done < <(fm_seat_resting_record | jq -r '(.seats // {}) | keys[]' 2>/dev/null)
+  if [ -z "$rows" ]; then
+    printf '(none - every seat is above the %s%% floor, or has not been read yet)\n' "$floor"
+    return 0
+  fi
+  printf '%s' "$rows"
+}
+
+# cmd_resting [wake <name>]
+# Read the record, or put one seat back into rotation by hand. A hand wake is
+# deliberately allowed to cross the re-add rules: the next pass reads the seat
+# again and rests it again if it is still low, so the override is temporary by
+# construction rather than by promise.
+cmd_resting() {
+  local verb=${1-} name=${2-} record
+  case "$verb" in
+    '')
+      print_resting
+      return 0
+      ;;
+    wake) ;;
+    *) usage ;;
+  esac
+  [ -n "$name" ] || usage
+  fm_seat_resting "$name" || {
+    printf 'not resting: %s\n' "$name"
+    return 0
+  }
+  record=$(fm_seat_resting_record | jq -c --arg n "$name" 'del(.seats[$n])')
+  fm_seat_resting_write "$record" || die "could not update the resting record"
+  printf 'back in automatic rotation: %s\n' "$name"
+  printf 'the next automatic pass reads it again and rests it again if it is still at or below the floor\n'
+  propagate_to_secondmates
+}
+
+# floor_expected_back <limiting-window> <session-resets> <week-resets> <week-left> <readd> <share>
+# When a resting seat can next be expected back: the reset of the window holding
+# it down, or the week's reset when a session reset alone could not wake it
+# anyway because the week could not then absorb a whole session.
+floor_expected_back() {
+  local window=$1 session_reset=$2 week_reset=$3 week=$4 readd=$5 share=$6 pick
+  if [ "$window" = "$FM_SEAT_WEEK_WINDOW" ]; then
+    pick=$week_reset
+  elif [ -n "$week" ] && ! jq -en --arg w "$week" --arg r "$readd" --arg s "$share" \
+    '($w | tonumber) >= (($r | tonumber) + ($s | tonumber))' >/dev/null 2>&1; then
+    pick=$week_reset
+  else
+    pick=$session_reset
+  fi
+  printf '%s\n' "${pick:-unknown}"
+}
+
+# floor_wake_due <entry> <now> <readd> <share>
+# True when a seat whose quota cannot be read because its token lapsed may come
+# back PROVISIONALLY: the reset of the window that rested it has passed by more
+# than the skew margin, and, when that window was the session, the week it last
+# read could still absorb a whole session. A seat rested for its WEEK therefore
+# stays down until its weekly reset, whatever its session does, which is exactly
+# the constraint a lapsed seat must not be allowed to slip.
+floor_wake_due() {
+  local entry=$1 now=$2 readd=$3 share=$4 window resets since window_seconds week due
+  IFS=$'\t' read -r window resets since window_seconds week < <(
+    printf '%s\n' "$entry" | jq -r '
+      (.limitingWindow // "") as $w |
+      [ $w,
+        (.windows[$w].resetsAt // ""),
+        ((.since // 0) | tostring),
+        ((.windows[$w].windowSeconds // "") | tostring),
+        ((.windows["seven_day"].remaining // "") | tostring) ] | @tsv' 2>/dev/null)
+  [ -n "$window" ] || return 1
+  if [ -n "$resets" ] && due=$(fm_seat_iso_to_epoch "$resets"); then
+    :
+  else
+    # An idle window can carry no reset time at all, so fall back to the rest
+    # time plus the window's own length rather than guessing a reset happened.
+    case "$window_seconds" in ''|*[!0-9]*) return 1 ;; esac
+    due=$((since + window_seconds))
+  fi
+  [ "$now" -ge $((due + FM_SEAT_RESET_MARGIN)) ] || return 1
+  [ "$window" != "$FM_SEAT_SESSION_WINDOW" ] || {
+    [ -n "$week" ] || return 1
+    jq -en --arg w "$week" --arg r "$readd" --arg s "$share" \
+      '($w | tonumber) >= (($r | tonumber) + ($s | tonumber))' >/dev/null 2>&1 || return 1
+  }
+  return 0
+}
+
+# auto_floor
+# The floor half of one automatic pass. It runs BEFORE the switch trigger, so a
+# switch in this same pass can never land on a seat the pass just rested, and it
+# prints one line per seat that rested or woke and nothing at all otherwise.
+#
+# An unreadable reading never rests and never wakes a seat, in either direction:
+# the previous state stands and only the record's own unreadable mark moves,
+# which is the same rule the extra-usage warning applies.
+auto_floor() {
+  local floor readd dwell now record before name dir entry resting out remaining
+  local rows session week session_reset week_reset account share expected limiting
+  local new_entry changed=0
+  floor=$(fm_seat_floor) || return 0
+  readd=$(fm_seat_floor_readd) || return 0
+  dwell=$(fm_seat_floor_dwell)
+  now=$(date +%s)
+  record=$(fm_seat_resting_record)
+  before=$record
+  while IFS= read -r name; do
+    [ -n "$name" ] || continue
+    # A seat held out by hand can never be an automatic destination, so reading
+    # it would spend a quota call on a question no path acts on. The manual
+    # exclusion also takes precedence: the floor never writes that file, and a
+    # seat that is both is reported as held out.
+    ! fm_seat_auto_excluded "$name" || continue
+    dir=$(fm_seat_config_dir "$name")
+    resting=0
+    entry=''
+    if entry=$(fm_seat_resting_entry "$name"); then
+      resting=1
+    else
+      entry=''
+    fi
+    if ! out=$(fm_seat_quota_json "$dir"); then
+      [ "$resting" -eq 1 ] || continue
+      record=$(floor_mark_unreadable "$record" "$name" "$now")
+      continue
+    fi
+    if ! remaining=$(fm_seat_remaining_from "$out"); then
+      [ "$resting" -eq 1 ] || continue
+      share=$(fm_seat_session_share_value "$(printf '%s\n' "$entry" | jq -r '.account // ""')" | cut -f1)
+      if fm_seat_login_renewable_from "$out" && floor_wake_due "$entry" "$now" "$readd" "$share"; then
+        record=$(printf '%s\n' "$record" | jq -c --arg n "$name" 'del(.seats[$n])')
+        changed=1
+        printf 'claude-seat: %s comes back into automatic rotation provisionally - it rested below the %s%% floor, its access token lapsed while it rested, and the reset it was waiting for has passed, so the next worker launched there is what reads its quota again\n' \
+          "$name" "$floor"
+        continue
+      fi
+      record=$(floor_mark_unreadable "$record" "$name" "$now")
+      continue
+    fi
+    rows=$(fm_seat_windows_from "$out") || rows=''
+    session=$(fm_seat_window_field "$rows" "$FM_SEAT_SESSION_WINDOW" 2) || session=''
+    week=$(fm_seat_window_field "$rows" "$FM_SEAT_WEEK_WINDOW" 2) || week=''
+    session_reset=$(fm_seat_window_field "$rows" "$FM_SEAT_SESSION_WINDOW" 3) || session_reset=''
+    week_reset=$(fm_seat_window_field "$rows" "$FM_SEAT_WEEK_WINDOW" 3) || week_reset=''
+    account=$(fm_seat_account "$dir" 2>/dev/null) || account=''
+    [ -z "$account" ] || [ -z "$session" ] || [ -z "$week" ] ||
+      fm_seat_session_share_observe "$account" "$session" "$session_reset" "$week" "$week_reset"
+    share=$(fm_seat_session_share_value "$account" | cut -f1)
+    if [ "$resting" -eq 0 ]; then
+      jq -en --arg r "$remaining" --arg f "$floor" \
+        '($r | tonumber) <= ($f | tonumber)' >/dev/null 2>&1 || continue
+      limiting=$(fm_seat_limiting_window_from "$out") || limiting=''
+      expected=$(floor_expected_back "$limiting" "$session_reset" "$week_reset" "$week" "$readd" "$share")
+      new_entry=$(floor_entry "$account" "$limiting" "$expected" "$now" "$rows")
+      record=$(printf '%s\n' "$record" | jq -c --arg n "$name" --argjson e "$new_entry" '.seats[$n] = $e')
+      changed=1
+      printf 'claude-seat: %s is resting - %s%% left is at or below the %s%% floor, so automatic switches skip it until it recovers (expected back %s; fm-seat.sh switch %s still reaches it)\n' \
+        "$name" "$remaining" "$floor" "$expected" "$name"
+      continue
+    fi
+    if floor_may_wake "$entry" "$session" "$week" "$readd" "$share" "$dwell" "$now"; then
+      record=$(printf '%s\n' "$record" | jq -c --arg n "$name" 'del(.seats[$n])')
+      changed=1
+      printf 'claude-seat: %s comes back into automatic rotation - %s%% left on its session and %s%% on its week, both above the %s%% re-add level, with room for a whole session\n' \
+        "$name" "$session" "$week" "$readd"
+      continue
+    fi
+    limiting=$(fm_seat_limiting_window_from "$out") || limiting=''
+    expected=$(floor_expected_back "$limiting" "$session_reset" "$week_reset" "$week" "$readd" "$share")
+    new_entry=$(floor_entry "$account" "$limiting" "$expected" \
+      "$(printf '%s\n' "$entry" | jq -r '.since // 0')" "$rows")
+    record=$(printf '%s\n' "$record" | jq -c --arg n "$name" --argjson e "$new_entry" '
+      if (.seats[$n] | del(.lastRead)) == ($e | del(.lastRead)) then . else .seats[$n] = $e end')
+  done < <(fm_seat_list)
+  # A record that did not move is not rewritten and nothing is pushed, so a
+  # steady fleet costs one quota read per seat and no config churn at all.
+  [ "$(printf '%s\n' "$record" | jq -Sc .)" != "$(printf '%s\n' "$before" | jq -Sc .)" ] || return 0
+  record=$(printf '%s\n' "$record" | jq -c --argjson now "$now" '.schemaVersion = 1 | .updatedAt = $now')
+  if ! fm_seat_resting_write "$record"; then
+    printf 'warning: a Claude seat crossed the quota floor but the resting record could not be written, so automatic switches may still land on it\n' >&2
+    return 0
+  fi
+  # Only a change to WHICH seats are resting has to reach the secondmate homes:
+  # that is the half their own rotation reads. A refreshed figure is display.
+  [ "$changed" -eq 1 ] || return 0
+  propagate_to_secondmates >/dev/null
+}
+
+# floor_entry <account> <limiting-window> <expected-back> <since> <windows-rows>
+# One seat's resting record entry, built from the reading that produced it.
+floor_entry() {
+  local account=$1 limiting=$2 expected=$3 since=$4 rows=$5
+  printf '%s' "$rows" | jq -cRs --arg a "$account" --arg l "$limiting" \
+    --arg e "$expected" --argjson s "${since:-0}" --argjson now "$(date +%s)" '
+    (split("\n") | map(select(length > 0) | split("\t"))
+     | map({ key: .[0],
+             value: { remaining: (if .[1] == "" then null else (.[1] | tonumber) end),
+                      resetsAt: (if .[2] == "" then null else .[2] end),
+                      windowSeconds: (if .[3] == "" then null else (.[3] | tonumber) end) } })
+     | from_entries) as $w |
+    { since: $s, account: (if $a == "" then null else $a end),
+      limitingWindow: (if $l == "" then null else $l end),
+      provisional: false, expectedBack: $e,
+      lastRead: $now, unreadableSince: null, windows: $w }'
+}
+
+# floor_mark_unreadable <record> <name> <now>
+# Stamp that a resting seat's quota could not be read, changing nothing else.
+# The mark is for display: an unreadable reading never wakes a seat and never
+# rests one, so the state it describes is unchanged by definition.
+floor_mark_unreadable() {
+  printf '%s\n' "$1" | jq -c --arg n "$2" --argjson now "$3" '
+    if (.seats[$n] // null) == null then .
+    elif (.seats[$n].unreadableSince // null) != null then .
+    else .seats[$n].unreadableSince = $now end'
+}
+
+# floor_may_wake <entry> <session-left> <week-left> <readd> <share> <dwell> <now>
+# The whole wake test, on a fresh reading: both windows back above the re-add
+# level, the week able to absorb one more whole session on top of it, and the
+# minimum rest elapsed. The middle condition is the one that stops a session
+# reset from returning a seat whose remaining week a full session would overrun.
+floor_may_wake() {
+  local entry=$1 session=$2 week=$3 readd=$4 share=$5 dwell=$6 now=$7 since
+  [ -n "$session" ] && [ -n "$week" ] || return 1
+  since=$(printf '%s\n' "$entry" | jq -r '.since // 0')
+  case "$since" in ''|*[!0-9]*) since=0 ;; esac
+  [ $((now - since)) -ge "$dwell" ] || return 1
+  jq -en --arg s "$session" --arg w "$week" --arg r "$readd" --arg h "$share" '
+    ($s | tonumber) >= ($r | tonumber)
+    and ($w | tonumber) >= ($r | tonumber)
+    and ($w | tonumber) >= (($r | tonumber) + ($h | tonumber))' >/dev/null 2>&1
+}
+
 # --- arm / retire ------------------------------------------------------------
 # The watch is a registered check shim rather than the one-shot condition-action
 # primitive bin/fm-procevent-when.sh provides, because that primitive fires at
@@ -1067,22 +1527,38 @@ FM_CHECK_SHIM_ID=claude-seat
 FM_CHECK_SHIM_LABEL=fm-seat
 
 cmd_arm() {
-  local threshold
+  local threshold floor resting_count
   # Clear any older one-shot registration first, so a home upgrading from it
   # ends with one watch rather than two firing on the same crossing.
   if "$SCRIPT_DIR/fm-procevent-when.sh" source-id claude-seat >/dev/null 2>&1; then
     "$SCRIPT_DIR/fm-procevent-when.sh" retire claude-seat >/dev/null 2>&1 || true
   fi
-  threshold=$(fm_seat_threshold) ||
-    die "no auto-switch threshold configured; set one with 'fm-seat.sh threshold <percent-left>' first"
+  threshold=$(fm_seat_threshold) || threshold=''
+  floor=$(fm_seat_floor) || floor=''
+  [ -n "$threshold" ] || [ -n "$floor" ] ||
+    die "no auto-switch threshold or quota floor configured; set one with 'fm-seat.sh threshold <percent-left>' or 'fm-seat.sh floor <percent-left>' first"
   # stdout only is discarded: each candidate's own skip reason belongs on
   # stderr beside the refusal, the same way every other rotation refusal reads,
   # so arming after an exclusion says which seats were withheld.
-  next_seat >/dev/null ||
-    die "no seat under the seats root qualifies as a destination right now, so an automatic switch would have nowhere to go (each skipped seat and its reason is printed above); add and log into a second seat, put an excluded seat back with 'fm-seat.sh auto-include <name>', or lower 'fm-seat.sh destination-min' (docs/claude-seats.md). The default profile is never a rotation target"
+  if ! next_seat >/dev/null; then
+    # Every candidate merely RESTING is a warning rather than the refusal: the
+    # floor itself is what empties the candidate list, the watch is what refills
+    # it, and refusing to arm would leave nothing running to do that.
+    resting_count=$(fm_seat_resting_record | jq -r '(.seats // {}) | length' 2>/dev/null) || resting_count=0
+    case "$resting_count" in ''|*[!0-9]*) resting_count=0 ;; esac
+    [ "$resting_count" -gt 0 ] ||
+      die "no seat under the seats root qualifies as a destination right now, so an automatic switch would have nowhere to go (each skipped seat and its reason is printed above); add and log into a second seat, put an excluded seat back with 'fm-seat.sh auto-include <name>', or lower 'fm-seat.sh destination-min' (docs/claude-seats.md). The default profile is never a rotation target"
+    printf 'warning: every candidate seat is resting below the quota floor right now, so a switch would have nowhere to go until one of them recovers; the watch is what brings them back\n' >&2
+  fi
   fm_check_shim_arm "$FM_HOME" "$SCRIPT_DIR/fm-seat.sh" auto || exit 1
-  printf 'armed: automatic switch at %s%% left on the active seat\n' "$threshold"
-  printf 'keeps watching after each switch; one crossing fires at most once per seat\n'
+  if [ -n "$threshold" ]; then
+    printf 'armed: automatic switch at %s%% left on the active seat\n' "$threshold"
+    printf 'keeps watching after each switch; one crossing fires at most once per seat\n'
+  else
+    printf 'armed: the quota floor only - no auto-switch threshold is set, so nothing switches on its own\n'
+  fi
+  [ -z "$floor" ] ||
+    printf 'rests a seat at or below %s%% left and brings it back when a reading proves it recovered\n' "$floor"
 }
 
 cmd_retire() {
@@ -1108,6 +1584,11 @@ case "${1-}" in
   extra-usage)       shift; cmd_extra_usage "${1-}" "${2-}" ;;
   auto-exclude)      shift; cmd_auto_exclude "${1-}" ;;
   auto-include)      shift; cmd_auto_include "${1-}" ;;
+  floor)             shift; cmd_floor "${1-}" ;;
+  floor-readd)       shift; cmd_floor_readd "${1-}" ;;
+  floor-dwell)       shift; cmd_floor_dwell "${1-}" ;;
+  session-share)     shift; cmd_session_share "${1-}" ;;
+  resting)           shift; cmd_resting "${1-}" "${2-}" ;;
   lead-restart)      shift; cmd_lead_restart "$@" ;;
   threshold-reached) shift; cmd_threshold_reached ;;
   auto)              shift; cmd_auto ;;

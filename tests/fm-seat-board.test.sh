@@ -554,6 +554,88 @@ test_stopping_serve_leaves_nothing_listening_on_its_port() {
   pass "stopping serve leaves nothing listening on its port"
 }
 
+# rest_seat_on_board <home> <seat> <limiting-window> <remaining> <expected-back>
+# The resting record the seat watch writes, as this home's config. The board
+# never writes it; it only reports it, so a case states it the way the watch
+# would have left it.
+rest_seat_on_board() {
+  local home=$1 name=$2 window=$3 remaining=$4 expected=$5
+  jq -n --arg n "$name" --arg w "$window" --argjson r "$remaining" --arg e "$expected" '
+    { schemaVersion: 1, updatedAt: 1791417600,
+      seats: { ($n): { since: 1791410000, account: "someone@example.test",
+                       limitingWindow: $w, provisional: false, expectedBack: $e,
+                       lastRead: 1791417600, unreadableSince: null,
+                       windows: { ($w): { remaining: $r, resetsAt: $e,
+                                          windowSeconds: 604800 } } } } }' \
+    > "$home/config/claude-seat-resting"
+}
+
+test_json_tells_a_hand_held_seat_from_a_resting_one_and_reports_the_floor() {
+  local rec out
+  rec=$(make_board_case json-resting)
+  read_board_case "$rec"
+  mkdir -p "$SEATS_DIR/alpha" "$SEATS_DIR/bravo" "$SEATS_DIR/charlie"
+  printf '%s\n%s\n%s\n' "$SEATS_DIR/alpha" "$SEATS_DIR/bravo" "$SEATS_DIR/charlie" > "$SPEC_DIR/oauth"
+  printf 'alpha\n' > "$HOME_DIR/config/claude-seat"
+  printf 'bravo\n' > "$HOME_DIR/config/claude-seat-auto-exclude"
+  printf '5\n' > "$HOME_DIR/config/claude-seat-floor"
+  rest_seat_on_board "$HOME_DIR" charlie seven_day 2 2026-10-09T11:00:00Z
+
+  out=$(run_board "$HOME_DIR" "$FAKEBIN" "$CASE_DIR/cache" json)
+  printf '%s' "$out" | jq -e 'any(.seats[]; .name == "charlie" and .autoExcluded == true)' >/dev/null ||
+    fail "a resting seat must read as one an automatic switch may not land on (got: $out)"
+  printf '%s' "$out" | jq -e 'any(.seats[]; .name == "charlie"
+      and .exclusion.manual == false and .exclusion.resting.limitingWindow == "seven_day"
+      and .exclusion.resting.remaining == 2
+      and .exclusion.resting.expectedBack == "2026-10-09T11:00:00Z"
+      and .exclusion.resting.provisional == false)' >/dev/null ||
+    fail "the resting detail must say which window holds the seat down and when it is back (got: $out)"
+  printf '%s' "$out" | jq -e 'any(.seats[]; .name == "bravo"
+      and .exclusion.manual == true and .exclusion.resting == null)' >/dev/null ||
+    fail "a seat held out by hand must never read as one the floor rested (got: $out)"
+  printf '%s' "$out" | jq -e 'any(.seats[]; .name == "alpha"
+      and .autoExcluded == false and .exclusion.manual == false and .exclusion.resting == null)' >/dev/null ||
+    fail "a seat in rotation must be marked as neither (got: $out)"
+  printf '%s' "$out" | jq -e '.floor.removeAt == 5 and .floor.readdAt == 15
+      and .floor.dwellSeconds == 600 and .floor.sessionShare.source == "assumed"' >/dev/null ||
+    fail "json must report the floor's own settings and the session share in force (got: $out)"
+  pass "json tells a seat held out by hand from one the quota floor rested, and reports the floor itself"
+}
+
+test_json_reports_no_floor_when_none_is_configured() {
+  local rec out
+  rec=$(make_board_case json-no-floor)
+  read_board_case "$rec"
+  mkdir -p "$SEATS_DIR/alpha"
+  printf '%s\n' "$SEATS_DIR/alpha" > "$SPEC_DIR/oauth"
+
+  out=$(run_board "$HOME_DIR" "$FAKEBIN" "$CASE_DIR/cache" json)
+  printf '%s' "$out" | jq -e '.floor == null' >/dev/null ||
+    fail "an unconfigured floor must read as null rather than as a set of zeros (got: $out)"
+  printf '%s' "$out" | jq -e 'all(.seats[]; .exclusion.resting == null)' >/dev/null ||
+    fail "no seat may read as resting while no floor is configured (got: $out)"
+  pass "json reports no floor at all when none is configured"
+}
+
+test_render_shows_a_resting_seat_its_reason_and_the_floor_settings() {
+  local rec out
+  rec=$(make_board_case render-resting)
+  read_board_case "$rec"
+  mkdir -p "$SEATS_DIR/alpha" "$SEATS_DIR/bravo"
+  printf '%s\n%s\n' "$SEATS_DIR/alpha" "$SEATS_DIR/bravo" > "$SPEC_DIR/oauth"
+  printf 'alpha\n' > "$HOME_DIR/config/claude-seat"
+  printf '5\n' > "$HOME_DIR/config/claude-seat-floor"
+  rest_seat_on_board "$HOME_DIR" bravo seven_day 2 2026-10-09T11:00:00Z
+
+  out=$(run_board "$HOME_DIR" "$FAKEBIN" "$CASE_DIR/cache")
+  expect_grep 'resting: seven_day 2% left' "$out" "the page must say which window is holding the seat down"
+  expect_grep 'expected back 2026-10-09T11:00:00Z' "$out" "the page must say when the seat is due back"
+  expect_grep 'in rotation' "$out" "a seat an automatic switch may land on must say so"
+  expect_grep 'quota floor: rest at or below 5% left' "$out" "the page must print the floor in force"
+  expect_grep 'of a week, assumed' "$out" "the page must say whether the session share was measured"
+  pass "render shows a resting seat with its reason and the floor settings it was judged against"
+}
+
 test_json_rejects_an_unknown_flag() {
   local rc
   "$BOARD" json --fresh >/dev/null 2>&1
@@ -577,6 +659,9 @@ test_json_reports_a_seat_with_no_report_as_absent_rather_than_zero
 test_json_cached_only_never_reads_quota_axi
 test_json_cached_only_serves_an_expired_cache_with_its_real_age
 test_json_rejects_an_unknown_flag
+test_json_tells_a_hand_held_seat_from_a_resting_one_and_reports_the_floor
+test_json_reports_no_floor_when_none_is_configured
+test_render_shows_a_resting_seat_its_reason_and_the_floor_settings
 test_serve_answers_a_loopback_host_and_refuses_a_rebinding_one
 test_serve_serves_the_board_only_under_the_path_token_it_printed
 test_stopping_serve_leaves_nothing_listening_on_its_port
