@@ -99,7 +99,10 @@ test_no_mistakes_done_without_a_pr_is_refused() {
   for line in \
     'done: implementation complete' \
     'done [key=fix]: committed on fm/nopr, ready for /no-mistakes' \
-    'done: pushed branch, no PR yet'; do
+    'done: pushed branch, no PR yet' \
+    'done: PR checks green' \
+    'done: pipeline finished, PR step skipped, checks green' \
+    'done: PR change published for review'; do
     rc=0
     reason=$(accept_done ship no-mistakes "$wt" "$repo" "$line") || rc=$?
     [ "$rc" -eq 1 ] || fail "no-mistakes done: with no PR was accepted: $line"
