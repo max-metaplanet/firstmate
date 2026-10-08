@@ -608,18 +608,19 @@ cmd_switch() {
   propagate_to_secondmates
 }
 
-# propagate_to_secondmates
+# propagate_to_secondmates [what-changed] [what-stale-homes-keep-doing]
 # Carry the switch to this machine's live secondmate homes through the one
 # existing convergence, bin/fm-config-push.sh, which reports every home as
 # updated, unchanged, skipped, or failed. Remote routes never receive seat
 # settings (bin/fm-config-inherit-lib.sh). A failed push never undoes the
 # primary's switch; it is reported, and the push can be re-run on its own.
 propagate_to_secondmates() {
+  local what=${1:-'seat switched'} stale=${2:-'keep spawning on their previous seat'}
   if FM_HOME="$FM_HOME" FM_ROOT_OVERRIDE="$FM_ROOT" FM_STATE_OVERRIDE="$STATE" \
     FM_CONFIG_OVERRIDE="$CONFIG" "$SCRIPT_DIR/fm-config-push.sh" --local-only; then
     return 0
   fi
-  printf 'warning: seat switched here, but not every secondmate home was updated (see above); those homes keep spawning on their previous seat until bin/fm-config-push.sh --local-only succeeds\n' >&2
+  printf 'warning: %s here, but not every secondmate home was updated (see above); those homes %s until bin/fm-config-push.sh --local-only succeeds\n' "$what" "$stale" >&2
 }
 
 cmd_add() {
@@ -1167,7 +1168,7 @@ cmd_floor() {
     [ -f "$CONFIG/claude-seat-resting" ] || return 0
     rm -f "$CONFIG/claude-seat-resting" || die "could not clear the resting record"
     printf 'every seat the floor was resting is back in automatic rotation\n'
-    propagate_to_secondmates
+    propagate_to_secondmates 'quota floor cleared' 'keep skipping the seats it was resting'
     return 0
   fi
   readd=$(fm_seat_floor_readd) || return 0
@@ -1341,7 +1342,7 @@ cmd_resting() {
   fm_seat_resting_write "$record" || die "could not update the resting record"
   printf 'back in automatic rotation: %s\n' "$name"
   printf 'the next automatic pass reads it again and rests it again if it is still at or below the floor\n'
-  propagate_to_secondmates
+  propagate_to_secondmates "$name woken" "keep skipping it"
 }
 
 # floor_expected_back <limiting-window> <session-resets> <week-resets> <week-left> <readd> <share>
@@ -1462,16 +1463,9 @@ auto_floor() {
     [ -z "$account" ] || [ -z "$session" ] || [ -z "$week" ] ||
       fm_seat_session_share_observe "$account" "$session" "$session_reset" "$week" "$week_reset"
     share=$(fm_seat_session_share_value "$account" | cut -f1)
-    # A seat back provisionally is settled by its first readable reading: it
-    # rests again on real figures, or its entry is cleared.
-    if [ "$resting" -eq 0 ] || [ "$provisional" -eq 1 ]; then
-      if ! jq -en --arg r "$remaining" --arg f "$floor" \
-        '($r | tonumber) <= ($f | tonumber)' >/dev/null 2>&1; then
-        [ "$provisional" -eq 1 ] || continue
-        record=$(printf '%s\n' "$record" | jq -c --arg n "$name" 'del(.seats[$n])')
-        changed=1
-        continue
-      fi
+    if [ "$resting" -eq 0 ]; then
+      jq -en --arg r "$remaining" --arg f "$floor" \
+        '($r | tonumber) <= ($f | tonumber)' >/dev/null 2>&1 || continue
       limiting=$(fm_seat_limiting_window_from "$out") || limiting=''
       expected=$(floor_expected_back "$limiting" "$session_reset" "$week_reset" "$week" "$readd" "$share")
       new_entry=$(floor_entry "$account" "$limiting" "$expected" "$now" "$rows")
@@ -1481,6 +1475,8 @@ auto_floor() {
         "$name" "$remaining" "$floor" "$expected" "$name"
       continue
     fi
+    # A seat back provisionally faces the same wake test on its first readable
+    # reading: passing clears its entry, failing rests it again on real figures.
     if floor_may_wake "$entry" "$session" "$week" "$readd" "$share" "$dwell" "$now"; then
       record=$(printf '%s\n' "$record" | jq -c --arg n "$name" 'del(.seats[$n])')
       changed=1
@@ -1494,6 +1490,10 @@ auto_floor() {
       "$(printf '%s\n' "$entry" | jq -r '.since // 0')" "$rows")
     record=$(printf '%s\n' "$record" | jq -c --arg n "$name" --argjson e "$new_entry" '
       if (.seats[$n] | del(.lastRead)) == ($e | del(.lastRead)) then . else .seats[$n] = $e end')
+    [ "$provisional" -eq 1 ] || continue
+    changed=1
+    printf 'claude-seat: %s is resting again - read again after coming back provisionally, it has %s%% left on its session and %s%% on its week, short of the %s%% re-add level with room for a whole session (expected back %s)\n' \
+      "$name" "$session" "$week" "$readd" "$expected"
   done < <(fm_seat_list)
   # A record that did not move is not rewritten and nothing is pushed, so a
   # steady fleet costs one quota read per seat and no config churn at all.
@@ -1517,7 +1517,7 @@ auto_floor() {
   # Only a change to WHICH seats are resting has to reach the secondmate homes:
   # that is the half their own rotation reads. A refreshed figure is display.
   [ "$changed" -eq 1 ] || return 0
-  propagate_to_secondmates >/dev/null
+  propagate_to_secondmates 'resting record updated' 'keep their previous resting record' >/dev/null
 }
 
 # floor_entry <account> <limiting-window> <expected-back> <since> <windows-rows>

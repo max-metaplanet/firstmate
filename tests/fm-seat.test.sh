@@ -2646,6 +2646,82 @@ test_the_first_readable_reading_settles_a_provisional_seat() {
   pass "the first readable reading either rests a provisional seat again or clears its entry"
 }
 
+test_a_provisional_seat_whose_week_cannot_absorb_a_session_stays_resting() {
+  local out
+  floor_case floor-provisional-short-week
+  run_seat "$HOME_DIR" "$FAKEBIN" floor-dwell 0 >/dev/null
+  # Rested on its session while its week still read 40%, so the passed session
+  # reset is enough to bring it back provisionally once its token lapses.
+  seat_windows_clear "$SPEC_DIR"
+  seat_windows "$SPEC_DIR" "$SEATS_DIR/alpha" 80 2026-10-08T02:40:00Z 60 2026-10-14T21:00:00Z
+  seat_windows "$SPEC_DIR" "$SEATS_DIR/beta" 2 2020-01-01T00:00:00Z 40 2099-01-02T00:00:00Z
+  run_seat "$HOME_DIR" "$FAKEBIN" auto >/dev/null
+  seat_expired_refreshable "$SPEC_DIR" "$SEATS_DIR/beta"
+  run_seat "$HOME_DIR" "$FAKEBIN" auto >/dev/null
+  [ "$(jq -r '.seats.beta.provisional' "$HOME_DIR/config/claude-seat-resting")" = true ] ||
+    fail "precondition: beta must be back provisionally"
+
+  # Its week drained to 10% elsewhere: a fresh session is above the floor, but
+  # the week cannot absorb a whole 20% session on top of the 15% re-add level.
+  rm -f "$SPEC_DIR/expired_refreshable"
+  seat_windows_clear "$SPEC_DIR"
+  seat_windows "$SPEC_DIR" "$SEATS_DIR/alpha" 80 2026-10-08T02:40:00Z 60 2026-10-14T21:00:00Z
+  seat_windows "$SPEC_DIR" "$SEATS_DIR/beta" 100 2099-01-01T00:00:00Z 10 2099-01-02T00:00:00Z
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" auto)
+  assert_contains "$out" "beta is resting again" "a provisional seat that fails the wake test must rest again: $out"
+  [ "$(jq -r '.seats.beta.provisional' "$HOME_DIR/config/claude-seat-resting")" = false ] ||
+    fail "a provisional seat rested again must no longer be provisional"
+  [ "$(jq -r '.seats.beta.windows.seven_day.remaining' "$HOME_DIR/config/claude-seat-resting")" = 10 ] ||
+    fail "the record must carry the fresh figures: $(cat "$HOME_DIR/config/claude-seat-resting")"
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" switch --next)
+  expect_code 1 "$?" "a seat whose week cannot absorb a session must stay out of rotation: $out"
+  pass "a provisional seat is settled by the full wake test, not by clearing the floor alone"
+}
+
+test_a_week_reset_inside_a_session_yields_no_share_sample() {
+  local out
+  floor_case floor-share-week-reset
+  seat_windows_clear "$SPEC_DIR"
+  seat_windows "$SPEC_DIR" "$SEATS_DIR/alpha" 100 2026-10-08T02:40:00Z 97 2026-10-08T01:00:00Z
+  run_seat "$HOME_DIR" "$FAKEBIN" auto >/dev/null
+  # The week resets while the same session is still open.
+  seat_windows_clear "$SPEC_DIR"
+  seat_windows "$SPEC_DIR" "$SEATS_DIR/alpha" 70 2026-10-08T02:40:00Z 100 2026-10-15T01:00:00Z
+  run_seat "$HOME_DIR" "$FAKEBIN" auto >/dev/null
+  seat_windows_clear "$SPEC_DIR"
+  seat_windows "$SPEC_DIR" "$SEATS_DIR/alpha" 60 2026-10-08T02:40:00Z 90 2026-10-15T01:00:00Z
+  run_seat "$HOME_DIR" "$FAKEBIN" auto >/dev/null
+  seat_windows_clear "$SPEC_DIR"
+  seat_windows "$SPEC_DIR" "$SEATS_DIR/alpha" 100 2026-10-08T07:40:00Z 90 2026-10-15T01:00:00Z
+  run_seat "$HOME_DIR" "$FAKEBIN" auto >/dev/null
+
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" session-share)
+  case "$out" in
+    *"1 sample(s)"*) fail "a session the week reset inside must not produce a share sample: $out" ;;
+  esac
+  pass "a week reset inside an open session restarts its measurement rather than understating the share"
+}
+
+test_a_failed_push_after_a_hand_wake_does_not_claim_a_seat_switched() {
+  local out sm
+  if [ "$(id -u)" = 0 ]; then
+    printf '# skip - an unwritable secondmate config requires a non-root user\n'
+    return
+  fi
+  floor_case floor-wake-push-fails
+  sm=$(add_local_secondmate "$HOME_DIR" "$FAKEBIN" smwakefail)
+  TMUX='' rest_beta >/dev/null
+  chmod 500 "$sm/config"
+  out=$(TMUX='' run_seat "$HOME_DIR" "$FAKEBIN" resting wake beta)
+  chmod 700 "$sm/config"
+  assert_contains "$out" "not every secondmate home was updated" "a failed push must be reported"
+  assert_contains "$out" "beta woken here" "the warning must name what actually changed: $out"
+  case "$out" in
+    *"seat switched"*) fail "a hand wake switched nothing and must not say so: $out" ;;
+  esac
+  pass "a failed push after a hand wake reports the wake, not a seat switch"
+}
+
 test_clearing_the_floor_wakes_every_resting_seat_here_and_in_secondmates() {
   local out sm
   floor_case floor-off-wakes
@@ -3031,6 +3107,9 @@ test_an_unreadable_reading_never_rests_a_seat_and_never_wakes_one
 test_a_lapsed_seat_comes_back_provisionally_only_once_its_recorded_reset_has_passed
 test_a_provisional_seat_is_a_candidate_and_is_shown_as_provisionally_back
 test_the_first_readable_reading_settles_a_provisional_seat
+test_a_provisional_seat_whose_week_cannot_absorb_a_session_stays_resting
+test_a_week_reset_inside_a_session_yields_no_share_sample
+test_a_failed_push_after_a_hand_wake_does_not_claim_a_seat_switched
 test_clearing_the_floor_wakes_every_resting_seat_here_and_in_secondmates
 test_a_resting_record_withholds_nothing_while_no_floor_is_configured
 test_a_readd_level_at_or_below_the_floor_is_refused_and_ignored

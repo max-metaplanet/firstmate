@@ -952,8 +952,9 @@ fm_seat_session_share_value() {
 # Record one reading toward the measurement. A sample is produced only when the
 # session window has ROLLED while the week's has not, and only when the closed
 # window spent at least 20 points, so integer rounding can move the result by at
-# most about five points. Reset detection is by the reading itself, never by a
-# clock. Silent and best-effort: a home with no state directory simply never
+# most about five points. A week that resets inside an open session restarts
+# that session's measurement, since its week figures no longer share a baseline.
+# Reset detection is by the reading itself, never by a clock. Silent and best-effort: a home with no state directory simply never
 # measures.
 fm_seat_session_share_observe() {
   local account=${1-} s_left=${2-} s_reset=${3-} w_left=${4-} w_reset=${5-} path doc tmp
@@ -983,9 +984,10 @@ fm_seat_session_share_observe() {
         open: $fresh,
         samples: ((($cur.samples // []) + (if $sample >= 1 then [$sample] else [] end)) | .[-5:]),
         updatedAt: $now}
+    elif $open.weekResetsAt != $wr then
+      .accounts[$a] = ($cur | .open = $fresh | .updatedAt = $now)
     else
       .accounts[$a] = ($cur
-        | .open.weekResetsAt = $wr
         | .open.lastSessionUsed = $su
         | .open.lastWeekUsed = $wu
         | .updatedAt = $now)
