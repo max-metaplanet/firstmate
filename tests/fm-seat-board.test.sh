@@ -115,6 +115,8 @@ test_render_shows_the_default_seat_and_marks_it_active() {
   out=$(run_board "$HOME_DIR" "$FAKEBIN" "$CASE_DIR/cache")
   expect_grep 'default@example.test' "$out" "the default seat's account email must appear"
   expect_grep 'active for new workers' "$out" "the default seat is active for new workers when no seat is configured"
+  expect_grep 'pipeline seat for next managed launch: default' "$out" "the page must name the pipeline selection"
+  expect_grep 'no installation receipt' "$out" "an unmanaged installation must never be implied to be verified"
   pass "render shows the default seat and marks it active"
 }
 
