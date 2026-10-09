@@ -94,6 +94,8 @@ STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 . "$SCRIPT_DIR/fm-secondmate-nudge-lib.sh"
 # shellcheck source=bin/fm-pending-reply-lib.sh
 . "$SCRIPT_DIR/fm-pending-reply-lib.sh"
+# shellcheck source=bin/fm-secondmate-registry-lib.sh
+. "$SCRIPT_DIR/fm-secondmate-registry-lib.sh"
 
 PERSIST_WAIT=${FM_SECONDMATE_PERSIST_WAIT:-900}
 PERSIST_POLL=${FM_SECONDMATE_PERSIST_POLL:-5}
@@ -106,8 +108,13 @@ for arg in "$@"; do
     -*) echo "error: unexpected argument '$arg'" >&2; usage >&2; exit 2 ;;
   esac
   # /updatefirstmate's action line names each mate by its fm-<id> selector; the
-  # bare id is equally acceptable so a hand-run stays natural.
-  id=${arg#fm-}
+  # bare id is equally acceptable so a hand-run stays natural. An exact
+  # registered id wins when the id itself starts with fm-.
+  if secondmate_registry_line_for_id "$FM_HOME/data/secondmates.md" "$arg"; then
+    id=$arg
+  else
+    id=${arg#fm-}
+  fi
   case "$id" in ''|*[!A-Za-z0-9._-]*) echo "error: invalid second mate id: $arg" >&2; exit 2 ;; esac
   case " ${IDS[*]:-} " in
     *" $id "*) continue ;;

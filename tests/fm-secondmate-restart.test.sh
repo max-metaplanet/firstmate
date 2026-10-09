@@ -877,6 +877,31 @@ test_already_current_unprovable_mate_stays_on_the_nudge_path() {
   pass "T16 an already-current mate with an unprovable runtime keeps the honest nudge path"
 }
 
+test_registered_id_precedes_selector_prefix() {
+  local dir id selector out rc
+  for selector in fm-self fm-fm-self sm1 fm-sm1; do
+    case "$selector" in fm-self|fm-fm-self) id=fm-self ;; *) id=sm1 ;; esac
+    dir=$(new_case "selector-$selector")
+    add_local_mate "$dir" "$id"
+    # Register both names so the bare fm-self must win over stripping to self.
+    printf '%s\n' \
+      "- fm-self - Prefixed mate (home: $dir/fm-self-home; scope: self; projects: none; added 2026-10-09)" \
+      "- self - Other mate (home: $dir/self-home; scope: other; projects: none; added 2026-10-09)" \
+      "- sm1 - Ordinary mate (home: $dir/sm1-home; scope: ordinary; projects: none; added 2026-10-09)" \
+      > "$dir/home/data/secondmates.md"
+    out=$(FM_TEST_PERSIST_WAIT=0 run_restart "$dir" "$selector"); rc=$?
+    expect_code 3 "$rc" "selector $selector must reach its mate and wait for persistence"$'\n'"$out"
+    assert_contains "$out" "nudged: $id:" "selector $selector must resolve to $id"
+    assert_contains "$out" "summary: 0 of 1 restarted, 1 nudged, 0 unreached" \
+      "selector $selector must deliver to exactly one known mate"
+    assert_present "$dir/home/state/$id.inbox/001.msg" \
+      "selector $selector must deliver the persist request to $id"
+    assert_absent "$dir/home/state/self.inbox" "the exact fm-self id must not select self"
+  done
+  pass "registered ids win before stripping one selector prefix"
+}
+
+test_registered_id_precedes_selector_prefix
 test_persist_gates_and_asks_only_for_open_records
 test_persist_precedes_restart
 test_claude_replacement_persists_transcripts
