@@ -343,8 +343,6 @@ cmd_status() {
     "pipeline seat for next managed launch: " + .seat
     + (if .override then " (NM_CLAUDE_CONFIG_DIR override)" else " (follows active seat)" end),
     (if .blockedReason == null then empty else "pipeline selection HELD: " + .blockedReason end),
-    (if .installation == null then "pipeline wrapper: no installation receipt; use pipeline-install / pipeline-check"
-     else "pipeline wrapper recorded at: " + .installation.path + " (pipeline-check verifies it; no-mistakes must use this binary)" end),
     (.liveAgents[] | "live pipeline agent: pid=" + (.pid | tostring) + " seat=" + .seat
       + (if .override then " (override)" else "" end))'
   # The lead's own seat is a separate fact from the active one: a switch moves

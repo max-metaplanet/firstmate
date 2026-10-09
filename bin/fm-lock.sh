@@ -254,6 +254,7 @@ publish_lock_runtime() {
   {
     printf 'pid=%s\n' "$pid"
     printf 'profile=%s\n' "${CLAUDE_CONFIG_DIR:-}"
+    printf 'ambient=%s\n' "${FM_AMBIENT_CLAUDE_CONFIG_DIR-${CLAUDE_CONFIG_DIR:-}}"
     if target=$(discover_supervisor_target) && backend=$(discover_supervisor_backend); then
       printf 'backend=%s\n' "$backend"
       printf 'target=%s\n' "$target"

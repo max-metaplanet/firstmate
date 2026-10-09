@@ -281,15 +281,16 @@ Each pipeline-agent launch re-reads the bound home's active seat, ignoring a wor
 A switch therefore moves subsequent pipeline agents immediately, without moving the worker that is driving the run.
 `NM_CLAUDE_CONFIG_DIR` still wins when it names an existing seat directory under that home's seats root, but cannot bypass a manual exclusion, resting record, or extra-usage hold.
 An unmanaged path or missing profile is refused rather than falling back to another account.
-The default active seat uses the ambient `~/.claude` login, never an inherited worker seat.
+The default active seat uses the profile a worker spawned at that moment would get: the lead's ambient profile, which the lead records beside its session lock at session start, never the launching worker's inherited seat.
+Until the lead has recorded it, a launch on the default seat is refused rather than guessed.
 Unlike a worker's deliberate manual seat selection, pipeline launches refuse an excluded or resting active seat too.
 The same extra-usage policy gates the selected profile, so `stop` refuses a launch when its plan quota is gone (or it is at the configured floor); no pipeline hold bypass is offered.
 A launch refusal names the seat and reason and starts no agent.
 
 The automatic switch trigger already counts pipeline-agent usage: it reads the account's quota windows, which include usage billed by workers, pipeline agents, and other clients on that account.
 No separate pipeline counter or switch trigger is needed.
-`status` and the seat board show the next managed pipeline seat, any selection hold, the installation receipt, and each live managed pipeline agent's own seat.
-The receipt identifies what this tooling installed; `pipeline-check` verifies the current wrapper, and neither proves that no-mistakes has been configured to use it.
+`status` and the seat board show the next managed pipeline seat, any selection hold, and each live managed pipeline agent's own seat.
+`pipeline-check` verifies the installed wrapper against the template; it does not prove that no-mistakes has been configured to use it.
 A daemon-level override is visible on its live agent records; a status or board process only knows its own override environment for the next-launch display.
 
 When the watch rests a seat with a managed pipeline agent already running, it warns once per resting entry and prints one command to move subsequent launches:
