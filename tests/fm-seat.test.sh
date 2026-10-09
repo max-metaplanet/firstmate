@@ -3012,6 +3012,218 @@ test_a_stop_policy_holds_dispatch_once_the_active_seat_is_at_the_floor() {
   pass "with a floor set, the stop policy holds new dispatch once the active seat is at or below it"
 }
 
+# Pipeline fixtures install only under the suite's scratch directory. No test
+# reads or writes the installed machine-local wrapper or a real Claude profile.
+install_pipeline_fixture() {
+  PIPELINE_WRAPPER="$CASE_DIR/wrapper dir/claude"
+  PIPELINE_NATIVE="$CASE_DIR/native claude"
+  cat > "$PIPELINE_NATIVE" <<'SH'
+#!/usr/bin/env bash
+printf 'profile=%s\n' "${CLAUDE_CONFIG_DIR:-}"
+printf 'arg=<%s>\n' "$@"
+[ -z "${PIPELINE_TEST_STDIN:-}" ] || cat
+if [ -n "${PIPELINE_TEST_READY:-}" ]; then
+  printf '%s\n' "$$" > "$PIPELINE_TEST_READY"
+  deadline=$((SECONDS + ${FM_TEST_STUB_MAX_BLOCK_SECONDS:-120}))
+  while [ ! -e "$PIPELINE_TEST_RELEASE" ] && [ "$SECONDS" -lt "$deadline" ]; do sleep 0.1; done
+  [ -e "$PIPELINE_TEST_RELEASE" ] || exit 124
+fi
+exit "${PIPELINE_TEST_EXIT:-0}"
+SH
+  chmod +x "$PIPELINE_NATIVE"
+  run_seat "$HOME_DIR" "$FAKEBIN" pipeline-install --claude "$PIPELINE_NATIVE" \
+    --destination "$PIPELINE_WRAPPER" >/dev/null || fail "fixture wrapper installation failed"
+}
+
+run_pipeline_fixture() {
+  # Path overrides and profile inherited from a worker must not redirect the
+  # wrapper's bound home. The explicit NM override remains independently set.
+  FM_HOME="$CASE_DIR/wrong-home" FM_CONFIG_OVERRIDE="$CASE_DIR/wrong-config" \
+    FM_STATE_OVERRIDE="$CASE_DIR/wrong-state" CLAUDE_CONFIG_DIR=/wrong/worker-seat \
+    PATH="$FAKEBIN:$PATH" "$PIPELINE_WRAPPER" "$@"
+}
+
+test_pipeline_install_check_and_streams() {
+  local rec out rc before
+  rec=$(make_seat_case pipeline-streams); read_seat_case "$rec"
+  mkdir -p "$SEATS_DIR/alpha"
+  printf 'alpha\n' > "$HOME_DIR/config/claude-seat"
+  install_pipeline_fixture
+  before=$(cksum "$PIPELINE_WRAPPER")
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" pipeline-check --claude "$PIPELINE_NATIVE" --destination "$PIPELINE_WRAPPER")
+  expect_code 0 "$?" "scratch wrapper must match its template: $out"
+  [ "$before" = "$(cksum "$PIPELINE_WRAPPER")" ] || fail "check must not write the wrapper"
+  out=$(printf 'stdin payload\n' | NM_CLAUDE_CONFIG_DIR='' PIPELINE_TEST_STDIN=1 PIPELINE_TEST_EXIT=17 \
+    run_pipeline_fixture 'two words' "literal \$value" '--print' 2>&1)
+  rc=$?
+  expect_code 17 "$rc" "native exit status must survive the wrapper"
+  assert_contains "$out" "profile=$SEATS_DIR/alpha" "launch must use the bound home, not inherited overrides"
+  assert_contains "$out" 'arg=<two words>' "argument boundaries must survive"
+  # shellcheck disable=SC2016 # Deliberately literal argument.
+  assert_contains "$out" 'arg=<literal $value>' "literal arguments must survive"
+  assert_contains "$out" 'stdin payload' "stdin must survive probes and exec"
+  assert_absent "$SPEC_DIR/calls" "an unset extra-usage policy must not read quota"
+  printf '\n# changed\n' >> "$PIPELINE_WRAPPER"
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" pipeline-check --claude "$PIPELINE_NATIVE" --destination "$PIPELINE_WRAPPER")
+  expect_code 75 "$?" "check must refuse a modified wrapper"
+  pass "pipeline scratch install/check preserves argv, stdin, and native exit status"
+}
+
+test_pipeline_rereads_active_and_validates_override() {
+  local rec out
+  rec=$(make_seat_case pipeline-switch); read_seat_case "$rec"
+  mkdir -p "$SEATS_DIR/alpha" "$SEATS_DIR/beta"
+  printf 'alpha\n' > "$HOME_DIR/config/claude-seat"
+  install_pipeline_fixture
+  out=$(NM_CLAUDE_CONFIG_DIR='' run_pipeline_fixture)
+  assert_contains "$out" "profile=$SEATS_DIR/alpha" "first launch must use alpha"
+  printf 'beta\n' > "$HOME_DIR/config/claude-seat"
+  out=$(NM_CLAUDE_CONFIG_DIR='' run_pipeline_fixture)
+  assert_contains "$out" "profile=$SEATS_DIR/beta" "same installed wrapper must re-read active seat"
+  out=$(NM_CLAUDE_CONFIG_DIR="$SEATS_DIR/alpha" run_pipeline_fixture)
+  assert_contains "$out" "profile=$SEATS_DIR/alpha" "a managed override must still win"
+  out=$(NM_CLAUDE_CONFIG_DIR="$CASE_DIR/unmanaged" run_pipeline_fixture 2>&1)
+  expect_code 75 "$?" "unmanaged override must refuse instead of bypassing guards"
+  assert_not_contains "$out" 'profile=' "a refused launch must not start Claude"
+  printf 'missing\n' > "$HOME_DIR/config/claude-seat"
+  out=$(NM_CLAUDE_CONFIG_DIR='' run_pipeline_fixture 2>&1)
+  expect_code 75 "$?" "missing active directory must refuse instead of falling back"
+  assert_contains "$out" 'no fallback' "missing-directory refusal must explain the boundary"
+  rm "$HOME_DIR/config/claude-seat"
+  out=$(NM_CLAUDE_CONFIG_DIR='' run_pipeline_fixture)
+  assert_contains "$out" 'profile=' "default selection must launch"
+  assert_not_contains "$out" '/wrong/worker-seat' "default must not inherit the worker's profile"
+  pass "pipeline launches follow each switch and guard managed overrides and missing profiles"
+}
+
+test_pipeline_never_launches_excluded_or_resting() {
+  local rec out mode
+  rec=$(make_seat_case pipeline-withheld); read_seat_case "$rec"
+  mkdir -p "$SEATS_DIR/alpha" "$SEATS_DIR/beta"
+  printf 'alpha\n' > "$HOME_DIR/config/claude-seat"
+  printf 'alpha\n' > "$HOME_DIR/config/claude-seat-auto-exclude"
+  install_pipeline_fixture
+  for mode in active override; do
+    if [ "$mode" = override ]; then printf 'beta\n' > "$HOME_DIR/config/claude-seat"; fi
+    out=$(NM_CLAUDE_CONFIG_DIR="$([ "$mode" != override ] || printf '%s' "$SEATS_DIR/alpha")" run_pipeline_fixture 2>&1)
+    expect_code 75 "$?" "an excluded $mode seat must never launch"
+    assert_contains "$out" 'manually excluded' "hold must explain manual exclusion"
+    assert_not_contains "$out" 'profile=' "excluded seat must not start Claude"
+  done
+  rm "$HOME_DIR/config/claude-seat-auto-exclude"
+  printf 'alpha\n' > "$HOME_DIR/config/claude-seat"
+  printf '5\n' > "$HOME_DIR/config/claude-seat-floor"
+  printf '{"schemaVersion":1,"seats":{"alpha":{"since":1,"provisional":false}}}\n' > "$HOME_DIR/config/claude-seat-resting"
+  out=$(NM_CLAUDE_CONFIG_DIR='' run_pipeline_fixture 2>&1)
+  expect_code 75 "$?" "a resting active seat must never launch"
+  assert_contains "$out" 'resting below the quota floor' "rest hold must use the existing record"
+  printf 'beta\n' > "$HOME_DIR/config/claude-seat"
+  out=$(NM_CLAUDE_CONFIG_DIR="$SEATS_DIR/alpha" run_pipeline_fixture 2>&1)
+  expect_code 75 "$?" "an override must not bypass rest"
+  # Provisional seats are candidates again under the landed resting contract.
+  printf '{"schemaVersion":1,"seats":{"alpha":{"since":1,"provisional":true}}}\n' > "$HOME_DIR/config/claude-seat-resting"
+  out=$(NM_CLAUDE_CONFIG_DIR="$SEATS_DIR/alpha" run_pipeline_fixture)
+  expect_code 0 "$?" "provisional recovery must use the existing resting verdict: $out"
+  pass "pipeline launch guards apply to active and override seats and honor provisional recovery"
+}
+
+test_pipeline_extra_usage_reads_selected_profile() {
+  local rec out
+  rec=$(make_seat_case pipeline-policy); read_seat_case "$rec"
+  mkdir -p "$SEATS_DIR/alpha" "$SEATS_DIR/beta"
+  printf 'alpha\n' > "$HOME_DIR/config/claude-seat"
+  seat_logged_in "$SPEC_DIR" "$SEATS_DIR/alpha" "$SEATS_DIR/beta"
+  printf '%s\t80\n%s\t0\n' "$SEATS_DIR/alpha" "$SEATS_DIR/beta" > "$SPEC_DIR/remaining_map"
+  printf 'stop\n' > "$HOME_DIR/config/claude-seat-extra-usage"
+  install_pipeline_fixture
+  out=$(NM_CLAUDE_CONFIG_DIR="$SEATS_DIR/beta" run_pipeline_fixture 2>&1)
+  expect_code 75 "$?" "stop must read exhausted override instead of healthy active seat"
+  assert_contains "$out" 'no plan quota left' "stop refusal must name exhausted quota"
+  assert_not_contains "$out" 'profile=' "stop must start no agent"
+  printf '%s\t0\n%s\t0\n' "$SEATS_DIR/alpha" "$SEATS_DIR/beta" > "$SPEC_DIR/remaining_map"
+  out=$(NM_CLAUDE_CONFIG_DIR='' run_pipeline_fixture 2>&1)
+  expect_code 75 "$?" "stop must refuse when every seat is exhausted"
+  printf 'allow 10\n' > "$HOME_DIR/config/claude-seat-extra-usage"
+  printf '%s\t5\n' "$SEATS_DIR/beta" > "$SPEC_DIR/extra_map"
+  out=$(NM_CLAUDE_CONFIG_DIR="$SEATS_DIR/beta" run_pipeline_fixture)
+  expect_code 0 "$?" "allow policy below cap must still work: $out"
+  printf '%s\t10\n' "$SEATS_DIR/beta" > "$SPEC_DIR/extra_map"
+  out=$(NM_CLAUDE_CONFIG_DIR="$SEATS_DIR/beta" run_pipeline_fixture 2>&1)
+  expect_code 75 "$?" "allow policy must hold at cap"
+  printf '%s\n' "$SEATS_DIR/beta" > "$SPEC_DIR/unreadable_quota"
+  out=$(NM_CLAUDE_CONFIG_DIR="$SEATS_DIR/beta" run_pipeline_fixture 2>&1)
+  expect_code 75 "$?" "unreadable quota must fail closed under policy"
+  assert_contains "$out" 'could not be read' "unreadable refusal must be clear"
+  rm "$SPEC_DIR/unreadable_quota"
+  seat_expired_refreshable "$SPEC_DIR" "$SEATS_DIR/beta"
+  out=$(NM_CLAUDE_CONFIG_DIR="$SEATS_DIR/beta" run_pipeline_fixture)
+  expect_code 0 "$?" "landed renewable-token exception must still permit launch: $out"
+  pass "pipeline policy reads the selected profile and shares stop, cap, unreadable, and renewable verdicts"
+}
+
+test_pipeline_live_warning_and_move_leave_agent_running() {
+  local rec out pid i ready release board record stale warning
+  rec=$(make_seat_case pipeline-live); read_seat_case "$rec"
+  mkdir -p "$SEATS_DIR/alpha" "$SEATS_DIR/beta"
+  seat_logged_in "$SPEC_DIR" "$SEATS_DIR/alpha" "$SEATS_DIR/beta"
+  printf 'alpha\n' > "$HOME_DIR/config/claude-seat"
+  printf '5\n' > "$HOME_DIR/config/claude-seat-floor"
+  install_pipeline_fixture
+  ready="$CASE_DIR/ready"; release="$CASE_DIR/release"
+  NM_CLAUDE_CONFIG_DIR='' PIPELINE_TEST_READY="$ready" PIPELINE_TEST_RELEASE="$release" \
+    run_pipeline_fixture > "$CASE_DIR/agent-output" 2>&1 &
+  pid=$!
+  for ((i=0; i<200; i++)); do [ -s "$ready" ] && break; sleep 0.1; done
+  [ -s "$ready" ] || { touch "$release"; wait "$pid"; fail "live fixture did not launch"; }
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" status)
+  assert_contains "$out" 'live pipeline agent: pid=' "status must show the live agent"
+  assert_contains "$out" 'seat=alpha' "status must show the launched seat"
+  seat_windows "$SPEC_DIR" "$SEATS_DIR/alpha" 3 2026-10-10T00:00:00Z 60 2026-10-14T00:00:00Z
+  seat_windows "$SPEC_DIR" "$SEATS_DIR/beta" 80 2026-10-10T00:00:00Z 80 2026-10-14T00:00:00Z
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" auto)
+  warning='pipeline agent is still running on resting seat alpha'
+  assert_contains "$out" "$warning" "resting a live pipeline seat must warn"
+  assert_contains "$out" 'pipeline-move' "warning must offer a one-command move"
+  assert_contains "$out" 'approval because it discards in-flight work' "warning must distinguish whole-run cancellation"
+  kill -0 "$(cat "$ready")" || fail "rest warning must never kill the live agent"
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" auto)
+  assert_not_contains "$out" "$warning" "steady rest must not warn twice"
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" pipeline-move)
+  expect_code 0 "$?" "move must find beta through existing rotation: $out"
+  assert_contains "$out" 'subsequent managed pipeline launches follow active seat beta' "move must select beta"
+  kill -0 "$(cat "$ready")" || fail "move must leave the original agent running"
+  out=$(NM_CLAUDE_CONFIG_DIR='' run_pipeline_fixture)
+  assert_contains "$out" "profile=$SEATS_DIR/beta" "next launch after move must use beta"
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" pipeline-move)
+  assert_grep beta "$HOME_DIR/config/claude-seat" "move must keep an already eligible active seat"
+  board=$(FM_HOME="$HOME_DIR" FM_CONFIG_OVERRIDE="$HOME_DIR/config" FM_STATE_OVERRIDE="$HOME_DIR/state" \
+    NM_CLAUDE_CONFIG_DIR='' FM_SEAT_BOARD_CACHE_DIR="$CASE_DIR/board-cache" \
+    "$ROOT/bin/fm-seat-board.sh" json --cached-only)
+  printf '%s' "$board" | jq -e '.pipeline.seat == "beta" and (.pipeline.liveAgents | any(.seat == "alpha"))' >/dev/null ||
+    fail "board must distinguish next seat from live pipeline seat: $board"
+  # A reused PID with a different kernel start stamp is not the original agent.
+  record=$(find "$HOME_DIR/state/claude-pipeline" -name '*.json' | head -1)
+  stale="$HOME_DIR/state/claude-pipeline/stale.json"
+  jq --argjson pid "$(cat "$ready")" '.pid=$pid | .started="old process" | .seat="stale-seat"' "$record" > "$stale"
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" status)
+  assert_not_contains "$out" 'seat=stale-seat' "reused PID must not be reported live"
+  # A separate rest entry must warn again even for the same running agent.
+  printf '{"schemaVersion":1,"seats":{"alpha":{"since":2,"provisional":false}}}\n' > "$HOME_DIR/config/claude-seat-resting"
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" auto)
+  assert_contains "$out" "$warning" "a new resting entry must re-arm the warning"
+  touch "$release"
+  wait "$pid" || fail "original agent must finish normally"
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" status)
+  assert_not_contains "$out" 'live pipeline agent: pid=' "completed agents must not appear live"
+  pass "pipeline watch warns once per rest, move affects subsequent launches only, and live PID stamps stay honest"
+}
+
+test_pipeline_install_check_and_streams
+test_pipeline_rereads_active_and_validates_override
+test_pipeline_never_launches_excluded_or_resting
+test_pipeline_extra_usage_reads_selected_profile
+test_pipeline_live_warning_and_move_leave_agent_running
+
 test_absent_setting_is_the_default_seat
 test_switch_to_logged_in_seat_updates_only_the_setting
 test_switch_to_seat_that_is_not_logged_in_is_refused

@@ -254,9 +254,50 @@ A floor can be armed on its own, with no `threshold`: the watch then rests and w
 `arm` warns rather than refusing when every candidate happens to be resting, because the watch is exactly what brings them back.
 Nothing here moves a worker already running on a seat that starts resting: it keeps the profile recorded in its own task record, as it does through every other change.
 
+## Validation pipeline agents
+
+The machine-local no-mistakes Claude wrapper can use the same seat controls as workers.
+Install it from a stable Firstmate checkout, binding it to the home whose active seat should govern the pipeline:
+
+```
+FM_HOME=/path/to/home bin/fm-seat.sh pipeline-install --claude /absolute/path/to/native/claude
+FM_HOME=/path/to/home bin/fm-seat.sh pipeline-check --claude /absolute/path/to/native/claude
+```
+
+Configure no-mistakes to use the installed wrapper as its Claude binary; installing the wrapper does not edit no-mistakes configuration.
+`bin/fm-seat-pipeline.sh --help` owns its installation and launch mechanics, including the scratch destination option for staging or testing.
+The installed wrapper depends on that checkout remaining available, so do not install it from a disposable task worktree.
+
+Each pipeline-agent launch re-reads the bound home's active seat, ignoring a worker's inherited profile and home-path overrides.
+A switch therefore moves subsequent pipeline agents immediately, without moving the worker that is driving the run.
+`NM_CLAUDE_CONFIG_DIR` still wins when it names an existing seat directory under that home's seats root, but cannot bypass a manual exclusion, resting record, or extra-usage hold.
+An unmanaged path or missing profile is refused rather than falling back to another account.
+The default active seat uses the ambient `~/.claude` login, never an inherited worker seat.
+Unlike a worker's deliberate manual seat selection, pipeline launches refuse an excluded or resting active seat too.
+The same extra-usage policy gates the selected profile, so `stop` refuses a launch when its plan quota is gone (or it is at the configured floor); no pipeline hold bypass is offered.
+A launch refusal names the seat and reason and starts no agent.
+
+The automatic switch trigger already counts pipeline-agent usage: it reads the account's quota windows, which include usage billed by workers, pipeline agents, and other clients on that account.
+No separate pipeline counter or switch trigger is needed.
+`status` and the seat board show the next managed pipeline seat, any selection hold, the installation receipt, and each live managed pipeline agent's own seat.
+The receipt identifies what this tooling installed; `pipeline-check` verifies the current wrapper, and neither proves that no-mistakes has been configured to use it.
+A daemon-level override is visible on its live agent records; a status or board process only knows its own override environment for the next-launch display.
+
+When the watch rests a seat with a managed pipeline agent already running, it warns once per resting entry and prints one command to move subsequent launches:
+
+```
+FM_HOME=/path/to/home bin/fm-seat.sh pipeline-move
+```
+
+That command uses the existing seat rotation when the active seat is withheld, and keeps an eligible active seat if the automatic switch has already moved it.
+Clear an `NM_CLAUDE_CONFIG_DIR` override in the pipeline's launch environment to follow the active seat.
+The running agent finishes untouched; no wrapper or seat command cancels, aborts, or restarts a pipeline run.
+Moving an individual running agent needs no-mistakes support that is not currently available.
+A whole-run abort-and-revalidate is only a manual step with the captain's approval because it discards in-flight work, and must preserve every prior pipeline commit.
+
 ## Moving firstmate itself
 
-Everything above moves **workers**.
+Seat switches above govern new workers and pipeline agents.
 Firstmate itself is not a worker, and no switch moves it.
 It keeps the account its own process launched on, so after a few switches firstmate is commonly on a different seat from the one new workers get; `bin/fm-seat.sh status` prints both.
 

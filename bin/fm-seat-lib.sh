@@ -180,6 +180,81 @@ fm_seat_spawn_config_dir() {
   fm_seat_config_dir "$(fm_seat_active)"
 }
 
+# fm_seat_pipeline_selection
+# Read the next managed pipeline launch's seat without probing quota. An
+# explicit NM_CLAUDE_CONFIG_DIR wins only when it names an existing managed
+# seat, so an arbitrary path cannot bypass its exclusion or resting record.
+# The machine-local wrapper's default is the ambient ~/.claude login, never
+# the calling worker's inherited profile. This JSON is also the display owner.
+# blockedReason is null when the selection passes the directory/exclusion/rest
+# guards; the extra-usage gate is applied separately at launch, on this profile.
+fm_seat_pipeline_selection() {
+  local name profile override=false reason='' raw
+  name=$(fm_seat_active)
+  if [ -f "$CONFIG/claude-seat" ]; then
+    raw=$(sed -n '1p' "$CONFIG/claude-seat" | tr -d '[:space:]')
+    [ -z "$raw" ] || fm_seat_name_valid "$raw" || reason='configured seat is malformed'
+  fi
+  profile=$(FM_AMBIENT_CLAUDE_CONFIG_DIR='' fm_seat_config_dir "$name")
+  if [ -n "${NM_CLAUDE_CONFIG_DIR:-}" ]; then
+    override=true
+    profile=$NM_CLAUDE_CONFIG_DIR
+    name=$(fm_seat_name_of_profile "$profile")
+    # The inverse returns the path itself for an unmanaged profile. Refuse
+    # aliases too: a second spelling must not hide a managed seat's hold.
+    if ! fm_seat_name_valid "$name" || [ "$name" = "$FM_SEAT_DEFAULT_NAME" ]; then
+      reason='NM_CLAUDE_CONFIG_DIR must name a seat directory under the seats root'
+    fi
+  fi
+  if [ -z "$reason" ]; then
+    if [ "$name" != "$FM_SEAT_DEFAULT_NAME" ] && [ ! -d "$profile" ]; then
+      reason='seat profile directory is missing; no fallback is allowed'
+    elif fm_seat_auto_excluded "$name"; then
+      reason='seat is manually excluded'
+    elif fm_seat_resting "$name"; then
+      reason='seat is resting below the quota floor'
+    fi
+  fi
+  jq -cn --arg seat "$name" --arg profile "$profile" --arg reason "$reason" \
+    --argjson override "$override" \
+    '{seat: $seat, profile: $profile, override: $override,
+      blockedReason: (if $reason == "" then null else $reason end)}'
+}
+
+# fm_seat_pipeline_live
+# JSON array of still-running managed pipeline launches. A kernel start stamp
+# accompanies each PID, so PID reuse never turns an old launch into a live one.
+# Launch records contain no prompts, arguments, credentials, or account tokens.
+# Reading status/board never edits these records; the launch helper owns them.
+fm_seat_pipeline_live() {
+  local record pid started actual
+  {
+    for record in "$STATE/claude-pipeline"/*.json; do
+      [ -f "$record" ] || continue
+      pid=$(jq -r '.pid // empty' "$record" 2>/dev/null) || continue
+      case "$pid" in ''|*[!0-9]*) continue ;; esac
+      started=$(jq -r '.started // empty' "$record" 2>/dev/null) || continue
+      [ -n "$started" ] || continue
+      actual=$(LC_ALL=C ps -p "$pid" -o lstart= 2>/dev/null) || continue
+      [ "$actual" = "$started" ] || continue
+      cat "$record"
+    done
+  } | jq -s .
+}
+
+# fm_seat_pipeline_report
+# Read-only display of the managed wrapper's next selection, its live launch
+# records, and its installation receipt (not proof of no-mistakes config).
+# pipeline-check verifies the receipt's installed wrapper against the template.
+fm_seat_pipeline_report() {
+  local receipt=null
+  if [ -f "$STATE/.claude-seat-pipeline-wrapper.json" ]; then
+    receipt=$(jq -c . "$STATE/.claude-seat-pipeline-wrapper.json" 2>/dev/null) || receipt=null
+  fi
+  fm_seat_pipeline_selection | jq -c --argjson live "$(fm_seat_pipeline_live)" \
+    --argjson installation "$receipt" '. + {liveAgents: $live, installation: $installation}'
+}
+
 # fm_seat_list
 # Every seat name that has a profile directory under the root, one per line, in
 # a stable order. The set is read from the filesystem on every call, so nothing
@@ -1000,7 +1075,7 @@ fm_seat_session_share_observe() {
   return 0
 }
 
-# fm_seat_dispatch_decision
+# fm_seat_dispatch_decision [profile-dir]
 # The dispatch gate, printed as one line: `allow <reason>` or `hold <reason>`.
 #
 # What this can and cannot do is worth being exact about. Firstmate controls
@@ -1015,10 +1090,13 @@ fm_seat_session_share_observe() {
 # The quota floor layers one branch onto the `stop` policy and nothing onto
 # `allow <usd>`: with a floor set, `stop` holds once the active seat is at or
 # below it rather than waiting for the plan quota to reach nothing.
+# An explicit profile applies the same policy to a pipeline override; omitting
+# it keeps every worker call on the active seat's resolved profile.
 fm_seat_dispatch_decision() {
-  local policy cap out remaining spent floor
+  local policy cap out remaining spent floor profile
+  profile=${1-$(fm_seat_spawn_config_dir)}
   policy=$(fm_seat_extra_usage_policy) || { printf 'allow policy-unset\n'; return 0; }
-  out=$(fm_seat_quota_json "$(fm_seat_spawn_config_dir)") || {
+  out=$(fm_seat_quota_json "$profile") || {
     printf 'hold quota-unreadable\n'
     return 0
   }
