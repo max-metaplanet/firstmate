@@ -254,11 +254,52 @@ test_refuses_the_ambient_default_and_the_seat_already_held() {
   esac
   out=$(run_home "$LEAD_RESTART" --check --to alpha) && fail "the seat already held was accepted: $out"
   case "$out" in
-    *"already running on seat 'alpha'"*) ;;
+    *"already running on seat 'alpha'"*"--refresh"*) ;;
     *) fail "the refusal does not say the lead is already there: $out" ;;
   esac
   stop_case
   pass "the ambient default profile and the seat the lead already holds are both refused"
+}
+
+test_same_seat_refresh_keeps_the_persist_gate_and_stages_the_same_seat() {
+  local rec out worker
+  rec=$(make_case same-seat-refresh); read_case "$rec"
+  stub_pane_exists "$FAKEBIN"
+  printf 'beta\n' > "$HOME_DIR/config/claude-seat"
+  cp "$HOME_DIR/state/.lock-runtime" "$CASE_DIR/runtime.before"
+  out=$(run_as_lead "$LEAD_RESTART" --to alpha --refresh) &&
+    fail "a same-seat refresh ran without the persist gate: $out"
+  case "$out" in
+    *'Open-record persistence'*) ;;
+    *) fail "the refresh did not reach the persist gate: $out" ;;
+  esac
+  [ ! -f "$HOME_DIR/state/.lock-handover" ] || fail "an unpersisted refresh armed a reservation"
+  [ ! -f "$HOME_DIR/state/.lead-restart" ] || fail "an unpersisted refresh staged a plan"
+  kill -0 "$LEAD_PID" 2>/dev/null || fail "an unpersisted refresh disturbed the lead"
+
+  # Hold the detached stage without running it: this case proves the real
+  # reservation and staging path without replacing even the stand-in lead.
+  cat > "$FAKEBIN/nohup" <<'SH'
+#!/usr/bin/env bash
+exec sleep 60
+SH
+  chmod +x "$FAKEBIN/nohup"
+  out=$(run_as_lead "$LEAD_RESTART" --to alpha --refresh --persisted) ||
+    fail "a persisted same-seat refresh was refused: $out"
+  worker=$(printf '%s\n' "$out" | sed -n 's/^handover armed (worker \([0-9]*\)).*/\1/p')
+  [ -n "$worker" ] || fail "the refresh did not arm its detached stage: $out"
+  kill "$worker" 2>/dev/null || true
+  assert_grep 'session=lead-session-1' "$HOME_DIR/state/.lock-handover" "refresh must reserve the same session"
+  assert_grep "from_profile=$SEATS_DIR/alpha" "$HOME_DIR/state/.lead-restart" "refresh must leave the current seat"
+  assert_grep "to_profile=$SEATS_DIR/alpha" "$HOME_DIR/state/.lead-restart" "refresh must target the same seat"
+  assert_grep "CLAUDE_CONFIG_DIR=$SEATS_DIR/alpha env -u CLAUDE_CODE_CHILD_SESSION CLAUDE_CODE_FORCE_SESSION_PERSISTENCE=1" \
+    "$HOME_DIR/state/.lead-restart.launch" "refresh must stage the same seat with the persistence prefix"
+  assert_grep '--resume lead-session-1' "$HOME_DIR/state/.lead-restart.launch" "refresh must resume the same session"
+  cmp -s "$CASE_DIR/runtime.before" "$HOME_DIR/state/.lock-runtime" || fail "refresh changed the lead's seat record"
+  [ "$(cat "$HOME_DIR/config/claude-seat")" = beta ] || fail "refresh rotated the worker seat"
+  kill -0 "$LEAD_PID" 2>/dev/null || fail "staging a refresh disturbed the lead"
+  stop_case
+  pass "same-seat refresh keeps the persist gate and stages the same seat and session with persistence enabled"
 }
 
 test_only_the_lead_may_replace_the_lead() {
@@ -732,6 +773,7 @@ test_refuses_a_destination_that_is_not_proven_signed_in
 test_refuses_when_the_terminal_or_the_lead_profile_is_not_established
 test_a_runtime_record_for_another_pid_is_not_evidence
 test_refuses_the_ambient_default_and_the_seat_already_held
+test_same_seat_refresh_keeps_the_persist_gate_and_stages_the_same_seat
 test_only_the_lead_may_replace_the_lead
 test_launch_command_is_established_only_when_it_round_trips
 test_a_reservation_holds_the_home_for_its_successor_alone

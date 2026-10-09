@@ -321,6 +321,7 @@ No running Claude Code process can change credential store, so firstmate changes
 ```
 bin/fm-seat.sh lead-restart --check              # establish the move, change nothing
 bin/fm-seat.sh lead-restart --persisted          # do it
+bin/fm-lead-restart.sh --to <current-seat> --refresh --persisted  # restart in place
 ```
 
 Firstmate tells its crew it is about to restart, another `claude` starts on the new seat in the same terminal, resuming the same session, and the current process ends.

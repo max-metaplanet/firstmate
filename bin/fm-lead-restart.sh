@@ -1,11 +1,15 @@
 #!/usr/bin/env bash
-# fm-lead-restart.sh - move the PRIMARY firstmate session itself onto another
+# fm-lead-restart.sh - move or refresh the PRIMARY firstmate session on a
 # Claude seat, by replacing its own process in its own terminal.
 #
 # Usage:
-#   fm-lead-restart.sh --check --to <seat>
-#   fm-lead-restart.sh --to <seat> --persisted [--launch-command <cmd>] [--grace <s>]
+#   fm-lead-restart.sh --check --to <seat> [--refresh]
+#   fm-lead-restart.sh --to <seat> --persisted [--refresh] [--launch-command <cmd>] [--grace <s>]
 #   fm-lead-restart.sh --handover-stage <plan-file>     (internal; detached)
+#
+# --refresh permits the explicitly named seat to be the lead's current seat.
+# It uses the same persist gate and handover, without changing seat records or
+# rotation; without it, a same-seat destination is refused.
 #
 # WHY THIS IS NOT A SEAT SWITCH. bin/fm-seat.sh switch rewrites one config line
 # that only a fresh spawn reads, so it moves NEW workers and never disturbs
@@ -291,8 +295,8 @@ preflight() {  # <launch-command-override>
   SESSION_ID=$(established_session_id) || exit 1
   LEAD_PROFILE=$(established_lead_profile) || exit 1
   LEAD_SEAT=$(fm_seat_name_of_profile "$LEAD_PROFILE")
-  [ "$LEAD_PROFILE" != "$TO_PROFILE" ] ||
-    die "the lead is already running on seat '$TO_SEAT'"
+  [ "$LEAD_PROFILE" != "$TO_PROFILE" ] || [ "$REFRESH" -eq 1 ] ||
+    die "the lead is already running on seat '$TO_SEAT'; use --refresh to restart in place"
   established_pane || exit 1
 
   # The successor must be PROVEN signed in before anything is armed. An
@@ -589,6 +593,7 @@ handover_stage() {  # <plan-file>
 MODE=arm
 LAUNCH_OVERRIDE=''
 PERSISTED=0
+REFRESH=0
 PLAN_FILE=''
 P_COMMAND=''
 P_LAUNCH_FILE=''
@@ -596,6 +601,7 @@ while [ "$#" -gt 0 ]; do
   case "$1" in
     --check) MODE=check; shift ;;
     --persisted) PERSISTED=1; shift ;;
+    --refresh) REFRESH=1; shift ;;
     --to) [ "$#" -ge 2 ] || usage; TO_SEAT=$2; shift 2 ;;
     --launch-command) [ "$#" -ge 2 ] || usage; LAUNCH_OVERRIDE=$2; shift 2 ;;
     --grace) [ "$#" -ge 2 ] || usage; GRACE=$2; shift 2 ;;
