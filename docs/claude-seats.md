@@ -120,7 +120,7 @@ Without this setting the rotation gate is login-only and no candidate's quota is
 - `off` clears the policy, and nothing is held.
 
 The [typed dispatch resolver](configuration.md#typed-dispatch-resolution-env-typesafe_api_key) accounts for a hold before choosing a profile and can offer a Codex alternative when the matched rule lists one.
-A Claude-only rule stays held; the seat switcher never invents a profile or changes the configured rules.
+A Claude-only rule stays held unless its quota floor sends the work to the default, which [configuration](configuration.md#typed-dispatch-resolution-env-typesafe_api_key) owns; the seat switcher never invents a profile or changes the configured rules.
 When typed resolution is off or inconclusive, Firstmate applies the same seat gate during its ordinary candidate intake.
 
 Spend is read from the `extra_usage` window the account itself reports, and the cap is a firstmate-side figure compared against it - deliberately a smaller, separate number from the account's own extra-usage ceiling.
