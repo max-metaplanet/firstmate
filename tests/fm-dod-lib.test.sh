@@ -83,15 +83,58 @@ test_moved_branch_without_named_head_is_refused() {
   pass "a moved remote branch that lacks the named head is refused"
 }
 
-test_no_mistakes_prevalidation_done_is_not_gated() {
-  local repo wt
-  repo="$TMP_ROOT/preval-repo"
-  wt="$TMP_ROOT/preval-wt"
-  fm_git_worktree "$repo" "$wt" fm/preval
-  git -C "$wt" commit -q --allow-empty -m 'only in the disposable copy'
-  accept_done ship no-mistakes "$wt" "$repo" 'done: implementation complete' \
-    || fail "no-mistakes pre-validation done: must not require named-head reachability"
-  pass "no-mistakes pre-validation done: is not gated"
+# A no-mistakes worker runs the pipeline itself, so a done: it appends after
+# only committing locally claims a finished task that was never shipped. The
+# gate refuses it even when the commit is reachable outside the copy, because
+# reachability is not a PR, and the reason must say what to do instead.
+test_no_mistakes_done_without_a_pr_is_refused() {
+  local repo wt sha reason rc
+  repo="$TMP_ROOT/nopr-repo"
+  wt="$TMP_ROOT/nopr-wt"
+  fm_git_worktree "$repo" "$wt" fm/nopr
+  git -C "$wt" commit -q --allow-empty -m 'implementation commit'
+  sha=$(git -C "$wt" rev-parse HEAD)
+  # Reachable outside the copy: only the missing PR may carry the refusal.
+  git -C "$wt" update-ref refs/remotes/origin/fm/nopr "$sha"
+  for line in \
+    'done: implementation complete' \
+    'done [key=fix]: committed on fm/nopr, ready for /no-mistakes' \
+    'done: pushed branch, no PR yet' \
+    'done: PR checks green' \
+    'done: pipeline finished, PR step skipped, checks green' \
+    'done: PR change published for review'; do
+    rc=0
+    reason=$(accept_done ship no-mistakes "$wt" "$repo" "$line") || rc=$?
+    [ "$rc" -eq 1 ] || fail "no-mistakes done: with no PR was accepted: $line"
+    case "$reason" in
+      *"reports no PR"*"run /no-mistakes from this copy"*) ;;
+      *) fail "no-PR refusal did not name the missing PR and the remedy: $reason" ;;
+    esac
+  done
+  # An unregistered project resolves to the same default mode.
+  rc=0
+  accept_done ship '' "$wt" "$repo" 'done: implementation complete' >/dev/null || rc=$?
+  [ "$rc" -eq 1 ] || fail "an empty mode did not take the no-mistakes refusal"
+  pass "a no-mistakes done: naming no PR is refused with the pipeline remedy"
+}
+
+# The refusal is specific to the missing PR: a no-mistakes done that DOES name
+# its CI-ready PR still reaches the named-head gate rather than this one.
+test_no_mistakes_ci_ready_done_passes_the_pr_check() {
+  local repo wt sha
+  repo="$TMP_ROOT/ciready-repo"
+  wt="$TMP_ROOT/ciready-wt"
+  fm_git_worktree "$repo" "$wt" fm/ciready
+  git -C "$wt" commit -q --allow-empty -m 'implementation commit'
+  sha=$(git -C "$wt" rev-parse HEAD)
+  git -C "$wt" update-ref refs/remotes/origin/fm/ciready "$sha"
+  accept_done ship no-mistakes "$wt" "$repo" \
+    'done: PR https://example.test/o/r/pull/7 checks green' \
+    || fail "a CI-ready no-mistakes done: on a reachable head was refused"
+  accept_done ship no-mistakes "$wt" "$repo" \
+    'done: validation finished, PR https://example.test/o/r/pull/7 checks green' \
+    || fail "a CI-ready no-mistakes done: naming its PR after prose was refused"
+  pass "a CI-ready no-mistakes done: is not caught by the no-PR refusal"
 }
 
 test_local_only_linked_branch_is_accepted() {
@@ -733,7 +776,8 @@ test_local_only_does_not_read_origin() {
 
 test_scout_done_is_not_gated
 test_unpushed_ship_done_is_refused
-test_no_mistakes_prevalidation_done_is_not_gated
+test_no_mistakes_done_without_a_pr_is_refused
+test_no_mistakes_ci_ready_done_passes_the_pr_check
 test_remote_containing_named_head_is_accepted
 test_moved_branch_without_named_head_is_refused
 test_free_text_sha_is_not_the_named_head
@@ -750,6 +794,38 @@ test_non_done_lines_are_not_gated
 test_fenced_and_indented_captain_lines_are_not_intent
 test_pr_based_dod_draft_check_uses_gh_axi
 test_promotion_keeps_the_recorded_base_branch
+
+# Four Claude ship workers on 2026-10-07 committed locally and reported done
+# without running the pipeline, because the generated contract told them to: it
+# called that first done the handoff and had firstmate send /no-mistakes. The
+# no-mistakes DoD must now send the worker straight from its implementation
+# commit into the pipeline and leave no sentence that invites a done before it.
+test_no_mistakes_dod_sends_the_worker_into_the_pipeline_itself() {
+  local forge out
+  for forge in none gerrit; do
+    out="$TMP_ROOT/dod-nm-$forge.md"
+    fm_dod_block no-mistakes dod-nm-task fm/dod-nm-task "$forge" > "$out"
+    assert_grep 'invoke /no-mistakes yourself and drive the run to its outcome' "$out" \
+      "$forge: DoD did not have the worker start the pipeline itself"
+    assert_grep 'do not report done first, and do not wait for firstmate to send you the pipeline' "$out" \
+      "$forge: DoD did not forbid reporting done before the pipeline"
+    assert_no_grep 'Firstmate will then instruct you to run /no-mistakes' "$out" \
+      "$forge: DoD still hands the pipeline back to firstmate"
+    assert_no_grep 'handoff that starts the pipeline' "$out" \
+      "$forge: DoD still describes a pre-pipeline done as a handoff"
+    # shellcheck disable=SC2016  # the backticked placeholder must stay literal
+    assert_no_grep 'append `done \[at=<epoch>\]: {summary}`' "$out" \
+      "$forge: DoD still asks for a summary-only done"
+  done
+  # shellcheck disable=SC2016  # the backticked ready line must stay literal
+  assert_grep 'Your only `done:` is the CI-ready line below' "$TMP_ROOT/dod-nm-none.md" \
+    "the PR DoD did not pin the CI-ready line as the only done"
+  # shellcheck disable=SC2016  # the backticked ready line must stay literal
+  assert_grep 'Your only `done:` is the published-for-review line below' "$TMP_ROOT/dod-nm-gerrit.md" \
+    "the Gerrit DoD did not pin the published-for-review line as the only done"
+  pass "the no-mistakes DoD runs the pipeline from the implementation commit"
+}
+test_no_mistakes_dod_sends_the_worker_into_the_pipeline_itself
 
 # The launch role is the generated text a worker receives. It must keep the
 # skill name, so a session that registers the skill loads it by name, and must

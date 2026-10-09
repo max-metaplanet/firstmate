@@ -914,13 +914,14 @@ EOF
 EOF
   fm_write_meta "$mate/state/done.meta" \
     "window=firstmate:fm-done" "worktree=$mate/projects/done" "project=sample" \
-    "harness=claude" "kind=ship" "mode=no-mistakes"
+    "harness=claude" "kind=ship" "mode=no-mistakes" \
+    "pr=https://github.com/o/done/pull/1" "pr_head=0123456789abcdef0123456789abcdef01234567"
   fm_write_meta "$mate/state/failed.meta" \
     "window=firstmate:fm-failed" "worktree=$mate/projects/failed" "project=sample" \
     "harness=claude" "kind=ship" "mode=no-mistakes"
   record_claude_state "$mate/state" "done" idle
   record_claude_state "$mate/state" failed idle
-  printf 'done: complete\n' > "$mate/state/done.status"
+  printf 'done: PR https://github.com/o/done/pull/1 checks green\n' > "$mate/state/done.status"
   printf 'failed: stopped\n' > "$mate/state/failed.status"
   rm "$mate/state/parked.meta" "$mate/state/parked.status"
   refresh_local_secondmate_ledgers "$home"

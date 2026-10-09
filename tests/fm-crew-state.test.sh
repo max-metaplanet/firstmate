@@ -2328,7 +2328,7 @@ test_other_branch_run_ignored() {
   make_repo_on_branch "$d/wt" fm/feat-g
   make_fakebin "$d" >/dev/null
   fm_write_meta "$d/state/feat-g.meta" "window=fm:fm-feat-g" "worktree=$d/wt" "kind=ship" "harness=claude"
-  printf 'done: implemented, ready to validate\n' > "$d/state/feat-g.status"
+  printf 'done: PR https://example.test/o/r/pull/9 checks green\n' > "$d/state/feat-g.status"
   FM_FAKE_AXI_STATUS="$(run_running fm/some-other)"
   FM_FAKE_RUNS_LIST="$(cat <<'EOF'
   running    fm/some-other aaaaaaa  2026-07-02 22:10
@@ -2401,25 +2401,29 @@ test_merged_pr_reads_done_under_captured_meta() {
   pass "recorded merged PR reads done under the fleet snapshot's captured meta"
 }
 
-test_no_mistakes_prevalidation_done_stays_done() {
+# A no-mistakes worker runs the pipeline itself, so a done: that names no PR
+# reports a local commit as a finished task. Current state must read that as
+# blocked with the reason, not as done, or firstmate tears down unshipped work.
+test_no_mistakes_done_without_a_pr_reads_blocked() {
   reset_fakes
   local d out
-  d=$(new_case preval-done)
-  make_repo_on_branch "$d/wt" fm/preval
-  git -C "$d/wt" commit -q --allow-empty -m 'fix only in the worktree'
+  d=$(new_case nopr-done)
+  make_repo_on_branch "$d/wt" fm/nopr
+  git -C "$d/wt" commit -q --allow-empty -m 'implementation commit'
   make_fakebin "$d" >/dev/null
-  fm_write_meta "$d/state/preval.meta" \
-    "window=fm:fm-preval" "worktree=$d/wt" "project=$d/wt" \
+  fm_write_meta "$d/state/nopr.meta" \
+    "window=fm:fm-nopr" "worktree=$d/wt" "project=$d/wt" \
     "kind=ship" "mode=no-mistakes" "harness=claude"
-  printf 'done: implementation complete\n' > "$d/state/preval.status"
+  printf 'done: implementation complete, ready for /no-mistakes\n' > "$d/state/nopr.status"
   FM_FAKE_AXI_STATUS=""
   FM_FAKE_RUNS_LIST=""
   FM_FAKE_BUSY=0
-  arm_idle_record "$d/state" preval
-  out=$(run_crew_state "$d" preval)
-  assert_contains "$out" "state: done" "no-mistakes pre-validation done: remains done"
-  assert_not_contains "$out" "state: blocked" "pre-validation done: must not be the named-head gate"
-  pass "no-mistakes pre-validation done: stays current-state done"
+  arm_idle_record "$d/state" nopr
+  out=$(run_crew_state "$d" nopr)
+  assert_contains "$out" "state: blocked" "a no-mistakes done: naming no PR must not read done"
+  assert_contains "$out" "reports no PR" "the blocked reason did not name the missing PR"
+  assert_not_contains "$out" "state: done" "a no-mistakes done: naming no PR still read as done"
+  pass "a no-mistakes done: naming no PR reads blocked with its reason"
 }
 
 test_moved_remote_branch_without_named_head_is_blocked() {
@@ -5776,7 +5780,7 @@ test_coarse_run_does_not_probe_other_branch_ci_log_for_ready_status
 test_other_branch_run_ignored
 test_unpushed_ship_done_is_blocked
 test_merged_pr_reads_done_under_captured_meta
-test_no_mistakes_prevalidation_done_stays_done
+test_no_mistakes_done_without_a_pr_reads_blocked
 test_moved_remote_branch_without_named_head_is_blocked
 test_no_run_busy_pane
 test_no_run_launch_prompt_parked_is_not_working
