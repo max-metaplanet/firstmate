@@ -40,8 +40,10 @@
 #   candidate is unmeasured, never blocked), and the spendPriority argmax over
 #   the eligible candidates. Claude candidates also pass the seat dispatch gate;
 #   its bounded, seat-specific read is separate from the ranking snapshot.
-#   A hold offers only alternatives in the selected rule, never a new profile
-#   or the default rule. The model never sees quota, catalogs, approvals,
+#   A hold makes every Claude candidate ineligible: a matched rule offers only
+#   its own remaining alternatives, and a below-floor rule falls through to the
+#   default as usual, where held Claude profiles are equally ineligible.
+#   The model never sees quota, catalogs, approvals,
 #   confidence floors, `why`, or `use`. With no rules, it returns a non-clear
 #   result so firstmate keeps using the existing intake.
 #   docs/configuration.md "Crew dispatch profiles" owns the declared fields and
@@ -569,8 +571,6 @@ RESULT=$(jq -n --arg floor "$CONFIDENCE_FLOOR" --argjson lat "$LAT_MS" --arg non
    elif $rule == null then {source: "default", use: profiles($cfg.default // null), note: "no rule matched"}
    elif ($rule.approval // "") == "captain" then {source: $choice, escalate: "rule requires the captain'"'"'s explicit approval before dispatch"}
    elif $rule_floor_state == "unknown" then {source: $choice, escalate: "rule \($choice) floor \($rule.floor.provider)/\($rule.floor.scope) is unverifiable"}
-   elif $rule_floor_state == "below" and $seat_hold != "" and any(profiles($rule.use)[]; .harness == "claude")
-     then {source: $choice, escalate: "rule \($choice) floor \($rule.floor.scope) below \($rule.floor.min_percent)% and Claude seat dispatch held: default fallback suppressed"}
    elif $rule_floor_state == "below"
      then {source: "default", use: profiles($cfg.default // null), note: "rule \($choice) floor \($rule.floor.scope) below \($rule.floor.min_percent)%: fall through to default"}
    else {source: $choice, use: profiles($rule.use), note: "rule matched"} end) as $sel |
