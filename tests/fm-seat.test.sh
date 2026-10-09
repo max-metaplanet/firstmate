@@ -3043,6 +3043,55 @@ run_pipeline_fixture() {
     PATH="$FAKEBIN:$PATH" "$PIPELINE_WRAPPER" "$@"
 }
 
+# record_lead_ambient <profile>
+# The runtime record bin/fm-lock.sh leaves for this home's lead, naming the
+# profile its default-seat workers get.
+record_lead_ambient() {
+  printf '4242424\n' > "$HOME_DIR/state/.lock"
+  printf 'pid=4242424\nprofile=%s\nambient=%s\n' "$SEATS_DIR/lead" "$1" > "$HOME_DIR/state/.lock-runtime"
+}
+
+test_pipeline_default_seat_matches_worker_profile() {
+  local rec out ambient worker board
+  rec=$(make_seat_case pipeline-default); read_seat_case "$rec"
+  ambient="$CASE_DIR/lead ambient"
+  mkdir -p "$ambient" "$SEATS_DIR/lead"
+  install_pipeline_fixture
+  out=$(NM_CLAUDE_CONFIG_DIR='' run_pipeline_fixture 2>&1)
+  expect_code 75 "$?" "an unrecorded default profile must refuse rather than guess"
+  assert_contains "$out" "default seat's profile is not recorded" "refusal must explain the missing record"
+  assert_not_contains "$out" 'profile=' "an unrecorded default must start no agent"
+  record_lead_ambient "$ambient"
+  worker=$(SEAT_TEST_AMBIENT_CONFIG_DIR="$ambient" run_seat "$HOME_DIR" "$FAKEBIN" status)
+  assert_contains "$worker" "active profile: $ambient" "precondition: a default-seat worker spawned by the lead gets its ambient"
+  out=$(NM_CLAUDE_CONFIG_DIR='' run_pipeline_fixture)
+  assert_contains "$out" "profile=$ambient" "a default-seat pipeline agent must land on the worker's profile"
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" status)
+  assert_contains "$out" 'pipeline seat for next managed launch: default (follows active seat)' "status must name the default pipeline seat"
+  assert_not_contains "$out" 'pipeline selection HELD' "a recorded default must not be held"
+  board=$(FM_HOME="$HOME_DIR" FM_CONFIG_OVERRIDE="$HOME_DIR/config" FM_STATE_OVERRIDE="$HOME_DIR/state" \
+    NM_CLAUDE_CONFIG_DIR='' FM_SEAT_BOARD_CACHE_DIR="$CASE_DIR/board-cache" \
+    "$ROOT/bin/fm-seat-board.sh" json --cached-only)
+  printf '%s' "$board" | jq -e --arg p "$ambient" '.pipeline.seat == "default" and .pipeline.profile == $p and (.pipeline | has("installation") | not)' >/dev/null ||
+    fail "board must read the same default profile: $board"
+  seat_logged_in "$SPEC_DIR" "$ambient"
+  printf '%s\t0\n' "$ambient" > "$SPEC_DIR/remaining_map"
+  printf 'stop\n' > "$HOME_DIR/config/claude-seat-extra-usage"
+  out=$(NM_CLAUDE_CONFIG_DIR='' run_pipeline_fixture 2>&1)
+  expect_code 75 "$?" "stop must read the default seat's recorded profile"
+  assert_contains "$out" 'HELD pipeline-agent launch on seat default: pipeline seat default has no plan quota left' "refusal must name the pipeline seat"
+  assert_contains "$out" 'no new Claude pipeline agent is started' "refusal must name the pipeline-agent launch"
+  printf '%s\t80\n' "$ambient" > "$SPEC_DIR/remaining_map"
+  out=$(NM_CLAUDE_CONFIG_DIR='' run_pipeline_fixture)
+  expect_code 0 "$?" "quota left on the recorded default profile must launch: $out"
+  printf '5\n' > "$HOME_DIR/config/claude-seat-floor"
+  printf '{"schemaVersion":1,"seats":{"default":{"since":1,"provisional":false}}}\n' > "$HOME_DIR/config/claude-seat-resting"
+  out=$(NM_CLAUDE_CONFIG_DIR='' run_pipeline_fixture 2>&1)
+  expect_code 75 "$?" "a resting default seat must never launch"
+  assert_contains "$out" 'resting below the quota floor' "rest hold must apply to the default seat"
+  pass "a default-seat pipeline agent uses the lead's recorded worker profile for launch, display, rest and extra usage"
+}
+
 test_pipeline_install_check_and_streams() {
   local rec out rc before
   rec=$(make_seat_case pipeline-streams); read_seat_case "$rec"
@@ -3090,6 +3139,7 @@ test_pipeline_rereads_active_and_validates_override() {
   expect_code 75 "$?" "missing active directory must refuse instead of falling back"
   assert_contains "$out" 'no fallback' "missing-directory refusal must explain the boundary"
   rm "$HOME_DIR/config/claude-seat"
+  record_lead_ambient ''
   out=$(NM_CLAUDE_CONFIG_DIR='' run_pipeline_fixture)
   assert_contains "$out" 'profile=' "default selection must launch"
   assert_not_contains "$out" '/wrong/worker-seat' "default must not inherit the worker's profile"
@@ -3220,6 +3270,7 @@ test_pipeline_live_warning_and_move_leave_agent_running() {
 
 test_pipeline_install_check_and_streams
 test_pipeline_rereads_active_and_validates_override
+test_pipeline_default_seat_matches_worker_profile
 test_pipeline_never_launches_excluded_or_resting
 test_pipeline_extra_usage_reads_selected_profile
 test_pipeline_live_warning_and_move_leave_agent_running

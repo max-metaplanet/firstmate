@@ -184,10 +184,13 @@ fm_seat_spawn_config_dir() {
 # Read the next managed pipeline launch's seat without probing quota. An
 # explicit NM_CLAUDE_CONFIG_DIR wins only when it names an existing managed
 # seat, so an arbitrary path cannot bypass its exclusion or resting record.
-# The machine-local wrapper's default is the ambient ~/.claude login, never
-# the calling worker's inherited profile. This JSON is also the display owner.
+# The default seat resolves to the profile a worker spawned now would get: the
+# lead's recorded ambient (bin/fm-lock.sh), never the caller's own environment,
+# so a daemon, a status reader and the lead all agree. An unrecorded ambient is
+# refused rather than guessed. This JSON is also the display owner.
 # blockedReason is null when the selection passes the directory/exclusion/rest
 # guards; the extra-usage gate is applied separately at launch, on this profile.
+# Callers source bin/fm-session-lock-lib.sh for the runtime record.
 fm_seat_pipeline_selection() {
   local name profile override=false reason='' raw
   name=$(fm_seat_active)
@@ -195,7 +198,6 @@ fm_seat_pipeline_selection() {
     raw=$(sed -n '1p' "$CONFIG/claude-seat" | tr -d '[:space:]')
     [ -z "$raw" ] || fm_seat_name_valid "$raw" || reason='configured seat is malformed'
   fi
-  profile=$(FM_AMBIENT_CLAUDE_CONFIG_DIR='' fm_seat_config_dir "$name")
   if [ -n "${NM_CLAUDE_CONFIG_DIR:-}" ]; then
     override=true
     profile=$NM_CLAUDE_CONFIG_DIR
@@ -205,6 +207,11 @@ fm_seat_pipeline_selection() {
     if ! fm_seat_name_valid "$name" || [ "$name" = "$FM_SEAT_DEFAULT_NAME" ]; then
       reason='NM_CLAUDE_CONFIG_DIR must name a seat directory under the seats root'
     fi
+  elif [ "$name" != "$FM_SEAT_DEFAULT_NAME" ]; then
+    profile=$(fm_seat_config_dir "$name")
+  elif ! profile=$(fm_session_lock_runtime_field "$STATE" ambient); then
+    profile=''
+    [ -n "$reason" ] || reason="the default seat's profile is not recorded for this home's lead; it is recorded at the next session start"
   fi
   if [ -z "$reason" ]; then
     if [ "$name" != "$FM_SEAT_DEFAULT_NAME" ] && [ ! -d "$profile" ]; then
@@ -243,16 +250,10 @@ fm_seat_pipeline_live() {
 }
 
 # fm_seat_pipeline_report
-# Read-only display of the managed wrapper's next selection, its live launch
-# records, and its installation receipt (not proof of no-mistakes config).
-# pipeline-check verifies the receipt's installed wrapper against the template.
+# Read-only display of the managed wrapper's next selection and its live launch
+# records.
 fm_seat_pipeline_report() {
-  local receipt=null
-  if [ -f "$STATE/.claude-seat-pipeline-wrapper.json" ]; then
-    receipt=$(jq -c . "$STATE/.claude-seat-pipeline-wrapper.json" 2>/dev/null) || receipt=null
-  fi
-  fm_seat_pipeline_selection | jq -c --argjson live "$(fm_seat_pipeline_live)" \
-    --argjson installation "$receipt" '. + {liveAgents: $live, installation: $installation}'
+  fm_seat_pipeline_selection | jq -c --argjson live "$(fm_seat_pipeline_live)" '. + {liveAgents: $live}'
 }
 
 # fm_seat_list
@@ -1149,23 +1150,25 @@ fm_seat_dispatch_decision() {
   printf 'hold extra-usage-cap %s %s\n' "$spent" "$cap"
 }
 
-# fm_seat_dispatch_reason <decision-line>
+# fm_seat_dispatch_reason <decision-line> [seat-label] [launch-noun]
 # The operator-facing reason for one fm_seat_dispatch_decision line, the single
 # place its wording lives. Exit 0 for an allow and 1 for a hold, so the spawn
 # gate and `bin/fm-seat.sh status` both render and branch on the same text.
+# The labels default to the active seat and a worker; a pipeline launch names
+# its selected seat and itself instead.
 fm_seat_dispatch_reason() {
-  local verb reason a b
+  local verb reason a b seat=${2:-the active Claude seat} who=${3:-worker}
   read -r verb reason a b <<< "${1-}"
   if [ "$verb" = allow ]; then
     case "$reason" in
       policy-unset)
         printf 'no extra-usage policy is configured, so no quota is read and nothing holds\n' ;;
       plan-quota-remaining)
-        printf 'the active Claude seat still has %s%% of its plan quota left\n' "$a" ;;
+        printf '%s still has %s%% of its plan quota left\n' "$seat" "$a" ;;
       extra-usage-under-cap)
-        printf '$%s of extra usage spent on the active Claude seat, under the $%s cap\n' "$a" "$b" ;;
+        printf '$%s of extra usage spent on %s, under the $%s cap\n' "$a" "$seat" "$b" ;;
       login-renewable)
-        printf 'the active Claude seat access token has lapsed, so its quota cannot be read until this launch renews it\n' ;;
+        printf '%s access token has lapsed, so its quota cannot be read until this launch renews it\n' "$seat" ;;
       *)
         printf 'the extra-usage policy allows new Claude dispatch\n' ;;
     esac
@@ -1173,18 +1176,18 @@ fm_seat_dispatch_reason() {
   fi
   case "$reason" in
     quota-unreadable)
-      printf 'the active Claude seat quota could not be read, so whether this worker would run on paid extra usage is unknown, and the policy makes no guess\n' ;;
+      printf '%s quota could not be read, so whether this %s would run on paid extra usage is unknown, and the policy makes no guess\n' "$seat" "$who" ;;
     extra-usage-stop)
-      printf 'the active Claude seat has no plan quota left and the extra-usage policy is stop, so no new Claude worker is started on paid extra usage\n' ;;
+      printf '%s has no plan quota left and the extra-usage policy is stop, so no new Claude %s is started on paid extra usage\n' "$seat" "$who" ;;
     floor-stop)
-      printf 'the active Claude seat is at %s%% left, at or below the %s%% quota floor, and the extra-usage policy is stop, so no new Claude worker is started on what is left of it\n' "$a" "$b" ;;
+      printf '%s is at %s%% left, at or below the %s%% quota floor, and the extra-usage policy is stop, so no new Claude %s is started on what is left of it\n' "$seat" "$a" "$b" "$who" ;;
     extra-usage-spend-unreadable)
-      printf 'the active Claude seat has no plan quota left and its extra-usage spend could not be read, so it cannot be compared against the $%s cap\n' "$a" ;;
+      printf '%s has no plan quota left and its extra-usage spend could not be read, so it cannot be compared against the $%s cap\n' "$seat" "$a" ;;
     extra-usage-cap)
-      printf '$%s of extra usage is already spent on the active Claude seat, at or over the $%s cap\n' "$a" "$b" ;;
+      printf '$%s of extra usage is already spent on %s, at or over the $%s cap\n' "$a" "$seat" "$b" ;;
     *)
       printf 'the extra-usage policy holds new Claude dispatch\n' ;;
   esac
-  printf 'this holds only work not yet started; a worker already running keeps its own seat and can still draw extra usage mid-task\n'
+  printf 'this holds only work not yet started; a %s already running keeps its own seat and can still draw extra usage mid-task\n' "$who"
   return 1
 }

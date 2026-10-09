@@ -20,7 +20,7 @@
 # json    Prints the same reading as one JSON object instead of a page, for a
 #         reader that is not a browser. Schema 1:
 #           { schemaVersion, generatedAt, cacheSeconds, activeSeat, liveSeat,
-#             pipeline: { seat, profile, override, blockedReason, installation,
+#             pipeline: { seat, profile, override, blockedReason,
 #                         liveAgents: [{ seat, profile, override, pid, started }] },
 #             floor: null | { removeAt, readdAt, dwellSeconds,
 #                             sessionShare: { percent, source, samples } },
@@ -86,6 +86,8 @@ STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 . "$SCRIPT_DIR/fm-seat-lib.sh"
 # shellcheck source=bin/fm-quota-axi-lib.sh
 . "$SCRIPT_DIR/fm-quota-axi-lib.sh"
+# shellcheck source=bin/fm-session-lock-lib.sh
+. "$SCRIPT_DIR/fm-session-lock-lib.sh"
 
 FM_SEAT_BOARD_PORT_DEFAULT=4405
 FM_SEAT_BOARD_CACHE_SECONDS=${FM_SEAT_BOARD_CACHE_SECONDS:-60}
@@ -441,8 +443,6 @@ render_page() {
     "pipeline seat for next managed launch: " + .seat
     + (if .override then " (NM_CLAUDE_CONFIG_DIR override)" else " (follows active seat)" end),
     (if .blockedReason == null then empty else "pipeline selection HELD: " + .blockedReason end),
-    (if .installation == null then "pipeline wrapper: no installation receipt; use pipeline-install / pipeline-check"
-     else "pipeline wrapper recorded at: " + .installation.path + " (pipeline-check verifies it; no-mistakes must use this binary)" end),
     (.liveAgents[] | "live pipeline agent: pid=" + (.pid | tostring) + " seat=" + .seat)')
   seat_section_html "$FM_SEAT_DEFAULT_NAME" "$active"
   while IFS= read -r name; do
