@@ -66,7 +66,9 @@ case "${1:-}" in
         ". '"*"'")
           staged=${payload#". '"}
           staged=${staged%"'"}
-          [ ! -f "$staged" ] || cp "$staged" "$D/replacement-launch"
+          if [ -n "${FM_FAKE_CAPTURE_LAUNCH:-}" ] && [ -f "$staged" ]; then
+            cp "$staged" "$D/replacement-launch"
+          fi
           [ ! -f "$staged" ] || payload=$(cat "$staged")
           ;;
       esac
@@ -320,7 +322,7 @@ test_claude_replacement_persists_transcripts() {
       printf 'CLAUDE_CODE_CHILD_SESSION\nCLAUDE_CODE_FORCE_SESSION_PERSISTENCE\n' \
         > "$dir/home/config/launch-env-allowlist"
     fi
-    out=$(CLAUDE_CODE_CHILD_SESSION=1 CLAUDE_CODE_FORCE_SESSION_PERSISTENCE=0 run_restart "$dir" sm1) \
+    out=$(FM_FAKE_CAPTURE_LAUNCH=1 CLAUDE_CODE_CHILD_SESSION=1 CLAUDE_CODE_FORCE_SESSION_PERSISTENCE=0 run_restart "$dir" sm1) \
       || fail "transcript restart with allowlist=$setting failed: $out"
     launch=$(cat "$dir/fake/replacement-launch")
     cat > "$dir/fakebin/claude" <<'SH'
