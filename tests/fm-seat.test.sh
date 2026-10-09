@@ -3102,20 +3102,49 @@ record_lead_ambient() {
 }
 
 test_pipeline_default_seat_matches_worker_profile() {
-  local rec out ambient worker board
+  local rec out ambient worker board fallback
   rec=$(make_seat_case pipeline-default); read_seat_case "$rec"
   ambient="$CASE_DIR/lead ambient"
   mkdir -p "$ambient" "$SEATS_DIR/lead"
-  install_pipeline_fixture
+  fallback="$CASE_DIR/installed default"
+  mkdir -p "$fallback"
+  SEAT_TEST_AMBIENT_CONFIG_DIR="$fallback" install_pipeline_fixture
   out=$(NM_CLAUDE_CONFIG_DIR='' run_pipeline_fixture 2>&1)
-  expect_code 75 "$?" "an unrecorded default profile must refuse rather than guess"
-  assert_contains "$out" "default seat's profile is not recorded" "refusal must explain the missing record"
-  assert_not_contains "$out" 'profile=' "an unrecorded default must start no agent"
+  expect_code 0 "$?" "no live lead must fall back rather than refuse: $out"
+  assert_contains "$out" "profile=$fallback" "no live lead must use the installed default profile"
+  assert_contains "$out" "using the wrapper's installed default profile $fallback" "the fallback must be named on stderr"
+  assert_contains "$out" 'Restarting the lead records it' "the warning must say a lead restart records the profile"
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" status)
+  assert_contains "$out" 'pipeline default-seat profile not recorded' "status must show the unrecorded default"
+  assert_not_contains "$out" 'pipeline selection HELD' "an unrecorded default must not be held"
+  printf '4242424\n' > "$HOME_DIR/state/.lock"
+  printf 'pid=4242424\nprofile=%s\n' "$SEATS_DIR/lead" > "$HOME_DIR/state/.lock-runtime"
+  out=$(NM_CLAUDE_CONFIG_DIR='' run_pipeline_fixture 2>&1)
+  expect_code 0 "$?" "an old-format lead record must fall back rather than refuse: $out"
+  assert_contains "$out" "profile=$fallback" "an old-format lead record must use the installed default profile"
+  assert_contains "$out" "using the wrapper's installed default profile" "the old-format fallback must warn"
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" pipeline-move)
+  expect_code 0 "$?" "move must succeed on a healthy unrecorded default: $out"
+  [ ! -s "$HOME_DIR/config/claude-seat" ] || fail "move must not rotate a healthy default seat whose profile is unrecorded"
+  printf '5\n' > "$HOME_DIR/config/claude-seat-floor"
+  printf '{"schemaVersion":1,"seats":{"default":{"since":1,"provisional":false}}}\n' > "$HOME_DIR/config/claude-seat-resting"
+  out=$(NM_CLAUDE_CONFIG_DIR='' run_pipeline_fixture 2>&1)
+  expect_code 75 "$?" "a resting default seat must hold on the fallback too"
+  assert_not_contains "$out" 'profile=' "a resting fallback must start no agent"
+  rm -f "$HOME_DIR/config/claude-seat-resting" "$HOME_DIR/config/claude-seat-floor"
+  seat_logged_in "$SPEC_DIR" "$fallback"
+  printf '%s\t0\n' "$fallback" > "$SPEC_DIR/remaining_map"
+  printf 'stop\n' > "$HOME_DIR/config/claude-seat-extra-usage"
+  out=$(NM_CLAUDE_CONFIG_DIR='' run_pipeline_fixture 2>&1)
+  expect_code 75 "$?" "stop must gate the fallback profile"
+  assert_contains "$out" 'pipeline seat default has no plan quota left' "stop must read the fallback profile"
+  rm -f "$HOME_DIR/config/claude-seat-extra-usage" "$SPEC_DIR/remaining_map"
   record_lead_ambient "$ambient"
   worker=$(SEAT_TEST_AMBIENT_CONFIG_DIR="$ambient" run_seat "$HOME_DIR" "$FAKEBIN" status)
   assert_contains "$worker" "active profile: $ambient" "precondition: a default-seat worker spawned by the lead gets its ambient"
-  out=$(NM_CLAUDE_CONFIG_DIR='' run_pipeline_fixture)
+  out=$(NM_CLAUDE_CONFIG_DIR='' run_pipeline_fixture 2>&1)
   assert_contains "$out" "profile=$ambient" "a default-seat pipeline agent must land on the worker's profile"
+  assert_not_contains "$out" 'installed default profile' "a recorded default must not warn about the fallback"
   out=$(run_seat "$HOME_DIR" "$FAKEBIN" status)
   assert_contains "$out" 'pipeline seat for next managed launch: default (follows active seat)' "status must name the default pipeline seat"
   assert_not_contains "$out" 'pipeline selection HELD' "a recorded default must not be held"
@@ -3139,7 +3168,7 @@ test_pipeline_default_seat_matches_worker_profile() {
   out=$(NM_CLAUDE_CONFIG_DIR='' run_pipeline_fixture 2>&1)
   expect_code 75 "$?" "a resting default seat must never launch"
   assert_contains "$out" 'resting below the quota floor' "rest hold must apply to the default seat"
-  pass "a default-seat pipeline agent uses the lead's recorded worker profile for launch, display, rest and extra usage"
+  pass "a default-seat pipeline agent uses the lead's recorded worker profile, else the installed default, for launch, display, rest and extra usage"
 }
 
 test_pipeline_install_check_and_streams() {
@@ -3318,12 +3347,30 @@ test_pipeline_live_warning_and_move_leave_agent_running() {
   pass "pipeline watch warns once per rest, move affects subsequent launches only, and live PID stamps stay honest"
 }
 
+test_pipeline_move_keeps_a_healthy_seat_with_a_malformed_setting() {
+  local rec out
+  rec=$(make_seat_case pipeline-move-malformed); read_seat_case "$rec"
+  mkdir -p "$SEATS_DIR/alpha"
+  seat_logged_in "$SPEC_DIR" "$SEATS_DIR/alpha"
+  printf 'not a seat!\n' > "$HOME_DIR/config/claude-seat"
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" pipeline-move)
+  expect_code 1 "$?" "a malformed setting must be reported as a hold: $out"
+  assert_contains "$out" 'configured seat is malformed; active seat kept' "move must name the hold it cannot rotate away"
+  assert_grep 'not a seat!' "$HOME_DIR/config/claude-seat" "move must not rotate a healthy seat for a malformed setting"
+  printf 'ghost\n' > "$HOME_DIR/config/claude-seat"
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" pipeline-move)
+  expect_code 0 "$?" "a missing seat directory must still rotate: $out"
+  assert_contains "$out" 'follow active seat alpha' "a missing seat directory must rotate to an eligible seat"
+  pass "pipeline-move rotates only a resting, excluded or missing seat and reports any other hold"
+}
+
 test_pipeline_install_check_and_streams
 test_pipeline_rereads_active_and_validates_override
 test_pipeline_default_seat_matches_worker_profile
 test_pipeline_never_launches_excluded_or_resting
 test_pipeline_extra_usage_reads_selected_profile
 test_pipeline_live_warning_and_move_leave_agent_running
+test_pipeline_move_keeps_a_healthy_seat_with_a_malformed_setting
 
 test_absent_setting_is_the_default_seat
 test_switch_to_logged_in_seat_updates_only_the_setting

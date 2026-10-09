@@ -20,7 +20,7 @@
 # json    Prints the same reading as one JSON object instead of a page, for a
 #         reader that is not a browser. Schema 1:
 #           { schemaVersion, generatedAt, cacheSeconds, activeSeat, liveSeat,
-#             pipeline: { seat, profile, override, blockedReason,
+#             pipeline: { seat, profile, override, profileRecorded, blockedReason,
 #                         liveAgents: [{ seat, profile, override, pid, started }] },
 #             floor: null | { removeAt, readdAt, dwellSeconds,
 #                             sessionShare: { percent, source, samples } },
@@ -443,6 +443,7 @@ render_page() {
     "pipeline seat for next managed launch: " + .seat
     + (if .override then " (NM_CLAUDE_CONFIG_DIR override)" else " (follows active seat)" end),
     (if .blockedReason == null then empty else "pipeline selection HELD: " + .blockedReason end),
+    (if .profileRecorded then empty else "pipeline default-seat profile not recorded for this home'"'"'s lead; launches use the wrapper'"'"'s installed default profile until a lead restart records it" end),
     (.liveAgents[] | "live pipeline agent: pid=" + (.pid | tostring) + " seat=" + .seat)')
   seat_section_html "$FM_SEAT_DEFAULT_NAME" "$active"
   while IFS= read -r name; do

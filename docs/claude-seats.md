@@ -282,7 +282,8 @@ A switch therefore moves subsequent pipeline agents immediately, without moving 
 `NM_CLAUDE_CONFIG_DIR` still wins when it names an existing seat directory under that home's seats root, but cannot bypass a manual exclusion, resting record, or extra-usage hold.
 An unmanaged path or missing profile is refused rather than falling back to another account.
 The default active seat uses the profile a worker spawned at that moment would get: the lead's ambient profile, which the lead records beside its session lock at session start, never the launching worker's inherited seat.
-Until the lead has recorded it, a launch on the default seat is refused rather than guessed.
+While no live lead has recorded it (the lead is stopped, or its record predates the field), a default-seat launch warns on stderr and uses the default-seat profile the wrapper bound at install: the `CLAUDE_CONFIG_DIR` of the shell that ran `pipeline-install`, or the ambient login when that is unset, so install from the lead's environment.
+A lead restart records the profile; the rest, exclusion and extra-usage gates still apply to that fallback.
 Unlike a worker's deliberate manual seat selection, pipeline launches refuse an excluded or resting active seat too.
 The same extra-usage policy gates the selected profile, so `stop` refuses a launch when its plan quota is gone (or it is at the configured floor); no pipeline hold bypass is offered.
 A launch refusal names the seat and reason and starts no agent.
@@ -299,7 +300,8 @@ When the watch rests a seat with a managed pipeline agent already running, it wa
 FM_HOME=/path/to/home bin/fm-seat.sh pipeline-move
 ```
 
-That command uses the existing seat rotation when the active seat is withheld, and keeps an eligible active seat if the automatic switch has already moved it.
+That command uses the existing seat rotation only when the active seat is resting, manually excluded, or missing its profile directory, and keeps an eligible active seat if the automatic switch has already moved it.
+Any other selection hold, such as a malformed seat setting, is reported and exits nonzero without rotating.
 Clear an `NM_CLAUDE_CONFIG_DIR` override in the pipeline's launch environment to follow the active seat.
 The running agent finishes untouched; no wrapper or seat command cancels, aborts, or restarts a pipeline run.
 Moving an individual running agent needs no-mistakes support that is not currently available.

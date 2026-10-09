@@ -4,12 +4,15 @@
 #
 # Usage:
 #   fm-seat-pipeline.sh install|check [--destination <path>] --claude <path>
-#   fm-seat-pipeline.sh launch <home> <claude-path> [claude-args...]
+#   fm-seat-pipeline.sh launch --default-profile <dir> <home> <claude-path> [claude-args...]
 #
 # install writes only the selected wrapper (default ~/.no-mistakes/bin-wrappers/
 # claude). It binds the wrapper to this home and this checkout's helper, so use a stable
 # installation checkout, not a disposable worktree. It changes no no-mistakes
-# config; configure that wrapper as its Claude binary separately.
+# config; configure that wrapper as its Claude binary separately. It also binds
+# the default-seat profile the installing shell would hand a worker (its
+# CLAUDE_CONFIG_DIR, empty for the ambient login), so install from the lead's
+# environment.
 # check compares the installed wrapper to the current template without writes.
 # Both require the absolute, executable native Claude path (not the wrapper).
 # --destination lets tests and a staged install stay entirely in scratch space.
@@ -17,6 +20,8 @@
 # launch ignores inherited Firstmate path overrides and the worker's profile.
 # It resolves the bound home's active seat fresh, validates a managed-profile
 # NM_CLAUDE_CONFIG_DIR override, and refuses excluded/resting/missing seats.
+# On the default seat it uses the lead's recorded ambient profile; while none is
+# recorded it warns and uses the wrapper's installed default profile instead.
 # The shared extra-usage dispatch gate reads the selected profile; no launch
 # bypass is offered. Refusals exit 75, with a reason on stderr and no Claude.
 # It then records a PID/start stamp under state/claude-pipeline and execs Claude,
@@ -42,14 +47,15 @@ usage() { sed -n '2,/^set -u/{ /^#/s/^# *//p; }' "$0"; exit 2; }
 
 wrapper_text() {
   printf '#!/usr/bin/env bash\n'
-  printf 'FM_PIPELINE_TOOL=%q\nFM_PIPELINE_HOME=%q\nFM_PIPELINE_CLAUDE=%q\n' \
-    "$SCRIPT_DIR/fm-seat-pipeline.sh" "$FM_HOME" "$native"
+  printf 'FM_PIPELINE_TOOL=%q\nFM_PIPELINE_HOME=%q\nFM_PIPELINE_CLAUDE=%q\nFM_PIPELINE_DEFAULT_PROFILE=%q\n' \
+    "$SCRIPT_DIR/fm-seat-pipeline.sh" "$FM_HOME" "$native" "$default_profile"
   tail -n +2 "$SCRIPT_DIR/templates/no-mistakes-claude.sh"
 }
 
 cmd_install() {
-  local verb=$1 destination="${HOME:-}/.no-mistakes/bin-wrappers/claude" native='' tmp
+  local verb=$1 destination="${HOME:-}/.no-mistakes/bin-wrappers/claude" native='' tmp default_profile
   shift
+  default_profile=$(fm_seat_config_dir "$FM_SEAT_DEFAULT_NAME")
   while [ $# -gt 0 ]; do
     case "$1" in
       --destination) [ $# -ge 2 ] || usage; destination=$2; shift 2 ;;
@@ -58,6 +64,7 @@ cmd_install() {
     esac
   done
   case "$FM_HOME:$destination:$native" in /*:/*:/*) ;; *) die 'home, destination and native Claude must be absolute paths' ;; esac
+  case "$default_profile" in ''|/*) ;; *) die 'the default-seat profile must be an absolute path' ;; esac
   [ -x "$native" ] && [ ! -d "$native" ] || die 'native Claude binary is not executable'
   [ "$native" != "$destination" ] && [ ! "$native" -ef "$destination" ] || die 'native Claude must not be the wrapper itself'
   if [ "$verb" = check ]; then
@@ -76,10 +83,10 @@ cmd_install() {
 }
 
 cmd_launch() {
-  [ $# -ge 2 ] || usage
-  FM_HOME=$1
-  local native=$2 selection name profile reason record pid started actual
-  shift 2
+  [ $# -ge 4 ] && [ "$1" = --default-profile ] || usage
+  local default_profile=$2 native=$4 selection name profile reason record pid started actual
+  FM_HOME=$3
+  shift 4
   case "$FM_HOME:$native" in /*:/*) ;; *) die 'home and native Claude must be absolute paths' ;; esac
   [ -d "$FM_HOME/config" ] || die "bound home config is missing: $FM_HOME/config"
   CONFIG="$FM_HOME/config"
@@ -90,6 +97,11 @@ cmd_launch() {
   profile=$(printf '%s' "$selection" | jq -r '.profile')
   reason=$(printf '%s' "$selection" | jq -r '.blockedReason // empty')
   [ -z "$reason" ] || die "HELD pipeline-agent launch on seat $name: $reason; fm-seat.sh pipeline-move selects another seat for subsequent launches (clear a rejected NM_CLAUDE_CONFIG_DIR override in the pipeline environment)"
+  if [ "$(printf '%s' "$selection" | jq -r '.profileRecorded')" = false ]; then
+    profile=$default_profile
+    selection=$(printf '%s' "$selection" | jq -c --arg p "$profile" '.profile = $p')
+    printf "pipeline Claude: warning: the default seat's profile is not recorded for this home's lead; using the wrapper's installed default profile %s. Restarting the lead records it\n" "${profile:-(ambient default login)}" >&2
+  fi
   if ! reason=$(fm_seat_dispatch_reason "$(fm_seat_dispatch_decision "$profile")" "pipeline seat $name" "pipeline agent"); then
     die "HELD pipeline-agent launch on seat $name: $reason"
   fi

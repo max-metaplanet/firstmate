@@ -343,6 +343,7 @@ cmd_status() {
     "pipeline seat for next managed launch: " + .seat
     + (if .override then " (NM_CLAUDE_CONFIG_DIR override)" else " (follows active seat)" end),
     (if .blockedReason == null then empty else "pipeline selection HELD: " + .blockedReason end),
+    (if .profileRecorded then empty else "pipeline default-seat profile not recorded for this home'"'"'s lead; launches use the wrapper'"'"'s installed default profile until a lead restart records it" end),
     (.liveAgents[] | "live pipeline agent: pid=" + (.pid | tostring) + " seat=" + .seat
       + (if .override then " (override)" else "" end))'
   # The lead's own seat is a separate fact from the active one: a switch moves
@@ -1093,13 +1094,18 @@ warn_pipeline_resting_entry() {
 }
 
 cmd_pipeline_move() {
-  local selection reason
+  local active reason
   # The move follows active-seat rotation, irrespective of an override in the
   # shell issuing it. Overrides belong to the pipeline launch environment.
-  selection=$(NM_CLAUDE_CONFIG_DIR='' fm_seat_pipeline_selection)
-  reason=$(printf '%s' "$selection" | jq -r '.blockedReason // empty')
-  if [ -n "$reason" ]; then
+  active=$(fm_seat_active)
+  if fm_seat_auto_excluded "$active" || fm_seat_resting "$active" ||
+    { [ "$active" != "$FM_SEAT_DEFAULT_NAME" ] && [ ! -d "$(fm_seat_config_dir "$active")" ]; }; then
     cmd_switch --next || return 1
+  fi
+  reason=$(NM_CLAUDE_CONFIG_DIR='' fm_seat_pipeline_selection | jq -r '.blockedReason // empty')
+  if [ -n "$reason" ]; then
+    printf 'pipeline selection HELD on active seat %s: %s; active seat kept\n' "$(fm_seat_active)" "$reason" >&2
+    return 1
   fi
   printf 'subsequent managed pipeline launches follow active seat %s; running agents finish untouched (clear NM_CLAUDE_CONFIG_DIR in the pipeline environment if set)\n' "$(fm_seat_active)"
 }

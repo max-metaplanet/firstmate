@@ -214,13 +214,15 @@ fm_seat_spawn_config_dir() {
 # seat, so an arbitrary path cannot bypass its exclusion or resting record.
 # The default seat resolves to the profile a worker spawned now would get: the
 # lead's recorded ambient (bin/fm-lock.sh), never the caller's own environment,
-# so a daemon, a status reader and the lead all agree. An unrecorded ambient is
-# refused rather than guessed. This JSON is also the display owner.
+# so a daemon, a status reader and the lead all agree. An unrecorded ambient
+# (no live lead, or a record written before the field existed) reports
+# profileRecorded false; the launch then uses its wrapper's installed default
+# profile. This JSON is also the display owner.
 # blockedReason is null when the selection passes the directory/exclusion/rest
 # guards; the extra-usage gate is applied separately at launch, on this profile.
 # Callers source bin/fm-session-lock-lib.sh for the runtime record.
 fm_seat_pipeline_selection() {
-  local name profile override=false reason='' raw
+  local name profile override=false recorded=true reason='' raw
   name=$(fm_seat_active)
   if [ -f "$CONFIG/claude-seat" ]; then
     raw=$(sed -n '1p' "$CONFIG/claude-seat" | tr -d '[:space:]')
@@ -239,7 +241,7 @@ fm_seat_pipeline_selection() {
     profile=$(fm_seat_config_dir "$name")
   elif ! profile=$(fm_session_lock_runtime_field "$STATE" ambient); then
     profile=''
-    [ -n "$reason" ] || reason="the default seat's profile is not recorded for this home's lead; it is recorded at the next session start"
+    recorded=false
   fi
   if [ -z "$reason" ]; then
     if [ "$name" != "$FM_SEAT_DEFAULT_NAME" ] && [ ! -d "$profile" ]; then
@@ -251,8 +253,8 @@ fm_seat_pipeline_selection() {
     fi
   fi
   jq -cn --arg seat "$name" --arg profile "$profile" --arg reason "$reason" \
-    --argjson override "$override" \
-    '{seat: $seat, profile: $profile, override: $override,
+    --argjson override "$override" --argjson recorded "$recorded" \
+    '{seat: $seat, profile: $profile, override: $override, profileRecorded: $recorded,
       blockedReason: (if $reason == "" then null else $reason end)}'
 }
 
