@@ -2243,6 +2243,54 @@ rest_beta() {
   run_seat "$HOME_DIR" "$FAKEBIN" auto
 }
 
+test_resting_worker_warning_is_once_per_entry() {
+  local out task
+  floor_case floor-workers
+  cat > "$FAKEBIN/tmux" <<'SH'
+#!/usr/bin/env bash
+case "$1" in
+  list-windows) printf '%s\n' fm-live1 fm-live2 fm-stopped fm-other ;;
+  display-message)
+    case "$*" in
+      *pane_current_command*) case "$*" in *fm-stopped*) echo zsh ;; *) echo claude ;; esac ;;
+      *) echo fakepane ;;
+    esac
+    ;;
+esac
+SH
+  chmod +x "$FAKEBIN/tmux"
+  for task in live1 live2 stopped other remote malformed; do
+    printf 'window=fmses:fm-%s\nendpoint_task_id=%s\nharness=claude\nclaude_seat=%s\n' \
+      "$task" "$task" "$SEATS_DIR/beta" > "$HOME_DIR/state/$task.meta"
+    printf 'project=%s\nworktree=%s\n' "$CASE_DIR/project" "$CASE_DIR/worktree" >> "$HOME_DIR/state/$task.meta"
+  done
+  printf 'harness=codex\n' >> "$HOME_DIR/state/other.meta"
+  printf 'remote_host=elsewhere\n' >> "$HOME_DIR/state/remote.meta"
+  printf 'endpoint_task_id=someone-else\n' >> "$HOME_DIR/state/malformed.meta"
+  : > "$SPEC_DIR/calls"
+  out=$(rest_beta)
+  [ "$(wc -l < "$SPEC_DIR/calls" | tr -d ' ')" = 2 ] || fail "warning destination must share the watch memo"
+  assert_contains "$out" 'beta is resting with running workers: live1 live2' "warning must name only proven live local Claude workers"
+  assert_contains "$out" 'live1 relaunch --seat alpha --note' "warning must include the complete command for each worker"
+  assert_contains "$out" 'live2 relaunch --seat alpha --note' "warning must include the second worker command"
+  assert_contains "$out" "FM_HOME=$HOME_DIR" "command must explicitly target this home"
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" auto)
+  assert_not_contains "$out" 'running workers:' "steady resting state must not warn twice"
+  # Recovery clears the warning memo, and the next resting entry warns again.
+  run_seat "$HOME_DIR" "$FAKEBIN" floor-dwell 0 >/dev/null
+  seat_windows_clear "$SPEC_DIR"
+  seat_windows "$SPEC_DIR" "$SEATS_DIR/alpha" 80 2026-10-08T02:40:00Z 60 2026-10-14T21:00:00Z
+  seat_windows "$SPEC_DIR" "$SEATS_DIR/beta" 90 2026-10-08T06:00:00Z 90 2026-10-16T11:00:00Z
+  run_seat "$HOME_DIR" "$FAKEBIN" auto >/dev/null
+  out=$(rest_beta)
+  assert_contains "$out" 'running workers: live1 live2' "a new resting entry must re-arm the warning"
+  # No live task on a resting seat: no worker warning.
+  rm -f "$HOME_DIR/state/live1.meta" "$HOME_DIR/state/live2.meta"
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" auto)
+  assert_not_contains "$out" 'running workers:' "stopped and other-harness records must not warn"
+  pass "resting-worker warnings name each live worker and its move command once per entry"
+}
+
 test_the_floor_is_configurable_validated_and_absent_by_default() {
   local rec out status
   rec=$(make_seat_case floor-setting)
@@ -3126,3 +3174,5 @@ test_resting_wake_returns_a_seat_early_and_the_next_pass_may_rest_it_again
 test_a_stop_policy_holds_dispatch_once_the_active_seat_is_at_the_floor
 
 echo "# all fm-seat tests passed"
+
+test_resting_worker_warning_is_once_per_entry

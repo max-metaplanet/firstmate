@@ -19,8 +19,8 @@
 #      agent exited.
 set -u
 
-# shellcheck source=tests/lib.sh
-. "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+# shellcheck source=tests/fixtures.sh
+. "$(dirname "${BASH_SOURCE[0]}")/fixtures.sh"
 # shellcheck source=/dev/null
 . "$ROOT/bin/fm-control-lib.sh"
 # shellcheck source=/dev/null
@@ -45,7 +45,7 @@ relaunch_cleanup() {
   for d in "${TASK_TMPS[@]:-}"; do
     [ -n "$d" ] && rm -rf "$d"
   done
-  rm -rf "$TMP_ROOT"
+  fm_test_remove_tree "$TMP_ROOT"
 }
 trap relaunch_cleanup EXIT
 
@@ -388,6 +388,10 @@ test_same_harness_relaunch_keeps_identity_and_reuses_the_endpoint() {
     || fail "a relaunch must arm a fresh busy generation, got '$gen_after'"
   [ "$(journal_field "$dir" rl1 phase)" = complete ] \
     || fail "the transaction journal should end complete"
+  assert_not_contains "$(cat "$dir/home/state/rl1.control-relaunch")" 'from_seat=' \
+    "a relaunch without a seat override must not journal a seat move"
+  assert_not_contains "$(cat "$dir/home/state/rl1.control-relaunch")" 'to_seat=' \
+    "a relaunch without a seat override must not journal a destination seat"
   assert_grep "/exit" "$dir/fake/literal" "the previous agent should have been exited"
   assert_grep "cd -- '$dir/wt'" "$dir/fake/keys" "the replacement launch must enter the recorded worktree"
   assert_grep "Firstmate operational input waiting: read" "$dir/fake/literal" "the replacement should have been launched"
@@ -765,6 +769,97 @@ test_relaunch_keeps_the_recorded_claude_seat_after_a_seat_switch() {
   [ "$(meta_field "$dir" rl-seat claude_seat)" = "$seats/work" ] \
     || fail "the relaunch must preserve the recorded seat, got '$(meta_field "$dir" rl-seat claude_seat)'"
   pass "fm-control relaunch: a relaunch keeps the seat its task launched on, not the home's new one"
+}
+
+seat_relaunch_case() {  # <dir>
+  local dir=$1 seats="$1/seats"
+  mkdir -p "$seats/work" "$seats/spare" "$dir/home/config"
+  printf '%s\n' "$seats" > "$dir/home/config/claude-seats-root"
+  fm_test_make_quota_fake "$dir/fakebin" "$dir/quota-spec"
+  printf '%s\n' "$seats/work" "$seats/spare" '(default)' > "$dir/quota-spec/oauth"
+}
+
+test_relaunch_seat_override_is_transactional() {
+  local dir out rc before
+  dir=$(new_case seatmove rl-seatmove)
+  add_ship_task "$dir" rl-seatmove claude
+  seat_relaunch_case "$dir"
+  printf 'claude_seat=%s\n' "$dir/seats/work" >> "$dir/home/state/rl-seatmove.meta"
+  printf 'work\n' > "$dir/home/config/claude-seat"
+  printf 'uncommitted work\n' > "$dir/wt/preserved"
+  out=$(run_control "$dir" rl-seatmove relaunch --seat spare --note "continue preserved work"); rc=$?
+  expect_code 0 "$rc" "an explicit seat move should succeed: $out"
+  [ "$(meta_field "$dir" rl-seatmove claude_seat)" = "$dir/seats/spare" ] || fail "the task must record the destination profile"
+  assert_grep "CLAUDE_CONFIG_DIR='$dir/seats/spare'" "$dir/fake/literal" "the replacement must launch on the chosen seat"
+  [ "$(journal_field "$dir" rl-seatmove from_seat)" = "$dir/seats/work" ] || fail "the journal must record the prior seat"
+  [ "$(journal_field "$dir" rl-seatmove to_seat)" = "$dir/seats/spare" ] || fail "the journal must record the destination"
+  assert_grep work "$dir/home/config/claude-seat" "the home seat must stay unchanged"
+  assert_grep 'uncommitted work' "$dir/wt/preserved" "seat moves preserve dirty work"
+  out=$(run_control "$dir" rl-seatmove relaunch --seat default --note "return to default"); rc=$?
+  expect_code 0 "$rc" "default is an explicit destination: $out"
+  [ -z "$(meta_field "$dir" rl-seatmove claude_seat)" ] || fail "default must clear the recorded seat"
+  pass "fm-control relaunch: explicit seat moves publish and journal the chosen profile while preserving work and home config"
+
+  dir=$(new_case seatrollback rl-seatrollback)
+  add_ship_task "$dir" rl-seatrollback claude
+  seat_relaunch_case "$dir"
+  printf 'claude_seat=%s\n' "$dir/seats/work" >> "$dir/home/state/rl-seatrollback.meta"
+  before=$(cat "$dir/home/state/rl-seatrollback.meta")
+  printf '%s' "$dir/proj" > "$dir/fake/cwd"
+  out=$(run_control "$dir" rl-seatrollback relaunch --seat spare --note "recover preserved work"); rc=$?
+  expect_code 1 "$rc" "a replacement refused before publication must fail: $out"
+  [ "$(cat "$dir/home/state/rl-seatrollback.meta")" = "$before" ] || fail "a failed seat move must keep the prior record"
+  assert_contains "$out" "no agent is running" "rollback must report the stopped state honestly"
+  pass "fm-control relaunch: a failed seat move retains the prior seat record"
+}
+
+test_relaunch_seat_override_respects_account_pin() {
+  local dir out rc
+  dir=$(new_case seatpin rl-seatpin)
+  add_ship_task "$dir" rl-seatpin claude
+  seat_relaunch_case "$dir"
+  make_claude_auth_stub "$dir"
+  : > "$dir/seats/work/.credentials.json"
+  printf '%s\n' "$dir/seats/work" > "$dir/home/config/claude-account"
+  out=$(run_control "$dir" rl-seatpin relaunch --seat spare --note "pin remains authoritative"); rc=$?
+  expect_code 1 "$rc" "an explicit seat conflicting with the account pin must refuse"
+  assert_contains "$out" 'conflicts with config/claude-account' "refusal must name the account boundary"
+  [ "$(cat "$dir/fake/command")" = claude ] || fail "a conflicting seat move stopped the running worker"
+  [ ! -s "$dir/fake/literal" ] && [ ! -s "$dir/fake/keys" ] || fail "a pin conflict sent lifecycle input"
+  assert_grep "$dir/seats/work" "$dir/home/config/claude-account" "a seat move must not change the account pin"
+  pass "fm-control relaunch: an explicit seat cannot override the worker account pin"
+}
+
+test_relaunch_invalid_seat_changes_nothing() {
+  local dir out rc seat
+  dir=$(new_case seatbad rl-seatbad)
+  add_ship_task "$dir" rl-seatbad claude
+  seat_relaunch_case "$dir"
+  mkdir -p "$dir/seats/signedout" "$dir/seats/unknown" "$dir/seats/renewable"
+  printf '%s\n' "$dir/seats/signedout" > "$dir/quota-spec/proven_empty"
+  printf '%s\n' "$dir/seats/renewable" > "$dir/quota-spec/expired_refreshable"
+  cp "$dir/home/state/rl-seatbad.meta" "$dir/meta.before"
+  cp "$dir/home/data/rl-seatbad/brief.md" "$dir/brief.before"
+  for seat in missing signedout unknown '../spare' ''; do
+    out=$(run_control "$dir" rl-seatbad relaunch --seat "$seat" --note "do not stop"); rc=$?
+    expect_code 1 "$rc" "an invalid or unusable seat must refuse: $seat: $out"
+    cmp -s "$dir/meta.before" "$dir/home/state/rl-seatbad.meta" || fail "invalid seat changed metadata"
+    cmp -s "$dir/brief.before" "$dir/home/data/rl-seatbad/brief.md" || fail "invalid seat changed instructions"
+    [ "$(cat "$dir/fake/command")" = claude ] || fail "invalid seat stopped the worker"
+    [ ! -s "$dir/fake/literal" ] && [ ! -s "$dir/fake/keys" ] || fail "invalid seat sent lifecycle input"
+  done
+  out=$(run_control "$dir" rl-seatbad relaunch --harness codex --seat spare --note "wrong harness"); rc=$?
+  expect_code 1 "$rc" "a seat move to a different harness must refuse"
+  printf 'harness=claude-custom\n' >> "$dir/home/state/rl-seatbad.meta"
+  out=$(run_control "$dir" rl-seatbad relaunch --harness claude --seat spare --note "raw command"); rc=$?
+  expect_code 1 "$rc" "a raw Claude command must refuse a seat override before stop"
+  [ "$(cat "$dir/fake/command")" = claude ] || fail "a raw-command seat refusal stopped the agent"
+  cp "$dir/meta.before" "$dir/home/state/rl-seatbad.meta"
+  out=$(run_control "$dir" rl-seatbad exit --seat spare); rc=$?
+  expect_code 1 "$rc" "--seat applies only to relaunch"
+  out=$(run_control "$dir" rl-seatbad relaunch --seat renewable --note "renew on launch"); rc=$?
+  expect_code 0 "$rc" "a renewable login is a valid explicit destination: $out"
+  pass "fm-control relaunch: bad, signed-out, unreadable, empty, and non-Claude destinations refuse before any mutation; renewable login works"
 }
 
 test_relaunch_without_a_recorded_seat_adds_no_config_dir() {
@@ -2112,6 +2207,18 @@ test_reclaim_refuses_an_unreadable_endpoint() {
 make_herdr_stub() {  # <case-dir>
   local fb="$1/fakebin"
   mkdir -p "$fb"
+  # The Herdr fake records launches without executing a harness; Pi's launch
+  # preflight still needs a local executable for its optional help probe.
+  cat > "$fb/pi" <<'SH'
+#!/usr/bin/env bash
+if [ "${1:-}" = --help ]; then
+  printf '%s\n' '--tui-mode <regular|cozy> --approve'
+  exit 0
+fi
+echo 'unexpected Pi execution in the mocked Herdr lifecycle fixture' >&2
+exit 1
+SH
+  chmod +x "$fb/pi"
   # The herdr server-ensure poll must actually wait between reads, so this case
   # keeps the real sleep rather than the tmux cases' instant stub.
   rm -f "$fb/sleep"
@@ -2690,3 +2797,8 @@ test_herdr_reclaim_of_a_secondmate_names_its_own_owner
 test_herdr_rebind_failure_from_a_plain_shell_names_the_real_cause
 test_relaunch_reverifies_an_already_in_flight_item_instead_of_rewriting_it
 test_relaunch_moves_a_drifted_item_back_in_flight
+
+test_relaunch_seat_override_is_transactional
+test_relaunch_invalid_seat_changes_nothing
+
+test_relaunch_seat_override_respects_account_pin

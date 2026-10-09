@@ -16,10 +16,9 @@
 # The contract that makes a switch safe is that it changes only what the NEXT
 # claude worker gets. A live worker keeps the profile it launched with, because
 # that profile is recorded in its own task record at spawn time and every later
-# launch for that task reads the RECORD, never this resolution. Moving a running
-# worker between accounts would strand its session history, which lives under
-# the profile directory, so the recorded value is a correctness requirement and
-# not only a billing one.
+# launch for that task reads the RECORD unless relaunch explicitly names
+# --seat. Separate profiles can hold separate history, so changing the recorded
+# seat is a deliberate relaunch input rather than an automatic side effect.
 #
 # Eleven settings, all optional, all gitignored, and all inherited by LOCAL
 # secondmate homes but never by a remote route
@@ -152,6 +151,34 @@ fm_seat_config_dir() {
     return 0
   fi
   printf '%s\n' "${FM_AMBIENT_CLAUDE_CONFIG_DIR-${CLAUDE_CONFIG_DIR:-}}"
+}
+
+# fm_seat_relaunch_destination <name> -> profile directory (ambient for default)
+# Validate an explicit relaunch destination before the running worker stops.
+# Like switch without --force, a renewable login is usable, a proven signed-out
+# seat refuses, and an unreadable login refuses rather than guessing.
+fm_seat_relaunch_destination() {
+  local name=$1 dir rc
+  if [ "$name" != "$FM_SEAT_DEFAULT_NAME" ]; then
+    fm_seat_name_valid "$name" || { echo "error: invalid seat name: $name" >&2; return 1; }
+    dir=$(fm_seat_dir "$name") || return 1
+    [ -d "$dir" ] || { echo "error: seat '$name' has no profile directory at $dir" >&2; return 1; }
+  fi
+  dir=$(fm_seat_config_dir "$name")
+  if fm_seat_logged_in "$dir"; then
+    rc=0
+  else
+    rc=$?
+  fi
+  case "$rc" in
+    0|"$FM_SEAT_LOGIN_EXPIRED_RENEWABLE") ;;
+    1) echo "error: seat '$name' is not logged in; sign in before relaunching" >&2; return 1 ;;
+    *) echo "error: could not confirm seat '$name' is logged in; relaunch refused" >&2; return 1 ;;
+  esac
+  if fm_seat_resting "$name"; then
+    echo "warning: seat '$name' is resting below the quota floor; relaunching there explicitly" >&2
+  fi
+  printf '%s\n' "$dir"
 }
 
 # fm_seat_name_of_profile <profile-dir>

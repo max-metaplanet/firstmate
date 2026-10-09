@@ -31,6 +31,7 @@ export type SeatRecord = {
   readonly configDir: string;
   readonly active: boolean;
   readonly autoExcluded: boolean;
+  readonly resting: boolean;
   readonly hasData: boolean;
   readonly ageSeconds: number | null;
   readonly account: string | null;
@@ -148,6 +149,12 @@ export function parseSeatBoard(stdout: string): SeatBoard | undefined {
       configDir: typeof seat.configDir === "string" ? seat.configDir : "",
       active: seat.active === true,
       autoExcluded: seat.autoExcluded === true,
+      resting:
+        seat.exclusion !== null && typeof seat.exclusion === "object" &&
+        (seat.exclusion as Record<string, unknown>).manual !== true &&
+        (seat.exclusion as Record<string, unknown>).resting !== null &&
+        typeof (seat.exclusion as Record<string, unknown>).resting === "object" &&
+        ((seat.exclusion as Record<string, unknown>).resting as Record<string, unknown>).provisional !== true,
       hasData: seat.hasData === true,
       ageSeconds: asNumberOrNull(seat.ageSeconds),
       account: asStringOrNull(seat.account),
@@ -238,7 +245,8 @@ export function seatRows(board: SeatBoard, readAtMs: number, nowMs: number): Sea
     const marks: string[] = [];
     if (live) marks.push("this session");
     if (seat.active) marks.push("new workers");
-    if (seat.autoExcluded) marks.push("not in rotation");
+    if (seat.resting) marks.push("resting");
+    else if (seat.autoExcluded) marks.push("not in rotation");
     return {
       name: seat.name,
       live,

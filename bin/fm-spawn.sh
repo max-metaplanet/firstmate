@@ -56,7 +56,7 @@
 #   policy would otherwise hold, for the one spawn it is passed to. It changes
 #   no setting, so the next spawn is gated again; bin/fm-seat.sh extra-usage
 #   owns the policy and docs/claude-seats.md owns what a hold can and cannot do.
-#        fm-spawn.sh <task-id> --relaunch [--harness <name>] [--model <name>] [--effort <level>]
+#        fm-spawn.sh <task-id> --relaunch [--harness <name>] [--model <name>] [--effort <level>] [--seat <name|default>]
 #   --relaunch launches a replacement agent for an EXISTING task into that
 #   task's own recorded worktree, reusing its recorded endpoint when that
 #   endpoint still exists, instead of creating either from scratch. It is
@@ -67,7 +67,7 @@
 #   backend, kind, project or home, worktree, endpoint - comes from the task's
 #   validated state/<id>.meta, so --backend, --scout, --secondmate, a project
 #   positional, and batch pairs are all refused alongside it; only harness,
-#   model, and effort may change, which is what makes a harness switch one
+#   model, effort, and an explicit Claude --seat may change, making a switch one
 #   ordinary relaunch. It refuses unless the recorded endpoint is positively
 #   agent-free on a backend with a recovery-grade agent-state classifier (tmux
 #   or herdr), and clears the previous harness's per-task wiring before arming
@@ -692,6 +692,8 @@ BASE_BRANCH=
 BASE_BRANCH_SET=0
 TRACEPARENT_SET=0
 RELAUNCH=0
+SEAT_OVERRIDE=
+SEAT_OVERRIDE_SET=0
 IGNORE_SEAT_HOLD=0
 POS=()
 want_value=
@@ -707,6 +709,10 @@ for a in "$@"; do
     harness)
       HARNESS_ARG=$a
       HARNESS_SET=1
+      ;;
+    seat)
+      SEAT_OVERRIDE=$a
+      SEAT_OVERRIDE_SET=1
       ;;
     model)
       MODEL=$a
@@ -758,6 +764,8 @@ for a in "$@"; do
     KIND_SET=1
     ;;
   --relaunch) RELAUNCH=1 ;;
+  --seat) want_value=seat ;;
+  --seat=*) SEAT_OVERRIDE=${a#--seat=}; SEAT_OVERRIDE_SET=1 ;;
   --ignore-seat-hold) IGNORE_SEAT_HOLD=1 ;;
   --harness) want_value=harness ;;
   --harness=*)
@@ -1496,6 +1504,12 @@ spawn_herdr_presentation_order_lock_release() {
 # the single path verbatim. A failed pair is reported and skipped; the rest still launch;
 # exit is non-zero if any pair failed. Single-task invocations never carry an '=' in arg
 # one (task ids are bare slugs), so they fall straight through to the logic below.
+if [ "$SEAT_OVERRIDE_SET" = 1 ]; then
+  [ "$RELAUNCH" = 1 ] && [ -n "$SEAT_OVERRIDE" ] || {
+    echo "error: --seat requires --relaunch and a non-empty seat name" >&2
+    exit 1
+  }
+fi
 idpart=${POS[0]:-}
 idpart=${idpart%%=*}
 if [ "$RELAUNCH" -eq 1 ] && [ "${#POS[@]}" -gt 0 ] && [ "${POS[0]}" != "$idpart" ]; then
@@ -2533,6 +2547,17 @@ WORKER_ACCOUNT_DECLARED=${WORKER_ACCOUNT%%$'\t'*}
 WORKER_ACCOUNT_ROOT=${WORKER_ACCOUNT#*$'\t'}
 WORKER_ACCOUNT_PROVIDER=${WORKER_ACCOUNT_ROOT#*$'\t'}
 WORKER_ACCOUNT_ROOT=${WORKER_ACCOUNT_ROOT%%$'\t'*}
+if [ "$SEAT_OVERRIDE_SET" = 1 ]; then
+  [ "$RELAUNCH_PRIOR_HARNESS" = claude ] && [ "$HARNESS" = claude ] || {
+    echo "error: --seat requires a Claude-to-Claude relaunch" >&2
+    exit 1
+  }
+  RELAUNCH_SEAT=$(fm_seat_relaunch_destination "$SEAT_OVERRIDE") || exit 1
+  [ -z "$WORKER_ACCOUNT" ] || [ "$WORKER_ACCOUNT_ROOT" = "$RELAUNCH_SEAT" ] || {
+    echo "error: --seat conflicts with config/claude-account; the worker account pin is unchanged" >&2
+    exit 1
+  }
+fi
 if [ -n "$WORKER_ACCOUNT" ] && [ "$HARNESS" = claude ]; then
   if [ -n "$WORKER_ACCOUNT_ROOT" ]; then
     export CLAUDE_CONFIG_DIR=$WORKER_ACCOUNT_ROOT
@@ -4545,7 +4570,11 @@ spawn_assert_agent_worktree
 if [ "$HARNESS" = claude ]; then
   if [ "$RELAUNCH" -eq 1 ] && [ "$RELAUNCH_PRIOR_HARNESS" = claude ]; then
     SEAT_RECORD=$RELAUNCH_SEAT
-    SEAT_CONFIG_DIR=${RELAUNCH_SEAT:-$(fm_seat_config_dir "$FM_SEAT_DEFAULT_NAME")}
+    if [ "$SEAT_OVERRIDE_SET" = 1 ]; then
+      SEAT_CONFIG_DIR=$RELAUNCH_SEAT
+    else
+      SEAT_CONFIG_DIR=${RELAUNCH_SEAT:-$(fm_seat_config_dir "$FM_SEAT_DEFAULT_NAME")}
+    fi
   else
     SEAT_CONFIG=$(spawn_seat_config)
     SEAT_CONFIG_DIR=$(CONFIG=$SEAT_CONFIG fm_seat_spawn_config_dir)
