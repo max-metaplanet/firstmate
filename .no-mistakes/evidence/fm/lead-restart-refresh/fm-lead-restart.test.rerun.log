@@ -1,0 +1,21 @@
+ok - a check establishes the lead's seat, its destination, its session, and the replacement command
+ok - without the persist gate nothing is armed and the lead keeps running
+ok - a destination that is not proven signed in is refused, undecided included
+ok - an unestablished terminal or lead account refuses instead of guessing one
+ok - a runtime record that does not name the current lock owner is no evidence
+ok - the ambient default profile and the seat the lead already holds are both refused
+ok - same-seat refresh keeps the persist gate and stages the same seat and session with persistence enabled
+ok - a session that does not hold this home cannot replace its lead
+ok - a launch command is established only when it provably round-trips, and composition leaves exactly one resume
+ok - a reservation refuses every session but the one it names, and the successor clears it
+ok - a reservation that lapsed holds nothing, so a failed handover cannot wedge a home
+ok - the outgoing session still confirms its lock and does not drop its own reservation
+ok - only the session holding this home's lock may reserve it for a successor
+ok - the detached stage drops the reservation it armed with the nonce it holds, and nothing else can
+ok - the lead's own crossing hands over a binding move once per seat, with the persist gate and the exact command
+ok - a crossing the lead cannot act on names the blocker instead of offering a restart
+ok - a crossing that was blocked hands over the move as soon as it becomes available
+ok - the lead is replaced in its own terminal, on the new seat, resuming the same session, with one holder throughout
+ok - a replacement that exits at once is reported stranded, not running
+ok - a same-seat refresh tells the crew and the outcome that the lead restarted in place
+# all fm-lead-restart tests passed

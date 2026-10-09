@@ -1,0 +1,42 @@
+# lead runs on seat alpha (profile /tmp/fm-lead-restart.IhRun3/manual/seats/alpha); worker seat config: beta
+
+$ fm-lead-restart.sh --check --to alpha
+error: the lead is already running on seat 'alpha'; use --refresh to restart in place
+[rc=1]
+
+$ fm-lead-restart.sh --check --to alpha --refresh
+lead seat: alpha
+destination seat: alpha (/tmp/fm-lead-restart.IhRun3/manual/seats/alpha)
+session resumed: lead-session-1
+terminal: tmux %9
+replacement command: FM_AMBIENT_CLAUDE_CONFIG_DIR=/tmp/fm-lead-restart.IhRun3/manual/seats/alpha CLAUDE_CONFIG_DIR=/tmp/fm-lead-restart.IhRun3/manual/seats/alpha env -u CLAUDE_CODE_CHILD_SESSION CLAUDE_CODE_FORCE_SESSION_PERSISTENCE=1 /tmp/fm-lead-restart.IhRun3/harness-bin/claude /tmp/fm-lead-restart.IhRun3/sleeper.sh --resume lead-session-1
+[rc=0]
+
+$ fm-lead-restart.sh --to alpha --refresh
+error: this replaces the running firstmate session and drops its conversation, keeping every durable record. So first persist the open work you are holding only in this conversation, following the /stow skill's "Open-record persistence" section and nothing else from that skill: file a task for each open record that exists only in this conversation, including any captain call you had formed but never registered, and correct any task whose status no longer reflects what you now know. Do NOT run the memory, learnings, or captain-preference sweeps. Then re-run with --persisted
+[rc=1]
+# state after unpersisted refresh:
+.
+..
+.lock
+.lock-runtime
+.lock-session
+
+$ fm-lead-restart.sh --check --to beta --refresh (refresh flag on a different seat = ordinary move)
+lead seat: alpha
+destination seat: beta (/tmp/fm-lead-restart.IhRun3/manual/seats/beta)
+session resumed: lead-session-1
+terminal: tmux %9
+replacement command: FM_AMBIENT_CLAUDE_CONFIG_DIR=/tmp/fm-lead-restart.IhRun3/manual/seats/alpha CLAUDE_CONFIG_DIR=/tmp/fm-lead-restart.IhRun3/manual/seats/beta env -u CLAUDE_CODE_CHILD_SESSION CLAUDE_CODE_FORCE_SESSION_PERSISTENCE=1 /tmp/fm-lead-restart.IhRun3/harness-bin/claude /tmp/fm-lead-restart.IhRun3/sleeper.sh --resume lead-session-1
+[rc=0]
+
+$ fm-lead-restart.sh --check --to alpha --refresh (alpha no longer signed in)
+error: seat 'alpha' could not be confirmed logged in, and a lead restart never crosses that uncertainty
+[rc=1]
+
+# operator wrapper:
+$ fm-seat.sh lead-restart --check --to alpha --refresh
+Choose which Claude account (seat) NEW claude workers launch on.
+
+Usage:
+[rc=2]
