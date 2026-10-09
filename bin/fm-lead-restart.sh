@@ -1,11 +1,15 @@
 #!/usr/bin/env bash
-# fm-lead-restart.sh - move the PRIMARY firstmate session itself onto another
+# fm-lead-restart.sh - move or refresh the PRIMARY firstmate session on a
 # Claude seat, by replacing its own process in its own terminal.
 #
 # Usage:
-#   fm-lead-restart.sh --check --to <seat>
-#   fm-lead-restart.sh --to <seat> --persisted [--launch-command <cmd>] [--grace <s>]
+#   fm-lead-restart.sh --check --to <seat> [--refresh]
+#   fm-lead-restart.sh --to <seat> --persisted [--refresh] [--launch-command <cmd>] [--grace <s>]
 #   fm-lead-restart.sh --handover-stage <plan-file>     (internal; detached)
+#
+# --refresh permits the explicitly named seat to be the lead's current seat.
+# It uses the same persist gate and handover, without changing seat records or
+# rotation; without it, a same-seat destination is refused.
 #
 # WHY THIS IS NOT A SEAT SWITCH. bin/fm-seat.sh switch rewrites one config line
 # that only a fresh spawn reads, so it moves NEW workers and never disturbs
@@ -291,8 +295,8 @@ preflight() {  # <launch-command-override>
   SESSION_ID=$(established_session_id) || exit 1
   LEAD_PROFILE=$(established_lead_profile) || exit 1
   LEAD_SEAT=$(fm_seat_name_of_profile "$LEAD_PROFILE")
-  [ "$LEAD_PROFILE" != "$TO_PROFILE" ] ||
-    die "the lead is already running on seat '$TO_SEAT'"
+  [ "$LEAD_PROFILE" != "$TO_PROFILE" ] || [ "$REFRESH" -eq 1 ] ||
+    die "the lead is already running on seat '$TO_SEAT'; use --refresh to restart in place"
   established_pane || exit 1
 
   # The successor must be PROVEN signed in before anything is armed. An
@@ -445,9 +449,9 @@ record_result() {  # <state> <detail>
 # A task whose pane reads confidently dead has no one to tell; every other
 # recorded task, remote ones included, gets one fire-and-forget notice with its
 # own fresh delivery id. Sets CREW_UNREACHED to the ids that could not be told.
-notify_crew() {  # <to-seat>
+notify_crew() {  # <what-the-lead-is-doing>
   local meta id did text
-  text="The lead first mate is restarting onto another Claude seat ($1). Your own work, seat, and steering inbox are unaffected: carry on, and do not reply to this notice."
+  text="The lead first mate is $1. Your own work, seat, and steering inbox are unaffected: carry on, and do not reply to this notice."
   CREW_UNREACHED=''
   for meta in "$STATE"/*.meta; do
     [ -e "$meta" ] || continue
@@ -476,7 +480,7 @@ successor_holds_lock() {  # <old-pid> <to-profile>
 handover_stage() {  # <plan-file>
   PLAN_FILE=$1
   [ -f "$PLAN_FILE" ] || exit 1
-  local nonce pid backend target to_seat to_profile grace exit_wait start_wait claim_wait waited
+  local nonce pid backend target to_seat to_profile grace exit_wait start_wait claim_wait waited notice outcome
   nonce=$(plan_field nonce)
   pid=$(plan_field pid)
   backend=$(plan_field backend)
@@ -493,7 +497,14 @@ handover_stage() {  # <plan-file>
   case "$pid" in ''|*[!0-9]*) exit 1 ;; esac
   case "$grace$exit_wait$start_wait$claim_wait" in ''|*[!0-9]*) exit 1 ;; esac
 
-  notify_crew "$to_seat"
+  if [ "$(plan_field from_profile)" = "$to_profile" ]; then
+    notice="restarting in place on Claude seat $to_seat"
+    outcome="restarted in place on Claude seat $to_seat"
+  else
+    notice="restarting onto another Claude seat ($to_seat)"
+    outcome="moved to Claude seat $to_seat"
+  fi
+  notify_crew "$notice"
   sleep "$grace"
 
   # End the old lead, and nothing else. The watcher is a separate process with
@@ -580,7 +591,7 @@ handover_stage() {  # <plan-file>
     exit 0
   fi
   rm -f "$P_LAUNCH_FILE" 2>/dev/null || true
-  record_result 'done' "the firstmate session moved to Claude seat $to_seat in the same terminal, resuming the same session"
+  record_result 'done' "the firstmate session $outcome in the same terminal, resuming the same session"
   exit 0
 }
 
@@ -589,6 +600,7 @@ handover_stage() {  # <plan-file>
 MODE=arm
 LAUNCH_OVERRIDE=''
 PERSISTED=0
+REFRESH=0
 PLAN_FILE=''
 P_COMMAND=''
 P_LAUNCH_FILE=''
@@ -596,6 +608,7 @@ while [ "$#" -gt 0 ]; do
   case "$1" in
     --check) MODE=check; shift ;;
     --persisted) PERSISTED=1; shift ;;
+    --refresh) REFRESH=1; shift ;;
     --to) [ "$#" -ge 2 ] || usage; TO_SEAT=$2; shift 2 ;;
     --launch-command) [ "$#" -ge 2 ] || usage; LAUNCH_OVERRIDE=$2; shift 2 ;;
     --grace) [ "$#" -ge 2 ] || usage; GRACE=$2; shift 2 ;;

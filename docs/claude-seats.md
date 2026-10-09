@@ -321,14 +321,16 @@ No running Claude Code process can change credential store, so firstmate changes
 ```
 bin/fm-seat.sh lead-restart --check              # establish the move, change nothing
 bin/fm-seat.sh lead-restart --persisted          # do it
+bin/fm-lead-restart.sh --to <current-seat> --refresh --persisted  # restart in place
 ```
 
 Firstmate tells its crew it is about to restart, another `claude` starts on the new seat in the same terminal, resuming the same session, and the current process ends.
 The replacement carries the ambient login the previous process started from, so the `default` seat still names that login for workers launched afterwards rather than the seat firstmate moved to.
 A seat is a profile directory whose contents symlink the shared `~/.claude` body, which is what lets any seat resume the same session: the seat is the brain, the sessions and settings are the body.
 Without `--to`, the destination is the ordinary rotation, anchored on the seat firstmate is on rather than the seat new workers get, and it skips an excluded seat like every other automatic path.
+Naming the seat firstmate is already on is refused unless `--refresh` is given; a refresh restarts firstmate in place on that seat to pick up a corrected launch environment, through the same persist gate and handover, and changes no seat record or rotation.
 
-**Running workers are told, and are otherwise untouched.** Before the current process ends, each live worker gets one short notice that firstmate is restarting onto another seat, that its own work, seat, and steering inbox are unaffected, and that it should carry on without replying.
+**Running workers are told, and are otherwise untouched.** Before the current process ends, each live worker gets one short notice that firstmate is restarting onto another seat, or in place for a refresh, that its own work, seat, and steering inbox are unaffected, and that it should carry on without replying.
 The notice is cheap because nothing changes for a worker: its steering is a durable inbox, its status is a durable log, and it keeps the seat recorded in its own task record.
 So it is sent fire-and-forget, with no acknowledgement expected and no re-ring spanning the swap, and a worker it cannot reach never blocks the restart; that worker is named in `state/.lead-restart.result` instead.
 Supervision is a separate process with its own lock and is deliberately not stopped, so the cycle count goes from one to one across the swap.
