@@ -1,0 +1,34 @@
+## S2 manual exclusion and resting refuse; S3 extra-usage stop reads real quota
+$ echo seat-max2 > $LAB/config/claude-seat-auto-exclude; $LAB/wrapper/claude auth status
+pipeline Claude: HELD pipeline-agent launch on seat seat-max2: seat is manually excluded; fm-seat.sh pipeline-move selects another seat for subsequent launches (clear a rejected NM_CLAUDE_CONFIG_DIR override in the pipeline environment)
+exit=75
+## override cannot bypass exclusion: NM_CLAUDE_CONFIG_DIR=~/.claude-seats/seat-max2
+pipeline Claude: HELD pipeline-agent launch on seat seat-max2: seat is manually excluded; fm-seat.sh pipeline-move selects another seat for subsequent launches (clear a rejected NM_CLAUDE_CONFIG_DIR override in the pipeline environment)
+exit=75
+
+$ resting record for seat-max2 (floor 5) ; launch
+pipeline Claude: HELD pipeline-agent launch on seat seat-max2: seat is resting below the quota floor; fm-seat.sh pipeline-move selects another seat for subsequent launches (clear a rejected NM_CLAUDE_CONFIG_DIR override in the pipeline environment)
+exit=75
+
+## S3: real quota per seat (fm-seat.sh status)
+active seat for NEW workers: seat-max2
+active profile: /Users/max/.claude-seats/seat-max2
+login state: expired-renewable
+pipeline seat for next managed launch: seat-max2 (follows active seat)
+firstmate itself is running on: (not recorded for this session)
+auto-switch trigger: (unset - no automatic switching)
+destination minimum: (unset - any logged-in seat is a valid destination)
+extra-usage policy: (unset - nothing holds Claude dispatch)
+held out of automatic rotation by hand: (none - every seat under the root is a rotation candidate)
+quota floor: (unset - no seat is ever rested out of automatic rotation)
+resting below the quota floor:
+  (none - no quota floor is configured, so no seat is ever rested)
+auto-switch watch: not armed
+new Claude dispatch: allowed
+  no extra-usage policy is configured, so no quota is read and nothing holds
+
+live workers keep the seat they launched with:
+  (no task records)
+
+local secondmate homes declining inherited seats:
+  (none - every local home takes this seat)

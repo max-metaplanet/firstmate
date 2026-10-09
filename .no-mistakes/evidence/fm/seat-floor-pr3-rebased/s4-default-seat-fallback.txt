@@ -1,0 +1,37 @@
+## S4 default seat: no lead -> warn + installed default; real fm-lock.sh records ambient; old-format record -> fallback
+$ rm $LAB/config/claude-seat   # default seat; no lead lock in $LAB
+$ $LAB/wrapper/claude auth status
+pipeline Claude: warning: the default seat's profile is not recorded for this home's lead; using the wrapper's installed default profile /Users/max/.claude-seats/seat-max. Restarting the lead records it
+  "configDirectory": "/Users/max/.claude-seats/seat-max",
+  "email": "<seat-max-account>",
+$ FM_HOME=$LAB bin/fm-seat.sh status | grep pipeline
+pipeline seat for next managed launch: default (follows active seat)
+pipeline default-seat profile not recorded for this home's lead; launches use the wrapper's installed default profile until a lead restart records it
+
+$ CLAUDE_CONFIG_DIR=~/.claude-seats/seat-max2 FM_HOME=$LAB bin/fm-lock.sh   # a real lead lock acquisition in the lab home
+lock acquired: harness pid 52649
+exit=0
+$ cat $LAB/state/.lock-runtime
+pid=52649
+profile=/Users/max/.claude-seats/seat-max2
+ambient=/Users/max/.claude-seats/seat-max2
+$ $LAB/wrapper/claude auth status
+  "configDirectory": "/Users/max/.claude-seats/seat-max2",
+  "email": "<seat-max2-account>",
+pipeline seat for next managed launch: default (follows active seat)
+
+$ strip the ambient= line (record written by a lead that predates the field)
+pid=52649
+profile=/Users/max/.claude-seats/seat-max2
+pipeline Claude: warning: the default seat's profile is not recorded for this home's lead; using the wrapper's installed default profile /Users/max/.claude-seats/seat-max. Restarting the lead records it
+  "configDirectory": "/Users/max/.claude-seats/seat-max",
+  "email": "<seat-max-account>",
+
+$ resting default seat on the fallback must still hold
+pipeline Claude: HELD pipeline-agent launch on seat default: seat is resting below the quota floor; fm-seat.sh pipeline-move selects another seat for subsequent launches (clear a rejected NM_CLAUDE_CONFIG_DIR override in the pipeline environment)
+exit=75
+
+$ FM_HOME=$LAB bin/fm-seat.sh pipeline-move   # healthy default, profile unrecorded: must not rotate
+subsequent managed pipeline launches follow active seat default; running agents finish untouched (clear NM_CLAUDE_CONFIG_DIR in the pipeline environment if set)
+exit=0
+claude-seat now: (absent = default)

@@ -1,0 +1,62 @@
+## S3 extra-usage stop policy against the real accounts
+$ echo stop > $LAB/config/claude-seat-extra-usage
+
+### real quota for seat-max:
+bin: ~/.local/state/fnm_multishells/96456_1791323464572/bin/quota-axi
+description: Report local agent-provider quota windows for routing-aware agents
+generatedAt: "2026-10-09T17:17:34.204Z"
+quota[2]{provider,scope,effectivePercentRemaining,spendPriority,runway,confidence,limitedBy,resetsAt}:
+  claude,all_models,11,-3.087,projected_exhaustion,established,seven_day,"2026-10-14T20:59:59.835007+00:00"
+  claude,"model:fable",11,-1.0747,projected_exhaustion,established,seven_day,"2026-10-14T20:59:59.835007+00:00"
+exhaustion[2]{provider,scope,usableRunwaySeconds,projectedExhaustedAt,limitingWindowId}:
+  claude,all_models,19708,"2026-10-09T22:46:02.047Z",seven_day
+  claude,"model:fable",19708,"2026-10-09T22:46:02.047Z",seven_day
+attention[0]:
+help[1]:
+  Run `quota-axi --full` for windows, pace, reserve, and account evidence
+$ echo seat-max > $LAB/config/claude-seat; $LAB/wrapper/claude auth status
+{"configDirectory":"/Users/max/.claude-seats/seat-max","email":"<seat-max-account>"}
+exit=
+
+### real quota for seat-max2:
+bin: ~/.local/state/fnm_multishells/96456_1791323464572/bin/quota-axi
+description: Report local agent-provider quota windows for routing-aware agents
+generatedAt: "2026-10-09T17:17:37.803Z"
+quota[0]:
+exhaustion[0]:
+attention[1]{provider,scope,kind,detail,remedy}:
+  claude,all,unavailable,Claude credential expired (auth expired_refreshable),none
+help[1]:
+  Run `quota-axi --full` for windows, pace, reserve, and account evidence
+$ echo seat-max2 > $LAB/config/claude-seat; $LAB/wrapper/claude auth status
+{"configDirectory":"/Users/max/.claude-seats/seat-max2","email":"<seat-max2-account>"}
+exit=
+
+### real quota for seat-max-gmail:
+bin: ~/.local/state/fnm_multishells/96456_1791323464572/bin/quota-axi
+description: Report local agent-provider quota windows for routing-aware agents
+generatedAt: "2026-10-09T17:17:41.585Z"
+quota[2]{provider,scope,effectivePercentRemaining,spendPriority,runway,confidence,limitedBy,resetsAt}:
+  claude,all_models,0,unknown,exhausted_now,unknown,seven_day,"2026-10-12T06:00:00.137051+00:00"
+  claude,"model:fable",0,unknown,exhausted_now,unknown,seven_day,"2026-10-12T06:00:00.137051+00:00"
+exhaustion[2]{provider,scope,usableRunwaySeconds,projectedExhaustedAt,limitingWindowId}:
+  claude,all_models,0,"2026-10-09T17:17:41.585Z",seven_day
+  claude,"model:fable",0,"2026-10-09T17:17:41.585Z",seven_day
+attention[2]{provider,scope,kind,detail,remedy}:
+  claude,all_models,unmeasurable,five_hour blocks spendPriority,none
+  claude,"model:fable",unmeasurable,five_hour blocks spendPriority,none
+$ echo seat-max-gmail > $LAB/config/claude-seat; $LAB/wrapper/claude auth status
+exit=
+
+$ echo "stop 99" floor variant: set floor 99 so every seat is "at the configured floor"
+
+### re-run seat-max-gmail (real 0% weekly) under stop, raw output:
+$ $LAB/wrapper/claude auth status
+pipeline Claude: HELD pipeline-agent launch on seat seat-max-gmail: pipeline seat seat-max-gmail has no plan quota left and the extra-usage policy is stop, so no new Claude pipeline agent is started on paid extra usage
+this holds only work not yet started; a pipeline agent already running keeps its own seat and can still draw extra usage mid-task
+exit=75
+### override onto exhausted seat while active seat-max has quota:
+$ NM_CLAUDE_CONFIG_DIR=~/.claude-seats/seat-max-gmail $LAB/wrapper/claude auth status
+pipeline Claude: HELD pipeline-agent launch on seat seat-max-gmail: pipeline seat seat-max-gmail has no plan quota left and the extra-usage policy is stop, so no new Claude pipeline agent is started on paid extra usage
+this holds only work not yet started; a pipeline agent already running keeps its own seat and can still draw extra usage mid-task
+exit=75

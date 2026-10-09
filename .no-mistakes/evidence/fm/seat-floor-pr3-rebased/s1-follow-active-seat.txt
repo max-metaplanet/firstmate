@@ -1,0 +1,33 @@
+## S1 install + follow active seat (real native claude, real seat logins, read-only 'auth status')
+$ CLAUDE_CONFIG_DIR=~/.claude-seats/seat-max FM_HOME=$LAB bin/fm-seat.sh pipeline-install --claude ~/.local/bin/claude --destination $LAB/wrapper/claude
+pipeline wrapper installed: $LAB/wrapper/claude
+exit=0
+$ FM_HOME=$LAB bin/fm-seat.sh pipeline-check ...
+pipeline wrapper matches: $LAB/wrapper/claude
+exit=0
+
+$ cat $LAB/wrapper/claude
+#!/usr/bin/env bash
+FM_PIPELINE_TOOL=/Users/max/.no-mistakes/worktrees/61c6dd39b831/01M4GSZENHZR6QTVDZ7DRYX6NQ/bin/fm-seat-pipeline.sh
+FM_PIPELINE_HOME=$LAB
+FM_PIPELINE_CLAUDE=/Users/max/.local/bin/claude
+FM_PIPELINE_DEFAULT_PROFILE=/Users/max/.claude-seats/seat-max
+# Installed by fm-seat.sh pipeline-install; the installer supplies these three
+# absolute paths and the default-seat profile. Every invocation re-enters the seat guard, never a saved seat.
+exec "$FM_PIPELINE_TOOL" launch --default-profile "$FM_PIPELINE_DEFAULT_PROFILE" "$FM_PIPELINE_HOME" "$FM_PIPELINE_CLAUDE" "$@"
+
+$ echo seat-max2 > $LAB/config/claude-seat
+$ CLAUDE_CONFIG_DIR=/wrong/worker-seat FM_HOME=/wrong/home NM_CLAUDE_CONFIG_DIR= $LAB/wrapper/claude auth status | jq "{configDirectory,email}"
+{"configDirectory":"/Users/max/.claude-seats/seat-max2","email":"<seat-max2-account>","loggedIn":true}
+exit=
+
+$ echo seat-max-gmail > $LAB/config/claude-seat
+$ CLAUDE_CONFIG_DIR=/wrong/worker-seat FM_HOME=/wrong/home NM_CLAUDE_CONFIG_DIR= $LAB/wrapper/claude auth status | jq "{configDirectory,email}"
+{"configDirectory":"/Users/max/.claude-seats/seat-max-gmail","email":"<seat-max-gmail-account>","loggedIn":true}
+exit=
+
+## override still wins: NM_CLAUDE_CONFIG_DIR=~/.claude-seats/seat-max2
+{"configDirectory":"/Users/max/.claude-seats/seat-max2","email":"<seat-max2-account>"}
+## unmanaged override refused: NM_CLAUDE_CONFIG_DIR=/tmp/elsewhere
+pipeline Claude: HELD pipeline-agent launch on seat /tmp/elsewhere: NM_CLAUDE_CONFIG_DIR must name a seat directory under the seats root; fm-seat.sh pipeline-move selects another seat for subsequent launches (clear a rejected NM_CLAUDE_CONFIG_DIR override in the pipeline environment)
+exit=75
