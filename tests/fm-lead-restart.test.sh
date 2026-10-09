@@ -767,6 +767,31 @@ test_a_replacement_that_never_comes_up_is_reported_stranded() {
   pass "a replacement that exits at once is reported stranded, not running"
 }
 
+test_a_same_seat_refresh_tells_the_crew_it_restarts_in_place() {
+  local out msgs
+  command -v tmux >/dev/null 2>&1 || { echo "ok - # skip: tmux not found, the real-terminal swap needs one"; return 0; }
+  start_lab refresh
+  tmux -L "$LAB_SOCK" new-window -d -t lab -n crew 'sleep 600'
+  fm_write_meta "$LAB/home/state/crew1.meta" "window=lab:crew" "kind=ship" "harness=claude"
+  lead_run "$LAB" "FM_HOME=$LAB/home FM_STATE_OVERRIDE=$LAB/home/state FM_CONFIG_OVERRIDE=$LAB/home/config FM_DATA_OVERRIDE=$LAB/home/data PATH=$FAKEBIN:\$PATH $LEAD_RESTART --to alpha --refresh --persisted"
+  wait_for 30 "grep -q 'handover armed' '$LAB/cmd.log' 2>/dev/null" ||
+    fail "the refresh was never armed: $(cat "$LAB/cmd.log" 2>/dev/null)"
+  wait_for 180 "grep -q '^state=' '$LAB/home/state/.lead-restart.result' 2>/dev/null" ||
+    fail "the refresh never reported an outcome"
+  out=$(cat "$LAB/home/state/.lead-restart.result")
+  case "$out" in
+    *"state=done"*"restarted in place on Claude seat alpha"*) ;;
+    *) fail "the refresh outcome does not say it restarted in place: $out" ;;
+  esac
+  case "$out" in *"moved to"*) fail "the refresh outcome claims a move: $out" ;; esac
+  msgs=("$LAB/home/state/crew1.inbox/"*.msg)
+  [ -f "${msgs[0]}" ] || fail "the crew was not told about the refresh"
+  assert_grep 'restarting in place on Claude seat alpha' "${msgs[0]}" "the crew notice must describe a refresh"
+  ! grep -q 'another Claude seat' "${msgs[0]}" || fail "the refresh notice claims a move to another seat: $(cat "${msgs[0]}")"
+  kill "$(cat "$LAB/home/state/.lock")" 2>/dev/null || true
+  pass "a same-seat refresh tells the crew and the outcome that the lead restarted in place"
+}
+
 test_check_establishes_every_part_of_the_move
 test_refuses_without_the_persist_gate
 test_refuses_a_destination_that_is_not_proven_signed_in
@@ -786,5 +811,6 @@ test_the_lead_trigger_reports_the_blocker_rather_than_an_impossible_move
 test_a_transient_blocker_does_not_spend_the_crossing
 test_the_lead_is_replaced_in_its_own_terminal_with_supervision_unbroken
 test_a_replacement_that_never_comes_up_is_reported_stranded
+test_a_same_seat_refresh_tells_the_crew_it_restarts_in_place
 
 echo "# all fm-lead-restart tests passed"
