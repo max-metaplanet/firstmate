@@ -1,0 +1,24 @@
+$ fm-seat.sh floor 5
+quota floor: 5% left
+a rested seat comes back only above 15% left on BOTH windows, after at least 600s of rest, and only when its week can still absorb a whole session
+$ fm-seat.sh floor-dwell 0
+quota floor rest time: 0s
+$ fm-seat.sh auto   # pass 1
+claude-seat: seat-max-gmail is resting - 0% left is at or below the 5% floor, so automatic switches skip it until it recovers (expected back 2026-10-12T05:59:59.731561+00:00; fm-seat.sh switch seat-max-gmail still reaches it)
+claude-seat: seat-max2 is resting - 2% left is at or below the 5% floor, so automatic switches skip it until it recovers (expected back 2026-10-09T10:59:59.736240+00:00; fm-seat.sh switch seat-max2 still reaches it)
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+(exit 0)
+$ fm-seat.sh auto   # pass 2
+(exit 0)
+$ fm-seat.sh auto   # pass 3
+(exit 0)
+$ cat state/.claude-seat-auto
+$ fm-seat.sh resting
+seat-max-gmail: seven_day 0% left, expected back 2026-10-12T05:59:59.750946+00:00
+seat-max2: seven_day 2% left, expected back 2026-10-09T10:59:59.666830+00:00

@@ -1,0 +1,27 @@
+----- frame 8 03:19:04
+  operational input.
+  Read 1 file, ran 2 shell commands
+⏺ started
+✻ Cogitated for 19s · done 3:15 AM · 1 shell still running
+▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+   Background work is running
+   The following will stop when you exit:
+   shell · sleep 1800
+   ❯ 1. Exit and stop tasks
+     2. Move to background and exit
+     3. Stay
+   Enter to confirm · Esc to cancel
+----- frame 9 03:19:04
+> export GOTMPDIR=/tmp/fm-seatlab/gotmp
+export COMPACT_ADVISER_DISABLE=1
+export FM_TASK_ID=seatlab
+labproj  HEAD
+> export COMPACT_ADVISER_DISABLE=1
+export FM_TASK_ID=seatlab
+labproj  HEAD
+> export FM_TASK_ID=seatlab
+labproj  HEAD
+> . '/tmp/fm-seatlab+a92e0b223fbdcda14e5947961e73f2deb6d8d0426c4c288e59885a9db74a6eaa/launch.s1791530110.96866.4413.sh'
+Resume this session with:
+claude --resume f9fac5eb-5465-4ac1-bb7c-22083ec77d31
+----- frame 10 03:19:05

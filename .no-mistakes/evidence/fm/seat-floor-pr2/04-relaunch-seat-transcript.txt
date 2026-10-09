@@ -1,0 +1,7 @@
+# Live: the warned command run verbatim against the real Claude worker
+$ FM_HOME=/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.IherGU /Users/max/.no-mistakes/worktrees/61c6dd39b831/01M4FQZECZB7KVXF8ATKQ21FWZ/bin/fm-control.sh seatlab relaunch --seat seat-max --note Seat\ rested\;\ reconcile\ the\ preserved\ work\ and\ instruction\ inbox\ before\ continuing.
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.IherGU
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.IherGU
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+relaunched seatlab harness=claude from=claude model=haiku effort=default backend=tmux endpoint=primary:fm-seatlab worktree=/Users/max/.treehouse/labproj-96839e/1/labproj
+rc=0

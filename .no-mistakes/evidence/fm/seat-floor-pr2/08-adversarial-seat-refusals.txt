@@ -1,0 +1,15 @@
+$ fm-control.sh seatlab relaunch --seat nosuch --note x
+error: seat 'nosuch' has no profile directory at /Users/max/.claude-seats/nosuch
+rc=1
+(task record unchanged)
+pane command after: 2.1.295
+$ fm-control.sh seatlab relaunch --seat ../seat-max2 --note x
+error: invalid seat name: ../seat-max2
+rc=1
+(task record unchanged)
+pane command after: 2.1.295
+$ fm-control.sh seatlab exit --seat seat-max
+error: --harness, --model, --effort, --seat, and --note apply to 'relaunch' only
+rc=1
+(task record unchanged)
+pane command after: 2.1.295

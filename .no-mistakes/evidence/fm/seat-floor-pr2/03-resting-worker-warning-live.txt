@@ -1,0 +1,12 @@
+# Live lab: real Claude scout 'seatlab' on seat-max2 (weekly 2% left); floor 5%, run inside the lab tmux like the watcher
+$ fm-seat.sh auto   # pass 1
+claude-seat: seat-max2 is resting with running workers: seatlab; move each explicitly (destination login is validated; default is the fallback when rotation has no candidate): FM_HOME=/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.IherGU /Users/max/.no-mistakes/worktrees/61c6dd39b831/01M4FQZECZB7KVXF8ATKQ21FWZ/bin/fm-control.sh seatlab relaunch --seat seat-max --note Seat\ rested\;\ reconcile\ the\ preserved\ work\ and\ instruction\ inbox\ before\ continuing.
+rc=0
+$ fm-seat.sh auto   # pass 2 (same resting entry)
+rc=0
+$ cat state/.claude-seat-auto
+fired=
+blocked=
+extra=
+lead=
+resting_workers=seat-max2:1791530151

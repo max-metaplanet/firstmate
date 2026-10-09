@@ -1,0 +1,13 @@
+window=primary:fm-seatlab
+endpoint_task_id=seatlab
+worktree=/Users/max/.treehouse/labproj-96839e/1/labproj
+project=/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab.IherGU/projects/labproj
+harness=claude
+kind=scout
+tasktmp=/tmp/fm-seatlab
+model=haiku
+effort=default
+claude_seat=/Users/max/.claude-seats/seat-max
+busy_gen=g1791530348.29841.7313
+spawn_gen=s1791530349.27174.24134
+control_relaunch_tx=19823.20261009T071905Z.12430

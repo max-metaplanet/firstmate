@@ -1,0 +1,15 @@
+  │  ✕
+ ▐▛███▛█   Claude Code v2.1.295  │seat-max (this session): no reading yet
+▝▜██████▀  Opus 5.5 · Claude Team  │default session 55% · week 18% · Fable week 93% (3m old, stale)
+ ▝▝   ▝▝   ~/.no-mistakes/worktrees/61c6dd39b831/01M4FQZECZB7KVXF8ATKQ21FWZ  │seat-max [this session] session 55% · week 18% · Fable week 93% (3m old, stale)
+  │seat-max-gmail [resting] session 100% · week 0% · Fable week 98% (3m old, stale)
+  │seat-max2 [new workers, resting] session 100% · week 2% · Fable week 100% (3m old, stale)
+  │cached readings over 60s old are stale; only this session's own figures are live
+  │read 10s ago; next live refresh in 10m
+  │r: Refresh
+others tightest seat-max-gmail 0% (3m old, stale)  [-] │
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ 
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  Opus 5.5 | ~/./w/6/01M4FQZECZB7KVXF8ATKQ21FWZ [HEAD ✓] | ⚙️55 | ⚡100% | P00=E03=U07=J16:20:07
+  -- INSERT -- ⏵⏵ auto mode on (shift+tab to cycle) · ← for agents
