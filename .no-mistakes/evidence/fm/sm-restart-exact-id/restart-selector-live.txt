@@ -1,0 +1,38 @@
+### Lab home registry (only fm-self and sm1 registered; no 'self')
+- fm-self - Prefixed mate (home: /var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.HOlclA/fm-self-home; scope: self; projects: none; added 2026-10-09)
+- sm1 - Ordinary mate (home: /var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.HOlclA/sm1-home; scope: ordinary; projects: none; added 2026-10-09)
+
+### TARGET 709c4901: bin/fm-secondmate-restart.sh fm-self
+unreached: fm-self: no durable record for this second mate in this home; the re-read message could not be delivered either: refusing fleet lifecycle from inside a no-mistakes gate worktree (/Users/max/.no-mistakes/repos/61c6dd39b831.git)
+summary: 0 of 1 restarted, 0 nudged, 1 unreached
+exit=3
+
+### TARGET 709c4901: bin/fm-secondmate-restart.sh fm-fm-self
+unreached: fm-self: no durable record for this second mate in this home; the re-read message could not be delivered either: refusing fleet lifecycle from inside a no-mistakes gate worktree (/Users/max/.no-mistakes/repos/61c6dd39b831.git)
+summary: 0 of 1 restarted, 0 nudged, 1 unreached
+exit=3
+
+### TARGET 709c4901: bin/fm-secondmate-restart.sh sm1
+unreached: sm1: no durable record for this second mate in this home; the re-read message could not be delivered either: refusing fleet lifecycle from inside a no-mistakes gate worktree (/Users/max/.no-mistakes/repos/61c6dd39b831.git)
+summary: 0 of 1 restarted, 0 nudged, 1 unreached
+exit=3
+
+### TARGET 709c4901: bin/fm-secondmate-restart.sh fm-sm1
+unreached: sm1: no durable record for this second mate in this home; the re-read message could not be delivered either: refusing fleet lifecycle from inside a no-mistakes gate worktree (/Users/max/.no-mistakes/repos/61c6dd39b831.git)
+summary: 0 of 1 restarted, 0 nudged, 1 unreached
+exit=3
+
+### TARGET 709c4901: bin/fm-secondmate-restart.sh self
+unreached: self: no durable record for this second mate in this home; the re-read message could not be delivered either: refusing fleet lifecycle from inside a no-mistakes gate worktree (/Users/max/.no-mistakes/repos/61c6dd39b831.git)
+summary: 0 of 1 restarted, 0 nudged, 1 unreached
+exit=3
+
+### BASE c30bee75: bin/fm-secondmate-restart.sh fm-self
+unreached: self: no durable record for this second mate in this home; the re-read message could not be delivered either: refusing fleet lifecycle from inside a no-mistakes gate worktree (/Users/max/.no-mistakes/repos/61c6dd39b831.git)
+summary: 0 of 1 restarted, 0 nudged, 1 unreached
+exit=3
+
+### BASE c30bee75: bin/fm-secondmate-restart.sh fm-fm-self
+unreached: fm-self: no durable record for this second mate in this home; the re-read message could not be delivered either: refusing fleet lifecycle from inside a no-mistakes gate worktree (/Users/max/.no-mistakes/repos/61c6dd39b831.git)
+summary: 0 of 1 restarted, 0 nudged, 1 unreached
+exit=3
