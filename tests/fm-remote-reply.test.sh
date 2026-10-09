@@ -100,15 +100,20 @@ stop_reply_listener() {
   return 1
 }
 
-# Block until this generation's capture has been applied. A live listener keeps
-# its claim across polls, so start is only launched when nothing owns the source.
+# Block until this generation's capture has been applied. Manual replay can
+# replace a registration just as its old listener leaves, so re-check ownership
+# throughout the bounded wait rather than trusting a single live observation.
 await_reply_result() { # <result-path>
-  local result=$1 handled=${1%.result}.handled _
-  if [ "$(reply_owner)" != live ]; then
-    remote_env "$ROOT/bin/fm-procevent.sh" start "$SID" >/dev/null 2>&1 &
-  fi
-  for _ in $(seq 1 800); do
+  local result=$1 handled=${1%.result}.handled attempt starter=''
+  for attempt in $(seq 1 800); do
     [ -s "$result" ] && [ -f "$handled" ] && return 0
+    # Keep at most one start call in flight, and leave live listeners alone.
+    if [ $(((attempt - 1) % 20)) -eq 0 ] \
+      && { [ -z "$starter" ] || ! kill -0 "$starter" 2>/dev/null; } \
+      && [ "$(reply_owner)" != live ]; then
+      remote_env "$ROOT/bin/fm-procevent.sh" start "$SID" >/dev/null 2>&1 &
+      starter=$!
+    fi
     sleep 0.05
   done
   return 1
@@ -809,9 +814,11 @@ done
   || fail "an empty wait replaced the reply listener"
 printf 'working [corr=abcdefabcdefabcd]: held across an empty wait\n' \
   >> "$REMOTE/state/parent-replies.status"
-for _ in $(seq 1 80); do
+# Allow the capture and ingestion work the same bounded budget as other replies.
+# Do not start another listener here: the ownership continuity stays under test.
+for _ in $(seq 1 800); do
   grep -q 'held across an empty wait' "$PARENT/state/ios.status" && break
-  sleep 0.1
+  sleep 0.05
 done
 grep -q 'held across an empty wait' "$PARENT/state/ios.status" \
   || fail "a delta appended while the listener was owned was not mirrored"
