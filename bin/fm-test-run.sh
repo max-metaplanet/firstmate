@@ -1528,7 +1528,7 @@ families_for_changed_path() {
     bin/fm-procevent-quota.sh)
       printf '%s\n' "__script__:fm-procevent-quota.test.sh"
       ;;
-    bin/fm-seat.sh|bin/fm-seat-lib.sh)
+    bin/fm-seat.sh|bin/fm-seat-lib.sh|bin/fm-seat-pipeline.sh|bin/templates/no-mistakes-claude.sh)
       printf '%s\n' "__script__:fm-seat.test.sh"
       printf '%s\n' "__script__:fm-seat-board.test.sh"
       printf '%s\n' "__script__:fm-control-relaunch.test.sh"

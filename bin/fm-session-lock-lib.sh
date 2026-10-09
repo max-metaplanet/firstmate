@@ -460,6 +460,8 @@ fm_session_lock_handover_admits() {  # <state> [<ancestry-pids>]
 # One key=value per line in state/.lock-runtime:
 #   pid=<the anchor pid on lock line 1 when this was written>
 #   profile=<its CLAUDE_CONFIG_DIR; absent means the ambient default profile>
+#   ambient=<the profile a worker spawned on the default seat gets from it,
+#           per fm_seat_config_dir; read by pipeline launches on that seat>
 #   backend=<tmux|herdr> and target=<pane>, both absent unless the pane was
 #           established rather than guessed (bin/fm-supervisor-target-lib.sh)
 # bin/fm-lock.sh is its only writer.

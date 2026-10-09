@@ -673,6 +673,8 @@ test_the_lead_is_replaced_in_its_own_terminal_with_supervision_unbroken() {
     fail "the new lead did not resume the same session: $(ps -o args= -p "$new")"
   grep -q "^profile=$lab/seats/beta\$" "$lab/home/state/.lock-runtime" ||
     fail "the new lead is not on the destination seat: $(cat "$lab/home/state/.lock-runtime")"
+  grep -q "^ambient=$lab/seats/alpha\$" "$lab/home/state/.lock-runtime" ||
+    fail "the new lead must still record the profile its default-seat workers get: $(cat "$lab/home/state/.lock-runtime")"
   grep -q "^target=$pane\$" "$lab/home/state/.lock-runtime" ||
     fail "the new lead is not in the same terminal: $(cat "$lab/home/state/.lock-runtime")"
   [ ! -f "$lab/home/state/.lock-handover" ] || fail "the reservation outlived the completed handover"

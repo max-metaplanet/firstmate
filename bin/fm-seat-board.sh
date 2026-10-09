@@ -20,6 +20,8 @@
 # json    Prints the same reading as one JSON object instead of a page, for a
 #         reader that is not a browser. Schema 1:
 #           { schemaVersion, generatedAt, cacheSeconds, activeSeat, liveSeat,
+#             pipeline: { seat, profile, override, profileRecorded, blockedReason,
+#                         liveAgents: [{ seat, profile, override, pid, started }] },
 #             floor: null | { removeAt, readdAt, dwellSeconds,
 #                             sessionShare: { percent, source, samples } },
 #             seats: [ { name, configDir, active, autoExcluded, cacheFile,
@@ -84,6 +86,8 @@ STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 . "$SCRIPT_DIR/fm-seat-lib.sh"
 # shellcheck source=bin/fm-quota-axi-lib.sh
 . "$SCRIPT_DIR/fm-quota-axi-lib.sh"
+# shellcheck source=bin/fm-session-lock-lib.sh
+. "$SCRIPT_DIR/fm-session-lock-lib.sh"
 
 FM_SEAT_BOARD_PORT_DEFAULT=4405
 FM_SEAT_BOARD_CACHE_SECONDS=${FM_SEAT_BOARD_CACHE_SECONDS:-60}
@@ -415,14 +419,15 @@ render_json() {
       --arg live "$(fm_seat_name_of_profile "${CLAUDE_CONFIG_DIR:-}")" \
       --argjson cacheSeconds "$FM_SEAT_BOARD_CACHE_SECONDS" \
       --argjson floor "$(floor_json)" \
+      --argjson pipeline "$(fm_seat_pipeline_report)" \
       '{
         schemaVersion: 1, generatedAt: $generated, cacheSeconds: $cacheSeconds,
-        activeSeat: $active, liveSeat: $live, floor: $floor, seats: .
+        activeSeat: $active, liveSeat: $live, floor: $floor, pipeline: $pipeline, seats: .
       }'
 }
 
 render_page() {
-  local active name
+  local active name pipeline line
   active=$(fm_seat_active)
   printf '<!DOCTYPE html>\n<html><head><meta charset="utf-8">\n'
   printf '<title>Claude seats</title>\n'
@@ -431,6 +436,15 @@ render_page() {
   printf '</head><body>\n'
   printf '<h1>Claude seats</h1>\n'
   printf '<p class="generated">generated %s</p>\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  pipeline=$(fm_seat_pipeline_report)
+  while IFS= read -r line; do
+    printf '<p class="rotation">%s</p>\n' "$(html_escape "$line")"
+  done < <(printf '%s' "$pipeline" | jq -r '
+    "pipeline seat for next managed launch: " + .seat
+    + (if .override then " (NM_CLAUDE_CONFIG_DIR override)" else " (follows active seat)" end),
+    (if .blockedReason == null then empty else "pipeline selection HELD: " + .blockedReason end),
+    (if .profileRecorded then empty else "pipeline default-seat profile not recorded for this home'"'"'s lead; launches use the wrapper'"'"'s installed default profile until a lead restart records it" end),
+    (.liveAgents[] | "live pipeline agent: pid=" + (.pid | tostring) + " seat=" + .seat)')
   seat_section_html "$FM_SEAT_DEFAULT_NAME" "$active"
   while IFS= read -r name; do
     [ -n "$name" ] || continue

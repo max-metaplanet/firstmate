@@ -3,6 +3,9 @@
 #
 # Usage:
 #   fm-seat.sh status
+#   fm-seat.sh pipeline-install --claude <absolute-native-path> [--destination <path>]
+#   fm-seat.sh pipeline-check --claude <absolute-native-path> [--destination <path>]
+#   fm-seat.sh pipeline-move
 #   fm-seat.sh list
 #   fm-seat.sh switch <name|default> [--force]
 #   fm-seat.sh switch --next [--force]
@@ -32,6 +35,16 @@
 #            a switch can be read against the workers it did not touch, and every
 #            local secondmate home that declines inherited seat settings, with
 #            the seat that home is actually on, so a decline is never invisible.
+# pipeline-install / pipeline-check
+#            Install or verify the tracked no-mistakes Claude wrapper template,
+#            bound to this home and checkout. bin/fm-seat-pipeline.sh owns the
+#            installation and guarded launch mechanics. Use a stable checkout.
+# pipeline-move
+#            If the active pipeline seat is resting/excluded, rotate it through
+#            the existing switch --next path for subsequent launches. Otherwise
+#            keep the eligible active seat. Running agents finish untouched;
+#            an NM_CLAUDE_CONFIG_DIR override must be cleared in the pipeline's
+#            environment to follow that active seat. Never aborts/restarts a run.
 # list       Print every seat with its login state and account identity, and
 #            mark each seat held out of automatic rotation.
 # switch     Point future claude workers at <name>. `default` clears the setting
@@ -319,12 +332,20 @@ declining_secondmate_homes() {
 }
 
 cmd_status() {
-  local active profile threshold minimum policy reason rows excluded floor
+  local active profile threshold minimum policy reason rows excluded floor pipeline
   active=$(fm_seat_active)
   printf 'active seat for NEW workers: %s\n' "$active"
   profile=$(fm_seat_config_dir "$active")
   printf 'active profile: %s\n' "${profile:-(ambient default login)}"
   printf 'login state: %s\n' "$(login_state "$active")"
+  pipeline=$(fm_seat_pipeline_report)
+  printf '%s\n' "$pipeline" | jq -r '
+    "pipeline seat for next managed launch: " + .seat
+    + (if .override then " (NM_CLAUDE_CONFIG_DIR override)" else " (follows active seat)" end),
+    (if .blockedReason == null then empty else "pipeline selection HELD: " + .blockedReason end),
+    (if .profileRecorded then empty else "pipeline default-seat profile not recorded for this home'"'"'s lead; launches use the wrapper'"'"'s installed default profile until a lead restart records it" end),
+    (.liveAgents[] | "live pipeline agent: pid=" + (.pid | tostring) + " seat=" + .seat
+      + (if .override then " (override)" else "" end))'
   # The lead's own seat is a separate fact from the active one: a switch moves
   # what new workers get and leaves the running lead where it launched, so the
   # two drift apart by design and only `lead-restart` closes that gap.
@@ -911,6 +932,8 @@ cmd_threshold_reached() {
 # the instruction goes out as soon as the move becomes available.
 # `resting_workers=<seat:since ...>` records resting entries already warned
 # about, and drops entries once they return to rotation.
+# `pipeline=<seat:since ...>` records resting entries with live pipeline agents
+# already warned about, preserving the worker-warning record independently.
 AUTO_RECORD="$STATE/.claude-seat-auto"
 
 auto_record_get() {
@@ -922,22 +945,24 @@ auto_record_get() {
 # Replace one field, preserving the others. The record is small and rewritten
 # whole, so a partial write can never leave a half-updated record behind.
 auto_record_set() {
-  local key=$1 value=$2 fired blocked extra lead resting_workers tmp
+  local key=$1 value=$2 fired blocked extra lead resting_workers pipeline tmp
   fired=$(auto_record_get fired) || fired=''
   blocked=$(auto_record_get blocked) || blocked=''
   extra=$(auto_record_get extra) || extra=''
   lead=$(auto_record_get lead) || lead=''
   resting_workers=$(auto_record_get resting_workers) || resting_workers=''
+  pipeline=$(auto_record_get pipeline) || pipeline=''
   case "$key" in
     fired) fired=$value ;;
     blocked) blocked=$value ;;
     extra) extra=$value ;;
     lead) lead=$value ;;
     resting_workers) resting_workers=$value ;;
+    pipeline) pipeline=$value ;;
   esac
   mkdir -p "$STATE" 2>/dev/null || return 1
   tmp=$(umask 077; mktemp "$STATE/.fm-seat-auto.XXXXXX" 2>/dev/null) || return 1
-  { printf 'fired=%s\n' "$fired"; printf 'blocked=%s\n' "$blocked"; printf 'extra=%s\n' "$extra"; printf 'lead=%s\n' "$lead"; printf 'resting_workers=%s\n' "$resting_workers"; } > "$tmp" ||
+  { printf 'fired=%s\n' "$fired"; printf 'blocked=%s\n' "$blocked"; printf 'extra=%s\n' "$extra"; printf 'lead=%s\n' "$lead"; printf 'resting_workers=%s\n' "$resting_workers"; printf 'pipeline=%s\n' "$pipeline"; } > "$tmp" ||
     { rm -f -- "$tmp"; return 1; }
   mv -f -- "$tmp" "$AUTO_RECORD" || { rm -f -- "$tmp"; return 1; }
 }
@@ -1041,6 +1066,50 @@ warn_resting_workers() {
   [ "$current" = "$previous" ] || auto_record_set resting_workers "$current"
 }
 
+# warn_pipeline_resting_entry
+# Warn once per resting entry about managed pipeline agents already on it.
+# Uses launch PID/start stamps, never harness banners or endpoint discovery.
+# The move command selects the next launches' seat only: individual running
+# agent migration needs no-mistakes support. Even a manual whole-run abort and
+# revalidation needs explicit approval because it discards in-flight work.
+warn_pipeline_resting_entry() {
+  local live name entry token previous current='' summary move
+  live=$(fm_seat_pipeline_live)
+  previous=$(auto_record_get pipeline) || previous=''
+  printf -v move 'env FM_HOME=%q FM_CONFIG_OVERRIDE=%q FM_STATE_OVERRIDE=%q %q pipeline-move' \
+    "$FM_HOME" "$CONFIG" "$STATE" "$SCRIPT_DIR/fm-seat.sh"
+  while IFS= read -r name; do
+    [ -n "$name" ] || continue
+    fm_seat_resting "$name" || continue
+    entry=$(fm_seat_resting_entry "$name") || continue
+    token="$name:$(printf '%s' "$entry" | jq -r '.since')"
+    current="${current}${token} "
+    case " $previous " in *" $token "*) continue ;; esac
+    summary="pipeline agent is still running on resting seat $name; it finishes untouched. Move subsequent launches with: $move. Clear NM_CLAUDE_CONFIG_DIR in the pipeline environment if set. Moving an individual running agent requires no-mistakes support; a manual whole-run abort-and-revalidate needs the captain's approval because it discards in-flight work"
+    printf 'claude-seat: %s\n' "$summary"
+    "$SCRIPT_DIR/fm-usage-warner.sh" notify "$summary" >/dev/null 2>&1 || true
+  done < <(printf '%s' "$live" | jq -r '[.[].seat] | unique[]')
+  current=${current% }
+  [ "$current" = "$previous" ] || auto_record_set pipeline "$current"
+}
+
+cmd_pipeline_move() {
+  local active reason
+  # The move follows active-seat rotation, irrespective of an override in the
+  # shell issuing it. Overrides belong to the pipeline launch environment.
+  active=$(fm_seat_active)
+  if fm_seat_auto_excluded "$active" || fm_seat_resting "$active" ||
+    { [ "$active" != "$FM_SEAT_DEFAULT_NAME" ] && [ ! -d "$(fm_seat_config_dir "$active")" ]; }; then
+    cmd_switch --next || return 1
+  fi
+  reason=$(NM_CLAUDE_CONFIG_DIR='' fm_seat_pipeline_selection | jq -r '.blockedReason // empty')
+  if [ -n "$reason" ]; then
+    printf 'pipeline selection HELD on active seat %s: %s; active seat kept\n' "$(fm_seat_active)" "$reason" >&2
+    return 1
+  fi
+  printf 'subsequent managed pipeline launches follow active seat %s; running agents finish untouched (clear NM_CLAUDE_CONFIG_DIR in the pipeline environment if set)\n' "$(fm_seat_active)"
+}
+
 # One pass of the automatic mode. Prints a line ONLY when firstmate should know,
 # and is otherwise completely silent, because it runs on the watcher's cadence
 # and every line it prints becomes a wake.
@@ -1081,6 +1150,7 @@ cmd_auto() {
   # The floor runs FIRST, so a switch in this same pass can never land on a seat
   # this pass just rested.
   auto_floor
+  warn_pipeline_resting_entry
   if [ -n "$threshold" ]; then
     auto_trigger "$threshold" "$policy"
     auto_lead_trigger "$threshold"
@@ -1697,6 +1767,9 @@ cmd_retire() {
 
 case "${1-}" in
   status)            shift; cmd_status "$@" ;;
+  pipeline-install)  shift; "$SCRIPT_DIR/fm-seat-pipeline.sh" install "$@" ;;
+  pipeline-check)    shift; "$SCRIPT_DIR/fm-seat-pipeline.sh" check "$@" ;;
+  pipeline-move)     shift; [ $# -eq 0 ] || usage; cmd_pipeline_move ;;
   list)              shift; cmd_list "$@" ;;
   switch)            shift; cmd_switch "$@" ;;
   probe)             shift; cmd_probe "${1-}" ;;
