@@ -5,7 +5,7 @@
 # Usage: fm-control.sh <task-id> interrupt
 #        fm-control.sh <task-id> exit
 #        fm-control.sh <task-id> relaunch [--harness <name>] [--model <name>]
-#                                         [--effort <level>]
+#                                         [--effort <level>] [--seat <name|default>]
 #                                         (--note <text> | --note-file <path>)
 #
 # Why this exists, and how it differs from fm-send.sh. bin/fm-send.sh is the
@@ -46,6 +46,9 @@
 #              that composer reads as taking text again, so an earlier
 #              interrupt cannot strand the agent. Postcondition:
 #              the backend's recovery-grade classifier reports the agent gone.
+#              The recognized Claude background-task exit picker is confirmed
+#              once on its selected Exit and stop tasks row; other dialogs
+#              remain refused, and agent death is still required.
 #              Already-stopped is success (idempotent). An endpoint that reads
 #              `missing` is put through the control plane's per-backend absence
 #              proof (fm_control_endpoint_absence_verdict) before anything is
@@ -86,6 +89,9 @@
 #              worker account pin (bin/fm-worker-account-lib.sh) here, so a pin
 #              that no longer resolves or is signed out refuses before the old
 #              agent stops.
+#              --seat deliberately moves a Claude worker to a validated seat;
+#              absent that flag it keeps its recorded profile. The destination
+#              is journaled and published only by the replacement launch.
 #              --note is required for a ship or scout, whose replacement
 #              inherits the local copy but none of the conversation; a
 #              secondmate reconciles its own home's records at startup, so its
@@ -191,6 +197,13 @@ DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
 . "$SCRIPT_DIR/fm-wake-lib.sh"
 # shellcheck source=bin/fm-worker-account-lib.sh
 . "$SCRIPT_DIR/fm-worker-account-lib.sh"
+CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
+# shellcheck source=bin/fm-timeout-lib.sh
+. "$SCRIPT_DIR/fm-timeout-lib.sh"
+# shellcheck source=bin/fm-quota-axi-lib.sh
+. "$SCRIPT_DIR/fm-quota-axi-lib.sh"
+# shellcheck source=bin/fm-seat-lib.sh
+. "$SCRIPT_DIR/fm-seat-lib.sh"
 
 POLL=${FM_CONTROL_POLL:-0.5}
 SETTLE_WAIT=${FM_CONTROL_SETTLE_WAIT:-5}
@@ -253,6 +266,8 @@ fi
 NEW_HARNESS=
 NEW_MODEL=
 NEW_EFFORT=
+NEW_SEAT=
+SEAT_SET=0
 HARNESS_SET=0
 MODEL_SET=0
 EFFORT_SET=0
@@ -268,6 +283,7 @@ for control_arg in "$@"; do
       harness) NEW_HARNESS=$control_arg; HARNESS_SET=1 ;;
       model) NEW_MODEL=$control_arg; MODEL_SET=1 ;;
       effort) NEW_EFFORT=$control_arg; EFFORT_SET=1 ;;
+      seat) NEW_SEAT=$control_arg; SEAT_SET=1 ;;
       note) NOTE=$control_arg; NOTE_SET=1 ;;
       note_file)
         [ -f "$control_arg" ] || die "--note-file '$control_arg' is not a readable file"
@@ -285,6 +301,8 @@ for control_arg in "$@"; do
     --model=*) NEW_MODEL=${control_arg#--model=}; MODEL_SET=1 ;;
     --effort) control_want_value=effort ;;
     --effort=*) NEW_EFFORT=${control_arg#--effort=}; EFFORT_SET=1 ;;
+    --seat) control_want_value=seat ;;
+    --seat=*) NEW_SEAT=${control_arg#--seat=}; SEAT_SET=1 ;;
     --note) control_want_value=note ;;
     --note=*) NOTE=${control_arg#--note=}; NOTE_SET=1 ;;
     --note-file) control_want_value=note_file ;;
@@ -302,9 +320,10 @@ if [ -n "$control_want_value" ]; then
 fi
 
 if [ "$VERB" != relaunch ]; then
-  [ "$HARNESS_SET" = 0 ] && [ "$MODEL_SET" = 0 ] && [ "$EFFORT_SET" = 0 ] && [ "$NOTE_SET" = 0 ] \
-    || die "--harness, --model, --effort, and --note apply to 'relaunch' only"
+  [ "$HARNESS_SET" = 0 ] && [ "$MODEL_SET" = 0 ] && [ "$EFFORT_SET" = 0 ] && [ "$NOTE_SET" = 0 ] && [ "$SEAT_SET" = 0 ] \
+    || die "--harness, --model, --effort, --seat, and --note apply to 'relaunch' only"
 fi
+[ "$SEAT_SET" = 0 ] || [ -n "$NEW_SEAT" ] || die "--seat requires a non-empty value"
 [ "$HARNESS_SET" = 0 ] || [ -n "$NEW_HARNESS" ] || die "--harness requires a non-empty value"
 [ "$MODEL_SET" = 0 ] || [ -n "$NEW_MODEL" ] || die "--model requires a non-empty value"
 [ "$EFFORT_SET" = 0 ] || [ -n "$NEW_EFFORT" ] || die "--effort requires a non-empty value"
@@ -420,6 +439,45 @@ require_state_verified_backend() {  # <verb>
 # or choose.
 refuse_blocking_prompt() {  # <dialog-name>
   die "task $ID is blocked on a prompt: $1. Refusing to type Enter into it."
+}
+
+# Only lifecycle exit may answer this dialog; ordinary text submit still refuses.
+# Re-read the live viewport immediately before Enter rather than trusting a sink
+# written by an earlier composer read, and confirm at most once per action.
+EXIT_PICKER_CONFIRMED=0
+confirm_exit_prompt() {  # <dialog-name>
+  local screen dialog
+  [ "$HARNESS" = claude ] && [ "$1" = 'Claude background-task exit picker' ] \
+    || refuse_blocking_prompt "$1"
+  [ "$EXIT_PICKER_CONFIRMED" = 0 ] || return 0
+  [ "$(agent_state)" = alive ] || refuse_blocking_prompt "$1"
+  screen=$(fm_backend_visible_capture "$BACKEND" "$T" "$LABEL" 2>/dev/null) \
+    || refuse_blocking_prompt "$1"
+  dialog=$(fm_composer_blocking_dialog "$screen") \
+    || refuse_blocking_prompt "$1"
+  [ "$dialog" = "$1" ] || refuse_blocking_prompt "$1"
+  fm_backend_send_key "$BACKEND" "$T" Enter "$LABEL" \
+    || die "could not confirm task $ID's $dialog"
+  EXIT_PICKER_CONFIRMED=1
+}
+
+wait_exit_dead() {
+  local state screen dialog elapsed=0
+  while :; do
+    state=$(agent_state)
+    if [ "$state" = dead ]; then printf '%s' "$state"; return 0; fi
+    if [ "$state" = alive ]; then
+      screen=$(fm_backend_visible_capture "$BACKEND" "$T" "$LABEL" 2>/dev/null) || screen=''
+      if dialog=$(fm_composer_blocking_dialog "$screen"); then
+        confirm_exit_prompt "$dialog" || return 1
+      fi
+    fi
+    awk -v e="$elapsed" -v t="$EXIT_WAIT" 'BEGIN{exit !(e < t)}' || break
+    sleep "$POLL"
+    elapsed=$(awk -v e="$elapsed" -v p="$POLL" 'BEGIN{printf "%.3f", e + p}')
+  done
+  printf '%s' "$state"
+  return 1
 }
 
 # rendered_matches <ere>: whether any row of the visible viewport matches.
@@ -657,7 +715,7 @@ retire_busy_incarnation() {
 # do_exit: stop the running agent, preserving endpoint and worktree. Prints
 # `already-stopped`, `endpoint-gone`, or `stopped`.
 do_exit() {
-  local state cmd hazard verdict composer_state cancel absence insert_signal entry_before=insert interrupt_result=not-needed dialog
+  local state cmd hazard verdict composer_state cancel absence insert_signal entry_before=insert interrupt_result=not-needed dialog screen
   require_state_verified_backend exit
   state=$(agent_state)
   case "$state" in
@@ -702,6 +760,16 @@ do_exit() {
       ;;
     *) die "task $ID's endpoint reads '$state' rather than a positively classified state; refusing to send a lifecycle command into an unattributed endpoint" ;;
   esac
+  # A worker already parked on its exit picker must not receive the busy
+  # interrupt first: Escape cancels that picker instead of stopping a turn.
+  screen=$(fm_backend_visible_capture "$BACKEND" "$T" "$LABEL" 2>/dev/null) || screen=''
+  if dialog=$(fm_composer_blocking_dialog "$screen"); then
+    confirm_exit_prompt "$dialog"
+    state=$(wait_exit_dead) || die "task $ID's exit picker was confirmed but its agent did not stop within ${EXIT_WAIT}s"
+    retire_busy_incarnation
+    printf 'stopped'
+    return 0
+  fi
   # A busy agent is interrupted first before the exit command is submitted.
   case "$(busy_verdict)" in
     busy*)
@@ -732,7 +800,11 @@ do_exit() {
   # rather than a function that subshell sourced.
   if [ -s "${FM_COMPOSER_DIALOG_SINK:-}" ]; then
     dialog=$(cat "$FM_COMPOSER_DIALOG_SINK")
-    refuse_blocking_prompt "$dialog"
+    confirm_exit_prompt "$dialog"
+    state=$(wait_exit_dead) || die "task $ID's exit picker was confirmed but its agent did not stop within ${EXIT_WAIT}s"
+    retire_busy_incarnation
+    printf 'stopped'
+    return 0
   fi
   case "$composer_state" in
     empty) ;;
@@ -785,18 +857,10 @@ do_exit() {
   if [ -s "${FM_COMPOSER_DIALOG_SINK:-}" ]; then
     dialog=$(cat "$FM_COMPOSER_DIALOG_SINK")
     if [ "$(agent_state)" != dead ]; then
-      refuse_blocking_prompt "$dialog"
+      confirm_exit_prompt "$dialog"
     fi
   fi
-  state=$(wait_agent_state "$EXIT_WAIT" dead) || {
-    # A submit can return before any read sees the picker: a native busy
-    # verdict needs no composer read, and a cleared composer can be read
-    # before the picker renders. Read the screen once more here.
-    : > "$FM_COMPOSER_DIALOG_SINK" || true
-    fm_backend_composer_state "$BACKEND" "$T" "$LABEL" >/dev/null 2>&1 || true
-    if [ -s "$FM_COMPOSER_DIALOG_SINK" ]; then
-      refuse_blocking_prompt "$(cat "$FM_COMPOSER_DIALOG_SINK")"
-    fi
+  state=$(wait_exit_dead) || {
     die "exit-delivered $ID interrupt=$interrupt_result exit-command=delivered agent-state=$state exit=unconfirmed; the agent did not stop within ${EXIT_WAIT}s"
   }
   # The incarnation is over: retire its busy wiring so no stale record or
@@ -832,6 +896,7 @@ PRIOR_EFFORT=
 TARGET_HARNESS=$HARNESS
 TARGET_MODEL=
 TARGET_EFFORT=
+TARGET_SEAT=
 
 journal_write() {  # <phase> [extra-line]...
   local phase=$1
@@ -851,6 +916,10 @@ journal_write() {  # <phase> [extra-line]...
     echo "to_harness=$TARGET_HARNESS"
     echo "to_model=$TARGET_MODEL"
     echo "to_effort=$TARGET_EFFORT"
+    if [ "$SEAT_SET" = 1 ]; then
+      echo "from_seat=$(fm_meta_get "$META_PRIOR" claude_seat)"
+      echo "to_seat=$TARGET_SEAT"
+    fi
     local line
     for line in "$@"; do
       echo "$line"
@@ -1007,8 +1076,18 @@ resolve_relaunch_profile() {
   # signed out must refuse here, while nothing has changed yet.
   local account_model=$TARGET_MODEL
   [ "$account_model" != default ] || account_model=
-  fm_worker_account_select "$TARGET_HARNESS" "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}" \
-    "$account_model" "$TARGET_HARNESS" >/dev/null || return 1
+  local account account_root
+  account=$(fm_worker_account_select "$TARGET_HARNESS" "$CONFIG" \
+    "$account_model" "$TARGET_HARNESS") || return 1
+  if [ "$SEAT_SET" = 1 ]; then
+    [ "$PRIOR_RECORDED_HARNESS" = claude ] && [ "$TARGET_HARNESS" = claude ] \
+      || die "--seat requires a Claude-to-Claude relaunch"
+    TARGET_SEAT=$(fm_seat_relaunch_destination "$NEW_SEAT") || return 1
+    account_root=${account#*$'\t'}
+    account_root=${account_root%%$'\t'*}
+    [ -z "$account" ] || [ "$account_root" = "$TARGET_SEAT" ] \
+      || die "--seat '$NEW_SEAT' conflicts with config/claude-account; the worker account pin is unchanged"
+  fi
 }
 
 # safe_checkpoint: prove, before anything is stopped, that the work a relaunch
@@ -1157,6 +1236,7 @@ do_relaunch() {
   RELAUNCH_TX="${BASHPID:-$$}.$(date -u +%Y%m%dT%H%M%SZ).$RANDOM"
   journal_write launching "${CHECKPOINT_LINES[@]}" "$note_line" "relaunch_tx=$RELAUNCH_TX"
   spawn_args=("$ID" --relaunch --harness "$TARGET_HARNESS")
+  [ "$SEAT_SET" = 0 ] || spawn_args+=(--seat "$NEW_SEAT")
   [ "$TARGET_MODEL" = default ] || spawn_args+=(--model "$TARGET_MODEL")
   [ "$TARGET_EFFORT" = default ] || spawn_args+=(--effort "$TARGET_EFFORT")
   if FM_CONTROL_RELAUNCH_TX="$RELAUNCH_TX" \

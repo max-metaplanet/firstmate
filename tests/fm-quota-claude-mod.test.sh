@@ -237,7 +237,9 @@ const rows = seats.seatRows(
       seats: [
         { name: "alpha", hasData: true, ageSeconds: 5, windows: [{ id: "five_hour", percentRemaining: 80 }] },
         { name: "bravo", active: true, hasData: true, ageSeconds: 5, windows: [{ id: "five_hour", percentRemaining: 50 }] },
-        { name: "charlie", autoExcluded: true, hasData: true, ageSeconds: 99999, windows: [{ id: "five_hour", percentRemaining: 22 }] },
+        { name: "charlie", autoExcluded: true, exclusion: { manual: true, resting: { since: 1 } }, hasData: true, ageSeconds: 99999, windows: [{ id: "five_hour", percentRemaining: 22 }] },
+        { name: "delta", autoExcluded: true, exclusion: { manual: false, resting: { since: 1, provisional: false } }, hasData: false },
+        { name: "echo", exclusion: { manual: false, resting: { since: 1, provisional: true } }, hasData: false },
       ],
     }),
   ),
@@ -247,6 +249,8 @@ const rows = seats.seatRows(
 check(rows[0].live === true && rows[0].marks.includes("this session"), "the live seat must be marked");
 check(rows[1].marks.includes("new workers"), "the seat new workers launch on must be marked");
 check(rows[2].marks.includes("not in rotation"), "a seat held out of automatic rotation must be marked");
+check(rows[3].marks.includes("resting") && !rows[3].marks.includes("not in rotation"), "a resting seat must carry its own mark");
+check(!rows[4].marks.includes("resting"), "a provisionally returned seat is in rotation");
 check(!rows[1].live, "the seat new workers launch on is not necessarily the one this session is on");
 
 // The band's second half names the tightest OTHER seat with that figure's own age.

@@ -83,8 +83,9 @@ An `expired-renewable` seat needs no `--force`: the switch says the token lapsed
 A switch rewrites one setting that only a fresh spawn reads.
 
 - **New workers** launch on the new seat.
-- **Running workers** keep the seat they started on. Their seat is recorded in their own task record at launch, and nothing rewrites it.
-- **Relaunches** of an existing task reuse that recorded seat, never the current setting. Relaunch is the one path that starts a replacement agent for a task that already exists, so it is the one place this could have gone wrong. This matters beyond billing: a task's session history lives under its profile directory, so moving a task between seats would strand it.
+- **Running workers** keep the seat they started on.
+  Their seat is recorded in their own task record at launch; a seat switch never rewrites it.
+- **Relaunches** of an existing Claude task reuse its recorded seat unless `--seat <name|default>` deliberately selects another one; see [the relaunch transaction](agent-control.md#transactional-relaunch).
 - **Harness-changing relaunches** follow the harness. A task relaunched from another harness onto Claude has no Claude history yet, so it counts as a new worker and gets the active seat, never the default login. A task relaunched from Claude onto another harness records no seat any more.
 
 `bin/fm-seat.sh status` shows the active seat alongside every task's own recorded seat, which is how to confirm a switch left running work alone.
@@ -256,7 +257,11 @@ The floor is the operator's own definition of "effectively empty", and holding t
 
 A floor can be armed on its own, with no `threshold`: the watch then rests and wakes seats and switches nothing.
 `arm` warns rather than refusing when every candidate happens to be resting, because the watch is exactly what brings them back.
-Nothing here moves a worker already running on a seat that starts resting: it keeps the profile recorded in its own task record, as it does through every other change.
+When a seat rests with local Claude workers confirmed alive by their runtime, the watch prints one warning for that resting entry, naming those workers and the complete command to move each explicitly.
+The suggested destination is the active usable seat, otherwise a qualifying rotation seat; if none qualifies, the command names `default` and the control plane still validates its login before stopping anything.
+The watch never moves a worker itself.
+[`fm-control.sh relaunch --seat`](agent-control.md#transactional-relaunch) owns the deliberate move and its rollback guarantees.
+Its required progress note should carry any context the replacement needs, because a relaunch preserves files and the instruction inbox but starts a fresh conversation.
 
 ## Moving firstmate itself
 

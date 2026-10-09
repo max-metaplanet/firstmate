@@ -1266,21 +1266,18 @@ ok - live Herdr submit confirm: Claude Code (2.1.283 (Claude Code)) on herdr 0.9
 
 ### Claude background-task exit picker
 
-Measured 2026-10-05 against Claude Code 2.1.289 in an isolated tmux session.
-The Herdr lab was not running, so the Herdr path is covered by the existing fakes.
+The picker structure was measured 2026-10-05 against Claude Code 2.1.289 in an isolated tmux session.
 Typing `/exit` while a background shell is still running opens a picker whose selected row is "Exit and stop tasks" and whose footer is "Enter to confirm · Esc to cancel".
 That screen still classifies as pending, the same verdict as unsubmitted composer text.
-A second Enter would confirm the selected row.
-The picker is recognised by its recorded structure only: the heading on its own line, then the selected row alone on its row, with `Enter to confirm · Esc to cancel` as the last non-blank row.
-The same strings quoted above a normal composer, as a diff, this note, or a test fixture shows them, are not a picker.
-Submit retries now stop after the Enter that opened the picker and report unknown.
-A typed submit to a pane that already shows the picker types nothing and sends no Enter.
-Exit reports that the worker is blocked on the Claude background-task exit picker and does not type another Enter.
-A submit can return before any read sees the picker, so exit reads the screen once more when its wait for the agent to stop times out, and names the picker there too.
-Exit does not report a stopped agent whose pane still shows the picker text as blocked on a prompt.
+The picker is recognised by its recorded structure only: the heading on its own line, then the selected row alone on its row, with that footer as the last non-blank row.
+The same strings quoted above a normal composer are not a picker.
+Ordinary text submit still stops after the Enter that opened the picker and never confirms it; it types nothing when the picker was already open.
+Lifecycle exit now confirms that recognised selection once after rechecking the live viewport, including a picker that was already open or rendered after submit, and still requires the runtime's agent-death proof.
+The portable regressions in `tests/fm-control.test.sh` pin those three timing cases, the no-repeat rule for a stuck picker, and refusal of other selections.
+A valid isolated live-harness proof of that lifecycle confirmation remains pending; the earlier observation establishes the picker structure, not the new lifecycle action.
+A stopped agent whose pane still shows the picker text needs no confirmation.
 The watcher does not read the picker: a pane parked on it keeps the ordinary stale triage.
 No recorded screen was available for a model-downgrade confirmation, an MCP approval, or a Claude exit confirmation other than this picker, so those dialogs are not covered.
-Refusing an Enter that would confirm a dialog restores an existing safety path, so it is not gated behind a flag.
 
 ### Modal composer delivery
 

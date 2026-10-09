@@ -128,7 +128,9 @@
 # auto       One pass of the automatic mode, run by the armed check shim: rest
 #            or wake seats against the quota floor, read the active seat, switch
 #            when the trigger is met and a seat with headroom exists, and print
-#            one line when firstmate should know. The floor runs first, so a
+#            one line when firstmate should know, including one warning per
+#            resting entry with live workers and explicit seat-move commands.
+#            The floor runs first, so a
 #            switch in the same pass can never land on a seat that pass rested.
 #            Never run it in a loop of its own; `arm` gives it the watcher's.
 # arm        Register `auto` as this home's repeating Claude-seat check through
@@ -907,6 +909,8 @@ cmd_threshold_reached() {
 # every poll. A crossing that could not move records `lead=blocked:<seat>:<to>`
 # instead, which silences only that same blocker: every poll still re-asks, so
 # the instruction goes out as soon as the move becomes available.
+# `resting_workers=<seat:since ...>` records resting entries already warned
+# about, and drops entries once they return to rotation.
 AUTO_RECORD="$STATE/.claude-seat-auto"
 
 auto_record_get() {
@@ -918,20 +922,22 @@ auto_record_get() {
 # Replace one field, preserving the others. The record is small and rewritten
 # whole, so a partial write can never leave a half-updated record behind.
 auto_record_set() {
-  local key=$1 value=$2 fired blocked extra lead tmp
+  local key=$1 value=$2 fired blocked extra lead resting_workers tmp
   fired=$(auto_record_get fired) || fired=''
   blocked=$(auto_record_get blocked) || blocked=''
   extra=$(auto_record_get extra) || extra=''
   lead=$(auto_record_get lead) || lead=''
+  resting_workers=$(auto_record_get resting_workers) || resting_workers=''
   case "$key" in
     fired) fired=$value ;;
     blocked) blocked=$value ;;
     extra) extra=$value ;;
     lead) lead=$value ;;
+    resting_workers) resting_workers=$value ;;
   esac
   mkdir -p "$STATE" 2>/dev/null || return 1
   tmp=$(umask 077; mktemp "$STATE/.fm-seat-auto.XXXXXX" 2>/dev/null) || return 1
-  { printf 'fired=%s\n' "$fired"; printf 'blocked=%s\n' "$blocked"; printf 'extra=%s\n' "$extra"; printf 'lead=%s\n' "$lead"; } > "$tmp" ||
+  { printf 'fired=%s\n' "$fired"; printf 'blocked=%s\n' "$blocked"; printf 'extra=%s\n' "$extra"; printf 'lead=%s\n' "$lead"; printf 'resting_workers=%s\n' "$resting_workers"; } > "$tmp" ||
     { rm -f -- "$tmp"; return 1; }
   mv -f -- "$tmp" "$AUTO_RECORD" || { rm -f -- "$tmp"; return 1; }
 }
@@ -984,6 +990,57 @@ warn_extra_usage_entry() {
   "$SCRIPT_DIR/fm-usage-warner.sh" notify "$summary" >/dev/null 2>&1 || true
 }
 
+# warn_resting_workers: one warning per resting entry, naming only positively
+# live local Claude tasks and the complete control command for each. No worker
+# is moved by the watch. Profile paths in task records are resolved to names by
+# the seat library, and quota reads for a destination share this pass's memo.
+warn_resting_workers() {
+  local previous current='' name since token meta seat id tasks commands destination active command
+  previous=$(auto_record_get resting_workers) || previous=''
+  if ! fm_seat_floor >/dev/null; then
+    [ -z "$previous" ] || auto_record_set resting_workers ''
+    return 0
+  fi
+  active=$(fm_seat_active)
+  while IFS=$'\t' read -r name since; do
+    [ -n "$name" ] || continue
+    token="$name:$since"
+    case " $previous " in
+      *" $token "*) current="$current$token "; continue ;;
+    esac
+    tasks=''
+    for meta in "$STATE"/*.meta; do
+      [ -f "$meta" ] || continue
+      [ "$(fm_meta_get "$meta" harness)" = claude ] || continue
+      [ -z "$(fm_meta_get "$meta" remote_host)" ] || continue
+      seat=$(fm_seat_name_of_profile "$(fm_meta_get "$meta" claude_seat)")
+      [ "$seat" = "$name" ] || continue
+      id=${meta##*/}; id=${id%.meta}
+      fm_backend_validate_task_endpoint "$meta" "$id" >/dev/null 2>&1 || continue
+      [ "$(fm_backend_agent_state "$FM_BACKEND_VALIDATED_BACKEND" "$FM_BACKEND_VALIDATED_TARGET")" = alive ] || continue
+      tasks="$tasks$id "
+    done
+    [ -n "$tasks" ] || continue
+    destination=$active
+    if [ "$destination" = "$name" ] || fm_seat_resting "$destination" \
+       || ! seat_usable "$(login_state "$destination")"; then
+      destination=$(next_seat 2>/dev/null) || destination=$FM_SEAT_DEFAULT_NAME
+    fi
+    commands=''
+    for id in $tasks; do
+      printf -v command 'FM_HOME=%q %q %q relaunch --seat %q --note %q' \
+        "$FM_HOME" "$SCRIPT_DIR/fm-control.sh" "$id" "$destination" \
+        'Seat rested; reconcile the preserved work and instruction inbox before continuing.'
+      commands="${commands}${commands:+; }$command"
+    done
+    printf 'claude-seat: %s is resting with running workers: %s; move each explicitly (destination login is validated; default is the fallback when rotation has no candidate): %s\n' \
+      "$name" "${tasks% }" "$commands"
+    current="$current$token "
+  done < <(fm_seat_resting_record | jq -r '.seats | to_entries[] | select(.value.provisional != true) | [.key, .value.since] | @tsv')
+  current=${current% }
+  [ "$current" = "$previous" ] || auto_record_set resting_workers "$current"
+}
+
 # One pass of the automatic mode. Prints a line ONLY when firstmate should know,
 # and is otherwise completely silent, because it runs on the watcher's cadence
 # and every line it prints becomes a wake.
@@ -1029,6 +1086,7 @@ cmd_auto() {
     auto_lead_trigger "$threshold"
   fi
   [ -z "$policy" ] || warn_extra_usage_entry
+  warn_resting_workers
 }
 
 # auto_lead_trigger <threshold>
