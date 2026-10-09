@@ -568,6 +568,7 @@ export CLAUDE_PID=$$
 FM_HOME="$LAB/home" FM_STATE_OVERRIDE="$LAB/home/state" "$ROOT/bin/fm-lock.sh" >> "$LAB/lock.out" 2>&1
 notices=$(ls "$LAB/home/state/crew1.inbox/"*.msg 2>/dev/null | wc -l | tr -d ' ')
 printf 'lead pid=%s session=%s profile=%s crew_notices=%s\n' "$$" "$sess" "${CLAUDE_CONFIG_DIR:-none}" "$notices" >> "$LAB/lead.log"
+printf 'persistence=%s child=%s\n' "${CLAUDE_CODE_FORCE_SESSION_PERSISTENCE:-unset}" "${CLAUDE_CODE_CHILD_SESSION-unset}" >> "$LAB/lead.log"
 : > "$LAB/cmd.in"
 # Published only once the command file is initialized, so a caller can never
 # write a command into the moment before this truncates it.
@@ -616,7 +617,7 @@ SH
   chmod +x "$FAKEBIN/tmux"
 
   tmux -L "$LAB_SOCK" send-keys -t "$LAB_PANE" \
-    "CLAUDE_CONFIG_DIR='$LAB/seats/alpha' '$FAKE_CLAUDE' '$LAB/lead.sh'" Enter
+    "export CLAUDE_CODE_CHILD_SESSION=1 CLAUDE_CODE_FORCE_SESSION_PERSISTENCE=0; CLAUDE_CONFIG_DIR='$LAB/seats/alpha' '$FAKE_CLAUDE' '$LAB/lead.sh'" Enter
   # The lead's readiness marker, not the lock file: the lock's first line lands
   # before the runtime record beside it, so gating on the lock alone races the
   # record this test then reads.
@@ -654,6 +655,8 @@ test_the_lead_is_replaced_in_its_own_terminal_with_supervision_unbroken() {
   watcher=$(cat "$lab/watcher.pid")
 
   lab_restart
+  assert_grep 'env -u CLAUDE_CODE_CHILD_SESSION CLAUDE_CODE_FORCE_SESSION_PERSISTENCE=1' \
+    "$lab/home/state/.lead-restart.launch" "the staged lead replacement must enable transcript persistence"
   [ -f "$lab/home/state/.lock-handover" ] ||
     fail "the home was not reserved while the outgoing lead still held it"
 
@@ -667,6 +670,8 @@ test_the_lead_is_replaced_in_its_own_terminal_with_supervision_unbroken() {
   esac
 
   new=$(cat "$lab/home/state/.lock")
+  assert_grep 'persistence=0 child=1' "$lab/lead.log" "the outgoing lead must carry the contrary environment"
+  assert_grep 'persistence=1 child=unset' "$lab/lead.log" "the replacement lead must receive persistence with no child marker"
   [ "$new" != "$old" ] || fail "the lock still names the process that was replaced"
   kill -0 "$new" 2>/dev/null || fail "the new lead is not running"
   [ "$(ps -o args= -p "$new" | grep -c -- "--resume lead-session-1")" -eq 1 ] ||

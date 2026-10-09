@@ -5408,6 +5408,12 @@ if [ -n "$WORKER_ACCOUNT" ]; then
 elif [ "$HARNESS" = claude ] && [ -n "$SEAT_CONFIG_DIR" ]; then
   LAUNCH="CLAUDE_CONFIG_DIR=$(shell_quote "$SEAT_CONFIG_DIR") $LAUNCH"
 fi
+if [ "$HARNESS" = claude ] && [ "$KIND" = secondmate ] && [ "$RELAUNCH" -eq 1 ]; then
+  # Both local and remote secondmate restarts reach this launch owner.
+  # Apply this in the staged command: the endpoint shell can retain the
+  # outgoing session's child marker independently of the restarting process.
+  LAUNCH="env -u CLAUDE_CODE_CHILD_SESSION CLAUDE_CODE_FORCE_SESSION_PERSISTENCE=1 $LAUNCH"
+fi
 if [ "$KIND" = secondmate ]; then
   sq_home=$(shell_quote "$PROJ_ABS")
   sq_primary_home=$(shell_quote "$FM_HOME")
