@@ -262,7 +262,9 @@ compose_successor_command() {  # <profile-dir> <session-id> <ambient-profile>  (
     esac
     out="$out $(printf '%q' "$token")"
   done
-  printf 'FM_AMBIENT_CLAUDE_CONFIG_DIR=%q CLAUDE_CONFIG_DIR=%q%s --resume %q\n' "$ambient" "$profile" "$out" "$session"
+  # A successor is a persistent session even when the outgoing lead was
+  # launched as a Claude child; clear that inherited marker in the pane too.
+  printf 'FM_AMBIENT_CLAUDE_CONFIG_DIR=%q CLAUDE_CONFIG_DIR=%q env -u CLAUDE_CODE_CHILD_SESSION CLAUDE_CODE_FORCE_SESSION_PERSISTENCE=1%s --resume %q\n' "$ambient" "$profile" "$out" "$session"
 }
 
 # --- shared preflight --------------------------------------------------------

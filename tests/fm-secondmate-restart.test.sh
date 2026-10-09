@@ -66,6 +66,9 @@ case "${1:-}" in
         ". '"*"'")
           staged=${payload#". '"}
           staged=${staged%"'"}
+          if [ -n "${FM_FAKE_CAPTURE_LAUNCH:-}" ] && [ -f "$staged" ]; then
+            cp "$staged" "$D/replacement-launch"
+          fi
           [ ! -f "$staged" ] || payload=$(cat "$staged")
           ;;
       esac
@@ -307,6 +310,33 @@ test_persist_precedes_restart() {
   grep -h '^phase=' "$dir/home/state/pending-replies"/* | grep -q '^phase=resolved$' \
     || fail "the persist answer did not settle its durable expectation"
   pass "T2 the mate persists before anything is stopped"
+}
+
+test_claude_replacement_persists_transcripts() {
+  local dir setting out launch seen
+  for setting in absent enabled; do
+    dir=$(new_case "transcripts-$setting")
+    add_local_mate "$dir" sm1
+    arm_answer "$dir" sm1
+    if [ "$setting" = enabled ]; then
+      printf 'CLAUDE_CODE_CHILD_SESSION\nCLAUDE_CODE_FORCE_SESSION_PERSISTENCE\n' \
+        > "$dir/home/config/launch-env-allowlist"
+    fi
+    out=$(FM_FAKE_CAPTURE_LAUNCH=1 CLAUDE_CODE_CHILD_SESSION=1 CLAUDE_CODE_FORCE_SESSION_PERSISTENCE=0 run_restart "$dir" sm1) \
+      || fail "transcript restart with allowlist=$setting failed: $out"
+    launch=$(cat "$dir/fake/replacement-launch")
+    cat > "$dir/fakebin/claude" <<'SH'
+#!/usr/bin/env bash
+printf 'persistence=%s child=%s\n' "${CLAUDE_CODE_FORCE_SESSION_PERSISTENCE-unset}" "${CLAUDE_CODE_CHILD_SESSION-unset}"
+SH
+    chmod +x "$dir/fakebin/claude"
+    seen=$(env -i HOME="$dir" PATH="$dir/fakebin:$PATH" \
+      CLAUDE_CODE_CHILD_SESSION=1 CLAUDE_CODE_FORCE_SESSION_PERSISTENCE=0 \
+      /bin/sh -c "$launch") || fail "the staged replacement could not run: $launch"
+    assert_equals 'persistence=1 child=unset' "$seen" \
+      "the replacement must persist transcripts even with inherited child state and allowlist=$setting"
+  done
+  pass "Claude secondmate replacements persist transcripts in both allowlist postures"
 }
 
 # --- T2b: an answer delivered at a zero-second bound still releases the gate -
@@ -849,6 +879,7 @@ test_already_current_unprovable_mate_stays_on_the_nudge_path() {
 
 test_persist_gates_and_asks_only_for_open_records
 test_persist_precedes_restart
+test_claude_replacement_persists_transcripts
 test_arrived_answer_precedes_deadline_check
 test_answer_between_resolution_and_timeout_wins
 test_unprovable_runtime_falls_back
