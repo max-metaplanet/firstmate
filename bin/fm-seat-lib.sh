@@ -1,5 +1,6 @@
 # shellcheck shell=bash
-# Shared Claude seat resolution, used by bin/fm-seat.sh and bin/fm-spawn.sh.
+# Shared Claude seat resolution, used by the seat command, spawn and dispatch
+# resolver.
 # Usage: . bin/fm-seat-lib.sh   (after FM_ROOT, FM_HOME, and CONFIG are set, and
 #        after bin/fm-timeout-lib.sh, which bounds every quota read, and
 #        bin/fm-quota-axi-lib.sh, which owns the quota row join)
@@ -174,8 +175,8 @@ fm_seat_name_of_profile() {
 
 # fm_seat_spawn_config_dir
 # The CLAUDE_CONFIG_DIR a NEW claude worker should launch with: the active
-# seat's, resolved by fm_seat_config_dir. Only a fresh spawn calls this. A
-# relaunch reads the task's recorded value.
+# seat's, resolved by fm_seat_config_dir. A fresh spawn or resolver uses this;
+# a relaunch reads the task's recorded value.
 fm_seat_spawn_config_dir() {
   fm_seat_config_dir "$(fm_seat_active)"
 }

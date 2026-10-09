@@ -1245,6 +1245,9 @@ After the answer, code applies all remaining checks and ranking:
 - Each candidate's `provider` and `floor`.
 - Every applicable account-wide and model/product row from one `quota-axi --json` snapshot.
 - The numeric `spendPriority` argmax over candidates, using each candidate's limiting row.
+- The [Claude seat dispatch gate](claude-seats.md#switching-automatically), using a separate bounded read of the active seat rather than the ambient Claude ranking row.
+  A held Claude candidate is ineligible, and configured alternatives such as Codex remain subject to the existing quota and approval gates.
+  During a seat hold, a below-floor matched rule containing Claude escalates with its own candidates instead of falling through to the default, so the rule floor still holds and a Claude-only rule cannot borrow another route.
 
 The [shared quota library](../bin/fm-quota-axi-lib.sh) accepts schema 5 and schema 6 and implements the [account-matching contract](../.agents/skills/quota-array-dispatch/SKILL.md#1-eligibility).
 

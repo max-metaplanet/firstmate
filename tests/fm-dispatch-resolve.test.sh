@@ -145,8 +145,13 @@ else
 fi
 printf '%s\n' "$*" >> "${QUOTA_AXI_CALLS:?}"
 [ "${FAKE_QUOTA_FAIL:-0}" = 1 ] && exit 1
-[ "${1:-}" = --json ] || exit 2
-cat "${QUOTA_AXI_FIXTURE:?}"
+if [ "${1:-}" = --provider ]; then
+  printf '%s\n' "${CLAUDE_CONFIG_DIR-}" > "${FAKE_SEAT_PROFILE_LOG:?}"
+  cat "${FAKE_SEAT_QUOTA:?}"
+else
+  [ "${1:-}" = --json ] || exit 2
+  cat "${QUOTA_AXI_FIXTURE:?}"
+fi
 SH
 chmod +x "$FAKEBIN/quota-axi"
 
@@ -1184,5 +1189,87 @@ run code out err --help
 expect_code 0 "$code" "--help exits 0"
 assert_contains "$out" 'Usage:' "--help prints usage"
 pass "configuration errors exit 2 before any network call"
+
+
+# --- seat hold: evaluate configured alternatives, never borrow a default -----
+cp "$BASE_RULES" "$RULES"
+write_response "$RESPONSE" rule_4 0.9
+write_quota "$QUOTA" 0.1 0.9
+jq '.rules[3].use = [{harness:"claude",model:"sonnet",effort:"high"},
+  {harness:"codex",model:"gpt-5.6-sol",effort:"xhigh"}]
+  | .default = {harness:"cursor",model:"cursor-grok-4.6-high"}' "$RULES" > "$TMP_ROOT/seat-rules"
+cp "$TMP_ROOT/seat-rules" "$RULES"
+export FAKE_SEAT_QUOTA="$TMP_ROOT/seat-quota.json" FAKE_SEAT_PROFILE_LOG="$LOG/seat-profile"
+mkdir -p "$TMP_ROOT/seats/work"
+printf '%s\n' "$TMP_ROOT/seats" > "$HOME_DIR/config/claude-seats-root"
+printf 'work\n' > "$HOME_DIR/config/claude-seat"
+printf 'stop\n' > "$HOME_DIR/config/claude-seat-extra-usage"
+jq '(.providers[] | select(.provider == "claude") | .quotaSemantics.effectiveAvailability[]).effectivePercentRemaining = 0' "$QUOTA" > "$FAKE_SEAT_QUOTA"
+reset_log
+TYPESAFE_API_KEY=$KEY run code out err "$BRIEF"
+expect_code 0 "$code" "seat hold resolution exits normally"
+assert_contains "$out" "profile: --harness 'codex' --model 'gpt-5.6-sol' --effort 'xhigh'" "held seat offers the rule's Codex candidate"
+assert_contains "$out" 'not eligible: Claude seat dispatch held:' "held Claude cannot win even with higher ambient spendPriority"
+assert_contains "$out" 'extra-usage policy is stop' "candidate evidence names the seat hold"
+assert_equals "$TMP_ROOT/seats/work" "$(cat "$LOG/seat-profile")" "gate probes the configured seat, not the ambient account"
+assert_equals '2' "$(wc -l < "$LOG/quota-axi.calls" | tr -d ' ')" "one ranking snapshot plus one seat-specific read"
+
+# A Claude-only matched rule remains held even with a viable default profile.
+jq '.rules[3].use |= map(select(.harness == "claude"))' "$RULES" > "$TMP_ROOT/claude-only"
+cp "$TMP_ROOT/claude-only" "$RULES"
+reset_log
+TYPESAFE_API_KEY=$KEY run code out err "$BRIEF"
+assert_contains "$out" 'status: escalate' "Claude-only rule remains held"
+assert_not_contains "$out" '  profile:' "no default alternative is invented"
+assert_not_contains "$out" 'candidate: cursor:' "held rule never borrows the default"
+
+# A rule-floor fallback must not evade that hold either.
+jq '.rules[3].floor = {provider:"claude",scope:"all_models",min_percent:90}' "$RULES" > "$TMP_ROOT/claude-floor"
+cp "$TMP_ROOT/claude-floor" "$RULES"
+TYPESAFE_API_KEY=$KEY run code out err "$BRIEF"
+assert_contains "$out" 'status: escalate' "Claude-only below-floor rule stays held"
+assert_not_contains "$out" 'candidate: cursor:' "rule floor cannot borrow a default during a seat hold"
+cp "$TMP_ROOT/seat-rules" "$RULES"
+jq '.rules[3].floor = {provider:"claude",scope:"all_models",min_percent:90}' "$RULES" > "$TMP_ROOT/mixed-floor"
+cp "$TMP_ROOT/mixed-floor" "$RULES"
+TYPESAFE_API_KEY=$KEY run code out err "$BRIEF"
+assert_contains "$out" 'status: escalate' "the matched rule floor still holds even with a viable alternative"
+assert_contains "$out" 'default fallback suppressed' "seat hold explains why it cannot borrow the default"
+assert_contains "$out" 'candidate: codex:gpt-5.6-sol' "rule floor outcome still offers evidence for its own configured alternatives"
+assert_not_contains "$out" '  profile:' "seat hold never bypasses the rule floor"
+cp "$TMP_ROOT/seat-rules" "$RULES"
+jq '.rules[3].approval = "captain"' "$RULES" > "$TMP_ROOT/seat-approval"
+cp "$TMP_ROOT/seat-approval" "$RULES"
+TYPESAFE_API_KEY=$KEY run code out err "$BRIEF"
+assert_contains "$out" 'status: escalate' "a seat hold never bypasses rule approval"
+assert_not_contains "$out" '  profile:' "approval-gated Codex is not auto-selected"
+cp "$TMP_ROOT/seat-rules" "$RULES"
+
+# Unknown Codex quota remains unranked instead of guessed usable.
+jq '(.providers[] | select(.provider == "codex") | .quotaSemantics) = {status:"unknown",effectiveAvailability:[]}' "$QUOTA" > "$TMP_ROOT/unknown-codex"
+cp "$QUOTA" "$TMP_ROOT/ranking-backup"
+cp "$TMP_ROOT/unknown-codex" "$QUOTA"
+TYPESAFE_API_KEY=$KEY run code out err "$BRIEF"
+assert_contains "$out" 'status: escalate' "unmeasured alternative cannot be selected automatically"
+assert_contains "$out" 'candidate: codex:gpt-5.6-sol  provider=codex  -> eligible, unranked:' "Codex uncertainty is disclosed"
+cp "$TMP_ROOT/ranking-backup" "$QUOTA"
+
+# The gate also honors a configured reserve floor despite positive plan quota.
+cp "$QUOTA" "$FAKE_SEAT_QUOTA"
+printf '80\n' > "$HOME_DIR/config/claude-seat-floor"
+TYPESAFE_API_KEY=$KEY run code out err "$BRIEF"
+assert_contains "$out" "profile: --harness 'codex'" "stop at reserve floor offers the configured Codex alternative"
+rm "$HOME_DIR/config/claude-seat-floor"
+TYPESAFE_API_KEY=$KEY run code out err "$BRIEF"
+assert_contains "$out" "profile: --harness 'claude'" "healthy plan quota keeps ordinary ranking"
+rm "$HOME_DIR/config/claude-seat-extra-usage"
+reset_log
+TYPESAFE_API_KEY=$KEY run code out err "$BRIEF"
+assert_contains "$out" "profile: --harness 'claude'" "unset policy keeps ordinary ranking"
+assert_equals '1' "$(wc -l < "$LOG/quota-axi.calls" | tr -d ' ')" "unset policy makes no seat quota call"
+rm "$HOME_DIR/config/claude-seat" "$HOME_DIR/config/claude-seats-root"
+unset FAKE_SEAT_QUOTA FAKE_SEAT_PROFILE_LOG
+cp "$BASE_RULES" "$RULES"
+pass "seat holds offer only configured alternatives while preserving quota and approval gates"
 
 printf '# all fm-dispatch-resolve tests passed\n'

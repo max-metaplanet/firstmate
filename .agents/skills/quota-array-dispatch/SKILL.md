@@ -48,7 +48,7 @@ Do not read `--json` on the normal path, and do not reach for `--full` to rebuil
 
 After reading the TOON, fall back to one `quota-axi --json` call only when that TOON is genuinely ambiguous for the decision, or when the installed quota-axi is somehow below the floor so its TOON lacks `spendPriority`.
 Ambiguous means a candidate's `spendPriority` is the literal `unknown` or unmeasurable, a real tie still needs extra evidence, or a candidate's eligibility is unclear from `quota[]` plus `attention[]`.
-The fallback therefore has an explicit TOON-then-JSON call sequence; reuse its JSON result and do not take any further quota snapshots.
+The fallback therefore has an explicit TOON-then-JSON call sequence; reuse its JSON result and do not take any further ranking snapshots.
 Below-floor is rare: bootstrap enforces `FM_QUOTA_AXI_MIN` and normally reports `MISSING` before dispatch; if an intake somehow reaches an older build whose TOON lacks `spendPriority`, use the defensive `--json` fallback rather than treating the missing scalar as healthy.
 `--json` is a defensive belt, not a habit; never reach for it because it feels more complete.
 Read `quota-axi auth --json` only when a candidate's credential surface is in question.
@@ -65,6 +65,11 @@ It cannot override a hard-gate failure, and it is never hidden inside a new comp
 
 Outside those documented mappings, deterministic shell must not infer a provider family or credential store from a harness, model, or source name.
 You establish the remaining relations yourself, in the open, from the candidate's own authoritative catalog (`harness-adapters` owns the per-harness discovery surface) plus the one intake snapshot.
+
+For a new Claude candidate, apply `fm_seat_dispatch_decision` from `bin/fm-seat-lib.sh` before ranking; the library header owns its sourcing prerequisites and gate mechanics.
+This bounded seat-specific policy read is separate from the intake ranking snapshot.
+A hold excludes that Claude candidate, so consider only the matched rule's own remaining candidates, including Codex when configured, and keep a Claude-only rule held rather than borrowing a default or inventing a profile.
+`bin/fm-spawn.sh` rechecks the gate at launch.
 
 Confirm the catalog lists the candidate's model and record the provider family it reports.
 A model the catalog does not list is concrete contradictory evidence: block that candidate and quote the catalog result.
