@@ -5443,11 +5443,10 @@ if [ -n "$WORKER_ACCOUNT" ]; then
 elif [ "$HARNESS" = claude ] && [ -n "$SEAT_CONFIG_DIR" ]; then
   LAUNCH="CLAUDE_CONFIG_DIR=$(shell_quote "$SEAT_CONFIG_DIR") $LAUNCH"
 fi
-if [ "$HARNESS" = claude ] && [ "$RELAUNCH" -eq 1 ]; then
-  # Every Claude relaunch (crewmate, scout, and local or remote secondmate)
-  # reaches this launch owner. Apply this in the staged command: the endpoint
-  # shell can retain the outgoing session's child marker independently of the
-  # restarting process.
+if [ "$HARNESS" = claude ]; then
+  # Every fresh Claude launch and relaunch reaches this launch owner. Apply
+  # this in the staged command: the endpoint shell can inherit or retain a
+  # child marker independently of the spawning process.
   LAUNCH="env -u CLAUDE_CODE_CHILD_SESSION CLAUDE_CODE_FORCE_SESSION_PERSISTENCE=1 $LAUNCH"
 fi
 if [ "$KIND" = secondmate ]; then
