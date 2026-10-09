@@ -1,0 +1,24 @@
+### Scenario 2: held seat, rule with Codex alternative
+$ bin/fm-dispatch-resolve.sh brief-investigate.md
+dispatch-resolve:
+  status: clear
+  model: jev-1.13.0   latency_ms: 294   tokens: 819/71
+  rule: rule_2 (The task is an investigation, diagnosis, audit, bug reproduc)   confidence: 1.0
+  probabilities: rule_1=0.0 rule_2=1.0 rule_3=0.0 rule_4=0.0 rule_5=0.0 default=0.0
+  note: rule matched
+  candidate: claude:claude-sonnet-5  provider=claude  -> not eligible: Claude seat dispatch held: the active Claude seat quota could not be read, so whether this worker would run on paid extra usage is unknown, and the policy makes no guess this holds only work not yet started; a worker already running keeps its own seat and can still draw extra usage mid-task
+  candidate: codex:gpt-6.1-sol  provider=codex  scope=all_models  remaining=95%  spendPriority=-4.891  runway=projected_exhaustion  -> eligible
+  profile: --harness 'codex' --model 'gpt-6.1-sol' --effort 'high'
+[exit 0]
+
+### Scenario 2 rerun (Claude quota endpoint rate-limited again: quota-unreadable hold; the floor-stop hold reason is shown in 05 scenario 4b)
+dispatch-resolve:
+  status: clear
+  model: jev-1.13.0   latency_ms: 285   tokens: 819/71
+  rule: rule_2 (The task is an investigation, diagnosis, audit, bug reproduc)   confidence: 1.0
+  probabilities: rule_1=0.0 rule_2=1.0 rule_3=0.0 rule_4=0.0 rule_5=0.0 default=0.0
+  note: rule matched
+  candidate: claude:claude-sonnet-5  provider=claude  -> not eligible: Claude seat dispatch held: the active Claude seat quota could not be read, so whether this worker would run on paid extra usage is unknown, and the policy makes no guess this holds only work not yet started; a worker already running keeps its own seat and can still draw extra usage mid-task
+  candidate: codex:gpt-6.1-sol  provider=codex  scope=all_models  remaining=95%  spendPriority=-4.6713  runway=projected_exhaustion  -> eligible
+  profile: --harness 'codex' --model 'gpt-6.1-sol' --effort 'high'
+[exit 0]

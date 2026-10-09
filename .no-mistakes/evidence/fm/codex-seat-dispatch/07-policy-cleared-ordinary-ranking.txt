@@ -1,0 +1,12 @@
+### Scenario 5: policy removed -> Claude is not held (still eligible; ambient Claude ranking row was rate-limited/unknown at this moment, so it is unranked rather than ranked - see 01 for the measured baseline)
+dispatch-resolve:
+  status: clear
+  model: jev-1.13.0   latency_ms: 296   tokens: 819/71
+  rule: rule_2 (The task is an investigation, diagnosis, audit, bug reproduc)   confidence: 1.0
+  probabilities: rule_1=0.0 rule_2=1.0 rule_3=0.0 rule_4=0.0 rule_5=0.0 default=0.0
+  note: rule matched
+  note: 1 eligible candidate(s) unranked (claude)
+  candidate: claude:claude-sonnet-5  provider=claude  scope=all_models  remaining=-%  spendPriority=-  runway=unknown  -> eligible, unranked: provider claude unmeasured (unknown): disclosed uncertainty
+  candidate: codex:gpt-6.1-sol  provider=codex  scope=all_models  remaining=95%  spendPriority=-4.664  runway=projected_exhaustion  -> eligible
+  profile: --harness 'codex' --model 'gpt-6.1-sol' --effort 'high'
+[exit 0]

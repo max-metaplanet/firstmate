@@ -1,0 +1,22 @@
+### Scenario 3: held seat, Claude-only rule (deployment-config path force)
+$ bin/fm-dispatch-resolve.sh brief-migration.md
+dispatch-resolve:
+  status: escalate
+  model: jev-1.13.0   latency_ms: 232   tokens: 817/71
+  rule: rule_3 (The task changes a database migration, a generated schema ar)   confidence: 1.0
+  probabilities: rule_1=0.0 rule_2=0.0 rule_3=1.0 rule_4=0.0 rule_5=0.0 default=0.0
+  reason: no rankable eligible candidate
+  note: rule matched
+  candidate: claude:claude-opus-5  provider=claude  -> not eligible: Claude seat dispatch held: the active Claude seat quota could not be read, so whether this worker would run on paid extra usage is unknown, and the policy makes no guess this holds only work not yet started; a worker already running keeps its own seat and can still draw extra usage mid-task
+[exit 0]
+
+### Scenario 3 rerun (Claude quota endpoint rate-limited again: quota-unreadable hold; the floor-stop hold reason is shown in 05 scenario 4b)
+dispatch-resolve:
+  status: escalate
+  model: jev-1.13.0   latency_ms: 227   tokens: 817/71
+  rule: rule_3 (The task changes a database migration, a generated schema ar)   confidence: 1.0
+  probabilities: rule_1=0.0 rule_2=0.0 rule_3=1.0 rule_4=0.0 rule_5=0.0 default=0.0
+  reason: no rankable eligible candidate
+  note: rule matched
+  candidate: claude:claude-opus-5  provider=claude  -> not eligible: Claude seat dispatch held: the active Claude seat quota could not be read, so whether this worker would run on paid extra usage is unknown, and the policy makes no guess this holds only work not yet started; a worker already running keeps its own seat and can still draw extra usage mid-task
+[exit 0]

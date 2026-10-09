@@ -1,0 +1,12 @@
+### Scenario 1 baseline: no extra-usage policy in lab home (config: claude-seat claude-seats-root crew-dispatch.json )
+$ FM_HOME=$LAB bin/fm-dispatch-resolve.sh brief-investigate.md
+dispatch-resolve:
+  status: clear
+  model: jev-1.13.0   latency_ms: 404   tokens: 819/71
+  rule: rule_2 (The task is an investigation, diagnosis, audit, bug reproduc)   confidence: 1.0
+  probabilities: rule_1=0.0 rule_2=1.0 rule_3=0.0 rule_4=0.0 rule_5=0.0 default=0.0
+  note: rule matched
+  candidate: claude:claude-sonnet-5  provider=claude  scope=all_models  remaining=19%  spendPriority=-3.6178  runway=projected_exhaustion  -> eligible
+  candidate: codex:gpt-6.1-sol  provider=codex  scope=all_models  remaining=95%  spendPriority=-4.908  runway=projected_exhaustion  -> eligible
+  profile: --harness 'claude' --model 'claude-sonnet-5' --effort 'high'
+[exit 0]

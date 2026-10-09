@@ -1,0 +1,25 @@
+### Scenario 4 (adversarial): held seat; matched rule_2 has floor {provider:codex,min_percent:99} (below), default = codex
+lab rule_2 floor: {"provider":"codex","scope":"all_models","min_percent":99}; default: {"harness":"codex","model":"gpt-6.1-sol","effort":"medium"}; orig default: [{"harness":"claude","model":"claude-sonnet-5","effort":"medium"},{"harness":"codex","model":"gpt-6.1-sol","effort":"medium"}]
+$ bin/fm-dispatch-resolve.sh brief-investigate.md
+dispatch-resolve:
+  status: clear
+  model: jev-1.13.0   latency_ms: 241   tokens: 819/71
+  rule: rule_2 (The task is an investigation, diagnosis, audit, bug reproduc)   confidence: 1.0
+  probabilities: rule_1=0.0 rule_2=1.0 rule_3=0.0 rule_4=0.0 rule_5=0.0 default=0.0
+  note: rule rule_2 floor all_models below 99%: fall through to default
+  candidate: codex:gpt-6.1-sol  provider=codex  scope=all_models  remaining=95%  spendPriority=-4.847  runway=projected_exhaustion  -> eligible
+  profile: --harness 'codex' --model 'gpt-6.1-sol' --effort 'medium'
+[exit 0]
+### Scenario 4b: held seat; below-floor rule_2 falls through to the real fleet default [claude, codex]
+default: [{"harness":"claude","model":"claude-sonnet-5","effort":"medium"},{"harness":"codex","model":"gpt-6.1-sol","effort":"medium"}]
+$ bin/fm-dispatch-resolve.sh brief-investigate.md
+dispatch-resolve:
+  status: clear
+  model: jev-1.13.0   latency_ms: 346   tokens: 819/71
+  rule: rule_2 (The task is an investigation, diagnosis, audit, bug reproduc)   confidence: 1.0
+  probabilities: rule_1=0.0 rule_2=1.0 rule_3=0.0 rule_4=0.0 rule_5=0.0 default=0.0
+  note: rule rule_2 floor all_models below 99%: fall through to default
+  candidate: claude:claude-sonnet-5  provider=claude  -> not eligible: Claude seat dispatch held: the active Claude seat is at 19% left, at or below the 100% quota floor, and the extra-usage policy is stop, so no new Claude worker is started on what is left of it this holds only work not yet started; a worker already running keeps its own seat and can still draw extra usage mid-task
+  candidate: codex:gpt-6.1-sol  provider=codex  scope=all_models  remaining=95%  spendPriority=-4.682  runway=projected_exhaustion  -> eligible
+  profile: --harness 'codex' --model 'gpt-6.1-sol' --effort 'medium'
+[exit 0]

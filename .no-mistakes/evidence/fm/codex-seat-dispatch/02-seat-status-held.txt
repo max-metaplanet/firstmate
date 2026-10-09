@@ -1,0 +1,25 @@
+### Seat status in lab (stop policy, floor 100, seat-max)
+$ bin/fm-seat.sh status
+active seat for NEW workers: seat-max
+active profile: /Users/max/.claude-seats/seat-max
+login state: logged-in
+firstmate itself is running on: (not recorded for this session)
+auto-switch trigger: (unset - no automatic switching)
+destination minimum: (unset - any logged-in seat is a valid destination)
+extra-usage policy: stop - hold new Claude dispatch rather than start work on paid extra usage
+held out of automatic rotation by hand: (none - every seat under the root is a rotation candidate)
+quota floor: rest a seat at or below 100% left, back only above 100% on BOTH windows after 600s and with room for a whole session
+resting below the quota floor:
+  (none - every seat is above the 100% floor, or has not been read yet)
+auto-switch watch: not armed
+new Claude dispatch: HELD (bin/fm-spawn.sh --ignore-seat-hold starts one task anyway)
+  resolve the task brief with bin/fm-dispatch-resolve.sh to offer alternatives configured in its matched rule
+  the active Claude seat is at 19% left, at or below the 100% quota floor, and the extra-usage policy is stop, so no new Claude worker is started on what is left of it
+  this holds only work not yet started; a worker already running keeps its own seat and can still draw extra usage mid-task
+
+live workers keep the seat they launched with:
+  (no task records)
+
+local secondmate homes declining inherited seats:
+  (none - every local home takes this seat)
+[exit 0]
