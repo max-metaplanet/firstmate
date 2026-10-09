@@ -65,7 +65,9 @@
 # extra-usage
 #            EXTRA-USAGE POLICY, for when no seat has headroom. `stop` holds new
 #            Claude dispatch rather than starting workers that would run on paid
-#            extra usage; `allow <usd>` keeps dispatching until the seat's
+#            extra usage; dispatch resolution can offer configured alternatives
+#            from the matched rule (fm-dispatch-resolve.sh). `allow <usd>` keeps
+#            dispatching until the seat's
 #            extra-usage spend reaches that dollar cap and holds after it;
 #            `off` clears the policy and holds nothing. Absent means no hold of
 #            any kind.
@@ -371,6 +373,7 @@ cmd_status() {
     printf 'new Claude dispatch: allowed\n'
   else
     printf 'new Claude dispatch: HELD (bin/fm-spawn.sh --ignore-seat-hold starts one task anyway)\n'
+    printf '  resolve the task brief with bin/fm-dispatch-resolve.sh to offer alternatives configured in its matched rule\n'
   fi
   printf '%s\n' "$reason" | sed 's/^/  /'
   printf '\nlive workers keep the seat they launched with:\n'

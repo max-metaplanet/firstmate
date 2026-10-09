@@ -3000,6 +3000,8 @@ test_a_stop_policy_holds_dispatch_once_the_active_seat_is_at_the_floor() {
   seat_windows "$SPEC_DIR" "$SEATS_DIR/alpha" 60 2026-10-08T02:40:00Z 3 2026-10-14T21:00:00Z
 
   out=$(run_seat "$HOME_DIR" "$FAKEBIN" status)
+  assert_contains "$out" "resolve the task brief with bin/fm-dispatch-resolve.sh" \
+    "seat status points to configured task alternatives"
   assert_contains "$out" "new Claude dispatch: HELD" \
     "with a floor set, stop must hold at the floor rather than at nothing left: $out"
   assert_contains "$out" "at or below the 5% quota floor" "the hold must name the floor it is holding at"
