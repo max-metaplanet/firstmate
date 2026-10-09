@@ -1,0 +1,4 @@
+ bin/fm-lead-restart.sh        | 33 +++++++++++++-------
+ docs/claude-seats.md          |  4 ++-
+ tests/fm-lead-restart.test.sh | 70 ++++++++++++++++++++++++++++++++++++++++++-
+ 3 files changed, 95 insertions(+), 12 deletions(-)
