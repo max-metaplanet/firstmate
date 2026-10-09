@@ -880,6 +880,28 @@ test_relaunch_without_a_recorded_seat_adds_no_config_dir() {
   pass "fm-control relaunch: a task with no recorded seat is never moved onto one"
 }
 
+test_claude_crewmate_relaunch_persists_transcripts() {
+  local dir out rc launch seen
+  dir=$(new_case transcripts rl-tx1)
+  add_ship_task "$dir" rl-tx1 claude
+  out=$(CLAUDE_CODE_CHILD_SESSION=1 CLAUDE_CODE_FORCE_SESSION_PERSISTENCE=0 \
+    run_control "$dir" rl-tx1 relaunch --note "stopped mid-task"); rc=$?
+  expect_code 0 "$rc" "a claude crewmate relaunch should succeed"$'\n'"$out"
+  launch=$(grep 'Firstmate operational input waiting: read' "$dir/fake/literal" | tail -1)
+  [ -n "$launch" ] || fail "the relaunch sent no replacement launch command"
+  cat > "$dir/fakebin/claude" <<'SH'
+#!/usr/bin/env bash
+printf 'persistence=%s child=%s\n' "${CLAUDE_CODE_FORCE_SESSION_PERSISTENCE-unset}" "${CLAUDE_CODE_CHILD_SESSION-unset}"
+SH
+  chmod +x "$dir/fakebin/claude"
+  seen=$(env -i HOME="$dir/user-home" PATH="$dir/fakebin:$PATH" TERM=xterm \
+    CLAUDE_CODE_CHILD_SESSION=1 CLAUDE_CODE_FORCE_SESSION_PERSISTENCE=0 \
+    /bin/sh -c "$launch") || fail "the staged replacement could not run: $launch"
+  assert_equals 'persistence=1 child=unset' "$seen" \
+    "a relaunched claude crewmate must persist transcripts despite inherited child state"
+  pass "fm-control relaunch: a claude crewmate replacement persists transcripts"
+}
+
 test_relaunch_of_a_pre_seats_task_keeps_the_ambient_profile() {
   local dir out rc seats
   dir=$(new_case seatambient rl-seat3)
@@ -2739,6 +2761,7 @@ test_prefixed_recorded_harness_requires_explicit_replacement
 test_same_harness_relaunch_keeps_the_profile_axes
 test_relaunch_keeps_the_recorded_claude_seat_after_a_seat_switch
 test_relaunch_without_a_recorded_seat_adds_no_config_dir
+test_claude_crewmate_relaunch_persists_transcripts
 test_relaunch_of_a_pre_seats_task_keeps_the_ambient_profile
 test_relaunch_from_another_harness_onto_claude_takes_the_active_seat
 test_relaunch_from_claude_onto_another_harness_drops_the_seat

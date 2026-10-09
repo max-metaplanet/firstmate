@@ -323,8 +323,6 @@ test_claude_replacement_persists_transcripts() {
     out=$(CLAUDE_CODE_CHILD_SESSION=1 CLAUDE_CODE_FORCE_SESSION_PERSISTENCE=0 run_restart "$dir" sm1) \
       || fail "transcript restart with allowlist=$setting failed: $out"
     launch=$(cat "$dir/fake/replacement-launch")
-    assert_contains "$launch" 'env -u CLAUDE_CODE_CHILD_SESSION CLAUDE_CODE_FORCE_SESSION_PERSISTENCE=1' \
-      "the staged secondmate replacement must force persistence and clear the child marker"
     cat > "$dir/fakebin/claude" <<'SH'
 #!/usr/bin/env bash
 printf 'persistence=%s child=%s\n' "${CLAUDE_CODE_FORCE_SESSION_PERSISTENCE-unset}" "${CLAUDE_CODE_CHILD_SESSION-unset}"

@@ -655,8 +655,6 @@ test_the_lead_is_replaced_in_its_own_terminal_with_supervision_unbroken() {
   watcher=$(cat "$lab/watcher.pid")
 
   lab_restart
-  assert_grep 'env -u CLAUDE_CODE_CHILD_SESSION CLAUDE_CODE_FORCE_SESSION_PERSISTENCE=1' \
-    "$lab/home/state/.lead-restart.launch" "the staged lead replacement must enable transcript persistence"
   [ -f "$lab/home/state/.lock-handover" ] ||
     fail "the home was not reserved while the outgoing lead still held it"
 
