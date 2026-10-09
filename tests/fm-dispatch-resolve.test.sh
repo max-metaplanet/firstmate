@@ -1178,7 +1178,7 @@ assert_contains "$err" "malformed rules file: $RULES - use profiles whose harnes
 [ "$(printf '%s\n' "$err" | wc -l | tr -d ' ')" -eq 1 ] || fail "provider errors must use one diagnostic"
 assert_absent "$LOG/argv" "configuration errors never reach the network"
 cp "$BASE_RULES" "$RULES"
-for removed in --json --rules --quota; do
+for removed in --rules --quota; do
   TYPESAFE_API_KEY=$KEY run code out err "$BRIEF" "$removed"
   expect_code 2 "$code" "removed option is rejected: $removed"
   assert_contains "$err" "unknown flag $removed" "removed option has no public path: $removed"
@@ -1268,5 +1268,79 @@ rm "$HOME_DIR/config/claude-seat" "$HOME_DIR/config/claude-seats-root"
 unset FAKE_SEAT_QUOTA FAKE_SEAT_PROFILE_LOG
 cp "$BASE_RULES" "$RULES"
 pass "seat holds offer only configured alternatives while preserving quota and approval gates"
+
+# --- running worker offer: own rule only, even when Claude is healthy -------
+cp "$TMP_ROOT/seat-rules" "$RULES"
+write_response "$RESPONSE" rule_4 0.9
+write_quota "$QUOTA" 0.1 0.9
+TYPESAFE_API_KEY=$KEY run code out err "$BRIEF" --codex-alternative --json
+expect_code 0 "$code" "Codex alternative resolution succeeds"
+assert_equals clear "$(jq -r '.status' <<< "$out")" "healthy active seat must not hide a drained worker's alternative"
+assert_equals '{"harness":"codex","model":"gpt-5.6-sol","effort":"xhigh"}' \
+  "$(jq -c '.chosen.profile' <<< "$out")" "offer retains the matched rule's full Codex profile"
+assert_equals 2 "$(jq '.candidates | length' <<< "$out")" "offer retains all candidate evidence"
+TYPESAFE_API_KEY=$KEY run code out err "$BRIEF" --codex-alternative
+assert_contains "$out" "profile: --harness 'codex'" "text mode also offers only Codex"
+
+# The default cannot turn a Claude-only match or a no-match into an offer.
+jq '.rules[3].use |= map(select(.harness == "claude"))
+  | .default = {harness:"codex",model:"gpt-5.6-sol"}' "$RULES" > "$TMP_ROOT/offer-only"
+cp "$TMP_ROOT/offer-only" "$RULES"
+TYPESAFE_API_KEY=$KEY run code out err "$BRIEF" --codex-alternative --json
+assert_equals escalate "$(jq -r '.status' <<< "$out")" "Claude-only rule has no offer"
+assert_equals null "$(jq '.chosen' <<< "$out")" "default Codex cannot be borrowed"
+write_response "$RESPONSE" default 0.9
+TYPESAFE_API_KEY=$KEY run code out err "$BRIEF" --codex-alternative --json
+assert_equals escalate "$(jq -r '.status' <<< "$out")" "no matched rule has no offer"
+write_response "$RESPONSE" rule_4 0.9
+
+# A below-floor matched rule does not route the offer to the default either.
+cp "$TMP_ROOT/seat-rules" "$RULES"
+jq '.rules[3].floor = {provider:"claude",scope:"all_models",min_percent:90}
+  | .default = {harness:"codex",model:"another-model"}' "$RULES" > "$TMP_ROOT/offer-floor"
+cp "$TMP_ROOT/offer-floor" "$RULES"
+TYPESAFE_API_KEY=$KEY run code out err "$BRIEF" --codex-alternative --json
+assert_equals escalate "$(jq -r '.status' <<< "$out")" "rule floor gates the Codex offer without default fallback"
+assert_equals null "$(jq '.chosen' <<< "$out")" "below-floor rule does not choose any profile"
+cp "$TMP_ROOT/seat-rules" "$RULES"
+jq '.rules[3].approval = "captain"' "$RULES" > "$TMP_ROOT/offer-approval"
+cp "$TMP_ROOT/offer-approval" "$RULES"
+TYPESAFE_API_KEY=$KEY run code out err "$BRIEF" --codex-alternative --json
+assert_equals escalate "$(jq -r '.status' <<< "$out")" "offer retains approval gate"
+cp "$TMP_ROOT/seat-rules" "$RULES"
+write_response "$RESPONSE" rule_4 0.4
+TYPESAFE_API_KEY=$KEY run code out err "$BRIEF" --codex-alternative --json
+assert_equals ambiguous "$(jq -r '.status' <<< "$out")" "uncertain match produces no offer"
+write_response "$RESPONSE" rule_4 0.9
+cp "$QUOTA" "$TMP_ROOT/offer-quota"
+for state in exhausted unknown profile-floor tie; do
+  cp "$TMP_ROOT/offer-quota" "$QUOTA"
+  cp "$TMP_ROOT/seat-rules" "$RULES"
+  case "$state" in
+    exhausted)
+      jq '(.providers[] | select(.provider == "codex") | .quotaSemantics.effectiveAvailability[]).effectivePercentRemaining = 0' "$QUOTA" > "$TMP_ROOT/offer-state"
+      cp "$TMP_ROOT/offer-state" "$QUOTA" ;;
+    unknown)
+      cp "$TMP_ROOT/unknown-codex" "$QUOTA" ;;
+    profile-floor)
+      jq '.rules[3].use[1].floor = {scope:"all_models",min_percent:50}' "$RULES" > "$TMP_ROOT/offer-state"
+      cp "$TMP_ROOT/offer-state" "$RULES" ;;
+    tie)
+      jq '.rules[3].use += [{harness:"codex",model:"another-model"}]' "$RULES" > "$TMP_ROOT/offer-state"
+      cp "$TMP_ROOT/offer-state" "$RULES" ;;
+  esac
+  TYPESAFE_API_KEY=$KEY run code out err "$BRIEF" --codex-alternative --json
+  assert_equals escalate "$(jq -r '.status' <<< "$out")" "$state does not guess a Codex offer"
+  assert_equals null "$(jq '.chosen' <<< "$out")" "$state leaves the choice unresolved"
+done
+cp "$TMP_ROOT/offer-quota" "$QUOTA"
+cp "$TMP_ROOT/seat-rules" "$RULES"
+reset_log
+run code out err "$BRIEF" --codex-alternative --json
+assert_equals '' "$out" "off stays silent with JSON output"
+assert_absent "$LOG/argv" "off offer makes no network call"
+FAKE_QUOTA_FAIL=1 TYPESAFE_API_KEY=$KEY run code out err "$BRIEF" --codex-alternative --json
+assert_equals error "$(jq -r '.status' <<< "$out")" "quota failure returns structured error"
+pass "running-worker Codex offers stay inside the matched rule and preserve all resolver gates"
 
 printf '# all fm-dispatch-resolve tests passed\n'

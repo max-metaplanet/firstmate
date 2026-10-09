@@ -936,9 +936,11 @@ test_relaunch_from_claude_onto_another_harness_drops_the_seat() {
   printf 'work\n' > "$dir/home/config/claude-seat"
   printf 'claude_seat=%s\n' "$seats/work" >> "$dir/home/state/rl-seat5.meta"
   printf 'codex' > "$dir/fake/becomes"
-  out=$(run_control "$dir" rl-seat5 relaunch --harness codex --note "switching runtime"); rc=$?
+  out=$(run_control "$dir" rl-seat5 relaunch --harness codex --model gpt-5.6-sol --effort xhigh --note "switching runtime"); rc=$?
   expect_code 0 "$rc" "a claude-to-codex relaunch should succeed"$'\n'"$out"
   [ "$(meta_field "$dir" rl-seat5 harness)" = codex ] || fail "the record should follow the harness switch"
+  [ "$(meta_field "$dir" rl-seat5 model)" = gpt-5.6-sol ] || fail "the offered Codex model must be recorded"
+  [ "$(meta_field "$dir" rl-seat5 effort)" = xhigh ] || fail "the offered Codex effort must be recorded"
   ! grep -q '^claude_seat=' "$dir/home/state/rl-seat5.meta" \
     || fail "a claude-to-codex relaunch must drop the claude_seat line"
   assert_no_grep "CLAUDE_CONFIG_DIR=" "$dir/fake/literal" \
@@ -1553,16 +1555,19 @@ test_launch_failure_keeps_the_prior_record_and_reports_it() {
   local dir out rc before
   dir=$(new_case rollback rl13)
   add_ship_task "$dir" rl13 claude
+  printf 'claude_seat=%s\n' "$dir/rested-seat" >> "$dir/home/state/rl13.meta"
+  printf 'uncommitted work\n' > "$dir/wt/dirty.txt"
   before=$(cat "$dir/home/state/rl13.meta")
   # The endpoint's shell is not in the recorded worktree, so the launch owner
   # refuses AFTER the previous agent has already been stopped.
   printf '%s' "$dir/proj" > "$dir/fake/cwd"
-  out=$(run_control "$dir" rl13 relaunch --harness codex --note "carry this forward"); rc=$?
+  out=$(run_control "$dir" rl13 relaunch --harness codex --model gpt-5.6-sol --effort xhigh --note "carry this forward"); rc=$?
   expect_code 1 "$rc" "a failed launch should fail closed"$'\n'"$out"
   assert_contains "$out" "no agent is running" "the failure should say no agent is running"
   assert_contains "$out" "$dir/wt" "the failure should say where the work is preserved"
   [ "$(cat "$dir/home/state/rl13.meta")" = "$before" ] \
     || fail "a failed launch must keep the prior durable record"
+  assert_grep "uncommitted work" "$dir/wt/dirty.txt" "failed Codex move preserves dirty work"
   [ "$(journal_field "$dir" rl13 phase)" = "failed:launching" ] \
     || fail "the journal should record the failed phase, got '$(journal_field "$dir" rl13 phase)'"
   [ "$(journal_field "$dir" rl13 rollback)" = "prior-record-kept" ] \

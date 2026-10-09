@@ -82,7 +82,8 @@ A relaunch does take one session reference when the endpoint's own runtime recor
    A Claude or Pi replacement must also pass the home's [worker account pin](configuration.md#worker-account-pin-configclaude-account-configpi-account), so a pin that no longer resolves or is signed out refuses before the old agent stops.
    `--seat <name|default>` is a deliberate Claude-to-Claude move, validated before stopping the old agent with the same login evidence as a seat switch without `--force`.
    It accepts a renewable login, refuses a missing profile, a signed-out or unreadable login, and a destination conflicting with the worker account pin, and warns when the destination is resting.
-   Without `--seat`, the replacement keeps its recorded Claude profile.
+   Without `--seat`, a Claude-to-Claude replacement keeps its recorded Claude profile.
+   A Codex offer from the [resting-worker warning](claude-seats.md#resting-a-seat-below-a-quota-floor) uses `--harness codex` and its matched rule's model and effort, without `--seat`; the same transaction applies and the published Codex record no longer carries a Claude seat.
    The relaunch journal records both profile paths; the launch owner publishes the new seat with the replacement's record, so a failed launch before publication retains the prior seat.
    For example: `FM_HOME=/path/to/home bin/fm-control.sh task-id relaunch --seat spare --note "Continue from the preserved files and instruction inbox."`.
 2. **Safe checkpoint.**
