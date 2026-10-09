@@ -1,0 +1,35 @@
+## live pipeline agent: real Claude via wrapper, pid=42362; process command + CLAUDE_CONFIG_DIR from its environment
+error: invalid value '42362' for '--pager <PAGER>'
+  [possible values: auto, always, disable]
+
+For more information, try '--help'.
+error: invalid value '42362' for '--pager <PAGER>'
+  [possible values: auto, always, disable]
+
+For more information, try '--help'.
+## FM_HOME=$LAB bin/fm-seat.sh status (pipeline lines)
+active seat for NEW workers: seat-max2
+pipeline seat for next managed launch: seat-max2 (follows active seat)
+live pipeline agent: pid=42362 seat=seat-max2
+## arm a 5% quota floor; run one real watch pass: FM_HOME=$LAB bin/fm-seat.sh auto
+claude-seat: seat-max-gmail is resting - 0% left is at or below the 5% floor, so automatic switches skip it until it recovers (expected back 2026-10-12T06:00:00.457864+00:00; fm-seat.sh switch seat-max-gmail still reaches it)
+claude-seat: seat-max2 is resting - 2% left is at or below the 5% floor, so automatic switches skip it until it recovers (expected back 2026-10-09T10:59:59.530878+00:00; fm-seat.sh switch seat-max2 still reaches it)
+claude-seat: pipeline agent is still running on resting seat seat-max2; it finishes untouched. Move subsequent launches with: env FM_HOME=$LAB FM_CONFIG_OVERRIDE=$LAB/config FM_STATE_OVERRIDE=$LAB/state /Users/max/.no-mistakes/worktrees/61c6dd39b831/01M4FNXYS9W0BGF6FKPCGA95QJ/bin/fm-seat.sh pipeline-move. Clear NM_CLAUDE_CONFIG_DIR in the pipeline environment if set. Moving an individual running agent requires no-mistakes support; a manual whole-run abort-and-revalidate needs the captain's approval because it discards in-flight work
+exit=0
+## second watch pass (must not repeat the warning)
+exit=0
+## resting record
+["seat-max-gmail","seat-max2"]
+## agent still alive after rest?
+error: invalid value '42362' for '--pager <PAGER>'
+  [possible values: auto, always, disable]
+
+For more information, try '--help'.
+## status now
+active seat for NEW workers: seat-max2
+pipeline seat for next managed launch: seat-max2 (follows active seat)
+pipeline selection HELD: seat is resting below the quota floor
+live pipeline agent: pid=42362 seat=seat-max2
+## a new launch on the resting active seat
+pipeline Claude: HELD pipeline-agent launch on seat seat-max2: seat is resting below the quota floor; fm-seat.sh pipeline-move selects another seat for subsequent launches (clear a rejected NM_CLAUDE_CONFIG_DIR override in the pipeline environment)
+exit=75

@@ -1,0 +1,11 @@
+## active seat:
+seat-max
+## manually exclude seat-max (config/claude-seat-auto-exclude), then launch
+pipeline Claude: HELD pipeline-agent launch on seat seat-max: seat is manually excluded; fm-seat.sh pipeline-move selects another seat for subsequent launches (clear a rejected NM_CLAUDE_CONFIG_DIR override in the pipeline environment)
+exit=75
+## status while excluded
+pipeline seat for next managed launch: seat-max (follows active seat)
+pipeline selection HELD: seat is manually excluded
+## exclusion removed, launch
+LAUNCHED
+exit=0

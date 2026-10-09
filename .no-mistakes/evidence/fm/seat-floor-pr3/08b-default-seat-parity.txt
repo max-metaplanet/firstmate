@@ -1,0 +1,30 @@
+## lab lead (real claude primary, fm-lock.sh) recorded runtime:
+pid=66067
+profile=/Users/max/.claude-seats/seat-max
+ambient=/Users/max/.claude-seats/seat-max
+backend=tmux
+target=%17
+## active seat:
+(absent => default)
+## what a worker spawned now on default would get, evaluated in the lead env (FM_AMBIENT_CLAUDE_CONFIG_DIR unset, CLAUDE_CONFIG_DIR=seat-max):
+fm_seat_spawn_config_dir => /Users/max/.claude-seats/seat-max
+## extra-usage policy:
+stop
+## pipeline launch from a daemon env carrying CLAUDE_CONFIG_DIR=seat-max-gmail (0% left):
+pipeline Claude: HELD pipeline-agent launch on seat default: pipeline seat default quota could not be read, so whether this pipeline agent would run on paid extra usage is unknown, and the policy makes no guess
+this holds only work not yet started; a pipeline agent already running keeps its own seat and can still draw extra usage mid-task
+exit=
+## status read by a process whose own CLAUDE_CONFIG_DIR=seat-max-gmail:
+active seat for NEW workers: default
+active profile: /Users/max/.claude-seats/seat-max-gmail
+pipeline seat for next managed launch: default (follows active seat)
+live pipeline agent: pid=42362 seat=seat-max2
+extra-usage policy: stop - hold new Claude dispatch rather than start work on paid extra usage
+new Claude dispatch: HELD (bin/fm-spawn.sh --ignore-seat-hold starts one task anyway)
+  the active Claude seat has no plan quota left and the extra-usage policy is stop, so no new Claude worker is started on paid extra usage
+## board json read by a process whose own CLAUDE_CONFIG_DIR=seat-max-gmail:
+{"activeSeat":"default","liveSeat":"seat-max-gmail","pipeline":{"seat":"default","profile":"/Users/max/.claude-seats/seat-max","blockedReason":null},"default":{"configDir":"/Users/max/.claude-seats/seat-max-gmail","account":"maxa.villa@gmail.com"}}
+## floor 25 (seat-max at 18%): extra-usage gate must read the lead profile seat-max, not the daemon env
+pipeline Claude: HELD pipeline-agent launch on seat default: pipeline seat default quota could not be read, so whether this pipeline agent would run on paid extra usage is unknown, and the policy makes no guess
+this holds only work not yet started; a pipeline agent already running keeps its own seat and can still draw extra usage mid-task
+exit=75

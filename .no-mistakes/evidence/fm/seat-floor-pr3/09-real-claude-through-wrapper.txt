@@ -1,0 +1,12 @@
+## active seat default (lead ambient seat-max); real Claude through the installed wrapper, prompt on stdin
+{"result":"Not logged in · Please run /login","is_error":true}
+exit=
+## exit status passthrough: unknown flag via wrapper vs direct
+wrapper exit=1
+direct exit=1
+## (rerun with USER/LOGNAME in the daemon env, which macOS keychain lookup needs) real Claude through the wrapper, prompt on stdin; daemon env carries seat-max-gmail
+{"result":"PIPE-OK","is_error":false}
+exit=
+## launch records (newest):
+launch.3IgJIj.json
+launch.de0Ed0.json

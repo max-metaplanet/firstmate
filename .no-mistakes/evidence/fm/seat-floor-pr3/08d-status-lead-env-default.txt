@@ -1,0 +1,5 @@
+## status read in the lead env (CLAUDE_CONFIG_DIR=seat-max, as the lab lead runs) with active=default
+active seat for NEW workers: default
+active profile: /Users/max/.claude-seats/seat-max
+pipeline seat for next managed launch: default (follows active seat)
+live pipeline agent: pid=42362 seat=seat-max2

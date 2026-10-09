@@ -1,0 +1,151 @@
+FM_TEST_BEGIN 2026-10-09T07:18:19Z tests/fm-seat.test.sh family=backend-dispatch expected_gate_skip=none
+ok - pipeline scratch install/check preserves argv, stdin, and native exit status
+ok - pipeline launches follow each switch and guard managed overrides and missing profiles
+ok - a default-seat pipeline agent uses the lead's recorded worker profile for launch, display, rest and extra usage
+ok - pipeline launch guards apply to active and override seats and honor provisional recovery
+ok - pipeline policy reads the selected profile and shares stop, cap, unreadable, and renewable verdicts
+ok - pipeline watch warns once per rest, move affects subsequent launches only, and live PID stamps stay honest
+ok - an unset seat setting is the ambient default and configures no automatic switching
+ok - a switch to a logged-in seat records the seat and nothing else
+ok - a switch to a profile that is not logged in is refused and changes nothing
+ok - --force does not override a seat proven to be logged out
+ok - a rate-limited signed-in seat is undecided, and --force switches onto it
+ok - an unreadable credential store reads as undecided and --force may cross it
+ok - a forced switch refuses a seat whose profile directory does not exist
+ok - switching to the default seat clears the setting and restores ambient behaviour
+ok - a seat switch reaches running local secondmate homes and reports each one
+ok - a failed secondmate push is reported and never undoes the primary switch
+ok - a local home that declines keeps its own three seat settings through a switch
+ok - one home's decline leaves every other local home taking the switch
+ok - status names every local home that declined and the seat it is really on
+ok - a decline flag of any type declines and shows in status
+ok - seat settings reach local secondmate homes only and never cross to a remote route
+ok - a seat switch pushes only local secondmate homes and never waits on a remote route
+ok - fm-config-push reaches remote routes by default and skips them only with --local-only
+ok - the auto-switch threshold is configurable, validated, clearable, and unset by default
+ok - the threshold condition turns true exactly at the configured percent
+ok - an unreadable quota never trips an automatic switch
+ok - only account-level quota windows count toward the auto-switch threshold
+ok - the default seat's probe and threshold read the ambient profile new workers launch with
+ok - a home that configures none of the automatic settings behaves exactly as before they existed
+ok - the dispatch gate reads no quota at all until an extra-usage policy is configured
+ok - the destination minimum is settable by command, validated, clearable, and unset by default
+ok - a switch skips a logged-in seat below the destination minimum and lands on one above it
+ok - no switch happens when every candidate is below the destination minimum
+ok - a candidate whose quota gives no verdict is skipped, never guessed at as headroom
+ok - the extra-usage policy is settable by command, validated, clearable, and unset by default
+ok - the stop policy holds new dispatch only once the active seat's plan quota is gone
+ok - the allow policy dispatches under its dollar cap and holds once the spend reaches it
+ok - an unreadable quota holds dispatch instead of guessing, and the hold lifts once it reads again
+ok - a lapsed but renewable seat is not held by the extra-usage policy for its unreadable quota
+ok - the watch keeps running after a switch, fires once per crossing, and catches the next seat's own
+ok - with no seat qualifying the watch reports the policy consequence once and switches nothing
+ok - the watch's wake line and status agree while the seat still has plan quota
+ok - after a crossing with nowhere to go, the watch keeps looking and switches once a seat recovers
+ok - every quota read one automatic pass makes stays inside the watcher's per-check budget
+ok - the watch switches nothing when the active seat's quota gives no verdict
+ok - arm registers a repeating watch the watcher can run, and retire removes it cleanly
+ok - status reports all three automatic settings, every percentage counting percent left
+ok - rotation chooses the next logged-in seat under the root and skips ones with no credentials
+ok - a lapsed but renewable seat reads as usable instead of unknown
+ok - the lapsed verdict is read from authStatus, not from the error text
+ok - switching to a lapsed seat succeeds without --force
+ok - rotation treats a lapsed seat as a destination when no destination minimum is set
+ok - a destination minimum skips a lapsed seat for unknown headroom, not for its login state
+ok - a genuinely signed-out seat is refused and --force cannot cross it
+ok - rotation separates a signed-out seat from a merely lapsed one
+ok - an auth_required read from a rejected request is undecided and --force may cross it
+ok - rotation never targets the default profile, even when it is the only other logged-in store
+ok - rotation never assumes which seats exist and picks up seats added later
+ok - rotation refuses with an accurate reason per seat rather than pretending to switch
+ok - auto-exclude and auto-include round trip idempotently and leave no empty record behind
+ok - auto-exclude refuses a name that is not a seat and the default login that is never a target
+ok - status and list both report which seats are held out of automatic rotation
+ok - switch --next skips an excluded seat and reaches it again once it is included
+ok - an excluded seat stays manually switchable and stays out of automatic rotation
+ok - excluding the active seat withholds it as a future destination and moves nothing
+ok - excluding every candidate falls through to the existing no-destination refusal
+ok - the armed watch skips an excluded seat even when it has the most headroom
+ok - the lead-restart destination choice skips an excluded seat like every other automatic path
+ok - adding a seat creates an empty profile directory and prints the owner's login steps
+ok - a directory named 'default' is never offered, added, or rotated to
+ok - seat names that are not a single safe path component are refused
+ok - an unset seat setting leaves the launch and the task record exactly as before
+ok - a spawn launches on the active seat and records it in the task's own record
+ok - switching seats leaves a running worker's recorded profile unchanged
+ok - after a switch new workers get the new seat while existing ones keep theirs
+ok - an ambient CLAUDE_CONFIG_DIR still reaches workers and is recorded per task
+ok - a configured seat takes precedence over firstmate's own ambient config dir
+ok - after a lead restart, default-seat spawns stay on the original ambient profile
+ok - a non-claude spawn records no Claude seat while a named seat is active
+ok - a home configuring both an account pin and an active seat is refused before anything exists
+ok - the account pin and seat conflict refuses only a claude spawn
+ok - a pin-only home with no seat file still relaunches a claude task under its pin
+ok - a pin pointing at a seat directory still relaunches a task recorded on that directory
+ok - a stop policy holds a fresh claude spawn, names the override, and changes nothing when overridden
+ok - the spawn gate holds at the dollar cap and on an unreadable quota, and dispatches under the cap
+ok - the dispatch hold covers fresh claude spawns only and never strands a task already under way
+ok - the Claude extra-usage hold never reaches a worker on another harness
+ok - the quota floor and its three companions are absent by default, validated, and clearable
+ok - a seat at or below the floor rests, is reported once, and every automatic switch skips it
+ok - the resting record names the limiting window, both windows' figures, and when the seat is due back
+ok - resting withholds a seat from the automatic paths only; switch <name> still reaches it with a warning
+ok - a manual exclusion takes precedence over the floor and is never lifted by a reading
+ok - a resting seat comes back only when both windows clear the re-add level and it has rested long enough
+ok - a session that refreshes never returns a seat whose remaining week a whole session would overrun
+ok - a seat rested for its week comes back when the week itself recovers
+ok - the session share is measured from how the two windows move together inside one window
+ok - an unmeasured share uses the assumed figure, says so, and the override binds the wake guard
+ok - an unreadable reading changes no seat's state in either direction
+ok - a seat whose token lapsed while resting comes back only once the reset it was waiting for has passed
+ok - a seat back provisionally is a rotation candidate and every surface shows it as provisionally back
+ok - the first readable reading either rests a provisional seat again or clears its entry
+ok - a provisional seat is settled by the full wake test, not by clearing the floor alone
+ok - a week reset inside an open session restarts its measurement rather than understating the share
+ok - a failed push after a hand wake reports the wake, not a seat switch
+ok - clearing the floor clears the resting record here and in local secondmate homes
+ok - a resting record withholds nothing while no floor is configured
+ok - a re-add level at or below the floor is refused, and one the floor overtook is ignored
+ok - a seat woken by hand during a pass stays woken
+ok - arm keeps its refusal unless every rejected candidate is merely resting
+ok - a pass the watcher kills leaves no memo directory behind
+ok - one automatic pass makes exactly one quota read per seat and stays inside the watcher's budget
+ok - the resting record and the floor settings reach local secondmate homes and skip a declining one
+ok - arm warns rather than refusing when every candidate is merely resting, because the watch is what brings them back
+ok - the quota floor can be armed and run on its own, with no auto-switch threshold
+ok - status and list tell a seat held out by hand from one the quota floor is resting
+ok - the floor setter warns rather than refuses when it sits at or above the switch trigger
+ok - resting wake returns a seat early and the next pass rests it again if it is still at or below the floor
+ok - with a floor set, the stop policy holds new dispatch once the active seat is at or below it
+# all fm-seat tests passed
+FM_TEST_END 2026-10-09T07:28:20Z tests/fm-seat.test.sh exit=0 duration_ms=600906 gate_skip=false
+FM_TEST_BEGIN 2026-10-09T07:28:20Z tests/fm-seat-board.test.sh family=unclassified expected_gate_skip=none
+ok - render shows the default seat and marks it active
+ok - render lists a named seat with its windows and extra-usage spend
+ok - render shows an attention line for a seat that is not logged in
+ok - render shows a rate-limited seat's error as-is
+ok - a reload within the cache window does not read quota-axi again
+ok - render reads quota-axi without refreshing or prompting for credentials
+ok - the cache is scoped to each seat's config dir, not its name
+ok - render escapes markup in quota-axi text
+ok - serve rejects a missing or non-numeric port
+ok - json reports every seat with its own cache age and the window those ages are judged against
+ok - json marks the active seat, the live seat, and a seat held out of automatic rotation
+ok - json reports a seat with no usable report as absent rather than as a zero
+ok - json --cached-only reports an empty cache as no data and never reads quota-axi
+ok - json --cached-only serves an expired cached report with its real age, so a reader can call it stale
+ok - json rejects an unknown flag
+ok - json tells a seat held out by hand from one the quota floor rested, and reports the floor itself
+ok - json reports no floor at all when none is configured
+ok - render shows a resting seat with its reason and the floor settings it was judged against
+ok - a seat back provisionally reads as in rotation, with the provisional marker
+ok - serve answers a loopback Host and refuses a rebinding page's foreign Host
+ok - serve serves the board only under the per-run path token it printed
+ok - stopping serve leaves nothing listening on its port
+# all fm-seat-board tests passed
+FM_TEST_END 2026-10-09T07:29:00Z tests/fm-seat-board.test.sh exit=0 duration_ms=40175 gate_skip=false
+FM_TEST_SUMMARY total=2 failed=0 skipped_gate=0 duration_ms=641522
+FM_TEST_SUMMARY_FAMILY family=backend-dispatch count=1 duration_ms=600906 failed=0
+FM_TEST_SUMMARY_FAMILY family=unclassified count=1 duration_ms=40175 failed=0
+FM_TEST_SLOWEST rank=1 script=tests/fm-seat.test.sh duration_ms=600906
+FM_TEST_SLOWEST rank=2 script=tests/fm-seat-board.test.sh duration_ms=40175

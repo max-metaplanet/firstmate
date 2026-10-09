@@ -1,0 +1,37 @@
+## floor disarmed; extra-usage policy stop; switch to seat-max-gmail (real quota: week 0% left)
+switched: seat-max -> seat-max-gmail
+pipeline Claude: HELD pipeline-agent launch on seat seat-max-gmail: pipeline seat seat-max-gmail has no plan quota left and the extra-usage policy is stop, so no new Claude pipeline agent is started on paid extra usage
+this holds only work not yet started; a pipeline agent already running keeps its own seat and can still draw extra usage mid-task
+exit=75
+## status shows the same hold
+pipeline seat for next managed launch: seat-max-gmail (follows active seat)
+live pipeline agent: pid=42362 seat=seat-max2
+extra-usage policy: stop - hold new Claude dispatch rather than start work on paid extra usage
+new Claude dispatch: HELD (bin/fm-spawn.sh --ignore-seat-hold starts one task anyway)
+  the active Claude seat has no plan quota left and the extra-usage policy is stop, so no new Claude worker is started on paid extra usage
+  this holds only work not yet started; a worker already running keeps its own seat and can still draw extra usage mid-task
+## back to seat-max (18% left), same stop policy -> allowed
+switched: seat-max-gmail -> seat-max
+LAUNCHED-INTO-CLAUDE
+exit=0
+## NM_CLAUDE_CONFIG_DIR override to seat-max-gmail while active is seat-max: override wins but stop still applies, refusal names the pipeline seat
+pipeline Claude: HELD pipeline-agent launch on seat seat-max-gmail: pipeline seat seat-max-gmail has no plan quota left and the extra-usage policy is stop, so no new Claude pipeline agent is started on paid extra usage
+this holds only work not yet started; a pipeline agent already running keeps its own seat and can still draw extra usage mid-task
+exit=75
+## override to seat-max2 (eligible, 2% left): override wins
+CLAUDE_CONFIG_DIR=/Users/max/.claude-seats/seat-max2
+## adversarial: override to an unmanaged path (bare ~/.claude)
+pipeline Claude: HELD pipeline-agent launch on seat /Users/max/.claude: NM_CLAUDE_CONFIG_DIR must name a seat directory under the seats root; fm-seat.sh pipeline-move selects another seat for subsequent launches (clear a rejected NM_CLAUDE_CONFIG_DIR override in the pipeline environment)
+exit=75
+## adversarial: override to an alias spelling of a managed seat (trailing slash / dot segment)
+pipeline Claude: HELD pipeline-agent launch on seat /Users/max/.claude-seats/seat-max-gmail/: NM_CLAUDE_CONFIG_DIR must name a seat directory under the seats root; fm-seat.sh pipeline-move selects another seat for subsequent launches (clear a rejected NM_CLAUDE_CONFIG_DIR override in the pipeline environment)
+exit=75
+pipeline Claude: HELD pipeline-agent launch on seat /Users/max/.claude-seats/./seat-max-gmail: NM_CLAUDE_CONFIG_DIR must name a seat directory under the seats root; fm-seat.sh pipeline-move selects another seat for subsequent launches (clear a rejected NM_CLAUDE_CONFIG_DIR override in the pipeline environment)
+exit=75
+## adversarial: override to a nonexistent seat dir under the root
+pipeline Claude: HELD pipeline-agent launch on seat /Users/max/.claude-seats/seat-nope: NM_CLAUDE_CONFIG_DIR must name a seat directory under the seats root; fm-seat.sh pipeline-move selects another seat for subsequent launches (clear a rejected NM_CLAUDE_CONFIG_DIR override in the pipeline environment)
+exit=75
+## floor-stop: floor 25 with seat-max at ~18% left, policy stop (no watch pass run, so not resting)
+pipeline Claude: HELD pipeline-agent launch on seat seat-max: pipeline seat seat-max is at 18% left, at or below the 25% quota floor, and the extra-usage policy is stop, so no new Claude pipeline agent is started on what is left of it
+this holds only work not yet started; a pipeline agent already running keeps its own seat and can still draw extra usage mid-task
+exit=75

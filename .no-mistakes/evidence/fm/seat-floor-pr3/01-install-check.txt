@@ -1,0 +1,17 @@
+$ FM_HOME=$LAB bin/fm-seat.sh pipeline-install --claude /Users/max/.local/bin/claude --destination $LAB/scratch/claude
+pipeline wrapper installed: $LAB/scratch/claude
+exit=0
+$ ... pipeline-check
+pipeline wrapper matches: $LAB/scratch/claude
+exit=0
+$ cat installed wrapper
+#!/usr/bin/env bash
+FM_PIPELINE_TOOL=/Users/max/.no-mistakes/worktrees/61c6dd39b831/01M4FNXYS9W0BGF6FKPCGA95QJ/bin/fm-seat-pipeline.sh
+FM_PIPELINE_HOME=$LAB
+FM_PIPELINE_CLAUDE=/Users/max/.local/bin/claude
+# Installed by fm-seat.sh pipeline-install; the installer supplies these three
+# absolute paths. Every invocation re-enters the seat guard, never a saved seat.
+exec "$FM_PIPELINE_TOOL" launch "$FM_PIPELINE_HOME" "$FM_PIPELINE_CLAUDE" "$@"
+$ tamper wrapper then pipeline-check
+pipeline Claude: wrapper is absent or differs from the template: $LAB/scratch/claude
+exit=75

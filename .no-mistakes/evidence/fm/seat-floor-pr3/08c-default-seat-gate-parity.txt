@@ -1,0 +1,9 @@
+## (retry after quota endpoint rate-limit cleared) active=default, lead ambient=seat-max, policy stop
+## pipeline launch from a daemon env carrying CLAUDE_CONFIG_DIR=seat-max-gmail (0% left -> would hold if read):
+CLAUDE_CONFIG_DIR=/Users/max/.claude-seats/seat-max
+exit=
+## floor 25 (seat-max at 18%): gate must read lead profile seat-max -> floor-stop naming 18%
+pipeline Claude: HELD pipeline-agent launch on seat default: pipeline seat default is at 18% left, at or below the 25% quota floor, and the extra-usage policy is stop, so no new Claude pipeline agent is started on what is left of it
+this holds only work not yet started; a pipeline agent already running keeps its own seat and can still draw extra usage mid-task
+exit=75
+## rest check for default: a resting record on "default" with floor armed blocks the launch

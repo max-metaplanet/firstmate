@@ -1,0 +1,25 @@
+## live agent pid=42362 process + its CLAUDE_CONFIG_DIR
+42362 /Users/max/.local/bin/claude
+ALIVE
+CLAUDE_CONFIG_DIR=/Users/max/.claude-seats/seat-max2
+## run the exact one-command move printed by the warning
+switched: seat-max2 -> seat-max
+applies to NEW claude workers only; running workers keep their own seat
+config-push: no live secondmate homes found
+subsequent managed pipeline launches follow active seat seat-max; running agents finish untouched (clear NM_CLAUDE_CONFIG_DIR in the pipeline environment if set)
+exit=0
+## running agent after the move
+42362 /Users/max/.local/bin/claude
+ALIVE-UNTOUCHED
+ Accessing workspace:
+ Quick safety check: Is this a project you created or one you trust? (Like your
+## status after the move
+active seat for NEW workers: seat-max
+pipeline seat for next managed launch: seat-max (follows active seat)
+live pipeline agent: pid=42362 seat=seat-max2
+## next launch
+CLAUDE_CONFIG_DIR=/Users/max/.claude-seats/seat-max
+exit=0
+## pipeline-move again when the active seat is already eligible (must keep it)
+subsequent managed pipeline launches follow active seat seat-max; running agents finish untouched (clear NM_CLAUDE_CONFIG_DIR in the pipeline environment if set)
+seat-max

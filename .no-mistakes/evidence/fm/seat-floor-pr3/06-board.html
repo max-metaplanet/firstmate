@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<title>Claude seats</title>
+<meta http-equiv="refresh" content="60">
+<style>body { font-family: -apple-system, system-ui, sans-serif; margin: 2rem; color: #1a1a1a; }
+h1 { font-size: 1.4rem; }
+.generated { color: #666; font-size: 0.85rem; }
+section.seat { border: 1px solid #ccc; border-radius: 6px; padding: 0.75rem 1rem; margin-bottom: 1rem; }
+section.seat h2 { font-size: 1.05rem; margin: 0 0 0.35rem; }
+.active { color: #0a7a2f; font-weight: bold; font-size: 0.8rem; }
+.account { color: #444; margin: 0.1rem 0; }
+.attention { color: #b30000; font-weight: bold; }
+table.windows { border-collapse: collapse; margin-top: 0.4rem; }
+table.windows th, table.windows td { text-align: left; padding: 0.15rem 0.6rem 0.15rem 0; }
+.extra { color: #444; }
+.rotation { color: #444; font-size: 0.85rem; margin: 0.1rem 0; }
+.resting { color: #9a5b00; font-weight: bold; }
+.floor { color: #666; font-size: 0.85rem; margin-top: 1rem; }</style>
+</head><body>
+<h1>Claude seats</h1>
+<p class="generated">generated 2026-10-09T07:09:12Z</p>
+<p class="rotation">pipeline seat for next managed launch: seat-max (follows active seat)</p>
+<p class="rotation">live pipeline agent: pid=42362 seat=seat-max2</p>
+<section class="seat">
+<h2>default</h2>
+<p class="rotation">never an automatic rotation target (the ambient login)</p>
+<p class="account">max@metaplanet.jp</p>
+<table class="windows">
+<tr><th>window</th><th>left</th><th>resets</th></tr>
+<tr><td>session</td><td>63%</td><td>2026-10-09T08:39:59.578141+00:00</td></tr>
+<tr><td>week</td><td>18%</td><td>2026-10-14T20:59:59.578170+00:00</td></tr>
+<tr><td>Fable week</td><td>93%</td><td>2026-10-14T20:59:59.578458+00:00</td></tr>
+</table>
+<p class="extra">extra usage: $290.11 of $10000</p>
+</section>
+<section class="seat">
+<h2>seat-max <span class="active">active for new workers</span></h2>
+<p class="rotation">in rotation</p>
+<p class="account">max@metaplanet.jp</p>
+<table class="windows">
+<tr><th>window</th><th>left</th><th>resets</th></tr>
+<tr><td>session</td><td>63%</td><td>2026-10-09T08:39:59.578141+00:00</td></tr>
+<tr><td>week</td><td>18%</td><td>2026-10-14T20:59:59.578170+00:00</td></tr>
+<tr><td>Fable week</td><td>93%</td><td>2026-10-14T20:59:59.578458+00:00</td></tr>
+</table>
+<p class="extra">extra usage: $290.11 of $10000</p>
+</section>
+<section class="seat">
+<h2>seat-max-gmail</h2>
+<p class="rotation resting">resting: seven_day 0% left, at or below the quota floor, expected back 2026-10-12T05:59:59.973438+00:00</p>
+<p class="account">maxa.villa@gmail.com</p>
+<table class="windows">
+<tr><th>window</th><th>left</th><th>resets</th></tr>
+<tr><td>session</td><td>100%</td><td></td></tr>
+<tr><td>week (holding this seat down)</td><td>0%</td><td>2026-10-12T05:59:59.667092+00:00</td></tr>
+<tr><td>Fable week</td><td>98%</td><td>2026-10-12T05:59:59.667272+00:00</td></tr>
+</table>
+</section>
+<section class="seat">
+<h2>seat-max2</h2>
+<p class="rotation resting">resting: seven_day 2% left, at or below the quota floor, expected back 2026-10-09T11:00:00.317518+00:00</p>
+<p class="account">max2@metaplanet.jp</p>
+<table class="windows">
+<tr><th>window</th><th>left</th><th>resets</th></tr>
+<tr><td>session</td><td>100%</td><td>2026-10-09T10:19:59.608983+00:00</td></tr>
+<tr><td>week (holding this seat down)</td><td>2%</td><td>2026-10-09T10:59:59.609012+00:00</td></tr>
+<tr><td>Fable week</td><td>100%</td><td>2026-10-09T11:00:00+00:00</td></tr>
+</table>
+<p class="extra">extra usage: $0 of $10000</p>
+</section>
+<p class="floor">quota floor: rest at or below 5% left, back only above 15% on both windows after 600s, and only when the week can still absorb a whole session (20% of a week, assumed, 0 sample(s))</p>
+</body></html>

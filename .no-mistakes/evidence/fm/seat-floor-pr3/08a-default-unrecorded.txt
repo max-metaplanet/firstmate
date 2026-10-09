@@ -1,0 +1,11 @@
+## switch to default; no lead has started in this home yet
+switched: seat-max -> default
+(eval):5: no matches found: $LAB/state/.lock*
+pipeline Claude: HELD pipeline-agent launch on seat default: the default seat's profile is not recorded for this home's lead; it is recorded at the next session start; fm-seat.sh pipeline-move selects another seat for subsequent launches (clear a rejected NM_CLAUDE_CONFIG_DIR override in the pipeline environment)
+exit=75
+active seat for NEW workers: default
+active profile: /Users/max/.claude-seats/seat-max
+pipeline seat for next managed launch: default (follows active seat)
+pipeline selection HELD: the default seat's profile is not recorded for this home's lead; it is recorded at the next session start
+live pipeline agent: pid=42362 seat=seat-max2
+  the active Claude seat quota could not be read, so whether this worker would run on paid extra usage is unknown, and the policy makes no guess
