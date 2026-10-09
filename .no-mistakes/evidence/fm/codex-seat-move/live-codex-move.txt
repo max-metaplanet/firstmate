@@ -1,0 +1,30 @@
+# Executed the printed 'Codex alternative for feat' command in the lab
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.M66CUc
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.M66CUc
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+warning: /var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.M66CUc/data/feat/launch-brief.md records no ship branch; defaulting to legacy branch fm/feat
+warning: /var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.M66CUc/data/feat/launch-brief.md records no delivery contract line (scaffolded before ship briefs recorded one); launching on the explicit --mode  - confirm its definition of done matches
+notice: feat ships mode= while the standing posture for firstmate is no-mistakes - less rigor than the captain's standing posture; proceed only on a current explicit captain instruction or an intake judgment you can state
+relaunched feat harness=codex from=claude model=gpt-6-astra effort=high backend=tmux endpoint=fmses:fm-feat worktree=/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.M66CUc/wt
+rc=0
+
+# feat.meta after move
+window=fmses:fm-feat
+endpoint_task_id=feat
+worktree=/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.M66CUc/wt
+project=/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab.M66CUc/projects/firstmate
+harness=codex
+kind=ship
+branch=fm/feat
+tasktmp=/tmp/fm-feat
+model=gpt-6-astra
+effort=high
+spawn_gen=s1791567413.18010.4236
+control_relaunch_tx=13229.20261009T173650Z.31692
+
+# lab windows
+fm-diag 2.1.295
+fm-migr 2.1.295
+fm-feat node
+# worktree status
+?? dirty.txt

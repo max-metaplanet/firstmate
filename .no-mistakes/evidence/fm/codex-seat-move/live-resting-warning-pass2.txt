@@ -1,0 +1,2 @@
+# second fm-seat.sh auto pass, same resting entry
+rc=0

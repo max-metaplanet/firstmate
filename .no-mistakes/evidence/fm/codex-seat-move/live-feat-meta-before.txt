@@ -1,0 +1,7 @@
+window=fmses:fm-feat
+endpoint_task_id=feat
+harness=claude
+claude_seat=/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.M66CUc/seats/beta
+kind=ship
+project=/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.M66CUc/projects/firstmate
+worktree=/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.M66CUc/wt

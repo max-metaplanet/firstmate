@@ -1,0 +1,12 @@
+=== feat
+{"status":"clear","reason":null,"rule":"rule_5","chosen":{"harness":"codex","model":"gpt-6-astra","effort":"high"},"candidates":[{"h":"claude","m":"claude-opus-5","eligible":true},{"h":"codex","m":"gpt-6-astra","eligible":true}]}
+rc=
+=== diag
+{"status":"clear","reason":null,"rule":"rule_2","chosen":{"harness":"codex","model":"gpt-6.1-sol","effort":"high"},"candidates":[{"h":"claude","m":"claude-sonnet-5","eligible":true},{"h":"codex","m":"gpt-6.1-sol","eligible":true}]}
+rc=
+=== migr
+{"status":"escalate","reason":"no rankable eligible candidate","rule":"rule_3","chosen":null,"candidates":[{"h":"claude","m":"claude-opus-5","eligible":true}]}
+rc=
+=== contract
+{"status":"escalate","reason":"no rankable eligible candidate","rule":"rule_4","chosen":null,"candidates":[{"h":"claude","m":"claude-opus-5","eligible":true}]}
+rc=
