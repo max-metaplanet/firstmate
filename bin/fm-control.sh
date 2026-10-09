@@ -89,6 +89,9 @@
 #              worker account pin (bin/fm-worker-account-lib.sh) here, so a pin
 #              that no longer resolves or is signed out refuses before the old
 #              agent stops.
+#              A resting-worker Codex offer uses --harness codex with its
+#              matched rule's model/effort, without --seat, through this same
+#              transaction; a published Codex record drops the Claude seat.
 #              --seat deliberately moves a Claude worker to a validated seat;
 #              absent that flag it keeps its recorded profile. The destination
 #              is journaled and published only by the replacement launch.

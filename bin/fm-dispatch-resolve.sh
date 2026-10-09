@@ -3,7 +3,16 @@
 # profile from a task brief with typesafe.ai's System One model (Jev), opt-in.
 #
 # Usage:
-#   fm-dispatch-resolve.sh <brief-file> [--project <name>]
+#   fm-dispatch-resolve.sh <brief-file> [--project <name>] [--codex-alternative] [--json]
+#
+# --codex-alternative resolves a running worker's brief for an explicit
+#   harness-changing relaunch offer: rank only Codex profiles from the matched
+#   rule, retaining confidence, approval, rule/profile floors and quota gates.
+#   No match or a below-floor rule escalates; never borrow the default or another
+#   rule's profiles. It never launches or moves a worker.
+# --json emits the resolution object instead of the text block; off remains
+#   silent, and configuration errors retain exit 2. The chosen.profile object
+#   exists only for a clear result.
 #
 # Opt-in gate: TYPESAFE_API_KEY non-empty in this process environment, else a
 #   TYPESAFE_API_KEY= line in $FM_HOME/.env read with fmx_env_get, the same
@@ -119,7 +128,11 @@ DEFAULT_WHEN="No listed rule applies to this task."
 
 die() { printf 'error: %s\n' "$1" >&2; exit 2; }
 no_rules() {
-  printf 'dispatch-resolve:\n  status: escalate\n  reason: no rules to match\n'
+  if [ "$JSON_OUTPUT" = 1 ]; then
+    printf '%s\n' '{"status":"escalate","reason":"no rules to match"}'
+  else
+    printf 'dispatch-resolve:\n  status: escalate\n  reason: no rules to match\n'
+  fi
   exit 0
 }
 usage() {
@@ -130,10 +143,13 @@ usage() {
   ' "$0"
 }
 
+CODEX_ALTERNATIVE=false JSON_OUTPUT=0
 BRIEF='' PROJECT='' RULES_PATH="$CONFIG/crew-dispatch.json" RULES=''
 NEVER_SEND_PATH="$CONFIG/dispatch-never-send"
 while [ $# -gt 0 ]; do
   case "$1" in
+    --codex-alternative) CODEX_ALTERNATIVE=true; shift ;;
+    --json) JSON_OUTPUT=1; shift ;;
     --project) [ $# -ge 2 ] || die "--project needs a value"; PROJECT=$2; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     -*) die "unknown flag $1" ;;
@@ -257,7 +273,11 @@ RULE_COUNT=$(jq -r '(.rules // []) | length' "$RULES")
 emit_error() {
   local reason=$1
   echo "dispatch-resolve: error ($reason)" >&2
-  printf 'dispatch-resolve:\n  status: error\n  reason: %s\n' "$reason"
+  if [ "$JSON_OUTPUT" = 1 ]; then
+    jq -nc --arg reason "$reason" '{status: "error", reason: $reason}'
+  else
+    printf 'dispatch-resolve:\n  status: error\n  reason: %s\n' "$reason"
+  fi
   exit 0
 }
 
@@ -459,7 +479,7 @@ fi
 
 # ---- resolution: declared gates + quota evidence + argmax, all in jq ------------
 RESULT=$(jq -n --arg floor "$CONFIDENCE_FLOOR" --argjson lat "$LAT_MS" --arg none_criterion "$DEFAULT_WHEN" --argjson pmap "$PMAP" \
-  --argjson forced "$FORCED" --arg seat_hold "$SEAT_HOLD" \
+  --argjson forced "$FORCED" --arg seat_hold "$SEAT_HOLD" --argjson codex_alternative "$CODEX_ALTERNATIVE" \
   --slurpfile resp "$RESP_FILE" --slurpfile rules "$RULES" --slurpfile quota "$QUOTA" "$FM_QUOTA_ROW_JQ"'
   ($resp[0]) as $r | ($rules[0]) as $cfg | ($quota[0]) as $q | ($r.answers.rule) as $a |
   def profiles($v): if ($v | type) == "array" then $v elif ($v | type) == "object" then [$v] else [] end;
@@ -568,9 +588,12 @@ RESULT=$(jq -n --arg floor "$CONFIDENCE_FLOOR" --argjson lat "$LAT_MS" --arg non
    else profiles($rule.use)
    end) as $answer_use |
   (if $choice != "default" and $rule == null then {invalid: "rule \($choice) is not in the rules file"}
+   elif $rule == null and $codex_alternative then {source: "default", escalate: "no matched rule for a Codex relaunch offer"}
    elif $rule == null then {source: "default", use: profiles($cfg.default // null), note: "no rule matched"}
    elif ($rule.approval // "") == "captain" then {source: $choice, escalate: "rule requires the captain'"'"'s explicit approval before dispatch"}
    elif $rule_floor_state == "unknown" then {source: $choice, escalate: "rule \($choice) floor \($rule.floor.provider)/\($rule.floor.scope) is unverifiable"}
+   elif $rule_floor_state == "below" and $codex_alternative
+     then {source: $choice, escalate: "matched rule below its floor; no Codex relaunch offer"}
    elif $rule_floor_state == "below"
      then {source: "default", use: profiles($cfg.default // null), note: "rule \($choice) floor \($rule.floor.scope) below \($rule.floor.min_percent)%: fall through to default"}
    else {source: $choice, use: profiles($rule.use), note: "rule matched"} end) as $sel |
@@ -601,7 +624,7 @@ RESULT=$(jq -n --arg floor "$CONFIDENCE_FLOOR" --argjson lat "$LAT_MS" --arg non
   elif ($sel.use | length) == 0 then $ev + {status: "escalate", reason: "no profiles configured for \($sel.source)", note: $sel.note, candidates: []}
   else
     ($sel.use | map(evaluate(.))) as $cands |
-    ([$cands[] | select(.eligible and ((.unranked // false) | not))]) as $elig |
+    ([$cands[] | select(.eligible and ((.unranked // false) | not) and ($codex_alternative == false or .profile.harness == "codex"))]) as $elig |
     ([$cands[] | select(.unranked)]) as $unranked |
     if ($elig | length) == 0 then $ev + {status: "escalate", reason: "no rankable eligible candidate", note: $sel.note, candidates: $cands}
     else
@@ -615,6 +638,11 @@ RESULT=$(jq -n --arg floor "$CONFIDENCE_FLOOR" --argjson lat "$LAT_MS" --arg non
       end
     end
   end') || emit_error "resolution failed"
+
+if [ "$JSON_OUTPUT" = 1 ]; then
+  printf '%s\n' "$RESULT"
+  exit 0
+fi
 
 TEXT=$(jq -r '
   def flat: tostring | gsub("[\t\r\n]"; " ");

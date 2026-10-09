@@ -1248,6 +1248,7 @@ After the answer, code applies all remaining checks and ranking:
 - The [Claude seat dispatch gate](claude-seats.md#switching-automatically), using a separate bounded read of the active seat rather than the ambient Claude ranking row.
   A held Claude candidate is ineligible, and configured alternatives such as Codex remain subject to the existing quota and approval gates.
   A matched rule offers only its own candidates, so a Claude-only rule stays held; a below-floor rule still falls through to the default, whose Claude profiles are held the same way.
+- With `--codex-alternative`, used only by the [resting-worker Codex offer](claude-seats.md#resting-a-seat-below-a-quota-floor), only the matched rule's Codex candidates are ranked; no matched rule or a below-floor rule escalates instead of falling through to the default.
 
 The [shared quota library](../bin/fm-quota-axi-lib.sh) accepts schema 5 and schema 6 and implements the [account-matching contract](../.agents/skills/quota-array-dispatch/SKILL.md#1-eligibility).
 

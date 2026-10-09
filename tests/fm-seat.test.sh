@@ -2243,9 +2243,8 @@ rest_beta() {
   run_seat "$HOME_DIR" "$FAKEBIN" auto
 }
 
-test_resting_worker_warning_is_once_per_entry() {
-  local out task
-  floor_case floor-workers
+make_live_resting_workers() {
+  local task
   cat > "$FAKEBIN/tmux" <<'SH'
 #!/usr/bin/env bash
 case "$1" in
@@ -2267,6 +2266,12 @@ SH
   printf 'harness=codex\n' >> "$HOME_DIR/state/other.meta"
   printf 'remote_host=elsewhere\n' >> "$HOME_DIR/state/remote.meta"
   printf 'endpoint_task_id=someone-else\n' >> "$HOME_DIR/state/malformed.meta"
+}
+
+test_resting_worker_warning_is_once_per_entry() {
+  local out
+  floor_case floor-workers
+  make_live_resting_workers
   : > "$SPEC_DIR/calls"
   out=$(rest_beta)
   [ "$(wc -l < "$SPEC_DIR/calls" | tr -d ' ')" = 2 ] || fail "warning destination must share the watch memo"
@@ -2289,6 +2294,84 @@ SH
   out=$(run_seat "$HOME_DIR" "$FAKEBIN" auto)
   assert_not_contains "$out" 'running workers:' "stopped and other-harness records must not warn"
   pass "resting-worker warnings name each live worker and its move command once per entry"
+}
+
+test_resting_warning_offers_only_the_workers_own_codex_candidate() {
+  local out before calls
+  floor_case floor-codex-offer
+  make_live_resting_workers
+  mkdir -p "$HOME_DIR/data/live1" "$HOME_DIR/data/live2"
+  printf 'kind=ship\n' >> "$HOME_DIR/state/live1.meta"
+  printf 'kind=scout\n' >> "$HOME_DIR/state/live2.meta"
+  printf "## Captain's intent\nEligible feature work.\n## Firstmate spec\nImplement the feature.\n" > "$HOME_DIR/data/live1/brief.md"
+  printf "## Captain's intent\nProtected contract work.\n## Firstmate spec\nCheck the contract.\n" > "$HOME_DIR/data/live2/brief.md"
+  printf 'TYPESAFE_API_KEY=fixture-key\n' > "$HOME_DIR/.env"
+  cat > "$HOME_DIR/config/crew-dispatch.json" <<'JSON'
+{"rules":[
+  {"when":"Feature work","use":[{"harness":"claude","model":"opus"},{"harness":"codex","model":"gpt-5.6-sol","effort":"xhigh"}]},
+  {"when":"Contract work","use":{"harness":"claude","model":"opus"}}
+],"default":{"harness":"codex","model":"default-only-model"}}
+JSON
+  mv "$FAKEBIN/quota-axi" "$FAKEBIN/quota-seat-fixture"
+  cat > "$FAKEBIN/quota-axi" <<'SH'
+#!/usr/bin/env bash
+if [ "${1:-}" != --json ]; then
+  exec "${BASH_SOURCE[0]%/*}/quota-seat-fixture" "$@"
+fi
+cat <<'JSON'
+{"schemaVersion":5,"providers":[
+  {"provider":"claude","quotaSemantics":{"status":"known","effectiveAvailability":[{"scope":"all_models","status":"known","effectivePercentRemaining":80,"runway":{"status":"through_reset"},"selection":{"spendPriority":0.9}}]}},
+  {"provider":"codex","quotaSemantics":{"status":"known","effectiveAvailability":[{"scope":"all_models","status":"known","effectivePercentRemaining":60,"runway":{"status":"through_reset"},"selection":{"spendPriority":0.2}}]}}
+]}
+JSON
+SH
+  cat > "$FAKEBIN/curl" <<'SH'
+#!/usr/bin/env bash
+response=''
+while [ $# -gt 0 ]; do
+  case "$1" in -o) response=$2; shift 2 ;; *) shift ;; esac
+done
+request=$(cat)
+printf 'request\n' >> "${BASH_SOURCE[0]%/*}/dispatch-calls"
+choice=rule_1
+case "$request" in *'Protected contract'*) choice=rule_2 ;; esac
+printf '{"model":"jev","answers":{"rule":{"type":"choice","choice":"%s","confidence":0.95,"probabilities":{"rule_1":0.5,"rule_2":0.5,"default":0}}}}\n' "$choice" > "$response"
+printf 200
+SH
+  chmod +x "$FAKEBIN/quota-axi" "$FAKEBIN/curl"
+  before=$(cat "$HOME_DIR/state/live1.meta")
+  out=$(rest_beta)
+  assert_contains "$out" 'live1 relaunch --seat alpha --note' "Claude seat offer remains available"
+  assert_contains "$out" 'Codex alternative for live1:' "mixed rule offers Codex"
+  assert_contains "$out" 'live1 relaunch --harness codex --model gpt-5.6-sol --effort xhigh --note' "offer is the complete existing relaunch command with configured axes"
+  assert_not_contains "$out" 'Codex alternative for live2:' "Claude-only worker has no Codex offer"
+  assert_contains "$out" 'live2 relaunch --seat alpha --note' "Claude-only worker keeps its seat offer"
+  assert_not_contains "$out" 'default-only-model' "warning never borrows a default profile"
+  assert_equals "$before" "$(cat "$HOME_DIR/state/live1.meta")" "warning does not change a worker's record"
+  assert_absent "$HOME_DIR/state/live1.control-relaunch" "warning never starts a move"
+  calls=$(wc -l < "$FAKEBIN/dispatch-calls" | tr -d ' ')
+  assert_equals 2 "$calls" "each worker is matched using its own stored brief"
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" auto)
+  assert_not_contains "$out" 'Codex alternative' "warning remains once per resting entry"
+  assert_equals "$calls" "$(wc -l < "$FAKEBIN/dispatch-calls" | tr -d ' ')" "repeat pass never rematches workers"
+  # Turning the resolver off leaves the Claude offer and makes no request.
+  rm "$HOME_DIR/.env" "$HOME_DIR/state/.claude-seat-auto"
+  out=$(TYPESAFE_API_KEY='' run_seat "$HOME_DIR" "$FAKEBIN" auto)
+  assert_not_contains "$out" 'Codex alternative' "off resolver leaves only the Claude offers"
+  assert_contains "$out" 'live1 relaunch --seat alpha --note' "off resolver retains the move command"
+  assert_equals "$calls" "$(wc -l < "$FAKEBIN/dispatch-calls" | tr -d ' ')" "off offer makes no request"
+  # Malformed configuration is reported without starting a lifecycle action.
+  printf 'TYPESAFE_API_KEY=fixture-key\n' > "$HOME_DIR/.env"
+  printf '{broken\n' > "$HOME_DIR/config/crew-dispatch.json"
+  rm "$HOME_DIR/state/.claude-seat-auto"
+  # The watcher captures stdout and discards stderr, so test that channel.
+  out=$(FM_HOME="$HOME_DIR" FM_CONFIG_OVERRIDE="$HOME_DIR/config" \
+    FM_STATE_OVERRIDE="$HOME_DIR/state" FM_DATA_OVERRIDE="$HOME_DIR/data" \
+    CLAUDE_CONFIG_DIR='' PATH="$FAKEBIN:$PATH" "$SEAT" auto 2> "$CASE_DIR/offer.stderr")
+  assert_contains "$out" 'Codex offer for live1 unavailable; dispatch configuration needs attention' "configuration errors remain visible"
+  assert_contains "$out" 'live1 relaunch --seat alpha --note' "a resolver error cannot remove the Claude move"
+  assert_not_contains "$out" 'Codex alternative' "a resolver error cannot invent a Codex move"
+  pass "resting warnings offer a rule-local Codex command without moving workers or borrowing defaults"
 }
 
 test_the_floor_is_configurable_validated_and_absent_by_default() {
@@ -3488,3 +3571,4 @@ test_a_stop_policy_holds_dispatch_once_the_active_seat_is_at_the_floor
 echo "# all fm-seat tests passed"
 
 test_resting_worker_warning_is_once_per_entry
+test_resting_warning_offers_only_the_workers_own_codex_candidate

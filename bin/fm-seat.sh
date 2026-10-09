@@ -143,6 +143,13 @@
 #            when the trigger is met and a seat with headroom exists, and print
 #            one line when firstmate should know, including one warning per
 #            resting entry with live workers and explicit seat-move commands.
+#            For ships/scouts, fm-dispatch-resolve.sh --codex-alternative also
+#            offers an eligible Codex profile from the worker's matched rule
+#            when the resolver is on and clear; never from the default.
+#            Harness-changing offers use the existing fm-control.sh relaunch
+#            flags, never --seat, and nothing moves until a command is run.
+#            Optional lookups share the pass's read deadline; off, non-clear
+#            or timed-out resolution leaves the Claude offer intact.
 #            The floor runs first, so a
 #            switch in the same pass can never land on a seat that pass rested.
 #            Never run it in a loop of its own; `arm` gives it the watcher's.
@@ -1021,6 +1028,7 @@ warn_extra_usage_entry() {
 # the seat library, and quota reads for a destination share this pass's memo.
 warn_resting_workers() {
   local previous current='' name since token meta seat id tasks commands destination active command
+  local kind brief result profile model effort codex_command project offer_bound offer_rc
   previous=$(auto_record_get resting_workers) || previous=''
   if ! fm_seat_floor >/dev/null; then
     [ -z "$previous" ] || auto_record_set resting_workers ''
@@ -1056,9 +1064,43 @@ warn_resting_workers() {
       printf -v command 'FM_HOME=%q %q %q relaunch --seat %q --note %q' \
         "$FM_HOME" "$SCRIPT_DIR/fm-control.sh" "$id" "$destination" \
         'Seat rested; reconcile the preserved work and instruction inbox before continuing.'
-      commands="${commands}${commands:+; }$command"
+      commands="${commands}${commands:+$'\n'}  Claude move for $id: $command"
+      meta="$STATE/$id.meta"
+      kind=$(fm_meta_get "$meta" kind)
+      case "$kind" in ship|scout) ;; *) continue ;; esac
+      brief="$DATA/$id/brief.md"
+      [ -r "$brief" ] || continue
+      project=$(fm_meta_get "$meta" project)
+      # Keep the optional lookup inside this pass's quota-read deadline. An
+      # off, uncertain or timed-out resolver leaves the Claude offer intact.
+      offer_bound=$(fm_seat_read_bound) || continue
+      result=$(FM_HOME="$FM_HOME" FM_CONFIG_OVERRIDE="$CONFIG" \
+        fm_run_timed "$offer_bound" "$SCRIPT_DIR/fm-dispatch-resolve.sh" "$brief" \
+        --project "${project##*/}" --codex-alternative --json 2>/dev/null)
+      offer_rc=$?
+      if [ "$offer_rc" != 0 ]; then
+        if [ "$offer_rc" = 2 ]; then
+          printf 'claude-seat: Codex offer for %s unavailable; dispatch configuration needs attention\n' "$id"
+        fi
+        continue
+      fi
+      profile=$(jq -ce 'select(.status == "clear" and .chosen.profile.harness == "codex") | .chosen.profile' \
+        <<< "$result" 2>/dev/null) || continue
+      model=$(jq -r '.model // ""' <<< "$profile")
+      effort=$(jq -r '.effort // ""' <<< "$profile")
+      printf -v codex_command 'FM_HOME=%q %q %q relaunch --harness codex' \
+        "$FM_HOME" "$SCRIPT_DIR/fm-control.sh" "$id"
+      if [ -n "$model" ]; then
+        printf -v command ' --model %q' "$model"; codex_command+=$command
+      fi
+      if [ -n "$effort" ]; then
+        printf -v command ' --effort %q' "$effort"; codex_command+=$command
+      fi
+      printf -v command ' --note %q' \
+        'Seat rested; reconcile the preserved work and instruction inbox before continuing on Codex.'
+      commands="$commands"$'\n'"  Codex alternative for $id: $codex_command$command"
     done
-    printf 'claude-seat: %s is resting with running workers: %s; move each explicitly (destination login is validated; default is the fallback when rotation has no candidate): %s\n' \
+    printf 'claude-seat: %s is resting with running workers: %s; move each explicitly (Claude destination login is validated; default is the fallback when rotation has no candidate):\n%s\n' \
       "$name" "${tasks% }" "$commands"
     current="$current$token "
   done < <(fm_seat_resting_record | jq -r '.seats | to_entries[] | select(.value.provisional != true) | [.key, .value.since] | @tsv')

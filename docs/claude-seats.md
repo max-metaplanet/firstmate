@@ -259,8 +259,11 @@ A floor can be armed on its own, with no `threshold`: the watch then rests and w
 `arm` warns rather than refusing when every candidate happens to be resting, because the watch is exactly what brings them back.
 When a seat rests with local Claude workers confirmed alive by their runtime, the watch prints one warning for that resting entry, naming those workers and the complete command to move each explicitly.
 The suggested destination is the active usable seat, otherwise a qualifying rotation seat; if none qualifies, the command names `default` and the control plane still validates its login before stopping anything.
+For a ship or scout, the watch also offers Codex when the enabled dispatch resolver clearly matches the stored brief to a rule with an eligible Codex candidate.
+The resolver retains its confidence, approval, floor and quota gates and never borrows a default profile for this offer; an off or non-clear resolver leaves the Claude commands unchanged.
+The Codex command names that candidate's model and effort through the existing harness-changing relaunch flags.
 The watch never moves a worker itself.
-[`fm-control.sh relaunch --seat`](agent-control.md#transactional-relaunch) owns the deliberate move and its rollback guarantees.
+[`fm-control.sh relaunch`](agent-control.md#transactional-relaunch) owns the deliberate move and its rollback guarantees.
 Its required progress note should carry any context the replacement needs, because a relaunch preserves files and the instruction inbox but starts a fresh conversation.
 
 ## Validation pipeline agents
