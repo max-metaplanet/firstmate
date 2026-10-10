@@ -992,7 +992,11 @@ else
       esac
     fi
   fi
-  if [ "$INBOX_PLANE" = 0 ]; then fm_send_wake_parked || exit 1; fi
+  if [ "$INBOX_PLANE" = 0 ] && ! fm_send_wake_parked; then
+    fm_send_known_undelivered_cleanup ||
+      echo "error: known-undelivered pending-reply state could not be reset for $TARGET_TASK_ID" >&2
+    exit 1
+  fi
   if [ "$INBOX_PLANE" = 1 ] && [ "$TARGET_BACKEND" = remote ]; then
     # Remote inbox leg: the message becomes a durable record in the remote
     # home's steering inbox, written idempotently by the host-local leg, then
