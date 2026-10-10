@@ -220,7 +220,6 @@ A parked local secondmate stays registered with its home and inbox intact, is ex
 Its current fleet state reports `parked` and whether wake resumes an exact recorded session or starts fresh from persisted records.
 Remote secondmates do not support parking.
 
-
 For an unparked local `kind=secondmate` meta with no window, treat the secondmate as a dead persistent direct report and respawn it with:
 
 ```sh
