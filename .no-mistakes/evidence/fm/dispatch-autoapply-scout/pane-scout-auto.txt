@@ -1,0 +1,13 @@
+ ▐▛███▛█   Claude Code v2.1.296
+▝▜██████▀  Sonnet 5 with high effort · Claude Team
+ ▝▝   ▝▝   /private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab.QDDbbn/treehouse/.treehouse/demo-d1994e/1/demo
+❯ : Firstmate operational input waiting: read '/private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab.QDDbbn/state/operational-inbox/1791625461-c6455dc0e8654f4e.msg' and handle its contents as Firstmate
+  operational input.
+⏺ Reading 1 file…
+✽ Inferring… (8s · ↓ 130 tokens · thinking with high effort)
+                                                                                                                                                                                                          ● high · /effort
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ 
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  Sonnet 5 | p/v/f/1/g/T/f/t/./d/1/demo [HEAD ✓] | ⚙️55 | ⚡100% | P02=E05=U09=J18:44:27
+  -- INSERT -- ⏵⏵ bypass permissions on (shift+tab to cycle) · ← for agents

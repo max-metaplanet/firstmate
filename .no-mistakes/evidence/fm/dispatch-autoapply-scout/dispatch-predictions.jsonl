@@ -1,0 +1,8 @@
+{"ts":"2026-10-10T09:44:06Z","task_id":"scout-auto","resolver_status":"clear","rule":"rule_2","confidence":1.0,"chosen":{"harness":"claude","model":"claude-sonnet-5","effort":"high"},"auto_applied":true,"used":{"harness":"claude","model":"claude-sonnet-5","effort":"high"}}
+{"ts":"2026-10-10T09:55:47Z","task_id":"scout-auto","resolver_status":"not-run","rule":null,"confidence":null,"chosen":null,"auto_applied":false,"used":{"harness":"claude","model":null,"effort":null}}
+{"ts":"2026-10-10T09:56:34Z","task_id":"scout-explicit","resolver_status":"not-run","rule":null,"confidence":null,"chosen":null,"auto_applied":false,"used":{"harness":"codex","model":null,"effort":null}}
+{"ts":"2026-10-10T09:57:37Z","task_id":"scout-explicit","resolver_status":"not-run","rule":null,"confidence":null,"chosen":null,"auto_applied":false,"used":{"harness":"codex","model":null,"effort":null}}
+{"ts":"2026-10-10T09:58:02Z","task_id":"scout-model","resolver_status":"not-run","rule":null,"confidence":null,"chosen":null,"auto_applied":false,"used":{"harness":null,"model":null,"effort":null}}
+{"ts":"2026-10-10T09:58:07Z","task_id":"ship-other","resolver_status":"clear","rule":"rule_5","confidence":1.0,"chosen":{"harness":"claude","model":"claude-opus-5","effort":"high"},"auto_applied":false,"used":{"harness":null,"model":null,"effort":null}}
+{"ts":"2026-10-10T09:58:22Z","task_id":"scout-two","resolver_status":"error","rule":null,"confidence":null,"chosen":null,"auto_applied":false,"used":{"harness":null,"model":null,"effort":null}}
+{"ts":"2026-10-10T09:58:25Z","task_id":"scout-nocfg","resolver_status":"no-config","rule":null,"confidence":null,"chosen":null,"auto_applied":false,"used":{"harness":"claude","model":null,"effort":null}}

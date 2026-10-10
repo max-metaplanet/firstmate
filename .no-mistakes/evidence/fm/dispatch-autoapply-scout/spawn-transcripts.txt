@@ -1,0 +1,34 @@
+=== spawn-explicit.log
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+spawned scout-explicit harness=codex kind=scout window=primary:fm-scout-explicit worktree=/private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab.QDDbbn/treehouse/.treehouse/demo-x-a685f2/1/demo-x
+EXIT=0
+=== spawn-model.log
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+error: config/crew-dispatch.json is active - pass an explicit harness resolved from the dispatch rules (the consultation backstop, so the rules are never silently skipped).
+EXIT=1
+=== spawn-nocfg.log
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+spawned scout-nocfg harness=claude kind=scout window=primary:fm-scout-nocfg worktree=/private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab.QDDbbn/treehouse/.treehouse/demo-n-6684f5/1/demo-n
+EXIT=0
+=== spawn-other.log
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+error: config/crew-dispatch.json is active - pass an explicit harness resolved from the dispatch rules (the consultation backstop, so the rules are never silently skipped).
+EXIT=1
+=== spawn-relaunch.log
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+spawned scout-auto harness=claude kind=scout window=primary:fm-scout-auto worktree=/private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab.QDDbbn/treehouse/.treehouse/demo-d1994e/1/demo
+EXIT=0
+=== spawn-ro.log
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+/Users/max/.no-mistakes/worktrees/61c6dd39b831/01M4JH6T8J3VCTNW33VS4VE4GV/bin/fm-dispatch-predict-lib.sh: line 70: /var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.QDDbbn/data/dispatch-predictions.jsonl: Permission denied
+warning: could not append /var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.QDDbbn/data/dispatch-predictions.jsonl
+spawned scout-ro harness=claude kind=scout window=primary:fm-scout-ro worktree=/private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab.QDDbbn/treehouse/.treehouse/demo-r-77f47c/1/demo-r
+EXIT=0
+=== spawn-scout-auto.log
+spawned scout-auto harness=claude kind=scout window=primary:fm-scout-auto worktree=/private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab.QDDbbn/treehouse/.treehouse/demo-d1994e/1/demo
+EXIT=0
+=== spawn-two.log
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+error: malformed rules file: /var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.QDDbbn/config/crew-dispatch.json - at most one rule may declare auto_apply true
+error: config/crew-dispatch.json is active - pass an explicit harness resolved from the dispatch rules (the consultation backstop, so the rules are never silently skipped).
+EXIT=1

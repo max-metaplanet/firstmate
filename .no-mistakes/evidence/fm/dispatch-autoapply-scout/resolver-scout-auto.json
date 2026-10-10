@@ -1,0 +1,93 @@
+{
+  "model": "jev-1.13.0",
+  "latency_ms": 212,
+  "tokens": {
+    "input_tokens": 844,
+    "output_tokens": 71
+  },
+  "rule": "rule_2",
+  "rule_when": "The task is an investigation, diagnosis, audit, bug reproduc",
+  "confidence": 1.0,
+  "probabilities": {
+    "rule_1": 0.0,
+    "rule_2": 1.0,
+    "rule_3": 0.0,
+    "rule_4": 0.0,
+    "rule_5": 0.0,
+    "default": 0.0
+  },
+  "auto_apply": true,
+  "status": "clear",
+  "note": "rule matched",
+  "candidates": [
+    {
+      "profile": {
+        "harness": "claude",
+        "model": "claude-sonnet-5",
+        "effort": "high"
+      },
+      "provider": "claude",
+      "bounds": [
+        {
+          "scope": "all_models",
+          "status": "known",
+          "pct": 58,
+          "runway": "projected_exhaustion",
+          "spendPriority": -2.0665
+        }
+      ],
+      "scope": "all_models",
+      "pct": 58,
+      "spendPriority": -2.0665,
+      "runway": "projected_exhaustion",
+      "eligible": true,
+      "reason": "ok"
+    },
+    {
+      "profile": {
+        "harness": "codex",
+        "model": "gpt-6.1-sol",
+        "effort": "high"
+      },
+      "provider": "codex",
+      "bounds": [
+        {
+          "scope": "all_models",
+          "status": "known",
+          "pct": 8,
+          "runway": "projected_exhaustion",
+          "spendPriority": -5.3772
+        }
+      ],
+      "scope": "all_models",
+      "pct": 8,
+      "spendPriority": -5.3772,
+      "runway": "projected_exhaustion",
+      "eligible": true,
+      "reason": "ok"
+    }
+  ],
+  "chosen": {
+    "profile": {
+      "harness": "claude",
+      "model": "claude-sonnet-5",
+      "effort": "high"
+    },
+    "provider": "claude",
+    "bounds": [
+      {
+        "scope": "all_models",
+        "status": "known",
+        "pct": 58,
+        "runway": "projected_exhaustion",
+        "spendPriority": -2.0665
+      }
+    ],
+    "scope": "all_models",
+    "pct": 58,
+    "spendPriority": -2.0665,
+    "runway": "projected_exhaustion",
+    "eligible": true,
+    "reason": "ok"
+  }
+}
