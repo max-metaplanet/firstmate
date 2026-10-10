@@ -3003,6 +3003,93 @@ test_kill_refuses_when_presentation_lock_is_unavailable() {
   pass "fm_backend_herdr_kill: unavailable session locks defer every pane close"
 }
 
+test_presentation_lock_acquire_budget_and_distinct_failures() {
+  local dir out status attempts
+  dir="$TMP_ROOT/presentation-lock-acquire"; mkdir -p "$dir"
+
+  # An unresolved session is not a wait: nothing is attempted and the caller
+  # is told it differs from contention.
+  : > "$dir/attempts"
+  out=$(ROOT="$ROOT" ATTEMPTS="$dir/attempts" bash -c '
+    . "$ROOT/bin/backends/herdr.sh"
+    fm_backend_herdr_presentation_session_lock_path() { return 1; }
+    fm_lock_try_acquire() { printf "x\n" >> "$ATTEMPTS"; return 1; }
+    sleep() { :; }
+    fm_backend_herdr_presentation_lock_acquire fmtest
+    printf "rc=%s lock=[%s]\n" "$?" "$FM_BACKEND_HERDR_PRESENTATION_LOCK"
+  ' 2>&1)
+  status=$?
+  [ "$status" -eq 0 ] || fail "unresolved presentation lock probe failed to run: $out"
+  assert_contains "$out" "rc=2 lock=[]" "an unresolved session did not report its own distinct failure: $out"
+  attempts=$(wc -l < "$dir/attempts" | tr -d ' ')
+  [ "$attempts" = 0 ] || fail "an unresolved session still attempted acquisition: $attempts"
+
+  # A contended lock spends exactly the requested budget, and the default
+  # budget is the opportunistic one every fall-back-capable caller relies on.
+  for attempts in '' 7; do
+    : > "$dir/attempts"
+    out=$(ROOT="$ROOT" ATTEMPTS="$dir/attempts" BUDGET="$attempts" bash -c '
+      . "$ROOT/bin/backends/herdr.sh"
+      fm_backend_herdr_presentation_session_lock_path() { printf "/tmp/fm-herdr-budget-test-lock"; }
+      fm_lock_try_acquire() { printf "x\n" >> "$ATTEMPTS"; return 1; }
+      sleep() { :; }
+      if [ -n "$BUDGET" ]; then
+        fm_backend_herdr_presentation_lock_acquire fmtest "$BUDGET"
+      else
+        fm_backend_herdr_presentation_lock_acquire fmtest
+      fi
+      printf "rc=%s lock=[%s]\n" "$?" "$FM_BACKEND_HERDR_PRESENTATION_LOCK"
+    ' 2>&1)
+    assert_contains "$out" "rc=1 lock=[]" "a contended lock did not report contention: $out"
+    [ "$(wc -l < "$dir/attempts" | tr -d ' ')" = "${attempts:-50}" ] \
+      || fail "contended wait did not spend ${attempts:-50} attempts: $(wc -l < "$dir/attempts" | tr -d ' ')"
+  done
+
+  # A holder that releases within the budget is waited out rather than
+  # refused, and the taken path is published for the caller to release.
+  : > "$dir/attempts"
+  out=$(ROOT="$ROOT" ATTEMPTS="$dir/attempts" bash -c '
+    . "$ROOT/bin/backends/herdr.sh"
+    fm_backend_herdr_presentation_session_lock_path() { printf "/tmp/fm-herdr-budget-test-lock"; }
+    fm_lock_try_acquire() {
+      printf "x\n" >> "$ATTEMPTS"
+      [ "$(wc -l < "$ATTEMPTS" | tr -d " ")" -ge 9 ]
+    }
+    sleep() { :; }
+    fm_backend_herdr_presentation_lock_acquire fmtest 20
+    printf "rc=%s lock=[%s]\n" "$?" "$FM_BACKEND_HERDR_PRESENTATION_LOCK"
+  ' 2>&1)
+  assert_contains "$out" "rc=0 lock=[/tmp/fm-herdr-budget-test-lock]" \
+    "a holder releasing inside the budget was not waited out: $out"
+  [ "$(wc -l < "$dir/attempts" | tr -d ' ')" = 9 ] \
+    || fail "the wait did not stop at the acquiring attempt: $(wc -l < "$dir/attempts" | tr -d ' ')"
+
+  # A budget longer than the opportunistic default outlasts a holder that the
+  # default would have refused. This is the concurrent-recovery case: it
+  # cannot fall back flat, so it must survive a hold longer than 50 x 0.1s.
+  : > "$dir/attempts"
+  out=$(ROOT="$ROOT" ATTEMPTS="$dir/attempts" bash -c '
+    . "$ROOT/bin/backends/herdr.sh"
+    fm_backend_herdr_presentation_session_lock_path() { printf "/tmp/fm-herdr-budget-test-lock"; }
+    fm_lock_try_acquire() {
+      printf "x\n" >> "$ATTEMPTS"
+      [ "$(wc -l < "$ATTEMPTS" | tr -d " ")" -gt 50 ]
+    }
+    sleep() { :; }
+    rc=0
+    fm_backend_herdr_presentation_lock_acquire fmtest || rc=$?
+    printf "default=%s " "$rc"
+    : > "$ATTEMPTS"
+    rc=0
+    fm_backend_herdr_presentation_lock_acquire fmtest 300 || rc=$?
+    printf "longer=%s\n" "$rc"
+  ' 2>&1)
+  assert_contains "$out" "default=1 longer=0" \
+    "a longer budget did not outlast a hold the opportunistic budget refuses: $out"
+
+  pass "fm_backend_herdr_presentation_lock_acquire: bounded budget, and contention is distinct from an unresolved session"
+}
+
 test_endpoint_confirmed_gone_gates_on_structured_presence() {
   local out
   out=$(bash -c '
@@ -6249,6 +6336,7 @@ test_projection_order_foreign_new_child_before_parent_is_read_only
 test_projection_order_missing_parent_is_read_only
 test_presentation_session_lock_path_is_shared_across_homes
 test_presentation_session_lock_path_rejects_malformed_socket
+test_presentation_lock_acquire_budget_and_distinct_failures
 test_projection_order_rejects_malformed_socket
 test_projection_reclaim_refusal_matrix_is_non_mutating
 test_projection_reclaim_replaces_only_exact_husk_and_advances_binding
