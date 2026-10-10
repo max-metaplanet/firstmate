@@ -1442,7 +1442,7 @@ families_for_changed_path() {
       # through run_script_bounded, so it cannot regress fixture Git isolation.
       printf '%s\n' pure-contract-unit
       ;;
-    bin/backends/herdr*|bin/fm-herdr-lab.sh|tests/herdr-test-safety.sh|tests/herdr-client-pair-fixture.sh)
+    bin/backends/herdr*|bin/fm-herdr-cli-lib.sh|bin/fm-herdr-lab.sh|tests/herdr-test-safety.sh|tests/herdr-client-pair-fixture.sh)
       printf '%s\n' real-herdr-gated
       printf '%s\n' backend-dispatch
       printf '%s\n' pure-contract-unit

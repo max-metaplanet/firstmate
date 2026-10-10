@@ -37,13 +37,16 @@
 # absent; teardown refuses when that stop cannot be confirmed.
 set -u
 
+# shellcheck source=bin/fm-herdr-cli-lib.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/fm-herdr-cli-lib.sh"
+
 fm_herdr_lab_error() {
   echo "fm-herdr-lab: $*" >&2
 }
 
 fm_herdr_lab_validate_name() { # <session>
   local name=${1:-}
-  [[ "$name" =~ ^fm-lab-[a-zA-Z0-9][a-zA-Z0-9_-]*$ ]] && return 0
+  fm_herdr_cli_lab_name "$name" && return 0
   case "$name" in
     default) fm_herdr_lab_error "refusing session name 'default'" ;;
     '') fm_herdr_lab_error "refusing an empty session name" ;;
@@ -61,15 +64,9 @@ fm_herdr_lab_tripwire_path() { # <session>
 }
 
 fm_herdr_lab_raw() { # <session> <herdr arguments...>
-  local name=$1 i
+  local name=$1
   shift
-  local -a args=("$@")
-  for ((i = 0; i < ${#args[@]}; i++)); do
-    [ "${args[i]}" = -- ] || continue
-    HERDR_SESSION="$name" herdr "${args[@]:0:i}" --session "$name" "${args[@]:i}"
-    return
-  done
-  HERDR_SESSION="$name" herdr "$@" --session "$name"
+  FM_HERDR_LAB="$name" fm_herdr_cli_run herdr "$name" "$@"
 }
 
 fm_herdr_lab_session_list() { # <session>

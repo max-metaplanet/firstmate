@@ -515,7 +515,7 @@ Workspace and tab ids support verification and cleanup but are not inferred from
 ### Named server and session routing
 
 The adapter starts and polls a named server before workspace, tab, pane, or agent calls.
-Every Herdr invocation goes through `fm_backend_herdr_cli`, which sets the environment and passes an explicit trailing `--session <name>`.
+Every Herdr invocation goes through `fm_backend_herdr_cli`, which sets the environment, drops inherited socket overrides, and passes an explicit `--session <name>` before any `--` delimiter.
 An environment variable alone is not reliable when another Herdr server is running.
 
 When the selected named server is not running, the adapter launches it without these inherited values:
@@ -824,6 +824,8 @@ Its before/after tripwire requires the live default-session snapshot to remain b
 
 The helper's header and `--help` own exact commands.
 Tests use thin compatibility wrappers in `tests/herdr-test-safety.sh` and never duplicate the destructive policy.
+The backend and lab helper share the session and socket delivery boundary in `bin/fm-herdr-cli-lib.sh`, including its lab-context refusal guard.
+Tests that call adapter functions from the test process set `FM_HERDR_LAB` there too; a helper subprocess cannot export its marker back into its caller.
 
 ## Active limits
 

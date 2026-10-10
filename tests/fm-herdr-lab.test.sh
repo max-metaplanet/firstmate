@@ -534,6 +534,125 @@ test_viewer_launcher_refuses_unsafe_arguments() {
   pass "fm-herdr-lab: the viewer launcher refuses unsafe sessions and pidfiles"
 }
 
+# Both sessions deliberately expose the same pane id. The fake implements the
+# vendor's option boundary and socket fallback, not a blanket --session check:
+# a flag after -- is payload, and an inherited socket wins without that flag.
+test_backend_delivery_session_collision() (
+  local dir="$TMP_ROOT/delivery" rc target session marker operation verdict
+  mkdir -p "$dir/bin" "$dir/state"
+  cat > "$dir/bin/herdr" <<'SH'
+#!/usr/bin/env bash
+set -u
+session=${HERDR_SESSION:-default}
+[ -z "${HERDR_SOCKET_PATH:-}" ] || session=default
+explicit=
+args=("$@")
+for ((i=0; i<${#args[@]}; i++)); do
+  [ "${args[i]}" != -- ] || break
+  if [ "${args[i]}" = --session ]; then
+    explicit=${args[i+1]}
+    args=("${args[@]:0:i}" "${args[@]:i+2}")
+    break
+  fi
+done
+[ -z "$explicit" ] || session=$explicit
+set -- "${args[@]}"
+case "$1 ${2:-}" in
+  'fixture-environment ')
+    printf '%s|%s|%s\n' "${HERDR_SOCKET_PATH+x}" "${HERDR_CLIENT_SOCKET_PATH+x}" "$HERDR_SESSION"
+    exit 37
+    ;;
+  'status --json') printf '%s\n' '{"server":{"running":true}}' ;;
+  'pane read') printf '  ❯\n' ;;
+  'agent get') printf '%s\n' '{"result":{"agent":{"agent":"codex","agent_status":"working"}}}' ;;
+  'pane send-text'|'pane send-keys'|'pane run')
+    printf '%s|%s|%s|%s\n' "$session" "$3" "$2" "$4" >> "$DELIVERY_LOG"
+    ;;
+  *) printf '{}\n' ;;
+esac
+printf '%s|%s|%s\n' "${FM_HERDR_LAB:-}" "${HERDR_SOCKET_PATH:-}" "${HERDR_CLIENT_SOCKET_PATH:-}" >> "$ENV_LOG"
+SH
+  chmod +x "$dir/bin/herdr"
+  export PATH="$dir/bin:$PATH" FM_HOME="$dir" FM_STATE_OVERRIDE="$dir/state"
+  export DELIVERY_LOG="$dir/delivery.log" ENV_LOG="$dir/env.log"
+  export HERDR_SESSION=default HERDR_SOCKET_PATH=/fixture/default.sock
+  export HERDR_CLIENT_SOCKET_PATH=/fixture/default-client.sock
+  unset FM_BACKEND_HERDR_BIN FM_BACKEND_HERDR_CLIENT_SESSION
+  # shellcheck source=/dev/null
+  . "$ROOT/bin/fm-task-inbox-lib.sh"
+  local rec
+  rec=$(fm_task_inbox_write "$dir/state" modal-entry test) || fail 'could not create ring record'
+  target=fm-lab-collision:wAC:p2
+  export FM_HERDR_LAB=fm-lab-collision
+  fm_task_inbox_ring herdr "$target" "$rec" || fail 'lab ring failed'
+  fm_backend_send_literal herdr "$target" -- || fail 'literal delimiter failed'
+  fm_backend_send_key herdr "$target" Enter || fail 'lab key failed'
+  fm_backend_herdr_send_text_line "$target" ':' || fail 'lab run failed'
+  [ "$(wc -l < "$DELIVERY_LOG" | tr -d ' ')" = 5 ] || fail 'expected ring text/Enter plus literal, key and run'
+  while IFS= read -r line; do
+    case "$line" in fm-lab-collision'|wAC:p2|'*) ;; *) fail "delivery escaped the lab: $line" ;; esac
+  done < "$DELIVERY_LOG"
+  # Removing the lab marker must not change explicit target routing.
+  unset FM_HERDR_LAB
+  fm_backend_send_literal herdr "$target" -- || fail 'unmarked explicit target failed'
+  [ "$(tail -1 "$DELIVERY_LOG")" = 'fm-lab-collision|wAC:p2|send-text|--' ] || fail 'unmarked delimiter delivery used ambient socket'
+  [ "$HERDR_SOCKET_PATH" = /fixture/default.sock ] || fail 'delivery modified caller socket identity'
+  [ "$HERDR_CLIENT_SOCKET_PATH" = /fixture/default-client.sock ] || fail 'delivery modified caller client socket identity'
+  rc=0
+  fm_herdr_cli_run "$dir/bin/herdr" fm-lab-collision fixture-environment > "$dir/child-env" || rc=$?
+  [ "$rc" -eq 37 ] || fail 'delivery did not preserve the child exit status'
+  [ "$(cat "$dir/child-env")" = '||fm-lab-collision' ] || fail 'child socket overrides were not unset'
+  [ "$HERDR_SESSION" = default ] || fail 'failed delivery modified caller session identity'
+  [ "$HERDR_SOCKET_PATH" = /fixture/default.sock ] || fail 'failed delivery modified caller socket identity'
+  [ "$HERDR_CLIENT_SOCKET_PATH" = /fixture/default-client.sock ] || fail 'failed delivery modified caller client socket identity'
+  (
+    unset HERDR_SOCKET_PATH HERDR_CLIENT_SOCKET_PATH
+    rc=0
+    fm_herdr_cli_run "$dir/bin/herdr" fm-lab-collision fixture-environment > "$dir/child-env" || rc=$?
+    [ "$rc" -eq 37 ] || fail 'delivery with absent caller sockets lost the child exit status'
+    [ -z "${HERDR_SOCKET_PATH+x}${HERDR_CLIENT_SOCKET_PATH+x}" ] || fail 'delivery introduced caller socket variables'
+  ) || fail 'delivery did not preserve absent caller socket variables'
+  pass 'Herdr delivery: colliding pane ids route ring, literal --, keys and run to the target session'
+
+  for marker in explicit ambient; do
+    if [ "$marker" = explicit ]; then
+      export FM_HERDR_LAB=1 HERDR_SESSION=default
+    else
+      unset FM_HERDR_LAB
+      export HERDR_SESSION=fm-lab-collision
+    fi
+    for session in default real-fleet; do
+      target="$session:wAC:p2"
+      for operation in ring literal key run cli submit; do
+        : > "$DELIVERY_LOG"
+        rc=0
+        case "$operation" in
+          ring) fm_task_inbox_ring herdr "$target" "$rec" 2> "$dir/error" || rc=$? ;;
+          literal) fm_backend_send_literal herdr "$target" forbidden 2> "$dir/error" || rc=$? ;;
+          key) fm_backend_send_key herdr "$target" Enter 2> "$dir/error" || rc=$? ;;
+          run) fm_backend_herdr_send_text_line "$target" forbidden 2> "$dir/error" || rc=$? ;;
+          cli) fm_backend_herdr_cli "$session" pane send-keys wAC:p2 enter 2> "$dir/error" || rc=$? ;;
+          submit)
+            verdict=$(fm_backend_send_text_submit herdr "$target" forbidden 1 0 0 2> "$dir/error") || rc=$?
+            [ "$verdict" != send-failed ] || rc=1
+            ;;
+        esac
+        [ "$rc" -ne 0 ] || fail "$marker lab allowed $operation to $session"
+        [ ! -s "$DELIVERY_LOG" ] || fail 'refused delivery still typed into a pane'
+        assert_contains "$(cat "$dir/error")" 'Herdr lab refuses session' 'missing delivery-owner refusal diagnostic'
+      done
+    done
+  done
+  # The lab helper's marker crosses the executable boundary, while neither
+  # inherited socket override does. Its subprocess cannot mark its parent.
+  unset FM_HERDR_LAB
+  HERDR_SESSION=default "$ROOT/bin/fm-herdr-lab.sh" run fm-lab-collision pane send-keys wAC:p2 enter || fail 'helper delivery failed'
+  [ "$(tail -1 "$ENV_LOG")" = 'fm-lab-collision||' ] || fail 'lab helper leaked sockets or failed to mark its child'
+  pass 'Herdr delivery: explicit and ambient lab contexts refuse every non-lab target before typing'
+)
+
+test_backend_delivery_session_collision || exit 1
+
 test_refuses_unsafe_names
 test_provision_run_and_guarded_teardown
 test_run_scopes_session_before_double_dash
