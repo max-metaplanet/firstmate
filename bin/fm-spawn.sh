@@ -664,6 +664,8 @@ fm_backlog_directory_present "$STATE" "state directory" || {
 . "$SCRIPT_DIR/fm-quota-axi-lib.sh"
 # shellcheck source=bin/fm-seat-lib.sh
 . "$SCRIPT_DIR/fm-seat-lib.sh"
+# shellcheck source=bin/fm-dispatch-predict-lib.sh
+. "$SCRIPT_DIR/fm-dispatch-predict-lib.sh"
 
 # Fail closed before any fleet mutation: a no-mistakes gate agent must never spawn
 # a direct report (see bin/fm-gate-refuse-lib.sh).
@@ -2333,11 +2335,55 @@ case "$ARG3" in
     harness_src='config/secondmate-harness (falling back to config/crew-harness)'
   else
     if [ -f "$CONFIG/crew-dispatch.json" ]; then
-      echo "error: config/crew-dispatch.json is active - pass an explicit harness resolved from the dispatch rules (the consultation backstop, so the rules are never silently skipped)." >&2
-      exit 1
+      # dispatch-resolve auto-apply pilot: the investigation/scout rule only
+      # (docs/configuration.md "Crew dispatch profiles"). This branch only
+      # runs when no explicit --harness/positional harness/raw launch command
+      # was given, so any explicit per-task choice already took the branches
+      # above and is never touched here. Resolve the task's own brief and,
+      # only on a clear result whose matched rule declares
+      # "auto_apply": true, apply its chosen harness/model/effort in place of
+      # today's hard refusal below - explicit --model/--effort still win even
+      # when the harness itself is auto-applied. Every other outcome
+      # (ambiguous, escalate, error, off, no auto_apply, missing jq, or no
+      # brief yet) keeps today's refusal unchanged. The attempt is always
+      # logged (bin/fm-dispatch-predict-lib.sh) so later outcomes can be
+      # joined back to the resolver's prediction, whether or not it applied.
+      DISPATCH_PILOT_APPLIED=false
+      DISPATCH_PILOT_JSON=''
+      DISPATCH_PILOT_BRIEF="$DATA/$ID/brief.md"
+      if command -v jq >/dev/null 2>&1 && [ -f "$DISPATCH_PILOT_BRIEF" ]; then
+        DISPATCH_PILOT_JSON=$("$FM_ROOT/bin/fm-dispatch-resolve.sh" "$DISPATCH_PILOT_BRIEF" --project "$PROJ" --json 2>/dev/null) || true
+        if [ -n "$DISPATCH_PILOT_JSON" ] && printf '%s' "$DISPATCH_PILOT_JSON" | jq -e 'type == "object"' >/dev/null 2>&1; then
+          if [ "$(jq -r '.status // ""' <<<"$DISPATCH_PILOT_JSON" 2>/dev/null || true)" = clear ] \
+            && [ "$(jq -r '.auto_apply // false' <<<"$DISPATCH_PILOT_JSON" 2>/dev/null || true)" = true ]; then
+            DISPATCH_PILOT_HARNESS=$(jq -r '.chosen.profile.harness // ""' <<<"$DISPATCH_PILOT_JSON" 2>/dev/null) || true
+            DISPATCH_PILOT_MODEL=$(jq -r '.chosen.profile.model // ""' <<<"$DISPATCH_PILOT_JSON" 2>/dev/null) || true
+            DISPATCH_PILOT_EFFORT=$(jq -r '.chosen.profile.effort // ""' <<<"$DISPATCH_PILOT_JSON" 2>/dev/null) || true
+            DISPATCH_PILOT_RULE=$(jq -r '.rule // "?"' <<<"$DISPATCH_PILOT_JSON" 2>/dev/null) || true
+            if [ -n "$DISPATCH_PILOT_HARNESS" ]; then
+              HARNESS=$DISPATCH_PILOT_HARNESS
+              if [ "$MODEL_SET" -eq 0 ] && [ -n "$DISPATCH_PILOT_MODEL" ]; then
+                MODEL=$DISPATCH_PILOT_MODEL
+              fi
+              if [ "$EFFORT_SET" -eq 0 ] && [ -n "$DISPATCH_PILOT_EFFORT" ]; then
+                EFFORT=$DISPATCH_PILOT_EFFORT
+              fi
+              harness_src="dispatch-resolve auto-apply (rule $DISPATCH_PILOT_RULE)"
+              DISPATCH_PILOT_APPLIED=true
+            fi
+          fi
+        fi
+      fi
+      fm_dispatch_predict_log "$DATA" "$ID" "$DISPATCH_PILOT_JSON" "$DISPATCH_PILOT_APPLIED" \
+        "${HARNESS:-}" "${MODEL:-}" "${EFFORT:-}"
+      if [ "$DISPATCH_PILOT_APPLIED" != true ]; then
+        echo "error: config/crew-dispatch.json is active - pass an explicit harness resolved from the dispatch rules (the consultation backstop, so the rules are never silently skipped)." >&2
+        exit 1
+      fi
+    else
+      HARNESS=$("$FM_ROOT/bin/fm-harness.sh" crew)
+      harness_src='config/crew-harness'
     fi
-    HARNESS=$("$FM_ROOT/bin/fm-harness.sh" crew)
-    harness_src='config/crew-harness'
   fi
   LAUNCH=$(launch_template "$HARNESS" "$KIND") || {
     echo "error: no launch template for harness '$HARNESS' (from $harness_src or detection); pass a raw launch command to use an unverified adapter" >&2

@@ -1111,11 +1111,12 @@ This section is the single owner of the canonical schema and its per-field seman
 
 **Fields applied only by typed resolution**
 
-Rule `approval`, `min_confidence`, `path_force`, and `floor`, and profile `provider` and `floor` are optional declarations that only [typed dispatch resolution](#typed-dispatch-resolution-env-typesafe_api_key) applies in code; without that opt-in they are inert, and firstmate's own intake reads them as ordinary hints.
+Rule `approval`, `min_confidence`, `path_force`, `auto_apply`, and `floor`, and profile `provider` and `floor` are optional declarations that only [typed dispatch resolution](#typed-dispatch-resolution-env-typesafe_api_key) applies in code; without that opt-in they are inert, and firstmate's own intake reads them as ordinary hints.
 The resolver supplies the fixed neutral Choice option `No listed rule applies to this task.` for work that matches no listed rule.
 
 - `approval` accepts only `"captain"` and means a task the rule matches is never dispatched from the tool's answer alone.
 - `path_force` accepts only `"deployment-config"` and marks the one rule that deployment-configuration work belongs to, so [typed dispatch resolution](#typed-dispatch-resolution-env-typesafe_api_key) can route that work by a path fact instead of by rule wording.
+- `auto_apply` accepts only a boolean and opts a rule into [`fm-spawn.sh`'s automatic profile application](#automatic-profile-application-fm-spawnsh) below: a `clear` resolver result for a rule that declares `"auto_apply": true` is applied to an ordinary spawn instead of the usual explicit-harness backstop. Every other rule, and a rule with `auto_apply` absent or `false`, is unaffected and keeps today's backstop.
 - At most one rule may declare it, and the resolver finds that rule by the declaration rather than by its position, so homes whose rules sit in a different order route identically.
 - Path forcing does nothing until some rule declares `path_force`: a home that declares it on no rule keeps today's routing, and every brief, including one whose declared paths name deployment configuration, still goes to Jev.
 
@@ -1302,6 +1303,18 @@ Firstmate passes its profile line unless it states a reason to override, such as
 - The resolver fixes the endpoint at `https://api.typesafe.ai`, model at `jev-latest`, default confidence floor at 0.6, and request timeout at 5 seconds; `TYPESAFE_API_KEY` is its only resolver-specific environment setting.
 
 The live rule-match evidence is recorded in [`verification/dispatch-resolve.md`](verification/dispatch-resolve.md).
+
+**Automatic profile application (fm-spawn.sh)**
+
+This is the one-rule pilot named in "Fields applied only by typed resolution" above: `bin/fm-spawn.sh` itself can apply the resolver's own pick to an ordinary crewmate or scout spawn, instead of leaving every resolve-and-apply round trip to firstmate's own reasoning.
+
+It fires only inside the existing consultation backstop - a non-secondmate spawn with `config/crew-dispatch.json` present and no explicit `--harness`, positional harness, or raw launch command.
+An explicit `--harness`, positional harness, or raw launch command never reaches this hook at all, and an explicit `--model` or `--effort` still wins over the resolver's axis even when the harness itself is auto-applied.
+There, instead of immediately refusing, `fm-spawn.sh` resolves the task's own `data/<id>/brief.md` with `bin/fm-dispatch-resolve.sh --json` and applies the result only when its status is `clear` and the matched rule declares `"auto_apply": true`; the harness, and any unset model or effort, come straight from the resolver's `chosen.profile`.
+Every other outcome - `ambiguous`, `escalate`, `error`, `off` (no `TYPESAFE_API_KEY`), a `clear` match on a rule that does not opt in, a missing brief, or a missing `jq` - leaves today's refusal in place; the pilot never blocks or fails a spawn on its own account.
+
+Every attempt through this hook, applied or not, appends one JSON line to `data/dispatch-predictions.jsonl` (`bin/fm-dispatch-predict-lib.sh`): a UTC timestamp, the task id, the resolver's status and matched rule, its chosen profile (clear results only), whether that profile was applied, and the profile the spawn actually used.
+The ledger carries no brief text or secrets, and a logging failure (missing `jq`, an unwritable `data/`) is reported on stderr without touching the spawn.
 
 ## Toolchain
 
