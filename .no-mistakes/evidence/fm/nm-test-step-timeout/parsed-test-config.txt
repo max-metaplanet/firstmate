@@ -1,0 +1,11 @@
+top-level keys: ["disable_project_settings", "document", "commands", "test"]
+commands: {"lint"=>"bin/fm-lint.sh"}
+test keys: ["instructions", "evidence"]
+test.evidence: {"store_in_repo"=>true}
+instructions type=String lines=13
+--- first paragraph of parsed test.instructions ---
+Choose and run the colocated tests in tests/ that cover the changed paths and their direct consumers, and run a live lab scenario only when the change alters live lifecycle behavior, through the guarded lab helpers described below.
+Do not run the full suite families, and do not re-run slow suites that do not cover the changed paths; CI already runs them (tests/fm-supervision-host.test.sh alone takes 22-30 minutes).
+When the change touches what a slow suite covers, still run that suite, or a filtered part of it that exercises the changed behavior, and plan the step's time around it; never give a verdict that rests on zero tests for a touched file.
+Finish well inside this step's time limit and report your verdict on the targeted and live checks you ran.
+--- skip-related keys anywhere: 0

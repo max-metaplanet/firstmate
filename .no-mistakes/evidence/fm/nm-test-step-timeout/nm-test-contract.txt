@@ -1,0 +1,3 @@
+$ bash tests/fm-nm-test-contract.test.sh
+ok - no-mistakes does not configure commands.test
+exit=0

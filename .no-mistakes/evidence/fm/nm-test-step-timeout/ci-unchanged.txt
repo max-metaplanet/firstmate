@@ -1,0 +1,10 @@
+ci.yml unchanged between base and target
+91:        run: bin/fm-test-run.sh --check-coverage
+94:  # set only. Composition owner: bin/fm-test-run.sh (docs/fm-test-portable-shards.md).
+128:          bin/fm-test-run.sh --lane portable-parallel-1 \
+167:          bin/fm-test-run.sh --lane portable-parallel-2 \
+181:  # and the shard count both belong to bin/fm-test-run.sh, which refuses a lane
+231:          # without matching bin/fm-test-run.sh is refused instead of quietly
+240:          bin/fm-test-run.sh --lane "$FM_SERIAL_LANE" \
+350:          bin/fm-test-run.sh --family real-herdr-gated \
+405:          bin/fm-test-run.sh --aggregate-json \
