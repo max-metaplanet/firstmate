@@ -22,14 +22,16 @@ fm_herdr_cli_check_session() { # <session>
 
 fm_herdr_cli_run() ( # <binary> <session> <arguments...>
   local client=$1 session=$2 i
+  # Bash 3.2 array slices must not inherit a caller's temporary read delimiter.
+  local IFS=$' \t\n'
   shift 2
   fm_herdr_cli_check_session "$session" || return 1
   local -a args=("$@")
   unset HERDR_SOCKET_PATH HERDR_CLIENT_SOCKET_PATH
+  # Replace this isolated shell with the client instead of forking another
+  # process for every call made while a presentation lock is held.
   for ((i = 0; i < ${#args[@]}; i++)); do
-    [ "${args[i]}" = -- ] || continue
-    HERDR_SESSION="$session" "$client" "${args[@]:0:i}" --session "$session" "${args[@]:i}"
-    return
+    [ "${args[i]}" != -- ] || break
   done
-  HERDR_SESSION="$session" "$client" "$@" --session "$session"
+  HERDR_SESSION="$session" exec "$client" "${args[@]:0:i}" --session "$session" "${args[@]:i}"
 )

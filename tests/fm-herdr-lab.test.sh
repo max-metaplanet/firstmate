@@ -558,6 +558,10 @@ done
 [ -z "$explicit" ] || session=$explicit
 set -- "${args[@]}"
 case "$1 ${2:-}" in
+  'fixture-environment ')
+    printf '%s|%s|%s\n' "${HERDR_SOCKET_PATH+x}" "${HERDR_CLIENT_SOCKET_PATH+x}" "$HERDR_SESSION"
+    exit 37
+    ;;
   'status --json') printf '%s\n' '{"server":{"running":true}}' ;;
   'pane read') printf '  ❯\n' ;;
   'agent get') printf '%s\n' '{"result":{"agent":{"agent":"codex","agent_status":"working"}}}' ;;
@@ -594,6 +598,20 @@ SH
   [ "$(tail -1 "$DELIVERY_LOG")" = 'fm-lab-collision|wAC:p2|send-text|--' ] || fail 'unmarked delimiter delivery used ambient socket'
   [ "$HERDR_SOCKET_PATH" = /fixture/default.sock ] || fail 'delivery modified caller socket identity'
   [ "$HERDR_CLIENT_SOCKET_PATH" = /fixture/default-client.sock ] || fail 'delivery modified caller client socket identity'
+  rc=0
+  fm_herdr_cli_run "$dir/bin/herdr" fm-lab-collision fixture-environment > "$dir/child-env" || rc=$?
+  [ "$rc" -eq 37 ] || fail 'delivery did not preserve the child exit status'
+  [ "$(cat "$dir/child-env")" = '||fm-lab-collision' ] || fail 'child socket overrides were not unset'
+  [ "$HERDR_SESSION" = default ] || fail 'failed delivery modified caller session identity'
+  [ "$HERDR_SOCKET_PATH" = /fixture/default.sock ] || fail 'failed delivery modified caller socket identity'
+  [ "$HERDR_CLIENT_SOCKET_PATH" = /fixture/default-client.sock ] || fail 'failed delivery modified caller client socket identity'
+  (
+    unset HERDR_SOCKET_PATH HERDR_CLIENT_SOCKET_PATH
+    rc=0
+    fm_herdr_cli_run "$dir/bin/herdr" fm-lab-collision fixture-environment > "$dir/child-env" || rc=$?
+    [ "$rc" -eq 37 ] || fail 'delivery with absent caller sockets lost the child exit status'
+    [ -z "${HERDR_SOCKET_PATH+x}${HERDR_CLIENT_SOCKET_PATH+x}" ] || fail 'delivery introduced caller socket variables'
+  ) || fail 'delivery did not preserve absent caller socket variables'
   pass 'Herdr delivery: colliding pane ids route ring, literal --, keys and run to the target session'
 
   for marker in explicit ambient; do
