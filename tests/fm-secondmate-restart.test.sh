@@ -975,10 +975,10 @@ test_park_failed_wake_preserves_delivery() {
   assert_contains "$out" 'Do not resend' 'failed wake distinguishes durable delivery'
   assert_present "$dir/home/state/.secondmate-park-sm1" 'failed wake retains park authority'
   assert_grep 'work retained after failed wake' "$dir/home/state/sm1.inbox/002.msg" 'failed wake retains exact work'
-  before=$(ls "$dir/home/state/pending-replies" 2>/dev/null | sort)
+  before=$(find "$dir/home/state/pending-replies" -mindepth 1 2>/dev/null | sort)
   out=$(env PATH="$dir/fakebin:$PATH" FM_HOME="$dir/home" FM_FAKE_DIR="$dir/fake" FM_SPAWN_NO_GUARD=1 "$ROOT/bin/fm-send.sh" sm1 '/compact' 2>&1); rc=$?
   expect_code 1 "$rc" "typed send must fail when wake refuses: $out"
-  [ "$(ls "$dir/home/state/pending-replies" 2>/dev/null | sort)" = "$before" ] ||
+  [ "$(find "$dir/home/state/pending-replies" -mindepth 1 2>/dev/null | sort)" = "$before" ] ||
     fail "failed typed wake left a pending-reply expectation: $out"
   rm "$dir/home/config/claude-permission-mode"
   out=$(run_park "$dir" sm1 unpark); rc=$?
