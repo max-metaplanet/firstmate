@@ -357,6 +357,12 @@ fm_task_inbox_doorbell_line() {  # <record-path>
 # a lost first Enter gets one confirmed retry.
 fm_task_inbox_ring() {  # <backend> <target> <record-path> [expected-label]
   local backend=$1 target=$2 rec=$3 label=${4:-} line cstate verdict
+  # Surface the delivery owner's lab refusal before advisory probes suppress
+  # their diagnostics or turn an unreadable endpoint into a best-effort ring.
+  if [ "$backend" = herdr ]; then
+    fm_backend_source herdr || return 2
+    fm_backend_herdr_parse_target "$target" || return 2
+  fi
   case "$(fm_backend_agent_state "$backend" "$target" 2>/dev/null || true)" in
     dead|missing) return 3 ;;
   esac

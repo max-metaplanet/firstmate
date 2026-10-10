@@ -45,6 +45,7 @@ herdr_forget_inherited_pane
 
 ORIGINAL_PATH=$PATH
 SESSION=$("$LAB_HELPER" name herdr-submit-confirm-live)
+export FM_HERDR_LAB="$SESSION"
 TMP_ROOT=$(mktemp -d "$(cd "${TMPDIR:-/tmp}" && pwd -P)/fm-herdr-submit-confirm-live.XXXXXX")
 FAKEBIN="$TMP_ROOT/fakebin"
 mkdir -p "$FAKEBIN"

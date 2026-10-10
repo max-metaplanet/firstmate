@@ -824,6 +824,8 @@ Its before/after tripwire requires the live default-session snapshot to remain b
 
 The helper's header and `--help` own exact commands.
 Tests use thin compatibility wrappers in `tests/herdr-test-safety.sh` and never duplicate the destructive policy.
+The backend and lab helper share the session and socket delivery boundary in `bin/fm-herdr-cli-lib.sh`, including its lab-context refusal guard.
+Tests that call adapter functions from the test process set `FM_HERDR_LAB` there too; a helper subprocess cannot export its marker back into its caller.
 
 ## Active limits
 

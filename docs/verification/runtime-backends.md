@@ -1109,6 +1109,25 @@ No reasoning-effort axis was found; `gemini --help` on 0.58.0 exposes no effort,
 
 ## Herdr
 
+### Delivery session isolation
+
+On 2026-10-09, the executable stand-in regression below verified colliding `wAC:p2` identifiers in lab and default sessions, including the literal `--` option boundary.
+It also verified refusal of default and other non-lab targets for ring, literal, key, run, submit, and direct adapter CLI delivery under both explicit and ambient lab contexts.
+The invocation boundary is owned by `bin/fm-herdr-cli-lib.sh`.
+
+```sh
+bash bin/fm-test-run.sh tests/fm-herdr-lab.test.sh
+```
+
+Relevant output:
+
+```text
+ok - Herdr delivery: colliding pane ids route ring, literal --, keys and run to the target session
+ok - Herdr delivery: explicit and ambient lab contexts refuse every non-lab target before typing
+```
+
+### Protocol compatibility
+
 The compatibility floor is protocol 14.
 The whole real-Herdr lane's latest active verification uses both Herdr 0.7.4 protocol 16 and Herdr 0.8.0 protocol 19 on macOS aarch64, while focused Herdr 0.7.5 protocol 17, earlier protocol-16, protocol-14, and 0.7.3 evidence is retained where it defines current behavior or fallbacks.
 Protocol 17 keeps every protocol-16 feature gate satisfied; the event and workspace-move floors remain 16.

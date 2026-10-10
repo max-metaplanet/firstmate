@@ -72,6 +72,9 @@ FM_BACKEND_HERDR_ROOT="$(d=${BASH_SOURCE[0]%/*}; [ "$d" != "${BASH_SOURCE[0]}" ]
 FM_ROOT="${FM_ROOT_OVERRIDE:-${FM_ROOT:-$FM_BACKEND_HERDR_ROOT}}"
 FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 
+# shellcheck source=bin/fm-herdr-cli-lib.sh
+. "$FM_BACKEND_HERDR_ROOT/bin/fm-herdr-cli-lib.sh"
+
 # Shared composer-content classifier (empty|pending|unknown, and the fleet-wide
 # dead-shell-vs-agent-composer rule). Owned by bin/fm-composer-lib.sh, reused by
 # every backend so the decision cannot drift.
@@ -370,18 +373,19 @@ fm_backend_herdr_workspace_label() {
 }
 
 # fm_backend_herdr_cli: run `herdr <args...>` scoped to <session>, setting
-# BOTH the HERDR_SESSION env var AND appending a trailing `--session <name>`
+# BOTH the HERDR_SESSION env var AND an explicit `--session <name>`
 # CLI flag. Verified empirically (docs/herdr-backend.md "Session targeting: the
 # --session flag, not HERDR_SESSION alone"): on the installed herdr 0.7.1
 # client, the HERDR_SESSION env var is NOT reliably honored by CLI subcommands
 # once ANY other herdr server is already bound on the machine - queries
 # silently fall back to whatever server IS running (the wrong one) instead of
 # routing to the requested session or refusing. The `--session <name>` global
-# flag (verified in both leading and trailing position; trailing used here to
-# keep every call site a minimal, append-only diff) always routes correctly,
+# flag (verified in both leading and trailing option positions) routes correctly,
 # including starting a genuinely separate, isolated server process. The env
 # var is kept alongside it - harmless, self-documenting, and forward-
-# compatible if a future herdr build honors it. Never used by
+# compatible if a future herdr build honors it. bin/fm-herdr-cli-lib.sh owns
+# delimiter placement, inherited socket removal, and the lab refusal guard.
+# Never used by
 # fm_backend_herdr_version_check, which is intentionally session-independent
 # (reads only .client.* fields).
 fm_backend_herdr_cli() {  # <session> <herdr-subcommand-and-args...>
@@ -396,18 +400,18 @@ fm_backend_herdr_cli() {  # <session> <herdr-subcommand-and-args...>
   # The long-lived `server` launch is exec'd straight through: buffering its
   # stderr would hold this call open for the server's whole lifetime.
   if [ "${1:-}" = server ]; then
-    HERDR_SESSION="$session" "$client_bin" "$@" --session "$session"
+    fm_herdr_cli_run "$client_bin" "$session" "$@"
     return $?
   fi
   failed_bin=$client_bin
-  { err=$(HERDR_SESSION="$session" "$failed_bin" "$@" --session "$session" 2>&1 1>&3 3>&-) || rc=$?; } 3>&1
+  { err=$(fm_herdr_cli_run "$failed_bin" "$session" "$@" 2>&1 1>&3 3>&-) || rc=$?; } 3>&1
   if [ "$rc" -ne 0 ]; then
     case "$err" in
       *protocol_mismatch*)
         fm_backend_herdr_client_select "$session" force
         selected_bin=$(fm_backend_herdr_bin)
         if [ "$selected_bin" != "$failed_bin" ]; then
-          HERDR_SESSION="$session" "$selected_bin" "$@" --session "$session"
+          fm_herdr_cli_run "$selected_bin" "$session" "$@"
           return $?
         fi
         ;;
@@ -468,7 +472,7 @@ fm_backend_herdr_client_candidates() {
 # client did not report. Never fails.
 fm_backend_herdr_client_status() {  # <bin> <session>
   local bin=$1 session=$2 out
-  out=$(HERDR_SESSION="$session" "$bin" status --json --session "$session" 2>/dev/null) || out=
+  out=$(fm_herdr_cli_run "$bin" "$session" status --json 2>/dev/null) || out=
   printf '%s' "$out" | jq -r '
     [ (if (.server | type) == "object" and .server.running != null then (.server.running | tostring) else "" end),
       (if (.server | type) == "object" and (.server | has("compatible"))
@@ -3032,7 +3036,8 @@ fm_backend_herdr_parse_target() {  # <target>
   local target=$1
   FM_BACKEND_HERDR_SESSION=${target%%:*}
   FM_BACKEND_HERDR_PANE=${target#*:}
-  [ -n "$FM_BACKEND_HERDR_SESSION" ] && [ -n "$FM_BACKEND_HERDR_PANE" ] && [ "$FM_BACKEND_HERDR_PANE" != "$target" ]
+  [ -n "$FM_BACKEND_HERDR_SESSION" ] && [ -n "$FM_BACKEND_HERDR_PANE" ] && [ "$FM_BACKEND_HERDR_PANE" != "$target" ] || return 1
+  fm_herdr_cli_check_session "$FM_BACKEND_HERDR_SESSION"
 }
 
 fm_backend_herdr_target_ready() {  # <target>
@@ -3473,7 +3478,7 @@ fm_backend_herdr_send_text_submit() {  # <target> <text> <retries> <enter-sleep>
   local target=$1 text=$2 retries=$3 sleep_s=$4 settle=$5 i=0 verdict baseline confirm_sleep
   local raw_status footer_baseline='' allow_rendered=0 enter_sent=0 identity harness proof=0 content
   local recovered=0
-  fm_backend_herdr_parse_target "$target" || { printf 'unknown'; return 0; }
+  fm_backend_herdr_parse_target "$target" || { printf 'send-failed'; return 0; }
   # Claude on Herdr is the live-verified truncation shape: Enter is withheld
   # unless the composer, empty before the send, shows this payload. A suffix
   # that then starts a turn must not report empty. Other harnesses keep the
