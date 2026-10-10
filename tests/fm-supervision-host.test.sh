@@ -3067,6 +3067,54 @@ test_explicit_stop_checks_recorded_identity_and_reaps_detached_arm() {
 }
 
 
+test_stop_signal_race_accepts_only_a_gone_process() {
+  local home pid identity mode out rc
+  for mode in TERM KILL denied; do
+    home=$(make_home "stop-race-$mode" attended)
+    sleep 120 &
+    pid=$!
+    printf '%s\n' "$pid" >> "$home/orphan-pid"
+    identity=$(bash -c '. "$1/fm-wake-lib.sh"; . "$1/fm-supervision-engine-lib.sh"; _fm_engine_identity "$2"' _ "$ROOT/bin" "$pid")
+    printf 'host\t%s\t%s\n' "$pid" "$identity" > "$home/state/.supervision-host"
+    # Model ESRCH after the identity check through the shell's signal interface.
+    # A denied signal leaves the real process alive and must still refuse.
+    cat > "$home/race-env" <<'SH'
+kill() {
+  if [ "${2:-}" = "$FM_RACE_PID" ]; then
+    case "$1:$FM_RACE_MODE" in
+      -TERM:denied) return 1 ;;
+      -TERM:KILL) return 0 ;;
+      -TERM:TERM|-KILL:KILL)
+        builtin kill -KILL "$FM_RACE_PID" || return 1
+        while builtin kill -0 "$FM_RACE_PID" 2>/dev/null; do /bin/sleep 0.01; done
+        printf '%s\n' "$1" >> "$FM_HOME/signal-race"
+        return 1 ;;
+    esac
+  fi
+  builtin kill "$@"
+}
+sleep() {
+  [ "${1:-}" != 0.1 ] || return 0
+  command sleep "$@"
+}
+SH
+    out=$(FM_HOME="$home" BASH_ENV="$home/race-env" FM_RACE_PID="$pid" FM_RACE_MODE="$mode" bash "$HOST" --stop 2>&1); rc=$?
+    if [ "$mode" = denied ]; then
+      expect_code 1 "$rc" "a failed signal to a live process must refuse: $out"
+      kill -0 "$pid" 2>/dev/null || fail 'denied signal fixture lost its live process'
+      assert_present "$home/state/.supervision-host" 'failed stop retains its ownership record'
+      kill -TERM "$pid"
+    else
+      expect_code 0 "$rc" "a process gone during $mode must not fail stop: $out"
+      assert_grep "-$mode" "$home/signal-race" 'the intended signal failure was exercised'
+      assert_absent "$home/state/.supervision-host" 'successful stop clears its ownership record'
+    fi
+    wait "$pid" 2>/dev/null || true
+  done
+  pass 'host: signal races accept a gone process and still refuse a live process'
+}
+
+test_stop_signal_race_accepts_only_a_gone_process
 test_claude_stop_hook_restores_handoff_when_successor_closed_before_exit_to_main
 test_claude_stop_hook_restores_handoff_when_successor_closed_mid_engine_turn
 test_claude_stop_hook_notifies_when_closed_successor_downtime_restore_fails

@@ -5,8 +5,8 @@
 # park asks the existing correlated open-record persist gate, refuses without
 # its answer, then stops the agent through fm-control exit and stops its home
 # supervision host and watcher. Any child metadata, in-flight backlog work, or
-# outstanding incoming instruction refuses parking. unpark relaunches through
-# fm-spawn --relaunch and is also fm-send's automatic wake path; fm-crew-state
+# outstanding incoming instruction refuses parking. unpark uses fm-spawn's
+# relaunch or missing-endpoint secondmate respawn path and is also fm-send's automatic wake path; fm-crew-state
 # shows the parked state. Exact session resume uses the existing recorded reference
 # when available, otherwise output explicitly reports a fresh session.
 # Remote homes are unsupported and refuse before mutation.
@@ -71,7 +71,19 @@ validate_identity
 fm_sm_live_require_locks
 fm_lock_acquire_wait "$STATE/.secondmate-liveness-$ID.lock"
 CHILD_SET_LOCK=''
-trap '[ -z "$CHILD_SET_LOCK" ] || fm_lock_release "$CHILD_SET_LOCK"; fm_secondmate_liveness_unlock "$ID"' EXIT
+OWN_PREPARING=0
+cleanup() {
+  # Only our unconfirmed preparation is safe to roll back: nothing stopped.
+  if [ "$OWN_PREPARING" = 1 ] && [ "${PERSISTED:-0}" = 0 ]; then
+    rm -f "$RECORD"
+  fi
+  [ -z "$CHILD_SET_LOCK" ] || fm_lock_release "$CHILD_SET_LOCK"
+  fm_secondmate_liveness_unlock "$ID"
+}
+trap cleanup EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
 validate_identity
 PERSISTED=0 CORR='' MODE=fresh RESUME_HARNESS='' REF=''
 SPAWN_GEN=$(fm_meta_get "$META" spawn_gen)
@@ -109,9 +121,25 @@ check_idle() {
   pending=$(fm_task_inbox_oldest_unhandled "$STATE" "$ID" 2>/dev/null) || pending=''
   [ -z "$pending" ] || { echo "error: secondmate has an incoming instruction: $pending" >&2; return 1; }
 }
+ring_pending() {
+  local pending
+  pending=$(fm_task_inbox_oldest_unhandled "$STATE" "$ID" 2>/dev/null) || pending=''
+  if [ -n "$pending" ]; then
+    fm_task_inbox_ring "$(fm_backend_of_meta "$META")" "$(fm_backend_target_of_meta "$META")" "$pending" "fm-$ID" || true
+  fi
+}
 if [ "$ACTION" = unpark ]; then
   if ! fm_secondmate_park_present "$STATE" "$ID"; then printf '%s: already unparked\n' "$ID"; exit 0; fi
   read_record
+  if [ "$(fm_meta_get "$RECORD" phase)" = preparing ] && [ "$PERSISTED" = 0 ]; then
+    # Acquiring the park lock proves the previous preparation no longer owns
+    # it. It never stopped the mate; restore normal delivery, including after
+    # SIGKILL or a parent restart where an EXIT trap could not run.
+    rm -f "$RECORD" || fail 'cannot clear interrupted persist preparation'
+    report 'interrupted park cancelled; normal delivery restored' || exit 1
+    ring_pending
+    exit 0
+  fi
   [ "$PERSISTED" = 1 ] || fail 'park persistence was not confirmed; retry park before waking'
   if [ "$(fm_meta_get "$RECORD" phase)" = waking ]; then
     current_state=$(fm_backend_agent_state "$(fm_backend_of_meta "$META")" "$(fm_backend_target_of_meta "$META")") || current_state=unreadable
@@ -121,19 +149,23 @@ if [ "$ACTION" = unpark ]; then
       report "$ACTION reconciled after interrupted wake"
       exit $?
     fi
-    case "$current_state" in dead) write_record parked || fail 'cannot retry wake' ;; *) fail "interrupted wake has endpoint state $current_state; keep inbox and reconcile before retry" ;; esac
+    case "$current_state" in dead|missing) write_record parked || fail 'cannot retry wake' ;; *) fail "interrupted wake has endpoint state $current_state; keep inbox and reconcile before retry" ;; esac
   fi
   [ "$(fm_meta_get "$RECORD" phase)" = parked ] || fail 'park did not finish; retry park to finish stopping before waking'
   write_record waking || fail 'cannot record wake'
-  if "$SCRIPT_DIR/fm-spawn.sh" "$ID" --relaunch; then
+  backend=$(fm_backend_of_meta "$META")
+  current_state=$(fm_backend_agent_state "$backend" "$(fm_backend_target_of_meta "$META")") || current_state=unreadable
+  case "$current_state" in
+    dead) spawn_args=("$ID" --relaunch) ;;
+    missing) spawn_args=("$ID" "$MATE_HOME" --secondmate --backend "$backend" --harness "$RESUME_HARNESS") ;;
+    *) fail "parked endpoint state is $current_state; refusing duplicate launch" ;;
+  esac
+  if "$SCRIPT_DIR/fm-spawn.sh" "${spawn_args[@]}"; then
     rm -f "$RECORD" || fail 'agent launched but park record could not be cleared'
     report "$ACTION complete" || exit 1
     # An explicit unpark also delivers already queued work, including work whose
     # earlier automatic wake failed. No record is removed or rewritten here.
-    pending=$(fm_task_inbox_oldest_unhandled "$STATE" "$ID" 2>/dev/null) || pending=''
-    if [ -n "$pending" ]; then
-      fm_task_inbox_ring "$(fm_backend_of_meta "$META")" "$(fm_backend_target_of_meta "$META")" "$pending" "fm-$ID" || true
-    fi
+    ring_pending
     exit 0
   fi
   write_record parked || true
@@ -156,6 +188,7 @@ if [ "$PERSISTED" != 1 ]; then
   case "$POLL" in ''|0|*[!0-9]*) fail 'invalid persist poll' ;; esac
   REQUEST="I am about to park your agent. Before that, $FM_PERSIST_OPEN_RECORDS_CONTRACT Then acknowledge this instruction in your durable inbox and reply on your parent channel saying it is done, or saying what you deliberately left alone and why."
   CORR=$(fm_pending_reply_create "$FM_HOME" "$STATE" "$ID" "$REQUEST") || fail 'cannot track persist answer'
+  OWN_PREPARING=1
   write_record preparing || fail 'cannot record persist preparation'
   if ! FM_PENDING_REPLY_EXISTING_CORR="$CORR" "$SCRIPT_DIR/fm-send.sh" "$ID" "$REQUEST"; then
     rm -f "$RECORD"

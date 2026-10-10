@@ -255,7 +255,10 @@ REMOTE_HOST=$(meta_value remote_host)
 
 if [ "$KIND" = secondmate ] && { [ -e "$STATE/.secondmate-park-$ID" ] || [ -L "$STATE/.secondmate-park-$ID" ]; }; then
   park_record="$STATE/.secondmate-park-$ID"
-  emit parked park-record "secondmate $(sed -n 's/^phase=//p' "$park_record"); session=$(sed -n 's/^resume_mode=//p' "$park_record")"
+  park_phase=$(sed -n 's/^phase=//p' "$park_record")
+  case "$park_phase" in
+    parking|parked) emit parked park-record "secondmate $park_phase; session=$(sed -n 's/^resume_mode=//p' "$park_record")" ;;
+  esac
 fi
 
 # A torn-down (or never-created) worktree has no current state to read. A

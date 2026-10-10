@@ -49,6 +49,10 @@ make_stub() {  # <case-dir>
 set -u
 D=$FM_FAKE_DIR
 case "${1:-}" in
+  new-window)
+    printf 'fm-sm1\n' >> "$D/windows"
+    printf 'created\n' >> "$D/created"
+    printf '@42\n'; exit 0 ;;
   send-keys)
     shift
     literal=0
@@ -990,6 +994,75 @@ test_park_remote_refusal() {
   pass 'remote park refuses before lifecycle mutation'
 }
 
+test_park_missing_endpoint_respawns_same_session() {
+  local dir out rc
+  dir=$(new_case park-missing); add_park_mate "$dir"; arm_answer "$dir" sm1
+  printf 'exact-park-session\n' > "$dir/sm1-home/state/.lock-session"
+  out=$(run_park "$dir" sm1 park); rc=$?
+  expect_code 0 "$rc" "park before endpoint loss: $out"
+  : > "$dir/fake/windows"
+  out=$(env TMUX='' PATH="$dir/fakebin:$PATH" FM_HOME="$dir/home" FM_FAKE_DIR="$dir/fake" FM_SPAWN_NO_GUARD=1 FM_FAKE_CAPTURE_LAUNCH=1 \
+    "$ROOT/bin/fm-send.sh" sm1 'work after endpoint loss' 2>&1); rc=$?
+  expect_code 0 "$rc" "missing endpoint wake: $out"
+  assert_absent "$dir/home/state/.secondmate-park-sm1" "respawn clears marker: $out"
+  assert_grep 'created' "$dir/fake/created" 'missing endpoint uses the existing respawn owner'
+  assert_grep 'exact-park-session' "$dir/fake/replacement-launch" 'respawn preserves captured session reference'
+  assert_grep 'work after endpoint loss' "$dir/home/state/sm1.inbox/002.msg" 'respawn preserves queued work'
+  pass 'missing parked endpoint respawns into its home with the captured session and durable inbox'
+}
+
+test_park_interrupted_preparation_restores_delivery() {
+  local dir out rc phase
+  dir=$(new_case park-preparing); add_park_mate "$dir"
+  printf 'schema=1\nhome=%s\nphase=preparing\npersisted=0\npersist_corr=interrupted\nresume_mode=fresh\nresume_harness=claude\nresume_ref=\nspawn_gen=before\n' \
+    "$dir/sm1-home" > "$dir/home/state/.secondmate-park-sm1"
+  out=$(env PATH="$dir/fakebin:$PATH" FM_HOME="$dir/home" FM_FAKE_DIR="$dir/fake" FM_SPAWN_NO_GUARD=1 \
+    "$ROOT/bin/fm-send.sh" sm1 'work after interrupted preparation' 2>&1); rc=$?
+  expect_code 0 "$rc" "interrupted preparation wake: $out"
+  assert_absent "$dir/home/state/.secondmate-park-sm1" 'stale unconfirmed preparation is removed under lock'
+  assert_grep 'doorbell' "$dir/fake/rings" 'the still-running mate receives its inbox doorbell'
+  assert_grep 'work after interrupted preparation' "$dir/home/state/sm1.inbox/001.msg" 'recovery retains work'
+  assert_absent "$dir/fake/created" 'recovery does not duplicate a live mate'
+  assert_no_grep '^/exit$' "$dir/fake/literal" 'recovery does not stop a live mate'
+  for phase in preparing waking parking parked; do
+    printf 'phase=%s\nresume_mode=fresh\n' "$phase" > "$dir/home/state/.secondmate-park-sm1"
+    out=$(env PATH="$dir/fakebin:$PATH" FM_FAKE_DIR="$dir/fake" FM_CREW_STATE_META_OVERRIDE='' FM_CREW_STATE_STATUS_OVERRIDE='' \
+      FM_HOME="$dir/home" "$ROOT/bin/fm-crew-state.sh" sm1)
+    case "$phase" in
+      parking|parked) assert_contains "$out" 'state: parked' "$phase is stopped" ;;
+      *) assert_not_contains "$out" 'state: parked' "$phase is transitional, not stopped" ;;
+    esac
+  done
+  pass 'interrupted preparation restores delivery and transitional phases do not claim parked'
+}
+
+test_park_signal_cleans_unconfirmed_preparation() {
+  local dir out rc
+  dir=$(new_case park-signal); add_park_mate "$dir"
+  # The provider executes inside fm-send; its grandparent is the park command.
+  # Deliver TERM while park is synchronously waiting for its persist send.
+  cat > "$dir/fake/on-doorbell" <<'SH'
+#!/usr/bin/env bash
+pid=$PPID
+while [ "$pid" -gt 1 ]; do
+  command=$(ps -o command= -p "$pid")
+  case "$command" in *fm-secondmate-park.sh*) kill -TERM "$pid"; exit 0 ;; esac
+  pid=$(ps -o ppid= -p "$pid" | tr -d ' ')
+done
+exit 1
+SH
+  chmod +x "$dir/fake/on-doorbell"
+  out=$(run_park "$dir" sm1 park); rc=$?
+  expect_code 143 "$rc" "interrupted park must exit on TERM: $out"
+  assert_absent "$dir/home/state/.secondmate-park-sm1" 'TERM removes only unconfirmed preparation'
+  assert_present "$dir/home/state/sm1.inbox/001.msg" 'TERM preserves the persist instruction'
+  assert_no_grep '^/exit$' "$dir/fake/literal" 'TERM before persistence leaves the mate running'
+  pass 'TERM rolls back unconfirmed park preparation without discarding its instruction'
+}
+
+test_park_missing_endpoint_respawns_same_session
+test_park_interrupted_preparation_restores_delivery
+test_park_signal_cleans_unconfirmed_preparation
 test_park_persist_and_idle_gates
 test_park_wake_and_status
 test_park_remote_refusal

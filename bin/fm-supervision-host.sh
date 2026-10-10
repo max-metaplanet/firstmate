@@ -347,14 +347,14 @@ stop_recorded() {  # <pid> <identity> <seconds>
   local pid=$1 identity=$2 limit=$(( ${3:-10} * 10 )) i
   fm_pid_alive "$pid" || return 0
   [ -n "$identity" ] && [ "$(identity_of "$pid")" = "$identity" ] || return 0
-  kill -TERM "$pid" 2>/dev/null || return 1
+  kill -TERM "$pid" 2>/dev/null || ! fm_pid_alive "$pid" || return 1
   i=0
   while [ "$i" -lt "$limit" ] && fm_pid_alive "$pid"; do
     sleep 0.1
     i=$((i + 1))
   done
   if fm_pid_alive "$pid" && [ "$(identity_of "$pid")" = "$identity" ]; then
-    kill -KILL "$pid" 2>/dev/null || return 1
+    kill -KILL "$pid" 2>/dev/null || ! fm_pid_alive "$pid" || return 1
   fi
   return 0
 }

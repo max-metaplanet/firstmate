@@ -1576,7 +1576,7 @@ PARK_RESUME_MARKER=
 if { [ "$KIND" = secondmate ] || { [ "$RELAUNCH" = 1 ] && [ "$(fm_meta_get "$STATE/$ID.meta" kind)" = secondmate ]; }; } &&
   { [ -e "$STATE/.secondmate-park-$ID" ] || [ -L "$STATE/.secondmate-park-$ID" ]; }; then
   PARK_RESUME_MARKER="$STATE/.secondmate-park-$ID"
-  if [ "$RELAUNCH" != 1 ] || ! fm_secondmate_resume_load "$PARK_RESUME_MARKER" \
+  if ! fm_secondmate_resume_load "$PARK_RESUME_MARKER" \
     "$(fm_meta_get "$STATE/$ID.meta" home)" "$(fm_meta_get "$STATE/$ID.meta" harness)"; then
     echo "error: secondmate $ID is parked or has an invalid wake record; use bin/fm-secondmate-park.sh $ID unpark" >&2
     exit 1
