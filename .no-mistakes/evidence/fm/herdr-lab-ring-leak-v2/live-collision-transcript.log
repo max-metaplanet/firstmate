@@ -1,0 +1,11 @@
+lab session: fm-lab-collide-98534-29294
+lab pane: w1:p1
+== S1b: literal '-- echo FMCOLLIDE_98525_14764' + Enter to fm-lab-collide-98534-29294:w1:p1 with inherited default session+sockets, no lab marker
+literal rc=0
+key rc=0
+-- lab pane read-back:
+echo -- FMCOLLIDE_98525_14764
+> echo -- FMCOLLIDE_98525_14764
+-- FMCOLLIDE_98525_14764
+caller env still: HERDR_SESSION=default socket=herdr.sock client=herdr-client.sock
+teardown rc=0

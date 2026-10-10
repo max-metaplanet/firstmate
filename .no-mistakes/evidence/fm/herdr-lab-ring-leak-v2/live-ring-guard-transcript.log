@@ -1,0 +1,20 @@
+lab session: fm-lab-ringguard-85072-1135
+lab pane: w1:p1 (pane ids like this also exist in the default session)
+== S1: ring lab target with inherited default session+sockets, no lab marker
+ring rc=3
+-- lab pane after ring:
+== S2: explicit lab marker, non-lab targets must be refused before any herdr call
+default:w-fmtest-none:p999 ring rc=2 herdr_calls=0 stderr=error: Herdr lab refuses session 'default': delivery requires a named fm-lab-* session
+default:w-fmtest-none:p999 literal rc=1 herdr_calls=0 stderr=error: Herdr lab refuses session 'default': delivery requires a named fm-lab-* session
+default:w-fmtest-none:p999 key rc=1 herdr_calls=0 stderr=error: Herdr lab refuses session 'default': delivery requires a named fm-lab-* session
+verdict=send-failed default:w-fmtest-none:p999 submit rc=1 herdr_calls=0 stderr=error: Herdr lab refuses session 'default': delivery requires a named fm-lab-* session
+real-fleet:w-fmtest-none:p999 ring rc=2 herdr_calls=0 stderr=error: Herdr lab refuses session 'real-fleet': delivery requires a named fm-lab-* session
+real-fleet:w-fmtest-none:p999 literal rc=1 herdr_calls=0 stderr=error: Herdr lab refuses session 'real-fleet': delivery requires a named fm-lab-* session
+real-fleet:w-fmtest-none:p999 key rc=1 herdr_calls=0 stderr=error: Herdr lab refuses session 'real-fleet': delivery requires a named fm-lab-* session
+verdict=send-failed real-fleet:w-fmtest-none:p999 submit rc=1 herdr_calls=0 stderr=error: Herdr lab refuses session 'real-fleet': delivery requires a named fm-lab-* session
+== S3: ambient lab HERDR_SESSION (no marker), default target refused
+ring rc=2 herdr_calls=0 stderr=error: Herdr lab refuses session 'default': delivery requires a named fm-lab-* session
+== S4: lab helper refuses default
+fm-herdr-lab: refusing session name 'default'
+helper rc=1
+teardown rc=0

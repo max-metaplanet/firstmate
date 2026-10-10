@@ -1,0 +1,9 @@
+Guard tripwire summary for the live run of tests/fm-herdr-submit-confirm-live-e2e.test.sh
+(run with inherited HERDR_SESSION=default, HERDR_SOCKET_PATH and HERDR_CLIENT_SOCKET_PATH pointing at the default server's sockets).
+The raw per-call log was truncated when the next scenario reused the file. The counts below were captured before that happened.
+  318 ALLOW  (every call carried --session fm-lab-herdr-submit-con-35949-21155, with no socket env in the child)
+    1 ALLOW-VERSION (herdr --version)
+    0 REFUSE-SOCKET-LEAK
+    0 REFUSE-NONLAB
+All pane send-text, send-keys and run calls, including the three fm_task_inbox_ring doorbells
+(modal-entry, modal-command, non-modal), went to w1:p1 and w2:p1 in the lab session only.
