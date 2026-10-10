@@ -26,11 +26,10 @@ fm_herdr_cli_run() ( # <binary> <session> <arguments...>
   fm_herdr_cli_check_session "$session" || return 1
   local -a args=("$@")
   unset HERDR_SOCKET_PATH HERDR_CLIENT_SOCKET_PATH
-  export HERDR_SESSION="$session"
   for ((i = 0; i < ${#args[@]}; i++)); do
     [ "${args[i]}" = -- ] || continue
-    "$client" "${args[@]:0:i}" --session "$session" "${args[@]:i}"
+    HERDR_SESSION="$session" "$client" "${args[@]:0:i}" --session "$session" "${args[@]:i}"
     return
   done
-  "$client" "$@" --session "$session"
+  HERDR_SESSION="$session" "$client" "$@" --session "$session"
 )
