@@ -3042,6 +3042,55 @@ test_explicit_stop_retires_only_this_home_and_preserves_conversations() {
   pass "host: explicit stop is home-scoped, idempotent, and preserves conversations and durable data"
 }
 
+test_explicit_stop_retires_watcher_from_mate_code_root() {
+  local home other parent arm watcher other_watcher out rc identity
+  home=$(make_home lifecycle-mate-code attended)
+  other=$(make_home lifecycle-other-code attended)
+  # A seeded mate runs its own copy of bin/, while park invokes the parent's
+  # supervision stop. Exercise that real split rather than a path-only stub.
+  cp -R "$ROOT/bin" "$home/bin"
+  PATH="$home/fakebin:$PATH" FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" \
+    "$home/bin/fm-watch-arm.sh" > "$home/arm.out" 2>&1 &
+  arm=$!
+  printf '%s\n' "$arm" >> "$home/orphan-pid"
+  wait_until 300 grep -qs '^watcher: started pid=' "$home/arm.out" \
+    || fail "mate-code: watcher never armed: $(cat "$home/arm.out")"
+  watcher=$(cat "$home/state/.watch.lock/pid")
+  [ "$(cat "$home/state/.watch.lock/watcher-path")" = "$home/bin/fm-watch.sh" ] \
+    || fail 'fixture did not launch the watcher from the mate code root'
+  PATH="$other/fakebin:$PATH" FM_HOME="$other" FM_STATE_OVERRIDE="$other/state" \
+    "$ROOT/bin/fm-watch.sh" > "$other/watch.out" 2>&1 &
+  other_watcher=$!
+  wait_until 300 watcher_live "$other" || fail 'other-code: watcher never started'
+  parent="$TMP_ROOT/lifecycle-code-parent"
+  mkdir -p "$parent/state"
+  printf 'mate\n' > "$home/.fm-secondmate-home"
+  printf 'schema=fm-secondmate-parent.v1\nroute=local\nparent_home=%s\n' "$parent" > "$home/.fm-secondmate-parent"
+  : > "$parent/state/.secondmate-park-mate"
+  identity=$(cat "$home/state/.watch.lock/pid-identity")
+  printf '%s\n' "$other" > "$home/state/.watch.lock/fm-home"
+  FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" "$HOST" --stop >/dev/null 2>&1 || true
+  kill -0 "$watcher" 2>/dev/null || fail 'stop ignored the recorded home mismatch'
+  printf '%s\n' "$home" > "$home/state/.watch.lock/fm-home"
+  printf 'wrong-identity\n' > "$home/state/.watch.lock/pid-identity"
+  FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" "$HOST" --stop >/dev/null 2>&1 || true
+  kill -0 "$watcher" 2>/dev/null || fail 'stop ignored the recorded process identity mismatch'
+  printf '%s\n' "$identity" > "$home/state/.watch.lock/pid-identity"
+  out=$(FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" "$HOST" --stop 2>&1); rc=$?
+  expect_code 0 "$rc" "mate-code stop failed: $out"
+  assert_contains "$out" "watcher: stopped pid=$watcher" 'stop must identify the mate-code watcher'
+  ! kill -0 "$watcher" 2>/dev/null || fail 'mate-code watcher survived park stop'
+  wait "$arm" 2>/dev/null || true
+  cp -p "$home/state/.last-watcher-beat" "$home/stopped-beat"
+  sleep 2
+  [ ! "$home/state/.last-watcher-beat" -nt "$home/stopped-beat" ] || fail 'parked mate continued beating'
+  kill -0 "$other_watcher" 2>/dev/null || fail "stop reached another home's watcher"
+  FM_HOME="$other" FM_STATE_OVERRIDE="$other/state" "$HOST" --stop >/dev/null 2>&1 \
+    || fail 'other-code cleanup failed'
+  wait "$other_watcher" 2>/dev/null || true
+  pass 'host: park stop retires a watcher from the mate code root without touching another home'
+}
+
 test_explicit_stop_checks_recorded_identity_and_reaps_detached_arm() {
   local home unrelated arm identity out rc
   home=$(make_home lifecycle-records attended)
@@ -3114,6 +3163,7 @@ SH
   pass 'host: signal races accept a gone process and still refuse a live process'
 }
 
+test_explicit_stop_retires_watcher_from_mate_code_root
 test_stop_signal_race_accepts_only_a_gone_process
 test_claude_stop_hook_restores_handoff_when_successor_closed_before_exit_to_main
 test_claude_stop_hook_restores_handoff_when_successor_closed_mid_engine_turn

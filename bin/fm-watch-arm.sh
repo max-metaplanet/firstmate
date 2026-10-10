@@ -82,7 +82,9 @@
 # --stop: the same home-scoped stop without re-arming, for an owner that ends
 # its own supervision cycle on purpose (the supervision host's park boundary,
 # bin/fm-supervision-host.sh). The stopped watcher publishes downtime exactly
-# as any watcher close does; prints "watcher: stopped pid=<N>" or
+# as any watcher close does. Stop uses the lock's recorded code path, home and
+# process identity so a parent can stop a mate running its own copy of bin/;
+# the recorded path is never executed. It prints "watcher: stopped pid=<N>" or
 # "watcher: none running" and exits 0, or exits 1 when the watcher outlived
 # the stop.
 #
@@ -520,10 +522,17 @@ fi
 # holder and no-opping. Sets STOPPED_PID to the pid it stopped.
 STOPPED_PID=
 stop_home_watcher() {
-  local lock_pid i
+  local lock_pid watch_path=$WATCH i
   lock_pid=$(cat "$WATCH_LOCK/pid" 2>/dev/null || true)
   fm_pid_alive "$lock_pid" || return 0
-  if fm_watcher_lock_matches_pid "$STATE" "$WATCH" "$lock_pid" "$FM_HOME"; then
+  if [ "$mode" = stop ]; then
+    # Explicit lifecycle stop belongs to the home, even when its watcher was
+    # launched from another checkout. Keep the recorded home and full process
+    # identity checks; use the path only as identity data, never as a command.
+    watch_path=$(cat "$WATCH_LOCK/watcher-path" 2>/dev/null || true)
+    [ -n "$watch_path" ] || { echo 'watcher: FAILED - live watcher has no recorded code path' >&2; return 1; }
+  fi
+  if fm_watcher_lock_matches_pid "$STATE" "$watch_path" "$lock_pid" "$FM_HOME"; then
     kill -TERM "$lock_pid" 2>/dev/null || true
     i=0
     while [ "$i" -lt 50 ] && fm_pid_alive "$lock_pid"; do
