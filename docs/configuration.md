@@ -794,7 +794,7 @@ An explicit harness argument to `fm-spawn.sh` still overrides either config file
 An explicit `--model` or `--effort` overrides the matching token from `config/secondmate-harness`; for a local route, an explicit harness or raw launch command starts with clean model and effort defaults unless those flags are also passed.
 
 Remote secondmate routes accept verified harness adapters only and reject raw launch commands.
-When `config/crew-dispatch.json` exists, crewmate and scout spawns require an explicit resolved harness instead of automatically falling back to `config/crew-harness`.
+When `config/crew-dispatch.json` exists, crewmate and scout spawns require an explicit resolved harness instead of automatically falling back to `config/crew-harness`, except for the "Automatic profile application" pilot under [typed dispatch resolution](#typed-dispatch-resolution-env-typesafe_api_key).
 
 The inherited-local-material contract is owned by [`secondmate-provisioning`](../.agents/skills/secondmate-provisioning/SKILL.md); its harness-relevant consequence is that a secondmate's own crewmates use the primary's dispatch profiles and static harness value.
 Those inherited values are defaults and rules only; `fm-spawn` still permits a consciously chosen explicit runtime outside the config.
@@ -1116,9 +1116,9 @@ The resolver supplies the fixed neutral Choice option `No listed rule applies to
 
 - `approval` accepts only `"captain"` and means a task the rule matches is never dispatched from the tool's answer alone.
 - `path_force` accepts only `"deployment-config"` and marks the one rule that deployment-configuration work belongs to, so [typed dispatch resolution](#typed-dispatch-resolution-env-typesafe_api_key) can route that work by a path fact instead of by rule wording.
-- `auto_apply` accepts only a boolean and opts a rule into [`fm-spawn.sh`'s automatic profile application](#automatic-profile-application-fm-spawnsh) below: a `clear` resolver result for a rule that declares `"auto_apply": true` is applied to an ordinary spawn instead of the usual explicit-harness backstop. Every other rule, and a rule with `auto_apply` absent or `false`, is unaffected and keeps today's backstop At most one rule may declare `"auto_apply": true`; more than one is a malformed rules file, so the resolver reports it and nothing is auto-applied.
 - At most one rule may declare it, and the resolver finds that rule by the declaration rather than by its position, so homes whose rules sit in a different order route identically.
 - Path forcing does nothing until some rule declares `path_force`: a home that declares it on no rule keeps today's routing, and every brief, including one whose declared paths name deployment configuration, still goes to Jev.
+- `auto_apply` accepts only a boolean and opts a rule into `fm-spawn.sh`'s "Automatic profile application" under [typed dispatch resolution](#typed-dispatch-resolution-env-typesafe_api_key): a `clear` resolver result for a rule that declares `"auto_apply": true` is applied to an ordinary spawn instead of the usual explicit-harness backstop. Every other rule, and a rule with `auto_apply` absent or `false`, is unaffected and keeps today's backstop. At most one rule may declare `"auto_apply": true`; more than one is a malformed rules file, so the resolver reports it and nothing is auto-applied.
 
 `min_confidence` is a number from 0 through 1.
 The rule's own probability in the answer must reach it, replacing the resolver's global 0.6 floor on the answer's confidence.
@@ -1170,7 +1170,7 @@ See [`docs/examples/crew-dispatch.json`](examples/crew-dispatch.json) for a star
 - Malformed JSON, malformed rules, an empty or malformed profile array, an unverified harness, or an effort value unsupported by that harness is reported as `CREW_DISPATCH: invalid config/crew-dispatch.json - ...`.
 - While typed resolution is active, malformed `approval`, `min_confidence`, `path_force`, `floor`, and present `provider` declarations receive the same diagnostic; without the key those inert declarations preserve the pre-existing bootstrap behavior.
 - Missing `jq` is reported through the normal `MISSING: jq` install-consent flow.
-- While the file remains present, no crewmate or scout spawn may proceed without an explicit resolved harness; malformed configuration must be reported and corrected rather than selected around.
+- While the file remains present, no crewmate or scout spawn may proceed without an explicit resolved harness, apart from a `clear` "Automatic profile application" result (see [typed dispatch resolution](#typed-dispatch-resolution-env-typesafe_api_key)); malformed configuration must be reported and corrected rather than selected around.
 
 **Inheritance**
 
