@@ -19,6 +19,9 @@
 #   unverified  - the endpoint is recorded under a session this home does not
 #                 own, so probing is not authorized
 #
+# A durable park record suppresses endpoint probing in both modes; its owner
+# is bin/fm-secondmate-park.sh. Unparked mates retain the rules below.
+#
 # Only `dead` and `missing` are recovery-authorizing states: they prove the
 # agent is not running, so relaunching cannot produce a duplicate endpoint.
 # `ambiguous`, `unreadable`, and `unverified` leave the endpoint untouched -
@@ -56,6 +59,8 @@ FM_SM_LIVE_LIB_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 . "$FM_SM_LIVE_LIB_DIR/fm-backend.sh"
 # shellcheck source=bin/fm-remote-readiness-lib.sh
 . "$FM_SM_LIVE_LIB_DIR/fm-remote-readiness-lib.sh"
+# shellcheck source=bin/fm-secondmate-park-lib.sh
+. "$FM_SM_LIVE_LIB_DIR/fm-secondmate-park-lib.sh"
 # shellcheck source=bin/fm-timeout-lib.sh
 . "$FM_SM_LIVE_LIB_DIR/fm-timeout-lib.sh"
 
@@ -133,6 +138,10 @@ fm_secondmate_liveness_probe() {  # <meta> <id> <full|poll>
   local meta=$1 id=$2 mode=$3
   FM_SM_LIVE_STATUS=skipped FM_SM_LIVE_STATE=unknown FM_SM_LIVE_KILL=0
   FM_SM_LIVE_CAUSE='' FM_SM_LIVE_WHERE='' FM_SM_LIVE_REASON='' FM_SM_LIVE_LINE=''
+  if fm_secondmate_park_present "${meta%/*}" "$id"; then
+    FM_SM_LIVE_STATUS=silent FM_SM_LIVE_STATE=parked
+    return 0
+  fi
   local window harness remote_host remote_rc out agent_state readiness_reason route_out remote_backend
   window=$(fm_meta_get "$meta" window)
   [ -n "$window" ] || { FM_SM_LIVE_STATUS=silent; return 0; }

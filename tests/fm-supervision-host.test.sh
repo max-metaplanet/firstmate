@@ -3003,6 +3003,168 @@ test_superseded_host_leaves_the_owner_untouched() {
   pass "host: a host under a superseded auto-arm generation stands down without touching the owner"
 }
 
+test_explicit_stop_retires_only_this_home_and_preserves_conversations() {
+  local home other parent pid watcher other_pid out rc
+  home=$(make_home lifecycle-stop away)
+  other=$(make_home lifecycle-other away)
+  start_host "$home"
+  start_host "$other"
+  wait_until 150 watcher_live "$home" || fail "stop: first host never armed"
+  wait_until 150 watcher_live "$other" || fail "stop: second host never armed"
+  pid=$(awk -F '\t' '$1 == "host" { print $2; exit }' "$home/state/.supervision-host")
+  watcher=$(cat "$home/state/.watch.lock/pid")
+  other_pid=$(awk -F '\t' '$1 == "host" { print $2; exit }' "$other/state/.supervision-host")
+  printf 'session=keep-this-conversation\n' > "$home/state/.supervision-host-engine"
+  printf 'working: keep-this-inbox\n' > "$home/state/lifecycle-inbox"
+  parent="$TMP_ROOT/lifecycle-parent"
+  mkdir -p "$parent/state"
+  printf 'mate\n' > "$home/.fm-secondmate-home"
+  printf 'schema=fm-secondmate-parent.v1\nroute=local\nparent_home=%s\n' "$parent" > "$home/.fm-secondmate-parent"
+  : > "$parent/state/.secondmate-park-mate"
+  out=$(FM_HOME="$home" "$HOST" --stop 2>&1); rc=$?
+  expect_code 0 "$rc" "home stop must succeed: $out"
+  wait_until 150 host_exited "$home" || fail "stop: host did not exit"
+  ! kill -0 "$pid" 2>/dev/null || fail "stop: host survived"
+  ! kill -0 "$watcher" 2>/dev/null || fail "stop: watcher survived"
+  [ ! -e "$home/state/.supervision-host" ] || fail "stop: host record survived"
+  assert_grep 'session=keep-this-conversation' "$home/state/.supervision-host-engine" "stop removed engine conversation"
+  assert_grep 'working: keep-this-inbox' "$home/state/lifecycle-inbox" "stop removed durable data"
+  kill -0 "$other_pid" 2>/dev/null || fail "stop touched another home's host"
+  watcher_live "$other" || fail "stop touched another home's watcher"
+  out=$(FM_HOME="$home" "$HOST" --stop 2>&1); rc=$?
+  expect_code 0 "$rc" "repeated home stop must succeed: $out"
+  rm -f "$home/host.rc"
+  start_host "$home"
+  wait_until 150 host_exited "$home" || fail "parked home started a new host"
+  assert_grep 'supervision-host stood down:' "$home/host.out" "parked host did not stand down"
+  watcher_live "$home" && fail "parked home rearmed its watcher"
+  FM_HOME="$other" "$HOST" --stop >/dev/null 2>&1 || fail "stop: second home cleanup failed"
+  pass "host: explicit stop is home-scoped, idempotent, and preserves conversations and durable data"
+}
+
+test_explicit_stop_retires_watcher_from_mate_code_root() {
+  local home other parent arm watcher other_watcher out rc identity
+  home=$(make_home lifecycle-mate-code attended)
+  other=$(make_home lifecycle-other-code attended)
+  # A seeded mate runs its own copy of bin/, while park invokes the parent's
+  # supervision stop. Exercise that real split rather than a path-only stub.
+  cp -R "$ROOT/bin" "$home/bin"
+  PATH="$home/fakebin:$PATH" FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" \
+    "$home/bin/fm-watch-arm.sh" > "$home/arm.out" 2>&1 &
+  arm=$!
+  printf '%s\n' "$arm" >> "$home/orphan-pid"
+  wait_until 300 grep -qs '^watcher: started pid=' "$home/arm.out" \
+    || fail "mate-code: watcher never armed: $(cat "$home/arm.out")"
+  watcher=$(cat "$home/state/.watch.lock/pid")
+  [ "$(cat "$home/state/.watch.lock/watcher-path")" = "$home/bin/fm-watch.sh" ] \
+    || fail 'fixture did not launch the watcher from the mate code root'
+  PATH="$other/fakebin:$PATH" FM_HOME="$other" FM_STATE_OVERRIDE="$other/state" \
+    "$ROOT/bin/fm-watch.sh" > "$other/watch.out" 2>&1 &
+  other_watcher=$!
+  wait_until 300 watcher_live "$other" || fail 'other-code: watcher never started'
+  parent="$TMP_ROOT/lifecycle-code-parent"
+  mkdir -p "$parent/state"
+  printf 'mate\n' > "$home/.fm-secondmate-home"
+  printf 'schema=fm-secondmate-parent.v1\nroute=local\nparent_home=%s\n' "$parent" > "$home/.fm-secondmate-parent"
+  : > "$parent/state/.secondmate-park-mate"
+  identity=$(cat "$home/state/.watch.lock/pid-identity")
+  printf '%s\n' "$other" > "$home/state/.watch.lock/fm-home"
+  FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" "$HOST" --stop >/dev/null 2>&1 || true
+  kill -0 "$watcher" 2>/dev/null || fail 'stop ignored the recorded home mismatch'
+  printf '%s\n' "$home" > "$home/state/.watch.lock/fm-home"
+  printf 'wrong-identity\n' > "$home/state/.watch.lock/pid-identity"
+  FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" "$HOST" --stop >/dev/null 2>&1 || true
+  kill -0 "$watcher" 2>/dev/null || fail 'stop ignored the recorded process identity mismatch'
+  printf '%s\n' "$identity" > "$home/state/.watch.lock/pid-identity"
+  out=$(FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" "$HOST" --stop 2>&1); rc=$?
+  expect_code 0 "$rc" "mate-code stop failed: $out"
+  assert_contains "$out" "watcher: stopped pid=$watcher" 'stop must identify the mate-code watcher'
+  ! kill -0 "$watcher" 2>/dev/null || fail 'mate-code watcher survived park stop'
+  wait "$arm" 2>/dev/null || true
+  cp -p "$home/state/.last-watcher-beat" "$home/stopped-beat"
+  sleep 2
+  [ ! "$home/state/.last-watcher-beat" -nt "$home/stopped-beat" ] || fail 'parked mate continued beating'
+  kill -0 "$other_watcher" 2>/dev/null || fail "stop reached another home's watcher"
+  FM_HOME="$other" FM_STATE_OVERRIDE="$other/state" "$HOST" --stop >/dev/null 2>&1 \
+    || fail 'other-code cleanup failed'
+  wait "$other_watcher" 2>/dev/null || true
+  pass 'host: park stop retires a watcher from the mate code root without touching another home'
+}
+
+test_explicit_stop_checks_recorded_identity_and_reaps_detached_arm() {
+  local home unrelated arm identity out rc
+  home=$(make_home lifecycle-records attended)
+  sleep 120 &
+  unrelated=$!
+  printf '%s\n' "$unrelated" >> "$home/orphan-pid"
+  sleep 120 &
+  arm=$!
+  printf '%s\n' "$arm" >> "$home/orphan-pid"
+  identity=$(FM_HOME="$home" bash -c '. "$1/fm-wake-lib.sh"; . "$1/fm-supervision-engine-lib.sh"; _fm_engine_identity "$2"' _ \
+    "$ROOT/bin" "$arm")
+  [ -n "$identity" ] || fail "stop fixture: no process identity"
+  printf 'host\t%s\twrong-identity\narm\t%s\twrong-identity\n' "$unrelated" "$unrelated" > "$home/state/.supervision-host"
+  printf '%s\t%s\n' "$arm" "$identity" > "$home/state/.supervision-host-left"
+  out=$(FM_HOME="$home" "$HOST" --stop 2>&1); rc=$?
+  expect_code 0 "$rc" "stale-record stop must succeed: $out"
+  kill -0 "$unrelated" 2>/dev/null || fail "stop killed a process with mismatched identity"
+  ! kill -0 "$arm" 2>/dev/null || fail "stop left a recorded detached arm running"
+  [ ! -e "$home/state/.supervision-host-left" ] || fail "stop retained detached arm record"
+  kill -TERM "$unrelated" 2>/dev/null || true
+  wait "$unrelated" "$arm" 2>/dev/null || true
+  pass "host: explicit stop guards process identities and stops a detached successor arm"
+}
+
+
+test_stop_signal_race_accepts_only_a_gone_process() {
+  local home pid identity mode out rc
+  for mode in TERM KILL denied; do
+    home=$(make_home "stop-race-$mode" attended)
+    sleep 120 &
+    pid=$!
+    printf '%s\n' "$pid" >> "$home/orphan-pid"
+    identity=$(bash -c '. "$1/fm-wake-lib.sh"; . "$1/fm-supervision-engine-lib.sh"; _fm_engine_identity "$2"' _ "$ROOT/bin" "$pid")
+    printf 'host\t%s\t%s\n' "$pid" "$identity" > "$home/state/.supervision-host"
+    # Model ESRCH after the identity check through the shell's signal interface.
+    # A denied signal leaves the real process alive and must still refuse.
+    cat > "$home/race-env" <<'SH'
+kill() {
+  if [ "${2:-}" = "$FM_RACE_PID" ]; then
+    case "$1:$FM_RACE_MODE" in
+      -TERM:denied) return 1 ;;
+      -TERM:KILL) return 0 ;;
+      -TERM:TERM|-KILL:KILL)
+        builtin kill -KILL "$FM_RACE_PID" || return 1
+        while builtin kill -0 "$FM_RACE_PID" 2>/dev/null; do /bin/sleep 0.01; done
+        printf '%s\n' "$1" >> "$FM_HOME/signal-race"
+        return 1 ;;
+    esac
+  fi
+  builtin kill "$@"
+}
+sleep() {
+  [ "${1:-}" != 0.1 ] || return 0
+  command sleep "$@"
+}
+SH
+    out=$(FM_HOME="$home" BASH_ENV="$home/race-env" FM_RACE_PID="$pid" FM_RACE_MODE="$mode" bash "$HOST" --stop 2>&1); rc=$?
+    if [ "$mode" = denied ]; then
+      expect_code 1 "$rc" "a failed signal to a live process must refuse: $out"
+      kill -0 "$pid" 2>/dev/null || fail 'denied signal fixture lost its live process'
+      assert_present "$home/state/.supervision-host" 'failed stop retains its ownership record'
+      kill -TERM "$pid"
+    else
+      expect_code 0 "$rc" "a process gone during $mode must not fail stop: $out"
+      assert_grep "-$mode" "$home/signal-race" 'the intended signal failure was exercised'
+      assert_absent "$home/state/.supervision-host" 'successful stop clears its ownership record'
+    fi
+    wait "$pid" 2>/dev/null || true
+  done
+  pass 'host: signal races accept a gone process and still refuse a live process'
+}
+
+test_explicit_stop_retires_watcher_from_mate_code_root
+test_stop_signal_race_accepts_only_a_gone_process
 test_claude_stop_hook_restores_handoff_when_successor_closed_before_exit_to_main
 test_claude_stop_hook_restores_handoff_when_successor_closed_mid_engine_turn
 test_claude_stop_hook_notifies_when_closed_successor_downtime_restore_fails
@@ -3080,3 +3242,6 @@ test_unchanged_held_outcome_reaches_the_captain_once_until_a_new_event
 test_unverified_engine_hands_every_away_wake_to_main
 test_host_outside_the_lock_owner_stands_down
 test_superseded_host_leaves_the_owner_untouched
+
+test_explicit_stop_retires_only_this_home_and_preserves_conversations
+test_explicit_stop_checks_recorded_identity_and_reaps_detached_arm
