@@ -197,9 +197,9 @@ test_normal_tier_shares_one_budget() {
 # runners and about 35 minutes on the slow runners that cancelled serial 2 at
 # the old 30-minute bound, so no partition of the lane fits the normal tier.
 # Like the Herdr lane, the shard-run step owns a tighter tripwire under that
-# bound, so a wedged shard fails with its output while the always() timing
-# upload still runs; a cancelled job uploads no artifact, which is how the
-# stale weight hints stayed invisible.
+# bound, so a wedged shard fails the step with its captured log output rather
+# than cancelling the job. The timing JSON is written only after every script
+# finishes, so a timed-out shard still uploads no timing artifact.
 test_serial_tier_keeps_a_step_tripwire_under_a_job_backstop() {
   local normal serial step
   # shellcheck disable=SC2086

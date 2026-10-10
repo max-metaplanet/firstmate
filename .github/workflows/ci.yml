@@ -233,10 +233,10 @@ jobs:
       - name: Run portable serial shard ${{ matrix.shard }}
         id: run-portable-serial-shard
         # Step tripwire under the job bound, as the Herdr lane does: a wedged
-        # shard fails here with its output while the always() timing upload
-        # below still runs, instead of being cancelled at the job cap with no
-        # artifact. Every cancelled serial 2 job lost its timing artifact that
-        # way, which is what let the stale weight hints go unnoticed.
+        # shard fails here with its captured log output instead of being
+        # cancelled at the job cap. The timing JSON is written only after
+        # every script finishes, so a killed step still uploads no timing
+        # artifact.
         timeout-minutes: 40
         env:
           # job-total rather than a literal, so shrinking or growing the matrix
