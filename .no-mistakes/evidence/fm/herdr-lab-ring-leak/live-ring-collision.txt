@@ -1,0 +1,39 @@
+== Two real Herdr labs, both with pane w1:p1: A=fm-lab-ringA-15426-1849 B=fm-lab-ringB-15436-18218
+== Caller env simulates a worker whose inherited Herdr socket is NOT the target's (points at B)
+
+### BASE commit 0c4dc4a6: ring target fm-lab-ringA-15426-1849:w1:p1
+ring rc=3 (code=/tmp/fm-ring-base target=fm-lab-ringA-15426-1849:w1:p1 ambient HERDR_SESSION=fm-lab-ringB-15436-18218 socket=/Users/max/.config/herdr/sessions/fm-lab-ringB-15436-18218/herdr.sock)
+-- lab A pane w1:p1 (target) contains basering?
+0
+-- lab B pane w1:p1 (bystander) contains basering?
+0
+
+### FIX commit a8a5d24d: ring target fm-lab-ringA-15426-1849:w1:p1
+ring rc=3 (code=/Users/max/.no-mistakes/worktrees/61c6dd39b831/01M4HWTQXJ1PDYWY9XSYWN63F5 target=fm-lab-ringA-15426-1849:w1:p1 ambient HERDR_SESSION=fm-lab-ringB-15436-18218 socket=/Users/max/.config/herdr/sessions/fm-lab-ringB-15436-18218/herdr.sock)
+-- lab A pane w1:p1 (target) contains fixring?
+0
+-- lab B pane w1:p1 (bystander) contains fixring?
+0
+
+== pane A tail:
+/private/tmp  v24.13.0  v3.14.3
+>
+== pane B tail:
+/private/tmp  v24.13.0  v3.14.3
+>
+
+######## Literal-delivery primitive (agent-free panes make the ring stop at rc=3 dead/missing before typing)
+### BASE 0c4dc4a6
+send_literal rc=0 (target=fm-lab-ringA-15426-1849:w1:p1 ambient HERDR_SESSION=fm-lab-ringB-15436-18218 socket=fm-lab-ringB-15436-18218/herdr.sock)
+-- target A has BASEWORD: 1   bystander B has BASEWORD: 0
+### FIX a8a5d24d
+send_literal rc=0 (target=fm-lab-ringA-15426-1849:w1:p1 ambient HERDR_SESSION=fm-lab-ringB-15436-18218 socket=fm-lab-ringB-15436-18218/herdr.sock)
+-- target A has FIXWORD: 1   bystander B has FIXWORD: 0
+== pane A:
+/private/tmp  v24.13.0  v3.14.3
+> BASEWORDFIXWORD
+== pane B:
+/private/tmp  v24.13.0  v3.14.3
+>
+teardown fm-lab-ringA-15426-1849 rc=0
+teardown fm-lab-ringB-15436-18218 rc=0

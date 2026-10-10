@@ -1,0 +1,46 @@
+### Real herdr 0.9.1, lab context, non-lab target session 'fm-victim-nolab' (nonexistent, so a guard failure would be harmless)
+-- explicit marker (FM_HERDR_LAB=fm-lab-ringA-15426-1849):
+error: Herdr lab refuses session 'fm-victim-nolab': delivery requires a named fm-lab-* session
+ring rc=2 target=fm-victim-nolab:w1:p1 FM_HERDR_LAB=fm-lab-ringA-15426-1849 HERDR_SESSION=
+-- ambient marker (HERDR_SESSION=fm-lab-ringA-15426-1849):
+error: Herdr lab refuses session 'fm-victim-nolab': delivery requires a named fm-lab-* session
+ring rc=2 target=fm-victim-nolab:w1:p1 FM_HERDR_LAB= HERDR_SESSION=fm-lab-ringA-15426-1849
+-- explicit marker (FM_HERDR_LAB=fm-lab-ringA-15426-1849):
+error: Herdr lab refuses session 'fm-victim-nolab': delivery requires a named fm-lab-* session
+literal rc=1 target=fm-victim-nolab:w1:p1 FM_HERDR_LAB=fm-lab-ringA-15426-1849 HERDR_SESSION=
+-- ambient marker (HERDR_SESSION=fm-lab-ringA-15426-1849):
+error: Herdr lab refuses session 'fm-victim-nolab': delivery requires a named fm-lab-* session
+literal rc=1 target=fm-victim-nolab:w1:p1 FM_HERDR_LAB= HERDR_SESSION=fm-lab-ringA-15426-1849
+-- explicit marker (FM_HERDR_LAB=fm-lab-ringA-15426-1849):
+error: Herdr lab refuses session 'fm-victim-nolab': delivery requires a named fm-lab-* session
+error: Herdr lab refuses session 'fm-victim-nolab': delivery requires a named fm-lab-* session
+verdict=send-failed
+submit rc=0 target=fm-victim-nolab:w1:p1 FM_HERDR_LAB=fm-lab-ringA-15426-1849 HERDR_SESSION=
+-- ambient marker (HERDR_SESSION=fm-lab-ringA-15426-1849):
+error: Herdr lab refuses session 'fm-victim-nolab': delivery requires a named fm-lab-* session
+error: Herdr lab refuses session 'fm-victim-nolab': delivery requires a named fm-lab-* session
+verdict=send-failed
+submit rc=0 target=fm-victim-nolab:w1:p1 FM_HERDR_LAB= HERDR_SESSION=fm-lab-ringA-15426-1849
+
+### Target session 'default' with a never-forwarding recording herdr shim on PATH (proves no herdr call is attempted)
+error: Herdr lab refuses session 'default': delivery requires a named fm-lab-* session
+ring rc=2 target=default:w1:p1 FM_HERDR_LAB=fm-lab-ringA-15426-1849 HERDR_SESSION=
+error: Herdr lab refuses session 'default': delivery requires a named fm-lab-* session
+ring rc=2 target=default:w1:p1 FM_HERDR_LAB= HERDR_SESSION=fm-lab-ringA-15426-1849
+error: Herdr lab refuses session 'default': delivery requires a named fm-lab-* session
+literal rc=1 target=default:w1:p1 FM_HERDR_LAB=fm-lab-ringA-15426-1849 HERDR_SESSION=
+error: Herdr lab refuses session 'default': delivery requires a named fm-lab-* session
+literal rc=1 target=default:w1:p1 FM_HERDR_LAB= HERDR_SESSION=fm-lab-ringA-15426-1849
+error: Herdr lab refuses session 'default': delivery requires a named fm-lab-* session
+error: Herdr lab refuses session 'default': delivery requires a named fm-lab-* session
+verdict=send-failed
+submit rc=0 target=default:w1:p1 FM_HERDR_LAB=fm-lab-ringA-15426-1849 HERDR_SESSION=
+error: Herdr lab refuses session 'default': delivery requires a named fm-lab-* session
+error: Herdr lab refuses session 'default': delivery requires a named fm-lab-* session
+verdict=send-failed
+submit rc=0 target=default:w1:p1 FM_HERDR_LAB= HERDR_SESSION=fm-lab-ringA-15426-1849
+-- herdr invocations recorded by shim: 0
+
+### Lab helper run against default is refused
+fm-herdr-lab: refusing session name 'default'
+rc=1
