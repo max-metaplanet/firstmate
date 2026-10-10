@@ -72,6 +72,7 @@ fm_sm_live_require_locks
 fm_lock_acquire_wait "$STATE/.secondmate-liveness-$ID.lock"
 CHILD_SET_LOCK=''
 OWN_PREPARING=0
+# shellcheck disable=SC2329 # Invoked by the EXIT and signal traps below.
 cleanup() {
   # Only our unconfirmed preparation is safe to roll back: nothing stopped.
   if [ "$OWN_PREPARING" = 1 ] && [ "${PERSISTED:-0}" = 0 ]; then
