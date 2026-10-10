@@ -33,10 +33,17 @@ document:
 commands:
   lint: 'bin/fm-lint.sh'
 
+# Trusted Test-step policy. The scope paragraph keeps local validation targeted so
+# the step finishes inside its time limit; the firstmate-coding-guidelines skill
+# owns the rationale, and CI still runs every suite.
 # Publish each run's test evidence to the orphan no-mistakes/evidence branch linked from the PR.
 # The evidence is not committed to the feature or default branch.
 test:
   instructions: |
+    Choose and run the colocated tests in tests/ that cover the changed paths and their direct consumers, and run a live lab scenario only when the change alters live lifecycle behavior, through the guarded lab helpers described below.
+    Do not run the full suite families, and do not re-run slow suites that CI already covers (tests/fm-supervision-host.test.sh alone takes 22-30 minutes).
+    Finish well inside this step's time limit and report your verdict on the targeted and live checks you ran.
+
     Run live Herdr scenarios only through bin/fm-herdr-lab.sh with a named non-default fm-lab-* session, following that helper's prepare, provision, run, and teardown contract exactly.
     Never touch the live default Herdr session or fleet panes.
     Prefer a throwaway lab for spawn, long-launch, and Claude-path proofs, and tear it down in the same evidence turn.
