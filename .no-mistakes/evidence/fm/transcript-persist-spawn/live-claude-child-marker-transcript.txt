@@ -1,0 +1,40 @@
+# Lab tmux server global env carries no CLAUDE_CODE_CHILD_SESSION; each session gets -e CLAUDE_CODE_CHILD_SESSION=1 (inherited marker, as a lead-spawned worker pane has).
+# control command: claude
+# fixed command:   env -u CLAUDE_CODE_CHILD_SESSION CLAUDE_CODE_FORCE_SESSION_PERSISTENCE=1 claude   (the prefix fm-spawn.sh now stages for every fresh Claude launch)
+
+=== control pane
+ ▐▛███▛█   Claude Code v2.1.296
+▝▜██████▀  Opus 5.5 · Claude Team
+ ▝▝   ▝▝   ~/.no-mistakes/worktrees/61c6dd39b831/01M4KBC7HBGE4VMDMEN4FCRKM7
+❯ Reply with only the word LABPONG-control
+⏺ LABPONG-control
+✻ Crunched for 3s · done 1:09 PM
+seat-max2 5h 40% (1h 30m) · 7d 46%  │  others tightest seat-max 0% (3m old, stale)                                                                                                                  [-]
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ 
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⚠ Transcript saving is off — inherited CLAUDE_CODE_CHILD_SESSION marker · restart with CLAUDE_CODE_FORCE_SESSION_PERSISTENCE=1 to keep future transcripts
+  Opus 5.5 | ~/./w/6/01M4KBC7HBGE4VMDMEN4FCRKM7 [HEAD ✓] | 🔴41.9¢ 20.1s | ⚙️30 | ⚡100% | P10=E13=U17=J02:09:06
+  -- INSERT -- ⏵⏵ auto mode on (shift+tab to cycle)
+--- control claude process env (pid 2105):
+CLAUDE_CODE_CHILD_SESSION=1
+
+=== fixed pane
+ ▐▛███▛█   Claude Code v2.1.296
+▝▜██████▀  Opus 5.5 · Claude Team
+ ▝▝   ▝▝   ~/.no-mistakes/worktrees/61c6dd39b831/01M4KBC7HBGE4VMDMEN4FCRKM7
+❯ Reply with only the word LABPONG-fixed
+⏺ LABPONG-fixed
+✻ Baked for 3s · done 1:09 PM
+seat-max2 5h 40% (1h 30m) · 7d 46%  │  others tightest seat-max 0% (3m old, stale)                                                                                                                  [-]
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ 
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  Opus 5.5 | ~/./w/6/01M4KBC7HBGE4VMDMEN4FCRKM7 [HEAD ✓] | 🔴42.1¢ 18.9s | ⚙️27 | ⚡100% | P10=E13=U17=J02:09:07
+  -- INSERT -- ⏵⏵ auto mode on (shift+tab to cycle) · ← for agents
+--- fixed claude process env (pid 2120):
+CLAUDE_CODE_FORCE_SESSION_PERSISTENCE=1
+
+=== transcripts created during this run (seat projects dir):
+d9cd8ed0-d982-4a6b-8e20-e2f49f1dbf47.jsonl: contains LABPONG-fixed 
+(no transcript for LABPONG-control was written)
