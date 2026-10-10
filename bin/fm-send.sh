@@ -853,7 +853,7 @@ fm_send_wake_parked() {
   record="$STATE/.secondmate-park-$id"
   if [ "$(fm_meta_get "$record" phase)" = preparing ] &&
     [ -n "$PENDING_REPLY_CORR" ] && [ "$PENDING_REPLY_CORR" = "$(fm_meta_get "$record" persist_corr)" ]; then return 0; fi
-  "$SCRIPT_DIR/fm-secondmate-park.sh" "$id" wake || return 1
+  "$SCRIPT_DIR/fm-secondmate-park.sh" "$id" unpark || return 1
   T=$(fm_backend_target_of_meta "$TARGET_META")
   TARGET_BACKEND=$(fm_backend_of_meta "$TARGET_META")
   TARGET_HARNESS=$(fm_meta_get "$TARGET_META" harness)

@@ -925,10 +925,10 @@ test_park_persist_and_idle_gates() {
   assert_contains "$out" 'outstanding child work' 'idle refusal explains child record'
   assert_absent "$dir/home/state/sm1.inbox" 'idle refusal must precede persist request'
   out=$(run_park "$dir" sm1 park --force); rc=$?
-  expect_code 0 "$rc" "forced park must preserve children: $out"
-  assert_present "$dir/sm1-home/state/child.meta" 'force never removes child metadata'
-  assert_contains "$out" 'session=fresh' 'fallback disposition is explicit'
-  pass 'park requires persistence and refuses child work unless forced without discarding it'
+  expect_code 2 "$rc" "park has no force override: $out"
+  assert_present "$dir/sm1-home/state/child.meta" 'refused park never removes child metadata'
+  assert_absent "$dir/home/state/.secondmate-park-sm1" 'refused park leaves no marker'
+  pass 'park requires persistence and refuses child work without discarding it'
 }
 
 test_park_wake_and_status() {
@@ -956,7 +956,7 @@ test_park_wake_and_status() {
   assert_absent "$dir/home/state/.secondmate-park-sm1" "successful wake clears marker: $out"
   assert_grep 'new routed work' "$dir/home/state/sm1.inbox/002.msg" 'work survives in durable inbox'
   assert_present "$dir/sm1-home/data/keep.md" 'wake preserves home data'
-  assert_grep 'wake complete' "$dir/home/state/.wake-queue" 'wake reports on parent channel'
+  assert_grep 'unpark complete' "$dir/home/state/.wake-queue" 'wake reports on parent channel'
   pass 'park state suppresses liveness and watcher startup; routed send wakes with inbox intact'
 }
 

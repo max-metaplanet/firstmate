@@ -1,15 +1,13 @@
 #!/usr/bin/env bash
 # Park a registered local secondmate without removing its home or records.
-# Usage: FM_HOME=<parent> fm-secondmate-park.sh <id> park [--force]
-#        FM_HOME=<parent> fm-secondmate-park.sh <id> unpark|wake|status
+# Usage: FM_HOME=<parent> fm-secondmate-park.sh <id> park|unpark
 #
 # park asks the existing correlated open-record persist gate, refuses without
 # its answer, then stops the agent through fm-control exit and stops its home
-# supervision host and watcher. --force permits outstanding child records; it
-# never skips persistence, kills children, or discards work. Without --force,
-# any child metadata or outstanding incoming instruction refuses parking.
-# unpark and wake both relaunch through fm-spawn --relaunch; wake is fm-send's
-# automatic path. Exact session resume uses the existing recorded reference
+# supervision host and watcher. Any child metadata, in-flight backlog work, or
+# outstanding incoming instruction refuses parking. unpark relaunches through
+# fm-spawn --relaunch and is also fm-send's automatic wake path; fm-crew-state
+# shows the parked state. Exact session resume uses the existing recorded reference
 # when available, otherwise output explicitly reports a fresh session.
 # Remote homes are unsupported and refuse before mutation.
 #
@@ -29,9 +27,9 @@ set -u
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 case "${1:-}" in -h|--help) sed -n '2,/^set -u/{ /^set -u/d; s/^# \{0,1\}//; p; }' "$0"; exit 0 ;; esac
-ID=${1:-} ACTION=${2:-} FORCE=${3:-}
+ID=${1:-} ACTION=${2:-}
 case "$ID" in ''|*[!A-Za-z0-9._-]*) echo 'error: an exact secondmate id is required' >&2; exit 2 ;; esac
-case "$ACTION:$FORCE:$#" in park::2|park:--force:3|unpark::2|wake::2|status::2) ;; *) echo 'usage: fm-secondmate-park.sh <id> park [--force] | unpark | wake | status' >&2; exit 2 ;; esac
+case "$ACTION:$#" in park:2|unpark:2) ;; *) echo 'usage: fm-secondmate-park.sh <id> park | unpark' >&2; exit 2 ;; esac
 [ -n "${FM_HOME:-}" ] && [ -d "$FM_HOME" ] || { echo 'error: explicit FM_HOME is required' >&2; exit 1; }
 STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 # The child's binding names parent/state, so a different state directory would
@@ -70,14 +68,6 @@ validate_identity() {
   [ "$FM_SECONDMATE_PARENT_ROUTE" = local ] && [ "$FM_SECONDMATE_PARENT_HOME" = "$FM_HOME" ] || fail 'secondmate belongs to another parent'
 }
 validate_identity
-if [ "$ACTION" = status ]; then
-  if fm_secondmate_park_present "$STATE" "$ID"; then
-    printf '%s: %s; session=%s\n' "$ID" "$(fm_meta_get "$RECORD" phase)" "$(fm_meta_get "$RECORD" resume_mode)"
-  else
-    printf '%s: unparked\n' "$ID"
-  fi
-  exit 0
-fi
 fm_sm_live_require_locks
 fm_lock_acquire_wait "$STATE/.secondmate-liveness-$ID.lock"
 CHILD_SET_LOCK=''
@@ -106,10 +96,9 @@ read_record() {
   SPAWN_GEN=$(fm_meta_get "$RECORD" spawn_gen)
 }
 check_idle() {
-  [ "$FORCE" != --force ] || return 0
   local child pending backend listing
   for child in "$MATE_HOME/state"/*.meta; do
-    [ ! -e "$child" ] || { echo "error: secondmate has outstanding child work: $child (use --force to leave it unsupervised)" >&2; return 1; }
+    [ ! -e "$child" ] || { echo "error: secondmate has outstanding child work: $child" >&2; return 1; }
   done
   backend=$(fm_tasks_axi_backend "$MATE_HOME") || return 1
   if [ "$backend" != markdown ] || [ -e "$MATE_HOME/data/backlog.md" ]; then
@@ -120,7 +109,7 @@ check_idle() {
   pending=$(fm_task_inbox_oldest_unhandled "$STATE" "$ID" 2>/dev/null) || pending=''
   [ -z "$pending" ] || { echo "error: secondmate has an incoming instruction: $pending" >&2; return 1; }
 }
-if [ "$ACTION" != park ]; then
+if [ "$ACTION" = unpark ]; then
   if ! fm_secondmate_park_present "$STATE" "$ID"; then printf '%s: already unparked\n' "$ID"; exit 0; fi
   read_record
   [ "$PERSISTED" = 1 ] || fail 'park persistence was not confirmed; retry park before waking'
