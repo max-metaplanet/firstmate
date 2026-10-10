@@ -664,6 +664,8 @@ fm_backlog_directory_present "$STATE" "state directory" || {
 . "$SCRIPT_DIR/fm-quota-axi-lib.sh"
 # shellcheck source=bin/fm-seat-lib.sh
 . "$SCRIPT_DIR/fm-seat-lib.sh"
+# shellcheck source=bin/fm-dispatch-predict-lib.sh
+. "$SCRIPT_DIR/fm-dispatch-predict-lib.sh"
 
 # Fail closed before any fleet mutation: a no-mistakes gate agent must never spawn
 # a direct report (see bin/fm-gate-refuse-lib.sh).
@@ -1230,6 +1232,7 @@ spawn_remote_secondmate() {
     echo "error: remote secondmate $id launched, but its reply source could not be armed; endpoint metadata is preserved" >&2
     return 1
   fi
+  fm_dispatch_predict_log "$DATA" "$id" '' not-run false "$harness" "${model#-}" "${effort#-}"
   [ ! -e "$CONFIG/fleet-ledger" ] || FM_HOME=$FM_HOME FM_STATE_OVERRIDE=$STATE FM_CONFIG_OVERRIDE=$CONFIG "$SCRIPT_DIR/fm-fleet-ledger.sh" dispatched "$id" secondmate "" "$harness" "${model#-}" || true
   echo "spawned $id harness=$harness kind=secondmate mode=secondmate yolo=off window=remote:$id worktree=$home remote=$host backend=$remote_backend"
   return 0
@@ -2306,6 +2309,10 @@ launch_template() {
   esac
 }
 
+DISPATCH_PILOT_JSON=''
+DISPATCH_PILOT_APPLIED=false
+DISPATCH_PILOT_STATUS=not-run
+[ -f "$CONFIG/crew-dispatch.json" ] || DISPATCH_PILOT_STATUS=no-config
 case "$ARG3" in
 *' '*) # raw launch command (unverified-adapter escape hatch)
   RAW_LAUNCH=1
@@ -2333,11 +2340,47 @@ case "$ARG3" in
     harness_src='config/secondmate-harness (falling back to config/crew-harness)'
   else
     if [ -f "$CONFIG/crew-dispatch.json" ]; then
-      echo "error: config/crew-dispatch.json is active - pass an explicit harness resolved from the dispatch rules (the consultation backstop, so the rules are never silently skipped)." >&2
-      exit 1
+      # dispatch-resolve auto-apply pilot: the investigation/scout rule only
+      # (docs/configuration.md "Crew dispatch profiles"). This branch only
+      # runs when no explicit --harness/positional harness/raw launch command
+      # was given; an explicit --model or --effort also skips the resolver, so
+      # any explicit per-spawn choice keeps today's refusal below. Otherwise
+      # resolve the task's own brief and, only on a clear result whose matched
+      # rule declares "auto_apply": true, apply its chosen harness/model/effort
+      # in place of that refusal. Every other outcome (ambiguous, escalate,
+      # error, off, no auto_apply, missing jq, or no brief yet) keeps the
+      # refusal unchanged.
+      DISPATCH_PILOT_STATUS=not-run
+      DISPATCH_PILOT_BRIEF="$DATA/$ID/brief.md"
+      if [ "$MODEL_SET" -eq 0 ] && [ "$EFFORT_SET" -eq 0 ]; then
+        DISPATCH_PILOT_STATUS=off
+        if command -v jq >/dev/null 2>&1 && [ -f "$DISPATCH_PILOT_BRIEF" ]; then
+          DISPATCH_PILOT_JSON=$("$FM_ROOT/bin/fm-dispatch-resolve.sh" "$DISPATCH_PILOT_BRIEF" --project "$PROJ" --json) || DISPATCH_PILOT_STATUS=error
+          if [ -n "$DISPATCH_PILOT_JSON" ] && printf '%s' "$DISPATCH_PILOT_JSON" | jq -e 'type == "object"' >/dev/null 2>&1; then
+            if [ "$(jq -r '.status // ""' <<<"$DISPATCH_PILOT_JSON" 2>/dev/null || true)" = clear ] \
+              && [ "$(jq -r '.auto_apply // false' <<<"$DISPATCH_PILOT_JSON" 2>/dev/null || true)" = true ]; then
+              DISPATCH_PILOT_HARNESS=$(jq -r '.chosen.profile.harness // ""' <<<"$DISPATCH_PILOT_JSON" 2>/dev/null) || true
+              DISPATCH_PILOT_RULE=$(jq -r '.rule // "?"' <<<"$DISPATCH_PILOT_JSON" 2>/dev/null) || true
+              if [ -n "$DISPATCH_PILOT_HARNESS" ]; then
+                HARNESS=$DISPATCH_PILOT_HARNESS
+                MODEL=$(jq -r '.chosen.profile.model // ""' <<<"$DISPATCH_PILOT_JSON" 2>/dev/null) || MODEL=
+                EFFORT=$(jq -r '.chosen.profile.effort // ""' <<<"$DISPATCH_PILOT_JSON" 2>/dev/null) || EFFORT=
+                harness_src="dispatch-resolve auto-apply (rule $DISPATCH_PILOT_RULE)"
+                DISPATCH_PILOT_APPLIED=true
+              fi
+            fi
+          fi
+        fi
+      fi
+      if [ "$DISPATCH_PILOT_APPLIED" != true ]; then
+        fm_dispatch_predict_log "$DATA" "$ID" "$DISPATCH_PILOT_JSON" "$DISPATCH_PILOT_STATUS" false '' '' ''
+        echo "error: config/crew-dispatch.json is active - pass an explicit harness resolved from the dispatch rules (the consultation backstop, so the rules are never silently skipped)." >&2
+        exit 1
+      fi
+    else
+      HARNESS=$("$FM_ROOT/bin/fm-harness.sh" crew)
+      harness_src='config/crew-harness'
     fi
-    HARNESS=$("$FM_ROOT/bin/fm-harness.sh" crew)
-    harness_src='config/crew-harness'
   fi
   LAUNCH=$(launch_template "$HARNESS" "$KIND") || {
     echo "error: no launch template for harness '$HARNESS' (from $harness_src or detection); pass a raw launch command to use an unverified adapter" >&2
@@ -2465,6 +2508,8 @@ if [ "$KIND" = secondmate ] && [ -z "$ARG3" ]; then
     fi
   fi
 fi
+fm_dispatch_predict_log "$DATA" "$ID" "$DISPATCH_PILOT_JSON" "$DISPATCH_PILOT_STATUS" "$DISPATCH_PILOT_APPLIED" \
+  "${HARNESS:-}" "${MODEL:-}" "${EFFORT:-}"
 # Ultra is an explicit native capability, never a Pi thinking-level alias.
 # Validate the fully resolved profile before worktree or endpoint provisioning.
 if [ "$EFFORT" = ultra ]; then
