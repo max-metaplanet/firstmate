@@ -1,0 +1,13 @@
+woke.txt: WOKE-f98c
+mate claude argv (session resume):
+--resume dda05986-7b0a-43d7-ae67-26cf45bd44df
+--model sonnet
+--effort low
+inbox:
+home/state/labf98c15b458c5-mate.inbox/handled/002.msg
+home/state/labf98c15b458c5-mate.inbox/handled/003.msg
+home/state/labf98c15b458c5-mate.inbox/handled/001.msg
+latest status:
+done [at=1791644473]: corr=9cf5dc704eaceb3d config reread applied (config/startup-memory-budget=7500)
+done [at=1791644538]: corr=4f8d6fda8d03be44 open-record persistence complete; nothing held only in conversation (no open work, no unregistered captain calls, no stale tasks), nothing filed
+done [at=1791644805]: corr=8b8cda51a750f507 created data/woke.txt containing WOKE-f98c in this home

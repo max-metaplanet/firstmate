@@ -1,0 +1,5 @@
+ok - capture preserves Claude's recorded session and declares unavailable continuity
+ok - Pi capture uses only its own endpoint's registered Pi identity
+ok - wake validates persistence, identity, mode, and unambiguous exact reference
+ok - a parked secondmate home refuses new task dispatch
+rc=0 secs=2

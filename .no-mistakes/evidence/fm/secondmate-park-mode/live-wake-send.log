@@ -1,0 +1,14 @@
+$ fm-send.sh labf98c15b458c5-mate '<work>'   (15:06:05)
+WARNING: queued wakes pending - drain them with bin/fm-wake-drain.sh before anything else.
+WARNING: queued wakes pending - drain them with bin/fm-wake-drain.sh before anything else.
+spawned labf98c15b458c5-mate harness=claude kind=secondmate mode=secondmate yolo=off window=firstmate:fm-labf98c15b458c5-mate worktree=/private/tmp/fmlab.3qFaJw/mate
+labf98c15b458c5-mate: unpark complete; session=exact
+$LR/run.sh bin/fm-send.sh $ID "$MSG"  1.98s user 3.20s system 26% cpu 19.264 total
+rc=0
+park record after send: ls: state/.secondmate-park-labf98c15b458c5-mate: No such file or directory
+meta model/effort/spawn_gen:
+model=sonnet
+effort=low
+spawn_gen=s1791644775.89485.12091
+$ fm-crew-state.sh labf98c15b458c5-mate
+state: done · source: status-log · corr=4f8d6fda8d03be44 open-record persistence complete; nothing held only in conversation (no open work, no unregistered captain calls, no stale tasks), nothing filed

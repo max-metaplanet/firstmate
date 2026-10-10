@@ -1,0 +1,6 @@
+stopped: lab tmux server and lab processes
+removed: task temp /tmp/fm-labf98c15b458c5-mate+88ede5e9be93a5305b4545b6780b3a00c30bbb8514fd631fb740a849b44572d0
+removed: task temp /tmp/fm-labf98c15b458c5-mate
+removed: 2 Claude project entries under /private/tmp/fmlab.3qFaJw
+warning: ~/.treehouse gained entries during the lab; left as is: project-649968
+removed: /private/tmp/fmlab.3qFaJw

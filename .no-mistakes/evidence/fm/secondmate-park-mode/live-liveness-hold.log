@@ -1,0 +1,6 @@
+t=30s utc=15:03:17 liveness_tick=Oct 10 11:02:25 2026 watcher_beat=Oct 10 11:03:17 2026 mate_claude=0 park_phase=parked spawn_gen=s1791644441.29965.19767 mate_watch=4
+t=60s utc=15:03:47 liveness_tick=Oct 10 11:03:33 2026 watcher_beat=Oct 10 11:03:32 2026 mate_claude=0 park_phase=parked spawn_gen=s1791644441.29965.19767 mate_watch=4
+t=90s utc=15:04:17 liveness_tick=Oct 10 11:03:33 2026 watcher_beat=Oct 10 11:04:04 2026 mate_claude=0 park_phase=parked spawn_gen=s1791644441.29965.19767 mate_watch=4
+t=120s utc=15:04:47 liveness_tick=Oct 10 11:04:35 2026 watcher_beat=Oct 10 11:04:35 2026 mate_claude=0 park_phase=parked spawn_gen=s1791644441.29965.19767 mate_watch=4
+t=150s utc=15:05:18 liveness_tick=Oct 10 11:04:35 2026 watcher_beat=Oct 10 11:05:07 2026 mate_claude=0 park_phase=parked spawn_gen=s1791644441.29965.19767 mate_watch=4
+t=180s utc=15:05:48 liveness_tick=Oct 10 11:05:38 2026 watcher_beat=Oct 10 11:05:38 2026 mate_claude=0 park_phase=parked spawn_gen=s1791644441.29965.19767 mate_watch=4

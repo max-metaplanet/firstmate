@@ -1,0 +1,8 @@
+ok - host: park stop retires a watcher from the mate code root without touching another home
+ok - host: signal races accept a gone process and still refuse a live process
+ok - host: explicit stop is home-scoped, idempotent, and preserves conversations and durable data
+ok - host: explicit stop guards process identities and stops a detached successor arm
+ok - host: a restarted host stops, by recorded identity, the cycle a killed predecessor left running
+ok - host: a host outside the session-lock owner stands down without arming
+ok - host: a host under a superseded auto-arm generation stands down without touching the owner
+bash $F  5.33s user 10.85s system 71% cpu 22.660 total

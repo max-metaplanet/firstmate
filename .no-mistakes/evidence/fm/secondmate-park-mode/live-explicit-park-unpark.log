@@ -1,0 +1,24 @@
+$ unpark (not parked)
+labf98c15b458c5-mate: already unparked
+rc=0
+$ park
+WARNING: queued wakes pending - drain them with bin/fm-wake-drain.sh before anything else.
+stopped labf98c15b458c5-mate harness=claude backend=tmux endpoint=firstmate:fm-labf98c15b458c5-mate worktree=/private/tmp/fmlab.3qFaJw/mate
+watcher: none running
+supervision-host: stopped
+labf98c15b458c5-mate: parked; session=exact
+rc=0
+$ park (again)
+labf98c15b458c5-mate: already parked; session=exact
+rc=0
+$ unpark
+WARNING: queued wakes pending - drain them with bin/fm-wake-drain.sh before anything else.
+spawned labf98c15b458c5-mate harness=claude kind=secondmate mode=secondmate yolo=off window=firstmate:fm-labf98c15b458c5-mate worktree=/private/tmp/fmlab.3qFaJw/mate
+labf98c15b458c5-mate: unpark complete; session=exact
+rc=0
+model=sonnet
+effort=low
+--resume dda05986-7b0a-43d7-ae67-26cf45bd44df
+registry: - labf98c15b458c5-mate - Provide an idle live-validation lab second mate. When explicitly steered for a synthetic test, report only honest local lab outcomes do not claim external PR activity, merge, or retire yourself. (home: /private/tmp/fmlab.3qFaJw/mate; scope: second-mate live validation synthetic status relay; projects: ; added 2026-10-10)
+home intact: labf98c15b458c5-mate charter.md projects.md woke.txt 
+inbox handled: 001.msg 002.msg 003.msg 004.msg 

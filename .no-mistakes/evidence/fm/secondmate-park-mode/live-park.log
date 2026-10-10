@@ -1,0 +1,8 @@
+$ fm-secondmate-park.sh labf98c15b458c5-mate park
+NOTICE: wake rows held by the live supervision branch - it presents and acknowledges them; do not drain them from here.
+stopped labf98c15b458c5-mate harness=claude backend=tmux endpoint=firstmate:fm-labf98c15b458c5-mate worktree=/private/tmp/fmlab.3qFaJw/mate
+watcher: stopped pid=94297
+supervision-host: stopped
+labf98c15b458c5-mate: parked; session=exact
+FM_SECONDMATE_PERSIST_WAIT=400 FM_SECONDMATE_PERSIST_POLL=3 $LR/run.sh  $ID   1.21s user 2.01s system 16% cpu 20.108 total
+rc=0

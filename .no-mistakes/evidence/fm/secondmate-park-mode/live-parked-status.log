@@ -1,0 +1,5 @@
+$ fm-crew-state.sh labf98c15b458c5-mate   (15:02:39)
+state: parked · source: park-record · secondmate parked; session=exact
+$ fm-watch-arm.sh in parked mate home
+watcher: secondmate parked
+rc=0
