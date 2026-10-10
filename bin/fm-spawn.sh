@@ -1448,22 +1448,34 @@ trap spawn_abort_cleanup EXIT
 # One bounded lock per live Herdr session/socket, shared across all homes.
 # <session> is required so secondmate and primary spawns serialize against the
 # same session without writing any other home's state directory.
+# fm_backend_herdr_presentation_lock_acquire owns the wait and the two exit
+# codes; this wrapper only records what was taken so spawn_abort_cleanup
+# releases it. <attempts> is passed through, and omitting it keeps the
+# adapter's opportunistic budget.
 spawn_herdr_presentation_order_lock_acquire() {
-  local session=${1:-} attempt lock_path
+  local session=${1:-} attempts=${2:-} rc=0
   [ -n "$session" ] || session=$(fm_backend_herdr_session)
-  lock_path=$(fm_backend_herdr_presentation_session_lock_path "$session") || return 1
-  HERDR_PRESENTATION_ORDER_LOCK="$lock_path"
-  attempt=0
-  while [ "$attempt" -lt 50 ]; do
-    if fm_lock_try_acquire "$HERDR_PRESENTATION_ORDER_LOCK"; then
-      HERDR_PRESENTATION_ORDER_LOCK_HELD=1
-      return 0
-    fi
-    sleep 0.1
-    attempt=$((attempt + 1))
-  done
-  return 1
+  if [ -n "$attempts" ]; then
+    fm_backend_herdr_presentation_lock_acquire "$session" "$attempts" || rc=$?
+  else
+    fm_backend_herdr_presentation_lock_acquire "$session" || rc=$?
+  fi
+  [ "$rc" -eq 0 ] || return "$rc"
+  HERDR_PRESENTATION_ORDER_LOCK=$FM_BACKEND_HERDR_PRESENTATION_LOCK
+  HERDR_PRESENTATION_ORDER_LOCK_HELD=1
+  return 0
 }
+
+# A projected recovery cannot fall back to the flat layout the way a fresh
+# spawn does: it either reclaims its recorded space under this lock or
+# refuses. The holder's own critical section runs from the reclaim through
+# `treehouse get` and the two-read worktree settle below, which costs seconds
+# of real work even on an idle host, so the opportunistic 5s budget was
+# shorter than a healthy holder's normal hold and turned ordinary concurrency
+# into a refusal. 30s is still bounded - well under the 60s the holder's own
+# worktree wait allows before it gives up and releases - and a dead holder's
+# lock is reclaimed by fm_lock_try_acquire rather than waited out.
+HERDR_PRESENTATION_RECOVERY_LOCK_ATTEMPTS=300
 
 clear_relaunch_harness_wiring() {
   local harness=$1 wt=$2 state=$3 id=$4 token_path token auth_path path
@@ -3865,10 +3877,16 @@ else
           echo "error: herdr presentation recovery could not ensure its exact named session" >&2
           exit 1
         }
-        spawn_herdr_presentation_order_lock_acquire "$HERDR_SES" || {
-          echo "error: herdr presentation recovery could not acquire its session lock; refusing a concurrent resume" >&2
+        HERDR_RECOVERY_LOCK_RC=0
+        spawn_herdr_presentation_order_lock_acquire \
+          "$HERDR_SES" "$HERDR_PRESENTATION_RECOVERY_LOCK_ATTEMPTS" || HERDR_RECOVERY_LOCK_RC=$?
+        if [ "$HERDR_RECOVERY_LOCK_RC" -eq 2 ]; then
+          echo "error: herdr presentation recovery could not resolve the running socket of its named session '$HERDR_SES', so it has no shared lock to serialize on; refusing the resume" >&2
           exit 1
-        }
+        elif [ "$HERDR_RECOVERY_LOCK_RC" -ne 0 ]; then
+          echo "error: herdr presentation recovery waited ${HERDR_PRESENTATION_RECOVERY_LOCK_ATTEMPTS} x 0.1s and another spawn still held the session lock; refusing a concurrent resume" >&2
+          exit 1
+        fi
         if [ -e "$STATE/$ID.meta" ] || [ -L "$STATE/$ID.meta" ]; then
           herdr_projection_existing_meta_allows_flat "$STATE/$ID.meta" || exit 1
         fi
