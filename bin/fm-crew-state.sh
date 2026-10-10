@@ -24,7 +24,7 @@
 # Output is one stable, parseable, token-tight line firstmate can read every
 # heartbeat:
 #
-#   state: <working|parked|done|blocked|paused|failed|unreadable|unknown> · source: <run-step|pane|status-log|remote-endpoint|none> · <detail>
+#   state: <working|parked|done|blocked|paused|failed|unreadable|unknown> · source: <run-step|pane|status-log|remote-endpoint|park-record|none> · <detail>
 #
 # Every state word but `unreadable` is a claim about the CREW. `unreadable` is
 # the reader's claim about ITSELF: NO CREW CLAIM COULD BE ESTABLISHED here, and
@@ -252,6 +252,11 @@ KIND=$(meta_value kind)
 HARNESS=$(meta_value harness)
 REMOTE_HOST=$(meta_value remote_host)
 [ -n "$KIND" ] || KIND=ship
+
+if [ "$KIND" = secondmate ] && { [ -e "$STATE/.secondmate-park-$ID" ] || [ -L "$STATE/.secondmate-park-$ID" ]; }; then
+  park_record="$STATE/.secondmate-park-$ID"
+  emit parked park-record "secondmate $(sed -n 's/^phase=//p' "$park_record"); session=$(sed -n 's/^resume_mode=//p' "$park_record")"
+fi
 
 # A torn-down (or never-created) worktree has no current state to read. A
 # remote secondmate's recorded worktree is a path on ITS host, so the local

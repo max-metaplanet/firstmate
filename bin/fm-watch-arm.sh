@@ -119,6 +119,12 @@ if [ "${FM_GATE_REFUSE_BYPASS:-}" != 1 ]; then
       fi ;;
   esac
 fi
+# shellcheck source=bin/fm-secondmate-park-lib.sh
+. "$SCRIPT_DIR/fm-secondmate-park-lib.sh"
+if [ "${1:-}" != --stop ] && fm_secondmate_home_parked "${FM_HOME:-${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}}"; then
+  echo "watcher: secondmate parked"
+  exit 0
+fi
 # shellcheck source=bin/fm-wake-lib.sh
 . "$SCRIPT_DIR/fm-wake-lib.sh"
 

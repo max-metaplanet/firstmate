@@ -3003,6 +3003,70 @@ test_superseded_host_leaves_the_owner_untouched() {
   pass "host: a host under a superseded auto-arm generation stands down without touching the owner"
 }
 
+test_explicit_stop_retires_only_this_home_and_preserves_conversations() {
+  local home other parent pid watcher other_pid out rc
+  home=$(make_home lifecycle-stop away)
+  other=$(make_home lifecycle-other away)
+  start_host "$home"
+  start_host "$other"
+  wait_until 150 watcher_live "$home" || fail "stop: first host never armed"
+  wait_until 150 watcher_live "$other" || fail "stop: second host never armed"
+  pid=$(awk -F '\t' '$1 == "host" { print $2; exit }' "$home/state/.supervision-host")
+  watcher=$(cat "$home/state/.watch.lock/pid")
+  other_pid=$(awk -F '\t' '$1 == "host" { print $2; exit }' "$other/state/.supervision-host")
+  printf 'session=keep-this-conversation\n' > "$home/state/.supervision-host-engine"
+  printf 'working: keep-this-inbox\n' > "$home/state/lifecycle-inbox"
+  parent="$TMP_ROOT/lifecycle-parent"
+  mkdir -p "$parent/state"
+  printf 'mate\n' > "$home/.fm-secondmate-home"
+  printf 'schema=fm-secondmate-parent.v1\nroute=local\nparent_home=%s\n' "$parent" > "$home/.fm-secondmate-parent"
+  : > "$parent/state/.secondmate-park-mate"
+  out=$(FM_HOME="$home" "$HOST" --stop 2>&1); rc=$?
+  expect_code 0 "$rc" "home stop must succeed: $out"
+  wait_until 150 host_exited "$home" || fail "stop: host did not exit"
+  ! kill -0 "$pid" 2>/dev/null || fail "stop: host survived"
+  ! kill -0 "$watcher" 2>/dev/null || fail "stop: watcher survived"
+  [ ! -e "$home/state/.supervision-host" ] || fail "stop: host record survived"
+  assert_grep 'session=keep-this-conversation' "$home/state/.supervision-host-engine" "stop removed engine conversation"
+  assert_grep 'working: keep-this-inbox' "$home/state/lifecycle-inbox" "stop removed durable data"
+  kill -0 "$other_pid" 2>/dev/null || fail "stop touched another home's host"
+  watcher_live "$other" || fail "stop touched another home's watcher"
+  out=$(FM_HOME="$home" "$HOST" --stop 2>&1); rc=$?
+  expect_code 0 "$rc" "repeated home stop must succeed: $out"
+  rm -f "$home/host.rc"
+  start_host "$home"
+  wait_until 150 host_exited "$home" || fail "parked home started a new host"
+  assert_grep 'supervision-host stood down:' "$home/host.out" "parked host did not stand down"
+  watcher_live "$home" && fail "parked home rearmed its watcher"
+  FM_HOME="$other" "$HOST" --stop >/dev/null 2>&1 || fail "stop: second home cleanup failed"
+  pass "host: explicit stop is home-scoped, idempotent, and preserves conversations and durable data"
+}
+
+test_explicit_stop_checks_recorded_identity_and_reaps_detached_arm() {
+  local home unrelated arm identity out rc
+  home=$(make_home lifecycle-records attended)
+  sleep 120 &
+  unrelated=$!
+  printf '%s\n' "$unrelated" >> "$home/orphan-pid"
+  sleep 120 &
+  arm=$!
+  printf '%s\n' "$arm" >> "$home/orphan-pid"
+  identity=$(FM_HOME="$home" bash -c '. "$1/fm-wake-lib.sh"; . "$1/fm-supervision-engine-lib.sh"; _fm_engine_identity "$2"' _ \
+    "$ROOT/bin" "$arm")
+  [ -n "$identity" ] || fail "stop fixture: no process identity"
+  printf 'host\t%s\twrong-identity\narm\t%s\twrong-identity\n' "$unrelated" "$unrelated" > "$home/state/.supervision-host"
+  printf '%s\t%s\n' "$arm" "$identity" > "$home/state/.supervision-host-left"
+  out=$(FM_HOME="$home" "$HOST" --stop 2>&1); rc=$?
+  expect_code 0 "$rc" "stale-record stop must succeed: $out"
+  kill -0 "$unrelated" 2>/dev/null || fail "stop killed a process with mismatched identity"
+  ! kill -0 "$arm" 2>/dev/null || fail "stop left a recorded detached arm running"
+  [ ! -e "$home/state/.supervision-host-left" ] || fail "stop retained detached arm record"
+  kill -TERM "$unrelated" 2>/dev/null || true
+  wait "$unrelated" "$arm" 2>/dev/null || true
+  pass "host: explicit stop guards process identities and stops a detached successor arm"
+}
+
+
 test_claude_stop_hook_restores_handoff_when_successor_closed_before_exit_to_main
 test_claude_stop_hook_restores_handoff_when_successor_closed_mid_engine_turn
 test_claude_stop_hook_notifies_when_closed_successor_downtime_restore_fails
@@ -3080,3 +3144,6 @@ test_unchanged_held_outcome_reaches_the_captain_once_until_a_new_event
 test_unverified_engine_hands_every_away_wake_to_main
 test_host_outside_the_lock_owner_stands_down
 test_superseded_host_leaves_the_owner_untouched
+
+test_explicit_stop_retires_only_this_home_and_preserves_conversations
+test_explicit_stop_checks_recorded_identity_and_reaps_detached_arm

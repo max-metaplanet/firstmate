@@ -33,7 +33,7 @@ fm_git_identity fmtest fmtest@example.com
 TMP_ROOT=$(fm_test_tmproot fm-secondmate-restart)
 mkdir -p "$TMP_ROOT"
 TMP_ROOT=$(cd "$TMP_ROOT" && pwd -P)
-trap 'rm -rf -- "$TMP_ROOT"' EXIT
+trap 'chmod -R u+w "$TMP_ROOT" 2>/dev/null || true; rm -rf -- "$TMP_ROOT"' EXIT
 
 # A session-provider stub that models the two things this pass depends on: the
 # harness exit command stops the agent, a launch brief starts the replacement,
@@ -900,6 +900,100 @@ test_registered_id_precedes_selector_prefix() {
   done
   pass "registered ids win before stripping one selector prefix"
 }
+
+
+# Park uses the same modeled lifecycle and the real inbox/correlated gate.
+add_park_mate() {
+  local dir=$1
+  add_local_mate "$dir" sm1
+  printf '%s\n' "- sm1 - Test mate (home: $dir/sm1-home; scope: tests; projects: none; added 2026-10-09)" > "$dir/home/data/secondmates.md"
+  printf 'schema=fm-secondmate-parent.v1\nroute=local\nparent_home=%s\n' "$dir/home" > "$dir/sm1-home/.fm-secondmate-parent"
+}
+run_park() ( RESTART="$ROOT/bin/fm-secondmate-park.sh"; run_restart "$@"; )
+
+test_park_persist_and_idle_gates() {
+  local dir out rc
+  dir=$(new_case park-no-answer); add_park_mate "$dir"
+  out=$(FM_TEST_PERSIST_WAIT=0 run_park "$dir" sm1 park); rc=$?
+  expect_code 1 "$rc" "park without persistence must refuse: $out"
+  assert_not_contains "$(cat "$dir/fake/literal")" '/exit' 'unconfirmed park must not stop agent'
+  assert_absent "$dir/home/state/.secondmate-park-sm1" 'unconfirmed persist must not strand a parked marker'
+  dir=$(new_case park-child); add_park_mate "$dir"; arm_answer "$dir" sm1
+  printf 'kind=ship\n' > "$dir/sm1-home/state/child.meta"
+  out=$(run_park "$dir" sm1 park); rc=$?
+  expect_code 1 "$rc" "park with child work must refuse: $out"
+  assert_contains "$out" 'outstanding child work' 'idle refusal explains child record'
+  assert_absent "$dir/home/state/sm1.inbox" 'idle refusal must precede persist request'
+  out=$(run_park "$dir" sm1 park --force); rc=$?
+  expect_code 0 "$rc" "forced park must preserve children: $out"
+  assert_present "$dir/sm1-home/state/child.meta" 'force never removes child metadata'
+  assert_contains "$out" 'session=fresh' 'fallback disposition is explicit'
+  pass 'park requires persistence and refuses child work unless forced without discarding it'
+}
+
+test_park_wake_and_status() {
+  local dir out rc before
+  dir=$(new_case park-wake); add_park_mate "$dir"; arm_answer "$dir" sm1
+  printf 'durable backlog\n' > "$dir/sm1-home/data/keep.md"
+  out=$(run_park "$dir" sm1 park); rc=$?
+  expect_code 0 "$rc" "park should stop a persisted mate: $out"
+  assert_present "$dir/home/state/.secondmate-park-sm1" 'park flag survives command exit'
+  assert_grep '/exit' "$dir/fake/literal" 'park stops through control exit'
+  out=$(FM_CREW_STATE_META_OVERRIDE='' FM_CREW_STATE_STATUS_OVERRIDE='' FM_HOME="$dir/home" "$ROOT/bin/fm-crew-state.sh" sm1)
+  assert_contains "$out" 'state: parked' 'crew/fleet status shows parked'
+  assert_contains "$out" 'session=fresh' 'status shows fallback session mode'
+  out=$(FM_HOME="$dir/sm1-home" "$ROOT/bin/fm-watch-arm.sh")
+  assert_contains "$out" 'secondmate parked' 'parked home cannot rearm watcher'
+  # Probe with a dead endpoint: the park flag wins before any recovery.
+  out=$(FM_HOME="$dir/home" bash -c '. "$1/bin/fm-secondmate-liveness-lib.sh"; fm_secondmate_liveness_probe "$2/state/sm1.meta" sm1 poll; printf "%s %s" "$FM_SM_LIVE_STATUS" "$FM_SM_LIVE_STATE"' _ "$ROOT" "$dir/home")
+  [ "$out" = 'silent parked' ] || fail "liveness failed to honor park: $out"
+  before=$(wc -l < "$dir/fake/literal")
+  out=$(run_park "$dir" sm1 park); rc=$?
+  expect_code 0 "$rc" 'repeated park converges'
+  [ "$(wc -l < "$dir/fake/literal")" = "$before" ] || fail 'repeat park touched stopped endpoint'
+  out=$(env PATH="$dir/fakebin:$PATH" FM_HOME="$dir/home" FM_FAKE_DIR="$dir/fake" FM_SPAWN_NO_GUARD=1 "$ROOT/bin/fm-send.sh" sm1 'new routed work' 2>&1); rc=$?
+  expect_code 0 "$rc" "send must durably queue and wake: $out"
+  assert_absent "$dir/home/state/.secondmate-park-sm1" "successful wake clears marker: $out"
+  assert_grep 'new routed work' "$dir/home/state/sm1.inbox/002.msg" 'work survives in durable inbox'
+  assert_present "$dir/sm1-home/data/keep.md" 'wake preserves home data'
+  assert_grep 'wake complete' "$dir/home/state/.wake-queue" 'wake reports on parent channel'
+  pass 'park state suppresses liveness and watcher startup; routed send wakes with inbox intact'
+}
+
+test_park_failed_wake_preserves_delivery() {
+  local dir out rc
+  dir=$(new_case park-failed-wake); add_park_mate "$dir"; arm_answer "$dir" sm1
+  out=$(run_park "$dir" sm1 park); rc=$?
+  expect_code 0 "$rc" "setup park must succeed: $out"
+  printf 'invalid-permission\n' > "$dir/home/config/claude-permission-mode"
+  out=$(env PATH="$dir/fakebin:$PATH" FM_HOME="$dir/home" FM_FAKE_DIR="$dir/fake" FM_SPAWN_NO_GUARD=1 "$ROOT/bin/fm-send.sh" sm1 'work retained after failed wake' 2>&1); rc=$?
+  expect_code 0 "$rc" "durable enqueue must succeed even when wake refuses: $out"
+  assert_contains "$out" 'Do not resend' 'failed wake distinguishes durable delivery'
+  assert_present "$dir/home/state/.secondmate-park-sm1" 'failed wake retains park authority'
+  assert_grep 'work retained after failed wake' "$dir/home/state/sm1.inbox/002.msg" 'failed wake retains exact work'
+  rm "$dir/home/config/claude-permission-mode"
+  out=$(run_park "$dir" sm1 unpark); rc=$?
+  expect_code 0 "$rc" "explicit unpark retries queued delivery: $out"
+  assert_absent "$dir/home/state/.secondmate-park-sm1" 'retry clears park after launch'
+  assert_present "$dir/home/state/sm1.inbox/002.msg" 'unpark never deletes queued work'
+  pass 'failed automatic wake retains the durable inbox and explicit unpark retries'
+}
+
+test_park_remote_refusal() {
+  local dir out rc
+  dir=$(new_case park-remote); add_park_mate "$dir"
+  printf 'remote_host=remote-test\n' >> "$dir/home/state/sm1.meta"
+  out=$(run_park "$dir" sm1 park); rc=$?
+  expect_code 1 "$rc" 'remote park must refuse'
+  assert_contains "$out" 'remote secondmate parking is unsupported' 'remote limitation is explicit'
+  assert_absent "$dir/home/state/.secondmate-park-sm1" 'remote refusal changes nothing'
+  pass 'remote park refuses before lifecycle mutation'
+}
+
+test_park_persist_and_idle_gates
+test_park_wake_and_status
+test_park_remote_refusal
+test_park_failed_wake_preserves_delivery
 
 test_registered_id_precedes_selector_prefix
 test_persist_gates_and_asks_only_for_open_records

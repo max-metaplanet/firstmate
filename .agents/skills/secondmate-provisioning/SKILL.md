@@ -213,9 +213,15 @@ That same rule governs routing generally: a Relay-linked request whose work goes
 It refuses any destination that is not a genuine seeded firstmate home with safe operational directories and a matching `.fm-secondmate-home` marker, so a move can never land in a project.
 Do not hand off `local-only` items.
 
-## Recovery
+## Parking and recovery
 
-For local `kind=secondmate` meta with no window, treat the secondmate as a dead persistent direct report and respawn it with:
+Use [`bin/fm-secondmate-park.sh --help`](../../../bin/fm-secondmate-park.sh) for the `park`, `unpark`, `wake`, and `status` commands and their persist, idle-work, and retry guards.
+A parked local secondmate stays registered with its home and inbox intact, is excluded from liveness recovery, and wakes automatically when `fm-send` queues work for it.
+Its current fleet state reports `parked` and whether wake resumes an exact recorded session or starts fresh from persisted records.
+Remote secondmates do not support parking.
+
+
+For an unparked local `kind=secondmate` meta with no window, treat the secondmate as a dead persistent direct report and respawn it with:
 
 ```sh
 bin/fm-spawn.sh <id> --secondmate
