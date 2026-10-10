@@ -134,7 +134,13 @@ wake_parked() {
   backend=$(fm_backend_of_meta "$META")
   current_state=$(fm_backend_agent_state "$backend" "$(fm_backend_target_of_meta "$META")") || current_state=unreadable
   case "$current_state" in
-    dead) spawn_args=("$ID" --relaunch) ;;
+    dead)
+      spawn_args=("$ID" --relaunch)
+      prior_model=$(fm_meta_get "$META" model)
+      prior_effort=$(fm_meta_get "$META" effort)
+      case "$prior_model" in ''|default) ;; *) spawn_args+=(--model "$prior_model") ;; esac
+      case "$prior_effort" in ''|default) ;; *) spawn_args+=(--effort "$prior_effort") ;; esac
+      ;;
     missing) spawn_args=("$ID" "$MATE_HOME" --secondmate --backend "$backend") ;;
     *) fail "parked endpoint state is $current_state; refusing duplicate launch" ;;
   esac

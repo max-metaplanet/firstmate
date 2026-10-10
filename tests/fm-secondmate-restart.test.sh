@@ -1018,6 +1018,22 @@ test_park_missing_endpoint_respawns_same_session() {
   pass 'missing parked endpoint respawns into its home with the captured session and durable inbox'
 }
 
+test_park_dead_endpoint_wake_keeps_model_effort() {
+  local dir out rc
+  dir=$(new_case park-dead-profile); add_park_mate "$dir"; arm_answer "$dir" sm1
+  sed -i.bak -e 's/^model=default$/model=pinned-model/' -e 's/^effort=default$/effort=high/' "$dir/home/state/sm1.meta"
+  out=$(run_park "$dir" sm1 park); rc=$?
+  expect_code 0 "$rc" "park before dead-endpoint wake: $out"
+  out=$(env PATH="$dir/fakebin:$PATH" FM_HOME="$dir/home" FM_FAKE_DIR="$dir/fake" FM_SPAWN_NO_GUARD=1 FM_FAKE_CAPTURE_LAUNCH=1 \
+    "$ROOT/bin/fm-send.sh" sm1 'work for dead endpoint' 2>&1); rc=$?
+  expect_code 0 "$rc" "dead endpoint wake: $out"
+  assert_absent "$dir/home/state/.secondmate-park-sm1" "relaunch clears marker: $out"
+  assert_grep 'pinned-model' "$dir/fake/replacement-launch" 'relaunch keeps the mate model'
+  assert_grep "model=pinned-model" "$dir/home/state/sm1.meta" "relaunched record keeps the mate model"
+  assert_grep 'effort=high' "$dir/home/state/sm1.meta" 'relaunched record keeps the mate effort'
+  pass 'dead parked endpoint relaunches with its recorded model and effort'
+}
+
 test_park_interrupted_preparation_restores_delivery() {
   local dir out rc phase
   dir=$(new_case park-preparing); add_park_mate "$dir"
@@ -1091,6 +1107,7 @@ SH
 }
 
 test_park_missing_endpoint_respawns_same_session
+test_park_dead_endpoint_wake_keeps_model_effort
 test_park_wakes_for_work_queued_during_persist
 test_park_interrupted_preparation_restores_delivery
 test_park_signal_cleans_unconfirmed_preparation
