@@ -1081,7 +1081,6 @@ select_lane() {
 
 run_coverage_guard() {
   local tmp missing extra a b shard unhinted serial_total serial_ms serial_max_ms=0
-  local serial_max_count=0 serial_max_script=
   local p1_ms p1_unhinted p2_ms p2_unhinted parallel_max_ms parallel_imbalance_ms
   local -a saved_scripts=()
   tmp=$(mktemp -d "${TMPDIR:-/tmp}/fm-test-coverage.XXXXXX")
@@ -1130,11 +1129,6 @@ run_coverage_guard() {
     serial_ms=$(printf '%s\n' "${SCRIPTS[@]+"${SCRIPTS[@]}"}" | portable_serial_lane_weight)
     if [ "$serial_ms" -gt "$serial_max_ms" ]; then
       serial_max_ms=$serial_ms
-      # Remember the shape of the heaviest shard, not just its weight: a shard
-      # holding one script cannot be rebalanced, so the refusal below must not
-      # send a reader looking for a better split that does not exist.
-      serial_max_count=${#SCRIPTS[@]}
-      serial_max_script=${SCRIPTS[0]}
     fi
     shard=$((shard + 1))
   done
@@ -1213,10 +1207,7 @@ run_coverage_guard() {
 
   if [ "$serial_max_ms" -gt "$PORTABLE_SERIAL_MAX_WEIGHT_MS" ]; then
     log "coverage guard: largest portable serial shard packs ${serial_max_ms}ms above the ${PORTABLE_SERIAL_MAX_WEIGHT_MS}ms target"
-    if [ "$serial_max_count" -eq 1 ]; then
-      log "that shard holds only ${serial_max_script}, so no split can shrink it; this needs a runtime fix for that script"
-    fi
-    log "refresh CI hints and rebalance or add shards; do not raise the job timeout: docs/fm-test-portable-shards.md"
+    log "refresh CI hints and rebalance or add shards; a single script over budget needs a runtime fix, not a timeout raise: docs/fm-test-portable-shards.md"
     rm -rf "$tmp"
     return 1
   fi
