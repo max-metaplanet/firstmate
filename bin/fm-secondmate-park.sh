@@ -21,8 +21,8 @@
 # A failed wake preserves the parked record and every inbox message. Lifecycle
 # outcomes are parent-channel check wakes. Commands never retire registration.
 # FM_SECONDMATE_PERSIST_WAIT (900) and FM_SECONDMATE_PERSIST_POLL (5) have the
-# same meanings as fm-secondmate-restart. Work arriving during park is durably
-# queued before fm-send waits for this lock, then wakes and rings the inbox.
+# same meanings as fm-secondmate-restart. Work durably queued while park holds
+# the lock wakes the mate as soon as park records parked.
 set -u
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
@@ -128,6 +128,38 @@ ring_pending() {
     fm_task_inbox_ring "$(fm_backend_of_meta "$META")" "$(fm_backend_target_of_meta "$META")" "$pending" "fm-$ID" || true
   fi
 }
+wake_parked() {
+  [ "$(fm_meta_get "$RECORD" phase)" = parked ] || fail 'park did not finish; retry park to finish stopping before waking'
+  write_record waking || fail 'cannot record wake'
+  backend=$(fm_backend_of_meta "$META")
+  current_state=$(fm_backend_agent_state "$backend" "$(fm_backend_target_of_meta "$META")") || current_state=unreadable
+  case "$current_state" in
+    dead) spawn_args=("$ID" --relaunch) ;;
+    missing) spawn_args=("$ID" "$MATE_HOME" --secondmate --backend "$backend") ;;
+    *) fail "parked endpoint state is $current_state; refusing duplicate launch" ;;
+  esac
+  if "$SCRIPT_DIR/fm-spawn.sh" "${spawn_args[@]}"; then
+    rm -f "$RECORD" || fail 'agent launched but park record could not be cleared'
+    report 'unpark complete' || exit 1
+    # An explicit unpark also delivers already queued work, including work whose
+    # earlier automatic wake failed. No record is removed or rewritten here.
+    ring_pending
+    exit 0
+  fi
+  write_record parked || true
+  report 'wake failed; still parked, inbox preserved' || true
+  exit 1
+}
+queued_during_park() {
+  local f
+  for f in "$(fm_task_inbox_dir "$STATE" "$ID")"/*.msg; do
+    [ -e "$f" ] || continue
+    fm_task_inbox_is_fire_and_forget "$f" && continue
+    [ -n "$CORR" ] && grep -qF "$CORR" "$f" && continue
+    return 0
+  done
+  return 1
+}
 if [ "$ACTION" = unpark ]; then
   if ! fm_secondmate_park_present "$STATE" "$ID"; then printf '%s: already unparked\n' "$ID"; exit 0; fi
   read_record
@@ -146,31 +178,12 @@ if [ "$ACTION" = unpark ]; then
     current_gen=$(fm_meta_get "$META" spawn_gen)
     if [ "$current_state" = alive ] && [ -n "$current_gen" ] && [ "$current_gen" != "$SPAWN_GEN" ]; then
       rm -f "$RECORD" || fail 'cannot clear completed wake'
-      report "$ACTION reconciled after interrupted wake"
+      report 'unpark reconciled after interrupted wake'
       exit $?
     fi
     case "$current_state" in dead|missing) write_record parked || fail 'cannot retry wake' ;; *) fail "interrupted wake has endpoint state $current_state; keep inbox and reconcile before retry" ;; esac
   fi
-  [ "$(fm_meta_get "$RECORD" phase)" = parked ] || fail 'park did not finish; retry park to finish stopping before waking'
-  write_record waking || fail 'cannot record wake'
-  backend=$(fm_backend_of_meta "$META")
-  current_state=$(fm_backend_agent_state "$backend" "$(fm_backend_target_of_meta "$META")") || current_state=unreadable
-  case "$current_state" in
-    dead) spawn_args=("$ID" --relaunch) ;;
-    missing) spawn_args=("$ID" "$MATE_HOME" --secondmate --backend "$backend") ;;
-    *) fail "parked endpoint state is $current_state; refusing duplicate launch" ;;
-  esac
-  if "$SCRIPT_DIR/fm-spawn.sh" "${spawn_args[@]}"; then
-    rm -f "$RECORD" || fail 'agent launched but park record could not be cleared'
-    report "$ACTION complete" || exit 1
-    # An explicit unpark also delivers already queued work, including work whose
-    # earlier automatic wake failed. No record is removed or rewritten here.
-    ring_pending
-    exit 0
-  fi
-  write_record parked || true
-  report 'wake failed; still parked, inbox preserved' || true
-  exit 1
+  wake_parked
 fi
 CHILD_SET_LOCK=$(fm_task_set_lock_path "$MATE_HOME/state") || fail 'cannot resolve child task set lock'
 fm_lock_try_acquire "$CHILD_SET_LOCK" || { CHILD_SET_LOCK=''; fail 'child task publication is in progress; retry park'; }
@@ -205,7 +218,7 @@ if [ "$PERSISTED" != 1 ]; then
     sleep "$POLL"
   done
   # Recheck child work after the mate wrote its durable records. New parent
-  # inbox work is intentionally deferred and will wake it after this lock.
+  # inbox work is deferred and wakes the mate once the stop completes.
   if ! check_idle after-persist; then rm -f "$RECORD"; exit 1; fi
   fm_secondmate_resume_capture "$META" || fail 'cannot capture resume disposition'
   MODE=$FM_SECONDMATE_RESUME_MODE RESUME_HARNESS=$FM_SECONDMATE_RESUME_HARNESS REF=$FM_SECONDMATE_RESUME_REF
@@ -216,4 +229,7 @@ if ! "$SCRIPT_DIR/fm-control.sh" "$ID" exit; then report 'park incomplete: agent
 if ! FM_HOME="$MATE_HOME" FM_STATE_OVERRIDE="$MATE_HOME/state" FM_CONFIG_OVERRIDE="$MATE_HOME/config" \
   "$SCRIPT_DIR/fm-supervision-host.sh" --stop; then report 'park incomplete: supervision stop failed; retry park' || true; exit 1; fi
 write_record parked || fail 'cannot record completed park'
-report parked
+report parked || exit 1
+queued_during_park || exit 0
+fm_lock_release "$CHILD_SET_LOCK"; CHILD_SET_LOCK=''
+wake_parked

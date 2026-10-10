@@ -1067,7 +1067,31 @@ SH
   pass 'TERM rolls back unconfirmed park preparation without discarding its instruction'
 }
 
+test_park_wakes_for_work_queued_during_persist() {
+  local dir out rc
+  dir=$(new_case park-queued); add_park_mate "$dir"; arm_answer "$dir" sm1
+  # Model a routed send that durably enqueued while park held the lock, then
+  # died before it could wake the mate: only park itself can deliver it.
+  cat > "$dir/fake/on-doorbell" <<SH
+#!/usr/bin/env bash
+[ -e "$dir/fake/queued" ] && exit 0
+: > "$dir/fake/queued"
+. "$ROOT/bin/fm-wake-lib.sh"; . "$ROOT/bin/fm-task-inbox-lib.sh"
+fm_task_inbox_write "$dir/home/state" sm1 'work queued during park' >/dev/null
+SH
+  chmod +x "$dir/fake/on-doorbell"
+  out=$(run_park "$dir" sm1 park); rc=$?
+  expect_code 0 "$rc" "park with deferred work must wake the mate: $out"
+  assert_grep '/exit' "$dir/fake/literal" "park still completed its stop: $out"
+  assert_absent "$dir/home/state/.secondmate-park-sm1" "deferred work wakes the parked mate: $out"
+  assert_grep 'unpark complete' "$dir/home/state/.wake-queue" 'automatic wake reports on parent channel'
+  assert_grep 'work queued during park' "$dir/home/state/sm1.inbox/002.msg" 'deferred work stays in the durable inbox'
+  [ "$(grep -c doorbell "$dir/fake/rings")" -ge 2 ] || fail 'woken mate was not rung for its queued work'
+  pass 'work queued while park waits for persistence wakes the mate after the stop'
+}
+
 test_park_missing_endpoint_respawns_same_session
+test_park_wakes_for_work_queued_during_persist
 test_park_interrupted_preparation_restores_delivery
 test_park_signal_cleans_unconfirmed_preparation
 test_park_persist_and_idle_gates
