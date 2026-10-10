@@ -640,7 +640,7 @@ test_active_dispatch_profile_ambiguous_resolver_stays_unchanged() {
 }
 
 test_active_dispatch_profile_explicit_harness_bypasses_the_pilot() {
-  local rec id out status launch
+  local rec id out status launch line
   id=profile-pilot-explicit-harness-z23
   rec=$(make_spawn_case profile-pilot-explicit-harness claude "$id")
   read_case_record "$rec"
@@ -655,12 +655,17 @@ test_active_dispatch_profile_explicit_harness_bypasses_the_pilot() {
   assert_meta_profile "$HOME_DIR/state/$id.meta" claude opus default
   launch=$(cat "$LAUNCH_LOG")
   assert_not_contains "$launch" "codex" "explicit harness launch must never contain the resolver's auto-apply pick"
-  assert_absent "$HOME_DIR/data/dispatch-predictions.jsonl" \
-    "an explicit harness must never reach the resolver or write a prediction"
-  pass "an explicit --harness bypasses the pilot entirely and writes no prediction"
+
+  line=$(read_predictions_log "$HOME_DIR")
+  [ "$(jq -r '.task_id' <<<"$line")" = "$id" ] || fail "prediction log task_id mismatch: $line"
+  [ "$(jq -r '.resolver_status' <<<"$line")" = not-run ] || fail "an explicit harness must log resolver_status=not-run: $line"
+  [ "$(jq -r '.auto_applied' <<<"$line")" = false ] || fail "prediction log auto_applied mismatch: $line"
+  [ "$(jq -r '.used.harness' <<<"$line")" = claude ] || fail "prediction log used.harness mismatch: $line"
+  [ "$(jq -r '.used.model' <<<"$line")" = opus ] || fail "prediction log used.model mismatch: $line"
+  pass "an explicit --harness bypasses the pilot and logs not-run with the profile actually used"
 }
 
-test_active_dispatch_profile_explicit_model_wins_over_auto_apply() {
+test_active_dispatch_profile_explicit_model_disables_auto_apply() {
   local rec id out status line
   id=profile-pilot-explicit-model-z24
   rec=$(make_spawn_case profile-pilot-explicit-model claude "$id")
@@ -668,18 +673,58 @@ test_active_dispatch_profile_explicit_model_wins_over_auto_apply() {
   enable_pilot_dispatch_profile "$HOME_DIR"
   make_pilot_fakebin "$FAKEBIN_DIR" rule_1 0.95
 
-  out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" --scout --model gpt-5.6-luna)
+  out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" --scout --model claude-opus-4 2>&1)
   status=$?
-  expect_code 0 "$status" "an explicit model should still allow the pilot to auto-apply the harness: $out"
-  assert_contains "$out" "spawned $id harness=codex" "the pilot did not apply the resolver's own harness"
-  # The explicit model wins; the resolver's own high effort still fills the
-  # unset effort axis, since only the model was pinned by the caller.
-  assert_meta_profile "$HOME_DIR/state/$id.meta" codex gpt-5.6-luna high
+  expect_code 1 "$status" "an explicit model without a harness must keep the explicit-harness backstop"
+  assert_contains "$out" "config/crew-dispatch.json is active - pass an explicit harness resolved from the dispatch rules" \
+    "an explicit model did not keep today's backstop"
+  assert_absent "$HOME_DIR/state/$id.meta" "a refused spawn must not write task meta"
 
   line=$(read_predictions_log "$HOME_DIR")
-  [ "$(jq -r '.auto_applied' <<<"$line")" = true ] || fail "prediction log auto_applied mismatch: $line"
-  [ "$(jq -r '.used.model' <<<"$line")" = gpt-5.6-luna ] || fail "prediction log did not record the explicit model as used: $line"
-  pass "an explicit --model wins over the resolver's chosen model while the harness still auto-applies"
+  [ "$(jq -r '.resolver_status' <<<"$line")" = not-run ] || fail "an explicit model must log resolver_status=not-run: $line"
+  [ "$(jq -r '.auto_applied' <<<"$line")" = false ] || fail "prediction log auto_applied mismatch: $line"
+  pass "an explicit --model disables auto-apply, so the explicit-harness backstop still applies"
+}
+
+test_active_dispatch_profile_two_auto_apply_rules_apply_nothing() {
+  local rec id out status line
+  id=profile-pilot-two-rules-z25
+  rec=$(make_spawn_case profile-pilot-two-rules claude "$id")
+  read_case_record "$rec"
+  enable_pilot_dispatch_profile "$HOME_DIR"
+  jq '.rules[1].auto_apply = true' "$HOME_DIR/config/crew-dispatch.json" > "$CASE_DIR/two-rules.json"
+  cp "$CASE_DIR/two-rules.json" "$HOME_DIR/config/crew-dispatch.json"
+  make_pilot_fakebin "$FAKEBIN_DIR" rule_1 0.95
+
+  out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" --scout 2>&1)
+  status=$?
+  expect_code 1 "$status" "two auto_apply rules must not auto-apply anything"
+  assert_contains "$out" "at most one rule may declare auto_apply true" \
+    "the config error was not reported"
+  assert_absent "$HOME_DIR/state/$id.meta" "a refused spawn must not write task meta"
+
+  line=$(read_predictions_log "$HOME_DIR")
+  [ "$(jq -r '.resolver_status' <<<"$line")" = error ] || fail "a resolver config error must log resolver_status=error: $line"
+  [ "$(jq -r '.auto_applied' <<<"$line")" = false ] || fail "prediction log auto_applied mismatch: $line"
+  pass "more than one auto_apply rule is a reported config error and auto-applies nothing"
+}
+
+test_spawn_without_dispatch_config_logs_no_config() {
+  local rec id out status line
+  id=profile-pilot-no-config-z26
+  rec=$(make_spawn_case profile-pilot-no-config claude "$id")
+  read_case_record "$rec"
+
+  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR")
+  status=$?
+  expect_code 0 "$status" "a spawn without crew-dispatch.json should succeed: $out"
+
+  line=$(read_predictions_log "$HOME_DIR")
+  [ "$(jq -r '.task_id' <<<"$line")" = "$id" ] || fail "prediction log task_id mismatch: $line"
+  [ "$(jq -r '.resolver_status' <<<"$line")" = no-config ] || fail "a home without crew-dispatch.json must log resolver_status=no-config: $line"
+  [ "$(jq -r '.auto_applied' <<<"$line")" = false ] || fail "prediction log auto_applied mismatch: $line"
+  [ "$(jq -r '.used.harness' <<<"$line")" = claude ] || fail "prediction log used.harness mismatch: $line"
+  pass "a spawn in a home without crew-dispatch.json logs no-config with the profile actually used"
 }
 
 test_chained_raw_launch_strips_ai_trailer_in_every_step() {
@@ -2107,7 +2152,9 @@ test_active_dispatch_profile_auto_applies_pilot_rule_when_clear
 test_active_dispatch_profile_other_rule_stays_unchanged
 test_active_dispatch_profile_ambiguous_resolver_stays_unchanged
 test_active_dispatch_profile_explicit_harness_bypasses_the_pilot
-test_active_dispatch_profile_explicit_model_wins_over_auto_apply
+test_active_dispatch_profile_explicit_model_disables_auto_apply
+test_active_dispatch_profile_two_auto_apply_rules_apply_nothing
+test_spawn_without_dispatch_config_logs_no_config
 test_chained_raw_launch_strips_ai_trailer_in_every_step
 test_claude_threads_model_and_effort
 test_codex_threads_model_and_effort

@@ -78,7 +78,8 @@
 #       (a path-forced result only; no decided_by line means Jev decided)
 #     auto_apply: true (present, text and JSON, whenever the matched rule - Jev-
 #       decided or path-forced alike - declares "auto_apply": true in
-#       config/crew-dispatch.json; absent/false otherwise. This is the one
+#       config/crew-dispatch.json, which at most one rule may do; absent/false
+#       otherwise. This is the one
 #       field bin/fm-spawn.sh's dispatch-resolve pilot hook checks before
 #       applying a clear result's profile automatically; see
 #       docs/configuration.md "Crew dispatch profiles".)
@@ -233,6 +234,7 @@ rules_err=$(jq -r --argjson verified_harnesses "$VERIFIED_HARNESSES" --arg provi
     "path_force must be \"deployment-config\" when present"
   elif ([(.rules // [])[] | select(.path_force == "deployment-config")] | length) > 1 then "at most one rule may declare path_force"
   elif any((.rules // [])[]; has("auto_apply") and (.auto_apply | type) != "boolean") then "auto_apply must be a boolean when present"
+  elif ([(.rules // [])[] | select(.auto_apply == true)] | length) > 1 then "at most one rule may declare auto_apply true"
   elif any((.rules // [])[]; has("floor") and floor_bad(.floor; true)) then "rule floor needs scope, min_percent 0..100, and provider matching ^[a-z0-9]+(-[a-z0-9]+)*\\z"
   elif any((.rules // [])[] | profiles(.use)[]; profile_bad(.)) then "each use profile needs harness; model, effort, and floor must be well formed, and provider must match ^[a-z0-9]+(-[a-z0-9]+)*\\z when present"
   elif any((.rules // [])[]; duplicate_profiles(profiles(.use))) then "each rule use must not contain duplicate harness, model, and effort profiles"

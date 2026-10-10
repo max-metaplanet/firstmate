@@ -1116,7 +1116,7 @@ The resolver supplies the fixed neutral Choice option `No listed rule applies to
 
 - `approval` accepts only `"captain"` and means a task the rule matches is never dispatched from the tool's answer alone.
 - `path_force` accepts only `"deployment-config"` and marks the one rule that deployment-configuration work belongs to, so [typed dispatch resolution](#typed-dispatch-resolution-env-typesafe_api_key) can route that work by a path fact instead of by rule wording.
-- `auto_apply` accepts only a boolean and opts a rule into [`fm-spawn.sh`'s automatic profile application](#automatic-profile-application-fm-spawnsh) below: a `clear` resolver result for a rule that declares `"auto_apply": true` is applied to an ordinary spawn instead of the usual explicit-harness backstop. Every other rule, and a rule with `auto_apply` absent or `false`, is unaffected and keeps today's backstop.
+- `auto_apply` accepts only a boolean and opts a rule into [`fm-spawn.sh`'s automatic profile application](#automatic-profile-application-fm-spawnsh) below: a `clear` resolver result for a rule that declares `"auto_apply": true` is applied to an ordinary spawn instead of the usual explicit-harness backstop. Every other rule, and a rule with `auto_apply` absent or `false`, is unaffected and keeps today's backstop At most one rule may declare `"auto_apply": true`; more than one is a malformed rules file, so the resolver reports it and nothing is auto-applied.
 - At most one rule may declare it, and the resolver finds that rule by the declaration rather than by its position, so homes whose rules sit in a different order route identically.
 - Path forcing does nothing until some rule declares `path_force`: a home that declares it on no rule keeps today's routing, and every brief, including one whose declared paths name deployment configuration, still goes to Jev.
 
@@ -1308,12 +1308,14 @@ The live rule-match evidence is recorded in [`verification/dispatch-resolve.md`]
 
 This is the one-rule pilot named in "Fields applied only by typed resolution" above: `bin/fm-spawn.sh` itself can apply the resolver's own pick to an ordinary crewmate or scout spawn, instead of leaving every resolve-and-apply round trip to firstmate's own reasoning.
 
-It fires only inside the existing consultation backstop - a non-secondmate spawn with `config/crew-dispatch.json` present and no explicit `--harness`, positional harness, or raw launch command.
-An explicit `--harness`, positional harness, or raw launch command never reaches this hook at all, and an explicit `--model` or `--effort` still wins over the resolver's axis even when the harness itself is auto-applied.
-There, instead of immediately refusing, `fm-spawn.sh` resolves the task's own `data/<id>/brief.md` with `bin/fm-dispatch-resolve.sh --json` and applies the result only when its status is `clear` and the matched rule declares `"auto_apply": true`; the harness, and any unset model or effort, come straight from the resolver's `chosen.profile`.
+It fires only inside the existing consultation backstop - a non-secondmate spawn with `config/crew-dispatch.json` present and no explicit per-spawn choice.
+Any explicit `--harness`, positional harness, raw launch command, `--model`, or `--effort` disables auto-apply for that spawn entirely, so the explicit choice wins and the explicit-harness backstop still applies to a spawn that names a model or effort without a harness.
+There, instead of immediately refusing, `fm-spawn.sh` resolves the task's own `data/<id>/brief.md` with `bin/fm-dispatch-resolve.sh --json` and applies the result only when its status is `clear` and the matched rule declares `"auto_apply": true`; the harness, model, and effort all come straight from the resolver's `chosen.profile`.
 Every other outcome - `ambiguous`, `escalate`, `error`, `off` (no `TYPESAFE_API_KEY`), a `clear` match on a rule that does not opt in, a missing brief, or a missing `jq` - leaves today's refusal in place; the pilot never blocks or fails a spawn on its own account.
 
-Every attempt through this hook, applied or not, appends one JSON line to `data/dispatch-predictions.jsonl` (`bin/fm-dispatch-predict-lib.sh`): a UTC timestamp, the task id, the resolver's status and matched rule, its chosen profile (clear results only), whether that profile was applied, and the profile the spawn actually used.
+Every spawn and relaunch - crewmate, scout, or secondmate, explicit or not, with or without `config/crew-dispatch.json` - appends one JSON line to `data/dispatch-predictions.jsonl` (`bin/fm-dispatch-predict-lib.sh`): a UTC timestamp, the task id, the resolver's status, matched rule, and confidence, its chosen profile (clear results only), whether that profile was applied, and the profile the spawn actually used.
+When the resolver did not run, the status says why: `no-config` (no `config/crew-dispatch.json`), `not-run` (an explicit choice, a relaunch, or a secondmate), `off`, or `error`.
+A line is written once the profile is resolved, before launch, so a spawn that later aborts or is retried can leave more than one line per task id; joins should take the last line per task id.
 The ledger carries no brief text or secrets, and a logging failure (missing `jq`, an unwritable `data/`) is reported on stderr without touching the spawn.
 
 ## Toolchain
