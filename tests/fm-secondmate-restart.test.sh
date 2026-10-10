@@ -1001,12 +1001,14 @@ test_park_missing_endpoint_respawns_same_session() {
   out=$(run_park "$dir" sm1 park); rc=$?
   expect_code 0 "$rc" "park before endpoint loss: $out"
   : > "$dir/fake/windows"
+  printf 'claude pinned-model high\n' > "$dir/home/config/secondmate-harness"
   out=$(env TMUX='' PATH="$dir/fakebin:$PATH" FM_HOME="$dir/home" FM_FAKE_DIR="$dir/fake" FM_SPAWN_NO_GUARD=1 FM_FAKE_CAPTURE_LAUNCH=1 \
     "$ROOT/bin/fm-send.sh" sm1 'work after endpoint loss' 2>&1); rc=$?
   expect_code 0 "$rc" "missing endpoint wake: $out"
   assert_absent "$dir/home/state/.secondmate-park-sm1" "respawn clears marker: $out"
   assert_grep 'created' "$dir/fake/created" 'missing endpoint uses the existing respawn owner'
   assert_grep 'exact-park-session' "$dir/fake/replacement-launch" 'respawn preserves captured session reference'
+  assert_grep 'pinned-model' "$dir/fake/replacement-launch" 'respawn keeps the configured secondmate model'
   assert_grep 'work after endpoint loss' "$dir/home/state/sm1.inbox/002.msg" 'respawn preserves queued work'
   pass 'missing parked endpoint respawns into its home with the captured session and durable inbox'
 }

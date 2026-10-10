@@ -157,7 +157,7 @@ if [ "$ACTION" = unpark ]; then
   current_state=$(fm_backend_agent_state "$backend" "$(fm_backend_target_of_meta "$META")") || current_state=unreadable
   case "$current_state" in
     dead) spawn_args=("$ID" --relaunch) ;;
-    missing) spawn_args=("$ID" "$MATE_HOME" --secondmate --backend "$backend" --harness "$RESUME_HARNESS") ;;
+    missing) spawn_args=("$ID" "$MATE_HOME" --secondmate --backend "$backend") ;;
     *) fail "parked endpoint state is $current_state; refusing duplicate launch" ;;
   esac
   if "$SCRIPT_DIR/fm-spawn.sh" "${spawn_args[@]}"; then
