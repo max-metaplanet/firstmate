@@ -83,7 +83,7 @@ _fm_wait_fd_setup() {
   fi
   fifo="${TMPDIR:-/tmp}/.fm-wait.$$.$RANDOM"
   mkfifo -m 600 "$fifo" 2>/dev/null || return 1
-  if ! exec {FM_WAIT_FD}<>"$fifo" 2>/dev/null; then
+  if ! { exec {FM_WAIT_FD}<>"$fifo"; } 2>/dev/null; then
     rm -f "$fifo" 2>/dev/null || true
     FM_WAIT_FD=
     return 1

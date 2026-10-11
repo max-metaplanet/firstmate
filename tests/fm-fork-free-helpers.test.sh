@@ -341,6 +341,7 @@ PATH="$2:$PATH"
 before=$SECONDS
 fm_wait_seconds 1
 fm_wait_seconds 0.5
+printf 'stderr survives wait setup\n' >&2
 elapsed=$((SECONDS - before))
 # Two waits totalling 1.5s must not return early; SECONDS is whole seconds, so
 # one is the floor a correct wait can show and three bounds a wait that hung.
@@ -353,7 +354,15 @@ else
   [ "$starts" -eq 2 ] || printf 'bash %s fell back to sleep %s times, not twice\n' "$BASH_VERSION" "$starts"
 fi
 SH
-  run_everywhere "bounded wait" "$script" "$shim" "$log"
+  # Capture stderr separately: allocating the descriptor must not permanently
+  # redirect the caller's diagnostics into /dev/null.
+  local wrapped="$TMP_ROOT/wait-stderr.sh"
+  cat > "$wrapped" <<'SH'
+"$BASH" "$2" "$1" "$3" "$4" 2> "$5" || exit
+IFS= read -r diagnostic < "$5"
+[ "$diagnostic" = 'stderr survives wait setup' ] || printf 'wait setup lost stderr\n'
+SH
+  run_everywhere "bounded wait" "$wrapped" "$script" "$shim" "$log" "$TMP_ROOT/wait.stderr"
   pass "fm_wait_seconds waits its interval and starts no sleep program where read -t is available"
 }
 
