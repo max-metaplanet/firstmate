@@ -412,7 +412,7 @@ for attempt in range(8):
         try:
             deadline = time.monotonic() + 20
             while time.monotonic() < deadline:
-                if re.search(r"\+ (?:read -r -t 1 -u |sleep 1\n)", trace_path.read_text()):
+                if re.search(r"\+ (?:read -r -t 1 -u |sleep 1\n)", trace_path.read_text(errors="replace")):
                     break
                 if proc.poll() is not None:
                     raise AssertionError("watcher exited before its wait")
@@ -423,7 +423,7 @@ for attempt in range(8):
             proc.send_signal(signal.SIGTERM)
             proc.wait(timeout=5)
             assert proc.returncode in (-signal.SIGTERM, 128 + signal.SIGTERM), proc.returncode
-            assert "return: can only" not in trace_path.read_text(), "invalid return during cleanup"
+            assert "return: can only" not in trace_path.read_text(errors="replace"), "invalid return during cleanup"
             assert not (home / "state" / ".watch.lock").is_symlink(), "watcher retained ownership"
         finally:
             if proc.poll() is None:
