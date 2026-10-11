@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # fm-dispatch-predict-lib.sh - append-only prediction log for fm-spawn.sh's
 # dispatch-resolve auto-apply pilot (the investigation/scout rule only;
-# docs/configuration.md "Crew dispatch profiles").
+# docs/configuration.md "Automatic profile application (fm-spawn.sh)").
 #
 # fm_dispatch_predict_log <data-dir> <task-id> <resolver-json-or-empty> \
 #   <fallback-status> <auto_applied: true|false> <harness-used> <model-used> \

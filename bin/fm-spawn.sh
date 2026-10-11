@@ -2373,7 +2373,7 @@ case "$ARG3" in
   else
     if [ -f "$CONFIG/crew-dispatch.json" ]; then
       # dispatch-resolve auto-apply pilot: the investigation/scout rule only
-      # (docs/configuration.md "Crew dispatch profiles"). This branch only
+      # (docs/configuration.md "Automatic profile application"). This branch only
       # runs when no explicit --harness/positional harness/raw launch command
       # was given; an explicit --model or --effort also skips the resolver, so
       # any explicit per-spawn choice keeps today's refusal below. Otherwise

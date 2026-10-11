@@ -83,7 +83,7 @@
 #       a floor fall-through to the default profiles. This is the one
 #       field bin/fm-spawn.sh's dispatch-resolve pilot hook checks before
 #       applying a clear result's profile automatically; see
-#       docs/configuration.md "Crew dispatch profiles".)
+#       docs/configuration.md "Automatic profile application (fm-spawn.sh)".)
 #     auto_apply_skipped: <why an opted-in matched rule did not auto-apply>
 #     JSON only: applied_rule, the rule id (or "default") the profiles came
 #       from, which differs from rule after a fallback or floor fall-through
