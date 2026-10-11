@@ -1161,6 +1161,27 @@ assert_absent "$LOG/argv" "auto_apply on a forced route still makes no model cal
 cp "$BASE_RULES" "$RULES"
 pass "auto_apply surfaces from the matched rule on both a model-decided and a path-forced clear route, and is absent/false otherwise"
 
+jq '.rules[3].floor = {"scope":"all_models","min_percent":99,"provider":"codex"}' "$AUTO_APPLY_RULES" > "$RULES"
+reset_log
+write_response "$RESPONSE" rule_4 0.9
+TYPESAFE_API_KEY=$KEY run code out err "$BRIEF" --project pager --json
+assert_equals clear "$(jq -r '.status' <<< "$out")" "an opted-in rule below its floor still resolves among the default profiles"
+assert_equals false "$(jq -r '.auto_apply' <<< "$out")" "a floor fall-through to default never reports auto_apply true"
+assert_equals default "$(jq -r '.applied_rule' <<< "$out")" "applied_rule names the default profiles a floor fall-through used"
+assert_contains "$(jq -r '.auto_apply_skipped' <<< "$out")" 'fall through to default' "the skip reason names the fall-through"
+TYPESAFE_API_KEY=$KEY run code out err "$BRIEF" --project pager
+assert_contains "$out" '  auto_apply_skipped: rule rule_4 opted in but selection came from default' "text output names why auto-apply was skipped"
+jq '.rules[1].min_confidence = 0.9 | .rules[3].min_confidence = 0.1' "$AUTO_APPLY_RULES" > "$RULES"
+reset_log
+write_floor_response "$RESPONSE" rule_2 0.76 0.02 0.76 0.02 0.18 0.02
+TYPESAFE_API_KEY=$KEY run code out err "$BRIEF" --project pager --json
+assert_equals clear "$(jq -r '.status' <<< "$out")" "a fallback onto the opted-in rule resolves clear"
+assert_equals rule_2 "$(jq -r '.rule' <<< "$out")" "rule keeps the model's top pick"
+assert_equals rule_4 "$(jq -r '.applied_rule' <<< "$out")" "applied_rule names the fallback rule whose profiles were used"
+assert_equals true "$(jq -r '.auto_apply' <<< "$out")" "a fallback onto the opted-in rule's own profiles auto-applies"
+cp "$BASE_RULES" "$RULES"
+pass "auto_apply requires the opted-in rule's own profiles, and applied_rule names the rule they came from"
+
 # --- configuration errors exit 2 and select nothing ----------------------------------
 reset_log
 TYPESAFE_API_KEY=$KEY run code out err

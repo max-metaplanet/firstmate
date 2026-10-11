@@ -78,11 +78,15 @@
 #       (a path-forced result only; no decided_by line means Jev decided)
 #     auto_apply: true (present, text and JSON, whenever the matched rule - Jev-
 #       decided or path-forced alike - declares "auto_apply": true in
-#       config/crew-dispatch.json, which at most one rule may do; absent/false
-#       otherwise. This is the one
+#       config/crew-dispatch.json, which at most one rule may do, and the
+#       profiles come from that rule itself; absent/false otherwise, including
+#       a floor fall-through to the default profiles. This is the one
 #       field bin/fm-spawn.sh's dispatch-resolve pilot hook checks before
 #       applying a clear result's profile automatically; see
 #       docs/configuration.md "Crew dispatch profiles".)
+#     auto_apply_skipped: <why an opted-in matched rule did not auto-apply>
+#     JSON only: applied_rule, the rule id (or "default") the profiles came
+#       from, which differs from rule after a fallback or floor fall-through
 #     reason: <why the status is not clear>
 #     candidate: <harness>:<model> provider=.. scope=.. remaining=..% spendPriority=.. runway=.. -> eligible | eligible, unranked: <reason> | not eligible: <reason>
 #     profile: --harness <h> [--model <m>] [--effort <e>]     (status clear only)
@@ -608,18 +612,23 @@ RESULT=$(jq -n --arg floor "$CONFIDENCE_FLOOR" --argjson lat "$LAT_MS" --arg non
    else {source: $choice, use: profiles($rule.use), note: "rule matched"} end) as $sel |
   def when_of($c): (if rule_at($c) == null then $none_criterion else rule_at($c).when end | .[0:60]);
   # auto_apply is the one-rule pilot opt-in (docs/configuration.md "Crew
-  # dispatch profiles"): it rides every result, forced or model-decided, keyed
-  # off the SAME matched rule $choice already names, so a caller never needs a
-  # second lookup to learn whether the matched rule opted in.
-  ((rule_at($choice).auto_apply // false)) as $auto_apply |
+  # dispatch profiles"): it rides every result, forced or model-decided, and is
+  # true only when the profiles come from the opted-in rule itself, so a floor
+  # fall-through to the default profiles never auto-applies. applied_rule names
+  # the rule (or "default") the profiles actually came from.
+  ($sel.source // $choice) as $applied_rule |
+  ((rule_at($choice).auto_apply // false)) as $opted_in |
+  ($opted_in and $applied_rule == $choice) as $auto_apply |
+  (if $opted_in and ($auto_apply | not) then {auto_apply_skipped: "rule \($choice) opted in but selection came from \($applied_rule): \($sel.note // $sel.escalate // "no profile")"} else {} end) as $skip |
   (if $forced == null then
      {
        model: $r.model, latency_ms: $lat, tokens: ($r.usage // null),
        rule: $picked,
        rule_when: when_of($picked),
        confidence: $a.confidence, probabilities: $a.probabilities,
+       applied_rule: $applied_rule,
        auto_apply: $auto_apply
-     }
+     } + $skip
      + (if $fb.to then {fallback: "\($choice) (\(when_of($choice))) probability \($fb.p) clears its floor \($fb.to_floor); \($picked) probability \($a.probabilities[$picked]) is below its floor \($picked_floor)"} else {} end)
    else
      {
@@ -627,8 +636,9 @@ RESULT=$(jq -n --arg floor "$CONFIDENCE_FLOOR" --argjson lat "$LAT_MS" --arg non
        rule: $choice,
        rule_when: when_of($choice),
        forced_path: $forced.path, forced_pattern: $forced.pattern,
+       applied_rule: $applied_rule,
        auto_apply: $auto_apply
-     }
+     } + $skip
    end) as $ev |
   if $sel.invalid then $ev + {status: "error", reason: $sel.invalid}
   elif $fb.below and $fb.global then
@@ -677,6 +687,7 @@ TEXT=$(jq -r '
       (if .fallback then "  fallback: \(.fallback | flat)" else empty end))
    end),
   (if .auto_apply then "  auto_apply: true" else empty end),
+  (if .auto_apply_skipped then "  auto_apply_skipped: \(.auto_apply_skipped | flat)" else empty end),
   (if .reason then "  reason: \(.reason | flat)" else empty end),
   (if .note then "  note: \(.note | flat)" else empty end),
   (if .unranked_note then "  note: \(.unranked_note | flat)" else empty end),

@@ -709,6 +709,54 @@ test_active_dispatch_profile_two_auto_apply_rules_apply_nothing() {
   pass "more than one auto_apply rule is a reported config error and auto-applies nothing"
 }
 
+test_active_dispatch_profile_floor_fallthrough_never_auto_applies_default() {
+  local rec id out status line
+  id=profile-pilot-floor-z27
+  rec=$(make_spawn_case profile-pilot-floor claude "$id")
+  read_case_record "$rec"
+  enable_pilot_dispatch_profile "$HOME_DIR"
+  jq '.rules[0].floor = {"scope":"all_models","min_percent":80,"provider":"codex"}' "$HOME_DIR/config/crew-dispatch.json" > "$CASE_DIR/floor.json"
+  cp "$CASE_DIR/floor.json" "$HOME_DIR/config/crew-dispatch.json"
+  make_pilot_fakebin "$FAKEBIN_DIR" rule_1 0.95
+
+  out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" --scout 2>&1)
+  status=$?
+  expect_code 1 "$status" "a scout floor fall-through to default must keep the explicit-harness backstop: $out"
+  assert_contains "$out" "config/crew-dispatch.json is active - pass an explicit harness resolved from the dispatch rules"     "a floor fall-through did not keep today's backstop"
+  assert_absent "$HOME_DIR/state/$id.meta" "a refused spawn must not write task meta"
+
+  line=$(read_predictions_log "$HOME_DIR")
+  [ "$(jq -r '.resolver_status' <<<"$line")" = clear ] || fail "prediction log resolver_status mismatch: $line"
+  [ "$(jq -r '.rule' <<<"$line")" = default ] || fail "prediction log rule must name the default profiles actually selected: $line"
+  [ "$(jq -r '.picked_rule' <<<"$line")" = rule_1 ] || fail "prediction log picked_rule mismatch: $line"
+  [ "$(jq -r '.auto_applied' <<<"$line")" = false ] || fail "prediction log auto_applied mismatch: $line"
+  assert_contains "$(jq -r '.auto_apply_skipped' <<<"$line")" "fall through to default" "prediction log must give the reason auto-apply was skipped"
+  pass "a scout floor fall-through to default never auto-applies and logs why"
+}
+
+test_active_dispatch_profile_min_confidence_fallback_logs_applied_rule() {
+  local rec id out status line
+  id=profile-pilot-fallback-z28
+  rec=$(make_spawn_case profile-pilot-fallback claude "$id")
+  read_case_record "$rec"
+  enable_pilot_dispatch_profile "$HOME_DIR"
+  jq '.rules[0].min_confidence = 0.1 | .rules[1].min_confidence = 0.8' "$HOME_DIR/config/crew-dispatch.json" > "$CASE_DIR/fallback.json"
+  cp "$CASE_DIR/fallback.json" "$HOME_DIR/config/crew-dispatch.json"
+  make_pilot_fakebin "$FAKEBIN_DIR" rule_2 0.6
+
+  out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" --scout)
+  status=$?
+  expect_code 0 "$status" "a fallback onto the auto_apply rule should spawn: $out"
+  assert_contains "$out" "spawned $id harness=codex" "spawn did not apply the fallback rule's profile"
+  assert_meta_profile "$HOME_DIR/state/$id.meta" codex gpt-5.6-sol high
+
+  line=$(read_predictions_log "$HOME_DIR")
+  [ "$(jq -r '.rule' <<<"$line")" = rule_1 ] || fail "prediction log rule must name the rule whose profiles were used: $line"
+  [ "$(jq -r '.picked_rule' <<<"$line")" = rule_2 ] || fail "prediction log picked_rule mismatch: $line"
+  [ "$(jq -r '.auto_applied' <<<"$line")" = true ] || fail "prediction log auto_applied mismatch: $line"
+  pass "a min_confidence fallback onto the auto_apply rule logs the rule whose profiles were used"
+}
+
 test_spawn_without_dispatch_config_logs_no_config() {
   local rec id out status line
   id=profile-pilot-no-config-z26
@@ -2154,6 +2202,8 @@ test_active_dispatch_profile_ambiguous_resolver_stays_unchanged
 test_active_dispatch_profile_explicit_harness_bypasses_the_pilot
 test_active_dispatch_profile_explicit_model_disables_auto_apply
 test_active_dispatch_profile_two_auto_apply_rules_apply_nothing
+test_active_dispatch_profile_floor_fallthrough_never_auto_applies_default
+test_active_dispatch_profile_min_confidence_fallback_logs_applied_rule
 test_spawn_without_dispatch_config_logs_no_config
 test_chained_raw_launch_strips_ai_trailer_in_every_step
 test_claude_threads_model_and_effort

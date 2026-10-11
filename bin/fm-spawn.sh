@@ -2392,7 +2392,7 @@ case "$ARG3" in
             if [ "$(jq -r '.status // ""' <<<"$DISPATCH_PILOT_JSON" 2>/dev/null || true)" = clear ] \
               && [ "$(jq -r '.auto_apply // false' <<<"$DISPATCH_PILOT_JSON" 2>/dev/null || true)" = true ]; then
               DISPATCH_PILOT_HARNESS=$(jq -r '.chosen.profile.harness // ""' <<<"$DISPATCH_PILOT_JSON" 2>/dev/null) || true
-              DISPATCH_PILOT_RULE=$(jq -r '.rule // "?"' <<<"$DISPATCH_PILOT_JSON" 2>/dev/null) || true
+              DISPATCH_PILOT_RULE=$(jq -r '.applied_rule // .rule // "?"' <<<"$DISPATCH_PILOT_JSON" 2>/dev/null) || true
               if [ -n "$DISPATCH_PILOT_HARNESS" ]; then
                 HARNESS=$DISPATCH_PILOT_HARNESS
                 MODEL=$(jq -r '.chosen.profile.model // ""' <<<"$DISPATCH_PILOT_JSON" 2>/dev/null) || MODEL=

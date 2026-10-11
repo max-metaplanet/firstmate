@@ -16,12 +16,17 @@
 #                   per-spawn choice, a relaunch, or a secondmate), "error"
 #                   (the resolver failed, e.g. malformed config), or "off"
 #                   (TYPESAFE_API_KEY absent, a never-send match, or no brief)
-#   rule            the resolver's matched rule id, when present
-#   confidence      the resolver's confidence for that rule, when present
+#   rule            the rule id (or "default") whose profiles the resolver
+#                   selected, when present; after a min_confidence fallback
+#                   this is the fallback rule, not the model's top pick
+#   picked_rule     the resolver's top pick before any fallback, when present
+#   confidence      the resolver's answer confidence, when present
 #   chosen          the resolver's chosen {harness,model,effort}, or null
 #                   unless status is clear
 #   auto_applied    true only when the spawn launched on the resolver's own
 #                   chosen profile
+#   auto_apply_skipped  the resolver's reason an opted-in rule did not
+#                   auto-apply (e.g. a floor fall-through to default), or null
 #   used            the profile fm-spawn.sh actually launched with
 # No brief text, captain's intent, or secrets are recorded; <resolver-json>
 # itself must already be the resolver's own --json output, never the brief.
@@ -50,10 +55,12 @@ fm_dispatch_predict_log() {
       ts: $ts,
       task_id: $task_id,
       resolver_status: (if ($r | type) == "object" then ($r.status // $fallback_status) else $fallback_status end),
-      rule: (if ($r | type) == "object" then ($r.rule // null) else null end),
+      rule: (if ($r | type) == "object" then ($r.applied_rule // $r.rule // null) else null end),
+      picked_rule: (if ($r | type) == "object" then ($r.rule // null) else null end),
       confidence: (if ($r | type) == "object" then ($r.confidence // null) else null end),
       chosen: (if ($r | type) == "object" then ($r.chosen.profile // null) else null end),
       auto_applied: $auto_applied,
+      auto_apply_skipped: (if ($r | type) == "object" then ($r.auto_apply_skipped // null) else null end),
       used: {
         harness: (if $harness == "" then null else $harness end),
         model: (if $model == "" then null else $model end),
