@@ -76,6 +76,17 @@
 #       (a Jev-decided result only)
 #     decided_by: path-forced, rule (when excerpt), forced_path/forced_pattern
 #       (a path-forced result only; no decided_by line means Jev decided)
+#     auto_apply: true (present, text and JSON, whenever the matched rule - Jev-
+#       decided or path-forced alike - declares "auto_apply": true in
+#       config/crew-dispatch.json, which at most one rule may do, and the
+#       profiles come from that rule itself; absent/false otherwise, including
+#       a floor fall-through to the default profiles. This is the one
+#       field bin/fm-spawn.sh's dispatch-resolve pilot hook checks before
+#       applying a clear result's profile automatically; see
+#       docs/configuration.md "Automatic profile application (fm-spawn.sh)".)
+#     auto_apply_skipped: <why an opted-in matched rule did not auto-apply>
+#     JSON only: applied_rule, the rule id (or "default") the profiles came
+#       from, which differs from rule after a fallback or floor fall-through
 #     reason: <why the status is not clear>
 #     candidate: <harness>:<model> provider=.. scope=.. remaining=..% spendPriority=.. runway=.. -> eligible | eligible, unranked: <reason> | not eligible: <reason>
 #     profile: --harness <h> [--model <m>] [--effort <e>]     (status clear only)
@@ -226,6 +237,8 @@ rules_err=$(jq -r --argjson verified_harnesses "$VERIFIED_HARNESSES" --arg provi
   elif any((.rules // [])[]; has("path_force") and .path_force != "deployment-config") then
     "path_force must be \"deployment-config\" when present"
   elif ([(.rules // [])[] | select(.path_force == "deployment-config")] | length) > 1 then "at most one rule may declare path_force"
+  elif any((.rules // [])[]; has("auto_apply") and (.auto_apply | type) != "boolean") then "auto_apply must be a boolean when present"
+  elif ([(.rules // [])[] | select(.auto_apply == true)] | length) > 1 then "at most one rule may declare auto_apply true"
   elif any((.rules // [])[]; has("floor") and floor_bad(.floor; true)) then "rule floor needs scope, min_percent 0..100, and provider matching ^[a-z0-9]+(-[a-z0-9]+)*\\z"
   elif any((.rules // [])[] | profiles(.use)[]; profile_bad(.)) then "each use profile needs harness; model, effort, and floor must be well formed, and provider must match ^[a-z0-9]+(-[a-z0-9]+)*\\z when present"
   elif any((.rules // [])[]; duplicate_profiles(profiles(.use))) then "each rule use must not contain duplicate harness, model, and effort profiles"
@@ -598,21 +611,34 @@ RESULT=$(jq -n --arg floor "$CONFIDENCE_FLOOR" --argjson lat "$LAT_MS" --arg non
      then {source: "default", use: profiles($cfg.default // null), note: "rule \($choice) floor \($rule.floor.scope) below \($rule.floor.min_percent)%: fall through to default"}
    else {source: $choice, use: profiles($rule.use), note: "rule matched"} end) as $sel |
   def when_of($c): (if rule_at($c) == null then $none_criterion else rule_at($c).when end | .[0:60]);
+  # auto_apply is the one-rule pilot opt-in (docs/configuration.md "Crew
+  # dispatch profiles"): it rides every result, forced or model-decided, and is
+  # true only when the profiles come from the opted-in rule itself, so a floor
+  # fall-through to the default profiles never auto-applies. applied_rule names
+  # the rule (or "default") the profiles actually came from.
+  ($sel.source // $choice) as $applied_rule |
+  ((rule_at($choice).auto_apply // false)) as $opted_in |
+  ($opted_in and $applied_rule == $choice) as $auto_apply |
+  (if $opted_in and ($auto_apply | not) then {auto_apply_skipped: "rule \($choice) opted in but selection came from \($applied_rule): \($sel.note // $sel.escalate // "no profile")"} else {} end) as $skip |
   (if $forced == null then
      {
        model: $r.model, latency_ms: $lat, tokens: ($r.usage // null),
        rule: $picked,
        rule_when: when_of($picked),
-       confidence: $a.confidence, probabilities: $a.probabilities
-     }
+       confidence: $a.confidence, probabilities: $a.probabilities,
+       applied_rule: $applied_rule,
+       auto_apply: $auto_apply
+     } + $skip
      + (if $fb.to then {fallback: "\($choice) (\(when_of($choice))) probability \($fb.p) clears its floor \($fb.to_floor); \($picked) probability \($a.probabilities[$picked]) is below its floor \($picked_floor)"} else {} end)
    else
      {
        decided_by: "path-forced",
        rule: $choice,
        rule_when: when_of($choice),
-       forced_path: $forced.path, forced_pattern: $forced.pattern
-     }
+       forced_path: $forced.path, forced_pattern: $forced.pattern,
+       applied_rule: $applied_rule,
+       auto_apply: $auto_apply
+     } + $skip
    end) as $ev |
   if $sel.invalid then $ev + {status: "error", reason: $sel.invalid}
   elif $fb.below and $fb.global then
@@ -660,6 +686,8 @@ TEXT=$(jq -r '
       "  probabilities: \([.probabilities | to_entries[] | "\(.key | flat)=\(.value | flat)"] | join(" "))",
       (if .fallback then "  fallback: \(.fallback | flat)" else empty end))
    end),
+  (if .auto_apply then "  auto_apply: true" else empty end),
+  (if .auto_apply_skipped then "  auto_apply_skipped: \(.auto_apply_skipped | flat)" else empty end),
   (if .reason then "  reason: \(.reason | flat)" else empty end),
   (if .note then "  note: \(.note | flat)" else empty end),
   (if .unranked_note then "  note: \(.unranked_note | flat)" else empty end),

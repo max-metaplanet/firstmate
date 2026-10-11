@@ -1130,6 +1130,58 @@ assert_absent "$LOG/argv" "floor fall-through on a forced route makes no model c
 cp "$BASE_RULES" "$RULES"
 pass "only the documented line form declares paths, and approval and floor semantics hold on a forced route"
 
+# --- auto_apply: the fm-spawn.sh one-rule pilot opt-in -------------------------------
+AUTO_APPLY_RULES="$TMP_ROOT/auto-apply-rules.json"
+jq '.rules[3].auto_apply = true' "$BASE_RULES" > "$AUTO_APPLY_RULES"
+cp "$AUTO_APPLY_RULES" "$RULES"
+reset_log
+write_response "$RESPONSE" rule_4 0.9
+TYPESAFE_API_KEY=$KEY run code out err "$BRIEF" --project pager
+assert_contains "$out" '  status: clear' "the opted-in rule still resolves clear"
+assert_contains "$out" '  auto_apply: true' "a model-decided clear match on the opted-in rule reports auto_apply: true"
+TYPESAFE_API_KEY=$KEY run code out err "$BRIEF" --project pager --json
+assert_equals true "$(jq -r '.auto_apply' <<< "$out")" "JSON output carries auto_apply: true for the opted-in rule"
+cp "$BASE_RULES" "$RULES"
+reset_log
+write_response "$RESPONSE" rule_4 0.9
+TYPESAFE_API_KEY=$KEY run code out err "$BRIEF" --project pager
+assert_not_contains "$out" 'auto_apply' "a rule that does not declare auto_apply prints no auto_apply line"
+TYPESAFE_API_KEY=$KEY run code out err "$BRIEF" --project pager --json
+assert_equals false "$(jq -r '.auto_apply' <<< "$out")" "JSON output reports auto_apply: false for a rule that never opted in"
+# A path-forced route carries the same field, keyed off the SAME forced rule.
+cp "$CAREFUL_RULES" "$RULES"
+jq '.rules[2].auto_apply = true' "$CAREFUL_RULES" > "$TMP_ROOT/auto-apply-careful.json"
+cp "$TMP_ROOT/auto-apply-careful.json" "$RULES"
+brief_with_paths 'infra/prod.tf'
+reset_log
+TYPESAFE_API_KEY=$KEY run code out err "$PATH_BRIEF" --project pager
+assert_contains "$out" '  decided_by: path-forced' "the forced-route fixture still forces"
+assert_contains "$out" '  auto_apply: true' "a path-forced route reports auto_apply from the SAME forced rule, with no model call"
+assert_absent "$LOG/argv" "auto_apply on a forced route still makes no model call"
+cp "$BASE_RULES" "$RULES"
+pass "auto_apply surfaces from the matched rule on both a model-decided and a path-forced clear route, and is absent/false otherwise"
+
+jq '.rules[3].floor = {"scope":"all_models","min_percent":99,"provider":"codex"}' "$AUTO_APPLY_RULES" > "$RULES"
+reset_log
+write_response "$RESPONSE" rule_4 0.9
+TYPESAFE_API_KEY=$KEY run code out err "$BRIEF" --project pager --json
+assert_equals clear "$(jq -r '.status' <<< "$out")" "an opted-in rule below its floor still resolves among the default profiles"
+assert_equals false "$(jq -r '.auto_apply' <<< "$out")" "a floor fall-through to default never reports auto_apply true"
+assert_equals default "$(jq -r '.applied_rule' <<< "$out")" "applied_rule names the default profiles a floor fall-through used"
+assert_contains "$(jq -r '.auto_apply_skipped' <<< "$out")" 'fall through to default' "the skip reason names the fall-through"
+TYPESAFE_API_KEY=$KEY run code out err "$BRIEF" --project pager
+assert_contains "$out" '  auto_apply_skipped: rule rule_4 opted in but selection came from default' "text output names why auto-apply was skipped"
+jq '.rules[1].min_confidence = 0.9 | .rules[3].min_confidence = 0.1' "$AUTO_APPLY_RULES" > "$RULES"
+reset_log
+write_floor_response "$RESPONSE" rule_2 0.76 0.02 0.76 0.02 0.18 0.02
+TYPESAFE_API_KEY=$KEY run code out err "$BRIEF" --project pager --json
+assert_equals clear "$(jq -r '.status' <<< "$out")" "a fallback onto the opted-in rule resolves clear"
+assert_equals rule_2 "$(jq -r '.rule' <<< "$out")" "rule keeps the model's top pick"
+assert_equals rule_4 "$(jq -r '.applied_rule' <<< "$out")" "applied_rule names the fallback rule whose profiles were used"
+assert_equals true "$(jq -r '.auto_apply' <<< "$out")" "a fallback onto the opted-in rule's own profiles auto-applies"
+cp "$BASE_RULES" "$RULES"
+pass "auto_apply requires the opted-in rule's own profiles, and applied_rule names the rule they came from"
+
 # --- configuration errors exit 2 and select nothing ----------------------------------
 reset_log
 TYPESAFE_API_KEY=$KEY run code out err
@@ -1153,6 +1205,9 @@ for bad in \
   '{"rules":[{"when":"x","use":{"harness":"claude"},"path_force":true}]}|path_force must be "deployment-config" when present' \
   '{"rules":[{"when":"x","use":{"harness":"claude"},"path_force":"deploy"}]}|path_force must be "deployment-config" when present' \
   '{"rules":[{"when":"x","use":{"harness":"claude"},"path_force":"deployment-config"},{"when":"y","use":{"harness":"claude"},"path_force":"deployment-config"}]}|at most one rule may declare path_force' \
+  '{"rules":[{"when":"x","use":{"harness":"claude"},"auto_apply":"yes"}]}|auto_apply must be a boolean when present' \
+  '{"rules":[{"when":"x","use":{"harness":"claude"},"auto_apply":1}]}|auto_apply must be a boolean when present' \
+  '{"rules":[{"when":"x","use":{"harness":"claude"},"auto_apply":true},{"when":"y","use":{"harness":"claude"},"auto_apply":true}]}|at most one rule may declare auto_apply true' \
   '{"rules":[{"when":"x","use":{"harness":"claude"},"floor":{"scope":"model:fable","min_percent":20}}]}|rule floor needs scope, min_percent 0..100, and provider matching ^[a-z0-9]+(-[a-z0-9]+)*\z' \
   '{"rules":[{"when":"x","use":{"harness":"claude"},"floor":{"scope":"model:fable","min_percent":20,"provider":"CLAUDE"}}]}|rule floor needs scope, min_percent 0..100, and provider matching ^[a-z0-9]+(-[a-z0-9]+)*\z' \
   '{"rules":[{"when":"x","use":{"harness":"claude","provider":""}}]}|each use profile needs harness; model, effort, and floor must be well formed, and provider must match ^[a-z0-9]+(-[a-z0-9]+)*\z when present' \
