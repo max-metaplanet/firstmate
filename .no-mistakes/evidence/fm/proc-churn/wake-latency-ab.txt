@@ -1,0 +1,6 @@
+label=before wake_latency_s=41.94 watcher_alive_before_term=yes exited_after_term=yes term_to_exit_s=0.32 rc=0 lock_left=no
+surfaced: signal: /tmp/fm-nmtest.tuvdaN/fm-lat.VyXzYq/home/state/t1.status
+label=after wake_latency_s=41.59 watcher_alive_before_term=yes exited_after_term=yes term_to_exit_s=0.20 rc=0 lock_left=no
+surfaced: signal: /tmp/fm-nmtest.tuvdaN/fm-lat.OMG8rg/home/state/t1.status
+label=after-2 wake_latency_s=42.61 watcher_alive_before_term=yes exited_after_term=yes term_to_exit_s=0.14 rc=0 lock_left=no
+label=before-2 wake_latency_s=41.89 watcher_alive_before_term=yes exited_after_term=yes term_to_exit_s=0.20 rc=0 lock_left=no

@@ -1,0 +1,37 @@
+label=before root=/tmp/fm-nmtest.tuvdaN/base window=40s poll=2s tasks=3 watcher_alive_at_end=yes terminated_after_term=yes
+poll_cycles=4  externals_per_cycle=169.2  total=677
+externals by program (per cycle):
+    23.8  cat
+    19.8  rm
+    16.8  readlink
+    15.0  grep
+    12.8  cut
+    12.0  jq
+    11.2  tail
+     7.2  uname
+     6.5  tr
+     6.5  od
+     6.0  mktemp
+     6.0  date
+     4.2  dirname
+     3.8  tmux
+     3.8  mkdir
+     3.8  basename
+     3.0  md5
+     2.0  perl
+     1.5  mv
+     1.5  head
+     1.2  touch
+     1.0  sleep
+sampled descendants (per cycle; undercounts fast execs, catches absolute-path helpers):
+    57.5  (bash)
+    21.0  bash
+     4.0  (stat)
+     3.2  /bin/bash
+     2.0  /usr/bin/perl
+     1.5  (cat)
+     1.0  <defunct>
+     1.0  /bin/sleep
+     1.0  (rm)
+     0.8  /usr/bin/stat
+bench dir retained: /tmp/fm-nmtest.tuvdaN/fm-tickbench.ch5m6P

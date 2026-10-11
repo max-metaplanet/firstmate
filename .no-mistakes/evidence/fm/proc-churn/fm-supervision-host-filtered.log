@@ -1,0 +1,12 @@
+ok - host: a parked host samples its arm's exit without starting a program, and still takes its close
+ok - host: the park ends itself with a boundary wake and a stopped watcher
+ok - host: waiting closes cannot carry the park past its boundary
+ok - host: signal races accept a gone process and still refuse a live process
+ok - host+hook: a successor closed before exit_to_main does not suppress the branch-outcome rewake
+ok - host+hook: a successor that closes during a held engine turn does not suppress the branch-outcome rewake
+ok - host+hook: a successor that cannot be recorded is stopped, and main's next turn end arms a fresh cycle
+ok - host: an engine turn is bounded, and tool processes outside its process group are reaped
+ok - host: a restarted host stops, by recorded identity, the cycle a killed predecessor left running
+ok - host: explicit stop is home-scoped, idempotent, and preserves conversations and durable data
+ok - host: explicit stop guards process identities and stops a detached successor arm
+exit=0
