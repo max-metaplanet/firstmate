@@ -215,6 +215,21 @@ fm_brief_base_branches() {  # <brief>
   ' "$1"
 }
 
+# Print the "Ticket:" value, then the "Commit type:" value, of the last rendered
+# Definition of done header (heading, "Delivery contract:", "Ship branch:", then
+# the ticket lines directly after it), one per line and empty when absent. Lines
+# anywhere else in the brief, such as pasted task text, are ignored.
+fm_brief_ticket_header() {  # <brief>
+  awk '
+    s == 3 && sub(/^Ticket: /, "") { t = $0; s = 4; next }
+    s == 4 && sub(/^Commit type: /, "") { c = $0; s = 0; next }
+    s == 2 && /^Ship branch: / { t = ""; c = ""; s = 3; next }
+    s == 1 && /^Delivery contract: mode=/ { s = 2; next }
+    { s = ($0 == "# Definition of done") ? 1 : 0 }
+    END { print t; print c }
+  ' "$1"
+}
+
 # A task's optional ClickUp ticket binds its commit subjects, pull request
 # title, and ship branch to the captain's ticket convention. bin/fm-brief.sh
 # records it as the "Ticket: <id>" and "Commit type: <type>" lines of the

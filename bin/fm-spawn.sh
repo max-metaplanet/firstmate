@@ -3449,8 +3449,7 @@ if [ "$KIND" = ship ]; then
   # ship branch, so a brief and its spawn can never tell the worker one
   # commit-subject format while the task record carries another. A brief that
   # carries them refuses a spawn without the flags, and vice versa.
-  BRIEF_TICKET=$(sed -n 's/^Ticket: //p' "$BRIEF" | head -n 1)
-  BRIEF_COMMIT_TYPE=$(sed -n 's/^Commit type: //p' "$BRIEF" | head -n 1)
+  { IFS= read -r BRIEF_TICKET; IFS= read -r BRIEF_COMMIT_TYPE; } < <(fm_brief_ticket_header "$BRIEF")
   if [ "$BRIEF_TICKET" != "$TICKET" ] || [ "$BRIEF_COMMIT_TYPE" != "$COMMIT_TYPE" ]; then
     # A relaunch's ticket comes from the meta record (the flags are refused
     # there), so a promoted scout - whose brief.md is still the scout brief and

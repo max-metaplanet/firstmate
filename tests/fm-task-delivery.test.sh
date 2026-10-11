@@ -1409,6 +1409,41 @@ EOF
   pass "fm-spawn: a ship's ticket must agree with the brief that instructs its worker"
 }
 
+# The captain's task text is rendered before the Definition of done header and
+# is often pasted from ClickUp, so a "Ticket:" line there must neither supply
+# the ticket nor make an agreeing spawn look like drift.
+test_spawn_ignores_a_ticket_line_in_the_task_text() {
+  local rec home proj fakebin out brief
+  rec=$(make_home ticket-decoy "- proj [no-mistakes] - fixture (added 2026-01-01)")
+  IFS='|' read -r home proj fakebin <<EOF
+$rec
+EOF
+
+  FM_HOME="$home" "$BRIEF" ticket-decoy-a1 proj --mode no-mistakes \
+    --ticket ENG-123 --commit-type feat >/dev/null \
+    || fail "a ticketed brief should scaffold"
+  brief="$home/data/ticket-decoy-a1/brief.md"
+  fill_brief_subsections "$brief" "Run the review loop." "Ship it."
+  sed -i.bak '1a\
+Ticket: ENG-99\
+Commit type: fix
+' "$brief" && rm -f "$brief.bak"
+  out=$(run_spawn "$home" "$fakebin" ticket-decoy-a1 "$proj" claude \
+    --mode no-mistakes --yolo off --ticket ENG-123 --commit-type feat)
+  assert_not_contains "$out" "ticket mismatch" "a ticket line in the task text was read as the brief's ticket"
+
+  FM_HOME="$home" "$BRIEF" ticket-decoy-a2 proj --mode no-mistakes >/dev/null \
+    || fail "an unticketed brief should scaffold"
+  brief="$home/data/ticket-decoy-a2/brief.md"
+  fill_brief_subsections "$brief" "Run the review loop." "Ship it."
+  sed -i.bak '1a\
+Ticket: ENG-99
+' "$brief" && rm -f "$brief.bak"
+  out=$(run_spawn "$home" "$fakebin" ticket-decoy-a2 "$proj" claude --mode no-mistakes --yolo off)
+  assert_not_contains "$out" "ticket mismatch" "a ticket line in the task text refused an unticketed spawn"
+  pass "fm-spawn: a ticket line in the task text is not the brief's ticket header"
+}
+
 # A relaunch reuses the task's recorded ticket exactly as it reuses the recorded
 # branch, so the flags are refused there and the record stays the only source.
 # tests/fm-control-relaunch.test.sh owns the other half - that a relaunch which
@@ -1764,6 +1799,7 @@ test_forge_gerrit_direct_pr_publishes_one_change
 test_spawn_requires_the_brief_to_carry_the_registered_forge
 test_spawn_requires_the_brief_to_carry_the_selected_branch
 test_spawn_requires_the_brief_to_carry_the_selected_ticket
+test_spawn_ignores_a_ticket_line_in_the_task_text
 test_relaunch_refuses_a_ticket_override
 test_promotion_persists_the_selected_ticket
 test_spawn_notices_a_ship_branch_against_the_registry_prefix
