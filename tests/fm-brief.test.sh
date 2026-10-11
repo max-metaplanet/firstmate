@@ -1492,6 +1492,135 @@ test_worker_role_scope
 # Rule 2 governs file edits rather than pool administration, so every crewmate
 # scaffold must prohibit the administrative act itself. The rule is emitted from
 # one shared string so the ship and scout copies cannot drift apart.
+# The ticket convention binds a ship's branch, commit subjects, and PR title to
+# a ClickUp id. The brief is where the worker learns all three, so the exact
+# formats must be rendered literally rather than described.
+test_ticket_renders_the_convention_and_branch() {
+  local home id mode brief
+  home="$TMP_ROOT/ticket-render-home"
+  mkdir -p "$home/data"
+  for id_mode in "ticket-nm-e1:no-mistakes" "ticket-dp-e2:direct-PR" "ticket-lo-e3:local-only"; do
+    id=${id_mode%%:*}
+    mode=${id_mode##*:}
+    FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj --mode "$mode" \
+      --ticket ENG-630 --commit-type feat >/dev/null 2>&1 \
+      || fail "$mode: a ticketed brief should scaffold"
+    brief="$home/data/$id/brief.md"
+    assert_grep "Ship branch: feat/ENG-630-$id" "$brief" \
+      "$mode: a ticketed ship branch must be <type>/<ticket>-<task-id>"
+    assert_grep "Ticket: ENG-630" "$brief" \
+      "$mode: the ticket must be machine-readable in the delivery header"
+    assert_grep "Commit type: feat" "$brief" \
+      "$mode: the commit type must be machine-readable in the delivery header"
+    # shellcheck disable=SC2016  # the literal backticked format must stay unexpanded
+    assert_grep 'must read `feat/ENG-630(<scope>): <message>`' "$brief" \
+      "$mode: the brief must state the exact commit-subject and PR-title format"
+    # shellcheck disable=SC2016  # literal backticks around the branch name must stay unexpanded
+    assert_grep "\`git checkout -b feat/ENG-630-$id --\`" "$brief" \
+      "$mode: the Setup step must create the ticketed branch"
+  done
+  pass "fm-brief.sh: --ticket renders the convention and branch in every ship mode"
+}
+
+# "no-ticket" is the explicit marker for genuinely ticketless work, so it still
+# produces the convention rather than falling back to the fm/ prefix.
+test_no_ticket_marker_still_follows_the_convention() {
+  local home brief
+  home="$TMP_ROOT/ticket-none-home"
+  mkdir -p "$home/data"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" ticket-none-e1 some-proj --mode no-mistakes \
+    --ticket no-ticket --commit-type chore >/dev/null 2>&1 \
+    || fail "the explicit no-ticket marker should scaffold"
+  brief="$home/data/ticket-none-e1/brief.md"
+  assert_grep 'Ship branch: chore/no-ticket-ticket-none-e1' "$brief" \
+    "the no-ticket marker must still name a convention branch"
+  assert_grep 'Ticket: no-ticket' "$brief" \
+    "the no-ticket marker must be recorded as the ticket"
+  # shellcheck disable=SC2016  # the literal backticked format must stay unexpanded
+  assert_grep 'must read `chore/no-ticket(<scope>): <message>`' "$brief" \
+    "the no-ticket marker must appear in the commit-subject format"
+  pass "fm-brief.sh: the explicit no-ticket marker follows the convention"
+}
+
+# Omitting --ticket must leave the task exactly as it was before the convention
+# existed: the fm/ branch and no convention text anywhere in the brief.
+test_unticketed_brief_carries_no_convention() {
+  local home id mode brief
+  home="$TMP_ROOT/ticket-absent-home"
+  mkdir -p "$home/data"
+  for id_mode in "ticket-absent-e1:no-mistakes" "ticket-absent-e2:direct-PR" "ticket-absent-e3:local-only"; do
+    id=${id_mode%%:*}
+    mode=${id_mode##*:}
+    FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj --mode "$mode" >/dev/null 2>&1 \
+      || fail "$mode: an unticketed brief should scaffold"
+    brief="$home/data/$id/brief.md"
+    assert_grep "Ship branch: fm/$id" "$brief" \
+      "$mode: omitting --ticket must keep the fm/ ship branch"
+    assert_no_grep 'Ticket: ' "$brief" \
+      "$mode: an unticketed brief must carry no ticket header"
+    assert_no_grep 'Commit type: ' "$brief" \
+      "$mode: an unticketed brief must carry no commit-type header"
+    assert_no_grep '(<scope>): <message>' "$brief" \
+      "$mode: an unticketed brief must carry no convention text"
+  done
+  pass "fm-brief.sh: omitting --ticket leaves the brief exactly as it was"
+}
+
+# The commit type is never guessed from the task text, and the ticket grammar is
+# closed, so every invalid combination stops before a worker reads it.
+test_ticket_and_commit_type_are_validated_as_a_pair() {
+  local home out
+  home="$TMP_ROOT/ticket-invalid-home"
+  mkdir -p "$home/data"
+
+  out=$(FM_HOME="$home" "$ROOT/bin/fm-brief.sh" ticket-bad-e1 proj --mode no-mistakes \
+    --ticket ENG-630 2>&1) && fail "a ticket without a commit type was accepted"
+  assert_contains "$out" "requires --commit-type" "the refusal did not name the missing type"
+  assert_absent "$home/data/ticket-bad-e1/brief.md" "the refused brief was still written"
+
+  out=$(FM_HOME="$home" "$ROOT/bin/fm-brief.sh" ticket-bad-e2 proj --mode no-mistakes \
+    --commit-type feat 2>&1) && fail "a commit type without a ticket was accepted"
+  assert_contains "$out" "has no meaning without --ticket" "the refusal did not explain the pairing"
+
+  for bad in ENG- eng-630 ENG-63a 630 ENG630; do
+    out=$(FM_HOME="$home" "$ROOT/bin/fm-brief.sh" ticket-bad-e3 proj --mode no-mistakes \
+      --ticket "$bad" --commit-type feat 2>&1) && fail "invalid ticket '$bad' was accepted"
+    assert_contains "$out" "must be a ClickUp id like ENG-123" \
+      "the refusal of '$bad' did not name the expected grammar"
+  done
+
+  for bad in Feat fe_at 1feat no-ticket; do
+    out=$(FM_HOME="$home" "$ROOT/bin/fm-brief.sh" ticket-bad-e4 proj --mode no-mistakes \
+      --ticket ENG-630 --commit-type "$bad" 2>&1) && fail "invalid commit type '$bad' was accepted"
+    assert_contains "$out" "$bad" "the refusal of commit type '$bad' did not name it"
+  done
+
+  out=$(FM_HOME="$home" "$ROOT/bin/fm-brief.sh" ticket-bad-e5 proj --mode no-mistakes \
+    --ticket ENG-630 --commit-type feat --branch-prefix fix/ 2>&1) \
+    && fail "--branch-prefix combined with --ticket was accepted"
+  assert_contains "$out" "cannot be combined with --ticket" \
+    "the refusal did not explain that the convention owns the branch"
+  pass "fm-brief.sh: the ticket and commit type are validated as a closed pair"
+}
+
+# A scout makes no branch and opens no pull request, and a charter is not a
+# delivery contract, so neither flag applies there.
+test_ticket_is_refused_where_it_does_not_apply() {
+  local home out
+  home="$TMP_ROOT/ticket-scope-home"
+  mkdir -p "$home/data"
+  out=$(FM_HOME="$home" "$ROOT/bin/fm-brief.sh" ticket-scope-e1 proj --scout \
+    --ticket ENG-630 --commit-type feat 2>&1) && fail "a scout brief accepted --ticket"
+  assert_contains "$out" "apply only to ship briefs" "the scout refusal did not name the scope"
+  assert_absent "$home/data/ticket-scope-e1/brief.md" "the refused scout brief was still written"
+
+  out=$(FM_SECONDMATE_CHARTER='Hold the domain.' FM_HOME="$home" \
+    "$ROOT/bin/fm-brief.sh" ticket-scope-e2 --secondmate --no-projects \
+    --ticket ENG-630 --commit-type feat 2>&1) && fail "a charter accepted --ticket"
+  assert_contains "$out" "apply only to ship briefs" "the charter refusal did not name the scope"
+  pass "fm-brief.sh: --ticket and --commit-type are refused on scouts and charters"
+}
+
 test_crewmate_scaffolds_forbid_pool_administration() {
   local home id brief mode ship_rule scout_rule
   home="$TMP_ROOT/pool-admin-home"
@@ -1591,5 +1720,10 @@ test_ship_branch_prefix_empty_override_yields_bare_task_id
 test_branch_prefix_is_refused_where_it_does_not_apply
 test_branch_prefix_value_is_validated
 test_branch_prefix_command_is_shell_safe
+test_ticket_renders_the_convention_and_branch
+test_no_ticket_marker_still_follows_the_convention
+test_unticketed_brief_carries_no_convention
+test_ticket_and_commit_type_are_validated_as_a_pair
+test_ticket_is_refused_where_it_does_not_apply
 test_crewmate_scaffolds_forbid_pool_administration
 test_checked_convention_reaches_every_escalation_path

@@ -141,6 +141,11 @@ fm_lock_release "$MERGE_CONTROL_LOCK" || true
 MERGE_CONTROL_LOCK=
 [ "$merge_status" -eq 0 ] || exit "$merge_status"
 after=$(git -C "$PROJ" rev-parse --short "$DEFAULT")
+# Stamp when this local-only landing happened, for bin/fm-task-timing.sh to read
+# at cleanup, in the same record a confirmed PR merge writes
+# (bin/fm-merge-outcome-lib.sh). Best effort: work that has already landed is
+# never reported as failed because a timing stamp could not be kept.
+printf '%s\n' "$(date +%s)" > "$STATE/$ID.merged-at" 2>/dev/null || true
 # Opt-in fleet activity ledger (docs/fleet-ledger.md); off costs one file test.
 [ ! -e "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}/fleet-ledger" ] || FM_HOME=$FM_HOME FM_STATE_OVERRIDE=$STATE "$SCRIPT_DIR/fm-fleet-ledger.sh" merged "$ID" local || true
 echo "merged $BRANCH into local $DEFAULT ($before -> $after) in $PROJ"

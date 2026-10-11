@@ -390,6 +390,11 @@ fm_pr_metadata_identity_parse() {
         ;;
       x_request=*|x_request_ts=*|x_followups=*|x_platform=*|x_reply_max_chars=*)
         ;;
+      pr_at=*)
+        # The stamp bin/fm-pr-check.sh records beside the PR identity for
+        # bin/fm-task-timing.sh. It carries no identity, so it is known-benign
+        # here exactly as the x_ lines are.
+        ;;
       *)
         [ "$seen_pr" -eq 0 ] || post_pr_invalid=1
         ;;

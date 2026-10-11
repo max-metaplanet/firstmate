@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # Record a PR-ready task: store one validated canonical pr=<url> and the forge's
 # exact pr_head=<sha> when available, then atomically arm a static merge poll.
+# It also stamps pr_at=<epoch>, the moment this task's pull request first became
+# known, which bin/fm-task-timing.sh reads at cleanup; re-arming the same URL
+# keeps the original stamp.
 # Refuses when bin/fm-dod-lib.sh will not accept the named head as reachable
 # outside the worker's disposable copy; in no-mistakes mode a forge-reported
 # head is that named head and is already stored on the forge.
@@ -179,13 +182,26 @@ META_DEVICE=$(fm_pr_file_device "$META") || exit 1
 STATE_DEVICE=$(fm_pr_file_device "$STATE") || exit 1
 [ "$META_DEVICE" = "$STATE_DEVICE" ] || { echo "error: task metadata is unavailable" >&2; exit 1; }
 META_TMP=$(mktemp "$STATE/.fm-pr-meta.XXXXXX") || exit 1
+PRIOR_PR=
+PRIOR_PR_AT=
 while IFS= read -r line || [ -n "$line" ]; do
   case "$line" in
-    pr=*|pr_head=*) ;;
+    pr=*) PRIOR_PR=${line#pr=} ;;
+    pr_at=*) PRIOR_PR_AT=${line#pr_at=} ;;
+    pr_head=*) ;;
     *) printf '%s\n' "$line" >> "$META_TMP" || exit 1 ;;
   esac
 done < "$META"
 printf 'pr=%s\n' "$URL" >> "$META_TMP" || exit 1
+# When this is the moment the task's pull request became known, stamp it so
+# bin/fm-task-timing.sh can measure how long the work waited before review.
+# Re-arming the SAME pull request keeps the original stamp: the PR did not open
+# twice, so resetting it would silently shorten the recorded wait.
+if [ "$PRIOR_PR" = "$URL" ] && [ -n "$PRIOR_PR_AT" ]; then
+  printf 'pr_at=%s\n' "$PRIOR_PR_AT" >> "$META_TMP" || exit 1
+else
+  printf 'pr_at=%s\n' "$(date +%s)" >> "$META_TMP" || exit 1
+fi
 [ -z "$PR_HEAD" ] || printf 'pr_head=%s\n' "$PR_HEAD" >> "$META_TMP" || exit 1
 chmod 0600 "$META_TMP" || exit 1
 fm_pr_private_file_valid "$META_TMP" 600 "$STATE_DEVICE" || exit 1

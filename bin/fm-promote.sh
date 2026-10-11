@@ -22,7 +22,8 @@
 # never passes the provenance gate as the ask (bin/fm-dod-lib.sh).
 # A scout records no delivery posture, so promotion is where this task's delivery
 # contract is decided: --mode, --yolo, and the ship branch resolved from
-# --branch-prefix are written into the meta alongside the kind= flip. Firstmate resolves all three at promotion time, having just
+# --branch-prefix or from --ticket with --commit-type are written into the meta
+# alongside the kind= flip. Firstmate resolves all three at promotion time, having just
 # read the scout's report (AGENTS.md section 7); data/projects.md holds the
 # captain's standing posture as context, and this script never looks that posture
 # up. The registry IS read for one thing only: the project's forge binding, which
@@ -38,7 +39,16 @@
 # its value against the registry; bin/fm-project-mode.sh's header owns the
 # binding and bin/fm-dod-lib.sh owns what it changes for the worker, including
 # the refusal of a forge on local-only.
-# Usage: fm-promote.sh <task-id> --mode <no-mistakes|direct-PR|local-only> --yolo <on|off> [--branch-prefix <prefix>]
+# --ticket <ENG-123|no-ticket> with --commit-type <type> promotes the scout onto
+# the captain's ticket convention: the ship branch becomes
+# "<type>/<ticket>-<task-id>" instead of the "fm/" prefix, the promoted ship
+# instructions carry the exact commit-subject and PR-title format, and the pair
+# is recorded as ticket= and commit_type= in the meta so a later relaunch and
+# cleanup read it rather than re-deriving it. The two come as a pair and neither
+# combines with --branch-prefix; bin/fm-dod-lib.sh's fm_ticket_resolve owns the
+# grammar and the branch each case resolves, so promotion and bin/fm-brief.sh
+# cannot name different branches for the same inputs.
+# Usage: fm-promote.sh <task-id> --mode <no-mistakes|direct-PR|local-only> --yolo <on|off> [--branch-prefix <prefix>] [--ticket <ENG-123|no-ticket> --commit-type <type>]
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -67,6 +77,9 @@ DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
 MODE=
 YOLO=
 BRANCH_PREFIX=fm/
+BRANCH_PREFIX_SET=0
+TICKET=
+COMMIT_TYPE=
 MODE_SET=0
 YOLO_SET=0
 FORGE=none
@@ -80,7 +93,9 @@ for a in "$@"; do
     case "$want_value" in
       mode) MODE=$a; MODE_SET=1 ;;
       yolo) YOLO=$a; YOLO_SET=1 ;;
-      branch-prefix) BRANCH_PREFIX=$a ;;
+      branch-prefix) BRANCH_PREFIX=$a; BRANCH_PREFIX_SET=1 ;;
+      ticket) TICKET=$a ;;
+      commit-type) COMMIT_TYPE=$a ;;
     esac
     want_value=
     continue
@@ -91,7 +106,11 @@ for a in "$@"; do
     --yolo) want_value=yolo ;;
     --yolo=*) YOLO=${a#--yolo=}; YOLO_SET=1 ;;
     --branch-prefix) want_value="branch-prefix" ;;
-    --branch-prefix=*) BRANCH_PREFIX=${a#--branch-prefix=} ;;
+    --branch-prefix=*) BRANCH_PREFIX=${a#--branch-prefix=}; BRANCH_PREFIX_SET=1 ;;
+    --ticket) want_value="ticket" ;;
+    --ticket=*) TICKET=${a#--ticket=} ;;
+    --commit-type) want_value="commit-type" ;;
+    --commit-type=*) COMMIT_TYPE=${a#--commit-type=} ;;
     *) POS+=("$a") ;;
   esac
 done
@@ -135,9 +154,15 @@ refuse_impossible_forge_posture || exit 1
 
 ID=${POS[0]}
 fm_task_id_creation_valid "$ID" || { echo "error: invalid task id" >&2; exit 2; }
-BRANCH="$BRANCH_PREFIX$ID"
+fm_ticket_resolve "$TICKET" "$COMMIT_TYPE" "$ID" "$BRANCH_PREFIX" "$BRANCH_PREFIX_SET" "fm-promote.sh" || exit 1
+BRANCH=$FM_TICKET_BRANCH
+TICKET_HEADER=$FM_TICKET_HEADER
 if ! git check-ref-format --branch "$BRANCH" >/dev/null 2>&1; then
-  echo "error: --branch-prefix and task id must form a valid git branch (got '$BRANCH')" >&2
+  if [ -n "$TICKET" ]; then
+    echo "error: --commit-type, --ticket and task id must form a valid git branch (got '$BRANCH')" >&2
+  else
+    echo "error: --branch-prefix and task id must form a valid git branch (got '$BRANCH')" >&2
+  fi
   exit 1
 fi
 printf -v BRANCH_Q '%q' "$BRANCH"
@@ -271,7 +296,7 @@ EOF
     printf '%s\n' "$PROMOTION_ASK_USER_BLOCK"
   fi
   printf '\n'
-  fm_dod_block "$MODE" "$ID" "$BRANCH" "$FORGE" "$BASE_BRANCH"
+  fm_dod_block "$MODE" "$ID" "$BRANCH" "$FORGE" "$BASE_BRANCH" "$TICKET_HEADER"
 }
 mkdir -p "$DATA/$ID"
 [ ! -d "$INSTRUCTIONS" ] || { echo "error: ship instructions path is a directory: $INSTRUCTIONS" >&2; exit 1; }
@@ -324,12 +349,16 @@ fi
 BRIEF_REPLACEMENT=
 
 TMP="$STATE/.$ID.meta.promote.${BASHPID:-$$}"
-grep -v -e '^kind=' -e '^mode=' -e '^yolo=' -e '^branch=' "$META" > "$TMP"
+grep -v -e '^kind=' -e '^mode=' -e '^yolo=' -e '^branch=' -e '^ticket=' -e '^commit_type=' "$META" > "$TMP"
 {
   echo "kind=ship"
   echo "mode=$MODE"
   echo "yolo=$YOLO"
   echo "branch=$BRANCH"
+  # Recorded at the promotion that decided it, so a later relaunch and cleanup
+  # read the ticket rather than re-deriving it from the branch name.
+  [ -z "$TICKET" ] || echo "ticket=$TICKET"
+  [ -z "$COMMIT_TYPE" ] || echo "commit_type=$COMMIT_TYPE"
 } >> "$TMP"
 if ! fm_backlog_atomic_transition publish "$TMP" "$META" "task record" "$STATE"; then
   rm -f -- "$TMP"

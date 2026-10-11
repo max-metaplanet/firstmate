@@ -14,7 +14,7 @@
 # charters still use a single `{TASK}` charter fill. Firstmate may adjust other
 # sections when the task genuinely deviates (e.g. working an existing external
 # PR instead of shipping a new one).
-# Usage: fm-brief.sh <task-id> <repo-name> --mode <no-mistakes|direct-PR|local-only> [--branch-prefix <prefix>] [--base-branch <branch>] [--forge <none|gerrit> [--shape squash]] [--herdr-lab]
+# Usage: fm-brief.sh <task-id> <repo-name> --mode <no-mistakes|direct-PR|local-only> [--branch-prefix <prefix>] [--ticket <ENG-123|no-ticket> --commit-type <type>] [--base-branch <branch>] [--forge <none|gerrit> [--shape squash]] [--herdr-lab]
 #        fm-brief.sh <task-id> <repo-name> --scout [--base-branch <branch>] [--herdr-lab]
 #        fm-brief.sh <task-id> --secondmate {<project>...|--no-projects}
 #   --scout writes the scout contract instead: the deliverable is a report at
@@ -59,6 +59,17 @@
 # standing per-project preference, and firstmate resolves it per task at intake
 # and passes the explicit flag. Refused on --scout and --secondmate: a scout
 # makes no branch and a charter is not a delivery contract.
+# --ticket <ENG-123|no-ticket> with --commit-type <type> puts the ship on the
+# captain's ticket convention: the branch becomes "<type>/<ticket>-<task-id>"
+# instead of the "fm/" prefix, and the Definition of done's machine-readable
+# header gains "Ticket:" and "Commit type:" lines plus the exact commit-subject
+# and PR-title format the worker must follow. bin/fm-dod-lib.sh's
+# fm_ticket_resolve owns the ticket and type grammar, the branch it resolves,
+# and that rendered text. The two flags come as a pair: a ticket without a type
+# is refused rather than given a guessed one, a type without a ticket has no
+# meaning, and neither combines with --branch-prefix, which the convention
+# replaces. Omitting --ticket changes nothing at all. Refused on --scout and
+# --secondmate for the same reason --branch-prefix is.
 # --base-branch <branch> starts the task from origin's <branch> instead of the
 # repository default, for work that belongs on a named integration, feature, or
 # release branch. It writes a "Base branch: <branch>" line under `# Setup`, which
@@ -199,6 +210,10 @@ MODE=
 MODE_SET=0
 BRANCH_PREFIX=fm/
 BRANCH_PREFIX_SET=0
+TICKET=
+TICKET_SET=0
+COMMIT_TYPE=
+COMMIT_TYPE_SET=0
 BASE_BRANCH=
 BASE_BRANCH_SET=0
 FORGE=none
@@ -215,6 +230,8 @@ for a in "$@"; do
     case "$want_value" in
       mode) MODE=$a; MODE_SET=1 ;;
       branch-prefix) BRANCH_PREFIX=$a; BRANCH_PREFIX_SET=1 ;;
+      ticket) TICKET=$a; TICKET_SET=1 ;;
+      commit-type) COMMIT_TYPE=$a; COMMIT_TYPE_SET=1 ;;
       base-branch) BASE_BRANCH=$a; BASE_BRANCH_SET=1 ;;
       forge) FORGE=$a; FORGE_SET=1 ;;
       shape) SHAPE=$a; SHAPE_SET=1 ;;
@@ -232,6 +249,10 @@ for a in "$@"; do
     --mode=*) MODE=${a#--mode=}; MODE_SET=1 ;;
     --branch-prefix) want_value="branch-prefix" ;;
     --branch-prefix=*) BRANCH_PREFIX=${a#--branch-prefix=}; BRANCH_PREFIX_SET=1 ;;
+    --ticket) want_value="ticket" ;;
+    --ticket=*) TICKET=${a#--ticket=}; TICKET_SET=1 ;;
+    --commit-type) want_value="commit-type" ;;
+    --commit-type=*) COMMIT_TYPE=${a#--commit-type=}; COMMIT_TYPE_SET=1 ;;
     --base-branch) want_value="base-branch" ;;
     --base-branch=*) BASE_BRANCH=${a#--base-branch=}; BASE_BRANCH_SET=1 ;;
     --forge) want_value=forge ;;
@@ -272,6 +293,10 @@ if [ "$KIND" != ship ] && [ "$BRANCH_PREFIX_SET" -eq 1 ]; then
   echo "error: --branch-prefix applies only to ship briefs; a scout makes no branch and a secondmate charter is not a delivery contract" >&2
   exit 1
 fi
+if [ "$KIND" != ship ] && { [ "$TICKET_SET" -eq 1 ] || [ "$COMMIT_TYPE_SET" -eq 1 ]; }; then
+  echo "error: --ticket and --commit-type apply only to ship briefs; a scout makes no branch and opens no pull request, and a secondmate charter is not a delivery contract" >&2
+  exit 1
+fi
 case "$BRANCH_PREFIX" in
   *' '*) echo "error: --branch-prefix must not contain a space (got '$BRANCH_PREFIX')" >&2; exit 1 ;;
   -*) echo "error: --branch-prefix must not start with '-' (got '$BRANCH_PREFIX')" >&2; exit 1 ;;
@@ -305,9 +330,17 @@ if [ "$BASE_BRANCH_SET" -eq 1 ]; then
   fm_base_branch_valid "$BASE_BRANCH" "$MODE" "$FORGE" "fm-brief.sh --base-branch" || exit 1
 fi
 ID=${POS[0]}
-BRANCH="$BRANCH_PREFIX$ID"
+# fm-dod-lib.sh owns the ticket grammar and the branch each case resolves, so
+# the brief, the spawn, and a scout promotion cannot name different branches.
+fm_ticket_resolve "$TICKET" "$COMMIT_TYPE" "$ID" "$BRANCH_PREFIX" "$BRANCH_PREFIX_SET" "fm-brief.sh" || exit 1
+BRANCH=$FM_TICKET_BRANCH
+TICKET_HEADER=$FM_TICKET_HEADER
 if ! git check-ref-format --branch "$BRANCH" >/dev/null 2>&1; then
-  echo "error: --branch-prefix and task id must form a valid git branch (got '$BRANCH')" >&2
+  if [ -n "$TICKET" ]; then
+    echo "error: --commit-type, --ticket and task id must form a valid git branch (got '$BRANCH')" >&2
+  else
+    echo "error: --branch-prefix and task id must form a valid git branch (got '$BRANCH')" >&2
+  fi
   exit 1
 fi
 printf -v BRANCH_Q '%q' "$BRANCH"
@@ -677,7 +710,7 @@ case "$MODE" in
     ;;
 esac
 RULE1=$(fm_ship_rule_one "$MODE" "$ID" "$BRANCH" "$FORGE" "$BASE_BRANCH") || exit 1
-DOD=$(fm_dod_block "$MODE" "$ID" "$BRANCH" "$FORGE" "$BASE_BRANCH") || exit 1
+DOD=$(fm_dod_block "$MODE" "$ID" "$BRANCH" "$FORGE" "$BASE_BRANCH" "$TICKET_HEADER") || exit 1
 
 cat > "$BRIEF" <<EOF
 You are a crewmate: an autonomous worker agent managed by firstmate. Work on your own; do not wait for a human.

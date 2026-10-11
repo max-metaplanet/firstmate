@@ -108,6 +108,14 @@ fm_merge_outcome_report() {  # <home> <state> <task-id> <pr-url> <origin> [autho
     fm_pr_poll_merge_mark_notified "$state" "$id" \
       "$provider" "$host" "$path" "$number" || status=1
   fi
+  # Stamp when this merge was confirmed, for bin/fm-task-timing.sh to read at
+  # cleanup. It is its own record rather than a line in the task meta, because
+  # this path must leave the canonical task record byte-identical. Written once,
+  # inside the already-notified guard above, and best effort: a merge that
+  # landed is never reported as failed because a timing stamp could not be kept.
+  if [ "$status" -eq 0 ]; then
+    printf '%s\n' "$(date +%s)" > "$state/$id.merged-at" 2>/dev/null || true
+  fi
   fm_lock_release "$lock"
   # Opt-in fleet activity ledger (docs/fleet-ledger.md); off costs one file test.
   [ ! -e "${FM_CONFIG_OVERRIDE:-$home/config}/fleet-ledger" ] || [ "$status" -ne 0 ] || FM_HOME=$home FM_STATE_OVERRIDE=$state "$_FM_MERGE_OUTCOME_LIB_DIR/fm-fleet-ledger.sh" merged "$id" pr "$FM_PR_URL" || true
