@@ -388,7 +388,7 @@ start_handling_successor() {  # <closed-arm-pid>
     fi
     grep -q '^watcher: FAILED' "$out" 2>/dev/null && break
     [ "$(date +%s)" -ge "$deadline" ] && break
-    sleep 0.2
+    fm_wait_seconds 0.2
   done
   line=$(grep '^watcher: FAILED' "$out" 2>/dev/null | head -n 1 || true)
   rm -f "$out" 2>/dev/null || true
