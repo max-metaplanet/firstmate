@@ -285,6 +285,7 @@ fm_ticket_branch() {  # <commit-type> <ticket> <task-id>
 fm_ticket_resolve() {  # <ticket> <commit-type> <task-id> <branch-prefix> <branch-prefix-set> <caller>
   local ticket=$1 commit_type=$2 id=$3 prefix=$4 prefix_set=$5 caller=$6
   FM_TICKET_BRANCH="$prefix$id"
+  # shellcheck disable=SC2034 # Output global, read by the sourcing caller.
   FM_TICKET_HEADER=
   if [ -z "$ticket" ]; then
     [ -z "$commit_type" ] || {
@@ -304,6 +305,7 @@ fm_ticket_resolve() {  # <ticket> <commit-type> <task-id> <branch-prefix> <branc
     return 1
   }
   FM_TICKET_BRANCH=$(fm_ticket_branch "$commit_type" "$ticket" "$id")
+  # shellcheck disable=SC2034 # Output global, read by the sourcing caller.
   FM_TICKET_HEADER="
 Ticket: $ticket
 Commit type: $commit_type
