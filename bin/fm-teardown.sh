@@ -305,8 +305,9 @@
 # ledger. It runs before the task branch it attributes runs by is deleted and
 # before state/<id>.meta is removed, and is best effort: a failure warns and
 # never blocks cleanup.
-# Every ship task whose local copy this teardown owns also has one delivery-timing
-# line recorded by bin/fm-task-timing.sh, which owns the ledger and its fields.
+# Every ship task this teardown cleans up, including one that released its slot
+# claim, also has one delivery-timing line recorded by bin/fm-task-timing.sh,
+# which owns the ledger and its fields.
 # It needs no opt-in because it reads only this task's own durable records, runs
 # in the same window before state/<id>.meta is removed, and is best effort in
 # both directions: the recorder warns rather than failing, and a non-zero exit is

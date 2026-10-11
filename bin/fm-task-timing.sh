@@ -10,9 +10,9 @@
 # data/task-timing.jsonl, at most once per task incarnation (task id plus the
 # record's spawn_gen): repeating it for an incarnation already in the ledger
 # appends nothing, so a retried cleanup never counts a task twice.
-# bin/fm-teardown.sh calls it for every ship task whose local copy it cleans up,
-# before it removes state/<id>.meta. The ledger is private and gitignored with
-# the rest of data/.
+# bin/fm-teardown.sh calls it for every ship task it cleans up, including one that
+# released its slot claim, before it removes state/<id>.meta. The ledger is
+# private and gitignored with the rest of data/.
 #
 # Never a gate. Every failure path exits 0 after writing at most a warning,
 # because a timing record is a report input and cleanup has already succeeded by

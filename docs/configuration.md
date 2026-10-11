@@ -589,7 +589,7 @@ An existing ledger is left untouched while recording is disabled.
 
 ## Task delivery timings (data/task-timing.jsonl)
 
-Every ship task whose local copy teardown cleans up appends one JSON object to the private, gitignored `data/task-timing.jsonl`, so a work-impact report can compute lead time and waiting time from durable records instead of a transcript.
+Every ship task teardown cleans up, including one that released its slot claim, appends one JSON object to the private, gitignored `data/task-timing.jsonl`, so a work-impact report can compute lead time and waiting time from durable records instead of a transcript.
 `bin/fm-task-timing.sh`'s header owns the field list and where each value is read from; the line carries the task, its kind, mode, project, ticket and commit type, the dispatch, PR-opened, and merge times, the recorded pull request, and the incarnation the line was written for.
 Lead time is `merged_at - dispatched_at` and the review wait is `merged_at - pr_opened_at`; a field the task's records never carried is written as JSON `null`, which means that leg is unmeasurable for the task rather than zero.
 Recording is not a gate and has no opt-in flag: it is written after cleanup has already succeeded, it appends at most once per task incarnation so a retried cleanup never counts a task twice, and every failure warns and leaves cleanup reported as the success it was.
