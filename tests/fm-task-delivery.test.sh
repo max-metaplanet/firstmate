@@ -1592,6 +1592,14 @@ EOF
   assert_not_contains "$out" "registers the ship-branch prefix" \
     "a spawn matching the registered prefix was announced as a deviation"
 
+  FM_HOME="$home" "$BRIEF" prefix-dev-a3 proj --mode no-mistakes --ticket ENG-123 --commit-type feat >/dev/null \
+    || fail "a ticketed brief should scaffold"
+  fill_brief_subsections "$home/data/prefix-dev-a3/brief.md" "Run the review loop." "Ship it."
+  out=$(run_spawn "$home" "$fakebin" prefix-dev-a3 "$proj" claude --mode no-mistakes --yolo off --ticket ENG-123 --commit-type feat)
+  assert_not_contains "$out" "mismatch" "the ticketed brief and spawn disagreed"
+  assert_not_contains "$out" "registers the ship-branch prefix" \
+    "a ticket-convention branch was announced as a firstmate-authored deviation"
+
   pass "fm-spawn: a ship branch that deviates from the registered prefix is announced, never blocked"
 }
 
