@@ -3436,7 +3436,7 @@ fi
 # (bin/fm-task-timing.sh owns the ledger and its fields). It reads only this
 # task's durable records and never gates cleanup: the recorder warns instead of
 # failing, and a non-zero exit is ignored here as well.
-if [ "$KIND" = ship ] && teardown_owns_worktree; then
+if [ "$KIND" = ship ]; then
   FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" FM_DATA_OVERRIDE="$DATA" FM_CONFIG_OVERRIDE="$CONFIG" \
     "$SCRIPT_DIR/fm-task-timing.sh" record "$ID" >/dev/null || true
 fi

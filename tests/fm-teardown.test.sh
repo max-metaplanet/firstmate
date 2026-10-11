@@ -2422,6 +2422,11 @@ test_a_released_record_cleans_up_without_touching_the_copy() {
   assert_contains "$out" "released its claim" \
     "slot-untouched: the teardown did not say why it left the copy alone"
   assert_absent "$case_dir/state/collider.meta" "slot-untouched: the released record survived its teardown"
+  [ "$(python3 -I -c '
+import json, sys
+print(sum(json.loads(l)["task"] == "collider" for l in open(sys.argv[1])))
+' "$case_dir/data/task-timing.jsonl" 2>/dev/null)" = 1 ] \
+    || fail "slot-untouched: the released ship record's teardown did not record exactly one delivery-timing line"
   [ -d "$slot" ] || fail "slot-untouched: the released record's teardown removed the shared copy"
   [ "$(git -C "$slot" rev-parse HEAD 2>/dev/null)" = "$head" ] \
     || fail "slot-untouched: the released record's teardown moved the shared copy's HEAD"
@@ -2429,7 +2434,7 @@ test_a_released_record_cleans_up_without_touching_the_copy() {
     || fail "slot-untouched: the released record's teardown dropped the shared copy's branch"
   assert_grep "worktree=$slot" "$case_dir/state/task-x1.meta" \
     "slot-untouched: the released record's teardown disturbed the record that keeps the copy"
-  pass "a released record cleans up without touching the copy that stayed with the other record"
+  pass "a released record cleans up and records its delivery timing without touching the copy that stayed with the other record"
 }
 
 test_teardown_missing_busy_sidecar_completes() {

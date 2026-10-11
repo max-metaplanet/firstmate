@@ -1595,10 +1595,10 @@ if [ "${#POS[@]}" -gt 0 ] && [ "${POS[0]}" != "$idpart" ] && case "$idpart" in *
   [ "$MODE_SET" -eq 0 ] || shared_args+=(--mode "$MODE")
   [ "$YOLO_SET" -eq 0 ] || shared_args+=(--yolo "$YOLO")
   [ "$BRANCH_PREFIX_SET" -eq 0 ] || shared_args+=(--branch-prefix "$BRANCH_PREFIX")
-  # A ticket rides the batch like the mode does: each pair still resolves its own
-  # branch from its own task id and re-validates it against its own brief.
-  [ "$TICKET_SET" -eq 0 ] || shared_args+=(--ticket "$TICKET")
-  [ "$COMMIT_TYPE_SET" -eq 0 ] || shared_args+=(--commit-type "$COMMIT_TYPE")
+  { [ "$TICKET_SET" -eq 0 ] && [ "$COMMIT_TYPE_SET" -eq 0 ]; } || {
+    echo "error: batch dispatch does not share --ticket or --commit-type; each ticketed task carries its own ticket, so spawn it explicitly" >&2
+    exit 2
+  }
   [ "$BASE_BRANCH_SET" -eq 0 ] || shared_args+=(--base-branch "$BASE_BRANCH")
   for pair in "${POS[@]}"; do
     case "$pair" in
