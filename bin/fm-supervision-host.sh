@@ -442,6 +442,7 @@ stop_engine_turn() {
 # shellcheck disable=SC2329 # Invoked by the EXIT trap.
 cleanup() {
   local rc=$? f
+  FM_WAIT_READ_PID=
   trap - EXIT HUP TERM INT
   if [ "$ENGINE_RUNNING" -eq 1 ]; then
     stop_engine_turn
@@ -1114,6 +1115,7 @@ trap cleanup EXIT
 trap 'exit 129' HUP
 trap 'exit 143' TERM
 trap 'exit 130' INT
+FM_WAIT_READ_PID=${BASHPID:-$$}
 activate || { echo "supervision-host stood down: the host record could not be written"; exit 0; }
 log_line "start	gen=$GEN	primary=$PRIMARY"
 

@@ -61,6 +61,11 @@ fi
 # `sleep` starts a program per call, so a loop that probes twice a second costs
 # two program starts a second forever; `read -t` blocks for the same interval
 # inside this shell and starts nothing.
+# Callers opt in with FM_WAIT_READ_PID=${BASHPID:-$$} only after installing
+# terminating HUP/TERM/INT traps, and clear it before restoring native signals.
+# Native fatal-signal EXIT cleanup can outlive Bash's read timer and be unwound
+# by it, resuming the interrupted loop or crashing Bash. Such callers keep
+# sleep, as do subshells (which reset the caller's signal traps).
 # The descriptor is both ends of a FIFO this process holds open, so it never
 # reaches end-of-file and the read always runs its whole timeout. The FIFO is
 # unlinked as soon as it is open, so nothing is left on disk and the descriptor
@@ -94,6 +99,10 @@ _fm_wait_fd_setup() {
 
 fm_wait_seconds() {  # <seconds>
   local _fm_wait_discard
+  if [ "${FM_WAIT_READ_PID:-}" != "${BASHPID:-$$}" ] || [ "${BASH_SUBSHELL:-0}" -ne 0 ]; then
+    sleep "$1"
+    return
+  fi
   if [ "$_FM_WAIT_FD_TRIED" -eq 0 ] && ! _fm_wait_fd_setup; then
     FM_WAIT_FD=
   fi

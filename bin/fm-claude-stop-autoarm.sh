@@ -302,6 +302,7 @@ autoarm_record() {  # <outcome>
 # shellcheck disable=SC2329 # Invoked indirectly by the signal traps below.
 handle_autoarm_signal() {
   local signal=$1
+  FM_WAIT_READ_PID=
   trap - HUP TERM INT
   if [ -n "${ARM_PID:-}" ]; then
     kill -TERM "$ARM_PID" 2>/dev/null || true
@@ -325,6 +326,7 @@ handle_autoarm_signal() {
 trap 'handle_autoarm_signal HUP' HUP
 trap 'handle_autoarm_signal TERM' TERM
 trap 'handle_autoarm_signal INT' INT
+FM_WAIT_READ_PID=${BASHPID:-$$}
 
 # X mode cadence: source the generated config so an X instance polls at its
 # 30s cadence (fm-bootstrap.sh x_mode_setup contract).

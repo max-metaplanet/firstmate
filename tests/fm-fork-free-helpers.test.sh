@@ -338,6 +338,10 @@ SH
 . "$1/bin/fm-wake-lib.sh"
 PATH="$2:$PATH"
 : > "$3"
+trap 'exit 129' HUP
+trap 'exit 143' TERM
+trap 'exit 130' INT
+FM_WAIT_READ_PID=${BASHPID:-$$}
 before=$SECONDS
 fm_wait_seconds 1
 fm_wait_seconds 0.5
@@ -353,6 +357,12 @@ if [ "${BASH_VERSINFO[0]}" -gt 4 ] || { [ "${BASH_VERSINFO[0]}" -eq 4 ] && [ "${
 else
   [ "$starts" -eq 2 ] || printf 'bash %s fell back to sleep %s times, not twice\n' "$BASH_VERSION" "$starts"
 fi
+# Subshells reset trapped signals; the parent's opt-in must not reach them.
+(fm_wait_seconds 0.05)
+FM_WAIT_READ_PID=
+fm_wait_seconds 0.05
+fallback_starts=$(grep -c . "$3" || true)
+[ "$fallback_starts" -eq "$((starts + 2))" ] || printf 'unsafe signal contexts did not retain sleep\n'
 SH
   # Capture stderr separately: allocating the descriptor must not permanently
   # redirect the caller's diagnostics into /dev/null.
@@ -364,6 +374,63 @@ IFS= read -r diagnostic < "$5"
 SH
   run_everywhere "bounded wait" "$wrapped" "$script" "$shim" "$log" "$TMP_ROOT/wait.stderr"
   pass "fm_wait_seconds waits its interval and starts no sleep program where read -t is available"
+}
+
+test_watcher_termination_during_wait() {
+  # Bash's read timer can unwind native fatal-signal EXIT cleanup. Exercise the
+  # real watcher and its recovery cleanup, with TERM late in the poll wait.
+  python3 - "$ROOT" "$TMP_ROOT" "$BASH" <<'PYTEST' || fail "watcher wait broke TERM cleanup"
+import os
+import pathlib
+import re
+import signal
+import subprocess
+import sys
+import time
+
+root, tmp, interpreter = sys.argv[1:]
+for attempt in range(8):
+    home = pathlib.Path(tmp) / ("wait-term-%d" % attempt)
+    for name in ("state", "config", "shim"):
+        (home / name).mkdir(parents=True)
+    tmux = home / "shim" / "tmux"
+    tmux.write_text("#!/bin/sh\nexit 0\n")
+    tmux.chmod(0o755)
+    env = {k: v for k, v in os.environ.items() if not k.startswith("FM_")}
+    env.update(FM_HOME=str(home), FM_STATE_OVERRIDE=str(home / "state"),
+               FM_POLL="1", FM_CHECK_INTERVAL="999999", FM_HEARTBEAT="999999",
+               FM_HOME_SUMMARY_INTERVAL="999999",
+               PATH=str(home / "shim") + os.pathsep + os.environ["PATH"])
+    trace_path = home / "trace"
+    with trace_path.open("w") as trace:
+        # Trace only synchronizes signal delivery with an executing wait; the
+        # assertions below concern exit, diagnostics, and released ownership.
+        env.pop("BASH_XTRACEFD", None)
+        proc = subprocess.Popen([interpreter, "-x", root + "/bin/fm-watch.sh"],
+                                env=env, stdout=subprocess.DEVNULL, stderr=trace,
+                                start_new_session=True)
+        try:
+            deadline = time.monotonic() + 20
+            while time.monotonic() < deadline:
+                if re.search(r"\+ (?:read -r -t 1 -u |sleep 1\n)", trace_path.read_text()):
+                    break
+                if proc.poll() is not None:
+                    raise AssertionError("watcher exited before its wait")
+                time.sleep(0.01)
+            else:
+                raise AssertionError("watcher never reached its poll wait")
+            time.sleep(0.8 + (attempt % 3) * 0.05)
+            proc.send_signal(signal.SIGTERM)
+            proc.wait(timeout=5)
+            assert proc.returncode in (-signal.SIGTERM, 128 + signal.SIGTERM), proc.returncode
+            assert "return: can only" not in trace_path.read_text(), "invalid return during cleanup"
+            assert not (home / "state" / ".watch.lock").is_symlink(), "watcher retained ownership"
+        finally:
+            if proc.poll() is None:
+                os.killpg(proc.pid, signal.SIGKILL)
+                proc.wait()
+PYTEST
+  pass "watcher exits on TERM during its poll wait and releases ownership"
 }
 
 test_window_fields_match_the_meta_pipeline() {
@@ -439,5 +506,6 @@ else
   test_hex_encoder_matches_od
   test_status_signature_matches_the_per_field_readers
   test_wait_helper_waits_without_starting_sleep
+  test_watcher_termination_during_wait
   test_window_fields_match_the_meta_pipeline
 fi
