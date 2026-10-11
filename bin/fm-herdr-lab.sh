@@ -37,8 +37,14 @@
 # absent; teardown refuses when that stop cannot be confirmed.
 set -u
 
+# Resolved by parameter expansion rather than `$(cd "$(dirname ...)" && pwd)`:
+# this helper is re-executed once per Herdr call in a lab, so two forks and an
+# external `dirname` here are paid by every call a test makes while a
+# presentation lock is held.
+fm_herdr_lab_bin_dir=${BASH_SOURCE[0]%/*}
+[ "$fm_herdr_lab_bin_dir" != "${BASH_SOURCE[0]}" ] || fm_herdr_lab_bin_dir=.
 # shellcheck source=bin/fm-herdr-cli-lib.sh
-. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/fm-herdr-cli-lib.sh"
+. "$fm_herdr_lab_bin_dir/fm-herdr-cli-lib.sh"
 
 fm_herdr_lab_error() {
   echo "fm-herdr-lab: $*" >&2
