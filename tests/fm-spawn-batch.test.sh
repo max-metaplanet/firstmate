@@ -143,8 +143,24 @@ test_scout_batch_refuses_delivery_flags() {
   pass "scout batch refuses ship delivery flags instead of ignoring them"
 }
 
+# One ticket names one task, so a batch refuses to apply a shared ticket to
+# every pair rather than give distinct tasks the same ticket and branch family.
+test_batch_refuses_a_shared_ticket() {
+  local out status
+  out=$(run_ship_spawn nope-batch-ticket-z13=projects/none-a nope-batch-ticket-z14=projects/none-b \
+    --ticket ENG-123 --commit-type feat)
+  status=$?
+  [ "$status" -ne 0 ] || fail "a batch carrying --ticket should exit non-zero"
+  printf '%s\n' "$out" | grep -F 'batch dispatch does not share --ticket or --commit-type' >/dev/null \
+    || fail "batch did not refuse the shared ticket"
+  printf '%s\n' "$out" | grep -F 'batch:' >/dev/null \
+    && fail "batch dispatched pairs despite a shared ticket"
+  pass "batch dispatch refuses a shared --ticket/--commit-type before any pair runs"
+}
+
 test_batch_dispatches_every_pair
 test_batch_mode_boundaries
+test_batch_refuses_a_shared_ticket
 test_batch_requires_the_shared_delivery_contract
 test_scout_batch_refuses_delivery_flags
 test_projects_path_scoping

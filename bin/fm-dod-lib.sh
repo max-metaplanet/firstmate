@@ -55,6 +55,10 @@
 # appends " forge=gerrit shape=squash" to that line. The "Ship branch: <branch>"
 # line under it is machine-readable the same way: bin/fm-spawn.sh refuses a ship
 # whose spawn-selected branch disagrees with it.
+# A ticketed task adds "Ticket: <id>" and "Commit type: <type>" to that header
+# plus the convention sentences fm_ticket_resolve renders, which this function
+# takes already rendered as its sixth argument and only places; bin/fm-spawn.sh
+# refuses a ship whose ticket or commit type disagrees with those lines.
 # forge is none|gerrit and defaults to none; bin/fm-project-mode.sh's header owns
 # what the registry binding means, and this file owns what gerrit changes for a
 # WORKER (docs/gerrit-forge-integration.md is the design). A forge composes with
@@ -209,6 +213,105 @@ fm_brief_base_branches() {  # <brief>
     { setup = /^You are in a disposable git worktree of .*, at a detached HEAD on a clean copy of its base branch\.$/ }
     END { exit !n }
   ' "$1"
+}
+
+# Print the "Ticket:" value, then the "Commit type:" value, of the last rendered
+# Definition of done header (heading, "Delivery contract:", "Ship branch:", then
+# the ticket lines directly after it), one per line and empty when absent. Lines
+# anywhere else in the brief, such as pasted task text, are ignored.
+fm_brief_ticket_header() {  # <brief>
+  awk '
+    s == 3 && sub(/^Ticket: /, "") { t = $0; s = 4; next }
+    s == 4 && sub(/^Commit type: /, "") { c = $0; s = 0; next }
+    s == 2 && /^Ship branch: / { t = ""; c = ""; s = 3; next }
+    s == 1 && /^Delivery contract: mode=/ { s = 2; next }
+    { s = ($0 == "# Definition of done") ? 1 : 0 }
+    END { print t; print c }
+  ' "$1"
+}
+
+# A task's optional ClickUp ticket binds its commit subjects, pull request
+# title, and ship branch to the captain's ticket convention. bin/fm-brief.sh
+# records it as the "Ticket: <id>" and "Commit type: <type>" lines of the
+# Definition of done's machine-readable header, bin/fm-spawn.sh takes it as
+# --ticket/--commit-type, refuses a brief whose header disagrees, and records
+# ticket= and commit_type= in the task metadata, which a relaunch preserves and
+# promotion and cleanup read rather than re-deriving.
+# A ticket is a ClickUp id "ENG-<digits>" or the explicit "no-ticket" marker,
+# which names genuinely ticketless work and is never a default: omitting
+# --ticket entirely leaves the task on the unchanged "fm/" ship branch and
+# writes no header lines at all. The commit type is never guessed from prose,
+# so a ticketed task without an explicit type is refused rather than given an
+# invented one.
+FM_TICKET_NONE=no-ticket
+
+fm_ticket_valid() {  # <ticket> <caller>
+  local ticket=$1 caller=$2
+  case "$ticket" in
+    "$FM_TICKET_NONE") return 0 ;;
+    ENG-*[!0-9]*) ;;
+    ENG-[0-9]*) return 0 ;;
+  esac
+  echo "error: $caller: ticket '$ticket' must be a ClickUp id like ENG-123, or the explicit $FM_TICKET_NONE marker for genuinely ticketless work" >&2
+  return 1
+}
+
+fm_commit_type_valid() {  # <commit-type> <caller>
+  local commit_type=$1 caller=$2
+  case "$commit_type" in
+    "$FM_TICKET_NONE")
+      echo "error: $caller: '$commit_type' is the ticketless ticket marker, not a commit type; pass the conventional type such as feat, fix, or chore" >&2
+      return 1 ;;
+    ''|*[!a-z0-9]*|[!a-z]*)
+      echo "error: $caller: commit type '$commit_type' must be lowercase letters and digits starting with a letter, such as feat, fix, chore, docs, or refactor" >&2
+      return 1 ;;
+  esac
+  return 0
+}
+
+# The ship branch a ticketed task takes instead of the project's "fm/" prefix.
+fm_ticket_branch() {  # <commit-type> <ticket> <task-id>
+  printf '%s/%s-%s\n' "$1" "$2" "$3"
+}
+
+# Resolve a ship task's branch and the Definition of done header its ticket
+# adds, so bin/fm-brief.sh, bin/fm-spawn.sh, and bin/fm-promote.sh cannot drift
+# apart on either. Sets FM_TICKET_BRANCH to the branch the task ships on and
+# FM_TICKET_HEADER to the extra header text, empty when the task carries no
+# ticket. <branch-prefix-set> is 1 when the caller was passed an explicit
+# --branch-prefix, which a ticket contradicts because the convention owns the
+# whole branch name. An unticketed call resolves the unchanged
+# "<prefix><task-id>" branch and writes nothing.
+fm_ticket_resolve() {  # <ticket> <commit-type> <task-id> <branch-prefix> <branch-prefix-set> <caller>
+  local ticket=$1 commit_type=$2 id=$3 prefix=$4 prefix_set=$5 caller=$6
+  FM_TICKET_BRANCH="$prefix$id"
+  # shellcheck disable=SC2034 # Output global, read by the sourcing caller.
+  FM_TICKET_HEADER=
+  if [ -z "$ticket" ]; then
+    [ -z "$commit_type" ] || {
+      echo "error: $caller: --commit-type has no meaning without --ticket; the convention binds a type to a ticket id or to its explicit $FM_TICKET_NONE marker" >&2
+      return 1
+    }
+    return 0
+  fi
+  fm_ticket_valid "$ticket" "$caller" || return 1
+  [ -n "$commit_type" ] || {
+    echo "error: $caller: --ticket $ticket requires --commit-type <type>; the type is never guessed from the task text, so a ticketed task without one is refused" >&2
+    return 1
+  }
+  fm_commit_type_valid "$commit_type" "$caller" || return 1
+  [ "$prefix_set" -eq 0 ] || {
+    echo "error: $caller: --branch-prefix cannot be combined with --ticket; a ticketed ship branch is <commit-type>/<ticket>-<task-id> by the convention" >&2
+    return 1
+  }
+  FM_TICKET_BRANCH=$(fm_ticket_branch "$commit_type" "$ticket" "$id")
+  # shellcheck disable=SC2034 # Output global, read by the sourcing caller.
+  FM_TICKET_HEADER="
+Ticket: $ticket
+Commit type: $commit_type
+Every commit subject on this branch and the pull request title must read \`$commit_type/$ticket(<scope>): <message>\`, where \`<scope>\` names the area changed and \`<message>\` is a short imperative description.
+The branch is exactly \`$FM_TICKET_BRANCH\`; do not rename it."
+  return 0
 }
 
 fm_ship_rule_one() {  # <no-mistakes|direct-PR|local-only> <task-id> [branch] [<forge>] [<base>]
@@ -423,8 +526,8 @@ There is no pull request, no \`gh-axi\` call, and no forge CI result to report: 
 EOF
 }
 
-fm_dod_block() {  # <mode> <task-id> [branch] [<forge>] [<base>]
-  local mode=$1 id=$2 forge=${4:-none} base=${5:-}
+fm_dod_block() {  # <mode> <task-id> [branch] [<forge>] [<base>] [<ticket-header>]
+  local mode=$1 id=$2 forge=${4:-none} base=${5:-} ticket_header=${6:-}
   local branch=${3:-fm/$id} pr_base='' nm_base='' base_q
   fm_forge_valid_for_mode "$forge" "$mode" fm_dod_block || return 1
   fm_base_branch_valid "$base" "$mode" "$forge" fm_dod_block || return 1
@@ -439,7 +542,7 @@ fm_dod_block() {  # <mode> <task-id> [branch] [<forge>] [<base>]
       cat <<EOF
 # Definition of done
 Delivery contract: mode=direct-PR forge=gerrit shape=squash
-Ship branch: $branch
+Ship branch: $branch$ticket_header
 This task ships **direct-PR** to a Gerrit review server: you publish the change yourself, without the no-mistakes pipeline.
 Gerrit has no pull requests, so there is nothing to open; publishing creates the change.
 The task is complete only when committed on your branch.
@@ -454,7 +557,7 @@ EOF
       cat <<EOF
 # Definition of done
 Delivery contract: mode=no-mistakes forge=gerrit shape=squash
-Ship branch: $branch
+Ship branch: $branch$ticket_header
 This project's review server is Gerrit: it has no pull requests and no forge CI the pipeline can watch, so **no-mistakes runs here as a review pass that ends at a ready branch**, and you then publish that branch as one change.
 Pass \`--skip push,pr,ci\` on every \`no-mistakes axi run\` for this task, and skip nothing else: \`review\`, \`test\`, \`document\`, and \`lint\` are the whole point of the run.
 Those three are the only steps that reach a forge, and skipping them is a supported outcome, not a degraded one.
@@ -485,7 +588,7 @@ EOF
       cat <<EOF
 # Definition of done
 Delivery contract: mode=direct-PR
-Ship branch: $branch
+Ship branch: $branch$ticket_header
 This task ships **direct-PR**: you raise the PR yourself, without the no-mistakes pipeline.
 The task is complete only when committed on your branch.
 When it is implemented and committed, push your branch to \`origin\` and open a PR with \`gh-axi\` that is ready for review, not a draft$pr_base.
@@ -506,7 +609,7 @@ EOF
       cat <<EOF
 # Definition of done
 Delivery contract: mode=local-only
-Ship branch: $branch
+Ship branch: $branch$ticket_header
 This task ships **local-only**: no remote, no PR, no pipeline.
 The task is complete only when committed on your branch \`$branch\`. Do NOT push, do NOT open a PR, do NOT merge.
 A \`done:\` is accepted when the named head is on this project's shared local branch, not only on a detached copy; the check tests that head, not merely that a branch moved.
@@ -519,7 +622,7 @@ EOF
       cat <<EOF
 # Definition of done
 Delivery contract: mode=no-mistakes
-Ship branch: $branch
+Ship branch: $branch$ticket_header
 The implementation is complete only when committed on your branch; the TASK is complete only when the pipeline has turned that commit into a PR with green checks.
 As soon as the implementation is committed and your tree is clean, invoke /no-mistakes yourself and drive the run to its outcome: do not report done first, and do not wait for firstmate to send you the pipeline.
 The pipeline owns the push; never push from this copy.

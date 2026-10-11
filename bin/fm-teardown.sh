@@ -305,6 +305,13 @@
 # ledger. It runs before the task branch it attributes runs by is deleted and
 # before state/<id>.meta is removed, and is best effort: a failure warns and
 # never blocks cleanup.
+# Every ship task this teardown cleans up, including one that released its slot
+# claim, also has one delivery-timing line recorded by bin/fm-task-timing.sh,
+# which owns the ledger and its fields.
+# It needs no opt-in because it reads only this task's own durable records, runs
+# in the same window before state/<id>.meta is removed, and is best effort in
+# both directions: the recorder warns rather than failing, and a non-zero exit is
+# ignored here, because cleanup has already succeeded by the time it is written.
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -3426,6 +3433,14 @@ if [ "$KIND" = ship ] && teardown_owns_worktree && [ -e "$CONFIG/pipeline-spend"
     "$SCRIPT_DIR/fm-pipeline-spend.sh" record "$ID" >/dev/null \
     || echo "warning: could not record $ID's no-mistakes pipeline spend; cleanup continues" >&2
 fi
+# One delivery-timing line per ship task, for the work-impact report
+# (bin/fm-task-timing.sh owns the ledger and its fields). It reads only this
+# task's durable records and never gates cleanup: the recorder warns instead of
+# failing, and a non-zero exit is ignored here as well.
+if [ "$KIND" = ship ]; then
+  FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" FM_DATA_OVERRIDE="$DATA" FM_CONFIG_OVERRIDE="$CONFIG" \
+    "$SCRIPT_DIR/fm-task-timing.sh" record "$ID" >/dev/null || true
+fi
 
 # Fix 3 (see script header): sweep remote job workers abandoned by an already
 # pruned code root. Best effort - a sweep failure never blocks this teardown.
@@ -3651,7 +3666,7 @@ rm -f "$STATE/$ID.turn-ended" "$STATE/$ID.progress" \
   "$STATE/$ID.control-relaunch" "$STATE/$ID.control-relaunch.meta-prior" \
   "$STATE/$ID.control-relaunch.brief-prior" "$STATE/$ID.control-relaunch.note" \
   "$STATE/$ID.reconcile-nudged" "$STATE/$ID.gemini-settings.json" "$STATE/$ID.devin-config.json" \
-  "$STATE/.$ID.branch-outcome-index" \
+  "$STATE/.$ID.branch-outcome-index" "$STATE/$ID.merged-at" \
   "$STATE/.secondmate-relaunch-$ID" "$STATE/.secondmate-relaunch-bound-$ID" "$STATE/.secondmate-park-$ID"
 # The steering inbox (bin/fm-task-inbox-lib.sh) is runtime state for the
 # retired endpoint; teardown only runs after landing is confirmed, so any

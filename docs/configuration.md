@@ -587,6 +587,16 @@ The optional local, gitignored `config/pipeline-spend` presence flag opts this h
 When the flag is absent, teardown skips recording and the recorder exits before reading task metadata, no-mistakes state, or the spend ledger.
 An existing ledger is left untouched while recording is disabled.
 
+## Task delivery timings (data/task-timing.jsonl)
+
+Every ship task teardown cleans up, including one that released its slot claim, appends one JSON object to the private, gitignored `data/task-timing.jsonl`, so a work-impact report can compute lead time and waiting time from durable records instead of a transcript.
+`bin/fm-task-timing.sh`'s header owns the field list and where each value is read from; the line carries the task, its kind, mode, project, ticket and commit type, the dispatch, PR-opened, and merge times, the recorded pull request, and the incarnation the line was written for.
+Lead time is `merged_at - dispatched_at` and the review wait is `merged_at - pr_opened_at`; a field the task's records never carried is written as JSON `null`, which means that leg is unmeasurable for the task rather than zero.
+Recording is not a gate and has no opt-in flag: it is written after cleanup has already succeeded, it appends at most once per task incarnation so a retried cleanup never counts a task twice, and every failure warns and leaves cleanup reported as the success it was.
+The three stamps are written where they are produced: `dispatched_at=` in task meta by the fresh spawn and preserved across relaunches, `pr_at=` in task meta by `bin/fm-pr-check.sh` when the pull request first becomes known, and `state/<id>.merged-at` by `bin/fm-merge-outcome-lib.sh` on a confirmed PR merge or `bin/fm-merge-local.sh` on a local-only landing.
+The merge stamp is its own record rather than a line in the task meta because the merge-notification path must leave the canonical task record byte-identical; teardown removes it with the rest of the task's runtime state.
+A task dispatched before those stamps existed records the legs it has and `null` for the rest.
+
 ## Turn-end pane-churn absorb (config/turnend-churn-absorb)
 
 The optional local, gitignored `config/turnend-churn-absorb` presence flag opts this home into a default-off third form of positive work evidence in watcher triage.

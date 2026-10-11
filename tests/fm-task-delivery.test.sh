@@ -1350,6 +1350,160 @@ EOF
 # local merge all inherit the recorded name. A mismatch is refused before any
 # record exists, and a brief from before briefs recorded a ship branch is only
 # acceptable on the legacy default, which warns.
+# The ticket convention tells the worker which commit-subject and PR-title
+# format to use, so a brief and its spawn must never disagree about it. A ticket
+# is part of the branch name, so most drift is already caught as a branch
+# mismatch; the ticket check is the backstop for drift the branch cannot show,
+# where the SAME branch is reached without the convention behind it.
+test_spawn_requires_the_brief_to_carry_the_selected_ticket() {
+  local rec home proj fakebin out status
+  rec=$(make_home ticket-agree "- proj [no-mistakes] - fixture (added 2026-01-01)")
+  IFS='|' read -r home proj fakebin <<EOF
+$rec
+EOF
+
+  FM_HOME="$home" "$BRIEF" ticket-agree-a1 proj --mode no-mistakes \
+    --ticket ENG-630 --commit-type feat >/dev/null \
+    || fail "a ticketed brief should scaffold"
+  fill_brief_subsections "$home/data/ticket-agree-a1/brief.md" "Run the review loop." "Ship it."
+
+  # A different ticket is a different branch, so the branch guard catches it.
+  out=$(run_spawn "$home" "$fakebin" ticket-agree-a1 "$proj" claude \
+    --mode no-mistakes --yolo off --ticket ENG-631 --commit-type feat)
+  status=$?
+  [ "$status" -ne 0 ] || fail "a spawn selecting a different ticket than its brief records was accepted"
+  assert_contains "$out" "the brief says branch=feat/ENG-630-ticket-agree-a1 but this spawn selected branch=feat/ENG-631-ticket-agree-a1" \
+    "the refusal did not name both sides of the drift"
+  assert_absent "$home/state/ticket-agree-a1.meta" "the refused spawn still recorded a task"
+
+  # The backstop: the same branch reached with --branch-prefix carries no ticket,
+  # so the worker would be told the convention while the record held none.
+  out=$(run_spawn "$home" "$fakebin" ticket-agree-a1 "$proj" claude \
+    --mode no-mistakes --yolo off --branch-prefix feat/ENG-630-)
+  status=$?
+  [ "$status" -ne 0 ] || fail "a ticketed brief accepted a spawn carrying no ticket"
+  assert_contains "$out" "ticket mismatch for ticket-agree-a1" "the refusal did not name the drift it caught"
+  assert_contains "$out" "the brief says ticket=ENG-630 commit type=feat but this spawn passed ticket=none commit type=none" \
+    "the refusal did not name both sides of the drift"
+  assert_absent "$home/state/ticket-agree-a1.meta" "the refused unticketed spawn still recorded a task"
+
+  # And the reverse: an unticketed brief refuses a ticketed spawn.
+  FM_HOME="$home" "$BRIEF" ticket-agree-a2 proj --mode no-mistakes >/dev/null \
+    || fail "an unticketed brief should scaffold"
+  fill_brief_subsections "$home/data/ticket-agree-a2/brief.md" "Run the review loop." "Ship it."
+  out=$(run_spawn "$home" "$fakebin" ticket-agree-a2 "$proj" claude \
+    --mode no-mistakes --yolo off --ticket ENG-630 --commit-type feat)
+  status=$?
+  [ "$status" -ne 0 ] || fail "an unticketed brief accepted a ticketed spawn"
+  assert_absent "$home/state/ticket-agree-a2.meta" "the refused ticketed spawn still recorded a task"
+
+  # An agreeing pair reaches the launch instead of being refused as drift.
+  FM_HOME="$home" "$BRIEF" ticket-agree-a3 proj --mode no-mistakes \
+    --ticket ENG-630 --commit-type feat >/dev/null \
+    || fail "a second ticketed brief should scaffold"
+  fill_brief_subsections "$home/data/ticket-agree-a3/brief.md" "Run the review loop." "Ship it."
+  out=$(run_spawn "$home" "$fakebin" ticket-agree-a3 "$proj" claude \
+    --mode no-mistakes --yolo off --ticket ENG-630 --commit-type feat)
+  assert_not_contains "$out" "ticket mismatch" "an agreeing brief and spawn were reported as drift"
+  assert_not_contains "$out" "branch mismatch" "the ticketed branch disagreed with its own brief"
+  pass "fm-spawn: a ship's ticket must agree with the brief that instructs its worker"
+}
+
+# The captain's task text is rendered before the Definition of done header and
+# is often pasted from ClickUp, so a "Ticket:" line there must neither supply
+# the ticket nor make an agreeing spawn look like drift.
+test_spawn_ignores_a_ticket_line_in_the_task_text() {
+  local rec home proj fakebin out brief
+  rec=$(make_home ticket-decoy "- proj [no-mistakes] - fixture (added 2026-01-01)")
+  IFS='|' read -r home proj fakebin <<EOF
+$rec
+EOF
+
+  FM_HOME="$home" "$BRIEF" ticket-decoy-a1 proj --mode no-mistakes \
+    --ticket ENG-123 --commit-type feat >/dev/null \
+    || fail "a ticketed brief should scaffold"
+  brief="$home/data/ticket-decoy-a1/brief.md"
+  fill_brief_subsections "$brief" "Run the review loop." "Ship it."
+  sed -i.bak '1a\
+Ticket: ENG-99\
+Commit type: fix
+' "$brief" && rm -f "$brief.bak"
+  out=$(run_spawn "$home" "$fakebin" ticket-decoy-a1 "$proj" claude \
+    --mode no-mistakes --yolo off --ticket ENG-123 --commit-type feat)
+  assert_not_contains "$out" "ticket mismatch" "a ticket line in the task text was read as the brief's ticket"
+
+  FM_HOME="$home" "$BRIEF" ticket-decoy-a2 proj --mode no-mistakes >/dev/null \
+    || fail "an unticketed brief should scaffold"
+  brief="$home/data/ticket-decoy-a2/brief.md"
+  fill_brief_subsections "$brief" "Run the review loop." "Ship it."
+  sed -i.bak '1a\
+Ticket: ENG-99
+' "$brief" && rm -f "$brief.bak"
+  out=$(run_spawn "$home" "$fakebin" ticket-decoy-a2 "$proj" claude --mode no-mistakes --yolo off)
+  assert_not_contains "$out" "ticket mismatch" "a ticket line in the task text refused an unticketed spawn"
+  pass "fm-spawn: a ticket line in the task text is not the brief's ticket header"
+}
+
+# A relaunch reuses the task's recorded ticket exactly as it reuses the recorded
+# branch, so the flags are refused there and the record stays the only source.
+# tests/fm-control-relaunch.test.sh owns the other half - that a relaunch which
+# completes carries the recorded ticket forward - because only that suite's
+# fixture gets a relaunch past endpoint validation.
+test_relaunch_refuses_a_ticket_override() {
+  local rec home proj fakebin out status
+  rec=$(make_home ticket-relaunch "- proj [no-mistakes] - fixture (added 2026-01-01)")
+  IFS='|' read -r home proj fakebin <<EOF
+$rec
+EOF
+
+  out=$(run_spawn "$home" "$fakebin" ticket-relaunch-a1 --relaunch \
+    --ticket ENG-631 --commit-type fix)
+  status=$?
+  [ "$status" -ne 0 ] || fail "a relaunch accepted a ticket override"
+  assert_contains "$out" "--relaunch reuses the task's recorded ticket and commit type" \
+    "the refusal did not name the recorded ticket as the source"
+
+  out=$(run_spawn "$home" "$fakebin" ticket-relaunch-a1 --relaunch --commit-type fix)
+  status=$?
+  [ "$status" -ne 0 ] || fail "a relaunch accepted a commit-type override"
+  assert_contains "$out" "--relaunch reuses the task's recorded ticket and commit type" \
+    "the commit-type refusal did not name the recorded ticket as the source"
+  pass "fm-spawn: a relaunch refuses a ticket override and keeps the recorded pair"
+}
+
+# A scout records no delivery posture, so promotion is where a ticket is chosen.
+# It must reach both the promoted worker's instructions and the durable record
+# that a later relaunch and cleanup read.
+test_promotion_persists_the_selected_ticket() {
+  local home id meta instructions out
+  home="$TMP_ROOT/promote-ticket/home"
+  id=promote-ticket-e1
+  meta="$home/state/$id.meta"
+  mkdir -p "$home/state"
+  printf 'window=fm-%s\nkind=scout\nworktree=/tmp/wt\n' "$id" > "$meta"
+  FM_HOME="$home" "$BRIEF" "$id" fixture-project --scout >/dev/null 2>&1 \
+    || fail "ticket promotion scout brief should scaffold"
+  fill_brief_subsections "$home/data/$id/brief.md" \
+    "Promote the ticket fixture." "Use the configured branch exactly."
+  out=$(FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" "$PROMOTE" "$id" \
+    --mode local-only --yolo off --ticket ENG-630 --commit-type feat) \
+    || fail "ticket promotion should succeed"
+  instructions="$home/data/$id/ship-instructions.md"
+  assert_grep "branch=feat/ENG-630-$id" "$meta" \
+    "promotion did not persist the ticketed ship branch"
+  assert_grep "ticket=ENG-630" "$meta" "promotion did not persist the ticket"
+  assert_grep "commit_type=feat" "$meta" "promotion did not persist the commit type"
+  assert_grep "git checkout -b feat/ENG-630-$id --" "$instructions" \
+    "promotion did not deliver the ticketed branch-creation command"
+  assert_grep "Ticket: ENG-630" "$instructions" \
+    "promotion did not deliver the ticket to the worker"
+  # shellcheck disable=SC2016  # the literal backticked format must stay unexpanded
+  assert_grep 'must read `feat/ENG-630(<scope>): <message>`' "$instructions" \
+    "promotion did not deliver the exact commit-subject and PR-title format"
+  assert_contains "$out" "promoted $id to ship" "ticket promotion did not complete normally"
+  pass "fm-promote: a selected ticket reaches both worker instructions and durable task state"
+}
+
 test_spawn_requires_the_brief_to_carry_the_selected_branch() {
   local rec home proj fakebin out status
   rec=$(make_home branch-agree "- proj [no-mistakes] - fixture (added 2026-01-01)")
@@ -1437,6 +1591,14 @@ EOF
   out=$(run_spawn "$home" "$fakebin" prefix-dev-a2 "$proj" claude --mode no-mistakes --yolo off --branch-prefix fix/)
   assert_not_contains "$out" "registers the ship-branch prefix" \
     "a spawn matching the registered prefix was announced as a deviation"
+
+  FM_HOME="$home" "$BRIEF" prefix-dev-a3 proj --mode no-mistakes --ticket ENG-123 --commit-type feat >/dev/null \
+    || fail "a ticketed brief should scaffold"
+  fill_brief_subsections "$home/data/prefix-dev-a3/brief.md" "Run the review loop." "Ship it."
+  out=$(run_spawn "$home" "$fakebin" prefix-dev-a3 "$proj" claude --mode no-mistakes --yolo off --ticket ENG-123 --commit-type feat)
+  assert_not_contains "$out" "mismatch" "the ticketed brief and spawn disagreed"
+  assert_not_contains "$out" "registers the ship-branch prefix" \
+    "a ticket-convention branch was announced as a firstmate-authored deviation"
 
   pass "fm-spawn: a ship branch that deviates from the registered prefix is announced, never blocked"
 }
@@ -1644,6 +1806,10 @@ test_forge_gerrit_changes_what_no_mistakes_means
 test_forge_gerrit_direct_pr_publishes_one_change
 test_spawn_requires_the_brief_to_carry_the_registered_forge
 test_spawn_requires_the_brief_to_carry_the_selected_branch
+test_spawn_requires_the_brief_to_carry_the_selected_ticket
+test_spawn_ignores_a_ticket_line_in_the_task_text
+test_relaunch_refuses_a_ticket_override
+test_promotion_persists_the_selected_ticket
 test_spawn_notices_a_ship_branch_against_the_registry_prefix
 test_spawn_refuses_a_registry_forge_it_cannot_read
 test_promotion_carries_the_forge_binding

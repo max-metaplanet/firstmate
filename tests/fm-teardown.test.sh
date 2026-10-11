@@ -2422,6 +2422,11 @@ test_a_released_record_cleans_up_without_touching_the_copy() {
   assert_contains "$out" "released its claim" \
     "slot-untouched: the teardown did not say why it left the copy alone"
   assert_absent "$case_dir/state/collider.meta" "slot-untouched: the released record survived its teardown"
+  [ "$(python3 -I -c '
+import json, sys
+print(sum(json.loads(l)["task"] == "collider" for l in open(sys.argv[1])))
+' "$case_dir/data/task-timing.jsonl" 2>/dev/null)" = 1 ] \
+    || fail "slot-untouched: the released ship record's teardown did not record exactly one delivery-timing line"
   [ -d "$slot" ] || fail "slot-untouched: the released record's teardown removed the shared copy"
   [ "$(git -C "$slot" rev-parse HEAD 2>/dev/null)" = "$head" ] \
     || fail "slot-untouched: the released record's teardown moved the shared copy's HEAD"
@@ -2429,7 +2434,7 @@ test_a_released_record_cleans_up_without_touching_the_copy() {
     || fail "slot-untouched: the released record's teardown dropped the shared copy's branch"
   assert_grep "worktree=$slot" "$case_dir/state/task-x1.meta" \
     "slot-untouched: the released record's teardown disturbed the record that keeps the copy"
-  pass "a released record cleans up without touching the copy that stayed with the other record"
+  pass "a released record cleans up and records its delivery timing without touching the copy that stayed with the other record"
 }
 
 test_teardown_missing_busy_sidecar_completes() {
@@ -3443,6 +3448,69 @@ PY
   ! git -C "$case_dir/project" show-ref --verify --quiet refs/heads/fm/task-x1 \
     || fail "pipeline-spend: teardown kept the task branch"
   pass "teardown records the task's pipeline spend before removing its branch and record"
+}
+
+# The released-claim case above proves a line is written; this proves what it
+# carries. A work-impact report needs the ticket, the pull request, and all
+# three stamps, read from the durable records teardown is about to remove.
+test_teardown_records_the_task_delivery_timing() {
+  local case_dir rc=0 ledger
+  case_dir=$(make_case task-timing)
+  fm_write_meta "$case_dir/state/task-x1.meta" \
+    "window=firstmate:fm-task-x1" \
+    "endpoint_task_id=task-x1" \
+    "worktree=$case_dir/wt" \
+    "project=$case_dir/project" \
+    "kind=ship" \
+    "mode=no-mistakes" \
+    "spawn_gen=teardown-test-task-x1" \
+    "ticket=ENG-630" \
+    "commit_type=feat" \
+    "dispatched_at=1791600000" \
+    "pr=https://github.com/example/repo/pull/7" \
+    "pr_at=1791603600"
+  printf '1791610800\n' > "$case_dir/state/task-x1.merged-at"
+  land_shippable_commit "$case_dir"
+
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+
+  expect_code 0 "$rc" "task-timing: teardown should succeed"
+  ledger=$case_dir/data/task-timing.jsonl
+  assert_present "$ledger" "task-timing: teardown left no delivery-timing record"
+  assert_equals 1 "$(wc -l < "$ledger" | tr -d ' ')" "task-timing: the task was not recorded exactly once"
+  jq -e '
+    .task == "task-x1" and .spawn_gen == "teardown-test-task-x1"
+    and .kind == "ship" and .mode == "no-mistakes"
+    and .ticket == "ENG-630" and .commit_type == "feat"
+    and .dispatched_at == 1791600000 and .pr_opened_at == 1791603600
+    and .merged_at == 1791610800
+    and .pr_url == "https://github.com/example/repo/pull/7"
+  ' "$ledger" >/dev/null || fail "task-timing: the recorded timing is wrong: $(cat "$ledger")"
+  assert_absent "$case_dir/state/task-x1.meta" "task-timing: teardown kept the task record"
+  assert_absent "$case_dir/state/task-x1.merged-at" "task-timing: teardown kept the merge stamp"
+  pass "teardown records the task's delivery timing before removing its records"
+}
+
+# The timing line is a report input, not a gate: cleanup has already succeeded by
+# the time it is written. An unwritable ledger must therefore leave the teardown
+# reported as the success it was, rather than turning a finished cleanup into a
+# failure.
+test_timing_record_never_fails_cleanup() {
+  local case_dir rc=0
+  case_dir=$(make_case task-timing-unwritable)
+  write_meta "$case_dir" no-mistakes ship
+  # A directory where the ledger line belongs: the append cannot succeed.
+  mkdir -p "$case_dir/data/task-timing.jsonl"
+  land_shippable_commit "$case_dir"
+
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+
+  expect_code 0 "$rc" "task-timing-unwritable: an unwritable ledger must not fail cleanup"
+  ! grep -q REFUSED "$case_dir/stderr" \
+    || fail "task-timing-unwritable: teardown printed a REFUSED line"
+  assert_absent "$case_dir/state/task-x1.meta" \
+    "task-timing-unwritable: cleanup did not finish removing the task record"
+  pass "an unwritable timing ledger warns and never fails a finished cleanup"
 }
 
 test_teardown_skips_pipeline_spend_when_disabled() {
@@ -4729,6 +4797,8 @@ test_persistent_index_lock_exhausts_retries_and_refuses_loudly
 test_empty_retry_wait_uses_default_without_aborting
 test_fractional_legacy_retry_wait_refuses_without_arithmetic_error
 test_teardown_records_the_task_pipeline_spend
+test_teardown_records_the_task_delivery_timing
+test_timing_record_never_fails_cleanup
 test_teardown_skips_pipeline_spend_when_disabled
 test_teardown_records_unavailable_spend_for_a_gone_worktree
 test_parked_own_run_is_aborted_before_teardown

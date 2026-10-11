@@ -1393,6 +1393,52 @@ test_spawn_relaunch_of_promoted_scout_uses_the_recorded_branch() {
   pass "fm-spawn --relaunch: a promoted scout with a recorded custom branch relaunches on it instead of being refused"
 }
 
+# The ticket counterpart of the promoted-scout branch case above. Promotion
+# writes ticket= and commit_type= into the meta and the convention into the ship
+# instructions, but brief.md is still the scout scaffold and never gained the
+# "Ticket:" lines. The recorded pair is authoritative, so the relaunch must
+# proceed on it rather than be refused as drift against its own brief.
+test_spawn_relaunch_of_promoted_scout_uses_the_recorded_ticket() {
+  local dir out
+  dir=$(new_case promoteticket rl43)
+  add_ship_task "$dir" rl43 claude
+  printf 'branch=feat/ENG-630-rl43\nticket=ENG-630\ncommit_type=feat\n' \
+    >> "$dir/home/state/rl43.meta"
+  printf 'zsh' > "$dir/fake/command"
+  out=$(run_spawn "$dir" rl43 --relaunch)
+  assert_contains "$out" "spawned rl43" "the relaunch should complete on the recorded ticket"
+  assert_contains "$out" "records no ticket" "the brief gap should be reported, not silent"
+  assert_contains "$out" "recorded ticket ENG-630 and commit type feat" \
+    "the relaunch should name the ticket it adopted"
+  assert_not_contains "$out" "ticket mismatch" \
+    "the relaunch was refused as drift against its own ticket-free scout brief"
+  [ "$(meta_field "$dir" rl43 ticket)" = "ENG-630" ] \
+    || fail "the recorded ticket must survive the relaunch"
+  [ "$(meta_field "$dir" rl43 commit_type)" = "feat" ] \
+    || fail "the recorded commit type must survive the relaunch"
+  pass "fm-spawn --relaunch: a promoted scout with a recorded ticket relaunches on it instead of being refused"
+}
+
+# A "Ticket:" line pasted into the captain's intent is task text, not the
+# brief's ticket header, so it must not refuse a relaunch on the recorded ticket
+# nor replace the ticket the task record carries.
+test_spawn_relaunch_ignores_a_ticket_line_in_the_task_text() {
+  local dir out
+  dir=$(new_case ticketdecoy rl44)
+  add_ship_task "$dir" rl44 claude
+  printf 'Ticket: ENG-99\nCommit type: fix\n' >> "$dir/home/data/rl44/brief.md"
+  printf 'branch=feat/ENG-630-rl44\nticket=ENG-630\ncommit_type=feat\n' \
+    >> "$dir/home/state/rl44.meta"
+  printf 'zsh' > "$dir/fake/command"
+  out=$(run_spawn "$dir" rl44 --relaunch)
+  assert_contains "$out" "spawned rl44" "a ticket line in the task text refused the relaunch"
+  assert_not_contains "$out" "ticket mismatch" \
+    "a ticket line in the task text was read as the brief's ticket header"
+  [ "$(meta_field "$dir" rl44 ticket)" = "ENG-630" ] \
+    || fail "the recorded ticket must survive a ticket line in the task text"
+  pass "fm-spawn --relaunch: a ticket line in the task text is not the brief's ticket header"
+}
+
 # A relaunch acquires no working copy: it reuses the one the record already
 # names. bin/fm-spawn.sh's claimed-copy refusal therefore must not reach it -
 # not even when a SECOND record names that same copy, which is precisely the
@@ -2842,6 +2888,8 @@ test_explicit_secondmate_harness_ignores_configured_profile_axes
 test_ship_relaunch_ignores_the_crew_harness_config
 test_spawn_relaunch_without_a_harness_reuses_the_recorded_one
 test_spawn_relaunch_of_promoted_scout_uses_the_recorded_branch
+test_spawn_relaunch_of_promoted_scout_uses_the_recorded_ticket
+test_spawn_relaunch_ignores_a_ticket_line_in_the_task_text
 test_spawn_relaunch_is_not_refused_by_the_claimed_copy_guard
 test_spawn_relaunch_refuses_a_record_that_released_its_copy
 test_promoted_scout_relaunch_receives_the_current_delivery_contract
