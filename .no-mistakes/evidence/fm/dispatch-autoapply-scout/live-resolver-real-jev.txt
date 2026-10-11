@@ -1,0 +1,22 @@
+### scout-a1
+dispatch-resolve:
+  status: clear
+  model: jev-1.13.0   latency_ms: 220   tokens: 486/44
+  rule: rule_1 (The task is an investigation, diagnosis, audit, bug reproduc)   confidence: 1.0
+  probabilities: rule_1=1.0 rule_2=0.0 default=0.0
+  auto_apply: true
+  note: rule matched
+  candidate: codex:gpt-5.5  provider=codex  scope=all_models  remaining=90%  spendPriority=-16.7574  runway=projected_exhaustion  -> eligible
+  candidate: claude:sonnet  provider=claude  scope=all_models  remaining=14%  spendPriority=-3.1168  runway=projected_exhaustion  -> eligible
+  profile: --harness 'claude' --model 'sonnet' --effort 'high'
+rc=0
+### feat-b2
+dispatch-resolve:
+  status: clear
+  model: jev-1.13.0   latency_ms: 178   tokens: 480/44
+  rule: rule_2 (Routine feature implementation with a stated design.)   confidence: 1.0
+  probabilities: rule_1=0.0 rule_2=1.0 default=0.0
+  note: rule matched
+  candidate: claude:opus  provider=claude  scope=all_models  remaining=14%  spendPriority=-3.1168  runway=projected_exhaustion  -> eligible
+  profile: --harness 'claude' --model 'opus'
+rc=0

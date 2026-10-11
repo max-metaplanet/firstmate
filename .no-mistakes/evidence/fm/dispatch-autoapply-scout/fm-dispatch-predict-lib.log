@@ -1,0 +1,11 @@
+ok - a clear result records the resolver's rule, chosen profile, and the profile actually used
+ok - a non-clear result records a null chosen profile and auto_applied=false
+ok - empty resolver output (off, never-send, or an unavailable resolver) logs as status off
+ok - malformed resolver JSON never aborts the caller and logs as status off
+ok - the ledger line carries only the resolver prediction and profile fields, never brief text or secrets
+warning: jq not installed; dispatch-resolve prediction for task-nojq-1 not logged
+ok - a missing jq skips logging instead of failing the caller
+ok - a spawn the resolver did not run for logs the caller's status and the profile actually used
+ok - every call appends exactly one new line, never replacing the ledger
+# all fm-dispatch-predict-lib tests passed
+bash tests/$t.test.sh  0.32s user 0.57s system 59% cpu 1.493 total

@@ -1,0 +1,2 @@
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.v2k4NT
+spawned scout-c3 harness=codex kind=scout window=primary:fm-scout-c3 worktree=/Users/max/.treehouse/demo-ddf565/1/demo
