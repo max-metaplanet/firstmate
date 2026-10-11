@@ -1,0 +1,16 @@
+## change: worktree write probe
+ok - the worktree write probe is wall-clock bounded, and hitting the bound reads as no write evidence
+ok - the worktree write probe is wall-clock bounded, and hitting the bound reads as no write evidence
+ok - the worktree write probe is wall-clock bounded, and hitting the bound reads as no write evidence
+## change: presentation holder
+ok - presentation lock waits are bounded and retriable without weakening acknowledgement atomicity
+ok - presentation lock waits are bounded and retriable without weakening acknowledgement atomicity
+not ok - presentation lock delayed the drain for 6s
+## base: worktree write probe
+ok - the worktree write probe is wall-clock bounded, and hitting the bound reads as no write evidence
+ok - the worktree write probe is wall-clock bounded, and hitting the bound reads as no write evidence
+ok - the worktree write probe is wall-clock bounded, and hitting the bound reads as no write evidence
+## base: presentation holder
+ok - presentation lock waits are bounded and retriable without weakening acknowledgement atomicity
+ok - presentation lock waits are bounded and retriable without weakening acknowledgement atomicity
+not ok - presentation lock delayed the drain for 5s

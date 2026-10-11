@@ -1,0 +1,4 @@
+ok - host: a main-only pass-through leaves the successor watcher running and the close undelivered for main
+ok - host+hook: a successor that cannot be recorded is stopped, and main's next turn end arms a fresh cycle
+ok - host: the park ends itself with a boundary wake and a stopped watcher
+exit=0

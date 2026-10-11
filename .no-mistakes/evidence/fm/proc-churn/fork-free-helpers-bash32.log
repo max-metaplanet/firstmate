@@ -1,0 +1,12 @@
+ok - fm_dirname_to and fm_basename_to match dirname and basename on every edge case
+ok - fm_epoch_seconds_to reads the clock like date +%s and forks date at most as often
+ok - signal seen paths and absolute lock paths are byte-identical to the dirname/basename/tr forms
+ok - recovery marker reads accept exactly the one-line records wc -l accepted
+ok - window_to_task resolves every recorded window exactly as the grep/tail/cut pipeline did
+ok - classify stat helpers resolve the kernel name once per process
+ok - fm_read_file_to returns what cat returned, including for empty, unreadable, missing and non-regular files
+ok - _fm_hex_encode_to produces the bytes od -An -v -tx1 | tr -d ' \n' produced
+ok - status_observed_signature is byte-identical to the four-stat, od-piped form it replaced
+ok - watcher exits on TERM during its poll wait and releases ownership
+ok - window metadata fields match the grep/cut pipeline, never answer for another window, and follow a changed meta
+exit=0

@@ -1,6 +1,12 @@
-label=before wake_latency_s=41.94 watcher_alive_before_term=yes exited_after_term=yes term_to_exit_s=0.32 rc=0 lock_left=no
-surfaced: signal: /tmp/fm-nmtest.tuvdaN/fm-lat.VyXzYq/home/state/t1.status
-label=after wake_latency_s=41.59 watcher_alive_before_term=yes exited_after_term=yes term_to_exit_s=0.20 rc=0 lock_left=no
-surfaced: signal: /tmp/fm-nmtest.tuvdaN/fm-lat.OMG8rg/home/state/t1.status
-label=after-2 wake_latency_s=42.61 watcher_alive_before_term=yes exited_after_term=yes term_to_exit_s=0.14 rc=0 lock_left=no
-label=before-2 wake_latency_s=41.89 watcher_alive_before_term=yes exited_after_term=yes term_to_exit_s=0.20 rc=0 lock_left=no
+label=before poll=15s wake_latency_s=16.73 watcher_alive_after_wake=yes exited_after_term=yes term_to_exit_s=0.22 rc=0
+surfaced: signal: /var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lat.srjuTT/home/state/t1.status
+state-lock-entry: .home-summary-refresh.lock
+state-lock-entry: .home-summary-refresh.lock.owner.wZXfI7
+label=after poll=15s wake_latency_s=15.01 watcher_alive_after_wake=yes exited_after_term=yes term_to_exit_s=0.21 rc=0
+surfaced: signal: /var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lat.iWRrLv/home/state/t1.status
+label=before-2 poll=15s wake_latency_s=18.91 watcher_alive_after_wake=yes exited_after_term=yes term_to_exit_s=1.01 rc=0
+surfaced: signal: /var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lat.7kmNzE/home/state/t1.status
+label=after-2 poll=15s wake_latency_s=17.75 watcher_alive_after_wake=yes exited_after_term=yes term_to_exit_s=0.07 rc=0
+surfaced: signal: /var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lat.sVp7hR/home/state/t1.status
+state-lock-entry: .home-summary-refresh.lock
+state-lock-entry: .home-summary-refresh.lock.owner.IgkvQI
