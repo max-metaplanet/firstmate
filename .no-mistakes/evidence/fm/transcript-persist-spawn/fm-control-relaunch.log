@@ -86,4 +86,3 @@ ok - fm-control relaunch: explicit seat moves publish and journal the chosen pro
 ok - fm-control relaunch: a failed seat move retains the prior seat record
 ok - fm-control relaunch: bad, signed-out, unreadable, empty, and non-Claude destinations refuse before any mutation; renewable login works
 ok - fm-control relaunch: an explicit seat cannot override the worker account pin
-exit=0 secs=552

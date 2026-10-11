@@ -1,0 +1,2 @@
+claude pid=5453
+CLAUDE_CODE_CHILD_SESSION=1

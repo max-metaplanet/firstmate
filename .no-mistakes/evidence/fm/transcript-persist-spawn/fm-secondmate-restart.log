@@ -23,5 +23,9 @@ ok - T7 an unreachable host is reported honestly instead of claimed as reloaded
 ok - T9 the persist gate retains its explicitly allocated correlation
 ok - T10 pending persist answers are polled as one fleet
 ok - T11 post-stop restart failure is never misreported as a nudge
-not ok - the slow first relaunch blocked lifecycle progress for the second mate
-exit=1 secs=371
+ok - T12 relaunch waits do not block fleet persistence polling
+ok - T13 a dead restart worker cannot hang the parent
+ok - T14 a result published during reaping is honored
+ok - T15 an already-current live mate is named by the update pass and genuinely restarted
+ok - T16 an already-current mate with an unprovable runtime keeps the honest nudge path
+# all fm-secondmate-restart tests passed

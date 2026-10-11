@@ -1,0 +1,4 @@
+fm-claude-trust exit=0
+fm-secondmate-restart exit=0
+fm-control-relaunch exit=0
+fm-spawn-dispatch-profile exit=0
