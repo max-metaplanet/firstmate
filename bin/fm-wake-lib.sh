@@ -61,11 +61,12 @@ fi
 # `sleep` starts a program per call, so a loop that probes twice a second costs
 # two program starts a second forever; `read -t` blocks for the same interval
 # inside this shell and starts nothing.
-# Callers opt in with FM_WAIT_READ_PID=${BASHPID:-$$} only after installing
-# terminating HUP/TERM/INT traps, and clear it before restoring native signals.
-# Native fatal-signal EXIT cleanup can outlive Bash's read timer and be unwound
-# by it, resuming the interrupted loop or crashing Bash. Such callers keep
-# sleep, as do subshells (which reset the caller's signal traps).
+# Callers may opt in with FM_WAIT_READ_PID=${BASHPID:-$$} only where stop signals
+# cannot enter cleanup during the read. Even explicit terminating signal traps
+# leave the read timer outstanding during EXIT cleanup: it can unwind cleanup,
+# lose the exit status, or crash Bash. Clearing the opt-in during cleanup cannot
+# cancel that timer. Watcher, host and Stop-hook waits therefore keep sleep,
+# as do subshells (which reset the caller's signal traps).
 # The descriptor is both ends of a FIFO this process holds open, so it never
 # reaches end-of-file and the read always runs its whole timeout. The FIFO is
 # unlinked as soon as it is open, so nothing is left on disk and the descriptor

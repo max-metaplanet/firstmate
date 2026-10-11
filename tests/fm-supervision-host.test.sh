@@ -2420,8 +2420,8 @@ test_restarted_host_stops_what_a_killed_predecessor_left() {
 # any home sat parked - and now waits inside the shell instead. The interval is
 # unchanged, so this case asserts both halves: a parked host starts no program
 # to wait, and an arm's close still reaches it.
-test_park_exit_probe_waits_without_starting_a_program() {
-  local home host_pid probe_free started
+test_park_exit_probe_keeps_cadence_and_takes_close() {
+  local home host_pid started interval
   home=$(make_home park-cadence attended)
   cat > "$home/fakebin/sleep" <<'SH'
 #!/bin/bash
@@ -2435,32 +2435,25 @@ fi
 exec /bin/sleep "$@"
 SH
   chmod +x "$home/fakebin/sleep"
-  # The in-shell wait needs an auto-assigned descriptor, which is Bash 4.1 and
-  # later; where the host's Bash is older it falls back to `sleep` on purpose
-  # and only the close half of this case applies.
-  probe_free=1
-  # shellcheck disable=SC2016 # Expanded by the interpreter the host will use.
-  bash -c '[ "${BASH_VERSINFO[0]}" -gt 4 ] || { [ "${BASH_VERSINFO[0]}" -eq 4 ] && [ "${BASH_VERSINFO[1]}" -ge 1 ]; }' \
-    || probe_free=0
   start_host "$home"
   wait_until 150 watcher_live "$home" || fail "park-cadence: no watcher started"
   host_pid=$(awk -F '\t' '$1 == "host" { print $2; exit }' "$home/state/.supervision-host")
   [ -n "$host_pid" ] || fail "park-cadence: no recorded host"
   printf '%s\n' "$host_pid" > "$home/probe-host"
-  # Sit parked across several sampling intervals: the child-sleep probe left
-  # about a dozen program starts in this window.
+  # Timed reads can interrupt signal-triggered EXIT cleanup. Keep the safe
+  # child wait and prove the existing half-second probe cadence is preserved.
   sleep 3
-  if [ "$probe_free" -eq 1 ]; then
-    started=$(grep -c . "$home/park-sleeps" 2>/dev/null || true)
-    [ "${started:-0}" -eq 0 ] \
-      || fail "park-cadence: a parked host started $started sleep programs in 3s: $(sort -u "$home/park-sleeps" | tr '\n' ' ')"
-  fi
+  started=$(grep -c . "$home/park-sleeps" 2>/dev/null || true)
+  [ "${started:-0}" -gt 0 ] || fail "park-cadence: no host exit probe observed"
+  while IFS= read -r interval; do
+    [ "$interval" = 0.5 ] || fail "park-cadence: changed probe interval: $interval"
+  done < "$home/park-sleeps"
   # The close path is unchanged: an actionable wake still reaches the host.
   append_status "$home" 'step one'
   wait_until 250 handled_at_least "$home" 1 \
     || fail "park-cadence: the arm's close never reached the parked host: $(cat "$home/host.out")"
   stop_home_processes "$home"
-  pass "host: a parked host samples its arm's exit without starting a program, and still takes its close"
+  pass "host: a parked host keeps its half-second exit probe and still takes its close"
 }
 
 test_park_boundary_ends_the_park_before_the_hook_timeout() {
@@ -3191,7 +3184,7 @@ test_claude_stop_hook_restores_handoff_when_successor_closed_before_exit_to_main
 test_claude_stop_hook_restores_handoff_when_successor_closed_mid_engine_turn
 test_claude_stop_hook_notifies_when_closed_successor_downtime_restore_fails
 test_claude_stop_hook_notifies_when_closed_announced_successor_downtime_restore_fails
-test_park_exit_probe_waits_without_starting_a_program
+test_park_exit_probe_keeps_cadence_and_takes_close
 test_report_surface_enforces_actor_turn_and_scope
 test_report_after_the_return_is_queued_for_main
 test_dispatch_entry_scopes_rows_and_renders_the_away_tail

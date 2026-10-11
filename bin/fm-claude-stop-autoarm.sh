@@ -302,7 +302,6 @@ autoarm_record() {  # <outcome>
 # shellcheck disable=SC2329 # Invoked indirectly by the signal traps below.
 handle_autoarm_signal() {
   local signal=$1
-  FM_WAIT_READ_PID=
   trap - HUP TERM INT
   if [ -n "${ARM_PID:-}" ]; then
     kill -TERM "$ARM_PID" 2>/dev/null || true
@@ -326,7 +325,8 @@ handle_autoarm_signal() {
 trap 'handle_autoarm_signal HUP' HUP
 trap 'handle_autoarm_signal TERM' TERM
 trap 'handle_autoarm_signal INT' INT
-FM_WAIT_READ_PID=${BASHPID:-$$}
+# Signal handling performs durable cleanup, so it must not inherit a timed
+# read's outstanding timer. Keep external waits just as the host does.
 
 # X mode cadence: source the generated config so an X instance polls at its
 # 30s cadence (fm-bootstrap.sh x_mode_setup contract).
@@ -390,7 +390,7 @@ start_handling_successor() {  # <closed-arm-pid>
     fi
     grep -q '^watcher: FAILED' "$out" 2>/dev/null && break
     [ "$(date +%s)" -ge "$deadline" ] && break
-    fm_wait_seconds 0.2
+    sleep 0.2
   done
   line=$(grep '^watcher: FAILED' "$out" 2>/dev/null | head -n 1 || true)
   rm -f "$out" 2>/dev/null || true

@@ -183,7 +183,7 @@
 # Park duration uses Bash's process-relative SECONDS counter (including Bash
 # 3.2), while durable timestamps still use epoch time. This is not a portable
 # monotonic-clock guarantee. Arm exit probes wait 0.5 seconds at a time with
-# fm_wait_seconds, inside the unchanged POLL-cadence maintenance and boundary checks;
+# sleep, inside the unchanged POLL-cadence maintenance and boundary checks;
 # close observation and a shell-only caught signal may wait that interval plus
 # work/scheduling time. No stop-signal disposition or cleanup bound changes.
 # FM_TEST_SUPERVISION_HOST_CLOCK names a file holding the park's elapsed
@@ -350,7 +350,7 @@ stop_recorded() {  # <pid> <identity> <seconds>
   kill -TERM "$pid" 2>/dev/null || ! fm_pid_alive "$pid" || return 1
   i=0
   while [ "$i" -lt "$limit" ] && fm_pid_alive "$pid"; do
-    fm_wait_seconds 0.1
+    sleep 0.1
     i=$((i + 1))
   done
   if fm_pid_alive "$pid" && [ "$(identity_of "$pid")" = "$identity" ]; then
@@ -433,7 +433,7 @@ stop_engine_turn() {
   limit=$(( (ENGINE_GRACE + 10) * 10 ))
   i=0
   while [ -n "$ENGINE_SUBSHELL" ] && fm_pid_alive "$ENGINE_SUBSHELL" && [ "$i" -lt "$limit" ]; do
-    fm_wait_seconds 0.1
+    sleep 0.1
     i=$((i + 1))
   done
   [ -z "$ENGINE_SUBSHELL" ] || kill -KILL "$ENGINE_SUBSHELL" 2>/dev/null || true
@@ -442,7 +442,6 @@ stop_engine_turn() {
 # shellcheck disable=SC2329 # Invoked by the EXIT trap.
 cleanup() {
   local rc=$? f
-  FM_WAIT_READ_PID=
   trap - EXIT HUP TERM INT
   if [ "$ENGINE_RUNNING" -eq 1 ]; then
     stop_engine_turn
@@ -471,7 +470,7 @@ retire_arm() {  # <pid> <output-file>
     kill -TERM "$pid" 2>/dev/null || true
     i=0
     while [ "$i" -lt 100 ] && fm_pid_alive "$pid"; do
-      fm_wait_seconds 0.1
+      sleep 0.1
       i=$((i + 1))
     done
     fm_pid_alive "$pid" && kill -KILL "$pid" 2>/dev/null
@@ -567,7 +566,7 @@ await_close() {
     # changing the outer identity refresh, readiness, or boundary cadence.
     i=$((POLL * 2))
     while [ "$i" -gt 0 ] && fm_pid_alive "$ARM_PID"; do
-      fm_wait_seconds 0.5
+      sleep 0.5
       i=$((i - 1))
     done
   done
@@ -700,7 +699,7 @@ start_successor() {  # <predecessor-arm-pid>
     fm_pid_alive "$SUCCESSOR_PID" || return 1
     fm_epoch_seconds_to now
     [ "$now" -lt "$deadline" ] || return 1
-    fm_wait_seconds 0.2
+    sleep 0.2
   done
 }
 
@@ -1115,7 +1114,8 @@ trap cleanup EXIT
 trap 'exit 129' HUP
 trap 'exit 143' TERM
 trap 'exit 130' INT
-FM_WAIT_READ_PID=${BASHPID:-$$}
+# Keep external waits here: a timed read's outstanding timer can interrupt
+# signal-triggered EXIT cleanup even with explicit terminating signal traps.
 activate || { echo "supervision-host stood down: the host record could not be written"; exit 0; }
 log_line "start	gen=$GEN	primary=$PRIMARY"
 
