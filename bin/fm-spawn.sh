@@ -46,7 +46,8 @@
 #   its "Ship branch:" line, and a brief carrying those lines refuses a spawn
 #   without the flags. The pair is recorded as ticket= and commit_type= in
 #   state/<id>.meta, which a relaunch preserves and cleanup reads; the flags are
-#   refused on scouts, secondmates, relaunches, and alongside --branch-prefix.
+#   refused on scouts, secondmates, relaunches, batch dispatch, and alongside
+#   --branch-prefix, because one ticket names one task.
 #   Without them nothing changes. bin/fm-dod-lib.sh's fm_ticket_resolve owns the
 #   grammar and the branch each case resolves.
 #   --base-branch is the optional branch selected at intake for a ship or scout
