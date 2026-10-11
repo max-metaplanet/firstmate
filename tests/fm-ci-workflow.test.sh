@@ -6,8 +6,8 @@
 # fan-out, and four jobs carried no timeout at all. These tests hold both
 # safeguards: PR runs supersede within one PR while main pushes are never
 # cancelled, and every CI job carries a finite hang tripwire drawn from the
-# three-tier timeout policy that docs/fm-test-portable-shards.md "Timeouts"
-# owns (fast, normal, heavy), so no job drifts back to a one-off number.
+# four-tier timeout policy that docs/fm-test-portable-shards.md "Timeouts"
+# owns (fast, normal, serial, heavy), so no job drifts back to a one-off number.
 #
 # The workflow is parsed as YAML and its concurrency expressions are resolved
 # against simulated pull_request and push contexts, so the assertions describe
@@ -74,7 +74,8 @@ puts YAML.load_file(ARGV[0]).fetch("jobs").fetch(ARGV[1]).fetch("timeout-minutes
 # must join a tier, and a job-level value outside these tiers is exactly the
 # one-off number the policy removed.
 FAST_TIER_JOBS='test-coverage invariants tests-timing-aggregate'
-NORMAL_TIER_JOBS='lint tests-portable-parallel-1 tests-portable-parallel-2 tests-portable-serial macos-stock-bash'
+NORMAL_TIER_JOBS='lint tests-portable-parallel-1 tests-portable-parallel-2 macos-stock-bash'
+SERIAL_TIER_JOBS='tests-portable-serial'
 HEAVY_TIER_JOBS='tests-herdr'
 
 # Print the one timeout every listed job shares; fail on any disagreement.
@@ -146,21 +147,21 @@ end
   pass "every ci.yml job carries a finite timeout"
 }
 
-# Every job sits in exactly one tier, and the workflow carries exactly three
+# Every job sits in exactly one tier, and the workflow carries exactly four
 # distinct job-level timeouts: one per tier, no one-off numbers.
 test_every_job_belongs_to_exactly_one_timeout_tier() {
   local expected actual distinct
   # shellcheck disable=SC2086
-  expected=$(printf '%s\n' $FAST_TIER_JOBS $NORMAL_TIER_JOBS $HEAVY_TIER_JOBS | LC_ALL=C sort)
+  expected=$(printf '%s\n' $FAST_TIER_JOBS $NORMAL_TIER_JOBS $SERIAL_TIER_JOBS $HEAVY_TIER_JOBS | LC_ALL=C sort)
   [ "$(printf '%s\n' "$expected" | LC_ALL=C sort -u)" = "$expected" ] \
     || fail "a job is listed in more than one timeout tier:"$'\n'"$expected"
   actual=$(workflow_jobs | LC_ALL=C sort) || fail "could not list ci.yml jobs"
   [ "$actual" = "$expected" ] \
     || fail "ci.yml jobs and the timeout tiers disagree; every job must join one tier"$'\n'"workflow: $(printf '%s' "$actual" | tr '\n' ' ')"$'\n'"tiers: $(printf '%s' "$expected" | tr '\n' ' ')"
   distinct=$(for job in $expected; do job_timeout "$job"; done | LC_ALL=C sort -u | wc -l | tr -d ' ')
-  [ "$distinct" = 3 ] \
-    || fail "ci.yml must carry exactly three distinct job timeouts (fast, normal, heavy), got $distinct"
-  pass "every ci.yml job belongs to one of the three timeout tiers"
+  [ "$distinct" = 4 ] \
+    || fail "ci.yml must carry exactly four distinct job timeouts (fast, normal, serial, heavy), got $distinct"
+  pass "every ci.yml job belongs to one of the four timeout tiers"
 }
 
 # Fast tier: seconds-long checks share one short tripwire in the 5-10 minute band.
@@ -173,8 +174,10 @@ test_fast_tier_shares_one_short_tripwire() {
   pass "fast tier jobs share one $fast minute tripwire"
 }
 
-# Normal tier: every test or lint lane shares ONE fixed 30-minute budget,
-# above the fast tier. That budget is a hang tripwire, not a packing estimate.
+# Normal tier: every lint lane, portable parallel shard and the macOS snapshot
+# lane share ONE fixed 30-minute budget, above the fast tier. That budget is a
+# hang tripwire, not a packing estimate. The portable serial shards left this
+# tier for the serial tier below; nothing else may follow them out.
 test_normal_tier_shares_one_budget() {
   local fast normal
   # shellcheck disable=SC2086
@@ -186,6 +189,43 @@ test_normal_tier_shares_one_budget() {
   [ "$normal" = 30 ] \
     || fail "normal tier must be the single 30-minute shared budget, got $normal"
   pass "normal tier jobs share one $normal minute budget"
+}
+
+# Serial tier: the portable serial shards carry their own job bound above the
+# normal tier, because one indivisible script sets their floor.
+# tests/fm-supervision-host.test.sh measured 16.9-22.6 minutes on healthy
+# runners and about 35 minutes on the slow runners that cancelled serial 2 at
+# the old 30-minute bound, so no partition of the lane fits the normal tier.
+# Like the Herdr lane, the shard-run step owns a tighter tripwire under that
+# bound, so a wedged shard fails the step with its captured log output rather
+# than cancelling the job. The timing JSON is written only after every script
+# finishes, so a timed-out shard still uploads no timing artifact.
+test_serial_tier_keeps_a_step_tripwire_under_a_job_backstop() {
+  local normal serial step
+  # shellcheck disable=SC2086
+  normal=$(tier_timeout normal $NORMAL_TIER_JOBS) || exit 1
+  # shellcheck disable=SC2086
+  serial=$(tier_timeout serial $SERIAL_TIER_JOBS) || exit 1
+  [ "$serial" -gt "$normal" ] \
+    || fail "serial tier ($serial) must exceed the normal tier ($normal)"
+  [ "$serial" = 45 ] \
+    || fail "serial tier must be the single 45-minute shared budget, got $serial"
+  step=$(ruby -ryaml -e '
+steps = YAML.load_file(ARGV[0]).fetch("jobs").fetch(ARGV[1]).fetch("steps")
+index = steps.index { |s| s["id"] == "run-portable-serial-shard" }
+raise "no run-portable-serial-shard step" unless index
+upload = steps.index { |s| s["id"] == "upload-portable-serial-timing" }
+raise "no upload-portable-serial-timing step" unless upload
+raise "the timing upload must follow the shard-run step" unless upload > index
+raise "the timing upload must run under always()" unless steps[upload]["if"].to_s.strip == "always()"
+puts steps[index].fetch("timeout-minutes", "none")
+' "$CI_WORKFLOW" tests-portable-serial) || fail "could not read the portable serial shard-run step"
+  case "$step" in ''|*[!0-9]*) fail "the portable serial shard-run step needs its own timeout-minutes, got $step" ;; esac
+  [ "$step" = 40 ] \
+    || fail "the portable serial shard-run step must be the 40-minute tripwire, got $step"
+  [ "$step" -lt "$serial" ] \
+    || fail "the shard-run tripwire ($step) must stay under the serial job bound ($serial)"
+  pass "serial tier jobs share one $serial minute bound with a $step minute step tripwire"
 }
 
 # Heavy tier: Herdr alone carries a job-level last-resort backstop above the
@@ -257,4 +297,5 @@ test_every_job_has_a_finite_timeout
 test_every_job_belongs_to_exactly_one_timeout_tier
 test_fast_tier_shares_one_short_tripwire
 test_normal_tier_shares_one_budget
+test_serial_tier_keeps_a_step_tripwire_under_a_job_backstop
 test_heavy_tier_keeps_a_step_tripwire_under_a_job_backstop
