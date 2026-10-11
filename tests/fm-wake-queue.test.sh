@@ -2587,18 +2587,10 @@ test_subshell_lock_ownership_without_bashpid() {
 # lock once contention clears so it can safely hold and release the critical
 # section itself.
 test_bounded_lock_handoff_after_contention() {
-  local dir state lock holder_pid waiter_pid i recorded_pid real_sleep sleep_log
+  local dir state lock holder_pid waiter_pid i recorded_pid
   dir=$(make_case bounded-lock-handoff)
   state="$dir/state"
   lock="$state/.fixture.lock"
-  sleep_log="$dir/waiter-sleeps"
-  real_sleep=$(command -v sleep) || fail "sleep is unavailable for the handoff fixture"
-  cat > "$dir/fakebin/sleep" <<'SH'
-#!/usr/bin/env bash
-printf '%s\n' "$1" >> "$FM_HANDOFF_SLEEP_LOG"
-exec "$FM_HANDOFF_REAL_SLEEP" "$@"
-SH
-  chmod +x "$dir/fakebin/sleep"
 
   FM_STATE_OVERRIDE="$state" bash -c '
     . "$1"
@@ -2616,7 +2608,7 @@ SH
   [ -s "$dir/holder.ready" ] \
     || { kill "$holder_pid" 2>/dev/null || true; fail "handoff fixture holder never acquired its lock"; }
 
-  PATH="$dir/fakebin:$PATH" FM_HANDOFF_SLEEP_LOG="$sleep_log" FM_HANDOFF_REAL_SLEEP="$real_sleep" \
+  PATH="$dir/fakebin:$PATH" \
     FM_STATE_OVERRIDE="$state" bash -c '
     . "$1"
     fm_lock_acquire_wait_bounded "$2" 5 || exit 11
@@ -2627,15 +2619,19 @@ SH
     fm_lock_release "$2"
   ' _ "$ROOT/bin/fm-wake-lib.sh" "$lock" "$dir/waiter.ready" "$dir/release-waiter" &
   waiter_pid=$!
+  # Contention is read from the waiter itself rather than from a program its
+  # wait happens to start: across a settling window it must stay alive and
+  # unacquired while the holder holds, and it must acquire once the holder
+  # releases, which the assertions below check.
   i=0
-  while [ "$i" -lt 100 ] && ! grep -Fx '0.1' "$sleep_log" >/dev/null 2>&1; do
+  while [ "$i" -lt 20 ]; do
+    kill -0 "$waiter_pid" 2>/dev/null \
+      || { kill "$holder_pid" 2>/dev/null || true; fail "bounded waiter exited while a live holder held the lock"; }
+    [ ! -e "$dir/waiter.ready" ] \
+      || { kill "$holder_pid" "$waiter_pid" 2>/dev/null || true; fail "bounded waiter bypassed a live holder"; }
     sleep 0.05
     i=$((i + 1))
   done
-  grep -Fx '0.1' "$sleep_log" >/dev/null 2>&1 \
-    || { kill "$holder_pid" "$waiter_pid" 2>/dev/null || true; fail "bounded helper never entered its contended wait"; }
-  [ ! -e "$dir/waiter.ready" ] \
-    || { kill "$holder_pid" "$waiter_pid" 2>/dev/null || true; fail "bounded waiter bypassed a live holder"; }
 
   : > "$dir/release-holder"
   wait "$holder_pid" || { kill "$waiter_pid" 2>/dev/null || true; fail "fixture holder did not release cleanly"; }

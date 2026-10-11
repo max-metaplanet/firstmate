@@ -182,8 +182,8 @@
 # successor cycle may take to verify), FM_SUPERVISION_HOST_POLL (1).
 # Park duration uses Bash's process-relative SECONDS counter (including Bash
 # 3.2), while durable timestamps still use epoch time. This is not a portable
-# monotonic-clock guarantee. Arm exit probes use ordinary 0.5-second child
-# sleeps within the unchanged POLL-cadence maintenance and boundary checks;
+# monotonic-clock guarantee. Arm exit probes wait 0.5 seconds at a time with
+# sleep, inside the unchanged POLL-cadence maintenance and boundary checks;
 # close observation and a shell-only caught signal may wait that interval plus
 # work/scheduling time. No stop-signal disposition or cleanup bound changes.
 # FM_TEST_SUPERVISION_HOST_CLOCK names a file holding the park's elapsed
@@ -678,13 +678,14 @@ stand_down() {  # <why>
 # Start the successor cycle and wait until it proves a live watcher. Sets
 # SUCCESSOR_WATCHER and SUCCESSOR_GENERATION (empty when the arm attached).
 start_successor() {  # <predecessor-arm-pid>
-  local deadline line
+  local deadline line now
   SUCCESSOR_WATCHER=
   SUCCESSOR_GENERATION=
   start_arm "$1" || return 1
   SUCCESSOR_PID=$STARTED_ARM_PID
   SUCCESSOR_OUT=$STARTED_ARM_OUT
-  deadline=$(( $(date +%s) + READY_TIMEOUT ))
+  fm_epoch_seconds_to now
+  deadline=$(( now + READY_TIMEOUT ))
   while :; do
     line=$(grep -E '^watcher: (started|attached) pid=[0-9]+' "$SUCCESSOR_OUT" 2>/dev/null | head -n 1)
     if [ -n "$line" ]; then
@@ -696,7 +697,8 @@ start_successor() {  # <predecessor-arm-pid>
       return 0
     fi
     fm_pid_alive "$SUCCESSOR_PID" || return 1
-    [ "$(date +%s)" -lt "$deadline" ] || return 1
+    fm_epoch_seconds_to now
+    [ "$now" -lt "$deadline" ] || return 1
     sleep 0.2
   done
 }
@@ -1112,6 +1114,8 @@ trap cleanup EXIT
 trap 'exit 129' HUP
 trap 'exit 143' TERM
 trap 'exit 130' INT
+# Keep external waits here: a timed read's outstanding timer can interrupt
+# signal-triggered EXIT cleanup even with explicit terminating signal traps.
 activate || { echo "supervision-host stood down: the host record could not be written"; exit 0; }
 log_line "start	gen=$GEN	primary=$PRIMARY"
 

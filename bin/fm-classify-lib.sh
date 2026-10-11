@@ -70,6 +70,8 @@ case $- in *u*) _fm_classify_nounset=on ;; *) _fm_classify_nounset=off ;; esac
 # shellcheck source=bin/fm-timeout-lib.sh
 # shellcheck disable=SC1091
 . "$_FM_CLASSIFY_LIB_DIR/fm-timeout-lib.sh"
+# shellcheck source=bin/fm-path-lib.sh
+. "$_FM_CLASSIFY_LIB_DIR/fm-path-lib.sh"
 [ "$_fm_classify_nounset" = on ] || set +u
 unset _fm_classify_nounset
 
@@ -1639,9 +1641,80 @@ _status_observed_path_state() {
   fi
 }
 
+# The path state, the size and the device/inode identity in ONE stat call.
+# Taken separately they cost four program starts per status file, and the
+# watcher takes this signature for every status file twice on every poll.
+# Fields are joined by `|`, which none of them can contain: a file type word, a
+# byte count, a device:inode pair, a birth epoch and a birth timestamp.
+# Output: "<path-state>|<size>|<device:inode>|<birth-epoch>|<birth-time>".
+_fm_status_stat_fields() {  # <file>
+  if [ "$_FM_CLASSIFY_UNAME_S" = Darwin ]; then
+    LC_ALL=C /usr/bin/stat -f '%HT:%p|%z|%d:%i|%B|%FB' "$1" 2>/dev/null
+  else
+    LC_ALL=C stat -c '%F:%f|%s|%d:%i|%W|%w' "$1" 2>/dev/null
+  fi
+}
+
+# Hex-encode <text> into <output-variable> with no program start.
+# This replaces an `od | tr` pipeline whose three program starts were paid on
+# every signature. LC_ALL=C makes substring indexing byte-wise, so the output is
+# byte-for-byte what `od -An -v -tx1 | tr -d ' \n'` produced for the same text.
+_fm_hex_encode_to() {  # <output-variable> <text>
+  local LC_ALL=C out='' i=0 len ch code
+  len=${#2}
+  while [ "$i" -lt "$len" ]; do
+    ch=${2:i:1}
+    printf -v code '%d' "'$ch"
+    printf -v ch '%02x' "$(( code & 255 ))"
+    out=$out$ch
+    i=$((i + 1))
+  done
+  printf -v "$1" '%s' "$out"
+}
+
+# Read every stat-derived signature field in one call, reporting exactly the
+# error words the per-field readers above report when a file cannot be stat-ed.
+# A caller-installed reader seam stays authoritative, so the per-field readers
+# own the result whenever one is set.
+_fm_status_signature_fields() {  # <file> <size-needed> <identity-needed>
+  local f=$1 need_size=$2 need_ident=$3 raw rest ident epoch birth
+  _FM_SIG_PATH_STATE=stat-error
+  _FM_SIG_SIZE='size-error'
+  _FM_SIG_IDENT='identity-error'
+  if [ -n "${FM_STATUS_IDENTITY_READER:-}" ] || [ -n "${FM_STATUS_SIZE_READER:-}" ]; then
+    _FM_SIG_PATH_STATE=$(_status_observed_path_state "$f") || _FM_SIG_PATH_STATE=stat-error
+    if [ "$need_size" = 1 ]; then
+      _FM_SIG_SIZE=$(_fm_status_file_size "$f") || _FM_SIG_SIZE='size-error'
+    fi
+    if [ "$need_ident" = 1 ]; then
+      _FM_SIG_IDENT=$(_fm_open_decisions_file_ident "$f") || _FM_SIG_IDENT='identity-error'
+      [ -n "$_FM_SIG_IDENT" ] || _FM_SIG_IDENT='identity-error'
+    fi
+    return 0
+  fi
+  raw=$(_fm_status_stat_fields "$f") || return 0
+  case "$raw" in *'|'*'|'*'|'*'|'*) ;; *) return 0 ;; esac
+  _FM_SIG_PATH_STATE=${raw%%|*}; rest=${raw#*|}
+  _FM_SIG_SIZE=${rest%%|*};      rest=${rest#*|}
+  ident=${rest%%|*};             rest=${rest#*|}
+  epoch=${rest%%|*}
+  birth=${rest#*|}
+  [ "$epoch" = 0 ] && birth=''
+  case "$ident$birth" in *$'\t'*|*$'\n'*|'') return 0 ;; esac
+  if [ -n "$birth" ]; then
+    _FM_SIG_IDENT="strong:$ident:$birth"
+  else
+    _FM_SIG_IDENT="weak:$ident"
+  fi
+}
+
 status_observed_signature() {
   local f=$1 size=${2-} ident=${3-} path_state link_target=- access kind encoded
-  path_state=$(_status_observed_path_state "$f") || path_state=stat-error
+  local field hex need_size=1 need_ident=1
+  [ -z "$size" ] || need_size=0
+  [ -z "$ident" ] || need_ident=0
+  _fm_status_signature_fields "$f" "$need_size" "$need_ident"
+  path_state=$_FM_SIG_PATH_STATE
   if [ -L "$f" ]; then
     link_target=$(readlink "$f" 2>/dev/null) || link_target=readlink-error
     kind=symlink
@@ -1655,31 +1728,33 @@ status_observed_signature() {
     kind=unreadable
   fi
   if [ -z "$size" ]; then
-    size=$(_fm_status_file_size "$f") || size='size-error'
-    size=${size//[[:space:]]/}
+    size=${_FM_SIG_SIZE//[[:space:]]/}
     case "$size" in ''|*[!0-9]*) size='size-error' ;; esac
   fi
   if [ -z "$ident" ]; then
-    ident=$(_fm_open_decisions_file_ident "$f") || ident=identity-error
-    [ -n "$ident" ] || ident=identity-error
+    ident=$_FM_SIG_IDENT
   fi
   if [ -r "$f" ]; then access=readable; else access=unreadable; fi
-  encoded=$(printf '%s\0%s\0%s\0%s\0%s\0%s' \
-    "$size" "$ident" "$path_state" "$link_target" "$access" "$kind" \
-    | LC_ALL=C od -An -v -tx1 | tr -d ' \n') || return 1
+  # The fields are joined by a NUL byte, which encodes as the literal "00".
+  encoded=
+  for field in "$size" "$ident" "$path_state" "$link_target" "$access" "$kind"; do
+    _fm_hex_encode_to hex "$field"
+    [ -z "$encoded" ] || encoded="${encoded}00"
+    encoded=$encoded$hex
+  done
   printf 'r1:%s' "$encoded"
 }
 
 status_presentation_marker_reported_matches() {
   local raw
-  raw=$(cat "$1" 2>/dev/null) || return 1
+  fm_read_file_to raw "$1" || return 1
   status_presentation_marker_parse "$raw" || return 1
   [ "$STATUS_PRESENTATION_REPORTED" = "$2" ]
 }
 
 status_presentation_marker_offset() {
   local raw classified offset ident current
-  raw=$(cat "$1" 2>/dev/null) || { printf '0'; return 0; }
+  fm_read_file_to raw "$1" || { printf '0'; return 0; }
   status_presentation_marker_parse "$raw" || { printf '0'; return 0; }
   classified=$STATUS_PRESENTATION_CLASSIFIED
   [ "$classified" != - ] || { printf '0'; return 0; }
@@ -1692,7 +1767,7 @@ status_presentation_marker_offset() {
 status_presentation_marker_report() {
   local marker=$1 reported=$2 raw classified=-
   _status_presentation_signature_valid "$reported" || return 1
-  if raw=$(cat "$marker" 2>/dev/null) && status_presentation_marker_parse "$raw"; then
+  if fm_read_file_to raw "$marker" && status_presentation_marker_parse "$raw"; then
     classified=$STATUS_PRESENTATION_CLASSIFIED
   fi
   printf 'v2\t%s\t%s' "$reported" "$classified" > "$marker"

@@ -437,55 +437,93 @@ hash_pane() {
 # its fm-spawn seed from reading as provably working.
 window_is_busy() {  # <window> <tail40>
   local w=$1 tail40=$2 task meta verdict
-  task=$(window_to_task "$w" "$STATE")
+  window_fields "$w"
+  task=$FM_WIN_TASK
   meta="$STATE/$task.meta"
   if [ -n "$task" ] && [ -f "$meta" ]; then
     verdict=$(fm_busy_classify_meta "$meta" "$task" "$STATE" "$tail40")
   else
-    verdict=$(fm_busy_classify "$(window_backend "$w")" "$w" "$(window_harness "$w")" \
+    verdict=$(fm_busy_classify "$FM_WIN_BACKEND" "$w" "$FM_WIN_HARNESS" \
       "${task:-unknown}" "$STATE" "$tail40")
   fi
   [ "${verdict%% *}" = busy ]
 }
 
-window_kind() {
-  local w=$1 meta kind
+# window_fields: resolve one window's recorded metadata ONCE and publish its
+# fields as globals. Every per-window helper below reads those globals instead
+# of resolving the metadata again, because each resolution scans state/*.meta
+# and one poll of one window asks for the same four fields five or six times -
+# that repetition, not the reads themselves, is what turned a quiet tick into a
+# burst of forked subshells.
+# The memo holds exactly one window: the poll loop and the helpers it calls work
+# through one window at a time, so a second entry would never be read, and a
+# single entry cannot serve a stale window by mistake.
+# A helper invoked through $(...) runs in a subshell and inherits a warm memo,
+# so its own fields cost no further reads; a memo it warms is discarded with
+# that subshell, which is why the loops call window_fields in their own frame
+# first.
+# Field defaults match the metadata contract bin/fm-backend.sh owns: an absent
+# backend= is tmux (the P1 compatibility contract), an absent kind= on a
+# recorded task is ship, and a window with no metadata at all is an unknown
+# kind on tmux. Each value is the LAST one its metadata records, through
+# fm_meta_get, which is the fleet-wide reading of a repeated key.
+FM_WIN_MEMO_WINDOW=
+FM_WIN_KIND=
+FM_WIN_BACKEND=
+FM_WIN_HARNESS=
+FM_WIN_TASK=
+FM_WIN_KEY=
+
+window_fields() {  # <window>
+  local w=$1 meta
+  [ "$FM_WIN_MEMO_WINDOW" = "$w" ] && [ -n "$FM_WIN_MEMO_WINDOW" ] && return 0
+  FM_WIN_KIND=unknown
+  FM_WIN_BACKEND=tmux
+  FM_WIN_HARNESS=
+  window_key "$w" FM_WIN_KEY
   meta=$(fm_backend_meta_for_window "$w" "$STATE" 2>/dev/null || true)
   if [ -n "$meta" ]; then
-    kind=$(grep '^kind=' "$meta" | cut -d= -f2- || true)
-    [ -n "$kind" ] || kind=ship
-    echo "$kind"
-    return 0
+    FM_WIN_KIND=$(fm_meta_get "$meta" kind)
+    [ -n "$FM_WIN_KIND" ] || FM_WIN_KIND=ship
+    FM_WIN_BACKEND=$(fm_meta_get "$meta" backend)
+    [ -n "$FM_WIN_BACKEND" ] || FM_WIN_BACKEND=tmux
+    FM_WIN_HARNESS=$(fm_meta_get "$meta" harness)
+    FM_WIN_TASK=${meta##*/}
+    FM_WIN_TASK=${FM_WIN_TASK%.meta}
+  else
+    FM_WIN_TASK=$(window_to_task "$w" "$STATE")
   fi
-  echo unknown
+  FM_WIN_MEMO_WINDOW=$w
+}
+
+# Drop the memo so the next window - or the next poll of the same window - reads
+# metadata that may have changed since. The poll loop clears it per window.
+window_fields_forget() {
+  FM_WIN_MEMO_WINDOW=
+}
+
+window_kind() {
+  window_fields "$1"
+  printf '%s\n' "$FM_WIN_KIND"
 }
 
 # window_backend: the backend recorded in the meta whose window= matches <w>,
 # defaulting to tmux (absent backend= means tmux; the P1 compatibility
 # contract) when no matching meta carries the field, or none matches at all.
 window_backend() {
-  local w=$1 meta backend
-  meta=$(fm_backend_meta_for_window "$w" "$STATE" 2>/dev/null || true)
-  if [ -n "$meta" ]; then
-    backend=$(grep '^backend=' "$meta" | cut -d= -f2- || true)
-    [ -n "$backend" ] || backend=tmux
-    echo "$backend"
-    return 0
-  fi
-  echo tmux
+  window_fields "$1"
+  printf '%s\n' "$FM_WIN_BACKEND"
 }
 
 window_harness() {
-  local w=$1 meta
-  meta=$(fm_backend_meta_for_window "$w" "$STATE" 2>/dev/null || true)
-  [ -n "$meta" ] || return 0
-  grep '^harness=' "$meta" | cut -d= -f2- || true
+  window_fields "$1"
+  [ -n "$FM_WIN_HARNESS" ] || return 0
+  printf '%s\n' "$FM_WIN_HARNESS"
 }
 
 window_label() {
-  local w=$1 task
-  task=$(window_to_task "$w" "$STATE")
-  [ -n "$task" ] && printf 'fm-%s' "$task"
+  window_fields "$1"
+  [ -n "$FM_WIN_TASK" ] && printf 'fm-%s' "$FM_WIN_TASK"
 }
 
 # The ONE derivation of a window's per-window marker key: `:`, `/` and `.` become
@@ -496,10 +534,17 @@ window_label() {
 # how a future change to it silently orphans a window's markers instead of clearing
 # them. The helpers below take the derived key rather than re-deriving it, so one
 # poll of one window derives it once.
-window_key() {  # <window>
+# Pass an output variable to derive the key without forking a subshell for it,
+# the same shape fm_current_pid uses on the wake paths.
+window_key() {  # <window> [output-variable]
   local key=${1//:/_}
   key=${key//\//_}
-  printf '%s' "${key//./_}"
+  key=${key//./_}
+  if [ "$#" -gt 1 ]; then
+    printf -v "$2" '%s' "$key"
+  else
+    printf '%s' "$key"
+  fi
 }
 
 inbox_steer_escalate_unavailable() {  # <window> <task> <record>
@@ -1968,12 +2013,21 @@ surface_nonterminal_stale() {  # <window> <hash>
 # Check and heartbeat cadence must survive actionable exits and restarts: the
 # watcher may be relaunched before in-memory counters reach their threshold on a
 # busy fleet. Persist the schedule as file mtimes instead.
-age_of() {  # seconds since file mtime; "due immediately" if missing
-  local f=$1 m now
-  m=$(stat_mtime "$f") || { echo 999999; return; }
+# Pass an output variable to read the age without forking a subshell for it:
+# the poll loop asks three times a cycle and each answer cost a fork of its own.
+age_of() {  # <file> [output-variable]; seconds since mtime, 999999 when missing
+  local f=$1 m now age
+  m=$(stat_mtime "$f") || m=
   fm_epoch_seconds_to now
-  [ "$m" -le "$now" ] || { echo 999999; return; }
-  echo $(( now - m ))
+  case "$m" in
+    ''|*[!0-9]*) age=999999 ;;
+    *) if [ "$m" -le "$now" ]; then age=$(( now - m )); else age=999999; fi ;;
+  esac
+  if [ "$#" -gt 1 ]; then
+    printf -v "$2" '%s' "$age"
+  else
+    printf '%s\n' "$age"
+  fi
 }
 
 # Layer 2 + 3 signal scan: status files and turn-end markers.
@@ -1991,7 +2045,7 @@ age_of() {  # seconds since file mtime; "due immediately" if missing
 # The caller records reported state only after surfacing or intentional absorption,
 # and commits a status classification position only after a successful span read.
 scan_signals() {
-  local f sig sf exclude
+  local f sig sf exclude seen_sig
   # A remote mate's own parent channel is not a self-home task status log; the
   # home-shape-aware exclusion and its precedent live in
   # status_scan_parent_channel_exclude (fm-classify-lib.sh).
@@ -2005,8 +2059,9 @@ scan_signals() {
     [ -n "$sig" ] || continue
     sf=$(fm_wake_signal_seen_path "$STATE" "$f")
     case "$f" in
-      *.status) fm_wake_signal_seen_current "$STATE" "$f" && continue ;;
-      *) [ "$sig" = "$(cat "$sf" 2>/dev/null)" ] && continue ;;
+      *.status) fm_wake_signal_seen_current "$STATE" "$f" "$sig" && continue ;;
+      *) fm_read_file_to seen_sig "$sf" || seen_sig=
+         [ "$sig" = "$seen_sig" ] && continue ;;
     esac
     printf '%s\t%s\t%s\n' "$sf" "$sig" "$f"
   done
@@ -2293,7 +2348,7 @@ heartbeat_scan_finds_actionable() {
 # bounded wait on the backend's native transition stream, so a crew going
 # `blocked` wakes the supervisor sub-second instead of after the stale-pane
 # wedge timer. For every other home - no push-capable window, backend not
-# capable, or the event path proven unreliable this process - it sleeps POLL,
+# capable, or the event path proven unreliable this process - it waits POLL,
 # byte-for-byte today's behavior. The poll loop above still runs every cycle, so
 # this only ever SHORTENS latency; it can never drop an escalation (the poll
 # loop is the permanent fail-closed backstop). This preserves the single live
@@ -2303,13 +2358,15 @@ event_wait_or_sleep() {
   local w b session first_backend="" first_session="" rec rc
   local windows=()
   while IFS= read -r w; do
-    b=$(window_backend "$w")
+    window_fields_forget
+    window_fields "$w"
+    b=$FM_WIN_BACKEND
     fm_backend_has_push "$b" || continue
     # Secondmate endpoints are supervised via status writes, not pane/agent
     # state (an idle or blocked secondmate agent pane is healthy by design), so
     # they are excluded from the fast escalation exactly as the stale loop skips
     # them.
-    [ "$(window_kind "$w")" = secondmate ] && continue
+    [ "$FM_WIN_KIND" = secondmate ] && continue
     session=${w%%:*}
     if [ -z "$first_backend" ]; then first_backend=$b; first_session=$session; fi
     # One socket connection covers one backend+session; a home normally has a
@@ -2628,6 +2685,16 @@ resurface_after_downtime() {
   wake "check: rearm-resurface"
 }
 
+# Cadence ages and the per-poll marker reads below are filled through output
+# variables rather than command substitution, so declare them before the loop.
+home_summary_age=999999
+check_age=999999
+heartbeat_age=999999
+watch_lock_pid=
+stale_seen=
+count_prev=0
+prev=
+
 while :; do
   # Home-gone exit: a deleted home, state directory, or code root means this
   # watcher's world is gone (a torn-down temporary home or a discarded
@@ -2658,7 +2725,8 @@ while :; do
   # no-ops because the lock pid is not ours, so the survivor's lock is untouched.
   # This makes any duplicate self-resolve within one poll instead of persisting
   # and doubling every wake.
-  if [ "$(cat "$WATCH_LOCK/pid" 2>/dev/null || true)" != "$WATCHER_PID" ]; then
+  fm_read_file_to watch_lock_pid "$WATCH_LOCK/pid" || watch_lock_pid=
+  if [ "$watch_lock_pid" != "$WATCHER_PID" ]; then
     exit 0
   fi
 
@@ -2670,7 +2738,8 @@ while :; do
   # status lines before this cycle can exit on a wake. Off costs one file test.
   [ ! -e "$CONFIG/fleet-ledger" ] || FM_HOME=$FM_HOME FM_STATE_OVERRIDE=$STATE FM_CONFIG_OVERRIDE=$CONFIG "$SCRIPT_DIR/fm-fleet-ledger.sh" capture || true
 
-  if [ "$(age_of "$STATE/home-summary.json")" -ge "$HOME_SUMMARY_INTERVAL" ]; then
+  age_of "$STATE/home-summary.json" home_summary_age
+  if [ "$home_summary_age" -ge "$HOME_SUMMARY_INTERVAL" ]; then
     home_summary_refresh_detached
   fi
 
@@ -2740,7 +2809,8 @@ while :; do
   # keeps producing signals - the slow poll (e.g. merge detection) would then
   # never run until the fleet went quiet. Checks are due only every
   # CHECK_INTERVAL, so most cycles skip this block and fall straight through.
-  if [ "$(age_of "$STATE/.last-check")" -ge "$CHECK_INTERVAL" ]; then
+  age_of "$STATE/.last-check" check_age
+  if [ "$check_age" -ge "$CHECK_INTERVAL" ]; then
     rejected_checks=
     contribution_check_output=
     for c in "$STATE"/*.check.sh; do
@@ -2999,12 +3069,16 @@ EOF
   # remembers the hash already classified, or the declaration a busy pane's
   # crossed turn bound already handed to the away-mode daemon).
   while IFS= read -r w; do
-    kind=$(window_kind "$w")
-    task=$(window_to_task "$w" "$STATE")
+    # One metadata resolution per window per poll; every helper below reads the
+    # published fields rather than resolving the same window again.
+    window_fields_forget
+    window_fields "$w"
+    kind=$FM_WIN_KIND
+    task=$FM_WIN_TASK
     # Steering-inbox loss detection runs before the secondmate stale
     # exemption below, because a mate's steers land in an inbox too.
     [ -z "$task" ] || inbox_steer_check "$w" "$task"
-    key=$(window_key "$w")
+    key=$FM_WIN_KEY
     last=$(status_declared_wait_line "$STATE/$task.status")
     if ! status_is_paused_or_captain_held "$last" && [ -e "$STATE/.paused-$key" ]; then
       clear_pause_tracking "$key"
@@ -3019,7 +3093,9 @@ EOF
     if [ "$kind" = secondmate ] && ! status_is_paused_or_captain_held "$last"; then
       continue
     fi
-    tail40=$(fm_backend_capture "$(window_backend "$w")" "$w" 40 "$(window_label "$w")" 2>/dev/null) || continue
+    label=
+    [ -z "$FM_WIN_TASK" ] || label="fm-$FM_WIN_TASK"
+    tail40=$(fm_backend_capture "$FM_WIN_BACKEND" "$w" 40 "$label" 2>/dev/null) || continue
     h=$(printf '%s' "$tail40" | hash_pane)
     hf="$STATE/.hash-$key"
     cf="$STATE/.count-$key"
@@ -3027,7 +3103,7 @@ EOF
     ssf="$STATE/.stale-since-$key"
     ewf="$STATE/.wedge-escalations-$key"
     pf="$STATE/.paused-$key"   # flag: this key's stale is using the bounded pause cadence
-    prev=$(cat "$hf" 2>/dev/null || true)
+    fm_read_file_to prev "$hf" || prev=
     # Busy match: a backend's native semantic state when available (herdr), else
     # the last 6 non-blank lines only (the TUI footer area, where every verified
     # harness renders its busy indicator) so busy-looking strings in displayed
@@ -3035,7 +3111,9 @@ EOF
     # reused below so a busy verdict is consistent within one cycle.
     if window_is_busy "$w" "$tail40"; then busy_now=0; else busy_now=1; fi
     if [ "$h" = "$prev" ]; then
-      n=$(( $(cat "$cf" 2>/dev/null || echo 0) + 1 ))
+      fm_read_file_to count_prev "$cf" || count_prev=0
+      case "$count_prev" in ''|*[!0-9]*) count_prev=0 ;; esac
+      n=$(( count_prev + 1 ))
       echo "$n" > "$cf"
       if [ "$n" -ge 2 ] && [ "$busy_now" -ne 0 ]; then
         # The pane is idle/stale at hash $h. Triage decides whether this wakes
@@ -3052,7 +3130,7 @@ EOF
           if captain_held_silenced "$last"; then
             printf '%s' "$h" > "$sf"
             triage_log "absorbed stale (captain-held, never rechecked while the away-posture record exists): $w"
-          elif [ "$(cat "$sf" 2>/dev/null || true)" != "$h" ]; then
+          elif fm_read_file_to stale_seen "$sf"; [ "$stale_seen" != "$h" ]; then
             fm_wake_append stale "$w" "stale: $w" || exit 1
             printf '%s' "$h" > "$sf"
             wake "stale: $w"
@@ -3072,8 +3150,8 @@ EOF
           # line. On a NEW hash, give an active run/busy pane (the same
           # authoritative source fm-crew-state.sh itself already prioritizes
           # over the log) a chance to override before trusting the log.
-          if [ "$(cat "$sf" 2>/dev/null || true)" != "$h" ]; then
-            if crew_is_provably_working "$(window_to_task "$w" "$STATE")"; then
+          if fm_read_file_to stale_seen "$sf"; [ "$stale_seen" != "$h" ]; then
+            if crew_is_provably_working "$task"; then
               printf '%s' "$h" > "$sf"
               date +%s > "$ssf"
               clear_write_tracking "$key"
@@ -3096,7 +3174,7 @@ EOF
               printf '%s' "$h" > "$sf"
               rm -f "$ssf"
               clear_write_tracking "$key"
-              stale_status="$STATE/$(window_to_task "$w" "$STATE").status"
+              stale_status="$STATE/$task.status"
               stale_record=$(status_span_first_actionable_record "$stale_status" 0)
               case $? in
                 0|1) stale_end=${stale_record%%$'\t'*}; stale_rest=${stale_record#*$'\t'}; stale_ident=${stale_rest%%$'\t'*} ;;
@@ -3130,8 +3208,7 @@ EOF
           #     (it may be done via an interactive menu that wrote no done: status,
           #     waiting on a decision, or wedged) instead of leaving the finish to
           #     wait out the timer.
-          if [ "$(cat "$sf" 2>/dev/null || true)" != "$h" ]; then
-            task=$(window_to_task "$w" "$STATE")
+          if fm_read_file_to stale_seen "$sf"; [ "$stale_seen" != "$h" ]; then
             case "$(pause_state_class "$w" "$task")" in
               working)
                 clear_pause_tracking "$key"
@@ -3147,7 +3224,6 @@ EOF
                 ;;
             esac
           else
-            task=$(window_to_task "$w" "$STATE")
             if [ -e "$pf" ] || status_is_paused_or_captain_held "$(status_declared_wait_line "$STATE/$task.status")"; then
               case "$(pause_state_class "$w" "$task")" in
                 paused)  handle_paused_stale "$w" "$task" "$h" ;;
@@ -3178,7 +3254,7 @@ EOF
         # is cleared - but not in the same poll the declared-pause cadence just
         # recorded it, or the re-surface throttle it depends on would be erased and
         # the pause would re-surface every poll instead of once per long cadence.
-        if [ "$paused_bound" -ne 0 ] && [ -e "$pf" ] && { [ "$n" -ge 2 ] || ! status_is_paused_or_captain_held "$(status_declared_wait_line "$STATE/$(window_to_task "$w" "$STATE").status")"; }; then
+        if [ "$paused_bound" -ne 0 ] && [ -e "$pf" ] && { [ "$n" -ge 2 ] || ! status_is_paused_or_captain_held "$(status_declared_wait_line "$STATE/$task.status")"; }; then
           clear_pause_tracking "$key"
         fi
       fi
@@ -3192,7 +3268,6 @@ EOF
         rm -f "$ssf" "$ewf"
         clear_write_tracking "$key"
       fi
-      task=$(window_to_task "$w" "$STATE")
       if ! afk_present && status_is_paused_or_captain_held "$(status_declared_wait_line "$STATE/$task.status")" && [ "$busy_now" -ne 0 ]; then
         case "$(pause_state_class "$w" "$task")" in
           paused) handle_paused_stale "$w" "$task" "$h" ;;
@@ -3219,11 +3294,13 @@ EOF
   # what. Time-based via .last-heartbeat mtime; interval doubles per consecutive
   # no-change heartbeat (idle fleet) up to HEARTBEAT_MAX, and resets on any
   # surfaced non-heartbeat wake.
-  streak=$(cat "$STATE/.heartbeat-streak" 2>/dev/null || echo 0)
+  fm_read_file_to streak "$STATE/.heartbeat-streak" || streak=0
+  case "$streak" in ''|*[!0-9]*) streak=0 ;; esac
   [ "$streak" -gt 12 ] && streak=12
   hb=$(( HEARTBEAT * (1 << streak) ))
   [ "$hb" -gt "$HEARTBEAT_MAX" ] && hb=$HEARTBEAT_MAX
-  if [ "$(age_of "$STATE/.last-heartbeat")" -ge "$hb" ]; then
+  age_of "$STATE/.last-heartbeat" heartbeat_age
+  if [ "$heartbeat_age" -ge "$hb" ]; then
     # Triage: in always-on mode a heartbeat is benign unless the cheap fleet-scan
     # turns up a captain-relevant status the per-wake path missed. Absorb the
     # no-change case (advance the schedule and back off exactly as wake() would,

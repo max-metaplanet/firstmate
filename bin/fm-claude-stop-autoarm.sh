@@ -325,6 +325,8 @@ handle_autoarm_signal() {
 trap 'handle_autoarm_signal HUP' HUP
 trap 'handle_autoarm_signal TERM' TERM
 trap 'handle_autoarm_signal INT' INT
+# Signal handling performs durable cleanup, so it must not inherit a timed
+# read's outstanding timer. Keep external waits just as the host does.
 
 # X mode cadence: source the generated config so an X instance polls at its
 # 30s cadence (fm-bootstrap.sh x_mode_setup contract).

@@ -2415,8 +2415,11 @@ test_restarted_host_stops_what_a_killed_predecessor_left() {
   pass "host: a restarted host stops, by recorded identity, the cycle a killed predecessor left running"
 }
 
-test_park_exit_probe_uses_half_second_child_sleeps() {
-  local home host_pid
+# The parked host samples its arm's exit at the unchanged half-second interval.
+# Keep external sleep because a timed read can interrupt signal-triggered EXIT
+# cleanup. Verify the interval and that an arm's close still reaches the host.
+test_park_exit_probe_keeps_cadence_and_takes_close() {
+  local home host_pid started interval
   home=$(make_home park-cadence attended)
   cat > "$home/fakebin/sleep" <<'SH'
 #!/bin/bash
@@ -2435,10 +2438,20 @@ SH
   host_pid=$(awk -F '\t' '$1 == "host" { print $2; exit }' "$home/state/.supervision-host")
   [ -n "$host_pid" ] || fail "park-cadence: no recorded host"
   printf '%s\n' "$host_pid" > "$home/probe-host"
-  wait_until 100 test -s "$home/park-sleeps" || fail "park-cadence: no child sleep observed"
-  [ "$(sort -u "$home/park-sleeps")" = 0.5 ] || fail "park-cadence: exit probing did not use half-second sleeps"
+  # Timed reads can interrupt signal-triggered EXIT cleanup. Keep the safe
+  # child wait and prove the existing half-second probe cadence is preserved.
+  sleep 3
+  started=$(grep -c . "$home/park-sleeps" 2>/dev/null || true)
+  [ "${started:-0}" -gt 0 ] || fail "park-cadence: no host exit probe observed"
+  while IFS= read -r interval; do
+    [ "$interval" = 0.5 ] || fail "park-cadence: changed probe interval: $interval"
+  done < "$home/park-sleeps"
+  # The close path is unchanged: an actionable wake still reaches the host.
+  append_status "$home" 'step one'
+  wait_until 250 handled_at_least "$home" 1 \
+    || fail "park-cadence: the arm's close never reached the parked host: $(cat "$home/host.out")"
   stop_home_processes "$home"
-  pass "host: parked child-exit sampling uses ordinary half-second sleeps"
+  pass "host: a parked host keeps its half-second exit probe and still takes its close"
 }
 
 test_park_boundary_ends_the_park_before_the_hook_timeout() {
@@ -3169,7 +3182,7 @@ test_claude_stop_hook_restores_handoff_when_successor_closed_before_exit_to_main
 test_claude_stop_hook_restores_handoff_when_successor_closed_mid_engine_turn
 test_claude_stop_hook_notifies_when_closed_successor_downtime_restore_fails
 test_claude_stop_hook_notifies_when_closed_announced_successor_downtime_restore_fails
-test_park_exit_probe_uses_half_second_child_sleeps
+test_park_exit_probe_keeps_cadence_and_takes_close
 test_report_surface_enforces_actor_turn_and_scope
 test_report_after_the_return_is_queued_for_main
 test_dispatch_entry_scopes_rows_and_renders_the_away_tail

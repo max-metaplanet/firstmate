@@ -2446,9 +2446,14 @@ fm_wake_signal_seen_size() {  # <state> <file>
 # This predicate never consults the owned-append ledger, which is what makes it
 # the safe gate for a captain-facing surface: a line must never be withheld from
 # presentation merely because this home is the writer that appended it.
-fm_wake_signal_reported_current() {  # <state> <file>
-  local sig marker
-  sig=$(fm_wake_signal_sig "$2") || return 1
+# <signature> is the one this file's signature was just read as, so a caller
+# that already took it does not pay for a second read; the watcher's signal scan
+# takes one per status file per poll and this predicate was retaking it.
+fm_wake_signal_reported_current() {  # <state> <file> [signature]
+  local sig=${3-} marker
+  if [ -z "$sig" ]; then
+    sig=$(fm_wake_signal_sig "$2") || return 1
+  fi
   [ -n "$sig" ] || return 1
   marker=$(fm_wake_signal_seen_path "$1" "$2")
   case "$2" in
@@ -2469,9 +2474,9 @@ fm_wake_signal_reported_current() {  # <state> <file>
 # This is the wake-scan predicate and answers only "should this wake the home?".
 # Presentation asks the different question and uses
 # fm_wake_signal_reported_current.
-fm_wake_signal_seen_current() {  # <state> <file>
+fm_wake_signal_seen_current() {  # <state> <file> [signature]
   local classified size
-  fm_wake_signal_reported_current "$1" "$2" && return 0
+  fm_wake_signal_reported_current "$1" "$2" "${3-}" && return 0
   case "$2" in *.status) ;; *) return 1 ;; esac
   _fm_wake_require_classify || return 1
   classified=$(fm_wake_signal_seen_size "$1" "$2")
