@@ -57,64 +57,6 @@ else
   fm_epoch_seconds_to() { printf -v "$1" '%s' "$(date +%s)"; }
 fi
 
-# Fork-free stand-in for `sleep` on the supervision and watcher wait paths.
-# `sleep` starts a program per call, so a loop that probes twice a second costs
-# two program starts a second forever; `read -t` blocks for the same interval
-# inside this shell and starts nothing.
-# Callers may opt in with FM_WAIT_READ_PID=${BASHPID:-$$} only where stop signals
-# cannot enter cleanup during the read. Even explicit terminating signal traps
-# leave the read timer outstanding during EXIT cleanup: it can unwind cleanup,
-# lose the exit status, or crash Bash. Clearing the opt-in during cleanup cannot
-# cancel that timer. Watcher, host and Stop-hook waits therefore keep sleep,
-# as do subshells (which reset the caller's signal traps).
-# The descriptor is both ends of a FIFO this process holds open, so it never
-# reaches end-of-file and the read always runs its whole timeout. The FIFO is
-# unlinked as soon as it is open, so nothing is left on disk and the descriptor
-# disappears with the process. Child processes inherit the descriptor, which is
-# harmless: nothing reads or writes it, and this process holds the write end so
-# a child exiting cannot end a wait early.
-# Setup runs once per process and falls back to `sleep` whenever the descriptor
-# cannot be created (Bash below 4.1, no writable temp directory), so the wait
-# itself can never be skipped.
-FM_WAIT_FD=
-_FM_WAIT_FD_TRIED=0
-
-_fm_wait_fd_setup() {
-  local fifo
-  _FM_WAIT_FD_TRIED=1
-  # Auto-assigned {var} descriptors are Bash 4.1 and later.
-  if [ "${BASH_VERSINFO[0]}" -lt 4 ] \
-    || { [ "${BASH_VERSINFO[0]}" -eq 4 ] && [ "${BASH_VERSINFO[1]}" -lt 1 ]; }; then
-    return 1
-  fi
-  fifo="${TMPDIR:-/tmp}/.fm-wait.$$.$RANDOM"
-  mkfifo -m 600 "$fifo" 2>/dev/null || return 1
-  if ! { exec {FM_WAIT_FD}<>"$fifo"; } 2>/dev/null; then
-    rm -f "$fifo" 2>/dev/null || true
-    FM_WAIT_FD=
-    return 1
-  fi
-  rm -f "$fifo" 2>/dev/null || true
-  return 0
-}
-
-fm_wait_seconds() {  # <seconds>
-  local _fm_wait_discard
-  if [ "${FM_WAIT_READ_PID:-}" != "${BASHPID:-$$}" ] || [ "${BASH_SUBSHELL:-0}" -ne 0 ]; then
-    sleep "$1"
-    return
-  fi
-  if [ "$_FM_WAIT_FD_TRIED" -eq 0 ] && ! _fm_wait_fd_setup; then
-    FM_WAIT_FD=
-  fi
-  if [ -n "$FM_WAIT_FD" ]; then
-    # A timeout is the expected outcome, so its non-zero status is not an error.
-    read -r -t "$1" -u "$FM_WAIT_FD" _fm_wait_discard || true
-    return 0
-  fi
-  sleep "$1"
-}
-
 fm_pid_alive() {
   local pid=$1
   case "$pid" in
@@ -1322,7 +1264,7 @@ fm_lock_try_acquire() {
 fm_lock_acquire_wait() {
   local lockdir=$1
   while ! fm_lock_try_acquire "$lockdir"; do
-    fm_wait_seconds 0.1
+    sleep 0.1
   done
 }
 
@@ -1335,7 +1277,7 @@ fm_lock_acquire_wait_max() {  # <lockdir> <max-seconds>
   deadline=$((SECONDS + seconds))
   while ! fm_lock_try_acquire "$lockdir"; do
     [ "$SECONDS" -lt "$deadline" ] || return 1
-    fm_wait_seconds 0.1
+    sleep 0.1
   done
 }
 
@@ -1940,7 +1882,7 @@ fm_autoarm_write_owned() {  # <state-dir> <gen> <outcome> [marker-file] [session
   i=0
   while ! fm_lock_try_acquire "$lock"; do
     [ "$i" -lt 20 ] || return 1
-    fm_wait_seconds 0.02
+    sleep 0.02
     i=$((i + 1))
   done
   if ! fm_autoarm_ledger_read "$state" \
@@ -2092,7 +2034,7 @@ fm_autoarm_release_abandoned() {  # <state-dir> [grace]
     fi
     i=0
     while [ "$i" -lt 20 ] && fm_pid_alive "$lock_pid"; do
-      fm_wait_seconds 0.05
+      sleep 0.05
       i=$((i + 1))
     done
   fi

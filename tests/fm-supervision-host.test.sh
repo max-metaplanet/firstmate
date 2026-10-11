@@ -2415,11 +2415,9 @@ test_restarted_host_stops_what_a_killed_predecessor_left() {
   pass "host: a restarted host stops, by recorded identity, the cycle a killed predecessor left running"
 }
 
-# The parked host samples its arm's exit twice a second. That sampling used to
-# start a `sleep` child per sample - two program starts a second for as long as
-# any home sat parked - and now waits inside the shell instead. The interval is
-# unchanged, so this case asserts both halves: a parked host starts no program
-# to wait, and an arm's close still reaches it.
+# The parked host samples its arm's exit at the unchanged half-second interval.
+# Keep external sleep because a timed read can interrupt signal-triggered EXIT
+# cleanup. Verify the interval and that an arm's close still reaches the host.
 test_park_exit_probe_keeps_cadence_and_takes_close() {
   local home host_pid started interval
   home=$(make_home park-cadence attended)

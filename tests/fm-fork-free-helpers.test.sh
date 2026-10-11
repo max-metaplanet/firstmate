@@ -325,57 +325,6 @@ SH
   pass "status_observed_signature is byte-identical to the four-stat, od-piped form it replaced"
 }
 
-test_wait_helper_waits_without_starting_sleep() {
-  local script="$TMP_ROOT/wait.sh" shim="$TMP_ROOT/wait-shim" log="$TMP_ROOT/wait-sleep.log"
-  mkdir -p "$shim"
-  cat > "$shim/sleep" <<SH
-#!/bin/sh
-printf 'sleep\n' >> "$log"
-exec $(command -v sleep) "\$@"
-SH
-  chmod +x "$shim/sleep"
-  cat > "$script" <<'SH'
-. "$1/bin/fm-wake-lib.sh"
-PATH="$2:$PATH"
-: > "$3"
-trap 'exit 129' HUP
-trap 'exit 143' TERM
-trap 'exit 130' INT
-FM_WAIT_READ_PID=${BASHPID:-$$}
-before=$SECONDS
-fm_wait_seconds 1
-fm_wait_seconds 0.5
-printf 'stderr survives wait setup\n' >&2
-elapsed=$((SECONDS - before))
-# Two waits totalling 1.5s must not return early; SECONDS is whole seconds, so
-# one is the floor a correct wait can show and three bounds a wait that hung.
-[ "$elapsed" -ge 1 ] || printf 'two waits of 1.5s total returned after %ss\n' "$elapsed"
-[ "$elapsed" -le 3 ] || printf 'two waits of 1.5s total took %ss\n' "$elapsed"
-starts=$(grep -c . "$3" || true)
-if [ "${BASH_VERSINFO[0]}" -gt 4 ] || { [ "${BASH_VERSINFO[0]}" -eq 4 ] && [ "${BASH_VERSINFO[1]}" -ge 1 ]; }; then
-  [ "$starts" -eq 0 ] || printf 'bash %s started sleep %s times\n' "$BASH_VERSION" "$starts"
-else
-  [ "$starts" -eq 2 ] || printf 'bash %s fell back to sleep %s times, not twice\n' "$BASH_VERSION" "$starts"
-fi
-# Subshells reset trapped signals; the parent's opt-in must not reach them.
-(fm_wait_seconds 0.05)
-FM_WAIT_READ_PID=
-fm_wait_seconds 0.05
-fallback_starts=$(grep -c . "$3" || true)
-[ "$fallback_starts" -eq "$((starts + 2))" ] || printf 'unsafe signal contexts did not retain sleep\n'
-SH
-  # Capture stderr separately: allocating the descriptor must not permanently
-  # redirect the caller's diagnostics into /dev/null.
-  local wrapped="$TMP_ROOT/wait-stderr.sh"
-  cat > "$wrapped" <<'SH'
-"$BASH" "$2" "$1" "$3" "$4" 2> "$5" || exit
-IFS= read -r diagnostic < "$5"
-[ "$diagnostic" = 'stderr survives wait setup' ] || printf 'wait setup lost stderr\n'
-SH
-  run_everywhere "bounded wait" "$wrapped" "$script" "$shim" "$log" "$TMP_ROOT/wait.stderr"
-  pass "fm_wait_seconds waits its interval and starts no sleep program where read -t is available"
-}
-
 test_watcher_termination_during_wait() {
   # Bash's read timer can unwind native fatal-signal EXIT cleanup. Exercise the
   # real watcher and its recovery cleanup, with TERM late in the poll wait.
@@ -505,7 +454,6 @@ else
   test_file_read_helper_matches_cat
   test_hex_encoder_matches_od
   test_status_signature_matches_the_per_field_readers
-  test_wait_helper_waits_without_starting_sleep
   test_watcher_termination_during_wait
   test_window_fields_match_the_meta_pipeline
 fi

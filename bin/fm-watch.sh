@@ -2171,7 +2171,7 @@ fm_active_check_stop() {
   [ -z "$pid" ] || kill -TERM "$pid" 2>/dev/null || true
   i=0
   while [ -n "$pgid" ] && kill -0 -- "-$pgid" 2>/dev/null && [ "$i" -lt 20 ]; do
-    fm_wait_seconds 0.01
+    sleep 0.01
     i=$((i + 1))
   done
   [ -z "$pgid" ] || kill -KILL -- "-$pgid" 2>/dev/null || true
@@ -2179,7 +2179,7 @@ fm_active_check_stop() {
   [ -z "$pid" ] || wait "$pid" 2>/dev/null || true
   i=0
   while [ -n "$pgid" ] && kill -0 -- "-$pgid" 2>/dev/null && [ "$i" -lt 100 ]; do
-    fm_wait_seconds 0.01
+    sleep 0.01
     i=$((i + 1))
   done
   if [ -n "$pgid" ] && kill -0 -- "-$pgid" 2>/dev/null; then
@@ -2344,7 +2344,7 @@ heartbeat_scan_finds_actionable() {
 }
 
 # event_wait_or_sleep: the terminal wait of each supervision cycle. For a home
-# with push-capable windows (herdr), it replaces the blind POLL wait with a
+# with push-capable windows (herdr), it replaces the blind `sleep POLL` with a
 # bounded wait on the backend's native transition stream, so a crew going
 # `blocked` wakes the supervisor sub-second instead of after the stale-pane
 # wedge timer. For every other home - no push-capable window, backend not
@@ -2379,7 +2379,7 @@ event_wait_or_sleep() {
   done < <(recorded_windows)
 
   if [ "${#windows[@]}" -eq 0 ]; then
-    fm_wait_seconds "$POLL"
+    sleep "$POLL"
     return
   fi
 
@@ -2395,7 +2395,7 @@ event_wait_or_sleep() {
     _event_cap_fails=0
   fi
   if [ "$_event_cap_ok" != 1 ]; then
-    fm_wait_seconds "$POLL"
+    sleep "$POLL"
     return
   fi
 
@@ -2412,7 +2412,7 @@ event_wait_or_sleep() {
       # pure polling for the rest of this watcher process.
       _event_cap_fails=$((_event_cap_fails + 1))
       [ "$_event_cap_fails" -ge "$EVENT_CAP_FAIL_MAX" ] && _event_cap_ok=0
-      fm_wait_seconds "$POLL"
+      sleep "$POLL"
       ;;
     *)
       # 1: a clean full-budget wait with no actionable edge - the reader already
@@ -2458,7 +2458,7 @@ evict_stalled_holder() {
   fm_watcher_lock_matches_pid "$STATE" "$WATCH_PATH" "$pid" "$FM_HOME" || return 1
   kill -TERM "$pid" 2>/dev/null || return 1
   while [ "$i" -lt 50 ] && fm_pid_alive "$pid"; do
-    fm_wait_seconds 0.1
+    sleep 0.1
     i=$((i + 1))
   done
   ! fm_pid_alive "$pid"
@@ -2945,7 +2945,7 @@ EOF
   # signature for an already-pending file (last write wins below).
   pending=$(scan_signals)
   if [ -n "$pending" ]; then
-    fm_wait_seconds "$SIGNAL_GRACE"
+    sleep "$SIGNAL_GRACE"
     pending=$(printf '%s\n%s' "$pending" "$(scan_signals)")
     # The final coalesced signal set is the watcher-carried status-change
     # trigger for this home's published summary. Start it before either
