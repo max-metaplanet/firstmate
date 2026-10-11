@@ -880,6 +880,39 @@ fm_backend_herdr_presentation_session_lock_path() {  # <session>
   printf '%s/order-%s.lock' "$dir" "$key"
 }
 
+# fm_backend_herdr_presentation_lock_acquire: single owner of the bounded wait
+# for that one shared lock. On success it sets
+# FM_BACKEND_HERDR_PRESENTATION_LOCK to the path it took, so the caller
+# releases exactly what it holds; it is never called through a command
+# substitution, because the lock's holder identity is the acquiring process's
+# own pid and a subshell would record a pid that dies mid-critical-section.
+# The two failures are deliberately distinct, because they need different
+# answers: 2 means the named session's socket could not be resolved, so there
+# is nothing to serialize on and no attempt is made, while 1 means another
+# holder kept the lock for the whole budget.
+# <attempts> is in 0.1s units and defaults to 50 (5s), the opportunistic
+# budget for a caller that can give up and continue without the projection. A
+# caller that cannot fall back must pass a budget that outlasts a holder which
+# will itself finish.
+fm_backend_herdr_presentation_lock_acquire() {  # <session> [attempts]
+  local session=$1 attempts=${2:-50} lock_path attempt=0
+  FM_BACKEND_HERDR_PRESENTATION_LOCK=
+  if ! declare -F fm_lock_try_acquire >/dev/null 2>&1; then
+    # shellcheck source=bin/fm-wake-lib.sh
+    . "$FM_BACKEND_HERDR_ROOT/bin/fm-wake-lib.sh"
+  fi
+  lock_path=$(fm_backend_herdr_presentation_session_lock_path "$session") || return 2
+  while [ "$attempt" -lt "$attempts" ]; do
+    if fm_lock_try_acquire "$lock_path"; then
+      FM_BACKEND_HERDR_PRESENTATION_LOCK=$lock_path
+      return 0
+    fi
+    sleep 0.1
+    attempt=$((attempt + 1))
+  done
+  return 1
+}
+
 # fm_backend_herdr_projection_focus_snapshot: print the exact active
 # workspace and tab ids as one tab-separated record.
 # Presentation mutations use this read-only snapshot as their sole focus
@@ -3657,23 +3690,11 @@ fm_backend_herdr_kill_serialized() {  # <session> <pane>
 
 fm_backend_herdr_kill() {  # <target>
   fm_backend_herdr_target_ready "$1" || return 0
-  local session=$FM_BACKEND_HERDR_SESSION pane=$FM_BACKEND_HERDR_PANE
-  local lock_path attempt=0 lock_held=0
-  if ! declare -F fm_lock_try_acquire >/dev/null 2>&1; then
-    # shellcheck source=bin/fm-wake-lib.sh
-    . "$FM_BACKEND_HERDR_ROOT/bin/fm-wake-lib.sh"
-  fi
-  if lock_path=$(fm_backend_herdr_presentation_session_lock_path "$session"); then
-    while [ "$attempt" -lt 50 ]; do
-      if fm_lock_try_acquire "$lock_path"; then
-        lock_held=1
-        break
-      fi
-      sleep 0.1
-      attempt=$((attempt + 1))
-    done
-  fi
-  if [ "$lock_held" = 1 ]; then
+  local session=$FM_BACKEND_HERDR_SESSION pane=$FM_BACKEND_HERDR_PANE lock_path
+  # A kill can always defer, so it takes the opportunistic budget and reports
+  # either failure the same way.
+  if fm_backend_herdr_presentation_lock_acquire "$session"; then
+    lock_path=$FM_BACKEND_HERDR_PRESENTATION_LOCK
     fm_backend_herdr_kill_serialized "$session" "$pane"
     fm_lock_release "$lock_path" || true
   else
