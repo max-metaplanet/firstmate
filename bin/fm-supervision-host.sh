@@ -5,6 +5,12 @@
 #
 # Usage:
 #   fm-supervision-host.sh park [--restart]
+#   fm-supervision-host.sh --stop
+#
+# --stop stops only this home's recorded host, engine, arms, and watcher,
+# with their existing identity guards, and releases branch leases. It preserves
+# the engine conversation and all durable fleet records. The caller must inhibit
+# new arms first when stopping the home for secondmate parking.
 #
 # A primary's arm owner runs this in place of bin/fm-watch-arm.sh when the home
 # runs the host (by default on Claude, by config/supervision-host elsewhere,
@@ -201,18 +207,22 @@ CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
 . "$SCRIPT_DIR/fm-supervision-engine-lib.sh"
 # shellcheck source=bin/fm-afk-contract.sh
 . "$SCRIPT_DIR/fm-afk-contract.sh"
+# shellcheck source=bin/fm-secondmate-park-lib.sh
+. "$SCRIPT_DIR/fm-secondmate-park-lib.sh"
 
 FIRST_ARM_RESTART=0
+MODE=park
 case "${1:-}" in
   park)
     case "$#:${2:-}" in
       1:) ;;
       2:--restart) FIRST_ARM_RESTART=1 ;;
-      *) echo "usage: fm-supervision-host.sh park [--restart]" >&2; exit 2 ;;
+      *) echo "usage: fm-supervision-host.sh park [--restart] | --stop" >&2; exit 2 ;;
     esac
     ;;
+  --stop) [ "$#" -eq 1 ] || exit 2; MODE=stop ;;
   -h|--help) sed -n '2,/^set -u/p' "${BASH_SOURCE[0]}" | sed '$d' | sed 's/^# \{0,1\}//'; exit 0 ;;
-  *) echo "usage: fm-supervision-host.sh park [--restart]" >&2; exit 2 ;;
+  *) echo "usage: fm-supervision-host.sh park [--restart] | --stop" >&2; exit 2 ;;
 esac
 
 numeric_or() {  # <value> <default>
@@ -337,15 +347,16 @@ stop_recorded() {  # <pid> <identity> <seconds>
   local pid=$1 identity=$2 limit=$(( ${3:-10} * 10 )) i
   fm_pid_alive "$pid" || return 0
   [ -n "$identity" ] && [ "$(identity_of "$pid")" = "$identity" ] || return 0
-  kill -TERM "$pid" 2>/dev/null || return 0
+  kill -TERM "$pid" 2>/dev/null || ! fm_pid_alive "$pid" || return 1
   i=0
   while [ "$i" -lt "$limit" ] && fm_pid_alive "$pid"; do
     sleep 0.1
     i=$((i + 1))
   done
   if fm_pid_alive "$pid" && [ "$(identity_of "$pid")" = "$identity" ]; then
-    kill -KILL "$pid" 2>/dev/null || true
+    kill -KILL "$pid" 2>/dev/null || ! fm_pid_alive "$pid" || return 1
   fi
+  return 0
 }
 
 branch_env() {  # <command...>: run with the branch actor identity
@@ -356,29 +367,27 @@ release_branch_leases() {
   branch_env "$SCRIPT_DIR/fm-lease.sh" release-actor --actor branch >/dev/null 2>&1 || true
 }
 
-# Stop whatever a predecessor host left running, then take the record. The
-# auto-arm admits one generation at a time, so a predecessor still alive here
-# was superseded (its owner died or went stale) or crashed mid-cleanup.
-activate() {
+# Stop only the processes recorded by this home. Activation uses this after
+# ownership admission; explicit lifecycle stop uses it after inhibiting arms.
+reap_recorded_host() {
   local role pid identity
-  mkdir -p "$STATE" || return 1
   if [ -f "$HOST_RECORD" ]; then
     # The predecessor host first, with room for its own cleanup (which stops
     # its engine and arms), before anything it left is stopped individually.
     while IFS="$(printf '\t')" read -r role pid identity; do
       [ "$role" = host ] || continue
       [ "$pid" != "$HOST_PID" ] || continue
-      stop_recorded "$pid" "$identity" $((ENGINE_GRACE + 20))
+      stop_recorded "$pid" "$identity" $((ENGINE_GRACE + 20)) || return 1
     done < "$HOST_RECORD"
   fi
   if [ -f "$ENGINE_PID_FILE" ]; then
     IFS="$(printf '\t')" read -r pid identity < "$ENGINE_PID_FILE" || true
-    stop_recorded "${pid:-}" "${identity:-}" $((ENGINE_GRACE + 5))
+    stop_recorded "${pid:-}" "${identity:-}" $((ENGINE_GRACE + 5)) || return 1
     rm -f "$ENGINE_PID_FILE"
   fi
   if [ -f "$HOST_RECORD" ]; then
     while IFS="$(printf '\t')" read -r role pid identity; do
-      [ "$role" = arm ] && stop_recorded "$pid" "$identity" 10
+      [ "$role" != arm ] || stop_recorded "$pid" "$identity" 10 || return 1
     done < "$HOST_RECORD"
   fi
   # A predecessor killed outright ran no cleanup: reap the engine descendants
@@ -390,6 +399,12 @@ activate() {
   done
   rm -f "$STATE"/.supervision-host-arm.* "$STATE"/.supervision-host-descendants.* "$STATE"/.supervision-host-result.* \
     "$STATE"/.supervision-host-errors.* "$STATE"/.supervision-host-readback.* "$TURN_FILE" "$MIRROR_FEED" 2>/dev/null || true
+}
+
+activate() {
+  local pid identity
+  mkdir -p "$STATE" || return 1
+  reap_recorded_host || return 1
   # The successor a pass-through left for main: the first cycle takes it over
   # while it still answers to its recorded identity, and its record goes only
   # once it does not.
@@ -466,6 +481,7 @@ retire_arm() {  # <pid> <output-file>
 }
 
 host_still_owner() {
+  fm_secondmate_home_parked "$FM_HOME" && return 1
   fm_session_lock_owned_by_self "$STATE" || return 1
   [ -n "$AUTOARM_GEN" ] || return 0
   fm_autoarm_ledger_read "$STATE" || return 1
@@ -476,6 +492,7 @@ host_still_owner() {
 start_arm() {  # <predecessor-arm-pid or empty> [--restart]; sets the started pid/output
   local predecessor=$1 out pid
   shift
+  fm_secondmate_home_parked "$FM_HOME" && return 1
   out=$(mktemp "$STATE/.supervision-host-arm.XXXXXX") || return 1
   if [ -n "$predecessor" ]; then
     FM_WATCH_PREDECESSOR_ARM_PID=$predecessor FM_GUARD_GRACE="$GRACE" "$SCRIPT_DIR/fm-watch-arm.sh" "$@" >"$out" 2>&1 &
@@ -1069,6 +1086,22 @@ attended_acceptor() {  # <first-reason-line>
   ATTENDED_OFFER=$offer
   [ -z "$ATTENDED_WHY" ]
 }
+
+# An explicit lifecycle stop does not require the stopped session's lock.
+# New arms are inhibited by the park owner before this cleanup is requested.
+if [ "$MODE" = stop ]; then
+  reap_recorded_host || exit 1
+  if [ -f "$LEFT_RECORD" ]; then
+    LEFT_PID='' LEFT_IDENTITY=''
+    IFS="$(printf '\t')" read -r LEFT_PID LEFT_IDENTITY < "$LEFT_RECORD" || true
+    stop_recorded "$LEFT_PID" "$LEFT_IDENTITY" 10 || exit 1
+  fi
+  "$SCRIPT_DIR/fm-watch-arm.sh" --stop || exit 1
+  release_branch_leases
+  rm -f "$HOST_RECORD" "$LEFT_RECORD" "$ENGINE_PID_FILE" "$PROMPT_FILE" "$WAKE_FILE"
+  echo "supervision-host: stopped"
+  exit 0
+fi
 
 # Ownership first: a host that does not own supervision leaves the owner's
 # host, processes, arms, and leases alone.

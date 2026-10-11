@@ -22,7 +22,7 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
-# Timeout policy: docs/fm-test-portable-shards.md "Timeouts" owns the three
+# Timeout policy: docs/fm-test-portable-shards.md "Timeouts" owns the four
 # tiers and their rationale; tests/fm-ci-workflow.test.sh guards this workflow.
 # Each job comment identifies the tier implemented by its executable value.
 
@@ -183,8 +183,13 @@ jobs:
   tests-portable-serial:
     name: Behavior portable serial ${{ matrix.shard }}
     runs-on: ubuntu-latest
-    # Normal tier (see the timeout policy above).
-    timeout-minutes: 30
+    # Serial tier (see the timeout policy above). This lane carries one
+    # indivisible script, tests/fm-supervision-host.test.sh, measured at
+    # 16.9-22.6 minutes on healthy runners and about 35 minutes on the slow
+    # runners that cancelled serial 2 at the old 30-minute bound. No partition
+    # of the lane can bring that script under a 30-minute cap, so the serial
+    # shards carry their own job bound while every other lane keeps 30.
+    timeout-minutes: 45
     strategy:
       # Every shard reports so one failure never hides another shard's result.
       fail-fast: false
@@ -226,6 +231,13 @@ jobs:
           npm install -g @earendil-works/pi-coding-agent
           npm ls -g --depth 0 @earendil-works/pi-coding-agent
       - name: Run portable serial shard ${{ matrix.shard }}
+        id: run-portable-serial-shard
+        # Step tripwire under the job bound, as the Herdr lane does: a wedged
+        # shard fails here with its captured log output instead of being
+        # cancelled at the job cap. The timing JSON is written only after
+        # every script finishes, so a killed step still uploads no timing
+        # artifact.
+        timeout-minutes: 40
         env:
           # job-total rather than a literal, so shrinking or growing the matrix
           # without matching bin/fm-test-run.sh is refused instead of quietly
@@ -241,6 +253,7 @@ jobs:
             --fail-on-gate-skip 'Pi extension typecheck prerequisite not found' \
             --json "$RUNNER_TEMP/fm-test/fm-test-timing-portable-serial-${FM_SERIAL_SHARD}.json"
       - name: Upload portable serial shard ${{ matrix.shard }} timing artifact
+        id: upload-portable-serial-timing
         if: always()
         uses: actions/upload-artifact@v4
         with:

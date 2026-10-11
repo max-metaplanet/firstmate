@@ -1130,6 +1130,67 @@ test_turnend_auth_paths_are_owned_by_the_control_adapter() {
   pass "fm-control-lib: one owner resolves each harness's turn-end registry entry, and refuses a malformed token"
 }
 
+test_parked_secondmate_spawn_continuity() {
+  local dir home out rc phase mode ref harness
+  dir=$(new_case parked-sm smpark)
+  home="$dir/home"
+  mkdir -p "$home/data/smpark" "$home/config"
+  printf '# secondmate brief\n' > "$home/data/smpark/brief.md"
+  fm_git_worktree "$dir/proj" "$dir/smhome" sm-branch
+  mkdir -p "$dir/smhome/state" "$dir/smhome/data" "$dir/smhome/bin"
+  printf 'smpark\n' > "$dir/smhome/.fm-secondmate-home"
+  printf '# agents\n' > "$dir/smhome/AGENTS.md"
+  printf 'zsh' > "$dir/fake/command"
+  printf '%s' "$dir/smhome" > "$dir/fake/cwd"
+  {
+    printf 'window=fmses:fm-smpark\nendpoint_task_id=smpark\n'
+    printf 'worktree=%s\nproject=%s\nhome=%s\n' "$dir/smhome" "$dir/smhome" "$dir/smhome"
+    printf 'harness=claude\nkind=secondmate\nmode=secondmate\nyolo=off\nmodel=default\neffort=default\n'
+  } > "$home/state/smpark.meta"
+  for phase in parking parked waking; do
+    printf 'home=%s\nphase=%s\npersisted=1\nresume_mode=exact\nresume_harness=claude\nresume_ref=saved-session\n' \
+      "$dir/smhome" "$phase" > "$home/state/.secondmate-park-smpark"
+    out=$(run_spawn "$dir" smpark --secondmate); rc=$?
+    expect_code 1 "$rc" "fresh spawn must respect $phase marker: $out"
+    if [ "$phase" != waking ]; then
+      out=$(run_spawn "$dir" smpark --relaunch); rc=$?
+      expect_code 1 "$rc" "direct relaunch must respect $phase marker: $out"
+    fi
+    [ ! -s "$dir/fake/literal" ] || fail "park refusal delivered a launch"
+  done
+  for mode in exact fresh; do
+    ref=
+    [ "$mode" != exact ] || ref="saved-session's-id"
+    printf 'home=%s\nphase=waking\npersisted=1\nresume_mode=%s\nresume_harness=claude\nresume_ref=%s\n' \
+      "$dir/smhome" "$mode" "$ref" > "$home/state/.secondmate-park-smpark"
+    printf 'zsh' > "$dir/fake/command"
+    : > "$dir/fake/literal"
+    out=$(run_spawn "$dir" smpark --relaunch); rc=$?
+    expect_code 0 "$rc" "persisted $mode wake should launch: $out"
+    if [ "$mode" = exact ]; then
+      assert_grep "claude --resume 'saved-session'" "$dir/fake/literal" "parked Claude launch must resume the saved reference"
+    else
+      assert_no_grep --resume "$dir/fake/literal" "explicit fresh wake must not resume an arbitrary conversation"
+    fi
+    [ -f "$home/state/.secondmate-park-smpark" ] || fail "spawn must leave marker removal to park owner"
+  done
+  for harness in pi pi-signed; do
+    printf '#!/usr/bin/env bash\nprintf "Options: --tui-mode --approve\\n"\n' > "$dir/fakebin/$harness"
+    chmod +x "$dir/fakebin/$harness"
+    sed "s/^harness=.*/harness=$harness/" "$home/state/smpark.meta" > "$home/state/smpark.meta.tmp"
+    mv "$home/state/smpark.meta.tmp" "$home/state/smpark.meta"
+    printf 'home=%s\nphase=waking\npersisted=1\nresume_mode=exact\nresume_harness=%s\nresume_ref=%s\n' \
+      "$dir/smhome" "$harness" "$dir/saved Pi session.jsonl" > "$home/state/.secondmate-park-smpark"
+    printf 'zsh' > "$dir/fake/command"
+    printf '%s' "$harness" > "$dir/fake/becomes"
+    : > "$dir/fake/literal"
+    out=$(run_spawn "$dir" smpark --relaunch); rc=$?
+    expect_code 0 "$rc" "persisted $harness wake should launch: $out"
+    assert_grep "--session '$dir/saved Pi session.jsonl'" "$dir/fake/literal" "Pi wake must use the captured path without consulting a stopped runtime"
+  done
+  pass "parked secondmate: spawn refuses stopped phases and resumes only the persist-gated session"
+}
+
 test_secondmate_relaunch_picks_up_the_configured_harness_pin() {
   local dir home out rc
   dir=$(new_case smpin sm3)
@@ -2773,6 +2834,7 @@ test_relaunch_onto_an_unverified_harness_is_refused
 test_prior_harness_turnend_registry_entry_is_cleared
 test_wiring_removal_failure_refuses_before_replacement_arm
 test_turnend_auth_paths_are_owned_by_the_control_adapter
+test_parked_secondmate_spawn_continuity
 test_secondmate_relaunch_picks_up_the_configured_harness_pin
 test_secondmate_relaunch_ignores_invalid_configured_effort_before_stop
 test_secondmate_relaunch_onto_a_crewmate_only_adapter_refuses_before_stop

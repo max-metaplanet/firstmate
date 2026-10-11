@@ -33,7 +33,7 @@ fm_git_identity fmtest fmtest@example.com
 TMP_ROOT=$(fm_test_tmproot fm-secondmate-restart)
 mkdir -p "$TMP_ROOT"
 TMP_ROOT=$(cd "$TMP_ROOT" && pwd -P)
-trap 'rm -rf -- "$TMP_ROOT"' EXIT
+trap 'chmod -R u+w "$TMP_ROOT" 2>/dev/null || true; rm -rf -- "$TMP_ROOT"' EXIT
 
 # A session-provider stub that models the two things this pass depends on: the
 # harness exit command stops the agent, a launch brief starts the replacement,
@@ -49,6 +49,10 @@ make_stub() {  # <case-dir>
 set -u
 D=$FM_FAKE_DIR
 case "${1:-}" in
+  new-window)
+    printf 'fm-sm1\n' >> "$D/windows"
+    printf 'created\n' >> "$D/created"
+    printf '@42\n'; exit 0 ;;
   send-keys)
     shift
     literal=0
@@ -900,6 +904,217 @@ test_registered_id_precedes_selector_prefix() {
   done
   pass "registered ids win before stripping one selector prefix"
 }
+
+
+# Park uses the same modeled lifecycle and the real inbox/correlated gate.
+add_park_mate() {
+  local dir=$1
+  add_local_mate "$dir" sm1
+  printf '%s\n' "- sm1 - Test mate (home: $dir/sm1-home; scope: tests; projects: none; added 2026-10-09)" > "$dir/home/data/secondmates.md"
+  printf 'schema=fm-secondmate-parent.v1\nroute=local\nparent_home=%s\n' "$dir/home" > "$dir/sm1-home/.fm-secondmate-parent"
+}
+run_park() ( RESTART="$ROOT/bin/fm-secondmate-park.sh"; run_restart "$@"; )
+
+test_park_persist_and_idle_gates() {
+  local dir out rc
+  dir=$(new_case park-no-answer); add_park_mate "$dir"
+  out=$(FM_TEST_PERSIST_WAIT=0 run_park "$dir" sm1 park); rc=$?
+  expect_code 1 "$rc" "park without persistence must refuse: $out"
+  assert_not_contains "$(cat "$dir/fake/literal")" '/exit' 'unconfirmed park must not stop agent'
+  assert_absent "$dir/home/state/.secondmate-park-sm1" 'unconfirmed persist must not strand a parked marker'
+  dir=$(new_case park-child); add_park_mate "$dir"; arm_answer "$dir" sm1
+  printf 'kind=ship\n' > "$dir/sm1-home/state/child.meta"
+  out=$(run_park "$dir" sm1 park); rc=$?
+  expect_code 1 "$rc" "park with child work must refuse: $out"
+  assert_contains "$out" 'outstanding child work' 'idle refusal explains child record'
+  assert_absent "$dir/home/state/sm1.inbox" 'idle refusal must precede persist request'
+  out=$(run_park "$dir" sm1 park --force); rc=$?
+  expect_code 2 "$rc" "park has no force override: $out"
+  assert_present "$dir/sm1-home/state/child.meta" 'refused park never removes child metadata'
+  assert_absent "$dir/home/state/.secondmate-park-sm1" 'refused park leaves no marker'
+  pass 'park requires persistence and refuses child work without discarding it'
+}
+
+test_park_wake_and_status() {
+  local dir out rc before
+  dir=$(new_case park-wake); add_park_mate "$dir"; arm_answer "$dir" sm1
+  printf 'durable backlog\n' > "$dir/sm1-home/data/keep.md"
+  out=$(run_park "$dir" sm1 park); rc=$?
+  expect_code 0 "$rc" "park should stop a persisted mate: $out"
+  assert_present "$dir/home/state/.secondmate-park-sm1" 'park flag survives command exit'
+  assert_grep '/exit' "$dir/fake/literal" 'park stops through control exit'
+  out=$(FM_CREW_STATE_META_OVERRIDE='' FM_CREW_STATE_STATUS_OVERRIDE='' FM_HOME="$dir/home" "$ROOT/bin/fm-crew-state.sh" sm1)
+  assert_contains "$out" 'state: parked' 'crew/fleet status shows parked'
+  assert_contains "$out" 'session=fresh' 'status shows fallback session mode'
+  out=$(FM_HOME="$dir/sm1-home" "$ROOT/bin/fm-watch-arm.sh")
+  assert_contains "$out" 'secondmate parked' 'parked home cannot rearm watcher'
+  # Probe with a dead endpoint: the park flag wins before any recovery.
+  out=$(FM_HOME="$dir/home" bash -c '. "$1/bin/fm-secondmate-liveness-lib.sh"; fm_secondmate_liveness_probe "$2/state/sm1.meta" sm1 poll; printf "%s %s" "$FM_SM_LIVE_STATUS" "$FM_SM_LIVE_STATE"' _ "$ROOT" "$dir/home")
+  [ "$out" = 'silent parked' ] || fail "liveness failed to honor park: $out"
+  before=$(wc -l < "$dir/fake/literal")
+  out=$(run_park "$dir" sm1 park); rc=$?
+  expect_code 0 "$rc" 'repeated park converges'
+  [ "$(wc -l < "$dir/fake/literal")" = "$before" ] || fail 'repeat park touched stopped endpoint'
+  out=$(env PATH="$dir/fakebin:$PATH" FM_HOME="$dir/home" FM_FAKE_DIR="$dir/fake" FM_SPAWN_NO_GUARD=1 "$ROOT/bin/fm-send.sh" sm1 'new routed work' 2>&1); rc=$?
+  expect_code 0 "$rc" "send must durably queue and wake: $out"
+  assert_absent "$dir/home/state/.secondmate-park-sm1" "successful wake clears marker: $out"
+  assert_grep 'new routed work' "$dir/home/state/sm1.inbox/002.msg" 'work survives in durable inbox'
+  assert_present "$dir/sm1-home/data/keep.md" 'wake preserves home data'
+  assert_grep 'unpark complete' "$dir/home/state/.wake-queue" 'wake reports on parent channel'
+  pass 'park state suppresses liveness and watcher startup; routed send wakes with inbox intact'
+}
+
+test_park_failed_wake_preserves_delivery() {
+  local dir out rc before
+  dir=$(new_case park-failed-wake); add_park_mate "$dir"; arm_answer "$dir" sm1
+  out=$(run_park "$dir" sm1 park); rc=$?
+  expect_code 0 "$rc" "setup park must succeed: $out"
+  printf 'invalid-permission\n' > "$dir/home/config/claude-permission-mode"
+  out=$(env PATH="$dir/fakebin:$PATH" FM_HOME="$dir/home" FM_FAKE_DIR="$dir/fake" FM_SPAWN_NO_GUARD=1 "$ROOT/bin/fm-send.sh" sm1 'work retained after failed wake' 2>&1); rc=$?
+  expect_code 0 "$rc" "durable enqueue must succeed even when wake refuses: $out"
+  assert_contains "$out" 'Do not resend' 'failed wake distinguishes durable delivery'
+  assert_present "$dir/home/state/.secondmate-park-sm1" 'failed wake retains park authority'
+  assert_grep 'work retained after failed wake' "$dir/home/state/sm1.inbox/002.msg" 'failed wake retains exact work'
+  before=$(find "$dir/home/state/pending-replies" -mindepth 1 2>/dev/null | sort)
+  out=$(env PATH="$dir/fakebin:$PATH" FM_HOME="$dir/home" FM_FAKE_DIR="$dir/fake" FM_SPAWN_NO_GUARD=1 "$ROOT/bin/fm-send.sh" sm1 '/compact' 2>&1); rc=$?
+  expect_code 1 "$rc" "typed send must fail when wake refuses: $out"
+  [ "$(find "$dir/home/state/pending-replies" -mindepth 1 2>/dev/null | sort)" = "$before" ] ||
+    fail "failed typed wake left a pending-reply expectation: $out"
+  rm "$dir/home/config/claude-permission-mode"
+  out=$(run_park "$dir" sm1 unpark); rc=$?
+  expect_code 0 "$rc" "explicit unpark retries queued delivery: $out"
+  assert_absent "$dir/home/state/.secondmate-park-sm1" 'retry clears park after launch'
+  assert_present "$dir/home/state/sm1.inbox/002.msg" 'unpark never deletes queued work'
+  pass 'failed automatic wake retains the durable inbox and explicit unpark retries'
+}
+
+test_park_remote_refusal() {
+  local dir out rc
+  dir=$(new_case park-remote); add_park_mate "$dir"
+  printf 'remote_host=remote-test\n' >> "$dir/home/state/sm1.meta"
+  out=$(run_park "$dir" sm1 park); rc=$?
+  expect_code 1 "$rc" 'remote park must refuse'
+  assert_contains "$out" 'remote secondmate parking is unsupported' 'remote limitation is explicit'
+  assert_absent "$dir/home/state/.secondmate-park-sm1" 'remote refusal changes nothing'
+  pass 'remote park refuses before lifecycle mutation'
+}
+
+test_park_missing_endpoint_respawns_same_session() {
+  local dir out rc
+  dir=$(new_case park-missing); add_park_mate "$dir"; arm_answer "$dir" sm1
+  printf 'exact-park-session\n' > "$dir/sm1-home/state/.lock-session"
+  out=$(run_park "$dir" sm1 park); rc=$?
+  expect_code 0 "$rc" "park before endpoint loss: $out"
+  : > "$dir/fake/windows"
+  printf 'claude pinned-model high\n' > "$dir/home/config/secondmate-harness"
+  out=$(env TMUX='' PATH="$dir/fakebin:$PATH" FM_HOME="$dir/home" FM_FAKE_DIR="$dir/fake" FM_SPAWN_NO_GUARD=1 FM_FAKE_CAPTURE_LAUNCH=1 \
+    "$ROOT/bin/fm-send.sh" sm1 'work after endpoint loss' 2>&1); rc=$?
+  expect_code 0 "$rc" "missing endpoint wake: $out"
+  assert_absent "$dir/home/state/.secondmate-park-sm1" "respawn clears marker: $out"
+  assert_grep 'created' "$dir/fake/created" 'missing endpoint uses the existing respawn owner'
+  assert_grep 'exact-park-session' "$dir/fake/replacement-launch" 'respawn preserves captured session reference'
+  assert_grep 'pinned-model' "$dir/fake/replacement-launch" 'respawn keeps the configured secondmate model'
+  assert_grep 'work after endpoint loss' "$dir/home/state/sm1.inbox/002.msg" 'respawn preserves queued work'
+  pass 'missing parked endpoint respawns into its home with the captured session and durable inbox'
+}
+
+test_park_dead_endpoint_wake_keeps_model_effort() {
+  local dir out rc
+  dir=$(new_case park-dead-profile); add_park_mate "$dir"; arm_answer "$dir" sm1
+  sed -i.bak -e 's/^model=default$/model=pinned-model/' -e 's/^effort=default$/effort=high/' "$dir/home/state/sm1.meta"
+  out=$(run_park "$dir" sm1 park); rc=$?
+  expect_code 0 "$rc" "park before dead-endpoint wake: $out"
+  out=$(env PATH="$dir/fakebin:$PATH" FM_HOME="$dir/home" FM_FAKE_DIR="$dir/fake" FM_SPAWN_NO_GUARD=1 FM_FAKE_CAPTURE_LAUNCH=1 \
+    "$ROOT/bin/fm-send.sh" sm1 'work for dead endpoint' 2>&1); rc=$?
+  expect_code 0 "$rc" "dead endpoint wake: $out"
+  assert_absent "$dir/home/state/.secondmate-park-sm1" "relaunch clears marker: $out"
+  assert_grep 'pinned-model' "$dir/fake/replacement-launch" 'relaunch keeps the mate model'
+  assert_grep "model=pinned-model" "$dir/home/state/sm1.meta" "relaunched record keeps the mate model"
+  assert_grep 'effort=high' "$dir/home/state/sm1.meta" 'relaunched record keeps the mate effort'
+  pass 'dead parked endpoint relaunches with its recorded model and effort'
+}
+
+test_park_interrupted_preparation_restores_delivery() {
+  local dir out rc phase
+  dir=$(new_case park-preparing); add_park_mate "$dir"
+  printf 'schema=1\nhome=%s\nphase=preparing\npersisted=0\npersist_corr=interrupted\nresume_mode=fresh\nresume_harness=claude\nresume_ref=\nspawn_gen=before\n' \
+    "$dir/sm1-home" > "$dir/home/state/.secondmate-park-sm1"
+  out=$(env PATH="$dir/fakebin:$PATH" FM_HOME="$dir/home" FM_FAKE_DIR="$dir/fake" FM_SPAWN_NO_GUARD=1 \
+    "$ROOT/bin/fm-send.sh" sm1 'work after interrupted preparation' 2>&1); rc=$?
+  expect_code 0 "$rc" "interrupted preparation wake: $out"
+  assert_absent "$dir/home/state/.secondmate-park-sm1" 'stale unconfirmed preparation is removed under lock'
+  assert_grep 'doorbell' "$dir/fake/rings" 'the still-running mate receives its inbox doorbell'
+  assert_grep 'work after interrupted preparation' "$dir/home/state/sm1.inbox/001.msg" 'recovery retains work'
+  assert_absent "$dir/fake/created" 'recovery does not duplicate a live mate'
+  assert_no_grep '^/exit$' "$dir/fake/literal" 'recovery does not stop a live mate'
+  for phase in preparing waking parking parked; do
+    printf 'phase=%s\nresume_mode=fresh\n' "$phase" > "$dir/home/state/.secondmate-park-sm1"
+    out=$(env PATH="$dir/fakebin:$PATH" FM_FAKE_DIR="$dir/fake" FM_CREW_STATE_META_OVERRIDE='' FM_CREW_STATE_STATUS_OVERRIDE='' \
+      FM_HOME="$dir/home" "$ROOT/bin/fm-crew-state.sh" sm1)
+    case "$phase" in
+      parking|parked) assert_contains "$out" 'state: parked' "$phase is stopped" ;;
+      *) assert_not_contains "$out" 'state: parked' "$phase is transitional, not stopped" ;;
+    esac
+  done
+  pass 'interrupted preparation restores delivery and transitional phases do not claim parked'
+}
+
+test_park_signal_cleans_unconfirmed_preparation() {
+  local dir out rc
+  dir=$(new_case park-signal); add_park_mate "$dir"
+  # The provider executes inside fm-send; its grandparent is the park command.
+  # Deliver TERM while park is synchronously waiting for its persist send.
+  cat > "$dir/fake/on-doorbell" <<'SH'
+#!/usr/bin/env bash
+pid=$PPID
+while [ "$pid" -gt 1 ]; do
+  command=$(ps -o command= -p "$pid")
+  case "$command" in *fm-secondmate-park.sh*) kill -TERM "$pid"; exit 0 ;; esac
+  pid=$(ps -o ppid= -p "$pid" | tr -d ' ')
+done
+exit 1
+SH
+  chmod +x "$dir/fake/on-doorbell"
+  out=$(run_park "$dir" sm1 park); rc=$?
+  expect_code 143 "$rc" "interrupted park must exit on TERM: $out"
+  assert_absent "$dir/home/state/.secondmate-park-sm1" 'TERM removes only unconfirmed preparation'
+  assert_present "$dir/home/state/sm1.inbox/001.msg" 'TERM preserves the persist instruction'
+  assert_no_grep '^/exit$' "$dir/fake/literal" 'TERM before persistence leaves the mate running'
+  pass 'TERM rolls back unconfirmed park preparation without discarding its instruction'
+}
+
+test_park_wakes_for_work_queued_during_persist() {
+  local dir out rc
+  dir=$(new_case park-queued); add_park_mate "$dir"; arm_answer "$dir" sm1
+  # Model a routed send that durably enqueued while park held the lock, then
+  # died before it could wake the mate: only park itself can deliver it.
+  cat > "$dir/fake/on-doorbell" <<SH
+#!/usr/bin/env bash
+[ -e "$dir/fake/queued" ] && exit 0
+: > "$dir/fake/queued"
+. "$ROOT/bin/fm-wake-lib.sh"; . "$ROOT/bin/fm-task-inbox-lib.sh"
+fm_task_inbox_write "$dir/home/state" sm1 'work queued during park' >/dev/null
+SH
+  chmod +x "$dir/fake/on-doorbell"
+  out=$(run_park "$dir" sm1 park); rc=$?
+  expect_code 0 "$rc" "park with deferred work must wake the mate: $out"
+  assert_grep '/exit' "$dir/fake/literal" "park still completed its stop: $out"
+  assert_absent "$dir/home/state/.secondmate-park-sm1" "deferred work wakes the parked mate: $out"
+  assert_grep 'unpark complete' "$dir/home/state/.wake-queue" 'automatic wake reports on parent channel'
+  assert_grep 'work queued during park' "$dir/home/state/sm1.inbox/002.msg" 'deferred work stays in the durable inbox'
+  [ "$(grep -c doorbell "$dir/fake/rings")" -ge 2 ] || fail 'woken mate was not rung for its queued work'
+  pass 'work queued while park waits for persistence wakes the mate after the stop'
+}
+
+test_park_missing_endpoint_respawns_same_session
+test_park_dead_endpoint_wake_keeps_model_effort
+test_park_wakes_for_work_queued_during_persist
+test_park_interrupted_preparation_restores_delivery
+test_park_signal_cleans_unconfirmed_preparation
+test_park_persist_and_idle_gates
+test_park_wake_and_status
+test_park_remote_refusal
+test_park_failed_wake_preserves_delivery
 
 test_registered_id_precedes_selector_prefix
 test_persist_gates_and_asks_only_for_open_records

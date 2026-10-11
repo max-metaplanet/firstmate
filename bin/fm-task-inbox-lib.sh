@@ -473,6 +473,9 @@ fm_task_inbox_clear_retry() {  # <state-dir> <task-id> <record-path>
 # An empty inbox also resets the ladder bookkeeping so the next message starts
 # a fresh ladder.
 fm_task_inbox_due_action() {  # <state-dir> <task-id>
+  # Park owns waking after durable enqueue; retry polling must not deliver
+  # deferred work while the persist/stop transaction is in progress.
+  if [ -e "$1/.secondmate-park-$2" ] || [ -L "$1/.secondmate-park-$2" ]; then return 0; fi
   local dir oldest base now grace max ladder rec_base count last
   dir=$(fm_task_inbox_dir "$1" "$2")
   if ! oldest=$(fm_task_inbox_oldest_unhandled "$1" "$2"); then

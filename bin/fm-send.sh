@@ -39,6 +39,10 @@
 # fire-and-forget request instead retries with its same caller-supplied delivery
 # id. A still-unconfirmed reply-bearing request keeps its reply expectation
 # preserved for the record that may have landed.
+# A parked local secondmate is woken after durable enqueue through
+# bin/fm-secondmate-park.sh; failed wake preserves the record and reports a
+# parent-channel check event. Typed sends wake before submission.
+#
 # Pending-reply bookkeeping trouble after a durable enqueue NEVER exits
 # nonzero: with the recovery marker stored the watcher reconciles it silently,
 # and with both the commit and the marker lost the send prints a distinct
@@ -259,6 +263,8 @@ fi
 . "$SCRIPT_DIR/fm-wake-lib.sh"
 # shellcheck source=bin/fm-task-inbox-lib.sh
 . "$SCRIPT_DIR/fm-task-inbox-lib.sh"
+# shellcheck source=bin/fm-secondmate-park-lib.sh
+. "$SCRIPT_DIR/fm-secondmate-park-lib.sh"
 # shellcheck source=bin/fm-timeout-lib.sh
 . "$SCRIPT_DIR/fm-timeout-lib.sh"
 
@@ -837,7 +843,25 @@ fm_send_feed_resolved_holds() { # <answer-text>
 # send implementation. A failed backend send is still surfaced below as a hard
 # error with the attempted resolution attached.
 
+# Wake only this recorded local secondmate. The park persist request itself
+# must reach the old agent while its owner holds the lifecycle lock.
+fm_send_wake_parked() {
+  local id record
+  [ -n "$TARGET_META" ] && [ "$(fm_meta_get "$TARGET_META" kind)" = secondmate ] || return 0
+  id=$(fm_send_id_from_meta "$TARGET_META")
+  fm_secondmate_park_present "$STATE" "$id" || return 0
+  record="$STATE/.secondmate-park-$id"
+  if [ "$(fm_meta_get "$record" phase)" = preparing ] &&
+    [ -n "$PENDING_REPLY_CORR" ] && [ "$PENDING_REPLY_CORR" = "$(fm_meta_get "$record" persist_corr)" ]; then return 0; fi
+  "$SCRIPT_DIR/fm-secondmate-park.sh" "$id" unpark || return 1
+  T=$(fm_backend_target_of_meta "$TARGET_META")
+  TARGET_BACKEND=$(fm_backend_of_meta "$TARGET_META")
+  TARGET_HARNESS=$(fm_meta_get "$TARGET_META" harness)
+}
+
+
 if [ "${1:-}" = "--key" ]; then
+  fm_send_wake_parked || exit 1
   [ -z "$FIRE_AND_FORGET_ID" ] ||
     {
       echo "error: --fire-and-forget cannot accompany --key" >&2
@@ -967,6 +991,11 @@ else
       *) INBOX_PLANE=1 ;;
       esac
     fi
+  fi
+  if [ "$INBOX_PLANE" = 0 ] && ! fm_send_wake_parked; then
+    fm_send_known_undelivered_cleanup ||
+      echo "error: known-undelivered pending-reply state could not be reset for $TARGET_TASK_ID" >&2
+    exit 1
   fi
   if [ "$INBOX_PLANE" = 1 ] && [ "$TARGET_BACKEND" = remote ]; then
     # Remote inbox leg: the message becomes a durable record in the remote
@@ -1158,6 +1187,11 @@ else
     if [ -n "$RESOLVE_KEYS" ]; then
       fm_send_close_resolved_keys "$RESOLVE_ANSWER_TEXT" || exit 1
       fm_send_feed_resolved_holds "$RESOLVE_ANSWER_TEXT" || exit 1
+    fi
+    # Enqueue precedes wake, so even a failed launch cannot lose the steer.
+    if ! fm_send_wake_parked; then
+      echo "warning: steer durably recorded at $INBOX_RECORD; secondmate wake failed. Do not resend; retry unpark." >&2
+      exit 0
     fi
     # Ring the doorbell, best-effort: no ring outcome changes the exit status,
     # because the watcher owns loss detection from here, either through its
