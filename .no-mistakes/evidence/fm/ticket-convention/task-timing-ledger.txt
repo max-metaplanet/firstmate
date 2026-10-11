@@ -1,0 +1,3 @@
+=== data/task-timing.jsonl after both teardowns ===
+{"task":"tick1","spawn_gen":"s1791715265.95119.31917","kind":"ship","mode":"no-mistakes","project":"demo","ticket":"ENG-123","commit_type":"feat","dispatched_at":1791715265,"pr_opened_at":null,"merged_at":null,"pr_url":null,"recorded_at":1791715317}
+{"task":"plain1","spawn_gen":"s1791715350.86003.20179","kind":"ship","mode":"no-mistakes","project":"demo","ticket":null,"commit_type":null,"dispatched_at":1791715350,"pr_opened_at":null,"merged_at":null,"pr_url":null,"recorded_at":1791715372}

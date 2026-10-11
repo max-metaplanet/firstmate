@@ -1,0 +1,43 @@
+$ fm-brief.sh tick1 demo --mode no-mistakes --ticket ENG-123 --commit-type feat
+scaffolded: /var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab.Ac3kND/data/tick1/brief.md (ship, mode=no-mistakes; replace {TASK} and {FIRSTMATE_SPEC})
+exit=0
+
+--- Definition of done header ---
+96:# Definition of done
+97-Delivery contract: mode=no-mistakes
+98-Ship branch: feat/ENG-123-tick1
+99-Ticket: ENG-123
+100-Commit type: feat
+101-Every commit subject on this branch and the pull request title must read `feat/ENG-123(<scope>): <message>`, where `<scope>` names the area changed and `<message>` is a short imperative description.
+102-The branch is exactly `feat/ENG-123-tick1`; do not rename it.
+
+$ fm-brief.sh plain1 demo --mode no-mistakes   (no ticket)
+scaffolded: /var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab.Ac3kND/data/plain1/brief.md (ship, mode=no-mistakes; replace {TASK} and {FIRSTMATE_SPEC})
+exit=0
+96:# Definition of done
+97-Delivery contract: mode=no-mistakes
+98-Ship branch: fm/plain1
+99-The implementation is complete only when committed on your branch; the TASK is complete only when the pipeline has turned that commit into a PR with green checks.
+
+$ fm-brief.sh bad1 demo --mode no-mistakes --ticket ENG-123   (missing commit type)
+error: fm-brief.sh: --ticket ENG-123 requires --commit-type <type>; the type is never guessed from the task text, so a ticketed task without one is refused
+exit=1
+
+$ fm-brief.sh bad2 demo --mode no-mistakes --ticket ENG-1x --commit-type feat
+error: fm-brief.sh: ticket 'ENG-1x' must be a ClickUp id like ENG-123, or the explicit no-ticket marker for genuinely ticketless work
+exit=1
+
+$ fm-brief.sh bad3 demo --mode no-mistakes --ticket ENG-123 --commit-type feat --branch-prefix fix/
+error: fm-brief.sh: --branch-prefix cannot be combined with --ticket; a ticketed ship branch is <commit-type>/<ticket>-<task-id> by the convention
+exit=1
+
+$ fm-brief.sh nt1 demo --mode no-mistakes --ticket no-ticket --commit-type chore
+scaffolded: /var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab.Ac3kND/data/nt1/brief.md (ship, mode=no-mistakes; replace {TASK} and {FIRSTMATE_SPEC})
+exit=0
+96:# Definition of done
+97-Delivery contract: mode=no-mistakes
+98-Ship branch: chore/no-ticket-nt1
+99-Ticket: no-ticket
+100-Commit type: chore
+101-Every commit subject on this branch and the pull request title must read `chore/no-ticket(<scope>): <message>`, where `<scope>` names the area changed and `<message>` is a short imperative description.
+102-The branch is exactly `chore/no-ticket-nt1`; do not rename it.

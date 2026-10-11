@@ -1,0 +1,22 @@
+--- state/tick1.meta ---
+window=primary:fm-tick1
+endpoint_task_id=tick1
+worktree=/Users/max/.treehouse/demo-161694/1/demo
+project=/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab.Ac3kND/projects/demo
+harness=claude
+kind=ship
+mode=no-mistakes
+yolo=off
+branch=feat/ENG-123-tick1
+tasktmp=/tmp/fm-tick1
+ticket=ENG-123
+commit_type=feat
+dispatched_at=1791715265
+model=default
+effort=default
+claude_seat=/Users/max/.claude-seats/seat-max2
+busy_gen=g1791715263.9152.31867
+spawn_gen=s1791715265.95119.31917
+
+--- worker worktree branch ---
+worker branch: feat/ENG-123-tick1

@@ -1,0 +1,2 @@
+fm-control-relaunch exit=0
+fm-teardown exit=0

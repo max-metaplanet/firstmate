@@ -1,0 +1,34 @@
+=== lab pane transcript (refusals + unticketed spawn) ===
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab.Ac3kND
+error: branch mismatch for tick2: the brief says branch=fix/ENG-124-tick2 but this spawn selected branch=fm/tick2
+S2=1
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab.Ac3kND
+error: branch mismatch for tick2: the brief says branch=fix/ENG-124-tick2 but this spawn selected branch=fix/ENG-999-tick2
+S3=1
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab.Ac3kND
+spawned plain1 harness=claude kind=ship mode=no-mistakes yolo=off window=primary:fm-plain1 worktree=/Users/max/.treehouse/demo-161694/1/demo
+S4=0
+$ 
+=== plain1 brief captain's intent (decoy) ===
+5-Add a README line.
+6:Ticket: ENG-99 (related)
+7-
+=== state/plain1.meta ===
+window=primary:fm-plain1
+endpoint_task_id=plain1
+worktree=/Users/max/.treehouse/demo-161694/1/demo
+project=/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab.Ac3kND/projects/demo
+harness=claude
+kind=ship
+mode=no-mistakes
+yolo=off
+branch=fm/plain1
+tasktmp=/tmp/fm-plain1
+dispatched_at=1791715350
+model=default
+effort=default
+claude_seat=/Users/max/.claude-seats/seat-max2
+busy_gen=g1791715349.95404.20343
+spawn_gen=s1791715350.86003.20179
+=== tick2 state files (expect none) ===
+none

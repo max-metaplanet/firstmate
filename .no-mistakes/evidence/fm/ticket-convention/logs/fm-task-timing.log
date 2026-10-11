@@ -1,0 +1,6 @@
+ok - fm-task-timing.sh: a complete ship record carries every timing field
+ok - fm-task-timing.sh: values the records never carried are recorded as absent
+ok - fm-task-timing.sh: an unusable stamp is recorded as absent and keeps the line valid JSON
+ok - fm-task-timing.sh: the ledger appends once per incarnation and never rewrites
+ok - fm-task-timing.sh: an unusable source warns and never fails cleanup
+ok - fm-task-timing.sh: bad usage is refused rather than recorded
