@@ -131,6 +131,26 @@ test_repeated_calls_append_one_line_each() {
   pass "every call appends exactly one new line, never replacing the ledger"
 }
 
+test_provenance_unknowns_and_safe_summary() {
+  local data line status
+  data="$TMP_ROOT/provenance/data"
+  for status in off not-run error no-config; do
+    fm_dispatch_predict_log "$data" task-unknown '' "$status" false '' '' ''
+    line=$(last_line "$data")
+    jq -e '.requested_model == null and .resolved_model == null and .rubric_sha256 == null and .config_sha256 == null and .policy_sha256 == null and .source_revision == null and .probability_summary == null and .decided_by == null' <<<"$line" >/dev/null || fail "missing provenance must remain unknown"
+  done
+  fm_dispatch_predict_log "$data" task-malformed '{not json' error false '' '' ''
+  fm_dispatch_predict_log "$data" task-scalar '[1,2]' error false '' '' ''
+  jq -e '.probability_summary == null and .resolved_model == null' <<<"$(last_line "$data")" >/dev/null || fail "malformed JSON fabricated evidence"
+  fm_dispatch_predict_log "$data" task-summary \
+    '{"status":"clear","model":"do-not-infer","provenance":{"requested_model":"jev-latest","probability_summary":{"rule":{"probabilities":{"rule_1":0.7,"default":0.3,"private brief text":1,"rule_2":-1,"rule_3":"secret"}}}}}' \
+    error false '' '' ''
+  line=$(last_line "$data")
+  jq -e '.resolved_model == null and .probability_summary == {rule:{probabilities:{rule_1:0.7,default:0.3}}}' <<<"$line" >/dev/null || fail "summary must filter unsafe labels and unbounded values"
+  pass "unknown provenance stays explicit and probability summary excludes arbitrary text"
+}
+
+test_provenance_unknowns_and_safe_summary
 test_clear_result_records_chosen_and_used_profiles
 test_non_clear_result_records_null_chosen_and_false_applied
 test_empty_or_off_resolver_output_logs_as_off

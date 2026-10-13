@@ -28,12 +28,63 @@
 #   auto_apply_skipped  the resolver's reason an opted-in rule did not
 #                   auto-apply (e.g. a floor fall-through to default), or null
 #   used            the profile fm-spawn.sh actually launched with
+#   requested_model / resolved_model  Jev request alias and provider-reported
+#                   model, independently null when no request/identity exists
+#   rubric_sha256   SHA-256 of jq compact sorted questions JSON + newline
+#                   (no task state)
+#   config_sha256   SHA-256 of compact sorted dispatch snapshot + model/base/
+#                   timeout/confidence floor; no configuration content logged
+#   policy_sha256   SHA-256 of never-send file bytes when available, else null
+#   source_revision resolver checkout HEAD, with -dirty for tracked changes,
+#                   or null outside a Git checkout
+#   probability_summary {rule:{probabilities:{declared option: probability}}}
+#                   for a validated answer; null when no valid answer exists
+#   decided_by      jev or path-forced when known, otherwise null
+# Resolver JSON carries these under provenance; this file owns the log schema.
+# Hashes are evidence identifiers, not copies of the rubric or configuration.
 # No brief text, captain's intent, or secrets are recorded; <resolver-json>
 # itself must already be the resolver's own --json output, never the brief.
 #
 # Logging never fails the spawn: a missing jq, an unwritable data directory,
 # or malformed resolver JSON is reported on stderr and the function still
 # returns 0.
+# Hash stdin without introducing a mandatory dependency into routing.
+fm_dispatch_predict_sha256() {
+  local digest=''
+  if command -v shasum >/dev/null 2>&1; then
+    digest=$(shasum -a 256 2>/dev/null)
+  elif command -v sha256sum >/dev/null 2>&1; then
+    digest=$(sha256sum 2>/dev/null)
+  fi
+  digest=${digest%% *}
+  [[ "$digest" =~ ^[a-f0-9]{64}$ ]] && printf '%s' "$digest"
+  return 0
+}
+
+fm_dispatch_predict_provenance() { # <rules-snapshot> <questions-json> <model> <base> <timeout> <floor> <policy-path> <source-root>
+  local config_hash rubric_hash policy_hash='' revision='' dirty source_root top
+  source_root=$(cd "$8" && pwd -P)
+  top=$(git -C "$source_root" rev-parse --show-toplevel 2>/dev/null) || top=''
+  rubric_hash=$(printf '%s' "$2" | jq -cS . | fm_dispatch_predict_sha256)
+  config_hash=$(jq -cS -n --slurpfile rules "$1" --arg model "$3" --arg base "$4" \
+    --arg timeout "$5" --arg floor "$6" \
+    '{rules: $rules[0], model: $model, apiBase: $base, timeout: $timeout, confidence_floor: $floor}' | fm_dispatch_predict_sha256)
+  if [ -f "$7" ] && [ -r "$7" ]; then
+    policy_hash=$(fm_dispatch_predict_sha256 < "$7")
+  fi
+  if [ "$top" = "$source_root" ] && revision=$(git -C "$source_root" rev-parse HEAD 2>/dev/null); then
+    if dirty=$(git -C "$source_root" status --porcelain --untracked-files=no 2>/dev/null); then
+      [ -z "$dirty" ] || revision="$revision-dirty"
+    else revision=''; fi
+  else revision=''; fi
+  jq -nc --arg rubric "$rubric_hash" --arg config "$config_hash" \
+    --arg policy "$policy_hash" --arg revision "$revision" '
+    def known: if . == "" then null else . end;
+    {rubric_sha256: ($rubric | known), config_sha256: ($config | known),
+     policy_sha256: ($policy | known), source_revision: ($revision | known),
+     requested_model: null, resolved_model: null, probability_summary: null}'
+}
+
 fm_dispatch_predict_log() {
   local data_dir=$1 task_id=$2 resolver_json=$3 fallback_status=${4:-off}
   local auto_applied=$5 harness=$6 model=$7 effort=$8
@@ -50,8 +101,23 @@ fm_dispatch_predict_log() {
   line=$(jq -nc --arg ts "$ts" --arg task_id "$task_id" --arg harness "$harness" \
     --arg model "$model" --arg effort "$effort" --argjson auto_applied "$auto_applied" \
     --arg resolver_raw "$resolver_json" --arg fallback_status "$fallback_status" '
-    (try ($resolver_raw | fromjson) catch null) as $r |
+    (try ($resolver_raw | fromjson) catch null) |
+    (if type == "object" then . else null end) as $r |
+    (if ($r.provenance | type) == "object" then $r.provenance else {} end) as $p |
     {
+      requested_model: ($p.requested_model // null),
+      resolved_model: ($p.resolved_model // null),
+      rubric_sha256: ($p.rubric_sha256 // null),
+      config_sha256: ($p.config_sha256 // null),
+      policy_sha256: ($p.policy_sha256 // null),
+      source_revision: ($p.source_revision // null),
+      probability_summary: (if ($p.probability_summary.rule.probabilities | type) == "object" then
+        {rule: {probabilities: ($p.probability_summary.rule.probabilities | with_entries(
+          select((.key | test("^(rule_[1-9][0-9]*|default)$")) and
+                 (.value | type) == "number" and .value >= 0 and .value <= 1)))}}
+        else null end),
+      decided_by: (if $r.decided_by == "path-forced" then "path-forced"
+                   elif $p.requested_model != null then "jev" else null end),
       ts: $ts,
       task_id: $task_id,
       resolver_status: (if ($r | type) == "object" then ($r.status // $fallback_status) else $fallback_status end),

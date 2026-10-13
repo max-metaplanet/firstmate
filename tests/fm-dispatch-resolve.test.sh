@@ -199,6 +199,58 @@ assert_absent "$LOG/argv" "absent key never calls curl"
 assert_absent "$LOG/quota-axi.calls" "absent key never reads quota-axi"
 pass "absent key is off: one stderr line, exit 0, no network call"
 
+# --- provenance through resolver and prediction producer, no live accuracy claim ---
+# shellcheck source=bin/fm-dispatch-predict-lib.sh
+. "$ROOT/bin/fm-dispatch-predict-lib.sh"
+write_response "$RESPONSE" rule_4 0.9
+TYPESAFE_API_KEY=$KEY run code out err "$BRIEF" --project pager --json
+expect_code 0 "$code" "provenance preserves successful resolution"
+assert_equals clear "$(jq -r .status <<<"$out")" "provenance preserves routing"
+assert_equals jev-latest "$(jq -r .provenance.requested_model <<<"$out")" "requested alias is recorded"
+assert_equals jev-1.13.0 "$(jq -r .provenance.resolved_model <<<"$out")" "response model is recorded"
+expected_rubric=$(jq -cS .questions "$LOG/body" | shasum -a 256 | awk '{print $1}')
+assert_equals "$expected_rubric" "$(jq -r .provenance.rubric_sha256 <<<"$out")" "rubric hash identifies the actual public request questions"
+jq -e '.provenance.config_sha256 | test("^[a-f0-9]{64}$")' <<<"$out" >/dev/null || fail "config digest missing"
+jq -e '.provenance.source_revision | test("^[a-f0-9]{40}(-dirty)?$")' <<<"$out" >/dev/null || fail "source revision missing"
+assert_equals null "$(jq -r .provenance.policy_sha256 <<<"$out")" "absent never-send policy is unknown"
+fm_dispatch_predict_log "$TMP_ROOT/provenance-data" task-provenance "$out" error false '' '' ''
+line=$(tail -n 1 "$TMP_ROOT/provenance-data/dispatch-predictions.jsonl")
+assert_equals "$(jq -cS .provenance.probability_summary <<<"$out")" "$(jq -cS .probability_summary <<<"$line")" "producer retains bounded declared probabilities"
+assert_not_contains "$line" 'off-by-one' "prediction excludes task state"
+assert_not_contains "$line" "$KEY" "prediction excludes credentials"
+original_config=$(jq -r .provenance.config_sha256 <<<"$out")
+original_rubric=$(jq -r .provenance.rubric_sha256 <<<"$out")
+jq 'del(.model)' "$RESPONSE" > "$TMP_ROOT/no-model-response"
+mv "$TMP_ROOT/no-model-response" "$RESPONSE"
+TYPESAFE_API_KEY=$KEY run code out err "$BRIEF" --json
+assert_equals clear "$(jq -r .status <<<"$out")" "model omission preserves routing"
+assert_equals null "$(jq -r .provenance.resolved_model <<<"$out")" "model omission never borrows the requested alias"
+jq '.rules[3].use[1].model = "another-model"' "$BASE_RULES" > "$RULES"
+TYPESAFE_API_KEY=$KEY run code out err "$BRIEF" --json
+assert_equals "$original_rubric" "$(jq -r .provenance.rubric_sha256 <<<"$out")" "profile change leaves rubric unchanged"
+[ "$original_config" != "$(jq -r .provenance.config_sha256 <<<"$out")" ] || fail "profile change must change config digest"
+jq '.rules[3].when = "Different matching condition"' "$BASE_RULES" > "$RULES"
+TYPESAFE_API_KEY=$KEY run code out err "$BRIEF" --json
+[ "$original_rubric" != "$(jq -r .provenance.rubric_sha256 <<<"$out")" ] || fail "matching condition must change rubric digest"
+cp "$BASE_RULES" "$RULES"
+printf '%s\n' '# policy without a matching value' 'unmatched-policy-marker' > "$HOME_DIR/config/dispatch-never-send"
+TYPESAFE_API_KEY=$KEY run code out err "$BRIEF" --json
+expected_policy=$(shasum -a 256 "$HOME_DIR/config/dispatch-never-send" | awk '{print $1}')
+assert_equals "$expected_policy" "$(jq -r .provenance.policy_sha256 <<<"$out")" "policy hash identifies checked policy without exposing it"
+mv "$HOME_DIR/config/dispatch-never-send" "$TMP_ROOT/checked-policy"
+write_response "$RESPONSE" rule_4 0.9
+TYPESAFE_API_KEY=$KEY FAKE_CURL_HTTP=500 run code out err "$BRIEF" --json
+assert_equals error "$(jq -r .status <<<"$out")" "transport failure keeps error result"
+assert_equals jev-latest "$(jq -r .provenance.requested_model <<<"$out")" "failed request keeps request alias"
+assert_equals null "$(jq -r .provenance.resolved_model <<<"$out")" "HTTP error is not a model answer"
+assert_equals null "$(jq -r .provenance.probability_summary <<<"$out")" "HTTP error has no invented probabilities"
+printf '%s\n' '{not json' > "$RESPONSE"
+TYPESAFE_API_KEY=$KEY run code out err "$BRIEF" --json
+assert_equals error "$(jq -r .status <<<"$out")" "malformed response remains error"
+assert_equals null "$(jq -r .provenance.probability_summary <<<"$out")" "malformed answer is unknown"
+write_response "$RESPONSE" rule_4 0.9
+pass "provenance records request evidence without changing decisions or claiming model accuracy"
+
 # --- .env key, and the environment wins over it ------------------------------
 printf '%s\n' '# local secrets' 'FMX_PAIRING_TOKEN=abc' "export TYPESAFE_API_KEY=\"$KEY\"" > "$HOME_DIR/.env"
 reset_log
@@ -1004,6 +1056,13 @@ assert_present "$LOG/quota-axi.calls" "a forced route still reads quota evidence
 assert_contains "$out" 'candidate: claude:opus  provider=claude  scope=all_models  remaining=79%  spendPriority=-0.4627  runway=projected_exhaustion  -> eligible' "forced candidates carry the same quota evidence"
 assert_contains "$out" 'candidate: cursor:cursor-grok-4.6-high  provider=cursor  scope=all_models  remaining=91%  spendPriority=0.7597  runway=through_reset  -> eligible' "every forced candidate is accounted for"
 assert_contains "$out" "  profile: --harness 'cursor' --model 'cursor-grok-4.6-high'" "the forced rule's profiles run the same spendPriority argmax"
+TYPESAFE_API_KEY=$KEY run code out err "$PATH_BRIEF" --project pager --json
+assert_equals path-forced "$(jq -r .decided_by <<<"$out")" "JSON keeps deterministic decision origin"
+jq -e '.provenance | .requested_model == null and .resolved_model == null and .probability_summary == null and (.rubric_sha256 | test("^[a-f0-9]{64}$"))' <<<"$out" >/dev/null || fail "forced provenance invents a model answer or loses rubric"
+fm_dispatch_predict_log "$TMP_ROOT/provenance-data" task-forced "$out" error false '' '' ''
+line=$(tail -n 1 "$TMP_ROOT/provenance-data/dispatch-predictions.jsonl")
+assert_equals path-forced "$(jq -r .decided_by <<<"$line")" "producer keeps forced origin"
+assert_equals null "$(jq -r .probability_summary <<<"$line")" "producer never fabricates forced probabilities"
 pass "a declared deployment path forces the careful rule in code, with no model call"
 
 # The careful rule is found by its declaration, never by position.
