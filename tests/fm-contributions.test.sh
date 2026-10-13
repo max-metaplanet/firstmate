@@ -1035,6 +1035,10 @@ test_arm_plumbs_a_configured_budget_into_the_check_shim() {
     wrap_forge "$home"
     mutate_record "$home" delivery '.records[0].checked_at="2026-09-15T08:00:00Z"'
     cp "$home/data/delivery/contributions.json" "$home/prior.json"
+    # Freeze the clock before the fault is armed: an unfrozen one can tick past
+    # the one-second budget before the first forge call, so the generated check
+    # never writes forge/calls.
+    /bin/date +%s > "$home/forge/clock"
     printf 'hang\n' > "$home/forge/fault"
     # Freeze the clock: a one-second budget's whole reserve is gone if the wall
     # clock ticks between taking the deadline and the first reserve check.

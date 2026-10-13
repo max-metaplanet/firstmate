@@ -282,7 +282,7 @@ Projected children are placed in one contiguous block immediately after their ow
 - The protocol.
 - The socket.
 - `python3`.
-- The machine-private per-session lock.
+- The account-private per-session lock.
 
 Existing legacy child labels may extend an already adjacent block read-only but are never renamed or migrated.
 A foreign, ambiguous, detached, or manually interleaved child makes ordering skip with a warning rather than rewriting the layout.
@@ -363,6 +363,8 @@ Once the exact pane is confirmed gone, teardown retires the task's own journal w
 Recovery is deliberately conservative and presentation-only.
 An existing journal suppresses another projected create.
 Before any recovery mutation, Firstmate holds both the task spawn lock and the named-session presentation lock.
+That presentation lock lives in a namespace private to the OS account, so another account on the same host running its own Firstmate on Herdr cannot block this account's spawn, recovery, or teardown.
+A namespace at this account's name that another account owns, or that is not mode 700, is still refused and is never adopted, chowned, or removed.
 
 A same-identity version 2 binding may replace one exact agent-free restart husk in place.
 A husk is a restored same-labeled tab with a missing pane or no registered agent, as [Restart and liveness behavior](#restart-and-liveness-behavior) describes.
@@ -461,6 +463,12 @@ Any of these preserves the candidate and lets session startup continue with at m
   Because it cannot degrade, that wait is much longer than the opportunistic one a fresh projected create uses: a holder keeps the lock through worktree creation and settling, so a wait sized for a quick handover turns ordinary concurrency into a refusal.
   The refusal names which of the two it hit, a lock another spawn still holds or a named session whose running socket could not be resolved, because only the first is a wait.
   Default-on makes that refusal reachable in any Herdr home.
+  Pass `fm-spawn.sh --herdr-resume-lock-wait` to opt that recovery into waiting for the lock instead of refusing when the bounded wait is spent, so concurrent recoveries can serialize.
+  The flag applies to a fresh ship or scout spawn that recovers a journal.
+  The multi-task path forwards the flag to each per-pair spawn.
+  `fm-spawn.sh --relaunch` and `--secondmate` take no exact-resume presentation-order lock, so the flag has no effect there.
+  Dead-owner reclaim still stops the wait when a holder crashed.
+  Unbounded blocking on the session lock is never the default.
 - Existing layouts are not force-renamed or rearranged.
 - Missing or ambiguous restart bindings fall back to the ordinary home workspace while the old projection remains untouched.
 - Crashes, lost responses, failed exact-pane cleanup, or human renames can leave quarantined spaces.
@@ -559,7 +567,6 @@ A cleared refusal then gets exactly one recovery, because the commonest cause of
 The recovery reads the harness's text-entry indicator in the composer footer first and types nothing when it is rendered, because a payload the composer ate usually ends on an insert command and has already restored text entry itself; only an absent indicator makes the adapter type the text-entry key, and that counts only when the indicator appears while the composer still reads empty.
 The payload is then typed and proven a second time, and a payload still refused after that reports `send-failed`.
 A Claude composer that already holds text, or cannot be read, before the send is refused with nothing typed.
-Other harnesses, and panes with no native identity, skip this proof and keep the type-then-Enter path, because their paste placeholders and composer shapes are not live-verified.
 
 Other harnesses, and panes with no native identity, skip this proof and keep the type-then-Enter path.
 They skip it because their paste placeholders and composer shapes are not live-verified.

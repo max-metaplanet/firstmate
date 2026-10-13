@@ -22,7 +22,8 @@ In particular, run 36664663190's serial 5 finished in 22m15s with an assertion f
 Collect successful per-script measurements for every member before calculating a split.
 
 The serial hints were refreshed again on 2026-10-10 from seven green runs of this repository's own CI: 38068758436, 38065011500, 38044860890, 38031183126, 38004058787, 37998134189, and 37997299201.
-Those runs measure every one of the 220 current serial members, so `serial_unhinted` is now zero.
+Those runs measure the serial members this fork's own CI had then; the upstream merge added serial scripts those runs never saw, so `serial_unhinted` is no longer zero and those members pack on `PORTABLE_SERIAL_DEFAULT_WEIGHT_MS` until a green run measures them.
+Read the current count from `bin/fm-test-run.sh --check-coverage` rather than from a number copied here.
 Read timing artifacts from the repository the shards actually run in: `gh-axi` resolves to the `upstream` remote when one is configured, and a sibling repository's shard membership and script set are not interchangeable with this one's.
 
 A hint is a high-water mark across the recorded baselines rather than only the newest run's figure.
