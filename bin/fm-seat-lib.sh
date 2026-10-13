@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# Shared Claude seat resolution, used by the seat command, spawn and dispatch
+# Shared Claude and Codex seat resolution, used by the seat command, spawn and dispatch
 # resolver.
 # Usage: . bin/fm-seat-lib.sh   (after FM_ROOT, FM_HOME, and CONFIG are set, and
 #        after bin/fm-timeout-lib.sh, which bounds every quota read, and
@@ -57,6 +57,76 @@
 # can spend a separate account; bin/fm-config-inherit-lib.sh owns that decline.
 # docs/configuration.md "Claude seats" owns their schema.
 
+# FM_SEAT_PROVIDER selects claude (the default) or codex for a scoped call.
+# Both providers use config/<provider>-seat* and ~/.<provider>-seats.
+# Codex homes may be registered as directory symlinks; authentication is never
+# copied, and aliases of one auth.json are one credential identity.
+fm_seat_provider() {
+  case "${FM_SEAT_PROVIDER:-claude}" in
+    claude|codex) printf '%s\n' "${FM_SEAT_PROVIDER:-claude}" ;;
+    *) printf 'error: unsupported seat provider: %s\n' "$FM_SEAT_PROVIDER" >&2; return 1 ;;
+  esac
+}
+
+fm_seat_env_name() {
+  case "$(fm_seat_provider)" in
+    claude) printf 'CLAUDE_CONFIG_DIR\n' ;;
+    codex) printf 'CODEX_HOME\n' ;;
+    *) return 1 ;;
+  esac
+}
+
+# fm_seat_codex_home <profile-dir>
+# A file-level auth.json alias must launch and log in through its authoritative
+# owner's home, so a vendor writer cannot replace the alias with a second login.
+# This also selects that home's session/config state. Directory aliases remain
+# safe because every write already traverses the same parent directory.
+# Empty preserves the ambient home unless its auth.json is itself an alias.
+fm_seat_codex_home() {
+  python3 - "${1-}" "${CODEX_HOME:-${HOME:-}/.codex}" <<'PYCODEXHOME'
+import os, sys
+profile, ambient = sys.argv[1:]
+auth = os.path.join(profile or ambient, "auth.json")
+if not os.path.islink(auth):
+    print(profile)
+    raise SystemExit(0)
+try:
+    target = os.path.realpath(auth)
+    if os.path.basename(target) != "auth.json" or not os.path.isfile(target):
+        raise ValueError("auth alias must target an existing auth.json")
+    owner = os.path.dirname(target)
+    if not os.path.isdir(owner):
+        raise ValueError("authentication owner home is missing")
+    print(owner)
+except (OSError, ValueError) as error:
+    print("error: cannot resolve Codex authentication owner: " + str(error), file=sys.stderr)
+    raise SystemExit(1)
+PYCODEXHOME
+}
+
+# fm_seat_credential_identity <profile-dir>
+# Compare credential stores without opening credentials. Codex follows both
+# directory and auth.json symlinks, so an alias cannot masquerade as fresh quota.
+# Claude keeps its path identity because that determines its Keychain service.
+fm_seat_credential_identity() {
+  python3 "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/fm-seat-lock.py" identity \
+    --provider "${FM_SEAT_PROVIDER:-claude}" --profile "${1-}"
+}
+
+fm_seat_login_command() {
+  local dir=${1-} provider
+  provider=$(fm_seat_provider) || return 1
+  if [ "$provider" = codex ]; then
+    [ -n "$dir" ] || dir="${HOME:-}/.codex"
+    dir=$(fm_seat_codex_home "$dir") || return 1
+    printf 'CODEX_HOME=%q codex login\n' "$dir"
+  elif [ -n "$dir" ]; then
+    printf 'env -u CLAUDE_SECURESTORAGE_CONFIG_DIR CLAUDE_CONFIG_DIR=%q claude\n' "$dir"
+  else
+    printf 'env -u CLAUDE_SECURESTORAGE_CONFIG_DIR -u CLAUDE_CONFIG_DIR claude\n'
+  fi
+}
+
 # The reserved seat name for "the default login", which is the ambient profile
 # Claude Code uses with no CLAUDE_CONFIG_DIR set. It is never a directory under
 # the seats root, and switching to it clears config/claude-seat.
@@ -75,10 +145,10 @@ FM_SEAT_LOGIN_EXPIRED_RENEWABLE=3
 # profile. A home that wants its own set overrides the root.
 fm_seat_root() {
   local root=
-  if [ -f "$CONFIG/claude-seats-root" ]; then
-    root=$(sed -n '1p' "$CONFIG/claude-seats-root" 2>/dev/null | tr -d '[:space:]')
+  if [ -f "$CONFIG/${FM_SEAT_PROVIDER:-claude}-seats-root" ]; then
+    root=$(sed -n '1p' "$CONFIG/${FM_SEAT_PROVIDER:-claude}-seats-root" 2>/dev/null | tr -d '[:space:]')
   fi
-  [ -n "$root" ] || root="${HOME:-}/.claude-seats"
+  [ -n "$root" ] || root="${HOME:-}/.${FM_SEAT_PROVIDER:-claude}-seats"
   printf '%s\n' "$root"
 }
 
@@ -123,8 +193,8 @@ fm_seat_dir() {
 # config dir, so every existing caller is unchanged.
 fm_seat_active() {
   local config_dir=${1:-$CONFIG} name=
-  if [ -f "$config_dir/claude-seat" ]; then
-    name=$(sed -n '1p' "$config_dir/claude-seat" 2>/dev/null | tr -d '[:space:]')
+  if [ -f "$config_dir/${FM_SEAT_PROVIDER:-claude}-seat" ]; then
+    name=$(sed -n '1p' "$config_dir/${FM_SEAT_PROVIDER:-claude}-seat" 2>/dev/null | tr -d '[:space:]')
   fi
   if [ -z "$name" ] || ! fm_seat_name_valid "$name"; then
     printf '%s\n' "$FM_SEAT_DEFAULT_NAME"
@@ -147,11 +217,25 @@ fm_seat_active() {
 # always inspect the same profile a worker on that seat would spend.
 fm_seat_config_dir() {
   local name=${1-} dir
-  if [ "$name" != "$FM_SEAT_DEFAULT_NAME" ] && dir=$(fm_seat_dir "$name"); then
-    printf '%s\n' "$dir"
-    return 0
+  if [ "${FM_SEAT_PROVIDER:-claude}" = codex ] && [ "$name" != "$FM_SEAT_DEFAULT_NAME" ]; then
+    fm_seat_name_valid "$name" || { echo "error: invalid Codex seat name: $name" >&2; return 1; }
   fi
-  printf '%s\n' "${FM_AMBIENT_CLAUDE_CONFIG_DIR-${CLAUDE_CONFIG_DIR:-}}"
+  if [ "$name" != "$FM_SEAT_DEFAULT_NAME" ]; then
+    if dir=$(fm_seat_dir "$name"); then
+      if [ "${FM_SEAT_PROVIDER:-claude}" = codex ]; then
+        fm_seat_codex_home "$dir"
+      else
+        printf '%s\n' "$dir"
+      fi
+      return $?
+    fi
+    [ "${FM_SEAT_PROVIDER:-claude}" != codex ] || return 1
+  fi
+  if [ "$(fm_seat_provider)" = codex ]; then
+    fm_seat_codex_home "${CODEX_HOME:-}"
+  else
+    printf '%s\n' "${FM_AMBIENT_CLAUDE_CONFIG_DIR-${CLAUDE_CONFIG_DIR:-}}"
+  fi
 }
 
 # fm_seat_relaunch_destination <name> -> profile directory (ambient for default)
@@ -165,7 +249,7 @@ fm_seat_relaunch_destination() {
     dir=$(fm_seat_dir "$name") || return 1
     [ -d "$dir" ] || { echo "error: seat '$name' has no profile directory at $dir" >&2; return 1; }
   fi
-  dir=$(fm_seat_config_dir "$name")
+  dir=$(fm_seat_config_dir "$name") || return 1
   if fm_seat_logged_in "$dir"; then
     rc=0
   else
@@ -193,7 +277,7 @@ fm_seat_name_of_profile() {
   [ -n "$profile" ] || { printf '%s\n' "$FM_SEAT_DEFAULT_NAME"; return 0; }
   while IFS= read -r name; do
     [ -n "$name" ] || continue
-    [ "$(fm_seat_dir "$name")" = "$profile" ] || continue
+    [ "$(fm_seat_config_dir "$name")" = "$profile" ] || continue
     printf '%s\n' "$name"
     return 0
   done < <(fm_seat_list)
@@ -205,7 +289,24 @@ fm_seat_name_of_profile() {
 # seat's, resolved by fm_seat_config_dir. A fresh spawn or resolver uses this;
 # a relaunch reads the task's recorded value.
 fm_seat_spawn_config_dir() {
-  fm_seat_config_dir "$(fm_seat_active)"
+  local name profile raw
+  fm_seat_provider >/dev/null || return 1
+  name=$(fm_seat_active)
+  if [ "$(fm_seat_provider)" = codex ] && [ -f "$CONFIG/codex-seat" ]; then
+    raw=$(sed -n '1p' "$CONFIG/codex-seat")
+    raw=${raw#"${raw%%[![:space:]]*}"}
+    raw=${raw%"${raw##*[![:space:]]}"}
+    if [ -z "$raw" ] || ! fm_seat_name_valid "$raw"; then
+      echo 'error: configured Codex seat is malformed; no fallback is allowed' >&2; return 1
+    fi
+  fi
+  profile=$(fm_seat_config_dir "$name") || return 1
+  if [ "$(fm_seat_provider)" = codex ] && [ "$name" != "$FM_SEAT_DEFAULT_NAME" ]; then
+    [ -d "$profile" ] && [ -f "$profile/auth.json" ] || {
+      echo "error: Codex seat '$name' is missing its home or auth.json; no fallback is allowed" >&2; return 1;
+    }
+  fi
+  printf '%s\n' "$profile"
 }
 
 # fm_seat_pipeline_selection
@@ -222,10 +323,11 @@ fm_seat_spawn_config_dir() {
 # guards; the extra-usage gate is applied separately at launch, on this profile.
 # Callers source bin/fm-session-lock-lib.sh for the runtime record.
 fm_seat_pipeline_selection() {
+  [ "${FM_SEAT_PROVIDER:-claude}" = claude ] || { echo "error: pipeline seats support Claude only" >&2; return 1; }
   local name profile override=false recorded=true reason='' raw
   name=$(fm_seat_active)
-  if [ -f "$CONFIG/claude-seat" ]; then
-    raw=$(sed -n '1p' "$CONFIG/claude-seat" | tr -d '[:space:]')
+  if [ -f "$CONFIG/${FM_SEAT_PROVIDER:-claude}-seat" ]; then
+    raw=$(sed -n '1p' "$CONFIG/${FM_SEAT_PROVIDER:-claude}-seat" | tr -d '[:space:]')
     [ -z "$raw" ] || fm_seat_name_valid "$raw" || reason='configured seat is malformed'
   fi
   if [ -n "${NM_CLAUDE_CONFIG_DIR:-}" ]; then
@@ -309,6 +411,19 @@ fm_seat_list() {
   done
 }
 
+# fm_seat_provider_in_use
+# True when FM_SEAT_PROVIDER has a named seat, any config/<provider>-seat*
+# setting, or an existing ambient home. The board and scheduled renewal show and
+# renew a provider's default seat only then, so a Claude-only home never reads Codex.
+fm_seat_provider_in_use() {
+  local provider home
+  provider=$(fm_seat_provider) || return 1
+  [ -z "$(fm_seat_list)" ] || return 0
+  compgen -G "$CONFIG/$provider-seat*" >/dev/null && return 0
+  home=$(fm_seat_config_dir "$FM_SEAT_DEFAULT_NAME") || return 0
+  [ -d "${home:-${HOME:-}/.$provider}" ]
+}
+
 # fm_seat_logged_in [config-dir]
 # Exit 0 when the profile holds usable Claude credentials, 3 when its session is
 # signed in but its access token has lapsed and can still be renewed, 1 when it
@@ -327,11 +442,10 @@ fm_seat_list() {
 # nothing has launched on since yesterday reads this way for most of the window
 # it spends as a rotation candidate. The session behind it is intact: launching
 # a claude worker there makes Claude Code perform the refresh exchange against
-# its own stored refresh token and rewrite the store, which is exactly how such
-# a seat recovers. Firstmate must never do that renewal itself - the refresh
-# token is single-use and a second refresher racing the session that owns it is
-# how a holder ends up presenting a spent token - so every read here stays
-# non-renewing and the launch remains the only thing that renews.
+# its own stored refresh token and rewrite the store. A refresh token is
+# single-use: a second refresher racing an owning session can present a spent
+# token. Every quota/probe read here stays non-renewing; fm-seat-renew-lib.sh
+# projects renewal state; fm-seat-renew.py owns the locked owner preflight.
 fm_seat_logged_in() {
   local dir=${1-} out
   command -v quota-axi >/dev/null 2>&1 || return 2
@@ -344,9 +458,13 @@ fm_seat_logged_in() {
   out=$(fm_seat_quota_read "$dir") || return 2
   [ -n "$out" ] || return 2
   printf '%s\n' "$out" | jq -e . >/dev/null 2>&1 || return 2
-  printf '%s\n' "$out" | jq -e '
-    (.providers // []) | map(select(.provider == "claude")) | .[0] // empty
-    | .source == "oauth"
+  printf '%s\n' "$out" | jq -e --arg provider "${FM_SEAT_PROVIDER:-claude}" "$FM_QUOTA_ROW_JQ"'
+    quota_row(.; $provider; (if $provider == "codex" then "codex-home" else "" end)) // empty
+    | .state.authStatus == "credentials_invalid"
+  ' >/dev/null 2>&1 && return 1
+  printf '%s\n' "$out" | jq -e --arg provider "${FM_SEAT_PROVIDER:-claude}" "$FM_QUOTA_ROW_JQ"'
+    quota_row(.; $provider; (if $provider == "codex" then "codex-home" else "" end)) // empty
+    | .source == "oauth" and ((.state.authStatus // "") != "credentials_invalid")
   ' >/dev/null 2>&1 && return 0
   # Soft expiry, read from the one field quota-axi publishes for it. Its own
   # type declares the contract this relies on: "Machine-readable local auth
@@ -356,8 +474,8 @@ fm_seat_logged_in() {
   # token expired" and "Claude credential expired", depending on whether the
   # quota endpoint rate limited the read first - so this matches the field and
   # never the message.
-  printf '%s\n' "$out" | jq -e '
-    (.providers // []) | map(select(.provider == "claude")) | .[0] // empty
+  printf '%s\n' "$out" | jq -e --arg provider "${FM_SEAT_PROVIDER:-claude}" "$FM_QUOTA_ROW_JQ"'
+    quota_row(.; $provider; (if $provider == "codex" then "codex-home" else "" end)) // empty
     | .state.authStatus == "expired_refreshable"
   ' >/dev/null 2>&1 && return "$FM_SEAT_LOGIN_EXPIRED_RENEWABLE"
   # Tell a clean "not logged in" apart from a probe that could not decide, so a
@@ -389,8 +507,8 @@ fm_seat_logged_in() {
   # status for any 401, including one against a locally valid credential whose
   # refresh token a launch would still try. Such a read has a `failed` attempt,
   # because a credential was presented and rejected, so it stays undecided.
-  printf '%s\n' "$out" | jq -e '
-    (.providers // []) | map(select(.provider == "claude")) | .[0] // empty
+  printf '%s\n' "$out" | jq -e --arg provider "${FM_SEAT_PROVIDER:-claude}" "$FM_QUOTA_ROW_JQ"'
+    quota_row(.; $provider; (if $provider == "codex" then "codex-home" else "" end)) // empty
     | .source == "unavailable"
       and ((.attempts // []) | length > 0
         and all(.status == "skipped"
@@ -408,8 +526,8 @@ fm_seat_account() {
   command -v jq >/dev/null 2>&1 || return 1
   out=$(fm_seat_quota_read "$dir") || return 1
   [ -n "$out" ] || return 1
-  printf '%s\n' "$out" | jq -er '
-    (.providers // []) | map(select(.provider == "claude")) | .[0] // empty
+  printf '%s\n' "$out" | jq -er --arg provider "${FM_SEAT_PROVIDER:-claude}" "$FM_QUOTA_ROW_JQ"'
+    quota_row(.; $provider; (if $provider == "codex" then "codex-home" else "" end)) // empty
     | .account.email // empty
   ' 2>/dev/null
 }
@@ -420,7 +538,7 @@ fm_seat_account() {
 # no default that would move accounts on a home that never asked for it.
 # fm_seat_percent_file, in the automatic-mode section below, owns the parse.
 fm_seat_threshold() {
-  fm_seat_percent_file "$CONFIG/claude-seat-threshold"
+  fm_seat_percent_file "$CONFIG/${FM_SEAT_PROVIDER:-claude}-seat-threshold"
 }
 
 # --- automatic mode -----------------------------------------------------------
@@ -450,7 +568,7 @@ fm_seat_percent_file() {
 # was before this setting existed: any logged-in seat qualifies and no
 # candidate's quota is read at all.
 fm_seat_destination_min() {
-  fm_seat_percent_file "$CONFIG/claude-seat-destination-min"
+  fm_seat_percent_file "$CONFIG/${FM_SEAT_PROVIDER:-claude}-seat-destination-min"
 }
 
 # fm_seat_extra_usage_policy
@@ -462,7 +580,8 @@ fm_seat_destination_min() {
 # on paid extra usage. `allow <usd>` keeps dispatching while the seat's recorded
 # extra-usage spend is below that dollar figure and holds once it is not.
 fm_seat_extra_usage_policy() {
-  local path="$CONFIG/claude-seat-extra-usage" v='' amount=''
+  [ "${FM_SEAT_PROVIDER:-claude}" = claude ] || return 1
+  local path="$CONFIG/${FM_SEAT_PROVIDER:-claude}-seat-extra-usage" v='' amount=''
   [ -f "$path" ] || return 1
   v=$(sed -n '1p' "$path" 2>/dev/null)
   v=${v#"${v%%[![:space:]]*}"}
@@ -495,7 +614,7 @@ fm_seat_extra_usage_policy() {
 # or misspelled name without either excluding a seat it did not name or
 # suppressing the exclusions beside it.
 fm_seat_auto_exclude_list() {
-  local path="$CONFIG/claude-seat-auto-exclude" line
+  local path="$CONFIG/${FM_SEAT_PROVIDER:-claude}-seat-auto-exclude" line
   [ -f "$path" ] || return 0
   while IFS= read -r line || [ -n "$line" ]; do
     line=${line#"${line%%[![:space:]]*}"}
@@ -514,10 +633,18 @@ fm_seat_auto_exclude_list() {
 # seat from the automatic paths only, and naming it explicitly stays a valid
 # manual choice (docs/claude-seats.md).
 fm_seat_auto_excluded() {
-  local name=${1-} excluded
+  local name=${1-} excluded identity
   [ -n "$name" ] || return 1
+  identity=''
+  if [ "${FM_SEAT_PROVIDER:-claude}" = codex ]; then
+    identity=$(fm_seat_credential_identity "$(fm_seat_config_dir "$name")") || return 1
+  fi
   while IFS= read -r excluded; do
     [ "$excluded" = "$name" ] && return 0
+    if [ -n "$identity" ] && fm_seat_name_valid "$excluded" &&
+      [ "$identity" = "$(fm_seat_credential_identity "$(fm_seat_config_dir "$excluded")")" ]; then
+      return 0
+    fi
   done < <(fm_seat_auto_exclude_list)
   return 1
 }
@@ -550,8 +677,8 @@ fm_seat_read_bound() {
 # profile path can ever sanitize into that name.
 fm_seat_memo_key() {
   local dir=${1-}
-  [ -n "$dir" ] || { printf 'ambient'; return 0; }
-  printf 'profile-%s' "$(printf '%s' "$dir" | tr -c 'A-Za-z0-9_-' '_')"
+  [ -n "$dir" ] || { printf '%s-ambient' "${FM_SEAT_PROVIDER:-claude}"; return 0; }
+  printf '%s-profile-%s' "${FM_SEAT_PROVIDER:-claude}" "$(printf '%s' "$dir" | tr -c 'A-Za-z0-9_-' '_')"
 }
 
 # fm_seat_quota_read <config-dir>
@@ -572,7 +699,14 @@ fm_seat_memo_key() {
 # pass's whole budget twice. Only a pass sets the memo; no long-lived caller
 # does, so nothing outside one pass ever reads a figure it did not take itself.
 fm_seat_quota_read() {
-  local dir=${1-} bound out memo=''
+  local dir=${1-} bound out memo='' provider env_name
+  local -a profile_args=()
+  provider=$(fm_seat_provider) || return 1
+  env_name=$(fm_seat_env_name) || return 1
+  if [ "$provider" = codex ]; then
+    dir=${dir:-${HOME:-}/.codex}
+    profile_args=(--profile-only)
+  fi
   if [ -n "${FM_SEAT_READ_MEMO_DIR:-}" ] && [ -d "${FM_SEAT_READ_MEMO_DIR:-}" ]; then
     memo="$FM_SEAT_READ_MEMO_DIR/$(fm_seat_memo_key "$dir")"
     [ ! -f "$memo.fail" ] || return 1
@@ -583,8 +717,8 @@ fm_seat_quota_read() {
   fi
   command -v quota-axi >/dev/null 2>&1 || return 1
   bound=$(fm_seat_read_bound) || return 1
-  out=$(fm_run_timed "$bound" env CLAUDE_CONFIG_DIR="$dir" \
-    quota-axi --provider claude --no-credential-refresh --full --json 2>/dev/null </dev/null)
+  out=$(fm_run_timed "$bound" env "$env_name=$dir" \
+    quota-axi --provider "$provider" "${profile_args[@]}" --no-credential-refresh --full --json 2>/dev/null </dev/null)
   if fm_timed_out "$?"; then
     [ -z "$memo" ] || : > "$memo.fail" 2>/dev/null || true
     return 1
@@ -619,8 +753,8 @@ fm_seat_quota_json() {
 fm_seat_remaining_from() {
   local out=${1-} remaining
   [ -n "$out" ] || return 1
-  remaining=$(printf '%s\n' "$out" | jq -r "$FM_QUOTA_ROW_JQ"'
-    quota_effective(quota_row(.; "claude"; ""); "default")
+  remaining=$(printf '%s\n' "$out" | jq -r --arg provider "${FM_SEAT_PROVIDER:-claude}" "$FM_QUOTA_ROW_JQ"'
+    quota_effective(quota_row(.; $provider; (if $provider == "codex" then "codex-home" else "" end)); "default")
     | if (.runway.status // "") == "exhausted_now" then "0"
       elif .status == "known" and (.effectivePercentRemaining | type) == "number"
       then (.effectivePercentRemaining | tostring)
@@ -648,8 +782,8 @@ fm_seat_remaining() {
 fm_seat_extra_spent_from() {
   local out=${1-} spent
   [ -n "$out" ] || return 1
-  spent=$(printf '%s\n' "$out" | jq -r "$FM_QUOTA_ROW_JQ"'
-    quota_row(.; "claude"; "") as $row
+  spent=$(printf '%s\n' "$out" | jq -r --arg provider "${FM_SEAT_PROVIDER:-claude}" "$FM_QUOTA_ROW_JQ"'
+    quota_row(.; $provider; (if $provider == "codex" then "codex-home" else "" end)) as $row
     | if ($row // null) == null then "error" else
         (($row.windows // []) | map(select(.id == "extra_usage")) | first) as $w
         | if ($w // null) == null or ($w.spentUsd | type) != "number"
@@ -666,8 +800,8 @@ fm_seat_extra_spent_from() {
 fm_seat_extra_limit_from() {
   local out=${1-} limit
   [ -n "$out" ] || return 1
-  limit=$(printf '%s\n' "$out" | jq -r "$FM_QUOTA_ROW_JQ"'
-    quota_row(.; "claude"; "") as $row
+  limit=$(printf '%s\n' "$out" | jq -r --arg provider "${FM_SEAT_PROVIDER:-claude}" "$FM_QUOTA_ROW_JQ"'
+    quota_row(.; $provider; (if $provider == "codex" then "codex-home" else "" end)) as $row
     | if ($row // null) == null then "error" else
         (($row.windows // []) | map(select(.id == "extra_usage")) | first) as $w
         | if ($w // null) == null or ($w.limitUsd | type) != "number"
@@ -749,7 +883,8 @@ fm_seat_seconds_file() {
 # read, and every automatic path behaves exactly as it did before the floor
 # existed.
 fm_seat_floor() {
-  fm_seat_percent_file "$CONFIG/claude-seat-floor"
+  [ "${FM_SEAT_PROVIDER:-claude}" = claude ] || return 1
+  fm_seat_percent_file "$CONFIG/${FM_SEAT_PROVIDER:-claude}-seat-floor"
 }
 
 # fm_seat_floor_readd
@@ -763,7 +898,7 @@ fm_seat_floor() {
 fm_seat_floor_readd() {
   local floor readd
   floor=$(fm_seat_floor) || return 1
-  if readd=$(fm_seat_percent_file "$CONFIG/claude-seat-floor-readd") &&
+  if readd=$(fm_seat_percent_file "$CONFIG/${FM_SEAT_PROVIDER:-claude}-seat-floor-readd") &&
     jq -en --arg r "$readd" --arg f "$floor" '($r | tonumber) > ($f | tonumber)' >/dev/null 2>&1; then
     printf '%s\n' "$readd"
     return 0
@@ -776,7 +911,7 @@ fm_seat_floor_readd() {
 # Seconds a seat must have been resting before any reading may wake it.
 fm_seat_floor_dwell() {
   local v
-  v=$(fm_seat_seconds_file "$CONFIG/claude-seat-floor-dwell") || v=$FM_SEAT_FLOOR_DWELL_DEFAULT
+  v=$(fm_seat_seconds_file "$CONFIG/${FM_SEAT_PROVIDER:-claude}-seat-floor-dwell") || v=$FM_SEAT_FLOOR_DWELL_DEFAULT
   printf '%s\n' "$v"
 }
 
@@ -786,7 +921,7 @@ fm_seat_floor_dwell() {
 # and it is the one percentage here that does not count percent left.
 fm_seat_session_share_setting() {
   local v
-  v=$(fm_seat_percent_file "$CONFIG/claude-seat-session-share") || v=$FM_SEAT_SESSION_SHARE_DEFAULT
+  v=$(fm_seat_percent_file "$CONFIG/${FM_SEAT_PROVIDER:-claude}-seat-session-share") || v=$FM_SEAT_SESSION_SHARE_DEFAULT
   printf '%s\n' "$v"
 }
 
@@ -845,10 +980,15 @@ fm_seat_iso_to_epoch() {
 fm_seat_windows_from() {
   local out=${1-}
   [ -n "$out" ] || return 1
-  printf '%s\n' "$out" | jq -r "$FM_QUOTA_ROW_JQ"'
-    quota_row(.; "claude"; "") as $row
+  printf '%s\n' "$out" | jq -r --arg provider "${FM_SEAT_PROVIDER:-claude}" "$FM_QUOTA_ROW_JQ"'
+    quota_row(.; $provider; (if $provider == "codex" then "codex-home" else "" end)) as $row
     | if ($row // null) == null then empty else
         ($row.windows // [])[]
+        | (if $provider == "codex" then
+             if .windowSeconds == 604800 or .id == "weekly" then .id = "seven_day"
+             elif .windowSeconds == 18000 or .id == "session" then .id = "five_hour"
+             else . end
+           else . end)
         | select(.id == "five_hour" or .id == "seven_day")
         | [ .id,
             ((.percentRemaining // "") | tostring),
@@ -876,10 +1016,13 @@ fm_seat_window_field() {
 fm_seat_limiting_window_from() {
   local out=${1-} named rows session week
   [ -n "$out" ] || return 1
-  named=$(printf '%s\n' "$out" | jq -r "$FM_QUOTA_ROW_JQ"'
-    quota_effective(quota_row(.; "claude"; ""); "default")
+  named=$(printf '%s\n' "$out" | jq -r --arg provider "${FM_SEAT_PROVIDER:-claude}" "$FM_QUOTA_ROW_JQ"'
+    quota_effective(quota_row(.; $provider; (if $provider == "codex" then "codex-home" else "" end)); "default")
     | (.limitingWindowIds // [])[0] // ""
   ' 2>/dev/null) || named=''
+  if [ "${FM_SEAT_PROVIDER:-claude}" = codex ]; then
+    case "$named" in weekly) named=$FM_SEAT_WEEK_WINDOW ;; session) named=$FM_SEAT_SESSION_WINDOW ;; esac
+  fi
   case "$named" in
     "$FM_SEAT_SESSION_WINDOW" | "$FM_SEAT_WEEK_WINDOW")
       printf '%s\n' "$named"
@@ -910,8 +1053,8 @@ fm_seat_limiting_window_from() {
 fm_seat_login_renewable_from() {
   local out=${1-}
   [ -n "$out" ] || return 1
-  printf '%s\n' "$out" | jq -e '
-    (.providers // []) | map(select(.provider == "claude")) | .[0] // empty
+  printf '%s\n' "$out" | jq -e --arg provider "${FM_SEAT_PROVIDER:-claude}" "$FM_QUOTA_ROW_JQ"'
+    quota_row(.; $provider; (if $provider == "codex" then "codex-home" else "" end)) // empty
     | .state.authStatus == "expired_refreshable"
   ' >/dev/null 2>&1
 }
@@ -933,7 +1076,7 @@ fm_seat_login_renewable_from() {
 # fm_seat_resting_record
 # The whole document, always valid JSON.
 fm_seat_resting_record() {
-  local path="$CONFIG/claude-seat-resting"
+  local path="$CONFIG/${FM_SEAT_PROVIDER:-claude}-seat-resting"
   if [ -f "$path" ] && jq -e 'type == "object" and (.seats | type) == "object"' \
     "$path" >/dev/null 2>&1; then
     cat "$path"
@@ -980,12 +1123,12 @@ fm_seat_resting_write() {
   printf '%s\n' "$record" | jq -e . >/dev/null 2>&1 || return 1
   mkdir -p "$CONFIG" 2>/dev/null || return 1
   if printf '%s\n' "$record" | jq -e '(.seats | length) == 0' >/dev/null 2>&1; then
-    rm -f "$CONFIG/claude-seat-resting" || return 1
+    rm -f "$CONFIG/${FM_SEAT_PROVIDER:-claude}-seat-resting" || return 1
     return 0
   fi
-  tmp=$(umask 077; mktemp "$CONFIG/.claude-seat-resting.XXXXXX" 2>/dev/null) || return 1
+  tmp=$(umask 077; mktemp "$CONFIG/.${FM_SEAT_PROVIDER:-claude}-seat-resting.XXXXXX" 2>/dev/null) || return 1
   printf '%s\n' "$record" | jq -S . > "$tmp" 2>/dev/null || { rm -f -- "$tmp"; return 1; }
-  mv -f -- "$tmp" "$CONFIG/claude-seat-resting" || { rm -f -- "$tmp"; return 1; }
+  mv -f -- "$tmp" "$CONFIG/${FM_SEAT_PROVIDER:-claude}-seat-resting" || { rm -f -- "$tmp"; return 1; }
 }
 
 # --- the session share --------------------------------------------------------
@@ -1008,7 +1151,7 @@ fm_seat_resting_write() {
 # makes every share assumed rather than measured.
 fm_seat_session_share_file() {
   [ -n "${STATE:-}" ] || return 1
-  printf '%s\n' "$STATE/claude-seat-session-share.json"
+  printf '%s\n' "$STATE/${FM_SEAT_PROVIDER:-claude}-seat-session-share.json"
 }
 
 # fm_seat_session_share_doc
@@ -1100,7 +1243,7 @@ fm_seat_session_share_observe() {
     end' 2>/dev/null) || return 0
   [ -n "$doc" ] || return 0
   mkdir -p "$STATE" 2>/dev/null || return 0
-  tmp=$(umask 077; mktemp "$STATE/.claude-seat-session-share.XXXXXX" 2>/dev/null) || return 0
+  tmp=$(umask 077; mktemp "$STATE/.${FM_SEAT_PROVIDER:-claude}-seat-session-share.XXXXXX" 2>/dev/null) || return 0
   printf '%s\n' "$doc" > "$tmp" 2>/dev/null || { rm -f -- "$tmp"; return 0; }
   mv -f -- "$tmp" "$path" 2>/dev/null || rm -f -- "$tmp"
   return 0
@@ -1135,8 +1278,8 @@ fm_seat_dispatch_decision() {
     # A lapsed token reads no quota until a launch renews it, so holding on it
     # would hold every spawn for good. The field is the one fm_seat_logged_in
     # reads for the same state.
-    if printf '%s\n' "$out" | jq -e '
-      (.providers // []) | map(select(.provider == "claude")) | .[0] // empty
+    if printf '%s\n' "$out" | jq -e --arg provider "${FM_SEAT_PROVIDER:-claude}" "$FM_QUOTA_ROW_JQ"'
+      quota_row(.; $provider; (if $provider == "codex" then "codex-home" else "" end)) // empty
       | .state.authStatus == "expired_refreshable"
     ' >/dev/null 2>&1; then
       printf 'allow login-renewable\n'

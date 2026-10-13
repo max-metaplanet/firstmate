@@ -55,6 +55,8 @@ export type WorldOptions = {
 export function seat(
   name: string,
   options: {
+    provider?: "claude" | "codex";
+    renewal?: Record<string, unknown>;
     active?: boolean;
     autoExcluded?: boolean;
     hasData?: boolean;
@@ -66,6 +68,8 @@ export function seat(
 ): Record<string, unknown> {
   return {
     name,
+    provider: options.provider,
+    renewal: options.renewal,
     configDir: `/seats/${name}`,
     active: options.active ?? false,
     autoExcluded: options.autoExcluded ?? false,

@@ -957,7 +957,7 @@ Any `config/claude-seat-local` path declines, whatever its type: a directory or 
 [One home on a separate account](claude-seats.md#one-home-on-a-separate-account) owns the operator procedure and how `bin/fm-seat.sh status` and each switch report a declining home.
 
 A switch changes only which seat the NEXT worker gets.
-`bin/fm-spawn.sh` resolves the seat once per fresh Claude spawn (other harnesses record no seat), prefers the active seat over firstmate's own ambient `CLAUDE_CONFIG_DIR`, pre-registers Claude workspace trust in that same profile, and records the resolved directory as `claude_seat=` in the task's own record.
+`bin/fm-spawn.sh` resolves the seat once per fresh Claude spawn, prefers the active seat over firstmate's own ambient `CLAUDE_CONFIG_DIR`, pre-registers Claude workspace trust in that same profile, and records the resolved directory as `claude_seat=` in the task's own record.
 Every Claude-to-Claude relaunch reads that record instead of re-resolving the setting, so a switch never moves a live or relaunched worker; a task's session history lives under its profile directory, which makes the recorded value a correctness requirement rather than only a billing one.
 A task whose record carries no `claude_seat=` line, including every task created before seats existed, keeps the ambient default and is never retroactively moved onto a seat.
 A relaunch that switches a task from another harness onto Claude has no Claude history to protect, so it resolves and records the active seat exactly as a fresh spawn does; a relaunch onto any other harness drops the `claude_seat=` line.
@@ -966,6 +966,22 @@ Firstmate itself is not a worker and no switch moves it: it keeps the account it
 It changes account only by being replaced, which `bin/fm-seat.sh lead-restart` does through `bin/fm-lead-restart.sh`, and [Moving firstmate itself](claude-seats.md#moving-firstmate-itself) owns that procedure and its refusals.
 The armed watch asks the same threshold question about firstmate's own seat, and firstmate carries that move out itself on the resulting wake without captain approval.
 The watch hands it over with the exact command rather than performing it, because replacing firstmate drops the conversation whose open work has to be written down first and only firstmate can write it.
+
+## Codex seats
+
+Codex uses the same seat resolver with provider `codex`, separate from Claude's settings.
+`config/codex-seat` holds the active seat name for new Codex workers, and `config/codex-seats-root` defaults to `$HOME/.codex-seats`.
+A named seat must resolve to an existing home with `auth.json`; an invalid configured name or missing home refuses the launch instead of selecting another account.
+`config/codex-seat-threshold`, `config/codex-seat-destination-min`, and `config/codex-seat-auto-exclude` have the corresponding Claude settings' value formats and rotation semantics above.
+These five files are inherited by local secondmate homes only, and `config/codex-seat-local` declines only Codex inheritance using the same presence semantics as `claude-seat-local`.
+Codex does not support the Claude paid extra-usage, floor, or session-share settings.
+
+New Codex launches prefer the named seat over ambient `CODEX_HOME` and record the resolved directory as `codex_seat=`.
+Codex relaunches preserve that recorded home; an explicit same-harness `fm-control.sh relaunch --seat` validates the destination before stopping the old worker.
+An unset home explicitly clears a runtime daemon's inherited `CODEX_HOME`, preserving the ordinary default store.
+A switch changes future workers only, and a harness change drops the old vendor's seat record.
+The dispatch resolver reads Codex quota against the selected home without refreshing credentials.
+[`claude-seats.md`](claude-seats.md#codex-seats) owns the registration and switching procedure.
 
 ## Lavish server address (config/lavish-axi-host)
 

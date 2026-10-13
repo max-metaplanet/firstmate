@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # A very lightweight, read-only local web page showing quota-axi's report for
-# every Claude seat: bin/fm-seat.sh manages which seat NEW workers launch on,
+# every Claude and Codex seat: bin/fm-seat.sh manages which seat NEW workers launch on,
 # and this script just displays what quota-axi says every seat has left.
 #
 # Usage:
@@ -24,13 +24,21 @@
 #                         liveAgents: [{ seat, profile, override, pid, started }] },
 #             floor: null | { removeAt, readdAt, dwellSeconds,
 #                             sessionShare: { percent, source, samples } },
-#             seats: [ { name, configDir, active, autoExcluded, cacheFile,
-#                        hasData, ageSeconds, account, attention,
+#             providers: { claude: { activeSeat, liveSeat, floor },
+#                          codex: { activeSeat, liveSeat, floor } },
+#             seats: [ { provider, name, configDir, active, autoExcluded, cacheFile,
+#                        hasData, ageSeconds, account, attention, renewal,
 #                        exclusion: { manual, resting: null | {
 #                          limitingWindow, remaining, since, resetsAt,
 #                          expectedBack, provisional, unreadableSince } },
 #                        windows: [ { id, label, percentRemaining, resetsAt } ],
 #                        extraUsage } ] }
+#         The legacy top-level activeSeat, liveSeat, floor and pipeline describe
+#         Claude; providers and each seat's provider disambiguate matching names.
+#         Codex appears only when fm_seat_provider_in_use; otherwise
+#         providers.codex is null and no Codex quota is read.
+#         renewal is the read-only fm_seat_renewal_from projection, including history and action
+#         commands for the operator to run; polling never executes these commands.
 #         autoExcluded is true when an automatic switch may not land on that
 #         seat for EITHER reason, which is the question every reader of it asks;
 #         `exclusion` is what says which reason, so a seat held out by hand is
@@ -84,6 +92,8 @@ STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 . "$SCRIPT_DIR/fm-timeout-lib.sh"
 # shellcheck source=bin/fm-seat-lib.sh
 . "$SCRIPT_DIR/fm-seat-lib.sh"
+# shellcheck source=bin/fm-seat-renew-lib.sh
+. "$SCRIPT_DIR/fm-seat-renew-lib.sh"
 # shellcheck source=bin/fm-quota-axi-lib.sh
 . "$SCRIPT_DIR/fm-quota-axi-lib.sh"
 # shellcheck source=bin/fm-session-lock-lib.sh
@@ -130,11 +140,13 @@ file_age_seconds() {
 }
 
 # seat_cache_file <config-dir>
-# The cache file one seat's report is stored in. Keyed by the resolved config
-# directory rather than the seat name, so two homes whose same-named seats point
+# The cache file one seat's report is stored in. Keyed by provider and resolved
+# config directory rather than the seat name, so two homes whose same-named seats point
 # at different profiles never share a cached report.
 seat_cache_file() {
-  printf '%s\n' "$FM_SEAT_BOARD_CACHE_DIR/$(cache_key "${1:-default}").json"
+  local prefix=
+  [ "${FM_SEAT_PROVIDER:-claude}" = claude ] || prefix="${FM_SEAT_PROVIDER}-"
+  printf '%s\n' "$FM_SEAT_BOARD_CACHE_DIR/${prefix}$(cache_key "${1:-default}").json"
 }
 
 # seat_quota_cached <config-dir> [cached-only]
@@ -237,13 +249,21 @@ CSS
 # seat_section_html <seat-name> <active-seat-name>
 seat_section_html() {
   local name=$1 active=$2 dir json marker email src state_err attention extra spent limit
-  local resting limiting=''
+  local resting renewal line limiting=''
   dir=$(fm_seat_config_dir "$name")
   json=$(seat_quota_cached "$dir")
   marker=
   [ "$name" != "$active" ] || marker=' <span class="active">active for new workers</span>'
-  printf '<section class="seat">\n'
+  printf '<section class="seat" data-provider="%s">\n' "$(html_escape "${FM_SEAT_PROVIDER:-claude}")"
   printf '<h2>%s%s</h2>\n' "$(html_escape "$name")" "$marker"
+  printf '<p class="rotation">provider: %s</p>\n' "$(html_escape "${FM_SEAT_PROVIDER:-claude}")"
+  renewal=$(fm_seat_renewal_from "$json" "$dir" "$name")
+  while IFS= read -r line; do
+    printf '<p class="rotation">%s</p>\n' "$(html_escape "$line")"
+  done < <(printf '%s' "$renewal" | jq -r '"renewal: " + .state, (if .outcome then "last outcome: " + .outcome else empty end),
+      (if (.lastRenewal | type) == "number" then "last renewal: " + (.lastRenewal | todateiso8601) else empty end),
+      (if (.lastAttempt | type) == "number" then "last attempt: " + (.lastAttempt | todateiso8601) else empty end),
+      (.reason // empty), (.command // empty), (.loginCommand // empty)' )
   # Whether an automatic switch may land here, and which of the two reasons it
   # is, because an operator reading "not in rotation" needs to know whether they
   # withheld this seat themselves or the quota floor is resting it.
@@ -265,11 +285,11 @@ seat_section_html() {
     return
   fi
   email=$(printf '%s' "$json" |
-    jq -r '(.providers[]? | select(.provider == "claude") | .account.email // empty)' 2>/dev/null)
+    jq -r --arg provider "${FM_SEAT_PROVIDER:-claude}" '(.providers[]? | select(.provider == $provider) | .account.email // empty)' 2>/dev/null)
   src=$(printf '%s' "$json" |
-    jq -r '(.providers[]? | select(.provider == "claude") | .source // empty)' 2>/dev/null)
+    jq -r --arg provider "${FM_SEAT_PROVIDER:-claude}" '(.providers[]? | select(.provider == $provider) | .source // empty)' 2>/dev/null)
   state_err=$(printf '%s' "$json" |
-    jq -r '(.providers[]? | select(.provider == "claude") | .state.error // empty)' 2>/dev/null)
+    jq -r --arg provider "${FM_SEAT_PROVIDER:-claude}" '(.providers[]? | select(.provider == $provider) | .state.error // empty)' 2>/dev/null)
   [ -z "$email" ] || printf '<p class="account">%s</p>\n' "$(html_escape "$email")"
   if [ "$src" != oauth ]; then
     attention=$state_err
@@ -282,14 +302,14 @@ seat_section_html() {
     [ "$wid" != "$limiting" ] || label="${label:-$wid} (holding this seat down)"
     printf '<tr><td>%s</td><td>%s%%</td><td>%s</td></tr>\n' \
       "$(html_escape "${label:-$wid}")" "$(html_escape "$pct")" "$(html_escape "$resets")"
-  done < <(printf '%s' "$json" | jq -r '
-    (.providers[]? | select(.provider == "claude") | .windows // [])[] |
+  done < <(printf '%s' "$json" | jq -r --arg provider "${FM_SEAT_PROVIDER:-claude}" '
+    (.providers[]? | select(.provider == $provider) | .windows // [])[] |
     select(.id != "extra_usage") |
     [.id, (.label // .id), ((.percentRemaining // "") | tostring), (.resetsAt // "")] | @tsv
   ' 2>/dev/null)
   printf '</table>\n'
-  extra=$(printf '%s' "$json" | jq -r '
-    (.providers[]? | select(.provider == "claude") | .windows // [])[] |
+  extra=$(printf '%s' "$json" | jq -r --arg provider "${FM_SEAT_PROVIDER:-claude}" '
+    (.providers[]? | select(.provider == $provider) | .windows // [])[] |
     select(.id == "extra_usage") |
     [((.spentUsd // "") | tostring), ((.limitUsd // "") | tostring)] | @tsv
   ' 2>/dev/null | head -1)
@@ -338,11 +358,12 @@ floor_json() {
 # date them, and a seat with no report prints hasData false with null figures
 # rather than zeros a reader could mistake for an empty quota.
 seat_json() {
-  local name=$1 active=$2 cached_only=$3 dir json cache_file age flags manual resting
+  local name=$1 active=$2 cached_only=$3 dir json cache_file age flags manual resting renewal
   dir=$(fm_seat_config_dir "$name")
   cache_file=$(seat_cache_file "$dir")
   json=$(seat_quota_cached "$dir" "$cached_only")
   age=$(file_age_seconds "$cache_file") || age=null
+  renewal=$(fm_seat_renewal_from "$json" "$dir" "$name")
   manual=$(fm_seat_auto_excluded "$name" && printf true || printf false)
   resting=$(seat_resting_json "$name")
   # One flag for "an automatic switch may not land here", whatever is holding
@@ -352,12 +373,13 @@ seat_json() {
   { [ "$manual" = false ] && ! fm_seat_resting "$name"; } || flags=true
   if [ -z "$json" ]; then
     jq -n \
+      --arg provider "${FM_SEAT_PROVIDER:-claude}" --argjson renewal "$renewal" \
       --arg name "$name" --arg dir "$dir" --arg cache "$cache_file" \
       --argjson active "$([ "$name" = "$active" ] && printf true || printf false)" \
       --argjson excluded "$flags" \
       --argjson manual "$manual" --argjson resting "$resting" \
       '{
-        name: $name, configDir: $dir, active: $active, autoExcluded: $excluded,
+        provider: $provider, renewal: $renewal, name: $name, configDir: $dir, active: $active, autoExcluded: $excluded,
         exclusion: { manual: $manual, resting: $resting },
         cacheFile: $cache, hasData: false, ageSeconds: null, account: null,
         attention: "no quota data (quota-axi unavailable or the read timed out)",
@@ -366,20 +388,21 @@ seat_json() {
     return 0
   fi
   printf '%s' "$json" | jq \
+    --arg provider "${FM_SEAT_PROVIDER:-claude}" --argjson renewal "$renewal" \
     --arg name "$name" --arg dir "$dir" --arg cache "$cache_file" \
     --argjson active "$([ "$name" = "$active" ] && printf true || printf false)" \
     --argjson excluded "$flags" \
     --argjson manual "$manual" --argjson resting "$resting" \
     --argjson age "$age" \
     '
-    ([.providers[]? | select(.provider == "claude")] | first) as $p |
+    ([.providers[]? | select(.provider == $provider)] | first) as $p |
     {
-      name: $name, configDir: $dir, active: $active, autoExcluded: $excluded,
+      provider: $provider, renewal: $renewal, name: $name, configDir: $dir, active: $active, autoExcluded: $excluded,
       exclusion: { manual: $manual, resting: $resting },
       cacheFile: $cache, hasData: true, ageSeconds: $age,
       account: ($p.account.email // null),
       attention: (
-        if $p == null then "no claude row in the quota report"
+        if $p == null then "no " + $provider + " row in the quota report"
         elif ($p.source // "") == "oauth" then null
         else (($p.state.error // "") | if . == "" then "not logged in" else . end)
         end
@@ -401,40 +424,59 @@ seat_json() {
     }'
 }
 
-# render_json <cached-only>
-# Every seat's record as one JSON object, the default login first and then each
-# named seat in fm_seat_list's own order.
-render_json() {
-  local cached_only=$1 active name
+# provider_seats_json <provider> <cached-only>
+provider_seats_json() (
+  FM_SEAT_PROVIDER=$1
+  local cached_only=$2 active name
+  [ "$FM_SEAT_PROVIDER" = claude ] || fm_seat_provider_in_use || return 0
   active=$(fm_seat_active)
+  seat_json "$FM_SEAT_DEFAULT_NAME" "$active" "$cached_only"
+  while IFS= read -r name; do
+    [ -n "$name" ] || continue
+    seat_json "$name" "$active" "$cached_only"
+  done < <(fm_seat_list)
+)
+
+provider_metadata_json() (
+  FM_SEAT_PROVIDER=$1
+  local ambient=${CLAUDE_CONFIG_DIR:-}
+  [ "$FM_SEAT_PROVIDER" = claude ] || fm_seat_provider_in_use || { printf 'null\n'; return 0; }
+  [ "$FM_SEAT_PROVIDER" != codex ] || ambient=${CODEX_HOME:-}
+  jq -cn --arg active "$(fm_seat_active)" \
+    --arg live "$(fm_seat_name_of_profile "$ambient")" --argjson floor "$(floor_json)" \
+    '{ activeSeat: $active, liveSeat: $live, floor: $floor }'
+)
+
+# render_json <cached-only>
+# Every provider's default login followed by its named seats in library order.
+render_json() {
+  local cached_only=$1
   {
-    seat_json "$FM_SEAT_DEFAULT_NAME" "$active" "$cached_only"
-    while IFS= read -r name; do
-      [ -n "$name" ] || continue
-      seat_json "$name" "$active" "$cached_only"
-    done < <(fm_seat_list)
+    provider_seats_json claude "$cached_only"
+    provider_seats_json codex "$cached_only"
   } | jq -s \
       --arg generated "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-      --arg active "$active" \
-      --arg live "$(fm_seat_name_of_profile "${CLAUDE_CONFIG_DIR:-}")" \
+      --argjson claude "$(provider_metadata_json claude)" \
+      --argjson codex "$(provider_metadata_json codex)" \
       --argjson cacheSeconds "$FM_SEAT_BOARD_CACHE_SECONDS" \
-      --argjson floor "$(floor_json)" \
-      --argjson pipeline "$(fm_seat_pipeline_report)" \
+      --argjson pipeline "$(FM_SEAT_PROVIDER=claude fm_seat_pipeline_report)" \
       '{
         schemaVersion: 1, generatedAt: $generated, cacheSeconds: $cacheSeconds,
-        activeSeat: $active, liveSeat: $live, floor: $floor, pipeline: $pipeline, seats: .
+        activeSeat: $claude.activeSeat, liveSeat: $claude.liveSeat,
+        floor: $claude.floor, pipeline: $pipeline,
+        providers: { claude: $claude, codex: $codex }, seats: .
       }'
 }
 
 render_page() {
-  local active name pipeline line
+  local active name pipeline line FM_SEAT_PROVIDER=claude
   active=$(fm_seat_active)
   printf '<!DOCTYPE html>\n<html><head><meta charset="utf-8">\n'
-  printf '<title>Claude seats</title>\n'
+  printf '<title>Claude and Codex seats</title>\n'
   printf '<meta http-equiv="refresh" content="%s">\n' "$FM_SEAT_BOARD_CACHE_SECONDS"
   printf '<style>%s</style>\n' "$(board_css)"
   printf '</head><body>\n'
-  printf '<h1>Claude seats</h1>\n'
+  printf '<h1>Claude and Codex seats</h1>\n'
   printf '<p class="generated">generated %s</p>\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   pipeline=$(fm_seat_pipeline_report)
   while IFS= read -r line; do
@@ -445,12 +487,17 @@ render_page() {
     (if .blockedReason == null then empty else "pipeline selection HELD: " + .blockedReason end),
     (if .profileRecorded then empty else "pipeline default-seat profile not recorded for this home'"'"'s lead; launches use the wrapper'"'"'s installed default profile until a lead restart records it" end),
     (.liveAgents[] | "live pipeline agent: pid=" + (.pid | tostring) + " seat=" + .seat)')
-  seat_section_html "$FM_SEAT_DEFAULT_NAME" "$active"
-  while IFS= read -r name; do
-    [ -n "$name" ] || continue
-    seat_section_html "$name" "$active"
-  done < <(fm_seat_list)
-  floor_footer_html
+  for FM_SEAT_PROVIDER in claude codex; do
+    [ "$FM_SEAT_PROVIDER" = claude ] || fm_seat_provider_in_use || continue
+    active=$(fm_seat_active)
+    printf '<h2>%s</h2>\n' "$FM_SEAT_PROVIDER"
+    seat_section_html "$FM_SEAT_DEFAULT_NAME" "$active"
+    while IFS= read -r name; do
+      [ -n "$name" ] || continue
+      seat_section_html "$name" "$active"
+    done < <(fm_seat_list)
+    floor_footer_html
+  done
   printf '</body></html>\n'
 }
 

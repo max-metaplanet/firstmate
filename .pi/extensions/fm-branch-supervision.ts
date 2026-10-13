@@ -1681,6 +1681,15 @@ ${context.command}
     // getEntries() here loses the captain request that the next wake may answer.
     // Stage it verbatim and remember the future persisted index for turn_end's
     // duplicate suppression. Operational extension injections are not dialog.
+    // A run opened by a custom message carries no prompt and is never captain
+    // dialog; it only tells whether this extension's own request opened the run.
+    if (!("prompt" in event)) {
+      processingOpenedThisRun =
+        queuedProcessingContent !== null &&
+        isProcessingCustomMessage(event.message) &&
+        event.message.content === queuedProcessingContent;
+      return;
+    }
     const prompt = event.prompt;
     processingOpenedThisRun = queuedProcessingContent !== null && prompt === queuedProcessingContent;
     const trimmed = prompt.trim();

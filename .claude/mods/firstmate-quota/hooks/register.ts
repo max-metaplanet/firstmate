@@ -250,17 +250,23 @@ function seatElement($: EngineInterface, e: RenderInput, row: SeatRow): RenderEl
   const marks =
     row.marks.length === 0 ? [] : [Text({ dimColor: true, children: [`[${row.marks.join(", ")}]`] })];
   return Box({
-    flexDirection: "row",
-    columnGap: 1,
+    flexDirection: "column",
     children: [
-      Text({ bold: row.live, children: [row.name] }),
-      ...marks,
-      Text({ dimColor: stale, children: [seatFiguresText(row)] }),
-      Text({
-        color: stale ? "yellow" : undefined,
-        dimColor: !stale,
-        children: [`(${freshnessWord(row.freshness, row.ageWord)})`],
+      Box({
+        flexDirection: "row",
+        columnGap: 1,
+        children: [
+          Text({ bold: row.live, children: [`${row.provider} ${row.name}`] }),
+          ...marks,
+          Text({ dimColor: stale, children: [seatFiguresText(row)] }),
+          Text({
+            color: stale ? "yellow" : undefined,
+            dimColor: !stale,
+            children: [`(${freshnessWord(row.freshness, row.ageWord)})`],
+          }),
+        ],
       }),
+      ...(row.renewal === "" ? [] : [Text({ dimColor: true, children: [row.renewal] })]),
     ],
   });
 }
@@ -273,7 +279,7 @@ export const register: Register = (on) => {
     try {
       await $.command.register({
         name: SEATS_COMMAND,
-        description: "Show every configured Claude seat's quota, with each reading's age.",
+        description: "Show every configured Claude and Codex seat's quota, with each reading's age.",
       });
     } catch {
       // Another plugin owns /seats; the band still draws.
@@ -300,7 +306,7 @@ export const register: Register = (on) => {
       if (reading !== undefined) await reading;
       return { text: seatsText(await $.clock.now()) };
     }
-    await $.ui.open({ id: SEATS_COMMAND, title: "Claude seats", focus: true, closeOnEscape: true });
+    await $.ui.open({ id: SEATS_COMMAND, title: "Claude and Codex seats", focus: true, closeOnEscape: true });
     return {};
   });
 
