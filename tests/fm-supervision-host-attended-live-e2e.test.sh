@@ -272,7 +272,6 @@ start_primary() {  # <lab>
     last_seen=$(printf '%s\n' "$screen" | grep -v '^[[:space:]]*$' | tail -n 6)
     [ -n "$last_seen" ] || last_seen='empty screen'
     case "$screen" in
-      *'bypass permissions on'*) break ;;
       *'Yes, I trust this folder'*) choose "$sock" "$screen" 'Yes, I trust this folder' ;;
       *'Yes, I accept'*) choose "$sock" "$screen" 'Yes, I accept' ;;
       *'external CLAUDE.md'*|*'external imports'*) choose "$sock" "$screen" 'Yes, allow external imports' ;;

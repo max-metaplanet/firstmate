@@ -145,7 +145,6 @@ run_interactive() {  # <harness> <command> [arguments...]
       *'Yes, I trust this folder'*|*'Trust all and continue'*)
         tmux -L "$SOCKET-$harness" send-keys -t "$harness" Down; sleep 0.5; tmux -L "$SOCKET-$harness" send-keys -t "$harness" Enter; sleep 3 ;;
       *'1. Yes, continue'*) tmux -L "$SOCKET-$harness" send-keys -t "$harness" Enter; sleep 3 ;;
-      *'bypass permissions on'*) break ;;
       *'Do you trust the contents of this directory'*) tmux -L "$SOCKET-$harness" send-keys -t "$harness" y; sleep 3 ;;
       *'Plan, search, build'*) break ;;
       *)
