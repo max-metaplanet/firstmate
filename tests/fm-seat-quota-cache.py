@@ -5,6 +5,7 @@ Cache aging changes persisted test evidence, never production source or clocks.
 """
 import concurrent.futures
 import datetime
+import fcntl
 import json
 import os
 from pathlib import Path
@@ -249,6 +250,57 @@ c.expect(False, "fallback=unsafe-or-missing")
 c.expect(False, "fallback=unsafe-or-missing")
 assert c.count() == 1
 print("PASS: authoritative ISO retry-after suppresses live reads for safe and unsafe/missing fallback")
+
+# A failed refresh without retry-after answers every reader already waiting on
+# the lock, with the same bounded fallback; later readers may retry.
+def burst(case):
+    with concurrent.futures.ThreadPoolExecutor(max_workers=6) as pool:
+        return list(pool.map(lambda _: case.run(QUOTA_DELAY="1"), range(6)))
+for name, last_good in [("safe", lambda c: c.age(200)),
+                        ("unsafe", lambda c: c.age(200, lambda r: r["windows"][0].update(percentRemaining=20))),
+                        ("missing", None)]:
+    for response in [failure(), "not-json"]:
+        c = Case()
+        if last_good:
+            c.expect(True, "source=live")
+            last_good(c)
+        before = c.count()
+        c.set(response) if isinstance(response, dict) else c.response.write_text(response)
+        results = burst(c)
+        assert c.count() == before + 1, (name, c.calls.read_text())
+        safe = name == "safe"
+        assert all((r.returncode == 0) == safe for r in results), [r.stdout for r in results]
+        source = "source=last-good-fallback" if safe else "fallback=unsafe-or-missing"
+        assert all(source in r.stdout for r in results), [r.stdout for r in results]
+        assert sum("failure=live" in r.stdout for r in results) == 1
+        assert sum("failure=shared-" in r.stdout for r in results) == 5
+        c.expect(safe, "failure=live")
+        assert c.count() == before + 2
+# A reader whose lock wait expires judges published evidence without a live read.
+def held(case, allowed, text):
+    path, = case.cache.glob("*.lock")
+    with path.open("r+") as stream:
+        fcntl.flock(stream, fcntl.LOCK_EX)
+        return case.expect(allowed, text, FM_SEAT_READ_DEADLINE=str(int(time.time()) + 2))
+for age, mutate, allowed, text in [
+        (50, None, True, "source=fresh-cache"),
+        (200, None, True, "source=last-good-fallback"),
+        (200, lambda r: r["windows"][1].update(percentRemaining=20), False, "fallback=unsafe-or-missing"),
+        (910, None, False, "fallback=unsafe-or-missing")]:
+    c = Case()
+    c.expect(True, "source=live")
+    c.age(age, mutate)
+    c.set(failure())
+    out = held(c, allowed, text)
+    assert c.count() == 1
+    assert age == 50 or "failure=cache-lock-timeout" in out, out
+c = Case()
+c.expect(True, "source=live")
+path, = c.cache.glob("*.json")
+path.unlink()
+held(c, False, "failure=cache-lock-timeout")
+assert c.count() == 1
+print("PASS: concurrent failures share one attempt; lock-deadline readers use only safe published last-good evidence")
 
 for defect in ["json", "mode", "symlink", "directory-mode"]:
     c = Case()

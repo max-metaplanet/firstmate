@@ -34,6 +34,9 @@ profiles cannot fall back. A definitive auth failure retires the last good read.
 The producer's state.retryAfter is an ISO instant, not error-message text; it
 blocks all live reads by this cache until that instant, including unsafe-fallback
 holds. Producer-owned stale quota is never promoted to a fresh success.
+A failed refresh is shared with every reader that was already waiting on the
+lock, and a reader whose lock wait expires judges the published record without
+refreshing; both use only the same bounded last-good predicate or hold.
 """
 
 import datetime
@@ -222,22 +225,26 @@ def evidence(profile, bound, floor, policy):
     fd = os.open(lock, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
     with os.fdopen(fd, "r+") as stream:
         private(lock)
+        started = time.time()
         deadline = time.monotonic() + bound
-        while True:
+        locked = False
+        while not locked:
             try:
                 fcntl.flock(stream, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                break
+                locked = True
             except BlockingIOError:
                 if time.monotonic() >= deadline:
-                    return {"report": None, "note": "source=hold cache-lock-timeout"}
+                    break
                 time.sleep(0.1)
+        # Without the lock this still reads only an atomically replaced record.
         now = time.time()
         record = {"version": 1, "key": key, "good": None, "retryAt": 0}
         if path.exists() or path.is_symlink():
             private(path)
             record = json.loads(path.read_text())
             if (record.get("version") != 1 or record.get("key") != key
-                    or not number(record.get("retryAt")) or record["retryAt"] < 0):
+                    or not number(record.get("retryAt")) or record["retryAt"] < 0
+                    or not number(record.get("failedAt", 0)) or record.get("failedAt", 0) < 0):
                 raise ValueError("invalid cache record")
         good = None if token_selected else record.get("good")
         observed = instant(row(good).get("state", {}).get("refreshedAt"))
@@ -246,20 +253,31 @@ def evidence(profile, bound, floor, policy):
         note = f"age={max(0, int(age)) if age is not None else 'unknown'}s backoff={backoff}s"
         if backoff == 0 and good is not None and success(good, now):
             return {"report": good, "note": "source=fresh-cache " + note}
-        left = deadline - time.monotonic()
-        if not backoff and left <= 0:
-            return {"report": None, "note": "source=hold cache-lock-timeout"}
-        report = record.get("failure") if backoff else live(profile, max(1, math.ceil(left)), stream.fileno())
-        now = time.time()
-        if not backoff:
+        # A failure attempted while this reader waited answers the whole burst;
+        # a reader arriving after it retries, so no backoff is invented.
+        failed_at = record.get("failedAt", 0)
+        shared = (locked and not backoff and not token_selected
+                  and "failure" in record and failed_at >= started)
+        if backoff:
+            report, failure = record.get("failure"), "backoff"
+        elif shared:
+            report, failure = record["failure"], f"shared-{max(0, int(now - failed_at))}s-ago"
+        elif not locked or deadline - time.monotonic() <= 0:
+            report, failure = None, "cache-lock-timeout"
+        else:
+            report = live(profile, max(1, math.ceil(deadline - time.monotonic())), stream.fileno())
+            failure = "live"
+            now = time.time()
             retry = instant(row(report).get("state", {}).get("retryAfter"))
             record["retryAt"] = max(0, retry or 0)
             if not token_selected and success(report, now):
                 record["good"] = report
                 record.pop("failure", None)
+                record.pop("failedAt", None)
                 publish(path, record)
                 return {"report": report, "note": "source=live age=0s backoff=0s"}
             record["failure"] = report
+            record["failedAt"] = now
             # A readable current quota (including low/paid/unknown quota) replaces
             # the old evidence; only a transient failure may retain it.
             if not transient(report):
@@ -268,7 +286,8 @@ def evidence(profile, bound, floor, policy):
             publish(path, record)
         age = now - observed if observed is not None else None
         backoff = max(0, math.ceil(record["retryAt"] - now))
-        note = f"age={max(0, int(age)) if age is not None else 'unknown'}s backoff={backoff}s"
+        note = (f"age={max(0, int(age)) if age is not None else 'unknown'}s "
+                f"backoff={backoff}s failure={failure}")
         if policy == "raw":
             return {"report": report, "note": "source=producer " + note}
         if (good is not None and age is not None and 0 <= age <= 900
