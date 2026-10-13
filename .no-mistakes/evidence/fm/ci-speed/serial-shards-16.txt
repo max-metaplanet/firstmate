@@ -1,0 +1,47 @@
+### --list-lanes
+portable-parallel-1
+portable-parallel-2
+portable-serial
+portable-serial-1of16
+portable-serial-2of16
+portable-serial-3of16
+portable-serial-4of16
+portable-serial-5of16
+portable-serial-6of16
+portable-serial-7of16
+portable-serial-8of16
+portable-serial-9of16
+portable-serial-10of16
+portable-serial-11of16
+portable-serial-12of16
+portable-serial-13of16
+portable-serial-14of16
+portable-serial-15of16
+portable-serial-16of16
+real-herdr-gated
+
+### per-shard modeled minutes (from bin/fm-test-run.sh measured hints) and script count
+shard 1:        1 scripts
+shard 2:        1 scripts
+shard 3:       13 scripts
+shard 4:       14 scripts
+shard 5:       15 scripts
+shard 6:       16 scripts
+shard 7:       16 scripts
+shard 8:       17 scripts
+shard 9:       16 scripts
+shard 10:       17 scripts
+shard 11:       17 scripts
+shard 12:       17 scripts
+shard 13:       17 scripts
+shard 14:       17 scripts
+shard 15:       17 scripts
+shard 16:       16 scripts
+
+### union of 16 shards == full portable-serial lane, disjoint?
+lane=     227 union=     227 uniq=     227
+IDENTICAL
+
+### stale 9-shard lane name is refused
+fm-test-run: lane 'portable-serial-1of9' asks for 9 portable serial shards but this runner is configured for 16 (see --list-lanes)
+exit=2

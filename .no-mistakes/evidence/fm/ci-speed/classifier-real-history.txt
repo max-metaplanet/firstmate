@@ -1,0 +1,84 @@
+### This branch (base 439281ba -> HEAD), shell + workflow change
+behavior=true
+macos=true
+
+### push to main event
+behavior=true
+macos=true
+fatal: ambiguous argument 'main': unknown revision or path not in the working tree.
+Use '--' to separate paths from revisions, like this:
+'git <command> [<revision>...] -- [<file>...]'
+
+### missing base sha (fail-open)
+behavior=true
+macos=true
+
+### historical commit 17fe8029 files:
+  .no-mistakes.yaml
+  docs/configuration.md
+behavior=true
+macos=true
+
+### historical commit 71faed92 files:
+  bin/fm-lead-restart.sh
+  docs/claude-seats.md
+  tests/fm-lead-restart.test.sh
+behavior=true
+macos=true
+
+### historical commit 98805212 files:
+  bin/fm-pr-merge.sh
+  docs/architecture.md
+  tests/fm-pr-merge.test.sh
+behavior=true
+macos=true
+
+### historical commit 68c5c0c6 files:
+  bin/fm-dod-lib.sh
+  docs/configuration.md
+  tests/fm-dod-lib.test.sh
+behavior=true
+macos=true
+
+### historical commit 8c1679ad files:
+  bin/fm-seat-board.sh
+  docs/claude-seats.md
+  tests/fm-seat-board.test.sh
+behavior=true
+macos=true
+
+### historical commit 51454563 files:
+  bin/fm-spawn.sh
+  docs/configuration.md
+  tests/fm-seat.test.sh
+behavior=true
+macos=true
+
+### historical commit de6bf4c2 files:
+  bin/fm-spawn.sh
+  docs/configuration.md
+  tests/fm-seat.test.sh
+behavior=true
+macos=true
+
+### historical commit 3bbf7efe files:
+  bin/fm-spawn.sh
+  docs/claude-seats.md
+  docs/configuration.md
+  tests/fm-seat.test.sh
+behavior=true
+macos=true
+
+### historical commit 7e0e60a2 files:
+  bin/fm-teardown.sh
+  bin/fm-wake-lib.sh
+  docs/architecture.md
+  tests/fm-wake-queue.test.sh
+behavior=true
+macos=true
+
+### historical commit fef37b95 files:
+  bin/fm-classify-lib.sh
+  docs/watcher-continuity.md
+  tests/fm-watch-triage.test.sh
+behavior=true

@@ -1,0 +1,44 @@
+
+### PR scenario: docs-only prose (docs/architecture.md + README.md) -> expect behavior=false macos=false
+  M	README.md
+  M	docs/architecture.md
+behavior=false
+macos=false
+
+### PR scenario: test-read doc docs/configuration.md -> expect behavior=true macos=false
+  M	docs/configuration.md
+behavior=true
+macos=false
+
+### PR scenario: .gitignore only -> expect behavior=true macos=false
+  M	.gitignore
+behavior=true
+macos=false
+
+### PR scenario: rename out of docs/supervision-protocols -> expect behavior=true
+  A	docs/moved-out.md
+  D	docs/supervision-protocols/claude.md
+behavior=true
+macos=false
+
+### PR scenario: skill/AGENTS prose (test-read) -> expect behavior=true macos=false
+  M	skills/stow/SKILL.md
+behavior=true
+macos=false
+
+### PR scenario: shell source bin/fm-lint.sh -> expect behavior=true macos=true
+  M	bin/fm-lint.sh
+behavior=true
+macos=true
+
+### PR scenario: ci.yml -> expect behavior=true macos=true
+  M	.github/workflows/ci.yml
+behavior=true
+macos=true
+
+### docs-guard command the workflow runs on the docs-only path
+FM_TEST_END 2026-10-13T22:23:09Z tests/fm-documentation-audiences.test.sh exit=0 duration_ms=50703 gate_skip=false
+FM_TEST_SUMMARY total=1 failed=0 skipped_gate=0 duration_ms=52283
+FM_TEST_SUMMARY_FAMILY family=pure-contract-unit count=1 duration_ms=50703 failed=0
+FM_TEST_SLOWEST rank=1 script=tests/fm-documentation-audiences.test.sh duration_ms=50703
+exit=0
