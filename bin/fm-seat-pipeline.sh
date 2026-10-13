@@ -105,6 +105,9 @@ cmd_launch() {
   if ! reason=$(fm_seat_dispatch_reason "$(fm_seat_dispatch_decision "$profile")" "pipeline seat $name" "pipeline agent"); then
     die "HELD pipeline-agent launch on seat $name: $reason"
   fi
+  case "$reason" in
+    *source=fresh-cache*|*source=last-good-fallback*) printf 'pipeline Claude: %s\n' "$reason" >&2 ;;
+  esac
   [ -x "$native" ] && [ ! -d "$native" ] || die "native Claude is not executable: $native"
   # Never let a daemon's inherited worker profile determine the actual login.
   if [ -n "$profile" ]; then

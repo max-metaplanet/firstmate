@@ -3447,6 +3447,10 @@ test_pipeline_move_keeps_a_healthy_seat_with_a_malformed_setting() {
   pass "pipeline-move rotates only a resting, excluded or missing seat and reports any other hold"
 }
 
+# Exercise the real dispatch shell API with isolated quota documents and cache
+# artifacts; the Python fixture never imports implementation modules.
+python3 "$ROOT/tests/fm-seat-quota-cache.py" "$ROOT" "$TMP_ROOT" || fail "shared dispatch quota cache regressions"
+
 test_pipeline_install_check_and_streams
 test_pipeline_rereads_active_and_validates_override
 test_pipeline_default_seat_matches_worker_profile

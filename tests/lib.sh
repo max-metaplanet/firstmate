@@ -287,6 +287,11 @@ FM_PR_MERGE_LINE_ROOT=${FM_PR_MERGE_LINE_ROOT:-$FM_TEST_TMPDIR/fm-test-pr-merge-
 export FM_PR_MERGE_LINE_ROOT
 printf '%s\n' "$FM_PR_MERGE_LINE_ROOT" >> "$FM_TEST_CLEANUP_REGISTRY"
 
+# Launch quota caches are machine-shared in production; fixture evidence must
+# never read or write the operator's cache or collide with another test suite.
+FM_SEAT_QUOTA_CACHE_ROOT=$(fm_test_tmproot fm-test-seat-quota-cache)
+export FM_SEAT_QUOTA_CACHE_ROOT
+
 trap fm_test_cleanup EXIT
 trap 'fm_test_cleanup; exit 130' INT
 trap 'fm_test_cleanup; exit 143' TERM

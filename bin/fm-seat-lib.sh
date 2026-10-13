@@ -555,9 +555,9 @@ fm_seat_memo_key() {
 }
 
 # fm_seat_quota_read <config-dir>
-# The one bounded quota-axi call every seat probe and quota read makes, printed
-# raw. Returns 1 when quota-axi is missing, no time is left, or the bound was
-# hit, which every caller treats as no verdict.
+# Shared fresh quota evidence for every seat probe and quota read, printed
+# with the unchanged producer schema. A failed cache or bounded live read
+# returns 1, which every caller treats as no verdict.
 #
 # The exit status of quota-axi is otherwise deliberately ignored: an unavailable
 # provider still prints the report that says so, and that report is what
@@ -566,11 +566,12 @@ fm_seat_memo_key() {
 # THE PER-PASS MEMO. With FM_SEAT_READ_MEMO_DIR set, the first read of a profile
 # is stored there and every later read of the SAME profile in that pass reuses
 # it, including the reads a `switch` run as a child makes, because the variable
-# is exported. One automatic pass therefore makes exactly one quota call per
+# is exported. One automatic pass therefore makes at most one quota call per
 # seat however many questions it asks about it. A read that gave no verdict is
 # memoed as such, so a seat whose store is slow or unreachable cannot spend the
 # pass's whole budget twice. Only a pass sets the memo; no long-lived caller
-# does, so nothing outside one pass ever reads a figure it did not take itself.
+# does; the shared profile cache below additionally coalesces fresh reads across
+# processes and honors endpoint backoff.
 fm_seat_quota_read() {
   local dir=${1-} bound out memo=''
   if [ -n "${FM_SEAT_READ_MEMO_DIR:-}" ] && [ -d "${FM_SEAT_READ_MEMO_DIR:-}" ]; then
@@ -581,15 +582,26 @@ fm_seat_quota_read() {
       return 0
     fi
   fi
+  bound=$(fm_seat_read_bound) || return 1
+  out=$(python3 "${BASH_SOURCE[0]%/*}/fm-seat-quota-cache.py" "$dir" "$bound" 0 raw) || return 1
+  out=$(printf '%s\n' "$out" | jq -ce '.report // empty') || {
+    [ -z "$memo" ] || : > "$memo.fail" 2>/dev/null || true
+    return 1
+  }
+  [ -z "$memo" ] || printf '%s\n' "$out" > "$memo" 2>/dev/null || true
+  printf '%s\n' "$out"
+}
+
+# Uncached transport, called only by the cache's locked refresh. Keep the
+# no-credential-refresh boundary and bounded quota-axi invocation here.
+fm_seat_quota_live() {
+  local dir=${1-} bound out rc
   command -v quota-axi >/dev/null 2>&1 || return 1
   bound=$(fm_seat_read_bound) || return 1
   out=$(fm_run_timed "$bound" env CLAUDE_CONFIG_DIR="$dir" \
     quota-axi --provider claude --no-credential-refresh --full --json 2>/dev/null </dev/null)
-  if fm_timed_out "$?"; then
-    [ -z "$memo" ] || : > "$memo.fail" 2>/dev/null || true
-    return 1
-  fi
-  [ -z "$memo" ] || printf '%s\n' "$out" > "$memo" 2>/dev/null || true
+  rc=$?
+  fm_timed_out "$rc" && return 1
   printf '%s\n' "$out"
 }
 
@@ -1123,14 +1135,27 @@ fm_seat_session_share_observe() {
 # below it rather than waiting for the plan quota to reach nothing.
 # An explicit profile applies the same policy to a pipeline override; omitting
 # it keeps every worker call on the active seat's resolved profile.
+# Shared cache mechanics and the conservative last-good predicate
+# are owned by bin/fm-seat-quota-cache.py; public quota JSON remains untouched.
+# The optional ` | ...` suffix carries provenance without changing reason tokens.
 fm_seat_dispatch_decision() {
-  local policy cap out remaining spent floor profile
+  local policy profile evidence note decision bound floor
   profile=${1-$(fm_seat_spawn_config_dir)}
   policy=$(fm_seat_extra_usage_policy) || { printf 'allow policy-unset\n'; return 0; }
-  out=$(fm_seat_quota_json "$profile") || {
-    printf 'hold quota-unreadable\n'
+  bound=$(fm_seat_read_bound) || { printf 'hold quota-unreadable\n'; return 0; }
+  floor=$(fm_seat_floor) || floor=0
+  evidence=$(python3 "${BASH_SOURCE[0]%/*}/fm-seat-quota-cache.py" "$profile" "$bound" "$floor" "$policy") || {
+    printf 'hold quota-unreadable | source=hold cache-helper-unavailable\n'
     return 0
   }
+  note=$(printf '%s\n' "$evidence" | jq -r '.note')
+  decision=$(fm_seat_dispatch_from "$(printf '%s\n' "$evidence" | jq -c '.report')" "$policy")
+  printf '%s | %s\n' "$decision" "$note"
+}
+
+# Apply the existing launch policy to selected evidence, independently of cache I/O.
+fm_seat_dispatch_from() {
+  local policy=$2 cap out=$1 remaining spent floor
   remaining=$(fm_seat_remaining_from "$out") || {
     # A lapsed token reads no quota until a launch renews it, so holding on it
     # would hold every spawn for good. The field is the one fm_seat_logged_in
@@ -1188,7 +1213,9 @@ fm_seat_dispatch_decision() {
 # its selected seat and itself instead.
 fm_seat_dispatch_reason() {
   local verb reason a b seat=${2:-the active Claude seat} who=${3:-worker}
-  read -r verb reason a b <<< "${1-}"
+  local line=${1-} provenance=''
+  case "$line" in *' | '*) provenance=${line#* | }; line=${line%% | *} ;; esac
+  read -r verb reason a b <<< "$line"
   if [ "$verb" = allow ]; then
     case "$reason" in
       policy-unset)
@@ -1202,6 +1229,7 @@ fm_seat_dispatch_reason() {
       *)
         printf 'the extra-usage policy allows new Claude dispatch\n' ;;
     esac
+    [ -z "$provenance" ] || printf 'quota evidence: %s\n' "$provenance"
     return 0
   fi
   case "$reason" in
@@ -1219,5 +1247,6 @@ fm_seat_dispatch_reason() {
       printf 'the extra-usage policy holds new Claude dispatch\n' ;;
   esac
   printf 'this holds only work not yet started; a %s already running keeps its own seat and can still draw extra usage mid-task\n' "$who"
+  [ -z "$provenance" ] || printf 'quota evidence: %s\n' "$provenance"
   return 1
 }
