@@ -52,7 +52,6 @@ jobs:
           FM_CI_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -eu
-          bin/fm-ci-change-scope.sh --paths
           bin/fm-ci-change-scope.sh | tee -a "$GITHUB_OUTPUT"
 
   lint:

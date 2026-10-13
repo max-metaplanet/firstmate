@@ -10,7 +10,6 @@
 #
 # Usage:
 #   bin/fm-ci-change-scope.sh            classify and print both gate outputs
-#   bin/fm-ci-change-scope.sh --paths    print the classified changed paths
 #   bin/fm-ci-change-scope.sh --help     print this header
 #
 # Inputs, all optional and read from the environment:
@@ -47,7 +46,13 @@
 # Only *.md under docs/ is inert, so every docs/ JSON stays behavior-relevant,
 # including docs/documentation-audiences.json and docs/fm-test-isolation-proof.json.
 # AGENTS.md, CLAUDE.md, CONTRIBUTING.md, .agents/, skills/ and .github/ are all
-# behavior-relevant, matching the same changed-file map.
+# behavior-relevant, matching the same changed-file map. .gitignore is
+# behavior-relevant too: tests/fm-gitignore-config.test.sh runs check-ignore
+# against the repository and copies its .gitignore into a scratch repo.
+#
+# The diff runs with --no-renames so a rename reports both its source and its
+# destination. With rename detection on, git prints only the destination, and a
+# file moved out of a path a test reads would be classified by where it landed.
 #
 # Adding a test that reads a prose path means adding that path to the exception
 # list here. tests/fm-ci-change-scope.test.sh pins both verdicts, and ci.yml's
@@ -61,7 +66,7 @@ case "${1:-}" in
     awk 'NR == 1 { next } /^#/ { sub(/^# ?/, ""); print; next } { exit }' "$0"
     exit 0
     ;;
-  --paths | '') ;;
+  '') ;;
   *)
     printf 'fm-ci-change-scope.sh: unknown argument: %s\n' "$1" >&2
     exit 2
@@ -87,7 +92,7 @@ changed_paths() {
   # Compare against the merge base so commits that only arrived on the base
   # branch are never counted as this pull request's changes.
   merge_base=$(git merge-base "$base" "$head" 2>/dev/null) || merge_base=$base
-  git diff --name-only "$merge_base" "$head" 2>/dev/null || return 1
+  git diff --no-renames --name-only "$merge_base" "$head" 2>/dev/null || return 1
 }
 
 # True when the path cannot change the stock macOS Bash job's verdict.
@@ -112,17 +117,13 @@ behavior_inert() {
     # A case glob's * spans /, so this covers nested pages such as
     # docs/verification/agy.md as well as top-level ones.
     docs/*.md) return 0 ;;
-    README.md | VISION.md | GROK_BOT.md | LICENSE | .gitignore | .greptile*) return 0 ;;
+    README.md | VISION.md | GROK_BOT.md | LICENSE | .greptile*) return 0 ;;
     assets/*) return 0 ;;
     *) return 1 ;;
   esac
 }
 
 paths=$(changed_paths) || paths=
-if [ "${1:-}" = --paths ]; then
-  [ -z "$paths" ] || printf '%s\n' "$paths"
-  exit 0
-fi
 
 behavior=true
 macos=true

@@ -71,6 +71,7 @@ test_prose_a_test_reads_stays_behavior_triggering() {
   assert_gates true false 'the isolation proof evidence' docs/fm-test-isolation-proof.json
   assert_gates true false 'the documentation audience inventory' \
     docs/documentation-audiences.json
+  assert_gates true false 'the ignore rules a test checks' .gitignore
   pass "prose and data a test reads keeps the behavior gate on"
 }
 
@@ -80,6 +81,27 @@ test_one_relevant_path_turns_the_gate_back_on() {
   assert_gates true false 'prose beside a skill change' \
     docs/architecture.md .agents/skills/bearings/SKILL.md
   pass "a single relevant path turns its gate back on for the whole change set"
+}
+
+# A rename out of a path a test reads must be classified by its source as well
+# as its destination, so this drives the real git diff rather than a path list.
+test_rename_out_of_a_read_path_keeps_the_behavior_gate_on() {
+  local repo base out
+  repo="$TMP_ROOT/rename-repo"
+  mkdir -p "$repo/bin" "$repo/docs/supervision-protocols"
+  cp "$SCOPE" "$repo/bin/fm-ci-change-scope.sh"
+  printf 'protocol\n' >"$repo/docs/supervision-protocols/a.md"
+  git -C "$repo" init -q
+  git -C "$repo" add -A
+  git -C "$repo" -c user.name=t -c user.email=t@t commit -qm base
+  base=$(git -C "$repo" rev-parse HEAD)
+  git -C "$repo" mv docs/supervision-protocols/a.md docs/a.md
+  git -C "$repo" -c user.name=t -c user.email=t@t commit -qm rename
+  out=$(FM_CI_EVENT=pull_request FM_CI_BASE_SHA="$base" FM_CI_HEAD_SHA=HEAD \
+    bash "$repo/bin/fm-ci-change-scope.sh") || fail "classifying a rename failed"
+  assert_contains "$out" 'behavior=true' \
+    "a rename out of a test-read path must keep the behavior gate on"$'\n'"$out"
+  pass "a rename out of a test-read path keeps the behavior gate on"
 }
 
 # Coverage beats speed: anything the allowlists do not name is relevant.
@@ -130,6 +152,7 @@ test_shell_changes_turn_both_gates_on
 test_non_shell_test_inputs_run_the_behavior_suites_without_macos
 test_prose_a_test_reads_stays_behavior_triggering
 test_one_relevant_path_turns_the_gate_back_on
+test_rename_out_of_a_read_path_keeps_the_behavior_gate_on
 test_unrecognized_paths_keep_both_gates_on
 test_push_events_and_unusable_input_keep_both_gates_on
 test_unknown_argument_is_refused
