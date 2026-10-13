@@ -1,0 +1,16 @@
+## Routing parity: base cf18910a vs head 3244432 (real Jev API; provenance stripped from head)
+[brief] head: {"applied_rule":"rule_2","auto_apply":false,"chosen":{"effort":"low","harness":"claude","model":"haiku"},"forced":null,"rule":"rule_2","status":"clear"}
+[brief] base: {"applied_rule":"rule_2","auto_apply":false,"chosen":{"effort":"low","harness":"claude","model":"haiku"},"forced":null,"rule":"rule_2","status":"clear"}
+[brief] IDENTICAL
+[brief] head provenance: {"rubric_sha256":"f0bbf3224e4f1e55b990297e675e105665ab3db1a61283672f76626e75e824e0","config_sha256":"55a644e7ba8e2cb7e1aa7d1d6fcfdcbaf066de0f28a7ba2dc217f92c9f0b7451","policy_sha256":null,"source_revision":"3244432749a4032b8335422f2b9859b744ec7e26","requested_model":"jev-latest","resolved_model":"jev-1.13.0","probability_summary":{"rule":{"probabilities":{"rule_1":0.0,"rule_2":1.0,"rule_3":0.0,"default":0.0}}}}
+[brief] base has provenance key: false
+[news] head: {"applied_rule":"rule_1","auto_apply":false,"chosen":null,"forced":null,"rule":"rule_1","status":"escalate"}
+[news] base: {"applied_rule":"rule_1","auto_apply":false,"chosen":null,"forced":null,"rule":"rule_1","status":"escalate"}
+[news] IDENTICAL
+[news] head provenance: {"rubric_sha256":"f0bbf3224e4f1e55b990297e675e105665ab3db1a61283672f76626e75e824e0","config_sha256":"55a644e7ba8e2cb7e1aa7d1d6fcfdcbaf066de0f28a7ba2dc217f92c9f0b7451","policy_sha256":null,"source_revision":"3244432749a4032b8335422f2b9859b744ec7e26","requested_model":"jev-latest","resolved_model":"jev-1.13.0","probability_summary":{"rule":{"probabilities":{"rule_1":1.0,"rule_2":0.0,"rule_3":0.0,"default":0.0}}}}
+[news] base has provenance key: false
+[forced] head: {"applied_rule":"rule_3","auto_apply":false,"chosen":{"effort":"high","harness":"codex","model":"gpt-5.5"},"forced":null,"rule":"rule_3","status":"clear"}
+[forced] base: {"applied_rule":"rule_3","auto_apply":false,"chosen":{"effort":"high","harness":"codex","model":"gpt-5.5"},"forced":null,"rule":"rule_3","status":"clear"}
+[forced] IDENTICAL
+[forced] head provenance: {"rubric_sha256":"f0bbf3224e4f1e55b990297e675e105665ab3db1a61283672f76626e75e824e0","config_sha256":"55a644e7ba8e2cb7e1aa7d1d6fcfdcbaf066de0f28a7ba2dc217f92c9f0b7451","policy_sha256":null,"source_revision":"3244432749a4032b8335422f2b9859b744ec7e26","requested_model":null,"resolved_model":null,"probability_summary":null}
+[forced] base has provenance key: false

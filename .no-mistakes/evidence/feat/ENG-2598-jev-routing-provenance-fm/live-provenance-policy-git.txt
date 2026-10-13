@@ -1,0 +1,12 @@
+## policy_sha256 from a real never-send list (forced rule => no network)
+shasum of file: e4901f10fd27c8f315ab97a9f5dff41892dcf0cb54a1cbfb22b7db7148d58a40
+provenance.policy_sha256: e4901f10fd27c8f315ab97a9f5dff41892dcf0cb54a1cbfb22b7db7148d58a40
+
+## source_revision read-only Git: resolver copy inside a scratch git checkout
+HEAD=3490548624c1586b517a55bb1313e4b5f1eda4ae
+with foreign index.lock held + stale stat: source_revision=3490548624c1586b517a55bb1313e4b5f1eda4ae
+index mtime unchanged: yes
+foreign index.lock still present & untouched: yes
+after tracked edit: 3490548624c1586b517a55bb1313e4b5f1eda4ae-dirty
+untracked file only: 3490548624c1586b517a55bb1313e4b5f1eda4ae
+outside any git checkout: null

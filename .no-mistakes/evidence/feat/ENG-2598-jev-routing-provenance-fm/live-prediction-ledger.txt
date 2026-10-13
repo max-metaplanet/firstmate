@@ -1,0 +1,8 @@
+## Prediction ledger lines written by fm_dispatch_predict_log (the function fm-spawn.sh calls) from the live resolver JSON
+ledger: data/dispatch-predictions.jsonl
+{"task_id":"task-live-clear","resolver_status":"clear","requested_model":"jev-latest","resolved_model":"jev-1.13.0","rubric_sha256":"f0bbf3224e4f","config_sha256":"55a644e7ba8e","policy_sha256":null,"source_revision":"3244432749a4032b8335422f2b9859b744ec7e26","probability_summary":{"rule":{"probabilities":{"rule_1":0.0,"rule_2":1.0,"rule_3":0.0,"default":0.0}}},"decided_by":"<absent>"}
+{"task_id":"task-live-forced","resolver_status":"clear","requested_model":null,"resolved_model":null,"rubric_sha256":"f0bbf3224e4f","config_sha256":"55a644e7ba8e","policy_sha256":null,"source_revision":"3244432749a4032b8335422f2b9859b744ec7e26","probability_summary":null,"decided_by":"<absent>"}
+{"task_id":"task-live-error","resolver_status":"error","requested_model":"jev-latest","resolved_model":null,"rubric_sha256":"x","config_sha256":"null","policy_sha256":null,"source_revision":null,"probability_summary":null,"decided_by":"<absent>"}
+{"task_id":"task-not-run","resolver_status":"not-run","requested_model":null,"resolved_model":null,"rubric_sha256":"null","config_sha256":"null","policy_sha256":null,"source_revision":null,"probability_summary":null,"decided_by":"<absent>"}
+{"task_id":"task-adversarial","resolver_status":"clear","requested_model":"jev-latest","resolved_model":null,"rubric_sha256":"null","config_sha256":"null","policy_sha256":null,"source_revision":null,"probability_summary":{"rule":{"probabilities":{"rule_1":0.4}}},"decided_by":"<absent>"}
+brief text leaked into ledger: 0

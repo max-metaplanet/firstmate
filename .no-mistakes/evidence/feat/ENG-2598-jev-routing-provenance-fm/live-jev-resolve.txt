@@ -1,0 +1,89 @@
+$ fm-dispatch-resolve.sh $LAB/brief.md --project pager --json   (real Jev API, lab FM_HOME, docs/examples rules)
+{
+  "model": "jev-1.13.0",
+  "latency_ms": 253,
+  "tokens": {
+    "input_tokens": 494,
+    "output_tokens": 53
+  },
+  "rule": "rule_2",
+  "rule_when": "The task is a trivial mechanical edit such as a rote rename,",
+  "confidence": 1.0,
+  "probabilities": {
+    "rule_1": 0.0,
+    "rule_2": 1.0,
+    "rule_3": 0.0,
+    "default": 0.0
+  },
+  "applied_rule": "rule_2",
+  "auto_apply": false,
+  "provenance": {
+    "rubric_sha256": "f0bbf3224e4f1e55b990297e675e105665ab3db1a61283672f76626e75e824e0",
+    "config_sha256": "55a644e7ba8e2cb7e1aa7d1d6fcfdcbaf066de0f28a7ba2dc217f92c9f0b7451",
+    "policy_sha256": null,
+    "source_revision": "3244432749a4032b8335422f2b9859b744ec7e26",
+    "requested_model": "jev-latest",
+    "resolved_model": "jev-1.13.0",
+    "probability_summary": {
+      "rule": {
+        "probabilities": {
+          "rule_1": 0.0,
+          "rule_2": 1.0,
+          "rule_3": 0.0,
+          "default": 0.0
+        }
+      }
+    }
+  },
+  "status": "clear",
+  "note": "rule matched",
+  "candidates": [
+    {
+      "profile": {
+        "harness": "claude",
+        "model": "haiku",
+        "effort": "low"
+      },
+      "provider": "claude",
+      "bounds": [
+        {
+          "scope": "all_models",
+          "status": "known",
+          "pct": 74,
+          "runway": "through_reset",
+          "spendPriority": 0.6778
+        }
+      ],
+      "scope": "all_models",
+      "pct": 74,
+      "spendPriority": 0.6778,
+      "runway": "through_reset",
+      "eligible": true,
+      "reason": "ok"
+    }
+  ],
+  "chosen": {
+    "profile": {
+      "harness": "claude",
+      "model": "haiku",
+      "effort": "low"
+    },
+    "provider": "claude",
+    "bounds": [
+      {
+        "scope": "all_models",
+        "status": "known",
+        "pct": 74,
+        "runway": "through_reset",
+        "spendPriority": 0.6778
+      }
+    ],
+    "scope": "all_models",
+    "pct": 74,
+    "spendPriority": 0.6778,
+    "runway": "through_reset",
+    "eligible": true,
+    "reason": "ok"
+  }
+}
+rc=0
