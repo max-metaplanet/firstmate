@@ -244,6 +244,9 @@ assert_equals error "$(jq -r .status <<<"$out")" "transport failure keeps error 
 assert_equals jev-latest "$(jq -r .provenance.requested_model <<<"$out")" "failed request keeps request alias"
 assert_equals null "$(jq -r .provenance.resolved_model <<<"$out")" "HTTP error is not a model answer"
 assert_equals null "$(jq -r .provenance.probability_summary <<<"$out")" "HTTP error has no invented probabilities"
+fm_dispatch_predict_log "$TMP_ROOT/provenance-data" task-http-error "$out" error false '' '' ''
+line=$(tail -n 1 "$TMP_ROOT/provenance-data/dispatch-predictions.jsonl")
+jq -e '.requested_model == "jev-latest" and .resolved_model == null and .probability_summary == null and (has("decided_by") | not)' <<<"$line" >/dev/null || fail "failed request log must not claim a Jev decision: $line"
 printf '%s\n' '{not json' > "$RESPONSE"
 TYPESAFE_API_KEY=$KEY run code out err "$BRIEF" --json
 assert_equals error "$(jq -r .status <<<"$out")" "malformed response remains error"
@@ -1061,7 +1064,7 @@ assert_equals path-forced "$(jq -r .decided_by <<<"$out")" "JSON keeps determini
 jq -e '.provenance | .requested_model == null and .resolved_model == null and .probability_summary == null and (.rubric_sha256 | test("^[a-f0-9]{64}$"))' <<<"$out" >/dev/null || fail "forced provenance invents a model answer or loses rubric"
 fm_dispatch_predict_log "$TMP_ROOT/provenance-data" task-forced "$out" error false '' '' ''
 line=$(tail -n 1 "$TMP_ROOT/provenance-data/dispatch-predictions.jsonl")
-assert_equals path-forced "$(jq -r .decided_by <<<"$line")" "producer keeps forced origin"
+jq -e 'has("decided_by") | not' <<<"$line" >/dev/null || fail "prediction log adds no decided_by field"
 assert_equals null "$(jq -r .probability_summary <<<"$line")" "producer never fabricates forced probabilities"
 pass "a declared deployment path forces the careful rule in code, with no model call"
 

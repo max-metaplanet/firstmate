@@ -39,7 +39,6 @@
 #                   or null outside a Git checkout
 #   probability_summary {rule:{probabilities:{declared option: probability}}}
 #                   for a validated answer; null when no valid answer exists
-#   decided_by      jev or path-forced when known, otherwise null
 # Resolver JSON carries these under provenance; this file owns the log schema.
 # Hashes are evidence identifiers, not copies of the rubric or configuration.
 # No brief text, captain's intent, or secrets are recorded; <resolver-json>
@@ -73,7 +72,7 @@ fm_dispatch_predict_provenance() { # <rules-snapshot> <questions-json> <model> <
     policy_hash=$(fm_dispatch_predict_sha256 < "$7")
   fi
   if [ "$top" = "$source_root" ] && revision=$(git -C "$source_root" rev-parse HEAD 2>/dev/null); then
-    if dirty=$(git -C "$source_root" status --porcelain --untracked-files=no 2>/dev/null); then
+    if dirty=$(GIT_OPTIONAL_LOCKS=0 git -C "$source_root" status --porcelain --untracked-files=no 2>/dev/null); then
       [ -z "$dirty" ] || revision="$revision-dirty"
     else revision=''; fi
   else revision=''; fi
@@ -116,8 +115,6 @@ fm_dispatch_predict_log() {
           select((.key | test("^(rule_[1-9][0-9]*|default)$")) and
                  (.value | type) == "number" and .value >= 0 and .value <= 1)))}}
         else null end),
-      decided_by: (if $r.decided_by == "path-forced" then "path-forced"
-                   elif $p.requested_model != null then "jev" else null end),
       ts: $ts,
       task_id: $task_id,
       resolver_status: (if ($r | type) == "object" then ($r.status // $fallback_status) else $fallback_status end),
