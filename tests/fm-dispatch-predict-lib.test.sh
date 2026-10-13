@@ -131,6 +131,49 @@ test_repeated_calls_append_one_line_each() {
   pass "every call appends exactly one new line, never replacing the ledger"
 }
 
+test_provenance_unknowns_and_safe_summary() {
+  local data line status
+  data="$TMP_ROOT/provenance/data"
+  for status in off not-run error no-config; do
+    fm_dispatch_predict_log "$data" task-unknown '' "$status" false '' '' ''
+    line=$(last_line "$data")
+    jq -e '.requested_model == null and .resolved_model == null and .rubric_sha256 == null and .config_sha256 == null and .policy_sha256 == null and .source_revision == null and .probability_summary == null and (has("decided_by") | not)' <<<"$line" >/dev/null || fail "missing provenance must remain unknown"
+  done
+  fm_dispatch_predict_log "$data" task-malformed '{not json' error false '' '' ''
+  fm_dispatch_predict_log "$data" task-scalar '[1,2]' error false '' '' ''
+  jq -e '.probability_summary == null and .resolved_model == null' <<<"$(last_line "$data")" >/dev/null || fail "malformed JSON fabricated evidence"
+  fm_dispatch_predict_log "$data" task-summary \
+    '{"status":"clear","model":"do-not-infer","provenance":{"requested_model":"jev-latest","probability_summary":{"rule":{"probabilities":{"rule_1":0.7,"default":0.3,"private brief text":1,"rule_2":-1,"rule_3":"secret"}}}}}' \
+    error false '' '' ''
+  line=$(last_line "$data")
+  jq -e '.resolved_model == null and .probability_summary == {rule:{probabilities:{rule_1:0.7,default:0.3}}}' <<<"$line" >/dev/null || fail "summary must filter unsafe labels and unbounded values"
+  pass "unknown provenance stays explicit and probability summary excludes arbitrary text"
+}
+
+test_source_revision_inspection_leaves_index_untouched() {
+  local repo rules prov before after
+  repo="$TMP_ROOT/readonly-git/repo"
+  mkdir -p "$repo"
+  git -C "$repo" init -q
+  printf 'one\n' > "$repo/tracked"
+  git -C "$repo" add tracked
+  git -C "$repo" -c user.name=t -c user.email=t@t commit -qm init
+  touch -t 203001010000 "$repo/tracked"
+  before=$(shasum "$repo/.git/index")
+  rules="$TMP_ROOT/readonly-git/rules.json"
+  printf '{}\n' > "$rules"
+  prov=$(fm_dispatch_predict_provenance "$rules" '[]' jev-latest base 10 0.8 "$TMP_ROOT/none" "$repo")
+  after=$(shasum "$repo/.git/index")
+  [ "$before" = "$after" ] || fail "source revision lookup rewrote the git index"
+  jq -e --arg head "$(git -C "$repo" rev-parse HEAD)" '.source_revision == $head' <<<"$prov" >/dev/null || fail "stat-only change must stay clean: $prov"
+  printf 'two\n' > "$repo/tracked"
+  prov=$(fm_dispatch_predict_provenance "$rules" '[]' jev-latest base 10 0.8 "$TMP_ROOT/none" "$repo")
+  jq -e --arg head "$(git -C "$repo" rev-parse HEAD)" '.source_revision == ($head + "-dirty")' <<<"$prov" >/dev/null || fail "tracked edit must mark dirty: $prov"
+  pass "source revision lookup is read-only and keeps tracked dirty semantics"
+}
+
+test_provenance_unknowns_and_safe_summary
+test_source_revision_inspection_leaves_index_untouched
 test_clear_result_records_chosen_and_used_profiles
 test_non_clear_result_records_null_chosen_and_false_applied
 test_empty_or_off_resolver_output_logs_as_off

@@ -12,7 +12,8 @@
 #   rule's profiles. It never launches or moves a worker.
 # --json emits the resolution object instead of the text block; off remains
 #   silent, and configuration errors retain exit 2. The chosen.profile object
-#   exists only for a clear result.
+#   exists only for a clear result. Additive provenance is carried under
+#   provenance; bin/fm-dispatch-predict-lib.sh owns its prediction log schema.
 #
 # Opt-in gate: TYPESAFE_API_KEY non-empty in this process environment, else a
 #   TYPESAFE_API_KEY= line in $FM_HOME/.env read with fmx_env_get, the same
@@ -131,6 +132,10 @@ CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
 # shellcheck source=bin/fm-seat-lib.sh
 . "$SCRIPT_DIR/fm-seat-lib.sh"
 
+# shellcheck source=bin/fm-dispatch-predict-lib.sh
+. "$SCRIPT_DIR/fm-dispatch-predict-lib.sh"
+PROVENANCE='{}'
+
 CONFIDENCE_FLOOR=0.6
 TS_MODEL=jev-latest
 TS_BASE=https://api.typesafe.ai
@@ -140,7 +145,7 @@ DEFAULT_WHEN="No listed rule applies to this task."
 die() { printf 'error: %s\n' "$1" >&2; exit 2; }
 no_rules() {
   if [ "$JSON_OUTPUT" = 1 ]; then
-    printf '%s\n' '{"status":"escalate","reason":"no rules to match"}'
+    printf '{"status":"escalate","reason":"no rules to match","provenance":%s}\n' "$PROVENANCE"
   else
     printf 'dispatch-resolve:\n  status: escalate\n  reason: no rules to match\n'
   fi
@@ -287,12 +292,22 @@ emit_error() {
   local reason=$1
   echo "dispatch-resolve: error ($reason)" >&2
   if [ "$JSON_OUTPUT" = 1 ]; then
-    jq -nc --arg reason "$reason" '{status: "error", reason: $reason}'
+    jq -nc --arg reason "$reason" --argjson provenance "$PROVENANCE" '{status: "error", reason: $reason, provenance: $provenance}'
   else
     printf 'dispatch-resolve:\n  status: error\n  reason: %s\n' "$reason"
   fi
   exit 0
 }
+
+# Build the rubric independently of task state so deterministic decisions carry
+# the same evidence identifiers without sending a request.
+QUESTIONS=$(jq -nc --arg none_criterion "$DEFAULT_WHEN" --slurpfile rules "$RULES" '
+  ($rules[0].rules // [] | to_entries | map({key: ("rule_" + ((.key + 1) | tostring)), value: .value.when}) | from_entries) as $criteria |
+  {rule: {type: "choice",
+    instructions: "Which ONE dispatch rule best fits `task` (read `task.brief` and `task.project`)? Each option is the rule'"'"'s own matching condition; pick `default` when no rule'"'"'s condition is met, including when a rule'"'"'s own exemption text excludes this task.",
+    criteria: ($criteria + {default: $none_criterion})}}')
+PROVENANCE=$(fm_dispatch_predict_provenance "$RULES" "$QUESTIONS" "$TS_MODEL" "$TS_BASE" \
+  "$TS_TIMEOUT" "$CONFIDENCE_FLOOR" "$NEVER_SEND_PATH" "$SCRIPT_DIR/..")
 
 if [ "$RULE_COUNT" -eq 0 ]; then
   no_rules
@@ -433,21 +448,10 @@ LAT_MS=null
 if [ "$FORCED" = null ]; then
   command -v curl >/dev/null 2>&1 || emit_error "curl not installed"
   REQUEST=$(jq -n --rawfile brief "$TASK_TEXT" --arg project "$PROJECT" --arg model "$TS_MODEL" \
-    --arg none_criterion "$DEFAULT_WHEN" --slurpfile rules "$RULES" '
-    ($rules[0]) as $cfg |
-    ($cfg.rules | to_entries | map({key: ("rule_" + ((.key + 1) | tostring)), value: .value.when}) | from_entries) as $criteria |
-    {
-      model: $model,
-      state: {task: {project: $project, brief: $brief}},
-      questions: {
-        rule: {
-          type: "choice",
-          instructions: "Which ONE dispatch rule best fits `task` (read `task.brief` and `task.project`)? Each option is the rule'"'"'s own matching condition; pick `default` when no rule'"'"'s condition is met, including when a rule'"'"'s own exemption text excludes this task.",
-          criteria: ($criteria + {default: $none_criterion})
-        }
-      }
-    }')
+    --argjson questions "$QUESTIONS" '
+    {model: $model, state: {task: {project: $project, brief: $brief}}, questions: $questions}')
   never_send_check
+  PROVENANCE=$(jq -c --arg model "$TS_MODEL" '.requested_model = $model' <<<"$PROVENANCE")
   T0=$(fm_timing_now_ms)
   HTTP=$(printf '%s' "$REQUEST" | curl -sS --max-time "$TS_TIMEOUT" -o "$RESP_FILE" -w '%{http_code}' \
     -X POST "$TS_BASE/v1/systemone" -H 'Content-Type: application/json' \
@@ -470,6 +474,10 @@ if [ "$FORCED" = null ]; then
        (.usage.input_tokens | type) == "number" and
        (.usage.output_tokens | type) == "number"))' \
   "$RESP_FILE" >/dev/null 2>&1 || emit_error "response is not a rule Choice answer"
+  PROVENANCE=$(jq -nc --argjson provenance "$PROVENANCE" --slurpfile resp "$RESP_FILE" '
+    $resp[0] as $r | $provenance + {
+      resolved_model: (if ($r.model | type) == "string" and ($r.model | length) > 0 then $r.model else null end),
+      probability_summary: {rule: {probabilities: $r.answers.rule.probabilities}}}')
 else
   printf 'null\n' > "$RESP_FILE"
 fi
@@ -503,7 +511,7 @@ fi
 
 # ---- resolution: declared gates + quota evidence + argmax, all in jq ------------
 RESULT=$(jq -n --arg floor "$CONFIDENCE_FLOOR" --argjson lat "$LAT_MS" --arg none_criterion "$DEFAULT_WHEN" --argjson pmap "$PMAP" \
-  --argjson forced "$FORCED" --arg seat_hold "$SEAT_HOLD" --argjson codex_alternative "$CODEX_ALTERNATIVE" \
+  --argjson provenance "$PROVENANCE" --argjson forced "$FORCED" --arg seat_hold "$SEAT_HOLD" --argjson codex_alternative "$CODEX_ALTERNATIVE" \
   --slurpfile resp "$RESP_FILE" --slurpfile rules "$RULES" --slurpfile quota "$QUOTA" "$FM_QUOTA_ROW_JQ"'
   ($resp[0]) as $r | ($rules[0]) as $cfg | ($quota[0]) as $q | ($r.answers.rule) as $a |
   def profiles($v): if ($v | type) == "array" then $v elif ($v | type) == "object" then [$v] else [] end;
@@ -631,7 +639,7 @@ RESULT=$(jq -n --arg floor "$CONFIDENCE_FLOOR" --argjson lat "$LAT_MS" --arg non
   ((rule_at($choice).auto_apply // false)) as $opted_in |
   ($opted_in and $applied_rule == $choice) as $auto_apply |
   (if $opted_in and ($auto_apply | not) then {auto_apply_skipped: "rule \($choice) opted in but selection came from \($applied_rule): \($sel.note // $sel.escalate // "no profile")"} else {} end) as $skip |
-  (if $forced == null then
+  ((if $forced == null then
      {
        model: $r.model, latency_ms: $lat, tokens: ($r.usage // null),
        rule: $picked,
@@ -650,7 +658,7 @@ RESULT=$(jq -n --arg floor "$CONFIDENCE_FLOOR" --argjson lat "$LAT_MS" --arg non
        applied_rule: $applied_rule,
        auto_apply: $auto_apply
      } + $skip
-   end) as $ev |
+   end) + {provenance: $provenance}) as $ev |
   if $sel.invalid then $ev + {status: "error", reason: $sel.invalid}
   elif $fb.below and $fb.global then
     $ev + {status: "ambiguous", reason: "confidence \($a.confidence) below floor \($floor)", candidates: ($answer_use | map(evaluate(.)))}
