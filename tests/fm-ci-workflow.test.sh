@@ -73,7 +73,7 @@ puts YAML.load_file(ARGV[0]).fetch("jobs").fetch(ARGV[1]).fetch("timeout-minutes
 # Tier membership is the executable inventory of the timeout policy: a new job
 # must join a tier, and a job-level value outside these tiers is exactly the
 # one-off number the policy removed.
-FAST_TIER_JOBS='test-coverage invariants tests-timing-aggregate'
+FAST_TIER_JOBS='test-coverage invariants tests-timing-aggregate changes docs-guard ci-gate'
 NORMAL_TIER_JOBS='lint tests-portable-parallel-1 tests-portable-parallel-2 macos-stock-bash'
 SERIAL_TIER_JOBS='tests-portable-serial'
 HEAVY_TIER_JOBS='tests-herdr'
@@ -259,6 +259,64 @@ puts steps[index].fetch("timeout-minutes", "none")
   pass "Herdr keeps a $step minute step tripwire under a $heavy minute job backstop"
 }
 
+# The change-scope gates must stay job-level conditions fed by one always-run
+# detection job. A workflow-level paths: filter never creates the workflow, so a
+# check required by branch protection would stay pending forever, while a job
+# skipped by `if:` reports "skipped" and satisfies protection. The gated jobs
+# must also agree on which output gates them, or a lane could be skipped by a
+# verdict that never covered its sources.
+test_change_scope_gates_are_job_level_and_consistent() {
+  ruby -ryaml - "$CI_WORKFLOW" <<'RUBY' || fail "change-scope gate contract"
+workflow = YAML.load_file(ARGV[0])
+jobs = workflow.fetch("jobs")
+
+on = workflow.fetch(true) { workflow.fetch("on") }
+on.each do |event, spec|
+  next unless spec.is_a?(Hash)
+  raise "#{event} must not carry a workflow-level paths filter" if spec.key?("paths") || spec.key?("paths-ignore")
+end
+
+scope = jobs.fetch("changes")
+raise "the change-scope job must not be gated itself" if scope.key?("if")
+raise "the change-scope job must publish both gate outputs" unless scope.fetch("outputs").keys.sort == %w[behavior macos]
+
+behavior_gated = %w[
+  lint tests-portable-parallel-1 tests-portable-parallel-2 tests-portable-serial tests-herdr
+]
+behavior_gated.each do |id|
+  job = jobs.fetch(id)
+  raise "#{id} must need the change-scope job" unless Array(job.fetch("needs")).include?("changes")
+  raise "#{id} must be gated on the behavior output" unless job.fetch("if") == "needs.changes.outputs.behavior == 'true'"
+end
+
+macos = jobs.fetch("macos-stock-bash")
+raise "the macOS job must need the change-scope job" unless Array(macos.fetch("needs")).include?("changes")
+raise "the macOS job must be gated on the macos output" unless macos.fetch("if") == "needs.changes.outputs.macos == 'true'"
+
+guard = jobs.fetch("docs-guard")
+raise "the docs guard must run exactly when the behavior suites are skipped" unless guard.fetch("if") == "needs.changes.outputs.behavior == 'false'"
+
+%w[test-coverage invariants].each do |id|
+  raise "#{id} must stay ungated" if jobs.fetch(id).key?("if")
+end
+RUBY
+  pass "the change-scope gates stay job-level and agree on their verdicts"
+}
+
+# One check must always report the whole round, so a gated-off job never looks
+# like a missing result to branch protection or to a reviewer.
+test_ci_gate_always_reports_every_job() {
+  ruby -ryaml - "$CI_WORKFLOW" <<'RUBY' || fail "CI gate contract"
+jobs = YAML.load_file(ARGV[0]).fetch("jobs")
+gate = jobs.fetch("ci-gate")
+raise "the CI gate must run on every event" unless gate.fetch("if") == "always()"
+needed = Array(gate.fetch("needs")).sort
+expected = (jobs.keys - ["ci-gate"]).sort
+raise "the CI gate must need every other job, missing #{(expected - needed).join(" ")}" unless needed == expected
+RUBY
+  pass "the CI gate always runs and covers every other job"
+}
+
 test_ci_matrices_match_executable_partitions() {
   ruby -ryaml -ropen3 - "$CI_WORKFLOW" "$ROOT" <<'RUBY' || fail "CI partition contract"
 jobs = YAML.load_file(ARGV[0]).fetch("jobs")
@@ -299,3 +357,5 @@ test_fast_tier_shares_one_short_tripwire
 test_normal_tier_shares_one_budget
 test_serial_tier_keeps_a_step_tripwire_under_a_job_backstop
 test_heavy_tier_keeps_a_step_tripwire_under_a_job_backstop
+test_change_scope_gates_are_job_level_and_consistent
+test_ci_gate_always_reports_every_job

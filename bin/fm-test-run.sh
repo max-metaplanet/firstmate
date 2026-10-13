@@ -202,7 +202,15 @@ CHANGED_DEFAULT_TIMEOUT_SECS=1500
 
 # How many separate-runner shards the portable serial remainder splits into.
 # One owner: CI lane names carry this count and are refused when they disagree.
-PORTABLE_SERIAL_SHARDS=9
+# 16 is the knee of the LPT packing below, not a round number. The lane holds
+# about 180 minutes of measured work, and at 16 bins every shard the packing can
+# balance lands at or under 10 minutes while only the two indivisible scripts
+# stay above it: tests/fm-supervision-host.test.sh at about 22.6 minutes and
+# tests/fm-watch-triage.test.sh at about 17.9 minutes. Past 16 the third-largest
+# bin stops shrinking because it holds one 7.7-minute script, so more shards buy
+# queue contention and no wall time. Cutting the lane below those two scripts
+# needs their runtime addressed, not more bins.
+PORTABLE_SERIAL_SHARDS=16
 
 # Conservative balance hint for a portable-serial script with no measurement.
 # Rounded above the current CI mean, including the capability-skipped scripts.
