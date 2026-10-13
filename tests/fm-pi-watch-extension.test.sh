@@ -3527,7 +3527,7 @@ const pi = {
   // The real Pi prompt path: a follow-up sent while the agent is streaming is
   // queued for the running run and raises no before_agent_start; only a send
   // to an idle agent starts a run and raises it with the exact text. With
-  // customOpensIdleRun, another extension's idle custom message opens that run
+  // customOpensIdleRun, an idle custom message from another extension opens that run
   // first, so Pi raises the prompt-less custom variant carrying the same text.
   sendUserMessage: async (message) => {
     prompts.push(message);
