@@ -27,9 +27,41 @@ concurrency:
 # Each job comment identifies the tier implemented by its executable value.
 
 jobs:
+  # Change-scope gates. One owner of the path sets: bin/fm-ci-change-scope.sh,
+  # pinned by tests/fm-ci-change-scope.test.sh. This job runs on every event so
+  # a gated job below reports "skipped" and satisfies branch protection; a
+  # workflow-level paths: filter would never create the workflow at all and
+  # would leave a required check pending forever.
+  changes:
+    name: Change scope
+    runs-on: ubuntu-latest
+    # Fast tier (see the timeout policy above): one diff and one classification.
+    timeout-minutes: 5
+    outputs:
+      behavior: ${{ steps.scope.outputs.behavior }}
+      macos: ${{ steps.scope.outputs.macos }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Classify the changed paths
+        id: scope
+        env:
+          FM_CI_EVENT: ${{ github.event_name }}
+          FM_CI_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          FM_CI_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -eu
+          bin/fm-ci-change-scope.sh --paths
+          bin/fm-ci-change-scope.sh | tee -a "$GITHUB_OUTPUT"
+
   lint:
     name: Lint ${{ matrix.partition }}
     runs-on: ubuntu-latest
+    # Shell lint reads only bin/ and tests/ plus the workflow YAML, so prose
+    # that reaches no test cannot change its verdict.
+    needs: changes
+    if: needs.changes.outputs.behavior == 'true'
     # Normal tier (see the timeout policy above).
     timeout-minutes: 30
     strategy:
@@ -97,6 +129,8 @@ jobs:
     runs-on: ubuntu-latest
     # Normal tier (see the timeout policy above).
     timeout-minutes: 30
+    needs: changes
+    if: needs.changes.outputs.behavior == 'true'
     steps:
       - uses: actions/checkout@v6
         with:
@@ -141,6 +175,8 @@ jobs:
     runs-on: ubuntu-latest
     # Normal tier (see the timeout policy above).
     timeout-minutes: 30
+    needs: changes
+    if: needs.changes.outputs.behavior == 'true'
     steps:
       - uses: actions/checkout@v6
         with:
@@ -190,11 +226,13 @@ jobs:
     # of the lane can bring that script under a 30-minute cap, so the serial
     # shards carry their own job bound while every other lane keeps 30.
     timeout-minutes: 45
+    needs: changes
+    if: needs.changes.outputs.behavior == 'true'
     strategy:
       # Every shard reports so one failure never hides another shard's result.
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
     steps:
       - uses: actions/checkout@v6
         with:
@@ -268,6 +306,8 @@ jobs:
   tests-herdr:
     name: Behavior tests (Herdr)
     runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.behavior == 'true'
     # Heavy tier (see the timeout policy above): the last-resort job backstop.
     # The family-run step below owns the hang tripwire, so a wedged suite fails
     # there with the always() cleanup and timing upload still running.
@@ -392,11 +432,14 @@ jobs:
     # Fast tier: aggregation is seconds of work over lane artifacts.
     timeout-minutes: 5
     needs:
+      - changes
       - tests-portable-parallel-1
       - tests-portable-parallel-2
       - tests-portable-serial
       - tests-herdr
-    if: always()
+    # always() so a failed lane still contributes its timing, but not when the
+    # lanes were gated off: there would be no artifact to download at all.
+    if: always() && needs.changes.outputs.behavior == 'true'
     steps:
       - uses: actions/checkout@v6
       - name: Download lane timing artifacts
@@ -431,6 +474,13 @@ jobs:
     runs-on: macos-latest
     # Normal tier (see the timeout policy above).
     timeout-minutes: 30
+    # macOS runners are the scarcest capacity in this fork: this job has queued
+    # about 35 minutes for a 7.5-minute run, which alone set the CI round's wall
+    # clock. It reads nothing but shell sources, so it runs for bin/, tests/ and
+    # this workflow, and on every push to main. bin/fm-ci-change-scope.sh owns
+    # that path set and derives it from what the run step below actually reads.
+    needs: changes
+    if: needs.changes.outputs.macos == 'true'
     steps:
       - uses: actions/checkout@v6
       - name: Run snapshot consumers with stock Bash
@@ -520,6 +570,27 @@ jobs:
             exit 1
           }
 
+  # The behavior gate's one coverage obligation. A prose-only change skips the
+  # suites above, and the only suite whose verdict such a change can alter is
+  # the documentation audience audit: bin/fm-doc-audience-check.sh compares the
+  # complete tracked prose set against docs/documentation-audiences.json and
+  # resolves every local link, so adding, removing, renaming or re-linking any
+  # tracked prose file changes its result. Running that one script here keeps
+  # the docs-only path's coverage identical to a full round's.
+  docs-guard:
+    name: Documentation audience guard
+    runs-on: ubuntu-latest
+    # Fast tier (see the timeout policy above): one 1.4-second suite.
+    timeout-minutes: 5
+    needs: changes
+    if: needs.changes.outputs.behavior == 'false'
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Audit the tracked documentation surface
+        run: bin/fm-test-run.sh tests/fm-documentation-audiences.test.sh
+
   invariants:
     name: Repo invariants
     runs-on: ubuntu-latest
@@ -547,3 +618,45 @@ jobs:
             printf '%s\n' "$tracked"
             exit 1
           fi
+
+  # One always-reported check that summarizes the whole round, so gating a job
+  # off never looks like a missing result. It runs on every event and fails if
+  # any job it needs failed or was cancelled; a job the gates skipped is a pass,
+  # because the gates are what proved that job could not be affected.
+  # Branch protection on this fork currently requires no checks. If required
+  # checks are ever configured, require THIS check rather than the gated jobs.
+  ci-gate:
+    name: CI gate
+    runs-on: ubuntu-latest
+    # Fast tier (see the timeout policy above): one results comparison.
+    timeout-minutes: 5
+    if: always()
+    needs:
+      - changes
+      - lint
+      - test-coverage
+      - tests-portable-parallel-1
+      - tests-portable-parallel-2
+      - tests-portable-serial
+      - tests-herdr
+      - tests-timing-aggregate
+      - macos-stock-bash
+      - docs-guard
+      - invariants
+    steps:
+      - name: Require every job to have passed or been gated off
+        env:
+          FM_CI_NEEDS: ${{ toJSON(needs) }}
+        run: |
+          set -eu
+          printf '%s\n' "$FM_CI_NEEDS"
+          bad=$(printf '%s' "$FM_CI_NEEDS" \
+            | jq -r 'to_entries
+                     | map(select(.value.result != "success" and .value.result != "skipped"))
+                     | .[] | "\(.key)=\(.value.result)"')
+          if [ -n "$bad" ]; then
+            echo "::error::CI jobs did not pass:"
+            printf '%s\n' "$bad"
+            exit 1
+          fi
+          echo "every CI job passed or was gated off"

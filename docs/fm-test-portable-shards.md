@@ -123,11 +123,16 @@ Portable shards, each portable serial shard, and the Herdr lane upload runner-ge
 CI requires its per-root bounds, so an unenforceable deadline or address-space limit refuses lint rather than running uncapped; the script header owns the envelope, per-root execution contract, and memory fallback.
 Its `--list-files` interface exposes partition membership; `tests/fm-lint.test.sh` verifies complete/disjoint executed roots, initial analysis flags, and fallback reporting.
 The workflow uploads each partition's quiet telemetry plus its per-root lifecycle sidecar to distinguish analysis cost, memory use, and host contention.
-No fast mode, path skips, reduced checks, or paid runner provisioning is part of this layout.
+No fast mode, reduced checks, or paid runner provisioning is part of this layout.
+Jobs are gated by changed path, and `bin/fm-ci-change-scope.sh` is the single owner of those path sets: it derives them from what the gated jobs actually read, keeps a gate on for any path it does not prove inert, and its header owns the reasoning for each set.
+The gates are job-level `if:` conditions fed by one always-run detection job, never a workflow-level `paths:` filter, because a workflow that is never created leaves a required check pending forever while a job skipped by `if:` reports as skipped and satisfies branch protection.
+The always-run `ci-gate` job reports the whole round's result, so a gated-off job never reads as a missing check; require that check rather than the gated jobs if this repository ever configures required checks.
 
 The longer-term performance objective remains a complete green run under fifteen minutes including start delay, but the current supervision-host floor alone exceeds that objective.
 The immediate packing target is the runner's modeled script budget, not a claim that more shards alone can make an indivisible script faster.
-The layout uses sixteen long-lived Linux jobs (nine serial, two parallel, Herdr, four lint), plus short checks and macOS; insufficient shared account capacity can erase the packing gain.
+The layout uses twenty-three long-lived Linux jobs (sixteen serial, two parallel, Herdr, four lint), plus short checks and macOS; insufficient shared account capacity can erase the packing gain.
+Sixteen serial shards is the knee of the packing, measured from the aggregate of run 38453818522: at sixteen bins every shard the packing can balance lands at or under 10 minutes, and only `tests/fm-supervision-host.test.sh` at about 22.6 minutes and `tests/fm-watch-triage.test.sh` at about 17.9 minutes stay above it.
+Past sixteen the third-largest bin stops shrinking, because it holds one 7.7-minute script, so further shards buy queue contention and no wall time.
 Compare complete before/after runs, preserve cancelled and partial-run evidence, and measure a representative normal-run sample before claiming a P95 improvement.
 The workflow retains per-PR supersession without cancelling main pushes or changing the compliance workflow's event semantics.
 
