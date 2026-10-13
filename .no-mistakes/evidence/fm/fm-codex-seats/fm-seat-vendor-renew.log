@@ -1,0 +1,1 @@
+ok - vendor refresh sends no model request, preserves ambient Claude, rejects seat wrappers, and retains lease through cancellation

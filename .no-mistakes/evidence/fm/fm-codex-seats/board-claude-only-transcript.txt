@@ -1,0 +1,4 @@
+$ fm-seat-board.sh json   # fresh Claude-only lab home (no Codex seats/home/config)
+{"providers":{"claude":{"activeSeat":"default","liveSeat":"default","floor":null},"codex":null},"seats":[{"name":"default","provider":"claude"}]}
+quota-axi calls:
+--provider claude --no-credential-refresh --full --json CODEX_HOME=

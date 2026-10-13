@@ -1,0 +1,14 @@
+$ fm-seat-board.sh json   # Claude-only lab home
+{"providers":["claude","codex"],"seats":[{"name":"default","provider":"claude","renewal":"unknown"}]}
+quota-axi calls:
+--provider claude --no-credential-refresh --full --json CODEX_HOME=
+
+$ fm-seat.sh --provider codex add alpha --home /var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.OOY30h/cx
+registered existing Codex home: /var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.OOY30h/user/.codex-seats/alpha -> /var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.OOY30h/cx; no authentication copied
+login command: CODEX_HOME=/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.OOY30h/user/.codex-seats/alpha codex login
+
+$ fm-seat-board.sh json   # after registering a Codex seat
+{"seats":[{"name":"default","provider":"claude","renewal":"unknown","login":null},{"name":"default","provider":"codex","renewal":"unknown","login":null},{"name":"alpha","provider":"codex","renewal":"unknown","login":null}]}
+quota-axi calls:
+--provider codex --profile-only --no-credential-refresh --full --json CODEX_HOME=/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.OOY30h/user/.codex
+--provider codex --profile-only --no-credential-refresh --full --json CODEX_HOME=/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.OOY30h/user/.codex-seats/alpha

@@ -1,0 +1,10 @@
+ok - private global leases bind credential aliases and state stays readable during renewal
+ok - managed child retains its lease through wrapper TERM and unexpected wrapper death
+ok - renewal subprocess fd inheritance retains exclusion until its owner exits
+ok - independent real environment and open-file bindings each prove ownership without leaking environment
+ok - nonmatching live vendors are excluded, while an unreadable plausible owner fails closed
+ok - older native versions retain independent owner signals without matching helper substrings
+ok - recorded workers and a bound live lead hold renewal without scanning another home
+ok - ordinary Claude respects platform credential identity across locks, environments, files, and records
+ok - unsafe lock roots and renewal state fail closed
+ok - seat locks and owner scans passed real-process regression coverage
