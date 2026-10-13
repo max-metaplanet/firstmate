@@ -1,17 +1,7 @@
 # shellcheck shell=bash
-# Read-only seat renewal decisions, shared by the CLI and quota panel.
-# Source after fm-seat-lib.sh; FM_SEAT_PROVIDER selects claude or codex.
-# fm_seat_renewal_from <quota-json> <profile> [seat-name] prints JSON containing
-# state, reason, loginCommand, command, and supported. command is a read-only
-# recheck command, never a renewal command. No function here launches a vendor.
-#
-# No vendor currently has an enabled renewal adapter. A process snapshot cannot
-# exclude an unmanaged session starting immediately afterwards, and a private
-# helper lock cannot exclude that session either. Vendor refresh serialization
-# alone does not establish that no live session owns the seat. Until ownership
-# exclusion is proven, every mutation request refuses without reading tokens,
-# invoking a vendor CLI, or attempting a login. Keep this boundary here rather
-# than letting individual panel actions decide when credential writes are safe.
+# Renewal authentication classification and panel projection.
+# bin/fm-seat-renew.py owns guarded mutation and persisted history.
+# This library only reads; neither a panel read nor --check starts a vendor.
 
 fm_seat_renewal_from() {
   local json=${1-} profile=${2-} name=${3-} provider=${FM_SEAT_PROVIDER:-claude}
@@ -35,17 +25,25 @@ fm_seat_renewal_from() {
       login=$(fm_seat_login_command "$profile") || return 2
       ;;
     expired_refreshable)
-      reason='Automatic renewal is unavailable: exclusive ownership against live and newly starting vendor sessions has not been proven. A normal vendor session owns its refresh.'
+      reason='Eligible for guarded renewal when no live owner holds this seat.'
       ;;
     healthy) reason='The read-only quota probe succeeded; renewal is not needed.' ;;
     *) reason='Credential usability is unknown; no renewal or login is attempted.' ;;
   esac
   if [ -n "$name" ]; then
     fm_seat_name_valid "$name" || return 2
-    printf -v command 'FM_HOME=%q %q --provider %q --check %q' "${FM_HOME:-${FM_ROOT:-.}}" \
+    printf -v command 'FM_HOME=%q %q --provider %q %q' "${FM_HOME:-${FM_ROOT:-.}}" \
       "${FM_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}/bin/fm-seat-renew.sh" "$provider" "$name"
   fi
-  jq -cn --arg state "$state" --arg reason "$reason" --arg login "$login" --arg command "$command" \
+  local history='{}'
+  if [ "${FM_SEAT_RENEW_NO_HISTORY:-0}" != 1 ]; then
+    history=$(python3 "${FM_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}/bin/fm-seat-lock.py" state --provider "$provider" --profile "$profile" 2>/dev/null) || history='{}'
+  fi
+  if [ "$state" != healthy ] && printf '%s' "$history" | jq -e '.invalidLatched == true' >/dev/null 2>&1; then
+    reason='Renewal stopped after invalid credentials; a healthy read after login clears the stop.'
+    login=$(fm_seat_login_command "$profile") || return 2
+  fi
+  jq -cn --argjson history "$history" --arg state "$state" --arg reason "$reason" --arg login "$login" --arg command "$command" \
     '{state:$state,reason:$reason,loginCommand:(if $login == "" then null else $login end),
-      command:(if $command == "" then null else $command end),supported:false}'
+      command:(if $command == "" then null else $command end),supported:true,lastAttempt:null,lastRenewal:null,outcome:null} + ($history | {lastAttempt,lastRenewal,outcome})'
 }

@@ -5565,6 +5565,21 @@ claude | codex | opencode | pi | pi-signed | grok | kimi | gemini | muse | rovo 
   LAUNCH="env -u CURSOR_AGENT -u CURSOR_INVOKED_AS -u GEMINI_CLI $LAUNCH"
   ;;
 esac
+# Keep a shared credential-store lease for the managed session lifetime. A
+# renewal already holding the exclusive lease delays this actual launch, and
+# a renewal arriving afterwards sees the shared lease and skips the seat.
+if [ "$RAW_LAUNCH" = 0 ]; then
+  case "$HARNESS" in
+    claude|codex)
+      if [ "$HARNESS" = claude ] && [ -n "$WORKER_ACCOUNT" ]; then
+        SEAT_LOCK_PROFILE=$WORKER_ACCOUNT_ROOT
+      else
+        SEAT_LOCK_PROFILE=$SEAT_CONFIG_DIR
+      fi
+      LAUNCH="env FM_SEAT_LOCK_ROOT=$(shell_quote "${FM_SEAT_LOCK_ROOT:-$HOME/.local/state/firstmate-seat-locks}") python3 $(shell_quote "$SCRIPT_DIR/fm-seat-lock.py") guard --provider $(shell_quote "$HARNESS") --profile $(shell_quote "$SEAT_LOCK_PROFILE") -- env $LAUNCH"
+      ;;
+  esac
+fi
 # Crewmate panes are created by a long-lived tmux/herdr daemon that does not
 # inherit firstmate's current environment, so a bare `claude` in the pane falls
 # back to the default ~/.claude store even when this task should run on another
@@ -5595,8 +5610,12 @@ if [ -n "$WORKER_ACCOUNT" ]; then
     LAUNCH="PI_CODING_AGENT_DIR=$(shell_quote "$WORKER_ACCOUNT_ROOT") $LAUNCH"
     ;;
   esac
-elif [ "$HARNESS" = claude ] && [ -n "$SEAT_CONFIG_DIR" ]; then
-  LAUNCH="CLAUDE_CONFIG_DIR=$(shell_quote "$SEAT_CONFIG_DIR") $LAUNCH"
+elif [ "$HARNESS" = claude ]; then
+  if [ -n "$SEAT_CONFIG_DIR" ]; then
+    LAUNCH="env -u CLAUDE_SECURESTORAGE_CONFIG_DIR CLAUDE_CONFIG_DIR=$(shell_quote "$SEAT_CONFIG_DIR") $LAUNCH"
+  else
+    LAUNCH="env -u CLAUDE_SECURESTORAGE_CONFIG_DIR -u CLAUDE_CONFIG_DIR $LAUNCH"
+  fi
 elif [ "$HARNESS" = codex ]; then
   # Explicitly clear a daemon's stale CODEX_HOME when the ambient default wins.
   if [ -n "$SEAT_CONFIG_DIR" ]; then

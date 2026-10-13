@@ -294,7 +294,7 @@ family_for_basename() {
   case "$1" in
     fm-arm-pretool-check.test.sh|fm-ask-user-authority.test.sh|\
     fm-bearings-board.test.sh|\
-    fm-brief.test.sh|fm-dod-lib.test.sh|fm-vendor-auth-probe.test.sh|fm-seat-renew.test.sh|\
+    fm-brief.test.sh|fm-dod-lib.test.sh|fm-vendor-auth-probe.test.sh|fm-seat-renew.test.sh|fm-seat-lock.test.sh|fm-seat-vendor-renew.test.sh|\
     fm-calm-pi-extension.test.sh|fm-cd-pretool-check.test.sh|\
     fm-classify-decision-key.test.sh|\
     fm-composer-ghost.test.sh|fm-composer-lib.test.sh|\
@@ -1562,8 +1562,10 @@ families_for_changed_path() {
       printf '%s\n' "__script__:fm-control-relaunch.test.sh"
       printf '%s\n' "__script__:fm-lead-restart.test.sh"
       ;;
-    bin/fm-seat-renew.sh|bin/fm-seat-renew-lib.sh)
+    bin/fm-seat-renew.sh|bin/fm-seat-renew-lib.sh|bin/fm-seat-renew.py|bin/fm-seat-lock.py|bin/fm-seat-vendor-renew.py)
       printf '%s\n' "__script__:fm-seat-renew.test.sh"
+      printf '%s\n' "__script__:fm-seat-lock.test.sh"
+      printf '%s\n' "__script__:fm-seat-vendor-renew.test.sh"
       printf '%s\n' "__script__:fm-seat-renew-live-e2e.test.sh"
       printf '%s\n' "__script__:fm-seat-board.test.sh"
       ;;

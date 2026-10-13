@@ -2564,20 +2564,29 @@ Repeat the hooked-worker check above before publication if watcher or task-inbox
 ## Seat renewal capability boundary
 
 Verified on 2026-10-13 with Claude Code `2.1.296 (Claude Code)` and Codex `codex-cli 0.162.0` on macOS arm64.
-`bin/fm-seat-renew-lib.sh` owns the renewal decision and its unsupported-adapter boundary.
-`bash tests/fm-seat-renew-live-e2e.test.sh` checks every installed supported vendor using version, help, protocol schema generation, and Codex login status in fresh empty homes, without a model request or access to live credential stores.
+`bin/fm-seat-renew.py` owns renewal eligibility and `bin/fm-seat-vendor-renew.py` owns the vendor protocol, environment, and cancellation handling.
+`bash tests/fm-seat-renew-live-e2e.test.sh` checks the real installed vendors in fresh empty or synthetic homes, without a model request or access to live credential stores.
 The exact result was:
 
 ```text
-ok - 2.1.296 (Claude Code): auth help exposes login; automatic renewal remains disabled
+ok - 2.1.296 (Claude Code): auth help exposes login
+ok - 2.1.296 (Claude Code): real doctor enters vendor refresh lock only for expired synthetic auth; network refused, no model call
+ok - 2.1.296 (Claude Code): owner scanner detects the real isolated doctor process
 ok - codex-cli 0.162.0: empty CODEX_HOME reports Not logged in without credential creation
-ok - codex-cli 0.162.0: generated account/read refreshToken schema; automatic renewal remains disabled
+ok - codex-cli 0.162.0: installed app-server launcher retains inherited lease descriptor until exit
+ok - codex-cli 0.162.0: owner scanner detects the real isolated app-server
+ok - codex-cli 0.162.0: managed lease wrapper preserves native owner and agent-process classification
+ok - codex-cli 0.162.0: real initialize/account-read refresh protocol completed with empty auth and no model turn
 ```
 
-Codex's generated `v2/GetAccountParams.json` declares a boolean `refreshToken` field that requests proactive refresh in managed-auth mode.
-That capability does not prove exclusive ownership against arbitrary live or newly starting vendor sessions.
-The guard verifies the capability surface only; it neither attempts renewal nor establishes renewal safety.
-`bash tests/fm-seat-renew.test.sh` returned `ok - both vendors classify renewal state and refuse unsafe renewal without starting vendor CLIs`.
-That portable regression exercises the helper's public CLI with invalid, expired-refreshable, healthy, unknown, and malformed read results, with vendor launch tripwires.
+The Claude comparison supplies synthetic expired and fresh OAuth records through a fake secure-store executable, blocks network traffic with a refused loopback proxy, and observes the vendor's actual refresh-lock directory during credential rereads.
+Only expired synthetic credentials enter that path; the fresh case is the counterfactual proving that an unrelated startup lock cannot satisfy the guard.
+The owner scan is also exercised while the actual vendor is held at a synthetic secure-store read.
+This synthetic secure-store proof currently requires macOS; other platforms explicitly skip it.
+Codex's generated `v2/GetAccountParams.json` declares the proactive managed-auth refresh field, and the real empty-auth protocol test sends only initialize, initialized, and account/read.
 The empty-home Codex check runs with `env -i`, so inherited API keys, auth selectors, and other configuration cannot answer for the selected `CODEX_HOME`.
-On the same date, `bash tests/fm-quota-claude-mod-plugin.test.sh` passed all 36 tests against Claude Code `2.1.296`, including the installed quota mod integration.
+The managed Codex proof launches an empty-auth app-server under the real lease wrapper and checks native process classification without any backend lifecycle operation.
+`bash tests/fm-seat-vendor-renew.test.sh` returned `ok - vendor refresh sends no model request, preserves ambient Claude, rejects seat wrappers, and retains lease through cancellation`.
+That portable regression kills only a synthetic adapter fixture and proves its vendor child retains the inherited kernel lease until exit; it also exercises protocol rejection, signal deferral, ordinary Claude's unset secure-store selectors, and rejection of managed pipeline wrappers before execution.
+These checks do not spend or refresh a real account, and a completed vendor command still requires the renewal engine's read-only postverification.
+On the same date, `bash tests/fm-quota-claude-mod-plugin.test.sh` passed all 38 tests against Claude Code `2.1.296`, including renewal history in the installed quota mod integration.

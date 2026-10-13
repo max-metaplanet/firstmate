@@ -35,7 +35,7 @@
 #                        extraUsage } ] }
 #         The legacy top-level activeSeat, liveSeat, floor and pipeline describe
 #         Claude; providers and each seat's provider disambiguate matching names.
-#         renewal is the read-only fm_seat_renewal_from result, including action
+#         renewal is the read-only fm_seat_renewal_from projection, including history and action
 #         commands for the operator to run; polling never executes these commands.
 #         autoExcluded is true when an automatic switch may not land on that
 #         seat for EITHER reason, which is the question every reader of it asks;
@@ -258,7 +258,10 @@ seat_section_html() {
   renewal=$(fm_seat_renewal_from "$json" "$dir" "$name")
   while IFS= read -r line; do
     printf '<p class="rotation">%s</p>\n' "$(html_escape "$line")"
-  done < <(printf '%s' "$renewal" | jq -r '"renewal: " + .state, (.reason // empty), (.command // empty), (.loginCommand // empty)')
+  done < <(printf '%s' "$renewal" | jq -r '"renewal: " + .state, (if .outcome then "last outcome: " + .outcome else empty end),
+      (if (.lastRenewal | type) == "number" then "last renewal: " + (.lastRenewal | todateiso8601) else empty end),
+      (if (.lastAttempt | type) == "number" then "last attempt: " + (.lastAttempt | todateiso8601) else empty end),
+      (.reason // empty), (.command // empty), (.loginCommand // empty)' )
   # Whether an automatic switch may land here, and which of the two reasons it
   # is, because an operator reading "not in rotation" needs to know whether they
   # withheld this seat themselves or the quota floor is resting it.

@@ -290,7 +290,7 @@ test_json_separates_providers_with_matching_names_and_profiles() {
     .activeSeat == "default" and .providers.codex.activeSeat == "alpha"
     and ([.seats[] | select(.name == "alpha") | .provider] == ["claude", "codex"])
     and all(.seats[] | select(.name == "alpha"); .attention == null and .account == "shared@example.test")
-    and all(.seats[]; (.renewal.state | type) == "string" and .renewal.supported == false)
+    and all(.seats[]; (.renewal.state | type) == "string" and .renewal.supported == true)
   ' >/dev/null || fail "provider rows and renewal state must remain distinct: $out"
   claude_cache=$(printf '%s' "$out" | jq -r '.seats[] | select(.name == "alpha" and .provider == "claude") | .cacheFile')
   codex_cache=$(printf '%s' "$out" | jq -r '.seats[] | select(.name == "alpha" and .provider == "codex") | .cacheFile')
@@ -306,7 +306,7 @@ test_json_separates_providers_with_matching_names_and_profiles() {
       and (.renewal.loginCommand | endswith(" codex login")))
     and any(.seats[]; .name == "alpha" and .provider == "claude"
       and .renewal.state == "expired_refreshable" and .renewal.loginCommand == null
-      and (.renewal.reason | contains("unavailable")))
+      and (.renewal.reason | contains("guarded renewal")))
   ' >/dev/null || fail "cached provider verdicts must expose login or bounded renewal guidance: $cached"
   pass "provider identity separates matching seats and cache paths while preserving Claude legacy fields"
 }

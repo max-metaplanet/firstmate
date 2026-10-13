@@ -25,10 +25,22 @@ export type SeatWindow = {
   readonly resetsAt: string | null;
 };
 
+/** Renewal evidence and guarded actions supplied by the board's renewal owner. */
+export type SeatRenewal = {
+  readonly state: string;
+  readonly reason: string;
+  readonly command: string;
+  readonly loginCommand: string;
+  readonly supported: boolean;
+  readonly lastAttempt: number | null;
+  readonly lastRenewal: number | null;
+  readonly outcome: string | null;
+};
+
 /** One seat's record in the board's reading. */
 export type SeatRecord = {
   readonly provider: "claude" | "codex";
-  readonly renewal: { readonly state: string; readonly reason: string; readonly command: string; readonly loginCommand: string } | null;
+  readonly renewal: SeatRenewal | null;
   readonly name: string;
   readonly configDir: string;
   readonly active: boolean;
@@ -106,6 +118,13 @@ function asNumberOrNull(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
+/** Epoch seconds must describe a real Date before they may be shown as evidence. */
+function asEpochOrNull(value: unknown): number | null {
+  const seconds = asNumberOrNull(value);
+  return seconds !== null && Number.isInteger(seconds) && seconds >= 0 && seconds <= 8_640_000_000_000
+    ? seconds : null;
+}
+
 function asStringOrNull(value: unknown): string | null {
   return typeof value === "string" && value !== "" ? value : null;
 }
@@ -158,6 +177,10 @@ export function parseSeatBoard(stdout: string): SeatBoard | undefined {
         reason: asStringOrNull(renewal.reason) ?? "",
         command: asStringOrNull(renewal.command) ?? "",
         loginCommand: asStringOrNull(renewal.loginCommand) ?? "",
+        supported: renewal.supported === true,
+        lastAttempt: asEpochOrNull(renewal.lastAttempt),
+        lastRenewal: asEpochOrNull(renewal.lastRenewal),
+        outcome: asStringOrNull(renewal.outcome),
       },
       name: seat.name,
       configDir: typeof seat.configDir === "string" ? seat.configDir : "",
@@ -263,12 +286,7 @@ export function seatRows(board: SeatBoard, readAtMs: number, nowMs: number): Sea
     else if (seat.autoExcluded) marks.push("not in rotation");
     return {
       provider: seat.provider,
-      renewal: seat.renewal === null ? "" : [
-        `renewal: ${seat.renewal.state}`,
-        seat.renewal.reason,
-        seat.renewal.command,
-        seat.renewal.loginCommand,
-      ].filter((part) => part !== "").join(" · "),
+      renewal: renewalText(seat.renewal),
       name: seat.name,
       live,
       active: seat.active,
@@ -285,6 +303,21 @@ export function seatRows(board: SeatBoard, readAtMs: number, nowMs: number): Sea
       marks,
     };
   });
+}
+
+/** Recorded outcomes are separate from current auth state; drawing never starts renewal. */
+export function renewalText(renewal: SeatRenewal | null): string {
+  if (renewal === null) return "";
+  const timestamp = (seconds: number) => new Date(seconds * 1000).toISOString();
+  return [
+    `renewal: ${renewal.state}`,
+    renewal.outcome === null ? "" : `outcome: ${renewal.outcome}`,
+    renewal.lastRenewal === null ? "last renewed: not recorded" : `last renewed: ${timestamp(renewal.lastRenewal)}`,
+    renewal.lastAttempt === null ? "" : `last attempt: ${timestamp(renewal.lastAttempt)}`,
+    renewal.reason,
+    renewal.command === "" ? "" : `action: ${renewal.command}`,
+    renewal.loginCommand,
+  ].filter((part) => part !== "").join(" · ");
 }
 
 /** One row's figures as text: each window's percent left, or why there are none. */

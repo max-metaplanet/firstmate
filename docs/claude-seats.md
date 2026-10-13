@@ -382,19 +382,19 @@ Such a seat is usable.
 Launching a claude worker on it makes Claude Code perform the refresh exchange against its own stored refresh token and rewrite the store, which is how the seat recovers; no operator step is needed.
 So `probe` reports it usable, `switch` accepts it with no `--force`, and rotation treats it as a destination.
 
-Firstmate never performs that renewal itself.
+Quota reads never perform renewal themselves.
 Every quota read it makes passes `--no-credential-refresh`, which keeps the read from delegating a token renewal to the vendor CLI.
 That is deliberate and load-bearing: the refresh token behind a session is single-use, so a second refresher racing the Claude Code session that owns it can leave one holder presenting a spent token and sign the account out.
-The worker launch is the only thing that renews a seat.
+Worker launches and the guarded renewal helper use the vendor CLI to renew a seat.
 
 One consequence is worth planning around.
 A lapsed seat has **no readable quota** until something renews it, so it cannot answer a headroom comparison.
 With `destination-min` set, a lapsed seat is therefore skipped as a rotation destination - reported as unreadable headroom, not as a login problem - which means a home that sets a destination minimum will rotate only onto seats something has read recently.
 If you want rotation to reach idle seats, leave `destination-min` unset so the gate stays login-only.
-The extra-usage dispatch gate does not hold on a lapsed active seat for the same reason: the launch it would hold is the only thing that can renew the token.
+The extra-usage dispatch gate does not hold on a lapsed active seat for the same reason: that launch can renew the token.
 
 A seat the [quota floor](#resting-a-seat-below-a-quota-floor) is resting is never launched on, so its token lapses while it rests and nothing can prove it recovered.
-That is why such a seat is returned provisionally once the reset it was waiting for has passed: the launch is the only thing that can renew it, and a seat rested for its week still waits for the week.
+That is why such a seat is returned provisionally once the reset it was waiting for has passed when no fresh reading is available, and a seat rested for its week still waits for the week.
 
 A seat that is genuinely signed out is a different state and is still refused.
 When Anthropic definitively rejects a refresh token, Claude Code clears the session in place, and the seat reads `not-logged-in`; `--force` cannot cross that, and the seat needs the owner's login steps again.
@@ -405,11 +405,21 @@ When Anthropic definitively rejects a refresh token, Claude Code clears the sess
 Invalid or missing credentials show the exact login command; expired-but-refreshable credentials remain distinct from invalid credentials and do not prompt a new login.
 The helper's header owns its output and exit-status contract.
 
-Automatic renewal is currently unavailable for both vendors.
-A token-free vendor refresh mechanism is insufficient unless it also excludes a live owning session, including sessions outside Firstmate and sessions starting during the check.
-A process snapshot or a helper-only lock cannot establish that guarantee, and vendor refresh serialization alone does not establish that a seat is unowned.
-The helper therefore refuses renewal without launching a vendor or touching credentials; ordinary vendor sessions continue to own their refresh.
-The [runtime verification record](verification/runtime-backends.md) contains the current token-free capability checks.
+Run `bin/fm-seat-renew.sh arm` to register automatic renewal for both providers with the existing watcher; arming seat rotation also arms renewal.
+The registered check starts due renewal jobs every 15 minutes without adding a daemon.
+`bin/fm-seat-renew.sh disarm` stops future scheduled jobs; an in-flight token exchange finishes under its lock.
+Omit `--check` from the per-seat command to request the same guarded renewal immediately.
+This public helper is also the integration point for external quota scripts.
+
+The [coordinator contract](../bin/fm-seat-renew.py) owns eligibility, owner checks, locking, post-verification, and invalid-credential stopping.
+Managed Claude and Codex launches share a machine-wide credential-store lock with renewal, and seat switches skip a destination being renewed.
+The immediate owner scan also checks this user's vendor processes and this home's recorded workers and secondmates.
+An unmanaged session starting after that scan remains a residual race; the lock coordinates Firstmate launches across homes, not arbitrary external launchers.
+No model prompt or login flow is used: Claude runs its token-free `doctor` startup and Codex runs `account/read` with `refreshToken:true`.
+If vendor startup does not refresh, the fresh quota check reports failure and the next scheduled pass retries.
+A stalled vendor keeps the lock rather than being killed during single-use token redemption.
+The panel shows the last renewal attempt and success, while invalid credentials raise a check wake with the exact login command and stop further renewal until a healthy read proves login was restored.
+The [runtime verification record](verification/runtime-backends.md#seat-renewal-capability-boundary) contains the current token-free capability checks.
 
 ## Secondmate homes
 

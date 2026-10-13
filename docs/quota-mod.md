@@ -58,7 +58,7 @@ Another mod's band content survives: the mod takes what the plugins beneath it d
 The seat this session is on and the seat new workers launch on are shown separately because they are genuinely different facts: switching the active seat never moves a running worker.
 A seat the [quota floor](claude-seats.md#resting-a-seat-below-a-quota-floor) is resting carries a "resting" mark; a manual exclusion takes precedence and keeps the "not in rotation" mark, while a provisionally returned seat is in rotation.
 
-Each row also shows the cached renewal verdict, the reason an automatic renewal is unavailable, and an exact read-only recheck command.
+Each row also shows the cached authentication verdict, renewal outcome, last attempt and successful renewal times, and the guarded renewal command.
 Invalid credentials include the exact login command; the panel never runs it.
 [Seat renewal limits](claude-seats.md#renewal-status-and-safe-limits) own the credential safety boundary.
 

@@ -109,27 +109,21 @@ PYCODEXHOME
 # directory and auth.json symlinks, so an alias cannot masquerade as fresh quota.
 # Claude keeps its path identity because that determines its Keychain service.
 fm_seat_credential_identity() {
-  local dir=${1-}
-  if [ "$(fm_seat_provider)" = codex ]; then
-    dir=${dir:-${HOME:-}/.codex}
-    python3 - "$dir/auth.json" <<'PYIDENTITY'
-import os, sys
-print(os.path.realpath(sys.argv[1]))
-PYIDENTITY
-  else
-    printf '%s\n' "${dir:-${HOME:-}/.claude}"
-  fi
+  python3 "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/fm-seat-lock.py" identity \
+    --provider "${FM_SEAT_PROVIDER:-claude}" --profile "${1-}"
 }
 
 fm_seat_login_command() {
   local dir=${1-} provider
   provider=$(fm_seat_provider) || return 1
-  [ -n "$dir" ] || dir="${HOME:-}/.$provider"
   if [ "$provider" = codex ]; then
+    [ -n "$dir" ] || dir="${HOME:-}/.codex"
     dir=$(fm_seat_codex_home "$dir") || return 1
     printf 'CODEX_HOME=%q codex login\n' "$dir"
-  else
+  elif [ -n "$dir" ]; then
     printf 'env -u CLAUDE_SECURESTORAGE_CONFIG_DIR CLAUDE_CONFIG_DIR=%q claude\n' "$dir"
+  else
+    printf 'env -u CLAUDE_SECURESTORAGE_CONFIG_DIR -u CLAUDE_CONFIG_DIR claude\n'
   fi
 }
 
@@ -438,7 +432,7 @@ fm_seat_list() {
 # its own stored refresh token and rewrite the store. A refresh token is
 # single-use: a second refresher racing an owning session can present a spent
 # token. Every quota/probe read here stays non-renewing; fm-seat-renew-lib.sh
-# owns explicit renewal eligibility and the universal owner-exclusion gate.
+# projects renewal state; fm-seat-renew.py owns the locked owner preflight.
 fm_seat_logged_in() {
   local dir=${1-} out
   command -v quota-axi >/dev/null 2>&1 || return 2

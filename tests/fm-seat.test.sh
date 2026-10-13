@@ -20,6 +20,7 @@ set -u
 
 SEAT="$ROOT/bin/fm-seat.sh"
 TMP_ROOT=$(fm_test_tmproot fm-seat)
+export FM_SEAT_LOCK_ROOT="$TMP_ROOT/seat-locks"
 
 # The quota fake every seat case runs against lives in tests/fixtures.sh as
 # fm_test_make_quota_fake, because tests/fm-lead-restart.test.sh drives the same

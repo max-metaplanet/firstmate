@@ -303,6 +303,11 @@ cmd_list() {
   while IFS= read -r name; do
     [ -n "$name" ] || continue
     dir=$(fm_seat_config_dir "$name")
+    if ! python3 "$SCRIPT_DIR/fm-seat-lock.py" available --provider "$FM_SEAT_PROVIDER" \
+      --profile "$(fm_seat_config_dir "$name")" >/dev/null 2>&1; then
+      printf 'seat %s: skipped, renewing or lock unavailable\n' "$name" >&2
+      continue
+    fi
     state=$(login_state "$name")
     account=$(fm_seat_account "$dir" 2>/dev/null) || account=
     # The note is appended only for a seat something is withholding, so a home
@@ -602,7 +607,7 @@ next_seat() {
 # write_active <name>
 # Replace config/claude-seat atomically, or remove it for the default seat. This
 # is the whole of a switch: one file that only a fresh spawn ever reads.
-write_active() {
+write_active_unlocked() {
   local name=$1 tmp
   mkdir -p "$CONFIG" || die "could not create $CONFIG"
   if [ "$name" = "$FM_SEAT_DEFAULT_NAME" ]; then
@@ -612,6 +617,18 @@ write_active() {
   tmp="$CONFIG/.${FM_SEAT_PROVIDER}-seat.$$"
   printf '%s\n' "$name" > "$tmp" || die "could not write $tmp"
   mv -f "$tmp" "$CONFIG/${FM_SEAT_PROVIDER}-seat" || die "could not publish $CONFIG/${FM_SEAT_PROVIDER}-seat"
+}
+
+# The lock covers publication itself, not a racy preflight-only test.
+write_active() {
+  local profile
+  profile=$(fm_seat_config_dir "$1") || return 1
+  export CONFIG FM_SEAT_PROVIDER FM_SEAT_DEFAULT_NAME
+  export -f write_active_unlocked die
+  # shellcheck disable=SC2016  # Expanded by the guarded child shell.
+  python3 "$SCRIPT_DIR/fm-seat-lock.py" guard --nonblocking --provider "$FM_SEAT_PROVIDER" \
+    --profile "$profile" -- bash -c 'write_active_unlocked "$1"' fm-seat "$1" ||
+    die "seat '$1' is renewing or its lock is unavailable; retry after renewal completes"
 }
 
 cmd_switch() {
@@ -668,7 +685,7 @@ cmd_switch() {
       [ "$force" -eq 1 ] || die "could not confirm seat '$name' is logged in (quota read gave no verdict); re-run with --force to switch anyway"
       ;;
   esac
-  write_active "$name"
+  write_active "$name" || return 1
   printf 'switched: %s -> %s\n' "$prior" "$name"
   printf 'applies to NEW %s workers only; running workers keep their own seat\n' "$FM_SEAT_PROVIDER"
   propagate_to_secondmates
@@ -1844,6 +1861,7 @@ cmd_arm() {
     printf 'warning: every candidate seat is resting below the quota floor right now, so a switch would have nowhere to go until one of them recovers; the watch is what brings them back\n' >&2
   fi
   fm_check_shim_arm "$FM_HOME" "$SCRIPT_DIR/fm-seat.sh" --provider "$FM_SEAT_PROVIDER" auto || exit 1
+  "$SCRIPT_DIR/fm-seat-renew.sh" arm || exit 1
   if [ -n "$threshold" ]; then
     printf 'armed: automatic switch at %s%% left on the active seat\n' "$threshold"
     printf 'keeps watching after each switch; one crossing fires at most once per seat\n'
