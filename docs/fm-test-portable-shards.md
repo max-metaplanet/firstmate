@@ -149,7 +149,7 @@ A lane that reaches its tier bound needs investigation and a distribution or run
 
 | Tier | Jobs | Bound | Rationale |
 |---|---|---|---|
-| Fast | coverage guard, repo invariants, timing aggregate | 5 minutes | Seconds-long local work, so the tripwire only catches a hung runner. |
+| Fast | change scope, coverage guard, repo invariants, timing aggregate, documentation audience guard, CI gate | 5 minutes | Seconds-long local work, so the tripwire only catches a hung runner. |
 | Normal | lint partitions, portable parallel shards, macOS stock Bash | 30 minutes, one value shared by every job in the tier | One shared hang tripwire keeps these ordinary lanes on the same policy instead of allowing per-lane packing estimates or one-off caps to set the bound. |
 | Serial | portable serial shards | shard-run step 40 minutes under a 45-minute job bound | One indivisible script sets this lane's floor: `tests/fm-supervision-host.test.sh` measures 16.9-22.6 minutes on healthy runners and about 35 minutes on slow ones, so no partition of the lane fits the normal tier. The step tripwire bounds a wedged shard below the job cap and fails the step with its captured log output rather than cancelling the job; the timing JSON is written only after every script finishes, so a timed-out shard uploads no timing artifact. |
 | Heavy | Herdr | family-run step 20 minutes under a 75-minute job-level last-resort backstop | Healthy runs finish in about 7-10 minutes, so the step tripwire fails a wedged suite while the `always()` cleanup and timing upload still run, and the job cap only catches a hang outside that step. |
