@@ -2979,6 +2979,7 @@ QUOTA
   expect_code 0 "$rc" "Codex explicit seat move should succeed: $out"
   assert_grep "CODEX_HOME='$dir/seats/spare'" "$dir/fake/literal" "Codex explicit move must use destination"
   [ "$(meta_field "$dir" codex-seatmove codex_seat)" = "$dir/seats/spare" ] || fail "Codex destination not recorded"
+  [ "$(awk -F= '$1 == "codex_seat" { n++ } END { print n+0 }' "$dir/home/state/codex-seatmove.meta")" = 1 ] || fail "Stale Codex store duplicated in record"
   [ "$(journal_field "$dir" codex-seatmove from_seat)" = "$dir/seats/work" ] || fail "Codex prior store not journaled"
   [ "$(journal_field "$dir" codex-seatmove to_seat)" = "$dir/seats/spare" ] || fail "Codex target store not journaled"
   assert_grep work "$dir/home/config/codex-seat" "Explicit move must preserve home's active selection"
@@ -2988,6 +2989,11 @@ QUOTA
   [ "$rc" -ne 0 ] || fail "Missing recorded Codex store accepted"
   assert_contains "$out" 'recorded Codex home is missing' "Missing store should refuse before stopping"
   [ "$(cat "$dir/home/state/codex-seatmove.meta")" = "$before" ] || fail "Missing-store refusal changed task record"
+  mv "$dir/seats/moved-spare" "$dir/seats/spare"
+  printf 'claude\n' > "$dir/fake/becomes"
+  out=$(run_control "$dir" codex-seatmove relaunch --harness claude --note "change vendor"); rc=$?
+  expect_code 0 "$rc" "Codex-to-Claude move should succeed: $out"
+  assert_no_grep 'codex_seat=' "$dir/home/state/codex-seatmove.meta" "Harness change must drop Codex store"
   pass "Codex explicit moves journal both stores and missing stores refuse before stopping"
 }
 test_codex_relaunch_seat_override_and_missing_store

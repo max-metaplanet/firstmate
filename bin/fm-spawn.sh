@@ -1838,11 +1838,11 @@ RAW_LAUNCH=0
 # validation teardown uses, so a malformed, ambiguous, or foreign record
 # refuses here exactly as it refuses there.
 RELAUNCH_PRIOR_HARNESS=
-# The claude_seat line from the task's own record on a relaunch, empty when it
+# The vendor seat line from the task's own record on a relaunch, empty when it
 # has none.
 RELAUNCH_SEAT=
 # The Claude profile directory THIS task launches with, empty for the ambient
-# default, and the value its record carries as claude_seat. Both are resolved
+# default, and the value its record carries as <vendor>_seat. Both are resolved
 # once the harness is known, below (bin/fm-seat-lib.sh).
 SEAT_CONFIG_DIR=
 SEAT_RECORD=
@@ -5306,7 +5306,7 @@ SPAWN_META_PATH=$SPAWN_META_TMP
 preserve_relaunch_meta() {
   awk -F= '
     BEGIN {
-      split("window endpoint_task_id worktree project harness kind mode yolo branch tasktmp base_branch model effort account account_provider busy_gen spawn_gen claude_seat traceparent backend herdr_session herdr_workspace_id herdr_tab_id herdr_pane_id zellij_session zellij_tab_id zellij_pane_id orca_worktree_id terminal cmux_workspace_id cmux_surface_id home projects control_relaunch_tx", keys, " ")
+      split("window endpoint_task_id worktree project harness kind mode yolo branch tasktmp base_branch model effort account account_provider busy_gen spawn_gen claude_seat codex_seat traceparent backend herdr_session herdr_workspace_id herdr_tab_id herdr_pane_id zellij_session zellij_tab_id zellij_pane_id orca_worktree_id terminal cmux_workspace_id cmux_surface_id home projects control_relaunch_tx", keys, " ")
       for (i in keys) owned[keys[i]] = 1
     }
     !($1 in owned)
