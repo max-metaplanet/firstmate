@@ -123,7 +123,7 @@ describe("this session's own seat", () => {
     await $.session.measure(measurement([{ kind: "five_hour", percentUsed: 36 }]));
     const band = textOf(await $.ui.render({ ...BAND, plugin: PLUGIN }));
     expect(band).toContain("5h 64%");
-    expect(band).toContain("others tightest charlie 22%");
+    expect(band).toContain("others tightest claude charlie 22%");
     // One Text of the mod's own, so the band cannot grow a second row.
     expect(band.split("truncate-end").length - 1).toBe(1);
   });
@@ -406,5 +406,27 @@ describe("the reading used for every draw", () => {
     await clock.settle();
     const pane = textOf(await $.ui.render({ ...PANE, plugin: PLUGIN }));
     for (const name of ["alpha", "bravo", "charlie"]) expect(pane).toContain(name);
+  });
+});
+
+
+describe("provider identity and renewal guidance", () => {
+  test("shows Codex renewal actions without running them or marking it as this Claude session", async ($, on) => {
+    const { clock, journal } = world(on, { board: boardReading([
+      seat("alpha", { provider: "codex", renewal: {
+        state: "invalid", reason: "credentials invalid", supported: false,
+        loginCommand: "CODEX_HOME=/seats/alpha codex login",
+        command: "fm-seat-renew.sh --provider codex --check alpha",
+      } }),
+    ]) });
+    await $.session.start(SESSION_START);
+    await clock.settle();
+    const pane = textOf(await $.ui.render({ ...PANE, plugin: PLUGIN }));
+    expect(pane).toContain("codex alpha");
+    expect(pane).toContain("renewal: invalid");
+    expect(pane).toContain("CODEX_HOME=/seats/alpha codex login");
+    expect(pane).toContain("fm-seat-renew.sh --provider codex --check alpha");
+    expect(pane).not.toContain("[this session]");
+    expect(journal.runs).toEqual([[expect.stringContaining("fm-seat-board.sh"), "json", "--cached-only"]]);
   });
 });

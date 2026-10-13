@@ -242,7 +242,7 @@ run_control() {  # <case-dir> <args...>
   env -u HERDR_ENV -u HERDR_PANE_ID -u HERDR_SESSION -u HERDR_SOCKET_PATH \
     -u HERDR_TAB_ID -u HERDR_WORKSPACE_ID \
     PATH="$dir/fakebin:$PATH" FM_HOME="$dir/home" FM_FAKE_DIR="$dir/fake" \
-    HOME="$dir/user-home" CLAUDE_CONFIG_DIR="${FM_TEST_CLAUDE_CONFIG_DIR:-}" \
+    HOME="$dir/user-home" CODEX_HOME="${FM_TEST_CODEX_HOME:-}" CLAUDE_CONFIG_DIR="${FM_TEST_CLAUDE_CONFIG_DIR:-}" \
     FM_SPAWN_NO_GUARD=1 GROK_HOME="$dir/grokhome" \
     FM_CONTROL_POLL=0.01 FM_CONTROL_EXIT_WAIT=0.05 FM_CONTROL_LAUNCH_WAIT=0.05 \
     FM_REAL_GIT="${FM_REAL_GIT:-}" FM_FAKE_GIT_FAILURE="${FM_FAKE_GIT_FAILURE:-}" \
@@ -264,7 +264,7 @@ run_spawn() {  # <case-dir> <args...>
   env -u HERDR_ENV -u HERDR_PANE_ID -u HERDR_SESSION -u HERDR_SOCKET_PATH \
     -u HERDR_TAB_ID -u HERDR_WORKSPACE_ID \
     PATH="$dir/fakebin:$PATH" FM_HOME="$dir/home" FM_FAKE_DIR="$dir/fake" \
-    HOME="$dir/user-home" CLAUDE_CONFIG_DIR='' \
+    HOME="$dir/user-home" CODEX_HOME="${FM_TEST_CODEX_HOME:-}" CLAUDE_CONFIG_DIR='' \
     FM_SPAWN_NO_GUARD=1 GROK_HOME="$dir/grokhome" \
     "$SPAWN" "$@" 2>&1
 }
@@ -2940,3 +2940,54 @@ test_relaunch_seat_override_is_transactional
 test_relaunch_invalid_seat_changes_nothing
 
 test_relaunch_seat_override_respects_account_pin
+
+
+test_codex_relaunch_keeps_recorded_store() {
+  local dir out rc
+  dir=$(new_case codex-seatkeep codex-seatkeep)
+  add_ship_task "$dir" codex-seatkeep codex
+  printf 'codex\n' > "$dir/fake/becomes"
+  mkdir -p "$dir/seats/work" "$dir/seats/spare" "$dir/home/config"
+  printf 'codex_seat=%s\n' "$dir/seats/work" >> "$dir/home/state/codex-seatkeep.meta"
+  printf '%s\n' "$dir/seats" > "$dir/home/config/codex-seats-root"
+  printf 'spare\n' > "$dir/home/config/codex-seat"
+  out=$(run_control "$dir" codex-seatkeep relaunch --note "continue preserved work"); rc=$?
+  expect_code 0 "$rc" "Codex relaunch should preserve its store: $out"
+  assert_grep "CODEX_HOME='$dir/seats/work'" "$dir/fake/literal" "Codex relaunch must keep task profile"
+  [ "$(meta_field "$dir" codex-seatkeep codex_seat)" = "$dir/seats/work" ] || fail "Codex store changed after home switch"
+  assert_no_grep "$dir/seats/spare" "$dir/fake/literal" "Codex relaunch must not follow active seat"
+  pass "Codex relaunch retains recorded store across home switches"
+}
+test_codex_relaunch_keeps_recorded_store
+
+
+test_codex_relaunch_seat_override_and_missing_store() {
+  local dir out rc before
+  dir=$(new_case codex-seatmove codex-seatmove)
+  add_ship_task "$dir" codex-seatmove codex
+  printf 'codex\n' > "$dir/fake/becomes"
+  mkdir -p "$dir/seats/work" "$dir/seats/spare" "$dir/home/config"
+  printf 'codex_seat=%s\n' "$dir/seats/work" >> "$dir/home/state/codex-seatmove.meta"
+  printf '%s\n' "$dir/seats" > "$dir/home/config/codex-seats-root"
+  printf 'work\n' > "$dir/home/config/codex-seat"
+  cat > "$dir/fakebin/quota-axi" <<'QUOTA'
+#!/usr/bin/env bash
+printf '%s\n' '{"schemaVersion":5,"providers":[{"provider":"codex","source":"oauth","state":{"status":"fresh"}}]}'
+QUOTA
+  chmod +x "$dir/fakebin/quota-axi"
+  out=$(run_control "$dir" codex-seatmove relaunch --seat spare --note "move preserved work"); rc=$?
+  expect_code 0 "$rc" "Codex explicit seat move should succeed: $out"
+  assert_grep "CODEX_HOME='$dir/seats/spare'" "$dir/fake/literal" "Codex explicit move must use destination"
+  [ "$(meta_field "$dir" codex-seatmove codex_seat)" = "$dir/seats/spare" ] || fail "Codex destination not recorded"
+  [ "$(journal_field "$dir" codex-seatmove from_seat)" = "$dir/seats/work" ] || fail "Codex prior store not journaled"
+  [ "$(journal_field "$dir" codex-seatmove to_seat)" = "$dir/seats/spare" ] || fail "Codex target store not journaled"
+  assert_grep work "$dir/home/config/codex-seat" "Explicit move must preserve home's active selection"
+  mv "$dir/seats/spare" "$dir/seats/moved-spare"
+  before=$(cat "$dir/home/state/codex-seatmove.meta")
+  out=$(run_control "$dir" codex-seatmove relaunch --note "missing store"); rc=$?
+  [ "$rc" -ne 0 ] || fail "Missing recorded Codex store accepted"
+  assert_contains "$out" 'recorded Codex home is missing' "Missing store should refuse before stopping"
+  [ "$(cat "$dir/home/state/codex-seatmove.meta")" = "$before" ] || fail "Missing-store refusal changed task record"
+  pass "Codex explicit moves journal both stores and missing stores refuse before stopping"
+}
+test_codex_relaunch_seat_override_and_missing_store

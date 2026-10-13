@@ -92,7 +92,7 @@
 #              A resting-worker Codex offer uses --harness codex with its
 #              matched rule's model/effort, without --seat, through this same
 #              transaction; a published Codex record drops the Claude seat.
-#              --seat deliberately moves a Claude worker to a validated seat;
+#              --seat deliberately moves a Claude or Codex worker to a validated seat;
 #              absent that flag it keeps its recorded profile. The destination
 #              is journaled and published only by the replacement launch.
 #              --note is required for a ship or scout, whose replacement
@@ -920,7 +920,7 @@ journal_write() {  # <phase> [extra-line]...
     echo "to_model=$TARGET_MODEL"
     echo "to_effort=$TARGET_EFFORT"
     if [ "$SEAT_SET" = 1 ]; then
-      echo "from_seat=$(fm_meta_get "$META_PRIOR" claude_seat)"
+      echo "from_seat=$(fm_meta_get "$META_PRIOR" "${PRIOR_HARNESS}_seat")"
       echo "to_seat=$TARGET_SEAT"
     fi
     local line
@@ -1082,10 +1082,21 @@ resolve_relaunch_profile() {
   local account account_root
   account=$(fm_worker_account_select "$TARGET_HARNESS" "$CONFIG" \
     "$account_model" "$TARGET_HARNESS") || return 1
+  if [ "$SEAT_SET" = 0 ] && [ "$TARGET_HARNESS" = codex ] && [ "$PRIOR_RECORDED_HARNESS" = codex ]; then
+    local recorded_codex_home owner_codex_home
+    recorded_codex_home=$(fm_meta_get "$META" codex_seat)
+    [ -z "$recorded_codex_home" ] || [ -d "$recorded_codex_home" ] \
+      || die "recorded Codex home is missing: $recorded_codex_home; restore it before stopping this worker"
+    owner_codex_home=$(fm_seat_codex_home "$recorded_codex_home") || return 1
+    [ "$owner_codex_home" = "$recorded_codex_home" ] \
+      || die "recorded Codex home aliases another credential owner; use an explicit --seat move to that owner"
+
+  fi
   if [ "$SEAT_SET" = 1 ]; then
-    [ "$PRIOR_RECORDED_HARNESS" = claude ] && [ "$TARGET_HARNESS" = claude ] \
-      || die "--seat requires a Claude-to-Claude relaunch"
-    TARGET_SEAT=$(fm_seat_relaunch_destination "$NEW_SEAT") || return 1
+    if [ "$PRIOR_RECORDED_HARNESS" != "$TARGET_HARNESS" ] || { [ "$TARGET_HARNESS" != claude ] && [ "$TARGET_HARNESS" != codex ]; }; then
+      die "--seat requires a same-harness Claude or Codex relaunch"
+    fi
+    TARGET_SEAT=$(FM_SEAT_PROVIDER=$TARGET_HARNESS fm_seat_relaunch_destination "$NEW_SEAT") || return 1
     account_root=${account#*$'\t'}
     account_root=${account_root%%$'\t'*}
     [ -z "$account" ] || [ "$account_root" = "$TARGET_SEAT" ] \

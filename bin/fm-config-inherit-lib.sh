@@ -85,14 +85,14 @@ FM_SHARED_CAPTAIN_MODE="444"
 # The declared inheritable set (space-separated, config-dir-relative item paths).
 # Extend here to inherit more of the primary's local config; override via the
 # environment only in tests. Items must not contain whitespace.
-FM_INHERITABLE_CONFIG="${FM_INHERITABLE_CONFIG:-crew-dispatch.json dispatch-never-send crew-harness backlog-backend backend herdr-presentation-spaces startup-memory-budget trace-context launch-env-allowlist claude-permission-mode lavish-axi-host keep-ai-trailers supervision-host-off claude-seat claude-seats-root claude-seat-threshold claude-seat-destination-min claude-seat-extra-usage claude-seat-auto-exclude claude-seat-floor claude-seat-floor-readd claude-seat-floor-dwell claude-seat-session-share claude-seat-resting}"
+FM_INHERITABLE_CONFIG="${FM_INHERITABLE_CONFIG:-crew-dispatch.json dispatch-never-send crew-harness backlog-backend backend herdr-presentation-spaces startup-memory-budget trace-context launch-env-allowlist claude-permission-mode lavish-axi-host keep-ai-trailers supervision-host-off claude-seat claude-seats-root claude-seat-threshold claude-seat-destination-min claude-seat-extra-usage claude-seat-auto-exclude claude-seat-floor claude-seat-floor-readd claude-seat-floor-dwell claude-seat-session-share claude-seat-resting codex-seat codex-seats-root codex-seat-threshold codex-seat-destination-min codex-seat-auto-exclude}"
 
 # Items that name something that exists only on THIS machine, so they reach local
 # secondmate homes but never cross to a remote route. A Claude seat is a
 # per-machine, Keychain-backed profile the owner logged in here; a remote home
 # handed its name would resolve a profile nobody logged in there, so it keeps
 # its own login exactly as before seats existed (docs/claude-seats.md).
-FM_MACHINE_LOCAL_INHERITABLE_CONFIG="claude-seat claude-seats-root claude-seat-threshold claude-seat-destination-min claude-seat-extra-usage claude-seat-auto-exclude claude-seat-floor claude-seat-floor-readd claude-seat-floor-dwell claude-seat-session-share claude-seat-resting"
+FM_MACHINE_LOCAL_INHERITABLE_CONFIG="claude-seat claude-seats-root claude-seat-threshold claude-seat-destination-min claude-seat-extra-usage claude-seat-auto-exclude claude-seat-floor claude-seat-floor-readd claude-seat-floor-dwell claude-seat-session-share claude-seat-resting codex-seat codex-seats-root codex-seat-threshold codex-seat-destination-min codex-seat-auto-exclude"
 
 # The one per-home decline from those machine-local seat items, read in the
 # DESTINATION home's own config dir and deliberately not inheritable itself, so
@@ -111,14 +111,15 @@ fm_config_inherit_item_machine_local() {  # <item>
   return 1
 }
 
-# fm_config_inherit_seat_optout <dest-config-dir>
+# fm_config_inherit_seat_optout <dest-config-dir> [claude|codex]
 # True when the destination home declines the machine-local seat items: any
 # config/<FM_SEAT_LOCAL_OPTOUT_FILE> path is there, whatever its type, including
 # a directory or a dangling symlink. False is the fleet-wide default.
 fm_config_inherit_seat_optout() {
-  local dest_config=${1-} flag
+  local dest_config=${1-} provider=${2:-claude} flag
   [ -n "$dest_config" ] || return 1
-  flag="$dest_config/$FM_SEAT_LOCAL_OPTOUT_FILE"
+  case "$provider" in claude|codex) ;; *) return 1 ;; esac
+  flag="$dest_config/${provider}-seat-local"
   [ -e "$flag" ] || [ -L "$flag" ]
 }
 
@@ -593,21 +594,20 @@ propagate_secondmate_inheritance() {
 }
 
 propagate_inheritable_config() {
-  local src_config=$1 dest_config=$2 item src dest source_present reason rc seat_optout=0
+  local src_config=$1 dest_config=$2 item src dest source_present reason rc seat_provider
   [ -n "$src_config" ] || return 1
   [ -n "$dest_config" ] || return 1
   rc=0
-  # Read the destination home's own seat decline once, before any item is
-  # considered. Every local convergence point reaches the seat items through
+  # Read each provider's destination-home opt-out before its items. Every local convergence point reaches the seat items through
   # this loop, so honoring it here is what makes a declining home's choice hold
   # on a post-switch push, a session-start sweep, and a secondmate launch alike.
-  fm_config_inherit_seat_optout "$dest_config" && seat_optout=1
   for item in $FM_INHERITABLE_CONFIG; do
     case "$item" in
       ''|/*|.|..|../*|*/../*|*/..) return 1 ;;
     esac
-    if [ "$seat_optout" = 1 ] && fm_config_inherit_item_machine_local "$item"; then
-      reason="home declines inherited seat settings (config/$FM_SEAT_LOCAL_OPTOUT_FILE)"
+    seat_provider=${item%%-*}
+    if fm_config_inherit_item_machine_local "$item" && fm_config_inherit_seat_optout "$dest_config" "$seat_provider"; then
+      reason="home declines inherited seat settings (config/${seat_provider}-seat-local)"
       record_inheritable_config_result "$item" skipped "$reason"
       continue
     fi

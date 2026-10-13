@@ -102,6 +102,211 @@ seat_signed_out() {
   printf '%s\n' "$@" > "$spec/signed_out"
 }
 
+# Codex fixtures bind exclusively to CODEX_HOME and insist that every probe is
+# profile-only and non-renewing. Their auth files are empty synthetic stores.
+make_codex_seat_case() {
+  local name=$1
+  read_seat_case "$(make_seat_case "$name")"
+  printf '%s\n' "$SEATS_DIR" > "$HOME_DIR/config/codex-seats-root"
+  cat > "$FAKEBIN/quota-axi" <<'CODEXFAKE'
+#!/usr/bin/env bash
+set -u
+provider='' readonly_probe=0 profile_only=0
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --provider) provider=$2; shift ;;
+    --no-credential-refresh) readonly_probe=1 ;;
+    --profile-only) profile_only=1 ;;
+  esac
+  shift
+done
+[ "$provider" = codex ] && [ "$readonly_probe" = 1 ] && [ "$profile_only" = 1 ] || exit 88
+[ -n "${CODEX_HOME:-}" ] || exit 89
+[ -f "$CODEX_HOME/quota.json" ] || exit 90
+cat "$CODEX_HOME/quota.json"
+CODEXFAKE
+  chmod +x "$FAKEBIN/quota-axi"
+}
+
+codex_quota_fixture() {
+  local home=$1 remaining=${2:-60} auth=${3:-valid}
+  mkdir -p "$home"
+  : > "$home/auth.json"
+  jq -n --argjson remaining "$remaining" --arg auth "$auth" '{schemaVersion:6,providers:[
+    {provider:"codex",accountKey:"unrelated",source:"oauth",account:{email:"wrong@example.test"},
+     quotaSemantics:{effectiveAvailability:[{scope:"all_models",status:"known",effectivePercentRemaining:99}]}},
+    {provider:"codex",accountKey:"codex-home",source:(if $auth == "valid" then "oauth" else "unavailable" end),
+     account:{email:"native@example.test"},state:{authStatus:$auth},
+     attempts:[{source:"oauth",status:"skipped",error:$auth}],
+     quotaSemantics:{effectiveAvailability:[{scope:"all_models",status:"known",effectivePercentRemaining:$remaining}]}}
+  ]}' > "$home/quota.json"
+}
+
+test_codex_registration_keeps_one_auth_store_and_quotes_login() {
+  local out source_home identity_a identity_b
+  make_codex_seat_case codex-register
+  source_home="$CASE_DIR/existing home"
+  codex_quota_fixture "$source_home"
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" --provider codex add work --home "$source_home")
+  expect_code 0 "$?" "registering an existing Codex home must succeed: $out"
+  [ -L "$SEATS_DIR/work" ] || fail 'Codex registration must alias the original home'
+  [ "$SEATS_DIR/work/auth.json" -ef "$source_home/auth.json" ] || fail 'registered auth must remain the original file'
+  assert_contains "$out" 'no authentication copied' 'registration must explain the credential boundary'
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" --provider codex add work --home "$source_home")
+  expect_code 0 "$?" "registering the same home twice must converge: $out"
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" --provider codex probe work)
+  expect_code 0 "$?" "Codex quota must bind to the selected profile: $out"
+  assert_contains "$out" 'logged-in' 'Codex probe must use the native account'
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" --provider codex switch work)
+  expect_code 0 "$?" "switching to registered Codex home must succeed: $out"
+  assert_grep work "$HOME_DIR/config/codex-seat" 'Codex seat selection must use a separate config key'
+  assert_absent "$HOME_DIR/config/claude-seat" 'Codex selection must not select a Claude seat'
+  mkdir -p "$SEATS_DIR/alias"
+  ln -s "$source_home/auth.json" "$SEATS_DIR/alias/auth.json"
+  identity_a=$(FM_SEAT_PROVIDER=codex bash -c '. "$1/bin/fm-seat-lib.sh"; fm_seat_credential_identity "$2"' _ "$ROOT" "$SEATS_DIR/work")
+  identity_b=$(FM_SEAT_PROVIDER=codex bash -c '. "$1/bin/fm-seat-lib.sh"; fm_seat_credential_identity "$2"' _ "$ROOT" "$SEATS_DIR/alias")
+  [ "$identity_a" = "$identity_b" ] || fail 'auth.json aliases must share a credential identity'
+  pass 'Codex registration aliases one credential store and keeps provider settings isolated'
+}
+
+test_codex_rotation_skips_aliases_and_uses_native_account_quota() {
+  local out
+  make_codex_seat_case codex-rotation
+  codex_quota_fixture "$SEATS_DIR/a" 5
+  mkdir -p "$SEATS_DIR/b"
+  ln -s "$SEATS_DIR/a/auth.json" "$SEATS_DIR/b/auth.json"
+  codex_quota_fixture "$SEATS_DIR/c" 15
+  codex_quota_fixture "$SEATS_DIR/d" 70
+  printf 'a\n' > "$HOME_DIR/config/codex-seat"
+  printf '20\n' > "$HOME_DIR/config/codex-seat-destination-min"
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" --provider codex switch --next)
+  expect_code 0 "$?" "Codex rotation must find the independent eligible store: $out"
+  assert_contains "$out" 'shares the active credential store' 'an auth alias is not another account'
+  assert_contains "$out" '15% left is not above the 20%' 'another schema-6 account cannot supply this seat headroom'
+  assert_grep d "$HOME_DIR/config/codex-seat" 'rotation must select genuine native-account headroom'
+  printf 'b\n' > "$HOME_DIR/config/codex-seat-auto-exclude"
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" --provider codex switch --next)
+  expect_code 1 "$?" "an exclusion must cover every alias of its credential store: $out"
+  assert_contains "$out" 'seat a: skipped, excluded' 'aliases must not bypass exclusions'
+  pass 'Codex rotation honors auth aliases, native account quota, and alias exclusions'
+}
+
+test_codex_invalid_login_and_missing_selected_home_fail_closed() {
+  local out rc
+  make_codex_seat_case codex-invalid
+  codex_quota_fixture "$SEATS_DIR/invalid" 70 credentials_invalid
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" --provider codex switch invalid --force)
+  expect_code 1 "$?" "invalid Codex credentials cannot be forced: $out"
+  assert_contains "$out" 'codex login' 'invalid credentials need the exact login command'
+  assert_absent "$HOME_DIR/config/codex-seat" 'invalid credentials must not select a seat'
+  printf 'missing\n' > "$HOME_DIR/config/codex-seat"
+  rc=0
+  out=$(CONFIG="$HOME_DIR/config" FM_SEAT_PROVIDER=codex bash -c '. "$1/bin/fm-seat-lib.sh"; fm_seat_spawn_config_dir' _ "$ROOT" 2>&1) || rc=$?
+  expect_code 1 "$rc" "missing configured home cannot fall through to ambient login: $out"
+  printf '../escape\n' > "$HOME_DIR/config/codex-seat"
+  rc=0
+  out=$(CONFIG="$HOME_DIR/config" FM_SEAT_PROVIDER=codex bash -c '. "$1/bin/fm-seat-lib.sh"; fm_seat_spawn_config_dir' _ "$ROOT" 2>&1) || rc=$?
+  expect_code 1 "$rc" "malformed configured home cannot fall through to ambient login: $out"
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" --provider codex pipeline-move)
+  expect_code 1 "$?" "Codex pipeline must fail clearly: $out"
+  assert_contains "$out" 'supports Claude seats only' 'unsupported vendor operations need an explicit error'
+  pass 'invalid Codex logins and missing or malformed selected homes fail closed'
+}
+
+test_codex_automatic_switch_propagates_provider_and_watch_binding() {
+  local out
+  make_codex_seat_case codex-auto
+  codex_quota_fixture "$SEATS_DIR/a" 5
+  codex_quota_fixture "$SEATS_DIR/b" 70
+  printf 'a\n' > "$HOME_DIR/config/codex-seat"
+  printf '10\n' > "$HOME_DIR/config/codex-seat-threshold"
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" --provider codex auto)
+  expect_code 0 "$?" "Codex auto must keep provider through child switch: $out"
+  assert_contains "$out" 'codex-seat: switched from a' 'automatic outcome must identify Codex'
+  assert_grep b "$HOME_DIR/config/codex-seat" 'Codex automatic rotation must update its provider key'
+  assert_absent "$HOME_DIR/config/claude-seat" 'Codex automatic rotation must not move Claude'
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" --provider codex arm)
+  expect_code 0 "$?" "Codex watch must register independently: $out"
+  [ -f "$HOME_DIR/state/codex-seat.check.sh" ] || fail 'Codex watch needs its own registration'
+  assert_absent "$HOME_DIR/state/claude-seat.check.sh" 'Codex watch must not overwrite Claude registration'
+  out=$(FM_HOME="$HOME_DIR" PATH="$FAKEBIN:$PATH" bash "$HOME_DIR/state/codex-seat.check.sh" 2>&1)
+  expect_code 0 "$?" "the registered Codex watch must execute its provider scope: $out"
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" --provider codex retire)
+  expect_code 0 "$?" "Codex watch retirement must succeed: $out"
+  assert_absent "$HOME_DIR/state/codex-seat.check.sh" 'Codex retire must remove its own watch'
+  pass 'Codex automatic switching and registered watch preserve provider scope'
+}
+
+test_codex_file_alias_resolves_one_authoritative_home() {
+  local out home quoted rc
+  make_codex_seat_case codex-authoritative-home
+  home="$CASE_DIR/authoritative home"
+  codex_quota_fixture "$home"
+  mkdir -p "$SEATS_DIR/alias" "$SEATS_DIR/broken" "$SEATS_DIR/wrong-name"
+  ln -s "$home/auth.json" "$SEATS_DIR/alias/auth.json"
+  ln -s "$CASE_DIR/absent/auth.json" "$SEATS_DIR/broken/auth.json"
+  : > "$home/other.json"
+  ln -s "$home/other.json" "$SEATS_DIR/wrong-name/auth.json"
+  printf 'alias\n' > "$HOME_DIR/config/codex-seat"
+  out=$(CONFIG="$HOME_DIR/config" FM_SEAT_PROVIDER=codex bash -c '. "$1/bin/fm-seat-lib.sh"; fm_seat_spawn_config_dir' _ "$ROOT")
+  assert_equals "$home" "$out" 'file aliases must launch on the single authoritative credential/config home'
+  out=$(FM_SEAT_PROVIDER=codex bash -c '. "$1/bin/fm-seat-lib.sh"; fm_seat_login_command "$2"' _ "$ROOT" "$SEATS_DIR/alias")
+  printf -v quoted '%q' "$home"
+  assert_equals "CODEX_HOME=$quoted codex login" "$out" 'login must resolve the same home with safe shell quoting'
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" --provider codex probe alias)
+  expect_code 0 "$?" "probe must read the authoritative home rather than the alias directory: $out"
+  [ -L "$SEATS_DIR/alias/auth.json" ] || fail 'resolving/probing cannot rewrite the alias'
+  [ "$SEATS_DIR/alias/auth.json" -ef "$home/auth.json" ] || fail 'the original auth file must remain authoritative'
+  for home in "$SEATS_DIR/broken" "$SEATS_DIR/wrong-name"; do
+    rc=0
+    out=$(bash -c '. "$1/bin/fm-seat-lib.sh"; fm_seat_codex_home "$2"' _ "$ROOT" "$home" 2>&1) || rc=$?
+    expect_code 1 "$rc" "invalid credential aliases must fail closed: $out"
+  done
+  # If resolution accidentally falls back to an empty profile, this external
+  # quota fixture would approve it. A failure therefore proves no fallback.
+  cat > "$FAKEBIN/quota-axi" <<'ALIASQUOTA'
+#!/usr/bin/env bash
+printf '{"schemaVersion":5,"providers":[{"provider":"codex","source":"oauth"}]}\n'
+ALIASQUOTA
+  for home in broken wrong-name; do
+    rc=0
+    out=$(CONFIG="$HOME_DIR/config" FM_SEAT_PROVIDER=codex PATH="$FAKEBIN:$PATH" bash -c '
+      . "$1/bin/fm-timeout-lib.sh"
+      . "$1/bin/fm-quota-axi-lib.sh"
+      . "$1/bin/fm-seat-lib.sh"
+      fm_seat_relaunch_destination "$2"
+    ' _ "$ROOT" "$home" 2>&1) || rc=$?
+    expect_code 1 "$rc" "relaunch must refuse an invalid alias instead of accepting ambient login: $out"
+  done
+  pass 'Codex file aliases resolve one authoritative login and configuration home without credential writes'
+}
+
+test_codex_inheritance_has_provider_scoped_optouts_and_stays_local() {
+  local out declining taking
+  make_codex_seat_case codex-inheritance
+  codex_quota_fixture "$SEATS_DIR/work"
+  declining=$(add_local_secondmate "$HOME_DIR" "$FAKEBIN" codexdecline)
+  taking=$(add_local_secondmate "$HOME_DIR" "$FAKEBIN" codextaking)
+  : > "$declining/config/codex-seat-local"
+  : > "$taking/config/claude-seat-local"
+  printf 'personal\n' > "$declining/config/codex-seat"
+  printf '20\n' > "$HOME_DIR/config/codex-seat-threshold"
+  printf '30\n' > "$HOME_DIR/config/codex-seat-destination-min"
+  printf 'spare\n' > "$HOME_DIR/config/codex-seat-auto-exclude"
+  out=$(TMUX='' run_seat "$HOME_DIR" "$FAKEBIN" --provider codex switch work)
+  expect_code 0 "$?" "Codex switch must inherit local configuration: $out"
+  assert_equals personal "$(cat "$declining/config/codex-seat")" 'Codex optout must preserve its local active seat'
+  assert_equals work "$(cat "$taking/config/codex-seat")" 'Claude optout must not block Codex inheritance'
+  assert_equals 20 "$(cat "$taking/config/codex-seat-threshold")" 'Codex threshold must inherit'
+  assert_equals 30 "$(cat "$taking/config/codex-seat-destination-min")" 'Codex destination minimum must inherit'
+  assert_equals spare "$(cat "$taking/config/codex-seat-auto-exclude")" 'Codex exclusions must inherit'
+  assert_absent "$declining/config/codex-seat-threshold" 'Codex optout must preserve an absent local setting'
+  assert_contains "$out" 'codex-seat: skipped - home declines inherited seat settings' 'provider-specific decline must be visible'
+  out=$(bash -c '. "$1/bin/fm-config-inherit-lib.sh"; fm_config_inherit_items' _ "$ROOT")
+  assert_not_contains "$out" 'config/codex-seat' 'Codex settings must never cross a remote route'
+  pass 'Codex inheritance follows only its own optout and never crosses machines'
+}
+
 test_absent_setting_is_the_default_seat() {
   local rec out
   rec=$(make_seat_case absent-default)
@@ -2315,9 +2520,9 @@ JSON
   mv "$FAKEBIN/quota-axi" "$FAKEBIN/quota-seat-fixture"
   cat > "$FAKEBIN/quota-axi" <<'SH'
 #!/usr/bin/env bash
-if [ "${1:-}" != --json ]; then
-  exec "${BASH_SOURCE[0]%/*}/quota-seat-fixture" "$@"
-fi
+case " $* " in
+  *' --provider '*) exec "${BASH_SOURCE[0]%/*}/quota-seat-fixture" "$@" ;;
+esac
 cat <<'JSON'
 {"schemaVersion":5,"providers":[
   {"provider":"claude","quotaSemantics":{"status":"known","effectiveAvailability":[{"scope":"all_models","status":"known","effectivePercentRemaining":80,"runway":{"status":"through_reset"},"selection":{"spendPriority":0.9}}]}},
@@ -3454,6 +3659,13 @@ test_pipeline_never_launches_excluded_or_resting
 test_pipeline_extra_usage_reads_selected_profile
 test_pipeline_live_warning_and_move_leave_agent_running
 test_pipeline_move_keeps_a_healthy_seat_with_a_malformed_setting
+
+test_codex_file_alias_resolves_one_authoritative_home
+test_codex_inheritance_has_provider_scoped_optouts_and_stays_local
+test_codex_registration_keeps_one_auth_store_and_quotes_login
+test_codex_rotation_skips_aliases_and_uses_native_account_quota
+test_codex_invalid_login_and_missing_selected_home_fail_closed
+test_codex_automatic_switch_propagates_provider_and_watch_binding
 
 test_absent_setting_is_the_default_seat
 test_switch_to_logged_in_seat_updates_only_the_setting

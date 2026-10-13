@@ -2560,3 +2560,24 @@ Without Firstmate's hooks, Herdr reported the question panel as `blocked`, which
 This live proof covers the watcher and queue boundary; it does not establish live daemon-consumer delivery.
 `bin/fm-test-run.sh tests/fm-daemon.test.sh` exercises that consumer routing separately with portable regressions for busy escalation and busy-bookkeeping failures in away and quiet mode.
 Repeat the hooked-worker check above before publication if watcher or task-inbox busy code changes; `bin/fm-test-run.sh tests/fm-task-inbox.test.sh` refreshes the portable ladder regressions.
+
+## Seat renewal capability boundary
+
+Verified on 2026-10-13 with Claude Code `2.1.296 (Claude Code)` and Codex `codex-cli 0.162.0` on macOS arm64.
+`bin/fm-seat-renew-lib.sh` owns the renewal decision and its unsupported-adapter boundary.
+`bash tests/fm-seat-renew-live-e2e.test.sh` checks every installed supported vendor using version, help, protocol schema generation, and Codex login status in fresh empty homes, without a model request or access to live credential stores.
+The exact result was:
+
+```text
+ok - 2.1.296 (Claude Code): auth help exposes login; automatic renewal remains disabled
+ok - codex-cli 0.162.0: empty CODEX_HOME reports Not logged in without credential creation
+ok - codex-cli 0.162.0: generated account/read refreshToken schema; automatic renewal remains disabled
+```
+
+Codex's generated `v2/GetAccountParams.json` declares a boolean `refreshToken` field that requests proactive refresh in managed-auth mode.
+That capability does not prove exclusive ownership against arbitrary live or newly starting vendor sessions.
+The guard verifies the capability surface only; it neither attempts renewal nor establishes renewal safety.
+`bash tests/fm-seat-renew.test.sh` returned `ok - both vendors classify renewal state and refuse unsafe renewal without starting vendor CLIs`.
+That portable regression exercises the helper's public CLI with invalid, expired-refreshable, healthy, unknown, and malformed read results, with vendor launch tripwires.
+The empty-home Codex check runs with `env -i`, so inherited API keys, auth selectors, and other configuration cannot answer for the selected `CODEX_HOME`.
+On the same date, `bash tests/fm-quota-claude-mod-plugin.test.sh` passed all 36 tests against Claude Code `2.1.296`, including the installed quota mod integration.

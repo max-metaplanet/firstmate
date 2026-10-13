@@ -109,7 +109,7 @@ run_spawn() {
   # explicitly (empty by default) instead of leaking the invoking shell's value,
   # which would make launch assertions depend on the developer's environment.
   # A test opts in to the set case via FM_TEST_CLAUDE_CONFIG_DIR.
-  CLAUDE_CONFIG_DIR="${FM_TEST_CLAUDE_CONFIG_DIR:-}" \
+  CODEX_HOME="${FM_TEST_CODEX_HOME:-}" CLAUDE_CONFIG_DIR="${FM_TEST_CLAUDE_CONFIG_DIR:-}" \
     FM_FAKE_LAUNCH_LOG="$launchlog" FM_FAKE_PANE_LOG="${FM_TEST_PANE_LOG:-}" \
     FM_FAKE_PI_VERSION="${FM_TEST_PI_VERSION:-0.84.0}" \
     FM_FAKE_CURSOR_MODELS="${FM_TEST_CURSOR_MODELS:-}" \
@@ -2290,3 +2290,23 @@ test_claude_secondmate_launch_carries_the_attribution_policy
 test_active_dispatch_profile_does_not_block_secondmate_launch
 
 echo "# all fm-spawn-dispatch-profile tests passed"
+
+
+test_codex_seat_launch_store() {
+  local rec id out status launch
+  id=profile-codex-seat
+  rec=$(make_spawn_case profile-codex-seat codex "$id")
+  read_case_record "$rec"
+  mkdir -p "$CASE_DIR/seats/work"
+  printf '{}\n' > "$CASE_DIR/seats/work/auth.json"
+  printf '%s\n' "$CASE_DIR/seats" > "$HOME_DIR/config/codex-seats-root"
+  printf 'work\n' > "$HOME_DIR/config/codex-seat"
+  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR"); status=$?
+  expect_code 0 "$status" "Codex selected seat spawn should succeed: $out"
+  launch=$(cat "$LAUNCH_LOG")
+  assert_contains "$launch" "CODEX_HOME='$CASE_DIR/seats/work'" "Codex launch must name selected store"
+  assert_grep "codex_seat=$CASE_DIR/seats/work" "$HOME_DIR/state/$id.meta" "Codex metadata must retain the selected store"
+  assert_no_grep 'claude_seat=' "$HOME_DIR/state/$id.meta" "Codex must not record a Claude seat"
+  pass "Codex launches and records its selected home"
+}
+test_codex_seat_launch_store

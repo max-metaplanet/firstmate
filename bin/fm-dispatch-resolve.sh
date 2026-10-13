@@ -476,7 +476,18 @@ fi
 
 # ---- quota evidence: one quota-axi --json snapshot -----------------------------
 command -v quota-axi >/dev/null 2>&1 || emit_error "quota-axi not installed"
-quota-axi --json > "$QUOTA" 2>/dev/null || emit_error "quota-axi --json failed"
+# A Codex candidate will launch on the selected CODEX_HOME, so its quota row
+# must come from that same store. Never renew while collecting dispatch evidence.
+if jq -e '.. | objects | select(.harness? == "codex")' "$RULES" >/dev/null; then
+  CODEX_SEAT_HOME=$(FM_SEAT_PROVIDER=codex fm_seat_spawn_config_dir) || emit_error "Codex seat resolution failed"
+  if [ -n "$CODEX_SEAT_HOME" ]; then
+    env CODEX_HOME="$CODEX_SEAT_HOME" quota-axi --json --no-credential-refresh > "$QUOTA" 2>/dev/null || emit_error "quota-axi --json failed"
+  else
+    env -u CODEX_HOME quota-axi --json --no-credential-refresh > "$QUOTA" 2>/dev/null || emit_error "quota-axi --json failed"
+  fi
+else
+  quota-axi --json --no-credential-refresh > "$QUOTA" 2>/dev/null || emit_error "quota-axi --json failed"
+fi
 fm_quota_json_valid < "$QUOTA" || emit_error "quota-axi --json returned an invalid snapshot"
 
 # Read the same seat gate as spawn, not the ambient ranking row: the active

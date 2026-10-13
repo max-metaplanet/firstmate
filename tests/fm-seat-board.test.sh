@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Behavior tests for bin/fm-seat-board.sh: the read-only local page that shows
-# quota-axi's report for every Claude seat.
+# quota-axi's report for every Claude and Codex seat.
 #
 # Most tests here run against `render`, which prints the generated page once
 # and exits with no server and no port. The `serve` tests at the end drive a
@@ -39,7 +39,9 @@ make_board_quota_fake() {
 #!/usr/bin/env bash
 set -u
 spec="$spec"
+provider=claude
 key="\${CLAUDE_CONFIG_DIR:-}"
+case " \$* " in *" --provider codex "*) provider=codex; key="\${CODEX_HOME:-}" ;; esac
 [ -n "\$key" ] || key='(default)'
 email=\$(awk -F'\t' -v k="\$key" '\$1==k{print \$2; exit}' "\$spec/email_map" 2>/dev/null)
 remaining=\$(awk -F'\t' -v k="\$key" '\$1==k{print \$2; exit}' "\$spec/remaining_map" 2>/dev/null)
@@ -51,18 +53,18 @@ if [ -n "\$spent" ]; then
 fi
 if [ -f "\$spec/rate_limited" ] && grep -Fxq "\$key" "\$spec/rate_limited"; then
   cat <<JSON
-{"generatedAt":"2026-01-01T00:00:00Z","schemaVersion":5,"providers":[{"provider":"claude","label":"Claude","source":"unavailable","windows":[],"state":{"status":"rate_limited","error":"Claude quota endpoint rate limited"},"attempts":[],"quotaSemantics":{"status":"unknown","effectiveAvailability":[]}}]}
+{"generatedAt":"2026-01-01T00:00:00Z","schemaVersion":5,"providers":[{"provider":"\$provider","label":"Claude","source":"unavailable","windows":[],"state":{"status":"rate_limited","error":"Claude quota endpoint rate limited"},"attempts":[],"quotaSemantics":{"status":"unknown","effectiveAvailability":[]}}]}
 JSON
   exit 1
 fi
 if [ -f "\$spec/oauth" ] && grep -Fxq "\$key" "\$spec/oauth"; then
   cat <<JSON
-{"generatedAt":"2026-01-01T00:00:00Z","schemaVersion":5,"providers":[{"provider":"claude","label":"Claude","source":"oauth","account":{"email":"\$email"},"windows":\$windows,"quotaSemantics":{"status":"known","effectiveAvailability":[]}}]}
+{"generatedAt":"2026-01-01T00:00:00Z","schemaVersion":5,"providers":[{"provider":"\$provider","label":"Claude","source":"oauth","account":{"email":"\$email"},"windows":\$windows,"quotaSemantics":{"status":"known","effectiveAvailability":[]}}]}
 JSON
   exit 0
 fi
 cat <<JSON
-{"generatedAt":"2026-01-01T00:00:00Z","schemaVersion":5,"providers":[{"provider":"claude","label":"Claude","source":"unavailable","windows":[],"state":{"status":"error","error":"credentials_missing"},"attempts":[],"quotaSemantics":{"status":"unknown","effectiveAvailability":[]}}]}
+{"generatedAt":"2026-01-01T00:00:00Z","schemaVersion":5,"providers":[{"provider":"\$provider","label":"Claude","source":"unavailable","windows":[],"state":{"status":"error","error":"credentials_missing"},"attempts":[],"quotaSemantics":{"status":"unknown","effectiveAvailability":[]}}]}
 JSON
 exit 1
 SH
@@ -82,6 +84,7 @@ make_board_case() {
   fakebin=$(fm_fakebin "$case_dir")
   spec=$(make_board_quota_fake "$fakebin")
   printf '%s\n' "$seats" > "$home/config/claude-seats-root"
+  printf '%s\n' "$case_dir/codex-seats" > "$home/config/codex-seats-root"
   printf '%s\n' "$case_dir|$home|$seats|$fakebin|$spec"
 }
 
@@ -100,7 +103,7 @@ run_board() {
   shift 3
   [ $# -gt 0 ] || set -- render
   FM_HOME="$home" FM_CONFIG_OVERRIDE="$home/config" FM_STATE_OVERRIDE="$home/state" \
-    FM_DATA_OVERRIDE="$home/data" CLAUDE_CONFIG_DIR="" \
+    FM_DATA_OVERRIDE="$home/data" CLAUDE_CONFIG_DIR="" CODEX_HOME="" \
     FM_SEAT_BOARD_CACHE_DIR="$cache" FM_SEAT_BOARD_CACHE_SECONDS=60 \
     PATH="$fakebin:$PATH" "$BOARD" "$@" 2>&1
 }
@@ -272,6 +275,42 @@ test_serve_rejects_a_missing_or_non_numeric_port() {
 # the reading carries each seat's own age and never turns an absent figure into
 # a zero.
 
+test_json_separates_providers_with_matching_names_and_profiles() {
+  local rec out claude_cache codex_cache cached
+  rec=$(make_board_case providers)
+  read_board_case "$rec"
+  # Deliberately reuse the profile path: provider must be part of the cache key.
+  printf '%s\n' "$SEATS_DIR" > "$HOME_DIR/config/codex-seats-root"
+  mkdir -p "$SEATS_DIR/alpha"
+  printf 'alpha\n' > "$HOME_DIR/config/codex-seat"
+  printf '%s\n' "$SEATS_DIR/alpha" > "$SPEC_DIR/oauth"
+  printf '%s\tshared@example.test\n' "$SEATS_DIR/alpha" > "$SPEC_DIR/email_map"
+  out=$(run_board "$HOME_DIR" "$FAKEBIN" "$CASE_DIR/cache" json)
+  printf '%s' "$out" | jq -e '
+    .activeSeat == "default" and .providers.codex.activeSeat == "alpha"
+    and ([.seats[] | select(.name == "alpha") | .provider] == ["claude", "codex"])
+    and all(.seats[] | select(.name == "alpha"); .attention == null and .account == "shared@example.test")
+    and all(.seats[]; (.renewal.state | type) == "string" and .renewal.supported == false)
+  ' >/dev/null || fail "provider rows and renewal state must remain distinct: $out"
+  claude_cache=$(printf '%s' "$out" | jq -r '.seats[] | select(.name == "alpha" and .provider == "claude") | .cacheFile')
+  codex_cache=$(printf '%s' "$out" | jq -r '.seats[] | select(.name == "alpha" and .provider == "codex") | .cacheFile')
+  [ "$claude_cache" != "$codex_cache" ] || fail "different providers must never share a cache file"
+  jq '.providers[0].state = {authStatus:"credentials_invalid"}' "$codex_cache" > "$codex_cache.next"
+  mv "$codex_cache.next" "$codex_cache"
+  jq '.providers[0].state = {authStatus:"expired_refreshable"}' "$claude_cache" > "$claude_cache.next"
+  mv "$claude_cache.next" "$claude_cache"
+  cached=$(run_board "$HOME_DIR" "$FAKEBIN" "$CASE_DIR/cache" json --cached-only)
+  printf '%s' "$cached" | jq -e '
+    any(.seats[]; .name == "alpha" and .provider == "codex"
+      and .renewal.state == "invalid" and (.renewal.loginCommand | startswith("CODEX_HOME="))
+      and (.renewal.loginCommand | endswith(" codex login")))
+    and any(.seats[]; .name == "alpha" and .provider == "claude"
+      and .renewal.state == "expired_refreshable" and .renewal.loginCommand == null
+      and (.renewal.reason | contains("unavailable")))
+  ' >/dev/null || fail "cached provider verdicts must expose login or bounded renewal guidance: $cached"
+  pass "provider identity separates matching seats and cache paths while preserving Claude legacy fields"
+}
+
 test_json_reports_every_seat_with_its_own_cache_age() {
   local rec out
   rec=$(make_board_case json-ages)
@@ -284,7 +323,7 @@ test_json_reports_every_seat_with_its_own_cache_age() {
   out=$(run_board "$HOME_DIR" "$FAKEBIN" "$CASE_DIR/cache" json)
   printf '%s' "$out" | jq -e '.schemaVersion == 1' >/dev/null ||
     fail "json must print schema 1 (got: $out)"
-  printf '%s' "$out" | jq -e '[.seats[].name] == ["default", "alpha"]' >/dev/null ||
+  printf '%s' "$out" | jq -e '[.seats[] | select(.provider == "claude") | .name] == ["default", "alpha"]' >/dev/null ||
     fail "json must list the default login first and then each named seat (got: $out)"
   printf '%s' "$out" | jq -e 'all(.seats[]; .hasData == true and (.ageSeconds | type) == "number")' >/dev/null ||
     fail "json must date every seat it reports figures for (got: $out)"
@@ -460,7 +499,7 @@ PYPORT
 start_board() {
   local home=$1 fakebin=$2 cache=$3 log=$4 url='' waited=0
   FM_HOME="$home" FM_CONFIG_OVERRIDE="$home/config" FM_STATE_OVERRIDE="$home/state" \
-    FM_DATA_OVERRIDE="$home/data" CLAUDE_CONFIG_DIR="" \
+    FM_DATA_OVERRIDE="$home/data" CLAUDE_CONFIG_DIR="" CODEX_HOME="" \
     FM_SEAT_BOARD_CACHE_DIR="$cache" FM_SEAT_BOARD_CACHE_SECONDS=60 \
     PATH="$fakebin:$PATH" "$BOARD" serve --port 0 > "$log" 2>&1 &
   BOARD_PID=$!
@@ -677,6 +716,7 @@ test_render_reads_quota_axi_without_refreshing_or_prompting_for_credentials
 test_the_cache_is_scoped_to_each_seats_config_dir_not_its_name
 test_render_escapes_markup_in_quota_axi_text
 test_serve_rejects_a_missing_or_non_numeric_port
+test_json_separates_providers_with_matching_names_and_profiles
 test_json_reports_every_seat_with_its_own_cache_age
 test_json_marks_the_active_seat_the_live_seat_and_an_excluded_seat
 test_json_reports_a_seat_with_no_report_as_absent_rather_than_zero

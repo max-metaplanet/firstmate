@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
-# Choose which Claude account (seat) NEW claude workers launch on.
+# Choose which Claude or Codex account NEW workers launch on.
+# Use --provider codex before the command for Codex (default: claude).
+# Codex add <name> --home <absolute-existing-home> registers a directory alias
+# without copying authentication. Lead restart, pipeline, quota floor, session
+# share, and paid extra-usage policy commands currently support Claude only.
 #
 # Usage:
 #   fm-seat.sh status
@@ -189,6 +193,23 @@ STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
 DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
 
+FM_SEAT_PROVIDER=${FM_SEAT_PROVIDER:-claude}
+if [ "${1-}" = --provider ]; then
+  FM_SEAT_PROVIDER=${2-}
+  [ $# -ge 2 ] || { echo 'error: --provider requires claude or codex' >&2; exit 1; }
+  shift 2
+fi
+case "$FM_SEAT_PROVIDER" in
+  claude|codex) ;;
+  *) echo "error: unsupported seat provider: $FM_SEAT_PROVIDER" >&2; exit 1 ;;
+esac
+export FM_SEAT_PROVIDER
+if [ "$FM_SEAT_PROVIDER" = codex ]; then
+  case "${1-}" in
+    lead-restart|pipeline-*|floor|floor-readd|floor-dwell|session-share|resting|extra-usage) echo "error: $1 supports Claude seats only" >&2; exit 1 ;;
+  esac
+fi
+
 # shellcheck source=bin/fm-timeout-lib.sh
 . "$SCRIPT_DIR/fm-timeout-lib.sh"
 # shellcheck source=bin/fm-seat-lib.sh
@@ -246,7 +267,7 @@ login_state() {
   if [ "$name" != "$FM_SEAT_DEFAULT_NAME" ]; then
     fm_seat_dir "$name" >/dev/null || { printf 'unknown\n'; return; }
   fi
-  dir=$(fm_seat_config_dir "$name")
+  dir=$(fm_seat_config_dir "$name") || { printf 'unknown\n'; return; }
   fm_seat_logged_in "$dir"
   rc=$?
   case "$rc" in
@@ -315,7 +336,8 @@ live_task_seats() {
     [ -f "$meta" ] || continue
     id=${meta##*/}
     id=${id%.meta}
-    seat=$(sed -n 's/^claude_seat=//p' "$meta" | tail -1)
+    [ "$(sed -n 's/^harness=//p' "$meta" | tail -1)" = "$FM_SEAT_PROVIDER" ] || continue
+    seat=$(sed -n "s/^${FM_SEAT_PROVIDER}_seat=//p" "$meta" | tail -1)
     printf '%s\t%s\n' "$id" "${seat:-(ambient default login)}"
   done
 }
@@ -333,18 +355,20 @@ declining_secondmate_homes() {
     [ -n "$id" ] && [ -n "$home" ] || continue
     [ -z "$(fm_meta_get "$meta" remote_host)" ] || continue
     validate_secondmate_home "$id" "$home" || continue
-    fm_config_inherit_seat_optout "$VALIDATED_HOME/config" || continue
+    fm_config_inherit_seat_optout "$VALIDATED_HOME/config" "$FM_SEAT_PROVIDER" || continue
     printf '%s\t%s\t%s\n' "$id" "$(fm_seat_active "$VALIDATED_HOME/config")" "$VALIDATED_HOME"
   done < <(live_secondmate_meta_records "$STATE" "$DATA/secondmates.md")
 }
 
 cmd_status() {
-  local active profile threshold minimum policy reason rows excluded floor pipeline
+  local active profile threshold minimum policy reason rows excluded floor pipeline label
+  label=Claude; [ "$FM_SEAT_PROVIDER" != codex ] || label=Codex
   active=$(fm_seat_active)
   printf 'active seat for NEW workers: %s\n' "$active"
   profile=$(fm_seat_config_dir "$active")
   printf 'active profile: %s\n' "${profile:-(ambient default login)}"
   printf 'login state: %s\n' "$(login_state "$active")"
+  if [ "$FM_SEAT_PROVIDER" = claude ]; then
   pipeline=$(fm_seat_pipeline_report)
   printf '%s\n' "$pipeline" | jq -r '
     "pipeline seat for next managed launch: " + .seat
@@ -360,6 +384,7 @@ cmd_status() {
     printf 'firstmate itself is running on: %s\n' "$(fm_seat_name_of_profile "$profile")"
   else
     printf 'firstmate itself is running on: (not recorded for this session)\n'
+  fi
   fi
   if threshold=$(fm_seat_threshold); then
     printf 'auto-switch trigger: at or below %s%% left on the active seat\n' "$threshold"
@@ -377,7 +402,7 @@ cmd_status() {
       *)    printf 'extra-usage policy: allow up to $%s of paid extra usage, then hold\n' "${policy#allow }" ;;
     esac
   else
-    printf 'extra-usage policy: (unset - nothing holds Claude dispatch)\n'
+    printf 'extra-usage policy: (unset - nothing holds %s dispatch)\n' "$label"
   fi
   excluded=$(fm_seat_auto_exclude_list | tr '\n' ' ')
   excluded=${excluded% }
@@ -400,9 +425,9 @@ cmd_status() {
     printf 'auto-switch watch: not armed\n'
   fi
   if reason=$(fm_seat_dispatch_reason "$(fm_seat_dispatch_decision)"); then
-    printf 'new Claude dispatch: allowed\n'
+    printf 'new %s dispatch: allowed\n' "$label"
   else
-    printf 'new Claude dispatch: HELD (bin/fm-spawn.sh --ignore-seat-hold starts one task anyway)\n'
+    printf 'new %s dispatch: HELD (bin/fm-spawn.sh --ignore-seat-hold starts one task anyway)\n' "$label"
     printf '  resolve the task brief with bin/fm-dispatch-resolve.sh to offer alternatives configured in its matched rule\n'
   fi
   printf '%s\n' "$reason" | sed 's/^/  /'
@@ -437,6 +462,7 @@ cmd_probe() {
   # A renewable seat exits 0 with any caller: it is launchable, which is the
   # question `probe` answers. Its state word is what says the token has lapsed.
   seat_usable "$state" && return 0
+  printf 'login command: '; fm_seat_login_command "$(fm_seat_config_dir "$name")"
   case "$state" in
     not-logged-in) return 1 ;;
     *) return 2 ;;
@@ -509,6 +535,12 @@ next_seat() {
   for ((i = 1; i <= n; i++)); do
     name=${seats[$(((idx + i) % n))]}
     [ "$name" != "$active" ] || continue
+    if [ "$FM_SEAT_PROVIDER" = codex ] &&
+      [ "$(fm_seat_credential_identity "$(fm_seat_config_dir "$name")")" = \
+        "$(fm_seat_credential_identity "$(fm_seat_config_dir "$active")")" ]; then
+      printf 'seat %s: skipped, shares the active credential store\n' "$name" >&2
+      continue
+    fi
     # The exclusion is checked before anything is read about the seat, so a seat
     # held out of rotation costs no quota call and is reported as withheld on
     # purpose rather than as a seat that failed a check.
@@ -574,12 +606,12 @@ write_active() {
   local name=$1 tmp
   mkdir -p "$CONFIG" || die "could not create $CONFIG"
   if [ "$name" = "$FM_SEAT_DEFAULT_NAME" ]; then
-    rm -f "$CONFIG/claude-seat" || die "could not clear $CONFIG/claude-seat"
+    rm -f "$CONFIG/${FM_SEAT_PROVIDER}-seat" || die "could not clear $CONFIG/${FM_SEAT_PROVIDER}-seat"
     return 0
   fi
-  tmp="$CONFIG/.claude-seat.$$"
+  tmp="$CONFIG/.${FM_SEAT_PROVIDER}-seat.$$"
   printf '%s\n' "$name" > "$tmp" || die "could not write $tmp"
-  mv -f "$tmp" "$CONFIG/claude-seat" || die "could not publish $CONFIG/claude-seat"
+  mv -f "$tmp" "$CONFIG/${FM_SEAT_PROVIDER}-seat" || die "could not publish $CONFIG/${FM_SEAT_PROVIDER}-seat"
 }
 
 cmd_switch() {
@@ -616,6 +648,7 @@ cmd_switch() {
     printf 'warning: %s is resting below the quota floor (%s); switching to it anyway\n' \
       "$name" "$resting" >&2
   fi
+  fm_seat_config_dir "$name" >/dev/null || die "seat '$name' does not resolve to a safe profile"
   state=$(login_state "$name")
   case "$state" in
     logged-in) ;;
@@ -623,13 +656,13 @@ cmd_switch() {
       # No --force needed. The session is signed in and the next worker launched
       # here renews it; refusing would send the operator to --force for a seat
       # that is simply idle, which is how most seats read after eight hours.
-      printf "seat '%s' is signed in but its access token has lapsed; the next claude worker launched there renews it\\n" "$name"
+      printf "seat '%s' is signed in but its access token has lapsed; the next %s worker launched there renews it\\n" "$name" "$FM_SEAT_PROVIDER"
       ;;
     not-logged-in)
       # A hard refusal: this profile has no credentials, so every worker sent
       # there would fail on its first message. --force cannot override a proven
       # negative, only an undecided probe.
-      die "seat '$name' is not logged in; run 'fm-seat.sh add $name' for the owner's login steps (docs/claude-seats.md)"
+      die "seat '$name' is not logged in; run: $(fm_seat_login_command "$(fm_seat_config_dir "$name")")"
       ;;
     *)
       [ "$force" -eq 1 ] || die "could not confirm seat '$name' is logged in (quota read gave no verdict); re-run with --force to switch anyway"
@@ -637,7 +670,7 @@ cmd_switch() {
   esac
   write_active "$name"
   printf 'switched: %s -> %s\n' "$prior" "$name"
-  printf 'applies to NEW claude workers only; running workers keep their own seat\n'
+  printf 'applies to NEW %s workers only; running workers keep their own seat\n' "$FM_SEAT_PROVIDER"
   propagate_to_secondmates
 }
 
@@ -657,11 +690,36 @@ propagate_to_secondmates() {
 }
 
 cmd_add() {
-  local name=$1 dir
+  local name=$1 dir source_home=${3-}
   [ "$name" != "$FM_SEAT_DEFAULT_NAME" ] ||
     die "'$FM_SEAT_DEFAULT_NAME' names the ambient login, not a seat directory; choose another name"
   fm_seat_name_valid "$name" || die "invalid seat name: $name"
   dir=$(fm_seat_dir "$name") || die "seat '$name' does not resolve to a profile directory"
+  if [ "$FM_SEAT_PROVIDER" = codex ]; then
+    [ $# -eq 1 ] || { [ $# -eq 3 ] && [ "${2-}" = --home ]; } ||
+      die 'usage: fm-seat.sh --provider codex add <name> [--home <existing-home>]'
+    if [ -n "$source_home" ]; then
+      case "$source_home" in /*) ;; *) die '--home must be an absolute path' ;; esac
+      [ -d "$source_home" ] && [ -f "$source_home/auth.json" ] ||
+        die '--home must name an existing Codex home containing auth.json'
+      if [ -e "$dir" ] || [ -L "$dir" ]; then
+        [ -d "$dir" ] && [ "$(cd "$dir" && pwd -P)" = "$(cd "$source_home" && pwd -P)" ] ||
+          die "seat '$name' already exists and points elsewhere"
+      else
+        mkdir -p "$(fm_seat_root)" || die 'could not create seats root'
+        ln -s "$source_home" "$dir" || die 'could not register Codex home'
+      fi
+      printf 'registered existing Codex home: %s -> %s; no authentication copied\n' "$dir" "$source_home"
+    else
+      [ ! -L "$dir" ] || [ -d "$dir" ] || die "seat '$name' is a broken alias"
+      mkdir -p "$dir" || die "could not create $dir"
+      printf 'Codex home: %s; no authentication copied\n' "$dir"
+    fi
+    printf 'login command: '
+    fm_seat_login_command "$dir"
+    return 0
+  fi
+  [ $# -eq 1 ] || die 'Claude add takes one seat name'
   mkdir -p "$dir" || die "could not create $dir"
   chmod 700 "$dir" 2>/dev/null || true
   printf 'seat profile directory: %s\n' "$dir"
@@ -671,7 +729,7 @@ cmd_add() {
   printf '\n'
   printf 'The account owner now logs this seat in, personally, in a terminal:\n'
   printf '\n'
-  printf '  CLAUDE_CONFIG_DIR=%s claude\n' "$dir"
+  printf '  '; fm_seat_login_command "$dir"
   printf '\n'
   printf 'then runs /login inside that session and signs in as the account this\n'
   printf 'seat should bill to. Claude Code stores those credentials under a\n'
@@ -752,7 +810,7 @@ cmd_threshold() {
     printf '(unset - no automatic switching)\n'
     return 0
   fi
-  write_percent_setting claude-seat-threshold 'auto-switch threshold' "$v"
+  write_percent_setting "${FM_SEAT_PROVIDER}-seat-threshold" 'auto-switch threshold' "$v"
 }
 
 cmd_destination_min() {
@@ -765,7 +823,7 @@ cmd_destination_min() {
     printf '(unset - any logged-in seat is a valid destination)\n'
     return 0
   fi
-  write_percent_setting claude-seat-destination-min 'destination minimum' "$v"
+  write_percent_setting "${FM_SEAT_PROVIDER}-seat-destination-min" 'destination minimum' "$v"
 }
 
 # The extra-usage policy is the one seat setting that is not a percentage, so it
@@ -786,7 +844,7 @@ cmd_extra_usage() {
   mkdir -p "$CONFIG" || die "could not create $CONFIG"
   case "$mode" in
     off)
-      rm -f "$CONFIG/claude-seat-extra-usage" || die "could not clear the extra-usage policy"
+      rm -f "$CONFIG/${FM_SEAT_PROVIDER}-seat-extra-usage" || die "could not clear the extra-usage policy"
       printf 'extra-usage policy cleared; nothing holds Claude dispatch\n'
       return 0
       ;;
@@ -799,9 +857,9 @@ cmd_extra_usage() {
       ;;
     *) die "extra-usage must be 'stop', 'allow <usd>', or 'off'" ;;
   esac
-  tmp="$CONFIG/.claude-seat-extra-usage.$$"
+  tmp="$CONFIG/.${FM_SEAT_PROVIDER}-seat-extra-usage.$$"
   printf '%s\n' "$v" > "$tmp" || die "could not write $tmp"
-  mv -f "$tmp" "$CONFIG/claude-seat-extra-usage" || die "could not publish the extra-usage policy"
+  mv -f "$tmp" "$CONFIG/${FM_SEAT_PROVIDER}-seat-extra-usage" || die "could not publish the extra-usage policy"
   if [ "$v" = stop ]; then
     printf 'extra-usage policy: stop\n'
     printf 'new Claude workers are held once the active seat has no plan quota left.\n'
@@ -821,13 +879,13 @@ write_auto_exclude() {
   local tmp
   mkdir -p "$CONFIG" || die "could not create $CONFIG"
   if [ "$#" -eq 0 ]; then
-    rm -f "$CONFIG/claude-seat-auto-exclude" ||
+    rm -f "$CONFIG/${FM_SEAT_PROVIDER}-seat-auto-exclude" ||
       die "could not clear the automatic-rotation exclusions"
     return 0
   fi
-  tmp="$CONFIG/.claude-seat-auto-exclude.$$"
+  tmp="$CONFIG/.${FM_SEAT_PROVIDER}-seat-auto-exclude.$$"
   printf '%s\n' "$@" > "$tmp" || die "could not write $tmp"
-  mv -f "$tmp" "$CONFIG/claude-seat-auto-exclude" ||
+  mv -f "$tmp" "$CONFIG/${FM_SEAT_PROVIDER}-seat-auto-exclude" ||
     die "could not publish the automatic-rotation exclusions"
 }
 
@@ -941,7 +999,7 @@ cmd_threshold_reached() {
 # about, and drops entries once they return to rotation.
 # `pipeline=<seat:since ...>` records resting entries with live pipeline agents
 # already warned about, preserving the worker-warning record independently.
-AUTO_RECORD="$STATE/.claude-seat-auto"
+AUTO_RECORD="$STATE/.${FM_SEAT_PROVIDER}-seat-auto"
 
 auto_record_get() {
   [ -f "$AUTO_RECORD" ] || return 1
@@ -992,7 +1050,8 @@ warn_extra_usage_entry() {
   for meta in "$STATE"/*.meta; do
     [ -f "$meta" ] || continue
     [ "$(sed -n 's/^harness=//p' "$meta" | tail -1)" = claude ] || continue
-    seat=$(sed -n 's/^claude_seat=//p' "$meta" | tail -1)
+    [ "$(sed -n 's/^harness=//p' "$meta" | tail -1)" = "$FM_SEAT_PROVIDER" ] || continue
+    seat=$(sed -n "s/^${FM_SEAT_PROVIDER}_seat=//p" "$meta" | tail -1)
     task_seats="${task_seats}${seat}
 "
   done
@@ -1018,7 +1077,7 @@ warn_extra_usage_entry() {
   # silently, which is what re-arms the warning for its next entry.
   [ -n "$spending" ] || return 0
   summary="Claude seat in paid extra usage: $spending"
-  printf 'claude-seat: %s (a worker already running keeps this seat; only the account admin setting stops it drawing extra usage)\n' "$summary"
+  printf '%s-seat: %s (a worker already running keeps this seat; only the account admin setting stops it drawing extra usage)\n' "$FM_SEAT_PROVIDER" "$summary"
   "$SCRIPT_DIR/fm-usage-warner.sh" notify "$summary" >/dev/null 2>&1 || true
 }
 
@@ -1080,7 +1139,7 @@ warn_resting_workers() {
       offer_rc=$?
       if [ "$offer_rc" != 0 ]; then
         if [ "$offer_rc" = 2 ]; then
-          printf 'claude-seat: Codex offer for %s unavailable; dispatch configuration needs attention\n' "$id"
+          printf '%s-seat: Codex offer for %s unavailable; dispatch configuration needs attention\n' "$FM_SEAT_PROVIDER" "$id"
         fi
         continue
       fi
@@ -1100,7 +1159,7 @@ warn_resting_workers() {
         'Seat rested; reconcile the preserved work and instruction inbox before continuing on Codex.'
       commands="$commands"$'\n'"  Codex alternative for $id: $codex_command$command"
     done
-    printf 'claude-seat: %s is resting with running workers: %s; move each explicitly (Claude destination login is validated; default is the fallback when rotation has no candidate):\n%s\n' \
+    printf '%s-seat: %s is resting with running workers: %s; move each explicitly (Claude destination login is validated; default is the fallback when rotation has no candidate):\n%s\n' "$FM_SEAT_PROVIDER" \
       "$name" "${tasks% }" "$commands"
     current="$current$token "
   done < <(fm_seat_resting_record | jq -r '.seats | to_entries[] | select(.value.provisional != true) | [.key, .value.since] | @tsv')
@@ -1128,7 +1187,7 @@ warn_pipeline_resting_entry() {
     current="${current}${token} "
     case " $previous " in *" $token "*) continue ;; esac
     summary="pipeline agent is still running on resting seat $name; it finishes untouched. Move subsequent launches with: $move. Clear NM_CLAUDE_CONFIG_DIR in the pipeline environment if set. Moving an individual running agent requires no-mistakes support; a manual whole-run abort-and-revalidate needs the captain's approval because it discards in-flight work"
-    printf 'claude-seat: %s\n' "$summary"
+    printf '%s-seat: %s\n' "$FM_SEAT_PROVIDER" "$summary"
     "$SCRIPT_DIR/fm-usage-warner.sh" notify "$summary" >/dev/null 2>&1 || true
   done < <(printf '%s' "$live" | jq -r '[.[].seat] | unique[]')
   current=${current% }
@@ -1192,13 +1251,13 @@ cmd_auto() {
   # The floor runs FIRST, so a switch in this same pass can never land on a seat
   # this pass just rested.
   auto_floor
-  warn_pipeline_resting_entry
+  [ "$FM_SEAT_PROVIDER" != claude ] || warn_pipeline_resting_entry
   if [ -n "$threshold" ]; then
     auto_trigger "$threshold" "$policy"
-    auto_lead_trigger "$threshold"
+    [ "$FM_SEAT_PROVIDER" != claude ] || auto_lead_trigger "$threshold"
   fi
   [ -z "$policy" ] || warn_extra_usage_entry
-  warn_resting_workers
+  [ "$FM_SEAT_PROVIDER" != claude ] || warn_resting_workers
 }
 
 # auto_lead_trigger <threshold>
@@ -1242,7 +1301,7 @@ auto_lead_trigger() {  # <threshold>
   if ! target=$(next_seat "$seat" 2>/dev/null); then
     [ "$reported" != "blocked:$seat:" ] || return 0
     auto_record_set lead "blocked:$seat:"
-    printf 'claude-seat: firstmate itself is at %s%% left on %s and no seat qualifies as a destination, so it stays where it is\n' \
+    printf '%s-seat: firstmate itself is at %s%% left on %s and no seat qualifies as a destination, so it stays where it is\n' "$FM_SEAT_PROVIDER" \
       "$remaining" "$seat"
     return 0
   fi
@@ -1251,12 +1310,12 @@ auto_lead_trigger() {  # <threshold>
     "$SCRIPT_DIR/fm-lead-restart.sh" --check --to "$target" 2>&1); then
     [ "$reported" != "blocked:$seat:$target" ] || return 0
     auto_record_set lead "blocked:$seat:$target"
-    printf 'claude-seat: firstmate itself is at %s%% left on %s and cannot move to %s: %s\n' \
+    printf '%s-seat: firstmate itself is at %s%% left on %s and cannot move to %s: %s\n' "$FM_SEAT_PROVIDER" \
       "$remaining" "$seat" "$target" "$(printf '%s' "$out" | sed -n '/./{s/^error: //;s/[[:space:]]\{1,\}/ /g;p;q;}')"
     return 0
   fi
   auto_record_set lead "$seat"
-  printf 'claude-seat: firstmate itself is at %s%% left on %s and moves to %s now, on this wake, without asking the captain (load the claude-seat-lead-restart skill). Replacing this session drops its conversation and keeps every durable record, so FIRST %s THEN run exactly: %s/bin/fm-seat.sh lead-restart --to %s --persisted\n' \
+  printf '%s-seat: firstmate itself is at %s%% left on %s and moves to %s now, on this wake, without asking the captain (load the claude-seat-lead-restart skill). Replacing this session drops its conversation and keeps every durable record, so FIRST %s THEN run exactly: %s/bin/fm-seat.sh lead-restart --to %s --persisted\n' "$FM_SEAT_PROVIDER" \
     "$remaining" "$seat" "$target" "$FM_PERSIST_OPEN_RECORDS_CONTRACT" "$FM_ROOT" "$target"
 }
 
@@ -1292,14 +1351,14 @@ auto_trigger() {
       FM_CONFIG_OVERRIDE="$CONFIG" FM_DATA_OVERRIDE="$DATA" \
       "$SCRIPT_DIR/fm-seat.sh" switch "$target" 2>&1); then
       auto_record_set blocked ''
-      printf 'claude-seat: switched from %s at %s%% left to %s; new workers launch there\n' \
+      printf '%s-seat: switched from %s at %s%% left to %s; new workers launch there\n' "$FM_SEAT_PROVIDER" \
         "$active" "$remaining" "$target"
       return 0
     fi
     auto_record_set fired "$fired"
     [ "$blocked" != "$active" ] || return 0
     auto_record_set blocked "$active"
-    printf 'claude-seat: %s is at %s%% left and the switch to %s failed: %s\n' \
+    printf '%s-seat: %s is at %s%% left and the switch to %s failed: %s\n' "$FM_SEAT_PROVIDER" \
       "$active" "$remaining" "$target" "$(printf '%s' "$out" | tail -1)"
     return 0
   fi
@@ -1307,13 +1366,13 @@ auto_trigger() {
   auto_record_set blocked "$active"
   case "$policy" in
     stop)
-      printf 'claude-seat: %s is at %s%% left and no seat has enough headroom to switch to; new Claude work will be held once this seat'\''s plan quota runs out, rather than started on paid extra usage. A worker already running is not stopped.\n' \
+      printf '%s-seat: %s is at %s%% left and no seat has enough headroom to switch to; new Claude work will be held once this seat'\''s plan quota runs out, rather than started on paid extra usage. A worker already running is not stopped.\n' "$FM_SEAT_PROVIDER" \
         "$active" "$remaining" ;;
     allow\ *)
-      printf 'claude-seat: %s is at %s%% left and no seat has enough headroom to switch to; once this seat'\''s plan quota runs out, new Claude work continues on paid extra usage up to $%s, then will be held.\n' \
+      printf '%s-seat: %s is at %s%% left and no seat has enough headroom to switch to; once this seat'\''s plan quota runs out, new Claude work continues on paid extra usage up to $%s, then will be held.\n' "$FM_SEAT_PROVIDER" \
         "$active" "$remaining" "${policy#allow }" ;;
     *)
-      printf 'claude-seat: %s is at %s%% left and no seat has enough headroom to switch to; no extra-usage policy is set, so nothing is held.\n' \
+      printf '%s-seat: %s is at %s%% left and no seat has enough headroom to switch to; no extra-usage policy is set, so nothing is held.\n' "$FM_SEAT_PROVIDER" \
         "$active" "$remaining" ;;
   esac
 }
@@ -1334,12 +1393,12 @@ cmd_floor() {
     printf '(unset - no seat is ever rested out of automatic rotation)\n'
     return 0
   fi
-  write_percent_setting claude-seat-floor 'quota floor' "$v"
+  write_percent_setting "${FM_SEAT_PROVIDER}-seat-floor" 'quota floor' "$v"
   if [ "$v" = off ]; then
     # Clearing the floor wakes every seat it rested: a record nothing will ever
     # lift again must not outlive the floor here or in a secondmate home.
-    [ -f "$CONFIG/claude-seat-resting" ] || return 0
-    rm -f "$CONFIG/claude-seat-resting" || die "could not clear the resting record"
+    [ -f "$CONFIG/${FM_SEAT_PROVIDER}-seat-resting" ] || return 0
+    rm -f "$CONFIG/${FM_SEAT_PROVIDER}-seat-resting" || die "could not clear the resting record"
     printf 'every seat the floor was resting is back in automatic rotation\n'
     propagate_to_secondmates 'quota floor cleared' 'keep skipping the seats it was resting'
     return 0
@@ -1365,7 +1424,7 @@ cmd_floor() {
 cmd_floor_readd() {
   local v=${1-} configured
   if [ -z "$v" ]; then
-    configured=$(fm_seat_percent_file "$CONFIG/claude-seat-floor-readd") || configured=''
+    configured=$(fm_seat_percent_file "$CONFIG/${FM_SEAT_PROVIDER}-seat-floor-readd") || configured=''
     if v=$(fm_seat_floor_readd); then
       if [ "$v" = "$configured" ]; then
         printf '%s\n' "$v"
@@ -1388,13 +1447,13 @@ cmd_floor_readd() {
     jq -en --arg v "$v" --arg f "$floor" '($v | tonumber) <= ($f | tonumber)' >/dev/null 2>&1; then
     die "the quota floor re-add level must be above the ${floor}% floor, or a seat it wakes would rest again on the next reading"
   fi
-  write_percent_setting claude-seat-floor-readd 'quota floor re-add level' "$v"
+  write_percent_setting "${FM_SEAT_PROVIDER}-seat-floor-readd" 'quota floor re-add level' "$v"
 }
 
 cmd_floor_dwell() {
   local v=${1-} tmp
   if [ -z "$v" ]; then
-    if v=$(fm_seat_seconds_file "$CONFIG/claude-seat-floor-dwell"); then
+    if v=$(fm_seat_seconds_file "$CONFIG/${FM_SEAT_PROVIDER}-seat-floor-dwell"); then
       printf '%s\n' "$v"
       return 0
     fi
@@ -1403,23 +1462,23 @@ cmd_floor_dwell() {
   fi
   mkdir -p "$CONFIG" || die "could not create $CONFIG"
   if [ "$v" = off ]; then
-    rm -f "$CONFIG/claude-seat-floor-dwell" || die "could not clear the quota floor rest time"
+    rm -f "$CONFIG/${FM_SEAT_PROVIDER}-seat-floor-dwell" || die "could not clear the quota floor rest time"
     printf 'quota floor rest time cleared; the default of %ss applies\n' "$FM_SEAT_FLOOR_DWELL_DEFAULT"
     return 0
   fi
   local LC_ALL=C
   [[ "$v" =~ ^[0-9]+$ ]] ||
     die "the quota floor rest time must be a whole number of seconds, 0 for no minimum rest, or 'off'"
-  tmp="$CONFIG/.claude-seat-floor-dwell.$$"
+  tmp="$CONFIG/.${FM_SEAT_PROVIDER}-seat-floor-dwell.$$"
   printf '%s\n' "$v" > "$tmp" || die "could not write $tmp"
-  mv -f "$tmp" "$CONFIG/claude-seat-floor-dwell" || die "could not publish the quota floor rest time"
+  mv -f "$tmp" "$CONFIG/${FM_SEAT_PROVIDER}-seat-floor-dwell" || die "could not publish the quota floor rest time"
   printf 'quota floor rest time: %ss\n' "$v"
 }
 
 cmd_session_share() {
   local v=${1-} row
   if [ -z "$v" ]; then
-    if v=$(fm_seat_percent_file "$CONFIG/claude-seat-session-share"); then
+    if v=$(fm_seat_percent_file "$CONFIG/${FM_SEAT_PROVIDER}-seat-session-share"); then
       printf '%s%% of a week per session (set by hand)\n' "$v"
     else
       printf '%s%% of a week per session (built-in default)\n' "$FM_SEAT_SESSION_SHARE_DEFAULT"
@@ -1430,7 +1489,7 @@ cmd_session_share() {
     done < <(session_share_rows)
     return 0
   fi
-  write_percent_setting claude-seat-session-share 'assumed session share of a week' "$v"
+  write_percent_setting "${FM_SEAT_PROVIDER}-seat-session-share" 'assumed session share of a week' "$v"
 }
 
 # session_share_rows
@@ -1620,7 +1679,7 @@ auto_floor() {
       if fm_seat_login_renewable_from "$out" && floor_wake_due "$entry" "$now" "$readd" "$share"; then
         record=$(printf '%s\n' "$record" | jq -c --arg n "$name" '.seats[$n].provisional = true')
         changed=1
-        printf 'claude-seat: %s comes back into automatic rotation provisionally - it rested below the %s%% floor, its access token lapsed while it rested, and the reset it was waiting for has passed, so the next worker launched there is what reads its quota again\n' \
+        printf '%s-seat: %s comes back into automatic rotation provisionally - it rested below the %s%% floor, its access token lapsed while it rested, and the reset it was waiting for has passed, so the next worker launched there is what reads its quota again\n' "$FM_SEAT_PROVIDER" \
           "$name" "$floor"
         continue
       fi
@@ -1644,7 +1703,7 @@ auto_floor() {
       new_entry=$(floor_entry "$account" "$limiting" "$expected" "$now" "$rows")
       record=$(printf '%s\n' "$record" | jq -c --arg n "$name" --argjson e "$new_entry" '.seats[$n] = $e')
       changed=1
-      printf 'claude-seat: %s is resting - %s%% left is at or below the %s%% floor, so automatic switches skip it until it recovers (expected back %s; fm-seat.sh switch %s still reaches it)\n' \
+      printf '%s-seat: %s is resting - %s%% left is at or below the %s%% floor, so automatic switches skip it until it recovers (expected back %s; fm-seat.sh switch %s still reaches it)\n' "$FM_SEAT_PROVIDER" \
         "$name" "$remaining" "$floor" "$expected" "$name"
       continue
     fi
@@ -1653,7 +1712,7 @@ auto_floor() {
     if floor_may_wake "$entry" "$session" "$week" "$readd" "$share" "$dwell" "$now"; then
       record=$(printf '%s\n' "$record" | jq -c --arg n "$name" 'del(.seats[$n])')
       changed=1
-      printf 'claude-seat: %s comes back into automatic rotation - %s%% left on its session and %s%% on its week, both above the %s%% re-add level, with room for a whole session\n' \
+      printf '%s-seat: %s comes back into automatic rotation - %s%% left on its session and %s%% on its week, both above the %s%% re-add level, with room for a whole session\n' "$FM_SEAT_PROVIDER" \
         "$name" "$session" "$week" "$readd"
       continue
     fi
@@ -1665,7 +1724,7 @@ auto_floor() {
       if (.seats[$n] | del(.lastRead)) == ($e | del(.lastRead)) then . else .seats[$n] = $e end')
     [ "$provisional" -eq 1 ] || continue
     changed=1
-    printf 'claude-seat: %s is resting again - read again after coming back provisionally, it has %s%% left on its session and %s%% on its week, short of the %s%% re-add level with room for a whole session (expected back %s)\n' \
+    printf '%s-seat: %s is resting again - read again after coming back provisionally, it has %s%% left on its session and %s%% on its week, short of the %s%% re-add level with room for a whole session (expected back %s)\n' "$FM_SEAT_PROVIDER" \
       "$name" "$session" "$week" "$readd" "$expected"
   done < <(fm_seat_list)
   # A record that did not move is not rewritten and nothing is pushed, so a
@@ -1748,15 +1807,15 @@ floor_may_wake() {
 # script - it rewrites one config line that only a fresh spawn reads, and never
 # touches a running worker - so it is the deterministic subset a repeating poll
 # may carry out on its own. bin/fm-check-shim-lib.sh owns the write and binding.
-FM_CHECK_SHIM_ID=claude-seat
+FM_CHECK_SHIM_ID="${FM_SEAT_PROVIDER}-seat"
 FM_CHECK_SHIM_LABEL=fm-seat
 
 cmd_arm() {
   local threshold floor active name candidates=0 all_resting=1
   # Clear any older one-shot registration first, so a home upgrading from it
   # ends with one watch rather than two firing on the same crossing.
-  if "$SCRIPT_DIR/fm-procevent-when.sh" source-id claude-seat >/dev/null 2>&1; then
-    "$SCRIPT_DIR/fm-procevent-when.sh" retire claude-seat >/dev/null 2>&1 || true
+  if "$SCRIPT_DIR/fm-procevent-when.sh" source-id "$FM_CHECK_SHIM_ID" >/dev/null 2>&1; then
+    "$SCRIPT_DIR/fm-procevent-when.sh" retire "$FM_CHECK_SHIM_ID" >/dev/null 2>&1 || true
   fi
   threshold=$(fm_seat_threshold) || threshold=''
   floor=$(fm_seat_floor) || floor=''
@@ -1784,7 +1843,7 @@ cmd_arm() {
       die "no seat under the seats root qualifies as a destination right now, so an automatic switch would have nowhere to go (each skipped seat and its reason is printed above); add and log into a second seat, put an excluded seat back with 'fm-seat.sh auto-include <name>', or lower 'fm-seat.sh destination-min' (docs/claude-seats.md). The default profile is never a rotation target"
     printf 'warning: every candidate seat is resting below the quota floor right now, so a switch would have nowhere to go until one of them recovers; the watch is what brings them back\n' >&2
   fi
-  fm_check_shim_arm "$FM_HOME" "$SCRIPT_DIR/fm-seat.sh" auto || exit 1
+  fm_check_shim_arm "$FM_HOME" "$SCRIPT_DIR/fm-seat.sh" --provider "$FM_SEAT_PROVIDER" auto || exit 1
   if [ -n "$threshold" ]; then
     printf 'armed: automatic switch at %s%% left on the active seat\n' "$threshold"
     printf 'keeps watching after each switch; one crossing fires at most once per seat\n'
@@ -1801,10 +1860,14 @@ cmd_retire() {
   # older one-shot condition-action registration, which nothing else would ever
   # clear. Retiring both is what makes `retire` mean "stop watching" on any home
   # rather than only on a freshly armed one. It is a no-op when none exists.
-  if "$SCRIPT_DIR/fm-procevent-when.sh" source-id claude-seat >/dev/null 2>&1; then
-    "$SCRIPT_DIR/fm-procevent-when.sh" retire claude-seat >/dev/null 2>&1 || true
+  if "$SCRIPT_DIR/fm-procevent-when.sh" source-id "$FM_CHECK_SHIM_ID" >/dev/null 2>&1; then
+    "$SCRIPT_DIR/fm-procevent-when.sh" retire "$FM_CHECK_SHIM_ID" >/dev/null 2>&1 || true
   fi
-  printf 'retired: the automatic Claude seat watch\n'
+  if [ "$FM_SEAT_PROVIDER" = codex ]; then
+    printf 'retired: the automatic Codex seat watch\n'
+  else
+    printf 'retired: the automatic Claude seat watch\n'
+  fi
 }
 
 case "${1-}" in
@@ -1815,7 +1878,7 @@ case "${1-}" in
   list)              shift; cmd_list "$@" ;;
   switch)            shift; cmd_switch "$@" ;;
   probe)             shift; cmd_probe "${1-}" ;;
-  add)               shift; [ -n "${1-}" ] || usage; cmd_add "$1" ;;
+  add)               shift; [ -n "${1-}" ] || usage; cmd_add "$@" ;;
   threshold)         shift; cmd_threshold "${1-}" ;;
   destination-min)   shift; cmd_destination_min "${1-}" ;;
   extra-usage)       shift; cmd_extra_usage "${1-}" "${2-}" ;;

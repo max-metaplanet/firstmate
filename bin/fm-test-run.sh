@@ -294,7 +294,7 @@ family_for_basename() {
   case "$1" in
     fm-arm-pretool-check.test.sh|fm-ask-user-authority.test.sh|\
     fm-bearings-board.test.sh|\
-    fm-brief.test.sh|fm-dod-lib.test.sh|fm-vendor-auth-probe.test.sh|\
+    fm-brief.test.sh|fm-dod-lib.test.sh|fm-vendor-auth-probe.test.sh|fm-seat-renew.test.sh|\
     fm-calm-pi-extension.test.sh|fm-cd-pretool-check.test.sh|\
     fm-classify-decision-key.test.sh|\
     fm-composer-ghost.test.sh|fm-composer-lib.test.sh|\
@@ -376,7 +376,7 @@ family_for_basename() {
     fm-pi-seeded-home-trust-live-e2e.test.sh|\
     fm-herdr-version-floor-live-e2e.test.sh|\
     fm-herdr-pi-stale-registration-live-e2e.test.sh|\
-    fm-worker-account-live-e2e.test.sh|\
+    fm-worker-account-live-e2e.test.sh|fm-seat-renew-live-e2e.test.sh|\
     fm-operational-marker-live-e2e.test.sh|\
     fm-opencode-primary-live-e2e.test.sh|fm-pi-branch-live-e2e.test.sh|\
     fm-pi-branch-responsiveness-live-e2e.test.sh|\
@@ -1561,6 +1561,11 @@ families_for_changed_path() {
       printf '%s\n' "__script__:fm-seat-board.test.sh"
       printf '%s\n' "__script__:fm-control-relaunch.test.sh"
       printf '%s\n' "__script__:fm-lead-restart.test.sh"
+      ;;
+    bin/fm-seat-renew.sh|bin/fm-seat-renew-lib.sh)
+      printf '%s\n' "__script__:fm-seat-renew.test.sh"
+      printf '%s\n' "__script__:fm-seat-renew-live-e2e.test.sh"
+      printf '%s\n' "__script__:fm-seat-board.test.sh"
       ;;
     bin/fm-seat-board.sh)
       # The board owns the per-seat quota cache, and its `json` action is what the

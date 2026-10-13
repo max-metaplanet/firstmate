@@ -1,4 +1,4 @@
-# Claude seats: running workers on a second account
+# Claude and Codex seats: running workers on a second account
 
 A **seat** is one Claude account that Firstmate's workers can run on.
 Switching seats changes which account new workers bill to, without disturbing any worker already running.
@@ -64,6 +64,27 @@ See [Idle seats and lapsed tokens](#idle-seats-and-lapsed-tokens).
 `unknown` means the probe could not decide; on macOS that is how a seat reads both before step 2 and after it until the one-time Keychain approval described under [Limits worth knowing](#limits-worth-knowing).
 
 `probe` exits 0 for a usable seat, which includes `expired-renewable`, 1 for `not-logged-in`, and 2 for `unknown`.
+
+## Codex seats
+
+Use `bin/fm-seat.sh --provider codex` for Codex's separate seat selection.
+To register an existing login, point a seat at its existing home rather than copying `auth.json`:
+
+```sh
+bin/fm-seat.sh --provider codex add work --home /absolute/path/to/existing-codex-home
+bin/fm-seat.sh --provider codex probe work
+bin/fm-seat.sh --provider codex switch work
+```
+
+Registration links the existing directory and never copies or renews credentials.
+An existing home must contain `auth.json`; to create a genuinely new login, `add <name>` creates an empty home and prints its exact login command.
+Existing auth-file symlinks remain intact, and automatic rotation skips aliases of the active credential store.
+A file-level `auth.json` alias selects the authoritative credential owner's entire home, including its configuration and sessions, for launches and login commands.
+A task already recorded on a different alias home requires an explicit seat move before relaunch; its store never changes implicitly.
+`list`, `status`, `threshold`, `destination-min`, `auto-exclude`, `auto-include`, `auto`, `arm`, and `retire` work with the same provider prefix.
+Codex quota probes are profile-only and non-renewing, so a missing login cannot fall back to another credential source.
+Claude's paid extra-usage and floor controls, pipeline wrapper, and lead restart are not Codex operations.
+[`configuration.md`](configuration.md#codex-seats) owns the settings and recorded worker-home contract.
 
 ## Switching now
 
@@ -377,6 +398,18 @@ That is why such a seat is returned provisionally once the reset it was waiting 
 
 A seat that is genuinely signed out is a different state and is still refused.
 When Anthropic definitively rejects a refresh token, Claude Code clears the session in place, and the seat reads `not-logged-in`; `--force` cannot cross that, and the seat needs the owner's login steps again.
+
+## Renewal status and safe limits
+
+`bin/fm-seat-renew.sh --provider claude --check <name>` and its `codex` equivalent expose reusable, non-secret renewal status as JSON for the panel and other scripts.
+Invalid or missing credentials show the exact login command; expired-but-refreshable credentials remain distinct from invalid credentials and do not prompt a new login.
+The helper's header owns its output and exit-status contract.
+
+Automatic renewal is currently unavailable for both vendors.
+A token-free vendor refresh mechanism is insufficient unless it also excludes a live owning session, including sessions outside Firstmate and sessions starting during the check.
+A process snapshot or a helper-only lock cannot establish that guarantee, and vendor refresh serialization alone does not establish that a seat is unowned.
+The helper therefore refuses renewal without launching a vendor or touching credentials; ordinary vendor sessions continue to own their refresh.
+The [runtime verification record](verification/runtime-backends.md) contains the current token-free capability checks.
 
 ## Secondmate homes
 

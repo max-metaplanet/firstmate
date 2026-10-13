@@ -255,7 +255,7 @@ check(!rows[1].live, "the seat new workers launch on is not necessarily the one 
 
 // The band's second half names the tightest OTHER seat with that figure's own age.
 const tightest = seats.tightestOtherSeat(rows);
-check(tightest.name === "charlie" && tightest.percentLeft === 22, "the tightest other seat must win");
+check(tightest.name === "claude charlie" && tightest.percentLeft === 22, "the tightest other seat must win");
 const segment = seats.seatsBandSegment(rows);
 check(segment.includes("charlie 22%") && segment.includes("stale"), \`the band must date the other seats' figure, got \${segment}\`);
 check(seats.seatsBandSegment([rows[0]]) === undefined, "a machine with one seat must draw no others clause");
@@ -273,6 +273,16 @@ const noFigures = seats.seatRows(
   0,
 );
 check(seats.seatsBandSegment(noFigures) === "1 other seats: no reading", "other seats with no reading must say so, not show a zero");
+
+// Same-named Codex rows are never this Claude session, and carry actionable renewal state.
+const mixed = seats.seatRows(seats.parseSeatBoard(reading({ seats: [
+  { name: "alpha", provider: "claude" },
+  { name: "alpha", provider: "codex", renewal: { state: "invalid", reason: "credentials invalid", loginCommand: "CODEX_HOME=/seats/alpha codex login", command: "fm-seat-renew.sh --provider codex --check alpha" } },
+] })), 0, 0);
+check(mixed[0].live && !mixed[1].live, "provider identity must distinguish same-named live seats");
+check(seats.seatLine(mixed[1]).includes("codex alpha"), "provider must appear in text rows");
+check(seats.seatLine(mixed[1]).includes("CODEX_HOME=/seats/alpha codex login"), "invalid seat must display its exact login command");
+check(mixed[1].renewal.includes("credentials invalid"), "renewal reason must remain visible");
 
 // The code root is found through every path Claude Code may name the plugin by.
 for (const path of [
