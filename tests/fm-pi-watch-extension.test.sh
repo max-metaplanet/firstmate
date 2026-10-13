@@ -3470,7 +3470,7 @@ await waitFor(
 if (finalSession.prompts.filter((message) => message.includes("signal: streaming queued actionable outcome")).length !== 1) {
   throw new Error(`second replacement did not replay the idle queued follow-up exactly once: ${finalSession.prompts.join(" | ")}`);
 }
-finalSession.handlers.get("before_agent_start")?.({ prompt: finalSession.prompts[0] }, {});
+finalSession.handlers.get("before_agent_start")?.({ messageType: "user", prompt: finalSession.prompts[0] }, {});
 await new Promise((resolve) => setTimeout(resolve, 20));
 process.exit(0);
 EOF
@@ -3516,6 +3516,7 @@ import { pathToFileURL } from "node:url";
 const handlers = new Map();
 const prompts = [];
 let streaming = false;
+let customOpensIdleRun = false;
 let beforeAgentStarts = 0;
 const pi = {
   on(event, handler) {
@@ -3525,12 +3526,21 @@ const pi = {
   registerTool() {},
   // The real Pi prompt path: a follow-up sent while the agent is streaming is
   // queued for the running run and raises no before_agent_start; only a send
-  // to an idle agent starts a run and raises it with the exact text.
+  // to an idle agent starts a run and raises it with the exact text. With
+  // customOpensIdleRun, another extension's idle custom message opens that run
+  // first, so Pi raises the prompt-less custom variant carrying the same text.
   sendUserMessage: async (message) => {
     prompts.push(message);
     if (streaming) return;
     beforeAgentStarts += 1;
-    handlers.get("before_agent_start")?.({ prompt: message }, {});
+    if (customOpensIdleRun) {
+      handlers.get("before_agent_start")?.({
+        messageType: "custom",
+        message: { role: "custom", customType: "other-extension", content: message, display: true, timestamp: Date.now() },
+      }, {});
+      return;
+    }
+    handlers.get("before_agent_start")?.({ messageType: "user", prompt: message }, {});
   },
   events: { on() {}, emit() {} },
 };
@@ -3575,6 +3585,7 @@ if (handoff.pending.length !== 1 || handoff.pending[0].delivered || !handoff.pen
   throw new Error(`replacement handoff did not carry exactly the unconsumed wake: ${JSON.stringify(handoff)}`);
 }
 streaming = false;
+customOpensIdleRun = true;
 const replacementMod = await import(`${pathToFileURL(process.env.PLUGIN).href}?replacement=streaming-chain`);
 replacementMod.default(pi);
 await handlers.get("session_start")?.({ type: "session_start", reason: "new" }, {});
@@ -3584,6 +3595,11 @@ if (wakes("signal: streaming chain wake 2") !== 2 || wakes("signal: streaming ch
 }
 if (beforeAgentStarts !== 1) throw new Error(`idle replay raised before_agent_start ${beforeAgentStarts} times`);
 await waitFor(() => arms() === 4, "replacement arm");
+// A custom-opened run carries no prompt, so it must not consume the wake even
+// when its message text matches; only the user prompt that follows does.
+await new Promise((resolve) => setTimeout(resolve, 100));
+if (!existsSync(handoffPath)) throw new Error("a prompt-less custom run consumed the replayed wake");
+handlers.get("before_agent_start")?.({ messageType: "user", prompt: prompts[2] }, {});
 await waitFor(() => !existsSync(handoffPath), "consumed replay clears its handoff record");
 process.exit(0);
 EOF
@@ -3991,7 +4007,7 @@ if (!prompts[1].includes("signal: persistence failure actionable outcome")) {
 if (!prompts[1].includes("could not persist a replacement-session actionable wake")) {
   throw new Error(`replacement did not surface the persistence failure: ${prompts[1]}`);
 }
-handlers.get("before_agent_start")?.({ prompt: prompts[1] }, {});
+handlers.get("before_agent_start")?.({ messageType: "user", prompt: prompts[1] }, {});
 process.exit(0);
 EOF
 )
