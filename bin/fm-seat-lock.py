@@ -29,7 +29,8 @@ CLI: guard [--nonblocking] --provider P --profile PATH -- COMMAND [ARGS...]
 holds a shared lease through child exit and passes its descriptor to that child.
 TERM/INT/HUP are forwarded, but the wrapper waits rather than releasing a live
 child's lease. Once the child exits the wrapper unlocks that open file, so a
-daemon or tool process the session left behind cannot keep holding the seat. available takes a nonblocking shared lease (exit 75 when busy).
+daemon or tool process the session left behind cannot keep holding the seat.
+available takes a nonblocking shared lease (exit 75 when busy).
 state is a nonblocking, read-only JSON snapshot. owners prints the safe scan.
 identity prints the credential identity without reading or creating lock state.
 """

@@ -1,6 +1,6 @@
 # Claude and Codex seats: running workers on a second account
 
-A **seat** is one Claude account that Firstmate's workers can run on.
+A **seat** is one Claude or Codex account that Firstmate's workers can run on.
 Switching seats changes which account new workers bill to, without disturbing any worker already running.
 
 Use this when one account's weekly limit is close and a second account is available, or when work should be split across accounts deliberately.
