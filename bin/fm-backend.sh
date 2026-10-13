@@ -816,28 +816,7 @@ fm_backend_send_key() {  # <backend> <target> <key> [expected-label]
 fm_backend_send_literal() {  # <backend> <target> <text> [expected-label]
   local backend=$1
   shift
-  target=$1
-  label=${6:-}
   fm_backend_source "$backend" || return 1
-  # Every Enter loop below reads the dialog sink, so it must exist before
-  # any adapter types: a sink that fails here leaves the composer untouched.
-  fm_composer_dialog_sink_prepare || {
-    echo "error: the dialog check for a $backend submit could not be recorded" >&2
-    return 1
-  }
-  # One composer read after the sink exists and before the adapter types.
-  # The classify writes the sink; a named dialog means the next Enter would
-  # answer it.
-  if [ -n "$label" ]; then
-    fm_backend_composer_state "$backend" "$target" "$label" >/dev/null || true
-  else
-    fm_backend_composer_state "$backend" "$target" >/dev/null || true
-  fi
-  if dialog=$(fm_composer_blocking_dialog_noted); then
-    fm_composer_dialog_sink_release
-    echo "error: blocked on a prompt: $dialog" >&2
-    return 1
-  fi
   case "$backend" in
     tmux) fm_backend_tmux_send_literal "$@" ;;
     herdr) fm_backend_herdr_send_literal "$@" ;;
@@ -846,8 +825,6 @@ fm_backend_send_literal() {  # <backend> <target> <text> [expected-label]
     cmux) fm_backend_cmux_send_literal "$@" ;;
     *) echo "error: no send-literal implementation for backend '$backend'" >&2; return 1 ;;
   esac
-  fm_composer_dialog_sink_release
-  return "$rc"
 }
 
 # fm_backend_send_text_submit: type text once, then submit and verify,
