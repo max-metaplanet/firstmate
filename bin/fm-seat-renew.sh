@@ -61,6 +61,7 @@ case "$name" in
       fm_check_shim_arm "$FM_HOME" "$SCRIPT_DIR/fm-seat-renew.sh" auto || exit 1
       echo 'armed: guarded renewal checks for Claude and Codex every 15 minutes'
     else
+      # shellcheck disable=SC2119  # Renewal keeps no per-feature record to remove.
       fm_check_shim_disarm
       echo 'disarmed: future renewal checks; an in-flight refresh keeps its lock until complete'
     fi

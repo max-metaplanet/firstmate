@@ -51,7 +51,7 @@
 # and is re-pushed on every convergence, so the fleet stays converged on the
 # primary; an item the primary does not set is mirrored as absence downstream.
 # The one exception is a destination home that declines the machine-local seat
-# items through FM_SEAT_LOCAL_OPTOUT_FILE below, which is a home's own billing
+# items through the <provider>-seat-local file below, which is a home's own billing
 # choice rather than a value the primary could hold for it.
 # After successful config/* changes under an already-running secondmate, callers
 # invoke fm_config_send_reread_nudge so the live agent re-reads exact post-write
@@ -101,7 +101,7 @@ FM_MACHINE_LOCAL_INHERITABLE_CONFIG="claude-seat claude-seats-root claude-seat-t
 # it keeps its own seat files exactly as they are, including absent, while
 # every other local home still moves together on each switch. With the file
 # nowhere on the machine, propagation is exactly what it was before it existed.
-FM_SEAT_LOCAL_OPTOUT_FILE="claude-seat-local"
+# The file is config/claude-seat-local or config/codex-seat-local per provider.
 
 # True when <item> names something that exists only on THIS machine.
 fm_config_inherit_item_machine_local() {  # <item>
@@ -113,7 +113,7 @@ fm_config_inherit_item_machine_local() {  # <item>
 
 # fm_config_inherit_seat_optout <dest-config-dir> [claude|codex]
 # True when the destination home declines the machine-local seat items: any
-# config/<FM_SEAT_LOCAL_OPTOUT_FILE> path is there, whatever its type, including
+# config/<provider>-seat-local path is there, whatever its type, including
 # a directory or a dangling symlink. False is the fleet-wide default.
 fm_config_inherit_seat_optout() {
   local dest_config=${1-} provider=${2:-claude} flag

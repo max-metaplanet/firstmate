@@ -27,7 +27,7 @@ for provider in claude codex; do
       codex login status > "$TMP_ROOT/codex-login-status" 2>&1; then
       fail "$version: empty isolated CODEX_HOME unexpectedly reports logged in"
     fi
-    rg -q 'Not logged in' "$TMP_ROOT/codex-login-status" || fail "$version: empty-home login status contract changed"
+    grep -q -- 'Not logged in' "$TMP_ROOT/codex-login-status" || fail "$version: empty-home login status contract changed"
     [ ! -e "$TMP_ROOT/codex/auth.json" ] || fail "$version: read-only login status created auth.json"
     pass "$version: empty CODEX_HOME reports Not logged in without credential creation"
     python3 - "$TMP_ROOT" "$ROOT" <<'LOCKPROOF'
@@ -127,7 +127,7 @@ LOCKPROOF
   else
     env -i HOME="$TMP_ROOT/home" PATH="$PATH" CLAUDE_CONFIG_DIR="$TMP_ROOT/claude" DISABLE_AUTOUPDATER=1 \
       claude auth --help > "$TMP_ROOT/claude-help" 2>&1 || fail "$version: auth help failed"
-    rg -q 'login' "$TMP_ROOT/claude-help" || fail "$version: documented login command changed"
+    grep -q -- 'login' "$TMP_ROOT/claude-help" || fail "$version: documented login command changed"
     pass "$version: auth help exposes login"
     if [ "$(uname -s)" != Darwin ]; then
       printf 'skip: live: Claude synthetic Keychain refresh guard requires macOS\n'

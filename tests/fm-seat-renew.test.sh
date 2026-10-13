@@ -71,7 +71,7 @@ for provider in claude codex; do
   fixture "$provider" invalid after.json
   if bash "$ROOT/bin/fm-seat-renew.sh" --provider "$provider" seat-one > "$TMP_ROOT/result.json"; then fail 'invalid post-state accepted'; fi
   jq -e '.state == "invalid" and .outcome == "invalid" and .loginCommand != null' "$TMP_ROOT/result.json" >/dev/null || fail 'invalid result missing'
-  rg -q "$provider-seat: seat-one credentials-invalid; renewal stopped; run:" "$FM_HOME/state/.wake-queue" || fail 'missing immediate invalid wake'
+  grep -q -- "$provider-seat: seat-one credentials-invalid; renewal stopped; run:" "$FM_HOME/state/.wake-queue" || fail 'missing immediate invalid wake'
   mv "$TMP_ROOT/vendor-called" "$TMP_ROOT/$provider-vendor-invalid"
   fixture "$provider" expired_refreshable
   if bash "$ROOT/bin/fm-seat-renew.sh" --provider "$provider" seat-one > "$TMP_ROOT/result.json"; then fail 'latched seat resumed'; fi
@@ -162,9 +162,9 @@ for _ in $(seq 1 100); do [ ! -e "$TMP_ROOT/exclusive-held" ] || break; sleep .0
 [ -e "$TMP_ROOT/exclusive-held" ] || fail 'exclusive fixture never acquired lock'
 if bash "$ROOT/bin/fm-seat.sh" --provider codex switch seat-one --force > "$TMP_ROOT/switch-output" 2>&1; then fail 'switch published during renewal'; fi
 [ ! -e "$FM_HOME/config/codex-seat" ] || fail 'switch wrote active setting during renewal'
-rg -q 'renewing' "$TMP_ROOT/switch-output" || fail 'switch did not name renewal hold'
+grep -q -- 'renewing' "$TMP_ROOT/switch-output" || fail 'switch did not name renewal hold'
 if bash "$ROOT/bin/fm-seat.sh" --provider codex switch --next --force > "$TMP_ROOT/switch-output" 2>&1; then fail 'auto selection crossed renewal'; fi
-rg -q 'renewing' "$TMP_ROOT/switch-output" || fail 'rotation did not skip renewing seat'
+grep -q -- 'renewing' "$TMP_ROOT/switch-output" || fail 'rotation did not skip renewing seat'
 touch "$TMP_ROOT/exclusive-release"
 wait "$holder"
 bash "$ROOT/bin/fm-seat-renew.sh" arm > "$TMP_ROOT/armed"
