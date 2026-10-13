@@ -3,7 +3,8 @@
 
 seat_lock(provider, profile, exclusive, blocking) yields a Lease with fd,
 read_state() and exclusive-only write_state(dict). Close, never LOCK_UN, ends a
-lease so descriptors inherited by a still-running child retain the lock.
+lease so descriptors inherited by a still-running child retain the lock; only
+guard unlocks, after its child has exited.
 read_state(provider, profile) reads the last atomically published state without
 waiting for renewal. Missing state is {}. Unsafe files/roots fail closed.
 
@@ -27,7 +28,8 @@ claim local credentials. This is a snapshot, not a lease over unmanaged CLIs.
 CLI: guard [--nonblocking] --provider P --profile PATH -- COMMAND [ARGS...]
 holds a shared lease through child exit and passes its descriptor to that child.
 TERM/INT/HUP are forwarded, but the wrapper waits rather than releasing a live
-child's lease. available takes a nonblocking shared lease (exit 75 when busy).
+child's lease. Once the child exits the wrapper unlocks that open file, so a
+daemon or tool process the session left behind cannot keep holding the seat. available takes a nonblocking shared lease (exit 75 when busy).
 state is a nonblocking, read-only JSON snapshot. owners prints the safe scan.
 identity prints the credential identity without reading or creating lock state.
 """
@@ -548,6 +550,7 @@ def guard(provider, profile, command, blocking=True):
             for signum in pending:
                 forward(signum, None)
             code = child.wait()
+            fcntl.flock(lease.fd, fcntl.LOCK_UN)
             return code if code >= 0 else 128 - code
         finally:
             for sig, handler in previous.items():

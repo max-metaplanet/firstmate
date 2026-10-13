@@ -60,6 +60,7 @@ A seat the [quota floor](claude-seats.md#resting-a-seat-below-a-quota-floor) is 
 
 Each row also shows the cached authentication verdict, renewal outcome, last attempt and successful renewal times, and the guarded renewal command.
 Invalid credentials include the exact login command; the panel never runs it.
+Codex rows appear only on a home with Codex seats, Codex seat configuration, or a Codex home.
 [Seat renewal limits](claude-seats.md#renewal-status-and-safe-limits) own the credential safety boundary.
 
 Nothing a mod draws is visible in a `claude -p` run, an SDK session, or the VS Code chat panel, so in a session that cannot draw `/seats` answers with the same content as text instead.

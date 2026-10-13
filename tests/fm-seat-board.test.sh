@@ -39,6 +39,7 @@ make_board_quota_fake() {
 #!/usr/bin/env bash
 set -u
 spec="$spec"
+printf '%s\n' "\$*" >> "\$spec/calls"
 provider=claude
 key="\${CLAUDE_CONFIG_DIR:-}"
 case " \$* " in *" --provider codex "*) provider=codex; key="\${CODEX_HOME:-}" ;; esac
@@ -102,7 +103,7 @@ run_board() {
   local home=$1 fakebin=$2 cache=$3
   shift 3
   [ $# -gt 0 ] || set -- render
-  FM_HOME="$home" FM_CONFIG_OVERRIDE="$home/config" FM_STATE_OVERRIDE="$home/state" \
+  HOME="$home" FM_HOME="$home" FM_CONFIG_OVERRIDE="$home/config" FM_STATE_OVERRIDE="$home/state" \
     FM_DATA_OVERRIDE="$home/data" CLAUDE_CONFIG_DIR="" CODEX_HOME="" \
     FM_SEAT_BOARD_CACHE_DIR="$cache" FM_SEAT_BOARD_CACHE_SECONDS=60 \
     PATH="$fakebin:$PATH" "$BOARD" "$@" 2>&1
@@ -309,6 +310,39 @@ test_json_separates_providers_with_matching_names_and_profiles() {
       and (.renewal.reason | contains("guarded renewal")))
   ' >/dev/null || fail "cached provider verdicts must expose login or bounded renewal guidance: $cached"
   pass "provider identity separates matching seats and cache paths while preserving Claude legacy fields"
+}
+
+test_a_claude_only_home_shows_and_reads_no_codex_until_codex_is_in_use() {
+  local rec out page
+  rec=$(make_board_case claude-only)
+  read_board_case "$rec"
+  rm "$HOME_DIR/config/codex-seats-root"
+  printf '(default)\n' > "$SPEC_DIR/oauth"
+  out=$(run_board "$HOME_DIR" "$FAKEBIN" "$CASE_DIR/cache" json)
+  printf '%s' "$out" | jq -e '.providers.codex == null and all(.seats[]; .provider == "claude")' >/dev/null \
+    || fail "a Claude-only home must carry no Codex row: $out"
+  page=$(run_board "$HOME_DIR" "$FAKEBIN" "$CASE_DIR/cache")
+  if printf '%s' "$page" | grep -F 'codex login' >/dev/null; then fail "a Claude-only page must not prompt a Codex login"; fi
+  if grep -F -- '--provider codex' "$SPEC_DIR/calls" >/dev/null; then fail "a Claude-only home must make no Codex quota read"; fi
+  if command -v node >/dev/null 2>&1; then
+    printf '%s' "$out" > "$CASE_DIR/board.json"
+    cat > "$CASE_DIR/band.mjs" <<JS
+import { readFileSync } from "node:fs";
+import { pathToFileURL } from "node:url";
+const seats = await import(pathToFileURL(${ROOT@Q} + "/.claude/mods/firstmate-quota/lib/fm-quota-seats.ts").href);
+const board = seats.parseSeatBoard(readFileSync(${CASE_DIR@Q} + "/board.json", "utf8"));
+const rows = seats.seatRows(board, 0, 0);
+if (rows.length !== 1 || seats.seatsBandSegment(rows) !== undefined) throw new Error("Claude-only band drew another seat");
+JS
+    node --input-type=module < "$CASE_DIR/band.mjs" || fail "the quota mod must draw no other-seat clause for a Claude-only home"
+  fi
+  mkdir -p "$HOME_DIR/.codex"
+  out=$(run_board "$HOME_DIR" "$FAKEBIN" "$CASE_DIR/cache" json)
+  printf '%s' "$out" | jq -e '.providers.codex.activeSeat == "default"
+    and any(.seats[]; .provider == "codex" and .name == "default")' >/dev/null \
+    || fail "an existing Codex home must show its default seat: $out"
+  grep -F -- '--provider codex' "$SPEC_DIR/calls" >/dev/null || fail "an in-use Codex home must be read"
+  pass "a Claude-only home shows and reads no Codex seat, and a Codex home brings its default seat back"
 }
 
 test_json_reports_every_seat_with_its_own_cache_age() {
@@ -717,6 +751,7 @@ test_the_cache_is_scoped_to_each_seats_config_dir_not_its_name
 test_render_escapes_markup_in_quota_axi_text
 test_serve_rejects_a_missing_or_non_numeric_port
 test_json_separates_providers_with_matching_names_and_profiles
+test_a_claude_only_home_shows_and_reads_no_codex_until_codex_is_in_use
 test_json_reports_every_seat_with_its_own_cache_age
 test_json_marks_the_active_seat_the_live_seat_and_an_excluded_seat
 test_json_reports_a_seat_with_no_report_as_absent_rather_than_zero

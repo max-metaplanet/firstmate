@@ -303,7 +303,7 @@ while not pathlib.Path(sys.argv[2]).exists(): time.sleep(.03)
     os.environ["FM_SEAT_LOCK_ROOT"] = str(link)
     assert cli("available").returncode == 2, "symlink lock roots must be refused"
     os.environ["FM_SEAT_LOCK_ROOT"] = prior_root
-    key = next((scratch / "locks").glob("*.json"))
+    key = scratch / "locks" / (module._key("codex", str(profile)) + ".json")
     key.chmod(0o644)
     assert cli("state").returncode == 2, "unsafe published state must be refused"
     print("ok - unsafe lock roots and renewal state fail closed", flush=True)

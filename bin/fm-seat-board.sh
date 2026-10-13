@@ -35,6 +35,8 @@
 #                        extraUsage } ] }
 #         The legacy top-level activeSeat, liveSeat, floor and pipeline describe
 #         Claude; providers and each seat's provider disambiguate matching names.
+#         Codex appears only when fm_seat_provider_in_use; otherwise
+#         providers.codex is null and no Codex quota is read.
 #         renewal is the read-only fm_seat_renewal_from projection, including history and action
 #         commands for the operator to run; polling never executes these commands.
 #         autoExcluded is true when an automatic switch may not land on that
@@ -426,6 +428,7 @@ seat_json() {
 provider_seats_json() (
   FM_SEAT_PROVIDER=$1
   local cached_only=$2 active name
+  [ "$FM_SEAT_PROVIDER" = claude ] || fm_seat_provider_in_use || return 0
   active=$(fm_seat_active)
   seat_json "$FM_SEAT_DEFAULT_NAME" "$active" "$cached_only"
   while IFS= read -r name; do
@@ -437,6 +440,7 @@ provider_seats_json() (
 provider_metadata_json() (
   FM_SEAT_PROVIDER=$1
   local ambient=${CLAUDE_CONFIG_DIR:-}
+  [ "$FM_SEAT_PROVIDER" = claude ] || fm_seat_provider_in_use || { printf 'null\n'; return 0; }
   [ "$FM_SEAT_PROVIDER" != codex ] || ambient=${CODEX_HOME:-}
   jq -cn --arg active "$(fm_seat_active)" \
     --arg live "$(fm_seat_name_of_profile "$ambient")" --argjson floor "$(floor_json)" \
@@ -484,6 +488,7 @@ render_page() {
     (if .profileRecorded then empty else "pipeline default-seat profile not recorded for this home'"'"'s lead; launches use the wrapper'"'"'s installed default profile until a lead restart records it" end),
     (.liveAgents[] | "live pipeline agent: pid=" + (.pid | tostring) + " seat=" + .seat)')
   for FM_SEAT_PROVIDER in claude codex; do
+    [ "$FM_SEAT_PROVIDER" = claude ] || fm_seat_provider_in_use || continue
     active=$(fm_seat_active)
     printf '<h2>%s</h2>\n' "$FM_SEAT_PROVIDER"
     seat_section_html "$FM_SEAT_DEFAULT_NAME" "$active"

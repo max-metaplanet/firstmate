@@ -411,6 +411,19 @@ fm_seat_list() {
   done
 }
 
+# fm_seat_provider_in_use
+# True when FM_SEAT_PROVIDER has a named seat, any config/<provider>-seat*
+# setting, or an existing ambient home. The board and scheduled renewal show and
+# renew a provider's default seat only then, so a Claude-only home never reads Codex.
+fm_seat_provider_in_use() {
+  local provider home
+  provider=$(fm_seat_provider) || return 1
+  [ -z "$(fm_seat_list)" ] || return 0
+  compgen -G "$CONFIG/$provider-seat*" >/dev/null && return 0
+  home=$(fm_seat_config_dir "$FM_SEAT_DEFAULT_NAME") || return 0
+  [ -d "${home:-${HOME:-}/.$provider}" ]
+}
+
 # fm_seat_logged_in [config-dir]
 # Exit 0 when the profile holds usable Claude credentials, 3 when its session is
 # signed in but its access token has lapsed and can still be renewed, 1 when it

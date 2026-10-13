@@ -96,15 +96,46 @@ for provider in claude codex; do
   touch "$TMP_ROOT/release-$provider"
   wait "$holder"
 done
+# A managed worker that leaves a daemon behind must not pin the seat once the worker exits.
+# shellcheck disable=SC2016  # Fixture arguments expand in the child.
+python3 "$ROOT/bin/fm-seat-lock.py" guard --provider codex --profile "$TMP_ROOT/seats/seat-one" -- \
+  bash -c 'sleep 60 </dev/null >/dev/null 2>&1 & printf "%s\n" "$!" > "$1"' worker "$TMP_ROOT/daemon-pid"
+daemon=$(cat "$TMP_ROOT/daemon-pid")
+kill -0 "$daemon" 2>/dev/null || fail 'daemon fixture did not outlive its managed worker'
+bash "$ROOT/bin/fm-seat-renew.sh" --provider codex seat-one > "$TMP_ROOT/result.json" || true
+kill -0 "$daemon" 2>/dev/null || fail 'renewal disturbed the leftover daemon'
+kill "$daemon"
+jq -e '.state == "healthy" and .outcome == "renewed"' "$TMP_ROOT/result.json" >/dev/null || fail "leftover daemon pinned the seat lease: $(cat "$TMP_ROOT/result.json")"
+assert_equals codex "$(cat "$TMP_ROOT/vendor-called")" 'renewal proceeded past the leftover daemon'
+rm "$TMP_ROOT/vendor-called"
 # Ordinary Claude must retain its absent selector, not select a named ~/.claude Keychain.
 fixture claude invalid
 result=$(FM_AMBIENT_CLAUDE_CONFIG_DIR='' CLAUDE_CONFIG_DIR='' bash "$ROOT/bin/fm-seat-renew.sh" --provider claude --check default)
 assert_equals 'env -u CLAUDE_SECURESTORAGE_CONFIG_DIR -u CLAUDE_CONFIG_DIR claude' "$(printf '%s' "$result" | jq -r .loginCommand)" 'ordinary Claude login targets the unselected store'
+# Scheduling includes in-use default seats; Codex is skipped on a home that does not use it.
+profiles() {
+  HOME="$TMP_ROOT/user" CLAUDE_CONFIG_DIR='' FM_AMBIENT_CLAUDE_CONFIG_DIR='' CODEX_HOME='' \
+    FM_CONFIG_OVERRIDE="$TMP_ROOT/claude-only-config" bash "$ROOT/bin/fm-seat-renew.sh" --profiles
+}
+mkdir -p "$TMP_ROOT/user/.claude" "$TMP_ROOT/claude-only-config"
+printf '%s\n' "$TMP_ROOT/user/no-seats" > "$TMP_ROOT/claude-only-config/claude-seats-root"
+profiles > "$TMP_ROOT/profiles"
+jq -se '. == [{provider:"claude",name:"default",profile:""}]' "$TMP_ROOT/profiles" >/dev/null \
+  || fail "ordinary Claude default must schedule with its unset selector, and unused Codex not at all: $(cat "$TMP_ROOT/profiles")"
+mkdir -p "$TMP_ROOT/user/.codex"
+profiles > "$TMP_ROOT/profiles"
+jq -se --arg codex "$TMP_ROOT/user/.codex" 'any(.[]; . == {provider:"codex",name:"default",profile:$codex})' "$TMP_ROOT/profiles" >/dev/null \
+  || fail "an existing Codex home must schedule its default seat: $(cat "$TMP_ROOT/profiles")"
+rm -r "$TMP_ROOT/user/.codex"
 # The watcher returns immediately; detached jobs honor a shared 15-minute cadence.
+# The default Codex home aliases seat-one's auth.json, so both share one scheduled job.
 export FM_SEAT_LOCK_ROOT="$TMP_ROOT/scheduled-locks"
+printf '{}\n' > "$TMP_ROOT/seats/seat-one/auth.json"
+mkdir -p "$TMP_ROOT/user/.codex"
+ln -s "$TMP_ROOT/seats/seat-one/auth.json" "$TMP_ROOT/user/.codex/auth.json"
 fixture codex expired_refreshable
 fixture codex healthy after.json
-bash "$ROOT/bin/fm-seat-renew.sh" auto > "$TMP_ROOT/auto-output"
+HOME="$TMP_ROOT/user" CODEX_HOME='' CLAUDE_CONFIG_DIR='' FM_AMBIENT_CLAUDE_CONFIG_DIR='' bash "$ROOT/bin/fm-seat-renew.sh" auto > "$TMP_ROOT/auto-output"
 for _ in $(seq 1 600); do
   result=$(python3 "$ROOT/bin/fm-seat-lock.py" state --provider codex --profile "$TMP_ROOT/seats/seat-one")
   if printf '%s\n' "$result" | jq -e '.outcome == "renewed"' >/dev/null; then break; fi
@@ -113,7 +144,7 @@ done
 printf '%s\n' "$result" | jq -e '.outcome == "renewed"' >/dev/null || fail 'scheduled job never verified renewal'
 assert_equals codex "$(cat "$TMP_ROOT/vendor-called")" 'scheduled vendor launch'
 fixture codex expired_refreshable
-bash "$ROOT/bin/fm-seat-renew.sh" auto > "$TMP_ROOT/auto-output"
+HOME="$TMP_ROOT/user" CODEX_HOME='' CLAUDE_CONFIG_DIR='' FM_AMBIENT_CLAUDE_CONFIG_DIR='' bash "$ROOT/bin/fm-seat-renew.sh" auto > "$TMP_ROOT/auto-output"
 sleep .2
 assert_equals codex "$(cat "$TMP_ROOT/vendor-called")" 'cadence prevents a second scheduled launch'
 # Publication and automatic selection both observe an exclusive renewal lease.

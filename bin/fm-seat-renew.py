@@ -131,9 +131,14 @@ def auto():
     if rows.returncode:
         print("seat-renewal: cannot enumerate registered profiles")
         return 1
+    started = set()
     for row in rows.stdout.splitlines():
         try:
             item = json.loads(row)
+            identity = (item["provider"], locks.identity(item["provider"], item["profile"]))
+            if identity in started:
+                continue
+            started.add(identity)
             state = locks.read_state(item["provider"], item["profile"])
             if int(time.time()) - state.get("lastChecked", 0) < INTERVAL:
                 continue
@@ -143,7 +148,7 @@ def auto():
                 start_new_session=True, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL, close_fds=True,
             )
-        except (ValueError, KeyError, OSError):
+        except (ValueError, KeyError, OSError, locks.SeatLockError):
             print("seat-renewal: a profile guard failed closed")
     return 0
 

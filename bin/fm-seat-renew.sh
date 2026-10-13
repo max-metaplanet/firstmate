@@ -10,6 +10,8 @@
 # one-shot jobs (15 minute cadence), outside the watcher's killing timeout.
 # These jobs retain their lock until the vendor exits, even if it stalls.
 # --profiles and --probe are read-only internal interfaces for the job runner.
+# --profiles includes each in-use provider's default seat; ordinary Claude keeps
+# an empty profile, its unset Keychain selector, never an explicit ~/.claude.
 set -u
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
@@ -66,14 +68,15 @@ case "$name" in
   auto) exec python3 "$SCRIPT_DIR/fm-seat-renew.py" auto ;;
   profiles)
     for FM_SEAT_PROVIDER in claude codex; do
+      fm_seat_provider_in_use || continue
       while IFS= read -r seat; do
         fm_seat_name_valid "$seat" || continue
         profile=$(fm_seat_config_dir "$seat") || continue
-        [ -n "$profile" ] || profile="$HOME/.$FM_SEAT_PROVIDER"
-        [ -d "$profile" ] || continue
+        [ "$FM_SEAT_PROVIDER" = claude ] || profile=${profile:-$HOME/.codex}
+        [ -z "$profile" ] || [ -d "$profile" ] || continue
         jq -cn --arg provider "$FM_SEAT_PROVIDER" --arg name "$seat" --arg profile "$profile" \
           '{provider:$provider,name:$name,profile:$profile}'
-      done < <(fm_seat_list)
+      done < <(printf '%s\n' "$FM_SEAT_DEFAULT_NAME"; fm_seat_list)
     done
     exit 0 ;;
 esac

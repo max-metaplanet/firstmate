@@ -407,12 +407,14 @@ The helper's header owns its output and exit-status contract.
 
 Run `bin/fm-seat-renew.sh arm` to register automatic renewal for both providers with the existing watcher; arming seat rotation also arms renewal.
 The registered check starts due renewal jobs every 15 minutes without adding a daemon.
+Each in-use provider's default seat is scheduled with its named seats; ordinary Claude keeps its unset Keychain selector, and Codex aliases of one `auth.json` share one job.
 `bin/fm-seat-renew.sh disarm` stops future scheduled jobs; an in-flight token exchange finishes under its lock.
 Omit `--check` from the per-seat command to request the same guarded renewal immediately.
 This public helper is also the integration point for external quota scripts.
 
 The [coordinator contract](../bin/fm-seat-renew.py) owns eligibility, owner checks, locking, post-verification, and invalid-credential stopping.
 Managed Claude and Codex launches share a machine-wide credential-store lock with renewal, and seat switches skip a destination being renewed.
+A managed launch's lease ends when its vendor session exits, even if a daemon or tool process it started is still running.
 The immediate owner scan also checks this user's vendor processes and this home's recorded workers and secondmates.
 An unmanaged session starting after that scan remains a residual race; the lock coordinates Firstmate launches across homes, not arbitrary external launchers.
 No model prompt or login flow is used: Claude runs its token-free `doctor` startup and Codex runs `account/read` with `refreshToken:true`.

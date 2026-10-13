@@ -2589,4 +2589,6 @@ The managed Codex proof launches an empty-auth app-server under the real lease w
 `bash tests/fm-seat-vendor-renew.test.sh` returned `ok - vendor refresh sends no model request, preserves ambient Claude, rejects seat wrappers, and retains lease through cancellation`.
 That portable regression kills only a synthetic adapter fixture and proves its vendor child retains the inherited kernel lease until exit; it also exercises protocol rejection, signal deferral, ordinary Claude's unset secure-store selectors, and rejection of managed pipeline wrappers before execution.
 These checks do not spend or refresh a real account, and a completed vendor command still requires the renewal engine's read-only postverification.
+`bash tests/fm-seat-renew.test.sh` also launches a synthetic managed worker that leaves a daemon running and exits; guarded renewal then completes while that daemon stays alive, and the same run fails with `outcome: busy` when the wrapper does not unlock after its child exits.
+Its scheduling checks show ordinary Claude's default seat with an empty profile, no Codex row on a home without Codex, and one job for a default Codex home aliasing a named seat's `auth.json`.
 On the same date, `bash tests/fm-quota-claude-mod-plugin.test.sh` passed all 38 tests against Claude Code `2.1.296`, including renewal history in the installed quota mod integration.
