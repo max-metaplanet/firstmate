@@ -1,0 +1,14 @@
+== 8. six concurrent launches, endpoint 429 WITHOUT retry-after (2s latency), retryAt cleared, reading aged 203s
+decision: allow plan-quota-remaining 65 | source=last-good-fallback age=216s backoff=0s failure=shared-0s-ago
+decision: allow plan-quota-remaining 65 | source=last-good-fallback age=215s backoff=0s failure=live
+decision: allow plan-quota-remaining 65 | source=last-good-fallback age=216s backoff=0s failure=shared-0s-ago
+decision: allow plan-quota-remaining 65 | source=last-good-fallback age=216s backoff=0s failure=shared-0s-ago
+decision: allow plan-quota-remaining 65 | source=last-good-fallback age=216s backoff=0s failure=shared-0s-ago
+decision: allow plan-quota-remaining 65 | source=last-good-fallback age=216s backoff=0s failure=shared-0s-ago
+stub live calls during burst:        1
+
+== 9. low quota: last-good rewritten to 25% left with floor=10 (boundary=max(20,floor+10)=20 -> 25 is above) then to 18% (below): expect allow then hold
+-- last-good at 25%:
+decision: allow plan-quota-remaining 25 | source=last-good-fallback age=218s backoff=0s failure=live
+-- last-good at 18%:
+decision: hold quota-unreadable | source=live-or-hold fallback=unsafe-or-missing age=221s backoff=0s failure=live

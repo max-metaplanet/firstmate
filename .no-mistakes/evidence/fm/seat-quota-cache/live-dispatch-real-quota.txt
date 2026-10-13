@@ -1,0 +1,36 @@
+config: extra-usage policy=stop, floor=10
+== 1. first launch: real quota-axi live read
+decision: allow plan-quota-remaining 66 | source=live age=0s backoff=0s
+the active Claude seat still has 66% of its plan quota left
+quota evidence: source=live age=0s backoff=0s
+reason-rc=0
+real reading summary:
+{"source":"oauth","status":"fresh","refreshedAt":"2026-10-13T18:53:22.724Z","windows":[{"id":"five_hour","percentRemaining":66},{"id":"seven_day","percentRemaining":88},{"id":"model:fable","percentRemaining":100}]}
+
+== 2. second launch within 120s TTL: expect source=fresh-cache (no live call)
+decision: allow plan-quota-remaining 66 | source=fresh-cache age=0s backoff=0s
+the active Claude seat still has 66% of its plan quota left
+quota evidence: source=fresh-cache age=0s backoff=0s
+reason-rc=0
+
+cache dir perms:
+total 8
+drwx------@ 4 max  staff   128 Oct 13 14:53 .
+drwx------@ 5 max  staff   160 Oct 13 14:53 ..
+-rw-------@ 1 max  staff  3310 Oct 13 14:53 0ab0f3fe0bba1f31233d55d338c3d4ee3231bf0ef2448b928f10d2b1a08539e3.json
+-rw-------@ 1 max  staff     0 Oct 13 14:53 0ab0f3fe0bba1f31233d55d338c3d4ee3231bf0ef2448b928f10d2b1a08539e3.lock
+
+== 3. cached reading aged +300s, endpoint rate-limited (stub quota-axi, no retry-after)
+decision: allow plan-quota-remaining 66 | source=last-good-fallback age=300s backoff=0s failure=live
+the active Claude seat still has 66% of its plan quota left
+quota evidence: source=last-good-fallback age=300s backoff=0s failure=live
+reason-rc=0
+stub calls:        1
+
+== 4. cached reading aged +1000s (>900s), endpoint rate-limited: expect hold (no fallback)
+decision: hold quota-unreadable | source=live-or-hold fallback=unsafe-or-missing age=1001s backoff=0s failure=live
+the active Claude seat quota could not be read, so whether this worker would run on paid extra usage is unknown, and the policy makes no guess
+this holds only work not yet started; a worker already running keeps its own seat and can still draw extra usage mid-task
+quota evidence: source=live-or-hold fallback=unsafe-or-missing age=1001s backoff=0s failure=live
+reason-rc=1
+stub calls:        2

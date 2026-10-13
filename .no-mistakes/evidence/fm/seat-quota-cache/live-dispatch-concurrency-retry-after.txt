@@ -1,0 +1,16 @@
+== 5. fresh real read to seed cache
+decision: allow plan-quota-remaining 65 | source=live age=0s backoff=0s
+
+== 6. six concurrent launches, reading aged 200s, endpoint 429 w/ retryAfter=+90s (2s latency stub)
+decision: allow plan-quota-remaining 65 | source=last-good-fallback age=202s backoff=87s failure=live
+decision: allow plan-quota-remaining 65 | source=last-good-fallback age=202s backoff=87s failure=backoff
+decision: allow plan-quota-remaining 65 | source=last-good-fallback age=202s backoff=87s failure=backoff
+decision: allow plan-quota-remaining 65 | source=last-good-fallback age=202s backoff=87s failure=backoff
+decision: allow plan-quota-remaining 65 | source=last-good-fallback age=202s backoff=87s failure=backoff
+decision: allow plan-quota-remaining 65 | source=last-good-fallback age=202s backoff=87s failure=backoff
+stub live calls during burst:        1
+
+== 7. launch after burst, within retry-after window: expect backoff, no live call
+decision: allow plan-quota-remaining 65 | source=last-good-fallback age=203s backoff=87s failure=backoff
+stub live calls total:        1
+persisted retryAt vs now: 1791917705.47449 vs 1791917619
