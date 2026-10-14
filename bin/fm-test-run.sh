@@ -1391,10 +1391,14 @@ select_family() {
 }
 
 families_for_test_reference() {  # <needle>...
-  local s needle
+  local s needle helper
   local found=0
   local -a needles=()
   for needle in "$@"; do needles+=(-e "$needle"); done
+  for helper in tests/*-helpers.sh tests/fixtures.sh tests/*-fixture.sh; do
+    [ -f "$helper" ] || continue
+    ! grep -Fq "${needles[@]}" "$helper" || needles+=(-e "$(basename "$helper")")
+  done
   while IFS= read -r s; do
     [ -n "$s" ] || continue
     if grep -Fq "${needles[@]}" "$s"; then
@@ -1781,8 +1785,9 @@ families_for_changed_path() {
       printf '%s\n' pure-contract-unit
       ;;
     tests/git-config-helpers.sh)
-      # The reference scan is not transitive, so match the two helpers that
-      # source this one as well: most suites inherit it only through them.
+      # The reference scan follows only shared helper libraries, not lib.sh or
+      # herdr-test-safety.sh, so match the two files that source this one as
+      # well: most suites inherit it only through them.
       families_for_test_reference git-config-helpers.sh lib.sh herdr-test-safety.sh \
         || printf '%s\n' "__unmapped__:$path"
       ;;
