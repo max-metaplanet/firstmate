@@ -3108,47 +3108,74 @@ test_presentation_recovery_wait_requires_live_spawn_holder() (
   holder=
   trap 'if [ -n "$holder" ]; then kill "$holder" 2>/dev/null || true; wait "$holder" 2>/dev/null || true; fi' EXIT
   fm_backend_herdr_presentation_session_lock_path() { printf '%s/lock' "$dir"; }
+  # <role>: marked, unmarked, or later (publishes task-spawn once $dir/mark exists).
+  start_holder() {
+    rm -f "$dir/ready" "$dir/release" "$dir/mark" "$dir/marked"
+    (
+      fm_lock_try_acquire "$dir/lock" || exit 1
+      trap 'fm_lock_release "$dir/lock"' EXIT
+      if [ "$1" = marked ]; then
+        fm_lock_set_role "$dir/lock" task-spawn || exit 1
+      fi
+      touch "$dir/ready"
+      if [ "$1" = later ]; then
+        while [ ! -e "$dir/mark" ]; do command sleep 0.01; done
+        fm_lock_set_role "$dir/lock" task-spawn || exit 1
+        touch "$dir/marked"
+      fi
+      while [ ! -e "$dir/release" ]; do command sleep 0.01; done
+    ) &
+    holder=$!
+    wait_for "$dir/ready"
+  }
+  wait_for() {
+    local i
+    for ((i=0; i<200; i++)); do
+      [ -e "$1" ] && return 0
+      command sleep 0.01
+    done
+    fail "recovery lock holder did not reach ${1##*/}"
+  }
+  stop_holder() {
+    touch "$dir/release"
+    if [ -n "$holder" ]; then wait "$holder" || fail "recovery holder failed"; holder=; fi
+  }
   eval "real_$(declare -f fm_lock_try_acquire)"
-  # Release the marked holder right after a failed extension attempt, before
+  # Change the holder right after the first failed extension attempt, before
   # the holder check reads the lock.
   fm_lock_try_acquire() {
     real_fm_lock_try_acquire "$@" && return 0
-    if [ "$scenario" = released ] && [ "${ticks:-0}" -eq 50 ] && [ -n "$holder" ]; then
-      touch "$dir/release"
-      wait "$holder" || fail "recovery holder failed"
-      holder=
+    if [ "${ticks:-0}" -eq 50 ] && [ -n "$holder" ]; then
+      case "$scenario" in
+        released) stop_holder ;;
+        transition) stop_holder; start_holder later ;;
+      esac
     fi
     return 1
   }
 
-  for scenario in unmarked spawn released ordinary deadline; do
-    rm -f "$dir/ready" "$dir/release"
-    (
-      fm_lock_try_acquire "$dir/lock" || exit 1
-      trap 'fm_lock_release "$dir/lock"' EXIT
-      if [ "$scenario" != unmarked ]; then
-        fm_lock_set_role "$dir/lock" task-spawn || exit 1
-      fi
-      touch "$dir/ready"
-      while [ ! -e "$dir/release" ]; do command sleep 0.01; done
-    ) &
-    holder=$!
-    ready=0
-    for ((i=0; i<200; i++)); do
-      if [ -e "$dir/ready" ]; then ready=1; break; fi
-      command sleep 0.01
-    done
-    [ "$ready" = 1 ] || fail "recovery lock holder did not become ready"
+  for scenario in unmarked unreadable spawn released transition ordinary deadline; do
+    case "$scenario" in
+      unmarked) start_holder unmarked ;;
+      unreadable)
+        start_holder unmarked
+        owner=$(fm_lock_link_owner "$dir/lock") || fail "recovery holder has no owner"
+        printf 'task-spawn\n' > "$owner/role"
+        chmod 000 "$owner/role"
+        ;;
+      *) start_holder marked ;;
+    esac
     ticks=0
     sleep() {
       ticks=$((ticks + 1))
       if [ "$scenario" = deadline ]; then
         # Reach the extension first, then advance its elapsed-time clock.
         if [ "$ticks" -gt 50 ]; then SECONDS=$((SECONDS + 1)); fi
+      elif [ "$scenario" = transition ] && [ "$ticks" -eq 51 ]; then
+        touch "$dir/mark"
+        wait_for "$dir/marked"
       elif [ "$ticks" -eq 55 ]; then
-        touch "$dir/release"
-        wait "$holder" || fail "recovery holder failed"
-        holder=
+        stop_holder
       fi
     }
     rc=0
@@ -3158,8 +3185,8 @@ test_presentation_recovery_wait_requires_live_spawn_holder() (
       fm_backend_herdr_presentation_lock_acquire fmtest recovery || rc=$?
     fi
     case "$scenario" in
-      spawn)
-        [ "$rc" = 0 ] && [ "$ticks" = 55 ] || fail "marked live spawn was not waited out: rc=$rc ticks=$ticks"
+      spawn|transition)
+        [ "$rc" = 0 ] && [ "$ticks" = 55 ] || fail "$scenario live spawn was not waited out: rc=$rc ticks=$ticks"
         fm_lock_release "$FM_BACKEND_HERDR_PRESENTATION_LOCK"
         ;;
       released)
@@ -3169,12 +3196,14 @@ test_presentation_recovery_wait_requires_live_spawn_holder() (
       deadline)
         [ "$rc" = 1 ] && [ "$ticks" -gt 50 ] && [ "$ticks" -le 80 ] || fail "live marked holder exceeded the recovery deadline: rc=$rc ticks=$ticks"
         ;;
+      ordinary)
+        [ "$rc" = 1 ] && [ "$ticks" = 50 ] || fail "ordinary caller extended the default budget: rc=$rc ticks=$ticks"
+        ;;
       *)
-        [ "$rc" = 1 ] && [ "$ticks" = 50 ] || fail "$scenario unexpectedly extended the default budget: rc=$rc ticks=$ticks"
+        [ "$rc" = 1 ] && [ "$ticks" = 52 ] || fail "$scenario holder did not refuse promptly after the default budget: rc=$rc ticks=$ticks"
         ;;
     esac
-    touch "$dir/release"
-    if [ -n "$holder" ]; then wait "$holder" || fail "recovery holder failed"; holder=; fi
+    stop_holder
   done
   pass "presentation recovery extends only a live spawn hold and keeps a hard deadline"
 )

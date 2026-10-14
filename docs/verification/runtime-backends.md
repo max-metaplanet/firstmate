@@ -1522,7 +1522,7 @@ The current recovery contention policy and explicit wait option are documented i
 The bounded extension was verified on 2026-10-14 with real lock-holder processes on macOS using `bash bin/fm-test-run.sh tests/fm-backend-herdr.test.sh`.
 This host lacked GNU `timeout`; a temporary command shim delegated the suite's `timeout 3s` probe to `fm-timeout-lib.sh`'s Bash fallback.
 The new regression accelerates sleep and elapsed-clock progression while using the real lock implementation for owner publication, liveness, acquisition, and release.
-It verifies a recovery waits beyond the ordinary budget only for a marked live spawn, an ordinary caller and an unmarked holder retain their original budget, and a marked holder cannot keep the recovery waiting past its deadline.
+It verifies a recovery waits beyond the ordinary budget only for a marked live spawn, survives a release or a new holder publishing its role within two rechecks, refuses an unmarked or unreadable holder about 0.2s after the ordinary budget, leaves an ordinary caller's budget unchanged, and cannot be kept waiting past its deadline by a marked holder.
 
 ```text
 ok - fm_backend_herdr_presentation_lock_acquire: bounded budget, and contention is distinct from an unresolved session
