@@ -146,7 +146,10 @@
 # evidence. Consumer bin/ scripts still resolve through the curated map, so
 # recorded family-level coupling still expands to the whole family.
 # tests/lib.sh, tests/fixtures.sh, tests/*-helpers.sh and tests/*-fixture.sh are
-# shared files that map to the suites naming them; a fixture under
+# shared files that map to the suites naming them. Family reference scans also
+# follow one level of shared helper library: a suite counts as naming a file
+# when it names a tests/*-helpers.sh, fixtures.sh or *-fixture.sh whose
+# non-comment lines name it. A fixture under
 # tests/fixtures/<dir>/ is mapped by that directory instead. Curated family arms
 # above those also name individual tests/ files explicitly.
 set -eu
