@@ -87,6 +87,9 @@
 #     itself, the test runner, this classifier, shared test scaffolding, a
 #     shared library (bin/*-lib.sh, or any bin/ script sourced by more than
 #     SELECT_SHARED_FANIN others), or the no-mistakes config
+#   - a changed path is behavior-relevant prose (outside the inert set) that
+#     the map answers nothing for, alone or beside code, so the test reading
+#     it cannot be dropped
 #   - the runner refuses the change set, which is what it does for a path its
 #     map does not know
 #   - the selection comes back empty, so no suite would prove the change
