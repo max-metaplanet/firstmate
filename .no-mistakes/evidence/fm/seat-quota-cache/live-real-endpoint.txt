@@ -1,0 +1,42 @@
+== S1: three sequential pipeline-agent launches (real quota endpoint)
+-- launch 1
+2.1.299 (Claude Code)
+-- launch 2
+pipeline Claude: pipeline seat default still has 66% of its plan quota left
+quota evidence: source=fresh-cache age=0s backoff=0s
+2.1.299 (Claude Code)
+-- launch 3
+pipeline Claude: pipeline seat default still has 66% of its plan quota left
+quota evidence: source=fresh-cache age=0s backoff=0s
+2.1.299 (Claude Code)
+quota-axi live calls so far:        1
+== cache dir perms
+drwx------@  4 max  staff   128 Oct 14 04:47 .
+drwx------@ 10 max  staff   320 Oct 14 04:47 ..
+-rw-------@  1 max  staff  3596 Oct 14 04:47 8d965ba2001c7f3a2d022fb8b4b41acbc9457091054f43d6bacfbdb6141b423b.json
+-rw-------@  1 max  staff     0 Oct 14 04:47 8d965ba2001c7f3a2d022fb8b4b41acbc9457091054f43d6bacfbdb6141b423b.lock
+== S2: cold cache, 6 concurrent launches
+-- concurrent 1
+2.1.299 (Claude Code)
+-- concurrent 2
+pipeline Claude: pipeline seat default still has 66% of its plan quota left
+quota evidence: source=fresh-cache age=0s backoff=0s
+2.1.299 (Claude Code)
+-- concurrent 3
+pipeline Claude: pipeline seat default still has 66% of its plan quota left
+quota evidence: source=fresh-cache age=0s backoff=0s
+2.1.299 (Claude Code)
+-- concurrent 4
+pipeline Claude: pipeline seat default still has 66% of its plan quota left
+quota evidence: source=fresh-cache age=0s backoff=0s
+2.1.299 (Claude Code)
+-- concurrent 5
+pipeline Claude: pipeline seat default still has 66% of its plan quota left
+quota evidence: source=fresh-cache age=0s backoff=0s
+2.1.299 (Claude Code)
+-- concurrent 6
+pipeline Claude: pipeline seat default still has 66% of its plan quota left
+quota evidence: source=fresh-cache age=0s backoff=0s
+2.1.299 (Claude Code)
+quota-axi live calls for the burst of 6:        1
+04:47:48 pid=48943 --provider claude --no-credential-refresh --full --json

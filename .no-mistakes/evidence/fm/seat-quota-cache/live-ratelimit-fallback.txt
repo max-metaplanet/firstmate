@@ -1,0 +1,51 @@
+== seed: pA healthy (80%), pB low (25%, floor 15 => boundary 25), pC never read
+-- launch on pA
+2.1.299 (Claude Code)
+   exit=0  live calls on pA so far: 1
+-- launch on pB
+2.1.299 (Claude Code)
+   exit=0  live calls on pB so far: 1
+== endpoint now returns 429: pA retryAfter=+400s, pB no retryAfter, pC retryAfter=+400s with no last-good
+== within 2-minute TTL: no live call expected
+-- launch on pA
+pipeline Claude: pipeline seat default still has 80% of its plan quota left
+quota evidence: source=fresh-cache age=0s backoff=0s
+2.1.299 (Claude Code)
+   exit=0  live calls on pA so far: 1
+== S3: unreadable/no last-good holds exactly as before
+-- launch on pC
+pipeline Claude: HELD pipeline-agent launch on seat default: pipeline seat default quota could not be read, so whether this pipeline agent would run on paid extra usage is unknown, and the policy makes no guess
+this holds only work not yet started; a pipeline agent already running keeps its own seat and can still draw extra usage mid-task
+quota evidence: source=live-or-hold fallback=unsafe-or-missing age=unknowns backoff=400s failure=live
+   exit=75  live calls on pC so far: 1
+== S4: retry-after on pC: second launch must not call the endpoint
+-- launch on pC
+pipeline Claude: HELD pipeline-agent launch on seat default: pipeline seat default quota could not be read, so whether this pipeline agent would run on paid extra usage is unknown, and the policy makes no guess
+this holds only work not yet started; a pipeline agent already running keeps its own seat and can still draw extra usage mid-task
+quota evidence: source=live-or-hold fallback=unsafe-or-missing age=unknowns backoff=400s failure=backoff
+   exit=75  live calls on pC so far: 1
+== sleeping 125s so cached readings pass the 2-minute TTL (real clock)
+== S5: recent comfortable last-good used as fallback after 429
+-- launch on pA
+pipeline Claude: pipeline seat default still has 80% of its plan quota left
+quota evidence: source=last-good-fallback age=126s backoff=275s failure=live
+2.1.299 (Claude Code)
+   exit=0  live calls on pA so far: 2
+== S6: retry-after honored: next launch inside the window makes no live call, still visible fallback
+-- launch on pA
+pipeline Claude: pipeline seat default still has 80% of its plan quota left
+quota evidence: source=last-good-fallback age=126s backoff=274s failure=backoff
+2.1.299 (Claude Code)
+   exit=0  live calls on pA so far: 2
+== S7: low-quota last-good (25% vs boundary 25) must hold, not fall back
+-- launch on pB
+pipeline Claude: HELD pipeline-agent launch on seat default: pipeline seat default quota could not be read, so whether this pipeline agent would run on paid extra usage is unknown, and the policy makes no guess
+this holds only work not yet started; a pipeline agent already running keeps its own seat and can still draw extra usage mid-task
+quota evidence: source=live-or-hold fallback=unsafe-or-missing age=127s backoff=0s failure=live
+   exit=75  live calls on pB so far: 2
+== endpoint call log
+04:48:10 /var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.oiCNjD/pA
+04:48:11 /var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.oiCNjD/pB
+04:48:11 /var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.oiCNjD/pC
+04:50:17 /var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.oiCNjD/pA
+04:50:17 /var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.oiCNjD/pB
