@@ -3200,7 +3200,7 @@ test_presentation_recovery_wait_requires_live_spawn_holder() (
         [ "$rc" = 1 ] && [ "$ticks" = 50 ] || fail "ordinary caller extended the default budget: rc=$rc ticks=$ticks"
         ;;
       *)
-        [ "$rc" = 1 ] && [ "$ticks" = 52 ] || fail "$scenario holder did not refuse promptly after the default budget: rc=$rc ticks=$ticks"
+        [ "$rc" = 1 ] && [ "$ticks" = 49 ] || fail "$scenario holder did not refuse within the default budget: rc=$rc ticks=$ticks"
         ;;
     esac
     stop_holder

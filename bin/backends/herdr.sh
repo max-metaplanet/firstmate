@@ -916,8 +916,10 @@ fm_backend_herdr_presentation_lock_spawn_holder() {  # <lock-path>
 # budget for a caller that can give up and continue without the projection. A
 # recovery caller may pass `recovery` instead: after the ordinary budget it
 # retries only behind a live, owner-bound task-spawn role, with a 30s total
-# elapsed-time ceiling. Two rechecks absorb a release or a new holder that has
-# not yet published its role; a holder that still lacks that proof refuses.
+# elapsed-time ceiling. Proof is checked from the last three ordinary attempts
+# on; three consecutive misses absorb a release or a new holder that has not
+# yet published its role, and an unproven holder refuses no later than an
+# ordinary caller would.
 # The role uses the shared lock's existing owner directory and cleanup rules.
 
 fm_backend_herdr_presentation_lock_acquire() {  # <session> [attempts|recovery]
@@ -941,7 +943,9 @@ fm_backend_herdr_presentation_lock_acquire() {  # <session> [attempts|recovery]
       FM_BACKEND_HERDR_PRESENTATION_LOCK=$lock_path
       return 0
     fi
-    if [ "$attempt" -ge "$attempts" ]; then
+    # The three proofs end on the last ordinary attempt, so an unproven holder
+    # refuses within the ordinary budget rather than after it.
+    if [ "$recovery" -eq 1 ] && [ "$attempt" -ge $((attempts - 3)) ]; then
       if fm_backend_herdr_presentation_lock_spawn_holder "$lock_path"; then
         misses=0
       else
