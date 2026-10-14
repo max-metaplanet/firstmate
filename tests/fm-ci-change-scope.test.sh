@@ -249,6 +249,30 @@ test_a_path_the_map_refuses_falls_back_to_the_full_suite() {
   pass "a path the changed-file map refuses falls back to the full suite"
 }
 
+# Prose alongside code is the one shape that loses its prose check: the
+# behavior jobs run, so the prose-only docs-guard job is skipped, while the
+# code paths keep the selection non-empty so nothing widens. The selection
+# must carry the documentation-audience suite itself.
+test_prose_beside_code_keeps_the_documentation_suite() {
+  classify README.md bin/fm-pr-merge.sh
+  assert_contains "$SCOPE_OUT" 'full=false' \
+    "a mixed prose and code change still narrows"$'\n'"$SCOPE_OUT"
+  assert_contains "$(scope_value selected_matrix)" 'fm-documentation-audiences.test.sh' \
+    "a mixed change must keep the documentation-audience suite"$'\n'"$SCOPE_OUT"
+  assert_contains "$(scope_value selected_matrix)" 'fm-pr-merge.test.sh' \
+    "a mixed change must still select the code suite"$'\n'"$SCOPE_OUT"
+
+  # Prose alone never reaches here: with no behavioral change the docs-guard
+  # job owns it, so the selection stays empty rather than booking a job.
+  classify README.md
+  assert_contains "$SCOPE_OUT" 'behavior=false' \
+    "prose no test reads leaves the behavior gate off"$'\n'"$SCOPE_OUT"
+  [ "$(scope_value selected_matrix)" = '' ] \
+    || fail "prose alone must not book a selected job"$'\n'"$SCOPE_OUT"
+
+  pass "prose beside code keeps the documentation-audience suite"
+}
+
 # Prose a test really reads keeps the behavior gate on, but the runner's map
 # answers nothing for it, so there is no selection to trust and the round must
 # widen rather than run nothing.
@@ -301,5 +325,6 @@ test_only_pull_requests_select
 test_an_unusable_change_set_never_selects
 test_a_path_the_map_refuses_falls_back_to_the_full_suite
 test_a_behavior_relevant_path_that_maps_to_no_tests_runs_everything
+test_prose_beside_code_keeps_the_documentation_suite
 test_prose_only_changes_select_nothing_at_all
 test_a_selected_herdr_member_runs_the_herdr_lane

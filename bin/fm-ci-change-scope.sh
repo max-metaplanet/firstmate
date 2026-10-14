@@ -287,6 +287,20 @@ EOF
     --changed-paths-file <(printf '%s\n' "$paths") 2>/dev/null) || weighted=
   [ -n "$weighted" ] || return 0
 
+  # A change set holding tracked prose AND code runs the behavior jobs, so the
+  # prose-only docs-guard job does not run, while the map answers nothing for
+  # prose and the code paths keep the selection non-empty. The prose check
+  # would simply vanish. Add it here rather than in the map, because the map's
+  # silence on prose is what makes a prose-only behavior-relevant change widen
+  # to the complete suite, and attributing prose by reference scan is noisy.
+  if printf '%s\n' "$paths" | grep -qE '^(README\.md|LICENSE|\.gitignore|assets/|docs/)'; then
+    doc_suite=tests/fm-documentation-audiences.test.sh
+    if ! printf '%s\n' "$weighted" | grep -Fq -- "$doc_suite"; then
+      weighted="${weighted}
+$(bin/fm-test-run.sh --list-weighted "$doc_suite" 2>/dev/null)"
+    fi
+  fi
+
   # The required Herdr lane owns its whole family, so a selected member sends
   # the work there rather than into a job with no Herdr installed.
   herdr_members=$(bin/fm-test-run.sh --list --family real-herdr-gated 2>/dev/null) || herdr_members=

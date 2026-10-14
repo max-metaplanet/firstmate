@@ -2453,8 +2453,11 @@ if [ -n "$FAIL_ON_GATE_SKIP" ]; then
   SELECTION_DESC="${SELECTION_DESC};fail-on-gate-skip=$FAIL_ON_GATE_SKIP"
 fi
 if [ "$LIST_WEIGHTED" -eq 1 ]; then
+  # Serial weight, matching the shard packing: a selected job runs its scripts
+  # under the same bounded scheduler, so the parallel hint would understate a
+  # script that only goes faster when it shares a lane with unrelated work.
   for s in "${SCRIPTS[@]+"${SCRIPTS[@]}"}"; do
-    printf '%s\t%s\n' "$(portable_parallel_weight_for "$s")" "$s"
+    printf '%s\t%s\n' "$(portable_serial_weight_for "$s")" "$s"
   done | LC_ALL=C sort -t"$(printf '\t')" -k1,1nr -k2,2
   exit 0
 fi
