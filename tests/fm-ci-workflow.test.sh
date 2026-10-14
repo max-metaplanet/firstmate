@@ -18,8 +18,12 @@ set -u
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 CI_WORKFLOW="$ROOT/.github/workflows/ci.yml"
+MACOS_ADVISORY_WORKFLOW="$ROOT/.github/workflows/macos-advisory.yml"
+MACOS_CHECK="$ROOT/bin/fm-macos-stock-bash-check.sh"
 
 assert_present "$CI_WORKFLOW" ".github/workflows/ci.yml is missing"
+assert_present "$MACOS_ADVISORY_WORKFLOW" ".github/workflows/macos-advisory.yml is missing"
+assert_present "$MACOS_CHECK" "bin/fm-macos-stock-bash-check.sh is missing"
 command -v ruby >/dev/null 2>&1 \
   || fail "ruby is required to parse .github/workflows/ci.yml as YAML"
 command -v jq >/dev/null 2>&1 \
@@ -280,7 +284,7 @@ end
 
 scope = jobs.fetch("changes")
 raise "the change-scope job must not be gated itself" if scope.key?("if")
-expected_outputs = %w[behavior full herdr macos selected_count selected_matrix]
+expected_outputs = %w[behavior full herdr macos selected_matrix]
 raise "the change-scope job must publish every gate output" unless scope.fetch("outputs").keys.sort == expected_outputs
 
 # Which verdict gates which lane. The complete sharded suite runs on `full`,
@@ -427,7 +431,75 @@ RUBY
   pass "a nightly schedule keeps the complete suite running"
 }
 
+
+# The stock-Bash check runs in two places - blocking on push to main, advisory
+# on a pull request - and the whole point of the split is that the advisory
+# half cannot hold up a pull request round. These hold that shape: the two
+# halves must run the same check, the advisory one must live outside the CI
+# gate's verdict, and it must still carry a finite bound of its own.
+test_macos_advisory_runs_the_same_check_outside_the_prs_verdict() {
+  ruby -ryaml - "$CI_WORKFLOW" "$MACOS_ADVISORY_WORKFLOW" <<'RUBY' || fail "macOS advisory contract"
+ci = YAML.load_file(ARGV[0])
+advisory = YAML.load_file(ARGV[1])
+
+on = advisory.fetch(true) { advisory.fetch("on") }
+raise "the advisory workflow must run on pull requests" unless on.key?("pull_request")
+raise "the advisory workflow must not run on push" if on.key?("push")
+
+jobs = advisory.fetch("jobs")
+job = jobs.fetch("macos-stock-bash-advisory")
+timeout = job["timeout-minutes"]
+raise "the advisory job needs a finite hang tripwire, got #{timeout.inspect}" unless timeout.is_a?(Integer) && timeout > 0
+
+# Same check, one owner: both halves invoke the same script rather than
+# carrying their own copy of the assertions.
+run_of = lambda do |j|
+  step = j.fetch("steps").find { |s| s.key?("run") }
+  raise "no run step" unless step
+  step.fetch("run")
+end
+blocking = run_of.call(ci.fetch("jobs").fetch("macos-stock-bash"))
+advisory_run = run_of.call(job)
+owner = "bin/fm-macos-stock-bash-check.sh"
+raise "the blocking half must run #{owner}" unless blocking.include?(owner)
+raise "the advisory half must run the same #{owner}" unless advisory_run.include?(owner)
+
+# The CI gate is ci.yml's verdict and can only wait for ci.yml's own jobs, so
+# an advisory job defined in another workflow is structurally outside it.
+gate_needs = Array(ci.fetch("jobs").fetch("ci-gate").fetch("needs"))
+raise "the advisory job must not be part of the CI gate" if gate_needs.include?("macos-stock-bash-advisory")
+RUBY
+  pass "the macOS advisory half runs the same check outside the pull request's verdict"
+}
+
+# The check only means something under the stock interpreter, so running it
+# under anything else must refuse rather than report a pass that proves nothing.
+test_macos_check_refuses_a_non_stock_interpreter() {
+  local out rc=0
+  out=$(bash "$MACOS_CHECK" 2>&1) || rc=$?
+  if [ "${BASH_VERSINFO[0]}" -ge 4 ]; then
+    [ "$rc" -ne 0 ] \
+      || fail "the stock-Bash check must refuse a non-3.2 interpreter"$'\n'"$out"
+    assert_contains "$out" 'expected stock macOS Bash 3.2.57' \
+      "the refusal must name the interpreter it needed"$'\n'"$out"
+  fi
+
+  rc=0
+  out=$(bash "$MACOS_CHECK" --nope 2>&1) || rc=$?
+  [ "$rc" -eq 2 ] \
+    || fail "an unknown argument must be refused with status 2, got $rc"$'\n'"$out"
+
+  rc=0
+  out=$(bash "$MACOS_CHECK" --help 2>&1) || rc=$?
+  [ "$rc" -eq 0 ] || fail "--help must succeed, got $rc"$'\n'"$out"
+  assert_contains "$out" 'stock macOS Bash 3.2 compatibility check' \
+    "--help must describe the check"$'\n'"$out"
+  pass "the stock-Bash check refuses a non-stock interpreter and an unknown argument"
+}
+
 test_ci_matrices_match_executable_partitions
+test_macos_advisory_runs_the_same_check_outside_the_prs_verdict
+test_macos_check_refuses_a_non_stock_interpreter
 test_ci_gate_fails_the_round_when_any_job_failed
 test_macos_snapshot_is_non_blocking_on_prs_and_required_elsewhere
 test_a_nightly_schedule_runs_the_complete_suite

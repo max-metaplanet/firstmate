@@ -1,0 +1,71 @@
+name: macOS advisory
+
+# The ADVISORY half of the stock macOS Bash 3.2 check. The blocking half is
+# .github/workflows/ci.yml's macos-stock-bash job, which runs on push to main
+# and on the nightly schedule inside the CI gate's verdict.
+#
+# Why a separate workflow rather than another job in ci.yml: macOS runners are
+# the scarcest capacity in this fork, and this job has queued about 35 minutes
+# for a 7.5-minute run. A job that ci.yml's CI gate `needs` holds the entire
+# round until it finishes, and `needs` is static, so there is no way to express
+# "wait for this on main but not on a pull request" inside one gate. Living in
+# its own workflow is what makes it genuinely non-blocking: it reports its own
+# check, visible and red when stock Bash 3.2 breaks, while the pull request's
+# verdict - CI gate - neither waits for it nor fails with it.
+#
+# bin/fm-macos-stock-bash-check.sh owns what the check actually is, so this
+# half and the blocking half cannot drift apart.
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+# Same per-pull-request supersession as ci.yml: a new push replaces this
+# workflow's in-flight run rather than leaving a superseded head holding a
+# scarce macOS runner. ci.yml owns the rationale.
+concurrency:
+  group: macos-advisory-${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  # The same change-scope verdict ci.yml gates on, from the same single owner.
+  # This workflow cannot read ci.yml's job outputs, so it asks the classifier
+  # itself rather than re-spelling the path set here.
+  changes:
+    name: Change scope
+    runs-on: ubuntu-latest
+    # Fast tier: one diff and one classification.
+    timeout-minutes: 5
+    outputs:
+      macos: ${{ steps.scope.outputs.macos }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Classify the changed paths
+        id: scope
+        env:
+          FM_CI_EVENT: ${{ github.event_name }}
+          FM_CI_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          FM_CI_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -eu
+          bin/fm-ci-change-scope.sh | tee -a "$GITHUB_OUTPUT"
+
+  macos-stock-bash-advisory:
+    name: Stock macOS Bash snapshot compatibility (advisory)
+    runs-on: macos-latest
+    # Normal tier, the same bound its blocking twin carries in ci.yml.
+    timeout-minutes: 30
+    needs: changes
+    if: needs.changes.outputs.macos == 'true'
+    steps:
+      - uses: actions/checkout@v6
+      - name: Run snapshot consumers with stock Bash
+        shell: /bin/bash {0}
+        env:
+          PATH: /bin:/usr/bin:/usr/sbin:/sbin:/usr/local/bin:/opt/homebrew/bin
+        run: /bin/bash bin/fm-macos-stock-bash-check.sh

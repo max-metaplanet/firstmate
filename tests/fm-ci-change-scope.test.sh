@@ -181,11 +181,11 @@ test_unknown_argument_is_refused() {
 test_a_single_script_change_selects_one_packed_job() {
   local matrix
   classify bin/fm-quota-choose.sh
-  [ "$(scope_value selected_count)" = 1 ] \
-    || fail "a one-script change must select exactly its own suite"$'\n'"$SCOPE_OUT"
   matrix=$(scope_value selected_matrix)
   assert_contains "$matrix" 'tests/fm-quota-choose.test.sh' \
     "the selection must name the suite that covers the changed script"$'\n'"$matrix"
+  [ "$(printf '%s' "$matrix" | grep -c 'tests/' | tr -d ' ')" = 1 ] \
+    || fail "a one-script change must select exactly its own suite"$'\n'"$matrix"
   # Runner start delay is what a short round is made of, so the whole point is
   # that one small change spends one runner.
   [ "$(printf '%s' "$matrix" | grep -c '"shard"' | tr -d ' ')" = 1 ] \
