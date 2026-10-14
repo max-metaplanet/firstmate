@@ -3258,11 +3258,25 @@ resolved_existing_dir() {
 }
 
 resolve_project_dir_arg() {
-  local path=$1
+  local path=$1 clone mode_err
   case "$path" in
-  projects/*) printf '%s/%s\n' "$PROJECTS" "${path#projects/}" ;;
-  *) printf '%s\n' "$path" ;;
+  projects/*) printf '%s/%s\n' "$PROJECTS" "${path#projects/}"; return 0 ;;
+  */*) printf '%s\n' "$path"; return 0 ;;
   esac
+  if [ -d "$path" ]; then
+    printf '%s\n' "$path"
+    return 0
+  fi
+  clone="$PROJECTS/$path"
+  if [ -d "$clone" ]; then
+    mode_err=$("$FM_ROOT/bin/fm-project-mode.sh" "$path" 2>&1 >/dev/null) || true
+    case "$mode_err" in
+    *'not in registry'*) ;;
+    *) printf '%s\n' "$clone"; return 0 ;;
+    esac
+  fi
+  echo "error: \"$path\" does not resolve to a project; pass an absolute or relative path, projects/<name>, or a project name registered in data/projects.md with a clone under projects/" >&2
+  return 1
 }
 
 path_is_ancestor_of() {
@@ -3442,7 +3456,8 @@ if [ "$KIND" = secondmate ]; then
     BRIEF="$DATA/$ID/brief.md"
   fi
 else
-  PROJ_ABS="$(cd "$(resolve_project_dir_arg "$PROJ")" && pwd)"
+  PROJ_DIR_ARG=$(resolve_project_dir_arg "$PROJ") || exit 1
+  PROJ_ABS="$(cd "$PROJ_DIR_ARG" && pwd)"
   WT=""
   BRIEF="$DATA/$ID/brief.md"
 fi
