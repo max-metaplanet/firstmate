@@ -215,6 +215,14 @@ selection_blocked_by() {
     # A shared library by name; the fan-in test below catches the rest. A
     # case glob's * spans /, so these cover bin/backends/ as well.
     bin/*-lib.sh) return 0 ;;
+    # Prose a test reads that the map's prose arm answers nothing for: beside
+    # code the selection stays non-empty, so the reading test would vanish.
+    README.md | LICENSE | assets/* | docs/* | .gitignore)
+      ! behavior_inert "$path" || return 1
+      [ -z "$(bin/fm-test-run.sh --list-weighted --changed \
+        --changed-paths-file <(printf '%s\n' "$path") 2>/dev/null)" ]
+      return
+      ;;
     bin/*.sh) ;;
     *) return 1 ;;
   esac

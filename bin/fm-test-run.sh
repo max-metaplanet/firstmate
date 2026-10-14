@@ -1126,11 +1126,10 @@ select_lane() {
 # scans for; a guard that counted references differently from the map would
 # ask a different question than the one it exists to answer.
 #
-# Tracked prose is deliberately out of scope here. A docs-only change never
-# reaches this map at all: bin/fm-ci-change-scope.sh classifies it as inert and
-# CI runs the documentation audience guard instead, and that script's own
-# exception list plus tests/fm-ci-change-scope.test.sh are the single owner of
-# which prose a test really reads.
+# Tracked prose is deliberately out of scope here. bin/fm-ci-change-scope.sh
+# owns which prose a test really reads: inert prose adds only the documentation
+# audience suite, and prose a test reads that this map answers nothing for
+# widens the round to the complete suite, alone or beside code.
 changed_map_referenced_paths() {
   local f tracked scanned
   local -a files=()
@@ -1936,7 +1935,8 @@ families_for_changed_path() {
       ;;
     README.md|LICENSE|assets/*|docs/*|.gitignore)
       # Tracked prose selects nothing here. bin/fm-ci-change-scope.sh adds the
-      # documentation-audience suite on top when prose rides beside code.
+      # documentation-audience suite on top for inert prose, and widens to the
+      # complete suite for prose a test reads that reaches this arm.
       ;;
     *)
       if [ -e "$path" ]; then

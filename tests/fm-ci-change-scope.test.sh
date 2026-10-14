@@ -269,6 +269,14 @@ test_prose_beside_code_keeps_the_documentation_suite() {
   assert_contains "$(scope_value selected_matrix)" 'fm-documentation-audiences.test.sh' \
     "top-level prose beside code must keep the documentation-audience suite"$'\n'"$SCOPE_OUT"
 
+  # Prose a test reads that the map answers nothing for must not let the code
+  # path's selection drop the reading test.
+  assert_full_suite 'the pretool doc beside code' \
+    docs/arm-pretool-check.md bin/fm-quota-choose.sh
+  assert_full_suite 'the ignore rules beside code' .gitignore bin/fm-quota-choose.sh
+  assert_full_suite 'a dispatch example beside code' \
+    docs/examples/crew-dispatch.json bin/fm-quota-choose.sh
+
   # Prose alone never reaches here: with no behavioral change the docs-guard
   # job owns it, so the selection stays empty rather than booking a job.
   classify README.md
