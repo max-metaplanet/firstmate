@@ -184,7 +184,7 @@ test_canonical_partitions_preserve_full_lint() {
   mkdir -p "$fakebin"
   all=$(CI=true "$LINT" --list-files | LC_ALL=C sort)
   : > "$tmp/union"
-  for part in 1of16 2of16 3of16 4of16 5of16 6of16 7of16 8of16 9of16 10of16 11of16 12of16 13of16 14of16 15of16 16of16; do
+  for part in 1of14 2of14 3of14 4of14 5of14 6of14 7of14 8of14 9of14 10of14 11of14 12of14 13of14 14of14; do
     selected=$(CI=false GITHUB_ACTIONS=false "$LINT" --partition "$part" --list-files) \
       || fail "partition $part must select full canonical roots even on a local branch"
     [ -n "$selected" ] || fail "empty lint partition $part"
@@ -246,20 +246,20 @@ test_partition_runs_one_shellcheck_at_a_time() {
   telemetry="$tmp/telemetry.tsv"
   fm_lint_stub_shellcheck "$fakebin" "$log"
 
-  out=$(PATH="$fakebin:$PATH" "$LINT" --partition 1of16 --telemetry "$telemetry" 2>&1) \
+  out=$(PATH="$fakebin:$PATH" "$LINT" --partition 1of14 --telemetry "$telemetry" 2>&1) \
     || fail "canonical partition lint failed"$'\n'"$out"
   assert_grep $'jobs\t1' "$telemetry" \
     "a CI partition must run one ShellCheck at a time so it cannot race a sibling worker for runner memory"
 
   # An explicit --jobs override must not reintroduce the concurrency the
   # partition exists to avoid.
-  out=$(PATH="$fakebin:$PATH" "$LINT" --partition 8of16 --jobs 2 --telemetry "$telemetry" 2>&1) \
+  out=$(PATH="$fakebin:$PATH" "$LINT" --partition 7of14 --jobs 2 --telemetry "$telemetry" 2>&1) \
     || fail "canonical partition lint with an explicit --jobs failed"$'\n'"$out"
   assert_grep $'jobs\t1' "$telemetry" \
     "--jobs must not raise a partition above one concurrent ShellCheck"
 
   # FM_LINT_JOBS is the same lever by another name.
-  out=$(PATH="$fakebin:$PATH" FM_LINT_JOBS=2 "$LINT" --partition 16of16 --telemetry "$telemetry" 2>&1) \
+  out=$(PATH="$fakebin:$PATH" FM_LINT_JOBS=2 "$LINT" --partition 14of14 --telemetry "$telemetry" 2>&1) \
     || fail "canonical partition lint with FM_LINT_JOBS failed"$'\n'"$out"
   assert_grep $'jobs\t1' "$telemetry" \
     "FM_LINT_JOBS must not raise a partition above one concurrent ShellCheck"
