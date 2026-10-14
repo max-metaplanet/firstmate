@@ -460,7 +460,7 @@ Any of these preserves the candidate and lets session startup continue with at m
   So a Herdr create failure surfaces as a spawn failure in every Herdr home, rather than only in homes that opted in.
   Every earlier degradation on the fresh projected-create path (no session server, contended presentation lock, absent or ambiguous parent) still warns and continues flat.
 - Recovery of an existing presentation journal refuses by default when the shared presentation lock is still held after the same opportunistic wait a fresh projected create uses, rather than falling back flat.
-  A holder keeps the lock through worktree creation and settling, so on a slow host one of two simultaneous recoveries can refuse instead of waiting.
+  A live spawn holder earns the bounded recovery extension defined by `fm_backend_herdr_presentation_lock_acquire` in `bin/backends/herdr.sh`; unrelated holders retain the ordinary refusal budget.
   The refusal names which of the two it hit, a lock another spawn still holds or a named session whose running socket could not be resolved, because only the first is a wait.
   Default-on makes that refusal reachable in any Herdr home.
   Pass `fm-spawn.sh --herdr-resume-lock-wait` to opt that recovery into waiting for the lock instead of refusing when the bounded wait is spent, so concurrent recoveries can serialize.

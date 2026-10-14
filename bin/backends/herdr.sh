@@ -892,6 +892,16 @@ fm_backend_herdr_presentation_session_lock_path() {  # <session>
   printf '%s/order-%s.lock' "$dir" "$key"
 }
 
+fm_backend_herdr_presentation_lock_spawn_holder() {  # <lock-path>
+  local lock_path=$1 owner pid
+  owner=$(fm_lock_link_owner "$lock_path") || return 1
+  [ "$(fm_lock_role "$owner")" = task-spawn ] || return 1
+  pid=$(cat "$owner/pid" 2>/dev/null) || return 1
+  fm_pid_alive "$pid" || return 1
+  fm_lock_points_to_owner "$lock_path" "$owner"
+}
+
+
 # fm_backend_herdr_presentation_lock_acquire: single owner of the bounded wait
 # for that one shared lock. On success it sets
 # FM_BACKEND_HERDR_PRESENTATION_LOCK to the path it took, so the caller
@@ -904,20 +914,34 @@ fm_backend_herdr_presentation_session_lock_path() {  # <session>
 # holder kept the lock for the whole budget.
 # <attempts> is in 0.1s units and defaults to 50 (5s), the opportunistic
 # budget for a caller that can give up and continue without the projection. A
-# caller that cannot fall back must pass a budget that outlasts a holder which
-# will itself finish.
-fm_backend_herdr_presentation_lock_acquire() {  # <session> [attempts]
-  local session=$1 attempts=${2:-50} lock_path attempt=0
+# recovery caller may pass `recovery` instead: after the ordinary budget it
+# retries only behind a live, owner-bound task-spawn role, with a 30s total
+# elapsed-time ceiling. Unknown holders still refuse at the ordinary budget.
+# The role uses the shared lock's existing owner directory and cleanup rules.
+
+fm_backend_herdr_presentation_lock_acquire() {  # <session> [attempts|recovery]
+  local session=$1 attempts=${2:-50} lock_path attempt=0 recovery=0 deadline=0
+  if [ "$attempts" = recovery ]; then
+    attempts=50
+    recovery=1
+    deadline=$((SECONDS + 30))
+  fi
   FM_BACKEND_HERDR_PRESENTATION_LOCK=
   if ! declare -F fm_lock_try_acquire >/dev/null 2>&1; then
     # shellcheck source=bin/fm-wake-lib.sh
     . "$FM_BACKEND_HERDR_ROOT/bin/fm-wake-lib.sh"
   fi
   lock_path=$(fm_backend_herdr_presentation_session_lock_path "$session") || return 2
-  while [ "$attempt" -lt "$attempts" ]; do
+  while [ "$attempt" -lt "$attempts" ] || [ "$recovery" -eq 1 ]; do
+    if [ "$recovery" -eq 1 ] && [ "$SECONDS" -ge "$deadline" ]; then
+      return 1
+    fi
     if fm_lock_try_acquire "$lock_path"; then
       FM_BACKEND_HERDR_PRESENTATION_LOCK=$lock_path
       return 0
+    fi
+    if [ "$attempt" -ge "$attempts" ]; then
+      fm_backend_herdr_presentation_lock_spawn_holder "$lock_path" || return 1
     fi
     sleep 0.1
     attempt=$((attempt + 1))
