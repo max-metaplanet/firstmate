@@ -1615,7 +1615,7 @@ spawn_herdr_presentation_order_lock_acquire() {
     HERDR_PRESENTATION_ORDER_LOCK="$lock_path"
     fm_lock_acquire_wait "$HERDR_PRESENTATION_ORDER_LOCK"
     HERDR_PRESENTATION_ORDER_LOCK_HELD=1
-    fm_lock_set_role "$HERDR_PRESENTATION_ORDER_LOCK" task-spawn || return 1
+    fm_lock_set_role "$HERDR_PRESENTATION_ORDER_LOCK" task-spawn || true
     return 0
   fi
   if [ -n "$mode" ]; then
@@ -1626,7 +1626,7 @@ spawn_herdr_presentation_order_lock_acquire() {
   [ "$rc" -eq 0 ] || return "$rc"
   HERDR_PRESENTATION_ORDER_LOCK=$FM_BACKEND_HERDR_PRESENTATION_LOCK
   HERDR_PRESENTATION_ORDER_LOCK_HELD=1
-  fm_lock_set_role "$HERDR_PRESENTATION_ORDER_LOCK" task-spawn || return 1
+  fm_lock_set_role "$HERDR_PRESENTATION_ORDER_LOCK" task-spawn || true
   return 0
 }
 

@@ -892,11 +892,11 @@ fm_backend_herdr_presentation_session_lock_path() {  # <session>
   printf '%s/order-%s.lock' "$dir" "$key"
 }
 
-fm_backend_herdr_presentation_lock_spawn_holder() {  # <lock-path>
+fm_backend_herdr_presentation_lock_unmarked_holder() {  # <lock-path>
   local lock_path=$1 owner pid
   owner=$(fm_lock_link_owner "$lock_path") || return 1
-  [ "$(fm_lock_role "$owner")" = task-spawn ] || return 1
   pid=$(cat "$owner/pid" 2>/dev/null) || return 1
+  [ "$(fm_lock_role "$owner")" != task-spawn ] || return 1
   fm_pid_alive "$pid" || return 1
   fm_lock_points_to_owner "$lock_path" "$owner"
 }
@@ -915,8 +915,9 @@ fm_backend_herdr_presentation_lock_spawn_holder() {  # <lock-path>
 # <attempts> is in 0.1s units and defaults to 50 (5s), the opportunistic
 # budget for a caller that can give up and continue without the projection. A
 # recovery caller may pass `recovery` instead: after the ordinary budget it
-# retries only behind a live, owner-bound task-spawn role, with a 30s total
-# elapsed-time ceiling. Unknown holders still refuse at the ordinary budget.
+# keeps retrying unless a live, still-linked holder lacks the task-spawn role,
+# with a 30s total elapsed-time ceiling. Such unmarked holders still refuse at
+# the ordinary budget; a released or replaced holder is simply retried.
 # The role uses the shared lock's existing owner directory and cleanup rules.
 
 fm_backend_herdr_presentation_lock_acquire() {  # <session> [attempts|recovery]
@@ -941,7 +942,9 @@ fm_backend_herdr_presentation_lock_acquire() {  # <session> [attempts|recovery]
       return 0
     fi
     if [ "$attempt" -ge "$attempts" ]; then
-      fm_backend_herdr_presentation_lock_spawn_holder "$lock_path" || return 1
+      if fm_backend_herdr_presentation_lock_unmarked_holder "$lock_path"; then
+        return 1
+      fi
     fi
     sleep 0.1
     attempt=$((attempt + 1))
