@@ -3258,7 +3258,7 @@ resolved_existing_dir() {
 }
 
 resolve_project_dir_arg() {
-  local path=$1 clone mode_err
+  local path=$1
   case "$path" in
   projects/*) printf '%s/%s\n' "$PROJECTS" "${path#projects/}"; return 0 ;;
   */*) printf '%s\n' "$path"; return 0 ;;
@@ -3267,15 +3267,11 @@ resolve_project_dir_arg() {
     printf '%s\n' "$path"
     return 0
   fi
-  clone="$PROJECTS/$path"
-  if [ -d "$clone" ]; then
-    mode_err=$("$FM_ROOT/bin/fm-project-mode.sh" "$path" 2>&1 >/dev/null) || true
-    case "$mode_err" in
-    *'not in registry'*) ;;
-    *) printf '%s\n' "$clone"; return 0 ;;
-    esac
+  if [ -d "$PROJECTS/$path" ]; then
+    printf '%s\n' "$PROJECTS/$path"
+    return 0
   fi
-  echo "error: \"$path\" does not resolve to a project; pass an absolute or relative path, projects/<name>, or a project name registered in data/projects.md with a clone under projects/" >&2
+  echo "error: \"$path\" does not resolve to a project; pass an absolute or relative path, projects/<name>, or the name of a clone under projects/" >&2
   return 1
 }
 

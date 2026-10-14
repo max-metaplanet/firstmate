@@ -4,9 +4,10 @@
 # when the caller happened to already be inside projects/, because every other
 # bare name was handed straight to `cd` and failed with a raw
 # "No such file or directory" instead of a clear refusal. This file pins:
-# a bare registered name resolving to its clone under projects/, an unknown
-# bare name refusing before any cd with a clear error, and the pre-existing
-# absolute-path and projects/<name> forms staying unchanged.
+# a bare name resolving to its clone under projects/ (registered in
+# data/projects.md or not), a bare name with no clone refusing before any cd
+# with a clear error, and the pre-existing absolute-path and projects/<name>
+# forms staying unchanged.
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -52,8 +53,7 @@ run_spawn() {  # <home> <projects-dir> <fakebin> <spawn-args...>
 }
 
 # A bare name with no slash, not an existing directory relative to the working
-# directory, that names a project registered in data/projects.md with a clone at
-# projects/<name>, must resolve to that clone: the spawn must get past project
+# directory, that names a clone at projects/<name>, must resolve to that clone: the spawn must get past project
 # resolution and reach the backend (the fake tmux), never a raw cd failure.
 test_bare_registered_name_resolves_to_its_clone() {
   local rec home projects fakebin out
@@ -71,8 +71,7 @@ EOF
   pass "fm-spawn: a bare registered project name resolves to its clone under projects/"
 }
 
-# An unregistered bare name, or one with no clone under projects/, must refuse
-# before any cd with one clear error naming the accepted forms, never a raw
+# A bare name with no clone under projects/ must refuse before any cd with one clear error naming the accepted forms, never a raw
 # "No such file or directory".
 test_unknown_bare_name_refuses_clearly_before_any_cd() {
   local rec home projects fakebin out status
@@ -86,14 +85,35 @@ EOF
   assert_contains "$out" "\"nosuchproject\" does not resolve to a project" \
     "the refusal did not name the unresolved argument"
   assert_contains "$out" "projects/<name>" "the refusal did not name the accepted forms"
-  assert_contains "$out" "registered in data/projects.md" "the refusal did not name the accepted forms"
+  assert_contains "$out" "the name of a clone under projects/" "the refusal did not name the accepted forms"
   assert_not_contains "$out" "No such file or directory" \
     "an unknown bare project name still produced a raw cd failure instead of a clear refusal"
   pass "fm-spawn: an unknown bare project name refuses clearly before any cd"
 }
 
-# A registered name with no clone on disk is exactly as unresolvable as an
-# unregistered one: resolving it would hand a nonexistent path to cd.
+# Resolution depends only on the clone existing under projects/, not on the
+# registry: a clone missing from data/projects.md still resolves by bare name,
+# exactly as projects/<name> resolves the same clone.
+test_unregistered_clone_resolves_by_bare_name() {
+  local rec home projects fakebin out
+  rec=$(make_home unregistered-clone bare-resolve-b1)
+  IFS='|' read -r home projects fakebin <<EOF
+$rec
+EOF
+  mkdir -p "$projects/loose"
+  git -C "$projects/loose" init -q || fail "could not initialize project fixture"
+  out=$(run_spawn "$home" "$projects" "$fakebin" bare-resolve-b1 loose claude --scout)
+  assert_not_contains "$out" "No such file or directory" \
+    "an unregistered clone's bare name hit a raw cd failure"
+  assert_not_contains "$out" "does not resolve to a project" \
+    "an unregistered clone's bare name was refused as unresolvable"
+  assert_contains "$out" "$projects/loose" \
+    "the spawn never reached the resolved clone path"
+  pass "fm-spawn: a bare name resolves to an unregistered clone under projects/"
+}
+
+# Registration alone does not make a name resolvable: a registered name with no
+# clone on disk would hand a nonexistent path to cd.
 test_registered_name_without_a_clone_refuses_clearly() {
   local rec home projects fakebin out status
   rec=$(make_home no-clone bare-refuse-b1)
@@ -141,6 +161,7 @@ EOF
 }
 
 test_bare_registered_name_resolves_to_its_clone
+test_unregistered_clone_resolves_by_bare_name
 test_unknown_bare_name_refuses_clearly_before_any_cd
 test_registered_name_without_a_clone_refuses_clearly
 test_existing_path_forms_are_unchanged
