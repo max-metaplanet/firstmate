@@ -1105,11 +1105,13 @@ cmd_threshold_reached() {
 # a destination that itself sits below the trigger is not switched away from
 # on the very next poll; a switch rewrites it to the new seat, so that seat's
 # OWN later crossing fires again with nothing to re-arm by hand.
-# `blocked=<seat>` names the seat whose crossing has already been reported as
-# having nowhere to go, or as a switch that failed. It silences only that
-# report: every later poll still looks for a destination, so a candidate whose
-# window resets is switched to at once. Both clear the moment the active seat
-# reads back above the threshold.
+# `blocked=<seat>:<outcome>` names the seat whose crossing has already been
+# reported as having nowhere to go, or as a switch that failed, together with
+# the facts that report stated. It silences only that same report: every later
+# poll still looks for a destination, so a candidate whose window resets is
+# switched to at once, and a pass whose facts differ - the whole vendor now
+# empty, a reset moved, the work routed elsewhere - reports again. Both clear
+# the moment the active seat reads back above the threshold.
 # It also carries `extra=<seats>`, the set of seats last seen drawing paid extra
 # usage, so that warning fires on ENTRY rather than on every poll for as long as
 # the spend lasts, and `lead=<seat>`, the seat whose move instruction was last
@@ -1446,7 +1448,7 @@ auto_lead_trigger() {  # <threshold>
 # The trigger and switch half of one automatic pass.
 auto_trigger() {
   local threshold=$1 policy=$2 active dir remaining target fired blocked out
-  local depleted label alt alt_provider alt_seat alt_pct alt_label
+  local depleted label alt alt_provider alt_seat alt_pct alt_how alt_label signature
   active=$(fm_seat_active)
   dir=$(fm_seat_config_dir "$active")
   if ! remaining=$(fm_seat_remaining "$dir"); then
@@ -1480,34 +1482,43 @@ auto_trigger() {
       return 0
     fi
     auto_record_set fired "$fired"
-    [ "$blocked" != "$active" ] || return 0
-    auto_record_set blocked "$active"
+    [ "$blocked" != "$active:failed:$target" ] || return 0
+    auto_record_set blocked "$active:failed:$target"
     printf '%s-seat: %s is at %s%% left and the switch to %s failed: %s\n' "$FM_SEAT_PROVIDER" \
       "$active" "$remaining" "$target" "$(printf '%s' "$out" | tail -1)"
     return 0
   fi
-  [ "$blocked" != "$active" ] || return 0
-  auto_record_set blocked "$active"
   # Every seat of this vendor proven empty is its own outcome, not a failure to
   # find headroom: there is nowhere on this vendor to go, so nothing moves -
   # which is what stops a pass flipping between two empty seats - and the line
-  # says where the work goes instead. It rides the existing `blocked` record, so
-  # it is reported once for this crossing rather than on every poll, and is
-  # re-asked from scratch the moment a reset puts the active seat back above its
-  # trigger.
+  # says where the work goes instead. It rides the `blocked` record keyed on the
+  # facts it states, so it is reported once while they hold rather than on every
+  # poll, and again as soon as a seat drains, a reset moves, or the routing
+  # changes.
   if depleted=$(fm_seat_provider_depletion_summary); then
     label=Claude; [ "$FM_SEAT_PROVIDER" != codex ] || label=Codex
-    if alt=$(fm_seat_alternative_headroom); then
-      read -r alt_provider alt_seat alt_pct <<< "$alt"
+    alt=$(fm_seat_alternative_headroom) || alt=''
+    read -r alt_provider alt_seat alt_pct alt_how <<< "$alt"
+    signature="$active:depleted:$depleted:$alt_provider:$alt_seat:$alt_how"
+    [ "$blocked" != "$signature" ] || return 0
+    auto_record_set blocked "$signature"
+    if [ -n "$alt" ]; then
       alt_label=Claude; [ "$alt_provider" != codex ] || alt_label=Codex
-      printf '%s-seat: all %s seats depleted (%s); new work routes to %s seat %s, which has %s%% left. No switch was made.\n' \
-        "$FM_SEAT_PROVIDER" "$label" "$depleted" "$alt_label" "$alt_seat" "$alt_pct"
+      if [ "$alt_how" = active ]; then
+        printf '%s-seat: all %s seats depleted (%s); new work routes to %s seat %s, which has %s%% left. No switch was made.\n' \
+          "$FM_SEAT_PROVIDER" "$label" "$depleted" "$alt_label" "$alt_seat" "$alt_pct"
+      else
+        printf '%s-seat: all %s seats depleted (%s); new work routes to %s once it moves to seat %s, which has %s%% left: run %s/bin/fm-seat.sh --provider %s switch %s. No %s switch was made.\n' \
+          "$FM_SEAT_PROVIDER" "$label" "$depleted" "$alt_label" "$alt_seat" "$alt_pct" "$FM_ROOT" "$alt_provider" "$alt_seat" "$label"
+      fi
     else
       printf '%s-seat: all %s seats depleted (%s); no seat on the other vendor has readable headroom either, so new work waits for the first reset. No switch was made.\n' \
         "$FM_SEAT_PROVIDER" "$label" "$depleted"
     fi
     return 0
   fi
+  [ "$blocked" != "$active:short" ] || return 0
+  auto_record_set blocked "$active:short"
   case "$policy" in
     stop)
       printf '%s-seat: %s is at %s%% left and no seat has enough headroom to switch to; new Claude work will be held once this seat'\''s plan quota runs out, rather than started on paid extra usage. A worker already running is not stopped.\n' "$FM_SEAT_PROVIDER" \

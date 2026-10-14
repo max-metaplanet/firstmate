@@ -1142,23 +1142,30 @@ fm_seat_quota_verdict() {
 }
 
 # fm_seat_provider_verdicts
-# One row per selectable seat of FM_SEAT_PROVIDER that a worker could be
-# launched on, as `<name>\t<verdict>\t<percent>\t<resetsAt>` in seat-list
-# order, with the default seat first. A seat that is not launchable at all - no
-# login, or a login that could not be confirmed - is left out entirely, because
-# this answers where quota is, not where credentials are.
+# One row per seat of FM_SEAT_PROVIDER that new work can actually reach, as
+# `<name>\t<verdict>\t<percent>\t<resetsAt>`: the active seat first, then every
+# named seat automatic rotation may land on. A seat excluded from rotation or
+# resting below the floor is left out unless it is the active one, and so is the
+# ambient default seat, which rotation never picks. A seat that is not
+# launchable at all - no login, or a login that could not be confirmed - is left
+# out entirely, because this answers where quota is, not where credentials are.
 #
 # This is the whole provider picture one dispatch question needs, so a caller
 # asking "has this provider anything left anywhere" makes one pass rather than
 # its own loop. It reads every listed seat, so call it only once the cheaper
 # single-seat read has already come back depleted.
 fm_seat_provider_verdicts() {
-  local name dir state row
+  local name dir state row active
+  active=$(fm_seat_active)
   {
-    printf '%s\n' "$FM_SEAT_DEFAULT_NAME"
-    fm_seat_list
+    printf '%s\n' "$active"
+    fm_seat_list | grep -vxF -- "$active" || true
   } | while IFS= read -r name; do
     [ -n "$name" ] || continue
+    if [ "$name" != "$active" ]; then
+      ! fm_seat_auto_excluded "$name" || continue
+      ! fm_seat_resting "$name" || continue
+    fi
     dir=$(fm_seat_config_dir "$name" 2>/dev/null) || continue
     fm_seat_logged_in "$dir"
     state=$?
@@ -1213,13 +1220,17 @@ fm_seat_headroom_best() {
 }
 
 # fm_seat_alternative_headroom
-# The OTHER vendor's best proven headroom, as `<provider> <seat> <percent>`, or
-# 1 when this home does not use that vendor or none of its seats has a reading
-# that proves headroom. It exists so a vendor-wide refusal can name where the
-# work goes instead of only where it cannot go, which is the whole difference
-# between a refusal someone has to explain and one that routes itself.
+# Where the OTHER vendor's new work would run, as `<provider> <seat> <percent>
+# <active|switch>`, or 1 when this home does not use that vendor or none of its
+# reachable seats has a reading that proves headroom. Its active seat is named
+# whenever that seat has headroom, because that is where its new work launches;
+# otherwise the best rotation seat is named with `switch`, since work only gets
+# there once that vendor is switched to it. It exists so a vendor-wide refusal
+# can name where the work goes instead of only where it cannot go, which is the
+# whole difference between a refusal someone has to explain and one that routes
+# itself.
 fm_seat_alternative_headroom() {
-  local other best
+  local other best active verdict pct
   case "$(fm_seat_provider)" in
     claude) other=codex ;;
     codex) other=claude ;;
@@ -1229,8 +1240,15 @@ fm_seat_alternative_headroom() {
   # command-prefix assignment: it reaches each helper's own child processes and
   # is restored the moment the call returns, so nothing after this sees it.
   FM_SEAT_PROVIDER=$other fm_seat_provider_in_use || return 1
+  active=$(FM_SEAT_PROVIDER=$other fm_seat_active)
+  IFS=$'\t' read -r verdict pct _ <<< "$(FM_SEAT_PROVIDER=$other fm_seat_quota_verdict \
+    "$(FM_SEAT_PROVIDER=$other fm_seat_config_dir "$active")")"
+  if [ "$verdict" = headroom ]; then
+    printf '%s %s %s active\n' "$other" "$active" "$pct"
+    return 0
+  fi
   best=$(FM_SEAT_PROVIDER=$other fm_seat_headroom_best) || return 1
-  printf '%s %s\n' "$other" "$best"
+  printf '%s %s switch\n' "$other" "$best"
 }
 
 # --- the resting record -------------------------------------------------------

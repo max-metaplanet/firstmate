@@ -2852,7 +2852,7 @@ spawn_seat_depleted() {
 spawn_provider_depletion_gate() {
   { [ "$HARNESS" = claude ] || [ "$HARNESS" = codex ]; } &&
     [ "$RELAUNCH" -eq 0 ] && [ "$IGNORE_SEAT_HOLD" -eq 0 ] || return 0
-  local seat_config summary alt alt_provider alt_seat alt_pct alt_label label
+  local seat_config summary alt alt_provider alt_seat alt_pct alt_how alt_label label
   local announced='' where memo marker here here_seat here_pct headline depleted=0
   seat_config=$(spawn_seat_config)
   [ -n "$(FM_SEAT_PROVIDER=$HARNESS CONFIG=$seat_config fm_seat_list)" ] || return 0
@@ -2877,9 +2877,11 @@ spawn_provider_depletion_gate() {
     where="no seat on the other vendor has readable headroom either, so this task waits for the first reset"
     alt=$(FM_SEAT_PROVIDER=$HARNESS CONFIG=$seat_config fm_seat_alternative_headroom) || alt=''
     if [ -n "$alt" ]; then
-      read -r alt_provider alt_seat alt_pct <<< "$alt"
+      read -r alt_provider alt_seat alt_pct alt_how <<< "$alt"
       alt_label=Claude; [ "$alt_provider" != codex ] || alt_label=Codex
       where="dispatch this task on $alt_label instead, where seat $alt_seat has $alt_pct% left"
+      [ "$alt_how" = active ] ||
+        where="dispatch this task on $alt_label instead once 'bin/fm-seat.sh --provider $alt_provider switch $alt_seat' moves it to seat $alt_seat, which has $alt_pct% left"
     fi
   else
     # Only this seat is empty: another seat of the same vendor still has

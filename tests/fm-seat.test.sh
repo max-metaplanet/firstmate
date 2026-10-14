@@ -3844,6 +3844,7 @@ test_the_watch_refuses_to_flip_between_empty_seats_and_says_where_work_goes_once
   printf '%s\n' "$claude_seats" > "$home/config/claude-seats-root"
   printf '%s\n' "$codex_seats" > "$home/config/codex-seats-root"
   printf 'codex-max\n' > "$home/config/codex-seat"
+  printf 'seat-max\n' > "$home/config/claude-seat"
   printf '10\n' > "$home/config/codex-seat-threshold"
   # Exactly the fleet state that flipped: both Codex homes empty, while the
   # Claude seat's week has replenished.
@@ -3865,6 +3866,54 @@ test_the_watch_refuses_to_flip_between_empty_seats_and_says_where_work_goes_once
   [ -z "$out" ] || fail "the same unchanged depletion must not report again on the next poll: $out"
   assert_grep codex-max "$home/config/codex-seat" "a repeat poll must still move nothing"
   pass "with every seat of a vendor empty the watch moves nothing and says where work goes once"
+}
+
+test_the_watch_reports_a_vendor_draining_empty_after_its_shortfall_was_reported() {
+  local out case_dir home claude_seats codex_seats fakebin spec
+  case_dir="$TMP_ROOT/codex-drains-empty"
+  home="$case_dir/home"
+  claude_seats="$case_dir/claude-seats"
+  codex_seats="$case_dir/codex-seats"
+  spec="$case_dir/quota-spec"
+  mkdir -p "$home/config" "$home/state" "$home/data" \
+    "$claude_seats/seat-b" "$claude_seats/seat-max" "$codex_seats/codex-max" "$codex_seats/codex-max2"
+  : > "$codex_seats/codex-max/auth.json"
+  : > "$codex_seats/codex-max2/auth.json"
+  fakebin=$(fm_fakebin "$case_dir/fake")
+  make_dual_quota_fake "$fakebin" "$spec"
+  printf '%s\n' "$claude_seats" > "$home/config/claude-seats-root"
+  printf '%s\n' "$codex_seats" > "$home/config/codex-seats-root"
+  printf 'codex-max\n' > "$home/config/codex-seat"
+  printf 'seat-b\n' > "$home/config/claude-seat"
+  printf '10\n' > "$home/config/codex-seat-threshold"
+  # The incident's own order: the active home still has a little left when its
+  # only candidate is already empty.
+  dual_quota "$spec" codex "$codex_seats/codex-max" 6 2026-10-19T00:00:00Z
+  dual_quota "$spec" codex "$codex_seats/codex-max2" 0 2026-10-20T00:00:00Z
+  dual_quota "$spec" claude "$claude_seats/seat-b" 0 2026-10-16T00:00:00Z
+  dual_quota "$spec" claude "$claude_seats/seat-max" 92 2026-10-21T00:00:00Z
+
+  out=$(run_seat "$home" "$fakebin" --provider codex auto)
+  expect_code 0 "$?" "a crossing with nowhere to go must report rather than fail: $out"
+  assert_contains "$out" "no seat has enough headroom" "the first pass reports the shortfall"
+  assert_grep codex-max "$home/config/codex-seat" "nothing may move onto the empty home"
+
+  : > "$spec/codex_map"
+  dual_quota "$spec" codex "$codex_seats/codex-max" 0 2026-10-19T00:00:00Z
+  dual_quota "$spec" codex "$codex_seats/codex-max2" 0 2026-10-20T00:00:00Z
+  out=$(run_seat "$home" "$fakebin" --provider codex auto)
+  expect_code 0 "$?" "the drained pass must report rather than fail: $out"
+  assert_contains "$out" "all Codex seats depleted" \
+    "the active home draining empty must still be reported as the whole vendor empty"
+  assert_contains "$out" "codex-max until 2026-10-19T00:00:00Z" "each empty seat's reset must be named"
+  assert_contains "$out" "once it moves to seat seat-max" \
+    "with the other vendor's active seat empty the line must say a switch is needed"
+  assert_contains "$out" "--provider claude switch seat-max" "the line must name the switch that routes the work"
+  assert_grep codex-max "$home/config/codex-seat" "nothing may move while every seat is empty"
+
+  out=$(run_seat "$home" "$fakebin" --provider codex auto)
+  [ -z "$out" ] || fail "the same unchanged depletion must not report again on the next poll: $out"
+  pass "a vendor that drains empty after its shortfall was reported is still reported once, with its routing"
 }
 
 test_a_spawn_is_refused_on_an_empty_seat_and_the_routing_line_is_recorded_once() {
@@ -3931,6 +3980,7 @@ test_no_switch_lands_on_a_seat_whose_quota_is_used_up
 test_a_codex_switch_refuses_an_empty_home_exactly_as_a_claude_switch_does
 test_an_empty_seat_returns_to_rotation_on_its_own_once_a_read_shows_headroom
 test_the_watch_refuses_to_flip_between_empty_seats_and_says_where_work_goes_once
+test_the_watch_reports_a_vendor_draining_empty_after_its_shortfall_was_reported
 test_a_spawn_is_refused_on_an_empty_seat_and_the_routing_line_is_recorded_once
 test_dispatch_gate_needs_no_quota_reader_when_unconfigured
 test_destination_minimum_is_configurable_validated_and_clearable
