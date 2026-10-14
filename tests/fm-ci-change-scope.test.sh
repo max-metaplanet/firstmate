@@ -342,8 +342,8 @@ test_workflow_configuration_has_separate_local_coverage() {
     assert_equals false "$(scope_value herdr)" "workflow configuration leaves full Herdr coverage to CI"
     matrix=$(scope_value selected_matrix)
     scripts=$(printf '%s' "$matrix" | jq -r '.include[].scripts' | tr ' ' '\n' | LC_ALL=C sort)
-    assert_equals $'tests/fm-ci-change-scope.test.sh\ntests/fm-lint-workflows.test.sh\ntests/fm-nm-test-contract.test.sh' \
-      "$scripts" "local configuration coverage selects exactly its three contracts"
+    assert_equals $'tests/fm-ci-change-scope.test.sh\ntests/fm-ci-workflow.test.sh\ntests/fm-gate-refuse.test.sh\ntests/fm-lint-workflows.test.sh\ntests/fm-nm-test-contract.test.sh' \
+      "$scripts" "local configuration coverage selects exactly its contracts"
   done
   SCOPE_MODE=--local classify .github/workflows/ci.yml .no-mistakes.yaml bin/fm-quota-choose.sh README.md
   assert_equals false "$(scope_value full)" "configuration beside narrow code still narrows"
@@ -351,8 +351,8 @@ test_workflow_configuration_has_separate_local_coverage() {
   assert_contains "$matrix" tests/fm-quota-choose.test.sh "mixed changes retain normal code selection"
   assert_contains "$matrix" tests/fm-documentation-audiences.test.sh "mixed changes retain prose coverage"
   scripts=$(printf '%s' "$matrix" | jq -r '.include[].scripts' | tr ' ' '\n')
-  assert_equals 5 "$(printf '%s\n' "$scripts" | sort -u | wc -l | tr -d ' ')" "mixed selection contains only the expected suites"
-  assert_equals 5 "$(printf '%s\n' "$scripts" | wc -l | tr -d ' ')" "multiple configuration paths do not duplicate suites"
+  assert_equals 7 "$(printf '%s\n' "$scripts" | sort -u | wc -l | tr -d ' ')" "mixed selection contains only the expected suites"
+  assert_equals 7 "$(printf '%s\n' "$scripts" | wc -l | tr -d ' ')" "multiple configuration paths do not duplicate suites"
   pass "CI output stays unchanged while local configuration coverage narrows"
 }
 

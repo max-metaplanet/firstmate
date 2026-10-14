@@ -21,8 +21,8 @@
 #   bin/fm-ci-change-scope.sh --help     print this header
 #
 # --local keeps the output format but replaces workflow, action, and
-# .no-mistakes.yaml paths with their workflow-lint, classifier, and local Test
-# contract suites before asking the runner for a selection. Other changed paths
+# .no-mistakes.yaml paths with their workflow-lint, CI workflow, gate config,
+# classifier, and local Test contract suites before asking the runner for a selection. Other changed paths
 # retain their normal mapping and all other full-suite fallback rules still
 # apply. CI must use the default mode: only its full suite validates a changed
 # workflow. Local coverage leaves that complete validation to CI.
@@ -312,6 +312,8 @@ select_tests() {
     ! selection_blocked_by "$path" || return 0
     if [ "$local_mode" = true ] && workflow_configuration_path "$path"; then
       selection_paths="${selection_paths}tests/fm-lint-workflows.test.sh
+tests/fm-ci-workflow.test.sh
+tests/fm-gate-refuse.test.sh
 tests/fm-ci-change-scope.test.sh
 tests/fm-nm-test-contract.test.sh
 "

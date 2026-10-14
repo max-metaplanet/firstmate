@@ -105,7 +105,7 @@ for path in .github/workflows/ci.yml .github/actions/example/action.yml .no-mist
   expect_code 0 "$RC" "real local classifier for $path"
   assert_contains "$ARGV" '--per-script-timeout-secs 1500' "the timeout remains unchanged"
   scripts=$(printf '%s\n' "$ARGV" | tr ' ' '\n' | tail -n +3 | LC_ALL=C sort)
-  assert_equals $'tests/fm-ci-change-scope.test.sh\ntests/fm-lint-workflows.test.sh\ntests/fm-nm-test-contract.test.sh\ntests/fm-quota-choose.test.sh' \
+  assert_equals $'tests/fm-ci-change-scope.test.sh\ntests/fm-ci-workflow.test.sh\ntests/fm-gate-refuse.test.sh\ntests/fm-lint-workflows.test.sh\ntests/fm-nm-test-contract.test.sh\ntests/fm-quota-choose.test.sh' \
     "$scripts" "configured local Test runs contracts plus normal narrow selection"
 done
 printf '%s\n' .github/workflows/ci.yml bin/fm-ci-change-scope.sh > "$TMP_ROOT/changed-paths"
