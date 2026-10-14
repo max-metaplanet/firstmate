@@ -105,6 +105,18 @@ A timed-out shard may upload no artifact, so include a complete green run or the
 Completed shards from a partial run can supplement that complete baseline, but never treat missing tail scripts or the timeout duration as successful samples.
 Measure native-Windows-only scripts through the focused Git Bash runner and retain that `duration_ms` separately, because the portable CI shards skip them.
 
+## Change-scoped selection
+
+On a pull request the behavior lanes are replaced by the test scripts that cover the changed paths.
+`bin/fm-ci-change-scope.sh` is the single owner of that decision: it supplies the pull request's changed path set to `bin/fm-test-run.sh --list-weighted --changed --changed-paths-file`, so the diff and the map each keep one owner, and packs the result into the fewest jobs whose modeled work fits its per-job budget.
+A one-script change therefore spends one runner instead of nineteen, which is what a short round's wall clock is actually made of.
+Selection fails open to the complete suite, never toward speed; that script's header owns the complete list of conditions, and push to main plus the nightly schedule never select at all.
+`bin/fm-test-run.sh --check-changed-map` proves the map answers for every source path the tests tree names, because a selection is only as safe as the map behind it.
+
+The stock macOS Bash job is off the pull request path entirely and blocking on push to main and on the nightly schedule.
+Narrowing the Linux work cannot move a job that has queued about 35 minutes for a 7.5-minute run, and the `ci-gate` job cannot stop waiting for a job that runs, so the only way to take it off a round's wall clock is not to run it there.
+The tradeoff is that a stock-Bash 3.2 regression surfaces on main rather than on the pull request that introduced it; `ci-gate` requires that job's success on every non-pull-request event so the coverage is not merely dropped.
+
 ## Coverage guard
 
 `bin/fm-test-run.sh --check-coverage` verifies that both parallel lanes partition the proven-isolated set.
@@ -114,7 +126,7 @@ Its hint-coverage and modeled-budget checks are described in [Portable serial CI
 
 ## Timing artifacts
 
-Portable shards, each portable serial shard, and the Herdr lane upload runner-generated timing JSON.
+Portable shards, each portable serial shard, each packed change-scoped job, and the Herdr lane upload runner-generated timing JSON.
 `bin/fm-test-run.sh --aggregate-json` creates the combined summary artifact.
 `.github/workflows/ci.yml` owns the exact artifact names and aggregation wiring.
 
@@ -131,7 +143,8 @@ The always-run `ci-gate` job reports the whole round's result, so a gated-off jo
 
 The longer-term performance objective remains a complete green run under fifteen minutes including start delay, but the current supervision-host floor alone exceeds that objective.
 The immediate packing target is the runner's modeled script budget, not a claim that more shards alone can make an indivisible script faster.
-The layout uses twenty-three long-lived Linux jobs (sixteen serial, two parallel, Herdr, four lint), plus short checks and macOS; insufficient shared account capacity can erase the packing gain.
+A complete round uses twenty-three long-lived Linux jobs (sixteen serial, two parallel, Herdr, four lint), plus short checks; insufficient shared account capacity can erase the packing gain.
+A change-scoped pull request round uses at most six packed jobs plus the four lint partitions instead, and the macOS job is not on that round at all.
 Sixteen serial shards is the knee of the packing, measured from the aggregate of run 38453818522: at sixteen bins every shard the packing can balance lands at or under 10 minutes, and only `tests/fm-supervision-host.test.sh` at about 22.6 minutes and `tests/fm-watch-triage.test.sh` at about 17.9 minutes stay above it.
 Past sixteen the third-largest bin stops shrinking, because it holds one 7.7-minute script, so further shards buy queue contention and no wall time.
 Compare complete before/after runs, preserve cancelled and partial-run evidence, and measure a representative normal-run sample before claiming a P95 improvement.
@@ -151,7 +164,7 @@ A lane that reaches its tier bound needs investigation and a distribution or run
 | Tier | Jobs | Bound | Rationale |
 |---|---|---|---|
 | Fast | change scope, coverage guard, repo invariants, timing aggregate, documentation audience guard, CI gate | 5 minutes | Seconds-long local work, so the tripwire only catches a hung runner. |
-| Normal | lint partitions, portable parallel shards, macOS stock Bash | 30 minutes, one value shared by every job in the tier | One shared hang tripwire keeps these ordinary lanes on the same policy instead of allowing per-lane packing estimates or one-off caps to set the bound. |
+| Normal | lint partitions, portable parallel shards, change-scoped packed jobs, macOS stock Bash | 30 minutes, one value shared by every job in the tier | One shared hang tripwire keeps these ordinary lanes on the same policy instead of allowing per-lane packing estimates or one-off caps to set the bound. |
 | Serial | portable serial shards | shard-run step 40 minutes under a 45-minute job bound | One indivisible script sets this lane's floor: `tests/fm-supervision-host.test.sh` measures 16.9-22.6 minutes on healthy runners and about 35 minutes on slow ones, so no partition of the lane fits the normal tier. The step tripwire bounds a wedged shard below the job cap and fails the step with its captured log output rather than cancelling the job; the timing JSON is written only after every script finishes, so a timed-out shard uploads no timing artifact. |
 | Heavy | Herdr | family-run step 20 minutes under a 75-minute job-level last-resort backstop | Healthy runs finish in about 7-10 minutes, so the step tripwire fails a wedged suite while the `always()` cleanup and timing upload still run, and the job cap only catches a hang outside that step. |
 

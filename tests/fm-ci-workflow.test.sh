@@ -22,6 +22,8 @@ CI_WORKFLOW="$ROOT/.github/workflows/ci.yml"
 assert_present "$CI_WORKFLOW" ".github/workflows/ci.yml is missing"
 command -v ruby >/dev/null 2>&1 \
   || fail "ruby is required to parse .github/workflows/ci.yml as YAML"
+command -v jq >/dev/null 2>&1 \
+  || fail "jq is required to run the CI gate's verdict script"
 
 # Resolve the workflow's concurrency contract under one simulated event and
 # print "<group><TAB><cancel-in-progress>". Only the two expression constructs
@@ -74,7 +76,7 @@ puts YAML.load_file(ARGV[0]).fetch("jobs").fetch(ARGV[1]).fetch("timeout-minutes
 # must join a tier, and a job-level value outside these tiers is exactly the
 # one-off number the policy removed.
 FAST_TIER_JOBS='test-coverage invariants tests-timing-aggregate changes docs-guard ci-gate'
-NORMAL_TIER_JOBS='lint tests-portable-parallel-1 tests-portable-parallel-2 macos-stock-bash'
+NORMAL_TIER_JOBS='lint tests-portable-parallel-1 tests-portable-parallel-2 tests-selected macos-stock-bash'
 SERIAL_TIER_JOBS='tests-portable-serial'
 HEAVY_TIER_JOBS='tests-herdr'
 
@@ -278,20 +280,42 @@ end
 
 scope = jobs.fetch("changes")
 raise "the change-scope job must not be gated itself" if scope.key?("if")
-raise "the change-scope job must publish both gate outputs" unless scope.fetch("outputs").keys.sort == %w[behavior macos]
+expected_outputs = %w[behavior full herdr macos selected_count selected_matrix]
+raise "the change-scope job must publish every gate output" unless scope.fetch("outputs").keys.sort == expected_outputs
 
-behavior_gated = %w[
-  lint tests-portable-parallel-1 tests-portable-parallel-2 tests-portable-serial tests-herdr
-]
-behavior_gated.each do |id|
+# Which verdict gates which lane. The complete sharded suite runs on `full`,
+# which the classifier turns off only when it produced a trusted selection, so
+# a lane gated on `behavior` would keep running beside that selection and a
+# lane gated on `full` can never run beside it.
+gated_on = {
+  "lint" => "needs.changes.outputs.behavior == 'true'",
+  "tests-portable-parallel-1" => "needs.changes.outputs.full == 'true'",
+  "tests-portable-parallel-2" => "needs.changes.outputs.full == 'true'",
+  "tests-portable-serial" => "needs.changes.outputs.full == 'true'",
+  "tests-herdr" => "needs.changes.outputs.herdr == 'true'",
+  "tests-selected" => "needs.changes.outputs.selected_matrix != ''",
+}
+gated_on.each do |id, condition|
   job = jobs.fetch(id)
   raise "#{id} must need the change-scope job" unless Array(job.fetch("needs")).include?("changes")
-  raise "#{id} must be gated on the behavior output" unless job.fetch("if") == "needs.changes.outputs.behavior == 'true'"
+  raise "#{id} must be gated on #{condition}, got #{job.fetch("if")}" unless job.fetch("if") == condition
 end
 
+# The change-scoped lane's matrix comes from the classifier, and a matrix
+# expression resolves before the job's own gate does, so it must stay total:
+# fromJSON of an empty output would fail the whole run instead of skipping.
+selected = jobs.fetch("tests-selected")
+matrix = selected.fetch("strategy").fetch("matrix").to_s
+raise "the selected lane must build its matrix from the classifier" unless matrix.include?("needs.changes.outputs.selected_matrix")
+raise "the selected lane's matrix must have a literal fallback" unless matrix.match?(/\|\|\s*'\{/)
+raise "selected failures must not cancel another packed job" unless selected.fetch("strategy").fetch("fail-fast") == false
+
+# Non-blocking on a pull request, blocking everywhere else. The job is gated
+# off the pull request path entirely, because the gate below cannot stop
+# waiting for a job that runs.
 macos = jobs.fetch("macos-stock-bash")
 raise "the macOS job must need the change-scope job" unless Array(macos.fetch("needs")).include?("changes")
-raise "the macOS job must be gated on the macos output" unless macos.fetch("if") == "needs.changes.outputs.macos == 'true'"
+raise "the macOS job must be gated off pull requests and on its own output" unless macos.fetch("if") == "github.event_name != 'pull_request' && needs.changes.outputs.macos == 'true'"
 
 guard = jobs.fetch("docs-guard")
 raise "the docs guard must run exactly when the behavior suites are skipped" unless guard.fetch("if") == "needs.changes.outputs.behavior == 'false'"
@@ -347,7 +371,66 @@ RUBY
   pass "CI matrices cover every executable serial lane and canonical lint root exactly once"
 }
 
+# Run the CI gate's own verdict script against a simulated needs context,
+# rather than reading the file for the words it contains. The script is the
+# round's single verdict, so what it does with a result is what matters.
+run_ci_gate() {  # <event> <needs json>
+  local script
+  script=$(ruby -ryaml -e '
+steps = YAML.load_file(ARGV[0]).fetch("jobs").fetch("ci-gate").fetch("steps")
+step = steps.find { |s| s.key?("run") }
+raise "the CI gate has no run step" unless step
+puts step.fetch("run")
+' "$CI_WORKFLOW") || fail "could not read the CI gate verdict script"
+  FM_CI_NEEDS=$2 FM_CI_EVENT_NAME=$1 bash -c "$script" >/dev/null 2>&1
+}
+
+# Every job green, with the macOS snapshot skipped as it is on a pull request.
+GATE_NEEDS_MACOS_SKIPPED='{"changes":{"result":"success"},"tests-selected":{"result":"success"},"macos-stock-bash":{"result":"skipped"}}'
+GATE_NEEDS_MACOS_GREEN='{"changes":{"result":"success"},"tests-selected":{"result":"success"},"macos-stock-bash":{"result":"success"}}'
+GATE_NEEDS_ONE_FAILED='{"changes":{"result":"success"},"tests-selected":{"result":"failure"},"macos-stock-bash":{"result":"success"}}'
+
+test_ci_gate_fails_the_round_when_any_job_failed() {
+  run_ci_gate pull_request "$GATE_NEEDS_ONE_FAILED" \
+    && fail "the CI gate must fail the round when a job it needs failed"
+  pass "the CI gate fails the round when a job it needs failed"
+}
+
+# The macOS snapshot is deliberately off the pull request path, so the round's
+# verdict must accept its absence there and require its success everywhere
+# else. Without the second half, taking it off pull requests would quietly
+# take it out of the project's coverage altogether.
+test_macos_snapshot_is_non_blocking_on_prs_and_required_elsewhere() {
+  run_ci_gate pull_request "$GATE_NEEDS_MACOS_SKIPPED" \
+    || fail "a pull request round must pass with the macOS snapshot skipped"
+  run_ci_gate push "$GATE_NEEDS_MACOS_SKIPPED" \
+    && fail "a push round must not pass with the macOS snapshot skipped"
+  run_ci_gate schedule "$GATE_NEEDS_MACOS_SKIPPED" \
+    && fail "a scheduled round must not pass with the macOS snapshot skipped"
+  run_ci_gate push "$GATE_NEEDS_MACOS_GREEN" \
+    || fail "a push round must pass once the macOS snapshot is green"
+  pass "the macOS snapshot is non-blocking on pull requests and required elsewhere"
+}
+
+# Change-scoped selection narrows what a pull request runs, so something must
+# still run the complete suite on a schedule rather than only when main moves.
+test_a_nightly_schedule_runs_the_complete_suite() {
+  ruby -ryaml - "$CI_WORKFLOW" <<'RUBY' || fail "nightly schedule contract"
+workflow = YAML.load_file(ARGV[0])
+on = workflow.fetch(true) { workflow.fetch("on") }
+schedule = on["schedule"]
+raise "ci.yml must carry a schedule trigger" unless schedule.is_a?(Array) && !schedule.empty?
+crons = schedule.map { |entry| entry.fetch("cron") }
+raise "every schedule entry needs a cron" if crons.any? { |c| c.to_s.strip.empty? }
+raise "the schedule must be daily, got #{crons.inspect}" unless crons.all? { |c| c.split(/\s+/).length == 5 && c.split(/\s+/)[2..4] == %w[* * *] }
+RUBY
+  pass "a nightly schedule keeps the complete suite running"
+}
+
 test_ci_matrices_match_executable_partitions
+test_ci_gate_fails_the_round_when_any_job_failed
+test_macos_snapshot_is_non_blocking_on_prs_and_required_elsewhere
+test_a_nightly_schedule_runs_the_complete_suite
 test_pr_pushes_supersede_within_one_pr
 test_separate_prs_do_not_cancel_each_other
 test_main_pushes_are_never_cancelled
