@@ -1,0 +1,18 @@
+ok - CI matrices cover every executable serial lane and canonical lint root exactly once
+ok - the macOS advisory half runs the same check outside the pull request's verdict
+ok - the stock-Bash check refuses a non-stock interpreter and an unknown argument
+ok - the CI gate fails the round when a job it needs failed
+ok - the macOS snapshot is non-blocking on pull requests and required elsewhere
+ok - a nightly schedule keeps the complete suite running
+ok - a newer push to one PR supersedes that PR's in-flight CI
+ok - distinct PRs get distinct concurrency groups
+ok - every main push keeps its own group and is never cancelled
+ok - every ci.yml job carries a finite timeout
+ok - every ci.yml job belongs to one of the four timeout tiers
+ok - fast tier jobs share one 5 minute tripwire
+ok - normal tier jobs share one 30 minute budget
+ok - serial tier jobs share one 45 minute bound with a 40 minute step tripwire
+ok - Herdr keeps a 20 minute step tripwire under a 75 minute job backstop
+ok - the change-scope gates stay job-level and agree on their verdicts
+ok - the CI gate always runs and covers every other job
+EXIT=0

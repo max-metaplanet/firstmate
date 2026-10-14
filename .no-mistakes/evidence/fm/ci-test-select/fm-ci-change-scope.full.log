@@ -1,0 +1,20 @@
+ok - prose no test reads turns both the behavior and macOS gates off
+ok - a shell or CI workflow change keeps both gates on
+ok - test-affecting non-shell changes run the behavior suites but skip macOS
+ok - prose and data a test reads keeps the behavior gate on
+ok - a single relevant path turns its gate back on for the whole change set
+ok - a rename out of a test-read path keeps the behavior gate on
+ok - an unrecognized path keeps both gates on
+ok - push events, unknown events and unusable change sets keep both gates on
+ok - an unknown argument is refused rather than silently classified
+ok - a one-script change selects its own suite in a single job
+ok - a selection no packing fits under the budget falls back to the full suite
+ok - shared libraries, test scaffolding and the selection machinery run everything
+ok - push to main and the nightly schedule always run the complete suite
+ok - an unusable change set never narrows the round
+ok - a path the changed-file map refuses falls back to the full suite
+ok - a behavior-relevant path that maps to no tests runs the complete suite
+ok - prose beside code keeps the documentation-audience suite
+ok - a prose-only change selects nothing and keeps the documentation guard
+ok - a selected Herdr-family member runs the required Herdr lane instead
+EXIT=0

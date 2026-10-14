@@ -1,0 +1,51 @@
+=== tests/fm-ci-change-scope.test.sh
+ok - a single relevant path turns its gate back on for the whole change set
+ok - a rename out of a test-read path keeps the behavior gate on
+ok - an unrecognized path keeps both gates on
+ok - push events, unknown events and unusable change sets keep both gates on
+ok - an unknown argument is refused rather than silently classified
+ok - a one-script change selects its own suite in a single job
+ok - a selection no packing fits under the budget falls back to the full suite
+ok - shared libraries, test scaffolding and the selection machinery run everything
+ok - push to main and the nightly schedule always run the complete suite
+ok - an unusable change set never narrows the round
+ok - a path the changed-file map refuses falls back to the full suite
+ok - a behavior-relevant path that maps to no tests runs the complete suite
+ok - prose beside code keeps the documentation-audience suite
+ok - a prose-only change selects nothing and keeps the documentation guard
+ok - a selected Herdr-family member runs the required Herdr lane instead
+exit= secs=98
+=== tests/fm-ci-workflow.test.sh
+ok - the stock-Bash check refuses a non-stock interpreter and an unknown argument
+ok - the CI gate fails the round when a job it needs failed
+ok - the macOS snapshot is non-blocking on pull requests and required elsewhere
+ok - a nightly schedule keeps the complete suite running
+ok - a newer push to one PR supersedes that PR's in-flight CI
+ok - distinct PRs get distinct concurrency groups
+ok - every main push keeps its own group and is never cancelled
+ok - every ci.yml job carries a finite timeout
+ok - every ci.yml job belongs to one of the four timeout tiers
+ok - fast tier jobs share one 5 minute tripwire
+ok - normal tier jobs share one 30 minute budget
+ok - serial tier jobs share one 45 minute bound with a 40 minute step tripwire
+ok - Herdr keeps a 20 minute step tripwire under a 75 minute job backstop
+ok - the change-scope gates stay job-level and agree on their verdicts
+ok - the CI gate always runs and covers every other job
+exit= secs=27
+=== tests/fm-test-run.test.sh
+ok - portable serial shards are a deterministic disjoint cover of the serial lane
+ok - coverage guard bounds the unmeasured share and serial packing within twenty-five minutes
+ok - serial packing accepts the exact budget and refuses one millisecond above it
+ok - portable serial shard lanes refuse mismatched, out-of-range, and countless names
+ok - --jobs refuses non-proven / stateful selections
+ok - --jobs admits and schedules a family with a recorded concurrent proof
+ok - an unclassified new test stays serial while the proven residual family runs concurrently
+ok - a changed shared test fixture selects its readers while an unread tests/ path still refuses
+ok - a concurrent run starts the longest-hint script first
+ok - --per-script-timeout-secs turns a hung script into a bounded failure
+ok - the automatic --changed bound gives the slow watcher suite at least 1500s
+ok - --max-wall-ms fails an over-budget run and refuses a malformed budget
+ok - jobs scheduler runs proven scripts; failure propagates; non-proven refused
+ok - Herdr CI family-run step times out at 20 min under a 75 min job backstop
+ok - aggregate-json merges lane timing artifacts
+exit= secs=650

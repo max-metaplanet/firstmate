@@ -1,0 +1,112 @@
+### one-script change: [bin/fm-quota-choose.sh]
+behavior=true
+macos=true
+full=false
+herdr=false
+selected_matrix={"include":[{"shard":"1","scripts":"tests/fm-quota-choose.test.sh"}]}
+  0.46s user 0.83s system 76% cpu 1.691 total
+
+### skill change: []
+behavior=true
+macos=true
+full=true
+herdr=true
+selected_matrix=
+  0.01s user 0.01s system 74% cpu 0.020 total
+
+### shared lib: [bin/fm-agent-process-lib.sh]
+behavior=true
+macos=true
+full=true
+herdr=true
+selected_matrix=
+  0.01s user 0.01s system 72% cpu 0.022 total
+
+### unknown path: [some/new/unmapped-file.xyz]
+behavior=true
+macos=true
+full=true
+herdr=true
+selected_matrix=
+  0.26s user 0.39s system 65% cpu 0.990 total
+
+### workflow change: [.github/workflows/ci.yml]
+behavior=true
+macos=true
+full=true
+herdr=true
+selected_matrix=
+  0.01s user 0.01s system 65% cpu 0.017 total
+
+### prose only: [README.md]
+behavior=false
+macos=false
+full=false
+herdr=false
+selected_matrix=
+  0.01s user 0.01s system 69% cpu 0.017 total
+
+### behavior-relevant prose only: [docs/arm-pretool-check.md]
+behavior=true
+macos=false
+full=true
+herdr=true
+selected_matrix=
+  0.03s user 0.02s system 76% cpu 0.064 total
+
+### VISION.md beside code: [bin/fm-quota-choose.sh VISION.md]
+behavior=true
+macos=true
+full=false
+herdr=false
+selected_matrix={"include":[{"shard":"1","scripts":"tests/fm-live-lab.test.sh tests/fm-remote-job-launchagent.test.sh tests/fm-ci-change-scope.test.sh tests/fm-dispatch-predict-lib.test.sh tests/fm-self-repo-role.test.sh tests/fm-startup-growth-check.test.sh tests/fm-task-timing.test.sh tests/fm-backlog-read-bound.test.sh tests/fm-usage-warner.test.sh tests/fm-fleet-ledger.test.sh tests/fm-live-lab-up-mate.test.sh tests/fm-ci-workflow.test.sh tests/fm-remote-delta-read.test.sh tests/fm-inbox.test.sh tests/fm-pi-windows-shell-invocation.test.sh tests/fm-send-agy-confirm.test.sh tests/fm-seat-board.test.sh tests/fm-remote-job-claim-reap.test.sh tests/fm-quota-choose.test.sh tests/fm-tasks-axi.test.sh tests/fm-spawn-worktree-claimed.test.sh tests/fm-spawn-orca-worktree.test.sh tests/fm-slot-release.test.sh tests/fm-gemini-harness.test.sh tests/fm-nm-test-contract.test.sh tests/fm-jev-mem-guard.test.sh tests/fm-remote-job-claim-retention.test.sh tests/fm-stat-shadowing.test.sh tests/fm-documentation-audiences.test.sh"}]}
+  0.77s user 1.48s system 58% cpu 3.879 total
+
+### README beside code: [bin/fm-quota-choose.sh README.md]
+behavior=true
+macos=true
+full=false
+herdr=false
+selected_matrix={"include":[{"shard":"1","scripts":"tests/fm-quota-choose.test.sh tests/fm-documentation-audiences.test.sh"}]}
+  0.34s user 0.57s system 68% cpu 1.345 total
+
+### arm-pretool doc beside code: [bin/fm-quota-choose.sh docs/arm-pretool-check.md]
+behavior=true
+macos=true
+full=true
+herdr=true
+selected_matrix=
+  0.07s user 0.04s system 88% cpu 0.120 total
+
+### .gitignore beside code: [bin/fm-quota-choose.sh .gitignore]
+behavior=true
+macos=true
+full=true
+herdr=true
+selected_matrix=
+  0.07s user 0.03s system 84% cpu 0.125 total
+
+### docs/examples beside code: [bin/fm-quota-choose.sh docs/examples/crew-dispatch.json]
+behavior=true
+macos=true
+full=true
+herdr=true
+selected_matrix=
+  0.08s user 0.04s system 87% cpu 0.133 total
+
+### push to main: [bin/fm-quota-choose.sh]
+behavior=true
+macos=true
+full=true
+herdr=true
+selected_matrix=
+  0.01s user 0.01s system 70% cpu 0.017 total
+
+### nightly schedule: [bin/fm-quota-choose.sh]
+behavior=true
+macos=true
+full=true
+herdr=true
+selected_matrix=
+  0.01s user 0.01s system 75% cpu 0.016 total
+
