@@ -3145,19 +3145,20 @@ test_presentation_recovery_wait_requires_live_spawn_holder() (
   # the holder check reads the lock.
   fm_lock_try_acquire() {
     real_fm_lock_try_acquire "$@" && return 0
-    if [ "${ticks:-0}" -eq 50 ] && [ -n "$holder" ]; then
+    if [ -n "$holder" ] && { [ "${ticks:-0}" -eq 50 ] \
+       || { [ "$scenario" = slow-released ] && [ "${ticks:-0}" -eq 5 ]; }; }; then
       case "$scenario" in
-        released) stop_holder ;;
+        released|slow-released) stop_holder ;;
         transition) stop_holder; start_holder later ;;
       esac
     fi
     return 1
   }
 
-  for scenario in unmarked unreadable spawn released transition ordinary deadline slow-ordinary slow-unmarked; do
+  for scenario in unmarked unreadable spawn released transition ordinary deadline slow-ordinary slow-unmarked slow-unreadable slow-spawn slow-released; do
     case "$scenario" in
       unmarked|slow-unmarked) start_holder unmarked ;;
-      unreadable)
+      unreadable|slow-unreadable)
         start_holder unmarked
         owner=$(fm_lock_link_owner "$dir/lock") || fail "recovery holder has no owner"
         printf 'task-spawn\n' > "$owner/role"
@@ -3182,6 +3183,8 @@ test_presentation_recovery_wait_requires_live_spawn_holder() (
       if [ "$scenario" = transition ] && [ "$ticks" -eq 51 ]; then
         touch "$dir/mark"
         wait_for "$dir/marked"
+      elif [ "$scenario" = slow-spawn ] && [ "$ticks" -eq 8 ]; then
+        stop_holder
       elif [ "$scenario" != deadline ] && [ "$ticks" -eq 55 ]; then
         stop_holder
       fi
@@ -3201,6 +3204,14 @@ test_presentation_recovery_wait_requires_live_spawn_holder() (
         [ "$rc" = 0 ] && [ "$ticks" = 51 ] || fail "release before the holder check refused the recovery: rc=$rc ticks=$ticks"
         fm_lock_release "$FM_BACKEND_HERDR_PRESENTATION_LOCK"
         ;;
+      slow-released)
+        [ "$rc" = 0 ] && [ "$ticks" = 5 ] || fail "release at the elapsed deadline added a wait or refused recovery: rc=$rc ticks=$ticks"
+        fm_lock_release "$FM_BACKEND_HERDR_PRESENTATION_LOCK"
+        ;;
+      slow-spawn)
+        [ "$rc" = 0 ] && [ "$ticks" = 8 ] || fail "live spawn did not extend the elapsed recovery budget: rc=$rc ticks=$ticks"
+        fm_lock_release "$FM_BACKEND_HERDR_PRESENTATION_LOCK"
+        ;;
       deadline)
         [ "$rc" = 1 ] && [ "$ticks" -gt 50 ] && [ "$ticks" -le 80 ] || fail "live marked holder exceeded the recovery deadline: rc=$rc ticks=$ticks"
         ;;
@@ -3208,10 +3219,10 @@ test_presentation_recovery_wait_requires_live_spawn_holder() (
         [ "$rc" = 1 ] && [ "$ticks" = 50 ] || fail "ordinary caller extended the default budget: rc=$rc ticks=$ticks"
         ;;
       slow-ordinary)
-        [ "$rc" = 1 ] && [ "$ticks" = 6 ] || fail "slow attempts outlasted the default elapsed budget: rc=$rc ticks=$ticks"
+        [ "$rc" = 1 ] && [ "$ticks" = 50 ] || fail "recovery deadline changed the ordinary attempt budget: rc=$rc ticks=$ticks"
         ;;
-      slow-unmarked)
-        [ "$rc" = 1 ] && [ "$ticks" = 8 ] || fail "slow attempts kept a recovery behind an unmarked holder: rc=$rc ticks=$ticks"
+      slow-unmarked|slow-unreadable)
+        [ "$rc" = 1 ] && [ "$ticks" = 5 ] || fail "slow attempts kept a recovery behind an unproven holder past its elapsed deadline: rc=$rc ticks=$ticks"
         ;;
       *)
         [ "$rc" = 1 ] && [ "$ticks" = 49 ] || fail "$scenario holder did not refuse within the default budget: rc=$rc ticks=$ticks"

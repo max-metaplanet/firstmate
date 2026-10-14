@@ -1522,12 +1522,12 @@ The current recovery contention policy and explicit wait option are documented i
 The bounded extension was verified on 2026-10-14 with real lock-holder processes on macOS using `bash bin/fm-test-run.sh tests/fm-backend-herdr.test.sh`.
 This host lacked GNU `timeout`; a temporary command shim delegated the suite's `timeout 3s` probe to `fm-timeout-lib.sh`'s Bash fallback.
 The new regression accelerates sleep and pins elapsed-clock progression to it while using the real lock implementation for owner publication, liveness, acquisition, and release.
-It verifies a recovery waits beyond the ordinary budget only for a marked live spawn, survives a release or a new holder publishing its role within two rechecks, refuses an unmarked or unreadable holder within the ordinary budget, leaves an ordinary caller's budget unchanged, ends the ordinary budget by elapsed time when each attempt is slow, and cannot be kept waiting past its deadline by a marked holder.
+It verifies a recovery waits beyond the ordinary budget only for a marked live spawn, survives a release at the elapsed deadline or a new holder publishing its role within the ordinary budget, refuses an unmarked or unreadable holder without another sleep once its elapsed deadline is reached, leaves an ordinary caller's attempt budget unchanged even when attempts are slow, and cannot be kept waiting past its deadline by a marked holder.
 
 ```text
 ok - fm_backend_herdr_presentation_lock_acquire: bounded budget, and contention is distinct from an unresolved session
 ok - presentation recovery extends only a live spawn hold and keeps a hard deadline
-FM_TEST_SUMMARY total=1 failed=0 skipped_gate=0 duration_ms=148964
+FM_TEST_SUMMARY total=1 failed=0 skipped_gate=0 duration_ms=145235
 ```
 That run measured the default-on projection on Herdr 0.8.0 only, while the focus-flash regression below was last run on 0.7.5 before the flip, so neither run covered a defective release under default-on projection; the version floor and the focus-flash suite's Part C close that gap.
 
