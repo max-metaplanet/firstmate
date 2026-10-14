@@ -1,0 +1,114 @@
+$ CI=true FM_LINT_JOBS=1 bin/fm-lint.sh --partition 16of16 --jobs 2 --telemetry $T/partition-16.tsv
+fm-lint.sh: ShellCheck 0.11.0 (pinned 0.11.0)
+fm-lint.sh: full ShellCheck extended analysis enabled
+fm-lint: begin bin/fm-arm-pretool-check.sh (shard 0, full mode)
+fm-lint: end bin/fm-arm-pretool-check.sh reason=ok rc=0 duration_ms=137 rss_kib=unavailable
+fm-lint: begin bin/fm-captain-hold.sh (shard 0, full mode)
+fm-lint: end bin/fm-captain-hold.sh reason=ok rc=0 duration_ms=16007 rss_kib=unavailable
+fm-lint: begin bin/fm-gemini-lib.sh (shard 0, full mode)
+fm-lint: end bin/fm-gemini-lib.sh reason=ok rc=0 duration_ms=131 rss_kib=unavailable
+fm-lint: begin bin/fm-jev-mem-guard.sh (shard 0, full mode)
+fm-lint: end bin/fm-jev-mem-guard.sh reason=ok rc=0 duration_ms=117 rss_kib=unavailable
+fm-lint: begin bin/fm-path-lib.sh (shard 0, full mode)
+fm-lint: end bin/fm-path-lib.sh reason=ok rc=0 duration_ms=128 rss_kib=unavailable
+fm-lint: begin bin/fm-pending-reply-lib.sh (shard 0, full mode)
+fm-lint: end bin/fm-pending-reply-lib.sh reason=ok rc=0 duration_ms=21079 rss_kib=unavailable
+fm-lint: begin bin/fm-pr-check.sh (shard 0, full mode)
+fm-lint: end bin/fm-pr-check.sh reason=ok rc=0 duration_ms=22284 rss_kib=unavailable
+fm-lint: begin bin/fm-remote-secondmate-control.sh (shard 0, full mode)
+fm-lint: end bin/fm-remote-secondmate-control.sh reason=ok rc=0 duration_ms=29017 rss_kib=unavailable
+fm-lint: begin bin/fm-slot-record-lib.sh (shard 0, full mode)
+fm-lint: end bin/fm-slot-record-lib.sh reason=ok rc=0 duration_ms=682 rss_kib=unavailable
+fm-lint: begin bin/fm-startup-memory-budget-lib.sh (shard 0, full mode)
+fm-lint: end bin/fm-startup-memory-budget-lib.sh reason=ok rc=0 duration_ms=167 rss_kib=unavailable
+fm-lint: begin bin/fm-turnend-guard-cursor.sh (shard 0, full mode)
+fm-lint: end bin/fm-turnend-guard-cursor.sh reason=ok rc=0 duration_ms=8722 rss_kib=unavailable
+fm-lint: begin bin/backends/cmux.sh (shard 0, full mode)
+fm-lint: end bin/backends/cmux.sh reason=ok rc=0 duration_ms=1793 rss_kib=unavailable
+fm-lint: begin tests/fm-pr-reviewers.test.sh (shard 0, full mode)
+fm-lint: end tests/fm-pr-reviewers.test.sh reason=ok rc=0 duration_ms=577 rss_kib=unavailable
+fm-lint: begin tests/fm-seat-renew.test.sh (shard 0, full mode)
+fm-lint: end tests/fm-seat-renew.test.sh reason=ok rc=0 duration_ms=858 rss_kib=unavailable
+fm-lint: begin tests/fm-sessionstart-hook-live-e2e.test.sh (shard 0, full mode)
+fm-lint: end tests/fm-sessionstart-hook-live-e2e.test.sh reason=ok rc=0 duration_ms=1183 rss_kib=unavailable
+fm-lint: begin tests/fm-sessionstart-nudge.test.sh (shard 0, full mode)
+fm-lint: end tests/fm-sessionstart-nudge.test.sh reason=ok rc=0 duration_ms=1353 rss_kib=unavailable
+fm-lint: begin tests/fm-x-mode.test.sh (shard 0, full mode)
+fm-lint: end tests/fm-x-mode.test.sh reason=ok rc=0 duration_ms=7691 rss_kib=unavailable
+fm-lint: begin bin/fm-home-summary-refresh.sh (shard 1, full mode)
+fm-lint: end bin/fm-home-summary-refresh.sh reason=ok rc=0 duration_ms=6767 rss_kib=unavailable
+fm-lint: begin bin/fm-hook-host-lib.sh (shard 1, full mode)
+fm-lint: end bin/fm-hook-host-lib.sh reason=ok rc=0 duration_ms=120 rss_kib=unavailable
+fm-lint: begin bin/fm-live-lab.sh (shard 1, full mode)
+fm-lint: end bin/fm-live-lab.sh reason=ok rc=0 duration_ms=1125 rss_kib=unavailable
+fm-lint: begin bin/fm-procevent.sh (shard 1, full mode)
+fm-lint: end bin/fm-procevent.sh reason=ok rc=0 duration_ms=15018 rss_kib=unavailable
+fm-lint: begin bin/fm-remote-file.sh (shard 1, full mode)
+fm-lint: end bin/fm-remote-file.sh reason=ok rc=0 duration_ms=8337 rss_kib=unavailable
+fm-lint: begin bin/fm-turnend-guard.sh (shard 1, full mode)
+fm-lint: end bin/fm-turnend-guard.sh reason=ok rc=0 duration_ms=8314 rss_kib=unavailable
+fm-lint: begin tests/fm-backend-herdr-workspace-per-home-e2e.test.sh (shard 1, full mode)
+fm-lint: end tests/fm-backend-herdr-workspace-per-home-e2e.test.sh reason=ok rc=0 duration_ms=436 rss_kib=unavailable
+fm-lint: begin tests/fm-daemon.test.sh (shard 1, full mode)
+fm-lint: end tests/fm-daemon.test.sh reason=ok rc=0 duration_ms=39938 rss_kib=unavailable
+fm-lint: begin tests/fm-gitignore-config.test.sh (shard 1, full mode)
+fm-lint: end tests/fm-gitignore-config.test.sh reason=ok rc=0 duration_ms=163 rss_kib=unavailable
+fm-lint: begin tests/fm-harness-liveness-drift-live-e2e.test.sh (shard 1, full mode)
+fm-lint: end tests/fm-harness-liveness-drift-live-e2e.test.sh reason=ok rc=0 duration_ms=875 rss_kib=unavailable
+fm-lint: begin tests/fm-remote-doctor.test.sh (shard 1, full mode)
+fm-lint: end tests/fm-remote-doctor.test.sh reason=ok rc=0 duration_ms=1774 rss_kib=unavailable
+fm-lint: begin tests/fm-spawn-worktree-claimed.test.sh (shard 1, full mode)
+fm-lint: end tests/fm-spawn-worktree-claimed.test.sh reason=ok rc=0 duration_ms=1132 rss_kib=unavailable
+fm-lint: begin tests/fm-stat-shadowing.test.sh (shard 1, full mode)
+fm-lint: end tests/fm-stat-shadowing.test.sh reason=ok rc=0 duration_ms=117791 rss_kib=unavailable
+fm-lint: begin tests/fm-supervision-instructions.test.sh (shard 1, full mode)
+fm-lint: end tests/fm-supervision-instructions.test.sh reason=ok rc=0 duration_ms=1174 rss_kib=unavailable
+fm-lint: begin tests/fm-tool-update-check.test.sh (shard 1, full mode)
+fm-lint: end tests/fm-tool-update-check.test.sh reason=ok rc=0 duration_ms=2243 rss_kib=unavailable
+fm-lint: begin tests/fm-watch-checkpoint.test.sh (shard 1, full mode)
+fm-lint: end tests/fm-watch-checkpoint.test.sh reason=ok rc=0 duration_ms=1401 rss_kib=unavailable
+fm-lint-workflows.sh: actionlint 1.7.12 (pinned 1.7.12)
+fm-lint-workflows.sh: 4 workflow files valid
+exit=0 elapsed=339s
+--- telemetry
+format	fm-lint-telemetry-v1
+git_head	bf3f891caadf5fa50ec9fe40d4046c38e06af17b
+content_cksum	784479398-1531
+shellcheck_version	0.11.0
+analysis_mode	full
+partition	16of16
+jobs	1
+root_bounds_enforced	0
+root_deadline_seconds	unbounded
+root_kill_grace_seconds	unbounded
+root_memory_limit_kib	unbounded
+root_timing_mechanism	none
+root_count	33
+direct_lines	23157
+direct_bytes	1139021
+source_directives	67
+source_boundary_directives	9
+source_followed_directives	58
+source_target_count	31
+shard_1_weight_bytes	569594
+shard_2_weight_bytes	569427
+wall_seconds	324
+worker_wall_sum_seconds	318.92
+max_worker_wall_seconds	206.70
+user_seconds	228.72
+system_seconds	25.87
+max_worker_rss_kib	2181600
+worker_rss_sum_kib	4115264
+shellcheck_processes_start	0
+shellcheck_processes_end	1
+load_average_start	8.12/9.44/9.42
+load_average_end	17.41/12.96/10.89
+aggregate_cpu_percent_start	381.50
+aggregate_cpu_percent_end	409.00
+result_exit	0
+--- roots sidecar (head)
+format	fm-lint-roots-v1
+meta	shellcheck_version	0.11.0
+meta	platform	Darwin arm64
+meta	image_os	unknown
+meta	image_version	unknown

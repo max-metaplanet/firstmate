@@ -1,0 +1,27 @@
+canonical files:      516
+partition 1of16: files=31 bytes= 1138815
+partition 2of16: files=31 bytes= 1138840
+partition 3of16: files=31 bytes= 1138828
+partition 4of16: files=33 bytes= 1139321
+partition 5of16: files=32 bytes= 1138845
+partition 6of16: files=32 bytes= 1138802
+partition 7of16: files=33 bytes= 1139787
+partition 8of16: files=32 bytes= 1138799
+partition 9of16: files=32 bytes= 1138803
+partition 10of16: files=33 bytes= 1139011
+partition 11of16: files=33 bytes= 1139641
+partition 12of16: files=33 bytes= 1139312
+partition 13of16: files=32 bytes= 1138884
+partition 14of16: files=33 bytes= 1139544
+partition 15of16: files=32 bytes= 1138776
+partition 16of16: files=33 bytes= 1139021
+union total lines:      516  unique:      516
+duplicates:        0
+UNION == canonical set: YES
+--- determinism: re-list partitions
+deterministic: 1
+--- adversarial: out-of-range/invalid partitions
+17of16 -> exit=2 fm-lint.sh: --partition must be <n>of<total> with 1 <= n <= total, got 17of16.
+0of16 -> exit=2 fm-lint.sh: --partition must be <n>of<total> with 1 <= n <= total, got 0of16.
+1of0 -> exit=2 fm-lint.sh: --partition must be <n>of<total> with 1 <= n <= total, got 1of0.
+abc -> exit=2 fm-lint.sh: --partition must be <n>of<total> with 1 <= n <= total, got abc.
