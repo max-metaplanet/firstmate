@@ -659,7 +659,7 @@ The flag is a home-local supervision-noise preference and is not inherited by se
 
 ## Gate defaults (.no-mistakes.yaml)
 
-The tracked `.no-mistakes.yaml` sets `test.evidence.store_in_repo: true`, pins `commands.lint` to `bin/fm-lint.sh`, the same owner CI invokes, and runs `commands.test` from the same `bin/fm-ci-change-scope.sh` selection CI uses.
+The tracked `.no-mistakes.yaml` sets `test.evidence.store_in_repo: true`, pins `commands.lint` to `bin/fm-lint.sh`, the same owner CI invokes, and runs `commands.test` from `bin/fm-ci-change-scope.sh --local`; the classifier header owns how local coverage differs from its default CI verdicts.
 Storing evidence in the repo publishes each run's test artifacts to the orphan `no-mistakes/evidence` branch and links them from the PR body, instead of keeping them on local disk under the no-mistakes home.
 
 That branch shares no history with code branches, so evidence never enters a pushed feature branch or the default branch; the worktree's `.no-mistakes/` stays local and CI rejects tracked entries under that path.

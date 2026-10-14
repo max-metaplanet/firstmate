@@ -17,7 +17,15 @@
 #
 # Usage:
 #   bin/fm-ci-change-scope.sh            classify and print every gate output
+#   bin/fm-ci-change-scope.sh --local    select local no-mistakes Test coverage
 #   bin/fm-ci-change-scope.sh --help     print this header
+#
+# --local keeps the output format but replaces workflow, action, and
+# .no-mistakes.yaml paths with their workflow-lint, CI workflow, gate config,
+# classifier, and local Test contract suites before asking the runner for a selection. Other changed paths
+# retain their normal mapping and all other full-suite fallback rules still
+# apply. CI must use the default mode: only its full suite validates a changed
+# workflow. Local coverage leaves that complete validation to CI.
 #
 # Inputs, all optional and read from the environment:
 #   FM_CI_EVENT               the GitHub event name (default: pull_request)
@@ -103,7 +111,9 @@
 # hints, the same evidence its shard packing uses.
 set -eu
 
+local_mode=false
 case "${1:-}" in
+  --local) local_mode=true ;;
   --help | -h)
     awk 'NR == 1 { next } /^#/ { sub(/^# ?/, ""); print; next } { exit }' "$0"
     exit 0
@@ -203,13 +213,24 @@ SELECT_SHARED_FANIN=10
 
 TAB=$(printf '\t')
 
+# Configuration whose complete validation belongs to CI, with local contract
+# coverage available through --local. Keep this path classification in one place.
+workflow_configuration_path() {
+  case "$1" in
+    .github/workflows/* | .github/actions/* | .no-mistakes.yaml) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 # True when this changed path makes a change-scoped selection untrustworthy.
 selection_blocked_by() {
   local path=$1 base fanin
+  # The workflow decides which jobs exist, so CI must validate all of them.
+  if workflow_configuration_path "$path"; then
+    [ "$local_mode" = false ]
+    return
+  fi
   case "$path" in
-    # The workflow decides which jobs exist, so a selection made under the old
-    # one proves nothing about the new one.
-    .github/workflows/* | .github/actions/* | .no-mistakes.yaml) return 0 ;;
     # The runner, its isolation proof and this classifier are the machinery a
     # selection is made of.
     bin/fm-test-run.sh | bin/fm-test-isolation-proof.sh | bin/fm-ci-change-scope.sh) return 0 ;;
@@ -278,16 +299,28 @@ selected_matrix=
 # Narrow the gates above to a change-scoped selection, or leave them exactly as
 # they are. Every refusal path below returns before anything is narrowed.
 select_tests() {
-  local path weighted herdr_members list packed ms script shard scripts selected_herdr first
+  local path weighted herdr_members list packed ms script shard scripts selected_herdr first selection_paths
 
   [ "$behavior" = true ] || return 0
   [ "${FM_CI_EVENT:-pull_request}" = pull_request ] || return 0
   [ -n "$paths" ] || return 0
   [ -x bin/fm-test-run.sh ] || return 0
 
+  selection_paths=
   while IFS= read -r path; do
     [ -n "$path" ] || continue
     ! selection_blocked_by "$path" || return 0
+    if [ "$local_mode" = true ] && workflow_configuration_path "$path"; then
+      selection_paths="${selection_paths}tests/fm-lint-workflows.test.sh
+tests/fm-ci-workflow.test.sh
+tests/fm-gate-refuse.test.sh
+tests/fm-ci-change-scope.test.sh
+tests/fm-nm-test-contract.test.sh
+"
+    else
+      selection_paths="${selection_paths}${path}
+"
+    fi
   done <<EOF
 $paths
 EOF
@@ -295,7 +328,7 @@ EOF
   # The runner owns the map; this script owns the diff. It refuses a path set
   # whose mapping it does not know, and that refusal is the fail-open signal.
   weighted=$(bin/fm-test-run.sh --list-weighted --changed \
-    --changed-paths-file <(printf '%s\n' "$paths") 2>/dev/null) || weighted=
+    --changed-paths-file <(printf '%s\n' "$selection_paths") 2>/dev/null) || weighted=
   [ -n "$weighted" ] || return 0
 
   # A change set holding tracked prose AND code runs the behavior jobs, so the
