@@ -60,6 +60,13 @@ An authorized contribution then flows through the task's normal delivery contrac
 A gate refusal names the exact remedy: write `maintainer <scope>` into `config/firstmate-role`, or pass `--upstream-consent <scope>` for that one task with the captain's explicit approval.
 Never work around a refusal by pointing the task at a second checkout, fork, or parent clone; `fm_role_self_repo` treats every repository sharing firstmate's lineage as firstmate's own.
 
+## A firstmate PR raised outside no-mistakes
+
+When the captain's standing rule has firstmate raise a firstmate-repo pull request outside the no-mistakes pipeline - local validation skipping the long serial suite so this repository's own CI decides instead - that pull request carries no pipeline signature, so the "PR must be raised via no-mistakes" check fails and mails a failure for a deliberate delivery choice.
+That noise is what makes a real failure hard to spot, so apply the marker the check accepts as soon as the pull request exists: `bin/fm-pr-ci-validated.sh <pr-url>`, whose header owns the marker, its mechanics, and why the marker is a label.
+The marker waives nothing else and grants no merge authority: the merge still waits on every other required check, and `bin/fm-pr-merge.sh`'s attended `--allow-red` remains the unchanged fallback for a check red for any other reason.
+Never mark a pull request this repository's CI has not actually validated, and never mark one to get past a check that is failing on its own merits.
+
 ## Updating is not contributing
 
 `/updatefirstmate` and every guarded sync pull **from** upstream, which is consumption, not publication, and stays allowed for every role.

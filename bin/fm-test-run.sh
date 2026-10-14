@@ -439,6 +439,7 @@ family_for_basename() {
       printf '%s\n' backend-dispatch
       ;;
     fm-check-unregister.test.sh|fm-pipeline-spend.test.sh|fm-pr-check-security.test.sh|\
+    fm-pr-ci-validated.test.sh|\
     fm-pr-merge.test.sh|fm-pr-reviewers.test.sh|fm-pr-state.test.sh|\
     fm-review-diff.test.sh|fm-teardown.test.sh|fm-x-mode.test.sh)
       printf '%s\n' pr-forge
@@ -1884,6 +1885,13 @@ families_for_changed_path() {
     .github/workflows/ci.yml|.no-mistakes.yaml)
       printf '%s\n' pure-contract-unit
       printf '%s\n' real-herdr-gated
+      ;;
+    .github/workflows/no-mistakes-required.yml)
+      printf '%s\n' pure-contract-unit
+      # The required gate's own suite resolves this workflow's triggers,
+      # concurrency groups, and step conditions, so a change here must select
+      # it even though the generic .github/* arm below cannot name a script.
+      printf '%s\n' __script__:fm-no-mistakes-required.test.sh
       ;;
     docs/fm-test-portable-shards.md|docs/fm-test-isolation-proof.md|\
     docs/fm-test-isolation-proof.json)

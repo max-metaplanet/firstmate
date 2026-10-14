@@ -3,7 +3,7 @@ run-name: "PR #${{ github.event.pull_request.number }} body compliance - ${{ git
 
 on:
   pull_request:
-    types: [opened, edited, synchronize, reopened]
+    types: [opened, edited, synchronize, reopened, labeled, unlabeled]
     branches:
       - main
 
@@ -12,11 +12,13 @@ permissions:
   pull-requests: read
 
 # GitHub concurrency groups retain at most one pending run, replacing older
-# pending runs even when cancel-in-progress is false. Give body-bearing events
-# an immutable per-event group so first-time-fork approvals can never collapse
-# opened/edited checks. Keep synchronize/reopened coalescing as before.
+# pending runs even when cancel-in-progress is false. Give body-bearing and
+# label-bearing events an immutable per-event group so first-time-fork
+# approvals can never collapse opened/edited checks and a marker added or
+# removed mid-review can never replace one of them either. Keep
+# synchronize/reopened coalescing as before.
 concurrency:
-  group: no-mistakes-required-${{ github.event.pull_request.number }}-${{ (github.event.action == 'opened' || github.event.action == 'edited') && github.run_id || 'head-change' }}
+  group: no-mistakes-required-${{ github.event.pull_request.number }}-${{ (github.event.action == 'opened' || github.event.action == 'edited' || github.event.action == 'labeled' || github.event.action == 'unlabeled') && github.run_id || 'head-change' }}
   cancel-in-progress: true
 
 jobs:
@@ -27,7 +29,15 @@ jobs:
       github.event.pull_request.user.login != 'github-actions[bot]' &&
       github.event.pull_request.user.login != 'dependabot[bot]'
     steps:
+      # The marker is a label rather than a body trailer because only an account
+      # with triage or write access on this repository can add one, so no
+      # ordinary push and no outside contributor gets it by default. An unmarked
+      # PR still reaches the signature step below and still fails there.
+      - name: Accept the deliberate CI-validated marker
+        if: ${{ contains(github.event.pull_request.labels.*.name, 'fm-ci-validated') }}
+        run: echo "::notice::The fm-ci-validated label marks this PR as deliberately validated by this repository's own CI instead of the local no-mistakes pipeline, so the signature check is satisfied."
       - name: Verify no-mistakes signature and pipeline attestation
+        if: ${{ !contains(github.event.pull_request.labels.*.name, 'fm-ci-validated') }}
         uses: kunchenguid/no-mistakes/.github/actions/require-no-mistakes@f6441c96c352a18b9cadcaef6b6c7017e9ac3970 # v1.80.1
         with:
           exempt-authors: kunchenguid
