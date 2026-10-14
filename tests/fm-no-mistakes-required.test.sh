@@ -16,6 +16,7 @@ set -u
 
 ACTION_REF=32d396ac0f29135daf7fcb9964aba9d5f4e796d6
 TMP_ROOT=$(fm_test_tmproot fm-no-mistakes-required)
+BASE_PATH=$PATH
 VERIFY="$TMP_ROOT/verify.py"
 OLD_SHA=1111111111111111111111111111111111111111
 NEW_SHA=2222222222222222222222222222222222222222
@@ -136,7 +137,10 @@ context = {
   'github.event.action' => ARGV[3].to_s,
   'github.event.pull_request.number' => ARGV[4].to_s,
   'github.event.pull_request.user.login' => ARGV[5].to_s,
-  'github.event.pull_request.labels.*.name' => ARGV[6].to_s.split(',').reject(&:empty?)
+  'github.event.pull_request.labels.*.name' => ARGV[6].to_s.split(',').reject(&:empty?),
+  'steps.marker.outputs.marked' => ARGV[7].to_s,
+  'github.token' => 'stand-in-token',
+  'github.repository' => 'example-owner/example-repo'
 }
 
 case mode
@@ -150,6 +154,15 @@ when 'concurrency'
         interpolate(concurrency.fetch('cancel-in-progress'), context)].join("\t")
 when 'permissions'
   puts doc.fetch('permissions').map { |k, v| "#{k}=#{v}" }.sort.join(',')
+when 'marker-script'
+  step = job.fetch('steps').find { |s| s['id'] == 'marker' }
+  raise 'the workflow has no step with id: marker' if step.nil?
+  raise "the marker step must declare shell: bash, not #{step['shell'].inspect}" unless step['shell'] == 'bash'
+  print step.fetch('run')
+when 'marker-env'
+  step = job.fetch('steps').find { |s| s['id'] == 'marker' }
+  raise 'the workflow has no step with id: marker' if step.nil?
+  step.fetch('env').each { |k, v| puts "#{k}\t#{interpolate(v, context)}" }
 when 'steps'
   unless condition(job['if'], context)
     puts "job\tskipped"
@@ -171,8 +184,8 @@ RUBY
 # Resolve one workflow question. Args: mode [run_id] [action] [number] [author] [labels]
 resolve() {
   local mode=$1 run_id=${2:-7001} action=${3:-opened} number=${4:-3006}
-  local author=${5:-contributor} labels=${6:-}
-  ruby "$RESOLVE" "$WORKFLOW" "$mode" "$run_id" "$action" "$number" "$author" "$labels"
+  local author=${5:-contributor} labels=${6:-} marked=${7:-false}
+  ruby "$RESOLVE" "$WORKFLOW" "$mode" "$run_id" "$action" "$number" "$author" "$labels" "$marked"
 }
 
 MARKER=$("$MARKER_TOOL" --label) \
@@ -191,9 +204,9 @@ test_label_changes_re_evaluate_the_check() {
   pass "adding or removing a label re-evaluates the check beside the body and head events"
 }
 
-test_marker_label_passes_without_running_the_signature_action() {
+test_marker_decision_passes_without_running_the_signature_action() {
   local output
-  output=$(resolve steps 7002 labeled 3006 contributor "$MARKER") \
+  output=$(resolve steps 7002 labeled 3006 contributor "$MARKER" true) \
     || fail "could not resolve the workflow's steps for a marked PR"
   assert_not_contains "$output" "uses	" \
     "a marked PR still runs an action instead of passing on the marker alone"
@@ -203,15 +216,15 @@ test_marker_label_passes_without_running_the_signature_action() {
     "the passing notice does not name the $MARKER marker"
   assert_contains "$output" "no-mistakes" \
     "the passing notice does not name the rule it stands in for"
-  assert_equals 1 "$(printf '%s\n' "$output" | grep -c '^step	')" \
-    "a marked PR runs more than the one marker step"
-  pass "the $MARKER marker passes the check with a notice and no signature action"
+  assert_equals 2 "$(printf '%s\n' "$output" | grep -c '^step	')" \
+    "a marked PR runs more than the marker read and its notice"
+  pass "a marked PR passes the check with a notice and no signature action"
 }
 
 test_unmarked_pr_still_reaches_the_signature_action() {
   local output action
   for action in opened edited synchronize reopened unlabeled; do
-    output=$(resolve steps 7003 "$action" 3006 contributor "needs-review,documentation") \
+    output=$(resolve steps 7003 "$action" 3006 contributor "needs-review,documentation" false) \
       || fail "could not resolve the workflow's steps for an unmarked $action event"
     assert_contains "$output" \
       "uses	kunchenguid/no-mistakes/.github/actions/require-no-mistakes@f6441c96c352a18b9cadcaef6b6c7017e9ac3970" \
@@ -224,15 +237,99 @@ test_unmarked_pr_still_reaches_the_signature_action() {
   pass "a PR without the marker still reaches the pinned signature action unchanged"
 }
 
-# A near-miss label must not be mistaken for the marker, or any unrelated label
-# would quietly waive the check.
-test_only_the_exact_marker_waives_the_signature_action() {
-  local output
-  output=$(resolve steps 7004 labeled 3006 contributor "fm-ci-validated-draft,ci-validated") \
-    || fail "could not resolve the workflow's steps for a near-miss label set"
-  assert_contains "$output" "uses	kunchenguid/no-mistakes" \
-    "a label that merely resembles the marker skipped the signature action"
-  pass "only the exact $MARKER label waives the signature action"
+# The marker read is a real script GitHub runs with bash. Execute it the same
+# way, against a stand-in forge CLI, so the payload-versus-live-label decision
+# is proven rather than assumed.
+run_marker_step() {  # <case-name> <payload-marked> <live-labels-csv> [gh-rc]
+  local name=$1 payload=$2 live=$3 gh_rc=${4:-0} case_dir script
+  case_dir="$TMP_ROOT/marker-$name"
+  mkdir -p "$case_dir/fakebin"
+  script="$case_dir/marker.sh"
+  resolve marker-script > "$script" \
+    || fail "could not read the marker step's script"
+  printf '%s\n' ${live:+${live//,/$'\n'}} > "$case_dir/labels.txt"
+  : > "$case_dir/gh.log"
+  cat > "$case_dir/fakebin/gh" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$FM_TEST_GH_LOG"
+[ "${FM_TEST_GH_RC:-0}" = 0 ] || exit "$FM_TEST_GH_RC"
+cat "$FM_TEST_GH_LABELS"
+SH
+  chmod +x "$case_dir/fakebin/gh"
+  : > "$case_dir/output"
+  FM_TEST_GH_LOG="$case_dir/gh.log" FM_TEST_GH_LABELS="$case_dir/labels.txt" \
+    FM_TEST_GH_RC="$gh_rc" PATH="$case_dir/fakebin:$BASE_PATH" \
+    GH_TOKEN=stand-in PAYLOAD_MARKED="$payload" PR_NUMBER=3006 \
+    REPOSITORY=example-owner/example-repo GITHUB_OUTPUT="$case_dir/output" \
+    bash -eo pipefail "$script" > "$case_dir/stdout" 2> "$case_dir/stderr" \
+    || fail "the marker step failed for case $name"$'\n'"$(cat "$case_dir/stderr")"
+  printf '%s\n' "$case_dir"
+}
+
+marker_verdict() {  # <case-dir>
+  sed -n 's/^marked=//p' "$1/output"
+}
+
+# The ordering gap the review found: the delivery path can open the PR and label
+# it a moment later, so the opened event carries no marker even though the PR
+# has one by the time the runner starts.
+test_a_marker_absent_from_the_payload_but_present_live_still_passes() {
+  local case_dir
+  case_dir=$(run_marker_step api-only false "bug,$MARKER")
+  assert_equals true "$(marker_verdict "$case_dir")" \
+    "a marker the event payload missed was not read from the pull request"
+  assert_grep "repos/example-owner/example-repo/pulls/3006" "$case_dir/gh.log" \
+    "the live read did not use the pulls endpoint the existing read token covers"
+  pass "a marker present on the pull request but absent from the event still passes"
+}
+
+test_the_payload_marker_alone_passes_without_a_live_read() {
+  local case_dir
+  case_dir=$(run_marker_step payload-only true "")
+  assert_equals true "$(marker_verdict "$case_dir")" \
+    "a marker carried by the event was not honored"
+  assert_equals "" "$(cat "$case_dir/gh.log")" \
+    "a marker already in the payload still spent a live read"
+  pass "a marker carried by the opening event needs no live read"
+}
+
+test_an_unmarked_pull_request_stays_unmarked() {
+  local case_dir
+  case_dir=$(run_marker_step unmarked false "bug,documentation")
+  assert_equals false "$(marker_verdict "$case_dir")" \
+    "an unmarked pull request was treated as marked"
+
+  case_dir=$(run_marker_step near-miss false "$MARKER-draft,ci-validated")
+  assert_equals false "$(marker_verdict "$case_dir")" \
+    "a label that merely resembles the marker was accepted as the marker"
+  pass "only the exact $MARKER label marks a pull request"
+}
+
+# A read that cannot answer must never invent a marker, or an unreadable API
+# would waive the check for everyone.
+test_a_failed_live_read_never_marks_a_pull_request() {
+  local case_dir
+  case_dir=$(run_marker_step read-failed false "$MARKER" 1)
+  assert_equals false "$(marker_verdict "$case_dir")" \
+    "a failed live read marked an unmarked pull request"
+  assert_grep "::warning::" "$case_dir/stdout" \
+    "a failed live read passed silently instead of reporting the fallback"
+
+  case_dir=$(run_marker_step read-failed-payload true "" 1)
+  assert_equals true "$(marker_verdict "$case_dir")" \
+    "a failed live read discarded a marker the event already carried"
+  pass "a live read that cannot answer falls back to the event, never to marked"
+}
+
+test_the_marker_read_needs_no_token_beyond_the_declared_permissions() {
+  local env_lines
+  env_lines=$(resolve marker-env 7006 opened 3006 contributor "" false) \
+    || fail "could not read the marker step's environment"
+  assert_contains "$env_lines" "GH_TOKEN	" "the marker read has no token to read with"
+  assert_contains "$env_lines" "REPOSITORY	" "the marker read does not know which repository to read"
+  assert_contains "$env_lines" "PR_NUMBER	" "the marker read does not know which pull request to read"
+  assert_contains "$env_lines" "PAYLOAD_MARKED	" "the marker read cannot see the labels the event carried"
+  pass "the marker read takes the repository, pull request, payload verdict, and token it needs"
 }
 
 test_bot_authors_stay_exempt() {
@@ -341,9 +438,13 @@ test_missing_head_fails() {
 
 write_resolver
 test_label_changes_re_evaluate_the_check
-test_marker_label_passes_without_running_the_signature_action
+test_marker_decision_passes_without_running_the_signature_action
 test_unmarked_pr_still_reaches_the_signature_action
-test_only_the_exact_marker_waives_the_signature_action
+test_a_marker_absent_from_the_payload_but_present_live_still_passes
+test_the_payload_marker_alone_passes_without_a_live_read
+test_an_unmarked_pull_request_stays_unmarked
+test_a_failed_live_read_never_marks_a_pull_request
+test_the_marker_read_needs_no_token_beyond_the_declared_permissions
 test_bot_authors_stay_exempt
 test_label_events_cannot_collapse_the_body_check_runs
 test_check_needs_no_write_permission

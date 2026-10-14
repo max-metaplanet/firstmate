@@ -31,13 +31,40 @@ jobs:
     steps:
       # The marker is a label rather than a body trailer because only an account
       # with triage or write access on this repository can add one, so no
-      # ordinary push and no outside contributor gets it by default. An unmarked
-      # PR still reaches the signature step below and still fails there.
+      # ordinary push and no outside contributor gets it by default.
+      #
+      # The event payload carries only the labels the pull request had when the
+      # event fired, and a delivery path that opens the pull request and then
+      # labels it leaves the opened run blind to a marker that already exists by
+      # the time the runner starts. Read the live labels as well, through the
+      # pulls endpoint the existing pull-requests: read token already covers.
+      # A read that does not answer falls back to the payload, never to marked:
+      # an unmarked pull request must still fail this check.
+      - name: Read the CI-validated marker
+        id: marker
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PAYLOAD_MARKED: ${{ contains(github.event.pull_request.labels.*.name, 'fm-ci-validated') }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          marked=$PAYLOAD_MARKED
+          if [ "$marked" != true ]; then
+            if live=$(gh api "repos/$REPOSITORY/pulls/$PR_NUMBER" --jq '.labels[].name'); then
+              if printf '%s\n' "$live" | grep -Fxq 'fm-ci-validated'; then
+                marked=true
+              fi
+            else
+              echo "::warning::Could not read this pull request's current labels; using the labels the event carried."
+            fi
+          fi
+          printf 'marked=%s\n' "$marked" >> "$GITHUB_OUTPUT"
       - name: Accept the deliberate CI-validated marker
-        if: ${{ contains(github.event.pull_request.labels.*.name, 'fm-ci-validated') }}
+        if: steps.marker.outputs.marked == 'true'
         run: echo "::notice::The fm-ci-validated label marks this PR as deliberately validated by this repository's own CI instead of the local no-mistakes pipeline, so the signature check is satisfied."
       - name: Verify no-mistakes signature and pipeline attestation
-        if: ${{ !contains(github.event.pull_request.labels.*.name, 'fm-ci-validated') }}
+        if: steps.marker.outputs.marked != 'true'
         uses: kunchenguid/no-mistakes/.github/actions/require-no-mistakes@f6441c96c352a18b9cadcaef6b6c7017e9ac3970 # v1.80.1
         with:
           exempt-authors: kunchenguid

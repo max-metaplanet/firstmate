@@ -175,15 +175,63 @@ test_a_refused_forge_write_fails_loudly() {
   pass "a forge read or write the script could not complete fails loudly and stops"
 }
 
+# A PATH carrying only what the script needs before it looks for the forge
+# tool: bash for the `/usr/bin/env bash` shebang, and dirname for the script's
+# own directory resolution. Linking the whole PATH minus one entry also works
+# but costs seconds per case, which is budget the validation agents need more
+# than this test does.
 test_reports_a_missing_forge_tool() {
-  local case_dir rc=0
+  local case_dir minbin rc=0 tool
   case_dir=$(make_case no-gh-axi)
-  rm -f "$case_dir/fakebin/gh-axi"
-  FM_TEST_CASE_DIR="$case_dir" PATH="$case_dir/fakebin:$(fm_test_base_path_sans "$BASE_PATH" gh-axi)" \
+  minbin="$case_dir/minbin"
+  mkdir -p "$minbin"
+  for tool in bash dirname; do
+    ln -s "$(command -v "$tool")" "$minbin/$tool" \
+      || fail "could not stage $tool for the missing-forge-tool case"
+  done
+  FM_TEST_CASE_DIR="$case_dir" PATH="$minbin" \
     "$MARKER_TOOL" "$PR_URL" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
   expect_code 1 "$rc" "a missing forge tool reported success"
   assert_grep "gh-axi" "$case_dir/stderr" "the refusal did not name the missing tool"
   pass "the script reports the forge tool it needs rather than silently doing nothing"
+}
+
+# The create path must carry the marker on the create call itself, so the
+# opening event already has it instead of gaining it moments later.
+test_create_mode_prints_the_label_argument_without_editing_a_pr() {
+  local case_dir rc=0
+  case_dir=$(make_case create-mode bug)
+  run_case "$case_dir" --for-create example-owner/example-repo || rc=$?
+  expect_code 0 "$rc" "the create argument could not be produced"$'\n'"$(cat "$case_dir/stderr")"
+  assert_equals "--label $MARKER" "$(cat "$case_dir/stdout")" \
+    "the create path did not print the argument the create call must carry"
+  assert_call "$case_dir" "^label create --name $MARKER .*--repo example-owner/example-repo\$" \
+    "the create path did not ensure the marker label exists first"
+  assert_no_grep "pr edit" "$case_dir/gh-axi.log" \
+    "the create path edited a pull request that does not exist yet"
+
+  case_dir=$(make_case create-mode-existing "$MARKER")
+  rc=0
+  run_case "$case_dir" --for-create example-owner/example-repo || rc=$?
+  expect_code 0 "$rc" "the create argument could not be produced beside an existing label"
+  assert_no_grep "label create" "$case_dir/gh-axi.log" \
+    "an existing marker label was created again on the create path"
+  pass "the create path ensures the label and prints the argument the create call carries"
+}
+
+test_create_mode_refuses_anything_but_one_repository() {
+  local case_dir rc=0 argument
+  case_dir=$(make_case create-mode-refusals)
+  for argument in "" "example-owner" "https://github.com/example-owner/example-repo" "a/b/c"; do
+    rc=0
+    run_case "$case_dir" --for-create "$argument" || rc=$?
+    expect_code 2 "$rc" "'--for-create $argument' was not refused"
+  done
+  rc=0
+  run_case "$case_dir" --for-create example-owner/example-repo extra || rc=$?
+  expect_code 2 "$rc" "a second --for-create argument was not refused"
+  assert_equals "" "$(cat "$case_dir/gh-axi.log")" "a refused create argument still called the forge"
+  pass "the create path refuses anything but one owner/repository"
 }
 
 test_reports_the_marker_it_applies
@@ -194,3 +242,5 @@ test_refuses_a_pull_request_on_another_forge
 test_refuses_a_malformed_url
 test_a_refused_forge_write_fails_loudly
 test_reports_a_missing_forge_tool
+test_create_mode_prints_the_label_argument_without_editing_a_pr
+test_create_mode_refuses_anything_but_one_repository
