@@ -3097,6 +3097,168 @@ test_presentation_lock_acquire_budget_and_distinct_failures() {
   pass "fm_backend_herdr_presentation_lock_acquire: bounded budget, and contention is distinct from an unresolved session"
 }
 
+# Exercise real owner directories and live holder processes. Only the sleep
+# cadence and the elapsed-time clock are virtual; role publication, liveness,
+# acquisition and release all use the production lock implementation.
+test_presentation_recovery_wait_requires_live_spawn_holder() (
+  . "$ROOT/bin/backends/herdr.sh"
+  . "$ROOT/bin/fm-wake-lib.sh"
+  dir="$TMP_ROOT/presentation-recovery-wait"
+  mkdir -p "$dir"
+  holder=
+  trap 'if [ -n "$holder" ]; then kill "$holder" 2>/dev/null || true; wait "$holder" 2>/dev/null || true; fi' EXIT
+  fm_backend_herdr_presentation_session_lock_path() { printf '%s/lock' "$dir"; }
+  # <role>: marked, unmarked, or later (publishes task-spawn once $dir/mark exists).
+  start_holder() {
+    rm -f "$dir/ready" "$dir/release" "$dir/mark" "$dir/marked"
+    (
+      fm_lock_try_acquire "$dir/lock" || exit 1
+      trap 'fm_lock_release "$dir/lock"' EXIT
+      if [ "$1" = marked ]; then
+        fm_lock_set_role "$dir/lock" task-spawn || exit 1
+      fi
+      touch "$dir/ready"
+      if [ "$1" = later ]; then
+        while [ ! -e "$dir/mark" ]; do command sleep 0.01; done
+        fm_lock_set_role "$dir/lock" task-spawn || exit 1
+        touch "$dir/marked"
+      fi
+      while [ ! -e "$dir/release" ]; do command sleep 0.01; done
+    ) &
+    holder=$!
+    wait_for "$dir/ready"
+  }
+  wait_for() {
+    local i
+    for ((i=0; i<200; i++)); do
+      [ -e "$1" ] && return 0
+      command sleep 0.01
+    done
+    fail "recovery lock holder did not reach ${1##*/}"
+  }
+  stop_holder() {
+    touch "$dir/mark" "$dir/release"
+    if [ -n "$holder" ]; then wait "$holder" || fail "recovery holder failed"; holder=; fi
+  }
+  # Each sleep is 0.1 virtual seconds, or a whole one for slow-* attempts.
+  # Re-pin after the real lock calls so their process work never moves the
+  # whole-second clock across a budget boundary.
+  pin_clock() {
+    # This fixture clock is intentionally scoped to the isolated subshell.
+    # shellcheck disable=SC2030
+    SECONDS=$((base + tenths / 10))
+  }
+  eval "real_$(declare -f fm_lock_try_acquire)"
+  eval "real_$(declare -f fm_backend_herdr_presentation_lock_spawn_holder)"
+  # Change the holder once, right after a failed attempt at $swap_tick and
+  # before the holder check reads the lock.
+  fm_lock_try_acquire() {
+    local rc=0
+    real_fm_lock_try_acquire "$@" || rc=$?
+    if [ "$rc" -ne 0 ] && [ -n "$holder" ] && [ "$swapped" = 0 ] && [ "$ticks" = "$swap_tick" ]; then
+      swapped=1
+      case "$scenario" in
+        released|slow-released) stop_holder ;;
+        transition-*) stop_holder; start_holder later ;;
+        turnover) stop_holder; start_holder marked ;;
+      esac
+    fi
+    pin_clock
+    return "$rc"
+  }
+  fm_backend_herdr_presentation_lock_spawn_holder() {
+    local rc=0
+    real_fm_backend_herdr_presentation_lock_spawn_holder "$@" || rc=$?
+    pin_clock
+    return "$rc"
+  }
+
+  for scenario in unmarked unreadable spawn released transition-early transition-late turnover ordinary deadline slow-ordinary slow-unmarked slow-unreadable slow-spawn slow-released; do
+    ticks=0 tenths=0 swapped=0
+    case "$scenario" in
+      released|transition-late|turnover) swap_tick=50 ;;
+      transition-early) swap_tick=47 ;;
+      slow-released) swap_tick=5 ;;
+      *) swap_tick=-1 ;;
+    esac
+    base=$SECONDS
+    case "$scenario" in
+      unmarked|slow-unmarked) start_holder unmarked ;;
+      unreadable|slow-unreadable)
+        start_holder unmarked
+        owner=$(fm_lock_link_owner "$dir/lock") || fail "recovery holder has no owner"
+        printf 'task-spawn\n' > "$owner/role"
+        chmod 000 "$owner/role"
+        ;;
+      *) start_holder marked ;;
+    esac
+    pin_clock
+    sleep() {
+      ticks=$((ticks + 1))
+      case "$scenario" in
+        # Reach the extension first, then advance a whole second per attempt.
+        deadline) if [ "$ticks" -gt 50 ]; then tenths=$((tenths + 10)); else tenths=$((tenths + 1)); fi ;;
+        # Each attempt costs a whole second, as on a heavily loaded host.
+        slow-*) tenths=$((tenths + 10)) ;;
+        *) tenths=$((tenths + 1)) ;;
+      esac
+      pin_clock
+      if [ "$scenario" = transition-early ] && [ "$ticks" -eq 48 ]; then
+        touch "$dir/mark"
+        wait_for "$dir/marked"
+      elif [ "$scenario" = slow-spawn ] && [ "$ticks" -eq 8 ]; then
+        stop_holder
+      elif [ "$scenario" != deadline ] && [ "$ticks" -eq 55 ]; then
+        stop_holder
+      fi
+    }
+    rc=0
+    if [ "$scenario" = ordinary ] || [ "$scenario" = slow-ordinary ]; then
+      fm_backend_herdr_presentation_lock_acquire fmtest || rc=$?
+    else
+      fm_backend_herdr_presentation_lock_acquire fmtest recovery || rc=$?
+    fi
+    case "$scenario" in
+      spawn|transition-early|turnover)
+        [ "$rc" = 0 ] && [ "$ticks" = 55 ] || fail "$scenario live spawn was not waited out: rc=$rc ticks=$ticks"
+        fm_lock_release "$FM_BACKEND_HERDR_PRESENTATION_LOCK"
+        ;;
+      released)
+        [ "$rc" = 0 ] && [ "$ticks" = 50 ] || fail "release before the holder check added a wait or refused the recovery: rc=$rc ticks=$ticks"
+        fm_lock_release "$FM_BACKEND_HERDR_PRESENTATION_LOCK"
+        ;;
+      transition-late)
+        [ "$rc" = 1 ] && [ "$ticks" = 50 ] || fail "unproven holder after the elapsed deadline got another wait: rc=$rc ticks=$ticks"
+        ;;
+      slow-released)
+        [ "$rc" = 0 ] && [ "$ticks" = 5 ] || fail "release at the elapsed deadline added a wait or refused recovery: rc=$rc ticks=$ticks"
+        fm_lock_release "$FM_BACKEND_HERDR_PRESENTATION_LOCK"
+        ;;
+      slow-spawn)
+        [ "$rc" = 0 ] && [ "$ticks" = 8 ] || fail "live spawn did not extend the elapsed recovery budget: rc=$rc ticks=$ticks"
+        fm_lock_release "$FM_BACKEND_HERDR_PRESENTATION_LOCK"
+        ;;
+      deadline)
+        [ "$rc" = 1 ] && [ "$ticks" -gt 50 ] && [ "$ticks" -le 80 ] || fail "live marked holder exceeded the recovery deadline: rc=$rc ticks=$ticks"
+        ;;
+      ordinary)
+        [ "$rc" = 1 ] && [ "$ticks" = 50 ] || fail "ordinary caller extended the default budget: rc=$rc ticks=$ticks"
+        ;;
+      slow-ordinary)
+        [ "$rc" = 1 ] && [ "$ticks" = 50 ] || fail "recovery deadline changed the ordinary attempt budget: rc=$rc ticks=$ticks"
+        ;;
+      slow-unmarked|slow-unreadable)
+        [ "$rc" = 1 ] && [ "$ticks" = 5 ] || fail "slow attempts kept a recovery behind an unproven holder past its elapsed deadline: rc=$rc ticks=$ticks"
+        ;;
+      *)
+        [ "$rc" = 1 ] && [ "$ticks" = 49 ] || fail "$scenario holder did not refuse within the default budget: rc=$rc ticks=$ticks"
+        ;;
+    esac
+    stop_holder
+  done
+  pass "presentation recovery extends only a live spawn hold and keeps a hard deadline"
+)
+
 test_endpoint_confirmed_gone_gates_on_structured_presence() {
   local out
   out=$(bash -c '
@@ -6368,6 +6530,7 @@ test_projection_order_missing_parent_is_read_only
 test_presentation_session_lock_path_is_shared_across_homes
 test_presentation_session_lock_path_rejects_malformed_socket
 test_presentation_lock_acquire_budget_and_distinct_failures
+test_presentation_recovery_wait_requires_live_spawn_holder || fail "presentation recovery lock regression failed"
 test_projection_order_rejects_malformed_socket
 test_projection_reclaim_refusal_matrix_is_non_mutating
 test_projection_reclaim_replaces_only_exact_husk_and_advances_binding

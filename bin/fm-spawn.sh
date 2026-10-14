@@ -161,8 +161,9 @@
 #   canonical socket, outside any home's state/) through launch handoff.
 #   On contention a create makes one bounded attempt and falls back to the
 #   ordinary flat layout before any projection mutation. A resume refuses by
-#   default on the same contention (it does not degrade flat; a concurrent
-#   resume is a hard failure). Pass --herdr-resume-lock-wait to opt that
+#   default on the same contention, except for the backend's bounded extension
+#   behind a live task-spawn holder (it never degrades flat).
+#   Pass --herdr-resume-lock-wait to opt that
 #   resume into waiting for the lock instead, so two concurrent recoveries
 #   can serialize and each still replace its own exact husk. The flag acts
 #   only on that fresh ship or scout spawn path: --relaunch reuses the
@@ -1597,7 +1598,7 @@ trap spawn_abort_cleanup EXIT
 # same session without writing any other home's state directory.
 # fm_backend_herdr_presentation_lock_acquire owns the bounded wait and the two
 # exit codes; this wrapper only records what was taken so spawn_abort_cleanup
-# releases it. <mode> is either an attempt budget passed through - omitting it
+# releases it. <mode> is either an attempt budget or `recovery` passed through - omitting it
 # keeps the adapter's opportunistic budget - or the literal `wait`, which makes
 # this call WAIT for the lock instead (`fm_lock_acquire_wait`, the same
 # unbounded-wait idiom this file already uses for its other fleet-shared
@@ -1614,6 +1615,7 @@ spawn_herdr_presentation_order_lock_acquire() {
     HERDR_PRESENTATION_ORDER_LOCK="$lock_path"
     fm_lock_acquire_wait "$HERDR_PRESENTATION_ORDER_LOCK"
     HERDR_PRESENTATION_ORDER_LOCK_HELD=1
+    fm_lock_set_role "$HERDR_PRESENTATION_ORDER_LOCK" task-spawn || true
     return 0
   fi
   if [ -n "$mode" ]; then
@@ -1624,6 +1626,7 @@ spawn_herdr_presentation_order_lock_acquire() {
   [ "$rc" -eq 0 ] || return "$rc"
   HERDR_PRESENTATION_ORDER_LOCK=$FM_BACKEND_HERDR_PRESENTATION_LOCK
   HERDR_PRESENTATION_ORDER_LOCK_HELD=1
+  fm_lock_set_role "$HERDR_PRESENTATION_ORDER_LOCK" task-spawn || true
   return 0
 }
 
@@ -4227,18 +4230,18 @@ else
           exit 1
         }
         HERDR_RECOVERY_LOCK_RC=0
-        # Refuse-by-default on contention. Wait only when the caller opted in
-        # with --herdr-resume-lock-wait (see header).
+        # Only a proven concurrent spawn earns the backend's bounded recovery
+        # extension. Unbounded waiting still requires the explicit flag.
         if [ "$HERDR_RESUME_LOCK_WAIT" = 1 ]; then
           spawn_herdr_presentation_order_lock_acquire "$HERDR_SES" wait || HERDR_RECOVERY_LOCK_RC=$?
         else
-          spawn_herdr_presentation_order_lock_acquire "$HERDR_SES" || HERDR_RECOVERY_LOCK_RC=$?
+          spawn_herdr_presentation_order_lock_acquire "$HERDR_SES" recovery || HERDR_RECOVERY_LOCK_RC=$?
         fi
         if [ "$HERDR_RECOVERY_LOCK_RC" -eq 2 ]; then
           echo "error: herdr presentation recovery could not resolve the running socket of its named session '$HERDR_SES', so it has no shared lock to serialize on; refusing the resume" >&2
           exit 1
         elif [ "$HERDR_RECOVERY_LOCK_RC" -ne 0 ]; then
-          echo "error: herdr presentation recovery could not acquire its session lock within the opportunistic budget and another spawn still held it; refusing a concurrent resume (pass --herdr-resume-lock-wait to wait instead)" >&2
+          echo "error: herdr presentation recovery could not acquire its session lock within the bounded recovery budget and another holder still held it; refusing a concurrent resume (pass --herdr-resume-lock-wait to wait instead)" >&2
           exit 1
         fi
         if [ -e "$STATE/$ID.meta" ] || [ -L "$STATE/$ID.meta" ]; then

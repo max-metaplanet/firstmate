@@ -1518,10 +1518,17 @@ ok - real Herdr lab validation completed on Herdr 0.8.0 with the default-session
 ```
 
 The projected spawn in that run used the historical empty opt-in file, so a home that had already enabled the projection keeps it without any migration step.
-One concurrent cross-home recovery case refused under contention on a loaded machine and passed on an immediate rerun; recovery-path presentation lock contention remains a deliberate hard refusal by default rather than a flat fallback, which default-on makes reachable from any Herdr home.
-Callers that need concurrent recoveries to serialize can pass `fm-spawn.sh --herdr-resume-lock-wait`.
-The flag applies to a fresh ship or scout spawn, and the multi-task path forwards it to each per-pair spawn.
-It has no effect on `--relaunch` and `--secondmate`, because those paths take no exact-resume presentation-order lock.
+The current recovery contention policy and explicit wait option are documented in [Herdr operational compromises](../herdr-backend.md#operational-compromises).
+The bounded extension was verified on 2026-10-14 with real lock-holder processes on macOS using `bash bin/fm-test-run.sh tests/fm-backend-herdr.test.sh`.
+This host lacked GNU `timeout`; a temporary command shim delegated the suite's `timeout 3s` probe to `fm-timeout-lib.sh`'s Bash fallback.
+The new regression accelerates sleep and advances the elapsed clock 0.1s per sleep, so 50 sleeps are five elapsed seconds, while using the real lock implementation for owner publication, liveness, acquisition, and release.
+It verifies a recovery waits beyond the ordinary budget only for a marked live spawn, including a new marked owner that replaces the previous one, survives a release at the elapsed deadline or a new holder publishing its role within the ordinary budget, refuses an unmarked or unreadable holder, or a new holder still unmarked after the elapsed deadline, without another sleep, leaves an ordinary caller's attempt budget unchanged even when attempts are slow, and cannot be kept waiting past its deadline by a marked holder.
+
+```text
+ok - fm_backend_herdr_presentation_lock_acquire: bounded budget, and contention is distinct from an unresolved session
+ok - presentation recovery extends only a live spawn hold and keeps a hard deadline
+FM_TEST_SUMMARY total=1 failed=0 skipped_gate=0 duration_ms=145235
+```
 That run measured the default-on projection on Herdr 0.8.0 only, while the focus-flash regression below was last run on 0.7.5 before the flip, so neither run covered a defective release under default-on projection; the version floor and the focus-flash suite's Part C close that gap.
 
 The restored-shell session-start cleanup ran on 2026-07-24 against Herdr 0.7.5 protocol 17:
