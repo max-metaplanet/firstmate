@@ -913,22 +913,26 @@ fm_backend_herdr_presentation_lock_spawn_holder() {  # <lock-path>
 # is nothing to serialize on and no attempt is made, while 1 means another
 # holder kept the lock for the whole budget.
 # <attempts> is in 0.1s units and defaults to 50 (5s), the opportunistic
-# budget for a caller that can give up and continue without the projection. A
+# budget for a caller that can give up and continue without the projection.
+# Each attempt also costs its own process work, so the budget additionally
+# ends once its nominal time (plus up to 1s of SECONDS granularity) has
+# elapsed; on a loaded host the attempt count alone can stretch 5s past 15s. A
 # recovery caller may pass `recovery` instead: after the ordinary budget it
 # retries only behind a live, owner-bound task-spawn role, with a 30s total
 # elapsed-time ceiling. Proof is checked from the last three ordinary attempts
 # on; three consecutive misses absorb a release or a new holder that has not
-# yet published its role, and an unproven holder refuses no later than an
-# ordinary caller would.
+# yet published its role, and an unproven holder refuses within the ordinary
+# budget, or two attempts after its elapsed time ends it.
 # The role uses the shared lock's existing owner directory and cleanup rules.
 
 fm_backend_herdr_presentation_lock_acquire() {  # <session> [attempts|recovery]
-  local session=$1 attempts=${2:-50} lock_path attempt=0 recovery=0 deadline=0 misses=0
+  local session=$1 attempts=${2:-50} lock_path attempt=0 recovery=0 deadline=0 misses=0 budget_end
   if [ "$attempts" = recovery ]; then
     attempts=50
     recovery=1
     deadline=$((SECONDS + 30))
   fi
+  budget_end=$((SECONDS + attempts / 10 + 1))
   FM_BACKEND_HERDR_PRESENTATION_LOCK=
   if ! declare -F fm_lock_try_acquire >/dev/null 2>&1; then
     # shellcheck source=bin/fm-wake-lib.sh
@@ -942,6 +946,12 @@ fm_backend_herdr_presentation_lock_acquire() {  # <session> [attempts|recovery]
     if fm_lock_try_acquire "$lock_path"; then
       FM_BACKEND_HERDR_PRESENTATION_LOCK=$lock_path
       return 0
+    fi
+    if [ "$attempt" -lt "$attempts" ] && [ "$SECONDS" -ge "$budget_end" ]; then
+      [ "$recovery" -eq 1 ] || return 1
+      # Elapsed time ended the ordinary budget early: spend its last three
+      # attempts on the holder proofs now.
+      [ "$attempt" -ge $((attempts - 3)) ] || attempts=$((attempt + 3))
     fi
     # The three proofs end on the last ordinary attempt, so an unproven holder
     # refuses within the ordinary budget rather than after it.

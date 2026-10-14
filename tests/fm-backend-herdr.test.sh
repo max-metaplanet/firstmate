@@ -3098,8 +3098,8 @@ test_presentation_lock_acquire_budget_and_distinct_failures() {
 }
 
 # Exercise real owner directories and live holder processes. Only the sleep
-# cadence is accelerated; role publication, liveness, acquisition and release
-# all use the production lock implementation.
+# cadence and the elapsed-time clock are virtual; role publication, liveness,
+# acquisition and release all use the production lock implementation.
 test_presentation_recovery_wait_requires_live_spawn_holder() (
   . "$ROOT/bin/backends/herdr.sh"
   . "$ROOT/bin/fm-wake-lib.sh"
@@ -3154,9 +3154,9 @@ test_presentation_recovery_wait_requires_live_spawn_holder() (
     return 1
   }
 
-  for scenario in unmarked unreadable spawn released transition ordinary deadline; do
+  for scenario in unmarked unreadable spawn released transition ordinary deadline slow-ordinary slow-unmarked; do
     case "$scenario" in
-      unmarked) start_holder unmarked ;;
+      unmarked|slow-unmarked) start_holder unmarked ;;
       unreadable)
         start_holder unmarked
         owner=$(fm_lock_link_owner "$dir/lock") || fail "recovery holder has no owner"
@@ -3166,20 +3166,26 @@ test_presentation_recovery_wait_requires_live_spawn_holder() (
       *) start_holder marked ;;
     esac
     ticks=0
+    # Pin the clock to sleep time so slow real attempts never end a budget.
+    clock=$SECONDS
     sleep() {
       ticks=$((ticks + 1))
-      if [ "$scenario" = deadline ]; then
+      case "$scenario" in
         # Reach the extension first, then advance its elapsed-time clock.
-        if [ "$ticks" -gt 50 ]; then SECONDS=$((SECONDS + 1)); fi
-      elif [ "$scenario" = transition ] && [ "$ticks" -eq 51 ]; then
+        deadline) if [ "$ticks" -gt 50 ]; then clock=$((clock + 1)); fi ;;
+        # Each attempt costs a whole second, as on a heavily loaded host.
+        slow-*) clock=$((clock + 1)) ;;
+      esac
+      SECONDS=$clock
+      if [ "$scenario" = transition ] && [ "$ticks" -eq 51 ]; then
         touch "$dir/mark"
         wait_for "$dir/marked"
-      elif [ "$ticks" -eq 55 ]; then
+      elif [ "$scenario" != deadline ] && [ "$ticks" -eq 55 ]; then
         stop_holder
       fi
     }
     rc=0
-    if [ "$scenario" = ordinary ]; then
+    if [ "$scenario" = ordinary ] || [ "$scenario" = slow-ordinary ]; then
       fm_backend_herdr_presentation_lock_acquire fmtest || rc=$?
     else
       fm_backend_herdr_presentation_lock_acquire fmtest recovery || rc=$?
@@ -3198,6 +3204,12 @@ test_presentation_recovery_wait_requires_live_spawn_holder() (
         ;;
       ordinary)
         [ "$rc" = 1 ] && [ "$ticks" = 50 ] || fail "ordinary caller extended the default budget: rc=$rc ticks=$ticks"
+        ;;
+      slow-ordinary)
+        [ "$rc" = 1 ] && [ "$ticks" = 6 ] || fail "slow attempts outlasted the default elapsed budget: rc=$rc ticks=$ticks"
+        ;;
+      slow-unmarked)
+        [ "$rc" = 1 ] && [ "$ticks" = 8 ] || fail "slow attempts kept a recovery behind an unmarked holder: rc=$rc ticks=$ticks"
         ;;
       *)
         [ "$rc" = 1 ] && [ "$ticks" = 49 ] || fail "$scenario holder did not refuse within the default budget: rc=$rc ticks=$ticks"
