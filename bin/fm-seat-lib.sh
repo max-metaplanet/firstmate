@@ -747,7 +747,7 @@ fm_seat_quota_live() {
 }
 
 # fm_seat_quota_json <config-dir>
-# One quota-axi read against a seat's own profile, printed raw. Returns 1 when
+# One fm_seat_quota_read of a seat's own profile, printed raw. Returns 1 when
 # the read could not be made, ran out of time, or did not parse, which every
 # caller must treat as "no verdict" rather than as any particular number.
 fm_seat_quota_json() {
