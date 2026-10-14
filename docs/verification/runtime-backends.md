@@ -638,6 +638,64 @@ skip-runner: pi-signed is not installed, so its pin check was not exercised
 
 The guard submits no prompt and spends no tokens, so it runs by default wherever a runner is installed; rerun it after every Claude or Pi upgrade.
 
+## Secondmate busy contract
+
+Verified 2026-09-22 on this host with Claude Code 2.1.278, OpenCode 1.18.31, Pi 0.86.1, and Grok 1.0.40.
+
+A tmux-backed secondmate's active-turn gate reads the parent home's semantic busy record.
+Launches of opencode, pi, pi-signed, and omp arm that record and load the same hook or extension an ordinary worker uses, and those hooks do not touch the parent's turn-ended marker.
+A Claude secondmate arms the same record through busy hooks in the parent home's `state/<id>.claude-settings.json`, passed as Claude Code's `--settings` file, and does not write the mate home's `.claude/settings.local.json`.
+That `--settings` load and the merge of its hook entries with the home's own hooks rest on Claude Code's documentation (<https://code.claude.com/docs/en/cli-reference>, <https://code.claude.com/docs/en/hooks>) and not on a live run recorded in this section: the sample output below predates the `--settings` mechanism.
+A Claude secondmate is the one exception on Stop: its home's tracked Stop guard is the only Stop writer, recording idle when it allows the Stop and busy when it blocks it into a continuation, because Claude runs Stop hooks in parallel.
+Claude Code 2.1.278 was probed live in a scratch project with logging `UserPromptSubmit` and `Stop` hooks.
+A synchronous Stop hook that exits 2 forced a continuation with no `UserPromptSubmit`, which is why the guard itself records busy when it blocks.
+An `asyncRewake` Stop hook that exited 2 six seconds after the turn ended woke a new turn, and `UserPromptSubmit` fired 45ms after that hook exited.
+So a secondmate turn started by the Stop auto-arm reopens busy through the same `UserPromptSubmit` hook as a typed prompt, and the auto-arm needs no busy writer of its own.
+
+```text
+# asyncRewake probe                # synchronous block probe
+ups    1790092380.194370578        ups   1790092417.676751768
+stop   1790092380.968402195        stop  1790092418.684176531
+rewake 1790092386.979819188        block 1790092418.692480013
+ups    1790092387.025050498        stop  1790092419.717886938
+stop   1790092388.953108486
+```
+Codex stays unverified.
+Grok keeps its rendered-tail verdict and gets no parent turn-end hook.
+Cursor's transcript sidecar is written for a secondmate the same way it is for an ordinary worker, and this host has no Cursor agent binary, so that path was not started.
+Kimi stays unarmed, and a secondmate still gets no parent turn-end token.
+
+The portable regression is `tests/fm-busy-adapter-wiring.test.sh`.
+It spawns those harnesses through the real `bin/fm-spawn.sh --secondmate` path on a fake tmux pane, drives the generated hook or extension, and runs the stall gate while the record is busy and again after it goes idle.
+
+The live guard is `tests/fm-secondmate-busy-contract-live-e2e.test.sh`.
+It runs by default wherever tmux is installed.
+`FM_SECONDMATE_BUSY_LIVE=1` forces an absent binary to fail rather than skip.
+The spawn pane is a sleeper, so the launch brief is never delivered to a model.
+Each installed armed harness is then started for real, with no prompt and no keystrokes.
+
+```sh
+bash tests/fm-secondmate-busy-contract-live-e2e.test.sh
+```
+
+```text
+# claude 2.1.278 (Claude Code): real process stayed up; pane tail classify=busy fm-spawn
+ok - claude 2.1.278 (Claude Code): a tmux secondmate spawn arms a busy verdict the active-turn gate can see
+# opencode 1.18.31: real process stayed up; pane tail classify=busy fm-spawn
+ok - opencode 1.18.31: a tmux secondmate spawn arms a busy verdict the active-turn gate can see
+# pi 0.86.1: real process stayed up; pane tail classify=unknown launch-prompt
+ok - pi 0.86.1: a tmux secondmate spawn arms a busy verdict the active-turn gate can see
+# skip: pi-signed is not installed on this machine, so its secondmate busy contract is unverified here
+# skip: omp is not installed on this machine, so its secondmate busy contract is unverified here
+ok - grok grok 1.0.40 (eb1a2256660d) [stable]: secondmate spawn stays unarmed and does not emit a parent turn-end
+# skip: codex is not installed on this machine, so its secondmate busy contract is unverified here
+# checked 4 harness(es); absent: pi-signed omp codex
+ok - secondmate busy contract live guard checked every installed harness
+```
+
+Pi's real parked pane classified `unknown launch-prompt`.
+That is the launch-prompt backstop: the same spawn's record classified `busy fm-spawn` for a non-prompt mid-turn tail, which is what the active-turn gate reads while a turn is in progress.
+
 ## Codex hook trust
 
 Verified 2026-09-16 on codex-cli 0.151.0, macOS arm64, in a fresh linked worktree of this repository.
@@ -1460,7 +1518,10 @@ ok - real Herdr lab validation completed on Herdr 0.8.0 with the default-session
 ```
 
 The projected spawn in that run used the historical empty opt-in file, so a home that had already enabled the projection keeps it without any migration step.
-One concurrent cross-home recovery case refused under contention on a loaded machine and passed on an immediate rerun; recovery-path presentation lock contention is a deliberate hard refusal rather than a flat fallback, which default-on now makes reachable from any Herdr home.
+One concurrent cross-home recovery case refused under contention on a loaded machine and passed on an immediate rerun; recovery-path presentation lock contention remains a deliberate hard refusal by default rather than a flat fallback, which default-on makes reachable from any Herdr home.
+Callers that need concurrent recoveries to serialize can pass `fm-spawn.sh --herdr-resume-lock-wait`.
+The flag applies to a fresh ship or scout spawn, and the multi-task path forwards it to each per-pair spawn.
+It has no effect on `--relaunch` and `--secondmate`, because those paths take no exact-resume presentation-order lock.
 That run measured the default-on projection on Herdr 0.8.0 only, while the focus-flash regression below was last run on 0.7.5 before the flip, so neither run covered a defective release under default-on projection; the version floor and the focus-flash suite's Part C close that gap.
 
 The restored-shell session-start cleanup ran on 2026-07-24 against Herdr 0.7.5 protocol 17:
@@ -1722,7 +1783,7 @@ ok - real herdr: a stale registration no longer blocks relaunch, and the endpoin
 ok - real herdr: an agent that does not stop fails closed instead of being reported as stopped
 ```
 
-The registry read through `herdr pane report-agent` is the same source `fm_backend_herdr_agent_state` classifies, and since 2026-09-10 that registration counts as an agent only while `pane process-info` shows a harness process behind it, so the guard backs the registration with a real process named like a harness (a symlink to `sleep`) and then stops that process, with no real harness launched.
+The registry read through `herdr pane report-agent` is the same source `fm_backend_herdr_agent_state` classifies, and since 2026-09-10 that registration counts as an agent only while `pane process-info` shows a harness process behind it, so the guard backs the registration with a real process named like a harness (using `fm_agent_standin` from [`tests/lib.sh`](../../tests/lib.sh)) and then stops that process, with no real harness launched.
 That command is the guard that refreshes this record; run it after every Herdr upgrade rather than trusting the version above.
 
 For Pi on Herdr 0.9.0, `herdr agent get` reflects whether the agent process remains live; its registration does not persist merely because the pane and parent shell do.
@@ -2560,3 +2621,35 @@ Without Firstmate's hooks, Herdr reported the question panel as `blocked`, which
 This live proof covers the watcher and queue boundary; it does not establish live daemon-consumer delivery.
 `bin/fm-test-run.sh tests/fm-daemon.test.sh` exercises that consumer routing separately with portable regressions for busy escalation and busy-bookkeeping failures in away and quiet mode.
 Repeat the hooked-worker check above before publication if watcher or task-inbox busy code changes; `bin/fm-test-run.sh tests/fm-task-inbox.test.sh` refreshes the portable ladder regressions.
+
+## Seat renewal capability boundary
+
+Verified on 2026-10-13 with Claude Code `2.1.296 (Claude Code)` and Codex `codex-cli 0.162.0` on macOS arm64.
+`bin/fm-seat-renew.py` owns renewal eligibility and `bin/fm-seat-vendor-renew.py` owns the vendor protocol, environment, and cancellation handling.
+`bash tests/fm-seat-renew-live-e2e.test.sh` checks the real installed vendors in fresh empty or synthetic homes, without a model request or access to live credential stores.
+The exact result was:
+
+```text
+ok - 2.1.296 (Claude Code): auth help exposes login
+ok - 2.1.296 (Claude Code): real doctor enters vendor refresh lock only for expired synthetic auth; network refused, no model call
+ok - 2.1.296 (Claude Code): owner scanner detects the real isolated doctor process
+ok - codex-cli 0.162.0: empty CODEX_HOME reports Not logged in without credential creation
+ok - codex-cli 0.162.0: installed app-server launcher retains inherited lease descriptor until exit
+ok - codex-cli 0.162.0: owner scanner detects the real isolated app-server
+ok - codex-cli 0.162.0: managed lease wrapper preserves native owner and agent-process classification
+ok - codex-cli 0.162.0: real initialize/account-read refresh protocol completed with empty auth and no model turn
+```
+
+The Claude comparison supplies synthetic expired and fresh OAuth records through a fake secure-store executable, blocks network traffic with a refused loopback proxy, and observes the vendor's actual refresh-lock directory during credential rereads.
+Only expired synthetic credentials enter that path; the fresh case is the counterfactual proving that an unrelated startup lock cannot satisfy the guard.
+The owner scan is also exercised while the actual vendor is held at a synthetic secure-store read.
+This synthetic secure-store proof currently requires macOS; other platforms explicitly skip it.
+Codex's generated `v2/GetAccountParams.json` declares the proactive managed-auth refresh field, and the real empty-auth protocol test sends only initialize, initialized, and account/read.
+The empty-home Codex check runs with `env -i`, so inherited API keys, auth selectors, and other configuration cannot answer for the selected `CODEX_HOME`.
+The managed Codex proof launches an empty-auth app-server under the real lease wrapper and checks native process classification without any backend lifecycle operation.
+`bash tests/fm-seat-vendor-renew.test.sh` returned `ok - vendor refresh sends no model request, preserves ambient Claude, rejects seat wrappers, and retains lease through cancellation`.
+That portable regression kills only a synthetic adapter fixture and proves its vendor child retains the inherited kernel lease until exit; it also exercises protocol rejection, signal deferral, ordinary Claude's unset secure-store selectors, and rejection of managed pipeline wrappers before execution.
+These checks do not spend or refresh a real account, and a completed vendor command still requires the renewal engine's read-only postverification.
+`bash tests/fm-seat-renew.test.sh` also launches a synthetic managed worker that leaves a daemon running and exits; guarded renewal then completes while that daemon stays alive, and the same run fails with `outcome: busy` when the wrapper does not unlock after its child exits.
+Its scheduling checks show ordinary Claude's default seat with an empty profile, no Codex row on a home without Codex, and one job for a default Codex home aliasing a named seat's `auth.json`.
+On the same date, `bash tests/fm-quota-claude-mod-plugin.test.sh` passed all 38 tests against Claude Code `2.1.296`, including renewal history in the installed quota mod integration.

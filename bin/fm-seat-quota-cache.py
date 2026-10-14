@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Private seat quota evidence cache; fm-seat-lib.sh remains the launch-policy owner.
 
-Usage: fm-seat-quota-cache.py PROFILE READ_BOUND FLOOR POLICY
+Usage: fm-seat-quota-cache.py PROFILE READ_BOUND FLOOR POLICY [PROVIDER]
 The existing bounded, non-renewing quota-axi transport runs under a
 per-profile kernel lock. Its public JSON stays unchanged; this helper returns a
 private envelope {report, note}. The public shell producer unwraps the report
@@ -9,8 +9,12 @@ without metadata. POLICY=raw serves rotation/login probes: they share fresh
 reads and backoff but keep their per-pass memo and never receive aged fallback.
 
 One machine-user cache lives at ~/.cache/firstmate-seat-quota (override with
-FM_SEAT_QUOTA_CACHE_ROOT for isolated tests). SHA-256 of the canonical profile
-directory plus the producer's NFC Keychain selector identifies a record.
+FM_SEAT_QUOTA_CACHE_ROOT for isolated tests). SHA-256 of the seat provider, the
+canonical profile directory, and the producer's NFC Keychain selector identifies
+a record, so claude and codex never share one. PROVIDER defaults to claude and
+is passed explicitly because FM_SEAT_PROVIDER reaches callers as a plain or
+local shell assignment that no child process inherits; the bounded transport is
+told the same provider this record is keyed to.
 Environment bearer overrides never store or reuse successful evidence; only their
 backoff is shared conservatively within the profile, without hashing any secret.
 An ambient selector differs from explicitly naming ~/.claude, and aliases with
@@ -185,14 +189,18 @@ def publish(path, record):
             os.unlink(name)
 
 
-def live(profile, bound, lock_fd):
+def live(profile, bound, lock_fd, provider):
     # Keep the existing producer, timeout, argument list, and JSON schema owner.
     script = Path(__file__).resolve().parent
     command = '. "$1/fm-timeout-lib.sh"; . "$1/fm-seat-lib.sh"; fm_seat_quota_live "$2"'
     read_deadline = int(time.time()) + bound
     if os.environ.get("FM_SEAT_READ_DEADLINE"):
         read_deadline = min(read_deadline, int(os.environ["FM_SEAT_READ_DEADLINE"]))
-    env = dict(os.environ, FM_SEAT_READ_DEADLINE=str(read_deadline))
+    # The caller's FM_SEAT_PROVIDER may be a plain or local shell assignment that
+    # never entered this process's environment, so the transport is told the
+    # provider this record is keyed to instead of re-deriving a claude default.
+    env = dict(os.environ, FM_SEAT_READ_DEADLINE=str(read_deadline),
+               FM_SEAT_PROVIDER=provider)
     env.pop("FM_SEAT_READ_MEMO_DIR", None)
     # The bounded transport inherits the lock: killing this coordinator cannot
     # permit another refresh while its already-started request is still running.
@@ -205,8 +213,10 @@ def live(profile, bound, lock_fd):
         return None
 
 
-def evidence(profile, bound, floor, policy):
-    canonical = Path(profile or Path.home() / ".claude").resolve()
+def evidence(profile, bound, floor, policy, provider="claude"):
+    if provider not in ("claude", "codex"):
+        raise ValueError("unsupported seat provider")
+    canonical = Path(profile or Path.home() / ("." + provider)).resolve()
     if policy != "raw" and profile and not canonical.is_dir():
         return {"report": None, "note": "source=hold profile-missing"}
     root = Path(os.environ.get("FM_SEAT_QUOTA_CACHE_ROOT", Path.home() / ".cache/firstmate-seat-quota"))
@@ -215,9 +225,13 @@ def evidence(profile, bound, floor, policy):
     # quota-axi/Claude hash the raw NFC selector for Keychain, not realpath.
     # Include both filesystem identity and secure-store identity; collapsing
     # aliases or the ambient/explicit default would merge distinct accounts.
-    storage = os.environ.get("CLAUDE_SECURESTORAGE_CONFIG_DIR") or profile or None
-    token_selected = bool(os.environ.get("CLAUDE_CODE_OAUTH_TOKEN", "").strip())
-    identity = [unicodedata.normalize("NFC", str(canonical)),
+    # The secure-store selector and ambient token are Claude's; a codex read is
+    # keyed by its own home, and the provider itself separates the two records
+    # so one profile path can never serve another provider's quota.
+    claude = provider == "claude"
+    storage = (os.environ.get("CLAUDE_SECURESTORAGE_CONFIG_DIR") if claude else None) or profile or None
+    token_selected = claude and bool(os.environ.get("CLAUDE_CODE_OAUTH_TOKEN", "").strip())
+    identity = [provider, unicodedata.normalize("NFC", str(canonical)),
                 unicodedata.normalize("NFC", storage) if storage else None, token_selected]
     key = hashlib.sha256(json.dumps(identity).encode()).hexdigest()
     path = root / (key + ".json")
@@ -265,7 +279,8 @@ def evidence(profile, bound, floor, policy):
         elif not locked or deadline - time.monotonic() <= 0:
             report, failure = None, "cache-lock-timeout"
         else:
-            report = live(profile, max(1, math.ceil(deadline - time.monotonic())), stream.fileno())
+            report = live(profile, max(1, math.ceil(deadline - time.monotonic())),
+                          stream.fileno(), provider)
             failure = "live"
             now = time.time()
             retry = instant(row(report).get("state", {}).get("retryAfter"))
@@ -306,7 +321,8 @@ def evidence(profile, bound, floor, policy):
 
 def main():
     try:
-        answer = evidence(sys.argv[1], int(sys.argv[2]), float(sys.argv[3]), sys.argv[4])
+        answer = evidence(sys.argv[1], int(sys.argv[2]), float(sys.argv[3]), sys.argv[4],
+                          sys.argv[5] if len(sys.argv) > 5 else "claude")
     except (OSError, ValueError, TypeError, KeyError, AttributeError, OverflowError):
         answer = {"report": None, "note": "source=hold cache-unreadable"}
     print(json.dumps(answer, allow_nan=False))

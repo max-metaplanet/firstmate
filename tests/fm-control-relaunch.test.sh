@@ -242,7 +242,7 @@ run_control() {  # <case-dir> <args...>
   env -u HERDR_ENV -u HERDR_PANE_ID -u HERDR_SESSION -u HERDR_SOCKET_PATH \
     -u HERDR_TAB_ID -u HERDR_WORKSPACE_ID \
     PATH="$dir/fakebin:$PATH" FM_HOME="$dir/home" FM_FAKE_DIR="$dir/fake" \
-    HOME="$dir/user-home" CLAUDE_CONFIG_DIR="${FM_TEST_CLAUDE_CONFIG_DIR:-}" \
+    HOME="$dir/user-home" CODEX_HOME="${FM_TEST_CODEX_HOME:-}" CLAUDE_CONFIG_DIR="${FM_TEST_CLAUDE_CONFIG_DIR:-}" \
     FM_SPAWN_NO_GUARD=1 GROK_HOME="$dir/grokhome" \
     FM_CONTROL_POLL=0.01 FM_CONTROL_EXIT_WAIT=0.05 FM_CONTROL_LAUNCH_WAIT=0.05 \
     FM_REAL_GIT="${FM_REAL_GIT:-}" FM_FAKE_GIT_FAILURE="${FM_FAKE_GIT_FAILURE:-}" \
@@ -264,7 +264,7 @@ run_spawn() {  # <case-dir> <args...>
   env -u HERDR_ENV -u HERDR_PANE_ID -u HERDR_SESSION -u HERDR_SOCKET_PATH \
     -u HERDR_TAB_ID -u HERDR_WORKSPACE_ID \
     PATH="$dir/fakebin:$PATH" FM_HOME="$dir/home" FM_FAKE_DIR="$dir/fake" \
-    HOME="$dir/user-home" CLAUDE_CONFIG_DIR='' \
+    HOME="$dir/user-home" CODEX_HOME="${FM_TEST_CODEX_HOME:-}" CLAUDE_CONFIG_DIR='' \
     FM_SPAWN_NO_GUARD=1 GROK_HOME="$dir/grokhome" \
     "$SPAWN" "$@" 2>&1
 }
@@ -1047,6 +1047,54 @@ test_worker_account_pin_follows_the_relaunch() {
   pass "fm-control relaunch: the replacement follows the home's current worker account pin"
 }
 
+test_pi_exclude_tools_follow_the_relaunch() {
+  local dir out rc id=rl-pi-excl
+  dir=$(new_case pi-exclude "$id")
+  add_ship_task "$dir" "$id" pi
+  printf pi > "$dir/fake/command"
+  printf pi > "$dir/fake/becomes"
+  printf '#!/usr/bin/env bash\nprintf "Options: --tui-mode\\n"\n' > "$dir/fakebin/pi"
+  chmod +x "$dir/fakebin/pi"
+  mkdir -p "$dir/home/config"
+  printf '%s\n' '# hide writes' 'mcp__srv__writeTool' 'mcp__srv__adminTool' > "$dir/home/config/crew-exclude-tools"
+  out=$(run_control "$dir" "$id" relaunch --note "keep exclusions"); rc=$?
+  expect_code 0 "$rc" "a Pi relaunch with exclusions should succeed"$'\n'"$out"
+  assert_contains "$(cat "$dir/fake/literal")" "--exclude-tools 'mcp__srv__writeTool,mcp__srv__adminTool'" \
+    "the relaunched Pi worker must keep the home's tool exclusions"
+  rm "$dir/home/config/crew-exclude-tools"
+  : > "$dir/fake/literal"
+  printf pi > "$dir/fake/command"
+  out=$(run_control "$dir" "$id" relaunch --note "exclusions removed"); rc=$?
+  expect_code 0 "$rc" "a Pi relaunch after the file is removed should succeed"$'\n'"$out"
+  assert_not_contains "$(cat "$dir/fake/literal")" "--exclude-tools" \
+    "a relaunch without the file must launch with no exclusions"
+  pass "fm-control relaunch: a Pi replacement keeps the home's tool exclusions"
+}
+
+test_exclude_tools_refusals_happen_before_the_agent_stops() {
+  local dir out rc id=rl-excl-refuse
+  dir=$(new_case excl-refuse "$id")
+  add_ship_task "$dir" "$id" pi
+  printf pi > "$dir/fake/command"
+  printf pi > "$dir/fake/becomes"
+  printf '#!/usr/bin/env bash\nprintf "Options: --tui-mode\\n"\n' > "$dir/fakebin/pi"
+  chmod +x "$dir/fakebin/pi"
+  mkdir -p "$dir/home/config"
+  printf '%s\n' 'two words' > "$dir/home/config/crew-exclude-tools"
+  out=$(run_control "$dir" "$id" relaunch --note "bad list"); rc=$?
+  expect_code 1 "$rc" "a malformed exclusion list must refuse the relaunch"
+  assert_contains "$out" "config/crew-exclude-tools has a malformed entry" "refusal must name the entry"
+  [ "$(cat "$dir/fake/command")" = pi ] || fail "a malformed exclusion list stopped the running agent"
+  [ ! -s "$dir/fake/literal" ] || fail "a refused relaunch sent lifecycle input"
+  printf '%s\n' 'mcp__srv__writeTool' > "$dir/home/config/crew-exclude-tools"
+  out=$(run_control "$dir" "$id" relaunch --harness codex --note "switch runtime"); rc=$?
+  expect_code 1 "$rc" "relaunching onto a runtime that cannot hide tools must refuse"
+  assert_contains "$out" "config/crew-exclude-tools" "refusal must name the config file"
+  [ "$(cat "$dir/fake/command")" = pi ] || fail "an unhonorable exclusion list stopped the running agent"
+  [ ! -s "$dir/fake/literal" ] || fail "a refused relaunch sent lifecycle input"
+  pass "fm-control relaunch: exclusion-list refusals happen before the running agent stops"
+}
+
 test_explicit_model_wins_over_the_recorded_one() {
   local dir out rc
   dir=$(new_case explicit rl7)
@@ -1229,6 +1277,49 @@ test_secondmate_relaunch_picks_up_the_configured_harness_pin() {
     || fail "the configured effort token should come with the pin"
   assert_not_contains "$out" "not a verified harness" "codex is a verified harness"
   pass "fm-control relaunch: a secondmate relaunch re-resolves its durable configured harness pin"
+}
+
+test_secondmate_claude_relaunch_keeps_local_settings() {
+  local dir home prior settings out rc
+  dir=$(new_case smlocal sml)
+  home="$dir/home"
+  mkdir -p "$home/config" "$home/data/sml"
+  printf 'codex\n' > "$home/config/secondmate-harness"
+  printf '# secondmate brief\n' > "$home/data/sml/brief.md"
+  fm_git_worktree "$dir/proj" "$dir/smhome" sm-local-branch
+  mkdir -p "$dir/smhome/state" "$dir/smhome/data" "$dir/smhome/bin" "$dir/smhome/.claude"
+  printf 'sml\n' > "$dir/smhome/.fm-secondmate-home"
+  printf '# agents\n' > "$dir/smhome/AGENTS.md"
+  prior='{"permissions":{"allow":["Bash(echo hi)"]}}'
+  printf '%s\n' "$prior" > "$dir/smhome/.claude/settings.local.json"
+  printf '%s\n' '{"feedbackDrafts":"on"}' > "$home/state/sml.claude-settings.json"
+  printf 'gen=retired\n' > "$dir/smhome/.fm-busy-stop"
+  {
+    echo "window=fmses:fm-sml"
+    echo "endpoint_task_id=sml"
+    echo "worktree=$dir/smhome"
+    echo "project=$dir/smhome"
+    echo "harness=claude"
+    echo "kind=secondmate"
+    echo "mode=secondmate"
+    echo "yolo=off"
+    echo "model=default"
+    echo "effort=default"
+    echo "home=$dir/smhome"
+  } > "$home/state/sml.meta"
+  printf '%s\n' "fm-sml" > "$dir/fake/windows"
+  printf '%s' "$dir/smhome" > "$dir/fake/cwd"
+  printf 'codex' > "$dir/fake/becomes"
+  out=$(run_control "$dir" sml relaunch); rc=$?
+  expect_code 0 "$rc" "a claude secondmate relaunch should retire wiring without touching local settings"$'\n'"$out"
+  settings="$dir/smhome/.claude/settings.local.json"
+  [ "$(cat "$settings")" = "$prior" ] \
+    || fail "relaunch rewrote the mate home's settings.local.json"
+  [ ! -e "$home/state/sml.claude-settings.json" ] \
+    || fail "relaunch left the retired claude settings file in place"
+  [ ! -e "$dir/smhome/.fm-busy-stop" ] \
+    || fail "relaunch left the retired Stop pointer in the mate home"
+  pass "fm-control relaunch: a claude secondmate keeps settings.local.json and retires the state settings file and the Stop pointer"
 }
 
 test_secondmate_relaunch_ignores_invalid_configured_effort_before_stop() {
@@ -2875,6 +2966,8 @@ test_relaunch_from_claude_onto_another_harness_drops_the_seat
 test_native_ultra_relaunch_preserves_profile_and_rejects_before_stop
 test_signed_out_worker_account_pin_refuses_before_stop
 test_worker_account_pin_follows_the_relaunch
+test_pi_exclude_tools_follow_the_relaunch
+test_exclude_tools_refusals_happen_before_the_agent_stops
 test_explicit_model_wins_over_the_recorded_one
 test_relaunch_onto_an_unverified_harness_is_refused
 test_prior_harness_turnend_registry_entry_is_cleared
@@ -2882,6 +2975,7 @@ test_wiring_removal_failure_refuses_before_replacement_arm
 test_turnend_auth_paths_are_owned_by_the_control_adapter
 test_parked_secondmate_spawn_continuity
 test_secondmate_relaunch_picks_up_the_configured_harness_pin
+test_secondmate_claude_relaunch_keeps_local_settings
 test_secondmate_relaunch_ignores_invalid_configured_effort_before_stop
 test_secondmate_relaunch_onto_a_crewmate_only_adapter_refuses_before_stop
 test_explicit_secondmate_harness_ignores_configured_profile_axes
@@ -2940,3 +3034,60 @@ test_relaunch_seat_override_is_transactional
 test_relaunch_invalid_seat_changes_nothing
 
 test_relaunch_seat_override_respects_account_pin
+
+
+test_codex_relaunch_keeps_recorded_store() {
+  local dir out rc
+  dir=$(new_case codex-seatkeep codex-seatkeep)
+  add_ship_task "$dir" codex-seatkeep codex
+  printf 'codex\n' > "$dir/fake/becomes"
+  mkdir -p "$dir/seats/work" "$dir/seats/spare" "$dir/home/config"
+  printf 'codex_seat=%s\n' "$dir/seats/work" >> "$dir/home/state/codex-seatkeep.meta"
+  printf '%s\n' "$dir/seats" > "$dir/home/config/codex-seats-root"
+  printf 'spare\n' > "$dir/home/config/codex-seat"
+  out=$(run_control "$dir" codex-seatkeep relaunch --note "continue preserved work"); rc=$?
+  expect_code 0 "$rc" "Codex relaunch should preserve its store: $out"
+  assert_grep "CODEX_HOME='$dir/seats/work'" "$dir/fake/literal" "Codex relaunch must keep task profile"
+  [ "$(meta_field "$dir" codex-seatkeep codex_seat)" = "$dir/seats/work" ] || fail "Codex store changed after home switch"
+  assert_no_grep "$dir/seats/spare" "$dir/fake/literal" "Codex relaunch must not follow active seat"
+  pass "Codex relaunch retains recorded store across home switches"
+}
+test_codex_relaunch_keeps_recorded_store
+
+
+test_codex_relaunch_seat_override_and_missing_store() {
+  local dir out rc before
+  dir=$(new_case codex-seatmove codex-seatmove)
+  add_ship_task "$dir" codex-seatmove codex
+  printf 'codex\n' > "$dir/fake/becomes"
+  mkdir -p "$dir/seats/work" "$dir/seats/spare" "$dir/home/config"
+  printf 'codex_seat=%s\n' "$dir/seats/work" >> "$dir/home/state/codex-seatmove.meta"
+  printf '%s\n' "$dir/seats" > "$dir/home/config/codex-seats-root"
+  printf 'work\n' > "$dir/home/config/codex-seat"
+  cat > "$dir/fakebin/quota-axi" <<'QUOTA'
+#!/usr/bin/env bash
+printf '%s\n' '{"schemaVersion":5,"providers":[{"provider":"codex","source":"oauth","state":{"status":"fresh"}}]}'
+QUOTA
+  chmod +x "$dir/fakebin/quota-axi"
+  out=$(run_control "$dir" codex-seatmove relaunch --seat spare --note "move preserved work"); rc=$?
+  expect_code 0 "$rc" "Codex explicit seat move should succeed: $out"
+  assert_grep "CODEX_HOME='$dir/seats/spare'" "$dir/fake/literal" "Codex explicit move must use destination"
+  [ "$(meta_field "$dir" codex-seatmove codex_seat)" = "$dir/seats/spare" ] || fail "Codex destination not recorded"
+  [ "$(awk -F= '$1 == "codex_seat" { n++ } END { print n+0 }' "$dir/home/state/codex-seatmove.meta")" = 1 ] || fail "Stale Codex store duplicated in record"
+  [ "$(journal_field "$dir" codex-seatmove from_seat)" = "$dir/seats/work" ] || fail "Codex prior store not journaled"
+  [ "$(journal_field "$dir" codex-seatmove to_seat)" = "$dir/seats/spare" ] || fail "Codex target store not journaled"
+  assert_grep work "$dir/home/config/codex-seat" "Explicit move must preserve home's active selection"
+  mv "$dir/seats/spare" "$dir/seats/moved-spare"
+  before=$(cat "$dir/home/state/codex-seatmove.meta")
+  out=$(run_control "$dir" codex-seatmove relaunch --note "missing store"); rc=$?
+  [ "$rc" -ne 0 ] || fail "Missing recorded Codex store accepted"
+  assert_contains "$out" 'recorded Codex home is missing' "Missing store should refuse before stopping"
+  [ "$(cat "$dir/home/state/codex-seatmove.meta")" = "$before" ] || fail "Missing-store refusal changed task record"
+  mv "$dir/seats/moved-spare" "$dir/seats/spare"
+  printf 'claude\n' > "$dir/fake/becomes"
+  out=$(run_control "$dir" codex-seatmove relaunch --harness claude --note "change vendor"); rc=$?
+  expect_code 0 "$rc" "Codex-to-Claude move should succeed: $out"
+  assert_no_grep 'codex_seat=' "$dir/home/state/codex-seatmove.meta" "Harness change must drop Codex store"
+  pass "Codex explicit moves journal both stores and missing stores refuse before stopping"
+}
+test_codex_relaunch_seat_override_and_missing_store

@@ -202,7 +202,15 @@ CHANGED_DEFAULT_TIMEOUT_SECS=1500
 
 # How many separate-runner shards the portable serial remainder splits into.
 # One owner: CI lane names carry this count and are refused when they disagree.
-PORTABLE_SERIAL_SHARDS=9
+# 16 is the knee of the LPT packing below, not a round number. The lane holds
+# about 180 minutes of measured work, and at 16 bins every shard the packing can
+# balance lands at or under 10 minutes while only the two indivisible scripts
+# stay above it: tests/fm-supervision-host.test.sh at about 22.6 minutes and
+# tests/fm-watch-triage.test.sh at about 17.9 minutes. Past 16 the third-largest
+# bin stops shrinking because it holds one 7.7-minute script, so more shards buy
+# queue contention and no wall time. Cutting the lane below those two scripts
+# needs their runtime addressed, not more bins.
+PORTABLE_SERIAL_SHARDS=16
 
 # Conservative balance hint for a portable-serial script with no measurement.
 # Rounded above the current CI mean, including the capability-skipped scripts.
@@ -294,7 +302,7 @@ family_for_basename() {
   case "$1" in
     fm-arm-pretool-check.test.sh|fm-ask-user-authority.test.sh|\
     fm-bearings-board.test.sh|\
-    fm-brief.test.sh|fm-dod-lib.test.sh|fm-vendor-auth-probe.test.sh|\
+    fm-brief.test.sh|fm-dod-lib.test.sh|fm-vendor-auth-probe.test.sh|fm-seat-renew.test.sh|fm-seat-lock.test.sh|fm-seat-vendor-renew.test.sh|\
     fm-calm-pi-extension.test.sh|fm-cd-pretool-check.test.sh|\
     fm-classify-decision-key.test.sh|\
     fm-composer-ghost.test.sh|fm-composer-lib.test.sh|\
@@ -306,7 +314,7 @@ family_for_basename() {
     fm-lint-workflows.test.sh|\
     fm-operational-input.test.sh|fm-pi-primary-types.test.sh|\
     fm-calm-claude-mod.test.sh|fm-quota-claude-mod.test.sh|fm-fleet-mod.test.sh|\
-    fm-harness-adapter-references.test.sh|\
+    fm-harness-adapter-references.test.sh|fm-project-mode.test.sh|\
     fm-send-popup-settle.test.sh|fm-send-settle.test.sh|\
     fm-subagent-pretool-check.test.sh|\
     fm-supervision-instructions.test.sh|fm-task-delivery.test.sh|\
@@ -376,7 +384,7 @@ family_for_basename() {
     fm-pi-seeded-home-trust-live-e2e.test.sh|\
     fm-herdr-version-floor-live-e2e.test.sh|\
     fm-herdr-pi-stale-registration-live-e2e.test.sh|\
-    fm-worker-account-live-e2e.test.sh|\
+    fm-worker-account-live-e2e.test.sh|fm-seat-renew-live-e2e.test.sh|\
     fm-operational-marker-live-e2e.test.sh|\
     fm-opencode-primary-live-e2e.test.sh|fm-pi-branch-live-e2e.test.sh|\
     fm-pi-branch-responsiveness-live-e2e.test.sh|\
@@ -387,6 +395,7 @@ family_for_basename() {
     fm-host-mirror-live-e2e.test.sh|\
     fm-quota-array-dispatch-live-e2e.test.sh|fm-send-secondmate-marker-herdr-e2e.test.sh|\
     fm-send-inbox-doorbell-live-e2e.test.sh|\
+    fm-secondmate-busy-contract-live-e2e.test.sh|\
     fm-calm-claude-mod-plugin.test.sh|fm-calm-claude-mod-live-e2e.test.sh|\
     fm-calm-pi-queue-retention-live-e2e.test.sh|\
     fm-quota-claude-mod-plugin.test.sh|fm-fleet-mod-plugin.test.sh|\
@@ -405,6 +414,7 @@ family_for_basename() {
     fm-trace-context-spawn.test.sh|fm-spawn-worktree-settle.test.sh|\
     fm-spawn-compact-adviser-disable.test.sh|\
     fm-spawn-compact-adviser-disable-remote.test.sh|\
+    fm-project-capacity.test.sh|\
     fm-teardown-endpoint-safety.test.sh)
       printf '%s\n' backend-dispatch
       ;;
@@ -848,6 +858,7 @@ tests/fm-rovo-harness.test.sh 16379
 tests/fm-rovo-signals-live-e2e.test.sh 78
 tests/fm-seat-board.test.sh 4170
 tests/fm-seat.test.sh 167164
+tests/fm-secondmate-busy-contract-live-e2e.test.sh 90000
 tests/fm-secondmate-harness.test.sh 204639
 tests/fm-secondmate-lifecycle-e2e.test.sh 11920
 tests/fm-secondmate-liveness.test.sh 27406
@@ -1561,6 +1572,13 @@ families_for_changed_path() {
       printf '%s\n' "__script__:fm-seat-board.test.sh"
       printf '%s\n' "__script__:fm-control-relaunch.test.sh"
       printf '%s\n' "__script__:fm-lead-restart.test.sh"
+      ;;
+    bin/fm-seat-renew.sh|bin/fm-seat-renew-lib.sh|bin/fm-seat-renew.py|bin/fm-seat-lock.py|bin/fm-seat-vendor-renew.py)
+      printf '%s\n' "__script__:fm-seat-renew.test.sh"
+      printf '%s\n' "__script__:fm-seat-lock.test.sh"
+      printf '%s\n' "__script__:fm-seat-vendor-renew.test.sh"
+      printf '%s\n' "__script__:fm-seat-renew-live-e2e.test.sh"
+      printf '%s\n' "__script__:fm-seat-board.test.sh"
       ;;
     bin/fm-seat-board.sh)
       # The board owns the per-seat quota cache, and its `json` action is what the

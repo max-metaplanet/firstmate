@@ -15,7 +15,8 @@
 # also accepting unlanded edits to the same paths.
 #
 # Callers pass the copy, its project, the branch, and any PR URL they already
-# hold. The resolved PR URL comes back in FM_UNLANDED_PR_URL, because resolving
+# hold. A caller that can record a Forgejo pull request sources
+# bin/fm-pr-lib.sh first, so the Forgejo read below is available to it. The resolved PR URL comes back in FM_UNLANDED_PR_URL, because resolving
 # a merged PR from a branch name is worth recording once rather than twice.
 
 # shellcheck disable=SC2034 # Output global, read by the sourcing caller.
@@ -45,6 +46,10 @@ fm_unlanded_pr_number_from_target() {  # <pr-url-or-number>
     '' ) return 1 ;;
     *"/pull/"*)
       n=${target##*/pull/}
+      n=${n%%[!0-9]*}
+      ;;
+    *"/pulls/"*)  # Forgejo addresses pulls as /pulls/<n> and serves refs/pull/<n>/head.
+      n=${target##*/pulls/}
       n=${n%%[!0-9]*}
       ;;
     [0-9]*)
@@ -126,17 +131,31 @@ fm_unlanded_pr_is_merged() {  # <copy> <branch> <pr-url>
     target=$(fm_unlanded_pr_number_from_branch "$copy" "$branch") || return 1
   fi
   [ -n "$target" ] || return 1
-  view=$(cd "$copy" && gh pr view "$target" --json state,headRefOid,url -q '.state + "\t" + .headRefOid + "\t" + .url' 2>/dev/null) || return 1
-  state=${view%%$'\t'*}
-  remainder=${view#*$'\t'}
-  [ "$state" != "$view" ] || return 1
-  head=${remainder%%$'\t'*}
-  resolved_url=${remainder#*$'\t'}
-  [ "$head" != "$remainder" ] || return 1
-  case "$state" in
-    MERGED|merged) ;;
-    *) return 1 ;;
-  esac
+  # A recorded Forgejo pull request is read through tea, which is the only
+  # client that can answer for that instance; everything else goes to GitHub.
+  # With bin/fm-pr-lib.sh not loaded, a Forgejo URL falls through to the GitHub
+  # read and fails, which this file's conservative direction reports as "not
+  # landed" rather than as landed.
+  if declare -F fm_pr_url_parse >/dev/null 2>&1 \
+    && fm_pr_url_parse "$target" && [ "$FM_PR_PROVIDER" = forgejo ]; then
+    fm_pr_forgejo_read_record "$FM_PR_HOST" "$FM_PR_PATH" "$FM_PR_NUMBER" || return 1
+    [ "$FM_PR_RECORD_MERGED" = true ] || return 1
+    head=$FM_PR_RECORD_HEAD
+    fm_pr_head_valid "$head" || return 1
+    resolved_url=$FM_PR_URL
+  else
+    view=$(cd "$copy" && gh pr view "$target" --json state,headRefOid,url -q '.state + "\t" + .headRefOid + "\t" + .url' 2>/dev/null) || return 1
+    state=${view%%$'\t'*}
+    remainder=${view#*$'\t'}
+    [ "$state" != "$view" ] || return 1
+    head=${remainder%%$'\t'*}
+    resolved_url=${remainder#*$'\t'}
+    [ "$head" != "$remainder" ] || return 1
+    case "$state" in
+      MERGED|merged) ;;
+      *) return 1 ;;
+    esac
+  fi
   [ -n "$head" ] || return 1
   fm_unlanded_ensure_commit_object "$copy" "$target" "$head" || return 1
   current=$(git -C "$copy" rev-parse --verify HEAD 2>/dev/null) || return 1

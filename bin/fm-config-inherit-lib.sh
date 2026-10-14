@@ -8,7 +8,10 @@
 # spawn on codex too, primary config/backlog-backend=manual makes that home
 # hand-edit backlog files too, primary config/backend pins that home's local
 # runtime-backend default for future spawns, primary config/startup-memory-budget
-# bounds that home's startup-memory curation, and primary
+# bounds that home's startup-memory curation, primary config/firstmate-role
+# carries the primary's resolved firstmate-repository role with a
+# proof-of-state receipt (so a secondmate inherits only what the primary
+# resolves), and primary
 # config/herdr-presentation-spaces carries the same Herdr presentation-projection
 # preference - an absent primary file and an absent destination file both mean
 # the same unconfigured default, so the generic absence mirror below converges
@@ -51,7 +54,7 @@
 # and is re-pushed on every convergence, so the fleet stays converged on the
 # primary; an item the primary does not set is mirrored as absence downstream.
 # The one exception is a destination home that declines the machine-local seat
-# items through FM_SEAT_LOCAL_OPTOUT_FILE below, which is a home's own billing
+# items through the <provider>-seat-local file below, which is a home's own billing
 # choice rather than a value the primary could hold for it.
 # After successful config/* changes under an already-running secondmate, callers
 # invoke fm_config_send_reread_nudge so the live agent re-reads exact post-write
@@ -75,6 +78,8 @@
 #
 # shellcheck source=bin/fm-startup-memory-budget-lib.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/fm-startup-memory-budget-lib.sh"
+# shellcheck source=bin/fm-role-lib.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/fm-role-lib.sh"
 
 # The one shared data file in this inheritance contract. There is deliberately
 # no shared learnings file.
@@ -85,14 +90,28 @@ FM_SHARED_CAPTAIN_MODE="444"
 # The declared inheritable set (space-separated, config-dir-relative item paths).
 # Extend here to inherit more of the primary's local config; override via the
 # environment only in tests. Items must not contain whitespace.
-FM_INHERITABLE_CONFIG="${FM_INHERITABLE_CONFIG:-crew-dispatch.json dispatch-never-send crew-harness backlog-backend backend herdr-presentation-spaces startup-memory-budget trace-context launch-env-allowlist claude-permission-mode lavish-axi-host keep-ai-trailers supervision-host-off claude-seat claude-seats-root claude-seat-threshold claude-seat-destination-min claude-seat-extra-usage claude-seat-auto-exclude claude-seat-floor claude-seat-floor-readd claude-seat-floor-dwell claude-seat-session-share claude-seat-resting}"
+FM_INHERITABLE_CONFIG="${FM_INHERITABLE_CONFIG:-crew-dispatch.json dispatch-never-send crew-harness backlog-backend backend herdr-presentation-spaces startup-memory-budget trace-context launch-env-allowlist claude-permission-mode lavish-axi-host keep-ai-trailers supervision-host-off firstmate-role claude-seat claude-seats-root claude-seat-threshold claude-seat-destination-min claude-seat-extra-usage claude-seat-auto-exclude claude-seat-floor claude-seat-floor-readd claude-seat-floor-dwell claude-seat-session-share claude-seat-resting codex-seat codex-seats-root codex-seat-threshold codex-seat-destination-min codex-seat-auto-exclude}"
+
+# firstmate-role additionally carries a proof-of-state receipt: a scoped role
+# grant (or its recorded absence) authorizes a secondmate home only while
+# config/.fm-inherit-firstmate-role.generation there proves the exact bytes the
+# primary last published, so revocation converges and a grant without a matching
+# receipt is dead on arrival. The receipt proves consistency, not provenance;
+# deliberately forged local records are out of scope. Both routes publish the
+# primary's resolved role (fm_role_inherit_payload) rather than its raw file, so
+# a primary file its own resolver rejects propagates as an absence, never as a
+# grant. The remote route's receiver already writes that same receipt through
+# its generation machinery; the local route commits
+# it in propagate_secondmate_inheritance, and a failed propagation removes it
+# rather than leaving a stale proof. bin/fm-role-lib.sh owns how the grant and
+# receipt are interpreted.
 
 # Items that name something that exists only on THIS machine, so they reach local
 # secondmate homes but never cross to a remote route. A Claude seat is a
 # per-machine, Keychain-backed profile the owner logged in here; a remote home
 # handed its name would resolve a profile nobody logged in there, so it keeps
 # its own login exactly as before seats existed (docs/claude-seats.md).
-FM_MACHINE_LOCAL_INHERITABLE_CONFIG="claude-seat claude-seats-root claude-seat-threshold claude-seat-destination-min claude-seat-extra-usage claude-seat-auto-exclude claude-seat-floor claude-seat-floor-readd claude-seat-floor-dwell claude-seat-session-share claude-seat-resting"
+FM_MACHINE_LOCAL_INHERITABLE_CONFIG="claude-seat claude-seats-root claude-seat-threshold claude-seat-destination-min claude-seat-extra-usage claude-seat-auto-exclude claude-seat-floor claude-seat-floor-readd claude-seat-floor-dwell claude-seat-session-share claude-seat-resting codex-seat codex-seats-root codex-seat-threshold codex-seat-destination-min codex-seat-auto-exclude"
 
 # The one per-home decline from those machine-local seat items, read in the
 # DESTINATION home's own config dir and deliberately not inheritable itself, so
@@ -101,7 +120,7 @@ FM_MACHINE_LOCAL_INHERITABLE_CONFIG="claude-seat claude-seats-root claude-seat-t
 # it keeps its own seat files exactly as they are, including absent, while
 # every other local home still moves together on each switch. With the file
 # nowhere on the machine, propagation is exactly what it was before it existed.
-FM_SEAT_LOCAL_OPTOUT_FILE="claude-seat-local"
+# The file is config/claude-seat-local or config/codex-seat-local per provider.
 
 # True when <item> names something that exists only on THIS machine.
 fm_config_inherit_item_machine_local() {  # <item>
@@ -111,14 +130,15 @@ fm_config_inherit_item_machine_local() {  # <item>
   return 1
 }
 
-# fm_config_inherit_seat_optout <dest-config-dir>
+# fm_config_inherit_seat_optout <dest-config-dir> [claude|codex]
 # True when the destination home declines the machine-local seat items: any
-# config/<FM_SEAT_LOCAL_OPTOUT_FILE> path is there, whatever its type, including
+# config/<provider>-seat-local path is there, whatever its type, including
 # a directory or a dangling symlink. False is the fleet-wide default.
 fm_config_inherit_seat_optout() {
-  local dest_config=${1-} flag
+  local dest_config=${1-} provider=${2:-claude} flag
   [ -n "$dest_config" ] || return 1
-  flag="$dest_config/$FM_SEAT_LOCAL_OPTOUT_FILE"
+  case "$provider" in claude|codex) ;; *) return 1 ;; esac
+  flag="$dest_config/${provider}-seat-local"
   [ -e "$flag" ] || [ -L "$flag" ]
 }
 
@@ -259,8 +279,100 @@ destination_allows_inherited_item() {
 # error, such as copy or remove failure, occurs.
 record_inheritable_config_result() {
   local item=$1 status=$2 reason=${3:-}
+  if [ "$item" = firstmate-role ] && [ -n "${FM_INHERIT_DEST_CONFIG:-}" ]; then
+    # The inherited role grant is provable only through its receipt: write it
+    # for converged outcomes that produced a destination state (a copied grant
+    # or a mirrored absence), and drop it for every outcome that wrote nothing,
+    # so a stale positive proof never outlives the propagation that failed to
+    # prove the parent's current value. An unchanged outcome with no
+    # destination file is a no-op state - no receipt is written and none needs
+    # to exist.
+    case $status in
+    pushed)
+      if ! fm_inherit_role_receipt_commit "$FM_INHERIT_DEST_CONFIG"; then
+        status=error
+        reason="could not commit the role inheritance receipt"
+        warn_inheritable_config_error "$item" "$FM_INHERIT_DEST_CONFIG/firstmate-role" "$reason"
+        FM_INHERIT_ROLE_RECEIPT_FAILED=1
+      fi
+      ;;
+    unchanged)
+      if [ -f "$FM_INHERIT_DEST_CONFIG/firstmate-role" ] && [ ! -L "$FM_INHERIT_DEST_CONFIG/firstmate-role" ]; then
+        if ! fm_inherit_role_receipt_commit "$FM_INHERIT_DEST_CONFIG"; then
+          status=error
+          reason="could not commit the role inheritance receipt"
+          warn_inheritable_config_error "$item" "$FM_INHERIT_DEST_CONFIG/firstmate-role" "$reason"
+          FM_INHERIT_ROLE_RECEIPT_FAILED=1
+        fi
+      else
+        rm -f "$FM_INHERIT_DEST_CONFIG/.fm-inherit-firstmate-role.generation" 2>/dev/null || true
+      fi
+      ;;
+    *)
+      rm -f "$FM_INHERIT_DEST_CONFIG/.fm-inherit-firstmate-role.generation" 2>/dev/null || true
+      ;;
+    esac
+  fi
   [ -n "${FM_CONFIG_INHERIT_REPORT:-}" ] || return 0
   printf '%s\t%s\t%s\n' "$item" "$status" "$reason" >> "$FM_CONFIG_INHERIT_REPORT" 2>/dev/null || true
+}
+
+# fm_inherit_role_receipt_commit <dest-config-dir> - commit the post-propagation
+# proof of the role item's destination state in the same 4-line record the
+# remote receiver's generation file carries: <generation> <bytes> <sha256>
+# <put|absent>. The generation continues the receipt's own sequence (prior
+# value + 1, or 1), so a local commit never outpaces the remote route's
+# monotonic counter with an unrelated clock value and later remote pushes are
+# not refused as superseded. Written atomically at mode 0600 like the
+# receiver's own commit_generation, so a torn or world-readable proof can
+# never land.
+fm_inherit_role_receipt_commit() {
+  local dest_config=$1 dest receipt gen bytes sha cmd tmp prior_gen
+  dest=$dest_config/firstmate-role
+  receipt=$dest_config/.fm-inherit-firstmate-role.generation
+  [ -d "$dest_config" ] && [ ! -L "$dest_config" ] || return 1
+  gen=1
+  if [ -f "$receipt" ] && [ ! -L "$receipt" ]; then
+    IFS= read -r prior_gen <"$receipt" 2>/dev/null || prior_gen=
+    case $prior_gen in
+    '' | *[!0-9]*) ;;
+    *) gen=$((prior_gen + 1)) ;;
+    esac
+  fi
+  tmp=$(umask 077 && mktemp "$dest_config/.inherit-role-receipt.XXXXXX" 2>/dev/null) || return 1
+  if [ -f "$dest" ] && [ ! -L "$dest" ]; then
+    cmd=put
+    bytes=$(wc -c <"$dest" 2>/dev/null | tr -d '[:space:]') || {
+      rm -f "$tmp" 2>/dev/null
+      return 1
+    }
+    sha=$(fm_inherit_sha256 "$dest") || {
+      rm -f "$tmp" 2>/dev/null
+      return 1
+    }
+  else
+    cmd=absent
+    bytes=0
+    # The staged temp is still empty, so hashing it yields the empty-payload
+    # digest the remote receiver requires on an absent record.
+    sha=$(fm_inherit_sha256 "$tmp") || {
+      rm -f "$tmp" 2>/dev/null
+      return 1
+    }
+  fi
+  printf '%s\n%s\n%s\n%s\n' "$gen" "$bytes" "$sha" "$cmd" >"$tmp" || {
+    rm -f "$tmp" 2>/dev/null
+    return 1
+  }
+  chmod 600 "$tmp" 2>/dev/null || {
+    rm -f "$tmp" 2>/dev/null
+    return 1
+  }
+  mv -f "$tmp" "$receipt" 2>/dev/null || {
+    rm -f "$tmp" 2>/dev/null
+    return 1
+  }
+  return 0
 }
 
 inheritable_config_skip_reason() {
@@ -587,27 +699,35 @@ propagate_secondmate_inheritance() {
   [ -n "$src_config" ] || src_config="$src_home/config"
   [ -n "$src_data" ] || src_data="$src_home/data"
   rc=0
-  propagate_inheritable_config "$src_config" "$dest_home/config" || rc=1
+  propagate_inheritable_config "$src_config" "$dest_home/config" "$src_home" || rc=1
   propagate_shared_captain_preferences "$src_data" "$dest_home/data" || rc=1
   return "$rc"
 }
 
 propagate_inheritable_config() {
-  local src_config=$1 dest_config=$2 item src dest source_present reason rc seat_optout=0
+  local src_config=$1 dest_config=$2 src_home=${3:-${1%/*}} item src dest source_present reason rc seat_provider
+  local prior_dest_config=${FM_INHERIT_DEST_CONFIG-} role_stage=
   [ -n "$src_config" ] || return 1
   [ -n "$dest_config" ] || return 1
   rc=0
-  # Read the destination home's own seat decline once, before any item is
-  # considered. Every local convergence point reaches the seat items through
+  # Dest dir the per-item outcome recorder uses for firstmate-role receipt
+  # bookkeeping; restored on return so nested callers keep their own.
+  FM_INHERIT_DEST_CONFIG=$dest_config
+  FM_INHERIT_ROLE_RECEIPT_FAILED=
+  # Read each provider's destination-home opt-out before its items. Every local convergence point reaches the seat items through
   # this loop, so honoring it here is what makes a declining home's choice hold
   # on a post-switch push, a session-start sweep, and a secondmate launch alike.
-  fm_config_inherit_seat_optout "$dest_config" && seat_optout=1
   for item in $FM_INHERITABLE_CONFIG; do
     case "$item" in
-      ''|/*|.|..|../*|*/../*|*/..) return 1 ;;
+      ''|/*|.|..|../*|*/../*|*/..)
+        FM_INHERIT_DEST_CONFIG=$prior_dest_config
+        [ -z "$role_stage" ] || rm -rf "$role_stage"
+        return 1
+        ;;
     esac
-    if [ "$seat_optout" = 1 ] && fm_config_inherit_item_machine_local "$item"; then
-      reason="home declines inherited seat settings (config/$FM_SEAT_LOCAL_OPTOUT_FILE)"
+    seat_provider=${item%%-*}
+    if fm_config_inherit_item_machine_local "$item" && fm_config_inherit_seat_optout "$dest_config" "$seat_provider"; then
+      reason="home declines inherited seat settings (config/${seat_provider}-seat-local)"
       record_inheritable_config_result "$item" skipped "$reason"
       continue
     fi
@@ -617,6 +737,17 @@ propagate_inheritable_config() {
     fi
     src="$src_config/$item"
     dest="$dest_config/$item"
+    if [ "$item" = firstmate-role ]; then
+      if ! role_stage=$(mktemp -d "${TMPDIR:-/tmp}/fm-inherit-role.XXXXXX" 2>/dev/null) ||
+        ! fm_role_inherit_payload "$src_home" "$src_config" "$role_stage/$item"; then
+        reason="cannot resolve the primary role"
+        warn_inheritable_config_error "$item" "$src" "$reason"
+        record_inheritable_config_result "$item" error "$reason"
+        rc=1
+        continue
+      fi
+      src="$role_stage/$item"
+    fi
     if ! source_present=$(fm_config_source_present "$src"); then
       reason="cannot inspect primary source"
       warn_inheritable_config_error "$item" "$src" "$reason"
@@ -709,6 +840,9 @@ propagate_inheritable_config() {
       record_inheritable_config_result "$item" unchanged ""
     fi
   done
+  FM_INHERIT_DEST_CONFIG=$prior_dest_config
+  [ -z "$role_stage" ] || rm -rf "$role_stage"
+  [ -z "${FM_INHERIT_ROLE_RECEIPT_FAILED:-}" ] || rc=1
   return "$rc"
 }
 

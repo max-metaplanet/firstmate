@@ -668,7 +668,15 @@ SH
   # A controllable clock lets the budget expire between two forge calls.
   cat > "$home/fakebin/date" <<'SH'
 #!/bin/sh
-if [ "$*" = +%s ] && [ -f "$FORGE/clock" ]; then cat "$FORGE/clock"; else exec /bin/date "$@"; fi
+if [ "$*" = +%s ] && [ -f "$FORGE/clock" ]; then
+  cat "$FORGE/clock"
+  # An optional step advances the clock after each read, crossing a whole-second
+  # boundary at a known point instead of whenever the wall clock happens to.
+  if [ -f "$FORGE/clock-step" ]; then
+    printf '%s\n' "$(( $(cat "$FORGE/clock") + $(cat "$FORGE/clock-step") ))" > "$FORGE/clock.next"
+    mv -f "$FORGE/clock.next" "$FORGE/clock"
+  fi
+else exec /bin/date "$@"; fi
 SH
   chmod +x "$home/fakebin/gh" "$home/fakebin/date"
 }
@@ -1027,7 +1035,14 @@ test_arm_plumbs_a_configured_budget_into_the_check_shim() {
     wrap_forge "$home"
     mutate_record "$home" delivery '.records[0].checked_at="2026-09-15T08:00:00Z"'
     cp "$home/data/delivery/contributions.json" "$home/prior.json"
+    # Freeze the clock before the fault is armed: an unfrozen one can tick past
+    # the one-second budget before the first forge call, so the generated check
+    # never writes forge/calls.
+    /bin/date +%s > "$home/forge/clock"
     printf 'hang\n' > "$home/forge/fault"
+    # Freeze the clock: a one-second budget's whole reserve is gone if the wall
+    # clock ticks between taking the deadline and the first reserve check.
+    /bin/date +%s > "$home/forge/clock"
     if [ "$mode" = configured ]; then
       with_home "$home" env FM_CONTRIBUTIONS_BUDGET=1 "$ROOT/bin/fm-contributions.sh" arm >/dev/null \
         || fail 'arm with a configured budget failed'
@@ -1044,7 +1059,25 @@ test_arm_plumbs_a_configured_budget_into_the_check_shim() {
     cmp -s "$home/prior.json" "$home/data/delivery/contributions.json" \
       || fail "generated check failed to preserve the $mode one-second budget"
   done
-  pass 'generated checks enforce configured and inherited budgets at runtime'
+  # Crossing that boundary is still refused: with no budget left, the
+  # generated check declines the observation before any forge read.
+  home=$(new_home arm-budget-boundary)
+  forge_home "$home"
+  wrap_forge "$home"
+  mutate_record "$home" delivery '.records[0].checked_at="2026-09-15T08:00:00Z"'
+  cp "$home/data/delivery/contributions.json" "$home/prior.json"
+  /bin/date +%s > "$home/forge/clock"
+  printf '1\n' > "$home/forge/clock-step"
+  with_home "$home" env FM_CONTRIBUTIONS_BUDGET=1 "$ROOT/bin/fm-contributions.sh" arm >/dev/null \
+    || fail 'arm with a configured budget failed'
+  out=$(with_home "$home" env -u FM_CONTRIBUTIONS_BUDGET bash "$home/state/contributions.check.sh") \
+    || fail 'boundary check shim failed'
+  [ -z "$out" ] || fail "a check with no budget left printed a wake: $out"
+  [ ! -e "$home/forge/calls" ] || fail "a check with no budget left still read the forge: $(cat "$home/forge/calls")"
+  cmp -s "$home/prior.json" "$home/data/delivery/contributions.json" \
+    || fail 'a check with no budget left rewrote the prior record'
+  [ ! -s "$home/state/.wake-queue" ] || fail 'a check with no budget left enqueued a wake'
+  pass 'generated checks enforce configured and inherited budgets at runtime and decline with none left'
 }
 
 test_unavailable_forge_records_error_and_wakes_once_per_episode() { # genuine outage, two consecutive cycles

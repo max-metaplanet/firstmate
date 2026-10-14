@@ -92,9 +92,12 @@
 #              A resting-worker Codex offer uses --harness codex with its
 #              matched rule's model/effort, without --seat, through this same
 #              transaction; a published Codex record drops the Claude seat.
-#              --seat deliberately moves a Claude worker to a validated seat;
+#              --seat deliberately moves a Claude or Codex worker to a validated seat;
 #              absent that flag it keeps its recorded profile. The destination
 #              is journaled and published only by the replacement launch.
+#              The same pre-stop refusal applies to this home's worker tool
+#              exclusions (bin/fm-exclude-tools-lib.sh): a malformed list, or a
+#              replacement runtime that cannot hide the listed tools.
 #              --note is required for a ship or scout, whose replacement
 #              inherits the local copy but none of the conversation; a
 #              secondmate reconciles its own home's records at startup, so its
@@ -207,6 +210,8 @@ CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
 . "$SCRIPT_DIR/fm-quota-axi-lib.sh"
 # shellcheck source=bin/fm-seat-lib.sh
 . "$SCRIPT_DIR/fm-seat-lib.sh"
+# shellcheck source=bin/fm-exclude-tools-lib.sh
+. "$SCRIPT_DIR/fm-exclude-tools-lib.sh"
 
 POLL=${FM_CONTROL_POLL:-0.5}
 SETTLE_WAIT=${FM_CONTROL_SETTLE_WAIT:-5}
@@ -709,9 +714,65 @@ do_interrupt() {
   printf '%s cancel=%s' "$proof" "$cancel"
 }
 
+# Drop busy_gen from the task record when it still names <gen>.
+# fm-busy-event.sh owns the sidecar and the record; fm_backlog_atomic_transition
+# publish owns the task record. Clearing the line inside the busy writer would
+# take the task-record lock that teardown and spawn already hold; the busy
+# writer is their child process, so it would wait on a live holder that is
+# itself waiting on the child, and neither would ever proceed.
+clear_retired_meta_busy_gen() {  # <gen>
+  local gen=$1 meta="$STATE/$ID.meta" lock tmp current line
+  [ -n "$gen" ] || return 0
+  [ -f "$meta" ] && [ ! -L "$meta" ] || return 0
+  if ! declare -F fm_backlog_atomic_transition >/dev/null 2>&1; then
+    # shellcheck source=bin/fm-tasks-axi-lib.sh
+    . "$SCRIPT_DIR/fm-tasks-axi-lib.sh"
+    # shellcheck source=bin/fm-backlog-transition-lib.sh
+    . "$SCRIPT_DIR/fm-backlog-transition-lib.sh"
+  fi
+  lock=$(fm_meta_lock_path "$meta") || return 1
+  fm_lock_acquire_wait "$lock"
+  current=$(fm_meta_get "$meta" busy_gen)
+  if [ "$current" != "$gen" ]; then
+    fm_lock_release "$lock"
+    return 0
+  fi
+  tmp=$(mktemp "$STATE/.$ID.meta.retire.XXXXXX") || {
+    fm_lock_release "$lock"
+    return 1
+  }
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in
+      busy_gen=*) ;;
+      *)
+        printf '%s\n' "$line" >> "$tmp" || {
+          rm -f "$tmp"
+          fm_lock_release "$lock"
+          return 1
+        }
+        ;;
+    esac
+  done < "$meta" || {
+    rm -f "$tmp"
+    fm_lock_release "$lock"
+    return 1
+  }
+  if ! fm_backlog_atomic_transition publish "$tmp" "$meta" "task record" "$STATE"; then
+    rm -f "$tmp"
+    fm_lock_release "$lock"
+    return 1
+  fi
+  fm_lock_release "$lock"
+}
+
 retire_busy_incarnation() {
+  local gen=
   if [ -f "$STATE/$ID.busy-gen" ]; then
-    "$SCRIPT_DIR/fm-busy-event.sh" retire "$STATE" "$ID" --current-gen >/dev/null 2>&1 || true
+    gen=$(fm_busy_current_gen "$STATE" "$ID" 2>/dev/null || true)
+    if [ -n "$gen" ] \
+      && "$SCRIPT_DIR/fm-busy-event.sh" retire "$STATE" "$ID" --gen "$gen" >/dev/null 2>&1; then
+      clear_retired_meta_busy_gen "$gen" || true
+    fi
   fi
 }
 
@@ -920,7 +981,7 @@ journal_write() {  # <phase> [extra-line]...
     echo "to_model=$TARGET_MODEL"
     echo "to_effort=$TARGET_EFFORT"
     if [ "$SEAT_SET" = 1 ]; then
-      echo "from_seat=$(fm_meta_get "$META_PRIOR" claude_seat)"
+      echo "from_seat=$(fm_meta_get "$META_PRIOR" "${PRIOR_HARNESS}_seat")"
       echo "to_seat=$TARGET_SEAT"
     fi
     local line
@@ -1082,10 +1143,27 @@ resolve_relaunch_profile() {
   local account account_root
   account=$(fm_worker_account_select "$TARGET_HARNESS" "$CONFIG" \
     "$account_model" "$TARGET_HARNESS") || return 1
+  # Likewise config/crew-exclude-tools: a malformed file, or a replacement
+  # runtime that cannot hide the listed tools, refuses here, before the old
+  # agent stops. Secondmate agents are not covered.
+  if [ "$KIND" != secondmate ]; then
+    fm_exclude_tools_check "$TARGET_HARNESS" 0 "$CONFIG" >/dev/null || return 1
+  fi
+  if [ "$SEAT_SET" = 0 ] && [ "$TARGET_HARNESS" = codex ] && [ "$PRIOR_RECORDED_HARNESS" = codex ]; then
+    local recorded_codex_home owner_codex_home
+    recorded_codex_home=$(fm_meta_get "$META" codex_seat)
+    [ -z "$recorded_codex_home" ] || [ -d "$recorded_codex_home" ] \
+      || die "recorded Codex home is missing: $recorded_codex_home; restore it before stopping this worker"
+    owner_codex_home=$(fm_seat_codex_home "$recorded_codex_home") || return 1
+    [ "$owner_codex_home" = "$recorded_codex_home" ] \
+      || die "recorded Codex home aliases another credential owner; use an explicit --seat move to that owner"
+
+  fi
   if [ "$SEAT_SET" = 1 ]; then
-    [ "$PRIOR_RECORDED_HARNESS" = claude ] && [ "$TARGET_HARNESS" = claude ] \
-      || die "--seat requires a Claude-to-Claude relaunch"
-    TARGET_SEAT=$(fm_seat_relaunch_destination "$NEW_SEAT") || return 1
+    if [ "$PRIOR_RECORDED_HARNESS" != "$TARGET_HARNESS" ] || { [ "$TARGET_HARNESS" != claude ] && [ "$TARGET_HARNESS" != codex ]; }; then
+      die "--seat requires a same-harness Claude or Codex relaunch"
+    fi
+    TARGET_SEAT=$(FM_SEAT_PROVIDER=$TARGET_HARNESS fm_seat_relaunch_destination "$NEW_SEAT") || return 1
     account_root=${account#*$'\t'}
     account_root=${account_root%%$'\t'*}
     [ -z "$account" ] || [ "$account_root" = "$TARGET_SEAT" ] \

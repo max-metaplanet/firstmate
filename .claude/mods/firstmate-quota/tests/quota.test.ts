@@ -123,7 +123,7 @@ describe("this session's own seat", () => {
     await $.session.measure(measurement([{ kind: "five_hour", percentUsed: 36 }]));
     const band = textOf(await $.ui.render({ ...BAND, plugin: PLUGIN }));
     expect(band).toContain("5h 64%");
-    expect(band).toContain("others tightest charlie 22%");
+    expect(band).toContain("others tightest claude charlie 22%");
     // One Text of the mod's own, so the band cannot grow a second row.
     expect(band.split("truncate-end").length - 1).toBe(1);
   });
@@ -406,5 +406,73 @@ describe("the reading used for every draw", () => {
     await clock.settle();
     const pane = textOf(await $.ui.render({ ...PANE, plugin: PLUGIN }));
     for (const name of ["alpha", "bravo", "charlie"]) expect(pane).toContain(name);
+  });
+});
+
+
+describe("provider identity and renewal guidance", () => {
+  test("shows Codex renewal actions without running them or marking it as this Claude session", async ($, on) => {
+    const { clock, journal } = world(on, { board: boardReading([
+      seat("alpha", { provider: "codex", renewal: {
+        state: "invalid", reason: "credentials invalid", supported: false,
+        loginCommand: "CODEX_HOME=/seats/alpha codex login",
+        command: "fm-seat-renew.sh --provider codex --check alpha",
+      } }),
+    ]) });
+    await $.session.start(SESSION_START);
+    await clock.settle();
+    const pane = textOf(await $.ui.render({ ...PANE, plugin: PLUGIN }));
+    expect(pane).toContain("codex alpha");
+    expect(pane).toContain("renewal: invalid");
+    expect(pane).toContain("CODEX_HOME=/seats/alpha codex login");
+    expect(pane).toContain("fm-seat-renew.sh --provider codex --check alpha");
+    expect(pane).not.toContain("[this session]");
+    expect(journal.runs).toEqual([[expect.stringContaining("fm-seat-board.sh"), "json", "--cached-only"]]);
+  });
+});
+
+
+describe("automatic renewal evidence", () => {
+  test("shows a recorded renewal, the latest outcome, and its guarded action without executing it", async ($, on) => {
+    const command = "FM_HOME=/fleet /repo/bin/fm-seat-renew.sh --provider codex alpha";
+    const { clock, journal } = world(on, { board: boardReading([
+      seat("alpha", { provider: "codex", renewal: {
+        state: "expired_refreshable", reason: "Live session owns this seat; retry next cycle.",
+        supported: true, outcome: "owned", lastRenewal: 1_760_313_600,
+        lastAttempt: 1_760_313_660, command, loginCommand: null,
+      } }),
+    ]) });
+    await $.session.start(HEADLESS_START);
+    await clock.settle();
+    const text = (await $.command.run(seatsCommand())).text ?? "";
+    expect(text).toContain("renewal: expired_refreshable");
+    expect(text).toContain("outcome: owned");
+    expect(text).toContain("last renewed: 2025-10-13T00:00:00.000Z");
+    expect(text).toContain("last attempt: 2025-10-13T00:01:00.000Z");
+    expect(text).toContain(`action: ${command}`);
+    expect(text).toContain("retry next cycle");
+    expect(journal.runs).toEqual([[expect.stringContaining("fm-seat-board.sh"), "json", "--cached-only"]]);
+  });
+
+  test("draws renewal success in the pane and refuses malformed timestamp evidence", async ($, on) => {
+    const { clock } = world(on, { board: boardReading([
+      seat("alpha", { renewal: {
+        state: "healthy", reason: "Renewed successfully.", supported: true,
+        outcome: "renewed", lastRenewal: 0, lastAttempt: -1,
+      } }),
+      seat("bravo", { renewal: {
+        state: "unknown", supported: true, outcome: "failed",
+        lastRenewal: "yesterday", lastAttempt: 1e100,
+      } }),
+    ]) });
+    await $.session.start(SESSION_START);
+    await clock.settle();
+    const pane = textOf(await $.ui.render({ ...PANE, plugin: PLUGIN }));
+    expect(pane).toContain("outcome: renewed");
+    expect(pane).toContain("last renewed: 1970-01-01T00:00:00.000Z");
+    expect(pane).toContain("outcome: failed");
+    expect(pane).toContain("last renewed: not recorded");
+    expect(pane).not.toContain("last attempt:");
+    expect(pane).not.toContain("Invalid Date");
   });
 });

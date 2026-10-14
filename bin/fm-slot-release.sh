@@ -53,6 +53,8 @@ STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 . "$SCRIPT_DIR/fm-wake-lib.sh"
 # shellcheck source=bin/fm-slot-record-lib.sh
 . "$SCRIPT_DIR/fm-slot-record-lib.sh"
+# shellcheck source=bin/fm-pr-lib.sh
+. "$SCRIPT_DIR/fm-pr-lib.sh"
 # shellcheck source=bin/fm-unlanded-work-lib.sh
 . "$SCRIPT_DIR/fm-unlanded-work-lib.sh"
 

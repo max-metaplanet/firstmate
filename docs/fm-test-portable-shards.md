@@ -22,7 +22,8 @@ In particular, run 36664663190's serial 5 finished in 22m15s with an assertion f
 Collect successful per-script measurements for every member before calculating a split.
 
 The serial hints were refreshed again on 2026-10-10 from seven green runs of this repository's own CI: 38068758436, 38065011500, 38044860890, 38031183126, 38004058787, 37998134189, and 37997299201.
-Those runs measure every one of the 220 current serial members, so `serial_unhinted` is now zero.
+Those runs measure the serial members this fork's own CI had then; the upstream merge added serial scripts those runs never saw, so `serial_unhinted` is no longer zero and those members pack on `PORTABLE_SERIAL_DEFAULT_WEIGHT_MS` until a green run measures them.
+Read the current count from `bin/fm-test-run.sh --check-coverage` rather than from a number copied here.
 Read timing artifacts from the repository the shards actually run in: `gh-axi` resolves to the `upstream` remote when one is configured, and a sibling repository's shard membership and script set are not interchangeable with this one's.
 
 A hint is a high-water mark across the recorded baselines rather than only the newest run's figure.
@@ -123,11 +124,16 @@ Portable shards, each portable serial shard, and the Herdr lane upload runner-ge
 CI requires its per-root bounds, so an unenforceable deadline or address-space limit refuses lint rather than running uncapped; the script header owns the envelope, per-root execution contract, and memory fallback.
 Its `--list-files` interface exposes partition membership; `tests/fm-lint.test.sh` verifies complete/disjoint executed roots, initial analysis flags, and fallback reporting.
 The workflow uploads each partition's quiet telemetry plus its per-root lifecycle sidecar to distinguish analysis cost, memory use, and host contention.
-No fast mode, path skips, reduced checks, or paid runner provisioning is part of this layout.
+No fast mode, reduced checks, or paid runner provisioning is part of this layout.
+Jobs are gated by changed path, and `bin/fm-ci-change-scope.sh` is the single owner of those path sets: it derives them from what the gated jobs actually read, keeps a gate on for any path it does not prove inert, and its header owns the reasoning for each set.
+The gates are job-level `if:` conditions fed by one always-run detection job, never a workflow-level `paths:` filter, because a workflow that is never created leaves a required check pending forever while a job skipped by `if:` reports as skipped and satisfies branch protection.
+The always-run `ci-gate` job reports the whole round's result, so a gated-off job never reads as a missing check; require that check rather than the gated jobs if this repository ever configures required checks.
 
 The longer-term performance objective remains a complete green run under fifteen minutes including start delay, but the current supervision-host floor alone exceeds that objective.
 The immediate packing target is the runner's modeled script budget, not a claim that more shards alone can make an indivisible script faster.
-The layout uses sixteen long-lived Linux jobs (nine serial, two parallel, Herdr, four lint), plus short checks and macOS; insufficient shared account capacity can erase the packing gain.
+The layout uses twenty-three long-lived Linux jobs (sixteen serial, two parallel, Herdr, four lint), plus short checks and macOS; insufficient shared account capacity can erase the packing gain.
+Sixteen serial shards is the knee of the packing, measured from the aggregate of run 38453818522: at sixteen bins every shard the packing can balance lands at or under 10 minutes, and only `tests/fm-supervision-host.test.sh` at about 22.6 minutes and `tests/fm-watch-triage.test.sh` at about 17.9 minutes stay above it.
+Past sixteen the third-largest bin stops shrinking, because it holds one 7.7-minute script, so further shards buy queue contention and no wall time.
 Compare complete before/after runs, preserve cancelled and partial-run evidence, and measure a representative normal-run sample before claiming a P95 improvement.
 The workflow retains per-PR supersession without cancelling main pushes or changing the compliance workflow's event semantics.
 
@@ -144,7 +150,7 @@ A lane that reaches its tier bound needs investigation and a distribution or run
 
 | Tier | Jobs | Bound | Rationale |
 |---|---|---|---|
-| Fast | coverage guard, repo invariants, timing aggregate | 5 minutes | Seconds-long local work, so the tripwire only catches a hung runner. |
+| Fast | change scope, coverage guard, repo invariants, timing aggregate, documentation audience guard, CI gate | 5 minutes | Seconds-long local work, so the tripwire only catches a hung runner. |
 | Normal | lint partitions, portable parallel shards, macOS stock Bash | 30 minutes, one value shared by every job in the tier | One shared hang tripwire keeps these ordinary lanes on the same policy instead of allowing per-lane packing estimates or one-off caps to set the bound. |
 | Serial | portable serial shards | shard-run step 40 minutes under a 45-minute job bound | One indivisible script sets this lane's floor: `tests/fm-supervision-host.test.sh` measures 16.9-22.6 minutes on healthy runners and about 35 minutes on slow ones, so no partition of the lane fits the normal tier. The step tripwire bounds a wedged shard below the job cap and fails the step with its captured log output rather than cancelling the job; the timing JSON is written only after every script finishes, so a timed-out shard uploads no timing artifact. |
 | Heavy | Herdr | family-run step 20 minutes under a 75-minute job-level last-resort backstop | Healthy runs finish in about 7-10 minutes, so the step tripwire fails a wedged suite while the `always()` cleanup and timing upload still run, and the job cap only catches a hang outside that step. |

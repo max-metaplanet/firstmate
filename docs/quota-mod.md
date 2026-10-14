@@ -1,6 +1,6 @@
 # Seat quota in Claude Code
 
-The `firstmate-quota` mod under `.claude/mods/firstmate-quota` shows how much Claude quota is left, for the seat this session spends and for every other seat firstmate knows about.
+The `firstmate-quota` mod under `.claude/mods/firstmate-quota` shows how much quota is left for this Claude session and every configured Claude and Codex seat.
 It is a Claude Code plugin whose whole behavior lives in one function-hooks module, the same shape as the Calm mod.
 The trusted project auto-loads it through the `.claude/skills/firstmate-quota` entry, a symlink into `.claude/mods`, so no `--plugin-dir` or marketplace install is needed.
 
@@ -54,9 +54,14 @@ Another mod's band content survives: the mod takes what the plugins beneath it d
 
 ## `/seats`
 
-`/seats` opens a pane listing every configured seat: its name, which of them this session is on, which one new workers launch on, which are held out of automatic rotation, the account, the figures, and each reading's age.
+`/seats` opens a pane listing every configured seat: its provider and name, which of them this session is on, which one new workers launch on, which are held out of automatic rotation, the account, the figures, and each reading's age.
 The seat this session is on and the seat new workers launch on are shown separately because they are genuinely different facts: switching the active seat never moves a running worker.
 A seat the [quota floor](claude-seats.md#resting-a-seat-below-a-quota-floor) is resting carries a "resting" mark; a manual exclusion takes precedence and keeps the "not in rotation" mark, while a provisionally returned seat is in rotation.
+
+Each row also shows the cached authentication verdict, renewal outcome, last attempt and successful renewal times, and the guarded renewal command.
+Invalid credentials include the exact login command; the panel never runs it.
+Codex rows appear only on a home with Codex seats, Codex seat configuration, or a Codex home.
+[Seat renewal limits](claude-seats.md#renewal-status-and-safe-limits) own the credential safety boundary.
 
 Nothing a mod draws is visible in a `claude -p` run, an SDK session, or the VS Code chat panel, so in a session that cannot draw `/seats` answers with the same content as text instead.
 

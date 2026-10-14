@@ -115,7 +115,7 @@ cmd_launch() {
   else
     unset CLAUDE_CONFIG_DIR
   fi
-  unset FM_AMBIENT_CLAUDE_CONFIG_DIR
+  unset FM_AMBIENT_CLAUDE_CONFIG_DIR CLAUDE_SECURESTORAGE_CONFIG_DIR
   mkdir -p "$STATE/claude-pipeline" || die 'could not create pipeline launch records'
   for record in "$STATE/claude-pipeline"/*.json; do
     [ -f "$record" ] || continue
@@ -131,7 +131,8 @@ cmd_launch() {
     '. + {pid: $pid, started: $started}' > "$record" && mv "$record" "$record.json"; }; then
       rm -f "$record"; die 'could not record pipeline launch';
   fi
-  exec "$native" "$@"
+  exec python3 "$SCRIPT_DIR/fm-seat-lock.py" guard --provider claude \
+    --profile "$profile" -- "$native" "$@"
 }
 
 command -v jq >/dev/null 2>&1 || die 'jq is required'

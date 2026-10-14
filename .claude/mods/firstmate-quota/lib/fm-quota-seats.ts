@@ -1,4 +1,4 @@
-// Every configured Claude seat: how firstmate's own cached per-seat quota reports read.
+// Every configured Claude and Codex seat: how firstmate's own cached per-seat quota reports read.
 //
 // This module owns the all-seats half of the mod's policy: how the reading that
 // `bin/fm-seat-board.sh json` prints is parsed, how old each seat's figures are allowed
@@ -25,8 +25,22 @@ export type SeatWindow = {
   readonly resetsAt: string | null;
 };
 
+/** Renewal evidence and guarded actions supplied by the board's renewal owner. */
+export type SeatRenewal = {
+  readonly state: string;
+  readonly reason: string;
+  readonly command: string;
+  readonly loginCommand: string;
+  readonly supported: boolean;
+  readonly lastAttempt: number | null;
+  readonly lastRenewal: number | null;
+  readonly outcome: string | null;
+};
+
 /** One seat's record in the board's reading. */
 export type SeatRecord = {
+  readonly provider: "claude" | "codex";
+  readonly renewal: SeatRenewal | null;
   readonly name: string;
   readonly configDir: string;
   readonly active: boolean;
@@ -57,6 +71,8 @@ export type SeatFreshness = "fresh" | "stale" | "unknown" | "none";
 
 /** One seat ready to draw. */
 export type SeatRow = {
+  readonly provider: "claude" | "codex";
+  readonly renewal: string;
   readonly name: string;
   /** True for the seat this session itself spends, whose figures come from the engine. */
   readonly live: boolean;
@@ -102,6 +118,13 @@ function asNumberOrNull(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
+/** Epoch seconds must describe a real Date before they may be shown as evidence. */
+function asEpochOrNull(value: unknown): number | null {
+  const seconds = asNumberOrNull(value);
+  return seconds !== null && Number.isInteger(seconds) && seconds >= 0 && seconds <= 8_640_000_000_000
+    ? seconds : null;
+}
+
 function asStringOrNull(value: unknown): string | null {
   return typeof value === "string" && value !== "" ? value : null;
 }
@@ -128,6 +151,7 @@ export function parseSeatBoard(stdout: string): SeatBoard | undefined {
   for (const entry of report.seats) {
     if (entry === null || typeof entry !== "object") continue;
     const seat = entry as Record<string, unknown>;
+    if (seat.provider !== undefined && seat.provider !== "claude" && seat.provider !== "codex") continue;
     if (typeof seat.name !== "string" || seat.name === "") continue;
     const windows: SeatWindow[] = [];
     if (Array.isArray(seat.windows)) {
@@ -144,7 +168,20 @@ export function parseSeatBoard(stdout: string): SeatBoard | undefined {
         });
       }
     }
+    const renewal = seat.renewal !== null && typeof seat.renewal === "object"
+      ? seat.renewal as Record<string, unknown> : null;
     seats.push({
+      provider: seat.provider === "codex" ? "codex" : "claude",
+      renewal: renewal === null ? null : {
+        state: asStringOrNull(renewal.state) ?? "unknown",
+        reason: asStringOrNull(renewal.reason) ?? "",
+        command: asStringOrNull(renewal.command) ?? "",
+        loginCommand: asStringOrNull(renewal.loginCommand) ?? "",
+        supported: renewal.supported === true,
+        lastAttempt: asEpochOrNull(renewal.lastAttempt),
+        lastRenewal: asEpochOrNull(renewal.lastRenewal),
+        outcome: asStringOrNull(renewal.outcome),
+      },
       name: seat.name,
       configDir: typeof seat.configDir === "string" ? seat.configDir : "",
       active: seat.active === true,
@@ -241,13 +278,15 @@ export function seatRows(board: SeatBoard, readAtMs: number, nowMs: number): Sea
   return board.seats.map((seat) => {
     const age = seatAgeSeconds(seat, readAtMs, nowMs);
     const freshness = seatFreshness(seat, age, board.cacheSeconds);
-    const live = seat.name === board.liveSeat;
+    const live = seat.provider === "claude" && seat.name === board.liveSeat;
     const marks: string[] = [];
     if (live) marks.push("this session");
     if (seat.active) marks.push("new workers");
     if (seat.resting) marks.push("resting");
     else if (seat.autoExcluded) marks.push("not in rotation");
     return {
+      provider: seat.provider,
+      renewal: renewalText(seat.renewal),
       name: seat.name,
       live,
       active: seat.active,
@@ -266,6 +305,21 @@ export function seatRows(board: SeatBoard, readAtMs: number, nowMs: number): Sea
   });
 }
 
+/** Recorded outcomes are separate from current auth state; drawing never starts renewal. */
+export function renewalText(renewal: SeatRenewal | null): string {
+  if (renewal === null) return "";
+  const timestamp = (seconds: number) => new Date(seconds * 1000).toISOString();
+  return [
+    `renewal: ${renewal.state}`,
+    renewal.outcome === null ? "" : `outcome: ${renewal.outcome}`,
+    renewal.lastRenewal === null ? "last renewed: not recorded" : `last renewed: ${timestamp(renewal.lastRenewal)}`,
+    renewal.lastAttempt === null ? "" : `last attempt: ${timestamp(renewal.lastAttempt)}`,
+    renewal.reason,
+    renewal.command === "" ? "" : `action: ${renewal.command}`,
+    renewal.loginCommand,
+  ].filter((part) => part !== "").join(" · ");
+}
+
 /** One row's figures as text: each window's percent left, or why there are none. */
 export function seatFiguresText(row: SeatRow): string {
   if (row.windows.length === 0) {
@@ -279,7 +333,7 @@ export function seatLine(row: SeatRow): string {
   const marks = row.marks.length === 0 ? "" : ` [${row.marks.join(", ")}]`;
   const age = freshnessWord(row.freshness, row.ageWord);
   const account = row.account === "" ? "" : ` ${row.account}`;
-  return `${row.name}${marks}${account}: ${seatFiguresText(row)} (${age})`;
+  return `${row.provider} ${row.name}${marks}${account}: ${seatFiguresText(row)} (${age})${row.renewal === "" ? "" : `; ${row.renewal}`}`;
 }
 
 /**
@@ -295,7 +349,7 @@ export function tightestOtherSeat(
     for (const window of row.windows) {
       if (best === undefined || window.percentLeft < best.percentLeft) {
         best = {
-          name: row.name,
+          name: `${row.provider} ${row.name}`,
           percentLeft: window.percentLeft,
           freshness: row.freshness,
           ageWord: row.ageWord,

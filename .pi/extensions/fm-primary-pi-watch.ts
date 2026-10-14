@@ -1200,6 +1200,9 @@ export default function (pi: ExtensionAPI) {
   }
 
   pi.on?.("before_agent_start", (event) => {
+    // A wake is a user follow-up; a run opened by a custom message carries no
+    // prompt and cannot consume one.
+    if (!("prompt" in event)) return;
     consumeWake(generation, event.prompt);
   });
   pi.on?.("message_start", (event) => {
