@@ -1,0 +1,12 @@
+== supervision-host: base cases=82  split cases=82  base funcs=129 split funcs=129
+   tests/fm-supervision-host.test.sh: 26 cases
+   tests/fm-supervision-host-engine.test.sh: 17 cases
+   tests/fm-supervision-host-park.test.sh: 18 cases
+   tests/fm-supervision-host-stop-hook.test.sh: 22 cases
+== watch-triage: base cases=141  split cases=141  base funcs=183 split funcs=183
+   tests/fm-watch-triage-delivery.test.sh: 40 cases
+   tests/fm-watch-triage-stale.test.sh: 37 cases
+   tests/fm-watch-triage.test.sh: 64 cases
+   BODY-CHANGED test_live_captain_held_first_sight_silenced_by_away_record (tests/fm-watch-triage-delivery.test.sh)
+   BODY-CHANGED test_backlog_hold_never_rechecked_while_away_record_exists (tests/fm-watch-triage-delivery.test.sh)
+rc=0

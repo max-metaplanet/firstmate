@@ -1,0 +1,9 @@
+shard 1: tests/fm-watch-triage.test.sh
+shard 3: tests/fm-supervision-host.test.sh
+shard 6: tests/fm-supervision-host-stop-hook.test.sh
+shard 6: tests/fm-supervision-host-attended-live-e2e.test.sh
+shard 8: tests/fm-watch-triage-delivery.test.sh
+shard 10: tests/fm-supervision-host-park.test.sh
+shard 11: tests/fm-supervision-host-engine.test.sh
+shard 12: tests/fm-watch-triage-stale.test.sh
+shard 15: tests/fm-supervision-host-live-e2e.test.sh

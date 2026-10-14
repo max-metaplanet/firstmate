@@ -1,0 +1,2 @@
+not ok - cleanup lock bound 08 never contended on the held marker lock
+not ok - cleanup lock bound 00 gave up before the marker lock freed

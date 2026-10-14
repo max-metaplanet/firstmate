@@ -1,0 +1,10 @@
+13c13,14
+<   # and the first sight surfaces (test_exited_declared_pause_is_bounded_but_live_gate_surfaces).
+---
+>   # and the first sight surfaces (fm-watch-triage-stale.test.sh's
+>   # test_exited_declared_pause_is_bounded_but_live_gate_surfaces).
+10c10,11
+<   # (test_stale_churn_without_a_captain_call_still_alarms and its siblings). With
+---
+>   # (fm-watch-triage-stale.test.sh's test_stale_churn_without_a_captain_call_still_alarms
+>   # and its siblings). With

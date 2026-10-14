@@ -1,0 +1,8 @@
+tests/fm-afk-contract.test.sh
+tests/fm-afk-inject-e2e.test.sh
+tests/fm-afk-return.test.sh
+tests/fm-host-mirror.test.sh
+tests/fm-supervision-host-engine.test.sh
+tests/fm-supervision-host-park.test.sh
+tests/fm-supervision-host-stop-hook.test.sh
+tests/fm-supervision-host.test.sh
