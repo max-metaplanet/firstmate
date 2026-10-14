@@ -3137,25 +3137,51 @@ test_presentation_recovery_wait_requires_live_spawn_holder() (
     fail "recovery lock holder did not reach ${1##*/}"
   }
   stop_holder() {
-    touch "$dir/release"
+    touch "$dir/mark" "$dir/release"
     if [ -n "$holder" ]; then wait "$holder" || fail "recovery holder failed"; holder=; fi
   }
+  # Each sleep is 0.1 virtual seconds, or a whole one for slow-* attempts.
+  # Re-pin after the real lock calls so their process work never moves the
+  # whole-second clock across a budget boundary.
+  pin_clock() {
+    # This fixture clock is intentionally scoped to the isolated subshell.
+    # shellcheck disable=SC2030
+    SECONDS=$((base + tenths / 10))
+  }
   eval "real_$(declare -f fm_lock_try_acquire)"
-  # Change the holder right after the first failed extension attempt, before
-  # the holder check reads the lock.
+  eval "real_$(declare -f fm_backend_herdr_presentation_lock_spawn_holder)"
+  # Change the holder once, right after a failed attempt at $swap_tick and
+  # before the holder check reads the lock.
   fm_lock_try_acquire() {
-    real_fm_lock_try_acquire "$@" && return 0
-    if [ -n "$holder" ] && { [ "${ticks:-0}" -eq 50 ] \
-       || { [ "$scenario" = slow-released ] && [ "${ticks:-0}" -eq 5 ]; }; }; then
+    local rc=0
+    real_fm_lock_try_acquire "$@" || rc=$?
+    if [ "$rc" -ne 0 ] && [ -n "$holder" ] && [ "$swapped" = 0 ] && [ "$ticks" = "$swap_tick" ]; then
+      swapped=1
       case "$scenario" in
         released|slow-released) stop_holder ;;
-        transition) stop_holder; start_holder later ;;
+        transition-*) stop_holder; start_holder later ;;
+        turnover) stop_holder; start_holder marked ;;
       esac
     fi
-    return 1
+    pin_clock
+    return "$rc"
+  }
+  fm_backend_herdr_presentation_lock_spawn_holder() {
+    local rc=0
+    real_fm_backend_herdr_presentation_lock_spawn_holder "$@" || rc=$?
+    pin_clock
+    return "$rc"
   }
 
-  for scenario in unmarked unreadable spawn released transition ordinary deadline slow-ordinary slow-unmarked slow-unreadable slow-spawn slow-released; do
+  for scenario in unmarked unreadable spawn released transition-early transition-late turnover ordinary deadline slow-ordinary slow-unmarked slow-unreadable slow-spawn slow-released; do
+    ticks=0 tenths=0 swapped=0
+    case "$scenario" in
+      released|transition-late|turnover) swap_tick=50 ;;
+      transition-early) swap_tick=47 ;;
+      slow-released) swap_tick=5 ;;
+      *) swap_tick=-1 ;;
+    esac
+    base=$SECONDS
     case "$scenario" in
       unmarked|slow-unmarked) start_holder unmarked ;;
       unreadable|slow-unreadable)
@@ -3166,21 +3192,18 @@ test_presentation_recovery_wait_requires_live_spawn_holder() (
         ;;
       *) start_holder marked ;;
     esac
-    ticks=0
-    # Pin the clock to sleep time so slow real attempts never end a budget.
-    clock=$SECONDS
+    pin_clock
     sleep() {
       ticks=$((ticks + 1))
       case "$scenario" in
-        # Reach the extension first, then advance its elapsed-time clock.
-        deadline) if [ "$ticks" -gt 50 ]; then clock=$((clock + 1)); fi ;;
+        # Reach the extension first, then advance a whole second per attempt.
+        deadline) if [ "$ticks" -gt 50 ]; then tenths=$((tenths + 10)); else tenths=$((tenths + 1)); fi ;;
         # Each attempt costs a whole second, as on a heavily loaded host.
-        slow-*) clock=$((clock + 1)) ;;
+        slow-*) tenths=$((tenths + 10)) ;;
+        *) tenths=$((tenths + 1)) ;;
       esac
-      # This fixture clock is intentionally scoped to the isolated subshell.
-      # shellcheck disable=SC2030
-      SECONDS=$clock
-      if [ "$scenario" = transition ] && [ "$ticks" -eq 51 ]; then
+      pin_clock
+      if [ "$scenario" = transition-early ] && [ "$ticks" -eq 48 ]; then
         touch "$dir/mark"
         wait_for "$dir/marked"
       elif [ "$scenario" = slow-spawn ] && [ "$ticks" -eq 8 ]; then
@@ -3196,13 +3219,16 @@ test_presentation_recovery_wait_requires_live_spawn_holder() (
       fm_backend_herdr_presentation_lock_acquire fmtest recovery || rc=$?
     fi
     case "$scenario" in
-      spawn|transition)
+      spawn|transition-early|turnover)
         [ "$rc" = 0 ] && [ "$ticks" = 55 ] || fail "$scenario live spawn was not waited out: rc=$rc ticks=$ticks"
         fm_lock_release "$FM_BACKEND_HERDR_PRESENTATION_LOCK"
         ;;
       released)
-        [ "$rc" = 0 ] && [ "$ticks" = 51 ] || fail "release before the holder check refused the recovery: rc=$rc ticks=$ticks"
+        [ "$rc" = 0 ] && [ "$ticks" = 50 ] || fail "release before the holder check added a wait or refused the recovery: rc=$rc ticks=$ticks"
         fm_lock_release "$FM_BACKEND_HERDR_PRESENTATION_LOCK"
+        ;;
+      transition-late)
+        [ "$rc" = 1 ] && [ "$ticks" = 50 ] || fail "unproven holder after the elapsed deadline got another wait: rc=$rc ticks=$ticks"
         ;;
       slow-released)
         [ "$rc" = 0 ] && [ "$ticks" = 5 ] || fail "release at the elapsed deadline added a wait or refused recovery: rc=$rc ticks=$ticks"

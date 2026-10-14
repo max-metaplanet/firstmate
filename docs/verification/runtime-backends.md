@@ -1521,8 +1521,8 @@ The projected spawn in that run used the historical empty opt-in file, so a home
 The current recovery contention policy and explicit wait option are documented in [Herdr operational compromises](../herdr-backend.md#operational-compromises).
 The bounded extension was verified on 2026-10-14 with real lock-holder processes on macOS using `bash bin/fm-test-run.sh tests/fm-backend-herdr.test.sh`.
 This host lacked GNU `timeout`; a temporary command shim delegated the suite's `timeout 3s` probe to `fm-timeout-lib.sh`'s Bash fallback.
-The new regression accelerates sleep and pins elapsed-clock progression to it while using the real lock implementation for owner publication, liveness, acquisition, and release.
-It verifies a recovery waits beyond the ordinary budget only for a marked live spawn, survives a release at the elapsed deadline or a new holder publishing its role within the ordinary budget, refuses an unmarked or unreadable holder without another sleep once its elapsed deadline is reached, leaves an ordinary caller's attempt budget unchanged even when attempts are slow, and cannot be kept waiting past its deadline by a marked holder.
+The new regression accelerates sleep and advances the elapsed clock 0.1s per sleep, so 50 sleeps are five elapsed seconds, while using the real lock implementation for owner publication, liveness, acquisition, and release.
+It verifies a recovery waits beyond the ordinary budget only for a marked live spawn, including a new marked owner that replaces the previous one, survives a release at the elapsed deadline or a new holder publishing its role within the ordinary budget, refuses an unmarked or unreadable holder, or a new holder still unmarked after the elapsed deadline, without another sleep, leaves an ordinary caller's attempt budget unchanged even when attempts are slow, and cannot be kept waiting past its deadline by a marked holder.
 
 ```text
 ok - fm_backend_herdr_presentation_lock_acquire: bounded budget, and contention is distinct from an unresolved session
