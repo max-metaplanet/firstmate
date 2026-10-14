@@ -13,6 +13,9 @@ A GitHub Actions check (`Require no-mistakes`) runs on PRs targeting `main` and 
 The attestation must bind to the current PR head commit and report the review, test, and document steps as completed, so a stale attestation, a missing `head_sha`, or a skipped required step fails.
 It evaluates every PR opening and body edit independently, reruns after head synchronization or reopening, and prevents a later edit from replacing an earlier pending compliance check.
 GitHub Actions and Dependabot are exempt so their automation keeps working, but other contributor PRs that do not satisfy the attestation contract will not be reviewed or merged.
+One further exemption exists for maintainers: a PR carrying the `fm-ci-validated` label passes the check on the label alone, because a maintainer deliberately validated it through this repository's own CI instead of the local pipeline.
+Only an account with triage or write access can label a PR, so no push and no outside contribution gets that exemption by default, and adding or removing the label re-runs the check.
+The check reads the PR's current labels as well as the ones its event carried, so a label applied moments after the PR opens still counts; a label read that cannot answer falls back to the event rather than exempting anything.
 
 ## Workflow
 
