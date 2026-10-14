@@ -84,6 +84,7 @@ A task already recorded on a different alias home requires an explicit seat move
 `list`, `status`, `threshold`, `destination-min`, `auto-exclude`, `auto-include`, `auto`, `arm`, and `retire` work with the same provider prefix.
 Codex quota probes are profile-only and non-renewing, so a missing login cannot fall back to another credential source.
 Claude's paid extra-usage and floor controls, pipeline wrapper, and lead restart are not Codex operations.
+The empty-seat refusal described under [the five controls](#the-five-controls) is a Codex operation: a switch onto a home with no quota left is refused with its reset time, and with every Codex home empty the watch moves nothing and names the Claude seat that still has headroom.
 [`configuration.md`](configuration.md#codex-seats) owns the settings and recorded worker-home contract.
 
 ## Switching now
@@ -133,7 +134,13 @@ bin/fm-seat.sh arm
 **Destination headroom** (`destination-min`) is what counts as somewhere to go: a candidate must read **more** than that percent left.
 A seat below it is skipped, and the refusal names each skipped seat with its measured headroom.
 If no seat qualifies, nothing is switched.
-Without this setting the rotation gate is login-only and no candidate's quota is read at all, which is how it behaved before the setting existed.
+Without this setting no headroom level is asked of a candidate, which is how it behaved before the setting existed.
+
+A seat with **nothing left at all** is refused with no setting configured, because a worker launched there cannot run.
+Every switch applies it - automatic rotation, `bin/fm-seat.sh switch <name>` by hand, Claude seats and Codex homes alike - and the refusal names the seat and the time its quota comes back; `--force` is the override.
+Nothing about that refusal is written down, so the seat is a candidate again as soon as a read after its reset shows headroom: there is no list to take it off.
+A seat whose quota simply could not be read is never treated as empty, so an idle seat stays a destination exactly as it was.
+When **every** seat of one vendor reads empty, nothing is switched at all - moving between two empty seats is worse than staying - and one line reports each seat's reset time together with the other vendor's seat that still has headroom.
 
 **Extra-usage policy** (`extra-usage`) is what to do when no seat qualifies and the active seat's plan quota is gone, so further work would run on paid extra usage.
 
@@ -393,7 +400,7 @@ Worker launches and the guarded renewal helper use the vendor CLI to renew a sea
 One consequence is worth planning around.
 A lapsed seat has **no readable quota** until something renews it, so it cannot answer a headroom comparison.
 With `destination-min` set, a lapsed seat is therefore skipped as a rotation destination - reported as unreadable headroom, not as a login problem - which means a home that sets a destination minimum will rotate only onto seats something has read recently.
-If you want rotation to reach idle seats, leave `destination-min` unset so the gate stays login-only.
+If you want rotation to reach idle seats, leave `destination-min` unset; the empty-seat refusal above needs a reading that proves a seat empty, which a lapsed seat never gives, so it does not skip one.
 The extra-usage dispatch gate does not hold on a lapsed active seat for the same reason: that launch can renew the token.
 
 A seat the [quota floor](#resting-a-seat-below-a-quota-floor) is resting is never launched on, so its token lapses while it rests and nothing can prove it recovered.

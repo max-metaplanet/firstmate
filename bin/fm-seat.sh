@@ -61,7 +61,9 @@
 #            there fails on its first message; --force overrides that refusal
 #            when the probe itself cannot reach a verdict. A seat whose access
 #            token has merely lapsed is accepted with no --force, because the
-#            worker launched there renews it. After the switch it
+#            worker launched there renews it. It also refuses a seat whose live
+#            quota is used up, naming the reset time, and one at or below the
+#            destination minimum; --force crosses both. After the switch it
 #            runs bin/fm-config-push.sh --local-only so this machine's running local
 #            secondmate homes take the new seat too, reporting each home, and
 #            naming each seat item a declining home skipped and why.
@@ -76,9 +78,14 @@
 #            that trips an automatic switch. Absent means no automatic switching.
 # destination-min
 #            DESTINATION HEADROOM. Print, set, or clear the percent LEFT a seat
-#            must EXCEED to be a switch destination. Absent means the rotation
-#            gate is login-only, exactly as it was before this setting existed,
-#            and no candidate's quota is read at all.
+#            must EXCEED to be a switch destination. Absent, nothing beyond the
+#            used-up refusal below is asked of a candidate's quota.
+#            SEPARATELY and with no setting at all, no switch - automatic or by
+#            hand, Claude or Codex - lands on a seat whose live quota reads used
+#            up, because a worker launched there cannot run; the refusal names
+#            the seat and when it comes back, and --force is the override. A
+#            seat whose quota gives no verdict is never treated as used up, so
+#            an idle seat stays a destination exactly as it always was.
 # extra-usage
 #            EXTRA-USAGE POLICY, for when no seat has headroom. `stop` holds new
 #            Claude dispatch rather than starting workers that would run on paid
@@ -147,6 +154,10 @@
 #            when the trigger is met and a seat with headroom exists, and print
 #            one line when firstmate should know, including one warning per
 #            resting entry with live workers and explicit seat-move commands.
+#            When EVERY seat of this vendor reads used up, nothing moves - a
+#            switch between two empty seats is the one move worse than staying -
+#            and one line reports it, naming each seat's reset time and the
+#            other vendor's seat with headroom when there is one.
 #            For ships/scouts, fm-dispatch-resolve.sh --codex-alternative also
 #            offers an eligible Codex profile from the worker's matched rule
 #            when the resolver is on and clear; never from the default.
@@ -251,6 +262,23 @@ usage() {
   exit 2
 }
 die() { printf 'error: %s\n' "$1" >&2; exit 1; }
+
+# seat_command_memo
+# One quota memo for the rest of THIS command, so the login probe and the
+# destination quota read of the same profile cost one call rather than two.
+# It is the per-pass memo bin/fm-seat-lib.sh owns, scoped to a single short
+# command instead of a watch pass. A memo already in the environment belongs to
+# the pass that invoked this command as a child and is left exactly as it is,
+# so the pass keeps owning both the figures and the cleanup.
+seat_command_memo() {
+  local memo
+  [ -z "${FM_SEAT_READ_MEMO_DIR:-}" ] || return 0
+  memo=$(mktemp -d "${TMPDIR:-/tmp}/fm-seat-cmd.XXXXXX" 2>/dev/null) || return 0
+  FM_SEAT_READ_MEMO_DIR=$memo
+  export FM_SEAT_READ_MEMO_DIR
+  # shellcheck disable=SC2064 # the path is fixed now, not when the trap runs.
+  trap "rm -rf -- '$memo'" EXIT
+}
 
 # login_state <name>
 # Print "logged-in", "expired-renewable", "not-logged-in", or "unknown" for a
@@ -474,6 +502,65 @@ cmd_probe() {
   esac
 }
 
+# destination_quota_check <name>
+# The quota half of destination eligibility, applied by EVERY switch - the
+# automatic rotation below and an explicit `switch <name>` alike - so a seat a
+# rotation would refuse can never be reached by a deliberate switch either.
+# Prints the reason and returns 0 to REFUSE the seat, 1 when it qualifies, and 2
+# when the read reached no verdict, printing that as the reason too and leaving
+# what an unknown means to the caller.
+#
+# Two rules, in order:
+#   - A seat whose live quota PROVES it is empty is refused whatever is
+#     configured. This is the one gate that needs no setting, because a worker
+#     launched on an empty seat cannot run at all; it fires for a Claude seat and
+#     a Codex home alike, and names the reset time so the refusal also says when
+#     the seat comes back.
+#   - With config/<provider>-seat-destination-min set, a seat at or below that
+#     percent is refused as well. Absent, nothing further is asked.
+#
+# No verdict is never read as empty: a seat whose access token has merely lapsed
+# is signed in, and its headroom is unknown rather than zero.
+destination_quota_check() {
+  local name=$1 dir out remaining minimum reset
+  dir=$(fm_seat_config_dir "$name") || {
+    printf 'its profile could not be resolved\n'
+    return 2
+  }
+  minimum=$(fm_seat_destination_min) || minimum=''
+  if ! out=$(fm_seat_quota_json "$dir"); then
+    printf 'its quota could not be read, so its headroom is unknown and this makes no guess\n'
+    return 2
+  fi
+  fm_seat_depleted_from "$out"
+  case "$?" in
+    0)
+      reset=$(fm_seat_reset_at_from "$out") || reset=''
+      if [ -n "$reset" ]; then
+        printf 'its quota is used up; the seat comes back at %s\n' "$reset"
+      else
+        printf 'its quota is used up and its report names no reset time\n'
+      fi
+      return 0
+      ;;
+    2)
+      printf 'its quota could not be read, so its headroom is unknown and this makes no guess\n'
+      return 2
+      ;;
+  esac
+  [ -n "$minimum" ] || return 1
+  remaining=$(fm_seat_remaining_from "$out") || {
+    printf 'its quota could not be read, so its headroom is unknown and this makes no guess\n'
+    return 2
+  }
+  if jq -en --arg r "$remaining" --arg m "$minimum" \
+    '($r | tonumber) > ($m | tonumber)' >/dev/null 2>&1; then
+    return 1
+  fi
+  printf '%s%% left is not above the %s%% destination minimum\n' "$remaining" "$minimum"
+  return 0
+}
+
 # next_seat [<anchor-seat>]
 # The seat after the anchor seat, in list order, that a worker can be launched
 # on. The anchor defaults to the active seat, which is every existing caller;
@@ -511,23 +598,24 @@ cmd_probe() {
 # The seat set is read fresh from the seats root on every call, so this never
 # assumes which seats exist or that any particular one is present.
 #
-# DESTINATION HEADROOM. With config/claude-seat-destination-min set, a candidate
-# must also read MORE than that percent left, so a switch can never land on a
-# seat that is nearly empty. A candidate whose quota gives no verdict is SKIPPED
-# rather than guessed at in either direction: an ambiguous read is not evidence
-# of headroom, and switching onto it would be the guess this refuses to make.
-# With the setting absent no candidate quota is read at all and the gate is
-# login-only, byte for byte the behaviour that predates it.
+# DESTINATION QUOTA. destination_quota_check above owns this half in full and
+# is shared with an explicit switch, so the two can never drift: a candidate
+# proven EMPTY is refused with no setting at all, and one at or below
+# config/claude-seat-destination-min is refused when that setting is present.
+# A candidate whose quota gives no verdict is never guessed at in either
+# direction. With no minimum set it stays a destination, which keeps the
+# login-only outcome this had before any candidate quota was read; with one set
+# it is SKIPPED, because an ambiguous read cannot answer a headroom comparison.
 #
-# A seat whose access token has lapsed always falls in that skipped class while
-# the setting is set, because its quota genuinely cannot be read until a launch
-# renews it. So this setting and idle seats interact: a home that sets a
-# destination minimum will rotate only onto seats something has read recently.
+# A seat whose access token has lapsed is always in that no-verdict class,
+# because its quota genuinely cannot be read until a launch renews it. So the
+# minimum and idle seats interact: a home that sets a destination minimum will
+# rotate only onto seats something has read recently.
 #
 # Every rejected candidate is reported on stderr with its reason, so a refusal
 # to switch always says which seats were considered and why none qualified.
 next_seat() {
-  local active seats n i idx name minimum='' remaining state resting
+  local active seats n i idx name minimum='' reason state resting
   active=${1:-$(fm_seat_active)}
   minimum=$(fm_seat_destination_min) || minimum=''
   mapfile -t seats < <(fm_seat_list)
@@ -577,29 +665,34 @@ next_seat() {
       esac
       continue
     fi
+    reason=$(destination_quota_check "$name")
+    case "$?" in
+      1)
+        printf '%s\n' "$name"
+        return 0
+        ;;
+      0)
+        printf 'seat %s: skipped, %s\n' "$name" "$reason" >&2
+        continue
+        ;;
+    esac
+    # No verdict. With no destination minimum an idle seat is still a
+    # destination, which is the login-only outcome this had before any candidate
+    # quota was read; with one set the comparison has no number to make and the
+    # seat is skipped for that reason rather than for its login state.
     if [ -z "$minimum" ]; then
       printf '%s\n' "$name"
       return 0
     fi
-    if ! remaining=$(fm_seat_remaining "$(fm_seat_config_dir "$name")"); then
-      # A renewable seat lands here by construction: nothing can read its quota
-      # until something renews it, so it has no headroom figure to compare and
-      # is skipped for that reason rather than for its login state. Saying which
-      # is what stops an operator reading a merely idle seat as a broken one.
-      if [ "$state" = expired-renewable ]; then
-        printf 'seat %s: skipped, signed in but its access token has lapsed, so its headroom cannot be read until a worker launched there renews it\n' "$name" >&2
-      else
-        printf 'seat %s: skipped, its quota could not be read, so its headroom is unknown and this makes no guess\n' "$name" >&2
-      fi
-      continue
+    # A renewable seat lands here by construction: nothing can read its quota
+    # until something renews it, so it has no headroom figure to compare and
+    # is skipped for that reason rather than for its login state. Saying which
+    # is what stops an operator reading a merely idle seat as a broken one.
+    if [ "$state" = expired-renewable ]; then
+      printf 'seat %s: skipped, signed in but its access token has lapsed, so its headroom cannot be read until a worker launched there renews it\n' "$name" >&2
+    else
+      printf 'seat %s: skipped, %s\n' "$name" "$reason" >&2
     fi
-    if jq -en --arg r "$remaining" --arg m "$minimum" \
-      '($r | tonumber) > ($m | tonumber)' >/dev/null 2>&1; then
-      printf '%s\n' "$name"
-      return 0
-    fi
-    printf 'seat %s: skipped, %s%% left is not above the %s%% destination minimum\n' \
-      "$name" "$remaining" "$minimum" >&2
   done
   return 1
 }
@@ -632,7 +725,8 @@ write_active() {
 }
 
 cmd_switch() {
-  local name='' force=0 rotate=0 prior state dir resting
+  local name='' force=0 rotate=0 prior state dir resting reason
+  seat_command_memo
   while [ "$#" -gt 0 ]; do
     case "$1" in
       --next) rotate=1; shift ;;
@@ -685,6 +779,17 @@ cmd_switch() {
       [ "$force" -eq 1 ] || die "could not confirm seat '$name' is logged in (quota read gave no verdict); re-run with --force to switch anyway"
       ;;
   esac
+  # The quota half of the same destination test the automatic rotation applies.
+  # A deliberate switch still reaches an excluded or resting seat, because those
+  # withhold a seat from the AUTOMATIC paths only; it does not reach a seat whose
+  # quota is gone, because no worker launched there could run. --force is the
+  # explicit override, exactly as it is for an undecided login probe, and a read
+  # that reached no verdict changes nothing.
+  if reason=$(destination_quota_check "$name"); then
+    [ "$force" -eq 1 ] ||
+      die "seat '$name' is not a destination: $reason; re-run with --force to switch anyway"
+    printf "warning: switching to seat '%s' anyway: %s\n" "$name" "$reason" >&2
+  fi
   write_active "$name" || return 1
   printf 'switched: %s -> %s\n' "$prior" "$name"
   printf 'applies to NEW %s workers only; running workers keep their own seat\n' "$FM_SEAT_PROVIDER"
@@ -1213,6 +1318,7 @@ warn_pipeline_resting_entry() {
 
 cmd_pipeline_move() {
   local active reason
+  seat_command_memo
   # The move follows active-seat rotation, irrespective of an override in the
   # shell issuing it. Overrides belong to the pipeline launch environment.
   active=$(fm_seat_active)
@@ -1340,6 +1446,7 @@ auto_lead_trigger() {  # <threshold>
 # The trigger and switch half of one automatic pass.
 auto_trigger() {
   local threshold=$1 policy=$2 active dir remaining target fired blocked out
+  local depleted label alt alt_provider alt_seat alt_pct alt_label
   active=$(fm_seat_active)
   dir=$(fm_seat_config_dir "$active")
   if ! remaining=$(fm_seat_remaining "$dir"); then
@@ -1381,6 +1488,26 @@ auto_trigger() {
   fi
   [ "$blocked" != "$active" ] || return 0
   auto_record_set blocked "$active"
+  # Every seat of this vendor proven empty is its own outcome, not a failure to
+  # find headroom: there is nowhere on this vendor to go, so nothing moves -
+  # which is what stops a pass flipping between two empty seats - and the line
+  # says where the work goes instead. It rides the existing `blocked` record, so
+  # it is reported once for this crossing rather than on every poll, and is
+  # re-asked from scratch the moment a reset puts the active seat back above its
+  # trigger.
+  if depleted=$(fm_seat_provider_depletion_summary); then
+    label=Claude; [ "$FM_SEAT_PROVIDER" != codex ] || label=Codex
+    if alt=$(fm_seat_alternative_headroom); then
+      read -r alt_provider alt_seat alt_pct <<< "$alt"
+      alt_label=Claude; [ "$alt_provider" != codex ] || alt_label=Codex
+      printf '%s-seat: all %s seats depleted (%s); new work routes to %s seat %s, which has %s%% left. No switch was made.\n' \
+        "$FM_SEAT_PROVIDER" "$label" "$depleted" "$alt_label" "$alt_seat" "$alt_pct"
+    else
+      printf '%s-seat: all %s seats depleted (%s); no seat on the other vendor has readable headroom either, so new work waits for the first reset. No switch was made.\n' \
+        "$FM_SEAT_PROVIDER" "$label" "$depleted"
+    fi
+    return 0
+  fi
   case "$policy" in
     stop)
       printf '%s-seat: %s is at %s%% left and no seat has enough headroom to switch to; new Claude work will be held once this seat'\''s plan quota runs out, rather than started on paid extra usage. A worker already running is not stopped.\n' "$FM_SEAT_PROVIDER" \
