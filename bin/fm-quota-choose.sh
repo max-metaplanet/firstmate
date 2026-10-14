@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Choose the first quota-eligible candidate from a ranked list.
+# Choose the first quota-eligible candidate from a ranked list (probe edit).
 #
 # Usage:
 #   fm-quota-choose.sh [--snapshot <path>] [--candidate <harness:model>]...
