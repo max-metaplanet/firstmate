@@ -150,8 +150,8 @@ The always-run `ci-gate` job reports the whole round's result, so a gated-off jo
 
 The longer-term performance objective remains a complete green run under fifteen minutes including start delay; the supervision-host floor that alone exceeded that objective is gone.
 The immediate packing target is the runner's modeled script budget, and with no script left above a derived 488000 ms, more shards now lower that model until it reaches the lane's total work divided by the shard count.
-The layout uses twenty-three long-lived Linux jobs (sixteen serial, two parallel, Herdr, four lint), plus short checks and macOS; insufficient shared account capacity can erase the packing gain.
-A change-scoped pull request round uses at most six packed jobs plus the four lint partitions instead, with the macOS check running advisory beside it rather than inside its verdict.
+The layout uses thirty-three long-lived Linux jobs (sixteen serial, two parallel, Herdr, fourteen lint), plus short checks and macOS; insufficient shared account capacity can erase the packing gain.
+A change-scoped pull request round uses at most six packed jobs plus the fourteen lint partitions instead, with the macOS check running advisory beside it rather than inside its verdict.
 Sixteen serial shards was chosen as the knee of the packing from the aggregate of run 38453818522, when `tests/fm-supervision-host.test.sh` at about 22.6 minutes and `tests/fm-watch-triage.test.sh` at about 17.9 minutes were indivisible scripts that set the lane's floor.
 Both suites are now split across colocated scripts, so no single script sets the floor and the modeled maximum shard is the lane's total work divided by the shard count: `bin/fm-test-run.sh --check-coverage` reports `serial_max_ms=692596` at sixteen shards and 615641 at eighteen.
 Raising the count therefore buys wall time again, at the cost of each extra runner's start delay.
