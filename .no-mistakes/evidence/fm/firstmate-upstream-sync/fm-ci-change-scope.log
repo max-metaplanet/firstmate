@@ -1,0 +1,9 @@
+ok - prose no test reads turns both the behavior and macOS gates off
+ok - a shell or CI workflow change keeps both gates on
+ok - test-affecting non-shell changes run the behavior suites but skip macOS
+ok - prose and data a test reads keeps the behavior gate on
+ok - a single relevant path turns its gate back on for the whole change set
+ok - a rename out of a test-read path keeps the behavior gate on
+ok - an unrecognized path keeps both gates on
+ok - push events, unknown events and unusable change sets keep both gates on
+ok - an unknown argument is refused rather than silently classified
