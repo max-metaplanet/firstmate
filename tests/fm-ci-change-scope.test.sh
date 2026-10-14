@@ -20,7 +20,7 @@ scope_for() {  # <path>...
   local list
   list="$TMP_ROOT/paths.$$"
   printf '%s\n' "$@" >"$list"
-  FM_CI_EVENT=pull_request FM_CI_CHANGED_PATHS_FILE="$list" bash "$SCOPE"
+  FM_CI_EVENT=pull_request FM_CI_CHANGED_PATHS_FILE="$list" bash "$SCOPE" "${SCOPE_MODE:-}"
 }
 
 # Assert both gates for one change set.
@@ -324,6 +324,50 @@ test_a_selected_herdr_member_runs_the_herdr_lane() {
   pass "a selected Herdr-family member runs the required Herdr lane instead"
 }
 
+# Default output is the CI interface: local opt-in must not add output keys or
+# change the full-suite verdict for any configuration surface.
+test_workflow_configuration_has_separate_local_coverage() {
+  local path expected matrix scripts
+  for path in .github/workflows/ci.yml .github/workflows/other.yml .github/actions/example/action.yml .no-mistakes.yaml; do
+    classify "$path"
+    expected=$'behavior=true\nmacos=false\nfull=true\nherdr=true\nselected_matrix='
+    case "$path" in
+      .github/workflows/ci.yml | .no-mistakes.yaml)
+        expected=$'behavior=true\nmacos=true\nfull=true\nherdr=true\nselected_matrix='
+        ;;
+    esac
+    assert_equals "$expected" "$SCOPE_OUT" "CI output stays unchanged for $path"
+    SCOPE_MODE=--local classify "$path"
+    assert_equals false "$(scope_value full)" "local configuration coverage narrows for $path"
+    assert_equals false "$(scope_value herdr)" "workflow configuration leaves full Herdr coverage to CI"
+    matrix=$(scope_value selected_matrix)
+    scripts=$(printf '%s' "$matrix" | jq -r '.include[].scripts' | tr ' ' '\n' | LC_ALL=C sort)
+    assert_equals $'tests/fm-ci-change-scope.test.sh\ntests/fm-lint-workflows.test.sh\ntests/fm-nm-test-contract.test.sh' \
+      "$scripts" "local configuration coverage selects exactly its three contracts"
+  done
+  SCOPE_MODE=--local classify .github/workflows/ci.yml .no-mistakes.yaml bin/fm-quota-choose.sh README.md
+  assert_equals false "$(scope_value full)" "configuration beside narrow code still narrows"
+  matrix=$(scope_value selected_matrix)
+  assert_contains "$matrix" tests/fm-quota-choose.test.sh "mixed changes retain normal code selection"
+  assert_contains "$matrix" tests/fm-documentation-audiences.test.sh "mixed changes retain prose coverage"
+  scripts=$(printf '%s' "$matrix" | jq -r '.include[].scripts' | tr ' ' '\n')
+  assert_equals 5 "$(printf '%s\n' "$scripts" | sort -u | wc -l | tr -d ' ')" "mixed selection contains only the expected suites"
+  assert_equals 5 "$(printf '%s\n' "$scripts" | wc -l | tr -d ' ')" "multiple configuration paths do not duplicate suites"
+  pass "CI output stays unchanged while local configuration coverage narrows"
+}
+
+test_local_mode_keeps_other_conservative_fallbacks() {
+  local path
+  for path in bin/fm-test-run.sh bin/fm-test-isolation-proof.sh bin/fm-ci-change-scope.sh \
+    tests/lib.sh tests/fixtures.sh tests/wake-helpers.sh tests/herdr-test-safety.sh \
+    bin/fm-dod-lib.sh bin/fm-backend.sh tests/stray-note.txt docs/arm-pretool-check.md; do
+    SCOPE_MODE=--local assert_full_suite "local configuration plus $path" .github/workflows/ci.yml "$path"
+  done
+  SCOPE_MODE=--local assert_full_suite 'local configuration plus an oversized selection' \
+    .no-mistakes.yaml bin/fm-afk-launch.sh bin/fm-session-start.sh bin/fm-pr-merge.sh bin/fm-spawn.sh
+  pass "local mode retains every other conservative full-suite fallback"
+}
+
 test_prose_only_changes_turn_both_gates_off
 test_shell_changes_turn_both_gates_on
 test_non_shell_test_inputs_run_the_behavior_suites_without_macos
@@ -343,3 +387,6 @@ test_a_behavior_relevant_path_that_maps_to_no_tests_runs_everything
 test_prose_beside_code_keeps_the_documentation_suite
 test_prose_only_changes_select_nothing_at_all
 test_a_selected_herdr_member_runs_the_herdr_lane
+
+test_workflow_configuration_has_separate_local_coverage
+test_local_mode_keeps_other_conservative_fallbacks

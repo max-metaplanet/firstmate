@@ -52,13 +52,14 @@ document:
 # `tests/fm-lint-workflows.test.sh`.
 #
 # Reuse the CI classifier and its fm-test-run.sh changed-file map. The classifier
-# owns conservative full-suite fallbacks when a safe narrow selection is unknown.
+# owns local contract coverage for workflow configuration and conservative
+# full-suite fallbacks when a safe narrow selection is unknown.
 commands:
   lint: 'bin/fm-lint.sh'
   test: |
     bash <<'NM_TEST'
     set -euf
-    scope=$(FM_CI_EVENT=pull_request FM_CI_BASE_SHA=origin/main bash bin/fm-ci-change-scope.sh)
+    scope=$(FM_CI_EVENT=pull_request FM_CI_BASE_SHA=origin/main bash bin/fm-ci-change-scope.sh --local)
     printf '%s\n' "$scope"
     if printf '%s\n' "$scope" | grep -qx 'behavior=false'; then
       exec bash bin/fm-test-run.sh tests/fm-documentation-audiences.test.sh

@@ -29,6 +29,7 @@ print cmds.is_a?(Hash) ? cmds["test"].to_s : ""
 FIX="$TMP_ROOT/repo"
 mkdir -p "$FIX/bin"
 cat > "$FIX/bin/fm-ci-change-scope.sh" <<'SH'
+[ "$#" -eq 1 ] && [ "$1" = --local ] || exit 2
 printf '%s\n' "$SCOPE_OUT"
 exit "${SCOPE_RC:-0}"
 SH
@@ -86,3 +87,29 @@ pass "selector failure fails the command"
 run_cmd $'behavior=true\nfull=false\nherdr=false\nselected_matrix='"$M" 0 1
 expect_code 1 "$RC" "failing selected test"
 pass "a failing selected test fails the command"
+
+# Execute the configured command with the real classifier and selection map;
+# intercept only the final test execution to avoid recursively running this suite.
+cp "$ROOT/bin/fm-ci-change-scope.sh" "$FIX/bin/fm-ci-change-scope.sh"
+cat > "$FIX/bin/fm-test-run.sh" <<'SH'
+#!/usr/bin/env bash
+case "${1:-}" in
+  --list-weighted | --list) exec bash "$REAL_RUNNER" "$@" ;;
+esac
+printf '%s\n' "$*" > "$RUN_LOG"
+SH
+chmod +x "$FIX/bin/fm-test-run.sh"
+for path in .github/workflows/ci.yml .github/actions/example/action.yml .no-mistakes.yaml; do
+  printf '%s\n' "$path" bin/fm-quota-choose.sh > "$TMP_ROOT/changed-paths"
+  REAL_RUNNER="$ROOT/bin/fm-test-run.sh" FM_CI_CHANGED_PATHS_FILE="$TMP_ROOT/changed-paths" run_cmd ''
+  expect_code 0 "$RC" "real local classifier for $path"
+  assert_contains "$ARGV" '--per-script-timeout-secs 1500' "the timeout remains unchanged"
+  scripts=$(printf '%s\n' "$ARGV" | tr ' ' '\n' | tail -n +3 | LC_ALL=C sort)
+  assert_equals $'tests/fm-ci-change-scope.test.sh\ntests/fm-lint-workflows.test.sh\ntests/fm-nm-test-contract.test.sh\ntests/fm-quota-choose.test.sh' \
+    "$scripts" "configured local Test runs contracts plus normal narrow selection"
+done
+printf '%s\n' .github/workflows/ci.yml bin/fm-ci-change-scope.sh > "$TMP_ROOT/changed-paths"
+REAL_RUNNER="$ROOT/bin/fm-test-run.sh" FM_CI_CHANGED_PATHS_FILE="$TMP_ROOT/changed-paths" run_cmd ''
+expect_code 0 "$RC" "real local classifier with selection machinery changed"
+assert_equals "--all --per-script-timeout-secs 1500" "$ARGV" "machinery changes retain full local validation"
+pass "configured Test uses real local classification and preserves other full-suite fallbacks"
