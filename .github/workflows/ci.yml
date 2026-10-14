@@ -5,6 +5,13 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # The complete-suite backstop for change-scoped selection on pull requests.
+  # Push to main already runs everything; this catches a repository that sits
+  # for days on selected rounds alone. 07:00 UTC is outside the working day
+  # this fork is driven from, so a nightly failure is waiting in the morning
+  # rather than competing with a working round for runners.
+  schedule:
+    - cron: '0 7 * * *'
 
 permissions:
   contents: read
@@ -27,11 +34,19 @@ concurrency:
 # Each job comment identifies the tier implemented by its executable value.
 
 jobs:
-  # Change-scope gates. One owner of the path sets: bin/fm-ci-change-scope.sh,
-  # pinned by tests/fm-ci-change-scope.test.sh. This job runs on every event so
-  # a gated job below reports "skipped" and satisfies branch protection; a
+  # Change-scope gates. One owner of the path sets and of the change-scoped
+  # test selection: bin/fm-ci-change-scope.sh, pinned by
+  # tests/fm-ci-change-scope.test.sh. This job runs on every event so a gated
+  # job below reports "skipped" and satisfies branch protection; a
   # workflow-level paths: filter would never create the workflow at all and
   # would leave a required check pending forever.
+  #
+  # On a pull request the classifier may narrow the behavior gate further, to
+  # the test scripts that actually cover the changed paths, packed into the
+  # fewest jobs that fit its budget. `full` then turns the complete sharded
+  # suite off and `selected_matrix` turns the change-scoped job on. Everything
+  # the classifier cannot reason about leaves `full` true, and push to main
+  # plus the nightly schedule never select at all.
   changes:
     name: Change scope
     runs-on: ubuntu-latest
@@ -40,6 +55,9 @@ jobs:
     outputs:
       behavior: ${{ steps.scope.outputs.behavior }}
       macos: ${{ steps.scope.outputs.macos }}
+      full: ${{ steps.scope.outputs.full }}
+      herdr: ${{ steps.scope.outputs.herdr }}
+      selected_matrix: ${{ steps.scope.outputs.selected_matrix }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -120,6 +138,10 @@ jobs:
       - uses: actions/checkout@v6
       - name: Prove complete regression partition
         run: bin/fm-test-run.sh --check-coverage
+      # The change-scoped selection is only as safe as the map behind it, so
+      # the map's completeness is proven on every event, gated off by nothing.
+      - name: Prove the changed-file map answers for every referenced path
+        run: bin/fm-test-run.sh --check-changed-map
 
   # Two duration-balanced portable parallel shards of the Phase 2 proven-isolated
   # set only. Composition owner: bin/fm-test-run.sh (docs/fm-test-portable-shards.md).
@@ -129,7 +151,7 @@ jobs:
     # Normal tier (see the timeout policy above).
     timeout-minutes: 30
     needs: changes
-    if: needs.changes.outputs.behavior == 'true'
+    if: needs.changes.outputs.full == 'true'
     steps:
       - uses: actions/checkout@v6
         with:
@@ -175,7 +197,7 @@ jobs:
     # Normal tier (see the timeout policy above).
     timeout-minutes: 30
     needs: changes
-    if: needs.changes.outputs.behavior == 'true'
+    if: needs.changes.outputs.full == 'true'
     steps:
       - uses: actions/checkout@v6
         with:
@@ -226,7 +248,7 @@ jobs:
     # shards carry their own job bound while every other lane keeps 30.
     timeout-minutes: 45
     needs: changes
-    if: needs.changes.outputs.behavior == 'true'
+    if: needs.changes.outputs.full == 'true'
     strategy:
       # Every shard reports so one failure never hides another shard's result.
       fail-fast: false
@@ -298,6 +320,99 @@ jobs:
           path: ${{ runner.temp }}/fm-test/fm-test-timing-portable-serial-${{ matrix.shard }}.json
           if-no-files-found: warn
 
+  # Change-scoped behavior lane. On a pull request whose changed paths the
+  # classifier could reason about, this replaces both portable parallel lanes
+  # and all 16 portable serial shards with the test scripts that actually cover
+  # the change, packed by bin/fm-ci-change-scope.sh into the fewest jobs whose
+  # modeled work fits its per-job budget. A one-script change therefore spends
+  # one runner instead of 19, which is what the round's wall clock is made of:
+  # runner start delay dominates a short round.
+  #
+  # Composition is the classifier's, not this file's: it emits the matrix and
+  # the gate, and every case it cannot reason about leaves `full` true so the
+  # sharded lanes above run instead. The tool installs below are the union of
+  # what those lanes install, because any portable script may land here.
+  tests-selected:
+    name: Behavior selected ${{ matrix.shard }}
+    runs-on: ubuntu-latest
+    # Normal tier (see the timeout policy above). The classifier's own budget
+    # keeps a packed job far under this; the bound stays a hang tripwire.
+    timeout-minutes: 30
+    needs: changes
+    if: needs.changes.outputs.selected_matrix != ''
+    strategy:
+      # Every packed job reports so one failure never hides another's result.
+      fail-fast: false
+      # The fallback is never used: the gate above skips this job whenever the
+      # classifier emitted no selection. It is here because a matrix expression
+      # is resolved before that gate is, and fromJSON('') would fail the run.
+      matrix: ${{ fromJSON(needs.changes.outputs.selected_matrix || '{"include":[{"shard":"0","scripts":""}]}') }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Install pinned ShellCheck
+        run: |
+          set -eu
+          bin/fm-install-shellcheck.sh "$RUNNER_TEMP/bin"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      - name: Install pinned actionlint
+        run: |
+          set -eu
+          bin/fm-install-actionlint.sh "$RUNNER_TEMP/bin"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      - name: Require tmux for e2e tests
+        run: |
+          set -eu
+          command -v tmux >/dev/null || {
+            echo "::error::tmux is required for real afk injection e2e coverage"
+            exit 1
+          }
+          tmux -V
+      - name: Install tasks-axi
+        run: |
+          set -eu
+          npm install -g tasks-axi
+          tasks-axi --version
+      - name: Install the Pi package for the Pi extension tests
+        run: |
+          set -eu
+          npm install -g @earendil-works/pi-coding-agent
+          npm ls -g --depth 0 @earendil-works/pi-coding-agent
+      - name: Run selected scripts ${{ matrix.shard }}
+        id: run-selected
+        env:
+          # Through the environment rather than inline interpolation, so the
+          # script list is data the shell splits rather than text spliced into
+          # this step's source.
+          FM_SELECTED_SCRIPTS: ${{ matrix.scripts }}
+        run: |
+          set -eu
+          mkdir -p "$RUNNER_TEMP/fm-test"
+          [ -n "$FM_SELECTED_SCRIPTS" ] || {
+            echo "::error::the change-scoped job started with no selected scripts"
+            exit 1
+          }
+          # Word splitting is the point: the classifier packed this bin as a
+          # space-separated list of test script paths.
+          # The per-script bound turns a wedged script into a bounded failure
+          # with its output, rather than a job the 30-minute cap cancels. It
+          # sits above every measured script the classifier's own per-job
+          # budget can admit, so it bounds a hang and nothing else.
+          # shellcheck disable=SC2086
+          bin/fm-test-run.sh --exclude-family real-herdr-gated \
+            --per-script-timeout-secs 1500 \
+            --fail-on-gate-skip 'Pi extension typecheck prerequisite not found' \
+            --json "$RUNNER_TEMP/fm-test/fm-test-timing-selected-${{ matrix.shard }}.json" \
+            $FM_SELECTED_SCRIPTS
+      - name: Upload selected timing artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fm-test-timing-selected-${{ matrix.shard }}
+          path: ${{ runner.temp }}/fm-test/fm-test-timing-selected-${{ matrix.shard }}.json
+          if-no-files-found: warn
+
   # Required real-Herdr lane: pinned install, serial real-herdr-gated family,
   # hard-fail on "skip: herdr not found". Starts on Linux x86_64; if a genuine
   # platform invariant fails (focus, cleanup, default-session tripwire), keep
@@ -306,7 +421,10 @@ jobs:
     name: Behavior tests (Herdr)
     runs-on: ubuntu-latest
     needs: changes
-    if: needs.changes.outputs.behavior == 'true'
+    # The required Herdr lane owns its whole family, so a change-scoped
+    # selection that reaches any member sends the work here rather than into a
+    # job with no Herdr installed.
+    if: needs.changes.outputs.herdr == 'true'
     # Heavy tier (see the timeout policy above): the last-resort job backstop.
     # The family-run step below owns the hang tripwire, so a wedged suite fails
     # there with the always() cleanup and timing upload still running.
@@ -438,7 +556,7 @@ jobs:
       - tests-herdr
     # always() so a failed lane still contributes its timing, but not when the
     # lanes were gated off: there would be no artifact to download at all.
-    if: always() && needs.changes.outputs.behavior == 'true'
+    if: always() && needs.changes.outputs.full == 'true'
     steps:
       - uses: actions/checkout@v6
       - name: Download lane timing artifacts
@@ -473,101 +591,28 @@ jobs:
     runs-on: macos-latest
     # Normal tier (see the timeout policy above).
     timeout-minutes: 30
-    # macOS runners are the scarcest capacity in this fork: this job has queued
-    # about 35 minutes for a 7.5-minute run, which alone set the CI round's wall
-    # clock. It reads nothing but shell sources, so it runs for bin/, tests/ and
-    # this workflow, and on every push to main. bin/fm-ci-change-scope.sh owns
-    # that path set and derives it from what the run step below actually reads.
+    # This is the BLOCKING half of the stock-Bash check: push to main and the
+    # nightly schedule, inside the CI gate's verdict. The advisory half runs on
+    # pull requests from .github/workflows/macos-advisory.yml.
+    #
+    # The split exists because macOS runners are the scarcest capacity in this
+    # fork - this job has queued about 35 minutes for a 7.5-minute run - and a
+    # job the CI gate needs holds the whole round until it finishes. `needs` is
+    # static, so the only way to keep a pull request's verdict off this job is
+    # for the pull request's copy of it to live outside that verdict entirely.
+    #
+    # It reads nothing but shell sources, so bin/fm-ci-change-scope.sh still
+    # owns which paths can change its verdict, and bin/fm-macos-stock-bash-check.sh
+    # owns what the check is, so both halves stay the same check.
     needs: changes
-    if: needs.changes.outputs.macos == 'true'
+    if: github.event_name != 'pull_request' && needs.changes.outputs.macos == 'true'
     steps:
       - uses: actions/checkout@v6
       - name: Run snapshot consumers with stock Bash
         shell: /bin/bash {0}
         env:
           PATH: /bin:/usr/bin:/usr/sbin:/sbin:/usr/local/bin:/opt/homebrew/bin
-        run: |
-          set -eu
-          case "$BASH_VERSION" in
-            3.2.57*) ;;
-            *) echo "::error::expected stock macOS Bash 3.2.57, got $BASH_VERSION"; exit 1 ;;
-          esac
-          /bin/bash --version | head -1
-          command -v jq >/dev/null || { echo "::error::jq is required"; exit 1; }
-
-          shell_inventory="$RUNNER_TEMP/fm-shell-inventory"
-          bin/fm-lint.sh --list-files > "$shell_inventory"
-          parse_fail=0
-          while IFS= read -r f; do
-            /bin/bash -n "$f" || { echo "::error::stock macOS Bash 3.2 failed to parse $f"; parse_fail=1; }
-          done < "$shell_inventory"
-          [ "$parse_fail" -eq 0 ] || { echo "::error::stock macOS Bash 3.2 parse sweep failed"; exit 1; }
-
-          command -v npm >/dev/null || { echo "::error::npm is required to install tasks-axi"; exit 1; }
-          npm install -g tasks-axi@0.2.6 >/dev/null
-          PATH="$(npm prefix -g)/bin:$PATH"
-          export PATH
-          command -v tasks-axi >/dev/null || { echo "::error::tasks-axi is required for the stock Bash regressions"; exit 1; }
-
-          snapshot_output=$(/bin/bash tests/fm-fleet-snapshot-view.test.sh)
-          printf '%s\n' "$snapshot_output"
-          snapshot_count=$(printf '%s\n' "$snapshot_output" | grep -c '^ok - ')
-          [ "$snapshot_count" -eq 19 ] || {
-            echo "::error::expected 19 snapshot/fleet-view tests, got $snapshot_count"
-            exit 1
-          }
-
-          bearings_output=$(/bin/bash tests/fm-bearings-snapshot.test.sh)
-          printf '%s\n' "$bearings_output"
-          bearings_count=$(printf '%s\n' "$bearings_output" | grep -c '^ok - ')
-          [ "$bearings_count" -eq 60 ] || {
-            echo "::error::expected 60 Bearings tests, got $bearings_count"
-            exit 1
-          }
-
-          # The full public-followup suite is not a stock-bash snapshot; run only
-          # the empty-lock register regression under real /bin/bash 3.2.
-          pf_output=$(FM_TEST_ONLY=test_first_register_succeeds_with_empty_lock_list_under_bash32 \
-            /bin/bash tests/fm-public-followup.test.sh)
-          printf '%s\n' "$pf_output"
-          pf_count=$(printf '%s\n' "$pf_output" | grep -c '^ok - ')
-          [ "$pf_count" -eq 1 ] || {
-            echo "::error::expected 1 public-followup bash 3.2 register regression, got $pf_count"
-            exit 1
-          }
-
-          # Same shape for the watcher's churn-deferral regression: an already-
-          # marked churn window expands an empty array that only stock Bash
-          # treats as an unbound variable under set -u.
-          churn_output=$(FM_TEST_ONLY=test_turn_ended_churn_existing_marker_absorbed \
-            /bin/bash tests/fm-watch-triage.test.sh)
-          printf '%s\n' "$churn_output"
-          churn_count=$(printf '%s\n' "$churn_output" | grep -c '^ok - ')
-          [ "$churn_count" -eq 1 ] || {
-            echo "::error::expected 1 watcher churn-deferral bash 3.2 regression, got $churn_count"
-            exit 1
-          }
-
-          # The fork-free hot-path helpers must stay byte-identical to the
-          # commands they replace under stock Bash 3.2, which lacks the
-          # printf %(...)T clock and falls back to date.
-          helpers_output=$(/bin/bash tests/fm-fork-free-helpers.test.sh)
-          printf '%s\n' "$helpers_output"
-          helpers_count=$(printf '%s\n' "$helpers_output" | grep -c '^ok - ')
-          [ "$helpers_count" -eq 11 ] || {
-            echo "::error::expected 11 fork-free helper bash 3.2 regressions, got $helpers_count"
-            exit 1
-          }
-
-          backend_output=$(FM_TEST_ONLY=test_backend_source_requires_adapter_file \
-            FM_TEST_BASH=/bin/bash \
-            /bin/bash tests/fm-backend.test.sh)
-          printf '%s\n' "$backend_output"
-          backend_count=$(printf '%s\n' "$backend_output" | grep -c '^ok - ')
-          [ "$backend_count" -eq 2 ] || {
-            echo "::error::expected 2 backend adapter-file bash 3.2 regressions, got $backend_count"
-            exit 1
-          }
+        run: /bin/bash bin/fm-macos-stock-bash-check.sh
 
   # The behavior gate's one coverage obligation. A prose-only change skips the
   # suites above, and the only suite whose verdict such a change can alter is
@@ -624,6 +669,10 @@ jobs:
   # because the gates are what proved that job could not be affected.
   # Branch protection on this fork currently requires no checks. If required
   # checks are ever configured, require THIS check rather than the gated jobs.
+  #
+  # The one job whose absence is NOT proof of anything is the macOS snapshot:
+  # it is deliberately not run on a pull request, so this gate requires its
+  # success on every other event instead of accepting the skip there.
   ci-gate:
     name: CI gate
     runs-on: ubuntu-latest
@@ -637,6 +686,7 @@ jobs:
       - tests-portable-parallel-1
       - tests-portable-parallel-2
       - tests-portable-serial
+      - tests-selected
       - tests-herdr
       - tests-timing-aggregate
       - macos-stock-bash
@@ -646,6 +696,7 @@ jobs:
       - name: Require every job to have passed or been gated off
         env:
           FM_CI_NEEDS: ${{ toJSON(needs) }}
+          FM_CI_EVENT_NAME: ${{ github.event_name }}
         run: |
           set -eu
           printf '%s\n' "$FM_CI_NEEDS"
@@ -657,5 +708,14 @@ jobs:
             echo "::error::CI jobs did not pass:"
             printf '%s\n' "$bad"
             exit 1
+          fi
+          # The macOS snapshot is non-blocking on a pull request and blocking
+          # everywhere else, so its skip is only acceptable on a pull request.
+          if [ "$FM_CI_EVENT_NAME" != pull_request ]; then
+            macos=$(printf '%s' "$FM_CI_NEEDS" | jq -r '."macos-stock-bash".result')
+            [ "$macos" = success ] || {
+              echo "::error::the macOS snapshot must pass on a $FM_CI_EVENT_NAME event, got $macos"
+              exit 1
+            }
           fi
           echo "every CI job passed or was gated off"

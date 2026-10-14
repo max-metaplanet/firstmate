@@ -5,11 +5,18 @@
 # on. It prints GitHub step-output lines, so the workflow reads a verdict
 # instead of re-spelling path globs per job:
 #
-#   behavior=true|false   run the behavior suites (portable lanes, Herdr, lint)
-#   macos=true|false      run the stock macOS Bash snapshot job
+#   behavior=true|false   run the behavior suites at all (lint included)
+#   macos=true|false      the stock macOS Bash snapshot job's sources changed
+#   full=true|false       run the COMPLETE behavior suite: both portable
+#                         parallel lanes and all 16 portable serial shards
+#   herdr=true|false      run the required real-Herdr lane
+#   selected_matrix=<json>|<empty>
+#                         a GitHub matrix for the change-scoped behavior job,
+#                         one entry per packed bin: {"include":[{"shard":"1",
+#                         "scripts":"tests/a.test.sh tests/b.test.sh"}]}
 #
 # Usage:
-#   bin/fm-ci-change-scope.sh            classify and print both gate outputs
+#   bin/fm-ci-change-scope.sh            classify and print every gate output
 #   bin/fm-ci-change-scope.sh --help     print this header
 #
 # Inputs, all optional and read from the environment:
@@ -17,6 +24,10 @@
 #   FM_CI_BASE_SHA            the pull request's base commit
 #   FM_CI_HEAD_SHA            the pull request's head commit (default: HEAD)
 #   FM_CI_CHANGED_PATHS_FILE  a newline-delimited path list, used instead of git
+#
+# The selection's own bounds - how many bins, how large, and what counts as a
+# broadly shared library - are constants below rather than inputs, so one
+# reading of this script tells you what any round will do.
 #
 # It fails open toward coverage, never toward speed: an unknown event, a missing
 # base commit, an unreadable diff, an empty change set, and any path outside the
@@ -59,6 +70,37 @@
 # docs-guard job keeps tests/fm-documentation-audiences.test.sh running on the
 # docs-only path, because adding or removing any tracked prose file changes that
 # suite's verdict through bin/fm-doc-audience-check.sh.
+#
+# Change-scoped selection narrows the behavior gate further on a pull request:
+# instead of the complete suite, CI runs only the test scripts that cover the
+# changed paths. The map that answers which those are is NOT duplicated here;
+# bin/fm-test-run.sh's --changed map stays its single owner and is asked
+# directly, with this script supplying the pull request's path set so the diff
+# keeps one owner too. bin/fm-test-run.sh --check-changed-map pins that map
+# against the paths the tests tree actually names.
+#
+# Selection fails open to the complete suite, never toward speed, whenever:
+#   - the event is not a pull request (push to main and the nightly schedule
+#     always run everything), or the change set could not be determined
+#   - the behavior gate is already off, so there is nothing to select from
+#   - a changed path is one selection cannot reason about: the CI workflow
+#     itself, the test runner, this classifier, shared test scaffolding, a
+#     shared library (bin/*-lib.sh, or any bin/ script sourced by more than
+#     SELECT_SHARED_FANIN others), or the no-mistakes config
+#   - a changed path is behavior-relevant prose (outside the inert set) that
+#     the map answers nothing for, alone or beside code, so the test reading
+#     it cannot be dropped
+#   - the runner refuses the change set, which is what it does for a path its
+#     map does not know
+#   - the selection comes back empty, so no suite would prove the change
+#   - the selection cannot be packed into SELECT_MAX_JOBS bins that each
+#     stay inside SELECT_BIN_BUDGET_MS of modeled work; past that the
+#     complete 16-shard suite is the faster shape anyway
+#
+# The packing is what keeps a one-script change from spending 23 runners: the
+# smallest bin count whose worst bin fits the budget wins, so a single-script
+# change runs in exactly one job. Weights are bin/fm-test-run.sh's own measured
+# hints, the same evidence its shard packing uses.
 set -eu
 
 case "${1:-}" in
@@ -144,7 +186,180 @@ EOF
   *) ;;
 esac
 
+# Most bins a selection may be packed into. Six keeps a packed round far under
+# the complete suite's twenty-three long-lived jobs while still splitting the
+# larger selections; past that, runner start delay eats the gain.
+SELECT_MAX_JOBS=6
+
+# Largest modeled bin a selection may pack to: ten minutes of estimated serial
+# work, measured by bin/fm-test-run.sh's own hints. A selection no packing
+# brings under this is one the complete sharded suite runs faster anyway.
+SELECT_BIN_BUDGET_MS=600000
+
+# How many OTHER bin/ scripts must source a changed script before it counts as
+# broadly shared and the round widens to everything. Ten sits above every
+# narrow helper and below the genuinely shared libraries.
+SELECT_SHARED_FANIN=10
+
+TAB=$(printf '\t')
+
+# True when this changed path makes a change-scoped selection untrustworthy.
+selection_blocked_by() {
+  local path=$1 base fanin
+  case "$path" in
+    # The workflow decides which jobs exist, so a selection made under the old
+    # one proves nothing about the new one.
+    .github/workflows/* | .github/actions/* | .no-mistakes.yaml) return 0 ;;
+    # The runner, its isolation proof and this classifier are the machinery a
+    # selection is made of.
+    bin/fm-test-run.sh | bin/fm-test-isolation-proof.sh | bin/fm-ci-change-scope.sh) return 0 ;;
+    # Shared test scaffolding every suite inherits.
+    tests/lib.sh | tests/fixtures.sh | tests/*-helpers.sh | tests/*-safety.sh) return 0 ;;
+    # A shared library by name; the fan-in test below catches the rest. A
+    # case glob's * spans /, so these cover bin/backends/ as well.
+    bin/*-lib.sh) return 0 ;;
+    # Prose a test reads that the map's prose arm answers nothing for: beside
+    # code the selection stays non-empty, so the reading test would vanish.
+    README.md | LICENSE | assets/* | docs/* | .gitignore)
+      ! behavior_inert "$path" || return 1
+      [ -z "$(bin/fm-test-run.sh --list-weighted --changed \
+        --changed-paths-file <(printf '%s\n' "$path") 2>/dev/null)" ]
+      return
+      ;;
+    bin/*.sh) ;;
+    *) return 1 ;;
+  esac
+  [ -f "$path" ] || return 1
+  base=$(basename "$path")
+  # How many OTHER scripts source this one: a `.` or `source` line naming it.
+  fanin=$(grep -lE "^[[:space:]]*(\.|source)[[:space:]].*${base}" \
+    bin/*.sh bin/backends/*.sh 2>/dev/null | grep -vc "/${base}\$") || fanin=0
+  case "$fanin" in
+    '' | *[!0-9]*) fanin=0 ;;
+  esac
+  [ "$fanin" -le "$SELECT_SHARED_FANIN" ] || return 0
+  return 1
+}
+
+# Pack "<ms>\t<path>" lines from stdin into the fewest bins whose worst bin
+# stays inside the budget, printing "<bin>\t<space separated paths>" per bin.
+# Prints nothing when no admissible bin count exists. Input must already be
+# ordered longest first, which is what longest-processing-time packing needs.
+pack_selection() {
+  awk -F'\t' -v maxjobs="$SELECT_MAX_JOBS" -v budget="$SELECT_BIN_BUDGET_MS" '
+    { ms[NR] = $1 + 0; path[NR] = $2; n = NR }
+    END {
+      if (n == 0) { exit 0 }
+      for (k = 1; k <= maxjobs; k++) {
+        worst = 0
+        for (b = 1; b <= k; b++) { load[b] = 0; members[b] = "" }
+        for (i = 1; i <= n; i++) {
+          best = 1
+          for (b = 2; b <= k; b++) { if (load[b] < load[best]) { best = b } }
+          load[best] += ms[i]
+          members[best] = (members[best] == "" ? path[i] : members[best] " " path[i])
+          if (load[best] > worst) { worst = load[best] }
+        }
+        if (worst <= budget) {
+          for (b = 1; b <= k; b++) {
+            if (members[b] != "") { printf "%d\t%s\n", b, members[b] }
+          }
+          exit 0
+        }
+      }
+    }
+  '
+}
+
+full=$behavior
+herdr=$behavior
+selected_matrix=
+
+# Narrow the gates above to a change-scoped selection, or leave them exactly as
+# they are. Every refusal path below returns before anything is narrowed.
+select_tests() {
+  local path weighted herdr_members list packed ms script shard scripts selected_herdr first
+
+  [ "$behavior" = true ] || return 0
+  [ "${FM_CI_EVENT:-pull_request}" = pull_request ] || return 0
+  [ -n "$paths" ] || return 0
+  [ -x bin/fm-test-run.sh ] || return 0
+
+  while IFS= read -r path; do
+    [ -n "$path" ] || continue
+    ! selection_blocked_by "$path" || return 0
+  done <<EOF
+$paths
+EOF
+
+  # The runner owns the map; this script owns the diff. It refuses a path set
+  # whose mapping it does not know, and that refusal is the fail-open signal.
+  weighted=$(bin/fm-test-run.sh --list-weighted --changed \
+    --changed-paths-file <(printf '%s\n' "$paths") 2>/dev/null) || weighted=
+  [ -n "$weighted" ] || return 0
+
+  # A change set holding tracked prose AND code runs the behavior jobs, so the
+  # prose-only docs-guard job does not run, while the map answers nothing for
+  # prose and the code paths keep the selection non-empty. The prose check
+  # would simply vanish. Add it here rather than in the map, because the map's
+  # silence on prose is what makes a prose-only behavior-relevant change widen
+  # to the complete suite, and attributing prose by reference scan is noisy.
+  # The trigger mirrors REQUIRED_TRACKED_PATTERNS in bin/fm-doc-audience-check.sh,
+  # which owns the prose set, plus the other files the map's prose arm names.
+  if printf '%s\n' "$paths" | grep -qE '(\.(md|mdx|rst|txt)$|^(LICENSE|\.gitignore)$|^(assets|docs)/)'; then
+    doc_suite=tests/fm-documentation-audiences.test.sh
+    if ! printf '%s\n' "$weighted" | grep -Fq -- "$doc_suite"; then
+      weighted="${weighted}
+$(bin/fm-test-run.sh --list-weighted "$doc_suite" 2>/dev/null)"
+    fi
+  fi
+
+  # The required Herdr lane owns its whole family, so a selected member sends
+  # the work there rather than into a job with no Herdr installed.
+  herdr_members=$(bin/fm-test-run.sh --list --family real-herdr-gated 2>/dev/null) || herdr_members=
+  selected_herdr=false
+  list=
+  while IFS="$TAB" read -r ms script; do
+    [ -n "$script" ] || continue
+    if printf '%s\n' "$herdr_members" | grep -Fxq -- "$script"; then
+      selected_herdr=true
+      continue
+    fi
+    list="${list}${ms}${TAB}${script}
+"
+  done <<EOF
+$weighted
+EOF
+
+  packed=
+  if [ -n "$list" ]; then
+    packed=$(printf '%s' "$list" | pack_selection)
+    [ -n "$packed" ] || return 0
+  fi
+
+  first=1
+  selected_matrix='{"include":['
+  while IFS="$TAB" read -r shard scripts; do
+    [ -n "$shard" ] || continue
+    [ "$first" -eq 1 ] || selected_matrix="${selected_matrix},"
+    first=0
+    selected_matrix="${selected_matrix}{\"shard\":\"${shard}\",\"scripts\":\"${scripts}\"}"
+  done <<EOF
+$packed
+EOF
+  selected_matrix="${selected_matrix}]}"
+  [ "$first" -eq 0 ] || selected_matrix=
+
+  full=false
+  herdr=$selected_herdr
+}
+
+select_tests
+
 # The behavior gate also covers the macOS job: a change that reaches no test at
 # all cannot reach the stock-Bash job either, and a shell change sets both.
 printf 'behavior=%s\n' "$behavior"
 printf 'macos=%s\n' "$macos"
+printf 'full=%s\n' "$full"
+printf 'herdr=%s\n' "$herdr"
+printf 'selected_matrix=%s\n' "$selected_matrix"

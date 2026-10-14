@@ -8,6 +8,7 @@
 #   fm-test-run.sh --all
 #   fm-test-run.sh --family <name>
 #   fm-test-run.sh --changed [--base <git-ref>]
+#   fm-test-run.sh --changed --changed-paths-file <file>
 #   fm-test-run.sh --lane portable-parallel-1|portable-parallel-2|portable-serial
 #   fm-test-run.sh --lane portable-serial-<k>of<n>   (one CI serial shard)
 #   fm-test-run.sh --proven-isolated
@@ -15,6 +16,7 @@
 #
 # Inspection (no execution):
 #   fm-test-run.sh --list --all
+#   fm-test-run.sh --list-weighted --changed --changed-paths-file <file>
 #   fm-test-run.sh --list --family <name>
 #   fm-test-run.sh --list --lane portable-parallel-1
 #   fm-test-run.sh --list-scheduled --family <name>
@@ -24,6 +26,7 @@
 #   fm-test-run.sh --concurrent-safe-family-jobs-max <name>
 #   fm-test-run.sh --list-lanes
 #   fm-test-run.sh --check-coverage
+#   fm-test-run.sh --check-changed-map
 #
 # Aggregation (no suite execution):
 #   fm-test-run.sh --aggregate-json <out.json> <lane.json> [more lane.json...]
@@ -35,6 +38,10 @@
 #                   gave (empty when it ran), so a lane can say which harness or
 #                   tool this host could not exercise.
 #   --list          print selected script paths (one per line) and exit 0
+#   --list-weighted print "<weight_ms><TAB><path>" for the selection, longest
+#                   first, and exit 0. The weight is this script's own measured
+#                   hint for that path, so a caller can bound a selection's
+#                   cost with the same evidence the shard packing uses.
 #   --list-scheduled
 #                   print selected paths longest-hint-first and exit 0.
 #                   Only --lane portable-parallel-1 or portable-parallel-2 uses
@@ -42,6 +49,12 @@
 #                   Every other selection uses serial weights alone.
 #                   Equal weights are ordered by path under LC_ALL=C.
 #   --base <ref>    with --changed, compare against this ref (default: origin/main)
+#   --changed-paths-file <file>
+#                   with --changed, take the changed path set from this
+#                   newline-delimited file instead of running git. The caller
+#                   then owns the diff: CI's change-scope job already computed
+#                   the pull request's path set, and re-deriving it here would
+#                   give the round two owners of one question.
 #   --exclude-family <name>
 #                   drop scripts whose primary family matches <name> after selection
 #                   (repeatable; portable CI lanes exclude real-herdr-gated so the
@@ -171,14 +184,17 @@ cd "$ROOT" || exit 1
 MODE=
 LIST_ONLY=0
 LIST_SCHEDULED=0
+LIST_WEIGHTED=0
 LIST_FAMILIES=0
 LIST_CONCURRENT_SAFE_FAMILIES=0
 LIST_LANES=0
 CHECK_COVERAGE=0
+CHECK_CHANGED_MAP=0
 AGGREGATE_OUT=
 FAMILY=
 LANE=
 BASE_REF=origin/main
+CHANGED_PATHS_FILE=
 JSON_PATH=
 SCRIPTS=()
 EXCLUDE_FAMILIES=()
@@ -1102,6 +1118,85 @@ select_lane() {
   [ "$found" -eq 1 ] || die "lane '$want' selected no tests"
 }
 
+# Source paths outside tests/ that the tests tree names, found by a static scan
+# rather than by a maintained list: every token in the tests tree that looks
+# like one of the repository's executable or contract surfaces, intersected
+# with what git actually tracks. "Names" means a literal occurrence anywhere in
+# the file, which is the same notion of a reference the map's own fallback
+# scans for; a guard that counted references differently from the map would
+# ask a different question than the one it exists to answer.
+#
+# Tracked prose is deliberately out of scope here. bin/fm-ci-change-scope.sh
+# owns which prose a test really reads: inert prose adds only the documentation
+# audience suite, and prose a test reads that this map answers nothing for
+# widens the round to the complete suite, alone or beside code.
+changed_map_referenced_paths() {
+  local f tracked scanned
+  local -a files=()
+  tracked=$(git -C "$ROOT" ls-files 2>/dev/null | LC_ALL=C sort -u) || return 1
+  [ -n "$tracked" ] || return 1
+  for f in tests/*.sh tests/*.py tests/*.mjs; do
+    [ -f "$f" ] || continue
+    files+=("$f")
+  done
+  [ "${#files[@]}" -gt 0 ] || return 0
+  scanned=$(grep -ohE '(bin|\.agents|\.claude|\.pi)/[A-Za-z0-9_./-]+' -- "${files[@]}" \
+    | LC_ALL=C sort -u) || scanned=
+  [ -n "$scanned" ] || return 0
+  LC_ALL=C comm -12 <(printf '%s\n' "$scanned") <(printf '%s\n' "$tracked")
+}
+
+# Completeness guard for the changed-file map above.
+#
+# The map decides which suites a change is proven by, and CI now runs only that
+# selection on a pull request, so a source path the map answers nothing for is
+# a path whose tests quietly stop running. Two answers are failures:
+#
+#   refused  - families_for_changed_path reports __unmapped__, which makes
+#              --changed refuse. CI falls open to the complete suite on that
+#              refusal, so it is safe, but it means no selection is possible
+#              for a path the tests tree genuinely depends on.
+#   empty    - the map resolves the path to no suite at all, silently. This is
+#              the dangerous one: an inert arm reaching over a surface some
+#              test really reads would drop that test from every selection
+#              with nothing left to notice it.
+#
+# The consumer-expansion fallback is switched off while the guard resolves, so
+# each path is judged on the map's direct answer. That fallback only ever adds
+# families to a non-empty answer, and it is what makes the sweep quadratic, so
+# turning it off costs the guard nothing it was looking for.
+run_changed_map_guard() {
+  local path entries count=0
+  local refused='' empty=''
+  while IFS= read -r path; do
+    [ -n "$path" ] || continue
+    case "$path" in
+      tests/*) continue ;;
+    esac
+    count=$((count + 1))
+    BIN_FALLBACK_DEPTH=2
+    entries=$(families_for_changed_path "$path" 2>/dev/null) || entries=
+    BIN_FALLBACK_DEPTH=0
+    case "$entries" in
+      *__unmapped__:*) refused="${refused}  $path"$'\n' ;;
+      '') empty="${empty}  $path"$'\n' ;;
+    esac
+  done < <(changed_map_referenced_paths)
+
+  if [ "$count" -eq 0 ]; then
+    log "changed-map guard found no referenced source paths to check"
+    return 1
+  fi
+  if [ -n "$refused" ] || [ -n "$empty" ]; then
+    [ -z "$refused" ] || printf 'fm-test-run: the tests tree names these paths and the changed-file map refuses them:\n%s' "$refused" >&2
+    [ -z "$empty" ] || printf 'fm-test-run: the tests tree names these paths and the changed-file map selects no suite for them:\n%s' "$empty" >&2
+    log "add an arm to families_for_changed_path for each path above"
+    return 1
+  fi
+  printf 'FM_TEST_CHANGED_MAP referenced=%s refused=0 unselected=0\n' "$count"
+  return 0
+}
+
 run_coverage_guard() {
   local tmp missing extra a b shard unhinted serial_total serial_ms serial_max_ms=0
   local p1_ms p1_unhinted p2_ms p2_unhinted parallel_max_ms parallel_imbalance_ms
@@ -1420,23 +1515,33 @@ families_for_test_reference() {  # <needle>...
 scripts_for_test_reference() {
   local needle=$1 s
   local found=0
+  local -a all=()
   while IFS= read -r s; do
     [ -n "$s" ] || continue
-    if grep -Fq "$needle" "$s"; then
-      printf '__script__:%s\n' "$(basename "$s")"
-      found=1
-    fi
+    all+=("$s")
   done < <(all_repo_tests)
+  [ "${#all[@]}" -gt 0 ] || return 1
+  # One grep over the whole tests tree rather than one per file: the map is
+  # consulted once per changed path and again per consumer, so a fork per test
+  # script turned a selection into tens of thousands of processes.
+  while IFS= read -r s; do
+    [ -n "$s" ] || continue
+    printf '__script__:%s\n' "$(basename "$s")"
+    found=1
+  done < <(grep -lF -e "$needle" -- "${all[@]}" 2>/dev/null || true)
   [ "$found" -eq 1 ]
 }
 
 # bin/ scripts other than <needle> itself that name <needle>.
 bin_consumers_of() {
   local needle=$1 b
+  local -a all=()
   for b in bin/*.sh bin/backends/*.sh; do
     [ -f "$b" ] || continue
-    [ "$(basename "$b")" = "$needle" ] || ! grep -Fq "$needle" "$b" || printf '%s\n' "$b"
+    [ "$(basename "$b")" = "$needle" ] || all+=("$b")
   done
+  [ "${#all[@]}" -gt 0 ] || return 0
+  grep -lF -e "$needle" -- "${all[@]}" 2>/dev/null || true
 }
 
 # An unmapped bin/ path has no curated family of its own. Its blast radius is
@@ -1829,6 +1934,9 @@ families_for_changed_path() {
       printf '%s\n' "__unmapped__:$path"
       ;;
     README.md|LICENSE|assets/*|docs/*|.gitignore)
+      # Tracked prose selects nothing here. bin/fm-ci-change-scope.sh adds the
+      # documentation-audience suite on top for inert prose, and widens to the
+      # complete suite for prose a test reads that reaches this arm.
       ;;
     *)
       if [ -e "$path" ]; then
@@ -1844,12 +1952,29 @@ families_for_changed_path() {
   esac
 }
 
+# The changed path set --changed classifies. A caller-supplied list replaces the
+# git derivation entirely, including the working-tree and untracked arms: the
+# caller is then the one owner of what changed, and mixing its list with this
+# checkout's dirt would classify paths the caller never reported.
+changed_paths_source() {
+  local base=$1
+  if [ -n "$CHANGED_PATHS_FILE" ]; then
+    cat -- "$CHANGED_PATHS_FILE"
+    return 0
+  fi
+  git -C "$ROOT" diff --name-only "${base}...HEAD" 2>/dev/null
+  git -C "$ROOT" diff --name-only HEAD 2>/dev/null
+  git -C "$ROOT" ls-files --others --exclude-standard 2>/dev/null
+}
+
 select_changed() {
   local base=$1 path entry fam script_name s
   local -a wanted_families=()
   local -a wanted_scripts=()
 
-  if ! git -C "$ROOT" rev-parse --verify "$base" >/dev/null 2>&1; then
+  if [ -n "$CHANGED_PATHS_FILE" ]; then
+    [ -r "$CHANGED_PATHS_FILE" ] || die "changed paths file not readable: $CHANGED_PATHS_FILE"
+  elif ! git -C "$ROOT" rev-parse --verify "$base" >/dev/null 2>&1; then
     die "changed-file base ref not found: $base (pass --base <ref>)"
   fi
 
@@ -1870,9 +1995,7 @@ select_changed() {
           ;;
       esac
     done < <(families_for_changed_path "$path")
-  done < <(git -C "$ROOT" diff --name-only "${base}...HEAD" 2>/dev/null; \
-           git -C "$ROOT" diff --name-only HEAD 2>/dev/null; \
-           git -C "$ROOT" ls-files --others --exclude-standard 2>/dev/null)
+  done < <(changed_paths_source "$base")
 
   # Dedup families
   local f seen_f
@@ -2076,6 +2199,15 @@ while [ "$#" -gt 0 ]; do
       BASE_REF=${1#--base=}
       shift
       ;;
+    --changed-paths-file)
+      [ "$#" -gt 1 ] || die "--changed-paths-file requires a path"
+      CHANGED_PATHS_FILE=$2
+      shift 2
+      ;;
+    --changed-paths-file=*)
+      CHANGED_PATHS_FILE=${1#--changed-paths-file=}
+      shift
+      ;;
     --json)
       [ "$#" -gt 1 ] || die "--json requires a path"
       JSON_PATH=$2
@@ -2122,6 +2254,10 @@ while [ "$#" -gt 0 ]; do
       LIST_SCHEDULED=1
       shift
       ;;
+    --list-weighted)
+      LIST_WEIGHTED=1
+      shift
+      ;;
     --list-families)
       LIST_FAMILIES=1
       shift
@@ -2145,6 +2281,10 @@ while [ "$#" -gt 0 ]; do
       ;;
     --check-coverage)
       CHECK_COVERAGE=1
+      shift
+      ;;
+    --check-changed-map)
+      CHECK_CHANGED_MAP=1
       shift
       ;;
     --aggregate-json)
@@ -2221,6 +2361,11 @@ if [ "$CHECK_COVERAGE" -eq 1 ]; then
   exit $?
 fi
 
+if [ "$CHECK_CHANGED_MAP" -eq 1 ]; then
+  run_changed_map_guard
+  exit $?
+fi
+
 if [ "${MODE:-}" = "aggregate" ]; then
   [ -n "$AGGREGATE_OUT" ] || die "--aggregate-json requires an output path"
   [ "${#SCRIPTS[@]}" -gt 0 ] || die "--aggregate-json requires at least one input timing JSON"
@@ -2229,6 +2374,10 @@ if [ "${MODE:-}" = "aggregate" ]; then
   done
   aggregate_timing_json "$AGGREGATE_OUT" "${SCRIPTS[@]}"
   exit 0
+fi
+
+if [ -n "$CHANGED_PATHS_FILE" ] && [ "${MODE:-}" != changed ]; then
+  die "--changed-paths-file requires --changed"
 fi
 
 case "$JOBS" in
@@ -2250,11 +2399,12 @@ esac
 
 # Refuse before any suite is selected or run. The inspection modes execute
 # nothing: --list-families, --list-concurrent-safe-families, --list-lanes,
-# --check-coverage, --concurrent-safe-family-jobs-max and --aggregate-json have
-# already exited above, and --list/--list-scheduled print their selection and
-# exit below. An unset MODE still falls through to the usage error, so a caller
+# --check-coverage, --check-changed-map, --concurrent-safe-family-jobs-max and
+# --aggregate-json have already exited above, and --list, --list-scheduled and
+# --list-weighted print their selection and exit below. An unset MODE still falls through to the usage error, so a caller
 # who named no selection mode is told that rather than this.
-if [ -n "${MODE:-}" ] && [ "$LIST_ONLY" -eq 0 ] && [ "$LIST_SCHEDULED" -eq 0 ]; then
+if [ -n "${MODE:-}" ] && [ "$LIST_ONLY" -eq 0 ] && [ "$LIST_SCHEDULED" -eq 0 ] \
+  && [ "$LIST_WEIGHTED" -eq 0 ]; then
   refuse_primary_checkout_for_task
 fi
 
@@ -2277,7 +2427,11 @@ case "${MODE:-}" in
     ;;
   changed)
     select_changed "$BASE_REF"
-    SELECTION_DESC="changed:base=$BASE_REF"
+    if [ -n "$CHANGED_PATHS_FILE" ]; then
+      SELECTION_DESC="changed:paths-file"
+    else
+      SELECTION_DESC="changed:base=$BASE_REF"
+    fi
     ;;
   scripts)
     # Normalize and re-add through add_script for consistent paths.
@@ -2299,6 +2453,15 @@ if [ "${#EXCLUDE_FAMILIES[@]}" -gt 0 ]; then
 fi
 if [ -n "$FAIL_ON_GATE_SKIP" ]; then
   SELECTION_DESC="${SELECTION_DESC};fail-on-gate-skip=$FAIL_ON_GATE_SKIP"
+fi
+if [ "$LIST_WEIGHTED" -eq 1 ]; then
+  # Serial weight, matching the shard packing: a selected job runs its scripts
+  # under the same bounded scheduler, so the parallel hint would understate a
+  # script that only goes faster when it shares a lane with unrelated work.
+  for s in "${SCRIPTS[@]+"${SCRIPTS[@]}"}"; do
+    printf '%s\t%s\n' "$(portable_serial_weight_for "$s")" "$s"
+  done | LC_ALL=C sort -t"$(printf '\t')" -k1,1nr -k2,2
+  exit 0
 fi
 if [ "$LIST_ONLY" -eq 1 ] || [ "$LIST_SCHEDULED" -eq 1 ]; then
   if [ "$LIST_SCHEDULED" -eq 1 ]; then
