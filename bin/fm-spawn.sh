@@ -2791,6 +2791,9 @@ spawn_seat_dispatch_gate() {
     } >&2
     exit 1
   fi
+  case "$SEAT_DISPATCH" in
+    *source=last-good-fallback*) printf 'Claude dispatch: %s\n' "$SEAT_DISPATCH" >&2 ;;
+  esac
 }
 
 # The config dir whose seat settings a claude launch of this task uses: a

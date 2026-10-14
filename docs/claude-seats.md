@@ -188,7 +188,10 @@ An unreadable or ambiguous quota is never guessed at, in either direction:
 
 - The **active** seat's quota unreadable means no switch, and the watch stays silent rather than waking on every poll.
 - A **candidate** seat's quota unreadable means that seat is skipped, and the output says the quota could not be read rather than implying a number.
-- With an extra-usage policy configured, an unreadable quota **holds** dispatch, because launching anyway would be exactly the guess the policy was set to avoid. The hold lifts on its own once the quota reads again. The one exception is an active seat whose token has [lapsed](#idle-seats-and-lapsed-tokens): only a launch renews it, so holding would hold every spawn for good, and dispatch is allowed instead.
+- With an extra-usage policy configured, unreadable quota holds dispatch unless the shared cache has a recent successful reading with conservative headroom across every bounding window.
+  Decision reasons identify fresh cache hits, last-good fallback age, endpoint backoff, and unsafe-evidence holds; the [cache helper header](../bin/fm-seat-quota-cache.py) owns exact lifetimes, headroom thresholds, storage, and locking.
+  The cache uses Python 3 and never refreshes credentials; a missing helper dependency or unsafe cache holds the launch.
+  An active seat whose token has [lapsed](#idle-seats-and-lapsed-tokens) retains its existing renewal exception: only a launch renews it, so dispatch is allowed instead.
 
 A rotation with no qualifying seat refuses rather than pretending to switch, and never falls back to the default profile or onto a seat held out of rotation.
 

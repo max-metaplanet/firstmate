@@ -506,6 +506,7 @@ if jq -e '.. | objects | select(.harness? == "claude")' "$RULES" >/dev/null; the
   SEAT_DECISION=$(fm_seat_dispatch_decision)
   case "$SEAT_DECISION" in
     hold\ *) SEAT_HOLD=$(fm_seat_dispatch_reason "$SEAT_DECISION") ;;
+    allow\ *source=last-good-fallback*) fm_seat_dispatch_reason "$SEAT_DECISION" >&2 ;;
   esac
 fi
 
