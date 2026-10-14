@@ -3176,6 +3176,8 @@ test_presentation_recovery_wait_requires_live_spawn_holder() (
         # Each attempt costs a whole second, as on a heavily loaded host.
         slow-*) clock=$((clock + 1)) ;;
       esac
+      # This fixture clock is intentionally scoped to the isolated subshell.
+      # shellcheck disable=SC2030
       SECONDS=$clock
       if [ "$scenario" = transition ] && [ "$ticks" -eq 51 ]; then
         touch "$dir/mark"
