@@ -113,9 +113,11 @@ A one-script change therefore spends one runner instead of nineteen, which is wh
 Selection fails open to the complete suite, never toward speed; that script's header owns the complete list of conditions, and push to main plus the nightly schedule never select at all.
 `bin/fm-test-run.sh --check-changed-map` proves the map answers for every source path the tests tree names, because a selection is only as safe as the map behind it.
 
-The stock macOS Bash job is off the pull request path entirely and blocking on push to main and on the nightly schedule.
-Narrowing the Linux work cannot move a job that has queued about 35 minutes for a 7.5-minute run, and the `ci-gate` job cannot stop waiting for a job that runs, so the only way to take it off a round's wall clock is not to run it there.
-The tradeoff is that a stock-Bash 3.2 regression surfaces on main rather than on the pull request that introduced it; `ci-gate` requires that job's success on every non-pull-request event so the coverage is not merely dropped.
+The stock macOS Bash check runs in two halves, because `needs` is static and a job the `ci-gate` job waits for holds the whole round until it finishes.
+Narrowing the Linux work cannot move a job that has queued about 35 minutes for a 7.5-minute run, so the pull request's copy of it has to live outside that verdict rather than inside it.
+On push to main and on the nightly schedule it runs as `ci.yml`'s `macos-stock-bash` job, inside the `ci-gate` verdict, which requires its success on every non-pull-request event.
+On a pull request it runs from [macos-advisory.yml](../.github/workflows/macos-advisory.yml) instead: a separate workflow reporting its own check, visible and red when stock Bash 3.2 breaks, that the pull request's verdict neither waits for nor fails with.
+[`bin/fm-macos-stock-bash-check.sh`](../bin/fm-macos-stock-bash-check.sh) owns what the check is, so the two halves cannot drift apart, and it is runnable locally under `/bin/bash`.
 
 ## Coverage guard
 
@@ -144,7 +146,7 @@ The always-run `ci-gate` job reports the whole round's result, so a gated-off jo
 The longer-term performance objective remains a complete green run under fifteen minutes including start delay, but the current supervision-host floor alone exceeds that objective.
 The immediate packing target is the runner's modeled script budget, not a claim that more shards alone can make an indivisible script faster.
 A complete round uses twenty-three long-lived Linux jobs (sixteen serial, two parallel, Herdr, four lint), plus short checks; insufficient shared account capacity can erase the packing gain.
-A change-scoped pull request round uses at most six packed jobs plus the four lint partitions instead, and the macOS job is not on that round at all.
+A change-scoped pull request round uses at most six packed jobs plus the four lint partitions instead, with the macOS check running advisory beside it rather than inside its verdict.
 Sixteen serial shards is the knee of the packing, measured from the aggregate of run 38453818522: at sixteen bins every shard the packing can balance lands at or under 10 minutes, and only `tests/fm-supervision-host.test.sh` at about 22.6 minutes and `tests/fm-watch-triage.test.sh` at about 17.9 minutes stay above it.
 Past sixteen the third-largest bin stops shrinking, because it holds one 7.7-minute script, so further shards buy queue contention and no wall time.
 Compare complete before/after runs, preserve cancelled and partial-run evidence, and measure a representative normal-run sample before claiming a P95 improvement.

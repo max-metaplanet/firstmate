@@ -10,7 +10,6 @@
 #   full=true|false       run the COMPLETE behavior suite: both portable
 #                         parallel lanes and all 16 portable serial shards
 #   herdr=true|false      run the required real-Herdr lane
-#   selected_count=<n>    how many test scripts the change-scoped selection holds
 #   selected_matrix=<json>|<empty>
 #                         a GitHub matrix for the change-scoped behavior job,
 #                         one entry per packed bin: {"include":[{"shard":"1",
@@ -25,13 +24,10 @@
 #   FM_CI_BASE_SHA            the pull request's base commit
 #   FM_CI_HEAD_SHA            the pull request's head commit (default: HEAD)
 #   FM_CI_CHANGED_PATHS_FILE  a newline-delimited path list, used instead of git
-#   FM_CI_SELECT              0 disables change-scoped selection entirely
-#   FM_CI_SELECT_MAX_JOBS     most bins the selection may be packed into (6)
-#   FM_CI_SELECT_BIN_BUDGET_MS
-#                             largest modeled bin the selection may pack to
-#                             (600000, i.e. 10 minutes of estimated serial work)
-#   FM_CI_SELECT_SHARED_FANIN how many OTHER bin/ scripts must source a changed
-#                             script before it counts as broadly shared (10)
+#
+# The selection's own bounds - how many bins, how large, and what counts as a
+# broadly shared library - are constants below rather than inputs, so one
+# reading of this script tells you what any round will do.
 #
 # It fails open toward coverage, never toward speed: an unknown event, a missing
 # base commit, an unreadable diff, an empty change set, and any path outside the
@@ -90,12 +86,12 @@
 #   - a changed path is one selection cannot reason about: the CI workflow
 #     itself, the test runner, this classifier, shared test scaffolding, a
 #     shared library (bin/*-lib.sh, or any bin/ script sourced by more than
-#     FM_CI_SELECT_SHARED_FANIN others), or the no-mistakes config
+#     SELECT_SHARED_FANIN others), or the no-mistakes config
 #   - the runner refuses the change set, which is what it does for a path its
 #     map does not know
 #   - the selection comes back empty, so no suite would prove the change
-#   - the selection cannot be packed into FM_CI_SELECT_MAX_JOBS bins that each
-#     stay inside FM_CI_SELECT_BIN_BUDGET_MS of modeled work; past that the
+#   - the selection cannot be packed into SELECT_MAX_JOBS bins that each
+#     stay inside SELECT_BIN_BUDGET_MS of modeled work; past that the
 #     complete 16-shard suite is the faster shape anyway
 #
 # The packing is what keeps a one-script change from spending 23 runners: the
@@ -187,9 +183,21 @@ EOF
   *) ;;
 esac
 
-SELECT_MAX_JOBS=${FM_CI_SELECT_MAX_JOBS:-6}
-SELECT_BIN_BUDGET_MS=${FM_CI_SELECT_BIN_BUDGET_MS:-600000}
-SELECT_SHARED_FANIN=${FM_CI_SELECT_SHARED_FANIN:-10}
+# Most bins a selection may be packed into. Six keeps a packed round far under
+# the complete suite's twenty-three long-lived jobs while still splitting the
+# larger selections; past that, runner start delay eats the gain.
+SELECT_MAX_JOBS=6
+
+# Largest modeled bin a selection may pack to: ten minutes of estimated serial
+# work, measured by bin/fm-test-run.sh's own hints. A selection no packing
+# brings under this is one the complete sharded suite runs faster anyway.
+SELECT_BIN_BUDGET_MS=600000
+
+# How many OTHER bin/ scripts must source a changed script before it counts as
+# broadly shared and the round widens to everything. Ten sits above every
+# narrow helper and below the genuinely shared libraries.
+SELECT_SHARED_FANIN=10
+
 TAB=$(printf '\t')
 
 # True when this changed path makes a change-scoped selection untrustworthy.
@@ -254,7 +262,6 @@ pack_selection() {
 
 full=$behavior
 herdr=$behavior
-selected_count=0
 selected_matrix=
 
 # Narrow the gates above to a change-scoped selection, or leave them exactly as
@@ -263,7 +270,6 @@ select_tests() {
   local path weighted herdr_members list packed ms script shard scripts selected_herdr first
 
   [ "$behavior" = true ] || return 0
-  [ "${FM_CI_SELECT:-1}" != 0 ] || return 0
   [ "${FM_CI_EVENT:-pull_request}" = pull_request ] || return 0
   [ -n "$paths" ] || return 0
   [ -x bin/fm-test-run.sh ] || return 0
@@ -302,7 +308,6 @@ EOF
   if [ -n "$list" ]; then
     packed=$(printf '%s' "$list" | pack_selection)
     [ -n "$packed" ] || return 0
-    selected_count=$(printf '%s' "$list" | grep -c . || true)
   fi
 
   first=1
@@ -330,5 +335,4 @@ printf 'behavior=%s\n' "$behavior"
 printf 'macos=%s\n' "$macos"
 printf 'full=%s\n' "$full"
 printf 'herdr=%s\n' "$herdr"
-printf 'selected_count=%s\n' "$selected_count"
 printf 'selected_matrix=%s\n' "$selected_matrix"
