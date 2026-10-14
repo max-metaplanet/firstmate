@@ -163,6 +163,10 @@ when 'marker-env'
   step = job.fetch('steps').find { |s| s['id'] == 'marker' }
   raise 'the workflow has no step with id: marker' if step.nil?
   step.fetch('env').each { |k, v| puts "#{k}\t#{interpolate(v, context)}" }
+when 'step-script'
+  step = job.fetch('steps').find { |s| s['name'] == ARGV[8] }
+  raise "the workflow has no step named: #{ARGV[8]}" if step.nil?
+  print step.fetch('run')
 when 'steps'
   unless condition(job['if'], context)
     puts "job\tskipped"
@@ -172,7 +176,6 @@ when 'steps'
     next unless condition(step['if'], context)
     puts "step\t#{step['name']}"
     puts "uses\t#{step['uses']}" if step['uses']
-    puts "run\t#{step['run']}" if step['run']
     (step['with'] || {}).each { |k, v| puts "with\t#{k}=#{v}" }
   end
 else
@@ -181,12 +184,15 @@ end
 RUBY
 }
 
-# Resolve one workflow question. Args: mode [run_id] [action] [number] [author] [labels]
+# Resolve one workflow question. Args: mode [run_id] [action] [number] [author] [labels] [marked] [step-name]
 resolve() {
   local mode=$1 run_id=${2:-7001} action=${3:-opened} number=${4:-3006}
-  local author=${5:-contributor} labels=${6:-} marked=${7:-false}
-  ruby "$RESOLVE" "$WORKFLOW" "$mode" "$run_id" "$action" "$number" "$author" "$labels" "$marked"
+  local author=${5:-contributor} labels=${6:-} marked=${7:-false} step_name=${8:-}
+  ruby "$RESOLVE" "$WORKFLOW" "$mode" "$run_id" "$action" "$number" "$author" "$labels" "$marked" "$step_name"
 }
+
+MARKER_STEP='Read the CI-validated marker'
+ACCEPT_STEP='Accept the deliberate CI-validated marker'
 
 MARKER=$("$MARKER_TOOL" --label) \
   || fail "bin/fm-pr-ci-validated.sh could not report the marker label it applies"
@@ -205,19 +211,19 @@ test_label_changes_re_evaluate_the_check() {
 }
 
 test_marker_decision_passes_without_running_the_signature_action() {
-  local output
+  local output notice
   output=$(resolve steps 7002 labeled 3006 contributor "$MARKER" true) \
     || fail "could not resolve the workflow's steps for a marked PR"
-  assert_not_contains "$output" "uses	" \
-    "a marked PR still runs an action instead of passing on the marker alone"
-  assert_contains "$output" "::notice::" \
+  assert_equals "step	$MARKER_STEP"$'\n'"step	$ACCEPT_STEP" "$output" \
+    "a marked PR does not run exactly the marker read and its acceptance, with no action"
+  notice=$(resolve step-script 7002 labeled 3006 contributor "$MARKER" true "$ACCEPT_STEP" | bash -eo pipefail) \
+    || fail "the acceptance step failed to run"
+  assert_contains "$notice" "::notice::" \
     "a marked PR does not report why the check passed"
-  assert_contains "$output" "$MARKER" \
+  assert_contains "$notice" "$MARKER" \
     "the passing notice does not name the $MARKER marker"
-  assert_contains "$output" "no-mistakes" \
+  assert_contains "$notice" "no-mistakes" \
     "the passing notice does not name the rule it stands in for"
-  assert_equals 2 "$(printf '%s\n' "$output" | grep -c '^step	')" \
-    "a marked PR runs more than the marker read and its notice"
   pass "a marked PR passes the check with a notice and no signature action"
 }
 
@@ -231,8 +237,8 @@ test_unmarked_pr_still_reaches_the_signature_action() {
       "an unmarked PR does not reach the pinned signature action on a $action event"
     assert_contains "$output" "with	exempt-authors=kunchenguid" \
       "the signature action lost its exempt author on a $action event"
-    assert_not_contains "$output" "::notice::" \
-      "an unmarked PR reported the marker notice on a $action event"
+    assert_not_contains "$output" "step	$ACCEPT_STEP" \
+      "an unmarked PR ran the marker acceptance on a $action event"
   done
   pass "a PR without the marker still reaches the pinned signature action unchanged"
 }
