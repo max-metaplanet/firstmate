@@ -63,7 +63,7 @@ commands:
     if printf '%s\n' "$scope" | grep -qx 'behavior=false'; then
       exec bash bin/fm-test-run.sh tests/fm-documentation-audiences.test.sh
     elif printf '%s\n' "$scope" | grep -qx 'full=true'; then
-      exec bash bin/fm-test-run.sh --all
+      exec bash bin/fm-test-run.sh --all --per-script-timeout-secs 1500
     fi
     matrix=$(printf '%s\n' "$scope" | sed -n 's/^selected_matrix=//p')
     selected=
