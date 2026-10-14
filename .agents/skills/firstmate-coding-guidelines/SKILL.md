@@ -114,9 +114,15 @@ Run `bin/fm-doc-audience-check.sh`; it enforces classification, README setup rou
 
 ## No-mistakes test configuration
 
-Never configure a deterministic suite-walk `commands.test` in any repository's no-mistakes config, whether it selects the full suite, changed tests, a family, or a fixed script list.
-Targeted validation belongs to the no-mistakes evidence path, while CI owns broad deterministic regression coverage.
-Firstmate PR #3644 demonstrated the cost: pinning a 75-162-script walk took 32.7 minutes per validation, while removing it restored the 3.6-minute targeted-validation posture.
+Do not configure an unconditional deterministic suite walk as `commands.test`; CI owns broad regression coverage and the Test evidence agent owns additional intent-targeted scenarios.
+Firstmate's measured exception reuses `bin/fm-ci-change-scope.sh`, which delegates to `bin/fm-test-run.sh`'s changed-file map and weighted selection; never build a second selector.
+Preserve the classifier's complete-suite fallback when it cannot establish a safe narrow selection, and run the documentation-audience check for its behavior-inert prose case.
+The Test evidence agent consumes the command's results instead of repeating passing suites, while still covering any unmet intent or live-behavior requirement.
+Keep this exception only while a measured representative small-diff command is clearly faster than agent-targeted validation; otherwise remove `commands.test` and name the selector output in scoped Test instructions.
+The earlier Firstmate suite-walk evidence measured 32.7 minutes against 3.6 minutes of targeted validation; a full walk remains the wrong default.
+The fork's run `01M4WFXBA6HC6HYY3VMFW1HGQP` subsequently spent 2,638.992 seconds (44 minutes) in agent-chosen Test.
+On 2026-10-14, the selector-based command for a comment-only `bin/fm-quota-choose.sh` diff passed its one selected suite in 13.668 seconds wall-clock, including selection and runner startup.
+That is command timing, not the full Test step: no-mistakes still runs its evidence agent afterward, so total-step improvement must be measured after the trusted configuration lands.
 
 ## Repo style rules
 

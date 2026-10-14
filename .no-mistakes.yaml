@@ -9,11 +9,33 @@
 # HEAD-continuity guard; see docs/architecture.md "No-mistakes gate authority boundary."
 disable_project_settings: true
 
+# Review remains mandatory. v1.84.0 has no repository-level hard timeout;
+# review_agent_timeout is global-only. This caps automatic repair rounds only.
+auto_fix:
+  review: 1
+review:
+  path_instructions:
+    - path: "*"
+      instructions: |
+        For a small, low-risk diff, review the complete branch diff, its direct
+        consumers, relevant tests, and the authoritative policy or documentation.
+        Expand investigation only to resolve a concrete correctness, safety, or
+        intent question raised by that diff; do not audit unrelated subsystems.
+        Complete one focused pass and report actionable findings with evidence.
+        On re-review, verify the repairs and their affected behavior, using the
+        prior findings as context while independently checking the complete diff.
+        Review is never skipped, and unresolved findings still reach the gate.
+
 # Trusted documentation placement policy for the Document step.
 # The audience inventory and coding guideline own the detail; keep this as a
 # pointer so gate instructions cannot become a second prose policy.
 document:
   instructions: |
+    First inspect the complete branch diff for changes that make maintained
+    documentation inaccurate, including changed behavior, configuration, or prose.
+    If existing documentation remains accurate and no documentation change is
+    needed, report that no-op immediately; do not perform a repository-wide
+    documentation audit or make cosmetic edits to justify this step.
     Read docs/documentation-audiences.md and its machine-consumed
     docs/documentation-audiences.json inventory before changing documentation.
     Apply the knowledge-placement policy in
@@ -29,18 +51,47 @@ document:
 # Invocation wiring is asserted by `tests/fm-lint.test.sh` and
 # `tests/fm-lint-workflows.test.sh`.
 #
-# Keep commands.test absent; the firstmate-coding-guidelines skill owns this policy.
+# Reuse the CI classifier and its fm-test-run.sh changed-file map. The classifier
+# owns conservative full-suite fallbacks when a safe narrow selection is unknown.
 commands:
   lint: 'bin/fm-lint.sh'
+  test: |
+    bash <<'NM_TEST'
+    set -euf
+    scope=$(FM_CI_EVENT=pull_request FM_CI_BASE_SHA=origin/main bash bin/fm-ci-change-scope.sh)
+    printf '%s\n' "$scope"
+    if printf '%s\n' "$scope" | grep -qx 'behavior=false'; then
+      exec bash bin/fm-test-run.sh tests/fm-documentation-audiences.test.sh
+    elif printf '%s\n' "$scope" | grep -qx 'full=true'; then
+      exec bash bin/fm-test-run.sh --all
+    fi
+    matrix=$(printf '%s\n' "$scope" | sed -n 's/^selected_matrix=//p')
+    selected=
+    if [ -n "$matrix" ]; then
+      selected=$(printf '%s\n' "$matrix" | jq -er '[.include[].scripts] | join(" ")')
+    fi
+    if printf '%s\n' "$scope" | grep -qx 'herdr=true'; then
+      selected="$selected $(bash bin/fm-test-run.sh --list --family real-herdr-gated)"
+    fi
+    [ -n "$selected" ] || { printf '%s\n' 'selector returned no tests' >&2; exit 1; }
+    # The selector emits repository-owned test paths without whitespace.
+    # Globbing is disabled above; split only its space/newline-delimited path list.
+    # shellcheck disable=SC2086
+    set -- $selected
+    exec bash bin/fm-test-run.sh --per-script-timeout-secs 1500 "$@"
+    NM_TEST
 
 # Trusted Test-step policy. The scope paragraph keeps local validation targeted so
-# the step finishes inside its time limit; the firstmate-coding-guidelines skill
-# owns the rationale, and CI still runs every suite.
+# the step avoids duplicate work; the firstmate-coding-guidelines skill owns
+# the measured command exception, and CI owns broad regression coverage.
 # Publish each run's test evidence to the orphan no-mistakes/evidence branch linked from the PR.
 # The evidence is not committed to the feature or default branch.
 test:
   instructions: |
-    Choose and run the colocated tests in tests/ that cover the changed paths and their direct consumers, and run a live lab scenario only when the change alters live lifecycle behavior, through the guarded lab helpers described below.
+    Read the configured Test command's selector output and results first.
+    Do not repeat suites that already passed for this head; use their evidence and run only additional intent-targeted checks needed for changed behavior or uncovered direct consumers.
+    If the selector reports full=true, its safe narrow mapping is unknown; retain that conservative fallback rather than inventing a second path map.
+    Run a live lab scenario only when the change alters live lifecycle behavior, through the guarded lab helpers described below.
     Do not run the full suite families, and do not re-run slow suites that do not cover the changed paths; CI already runs them (tests/fm-supervision-host.test.sh alone takes 22-30 minutes).
     When the change touches what a slow suite covers, still run that suite, or a filtered part of it that exercises the changed behavior, and plan the step's time around it; never give a verdict that rests on zero tests for a touched file.
     Finish well inside this step's time limit and report your verdict on the targeted and live checks you ran.
