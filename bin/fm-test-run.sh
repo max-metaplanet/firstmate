@@ -146,7 +146,10 @@
 # evidence. Consumer bin/ scripts still resolve through the curated map, so
 # recorded family-level coupling still expands to the whole family.
 # tests/lib.sh, tests/fixtures.sh, tests/*-helpers.sh and tests/*-fixture.sh are
-# shared files that map to the suites naming them; a fixture under
+# shared files that map to the suites naming them. Family reference scans also
+# follow one level of shared helper library: a suite counts as naming a file
+# when it names a tests/*-helpers.sh, fixtures.sh or *-fixture.sh whose
+# non-comment lines name it. A fixture under
 # tests/fixtures/<dir>/ is mapped by that directory instead. Curated family arms
 # above those also name individual tests/ files explicitly.
 set -eu
@@ -186,30 +189,30 @@ JOBS_MAX=8
 MAX_WALL_MS=
 PER_SCRIPT_TIMEOUT_SECS=0
 # Bound applied automatically on the automatic --changed path, derived from
-# measured healthy runtimes with margin rather than picked: the slowest measured
-# script is tests/fm-supervision-host.test.sh at about 1353s under CI load (the
-# hint table below records that loaded figure), ahead of
-# tests/fm-watch-triage.test.sh at about 1075s. 1500s still keeps every measured
-# script under the bound, but only by about 1.11x over the slowest one, so this
-# margin is thinner than the 1.4x it was set for and a slow machine can trip it
-# on the --changed path; raising it belongs with a runtime fix for that script
-# rather than with shard packing. It stays under the serial lane's 40-minute
-# step tripwire so a wedged script fails here, with its output, before the job
-# cap cancels the lane. It is a guard, not a speed control: a HUNG script
+# measured healthy runtimes with margin rather than picked: the largest hint in
+# the table below is now tests/fm-watch-triage.test.sh at about 488s, ahead of
+# tests/fm-remote-secondmate-lifecycle-e2e.test.sh at about 463s, because the
+# two suites that used to hold this lane's floor at about 1353s and 1075s under
+# CI load were split into colocated scripts. 1500s keeps every hinted script
+# under the bound by about 3x, restoring the margin the unsplit host suite had
+# worn down to 1.11x. It stays under the serial lane's 40-minute step tripwire
+# so a wedged script fails here, with its output, before the job cap cancels
+# the lane. It is a guard, not a speed control: a HUNG script
 # becomes a bounded failure instead of an unbounded suite, which is the shape
 # that silently outruns a caller's invocation budget.
 CHANGED_DEFAULT_TIMEOUT_SECS=1500
 
 # How many separate-runner shards the portable serial remainder splits into.
 # One owner: CI lane names carry this count and are refused when they disagree.
-# 16 is the knee of the LPT packing below, not a round number. The lane holds
-# about 180 minutes of measured work, and at 16 bins every shard the packing can
-# balance lands at or under 10 minutes while only the two indivisible scripts
-# stay above it: tests/fm-supervision-host.test.sh at about 22.6 minutes and
-# tests/fm-watch-triage.test.sh at about 17.9 minutes. Past 16 the third-largest
-# bin stops shrinking because it holds one 7.7-minute script, so more shards buy
-# queue contention and no wall time. Cutting the lane below those two scripts
-# needs their runtime addressed, not more bins.
+# 16 was chosen as the knee of the LPT packing below, from the aggregate of
+# run 38453818522: two indivisible scripts, tests/fm-supervision-host.test.sh at
+# about 22.6 minutes and tests/fm-watch-triage.test.sh at about 17.9 minutes,
+# set the lane's floor, so more shards bought no wall time. Both suites are now
+# split across colocated scripts, so no single script sets the floor and the
+# modeled maximum shard is the lane's total work divided by the shard count:
+# --check-coverage reports serial_max_ms=692596 at 16 shards and 615641 at 18.
+# Raising the count buys wall time again, against each extra runner's start
+# delay and shared account capacity.
 PORTABLE_SERIAL_SHARDS=16
 
 # Conservative balance hint for a portable-serial script with no measurement.
@@ -218,10 +221,10 @@ PORTABLE_SERIAL_DEFAULT_WEIGHT_MS=45000
 
 # Packing target, not an execution timeout. Hints are measured on healthy
 # runners, and a slow runner has been observed running the same script about
-# 1.6x longer (tests/fm-supervision-host.test.sh: 1353420 ms measured, about
-# 35 minutes extrapolated on the runners that cancelled serial 2). The target
-# is therefore set so a shard packed to it still lands inside the serial step
-# tripwire at that factor: 1500000 ms x 1.6 is 40 minutes, the step bound in
+# 1.6x longer (the pre-split tests/fm-supervision-host.test.sh: 1353420 ms
+# measured, about 35 minutes extrapolated on the runners that cancelled serial
+# 2). The target is therefore set so a shard packed to it still lands inside
+# the serial step tripwire at that factor: 1500000 ms x 1.6 is 40 minutes, the step bound in
 # .github/workflows/ci.yml, under the 45-minute serial job cap.
 # --check-coverage refuses a modeled serial shard above this target; refresh
 # hints or rebalance instead.
@@ -333,7 +336,8 @@ family_for_basename() {
     fm-mail.test.sh|fm-mail-check.test.sh|\
     fm-turnend-foreign-owner-arm-fix.test.sh|\
     fm-wake-queue.test.sh|fm-watch-arm.test.sh|fm-watch-checkpoint.test.sh|fm-watch-recovery-loop.test.sh|\
-    fm-watch-triage.test.sh|fm-task-inbox.test.sh|\
+    fm-watch-triage.test.sh|fm-watch-triage-stale.test.sh|fm-watch-triage-delivery.test.sh|\
+    fm-task-inbox.test.sh|\
     fm-watcher-lock.test.sh|fm-inactive-reconcile.test.sh)
       printf '%s\n' watcher-wake-lock
       ;;
@@ -424,7 +428,9 @@ family_for_basename() {
       printf '%s\n' pr-forge
       ;;
     fm-afk-contract.test.sh|fm-afk-inject-e2e.test.sh|fm-afk-return.test.sh|\
-    fm-supervision-host.test.sh|fm-host-mirror.test.sh)
+    fm-supervision-host.test.sh|fm-supervision-host-stop-hook.test.sh|\
+    fm-supervision-host-engine.test.sh|fm-supervision-host-park.test.sh|\
+    fm-host-mirror.test.sh)
       printf '%s\n' afk
       ;;
     fm-bearings-board-render.test.sh|fm-bearings-snapshot.test.sh|fm-contributions.test.sh|\
@@ -700,13 +706,14 @@ list_portable_serial() {
   done < <(all_repo_tests)
 }
 
-# Measured portable-serial script durations in milliseconds, from the CI timing
+# Portable-serial script durations in milliseconds, from the CI timing
 # artifacts recorded in docs/fm-test-portable-shards.md. Each value is the
 # slowest successful sample in the referenced complete/partial CI runs, with
-# the version-specific host and native-Windows exceptions documented there.
-# These are balance hints only: the shard
-# partition stays complete and disjoint whatever they say, so a stale hint costs
-# balance rather than coverage. That doc owns the refresh procedure.
+# the version-specific host and native-Windows exceptions documented there, and
+# with the split supervision-host and watch-triage scripts carrying their
+# pre-split measurement apportioned by case share until CI measures them.
+# These are balance hints only: the shard partition stays complete and disjoint
+# whatever they say, so a stale hint costs balance rather than coverage. That doc owns the refresh procedure.
 portable_serial_weight_hints() {
   cat <<'EOF'
 tests/fm-afk-contract.test.sh 11784
@@ -896,7 +903,10 @@ tests/fm-subagent-pretool-check.test.sh 1023
 tests/fm-supervision-events.test.sh 690
 tests/fm-supervision-host-attended-live-e2e.test.sh 78
 tests/fm-supervision-host-live-e2e.test.sh 80
-tests/fm-supervision-host.test.sh 1353420
+tests/fm-supervision-host-engine.test.sh 284000
+tests/fm-supervision-host-park.test.sh 300000
+tests/fm-supervision-host-stop-hook.test.sh 334000
+tests/fm-supervision-host.test.sh 434000
 tests/fm-tangle-guard.test.sh 8501
 tests/fm-task-delivery.test.sh 38389
 tests/fm-task-inbox.test.sh 75594
@@ -926,7 +936,9 @@ tests/fm-wake-queue.test.sh 167642
 tests/fm-watch-arm.test.sh 127650
 tests/fm-watch-checkpoint.test.sh 11454
 tests/fm-watch-recovery-loop.test.sh 59180
-tests/fm-watch-triage.test.sh 1074843
+tests/fm-watch-triage-delivery.test.sh 305000
+tests/fm-watch-triage-stale.test.sh 282000
+tests/fm-watch-triage.test.sh 488000
 tests/fm-watcher-lock.test.sh 73062
 tests/fm-worker-account-live-e2e.test.sh 3536
 tests/fm-worker-account.test.sh 42425
@@ -1382,10 +1394,15 @@ select_family() {
 }
 
 families_for_test_reference() {  # <needle>...
-  local s needle
+  local s needle helper
   local found=0
   local -a needles=()
   for needle in "$@"; do needles+=(-e "$needle"); done
+  for helper in tests/*-helpers.sh tests/fixtures.sh tests/*-fixture.sh; do
+    [ -f "$helper" ] || continue
+    ! grep -v '^[[:space:]]*#' "$helper" | grep -Fq "${needles[@]}" \
+      || needles+=(-e "$(basename "$helper")")
+  done
   while IFS= read -r s; do
     [ -n "$s" ] || continue
     if grep -Fq "${needles[@]}" "$s"; then
@@ -1772,8 +1789,9 @@ families_for_changed_path() {
       printf '%s\n' pure-contract-unit
       ;;
     tests/git-config-helpers.sh)
-      # The reference scan is not transitive, so match the two helpers that
-      # source this one as well: most suites inherit it only through them.
+      # The reference scan follows only shared helper libraries, not lib.sh or
+      # herdr-test-safety.sh, so match the two files that source this one as
+      # well: most suites inherit it only through them.
       families_for_test_reference git-config-helpers.sh lib.sh herdr-test-safety.sh \
         || printf '%s\n' "__unmapped__:$path"
       ;;
