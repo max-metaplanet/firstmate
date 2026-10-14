@@ -1397,7 +1397,8 @@ families_for_test_reference() {  # <needle>...
   for needle in "$@"; do needles+=(-e "$needle"); done
   for helper in tests/*-helpers.sh tests/fixtures.sh tests/*-fixture.sh; do
     [ -f "$helper" ] || continue
-    ! grep -Fq "${needles[@]}" "$helper" || needles+=(-e "$(basename "$helper")")
+    ! grep -v '^[[:space:]]*#' "$helper" | grep -Fq "${needles[@]}" \
+      || needles+=(-e "$(basename "$helper")")
   done
   while IFS= read -r s; do
     [ -n "$s" ] || continue
