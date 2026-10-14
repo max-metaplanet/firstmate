@@ -1,0 +1,13 @@
+bin/fm-quota-choose.sh
+behavior=true
+macos=true
+full=false
+herdr=false
+selected_matrix={"include":[{"shard":"1","scripts":"tests/fm-quota-choose.test.sh"}]}
+FM_TEST_BEGIN 2026-10-14T12:45:39Z tests/fm-quota-choose.test.sh family=standalone expected_gate_skip=none
+not ok - help omitted the multi-provider usage restriction
+FM_TEST_END 2026-10-14T12:45:39Z tests/fm-quota-choose.test.sh exit=1 duration_ms=217 gate_skip=false
+FM_TEST_SUMMARY total=1 failed=1 skipped_gate=0 duration_ms=311
+FM_TEST_SUMMARY_FAMILY family=standalone count=1 duration_ms=217 failed=1
+FM_TEST_SLOWEST rank=1 script=tests/fm-quota-choose.test.sh duration_ms=217
+exit=1 wall=2s

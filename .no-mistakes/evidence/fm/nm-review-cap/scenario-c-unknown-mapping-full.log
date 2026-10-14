@@ -1,0 +1,10 @@
+$ git diff --name-only origin/main HEAD
+.no-mistakes.yaml
+$ PATH=<argv-recording bash shim>:$PATH sh -c "$(yq -r .commands.test .no-mistakes.yaml)"
+behavior=true
+macos=true
+full=true
+herdr=true
+selected_matrix=
+INTERCEPTED final runner argv: bin/fm-test-run.sh --all --per-script-timeout-secs 1500
+exit=0

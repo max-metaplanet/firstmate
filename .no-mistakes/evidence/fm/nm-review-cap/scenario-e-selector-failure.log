@@ -1,0 +1,6 @@
+# classifier forced to exit 3 (uncommitted edit) on the small-diff branch
+#!/usr/bin/env bash
+exit 3
+# fm-ci-change-scope.sh - classify a CI event's changed paths into job gates.
+$ sh -c "$(yq -r .commands.test .no-mistakes.yaml)"
+exit=3

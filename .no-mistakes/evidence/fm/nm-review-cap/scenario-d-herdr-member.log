@@ -1,0 +1,11 @@
+$ git diff --name-only origin/main HEAD
+bin/fm-quota-choose.sh
+tests/fm-backend-herdr-smoke.test.sh
+$ PATH=<argv-recording bash shim>:$PATH sh -c "$(yq -r .commands.test .no-mistakes.yaml)"
+behavior=true
+macos=true
+full=false
+herdr=true
+selected_matrix={"include":[{"shard":"1","scripts":"tests/fm-quota-choose.test.sh"}]}
+INTERCEPTED final runner argv: bin/fm-test-run.sh --per-script-timeout-secs 1500 tests/fm-quota-choose.test.sh tests/fm-afk-inject-herdr-e2e.test.sh tests/fm-afk-launch.test.sh tests/fm-backend-autodetect-smoke.test.sh tests/fm-backend-herdr-agent-exit-shell-e2e.test.sh tests/fm-backend-herdr-eventwait-smoke.test.sh tests/fm-backend-herdr-focus-flash-e2e.test.sh tests/fm-backend-herdr-launcher-workspace-e2e.test.sh tests/fm-backend-herdr-presentation-e2e.test.sh tests/fm-backend-herdr-prune-safety-e2e.test.sh tests/fm-backend-herdr-respawn-idem-e2e.test.sh tests/fm-backend-herdr-smoke.test.sh tests/fm-backend-herdr-stale-active-tab-e2e.test.sh tests/fm-backend-herdr-workspace-per-home-e2e.test.sh tests/fm-control-herdr-smoke.test.sh tests/fm-herdr-attached-viewer-live-e2e.test.sh tests/fm-herdr-session-cleanup-e2e.test.sh
+exit=0

@@ -1,0 +1,8 @@
+ok - selected matrix scripts run with the per-script bound
+ok - behavior-inert change runs only the documentation-audience suite
+ok - unknown mapping falls back to the full suite
+ok - herdr selection adds the real-herdr-gated family
+ok - empty selection fails without running tests
+ok - selector failure fails the command
+ok - a failing selected test fails the command
+bash tests/fm-nm-test-contract.test.sh  1.02s user 1.29s system 68% cpu 3.372 total

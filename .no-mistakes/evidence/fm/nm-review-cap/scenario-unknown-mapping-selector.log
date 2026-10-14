@@ -1,0 +1,14 @@
+$ FM_CI_EVENT=pull_request FM_CI_BASE_SHA=origin/main bash bin/fm-ci-change-scope.sh  (diff: .no-mistakes.yaml)
+behavior=true
+macos=true
+full=true
+herdr=true
+selected_matrix=
+exit=0
+$ selector with origin/main missing
+behavior=true
+macos=true
+full=true
+herdr=true
+selected_matrix=
+exit=0
