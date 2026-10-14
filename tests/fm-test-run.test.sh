@@ -88,6 +88,42 @@ test_changed_file_selection_is_conservative() {
   pass "changed-file selection stays conservative (never silent full suite)"
 }
 
+# The weights a caller bounds a selection with are this runner's own measured
+# hints, so --list-weighted must report them against the same selection --list
+# reports, longest first. CI's change-scope classifier packs a pull request's
+# selection into jobs from exactly this output.
+test_list_weighted_reports_measured_hints_longest_first() {
+  local weighted paths listed previous ms script
+  weighted=$("$RUNNER" --list-weighted --family pure-contract-unit) \
+    || fail "--list-weighted failed for a family selection"
+  [ -n "$weighted" ] || fail "--list-weighted printed nothing"
+  paths=$(printf '%s\n' "$weighted" | cut -f2- | LC_ALL=C sort)
+  listed=$("$RUNNER" --list --family pure-contract-unit | LC_ALL=C sort)
+  [ "$paths" = "$listed" ] \
+    || fail "--list-weighted must cover exactly the same selection as --list"
+  previous=
+  while IFS="$(printf '\t')" read -r ms script; do
+    [ -n "$script" ] || continue
+    case "$ms" in
+      ''|*[!0-9]*) fail "--list-weighted must print a whole number of ms, got '$ms' for $script" ;;
+    esac
+    if [ -n "$previous" ]; then
+      [ "$ms" -le "$previous" ] \
+        || fail "--list-weighted must order longest first, $ms followed $previous"
+    fi
+    previous=$ms
+  done <<EOF
+$weighted
+EOF
+  # Two scripts whose measured durations are orders of magnitude apart must
+  # come back in that order, so a caller packing bins packs the real shape.
+  weighted=$("$RUNNER" --list-weighted tests/fm-quota-choose.test.sh tests/fm-supervision-host.test.sh) \
+    || fail "--list-weighted failed for an explicit script list"
+  [ "$(printf '%s\n' "$weighted" | head -1 | cut -f2-)" = tests/fm-supervision-host.test.sh ] \
+    || fail "the slowest measured script must sort first"$'\n'"$weighted"
+  pass "--list-weighted reports measured hints for the selection, longest first"
+}
+
 init_changed_fixture_repo() {
   local repo=$1 script
   mkdir -p "$repo/bin" "$repo/tests"
@@ -174,6 +210,94 @@ init_changed_fixture_repo() {
   git -C "$repo" init -q
   git -C "$repo" add .
   git -C "$repo" -c user.name=test -c user.email=test@example.invalid commit -qm baseline
+}
+
+# CI's change-scope job already computed the pull request's changed paths, so
+# the runner takes that list rather than deriving a second answer from git.
+# The caller's list must be the WHOLE answer: mixing it with this checkout's
+# own dirt would classify paths the caller never reported.
+test_changed_paths_file_replaces_the_git_derivation() {
+  local tmp repo listed rc
+  tmp=$(fm_test_tmproot fm-test-run-pathsfile)
+  repo="$tmp/repo"
+  init_changed_fixture_repo "$repo"
+
+  printf 'bin/fm-quota-choose.sh\n' >"$tmp/paths"
+  # A dirty working tree the caller did NOT report must not reach the result.
+  printf '\n' >>"$repo/bin/fm-timeout-lib.sh"
+  listed=$(cd "$repo" && bin/fm-test-run.sh --list --changed --changed-paths-file "$tmp/paths") \
+    || fail "--changed-paths-file selection failed"
+  assert_contains "$listed" "tests/fm-quota-choose.test.sh" \
+    "the caller's path must select its own suite"$'\n'"$listed"
+  case "$listed" in
+    *fm-session-start.test.sh*)
+      fail "an unreported working-tree change must not reach the selection"$'\n'"$listed"
+      ;;
+  esac
+
+  # A path the map does not know still refuses, which is what lets CI fall
+  # open to the complete suite rather than trust a partial answer.
+  printf 'src/unmapped.ts\n' >"$tmp/paths"
+  rc=0
+  (cd "$repo" && bin/fm-test-run.sh --list --changed --changed-paths-file "$tmp/paths") \
+    >/dev/null 2>&1 || rc=$?
+  [ "$rc" -ne 0 ] || fail "an unmapped path in the caller's list must still refuse"
+
+  rc=0
+  (cd "$repo" && bin/fm-test-run.sh --list --changed --changed-paths-file "$tmp/absent") \
+    >/dev/null 2>&1 || rc=$?
+  [ "$rc" -ne 0 ] || fail "an unreadable changed-paths file must refuse"
+
+  rc=0
+  (cd "$repo" && bin/fm-test-run.sh --list --all --changed-paths-file "$tmp/paths") \
+    >/dev/null 2>&1 || rc=$?
+  [ "$rc" -ne 0 ] || fail "--changed-paths-file without --changed must be refused"
+
+  rm -rf "$tmp"
+  pass "--changed-paths-file makes the caller the one owner of what changed"
+}
+
+# The changed-file map is what decides which suites prove a change, and CI now
+# runs only that selection on a pull request. A source path the tests tree
+# names and the map answers nothing for is a path whose tests stop running, so
+# the map's completeness is itself a regression.
+test_changed_map_answers_for_every_referenced_source_path() {
+  local out
+  out=$("$RUNNER" --check-changed-map 2>&1) \
+    || fail "the changed-file map does not answer for every referenced path:"$'\n'"$out"
+  assert_contains "$out" 'FM_TEST_CHANGED_MAP referenced=' \
+    "the guard must report how many paths it checked"$'\n'"$out"
+  [ "$(printf '%s\n' "$out" | sed -n 's/.*referenced=\([0-9][0-9]*\).*/\1/p')" -gt 50 ] \
+    || fail "the guard checked suspiciously few paths, so it proves little"$'\n'"$out"
+  pass "the changed-file map answers for every source path the tests tree names"
+}
+
+# And the guard really does catch an empty answer: the map's bin/ arm resolves
+# a path that no longer exists to nothing at all, which is exactly the silent
+# shape it exists to find.
+test_check_changed_map_catches_a_path_the_map_answers_nothing_for() {
+  local tmp repo out rc
+  tmp=$(fm_test_tmproot fm-test-run-mapguard)
+  repo="$tmp/repo"
+  init_changed_fixture_repo "$repo"
+
+  out=$(cd "$repo" && bin/fm-test-run.sh --check-changed-map 2>&1) \
+    || fail "the guard must pass on an intact fixture repository:"$'\n'"$out"
+
+  printf '# bin/retired-thing.sh\n' >>"$repo/tests/fm-brief.test.sh"
+  : >"$repo/bin/retired-thing.sh"
+  git -C "$repo" add -A
+  git -C "$repo" -c user.name=test -c user.email=test@example.invalid commit -qm retire
+  rm -f "$repo/bin/retired-thing.sh"
+
+  rc=0
+  out=$(cd "$repo" && bin/fm-test-run.sh --check-changed-map 2>&1) || rc=$?
+  [ "$rc" -ne 0 ] || fail "the guard must fail when the map answers nothing:"$'\n'"$out"
+  assert_contains "$out" 'bin/retired-thing.sh' \
+    "the guard must name the path it found no suite for"$'\n'"$out"
+
+  rm -rf "$tmp"
+  pass "the changed-map guard catches a referenced path the map answers nothing for"
 }
 
 # Build a repository with a primary checkout and one linked worktree, each
@@ -1834,6 +1958,10 @@ test_list_all_exact_suite_coverage
 test_family_selection
 test_single_script_selection
 test_changed_file_selection_is_conservative
+test_list_weighted_reports_measured_hints_longest_first
+test_changed_paths_file_replaces_the_git_derivation
+test_changed_map_answers_for_every_referenced_source_path
+test_check_changed_map_catches_a_path_the_map_answers_nothing_for
 test_task_marker_refuses_the_primary_checkout
 test_changed_runner_surfaces_select_their_family
 test_shell_line_ending_policy_selects_runner_contract
