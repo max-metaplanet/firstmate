@@ -177,42 +177,52 @@ test_list_files_reports_the_shell_inventory() {
   pass "fm-lint.sh --list-files reports the complete shell inventory"
 }
 
+# Completeness holds at whatever count the workflow picks, so this runs the
+# count CI uses today and a much finer split beside it: the finer split is
+# what catches a packing bug the coarse one can hide, and the production
+# count is what proves the matrix in .github/workflows/ci.yml loses nothing.
+LINT_PARTITION_TOTALS='3 14'
+
 test_canonical_partitions_preserve_full_lint() {
-  local tmp fakebin all part selected log flags mode rc option invocation_count root_count
+  local tmp fakebin all part selected log flags mode rc option invocation_count root_count total index
   tmp=$(fm_test_tmproot fm-lint-partitions)
   fakebin="$tmp/bin"
   mkdir -p "$fakebin"
   all=$(CI=true "$LINT" --list-files | LC_ALL=C sort)
-  : > "$tmp/union"
-  for part in 1of14 2of14 3of14 4of14 5of14 6of14 7of14 8of14 9of14 10of14 11of14 12of14 13of14 14of14; do
-    selected=$(CI=false GITHUB_ACTIONS=false "$LINT" --partition "$part" --list-files) \
-      || fail "partition $part must select full canonical roots even on a local branch"
-    [ -n "$selected" ] || fail "empty lint partition $part"
-    printf '%s\n' "$selected" >> "$tmp/union"
-    [ "$selected" = "$("$LINT" --partition "$part" --list-files)" ] \
-      || fail "partition $part is nondeterministic"
-    log="$tmp/$part.roots"
-    flags="$tmp/$part.flags"
-    mode="$tmp/$part.mode"
-    fm_lint_stub_shellcheck "$fakebin" "$log"
-    PATH="$fakebin:$PATH" FM_TEST_FLAG_LOG="$flags" FM_TEST_MODE_LOG="$mode" \
-      "$LINT" --partition "$part" > "$tmp/$part.out" 2>&1 \
-      || fail "canonical partition $part failed: $(cat "$tmp/$part.out")"
-    [ "$(LC_ALL=C sort "$log")" = "$(printf '%s\n' "$selected" | LC_ALL=C sort)" ] \
-      || fail "partition $part executed a different root set than it listed"
-    [ "$(LC_ALL=C sort -u "$flags")" = "$(printf 'exclude=none\nexternal-sources=yes')" ] \
-      || fail "partition $part weakened source-aware analysis"
-    [ "$(LC_ALL=C sort -u "$mode")" = on ] || fail "partition $part disabled full analysis"
-    root_count=$(printf '%s\n' "$selected" | grep -c .)
-    invocation_count=$(grep -c '^external-sources=' "$flags" || true)
-    [ "$invocation_count" -eq "$root_count" ] \
-      || fail "partition $part used $invocation_count ShellCheck calls for $root_count roots"
-    [ "$(grep -c '^fm-lint: begin ' "$tmp/$part.out" || true)" -eq "$root_count" ] \
-      || fail "partition $part did not stream a begin record per root"
-    [ "$(grep -c '^fm-lint: end ' "$tmp/$part.out" || true)" -eq "$root_count" ] \
-      || fail "partition $part did not stream an end record per root"
+  for total in $LINT_PARTITION_TOTALS; do
+    : > "$tmp/union"
+    for index in $(seq 1 "$total"); do
+      part="${index}of${total}"
+      selected=$(CI=false GITHUB_ACTIONS=false "$LINT" --partition "$part" --list-files) \
+        || fail "partition $part must select full canonical roots even on a local branch"
+      [ -n "$selected" ] || fail "empty lint partition $part"
+      printf '%s\n' "$selected" >> "$tmp/union"
+      [ "$selected" = "$("$LINT" --partition "$part" --list-files)" ] \
+        || fail "partition $part is nondeterministic"
+      log="$tmp/$part.roots"
+      flags="$tmp/$part.flags"
+      mode="$tmp/$part.mode"
+      fm_lint_stub_shellcheck "$fakebin" "$log"
+      PATH="$fakebin:$PATH" FM_TEST_FLAG_LOG="$flags" FM_TEST_MODE_LOG="$mode" \
+        "$LINT" --partition "$part" > "$tmp/$part.out" 2>&1 \
+        || fail "canonical partition $part failed: $(cat "$tmp/$part.out")"
+      [ "$(LC_ALL=C sort "$log")" = "$(printf '%s\n' "$selected" | LC_ALL=C sort)" ] \
+        || fail "partition $part executed a different root set than it listed"
+      [ "$(LC_ALL=C sort -u "$flags")" = "$(printf 'exclude=none\nexternal-sources=yes')" ] \
+        || fail "partition $part weakened source-aware analysis"
+      [ "$(LC_ALL=C sort -u "$mode")" = on ] || fail "partition $part disabled full analysis"
+      root_count=$(printf '%s\n' "$selected" | grep -c .)
+      invocation_count=$(grep -c '^external-sources=' "$flags" || true)
+      [ "$invocation_count" -eq "$root_count" ] \
+        || fail "partition $part used $invocation_count ShellCheck calls for $root_count roots"
+      [ "$(grep -c '^fm-lint: begin ' "$tmp/$part.out" || true)" -eq "$root_count" ] \
+        || fail "partition $part did not stream a begin record per root"
+      [ "$(grep -c '^fm-lint: end ' "$tmp/$part.out" || true)" -eq "$root_count" ] \
+        || fail "partition $part did not stream an end record per root"
+    done
+    [ "$(LC_ALL=C sort "$tmp/union")" = "$all" ] \
+      || fail "lint partitions at $total lose or duplicate canonical roots"
   done
-  [ "$(LC_ALL=C sort "$tmp/union")" = "$all" ] || fail "lint partitions lose or duplicate canonical roots"
   for option in 0of2 3of2 2of1 of2 1of xof2 1of2x; do
     rc=0
     "$LINT" --partition "$option" --list-files > "$tmp/refused" 2>&1 || rc=$?
@@ -246,20 +256,20 @@ test_partition_runs_one_shellcheck_at_a_time() {
   telemetry="$tmp/telemetry.tsv"
   fm_lint_stub_shellcheck "$fakebin" "$log"
 
-  out=$(PATH="$fakebin:$PATH" "$LINT" --partition 1of14 --telemetry "$telemetry" 2>&1) \
+  out=$(PATH="$fakebin:$PATH" "$LINT" --partition 1of3 --telemetry "$telemetry" 2>&1) \
     || fail "canonical partition lint failed"$'\n'"$out"
   assert_grep $'jobs\t1' "$telemetry" \
     "a CI partition must run one ShellCheck at a time so it cannot race a sibling worker for runner memory"
 
   # An explicit --jobs override must not reintroduce the concurrency the
   # partition exists to avoid.
-  out=$(PATH="$fakebin:$PATH" "$LINT" --partition 7of14 --jobs 2 --telemetry "$telemetry" 2>&1) \
+  out=$(PATH="$fakebin:$PATH" "$LINT" --partition 2of3 --jobs 2 --telemetry "$telemetry" 2>&1) \
     || fail "canonical partition lint with an explicit --jobs failed"$'\n'"$out"
   assert_grep $'jobs\t1' "$telemetry" \
     "--jobs must not raise a partition above one concurrent ShellCheck"
 
   # FM_LINT_JOBS is the same lever by another name.
-  out=$(PATH="$fakebin:$PATH" FM_LINT_JOBS=2 "$LINT" --partition 14of14 --telemetry "$telemetry" 2>&1) \
+  out=$(PATH="$fakebin:$PATH" FM_LINT_JOBS=2 "$LINT" --partition 3of3 --telemetry "$telemetry" 2>&1) \
     || fail "canonical partition lint with FM_LINT_JOBS failed"$'\n'"$out"
   assert_grep $'jobs\t1' "$telemetry" \
     "FM_LINT_JOBS must not raise a partition above one concurrent ShellCheck"

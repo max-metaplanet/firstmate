@@ -115,8 +115,14 @@ Measure native-Windows-only scripts through the focused Git Bash runner and reta
 On a pull request the behavior lanes are replaced by the test scripts that cover the changed paths.
 `bin/fm-ci-change-scope.sh` is the single owner of that decision: it supplies the pull request's changed path set to `bin/fm-test-run.sh --list-weighted --changed --changed-paths-file`, so the diff and the map each keep one owner, and packs the result into the fewest jobs whose modeled work fits its per-job budget.
 A one-script change therefore spends one runner instead of nineteen, which is what a short round's wall clock is actually made of.
-Selection fails open to the complete suite, never toward speed; that script's header owns the complete list of conditions, and push to main plus the nightly schedule never select at all.
+A change to CI setup is selected the same way as any other: the workflow, the no-mistakes config, the test runner, its isolation proof, the classifier itself and shared libraries are all answered by the runner's map with the family that owns them, and no second list of owning suites exists to drift from it.
 `bin/fm-test-run.sh --check-changed-map` proves the map answers for every source path the tests tree names, because a selection is only as safe as the map behind it.
+
+A pull request never runs the complete sixteen-shard suite, however little the classifier can establish.
+Where it cannot produce a packable selection - shared test scaffolding every suite names, a library whose owning families are the whole tree, prose a test reads that the map answers nothing for, or a path the map refuses - it falls back to both portable parallel lanes and the required Herdr lane, three runners rather than nineteen.
+That trade is only sound because the complete suite still runs: on the next push to main and again on the nightly schedule, where `full` is set and nothing is narrowed.
+A serial-lane regression a pull request's bounded round missed is therefore caught by a failing workflow run on main, which is the signal that layout depends on.
+`bin/fm-ci-change-scope.sh`'s header owns the complete list of fallback conditions and the one place CI and `--local` differ: `--local` keeps the complete-suite fallback, because its consumer runs scripts rather than CI jobs.
 
 The stock macOS Bash check runs in two halves, because `needs` is static and a job the `ci-gate` job waits for holds the whole round until it finishes.
 Narrowing the Linux work cannot move a job that has queued about 35 minutes for a 7.5-minute run, so the pull request's copy of it has to live outside that verdict rather than inside it.
@@ -150,8 +156,11 @@ The always-run `ci-gate` job reports the whole round's result, so a gated-off jo
 
 The longer-term performance objective remains a complete green run under fifteen minutes including start delay; the supervision-host floor that alone exceeded that objective is gone.
 The immediate packing target is the runner's modeled script budget, and with no script left above a derived 488000 ms, more shards now lower that model until it reaches the lane's total work divided by the shard count.
-The layout uses thirty-three long-lived Linux jobs (sixteen serial, two parallel, Herdr, fourteen lint), plus short checks and macOS; insufficient shared account capacity can erase the packing gain.
-A change-scoped pull request round uses at most six packed jobs plus the fourteen lint partitions instead, with the macOS check running advisory beside it rather than inside its verdict.
+The layout uses twenty-two long-lived Linux jobs (sixteen serial, two parallel, Herdr, three lint) on push to main and the nightly schedule, plus short checks and macOS; insufficient shared account capacity can erase the packing gain.
+A change-scoped pull request round uses at most six packed jobs plus the three lint partitions instead, and its bounded fallback three lanes plus those partitions, with the macOS check running advisory beside it rather than inside its verdict.
+This fork holds about twenty concurrent runners, which is what sets the lint count: at fourteen partitions a pull request's lint matrix alone approached that cap, so partitions and behavior jobs queued behind each other and the round's wall clock became queue wait rather than work.
+Replaying the per-root ShellCheck durations measured in run 38635813357 (2240.2 seconds of analysis over 516 roots) through `bin/fm-lint.sh`'s own byte-weight packing projects a slowest partition of 1172.5 seconds at two partitions, 833.0 seconds at three, and 698.9 seconds at four.
+Two partitions alone exceed the whole 19.0-minute round they were meant to shorten, so three is the count this layout uses; reproduce the projection by downloading the `fm-lint-telemetry-*` artifacts from a green run and summing each `end` record's duration per `bin/fm-lint.sh --partition <n>of<total> --list-files` membership.
 Sixteen serial shards was chosen as the knee of the packing from the aggregate of run 38453818522, when `tests/fm-supervision-host.test.sh` at about 22.6 minutes and `tests/fm-watch-triage.test.sh` at about 17.9 minutes were indivisible scripts that set the lane's floor.
 Both suites are now split across colocated scripts, so no single script sets the floor and the modeled maximum shard is the lane's total work divided by the shard count: `bin/fm-test-run.sh --check-coverage` reports `serial_max_ms=692596` at sixteen shards and 615641 at eighteen.
 Raising the count therefore buys wall time again, at the cost of each extra runner's start delay.
