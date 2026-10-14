@@ -3260,9 +3260,19 @@ resolved_existing_dir() {
 resolve_project_dir_arg() {
   local path=$1
   case "$path" in
-  projects/*) printf '%s/%s\n' "$PROJECTS" "${path#projects/}" ;;
-  *) printf '%s\n' "$path" ;;
+  projects/*) printf '%s/%s\n' "$PROJECTS" "${path#projects/}"; return 0 ;;
+  */*) printf '%s\n' "$path"; return 0 ;;
   esac
+  if [ -d "$path" ]; then
+    printf '%s\n' "$path"
+    return 0
+  fi
+  if [ -d "$PROJECTS/$path" ]; then
+    printf '%s\n' "$PROJECTS/$path"
+    return 0
+  fi
+  echo "error: \"$path\" does not resolve to a project; pass an absolute or relative path, projects/<name>, or the name of a clone under projects/" >&2
+  return 1
 }
 
 path_is_ancestor_of() {
@@ -3442,7 +3452,8 @@ if [ "$KIND" = secondmate ]; then
     BRIEF="$DATA/$ID/brief.md"
   fi
 else
-  PROJ_ABS="$(cd "$(resolve_project_dir_arg "$PROJ")" && pwd)"
+  PROJ_DIR_ARG=$(resolve_project_dir_arg "$PROJ") || exit 1
+  PROJ_ABS="$(cd "$PROJ_DIR_ARG" && pwd)"
   WT=""
   BRIEF="$DATA/$ID/brief.md"
 fi
