@@ -1935,6 +1935,8 @@ families_for_changed_path() {
       printf '%s\n' "__unmapped__:$path"
       ;;
     README.md|LICENSE|assets/*|docs/*|.gitignore)
+      # Tracked prose selects nothing here. bin/fm-ci-change-scope.sh adds the
+      # documentation-audience suite on top when prose rides beside code.
       ;;
     *)
       if [ -e "$path" ]; then

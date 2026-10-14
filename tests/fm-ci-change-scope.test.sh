@@ -262,6 +262,13 @@ test_prose_beside_code_keeps_the_documentation_suite() {
   assert_contains "$(scope_value selected_matrix)" 'fm-pr-merge.test.sh' \
     "a mixed change must still select the code suite"$'\n'"$SCOPE_OUT"
 
+  # Top-level prose outside docs/ is still in the audience checker's set.
+  classify VISION.md bin/fm-quota-choose.sh
+  assert_contains "$SCOPE_OUT" 'full=false' \
+    "top-level prose beside code still narrows"$'\n'"$SCOPE_OUT"
+  assert_contains "$(scope_value selected_matrix)" 'fm-documentation-audiences.test.sh' \
+    "top-level prose beside code must keep the documentation-audience suite"$'\n'"$SCOPE_OUT"
+
   # Prose alone never reaches here: with no behavioral change the docs-guard
   # job owns it, so the selection stays empty rather than booking a job.
   classify README.md

@@ -293,7 +293,9 @@ EOF
   # would simply vanish. Add it here rather than in the map, because the map's
   # silence on prose is what makes a prose-only behavior-relevant change widen
   # to the complete suite, and attributing prose by reference scan is noisy.
-  if printf '%s\n' "$paths" | grep -qE '^(README\.md|LICENSE|\.gitignore|assets/|docs/)'; then
+  # The trigger mirrors REQUIRED_TRACKED_PATTERNS in bin/fm-doc-audience-check.sh,
+  # which owns the prose set, plus the other files the map's prose arm names.
+  if printf '%s\n' "$paths" | grep -qE '(\.(md|mdx|rst|txt)$|^(LICENSE|\.gitignore)$|^(assets|docs)/)'; then
     doc_suite=tests/fm-documentation-audiences.test.sh
     if ! printf '%s\n' "$weighted" | grep -Fq -- "$doc_suite"; then
       weighted="${weighted}
