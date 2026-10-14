@@ -1,0 +1,5 @@
+holder=unmarked hold_s=15 mode=recovery rc=1 elapsed_s=12.08
+holder=marked hold_s=8 mode=recovery rc=0 elapsed_s=8.86
+holder=marked hold_s=40 mode=recovery rc=1 elapsed_s=30.15
+holder=unmarked hold_s=15 mode=ordinary rc=1 elapsed_s=14.85
+ 8:49  up 1 day, 21:23, 2 users, load averages: 12.02 10.59 9.76

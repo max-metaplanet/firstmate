@@ -1,0 +1,10 @@
+tree=base mode=default rc=1 elapsed_s=14.43
+tree=head mode=recovery rc=1 elapsed_s=12.22
+tree=head mode=default rc=1 elapsed_s=13.21
+tree=base mode=default rc=1 elapsed_s=12.78
+tree=head mode=recovery rc=1 elapsed_s=14.45
+tree=head mode=default rc=1 elapsed_s=13.88
+tree=base mode=default rc=1 elapsed_s=12.83
+tree=head mode=recovery rc=1 elapsed_s=12.82
+tree=head mode=default rc=1 elapsed_s=13.87
+ 9:10  up 1 day, 21:44, 2 users, load averages: 5.91 8.15 9.70

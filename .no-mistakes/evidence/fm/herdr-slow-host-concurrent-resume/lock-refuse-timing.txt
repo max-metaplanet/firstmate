@@ -1,0 +1,7 @@
+mode=ordinary rc=1 elapsed_s=15.37
+mode=recovery rc=0 elapsed_s=15.52
+ 8:36  up 1 day, 21:10, 2 users, load averages: 8.63 9.04 8.45
+mode=recovery rc=0 elapsed_s=15.35
+mode=ordinary rc=0 elapsed_s=15.87
+mode=recovery rc=0 elapsed_s=15.15
+ 8:37  up 1 day, 21:11, 2 users, load averages: 10.22 9.50 8.67

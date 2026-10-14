@@ -1,0 +1,9 @@
+tree=base mode=default rc=1 elapsed_s=14.701 load1=6.96
+tree=head mode=recovery rc=1 elapsed_s=15.219 load1=7.58
+tree=head mode=default rc=1 elapsed_s=13.501 load1=6.56
+tree=base mode=default rc=1 elapsed_s=13.346 load1=5.78
+tree=head mode=recovery rc=1 elapsed_s=12.960 load1=5.34
+tree=head mode=default rc=1 elapsed_s=15.854 load1=5.78
+tree=base mode=default rc=1 elapsed_s=13.302 load1=5.64
+tree=head mode=recovery rc=1 elapsed_s=13.247 load1=4.99
+tree=head mode=default rc=1 elapsed_s=13.422 load1=4.61
