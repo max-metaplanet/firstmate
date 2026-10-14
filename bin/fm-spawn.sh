@@ -1627,17 +1627,6 @@ spawn_herdr_presentation_order_lock_acquire() {
   return 0
 }
 
-# A projected recovery cannot fall back to the flat layout the way a fresh
-# spawn does: it either reclaims its recorded space under this lock or
-# refuses. The holder's own critical section runs from the reclaim through
-# `treehouse get` and the two-read worktree settle below, which costs seconds
-# of real work even on an idle host, so the opportunistic 5s budget was
-# shorter than a healthy holder's normal hold and turned ordinary concurrency
-# into a refusal. 30s is still bounded - well under the 60s the holder's own
-# worktree wait allows before it gives up and releases - and a dead holder's
-# lock is reclaimed by fm_lock_try_acquire rather than waited out.
-HERDR_PRESENTATION_RECOVERY_LOCK_ATTEMPTS=300
-
 clear_relaunch_harness_wiring() {
   local harness=$1 wt=$2 state=$3 id=$4 kind=${5-} token_path token auth_path path
   # The wiring arms above match on harness PREFIXES, because a task launched
@@ -4240,14 +4229,13 @@ else
         if [ "$HERDR_RESUME_LOCK_WAIT" = 1 ]; then
           spawn_herdr_presentation_order_lock_acquire "$HERDR_SES" wait || HERDR_RECOVERY_LOCK_RC=$?
         else
-          spawn_herdr_presentation_order_lock_acquire \
-            "$HERDR_SES" "$HERDR_PRESENTATION_RECOVERY_LOCK_ATTEMPTS" || HERDR_RECOVERY_LOCK_RC=$?
+          spawn_herdr_presentation_order_lock_acquire "$HERDR_SES" || HERDR_RECOVERY_LOCK_RC=$?
         fi
         if [ "$HERDR_RECOVERY_LOCK_RC" -eq 2 ]; then
           echo "error: herdr presentation recovery could not resolve the running socket of its named session '$HERDR_SES', so it has no shared lock to serialize on; refusing the resume" >&2
           exit 1
         elif [ "$HERDR_RECOVERY_LOCK_RC" -ne 0 ]; then
-          echo "error: herdr presentation recovery waited ${HERDR_PRESENTATION_RECOVERY_LOCK_ATTEMPTS} x 0.1s and another spawn still held the session lock; refusing a concurrent resume" >&2
+          echo "error: herdr presentation recovery could not acquire its session lock within the opportunistic budget and another spawn still held it; refusing a concurrent resume (pass --herdr-resume-lock-wait to wait instead)" >&2
           exit 1
         fi
         if [ -e "$STATE/$ID.meta" ] || [ -L "$STATE/$ID.meta" ]; then
