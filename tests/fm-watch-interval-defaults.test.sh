@@ -96,8 +96,8 @@ test_home_summary_interval_default_is_900_not_300() {
   local home before pid out i
   home=$(make_home summary-not-due)
   seed_home_summary "$home"
-  # 850s old: due under the retired 300s default, not due under the new 900s one.
-  fm_touch_epoch "$(( $(date +%s) - 850 ))" "$home/state/home-summary.json"
+  # 650s old: due under the retired 300s default, not due under the new 900s one, with a wide margin against CI scheduling delay between seeding the mtime and the watcher's first cycle.
+  fm_touch_epoch "$(( $(date +%s) - 650 ))" "$home/state/home-summary.json"
   before=$(/usr/bin/stat -f %m "$home/state/home-summary.json" 2>/dev/null \
     || stat -c %Y "$home/state/home-summary.json" 2>/dev/null)
   out="$home/not-due.out"
@@ -113,10 +113,10 @@ test_home_summary_interval_default_is_900_not_300() {
   [ -e "$home/state/.last-watcher-beat" ] || fail "watcher did not complete its initial cycle"
   sleep 1
   wait_for_summary_mtime_change "$home/state/home-summary.json" "$before" \
-    && fail "home-summary.json refreshed at 850s old; FM_HOME_SUMMARY_INTERVAL default is no longer >850s"
+    && fail "home-summary.json refreshed at 650s old; FM_HOME_SUMMARY_INTERVAL default is no longer >650s"
   kill "$pid" >/dev/null 2>&1 || true
   wait "$pid" >/dev/null 2>&1 || true
-  pass "850s-old home-summary.json is not refreshed by the default cadence"
+  pass "650s-old home-summary.json is not refreshed by the default cadence"
 
   home=$(make_home summary-due)
   seed_home_summary "$home"
@@ -139,8 +139,8 @@ test_home_summary_interval_invalid_value_falls_back_to_900_not_300() {
   local home before pid out i
   home=$(make_home summary-invalid-fallback)
   seed_home_summary "$home"
-  # 850s old: due under the retired 300s fallback, not due under the new 900s one.
-  fm_touch_epoch "$(( $(date +%s) - 850 ))" "$home/state/home-summary.json"
+  # 650s old: due under the retired 300s fallback, not due under the new 900s one, with the same wide margin.
+  fm_touch_epoch "$(( $(date +%s) - 650 ))" "$home/state/home-summary.json"
   before=$(/usr/bin/stat -f %m "$home/state/home-summary.json" 2>/dev/null \
     || stat -c %Y "$home/state/home-summary.json" 2>/dev/null)
   out="$home/invalid.out"
