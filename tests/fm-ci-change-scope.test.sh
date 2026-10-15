@@ -46,16 +46,39 @@ scope_value() {  # <key>
 }
 
 # Assert the complete suite runs rather than a change-scoped selection.
+# Only a push to main, the nightly schedule, an unrecognized event, or --local
+# can reach this verdict; a pull request falls back to the bounded lanes below.
 assert_full_suite() {  # <why> <path>...
   local why=$1
   shift
   classify "$@"
   assert_contains "$SCOPE_OUT" 'full=true' \
     "must fail open to the complete suite: $why"$'\n'"$SCOPE_OUT"
+  assert_contains "$SCOPE_OUT" 'parallel=true' \
+    "the complete suite includes both parallel lanes: $why"$'\n'"$SCOPE_OUT"
   assert_contains "$SCOPE_OUT" 'herdr=true' \
     "the complete suite includes the Herdr lane: $why"$'\n'"$SCOPE_OUT"
   [ "$(scope_value selected_matrix)" = '' ] \
     || fail "a complete-suite verdict must emit no selection matrix: $why"
+}
+
+# Assert the bounded pull-request fallback: both portable parallel lanes and
+# the required Herdr lane, and NOT the sixteen-shard serial fan-out. This is
+# what every doubt on a pull request lands on, and the thing it must never
+# land on is `full`, because nineteen long-lived jobs exceed the runners this
+# fork can hold and the round then queues behind itself.
+assert_bounded_fallback() {  # <why> <path>...
+  local why=$1
+  shift
+  classify "$@"
+  assert_contains "$SCOPE_OUT" 'full=false' \
+    "a pull request must never fan out to the serial shards: $why"$'\n'"$SCOPE_OUT"
+  assert_contains "$SCOPE_OUT" 'parallel=true' \
+    "the bounded fallback runs both parallel lanes: $why"$'\n'"$SCOPE_OUT"
+  assert_contains "$SCOPE_OUT" 'herdr=true' \
+    "the bounded fallback runs the Herdr lane: $why"$'\n'"$SCOPE_OUT"
+  [ "$(scope_value selected_matrix)" = '' ] \
+    || fail "the bounded fallback must emit no selection matrix: $why"
 }
 
 test_prose_only_changes_turn_both_gates_off() {
@@ -174,9 +197,12 @@ test_unknown_argument_is_refused() {
 }
 
 # Change-scoped selection. These hold the promise the same way the gates above
-# do: a selection replaces the complete suite, so each case asserts the
+# do: a selection replaces the behavior lanes, so each case asserts the
 # selection is only trusted where it is provably complete, and that every
-# doubt lands back on the full suite rather than on a faster round.
+# doubt lands back on a wider round rather than on a faster one.
+# On a pull request "wider" is the bounded parallel and Herdr lanes, never the
+# sixteen-shard serial fan-out; the complete suite belongs to push to main and
+# the nightly schedule, which is what makes that bound safe to take.
 
 test_a_single_script_change_selects_one_packed_job() {
   local matrix
@@ -195,58 +221,94 @@ test_a_single_script_change_selects_one_packed_job() {
   pass "a one-script change selects its own suite in a single job"
 }
 
-test_a_selection_too_large_to_pack_falls_back_to_the_full_suite() {
+test_a_selection_too_large_to_pack_falls_back_to_the_bounded_lanes() {
   # No single script exceeds the per-job budget any more now that the two
   # longest suites are split, so breadth is what the packing cannot absorb.
   # Each of these paths packs on its own; together their suites need more
-  # than the job cap allows, and a round that cannot be packed must widen
-  # rather than drop the work that does not fit.
-  assert_full_suite 'a change whose suites cannot be packed under the budget' \
+  # than the job cap allows, and the round must widen rather than drop the
+  # work that does not fit - but only as far as the bounded lanes.
+  assert_bounded_fallback 'a change whose suites cannot be packed under the budget' \
     bin/fm-afk-launch.sh bin/fm-session-start.sh bin/fm-pr-merge.sh bin/fm-spawn.sh
-  pass "a selection no packing fits under the budget falls back to the full suite"
+  pass "a selection no packing fits under the budget falls back to the bounded lanes"
 }
 
-test_shared_libraries_and_the_machinery_fall_back_to_the_full_suite() {
-  assert_full_suite 'a shared library by name' bin/fm-dod-lib.sh
-  assert_full_suite 'a script many others source' bin/fm-backend.sh
-  assert_full_suite 'the test runner itself' bin/fm-test-run.sh
-  assert_full_suite 'this classifier itself' bin/fm-ci-change-scope.sh
-  assert_full_suite 'the CI workflow itself' .github/workflows/ci.yml
-  assert_full_suite 'shared test scaffolding' tests/lib.sh
-  assert_full_suite 'one blocked path beside a selectable one' \
+# The machinery a selection is made of is no longer special-cased: the
+# runner's map answers for each of these with the family that owns it, and
+# the packing budget is what keeps the answer bounded. A pull request that
+# changes CI setup therefore spends a few runners rather than nineteen.
+test_the_selection_machinery_selects_the_family_that_owns_it() {
+  local path
+  for path in .github/workflows/ci.yml .no-mistakes.yaml bin/fm-test-run.sh \
+    bin/fm-test-isolation-proof.sh bin/fm-ci-change-scope.sh bin/fm-backend.sh; do
+    classify "$path"
+    assert_contains "$SCOPE_OUT" 'full=false' \
+      "CI setup must not fan out to the serial shards: $path"$'\n'"$SCOPE_OUT"
+    assert_contains "$SCOPE_OUT" 'parallel=false' \
+      "a trusted selection replaces the parallel lanes too: $path"$'\n'"$SCOPE_OUT"
+    [ -n "$(scope_value selected_matrix)" ] \
+      || fail "CI setup must select the suites that own it: $path"$'\n'"$SCOPE_OUT"
+    # Bounded, and nowhere near the nineteen long-lived jobs the complete
+    # suite books. The classifier's own cap is six.
+    [ "$(scope_value selected_matrix | grep -c '"shard"' | tr -d ' ')" -le 6 ] \
+      || fail "the packed selection must stay inside the job cap: $path"
+  done
+  # The CI workflow decides which jobs exist, including the required Herdr
+  # lane, so its owning families reach that lane as well.
+  classify .github/workflows/ci.yml
+  assert_contains "$SCOPE_OUT" 'herdr=true' \
+    "a CI workflow change must still run the required Herdr lane"$'\n'"$SCOPE_OUT"
+  pass "CI setup selects the families that own it instead of the complete suite"
+}
+
+# Shared test scaffolding is answered by the map too, but every suite names
+# it, so the answer is the whole tree and no packing fits it. That is the
+# bounded fallback's case, not the serial fan-out's.
+test_shared_scaffolding_falls_back_to_the_bounded_lanes() {
+  assert_bounded_fallback 'shared test scaffolding' tests/lib.sh
+  assert_bounded_fallback 'the shared fixtures library' tests/fixtures.sh
+  assert_bounded_fallback 'a shared helper library' tests/wake-helpers.sh
+  assert_bounded_fallback 'a broadly shared library' bin/fm-dod-lib.sh
+  assert_bounded_fallback 'one unpackable path beside a selectable one' \
     bin/fm-quota-choose.sh bin/fm-dod-lib.sh
-  pass "shared libraries, test scaffolding and the selection machinery run everything"
+  pass "shared scaffolding and broadly shared libraries run the bounded lanes"
 }
 
 test_only_pull_requests_select() {
   local out
   out=$(FM_CI_EVENT=push bash "$SCOPE") || fail "push classification failed"
   assert_contains "$out" 'full=true' "a push to main must run the complete suite"$'\n'"$out"
+  assert_contains "$out" 'parallel=true' "a push to main must run both parallel lanes"$'\n'"$out"
   out=$(FM_CI_EVENT=schedule bash "$SCOPE") || fail "schedule classification failed"
   assert_contains "$out" 'full=true' "the nightly schedule must run the complete suite"$'\n'"$out"
   assert_contains "$out" 'herdr=true' "the nightly schedule must run the Herdr lane"$'\n'"$out"
+  out=$(FM_CI_EVENT=workflow_dispatch bash "$SCOPE") || fail "unknown event classification failed"
+  assert_contains "$out" 'full=true' "an unrecognized event must run the complete suite"$'\n'"$out"
   pass "push to main and the nightly schedule always run the complete suite"
 }
 
-test_an_unusable_change_set_never_selects() {
+# The complete suite is what a push to main and the nightly schedule run, and
+# a pull request must never reach it however little the classifier knows.
+test_a_pull_request_never_runs_the_complete_suite() {
   local out
   out=$(FM_CI_EVENT=pull_request FM_CI_BASE_SHA='' bash "$SCOPE") \
     || fail "classification without a base commit failed"
-  assert_contains "$out" 'full=true' "a missing base commit must run the complete suite"$'\n'"$out"
+  assert_contains "$out" 'full=false' "a missing base commit must stay bounded"$'\n'"$out"
+  assert_contains "$out" 'parallel=true' "a missing base commit still runs the lanes"$'\n'"$out"
 
   : >"$TMP_ROOT/empty"
   out=$(FM_CI_EVENT=pull_request FM_CI_CHANGED_PATHS_FILE="$TMP_ROOT/empty" bash "$SCOPE") \
     || fail "classification of an empty change set failed"
-  assert_contains "$out" 'full=true' "an empty change set must run the complete suite"$'\n'"$out"
-  pass "an unusable change set never narrows the round"
+  assert_contains "$out" 'full=false' "an empty change set must stay bounded"$'\n'"$out"
+  assert_contains "$out" 'parallel=true' "an empty change set still runs the lanes"$'\n'"$out"
+  pass "a pull request never runs the complete sixteen-shard suite"
 }
 
 # A path the runner's map refuses is the map saying it does not know what
 # proves this change. The round must widen, not guess. A new non-test file
 # under tests/ is that shape: the map has no arm for it and says so.
-test_a_path_the_map_refuses_falls_back_to_the_full_suite() {
-  assert_full_suite 'a path the changed-file map has no arm for' tests/stray-note.txt
-  pass "a path the changed-file map refuses falls back to the full suite"
+test_a_path_the_map_refuses_falls_back_to_the_bounded_lanes() {
+  assert_bounded_fallback 'a path the changed-file map has no arm for' tests/stray-note.txt
+  pass "a path the changed-file map refuses falls back to the bounded lanes"
 }
 
 # Prose alongside code is the one shape that loses its prose check: the
@@ -271,10 +333,10 @@ test_prose_beside_code_keeps_the_documentation_suite() {
 
   # Prose a test reads that the map answers nothing for must not let the code
   # path's selection drop the reading test.
-  assert_full_suite 'the pretool doc beside code' \
+  assert_bounded_fallback 'the pretool doc beside code' \
     docs/arm-pretool-check.md bin/fm-quota-choose.sh
-  assert_full_suite 'the ignore rules beside code' .gitignore bin/fm-quota-choose.sh
-  assert_full_suite 'a dispatch example beside code' \
+  assert_bounded_fallback 'the ignore rules beside code' .gitignore bin/fm-quota-choose.sh
+  assert_bounded_fallback 'a dispatch example beside code' \
     docs/examples/crew-dispatch.json bin/fm-quota-choose.sh
 
   # Prose alone never reaches here: with no behavioral change the docs-guard
@@ -291,9 +353,9 @@ test_prose_beside_code_keeps_the_documentation_suite() {
 # Prose a test really reads keeps the behavior gate on, but the runner's map
 # answers nothing for it, so there is no selection to trust and the round must
 # widen rather than run nothing.
-test_a_behavior_relevant_path_that_maps_to_no_tests_runs_everything() {
-  assert_full_suite 'prose a test reads that maps to no suite' docs/arm-pretool-check.md
-  pass "a behavior-relevant path that maps to no tests runs the complete suite"
+test_a_behavior_relevant_path_that_maps_to_no_tests_runs_the_bounded_lanes() {
+  assert_bounded_fallback 'prose a test reads that maps to no suite' docs/arm-pretool-check.md
+  pass "a behavior-relevant path that maps to no tests runs the bounded lanes"
 }
 
 # A prose-only change has nothing to select from and keeps running the
@@ -304,6 +366,8 @@ test_prose_only_changes_select_nothing_at_all() {
     "prose must keep the behavior gate off"$'\n'"$SCOPE_OUT"
   assert_contains "$SCOPE_OUT" 'full=false' \
     "prose must not run the complete suite"$'\n'"$SCOPE_OUT"
+  assert_contains "$SCOPE_OUT" 'parallel=false' \
+    "prose must not run the parallel lanes"$'\n'"$SCOPE_OUT"
   assert_contains "$SCOPE_OUT" 'herdr=false' \
     "prose must not run the Herdr lane"$'\n'"$SCOPE_OUT"
   [ "$(scope_value selected_matrix)" = '' ] || fail "prose must select nothing at all"
@@ -324,19 +388,19 @@ test_a_selected_herdr_member_runs_the_herdr_lane() {
   pass "a selected Herdr-family member runs the required Herdr lane instead"
 }
 
-# Default output is the CI interface: local opt-in must not add output keys or
-# change the full-suite verdict for any configuration surface.
+# Local coverage for configuration stays its own, much narrower thing: CI
+# selects the family that owns a changed workflow, while --local selects only
+# that configuration's own contract suites, because its consumer runs scripts
+# on one machine rather than packed jobs on several.
 test_workflow_configuration_has_separate_local_coverage() {
-  local path expected matrix scripts
+  local path matrix scripts
   for path in .github/workflows/ci.yml .github/workflows/other.yml .github/actions/example/action.yml .no-mistakes.yaml; do
     classify "$path"
-    expected=$'behavior=true\nmacos=false\nfull=true\nherdr=true\nselected_matrix='
-    case "$path" in
-      .github/workflows/ci.yml | .no-mistakes.yaml)
-        expected=$'behavior=true\nmacos=true\nfull=true\nherdr=true\nselected_matrix='
-        ;;
-    esac
-    assert_equals "$expected" "$SCOPE_OUT" "CI output stays unchanged for $path"
+    assert_equals false "$(scope_value full)" "CI narrows a configuration change for $path"
+    assert_equals false "$(scope_value parallel)" "a trusted CI selection replaces the lanes for $path"
+    [ -n "$(scope_value selected_matrix)" ] \
+      || fail "CI must select the family that owns $path"$'\n'"$SCOPE_OUT"
+
     SCOPE_MODE=--local classify "$path"
     assert_equals false "$(scope_value full)" "local configuration coverage narrows for $path"
     assert_equals false "$(scope_value herdr)" "workflow configuration leaves full Herdr coverage to CI"
@@ -353,19 +417,21 @@ test_workflow_configuration_has_separate_local_coverage() {
   scripts=$(printf '%s' "$matrix" | jq -r '.include[].scripts' | tr ' ' '\n')
   assert_equals 7 "$(printf '%s\n' "$scripts" | sort -u | wc -l | tr -d ' ')" "mixed selection contains only the expected suites"
   assert_equals 7 "$(printf '%s\n' "$scripts" | wc -l | tr -d ' ')" "multiple configuration paths do not duplicate suites"
-  pass "CI output stays unchanged while local configuration coverage narrows"
+  pass "CI selects the owning family while local configuration coverage stays narrow"
 }
 
-test_local_mode_keeps_other_conservative_fallbacks() {
+# The bounded lane fallback is a CI shape: its consumer runs scripts, not
+# jobs, so --local keeps falling back to the complete suite instead.
+test_local_mode_keeps_the_complete_suite_fallback() {
   local path
-  for path in bin/fm-test-run.sh bin/fm-test-isolation-proof.sh bin/fm-ci-change-scope.sh \
-    tests/lib.sh tests/fixtures.sh tests/wake-helpers.sh tests/herdr-test-safety.sh \
-    bin/fm-dod-lib.sh bin/fm-backend.sh tests/stray-note.txt docs/arm-pretool-check.md; do
+  for path in tests/lib.sh tests/fixtures.sh tests/wake-helpers.sh \
+    bin/fm-dod-lib.sh tests/stray-note.txt docs/arm-pretool-check.md; do
     SCOPE_MODE=--local assert_full_suite "local configuration plus $path" .github/workflows/ci.yml "$path"
+    assert_bounded_fallback "CI with configuration plus $path" .github/workflows/ci.yml "$path"
   done
   SCOPE_MODE=--local assert_full_suite 'local configuration plus an oversized selection' \
     .no-mistakes.yaml bin/fm-afk-launch.sh bin/fm-session-start.sh bin/fm-pr-merge.sh bin/fm-spawn.sh
-  pass "local mode retains every other conservative full-suite fallback"
+  pass "local mode keeps the complete-suite fallback where CI uses the bounded lanes"
 }
 
 test_prose_only_changes_turn_both_gates_off
@@ -378,15 +444,16 @@ test_unrecognized_paths_keep_both_gates_on
 test_push_events_and_unusable_input_keep_both_gates_on
 test_unknown_argument_is_refused
 test_a_single_script_change_selects_one_packed_job
-test_a_selection_too_large_to_pack_falls_back_to_the_full_suite
-test_shared_libraries_and_the_machinery_fall_back_to_the_full_suite
+test_a_selection_too_large_to_pack_falls_back_to_the_bounded_lanes
+test_the_selection_machinery_selects_the_family_that_owns_it
+test_shared_scaffolding_falls_back_to_the_bounded_lanes
 test_only_pull_requests_select
-test_an_unusable_change_set_never_selects
-test_a_path_the_map_refuses_falls_back_to_the_full_suite
-test_a_behavior_relevant_path_that_maps_to_no_tests_runs_everything
+test_a_pull_request_never_runs_the_complete_suite
+test_a_path_the_map_refuses_falls_back_to_the_bounded_lanes
+test_a_behavior_relevant_path_that_maps_to_no_tests_runs_the_bounded_lanes
 test_prose_beside_code_keeps_the_documentation_suite
 test_prose_only_changes_select_nothing_at_all
 test_a_selected_herdr_member_runs_the_herdr_lane
 
 test_workflow_configuration_has_separate_local_coverage
-test_local_mode_keeps_other_conservative_fallbacks
+test_local_mode_keeps_the_complete_suite_fallback

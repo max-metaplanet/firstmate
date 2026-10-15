@@ -8,7 +8,14 @@
 #   behavior=true|false   run the behavior suites at all (lint included)
 #   macos=true|false      the stock macOS Bash snapshot job's sources changed
 #   full=true|false       run the COMPLETE behavior suite: both portable
-#                         parallel lanes and all 16 portable serial shards
+#                         parallel lanes and all 16 portable serial shards.
+#                         Only a push to main, the nightly schedule, or an
+#                         unrecognized event sets it; a pull request never
+#                         does, because those two events own the complete
+#                         coverage a pull request now trades away for speed.
+#   parallel=true|false   run the two portable parallel lanes. True whenever
+#                         `full` is, and true on its own for the bounded
+#                         pull-request fallback described below.
 #   herdr=true|false      run the required real-Herdr lane
 #   selected_matrix=<json>|<empty>
 #                         a GitHub matrix for the change-scoped behavior job,
@@ -22,10 +29,11 @@
 #
 # --local keeps the output format but replaces workflow, action, and
 # .no-mistakes.yaml paths with their workflow-lint, CI workflow, gate config,
-# classifier, and local Test contract suites before asking the runner for a selection. Other changed paths
-# retain their normal mapping and all other full-suite fallback rules still
-# apply. CI must use the default mode: only its full suite validates a changed
-# workflow. Local coverage leaves that complete validation to CI.
+# classifier, and local Test contract suites before asking the runner for a
+# selection, which is a far narrower set than the owning family CI selects for
+# the same paths. Other changed paths retain their normal mapping. --local also
+# keeps the complete-suite fallback in place of the bounded lane fallback
+# below, because the lanes it names are CI jobs its consumer cannot run.
 #
 # Inputs, all optional and read from the environment:
 #   FM_CI_EVENT               the GitHub event name (default: pull_request)
@@ -87,14 +95,16 @@
 # keeps one owner too. bin/fm-test-run.sh --check-changed-map pins that map
 # against the paths the tests tree actually names.
 #
-# Selection fails open to the complete suite, never toward speed, whenever:
-#   - the event is not a pull request (push to main and the nightly schedule
-#     always run everything), or the change set could not be determined
+# A pull request selects for every changed path, including the CI workflow,
+# the no-mistakes config, the test runner, its isolation proof, this
+# classifier, shared test scaffolding and shared libraries. None of those is
+# special-cased here: the runner's map already answers for them with the
+# family that owns the touched machinery, and a second hand-written list of
+# "the suites that own X" would be a competing selector that drifts from it.
+#
+# Selection falls back, never toward speed, whenever:
 #   - the behavior gate is already off, so there is nothing to select from
-#   - a changed path is one selection cannot reason about: the CI workflow
-#     itself, the test runner, this classifier, shared test scaffolding, a
-#     shared library (bin/*-lib.sh, or any bin/ script sourced by more than
-#     SELECT_SHARED_FANIN others), or the no-mistakes config
+#   - the change set could not be determined
 #   - a changed path is behavior-relevant prose (outside the inert set) that
 #     the map answers nothing for, alone or beside code, so the test reading
 #     it cannot be dropped
@@ -102,8 +112,20 @@
 #     map does not know
 #   - the selection comes back empty, so no suite would prove the change
 #   - the selection cannot be packed into SELECT_MAX_JOBS bins that each
-#     stay inside SELECT_BIN_BUDGET_MS of modeled work; past that the
-#     complete 16-shard suite is the faster shape anyway
+#     stay inside SELECT_BIN_BUDGET_MS of modeled work
+#
+# What it falls back TO depends on the event, and this is the one place the
+# two differ. A push to main, the nightly schedule and an unrecognized event
+# run the complete suite: `full` stays true and nothing is narrowed. A pull
+# request runs the bounded lane fallback instead - both portable parallel
+# lanes and the required Herdr lane, three runners - rather than the complete
+# sixteen-shard serial fan-out. The fork holds about twenty concurrent
+# runners, so a pull request that fans out to nineteen long-lived jobs spends
+# its round queueing behind itself and behind every sibling round; the
+# complete coverage it gives up is run on the very next push to main and again
+# overnight, which is where a serial-lane regression is caught instead.
+# --local keeps the complete-suite fallback, because its consumer runs scripts
+# rather than CI jobs and has no lane to fall back to.
 #
 # The packing is what keeps a one-script change from spending 23 runners: the
 # smallest bin count whose worst bin fits the budget wins, so a single-script
@@ -206,11 +228,6 @@ SELECT_MAX_JOBS=6
 # brings under this is one the complete sharded suite runs faster anyway.
 SELECT_BIN_BUDGET_MS=600000
 
-# How many OTHER bin/ scripts must source a changed script before it counts as
-# broadly shared and the round widens to everything. Ten sits above every
-# narrow helper and below the genuinely shared libraries.
-SELECT_SHARED_FANIN=10
-
 TAB=$(printf '\t')
 
 # Configuration whose complete validation belongs to CI, with local contract
@@ -223,43 +240,23 @@ workflow_configuration_path() {
 }
 
 # True when this changed path makes a change-scoped selection untrustworthy.
+#
+# Only one shape still does. Prose the map's prose arm answers nothing for
+# would vanish from a mixed change set: beside code the selection stays
+# non-empty, so nothing widens, and the test that reads the prose is silently
+# dropped. Every other path - machinery included - is answered by the runner's
+# map with the family that owns it, and the packing budget bounds the result.
 selection_blocked_by() {
-  local path=$1 base fanin
-  # The workflow decides which jobs exist, so CI must validate all of them.
-  if workflow_configuration_path "$path"; then
-    [ "$local_mode" = false ]
-    return
-  fi
+  local path=$1
   case "$path" in
-    # The runner, its isolation proof and this classifier are the machinery a
-    # selection is made of.
-    bin/fm-test-run.sh | bin/fm-test-isolation-proof.sh | bin/fm-ci-change-scope.sh) return 0 ;;
-    # Shared test scaffolding every suite inherits.
-    tests/lib.sh | tests/fixtures.sh | tests/*-helpers.sh | tests/*-safety.sh) return 0 ;;
-    # A shared library by name; the fan-in test below catches the rest. A
-    # case glob's * spans /, so these cover bin/backends/ as well.
-    bin/*-lib.sh) return 0 ;;
-    # Prose a test reads that the map's prose arm answers nothing for: beside
-    # code the selection stays non-empty, so the reading test would vanish.
     README.md | LICENSE | assets/* | docs/* | .gitignore)
       ! behavior_inert "$path" || return 1
       [ -z "$(bin/fm-test-run.sh --list-weighted --changed \
         --changed-paths-file <(printf '%s\n' "$path") 2>/dev/null)" ]
       return
       ;;
-    bin/*.sh) ;;
     *) return 1 ;;
   esac
-  [ -f "$path" ] || return 1
-  base=$(basename "$path")
-  # How many OTHER scripts source this one: a `.` or `source` line naming it.
-  fanin=$(grep -lE "^[[:space:]]*(\.|source)[[:space:]].*${base}" \
-    bin/*.sh bin/backends/*.sh 2>/dev/null | grep -vc "/${base}\$") || fanin=0
-  case "$fanin" in
-    '' | *[!0-9]*) fanin=0 ;;
-  esac
-  [ "$fanin" -le "$SELECT_SHARED_FANIN" ] || return 0
-  return 1
 }
 
 # Pack "<ms>\t<path>" lines from stdin into the fewest bins whose worst bin
@@ -293,23 +290,41 @@ pack_selection() {
 }
 
 full=$behavior
+parallel=$behavior
 herdr=$behavior
 selected_matrix=
 
-# Narrow the gates above to a change-scoped selection, or leave them exactly as
-# they are. Every refusal path below returns before anything is narrowed.
+# Give up on a pull request's change-scoped selection. The header's fallback
+# paragraph owns why a pull request lands on the two portable parallel lanes
+# and the required Herdr lane instead of the complete sixteen-shard fan-out,
+# and why --local keeps the complete-suite fallback instead.
+fall_back() {
+  [ "$local_mode" = false ] || return 0
+  full=false
+  parallel=true
+  herdr=true
+  selected_matrix=
+}
+
+# Narrow the gates above to a change-scoped selection, or fall back. Every
+# refusal path below returns before anything is narrowed.
 select_tests() {
   local path weighted herdr_members list packed ms script shard scripts selected_herdr first selection_paths
 
   [ "$behavior" = true ] || return 0
+  # Push to main, the nightly schedule and an unrecognized event never select
+  # and never fall back: they are what the complete suite runs on.
   [ "${FM_CI_EVENT:-pull_request}" = pull_request ] || return 0
-  [ -n "$paths" ] || return 0
-  [ -x bin/fm-test-run.sh ] || return 0
+  [ -n "$paths" ] || { fall_back; return 0; }
+  [ -x bin/fm-test-run.sh ] || { fall_back; return 0; }
 
   selection_paths=
   while IFS= read -r path; do
     [ -n "$path" ] || continue
-    ! selection_blocked_by "$path" || return 0
+    if selection_blocked_by "$path"; then
+      fall_back
+      return 0
+    fi
     if [ "$local_mode" = true ] && workflow_configuration_path "$path"; then
       selection_paths="${selection_paths}tests/fm-lint-workflows.test.sh
 tests/fm-ci-workflow.test.sh
@@ -329,7 +344,7 @@ EOF
   # whose mapping it does not know, and that refusal is the fail-open signal.
   weighted=$(bin/fm-test-run.sh --list-weighted --changed \
     --changed-paths-file <(printf '%s\n' "$selection_paths") 2>/dev/null) || weighted=
-  [ -n "$weighted" ] || return 0
+  [ -n "$weighted" ] || { fall_back; return 0; }
 
   # A change set holding tracked prose AND code runs the behavior jobs, so the
   # prose-only docs-guard job does not run, while the map answers nothing for
@@ -367,7 +382,7 @@ EOF
   packed=
   if [ -n "$list" ]; then
     packed=$(printf '%s' "$list" | pack_selection)
-    [ -n "$packed" ] || return 0
+    [ -n "$packed" ] || { fall_back; return 0; }
   fi
 
   first=1
@@ -381,9 +396,12 @@ EOF
 $packed
 EOF
   selected_matrix="${selected_matrix}]}"
+  # A change set whose every selected script is a Herdr-family member packs
+  # nothing: the required Herdr lane runs it and no packed job is needed.
   [ "$first" -eq 0 ] || selected_matrix=
 
   full=false
+  parallel=false
   herdr=$selected_herdr
 }
 
@@ -394,5 +412,6 @@ select_tests
 printf 'behavior=%s\n' "$behavior"
 printf 'macos=%s\n' "$macos"
 printf 'full=%s\n' "$full"
+printf 'parallel=%s\n' "$parallel"
 printf 'herdr=%s\n' "$herdr"
 printf 'selected_matrix=%s\n' "$selected_matrix"

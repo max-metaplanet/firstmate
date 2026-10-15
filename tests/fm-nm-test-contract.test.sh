@@ -108,8 +108,21 @@ for path in .github/workflows/ci.yml .github/actions/example/action.yml .no-mist
   assert_equals $'tests/fm-ci-change-scope.test.sh\ntests/fm-ci-workflow.test.sh\ntests/fm-gate-refuse.test.sh\ntests/fm-lint-workflows.test.sh\ntests/fm-nm-test-contract.test.sh\ntests/fm-quota-choose.test.sh' \
     "$scripts" "configured local Test runs contracts plus normal narrow selection"
 done
+# A changed classifier is answered by the runner's map with the family that
+# owns it, so local validation runs that family rather than everything.
 printf '%s\n' .github/workflows/ci.yml bin/fm-ci-change-scope.sh > "$TMP_ROOT/changed-paths"
 REAL_RUNNER="$ROOT/bin/fm-test-run.sh" FM_CI_CHANGED_PATHS_FILE="$TMP_ROOT/changed-paths" run_cmd ''
-expect_code 0 "$RC" "real local classifier with selection machinery changed"
-assert_equals "--all --per-script-timeout-secs 1500" "$ARGV" "machinery changes retain full local validation"
-pass "configured Test uses real local classification and preserves other full-suite fallbacks"
+expect_code 0 "$RC" "real local classifier with the classifier itself changed"
+assert_contains "$ARGV" 'tests/fm-ci-change-scope.test.sh' \
+  "a changed classifier must select its own contract suite"
+case "$ARGV" in
+  *--all*) fail "a mapped machinery change must not widen local validation to everything" ;;
+esac
+
+# Shared test scaffolding is the shape the map cannot narrow: every suite
+# names it, so local validation keeps its complete-suite fallback there.
+printf '%s\n' tests/lib.sh > "$TMP_ROOT/changed-paths"
+REAL_RUNNER="$ROOT/bin/fm-test-run.sh" FM_CI_CHANGED_PATHS_FILE="$TMP_ROOT/changed-paths" run_cmd ''
+expect_code 0 "$RC" "real local classifier with shared scaffolding changed"
+assert_equals "--all --per-script-timeout-secs 1500" "$ARGV" "shared scaffolding retains full local validation"
+pass "configured Test uses real local classification and preserves its full-suite fallback"

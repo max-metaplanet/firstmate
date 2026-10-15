@@ -116,7 +116,7 @@ Run `bin/fm-doc-audience-check.sh`; it enforces classification, README setup rou
 
 Do not configure an unconditional deterministic suite walk as `commands.test`; CI owns broad regression coverage and the Test evidence agent owns additional intent-targeted scenarios.
 Firstmate's measured exception reuses `bin/fm-ci-change-scope.sh`, which delegates to `bin/fm-test-run.sh`'s changed-file map and weighted selection; never build a second selector.
-Preserve the classifier's complete-suite fallback when it cannot establish a safe narrow selection, and run the documentation-audience check for its behavior-inert prose case.
+Preserve the classifier's fallback when it cannot establish a safe narrow selection - the complete suite locally, the bounded parallel and Herdr lanes on a pull request - and run the documentation-audience check for its behavior-inert prose case.
 The Test evidence agent consumes the command's results instead of repeating passing suites, while still covering any unmet intent or live-behavior requirement.
 Keep this exception only while a measured representative small-diff command is clearly faster than agent-targeted validation; otherwise remove `commands.test` and name the selector output in scoped Test instructions.
 The earlier Firstmate suite-walk evidence measured 32.7 minutes against 3.6 minutes of targeted validation; a full walk remains the wrong default.

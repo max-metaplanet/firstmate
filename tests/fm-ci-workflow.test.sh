@@ -284,17 +284,19 @@ end
 
 scope = jobs.fetch("changes")
 raise "the change-scope job must not be gated itself" if scope.key?("if")
-expected_outputs = %w[behavior full herdr macos selected_matrix]
+expected_outputs = %w[behavior full herdr macos parallel selected_matrix]
 raise "the change-scope job must publish every gate output" unless scope.fetch("outputs").keys.sort == expected_outputs
 
-# Which verdict gates which lane. The complete sharded suite runs on `full`,
-# which the classifier turns off only when it produced a trusted selection, so
-# a lane gated on `behavior` would keep running beside that selection and a
-# lane gated on `full` can never run beside it.
+# Which verdict gates which lane. The sixteen serial shards run on `full`,
+# which only a push to main, the nightly schedule or an unrecognized event
+# sets. The two parallel lanes run on the wider `parallel`, because they are
+# also the pull request's bounded fallback when no selection can be trusted,
+# so gating them on `full` would leave that fallback with no behavior coverage
+# at all.
 gated_on = {
   "lint" => "needs.changes.outputs.behavior == 'true'",
-  "tests-portable-parallel-1" => "needs.changes.outputs.full == 'true'",
-  "tests-portable-parallel-2" => "needs.changes.outputs.full == 'true'",
+  "tests-portable-parallel-1" => "needs.changes.outputs.parallel == 'true'",
+  "tests-portable-parallel-2" => "needs.changes.outputs.parallel == 'true'",
   "tests-portable-serial" => "needs.changes.outputs.full == 'true'",
   "tests-herdr" => "needs.changes.outputs.herdr == 'true'",
   "tests-selected" => "needs.changes.outputs.selected_matrix != ''",

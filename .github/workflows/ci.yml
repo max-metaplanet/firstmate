@@ -41,12 +41,15 @@ jobs:
   # workflow-level paths: filter would never create the workflow at all and
   # would leave a required check pending forever.
   #
-  # On a pull request the classifier may narrow the behavior gate further, to
-  # the test scripts that actually cover the changed paths, packed into the
-  # fewest jobs that fit its budget. `full` then turns the complete sharded
-  # suite off and `selected_matrix` turns the change-scoped job on. Everything
-  # the classifier cannot reason about leaves `full` true, and push to main
-  # plus the nightly schedule never select at all.
+  # On a pull request the classifier narrows the behavior gate to the test
+  # scripts that actually cover the changed paths, packed into the fewest jobs
+  # that fit its budget: `full` turns the complete sharded suite off and
+  # `selected_matrix` turns the change-scoped job on. A pull request it cannot
+  # narrow falls back to `parallel` alone - the two portable parallel lanes
+  # plus the Herdr lane - rather than the sixteen-shard serial fan-out, so a
+  # pull request never sets `full`. Push to main and the nightly schedule do
+  # not select at all and run everything, which is where the serial shards and
+  # the complete coverage a pull request trades away are actually run.
   changes:
     name: Change scope
     runs-on: ubuntu-latest
@@ -56,6 +59,7 @@ jobs:
       behavior: ${{ steps.scope.outputs.behavior }}
       macos: ${{ steps.scope.outputs.macos }}
       full: ${{ steps.scope.outputs.full }}
+      parallel: ${{ steps.scope.outputs.parallel }}
       herdr: ${{ steps.scope.outputs.herdr }}
       selected_matrix: ${{ steps.scope.outputs.selected_matrix }}
     steps:
@@ -86,9 +90,14 @@ jobs:
       matrix:
         # Each partition runs one ShellCheck at a time so it never competes with
         # a sibling worker for the runner's memory (bin/fm-lint.sh owns why).
-        # Partition count is what keeps a partition's wall time down, so this
-        # matrix is the dial to turn when the canonical set grows.
-        partition: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
+        # Partition count trades a partition's wall time against the number of
+        # runners the round holds, and this fork has about twenty: past that,
+        # lint partitions and behavior jobs queue behind each other and the
+        # round's wall clock becomes queue wait rather than work. Three is the
+        # measured knee - docs/fm-test-portable-shards.md "Lint partitions and
+        # end-to-end latency" holds the per-count projection - so this matrix
+        # is the dial to turn when the canonical set grows or that cap lifts.
+        partition: [1, 2, 3]
     steps:
       - uses: actions/checkout@v6
       - name: Install pinned ShellCheck
@@ -151,7 +160,9 @@ jobs:
     # Normal tier (see the timeout policy above).
     timeout-minutes: 30
     needs: changes
-    if: needs.changes.outputs.full == 'true'
+    # `parallel`, not `full`: these two lanes are also the pull request's
+    # bounded fallback when no change-scoped selection can be trusted.
+    if: needs.changes.outputs.parallel == 'true'
     steps:
       - uses: actions/checkout@v6
         with:
@@ -197,7 +208,8 @@ jobs:
     # Normal tier (see the timeout policy above).
     timeout-minutes: 30
     needs: changes
-    if: needs.changes.outputs.full == 'true'
+    # Gated with its sibling lane above, for the same reason.
+    if: needs.changes.outputs.parallel == 'true'
     steps:
       - uses: actions/checkout@v6
         with:
@@ -556,7 +568,9 @@ jobs:
       - tests-herdr
     # always() so a failed lane still contributes its timing, but not when the
     # lanes were gated off: there would be no artifact to download at all.
-    if: always() && needs.changes.outputs.full == 'true'
+    # `parallel` is the widest gate any lane it waits on uses, so this job runs
+    # for the bounded fallback round too.
+    if: always() && needs.changes.outputs.parallel == 'true'
     steps:
       - uses: actions/checkout@v6
       - name: Download lane timing artifacts

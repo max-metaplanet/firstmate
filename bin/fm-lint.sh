@@ -53,8 +53,12 @@
 # the memory it can see rather than to a fixed per-root cost, so two workers
 # sharing a runner both expand toward the whole machine and can collide with its
 # OOM killer, while one worker expands into that same runner safely. Partition
-# count, not worker count, is therefore what bounds a partition's wall time, and
-# raising the CI matrix is the supported way to make partitions finish sooner.
+# count, not worker count, is therefore what bounds a partition's wall time.
+# Raising the CI matrix is the supported way to make partitions finish sooner,
+# but it is not free: each partition holds a runner for the whole round, and a
+# fork with a concurrent-runner cap pays the extra partitions back as queue
+# wait. .github/workflows/ci.yml owns the count and
+# docs/fm-test-portable-shards.md owns the measurement behind it.
 # Partition mode is always full source-aware analysis, never changed-only or
 # --fast, and does not accept explicit paths. Each partition also runs workflow
 # lint and backend-purity checks, keeping either invocation independently useful.
