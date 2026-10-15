@@ -121,7 +121,11 @@ test_reads_the_real_snapshot() {
 MD
   printf 'id=alpha\nkind=ship\nharness=claude\nmode=no-mistakes\nyolo=off\nbackend=tmux\ntarget=fm-alpha\nworktree=%s\npr=https://github.com/o/r/pull/7\n' "$home" >"$home/state/alpha.meta"
   printf 'working [at=1759700000]: alpha under way\nblocked [at=1759700100] [key=k1]: needs a credential\n' >"$home/state/alpha.status"
-  FM_HOME="$home" "$SNAPSHOT" --json >"$TMP_ROOT/real.json" 2>"$TMP_ROOT/real.err" \
+  # Pin the producer's clock so scope-call's undated hold (since 2026-10-01) stays
+  # under the undated-hold aging threshold regardless of the real run date; an
+  # unpinned clock ages that hold out of "live" once 14 real-world days pass.
+  FM_HOME="$home" FM_SNAPSHOT_NOW=2026-10-08T00:00:00Z FM_SNAPSHOT_NOW_EPOCH=1791417600 \
+    "$SNAPSHOT" --json >"$TMP_ROOT/real.json" 2>"$TMP_ROOT/real.err" \
     || fail "bin/fm-fleet-snapshot.sh --json failed on a synthetic home: $(cat "$TMP_ROOT/real.err")"
   cat >"$TMP_ROOT/real.mjs" <<JS
 import { readFileSync } from "node:fs";
