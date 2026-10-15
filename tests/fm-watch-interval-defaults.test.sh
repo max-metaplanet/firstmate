@@ -13,6 +13,18 @@ WATCH="$ROOT/bin/fm-watch.sh"
 WRITER="$ROOT/bin/fm-home-summary-refresh.sh"
 TMP_ROOT=$(fm_test_tmproot fm-watch-interval-defaults)
 
+# Portable mtime read, matching bin/fm-watch.sh's own stat_mtime: branch on
+# uname rather than a blind `||` fallback. On Linux, BSD's `-f %m` is parsed as
+# --file-system plus a second bogus file argument ("%m"), so it fails on that
+# argument but still prints the real file's verbose filesystem block to stdout
+# before the fallback also runs - polluting the capture with disk-usage figures
+# that drift between calls even though the real mtime never changed.
+if [ "$(uname)" = Darwin ]; then
+  mtime_of() { /usr/bin/stat -f %m "$1" 2>/dev/null; }
+else
+  mtime_of() { stat -c %Y "$1" 2>/dev/null; }
+fi
+
 make_home() {
   local name=$1 home
   home="$TMP_ROOT/$name"
@@ -84,7 +96,7 @@ SH
 wait_for_summary_mtime_change() {
   local path=$1 before=$2 i=0 now
   while [ "$i" -lt 30 ]; do
-    now=$(/usr/bin/stat -f %m "$path" 2>/dev/null || stat -c %Y "$path" 2>/dev/null)
+    now=$(mtime_of "$path")
     [ "$now" = "$before" ] || return 0
     sleep 0.1
     i=$((i + 1))
@@ -98,8 +110,7 @@ test_home_summary_interval_default_is_900_not_300() {
   seed_home_summary "$home"
   # 650s old: due under the retired 300s default, not due under the new 900s one, with a wide margin against CI scheduling delay between seeding the mtime and the watcher's first cycle.
   fm_touch_epoch "$(( $(date +%s) - 650 ))" "$home/state/home-summary.json"
-  before=$(/usr/bin/stat -f %m "$home/state/home-summary.json" 2>/dev/null \
-    || stat -c %Y "$home/state/home-summary.json" 2>/dev/null)
+  before=$(mtime_of "$home/state/home-summary.json")
   out="$home/not-due.out"
   FM_HOME="$home" FM_POLL=1 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 \
     FM_HEARTBEAT=999999 "$WATCH" > "$out" 2>&1 &
@@ -113,7 +124,7 @@ test_home_summary_interval_default_is_900_not_300() {
   [ -e "$home/state/.last-watcher-beat" ] || fail "watcher did not complete its initial cycle"
   sleep 1
   wait_for_summary_mtime_change "$home/state/home-summary.json" "$before" \
-    && fail "home-summary.json refreshed at 650s old (before=$before, now=$(/usr/bin/stat -f %m "$home/state/home-summary.json" 2>/dev/null || stat -c %Y "$home/state/home-summary.json" 2>/dev/null), observed-at=$(date +%s)); FM_HOME_SUMMARY_INTERVAL default is no longer >650s; state dir:"$'\n'"$(ls -la "$home/state")"$'\n'"watcher output:"$'\n'"$(cat "$out")"
+    && fail "home-summary.json refreshed at 650s old; FM_HOME_SUMMARY_INTERVAL default is no longer >650s"
   kill "$pid" >/dev/null 2>&1 || true
   wait "$pid" >/dev/null 2>&1 || true
   pass "650s-old home-summary.json is not refreshed by the default cadence"
@@ -122,8 +133,7 @@ test_home_summary_interval_default_is_900_not_300() {
   seed_home_summary "$home"
   # 910s old: due under the new 900s default.
   fm_touch_epoch "$(( $(date +%s) - 910 ))" "$home/state/home-summary.json"
-  before=$(/usr/bin/stat -f %m "$home/state/home-summary.json" 2>/dev/null \
-    || stat -c %Y "$home/state/home-summary.json" 2>/dev/null)
+  before=$(mtime_of "$home/state/home-summary.json")
   out="$home/due.out"
   FM_HOME="$home" FM_POLL=1 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 \
     FM_HEARTBEAT=999999 "$WATCH" > "$out" 2>&1 &
@@ -141,8 +151,7 @@ test_home_summary_interval_invalid_value_falls_back_to_900_not_300() {
   seed_home_summary "$home"
   # 650s old: due under the retired 300s fallback, not due under the new 900s one, with the same wide margin.
   fm_touch_epoch "$(( $(date +%s) - 650 ))" "$home/state/home-summary.json"
-  before=$(/usr/bin/stat -f %m "$home/state/home-summary.json" 2>/dev/null \
-    || stat -c %Y "$home/state/home-summary.json" 2>/dev/null)
+  before=$(mtime_of "$home/state/home-summary.json")
   out="$home/invalid.out"
   FM_HOME="$home" FM_POLL=1 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 \
     FM_HEARTBEAT=999999 FM_HOME_SUMMARY_INTERVAL=not-a-number \
