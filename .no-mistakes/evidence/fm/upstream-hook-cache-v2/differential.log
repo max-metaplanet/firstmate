@@ -1,0 +1,68 @@
+SAME  subagent tool=Read                                         rc=0 
+SAME  subagent tool=Bash                                         rc=0 
+SAME  subagent tool=Write                                        rc=0 
+SAME  subagent tool=Edit                                         rc=0 
+SAME  subagent tool=Grep                                         rc=0 
+SAME  subagent tool=Glob                                         rc=0 
+SAME  subagent tool=TodoWrite                                    rc=0 
+SAME  subagent tool=WebFetch                                     rc=0 
+SAME  subagent tool=Task                                         rc=2 (deny/err output identical)
+SAME  subagent tool=Agent                                        rc=2 (deny/err output identical)
+SAME  subagent tool=SendMessage                                  rc=2 (deny/err output identical)
+SAME  subagent tool=TaskCreate                                   rc=0 
+SAME  subagent tool=CronCreate                                   rc=2 (deny/err output identical)
+SAME  subagent tool=ScheduleWakeup                               rc=2 (deny/err output identical)
+SAME  subagent tool=Monitor                                      rc=2 (deny/err output identical)
+SAME  subagent tool=EnterWorktree                                rc=2 (deny/err output identical)
+SAME  subagent tool=Workflow                                     rc=2 (deny/err output identical)
+SAME  subagent tool=mcp__x__spawn_worker                         rc=0 
+SAME  subagent tool=sub_agent                                    rc=2 (deny/err output identical)
+SAME  subagent tool=Work-Flow                                    rc=2 (deny/err output identical)
+SAME  subagent tool=DELEGATE                                     rc=2 (deny/err output identical)
+SAME  subagent tool=remote_trigger                               rc=2 (deny/err output identical)
+SAME  subagent Read with cwd under /worktrees/                   rc=0 
+SAME  subagent Bash mentioning spawn in command                  rc=0 
+SAME  subagent 1MB Write payload, tool=Write                     rc=0 
+SAME  subagent 1MB payload, tool=Task                            rc=2 (deny/err output identical)
+SAME  subagent empty stdin                                       rc=0 
+SAME  subagent malformed JSON                                    rc=0 
+SAME  subagent toolName (grok shape) Task, no --claude           rc=2 (deny/err output identical)
+SAME  subagent cursor-host payload Task                          rc=2 (deny/err output identical)
+SAME  arm  cmd=ls -la                                            rc=0 
+SAME  cd   cmd=ls -la                                            rc=0 
+SAME  arm  cmd=git status                                        rc=0 
+SAME  cd   cmd=git status                                        rc=0 
+SAME  arm  cmd=bin/fm-watch-arm.sh                               rc=0 
+SAME  cd   cmd=bin/fm-watch-arm.sh                               rc=0 
+SAME  arm  cmd=bin/fm-watch-arm.sh &                             rc=2 (deny/err output identical)
+SAME  cd   cmd=bin/fm-watch-arm.sh &                             rc=0 
+SAME  arm  cmd=nohup bin/fm-watch-arm.sh                         rc=2 (deny/err output identical)
+SAME  cd   cmd=nohup bin/fm-watch-arm.sh                         rc=0 
+SAME  arm  cmd=bin/fm-watch-arm.sh | cat                         rc=2 (deny/err output identical)
+SAME  cd   cmd=bin/fm-watch-arm.sh | cat                         rc=0 
+SAME  arm  cmd=pkill -f '/bin/fm-watch.sh'                       rc=2 (deny/err output identical)
+SAME  cd   cmd=pkill -f '/bin/fm-watch.sh'                       rc=0 
+SAME  arm  cmd=cd projects/foo                                   rc=0 
+SAME  cd   cmd=cd projects/foo                                   rc=2 (deny/err output identical)
+SAME  arm  cmd=cd ..                                             rc=0 
+SAME  cd   cmd=cd ..                                             rc=2 (deny/err output identical)
+SAME  arm  cmd=pushd x                                           rc=0 
+SAME  cd   cmd=pushd x                                           rc=2 (deny/err output identical)
+SAME  arm  cmd=(cd /tmp && ls)                                   rc=0 
+SAME  cd   cmd=(cd /tmp && ls)                                   rc=0 
+SAME  arm  cmd=cd /tmp && ls                                     rc=0 
+SAME  cd   cmd=cd /tmp && ls                                     rc=2 (deny/err output identical)
+SAME  arm  1MB heredoc command                                   rc=0 
+SAME  cd   1MB heredoc command                                   rc=0 
+SAME  arm  background:true payload                               rc=0 
+SAME  arm  --command CLI mode deny                               rc=2 (deny/err output identical)
+SAME  arm  empty stdin                                           rc=0 
+SAME  cd   empty stdin                                           rc=0 
+SAME  turnend-guard Stop                                         rc=0 
+SAME  turnend-guard Stop with trailing newlines                  rc=0 
+SAME  turnend-guard empty stdin                                  rc=0 
+SAME  stop-autoarm Stop                                          rc=0 
+SAME  stop-autoarm cursor-host Stop                              rc=0 
+SAME  host-mirror UserPromptSubmit                               rc=0 
+SAME  host-mirror Stop 1MB reply                                 rc=0 
+TOTAL same=67 diff=0

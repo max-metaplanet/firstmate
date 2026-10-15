@@ -1,0 +1,6 @@
+text=8000     sed-split=0.020s  expansion-split=0.010s  identical=yes
+text=100000   sed-split=0.029s  expansion-split=0.014s  identical=yes
+text=1048576  sed-split=0.039s  expansion-split=0.030s  identical=yes
+text=4194304  sed-split=0.101s  expansion-split=0.082s  identical=yes
+/tmp/nm-primB.k92R mean=.1718s
+/tmp/nm-primH.zEpO mean=.1395s
