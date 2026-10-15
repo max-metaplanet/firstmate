@@ -135,6 +135,9 @@ test_never_announced_recovery_is_announced_once() {
   out="$home/out.txt"
   err="$home/err.txt"
   printf 'pending:downtime:unreported.1.aaa\n' > "$home/state/.watcher-down"
+  append_wake "$home/state" check buried 'check: unacknowledged durable wake' \
+    || fail "could not seed the durable wake the recovery exists to resurface"
+  printf 'pending:downtime:unreported.1.aaa\n' > "$home/state/.watcher-down"
 
   status=0
   FM_HOME="$home" FM_POLL=1 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 \
@@ -145,7 +148,48 @@ test_never_announced_recovery_is_announced_once() {
     || fail "never-announced recovery did not surface exactly once: $(cat "$out")"
   [ "$(cat "$home/state/.watcher-down")" = 'announced:downtime:unreported.1.aaa' ] \
     || fail "never-announced recovery did not retain its announced generation"
-  pass "a never-announced recovery still surfaces once from a foreground checkpoint"
+  pass "a never-announced recovery over queued work still surfaces once from a foreground checkpoint"
+}
+
+# The other direction, and the one that decides whether the announcement above
+# earns its turn: a never-announced downtime generation with NOTHING queued
+# tells its reader to drain a queue that provably has nothing in it, so it stays
+# silent. Every watcher close no supervision turn acknowledged - a restart, a
+# take-over, a self-exit, a reclaimed lock - leaves exactly this state, and each
+# one used to cost a supervising turn whose drain found an empty queue.
+# The generation stays PENDING rather than being marked announced, which is what
+# keeps the recovery owed: the first durable row to arrive announces it.
+test_empty_queue_recovery_stays_silent_and_pending() {
+  local home out err status
+  home=$(make_home empty-queue-recovery)
+  out="$home/out.txt"
+  err="$home/err.txt"
+  printf 'pending:downtime:nothing-queued.1.aaa\n' > "$home/state/.watcher-down"
+
+  status=0
+  FM_HOME="$home" FM_POLL=1 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 \
+    "$CHECKPOINT" --seconds 2 >"$out" 2>"$err" || status=$?
+
+  expect_code 124 "$status" "empty-queue recovery checkpoint exit"
+  assert_not_contains "$(cat "$out")" "check: rearm-resurface" \
+    "a downtime generation with an empty queue announced a recovery with nothing to drain"
+  assert_contains "$(cat "$out")" "checkpoint: no actionable wake within 2s" \
+    "the silent recovery did not keep supervising for its bound"
+  [ "$(cat "$home/state/.watcher-down")" = 'pending:downtime:nothing-queued.1.aaa' ] \
+    || fail "a silenced recovery did not stay pending: $(cat "$home/state/.watcher-down")"
+
+  # Still owed: the first durable row announces that same generation once.
+  append_wake "$home/state" check arrived 'check: work arrived after the silence' \
+    || fail "could not append the durable wake that reopens the silenced recovery"
+  status=0
+  FM_HOME="$home" FM_POLL=1 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 \
+    "$CHECKPOINT" --seconds 5 >"$out" 2>"$err" || status=$?
+  expect_code 0 "$status" "reopened recovery checkpoint exit"
+  [ "$(grep -c '^check: rearm-resurface$' "$out" || true)" -eq 1 ] \
+    || fail "the silenced recovery did not surface once work arrived: $(cat "$out")"
+  [ "$(cat "$home/state/.watcher-down")" = 'announced:downtime:nothing-queued.1.aaa' ] \
+    || fail "the reopened recovery did not keep its own generation: $(cat "$home/state/.watcher-down")"
+  pass "a downtime generation with an empty queue stays silent and pending, then announces once work is queued"
 }
 
 test_queue_append_during_checkpoint_still_resurfaces() {
@@ -348,6 +392,7 @@ test_quiet_checkpoint_exits_124_cleanly
 test_perl_timeout_fallback_honors_cleanup_bound_before_escalating
 test_announced_recovery_is_not_reannounced_by_next_checkpoint
 test_never_announced_recovery_is_announced_once
+test_empty_queue_recovery_stays_silent_and_pending
 test_queue_append_during_checkpoint_still_resurfaces
 test_signal_passes_through_and_exits_zero
 test_registered_check_uses_preserved_watcher_environment

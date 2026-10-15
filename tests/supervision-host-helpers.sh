@@ -629,13 +629,22 @@ quiet_pass_through_successor() {  # <home>
 }
 
 park_after_stop() {  # <home>
-  rm -f "$1/host.rc"
-  : > "$1/park.go"
-  wait_until 150 host_exited "$1" || fail "the watcher's downtime resurface did not reach main: $(cat "$1/host.out")"
-  assert_re '^check: rearm-resurface' "$1/host.out" "fixture: the first close after the watcher stopped was not its resurface"
-  main_drain_and_ack "$1"
-  quiet_pass_through_successor "$1"
-  park_again "$1"
+  local home=$1
+  rm -f "$home/host.rc"
+  if [ ! -s "$home/state/.wake-queue" ]; then
+    # A downtime generation with nothing queued is deliberately silent
+    # (bin/fm-wake-lib.sh owns that rule), so there is no resurface for the new
+    # park to deliver and it simply owns the cycle. The branch below still
+    # covers the case the resurface exists for: a stop that stranded work.
+    park_again "$home"
+    return 0
+  fi
+  : > "$home/park.go"
+  wait_until 150 host_exited "$home" || fail "the watcher's downtime resurface did not reach main: $(cat "$home/host.out")"
+  assert_re '^check: rearm-resurface' "$home/host.out" "fixture: the first close after the watcher stopped was not its resurface"
+  main_drain_and_ack "$home"
+  quiet_pass_through_successor "$home"
+  park_again "$home"
 }
 
 

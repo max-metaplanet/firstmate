@@ -592,6 +592,11 @@ test_marker_publish_failure_retains_recovery_evidence() {
     || fail "marker-failure fixture watcher remained live"
 
   rmdir "$state/.watcher-down"
+  # The retained evidence is the point of this case; the recovery wake that
+  # reports it is announced only over durable work to drain
+  # (bin/fm-wake-lib.sh), so the row it carries is seeded rather than assumed.
+  append_wake "$state" check marker-failure 'check: work the stopped watcher never delivered' \
+    || fail "could not seed the durable wake the stale-lock recovery must carry"
   armout="$dir/recovery-arm.out"
   start_rearm_arm "$home" "$state" "$fakebin" "$armout"
   wait_for_exit "$ARM_PID" "$REARM_EXIT_POLLS" || fail "stale-lock recovery did not surface downtime"
@@ -802,6 +807,10 @@ test_restart_preserves_recovery_across_reused_pid_lock() {
   printf '%s\n' "$WATCH" > "$owner/watcher-path"
   printf '%s\n' 'reused-pid-does-not-match' > "$owner/pid-identity"
   ln -s "$owner" "$state/.watch.lock"
+  # Same reason as the marker-failure case: the published downtime is announced
+  # only when the queue holds work for that recovery to carry.
+  append_wake "$state" check reused-pid 'check: work the reused-pid lock stranded' \
+    || fail "could not seed the durable wake the reused-pid recovery must carry"
 
   start_rearm_arm "$home" "$state" "$fakebin" "$armout"
   wait_for_exit "$ARM_PID" "$REARM_EXIT_POLLS" || fail "restart did not surface recovery after clearing a reused-pid lock"
@@ -840,14 +849,13 @@ test_markerless_legacy_queue_is_recovered_on_arm() {
 }
 
 test_idle_lavish_source_stays_quiet_until_result() {
-  local dir home state fakebin source trigger first_out idle_out i
+  local dir home state fakebin source trigger idle_out i
   dir=$(make_case idle-lavish-source)
   home="$dir/home"
   state="$dir/state"
   fakebin="$dir/fakebin"
   source="$dir/lavish-source.sh"
   trigger="$dir/result-ready"
-  first_out="$dir/first-arm.out"
   idle_out="$dir/idle-arm.out"
   mkdir -p "$home/data"
   cat > "$source" <<'SH'
@@ -877,12 +885,11 @@ SH
     FM_PROCEVENT_LAUNCH_CONFIRM_SECONDS=1 \
     "$ROOT/bin/fm-procevent.sh" reconcile >/dev/null \
     || fail "could not start the Lavish fixture source"
+  # A downtime generation with an empty queue is deliberately silent
+  # (bin/fm-wake-lib.sh), so this generation needs no announcement arm first:
+  # the one arm below is the whole case, and nothing but a real Lavish result
+  # may end its cycle.
   printf 'pending:downtime:idle-lavish.1.fixture\n' > "$state/.watcher-down"
-
-  FM_ROOT_OVERRIDE="$ROOT" start_rearm_arm "$home" "$state" "$fakebin" "$first_out"
-  wait_for_exit "$ARM_PID" 80 || fail "the first recovery arm did not surface"
-  grep -F 'check: rearm-resurface' "$first_out" >/dev/null \
-    || fail "the pending recovery generation did not get its first announcement"
   [ ! -s "$state/.wake-queue" ] \
     || fail "the idle Lavish source produced a wake before any result"
 
@@ -913,26 +920,26 @@ SH
 }
 
 test_append_wakes_live_announced_watcher() {
-  local dir home state fakebin first_out idle_out
+  local dir home state fakebin idle_out
   dir=$(make_case append-after-empty-recovery)
   home="$dir/home"
   state="$dir/state"
   fakebin="$dir/fakebin"
-  first_out="$dir/first-arm.out"
   idle_out="$dir/idle-arm.out"
   mkdir -p "$home/data"
   printf 'pending:downtime:append-after-empty.fixture\n' > "$state/.watcher-down"
 
-  start_rearm_arm "$home" "$state" "$fakebin" "$first_out"
-  wait_for_exit "$ARM_PID" 80 || fail "the initial empty recovery did not surface"
-  grep -F 'check: rearm-resurface' "$first_out" >/dev/null \
-    || fail "the initial empty recovery was not announced"
+  # A downtime generation with an empty queue is silent and stays owed
+  # (bin/fm-wake-lib.sh), so this arm must keep supervising rather than spend a
+  # cycle telling its reader to drain nothing.
+  start_rearm_arm "$home" "$state" "$fakebin" "$idle_out"
+  is_live_non_zombie "$ARM_PID" \
+    || fail "the empty recovery ended its cycle instead of supervising: $(cat "$idle_out")"
+  ! grep -F 'check: rearm-resurface' "$idle_out" >/dev/null \
+    || fail "the empty recovery announced a drain with nothing queued: $(cat "$idle_out")"
   [ ! -s "$state/.wake-queue" ] \
     || fail "the empty recovery unexpectedly queued durable work"
 
-  start_rearm_arm "$home" "$state" "$fakebin" "$idle_out"
-  is_live_non_zombie "$ARM_PID" \
-    || fail "the announced empty recovery did not leave a live watcher"
   append_wake "$state" check inbox:fixture 'check: captain inbox note fixture' \
     || fail "the generic producer could not append its wake"
   wait_for_exit "$ARM_PID" 80 \
@@ -941,7 +948,7 @@ test_append_wakes_live_announced_watcher() {
     || fail "the appended wake did not reopen recovery: $(cat "$idle_out")"
   grep "$(printf '\tcheck\tinbox:fixture\t')" "$state/.wake-queue" >/dev/null \
     || fail "the appended wake was not durable when recovery surfaced"
-  pass "watch-arm: appending work reopens an announced empty recovery"
+  pass "watch-arm: an owed empty recovery supervises in silence until work is appended, then surfaces it"
 }
 
 # Exercise the handling-window recovery invariant owned by

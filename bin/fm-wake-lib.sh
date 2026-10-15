@@ -879,6 +879,20 @@ _fm_recovery_marker_ack() {
   fm_lock_release "$lock"
 }
 
+# 0 when the durable queue holds at least one row to drain. A watcher-downtime
+# recovery is announced ONLY when this is true, which is the whole of that
+# announcement's purpose: `check: rearm-resurface` tells its reader to drain the
+# queue and nothing else, so announcing it over an empty queue spends a
+# supervising turn that can only find nothing - the same reason bin/fm-guard.sh
+# counts rows before it sends an actor to a drain. The marker transitions below
+# read it under the queue lock; bin/fm-watch.sh's resurface_after_downtime reads
+# it for the reclaimed-stale-lock arm of the same decision, which consults no
+# marker at all. Deliberately a stat rather than a parse: a queue that exists but
+# cannot be read is not evidence of a drained queue, so it still announces.
+fm_recovery_queue_has_work() {
+  [ -s "$FM_WAKE_QUEUE" ]
+}
+
 _fm_recovery_marker_arm_check() {
   local marker=$1 lock line quarantine
   FM_RECOVERY_MARKER_ACTION='none'
@@ -889,7 +903,7 @@ _fm_recovery_marker_arm_check() {
     return 1
   fi
   if [ ! -e "$marker" ] && [ ! -L "$marker" ]; then
-    if [ -s "$FM_WAKE_QUEUE" ]; then
+    if fm_recovery_queue_has_work; then
       if ! _fm_recovery_marker_write_locked "$marker" downtime "" announced; then
         fm_lock_release "$lock"
         fm_lock_release "$FM_WAKE_QUEUE_LOCK"
@@ -929,6 +943,17 @@ _fm_recovery_marker_arm_check() {
       return 0
       ;;
     pending:downtime:*)
+      # An empty queue leaves this generation PENDING rather than announcing it:
+      # there is nothing for the announced turn to drain, and leaving it pending
+      # keeps the recovery owed, so the first durable row to arrive announces it
+      # on the next arm. Announcing it here instead woke a supervisor for every
+      # watcher close that no turn had acknowledged - a restart, a take-over, a
+      # self-exit - and the drain it asked for found an empty queue every time.
+      if ! fm_recovery_queue_has_work; then
+        fm_lock_release "$lock"
+        fm_lock_release "$FM_WAKE_QUEUE_LOCK"
+        return 0
+      fi
       if ! _fm_recovery_marker_write_locked "$marker" downtime "${line##*:}" announced; then
         fm_lock_release "$lock"
         fm_lock_release "$FM_WAKE_QUEUE_LOCK"
@@ -938,7 +963,7 @@ _fm_recovery_marker_arm_check() {
       FM_RECOVERY_MARKER_ACTION='recover'
       ;;
     acked:*)
-      if [ -s "$FM_WAKE_QUEUE" ]; then
+      if fm_recovery_queue_has_work; then
         if ! _fm_recovery_marker_write_locked "$marker" downtime "" announced; then
           fm_lock_release "$lock"
           fm_lock_release "$FM_WAKE_QUEUE_LOCK"
@@ -971,7 +996,7 @@ _fm_recovery_marker_reopen_announced() {
   fi
   case "$FM_RECOVERY_MARKER_TOKEN" in
     announced:*)
-      if [ -s "$FM_WAKE_QUEUE" ] \
+      if fm_recovery_queue_has_work \
         && ! _fm_recovery_marker_write_locked "$marker" downtime ""; then
         fm_lock_release "$lock"
         fm_lock_release "$FM_WAKE_QUEUE_LOCK"

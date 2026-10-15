@@ -42,7 +42,8 @@
 #                          resume. Unless afk is active. A pane about to escalate
 #                          that can account for its quiet - a `paused:` external
 #                          wait or a verified `captain-held` transfer its worker
-#                          declared, or, where config/wedge-defer-parked-gate
+#                          declared, a backlog captain call this home recorded
+#                          for that task, or, where config/wedge-defer-parked-gate
 #                          arms it, a validation gate of its own awaiting a
 #                          supervisor decision nobody has answered yet - is
 #                          deferred to that same long recheck cadence instead
@@ -1290,10 +1291,10 @@ wait_record() {  # <kind> <subject> <whom> <action> <age-record>
 
 # The evidence that a quiet pane is a BOUNDED WAIT rather than a wedge suspect,
 # read at the one moment it decides anything: when an escalation is about to
-# fire. Two records answer it, and they are independent: the worker's own status
-# line - a declared `paused:` external wait, or a verified `captain-held`
-# transfer - and, when that line explains nothing, the crew's authoritative
-# current state.
+# fire. Three records answer it, and they are independent: the worker's own
+# status line - a declared `paused:` external wait, or a verified `captain-held`
+# transfer - then the backlog captain call firstmate recorded for this task, and
+# last, when neither explains the quiet, the crew's authoritative current state.
 #
 # The generated brief promises that declaring one buys the long recheck cadence
 # instead of a wedge, and the wedge timer is reachable while that declaration
@@ -1311,9 +1312,24 @@ wait_record() {  # <kind> <subject> <whom> <action> <age-record>
 # timer only through pause_state_class answering `working`, so its crew state is
 # a running step, never a parked gate.
 #
-# The second record is OFF unless the home creates config/wedge-defer-parked-gate,
+# The SECOND record is the captain call itself, read through
+# task_captain_call_open - the same predicate, with the same semantics, that
+# already bounds the non-terminal and terminal stale paths for an ordinary crew
+# task held for the captain. It belongs here for the reason that bound exists:
+# once firstmate hands a question to the captain, the wait is written into the
+# BACKLOG and the worker's own last line stays whatever it was, so no line
+# predicate can read it, and a worker that is deliberately parked on that
+# question climbed the wedge ladder for the captain's whole thinking time. The
+# wait is on the captain, so the deferral's away-posture rule takes it, and a
+# call this watcher cannot prove open (an unreadable backlog, an absent
+# tasks-axi, a row this home does not carry) escalates exactly as it does today.
+# It costs one subprocess, paid only in the at-threshold branch - at most once
+# per window per STALE_ESCALATE_SECS - beside the crew-state read the sibling
+# stale paths already pay for the same predicate.
+#
+# The third record is OFF unless the home creates config/wedge-defer-parked-gate,
 # and that one guard is what makes an unconfigured home's behaviour identical to
-# having no second record at all: it is read before the fold, so no fold or
+# having no third record at all: it is read before the fold, so no fold or
 # crew-state read is spent, no wait record exists to defer on, no recheck wording
 # is reachable, and the lane keeps the unchanged escalation schedule, reason and
 # demand-deep-inspection wording. Unlike the status line, which is the worker's
@@ -1322,7 +1338,7 @@ wait_record() {  # <kind> <subject> <whom> <action> <age-record>
 # rather than a default every fleet inherits - the same reason
 # config/turnend-churn-absorb gates its own widened absorb.
 #
-# The second record takes TWO signals, and needs both. The crew's authoritative
+# The third record takes TWO signals, and needs both. The crew's authoritative
 # current state must be a no-mistakes gate whose answer is owed by a HUMAN
 # (crew_gate_awaits_human_decision in fm-classify-lib.sh, minted from the
 # findings table's `action` column by position), AND the task's own decision fold
@@ -1378,6 +1394,11 @@ wedge_wait_evidence() {  # <task> -> one wait_record on stdout
       external 'confirm the wait still holds' "$statusf"
     return 0
   fi
+  if task_captain_call_open "$task"; then
+    wait_record 'open captain call' 'awaiting the captain - recorded captain hold' \
+      captain 'answer the held decision or release the hold' ''
+    return 0
+  fi
   [ -e "$CONFIG/wedge-defer-parked-gate" ] || return 1
   if status_has_open_needs_decision "$statusf" \
     && run=$(crew_gate_awaits_human_decision "$task") \
@@ -1413,15 +1434,17 @@ wedge_wait_evidence() {  # <task> -> one wait_record on stdout
 # it, and every other captain-facing path in this file absorbs it silently for
 # that reason (handle_paused_stale, surface_nonterminal_stale,
 # captain_call_stale_bound). That absorb arms no throttle and deliberately
-# leaves the idle timer alone: a `captain` whom is minted only by the
-# captain-held arm of wedge_wait_evidence, which returns before the
+# leaves the idle timer alone: a `captain` whom is minted only by the two
+# captain arms of wedge_wait_evidence, both of which return before the
 # wedge-defer-parked-gate flag test and therefore before any decision-fold or
-# current-state read, so the only read that repeats under the away record is the
-# one status-line read that predates this deferral. There is nothing costly to
-# throttle there, so the recheck owed on return stays owed in full the moment the
-# record is archived rather than starting a cadence nobody could act on. The
-# costly parked-gate consult is owed to the supervisor instead, never silenced
-# here, and its own deferral restarts the timer below.
+# current-state read. What repeats under the away record is the one status-line
+# read that predates this deferral, plus - for a backlog captain call - the one
+# bounded backlog read task_captain_call_open already repeats on the sibling
+# stale paths under the same away rule. Neither is worth a throttle, so the
+# recheck owed on return stays owed in full the moment the record is archived
+# rather than starting a cadence nobody could act on. The costly parked-gate
+# consult is owed to the supervisor instead, never silenced here, and its own
+# deferral restarts the timer below.
 # The escalation counter is left alone, exactly as the write deferral leaves it:
 # this is not an escalation, and a later genuine one must keep the
 # demand-inspection history it had already earned.
@@ -2734,6 +2757,10 @@ rerecord_device_shifted_pr_poll() {  # <id>
   return 0
 }
 
+# Logged once per watcher, not once per poll: the condition below is re-read
+# every cycle, and a line per poll would bury the triage log it shares.
+RECLAIMED_LOCK_ABSORB_LOGGED=0
+
 resurface_after_downtime() {
   # Handling successors already have a predecessor-delivered wake on the way.
   # Re-announcing from this cycle is what turned a lost handshake into an
@@ -2747,6 +2774,18 @@ resurface_after_downtime() {
       exit 1
     fi
     [ "$FM_RECOVERY_MARKER_ACTION" = recover ] || return 0
+  elif ! fm_recovery_queue_has_work; then
+    # A stale lock this cycle reclaimed is evidence of a GAP, not of work to
+    # drain, and this arm consults no marker, so the queue is the only record
+    # that says whether the announcement has anything for its reader. Checked on
+    # every poll rather than once, so a row appended later still surfaces within
+    # one cycle. Read without the queue lock, like bin/fm-guard.sh's own count: a
+    # torn read can only delay this by one poll.
+    if [ "$RECLAIMED_LOCK_ABSORB_LOGGED" -eq 0 ]; then
+      RECLAIMED_LOCK_ABSORB_LOGGED=1
+      triage_log "absorbed reclaimed-lock recovery (nothing queued to drain)"
+    fi
+    return 0
   fi
   wake "check: rearm-resurface"
 }
