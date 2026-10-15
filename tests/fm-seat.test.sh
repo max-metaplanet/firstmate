@@ -3960,6 +3960,144 @@ test_a_paid_overflow_seat_still_takes_work_while_a_stop_policy_refuses_it() {
   pass "a seat on paid extra usage still takes work while stop and an unset policy refuse it"
 }
 
+# Field evidence: a second mate's home dispatched a worker onto Codex while both
+# Codex homes were at 0%; it stalled at the usage limit before doing any work.
+# Dispatch itself must refuse an exhausted provider in EVERY home, with no
+# per-home seat configuration, whether the harness came from static config or an
+# explicit flag.
+# Field evidence: seat-max held 100% of its week but its 5-hour window ran out,
+# so new workers went onto paid extra usage and had to be moved by hand. A seat
+# is only usable if EVERY account-level window it is bound by has something
+# left, so an exhausted session window means no headroom whatever the week says.
+test_an_exhausted_session_window_is_no_headroom_however_full_the_week_is() {
+  local rec out
+  rec=$(make_seat_case session-window-dry)
+  read_seat_case "$rec"
+  mkdir -p "$SEATS_DIR/alpha" "$SEATS_DIR/beta"
+  seat_logged_in "$SPEC_DIR" "$SEATS_DIR/alpha" "$SEATS_DIR/beta"
+  printf 'alpha\n' > "$HOME_DIR/config/claude-seat"
+  printf '10\n' > "$HOME_DIR/config/claude-seat-threshold"
+  # alpha: the incident's own shape - a full week behind a spent 5-hour window.
+  seat_windows "$SPEC_DIR" "$SEATS_DIR/alpha" 0 2026-10-15T06:00:00Z 100 2026-10-21T00:00:00Z
+  # beta: the seat with real headroom in both windows.
+  seat_windows "$SPEC_DIR" "$SEATS_DIR/beta" 60 2026-10-15T06:00:00Z 48 2026-10-21T00:00:00Z
+
+  # The spent session window alone must hold new dispatch, even though the
+  # weekly figure alone would look perfectly healthy. Under `stop` that is
+  # exactly the incident: the seat had a full week and still put new workers
+  # onto paid extra usage.
+  run_seat "$HOME_DIR" "$FAKEBIN" extra-usage stop >/dev/null
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" status)
+  assert_contains "$out" "new Claude dispatch: HELD" \
+    "a spent session window must hold new dispatch, not pass as the week's 100%"
+  assert_contains "$out" "no new Claude worker is started on paid extra usage" \
+    "the hold must name paid extra usage as what it is preventing"
+  run_seat "$HOME_DIR" "$FAKEBIN" extra-usage off >/dev/null
+
+  # And the automatic switch must move new work to the seat that has headroom
+  # in every window rather than leaving it on the spent one.
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" auto)
+  expect_code 0 "$?" "the pass must act rather than fail: $out"
+  assert_contains "$out" "switched from alpha" "the pass must move off the spent seat"
+  assert_grep beta "$HOME_DIR/config/claude-seat" "new work must land on the seat with headroom"
+
+  # A deliberate switch back onto the spent seat is refused for the same reason,
+  # with --force still the explicit override.
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" switch alpha)
+  expect_code 1 "$?" "a spent session window must refuse a destination too: $out"
+  assert_contains "$out" "--force" "the refusal must name the deliberate override"
+  assert_grep beta "$HOME_DIR/config/claude-seat" "a refused switch must move nothing"
+  pass "an exhausted session window is no headroom however full the week is"
+}
+
+# The same seat under the two extra-usage policies: `stop` counts paid extra
+# usage as no headroom, while `allow <usd>` under its cap is the one case the
+# empty-seat rule yields to.
+test_paid_extra_usage_is_no_headroom_under_stop_and_headroom_under_allow() {
+  local rec out
+  rec=$(make_seat_case extra-usage-headroom)
+  read_seat_case "$rec"
+  mkdir -p "$SEATS_DIR/alpha" "$SEATS_DIR/beta"
+  seat_logged_in "$SPEC_DIR" "$SEATS_DIR/alpha" "$SEATS_DIR/beta"
+  printf 'beta\n' > "$HOME_DIR/config/claude-seat"
+  # alpha's plan quota is gone and it is drawing paid extra usage.
+  seat_remaining "$SPEC_DIR" "$SEATS_DIR/alpha" 0
+  seat_extra_spend "$SPEC_DIR" "$SEATS_DIR/alpha" 10
+  seat_remaining "$SPEC_DIR" "$SEATS_DIR/beta" 30
+
+  run_seat "$HOME_DIR" "$FAKEBIN" extra-usage stop >/dev/null
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" switch alpha)
+  expect_code 1 "$?" "under stop a seat on paid extra usage must have no headroom: $out"
+  assert_contains "$out" "quota is used up" "the refusal must say the plan quota is gone"
+  assert_grep beta "$HOME_DIR/config/claude-seat" "a refused switch must move nothing"
+
+  run_seat "$HOME_DIR" "$FAKEBIN" extra-usage allow 25 >/dev/null
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" switch alpha)
+  expect_code 0 "$?" "under allow below the cap the same seat must still take work: $out"
+  assert_grep alpha "$HOME_DIR/config/claude-seat" "the switch must land on the covered seat"
+  pass "paid extra usage is no headroom under stop and headroom under allow below its cap"
+}
+
+test_a_codex_dispatch_is_refused_on_an_exhausted_provider_in_any_home() {
+  local rec id out user_home seats
+  id=codex-dry-dispatch-1
+  rec=$(spawn_case spawn-codex-dry "$id")
+  read_spawn_case "$rec"
+  make_dual_quota_fake "$FAKEBIN" "$CASE_DIR/quota-spec"
+  # No codex-seats-root is written anywhere: this home configures nothing, so
+  # the seats root must resolve from the ambient default exactly as an
+  # unconfigured second mate home's would.
+  user_home="$HOME_DIR/user-home"
+  # The fixture points claude-seats-root at an empty directory; drop it so BOTH
+  # providers resolve from the ambient default and this home configures no seat
+  # roots at all, exactly as an untouched second mate home does.
+  rm -f "$HOME_DIR/config/claude-seats-root"
+  seats="$user_home/.codex-seats"
+  mkdir -p "$seats/codex-max" "$seats/codex-max2"
+  : > "$seats/codex-max/auth.json"
+  : > "$seats/codex-max2/auth.json"
+  printf 'codex-max\n' > "$HOME_DIR/config/codex-seat"
+  dual_quota "$CASE_DIR/quota-spec" codex "$seats/codex-max" 0 2026-10-19T00:00:00Z
+  dual_quota "$CASE_DIR/quota-spec" codex "$seats/codex-max2" 0 2026-10-20T00:00:00Z
+
+  # An explicit --harness codex must refuse and say which homes are empty and
+  # when they return, rather than quietly sending the task somewhere else.
+  out=$(run_spawn_here "$HOME_DIR" "$WT_DIR" "$FAKEBIN" "$LAUNCH_LOG" "$id" "$PROJ_DIR" --harness codex 2>&1)
+  expect_code 1 "$?" "an explicit Codex dispatch must be refused while every Codex home is empty"
+  assert_contains "$out" "all Codex seats are out of quota" "the refusal must name the exhausted provider"
+  assert_contains "$out" "codex-max until 2026-10-19T00:00:00Z" "the refusal must name each home's reset"
+  assert_contains "$out" "codex-max2 until 2026-10-20T00:00:00Z" "the refusal must name the second home's reset"
+  assert_absent "$HOME_DIR/state/$id.meta" "a refused dispatch must create no task record"
+  [ ! -s "$LAUNCH_LOG" ] || fail "a refused dispatch must launch nothing: $(cat "$LAUNCH_LOG")"
+
+  # The same refusal when the harness comes from static configuration rather
+  # than a flag, because that is how a second mate home picks Codex.
+  printf 'codex\n' > "$HOME_DIR/config/crew-harness"
+  out=$(run_spawn_here "$HOME_DIR" "$WT_DIR" "$FAKEBIN" "$LAUNCH_LOG" "$id" "$PROJ_DIR" 2>&1)
+  expect_code 1 "$?" "a statically configured Codex dispatch must be refused too"
+  assert_contains "$out" "all Codex seats are out of quota" "the static-harness refusal must name the provider"
+  [ ! -s "$LAUNCH_LOG" ] || fail "a refused dispatch must launch nothing: $(cat "$LAUNCH_LOG")"
+
+  # A Claude seat with headroom is where the work belongs, and the refusal must
+  # say so rather than leaving the caller to work it out.
+  mkdir -p "$user_home/.claude-seats/seat-max"
+  printf 'seat-max\n' > "$HOME_DIR/config/claude-seat"
+  dual_quota "$CASE_DIR/quota-spec" claude "$user_home/.claude-seats/seat-max" 92 2026-10-21T00:00:00Z
+  out=$(run_spawn_here "$HOME_DIR" "$WT_DIR" "$FAKEBIN" "$LAUNCH_LOG" "$id" "$PROJ_DIR" 2>&1)
+  expect_code 1 "$?" "the refusal must stand while every Codex home is empty"
+  assert_contains "$out" "Claude" "the refusal must route the work to the provider that has headroom"
+  assert_contains "$out" "92% left" "the routing must carry the headroom it found"
+
+  # Once a reset returns one home, dispatch proceeds on its own with nothing
+  # re-added by hand.
+  : > "$CASE_DIR/quota-spec/codex_map"
+  dual_quota "$CASE_DIR/quota-spec" codex "$seats/codex-max" 55 2026-10-26T00:00:00Z
+  dual_quota "$CASE_DIR/quota-spec" codex "$seats/codex-max2" 0 2026-10-20T00:00:00Z
+  out=$(run_spawn_here "$HOME_DIR" "$WT_DIR" "$FAKEBIN" "$LAUNCH_LOG" "$id" "$PROJ_DIR" 2>&1)
+  expect_code 0 "$?" "a replenished Codex home must take work again with no re-add: $out"
+  pass "a Codex dispatch is refused on an exhausted provider in a home that configures no seats"
+}
+
 test_an_armed_watch_and_a_spawn_report_one_dry_vendor_once_between_them() {
   local rec id out wake
   id=seat-dry-shared-1
@@ -4111,6 +4249,9 @@ test_the_watch_reports_a_vendor_draining_empty_after_its_shortfall_was_reported
 test_a_spawn_is_refused_on_an_empty_seat_and_the_routing_line_is_recorded_once
 test_a_paid_overflow_seat_still_takes_work_while_a_stop_policy_refuses_it
 test_an_armed_watch_and_a_spawn_report_one_dry_vendor_once_between_them
+test_a_codex_dispatch_is_refused_on_an_exhausted_provider_in_any_home
+test_an_exhausted_session_window_is_no_headroom_however_full_the_week_is
+test_paid_extra_usage_is_no_headroom_under_stop_and_headroom_under_allow
 test_one_unreadable_seat_never_re_announces_an_unchanged_dry_vendor
 test_dispatch_gate_needs_no_quota_reader_when_unconfigured
 test_destination_minimum_is_configurable_validated_and_clearable
