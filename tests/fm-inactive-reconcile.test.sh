@@ -882,7 +882,7 @@ SH
   write_child "$MATE" child 'done: PR https://example.test/owner/repo/pull/1 checks green'
   : > "$reexec_log"
   run_reconcile "$MATE" >/dev/null
-  reported_outcome_key "$MATE" child done >/dev/null \
+  reported_outcome_key "$MATE" child 'done' >/dev/null \
     || fail "idle not-due poll in a secondmate home did not still run ledger_pass"
   [ ! -s "$reexec_log" ] \
     || fail "ledger_pass on an idle not-due poll unexpectedly forked the timed re-exec: $(cat "$reexec_log")"
