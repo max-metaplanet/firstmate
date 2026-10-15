@@ -1,0 +1,7 @@
+ok - a linked worktree green PR in merge monitoring reads held for merge
+ok - an unreadable run-step verdict names the specific thing it could not read
+ok - a failed inventory call reports one cause and only run ids
+ok - an undecodable overview repository line names the overview as its cause
+ok - a repo spelling the inventory does not record reads unreadable
+ok - failed ledger record reads unreadable only when the daemon is provably down
+selected fm-crew-state tests passed

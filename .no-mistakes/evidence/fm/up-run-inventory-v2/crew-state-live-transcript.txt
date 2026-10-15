@@ -1,0 +1,47 @@
+# Live: real bin/fm-crew-state.sh (HEAD 126ac128 vs base fc8972cd) against real no-mistakes no-mistakes version v1.84.0 (4822244) 2026-09-26T08:31:07Z with isolated NM_HOME + fm-lab home
+# primary checkout: /tmp/nmlab.KMUA/primary ; crew task worktree (linked): /tmp/nmlab.KMUA/wt on fm/feat-live ; no-run worktree: /tmp/nmlab.KMUA/wt2 on fm/feat-norun
+
+## real `no-mistakes axi` overview from the linked task worktree (capped: crew run is NOT in the shown window; repo: names the primary)
+repo: /private/tmp/nmlab.KMUA/primary
+current_branch: fm/feat-live
+daemon: stopped
+active_run:
+  id: "01LIVE"
+  branch: fm/feat-live
+  status: running
+  head: f5749afd
+  head_sha: f5749afd15bcfaa49958506264f600ce0fc46763
+  verification_plan: none
+  findings: none
+  steps[0]:
+count: 10 of 14 total
+runs[10]{id,branch,status,head,pr}:
+  "01QUOTE","fix/q\"x",ci_monitor_interrupted,f5749afd,""
+  "01COMMA","fix/a,b",completed,f5749afd,""
+  "01OTHER10",fm/other-10,completed,f5749afd,""
+  "01OTHER09",fm/other-9,completed,f5749afd,""
+  "01OTHER08",fm/other-8,completed,f5749afd,""
+  "01OTHER07",fm/other-7,completed,f5749afd,""
+  "01OTHER06",fm/other-6,completed,f5749afd,""
+  "01OTHER05",fm/other-5,completed,f5749afd,""
+  "01OTHER04",fm/other-4,completed,f5749afd,""
+  "01OTHER03",fm/other-3,completed,f5749afd,""
+
+## S1 single live run beyond the cap
+HEAD: state: working · source: run-step · validating (running) · run: 01LIVE
+BASE: state: working · source: run-step · validating (running) · run: 01LIVE
+
+## S2 worker with no run of its own (other branches have runs)
+HEAD: state: unknown · source: none · backend target gone: fm:fm-feat-norun
+
+## S3 adversarial: two live runs recorded for the crew branch
+HEAD: state: unreadable · source: run-step · could not tell which run on this branch is current: two are recorded live at once; run ids: 01LIVE, 01LIVEOLD; last reported run id: 01LIVE
+BASE: state: unknown · source: run-step · competing live runs; run ids: 01LIVE, 01LIVEOLD; last reported run id: 01LIVE
+HEAD crew_absorb_class -> none
+
+## S4 adversarial: state DB row for the crew branch fails validation
+HEAD: state: unreadable · source: run-step · could not read this branch's run inventory: the state database's own run rows for this branch did not validate; run ids: 01LIVE, 01LIVEOLD; last reported run id: 01LIVE
+BASE: state: unknown · source: run-step · complete same-branch run inventory unreadable; run ids: 01LIVE, 01LIVEOLD; last reported run id: 01LIVE
+
+## S2b worker with no run of its own, real tmux pane on the lab socket
+HEAD: state: unknown · source: pane · harness state unavailable (unknown missing)
