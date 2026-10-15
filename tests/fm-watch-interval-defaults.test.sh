@@ -113,7 +113,7 @@ test_home_summary_interval_default_is_900_not_300() {
   [ -e "$home/state/.last-watcher-beat" ] || fail "watcher did not complete its initial cycle"
   sleep 1
   wait_for_summary_mtime_change "$home/state/home-summary.json" "$before" \
-    && fail "home-summary.json refreshed at 650s old (before=$before, now=$(/usr/bin/stat -f %m "$home/state/home-summary.json" 2>/dev/null || stat -c %Y "$home/state/home-summary.json" 2>/dev/null)); FM_HOME_SUMMARY_INTERVAL default is no longer >650s; watcher output:"$'\n'"$(cat "$out")"
+    && fail "home-summary.json refreshed at 650s old (before=$before, now=$(/usr/bin/stat -f %m "$home/state/home-summary.json" 2>/dev/null || stat -c %Y "$home/state/home-summary.json" 2>/dev/null), observed-at=$(date +%s)); FM_HOME_SUMMARY_INTERVAL default is no longer >650s; state dir:"$'\n'"$(ls -la "$home/state")"$'\n'"watcher output:"$'\n'"$(cat "$out")"
   kill "$pid" >/dev/null 2>&1 || true
   wait "$pid" >/dev/null 2>&1 || true
   pass "650s-old home-summary.json is not refreshed by the default cadence"
