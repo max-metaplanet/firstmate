@@ -65,9 +65,13 @@
 #   steering inbox. This never rewrites a project's instruction files or a
 #   secondmate's charter.
 #   --ignore-seat-hold starts a claude task that this home's Claude extra-usage
-#   policy would otherwise hold, for the one spawn it is passed to. It changes
+#   policy would otherwise hold, and a claude or codex task whose seat a live
+#   read proves is out of quota, for the one spawn it is passed to. It changes
 #   no setting, so the next spawn is gated again; bin/fm-seat.sh extra-usage
 #   owns the policy and docs/claude-seats.md owns what a hold can and cannot do.
+#   The out-of-quota refusal needs no setting at all, names the seat with
+#   headroom to use instead - another seat of the same vendor, or the other
+#   vendor's - and records that routing line for firstmate once per depletion.
 #        fm-spawn.sh <task-id> --relaunch [--harness <name>] [--model <name>] [--effort <level>] [--seat <name|default>]
 #   --relaunch launches a replacement agent for an EXISTING task into that
 #   task's own recorded worktree, reusing its recorded endpoint when that
@@ -2810,7 +2814,107 @@ spawn_seat_config() {
   fi
 }
 
+# spawn_seat_dry
+# Exit 0 when the seat this spawn would launch on has nothing left to start new
+# work on, for the vendor and configuration directory the caller assigns on this
+# one call. Any other answer - headroom, paid extra usage still covering it, or
+# a read that reached no verdict - exits 1, so neither an unreadable seat nor a
+# configured paid overflow ever holds a spawn.
+spawn_seat_dry() {
+  local dir
+  dir=$(fm_seat_spawn_config_dir) || return 1
+  # fm_seat_dry, not the bare depleted verdict: a seat a configured
+  # `allow <usd>` policy still covers is deliberately usable on paid extra
+  # usage, and docs/configuration.md promises this gate does not take that away.
+  fm_seat_dry "$dir"
+}
+
+# Seat depletion gate: refuse to START a new claude or codex worker on a seat a
+# live read proves empty, and name where the work goes instead. It is separate
+# from the extra-usage policy above and needs no setting at all, because a
+# worker launched on an empty seat cannot run; it applies to Claude and Codex
+# alike, which is the parity the Claude-only gate above never had.
+#
+# A home that manages no named seat of this vendor reads no quota here and can
+# never be held by this gate: with one ambient login there is nothing to route
+# between, and holding it would strand the fleet rather than move it.
+#
+# Otherwise the cost is one quota read: the seat this spawn would use is read
+# first, and the rest of the vendor's seats only once that one comes back
+# empty. One memo covers the gate, so a seat read for two questions costs one
+# call.
+#
+# Nothing is recorded about a depleted seat, so a seat returns to use on its own
+# as soon as a read after its reset shows headroom; there is nothing to re-add.
+# The one durable record is the ANNOUNCEMENT marker below, which exists only so
+# the vendor-wide routing line is said once per depletion rather than on every
+# spawn.
+#
+# Only a FRESH spawn is gated, for the same reason the extra-usage gate gates
+# only fresh spawns, and --ignore-seat-hold is the same deliberate override.
+spawn_provider_depletion_gate() {
+  { [ "$HARNESS" = claude ] || [ "$HARNESS" = codex ]; } &&
+    [ "$RELAUNCH" -eq 0 ] && [ "$IGNORE_SEAT_HOLD" -eq 0 ] || return 0
+  local seat_config summary alt label notice where here here_seat here_pct
+  local memo dry=0 rc
+  seat_config=$(spawn_seat_config)
+  [ -n "$(FM_SEAT_PROVIDER=$HARNESS CONFIG=$seat_config fm_seat_list)" ] || return 0
+  memo=$(mktemp -d "${TMPDIR:-/tmp}/fm-spawn-seat.XXXXXX" 2>/dev/null) || memo=''
+  FM_SEAT_PROVIDER=$HARNESS CONFIG=$seat_config FM_SEAT_READ_MEMO_DIR=$memo \
+    spawn_seat_dry && dry=1
+  if [ "$dry" -eq 0 ]; then
+    # The seat this spawn would use is fine, is covered by a paid extra-usage
+    # policy, or gave no verdict: nothing is held, and any standing notice is
+    # forgotten so the next depletion announces itself rather than being
+    # silenced by a stale one.
+    [ -z "$memo" ] || rm -rf -- "$memo"
+    fm_seat_dry_clear "$STATE" "$HARNESS"
+    return 0
+  fi
+  label=Claude; [ "$HARNESS" != codex ] || label=Codex
+  summary=$(FM_SEAT_PROVIDER=$HARNESS CONFIG=$seat_config FM_SEAT_READ_MEMO_DIR=$memo \
+    fm_seat_provider_depletion_summary)
+  rc=$?
+  if [ "$rc" -eq 0 ]; then
+    # Every seat of this vendor is empty, so the work belongs on another one.
+    # The sentence comes from the same builder the watch uses, so the fleet
+    # hears this fact in one wording however it surfaces.
+    alt=$(FM_SEAT_PROVIDER=$HARNESS CONFIG=$seat_config fm_seat_alternative_headroom) || alt=''
+    notice=$(fm_seat_dry_notice "$HARNESS" "$summary" "$alt")
+    where="re-run with --ignore-seat-hold to start this task on an empty seat anyway"
+  else
+    # Only this seat is empty: another seat of the same vendor may still have
+    # headroom, so the home has somewhere to go without changing vendor.
+    here=$(FM_SEAT_PROVIDER=$HARNESS CONFIG=$seat_config FM_SEAT_READ_MEMO_DIR=$memo \
+      fm_seat_headroom_best) || here=''
+    read -r here_seat here_pct <<< "$here"
+    notice="the active $label seat is out of quota"
+    if [ -n "$here_seat" ]; then
+      notice="$notice; move new workers with 'bin/fm-seat.sh --provider $HARNESS switch $here_seat', which has $here_pct% left"
+    else
+      notice="$notice; no other $label seat has readable headroom, so this task waits for the first reset"
+    fi
+    where="re-run with --ignore-seat-hold to start this task on an empty seat anyway"
+  fi
+  [ -z "$memo" ] || rm -rf -- "$memo"
+  {
+    echo "error: this task is not started on a $label seat with no quota left:"
+    printf '  %s\n' "$notice"
+    printf '  %s\n' "$where"
+  } >&2
+  # The notice is recorded once per depletion, not once per spawn, through the
+  # record the watch pass shares: an armed watch and a spawn attempt report one
+  # depletion once between them, and it speaks again as soon as a reset moves or
+  # the routing changes. The refusal itself still states its reason every time,
+  # because a spawn that stops without saying why would be worse than noise.
+  if fm_seat_dry_announce "$STATE" "$HARNESS" "$notice"; then
+    fm_wake_append check "seat-depleted:$HARNESS" "check: $notice" || true
+  fi
+  exit 1
+}
+
 [ "$KIND" = secondmate ] || spawn_seat_dispatch_gate
+[ "$KIND" = secondmate ] || spawn_provider_depletion_gate
 
 # Worker account pin (header above): resolved before any endpoint, worktree, or
 # record exists. An absent pin selects nothing and leaves every later launch
@@ -3391,6 +3495,7 @@ if [ "$KIND" = secondmate ]; then
   }
   PROJ_ABS=$(validate_firstmate_home_for_spawn "$ID" "$FIRSTMATE_HOME")
   spawn_seat_dispatch_gate
+  spawn_provider_depletion_gate
   if [ -e "$DATA/secondmates.md" ] || [ -L "$DATA/secondmates.md" ]; then
     if ! secondmate_registry_validate_bindings "$DATA/secondmates.md" resolve_path "$ID" "$FIRSTMATE_HOME"; then
       echo "error: $SECONDMATE_REGISTRY_ERROR" >&2

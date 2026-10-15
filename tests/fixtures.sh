@@ -333,12 +333,37 @@ EOF
 # fm_test_make_spawn_fakebin <dir> [extra-exit0-tool...]
 # Creates <dir>/fakebin with the spawn tmux stub, a no-op treehouse, and any
 # extra exit-0 tools. Echoes the fakebin path.
+# fm_test_fake_quota_unavailable <fakebin>
+# A quota-axi reporting its provider unavailable for every read: the shape that
+# establishes nothing, so a fixture which declares no quota reaches the same "no
+# verdict" branch a real unreadable store does. It is installed by default in
+# every spawn fakebin because bin/fm-spawn.sh reads the seat a claude or codex
+# worker would launch on; without it such a fixture would reach the operator's
+# real quota-axi over the network. A case that cares about quota overwrites it.
+fm_test_fake_quota_unavailable() {
+  local fakebin=$1
+  cat > "$fakebin/quota-axi" <<'SH'
+#!/usr/bin/env bash
+set -u
+provider=claude
+case "${1-}" in --version) printf 'quota-axi 0.1.99\n'; exit 0 ;; esac
+while [ $# -gt 0 ]; do
+  case "$1" in --provider) provider=${2-claude}; shift ;; esac
+  shift
+done
+printf '{"generatedAt":"2026-01-01T00:00:00Z","schemaVersion":5,"providers":[{"provider":"%s","label":"%s","source":"unavailable","windows":[],"state":{"status":"error","error":"keychain_unreachable"},"attempts":[{"source":"oauth-file","status":"skipped","error":"credentials_missing"},{"source":"keychain","status":"skipped","error":"keychain_unreachable"}],"quotaSemantics":{"status":"unknown","effectiveAvailability":[]}}]}\n' "$provider" "$provider"
+exit 1
+SH
+  chmod +x "$fakebin/quota-axi"
+}
+
 fm_test_make_spawn_fakebin() {
   local dir=$1 fakebin
   shift
   fakebin=$(fm_fakebin "$dir")
   fm_test_fake_tmux_spawn "$fakebin"
   fm_fake_exit0 "$fakebin" treehouse "$@"
+  fm_test_fake_quota_unavailable "$fakebin"
   printf '%s\n' "$fakebin"
 }
 

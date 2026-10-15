@@ -696,9 +696,11 @@ fm_seat_memo_key() {
 # is exported. One automatic pass therefore makes at most one quota call per
 # seat however many questions it asks about it. A read that gave no verdict is
 # memoed as such, so a seat whose store is slow or unreachable cannot spend the
-# pass's whole budget twice. Only a pass sets the memo; no long-lived caller
-# does; the shared profile cache below additionally coalesces fresh reads across
-# processes and honors endpoint backoff.
+# pass's whole budget twice. Only a watch pass or a single short command sets
+# the memo - a switch asks one profile both whether it is logged in and whether
+# it has quota - and no long-lived caller does; the shared profile cache below
+# additionally coalesces fresh reads across processes and honors endpoint
+# backoff.
 fm_seat_quota_read() {
   local dir=${1-} bound out memo='' provider
   provider=$(fm_seat_provider) || return 1
@@ -1076,6 +1078,299 @@ fm_seat_login_renewable_from() {
     quota_row(.; $provider; (if $provider == "codex" then "codex-home" else "" end)) // empty
     | .state.authStatus == "expired_refreshable"
   ' >/dev/null 2>&1
+}
+
+# --- depletion ----------------------------------------------------------------
+# A seat is DEPLETED when a live read proves it has nothing left to spend: its
+# account-level effective percent remaining is zero, or its runway reads
+# exhausted now. fm_seat_remaining_from already collapses both to 0, so this is
+# the single place that reads that 0 as "a worker launched here cannot run".
+#
+# Depletion is computed from a fresh read every time and recorded nowhere. That
+# is what returns a depleted seat to rotation on its own: once its reset time
+# has passed and a read shows headroom it is an ordinary candidate again, with
+# nothing to re-add by hand. The quota floor's resting record below is a
+# different thing - a configured level well above empty, written and lifted only
+# by the watch.
+
+# fm_seat_depleted_from <quota-json>
+# Exit 0 when the seat is proven depleted, 1 when it has headroom, and 2 when
+# the quota gave no verdict. An absent verdict is never read as depletion: a
+# seat whose access token has merely lapsed is signed in, and its quota is
+# simply unreadable until a launch renews it.
+fm_seat_depleted_from() {
+  local out=${1-} remaining
+  remaining=$(fm_seat_remaining_from "$out") || return 2
+  jq -en --arg r "$remaining" '($r | tonumber) <= 0' >/dev/null 2>&1 && return 0
+  return 1
+}
+
+# fm_seat_reset_at_from <quota-json>
+# The resetsAt stamp of the window holding this seat down, so a refusal can say
+# when the seat comes back rather than only that it is empty. Returns 1 when the
+# report carries no account-level window, which is what a refusal then says.
+fm_seat_reset_at_from() {
+  local out=${1-} window rows at
+  window=$(fm_seat_limiting_window_from "$out") || return 1
+  rows=$(fm_seat_windows_from "$out") || return 1
+  at=$(fm_seat_window_field "$rows" "$window" 3) || return 1
+  printf '%s\n' "$at"
+}
+
+# fm_seat_quota_verdict <config-dir>
+# One read of a profile, rendered as `<verdict>\t<percent>\t<resetsAt>`:
+#
+#   depleted  proven empty; percent is 0 and resetsAt names when it returns
+#   headroom  proven to have something left; percent carries it
+#   unknown   the read reached no verdict; both fields are empty
+#
+# Every caller that must not guess branches on this one word, so the switch
+# gate, the dispatch gate, and any report can never drift apart on what
+# "depleted" means. An absent resetsAt prints empty rather than a guess.
+fm_seat_quota_verdict() {
+  local dir=${1-} out remaining='' reset='' verdict
+  out=$(fm_seat_quota_json "$dir") || { printf 'unknown\t\t\n'; return 0; }
+  fm_seat_depleted_from "$out"
+  case "$?" in
+    0) verdict=depleted ;;
+    1) verdict=headroom ;;
+    *) printf 'unknown\t\t\n'; return 0 ;;
+  esac
+  remaining=$(fm_seat_remaining_from "$out") || remaining=''
+  reset=$(fm_seat_reset_at_from "$out") || reset=''
+  printf '%s\t%s\t%s\n' "$verdict" "$remaining" "$reset"
+}
+
+# fm_seat_provider_verdicts
+# One row per seat of FM_SEAT_PROVIDER that new work can actually reach, as
+# `<name>\t<verdict>\t<percent>\t<resetsAt>`: the active seat first, then every
+# named seat automatic rotation may land on. A seat excluded from rotation or
+# resting below the floor is left out unless it is the active one, and so is the
+# ambient default seat, which rotation never picks. A seat that is not
+# launchable at all - no login, or a login that could not be confirmed - is left
+# out entirely, because this answers where quota is, not where credentials are.
+# A seat whose login probe reached NO verdict is different: it is reported as
+# `unknown`, because leaving it out would quietly shrink the list a vendor-wide
+# claim is made from.
+#
+# This is the whole provider picture one dispatch question needs, so a caller
+# asking "has this provider anything left anywhere" makes one pass rather than
+# its own loop. It reads every listed seat, so call it only once the cheaper
+# single-seat read has already come back depleted.
+fm_seat_provider_verdicts() {
+  local name dir state row active
+  active=$(fm_seat_active)
+  {
+    printf '%s\n' "$active"
+    fm_seat_list | grep -vxF -- "$active" || true
+  } | while IFS= read -r name; do
+    [ -n "$name" ] || continue
+    if [ "$name" != "$active" ]; then
+      ! fm_seat_auto_excluded "$name" || continue
+      ! fm_seat_resting "$name" || continue
+    fi
+    dir=$(fm_seat_config_dir "$name" 2>/dev/null) || continue
+    fm_seat_logged_in "$dir"
+    state=$?
+    case "$state" in
+      0|"$FM_SEAT_LOGIN_EXPIRED_RENEWABLE")
+        row=$(fm_seat_quota_verdict "$dir")
+        ;;
+      2)
+        # The probe reached no verdict, so this seat's quota is unknown rather
+        # than absent. Leaving it out would let a vendor-wide claim be made on a
+        # list that silently shrank, which is exactly how one transient read
+        # re-announces a depletion that has not changed.
+        row=$'unknown\t\t'
+        ;;
+      *) continue ;;
+    esac
+    printf '%s\t%s\n' "$name" "$row"
+  done
+}
+
+# fm_seat_provider_depletion_summary
+# `<seat> until <reset>` for every launchable seat of FM_SEAT_PROVIDER, joined
+# with commas, printed only when EVERY one of them is proven out of quota.
+# A seat whose report names no reset time says so rather than inventing one.
+#
+# Three outcomes, because "the whole vendor is empty" is a claim about proven
+# readings and the two ways of not proving it need different answers:
+#
+#   0  every seat proven out of quota; the summary is on stdout
+#   1  some seat is proven to have headroom, so the vendor is demonstrably not
+#      empty
+#   2  no seat proved headroom but at least one gave no verdict, so nothing is
+#      proven either way
+#
+# A caller must not treat 2 as either answer. Reporting on it would let one
+# transient unreadable read re-announce a depletion that has not changed, and
+# acting on it would hold work on no evidence.
+fm_seat_provider_depletion_summary() {
+  local rows name verdict reset summary='' undecided=0
+  rows=$(fm_seat_provider_verdicts) || return 1
+  [ -n "$rows" ] || return 1
+  while IFS=$'\t' read -r name verdict _ reset; do
+    [ -n "$name" ] || continue
+    case "$verdict" in
+      depleted) ;;
+      unknown) undecided=1; continue ;;
+      *) return 1 ;;
+    esac
+    if [ -n "$reset" ]; then
+      summary="$summary${summary:+, }$name until $reset"
+    else
+      summary="$summary${summary:+, }$name (no reset time reported)"
+    fi
+  done <<< "$rows"
+  [ "$undecided" -eq 0 ] || return 2
+  [ -n "$summary" ] || return 1
+  printf '%s\n' "$summary"
+}
+
+# fm_seat_headroom_best
+# The seat of FM_SEAT_PROVIDER with the most PROVEN headroom, as
+# `<seat> <percent>`, or 1 when no seat has a reading that proves any. A seat
+# whose quota gave no verdict never wins: this answers where work can be sent
+# with evidence, and an unreadable seat is not evidence.
+fm_seat_headroom_best() {
+  local rows name verdict pct best_name='' best_pct=''
+  rows=$(fm_seat_provider_verdicts) || return 1
+  while IFS=$'\t' read -r name verdict pct _; do
+    [ "$verdict" = headroom ] || continue
+    if [ -z "$best_pct" ] || jq -en --arg a "$pct" --arg b "$best_pct" \
+      '($a | tonumber) > ($b | tonumber)' >/dev/null 2>&1; then
+      best_name=$name
+      best_pct=$pct
+    fi
+  done <<< "$rows"
+  [ -n "$best_name" ] || return 1
+  printf '%s %s\n' "$best_name" "$best_pct"
+}
+
+# fm_seat_alternative_headroom
+# Where the OTHER vendor's new work would run, as `<provider> <seat> <percent>
+# <active|switch>`, or 1 when this home does not use that vendor or none of its
+# reachable seats has a reading that proves headroom. Its active seat is named
+# whenever that seat has headroom, because that is where its new work launches;
+# otherwise the best rotation seat is named with `switch`, since work only gets
+# there once that vendor is switched to it. It exists so a vendor-wide refusal
+# can name where the work goes instead of only where it cannot go, which is the
+# whole difference between a refusal someone has to explain and one that routes
+# itself.
+fm_seat_alternative_headroom() {
+  local other best active verdict pct
+  case "$(fm_seat_provider)" in
+    claude) other=codex ;;
+    codex) other=claude ;;
+    *) return 1 ;;
+  esac
+  # The other vendor is named for the duration of these two calls only, as a
+  # command-prefix assignment: it reaches each helper's own child processes and
+  # is restored the moment the call returns, so nothing after this sees it.
+  FM_SEAT_PROVIDER=$other fm_seat_provider_in_use || return 1
+  active=$(FM_SEAT_PROVIDER=$other fm_seat_active)
+  IFS=$'\t' read -r verdict pct _ <<< "$(FM_SEAT_PROVIDER=$other fm_seat_quota_verdict \
+    "$(FM_SEAT_PROVIDER=$other fm_seat_config_dir "$active")")"
+  if [ "$verdict" = headroom ]; then
+    printf '%s %s %s active\n' "$other" "$active" "$pct"
+    return 0
+  fi
+  best=$(FM_SEAT_PROVIDER=$other fm_seat_headroom_best) || return 1
+  printf '%s %s switch\n' "$other" "$best"
+}
+
+# fm_seat_extra_usage_covers_from <quota-json>
+# Exit 0 when a configured `allow <usd>` extra-usage policy still covers this
+# seat, so an empty plan quota does not stop new work on it.
+#
+# This is the one owner of that deferral. docs/configuration.md promises that
+# `allow <usd>` keeps dispatching once the plan quota is gone and the recorded
+# spend is under the cap, so every gate that would otherwise refuse an empty
+# seat asks here first and they cannot drift apart. The policy reader is already
+# Claude-only, which is what keeps this from ever covering a Codex seat.
+fm_seat_extra_usage_covers_from() {
+  local out=${1-} policy decision
+  policy=$(fm_seat_extra_usage_policy) || return 1
+  case "$policy" in allow\ *) ;; *) return 1 ;; esac
+  decision=$(fm_seat_dispatch_from "$out" "$policy")
+  case "$decision" in 'allow extra-usage-under-cap'*) return 0 ;; esac
+  return 1
+}
+
+# fm_seat_extra_usage_covers <config-dir>
+# The same question against a seat's own profile, for a caller holding a
+# directory rather than a report it has already read.
+fm_seat_extra_usage_covers() {
+  local out
+  out=$(fm_seat_quota_json "${1-}") || return 1
+  fm_seat_extra_usage_covers_from "$out"
+}
+
+# fm_seat_dry <config-dir>
+# Exit 0 when this seat has nothing left to start new work on: its plan quota is
+# proven empty AND no paid extra-usage policy still covers it. Exit 1 otherwise,
+# including when the quota gave no verdict, because an unreadable seat is not
+# evidence of an empty one.
+#
+# "Depleted" and "dry" are deliberately different questions: the first is about
+# the plan quota alone, and the second is the dispatch question every gate
+# actually asks.
+fm_seat_dry() {
+  local dir=${1-} out
+  out=$(fm_seat_quota_json "$dir") || return 1
+  fm_seat_depleted_from "$out" || return 1
+  ! fm_seat_extra_usage_covers_from "$out"
+}
+
+# fm_seat_dry_notice <provider> <summary> [<alt-line>]
+# The one sentence the watch and the spawn gate both use to say that a whole
+# vendor is out of quota, so the same fact never reaches the fleet in two
+# different wordings. <summary> is fm_seat_provider_depletion_summary's list of
+# seats and resets; <alt-line> is fm_seat_alternative_headroom's output, or
+# empty when nothing else has proven headroom.
+fm_seat_dry_notice() {
+  local provider=${1-} summary=${2-} alt=${3-} label alt_provider alt_seat alt_pct alt_how alt_label
+  label=Claude; [ "$provider" != codex ] || label=Codex
+  if [ -z "$alt" ]; then
+    printf 'all %s seats are out of quota (%s); no seat on the other vendor has readable headroom either, so new work waits for the first reset\n' \
+      "$label" "$summary"
+    return 0
+  fi
+  read -r alt_provider alt_seat alt_pct alt_how <<< "$alt"
+  alt_label=Claude; [ "$alt_provider" != codex ] || alt_label=Codex
+  if [ "$alt_how" = active ]; then
+    printf 'all %s seats are out of quota (%s); new work routes to %s seat %s, which has %s%% left\n' \
+      "$label" "$summary" "$alt_label" "$alt_seat" "$alt_pct"
+  else
+    printf 'all %s seats are out of quota (%s); new work routes to %s once it moves to seat %s, which has %s%% left: run bin/fm-seat.sh --provider %s switch %s\n' \
+      "$label" "$summary" "$alt_label" "$alt_seat" "$alt_pct" "$alt_provider" "$alt_seat"
+  fi
+}
+
+# fm_seat_dry_announce <state-dir> <provider> <notice>
+# Exit 0 when this exact notice has not been announced yet, recording it so the
+# next caller stays quiet; exit 1 when it is already the standing notice.
+#
+# The watch pass and the spawn gate share this one record per vendor, which is
+# what makes a depletion reach the captain once rather than once per channel.
+# Keying on the notice text itself means a reset moving, a seat draining, or the
+# routing changing all speak again, while nothing changing stays silent.
+fm_seat_dry_announce() {
+  local state=${1-} provider=${2-} notice=${3-} marker previous=''
+  marker="$state/.$provider-seat-dry"
+  [ ! -f "$marker" ] || previous=$(cat "$marker" 2>/dev/null || true)
+  [ "$previous" != "$notice" ] || return 1
+  mkdir -p "$state" 2>/dev/null || true
+  printf '%s\n' "$notice" > "$marker" 2>/dev/null || true
+  return 0
+}
+
+# fm_seat_dry_clear <state-dir> <provider>
+# Forget the standing notice, so the next depletion announces itself rather than
+# being silenced by a stale record.
+fm_seat_dry_clear() {
+  rm -f "${1-}/.${2-}-seat-dry" 2>/dev/null || true
 }
 
 # --- the resting record -------------------------------------------------------
