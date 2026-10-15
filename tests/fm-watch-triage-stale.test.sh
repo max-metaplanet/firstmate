@@ -842,6 +842,156 @@ test_wedge_threshold_recheck_names_the_captain_for_a_held_lane() {
   pass "a captain-held lane is rechecked as a hold on the captain, never as an external wait, and never at all while the captain is away"
 }
 
+# --- the wedge threshold reads the backlog captain call ----------------------
+# The gap this closes, reported from two homes: a worker parked on a question
+# firstmate had handed to the captain climbed the wedge ladder for the captain's
+# whole thinking time, and the documented response to a stale wake is peek, then
+# interrupt, then relaunch - so a false wedge on a lane that is merely waiting is
+# an instruction to damage work that is behaving correctly.
+#
+# Neither status-line record covers it. Once firstmate hands the question over,
+# the WAIT is written into the backlog by bin/fm-captain-hold.sh and the worker's
+# own last line stays whatever it was - routinely `working:` while its validation
+# run continues - so no line predicate can read it. The watcher already consults
+# that same record on its other two stale paths (task_captain_call_open); this
+# case pins it on the wedge timer too.
+#
+# Both directions are pinned, because a deferral that could not be told apart
+# from deleting wedge detection would be worse than the noise it removes: the
+# identical fixture with NO hold must keep the same schedule, escalation count,
+# reason and demand-deep-inspection wording. And the deferral is a DEFERRAL: the
+# bounded re-surface still fires, so an open call cannot hold the lane silent
+# forever on this one signal.
+test_wedge_threshold_defers_to_an_open_captain_call() {
+  local dir state fakebin out capture window key n queued
+  local working='state: working · source: run-step · ci running'
+  command -v tasks-axi >/dev/null 2>&1 \
+    || { echo "skip: tasks-axi not found (captain-call wedge deferral)"; return 0; }
+  window="test:fm-wedge"; key=$(printf '%s' "$window" | tr ':/.' '___')
+
+  # The worker escalated a question and then kept its last line non-captain-
+  # relevant, which is the plain route into the wedge timer. Its status file is
+  # backdated well past the recheck cadence and is still not the record of when
+  # the captain took the question in hand, so nothing about the recheck may be
+  # computed from its mtime.
+  local parked='needs-decision [key=retention]: which retention window wins
+working: still waiting for the answer'
+
+  dir=$(wedge_threshold_fixture captain-call-wedge "$parked" 2000)
+  arm_captain_hold "$dir" wedge || fail "could not build the captain-held backlog fixture"
+  state="$dir/state"; fakebin="$dir/fakebin"; out="$dir/watch.out"; capture="$dir/pane.txt"
+
+  wedge_threshold_round "$state" "$fakebin" "$out" "$capture" "$window" "$working" exit \
+    || fail "a lane under an open captain call was never rechecked at the threshold: $(cat "$out")"
+  grep -F 'open captain call' "$out" >/dev/null \
+    || fail "the captain-call recheck did not name its evidence: $(cat "$out")"
+  grep -F 'awaiting the captain' "$out" >/dev/null \
+    || fail "the captain-call recheck did not name the human the wait is on: $(cat "$out")"
+  grep -F 'answer the held decision or release the hold' "$out" >/dev/null \
+    || fail "the captain-call recheck did not name the action that clears the lane: $(cat "$out")"
+  grep -F 'awaiting external' "$out" >/dev/null \
+    && fail "a captain call was published as a wait on an external dependency: $(cat "$out")"
+  grep -F 'possible wedge' "$out" >/dev/null \
+    && fail "a lane under an open captain call was reported as a possible wedge: $(cat "$out")"
+  # No wait age is published: the hold's own start is not written anywhere this
+  # deferral can read, and the idle window it resets every pass would report the
+  # same small number forever.
+  grep -E ', waiting [0-9]+s' "$out" >/dev/null \
+    && fail "the captain-call recheck published a wait age it has no record for: $(cat "$out")"
+  ack_stopped_cycle "$state" || fail "could not acknowledge the captain-call recheck"
+
+  # Long cadence, not a ladder: further thresholds inside the cadence are
+  # absorbed whole, with no escalation counted and nothing queued.
+  queued=$(wedge_stale_wakes "$state" "$window")
+  n=1
+  while [ "$n" -le 3 ]; do
+    wedge_threshold_round "$state" "$fakebin" "$out" "$capture" "$window" "$working" absorb \
+      || fail "a lane under an open captain call wedge-escalated at threshold $n: $(cat "$out")"
+    n=$((n + 1))
+  done
+  [ "$(wedge_stale_wakes "$state" "$window")" -eq "$queued" ] \
+    || fail "an open captain call queued a further wake inside its recheck cadence: $(cat "$state/.wake-queue")"
+  [ ! -e "$state/.wedge-escalations-$key" ] \
+    || fail "an open captain call counted $(cat "$state/.wedge-escalations-$key") wedge escalation(s)"
+
+  # The rung that must survive: the absorb is bounded, so once the cadence has
+  # elapsed the lane re-surfaces rather than staying silent on this one signal.
+  [ -e "$state/.waiting-resurfaced-$key" ] \
+    || fail "the absorbed captain call recorded no re-surface cadence to elapse"
+  set_mtime "$(( $(date +%s) - 5000 ))" "$state/.waiting-resurfaced-$key"
+  wedge_threshold_round "$state" "$fakebin" "$out" "$capture" "$window" "$working" exit \
+    || fail "an open captain call was not re-surfaced once its recheck window elapsed: $(cat "$out")"
+  grep -F 'awaiting the captain' "$out" >/dev/null \
+    || fail "the elapsed captain-call recheck did not name the captain: $(cat "$out")"
+  ack_stopped_cycle "$state" || fail "could not acknowledge the elapsed captain-call recheck"
+
+  # The other direction: the identical fixture with NO hold keeps the unchanged
+  # ladder, reason and demand-deep-inspection wording. A backlog that records no
+  # call - and, equally, one this watcher cannot read at all - is not a wait.
+  dir=$(wedge_threshold_fixture captain-call-wedge-control "$parked" 2000)
+  state="$dir/state"; fakebin="$dir/fakebin"; out="$dir/watch.out"; capture="$dir/pane.txt"
+  n=1
+  while [ "$n" -le 3 ]; do
+    wedge_threshold_round "$state" "$fakebin" "$out" "$capture" "$window" "$working" exit \
+      || fail "a lane with no captain call stopped escalating at threshold $n: $(cat "$out")"
+    ack_stopped_cycle "$state" || fail "could not acknowledge unheld escalation $n"
+    grep -F "possible wedge, escalation $n" "$out" >/dev/null \
+      || fail "a lane with no captain call did not reach escalation $n: $(cat "$out")"
+    n=$((n + 1))
+  done
+  grep -F 'demand-deep-inspection: same pane has wedge-escalated 3 times in a row' "$out" >/dev/null \
+    || fail "a lane with no captain call lost the demand-deep-inspection wording: $(cat "$out")"
+  grep -F 'open captain call' "$out" >/dev/null \
+    && fail "a lane with no captain call was deferred as a wait on the captain: $(cat "$out")"
+  pass "a lane under an open backlog captain call takes the bounded recheck instead of the wedge ladder, while an unheld lane keeps it"
+}
+
+# The captain-away half, which the wait's `whom` decides: the one human who can
+# answer the hold is away, the return brief already lists it, and every other
+# captain-facing stale path in the watcher absorbs it in silence for that reason.
+# The absorb must arm no throttle and leave the idle timer alone, so the recheck
+# owed on return is owed in full the moment the record is archived.
+test_wedge_threshold_keeps_an_open_captain_call_silent_while_away() {
+  local dir state fakebin out capture window key n armed_timer
+  local working='state: working · source: run-step · ci running'
+  command -v tasks-axi >/dev/null 2>&1 \
+    || { echo "skip: tasks-axi not found (away captain-call wedge deferral)"; return 0; }
+  window="test:fm-wedge"; key=$(printf '%s' "$window" | tr ':/.' '___')
+  local parked='needs-decision [key=retention]: which retention window wins
+working: still waiting for the answer'
+
+  dir=$(wedge_threshold_fixture captain-call-wedge-away "$parked" 2000 2000)
+  arm_captain_hold "$dir" wedge || fail "could not build the away captain-held backlog fixture"
+  state="$dir/state"; fakebin="$dir/fakebin"; out="$dir/watch.out"; capture="$dir/pane.txt"
+  armed_timer=$(cat "$state/.stale-since-$key")
+  write_away_record "$state"
+  n=1
+  while [ "$n" -le 3 ]; do
+    FM_TEST_PAUSE_RESURFACE=240 wedge_threshold_round "$state" "$fakebin" "$out" "$capture" "$window" "$working" absorb \
+      || fail "an open captain call was rechecked at threshold $n while the away-posture record existed: $(cat "$out")"
+    n=$((n + 1))
+  done
+  [ "$(wedge_stale_wakes "$state" "$window")" -eq 0 ] \
+    || fail "an open captain call woke the away captain: $(cat "$state/.wake-queue")"
+  [ ! -s "$out" ] \
+    || fail "an open captain call printed a recheck while the away-posture record existed: $(cat "$out")"
+  [ ! -e "$state/.waiting-resurfaced-$key" ] \
+    || fail "an away-silenced captain call armed the recheck throttle, so the recheck owed on return would be delayed a full cadence"
+  [ ! -e "$state/.wedge-escalations-$key" ] \
+    || fail "an away-silenced captain call counted $(cat "$state/.wedge-escalations-$key") wedge escalation(s)"
+  [ "$(cat "$state/.stale-since-$key")" = "$armed_timer" ] \
+    || fail "an away-silenced captain call restarted the idle timer"
+
+  archive_away_record "$state"
+  : > "$out"
+  FM_TEST_PAUSE_RESURFACE=240 wedge_threshold_round "$state" "$fakebin" "$out" "$capture" "$window" "$working" exit \
+    || fail "an open captain call was never rechecked after the away-posture record was archived: $(cat "$out")"
+  grep -F 'awaiting the captain' "$out" >/dev/null \
+    || fail "the recheck owed on return did not name the captain: $(cat "$out")"
+  ack_stopped_cycle "$state" || fail "could not acknowledge the on-return captain-call recheck"
+  pass "an open captain call is never rechecked while the captain is away, and is owed in full the moment they are back"
+}
+
 # --- the wedge threshold reads the crew's own parked-gate state --------------
 # Upstream kunchenguid/firstmate#3055: a lane parked at a validation gate that is
 # waiting on a HUMAN is correctly quiet, but nothing in the status LINE says so -
@@ -2075,6 +2225,8 @@ test_wedge_threshold_parked_gate_needs_an_unanswered_decision
 test_wedge_threshold_parked_gate_is_off_until_armed
 test_wedge_defer_refuses_a_half_filled_wait_record
 test_open_captain_call_bounds_stale_churn
+test_wedge_threshold_defers_to_an_open_captain_call
+test_wedge_threshold_keeps_an_open_captain_call_silent_while_away
 test_stale_churn_without_a_captain_call_still_alarms
 test_failed_wake_append_does_not_arm_the_captain_hold_throttle
 test_reheld_captain_call_starts_its_own_resurface_window

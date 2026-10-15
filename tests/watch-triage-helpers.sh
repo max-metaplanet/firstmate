@@ -369,7 +369,12 @@ parked_watch_round() {  # <state> <fakebin> <out> <capture> <window> <exit|absor
 # in), which is how the dead-endpoint cases below reach `dead` and `missing`.
 wedge_threshold_round() {  # <state> <fakebin> <out> <capture> <window> <verdict> <exit|absorb>
   local state=$1 fakebin=$2 out=$3 capture=$4 window=$5 verdict=$6 mode=$7 pid cycles=0
+  # The home is the case directory, so the backlog captain-call read the
+  # at-threshold branch makes (task_captain_call_open) resolves against this
+  # fixture's own backlog rather than whatever the runner's checkout carries. A
+  # case with no backlog answers "not an open call" and keeps the ladder.
   PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture" \
+    FM_HOME="$(dirname "$state")" FM_DATA_OVERRIDE="$(dirname "$state")/data" \
     FM_CONFIG_OVERRIDE="$(dirname "$state")/config" \
     FM_FAKE_TMUX_CURRENT_COMMAND="${FM_TEST_PANE_COMMAND-grok}" \
     FM_FAKE_TMUX_WINDOWS="${FM_TEST_TMUX_WINDOWS-}" FM_FAKE_CREW_STATE="$verdict" \
@@ -431,6 +436,26 @@ wedge_threshold_fixture() {  # <name> <status-log> <status-age-secs> [<wedge-tim
 # Arm the opt-in parked-gate wait evidence for a fixture built above.
 arm_parked_gate() {  # <case-dir>
   : > "$1/config/wedge-defer-parked-gate"
+}
+
+# Give a wedge fixture a REAL captain hold on its own task, the record firstmate
+# writes once it hands a question to the captain. Built through
+# bin/fm-captain-hold.sh against a real tasks-axi backlog for the same reason
+# make_hold_home does: that script is the only writer of a hold and tasks-axi the
+# only reader, so a hand-written row would pin this test's idea of a hold instead
+# of the one the watcher consults. Returns 1 when the fixture could not be built.
+arm_captain_hold() {  # <case-dir> <task-id>
+  local dir=$1 task=$2
+  command -v tasks-axi >/dev/null 2>&1 || return 1
+  mkdir -p "$dir/data"
+  fm_test_tasks_toml "$dir/.tasks.toml" || return 1
+  printf '## In flight\n\n## Queued\n\n## Done\n' > "$dir/data/backlog.md"
+  (cd "$dir" && tasks-axi add "$task" 'work held for the captain' --file data/backlog.md) \
+    >/dev/null 2>&1 || return 1
+  FM_HOME="$dir" FM_STATE_OVERRIDE="$dir/state" FM_DATA_OVERRIDE="$dir/data" \
+    FM_CONFIG_OVERRIDE="$dir/config" "$ROOT/bin/fm-captain-hold.sh" \
+    hold "$task" --reason 'checked: the worker asked which retention window wins; awaiting the captain' \
+    >/dev/null 2>&1 || return 1
 }
 
 wedge_stale_wakes() {  # <state> <window>

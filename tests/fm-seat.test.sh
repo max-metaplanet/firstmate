@@ -4343,7 +4343,110 @@ test_the_floor_setter_warns_when_it_sits_at_or_above_the_switch_trigger
 test_resting_wake_returns_a_seat_early_and_the_next_pass_may_rest_it_again
 test_a_stop_policy_holds_dispatch_once_the_active_seat_is_at_the_floor
 
+# --- the paid-extra-usage warning fires once per SEAT's own entry ------------
+# Observed noise: the same unchanged seat re-alarmed firstmate on the watcher's
+# cadence for as long as the spend lasted. The de-dupe record held the whole set
+# of spending seats as one string and the warning fired whenever that string
+# changed, so a DIFFERENT seat entering or leaving - one task finishing was
+# enough - re-reported every seat in the set, including seats whose own state
+# had not moved since they were last reported.
+# Both directions are pinned: a seat whose state changes still alarms exactly
+# once, and a seat already reported stays silent through every later change to
+# the set.
+
+# A home whose ACTIVE seat is healthy, so nothing but the extra-usage warning
+# can speak: the trigger is configured (otherwise the pass reads no quota at
+# all) but the active seat sits far above it, and no floor is configured.
+extra_usage_case() {  # <name>
+  local rec
+  rec=$(make_seat_case "$1")
+  read_seat_case "$rec"
+  mkdir -p "$SEATS_DIR/alpha" "$SEATS_DIR/beta" "$SEATS_DIR/gamma"
+  seat_logged_in "$SPEC_DIR" "$SEATS_DIR/alpha" "$SEATS_DIR/beta" "$SEATS_DIR/gamma"
+  printf 'gamma\n' > "$HOME_DIR/config/claude-seat"
+  run_seat "$HOME_DIR" "$FAKEBIN" threshold 15 >/dev/null
+  run_seat "$HOME_DIR" "$FAKEBIN" extra-usage stop >/dev/null
+  seat_remaining "$SPEC_DIR" "$SEATS_DIR/gamma" 80
+}
+
+# One claude task recorded as running on <profile>.
+extra_usage_task() {  # <task-id> <profile>
+  printf 'harness=claude\nkind=ship\nclaude_seat=%s\n' "$2" > "$HOME_DIR/state/$1.meta"
+}
+
+# A seat whose plan quota is gone and whose account carries paid spend, which is
+# what fm_seat_in_extra_usage_from reads as drawing extra usage.
+extra_usage_spending() {  # <profile>
+  seat_remaining "$SPEC_DIR" "$1" 0
+  seat_extra_spend "$SPEC_DIR" "$1" 7
+}
+
+test_extra_usage_warning_is_once_per_seat_entry() {
+  local out
+  extra_usage_case extra-usage-entry
+  extra_usage_task alphatask "$SEATS_DIR/alpha"
+  extra_usage_spending "$SEATS_DIR/alpha"
+
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" auto)
+  assert_contains "$out" 'Claude seat in paid extra usage: alpha' \
+    "a seat entering paid extra usage must be reported once"
+
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" auto)
+  assert_not_contains "$out" 'paid extra usage' \
+    "an unchanged spending seat must not be reported again on the next poll"
+
+  # A SECOND seat enters. Only it is new, so only it is named: the first seat's
+  # own state has not changed and it has already been reported.
+  extra_usage_task betatask "$SEATS_DIR/beta"
+  extra_usage_spending "$SEATS_DIR/beta"
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" auto)
+  assert_contains "$out" 'Claude seat in paid extra usage: beta' \
+    "a second seat entering paid extra usage must be reported"
+  assert_not_contains "$out" 'usage: alpha' \
+    "a seat already reported must not be re-reported when another seat enters"
+
+  # The second seat's task ends, which shrinks the set. This is the exact change
+  # that used to re-alarm the seat that stayed.
+  rm -f "$HOME_DIR/state/betatask.meta"
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" auto)
+  assert_not_contains "$out" 'paid extra usage' \
+    "a seat leaving the set must not re-report the seat that stayed"
+
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" auto)
+  assert_not_contains "$out" 'paid extra usage' \
+    "the poll after a shrinking set must stay silent too"
+  pass "the paid-extra-usage warning reports each seat once on its own entry and stays silent for the rest"
+}
+
+# The still-waking half, and the one that decides whether the silence above was
+# safe: a seat whose own state changes must alarm, including the SAME seat
+# entering again after it left, with nothing re-armed by hand.
+test_extra_usage_warning_rearms_when_a_seat_leaves_and_returns() {
+  local out
+  extra_usage_case extra-usage-rearm
+  extra_usage_task alphatask "$SEATS_DIR/alpha"
+  extra_usage_spending "$SEATS_DIR/alpha"
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" auto)
+  assert_contains "$out" 'Claude seat in paid extra usage: alpha' \
+    "the first entry must be reported"
+
+  # The plan quota comes back, so the seat is no longer drawing extra usage.
+  printf '%s\t60\n%s\t80\n' "$SEATS_DIR/alpha" "$SEATS_DIR/gamma" > "$SPEC_DIR/remaining_map"
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" auto)
+  assert_not_contains "$out" 'paid extra usage' "a seat leaving extra usage must update the record silently"
+
+  # And it enters again: the record was re-armed by the silent departure.
+  printf '%s\t0\n%s\t80\n' "$SEATS_DIR/alpha" "$SEATS_DIR/gamma" > "$SPEC_DIR/remaining_map"
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" auto)
+  assert_contains "$out" 'Claude seat in paid extra usage: alpha' \
+    "a seat that left and returned must be reported again"
+  pass "a seat that leaves paid extra usage re-arms its own warning and is reported again when it returns"
+}
+
+
 echo "# all fm-seat tests passed"
 
 test_resting_worker_warning_is_once_per_entry
 test_resting_warning_offers_only_the_workers_own_codex_candidate
+test_extra_usage_warning_is_once_per_seat_entry
+test_extra_usage_warning_rearms_when_a_seat_leaves_and_returns

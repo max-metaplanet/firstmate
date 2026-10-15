@@ -777,6 +777,11 @@ test_watch_restart_rejects_reused_pid() {
   printf '%s\n' "$dir" > "$state/.watch.lock/fm-home"
   printf '%s\n' "$WATCH" > "$state/.watch.lock/watcher-path"
   printf '%s\n' "stale watcher identity" > "$state/.watch.lock/pid-identity"
+  # The downtime the restart publishes is announced only over durable work to
+  # drain (bin/fm-wake-lib.sh), so the row this recovery exists to carry is
+  # seeded here rather than assumed.
+  append_wake "$state" check reused-pid 'check: work the replaced watcher never delivered' \
+    || fail "could not seed the durable wake the restart recovery must carry"
   PATH="$fakebin:$PATH" FM_HOME="$dir" FM_POLL=5 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH_ARM" --restart > "$out" &
   pid=$!
   i=0
@@ -1098,6 +1103,10 @@ test_arm_starts_and_self_heals() {
       printf '%s\n' "$WATCH" > "$state/.watch.lock/watcher-path"
       printf '%s\n' "dead watcher identity" > "$state/.watch.lock/pid-identity"
       touch "$state/.last-watcher-beat"
+      # Same reason as the reused-pid case above: the reclaimed lock's downtime
+      # is announced only when there is durable work for that recovery to carry.
+      append_wake "$state" check dead-pid 'check: work the dead watcher never delivered' \
+        || fail "could not seed the durable wake the reclaim recovery must carry"
     fi
     PATH="$fakebin:$PATH" FM_HOME="$dir" FM_POLL=5 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH_ARM" > "$armout" &
     armpid=$!

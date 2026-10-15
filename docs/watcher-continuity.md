@@ -222,13 +222,15 @@ The away return brief treats a still-open handling episode as a wake in progress
 
 ### Announcement
 
-An unacknowledged downtime generation is announced at most once.
-The first recovery marks that generation announced, and later empty-queue arms leave it announced until durable work or interrupted handling makes recovery pending again.
+A downtime generation is announced only over durable work to drain, and then at most once.
+`check: rearm-resurface` tells its reader to drain the queue and nothing else, so an announcement over an empty queue can only spend a supervising turn that finds nothing; a watcher close no turn acknowledged - a restart, a take-over, a self-exit, a reclaimed lock - leaves exactly that state, and each one used to cost such a turn.
 A non-successor watcher start checks the durable queue and recovery marker under their locks.
-If an announced-but-unacknowledged episode has an empty queue, the arm leaves that generation announced, making repeated empty-queue arms idempotent while a long-poll source is merely alive.
-If a durable row arrived after the announcement, the arm opens a fresh pending downtime generation so buried work still resurfaces once.
+If the queue is empty, the arm announces nothing and leaves the generation exactly as it found it, so the recovery stays owed and repeated empty-queue arms are idempotent while a long-poll source is merely alive.
+That applies to a never-announced pending generation, which stays pending, and to an announced-but-unacknowledged one, which stays announced.
+With durable work queued, the first recovery marks the generation announced, and the first row to arrive after a silence announces that same generation once.
+If a durable row arrived after an announcement, the arm opens a fresh pending downtime generation so buried work still resurfaces once.
 A Codex foreground checkpoint skips the announced-episode reopen transition, so an already-announced generation stays announced while the checkpoint continues its bounded supervision.
-Its ordinary arm check still announces a never-announced generation, including one made pending by a durable queue append during the checkpoint.
+Its ordinary arm check still announces a never-announced generation that has queued work, including one made pending by a durable queue append during the checkpoint.
 
 ### Generation reuse
 
@@ -255,7 +257,8 @@ It is a non-fatal result that names its own remedy: re-drain, then acknowledge t
 
 The acknowledgement retires the marker only when no rows remain after sequence-bound consumption.
 A concurrently appended wake has a higher sequence, remains queued, and keeps the episode pending for presentation.
-Consequently, a watcher close during handling republishes the same generation as pending and forces one recovery turn even when no queue row remains, while the outstanding generation-bound acknowledgement stays valid.
+Consequently, a watcher close during handling republishes the same generation as pending, while the outstanding generation-bound acknowledgement stays valid.
+That republished generation is still announced only over queued rows: an interrupted handling turn leaves whatever it did not acknowledge in the queue, which is what a recovery turn can act on, while a turn that consumed its rows leaves a recovery turn nothing to present.
 An acknowledged episode does not freeze the generation, because the next downtime after it opens an episode of its own.
 
 ## Per-actor acknowledgement
@@ -456,7 +459,7 @@ They also prove that a legacy or handoff-phase watcher marker from an absent rep
 - Generation-bound acknowledgement.
 - A persistent live successor after recovery.
 - An idle live Lavish source that stays quiet until its real result wakes promptly.
-- An append that reopens an announced empty recovery.
+- An owed empty recovery that supervises in silence until work is appended, then surfaces it.
 - A watcher close inside the handling window that must leave the printed acknowledgement valid.
 - A re-arm whose recovery cycle is slowed after confirmation and must still surface rather than read as a watcher that stayed live.
 - The self-healing moved-generation acknowledgement that consumes its handled rows and names its remedy.

@@ -1119,11 +1119,11 @@ cmd_threshold_reached() {
 # switched to at once, and a pass whose facts differ - the whole vendor now
 # empty, a reset moved, the work routed elsewhere - reports again. Both clear
 # the moment the active seat reads back above the threshold.
-# It also carries `extra=<seats>`, the set of seats last seen drawing paid extra
-# usage, so that warning fires on ENTRY rather than on every poll for as long as
-# the spend lasts, and `lead=<seat>`, the seat whose move instruction was last
-# handed to FIRSTMATE ITSELF, so that instruction fires once per seat and not on
-# every poll. A crossing that could not move records `lead=blocked:<seat>:<to>`
+# It also carries `extra=<seat-tokens>`, the set of seats last seen drawing paid
+# extra usage, so that warning fires on each seat's own ENTRY rather than on
+# every poll for as long as the spend lasts, and `lead=<seat>`, the seat whose
+# move instruction was last handed to FIRSTMATE ITSELF, so that instruction
+# fires once per seat and not on every poll. A crossing that could not move records `lead=blocked:<seat>:<to>`
 # instead, which silences only that same blocker: every poll still re-asks, so
 # the instruction goes out as soon as the move becomes available.
 # `resting_workers=<seat:since ...>` records resting entries already warned
@@ -1163,15 +1163,49 @@ auto_record_set() {
   mv -f -- "$tmp" "$AUTO_RECORD" || { rm -f -- "$tmp"; return 1; }
 }
 
+# extra_record_token <seat-name>
+# The token the extra-usage record stores for one seat. A managed seat name
+# cannot contain whitespace (fm_seat_name_valid) and the ambient default seat is
+# `default`, but fm_seat_name_of_profile reports an UNMANAGED profile by its own
+# path, which can. The record is one space-separated line, so a token carrying a
+# space would be indistinguishable from two tokens; percent-escaping the few
+# bytes that would break the line keeps the mapping injective, which is what the
+# per-seat membership test below relies on.
+extra_record_token() {  # <seat-name>
+  local t=${1-}
+  t=${t//%/%25}
+  t=${t// /%20}
+  t=${t//$'\t'/%09}
+  t=${t//$'\n'/%0A}
+  t=${t//$'\r'/%0D}
+  printf '%s' "$t"
+}
+
+# extra_record_has <record> <token>
+# 0 when the space-separated extra-usage record already holds that seat's token.
+extra_record_has() {  # <record> <token>
+  case " $1 " in *" $2 "*) return 0 ;; esac
+  return 1
+}
+
 # warn_extra_usage_entry
 # The loud half of the stop policy. Firstmate cannot stop a running worker from
 # drawing paid extra usage, so the next best thing is to say so the moment it
 # starts: every seat a live task is running on is checked, and one notification
 # goes out through the home's single notification path
-# (bin/fm-usage-warner.sh notify) naming the seats now spending. Reported on
-# stdout too, because that line is what wakes firstmate.
+# (bin/fm-usage-warner.sh notify) naming the seats that have just entered extra
+# usage. Reported on stdout too, because that line is what wakes firstmate.
+#
+# ENTRY IS PER SEAT, NOT PER SET. Only a seat the record does not already hold
+# speaks; a seat it holds stays silent however the rest of the set moves, and a
+# seat that leaves updates the record silently, which is what re-arms its own
+# next entry. Comparing the whole set's STRING instead - what this did before -
+# made every change to the set re-alarm each seat in it, so one unrelated task
+# finishing was enough to wake firstmate again about a seat whose own state had
+# not changed since it was reported, on the watcher cadence, for as long as the
+# spend lasted.
 warn_extra_usage_entry() {
-  local meta seat label task_seats='' out spending='' summary previous
+  local meta seat name token task_seats='' out spending='' entering='' summary previous
   [ -d "$STATE" ] || return 0
   # Only a CLAUDE task's recorded profile is a Claude seat. A task on any other
   # harness records no seat and reads no Claude profile, so including it would
@@ -1189,25 +1223,25 @@ warn_extra_usage_entry() {
   task_seats=$(printf '%s' "$task_seats" | sort -u)
   [ -n "$task_seats" ] || return 0
   previous=$(auto_record_get extra) || previous=''
-  # A seat whose read gave no verdict, including one the pass ran out of time
-  # for, keeps its previous state rather than reading as having left extra
-  # usage, so a slow read can never re-arm the warning and wake twice.
   while IFS= read -r seat; do
-    label=${seat:-default profile}
+    name=$(fm_seat_name_of_profile "$seat")
+    token=$(extra_record_token "$name")
     if out=$(fm_seat_quota_json "$seat"); then
       fm_seat_in_extra_usage_from "$out" || continue
     else
-      case " $previous " in *" $label "*) ;; *) continue ;; esac
+      # A seat whose read gave no verdict, including one the pass ran out of
+      # time for, keeps its previous state rather than reading as having left
+      # extra usage, so a slow read can never re-arm the warning and wake twice.
+      extra_record_has "$previous" "$token" || continue
     fi
-    spending="${spending}${label} "
+    spending="${spending}${token} "
+    extra_record_has "$previous" "$token" || entering="${entering}${name} "
   done <<< "$task_seats"
   spending=${spending% }
-  [ "$spending" != "$previous" ] || return 0
-  auto_record_set extra "$spending"
-  # Only entry speaks. A seat that leaves extra usage updates the record
-  # silently, which is what re-arms the warning for its next entry.
-  [ -n "$spending" ] || return 0
-  summary="Claude seat in paid extra usage: $spending"
+  entering=${entering% }
+  [ "$spending" = "$previous" ] || auto_record_set extra "$spending"
+  [ -n "$entering" ] || return 0
+  summary="Claude seat in paid extra usage: $entering"
   printf '%s-seat: %s (a worker already running keeps this seat; only the account admin setting stops it drawing extra usage)\n' "$FM_SEAT_PROVIDER" "$summary"
   "$SCRIPT_DIR/fm-usage-warner.sh" notify "$summary" >/dev/null 2>&1 || true
 }
