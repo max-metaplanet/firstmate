@@ -135,14 +135,20 @@ WATCH_LOCK="$STATE/.watch.lock"
 BEAT="$STATE/.last-watcher-beat"
 # "Fresh" reuses the guard's threshold so there is one definition of liveness.
 GRACE=${FM_GUARD_GRACE:-300}
-# How long to wait for a freshly forked watcher to acquire the lock and beat.
-# Git Bash/MSYS pays a much higher fork cost while the watcher completes its
-# required pre-lock migration, so its bounded default covers that cold start.
+# Base window for a freshly forked watcher to acquire the lock and beat, sized
+# for an unloaded machine. Git Bash/MSYS pays a much higher fork cost while the
+# watcher completes its required pre-lock migration, so its bounded default
+# covers that cold start. The arm never waits exactly this long: the pre-lock
+# wait scales with the host's run queue and a watcher that already holds the lock
+# is followed to CONFIRM_CEILING (confirm_extend_deadline), because killing a
+# live starting watcher costs supervision and buys nothing.
 case "${OSTYPE:-}" in
   msys*|mingw*|cygwin*) ARM_CONFIRM_DEFAULT=30 ;;
   *) ARM_CONFIRM_DEFAULT=10 ;;
 esac
 CONFIRM_TIMEOUT=${FM_ARM_CONFIRM_TIMEOUT:-$ARM_CONFIRM_DEFAULT}
+case "$CONFIRM_TIMEOUT" in ''|*[!0-9]*|0) CONFIRM_TIMEOUT=$ARM_CONFIRM_DEFAULT ;; esac
+CONFIRM_CEILING=$(fm_arm_confirm_ceiling "$CONFIRM_TIMEOUT")
 # Poll interval while attached to an existing healthy watcher.
 ATTACH_POLL=${FM_ARM_ATTACH_POLL:-0.5}
 # The beacon age at which the watcher's own re-arm evicts a live holder; an
@@ -329,10 +335,11 @@ report_attached() {
 # Adapter-owned continuations normally win immediately, but the bound avoids a
 # false failure when process-close delivery and lock publication cross briefly.
 wait_for_healthy_successor() {
-  local deadline
+  local deadline budget
+  budget=$(fm_arm_confirm_budget "$CONFIRM_TIMEOUT")
   # date(1) exposes whole seconds. Add one rounding second so a timeout of one
   # second cannot collapse to a few milliseconds when called near a boundary.
-  deadline=$(( $(date +%s) + CONFIRM_TIMEOUT + 1 ))
+  deadline=$(( $(date +%s) + budget + 1 ))
   while :; do
     healthy_watcher && return 0
     [ "$(date +%s)" -ge "$deadline" ] && return 1
@@ -684,9 +691,45 @@ child_out=$(mktemp "$STATE/.watch-arm-output.XXXXXX") || {
   echo "watcher: FAILED - no live watcher with a fresh beacon"
   exit 1
 }
-# date(1) exposes whole seconds. Keep the configured confirmation budget from
-# collapsing when startup begins just before the next second boundary.
-deadline=$(( $(date +%s) + CONFIRM_TIMEOUT + 1 ))
+# A freshly forked watcher publishes its first liveness beacon only after it has
+# taken the singleton lock and finished startup, and BOTH phases stretch with the
+# host's load: at load average ~110 every fixed 10s window expired first, so the
+# arm TERMed healthy watchers and the home lost supervision. The wait therefore
+# follows what the child is observably doing:
+#
+#   - Before it holds the lock there is no progress to read, so the wait is the
+#     load-scaled pre-lock budget (fm_arm_confirm_budget), recomputed as the run
+#     queue grows rather than fixed at fork time.
+#   - Once the lock names this live child it IS this home's watcher, so wait for
+#     its beacon all the way to the ceiling. Killing it there would discard a
+#     watcher that is already holding the singleton.
+#
+# CONFIRM_CEILING bounds both, and a child that is gone is resolved by the loop's
+# own liveness branch, so a dead or wedged watcher is still an arm failure with
+# the existing failure line and the turn-end guard behind it.
+confirm_started_at=$(date +%s)
+confirm_pre_lock_deadline() {
+  local budget
+  budget=$(fm_arm_confirm_budget "$CONFIRM_TIMEOUT")
+  # date(1) exposes whole seconds. Keep the configured confirmation budget from
+  # collapsing when startup begins just before the next second boundary.
+  printf '%s\n' "$(( confirm_started_at + budget + 1 ))"
+}
+# Raise the live child's confirmation deadline when there is still something to
+# wait on. Returns 1 when the wait is spent, so the caller reports the failure.
+confirm_extend_deadline() {
+  local limit candidate
+  limit=$(( confirm_started_at + CONFIRM_CEILING + 1 ))
+  if fm_watcher_lock_matches_pid "$STATE" "$WATCH" "$child" "$FM_HOME"; then
+    candidate=$limit
+  else
+    candidate=$(confirm_pre_lock_deadline)
+    [ "$candidate" -le "$limit" ] || candidate=$limit
+  fi
+  [ "$candidate" -gt "$deadline" ] || return 1
+  deadline=$candidate
+}
+deadline=$(confirm_pre_lock_deadline)
 if [ -n "${FM_WATCH_PREDECESSOR_ARM_PID:-}" ]; then
   FM_WATCH_HANDLING_SUCCESSOR=1 "$WATCH" >"$child_out" &
 else
@@ -796,7 +839,13 @@ while :; do
     owned_child_finished "$rc"
     exit $?
   fi
-  [ "$(date +%s)" -ge "$deadline" ] && break
+  if [ "$(date +%s)" -ge "$deadline" ]; then
+    # Never TERM a watcher that is alive and still starting: extend while the
+    # load-scaled budget or the lock-holding ceiling leaves time to wait.
+    if ! fm_pid_alive "$child" || ! confirm_extend_deadline; then
+      break
+    fi
+  fi
   sleep 0.2
 done
 

@@ -1720,9 +1720,211 @@ EOF
   pass "watch-arm: the OpenCode arm plugin decides with the shared supervision predicate"
 }
 
+# --- fresh-watcher confirmation under load -------------------------------------
+# These cases drive the arm's OWN confirmation of a watcher it forked, so they
+# need a watcher whose startup timing the case controls. make_stub_watcher_home
+# builds a bin directory of symlinks to this checkout's real scripts with one
+# substitution - a stub bin/fm-watch.sh - so the arm under test is the real one,
+# resolving its watcher path, libraries, and state exactly as in production.
+#
+# The stub takes the real singleton lock and publishes the same ownership files
+# bin/fm-watch.sh does, so the arm's identity-strict health check can match it.
+# Its mode then decides what the arm has to judge:
+#   slow-beacon  - alive and holding the lock, first beacon delayed, then one
+#                  actionable wake so the confirmed arm closes its cycle.
+#   dead         - exits at once without lock or beacon.
+#   never-beacon - alive and holding the lock, never beacons.
+make_stub_watcher_home() {  # <case-name> <mode>
+  local name=$1 mode=$2 dir bin f
+  dir=$(make_case "$name")
+  bin="$dir/bin"
+  mkdir -p "$bin" "$dir/home/data" "$dir/home/config"
+  for f in "$ROOT"/bin/*; do
+    case "${f##*/}" in fm-watch.sh) continue ;; esac
+    ln -s "$f" "$bin/${f##*/}"
+  done
+  cat > "$bin/fm-watch.sh" <<STUB
+#!/usr/bin/env bash
+set -u
+STUB_MODE=$mode
+STUB
+  cat >> "$bin/fm-watch.sh" <<'STUB'
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+WATCH_PATH="$SCRIPT_DIR/fm-watch.sh"
+[ "$STUB_MODE" != dead ] || exit 0
+# shellcheck source=/dev/null
+. "$SCRIPT_DIR/fm-wake-lib.sh"
+LOCK="$STATE/.watch.lock"
+while ! fm_lock_try_acquire "$LOCK"; do sleep 0.05; done
+STUB_PID=${BASHPID:-$$}
+printf '%s\n' "$FM_HOME" > "$LOCK/fm-home"
+printf '%s\n' "$WATCH_PATH" > "$LOCK/watcher-path"
+printf '%s\n' "$(fm_pid_identity "$STUB_PID")" > "$LOCK/pid-identity"
+: > "$STATE/.stub-holds-lock"
+if [ "$STUB_MODE" = never-beacon ]; then
+  while :; do sleep 0.5; done
+fi
+sleep "${FM_STUB_BEACON_DELAY:-8}"
+touch "$STATE/.last-watcher-beat"
+# Keep beating until the arm has confirmed this watcher, so the case asserts the
+# confirmation the arm reached rather than racing its own 0.2s poll.
+STUB_WAIT=0
+STUB_CONFIRM_FILE=$(cat "${FM_STUB_CONFIRM_PATH_FILE:-/dev/null}" 2>/dev/null || true)
+while [ -n "$STUB_CONFIRM_FILE" ] && [ "$STUB_WAIT" -lt 300 ]; do
+  grep -q '^watcher: started ' "$STUB_CONFIRM_FILE" 2>/dev/null && break
+  touch "$STATE/.last-watcher-beat"
+  sleep 0.1
+  STUB_WAIT=$((STUB_WAIT + 1))
+done
+echo heartbeat
+exit 0
+STUB
+  chmod +x "$bin/fm-watch.sh"
+  printf '%s\n' "$dir"
+}
+
+# Run that home's arm in the background and set ARM_PID. Sets ARM_STARTED_AT so
+# a case can assert WHEN the arm gave up, not only that it did.
+ARM_STARTED_AT=
+start_stub_arm() {  # <dir> <confirm-base> <ceiling> <beacon-delay> <arm-out>
+  local dir=$1 confirm=$2 ceiling=$3 delay=$4 armout=$5
+  # The stub reads the arm's own output through this indirection rather than
+  # taking its path directly, so the launch below only ever writes that file.
+  printf '%s\n' "$armout" > "$dir/arm-output-path"
+  ARM_STARTED_AT=$(date +%s)
+  PATH="$dir/fakebin:$PATH" FM_HOME="$dir/home" FM_STATE_OVERRIDE="$dir/state" \
+    FM_POLL=1 FM_SIGNAL_GRACE=0 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
+    FM_ARM_CONFIRM_TIMEOUT="$confirm" FM_ARM_CONFIRM_CEILING="$ceiling" \
+    FM_STUB_BEACON_DELAY="$delay" FM_STUB_CONFIRM_PATH_FILE="$dir/arm-output-path" \
+    "$dir/bin/fm-watch-arm.sh" > "$armout" 2>&1 &
+  ARM_PID=$!
+}
+
+# A watcher that is alive and already holds the singleton, but whose first
+# beacon lands after the base confirmation window, used to be TERMed by the arm:
+# at load average ~110 every Stop-owned arm on this home ended exit 143 with
+# reason=confirmation-timeout and supervision stopped. The arm must follow a live
+# lock holder to its beacon instead, so the watcher it just started survives.
+test_slow_first_beacon_is_confirmed_not_killed() {
+  local dir armout status row
+  dir=$(make_stub_watcher_home slow-first-beacon slow-beacon)
+  armout="$dir/arm.out"
+
+  start_stub_arm "$dir" 5 60 12 "$armout"
+  wait_for_exit "$ARM_PID" 400
+  status=$?
+  [ "$status" -ne 124 ] || fail "the arm never resolved its slow-beacon watcher: $(cat "$armout")"
+  grep -Eq '^watcher: started pid=[0-9]+ \(beacon fresh\)' "$armout" \
+    || fail "the arm did not confirm a live watcher that beaconed late: $(cat "$armout")"
+  expect_code 0 "$status" "a confirmed slow-beacon cycle must exit zero: $(cat "$armout")"
+  grep -q '^heartbeat' "$armout" \
+    || fail "the confirmed cycle's own wake was not returned: $(cat "$armout")"
+  row=$(grep -c 'reason=confirmation-timeout' "$dir/state/.watch-cycle-exits.log" 2>/dev/null || true)
+  [ "$row" = 0 ] \
+    || fail "a confirmed watcher was still ledgered as a confirmation timeout: $(cat "$dir/state/.watch-cycle-exits.log")"
+  ! grep -q 'signal=TERM' "$dir/state/.watch-cycle-exits.log" 2>/dev/null \
+    || fail "the arm TERMed a watcher that was alive and starting: $(cat "$dir/state/.watch-cycle-exits.log")"
+  pass "watch-arm: a live watcher whose first beacon is late is confirmed, not killed"
+}
+
+# The load-tolerant wait must not blunt the failure path: a watcher that is gone
+# is resolved by the arm's own liveness branch, so it fails within the base
+# window rather than waiting out a ceiling four times longer, and the turn-end
+# guard keeps firing.
+test_dead_watcher_still_fails_the_arm_promptly() {
+  local dir armout status elapsed
+  dir=$(make_stub_watcher_home dead-watcher-prompt dead)
+  armout="$dir/arm.out"
+
+  start_stub_arm "$dir" 2 240 1 "$armout"
+  wait_for_exit "$ARM_PID" 900
+  status=$?
+  elapsed=$(( $(date +%s) - ARM_STARTED_AT ))
+  [ "$status" -ne 124 ] || fail "the arm never gave up on a dead watcher: $(cat "$armout")"
+  [ "$status" -ne 0 ] || fail "the arm reported success for a dead watcher: $(cat "$armout")"
+  grep -q '^watcher: FAILED' "$armout" \
+    || fail "the arm did not report the typed failure line: $(cat "$armout")"
+  [ "$elapsed" -lt 60 ] \
+    || fail "a dead watcher took ${elapsed}s to fail the arm, near its 240s ceiling"
+  ! grep -q 'reason=confirmation-timeout' "$dir/state/.watch-cycle-exits.log" 2>/dev/null \
+    || fail "a dead watcher was resolved by timing out the confirmation instead of by its liveness: $(cat "$dir/state/.watch-cycle-exits.log")"
+  [ ! -e "$dir/state/.last-watcher-beat" ] \
+    || fail "a dead watcher still published a liveness beacon"
+  pass "watch-arm: a dead watcher still fails the arm promptly"
+}
+
+# The ceiling is the bound that keeps the failure path honest: a watcher that
+# holds the lock but never beacons is wedged, so the arm waits past the base
+# window - proving the load-tolerant wait ran - and then still fails.
+test_watcher_that_never_beacons_fails_at_the_ceiling() {
+  local dir armout status elapsed lock_pid
+  dir=$(make_stub_watcher_home never-beacon-ceiling never-beacon)
+  armout="$dir/arm.out"
+
+  start_stub_arm "$dir" 4 8 1 "$armout"
+  wait_for_exit "$ARM_PID" 400
+  status=$?
+  elapsed=$(( $(date +%s) - ARM_STARTED_AT ))
+  [ "$status" -ne 124 ] || fail "the arm never reached its ceiling: $(cat "$armout")"
+  [ "$status" -ne 0 ] || fail "the arm confirmed a watcher that never beaconed: $(cat "$armout")"
+  grep -q '^watcher: FAILED - no live watcher with a fresh beacon' "$armout" \
+    || fail "the arm did not report the typed failure line: $(cat "$armout")"
+  [ -e "$dir/state/.stub-holds-lock" ] \
+    || fail "the fixture never reached the lock, so the ceiling was not what bounded the wait"
+  [ "$elapsed" -ge 5 ] \
+    || fail "the arm gave up after ${elapsed}s, inside its 4s base window rather than at its ceiling"
+  grep -q 'reason=confirmation-timeout' "$dir/state/.watch-cycle-exits.log" \
+    || fail "the spent ceiling was not ledgered: $(cat "$dir/state/.watch-cycle-exits.log")"
+  lock_pid=$(cat "$dir/state/.watch.lock/pid" 2>/dev/null || true)
+  [ -z "$lock_pid" ] || ! kill -0 "$lock_pid" 2>/dev/null \
+    || fail "the unconfirmed watcher is still running as pid $lock_pid"
+  pass "watch-arm: a watcher that never beacons still fails the arm at the ceiling"
+}
+
+# The pre-lock wait has no progress to read, so it is sized by the host's run
+# queue instead. Each case feeds a loadavg for a known multiple of this host's
+# CPU count, so the expected budget is exact without duplicating the arithmetic.
+test_pre_lock_confirm_budget_scales_with_load() {
+  local dir cpus lib budget
+  dir="$TMP_ROOT/confirm-budget-scaling"
+  lib="$ROOT/bin/fm-wake-lib.sh"
+  mkdir -p "$dir/proc" "$dir/state"
+  cpus=$(getconf _NPROCESSORS_ONLN 2>/dev/null || true)
+  case "$cpus" in ''|*[!0-9]*|0) cpus=$(sysctl -n hw.ncpu 2>/dev/null || true) ;; esac
+  case "$cpus" in ''|*[!0-9]*|0) cpus=1 ;; esac
+
+  budget_for() {  # <loadavg-first-field> [ceiling]
+    printf '%s 0.00 0.00 1/1 1\n' "$1" > "$dir/proc/loadavg"
+    FM_PROC_ROOT_OVERRIDE="$dir/proc" FM_ARM_CONFIRM_CEILING="${2:-180}" \
+      FM_STATE_OVERRIDE="$dir/state" bash -c '
+        # shellcheck source=/dev/null
+        . "$1"
+        fm_arm_confirm_budget "$2"
+      ' _ "$lib" 10
+  }
+
+  budget=$(budget_for 0.00)
+  [ "$budget" = 10 ] || fail "an idle host must keep the base window, got ${budget}s"
+  budget=$(budget_for "$cpus.00")
+  [ "$budget" = 10 ] || fail "one runnable process per CPU must keep the base window, got ${budget}s"
+  budget=$(budget_for "$((cpus * 11)).00")
+  [ "$budget" = 110 ] \
+    || fail "a run queue 11x the CPU count must widen the base window to 110s, got ${budget}s"
+  budget=$(budget_for "$((cpus * 11)).00" 50)
+  [ "$budget" = 50 ] || fail "the ceiling must clamp the scaled window, got ${budget}s"
+  budget=$(budget_for "not-a-load")
+  [ "$budget" = 10 ] || fail "an unreadable load average must keep the base window, got ${budget}s"
+  unset -f budget_for
+  pass "watch-arm: the pre-lock confirmation budget scales with the run queue and clamps"
+}
+
 test_attached_arm_reports_the_delivered_wake
 test_attached_arm_reports_the_delivered_wake_after_drain
 test_arm_refuses_an_unusable_launch_confirm_window
+test_slow_first_beacon_is_confirmed_not_killed
+test_dead_watcher_still_fails_the_arm_promptly
+test_watcher_that_never_beacons_fails_at_the_ceiling
+test_pre_lock_confirm_budget_scales_with_load
 test_arm_refuses_a_disposable_validation_checkout
 test_watcher_exits_when_its_state_directory_is_removed
 test_watcher_exits_when_its_home_is_removed
