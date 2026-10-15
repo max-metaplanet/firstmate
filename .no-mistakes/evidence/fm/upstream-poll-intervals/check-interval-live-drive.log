@@ -1,0 +1,5 @@
+[base] .last-check age=550s env=[] -> watcher woke: check: /tmp/fmhome.wCIh/state/task.check.sh: ready
+[new] .last-check age=550s env=[] -> no wake within 20s (sweep NOT fired)
+[new] .last-check age=610s env=[] -> watcher woke: check: /tmp/fmhome.nRao/state/task.check.sh: ready
+[new] .last-check age=550s env=[FM_CHECK_INTERVAL=300] -> watcher woke: check: /tmp/fmhome.fzH2/state/task.check.sh: ready
+[new] .last-check age=550s env=[FM_CHECK_INTERVAL=garbage] -> no wake within 20s (sweep NOT fired)

@@ -1,0 +1,6 @@
+[base] home-summary.json age=650s env=[] -> refreshed after ~1s
+[new] home-summary.json age=650s env=[] -> NOT refreshed within 12s
+[new] home-summary.json age=910s env=[] -> refreshed after ~1s
+[new] home-summary.json age=650s env=[FM_HOME_SUMMARY_INTERVAL=300] -> refreshed after ~1s
+[new] home-summary.json age=650s env=[FM_HOME_SUMMARY_INTERVAL=0] -> NOT refreshed within 12s
+[new] home-summary.json age=910s env=[FM_HOME_SUMMARY_INTERVAL=0] -> refreshed after ~1s
