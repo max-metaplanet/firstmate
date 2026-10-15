@@ -1,0 +1,10 @@
+## lab home /var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.kme27G (no timeout/gtimeout on host: none)
+S0 first poll, no marker: rc=0 timed re-exec: YES (perl) marker_mtime=1792033807
+S1 idle not-due poll: rc=0 timed re-exec: no marker_mtime=1792033807 (unchanged = no scan)
+S2 marker backdated to 1577854800 (due): rc=0 timed re-exec: YES (perl) marker_mtime=1792033807 (rewritten = scan ran)
+S3 --startup with fresh marker 1792033807: rc=0 timed re-exec: YES (perl) marker_mtime=1792033808 (rewritten = bypass honored)
+held
+S4 not-due poll while scan lock is held by live pid 93922: rc=0 took=0s timed re-exec: no (returns without waiting on lock)
+S5 DUE poll while scan lock is held: rc=0 took=4s timed re-exec: YES (perl) marker_mtime=1577854800 vs 1577854800 (blocked on lock, backstop at budget+1, no scan)
+S6 marker is a symlink to a fresh file: rc=0 timed re-exec: YES (perl) marker_is_symlink=no target_untouched=yes
+## lab removed

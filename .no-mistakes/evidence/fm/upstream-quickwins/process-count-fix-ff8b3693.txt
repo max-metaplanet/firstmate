@@ -1,0 +1,7 @@
+== fix-ff8b3693: lab home /var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.dxi1At, timeout=none gtimeout=none
+first (due, no marker) poll rc=0  marker: epoch=1792033782 cursor= 
+idle not-due poll rc=0; external commands via PATH (6):
+      1 bash
+      1 date
+      2 mkdir
+      2 uname

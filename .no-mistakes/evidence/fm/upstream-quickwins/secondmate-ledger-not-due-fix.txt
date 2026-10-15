@@ -1,0 +1,8 @@
+M0 first poll in secondmate home (due): rc=0 timed re-exec: YES
+M1 second poll (not due): rc=0 timed re-exec: no; reported records: 0
+M2 not-due poll after child wrote a terminal 'failed:' ledger line: rc=0 timed re-exec: no
+   mate receipts: d6995b5741d47bf4ac5706412f1e6630.reported
+   parent channel files containing the child outcome:
+     <parent>/state/mate.status
+     line: failed [key=child-outcome-child-failed-d6995b57] [at=1792033836]: child child failed: build broke on the lab fixture pr=https://example.test/owner/repo/pull/1 mode=no-mistakes yolo=off
+## labs removed
