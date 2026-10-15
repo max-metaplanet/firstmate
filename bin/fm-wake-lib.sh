@@ -141,6 +141,74 @@ fm_poll_derived_grace() {
   printf '%s\n' "$derived"
 }
 
+# fm_load_per_cpu_centi
+# The 1-minute load average divided by the online CPU count, in hundredths: 100
+# means one runnable process per CPU, 1100 means eleven. Prints 100 when the
+# platform exposes neither figure, so a load-scaled budget keeps its unscaled
+# base rather than guessing. Reads the compatible /proc first (honouring
+# FM_PROC_ROOT_OVERRIDE like fm_pid_identity), then sysctl, then uptime, and does
+# its own fixed-point arithmetic so no caller depends on a float-capable tool.
+fm_load_per_cpu_centi() {
+  local proc_root load cpus whole frac
+  proc_root=${FM_PROC_ROOT_OVERRIDE:-/proc}
+  load=
+  if [ -r "$proc_root/loadavg" ]; then
+    read -r load _ < "$proc_root/loadavg" 2>/dev/null || load=
+  fi
+  if [ -z "$load" ]; then
+    load=$(sysctl -n vm.loadavg 2>/dev/null | tr -d '{}' | awk 'NF { print $1; exit }') || load=
+  fi
+  if [ -z "$load" ]; then
+    load=$(uptime 2>/dev/null | sed -n 's/.*load average[s]*:[^0-9]*\([0-9][0-9]*\(\.[0-9][0-9]*\)\{0,1\}\).*/\1/p') || load=
+  fi
+  case "$load" in
+    ''|*[!0-9.]*) printf '100\n'; return 0 ;;
+    *.*.*) printf '100\n'; return 0 ;;
+    *.*) whole=${load%%.*}; frac=${load#*.} ;;
+    *) whole=$load; frac=0 ;;
+  esac
+  [ -n "$whole" ] || whole=0
+  frac="${frac}00"
+  cpus=$(getconf _NPROCESSORS_ONLN 2>/dev/null) || cpus=
+  case "$cpus" in ''|*[!0-9]*|0) cpus=$(sysctl -n hw.ncpu 2>/dev/null) || cpus= ;; esac
+  case "$cpus" in ''|*[!0-9]*|0) cpus=1 ;; esac
+  printf '%s\n' $(( (whole * 100 + 10#${frac:0:2}) / cpus ))
+}
+
+# fm_arm_confirm_ceiling [base-seconds]
+# Hard upper bound on any arm confirmation wait: FM_ARM_CONFIRM_CEILING, else
+# 180 seconds, never below the base window. It is bounded on purpose - past it an
+# unconfirmed watcher is reported as an arm failure, so the existing failure path
+# and the turn-end guard keep working against a dead or wedged watcher.
+fm_arm_confirm_ceiling() {
+  local base=${1:-${FM_ARM_CONFIRM_TIMEOUT:-10}} ceiling
+  case "$base" in ''|*[!0-9]*|0) base=10 ;; esac
+  ceiling=${FM_ARM_CONFIRM_CEILING:-180}
+  case "$ceiling" in ''|*[!0-9]*|0) ceiling=180 ;; esac
+  [ "$ceiling" -ge "$base" ] || ceiling=$base
+  printf '%s\n' "$ceiling"
+}
+
+# fm_arm_confirm_budget [base-seconds]
+# Seconds an arm may wait for a watcher it cannot yet see making progress - a
+# fresh child before it takes the singleton lock, or an adapter-owned successor
+# before it appears. The base window (FM_ARM_CONFIRM_TIMEOUT) sizes an unloaded
+# machine; the budget then grows with the run queue per CPU, because a loaded
+# host delays that whole pre-lock startup and a fixed short window kills a
+# watcher that is only waiting to be scheduled. Clamped to fm_arm_confirm_ceiling.
+# bin/fm-watch-arm.sh and bin/fm-claude-stop-autoarm.sh read this one definition.
+fm_arm_confirm_budget() {
+  local base=${1:-${FM_ARM_CONFIRM_TIMEOUT:-10}} ceiling centi scaled
+  case "$base" in ''|*[!0-9]*|0) base=10 ;; esac
+  ceiling=$(fm_arm_confirm_ceiling "$base")
+  centi=$(fm_load_per_cpu_centi)
+  [ "$centi" -ge 100 ] || centi=100
+  scaled=$(( (base * centi) / 100 ))
+  [ "$scaled" -ge "$base" ] || scaled=$base
+  [ "$scaled" -le "$ceiling" ] || scaled=$ceiling
+  printf '%s\n' "$scaled"
+}
+
 # fm_watcher_stall_bound [poll-seconds]
 # Hard bound on a live watcher holder's beacon age: FM_WATCHER_STALL_BOUND,
 # defaulting to 3x the watcher's stale grace (FM_WATCHER_STALE_GRACE, else

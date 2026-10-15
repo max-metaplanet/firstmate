@@ -379,6 +379,16 @@ Branch acknowledgement retiring the check-row receipts of exactly its granted se
 An attached arm follows verified identity-matched successors and resolves the same way when that chain ends without one.
 It does this because it holds no handle on the watcher's stdout and cannot read the reason line itself.
 
+### Confirming a fresh watcher
+
+A watcher publishes its first liveness beacon only after it has taken the singleton lock and finished startup, and both phases stretch with the host's load.
+The arm therefore sizes that wait by what its child is observably doing rather than by one fixed window.
+Before the child holds the lock there is no progress to read, so the wait is `FM_ARM_CONFIRM_TIMEOUT` widened by the run queue per CPU and recomputed as that queue grows.
+Once the lock names that live child it is this home's watcher, so the arm follows it to its beacon rather than killing the watcher it has just started.
+`FM_ARM_CONFIRM_CEILING` bounds both waits at 180 seconds by default, and a child that has exited is resolved by the arm's own liveness check, so a dead or wedged watcher is still an arm failure carrying the typed failure line and the turn-end guard behind it.
+A fixed short window is what made a host at load average about 110 end every arm with `reason=confirmation-timeout` after TERMing a healthy watcher, which is why neither wait may go back to one.
+`bin/fm-wake-lib.sh`'s `fm_arm_confirm_budget` and `fm_arm_confirm_ceiling` are the single owners of both figures, and `bin/fm-claude-stop-autoarm.sh` reads the same budget before reporting an unconfirmed handling successor.
+
 ### Terminal-delivery ledger
 
 Before releasing its singleton lock after printing an actionable reason, the watcher records that reason with its PID and process identity in `state/.watch-deliveries.log`.
@@ -463,6 +473,8 @@ They also prove that a legacy or handoff-phase watcher marker from an absent rep
 - The already-acknowledged confirmation no-op for a matching generation, with its mismatched-generation, dead-pid, and lock-mismatch rejections preserved.
 - The manual-restart generation churn that makes a confirmation for the churned generation report a mismatch, which an arm check without a reopen leaves in place.
 - A take-over that stays quiet after a confirmed TERM, still surfaces queued work and self-exit downtime, and attaches without stopping a cycle the named arm does not own.
+- A live watcher whose first beacon lands after the base window, which must be confirmed rather than TERMed, against a dead watcher that still fails promptly and a lock-holding watcher that never beacons and still fails at the ceiling.
+- The pre-lock confirmation budget's scaling with the run queue per CPU, its ceiling clamp, and its fallback to the base window when the load average is unreadable.
 - The disposable-checkout arm refusal.
 - The home-gone and state-gone watcher exits.
 - The test reaper that stops a watcher armed for a temporary home.

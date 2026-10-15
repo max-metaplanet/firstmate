@@ -385,7 +385,10 @@ run_arm() {  # <output file, or empty for none>
 SUCCESSOR_FAILURE=
 start_handling_successor() {  # <closed-arm-pid>
   local out pid deadline budget line monitor_was_on=0
-  budget=${FM_ARM_CONFIRM_TIMEOUT:-30}
+  # The arm's own pre-lock budget, which grows with the host's run queue, so a
+  # loaded machine is not reported as an unconfirmed successor while the arm is
+  # still legitimately waiting for its watcher (bin/fm-wake-lib.sh).
+  budget=$(fm_arm_confirm_budget "${FM_ARM_CONFIRM_TIMEOUT:-30}")
   case "$budget" in ''|*[!0-9]*) budget=30 ;; esac
   if ! out=$(mktemp "$STATE/.claude-autoarm-successor.XXXXXX"); then
     SUCCESSOR_FAILURE='The handling successor did not confirm a live watcher (its output file could not be created); this handling turn runs uncovered until the next turn end re-arms.'
