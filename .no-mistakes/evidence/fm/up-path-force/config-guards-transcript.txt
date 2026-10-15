@@ -1,0 +1,16 @@
+== path_force: "deploy"
+error: malformed rules file: /var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-dr-lab.wgx4BA/home-bad/config/crew-dispatch.json - path_force must be "deployment-config" when present
+exit=2
+== path_force: true
+error: malformed rules file: /var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-dr-lab.wgx4BA/home-bad/config/crew-dispatch.json - path_force must be "deployment-config" when present
+exit=2
+== two rules declare path_force
+error: malformed rules file: /var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-dr-lab.wgx4BA/home-bad/config/crew-dispatch.json - at most one rule may declare path_force
+exit=2
+== reordered home: careful rule moved to position 1
+dispatch-resolve:
+  status: clear
+  decided_by: path-forced
+  rule: rule_1 (The task is a big or ambiguous multi-file feature, a risky r)
+  forced_path: infra/prod/main.tf   forced_pattern: *.tf or *.tfvars
+network: no curl call

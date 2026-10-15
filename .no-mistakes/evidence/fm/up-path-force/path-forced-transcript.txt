@@ -1,0 +1,105 @@
+===== brief: vercel =====
+Target paths: vercel.json
+$ bin/fm-dispatch-resolve.sh briefs/vercel.md --project webapp
+dispatch-resolve:
+  status: clear
+  decided_by: path-forced
+  rule: rule_3 (The task is a big or ambiguous multi-file feature, a risky r)
+  forced_path: vercel.json   forced_pattern: vercel.json
+  note: rule matched
+  candidate: claude:claude-sonnet-5  provider=claude  scope=all_models  remaining=79%  spendPriority=-0.4  runway=projected_exhaustion  -> eligible
+  candidate: codex:gpt-5.5  provider=codex  scope=all_models  remaining=88%  spendPriority=0.6  runway=through_reset  -> eligible
+  profile: --harness 'codex' --model 'gpt-5.5' --effort 'high'
+exit=0
+network: no curl call (no Jev request)
+
+===== brief: terraform =====
+Target paths: infra/prod/main.tf
+$ bin/fm-dispatch-resolve.sh briefs/terraform.md --project webapp
+dispatch-resolve:
+  status: clear
+  decided_by: path-forced
+  rule: rule_3 (The task is a big or ambiguous multi-file feature, a risky r)
+  forced_path: infra/prod/main.tf   forced_pattern: *.tf or *.tfvars
+  note: rule matched
+  candidate: claude:claude-sonnet-5  provider=claude  scope=all_models  remaining=79%  spendPriority=-0.4  runway=projected_exhaustion  -> eligible
+  candidate: codex:gpt-5.5  provider=codex  scope=all_models  remaining=88%  spendPriority=0.6  runway=through_reset  -> eligible
+  profile: --harness 'codex' --model 'gpt-5.5' --effort 'high'
+exit=0
+network: no curl call (no Jev request)
+
+===== brief: k8s-ingress =====
+Target paths: deploy/web-ingress.yaml
+$ bin/fm-dispatch-resolve.sh briefs/k8s-ingress.md --project webapp
+dispatch-resolve:
+  status: clear
+  decided_by: path-forced
+  rule: rule_3 (The task is a big or ambiguous multi-file feature, a risky r)
+  forced_path: deploy/web-ingress.yaml   forced_pattern: Kubernetes or ingress manifest
+  note: rule matched
+  candidate: claude:claude-sonnet-5  provider=claude  scope=all_models  remaining=79%  spendPriority=-0.4  runway=projected_exhaustion  -> eligible
+  candidate: codex:gpt-5.5  provider=codex  scope=all_models  remaining=88%  spendPriority=0.6  runway=through_reset  -> eligible
+  profile: --harness 'codex' --model 'gpt-5.5' --effort 'high'
+exit=0
+network: no curl call (no Jev request)
+
+===== brief: helm =====
+Target paths: charts/web/values-prod.yaml
+$ bin/fm-dispatch-resolve.sh briefs/helm.md --project webapp
+dispatch-resolve:
+  status: clear
+  decided_by: path-forced
+  rule: rule_3 (The task is a big or ambiguous multi-file feature, a risky r)
+  forced_path: charts/web/values-prod.yaml   forced_pattern: Helm chart manifest
+  note: rule matched
+  candidate: claude:claude-sonnet-5  provider=claude  scope=all_models  remaining=79%  spendPriority=-0.4  runway=projected_exhaustion  -> eligible
+  candidate: codex:gpt-5.5  provider=codex  scope=all_models  remaining=88%  spendPriority=0.6  runway=through_reset  -> eligible
+  profile: --harness 'codex' --model 'gpt-5.5' --effort 'high'
+exit=0
+network: no curl call (no Jev request)
+
+===== brief: argocd =====
+Target paths: ops/argocd/apps/web-application.yaml
+$ bin/fm-dispatch-resolve.sh briefs/argocd.md --project webapp
+dispatch-resolve:
+  status: clear
+  decided_by: path-forced
+  rule: rule_3 (The task is a big or ambiguous multi-file feature, a risky r)
+  forced_path: ops/argocd/apps/web-application.yaml   forced_pattern: ArgoCD manifest directory
+  note: rule matched
+  candidate: claude:claude-sonnet-5  provider=claude  scope=all_models  remaining=79%  spendPriority=-0.4  runway=projected_exhaustion  -> eligible
+  candidate: codex:gpt-5.5  provider=codex  scope=all_models  remaining=88%  spendPriority=0.6  runway=through_reset  -> eligible
+  profile: --harness 'codex' --model 'gpt-5.5' --effort 'high'
+exit=0
+network: no curl call (no Jev request)
+
+===== brief: cfn =====
+Target paths: stacks/api.cfn.yaml
+$ bin/fm-dispatch-resolve.sh briefs/cfn.md --project webapp
+dispatch-resolve:
+  status: clear
+  decided_by: path-forced
+  rule: rule_3 (The task is a big or ambiguous multi-file feature, a risky r)
+  forced_path: stacks/api.cfn.yaml   forced_pattern: CloudFormation template
+  note: rule matched
+  candidate: claude:claude-sonnet-5  provider=claude  scope=all_models  remaining=79%  spendPriority=-0.4  runway=projected_exhaustion  -> eligible
+  candidate: codex:gpt-5.5  provider=codex  scope=all_models  remaining=88%  spendPriority=0.6  runway=through_reset  -> eligible
+  profile: --harness 'codex' --model 'gpt-5.5' --effort 'high'
+exit=0
+network: no curl call (no Jev request)
+
+===== brief: release =====
+Target paths: README.md scripts/release.sh
+$ bin/fm-dispatch-resolve.sh briefs/release.md --project webapp
+dispatch-resolve:
+  status: clear
+  decided_by: path-forced
+  rule: rule_3 (The task is a big or ambiguous multi-file feature, a risky r)
+  forced_path: scripts/release.sh   forced_pattern: deploy or release script
+  note: rule matched
+  candidate: claude:claude-sonnet-5  provider=claude  scope=all_models  remaining=79%  spendPriority=-0.4  runway=projected_exhaustion  -> eligible
+  candidate: codex:gpt-5.5  provider=codex  scope=all_models  remaining=88%  spendPriority=0.6  runway=through_reset  -> eligible
+  profile: --harness 'codex' --model 'gpt-5.5' --effort 'high'
+exit=0
+network: no curl call (no Jev request)
+

@@ -1,0 +1,84 @@
+===== brief: prose-only  (home: home) =====
+(no Target paths line)
+$ bin/fm-dispatch-resolve.sh briefs/prose-only.md --project webapp
+dispatch-resolve:
+  status: clear
+  model: jev-1.13.0   latency_ms: 634   tokens: 538/53
+  rule: rule_2 (The task is a trivial mechanical edit such as a rote rename,)   confidence: 1.0
+  probabilities: rule_1=0.0 rule_2=1.0 rule_3=0.0 default=0.0
+  note: rule matched
+  candidate: claude:haiku  provider=claude  scope=all_models  remaining=79%  spendPriority=-0.4  runway=projected_exhaustion  -> eligible
+  profile: --harness 'claude' --model 'haiku' --effort 'low'
+exit=0
+network: curl called 1 time(s) (Jev request)
+
+===== brief: nondeploy  (home: home) =====
+Target paths: src/components/charts/Bar.tsx docs/deploy.md
+$ bin/fm-dispatch-resolve.sh briefs/nondeploy.md --project webapp
+dispatch-resolve:
+  status: clear
+  model: jev-1.13.0   latency_ms: 316   tokens: 545/53
+  rule: rule_2 (The task is a trivial mechanical edit such as a rote rename,)   confidence: 1.0
+  probabilities: rule_1=0.0 rule_2=1.0 rule_3=0.0 default=0.0
+  note: rule matched
+  candidate: claude:haiku  provider=claude  scope=all_models  remaining=79%  spendPriority=-0.4  runway=projected_exhaustion  -> eligible
+  profile: --harness 'claude' --model 'haiku' --effort 'low'
+exit=0
+network: curl called 1 time(s) (Jev request)
+
+===== brief: backtick  (home: home) =====
+Target paths: `infra/k8s/app.yaml`
+$ bin/fm-dispatch-resolve.sh briefs/backtick.md --project webapp
+dispatch-resolve:
+  status: clear
+  model: jev-1.13.0   latency_ms: 208   tokens: 540/53
+  rule: rule_2 (The task is a trivial mechanical edit such as a rote rename,)   confidence: 1.0
+  probabilities: rule_1=0.0 rule_2=1.0 rule_3=0.0 default=0.0
+  note: rule matched
+  candidate: claude:haiku  provider=claude  scope=all_models  remaining=79%  spendPriority=-0.4  runway=projected_exhaustion  -> eligible
+  profile: --harness 'claude' --model 'haiku' --effort 'low'
+exit=0
+network: curl called 1 time(s) (Jev request)
+
+===== brief: comma  (home: home) =====
+Target paths: k8s/a.yaml, src/x.ts
+$ bin/fm-dispatch-resolve.sh briefs/comma.md --project webapp
+dispatch-resolve:
+  status: clear
+  model: jev-1.13.0   latency_ms: 192   tokens: 542/53
+  rule: rule_2 (The task is a trivial mechanical edit such as a rote rename,)   confidence: 1.0
+  probabilities: rule_1=0.0 rule_2=1.0 rule_3=0.0 default=0.0
+  note: rule matched
+  candidate: claude:haiku  provider=claude  scope=all_models  remaining=79%  spendPriority=-0.4  runway=projected_exhaustion  -> eligible
+  profile: --harness 'claude' --model 'haiku' --effort 'low'
+exit=0
+network: curl called 1 time(s) (Jev request)
+
+===== brief: bullet  (home: home) =====
+- Target paths: vercel.json
+$ bin/fm-dispatch-resolve.sh briefs/bullet.md --project webapp
+dispatch-resolve:
+  status: clear
+  model: jev-1.13.0   latency_ms: 192   tokens: 537/53
+  rule: rule_2 (The task is a trivial mechanical edit such as a rote rename,)   confidence: 1.0
+  probabilities: rule_1=0.0 rule_2=1.0 rule_3=0.0 default=0.0
+  note: rule matched
+  candidate: claude:haiku  provider=claude  scope=all_models  remaining=79%  spendPriority=-0.4  runway=projected_exhaustion  -> eligible
+  profile: --harness 'claude' --model 'haiku' --effort 'low'
+exit=0
+network: curl called 1 time(s) (Jev request)
+
+===== brief: vercel  (home: home-noforce) =====
+Target paths: vercel.json
+$ bin/fm-dispatch-resolve.sh briefs/vercel.md --project webapp
+dispatch-resolve:
+  status: clear
+  model: jev-1.13.0   latency_ms: 326   tokens: 536/53
+  rule: rule_2 (The task is a trivial mechanical edit such as a rote rename,)   confidence: 1.0
+  probabilities: rule_1=0.0 rule_2=1.0 rule_3=0.0 default=0.0
+  note: rule matched
+  candidate: claude:haiku  provider=claude  scope=all_models  remaining=79%  spendPriority=-0.4  runway=projected_exhaustion  -> eligible
+  profile: --harness 'claude' --model 'haiku' --effort 'low'
+exit=0
+network: curl called 1 time(s) (Jev request)
+
