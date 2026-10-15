@@ -845,44 +845,47 @@ test_scan_marker_replaces_symlink_safely() {
 }
 
 # An idle poll whose cadence is not yet due must return without the timed
-# re-exec (perl on a host with no timeout/gtimeout), while a due poll still
-# goes through it, and a secondmate home still runs ledger_pass on every poll
-# regardless of cadence.
+# re-exec (timeout, gtimeout or perl, whichever the host has), while a due
+# poll still goes through it, and a secondmate home still runs ledger_pass on
+# every poll regardless of cadence.
 test_idle_not_due_poll_skips_timed_reexec() {
-  local perl_log out rc
+  local reexec_log out rc tool real
 
   make_world idle-fast-path; bind_secondmate local; write_mate_meta
-  perl_log="$WORLD/perl-invocations.log"
-  : > "$perl_log"
-  cat > "$WORLD/fakebin/perl" <<SH
+  reexec_log="$WORLD/timed-reexec-invocations.log"
+  : > "$reexec_log"
+  for tool in timeout gtimeout perl; do
+    real=$(command -v "$tool") || continue
+    cat > "$WORLD/fakebin/$tool" <<SH
 #!/usr/bin/env bash
-printf 'call\n' >> '$perl_log'
-exec /usr/bin/perl "\$@"
+printf '$tool\n' >> '$reexec_log'
+exec '$real' "\$@"
 SH
-  chmod +x "$WORLD/fakebin/perl"
+    chmod +x "$WORLD/fakebin/$tool"
+  done
 
   # No marker exists yet: the first poll is due and must still go through the
   # timed re-exec.
   run_reconcile "$MATE" >/dev/null
-  [ -s "$perl_log" ] || fail "a due poll with no marker yet did not invoke the timed re-exec"
+  [ -s "$reexec_log" ] || fail "a due poll with no marker yet did not invoke the timed re-exec"
 
   # The marker is now fresh, so the very next poll is not due.
-  : > "$perl_log"
+  : > "$reexec_log"
   out=$(run_reconcile "$MATE") || rc=$?
   [ "${rc:-0}" -eq 0 ] || fail "idle not-due poll exited ${rc:-0}, not 0"
   [ -z "$out" ] || fail "idle not-due poll produced unexpected output: $out"
-  [ ! -s "$perl_log" ] \
-    || fail "idle not-due poll still forked the timed re-exec: $(cat "$perl_log")"
+  [ ! -s "$reexec_log" ] \
+    || fail "idle not-due poll still forked the timed re-exec: $(cat "$reexec_log")"
 
   # ledger_pass must still run every poll in a secondmate home: a freshly
   # terminal child is delivered on this same not-due poll.
   write_child "$MATE" child 'done: PR https://example.test/owner/repo/pull/1 checks green'
-  : > "$perl_log"
+  : > "$reexec_log"
   run_reconcile "$MATE" >/dev/null
   reported_outcome_key "$MATE" child done >/dev/null \
     || fail "idle not-due poll in a secondmate home did not still run ledger_pass"
-  [ ! -s "$perl_log" ] \
-    || fail "ledger_pass on an idle not-due poll unexpectedly forked the timed re-exec: $(cat "$perl_log")"
+  [ ! -s "$reexec_log" ] \
+    || fail "ledger_pass on an idle not-due poll unexpectedly forked the timed re-exec: $(cat "$reexec_log")"
 
   pass "an idle not-due poll skips the timed re-exec while ledger_pass still runs every poll and a due poll still scans"
 }
