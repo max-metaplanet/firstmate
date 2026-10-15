@@ -1,0 +1,238 @@
+== lab tmux windows (private socket /var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.r6mAhQ/tmux)
+fm-ship-a sleep
+fm-scout-a sleep
+fm-paused-old sleep
+fm-paused-recent sleep
+fm-sm-local zsh
+base exit=0 jq_execs=160
+target-noshortcircuit exit=0 jq_execs=90
+target-default exit=0 jq_execs=90
+== byte-identity (base vs target, short-circuit disabled, ignoring generated):
+277c277
+<     "fm_root": "/tmp/fmbase.0UXA/wt",
+---
+>     "fm_root": "/Users/max/.no-mistakes/worktrees/b730d76738a7/01M4Z7P9KEAK51MRH171C4GQXP",
+309,310c309,310
+<           "age_seconds": 1,
+<           "observed_at": "2026-10-15T07:58:06Z",
+---
+>           "age_seconds": 8,
+>           "observed_at": "2026-10-15T07:58:13Z",
+365c365
+<           "observed_at": "2026-10-15T07:58:06Z",
+---
+>           "observed_at": "2026-10-15T07:58:13Z",
+389,390c389,390
+<           "age_seconds": 1,
+<           "observed_at": "2026-10-15T07:58:06Z",
+---
+>           "age_seconds": 8,
+>           "observed_at": "2026-10-15T07:58:13Z",
+445c445
+<           "observed_at": "2026-10-15T07:58:06Z",
+---
+>           "observed_at": "2026-10-15T07:58:13Z",
+456c456
+<         "observed_at": "2026-10-15T07:58:06Z",
+---
+>         "observed_at": "2026-10-15T07:58:13Z",
+538c538
+<         "observed_at": "2026-10-15T07:58:06Z",
+---
+>         "observed_at": "2026-10-15T07:58:13Z",
+547c547
+<         "observed_at": "2026-10-15T07:58:06Z",
+---
+>         "observed_at": "2026-10-15T07:58:13Z",
+652c652
+<         "observed_at": "2026-10-15T07:58:06Z",
+---
+>         "observed_at": "2026-10-15T07:58:13Z",
+661c661
+<         "observed_at": "2026-10-15T07:58:06Z",
+---
+>         "observed_at": "2026-10-15T07:58:13Z",
+766c766
+<         "observed_at": "2026-10-15T07:58:06Z",
+---
+>         "observed_at": "2026-10-15T07:58:13Z",
+775c775
+<         "observed_at": "2026-10-15T07:58:06Z",
+---
+>         "observed_at": "2026-10-15T07:58:13Z",
+880c880
+<         "observed_at": "2026-10-15T07:58:06Z",
+---
+>         "observed_at": "2026-10-15T07:58:13Z",
+889c889
+<         "observed_at": "2026-10-15T07:58:06Z",
+---
+>         "observed_at": "2026-10-15T07:58:13Z",
+996c996
+<         "observed_at": "2026-10-15T07:58:06Z",
+---
+>         "observed_at": "2026-10-15T07:58:13Z",
+1005c1005
+<         "observed_at": "2026-10-15T07:58:06Z",
+---
+>         "observed_at": "2026-10-15T07:58:13Z",
+1072c1072
+<         "observed_at": "2026-10-15T07:58:06Z",
+---
+>         "observed_at": "2026-10-15T07:58:13Z",
+1081c1081
+<         "observed_at": "2026-10-15T07:58:06Z",
+---
+>         "observed_at": "2026-10-15T07:58:13Z",
+1148c1148
+<         "observed_at": "2026-10-15T07:58:06Z",
+---
+>         "observed_at": "2026-10-15T07:58:13Z",
+1157c1157
+<         "observed_at": "2026-10-15T07:58:06Z",
+---
+>         "observed_at": "2026-10-15T07:58:13Z",
+== current_state per task:
+-- base
+parked-old	working	pane	harness busy (claude-hook)
+paused-old	working	pane	harness busy (claude-hook)
+paused-recent	working	pane	harness busy (claude-hook)
+scout-a	unknown	pane	harness state unavailable (unknown codex-unverified)
+ship-a	working	pane	harness busy (claude-hook)
+sm-local	working	status-log	delegated
+sm-remote	unknown	none	remote endpoint liveness not collected by fleet snapshot
+-- target-default
+parked-old	parked	status-log	pick a rollout order · not live-probed (idle 214196299s)
+paused-old	paused	status-log	holding for the upstream tool release · not live-probed (idle 214196299s)
+paused-recent	working	pane	harness busy (claude-hook)
+scout-a	unknown	pane	harness state unavailable (unknown codex-unverified)
+ship-a	working	pane	harness busy (claude-hook)
+sm-local	working	status-log	delegated
+sm-remote	unknown	none	remote endpoint liveness not collected by fleet snapshot
+== remote secondmate home presence (target):
+{"remote":"host-fake","backend":"tmux","home":{"path":"/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.r6mAhQ/remote-sm-home","present":null}}
+== base vs target-default diff (ignoring generated):
+277c277
+<     "fm_root": "/tmp/fmbase.0UXA/wt",
+---
+>     "fm_root": "/Users/max/.no-mistakes/worktrees/b730d76738a7/01M4Z7P9KEAK51MRH171C4GQXP",
+309,310c309,310
+<           "age_seconds": 1,
+<           "observed_at": "2026-10-15T07:58:06Z",
+---
+>           "age_seconds": 14,
+>           "observed_at": "2026-10-15T07:58:19Z",
+365c365
+<           "observed_at": "2026-10-15T07:58:06Z",
+---
+>           "observed_at": "2026-10-15T07:58:19Z",
+389,390c389,390
+<           "age_seconds": 1,
+<           "observed_at": "2026-10-15T07:58:06Z",
+---
+>           "age_seconds": 14,
+>           "observed_at": "2026-10-15T07:58:19Z",
+445c445
+<           "observed_at": "2026-10-15T07:58:06Z",
+---
+>           "observed_at": "2026-10-15T07:58:19Z",
+456c456
+<         "observed_at": "2026-10-15T07:58:06Z",
+---
+>         "observed_at": "2026-10-15T07:58:19Z",
+536c536
+<         "detail": "harness busy (claude-hook)",
+---
+>         "detail": "pick a rollout order · not live-probed (idle 214196299s)",
+538,541c538,541
+<         "observed_at": "2026-10-15T07:58:06Z",
+<         "raw": "state: working · source: pane · harness busy (claude-hook)",
+<         "source": "pane",
+<         "state": "working"
+---
+>         "observed_at": "2026-10-15T07:58:19Z",
+>         "raw": "state: parked · source: status-log · pick a rollout order · not live-probed (idle 214196299s)",
+>         "source": "status-log",
+>         "state": "parked"
+547c547
+<         "observed_at": "2026-10-15T07:58:06Z",
+---
+>         "observed_at": "2026-10-15T07:58:19Z",
+555,556c555,562
+<         "open_decisions": [],
+<         "pending_decision": false,
+---
+>         "open_decisions": [
+>           {
+>             "key": "default",
+>             "summary": "pick a rollout order",
+>             "verb": "needs-decision"
+>           }
+>         ],
+>         "pending_decision": true,
+650c656
+<         "detail": "harness busy (claude-hook)",
+---
+>         "detail": "holding for the upstream tool release · not live-probed (idle 214196299s)",
+652,655c658,661
+<         "observed_at": "2026-10-15T07:58:06Z",
+<         "raw": "state: working · source: pane · harness busy (claude-hook)",
+<         "source": "pane",
+<         "state": "working"
+---
+>         "observed_at": "2026-10-15T07:58:19Z",
+>         "raw": "state: paused · source: status-log · holding for the upstream tool release · not live-probed (idle 214196299s)",
+>         "source": "status-log",
+>         "state": "paused"
+661c667
+<         "observed_at": "2026-10-15T07:58:06Z",
+---
+>         "observed_at": "2026-10-15T07:58:19Z",
+766c772
+<         "observed_at": "2026-10-15T07:58:06Z",
+---
+>         "observed_at": "2026-10-15T07:58:19Z",
+775c781
+<         "observed_at": "2026-10-15T07:58:06Z",
+---
+>         "observed_at": "2026-10-15T07:58:19Z",
+880c886
+<         "observed_at": "2026-10-15T07:58:06Z",
+---
+>         "observed_at": "2026-10-15T07:58:19Z",
+889c895
+<         "observed_at": "2026-10-15T07:58:06Z",
+---
+>         "observed_at": "2026-10-15T07:58:19Z",
+996c1002
+<         "observed_at": "2026-10-15T07:58:06Z",
+---
+>         "observed_at": "2026-10-15T07:58:19Z",
+1005c1011
+<         "observed_at": "2026-10-15T07:58:06Z",
+---
+>         "observed_at": "2026-10-15T07:58:19Z",
+1072c1078
+<         "observed_at": "2026-10-15T07:58:06Z",
+---
+>         "observed_at": "2026-10-15T07:58:19Z",
+1081c1087
+<         "observed_at": "2026-10-15T07:58:06Z",
+---
+>         "observed_at": "2026-10-15T07:58:19Z",
+1148c1154
+<         "observed_at": "2026-10-15T07:58:06Z",
+---
+>         "observed_at": "2026-10-15T07:58:19Z",
+1157c1163
+<         "observed_at": "2026-10-15T07:58:06Z",
+---
+>         "observed_at": "2026-10-15T07:58:19Z",
+== crew-state direct (target):
+default:          state: paused · source: status-log · holding for the upstream tool release · not live-probed (idle 214196301s) 
+threshold=abc:    state: paused · source: status-log · holding for the upstream tool release · not live-probed (idle 214196301s) 
+threshold=huge:   state: working · source: pane · harness busy (claude-hook) 
+paused-recent:    state: working · source: pane · harness busy (claude-hook) 
+after meta touch: state: working · source: pane · harness busy (claude-hook) 
+stale working:    state: working · source: pane · harness busy (claude-hook) 
+== lab torn down: yes

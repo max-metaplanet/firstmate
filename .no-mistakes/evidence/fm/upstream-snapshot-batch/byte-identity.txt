@@ -1,0 +1,8 @@
+base-1.json vs target-1.json: tasks[] raw bytes IDENTICAL in key order (14994 bytes, 7 crews); only the unchanged backlog sub-record is key-sorted, plus observed_at/age_seconds masked
+base-2.json vs target-2.json: tasks[] raw bytes IDENTICAL in key order (14994 bytes, 7 crews); only the unchanged backlog sub-record is key-sorted, plus observed_at/age_seconds masked
+snapshot-base.json vs snapshot-target-noshortcircuit.json: tasks[] raw bytes IDENTICAL in key order (14994 bytes, 7 crews); only the unchanged backlog sub-record is key-sorted, plus observed_at/age_seconds masked
+Whole document, key-sorted, generated/fm_root/time fields masked:
+  base-1 vs target-1 IDENTICAL
+  first-run base vs target IDENTICAL
+Pre-existing: base-1 vs base-2 backlog key order: ["records","present","path"] vs ["path","present","records"]
+jq execs per refresh on this 7-crew fixture: base=160 target=90

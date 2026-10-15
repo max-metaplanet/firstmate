@@ -1,0 +1,75 @@
+== tmux windows (private lab socket) ==
+keep
+fm-ship-a
+fm-scout-b
+fm-idle-c
+fm-park-d
+fm-blk-e
+== base: jq execs for one snapshot refresh: 82
+== head: jq execs for one snapshot refresh: 32
+== task rows (excluding current_state) identical base vs head (sorted-key compare):
+26c26
+<   "generated": "2026-10-15T08:03:58Z",
+---
+>   "generated": "2026-10-15T08:04:01Z",
+36c36
+<     "fm_root": "/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-qw3.YZ2vdf/base",
+---
+>     "fm_root": "/Users/max/.no-mistakes/worktrees/b730d76738a7/01M4Z7P9KEAK51MRH171C4GQXP",
+48c48
+<         "observed_at": "2026-10-15T08:03:58Z",
+---
+>         "observed_at": "2026-10-15T08:04:01Z",
+90c90
+<         "observed_at": "2026-10-15T08:03:58Z",
+---
+>         "observed_at": "2026-10-15T08:04:01Z",
+158c158
+<         "observed_at": "2026-10-15T08:03:58Z",
+---
+>         "observed_at": "2026-10-15T08:04:01Z",
+226c226
+<         "observed_at": "2026-10-15T08:03:58Z",
+---
+>         "observed_at": "2026-10-15T08:04:01Z",
+294c294
+<         "observed_at": "2026-10-15T08:03:58Z",
+---
+>         "observed_at": "2026-10-15T08:04:01Z",
+400c400
+<         "observed_at": "2026-10-15T08:03:58Z",
+---
+>         "observed_at": "2026-10-15T08:04:01Z",
+== tasks[] full rows identical except crews whose state changed:
+ship-a: DIFFERS
+ base current_state: {"state":"working","source":"pane","detail":"harness busy (claude-hook)","raw":"state: working · source: pane · harness busy (claude-hook)","observed_at":"2026-10-15T08:03:58Z","freshness":"fresh"}
+ head current_state: {"state":"working","source":"pane","detail":"harness busy (claude-hook)","raw":"state: working · source: pane · harness busy (claude-hook)","observed_at":"2026-10-15T08:04:01Z","freshness":"fresh"}
+scout-b: DIFFERS
+ base current_state: {"state":"unknown","source":"pane","detail":"harness state unavailable (unknown codex-unverified)","raw":"state: unknown · source: pane · harness state unavailable (unknown codex-unverified)","observed_at":"2026-10-15T08:03:58Z","freshness":"fresh"}
+ head current_state: {"state":"unknown","source":"pane","detail":"harness state unavailable (unknown codex-unverified)","raw":"state: unknown · source: pane · harness state unavailable (unknown codex-unverified)","observed_at":"2026-10-15T08:04:01Z","freshness":"fresh"}
+idle-c: DIFFERS
+ base current_state: {"state":"working","source":"pane","detail":"harness busy (claude-hook)","raw":"state: working · source: pane · harness busy (claude-hook)","observed_at":"2026-10-15T08:03:58Z","freshness":"fresh"}
+ head current_state: {"state":"paused","source":"status-log","detail":"holding for upstream release · not live-probed (idle 214196643s)","raw":"state: paused · source: status-log · holding for upstream release · not live-probed (idle 214196643s)","observed_at":"2026-10-15T08:04:01Z","freshness":"fresh"}
+park-d: DIFFERS
+ base current_state: {"state":"working","source":"pane","detail":"harness busy (claude-hook)","raw":"state: working · source: pane · harness busy (claude-hook)","observed_at":"2026-10-15T08:03:58Z","freshness":"fresh"}
+ head current_state: {"state":"working","source":"pane","detail":"harness busy (claude-hook)","raw":"state: working · source: pane · harness busy (claude-hook)","observed_at":"2026-10-15T08:04:01Z","freshness":"fresh"}
+blk-e: DIFFERS
+ base current_state: {"state":"working","source":"pane","detail":"harness busy (claude-hook)","raw":"state: working · source: pane · harness busy (claude-hook)","observed_at":"2026-10-15T08:03:58Z","freshness":"fresh"}
+ head current_state: {"state":"working","source":"pane","detail":"harness busy (claude-hook)","raw":"state: working · source: pane · harness busy (claude-hook)","observed_at":"2026-10-15T08:04:01Z","freshness":"fresh"}
+== head crew-state direct (real tmux probe) ==
+-- ship-a
+state: working · source: pane · harness busy (claude-hook)
+-- idle-c
+state: paused · source: status-log · holding for upstream release · not live-probed (idle 214196645s)
+-- park-d
+state: working · source: pane · harness busy (claude-hook)
+-- blk-e
+state: working · source: pane · harness busy (claude-hook)
+-- idle-c with threshold raised to 999999999 (must live-probe)
+state: working · source: pane · harness busy (claude-hook)
+-- idle-c with garbage threshold 'abc' (falls back to 86400)
+state: paused · source: status-log · holding for upstream release · not live-probed (idle 214196646s)
+-- idle-c after meta touched now (recent meta disqualifies)
+state: working · source: pane · harness busy (claude-hook)
+-- base crew-state idle-c (meta stale again) for comparison
+state: working · source: pane · harness busy (claude-hook)

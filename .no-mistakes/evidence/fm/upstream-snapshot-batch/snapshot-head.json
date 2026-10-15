@@ -1,0 +1,537 @@
+{
+  "schema": "fm-fleet-snapshot.v1",
+  "generated": "2026-10-15T08:04:01Z",
+  "fm_home": "/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.CRPIfB",
+  "roots": {
+    "fm_root": "/Users/max/.no-mistakes/worktrees/b730d76738a7/01M4Z7P9KEAK51MRH171C4GQXP",
+    "state": "/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.CRPIfB/state",
+    "data": "/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.CRPIfB/data",
+    "config": "/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.CRPIfB/config",
+    "projects": "/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.CRPIfB/projects"
+  },
+  "backlog": {
+    "records": [
+      {
+        "current_role": "worker",
+        "blocked_reason": null,
+        "hold_age_days": 14,
+        "hold_kind": null,
+        "body_lines": [],
+        "links": [],
+        "completion": {
+          "date": null,
+          "verb": null
+        },
+        "local_note": null,
+        "blocked_by_ids": [],
+        "state": "in_flight",
+        "hold_until": null,
+        "hold_set": null,
+        "raw": "- [ ] ship-a - Ship A (repo: alpha) (kind: ship) (since 2026-10-01)",
+        "checked": false,
+        "blocked_by": null,
+        "reported": null,
+        "requires_child_metadata": true,
+        "title": "Ship A",
+        "priority": null,
+        "body_excerpt": null,
+        "report_path": null,
+        "kind": "ship",
+        "captain_actionable": false,
+        "since": "2026-10-01",
+        "merged": null,
+        "repo": "alpha",
+        "id": "ship-a",
+        "done": null,
+        "structured": true,
+        "order": 1,
+        "hold_bucket": null,
+        "hold_reason": null,
+        "pr_url": null,
+        "unresolved_blocker_ids": []
+      }
+    ],
+    "path": "/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.CRPIfB/data/backlog.md",
+    "present": true
+  },
+  "tasks": [
+    {
+      "id": "blk-e",
+      "kind": "ship",
+      "harness": "claude",
+      "mode": "ship",
+      "yolo": "",
+      "branch": null,
+      "project": "alpha",
+      "spawn_gen": null,
+      "backend": "tmux",
+      "remote": null,
+      "paths": {
+        "meta": {
+          "path": "/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.CRPIfB/state/blk-e.meta",
+          "present": true
+        },
+        "status_log": {
+          "path": "/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.CRPIfB/state/blk-e.status",
+          "present": true,
+          "kind": "event_history",
+          "last_event": {
+            "state": "blocked",
+            "note": "daemon unreachable",
+            "raw": "blocked: daemon unreachable",
+            "age_seconds": null
+          }
+        },
+        "worktree": {
+          "path": "/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.CRPIfB/projects/blk-e-wt",
+          "present": true
+        },
+        "home": {
+          "path": null,
+          "present": false
+        },
+        "report": {
+          "path": "/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.CRPIfB/data/blk-e/report.md",
+          "present": false
+        }
+      },
+      "secondmate_projects": [],
+      "current_state": {
+        "state": "working",
+        "source": "pane",
+        "detail": "harness busy (claude-hook)",
+        "raw": "state: working · source: pane · harness busy (claude-hook)",
+        "observed_at": "2026-10-15T08:04:01Z",
+        "freshness": "fresh"
+      },
+      "endpoint": {
+        "target": "firstmate:fm-blk-e",
+        "exists": true,
+        "agent_alive": "not_checked",
+        "status": "unknown",
+        "observed_at": "2026-10-15T08:04:01Z",
+        "freshness": "fresh"
+      },
+      "pr": {
+        "url": null,
+        "source": "absent",
+        "head": null
+      },
+      "hints": {
+        "pending_decision": false,
+        "blocked_event": false,
+        "open_decisions": [],
+        "scout_report_present": false,
+        "last_event_text": "blocked: daemon unreachable"
+      },
+      "actions": {
+        "watch": "bin/fm-peek.sh fm-blk-e",
+        "steer": "bin/fm-send.sh fm-blk-e '<instruction>'",
+        "return_channel_note": null
+      },
+      "backlog": null
+    },
+    {
+      "id": "idle-c",
+      "kind": "ship",
+      "harness": "claude",
+      "mode": "ship",
+      "yolo": "",
+      "branch": null,
+      "project": "alpha",
+      "spawn_gen": null,
+      "backend": "tmux",
+      "remote": null,
+      "paths": {
+        "meta": {
+          "path": "/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.CRPIfB/state/idle-c.meta",
+          "present": true
+        },
+        "status_log": {
+          "path": "/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.CRPIfB/state/idle-c.status",
+          "present": true,
+          "kind": "event_history",
+          "last_event": {
+            "state": "paused",
+            "note": "holding for upstream release",
+            "raw": "paused: holding for upstream release",
+            "age_seconds": null
+          }
+        },
+        "worktree": {
+          "path": "/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.CRPIfB/projects/idle-c-wt",
+          "present": true
+        },
+        "home": {
+          "path": null,
+          "present": false
+        },
+        "report": {
+          "path": "/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.CRPIfB/data/idle-c/report.md",
+          "present": false
+        }
+      },
+      "secondmate_projects": [],
+      "current_state": {
+        "state": "paused",
+        "source": "status-log",
+        "detail": "holding for upstream release · not live-probed (idle 214196643s)",
+        "raw": "state: paused · source: status-log · holding for upstream release · not live-probed (idle 214196643s)",
+        "observed_at": "2026-10-15T08:04:01Z",
+        "freshness": "fresh"
+      },
+      "endpoint": {
+        "target": "firstmate:fm-idle-c",
+        "exists": true,
+        "agent_alive": "not_checked",
+        "status": "unknown",
+        "observed_at": "2026-10-15T08:04:01Z",
+        "freshness": "fresh"
+      },
+      "pr": {
+        "url": null,
+        "source": "absent",
+        "head": null
+      },
+      "hints": {
+        "pending_decision": false,
+        "blocked_event": false,
+        "open_decisions": [],
+        "scout_report_present": false,
+        "last_event_text": "paused: holding for upstream release"
+      },
+      "actions": {
+        "watch": "bin/fm-peek.sh fm-idle-c",
+        "steer": "bin/fm-send.sh fm-idle-c '<instruction>'",
+        "return_channel_note": null
+      },
+      "backlog": null
+    },
+    {
+      "id": "park-d",
+      "kind": "ship",
+      "harness": "claude",
+      "mode": "ship",
+      "yolo": "",
+      "branch": null,
+      "project": "alpha",
+      "spawn_gen": null,
+      "backend": "tmux",
+      "remote": null,
+      "paths": {
+        "meta": {
+          "path": "/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.CRPIfB/state/park-d.meta",
+          "present": true
+        },
+        "status_log": {
+          "path": "/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.CRPIfB/state/park-d.status",
+          "present": true,
+          "kind": "event_history",
+          "last_event": {
+            "state": "needs-decision",
+            "note": "pick rollout order",
+            "raw": "needs-decision: pick rollout order",
+            "age_seconds": null
+          }
+        },
+        "worktree": {
+          "path": "/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.CRPIfB/projects/park-d-wt",
+          "present": true
+        },
+        "home": {
+          "path": null,
+          "present": false
+        },
+        "report": {
+          "path": "/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.CRPIfB/data/park-d/report.md",
+          "present": false
+        }
+      },
+      "secondmate_projects": [],
+      "current_state": {
+        "state": "working",
+        "source": "pane",
+        "detail": "harness busy (claude-hook)",
+        "raw": "state: working · source: pane · harness busy (claude-hook)",
+        "observed_at": "2026-10-15T08:04:01Z",
+        "freshness": "fresh"
+      },
+      "endpoint": {
+        "target": "firstmate:fm-park-d",
+        "exists": true,
+        "agent_alive": "not_checked",
+        "status": "unknown",
+        "observed_at": "2026-10-15T08:04:01Z",
+        "freshness": "fresh"
+      },
+      "pr": {
+        "url": null,
+        "source": "absent",
+        "head": null
+      },
+      "hints": {
+        "pending_decision": false,
+        "blocked_event": false,
+        "open_decisions": [],
+        "scout_report_present": false,
+        "last_event_text": "needs-decision: pick rollout order"
+      },
+      "actions": {
+        "watch": "bin/fm-peek.sh fm-park-d",
+        "steer": "bin/fm-send.sh fm-park-d '<instruction>'",
+        "return_channel_note": null
+      },
+      "backlog": null
+    },
+    {
+      "id": "scout-b",
+      "kind": "scout",
+      "harness": "codex",
+      "mode": "scout",
+      "yolo": "",
+      "branch": null,
+      "project": "alpha",
+      "spawn_gen": null,
+      "backend": "tmux",
+      "remote": null,
+      "paths": {
+        "meta": {
+          "path": "/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.CRPIfB/state/scout-b.meta",
+          "present": true
+        },
+        "status_log": {
+          "path": "/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.CRPIfB/state/scout-b.status",
+          "present": true,
+          "kind": "event_history",
+          "last_event": {
+            "state": "done",
+            "note": "report ready",
+            "raw": "done: report ready",
+            "age_seconds": null
+          }
+        },
+        "worktree": {
+          "path": "/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.CRPIfB/projects/scout-b-wt",
+          "present": true
+        },
+        "home": {
+          "path": null,
+          "present": false
+        },
+        "report": {
+          "path": "/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.CRPIfB/data/scout-b/report.md",
+          "present": false
+        }
+      },
+      "secondmate_projects": [],
+      "current_state": {
+        "state": "unknown",
+        "source": "pane",
+        "detail": "harness state unavailable (unknown codex-unverified)",
+        "raw": "state: unknown · source: pane · harness state unavailable (unknown codex-unverified)",
+        "observed_at": "2026-10-15T08:04:01Z",
+        "freshness": "fresh"
+      },
+      "endpoint": {
+        "target": "firstmate:fm-scout-b",
+        "exists": true,
+        "agent_alive": "not_checked",
+        "status": "unknown",
+        "observed_at": "2026-10-15T08:04:01Z",
+        "freshness": "fresh"
+      },
+      "pr": {
+        "url": null,
+        "source": "absent",
+        "head": null
+      },
+      "hints": {
+        "pending_decision": false,
+        "blocked_event": false,
+        "open_decisions": [],
+        "scout_report_present": false,
+        "last_event_text": "done: report ready"
+      },
+      "actions": {
+        "watch": "bin/fm-peek.sh fm-scout-b",
+        "steer": "bin/fm-send.sh fm-scout-b '<instruction>'",
+        "return_channel_note": null
+      },
+      "backlog": null
+    },
+    {
+      "id": "ship-a",
+      "kind": "ship",
+      "harness": "claude",
+      "mode": "ship",
+      "yolo": "",
+      "branch": null,
+      "project": "alpha",
+      "spawn_gen": null,
+      "backend": "tmux",
+      "remote": null,
+      "paths": {
+        "meta": {
+          "path": "/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.CRPIfB/state/ship-a.meta",
+          "present": true
+        },
+        "status_log": {
+          "path": "/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.CRPIfB/state/ship-a.status",
+          "present": true,
+          "kind": "event_history",
+          "last_event": {
+            "state": "working",
+            "note": "implementing",
+            "raw": "working: implementing",
+            "age_seconds": null
+          }
+        },
+        "worktree": {
+          "path": "/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.CRPIfB/projects/ship-a-wt",
+          "present": true
+        },
+        "home": {
+          "path": null,
+          "present": false
+        },
+        "report": {
+          "path": "/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.CRPIfB/data/ship-a/report.md",
+          "present": false
+        }
+      },
+      "secondmate_projects": [],
+      "current_state": {
+        "state": "working",
+        "source": "pane",
+        "detail": "harness busy (claude-hook)",
+        "raw": "state: working · source: pane · harness busy (claude-hook)",
+        "observed_at": "2026-10-15T08:04:01Z",
+        "freshness": "fresh"
+      },
+      "endpoint": {
+        "target": "firstmate:fm-ship-a",
+        "exists": true,
+        "agent_alive": "not_checked",
+        "status": "unknown",
+        "observed_at": "2026-10-15T08:04:01Z",
+        "freshness": "fresh"
+      },
+      "pr": {
+        "url": null,
+        "source": "absent",
+        "head": null
+      },
+      "hints": {
+        "pending_decision": false,
+        "blocked_event": false,
+        "open_decisions": [],
+        "scout_report_present": false,
+        "last_event_text": "working: implementing"
+      },
+      "actions": {
+        "watch": "bin/fm-peek.sh fm-ship-a",
+        "steer": "bin/fm-send.sh fm-ship-a '<instruction>'",
+        "return_channel_note": null
+      },
+      "backlog": {
+        "current_role": "worker",
+        "blocked_reason": null,
+        "hold_age_days": 14,
+        "hold_kind": null,
+        "body_lines": [],
+        "links": [],
+        "completion": {
+          "date": null,
+          "verb": null
+        },
+        "local_note": null,
+        "blocked_by_ids": [],
+        "state": "in_flight",
+        "hold_until": null,
+        "hold_set": null,
+        "raw": "- [ ] ship-a - Ship A (repo: alpha) (kind: ship) (since 2026-10-01)",
+        "checked": false,
+        "blocked_by": null,
+        "reported": null,
+        "requires_child_metadata": true,
+        "title": "Ship A",
+        "priority": null,
+        "body_excerpt": null,
+        "report_path": null,
+        "kind": "ship",
+        "captain_actionable": false,
+        "since": "2026-10-01",
+        "merged": null,
+        "repo": "alpha",
+        "id": "ship-a",
+        "done": null,
+        "structured": true,
+        "order": 1,
+        "hold_bucket": null,
+        "hold_reason": null,
+        "pr_url": null,
+        "unresolved_blocker_ids": []
+      }
+    }
+  ],
+  "main_inventory": {
+    "valid": true,
+    "reason": null,
+    "orphan_in_flight": [],
+    "unstructured_current_count": 0
+  },
+  "contributions": {
+    "known": 0,
+    "checked": 0,
+    "counts": {
+      "captain": 0,
+      "fleet": 0,
+      "maintainer": 0,
+      "nobody": 0
+    },
+    "unmeasured": 0,
+    "complete": true,
+    "proven_clear": true,
+    "stale_verdicts": 0,
+    "missing_verdicts": 0,
+    "unreadable_records": 0,
+    "valid_until": 900,
+    "captain": [],
+    "captain_omitted": 0
+  },
+  "scout_reports": [],
+  "secondmate_current": {
+    "registry": {
+      "present": false,
+      "available": true,
+      "complete": true,
+      "reason": null,
+      "provenance": "registered-table",
+      "path": "/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.CRPIfB/data/secondmates.md",
+      "freshness": {
+        "status": "fresh",
+        "observed_at": "2026-10-15T08:04:01Z"
+      },
+      "records": [],
+      "input_truncated": false,
+      "records_truncated": false,
+      "reasons": [],
+      "lines_in_window": 0,
+      "records_in_window": 0
+    },
+    "records": [],
+    "total_registered": 0,
+    "total": 0,
+    "shown": 0,
+    "truncated": 0
+  },
+  "secondmate_landed": {
+    "records": [],
+    "truncated": [],
+    "unreadable": [],
+    "partial": []
+  },
+  "secondmate_guidance": {
+    "note": "For kind=secondmate, bearings selects validated structured state from that registered home; parent events and bounded terminal evidence are fallback-only supplements and never current-state authority."
+  }
+}
