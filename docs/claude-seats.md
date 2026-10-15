@@ -141,6 +141,8 @@ Every switch applies it - automatic rotation, `bin/fm-seat.sh switch <name>` by 
 Nothing about that refusal is written down, so the seat is a candidate again as soon as a read after its reset shows headroom: there is no list to take it off.
 A seat whose quota simply could not be read is never treated as empty, so an idle seat stays a destination exactly as it was.
 When **every** seat of one vendor reads empty, nothing is switched at all - moving between two empty seats is worse than staying - and one line reports each seat's reset time together with the other vendor's seat that still has headroom.
+The watch and the spawn gate share that one record and one wording, so the same depletion is reported once between them rather than once per channel.
+A seat with a configured `allow <usd>` policy still covering it does not count as empty, because that policy is what keeps work running once the plan quota is gone.
 
 **Extra-usage policy** (`extra-usage`) is what to do when no seat qualifies and the active seat's plan quota is gone, so further work would run on paid extra usage.
 

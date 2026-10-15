@@ -2814,16 +2814,19 @@ spawn_seat_config() {
   fi
 }
 
-# spawn_seat_depleted
-# Exit 0 when the seat this spawn would launch on is PROVEN out of quota, for
-# the vendor and configuration directory the caller assigns on this one call.
-# Any other answer - headroom, or a read that reached no verdict - exits 1, so
-# an unreadable seat never holds a spawn.
-spawn_seat_depleted() {
-  local dir verdict
+# spawn_seat_dry
+# Exit 0 when the seat this spawn would launch on has nothing left to start new
+# work on, for the vendor and configuration directory the caller assigns on this
+# one call. Any other answer - headroom, paid extra usage still covering it, or
+# a read that reached no verdict - exits 1, so neither an unreadable seat nor a
+# configured paid overflow ever holds a spawn.
+spawn_seat_dry() {
+  local dir
   dir=$(fm_seat_spawn_config_dir) || return 1
-  verdict=$(fm_seat_quota_verdict "$dir")
-  [ "${verdict%%$'\t'*}" = depleted ]
+  # fm_seat_dry, not the bare depleted verdict: a seat a configured
+  # `allow <usd>` policy still covers is deliberately usable on paid extra
+  # usage, and docs/configuration.md promises this gate does not take that away.
+  fm_seat_dry "$dir"
 }
 
 # Seat depletion gate: refuse to START a new claude or codex worker on a seat a
@@ -2852,67 +2855,60 @@ spawn_seat_depleted() {
 spawn_provider_depletion_gate() {
   { [ "$HARNESS" = claude ] || [ "$HARNESS" = codex ]; } &&
     [ "$RELAUNCH" -eq 0 ] && [ "$IGNORE_SEAT_HOLD" -eq 0 ] || return 0
-  local seat_config summary alt alt_provider alt_seat alt_pct alt_how alt_label label
-  local announced='' where memo marker here here_seat here_pct headline depleted=0
+  local seat_config summary alt label notice where here here_seat here_pct
+  local memo dry=0 rc
   seat_config=$(spawn_seat_config)
   [ -n "$(FM_SEAT_PROVIDER=$HARNESS CONFIG=$seat_config fm_seat_list)" ] || return 0
-  marker="$STATE/.$HARNESS-seat-depleted"
   memo=$(mktemp -d "${TMPDIR:-/tmp}/fm-spawn-seat.XXXXXX" 2>/dev/null) || memo=''
   FM_SEAT_PROVIDER=$HARNESS CONFIG=$seat_config FM_SEAT_READ_MEMO_DIR=$memo \
-    spawn_seat_depleted && depleted=1
-  if [ "$depleted" -eq 0 ]; then
-    # The seat this spawn would use is fine, or gave no verdict: nothing is
-    # held, and any earlier announcement is cleared so the next depletion
-    # announces itself rather than being silenced by a stale marker.
+    spawn_seat_dry && dry=1
+  if [ "$dry" -eq 0 ]; then
+    # The seat this spawn would use is fine, is covered by a paid extra-usage
+    # policy, or gave no verdict: nothing is held, and any standing notice is
+    # forgotten so the next depletion announces itself rather than being
+    # silenced by a stale one.
     [ -z "$memo" ] || rm -rf -- "$memo"
-    rm -f "$marker" 2>/dev/null || true
+    fm_seat_dry_clear "$STATE" "$HARNESS"
     return 0
   fi
-  summary=$(FM_SEAT_PROVIDER=$HARNESS CONFIG=$seat_config FM_SEAT_READ_MEMO_DIR=$memo \
-    fm_seat_provider_depletion_summary) || summary=''
   label=Claude; [ "$HARNESS" != codex ] || label=Codex
-  if [ -n "$summary" ]; then
+  summary=$(FM_SEAT_PROVIDER=$HARNESS CONFIG=$seat_config FM_SEAT_READ_MEMO_DIR=$memo \
+    fm_seat_provider_depletion_summary)
+  rc=$?
+  if [ "$rc" -eq 0 ]; then
     # Every seat of this vendor is empty, so the work belongs on another one.
-    headline="every $label seat is out of quota ($summary)"
-    where="no seat on the other vendor has readable headroom either, so this task waits for the first reset"
+    # The sentence comes from the same builder the watch uses, so the fleet
+    # hears this fact in one wording however it surfaces.
     alt=$(FM_SEAT_PROVIDER=$HARNESS CONFIG=$seat_config fm_seat_alternative_headroom) || alt=''
-    if [ -n "$alt" ]; then
-      read -r alt_provider alt_seat alt_pct alt_how <<< "$alt"
-      alt_label=Claude; [ "$alt_provider" != codex ] || alt_label=Codex
-      where="dispatch this task on $alt_label instead, where seat $alt_seat has $alt_pct% left"
-      [ "$alt_how" = active ] ||
-        where="dispatch this task on $alt_label instead once 'bin/fm-seat.sh --provider $alt_provider switch $alt_seat' moves it to seat $alt_seat, which has $alt_pct% left"
-    fi
+    notice=$(fm_seat_dry_notice "$HARNESS" "$summary" "$alt")
+    where="re-run with --ignore-seat-hold to start this task on an empty seat anyway"
   else
-    # Only this seat is empty: another seat of the same vendor still has
+    # Only this seat is empty: another seat of the same vendor may still have
     # headroom, so the home has somewhere to go without changing vendor.
     here=$(FM_SEAT_PROVIDER=$HARNESS CONFIG=$seat_config FM_SEAT_READ_MEMO_DIR=$memo \
       fm_seat_headroom_best) || here=''
     read -r here_seat here_pct <<< "$here"
-    headline="the active $label seat is out of quota"
+    notice="the active $label seat is out of quota"
     if [ -n "$here_seat" ]; then
-      where="move new workers with 'bin/fm-seat.sh --provider $HARNESS switch $here_seat', which has $here_pct% left"
+      notice="$notice; move new workers with 'bin/fm-seat.sh --provider $HARNESS switch $here_seat', which has $here_pct% left"
     else
-      where="no other $label seat has readable headroom, so this task waits for the first reset"
+      notice="$notice; no other $label seat has readable headroom, so this task waits for the first reset"
     fi
+    where="re-run with --ignore-seat-hold to start this task on an empty seat anyway"
   fi
   [ -z "$memo" ] || rm -rf -- "$memo"
-  [ ! -f "$marker" ] || announced=$(cat "$marker" 2>/dev/null || true)
   {
     echo "error: this task is not started on a $label seat with no quota left:"
-    printf '  %s\n' "$headline"
+    printf '  %s\n' "$notice"
     printf '  %s\n' "$where"
-    echo "re-run with --ignore-seat-hold to start this task on an empty seat anyway"
   } >&2
-  # The routing line is recorded once per depletion, not once per spawn: the
-  # marker carries the exact seats and resets it was announced for, so a later
-  # spawn is silent while nothing has changed and announces again as soon as a
-  # reset moves. The refusal itself still states its reason every time, because
-  # a spawn that stops without saying why would be worse than noise.
-  if [ "$announced" != "$headline" ]; then
-    mkdir -p "$STATE" 2>/dev/null || true
-    printf '%s\n' "$headline" > "$marker" 2>/dev/null || true
-    fm_wake_append check "seat-depleted:$HARNESS" "check: $headline; $where" || true
+  # The notice is recorded once per depletion, not once per spawn, through the
+  # record the watch pass shares: an armed watch and a spawn attempt report one
+  # depletion once between them, and it speaks again as soon as a reset moves or
+  # the routing changes. The refusal itself still states its reason every time,
+  # because a spawn that stops without saying why would be worse than noise.
+  if fm_seat_dry_announce "$STATE" "$HARNESS" "$notice"; then
+    fm_wake_append check "seat-depleted:$HARNESS" "check: $notice" || true
   fi
   exit 1
 }

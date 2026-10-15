@@ -3854,7 +3854,7 @@ test_the_watch_refuses_to_flip_between_empty_seats_and_says_where_work_goes_once
 
   out=$(run_seat "$home" "$fakebin" --provider codex auto)
   expect_code 0 "$?" "a pass with every seat empty must report rather than fail: $out"
-  assert_contains "$out" "all Codex seats depleted" "the pass must say the whole vendor is empty"
+  assert_contains "$out" "all Codex seats are out of quota" "the pass must say the whole vendor is empty"
   assert_contains "$out" "codex-max until 2026-10-19T00:00:00Z" "each empty seat's reset must be named"
   assert_contains "$out" "codex-max2 until 2026-10-20T00:00:00Z" "the second seat's reset must be named too"
   assert_contains "$out" "new work routes to Claude seat seat-max" \
@@ -3903,7 +3903,7 @@ test_the_watch_reports_a_vendor_draining_empty_after_its_shortfall_was_reported(
   dual_quota "$spec" codex "$codex_seats/codex-max2" 0 2026-10-20T00:00:00Z
   out=$(run_seat "$home" "$fakebin" --provider codex auto)
   expect_code 0 "$?" "the drained pass must report rather than fail: $out"
-  assert_contains "$out" "all Codex seats depleted" \
+  assert_contains "$out" "all Codex seats are out of quota" \
     "the active home draining empty must still be reported as the whole vendor empty"
   assert_contains "$out" "codex-max until 2026-10-19T00:00:00Z" "each empty seat's reset must be named"
   assert_contains "$out" "once it moves to seat seat-max" \
@@ -3914,6 +3914,133 @@ test_the_watch_reports_a_vendor_draining_empty_after_its_shortfall_was_reported(
   out=$(run_seat "$home" "$fakebin" --provider codex auto)
   [ -z "$out" ] || fail "the same unchanged depletion must not report again on the next poll: $out"
   pass "a vendor that drains empty after its shortfall was reported is still reported once, with its routing"
+}
+
+test_a_paid_overflow_seat_still_takes_work_while_a_stop_policy_refuses_it() {
+  local rec out
+  rec=$(make_seat_case dry-vs-extra-usage)
+  read_seat_case "$rec"
+  mkdir -p "$SEATS_DIR/alpha" "$SEATS_DIR/beta"
+  seat_logged_in "$SPEC_DIR" "$SEATS_DIR/alpha" "$SEATS_DIR/beta"
+  printf 'alpha\n' > "$HOME_DIR/config/claude-seat"
+  # beta's plan quota is gone, which is exactly the state an `allow <usd>`
+  # policy is configured to keep working through.
+  seat_remaining "$SPEC_DIR" "$SEATS_DIR/alpha" 40
+  seat_remaining "$SPEC_DIR" "$SEATS_DIR/beta" 0
+  seat_extra_spend "$SPEC_DIR" "$SEATS_DIR/beta" 10
+
+  # With no policy configured the empty seat is refused, which is the behaviour
+  # the depleted rule exists for.
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" switch beta)
+  expect_code 1 "$?" "with no extra-usage policy an empty seat must still be refused: $out"
+  assert_contains "$out" "quota is used up" "the refusal must say the plan quota is gone"
+  assert_grep alpha "$HOME_DIR/config/claude-seat" "a refused switch must move nothing"
+
+  # `allow <usd>` under its cap: docs/configuration.md promises dispatch
+  # continues in exactly this state, so the empty-seat rule must yield to it.
+  run_seat "$HOME_DIR" "$FAKEBIN" extra-usage allow 25 >/dev/null
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" switch beta)
+  expect_code 0 "$?" "paid extra usage under its cap must keep an empty seat usable: $out"
+  assert_grep beta "$HOME_DIR/config/claude-seat" "the switch must land on the covered seat"
+
+  # Spend at the cap is no longer covered, so the seat is empty again.
+  printf '%s\n' alpha > "$HOME_DIR/config/claude-seat"
+  printf '%s\t25\n' "$SEATS_DIR/beta" > "$SPEC_DIR/extra_map"
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" switch beta)
+  expect_code 1 "$?" "spend at the cap must stop covering the empty seat: $out"
+  assert_contains "$out" "quota is used up" "the refusal must say the plan quota is gone"
+
+  # `stop` never covers anything, so it must refuse exactly as an unset policy did.
+  run_seat "$HOME_DIR" "$FAKEBIN" extra-usage stop >/dev/null
+  printf '%s\t10\n' "$SEATS_DIR/beta" > "$SPEC_DIR/extra_map"
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" switch beta)
+  expect_code 1 "$?" "the stop policy must never keep an empty seat usable: $out"
+  assert_contains "$out" "quota is used up" "the refusal must say the plan quota is gone"
+  assert_grep alpha "$HOME_DIR/config/claude-seat" "a refused switch must move nothing"
+  pass "a seat on paid extra usage still takes work while stop and an unset policy refuse it"
+}
+
+test_an_armed_watch_and_a_spawn_report_one_dry_vendor_once_between_them() {
+  local rec id out wake
+  id=seat-dry-shared-1
+  rec=$(spawn_case spawn-seat-dry-shared "$id")
+  read_spawn_case "$rec"
+  make_quota_fake "$FAKEBIN" "$CASE_DIR/quota-spec"
+  mkdir -p "$SEATS_DIR/alpha"
+  printf '%s\n' "$SEATS_DIR/alpha" > "$CASE_DIR/quota-spec/oauth"
+  printf 'alpha\n' > "$HOME_DIR/config/claude-seat"
+  printf '10\n' > "$HOME_DIR/config/claude-seat-threshold"
+  printf '%s\t0\t2026-10-20T09:00:00Z\t0\t2026-10-20T09:00:00Z\n' \
+    "$SEATS_DIR/alpha" > "$CASE_DIR/quota-spec/windows_map"
+
+  # The watch speaks first and records the notice.
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" auto)
+  expect_code 0 "$?" "a pass with every seat empty must report rather than fail: $out"
+  assert_contains "$out" "all Claude seats are out of quota" "the pass must say the vendor is empty"
+  assert_contains "$out" "2026-10-20T09:00:00Z" "the notice must name when the seat returns"
+
+  # The spawn refuses, and must not say the same thing to the supervisor again:
+  # one depletion reaches the captain once, whichever channel saw it first.
+  out=$(run_spawn_here "$HOME_DIR" "$WT_DIR" "$FAKEBIN" "$LAUNCH_LOG" "$id" "$PROJ_DIR" 2>&1)
+  expect_code 1 "$?" "a spawn onto the empty vendor must still be refused"
+  assert_contains "$out" "all Claude seats are out of quota" \
+    "the refusal must use the same wording the watch used"
+  wake=$(grep -c 'seat-depleted:claude' "$HOME_DIR/state/.wake-queue" 2>/dev/null || true)
+  assert_equals 0 "${wake:-0}" \
+    "a depletion the watch already reported must not be recorded a second time by the spawn"
+
+  # And the watch stays quiet on its next poll for the same unchanged facts.
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" auto)
+  [ -z "$out" ] || fail "the same unchanged depletion must not report again: $out"
+  pass "an armed watch and a spawn report one dry vendor once between them"
+}
+
+test_one_unreadable_seat_never_re_announces_an_unchanged_dry_vendor() {
+  local out case_dir home claude_seats codex_seats fakebin spec
+  case_dir="$TMP_ROOT/dry-undecided"
+  home="$case_dir/home"
+  claude_seats="$case_dir/claude-seats"
+  codex_seats="$case_dir/codex-seats"
+  spec="$case_dir/quota-spec"
+  mkdir -p "$home/config" "$home/state" "$home/data" \
+    "$claude_seats/seat-max" "$codex_seats/codex-max" "$codex_seats/codex-max2"
+  : > "$codex_seats/codex-max/auth.json"
+  : > "$codex_seats/codex-max2/auth.json"
+  fakebin=$(fm_fakebin "$case_dir/fake")
+  make_dual_quota_fake "$fakebin" "$spec"
+  printf '%s\n' "$claude_seats" > "$home/config/claude-seats-root"
+  printf '%s\n' "$codex_seats" > "$home/config/codex-seats-root"
+  printf 'codex-max\n' > "$home/config/codex-seat"
+  printf 'seat-max\n' > "$home/config/claude-seat"
+  printf '10\n' > "$home/config/codex-seat-threshold"
+  dual_quota "$spec" codex "$codex_seats/codex-max" 0 2026-10-19T00:00:00Z
+  dual_quota "$spec" codex "$codex_seats/codex-max2" 0 2026-10-20T00:00:00Z
+  dual_quota "$spec" claude "$claude_seats/seat-max" 92 2026-10-21T00:00:00Z
+
+  out=$(run_seat "$home" "$fakebin" --provider codex auto)
+  assert_contains "$out" "all Codex seats are out of quota" "the first pass must report the dry vendor"
+
+  # The non-active seat's read fails on this pass only. Nothing about the
+  # depletion has changed, so a transient unreadable seat must not make the
+  # fleet hear it all over again.
+  : > "$spec/codex_map"
+  dual_quota "$spec" codex "$codex_seats/codex-max" 0 2026-10-19T00:00:00Z
+  out=$(run_seat "$home" "$fakebin" --provider codex auto)
+  [ -z "$out" ] || fail "an unreadable seat must not re-announce an unchanged depletion: $out"
+  assert_grep codex-max "$home/config/codex-seat" "an undecided pass must move nothing"
+
+  # Once it reads again, still unchanged, it stays quiet.
+  dual_quota "$spec" codex "$codex_seats/codex-max2" 0 2026-10-20T00:00:00Z
+  out=$(run_seat "$home" "$fakebin" --provider codex auto)
+  [ -z "$out" ] || fail "the restored read must not re-announce an unchanged depletion: $out"
+
+  # A reset moving IS a change, so it speaks again.
+  : > "$spec/codex_map"
+  dual_quota "$spec" codex "$codex_seats/codex-max" 0 2026-10-26T00:00:00Z
+  dual_quota "$spec" codex "$codex_seats/codex-max2" 0 2026-10-20T00:00:00Z
+  out=$(run_seat "$home" "$fakebin" --provider codex auto)
+  assert_contains "$out" "2026-10-26T00:00:00Z" "a reset that moves must be reported again"
+  pass "one unreadable seat never re-announces an unchanged dry vendor"
 }
 
 test_a_spawn_is_refused_on_an_empty_seat_and_the_routing_line_is_recorded_once() {
@@ -3982,6 +4109,9 @@ test_an_empty_seat_returns_to_rotation_on_its_own_once_a_read_shows_headroom
 test_the_watch_refuses_to_flip_between_empty_seats_and_says_where_work_goes_once
 test_the_watch_reports_a_vendor_draining_empty_after_its_shortfall_was_reported
 test_a_spawn_is_refused_on_an_empty_seat_and_the_routing_line_is_recorded_once
+test_a_paid_overflow_seat_still_takes_work_while_a_stop_policy_refuses_it
+test_an_armed_watch_and_a_spawn_report_one_dry_vendor_once_between_them
+test_one_unreadable_seat_never_re_announces_an_unchanged_dry_vendor
 test_dispatch_gate_needs_no_quota_reader_when_unconfigured
 test_destination_minimum_is_configurable_validated_and_clearable
 test_a_switch_skips_a_seat_below_the_destination_minimum

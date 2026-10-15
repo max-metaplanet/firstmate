@@ -535,13 +535,20 @@ destination_quota_check() {
   fm_seat_depleted_from "$out"
   case "$?" in
     0)
-      reset=$(fm_seat_reset_at_from "$out") || reset=''
-      if [ -n "$reset" ]; then
-        printf 'its quota is used up; the seat comes back at %s\n' "$reset"
-      else
-        printf 'its quota is used up and its report names no reset time\n'
+      # An empty plan quota is not the end of it: a configured `allow <usd>`
+      # policy deliberately keeps dispatching on paid extra usage, so a seat it
+      # still covers remains a destination. Only the depleted rule yields here;
+      # the destination minimum below is a separate rule and still applies, with
+      # --force as its deliberate manual override.
+      if ! fm_seat_extra_usage_covers_from "$out"; then
+        reset=$(fm_seat_reset_at_from "$out") || reset=''
+        if [ -n "$reset" ]; then
+          printf 'its quota is used up; the seat comes back at %s\n' "$reset"
+        else
+          printf 'its quota is used up and its report names no reset time\n'
+        fi
+        return 0
       fi
-      return 0
       ;;
     2)
       printf 'its quota could not be read, so its headroom is unknown and this makes no guess\n'
@@ -1448,7 +1455,7 @@ auto_lead_trigger() {  # <threshold>
 # The trigger and switch half of one automatic pass.
 auto_trigger() {
   local threshold=$1 policy=$2 active dir remaining target fired blocked out
-  local depleted label alt alt_provider alt_seat alt_pct alt_how alt_label signature
+  local depleted alt notice
   active=$(fm_seat_active)
   dir=$(fm_seat_config_dir "$active")
   if ! remaining=$(fm_seat_remaining "$dir"); then
@@ -1461,6 +1468,9 @@ auto_trigger() {
     '($r | tonumber) <= ($t | tonumber)' >/dev/null 2>&1; then
     auto_record_set fired ''
     auto_record_set blocked ''
+    # The vendor is demonstrably not dry, so the standing notice is forgotten
+    # and the next depletion announces itself instead of being silenced by it.
+    fm_seat_dry_clear "$STATE" "$FM_SEAT_PROVIDER"
     return 0
   fi
   fired=$(auto_record_get fired) || fired=''
@@ -1488,34 +1498,33 @@ auto_trigger() {
       "$active" "$remaining" "$target" "$(printf '%s' "$out" | tail -1)"
     return 0
   fi
-  # Every seat of this vendor proven empty is its own outcome, not a failure to
+  # Every seat of this vendor out of quota is its own outcome, not a failure to
   # find headroom: there is nowhere on this vendor to go, so nothing moves -
-  # which is what stops a pass flipping between two empty seats - and the line
-  # says where the work goes instead. It rides the `blocked` record keyed on the
-  # facts it states, so it is reported once while they hold rather than on every
-  # poll, and again as soon as a seat drains, a reset moves, or the routing
-  # changes.
-  if depleted=$(fm_seat_provider_depletion_summary); then
-    label=Claude; [ "$FM_SEAT_PROVIDER" != codex ] || label=Codex
-    alt=$(fm_seat_alternative_headroom) || alt=''
-    read -r alt_provider alt_seat alt_pct alt_how <<< "$alt"
-    signature="$active:depleted:$depleted:$alt_provider:$alt_seat:$alt_how"
-    [ "$blocked" != "$signature" ] || return 0
-    auto_record_set blocked "$signature"
-    if [ -n "$alt" ]; then
-      alt_label=Claude; [ "$alt_provider" != codex ] || alt_label=Codex
-      if [ "$alt_how" = active ]; then
-        printf '%s-seat: all %s seats depleted (%s); new work routes to %s seat %s, which has %s%% left. No switch was made.\n' \
-          "$FM_SEAT_PROVIDER" "$label" "$depleted" "$alt_label" "$alt_seat" "$alt_pct"
-      else
-        printf '%s-seat: all %s seats depleted (%s); new work routes to %s once it moves to seat %s, which has %s%% left: run %s/bin/fm-seat.sh --provider %s switch %s. No %s switch was made.\n' \
-          "$FM_SEAT_PROVIDER" "$label" "$depleted" "$alt_label" "$alt_seat" "$alt_pct" "$FM_ROOT" "$alt_provider" "$alt_seat" "$label"
-      fi
-    else
-      printf '%s-seat: all %s seats depleted (%s); no seat on the other vendor has readable headroom either, so new work waits for the first reset. No switch was made.\n' \
-        "$FM_SEAT_PROVIDER" "$label" "$depleted"
-    fi
-    return 0
+  # which is what stops a pass flipping between two empty seats - and the notice
+  # says where the work goes instead. A seat a paid extra-usage policy still
+  # covers is not dry, so that case falls through to the policy line below
+  # rather than claiming the vendor is empty.
+  if ! fm_seat_extra_usage_covers "$dir"; then
+    depleted=$(fm_seat_provider_depletion_summary)
+    case "$?" in
+      0)
+        alt=$(fm_seat_alternative_headroom) || alt=''
+        notice=$(fm_seat_dry_notice "$FM_SEAT_PROVIDER" "$depleted" "$alt")
+        # Announced through the record the spawn gate shares, so an armed watch
+        # and a spawn attempt report one depletion once between them rather than
+        # twice in two different wordings.
+        fm_seat_dry_announce "$STATE" "$FM_SEAT_PROVIDER" "$notice" || return 0
+        printf '%s-seat: %s. No switch was made.\n' "$FM_SEAT_PROVIDER" "$notice"
+        return 0
+        ;;
+      2)
+        # One seat gave no verdict, so nothing is proven either way. Saying
+        # anything here would let a transient unreadable read re-announce a
+        # depletion that has not changed, so this pass stays silent and leaves
+        # every record exactly as it found it.
+        return 0
+        ;;
+    esac
   fi
   [ "$blocked" != "$active:short" ] || return 0
   auto_record_set blocked "$active:short"
