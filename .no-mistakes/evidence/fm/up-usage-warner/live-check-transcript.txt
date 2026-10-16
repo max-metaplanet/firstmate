@@ -1,0 +1,30 @@
+### S1 unconfigured home: check + arm
+$ fm-usage-warner.sh check   (no config/usage-warner)
+exit=0
+$ fm-usage-warner.sh arm
+fm-usage-warner: no threshold configured at /var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.FDoAB0/config/usage-warner
+exit=1
+calls.log after unconfigured: <none: quota-axi and osascript never invoked>
+state files: 
+
+### S2 on-demand check against real quota-axi (live: five_hour ~70, seven_day ~58)
+# lab
+five_hour:50
+five_hour:99
+seven_day:95
+model:nonexistent:1
+$ check (1st)
+usage-warner: five_hour at 70% (>=50%)
+exit=0
+$ check (2nd, same state)
+exit=0
+--- record:
+fm-usage-warner-v2
+reported=
+notified-begin
+five_hour:50
+notified-end
+--- calls.log:
+quota-axi --provider claude --json --full --no-credential-refresh
+osascript -e on run argv -e display notification (item 1 of argv) with title "Firstmate: Claude usage" -e end run five_hour at 70% (>=50%)
+quota-axi --provider claude --json --full --no-credential-refresh

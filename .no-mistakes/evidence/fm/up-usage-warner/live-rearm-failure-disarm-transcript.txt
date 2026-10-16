@@ -1,0 +1,39 @@
+
+### S4 live re-arm: the real five_hour window reset at 19:00Z between sweeps (real read now five_hour=0), so the S3b sweep cleared five_hour:50/60 from the record (shown above)
+[{"id":"five_hour","percentUsed":0},{"id":"seven_day","percentUsed":59},{"id":"model:fable","percentUsed":0},{"id":"extra_usage","percentUsed":5}]
+--- after re-arm, a renewed crossing warns again: real quota-axi output with five_hour rewritten to 85 via jq (window value only; everything else real)
+$ check
+usage-warner: five_hour at 85% (>=50%); five_hour at 85% (>=60%)
+exit=0
+$ check again
+exit=0
+--- calls.log:
+quota-axi --provider claude --json --full --no-credential-refresh
+osascript -e on run argv -e display notification (item 1 of argv) with title "Firstmate: Claude usage" -e end run five_hour at 85% (>=50%); five_hour at 85% (>=60%)
+quota-axi --provider claude --json --full --no-credential-refresh
+--- record:
+fm-usage-warner-v2
+reported=
+notified-begin
+five_hour:50
+five_hour:60
+notified-end
+
+### S5 standing read failure (quota-axi absent from PATH): reported once until it changes, record crossings kept
+$ check #1
+usage-warner: quota-axi is not installed
+exit=0
+$ check #2
+exit=0
+--- record:
+fm-usage-warner-v2
+reported=usage-warner: quota-axi is not installed
+notified-begin
+five_hour:50
+five_hour:60
+notified-end
+
+### S6 disarm
+disarmed: state/usage-warner.check.sh
+exit=0
+<no usage-warner files remain>
