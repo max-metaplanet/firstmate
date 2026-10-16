@@ -2841,20 +2841,6 @@ rerecord_device_shifted_pr_poll() {  # <id>
 # Logged once per watcher, not once per poll: the condition below is re-read
 # every cycle, and a line per poll would bury the triage log it shares.
 RECLAIMED_LOCK_ABSORB_LOGGED=0
-# The open-decision half of that condition, resolved once per watcher rather
-# than per poll: a decision already open when this cycle reclaimed the lock is
-# what the recovery turn would re-present, while a decision opened afterwards
-# wakes this live watcher on its own status line and queues a row the per-poll
-# queue stat already catches.
-RECLAIMED_LOCK_OPEN_DECISION=
-
-reclaimed_lock_recovery_has_open_decision() {
-  if [ -z "$RECLAIMED_LOCK_OPEN_DECISION" ]; then
-    RECLAIMED_LOCK_OPEN_DECISION=no
-    fm_recovery_open_decision_present && RECLAIMED_LOCK_OPEN_DECISION=yes
-  fi
-  [ "$RECLAIMED_LOCK_OPEN_DECISION" = yes ]
-}
 
 resurface_after_downtime() {
   # Handling successors already have a predecessor-delivered wake on the way.
@@ -2869,19 +2855,16 @@ resurface_after_downtime() {
       exit 1
     fi
     [ "$FM_RECOVERY_MARKER_ACTION" = recover ] || return 0
-  elif [ "$WATCHER_RECOVERY_MARKER_APPROVED" -ne 1 ] \
-    && ! fm_recovery_queue_has_work && ! reclaimed_lock_recovery_has_open_decision; then
+  elif [ "$WATCHER_RECOVERY_MARKER_APPROVED" -ne 1 ] && ! fm_recovery_queue_has_work; then
     # A stale lock this cycle reclaimed is evidence of a GAP, not of work to
-    # drain, and this arm consults no marker, so the queue and the still-open
-    # decision fold are the only records that say whether the announcement has
-    # anything for its reader - the same gate fm_recovery_has_work_to_present
-    # owns for the marker transition. The queue is checked on every poll rather
-    # than once, so a row appended later still surfaces within one cycle. Read
-    # without the queue lock, like bin/fm-guard.sh's own count: a torn read can
-    # only delay this by one poll.
+    # drain, and this arm consults no marker, so the queue is the only record
+    # that says whether the announcement has anything for its reader. Checked on
+    # every poll rather than once, so a row appended later still surfaces within
+    # one cycle. Read without the queue lock, like bin/fm-guard.sh's own count: a
+    # torn read can only delay this by one poll.
     if [ "$RECLAIMED_LOCK_ABSORB_LOGGED" -eq 0 ]; then
       RECLAIMED_LOCK_ABSORB_LOGGED=1
-      triage_log "absorbed reclaimed-lock recovery (nothing queued to drain, no decision open)"
+      triage_log "absorbed reclaimed-lock recovery (nothing queued to drain)"
     fi
     return 0
   fi

@@ -947,37 +947,18 @@ _fm_recovery_marker_ack() {
   fm_lock_release "$lock"
 }
 
-# 0 when the durable queue holds at least one row to drain, which is the first
-# and cheapest half of the announcement gate fm_recovery_has_work_to_present
-# owns below: `check: rearm-resurface` sends its reader to a drain, so a
-# recovery with nothing for that drain spends a supervising turn that can only
-# find nothing - the same reason bin/fm-guard.sh counts rows before it sends an
-# actor to a drain. The marker transitions below read it under the queue lock;
-# bin/fm-watch.sh's resurface_after_downtime reads the same gate for the
-# reclaimed-stale-lock arm of the same decision, which consults no marker at all.
-# Deliberately a stat rather than a parse: a queue that exists but cannot be read
-# is not evidence of a drained queue, so it still announces.
+# 0 when the durable queue holds at least one row to drain. A watcher-downtime
+# recovery is announced ONLY when this is true, which is the whole of that
+# announcement's purpose: `check: rearm-resurface` tells its reader to drain the
+# queue and nothing else, so announcing it over an empty queue spends a
+# supervising turn that can only find nothing - the same reason bin/fm-guard.sh
+# counts rows before it sends an actor to a drain. The marker transitions below
+# read it under the queue lock; bin/fm-watch.sh's resurface_after_downtime reads
+# it for the reclaimed-stale-lock arm of the same decision, which consults no
+# marker at all. Deliberately a stat rather than a parse: a queue that exists but
+# cannot be read is not evidence of a drained queue, so it still announces.
 fm_recovery_queue_has_work() {
   [ -s "$FM_WAKE_QUEUE" ]
-}
-
-# 0 when this home still holds a decision open, which is the one record a
-# recovery turn can act on with nothing queued: the OPEN DECISIONS fold reads the
-# status logs, not the queue, and AGENTS.md section 8 makes that section
-# actionable on its own, so a gap that leaves a decision open does have work for
-# its reader. A decision that OPENS later needs no read here - its own status
-# line wakes the live watcher and queues a row the stat above already catches -
-# so this is read once per recovery decision rather than per poll.
-fm_recovery_open_decision_present() {
-  _fm_wake_require_classify || return 1
-  [ -n "$(scan_open_decisions "$STATE")" ]
-}
-
-# The whole of "this recovery has something for its reader", and the gate the
-# downtime announcement takes. Queue rows answer it first because they cost one
-# stat; the fold is consulted only when the queue is empty.
-fm_recovery_has_work_to_present() {
-  fm_recovery_queue_has_work || fm_recovery_open_decision_present
 }
 
 _fm_recovery_marker_arm_check() {
@@ -1030,15 +1011,13 @@ _fm_recovery_marker_arm_check() {
       return 0
       ;;
     pending:downtime:*)
-      # Nothing to present leaves this generation PENDING rather than announcing
-      # it: there is nothing for the announced turn to act on, and leaving it
-      # pending keeps the recovery owed, so the first durable row to arrive
-      # announces it on the next arm. Announcing it regardless woke a supervisor
-      # for every watcher close that no turn had acknowledged - a restart, a
-      # take-over, a self-exit - and the drain it asked for found nothing every
-      # time. A decision this home still holds open is not nothing: that fold is
-      # exactly what the recovery turn re-presents after the gap.
-      if ! fm_recovery_has_work_to_present; then
+      # An empty queue leaves this generation PENDING rather than announcing it:
+      # there is nothing for the announced turn to drain, and leaving it pending
+      # keeps the recovery owed, so the first durable row to arrive announces it
+      # on the next arm. Announcing it here instead woke a supervisor for every
+      # watcher close that no turn had acknowledged - a restart, a take-over, a
+      # self-exit - and the drain it asked for found an empty queue every time.
+      if ! fm_recovery_queue_has_work; then
         fm_lock_release "$lock"
         fm_lock_release "$FM_WAKE_QUEUE_LOCK"
         return 0
