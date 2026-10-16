@@ -5170,7 +5170,8 @@ test_unresolvable_leader_preserves_every_candidate() {
 # processes away first, so the teardown completes; anything still standing
 # there afterwards is not the task's and keeps the slot.
 # <case-dir> gets a fake zellij whose one task tab holds <pane-pid>, and whose
-# close of that tab ends exactly that pid, as a real pane close does.
+# close of that tab ends exactly that pid shortly AFTER the close returns, as a
+# real pane close does.
 add_zellij_task_pane() {  # <case-dir> <pane-pid>
   local case_dir=$1
   fm_write_meta "$case_dir/state/task-x1.meta" \
@@ -5195,7 +5196,8 @@ case " \$* " in
   *" list-tabs "*) printf '[{"tab_id":1,"name":"fm-task-x1"}]\n' ;;
   *" close-tab-by-id "*)
     printf 'close\n' >> "$case_dir/zellij-close.log"
-    kill -KILL $2 2>/dev/null || true ;;
+    ( sleep 0.5; kill -TERM $2 2>/dev/null ) >/dev/null 2>&1 &
+    ;;
 esac
 exit 0
 EOF

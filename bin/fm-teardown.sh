@@ -2405,6 +2405,20 @@ EOF
   return 1
 }
 
+# A backend close only asks the pane to go away, and its shell and agent take
+# a moment to exit after it returns. Give whatever still stands in <dir> a
+# bounded few seconds to leave before the pre-return scan judges it, so the
+# task's own exiting worker is never mistaken for something to refuse over.
+await_closed_endpoint_processes() {  # <dir>
+  local waited=0 pids
+  while [ "$waited" -lt 5 ]; do
+    pids=$(pids_with_cwd_under "$1") || return 0
+    [ -n "$pids" ] || return 0
+    sleep 1
+    waited=$((waited + 1))
+  done
+}
+
 # Refuse to hand <dir> to `treehouse return --force` while anything the reaper
 # could not prove to be this task's own still has its cwd there: treehouse
 # terminates every process standing in the worktree it returns, so returning
@@ -3714,6 +3728,7 @@ if [ "$KIND" != secondmate ] && teardown_owns_worktree; then
       if [ "$TEARDOWN_WINDOWLESS" != 1 ]; then
         fm_backend_kill "$BACKEND" "$T" "$(meta_value "$META" zellij_tab_id)" "fm-$ID" \
           || endpoint_close_refusal "$ID" "$BACKEND" "$T" 1 || exit 1
+        await_closed_endpoint_processes "$WT"
       fi
       TEARDOWN_ENDPOINT_CLOSED=1
       ;;
