@@ -146,9 +146,34 @@ for content in ["not-json", "null", "[]"]:
     c.expect(True, "source=last-good-fallback")
 print("PASS: fresh TTL and 900-second last-good boundary, unreadable JSON fallback")
 
+
+# A failed live read falls back at the launch boundary the policy itself
+# enforces, never at a higher bar of its own: a seat at 18 percent is dispatched
+# by a live read, so the same reading seconds past the fresh window must not be
+# reported as quota that could not be read. At or below that boundary, and
+# below a configured floor, it still refuses.
+def remaining(value):
+    def mutate(provider):
+        for window in provider["windows"]:
+            window["percentRemaining"] = value
+        provider["quotaSemantics"]["effectiveAvailability"][0]["effectivePercentRemaining"] = value
+    return mutate
+
+
+for value, floor, allowed in [(18, None, True), (18, "20", False), (10, None, False), (0, None, False)]:
+    c = Case()
+    c.expect(True, "source=live")
+    if floor:
+        (c.config / "claude-seat-floor").write_text(floor + "\n")
+    c.age(122, remaining(value))
+    c.set(failure())
+    c.expect(allowed, "source=last-good-fallback" if allowed else "fallback=unsafe-or-missing")
+    assert c.count() == 2
+print("PASS: a failed live read falls back at the configured launch boundary and refuses at or below it")
+
 mutations = [
-    lambda r: r["windows"][0].update(percentRemaining=20),
-    lambda r: r["windows"][1].update(percentRemaining=20),
+    lambda r: r["windows"][0].update(percentRemaining=10),
+    lambda r: r["windows"][1].update(percentRemaining=10),
     lambda r: r["windows"][1].update(percentRemaining=None),
     lambda r: r["windows"].pop(),
     lambda r: r["windows"].append({"id": "month", "kind": "monthly", "percentRemaining": 0}),
@@ -257,7 +282,7 @@ def burst(case):
     with concurrent.futures.ThreadPoolExecutor(max_workers=6) as pool:
         return list(pool.map(lambda _: case.run(QUOTA_DELAY="1"), range(6)))
 for name, last_good in [("safe", lambda c: c.age(200)),
-                        ("unsafe", lambda c: c.age(200, lambda r: r["windows"][0].update(percentRemaining=20))),
+                        ("unsafe", lambda c: c.age(200, lambda r: r["windows"][0].update(percentRemaining=10))),
                         ("missing", None)]:
     for response in [failure(), "not-json"]:
         c = Case()
@@ -285,7 +310,7 @@ def held(case, allowed, text):
 for age, mutate, allowed, text in [
         (50, None, True, "source=fresh-cache"),
         (200, None, True, "source=last-good-fallback"),
-        (200, lambda r: r["windows"][1].update(percentRemaining=20), False, "fallback=unsafe-or-missing"),
+        (200, lambda r: r["windows"][1].update(percentRemaining=10), False, "fallback=unsafe-or-missing"),
         (910, None, False, "fallback=unsafe-or-missing")]:
     c = Case()
     c.expect(True, "source=live")
@@ -376,3 +401,45 @@ result = subprocess.run(["bash", "-c", raw_script, "raw", str(ROOT), str(c.profi
 assert result.returncode == 0 and json.loads(result.stdout) == json.loads(c.response.read_text()), result
 assert c.count() == 2
 print("PASS: managed pipeline launches and raw readers share cache/backoff, preserve JSON, and retain exclusions")
+
+# A launcher whose own PATH has no quota-axi reads quota through the directory
+# the live lead recorded beside its lock, and holds when no record names one.
+c = Case()
+(c.config / "claude-seats-root").write_text(str(c.base) + "\n")
+(c.config / "claude-seat").write_text("profile\n")
+state = c.base / "state"
+state.mkdir()
+# Every directory that can serve quota-axi leaves this PATH, so the launcher
+# is as blind to the tool as a daemon started outside a login shell.
+def blind_path(case):
+    return ":".join(entry for entry in case.env["PATH"].split(":")
+                    if entry and not os.access(os.path.join(entry, "quota-axi"), os.X_OK))
+
+
+blind = dict(c.env, PATH=blind_path(c))
+result = subprocess.run(["bash", str(ROOT / "bin/fm-seat-pipeline.sh"), "launch",
+                         "--default-profile", "", str(c.base), str(native)],
+                        env=blind, capture_output=True, text=True)
+assert result.returncode == 75 and "quota could not be read" in result.stderr, result
+assert c.count() == 0, c.calls.read_text()
+(state / ".lock").write_text("4242424\n")
+(state / ".lock-runtime").write_text("pid=4242424\nprofile=\nambient=\nquotabin=%s\n" % c.base)
+result = subprocess.run(["bash", str(ROOT / "bin/fm-seat-pipeline.sh"), "launch",
+                         "--default-profile", "", str(c.base), str(native)],
+                        env=blind, capture_output=True, text=True)
+assert result.returncode == 0 and "native-started" in result.stdout, result
+assert c.count() == 1, c.calls.read_text()
+# A record naming a directory without the tool changes nothing.
+c = Case()
+(c.config / "claude-seats-root").write_text(str(c.base) + "\n")
+(c.config / "claude-seat").write_text("profile\n")
+state = c.base / "state"
+state.mkdir()
+(state / ".lock").write_text("4242424\n")
+(state / ".lock-runtime").write_text("pid=4242424\nquotabin=%s\n" % (c.base / "profile"))
+result = subprocess.run(["bash", str(ROOT / "bin/fm-seat-pipeline.sh"), "launch",
+                         "--default-profile", "", str(c.base), str(native)],
+                        env=dict(c.env, PATH=blind_path(c)), capture_output=True, text=True)
+assert result.returncode == 75 and "quota could not be read" in result.stderr, result
+assert c.count() == 0, c.calls.read_text()
+print("PASS: a launcher with no quota-axi on PATH reads quota through the lead-recorded directory only when it holds the tool")

@@ -26,8 +26,12 @@ Fresh, successful OAuth evidence is reusable for <120 seconds from the producer'
 refreshedAt. Only positive plan quota is cached: paid usage always needs a live
 read. After transient failure, evidence is fallback-only through 900 seconds.
 Fallback requires BOTH session and weekly windows, every account availability
-and every session/weekly/monthly window to be known, >max(20, floor+10) percent
-remaining, and no exhausted or unknown account runway. Projected exhaustion
+and every session/weekly/monthly window to be known, more than floor+10
+percent remaining, and no exhausted or unknown account runway. That bar is the
+launch boundary this policy itself enforces plus ten points of hysteresis, so
+an aged reading cannot carry a seat across the boundary a live read holds at.
+A bar above the boundary instead refuses launches the same evidence allows
+live, and reports them as quota that could not be read. Projected exhaustion
 must be more than 120 seconds ahead, both by timestamp and by age-adjusted
 usableRunwaySeconds. Every declared boundedBy window must exist and clear the
 same headroom threshold. Any reported extra-usage
@@ -135,7 +139,7 @@ def transient(report):
 
 
 def comfortable(report, floor, policy, now, age):
-    boundary = max(20, floor + 10)
+    boundary = floor + 10
     if not healthy_availability(applicable(report), boundary):
         return False
     windows = row(report).get("windows", [])
