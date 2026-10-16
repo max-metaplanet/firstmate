@@ -811,17 +811,19 @@ test_a_long_batch_carries_every_verdict_uncut() {
   pass "fm-jev-prod-check: a long batch carries every verdict it settles, uncut"
 }
 
-# Wrap a home's fake gh so the first read matching <pattern> logs itself and
-# then hangs past the read bound, spending the whole read budget.
-slow_once_gh() {  # <home> <case-pattern>
-  local home=$1 bin="$1/bin"
+# Wrap a home's fake gh so a read matching <pattern> logs itself and then hangs
+# past the read bound, spending the whole read budget: only the first such read
+# with `once`, every one with `always`.
+slow_gh() {  # <home> <case-pattern> <once|always>
+  local home=$1 bin="$1/bin" consume=
+  [ "$3" = always ] || consume="rm -f '$home/fx/slow-read'"
   mv "$bin/gh" "$bin/gh-fixture"
   cat > "$bin/gh" <<EOF
 #!/usr/bin/env bash
 case "\$*" in
   $2)
-    if [ -e '$home/fx/slow-once' ]; then
-      rm -f '$home/fx/slow-once'
+    if [ -e '$home/fx/slow-read' ]; then
+      $consume
       printf '%s\n' "\$*" >> '$home/fx/gh-argv.log'
       sleep 4
       exit 1
@@ -830,42 +832,50 @@ esac
 exec '$bin/gh-fixture' "\$@"
 EOF
   chmod +x "$bin/gh"
-  : > "$home/fx/slow-once"
+  : > "$home/fx/slow-read"
 }
 
-# One poll on the real wall clock, the only clock the read budget runs on.
+# Merged pull requests placed on the real wall clock, the only clock the read
+# budget runs on, so a budget case never contradicts its own lookback.
+write_real_pulls() {  # <home> <json-array-of-numbers>
+  local merged
+  merged=$(jq -nr --argjson t "$(( $(date +%s) - 7200 ))" '$t | todateiso8601')
+  jq -n --arg base "https://github.com/$REPO/pull" --arg head "$HEAD_SHA" \
+    --arg merge "$MERGE_SHA" --arg merged "$merged" --arg title "$TITLE" \
+    --argjson numbers "$2" \
+    '$numbers | map({number:.,html_url:"\($base)/\(.)",title:$title,
+       merged_at:$merged,head:{sha:$head},merge_commit_sha:$merge})' \
+    > "$1/fx/pulls.json"
+}
+
+# One poll on the real wall clock.
 budget_poll() {  # <home>
   env PATH="$1/bin:$PATH" FM_HOME="$1" FM_JEV_PROD_BUDGET=3 \
     FM_JEV_PROD_MAX_PRS=3 "$CHECK" check 2>&1
 }
 
+comment_reads() {  # <home>
+  sed -n 's|.*issues/\([0-9]*\)/comments.*|\1|p' "$1/fx/gh-argv.log" | tr '\n' ' '
+}
+
 test_a_window_the_budget_cut_short_is_finished_on_the_next_poll() {
-  local home real merged first second expected
+  local home
   home=$(make_home budget-cursor)
   configure "$home"
   fake_gh "$home" >/dev/null
-  # The budget is real wall-clock time here, so the merges are placed relative
-  # to it rather than to the fixed test clock.
-  real=$(date +%s)
-  merged=$(jq -nr --argjson t "$((real - 7200))" '$t | todateiso8601')
-  jq -n --arg base "https://github.com/$REPO/pull" --arg head "$HEAD_SHA" \
-    --arg merge "$MERGE_SHA" --arg merged "$merged" --arg title "$TITLE" \
-    '[2214,2215,2216,2217,2218,2219] | map({number:.,html_url:"\($base)/\(.)",title:$title,
-       merged_at:$merged,head:{sha:$head},merge_commit_sha:$merge})' \
-    > "$home/fx/pulls.json"
-  # The first comment read of the run is slow enough to spend the whole budget.
-  slow_once_gh "$home" '*issues/*/comments*'
+  write_real_pulls "$home" '[2214,2215,2216,2217,2218,2219]'
+  write_no_comments "$home" 2214
+  # The second pull request's comment read runs the budget out after the first
+  # one had already spent part of it.
+  slow_gh "$home" '*issues/2215/comments*' once
 
   : > "$home/fx/gh-argv.log"
   budget_poll "$home" >/dev/null
-  first=$(sed -n 's|.*issues/\([0-9]*\)/comments.*|\1|p' "$home/fx/gh-argv.log")
-  assert_equals 1 "$(printf '%s\n' "$first" | grep -c .)" "the spent budget must stop the poll after one pull request"
+  assert_equals "2214 2215 " "$(comment_reads "$home")" "the spent budget must stop the poll at the pull request it cut short"
 
   : > "$home/fx/gh-argv.log"
   budget_poll "$home" >/dev/null
-  second=$(sed -n 's|.*issues/\([0-9]*\)/comments.*|\1|p' "$home/fx/gh-argv.log" | tr '\n' ' ')
-  expected="$first $(( (first - 2214 + 1) % 6 + 2214 )) $(( (first - 2214 + 2) % 6 + 2214 )) "
-  assert_equals "$expected" "$second" \
+  assert_equals "2215 2216 2217 " "$(comment_reads "$home")" \
     "the next poll must start at the pull request the budget cut short, not skip it"
   pass "fm-jev-prod-check: a window the read budget cut short is finished on the very next poll"
 }
@@ -875,11 +885,13 @@ test_a_preview_read_the_budget_cut_short_is_deferred_not_couldnt_check() {
   home=$(make_home budget-preview)
   configure "$home"
   fake_gh "$home" >/dev/null
-  NOW=$(date +%s) write_pulls "$home" 7200
+  write_real_pulls "$home" '[2213,2214]'
+  write_no_comments "$home" 2213
   write_comments "$home" 2214 900022 "$(section portal failed post-merge production b0d9e7000022)"
   write_preview_artifact "$home" portal proven
-  # The preview lookup is the read the budget runs out in.
-  slow_once_gh "$home" '*actions/workflows/jev-check.yml/runs*'
+  # The preview lookup is the read the budget runs out in, after 2213 had
+  # already spent part of it.
+  slow_gh "$home" '*actions/workflows/jev-check.yml/runs*' once
 
   out=$(budget_poll "$home")
   assert_equals "" "$out" "a pull request the budget cut short must report nothing"
@@ -892,6 +904,34 @@ test_a_preview_read_the_budget_cut_short_is_deferred_not_couldnt_check() {
   assert_grep "woken	2214/portal/b0d9e7000022" "$home/state/.jev-prod-monitor" \
     "the completed verdict must be recorded"
   pass "fm-jev-prod-check: a preview read the budget cut short is deferred, never filed as couldnt-check"
+}
+
+test_a_pull_request_slow_on_every_poll_never_holds_the_monitor() {
+  local home
+  home=$(make_home budget-stuck)
+  configure "$home"
+  fake_gh "$home" >/dev/null
+  write_real_pulls "$home" '[2214,2215]'
+  write_comments "$home" 2214 900023 "$(section portal failed post-merge production 5170c4000023)"
+  write_no_comments "$home" 2215
+  write_preview_artifact "$home" portal proven
+  # 2214's preview lookup outlasts a whole fresh budget on every poll.
+  slow_gh "$home" '*actions/workflows/jev-check.yml/runs*' always
+
+  : > "$home/fx/gh-argv.log"
+  budget_poll "$home" >/dev/null
+  assert_equals "2214 " "$(comment_reads "$home")" "the first poll must spend its whole budget on the slow pull request"
+  assert_grep "couldnt-check	couldnt-check pr=https://github.com/$REPO/pull/2214 " \
+    "$home/state/.jev-prod-monitor" \
+    "a pull request a whole fresh budget could not read must be couldnt-check, not deferred forever"
+  assert_grep "woken	2214/portal/5170c4000023" "$home/state/.jev-prod-monitor" \
+    "the couldnt-check verdict must be recorded so it is not queued again"
+
+  : > "$home/fx/gh-argv.log"
+  budget_poll "$home" >/dev/null
+  assert_equals "2215" "$(comment_reads "$home" | cut -d' ' -f1)" \
+    "the next poll must move on to the next pull request"
+  pass "fm-jev-prod-check: a pull request slow on every poll is couldnt-check and never holds the monitor"
 }
 
 test_the_read_budget_fits_a_lowered_check_timeout() {
@@ -942,4 +982,5 @@ test_a_rotation_bucket_advances_by_a_whole_window
 test_a_long_batch_carries_every_verdict_uncut
 test_a_window_the_budget_cut_short_is_finished_on_the_next_poll
 test_a_preview_read_the_budget_cut_short_is_deferred_not_couldnt_check
+test_a_pull_request_slow_on_every_poll_never_holds_the_monitor
 test_the_read_budget_fits_a_lowered_check_timeout

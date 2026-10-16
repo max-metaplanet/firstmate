@@ -62,9 +62,12 @@
 # repository to watch. Configured, one poll spends at most FM_JEV_PROD_BUDGET
 # seconds (default 20, cut down to the watcher's own per-check bound) over at
 # most FM_JEV_PROD_MAX_PRS pull requests. A pull request the budget did not
-# reach, or ran out in the middle of, is examined first on the next poll; that is
-# deferral, not a failure, and it reports nothing: a read the budget cut short is
-# not evidence about a verdict, so it is never queued or recorded as woken.
+# reach, or ran out in the middle of after an earlier one had spent part of it,
+# is examined first on the next poll; that is deferral, not a failure, and it
+# reports nothing: a read the budget cut short is not evidence about a verdict,
+# so it is never queued or recorded as woken. A pull request that exhausts a
+# whole fresh budget on its own is couldnt-check instead, and the rotation moves
+# past it, so no single slow pull request can hold the monitor in place.
 #
 # DEDUPE. state/.jev-prod-monitor is the one owner. A verdict is keyed by
 # <pr>/<app>/<record-id>, the recorder's own identifier for the run that
@@ -611,18 +614,32 @@ EOF
   return 0
 }
 
+# The budget ran out, and an earlier pull request this poll (the caller's
+# `examined`) had already spent part of it.
+budget_cut_deferrable() {
+  ! budget_left && [ "$examined" -gt 1 ]
+}
+
 # Examine one merged pull request. Appends to the caller's regressions, woken
 # and pending; those are the caller's locals on purpose, because this is one
 # function split out for readability rather than a second owner of the record.
-# Returns non-zero only when the budget ran out mid-read, leaving whatever it
-# had not finished unqueued and unrecorded for the next poll.
+# Returns non-zero only when the budget ran out mid-read after an earlier pull
+# request this poll had spent part of it, leaving whatever it had not finished
+# unqueued and unrecorded for the next poll. The first pull request of a poll had
+# the whole budget, so running out is its honest couldnt-check.
 examine_pr() {  # <number> <url> <head-sha> <merge-sha> <merged-at> <title>
   local number=$1 url=$2 head_sha=$3 merge_sha=$4 merged_at=$5 title=$6
   local comments body_file comment_id ticket apps app verdict phase rec
   local checks_url key class preview preview_run
 
   comments=$(gh_json "repos/$CONFIG_REPO/issues/$number/comments?per_page=100") || {
-    budget_left || return 1
+    budget_cut_deferrable && return 1
+    budget_left && return 0
+    pr_url_ok "$url" "$number" || return 0
+    key="$number/-/read-budget-exhausted"
+    list_has "$woken" "$key" && return 0
+    queue_item couldnt-check "$key" "$url" "$(ticket_from_title "$title")" - none '' \
+      "$url" "https://github.com/$CONFIG_REPO/commit/$merge_sha/checks" ''
     return 0
   }
   body_file="$TMP/body-$number"
@@ -717,7 +734,7 @@ examine_pr() {  # <number> <url> <head-sha> <merge-sha> <merged-at> <title>
     if preview_verdict "$CONFIG_REPO" "$head_sha" "$app"; then
       preview=$PREVIEW_VERDICT
       preview_run=$PREVIEW_RUN_URL
-    elif ! budget_left; then
+    elif budget_cut_deferrable; then
       return 1
     fi
     if [ -z "$preview" ] || ! verdict_is_flagged "$verdict"; then
