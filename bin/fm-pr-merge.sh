@@ -2091,3 +2091,10 @@ case "$outcome_rc" in
     printf 'actionable: merged %s but could not record the outcome for supervision\n' "$URL" >&2
     ;;
 esac
+
+# Opt-in ticket-sync hook (docs/configuration.md); off costs one file test.
+# Reached only once per landed merge: the forge proved MERGED above, and a
+# re-run against an already-merged pull request is refused long before here,
+# so the ticket is completed exactly once.
+[ ! -e "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}/ticket-sync-hook" ] \
+  || FM_HOME=$FM_HOME FM_STATE_OVERRIDE=$STATE "$SCRIPT_DIR/fm-ticket-sync.sh" "$ID" 'done' "$URL" || true

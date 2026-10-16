@@ -1011,6 +1011,13 @@ command_hold() {
   [ -n "$(body_hold_set_timestamp "$(show_field_value "$show" body)")" ] \
     || fail "task $id lost its hold-set stamp while being held"
   publish_parent_hold "$id" "$occurrence" needs-decision "$reason"
+  # Opt-in ticket-sync hook (docs/configuration.md); off costs one file test.
+  # This is the one place a task becomes held for the captain, so it is the one
+  # place the ticket learns the work is waiting on a decision. A repeat of a
+  # hold that was already active is the same wait rather than a new one
+  # (preserve_hold_set), and fires nothing.
+  [ ! -e "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}/ticket-sync-hook" ] || [ "$preserve_hold_set" = 1 ] \
+    || FM_HOME=$FM_HOME FM_STATE_OVERRIDE=$STATE "$SCRIPT_DIR/fm-ticket-sync.sh" "$id" waiting "$reason" || true
   printf '%s\n' "$id"
 }
 

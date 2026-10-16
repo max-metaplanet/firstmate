@@ -574,6 +574,32 @@ See [`trace-context.md`](trace-context.md) for carrier semantics, supported rout
 
 See [`fleet-ledger.md`](fleet-ledger.md) for the opt-in setup, record contract, and limits.
 
+## Ticket-sync hook (config/ticket-sync-hook)
+
+The optional local, gitignored `config/ticket-sync-hook` names one executable this home runs as a task's work reaches each milestone, so an external tracker follows the work instead of depending on firstmate remembering to move a ticket by hand.
+Firstmate ships no tracker integration: the hook, and any credentials it needs, stay private to the home that configured it.
+With the file absent every milestone costs one file test and starts no process, which is what every home that has not opted in does.
+
+The file holds exactly one directive line, with blank lines and `#` comment lines ignored, naming an absolute path to an executable.
+A relative path, a second directive line, or a path that is not an executable file resolves to a hook that cannot be run, and is reported on the task rather than silently skipped.
+
+Firstmate invokes it as `<hook> <ticket-id> <event> [args...]`, where the ticket id is the task's recorded `ticket=` (`bin/fm-dod-lib.sh` owns that grammar) and the event is one of:
+
+| Event | Fired when | Producer |
+| --- | --- | --- |
+| `start` | A ticketed task's worker has launched and its backlog item is committed. A relaunch republishes an existing task and fires nothing. | `bin/fm-spawn.sh` |
+| `review <pr-url>` | The task's pull request is first recorded. Re-arming the same URL and the merge-time re-record fire nothing. | `bin/fm-pr-check.sh` |
+| `done <pr-url>` | The forge proved the pull request merged. | `bin/fm-pr-merge.sh` |
+| `waiting <text>` | The task became held for the captain, with the hold reason as the text. Repeating an already active hold fires nothing. | `bin/fm-captain-hold.sh` |
+
+Each event fires once per transition rather than once per poll, so a hook may comment on a ticket without deduplicating.
+A task with no recorded ticket, or the explicit `no-ticket` marker, never reaches the hook, and a ticket is never parsed out of task prose.
+A scout carries no ticket today, because `--ticket` applies only to ship work; a promoted scout fires `start` when it is spawned as a ship.
+
+The hook can neither delay nor fail the work: it runs in a detached child with a bounded runtime, holding none of the producer's streams, and its exit status never reaches the producer's control flow.
+A hook that fails, hits its bound, or cannot be run is reported as one status line on the task naming the event and the exit code, which supervision reads like any other unread status.
+`bin/fm-ticket-sync.sh` owns the firing mechanics, the status line, and the bound.
+
 ## Firstmate role (config/firstmate-role)
 
 The optional local, gitignored `config/firstmate-role` declares this home's relationship to the firstmate repository itself.
@@ -2574,6 +2600,7 @@ FM_BACKLOG_ROW_TIMEOUT_SECS=10   # seconds bounding each backlog row read (bin/f
 FM_BOOTSTRAP_DETECT_ONLY=0   # internal/read-only session-start mode: skip bootstrap's mutating sweeps and print advisory TANGLE wording
 FM_BOOTSTRAP_NETWORK=all   # internal session-start phase split: all, skip (local steps only), or only (network steps only); see bin/fm-bootstrap.sh
 FM_STARTUP_NETWORK_TIMEOUT=120   # seconds bounding the deferred inactive-outcome scan plus network checks, including the lock waits the worker makes before them; hitting it prints an actionable NETWORK_CHECKS line, and a lock a live process still holds at the deadline ends the worker with a failed-rerun record (publication and delivery are bounded by FM_SESSION_START_TIMEOUT the same way)
+FM_TICKET_SYNC_TIMEOUT=60   # seconds the detached ticket-sync hook is given (bin/fm-ticket-sync.sh); nonpositive or invalid values fall back to 60, and hitting the bound is reported as exit=124 on the task
 FM_TASKS_AXI_COMPATIBLE=   # internal one-hop handoff of an already-computed tasks-axi compatibility verdict (0 or 1); consumed when bin/fm-tasks-axi-lib.sh is sourced
 FM_GUARD_READ_ONLY=0    # internal/read-only guard mode: keep alarms but suppress drain, supervision repair, and checkout repair commands
 FM_GUARD_CONTINUE_LINE='This is a supervision warning only; the guarded operation WILL still run.'   # banner continuation line; fm-send.sh overrides it to name the requested message specifically
