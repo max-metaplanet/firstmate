@@ -4879,18 +4879,26 @@ fail_after_case_cleanup() {  # <case-dir> <message> [pid]...
 
 # The general form of the observed OrbStack kill: a long-lived process that
 # belongs to nobody in this task, whose working directory simply happens to sit
-# in the task's worktree. The cwd scan finds it; nothing else about it says it
-# is the task's, so it must come out of teardown alive - and it must not be
-# able to hold the cleanup back either.
+# in the task's pooled worktree. The cwd scan finds it; nothing else about it
+# says it is the task's, so it must come out of teardown alive. `treehouse
+# return --force` would terminate it as well, so teardown must keep the slot
+# and refuse before the return, naming it - and once the operator has stopped
+# it, a rerun must return the slot exactly as an ordinary teardown does.
 test_unrelated_cwd_process_is_preserved() {
-  local case_dir rc pid leader leader_pgid pid_pgid pid_ppid
+  local case_dir rc pid leader leader_pgid pid_pgid pid_ppid wt
   case_dir=$(make_case unrelated-cwd-preserved)
-  write_meta "$case_dir" no-mistakes ship
   land_shippable_commit "$case_dir"
+  wt=$(move_case_to_pool_slot "$case_dir" 5)
+  write_meta "$case_dir" no-mistakes ship "$wt"
+  cat > "$case_dir/fakebin/treehouse" <<EOF
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >> "$case_dir/treehouse.log"
+EOF
+  chmod +x "$case_dir/fakebin/treehouse"
   start_endpoint_leader "$case_dir"
   leader=$(leader_record "$case_dir" leader)
 
-  ( cd "$case_dir/wt" && exec sleep 300 ) &
+  ( cd "$wt" && exec sleep 300 ) &
   pid=$!
   disown
   sleep 0.3
@@ -4907,21 +4915,39 @@ test_unrelated_cwd_process_is_preserved() {
     || fail_after_case_cleanup "$case_dir" "unrelated-cwd-preserved: fixture broke - the sleeper is a child of the leader" "$pid"
 
   rc=0
-  FM_FAKE_TMUX_PANE_PID="$leader" \
+  FM_HOME="$case_dir" FM_FAKE_TMUX_PANE_PID="$leader" \
     run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
 
   kill -0 "$pid" 2>/dev/null \
     || fail_after_case_cleanup "$case_dir" "unrelated-cwd-preserved: teardown killed a process this task does not own"
-  kill -KILL "$pid" 2>/dev/null || true
-  stop_endpoint_leader "$case_dir"
-  expect_code 0 "$rc" "unrelated-cwd-preserved: teardown should still complete"
+  [ "$rc" -eq 1 ] \
+    || fail_after_case_cleanup "$case_dir" "unrelated-cwd-preserved: teardown should refuse while the unrelated process stands in the slot (rc=$rc)" "$pid"
+  [ ! -e "$case_dir/treehouse.log" ] \
+    || fail_after_case_cleanup "$case_dir" "unrelated-cwd-preserved: teardown returned the slot over a process it does not own" "$pid"
   assert_grep "preserving process(es) working under this task's worktree" "$case_dir/stderr" \
     "unrelated-cwd-preserved: teardown did not report the process it left alone"
+  assert_grep "REFUSED: process(es) that are not provably task-x1's own still work under its worktree" "$case_dir/stderr" \
+    "unrelated-cwd-preserved: teardown did not explain why it kept the slot"
+  assert_grep "pid $pid: sleep 300 (cwd " "$case_dir/stderr" \
+    "unrelated-cwd-preserved: the refusal did not name the preserved process and its command"
   assert_not_contains "$(cat "$case_dir/stderr")" "reaping leaked worktree process" \
     "unrelated-cwd-preserved: teardown reported reaping a process this task does not own"
+  assert_present "$case_dir/state/task-x1.meta" \
+    "unrelated-cwd-preserved: the refusal removed the task record"
+  assert_present "$wt" "unrelated-cwd-preserved: the refusal removed the worktree"
+
+  kill -KILL "$pid" 2>/dev/null || true
+  sleep 0.2
+  rc=0
+  FM_HOME="$case_dir" FM_FAKE_TMUX_PANE_PID="$leader" \
+    run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+  stop_endpoint_leader "$case_dir"
+  expect_code 0 "$rc" "unrelated-cwd-preserved: the rerun should complete once the process is gone"
+  assert_grep "return --force $wt" "$case_dir/treehouse.log" \
+    "unrelated-cwd-preserved: the rerun did not return the slot"
   assert_absent "$case_dir/state/task-x1.meta" \
-    "unrelated-cwd-preserved: a preserved process blocked cleanup instead of being left alone"
-  pass "a process that only shares the worktree as its working directory survives teardown and is reported preserved"
+    "unrelated-cwd-preserved: the rerun did not finish cleanup"
+  pass "a process that only shares the pooled worktree as its cwd survives, keeps the slot from being returned, and a rerun returns it once it is gone"
 }
 
 # A live descendant of the endpoint leader, deliberately placed in its OWN
@@ -5046,7 +5072,9 @@ SH
     || fail_after_case_cleanup "$case_dir" "session-only-reap: a process in another session was killed"
   kill -KILL "$unrelated" 2>/dev/null || true
   stop_endpoint_leader "$case_dir"
-  expect_code 0 "$rc" "session-only-reap: teardown should succeed"
+  expect_code 1 "$rc" "session-only-reap: teardown should keep the slot while the other session's process stands in it"
+  assert_grep "pid $unrelated: sleep 300" "$case_dir/stderr" \
+    "session-only-reap: the refusal did not name the other session's process"
   assert_grep "reaping leaked worktree process(es) for task-x1: $owned" "$case_dir/stderr" \
     "session-only-reap: teardown did not reap exactly the process in the leader's session"
   assert_grep "preserving process(es) working under this task's worktree that are not task-x1's own" "$case_dir/stderr" \
@@ -5095,7 +5123,9 @@ test_leaked_process_matched_only_by_proc_session_is_reaped() {
     || fail_after_case_cleanup "$case_dir" "proc-session-only-reap: a process in another session was killed"
   kill -KILL "$unrelated" 2>/dev/null || true
   stop_endpoint_leader "$case_dir"
-  expect_code 0 "$rc" "proc-session-only-reap: teardown should succeed"
+  expect_code 1 "$rc" "proc-session-only-reap: teardown should keep the slot while the other session's process stands in it"
+  assert_grep "pid $unrelated: sleep 300" "$case_dir/stderr" \
+    "proc-session-only-reap: the refusal did not name the other session's process"
   assert_grep "reaping leaked worktree process(es) for task-x1: $owned" "$case_dir/stderr" \
     "proc-session-only-reap: teardown did not reap exactly the process in the leader's session"
   pass "the session a leaked process inherited is read from /proc too, and a process from another session is left alone"
@@ -5103,7 +5133,8 @@ test_leaked_process_matched_only_by_proc_session_is_reaped() {
 
 # An endpoint that can no longer name its own leader - a retried cleanup whose
 # pane is already gone - can prove nothing about anything standing in the
-# worktree. It must leave every candidate running, say so, and still finish.
+# worktree. It must leave every candidate running, say so, and keep the slot
+# rather than hand it to a return that would kill them.
 test_unresolvable_leader_preserves_every_candidate() {
   local case_dir rc pid
   case_dir=$(make_case no-leader-preserve)
@@ -5123,12 +5154,14 @@ test_unresolvable_leader_preserves_every_candidate() {
     fail "no-leader-preserve: teardown killed a process it could not attribute to the task"
   fi
   kill -KILL "$pid" 2>/dev/null || true
-  expect_code 0 "$rc" "no-leader-preserve: teardown should still complete"
+  expect_code 1 "$rc" "no-leader-preserve: teardown should refuse before returning the slot"
   assert_grep "cannot resolve the tmux endpoint leader for task-x1" "$case_dir/stderr" \
     "no-leader-preserve: teardown did not report that ownership could not be established"
-  assert_absent "$case_dir/state/task-x1.meta" \
-    "no-leader-preserve: an unattributable process blocked cleanup"
-  pass "an endpoint that can no longer name its leader preserves every candidate and still completes cleanup"
+  assert_grep "pid $pid: sleep 300" "$case_dir/stderr" \
+    "no-leader-preserve: the refusal did not name the unattributable process"
+  assert_present "$case_dir/state/task-x1.meta" \
+    "no-leader-preserve: the refusal removed the task record"
+  pass "an endpoint that can no longer name its leader preserves every candidate and keeps the slot instead of returning it"
 }
 
 test_lsof_absent_reaps_tmux_process_group() {

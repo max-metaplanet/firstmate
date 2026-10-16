@@ -311,7 +311,11 @@
 #     the same second the task was cleaned up). So each candidate must also be
 #     proved to descend from the task's own endpoint leader, by parent chain,
 #     process group, or session (task_pid_belongs_to_task); an unproved
-#     candidate is reported as preserved and left strictly alone.
+#     candidate is reported as preserved and left strictly alone. Because
+#     `treehouse return --force` itself terminates every process standing in
+#     the worktree, teardown then refuses before the return while any such
+#     preserved process is still there, naming each one; the operator stops
+#     it and reruns teardown.
 #     Idempotent: nothing left to find is a silent no-op.
 #   Fix 3 - sweep abandoned remote job workers. A remote job worker started
 #     from a worktree's own bin/ outlives that worktree's removal without
@@ -2259,7 +2263,8 @@ reap_task_backend_process_group() {  # <label>
 # helper whose cwd had wandered into a task worktree was TERMed then KILLed
 # here). So every candidate must first be proved to be this task's own by
 # task_pid_belongs_to_task; an unproved one is reported as preserved and left
-# running, and it can never hold teardown back either.
+# running. It does not fail the reap, but a worktree it still stands in is
+# never returned to the pool (refuse_unowned_worktree_processes).
 # TERM first, then KILL after a short grace period for anything still alive; a
 # process that exits on its own between the two passes is simply absent from
 # the recheck. A missing lsof uses the backend process-group fallback; an lsof
@@ -2383,10 +2388,10 @@ EOF
     return 1
   fi
   [ -z "$TASK_PIDS" ] && return 0
-  # Only this task's OWN survivors may hold teardown back. A process that was
-  # never the task's is already reported as preserved, and refusing over one
-  # would wedge every later retry on something teardown is never allowed to
-  # end.
+  # Only this task's OWN survivors count as a failed reap. A process that was
+  # never the task's is already reported as preserved; whether it may still
+  # stand in a worktree about to be returned is refuse_unowned_worktree_processes'
+  # question, not this one.
   remaining=
   while IFS= read -r pid; do
     [ -n "$pid" ] || continue
@@ -2397,6 +2402,37 @@ $TASK_PIDS
 EOF
   [ -n "$remaining" ] || return 0
   echo "REFUSED: leaked $label processes for $ID remain after $max_passes reap attempts:$remaining; preserving the worktree/tasktmp for manual inspection or retry." >&2
+  return 1
+}
+
+# Refuse to hand <dir> to `treehouse return --force` while anything the reaper
+# could not prove to be this task's own still has its cwd there: treehouse
+# terminates every process standing in the worktree it returns, so returning
+# the slot would kill exactly what reap_task_worktree_processes preserved.
+# Runs after every landed-work check and before any destructive step, so the
+# operator stops the named process and a rerun picks up where this stopped.
+refuse_unowned_worktree_processes() {  # <dir>
+  local dir=$1 pids pid cmd cwd unowned=
+  command -v lsof >/dev/null 2>&1 || return 0
+  if ! pids=$(pids_with_cwd_under "$dir"); then
+    echo "REFUSED: cannot determine processes under $dir for $ID (lsof failed); keeping the worktree slot rather than returning it." >&2
+    return 1
+  fi
+  [ -n "$pids" ] || return 0
+  task_leader_context || true
+  while IFS= read -r pid; do
+    [ -n "$pid" ] || continue
+    task_pid_belongs_to_task "$pid" && continue
+    cmd=$(ps -p "$pid" -o command= 2>/dev/null) || continue
+    cmd=$(fm_nm_trim "$cmd")
+    cwd=$(lsof -a -p "$pid" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p' | head -n 1) || cwd=
+    unowned="$unowned
+  pid $pid: ${cmd:-<unknown>} (cwd ${cwd:-<unknown>})"
+  done <<EOF
+$pids
+EOF
+  [ -n "$unowned" ] || return 0
+  echo "REFUSED: process(es) that are not provably $ID's own still work under its worktree $dir; keeping the slot instead of returning it, because the return would kill them and teardown never touches anything outside the task. Stop each one, then rerun teardown:$unowned" >&2
   return 1
 }
 
@@ -3666,6 +3702,7 @@ fi
 if [ "$KIND" != secondmate ] && teardown_owns_worktree; then
   conclude_task_no_mistakes_run "$WT"
   reap_task_worktree_processes worktree "$WT" "$TASK_TMP"
+  [ "$BACKEND" = orca ] || refuse_unowned_worktree_processes "$WT" || exit 1
 elif [ "$KIND" != secondmate ]; then
   reap_task_worktree_processes tasktmp "$TASK_TMP"
 fi
