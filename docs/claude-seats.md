@@ -198,8 +198,11 @@ A seat's seven-day window is what says whether that account can carry work at al
 Every automatic decision - the switch trigger, firstmate's own move, and the destination gate all three paths share - is measured against it.
 
 **The five-hour window decides only WHEN.**
-A session dip is a short wait, not a spent account, and it never fires a rotation or a move of firstmate itself on its own: work waits for that window's reset, which the [quota floor](#resting-a-seat-below-a-quota-floor) already does by resting the seat and waking it on its own reset.
-A session window that is *spent* is the one exception and it comes first: no worker launched on that seat can run at all, so the crossing fires on the account figure whatever the week says, and new work goes to a seat that has session room.
+A session dip is a short wait, not a spent account, and it never fires a rotation or a move of firstmate itself on its own.
+What it does change is where a **new** Claude worker starts: with a trigger set, a fresh spawn whose active seat's five-hour window is at or below the trigger launches on another seat that has five-hour room above it **and** more weekly spare than the active seat, chosen through the same gate as the rotation (`bin/fm-seat.sh launch-destination`).
+That routes one launch only: `config/claude-seat` is not rewritten, firstmate itself is not moved, and running workers stay where they are.
+With no seat qualifying, the spawn is held and the refusal names the soonest five-hour reset to wait for; `--ignore-seat-hold` starts it on the active seat anyway, and a relaunch is never held.
+A session window that is *spent* is the one exception and it comes first: no worker launched on that seat can run at all, so the crossing fires on the account figure whatever the week says; the rotation still needs a seat with more weekly spare, and a new worker goes to a seat that has session room at launch, as described above.
 Waiting out a dip and never starting work on a seat that cannot take it are the two halves of the same rule.
 
 Reading one collapsed percentage for both is what moved firstmate back and forth between two seats on 2026-10-15/16: a seat holding 65% of its week read as "18%" because its five-hour window was down, and the rotation treated that as a spent account.
@@ -221,8 +224,9 @@ Three rules follow from that ranking:
 Ranking needs a weekly reset and a spare figure to rank by, so it applies on a report that carries quota-axi's weekly pace, which is what a current account returns.
 Where that projection is absent the comparison degrades to a plainer figure with no reset beside it, and the first qualifying seat in rotation order is taken, exactly as it always was.
 
-The comparison is skipped, leaving the absolute rules alone, exactly when it cannot be made or does not apply: the anchor's own headroom cannot be read, the two sides are measured on different bases, or staying is not an option at all because the anchor seat is resting, held out of rotation, or proven empty.
-That last case is what keeps a [mid-task move off a walled seat](#when-a-running-worker-hits-the-wall) working: the seat that walled a worker reads empty, so any seat with real headroom takes the work.
+The comparison is skipped, leaving the absolute rules alone, exactly when it cannot be made or does not apply: the anchor's own headroom cannot be read, the two sides are measured on different bases, or the anchor's **week** is proven empty.
+A seat that is resting below the floor or held out of rotation by hand still has a known week, so the comparison still applies to work leaving it, and so does a seat whose five-hour window alone is spent.
+The empty-week case is what keeps a [mid-task move off a walled seat](#when-a-running-worker-hits-the-wall) working: a seat whose week is spent is one the work cannot stay on, so any seat with real headroom takes the work.
 
 The comparison belongs to the automatic paths.
 A move asked for **by hand** is the operator's own choice of where to put work, so `bin/fm-seat.sh switch <name>`, `switch --next`, and `lead-restart` with no `--to` all ask only which seats are usable at all.

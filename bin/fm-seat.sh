@@ -16,6 +16,7 @@
 #   fm-seat.sh probe [<name|default>]
 #   fm-seat.sh name-of <profile-dir>
 #   fm-seat.sh worker-destination --from <name|default> [--skip <name>]...
+#   fm-seat.sh launch-destination
 #   fm-seat.sh add <name>
 #   fm-seat.sh threshold [<percent-left>|off]
 #   fm-seat.sh destination-min [<percent-left>|off]
@@ -95,6 +96,14 @@
 #            none qualifies. It switches,
 #            writes and launches nothing - bin/fm-quota-wall-lib.sh owns the
 #            mid-task move and bin/fm-control.sh performs it.
+# launch-destination
+#            The seat a NEW Claude worker launches on. The active seat, unless
+#            a switch trigger is set and the active seat's five-hour window is
+#            proven at or below it; then a seat with five-hour room and more
+#            weekly spare, through the same gate as the rotation. Prints one
+#            seat name; exit 1 naming the soonest five-hour reset when none
+#            qualifies. It switches, writes and launches nothing -
+#            bin/fm-spawn.sh points that one launch at the answer.
 # add        Create an empty profile directory for a new seat and print the exact
 #            login command the account owner runs. It never logs in, never reads
 #            or writes any credential, and never touches the Keychain.
@@ -585,6 +594,101 @@ cmd_worker_destination() {
   printf '%s\n' "$name"
 }
 
+# session_window <name>
+# One seat's five-hour window as `<percent-left><TAB><resetsAt>`, from the same
+# headroom row the rest of the policy reads, with an unreported reset empty.
+# Returns 1 when the seat's quota gave no verdict or reports no five-hour window.
+session_window() {
+  local dir out row left reset
+  dir=$(fm_seat_config_dir "${1-}") || return 1
+  out=$(fm_seat_quota_json "$dir") || return 1
+  row=$(fm_seat_headroom_from "$out") || return 1
+  left=$(fm_seat_headroom_field "$row" 4) || return 1
+  reset=$(fm_seat_headroom_field "$row" 5) || reset=''
+  printf '%s\t%s\n' "$left" "$reset"
+}
+
+# session_room_reason <name> <trigger>
+# WHEN, for a new worker's launch: whether the seat's five-hour window has room
+# above the switch trigger. Returns 1 when it does, 0 when it is proven not to,
+# and 2 when no five-hour reading exists; 0 and 2 print the reason. A five-hour
+# dip never rotates the active seat or moves the lead, so this is the one place
+# that dip is acted on, and only for work not yet started.
+session_room_reason() {
+  local name=$1 trigger=$2 left reset
+  IFS=$'\t' read -r left reset < <(session_window "$name") || {
+    printf 'its 5-hour window could not be read, so it cannot be shown to have room for a new worker\n'
+    return 2
+  }
+  jq -en --arg l "$left" --arg t "$trigger" '($l | tonumber) > ($t | tonumber)' >/dev/null 2>&1 &&
+    return 1
+  printf '5-hour %s%% left is not above the %s%% switch trigger' "$left" "$trigger"
+  ! reset=$(fm_seat_reset_phrase "$reset") || printf ' (resets %s)' "$reset"
+  printf '\n'
+  return 0
+}
+
+# cmd_launch_destination
+# The seat a NEW Claude worker launches on, by name. With no switch trigger set,
+# or when the active seat has five-hour room or no five-hour reading, that is
+# the active seat, unchanged. When the active seat is proven to have no
+# five-hour room, it is the seat next_seat chooses with --session-room: one with
+# room AND more weekly spare than the active seat. Read-only: it writes no seat
+# file and moves neither the lead nor a running worker; bin/fm-spawn.sh points
+# that one launch at the answer.
+#
+# When nothing qualifies it refuses, with every skipped seat's reason above the
+# soonest five-hour reset among the seats without room, which is what the
+# launch waits for. An active seat with nothing left at all is the exception:
+# it answers the active seat, because the spawn's depletion and extra-usage
+# gates own an empty seat's refusal, and its paid overflow, in their own words.
+cmd_launch_destination() {
+  local active trigger name soonest seat at seats
+  [ "$#" -eq 0 ] || usage
+  seat_command_memo
+  active=$(fm_seat_active)
+  trigger=$(fm_seat_threshold) || { printf '%s\n' "$active"; return 0; }
+  if session_room_reason "$active" "$trigger" >/dev/null; then :; else
+    printf '%s\n' "$active"
+    return 0
+  fi
+  if name=$(next_seat --session-room "$active"); then
+    printf '%s\n' "$name"
+    return 0
+  fi
+  if [ "$(fm_seat_quota_verdict "$(fm_seat_config_dir "$active")" | cut -f1)" = depleted ]; then
+    printf '%s\n' "$active"
+    return 0
+  fi
+  mapfile -t seats < <(fm_seat_list)
+  if soonest=$(session_soonest_reset "$trigger" "$active" ${seats[@]+"${seats[@]}"}); then
+    IFS=$'\t' read -r seat at <<< "$soonest"
+    die "no seat has 5-hour room for a new worker and more weekly spare than '$active' (each skipped seat and its reason is printed above); the soonest 5-hour reset is $seat at $(fm_seat_reset_phrase "$at")"
+  fi
+  die "no seat has 5-hour room for a new worker and more weekly spare than '$active' (each skipped seat and its reason is printed above), and no seat's report names when its 5-hour window resets"
+}
+
+# session_soonest_reset <trigger> <seat>...
+# Among the named seats whose five-hour window is at or below the trigger, the
+# one whose window resets first, as `<seat><TAB><resetsAt>`. Returns 1 when none
+# of them reports a reset.
+session_soonest_reset() {
+  local trigger=$1 name left reset at best_at='' best=''
+  shift
+  for name in "$@"; do
+    IFS=$'\t' read -r left reset < <(session_window "$name") || continue
+    jq -en --arg l "$left" --arg t "$trigger" '($l | tonumber) <= ($t | tonumber)' >/dev/null 2>&1 ||
+      continue
+    at=$(fm_seat_iso_to_epoch "$reset") || continue
+    if [ -z "$best_at" ] || [ "$at" -lt "$best_at" ]; then
+      best_at=$at
+      best=$(printf '%s\t%s' "$name" "$reset")
+    fi
+  done
+  [ -n "$best" ] || return 1
+  printf '%s\n' "$best"
+}
+
 # seat_resets <walled-seat>
 # When every seat of this provider comes back, for a refusal that has to say so:
 # the walled seat first, then the default profile, then every named seat, each
@@ -738,22 +842,27 @@ seat_crossing() {
 # down and this reads it here - one quota call, and none at all inside a watch
 # pass or a single command, where the seat library's read memo already holds it.
 #
-# It stays silent, and the anchor rule therefore stays off, whenever staying put
-# is not an option: a seat held out of automatic rotation, one resting below the
-# quota floor, and one whose quota proves it empty are all seats the work cannot
-# remain on, so "better than here" is not the question being asked. That is also
-# what keeps the mid-task move off a walled seat working: a seat that walled a
-# worker reads empty, and every seat with real headroom qualifies as it always
-# did.
+# The rule holds whenever the anchor's weekly reading is known. A seat resting
+# below the quota floor or held out of automatic rotation by hand is still a
+# seat with a known week, and moving off it onto less weekly spare is still a
+# move to a worse seat, so neither waives the rule.
+#
+# It stays silent, and the anchor rule therefore stays off, in exactly two
+# cases: the anchor's reading gives no verdict, and the anchor's WEEKLY window
+# is proven empty. The second is what keeps the mid-task move off a walled seat
+# working: a seat whose week is spent is one the work cannot remain on, and
+# every seat with real headroom qualifies as it always did. A spent five-hour
+# window alone is not that case, because the week behind it is still there.
 anchor_headroom() {
-  local name=${1-} dir out row
+  local name=${1-} dir out row week
   [ -n "$name" ] || return 1
-  ! fm_seat_auto_excluded "$name" || return 1
-  ! fm_seat_resting "$name" || return 1
   dir=$(fm_seat_config_dir "$name") || return 1
   out=$(fm_seat_quota_json "$dir") || return 1
-  ! fm_seat_depleted_from "$out" || return 1
   row=$(fm_seat_headroom_from "$out") || return 1
+  if week=$(fm_seat_headroom_field "$row" 1) &&
+    jq -en --arg w "$week" '($w | tonumber) <= 0' >/dev/null 2>&1; then
+    return 1
+  fi
   fm_seat_choice_spare "$row"
 }
 
@@ -853,6 +962,10 @@ seat_rank_key() {
 # `switch --next` typed at the prompt is the operator's own rotation, not a
 # choice this makes on headroom.
 #
+# `--session-room` adds one more rule for a NEW worker's launch: a candidate
+# must also show five-hour room above the switch trigger (session_room_reason
+# below). launch-destination is its only caller.
+#
 # A seat whose access token has lapsed is always in that no-verdict class,
 # because its quota genuinely cannot be read until a launch renews it. So the
 # minimum and idle seats interact: a home that sets a destination minimum will
@@ -861,11 +974,15 @@ seat_rank_key() {
 # Every rejected candidate is reported on stderr with its reason, so a refusal
 # to switch always says which seats were considered and why none qualified.
 next_seat() {
-  local active seats n i idx name minimum='' reason state resting skip
-  local anchor_basis='' anchor_spare='' any=0 key
+  local active seats n i idx name minimum='' reason state resting skip rc
+  local anchor_basis='' anchor_spare='' any=0 key session=''
   local -a ranked=()
   if [ "${1-}" = --any ]; then
     any=1
+    shift
+  fi
+  if [ "${1-}" = --session-room ]; then
+    session=$(fm_seat_threshold) || return 1
     shift
   fi
   active=${1:-$(fm_seat_active)}
@@ -928,7 +1045,15 @@ next_seat() {
       continue
     fi
     reason=$(destination_quota_check "$name" "$anchor_basis" "$anchor_spare")
-    case "$?" in
+    rc=$?
+    if [ "$rc" -ne 0 ] && [ -n "$session" ]; then
+      reason=$(session_room_reason "$name" "$session")
+      if [ "$?" -ne 1 ]; then
+        printf 'seat %s: skipped, %s\n' "$name" "$reason" >&2
+        continue
+      fi
+    fi
+    case "$rc" in
       1)
         if [ "$anchor_basis" != week-spare ] || ! key=$(seat_rank_key "$name" "$i"); then
           printf '%s\n' "$name"
@@ -2360,6 +2485,7 @@ case "${1-}" in
   probe)             shift; cmd_probe "${1-}" ;;
   name-of)           shift; cmd_name_of "${1-}" ;;
   worker-destination) shift; cmd_worker_destination "$@" ;;
+  launch-destination) shift; cmd_launch_destination "$@" ;;
   add)               shift; [ -n "${1-}" ] || usage; cmd_add "$@" ;;
   threshold)         shift; cmd_threshold "${1-}" ;;
   destination-min)   shift; cmd_destination_min "${1-}" ;;

@@ -1143,8 +1143,9 @@ fm_seat_choice_spare() {
 # `<basis><TAB><percent>`: the seven-day window when it is reported, and the
 # collapsed account figure otherwise. A five-hour DIP is deliberately not read
 # here, so a session that is merely down no longer fires a rotation or a lead
-# move on its own; work on that seat waits for the window's reset, which the
-# quota floor already does, rather than changing account.
+# move on its own; running work waits for the window's reset rather than
+# changing account, and a NEW worker is routed off that seat at launch instead
+# (bin/fm-seat.sh launch-destination, called by bin/fm-spawn.sh).
 #
 # A seat with nothing left AT ALL is the one exception, and it comes first: a
 # spent five-hour window means no worker launched there can run now, whatever
