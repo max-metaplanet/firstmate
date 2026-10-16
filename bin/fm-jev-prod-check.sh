@@ -62,8 +62,9 @@
 # repository to watch. Configured, one poll spends at most FM_JEV_PROD_BUDGET
 # seconds (default 20, cut down to the watcher's own per-check bound) over at
 # most FM_JEV_PROD_MAX_PRS pull requests. A pull request the budget did not
-# reach is examined first on the next poll; that is deferral, not a failure, and
-# it reports nothing.
+# reach, or ran out in the middle of, is examined first on the next poll; that is
+# deferral, not a failure, and it reports nothing: a read the budget cut short is
+# not evidence about a verdict, so it is never queued or recorded as woken.
 #
 # DEDUPE. state/.jev-prod-monitor is the one owner. A verdict is keyed by
 # <pr>/<app>/<record-id>, the recorder's own identifier for the run that
@@ -583,7 +584,7 @@ action_check() {
     [ "$examined" -lt "$MAX_PRS" ] || break
     budget_left || break
     examined=$((examined + 1))
-    examine_pr "$number" "$url" "$head_sha" "$merge_sha" "$merged_at" "$title"
+    examine_pr "$number" "$url" "$head_sha" "$merge_sha" "$merged_at" "$title" || break
     cursor=$number
   done <<EOF
 $candidates
@@ -613,12 +614,17 @@ EOF
 # Examine one merged pull request. Appends to the caller's regressions, woken
 # and pending; those are the caller's locals on purpose, because this is one
 # function split out for readability rather than a second owner of the record.
+# Returns non-zero only when the budget ran out mid-read, leaving whatever it
+# had not finished unqueued and unrecorded for the next poll.
 examine_pr() {  # <number> <url> <head-sha> <merge-sha> <merged-at> <title>
   local number=$1 url=$2 head_sha=$3 merge_sha=$4 merged_at=$5 title=$6
   local comments body_file comment_id ticket apps app verdict phase rec
   local checks_url key class preview preview_run
 
-  comments=$(gh_json "repos/$CONFIG_REPO/issues/$number/comments?per_page=100") || return 0
+  comments=$(gh_json "repos/$CONFIG_REPO/issues/$number/comments?per_page=100") || {
+    budget_left || return 1
+    return 0
+  }
   body_file="$TMP/body-$number"
   # ONLY the recorder's own comment is a verdict. Anybody who can comment on the
   # pull request can write the marker, and the earliest marker comment is the one
@@ -711,6 +717,8 @@ examine_pr() {  # <number> <url> <head-sha> <merge-sha> <merged-at> <title>
     if preview_verdict "$CONFIG_REPO" "$head_sha" "$app"; then
       preview=$PREVIEW_VERDICT
       preview_run=$PREVIEW_RUN_URL
+    elif ! budget_left; then
+      return 1
     fi
     if [ -z "$preview" ] || ! verdict_is_flagged "$verdict"; then
       class=couldnt-check

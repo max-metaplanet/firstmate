@@ -811,17 +811,15 @@ test_a_long_batch_carries_every_verdict_uncut() {
   pass "fm-jev-prod-check: a long batch carries every verdict it settles, uncut"
 }
 
-test_a_window_the_budget_cut_short_is_finished_on_the_next_poll() {
-  local home bin real merged first second expected
-  home=$(make_home budget-cursor)
-  configure "$home"
-  bin=$(fake_gh "$home")
-  # The first comment read of the run is slow enough to spend the whole budget.
+# Wrap a home's fake gh so the first read matching <pattern> logs itself and
+# then hangs past the read bound, spending the whole read budget.
+slow_once_gh() {  # <home> <case-pattern>
+  local home=$1 bin="$1/bin"
   mv "$bin/gh" "$bin/gh-fixture"
   cat > "$bin/gh" <<EOF
 #!/usr/bin/env bash
 case "\$*" in
-  *issues/*/comments*)
+  $2)
     if [ -e '$home/fx/slow-once' ]; then
       rm -f '$home/fx/slow-once'
       printf '%s\n' "\$*" >> '$home/fx/gh-argv.log'
@@ -832,6 +830,20 @@ esac
 exec '$bin/gh-fixture' "\$@"
 EOF
   chmod +x "$bin/gh"
+  : > "$home/fx/slow-once"
+}
+
+# One poll on the real wall clock, the only clock the read budget runs on.
+budget_poll() {  # <home>
+  env PATH="$1/bin:$PATH" FM_HOME="$1" FM_JEV_PROD_BUDGET=3 \
+    FM_JEV_PROD_MAX_PRS=3 "$CHECK" check 2>&1
+}
+
+test_a_window_the_budget_cut_short_is_finished_on_the_next_poll() {
+  local home real merged first second expected
+  home=$(make_home budget-cursor)
+  configure "$home"
+  fake_gh "$home" >/dev/null
   # The budget is real wall-clock time here, so the merges are placed relative
   # to it rather than to the fixed test clock.
   real=$(date +%s)
@@ -841,22 +853,45 @@ EOF
     '[2214,2215,2216,2217,2218,2219] | map({number:.,html_url:"\($base)/\(.)",title:$title,
        merged_at:$merged,head:{sha:$head},merge_commit_sha:$merge})' \
     > "$home/fx/pulls.json"
+  # The first comment read of the run is slow enough to spend the whole budget.
+  slow_once_gh "$home" '*issues/*/comments*'
 
   : > "$home/fx/gh-argv.log"
-  : > "$home/fx/slow-once"
-  env PATH="$bin:$PATH" FM_HOME="$home" FM_JEV_PROD_BUDGET=3 \
-    FM_JEV_PROD_MAX_PRS=3 "$CHECK" check >/dev/null 2>&1
+  budget_poll "$home" >/dev/null
   first=$(sed -n 's|.*issues/\([0-9]*\)/comments.*|\1|p' "$home/fx/gh-argv.log")
   assert_equals 1 "$(printf '%s\n' "$first" | grep -c .)" "the spent budget must stop the poll after one pull request"
 
   : > "$home/fx/gh-argv.log"
-  env PATH="$bin:$PATH" FM_HOME="$home" FM_JEV_PROD_BUDGET=3 \
-    FM_JEV_PROD_MAX_PRS=3 "$CHECK" check >/dev/null 2>&1
+  budget_poll "$home" >/dev/null
   second=$(sed -n 's|.*issues/\([0-9]*\)/comments.*|\1|p' "$home/fx/gh-argv.log" | tr '\n' ' ')
-  expected="$(( (first - 2214 + 1) % 6 + 2214 )) $(( (first - 2214 + 2) % 6 + 2214 )) $(( (first - 2214 + 3) % 6 + 2214 )) "
+  expected="$first $(( (first - 2214 + 1) % 6 + 2214 )) $(( (first - 2214 + 2) % 6 + 2214 )) "
   assert_equals "$expected" "$second" \
-    "the next poll must start right after the last pull request actually examined"
+    "the next poll must start at the pull request the budget cut short, not skip it"
   pass "fm-jev-prod-check: a window the read budget cut short is finished on the very next poll"
+}
+
+test_a_preview_read_the_budget_cut_short_is_deferred_not_couldnt_check() {
+  local home out
+  home=$(make_home budget-preview)
+  configure "$home"
+  fake_gh "$home" >/dev/null
+  NOW=$(date +%s) write_pulls "$home" 7200
+  write_comments "$home" 2214 900022 "$(section portal failed post-merge production b0d9e7000022)"
+  write_preview_artifact "$home" portal proven
+  # The preview lookup is the read the budget runs out in.
+  slow_once_gh "$home" '*actions/workflows/jev-check.yml/runs*'
+
+  out=$(budget_poll "$home")
+  assert_equals "" "$out" "a pull request the budget cut short must report nothing"
+  if grep -q '^woken	2214/' "$home/state/.jev-prod-monitor" || grep -q '^pending	' "$home/state/.jev-prod-monitor"; then
+    fail "a verdict the budget cut short must be neither queued nor recorded as woken"
+  fi
+
+  out=$(budget_poll "$home")
+  assert_contains "$out" "jev-prod: regression" "the next poll must pair the verdict and wake its regression at once"
+  assert_grep "woken	2214/portal/b0d9e7000022" "$home/state/.jev-prod-monitor" \
+    "the completed verdict must be recorded"
+  pass "fm-jev-prod-check: a preview read the budget cut short is deferred, never filed as couldnt-check"
 }
 
 test_the_read_budget_fits_a_lowered_check_timeout() {
@@ -906,4 +941,5 @@ test_more_candidates_than_one_poll_reads_are_rotated
 test_a_rotation_bucket_advances_by_a_whole_window
 test_a_long_batch_carries_every_verdict_uncut
 test_a_window_the_budget_cut_short_is_finished_on_the_next_poll
+test_a_preview_read_the_budget_cut_short_is_deferred_not_couldnt_check
 test_the_read_budget_fits_a_lowered_check_timeout
