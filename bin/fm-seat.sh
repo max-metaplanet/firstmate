@@ -14,6 +14,8 @@
 #   fm-seat.sh switch <name|default> [--force]
 #   fm-seat.sh switch --next [--force]
 #   fm-seat.sh probe [<name|default>]
+#   fm-seat.sh name-of <profile-dir>
+#   fm-seat.sh worker-destination --from <name|default> [--skip <name>]...
 #   fm-seat.sh add <name>
 #   fm-seat.sh threshold [<percent-left>|off]
 #   fm-seat.sh destination-min [<percent-left>|off]
@@ -71,6 +73,24 @@
 #            (`logged-in`, or `expired-renewable` for a signed-in seat whose
 #            access token lapsed and which the next launch renews), 1 proven not
 #            logged in, 2 undecided.
+# name-of    Print the seat NAME a profile directory belongs to - the inverse of
+#            every other lookup here. A task's own record holds the profile it
+#            launched with, so this reads that back as the seat it is. An empty
+#            profile is the ambient default seat; a profile outside the seats
+#            root is reported by its own path rather than labelled with a seat
+#            it is not on.
+# worker-destination
+#            Where an ALREADY RUNNING worker should move when the seat it
+#            launched on hits a vendor credit or usage wall. Same candidate set
+#            and same quota gate as the automatic rotation, anchored on the seat
+#            the WORKER is on rather than the active seat, so the walled seat is
+#            never the answer, and neither is any --skip seat (one this worker
+#            already walled out on). Prints one seat name; exit 1 with each
+#            skipped seat and its reason, then every seat (the walled one and
+#            the default profile included) and when it resets, on stderr when
+#            none qualifies. It switches,
+#            writes and launches nothing - bin/fm-quota-wall-lib.sh owns the
+#            mid-task move and bin/fm-control.sh performs it.
 # add        Create an empty profile directory for a new seat and print the exact
 #            login command the account owner runs. It never logs in, never reads
 #            or writes any credential, and never touches the Keychain.
@@ -502,6 +522,78 @@ cmd_probe() {
   esac
 }
 
+# cmd_name_of <profile-dir>
+# The seat NAME a profile directory belongs to, which is the inverse of the
+# resolution every other command here makes. A task's own record holds the
+# profile it launched with, while an operator, a report and a destination query
+# all speak in seat names, so this is where a recorded profile is read back as
+# the seat it is. fm_seat_name_of_profile owns the answer, including the empty
+# profile (the ambient default seat) and a profile outside the seats root, which
+# is reported by its own path rather than labelled with a seat it is not on.
+cmd_name_of() {
+  fm_seat_name_of_profile "${1-}"
+}
+
+# cmd_worker_destination
+# Where an ALREADY RUNNING worker should move when the seat it launched on hits
+# a vendor credit or usage wall. This is `switch --next`'s candidate set and
+# quota gate, anchored on the seat the WORKER is on instead of the active one,
+# so the seat it walled out on is never the answer and every rule a new launch
+# gets - the automatic-rotation exclusion, the quota floor's resting record, the
+# login requirement, the proven-empty refusal, the destination minimum, and the
+# paid extra-usage policy's deferral - applies to a mid-task move through the
+# same code rather than a second copy of it (next_seat above is the one owner).
+# Read-only: it answers where the work COULD go and switches, writes and
+# launches nothing. bin/fm-quota-wall-lib.sh owns the move itself.
+cmd_worker_destination() {
+  local from='' name skip=()
+  seat_command_memo
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --from) [ "$#" -ge 2 ] || usage; from=$2; shift 2 ;;
+      --from=*) from=${1#--from=}; shift ;;
+      --skip) [ "$#" -ge 2 ] || usage; skip+=("$2"); shift 2 ;;
+      --skip=*) skip+=("${1#--skip=}"); shift ;;
+      *) usage ;;
+    esac
+  done
+  [ -n "$from" ] || usage
+  if [ "$from" != "$FM_SEAT_DEFAULT_NAME" ]; then
+    fm_seat_name_valid "$from" || die "invalid seat name: $from"
+  fi
+  name=$(next_seat "$from" ${skip[@]+"${skip[@]}"}) || {
+    seat_resets "$from"
+    die "no seat under the seats root qualifies to take over work running on '$from' (each skipped seat and its reason is printed above); add and log into another seat, put an excluded seat back with 'fm-seat.sh auto-include <name>', or lower 'fm-seat.sh destination-min' (docs/claude-seats.md)"
+  }
+  printf '%s\n' "$name"
+}
+
+# seat_resets <walled-seat>
+# When every seat of this provider comes back, for a refusal that has to say so:
+# the walled seat first, then the default profile, then every named seat, each
+# from fm_seat_quota_verdict's one read, on stderr beside the skip reasons. A
+# seat whose reset cannot be read says so and why rather than being left out.
+seat_resets() {
+  local from=$1 name dir verdict reset seen=' ' seats
+  mapfile -t seats < <(fm_seat_list)
+  for name in "$from" "$FM_SEAT_DEFAULT_NAME" ${seats[@]+"${seats[@]}"}; do
+    case "$seen" in *" $name "*) continue ;; esac
+    seen="$seen$name "
+    if ! dir=$(fm_seat_config_dir "$name" 2>/dev/null); then
+      printf 'seat %s: reset unknown: its profile could not be resolved\n' "$name" >&2
+      continue
+    fi
+    IFS=$'\t' read -r verdict _ reset <<< "$(fm_seat_quota_verdict "$dir")"
+    if [ -n "$reset" ]; then
+      printf 'seat %s: resets at %s\n' "$name" "$reset" >&2
+    elif [ "$verdict" = unknown ]; then
+      printf 'seat %s: reset unknown: its quota could not be read\n' "$name" >&2
+    else
+      printf 'seat %s: reset unknown: its quota report names no reset time\n' "$name" >&2
+    fi
+  done
+}
+
 # destination_quota_check <name>
 # The quota half of destination eligibility, applied by EVERY switch - the
 # automatic rotation below and an explicit `switch <name>` alike - so a seat a
@@ -568,12 +660,13 @@ destination_quota_check() {
   return 0
 }
 
-# next_seat [<anchor-seat>]
+# next_seat [<anchor-seat> [<skip-seat>...]]
 # The seat after the anchor seat, in list order, that a worker can be launched
 # on. The anchor defaults to the active seat, which is every existing caller;
 # the lead restart passes the seat the LEAD is on instead, because that is the
 # seat it is rotating away from. The selection RULES below are identical either
-# way - only the starting point differs.
+# way - only the starting point differs. A mid-task move also names every seat
+# that worker already walled out on, which are never chosen either.
 # Rotation wraps, and the anchor seat is never chosen, so a rotation with no
 # other usable seat refuses rather than pretending to switch.
 #
@@ -622,8 +715,9 @@ destination_quota_check() {
 # Every rejected candidate is reported on stderr with its reason, so a refusal
 # to switch always says which seats were considered and why none qualified.
 next_seat() {
-  local active seats n i idx name minimum='' reason state resting
+  local active seats n i idx name minimum='' reason state resting skip
   active=${1:-$(fm_seat_active)}
+  [ "$#" -eq 0 ] || shift
   minimum=$(fm_seat_destination_min) || minimum=''
   mapfile -t seats < <(fm_seat_list)
   n=${#seats[@]}
@@ -635,6 +729,13 @@ next_seat() {
   for ((i = 1; i <= n; i++)); do
     name=${seats[$(((idx + i) % n))]}
     [ "$name" != "$active" ] || continue
+    for skip in "$@"; do
+      [ "$name" != "$skip" ] || break
+    done
+    if [ "$#" -gt 0 ] && [ "$name" = "$skip" ]; then
+      printf 'seat %s: skipped, this worker already walled out on it\n' "$name" >&2
+      continue
+    fi
     if [ "$FM_SEAT_PROVIDER" = codex ] &&
       [ "$(fm_seat_credential_identity "$(fm_seat_config_dir "$name")")" = \
         "$(fm_seat_credential_identity "$(fm_seat_config_dir "$active")")" ]; then
@@ -2077,6 +2178,8 @@ case "${1-}" in
   list)              shift; cmd_list "$@" ;;
   switch)            shift; cmd_switch "$@" ;;
   probe)             shift; cmd_probe "${1-}" ;;
+  name-of)           shift; cmd_name_of "${1-}" ;;
+  worker-destination) shift; cmd_worker_destination "$@" ;;
   add)               shift; [ -n "${1-}" ] || usage; cmd_add "$@" ;;
   threshold)         shift; cmd_threshold "${1-}" ;;
   destination-min)   shift; cmd_destination_min "${1-}" ;;

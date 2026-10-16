@@ -2198,6 +2198,75 @@ if [ -n "${FM_TEST_ONLY:-}" ]; then
   exit 0
 fi
 
+# --- vendor quota wall: moved, not escalated as a wedge ---------------------
+# The condition the stale ladder cannot answer. A worker whose seat ran out of
+# credits stops mid-task, and the same wall stops it appending a status line
+# about the stop, so every signal this watcher reads looks like an ordinary
+# quiet pane and the ladder - whose last rung is a relaunch in place - fires
+# every few minutes against a worker only a seat move can rescue. The wall must
+# be recognized from the pane, answered by moving the work, and reported once,
+# with no generic stale wake left behind. bin/fm-quota-wall-lib.sh owns the
+# decision and tests/fm-quota-wall.test.sh covers its bounds; this case proves
+# the watcher reaches it ahead of ordinary triage and turns one outcome into one
+# wake.
+test_vendor_quota_wall_moves_the_worker_instead_of_escalating() {
+  local dir state fakebin out capture_file window key pane_hash sig pid detail
+  dir=$(make_case quota-wall-move); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"; capture_file="$dir/pane.txt"
+  window="test:fm-walled"
+  cp "$ROOT/tests/captures/codex-v0.162.0/out-of-credits.pane" "$capture_file"
+  printf 'window=%s\nkind=ship\nharness=codex\ncodex_seat=/seats/codex-max2\n' \
+    "$window" > "$state/walled.meta"
+  printf 'working: implementing the fix\n' > "$state/walled.status"
+  sig=$(seen_sig "$state/walled.status"); printf '%s' "$sig" > "$state/.seen-walled_status"
+  key=$(printf '%s' "$window" | tr ':/.' '___')
+  pane_hash=$(hash_text "$(cat "$capture_file")")
+  printf '%s' "$pane_hash" > "$state/.hash-$key"
+  printf '1\n' > "$state/.count-$key"
+
+  # The authoritative read agrees with the pane: bin/fm-crew-state.sh mints this
+  # line for an idle pane carrying that vendor's own banner.
+  detail='quota wall: codex out-of-credits (matched "Your workspace is out of credits")'
+  export FM_FAKE_CREW_STATE="state: quota-blocked · source: pane · $detail"
+
+  cat > "$fakebin/seat" <<SEATFAKE
+#!/usr/bin/env bash
+set -u
+cmd=''
+for a in "\$@"; do case "\$a" in name-of|worker-destination) cmd=\$a ;; esac; done
+case "\$cmd" in
+  name-of) printf 'codex-max2\n' ;;
+  worker-destination) printf 'codex-max\n' ;;
+  *) exit 64 ;;
+esac
+SEATFAKE
+  cat > "$fakebin/control" <<CONTROLFAKE
+#!/usr/bin/env bash
+set -u
+printf '%s\n' "\$*" >> "$dir/control.calls"
+CONTROLFAKE
+  chmod +x "$fakebin/seat" "$fakebin/control"
+
+  PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file" \
+    FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" \
+    FM_QUOTA_WALL_SEAT_BIN="$fakebin/seat" FM_QUOTA_WALL_CONTROL_BIN="$fakebin/control" \
+    FM_STALE_ESCALATE_SECS=999 FM_POLL=1 FM_SIGNAL_GRACE=1 \
+    FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
+  pid=$!
+  wait_for_exit "$pid" 150 || { reap "$pid"; fail "the watcher did not report the vendor quota wall: $(cat "$out")"; }
+  grep -F 'check: task walled' "$out" >/dev/null \
+    || fail "the wall was not reported as its own outcome: $(cat "$out")"
+  grep -F 'moved to seat codex-max' "$out" >/dev/null \
+    || fail "the outcome did not name where the work went: $(cat "$out")"
+  grep -F "stale: $window" "$out" >/dev/null \
+    && fail "a wall that was answered must not also raise a generic stale wake: $(cat "$out")"
+  grep -F 'relaunch --seat codex-max' "$dir/control.calls" >/dev/null \
+    || fail "the worker was not relaunched on the chosen seat: $(cat "$dir/control.calls" 2>/dev/null || echo '(no calls)')"
+  unset FM_FAKE_CREW_STATE
+  pass "a vendor quota wall moves the worker and reports one outcome instead of escalating a wedge"
+}
+
+
 test_stale_terminal_status_overridden_by_active_run
 test_nonterminal_stale_provably_working_absorbed_then_escalated
 test_wedge_escalation_marks_demand_deep_inspection_after_threshold
@@ -2237,3 +2306,4 @@ test_secondmate_unpause_clears_pause_tracking
 test_nonterminal_stale_pause_transitions_reclassify_unchanged_hash
 test_nonterminal_paused_rechecks_authoritative_state
 test_paused_authoritative_working_preserves_wedge_timer
+test_vendor_quota_wall_moves_the_worker_instead_of_escalating

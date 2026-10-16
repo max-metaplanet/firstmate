@@ -238,6 +238,7 @@ case "${1:-}" in
   capture-pane)
     [ "${FM_FAKE_TMUX_MISSING:-0}" = 1 ] && exit 1
     if [ "${FM_FAKE_BUSY:-0}" = 1 ]; then printf 'work in progress\n%s\n' "${FM_FAKE_BUSY_TEXT:-esc to interrupt}"
+    elif [ -n "${FM_FAKE_IDLE_TEXT_FILE:-}" ]; then cat "$FM_FAKE_IDLE_TEXT_FILE"
     else printf 'all quiet\n> \n'; fi ;;
 esac
 exit 0
@@ -344,6 +345,7 @@ reset_fakes() {
   FM_FAKE_RUNS_LIST=""
   FM_FAKE_BUSY=0
   FM_FAKE_BUSY_TEXT=
+  FM_FAKE_IDLE_TEXT_FILE=
   FM_FAKE_TMUX_MISSING=0
   FM_FAKE_TMUX_UNREADABLE=0
   FM_FAKE_HERDR_BUSY=0
@@ -375,7 +377,7 @@ reset_fakes() {
   FM_FAKE_GERRIT_READ_FAIL=0
   FM_FAKE_GERRIT_READ_LOG=
   unset FM_FAKE_PR_47_STATE FM_FAKE_PR_47_MERGED FM_FAKE_PR_48_STATE FM_FAKE_PR_48_MERGED
-  export FM_FAKE_AXI_STATUS FM_FAKE_AXI_STATUS_RUN FM_FAKE_RUNS_LIST FM_FAKE_BUSY FM_FAKE_BUSY_TEXT FM_FAKE_TMUX_MISSING FM_FAKE_TMUX_UNREADABLE
+  export FM_FAKE_AXI_STATUS FM_FAKE_AXI_STATUS_RUN FM_FAKE_RUNS_LIST FM_FAKE_BUSY FM_FAKE_BUSY_TEXT FM_FAKE_IDLE_TEXT_FILE FM_FAKE_TMUX_MISSING FM_FAKE_TMUX_UNREADABLE
   export FM_FAKE_HERDR_BUSY FM_FAKE_HERDR_MISSING FM_FAKE_HERDR_READ_FAIL FM_FAKE_HERDR_HUSK FM_FAKE_HERDR_AGENT_STATUS FM_FAKE_HERDR_PROCESS FM_FAKE_HERDR_SHELL_PID FM_FAKE_CI_LOGS
   export FM_FAKE_DAEMON_DOWN FM_FAKE_DAEMON_TIMEOUT FM_FAKE_DAEMON_PROBE_LOG FM_FAKE_AXI_HOME
   export FM_FAKE_AXI_HOME_ERROR FM_FAKE_AXI_STATUS_RUN_ERROR FM_FAKE_AXI_STATUS_ERROR
@@ -5821,6 +5823,114 @@ test_captured_completed_history() {
   pass 'captured completed status yields to synthetic subsequent development'
 }
 
+# (g'') no run + idle pane carrying one vendor's own wall banner -> quota-blocked.
+# This is the reader half of the vendor quota wall. A worker whose seat ran out
+# of credits stops mid-task AND loses the turn it would need to say so, so the
+# log's last line is whatever it wrote before the wall and the pane is quiet:
+# both neighbours of this read get it wrong, which is why the wall is its own
+# state between them. The frames come from tests/captures/, whose READMEs own
+# the vendor-string provenance; bin/fm-quota-wall-lib.sh owns the needles and
+# tests/fm-quota-wall.test.sh owns the bounded recovery driven from this verdict.
+test_no_run_idle_pane_vendor_quota_wall() {
+  reset_fakes
+  local d out; d=$(new_case quota-wall)
+  make_repo_on_branch "$d/wt" fm/feat-walled
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/feat-walled.meta" "window=fm:fm-feat-walled" "worktree=$d/wt" \
+    "kind=ship" "harness=codex" "codex_seat=/seats/codex-max2"
+  # The worker's own last line predates the wall, exactly as it must: appending
+  # anything after it would have taken the turn the wall denied.
+  printf 'working: implementing the fix\n' > "$d/state/feat-walled.status"
+  FM_FAKE_AXI_STATUS=""
+  FM_FAKE_BUSY=0
+  FM_FAKE_IDLE_TEXT_FILE="$ROOT/tests/captures/codex-v0.162.0/out-of-credits.pane"
+  arm_idle_record "$d/state" feat-walled
+  out=$(run_crew_state "$d" feat-walled)
+  assert_contains "$out" "state: quota-blocked" \
+    "an idle pane carrying the vendor's own credit banner must read as quota-blocked"
+  assert_contains "$out" "source: pane" "the wall is read from the pane, not from the log"
+  assert_contains "$out" "quota wall: codex out-of-credits" \
+    "the detail must name the vendor and the class of wall"
+  assert_contains "$out" 'matched "Your workspace is out of credits"' \
+    "the detail must carry the text it matched, so the verdict is inspectable"
+  assert_contains "$out" "/seats/codex-max2" "the detail must name the seat the worker is on"
+  assert_not_contains "$out" "state: working" "a walled worker must never read as working"
+  # Codex has no verified semantic busy source at all, so the only liveness
+  # evidence this verdict can ever have for it is an unverified read. That has
+  # to be reported rather than hidden, and it must not withhold the verdict -
+  # an idle-only gate would be permanently unreachable for the one vendor whose
+  # credit wall this exists for.
+  assert_contains "$out" "harness state: unknown codex-unverified" \
+    "the detail must report the liveness evidence the verdict actually had"
+
+  # The same frame on a Claude worker is not Claude's banner text, so it is not
+  # a wall: the needles are per vendor, never pooled.
+  fm_write_meta "$d/state/feat-walled.meta" "window=fm:fm-feat-walled" "worktree=$d/wt" \
+    "kind=ship" "harness=claude"
+  out=$(run_crew_state "$d" feat-walled)
+  assert_contains "$out" "state: working" "another vendor's banner must fall through to the log"
+
+  # And a Claude worker, which DOES have a verified idle source, reads the wall
+  # with that stronger evidence named - the same verdict from the better half of
+  # the liveness spectrum.
+  fm_write_meta "$d/state/feat-walled.meta" "window=fm:fm-feat-walled" "worktree=$d/wt" \
+    "kind=ship" "harness=claude" "claude_seat=/seats/claude-a"
+  FM_FAKE_IDLE_TEXT_FILE="$ROOT/tests/captures/claude-v2.1.301/extra-usage-stop.pane"
+  out=$(run_crew_state "$d" feat-walled)
+  assert_contains "$out" "state: quota-blocked" "a Claude extra-usage stop must read as quota-blocked"
+  assert_contains "$out" "quota wall: claude extra-usage" \
+    "a capped extra-usage stop must be named as itself, not as a plain usage limit"
+  assert_contains "$out" "harness state: idle" "a verified idle read must be named as the evidence it is"
+  pass "an idle pane carrying a vendor wall banner reads quota-blocked, per vendor"
+}
+
+# The two states this must never be confused with, in both directions.
+test_vendor_quota_wall_never_outranks_live_work_or_a_quiet_pane() {
+  reset_fakes
+  local d out; d=$(new_case quota-wall-bounds)
+  make_repo_on_branch "$d/wt" fm/feat-bounds
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/feat-bounds.meta" "window=fm:fm-feat-bounds" "worktree=$d/wt" \
+    "kind=ship" "harness=claude" "claude_seat=/seats/claude-a"
+  printf 'working: still going\n' > "$d/state/feat-bounds.status"
+  FM_FAKE_AXI_STATUS=""
+  FM_FAKE_IDLE_TEXT_FILE="$ROOT/tests/captures/claude-v2.1.301/usage-limit.pane"
+
+  # A BUSY pane showing the banner has already moved past it, so the busy
+  # verdict stands and nothing may be moved. The verdict comes from the crew's
+  # own semantic lifecycle record, which is the only thing that can prove busy.
+  FM_FAKE_BUSY=1
+  local gen; gen=$("$ROOT/bin/fm-busy-event.sh" arm "$d/state" feat-bounds)
+  "$ROOT/bin/fm-busy-event.sh" apply "$d/state" feat-bounds busy --gen "$gen" \
+    --source claude-hook --event user-prompt-submit
+  out=$(run_crew_state "$d" feat-bounds)
+  assert_contains "$out" "state: working" "a busy pane must keep its busy verdict"
+  assert_not_contains "$out" "quota-blocked" "a busy pane must never read as walled"
+
+  # An idle pane with no banner at all is the ordinary quiet pane this must not
+  # claim: recognition never rests on silence.
+  FM_FAKE_BUSY=0
+  FM_FAKE_IDLE_TEXT_FILE="$ROOT/tests/captures/claude-v2.1.301/idle-no-wall.pane"
+  arm_idle_record "$d/state" feat-bounds
+  out=$(run_crew_state "$d" feat-bounds)
+  assert_not_contains "$out" "quota-blocked" "an idle pane with no banner is not a wall"
+  assert_contains "$out" "source: status-log" "a quiet pane still falls through to the log"
+
+  # And the banner is there, but so is a live run: the run step answers first,
+  # which is the structural reason an automatic move can never orphan pipeline
+  # work. Asserted on the SAME frame that read as a wall above, so this case
+  # cannot pass by failing to recognize the banner.
+  FM_FAKE_IDLE_TEXT_FILE="$ROOT/tests/captures/claude-v2.1.301/usage-limit.pane"
+  out=$(run_crew_state "$d" feat-bounds)
+  assert_contains "$out" "quota-blocked" "precondition: this frame must read as a wall with no run"
+  FM_FAKE_AXI_STATUS="$(run_running fm/feat-bounds)"
+  out=$(run_crew_state "$d" feat-bounds)
+  assert_contains "$out" "source: run-step" "a live run step must answer before the pane is read"
+  assert_not_contains "$out" "quota-blocked" "a live run must never be reported as walled"
+  pass "the wall never outranks a busy pane, a live run, or an ordinarily quiet one"
+}
+
+
 test_captured_axi_status_shapes
 test_captured_inventory_replay
 test_captured_authority_transition
@@ -5912,6 +6022,8 @@ test_no_run_herdr_alive_with_failed_read_stays_live
 test_no_run_herdr_husk_dead_still_reads_gone
 test_no_run_herdr_idle_agent_status_outranked_by_record
 test_no_run_herdr_idle_agent_status_and_idle_record_stays_idle
+test_no_run_idle_pane_vendor_quota_wall
+test_vendor_quota_wall_never_outranks_live_work_or_a_quiet_pane
 test_no_run_idle_pane_uses_log
 test_no_run_idle_pane_uses_keyed_log
 test_no_run_idle_pane_paused

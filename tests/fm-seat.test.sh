@@ -4444,9 +4444,139 @@ test_extra_usage_warning_rearms_when_a_seat_leaves_and_returns() {
 }
 
 
+# --- moving an already-running worker off a walled seat ---------------------
+# `worker-destination` answers where a worker whose own seat hit a vendor credit
+# or usage wall can be moved, and `name-of` reads a task's recorded profile back
+# as the seat it is. The property these cases protect is that a MID-TASK move
+# gets the same candidate set and the same quota gate as a new launch, through
+# next_seat rather than a second chooser - so an excluded, resting, signed-out,
+# proven-empty or below-minimum seat is no more a destination for stopped work
+# than for fresh work. bin/fm-quota-wall-lib.sh owns the move itself, and
+# tests/fm-quota-wall.test.sh covers its bounds.
+
+test_name_of_reads_a_recorded_profile_back_as_its_seat() {
+  local rec out
+  rec=$(make_seat_case name-of)
+  read_seat_case "$rec"
+  mkdir -p "$SEATS_DIR/alpha"
+
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" name-of "$SEATS_DIR/alpha")
+  expect_code 0 "$?" "a managed profile must resolve to its seat name: $out"
+  assert_equals alpha "$out" "a task's recorded profile must read back as its seat name"
+
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" name-of '')
+  assert_equals default "$out" "an empty recorded profile is the ambient default seat"
+
+  # A profile outside the seats root is reported by its own path rather than
+  # labelled with a seat it is not on.
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" name-of "$CASE_DIR/unmanaged")
+  assert_equals "$CASE_DIR/unmanaged" "$out" \
+    "an unmanaged profile must be reported by its path, never as a seat it is not"
+  pass "name-of reads a recorded profile back as its seat, and says so honestly when it is not one"
+}
+
+test_worker_destination_never_answers_the_seat_the_worker_is_on() {
+  local rec out
+  rec=$(make_seat_case worker-destination)
+  read_seat_case "$rec"
+  mkdir -p "$SEATS_DIR/alpha" "$SEATS_DIR/beta"
+  seat_logged_in "$SPEC_DIR" "$SEATS_DIR/alpha" "$SEATS_DIR/beta"
+  seat_remaining "$SPEC_DIR" "$SEATS_DIR/alpha" 0
+  seat_remaining "$SPEC_DIR" "$SEATS_DIR/beta" 90
+  # The home's own active seat is deliberately the walled one, to prove the
+  # answer is anchored on the WORKER's seat and not on what new launches get.
+  printf 'alpha\n' > "$HOME_DIR/config/claude-seat"
+
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" worker-destination --from alpha)
+  expect_code 0 "$?" "a seat with headroom must be offered as a destination: $out"
+  assert_equals beta "$out" "the move must land on the seat that still has headroom"
+
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" worker-destination --from beta)
+  expect_code 1 "$?" "the only other seat is empty, so there is nowhere to move: $out"
+  assert_contains "$out" 'quota is used up' "the refusal must name why alpha was skipped"
+
+  # A seat this worker already walled out on is refused however much headroom
+  # its quota read reports, so a moved worker cannot be handed straight back.
+  seat_remaining "$SPEC_DIR" "$SEATS_DIR/alpha" 90
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" worker-destination --from beta --skip alpha)
+  expect_code 1 "$?" "a seat the worker already walled out on must not be offered: $out"
+  assert_contains "$out" 'already walled out on it' "the refusal must say why alpha was skipped"
+
+  # Nothing about the home's own seat choice may change: this answers a question.
+  assert_grep alpha "$HOME_DIR/config/claude-seat" \
+    "asking where a worker could go must never switch the active seat"
+  pass "worker-destination is anchored on the worker's own seat and changes nothing"
+}
+
+test_worker_destination_honours_the_same_gate_a_new_launch_gets() {
+  local rec out
+  rec=$(make_seat_case worker-destination-gate)
+  read_seat_case "$rec"
+  mkdir -p "$SEATS_DIR/alpha" "$SEATS_DIR/beta"
+  seat_logged_in "$SPEC_DIR" "$SEATS_DIR/alpha" "$SEATS_DIR/beta"
+  seat_remaining "$SPEC_DIR" "$SEATS_DIR/alpha" 0
+  seat_remaining "$SPEC_DIR" "$SEATS_DIR/beta" 25
+
+  # Held out of automatic rotation by hand: a stopped worker's move is an
+  # automatic path, so it must be withheld here exactly as a switch is.
+  run_seat "$HOME_DIR" "$FAKEBIN" auto-exclude beta >/dev/null
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" worker-destination --from alpha)
+  expect_code 1 "$?" "an excluded seat must not take over a stopped worker: $out"
+  assert_contains "$out" 'excluded from automatic rotation' \
+    "the refusal must say the seat was held out by hand"
+
+  # Back in rotation, but under a destination minimum it does not clear.
+  run_seat "$HOME_DIR" "$FAKEBIN" auto-include beta >/dev/null
+  run_seat "$HOME_DIR" "$FAKEBIN" destination-min 30 >/dev/null
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" worker-destination --from alpha)
+  expect_code 1 "$?" "a seat below the destination minimum must not take over a worker: $out"
+  assert_contains "$out" 'destination minimum' "the refusal must name the minimum it failed"
+
+  # Clear the minimum and the same seat is a destination again, which is what
+  # shows the refusals above came from the gate rather than from the seat.
+  run_seat "$HOME_DIR" "$FAKEBIN" destination-min off >/dev/null
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" worker-destination --from alpha)
+  expect_code 0 "$?" "with the minimum cleared the seat must be a destination again: $out"
+  assert_equals beta "$out" "the eligible seat must be offered once nothing withholds it"
+  pass "a stopped worker's move is withheld by the same exclusion and destination minimum a new launch gets"
+}
+
+test_worker_destination_names_when_an_empty_seat_comes_back() {
+  local rec out
+  rec=$(make_seat_case worker-destination-reset)
+  read_seat_case "$rec"
+  mkdir -p "$SEATS_DIR/alpha" "$SEATS_DIR/beta"
+  seat_logged_in "$SPEC_DIR" "$SEATS_DIR/alpha" "$SEATS_DIR/beta"
+  seat_windows "$SPEC_DIR" "$SEATS_DIR/alpha" 0 '2026-10-18T09:00:00Z' 0 '2026-10-20T00:00:00Z'
+  # beta is spent on its session window only, so the reset a decision must wait
+  # for is that window's - the one actually binding, not the weekly one it still
+  # has headroom in.
+  seat_windows "$SPEC_DIR" "$SEATS_DIR/beta" 0 '2026-10-16T02:00:00Z' 40 '2026-10-21T00:00:00Z'
+
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" worker-destination --from alpha)
+  expect_code 1 "$?" "every seat is empty, so there is nowhere to move: $out"
+  assert_contains "$out" 'seat beta' "the refusal must name the seat it considered"
+  assert_contains "$out" 'quota is used up' "the refusal must say why the seat cannot take the work"
+  assert_contains "$out" '2026-10-16T02:00:00Z' \
+    "the refusal must name the binding window's reset, so a decision can wait for it"
+  assert_not_contains "$out" '2026-10-21T00:00:00Z' \
+    "a window the seat still has headroom in is not when it comes back"
+  assert_contains "$out" 'seat alpha: resets at' \
+    "the refusal must say when the walled seat itself comes back"
+  assert_contains "$out" 'seat beta: resets at 2026-10-16T02:00:00Z' \
+    "every considered seat must be listed with its reset"
+  assert_contains "$out" 'seat default: reset unknown:' \
+    "the default profile must be listed, saying why its reset is unknown"
+  pass "with every seat empty the refusal names each seat and when it comes back"
+}
+
 echo "# all fm-seat tests passed"
 
 test_resting_worker_warning_is_once_per_entry
 test_resting_warning_offers_only_the_workers_own_codex_candidate
 test_extra_usage_warning_is_once_per_seat_entry
 test_extra_usage_warning_rearms_when_a_seat_leaves_and_returns
+test_name_of_reads_a_recorded_profile_back_as_its_seat
+test_worker_destination_never_answers_the_seat_the_worker_is_on
+test_worker_destination_honours_the_same_gate_a_new_launch_gets
+test_worker_destination_names_when_an_empty_seat_comes_back

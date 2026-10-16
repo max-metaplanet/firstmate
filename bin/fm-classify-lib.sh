@@ -2559,7 +2559,10 @@ status_span_has_actionable() {  # <status-file> <start-offset>
 #             pause (paused:), which is EXPECTED to idle;
 #   none    - neither, so the wake must surface (a stopped/finished/parked/failed/
 #             torn-down crew, an unreadable or unknown reader verdict, or a line
-#             this function could not parse).
+#             this function could not parse). A `quota-blocked` crew is also
+#             `none` here, deliberately: it is not absorbable, and it is not
+#             this classifier's to answer either - bin/fm-quota-wall-lib.sh owns
+#             that condition and the watcher answers it before asking here.
 # One fm-crew-state.sh read serves BOTH absorb reasons at once. Reading the state
 # authoritatively (not the status log) is what keeps run-step precedence: a crew
 # that appended paused: but then STARTED a run reports working, never paused.

@@ -325,7 +325,7 @@ family_for_basename() {
     fm-calm-pi-extension.test.sh|fm-cd-pretool-check.test.sh|\
     fm-classify-decision-key.test.sh|\
     fm-composer-ghost.test.sh|fm-composer-lib.test.sh|\
-    fm-crew-state.test.sh|fm-captain-hold-lifecycle.test.sh|\
+    fm-crew-state.test.sh|fm-captain-hold-lifecycle.test.sh|fm-quota-wall.test.sh|\
     fm-documentation-audiences.test.sh|fm-ensure-agents-md.test.sh|fm-forge-detect.test.sh|fm-grok-harness.test.sh|\
     fm-fork-free-helpers.test.sh|\
     fm-harness-precedence.test.sh|\
@@ -405,6 +405,7 @@ family_for_basename() {
     fm-herdr-version-floor-live-e2e.test.sh|\
     fm-herdr-pi-stale-registration-live-e2e.test.sh|\
     fm-worker-account-live-e2e.test.sh|fm-seat-renew-live-e2e.test.sh|\
+    fm-quota-wall-banners-live-e2e.test.sh|\
     fm-operational-marker-live-e2e.test.sh|\
     fm-opencode-primary-live-e2e.test.sh|fm-pi-branch-live-e2e.test.sh|\
     fm-pi-branch-responsiveness-live-e2e.test.sh|\
@@ -1695,6 +1696,20 @@ families_for_changed_path() {
       printf '%s\n' "__script__:fm-seat-board.test.sh"
       printf '%s\n' "__script__:fm-control-relaunch.test.sh"
       printf '%s\n' "__script__:fm-lead-restart.test.sh"
+      # The mid-task seat move asks fm-seat.sh for its destination and reads a
+      # recorded profile back as a seat name, so the wall library's own suite
+      # rides along with every change to that surface.
+      printf '%s\n' "__script__:fm-quota-wall.test.sh"
+      ;;
+    bin/fm-quota-wall-lib.sh|tests/captures/codex-*|tests/captures/claude-*)
+      # The detector's own suite, the current-state reader that mints its state,
+      # and the watcher that acts on it. The live banner guard is named too
+      # because a needle change must be re-proved against the shipped vendor
+      # artifact, not only against the recorded frames.
+      printf '%s\n' "__script__:fm-quota-wall.test.sh"
+      printf '%s\n' "__script__:fm-quota-wall-banners-live-e2e.test.sh"
+      printf '%s\n' "__script__:fm-crew-state.test.sh"
+      printf '%s\n' "__script__:fm-watch-triage-stale.test.sh"
       ;;
     bin/fm-seat-renew.sh|bin/fm-seat-renew-lib.sh|bin/fm-seat-renew.py|bin/fm-seat-lock.py|bin/fm-seat-vendor-renew.py)
       printf '%s\n' "__script__:fm-seat-renew.test.sh"
