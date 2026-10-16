@@ -181,6 +181,7 @@ fm_task_id_creation_valid "$ID" || { echo "error: invalid task id" >&2; exit 2; 
 fm_ticket_resolve "$TICKET" "$COMMIT_TYPE" "$ID" "$BRANCH_PREFIX" "$BRANCH_PREFIX_SET" "fm-promote.sh" || exit 1
 BRANCH=$FM_TICKET_BRANCH
 TICKET_HEADER=$FM_TICKET_HEADER
+TICKET_NM_RETITLE=$FM_TICKET_NM_RETITLE
 if ! git check-ref-format --branch "$BRANCH" >/dev/null 2>&1; then
   if [ -n "$TICKET" ]; then
     echo "error: --commit-type, --ticket and task id must form a valid git branch (got '$BRANCH')" >&2
@@ -337,7 +338,7 @@ EOF
     printf '%s\n' "$PROMOTION_ASK_USER_BLOCK"
   fi
   printf '\n'
-  fm_dod_block "$MODE" "$ID" "$BRANCH" "$FORGE" "$BASE_BRANCH" "$UPSTREAM_CONSENT" "$TICKET_HEADER"
+  fm_dod_block "$MODE" "$ID" "$BRANCH" "$FORGE" "$BASE_BRANCH" "$UPSTREAM_CONSENT" "$TICKET_HEADER" "$TICKET_NM_RETITLE"
 }
 mkdir -p "$DATA/$ID"
 [ ! -d "$INSTRUCTIONS" ] || { echo "error: ship instructions path is a directory: $INSTRUCTIONS" >&2; exit 1; }

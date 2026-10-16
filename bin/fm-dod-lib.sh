@@ -65,6 +65,12 @@
 # plus the convention sentences fm_ticket_resolve renders, which this function
 # takes already rendered as its seventh argument and only places; bin/fm-spawn.sh
 # refuses a ship whose ticket or commit type disagrees with those lines.
+# A ticketed no-mistakes task also takes fm_ticket_resolve's PR-retitle step as
+# its eighth argument: the pipeline's PR step drafts a conventional title with no
+# ticket in it, so the worker corrects that title as soon as the PR exists rather
+# than paying a red title check first. Only the no-mistakes block that opens a
+# pull request places it, and the forge supplies the edit and read-back commands;
+# the gerrit block publishes a change with no such title and ignores it.
 # forge is none|gerrit|forgejo and defaults to none; bin/fm-project-mode.sh's
 # header owns what the registry binding means, and this file owns what each
 # forge changes for a WORKER (docs/gerrit-forge-integration.md is the gerrit
@@ -284,9 +290,10 @@ fm_ticket_branch() {  # <commit-type> <ticket> <task-id>
 
 # Resolve a ship task's branch and the Definition of done header its ticket
 # adds, so bin/fm-brief.sh, bin/fm-spawn.sh, and bin/fm-promote.sh cannot drift
-# apart on either. Sets FM_TICKET_BRANCH to the branch the task ships on and
-# FM_TICKET_HEADER to the extra header text, empty when the task carries no
-# ticket. <branch-prefix-set> is 1 when the caller was passed an explicit
+# apart on either. Sets FM_TICKET_BRANCH to the branch the task ships on,
+# FM_TICKET_HEADER to the extra header text, and FM_TICKET_NM_RETITLE to the
+# PR-retitle step a ticketed no-mistakes block places; the last two are empty
+# when the task carries no ticket. <branch-prefix-set> is 1 when the caller was passed an explicit
 # --branch-prefix, which a ticket contradicts because the convention owns the
 # whole branch name. An unticketed call resolves the unchanged
 # "<prefix><task-id>" branch and writes nothing.
@@ -295,6 +302,8 @@ fm_ticket_resolve() {  # <ticket> <commit-type> <task-id> <branch-prefix> <branc
   FM_TICKET_BRANCH="$prefix$id"
   # shellcheck disable=SC2034 # Output global, read by the sourcing caller.
   FM_TICKET_HEADER=
+  # shellcheck disable=SC2034 # Output global, read by the sourcing caller.
+  FM_TICKET_NM_RETITLE=
   if [ -z "$ticket" ]; then
     [ -z "$commit_type" ] || {
       echo "error: $caller: --commit-type has no meaning without --ticket; the convention binds a type to a ticket id or to its explicit $FM_TICKET_NONE marker" >&2
@@ -319,6 +328,10 @@ Ticket: $ticket
 Commit type: $commit_type
 Every commit subject on this branch and the pull request title must read \`$commit_type/$ticket(<scope>): <message>\`, where \`<scope>\` names the area changed and \`<message>\` is a short imperative description.
 The branch is exactly \`$FM_TICKET_BRANCH\`; do not rename it."
+  # shellcheck disable=SC2034 # Output global, read by the sourcing caller.
+  FM_TICKET_NM_RETITLE="
+The pipeline's PR step drafts a conventional title like \`$commit_type(<scope>): <message>\`, which carries no ticket and so fails this project's title check.
+Do not wait for that check to go red: the moment the run has a PR URL - read it from \`no-mistakes axi status\` as soon as the PR step has opened the PR, before the CI wait - edit the title ONCE to insert \`/$ticket\` after the type, keeping the pipeline's own scope and message, so \`$commit_type(ci): x\` becomes \`$commit_type/$ticket(ci): x\`."
   return 0
 }
 
@@ -534,9 +547,9 @@ There is no pull request, no \`gh-axi\` call, and no forge CI result to report: 
 EOF
 }
 
-fm_dod_block() {  # <mode> <task-id> [branch] [<forge>] [<base>] [<consent>] [<ticket-header>]
-  local mode=$1 id=$2 forge=${4:-none} base=${5:-} consent=${6:-} ticket_header=${7:-}
-  local branch=${3:-fm/$id} pr_base='' nm_base='' base_q contract_forge='' contract_consent='' forge_cli=gh-axi draft_check origin_steps
+fm_dod_block() {  # <mode> <task-id> [branch] [<forge>] [<base>] [<consent>] [<ticket-header>] [<ticket-nm-retitle>]
+  local mode=$1 id=$2 forge=${4:-none} base=${5:-} consent=${6:-} ticket_header=${7:-} ticket_retitle=${8:-}
+  local branch=${3:-fm/$id} pr_base='' nm_base='' base_q contract_forge='' contract_consent='' forge_cli=gh-axi draft_check origin_steps retitle_cmd
   fm_forge_valid_for_mode "$forge" "$mode" fm_dod_block || return 1
   fm_base_branch_valid "$base" "$mode" "$forge" fm_dod_block || return 1
   if [ -n "$consent" ]; then
@@ -547,6 +560,8 @@ fm_dod_block() {  # <mode> <task-id> [branch] [<forge>] [<base>] [<consent>] [<t
     contract_consent=" upstream-consent=$consent"
   fi
   draft_check="(\`gh-axi pr view <PR URL>\` must print \`draft: no\`, naming the PR by its full URL so the read can never resolve against another repository); if it is a draft, mark it ready with \`gh-axi pr ready <PR URL>\`."
+  retitle_cmd="
+Edit it with \`gh-axi pr edit <PR URL> --title '<the corrected title>'\`, then read it back with \`gh-axi pr view <PR URL>\` and confirm the title it prints is the corrected one."
   # A fork clone is why the target is resolved rather than defaulted: \`gh pr
   # create\` with no -R opens the PR on a FORK's parent repository.
   origin_steps="Resolve the PR target from \`origin\` first and name it on the create - never leave the repository for \`gh\` to pick, because \`gh pr create\` with no \`-R\` defaults to a FORK's parent repository, and on a fork clone that opens the PR on a repository nobody authorized:
@@ -558,6 +573,8 @@ fm_dod_block() {  # <mode> <task-id> [branch] [<forge>] [<base>] [<consent>] [<t
     forge_cli=tea
     draft_check="(\`tea api --repo <owner>/<repo> /repos/{owner}/{repo}/pulls/<number>\` must show \`draft\` as false, where <owner>/<repo> and <number> come from your PR URL); Forgejo marks a draft by a work-in-progress title prefix such as \`WIP:\`, so if it is a draft, remove that prefix with \`tea pulls edit <number> --repo <owner>/<repo> --title '<title without the prefix>'\`."
     origin_steps="Resolve the PR target from \`origin\` first and name it on the create, never leaving the repository for the CLI to default: \`git remote get-url origin\` names the \`<owner>/<repo>\` you open the PR on, and \`origin\` is the only remote you push to."
+    retitle_cmd="
+Edit it with \`tea pulls edit <number> --repo <owner>/<repo> --title '<the corrected title>'\`, then read the pull request back with \`tea api --repo <owner>/<repo> /repos/{owner}/{repo}/pulls/<number>\` and confirm the title it prints is the corrected one."
   fi
   if [ -n "$base" ]; then
     printf -v base_q '%q' "$base"
@@ -655,6 +672,9 @@ Your only \`done:\` is the CI-ready line below, and a ship \`done:\` naming no P
 ${nm_base}
 EOF
       fm_nm_driving_block "$forge"
+      [ -z "$ticket_retitle" ] || cat <<EOF
+$ticket_retitle$retitle_cmd
+EOF
       cat <<EOF
 
 After /no-mistakes reports CI green (the CI-ready return point - do not wait for it to keep monitoring in the background until merge), read the PR back from the forge and confirm it is not a draft $draft_check
