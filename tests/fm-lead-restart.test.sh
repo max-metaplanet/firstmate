@@ -474,24 +474,6 @@ test_an_unreadable_or_foreign_record_is_undeterminable_rather_than_a_guess() {
   pass "a missing, foreign, or unparseable record is undeterminable and turns nothing on"
 }
 
-test_a_home_can_decline_the_follow() {
-  local rec out
-  command -v jq >/dev/null 2>&1 ||
-    { echo "ok - # skip: jq not found, reading the session record needs one"; return 0; }
-  rec=$(make_case rc-declined); read_case "$rec"
-  stub_pane_exists "$FAKEBIN"
-  write_session_record "$SEATS_DIR/alpha" "$LEAD_PID" lead-session-1 session_01abc
-  : > "$HOME_DIR/config/lead-follow-rc-off"
-  out=$(run_home "$LEAD_RESTART" --check --to beta) || fail "the check refused an establishable move: $out"
-  case "$out" in
-    *"remote control: not followed: this home carries config/lead-follow-rc-off"*) ;;
-    *) fail "the opt-out was not reported: $out" ;;
-  esac
-  case "$out" in *--remote-control*) fail "a home that declined the follow still got it: $out" ;; esac
-  stop_case
-  pass "config/lead-follow-rc-off declines the follow even with Remote Control on"
-}
-
 test_an_argv_that_already_names_remote_control_keeps_its_own_spelling() {
   local rec out
   command -v jq >/dev/null 2>&1 ||
@@ -995,8 +977,11 @@ test_a_remote_control_that_does_not_come_back_is_reported_on_the_outcome() {
   case "$out" in
     *"is on again"*) fail "the outcome claims a follow that never happened: $out" ;;
   esac
+  wait_for 30 "grep -qF 'check: lead-restart: Remote Control was on in the previous firstmate session but could not be confirmed on in the replacement on Claude seat beta within 4s; turn it back on there with /rc' '$LAB/home/state/.wake-queue' 2>/dev/null" || true
+  [ "$(grep -cF 'check: lead-restart: Remote Control was on in the previous firstmate session but could not be confirmed on in the replacement on Claude seat beta within 4s; turn it back on there with /rc' "$LAB/home/state/.wake-queue" 2>/dev/null)" = 1 ] ||
+    fail "exactly one wake naming the lost Remote Control was not queued: $(cat "$LAB/home/state/.wake-queue" 2>/dev/null)"
   kill "$new" 2>/dev/null || true
-  pass "a Remote Control that does not come back up in the replacement is reported on the restart outcome"
+  pass "a Remote Control that does not come back up in the replacement is reported on the restart outcome and wakes firstmate"
 }
 
 test_an_undeterminable_remote_control_state_is_logged_and_nothing_is_turned_on() {
@@ -1018,8 +1003,11 @@ test_an_undeterminable_remote_control_state_is_logged_and_nothing_is_turned_on()
   esac
   ! ps -o args= -p "$new" | grep -q -- '--remote-control' ||
     fail "Remote Control was turned on with no evidence it had been on: $(ps -o args= -p "$new")"
+  wait_for 30 "grep -qF 'check: lead-restart: whether Remote Control was on in the previous firstmate session could not be determined, so the replacement on Claude seat beta was started without it' '$LAB/home/state/.wake-queue' 2>/dev/null" || true
+  [ "$(grep -cF 'check: lead-restart: whether Remote Control was on in the previous firstmate session could not be determined, so the replacement on Claude seat beta was started without it' "$LAB/home/state/.wake-queue" 2>/dev/null)" = 1 ] ||
+    fail "exactly one wake naming the undeterminable Remote Control state was not queued: $(cat "$LAB/home/state/.wake-queue" 2>/dev/null)"
   kill "$new" 2>/dev/null || true
-  pass "an undeterminable Remote Control state turns nothing on and says so on the restart outcome"
+  pass "an undeterminable Remote Control state turns nothing on, says so on the restart outcome, and wakes firstmate"
 }
 
 test_a_same_seat_refresh_tells_the_crew_it_restarts_in_place() {
@@ -1059,7 +1047,6 @@ test_launch_command_is_established_only_when_it_round_trips
 test_remote_control_follows_a_lead_that_had_it_on
 test_remote_control_is_not_given_to_a_lead_that_did_not_have_it
 test_an_unreadable_or_foreign_record_is_undeterminable_rather_than_a_guess
-test_a_home_can_decline_the_follow
 test_an_argv_that_already_names_remote_control_keeps_its_own_spelling
 test_a_reservation_holds_the_home_for_its_successor_alone
 test_a_lapsed_reservation_never_wedges_the_home

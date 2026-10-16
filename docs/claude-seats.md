@@ -453,7 +453,7 @@ Its engine still follows the move, at its next turn; see [The engine's seat](sup
 So the outgoing session's state is read first, and the replacement is launched with it when it was on - whether it was started that way or given `/rc` later.
 The state is read from the session record Claude Code keeps for that process, never guessed: a record that cannot be read, or that names a different session, means the state is undeterminable, nothing is turned on, and `state/.lead-restart.result` says so.
 After the replacement takes the home, the same field is read back on it, so that record reports whether Remote Control actually came back rather than that a flag was passed.
-A home declines the follow with any `config/lead-follow-rc-off` path.
+When the state was undeterminable, or Remote Control was on but is not confirmed back on in the replacement, firstmate is also woken with a check wake that names the outcome, so a lost Remote Control is never left for the captain to notice.
 This is firstmate's own restart only; no worker, second mate, or ordinary relaunch carries Remote Control.
 
 **`--persisted` is a gate, not a flag.** The replacement drops firstmate's conversation and keeps every durable record, so the open work held only in that conversation has to be written down first - the same persist step a second mate gets before its restart.

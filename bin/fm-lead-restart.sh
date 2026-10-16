@@ -68,8 +68,6 @@
 # line says so rather than guessing. After the successor takes the home the same
 # field is read back on it, so the outcome reports whether Remote Control
 # actually followed rather than that a flag was passed.
-# `config/lead-follow-rc-off` declines the follow for this home, whatever its
-# type, exactly as `config/supervision-host-off` declines its own host.
 # This is the LEAD's restart only: no worker, secondmate, or ordinary relaunch
 # reads or carries any of it.
 #
@@ -236,13 +234,6 @@ rc_state_of() {  # <pid> <profile> <session-id>
   [ -n "$bridge" ] && printf 'on\n' || printf 'off\n'
 }
 
-# False when this home declines the follow. Any `config/lead-follow-rc-off` path
-# declines, whatever its type, so an operator can turn it off with an empty file,
-# a directory, or a dangling symlink and never have to get a value right.
-follow_rc_enabled() {
-  [ ! -e "$CONFIG/lead-follow-rc-off" ] && [ ! -L "$CONFIG/lead-follow-rc-off" ]
-}
-
 # --- launch command ----------------------------------------------------------
 
 # Print the lock-owning process's argv as one shell command line, or fail.
@@ -359,7 +350,7 @@ SESSION_ID=''
 TO_PROFILE=''
 LAUNCH_ARGV=''
 SUCCESSOR_CMD=''
-# on, off, undeterminable, or declined (this home opted out).
+# on, off, or undeterminable.
 LEAD_RC=''
 
 preflight() {  # <launch-command-override>
@@ -407,11 +398,7 @@ preflight() {  # <launch-command-override>
     LAUNCH_ARGV=$(establish_launch_argv "$LEAD_PID") ||
       die "the lead's own launch command could not be established from its running process, so the replacement could not be started with the same flags; re-run with --launch-command '<the exact command this session was started with>'"
   fi
-  if follow_rc_enabled; then
-    LEAD_RC=$(rc_state_of "$LEAD_PID" "$LEAD_PROFILE" "$SESSION_ID")
-  else
-    LEAD_RC=declined
-  fi
+  LEAD_RC=$(rc_state_of "$LEAD_PID" "$LEAD_PROFILE" "$SESSION_ID")
   [ "$LEAD_RC" != on ] || follow=1
   SUCCESSOR_CMD=$(printf '%s\n' "$LAUNCH_ARGV" | compose_successor_command "$TO_PROFILE" "$SESSION_ID" "${FM_AMBIENT_CLAUDE_CONFIG_DIR-$LEAD_PROFILE}" "$follow")
 }
@@ -422,7 +409,6 @@ rc_plan_line() {  # <state>
   case "$1" in
     on) printf 'on in this session, so the replacement is launched with it\n' ;;
     off) printf 'off in this session, so the replacement is not given it\n' ;;
-    declined) printf 'not followed: this home carries config/lead-follow-rc-off\n' ;;
     *) printf 'undeterminable for this session, so the replacement is not given it\n' ;;
   esac
 }
@@ -602,7 +588,7 @@ handover_stage() {  # <plan-file>
   PLAN_FILE=$1
   [ -f "$PLAN_FILE" ] || exit 1
   local nonce pid backend target to_seat to_profile grace exit_wait start_wait claim_wait waited notice outcome
-  local session follow_rc rc_wait
+  local session follow_rc rc_wait rc_wake=''
   nonce=$(plan_field nonce)
   pid=$(plan_field pid)
   backend=$(plan_field backend)
@@ -626,8 +612,10 @@ handover_stage() {  # <plan-file>
   # Carried into every outcome below, including the ones that never reach a
   # successor: an undeterminable state is the one the captain has to know about,
   # because it is the case where Remote Control was deliberately not turned on.
-  [ "$follow_rc" != undeterminable ] ||
+  if [ "$follow_rc" = undeterminable ]; then
     RC_NOTE='whether Remote Control was on could not be determined for the previous session, so it was not turned on'
+    rc_wake="whether Remote Control was on in the previous firstmate session could not be determined, so the replacement on Claude seat $to_seat was started without it; if it should be on, turn it on there with /rc"
+  fi
 
   if [ "$(plan_field from_profile)" = "$to_profile" ]; then
     notice="restarting in place on Claude seat $to_seat"
@@ -724,6 +712,7 @@ handover_stage() {  # <plan-file>
     [ "$follow_rc" != on ] ||
       RC_NOTE='the replacement was launched with Remote Control, which could not be confirmed because it has not taken this home yet'
     record_result started "the replacement is running on seat $to_seat but has not taken this home's lock yet; the reservation lapses on its own"
+    [ -z "$rc_wake" ] || fm_wake_append check lead-restart "check: lead-restart: $rc_wake" || true
     exit 0
   fi
   rm -f "$P_LAUNCH_FILE" 2>/dev/null || true
@@ -732,9 +721,11 @@ handover_stage() {  # <plan-file>
       RC_NOTE='Remote Control was on before and is on again'
     else
       RC_NOTE="Remote Control was on before the restart but could not be confirmed on in the replacement within ${rc_wait}s; turn it back on there with /rc"
+      rc_wake="Remote Control was on in the previous firstmate session but could not be confirmed on in the replacement on Claude seat $to_seat within ${rc_wait}s; turn it back on there with /rc"
     fi
   fi
   record_result 'done' "the firstmate session $outcome in the same terminal, resuming the same session"
+  [ -z "$rc_wake" ] || fm_wake_append check lead-restart "check: lead-restart: $rc_wake" || true
   exit 0
 }
 
