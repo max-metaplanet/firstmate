@@ -55,8 +55,12 @@
 #            mark each seat held out of automatic rotation.
 # switch     Point future claude workers at <name>. `default` clears the setting
 #            and returns to the ambient login. `--next` rotates to the next
-#            qualifying seat after the active one, which is what the automatic
-#            watch fires. Rotation covers only named seats under the seats root:
+#            usable seat after the active one. It is the operator's own
+#            rotation: the automatic watch applies one further rule by hand
+#            here, that a destination must have more weekly spare than the seat
+#            it leaves (docs/claude-seats.md, "Which seat carries work"), and a
+#            rotation typed at the prompt does not.
+#            Rotation covers only named seats under the seats root:
 #            the default profile is never a rotation target, because it is the
 #            owner's own interactive login and can change account under them.
 #            Refuses a seat that is not logged in, because a worker launched
@@ -158,8 +162,12 @@
 #            durable, and supervision is a separate process that is
 #            deliberately left alone. `--check`
 #            establishes everything and changes nothing. Without `--to` the
-#            destination is chosen by the same rotation a switch uses, anchored
-#            on the seat the LEAD is on rather than the seat new workers get.
+#            destination is chosen by the same rotation `switch --next` uses,
+#            anchored on the seat the LEAD is on rather than the seat new
+#            workers get; like that rotation it is the operator's own move and
+#            asks only which seats are usable. The automatic lead move names
+#            its destination with `--to`, having already applied the headroom
+#            rule in docs/claude-seats.md, "Which seat carries work".
 #            It refuses until `--persisted` says the open work held only in this
 #            conversation is written down, because the replacement drops that
 #            conversation. bin/fm-lead-restart.sh owns the transaction, its
@@ -415,12 +423,21 @@ declining_secondmate_homes() {
 
 cmd_status() {
   local active profile threshold minimum policy reason rows excluded floor pipeline label
+  local headroom
   label=Claude; [ "$FM_SEAT_PROVIDER" != codex ] || label=Codex
   active=$(fm_seat_active)
   printf 'active seat for NEW workers: %s\n' "$active"
   profile=$(fm_seat_config_dir "$active")
   printf 'active profile: %s\n' "${profile:-(ambient default login)}"
   printf 'login state: %s\n' "$(login_state "$active")"
+  # Every window named, never a bare percentage: the week is what decides which
+  # seat carries work and the five-hour window only when, so a reader must be
+  # able to tell the two apart at a glance.
+  if headroom=$(fm_seat_seat_phrase "$profile"); then
+    printf 'headroom: %s\n' "$headroom"
+  else
+    printf 'headroom: (its quota gave no verdict, so nothing is assumed about it)\n'
+  fi
   if [ "$FM_SEAT_PROVIDER" = claude ]; then
   pipeline=$(fm_seat_pipeline_report)
   printf '%s\n' "$pipeline" | jq -r '
@@ -594,7 +611,7 @@ seat_resets() {
   done
 }
 
-# destination_quota_check <name>
+# destination_quota_check <name> [<anchor-basis> <anchor-spare>]
 # The quota half of destination eligibility, applied by EVERY switch - the
 # automatic rotation below and an explicit `switch <name>` alike - so a seat a
 # rotation would refuse can never be reached by a deliberate switch either.
@@ -602,7 +619,7 @@ seat_resets() {
 # when the read reached no verdict, printing that as the reason too and leaving
 # what an unknown means to the caller.
 #
-# Two rules, in order:
+# Three rules, in order:
 #   - A seat whose live quota PROVES it is empty is refused whatever is
 #     configured. This is the one gate that needs no setting, because a worker
 #     launched on an empty seat cannot run at all; it fires for a Claude seat and
@@ -610,11 +627,30 @@ seat_resets() {
 #     the seat comes back.
 #   - With config/<provider>-seat-destination-min set, a seat at or below that
 #     percent is refused as well. Absent, nothing further is asked.
+#   - THE ANCHOR RULE. With the anchor seat's own weekly spare supplied, a
+#     candidate must also have strictly MORE of it than the seat the work would
+#     leave. Without it, two seats both under the trigger and both above the
+#     absolute minimum are each a valid destination for the other, which is
+#     what moved the lead back and forth between two spent seats on
+#     2026-10-15/16. The rule is additive: a candidate below the absolute
+#     minimum is still refused for that reason first.
+#
+# Only an automatic `next_seat` supplies an anchor, so a switch asked for by
+# hand - `switch <name>` and `switch --next` alike - stays absolute-only: a
+# deliberate choice is not a rotation decided on headroom, and the operator is
+# the one making it.
+#
+# fm_seat_choice_spare owns which figure is compared and names its basis; two
+# seats are compared only on the SAME basis, because points of weekly spare and
+# a plain percent left are different quantities. An anchor whose spare could not
+# be read, or one read on another basis, leaves today's absolute-only behavior
+# in place rather than refusing every candidate for a comparison it cannot make.
 #
 # No verdict is never read as empty: a seat whose access token has merely lapsed
 # is signed in, and its headroom is unknown rather than zero.
 destination_quota_check() {
-  local name=$1 dir out remaining minimum reset
+  local name=$1 anchor_basis=${2-} anchor_spare=${3-}
+  local dir out remaining minimum reset row basis spare
   dir=$(fm_seat_config_dir "$name") || {
     printf 'its profile could not be resolved\n'
     return 2
@@ -647,22 +683,111 @@ destination_quota_check() {
       return 2
       ;;
   esac
-  [ -n "$minimum" ] || return 1
-  remaining=$(fm_seat_remaining_from "$out") || {
+  if [ -n "$minimum" ]; then
+    remaining=$(fm_seat_remaining_from "$out") || {
+      printf 'its quota could not be read, so its headroom is unknown and this makes no guess\n'
+      return 2
+    }
+    jq -en --arg r "$remaining" --arg m "$minimum" \
+      '($r | tonumber) > ($m | tonumber)' >/dev/null 2>&1 || {
+      printf '%s%% left across its account windows is not above the %s%% destination minimum\n' \
+        "$remaining" "$minimum"
+      return 0
+    }
+  fi
+  [ -n "$anchor_basis" ] && [ -n "$anchor_spare" ] || return 1
+  row=$(fm_seat_headroom_from "$out") || {
     printf 'its quota could not be read, so its headroom is unknown and this makes no guess\n'
     return 2
   }
-  if jq -en --arg r "$remaining" --arg m "$minimum" \
-    '($r | tonumber) > ($m | tonumber)' >/dev/null 2>&1; then
-    return 1
-  fi
-  printf '%s%% left is not above the %s%% destination minimum\n' "$remaining" "$minimum"
+  IFS=$'\t' read -r basis spare <<< "$(fm_seat_choice_spare "$row")"
+  # A candidate measured on another basis cannot be compared with the anchor at
+  # all, so the absolute rules above are the whole answer for it, exactly as
+  # they were before the anchor rule existed.
+  [ -n "$basis" ] && [ "$basis" = "$anchor_basis" ] || return 1
+  jq -en --arg c "$spare" --arg a "$anchor_spare" \
+    '($c | tonumber) > ($a | tonumber)' >/dev/null 2>&1 && return 1
+  printf 'its %s of %s is not more than the %s the seat this would leave has\n' \
+    "$(fm_seat_basis_label "$basis")" "$spare" "$anchor_spare"
   return 0
 }
 
-# next_seat [<anchor-seat> [<skip-seat>...]]
+# seat_crossing <seat>
+# WHEN TO LOOK, for one seat, as `<basis><TAB><percent-left><TAB><phrase>` from
+# a single read: the figure a threshold crossing is measured against, and the
+# same reading rendered with every window named for the line that reports it.
+# fm_seat_trigger_left owns which window that figure comes from - the week when
+# the report carries one - so a five-hour dip no longer fires a rotation or a
+# lead move on its own. Returns 1 when the seat's quota gave no verdict, which
+# every caller treats as "do not act", never as a number.
+seat_crossing() {
+  local name=${1-} dir out row basis left phrase
+  dir=$(fm_seat_config_dir "$name") || return 1
+  out=$(fm_seat_quota_json "$dir") || return 1
+  row=$(fm_seat_headroom_from "$out") || return 1
+  IFS=$'\t' read -r basis left <<< "$(fm_seat_trigger_left "$row")"
+  [ -n "$basis" ] && [ -n "$left" ] || return 1
+  phrase=$(fm_seat_headroom_phrase "$row") || return 1
+  printf '%s\t%s\t%s\n' "$basis" "$left" "$phrase"
+}
+
+# anchor_headroom <anchor-seat>
+# The anchor's own weekly spare as `<basis><TAB><points>`, for the gate above.
+# A caller that has already read the anchor has read its percent LEFT for a
+# crossing, which is a different figure from spare, so there is nothing to hand
+# down and this reads it here - one quota call, and none at all inside a watch
+# pass or a single command, where the seat library's read memo already holds it.
+#
+# It stays silent, and the anchor rule therefore stays off, whenever staying put
+# is not an option: a seat held out of automatic rotation, one resting below the
+# quota floor, and one whose quota proves it empty are all seats the work cannot
+# remain on, so "better than here" is not the question being asked. That is also
+# what keeps the mid-task move off a walled seat working: a seat that walled a
+# worker reads empty, and every seat with real headroom qualifies as it always
+# did.
+anchor_headroom() {
+  local name=${1-} dir out row
+  [ -n "$name" ] || return 1
+  ! fm_seat_auto_excluded "$name" || return 1
+  ! fm_seat_resting "$name" || return 1
+  dir=$(fm_seat_config_dir "$name") || return 1
+  out=$(fm_seat_quota_json "$dir") || return 1
+  ! fm_seat_depleted_from "$out" || return 1
+  row=$(fm_seat_headroom_from "$out") || return 1
+  fm_seat_choice_spare "$row"
+}
+
+# seat_rank_key <name> <rotation-index>
+# One qualifying candidate's place in the use-it-or-lose-it order, as sortable
+# fields: `<has-spare><TAB><weekly reset><TAB><weekly spare><TAB><rotation
+# index><TAB><name>`, sorted by the first four with the name carried along.
+#
+# Spare that expires soonest is spent first, because it is the spare that would
+# otherwise be lost: among seats that still have weekly spare, the one whose
+# week resets first wins, then the one with the most spare, then rotation order
+# so the answer is the same every time. A seat with no spare left sorts behind
+# every seat that has some, which is what keeps the thinnest seat in reserve.
+#
+# A seat whose weekly reset is not reported cannot be shown to be the soonest
+# to expire, so it sorts after every seat whose reset is known rather than
+# ahead of them on a figure nothing supplied.
+seat_rank_key() {
+  local name=$1 index=$2 dir out row spare reset group=1 at=0
+  dir=$(fm_seat_config_dir "$name") || return 1
+  out=$(fm_seat_quota_json "$dir") || return 1
+  row=$(fm_seat_headroom_from "$out") || return 1
+  spare=$(fm_seat_headroom_field "$row" 2) || return 1
+  if jq -en --arg s "$spare" '($s | tonumber) > 0' >/dev/null 2>&1; then
+    group=0
+    reset=$(fm_seat_headroom_field "$row" 3) || reset=''
+    at=$(fm_seat_iso_to_epoch "$reset") || at=99999999999
+  fi
+  printf '%s\t%s\t%s\t%s\t%s\n' "$group" "$at" "$spare" "$index" "$name"
+}
+
+# next_seat [--any] [<anchor-seat> [<skip-seat>...]]
 # The seat after the anchor seat, in list order, that a worker can be launched
-# on. The anchor defaults to the active seat, which is every existing caller;
+# on. The anchor defaults to the active seat, which is most callers;
 # the lead restart passes the seat the LEAD is on instead, because that is the
 # seat it is rotating away from. The selection RULES below are identical either
 # way - only the starting point differs. A mid-task move also names every seat
@@ -707,6 +832,27 @@ destination_quota_check() {
 # login-only outcome this had before any candidate quota was read; with one set
 # it is SKIPPED, because an ambiguous read cannot answer a headroom comparison.
 #
+# THE ANCHOR RULE rides on the same gate and is read ONCE here, for the anchor,
+# rather than per candidate: a destination must have strictly more weekly spare
+# than the seat the work would leave. Every automatic path reaches it through
+# this one call, so the rotation, the lead move and the mid-task move cannot
+# drift apart on what counts as somewhere better. anchor_headroom above owns
+# when the rule is asked at all.
+#
+# WHICH qualifying seat is then chosen depends on what the report supports. On
+# a report carrying quota-axi's own weekly pace - which is what every current
+# account returns - the candidates are ranked by seat_rank_key above and the
+# best one is taken. Where that projection is absent the comparison degrades to
+# a plainer figure that carries no reset to rank by, and the first qualifying
+# seat in rotation order is taken, exactly as it always was.
+#
+# `--any` asks the absolute question instead - is there a seat a worker could
+# be launched on at all - with no improvement required. Two callers need it.
+# Arming the watch must succeed on a fleet whose ACTIVE seat is simply the best
+# one, because the watch is what catches that seat's own later crossing. And a
+# `switch --next` typed at the prompt is the operator's own rotation, not a
+# choice this makes on headroom.
+#
 # A seat whose access token has lapsed is always in that no-verdict class,
 # because its quota genuinely cannot be read until a launch renews it. So the
 # minimum and idle seats interact: a home that sets a destination minimum will
@@ -716,9 +862,17 @@ destination_quota_check() {
 # to switch always says which seats were considered and why none qualified.
 next_seat() {
   local active seats n i idx name minimum='' reason state resting skip
+  local anchor_basis='' anchor_spare='' any=0 key
+  local -a ranked=()
+  if [ "${1-}" = --any ]; then
+    any=1
+    shift
+  fi
   active=${1:-$(fm_seat_active)}
   [ "$#" -eq 0 ] || shift
   minimum=$(fm_seat_destination_min) || minimum=''
+  [ "$any" -eq 1 ] ||
+    IFS=$'\t' read -r anchor_basis anchor_spare < <(anchor_headroom "$active")
   mapfile -t seats < <(fm_seat_list)
   n=${#seats[@]}
   [ "$n" -gt 0 ] || return 1
@@ -773,11 +927,15 @@ next_seat() {
       esac
       continue
     fi
-    reason=$(destination_quota_check "$name")
+    reason=$(destination_quota_check "$name" "$anchor_basis" "$anchor_spare")
     case "$?" in
       1)
-        printf '%s\n' "$name"
-        return 0
+        if [ "$anchor_basis" != week-spare ] || ! key=$(seat_rank_key "$name" "$i"); then
+          printf '%s\n' "$name"
+          return 0
+        fi
+        ranked+=("$key")
+        continue
         ;;
       0)
         printf 'seat %s: skipped, %s\n' "$name" "$reason" >&2
@@ -789,8 +947,15 @@ next_seat() {
     # quota was read; with one set the comparison has no number to make and the
     # seat is skipped for that reason rather than for its login state.
     if [ -z "$minimum" ]; then
-      printf '%s\n' "$name"
-      return 0
+      if [ "$anchor_basis" != week-spare ]; then
+        printf '%s\n' "$name"
+        return 0
+      fi
+      # Ranked last of all: it is still a destination, but a seat whose
+      # headroom was actually measured is always the better answer, and this
+      # one has no figure to be placed by.
+      ranked+=("$(printf '2\t0\t0\t%s\t%s' "$i" "$name")")
+      continue
     fi
     # A renewable seat lands here by construction: nothing can read its quota
     # until something renews it, so it has no headroom figure to compare and
@@ -802,7 +967,10 @@ next_seat() {
       printf 'seat %s: skipped, %s\n' "$name" "$reason" >&2
     fi
   done
-  return 1
+  [ "${#ranked[@]}" -gt 0 ] || return 1
+  LC_ALL=C printf '%s\n' "${ranked[@]}" |
+    LC_ALL=C sort -t"$(printf '\t')" -k1,1n -k2,2n -k3,3nr -k4,4n |
+    head -1 | cut -f5
 }
 
 # write_active <name>
@@ -845,7 +1013,12 @@ cmd_switch() {
   done
   if [ "$rotate" -eq 1 ]; then
     [ -z "$name" ] || usage
-    name=$(next_seat) || die "no seat under the seats root qualifies as a destination (each skipped seat and its reason is printed above); add and log into a second seat, put an excluded seat back with 'fm-seat.sh auto-include <name>', or lower 'fm-seat.sh destination-min' (docs/claude-seats.md). The default profile is never a rotation target, so switch to it by name if that is what you want"
+    # A rotation asked for BY HAND is the operator's own choice of where to put
+    # new work, like `switch <name>`, so it asks which seats are usable rather
+    # than which one improves on this seat. The automatic watch does not come
+    # through here: it chooses its destination itself and then switches to it by
+    # name, which is where the improvement rule belongs.
+    name=$(next_seat --any) || die "no seat under the seats root qualifies as a destination (each skipped seat and its reason is printed above); add and log into a second seat, put an excluded seat back with 'fm-seat.sh auto-include <name>', or lower 'fm-seat.sh destination-min' (docs/claude-seats.md). The default profile is never a rotation target, so switch to it by name if that is what you want"
   fi
   [ -n "$name" ] || usage
   if [ "$name" != "$FM_SEAT_DEFAULT_NAME" ]; then
@@ -999,7 +1172,12 @@ cmd_lead_restart() {
     profile=$(lead_profile) ||
       die "the account firstmate itself runs on is not recorded for this session, so there is no seat to rotate away from; it is recorded at the next session start"
     anchor=$(fm_seat_name_of_profile "$profile")
-    to=$(next_seat "$anchor") ||
+    # Asked for by hand, like `switch --next`: the operator has decided to move
+    # the lead, so this answers which seats are usable rather than which one
+    # improves on this seat. The automatic move does not come through here - it
+    # chooses its own destination under the headroom rule and then names it
+    # with --to, which is what the watch's instruction tells firstmate to run.
+    to=$(next_seat --any "$anchor") ||
       die "no seat under the seats root qualifies as a destination for firstmate itself (each skipped seat and its reason is printed above); add and log into another seat, put an excluded seat back with 'fm-seat.sh auto-include <name>', or lower 'fm-seat.sh destination-min' (docs/claude-seats.md)"
   fi
   FM_HOME="$FM_HOME" FM_ROOT_OVERRIDE="$FM_ROOT" FM_STATE_OVERRIDE="$STATE" \
@@ -1193,17 +1371,17 @@ cmd_auto_include() {
 # rest of the fleet reads (quota-axi), against the profile a new worker on the
 # active seat would get, and never opens a poll loop of its own.
 cmd_threshold_reached() {
-  local threshold name dir remaining
+  local threshold name remaining
   threshold=$(fm_seat_threshold) || return 2
   name=$(fm_seat_active)
   if [ "$name" != "$FM_SEAT_DEFAULT_NAME" ]; then
     fm_seat_dir "$name" >/dev/null || return 2
   fi
-  dir=$(fm_seat_config_dir "$name")
-  # fm_seat_remaining owns which windows bound a worker with no specific model
-  # and returns 1 for anything it could not read, so an ambiguous quota stays an
-  # error here and never becomes a true that would switch accounts.
-  remaining=$(fm_seat_remaining "$dir") || return 2
+  # seat_crossing owns which window a crossing is measured against and returns
+  # 1 for anything it could not read, so an ambiguous quota stays an error here
+  # and never becomes a true that would switch accounts.
+  IFS=$'\t' read -r _ remaining _ < <(seat_crossing "$name") || return 2
+  [ -n "$remaining" ] || return 2
   jq -en --arg r "$remaining" --arg t "$threshold" \
     '($r | tonumber) <= ($t | tonumber)' >/dev/null 2>&1
 }
@@ -1554,10 +1732,11 @@ cmd_auto() {
 # command, session, or terminal, says exactly that instead of offering a
 # restart that would refuse.
 auto_lead_trigger() {  # <threshold>
-  local threshold=$1 profile seat remaining target reported out
+  local threshold=$1 profile seat remaining phrase target reported out
   profile=$(lead_profile) || return 0
   seat=$(fm_seat_name_of_profile "$profile")
-  remaining=$(fm_seat_remaining "$profile") || return 0
+  IFS=$'\t' read -r _ remaining phrase < <(seat_crossing "$seat") || return 0
+  [ -n "$remaining" ] || return 0
   if ! jq -en --arg r "$remaining" --arg t "$threshold" \
     '($r | tonumber) <= ($t | tonumber)' >/dev/null 2>&1; then
     auto_record_set lead ''
@@ -1568,8 +1747,8 @@ auto_lead_trigger() {  # <threshold>
   if ! target=$(next_seat "$seat" 2>/dev/null); then
     [ "$reported" != "blocked:$seat:" ] || return 0
     auto_record_set lead "blocked:$seat:"
-    printf '%s-seat: firstmate itself is at %s%% left on %s and no seat qualifies as a destination, so it stays where it is\n' "$FM_SEAT_PROVIDER" \
-      "$remaining" "$seat"
+    printf '%s-seat: firstmate itself is on %s at %s and no seat qualifies as a destination, so it stays where it is\n' "$FM_SEAT_PROVIDER" \
+      "$seat" "$phrase"
     return 0
   fi
   if ! out=$(FM_HOME="$FM_HOME" FM_ROOT_OVERRIDE="$FM_ROOT" FM_STATE_OVERRIDE="$STATE" \
@@ -1577,28 +1756,29 @@ auto_lead_trigger() {  # <threshold>
     "$SCRIPT_DIR/fm-lead-restart.sh" --check --to "$target" 2>&1); then
     [ "$reported" != "blocked:$seat:$target" ] || return 0
     auto_record_set lead "blocked:$seat:$target"
-    printf '%s-seat: firstmate itself is at %s%% left on %s and cannot move to %s: %s\n' "$FM_SEAT_PROVIDER" \
-      "$remaining" "$seat" "$target" "$(printf '%s' "$out" | sed -n '/./{s/^error: //;s/[[:space:]]\{1,\}/ /g;p;q;}')"
+    printf '%s-seat: firstmate itself is on %s at %s and cannot move to %s: %s\n' "$FM_SEAT_PROVIDER" \
+      "$seat" "$phrase" "$target" "$(printf '%s' "$out" | sed -n '/./{s/^error: //;s/[[:space:]]\{1,\}/ /g;p;q;}')"
     return 0
   fi
   auto_record_set lead "$seat"
-  printf '%s-seat: firstmate itself is at %s%% left on %s and moves to %s now, on this wake, without asking the captain (load the claude-seat-lead-restart skill). Replacing this session drops its conversation and keeps every durable record, so FIRST %s THEN run exactly: %s/bin/fm-seat.sh lead-restart --to %s --persisted\n' "$FM_SEAT_PROVIDER" \
-    "$remaining" "$seat" "$target" "$FM_PERSIST_OPEN_RECORDS_CONTRACT" "$FM_ROOT" "$target"
+  printf '%s-seat: firstmate itself is on %s at %s and moves to %s now, on this wake, without asking the captain (load the claude-seat-lead-restart skill). Replacing this session drops its conversation and keeps every durable record, so FIRST %s THEN run exactly: %s/bin/fm-seat.sh lead-restart --to %s --persisted\n' "$FM_SEAT_PROVIDER" \
+    "$seat" "$phrase" "$target" "$FM_PERSIST_OPEN_RECORDS_CONTRACT" "$FM_ROOT" "$target"
 }
 
 # auto_trigger <threshold> <policy>
 # The trigger and switch half of one automatic pass.
 auto_trigger() {
-  local threshold=$1 policy=$2 active dir remaining target fired blocked out
+  local threshold=$1 policy=$2 active dir remaining phrase target fired blocked out
   local depleted alt notice
   active=$(fm_seat_active)
   dir=$(fm_seat_config_dir "$active")
-  if ! remaining=$(fm_seat_remaining "$dir"); then
+  if ! IFS=$'\t' read -r _ remaining phrase < <(seat_crossing "$active"); then
     # Silent: an unreadable quota is a transient condition on a poll that runs
     # every cycle, and reporting it on each one would be noise, not a wake.
     # Nothing is switched on it either, which is the part that matters.
     return 0
   fi
+  [ -n "$remaining" ] || return 0
   if ! jq -en --arg r "$remaining" --arg t "$threshold" \
     '($r | tonumber) <= ($t | tonumber)' >/dev/null 2>&1; then
     auto_record_set fired ''
@@ -1622,15 +1802,15 @@ auto_trigger() {
       FM_CONFIG_OVERRIDE="$CONFIG" FM_DATA_OVERRIDE="$DATA" \
       "$SCRIPT_DIR/fm-seat.sh" switch "$target" 2>&1); then
       auto_record_set blocked ''
-      printf '%s-seat: switched from %s at %s%% left to %s; new workers launch there\n' "$FM_SEAT_PROVIDER" \
-        "$active" "$remaining" "$target"
+      printf '%s-seat: switched from %s at %s to %s; new workers launch there\n' "$FM_SEAT_PROVIDER" \
+        "$active" "$phrase" "$target"
       return 0
     fi
     auto_record_set fired "$fired"
     [ "$blocked" != "$active:failed:$target" ] || return 0
     auto_record_set blocked "$active:failed:$target"
-    printf '%s-seat: %s is at %s%% left and the switch to %s failed: %s\n' "$FM_SEAT_PROVIDER" \
-      "$active" "$remaining" "$target" "$(printf '%s' "$out" | tail -1)"
+    printf '%s-seat: %s is at %s and the switch to %s failed: %s\n' "$FM_SEAT_PROVIDER" \
+      "$active" "$phrase" "$target" "$(printf '%s' "$out" | tail -1)"
     return 0
   fi
   # Every seat of this vendor out of quota is its own outcome, not a failure to
@@ -1665,14 +1845,14 @@ auto_trigger() {
   auto_record_set blocked "$active:short"
   case "$policy" in
     stop)
-      printf '%s-seat: %s is at %s%% left and no seat has enough headroom to switch to; new Claude work will be held once this seat'\''s plan quota runs out, rather than started on paid extra usage. A worker already running is not stopped.\n' "$FM_SEAT_PROVIDER" \
-        "$active" "$remaining" ;;
+      printf '%s-seat: %s is at %s and no seat has enough headroom to switch to; new Claude work will be held once this seat'\''s plan quota runs out, rather than started on paid extra usage. A worker already running is not stopped.\n' "$FM_SEAT_PROVIDER" \
+        "$active" "$phrase" ;;
     allow\ *)
-      printf '%s-seat: %s is at %s%% left and no seat has enough headroom to switch to; once this seat'\''s plan quota runs out, new Claude work continues on paid extra usage up to $%s, then will be held.\n' "$FM_SEAT_PROVIDER" \
-        "$active" "$remaining" "${policy#allow }" ;;
+      printf '%s-seat: %s is at %s and no seat has enough headroom to switch to; once this seat'\''s plan quota runs out, new Claude work continues on paid extra usage up to $%s, then will be held.\n' "$FM_SEAT_PROVIDER" \
+        "$active" "$phrase" "${policy#allow }" ;;
     *)
-      printf '%s-seat: %s is at %s%% left and no seat has enough headroom to switch to; no extra-usage policy is set, so nothing is held.\n' "$FM_SEAT_PROVIDER" \
-        "$active" "$remaining" ;;
+      printf '%s-seat: %s is at %s and no seat has enough headroom to switch to; no extra-usage policy is set, so nothing is held.\n' "$FM_SEAT_PROVIDER" \
+        "$active" "$phrase" ;;
   esac
 }
 
@@ -2002,8 +2182,8 @@ auto_floor() {
       new_entry=$(floor_entry "$account" "$limiting" "$expected" "$now" "$rows")
       record=$(printf '%s\n' "$record" | jq -c --arg n "$name" --argjson e "$new_entry" '.seats[$n] = $e')
       changed=1
-      printf '%s-seat: %s is resting - %s%% left is at or below the %s%% floor, so automatic switches skip it until it recovers (expected back %s; fm-seat.sh switch %s still reaches it)\n' "$FM_SEAT_PROVIDER" \
-        "$name" "$remaining" "$floor" "$expected" "$name"
+      printf '%s-seat: %s is resting - %s%% left on its %s window is at or below the %s%% floor, so automatic switches skip it until it recovers (expected back %s; fm-seat.sh switch %s still reaches it)\n' "$FM_SEAT_PROVIDER" \
+        "$name" "$remaining" "$(fm_quota_window_label "$limiting")" "$floor" "$expected" "$name"
       continue
     fi
     # A seat back provisionally faces the same wake test on its first readable
@@ -2123,7 +2303,7 @@ cmd_arm() {
   # stdout only is discarded: each candidate's own skip reason belongs on
   # stderr beside the refusal, the same way every other rotation refusal reads,
   # so arming after an exclusion says which seats were withheld.
-  if ! next_seat >/dev/null; then
+  if ! next_seat --any >/dev/null; then
     # Every candidate merely RESTING is a warning rather than the refusal: the
     # floor itself is what empties the candidate list, the watch is what refills
     # it, and refusing to arm would leave nothing running to do that. Any

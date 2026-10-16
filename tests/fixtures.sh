@@ -449,13 +449,20 @@ make_stubs() {
 #                       report, which is where paid overflow spend is observed
 #   <spec>/windows_map  optional
 #                       "<CLAUDE_CONFIG_DIR><TAB><five_hour left><TAB><five_hour
-#                       resetsAt><TAB><seven_day left><TAB><seven_day resetsAt>"
+#                       resetsAt><TAB><seven_day left><TAB><seven_day resetsAt>
+#                       [<TAB><five_hour reserve><TAB><seven_day reserve>]"
 #                       rows giving a profile the two ACCOUNT-level windows the
 #                       quota floor reads, with percentUsed, percentRemaining,
 #                       resetsAt and windowSeconds. A row also derives that
 #                       profile's effectiveAvailability from the tighter of the
 #                       two, naming it in limitingWindowIds, so the floor and
 #                       the existing percent-left reads agree by construction.
+#                       The two optional reserve columns add that window's
+#                       pace.reservePercentPoints - quota-axi's own projection
+#                       of what is left over once the rest of the window burns
+#                       at the pace measured so far - which is the figure the
+#                       seat-choice policy ranks seats on. A column left out
+#                       reports no pace for that window at all.
 #                       A profile with no row reports no such windows, which is
 #                       what every case written before the floor existed assumes
 #   <spec>/slow         optional seconds every read sleeps before answering, for
@@ -490,11 +497,14 @@ if [ -f "\$spec/unreadable_quota" ] && grep -Fxq "\$key" "\$spec/unreadable_quot
 fi
 windows='[]'
 if [ -z "\$unreadable" ] && [ -f "\$spec/windows_map" ]; then
-  row=\$(awk -F'\t' -v k="\$key" '\$1==k{print \$2"\t"\$3"\t"\$4"\t"\$5; exit}' "\$spec/windows_map")
+  row=\$(awk -F'\t' -v k="\$key" '\$1==k{print \$2"\t"\$3"\t"\$4"\t"\$5"\t"\$6"\t"\$7; exit}' "\$spec/windows_map")
   if [ -n "\$row" ]; then
-    IFS=\$'\t' read -r fh_left fh_reset sd_left sd_reset <<< "\$row"
-    windows=\$(printf '[{"id":"five_hour","kind":"session","label":"session","percentUsed":%s,"percentRemaining":%s,"resetsAt":"%s","windowSeconds":18000},{"id":"seven_day","kind":"weekly","label":"week","percentUsed":%s,"percentRemaining":%s,"resetsAt":"%s","windowSeconds":604800}]' \
-      "\$((100 - fh_left))" "\$fh_left" "\$fh_reset" "\$((100 - sd_left))" "\$sd_left" "\$sd_reset")
+    IFS=\$'\t' read -r fh_left fh_reset sd_left sd_reset fh_pace sd_pace <<< "\$row"
+    fh_pace_json=''; sd_pace_json=''
+    [ -z "\$fh_pace" ] || fh_pace_json=\$(printf ',"pace":{"status":"on_pace","reservePercentPoints":%s}' "\$fh_pace")
+    [ -z "\$sd_pace" ] || sd_pace_json=\$(printf ',"pace":{"status":"on_pace","reservePercentPoints":%s}' "\$sd_pace")
+    windows=\$(printf '[{"id":"five_hour","kind":"session","label":"session","percentUsed":%s,"percentRemaining":%s,"resetsAt":"%s","windowSeconds":18000%s},{"id":"seven_day","kind":"weekly","label":"week","percentUsed":%s,"percentRemaining":%s,"resetsAt":"%s","windowSeconds":604800%s}]' \
+      "\$((100 - fh_left))" "\$fh_left" "\$fh_reset" "\$fh_pace_json" "\$((100 - sd_left))" "\$sd_left" "\$sd_reset" "\$sd_pace_json")
     limiting=seven_day
     tighter=\$sd_left
     if [ "\$fh_left" -lt "\$sd_left" ]; then limiting=five_hour; tighter=\$fh_left; fi

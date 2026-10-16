@@ -993,11 +993,17 @@ fm_seat_iso_to_epoch() {
 
 # fm_seat_windows_from <quota-json>
 # The two account-level windows the floor reads, one row each, as
-# `id<TAB>percentRemaining<TAB>resetsAt<TAB>windowSeconds`. A window the report
-# does not carry prints no row at all, and an absent field prints empty, so a
-# caller can tell "not reported" from a number. This is the one owner of that
-# extraction, so the watch and the board can never disagree about which windows
-# the floor is about.
+# `id<TAB>percentRemaining<TAB>resetsAt<TAB>windowSeconds<TAB>reservePercentPoints`.
+# A window the report does not carry prints no row at all, and an absent field
+# prints empty, so a caller can tell "not reported" from a number. This is the
+# one owner of that extraction, so the watch and the board can never disagree
+# about which windows the floor is about.
+#
+# The fifth field is quota-axi's OWN `pace.reservePercentPoints` for that
+# window: the percentage points left over once the rest of the window is
+# projected to burn at the pace already measured. It is carried here rather
+# than recomputed so the seat-choice policy uses the vendor's projection
+# instead of a burn model of firstmate's own invention.
 fm_seat_windows_from() {
   local out=${1-}
   [ -n "$out" ] || return 1
@@ -1014,7 +1020,8 @@ fm_seat_windows_from() {
         | [ .id,
             ((.percentRemaining // "") | tostring),
             (.resetsAt // ""),
-            ((.windowSeconds // "") | tostring) ]
+            ((.windowSeconds // "") | tostring),
+            ((.pace.reservePercentPoints // "") | tostring) ]
         | @tsv
       end
   ' 2>/dev/null
@@ -1028,6 +1035,190 @@ fm_seat_window_field() {
   v=$(printf '%s\n' "$rows" | awk -F'\t' -v id="$id" -v c="$col" '$1 == id { print $c; exit }')
   [ -n "$v" ] || return 1
   printf '%s\n' "$v"
+}
+
+# --- the seat-choice policy ---------------------------------------------------
+# Two separate questions, never one number. The WEEKLY window decides which
+# seat carries work; the five-hour window decides only when, because a
+# five-hour dip is a short wait rather than a spent account. Reading one
+# collapsed percentage for both is what moved the lead between two seats on
+# 2026-10-15/16: a seat with 65% of its week left read as "18%" because its
+# five-hour window was down, and the rotation treated that as a spent seat.
+# docs/claude-seats.md owns the operator-facing statement of this policy.
+
+# fm_seat_reset_phrase <resetsAt>
+# One reset stamp as `YYYY-MM-DD HH:MMZ`, from the report's own text: the
+# fractional second is dropped and a +00:00 offset is written as Z, so the same
+# instant always reads the same way whichever shape quota-axi stamped it in.
+# A stamp in another shape is printed unchanged rather than reformatted into
+# something it may not mean. Returns 1 for an absent stamp.
+fm_seat_reset_phrase() {
+  local at=${1-} zone=''
+  [ -n "$at" ] || return 1
+  case "$at" in
+    *Z) zone=Z; at=${at%Z} ;;
+    *+[0-9][0-9]:[0-9][0-9]) zone="+${at##*+}"; at=${at%+*} ;;
+    *-[0-9][0-9]:[0-9][0-9]) zone="-${at##*-}"; at=${at%-*} ;;
+    *) printf '%s\n' "$at"; return 0 ;;
+  esac
+  at=${at%%.*}
+  [ "$zone" != '+00:00' ] || zone=Z
+  case "$at" in
+    [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]) at=${at%:*} ;;
+    [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]) ;;
+    *) printf '%s%s\n' "$at" "$zone"; return 0 ;;
+  esac
+  printf '%s %s%s\n' "${at%%T*}" "${at#*T}" "$zone"
+}
+
+# fm_seat_headroom_from <quota-json>
+# One seat's headroom exactly as the policy reads it, as a single row:
+#   <week-left>\t<week-spare>\t<week-resets>\t<session-left>\t<session-resets>\t<account-left>
+# Every field is taken from quota-axi's own output and an unreported one is
+# empty, so a caller can always tell "not reported" from a number and never has
+# to infer one window's state from another's. Returns 1 when the report carries
+# neither a weekly window nor an account-level figure, which is the no-verdict
+# case every caller must refuse to guess at.
+#
+# This is the one read the whole policy is built on: the gate, the trigger and
+# every line that shows a seat's headroom take their figures from this row, so
+# a switch can never be decided on one window while the notice names another.
+fm_seat_headroom_from() {
+  local out=${1-} rows week_left week_spare week_reset session_left session_reset account
+  [ -n "$out" ] || return 1
+  rows=$(fm_seat_windows_from "$out") || rows=''
+  week_left=$(fm_seat_window_field "$rows" "$FM_SEAT_WEEK_WINDOW" 2) || week_left=''
+  week_reset=$(fm_seat_window_field "$rows" "$FM_SEAT_WEEK_WINDOW" 3) || week_reset=''
+  week_spare=$(fm_seat_window_field "$rows" "$FM_SEAT_WEEK_WINDOW" 5) || week_spare=''
+  session_left=$(fm_seat_window_field "$rows" "$FM_SEAT_SESSION_WINDOW" 2) || session_left=''
+  session_reset=$(fm_seat_window_field "$rows" "$FM_SEAT_SESSION_WINDOW" 3) || session_reset=''
+  account=$(fm_seat_remaining_from "$out") || account=''
+  [ -n "$week_left" ] || [ -n "$account" ] || return 1
+  printf '%s\t%s\t%s\t%s\t%s\t%s\n' \
+    "$week_left" "$week_spare" "$week_reset" "$session_left" "$session_reset" "$account"
+}
+
+# fm_seat_headroom_field <headroom-row> <column>
+# One field of an fm_seat_headroom_from row, or 1 when it was not reported.
+fm_seat_headroom_field() {
+  local v
+  v=$(printf '%s\n' "${1-}" | awk -F'\t' -v c="${2-}" 'NR == 1 { print $c }')
+  [ -n "$v" ] || return 1
+  printf '%s\n' "$v"
+}
+
+# fm_seat_choice_spare <headroom-row>
+# WHICH SEAT. The seat's weekly spare as `<basis><TAB><points>`: how many
+# percentage points of the week are left over once the rest of the week is
+# projected to burn at the pace already measured. Three bases, best first:
+#
+#   week-spare  quota-axi's own pace projection for the seven-day window
+#   week-left   the seven-day window's plain percent left, when that window is
+#               reported but carries no projection
+#   account     the collapsed account-level figure, for a report with no weekly
+#               window at all - which is what this had before the policy
+#
+# Two seats are only ever compared on the SAME basis, because points of spare
+# and plain percent left are different quantities. Returns 1 when the row
+# carries none of them.
+fm_seat_choice_spare() {
+  local row=${1-} v
+  if v=$(fm_seat_headroom_field "$row" 2); then
+    printf 'week-spare\t%s\n' "$v"
+    return 0
+  fi
+  if v=$(fm_seat_headroom_field "$row" 1); then
+    printf 'week-left\t%s\n' "$v"
+    return 0
+  fi
+  if v=$(fm_seat_headroom_field "$row" 6); then
+    printf 'account\t%s\n' "$v"
+    return 0
+  fi
+  return 1
+}
+
+# fm_seat_trigger_left <headroom-row>
+# WHEN TO LOOK. The percent left a crossing is measured against, as
+# `<basis><TAB><percent>`: the seven-day window when it is reported, and the
+# collapsed account figure otherwise. A five-hour DIP is deliberately not read
+# here, so a session that is merely down no longer fires a rotation or a lead
+# move on its own; work on that seat waits for the window's reset, which the
+# quota floor already does, rather than changing account.
+#
+# A seat with nothing left AT ALL is the one exception, and it comes first: a
+# spent five-hour window means no worker launched there can run now, whatever
+# the week says, so the account figure is what the crossing reads and new work
+# goes to a seat that has session room. That is the other half of the policy -
+# wait out a dip, but never start work on a seat that cannot take it - and it
+# is the same zero `fm_seat_depleted_from` already refuses as a destination.
+fm_seat_trigger_left() {
+  local row=${1-} v account=''
+  account=$(fm_seat_headroom_field "$row" 6) || account=''
+  if [ -n "$account" ] &&
+    jq -en --arg a "$account" '($a | tonumber) <= 0' >/dev/null 2>&1; then
+    printf 'account\t%s\n' "$account"
+    return 0
+  fi
+  if v=$(fm_seat_headroom_field "$row" 1); then
+    printf 'week\t%s\n' "$v"
+    return 0
+  fi
+  [ -n "$account" ] || return 1
+  printf 'account\t%s\n' "$account"
+}
+
+# fm_seat_basis_label <basis>
+# The words a message uses for a basis, so no caller invents its own.
+fm_seat_basis_label() {
+  case "${1-}" in
+    week-spare) printf 'weekly spare\n' ;;
+    week-left)  printf 'weekly headroom\n' ;;
+    week)       printf 'weekly headroom\n' ;;
+    account)    printf 'account headroom\n' ;;
+    *)          return 1 ;;
+  esac
+}
+
+# fm_seat_headroom_phrase <headroom-row>
+# A seat's headroom in words, with every window named and its reset beside it:
+#
+#   week 65% left (resets 2026-10-21 06:00Z), 5-hour 11% left (resets 2026-10-16 05:40Z)
+#
+# A report with no windows falls back to the collapsed account figure, named as
+# such rather than printed bare. Returns 1 when the row carries no figure at
+# all, which is the case a caller must report as unreadable instead.
+fm_seat_headroom_phrase() {
+  local row=${1-} week_left week_reset session_left session_reset account out=''
+  week_left=$(fm_seat_headroom_field "$row" 1) || week_left=''
+  week_reset=$(fm_seat_headroom_field "$row" 3) || week_reset=''
+  session_left=$(fm_seat_headroom_field "$row" 4) || session_left=''
+  session_reset=$(fm_seat_headroom_field "$row" 5) || session_reset=''
+  account=$(fm_seat_headroom_field "$row" 6) || account=''
+  if [ -n "$week_left" ]; then
+    out="$(fm_quota_window_label "$FM_SEAT_WEEK_WINDOW") $week_left% left"
+    ! week_reset=$(fm_seat_reset_phrase "$week_reset") || out="$out (resets $week_reset)"
+  fi
+  if [ -n "$session_left" ]; then
+    [ -z "$out" ] || out="$out, "
+    out="$out$(fm_quota_window_label "$FM_SEAT_SESSION_WINDOW") $session_left% left"
+    ! session_reset=$(fm_seat_reset_phrase "$session_reset") || out="$out (resets $session_reset)"
+  fi
+  if [ -z "$out" ]; then
+    [ -n "$account" ] || return 1
+    out="$account% left across its account windows"
+  fi
+  printf '%s\n' "$out"
+}
+
+# fm_seat_seat_phrase <config-dir>
+# One seat's headroom phrase from one read, for a caller holding a profile
+# rather than a report. Returns 1 when the seat's quota gave no verdict.
+fm_seat_seat_phrase() {
+  local out row
+  out=$(fm_seat_quota_json "${1-}") || return 1
+  row=$(fm_seat_headroom_from "$out") || return 1
+  fm_seat_headroom_phrase "$row"
 }
 
 # fm_seat_limiting_window_from <quota-json>
