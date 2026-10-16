@@ -3039,6 +3039,84 @@ test_a_persistent_secondmate_is_never_a_backlog_item() {
   pass "dispatching a persistent secondmate needs no backlog item"
 }
 
+
+# --- optional ticket-sync hook ------------------------------------------------
+#
+# bin/fm-ticket-sync.sh owns the hook contract and tests/fm-ticket-sync.test.sh
+# owns it end to end. This case proves only the wiring bin/fm-spawn.sh carries,
+# and it belongs here because the milestone fires at the same commit point this
+# file's other cases govern: the worker is launched and the item is In flight.
+
+test_a_ticketed_dispatch_starts_its_ticket_at_the_commit_point() {
+  local case_dir home id out i have
+  id=atomic-ticket-b1
+  case_dir=$(make_home dispatch-ticket-sync)
+  home=$(home_of "$case_dir")
+  add_item "$case_dir" "$id"
+  fm_test_tasks_toml "$home/.tasks.toml"
+
+  # The real scaffold, because a ticketed spawn refuses a brief that does not
+  # record the same ticket.
+  FM_HOME="$home" FM_DATA_OVERRIDE="$home/data" "$ROOT/bin/fm-brief.sh" "$id" project \
+    --mode no-mistakes --ticket ENG-2653 --commit-type feat >/dev/null \
+    || fail "could not scaffold the ticketed brief"
+  out=$(cat "$home/data/$id/brief.md")
+  out=${out//'{TASK}'/Exercise the ticketed dispatch.}
+  out=${out//'{FIRSTMATE_SPEC}'/Verify the ticket milestone.}
+  printf '%s\n' "$out" > "$home/data/$id/brief.md"
+
+  cat > "$case_dir/ticket-hook" <<SH
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >> "$case_dir/ticket-calls"
+SH
+  chmod +x "$case_dir/ticket-hook"
+  : > "$case_dir/ticket-calls"
+  printf '%s\n' "$case_dir/ticket-hook" > "$home/config/ticket-sync-hook"
+
+  out=$(run_spawn "$case_dir" "$id" "$case_dir/project" --mode no-mistakes --yolo off \
+    --ticket ENG-2653 --commit-type feat) || fail "ticketed spawn failed: $out"
+  assert_contains "$out" "spawned $id" "the ticketed spawn did not report success"
+  [ "$(row_state "$case_dir" "$id")" = in_flight ] \
+    || fail "the ticketed spawn left its item $(row_state "$case_dir" "$id")"
+
+  # The hook runs detached, so wait for its effect rather than assuming it landed.
+  i=0
+  while [ "$i" -lt 600 ]; do
+    have=$(wc -l < "$case_dir/ticket-calls" 2>/dev/null || echo 0)
+    [ "${have:-0}" -ge 1 ] && break
+    sleep 0.05
+    i=$((i + 1))
+  done
+  assert_grep 'ENG-2653 start' "$case_dir/ticket-calls" \
+    "the ticketed dispatch did not start its ticket"
+  assert_absent "$home/state/$id.status" \
+    "the succeeding hook reported a failure on the dispatched task"
+  pass "a ticketed dispatch starts its ticket once the worker is launched and the item is In flight"
+}
+
+test_an_unticketed_dispatch_starts_no_ticket() {
+  local case_dir home id out
+  id=atomic-unticketed-b1
+  case_dir=$(make_home dispatch-unticketed-sync "$id")
+  home=$(home_of "$case_dir")
+  add_item "$case_dir" "$id"
+  fm_test_tasks_toml "$home/.tasks.toml"
+  cat > "$case_dir/ticket-hook" <<SH
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >> "$case_dir/ticket-calls"
+SH
+  chmod +x "$case_dir/ticket-hook"
+  : > "$case_dir/ticket-calls"
+  printf '%s\n' "$case_dir/ticket-hook" > "$home/config/ticket-sync-hook"
+
+  out=$(run_ship_spawn "$case_dir" "$id") || fail "unticketed spawn failed: $out"
+  assert_contains "$out" "spawned $id" "the unticketed spawn did not report success"
+  sleep 0.6
+  [ ! -s "$case_dir/ticket-calls" ] \
+    || fail "an unticketed dispatch reached the hook: $(cat "$case_dir/ticket-calls")"
+  pass "an unticketed dispatch starts no ticket"
+}
+
 test_backend_resolution_preserves_config_errors
 test_backend_resolution_preserves_precedence_and_defaults
 test_backlog_callers_refuse_unreadable_backend_config
@@ -3139,3 +3217,5 @@ test_environment_selected_adapter_is_not_forced_to_markdown
 test_manual_backend_home_dispatches_and_completes_without_touching_the_backlog
 test_a_secondmate_home_keeps_its_own_books
 test_a_persistent_secondmate_is_never_a_backlog_item
+test_a_ticketed_dispatch_starts_its_ticket_at_the_commit_point
+test_an_unticketed_dispatch_starts_no_ticket

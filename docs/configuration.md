@@ -574,6 +574,32 @@ See [`trace-context.md`](trace-context.md) for carrier semantics, supported rout
 
 See [`fleet-ledger.md`](fleet-ledger.md) for the opt-in setup, record contract, and limits.
 
+## Ticket-sync hook (config/ticket-sync-hook)
+
+The optional local, gitignored `config/ticket-sync-hook` names one executable this home runs as a task's work reaches each milestone, so an external tracker follows the work instead of depending on firstmate remembering to move a ticket by hand.
+Firstmate ships no tracker integration: the hook, and any credentials it needs, stay private to the home that configured it.
+With the file absent every milestone costs one file test and starts no process, which is what every home that has not opted in does.
+
+The file holds exactly one directive line, with blank lines and `#` comment lines ignored, naming an absolute path to an executable.
+A relative path, a second directive line, or a path that is not an executable file resolves to a hook that cannot be run, and is reported on the task rather than silently skipped.
+
+Firstmate invokes it as `<hook> <ticket-id> <event> [args...]`, where the ticket id is the task's recorded `ticket=` (`bin/fm-dod-lib.sh` owns that grammar) and the event is one of:
+
+| Event | Fired when | Producer |
+| --- | --- | --- |
+| `start` | A ticketed task's worker has launched and its backlog item is committed. A relaunch republishes an existing task and fires nothing. | `bin/fm-spawn.sh` |
+| `review <pr-url>` | The task's pull request is first recorded. Re-arming the same URL and the merge-time re-record fire nothing. | `bin/fm-pr-check.sh` |
+| `done <pr-url>` | A confirmed merge was recorded, whether this home performed it, its merge poll detected one a queue or auto-merge finished later, or the captain merged on the forge. | `bin/fm-merge-outcome-lib.sh` |
+| `waiting <text>` | The task became held for the captain, with the hold reason as the text. Repeating an already active hold fires nothing. | `bin/fm-captain-hold.sh` |
+
+Each event fires once per transition rather than once per poll, so a hook may comment on a ticket without deduplicating.
+A task with no recorded ticket, or the explicit `no-ticket` marker, never reaches the hook, and a ticket is never parsed out of task prose.
+A scout carries no ticket today, because `--ticket` applies only to ship work; a promoted scout fires `start` when it is spawned as a ship.
+
+The hook can neither delay nor fail the work: it runs in a detached child with a bounded runtime, holding none of the producer's streams, and its exit status never reaches the producer's control flow.
+A hook that fails, hits its bound, or cannot be run is reported as one status line on the task naming the event and the exit code, which supervision reads like any other unread status.
+`bin/fm-ticket-sync.sh` owns the firing mechanics, the status line, and the bound.
+
 ## Firstmate role (config/firstmate-role)
 
 The optional local, gitignored `config/firstmate-role` declares this home's relationship to the firstmate repository itself.
@@ -1698,6 +1724,47 @@ That writes `state/usage-warner.check.sh` and binds its bytes with `bin/fm-check
 `bin/fm-usage-warner.sh disarm` removes the shim, its trust binding, and the de-dupe record (`state/.usage-warner`).
 This file is not inherited by secondmate homes, so each home warns on the windows it actually spends.
 
+## Production Jev verdict monitor (config/jev-prod-monitor)
+
+`config/jev-prod-monitor` is an optional local, gitignored file naming the project whose PRODUCTION browser-check verdicts this home follows.
+It is opt-in and load-bearing: an unconfigured home contacts no forge and sees no behaviour change, and [`bin/fm-jev-prod-check.sh`](../bin/fm-jev-prod-check.sh) refuses to arm without a valid repository.
+
+It exists because a project's browser check can run twice per pull request - once against the Vercel preview before the merge, and once against production after the production deployment - and the worker that shipped the pull request is gone by the time the second one reports.
+This poll reads that second verdict, pairs it with the preview verdict, and wakes firstmate only when something needs doing.
+
+This section is the single owner of the canonical schema.
+`bin/fm-jev-prod-check.sh` owns the read, classification, batching and dedupe mechanics, and the `bearings` skill's "Jev production verdict follow-up" section owns what firstmate does with each class.
+
+```
+<key>:<value>
+```
+
+One directive per non-empty, non-comment line, split on the FIRST colon.
+
+- `repo` is required and names the project as `<owner>/<repo>`.
+  Exactly one is accepted; a second is refused rather than one being chosen.
+- `lookback-hours` is optional, defaults to 48, and accepts 1 to 336.
+  It bounds how far back a merged pull request is still examined, which is what keeps the poll's cost bounded over time.
+- `recorder-login` is optional and defaults to `github-actions[bot]`, the identity the check lane posts its verdict comment as.
+  Only a marker comment written by this login counts as a verdict: anybody who can comment on a pull request can write the marker, so without that check somebody else's comment could stand in for the real verdict.
+  Set it only for a project whose lane posts under a different name.
+
+See [`docs/examples/jev-prod-monitor`](examples/jev-prod-monitor) for a starting point to copy into local `config/jev-prod-monitor`.
+
+Arm the check once per home with `bin/fm-jev-prod-check.sh arm`.
+That writes `state/jev-prod-monitor.check.sh` and binds its bytes with `bin/fm-check-register.sh`, so the existing watcher polls it on its normal cadence and turns a verdict into a `check:` wake; no separate schedule is involved.
+`arm` refuses unless `gh`, `jq` and `unzip` are all present, because the poll reads the verdict comment and the uploaded verdict artifact through them.
+
+Both of those sources are untrusted content: a comment is written by whoever can comment, and an artifact is whatever a workflow run uploaded.
+So every value the poll lifts out of either one is accepted only as a bounded token, anything outside its shape reads as not established rather than as a verdict, and decompression is bounded by time and by bytes.
+`bin/fm-jev-prod-check.sh disarm` removes the shim, its trust binding, and the dedupe record (`state/.jev-prod-monitor`).
+This file is not inherited by secondmate homes, so each home follows the projects it actually ships.
+
+Three environment variables tune the poll and exist mainly so the behaviour is testable; the defaults are the supported settings.
+`FM_JEV_PROD_BATCH_SECS` (default 21600) is how long a batched class waits before it goes out.
+`FM_JEV_PROD_GRACE_SECS` (default 3600) is how long after a merge a production verdict may still be missing before its absence is itself reported.
+`FM_JEV_PROD_BUDGET` (default 20, capped to `FM_CHECK_TIMEOUT` less three seconds) bounds one poll's forge reads, and `FM_JEV_PROD_MAX_PRS` (default 8) bounds how many merged pull requests one poll examines.
+
 ## Mail plane (.env)
 
 The mail plane (bin/fm-mail.sh) reads unseen IMAP messages and sends one SMTP message.
@@ -2574,6 +2641,7 @@ FM_BACKLOG_ROW_TIMEOUT_SECS=10   # seconds bounding each backlog row read (bin/f
 FM_BOOTSTRAP_DETECT_ONLY=0   # internal/read-only session-start mode: skip bootstrap's mutating sweeps and print advisory TANGLE wording
 FM_BOOTSTRAP_NETWORK=all   # internal session-start phase split: all, skip (local steps only), or only (network steps only); see bin/fm-bootstrap.sh
 FM_STARTUP_NETWORK_TIMEOUT=120   # seconds bounding the deferred inactive-outcome scan plus network checks, including the lock waits the worker makes before them; hitting it prints an actionable NETWORK_CHECKS line, and a lock a live process still holds at the deadline ends the worker with a failed-rerun record (publication and delivery are bounded by FM_SESSION_START_TIMEOUT the same way)
+FM_TICKET_SYNC_TIMEOUT=60   # seconds the detached ticket-sync hook is given (bin/fm-ticket-sync.sh); nonpositive or invalid values fall back to 60, and hitting the bound is reported as exit=124 on the task
 FM_TASKS_AXI_COMPATIBLE=   # internal one-hop handoff of an already-computed tasks-axi compatibility verdict (0 or 1); consumed when bin/fm-tasks-axi-lib.sh is sourced
 FM_GUARD_READ_ONLY=0    # internal/read-only guard mode: keep alarms but suppress drain, supervision repair, and checkout repair commands
 FM_GUARD_CONTINUE_LINE='This is a supervision warning only; the guarded operation WILL still run.'   # banner continuation line; fm-send.sh overrides it to name the requested message specifically

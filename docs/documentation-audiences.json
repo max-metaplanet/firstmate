@@ -365,6 +365,10 @@
       "audience": "operator-example"
     },
     {
+      "path": "docs/examples/jev-prod-monitor",
+      "audience": "operator-example"
+    },
+    {
       "path": "docs/examples/usage-warner",
       "audience": "operator-example"
     },

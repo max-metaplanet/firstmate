@@ -4645,6 +4645,114 @@ SH
   pass "marked hold reasons round-trip through public reads, fleet, startup, and return without changing other fields"
 }
 
+# --- optional ticket-sync hook ------------------------------------------------
+#
+# bin/fm-ticket-sync.sh owns the hook contract and tests/fm-ticket-sync.test.sh
+# owns it end to end. These two cases prove only the wiring this file's own
+# scripts carry: that a fresh captain hold and a proven merge each fire their
+# milestone exactly once, and that neither can be harmed by the hook.
+
+# Record every argument vector the hook is handed, one call per line.
+install_ticket_hook() {  # <home> [exit-code]
+  local home=$1 rc=${2:-0}
+  cat > "$home/ticket-hook" <<SH
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >> "$home/ticket-calls"
+exit $rc
+SH
+  chmod +x "$home/ticket-hook"
+  : > "$home/ticket-calls"
+  printf '%s\n' "$home/ticket-hook" > "$home/config/ticket-sync-hook"
+}
+
+# The hook runs detached, so wait for its effect rather than assuming it landed.
+wait_for_ticket_lines() {  # <file> <count>
+  local file=$1 want=$2 i=0 have
+  while [ "$i" -lt 600 ]; do
+    if [ -f "$file" ]; then
+      have=$(wc -l < "$file" 2>/dev/null || echo 0)
+      [ "${have:-0}" -ge "$want" ] && return 0
+    fi
+    sleep 0.05
+    i=$((i + 1))
+  done
+  return 1
+}
+
+test_a_fresh_captain_hold_moves_its_ticket_to_waiting() {
+  local home id plain
+  home=$(make_home captain-hold-ticket-sync)
+  install_ticket_hook "$home"
+  id=sample-hold-ticket
+  plain=sample-hold-unticketed
+  tasks_in "$home" add "$id" "Ship the ticketed change" --kind ship \
+    --repo sample --start >/dev/null || fail "could not create the held ticket fixture"
+  tasks_in "$home" add "$plain" "Ship the unticketed change" --kind ship \
+    --repo sample --start >/dev/null || fail "could not create the unticketed fixture"
+  fm_write_meta "$home/state/$id.meta" \
+    "window=firstmate:fm-$id" "endpoint_task_id=$id" "worktree=$home/projects/$id" \
+    "project=$home/projects/sample" "harness=codex" "kind=ship" "mode=no-mistakes" \
+    "ticket=ENG-2653" "commit_type=feat" "spawn_gen=fixture-$id"
+  fm_write_meta "$home/state/$plain.meta" \
+    "window=firstmate:fm-$plain" "endpoint_task_id=$plain" \
+    "worktree=$home/projects/$plain" "project=$home/projects/sample" \
+    "harness=codex" "kind=ship" "mode=no-mistakes" "spawn_gen=fixture-$plain"
+
+  run_captain "$home" hold "$id" --reason "captain must pick the rollout order" >/dev/null \
+    || fail "could not hold the ticketed task"
+  wait_for_ticket_lines "$home/ticket-calls" 1 \
+    || fail "a fresh captain hold never reached the ticket hook"
+  assert_grep 'ENG-2653 waiting captain must pick the rollout order' "$home/ticket-calls" \
+    "the captain hold did not pass its reason as the waiting text"
+
+  # Repeating an active hold is the same wait, not a new one.
+  run_captain "$home" hold "$id" --reason "captain must pick the rollout order" >/dev/null \
+    || fail "could not repeat the active hold"
+  # An unticketed task has no ticket to move at all.
+  run_captain "$home" hold "$plain" --reason "captain must decide the unticketed change" >/dev/null \
+    || fail "could not hold the unticketed task"
+  sleep 0.6
+  [ "$(wc -l < "$home/ticket-calls")" -eq 1 ] \
+    || fail "a repeated hold or an unticketed task fired a second waiting event: $(cat "$home/ticket-calls")"
+  assert_absent "$home/state/$plain.status" \
+    "the unticketed hold wrote a ticket-sync status line"
+  pass "a fresh captain hold moves its ticket to waiting exactly once"
+}
+
+test_a_verified_merge_completes_its_ticket() {
+  local home id pr repo wt
+  home=$(make_home merge-ticket-sync)
+  configure_merged_github "$home"
+  install_ticket_hook "$home" 7
+  id=sample-merge-ticket
+  pr=https://github.com/sample/sample/pull/51
+  repo="$home/projects/sample-merge"
+  wt="$home/projects/$id"
+  fm_git_worktree "$repo" "$wt" "fm/$id"
+  tasks_in "$home" add "$id" "Ship the ticketed pull request" --kind ship \
+    --repo sample --start >/dev/null || fail "could not create the merge ticket fixture"
+  fm_write_meta "$home/state/$id.meta" \
+    "window=firstmate:fm-$id" "endpoint_task_id=$id" "worktree=$wt" \
+    "project=$repo" "harness=codex" "kind=ship" "mode=no-mistakes" \
+    "ticket=ENG-2653" "commit_type=feat" "spawn_gen=fixture-$id" "pr=$pr"
+  printf 'done: merge ready\n' > "$home/state/$id.status"
+
+  # The hook is configured to fail: a merge that the forge proved landed must
+  # still be reported as landed, with the hook's failure named on the task.
+  run_pr_merge "$home" "$id" "$pr" > "$home/merge.out" 2> "$home/merge.err" \
+    || fail "a failing ticket hook broke a proven merge: $(cat "$home/merge.err")"
+  wait_for_ticket_lines "$home/ticket-calls" 1 \
+    || fail "a proven merge never reached the ticket hook"
+  assert_grep "ENG-2653 done $pr" "$home/ticket-calls" \
+    "the merge did not complete the ticket with its pull request URL"
+  wait_for_ticket_lines "$home/state/$id.status" 2 \
+    || fail "the failing hook wrote no status line on the merged task"
+  assert_grep 'ticket sync hook failed ticket=ENG-2653 event=done exit=7' \
+    "$home/state/$id.status" \
+    "the failing hook was not reported as a status line naming the event"
+  pass "a verified merge completes its ticket and survives a failing hook"
+}
+
 test_hold_reason_round_trips_awkward_characters
 test_hold_origins_precede_backend_holds
 test_historical_self_inventory_has_workable_repair
@@ -4706,3 +4814,5 @@ test_verify_names_the_unresolvable_legacy_id_once
 test_verify_resolves_a_pre_collapse_key_through_its_derived_marker
 test_captain_hold_mutations_address_the_beads_backend
 test_hold_creates_a_captain_row_when_beads_requires_due_without_custom_type
+test_a_fresh_captain_hold_moves_its_ticket_to_waiting
+test_a_verified_merge_completes_its_ticket

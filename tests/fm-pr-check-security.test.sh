@@ -3602,6 +3602,83 @@ SH
   pass "device re-record publication waits without rewriting its registration"
 }
 
+
+# --- optional ticket-sync hook ------------------------------------------------
+#
+# bin/fm-ticket-sync.sh owns the hook contract and tests/fm-ticket-sync.test.sh
+# owns it end to end. This case proves only the wiring this script carries: that
+# registering a task's pull request moves its ticket to review exactly once.
+
+# Record every argument vector the hook is handed, one call per line.
+install_ticket_hook() {  # <dir>
+  local dir=$1
+  cat > "$dir/ticket-hook" <<SH
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >> "$dir/ticket-calls"
+SH
+  chmod +x "$dir/ticket-hook"
+  : > "$dir/ticket-calls"
+  printf '%s\n' "$dir/ticket-hook" > "$dir/home/config/ticket-sync-hook"
+}
+
+# The hook runs detached, so wait for its effect rather than assuming it landed.
+wait_for_ticket_lines() {  # <file> <count>
+  local file=$1 want=$2 i=0 have
+  while [ "$i" -lt 600 ]; do
+    if [ -f "$file" ]; then
+      have=$(wc -l < "$file" 2>/dev/null || echo 0)
+      [ "${have:-0}" -ge "$want" ] && return 0
+    fi
+    sleep 0.05
+    i=$((i + 1))
+  done
+  return 1
+}
+
+test_pr_registration_moves_its_ticket_to_review_once() {
+  local dir url
+  dir=$(make_case pr-registration-ticket-sync)
+  install_ticket_hook "$dir"
+  url=https://github.com/o/r/pull/19
+  fm_write_meta "$dir/home/state/task-a.meta" \
+    "window=firstmate:fm-task-a" \
+    "endpoint_task_id=task-a" \
+    "worktree=$dir/wt" \
+    "project=$dir/project" \
+    "kind=ship" \
+    "mode=no-mistakes" \
+    "ticket=ENG-2653" \
+    "commit_type=feat"
+
+  run_check_entry "$dir" task-a "$url" >/dev/null 2> "$dir/arm.err" \
+    || fail "could not arm the ticketed pull request: $(cat "$dir/arm.err")"
+  wait_for_ticket_lines "$dir/ticket-calls" 1 \
+    || fail "registering a pull request never reached the ticket hook"
+  assert_grep "ENG-2653 review $url" "$dir/ticket-calls" \
+    "the registration did not move the ticket to review with its pull request URL"
+
+  # Re-arming the same URL is the same transition, and the merge-time
+  # re-record is not a review event at all: one ticket move per milestone.
+  run_check_entry "$dir" task-a "$url" >/dev/null 2>&1 \
+    || fail "could not re-arm the same pull request"
+  FM_PR_CHECK_MERGE=1 run_check_entry "$dir" task-a "$url" >/dev/null 2>&1 \
+    || fail "could not re-record the pull request at merge time"
+  sleep 0.6
+  [ "$(wc -l < "$dir/ticket-calls")" -eq 1 ] \
+    || fail "a re-arm or the merge-time re-record fired a second review event: $(cat "$dir/ticket-calls")"
+
+  # An unticketed task has no ticket to move.
+  fm_write_meta "$dir/home/state/task-b.meta" \
+    "window=firstmate:fm-task-b" "endpoint_task_id=task-b" "worktree=$dir/wt" \
+    "project=$dir/project" "kind=ship" "mode=no-mistakes"
+  run_check_entry "$dir" task-b https://github.com/o/r/pull/20 >/dev/null 2>&1 \
+    || fail "could not arm the unticketed pull request"
+  sleep 0.6
+  [ "$(wc -l < "$dir/ticket-calls")" -eq 1 ] \
+    || fail "an unticketed task fired a review event: $(cat "$dir/ticket-calls")"
+  pass "registering a pull request moves its ticket to review exactly once"
+}
+
 test_parser_matrix
 test_gitlab_merge_watch
 test_forgejo_merge_watch
@@ -3649,3 +3726,4 @@ test_bootstrap_leaves_unauthenticated_checks
 test_custom_snapshot_cleanup_on_signal
 test_returned_custom_check_descendants_are_drained
 test_teardown_removes_poll_artifacts
+test_pr_registration_moves_its_ticket_to_review_once

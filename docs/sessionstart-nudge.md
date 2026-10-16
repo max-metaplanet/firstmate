@@ -135,6 +135,10 @@ The digest makes no external-network call at all.
 Every network call it owes runs off the blocking path, in the separately bounded deferred stage owned by `bin/fm-startup-network.sh`.
 So an unreachable host can no longer consume this budget.
 
+That stage also carries two local steps whose cost does not come from this home: the bounded inactive-outcome startup scan and the home-local stale Herdr projection cleanup.
+The cleanup's candidate count comes from the machine's shared named Herdr session, so a busy machine made it exceed the whole digest bound on its own before anything printed.
+So no blocking stage of the digest scales with the fleet other homes are running.
+
 ### Digest timeout
 
 Some digest work remains local but unbounded:

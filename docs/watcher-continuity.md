@@ -227,6 +227,7 @@ A downtime generation is announced only over durable work to drain, and then at 
 A non-successor watcher start checks the durable queue and recovery marker under their locks.
 If the queue is empty, the arm announces nothing and leaves the generation exactly as it found it, so the recovery stays owed and repeated empty-queue arms are idempotent while a long-poll source is merely alive.
 That applies to a never-announced pending generation, which stays pending, and to an announced-but-unacknowledged one, which stays announced.
+The one exception is a malformed marker: the arm quarantines it, records a fresh announced downtime, and announces that recovery even over an empty queue; the watcher's poll loop does not re-apply the queue gate to a recovery the marker check approved.
 With durable work queued, the first recovery marks the generation announced, and the first row to arrive after a silence announces that same generation once.
 If a durable row arrived after an announcement, the arm opens a fresh pending downtime generation so buried work still resurfaces once.
 A Codex foreground checkpoint skips the announced-episode reopen transition, so an already-announced generation stays announced while the checkpoint continues its bounded supervision.
@@ -464,7 +465,7 @@ They also prove that a legacy or handoff-phase watcher marker from an absent rep
 
 - Durable queue replay.
 - Real remote parent-replies ingestion into the authoritative status log.
-- Decision-only OPEN DECISIONS recovery.
+- A decision-only downtime that stays silent while the next drain still re-folds the open decision.
 - Interrupted handling replay.
 - Generation-bound acknowledgement.
 - A persistent live successor after recovery.
