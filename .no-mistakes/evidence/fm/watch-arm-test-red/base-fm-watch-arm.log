@@ -1,0 +1,16 @@
+ok - watch-arm: an attached arm reports the wake its cycle delivered instead of a false failure
+ok - watch-arm: a delivered wake consumed by the handling turn still closes the attached arm cleanly
+ok - watch-arm: an unusable launch confirm window refuses to arm by name
+ok - watch-arm: a live watcher whose first beacon is late is confirmed, not killed
+ok - watch-arm: a dead watcher still fails the arm promptly
+ok - watch-arm: a watcher that never beacons still fails the arm at the ceiling
+ok - watch-arm: the pre-lock confirmation budget scales with the run queue and clamps
+ok - watch-arm: a disposable validation checkout refuses to arm
+ok - watch-arm: a watcher exits when its state directory is removed
+ok - watch-arm: a watcher exits when its home is removed
+ok - watch-arm: the test reaper stops a watcher armed for a tracked temporary home
+ok - watch-arm: a cycle that delivered no wake of its own still fails loudly
+ok - watch-arm: an attached arm keeps following a slow live holder and reports its wake
+wait_for_exit: owned pid 61255 exceeded 300 polls; sending TERM
+61255 24226 S    bash /var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-base.LWuH4G/bin/fm-watch-arm.sh
+not ok - the retry did not replace the stalled holder: watcher: started pid=61311 (beacon fresh)

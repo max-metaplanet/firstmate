@@ -1,0 +1,23 @@
+SETUP live synthetic owner= 42403 lock= 42403
+second-session acquisition rc=0 stdout='lock_rc=1\n' stderr='error: another live firstmate session holds the lock (pid 42403); operate read-only until resolved\n'
+nonowner autoarm rc=0 stdout='autoarm_rc=0\n' stderr=''
+nonowner stop 1 rc=0 stdout='{"systemMessage":"FIRSTMATE SUPERVISION IS OWNED BY ANOTHER LIVE SESSION: this read-only session cannot and should not arm or repair the watcher (lock owner pid 42403). Allowing this turn to end safely; the owning session must restore supervision."}\n' stderr=''
+nonowner stop 2 rc=0 stdout='{"systemMessage":"FIRSTMATE SUPERVISION IS OWNED BY ANOTHER LIVE SESSION: this read-only session cannot and should not arm or repair the watcher (lock owner pid 42403). Allowing this turn to end safely; the owning session must restore supervision."}\n' stderr=''
+nonowner stop 3 rc=0 stdout='{"systemMessage":"FIRSTMATE SUPERVISION IS OWNED BY ANOTHER LIVE SESSION: this read-only session cannot and should not arm or repair the watcher (lock owner pid 42403). Allowing this turn to end safely; the owning session must restore supervision."}\n' stderr=''
+nonowner stop 4 rc=0 stdout='{"systemMessage":"FIRSTMATE SUPERVISION IS OWNED BY ANOTHER LIVE SESSION: this read-only session cannot and should not arm or repair the watcher (lock owner pid 42403). Allowing this turn to end safely; the owning session must restore supervision."}\n' stderr=''
+nonowner stop 5 rc=0 stdout='{"systemMessage":"FIRSTMATE SUPERVISION IS OWNED BY ANOTHER LIVE SESSION: this read-only session cannot and should not arm or repair the watcher (lock owner pid 42403). Allowing this turn to end safely; the owning session must restore supervision."}\n' stderr=''
+FIXED repeated non-owner Stops: all five ended safely
+fresh-beat-only counterfactual rc=0 stdout='{"systemMessage":"FIRSTMATE SUPERVISION IS OWNED BY ANOTHER LIVE SESSION: this read-only session cannot and should not arm or repair the watcher (lock owner pid 42403). Allowing this turn to end safely; the owning session must restore supervision."}\n' stderr=''
+Traceback (most recent call last):
+  File "/Users/max/.no-mistakes/worktrees/61c6dd39b831/01M5371AC8CCC48F3VYPQSVHGK/tests/fm-turnend-foreign-owner-repro.py", line 202, in <module>
+    until(
+    ~~~~~^
+        lambda: (root / "state/.watch.lock/pid").is_file(),
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        message="replacement owner did not publish state/.watch.lock/pid",
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/max/.no-mistakes/worktrees/61c6dd39b831/01M5371AC8CCC48F3VYPQSVHGK/tests/fm-turnend-foreign-owner-repro.py", line 97, in until
+    raise RuntimeError(message() if callable(message) else message)
+RuntimeError: replacement owner did not publish state/.watch.lock/pid
