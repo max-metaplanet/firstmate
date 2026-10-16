@@ -129,9 +129,9 @@ test_config_parses_comments_whitespace_and_model_ids() {
     '{"id":"seven_day","percentUsed":50}' \
     '{"id":"model:fable","percentUsed":60}'
   out=$(run_check "$home" "$fakebin")
-  assert_contains "$out" "five_hour at 15% left (85% used)" \
+  assert_contains "$out" "5-hour window at 15% left (85% used)" \
     "a directive survives surrounding whitespace, and the line names both figures"
-  assert_contains "$out" "model:fable at 40% left (60% used)" \
+  assert_contains "$out" "model:fable window at 40% left (60% used)" \
     "a colon-containing window id splits on the LAST colon"
   assert_not_contains "$out" "seven_day" "malformed duplicate directives (no colon, non-numeric, out-of-range) never leak a usable threshold"
   pass "fm-usage-warner: config parsing keeps only valid directives, including colon-containing ids"
@@ -148,7 +148,7 @@ test_check_crosses_notifies_stays_quiet_then_rearms() {
 
   fake_quota_axi "$fakebin" '{"id":"five_hour","percentUsed":90}'
   out=$(run_check "$home" "$fakebin")
-  assert_contains "$out" "five_hour at 10% left (90% used), threshold 20% left" \
+  assert_contains "$out" "5-hour window at 10% left (90% used), threshold 20% left" \
     "a fresh crossing is reported, naming percent left, percent used, and the threshold"
   assert_grep "Firstmate: Claude usage" "$notify_log" "a fresh crossing posts one osascript notification"
 
@@ -165,7 +165,7 @@ test_check_crosses_notifies_stays_quiet_then_rearms() {
   : > "$notify_log"
   fake_quota_axi "$fakebin" '{"id":"five_hour","percentUsed":85}'
   out=$(run_check "$home" "$fakebin")
-  assert_contains "$out" "five_hour at 15% left (85% used)" "crossing again after recovering must notify again"
+  assert_contains "$out" "5-hour window at 15% left (85% used)" "crossing again after recovering must notify again"
   assert_grep "Firstmate: Claude usage" "$notify_log" "the re-crossing posts a fresh notification"
   pass "fm-usage-warner: edge-triggered de-dupe crosses once, stays quiet, and re-arms on drop"
 }
@@ -180,8 +180,8 @@ test_check_batches_multiple_crossings_into_one_notification() {
   printf 'five_hour:20\nseven_day:10\n' > "$home/config/usage-warner"
   fake_quota_axi "$fakebin" '{"id":"five_hour","percentUsed":92}' '{"id":"seven_day","percentUsed":97}'
   out=$(run_check "$home" "$fakebin")
-  assert_contains "$out" "five_hour at 8% left" "the batched line names the first crossing"
-  assert_contains "$out" "seven_day at 3% left" "the batched line names the second crossing"
+  assert_contains "$out" "5-hour window at 8% left" "the batched line names the first crossing"
+  assert_contains "$out" "week window at 3% left" "the batched line names the second crossing"
   local notify_count
   notify_count=$(grep -c . "$notify_log" || true)
   [ "$notify_count" -eq 1 ] || fail "two crossings in one read must post exactly one notification, got $notify_count"
@@ -210,7 +210,7 @@ test_check_keeps_a_briefly_missing_window_notified() {
 
   fake_quota_axi "$fakebin" '{"id":"five_hour","percentUsed":90}'
   out=$(run_check "$home" "$fakebin")
-  assert_contains "$out" "five_hour at 10% left" "precondition: the first crossing is reported"
+  assert_contains "$out" "5-hour window at 10% left" "precondition: the first crossing is reported"
 
   fake_quota_axi "$fakebin" '{"id":"seven_day","percentUsed":10}'
   run_check "$home" "$fakebin" >/dev/null
@@ -417,7 +417,7 @@ test_armed_shim_runs_a_real_check() {
   printf 'five_hour:80\n' > "$home/config/usage-warner"
   FM_HOME="$home" "$WARNER" arm >/dev/null 2>&1 || fail "arm must succeed"
   out=$(PATH="$fakebin:$PATH" "$home/state/usage-warner.check.sh" </dev/null)
-  assert_contains "$out" "five_hour at 8% left (92% used)" "the armed shim, run the way the watcher runs it, performs a real check"
+  assert_contains "$out" "5-hour window at 8% left (92% used)" "the armed shim, run the way the watcher runs it, performs a real check"
   pass "fm-usage-warner: the armed shim is exactly what the watcher would dispatch"
 }
 

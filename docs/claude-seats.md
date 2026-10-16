@@ -149,12 +149,16 @@ bin/fm-seat.sh arm
 
 ### The five controls
 
-**Trigger** (`threshold`) is when to look for a new seat: the active seat has dropped to or below that percent left.
+**Trigger** (`threshold`) is when to look for a new seat: the active seat's **week** has dropped to or below that percent left, or the seat has nothing left at all right now.
+[Which seat carries work](#which-seat-carries-work) below owns why the week is the window that fires it.
 
-**Destination headroom** (`destination-min`) is what counts as somewhere to go: a candidate must read **more** than that percent left.
+**Destination headroom** (`destination-min`) is an absolute floor on what counts as somewhere to go: a candidate must read **more** than that percent left.
 A seat below it is skipped, and the refusal names each skipped seat with its measured headroom.
 If no seat qualifies, nothing is switched.
-Without this setting no headroom level is asked of a candidate, which is how it behaved before the setting existed.
+Without this setting no absolute headroom level is asked of a candidate, which is how it behaved before the setting existed.
+
+That floor is not on its own enough to decide where work goes, because it never asks whether a candidate is better than the seat being left.
+[Which seat carries work](#which-seat-carries-work) below owns the comparison that does, and both apply: a candidate must clear the absolute floor **and** have more weekly spare than the seat it would take the work from.
 
 A seat with **nothing left at all** is refused with no setting configured, because a worker launched there cannot run.
 Every switch applies it - automatic rotation, `bin/fm-seat.sh switch <name>` by hand, Claude seats and Codex homes alike - and the refusal names the seat and the time its quota comes back; `--force` is the override.
@@ -185,6 +189,54 @@ It is the subject of [Resting a seat below a quota floor](#resting-a-seat-below-
 
 `bin/fm-seat.sh status` prints all five settings, whether the watch is armed, which seats are resting and why, and whether new Claude dispatch is held right now, with the same reason `bin/fm-spawn.sh` gives when it refuses a spawn.
 
+### Which seat carries work
+
+Two separate questions, never one number.
+
+**The week decides WHICH seat.**
+A seat's seven-day window is what says whether that account can carry work at all this week.
+Every automatic decision - the switch trigger, firstmate's own move, and the destination gate all three paths share - is measured against it.
+
+**The five-hour window decides only WHEN.**
+A session dip is a short wait, not a spent account, and it never fires a rotation or a move of firstmate itself on its own.
+What it does change is where a **new** Claude worker starts: with a trigger set, a fresh spawn whose active seat's five-hour window is at or below the trigger launches on another seat that has five-hour room above it **and** more weekly spare than the active seat, chosen through the same gate as the rotation (`bin/fm-seat.sh launch-destination`).
+That routes one launch only: `config/claude-seat` is not rewritten, firstmate itself is not moved, and running workers stay where they are.
+With no seat qualifying, the spawn is held and the refusal names the soonest five-hour reset to wait for; `--ignore-seat-hold` starts it on the active seat anyway, and a relaunch is never held.
+A session window that is *spent* is the one exception and it comes first: no worker launched on that seat can run at all, so the crossing fires on the account figure whatever the week says; the rotation still needs a seat with more weekly spare, and a new worker goes to a seat that has session room at launch, as described above.
+Waiting out a dip and never starting work on a seat that cannot take it are the two halves of the same rule.
+
+Reading one collapsed percentage for both is what moved firstmate back and forth between two seats on 2026-10-15/16: a seat holding 65% of its week read as "18%" because its five-hour window was down, and the rotation treated that as a spent account.
+
+**Seats are ranked by weekly spare**, not by weekly percent left: how many percentage points of the week survive once the rest of the week burns at the pace already measured.
+That figure is quota-axi's own `pace.reservePercentPoints` for the seven-day window, read from its report rather than recomputed here, so there is no second burn model to drift from the vendor's.
+A report with a weekly window but no pace falls back to that window's plain percent left, and one with no weekly window at all falls back to the collapsed account figure; two seats are only ever compared on the same basis, because spare and percent left are different quantities.
+
+Three rules follow from that ranking:
+
+- **Never move to a seat with no more spare.**
+  A candidate must have strictly more weekly spare than the seat the work would leave.
+  With every seat under the trigger, nothing moves and the stay-put notice says so once, which is the correct outcome: moving between two spent seats is worse than staying on one.
+- **Prefer the spare that expires soonest.**
+  Between two seats that both have spare, the one whose week resets first is the one to spend, because its spare is the spare that will otherwise be lost.
+- **Keep the thinnest seat in reserve.**
+  The seat with the least spare is the one left alone, so there is somewhere to go when the others cross.
+
+Ranking needs a weekly reset and a spare figure to rank by, so it applies on a report that carries quota-axi's weekly pace, which is what a current account returns.
+Where that projection is absent the comparison degrades to a plainer figure with no reset beside it, and the first qualifying seat in rotation order is taken, exactly as it always was.
+
+The comparison is skipped, leaving the absolute rules alone, exactly when it cannot be made or does not apply: the anchor's own headroom cannot be read, the two sides are measured on different bases, or the anchor's **week** is proven empty.
+A seat that is resting below the floor or held out of rotation by hand still has a known week, so the comparison still applies to work leaving it, and so does a seat whose five-hour window alone is spent.
+The empty-week case is what keeps a [mid-task move off a walled seat](#when-a-running-worker-hits-the-wall) working: a seat whose week is spent is one the work cannot stay on, so any seat with real headroom takes the work.
+
+The comparison belongs to the automatic paths.
+A move asked for **by hand** is the operator's own choice of where to put work, so `bin/fm-seat.sh switch <name>`, `switch --next`, and `lead-restart` with no `--to` all ask only which seats are usable at all.
+The automatic lead move is not one of those: it chooses its destination under this comparison and then names it with `--to`.
+Arming the watch asks the usable-seat question too, so a fleet whose active seat is simply the best one still arms - the watch is what catches that seat's own later crossing.
+
+**Every percentage names its window.**
+`bin/fm-seat.sh status`, every seat-watch line, and the usage warner all print a seat's headroom as `week 65% left (resets 2026-10-21 06:00Z), 5-hour 11% left (resets 2026-10-16 05:40Z)`.
+A bare percentage is never printed for a seat, because a reader cannot tell a five-hour dip from a spent week - and that is the ambiguity this policy exists to remove.
+
 ### What the automatic mode cannot do
 
 This is worth being exact about, because the setting is easy to read as a spend guarantee and it is not one.
@@ -212,13 +264,15 @@ Each pass keeps every quota read inside the watcher's per-check timeout (`FM_CHE
 
 ### What never trips a switch
 
-Only the account-level windows (`all_models` and `all_products`) count toward the trigger, the same scopes the dispatch chooser applies to a worker with no specific model; a model- or product-only window such as an Opus weekly limit does not trip a switch on its own.
+Only the account-level windows (`all_models` and `all_products`) are read at all, the same scopes the dispatch chooser applies to a worker with no specific model; a model- or product-only window such as an Opus weekly limit does not trip a switch on its own.
+Of those, the trigger is measured against the **week**, with a seat that has nothing left at all as the one exception; [which seat carries work](#which-seat-carries-work) owns that split.
 The quota floor reads the same two account-level windows by name (`five_hour` and `seven_day`) and ignores every model- and product-scoped window and `extra_usage` for the same reason: extra-usage credits are not plan quota, and a model limit does not bound a worker that is not on that model.
 For the `default` seat the condition reads the same profile a new worker on it gets, which is firstmate's own `CLAUDE_CONFIG_DIR` when that is set.
 
 An unreadable or ambiguous quota is never guessed at, in either direction:
 
 - The **active** seat's quota unreadable means no switch, and the watch stays silent rather than waking on every poll.
+- The active seat's own **weekly spare** unreadable means the comparison in [which seat carries work](#which-seat-carries-work) is not made at all, and the absolute rules decide alone, rather than every candidate being refused for a question nothing can answer.
 - A **candidate** seat's quota unreadable means that seat is skipped, and the output says the quota could not be read rather than implying a number.
 - With an extra-usage policy configured, unreadable quota holds dispatch unless the shared cache has a recent successful reading with conservative headroom across every bounding window.
   Decision reasons identify fresh cache hits, last-good fallback age, endpoint backoff, and unsafe-evidence holds; the [cache helper header](../bin/fm-seat-quota-cache.py) owns exact lifetimes, headroom thresholds, storage, and locking.

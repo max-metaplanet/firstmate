@@ -345,7 +345,7 @@ action_check() {
       notified_new="${notified_new}${id}
 "
       if ! id_in_list "$RECORD_NOTIFIED" "$id"; then
-        crossed="${crossed}${id} at ${left}% left (${used}% used), threshold ${threshold}% left; "
+        crossed="${crossed}$(fm_quota_window_label "$id") window at ${left}% left (${used}% used), threshold ${threshold}% left; "
       fi
     fi
   done <<< "$thresholds"
