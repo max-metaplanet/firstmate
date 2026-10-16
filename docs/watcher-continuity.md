@@ -464,7 +464,7 @@ They also prove that a legacy or handoff-phase watcher marker from an absent rep
 
 - Durable queue replay.
 - Real remote parent-replies ingestion into the authoritative status log.
-- Decision-only OPEN DECISIONS recovery.
+- A decision-only downtime that stays silent while the next drain still re-folds the open decision.
 - Interrupted handling replay.
 - Generation-bound acknowledgement.
 - A persistent live successor after recovery.
