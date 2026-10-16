@@ -1428,6 +1428,103 @@ status_presentation_snapshot() {  # <state>
   done
 }
 
+# --- shared presentation cursor index ---------------------------------------
+#
+# One drain presents several sections and then acknowledges and commits, and
+# every one of those passes needs the same two facts for the same task: the
+# byte offset already presented, and the byte offset the outcome backstop
+# already covered. Derived per pass, each one re-read the whole fleet manifest
+# and re-stat'ed the status file, so a twelve-task home paid for the same two
+# answers sixty times over.
+#
+# The index derives each task's two answers once per presentation and answers
+# every later read from that derivation. It is a memo, not a second contract:
+# it derives them by calling status_presentation_cursor_offset and
+# status_outcome_backstop_cursor_offset themselves, so those functions remain
+# the one owner of what the answers are, including every malformed-manifest
+# and missing-row edge. The derivation reads the manifest once for the whole
+# fleet and reuses the identity and size status_presentation_snapshot already
+# captured under the presentation lock, instead of re-reading both per task.
+#
+# Scope is the caller's explicit choice and never implicit: with the index
+# closed - which is how every caller outside a drain presentation uses them -
+# both functions derive their own answer exactly as before. The index stays
+# closed when there is no manifest yet, because that first-drain read falls
+# back to each task's legacy cursor file, and when any task's derivation
+# fails, so the failure surfaces from the real call rather than from a memo.
+FM_STATUS_CURSOR_INDEX_OPEN=false
+FM_STATUS_CURSOR_INDEX_ROWS=
+
+# Preloaded inputs for one derivation: the manifest bytes read once for the
+# whole fleet, and the task's identity and size as the snapshot captured them.
+# Set only by status_presentation_index_open, and only around its own
+# derivation, so no other caller is served a fact it did not read itself.
+_FM_CURSOR_PRELOAD=false
+_FM_CURSOR_PRELOAD_MANIFEST=
+_FM_CURSOR_PRELOAD_IDENT=
+_FM_CURSOR_PRELOAD_SIZE=
+
+status_presentation_index_open() {  # <state> <task-and-endpoint-snapshot>
+  local state=$1 snapshot=$2 manifest task endpoint ident f presented backstop rows=$'\n'
+  status_presentation_index_close
+  manifest="$state/.status-presentation-cursor"
+  [ -f "$manifest" ] && [ -r "$manifest" ] && [ ! -L "$manifest" ] || return 0
+  _FM_CURSOR_PRELOAD_MANIFEST=$(LC_ALL=C command cat "$manifest" 2>/dev/null) || return 0
+  while IFS=$(printf '\t') read -r task endpoint ident; do
+    [ -n "$task" ] || continue
+    f="$state/$task.status"
+    _FM_CURSOR_PRELOAD_IDENT=$ident
+    _FM_CURSOR_PRELOAD_SIZE=$endpoint
+    _FM_CURSOR_PRELOAD=true
+    if ! presented=$(status_presentation_cursor_offset "$f"); then
+      status_presentation_index_close
+      return 0
+    fi
+    if ! backstop=$(status_outcome_backstop_cursor_offset "$f"); then
+      status_presentation_index_close
+      return 0
+    fi
+    _FM_CURSOR_PRELOAD=false
+    rows="$rows$task"$'\t'"$presented"$'\t'"$backstop"$'\n'
+  done <<EOF
+$snapshot
+EOF
+  _FM_CURSOR_PRELOAD=false
+  _FM_CURSOR_PRELOAD_MANIFEST=
+  FM_STATUS_CURSOR_INDEX_ROWS=$rows
+  FM_STATUS_CURSOR_INDEX_OPEN=true
+}
+
+status_presentation_index_close() {
+  FM_STATUS_CURSOR_INDEX_OPEN=false
+  FM_STATUS_CURSOR_INDEX_ROWS=
+  _FM_CURSOR_PRELOAD=false
+  _FM_CURSOR_PRELOAD_MANIFEST=
+  _FM_CURSOR_PRELOAD_IDENT=
+  _FM_CURSOR_PRELOAD_SIZE=
+}
+
+# Read one recorded answer. Pure parameter expansion so a lookup costs no
+# process: the rows are newline-framed, so a task id that is the tail of
+# another task's id cannot match its row.
+_FM_CURSOR_INDEX_VALUE=
+_fm_cursor_index_lookup() {  # <presented|backstop> <task> -> 0 and the recorded offset
+  local want=$1 task=$2 row
+  _FM_CURSOR_INDEX_VALUE=
+  [ "$FM_STATUS_CURSOR_INDEX_OPEN" = true ] || return 1
+  case "$FM_STATUS_CURSOR_INDEX_ROWS" in
+    *$'\n'"$task"$'\t'*) ;;
+    *) return 1 ;;
+  esac
+  row=${FM_STATUS_CURSOR_INDEX_ROWS#*$'\n'"$task"$'\t'}
+  row=${row%%$'\n'*}
+  case "$want" in
+    presented) _FM_CURSOR_INDEX_VALUE=${row%%$'\t'*} ;;
+    *) _FM_CURSOR_INDEX_VALUE=${row#*$'\t'} ;;
+  esac
+  [ -n "$_FM_CURSOR_INDEX_VALUE" ] || return 1
+}
+
 # Read the latest non-blank event through one captured presentation endpoint.
 # This is the bounded latest-event owner for fleet-wide backstops: at most the
 # final 64 KiB is inspected, and a file that changes during the read is deferred
@@ -1506,10 +1603,18 @@ status_presentation_cursor_offset() {  # <status-file>
   [ -f "$f" ] && [ -r "$f" ] && [ ! -L "$f" ] || return 1
   state=${f%/*}
   task=${f##*/}; task=${task%.status}
+  if _fm_cursor_index_lookup presented "$task"; then
+    printf '%s' "$_FM_CURSOR_INDEX_VALUE"
+    return 0
+  fi
   manifest="$state/.status-presentation-cursor"
   if [ -e "$manifest" ] || [ -L "$manifest" ]; then
     [ -f "$manifest" ] && [ -r "$manifest" ] && [ ! -L "$manifest" ] || return 1
-    data=$(LC_ALL=C command cat "$manifest" 2>/dev/null) || return 1
+    if [ "$_FM_CURSOR_PRELOAD" = true ]; then
+      data=$_FM_CURSOR_PRELOAD_MANIFEST
+    else
+      data=$(LC_ALL=C command cat "$manifest" 2>/dev/null) || return 1
+    fi
     offset=
     while IFS=$(printf '\t') read -r row_task ident legacy backstop extra; do
       [ -n "$row_task" ] || continue
@@ -1538,8 +1643,13 @@ EOF
     offset=0
     ident=$(_fm_open_decisions_file_ident "$f") || return 1
   fi
-  cur_ident=$(_fm_open_decisions_file_ident "$f") || return 1
-  size=$(_fm_status_file_size "$f") || return 1
+  if [ "$_FM_CURSOR_PRELOAD" = true ]; then
+    cur_ident=$_FM_CURSOR_PRELOAD_IDENT
+    size=$_FM_CURSOR_PRELOAD_SIZE
+  else
+    cur_ident=$(_fm_open_decisions_file_ident "$f") || return 1
+    size=$(_fm_status_file_size "$f") || return 1
+  fi
   size=${size//[[:space:]]/}
   case "$size:$offset" in *[!0-9:]*) return 1 ;; esac
   if [ "$ident" != "$cur_ident" ] || [ "$offset" -gt "$size" ]; then offset=0; fi
@@ -1551,10 +1661,18 @@ status_outcome_backstop_cursor_offset() {  # <status-file>
   [ -f "$f" ] && [ -r "$f" ] && [ ! -L "$f" ] || return 1
   state=${f%/*}
   task=${f##*/}; task=${task%.status}
+  if _fm_cursor_index_lookup backstop "$task"; then
+    printf '%s' "$_FM_CURSOR_INDEX_VALUE"
+    return 0
+  fi
   manifest="$state/.status-presentation-cursor"
   [ -e "$manifest" ] || { printf '0'; return 0; }
   [ -f "$manifest" ] && [ -r "$manifest" ] && [ ! -L "$manifest" ] || return 1
-  data=$(LC_ALL=C command cat "$manifest" 2>/dev/null) || return 1
+  if [ "$_FM_CURSOR_PRELOAD" = true ]; then
+    data=$_FM_CURSOR_PRELOAD_MANIFEST
+  else
+    data=$(LC_ALL=C command cat "$manifest" 2>/dev/null) || return 1
+  fi
   backstop=0
   while IFS=$(printf '\t') read -r row_task ident presented row_backstop extra; do
     [ -n "$row_task" ] || continue
@@ -1562,8 +1680,13 @@ status_outcome_backstop_cursor_offset() {  # <status-file>
     case "$presented:$row_backstop" in *[!0-9:]*) return 1 ;; esac
     [ -n "$presented" ] && [ -n "$ident" ] || return 1
     if [ "$row_task" = "$task" ]; then
-      current=$(_fm_open_decisions_file_ident "$f") || return 1
-      size=$(_fm_status_file_size "$f") || return 1
+      if [ "$_FM_CURSOR_PRELOAD" = true ]; then
+        current=$_FM_CURSOR_PRELOAD_IDENT
+        size=$_FM_CURSOR_PRELOAD_SIZE
+      else
+        current=$(_fm_open_decisions_file_ident "$f") || return 1
+        size=$(_fm_status_file_size "$f") || return 1
+      fi
       size=${size//[[:space:]]/}
       case "$size" in ''|*[!0-9]*) return 1 ;; esac
       [ "$ident" = "$current" ] || { printf '0'; return 0; }
