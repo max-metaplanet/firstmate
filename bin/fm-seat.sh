@@ -638,12 +638,13 @@ session_room_reason() {
 # that one launch at the answer.
 #
 # When nothing qualifies it refuses, with every skipped seat's reason above the
-# soonest five-hour reset among the seats without room, which is what the
-# launch waits for. An active seat with nothing left at all is the exception:
+# soonest five-hour reset that can end the hold: the active seat's own, or that
+# of a candidate next_seat refused for five-hour room alone. An active seat with nothing left at all is the exception:
 # it answers the active seat, because the spawn's depletion and extra-usage
 # gates own an empty seat's refusal, and its paid overflow, in their own words.
 cmd_launch_destination() {
-  local active trigger name soonest seat at seats
+  local active trigger name soonest seat at
+  local -a waiting=()
   [ "$#" -eq 0 ] || usage
   seat_command_memo
   active=$(fm_seat_active)
@@ -660,8 +661,8 @@ cmd_launch_destination() {
     printf '%s\n' "$active"
     return 0
   fi
-  mapfile -t seats < <(fm_seat_list)
-  if soonest=$(session_soonest_reset "$trigger" "$active" ${seats[@]+"${seats[@]}"}); then
+  [ -z "$name" ] || mapfile -t waiting <<< "$name"
+  if soonest=$(session_soonest_reset "$trigger" "$active" ${waiting[@]+"${waiting[@]}"}); then
     IFS=$'\t' read -r seat at <<< "$soonest"
     die "no seat has 5-hour room for a new worker and more weekly spare than '$active' (each skipped seat and its reason is printed above); the soonest 5-hour reset is $seat at $(fm_seat_reset_phrase "$at")"
   fi
@@ -964,7 +965,9 @@ seat_rank_key() {
 #
 # `--session-room` adds one more rule for a NEW worker's launch: a candidate
 # must also show five-hour room above the switch trigger (session_room_reason
-# below). launch-destination is its only caller.
+# below). launch-destination is its only caller. When it refuses, it prints on
+# stdout every candidate that passed every other rule and lacked only that
+# room, because those seats' five-hour resets are the ones that can end a hold.
 #
 # A seat whose access token has lapsed is always in that no-verdict class,
 # because its quota genuinely cannot be read until a launch renews it. So the
@@ -975,8 +978,8 @@ seat_rank_key() {
 # to switch always says which seats were considered and why none qualified.
 next_seat() {
   local active seats n i idx name minimum='' reason state resting skip rc
-  local anchor_basis='' anchor_spare='' any=0 key session=''
-  local -a ranked=()
+  local anchor_basis='' anchor_spare='' any=0 key session='' room
+  local -a ranked=() waiting=()
   if [ "${1-}" = --any ]; then
     any=1
     shift
@@ -1048,8 +1051,10 @@ next_seat() {
     rc=$?
     if [ "$rc" -ne 0 ] && [ -n "$session" ]; then
       reason=$(session_room_reason "$name" "$session")
-      if [ "$?" -ne 1 ]; then
+      room=$?
+      if [ "$room" -ne 1 ]; then
         printf 'seat %s: skipped, %s\n' "$name" "$reason" >&2
+        [ "$room" -ne 0 ] || [ "$rc" -ne 1 ] || waiting+=("$name")
         continue
       fi
     fi
@@ -1092,7 +1097,10 @@ next_seat() {
       printf 'seat %s: skipped, %s\n' "$name" "$reason" >&2
     fi
   done
-  [ "${#ranked[@]}" -gt 0 ] || return 1
+  if [ "${#ranked[@]}" -eq 0 ]; then
+    [ "${#waiting[@]}" -eq 0 ] || printf '%s\n' "${waiting[@]}"
+    return 1
+  fi
   LC_ALL=C printf '%s\n' "${ranked[@]}" |
     LC_ALL=C sort -t"$(printf '\t')" -k1,1n -k2,2n -k3,3nr -k4,4n |
     head -1 | cut -f5

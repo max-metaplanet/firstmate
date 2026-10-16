@@ -4938,6 +4938,17 @@ test_a_new_worker_is_held_when_no_seat_has_five_hour_room() {
   assert_absent "$HOME_DIR/state/$id.meta" "a held spawn must create no task record"
   [ ! -s "$LAUNCH_LOG" ] || fail "a held spawn must launch nothing: $(cat "$LAUNCH_LOG")"
   assert_equals seat-max "$(cat "$HOME_DIR/config/claude-seat")" "a hold must not rotate the active seat"
+
+  # A seat whose five-hour window resets sooner but whose week is thinner than
+  # the active seat's can never take the launch, so its reset ends no hold and
+  # must not be the one named.
+  seat_windows_clear "$CASE_DIR/quota-spec"
+  seat_windows "$CASE_DIR/quota-spec" "$SEATS_DIR/seat-max" 3 '2026-10-16T05:40:00Z' 65 '2026-10-21T06:00:00Z' -60 22
+  seat_windows "$CASE_DIR/quota-spec" "$SEATS_DIR/seat-max-gmail" 10 '2026-10-16T04:00:00Z' 30 '2026-10-21T06:00:00Z' -50 5
+  out=$(run_spawn_here "$HOME_DIR" "$WT_DIR" "$FAKEBIN" "$LAUNCH_LOG" "$id" "$PROJ_DIR" 2>&1)
+  expect_code 1 "$?" "a spawn with no qualifying seat must still be held: $out"
+  assert_contains "$out" "the soonest 5-hour reset is seat-max at 2026-10-16 05:40Z" \
+    "the hold must name the reset that can end it, not a seat that could never qualify"
   pass "a new worker is held, naming the soonest five-hour reset, when no seat has five-hour room"
 }
 
