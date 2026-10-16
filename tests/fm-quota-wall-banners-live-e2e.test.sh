@@ -102,5 +102,10 @@ check_vendor() {
 check_vendor codex codex 'Your workspace is out of credits'
 check_vendor claude claude 'Usage limit reached'
 
-[ "$CHECKED" -gt 0 ] \
-  || fail 'neither vendor CLI was installed, so this guard proved nothing; install codex or claude, or run it where they are'
+if [ "$CHECKED" -eq 0 ]; then
+  if [ "$FM_LIVE_GATE_REQUESTED" -eq 1 ]; then
+    fail 'neither vendor CLI was installed, so this guard proved nothing; install codex or claude, or run it where they are'
+  fi
+  printf 'skip: live: neither codex nor claude is installed, so this guard proved nothing\n'
+  exit 0
+fi
