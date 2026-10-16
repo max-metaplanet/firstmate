@@ -3299,13 +3299,20 @@ EOF
         # (quota_wall_handle above owns the whole decision). The gate is one
         # string match over the tail already in hand, so every other window
         # pays nothing for it, and a secondmate is left out because its own
-        # liveness tick owns its recovery.
+        # liveness tick owns its recovery. The same frozen pane whose episode
+        # already had its move or its decision is skipped before the
+        # crew-state read, so a wall that lasts all day costs no fork per poll.
         if [ "$kind" != secondmate ] \
-          && fm_quota_wall_detect "$FM_WIN_HARNESS" "$tail40" >/dev/null \
-          && quota_wall_handle "$w" "$task" "$FM_WIN_HARNESS" "$tail40"; then
-          clear_pause_tracking "$key"
-          printf '%s' "$h" > "$sf"
-          continue
+          && fm_quota_wall_detect "$FM_WIN_HARNESS" "$tail40" >/dev/null; then
+          if fm_read_file_to stale_seen "$sf" && [ "$stale_seen" = "$h" ] \
+            && fm_quota_wall_settled "$STATE" "$task"; then
+            continue
+          fi
+          if quota_wall_handle "$w" "$task" "$FM_WIN_HARNESS" "$tail40"; then
+            clear_pause_tracking "$key"
+            printf '%s' "$h" > "$sf"
+            continue
+          fi
         fi
         if [ "$kind" = secondmate ]; then
           case "$(pause_state_class "$w" "$task")" in

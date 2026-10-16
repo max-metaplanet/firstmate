@@ -135,16 +135,22 @@ META
 #!/usr/bin/env bash
 set -u
 printf '%s\n' "\$*" >> "$case_dir/seat.calls"
-cmd=''
+cmd='' skip='' prev=''
 for a in "\$@"; do
   case "\$a" in name-of|worker-destination) cmd=\$a ;;
   esac
+  [ "\$prev" != --skip ] || skip="\$skip \$a "
+  prev=\$a
 done
+dest=\$(cat "$case_dir/dest" 2>/dev/null || printf '%s' "$destination")
 case "\$cmd" in
-  name-of) printf 'codex-max2\n' ;;
+  name-of) cat "$case_dir/seat" 2>/dev/null || printf 'codex-max2\n' ;;
   worker-destination)
-    if [ -n "$destination" ]; then
-      printf '%s\n' "$destination"
+    if [ -n "\$dest" ] && [ "\${skip#* \$dest }" != "\$skip" ]; then
+      printf 'seat %s: skipped, this worker already walled out on it\n' "\$dest" >&2
+      exit 1
+    elif [ -n "\$dest" ]; then
+      printf '%s\n' "\$dest"
     else
       printf 'seat codex-max: skipped, its quota is used up; the seat comes back at 2026-10-20T00:00:00Z\n' >&2
       printf 'seat codex-spare: skipped, excluded from automatic rotation\n' >&2
@@ -253,6 +259,32 @@ test_a_later_episode_gets_its_own_move() {
   pass 'a seat that walls out again in a later episode gets its own single move'
 }
 
+test_a_seat_already_walled_on_is_never_a_destination_again() {
+  local rc=0
+  read_case "$(make_case pingpong codex-max)"
+  set_wall_line
+  recover "$HOME_DIR" "$WALL_LINE" || fail 'the first wall must move the worker'
+  [ "$FM_QUOTA_WALL_STATUS" = moved ] || fail 'the first wall must move the worker off codex-max2'
+  fm_quota_wall_settled "$HOME_DIR/state" task \
+    || fail 'an episode that had its move must read as settled to a poller'
+
+  # The worker now runs on codex-max, which walls out too, and the chooser on
+  # its own would hand the work straight back to codex-max2.
+  printf 'codex-max\n' > "$CASE_DIR/seat"
+  printf 'codex-max2\n' > "$CASE_DIR/dest"
+  recover "$HOME_DIR" "$WALL_LINE" || rc=$?
+  expect_code 0 "$rc" 'a wall on the second seat must still be handled'
+  assert_grep 'worker-destination --from codex-max --skip codex-max2' "$CASE_DIR/seat.calls" \
+    'the chooser must be told which seat this worker already walled out on'
+  [ "$FM_QUOTA_WALL_STATUS" = no-destination ] \
+    || fail "a seat already walled on must not take the work back, got '$FM_QUOTA_WALL_STATUS'"
+  assert_contains "$FM_QUOTA_WALL_REPORT" 'already walled out' \
+    'the decision must say why the earlier seat was refused'
+  [ "$(wc -l < "$CASE_DIR/control.calls" | tr -d '[:space:]')" = 1 ] \
+    || fail 'the worker must not be relaunched back onto the seat it walled out on'
+  pass 'a worker never bounces back onto a seat it already walled out on'
+}
+
 test_no_seat_with_headroom_raises_one_decision() {
   local rc=0
   read_case "$(make_case nowhere)"
@@ -267,6 +299,8 @@ test_no_seat_with_headroom_raises_one_decision() {
     'the decision must say when a used-up seat comes back'
   assert_contains "$FM_QUOTA_WALL_REPORT" 'codex-spare' 'the decision must name a withheld seat too'
   [ ! -f "$CASE_DIR/control.calls" ] || fail 'nothing may be relaunched when no seat qualifies'
+  fm_quota_wall_settled "$HOME_DIR/state" task \
+    || fail 'an episode that raised its decision must read as settled to a poller'
 
   recover "$HOME_DIR" "$WALL_LINE" || fail 'a repeat sighting must still be handled'
   [ "$FM_QUOTA_WALL_STATUS" = spent ] \
@@ -280,6 +314,8 @@ test_a_live_pipeline_run_is_reported_and_never_moved() {
   set_wall_line
   recover "$HOME_DIR" 'state: working · source: run-step · run: 01ABC · step: fixing' \
     || fail 'a wall beside a live run must be handled rather than left to the stale ladder'
+  fm_quota_wall_settled "$HOME_DIR/state" task \
+    && fail 'a live-run report keeps the move, so a poller must keep re-reading'
   [ "$FM_QUOTA_WALL_STATUS" = pipeline-live ] \
     || fail "a live run must be reported, got '$FM_QUOTA_WALL_STATUS'"
   assert_contains "$FM_QUOTA_WALL_REPORT" 'still live' 'the report must say why nothing moved'
@@ -338,6 +374,7 @@ test_crew_state_line_is_the_deciding_read
 test_a_walled_worker_is_moved_to_a_seat_with_headroom
 test_only_one_automatic_move_per_episode
 test_a_later_episode_gets_its_own_move
+test_a_seat_already_walled_on_is_never_a_destination_again
 test_no_seat_with_headroom_raises_one_decision
 test_a_live_pipeline_run_is_reported_and_never_moved
 test_an_unreadable_verdict_is_left_to_ordinary_triage

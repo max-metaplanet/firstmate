@@ -4495,6 +4495,13 @@ test_worker_destination_never_answers_the_seat_the_worker_is_on() {
   expect_code 1 "$?" "the only other seat is empty, so there is nowhere to move: $out"
   assert_contains "$out" 'quota is used up' "the refusal must name why alpha was skipped"
 
+  # A seat this worker already walled out on is refused however much headroom
+  # its quota read reports, so a moved worker cannot be handed straight back.
+  seat_remaining "$SPEC_DIR" "$SEATS_DIR/alpha" 90
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" worker-destination --from beta --skip alpha)
+  expect_code 1 "$?" "a seat the worker already walled out on must not be offered: $out"
+  assert_contains "$out" 'already walled out on it' "the refusal must say why alpha was skipped"
+
   # Nothing about the home's own seat choice may change: this answers a question.
   assert_grep alpha "$HOME_DIR/config/claude-seat" \
     "asking where a worker could go must never switch the active seat"

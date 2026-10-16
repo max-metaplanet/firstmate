@@ -324,8 +324,10 @@ fm_quota_wall_move_timeout() {
 # fm_quota_wall_episode_key <vendor> <seat>
 # One episode is one vendor seat walling out: the seat is part of the identity
 # because a worker moved off a walled seat onto a second one that walls out too
-# is a genuinely new condition and gets its own single move, which is also what
-# bounds the whole recovery at the number of seats rather than letting it loop.
+# is a genuinely new condition and gets its own single move. Every seat walled
+# inside the window stays on the record and is never a destination again, which
+# is what bounds the whole recovery at the number of seats rather than letting
+# it loop between two of them.
 fm_quota_wall_episode_key() {
   printf '%s:%s\n' "${1-}" "${2-}"
 }
@@ -341,12 +343,26 @@ fm_quota_wall_episode_current() {  # <record> <key> <now>
   [ $(( now - at )) -lt "$(fm_quota_wall_episode_secs)" ]
 }
 
-# Replace the record with a fresh episode. Written whole and moved into place so
-# a torn write cannot leave a record that claims a move it never made.
-fm_quota_wall_episode_begin() {  # <record> <key> <class> <now>
-  local record=${1-} tmp
+# Replace the record with a fresh episode, carrying forward every seat a still
+# current earlier episode walled on, and adding <seat>. Written whole and moved
+# into place so a torn write cannot leave a record that claims a move it never
+# made.
+fm_quota_wall_episode_begin() {  # <record> <key> <class> <now> <seat>
+  local record=${1-} now=${4-} tmp at walled=''
+  at=$(fm_quota_wall_record_field "$record" at 2>/dev/null) || at=''
+  case "$at:$now" in
+    *[!0-9:]*|:*|*:) ;;
+    *)
+      if [ "$now" -ge "$at" ] \
+        && [ $(( now - at )) -lt "$(fm_quota_wall_episode_secs)" ]; then
+        walled=$(grep '^walled=' "$record" 2>/dev/null || true)
+      fi
+      ;;
+  esac
   tmp=$(umask 077; mktemp "$record.XXXXXX") || return 1
-  if ! printf 'episode=%s\nclass=%s\nat=%s\n' "${2-}" "${3-}" "${4-}" > "$tmp"; then
+  if ! { printf 'episode=%s\nclass=%s\nat=%s\n' "${2-}" "${3-}" "$now" \
+      && { [ -z "$walled" ] || printf '%s\n' "$walled"; } \
+      && printf 'walled=%s\n' "${5-}"; } > "$tmp"; then
     rm -f -- "$tmp"
     return 1
   fi
@@ -366,6 +382,18 @@ fm_quota_wall_episode_spent() {  # <record>
   fm_quota_wall_record_field "${1-}" decided >/dev/null 2>&1
 }
 
+# fm_quota_wall_settled <state-dir> <task>
+# 0 when the task's record holds an episode still inside its window that has
+# already had its move or its decision - the cheap check a poller makes before
+# paying for the authoritative read on a pane it has already seen.
+fm_quota_wall_settled() {
+  local record key
+  record=$(fm_quota_wall_record_path "${1-}" "${2-}")
+  key=$(fm_quota_wall_record_field "$record" episode 2>/dev/null) || return 1
+  fm_quota_wall_episode_current "$record" "$key" "$(date +%s)" \
+    && fm_quota_wall_episode_spent "$record"
+}
+
 # fm_quota_wall_seat_name <home> <vendor> <recorded-profile>
 # The seat NAME a task's recorded profile directory belongs to. The record holds
 # a profile path, while every report, every destination query and the handoff
@@ -375,18 +403,22 @@ fm_quota_wall_seat_name() {
   FM_HOME="$home" "$FM_QUOTA_WALL_SEAT_BIN" --provider "$vendor" name-of "$profile" 2>/dev/null
 }
 
-# fm_quota_wall_destination <home> <vendor> <from-seat>
-# Where this worker's work can go, from the one owner of seat candidacy. Sets
-# FM_QUOTA_WALL_DEST to the destination seat and returns 0, or leaves it empty,
-# sets FM_QUOTA_WALL_SKIPPED to every considered seat and its reason, and
-# returns 1.
+# fm_quota_wall_destination <home> <vendor> <from-seat> <record>
+# Where this worker's work can go, from the one owner of seat candidacy, never
+# a seat the record says it already walled on. Sets FM_QUOTA_WALL_DEST to the
+# destination seat and returns 0, or leaves it empty, sets
+# FM_QUOTA_WALL_SKIPPED to every considered seat and its reason, and returns 1.
 fm_quota_wall_destination() {
-  local home=${1-} vendor=${2-} from=${3-} out rc=0 skipped
+  local home=${1-} vendor=${2-} from=${3-} record=${4-} out rc=0 skipped seat
+  local args=()
   FM_QUOTA_WALL_DEST=''
   FM_QUOTA_WALL_SKIPPED=''
+  while IFS= read -r seat; do
+    [ -z "$seat" ] || [ "$seat" = "$from" ] || args+=(--skip "$seat")
+  done < <(sed -n 's/^walled=//p' "$record" 2>/dev/null)
   skipped=$(umask 077; mktemp "${TMPDIR:-/tmp}/fm-quota-wall-skipped.XXXXXX") || return 1
   out=$(env FM_HOME="$home" "$FM_QUOTA_WALL_SEAT_BIN" --provider "$vendor" \
-    worker-destination --from "$from" 2>"$skipped") || rc=$?
+    worker-destination --from "$from" ${args[@]+"${args[@]}"} 2>"$skipped") || rc=$?
   # The chooser reports one considered seat and its reason per line. Folded to
   # one line here, so a multi-seat refusal reads as a single reported sentence
   # rather than a block a wake row cannot carry; the final `error:` summary line
@@ -519,7 +551,7 @@ fm_quota_wall_recover() {
       FM_QUOTA_WALL_STATUS=spent
       return 0
     fi
-  elif ! fm_quota_wall_episode_begin "$record" "$key" "$class" "$now"; then
+  elif ! fm_quota_wall_episode_begin "$record" "$key" "$class" "$now" "$from"; then
     fm_lock_release "$lock" 2>/dev/null || true
     FM_QUOTA_WALL_STATUS=refused
     FM_QUOTA_WALL_REPORT="task $task reports a $vendor $class wall on seat $from, but its episode record at $record could not be written, so nothing was moved"
@@ -534,7 +566,7 @@ fm_quota_wall_recover() {
     return 0
   fi
 
-  if ! fm_quota_wall_destination "$home" "$vendor" "$from"; then
+  if ! fm_quota_wall_destination "$home" "$vendor" "$from" "$record"; then
     # A marker that cannot be written leaves the outcome to repeat on the next
     # poll rather than to disappear, which is the right direction for something
     # the captain is being asked to decide.

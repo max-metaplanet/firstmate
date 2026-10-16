@@ -121,10 +121,10 @@ So supervision sees a quiet window, reads it as a possible wedge, and works thro
 Firstmate answers that condition itself, with no decision asked for and no rule to remember.
 
 - The worker's own window is read on the supervision cycle that already runs.
-  An **idle** window carrying that vendor's own credit or usage-limit banner is a quota wall; an idle window with no such banner is not, and stays on the ordinary stale path exactly as before.
+  A window that is **not provably busy** and carries that vendor's own credit or usage-limit banner is a quota wall; one with no such banner is not, and stays on the ordinary stale path exactly as before.
 - The work is then **moved**: the task is relaunched on a seat that still qualifies, in the same local copy, with every uncommitted change untouched, and the replacement is told why it moved so it does not redo finished work.
 - A seat only qualifies if it would qualify for a new launch. The destination minimum, the hand exclusion, the quota floor's resting record, the login requirement, the proven-empty refusal and the paid extra-usage policy all apply, through the same check (`bin/fm-seat.sh worker-destination --from <seat>` answers it on its own and changes nothing).
-- **At most one automatic move per task per wall.** A seat that walls out again a day later is a new wall and gets its own single move; a seat that keeps reporting the same wall never gets a second one.
+- **At most one automatic move per task per wall.** A seat that walls out again a day later is a new wall and gets its own single move; a seat that keeps reporting the same wall never gets a second one, and a seat the task already walled out on inside that day is never its destination again, so a worker cannot bounce between two walled seats.
 - When **no seat qualifies**, that is the one thing brought to you, once, naming every seat that was considered, why each was refused, and when each comes back.
 - A worker whose **validation run is still live** is reported and never moved, because a relaunch would discard that run. Its one move is kept for when the run is no longer live.
 

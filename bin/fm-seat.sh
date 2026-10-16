@@ -15,7 +15,7 @@
 #   fm-seat.sh switch --next [--force]
 #   fm-seat.sh probe [<name|default>]
 #   fm-seat.sh name-of <profile-dir>
-#   fm-seat.sh worker-destination --from <name|default>
+#   fm-seat.sh worker-destination --from <name|default> [--skip <name>]...
 #   fm-seat.sh add <name>
 #   fm-seat.sh threshold [<percent-left>|off]
 #   fm-seat.sh destination-min [<percent-left>|off]
@@ -84,8 +84,9 @@
 #            launched on hits a vendor credit or usage wall. Same candidate set
 #            and same quota gate as the automatic rotation, anchored on the seat
 #            the WORKER is on rather than the active seat, so the walled seat is
-#            never the answer. Prints one seat name; exit 1 with each skipped
-#            seat and its reason on stderr when none qualifies. It switches,
+#            never the answer, and neither is any --skip seat (one this worker
+#            already walled out on). Prints one seat name; exit 1 with each
+#            skipped seat and its reason on stderr when none qualifies. It switches,
 #            writes and launches nothing - bin/fm-quota-wall-lib.sh owns the
 #            mid-task move and bin/fm-control.sh performs it.
 # add        Create an empty profile directory for a new seat and print the exact
@@ -543,12 +544,14 @@ cmd_name_of() {
 # Read-only: it answers where the work COULD go and switches, writes and
 # launches nothing. bin/fm-quota-wall-lib.sh owns the move itself.
 cmd_worker_destination() {
-  local from='' name
+  local from='' name skip=()
   seat_command_memo
   while [ "$#" -gt 0 ]; do
     case "$1" in
       --from) [ "$#" -ge 2 ] || usage; from=$2; shift 2 ;;
       --from=*) from=${1#--from=}; shift ;;
+      --skip) [ "$#" -ge 2 ] || usage; skip+=("$2"); shift 2 ;;
+      --skip=*) skip+=("${1#--skip=}"); shift ;;
       *) usage ;;
     esac
   done
@@ -556,7 +559,7 @@ cmd_worker_destination() {
   if [ "$from" != "$FM_SEAT_DEFAULT_NAME" ]; then
     fm_seat_name_valid "$from" || die "invalid seat name: $from"
   fi
-  name=$(next_seat "$from") || die "no seat under the seats root qualifies to take over work running on '$from' (each skipped seat and its reason is printed above); add and log into another seat, put an excluded seat back with 'fm-seat.sh auto-include <name>', or lower 'fm-seat.sh destination-min' (docs/claude-seats.md)"
+  name=$(next_seat "$from" ${skip[@]+"${skip[@]}"}) || die "no seat under the seats root qualifies to take over work running on '$from' (each skipped seat and its reason is printed above); add and log into another seat, put an excluded seat back with 'fm-seat.sh auto-include <name>', or lower 'fm-seat.sh destination-min' (docs/claude-seats.md)"
   printf '%s\n' "$name"
 }
 
@@ -626,12 +629,13 @@ destination_quota_check() {
   return 0
 }
 
-# next_seat [<anchor-seat>]
+# next_seat [<anchor-seat> [<skip-seat>...]]
 # The seat after the anchor seat, in list order, that a worker can be launched
 # on. The anchor defaults to the active seat, which is every existing caller;
 # the lead restart passes the seat the LEAD is on instead, because that is the
 # seat it is rotating away from. The selection RULES below are identical either
-# way - only the starting point differs.
+# way - only the starting point differs. A mid-task move also names every seat
+# that worker already walled out on, which are never chosen either.
 # Rotation wraps, and the anchor seat is never chosen, so a rotation with no
 # other usable seat refuses rather than pretending to switch.
 #
@@ -680,8 +684,9 @@ destination_quota_check() {
 # Every rejected candidate is reported on stderr with its reason, so a refusal
 # to switch always says which seats were considered and why none qualified.
 next_seat() {
-  local active seats n i idx name minimum='' reason state resting
+  local active seats n i idx name minimum='' reason state resting skip
   active=${1:-$(fm_seat_active)}
+  [ "$#" -eq 0 ] || shift
   minimum=$(fm_seat_destination_min) || minimum=''
   mapfile -t seats < <(fm_seat_list)
   n=${#seats[@]}
@@ -693,6 +698,13 @@ next_seat() {
   for ((i = 1; i <= n; i++)); do
     name=${seats[$(((idx + i) % n))]}
     [ "$name" != "$active" ] || continue
+    for skip in "$@"; do
+      [ "$name" != "$skip" ] || break
+    done
+    if [ "$#" -gt 0 ] && [ "$name" = "$skip" ]; then
+      printf 'seat %s: skipped, this worker already walled out on it\n' "$name" >&2
+      continue
+    fi
     if [ "$FM_SEAT_PROVIDER" = codex ] &&
       [ "$(fm_seat_credential_identity "$(fm_seat_config_dir "$name")")" = \
         "$(fm_seat_credential_identity "$(fm_seat_config_dir "$active")")" ]; then
