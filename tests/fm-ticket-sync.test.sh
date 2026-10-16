@@ -249,6 +249,15 @@ test_a_malformed_request_is_refused_without_running_a_hook() {
 # completes its ticket. That operation is the single place every confirmed
 # merge is recorded, and its own already-notified guard is what makes the
 # event once-per-pull-request.
+# Record one confirmed merge through the shared merge-outcome operation, the
+# way bin/fm-pr-merge.sh (origin self) and bin/fm-watch.sh (origin poll) do.
+report_merge() (  # <home> <id> <pr-url> <origin>
+  # shellcheck source=bin/fm-merge-outcome-lib.sh
+  # shellcheck disable=SC1091
+  . "$ROOT/bin/fm-merge-outcome-lib.sh"
+  FM_CONFIG_OVERRIDE="$1/config" fm_merge_outcome_report "$1" "$1/state" "$2" "$3" "$4"
+)
+
 test_every_recorded_merge_completes_its_ticket_once() {
   local home url
   home=$(make_home merge-origins)
@@ -260,14 +269,8 @@ test_every_recorded_merge_completes_its_ticket_once() {
 
   # A merge only this home's poll ever saw: a queued merge the forge finished
   # later, or one the captain made on the forge.
-  (
-    # shellcheck source=bin/fm-merge-outcome-lib.sh
-    # shellcheck disable=SC1091
-    . "$ROOT/bin/fm-merge-outcome-lib.sh"
-    FM_CONFIG_OVERRIDE="$home/config" \
-      fm_merge_outcome_report "$home" "$home/state" polled "$url" poll \
-      || fail "the polled merge outcome was not recorded"
-  ) || exit 1
+  report_merge "$home" polled "$url" poll \
+    || fail "the polled merge outcome was not recorded"
   wait_for_lines "$home/calls" 1 \
     || fail "a merge recorded by the poll never completed its ticket"
   assert_grep "ENG-4100 done $url" "$home/calls" \
@@ -275,14 +278,8 @@ test_every_recorded_merge_completes_its_ticket_once() {
 
   # The same merge reported again, the way the entrypoint and a later poll both
   # report one: the guard returns before the hook, so the ticket moves once.
-  (
-    # shellcheck source=bin/fm-merge-outcome-lib.sh
-    # shellcheck disable=SC1091
-    . "$ROOT/bin/fm-merge-outcome-lib.sh"
-    FM_CONFIG_OVERRIDE="$home/config" \
-      fm_merge_outcome_report "$home" "$home/state" polled "$url" self \
-      || fail "the repeated merge outcome failed"
-  ) || exit 1
+  report_merge "$home" polled "$url" self \
+    || fail "the repeated merge outcome failed"
   settle
   [ "$(wc -l < "$home/calls")" -eq 1 ] \
     || fail "a re-reported merge completed the ticket twice: $(cat "$home/calls")"

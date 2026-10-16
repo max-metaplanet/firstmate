@@ -4726,7 +4726,7 @@ test_a_verified_merge_completes_its_ticket() {
   install_ticket_hook "$home" 7
   id=sample-merge-ticket
   pr=https://github.com/sample/sample/pull/51
-  repo="$home/projects/sample-merge-ticket"
+  repo="$home/projects/sample-merge"
   wt="$home/projects/$id"
   fm_git_worktree "$repo" "$wt" "fm/$id"
   tasks_in "$home" add "$id" "Ship the ticketed pull request" --kind ship \
