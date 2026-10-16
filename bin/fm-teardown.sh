@@ -303,10 +303,20 @@
 #     whose CURRENT WORKING DIRECTORY is this task's own worktree or tasktmp
 #     root via `lsof -a -d cwd` (cheap: bounded by process count, not by
 #     walking the worktree's file tree) and sends TERM, then KILL after a short
-#     grace period to any survivor whose process identity still matches. Both
-#     roots are unique per task and never
-#     shared, so this can never reach another task's or the primary's
-#     processes. Idempotent: nothing left to find is a silent no-op.
+#     grace period to any survivor whose process identity still matches.
+#     Both roots are unique per task, but standing in one is not the same as
+#     belonging to it: any process on the machine can chdir there, and one
+#     did (observed 2026-10-16: a shared virtual-machine helper whose cwd had
+#     wandered into a task worktree was TERMed then KILLed by this reaper in
+#     the same second the task was cleaned up). So each candidate must also be
+#     proved to descend from the task's own endpoint leader, by parent chain,
+#     process group, or session (task_pid_belongs_to_task); an unproved
+#     candidate is reported as preserved and left strictly alone. Because
+#     `treehouse return --force` itself terminates every process standing in
+#     the worktree, teardown then refuses before the return while any such
+#     preserved process is still there, naming each one; the operator stops
+#     it and reruns teardown.
+#     Idempotent: nothing left to find is a silent no-op.
 #   Fix 3 - sweep abandoned remote job workers. A remote job worker started
 #     from a worktree's own bin/ outlives that worktree's removal without
 #     being reachable by Fix 2, because its working directory is wherever it
@@ -2062,6 +2072,130 @@ task_pid_list_contains() {  # <pid-list> <pid>
   printf '%s\n' "$1" | grep -Fxq "$2"
 }
 
+# task_process_lineage: print "<ppid> <pgid> <session>" for <pid> - the three
+# identifiers a process inherits when it is born and keeps for the rest of its
+# life, whatever happens to its own parent.
+# <session> is the kernel session id where the process table exposes it
+# (/proc/<pid>/stat field 6) and the controlling terminal otherwise: macOS
+# never exposes a session id (its ps SESS column reads 0 for every process)
+# while TT names the terminal that session owns, which is inherited the same
+# way and survives the same reparenting. "-" means this process has no usable
+# session token at all, so nothing may be concluded from it. Compare a token
+# only against another token this same function produced.
+task_process_lineage() {  # <pid>
+  local pid=$1 proc_root stat_line ppid pgid session rest value
+  local -a stat_fields
+  proc_root=${FM_PROC_ROOT_OVERRIDE:-/proc}
+  if [ -r "$proc_root/$pid/stat" ]; then
+    stat_line=$(cat "$proc_root/$pid/stat" 2>/dev/null) || return 1
+    read -r -a stat_fields <<< "${stat_line##*)}"
+    [ "${#stat_fields[@]}" -ge 4 ] || return 1
+    ppid=${stat_fields[1]}
+    pgid=${stat_fields[2]}
+    session=${stat_fields[3]}
+    case "$ppid" in ''|*[!0-9]*) return 1 ;; esac
+    case "$pgid" in ''|*[!0-9]*) return 1 ;; esac
+    case "$session" in ''|*[!0-9]*) return 1 ;; esac
+    printf '%s %s %s\n' "$ppid" "$pgid" "$session"
+    return 0
+  fi
+  value=$(LC_ALL=C ps -p "$pid" -o ppid=,pgid=,tty= 2>/dev/null) || return 1
+  value=$(fm_nm_trim "$value")
+  [ -n "$value" ] || return 1
+  case "$value" in *$'\n'*|*$'\r'*) return 1 ;; esac
+  read -r ppid pgid session rest <<EOF
+$value
+EOF
+  [ -z "${rest:-}" ] || return 1
+  case "$ppid" in ''|*[!0-9]*) return 1 ;; esac
+  case "$pgid" in ''|*[!0-9]*) return 1 ;; esac
+  # ps writes "??" or "-" for a process with no controlling terminal, and that
+  # is every daemon on the machine - the one token that must never match.
+  case "$session" in ''|'??'|'-'|*[!A-Za-z0-9/]*) session=- ;; esac
+  printf '%s %s %s\n' "$ppid" "$pgid" "$session"
+}
+
+# task_leader_context: resolve this task's own endpoint leader once per reap
+# call and work out which of its inherited identifiers may be trusted to
+# recognize the task's own processes. Sets TASK_LEADER_PID, plus
+# TASK_LEADER_PGID and TASK_LEADER_SESSION where each is trustworthy.
+# A nonzero return means the endpoint can no longer name its leader, which is
+# "ownership is unknowable here" and never permission to act.
+# An identifier teardown's OWN process shares is dropped rather than used -
+# the same refusal reap_task_backend_process_group makes about its own process
+# group - so a teardown that somehow ran inside the task's own session cannot
+# turn that into a licence to kill its own tree.
+task_leader_context() {
+  local leader lineage own_lineage leader_pgid leader_session own_pgid own_session
+  case "$TASK_LEADER_STATE" in
+    resolved) return 0 ;;
+    unresolved) return 1 ;;
+  esac
+  TASK_LEADER_STATE=unresolved
+  leader=$(fm_backend_leader_pid "$BACKEND" "$T") || return 1
+  lineage=$(task_process_lineage "$leader") || return 1
+  own_lineage=$(task_process_lineage "$$") || return 1
+  read -r _ leader_pgid leader_session <<EOF
+$lineage
+EOF
+  read -r _ own_pgid own_session <<EOF
+$own_lineage
+EOF
+  TASK_LEADER_PID=$leader
+  TASK_LEADER_PGID=
+  TASK_LEADER_SESSION=
+  case "$leader_pgid" in
+    0|1) ;;
+    "$own_pgid") ;;
+    *) TASK_LEADER_PGID=$leader_pgid ;;
+  esac
+  case "$leader_session" in
+    '-'|0|1) ;;
+    "$own_session") ;;
+    *) TASK_LEADER_SESSION=$leader_session ;;
+  esac
+  TASK_LEADER_STATE=resolved
+}
+
+# task_pid_belongs_to_task: is <pid> provably one of this task's own
+# processes? Any one of four proofs is enough:
+#   - it IS the endpoint leader;
+#   - it is in the leader's process group, which a background job of the pane
+#     shell itself keeps even once it has been reparented to init;
+#   - it is in the leader's session, which EVERY process the task started
+#     keeps for life - a process the agent spawned sits in the agent's own
+#     process group rather than the pane shell's, so once its own parent is
+#     gone the session is the only identifier left, and that is exactly the
+#     disowned-leaked-process case Fix 2 exists to catch;
+#   - the leader is somewhere in its parent chain, the ordinary live case.
+# Anything else is unproved - including a lineage that cannot be read - and an
+# unproved process is never this task's to signal.
+task_pid_belongs_to_task() {  # <pid>
+  local pid=$1 lineage ppid pgid session depth=0
+  [ -n "$TASK_LEADER_PID" ] || return 1
+  [ "$pid" != "$TASK_LEADER_PID" ] || return 0
+  lineage=$(task_process_lineage "$pid") || return 1
+  read -r ppid pgid session <<EOF
+$lineage
+EOF
+  [ -z "$TASK_LEADER_PGID" ] || [ "$pgid" != "$TASK_LEADER_PGID" ] || return 0
+  [ -z "$TASK_LEADER_SESSION" ] || [ "$session" != "$TASK_LEADER_SESSION" ] || return 0
+  # Only the parent chain is left to walk, so the group and session columns of
+  # each ancestor's lineage are read and deliberately discarded.
+  # Bounded walk: a process table that ever reported a cycle must not be able
+  # to spin teardown, and 0 and 1 are the roots every real walk ends at.
+  while [ "$depth" -lt 64 ]; do
+    case "$ppid" in 0|1) return 1 ;; esac
+    [ "$ppid" != "$TASK_LEADER_PID" ] || return 0
+    lineage=$(task_process_lineage "$ppid") || return 1
+    read -r ppid _ _ <<EOF
+$lineage
+EOF
+    depth=$((depth + 1))
+  done
+  return 1
+}
+
 task_pids_under_roots() {  # <dir>...
   TASK_PIDS=
   TASK_PIDS_FAILED_DIR=
@@ -2122,20 +2256,34 @@ reap_task_backend_process_group() {  # <label>
   fi
 }
 
-# Reap every process rooted (by cwd) under this task's own worktree or tasktmp
-# - both unique per task and never shared - before either is removed. TERM
-# first, then KILL after a short grace period for anything still alive; a
+# Reap this task's OWN leaked processes before its worktree or tasktmp is
+# removed. The cwd scan only finds candidates: a working directory under those
+# roots says where a process stands, not whose it is, and anything else on the
+# machine can stand there too (observed 2026-10-16: a shared virtual-machine
+# helper whose cwd had wandered into a task worktree was TERMed then KILLed
+# here). So every candidate must first be proved to be this task's own by
+# task_pid_belongs_to_task; an unproved one is reported as preserved and left
+# running. It does not fail the reap, but a worktree it still stands in is
+# never returned to the pool (refuse_unowned_worktree_processes).
+# TERM first, then KILL after a short grace period for anything still alive; a
 # process that exits on its own between the two passes is simply absent from
 # the recheck. A missing lsof uses the backend process-group fallback; an lsof
-# scan error refuses before destructive teardown.
+# scan error refuses before destructive teardown, and an endpoint that can no
+# longer name its leader preserves every candidate instead of guessing.
 reap_task_worktree_processes() {  # <label> <dir>...
   local label=$1 pids pid identity current_pids i pass=1 max_passes=3
+  local unowned remaining
   local -a tracked_pids tracked_identities remaining_pids remaining_identities
   shift
   if ! command -v lsof >/dev/null 2>&1; then
     reap_task_backend_process_group "$label"
     return 0
   fi
+  TASK_LEADER_PID=
+  TASK_LEADER_PGID=
+  TASK_LEADER_SESSION=
+  TASK_LEADER_STATE=pending
+  TASK_PRESERVED_REPORTED=
   while [ "$pass" -le "$max_passes" ]; do
     if ! task_pids_under_roots "$@"; then
       echo "REFUSED: cannot determine leaked processes under ${TASK_PIDS_FAILED_DIR:-<missing>} for $ID (lsof failed); preserving the worktree/tasktmp for manual inspection or retry." >&2
@@ -2143,8 +2291,16 @@ reap_task_worktree_processes() {  # <label> <dir>...
     fi
     pids=$TASK_PIDS
     [ -n "$pids" ] || return 0
+    # Resolved only now, and only once: a scan that found nothing needs no
+    # leader, and a teardown whose endpoint is already gone must still be able
+    # to finish rather than refuse over processes it cannot attribute.
+    if ! task_leader_context; then
+      echo "teardown: cannot resolve the $BACKEND endpoint leader for $ID, so no process under this task's $label can be proved to be its own; preserving $(printf '%s' "$pids" | tr '\n' ' ')for manual inspection" >&2
+      return 0
+    fi
     tracked_pids=()
     tracked_identities=()
+    unowned=
     while IFS= read -r pid; do
       [ -n "$pid" ] || continue
       if ! identity=$(task_process_identity "$pid"); then
@@ -2158,11 +2314,22 @@ reap_task_worktree_processes() {  # <label> <dir>...
         fi
         continue
       fi
+      if ! task_pid_belongs_to_task "$pid"; then
+        case " $TASK_PRESERVED_REPORTED " in
+          *" $pid "*) ;;
+          *)
+            unowned="$unowned $pid"
+            TASK_PRESERVED_REPORTED="$TASK_PRESERVED_REPORTED $pid"
+            ;;
+        esac
+        continue
+      fi
       tracked_pids+=("$pid")
       tracked_identities+=("$identity")
     done <<EOF
 $pids
 EOF
+    [ -z "$unowned" ] || echo "teardown: preserving process(es) working under this task's $label that are not $ID's own (neither its endpoint leader $TASK_LEADER_PID, nor in that leader's process group or session, nor descended from it):$unowned" >&2
     if [ "${#tracked_pids[@]}" -eq 0 ]; then
       pass=$((pass + 1))
       continue
@@ -2172,7 +2339,7 @@ EOF
       return 1
     fi
     current_pids=$TASK_PIDS
-    echo "teardown: reaping leaked $label process(es) for $ID: $(printf '%s' "$pids" | tr '\n' ' ')" >&2
+    echo "teardown: reaping leaked $label process(es) for $ID: ${tracked_pids[*]}" >&2
     for i in "${!tracked_pids[@]}"; do
       pid=${tracked_pids[$i]}
       identity=${tracked_identities[$i]}
@@ -2221,7 +2388,65 @@ EOF
     return 1
   fi
   [ -z "$TASK_PIDS" ] && return 0
-  echo "REFUSED: leaked $label processes for $ID remain after $max_passes reap attempts; preserving the worktree/tasktmp for manual inspection or retry." >&2
+  # Only this task's OWN survivors count as a failed reap. A process that was
+  # never the task's is already reported as preserved; whether it may still
+  # stand in a worktree about to be returned is refuse_unowned_worktree_processes'
+  # question, not this one.
+  remaining=
+  while IFS= read -r pid; do
+    [ -n "$pid" ] || continue
+    task_pid_belongs_to_task "$pid" || continue
+    remaining="$remaining $pid"
+  done <<EOF
+$TASK_PIDS
+EOF
+  [ -n "$remaining" ] || return 0
+  echo "REFUSED: leaked $label processes for $ID remain after $max_passes reap attempts:$remaining; preserving the worktree/tasktmp for manual inspection or retry." >&2
+  return 1
+}
+
+# A backend close only asks the pane to go away, and its shell and agent take
+# a moment to exit after it returns. Give whatever still stands in <dir> a
+# bounded few seconds to leave before the pre-return scan judges it, so the
+# task's own exiting worker is never mistaken for something to refuse over.
+await_closed_endpoint_processes() {  # <dir>
+  local waited=0 pids
+  while [ "$waited" -lt 5 ]; do
+    pids=$(pids_with_cwd_under "$1") || return 0
+    [ -n "$pids" ] || return 0
+    sleep 1
+    waited=$((waited + 1))
+  done
+}
+
+# Refuse to hand <dir> to `treehouse return --force` while anything the reaper
+# could not prove to be this task's own still has its cwd there: treehouse
+# terminates every process standing in the worktree it returns, so returning
+# the slot would kill exactly what reap_task_worktree_processes preserved.
+# Runs after every landed-work check and before any destructive step, so the
+# operator stops the named process and a rerun picks up where this stopped.
+refuse_unowned_worktree_processes() {  # <dir>
+  local dir=$1 pids pid cmd cwd unowned=
+  command -v lsof >/dev/null 2>&1 || return 0
+  if ! pids=$(pids_with_cwd_under "$dir"); then
+    echo "REFUSED: cannot determine processes under $dir for $ID (lsof failed); keeping the worktree slot rather than returning it." >&2
+    return 1
+  fi
+  [ -n "$pids" ] || return 0
+  task_leader_context || true
+  while IFS= read -r pid; do
+    [ -n "$pid" ] || continue
+    task_pid_belongs_to_task "$pid" && continue
+    cmd=$(ps -p "$pid" -o command= 2>/dev/null) || continue
+    cmd=$(fm_nm_trim "$cmd")
+    cwd=$(lsof -a -p "$pid" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p' | head -n 1) || cwd=
+    unowned="$unowned
+  pid $pid: ${cmd:-<unknown>} (cwd ${cwd:-<unknown>})"
+  done <<EOF
+$pids
+EOF
+  [ -n "$unowned" ] || return 0
+  echo "REFUSED: process(es) that are not provably $ID's own still work under its worktree $dir; keeping the slot instead of returning it, because the return would kill them and teardown never touches anything outside the task. Stop each one, then rerun teardown:$unowned" >&2
   return 1
 }
 
@@ -3091,11 +3316,12 @@ preflight_firstmate_home_herdr_children() {  # <home>
 # about its own close is bin/fm-backend.sh's fm_backend_kill contract.
 #
 # Returns 0 when the caller must continue anyway and 1 when it must stop.
-# <honors-force> is 1 at exactly one site, the generic non-Herdr/non-Orca
-# close, where --force is the operator's existing authority to discard this
-# task's records deliberately AND continuing is actually reachable: the
-# worktree is already returned by then and nothing after it needs the backend
-# that could not close.
+# <honors-force> is 1 at exactly one close, the generic non-Herdr/non-Orca
+# one, where --force is the operator's existing authority to discard this
+# task's records deliberately AND continuing is actually reachable: nothing
+# after it needs the backend that could not close. For tmux the worktree is
+# already returned by then; a leaderless backend closes before the return, and
+# the pre-return scan still refuses if its pane's processes outlived the close.
 # It is 0 everywhere else. The Orca site refuses under --force too, because
 # the step immediately after it removes the Orca worktree through the same CLI
 # whose absence is the only thing that arm ever reports, so a forced continue
@@ -3488,9 +3714,26 @@ fi
 # kind=secondmate: a secondmate home's own runtime lifecycle is owned by the
 # dedicated process-event and firstmate-home removal machinery further below,
 # not by task-worktree cleanup.
+# A backend that cannot name its endpoint leader (fm_backend_leader_pid) can
+# prove none of its own pane's processes to be the task's, so its endpoint is
+# closed here instead of after the return: the worker's own processes are then
+# gone before the pre-return scan, and only what is not the task's remains.
+TEARDOWN_ENDPOINT_CLOSED=0
 if [ "$KIND" != secondmate ] && teardown_owns_worktree; then
   conclude_task_no_mistakes_run "$WT"
   reap_task_worktree_processes worktree "$WT" "$TASK_TMP"
+  case "$BACKEND" in
+    tmux|herdr|orca) ;;
+    *)
+      if [ "$TEARDOWN_WINDOWLESS" != 1 ]; then
+        fm_backend_kill "$BACKEND" "$T" "$(meta_value "$META" zellij_tab_id)" "fm-$ID" \
+          || endpoint_close_refusal "$ID" "$BACKEND" "$T" 1 || exit 1
+        await_closed_endpoint_processes "$WT"
+      fi
+      TEARDOWN_ENDPOINT_CLOSED=1
+      ;;
+  esac
+  [ "$BACKEND" = orca ] || refuse_unowned_worktree_processes "$WT" || exit 1
 elif [ "$KIND" != secondmate ]; then
   reap_task_worktree_processes tasktmp "$TASK_TMP"
 fi
@@ -3636,7 +3879,7 @@ elif [ "$BACKEND" = herdr ]; then
   else
     echo "warning: herdr session presentation lock path is unavailable; skipping the pane close rather than closing unlocked" >&2
   fi
-elif [ "$BACKEND" != orca ] && [ "$TEARDOWN_WINDOWLESS" != 1 ]; then
+elif [ "$BACKEND" != orca ] && [ "$TEARDOWN_WINDOWLESS" != 1 ] && [ "$TEARDOWN_ENDPOINT_CLOSED" != 1 ]; then
   fm_backend_kill "$BACKEND" "$T" "$(meta_value "$META" zellij_tab_id)" "fm-$ID" \
     || endpoint_close_refusal "$ID" "$BACKEND" "$T" 1 || exit 1
 fi
