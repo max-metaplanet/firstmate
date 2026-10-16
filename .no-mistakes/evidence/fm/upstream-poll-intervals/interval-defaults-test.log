@@ -1,5 +1,5 @@
-wait_for_exit: owned pid 72302 exceeded 30 polls; sending TERM
-72302 71694 S    bash /Users/max/.no-mistakes/worktrees/b730d76738a7/01M4YZ9YC5ZJ6JAKC05Z1RJ8W7/bin/fm-watch.sh
+wait_for_exit: owned pid 6667 exceeded 30 polls; sending TERM
+ 6667  2805 S    bash /Users/max/.no-mistakes/worktrees/b730d76738a7/01M514YCFRRXJFBCV2P87YAXSK/bin/fm-watch.sh
 ok - 550s-old .last-check does not trigger the default check sweep
 ok - 610s-old .last-check triggers the default check sweep
 ok - 650s-old home-summary.json is not refreshed by the default cadence

@@ -1,0 +1,11 @@
+## FM_CHECK_INTERVAL=300 .last-check age=550s
+result: watcher exited rc=0 after ~2s
+  out: check: /var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-ovr.CUoJb2/override300/state/override300.check.sh: override300-ready
+
+## FM_CHECK_INTERVAL=30 .last-check age=45s
+result: watcher exited rc=0 after ~2s
+  out: check: /var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-ovr.CUoJb2/xmode30/state/xmode30.check.sh: xmode30-ready
+
+## FM_CHECK_INTERVAL=<unset> .last-check age=550s
+result: watcher still running after 25s -> no check sweep fired
+
