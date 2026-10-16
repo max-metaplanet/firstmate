@@ -935,6 +935,37 @@ EOF
   pass "fm-startup-network: a preserved-candidate warning survives deferral and still surfaces"
 }
 
+# Its cost scales with the shared Herdr session's fleet, so it runs after
+# bootstrap's network phase: a busy fleet must never starve the GitHub-auth
+# verdict or the sweeps, and bootstrap's own exit status still decides the run.
+test_stale_projection_cleanup_runs_after_the_network_phase() {
+  local rec home root log
+  rec=$(new_world herdr-cleanup-order)
+  IFS='|' read -r home root log <<EOF
+$rec
+EOF
+  printf '%s\n' $$ > "$home/state/.lock"
+
+  FM_FAKE_BOOTSTRAP_LOG="$log" FM_FAKE_CLEANUP_LOG="$log" \
+    run_stage "$home" "$root" run --locked 1
+  case "$(sed -n 1p "$log")" in network=only*) ;; *)
+    fail "the stale-projection cleanup ran before bootstrap's network phase: $(cat "$log")" ;;
+  esac
+  case "$(sed -n 2p "$log")" in home=*) ;; *)
+    fail "the stale-projection cleanup did not run after bootstrap's network phase: $(cat "$log")" ;;
+  esac
+
+  : > "$log"
+  FM_FAKE_BOOTSTRAP_LOG="$log" FM_FAKE_CLEANUP_LOG="$log" FM_FAKE_BOOTSTRAP_RC=3 \
+    run_stage "$home" "$root" run --locked 1 || true
+  grep -q '^home=' "$log" \
+    || fail "a failing network phase skipped the stale-projection cleanup"
+  grep -qx 'state=failed' "$home/state/.startup-network.status" \
+    || fail "the cleanup running last hid bootstrap's failing exit status"
+
+  pass "fm-startup-network: the stale-projection cleanup runs after the network phase without masking its status"
+}
+
 test_wait_fails_without_a_published_stage
 test_start_returns_without_holding_the_callers_stdout
 test_harvest_acknowledgement_suppresses_the_wake_and_no_claim_produces_it
@@ -947,6 +978,7 @@ test_mutating_sweeps_are_refused_when_the_lock_changed_hands
 test_the_stage_bound_is_reported_not_swallowed
 test_stale_projection_cleanup_runs_only_in_the_locked_phases
 test_stale_projection_cleanup_warnings_reach_the_report
+test_stale_projection_cleanup_runs_after_the_network_phase
 test_an_abandoned_run_reads_as_needing_a_rerun
 test_locked_start_is_not_satisfied_by_an_inflight_probe
 test_start_is_single_flight

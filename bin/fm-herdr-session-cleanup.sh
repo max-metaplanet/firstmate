@@ -105,22 +105,19 @@ fm_herdr_cleanup_scan_journals() { # <session> <home-real>
 # checks ask for an uncached scan, so a journal that changed mid-run can never
 # become authority to close a pane.
 FM_HERDR_CLEANUP_JOURNAL_INDEX=
-FM_HERDR_CLEANUP_JOURNAL_INDEX_READY=0
 
 fm_herdr_cleanup_index_journals() { # <session> <home-real>
-  FM_HERDR_CLEANUP_JOURNAL_INDEX_READY=0
-  FM_HERDR_CLEANUP_JOURNAL_INDEX=$(fm_herdr_cleanup_scan_journals "$1" "$2") || return 1
-  FM_HERDR_CLEANUP_JOURNAL_INDEX_READY=1
+  FM_HERDR_CLEANUP_JOURNAL_INDEX=$(fm_herdr_cleanup_scan_journals "$1" "$2")
 }
 
-# <cached> 1 reads the per-run index when it is ready; anything else, and an
-# absent index, rescans. The state/ test runs either way so a directory that
-# vanished mid-run still refuses every candidate.
+# <cached> 1 reads the per-run index; anything else rescans. The state/ test
+# runs either way so a directory that vanished mid-run still refuses every
+# candidate.
 fm_herdr_cleanup_journal_matches() { # <title> <session> <home-real> [cached]
   local title=$1 session=$2 home_real=$3 cached=${4:-0}
   local index journal id token label
   [ -d "$STATE" ] && [ ! -L "$STATE" ] || return 1
-  if [ "$cached" = 1 ] && [ "$FM_HERDR_CLEANUP_JOURNAL_INDEX_READY" = 1 ]; then
+  if [ "$cached" = 1 ]; then
     index=$FM_HERDR_CLEANUP_JOURNAL_INDEX
   else
     index=$(fm_herdr_cleanup_scan_journals "$session" "$home_real") || return 1
@@ -375,8 +372,10 @@ fm_herdr_session_cleanup() {
     fm_herdr_cleanup_warn "session '$session' workspace discovery was unreadable; preserving every candidate"
     return 0
   }
-  fm_herdr_cleanup_index_journals "$session" "$home_real" \
-    || fm_herdr_cleanup_warn 'journals could not be indexed; rescanning per candidate'
+  fm_herdr_cleanup_index_journals "$session" "$home_real" || {
+    fm_herdr_cleanup_warn 'journals could not be indexed; preserving every candidate'
+    return 0
+  }
   while IFS=$'\t' read -r workspace title; do
     [ -n "$workspace" ] && [ -n "$title" ] || continue
     fm_herdr_cleanup_one "$session" "$workspace" "$title" "$home_real"

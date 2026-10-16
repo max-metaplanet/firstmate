@@ -582,8 +582,10 @@ EOF
   # unless it has something a reader must act on, in which case its own warning
   # text reaches the report through this redirect. A child shell composes the
   # three executable owners only so fm_run_timed can govern them as one process
-  # group. The cleanup goes first because it is bounded by the shared Herdr
-  # session rather than by the network, so a slow remote cannot starve it.
+  # group. The cleanup goes last, after bootstrap's network phase and its
+  # GitHub-auth probe, because its cost scales with the shared Herdr session's
+  # fleet, so a busy fleet can never starve the auth verdict or the sweeps.
+  # The child still exits with bootstrap's status.
   # The sweeps get whatever the lock waits above left of the stage budget.
   budget=$(seconds_until "$stage_deadline")
   if [ "$sweep_locked" -eq 1 ]; then
@@ -592,9 +594,11 @@ EOF
       FM_BOOTSTRAP_NETWORK=only FM_BOOTSTRAP_NETWORK_LOCK_PID="$lock_pid" \
       bash -c '
         script_dir=$1
-        "$script_dir/fm-herdr-session-cleanup.sh" 2>&1 || true
         "$script_dir/fm-inactive-reconcile.sh" scan --startup >/dev/null 2>&1 || true
-        exec "$script_dir/fm-bootstrap.sh"
+        rc=0
+        "$script_dir/fm-bootstrap.sh" || rc=$?
+        "$script_dir/fm-herdr-session-cleanup.sh" 2>&1 || true
+        exit "$rc"
       ' _ "$SCRIPT_DIR" >"$out" 2>&1 || rc=$?
   else
     fm_run_timed "$budget" env FM_BOOTSTRAP_NETWORK=only FM_BOOTSTRAP_DETECT_ONLY=1 \
