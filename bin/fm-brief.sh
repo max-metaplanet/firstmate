@@ -409,6 +409,7 @@ ID=${POS[0]}
 fm_ticket_resolve "$TICKET" "$COMMIT_TYPE" "$ID" "$BRANCH_PREFIX" "$BRANCH_PREFIX_SET" "fm-brief.sh" || exit 1
 BRANCH=$FM_TICKET_BRANCH
 TICKET_HEADER=$FM_TICKET_HEADER
+TICKET_NM_RETITLE=$FM_TICKET_NM_RETITLE
 if ! git check-ref-format --branch "$BRANCH" >/dev/null 2>&1; then
   if [ -n "$TICKET" ]; then
     echo "error: --commit-type, --ticket and task id must form a valid git branch (got '$BRANCH')" >&2
@@ -784,7 +785,7 @@ case "$MODE" in
     ;;
 esac
 RULE1=$(fm_ship_rule_one "$MODE" "$ID" "$BRANCH" "$FORGE" "$BASE_BRANCH") || exit 1
-DOD=$(fm_dod_block "$MODE" "$ID" "$BRANCH" "$FORGE" "$BASE_BRANCH" "$UPSTREAM_CONSENT" "$TICKET_HEADER") || exit 1
+DOD=$(fm_dod_block "$MODE" "$ID" "$BRANCH" "$FORGE" "$BASE_BRANCH" "$UPSTREAM_CONSENT" "$TICKET_HEADER" "$TICKET_NM_RETITLE") || exit 1
 
 cat > "$BRIEF" <<EOF
 You are a crewmate: an autonomous worker agent managed by firstmate. Work on your own; do not wait for a human.

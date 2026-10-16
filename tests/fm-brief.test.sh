@@ -1643,6 +1643,49 @@ test_unticketed_brief_carries_no_convention() {
   pass "fm-brief.sh: omitting --ticket leaves the brief exactly as it was"
 }
 
+# no-mistakes' PR step drafts a conventional title with no ticket in it, which
+# the ticket convention's title check rejects. A ticketed no-mistakes worker must
+# therefore correct that title as soon as the PR exists instead of paying a red
+# check first; no other mode opens that PR, so no other mode carries the step.
+test_ticketed_no_mistakes_retitles_the_pipeline_pr() {
+  local home id mode brief
+  home="$TMP_ROOT/ticket-retitle-home"
+  mkdir -p "$home/data"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" ticket-retitle-e1 some-proj --mode no-mistakes \
+    --ticket ENG-2669 --commit-type feat >/dev/null 2>&1 \
+    || fail "a ticketed no-mistakes brief should scaffold"
+  brief="$home/data/ticket-retitle-e1/brief.md"
+  # shellcheck disable=SC2016  # the literal backticked title format must stay unexpanded
+  assert_grep 'drafts a conventional title like `feat(<scope>): <message>`' "$brief" \
+    "the brief must name the title the pipeline's PR step drafts"
+  # shellcheck disable=SC2016  # the literal backticked ticket insertion must stay unexpanded
+  assert_grep 'before the CI wait - edit the title ONCE to insert `/ENG-2669` after the type' "$brief" \
+    "the retitle must happen the moment the PR exists, before the CI wait"
+  # shellcheck disable=SC2016  # the literal backticked example must stay unexpanded
+  assert_grep 'so `feat(ci): x` becomes `feat/ENG-2669(ci): x`' "$brief" \
+    "the brief must show the exact retitle example keeping scope and message"
+  # shellcheck disable=SC2016  # the literal backticked commands must stay unexpanded
+  assert_grep '`gh-axi pr edit <PR URL> --title' "$brief" \
+    "the brief must name the forge command that edits the title"
+  # shellcheck disable=SC2016  # the literal backticked read-back must stay unexpanded
+  assert_grep 'read it back with `gh-axi pr view <PR URL>`' "$brief" \
+    "the brief must require the title to be read back"
+  for id_mode in "ticket-retitle-e2:direct-PR" "ticket-retitle-e3:local-only"; do
+    id=${id_mode%%:*}
+    mode=${id_mode##*:}
+    FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj --mode "$mode" \
+      --ticket ENG-2669 --commit-type feat >/dev/null 2>&1 \
+      || fail "$mode: a ticketed brief should scaffold"
+    assert_no_grep 'edit the title ONCE' "$home/data/$id/brief.md" \
+      "$mode: only no-mistakes drafts the title this step corrects"
+  done
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" ticket-retitle-e4 some-proj --mode no-mistakes \
+    >/dev/null 2>&1 || fail "an unticketed no-mistakes brief should scaffold"
+  assert_no_grep 'edit the title ONCE' "$home/data/ticket-retitle-e4/brief.md" \
+    "an unticketed brief has no ticket to insert into the title"
+  pass "fm-brief.sh: a ticketed no-mistakes brief corrects the pipeline's PR title"
+}
+
 # The commit type is never guessed from the task text, and the ticket grammar is
 # closed, so every invalid combination stops before a worker reads it.
 test_ticket_and_commit_type_are_validated_as_a_pair() {
@@ -1801,6 +1844,7 @@ test_branch_prefix_command_is_shell_safe
 test_ticket_renders_the_convention_and_branch
 test_no_ticket_marker_still_follows_the_convention
 test_unticketed_brief_carries_no_convention
+test_ticketed_no_mistakes_retitles_the_pipeline_pr
 test_ticket_and_commit_type_are_validated_as_a_pair
 test_ticket_is_refused_where_it_does_not_apply
 test_crewmate_scaffolds_forbid_pool_administration
