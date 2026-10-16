@@ -730,6 +730,65 @@ test_more_candidates_than_one_poll_reads_are_rotated() {
   pass "fm-jev-prod-check: more candidates than one poll reads are rotated so none is starved"
 }
 
+test_a_rotation_bucket_advances_by_a_whole_window() {
+  local home merged read_a read_b overlap
+  home=$(make_home rotation-window)
+  configure "$home"
+  fake_gh "$home" >/dev/null
+  merged=$(jq -nr --argjson t "$((NOW - 7200))" '$t | todateiso8601')
+  jq -n --arg base "https://github.com/$REPO/pull" --arg head "$HEAD_SHA" \
+    --arg merge "$MERGE_SHA" --arg merged "$merged" --arg title "$TITLE" \
+    '[2214,2215,2216,2217,2218,2219] | map({number:.,html_url:"\($base)/\(.)",title:$title,
+       merged_at:$merged,head:{sha:$head},merge_commit_sha:$merge})' \
+    > "$home/fx/pulls.json"
+
+  # Six waiting and two read per poll: the next bucket must read the next two,
+  # not slide over by one and re-read half of what the last bucket already read.
+  : > "$home/fx/gh-argv.log"
+  env PATH="$home/bin:$PATH" FM_HOME="$home" FM_JEV_PROD_NOW="$NOW" \
+    FM_JEV_PROD_MAX_PRS=2 "$CHECK" check >/dev/null 2>&1
+  read_a=$(sed -n 's|.*issues/\([0-9]*\)/comments.*|\1|p' "$home/fx/gh-argv.log" | sort)
+
+  : > "$home/fx/gh-argv.log"
+  env PATH="$home/bin:$PATH" FM_HOME="$home" FM_JEV_PROD_NOW="$((NOW + 600))" \
+    FM_JEV_PROD_MAX_PRS=2 "$CHECK" check >/dev/null 2>&1
+  read_b=$(sed -n 's|.*issues/\([0-9]*\)/comments.*|\1|p' "$home/fx/gh-argv.log" | sort)
+
+  assert_equals 2 "$(printf '%s\n' "$read_a" | grep -c .)" "the first bucket must read a full window"
+  assert_equals 2 "$(printf '%s\n' "$read_b" | grep -c .)" "the next bucket must read a full window"
+  overlap=$(printf '%s\n%s\n' "$read_a" "$read_b" | sort | uniq -d)
+  assert_equals "" "$overlap" "consecutive buckets must read disjoint windows"
+  pass "fm-jev-prod-check: each rotation bucket advances by a whole window of pull requests"
+}
+
+test_a_long_batch_carries_every_verdict_uncut() {
+  local home out app body=''
+  home=$(make_home long-batch)
+  configure "$home"
+  fake_gh "$home" >/dev/null
+  write_pulls "$home" 7200
+  for app in portal admin-center investor-hub shareholder-desk treasury-board; do
+    body="${body}$(section "$app" failed post-merge production "${app:0:4}00000001")
+
+"
+  done
+  write_comments "$home" 2214 900020 "$body"
+  write_no_preview_artifact "$home"
+
+  out=$(poll "$home")
+  assert_equals "" "$out" "unpaired verdicts batch rather than waking at once"
+  out=$(env PATH="$home/bin:$PATH" FM_HOME="$home" FM_JEV_PROD_NOW="$((NOW + 21700))" "$CHECK" check 2>&1)
+  assert_equals 1 "$(printf '%s\n' "$out" | grep -c .)" "a due batch must be exactly one line"
+  assert_contains "$out" "5 verdicts" "the batch must count every verdict"
+  for app in portal admin-center investor-hub shareholder-desk treasury-board; do
+    assert_contains "$out" "app=$app " "every batched verdict must reach firstmate, including $app"
+  done
+  if printf '%s' "$out" | grep -q '\[truncated\]'; then
+    fail "a batch whose verdicts are already settled must never be cut"
+  fi
+  pass "fm-jev-prod-check: a long batch carries every verdict it settles, uncut"
+}
+
 test_the_read_budget_fits_a_lowered_check_timeout() {
   local home out
   home=$(make_home budget)
@@ -773,4 +832,6 @@ test_a_pull_request_outside_the_lookback_is_not_examined
 test_arm_writes_and_binds_the_check_and_disarm_removes_it
 test_armed_shim_runs_a_real_check
 test_more_candidates_than_one_poll_reads_are_rotated
+test_a_rotation_bucket_advances_by_a_whole_window
+test_a_long_batch_carries_every_verdict_uncut
 test_the_read_budget_fits_a_lowered_check_timeout

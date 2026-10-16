@@ -557,7 +557,7 @@ action_check() {
   local candidates total offset
   total=$(printf '%s\n' "$pr_rows" | grep -c . || true)
   if [ "${total:-0}" -gt "$MAX_PRS" ]; then
-    offset=$(( (NOW / 600) % total ))
+    offset=$(( ((NOW / 600) * MAX_PRS) % total ))
     candidates=$(printf '%s\n' "$pr_rows" "$pr_rows" | grep . | tail -n +"$((offset + 1))" | head -n "$MAX_PRS")
   else
     candidates=$(printf '%s\n' "$pr_rows" | grep . || true)
@@ -590,10 +590,7 @@ EOF
     fi
   fi
 
-  if [ -n "$line" ]; then
-    fm_cap_line_var "$line" "$MAX_LINE"
-    printf '%s\n' "$FM_LINE_CAP_LINE"
-  fi
+  [ -z "$line" ] || printf '%s\n' "$line"
   record_write '' "$woken" "$pending"
   return 0
 }
