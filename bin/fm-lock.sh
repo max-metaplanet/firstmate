@@ -29,13 +29,12 @@
 # nothing, so a failed handover can never wedge a home permanently.
 # bin/fm-session-lock-lib.sh owns the record's format and both admission proofs.
 #
-# The owning session also records what it is running in - its Claude profile,
-# its pane, and where its own PATH finds quota-axi - in state/.lock-runtime,
-# bound to the pid on line 1, because none of them is derivable elsewhere: the
-# lead's own seat is not config/claude-seat (that names the seat NEW workers
-# get), and none of the three can be read out of a running process's
-# environment portably. It is written after the lock is committed and never
-# gates an acquisition.
+# The owning session also records what it is running in - its Claude profile and
+# its pane - in state/.lock-runtime, bound to the pid on line 1, because neither
+# is derivable elsewhere: the lead's own seat is not config/claude-seat (that
+# names the seat NEW workers get), and neither value can be read out of a
+# running process's environment portably. It is written after the lock is
+# committed and never gates an acquisition.
 #
 # Usage: fm-lock.sh           acquire; exit 1 unless ownership is verified
 #        fm-lock.sh status    print holder and liveness; always exits 0.
@@ -248,7 +247,7 @@ publish_lock_session() {
 # bin/fm-supervisor-target-lib.sh established one; its guessed fallback is left
 # out so a later reader refuses rather than restarts into the wrong terminal.
 publish_lock_runtime() {
-  local tmp pid target backend quotabin
+  local tmp pid target backend
   pid=$(cat "$LOCK" 2>/dev/null || true)
   case "$pid" in ''|*[!0-9]*) return 0 ;; esac
   tmp=$(mktemp "$STATE/.lock-runtime.XXXXXX" 2>/dev/null) || return 0
@@ -256,9 +255,6 @@ publish_lock_runtime() {
     printf 'pid=%s\n' "$pid"
     printf 'profile=%s\n' "${CLAUDE_CONFIG_DIR:-}"
     printf 'ambient=%s\n' "${FM_AMBIENT_CLAUDE_CONFIG_DIR-${CLAUDE_CONFIG_DIR:-}}"
-    if quotabin=$(fm_session_lock_quota_tool_dir); then
-      printf 'quotabin=%s\n' "$quotabin"
-    fi
     if target=$(discover_supervisor_target) && backend=$(discover_supervisor_backend); then
       printf 'backend=%s\n' "$backend"
       printf 'target=%s\n' "$target"

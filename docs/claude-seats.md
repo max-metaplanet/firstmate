@@ -400,8 +400,9 @@ A lead restart records the profile; the rest, exclusion and extra-usage gates st
 Unlike a worker's deliberate manual seat selection, pipeline launches refuse an excluded or resting active seat too.
 The same extra-usage policy gates the selected profile, so `stop` refuses a launch when its plan quota is gone (or it is at the configured floor); no pipeline hold bypass is offered.
 A launch refusal names the seat and reason and starts no agent.
-The gate reads quota with `quota-axi`, which a long-lived daemon's own `PATH` need not carry at all; the lead records the directory its `PATH` finds the tool in beside its session lock, and a launch that cannot find the tool itself reads quota through that directory, so a tool only a login shell can reach does not turn every launch into a hold.
-With neither on hand, no quota can be read and every launch is held, which a lead restart (or installing the tool where the daemon can see it) resolves.
+The gate reads quota with `quota-axi`, which a long-lived daemon's own `PATH` need not carry at all; every firstmate command that reads quota from a shell that can run the tool records its physical directory in `state/.quota-tool-dir`, and a launch that cannot find the tool itself reads quota through that directory, checked rather than trusted, so a tool only a login shell can reach does not turn every launch into a hold.
+The record is deliberately not tied to the session lock: a home upgraded mid-session would otherwise have no record until its lead restarted, which is the hold it exists to prevent.
+With neither on hand, no quota can be read and every launch is held, naming the missing record rather than the seat's quota; any firstmate command that reads quota from a shell that can run the tool restores it, as does installing the tool where the daemon can see it.
 
 The automatic switch trigger already counts pipeline-agent usage: it reads the account's quota windows, which include usage billed by workers, pipeline agents, and other clients on that account.
 No separate pipeline counter or switch trigger is needed.

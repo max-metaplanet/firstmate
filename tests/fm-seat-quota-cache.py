@@ -402,13 +402,19 @@ assert result.returncode == 0 and json.loads(result.stdout) == json.loads(c.resp
 assert c.count() == 2
 print("PASS: managed pipeline launches and raw readers share cache/backoff, preserve JSON, and retain exclusions")
 
-# A launcher whose own PATH has no quota-axi reads quota through the directory
-# the live lead recorded beside its lock, and holds when no record names one.
-c = Case()
-(c.config / "claude-seats-root").write_text(str(c.base) + "\n")
-(c.config / "claude-seat").write_text("profile\n")
-state = c.base / "state"
-state.mkdir()
+# A launcher whose own PATH has no quota-axi reads quota through the home's
+# recorded quota tool path, and names the missing record when none holds one.
+# The record is deliberately not bound to the session lock: no case here writes
+# a lock at all, because a home upgraded mid-session must not have to wait for
+# its lead to restart before its launches can read quota again.
+def launch_case():
+    case = Case()
+    (case.config / "claude-seats-root").write_text(str(case.base) + "\n")
+    (case.config / "claude-seat").write_text("profile\n")
+    (case.base / "state").mkdir()
+    return case
+
+
 # Every directory that can serve quota-axi leaves this PATH, so the launcher
 # is as blind to the tool as a daemon started outside a login shell.
 def blind_path(case):
@@ -416,30 +422,76 @@ def blind_path(case):
                     if entry and not os.access(os.path.join(entry, "quota-axi"), os.X_OK))
 
 
-blind = dict(c.env, PATH=blind_path(c))
-result = subprocess.run(["bash", str(ROOT / "bin/fm-seat-pipeline.sh"), "launch",
-                         "--default-profile", "", str(c.base), str(native)],
-                        env=blind, capture_output=True, text=True)
-assert result.returncode == 75 and "quota could not be read" in result.stderr, result
+def launch(case, env=None):
+    return subprocess.run(["bash", str(ROOT / "bin/fm-seat-pipeline.sh"), "launch",
+                           "--default-profile", "", str(case.base), str(native)],
+                          env=env or dict(case.env, PATH=blind_path(case)),
+                          capture_output=True, text=True)
+
+
+# No record at all: the hold must name the missing record, because this launch
+# read no quota rather than reading quota and finding it wanting.
+c = launch_case()
+result = launch(c)
+assert result.returncode == 75 and "no recorded quota tool path" in result.stderr, result
+assert "quota could not be read" not in result.stderr, result
 assert c.count() == 0, c.calls.read_text()
-(state / ".lock").write_text("4242424\n")
-(state / ".lock-runtime").write_text("pid=4242424\nprofile=\nambient=\nquotabin=%s\n" % c.base)
-result = subprocess.run(["bash", str(ROOT / "bin/fm-seat-pipeline.sh"), "launch",
-                         "--default-profile", "", str(c.base), str(native)],
-                        env=blind, capture_output=True, text=True)
+
+# A record naming the directory the tool is in carries the launch.
+c = launch_case()
+(c.base / "state" / ".quota-tool-dir").write_text(str(c.base) + "\n")
+result = launch(c)
 assert result.returncode == 0 and "native-started" in result.stdout, result
 assert c.count() == 1, c.calls.read_text()
-# A record naming a directory without the tool changes nothing.
-c = Case()
-(c.config / "claude-seats-root").write_text(str(c.base) + "\n")
-(c.config / "claude-seat").write_text("profile\n")
-state = c.base / "state"
-state.mkdir()
-(state / ".lock").write_text("4242424\n")
-(state / ".lock-runtime").write_text("pid=4242424\nquotabin=%s\n" % (c.base / "profile"))
-result = subprocess.run(["bash", str(ROOT / "bin/fm-seat-pipeline.sh"), "launch",
-                         "--default-profile", "", str(c.base), str(native)],
-                        env=dict(c.env, PATH=blind_path(c)), capture_output=True, text=True)
-assert result.returncode == 75 and "quota could not be read" in result.stderr, result
+
+# A record naming a directory without the tool names no tool at all, so the
+# hold is the missing record again rather than a seat's unreadable quota.
+c = launch_case()
+(c.base / "state" / ".quota-tool-dir").write_text(str(c.base / "profile") + "\n")
+result = launch(c)
+assert result.returncode == 75 and "no recorded quota tool path" in result.stderr, result
 assert c.count() == 0, c.calls.read_text()
-print("PASS: a launcher with no quota-axi on PATH reads quota through the lead-recorded directory only when it holds the tool")
+
+# A blind launch held before any quota read was attempted keeps the gate's own
+# wording: the missing record did not cause a hold that never reached the tool.
+c = launch_case()
+c.cache.write_text("not a directory\n")
+result = launch(c)
+assert result.returncode == 75 and "quota could not be read" in result.stderr, result
+assert "no recorded quota tool path" not in result.stderr, result
+assert c.count() == 0, c.calls.read_text()
+# The launch cannot reach a provider or read-bound failure, so the gate itself
+# shows those holds are not failed reads either.
+for env in ({"FM_SEAT_PROVIDER": "bogus"}, {"FM_SEAT_READ_DEADLINE": "0"}):
+    out = subprocess.run(["bash", "-c", '. "$1/bin/fm-timeout-lib.sh"; . "$1/bin/fm-seat-lib.sh"; '
+                          'd=$(fm_seat_dispatch_decision "$2"); printf "%s\\n" "$d"; '
+                          '! fm_seat_dispatch_read_failed "$d"', "test", str(ROOT), str(c.profile)],
+                         env=dict(c.env, PATH=blind_path(c), **env), capture_output=True, text=True)
+    assert out.returncode == 0 and out.stdout == "hold quota-unreadable\n", (env, out)
+
+# A launch that CAN read quota and is held on the seat's own quota keeps the
+# gate's wording: the record is not the cause and must not be blamed.
+c = launch_case()
+c.set(failure())
+result = launch(c, env=c.env)
+assert result.returncode == 75 and "quota could not be read" in result.stderr, result
+assert "no recorded quota tool path" not in result.stderr, result
+
+# A record that does hold the tool, with quota still unreadable, keeps the
+# gate's wording too: the record did its job and is not the cause.
+c = launch_case()
+c.set(failure())
+(c.base / "state" / ".quota-tool-dir").write_text(str(c.base) + "\n")
+result = launch(c)
+assert result.returncode == 75 and "quota could not be read" in result.stderr, result
+assert "no recorded quota tool path" not in result.stderr, result
+assert c.count() == 1, c.calls.read_text()
+
+# Reading through the record never rewrites it: the launching daemon is a pure
+# reader of a path firstmate owns.
+c = launch_case()
+record = c.base / "state" / ".quota-tool-dir"
+record.write_text(str(c.base) + "\n")
+assert launch(c).returncode == 0
+assert record.read_text() == str(c.base) + "\n", record.read_text()
+print("PASS: a blind launcher reads quota through the recorded quota tool path, names the record when none holds the tool, and never rewrites it")

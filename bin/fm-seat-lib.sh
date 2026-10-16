@@ -649,6 +649,76 @@ fm_seat_auto_excluded() {
   return 1
 }
 
+# THE RECORDED QUOTA TOOL DIRECTORY, state/.quota-tool-dir.
+# quota-axi can be installed where only a login shell reaches it - a per-shell
+# version-manager directory is the common case - and a long-lived daemon's own
+# PATH then carries no quota-axi at all. The launch such a daemon starts can
+# therefore read no quota and holds every time, while the same seat reads fine
+# from a shell. So every firstmate process that is about to read quota and CAN
+# find the tool records where, and a launch that cannot find it reads quota
+# through that directory, checked rather than trusted.
+#
+# The record is deliberately not bound to the session lock. Writing it only
+# when a lead acquires its lock leaves a home upgraded mid-session with no
+# record at all until the lead restarts, which is exactly the hold this exists
+# to prevent. These three functions own the record; nothing else writes it.
+
+# fm_seat_quota_tool_dir
+# The PHYSICAL directory this shell's PATH finds quota-axi in, or 1 when it
+# finds none. The physical directory is what matters: a version manager's
+# per-shell directory is a symlink into whichever installation that shell
+# selected, and the installations on one machine need not all carry the tool,
+# so a launch that followed the symlink can end up pointed at an installation
+# with no quota-axi in it at all.
+fm_seat_quota_tool_dir() {
+  local tool dir
+  tool=$(command -v quota-axi 2>/dev/null) || return 1
+  case "$tool" in */*) ;; *) return 1 ;; esac
+  dir=$(CDPATH='' cd -- "${tool%/*}" 2>/dev/null && pwd -P) || return 1
+  [ -x "$dir/quota-axi" ] || return 1
+  printf '%s\n' "$dir"
+}
+
+# fm_seat_quota_tool_record
+# Record this shell's quota tool directory for the launches that cannot find
+# the tool themselves. A shell that cannot find it either records nothing and
+# leaves any existing record alone, because a blind process knows no better
+# location than the one already recorded. Never fails a caller: the record is
+# an aid to a later launch, not a precondition of this read.
+#
+# FM_SEAT_QUOTA_TOOL_RECORDED set in a shell stops it and the subshells it
+# starts from recording. Reads run in command substitutions, so setting it here
+# lasts only for that one read; a process that must never record, such as the
+# pipeline launch, sets it before its first read.
+fm_seat_quota_tool_record() {
+  local dir tmp path
+  [ -n "${STATE:-}" ] || return 0
+  [ -z "${FM_SEAT_QUOTA_TOOL_RECORDED:-}" ] || return 0
+  FM_SEAT_QUOTA_TOOL_RECORDED=1
+  dir=$(fm_seat_quota_tool_dir) || return 0
+  path="$STATE/.quota-tool-dir"
+  [ "$dir" != "$(cat "$path" 2>/dev/null)" ] || return 0
+  mkdir -p "$STATE" 2>/dev/null || return 0
+  tmp=$(umask 077; mktemp "$STATE/.quota-tool-dir.XXXXXX" 2>/dev/null) || return 0
+  printf '%s\n' "$dir" > "$tmp" 2>/dev/null || { rm -f -- "$tmp"; return 0; }
+  mv -f -- "$tmp" "$path" 2>/dev/null || rm -f -- "$tmp"
+  return 0
+}
+
+# fm_seat_quota_tool_recorded <state>
+# The recorded directory, or 1 when no record names one that holds an
+# executable quota-axi now. The record is checked on every read rather than
+# trusted, so a node version the installation moved out from under, a pruned
+# directory, or a hand-edited record names no tool instead of a broken one.
+fm_seat_quota_tool_recorded() {
+  local state=${1-} dir
+  [ -n "$state" ] || return 1
+  dir=$(head -n 1 "$state/.quota-tool-dir" 2>/dev/null) || return 1
+  case "$dir" in /*) ;; *) return 1 ;; esac
+  [ -x "$dir/quota-axi" ] || return 1
+  printf '%s\n' "$dir"
+}
+
 # fm_seat_read_bound
 # Seconds one quota read may take: 10, or less when FM_SEAT_READ_DEADLINE (an
 # epoch second) is set and closer than that. Returns 1 when the deadline leaves
@@ -704,6 +774,7 @@ fm_seat_memo_key() {
 fm_seat_quota_read() {
   local dir=${1-} bound out memo='' provider
   provider=$(fm_seat_provider) || return 1
+  fm_seat_quota_tool_record
   # The profile the cache keys and the transport reads must be the same one, so
   # resolve codex's ambient default here rather than inside either of them.
   if [ "$provider" = codex ]; then
@@ -1783,6 +1854,10 @@ fm_seat_dispatch_decision() {
   # provider explicitly rather than letting the helper default to claude.
   provider=$(fm_seat_provider) || { printf 'hold quota-unreadable\n'; return 0; }
   policy=$(fm_seat_extra_usage_policy) || { printf 'allow policy-unset\n'; return 0; }
+  # Past the policy check, this gate is about to read quota, so a shell that
+  # can find the tool records where for the launches that cannot. An
+  # unconfigured home returns above and still pays nothing for the feature.
+  fm_seat_quota_tool_record
   bound=$(fm_seat_read_bound) || { printf 'hold quota-unreadable\n'; return 0; }
   floor=$(fm_seat_floor) || floor=0
   evidence=$(python3 "${BASH_SOURCE[0]%/*}/fm-seat-quota-cache.py" "$profile" "$bound" "$floor" "$policy" "$provider") || {
@@ -1792,6 +1867,16 @@ fm_seat_dispatch_decision() {
   note=$(printf '%s\n' "$evidence" | jq -r '.note')
   decision=$(fm_seat_dispatch_from "$(printf '%s\n' "$evidence" | jq -c '.report')" "$policy")
   printf '%s | %s\n' "$decision" "$note"
+}
+
+# fm_seat_dispatch_read_failed <decision-line>
+# Exit 0 only for a quota-unreadable hold whose quota this process tried to read
+# live and could not, as opposed to one held before any read was attempted.
+fm_seat_dispatch_read_failed() {
+  case "${1-}" in
+    'hold quota-unreadable | source=live-or-hold '*' failure=live') return 0 ;;
+  esac
+  return 1
 }
 
 # Apply the existing launch policy to selected evidence, independently of cache I/O.
