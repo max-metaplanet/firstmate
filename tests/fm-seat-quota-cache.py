@@ -452,28 +452,22 @@ result = launch(c)
 assert result.returncode == 75 and "no recorded quota tool path" in result.stderr, result
 assert c.count() == 0, c.calls.read_text()
 
-# A home that restarted before this change carries only the old lock-bound
-# field. The upgrade itself must not hold its launches, so that field still
-# carries one while it exists - and a lock-bound record whose pid does not
-# match the lock names nothing, exactly as it always did.
+# A blind launch held before any quota read was attempted keeps the gate's own
+# wording: the missing record did not cause a hold that never reached the tool.
 c = launch_case()
-(c.base / "state" / ".lock-runtime").write_text("pid=4242424\nquotabin=%s\n" % c.base)
+c.cache.write_text("not a directory\n")
 result = launch(c)
-assert result.returncode == 75 and "no recorded quota tool path" in result.stderr, result
-(c.base / "state" / ".lock").write_text("4242424\n")
-result = launch(c)
-assert result.returncode == 0 and "native-started" in result.stdout, result
-assert c.count() == 1, c.calls.read_text()
-
-# The durable record wins over the old field when both are present.
-c = launch_case()
-(c.base / "state" / ".lock").write_text("4242424\n")
-(c.base / "state" / ".lock-runtime").write_text(
-    "pid=4242424\nquotabin=%s\n" % (c.base / "profile"))
-(c.base / "state" / ".quota-tool-dir").write_text(str(c.base) + "\n")
-result = launch(c)
-assert result.returncode == 0 and "native-started" in result.stdout, result
-assert c.count() == 1, c.calls.read_text()
+assert result.returncode == 75 and "quota could not be read" in result.stderr, result
+assert "no recorded quota tool path" not in result.stderr, result
+assert c.count() == 0, c.calls.read_text()
+# The launch cannot reach a provider or read-bound failure, so the gate itself
+# shows those holds are not failed reads either.
+for env in ({"FM_SEAT_PROVIDER": "bogus"}, {"FM_SEAT_READ_DEADLINE": "0"}):
+    out = subprocess.run(["bash", "-c", '. "$1/bin/fm-timeout-lib.sh"; . "$1/bin/fm-seat-lib.sh"; '
+                          'd=$(fm_seat_dispatch_decision "$2"); printf "%s\\n" "$d"; '
+                          '! fm_seat_dispatch_read_failed "$d"', "test", str(ROOT), str(c.profile)],
+                         env=dict(c.env, PATH=blind_path(c), **env), capture_output=True, text=True)
+    assert out.returncode == 0 and out.stdout == "hold quota-unreadable\n", (env, out)
 
 # A launch that CAN read quota and is held on the seat's own quota keeps the
 # gate's wording: the record is not the cause and must not be blamed.

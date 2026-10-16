@@ -1869,6 +1869,16 @@ fm_seat_dispatch_decision() {
   printf '%s | %s\n' "$decision" "$note"
 }
 
+# fm_seat_dispatch_read_failed <decision-line>
+# Exit 0 only for a quota-unreadable hold whose quota this process tried to read
+# live and could not, as opposed to one held before any read was attempted.
+fm_seat_dispatch_read_failed() {
+  case "${1-}" in
+    'hold quota-unreadable | source=live-or-hold '*' failure=live') return 0 ;;
+  esac
+  return 1
+}
+
 # Apply the existing launch policy to selected evidence, independently of cache I/O.
 fm_seat_dispatch_from() {
   local policy=$2 cap out=$1 remaining spent floor

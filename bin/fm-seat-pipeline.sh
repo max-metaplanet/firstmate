@@ -21,7 +21,8 @@
 # When the launching daemon's PATH carries no quota-axi, the extra-usage gate
 # reads it through the home's recorded quota tool path, so a tool only a login
 # shell can find does not turn every launch into a hold; with no record either,
-# the hold names the missing record rather than the seat's quota.
+# a hold on the quota read that failed names the missing record rather than the
+# seat's quota.
 # It resolves the bound home's active seat fresh, validates a managed-profile
 # NM_CLAUDE_CONFIG_DIR override, and refuses excluded/resting/missing seats.
 # On the default seat it uses the lead's recorded ambient profile; while none is
@@ -97,20 +98,9 @@ cmd_install() {
 #   1  nothing to prepend: this launch finds the tool on its own PATH
 #   2  no tool and no record naming one, which is a hold cause of its own
 # bin/fm-seat-lib.sh owns the record and checks it rather than trusting it.
-#
-# The lock-bound quotabin= field is read second and only while it still exists.
-# It has no writer any more, but a home that restarted before this change
-# carries one, and reading it is what keeps the upgrade itself from holding a
-# launch in the window before that home's next quota read writes the record.
-# Drop this fallback once no home can still be carrying the old field.
 quota_tool_path() {
-  local state=$1 dir
   ! command -v quota-axi >/dev/null 2>&1 || return 1
-  if ! dir=$(fm_seat_quota_tool_recorded "$state"); then
-    dir=$(fm_session_lock_runtime_field "$state" quotabin) || return 2
-    [ -n "$dir" ] && [ -x "$dir/quota-axi" ] || return 2
-  fi
-  printf '%s\n' "$dir"
+  fm_seat_quota_tool_recorded "$1" || return 2
 }
 
 cmd_launch() {
@@ -150,11 +140,8 @@ cmd_launch() {
     # find it wanting; it never read any. Saying so names the missing record
     # an operator can restore, where "quota could not be read" sends them to
     # the seat instead.
-    if [ "$quota_rc" -eq 2 ]; then
-      case "$decision" in
-        'hold quota-unreadable'*)
-          die "HELD pipeline-agent launch on seat $name: no recorded quota tool path, so this launch read no quota at all - quota-axi is not on the launching process's PATH and no directory holding it is recorded for this home. Any firstmate command that reads quota from a shell that can run the tool records one" ;;
-      esac
+    if [ "$quota_rc" -eq 2 ] && fm_seat_dispatch_read_failed "$decision"; then
+      die "HELD pipeline-agent launch on seat $name: no recorded quota tool path, so this launch read no quota at all - quota-axi is not on the launching process's PATH and no directory holding it is recorded for this home. Any firstmate command that reads quota from a shell that can run the tool records one"
     fi
     die "HELD pipeline-agent launch on seat $name: $reason"
   fi

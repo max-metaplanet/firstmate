@@ -465,9 +465,6 @@ fm_session_lock_handover_admits() {  # <state> [<ancestry-pids>]
 #   backend=<tmux|herdr> and target=<pane>, both absent unless the pane was
 #           established rather than guessed (bin/fm-supervisor-target-lib.sh)
 # bin/fm-lock.sh is its only writer.
-# A record written before state/.quota-tool-dir existed may also carry a
-# quotabin= line. Nothing writes it any more; a pipeline launch reads it only
-# as the upgrade fallback described in bin/fm-seat-pipeline.sh.
 fm_session_lock_runtime_field() {  # <state> <key>
   local state=$1 key=$2 recorded lock_pid
   [ -f "$state/.lock-runtime" ] && [ ! -L "$state/.lock-runtime" ] || return 1
