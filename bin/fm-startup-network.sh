@@ -15,16 +15,24 @@
 # time, or as a durable wake when it does not. The locked startup's bounded
 # inactive-outcome scan also runs here because its local current-state reads can
 # be just as slow; that scan publishes its own findings to the durable wake queue.
+# The home-local stale Herdr projection cleanup joined them for the same reason
+# in a different dimension: it makes no network call, but its candidate count
+# comes from the machine's SHARED named Herdr session, so a home with a handful
+# of journals still paid for every other home's live panes, and on a busy
+# machine that single step exceeded the whole blocking budget on its own.
 #
 # WHAT IS PRESERVED. Nothing is dropped. bin/fm-bootstrap.sh remains the single
 # owner of every network sweep and still runs all of them, unchanged, via its
 # FM_BOOTSTRAP_NETWORK=only phase. bin/fm-inactive-reconcile.sh remains the
-# owner of the startup scan and its separate watcher cadence. Deferral changes
+# owner of the startup scan and its separate watcher cadence.
+# bin/fm-herdr-session-cleanup.sh remains the owner of the stale-projection
+# proof, its locking, and its conservative refusals. Deferral changes
 # WHEN they run, not WHETHER, and three properties make the later run safe:
 #   - The work is idempotent detection. A run whose report is lost (killed
 #     worker, truncated digest, crashed session) loses no finding: the next run
 #     re-derives the same inactive terminal child, dead secondmate, stuck clone,
-#     or undelivered handoff. There is no once-only signal to miss.
+#     undelivered handoff, or stale restored projection. There is no once-only
+#     signal to miss.
 #   - Results are durable and always surface. Network sweep output lands in
 #     state/.startup-network.report and reaches the agent either inline in the
 #     digest or, when it finishes too late for the digest to inline it, as a
@@ -52,11 +60,14 @@
 #          worker therefore cannot satisfy a later locked request; the later
 #          request gets a distinct generation and runs the locked phases. A new
 #          owner also gets a distinct generation. --locked 1 asks
-#          for the inactive-outcome scan and mutating sweeps as well as the
+#          for the inactive-outcome scan, the stale-projection cleanup, and the
+#          mutating sweeps as well as the
 #          read-only probe; --locked 0 asks for the probe only. --harvest-pid
 #          names the session-start process
 #          that will try to print the result inline, so the worker can tell
-#          whether a wake is still needed.
+#          whether a wake is still needed. The locked phases also carry the
+#          home-local stale Herdr projection cleanup, whose own output reaches
+#          the report byte for byte; a run that retires nothing says nothing.
 #        fm-startup-network.sh run --locked <0|1>
 #          Run the checks in the foreground and publish the result. This is what
 #          `start` detaches with its private generation reservation; run it
@@ -224,7 +235,7 @@ worker_alive() {
 phase_label() {  # <phases>
   case "$1" in
     probe) printf 'GitHub authentication' ;;
-    probe,sweeps) printf 'GitHub authentication, dead-secondmate relaunch, secondmate convergence, pending handoff delivery, project clone refresh with its drift reporting, and inactive terminal-outcome reconciliation' ;;
+    probe,sweeps) printf 'GitHub authentication, dead-secondmate relaunch, secondmate convergence, pending handoff delivery, project clone refresh with its drift reporting, inactive terminal-outcome reconciliation, and stale restored-projection cleanup' ;;
     *) printf 'the deferred network checks' ;;
   esac
 }
@@ -564,11 +575,17 @@ EOF
       downgraded=1
     fi
   fi
-  # One aggregate deadline covers both deferred operations. The inactive scan
-  # retains its own tighter per-scan bound inside this outer bound. Findings
+  # One aggregate deadline covers all three deferred operations. The inactive
+  # scan retains its own tighter per-scan bound inside this outer bound. Findings
   # need no report translation: the scan writes its ordinary durable
-  # inactive-outcome wakes directly. A child shell composes the two executable
-  # owners only so fm_run_timed can govern them as one process group.
+  # inactive-outcome wakes directly, and the stale-projection cleanup is silent
+  # unless it has something a reader must act on, in which case its own warning
+  # text reaches the report through this redirect. A child shell composes the
+  # three executable owners only so fm_run_timed can govern them as one process
+  # group. The cleanup goes last, after bootstrap's network phase and its
+  # GitHub-auth probe, because its cost scales with the shared Herdr session's
+  # fleet, so a busy fleet can never starve the auth verdict or the sweeps.
+  # The child still exits with bootstrap's status.
   # The sweeps get whatever the lock waits above left of the stage budget.
   budget=$(seconds_until "$stage_deadline")
   if [ "$sweep_locked" -eq 1 ]; then
@@ -578,7 +595,10 @@ EOF
       bash -c '
         script_dir=$1
         "$script_dir/fm-inactive-reconcile.sh" scan --startup >/dev/null 2>&1 || true
-        exec "$script_dir/fm-bootstrap.sh"
+        rc=0
+        "$script_dir/fm-bootstrap.sh" || rc=$?
+        "$script_dir/fm-herdr-session-cleanup.sh" 2>&1 || true
+        exit "$rc"
       ' _ "$SCRIPT_DIR" >"$out" 2>&1 || rc=$?
   else
     fm_run_timed "$budget" env FM_BOOTSTRAP_NETWORK=only FM_BOOTSTRAP_DETECT_ONLY=1 \

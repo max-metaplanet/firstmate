@@ -30,9 +30,11 @@
 #                       mutating step runs.
 #   1b. home role    - the resolved firstmate-repository role line
 #                      (bin/fm-role.sh report), purely local, no network.
-#   2. bootstrap      - home-local stale Herdr projection cleanup runs only
-#                       when this session actually holds the lock. Detect-only
-#                       diagnostics always run. Bootstrap's six MUTATING sweeps
+#   2. bootstrap      - detect-only diagnostics always run.
+#                       The home-local stale Herdr projection cleanup, which
+#                       used to run in front of this stage, now runs in the
+#                       deferred stage started at step 1.
+#                       Bootstrap's six MUTATING sweeps
 #                       (same-home backlog reconciliation,
 #                       secondmate convergence, secondmate liveness, pending remote
 #                       handoff retry, X-mode artifact writes, fleet sync) also run only when
@@ -84,10 +86,13 @@
 # convergence, pending remote handoff delivery, and the fleet-sync fetch - are
 # started as one detached bounded worker right after the lock (step 1) and
 # harvested at step 7 without ever blocking on it. The bounded inactive-outcome
-# startup scan joins that worker because its local current-state reads can also
-# be slow. bin/fm-startup-network.sh owns that stage and its safety argument;
-# bin/fm-bootstrap.sh and bin/fm-inactive-reconcile.sh remain the owners of the
-# work itself and still run it.
+# startup scan and the home-local stale Herdr projection cleanup join that
+# worker because their local reads can also be slow - the cleanup's cost scales
+# with the machine's whole live Herdr fleet, not with this home's state.
+# bin/fm-startup-network.sh owns that stage and its safety argument;
+# bin/fm-bootstrap.sh, bin/fm-inactive-reconcile.sh, and
+# bin/fm-herdr-session-cleanup.sh remain the owners of the work itself and still
+# run it.
 # The digest is therefore composed from bounded local reads and local
 # subprocesses only, while slow network or inactive-state reconciliation delays
 # a reported check rather than startup.
@@ -744,6 +749,11 @@ fi
 # FM_BOOTSTRAP_NETWORK=skip on every path: bootstrap's own network half is what
 # the deferred stage above is running right now, and running it twice would both
 # re-block this digest and race the worker's sweeps against themselves.
+# The home-local stale Herdr projection cleanup used to run here, in front of
+# bootstrap and under this same breadcrumb. It is now part of the same deferred
+# stage, for the same reason its network half is: its candidate count comes from
+# the machine's shared named Herdr session, so this home paid for every other
+# home's live panes before the digest could print anything.
 stage bootstrap
 subsection "BOOTSTRAP"
 if [ "$READ_ONLY" -eq 1 ]; then
@@ -753,11 +763,8 @@ elif [ "$REEMIT" -eq 1 ]; then
   BOOT_OUT=$(FM_BOOTSTRAP_DETECT_ONLY=1 FM_BOOTSTRAP_LOCKED=1 FM_BOOTSTRAP_NETWORK=skip \
     FM_TASKS_AXI_COMPATIBLE="$TASKS_AXI_COMPATIBLE" "$SCRIPT_DIR/fm-bootstrap.sh" 2>&1)
 else
-  BOOT_OUT=$(
-    "$SCRIPT_DIR/fm-herdr-session-cleanup.sh" 2>&1 || true
-    FM_BOOTSTRAP_NETWORK=skip FM_TASKS_AXI_COMPATIBLE="$TASKS_AXI_COMPATIBLE" \
-      "$SCRIPT_DIR/fm-bootstrap.sh" 2>&1
-  )
+  BOOT_OUT=$(FM_BOOTSTRAP_NETWORK=skip FM_TASKS_AXI_COMPATIBLE="$TASKS_AXI_COMPATIBLE" \
+    "$SCRIPT_DIR/fm-bootstrap.sh" 2>&1)
 fi
 if [ -n "$BOOT_OUT" ]; then
   printf '%s\n' "$BOOT_OUT"
