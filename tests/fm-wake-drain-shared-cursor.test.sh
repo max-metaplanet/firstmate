@@ -130,7 +130,9 @@ test_presented_lines_are_not_replayed_by_the_next_drain() {
 }
 
 test_shared_offsets_match_what_each_function_derives_alone() {
-  local dir state f task shared_presented shared_backstop alone_presented alone_backstop snapshot
+  # Only dir and state are this shell's; every other name below belongs to the
+  # inner `bash -c`, which sources the library and has its own scope.
+  local dir state
   dir=$(make_case shared-matches-alone)
   state="$dir/state"
   prime_cursor "$state"
