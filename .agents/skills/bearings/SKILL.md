@@ -226,7 +226,7 @@ Act by class:
   Tell the captain, with the pull request URL and what production is doing, because a live regression is a project outcome they own.
 - `still-flagged` - production is flagged and the preview already was too. The problem shipped knowingly or unnoticed, so it is a follow-up rather than a surprise.
   Comment on the ticket the same way and file the follow-up in the backlog; raise it to the captain only when the behaviour is user-visible or it is the second verdict on the same ticket.
-- `couldnt-check` - production's verdict could not be established, the pairing could not be completed, or production never reported at all.
+- `couldnt-check` - production's verdict could not be established, either side was a `skipped` or `stale` non-answer, the pairing could not be completed, or production never reported at all.
   This is NOT a pass and must never be filed as one. Establish what is missing from the linked evidence; a lane that stopped reporting is itself the finding, and a repeat for the same project is a broken monitor to fix rather than a verdict to chase.
 - A clean production verdict never wakes at all. It is recorded and nothing is asked of firstmate, so an absent wake means nothing needed doing, never that nothing was checked.
 

@@ -61,9 +61,9 @@
 # forge is contacted, and `arm` refuses rather than registering a check with no
 # repository to watch. Configured, one poll spends at most FM_JEV_PROD_BUDGET
 # seconds (default 20, cut down to the watcher's own per-check bound) over at
-# most FM_JEV_PROD_MAX_PRS pull requests, newest merge first. A pull request the
-# budget did not reach is simply examined on the next poll; that is deferral, not
-# a failure, and it reports nothing.
+# most FM_JEV_PROD_MAX_PRS pull requests. A pull request the budget did not
+# reach is examined first on the next poll; that is deferral, not a failure, and
+# it reports nothing.
 #
 # DEDUPE. state/.jev-prod-monitor is the one owner. A verdict is keyed by
 # <pr>/<app>/<record-id>, the recorder's own identifier for the run that
@@ -76,10 +76,12 @@
 # keep each verdict to one wake.
 #
 # ROTATION. Because candidates are not retired, a busy repository can hold more
-# of them than one poll should read. They are therefore rotated by the current
-# ten-minute epoch bucket, the same shape bin/fm-contributions.sh rotates its own
-# forge reads with, so every candidate is reached within a few polls instead of
-# the newest few monopolising the budget forever.
+# of them than one poll should read. They are therefore rotated by a cursor in
+# the same record: the last pull request a poll actually examined. The next poll
+# starts right after it, newest merge first, so a window the budget cut short is
+# finished on the very next poll and every candidate is reached within a few
+# polls instead of the newest few monopolising the budget forever. A cursor that
+# has aged out of the lookback starts the rotation over at the newest merge.
 #
 # URGENCY. A regression - preview proven, production not - wakes on the poll that
 # finds it. `still-flagged` and `couldnt-check` accumulate and go out as one line
@@ -262,12 +264,14 @@ fm_jev_repo_valid() {
 RECORD_REPORTED=
 RECORD_WOKEN=
 RECORD_PENDING=
+RECORD_CURSOR=
 
 record_read() {
   local line
   RECORD_REPORTED=
   RECORD_WOKEN=
   RECORD_PENDING=
+  RECORD_CURSOR=
   [ -f "$RECORD" ] || return 0
   while IFS= read -r line || [ -n "$line" ]; do
     case "$line" in
@@ -277,18 +281,20 @@ record_read() {
 " ;;
       pending?*) RECORD_PENDING="${RECORD_PENDING}${line#pending	}
 " ;;
+      cursor?*) RECORD_CURSOR=${line#cursor	} ;;
     esac
   done < "$RECORD"
   RECORD_WOKEN=${RECORD_WOKEN%$'\n'}
   RECORD_PENDING=${RECORD_PENDING%$'\n'}
+  case "$RECORD_CURSOR" in ''|*[!0-9]*) RECORD_CURSOR= ;; esac
   return 0
 }
 
 # Trailing newlines are stripped before writing: the lists are accumulated with
 # a trailing separator, and an unstripped one would publish a blank entry that
 # reads back as a real record on the next poll.
-record_write() {  # <reported> <woken-list> <pending-list>
-  local reported=$1 woken=$2 pending=$3 tmp
+record_write() {  # <reported> <woken-list> <pending-list> <cursor>
+  local reported=$1 woken=$2 pending=$3 cursor=$4 tmp
   woken=${woken%"${woken##*[!$'\n']}"}
   pending=${pending%"${pending##*[!$'\n']}"}
   mkdir -p "$STATE" 2>/dev/null || return 1
@@ -300,6 +306,7 @@ record_write() {  # <reported> <woken-list> <pending-list>
     # candidate still inside the lookback can present.
     [ -z "$woken" ] || printf '%s\n' "$woken" | tail -n "$WOKEN_KEEP" | sed 's/^/woken\t/'
     [ -z "$pending" ] || printf '%s\n' "$pending" | sed 's/^/pending\t/'
+    [ -z "$cursor" ] || printf 'cursor\t%s\n' "$cursor"
   } > "$tmp" || { rm -f -- "$tmp"; return 1; }
   chmod 0600 "$tmp" 2>/dev/null || { rm -f -- "$tmp"; return 1; }
   mv -f -- "$tmp" "$RECORD" || { rm -f -- "$tmp"; return 1; }
@@ -483,12 +490,12 @@ EOF
 }
 
 # --- classification ---------------------------------------------------------
-# `proven` is the recorder's only passing verdict. Everything else it can publish
-# - `failed`, `unproven`, `skipped` - is a production problem or a production
-# non-answer, and neither is a pass.
+# `proven` is the recorder's only passing verdict, and `failed` and `unproven`
+# are its flags. `skipped` and `stale` are non-answers: on either side they are
+# neither a pass nor a flag, so a pairing that holds one is couldnt-check.
 verdict_is_clean() { [ "$1" = proven ]; }
 verdict_is_flagged() {
-  case "$1" in failed|unproven|skipped|stale) return 0 ;; *) return 1 ;; esac
+  case "$1" in failed|unproven) return 0 ;; *) return 1 ;; esac
 }
 
 # One rendered item: the class, the full PR URL, the ticket (or none), and the
@@ -504,7 +511,7 @@ render_item() {  # <class> <pr-url> <ticket> <app> <prod-verdict> <preview-verdi
 # --- check ------------------------------------------------------------------
 action_check() {
   local prs pr_rows reported='' standing=''
-  local woken pending
+  local woken pending cursor
   local regressions='' regression_count=0
   local examined=0
 
@@ -514,6 +521,7 @@ action_check() {
   record_read
   woken=$RECORD_WOKEN
   pending=$RECORD_PENDING
+  cursor=$RECORD_CURSOR
 
   # A standing condition - a missing tool, an unreadable pull request list - is
   # reported once and then stays quiet until it changes, so a broken poll says
@@ -537,7 +545,7 @@ action_check() {
       fm_cap_line_var "$reported" "$MAX_LINE"
       printf '%s\n' "$FM_LINE_CAP_LINE"
     fi
-    record_write "$reported" "$woken" "$pending"
+    record_write "$reported" "$woken" "$pending" "$cursor"
     return 0
   fi
 
@@ -552,15 +560,21 @@ action_check() {
           | @tsv
     else empty end' 2>/dev/null) || pr_rows=
 
-  # Rotate the candidate set so a repository with more merged pull requests than
-  # one poll should read still reaches every one of them within a few polls.
-  local candidates total offset
+  # Rotate the candidate set from just after the last pull request examined, so
+  # a window the budget cut short is finished first on the next poll.
+  local candidates total offset window
   total=$(printf '%s\n' "$pr_rows" | grep -c . || true)
-  if [ "${total:-0}" -gt "$MAX_PRS" ]; then
-    offset=$(( ((NOW / 600) * MAX_PRS) % total ))
-    candidates=$(printf '%s\n' "$pr_rows" "$pr_rows" | grep . | tail -n +"$((offset + 1))" | head -n "$MAX_PRS")
-  else
-    candidates=$(printf '%s\n' "$pr_rows" | grep . || true)
+  total=${total:-0}
+  candidates=
+  if [ "$total" -gt 0 ]; then
+    offset=0
+    if [ -n "$cursor" ]; then
+      offset=$(printf '%s\n' "$pr_rows" | grep . | awk -F'\t' -v c="$cursor" '$1 == c { print NR; exit }')
+      offset=$(( ${offset:-0} % total ))
+    fi
+    window=$MAX_PRS
+    [ "$window" -le "$total" ] || window=$total
+    candidates=$(printf '%s\n' "$pr_rows" "$pr_rows" | grep . | tail -n +"$((offset + 1))" | head -n "$window")
   fi
 
   local number url head_sha merge_sha merged_at title
@@ -570,6 +584,7 @@ action_check() {
     budget_left || break
     examined=$((examined + 1))
     examine_pr "$number" "$url" "$head_sha" "$merge_sha" "$merged_at" "$title"
+    cursor=$number
   done <<EOF
 $candidates
 EOF
@@ -591,7 +606,7 @@ EOF
   fi
 
   [ -z "$line" ] || printf '%s\n' "$line"
-  record_write '' "$woken" "$pending"
+  record_write '' "$woken" "$pending" "$cursor"
   return 0
 }
 
@@ -697,7 +712,7 @@ examine_pr() {  # <number> <url> <head-sha> <merge-sha> <merged-at> <title>
       preview=$PREVIEW_VERDICT
       preview_run=$PREVIEW_RUN_URL
     fi
-    if [ -z "$preview" ]; then
+    if [ -z "$preview" ] || ! verdict_is_flagged "$verdict"; then
       class=couldnt-check
     elif verdict_is_clean "$preview"; then
       class=regression

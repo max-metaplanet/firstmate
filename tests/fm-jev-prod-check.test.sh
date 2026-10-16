@@ -409,10 +409,32 @@ test_skipped_production_verdict_is_not_a_pass() {
   write_preview_artifact "$home" portal proven
 
   out=$(poll "$home")
-  assert_equals 1 "$(printf '%s\n' "$out" | grep -c .)" "a skipped production run must wake as one line"
-  assert_contains "$out" "jev-prod: regression" "a skip after a proven preview is a production non-answer, not a pass"
+  assert_equals "" "$out" "a skipped production run is a non-answer that batches, not a regression that wakes at once"
+  assert_grep "woken	2214/portal/" "$home/state/.jev-prod-monitor" \
+    "the skip must be recorded so it is never re-queued"
+  out=$(env PATH="$home/bin:$PATH" FM_HOME="$home" FM_JEV_PROD_NOW="$((NOW + 21700))" "$CHECK" check 2>&1)
+  assert_equals 1 "$(printf '%s\n' "$out" | grep -c .)" "a skipped production run must go out as one line"
+  assert_contains "$out" "jev-prod: couldnt-check" "a skip after a proven preview is a production non-answer, never a pass"
   assert_contains "$out" "production=skipped" "the line must carry the skip as the production verdict"
-  pass "fm-jev-prod-check: a skipped production run is never read as a pass"
+  pass "fm-jev-prod-check: a skipped production run is couldnt-check, never read as a pass"
+}
+
+test_a_skipped_preview_never_makes_a_failure_still_flagged() {
+  local home out
+  home=$(make_home skipped-preview)
+  configure "$home"
+  fake_gh "$home" >/dev/null
+  write_pulls "$home" 7200
+  write_comments "$home" 2214 900021 "$(section portal failed post-merge production 5c1a9e000001)"
+  write_preview_artifact "$home" portal skipped
+
+  out=$(poll "$home")
+  assert_equals "" "$out" "a failure paired with a skipped preview batches rather than waking at once"
+  out=$(env PATH="$home/bin:$PATH" FM_HOME="$home" FM_JEV_PROD_NOW="$((NOW + 21700))" "$CHECK" check 2>&1)
+  assert_contains "$out" "jev-prod: couldnt-check" "a skipped preview never flagged anything, so the pairing is a non-answer"
+  assert_contains "$out" "production=failed" "the line must carry the production failure"
+  assert_contains "$out" "preview=skipped" "the line must carry the skipped preview"
+  pass "fm-jev-prod-check: a skipped preview paired with a production failure is couldnt-check, never still-flagged"
 }
 
 test_unparsable_section_is_couldnt_check() {
@@ -789,6 +811,54 @@ test_a_long_batch_carries_every_verdict_uncut() {
   pass "fm-jev-prod-check: a long batch carries every verdict it settles, uncut"
 }
 
+test_a_window_the_budget_cut_short_is_finished_on_the_next_poll() {
+  local home bin real merged first second expected
+  home=$(make_home budget-cursor)
+  configure "$home"
+  bin=$(fake_gh "$home")
+  # The first comment read of the run is slow enough to spend the whole budget.
+  mv "$bin/gh" "$bin/gh-fixture"
+  cat > "$bin/gh" <<EOF
+#!/usr/bin/env bash
+case "\$*" in
+  *issues/*/comments*)
+    if [ -e '$home/fx/slow-once' ]; then
+      rm -f '$home/fx/slow-once'
+      printf '%s\n' "\$*" >> '$home/fx/gh-argv.log'
+      sleep 4
+      exit 1
+    fi ;;
+esac
+exec '$bin/gh-fixture' "\$@"
+EOF
+  chmod +x "$bin/gh"
+  # The budget is real wall-clock time here, so the merges are placed relative
+  # to it rather than to the fixed test clock.
+  real=$(date +%s)
+  merged=$(jq -nr --argjson t "$((real - 7200))" '$t | todateiso8601')
+  jq -n --arg base "https://github.com/$REPO/pull" --arg head "$HEAD_SHA" \
+    --arg merge "$MERGE_SHA" --arg merged "$merged" --arg title "$TITLE" \
+    '[2214,2215,2216,2217,2218,2219] | map({number:.,html_url:"\($base)/\(.)",title:$title,
+       merged_at:$merged,head:{sha:$head},merge_commit_sha:$merge})' \
+    > "$home/fx/pulls.json"
+
+  : > "$home/fx/gh-argv.log"
+  : > "$home/fx/slow-once"
+  env PATH="$bin:$PATH" FM_HOME="$home" FM_JEV_PROD_BUDGET=3 \
+    FM_JEV_PROD_MAX_PRS=3 "$CHECK" check >/dev/null 2>&1
+  first=$(sed -n 's|.*issues/\([0-9]*\)/comments.*|\1|p' "$home/fx/gh-argv.log")
+  assert_equals 1 "$(printf '%s\n' "$first" | grep -c .)" "the spent budget must stop the poll after one pull request"
+
+  : > "$home/fx/gh-argv.log"
+  env PATH="$bin:$PATH" FM_HOME="$home" FM_JEV_PROD_BUDGET=3 \
+    FM_JEV_PROD_MAX_PRS=3 "$CHECK" check >/dev/null 2>&1
+  second=$(sed -n 's|.*issues/\([0-9]*\)/comments.*|\1|p' "$home/fx/gh-argv.log" | tr '\n' ' ')
+  expected="$(( (first - 2214 + 1) % 6 + 2214 )) $(( (first - 2214 + 2) % 6 + 2214 )) $(( (first - 2214 + 3) % 6 + 2214 )) "
+  assert_equals "$expected" "$second" \
+    "the next poll must start right after the last pull request actually examined"
+  pass "fm-jev-prod-check: a window the read budget cut short is finished on the very next poll"
+}
+
 test_the_read_budget_fits_a_lowered_check_timeout() {
   local home out
   home=$(make_home budget)
@@ -817,6 +887,7 @@ test_unestablished_preview_is_couldnt_check_not_clean
 test_a_production_run_that_never_reported_is_couldnt_check
 test_within_the_grace_a_missing_production_verdict_is_not_late
 test_skipped_production_verdict_is_not_a_pass
+test_a_skipped_preview_never_makes_a_failure_still_flagged
 test_unparsable_section_is_couldnt_check
 test_gh_failure_is_reported_once_and_never_as_clean
 test_missing_tool_is_reported_and_arm_refuses
@@ -834,4 +905,5 @@ test_armed_shim_runs_a_real_check
 test_more_candidates_than_one_poll_reads_are_rotated
 test_a_rotation_bucket_advances_by_a_whole_window
 test_a_long_batch_carries_every_verdict_uncut
+test_a_window_the_budget_cut_short_is_finished_on_the_next_poll
 test_the_read_budget_fits_a_lowered_check_timeout
