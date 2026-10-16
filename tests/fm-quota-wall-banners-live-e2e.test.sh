@@ -16,8 +16,10 @@
 # those CLIs exist, rather than waiting for someone to opt in after an upgrade.
 #
 # An absent vendor CLI is reported explicitly and skipped rather than passed
-# over in silence, and a run that checked no vendor at all FAILS, because a
-# guard that proved nothing must not report success.
+# over in silence. A run that checked no vendor at all skips, like every live
+# guard on a host that cannot run it, unless FM_QUOTA_WALL_BANNERS_LIVE=1 or
+# FM_LIVE=1 asked for it - then it FAILS, because a requested guard that proved
+# nothing must not report success.
 #
 # When this guard fails, the fix is to re-extract the vendor's current banner
 # text, update fm_quota_wall_needles and the affected tests/captures/ frames and
