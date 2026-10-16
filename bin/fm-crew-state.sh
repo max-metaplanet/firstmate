@@ -24,7 +24,7 @@
 # Output is one stable, parseable, token-tight line firstmate can read every
 # heartbeat:
 #
-#   state: <working|parked|done|blocked|paused|failed|unreadable|unknown> · source: <run-step|pane|status-log|remote-endpoint|park-record|none> · <detail>
+#   state: <working|parked|done|blocked|paused|failed|quota-blocked|unreadable|unknown> · source: <run-step|pane|status-log|remote-endpoint|park-record|none> · <detail>
 #
 # Every state word but `unreadable` is a claim about the CREW. `unreadable` is
 # the reader's claim about ITSELF: NO CREW CLAIM COULD BE ESTABLISHED here, and
@@ -44,10 +44,26 @@
 # does not have.
 # The run-step reader mints it today; the other sources still report `unknown`
 # and are unchanged by that rule.
+# `quota-blocked` is a CREW claim too, and the one state here that names a
+# condition no supervision ladder can recover by inspecting, interrupting, or
+# relaunching the worker in place: its vendor seat ran out of credits or hit a
+# usage limit, which stops the agent AND stops it appending a status line about
+# the stop, so a reader with no word for it reports a possible wedge and points
+# recovery at a worker nothing in the pane can fix. Only the no-run pane
+# fallback mints it, from a pane that is not provably working and carries one
+# vendor's own recorded wall banner; bin/fm-quota-wall-lib.sh owns the banner
+# text, the detail spelling, and the bounded automatic recovery the watcher
+# drives from this verdict. It is never minted from silence, never over an exact
+# busy verdict, and never while a run step answers for the crew, which is what
+# keeps an automatic move from orphaning a live pipeline. Its detail reports the
+# liveness evidence it had, because a vendor with no verified semantic busy
+# source (Codex) can only ever supply an unverified one.
+#
 # Consumers that act on a CREW claim match `working`, `paused`, `parked`,
 # `done`, or `failed` positively (fm-classify-lib.sh's crew_absorb_class,
-# fm-inactive-reconcile.sh), so `unreadable` is handled exactly as `unknown`
-# was: no absorb, no terminal claim, surface the wake. One consumer instead
+# fm-inactive-reconcile.sh), so `unreadable` and `quota-blocked` are handled
+# exactly as `unknown` was: no absorb, no terminal claim, surface the wake.
+# One consumer instead
 # matches the unreadable verdict itself positively - fm-fleet-snapshot.sh's
 # secondmate home summary, which reports a child whose current state could not
 # be read as `child_current_unavailable` - so it accepts BOTH words, and any
@@ -177,9 +193,14 @@
 #      FM_CREW_STATE_IDLE_SHORT_CIRCUIT_SECONDS (default 86400, 24h) skips the
 #      live probe entirely and reports that last known state with a
 #      not-live-probed marker. Otherwise fall back to the recorded backend's
-#      pane busy state, then the resolved status declaration when its verb maps
-#      to a recognized run-state. Decision-only events such as `resolved` never
-#      become current state or detail.
+#      pane busy state, then - for any verdict short of an exact busy - the
+#      vendor quota wall (fm_quota_wall_detect), then the resolved status
+#      declaration when its verb maps to a recognized run-state. Decision-only
+#      events such as `resolved` never become current state or detail. The wall
+#      read sits between the busy read and the log precisely because both
+#      neighbours get it wrong: a busy pane has moved past the banner, and the
+#      log's last line is whatever the worker wrote BEFORE the wall took its
+#      turn away.
 #   5. Missing meta or torn-down worktree: report unknown · none. If no run is
 #      attributed to this crew, a dead endpoint also reports unknown · none rather
 #      than trusting a stale status log. On tmux and herdr, which own a
@@ -207,6 +228,10 @@ STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 . "$SCRIPT_DIR/fm-classify-lib.sh"
 # shellcheck source=bin/fm-busy-lib.sh
 . "$SCRIPT_DIR/fm-busy-lib.sh"
+# The vendor quota wall: this reader mints the state, that library owns which
+# banner text means one and how the detail component is spelled.
+# shellcheck source=bin/fm-quota-wall-lib.sh
+. "$SCRIPT_DIR/fm-quota-wall-lib.sh"
 # shellcheck source=bin/fm-nm-run-lib.sh
 . "$SCRIPT_DIR/fm-nm-run-lib.sh"
 # shellcheck source=bin/fm-pr-lib.sh
@@ -374,10 +399,16 @@ pane_readable() {  # <target>
 # recognized interactive prompt would report `working` here while the
 # watcher's own poll (which always captures a tail) already classifies it
 # unknown - the exact split issue #1792 describes for a different cause.
-crew_busy_verdict() {  # <target>
-  local tail40
-  tail40=$(fm_backend_capture "$TASK_BACKEND" "$1" 40 "$EXPECTED_LABEL" 2>/dev/null) || tail40=''
-  fm_busy_classify "$TASK_BACKEND" "$1" "$HARNESS" "$ID" "$STATE" "$tail40"
+# The tail is captured by the CALLER and passed in, rather than captured here,
+# because the quota-wall read below asks a second question of the same pane and
+# one capture must serve both. A global set inside this function could not: its
+# only call site reads the verdict through a command substitution, so anything
+# assigned here would die with that subshell.
+crew_pane_tail() {  # <target>
+  fm_backend_capture "$TASK_BACKEND" "$1" 40 "$EXPECTED_LABEL" 2>/dev/null || true
+}
+crew_busy_verdict() {  # <target> <tail40>
+  fm_busy_classify "$TASK_BACKEND" "$1" "$HARNESS" "$ID" "$STATE" "${2-}"
 }
 
 # --- no-mistakes run lookup (authoritative when a run matches this branch) --
@@ -1412,9 +1443,31 @@ fi
 # verdict permits the status-log fallback below. Missing, malformed, stale, or
 # unverified semantic state remains unknown.
 if [ "$KIND" != secondmate ]; then
-  BUSY_VERDICT=$(crew_busy_verdict "$BACKEND_TARGET")
+  CREW_PANE_TAIL=$(crew_pane_tail "$BACKEND_TARGET")
+  BUSY_VERDICT=$(crew_busy_verdict "$BACKEND_TARGET" "$CREW_PANE_TAIL")
+  # An exact busy verdict is read first and answers on its own: a pane that is
+  # provably working has moved past whatever its tail still shows.
   case "${BUSY_VERDICT%% *}" in
     busy) emit working pane "harness busy (${BUSY_VERDICT#* })" ;;
+  esac
+  # Everything else is a pane that is NOT PROVABLY WORKING, which is the same
+  # rule the watcher's own busy gate applies (window_is_busy), and the vendor's
+  # own wall banner in that pane is positive crew evidence rather than a reader
+  # verdict. Deliberately not narrowed to the exact `idle` verdict: Codex has no
+  # verified semantic busy source at all (fm_busy_codex_semantic_source), so
+  # every stopped Codex worker reads `unknown codex-unverified` - the exact
+  # vendor whose credit wall this exists for - and an idle-only gate would be
+  # unreachable for it. The quality of that liveness evidence is reported in the
+  # detail instead of being hidden, and `busy` above is still never crossed.
+  # Reaching here at all already proves no run step answered for this crew,
+  # which is what keeps an automatic move off a live pipeline.
+  if QUOTA_WALL=$(fm_quota_wall_detect "$HARNESS" "$CREW_PANE_TAIL"); then
+    read -r QUOTA_WALL_VENDOR QUOTA_WALL_CLASS QUOTA_WALL_NEEDLE <<< "$QUOTA_WALL"
+    QUOTA_WALL_PROFILE=$(meta_value "${QUOTA_WALL_VENDOR}_seat")
+    emit "$FM_QUOTA_WALL_STATE" pane \
+      "$(fm_quota_wall_detail "$QUOTA_WALL_VENDOR" "$QUOTA_WALL_CLASS" "$QUOTA_WALL_NEEDLE")${SEP}harness state: $BUSY_VERDICT${SEP}seat profile: ${QUOTA_WALL_PROFILE:-(ambient default login)}"
+  fi
+  case "${BUSY_VERDICT%% *}" in
     idle) ;;
     *) emit unknown pane "harness state unavailable ($BUSY_VERDICT)" ;;
   esac

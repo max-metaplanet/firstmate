@@ -14,6 +14,8 @@
 #   fm-seat.sh switch <name|default> [--force]
 #   fm-seat.sh switch --next [--force]
 #   fm-seat.sh probe [<name|default>]
+#   fm-seat.sh name-of <profile-dir>
+#   fm-seat.sh worker-destination --from <name|default>
 #   fm-seat.sh add <name>
 #   fm-seat.sh threshold [<percent-left>|off]
 #   fm-seat.sh destination-min [<percent-left>|off]
@@ -71,6 +73,21 @@
 #            (`logged-in`, or `expired-renewable` for a signed-in seat whose
 #            access token lapsed and which the next launch renews), 1 proven not
 #            logged in, 2 undecided.
+# name-of    Print the seat NAME a profile directory belongs to - the inverse of
+#            every other lookup here. A task's own record holds the profile it
+#            launched with, so this reads that back as the seat it is. An empty
+#            profile is the ambient default seat; a profile outside the seats
+#            root is reported by its own path rather than labelled with a seat
+#            it is not on.
+# worker-destination
+#            Where an ALREADY RUNNING worker should move when the seat it
+#            launched on hits a vendor credit or usage wall. Same candidate set
+#            and same quota gate as the automatic rotation, anchored on the seat
+#            the WORKER is on rather than the active seat, so the walled seat is
+#            never the answer. Prints one seat name; exit 1 with each skipped
+#            seat and its reason on stderr when none qualifies. It switches,
+#            writes and launches nothing - bin/fm-quota-wall-lib.sh owns the
+#            mid-task move and bin/fm-control.sh performs it.
 # add        Create an empty profile directory for a new seat and print the exact
 #            login command the account owner runs. It never logs in, never reads
 #            or writes any credential, and never touches the Keychain.
@@ -500,6 +517,47 @@ cmd_probe() {
     not-logged-in) return 1 ;;
     *) return 2 ;;
   esac
+}
+
+# cmd_name_of <profile-dir>
+# The seat NAME a profile directory belongs to, which is the inverse of the
+# resolution every other command here makes. A task's own record holds the
+# profile it launched with, while an operator, a report and a destination query
+# all speak in seat names, so this is where a recorded profile is read back as
+# the seat it is. fm_seat_name_of_profile owns the answer, including the empty
+# profile (the ambient default seat) and a profile outside the seats root, which
+# is reported by its own path rather than labelled with a seat it is not on.
+cmd_name_of() {
+  fm_seat_name_of_profile "${1-}"
+}
+
+# cmd_worker_destination
+# Where an ALREADY RUNNING worker should move when the seat it launched on hits
+# a vendor credit or usage wall. This is `switch --next`'s candidate set and
+# quota gate, anchored on the seat the WORKER is on instead of the active one,
+# so the seat it walled out on is never the answer and every rule a new launch
+# gets - the automatic-rotation exclusion, the quota floor's resting record, the
+# login requirement, the proven-empty refusal, the destination minimum, and the
+# paid extra-usage policy's deferral - applies to a mid-task move through the
+# same code rather than a second copy of it (next_seat above is the one owner).
+# Read-only: it answers where the work COULD go and switches, writes and
+# launches nothing. bin/fm-quota-wall-lib.sh owns the move itself.
+cmd_worker_destination() {
+  local from='' name
+  seat_command_memo
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --from) [ "$#" -ge 2 ] || usage; from=$2; shift 2 ;;
+      --from=*) from=${1#--from=}; shift ;;
+      *) usage ;;
+    esac
+  done
+  [ -n "$from" ] || usage
+  if [ "$from" != "$FM_SEAT_DEFAULT_NAME" ]; then
+    fm_seat_name_valid "$from" || die "invalid seat name: $from"
+  fi
+  name=$(next_seat "$from") || die "no seat under the seats root qualifies to take over work running on '$from' (each skipped seat and its reason is printed above); add and log into another seat, put an excluded seat back with 'fm-seat.sh auto-include <name>', or lower 'fm-seat.sh destination-min' (docs/claude-seats.md)"
+  printf '%s\n' "$name"
 }
 
 # destination_quota_check <name>
@@ -2077,6 +2135,8 @@ case "${1-}" in
   list)              shift; cmd_list "$@" ;;
   switch)            shift; cmd_switch "$@" ;;
   probe)             shift; cmd_probe "${1-}" ;;
+  name-of)           shift; cmd_name_of "${1-}" ;;
+  worker-destination) shift; cmd_worker_destination "$@" ;;
   add)               shift; [ -n "${1-}" ] || usage; cmd_add "$@" ;;
   threshold)         shift; cmd_threshold "${1-}" ;;
   destination-min)   shift; cmd_destination_min "${1-}" ;;

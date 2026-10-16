@@ -112,6 +112,24 @@ A switch rewrites one setting that only a fresh spawn reads.
 
 `bin/fm-seat.sh status` shows the active seat alongside every task's own recorded seat, which is how to confirm a switch left running work alone.
 
+## When a running worker hits the wall
+
+A switch cannot rescue a worker that is already under way, and that worker is the one case where the wall actually stops work.
+Its seat runs out of credits or hits a usage limit, the agent stops mid-task, and the same wall stops it reporting the stop, because saying anything takes a turn.
+So supervision sees a quiet window, reads it as a possible wedge, and works through a recovery ladder whose last rung relaunches the worker in place - which fixes nothing, because the seat is the problem.
+
+Firstmate answers that condition itself, with no decision asked for and no rule to remember.
+
+- The worker's own window is read on the supervision cycle that already runs.
+  An **idle** window carrying that vendor's own credit or usage-limit banner is a quota wall; an idle window with no such banner is not, and stays on the ordinary stale path exactly as before.
+- The work is then **moved**: the task is relaunched on a seat that still qualifies, in the same local copy, with every uncommitted change untouched, and the replacement is told why it moved so it does not redo finished work.
+- A seat only qualifies if it would qualify for a new launch. The destination minimum, the hand exclusion, the quota floor's resting record, the login requirement, the proven-empty refusal and the paid extra-usage policy all apply, through the same check (`bin/fm-seat.sh worker-destination --from <seat>` answers it on its own and changes nothing).
+- **At most one automatic move per task per wall.** A seat that walls out again a day later is a new wall and gets its own single move; a seat that keeps reporting the same wall never gets a second one.
+- When **no seat qualifies**, that is the one thing brought to you, once, naming every seat that was considered, why each was refused, and when each comes back.
+- A worker whose **validation run is still live** is reported and never moved, because a relaunch would discard that run. Its one move is kept for when the run is no longer live.
+
+Nothing here switches the active seat or touches any other worker: it moves one task's own recorded seat and leaves the home's seat choice alone.
+
 ## Switching automatically
 
 The automatic path is the same switch, fired by a condition instead of by hand.
@@ -173,6 +191,9 @@ Firstmate controls **which seat a new worker starts on**, and **whether new Clau
 It cannot stop a worker that is *already running* from drawing paid extra usage mid-task.
 A running worker keeps the profile recorded in its own task record, by design, and nothing outside the organisation's Claude admin setting can stop that profile spending once its plan quota is gone.
 
+What it can do, once that worker has actually stopped, is move the work off the spent seat; [when a running worker hits the wall](#when-a-running-worker-hits-the-wall) owns that path, and it honours this policy when choosing where the work goes.
+Being able to move stopped work is not the same as capping a running agent's spend.
+
 So `stop` means **stop starting new work**, plus a loud warning the moment a seat a worker is already running on enters extra usage.
 That warning goes out through this home's one notification path, the same one the usage warner uses.
 It is never a guarantee of zero spend, and nothing here should be read as one.
@@ -226,7 +247,7 @@ Such a seat should be reachable deliberately and never be picked up by an automa
 - `switch --next`, the armed watch's switch, the watch's instruction to move firstmate itself, and the `lead-restart` destination all skip an excluded seat. They read one shared candidate list, so none of them can be the one that forgets.
 - `switch <name>` still reaches it. That is the point: the seat stays a deliberate choice and stops being an automatic one.
 - An excluded seat is listed with its reason whenever a rotation refuses, so a switch that found nowhere to go never leaves you guessing which seats were withheld.
-- Nothing moves when you exclude a seat. Excluding the **active** seat keeps it active and keeps new workers launching there; it only stops being a future automatic destination. Nothing moves a worker already running on it either.
+- Nothing moves when you exclude a seat. Excluding the **active** seat keeps it active and keeps new workers launching there; it only stops being a future automatic destination. Nothing moves a worker already running on it either, and an excluded seat is no more a destination for a [stopped worker's move](#when-a-running-worker-hits-the-wall) than for a new launch.
 - A seat is excluded regardless of how much it has left, so an exclusion is never lifted by a quota reading.
 
 `bin/fm-seat.sh status` names every excluded seat, and `bin/fm-seat.sh list` marks each one on its own row, so an exclusion is never a setting you have to remember you made.

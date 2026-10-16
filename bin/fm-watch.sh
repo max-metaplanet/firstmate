@@ -148,6 +148,26 @@
 #                          budget and is parked until a probe reads it live
 #                          again (FM_SECONDMATE_LIVENESS_MAX_ATTEMPTS and
 #                          FM_SECONDMATE_LIVENESS_WINDOW_SECS)
+#   check: task <id> hit a <vendor> <class> wall on seat <a> and was moved ...
+#                          a running worker's own window carried that vendor's
+#                          recorded credit or usage-limit banner while the pane
+#                          was not provably working, so the work was moved to a
+#                          seat that still qualifies and relaunched there with
+#                          its local copy and uncommitted changes untouched; one
+#                          wake per episode, which is also the bound on the move
+#   check: task <id> stopped on the <vendor> seat <a> (<class>) and no ...
+#                          the same wall with no seat left to take the work
+#                          over; the row names every seat that was considered
+#                          and why each was refused, including when each comes
+#                          back, and is raised once per episode rather than on
+#                          every poll
+#   check: task <id> shows a <vendor> <class> wall ... run is still live ...
+#                          the wall is in the worker's own window while an
+#                          attributed no-mistakes run still answers for the
+#                          task, so nothing was moved - a move would discard
+#                          that run - and the episode keeps its one move for
+#                          when the run is no longer live
+#                          (bin/fm-quota-wall-lib.sh owns all three)
 # For normal supervision, resume the session-start primary-harness protocol
 # after each printed reason. Direct duplicate invocations of this script still
 # no-op through the watcher singleton lock. A live holder whose beacon is stale
@@ -238,6 +258,13 @@ WATCH_HOME_EXISTED=0
 # and wake emission (secondmate_liveness_tick below).
 # shellcheck source=/dev/null # Analyzed separately as a canonical lint root.
 . "$SCRIPT_DIR/fm-secondmate-liveness-lib.sh"
+# The vendor quota wall: recognition, the one-move-per-episode bound, the
+# destination, the handoff note and the guarded move all live there, driven from
+# bin/fm-crew-state.sh's authoritative verdict. The watcher contributes the pane
+# evidence it already captured, the wake row, and the per-episode silence
+# (quota_wall_handle below).
+# shellcheck source=bin/fm-quota-wall-lib.sh
+. "$SCRIPT_DIR/fm-quota-wall-lib.sh"
 
 WATCH_LOCK="$STATE/.watch.lock"
 WATCH_PATH="$SCRIPT_DIR/fm-watch.sh"
@@ -1968,6 +1995,47 @@ captain_call_stale_bound() {  # <window-key> <task>
   stale_wait_throttled "$key" "$STALE_WAIT_DECLARATION"
 }
 
+# Act on a VENDOR QUOTA WALL rather than escalating it as a wedge.
+#
+# A worker whose seat ran out of credits or hit a usage limit stops mid-task,
+# and the same wall stops it saying so: appending a status line takes a turn.
+# Every signal this watcher normally reads therefore reports a healthy-looking
+# nothing, the stale ladder fires every few minutes for as long as the wall
+# lasts, and its last rung is a relaunch - at a worker a relaunch in place
+# cannot fix, because the seat is the problem. The condition has to be
+# recognized from the pane and answered by moving the work, which is what makes
+# it deterministic instead of a rule somebody has to remember.
+#
+# Ordering and cost. The cheap pane gate runs on the tail this poll already
+# captured and costs one string match, so it sits BEFORE every other triage
+# branch - including the away-mode handover, because a wall is exactly the
+# condition nobody is reading the pane for. Only a gate match pays for the
+# authoritative crew-state read, and the library decides from that read, so a
+# worker whose validation run is still live reads as working and is reported
+# rather than moved.
+#
+# bin/fm-quota-wall-lib.sh owns recognition, the one-move-per-episode bound, the
+# destination, the handoff note and the move; this contributes only the pane
+# evidence, the wake row, and the once-per-episode silence that keeps an acted-on
+# wall from re-alarming. Returns 0 when the wall was handled here, so the caller
+# skips ordinary triage for this window, and 1 when it was not.
+quota_wall_handle() {  # <window> <task> <harness> <pane-tail>
+  local win=$1 task=$2 harness=$3 tail=$4 line notify reason queued
+  line=$("$FM_CREW_STATE_BIN" "$task" 2>/dev/null) || line=''
+  fm_quota_wall_recover "$FM_HOME" "$STATE" "$task" "$harness" "$tail" "$line" || return 1
+  if [ -z "$FM_QUOTA_WALL_REPORT" ]; then
+    triage_log "absorbed stale (vendor quota wall already answered for this episode: $FM_QUOTA_WALL_STATUS): $win"
+    return 0
+  fi
+  notify="quota-wall-$task-$FM_QUOTA_WALL_STATUS"
+  reason="check: $FM_QUOTA_WALL_REPORT"
+  queued=$(fm_wake_queued_keys check)
+  if ! printf '%s\n' "$queued" | grep -Fx "$notify" >/dev/null 2>&1; then
+    fm_wake_append check "$notify" "$reason" || exit 1
+  fi
+  wake "$reason"
+}
+
 # Surface a stale pane no classifier could resolve, so firstmate inspects it: it
 # may have finished through an interactive menu that wrote no status, be waiting on
 # a decision, or be wedged. pause_state_class deliberately answers `none` for a
@@ -3224,6 +3292,21 @@ EOF
       if [ "$n" -ge 2 ] && [ "$busy_now" -ne 0 ]; then
         # The pane is idle/stale at hash $h. Triage decides whether this wakes
         # firstmate. Detection itself is unchanged from above.
+        #
+        # A vendor quota wall is answered before any of that: it is its own
+        # condition, not an inconclusive pane, and the stale ladder below would
+        # point recovery at a worker only a seat move can rescue
+        # (quota_wall_handle above owns the whole decision). The gate is one
+        # string match over the tail already in hand, so every other window
+        # pays nothing for it, and a secondmate is left out because its own
+        # liveness tick owns its recovery.
+        if [ "$kind" != secondmate ] \
+          && fm_quota_wall_detect "$FM_WIN_HARNESS" "$tail40" >/dev/null \
+          && quota_wall_handle "$w" "$task" "$FM_WIN_HARNESS" "$tail40"; then
+          clear_pause_tracking "$key"
+          printf '%s' "$h" > "$sf"
+          continue
+        fi
         if [ "$kind" = secondmate ]; then
           case "$(pause_state_class "$w" "$task")" in
             paused) handle_paused_stale "$w" "$task" "$h" ;;
