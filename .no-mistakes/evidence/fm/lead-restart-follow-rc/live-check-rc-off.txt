@@ -1,0 +1,11 @@
+# plain 'claude' primary, Remote Control never turned on
+$ jq '{pid,sessionId,bridgeSessionId}' sessions/40452.json
+{"pid":40452,"sessionId":"baf426de-65e8-487d-b131-34be3c5b23bb","bridgeSessionId":null}
+$ bin/fm-lead-restart.sh --check --to seat-max --refresh
+lead seat: seat-max
+destination seat: seat-max (/Users/max/.claude-seats/seat-max)
+session resumed: baf426de-65e8-487d-b131-34be3c5b23bb
+terminal: tmux %0
+remote control: off in this session, so the replacement is not given it
+replacement command: FM_AMBIENT_CLAUDE_CONFIG_DIR=/Users/max/.claude-seats/seat-max CLAUDE_CONFIG_DIR=/Users/max/.claude-seats/seat-max env -u CLAUDE_CODE_CHILD_SESSION CLAUDE_CODE_FORCE_SESSION_PERSISTENCE=1 claude --resume baf426de-65e8-487d-b131-34be3c5b23bb
+exit=0

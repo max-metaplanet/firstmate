@@ -1,0 +1,10 @@
+$ cat $CLAUDE_CONFIG_DIR/sessions/67656.json   # real claude --remote-control primary in the lab
+{"pid":67656,"sessionId":"d16b0670-7139-4e05-bb0e-696645aecedb","bridgeSessionId":"session_01KbuDwfgVPMYhjZFfgqpSis"}
+$ TMUX=<fm-lab socket> FM_HOME=$LAB bin/fm-lead-restart.sh --check --to seat-max --refresh
+lead seat: seat-max
+destination seat: seat-max (/Users/max/.claude-seats/seat-max)
+session resumed: d16b0670-7139-4e05-bb0e-696645aecedb
+terminal: tmux %0
+remote control: on in this session, so the replacement is launched with it
+replacement command: FM_AMBIENT_CLAUDE_CONFIG_DIR=/Users/max/.claude-seats/seat-max CLAUDE_CONFIG_DIR=/Users/max/.claude-seats/seat-max env -u CLAUDE_CODE_CHILD_SESSION CLAUDE_CODE_FORCE_SESSION_PERSISTENCE=1 claude --remote-control --resume d16b0670-7139-4e05-bb0e-696645aecedb
+exit=0

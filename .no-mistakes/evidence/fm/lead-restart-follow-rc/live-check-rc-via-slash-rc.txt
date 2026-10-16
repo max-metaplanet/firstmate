@@ -1,0 +1,14 @@
+# same plain-launched primary after typing /rc (no --remote-control on its argv)
+error: invalid value '40452' for '--pager <PAGER>'
+  [possible values: auto, always, disable]
+
+For more information, try '--help'.
+{"pid":40452,"sessionId":"baf426de-65e8-487d-b131-34be3c5b23bb","bridgeSessionId":"session_01AtKFXB93q36m3X3QFjBB4R"}
+$ bin/fm-lead-restart.sh --check --to seat-max --refresh
+lead seat: seat-max
+destination seat: seat-max (/Users/max/.claude-seats/seat-max)
+session resumed: baf426de-65e8-487d-b131-34be3c5b23bb
+terminal: tmux %0
+remote control: on in this session, so the replacement is launched with it
+replacement command: FM_AMBIENT_CLAUDE_CONFIG_DIR=/Users/max/.claude-seats/seat-max CLAUDE_CONFIG_DIR=/Users/max/.claude-seats/seat-max env -u CLAUDE_CODE_CHILD_SESSION CLAUDE_CODE_FORCE_SESSION_PERSISTENCE=1 claude --remote-control --resume baf426de-65e8-487d-b131-34be3c5b23bb
+exit=0

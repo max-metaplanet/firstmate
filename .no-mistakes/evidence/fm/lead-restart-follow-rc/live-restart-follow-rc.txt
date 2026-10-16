@@ -1,0 +1,38 @@
+# BEFORE: plain-launched lead (argv: claude), Remote Control turned on afterwards with /rc
+{"pid":14127,"sessionId":"3f5f635e-4c60-4e95-9ead-1dcba1a1d92f","bridgeSessionId":"session_01QU4eTQAKX5DFuTR67RTTZv"}
+
+# $ (in the lead) bin/fm-lead-restart.sh --to seat-max --persisted --refresh
+# plan recorded by the restart (state/.lead-restart):
+session=3f5f635e-4c60-4e95-9ead-1dcba1a1d92f
+command=FM_AMBIENT_CLAUDE_CONFIG_DIR=/Users/max/.claude-seats/seat-max CLAUDE_CONFIG_DIR=/Users/max/.claude-seats/seat-max env -u CLAUDE_CODE_CHILD_SESSION CLAUDE_CODE_FORCE_SESSION_PERSISTENCE=1 claude --remote-control --resume 3f5f635e-4c60-4e95-9ead-1dcba1a1d92f
+rc_wait=60
+follow_rc=on
+
+# AFTER: successor process and its session record
+12282 claude --remote-control --resume 3f5f635e-4c60-4e95-9ead-1dcba1a1d92f
+{"pid":12282,"sessionId":"3f5f635e-4c60-4e95-9ead-1dcba1a1d92f","bridgeSessionId":"session_01QU4eTQAKX5DFuTR67RTTZv"}
+state/.lock: 12282
+
+# state/.lead-restart.result
+state=done
+at=1792167778
+detail=the firstmate session restarted in place on Claude seat seat-max in the same terminal, resuming the same session; Remote Control was on before and is on again
+command=FM_AMBIENT_CLAUDE_CONFIG_DIR=/Users/max/.claude-seats/seat-max CLAUDE_CONFIG_DIR=/Users/max/.claude-seats/seat-max env -u CLAUDE_CODE_CHILD_SESSION CLAUDE_CODE_FORCE_SESSION_PERSISTENCE=1 claude --remote-control --resume 3f5f635e-4c60-4e95-9ead-1dcba1a1d92f
+launch_file=/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.g2TsdY/state/.lead-restart.launch
+
+# wake queue entries added by the restart (expected none on success):
+< 1792167524	1	check	lead-restart	check: lead-restart: the previous firstmate session ended but its replacement could not be started in that terminal; the exact command to run there is in /var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.g2TsdY/state/.lead-restart.result
+
+# successor pane (tmux capture-pane)
+⏺ Captain, this new session is up on seat seat-max. The switch went through cleanly and Remote Control is back on. There are no notices waiting and nothing is under way.
+  The home is unchanged: there's no backlog, no projects and no second mates. The same five helper tools are still missing (gh-axi, tasks-axi, quota-axi, chrome-devtools-axi, lavish-axi). If you want
+  them:
+  ! npm install -g gh-axi chrome-devtools-axi tasks-axi quota-axi lavish-axi
+  What would you like to work on?
+✻ Cogitated for 15s · done 12:23 PM
+seat-max 5h 66% · 7d 47% (5d 4h)  │  others tightest codex default 0% (2m old, stale)                                                                                                               [-]
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ 
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  Opus 5.5 | ~/./w/6/01M52M3FFWJJ0Q3VQJ7S8MSNF0 [HEAD ✓] | 🔴48.6¢ 211.1s | ⚙️26 | ⚡100% | P09=E12=U16=J01:23:11
+  -- INSERT -- ⏵⏵ auto mode on (shift+tab to cycle) · ← for agents
