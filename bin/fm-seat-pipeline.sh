@@ -18,6 +18,9 @@
 # --destination lets tests and a staged install stay entirely in scratch space.
 #
 # launch ignores inherited Firstmate path overrides and the worker's profile.
+# When the launching daemon's PATH carries no quota-axi, the extra-usage gate
+# reads it through the directory the live lead recorded beside its lock, so a
+# tool only a login shell can find does not turn every launch into a hold.
 # It resolves the bound home's active seat fresh, validates a managed-profile
 # NM_CLAUDE_CONFIG_DIR override, and refuses excluded/resting/missing seats.
 # On the default seat it uses the lead's recorded ambient profile; while none is
@@ -82,9 +85,25 @@ cmd_install() {
   printf 'pipeline wrapper installed: %s\n' "$destination"
 }
 
+# quota_tool_path <state>
+# The directory this launch must add to PATH before it can read quota, or 1
+# when it needs none and when none is known. A daemon starts this wrapper with
+# the daemon's own PATH, which need not carry quota-axi at all; the gate would
+# then read no quota and hold every launch as unreadable while the same seat
+# reads fine from a shell. The live lead records the directory its own PATH
+# finds the tool in, and that record is checked here rather than trusted.
+quota_tool_path() {
+  local state=$1 dir
+  ! command -v quota-axi >/dev/null 2>&1 || return 1
+  dir=$(fm_session_lock_runtime_field "$state" quotabin) || return 1
+  [ -n "$dir" ] && [ -x "$dir/quota-axi" ] || return 1
+  printf '%s\n' "$dir"
+}
+
 cmd_launch() {
   [ $# -ge 4 ] && [ "$1" = --default-profile ] || usage
   local default_profile=$2 native=$4 selection name profile reason record pid started actual
+  local quota_path='' decision
   FM_HOME=$3
   shift 4
   case "$FM_HOME:$native" in /*:/*) ;; *) die 'home and native Claude must be absolute paths' ;; esac
@@ -102,7 +121,12 @@ cmd_launch() {
     selection=$(printf '%s' "$selection" | jq -c --arg p "$profile" '.profile = $p')
     printf "pipeline Claude: warning: the default seat's profile is not recorded for this home's lead; using the wrapper's installed default profile %s. Restarting the lead records it\n" "${profile:-(ambient default login)}" >&2
   fi
-  if ! reason=$(fm_seat_dispatch_reason "$(fm_seat_dispatch_decision "$profile")" "pipeline seat $name" "pipeline agent"); then
+  quota_path=$(quota_tool_path "$STATE") || quota_path=''
+  decision=$(
+    [ -z "$quota_path" ] || PATH="$quota_path:$PATH"
+    fm_seat_dispatch_decision "$profile"
+  )
+  if ! reason=$(fm_seat_dispatch_reason "$decision" "pipeline seat $name" "pipeline agent"); then
     die "HELD pipeline-agent launch on seat $name: $reason"
   fi
   case "$reason" in

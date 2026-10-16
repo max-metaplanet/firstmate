@@ -427,6 +427,34 @@ test_anchor_pid_is_the_model_loop_process_only_for_a_trusted_id() {
   pass "session-lock: a trusted id anchors the lock on the model-loop process, anything else on the outermost pid"
 }
 
+test_the_lock_owner_records_the_physical_directory_of_its_quota_tool() {
+  local dir install real shim got
+  dir="$TMP_ROOT/quota-tool-dir"
+  install="$dir/node-install"
+  mkdir -p "$install/bin"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$install/bin/quota-axi"
+  chmod +x "$install/bin/quota-axi"
+  real=$(CDPATH='' cd -- "$install/bin" && pwd -P)
+  # A per-shell version manager reaches the same installation through a
+  # directory that is only a symlink and disappears with the shell that made it.
+  ln -s "$install" "$dir/shell-shim"
+  shim="$dir/shell-shim/bin"
+
+  got=$(PATH="$shim:/usr/bin:/bin" bash -c '. "$0"; fm_session_lock_quota_tool_dir' "$LIB") \
+    || fail "a quota tool on this session's PATH was recorded as none at all"
+  [ "$got" != "$shim" ] || fail "the per-shell shim directory was recorded, and it does not outlive this shell"
+  [ "$got" = "$real" ] || fail "recorded '$got', expected the physical installation directory $real"
+
+  chmod 600 "$install/bin/quota-axi"
+  if PATH="$shim:/usr/bin:/bin" bash -c '. "$0"; fm_session_lock_quota_tool_dir' "$LIB" >/dev/null 2>&1; then
+    fail "a directory whose quota-axi cannot be executed was recorded as usable"
+  fi
+  if PATH="/usr/bin:/bin" bash -c '. "$0"; fm_session_lock_quota_tool_dir' "$LIB" >/dev/null 2>&1; then
+    fail "a session that cannot find quota-axi itself must record no directory"
+  fi
+  pass "session-lock: the lock owner records the physical directory its own PATH finds quota-axi in"
+}
+
 # --- end-to-end layer: the real Stop auto-arm in real process trees ----------
 
 install_autoarm_scripts() {
@@ -1107,6 +1135,7 @@ test_harness_beyond_a_gap_never_owns_the_lock
 test_competing_version_named_session_is_seen_as_live
 test_same_session_id_owns_a_recycled_background_chain
 test_anchor_pid_is_the_model_loop_process_only_for_a_trusted_id
+test_the_lock_owner_records_the_physical_directory_of_its_quota_tool
 test_e2e_version_named_session_claims_the_home
 test_e2e_daemon_parented_session_claims_the_home
 test_e2e_daemon_parented_version_named_session_keeps_its_lock

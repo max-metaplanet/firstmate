@@ -169,6 +169,23 @@ fm_quota_json_valid() {
   ' >/dev/null 2>&1
 }
 
+# fm_quota_window_label <window-id>
+# The words every firstmate surface uses for one quota window. A seat's
+# headroom is never shown as a bare percentage, because a reader cannot tell a
+# five-hour dip from a spent week - the exact confusion that moved the lead
+# between two seats on 2026-10-15/16 - so the window is named beside the
+# figure wherever one is printed. An id this does not know is printed as it
+# came, which is still a named window rather than a bare number.
+fm_quota_window_label() {
+  case "${1-}" in
+    five_hour | session) printf '5-hour\n' ;;
+    seven_day | weekly)  printf 'week\n' ;;
+    extra_usage)         printf 'paid extra usage\n' ;;
+    '')                  printf 'account\n' ;;
+    *)                   printf '%s\n' "$1" ;;
+  esac
+}
+
 fm_quota_single_provider_table() {
   printf '%s\n' \
     'claude claude' \

@@ -491,7 +491,7 @@ test_the_lead_trigger_fires_once_per_seat_and_hands_over_the_gate() {
   run_home "$SEAT" threshold 15 >/dev/null
   out=$(run_home "$SEAT" auto)
   case "$out" in
-    *"firstmate itself is at 5% left on alpha and moves to beta now"*) ;;
+    *"firstmate itself is on alpha at 5% left across its account windows and moves to beta now"*) ;;
     *) fail "the lead's own crossing was not reported: $out" ;;
   esac
   case "$out" in

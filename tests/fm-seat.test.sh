@@ -191,7 +191,7 @@ test_codex_rotation_skips_aliases_and_uses_native_account_quota() {
   out=$(run_seat "$HOME_DIR" "$FAKEBIN" --provider codex switch --next)
   expect_code 0 "$?" "Codex rotation must find the independent eligible store: $out"
   assert_contains "$out" 'shares the active credential store' 'an auth alias is not another account'
-  assert_contains "$out" '15% left is not above the 20%' 'another schema-6 account cannot supply this seat headroom'
+  assert_contains "$out" '15% left across its account windows is not above the 20%' 'another schema-6 account cannot supply this seat headroom'
   assert_grep d "$HOME_DIR/config/codex-seat" 'rotation must select genuine native-account headroom'
   printf 'b\n' > "$HOME_DIR/config/codex-seat-auto-exclude"
   out=$(run_seat "$HOME_DIR" "$FAKEBIN" --provider codex switch --next)
@@ -1387,7 +1387,7 @@ test_the_watch_never_switches_onto_an_excluded_seat() {
     "$SEATS_DIR/work" "$SEATS_DIR/personal" "$SEATS_DIR/spare" > "$SPEC_DIR/remaining_map"
 
   out=$(run_seat "$HOME_DIR" "$FAKEBIN" auto)
-  assert_contains "$out" "switched from work at 5% left to spare" \
+  assert_contains "$out" "switched from work at 5% left across its account windows to spare" \
     "the armed watch must switch onto the seat that is still in rotation"
   assert_not_contains "$out" "to personal" "the armed watch must never land on an excluded seat"
   assert_grep "spare" "$HOME_DIR/config/claude-seat" "the switch must land on the included seat"
@@ -1908,7 +1908,7 @@ test_a_switch_skips_a_seat_below_the_destination_minimum() {
   out=$(run_seat "$HOME_DIR" "$FAKEBIN" switch --next)
   expect_code 0 "$?" "a rotation with one qualifying seat must succeed: $out"
   assert_contains "$out" "-> zulu-roomy" "rotation must land on the seat with headroom, not the next one in list order"
-  assert_contains "$out" "seat beta-lean: skipped, 12% left is not above the 25% destination minimum" \
+  assert_contains "$out" "seat beta-lean: skipped, 12% left across its account windows is not above the 25% destination minimum" \
     "the skipped seat and its measured headroom must be reported"
   assert_grep "zulu-roomy" "$HOME_DIR/config/claude-seat" "the qualifying seat must be recorded"
   pass "a switch skips a logged-in seat below the destination minimum and lands on one above it"
@@ -2107,7 +2107,7 @@ test_the_watch_keeps_firing_across_crossings_and_never_twice_on_one() {
   printf '%s\t10\n%s\t80\n%s\t90\n' \
     "$SEATS_DIR/alpha" "$SEATS_DIR/beta" "$SEATS_DIR/gamma" > "$SPEC_DIR/remaining_map"
   out=$(run_seat "$HOME_DIR" "$FAKEBIN" auto)
-  assert_contains "$out" "switched from alpha at 10% left to beta" "the first crossing must switch and report it"
+  assert_contains "$out" "switched from alpha at 10% left across its account windows to beta" "the first crossing must switch and report it"
   assert_grep "beta" "$HOME_DIR/config/claude-seat" "the first crossing must record the new seat"
 
   # The same seat sitting below its trigger is one crossing, not many: the next
@@ -2120,7 +2120,7 @@ test_the_watch_keeps_firing_across_crossings_and_never_twice_on_one() {
   printf '%s\t10\n%s\t9\n%s\t90\n' \
     "$SEATS_DIR/alpha" "$SEATS_DIR/beta" "$SEATS_DIR/gamma" > "$SPEC_DIR/remaining_map"
   out=$(run_seat "$HOME_DIR" "$FAKEBIN" auto)
-  assert_contains "$out" "switched from beta at 9% left to gamma" \
+  assert_contains "$out" "switched from beta at 9% left across its account windows to gamma" \
     "the watch must keep watching and fire on the next seat's own crossing"
   assert_grep "gamma" "$HOME_DIR/config/claude-seat" "the second crossing must record the third seat"
   pass "the watch keeps running after a switch, fires once per crossing, and catches the next seat's own"
@@ -2199,7 +2199,7 @@ test_the_watch_switches_once_a_candidate_recovers_after_a_crossing_with_nowhere_
   # look again rather than stay silent until alpha itself recovers.
   printf '%s\t5\n%s\t100\n' "$SEATS_DIR/alpha" "$SEATS_DIR/beta" > "$SPEC_DIR/remaining_map"
   out=$(run_seat "$HOME_DIR" "$FAKEBIN" auto)
-  assert_contains "$out" "switched from alpha at 5% left to beta" \
+  assert_contains "$out" "switched from alpha at 5% left across its account windows to beta" \
     "a candidate that recovers after a crossing with nowhere to go must be switched to"
   assert_grep "beta" "$HOME_DIR/config/claude-seat" "the recovered candidate must become the active seat"
 
@@ -2425,12 +2425,17 @@ test_a_non_claude_spawn_is_never_held_by_the_claude_policy() {
 # week a whole session would overrun.
 
 # seat_windows <spec> <profile> <session-left> <session-resets> <week-left> <week-resets>
+#              [<session-reserve> <week-reserve>]
 # Give one profile the two account-level windows the floor reads. Rows accumulate
 # until seat_windows_clear, and the first row for a profile is the one that wins.
+# The two optional reserve figures are that window's own
+# pace.reservePercentPoints, which is the spare the seat-choice policy ranks on;
+# a case that leaves them out reports no pace at all, as a quiet account does.
 seat_windows() {
-  local spec=$1
+  local spec=$1 row=''
   shift
-  printf '%s\t%s\t%s\t%s\t%s\n' "$@" >> "$spec/windows_map"
+  row=$(printf '%s\t' "$@")
+  printf '%s\n' "${row%$'\t'}" >> "$spec/windows_map"
 }
 
 seat_windows_clear() {
@@ -2640,8 +2645,8 @@ test_a_seat_at_or_below_the_floor_rests_and_rotation_skips_it() {
   floor_case floor-rests
   out=$(rest_beta)
   assert_contains "$out" "beta is resting" "a seat below the floor must be reported once"
-  assert_contains "$out" "2% left is at or below the 5% floor" \
-    "the line must name the figure and the floor it crossed"
+  assert_contains "$out" "2% left on its week window is at or below the 5% floor" \
+    "the line must name the figure, the window it came from, and the floor it crossed"
   assert_present "$HOME_DIR/config/claude-seat-resting" "resting must be recorded"
 
   # One crossing, one line: the same state must not wake firstmate again.
@@ -3994,15 +3999,19 @@ test_an_exhausted_session_window_is_no_headroom_however_full_the_week_is() {
     "the hold must name paid extra usage as what it is preventing"
   run_seat "$HOME_DIR" "$FAKEBIN" extra-usage off >/dev/null
 
-  # And the automatic switch must move new work to the seat that has headroom
-  # in every window rather than leaving it on the spent one.
+  # The automatic switch must not rotate the active seat onto beta, whose WEEK
+  # is thinner than alpha's: a spent session window is not a spent week, so the
+  # anchor rule still applies. A new worker reaches the seat with session room
+  # at launch instead (bin/fm-spawn.sh, covered by the spawn cases below).
   out=$(run_seat "$HOME_DIR" "$FAKEBIN" auto)
   expect_code 0 "$?" "the pass must act rather than fail: $out"
-  assert_contains "$out" "switched from alpha" "the pass must move off the spent seat"
-  assert_grep beta "$HOME_DIR/config/claude-seat" "new work must land on the seat with headroom"
+  assert_contains "$out" "no seat has enough headroom to switch to" \
+    "a spent session window on a full week must not rotate onto a thinner week"
+  assert_grep alpha "$HOME_DIR/config/claude-seat" "the active seat must stay on the fuller week"
 
   # A deliberate switch back onto the spent seat is refused for the same reason,
   # with --force still the explicit override.
+  printf 'beta\n' > "$HOME_DIR/config/claude-seat"
   out=$(run_seat "$HOME_DIR" "$FAKEBIN" switch alpha)
   expect_code 1 "$?" "a spent session window must refuse a destination too: $out"
   assert_contains "$out" "--force" "the refusal must name the deliberate override"
@@ -4570,7 +4579,393 @@ test_worker_destination_names_when_an_empty_seat_comes_back() {
   pass "with every seat empty the refusal names each seat and when it comes back"
 }
 
+
+# --- the seat-choice policy ---------------------------------------------------
+# Two separate questions, never one number: the WEEKLY window decides which seat
+# carries work and the five-hour window decides only when. These cases pin both
+# halves against the readings that produced the 2026-10-15/16 ping-pong, and
+# each one drives the real commands rather than inspecting any source.
+
+test_a_crossing_never_moves_onto_a_seat_with_no_more_headroom() {
+  local rec out
+  rec=$(make_seat_case policy-no-better)
+  read_seat_case "$rec"
+  mkdir -p "$SEATS_DIR/alpha" "$SEATS_DIR/beta"
+  seat_logged_in "$SPEC_DIR" "$SEATS_DIR/alpha" "$SEATS_DIR/beta"
+  printf 'alpha\n' > "$HOME_DIR/config/claude-seat"
+  # Both seats below the trigger and both well above the destination minimum,
+  # with the same spare: each one is a valid destination for the other under
+  # the absolute floor alone, which is exactly how the lead crossed back and
+  # forth between two spent seats.
+  seat_windows "$SPEC_DIR" "$SEATS_DIR/alpha" 90 '2026-10-16T05:40:00Z' 18 '2026-10-21T06:00:00Z' 40 -25
+  seat_windows "$SPEC_DIR" "$SEATS_DIR/beta" 90 '2026-10-16T05:40:00Z' 18 '2026-10-21T06:00:00Z' 40 -25
+  run_seat "$HOME_DIR" "$FAKEBIN" threshold 20 >/dev/null
+  run_seat "$HOME_DIR" "$FAKEBIN" destination-min 10 >/dev/null
+
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" auto)
+  assert_contains "$out" "no seat has enough headroom to switch to" \
+    "a crossing with no better seat must report the stay-put notice, not switch"
+  assert_grep alpha "$HOME_DIR/config/claude-seat" \
+    "a crossing with no better seat must leave the active seat exactly where it was"
+
+  # Once per episode, not once per poll: the existing dedup is what the notice
+  # relies on, and it only becomes reachable now that no-better seats are
+  # refused.
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" auto)
+  [ -z "$out" ] || fail "the stay-put notice fired twice for one crossing: $out"
+
+  # The other leg, with the seats swapped by hand. Before this gate the back
+  # leg fired too, which is the ping-pong itself.
+  printf 'beta\n' > "$HOME_DIR/config/claude-seat"
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" auto)
+  assert_contains "$out" "no seat has enough headroom to switch to" \
+    "the return leg must refuse for the same reason rather than switching back"
+  assert_grep beta "$HOME_DIR/config/claude-seat" "the return leg must not move the seat either"
+  pass "a crossing with no seat better than the one it is on stays put and says so once"
+}
+
+test_a_crossing_still_moves_onto_a_seat_that_is_genuinely_better() {
+  local rec out
+  rec=$(make_seat_case policy-genuine-move)
+  read_seat_case "$rec"
+  mkdir -p "$SEATS_DIR/alpha" "$SEATS_DIR/beta"
+  seat_logged_in "$SPEC_DIR" "$SEATS_DIR/alpha" "$SEATS_DIR/beta"
+  printf 'alpha\n' > "$HOME_DIR/config/claude-seat"
+  # Both under the trigger, as before, but beta really does have more spare.
+  # The gate must block moves that do not improve headroom, not every move.
+  seat_windows "$SPEC_DIR" "$SEATS_DIR/alpha" 90 '2026-10-16T05:40:00Z' 10 '2026-10-21T06:00:00Z' 40 -30
+  seat_windows "$SPEC_DIR" "$SEATS_DIR/beta" 90 '2026-10-16T05:40:00Z' 15 '2026-10-21T06:00:00Z' 40 -20
+  run_seat "$HOME_DIR" "$FAKEBIN" threshold 20 >/dev/null
+
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" auto)
+  assert_contains "$out" "switched from alpha" "a genuine improvement must still switch"
+  assert_contains "$out" "to beta" "the switch must land on the seat with more weekly spare"
+  assert_grep beta "$HOME_DIR/config/claude-seat" "the better seat must become the active one"
+  pass "a crossing still moves when another seat genuinely has more weekly spare"
+}
+
+test_the_destination_minimum_still_applies_on_top_of_the_anchor_rule() {
+  local rec out
+  rec=$(make_seat_case policy-minimum-additive)
+  read_seat_case "$rec"
+  mkdir -p "$SEATS_DIR/alpha" "$SEATS_DIR/beta"
+  seat_logged_in "$SPEC_DIR" "$SEATS_DIR/alpha" "$SEATS_DIR/beta"
+  printf 'alpha\n' > "$HOME_DIR/config/claude-seat"
+  # beta has MORE spare than alpha, so the anchor rule alone would take it, and
+  # it is still below the absolute floor. The two rules are additive.
+  seat_windows "$SPEC_DIR" "$SEATS_DIR/alpha" 90 '2026-10-16T05:40:00Z' 5 '2026-10-21T06:00:00Z' 40 -40
+  seat_windows "$SPEC_DIR" "$SEATS_DIR/beta" 90 '2026-10-16T05:40:00Z' 8 '2026-10-21T06:00:00Z' 40 -30
+  run_seat "$HOME_DIR" "$FAKEBIN" destination-min 10 >/dev/null
+
+  # Driven through a path that applies BOTH rules and prints each seat's own
+  # reason, so the refusal can be read against the rule that produced it.
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" worker-destination --from alpha)
+  expect_code 1 "$?" "a candidate below the absolute minimum must still be refused: $out"
+  assert_contains "$out" "8% left across its account windows is not above the 10% destination minimum" \
+    "the refusal must name the absolute minimum, not the anchor comparison this candidate would have passed"
+  pass "the destination minimum still refuses a candidate the anchor rule alone would accept"
+}
+
+test_the_lead_move_also_requires_a_seat_with_more_headroom() {
+  local rec out
+  rec=$(make_seat_case policy-lead-anchor)
+  read_seat_case "$rec"
+  mkdir -p "$SEATS_DIR/alpha" "$SEATS_DIR/beta"
+  seat_logged_in "$SPEC_DIR" "$SEATS_DIR/alpha" "$SEATS_DIR/beta"
+  printf 'beta\n' > "$HOME_DIR/config/claude-seat"
+  # The lead runs on alpha while new workers already go to beta, which is how
+  # the two sides of the ping-pong were on different seats at the same time.
+  printf '4242424\n' > "$HOME_DIR/state/.lock"
+  { printf 'pid=4242424\n'; printf 'profile=%s\n' "$SEATS_DIR/alpha"; } > "$HOME_DIR/state/.lock-runtime"
+  seat_windows "$SPEC_DIR" "$SEATS_DIR/alpha" 90 '2026-10-16T05:40:00Z' 19 '2026-10-21T06:00:00Z' 40 -24
+  seat_windows "$SPEC_DIR" "$SEATS_DIR/beta" 90 '2026-10-16T05:40:00Z' 18 '2026-10-21T06:00:00Z' 40 -25
+  run_seat "$HOME_DIR" "$FAKEBIN" threshold 20 >/dev/null
+
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" auto)
+  assert_contains "$out" "firstmate itself is on alpha" "the lead's own crossing must be reported"
+  assert_contains "$out" "no seat qualifies as a destination, so it stays where it is" \
+    "the lead must stay put rather than move onto a seat with no more headroom"
+  assert_not_contains "$out" "lead-restart --to" \
+    "no move instruction may be issued for a same-or-worse seat"
+  pass "the lead's own move refuses a destination with no more weekly spare than the seat it is on"
+}
+
+test_an_unreadable_anchor_leaves_the_absolute_rules_in_charge() {
+  local rec out
+  rec=$(make_seat_case policy-anchor-unreadable)
+  read_seat_case "$rec"
+  mkdir -p "$SEATS_DIR/alpha" "$SEATS_DIR/beta"
+  seat_logged_in "$SPEC_DIR" "$SEATS_DIR/alpha" "$SEATS_DIR/beta"
+  printf 'alpha\n' > "$HOME_DIR/config/claude-seat"
+  # The anchor's own headroom cannot be read, so there is no comparison to
+  # make. Refusing every candidate for a question that cannot be asked would
+  # strand the home; today's absolute-only behavior is what must remain.
+  # The lead's own move is the path that asks the comparison, so it is the one
+  # driven here: the active seat's crossing is read from the lead's profile,
+  # which is the same unreadable seat.
+  printf '4242424\n' > "$HOME_DIR/state/.lock"
+  { printf 'pid=4242424\n'; printf 'profile=%s\n' "$SEATS_DIR/alpha"; } > "$HOME_DIR/state/.lock-runtime"
+  seat_remaining "$SPEC_DIR" "$SEATS_DIR/alpha" 5
+  seat_remaining "$SPEC_DIR" "$SEATS_DIR/beta" 40
+  run_seat "$HOME_DIR" "$FAKEBIN" threshold 20 >/dev/null
+
+  # alpha's crossing is readable, so the move fires; its weekly SPARE is what
+  # cannot be read, because this report carries no windows at all. beta is in
+  # the same position, so the two are compared on the account figure they both
+  # do report, and 40 is more than 5.
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" auto)
+  assert_contains "$out" "to beta" "an eligible seat must still be chosen with no weekly window reported"
+
+  # Now the anchor's quota gives no verdict at all. There is no comparison to
+  # make, and refusing every candidate for a question that cannot be asked
+  # would strand the home, so the absolute rules are the whole answer.
+  seat_quota_unreadable "$SPEC_DIR" "$SEATS_DIR/beta"
+  printf 'beta\n' > "$HOME_DIR/config/claude-seat"
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" worker-destination --from beta)
+  expect_code 0 "$?" "an unreadable anchor must not block an otherwise eligible seat: $out"
+  assert_equals alpha "$out" "the eligible seat must still be offered"
+  pass "an anchor whose own headroom cannot be read falls back to the absolute rules alone"
+}
+
+test_a_walled_worker_moves_off_an_empty_seat_but_not_onto_an_equal_one() {
+  local rec out
+  rec=$(make_seat_case policy-worker-destination)
+  read_seat_case "$rec"
+  mkdir -p "$SEATS_DIR/alpha" "$SEATS_DIR/beta"
+  seat_logged_in "$SPEC_DIR" "$SEATS_DIR/alpha" "$SEATS_DIR/beta"
+  printf 'alpha\n' > "$HOME_DIR/config/claude-seat"
+  # The worker's own seat still reads headroom, and beta has no more of it.
+  # Moving the work there would buy nothing.
+  seat_windows "$SPEC_DIR" "$SEATS_DIR/alpha" 90 '2026-10-16T05:40:00Z' 18 '2026-10-21T06:00:00Z' 40 -25
+  seat_windows "$SPEC_DIR" "$SEATS_DIR/beta" 90 '2026-10-16T05:40:00Z' 18 '2026-10-21T06:00:00Z' 40 -25
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" worker-destination --from alpha)
+  expect_code 1 "$?" "a seat with no more headroom must not take over a worker: $out"
+  assert_contains "$out" "is not more than" "the refusal must name the comparison it failed"
+
+  # The common case: the seat that walled the worker reads empty, so staying is
+  # not an option and any seat with real headroom qualifies as it always did.
+  seat_windows_clear "$SPEC_DIR"
+  seat_windows "$SPEC_DIR" "$SEATS_DIR/alpha" 0 '2026-10-16T05:40:00Z' 0 '2026-10-21T06:00:00Z' -60 -60
+  seat_windows "$SPEC_DIR" "$SEATS_DIR/beta" 90 '2026-10-16T05:40:00Z' 18 '2026-10-21T06:00:00Z' 40 -25
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" worker-destination --from alpha)
+  expect_code 0 "$?" "an empty seat is one the work cannot stay on, so the move must still be offered: $out"
+  assert_equals beta "$out" "the seat with real headroom must take the work"
+  pass "a walled worker is never moved onto an equally spent seat, and still moves off an empty one"
+}
+
+test_a_five_hour_dip_alone_never_moves_a_seat_or_the_lead() {
+  local rec out
+  rec=$(make_seat_case policy-five-hour-dip)
+  read_seat_case "$rec"
+  mkdir -p "$SEATS_DIR/seat-max" "$SEATS_DIR/seat-max-gmail"
+  seat_logged_in "$SPEC_DIR" "$SEATS_DIR/seat-max" "$SEATS_DIR/seat-max-gmail"
+  printf 'seat-max\n' > "$HOME_DIR/config/claude-seat"
+  printf '4242424\n' > "$HOME_DIR/state/.lock"
+  { printf 'pid=4242424\n'; printf 'profile=%s\n' "$SEATS_DIR/seat-max"; } > "$HOME_DIR/state/.lock-runtime"
+  # The reading that started the incident: seat-max looked like "18%" because
+  # of its five-hour window while it held 65% of its week.
+  seat_windows "$SPEC_DIR" "$SEATS_DIR/seat-max" 18 '2026-10-16T05:40:00Z' 65 '2026-10-21T06:00:00Z' -30 22
+  seat_windows "$SPEC_DIR" "$SEATS_DIR/seat-max-gmail" 90 '2026-10-16T05:40:00Z' 18 '2026-10-21T06:00:00Z' 40 -25
+  run_seat "$HOME_DIR" "$FAKEBIN" threshold 20 >/dev/null
+
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" auto)
+  [ -z "$out" ] || fail "a five-hour dip on a healthy week fired a move on its own: $out"
+  assert_grep seat-max "$HOME_DIR/config/claude-seat" \
+    "a five-hour dip must leave the active seat where it is"
+
+  # The same seat's WEEK crossing is what fires, and it names both windows so
+  # the figure can never be read as the wrong one again.
+  seat_windows_clear "$SPEC_DIR"
+  seat_windows "$SPEC_DIR" "$SEATS_DIR/seat-max" 18 '2026-10-16T05:40:00Z' 15 '2026-10-21T06:00:00Z' -30 -28
+  seat_windows "$SPEC_DIR" "$SEATS_DIR/seat-max-gmail" 90 '2026-10-16T05:40:00Z' 60 '2026-10-21T06:00:00Z' 40 25
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" auto)
+  assert_contains "$out" "switched from seat-max at week 15% left (resets 2026-10-21 06:00Z), 5-hour 18% left (resets 2026-10-16 05:40Z) to seat-max-gmail" \
+    "the wake must name both windows and their resets, never a bare percentage"
+  pass "a five-hour dip alone moves nothing, and a weekly crossing names every window it reports"
+}
+
+test_the_policy_ranks_the_2026_10_16_seats_without_bouncing() {
+  local rec out name week week_reset five five_reset week_spare five_spare
+  rec=$(make_seat_case policy-table)
+  read_seat_case "$rec"
+  mkdir -p "$SEATS_DIR/seat-max" "$SEATS_DIR/seat-max-gmail" "$SEATS_DIR/seat-max2"
+  seat_logged_in "$SPEC_DIR" "$SEATS_DIR/seat-max" "$SEATS_DIR/seat-max-gmail" "$SEATS_DIR/seat-max2"
+  run_seat "$HOME_DIR" "$FAKEBIN" threshold 20 >/dev/null
+
+  # The real 03:12Z readings, as one table: seat name, five-hour left and its
+  # reset, weekly left and its reset, then each window's own spare. seat-max2
+  # is spent now and resets to a whole week at 11:00Z, which is the
+  # use-it-or-lose-it seat the policy prefers once it is back.
+  while IFS='|' read -r name five five_reset week week_reset five_spare week_spare; do
+    [ -n "$name" ] || continue
+    seat_windows "$SPEC_DIR" "$SEATS_DIR/$name" \
+      "$five" "$five_reset" "$week" "$week_reset" "$five_spare" "$week_spare"
+  done <<'TABLE'
+seat-max|11|2026-10-16T05:40:00Z|65|2026-10-21T06:00:00Z|-30|22
+seat-max-gmail|90|2026-10-16T05:40:00Z|18|2026-10-21T06:00:00Z|40|-25
+seat-max2|100|2026-10-16T05:40:00Z|0|2026-10-16T11:00:00Z|60|-60
+TABLE
+
+  # Work carries on where it is: seat-max's WEEK is the healthiest of the three,
+  # so its five-hour dip is a wait rather than a reason to change account.
+  printf 'seat-max\n' > "$HOME_DIR/config/claude-seat"
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" auto)
+  [ -z "$out" ] || fail "the healthiest week fired a move on a five-hour dip: $out"
+  assert_grep seat-max "$HOME_DIR/config/claude-seat" "work must stay on the seat with the most weekly spare"
+
+  # From the reserve seat, the move goes to seat-max and nowhere else:
+  # seat-max-gmail is the seat with the least spare, so it is what is kept back.
+  printf 'seat-max-gmail\n' > "$HOME_DIR/config/claude-seat"
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" auto)
+  assert_contains "$out" "to seat-max" "the reserve seat must hand work to the seat with the most weekly spare"
+  assert_grep seat-max "$HOME_DIR/config/claude-seat" "the chosen seat must be recorded"
+
+  # And it stops there: seat-max's own poll finds nothing better, so the pair
+  # cannot flip back and forth the way they did on 2026-10-15/16.
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" auto)
+  [ -z "$out" ] || fail "the seat just switched to fired a move of its own: $out"
+
+  # seat-max2's week resets to a whole week, which makes it the seat with the
+  # most spare and therefore the next destination once seat-max crosses.
+  seat_windows_clear "$SPEC_DIR"
+  seat_windows "$SPEC_DIR" "$SEATS_DIR/seat-max" 90 '2026-10-16T10:40:00Z' 12 '2026-10-21T06:00:00Z' 40 -30
+  seat_windows "$SPEC_DIR" "$SEATS_DIR/seat-max-gmail" 90 '2026-10-16T10:40:00Z' 18 '2026-10-21T06:00:00Z' 40 -25
+  seat_windows "$SPEC_DIR" "$SEATS_DIR/seat-max2" 100 '2026-10-16T16:00:00Z' 100 '2026-10-23T11:00:00Z' 60 95
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" auto)
+  assert_contains "$out" "to seat-max2" "the seat whose week has just reset must take the work"
+  assert_grep seat-max2 "$HOME_DIR/config/claude-seat" "the reset seat must become the active one"
+  pass "the 2026-10-16 readings route work by weekly spare, wait out a five-hour dip, and never bounce"
+}
+
+test_a_resting_lead_seat_never_moves_onto_a_seat_with_less_weekly_spare() {
+  local rec out
+  rec=$(make_seat_case policy-resting-anchor)
+  read_seat_case "$rec"
+  mkdir -p "$SEATS_DIR/alpha" "$SEATS_DIR/beta"
+  seat_logged_in "$SPEC_DIR" "$SEATS_DIR/alpha" "$SEATS_DIR/beta"
+  printf 'alpha\n' > "$HOME_DIR/config/claude-seat"
+  printf '4242424\n' > "$HOME_DIR/state/.lock"
+  { printf 'pid=4242424\n'; printf 'profile=%s\n' "$SEATS_DIR/alpha"; } > "$HOME_DIR/state/.lock-runtime"
+  run_seat "$HOME_DIR" "$FAKEBIN" floor 5 >/dev/null
+  run_seat "$HOME_DIR" "$FAKEBIN" threshold 20 >/dev/null
+  run_seat "$HOME_DIR" "$FAKEBIN" destination-min 10 >/dev/null
+
+  # alpha's five-hour window dips below the floor while its week is healthy,
+  # so the watch rests it and nothing crosses.
+  seat_windows "$SPEC_DIR" "$SEATS_DIR/alpha" 3 '2026-10-16T05:40:00Z' 60 '2026-10-21T06:00:00Z' -40 20
+  seat_windows "$SPEC_DIR" "$SEATS_DIR/beta" 90 '2026-10-16T05:40:00Z' 12 '2026-10-21T06:00:00Z' 40 -30
+  run_seat "$HOME_DIR" "$FAKEBIN" auto >/dev/null
+  assert_grep alpha "$HOME_DIR/config/claude-seat-resting" "precondition: alpha must be resting below the floor"
+
+  # Its week then crosses the trigger while it is still resting. beta clears the
+  # destination minimum but has LESS weekly spare, so moving the lead there is a
+  # move to a worse seat whatever alpha's resting record says.
+  seat_windows_clear "$SPEC_DIR"
+  seat_windows "$SPEC_DIR" "$SEATS_DIR/alpha" 3 '2026-10-16T05:40:00Z' 15 '2026-10-21T06:00:00Z' -40 -20
+  seat_windows "$SPEC_DIR" "$SEATS_DIR/beta" 90 '2026-10-16T05:40:00Z' 12 '2026-10-21T06:00:00Z' 40 -30
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" auto)
+  assert_grep alpha "$HOME_DIR/config/claude-seat-resting" "precondition: alpha must still be resting at the crossing"
+  assert_contains "$out" "no seat qualifies as a destination, so it stays where it is" \
+    "a resting lead seat must stay put rather than move onto less weekly spare"
+  assert_not_contains "$out" "lead-restart --to" \
+    "no move instruction may be issued for a seat with less weekly spare"
+  assert_grep alpha "$HOME_DIR/config/claude-seat" "the active seat must not rotate onto the worse seat either"
+  pass "a resting seat's crossing still refuses a destination with less weekly spare"
+}
+
+# spawn_session_case <name> <id>
+# A spawn home with two logged-in seats, seat-max active, a 20% switch trigger
+# and no quota floor, against the quota fake.
+spawn_session_case() {
+  local rec
+  rec=$(spawn_case "$1" "$2")
+  read_spawn_case "$rec"
+  make_quota_fake "$FAKEBIN" "$CASE_DIR/quota-spec"
+  mkdir -p "$SEATS_DIR/seat-max" "$SEATS_DIR/seat-max-gmail"
+  printf '%s\n' "$SEATS_DIR/seat-max" "$SEATS_DIR/seat-max-gmail" > "$CASE_DIR/quota-spec/oauth"
+  printf 'seat-max\n' > "$HOME_DIR/config/claude-seat"
+  printf '20\n' > "$HOME_DIR/config/claude-seat-threshold"
+}
+
+test_a_new_worker_launches_off_a_seat_with_no_five_hour_room() {
+  local id out launch
+  id=seat-session-route-1
+  spawn_session_case spawn-session-route "$id"
+  # The reviewer's case: a healthy week, a five-hour window nearly gone, and a
+  # second seat with session room and more weekly spare.
+  seat_windows "$CASE_DIR/quota-spec" "$SEATS_DIR/seat-max" 3 '2026-10-16T05:40:00Z' 65 '2026-10-21T06:00:00Z' -60 22
+  seat_windows "$CASE_DIR/quota-spec" "$SEATS_DIR/seat-max-gmail" 90 '2026-10-16T05:40:00Z' 80 '2026-10-21T06:00:00Z' 40 30
+
+  out=$(run_spawn_here "$HOME_DIR" "$WT_DIR" "$FAKEBIN" "$LAUNCH_LOG" "$id" "$PROJ_DIR" 2>&1)
+  expect_code 0 "$?" "a spawn with another seat holding five-hour room must start: $out"
+  launch=$(cat "$LAUNCH_LOG")
+  assert_contains "$launch" "CLAUDE_CONFIG_DIR='$SEATS_DIR/seat-max-gmail'" \
+    "the new worker must launch on the seat with five-hour room"
+  assert_grep "claude_seat=$SEATS_DIR/seat-max-gmail" "$HOME_DIR/state/$id.meta" \
+    "the task record must carry the seat it actually launched on"
+  assert_equals seat-max "$(cat "$HOME_DIR/config/claude-seat")" \
+    "routing one launch must not rotate the active seat"
+  assert_not_contains "$out" "lead-restart" "routing one launch must not move the lead"
+
+  # A five-hour window spent to nothing is routed the same way rather than held,
+  # because another seat can take the work now.
+  seat_windows_clear "$CASE_DIR/quota-spec"
+  seat_windows "$CASE_DIR/quota-spec" "$SEATS_DIR/seat-max" 0 '2026-10-16T05:40:00Z' 65 '2026-10-21T06:00:00Z' -60 22
+  seat_windows "$CASE_DIR/quota-spec" "$SEATS_DIR/seat-max-gmail" 90 '2026-10-16T05:40:00Z' 80 '2026-10-21T06:00:00Z' 40 30
+  fm_test_spawn_brief "$HOME_DIR" seat-session-route-2
+  git -C "$PROJ_DIR" worktree add --quiet -b wt-session-route-2 "$CASE_DIR/wt2"
+  out=$(run_spawn_here "$HOME_DIR" "$CASE_DIR/wt2" "$FAKEBIN" "$LAUNCH_LOG" seat-session-route-2 "$PROJ_DIR" 2>&1)
+  expect_code 0 "$?" "a spawn off a spent five-hour window must be routed, not held: $out"
+  assert_contains "$(cat "$LAUNCH_LOG")" "CLAUDE_CONFIG_DIR='$SEATS_DIR/seat-max-gmail'" \
+    "a spent five-hour window must route the launch to the seat with room"
+  assert_equals seat-max "$(cat "$HOME_DIR/config/claude-seat")" \
+    "routing off a spent five-hour window must not rotate the active seat"
+  pass "a new worker launches on a seat with five-hour room without rotating the active seat"
+}
+
+test_a_new_worker_is_held_when_no_seat_has_five_hour_room() {
+  local id out
+  id=seat-session-hold-1
+  spawn_session_case spawn-session-hold "$id"
+  seat_windows "$CASE_DIR/quota-spec" "$SEATS_DIR/seat-max" 3 '2026-10-16T05:40:00Z' 65 '2026-10-21T06:00:00Z' -60 22
+  seat_windows "$CASE_DIR/quota-spec" "$SEATS_DIR/seat-max-gmail" 10 '2026-10-16T04:00:00Z' 80 '2026-10-21T06:00:00Z' -50 30
+
+  out=$(run_spawn_here "$HOME_DIR" "$WT_DIR" "$FAKEBIN" "$LAUNCH_LOG" "$id" "$PROJ_DIR" 2>&1)
+  expect_code 1 "$?" "a spawn with no seat holding five-hour room must be held: $out"
+  assert_contains "$out" "the soonest 5-hour reset is seat-max-gmail at 2026-10-16 04:00Z" \
+    "the hold must name the soonest five-hour reset to wait for"
+  assert_contains "$out" "--ignore-seat-hold" "the hold must name the deliberate override"
+  assert_absent "$HOME_DIR/state/$id.meta" "a held spawn must create no task record"
+  [ ! -s "$LAUNCH_LOG" ] || fail "a held spawn must launch nothing: $(cat "$LAUNCH_LOG")"
+  assert_equals seat-max "$(cat "$HOME_DIR/config/claude-seat")" "a hold must not rotate the active seat"
+
+  # A seat whose five-hour window resets sooner but whose week is thinner than
+  # the active seat's can never take the launch, so its reset ends no hold and
+  # must not be the one named.
+  seat_windows_clear "$CASE_DIR/quota-spec"
+  seat_windows "$CASE_DIR/quota-spec" "$SEATS_DIR/seat-max" 3 '2026-10-16T05:40:00Z' 65 '2026-10-21T06:00:00Z' -60 22
+  seat_windows "$CASE_DIR/quota-spec" "$SEATS_DIR/seat-max-gmail" 10 '2026-10-16T04:00:00Z' 30 '2026-10-21T06:00:00Z' -50 5
+  out=$(run_spawn_here "$HOME_DIR" "$WT_DIR" "$FAKEBIN" "$LAUNCH_LOG" "$id" "$PROJ_DIR" 2>&1)
+  expect_code 1 "$?" "a spawn with no qualifying seat must still be held: $out"
+  assert_contains "$out" "the soonest 5-hour reset is seat-max at 2026-10-16 05:40Z" \
+    "the hold must name the reset that can end it, not a seat that could never qualify"
+  pass "a new worker is held, naming the soonest five-hour reset, when no seat has five-hour room"
+}
+
 echo "# all fm-seat tests passed"
+
+test_a_resting_lead_seat_never_moves_onto_a_seat_with_less_weekly_spare
+test_a_new_worker_launches_off_a_seat_with_no_five_hour_room
+test_a_new_worker_is_held_when_no_seat_has_five_hour_room
+test_a_crossing_never_moves_onto_a_seat_with_no_more_headroom
+test_a_crossing_still_moves_onto_a_seat_that_is_genuinely_better
+test_the_destination_minimum_still_applies_on_top_of_the_anchor_rule
+test_the_lead_move_also_requires_a_seat_with_more_headroom
+test_an_unreadable_anchor_leaves_the_absolute_rules_in_charge
+test_a_walled_worker_moves_off_an_empty_seat_but_not_onto_an_equal_one
+test_a_five_hour_dip_alone_never_moves_a_seat_or_the_lead
+test_the_policy_ranks_the_2026_10_16_seats_without_bouncing
+
 
 test_resting_worker_warning_is_once_per_entry
 test_resting_warning_offers_only_the_workers_own_codex_candidate

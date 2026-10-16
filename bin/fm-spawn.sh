@@ -1969,6 +1969,9 @@ RELAUNCH_SEAT=
 # once the harness is known, below (bin/fm-seat-lib.sh).
 SEAT_CONFIG_DIR=
 SEAT_RECORD=
+# The profile a fresh Claude launch is routed to instead of the active seat's,
+# set only by spawn_seat_session_gate; empty means the active seat.
+SPAWN_SEAT_DIR=
 # 1 when the recorded endpoint is authoritatively gone and this relaunch must
 # create a fresh one for the task rather than adopt its recorded address.
 RELAUNCH_REBIND=0
@@ -2790,7 +2793,7 @@ spawn_seat_dispatch_gate() {
   [ "$HARNESS" = claude ] && [ "$RELAUNCH" -eq 0 ] && [ "$IGNORE_SEAT_HOLD" -eq 0 ] || return 0
   local seat_config
   seat_config=$(spawn_seat_config)
-  if ! SEAT_DISPATCH=$(fm_seat_dispatch_reason "$(CONFIG=$seat_config fm_seat_dispatch_decision)"); then
+  if ! SEAT_DISPATCH=$(fm_seat_dispatch_reason "$(CONFIG=$seat_config fm_seat_dispatch_decision ${SPAWN_SEAT_DIR:+"$SPAWN_SEAT_DIR"})"); then
     {
       echo "error: this home holds new Claude work rather than starting it on paid extra usage:"
       printf '%s\n' "$SEAT_DISPATCH" | sed 's/^/  /'
@@ -2821,8 +2824,8 @@ spawn_seat_config() {
 # a read that reached no verdict - exits 1, so neither an unreadable seat nor a
 # configured paid overflow ever holds a spawn.
 spawn_seat_dry() {
-  local dir
-  dir=$(fm_seat_spawn_config_dir) || return 1
+  local dir=$SPAWN_SEAT_DIR
+  [ -n "$dir" ] || dir=$(fm_seat_spawn_config_dir) || return 1
   # fm_seat_dry, not the bare depleted verdict: a seat a configured
   # `allow <usd>` policy still covers is deliberately usable on paid extra
   # usage, and docs/configuration.md promises this gate does not take that away.
@@ -2913,6 +2916,41 @@ spawn_provider_depletion_gate() {
   exit 1
 }
 
+# Five-hour launch routing: a five-hour dip never rotates the active seat or
+# moves the lead (bin/fm-seat-lib.sh fm_seat_trigger_left), so this is where a
+# NEW Claude worker is kept off a seat whose five-hour window is at or below the
+# switch trigger. bin/fm-seat.sh launch-destination owns the choice through the
+# rotation's own gate; this only points THIS launch at its answer, writing no
+# seat file and touching no running worker. It runs first, so the extra-usage
+# and depletion gates below judge the seat the launch actually uses. A home with
+# no named seat or no switch trigger reads no quota here. Fresh Claude spawns
+# only, and --ignore-seat-hold is the same deliberate override as those gates.
+spawn_seat_session_gate() {
+  [ "$HARNESS" = claude ] && [ "$RELAUNCH" -eq 0 ] && [ "$IGNORE_SEAT_HOLD" -eq 0 ] || return 0
+  local seat_config dest active err
+  seat_config=$(spawn_seat_config)
+  FM_SEAT_PROVIDER=claude CONFIG=$seat_config fm_seat_threshold >/dev/null || return 0
+  [ -n "$(FM_SEAT_PROVIDER=claude CONFIG=$seat_config fm_seat_list)" ] || return 0
+  err=$(mktemp "${TMPDIR:-/tmp}/fm-spawn-session.XXXXXX") || return 0
+  if ! dest=$(FM_HOME=$FM_HOME FM_CONFIG_OVERRIDE=$seat_config FM_STATE_OVERRIDE=$STATE \
+    "$SCRIPT_DIR/fm-seat.sh" --provider claude launch-destination 2>"$err"); then
+    {
+      echo "error: this task is not started on a Claude seat with no 5-hour room:"
+      sed 's/^/  /' "$err"
+      echo "  re-run with --ignore-seat-hold to start this task on the active seat anyway"
+    } >&2
+    rm -f -- "$err"
+    exit 1
+  fi
+  rm -f -- "$err"
+  active=$(FM_SEAT_PROVIDER=claude CONFIG=$seat_config fm_seat_active)
+  [ -n "$dest" ] && [ "$dest" != "$active" ] || return 0
+  SPAWN_SEAT_DIR=$(FM_SEAT_PROVIDER=claude CONFIG=$seat_config fm_seat_config_dir "$dest") || exit 1
+  printf "Claude seat: '%s' has no 5-hour room, so this worker launches on '%s'; the active seat is unchanged\n" \
+    "$active" "$dest" >&2
+}
+
+[ "$KIND" = secondmate ] || spawn_seat_session_gate
 [ "$KIND" = secondmate ] || spawn_seat_dispatch_gate
 [ "$KIND" = secondmate ] || spawn_provider_depletion_gate
 
@@ -3494,6 +3532,7 @@ if [ "$KIND" = secondmate ]; then
     exit 1
   }
   PROJ_ABS=$(validate_firstmate_home_for_spawn "$ID" "$FIRSTMATE_HOME")
+  spawn_seat_session_gate
   spawn_seat_dispatch_gate
   spawn_provider_depletion_gate
   if [ -e "$DATA/secondmates.md" ] || [ -L "$DATA/secondmates.md" ]; then
@@ -5057,7 +5096,9 @@ if [ "$HARNESS" = claude ] || [ "$HARNESS" = codex ]; then
     fi
   else
     SEAT_CONFIG=$(spawn_seat_config)
-    SEAT_CONFIG_DIR=$(FM_SEAT_PROVIDER=$HARNESS CONFIG=$SEAT_CONFIG fm_seat_spawn_config_dir) || exit 1
+    SEAT_CONFIG_DIR=$SPAWN_SEAT_DIR
+    [ -n "$SEAT_CONFIG_DIR" ] ||
+      SEAT_CONFIG_DIR=$(FM_SEAT_PROVIDER=$HARNESS CONFIG=$SEAT_CONFIG fm_seat_spawn_config_dir) || exit 1
     SEAT_RECORD=$SEAT_CONFIG_DIR
   fi
   if [ "$HARNESS" = codex ]; then
