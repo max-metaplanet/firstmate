@@ -399,6 +399,7 @@ A live or unknown recorded or token-matched endpoint refuses duplicate launch.
 ### Startup cleanup of restored projections
 
 Locked session start has one narrower cleanup for a restored projected child that is no longer current task state.
+It runs in that session start's deferred stage, never on its blocking digest path, because its candidate count comes from the machine's shared named session rather than from this home's own state.
 It runs only when the current home has at least one ordinary presentation journal, and it considers only that home.
 A primary never recursively sweeps a secondmate home.
 
@@ -407,6 +408,7 @@ A candidate must meet all of these conditions:
 
 - The title must contain exactly one token occurrence across the named-session snapshot.
 - The title must equal the title derived from exactly one valid presentation journal in this home's own `state/`.
+  Those journals are read once per run into one label index, because every per-journal verdict is constant across candidates; each mutation prerequisite below still rereads the journal itself.
 - A version 2 journal additionally must bind this exact physical home, named session, workspace, tab, and pane.
 - The task's ordinary metadata must be absent.
 - The candidate must have exactly one tab and exactly one pane.

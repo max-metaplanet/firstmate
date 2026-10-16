@@ -19,6 +19,8 @@
 #     locked request supersedes an in-flight probe-only worker
 #   - a publish lock a live process holds past the budget ends the worker with a
 #     failed-rerun record instead of an unbounded wait
+#   - the home-local stale Herdr projection cleanup runs in the locked phases and
+#     only there, inside the same bound, with its own output in the report
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -69,6 +71,20 @@ fi
 exit "${FM_FAKE_BOOTSTRAP_RC:-0}"
 SH
   chmod +x "$root/bin/fm-bootstrap.sh"
+  # Same stand-in reasoning for the home-local stale Herdr projection cleanup:
+  # this suite owns whether and when the stage runs it, while
+  # tests/fm-herdr-session-cleanup.test.sh owns what it decides.
+  rm -f "$root/bin/fm-herdr-session-cleanup.sh"
+  cat > "$root/bin/fm-herdr-session-cleanup.sh" <<'SH'
+#!/usr/bin/env bash
+set -u
+[ -z "${FM_FAKE_CLEANUP_LOG:-}" ] \
+  || printf 'home=%s state=%s\n' "${FM_HOME:-}" "${FM_STATE_OVERRIDE:-}" \
+    >> "$FM_FAKE_CLEANUP_LOG"
+[ -z "${FM_FAKE_CLEANUP_OUT:-}" ] || printf '%s\n' "$FM_FAKE_CLEANUP_OUT" >&2
+exit "${FM_FAKE_CLEANUP_RC:-0}"
+SH
+  chmod +x "$root/bin/fm-herdr-session-cleanup.sh"
   cat > "$root/bin/ps" <<'SH'
 #!/usr/bin/env bash
 pid=
@@ -859,6 +875,66 @@ EOF
   pass "fm-startup-network: a held publish lock ends the worker inside its budget with a failed-rerun record"
 }
 
+# The stale-projection cleanup makes no network call, but its candidate count
+# comes from the machine's SHARED named Herdr session, so on a busy machine it
+# exceeded the whole blocking budget by itself. It belongs to the locked phases
+# for the same reason the mutating sweeps do: it needs this session's lock, and
+# a read-only or re-emitting session has no business running it at all.
+test_stale_projection_cleanup_runs_only_in_the_locked_phases() {
+  local rec home root log cleanup report
+  rec=$(new_world herdr-cleanup)
+  IFS='|' read -r home root log <<EOF
+$rec
+EOF
+  cleanup="$home/cleanup.log"
+  printf '%s\n' $$ > "$home/state/.lock"
+
+  FM_FAKE_BOOTSTRAP_LOG="$log" FM_FAKE_CLEANUP_LOG="$cleanup" \
+    run_stage "$home" "$root" run --locked 1
+  assert_grep "home=$home state=$home/state" "$cleanup" \
+    "the locked deferred stage did not run the stale-projection cleanup for its exact home"
+  [ "$(grep -c . "$cleanup")" = 1 ] \
+    || fail "the locked deferred stage ran the stale-projection cleanup more than once"
+  report=$(run_stage "$home" "$root" report)
+  assert_contains "$report" "stale restored-projection cleanup" \
+    "the stage did not name the cleanup among the phases it completed: $report"
+  [ ! -s "$home/state/.wake-queue" ] \
+    || fail "a cleanup that retired nothing quietly still woke the agent"
+
+  : > "$cleanup"
+  FM_FAKE_BOOTSTRAP_LOG="$log" FM_FAKE_CLEANUP_LOG="$cleanup" \
+    run_stage "$home" "$root" run --locked 0
+  [ ! -s "$cleanup" ] \
+    || fail "the read-only probe ran a cleanup that needs the fleet lock"
+
+  pass "fm-startup-network: the stale-projection cleanup runs in the locked phases and only there"
+}
+
+# Its warnings are the whole reason it is allowed to be non-fatal: a candidate it
+# could not prove safe is preserved, and the reader has to hear about it. Moving
+# the cleanup off the blocking digest must not swallow that line.
+test_stale_projection_cleanup_warnings_reach_the_report() {
+  local rec home root log cleanup report
+  rec=$(new_world herdr-cleanup-warning)
+  IFS='|' read -r home root log <<EOF
+$rec
+EOF
+  cleanup="$home/cleanup.log"
+  printf '%s\n' $$ > "$home/state/.lock"
+
+  FM_FAKE_BOOTSTRAP_LOG="$log" FM_FAKE_CLEANUP_LOG="$cleanup" \
+    FM_FAKE_CLEANUP_OUT='warning: herdr session-start projection cleanup: task preserved' \
+    run_stage "$home" "$root" run --locked 1
+  report=$(run_stage "$home" "$root" report)
+  assert_contains "$report" \
+    "warning: herdr session-start projection cleanup: task preserved" \
+    "a preserved-candidate warning was lost when the cleanup moved off the blocking path: $report"
+  wait_for_startup_network_wake "$home" \
+    || fail "an unharvested cleanup warning never reached the agent as a wake"
+
+  pass "fm-startup-network: a preserved-candidate warning survives deferral and still surfaces"
+}
+
 test_wait_fails_without_a_published_stage
 test_start_returns_without_holding_the_callers_stdout
 test_harvest_acknowledgement_suppresses_the_wake_and_no_claim_produces_it
@@ -869,6 +945,8 @@ test_an_actionable_successful_result_still_queues_a_wake
 test_deferred_invalid_secondmate_markers_queue_durable_findings
 test_mutating_sweeps_are_refused_when_the_lock_changed_hands
 test_the_stage_bound_is_reported_not_swallowed
+test_stale_projection_cleanup_runs_only_in_the_locked_phases
+test_stale_projection_cleanup_warnings_reach_the_report
 test_an_abandoned_run_reads_as_needing_a_rerun
 test_locked_start_is_not_satisfied_by_an_inflight_probe
 test_start_is_single_flight

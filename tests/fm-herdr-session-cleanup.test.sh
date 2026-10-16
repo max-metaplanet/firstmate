@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Focused safety tests for bin/fm-herdr-session-cleanup.sh.
 # Covers one exact cleanup, every title/journal/topology/agent/process refusal,
-# locked revalidation races, focus refusal, read errors, and repeat idempotence.
+# locked revalidation races, focus refusal, read errors, repeat idempotence,
+# and the per-run journal index that keeps discovery off a per-candidate rescan.
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -97,6 +98,15 @@ fixture_workspaces() {
   fixture_workspace_json "$title" "$tabs" "$panes"
   if [ -e "$FIXTURE_DIR/duplicate-token" ]; then
     printf ',{"workspace_id":"w3","label":"└ copy · p:%s","focused":false,"active_tab_id":"w3:t1","tab_count":1,"pane_count":1}' "$TOKEN"
+  fi
+  # Extra live candidates whose labels derive from this home's other journals,
+  # which is the shape a shared named session actually has: many candidates
+  # against many journals. Their own workspaces carry no tab or pane rows, so
+  # each one matches a journal and is then preserved by the topology proof.
+  if [ -e "$FIXTURE_DIR/decoys" ]; then
+    printf ',{"workspace_id":"w10","label":"└ decoy-one · p:%s","focused":false,"active_tab_id":"w10:t1","tab_count":1,"pane_count":1}' "$(index_token 1)"
+    printf ',{"workspace_id":"w11","label":"└ decoy-two · p:%s","focused":false,"active_tab_id":"w11:t1","tab_count":1,"pane_count":1}' "$(index_token 2)"
+    printf ',{"workspace_id":"w12","label":"└ decoy-three · p:%s","focused":false,"active_tab_id":"w12:t1","tab_count":1,"pane_count":1}' "$(index_token 3)"
   fi
   printf ']'
 }
@@ -282,6 +292,105 @@ reset_fixture; : > "$FIXTURE_DIR/race"; assert_preserved "revalidation race"
 reset_fixture; printf '%s\n' "$TAB" > "$FIXTURE_DIR/active-tab"; assert_preserved "active target"
 reset_fixture; : > "$FIXTURE_DIR/focus-refuse"; assert_preserved "focus refusal"
 
+# --- journal indexing -------------------------------------------------------
+# Discovery compares every live workspace label in the machine's shared named
+# Herdr session against this home's own journals, so the journals are indexed in
+# one pass per run instead of being reparsed for every candidate. Two properties
+# have to hold together: the indexed answer must be the same answer a
+# per-candidate scan gives, and the index must genuinely be that one pass.
+
+index_token() { # <suffix>
+  printf 'AbCdEfGhIjKlMnOpQrStU%s' "$1"
+}
+
+reset_fixture
+rm -f "${FM_STATE_OVERRIDE:?}"/*.herdr-presentation
+# A deliberate mix, so parity covers every per-journal verdict the scan makes:
+# three plain attempts, one version 2 journal bound to this home and session,
+# one bound to another home, and one malformed journal.
+write_v1 alpha "$(index_token 1)"
+write_v1 bravo "$(index_token 2)"
+write_v1 charlie "$(index_token 3)"
+{
+  printf 'version=2\ntask_id=delta\nprojection_id=%s\n' "$(index_token 4)"
+  printf 'home=%s\nsession=test\nworkspace_id=w4\ntab_id=w4:t1\npane_id=w4:p1\n' "$FM_HOME"
+  printf 'parent_workspace_id=w1\nparent_label=firstmate\nworkspace_label=└ delta · p:%s\ntask_label=fm-delta\n' \
+    "$(index_token 4)"
+} > "$FM_STATE_OVERRIDE/delta.herdr-presentation"
+mkdir -p "$TMP_ROOT/foreign-home"
+{
+  printf 'version=2\ntask_id=echo\nprojection_id=%s\n' "$(index_token 5)"
+  printf 'home=%s\nsession=test\nworkspace_id=w5\ntab_id=w5:t1\npane_id=w5:p1\n' "$TMP_ROOT/foreign-home"
+  printf 'parent_workspace_id=w1\nparent_label=firstmate\nworkspace_label=└ echo · p:%s\ntask_label=fm-echo\n' \
+    "$(index_token 5)"
+} > "$FM_STATE_OVERRIDE/echo.herdr-presentation"
+printf 'version=1\ntask_id=foxtrot\nprojection_id=short\n' \
+  > "$FM_STATE_OVERRIDE/foxtrot.herdr-presentation"
+
+HOME_REAL=$(fm_herdr_cleanup_home_identity) || fail "the test home identity was unreadable"
+fm_herdr_cleanup_index_journals test "$HOME_REAL" || fail "the journal index could not be built"
+
+# Every candidate title a run could see: one per journal written above, the
+# live-fixture title, and titles that match nothing.
+INDEX_TITLES=(
+  "└ alpha · p:$(index_token 1)"
+  "└ bravo · p:$(index_token 2)"
+  "└ charlie · p:$(index_token 3)"
+  "└ delta · p:$(index_token 4)"
+  "└ echo · p:$(index_token 5)"
+  "└ foxtrot · p:short"
+  "$TITLE"
+  "firstmate"
+  "└ alpha · p:$(index_token 2)"
+)
+for title in "${INDEX_TITLES[@]}"; do
+  cached=$(fm_herdr_cleanup_journal_matches "$title" test "$HOME_REAL" 1)
+  fresh=$(fm_herdr_cleanup_journal_matches "$title" test "$HOME_REAL" 0)
+  [ "$cached" = "$fresh" ] \
+    || fail "indexed and rescanned matches differ for '$title': [$cached] vs [$fresh]"
+done
+[ "$(fm_herdr_cleanup_journal_matches "└ alpha · p:$(index_token 1)" test "$HOME_REAL" 1)" \
+  = "$(printf '%s\t%s\t%s' "$FM_STATE_OVERRIDE/alpha.herdr-presentation" alpha "$(index_token 1)")" ] \
+  || fail "the index did not match the one journal whose label equals the candidate title"
+[ -z "$(fm_herdr_cleanup_journal_matches "└ echo · p:$(index_token 5)" test "$HOME_REAL" 1)" ] \
+  || fail "the index matched a version 2 journal bound to another home"
+[ -z "$(fm_herdr_cleanup_journal_matches "└ foxtrot · p:short" test "$HOME_REAL" 1)" ] \
+  || fail "the index matched a malformed journal"
+pass "indexed journal matching is identical to a per-candidate rescan across every candidate title"
+
+# The index is one pass per run, so a journal rewritten after it was built keeps
+# answering from the index - and anything a mutation depends on, which always
+# asks for a rescan, sees the new bytes instead.
+write_v1 alpha "$(index_token 6)"
+[ "$(fm_herdr_cleanup_journal_matches "└ alpha · p:$(index_token 1)" test "$HOME_REAL" 1)" \
+  = "$(printf '%s\t%s\t%s' "$FM_STATE_OVERRIDE/alpha.herdr-presentation" alpha "$(index_token 1)")" ] \
+  || fail "a cached lookup reparsed a journal the run had already indexed"
+[ -z "$(fm_herdr_cleanup_journal_matches "└ alpha · p:$(index_token 1)" test "$HOME_REAL" 0)" ] \
+  || fail "a rescan did not see the rewritten journal"
+[ "$(fm_herdr_cleanup_journal_matches "└ alpha · p:$(index_token 6)" test "$HOME_REAL" 0)" \
+  = "$(printf '%s\t%s\t%s' "$FM_STATE_OVERRIDE/alpha.herdr-presentation" alpha "$(index_token 6)")" ] \
+  || fail "a rescan did not match the rewritten journal's new label"
+pass "the per-run index is one pass, and every mutation prerequisite still rescans"
+
+# End to end with several candidates and several journals: exactly the one
+# candidate whose topology, metadata, agent, process, and focus all check out is
+# retired, and every other journal survives untouched.
+reset_fixture
+write_v1 decoy-one "$(index_token 1)"
+write_v1 decoy-two "$(index_token 2)"
+write_v1 decoy-three "$(index_token 3)"
+: > "$FIXTURE_DIR/decoys"
+fm_herdr_session_cleanup >/dev/null 2>&1
+[ ! -e "$FM_STATE_OVERRIDE/$ID.herdr-presentation" ] \
+  || fail "the one exact candidate among several was not retired"
+for id in decoy-one decoy-two decoy-three; do
+  [ -f "$FM_STATE_OVERRIDE/$id.herdr-presentation" ] \
+    || fail "a candidate that failed its topology proof lost its journal"
+done
+[ "$(wc -l < "$CLOSE_LOG" | tr -d ' ')" = 1 ] \
+  || fail "a run over several candidates did not close exactly one pane"
+pass "a run over several candidates and journals retires only the one exact match"
+
 INTEGRATION_ROOT="$TMP_ROOT/bootstrap-integration"
 mkdir -p "$INTEGRATION_ROOT/home/state" "$INTEGRATION_ROOT/home/data" "$INTEGRATION_ROOT/home/config"
 cp -R "$ROOT/bin" "$INTEGRATION_ROOT/bin"
@@ -300,19 +409,34 @@ FM_HOME="$INTEGRATION_ROOT/home" FM_HERDR_CLEANUP_TRACE="$TRACE" \
 [ ! -e "$TRACE" ] || fail "standalone bootstrap ran lock-owned stale projection cleanup"
 pass "standalone bootstrap cannot run lock-owned stale projection cleanup"
 
+# The blocking digest must not depend on how many live panes the machine's
+# shared named Herdr session holds, so a lock-owning session start hands this
+# cleanup to the deferred startup stage instead of running it in front of
+# bootstrap. The stage is replaced by a recorder here, so the assertion is about
+# what session start itself does with no detached worker to race.
+DEFER_LOG="$INTEGRATION_ROOT/deferred-stage.log"
+cat > "$INTEGRATION_ROOT/bin/fm-startup-network.sh" <<'SH'
+#!/usr/bin/env bash
+set -u
+printf '%s\n' "$*" >> "${FM_FAKE_DEFER_LOG:?}"
+SH
+chmod +x "$INTEGRATION_ROOT/bin/fm-startup-network.sh"
 cat > "$INTEGRATION_ROOT/bin/fm-lock.sh" <<'SH'
 #!/usr/bin/env bash
 printf '%s\n' 'lock acquired'
 SH
 chmod +x "$INTEGRATION_ROOT/bin/fm-lock.sh"
 FM_HOME="$INTEGRATION_ROOT/home" FM_ROOT_OVERRIDE="$INTEGRATION_ROOT" \
-  FM_HERDR_CLEANUP_TRACE="$TRACE" \
+  FM_HERDR_CLEANUP_TRACE="$TRACE" FM_FAKE_DEFER_LOG="$DEFER_LOG" \
   "$INTEGRATION_ROOT/bin/fm-session-start.sh" >/dev/null 2>&1 \
   || fail "lock-owning session start failed"
-[ "$(cat "$TRACE")" = "$INTEGRATION_ROOT/home" ] \
-  || fail "lock-owning session start did not run cleanup for its exact home"
+[ ! -s "$TRACE" ] \
+  || fail "lock-owning session start still ran stale projection cleanup on its blocking path"
+assert_grep '--locked 1' "$DEFER_LOG" \
+  "lock-owning session start did not ask the deferred stage for its locked phases"
 
 : > "$TRACE"
+: > "$DEFER_LOG"
 cat > "$INTEGRATION_ROOT/bin/fm-lock.sh" <<'SH'
 #!/usr/bin/env bash
 printf '%s\n' 'error: another live firstmate session holds the lock' >&2
@@ -320,10 +444,11 @@ exit 1
 SH
 chmod +x "$INTEGRATION_ROOT/bin/fm-lock.sh"
 FM_HOME="$INTEGRATION_ROOT/home" FM_ROOT_OVERRIDE="$INTEGRATION_ROOT" \
-  FM_HERDR_CLEANUP_TRACE="$TRACE" \
+  FM_HERDR_CLEANUP_TRACE="$TRACE" FM_FAKE_DEFER_LOG="$DEFER_LOG" \
   "$INTEGRATION_ROOT/bin/fm-session-start.sh" >/dev/null 2>&1 \
   || fail "read-only session start failed"
 [ ! -s "$TRACE" ] || fail "read-only session start ran stale projection cleanup"
-pass "session start runs cleanup only after acquiring its home lock"
+[ ! -s "$DEFER_LOG" ] || fail "read-only session start started the deferred stage"
+pass "session start never runs cleanup on its blocking path and defers it only when locked"
 
 printf 'all fm-herdr-session-cleanup tests passed\n'
