@@ -11,6 +11,12 @@
 # a merged pull request is still examined. A pull request older than it is never
 # read again, which is what stops this poll growing without limit.
 #
+# `recorder-login` is optional and defaults to `github-actions[bot]`: the
+# identity the check lane posts its verdict comment as. Only that author's
+# marker comment counts as a verdict, because anybody who can comment on a pull
+# request can write the marker. Set it only for a project whose lane posts under
+# a different name.
+#
 # An ABSENT config/jev-prod-monitor means the feature is off: `check` stays
 # completely silent, contacts no forge, and `arm` refuses. This file's mere
 # presence is the opt-in.

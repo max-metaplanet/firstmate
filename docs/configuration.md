@@ -1719,12 +1719,18 @@ One directive per non-empty, non-comment line, split on the FIRST colon.
   Exactly one is accepted; a second is refused rather than one being chosen.
 - `lookback-hours` is optional, defaults to 48, and accepts 1 to 336.
   It bounds how far back a merged pull request is still examined, which is what keeps the poll's cost bounded over time.
+- `recorder-login` is optional and defaults to `github-actions[bot]`, the identity the check lane posts its verdict comment as.
+  Only a marker comment written by this login counts as a verdict: anybody who can comment on a pull request can write the marker, so without that check somebody else's comment could stand in for the real verdict.
+  Set it only for a project whose lane posts under a different name.
 
 See [`docs/examples/jev-prod-monitor`](examples/jev-prod-monitor) for a starting point to copy into local `config/jev-prod-monitor`.
 
 Arm the check once per home with `bin/fm-jev-prod-check.sh arm`.
 That writes `state/jev-prod-monitor.check.sh` and binds its bytes with `bin/fm-check-register.sh`, so the existing watcher polls it on its normal cadence and turns a verdict into a `check:` wake; no separate schedule is involved.
 `arm` refuses unless `gh`, `jq` and `unzip` are all present, because the poll reads the verdict comment and the uploaded verdict artifact through them.
+
+Both of those sources are untrusted content: a comment is written by whoever can comment, and an artifact is whatever a workflow run uploaded.
+So every value the poll lifts out of either one is accepted only as a bounded token, anything outside its shape reads as not established rather than as a verdict, and decompression is bounded by time and by bytes.
 `bin/fm-jev-prod-check.sh disarm` removes the shim, its trust binding, and the dedupe record (`state/.jev-prod-monitor`).
 This file is not inherited by secondmate homes, so each home follows the projects it actually ships.
 

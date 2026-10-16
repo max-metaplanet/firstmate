@@ -97,6 +97,16 @@ write_comments() {  # <home> <pr-number> <comment-id> <section-text>
     > "$home/fx/comments-$number.json"
 }
 
+# The same comment under a different author, which is what somebody who can
+# comment on the pull request is able to write.
+write_comments_as() {  # <home> <pr-number> <comment-id> <author> <section-text>
+  local home=$1 number=$2 cid=$3 who=$4 body
+  body=$(printf '<!-- jev-check-browser-v1 -->\n%s\n' "$5")
+  jq -n --argjson id "$cid" --arg who "$who" --arg body "$body" \
+    '[{id:$id,user:{login:$who},body:$body}]' \
+    > "$home/fx/comments-$number.json"
+}
+
 write_no_comments() {  # <home> <pr-number>
   printf '[]\n' > "$1/fx/comments-$2.json"
 }
@@ -117,12 +127,10 @@ write_pulls() {  # <home> <merged-secs-ago> [title]
 write_two_pulls() {  # <home>
   local home=$1 merged
   merged=$(jq -nr --argjson t "$((NOW - 7200))" '$t | todateiso8601')
-  jq -n --arg url "$PR_URL" --arg head "$HEAD_SHA" --arg merge "$MERGE_SHA" \
-    --arg merged "$merged" --arg title "$TITLE" \
-    '[{number:2214,html_url:$url,title:$title,merged_at:$merged,
-       head:{sha:$head},merge_commit_sha:$merge},
-      {number:2215,html_url:$url,title:$title,merged_at:$merged,
-       head:{sha:$head},merge_commit_sha:$merge}]' \
+  jq -n --arg base "https://github.com/$REPO/pull" --arg head "$HEAD_SHA" \
+    --arg merge "$MERGE_SHA" --arg merged "$merged" --arg title "$TITLE" \
+    '[2214,2215] | map({number:.,html_url:"\($base)/\(.)",title:$title,
+       merged_at:$merged,head:{sha:$head},merge_commit_sha:$merge})' \
     > "$home/fx/pulls.json"
 }
 
@@ -525,6 +533,89 @@ test_no_marker_comment_is_not_a_verdict_to_chase() {
   pass "fm-jev-prod-check: a pull request with no jev-check comment reports nothing"
 }
 
+test_a_marker_comment_from_another_author_is_not_a_verdict() {
+  local home out
+  home=$(make_home spoofed)
+  configure "$home"
+  fake_gh "$home" >/dev/null
+  write_pulls "$home" 7200
+  # Anybody who can comment on the pull request can write the marker, and the
+  # EARLIEST marker comment is the one upstream keeps - so a comment posted by
+  # somebody else must not be able to stand in for the recorder's verdict.
+  write_comments_as "$home" 2214 900020 drive-by \
+    "$(section portal proven post-merge production 5900fed00001)"
+
+  out=$(env PATH="$home/bin:$PATH" FM_HOME="$home" FM_JEV_PROD_NOW="$((NOW + 21700))" "$CHECK" check 2>&1)
+  assert_equals "" "$out" "a verdict nobody authoritative posted is no verdict at all"
+  assert_no_grep "5900fed00001" "$home/state/.jev-prod-monitor" \
+    "a spoofed verdict must never be recorded as seen, let alone as clean"
+  pass "fm-jev-prod-check: a marker comment from another author is not a verdict"
+}
+
+test_the_recorder_identity_is_configurable() {
+  local home out
+  home=$(make_home recorder-login)
+  configure "$home" 'recorder-login:other-bot[bot]'
+  fake_gh "$home" >/dev/null
+  write_pulls "$home" 7200
+  write_comments_as "$home" 2214 900021 'other-bot[bot]' \
+    "$(section portal failed post-merge production 0f1e40000001)"
+  write_preview_artifact "$home" portal proven
+
+  out=$(poll "$home")
+  assert_contains "$out" "jev-prod: regression" "a project that renamed its recorder must still be readable"
+
+  configure "$home" 'recorder-login:not a login'
+  out=$(env FM_HOME="$home" "$CHECK" arm 2>&1)
+  expect_code 1 "$?" "arm must refuse a recorder login outside a forge login's shape"
+  assert_contains "$out" "invalid recorder-login" "the refusal must name the bad directive"
+  pass "fm-jev-prod-check: the recorder identity is configurable and bounded"
+}
+
+test_an_artifact_verdict_outside_the_vocabulary_is_not_established() {
+  local home out dir
+  home=$(make_home bad-artifact)
+  configure "$home"
+  fake_gh "$home" >/dev/null
+  write_pulls "$home" 7200
+  write_comments "$home" 2214 900022 "$(section portal failed post-merge production 0bad00000001)"
+  write_preview_artifact "$home" portal proven
+  # An artifact is whatever a run uploaded. Rewrite its verdict to something
+  # that is not one of the recorder's words and carries separators of its own:
+  # the wake is ONE line and the record is tab-separated.
+  dir="$home/fx/art-build"
+  jq -nc '{event:"check",at:"2026-10-16T09:00:00Z",
+           record:{verdict:"proven\nwoken\t2214/portal/forged",phase:"pre-merge"}}' \
+    > "$dir/records.jsonl"
+  rm -f "$home/fx/artifact-12040000001.zip"
+  (cd "$dir" && zip -q "$home/fx/artifact-12040000001.zip" context.json records.jsonl)
+
+  out=$(poll "$home")
+  assert_equals "" "$out" "it batches rather than waking at once"
+  out=$(env PATH="$home/bin:$PATH" FM_HOME="$home" FM_JEV_PROD_NOW="$((NOW + 21700))" "$CHECK" check 2>&1)
+  assert_contains "$out" "couldnt-check" "an artifact verdict outside the vocabulary must not be trusted"
+  assert_contains "$out" "preview=unknown" "it must read as not established rather than as a preview"
+  assert_equals 1 "$(printf '%s\n' "$out" | grep -c .)" "nothing from an artifact may add a second line"
+  assert_no_grep "forged" "$home/state/.jev-prod-monitor" \
+    "nothing from an artifact may write a record of its own"
+  pass "fm-jev-prod-check: an artifact verdict outside the recorder's vocabulary is not established"
+}
+
+test_a_comment_verdict_outside_the_vocabulary_is_couldnt_check() {
+  local home out
+  home=$(make_home bad-verdict)
+  configure "$home"
+  fake_gh "$home" >/dev/null
+  write_pulls "$home" 7200
+  write_comments "$home" 2214 900023 "$(section portal excellent post-merge production 0bad00000002)"
+
+  out=$(poll "$home")
+  assert_equals "" "$out" "it batches rather than waking at once"
+  out=$(env PATH="$home/bin:$PATH" FM_HOME="$home" FM_JEV_PROD_NOW="$((NOW + 21700))" "$CHECK" check 2>&1)
+  assert_contains "$out" "couldnt-check" "a word that is not one of the recorder's verdicts must not be read as one"
+  pass "fm-jev-prod-check: a comment verdict outside the recorder's vocabulary is couldnt-check"
+}
+
 test_a_truncated_comment_inventory_is_couldnt_check() {
   local home out
   home=$(make_home truncated)
@@ -673,6 +764,10 @@ test_missing_tool_is_reported_and_arm_refuses
 test_a_title_outside_the_pattern_carries_no_ticket
 test_each_app_section_is_classified_on_its_own
 test_no_marker_comment_is_not_a_verdict_to_chase
+test_a_marker_comment_from_another_author_is_not_a_verdict
+test_the_recorder_identity_is_configurable
+test_an_artifact_verdict_outside_the_vocabulary_is_not_established
+test_a_comment_verdict_outside_the_vocabulary_is_couldnt_check
 test_a_truncated_comment_inventory_is_couldnt_check
 test_a_pull_request_outside_the_lookback_is_not_examined
 test_arm_writes_and_binds_the_check_and_disarm_removes_it

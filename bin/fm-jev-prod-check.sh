@@ -39,6 +39,19 @@
 # costs), and the artifact is read only when production came back bad and the
 # pairing is what decides whether that is new.
 #
+# EVERYTHING IT READS IS UNTRUSTED. A pull request comment can be written by
+# anybody who can comment on the pull request, and an artifact is whatever a
+# workflow run uploaded. So the marker comment counts only when the RECORDER
+# posted it - a comment carrying the marker under any other author is not a
+# verdict and is ignored, which is what stops somebody pre-empting the real
+# verdict by posting their own - and every field lifted out of a comment or an
+# artifact is accepted only as a bounded token. A value outside its shape is
+# "not established", never a verdict, and never a line this prints: the wake is
+# one line and the record is tab-separated, so an unchecked newline or tab would
+# be a way to write extra records through content somebody else controls.
+# Decompression is bounded too, because an artifact's compressed size says
+# nothing about what it expands to.
+#
 # THE COMMENT SHAPE IS NOT GUESSED. It is upstream's `render()` plus core's
 # section wrapper, both vendored at a pin with their own tests. A section that
 # does not parse is `couldnt-check`, never clean - this check's one hard rule is
@@ -90,6 +103,15 @@ WOKEN_KEEP=500
 # The recorder's own marker and section wrappers. These are upstream's and
 # core's literal bytes; they are matched, never composed.
 MARKER='<!-- jev-check-browser-v1 -->'
+# Who the recorder posts as. core names this identity explicitly rather than
+# looking it up (`JEV_CHECK_LOGIN`), because an installation token cannot read
+# GET /user; this is the same default, overridable for a project that renamed it.
+RECORDER_LOGIN_DEFAULT='github-actions[bot]'
+# The verdicts upstream's recorder can publish. Anything else is not a verdict.
+VERDICT_SHAPE='^(proven|failed|unproven|skipped|stale)$'
+# An artifact entry is read through a byte cap: a compressed size says nothing
+# about what it expands to.
+UNZIP_MAX_BYTES=262144
 
 # shellcheck source=bin/fm-timeout-lib.sh
 . "$SCRIPT_DIR/fm-timeout-lib.sh"
@@ -170,12 +192,14 @@ trap 'exit 1' HUP INT TERM
 # absent or holds no valid directive. That "nothing" is the opt-in gate.
 CONFIG_REPO=
 CONFIG_LOOKBACK=48
+CONFIG_RECORDER_LOGIN=
 CONFIG_ERROR=
 
 config_read() {
   local line key value repo_seen=0
   CONFIG_REPO=
   CONFIG_LOOKBACK=48
+  CONFIG_RECORDER_LOGIN=$RECORDER_LOGIN_DEFAULT
   CONFIG_ERROR=
   [ -f "$CONFIG" ] || return 1
   while IFS= read -r line || [ -n "$line" ]; do
@@ -197,6 +221,15 @@ config_read() {
         fi
         fm_jev_repo_valid "$value" || { CONFIG_ERROR="invalid repo: $value"; return 1; }
         CONFIG_REPO=$value
+        ;;
+      recorder-login)
+        # Bounded to a forge login so the value can only ever be compared, never
+        # carry a separator into the record or the wake line.
+        case "$value" in
+          ''|*[!A-Za-z0-9._\[\]-]*) CONFIG_ERROR="invalid recorder-login: $value"; return 1 ;;
+        esac
+        [ "${#value}" -le 64 ] || { CONFIG_ERROR="recorder-login is too long"; return 1; }
+        CONFIG_RECORDER_LOGIN=$value
         ;;
       lookback-hours)
         case "$value" in ''|*[!0-9]*) CONFIG_ERROR="invalid lookback-hours: $value"; return 1 ;; esac
@@ -300,6 +333,39 @@ gh_json() {  # <api-path> ; prints the raw body
   printf '%s\n' "$out"
 }
 
+# --- bounded tokens ---------------------------------------------------------
+# A last line of defence for anything rendered: the wake is ONE line and the
+# record is tab-separated, so no field may carry a separator of its own.
+scrub_field() {  # <value>
+  printf '%s' "$1" | LC_ALL=C tr -d '\000-\037'
+}
+
+# Every value lifted out of a comment or an artifact passes one of these before
+# it reaches the record or the printed line. A refusal means "not established".
+token_ok() {  # <value> <extended-regex>
+  [ -n "$1" ] || return 1
+  # A value carrying a control character of its own is never a token, and this
+  # test has to come FIRST: grep matches per LINE, so a `^...$` regex would
+  # accept a multi-line value on the strength of its first line and ignore the
+  # rest - which is exactly how content somebody else controls would get
+  # through. Scrubbing is the test: a value the scrubber changes carried one.
+  [ "$1" = "$(scrub_field "$1")" ] || return 1
+  printf '%s' "$1" | LC_ALL=C grep -Eq "$2"
+}
+
+verdict_token_ok() { token_ok "$1" "$VERDICT_SHAPE"; }
+app_token_ok() { token_ok "$1" '^[A-Za-z0-9_-]{1,64}$'; }
+phase_token_ok() { token_ok "$1" '^(pre-merge|post-merge)$'; }
+record_token_ok() { token_ok "$1" '^[0-9A-Za-z-]{1,64}$'; }
+comment_id_ok() { token_ok "$1" '^[0-9]{1,20}$'; }
+
+# A pull request URL this poll is willing to print, reconstructed from the one
+# repository it was configured for rather than trusted as the forge sent it.
+pr_url_ok() {  # <url> <number>
+  [ "$1" = "https://github.com/$CONFIG_REPO/pull/$2" ]
+}
+
+
 # --- parsing ----------------------------------------------------------------
 # `<type>/<ENG-n>(<scope>): ...` is core's PR title contract. A title that does
 # not match carries NO ticket: a guessed ticket is worse than none, because it
@@ -358,6 +424,15 @@ record_of() {  # <section-file>
 PREVIEW_VERDICT=
 PREVIEW_RUN_URL=
 
+# One entry out of an artifact, bounded by the byte cap and by the clock. It
+# runs as `bash -c` rather than a function because fm_run_timed EXECS what it is
+# given, and an exported function is not something timeout(1) can exec.
+unzip_capped() {  # <zip> <entry>
+  # shellcheck disable=SC2016 # The inner shell expands these, not this one.
+  fm_run_timed "$READ_SECS" bash -c \
+    'unzip -p "$1" "$2" 2>/dev/null | head -c "$3"' _ "$1" "$2" "$UNZIP_MAX_BYTES"
+}
+
 preview_verdict() {  # <repo> <head-sha> <app>
   local repo=$1 head=$2 app=$3 runs run_id artifacts art_id zip verdict ctx_app
   PREVIEW_VERDICT=
@@ -384,15 +459,20 @@ preview_verdict() {  # <repo> <head-sha> <app>
     [ -s "$zip" ] || continue
     # The app lives in context.json and the verdict in records.jsonl; both are
     # in this one artifact, so the two are read from the same download.
-    ctx_app=$(unzip -p "$zip" context.json 2>/dev/null | jq -r '
+    # Both reads are bounded twice: by the remaining wall clock, and by a byte
+    # cap, because an artifact's compressed size says nothing about what it
+    # expands to and this runs inside the watcher's own per-check timeout.
+    ctx_app=$(unzip_capped "$zip" context.json | jq -r '
       if type == "object" and (.app | type) == "string" and (.phase | type) == "string"
       then (if .phase == "pre-merge" then .app else empty end) else empty end' 2>/dev/null) || continue
     [ "$ctx_app" = "$app" ] || continue
-    verdict=$(unzip -p "$zip" records.jsonl 2>/dev/null | jq -rs '
+    verdict=$(unzip_capped "$zip" records.jsonl | jq -rs '
       [ .[] | select(type == "object" and .event == "check")
             | select((.record.verdict | type) == "string") | .record.verdict ]
       | last // empty' 2>/dev/null) || continue
-    [ -n "$verdict" ] || continue
+    # An artifact is whatever a run uploaded, so its verdict is a verdict only if
+    # it is one of the words the recorder can publish.
+    verdict_token_ok "$verdict" || continue
     PREVIEW_VERDICT=$verdict
     PREVIEW_RUN_URL="https://github.com/$repo/actions/runs/$rid"
     return 0
@@ -415,8 +495,10 @@ verdict_is_flagged() {
 # evidence a reader needs to see it for themselves.
 render_item() {  # <class> <pr-url> <ticket> <app> <prod-verdict> <preview-verdict> <comment-url> <checks-url> [preview-run-url]
   printf '%s pr=%s ticket=%s app=%s production=%s preview=%s comment=%s checks=%s' \
-    "$1" "$2" "${3:-none}" "$4" "$5" "${6:-unknown}" "${7:-none}" "$8"
-  [ -z "${9:-}" ] || printf ' preview-run=%s' "$9"
+    "$(scrub_field "$1")" "$(scrub_field "$2")" "$(scrub_field "${3:-none}")" \
+    "$(scrub_field "$4")" "$(scrub_field "$5")" "$(scrub_field "${6:-unknown}")" \
+    "$(scrub_field "${7:-none}")" "$(scrub_field "$8")"
+  [ -z "${9:-}" ] || printf ' preview-run=%s' "$(scrub_field "$9")"
 }
 
 # --- check ------------------------------------------------------------------
@@ -526,12 +608,23 @@ examine_pr() {  # <number> <url> <head-sha> <merge-sha> <merged-at> <title>
 
   comments=$(gh_json "repos/$CONFIG_REPO/issues/$number/comments?per_page=100") || return 0
   body_file="$TMP/body-$number"
-  printf '%s' "$comments" | jq -r --arg marker "$MARKER" '
+  # ONLY the recorder's own comment is a verdict. Anybody who can comment on the
+  # pull request can write the marker, and the earliest marker comment is the one
+  # upstream keeps, so without this an outsider could pre-empt the real verdict
+  # simply by posting first.
+  printf '%s' "$comments" | jq -r --arg marker "$MARKER" --arg who "$CONFIG_RECORDER_LOGIN" '
     if type == "array" then
-      [ .[] | select((.body | type) == "string") | select(.body | contains($marker)) ]
+      [ .[]
+        | select((.body | type) == "string")
+        | select((.user.login // "") == $who)
+        | select(.body | contains($marker)) ]
       | sort_by(.id) | .[0] // empty | "\(.id)"
     else empty end' 2>/dev/null > "$TMP/cid-$number"
   comment_id=$(cat "$TMP/cid-$number" 2>/dev/null)
+  comment_id_ok "$comment_id" || comment_id=
+  # The URL is reconstructed from the configured repository rather than trusted
+  # as sent, so nothing this prints can point at another project.
+  pr_url_ok "$url" "$number" || return 0
   if [ -z "$comment_id" ]; then
     # A full page back with no marker on it means the inventory may be
     # truncated and the verdict may be sitting on a page this never read.
@@ -562,13 +655,16 @@ examine_pr() {  # <number> <url> <head-sha> <merge-sha> <merged-at> <title>
   while IFS= read -r app; do
     [ -n "$app" ] || continue
     section_of "$body_file" "$app" > "$TMP/section"
+    app_token_ok "$app" || continue
     verdict=$(verdict_of "$TMP/section")
     phase=$(phase_of "$TMP/section")
+    verdict_token_ok "$verdict" || verdict=
+    phase_token_ok "$phase" || phase=
     if [ -z "$verdict" ] || [ -z "$phase" ]; then
       # A section that does not parse is never read as a pass.
       key="$number/$app/unparsed"
       list_has "$woken" "$key" && continue
-      queue_item couldnt-check "$key" "$url" "$ticket" "$app" "${verdict:-unreadable}" '' \
+      queue_item couldnt-check "$key" "$url" "$ticket" "$app" "$(scrub_field "${verdict:-unreadable}")" '' \
         "$url#issuecomment-$comment_id" "$checks_url" ''
       continue
     fi
@@ -584,6 +680,7 @@ examine_pr() {  # <number> <url> <head-sha> <merge-sha> <merged-at> <title>
       continue
     fi
     rec=$(record_of "$TMP/section")
+    record_token_ok "$rec" || rec=
     [ -n "$rec" ] || rec="$phase-${verdict}-$(printf '%s' "$head_sha" | cut -c1-12)"
     key="$number/$app/$rec"
     if list_has "$woken" "$key"; then
