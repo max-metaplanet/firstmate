@@ -395,7 +395,7 @@ test_attached_arm_hands_a_stalled_holder_to_its_replacement() {
   pass "watch-arm: an attached arm hands a holder stalled past the bound to its owner's replacement"
 }
 
-test_rearm_resurfaces_durable_queue_and_remote_open_decision() {
+test_rearm_resurfaces_queued_wakes_while_a_decision_only_downtime_stays_silent_until_drain() {
   local dir home state fakebin result armout drainout status watcher_pid
   dir=$(make_case rearm-resurface)
   home="$dir/home"
@@ -485,7 +485,7 @@ test_rearm_resurfaces_durable_queue_and_remote_open_decision() {
   grep -F 'ios [key=remote-signoff] needs-decision: remote secondmate is held for captain sign-off' \
     "$dir/decision-only-drain.out" >/dev/null \
     || fail "unchanged remote decision was not re-folded after a later down interval"
-  pass "watch-arm: re-arm surfaces every queued wake and an open remote decision after downtime"
+  pass "watch-arm: re-arm surfaces queued wakes, and a downtime holding only an unchanged open remote decision stays silent until the next drain presents it"
 }
 
 # A contended host starves the short-lived processes a recovery cycle runs while
@@ -1921,7 +1921,7 @@ test_reaper_stops_a_tracked_watcher
 test_attached_arm_still_fails_on_a_wake_it_did_not_deliver
 test_attached_arm_follows_a_slow_live_holder
 test_attached_arm_hands_a_stalled_holder_to_its_replacement
-test_rearm_resurfaces_durable_queue_and_remote_open_decision
+test_rearm_resurfaces_queued_wakes_while_a_decision_only_downtime_stays_silent_until_drain
 test_slow_rearm_recovery_is_still_surfaced
 test_marker_publish_failure_retains_recovery_evidence
 test_delivery_gap_wake_is_recovered_once
