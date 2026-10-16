@@ -350,7 +350,7 @@ SESSION_ID=''
 TO_PROFILE=''
 LAUNCH_ARGV=''
 SUCCESSOR_CMD=''
-# on, off, or undeterminable.
+# on, off, undeterminable, or kept (not on, but the launch command names it).
 LEAD_RC=''
 
 preflight() {  # <launch-command-override>
@@ -400,6 +400,7 @@ preflight() {  # <launch-command-override>
   fi
   LEAD_RC=$(rc_state_of "$LEAD_PID" "$LEAD_PROFILE" "$SESSION_ID")
   [ "$LEAD_RC" != on ] || follow=1
+  [ "$LEAD_RC" = on ] || ! printf '%s\n' "$LAUNCH_ARGV" | grep -Eq -- '^--remote-control(=|$)' || LEAD_RC=kept
   SUCCESSOR_CMD=$(printf '%s\n' "$LAUNCH_ARGV" | compose_successor_command "$TO_PROFILE" "$SESSION_ID" "${FM_AMBIENT_CLAUDE_CONFIG_DIR-$LEAD_PROFILE}" "$follow")
 }
 
@@ -409,6 +410,7 @@ rc_plan_line() {  # <state>
   case "$1" in
     on) printf 'on in this session, so the replacement is launched with it\n' ;;
     off) printf 'off in this session, so the replacement is not given it\n' ;;
+    kept) printf 'not on in this session, but the replacement keeps the --remote-control its launch command already names\n' ;;
     *) printf 'undeterminable for this session, so the replacement is not given it\n' ;;
   esac
 }

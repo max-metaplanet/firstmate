@@ -490,8 +490,24 @@ test_an_argv_that_already_names_remote_control_keeps_its_own_spelling() {
   esac
   [ "$(printf '%s\n' "$out" | grep -o -- '--remote-control' | wc -l | tr -d ' ')" -eq 1 ] ||
     fail "a second Remote Control flag was added beside the one already there: $out"
+  write_session_record "$SEATS_DIR/alpha" "$LEAD_PID" lead-session-1
+  out=$(run_home "$LEAD_RESTART" --check --to beta \
+    --launch-command "$FAKE_CLAUDE --remote-control --model opus") ||
+    fail "an explicitly stated launch command was refused: $out"
+  case "$out" in
+    *"remote control: not on in this session, but the replacement keeps the --remote-control its launch command already names"*"replacement command:"*--remote-control*) ;;
+    *) fail "a flag kept from the launch command was reported as not given: $out" ;;
+  esac
+  rm -f "$SEATS_DIR/alpha/sessions/$LEAD_PID.json"
+  out=$(run_home "$LEAD_RESTART" --check --to beta \
+    --launch-command "$FAKE_CLAUDE --remote-control --model opus") ||
+    fail "an explicitly stated launch command was refused: $out"
+  case "$out" in
+    *"remote control: not on in this session, but the replacement keeps"*) ;;
+    *) fail "an undeterminable state with the flag in the launch command was reported as not given: $out" ;;
+  esac
   stop_case
-  pass "a launch command that already names Remote Control keeps its own flag and session name"
+  pass "a launch command that already names Remote Control keeps its own flag and session name, and the plan says so"
 }
 
 # --- layer 2: the handover reservation ---------------------------------------
