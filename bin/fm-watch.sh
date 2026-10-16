@@ -158,9 +158,15 @@
 #   check: task <id> stopped on the <vendor> seat <a> (<class>) and no ...
 #                          the same wall with no seat left to take the work
 #                          over; the row names every seat that was considered
-#                          and why each was refused, including when each comes
-#                          back, and is raised once per episode rather than on
-#                          every poll
+#                          and why each was refused, and when each seat - the
+#                          walled one and the default profile included - comes
+#                          back (or why that is unknown); raised once per
+#                          episode, which keeps looking every poll and moves
+#                          the work as soon as a seat qualifies
+#   check: task <id> hit a <vendor> <class> wall on seat <a> and the move ...
+#                          the move to a qualifying seat was attempted and the
+#                          relaunch failed; reported once with its reason and
+#                          not attempted again inside the episode
 #   check: task <id> shows a <vendor> <class> wall ... run is still live ...
 #                          the wall is in the worker's own window while an
 #                          attributed no-mistakes run still answers for the
@@ -3300,8 +3306,8 @@ EOF
         # string match over the tail already in hand, so every other window
         # pays nothing for it, and a secondmate is left out because its own
         # liveness tick owns its recovery. The same frozen pane whose episode
-        # already had its move or its decision is skipped before the
-        # crew-state read, so a wall that lasts all day costs no fork per poll.
+        # already had its move is skipped before the crew-state read, so a
+        # moved wall that lasts all day costs no fork per poll.
         if [ "$kind" != secondmate ] \
           && fm_quota_wall_detect "$FM_WIN_HARNESS" "$tail40" >/dev/null; then
           if fm_read_file_to stale_seen "$sf" && [ "$stale_seen" = "$h" ] \

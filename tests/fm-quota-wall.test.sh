@@ -154,6 +154,8 @@ case "\$cmd" in
     else
       printf 'seat codex-max: skipped, its quota is used up; the seat comes back at 2026-10-20T00:00:00Z\n' >&2
       printf 'seat codex-spare: skipped, excluded from automatic rotation\n' >&2
+      printf 'seat codex-max2: resets at 2026-10-16T05:00:00Z\n' >&2
+      printf 'seat default: reset unknown: its quota could not be read\n' >&2
       exit 1
     fi
     ;;
@@ -298,15 +300,42 @@ test_no_seat_with_headroom_raises_one_decision() {
   assert_contains "$FM_QUOTA_WALL_REPORT" '2026-10-20T00:00:00Z' \
     'the decision must say when a used-up seat comes back'
   assert_contains "$FM_QUOTA_WALL_REPORT" 'codex-spare' 'the decision must name a withheld seat too'
+  assert_contains "$FM_QUOTA_WALL_REPORT" 'seat codex-max2: resets at 2026-10-16T05:00:00Z' \
+    'the decision must say when the walled seat itself comes back'
+  assert_contains "$FM_QUOTA_WALL_REPORT" 'seat default: reset unknown: its quota could not be read' \
+    'a seat whose reset cannot be read must say so and why'
   [ ! -f "$CASE_DIR/control.calls" ] || fail 'nothing may be relaunched when no seat qualifies'
   fm_quota_wall_settled "$HOME_DIR/state" task \
-    || fail 'an episode that raised its decision must read as settled to a poller'
+    && fail 'a decided episode keeps looking for a seat, so a poller must keep re-reading'
 
   recover "$HOME_DIR" "$WALL_LINE" || fail 'a repeat sighting must still be handled'
   [ "$FM_QUOTA_WALL_STATUS" = spent ] \
     || fail "the decision must be raised once per episode, got '$FM_QUOTA_WALL_STATUS'"
   [ -z "$FM_QUOTA_WALL_REPORT" ] || fail 'the decision must not be re-raised on every poll'
+  [ ! -f "$CASE_DIR/control.calls" ] || fail 'nothing may be relaunched while no seat qualifies'
   pass 'with no seat left the one decision names every seat and its reset, once per episode'
+}
+
+test_a_decided_episode_moves_once_a_seat_qualifies() {
+  read_case "$(make_case recheck)"
+  set_wall_line
+  recover "$HOME_DIR" "$WALL_LINE" || fail 'a wall with nowhere to go must be handled'
+  [ "$FM_QUOTA_WALL_STATUS" = no-destination ] || fail 'the first poll must raise the decision'
+
+  # A seat comes back later inside the same episode.
+  printf 'codex-max\n' > "$CASE_DIR/dest"
+  recover "$HOME_DIR" "$WALL_LINE" || fail 'the later poll must be handled'
+  [ "$FM_QUOTA_WALL_STATUS" = moved ] \
+    || fail "a decided episode must move the worker once a seat qualifies, got '$FM_QUOTA_WALL_STATUS'"
+  assert_contains "$FM_QUOTA_WALL_REPORT" 'moved to seat codex-max' 'the move must be reported as the normal outcome'
+  assert_grep 'relaunch --seat codex-max' "$CASE_DIR/control.calls" \
+    'the deferred move must go through the relaunch transaction'
+
+  recover "$HOME_DIR" "$WALL_LINE" || fail 'a sighting after the move must be handled'
+  [ "$FM_QUOTA_WALL_STATUS" = spent ] || fail 'the move must still be the episode'"'"'s only one'
+  [ "$(wc -l < "$CASE_DIR/control.calls" | tr -d '[:space:]')" = 1 ] \
+    || fail 'the worker must be relaunched exactly once'
+  pass 'a decided episode keeps looking and moves the worker as soon as a seat qualifies'
 }
 
 test_a_live_pipeline_run_is_reported_and_never_moved() {
@@ -357,8 +386,8 @@ test_a_failed_move_is_reported_and_not_retried() {
   set_wall_line
   QUOTA_WALL_FAKE_CONTROL_FAIL=1 recover "$HOME_DIR" "$WALL_LINE" \
     || fail 'a failed move must still be handled rather than silently dropped'
-  [ "$FM_QUOTA_WALL_STATUS" = refused ] \
-    || fail "a failed relaunch must be reported, got '$FM_QUOTA_WALL_STATUS'"
+  [ "$FM_QUOTA_WALL_STATUS" = move-failed ] \
+    || fail "a failed relaunch must be reported as its own outcome, got '$FM_QUOTA_WALL_STATUS'"
   assert_contains "$FM_QUOTA_WALL_REPORT" 'failed' 'the report must say the move failed'
   assert_contains "$FM_QUOTA_WALL_REPORT" 'not logged in' "the report must carry the transaction's own reason"
 
@@ -376,6 +405,7 @@ test_only_one_automatic_move_per_episode
 test_a_later_episode_gets_its_own_move
 test_a_seat_already_walled_on_is_never_a_destination_again
 test_no_seat_with_headroom_raises_one_decision
+test_a_decided_episode_moves_once_a_seat_qualifies
 test_a_live_pipeline_run_is_reported_and_never_moved
 test_an_unreadable_verdict_is_left_to_ordinary_triage
 test_a_failed_move_is_reported_and_not_retried

@@ -373,19 +373,19 @@ fm_quota_wall_episode_mark() {  # <record> <key> <value>
   printf '%s=%s\n' "${2-}" "${3-}" >> "${1-}"
 }
 
-# 0 when this episode has already had its one automatic move or has already
-# raised its one no-destination outcome. Either way nothing further is reported
-# for it: the whole point of the bound is that a wall is acted on once and then
-# stops being news on every poll.
+# 0 when this episode has already had its one automatic move, attempted or
+# made, so nothing further is done or reported for it. An episode that only
+# raised its no-destination decision is NOT spent: it keeps looking for a seat
+# on every poll and moves the worker as soon as one qualifies, without raising
+# that decision a second time.
 fm_quota_wall_episode_spent() {  # <record>
-  fm_quota_wall_record_field "${1-}" moved >/dev/null 2>&1 && return 0
-  fm_quota_wall_record_field "${1-}" decided >/dev/null 2>&1
+  fm_quota_wall_record_field "${1-}" moved >/dev/null 2>&1
 }
 
 # fm_quota_wall_settled <state-dir> <task>
 # 0 when the task's record holds an episode still inside its window that has
-# already had its move or its decision - the cheap check a poller makes before
-# paying for the authoritative read on a pane it has already seen.
+# already had its move - the cheap check a poller makes before paying for the
+# authoritative read on a pane it has already seen.
 fm_quota_wall_settled() {
   local record key
   record=$(fm_quota_wall_record_path "${1-}" "${2-}")
@@ -465,7 +465,7 @@ EOF
 # The whole bounded response to one quota-walled worker, decided here so a
 # supervisor needs no rule of its own. Sets:
 #   FM_QUOTA_WALL_STATUS  moved | no-destination | pipeline-live | spent |
-#                         refused
+#                         move-failed | refused
 #   FM_QUOTA_WALL_REPORT  one supervisor-ready sentence, empty when the status
 #                         is one the supervisor has already been told about
 # and returns 0 when this wall was HANDLED here, so the caller's ordinary stale
@@ -484,10 +484,13 @@ EOF
 #   - any other line is not handled here at all.
 #
 # `spent` is the ordinary steady state after the first act: this episode already
-# had its one move, already raised its one refusal, or already reported its live
-# run, so the wall is handled and silent. That silence is deliberate - it is the
-# whole difference between acting once and re-alarming every few minutes for an
-# hour.
+# had its one move (`move-failed` reports one that did not complete, once),
+# already raised its one no-destination decision and still has nowhere to go,
+# or already reported its live run, so the wall is handled and silent. That
+# silence is deliberate - it is the whole difference between acting once and
+# re-alarming every few minutes for an hour. A decided episode still asks for a
+# destination on every poll, and the first one that qualifies moves the worker
+# and is reported as `moved`.
 fm_quota_wall_recover() {
   local home=${1-} state=${2-} task=${3-} harness=${4-} tail=${5-} line=${6-}
   local record note from now key lock rc=0 out verdict vendor class needle
@@ -567,6 +570,11 @@ fm_quota_wall_recover() {
   fi
 
   if ! fm_quota_wall_destination "$home" "$vendor" "$from" "$record"; then
+    if fm_quota_wall_record_field "$record" decided >/dev/null 2>&1; then
+      fm_lock_release "$lock" 2>/dev/null || true
+      FM_QUOTA_WALL_STATUS=spent
+      return 0
+    fi
     # A marker that cannot be written leaves the outcome to repeat on the next
     # poll rather than to disappear, which is the right direction for something
     # the captain is being asked to decide.
@@ -603,7 +611,7 @@ fm_quota_wall_recover() {
     FM_QUOTA_WALL_REPORT="task $task hit a $vendor $class wall on seat $from and was moved to seat $FM_QUOTA_WALL_DEST; its local copy and uncommitted work are untouched and it was told why it moved"
     return 0
   fi
-  FM_QUOTA_WALL_STATUS=refused
+  FM_QUOTA_WALL_STATUS=move-failed
   FM_QUOTA_WALL_REPORT="task $task hit a $vendor $class wall on seat $from and the move to seat $FM_QUOTA_WALL_DEST failed: $(printf '%s\n' "$out" | sed -n '1s/[[:space:]]\{1,\}/ /gp')"
   return 0
 }

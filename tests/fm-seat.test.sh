@@ -4561,6 +4561,12 @@ test_worker_destination_names_when_an_empty_seat_comes_back() {
     "the refusal must name the binding window's reset, so a decision can wait for it"
   assert_not_contains "$out" '2026-10-21T00:00:00Z' \
     "a window the seat still has headroom in is not when it comes back"
+  assert_contains "$out" 'seat alpha: resets at' \
+    "the refusal must say when the walled seat itself comes back"
+  assert_contains "$out" 'seat beta: resets at 2026-10-16T02:00:00Z' \
+    "every considered seat must be listed with its reset"
+  assert_contains "$out" 'seat default: reset unknown:' \
+    "the default profile must be listed, saying why its reset is unknown"
   pass "with every seat empty the refusal names each seat and when it comes back"
 }
 

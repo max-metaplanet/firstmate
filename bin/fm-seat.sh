@@ -86,7 +86,9 @@
 #            the WORKER is on rather than the active seat, so the walled seat is
 #            never the answer, and neither is any --skip seat (one this worker
 #            already walled out on). Prints one seat name; exit 1 with each
-#            skipped seat and its reason on stderr when none qualifies. It switches,
+#            skipped seat and its reason, then every seat (the walled one and
+#            the default profile included) and when it resets, on stderr when
+#            none qualifies. It switches,
 #            writes and launches nothing - bin/fm-quota-wall-lib.sh owns the
 #            mid-task move and bin/fm-control.sh performs it.
 # add        Create an empty profile directory for a new seat and print the exact
@@ -559,8 +561,37 @@ cmd_worker_destination() {
   if [ "$from" != "$FM_SEAT_DEFAULT_NAME" ]; then
     fm_seat_name_valid "$from" || die "invalid seat name: $from"
   fi
-  name=$(next_seat "$from" ${skip[@]+"${skip[@]}"}) || die "no seat under the seats root qualifies to take over work running on '$from' (each skipped seat and its reason is printed above); add and log into another seat, put an excluded seat back with 'fm-seat.sh auto-include <name>', or lower 'fm-seat.sh destination-min' (docs/claude-seats.md)"
+  name=$(next_seat "$from" ${skip[@]+"${skip[@]}"}) || {
+    seat_resets "$from"
+    die "no seat under the seats root qualifies to take over work running on '$from' (each skipped seat and its reason is printed above); add and log into another seat, put an excluded seat back with 'fm-seat.sh auto-include <name>', or lower 'fm-seat.sh destination-min' (docs/claude-seats.md)"
+  }
   printf '%s\n' "$name"
+}
+
+# seat_resets <walled-seat>
+# When every seat of this provider comes back, for a refusal that has to say so:
+# the walled seat first, then the default profile, then every named seat, each
+# from fm_seat_quota_verdict's one read, on stderr beside the skip reasons. A
+# seat whose reset cannot be read says so and why rather than being left out.
+seat_resets() {
+  local from=$1 name dir verdict reset seen=' ' seats
+  mapfile -t seats < <(fm_seat_list)
+  for name in "$from" "$FM_SEAT_DEFAULT_NAME" ${seats[@]+"${seats[@]}"}; do
+    case "$seen" in *" $name "*) continue ;; esac
+    seen="$seen$name "
+    if ! dir=$(fm_seat_config_dir "$name" 2>/dev/null); then
+      printf 'seat %s: reset unknown: its profile could not be resolved\n' "$name" >&2
+      continue
+    fi
+    IFS=$'\t' read -r verdict _ reset <<< "$(fm_seat_quota_verdict "$dir")"
+    if [ -n "$reset" ]; then
+      printf 'seat %s: resets at %s\n' "$name" "$reset" >&2
+    elif [ "$verdict" = unknown ]; then
+      printf 'seat %s: reset unknown: its quota could not be read\n' "$name" >&2
+    else
+      printf 'seat %s: reset unknown: its quota report names no reset time\n' "$name" >&2
+    fi
+  done
 }
 
 # destination_quota_check <name>
