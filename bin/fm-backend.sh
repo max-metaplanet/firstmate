@@ -916,6 +916,37 @@ fm_backend_worktree_path() {  # <backend> <worktree-id>
   esac
 }
 
+# fm_backend_leader_pid: print the pid at the root of everything the task ran
+# in <target> - the pane's own shell, which every process the task started
+# descends from. Callers use it to answer "does this process belong to that
+# task?" without trusting a path, a name, or a command line.
+# Only a backend that exposes a per-endpoint pid can answer: tmux reports
+# `pane_pid`, and herdr reports the pane's shell pid. zellij, cmux, and orca
+# expose no per-pane pid at all (bin/backends/zellij.sh's header records that
+# finding for zellij, and neither Orca's nor cmux's CLI has an equivalent), so
+# they fail here. A failure means ownership cannot be established, never that
+# the caller may proceed: every caller must treat it as a refusal to act.
+fm_backend_leader_pid() {  # <backend> <target>
+  local backend=$1 target=$2 pid=
+  [ -n "$target" ] || return 1
+  fm_backend_source "$backend" || return 1
+  case "$backend" in
+    tmux)
+      pid=$(tmux display-message -p -t "$target" '#{pane_pid}' 2>/dev/null) || return 1
+      ;;
+    herdr)
+      fm_backend_herdr_parse_target "$target" || return 1
+      pid=$(fm_backend_herdr_pane_shell_pid "$FM_BACKEND_HERDR_SESSION" "$FM_BACKEND_HERDR_PANE") || return 1
+      ;;
+    *) return 1 ;;
+  esac
+  pid=$(printf '%s' "$pid" | tr -d '[:space:]')
+  # 0 and 1 are never a task endpoint: both would make every orphaned process
+  # on the machine read as this task's own.
+  case "$pid" in ''|*[!0-9]*|0|1) return 1 ;; esac
+  printf '%s\n' "$pid"
+}
+
 # fm_backend_busy_state: semantic busy/idle/unknown for backends that expose
 # native agent-state (herdr-addendum "busy state" row - the first backend
 # where this gets real semantics beyond pane-regex). Backends with no such

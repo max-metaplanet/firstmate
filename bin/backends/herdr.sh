@@ -1475,6 +1475,25 @@ fm_backend_herdr_pid_is_bare_shell() {  # <ps-bin> <pid>
   return 1
 }
 
+# fm_backend_herdr_pane_shell_pid: print the shell pid <pane-id> was created
+# with - the process at the root of everything that pane ran - with no claim
+# about whether it is idle, bare, or alone. The only proof it carries is that
+# pane process-info answered for that exact pane id.
+# It exists for ownership questions ("did this process come out of that
+# pane?"), which need the pane's root pid and nothing else; every close path
+# must keep using fm_backend_herdr_pane_idle_shell_pid, whose idle proof is
+# what makes ending a shell safe.
+fm_backend_herdr_pane_shell_pid() {  # <session> <pane-id>
+  local info
+  info=$(fm_backend_herdr_cli "$1" pane process-info --pane "$2" 2>/dev/null) || return 1
+  printf '%s' "$info" | jq -er --arg pane "$2" '
+    select(.result.type == "pane_process_info" and .result.process_info.pane_id == $pane)
+    | .result.process_info.shell_pid
+    | select(type == "number" and . > 1)
+    | floor
+  ' 2>/dev/null
+}
+
 # fm_backend_herdr_pane_idle_shell_pid: print the shell pid of <pane-id> only
 # when the exact pane provably holds one lone idle recognized shell: pane
 # process-info agrees on the pane id, the shell pid is both the foreground

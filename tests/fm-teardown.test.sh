@@ -101,7 +101,13 @@ exit 0
 SH
   cat > "$fakebin/tmux" <<'SH'
 #!/usr/bin/env bash
-# tmux kill-window etc.: succeed silently.
+# `display-message -p -t <target> '#{pane_pid}'` answers FM_FAKE_TMUX_PANE_PID
+# when the case set one, which is how a case gives its task a real endpoint
+# leader to attribute processes to; unset means a pane that can no longer name
+# its own leader. tmux kill-window etc.: succeed silently.
+if [ "${1:-}" = display-message ] && [ "${*: -1}" = '#{pane_pid}' ]; then
+  [ -z "${FM_FAKE_TMUX_PANE_PID:-}" ] || printf '%s\n' "$FM_FAKE_TMUX_PANE_PID"
+fi
 exit 0
 SH
   # Default gh-axi mock: no PR is associated with the branch, and viewing any PR
@@ -4628,7 +4634,7 @@ EOF
   rc=0
   FM_FAKE_AXI_STATUS="$(parked_axi_status_toon fm/task-x1 "$head")" \
   FM_FAKE_NM_ABORT_LOG="$case_dir/nm-abort.log" \
-  FM_FAKE_NM_ABORT_NOOP=1 \
+  FM_FAKE_NM_ABORT_NOOP=1 FM_FAKE_TMUX_PANE_PID=$$ \
     run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
 
   expect_code 1 "$rc" "parked-run-abort-unconfirmed: teardown should refuse"
@@ -4687,6 +4693,117 @@ test_own_autonomous_run_is_left_alone() {
   pass "a task-owned autonomous running step is left alone rather than aborted"
 }
 
+# Start one real, isolated endpoint leader for <case-dir>: a process that puts
+# ITSELF in a new session and process group, so nothing it starts shares either
+# with the test runner - and the runner is the tree teardown itself runs in, so
+# an ownership answer that accidentally matched it would prove nothing.
+# Each remaining argument asks for one `sleep` with its cwd set to <dir>:
+#   <dir>          a plain child of the leader
+#   pgroup:<dir>   a grandchild in its OWN process group whose middle parent
+#                  stays alive, so only the parent chain can attribute it
+#   orphan:<dir>   a grandchild whose middle parent exits at once, so it is
+#                  reparented away from the leader and only the process group
+#                  it inherited is left - the disowned leaked process the
+#                  reaper exists for
+#   cmd:<dir>:<sh> a child of the leader running <sh> instead of `sleep`, for a
+#                  case that needs the process to do something; write it as
+#                  `exec ...` so the recorded pid is the program itself
+# Writes <case-dir>/leader.pids with `leader=`, one `pid<n>=` per argument in
+# order, and `all=` for cleanup; read them back with leader_record. Only
+# processes this function started are ever signaled, by recorded pid.
+start_endpoint_leader() {  # <case-dir> [spec]...
+  local case_dir=$1 waited=0
+  shift
+  perl -e '
+    use POSIX ();
+    POSIX::setsid();
+    my $out = shift @ARGV;
+    my @lines = ("leader=$$");
+    my @all = ($$);
+    my $n = 0;
+    for my $spec (@ARGV) {
+      $n++;
+      my ($kind, $dir, $cmd) = ("child", $spec, undef);
+      if ($spec =~ /^cmd:([^:]*):(.*)$/s) { ($kind, $dir, $cmd) = ("cmd", $1, $2); }
+      elsif ($spec =~ /^(pgroup|orphan):(.*)$/) { ($kind, $dir) = ($1, $2); }
+      my $pid;
+      if ($kind eq "child" || $kind eq "cmd") {
+        $pid = fork();
+        die "fork" unless defined $pid;
+        if (!$pid) {
+          chdir $dir or die "chdir";
+          exec("/bin/sh", "-c", $cmd) or die "exec" if $kind eq "cmd";
+          exec("sleep", "300") or die "exec";
+        }
+      } else {
+        pipe(my $rd, my $wr) or die "pipe";
+        my $mid = fork();
+        die "fork" unless defined $mid;
+        if (!$mid) {
+          close $rd;
+          # Only pgroup leaves the inherited process group behind; an orphan
+          # must keep it, because that is the one identifier a reparented
+          # leaked process still carries.
+          POSIX::setpgid(0, 0) if $kind eq "pgroup";
+          my $leaf = fork();
+          die "fork" unless defined $leaf;
+          if (!$leaf) { close $wr; chdir $dir or die "chdir"; exec("sleep", "300") or die "exec"; }
+          syswrite($wr, "$leaf\n");
+          close $wr;
+          POSIX::_exit(0) if $kind eq "orphan";
+          # A pgroup middle outlives its leaf, so it must not keep it around
+          # as a zombie: `kill -0` cannot tell a zombie from a survivor.
+          $SIG{CHLD} = "IGNORE";
+          sleep 3600;
+        }
+        close $wr;
+        $pid = <$rd>;
+        chomp $pid;
+        close $rd;
+        push @all, $mid;
+        waitpid($mid, 0) if $kind eq "orphan";
+      }
+      push @lines, "pid$n=$pid";
+      push @all, $pid;
+    }
+    push @lines, "all=" . join(" ", @all);
+    # From here on the leader must not leave a signaled child behind as a
+    # zombie, which `kill -0` cannot tell apart from a surviving process.
+    $SIG{CHLD} = "IGNORE";
+    open my $fh, ">", "$out.part" or die "open";
+    print {$fh} map { "$_\n" } @lines;
+    close $fh;
+    rename("$out.part", $out) or die "rename";
+    sleep 3600;
+  ' "$case_dir/leader.pids" "$@" &
+  disown
+  while [ ! -f "$case_dir/leader.pids" ]; do
+    waited=$((waited + 1))
+    [ "$waited" -lt 200 ] || fail "start_endpoint_leader: the leader never reported its pids"
+    sleep 0.05
+  done
+}
+
+leader_record() {  # <case-dir> <key>
+  sed -n "s/^$2=//p" "$1/leader.pids"
+}
+
+# Kill every process start_endpoint_leader recorded, by its recorded pid.
+stop_endpoint_leader() {  # <case-dir>
+  local pid
+  [ -f "$1/leader.pids" ] || return 0
+  for pid in $(leader_record "$1" all); do
+    kill -KILL "$pid" 2>/dev/null || true
+  done
+}
+
+# The lineage identifiers of <pid> as "<ppid> <pgid>", read the same way
+# teardown reads them, so a case can assert WHICH signal is doing the work
+# rather than assuming it.
+process_lineage() {  # <pid>
+  LC_ALL=C ps -p "$1" -o ppid=,pgid= 2>/dev/null | tr -s '[:space:]' ' ' | sed 's/^ //;s/ $//'
+}
+
 test_leaked_worktree_process_is_reaped() {
   local case_dir rc pid
   case_dir=$(make_case leaked-process-reap)
@@ -4696,7 +4813,9 @@ test_leaked_worktree_process_is_reaped() {
   # A backgrounded, disowned process rooted (by cwd) under the task's own
   # worktree - the same shape the observed incident's leaked `go test`
   # binaries took (reparented to init, no live task meta to attribute them
-  # to once an unpatched teardown had already run).
+  # to once an unpatched teardown had already run). The test runner stands in
+  # for the pane this task ran in, so the sleeper descends from the recorded
+  # endpoint leader exactly as a real leaked process does.
   ( cd "$case_dir/wt" && exec sleep 300 ) &
   pid=$!
   disown
@@ -4704,7 +4823,8 @@ test_leaked_worktree_process_is_reaped() {
   kill -0 "$pid" 2>/dev/null || fail "leaked-process-reap: setup sleeper did not start"
 
   rc=0
-  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+  FM_FAKE_TMUX_PANE_PID=$$ \
+    run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
 
   expect_code 0 "$rc" "leaked-process-reap: teardown should still succeed"
   if kill -0 "$pid" 2>/dev/null; then
@@ -4731,7 +4851,8 @@ test_leaked_tasktmp_process_is_reaped() {
   kill -0 "$pid" 2>/dev/null || fail "leaked-tasktmp-reap: setup sleeper did not start"
 
   rc=0
-  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+  FM_FAKE_TMUX_PANE_PID=$$ \
+    run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
 
   expect_code 0 "$rc" "leaked-tasktmp-reap: teardown should still succeed"
   if kill -0 "$pid" 2>/dev/null; then
@@ -4741,6 +4862,273 @@ test_leaked_tasktmp_process_is_reaped() {
   assert_grep "reaping leaked worktree process" "$case_dir/stderr" \
     "leaked-tasktmp-reap: teardown did not report reaping the leaked tasktmp process"
   pass "a leaked descendant process rooted under the task's per-task tasktmp is reaped by teardown too"
+}
+
+# fail, but stop this case's own throwaway processes first: `fail` exits the
+# whole suite, so anything the case started would otherwise outlive it.
+# Every pid signaled here is one the case itself recorded.
+fail_after_case_cleanup() {  # <case-dir> <message> [pid]...
+  local case_dir=$1 message=$2 pid
+  shift 2
+  for pid in "$@"; do
+    kill -KILL "$pid" 2>/dev/null || true
+  done
+  stop_endpoint_leader "$case_dir"
+  fail "$message"
+}
+
+# The general form of the observed OrbStack kill: a long-lived process that
+# belongs to nobody in this task, whose working directory simply happens to sit
+# in the task's worktree. The cwd scan finds it; nothing else about it says it
+# is the task's, so it must come out of teardown alive - and it must not be
+# able to hold the cleanup back either.
+test_unrelated_cwd_process_is_preserved() {
+  local case_dir rc pid leader leader_pgid pid_pgid pid_ppid
+  case_dir=$(make_case unrelated-cwd-preserved)
+  write_meta "$case_dir" no-mistakes ship
+  land_shippable_commit "$case_dir"
+  start_endpoint_leader "$case_dir"
+  leader=$(leader_record "$case_dir" leader)
+
+  ( cd "$case_dir/wt" && exec sleep 300 ) &
+  pid=$!
+  disown
+  sleep 0.3
+  kill -0 "$pid" 2>/dev/null \
+    || fail_after_case_cleanup "$case_dir" "unrelated-cwd-preserved: setup sleeper did not start"
+  # Prove the fixture really is unrelated rather than trusting it: neither the
+  # leader's process group nor the leader itself is anywhere in its lineage.
+  leader_pgid=$(process_lineage "$leader" | cut -d' ' -f2)
+  pid_pgid=$(process_lineage "$pid" | cut -d' ' -f2)
+  pid_ppid=$(process_lineage "$pid" | cut -d' ' -f1)
+  [ -n "$leader_pgid" ] && [ "$pid_pgid" != "$leader_pgid" ] \
+    || fail_after_case_cleanup "$case_dir" "unrelated-cwd-preserved: fixture broke - the sleeper shares the leader's process group" "$pid"
+  [ "$pid_ppid" != "$leader" ] \
+    || fail_after_case_cleanup "$case_dir" "unrelated-cwd-preserved: fixture broke - the sleeper is a child of the leader" "$pid"
+
+  rc=0
+  FM_FAKE_TMUX_PANE_PID="$leader" \
+    run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+
+  kill -0 "$pid" 2>/dev/null \
+    || fail_after_case_cleanup "$case_dir" "unrelated-cwd-preserved: teardown killed a process this task does not own"
+  kill -KILL "$pid" 2>/dev/null || true
+  stop_endpoint_leader "$case_dir"
+  expect_code 0 "$rc" "unrelated-cwd-preserved: teardown should still complete"
+  assert_grep "preserving process(es) working under this task's worktree" "$case_dir/stderr" \
+    "unrelated-cwd-preserved: teardown did not report the process it left alone"
+  assert_not_contains "$(cat "$case_dir/stderr")" "reaping leaked worktree process" \
+    "unrelated-cwd-preserved: teardown reported reaping a process this task does not own"
+  assert_absent "$case_dir/state/task-x1.meta" \
+    "unrelated-cwd-preserved: a preserved process blocked cleanup instead of being left alone"
+  pass "a process that only shares the worktree as its working directory survives teardown and is reported preserved"
+}
+
+# A live descendant of the endpoint leader, deliberately placed in its OWN
+# process group with its middle parent still alive, so the parent chain is the
+# only thing that can attribute it. FM_PROC_ROOT_OVERRIDE pins the lineage read
+# to `ps` on every platform, which keeps the leader's session token out of the
+# answer rather than letting Linux's /proc session id decide the case instead.
+test_endpoint_leader_descendant_is_reaped() {
+  local case_dir rc leader leaf leader_pgid leaf_pgid leaf_ppid
+  case_dir=$(make_case leader-descendant-reap)
+  write_meta "$case_dir" no-mistakes ship
+  land_shippable_commit "$case_dir"
+  start_endpoint_leader "$case_dir" "pgroup:$case_dir/wt"
+  leader=$(leader_record "$case_dir" leader)
+  leaf=$(leader_record "$case_dir" pid1)
+  kill -0 "$leaf" 2>/dev/null \
+    || fail_after_case_cleanup "$case_dir" "leader-descendant-reap: setup descendant did not start"
+  leader_pgid=$(process_lineage "$leader" | cut -d' ' -f2)
+  leaf_pgid=$(process_lineage "$leaf" | cut -d' ' -f2)
+  leaf_ppid=$(process_lineage "$leaf" | cut -d' ' -f1)
+  [ "$leaf_pgid" != "$leader_pgid" ] \
+    || fail_after_case_cleanup "$case_dir" "leader-descendant-reap: fixture broke - the descendant kept the leader's process group"
+  [ "$leaf_ppid" != "$leader" ] \
+    || fail_after_case_cleanup "$case_dir" "leader-descendant-reap: fixture broke - the descendant is a direct child, so no chain is walked"
+
+  rc=0
+  FM_PROC_ROOT_OVERRIDE="$case_dir/no-proc" FM_FAKE_TMUX_PANE_PID="$leader" \
+    run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+
+  if kill -0 "$leaf" 2>/dev/null; then
+    fail_after_case_cleanup "$case_dir" "leader-descendant-reap: a descendant of the endpoint leader survived teardown" "$leaf"
+  fi
+  stop_endpoint_leader "$case_dir"
+  expect_code 0 "$rc" "leader-descendant-reap: teardown should succeed"
+  assert_grep "reaping leaked worktree process" "$case_dir/stderr" \
+    "leader-descendant-reap: teardown did not report reaping the descendant"
+  pass "a descendant of the endpoint leader is reaped even when its own process group and parent differ from the leader's"
+}
+
+# The case the reaper was built for: the task's own process, disowned and
+# reparented away from the leader, so its parent chain is gone. The process
+# group it inherited at birth is all that is left, and it is enough.
+test_reparented_leaked_process_in_leader_group_is_reaped() {
+  local case_dir rc leader leaf leader_pgid leaf_pgid leaf_ppid
+  case_dir=$(make_case reparented-group-reap)
+  write_meta "$case_dir" no-mistakes ship
+  land_shippable_commit "$case_dir"
+  start_endpoint_leader "$case_dir" "orphan:$case_dir/wt"
+  leader=$(leader_record "$case_dir" leader)
+  leaf=$(leader_record "$case_dir" pid1)
+  kill -0 "$leaf" 2>/dev/null \
+    || fail_after_case_cleanup "$case_dir" "reparented-group-reap: setup orphan did not start"
+  leader_pgid=$(process_lineage "$leader" | cut -d' ' -f2)
+  leaf_pgid=$(process_lineage "$leaf" | cut -d' ' -f2)
+  leaf_ppid=$(process_lineage "$leaf" | cut -d' ' -f1)
+  [ "$leaf_ppid" = 1 ] \
+    || fail_after_case_cleanup "$case_dir" "reparented-group-reap: fixture broke - the orphan was not reparented away (parent $leaf_ppid)" "$leaf"
+  [ "$leaf_pgid" = "$leader_pgid" ] \
+    || fail_after_case_cleanup "$case_dir" "reparented-group-reap: fixture broke - the orphan did not keep the leader's process group" "$leaf"
+
+  rc=0
+  FM_PROC_ROOT_OVERRIDE="$case_dir/no-proc" FM_FAKE_TMUX_PANE_PID="$leader" \
+    run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+
+  if kill -0 "$leaf" 2>/dev/null; then
+    fail_after_case_cleanup "$case_dir" "reparented-group-reap: the task's own reparented process survived teardown" "$leaf"
+  fi
+  stop_endpoint_leader "$case_dir"
+  expect_code 0 "$rc" "reparented-group-reap: teardown should succeed"
+  assert_grep "reaping leaked worktree process" "$case_dir/stderr" \
+    "reparented-group-reap: teardown did not report reaping the reparented process"
+  pass "a disowned process reparented away from the endpoint leader is still reaped through the process group it inherited"
+}
+
+# The shape the two leaked `go test` binaries actually had: a process the AGENT
+# started, so its process group is the agent's rather than the pane shell's,
+# and then reparented away when the agent exited. Neither its parent chain nor
+# its process group names the leader; only the session every process of that
+# pane carries for life does. Two real processes with the same broken parent
+# and the same unrelated process group, differing ONLY in session, must come
+# out on opposite sides.
+test_leaked_process_matched_only_by_session_is_reaped() {
+  local case_dir rc leader owned unrelated
+  case_dir=$(make_case session-only-reap)
+  write_meta "$case_dir" no-mistakes ship
+  land_shippable_commit "$case_dir"
+  start_endpoint_leader "$case_dir"
+  leader=$(leader_record "$case_dir" leader)
+
+  ( cd "$case_dir/wt" && exec sleep 300 ) &
+  owned=$!
+  disown
+  ( cd "$case_dir/wt" && exec sleep 300 ) &
+  unrelated=$!
+  disown
+  sleep 0.3
+  # One `ps` answer per process, so the three lineages differ in the session
+  # column alone. Every other `ps` call - including teardown's own identity
+  # reads and its own lineage - goes to the real ps.
+  cat > "$case_dir/fakebin/ps" <<'SH'
+#!/usr/bin/env bash
+if [ "${1:-}" = -p ] && [ "${3:-}" = -o ] && [ "${4:-}" = ppid=,pgid=,tty= ]; then
+  case "${2:-}" in
+    "${FM_FAKE_TMUX_PANE_PID:-no}") printf '1 %s ttyfmA\n' "$FM_FAKE_TMUX_PANE_PID"; exit 0 ;;
+    "${FM_FAKE_SESSION_OWNED_PID:-no}") printf '1 %s ttyfmA\n' "$FM_FAKE_SESSION_OWNED_PID"; exit 0 ;;
+    "${FM_FAKE_SESSION_OTHER_PID:-no}") printf '1 %s ttyfmB\n' "$FM_FAKE_SESSION_OTHER_PID"; exit 0 ;;
+  esac
+fi
+exec "$REAL_PS_FOR_TEST" "$@"
+SH
+  chmod +x "$case_dir/fakebin/ps"
+
+  rc=0
+  FM_PROC_ROOT_OVERRIDE="$case_dir/no-proc" FM_FAKE_TMUX_PANE_PID="$leader" \
+  FM_FAKE_SESSION_OWNED_PID="$owned" FM_FAKE_SESSION_OTHER_PID="$unrelated" \
+    run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+
+  if kill -0 "$owned" 2>/dev/null; then
+    fail_after_case_cleanup "$case_dir" "session-only-reap: a process in the endpoint leader's own session survived teardown" "$owned" "$unrelated"
+  fi
+  kill -0 "$unrelated" 2>/dev/null \
+    || fail_after_case_cleanup "$case_dir" "session-only-reap: a process in another session was killed"
+  kill -KILL "$unrelated" 2>/dev/null || true
+  stop_endpoint_leader "$case_dir"
+  expect_code 0 "$rc" "session-only-reap: teardown should succeed"
+  assert_grep "reaping leaked worktree process(es) for task-x1: $owned" "$case_dir/stderr" \
+    "session-only-reap: teardown did not reap exactly the process in the leader's session"
+  assert_grep "preserving process(es) working under this task's worktree that are not task-x1's own" "$case_dir/stderr" \
+    "session-only-reap: teardown did not report the other session's process as preserved"
+  pass "a reparented process is reaped on the session it inherited from the endpoint leader, and one from another session is not"
+}
+
+# The same session-only decision, read through /proc instead of `ps`: that is
+# the branch Linux takes in production, and its session id is a different field
+# of a different interface. The proc root is fabricated so both platforms
+# exercise it, with each process's session set to a live pid that cannot
+# collide with teardown's own.
+test_leaked_process_matched_only_by_proc_session_is_reaped() {
+  local case_dir rc leader owned unrelated proc_root pid
+  case_dir=$(make_case proc-session-only-reap)
+  write_meta "$case_dir" no-mistakes ship
+  land_shippable_commit "$case_dir"
+  start_endpoint_leader "$case_dir"
+  leader=$(leader_record "$case_dir" leader)
+  proc_root="$case_dir/proc"
+
+  ( cd "$case_dir/wt" && exec sleep 300 ) &
+  owned=$!
+  disown
+  ( cd "$case_dir/wt" && exec sleep 300 ) &
+  unrelated=$!
+  disown
+  sleep 0.3
+  # /proc/<pid>/stat as the kernel writes it: after the comm field come state,
+  # ppid, pgrp and session, with starttime nineteen fields later. All three are
+  # reparented to init with their own process group; only session differs.
+  for pid in "$leader:$leader" "$owned:$leader" "$unrelated:$unrelated"; do
+    mkdir -p "$proc_root/${pid%%:*}"
+    printf '%s (sleep) S 1 %s %s 0 -1 0 0 0 0 0 0 0 0 0 0 0 0 4242 0 0 0\n' \
+      "${pid%%:*}" "${pid%%:*}" "${pid##*:}" > "$proc_root/${pid%%:*}/stat"
+  done
+
+  rc=0
+  FM_PROC_ROOT_OVERRIDE="$proc_root" FM_FAKE_TMUX_PANE_PID="$leader" \
+    run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+
+  if kill -0 "$owned" 2>/dev/null; then
+    fail_after_case_cleanup "$case_dir" "proc-session-only-reap: a process in the endpoint leader's own session survived teardown" "$owned" "$unrelated"
+  fi
+  kill -0 "$unrelated" 2>/dev/null \
+    || fail_after_case_cleanup "$case_dir" "proc-session-only-reap: a process in another session was killed"
+  kill -KILL "$unrelated" 2>/dev/null || true
+  stop_endpoint_leader "$case_dir"
+  expect_code 0 "$rc" "proc-session-only-reap: teardown should succeed"
+  assert_grep "reaping leaked worktree process(es) for task-x1: $owned" "$case_dir/stderr" \
+    "proc-session-only-reap: teardown did not reap exactly the process in the leader's session"
+  pass "the session a leaked process inherited is read from /proc too, and a process from another session is left alone"
+}
+
+# An endpoint that can no longer name its own leader - a retried cleanup whose
+# pane is already gone - can prove nothing about anything standing in the
+# worktree. It must leave every candidate running, say so, and still finish.
+test_unresolvable_leader_preserves_every_candidate() {
+  local case_dir rc pid
+  case_dir=$(make_case no-leader-preserve)
+  write_meta "$case_dir" no-mistakes ship
+  land_shippable_commit "$case_dir"
+
+  ( cd "$case_dir/wt" && exec sleep 300 ) &
+  pid=$!
+  disown
+  sleep 0.3
+  kill -0 "$pid" 2>/dev/null || fail "no-leader-preserve: setup sleeper did not start"
+
+  rc=0
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+
+  if ! kill -0 "$pid" 2>/dev/null; then
+    fail "no-leader-preserve: teardown killed a process it could not attribute to the task"
+  fi
+  kill -KILL "$pid" 2>/dev/null || true
+  expect_code 0 "$rc" "no-leader-preserve: teardown should still complete"
+  assert_grep "cannot resolve the tmux endpoint leader for task-x1" "$case_dir/stderr" \
+    "no-leader-preserve: teardown did not report that ownership could not be established"
+  assert_absent "$case_dir/state/task-x1.meta" \
+    "no-leader-preserve: an unattributable process blocked cleanup"
+  pass "an endpoint that can no longer name its leader preserves every candidate and still completes cleanup"
 }
 
 test_lsof_absent_reaps_tmux_process_group() {
@@ -4842,7 +5230,7 @@ SH
   chmod +x "$case_dir/fakebin/lsof" "$case_dir/fakebin/ps"
 
   rc=0
-  FM_PROC_ROOT_OVERRIDE="$case_dir/no-proc" \
+  FM_PROC_ROOT_OVERRIDE="$case_dir/no-proc" FM_FAKE_TMUX_PANE_PID=$$ \
   FM_FAKE_REUSED_PID="$pid" FM_FAKE_PS_COUNT="$case_dir/ps-count" \
     run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
 
@@ -4902,7 +5290,7 @@ SH
   chmod +x "$case_dir/fakebin/ps" "$case_dir/fakebin/lsof"
 
   rc=0
-  FM_PROC_ROOT_OVERRIDE="$case_dir/no-proc" \
+  FM_PROC_ROOT_OVERRIDE="$case_dir/no-proc" FM_FAKE_TMUX_PANE_PID=$$ \
   FM_FAKE_EXEC_PID="$pid" FM_FAKE_EXEC_MARKER="$marker" \
   FM_FAKE_EXEC_DONE="$done_flag" FM_FAKE_LSOF_COUNT="$case_dir/lsof-count" \
     run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
@@ -4922,26 +5310,30 @@ test_process_spawned_during_grace_is_reaped_on_later_pass() {
   write_meta "$case_dir" no-mistakes ship
   land_shippable_commit "$case_dir"
   child_file="$case_dir/child.pid"
-
-  ( cd "$case_dir/wt" && exec perl -e '
-      my $file = shift;
-      $SIG{TERM} = sub {
-        my $child = fork();
-        die "fork" unless defined $child;
-        if (!$child) { exec "sleep", "300"; }
-        open my $fh, ">", $file or die "open";
-        print {$fh} "$child\n";
-        close $fh;
-        exit 0;
-      };
-      sleep 300;
-    ' "$child_file" ) &
-  pid=$!
-  disown
+  # The spawning process runs under a real endpoint leader: its own TERM
+  # handler orphans the child it forks, so nothing but the process group that
+  # child inherited can attribute it - which is the whole point of the case.
+  cat > "$case_dir/grace.pl" <<'PL'
+my $file = shift;
+$SIG{TERM} = sub {
+  my $child = fork();
+  die "fork" unless defined $child;
+  if (!$child) { exec "sleep", "300"; }
+  open my $fh, ">", $file or die "open";
+  print {$fh} "$child\n";
+  close $fh;
+  exit 0;
+};
+sleep 300;
+PL
+  start_endpoint_leader "$case_dir" \
+    "cmd:$case_dir/wt:exec perl $case_dir/grace.pl $child_file"
+  pid=$(leader_record "$case_dir" pid1)
   sleep 0.2
 
   rc=0
-  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+  FM_FAKE_TMUX_PANE_PID=$(leader_record "$case_dir" leader) \
+    run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
 
   if [ -f "$child_file" ]; then child_pid=$(cat "$child_file"); fi
   if [ -n "$child_pid" ] && kill -0 "$child_pid" 2>/dev/null; then
@@ -4952,6 +5344,7 @@ test_process_spawned_during_grace_is_reaped_on_later_pass() {
     parent_survived=1
     kill -KILL "$pid" 2>/dev/null || true
   fi
+  stop_endpoint_leader "$case_dir"
   expect_code 0 "$rc" "grace-spawn-convergence: teardown should converge"
   assert_present "$child_file" "grace-spawn-convergence: TERM handler did not spawn a child"
   [ "$child_survived" -eq 0 ] || fail "grace-spawn-convergence: spawned child survived"
@@ -4972,9 +5365,13 @@ EOF
   cat > "$case_dir/fakebin/ps" <<'SH'
 #!/usr/bin/env bash
 if [ "${1:-}" = -p ] && [ "${2:-}" = "${FM_FAKE_PERSISTENT_PID:-}" ] \
-   && [ "${3:-}" = -o ] && [ "${4:-}" = lstart= ]; then
-  printf 'Tue Aug  4 10:00:00 2026\n'
-  exit 0
+   && [ "${3:-}" = -o ]; then
+  case "${4:-}" in
+    lstart=) printf 'Tue Aug  4 10:00:00 2026\n'; exit 0 ;;
+    # A child of the recorded endpoint leader, so this unkillable survivor is
+    # provably the task's OWN and must still hold teardown back.
+    ppid=,pgid=,tty=) printf '%s 1 ??\n' "${FM_FAKE_TMUX_PANE_PID:-0}"; exit 0 ;;
+  esac
 fi
 exec "$REAL_PS_FOR_TEST" "$@"
 SH
@@ -4982,6 +5379,7 @@ SH
 
   rc=0
   FM_PROC_ROOT_OVERRIDE="$case_dir/no-proc" FM_FAKE_PERSISTENT_PID="$fake_pid" \
+  FM_FAKE_TMUX_PANE_PID=$$ \
     run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
 
   expect_code 1 "$rc" "persistent-reap-refusal: teardown should refuse"
@@ -5023,6 +5421,7 @@ EOF
 
   rc=0
   FM_PROC_ROOT_OVERRIDE="$case_dir/no-proc" FM_FAKE_EXITED_PID="$fake_pid" \
+  FM_FAKE_TMUX_PANE_PID=$$ \
     run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
 
   expect_code 0 "$rc" "identity-exit-convergence: teardown should succeed"
@@ -5061,7 +5460,7 @@ EOF
 
   rc=0
   FM_FAKE_AXI_STATUS="$(parked_axi_status_toon fm/task-x1 "$head")" \
-  FM_FAKE_NM_ABORT_LOG="$abort_log" \
+  FM_FAKE_NM_ABORT_LOG="$abort_log" FM_FAKE_TMUX_PANE_PID=$$ \
     run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
   expect_code 0 "$rc" "abort-then-reap-then-remove-order: teardown should still succeed"
   kill -0 "$pid" 2>/dev/null && { kill -KILL "$pid" 2>/dev/null || true; }
@@ -5366,6 +5765,12 @@ test_another_branchs_parked_run_is_never_touched
 test_own_autonomous_run_is_left_alone
 test_leaked_worktree_process_is_reaped
 test_leaked_tasktmp_process_is_reaped
+test_unrelated_cwd_process_is_preserved
+test_endpoint_leader_descendant_is_reaped
+test_reparented_leaked_process_in_leader_group_is_reaped
+test_leaked_process_matched_only_by_session_is_reaped
+test_leaked_process_matched_only_by_proc_session_is_reaped
+test_unresolvable_leader_preserves_every_candidate
 test_lsof_absent_reaps_tmux_process_group
 test_lsof_error_refuses_before_removal
 test_reused_pid_identity_is_not_force_killed
