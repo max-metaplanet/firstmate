@@ -371,7 +371,13 @@ test_attached_arm_hands_a_stalled_holder_to_its_replacement() {
 
   # The owner's retry: a fresh arm reaches the watcher's eviction path, and the
   # replacement surfaces an ordinary wake instead of the refusal that used to
-  # end in the auto-arm FAILED notice.
+  # end in the auto-arm FAILED notice. A reclaimed lock is evidence of a gap
+  # rather than of work to drain, so the recovery that carries the replacement's
+  # wake is announced only over work its turn can act on - a queued row, or a
+  # decision this home holds open (resurface_after_downtime in bin/fm-watch.sh);
+  # this home holds no decision, so the row is seeded here rather than assumed.
+  append_wake "$state" check stalled-holder 'check: work the stalled holder never delivered' \
+    || fail "could not seed the durable wake the replacement's recovery must carry"
   PATH="$fakebin:$PATH" FM_HOME="$dir" FM_STATE_OVERRIDE="$state" \
     FM_POLL=1 FM_SIGNAL_GRACE=0 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
     FM_ARM_CONFIRM_TIMEOUT=10 FM_GUARD_GRACE=5 FM_WATCHER_STALL_BOUND=12 "$WATCH_ARM" > "$rearmout" 2>&1 &
@@ -1255,6 +1261,13 @@ test_take_over_preserves_downtime_from_watcher_self_exit() {
     || fail "self-exit unexpectedly delivered a wake"
   case "$(cat "$state/.watcher-down")" in pending:downtime:*) ;; *) fail "self-exit did not publish downtime" ;; esac
   rm -f "$dir/fail-tick"
+  # The published generation is preserved above with nothing queued, which is
+  # also what keeps it silent (bin/fm-wake-lib.sh): the recovery it carries is
+  # announced only over work its turn can act on. Queue that work now - after
+  # the self-exit assertions have proved the exit itself queued nothing - so the
+  # takeover's own recovery is the one this case follows to its wake.
+  append_wake "$state" check take-over-gap 'check: work the self-exit gap stranded' \
+    || fail "could not queue the wake the takeover recovery must carry"
   touch "$dir/release"
   i=0
   while [ "$i" -lt "$REARM_REPORT_POLLS" ]; do
@@ -1549,6 +1562,11 @@ test_handling_delivered_rejects_a_superseded_generation() {
   printf '%s' "$home" > "$state/.watch.lock/fm-home"
   printf '%s' "$WATCH" > "$state/.watch.lock/watcher-path"
   printf '%s' "$identity" > "$state/.watch.lock/pid-identity"
+  # The announcement is made only over work the recovery turn can act on
+  # (bin/fm-wake-lib.sh), so a published episode with nothing queued stays
+  # pending - not the announced precondition this case characterizes.
+  append_wake "$state" check downtime:fixture 'check: work the fixture downtime stranded' \
+    || fail "could not queue the wake the announced fixture episode must carry"
   FM_STATE_OVERRIDE="$state" bash -c '. "$1"; fm_recovery_marker_publish "$2" downtime && fm_recovery_marker_arm_check "$2"' \
     _ "$ROOT/bin/fm-wake-lib.sh" "$state/.watcher-down" \
     || fail "could not announce the fixture downtime episode"

@@ -2673,10 +2673,17 @@ if ! fm_recovery_marker_arm_check "$WATCHER_DOWNTIME_MARKER"; then
   echo "watcher: recovery state could not be consumed safely; retaining stale lock evidence" >&2
   exit 1
 fi
+# A recovery the marker arm check approved has already passed the announcement
+# gate once, under the queue lock and over the marker this cycle read. The poll
+# loop must not apply that gate a second time: an approval the marker owns -
+# a quarantined malformed marker above all, which is approved over no queue row
+# at all - would otherwise be absorbed and the arm would never report it.
+WATCHER_RECOVERY_MARKER_APPROVED=0
 if [ "${FM_WATCH_HANDLING_SUCCESSOR:-0}" = 1 ]; then
   WATCHER_RECOVERY_PENDING=0
 elif [ "$FM_RECOVERY_MARKER_ACTION" = recover ]; then
   WATCHER_RECOVERY_PENDING=1
+  WATCHER_RECOVERY_MARKER_APPROVED=1
 fi
 # Side-band ledger publication, detached from the poll loop.
 #
@@ -2834,6 +2841,20 @@ rerecord_device_shifted_pr_poll() {  # <id>
 # Logged once per watcher, not once per poll: the condition below is re-read
 # every cycle, and a line per poll would bury the triage log it shares.
 RECLAIMED_LOCK_ABSORB_LOGGED=0
+# The open-decision half of that condition, resolved once per watcher rather
+# than per poll: a decision already open when this cycle reclaimed the lock is
+# what the recovery turn would re-present, while a decision opened afterwards
+# wakes this live watcher on its own status line and queues a row the per-poll
+# queue stat already catches.
+RECLAIMED_LOCK_OPEN_DECISION=
+
+reclaimed_lock_recovery_has_open_decision() {
+  if [ -z "$RECLAIMED_LOCK_OPEN_DECISION" ]; then
+    RECLAIMED_LOCK_OPEN_DECISION=no
+    fm_recovery_open_decision_present && RECLAIMED_LOCK_OPEN_DECISION=yes
+  fi
+  [ "$RECLAIMED_LOCK_OPEN_DECISION" = yes ]
+}
 
 resurface_after_downtime() {
   # Handling successors already have a predecessor-delivered wake on the way.
@@ -2848,16 +2869,19 @@ resurface_after_downtime() {
       exit 1
     fi
     [ "$FM_RECOVERY_MARKER_ACTION" = recover ] || return 0
-  elif ! fm_recovery_queue_has_work; then
+  elif [ "$WATCHER_RECOVERY_MARKER_APPROVED" -ne 1 ] \
+    && ! fm_recovery_queue_has_work && ! reclaimed_lock_recovery_has_open_decision; then
     # A stale lock this cycle reclaimed is evidence of a GAP, not of work to
-    # drain, and this arm consults no marker, so the queue is the only record
-    # that says whether the announcement has anything for its reader. Checked on
-    # every poll rather than once, so a row appended later still surfaces within
-    # one cycle. Read without the queue lock, like bin/fm-guard.sh's own count: a
-    # torn read can only delay this by one poll.
+    # drain, and this arm consults no marker, so the queue and the still-open
+    # decision fold are the only records that say whether the announcement has
+    # anything for its reader - the same gate fm_recovery_has_work_to_present
+    # owns for the marker transition. The queue is checked on every poll rather
+    # than once, so a row appended later still surfaces within one cycle. Read
+    # without the queue lock, like bin/fm-guard.sh's own count: a torn read can
+    # only delay this by one poll.
     if [ "$RECLAIMED_LOCK_ABSORB_LOGGED" -eq 0 ]; then
       RECLAIMED_LOCK_ABSORB_LOGGED=1
-      triage_log "absorbed reclaimed-lock recovery (nothing queued to drain)"
+      triage_log "absorbed reclaimed-lock recovery (nothing queued to drain, no decision open)"
     fi
     return 0
   fi

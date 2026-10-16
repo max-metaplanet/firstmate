@@ -222,12 +222,13 @@ The away return brief treats a still-open handling episode as a wake in progress
 
 ### Announcement
 
-A downtime generation is announced only over durable work to drain, and then at most once.
-`check: rearm-resurface` tells its reader to drain the queue and nothing else, so an announcement over an empty queue can only spend a supervising turn that finds nothing; a watcher close no turn acknowledged - a restart, a take-over, a self-exit, a reclaimed lock - leaves exactly that state, and each one used to cost such a turn.
-A non-successor watcher start checks the durable queue and recovery marker under their locks.
-If the queue is empty, the arm announces nothing and leaves the generation exactly as it found it, so the recovery stays owed and repeated empty-queue arms are idempotent while a long-poll source is merely alive.
+A downtime generation is announced only over work its recovery turn can act on, and then at most once.
+That work is a durable queue row, or a decision this home still holds open, which the drain re-presents from the status logs rather than from the queue.
+An announcement over neither can only spend a supervising turn that finds nothing; a watcher close no turn acknowledged - a restart, a take-over, a self-exit, a reclaimed lock - leaves exactly that state, and each one used to cost such a turn.
+A non-successor watcher start checks the durable queue and recovery marker under their locks, and the open-decision fold only when the queue is empty.
+With neither, the arm announces nothing and leaves the generation exactly as it found it, so the recovery stays owed and repeated silent arms are idempotent while a long-poll source is merely alive.
 That applies to a never-announced pending generation, which stays pending, and to an announced-but-unacknowledged one, which stays announced.
-With durable work queued, the first recovery marks the generation announced, and the first row to arrive after a silence announces that same generation once.
+With work queued, the first recovery marks the generation announced, and the first row to arrive after a silence announces that same generation once.
 If a durable row arrived after an announcement, the arm opens a fresh pending downtime generation so buried work still resurfaces once.
 A Codex foreground checkpoint skips the announced-episode reopen transition, so an already-announced generation stays announced while the checkpoint continues its bounded supervision.
 Its ordinary arm check still announces a never-announced generation that has queued work, including one made pending by a durable queue append during the checkpoint.
