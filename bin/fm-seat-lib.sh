@@ -686,8 +686,10 @@ fm_seat_quota_tool_dir() {
 # location than the one already recorded. Never fails a caller: the record is
 # an aid to a later launch, not a precondition of this read.
 #
-# FM_SEAT_QUOTA_TOOL_RECORDED keeps one process to one resolution, so the
-# repeated reads of a single watch pass pay for it once.
+# FM_SEAT_QUOTA_TOOL_RECORDED set in a shell stops it and the subshells it
+# starts from recording. Reads run in command substitutions, so setting it here
+# lasts only for that one read; a process that must never record, such as the
+# pipeline launch, sets it before its first read.
 fm_seat_quota_tool_record() {
   local dir tmp path
   [ -n "${STATE:-}" ] || return 0
