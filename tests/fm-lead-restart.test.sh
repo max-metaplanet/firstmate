@@ -17,11 +17,14 @@
 # against real processes in a real terminal.
 #
 # What is NOT proven here, and is not claimed anywhere: that a real signed-in
-# `claude --resume <id>` comes back up as that same session. Exercising it needs
-# a credential, which this suite deliberately never touches. The stand-in
+# `claude --resume <id>` comes back up as that same session, or that a real
+# `claude --remote-control` reaches Anthropic. Exercising either needs a
+# credential, which this suite deliberately never touches. The stand-in
 # reproduces the documented contract instead - a resume keeps the session id,
-# which is exactly what --fork-session exists to opt out of - and every other
-# step is proven for real.
+# which is exactly what --fork-session exists to opt out of, and a session
+# publishes its Remote Control connection in its own per-pid session record -
+# and every other step is proven for real. The live claim behind that second
+# contract is recorded in docs/verification/runtime-backends.md.
 set -u
 
 # shellcheck source=tests/fixtures.sh
@@ -370,6 +373,145 @@ test_launch_command_is_established_only_when_it_round_trips() {
   pass "a launch command is established only when it provably round-trips, and composition leaves exactly one resume"
 }
 
+# --- layer 1b: following Remote Control --------------------------------------
+
+# write_session_record <profile> <pid> <session-id> [<bridge-session>]
+# The per-pid record a real Claude session publishes under its own profile, with
+# the Remote Control connection present only when one is named.
+write_session_record() {  # <profile> <pid> <session-id> [<bridge>]
+  mkdir -p "$1/sessions"
+  if [ -n "${4:-}" ]; then
+    printf '{"pid":%s,"sessionId":"%s","status":"idle","bridgeSessionId":"%s"}\n' "$2" "$3" "$4" \
+      > "$1/sessions/$2.json"
+  else
+    printf '{"pid":%s,"sessionId":"%s","status":"idle"}\n' "$2" "$3" > "$1/sessions/$2.json"
+  fi
+}
+
+test_remote_control_follows_a_lead_that_had_it_on() {
+  local rec out
+  command -v jq >/dev/null 2>&1 ||
+    { echo "ok - # skip: jq not found, reading the session record needs one"; return 0; }
+  rec=$(make_case rc-on); read_case "$rec"
+  stub_pane_exists "$FAKEBIN"
+  write_session_record "$SEATS_DIR/alpha" "$LEAD_PID" lead-session-1 session_01abc
+  out=$(run_home "$LEAD_RESTART" --check --to beta) || fail "the check refused an establishable move: $out"
+  case "$out" in
+    *"remote control: on in this session"*) ;;
+    *) fail "the check did not report Remote Control as on: $out" ;;
+  esac
+  case "$out" in
+    *"--remote-control --resume lead-session-1"*) ;;
+    *) fail "the replacement was not given Remote Control before its resume: $out" ;;
+  esac
+  stop_case
+  pass "a lead whose session record carries the Remote Control connection hands it to its replacement"
+}
+
+test_remote_control_is_not_given_to_a_lead_that_did_not_have_it() {
+  local rec out
+  command -v jq >/dev/null 2>&1 ||
+    { echo "ok - # skip: jq not found, reading the session record needs one"; return 0; }
+  rec=$(make_case rc-off); read_case "$rec"
+  stub_pane_exists "$FAKEBIN"
+
+  # Never connected: the field is absent entirely.
+  write_session_record "$SEATS_DIR/alpha" "$LEAD_PID" lead-session-1
+  out=$(run_home "$LEAD_RESTART" --check --to beta) || fail "the check refused an establishable move: $out"
+  case "$out" in
+    *"remote control: off in this session"*) ;;
+    *) fail "an absent connection was not read as off: $out" ;;
+  esac
+  case "$out" in *--remote-control*) fail "Remote Control was given to a lead that did not have it: $out" ;; esac
+
+  # Disconnected: the field is present and null, which is the same answer.
+  printf '{"pid":%s,"sessionId":"lead-session-1","bridgeSessionId":null}\n' "$LEAD_PID" \
+    > "$SEATS_DIR/alpha/sessions/$LEAD_PID.json"
+  out=$(run_home "$LEAD_RESTART" --check --to beta) || fail "the check refused an establishable move: $out"
+  case "$out" in
+    *"remote control: off in this session"*) ;;
+    *) fail "a disconnected session was not read as off: $out" ;;
+  esac
+  case "$out" in *--remote-control*) fail "Remote Control was given to a disconnected lead: $out" ;; esac
+  stop_case
+  pass "a lead that never connected, and one that disconnected, both leave the replacement without Remote Control"
+}
+
+test_an_unreadable_or_foreign_record_is_undeterminable_rather_than_a_guess() {
+  local rec out
+  command -v jq >/dev/null 2>&1 ||
+    { echo "ok - # skip: jq not found, reading the session record needs one"; return 0; }
+  rec=$(make_case rc-undeterminable); read_case "$rec"
+  stub_pane_exists "$FAKEBIN"
+
+  # No record at all.
+  out=$(run_home "$LEAD_RESTART" --check --to beta) || fail "the check refused an establishable move: $out"
+  case "$out" in
+    *"remote control: undeterminable for this session"*) ;;
+    *) fail "a missing record was not reported undeterminable: $out" ;;
+  esac
+  case "$out" in *--remote-control*) fail "Remote Control was turned on with no evidence: $out" ;; esac
+
+  # A record for THIS pid naming a different session - a recycled pid, or a
+  # record left behind by an earlier session - is evidence about that session,
+  # not this one, even though it carries a live connection.
+  write_session_record "$SEATS_DIR/alpha" "$LEAD_PID" some-other-session session_01abc
+  out=$(run_home "$LEAD_RESTART" --check --to beta) || fail "the check refused an establishable move: $out"
+  case "$out" in
+    *"remote control: undeterminable for this session"*) ;;
+    *) fail "a record for another session was read as this session's state: $out" ;;
+  esac
+  case "$out" in *--remote-control*) fail "a foreign record turned Remote Control on: $out" ;; esac
+
+  # Unparseable content is no answer either.
+  printf 'not json at all\n' > "$SEATS_DIR/alpha/sessions/$LEAD_PID.json"
+  out=$(run_home "$LEAD_RESTART" --check --to beta) || fail "the check refused an establishable move: $out"
+  case "$out" in
+    *"remote control: undeterminable for this session"*) ;;
+    *) fail "an unparseable record was not reported undeterminable: $out" ;;
+  esac
+  stop_case
+  pass "a missing, foreign, or unparseable record is undeterminable and turns nothing on"
+}
+
+test_a_home_can_decline_the_follow() {
+  local rec out
+  command -v jq >/dev/null 2>&1 ||
+    { echo "ok - # skip: jq not found, reading the session record needs one"; return 0; }
+  rec=$(make_case rc-declined); read_case "$rec"
+  stub_pane_exists "$FAKEBIN"
+  write_session_record "$SEATS_DIR/alpha" "$LEAD_PID" lead-session-1 session_01abc
+  : > "$HOME_DIR/config/lead-follow-rc-off"
+  out=$(run_home "$LEAD_RESTART" --check --to beta) || fail "the check refused an establishable move: $out"
+  case "$out" in
+    *"remote control: not followed: this home carries config/lead-follow-rc-off"*) ;;
+    *) fail "the opt-out was not reported: $out" ;;
+  esac
+  case "$out" in *--remote-control*) fail "a home that declined the follow still got it: $out" ;; esac
+  stop_case
+  pass "config/lead-follow-rc-off declines the follow even with Remote Control on"
+}
+
+test_an_argv_that_already_names_remote_control_keeps_its_own_spelling() {
+  local rec out
+  command -v jq >/dev/null 2>&1 ||
+    { echo "ok - # skip: jq not found, reading the session record needs one"; return 0; }
+  rec=$(make_case rc-already); read_case "$rec"
+  stub_pane_exists "$FAKEBIN"
+  write_session_record "$SEATS_DIR/alpha" "$LEAD_PID" lead-session-1 session_01abc
+  out=$(run_home "$LEAD_RESTART" --check --to beta \
+    --launch-command "$FAKE_CLAUDE --remote-control=lead-box --model opus") ||
+    fail "an explicitly stated launch command was refused: $out"
+  case "$out" in
+    *--remote-control=lead-box*) ;;
+    *) fail "the named remote session was dropped: $out" ;;
+  esac
+  [ "$(printf '%s\n' "$out" | grep -o -- '--remote-control' | wc -l | tr -d ' ')" -eq 1 ] ||
+    fail "a second Remote Control flag was added beside the one already there: $out"
+  stop_case
+  pass "a launch command that already names Remote Control keeps its own flag and session name"
+}
+
 # --- layer 2: the handover reservation ---------------------------------------
 
 lock_as() {  # <home> <session-id> <handover-token>
@@ -601,11 +743,35 @@ ROOT=$ROOT
 SH
   cat >> "$1" <<'SH'
 sess=${FM_TEST_SESSION:-lead-session-1}
+rc=0
 while [ "$#" -gt 0 ]; do
-  case "$1" in --resume) sess=$2; shift 2 ;; *) shift ;; esac
+  case "$1" in
+    --resume) sess=$2; shift 2 ;;
+    --remote-control|--remote-control=*) rc=1; shift ;;
+    *) shift ;;
+  esac
 done
 export CLAUDE_CODE_SESSION_ID="$sess"
 export CLAUDE_PID=$$
+# The one claude-CLI behavior this stand-in reproduces for Remote Control, as
+# observed on the real 2.1.301: a session publishes a per-pid record under its
+# own profile, carrying bridgeSessionId only while Remote Control is connected.
+# $LAB/rc-on is CONSUMED by the first session that reads it, standing in for a
+# `/rc` typed into that session alone, so a successor's connection can only come
+# from the launch flag and a test cannot pass on the marker instead.
+# $LAB/rc-broken makes a flagged launch come up WITHOUT the connection, which is
+# how a failure to connect looks from the outside.
+if [ -n "${CLAUDE_CONFIG_DIR:-}" ]; then
+  if [ -e "$LAB/rc-on" ]; then rc=1; rm -f "$LAB/rc-on"; fi
+  [ ! -e "$LAB/rc-broken" ] || rc=0
+  mkdir -p "$CLAUDE_CONFIG_DIR/sessions"
+  if [ "$rc" -eq 1 ]; then
+    printf '{"pid":%s,"sessionId":"%s","bridgeSessionId":"session_%s"}\n' \
+      "$$" "$sess" "$$" > "$CLAUDE_CONFIG_DIR/sessions/$$.json"
+  else
+    printf '{"pid":%s,"sessionId":"%s"}\n' "$$" "$sess" > "$CLAUDE_CONFIG_DIR/sessions/$$.json"
+  fi
+fi
 FM_HOME="$LAB/home" FM_STATE_OVERRIDE="$LAB/home/state" "$ROOT/bin/fm-lock.sh" >> "$LAB/lock.out" 2>&1
 notices=$(ls "$LAB/home/state/crew1.inbox/"*.msg 2>/dev/null | wc -l | tr -d ' ')
 printf 'lead pid=%s session=%s profile=%s crew_notices=%s\n' "$$" "$sess" "${CLAUDE_CONFIG_DIR:-none}" "$notices" >> "$LAB/lead.log"
@@ -632,11 +798,12 @@ lead_run() {  # <lab> <command>
   wait_for 30 "[ ! -s '$1/cmd.in' ]" || fail "the stand-in lead never picked up its command"
 }
 
-# start_lab <name>
+# start_lab <name> [rc-on]
 # A home in a real tmux on a private socket, with the stand-in lead running in
 # its first pane on seat alpha and holding the lock. Sets LAB, LAB_SOCK,
-# LAB_PANE, LAB_OLD (the lead's pid), and FAKEBIN.
-start_lab() {  # <name>
+# LAB_PANE, LAB_OLD (the lead's pid), and FAKEBIN. With `rc-on`, that lead comes
+# up with Remote Control connected, as one that was given `/rc` by hand has.
+start_lab() {  # <name> [rc-on]
   LAB="$TMP_ROOT/$1"
   mkdir -p "$LAB/home/state" "$LAB/home/config" "$LAB/home/data" "$LAB/seats/alpha" "$LAB/seats/beta" "$LAB/fake"
   FAKEBIN=$(fm_fakebin "$LAB/fake")
@@ -657,6 +824,7 @@ exec $(command -v tmux) -L "$LAB_SOCK" "\$@"
 SH
   chmod +x "$FAKEBIN/tmux"
 
+  [ "${2:-}" != rc-on ] || : > "$LAB/rc-on"
   tmux -L "$LAB_SOCK" send-keys -t "$LAB_PANE" \
     "export CLAUDE_CODE_CHILD_SESSION=1 CLAUDE_CODE_FORCE_SESSION_PERSISTENCE=0; CLAUDE_CONFIG_DIR='$LAB/seats/alpha' '$FAKE_CLAUDE' '$LAB/lead.sh'" Enter
   # The lead's readiness marker, not the lock file: the lock's first line lands
@@ -767,6 +935,93 @@ test_a_replacement_that_never_comes_up_is_reported_stranded() {
   pass "a replacement that exits at once is reported stranded, not running"
 }
 
+test_the_replacement_comes_up_with_the_remote_control_the_lead_had() {
+  local out new
+  command -v tmux >/dev/null 2>&1 || { echo "ok - # skip: tmux not found, the real-terminal swap needs one"; return 0; }
+  command -v jq >/dev/null 2>&1 || { echo "ok - # skip: jq not found, reading the session record needs one"; return 0; }
+  start_lab rc-swap rc-on
+  grep -q 'bridgeSessionId' "$LAB/seats/alpha/sessions/$LAB_OLD.json" ||
+    fail "the outgoing lead did not come up with Remote Control connected: $(cat "$LAB/seats/alpha/sessions/$LAB_OLD.json" 2>/dev/null)"
+  # Its own argv does not name the flag, which is the captain's case exactly:
+  # Remote Control was turned on by hand after the session started.
+  ! ps -o args= -p "$LAB_OLD" | grep -q -- '--remote-control' ||
+    fail "the outgoing lead was launched with the flag, so this proves nothing about following a runtime /rc"
+
+  lab_restart
+  wait_for 180 "grep -q '^state=' '$LAB/home/state/.lead-restart.result' 2>/dev/null" ||
+    fail "the swap never reported an outcome"
+  out=$(cat "$LAB/home/state/.lead-restart.result")
+  case "$out" in
+    *"state=done"*) ;;
+    *) fail "the swap did not complete: $out" ;;
+  esac
+  new=$(cat "$LAB/home/state/.lock")
+  [ "$(ps -o args= -p "$new" | grep -o -- '--remote-control' | wc -l | tr -d ' ')" -eq 1 ] ||
+    fail "the replacement was not started with Remote Control: $(ps -o args= -p "$new")"
+  # Verified by the same field the detection used, read back on the successor.
+  grep -q 'bridgeSessionId' "$LAB/seats/beta/sessions/$new.json" ||
+    fail "the replacement never published a Remote Control connection: $(cat "$LAB/seats/beta/sessions/$new.json" 2>/dev/null)"
+  case "$out" in
+    *"Remote Control was on before and is on again"*) ;;
+    *) fail "the outcome does not report that Remote Control followed: $out" ;;
+  esac
+  kill "$new" 2>/dev/null || true
+  pass "a lead that had Remote Control on is replaced by one that has it on, confirmed on the successor itself"
+}
+
+test_a_remote_control_that_does_not_come_back_is_reported_on_the_outcome() {
+  local out new
+  command -v tmux >/dev/null 2>&1 || { echo "ok - # skip: tmux not found, the real-terminal swap needs one"; return 0; }
+  command -v jq >/dev/null 2>&1 || { echo "ok - # skip: jq not found, reading the session record needs one"; return 0; }
+  start_lab rc-unverified rc-on
+  grep -q 'bridgeSessionId' "$LAB/seats/alpha/sessions/$LAB_OLD.json" ||
+    fail "the outgoing lead did not come up with Remote Control connected"
+  # The replacement is still launched with the flag, but its connection never
+  # establishes - the outcome must say so rather than claim the follow worked.
+  : > "$LAB/rc-broken"
+  lead_run "$LAB" "FM_LEAD_RESTART_RC_WAIT=4 FM_HOME=$LAB/home FM_STATE_OVERRIDE=$LAB/home/state FM_CONFIG_OVERRIDE=$LAB/home/config FM_DATA_OVERRIDE=$LAB/home/data PATH=$FAKEBIN:\$PATH $SEAT lead-restart --to beta --persisted"
+  wait_for 30 "grep -q 'handover armed' '$LAB/cmd.log' 2>/dev/null" ||
+    fail "the restart was never armed: $(cat "$LAB/cmd.log" 2>/dev/null)"
+  wait_for 180 "grep -q '^state=' '$LAB/home/state/.lead-restart.result' 2>/dev/null" ||
+    fail "the swap never reported an outcome"
+  out=$(cat "$LAB/home/state/.lead-restart.result")
+  new=$(cat "$LAB/home/state/.lock")
+  [ "$(ps -o args= -p "$new" | grep -o -- '--remote-control' | wc -l | tr -d ' ')" -eq 1 ] ||
+    fail "the replacement was not started with Remote Control at all: $(ps -o args= -p "$new")"
+  case "$out" in
+    *"could not be confirmed on in the replacement"*) ;;
+    *) fail "an unconfirmed Remote Control was not reported on the outcome: $out" ;;
+  esac
+  case "$out" in
+    *"is on again"*) fail "the outcome claims a follow that never happened: $out" ;;
+  esac
+  kill "$new" 2>/dev/null || true
+  pass "a Remote Control that does not come back up in the replacement is reported on the restart outcome"
+}
+
+test_an_undeterminable_remote_control_state_is_logged_and_nothing_is_turned_on() {
+  local out new
+  command -v tmux >/dev/null 2>&1 || { echo "ok - # skip: tmux not found, the real-terminal swap needs one"; return 0; }
+  command -v jq >/dev/null 2>&1 || { echo "ok - # skip: jq not found, reading the session record needs one"; return 0; }
+  start_lab rc-unknown
+  # The record the lead published is removed, so its state is no longer
+  # readable: the one case that must refuse to guess in either direction.
+  rm -f "$LAB/seats/alpha/sessions/$LAB_OLD.json"
+  lab_restart
+  wait_for 180 "grep -q '^state=' '$LAB/home/state/.lead-restart.result' 2>/dev/null" ||
+    fail "the swap never reported an outcome"
+  out=$(cat "$LAB/home/state/.lead-restart.result")
+  new=$(cat "$LAB/home/state/.lock")
+  case "$out" in
+    *"whether Remote Control was on could not be determined"*) ;;
+    *) fail "an undeterminable state was not logged on the outcome: $out" ;;
+  esac
+  ! ps -o args= -p "$new" | grep -q -- '--remote-control' ||
+    fail "Remote Control was turned on with no evidence it had been on: $(ps -o args= -p "$new")"
+  kill "$new" 2>/dev/null || true
+  pass "an undeterminable Remote Control state turns nothing on and says so on the restart outcome"
+}
+
 test_a_same_seat_refresh_tells_the_crew_it_restarts_in_place() {
   local out msgs
   command -v tmux >/dev/null 2>&1 || { echo "ok - # skip: tmux not found, the real-terminal swap needs one"; return 0; }
@@ -801,6 +1056,11 @@ test_refuses_the_ambient_default_and_the_seat_already_held
 test_same_seat_refresh_keeps_the_persist_gate_and_stages_the_same_seat
 test_only_the_lead_may_replace_the_lead
 test_launch_command_is_established_only_when_it_round_trips
+test_remote_control_follows_a_lead_that_had_it_on
+test_remote_control_is_not_given_to_a_lead_that_did_not_have_it
+test_an_unreadable_or_foreign_record_is_undeterminable_rather_than_a_guess
+test_a_home_can_decline_the_follow
+test_an_argv_that_already_names_remote_control_keeps_its_own_spelling
 test_a_reservation_holds_the_home_for_its_successor_alone
 test_a_lapsed_reservation_never_wedges_the_home
 test_the_outgoing_session_keeps_confirming_its_own_lock
@@ -811,6 +1071,9 @@ test_the_lead_trigger_reports_the_blocker_rather_than_an_impossible_move
 test_a_transient_blocker_does_not_spend_the_crossing
 test_the_lead_is_replaced_in_its_own_terminal_with_supervision_unbroken
 test_a_replacement_that_never_comes_up_is_reported_stranded
+test_the_replacement_comes_up_with_the_remote_control_the_lead_had
+test_a_remote_control_that_does_not_come_back_is_reported_on_the_outcome
+test_an_undeterminable_remote_control_state_is_logged_and_nothing_is_turned_on
 test_a_same_seat_refresh_tells_the_crew_it_restarts_in_place
 
 echo "# all fm-lead-restart tests passed"
