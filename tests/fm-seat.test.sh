@@ -4975,3 +4975,147 @@ test_name_of_reads_a_recorded_profile_back_as_its_seat
 test_worker_destination_never_answers_the_seat_the_worker_is_on
 test_worker_destination_honours_the_same_gate_a_new_launch_gets
 test_worker_destination_names_when_an_empty_seat_comes_back
+
+# --- the recorded quota tool directory ------------------------------------
+#
+# quota-axi can live where only a login shell reaches it, so a launch started
+# by a long-lived daemon can read no quota at all and holds every time. These
+# cases cover the record that closes that gap: who writes it, what exactly is
+# written, and that it is checked on every read rather than trusted.
+
+SEAT_LIB="$ROOT/bin/fm-seat-lib.sh"
+
+# A PATH with every directory that can serve quota-axi removed, so a process
+# running under it is as blind to the tool as a daemon started outside a login
+# shell.
+seat_blind_path() {
+  local out='' entry
+  local IFS=:
+  # shellcheck disable=SC2086  # deliberate colon splitting of PATH
+  for entry in $PATH; do
+    [ -n "$entry" ] || continue
+    [ ! -x "$entry/quota-axi" ] || continue
+    out="${out:+$out:}$entry"
+  done
+  printf '%s\n' "$out"
+}
+
+test_a_dispatch_gate_read_records_the_physical_quota_tool_directory() {
+  local rec out shim physical recorded
+  rec=$(make_seat_case quota-tool-record)
+  read_seat_case "$rec"
+  mkdir -p "$SEATS_DIR/work"
+  seat_logged_in "$SPEC_DIR" "$SEATS_DIR/work"
+  printf 'work\n' > "$HOME_DIR/config/claude-seat"
+  printf 'stop\n' > "$HOME_DIR/config/claude-seat-extra-usage"
+  # A per-shell version manager reaches the installation through a directory
+  # that is only a symlink into whichever installation that shell selected, so
+  # the physical installation directory is the only one worth recording.
+  ln -s "$FAKEBIN" "$CASE_DIR/shell-shim"
+  shim="$CASE_DIR/shell-shim"
+  physical=$(CDPATH='' cd -- "$FAKEBIN" && pwd -P)
+
+  out=$(FM_HOME="$HOME_DIR" FM_CONFIG_OVERRIDE="$HOME_DIR/config" \
+    FM_STATE_OVERRIDE="$HOME_DIR/state" FM_DATA_OVERRIDE="$HOME_DIR/data" \
+    CLAUDE_CONFIG_DIR='' PATH="$shim:$(seat_blind_path)" "$SEAT" status 2>&1)
+  expect_code 0 "$?" "reading the gate must not fail: $out"
+
+  [ -f "$HOME_DIR/state/.quota-tool-dir" ] \
+    || fail "a gate read that found quota-axi recorded no directory for the launches that cannot"
+  recorded=$(cat "$HOME_DIR/state/.quota-tool-dir")
+  [ "$recorded" != "$shim" ] \
+    || fail "the per-shell shim directory was recorded, and it does not outlive this shell"
+  [ "$recorded" = "$physical" ] \
+    || fail "recorded '$recorded', expected the physical installation directory $physical"
+  # Nothing in this case ever held a session lock, which is the whole point: a
+  # home upgraded mid-session must not wait for its lead to restart.
+  assert_absent "$HOME_DIR/state/.lock" \
+    "this case must prove the record is written with no session lock involved"
+  pass "seat: a dispatch-gate read records the physical directory its own PATH finds quota-axi in"
+}
+
+test_an_unconfigured_gate_records_no_quota_tool_directory() {
+  local rec out
+  rec=$(make_seat_case quota-tool-record-unconfigured)
+  read_seat_case "$rec"
+  mkdir -p "$SEATS_DIR/work"
+  seat_logged_in "$SPEC_DIR" "$SEATS_DIR/work"
+  printf 'work\n' > "$HOME_DIR/config/claude-seat"
+
+  # The gate alone, with no extra-usage policy configured. Other surfaces read
+  # quota because they print it; the gate reads none until it is configured,
+  # and must pay nothing for the record either.
+  out=$(CONFIG="$HOME_DIR/config" STATE="$HOME_DIR/state" PATH="$FAKEBIN:$PATH" \
+    bash -c '. "$1/bin/fm-timeout-lib.sh"; . "$1/bin/fm-seat-lib.sh"
+             . "$1/bin/fm-quota-axi-lib.sh"; fm_seat_dispatch_decision ""' seat-gate "$ROOT" 2>&1)
+  assert_contains "$out" "allow policy-unset" "this case must exercise the unconfigured gate"
+  assert_absent "$HOME_DIR/state/.quota-tool-dir" \
+    "a gate with no policy reads no quota and must pay nothing for the record either"
+  pass "seat: an unconfigured dispatch gate reads no quota and records no quota tool directory"
+}
+
+test_a_blind_process_records_nothing_and_keeps_the_existing_record() {
+  local rec out kept
+  rec=$(make_seat_case quota-tool-record-blind)
+  read_seat_case "$rec"
+  mkdir -p "$SEATS_DIR/work"
+  seat_logged_in "$SPEC_DIR" "$SEATS_DIR/work"
+  printf 'work\n' > "$HOME_DIR/config/claude-seat"
+  printf 'stop\n' > "$HOME_DIR/config/claude-seat-extra-usage"
+  printf '%s\n' "$FAKEBIN" > "$HOME_DIR/state/.quota-tool-dir"
+
+  out=$(FM_HOME="$HOME_DIR" FM_CONFIG_OVERRIDE="$HOME_DIR/config" \
+    FM_STATE_OVERRIDE="$HOME_DIR/state" FM_DATA_OVERRIDE="$HOME_DIR/data" \
+    CLAUDE_CONFIG_DIR='' PATH="$(seat_blind_path)" "$SEAT" status 2>&1)
+  expect_code 0 "$?" "reading the gate must not fail: $out"
+  kept=$(cat "$HOME_DIR/state/.quota-tool-dir")
+  [ "$kept" = "$FAKEBIN" ] \
+    || fail "a process that cannot find the tool overwrote a record it knows nothing better than: '$kept'"
+  pass "seat: a process that cannot find quota-axi records nothing and leaves the existing record alone"
+}
+
+test_the_recorded_quota_tool_directory_is_checked_rather_than_trusted() {
+  local rec state got
+  rec=$(make_seat_case quota-tool-record-checked)
+  read_seat_case "$rec"
+  state="$HOME_DIR/state"
+
+  if bash -c '. "$0"; fm_seat_quota_tool_recorded "$1"' "$SEAT_LIB" "$state" >/dev/null 2>&1; then
+    fail "a home with no record at all named a quota tool directory"
+  fi
+
+  printf '%s\n' "$FAKEBIN" > "$state/.quota-tool-dir"
+  got=$(bash -c '. "$0"; fm_seat_quota_tool_recorded "$1"' "$SEAT_LIB" "$state") \
+    || fail "a record naming a directory that holds quota-axi was refused"
+  [ "$got" = "$FAKEBIN" ] || fail "read back '$got', expected $FAKEBIN"
+
+  printf '%s\n' "$CASE_DIR/gone" > "$state/.quota-tool-dir"
+  if bash -c '. "$0"; fm_seat_quota_tool_recorded "$1"' "$SEAT_LIB" "$state" >/dev/null 2>&1; then
+    fail "a record naming a directory with no quota-axi in it was read as usable"
+  fi
+
+  printf 'relative/bin\n' > "$state/.quota-tool-dir"
+  if bash -c '. "$0"; fm_seat_quota_tool_recorded "$1"' "$SEAT_LIB" "$state" >/dev/null 2>&1; then
+    fail "a record naming a relative path was read as usable"
+  fi
+
+  # The resolver that produces the record is checked the same way: a directory
+  # whose quota-axi cannot be executed, and a shell that finds no tool at all,
+  # both name nothing rather than a location a launch would then fail on.
+  chmod 600 "$FAKEBIN/quota-axi"
+  if PATH="$FAKEBIN:$(seat_blind_path)" \
+    bash -c '. "$0"; fm_seat_quota_tool_dir' "$SEAT_LIB" >/dev/null 2>&1; then
+    fail "a directory whose quota-axi cannot be executed was resolved as usable"
+  fi
+  chmod 700 "$FAKEBIN/quota-axi"
+  if PATH="$(seat_blind_path)" \
+    bash -c '. "$0"; fm_seat_quota_tool_dir' "$SEAT_LIB" >/dev/null 2>&1; then
+    fail "a shell that cannot find quota-axi itself must resolve no directory"
+  fi
+  pass "seat: the recorded quota tool directory is checked on every read rather than trusted"
+}
+
+test_a_dispatch_gate_read_records_the_physical_quota_tool_directory
+test_an_unconfigured_gate_records_no_quota_tool_directory
+test_a_blind_process_records_nothing_and_keeps_the_existing_record
+test_the_recorded_quota_tool_directory_is_checked_rather_than_trusted

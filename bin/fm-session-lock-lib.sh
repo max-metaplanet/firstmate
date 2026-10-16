@@ -462,12 +462,12 @@ fm_session_lock_handover_admits() {  # <state> [<ancestry-pids>]
 #   profile=<its CLAUDE_CONFIG_DIR; absent means the ambient default profile>
 #   ambient=<the profile a worker spawned on the default seat gets from it,
 #           per fm_seat_config_dir; read by pipeline launches on that seat>
-#   quotabin=<the physical directory this session's PATH finds quota-axi in;
-#           read by a pipeline launch whose own daemon PATH has no quota-axi,
-#           absent when this session cannot find the tool either>
 #   backend=<tmux|herdr> and target=<pane>, both absent unless the pane was
 #           established rather than guessed (bin/fm-supervisor-target-lib.sh)
 # bin/fm-lock.sh is its only writer.
+# A record written before state/.quota-tool-dir existed may also carry a
+# quotabin= line. Nothing writes it any more; a pipeline launch reads it only
+# as the upgrade fallback described in bin/fm-seat-pipeline.sh.
 fm_session_lock_runtime_field() {  # <state> <key>
   local state=$1 key=$2 recorded lock_pid
   [ -f "$state/.lock-runtime" ] && [ ! -L "$state/.lock-runtime" ] || return 1
@@ -480,21 +480,4 @@ fm_session_lock_runtime_field() {  # <state> <key>
   # at all means this record cannot answer the question.
   grep -q "^$key=" "$state/.lock-runtime" 2>/dev/null || return 1
   sed -n "s/^$key=//p" "$state/.lock-runtime" 2>/dev/null | tail -1
-}
-
-# The directory a launcher started outside a login shell must put on PATH to
-# run quota-axi, or 1 when this session cannot find the tool either. A node
-# tool installed through a per-shell version manager is unreachable from a
-# long-lived daemon's PATH, so the launch it starts reads no quota at all; the
-# lock-owning session can see the tool, so it records where. The PHYSICAL
-# directory is what is recorded, because a version manager's per-shell
-# directory is a symlink to the installation it selected and only that
-# installation outlives the short-lived shell this runs in.
-fm_session_lock_quota_tool_dir() {
-  local tool dir
-  tool=$(command -v quota-axi 2>/dev/null) || return 1
-  case "$tool" in */*) ;; *) return 1 ;; esac
-  dir=$(CDPATH='' cd -- "${tool%/*}" 2>/dev/null && pwd -P) || return 1
-  [ -x "$dir/quota-axi" ] || return 1
-  printf '%s\n' "$dir"
 }

@@ -19,8 +19,9 @@
 #
 # launch ignores inherited Firstmate path overrides and the worker's profile.
 # When the launching daemon's PATH carries no quota-axi, the extra-usage gate
-# reads it through the directory the live lead recorded beside its lock, so a
-# tool only a login shell can find does not turn every launch into a hold.
+# reads it through the home's recorded quota tool path, so a tool only a login
+# shell can find does not turn every launch into a hold; with no record either,
+# the hold names the missing record rather than the seat's quota.
 # It resolves the bound home's active seat fresh, validates a managed-profile
 # NM_CLAUDE_CONFIG_DIR override, and refuses excluded/resting/missing seats.
 # On the default seat it uses the lead's recorded ambient profile; while none is
@@ -86,24 +87,41 @@ cmd_install() {
 }
 
 # quota_tool_path <state>
-# The directory this launch must add to PATH before it can read quota, or 1
-# when it needs none and when none is known. A daemon starts this wrapper with
-# the daemon's own PATH, which need not carry quota-axi at all; the gate would
-# then read no quota and hold every launch as unreadable while the same seat
-# reads fine from a shell. The live lead records the directory its own PATH
-# finds the tool in, and that record is checked here rather than trusted.
+# The directory this launch must add to PATH before it can read quota. A daemon
+# starts this wrapper with the daemon's own PATH, which need not carry
+# quota-axi at all; the gate would then read no quota and hold every launch as
+# unreadable while the same seat reads fine from a shell.
+#
+# Three outcomes, because they are three different launches:
+#   0  the directory to prepend, from the home's recorded quota tool path
+#   1  nothing to prepend: this launch finds the tool on its own PATH
+#   2  no tool and no record naming one, which is a hold cause of its own
+# bin/fm-seat-lib.sh owns the record and checks it rather than trusting it.
+#
+# The lock-bound quotabin= field is read second and only while it still exists.
+# It has no writer any more, but a home that restarted before this change
+# carries one, and reading it is what keeps the upgrade itself from holding a
+# launch in the window before that home's next quota read writes the record.
+# Drop this fallback once no home can still be carrying the old field.
 quota_tool_path() {
   local state=$1 dir
   ! command -v quota-axi >/dev/null 2>&1 || return 1
-  dir=$(fm_session_lock_runtime_field "$state" quotabin) || return 1
-  [ -n "$dir" ] && [ -x "$dir/quota-axi" ] || return 1
+  if ! dir=$(fm_seat_quota_tool_recorded "$state"); then
+    dir=$(fm_session_lock_runtime_field "$state" quotabin) || return 2
+    [ -n "$dir" ] && [ -x "$dir/quota-axi" ] || return 2
+  fi
   printf '%s\n' "$dir"
 }
 
 cmd_launch() {
   [ $# -ge 4 ] && [ "$1" = --default-profile ] || usage
   local default_profile=$2 native=$4 selection name profile reason record pid started actual
-  local quota_path='' decision
+  local quota_path='' quota_rc=0 decision
+  # The recorded quota tool path is firstmate's to write, never the launching
+  # daemon's: a daemon that found the tool only through that record knows no
+  # better location than the one already there. Suppressing the recorder here
+  # is what keeps this launch a pure reader of it (bin/fm-seat-lib.sh).
+  FM_SEAT_QUOTA_TOOL_RECORDED=1
   FM_HOME=$3
   shift 4
   case "$FM_HOME:$native" in /*:/*) ;; *) die 'home and native Claude must be absolute paths' ;; esac
@@ -121,12 +139,23 @@ cmd_launch() {
     selection=$(printf '%s' "$selection" | jq -c --arg p "$profile" '.profile = $p')
     printf "pipeline Claude: warning: the default seat's profile is not recorded for this home's lead; using the wrapper's installed default profile %s. Restarting the lead records it\n" "${profile:-(ambient default login)}" >&2
   fi
-  quota_path=$(quota_tool_path "$STATE") || quota_path=''
+  quota_path=$(quota_tool_path "$STATE") || quota_rc=$?
+  [ "$quota_rc" -eq 0 ] || quota_path=''
   decision=$(
     [ -z "$quota_path" ] || PATH="$quota_path:$PATH"
     fm_seat_dispatch_decision "$profile"
   )
   if ! reason=$(fm_seat_dispatch_reason "$decision" "pipeline seat $name" "pipeline agent"); then
+    # A launch that could never run quota-axi at all did not read quota and
+    # find it wanting; it never read any. Saying so names the missing record
+    # an operator can restore, where "quota could not be read" sends them to
+    # the seat instead.
+    if [ "$quota_rc" -eq 2 ]; then
+      case "$decision" in
+        'hold quota-unreadable'*)
+          die "HELD pipeline-agent launch on seat $name: no recorded quota tool path, so this launch read no quota at all - quota-axi is not on the launching process's PATH and no directory holding it is recorded for this home. Any firstmate command that reads quota from a shell that can run the tool records one" ;;
+      esac
+    fi
     die "HELD pipeline-agent launch on seat $name: $reason"
   fi
   case "$reason" in
