@@ -589,7 +589,7 @@ Firstmate invokes it as `<hook> <ticket-id> <event> [args...]`, where the ticket
 | --- | --- | --- |
 | `start` | A ticketed task's worker has launched and its backlog item is committed. A relaunch republishes an existing task and fires nothing. | `bin/fm-spawn.sh` |
 | `review <pr-url>` | The task's pull request is first recorded. Re-arming the same URL and the merge-time re-record fire nothing. | `bin/fm-pr-check.sh` |
-| `done <pr-url>` | The forge proved the pull request merged. | `bin/fm-pr-merge.sh` |
+| `done <pr-url>` | A confirmed merge was recorded, whether this home performed it, its merge poll detected one a queue or auto-merge finished later, or the captain merged on the forge. | `bin/fm-merge-outcome-lib.sh` |
 | `waiting <text>` | The task became held for the captain, with the hold reason as the text. Repeating an already active hold fires nothing. | `bin/fm-captain-hold.sh` |
 
 Each event fires once per transition rather than once per poll, so a hook may comment on a ticket without deduplicating.

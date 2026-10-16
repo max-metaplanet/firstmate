@@ -244,6 +244,53 @@ test_a_malformed_request_is_refused_without_running_a_hook() {
   pass "a malformed request is refused as a usage error without running a hook"
 }
 
+# The `done` event fires from the shared merge-outcome operation rather than
+# from the merge entrypoint, so a merge this home never performed still
+# completes its ticket. That operation is the single place every confirmed
+# merge is recorded, and its own already-notified guard is what makes the
+# event once-per-pull-request.
+test_every_recorded_merge_completes_its_ticket_once() {
+  local home url
+  home=$(make_home merge-origins)
+  install_hook "$home"
+  url=https://github.com/acme/sample/pull/7
+  fm_write_meta "$home/state/polled.meta" \
+    "window=firstmate:fm-polled" "worktree=$home/wt" "kind=ship" \
+    "mode=no-mistakes" "ticket=ENG-4100" "commit_type=feat"
+
+  # A merge only this home's poll ever saw: a queued merge the forge finished
+  # later, or one the captain made on the forge.
+  (
+    # shellcheck source=bin/fm-merge-outcome-lib.sh
+    # shellcheck disable=SC1091
+    . "$ROOT/bin/fm-merge-outcome-lib.sh"
+    FM_CONFIG_OVERRIDE="$home/config" \
+      fm_merge_outcome_report "$home" "$home/state" polled "$url" poll \
+      || fail "the polled merge outcome was not recorded"
+  ) || exit 1
+  wait_for_lines "$home/calls" 1 \
+    || fail "a merge recorded by the poll never completed its ticket"
+  assert_grep "ENG-4100 done $url" "$home/calls" \
+    "the polled merge did not complete the ticket with its pull request URL"
+
+  # The same merge reported again, the way the entrypoint and a later poll both
+  # report one: the guard returns before the hook, so the ticket moves once.
+  (
+    # shellcheck source=bin/fm-merge-outcome-lib.sh
+    # shellcheck disable=SC1091
+    . "$ROOT/bin/fm-merge-outcome-lib.sh"
+    FM_CONFIG_OVERRIDE="$home/config" \
+      fm_merge_outcome_report "$home" "$home/state" polled "$url" self \
+      || fail "the repeated merge outcome failed"
+  ) || exit 1
+  settle
+  [ "$(wc -l < "$home/calls")" -eq 1 ] \
+    || fail "a re-reported merge completed the ticket twice: $(cat "$home/calls")"
+  assert_absent "$home/state/polled.status" \
+    "the succeeding hook reported a failure on the merged task"
+  pass "every recorded merge completes its ticket once, whichever origin saw it"
+}
+
 test_an_unconfigured_home_never_runs_anything
 test_each_event_reaches_the_hook_with_its_ticket
 test_a_failing_hook_reports_the_event_and_its_exit_code
@@ -252,3 +299,4 @@ test_a_hook_that_cannot_be_run_is_reported_rather_than_skipped
 test_a_task_with_no_ticket_never_reaches_the_hook
 test_the_ticket_comes_only_from_the_record
 test_a_malformed_request_is_refused_without_running_a_hook
+test_every_recorded_merge_completes_its_ticket_once

@@ -16,7 +16,12 @@
 #   bin/fm-pr-check.sh      review <pr-url> (a newly recorded pr=, not the
 #                           merge-time re-record from bin/fm-pr-merge.sh and
 #                           not a re-arm of the same URL)
-#   bin/fm-pr-merge.sh      done <pr-url> (only after the forge proved MERGED)
+#   bin/fm-merge-outcome-lib.sh
+#                           done <pr-url> (every confirmed merge this home
+#                           records, whether it performed the merge, its poll
+#                           detected one a queue or auto-merge finished later,
+#                           or the captain merged on the forge; that operation's
+#                           own already-notified guard makes it once per PR)
 #   bin/fm-captain-hold.sh  waiting <reason> (a fresh captain hold, not a
 #                           repeat of one already active)
 #
