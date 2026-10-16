@@ -589,6 +589,14 @@
       "audience": "maintainer-verification"
     },
     {
+      "path": "tests/captures/claude-v2.1.301/README.md",
+      "audience": "maintainer-verification"
+    },
+    {
+      "path": "tests/captures/codex-v0.162.0/README.md",
+      "audience": "maintainer-verification"
+    },
+    {
       "path": ".agents/skills/agent-skill-trigger-index/SKILL.md",
       "audience": "agent-runtime"
     },
