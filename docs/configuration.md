@@ -1698,6 +1698,41 @@ That writes `state/usage-warner.check.sh` and binds its bytes with `bin/fm-check
 `bin/fm-usage-warner.sh disarm` removes the shim, its trust binding, and the de-dupe record (`state/.usage-warner`).
 This file is not inherited by secondmate homes, so each home warns on the windows it actually spends.
 
+## Production Jev verdict monitor (config/jev-prod-monitor)
+
+`config/jev-prod-monitor` is an optional local, gitignored file naming the project whose PRODUCTION browser-check verdicts this home follows.
+It is opt-in and load-bearing: an unconfigured home contacts no forge and sees no behaviour change, and [`bin/fm-jev-prod-check.sh`](../bin/fm-jev-prod-check.sh) refuses to arm without a valid repository.
+
+It exists because a project's browser check can run twice per pull request - once against the Vercel preview before the merge, and once against production after the production deployment - and the worker that shipped the pull request is gone by the time the second one reports.
+This poll reads that second verdict, pairs it with the preview verdict, and wakes firstmate only when something needs doing.
+
+This section is the single owner of the canonical schema.
+`bin/fm-jev-prod-check.sh` owns the read, classification, batching and dedupe mechanics, and the `bearings` skill's "Jev production verdict follow-up" section owns what firstmate does with each class.
+
+```
+<key>:<value>
+```
+
+One directive per non-empty, non-comment line, split on the FIRST colon.
+
+- `repo` is required and names the project as `<owner>/<repo>`.
+  Exactly one is accepted; a second is refused rather than one being chosen.
+- `lookback-hours` is optional, defaults to 48, and accepts 1 to 336.
+  It bounds how far back a merged pull request is still examined, which is what keeps the poll's cost bounded over time.
+
+See [`docs/examples/jev-prod-monitor`](examples/jev-prod-monitor) for a starting point to copy into local `config/jev-prod-monitor`.
+
+Arm the check once per home with `bin/fm-jev-prod-check.sh arm`.
+That writes `state/jev-prod-monitor.check.sh` and binds its bytes with `bin/fm-check-register.sh`, so the existing watcher polls it on its normal cadence and turns a verdict into a `check:` wake; no separate schedule is involved.
+`arm` refuses unless `gh`, `jq` and `unzip` are all present, because the poll reads the verdict comment and the uploaded verdict artifact through them.
+`bin/fm-jev-prod-check.sh disarm` removes the shim, its trust binding, and the dedupe record (`state/.jev-prod-monitor`).
+This file is not inherited by secondmate homes, so each home follows the projects it actually ships.
+
+Three environment variables tune the poll and exist mainly so the behaviour is testable; the defaults are the supported settings.
+`FM_JEV_PROD_BATCH_SECS` (default 21600) is how long a batched class waits before it goes out.
+`FM_JEV_PROD_GRACE_SECS` (default 3600) is how long after a merge a production verdict may still be missing before its absence is itself reported.
+`FM_JEV_PROD_BUDGET` (default 20, capped to `FM_CHECK_TIMEOUT` less three seconds) bounds one poll's forge reads, and `FM_JEV_PROD_MAX_PRS` (default 8) bounds how many merged pull requests one poll examines.
+
 ## Mail plane (.env)
 
 The mail plane (bin/fm-mail.sh) reads unseen IMAP messages and sends one SMTP message.

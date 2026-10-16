@@ -1,0 +1,25 @@
+# config/jev-prod-monitor - opt-in production Jev verdict poll
+# (bin/fm-jev-prod-check.sh). Copy this into a local, gitignored
+# config/jev-prod-monitor and edit. One `<key>:<value>` directive per non-empty,
+# non-comment line, split on the FIRST colon.
+#
+# `repo` is the only required directive and names the project whose merged pull
+# requests this home follows, as `<owner>/<repo>`. Exactly one is allowed: a
+# second is refused rather than one of them being picked.
+#
+# `lookback-hours` is optional (default 48, range 1..336) and bounds how far back
+# a merged pull request is still examined. A pull request older than it is never
+# read again, which is what stops this poll growing without limit.
+#
+# An ABSENT config/jev-prod-monitor means the feature is off: `check` stays
+# completely silent, contacts no forge, and `arm` refuses. This file's mere
+# presence is the opt-in.
+#
+# Arm the poll once per home with:
+#
+#   bin/fm-jev-prod-check.sh arm
+#
+# docs/configuration.md owns this schema. The `bearings` skill's "Jev production
+# verdict follow-up" section owns what firstmate does with each class of wake.
+repo:metaplanet-jp/core
+lookback-hours:48
