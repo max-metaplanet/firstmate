@@ -3302,11 +3302,12 @@ preflight_firstmate_home_herdr_children() {  # <home>
 # about its own close is bin/fm-backend.sh's fm_backend_kill contract.
 #
 # Returns 0 when the caller must continue anyway and 1 when it must stop.
-# <honors-force> is 1 at exactly one site, the generic non-Herdr/non-Orca
-# close, where --force is the operator's existing authority to discard this
-# task's records deliberately AND continuing is actually reachable: the
-# worktree is already returned by then and nothing after it needs the backend
-# that could not close.
+# <honors-force> is 1 at exactly one close, the generic non-Herdr/non-Orca
+# one, where --force is the operator's existing authority to discard this
+# task's records deliberately AND continuing is actually reachable: nothing
+# after it needs the backend that could not close. For tmux the worktree is
+# already returned by then; a leaderless backend closes before the return, and
+# the pre-return scan still refuses if its pane's processes outlived the close.
 # It is 0 everywhere else. The Orca site refuses under --force too, because
 # the step immediately after it removes the Orca worktree through the same CLI
 # whose absence is the only thing that arm ever reports, so a forced continue
@@ -3699,9 +3700,24 @@ fi
 # kind=secondmate: a secondmate home's own runtime lifecycle is owned by the
 # dedicated process-event and firstmate-home removal machinery further below,
 # not by task-worktree cleanup.
+# A backend that cannot name its endpoint leader (fm_backend_leader_pid) can
+# prove none of its own pane's processes to be the task's, so its endpoint is
+# closed here instead of after the return: the worker's own processes are then
+# gone before the pre-return scan, and only what is not the task's remains.
+TEARDOWN_ENDPOINT_CLOSED=0
 if [ "$KIND" != secondmate ] && teardown_owns_worktree; then
   conclude_task_no_mistakes_run "$WT"
   reap_task_worktree_processes worktree "$WT" "$TASK_TMP"
+  case "$BACKEND" in
+    tmux|herdr|orca) ;;
+    *)
+      if [ "$TEARDOWN_WINDOWLESS" != 1 ]; then
+        fm_backend_kill "$BACKEND" "$T" "$(meta_value "$META" zellij_tab_id)" "fm-$ID" \
+          || endpoint_close_refusal "$ID" "$BACKEND" "$T" 1 || exit 1
+      fi
+      TEARDOWN_ENDPOINT_CLOSED=1
+      ;;
+  esac
   [ "$BACKEND" = orca ] || refuse_unowned_worktree_processes "$WT" || exit 1
 elif [ "$KIND" != secondmate ]; then
   reap_task_worktree_processes tasktmp "$TASK_TMP"
@@ -3848,7 +3864,7 @@ elif [ "$BACKEND" = herdr ]; then
   else
     echo "warning: herdr session presentation lock path is unavailable; skipping the pane close rather than closing unlocked" >&2
   fi
-elif [ "$BACKEND" != orca ] && [ "$TEARDOWN_WINDOWLESS" != 1 ]; then
+elif [ "$BACKEND" != orca ] && [ "$TEARDOWN_WINDOWLESS" != 1 ] && [ "$TEARDOWN_ENDPOINT_CLOSED" != 1 ]; then
   fm_backend_kill "$BACKEND" "$T" "$(meta_value "$META" zellij_tab_id)" "fm-$ID" \
     || endpoint_close_refusal "$ID" "$BACKEND" "$T" 1 || exit 1
 fi

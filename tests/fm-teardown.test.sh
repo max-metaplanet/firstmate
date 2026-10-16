@@ -5164,6 +5164,98 @@ test_unresolvable_leader_preserves_every_candidate() {
   pass "an endpoint that can no longer name its leader preserves every candidate and keeps the slot instead of returning it"
 }
 
+# zellij exposes no per-pane pid, so nothing standing in the worktree can be
+# proved to be the task's own - including its own live worker. Closing the
+# task's recorded endpoint before the pre-return scan takes that worker's
+# processes away first, so the teardown completes; anything still standing
+# there afterwards is not the task's and keeps the slot.
+# <case-dir> gets a fake zellij whose one task tab holds <pane-pid>, and whose
+# close of that tab ends exactly that pid, as a real pane close does.
+add_zellij_task_pane() {  # <case-dir> <pane-pid>
+  local case_dir=$1
+  fm_write_meta "$case_dir/state/task-x1.meta" \
+    "window=zs:3" \
+    "endpoint_task_id=task-x1" \
+    "worktree=$case_dir/wt" \
+    "project=$case_dir/project" \
+    "kind=ship" \
+    "mode=no-mistakes" \
+    "backend=zellij" \
+    "zellij_session=zs" \
+    "zellij_tab_id=1" \
+    "zellij_pane_id=3" \
+    "spawn_gen=teardown-test-task-x1"
+  cat > "$case_dir/fakebin/zellij" <<EOF
+#!/usr/bin/env bash
+case " \$* " in
+  *" list-sessions "*) printf 'zs\n' ;;
+  *" list-panes "*)
+    if kill -0 $2 2>/dev/null; then printf '[{"id":3,"is_plugin":false,"tab_id":1}]\n'
+    else printf '[]\n'; fi ;;
+  *" list-tabs "*) printf '[{"tab_id":1,"name":"fm-task-x1"}]\n' ;;
+  *" close-tab-by-id "*)
+    printf 'close\n' >> "$case_dir/zellij-close.log"
+    kill -KILL $2 2>/dev/null || true ;;
+esac
+exit 0
+EOF
+  cat > "$case_dir/fakebin/treehouse" <<EOF
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >> "$case_dir/treehouse.log"
+EOF
+  chmod +x "$case_dir/fakebin/zellij" "$case_dir/fakebin/treehouse"
+}
+
+test_leaderless_backend_closes_its_own_pane_before_the_return_scan() {
+  local case_dir rc pane unrelated
+  case_dir=$(make_case leaderless-own-pane)
+  land_shippable_commit "$case_dir"
+  start_endpoint_leader "$case_dir" "$case_dir/wt"
+  pane=$(leader_record "$case_dir" pid1)
+  add_zellij_task_pane "$case_dir" "$pane"
+
+  rc=0
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+
+  if kill -0 "$pane" 2>/dev/null; then
+    fail_after_case_cleanup "$case_dir" "leaderless-own-pane: the task's own pane process outlived its endpoint close"
+  fi
+  stop_endpoint_leader "$case_dir"
+  expect_code 0 "$rc" "leaderless-own-pane: teardown should complete once its own pane is closed"
+  assert_present "$case_dir/zellij-close.log" "leaderless-own-pane: teardown never closed the task's tab"
+  assert_grep "return --force $case_dir/wt" "$case_dir/treehouse.log" \
+    "leaderless-own-pane: teardown did not return the worktree"
+  assert_absent "$case_dir/state/task-x1.meta" "leaderless-own-pane: cleanup did not finish"
+
+  case_dir=$(make_case leaderless-unrelated)
+  land_shippable_commit "$case_dir"
+  start_endpoint_leader "$case_dir" "$case_dir/wt"
+  pane=$(leader_record "$case_dir" pid1)
+  add_zellij_task_pane "$case_dir" "$pane"
+  ( cd "$case_dir/wt" && exec sleep 300 ) &
+  unrelated=$!
+  disown
+  sleep 0.3
+
+  rc=0
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+
+  kill -0 "$unrelated" 2>/dev/null \
+    || fail_after_case_cleanup "$case_dir" "leaderless-unrelated: teardown killed a process this task does not own"
+  [ "$rc" -eq 1 ] \
+    || fail_after_case_cleanup "$case_dir" "leaderless-unrelated: teardown should refuse while the unrelated process stands in the worktree (rc=$rc)" "$unrelated"
+  [ ! -e "$case_dir/treehouse.log" ] \
+    || fail_after_case_cleanup "$case_dir" "leaderless-unrelated: teardown returned the worktree over a process it does not own" "$unrelated"
+  kill -KILL "$unrelated" 2>/dev/null || true
+  stop_endpoint_leader "$case_dir"
+  assert_grep "pid $unrelated: sleep 300" "$case_dir/stderr" \
+    "leaderless-unrelated: the refusal did not name the unrelated process"
+  assert_no_grep "pid $pane:" "$case_dir/stderr" \
+    "leaderless-unrelated: the refusal named the task's own closed pane process"
+  assert_present "$case_dir/state/task-x1.meta" "leaderless-unrelated: the refusal removed the task record"
+  pass "a backend with no leader pid closes its own pane before the return scan, completing alone and refusing over an unrelated process"
+}
+
 test_lsof_absent_reaps_tmux_process_group() {
   local case_dir rc pid path_without_lsof
   case_dir=$(make_case lsof-absent-process-group-reap)
@@ -5804,6 +5896,7 @@ test_reparented_leaked_process_in_leader_group_is_reaped
 test_leaked_process_matched_only_by_session_is_reaped
 test_leaked_process_matched_only_by_proc_session_is_reaped
 test_unresolvable_leader_preserves_every_candidate
+test_leaderless_backend_closes_its_own_pane_before_the_return_scan
 test_lsof_absent_reaps_tmux_process_group
 test_lsof_error_refuses_before_removal
 test_reused_pid_identity_is_not_force_killed
