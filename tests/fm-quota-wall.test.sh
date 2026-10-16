@@ -287,6 +287,37 @@ test_a_seat_already_walled_on_is_never_a_destination_again() {
   pass 'a worker never bounces back onto a seat it already walled out on'
 }
 
+test_a_seat_walled_over_a_window_ago_is_a_destination_again() {
+  local record now
+  read_case "$(make_case chained codex-max)"
+  set_wall_line
+  recover "$HOME_DIR" "$WALL_LINE" || fail 'the first wall must move the worker'
+  printf 'codex-max\n' > "$CASE_DIR/seat"
+  printf 'codex-spare\n' > "$CASE_DIR/dest"
+  recover "$HOME_DIR" "$WALL_LINE" || fail 'the second wall must move the worker'
+  [ "$FM_QUOTA_WALL_STATUS" = moved ] || fail 'the second wall must move the worker to codex-spare'
+
+  # Re-stamp the record as the finding's timeline: codex-max2 walled 44h ago,
+  # codex-max 22h ago, so only codex-max is still inside its own window.
+  record=$(fm_quota_wall_record_path "$HOME_DIR/state" task)
+  now=$(date +%s)
+  sed -e "s/^at=.*/at=$(( now - 22 * 3600 ))/" \
+    -e "s/^walled=codex-max2:.*/walled=codex-max2:$(( now - 44 * 3600 ))/" \
+    -e "s/^walled=codex-max:.*/walled=codex-max:$(( now - 22 * 3600 ))/" \
+    "$record" > "$record.chained" && mv "$record.chained" "$record"
+
+  printf 'codex-spare\n' > "$CASE_DIR/seat"
+  printf 'codex-max2\n' > "$CASE_DIR/dest"
+  recover "$HOME_DIR" "$WALL_LINE" || fail 'the third wall must be handled'
+  [ "$FM_QUOTA_WALL_STATUS" = moved ] \
+    || fail "a seat that walled over a window ago must take the work again, got '$FM_QUOTA_WALL_STATUS': $FM_QUOTA_WALL_REPORT"
+  grep -E -- 'worker-destination --from codex-spare --skip codex-max$' "$CASE_DIR/seat.calls" >/dev/null \
+    || fail 'only the seat still inside its own window may be skipped'
+  assert_grep 'relaunch --seat codex-max2' "$CASE_DIR/control.calls" \
+    'the worker must be moved back onto the seat whose wall has aged out'
+  pass 'each walled seat ages out by its own wall, so a chain of walls never strands the worker'
+}
+
 test_no_seat_with_headroom_raises_one_decision() {
   local rc=0
   read_case "$(make_case nowhere)"
@@ -404,6 +435,7 @@ test_a_walled_worker_is_moved_to_a_seat_with_headroom
 test_only_one_automatic_move_per_episode
 test_a_later_episode_gets_its_own_move
 test_a_seat_already_walled_on_is_never_a_destination_again
+test_a_seat_walled_over_a_window_ago_is_a_destination_again
 test_no_seat_with_headroom_raises_one_decision
 test_a_decided_episode_moves_once_a_seat_qualifies
 test_a_live_pipeline_run_is_reported_and_never_moved
