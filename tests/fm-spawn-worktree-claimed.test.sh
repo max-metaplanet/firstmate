@@ -26,27 +26,12 @@ set -u
 
 TMP_ROOT=$(fm_test_tmproot fm-spawn-worktree-claimed)
 
-# make_claimed_fakebin <dir>: the settle suite's pane stub, reduced to a pane
-# that reports FM_FAKE_PANE_PATH from the first read (this suite is about what
-# happens AFTER the worktree is resolved, not about resolving it).
+# make_claimed_fakebin <dir>: a pane that reports FM_FAKE_PANE_PATH from the
+# first read and keeps the created window in the endpoint inventory.
 make_claimed_fakebin() {
   local dir=$1 fakebin
   fakebin=$(fm_fakebin "$dir")
-  cat > "$fakebin/tmux" <<'SH'
-#!/usr/bin/env bash
-set -u
-case "$*" in
-  *"#{pane_current_path}"*) printf '%s\n' "${FM_FAKE_PANE_PATH:-}"; exit 0 ;;
-esac
-case "${1:-}" in
-  display-message) printf 'firstmate\n'; exit 0 ;;
-  list-windows) exit 0 ;;
-  has-session|new-session|new-window|kill-window) exit 0 ;;
-  send-keys) exit 0 ;;
-esac
-exit 0
-SH
-  chmod +x "$fakebin/tmux"
+  fm_test_fake_tmux_spawn "$fakebin"
   fm_fake_exit0 "$fakebin" treehouse
   fm_test_fake_sleep_noop "$fakebin"
   printf '%s\n' "$fakebin"

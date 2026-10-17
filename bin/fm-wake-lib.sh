@@ -218,6 +218,8 @@ fm_watcher_beacon_age_to() {  # <output-variable> <beacon>
 FM_INACTIVE_RECONCILE_SECS_DEFAULT=900
 FM_INACTIVE_RECONCILE_SECS_MIN=60
 FM_INACTIVE_RECONCILE_SECS_MAX=1800
+# Read by the watcher and inactive-reconcile entry points.
+# shellcheck disable=SC2034
 FM_INACTIVE_RECONCILE_MARKER_NAME=.inactive-outcome-reconcile
 
 # Non-zero when FM_INACTIVE_RECONCILE_SECS is set to something outside the

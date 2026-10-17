@@ -69,8 +69,8 @@ command -v tasks-axi >/dev/null || { echo "::error::tasks-axi is required for th
 snapshot_output=$(/bin/bash tests/fm-fleet-snapshot-view.test.sh)
 printf '%s\n' "$snapshot_output"
 snapshot_count=$(printf '%s\n' "$snapshot_output" | grep -c '^ok - ')
-[ "$snapshot_count" -eq 20 ] || {
-  echo "::error::expected 20 snapshot/fleet-view tests, got $snapshot_count"
+[ "$snapshot_count" -eq 21 ] || {
+  echo "::error::expected 21 snapshot/fleet-view tests, got $snapshot_count"
   exit 1
 }
 
