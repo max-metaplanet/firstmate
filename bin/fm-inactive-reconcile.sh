@@ -91,12 +91,14 @@ SCRIPT_DIR="$(d=${BASH_SOURCE[0]%/*}; [ "$d" != "${BASH_SOURCE[0]}" ] || d=.; cd
 FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}}"
 STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 OUTCOME_DIR="$STATE/terminal-outcomes"
-SCAN_MARKER="$STATE/.inactive-outcome-reconcile"
-SCAN_LOCK="$STATE/.inactive-outcome-reconcile.lock"
 CREW_STATE_BIN="${FM_INACTIVE_CREW_STATE_BIN:-$SCRIPT_DIR/fm-crew-state.sh}"
 
 # shellcheck source=bin/fm-wake-lib.sh
 . "$SCRIPT_DIR/fm-wake-lib.sh"
+# The watcher poll reads this marker's cadence without launching this script,
+# so bin/fm-wake-lib.sh owns its name, its epoch read, and the window.
+SCAN_MARKER="$STATE/$FM_INACTIVE_RECONCILE_MARKER_NAME"
+SCAN_LOCK="$SCAN_MARKER.lock"
 # shellcheck source=bin/fm-classify-lib.sh
 . "$SCRIPT_DIR/fm-classify-lib.sh"
 # shellcheck source=bin/fm-parent-channel-lib.sh
@@ -106,15 +108,9 @@ CREW_STATE_BIN="${FM_INACTIVE_CREW_STATE_BIN:-$SCRIPT_DIR/fm-crew-state.sh}"
 # shellcheck source=bin/fm-dod-lib.sh
 . "$SCRIPT_DIR/fm-dod-lib.sh"
 
-FM_INACTIVE_RECONCILE_SECS=${FM_INACTIVE_RECONCILE_SECS:-900}
-case "$FM_INACTIVE_RECONCILE_SECS" in
-  ''|*[!0-9]*|0)
-    printf 'fm-inactive-reconcile: FM_INACTIVE_RECONCILE_SECS must be a whole number from 60 to 1800\n' >&2
-    exit 2
-    ;;
-esac
-if [ "$FM_INACTIVE_RECONCILE_SECS" -lt 60 ] || [ "$FM_INACTIVE_RECONCILE_SECS" -gt 1800 ]; then
-  printf 'fm-inactive-reconcile: FM_INACTIVE_RECONCILE_SECS must be a whole number from 60 to 1800\n' >&2
+if ! fm_inactive_reconcile_secs_to FM_INACTIVE_RECONCILE_SECS; then
+  printf 'fm-inactive-reconcile: FM_INACTIVE_RECONCILE_SECS must be a whole number from %s to %s\n' \
+    "$FM_INACTIVE_RECONCILE_SECS_MIN" "$FM_INACTIVE_RECONCILE_SECS_MAX" >&2
   exit 2
 fi
 FM_INACTIVE_RECONCILE_BUDGET_SECS=${FM_INACTIVE_RECONCILE_BUDGET_SECS:-10}
@@ -277,13 +273,22 @@ last_activity_age() { # <meta> <status> <turn-ended>
   if [ "$now" -lt "$newest" ]; then printf '0\n'; else printf '%s\n' $((now - newest)); fi
 }
 
-scan_marker_age() {
-  local now m
-  [ -e "$SCAN_MARKER" ] && [ ! -L "$SCAN_MARKER" ] || { printf '999999\n'; return; }
-  now=$(reconcile_now)
-  m=$(file_mtime "$SCAN_MARKER" 2>/dev/null || true)
-  case "$m" in ''|*[!0-9]*) printf '999999\n'; return ;; esac
-  if [ "$now" -lt "$m" ]; then printf '0\n'; else printf '%s\n' $((now - m)); fi
+# The scan's two directories, created once and then only tested for. Both exist
+# on every poll after the first, so making them unconditionally was a program
+# start per poll that found its work already done.
+ensure_outcome_dir() {
+  [ -d "$STATE" ] && [ -d "$OUTCOME_DIR" ] || mkdir -p "$STATE" "$OUTCOME_DIR" || return 1
+  [ ! -L "$OUTCOME_DIR" ] || return 1
+}
+
+scan_marker_age() {  # [output-variable]
+  local age
+  fm_inactive_reconcile_marker_age_to age "$SCAN_MARKER"
+  if [ "$#" -gt 0 ]; then
+    printf -v "$1" '%s' "$age"
+  else
+    printf '%s\n' "$age"
+  fi
 }
 
 scan_marker_cursor() {
@@ -599,9 +604,8 @@ scan_pass() { # <cursor> <after|through> <deadline> <secondmate-id-or-empty>
 }
 
 scan() {
-  local startup=${1:-0} self='' cursor deadline rc=0 marker_rc=0
-  mkdir -p "$STATE" "$OUTCOME_DIR" || return 1
-  [ ! -L "$OUTCOME_DIR" ] || return 1
+  local startup=${1:-0} self='' cursor deadline rc=0 marker_rc=0 marker_age
+  ensure_outcome_dir || return 1
   if self=$(home_secondmate_id); then
     # The ledger-first delivery is per poll, not per cadence.
     ledger_pass
@@ -609,7 +613,8 @@ scan() {
     marker_rc=$?
     self=''
   fi
-  if [ "$startup" != 1 ] && [ "$(scan_marker_age)" -lt "$FM_INACTIVE_RECONCILE_SECS" ]; then
+  scan_marker_age marker_age
+  if [ "$startup" != 1 ] && [ "$marker_age" -lt "$FM_INACTIVE_RECONCILE_SECS" ]; then
     return 0
   fi
   cursor=$(scan_marker_cursor)
@@ -670,9 +675,9 @@ case "$mode" in
     # ledger_pass still runs every poll in a secondmate home; a call found due
     # here is left untouched and falls through to the locked, timed scan so it
     # still gets that path's mkdir, lock, and budget handling exactly as before.
-    if [ "$startup" != 1 ] && [ "$(scan_marker_age)" -lt "$FM_INACTIVE_RECONCILE_SECS" ]; then
-      mkdir -p "$STATE" "$OUTCOME_DIR" || exit 1
-      [ ! -L "$OUTCOME_DIR" ] || exit 1
+    scan_marker_age marker_age
+    if [ "$startup" != 1 ] && [ "$marker_age" -lt "$FM_INACTIVE_RECONCILE_SECS" ]; then
+      ensure_outcome_dir || exit 1
       if self=$(home_secondmate_id); then
         ledger_pass
       fi

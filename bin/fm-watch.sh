@@ -1172,13 +1172,14 @@ EOF
 # budget. The per-mate liveness lock serializes this tick against a concurrent
 # session-start sweep, so neither side can kill or re-probe an endpoint the
 # other is mid-relaunch on.
+# The cadence marker's age comes from the one read this cycle already took for
+# every cadence; stamping it here is still what sets the next one.
 secondmate_liveness_tick() {
   local tick_marker="$STATE/.secondmate-liveness-tick"
-  local tick_age
-  age_of "$tick_marker" tick_age
-  [ "$tick_age" -ge "$SECONDMATE_LIVENESS_SECS" ] || return 0
+  [ "$liveness_age" -ge "$SECONDMATE_LIVENESS_SECS" ] || return 0
   touch "$tick_marker" || return 1
-  local now=$(( $(date +%s) )) meta id kind
+  local now meta id kind
+  fm_epoch_seconds_to now
   local bound_marker attempts notify_key reason queued err first_reason='' failed=0
   for meta in "$STATE"/*.meta; do
     [ -e "$meta" ] || continue
@@ -2192,6 +2193,65 @@ age_of() {  # <file> [output-variable]; seconds since mtime, 999999 when missing
   fi
 }
 
+# cadence_ages_read: every cadence marker this cycle will consult, read in ONE
+# program start. Five separate mtime reads were the whole fixed program cost of
+# a quiet poll, and each gate asks the same question - how old is this marker at
+# this poll - so one read at the top of the cycle answers them all. The mtime
+# stays the authority: ageing a marker is how a session start, an operator, or a
+# test forces the next cadence, and a cache that assumed mtimes only move
+# forward would ignore exactly that.
+# Only existing paths are passed, so the results line up with them in order; any
+# other count reads each marker on its own, because a shifted mapping would
+# mis-time a cadence.
+CADENCE_AGES=()
+cadence_ages_read() {  # <file>...
+  local cadence_i=0 cadence_now cadence_line cadence_count=0 cadence_age
+  local -a cadence_present=() cadence_slots=() cadence_mtimes=()
+  CADENCE_AGES=()
+  fm_epoch_seconds_to cadence_now
+  for cadence_line in "$@"; do
+    CADENCE_AGES[cadence_i]=999999
+    if [ -e "$cadence_line" ]; then
+      cadence_present+=( "$cadence_line" )
+      cadence_slots+=( "$cadence_i" )
+    fi
+    cadence_i=$((cadence_i + 1))
+  done
+  [ "${#cadence_present[@]}" -gt 0 ] || return 0
+  while IFS= read -r cadence_line; do
+    cadence_mtimes[cadence_count]=$cadence_line
+    cadence_count=$((cadence_count + 1))
+  done < <(fm_path_mtimes "${cadence_present[@]}")
+  if [ "$cadence_count" -ne "${#cadence_present[@]}" ]; then
+    cadence_count=0
+    for cadence_i in "${cadence_slots[@]}"; do
+      age_of "${cadence_present[cadence_count]}" cadence_age
+      CADENCE_AGES[cadence_i]=$cadence_age
+      cadence_count=$((cadence_count + 1))
+    done
+    return 0
+  fi
+  cadence_count=0
+  for cadence_i in "${cadence_slots[@]}"; do
+    cadence_line=${cadence_mtimes[cadence_count]}
+    cadence_count=$((cadence_count + 1))
+    case "$cadence_line" in
+      ''|*[!0-9]*) continue ;;
+    esac
+    [ "$cadence_line" -le "$cadence_now" ] || continue
+    CADENCE_AGES[cadence_i]=$((cadence_now - cadence_line))
+  done
+}
+
+# Fill the poll loop's `last` with the current window's declared-wait line, at
+# most once per window. The loop clears `last_read` per window, so this reads
+# the status log the first time a branch needs it and reuses that line after.
+declared_wait_line_for_window() {
+  [ "$last_read" -eq 0 ] || return 0
+  last=$(status_declared_wait_line "$STATE/$task.status")
+  last_read=1
+}
+
 # Layer 2 + 3 signal scan: status files and turn-end markers.
 # Each file is compared against its persisted reported signature in .seen-* rather
 # than mtime-vs-a-startup-touch, so signals that land while no watcher is running
@@ -2409,9 +2469,36 @@ run_check_capture() {
 FM_CAPTURE_OUTPUT=
 WATCHER_CAPTURE=
 
+# One capture buffer per watcher, named for this process and truncated by each
+# read's own redirection. Making and removing a temporary file per window cost
+# two program starts per window per poll for a file nothing else ever opens.
+# watcher_cleanup removes it; a crashed predecessor's leftover carries its own
+# pid and is never opened by this one.
+fm_capture_output_arm() {
+  [ -z "$FM_CAPTURE_OUTPUT" ] || return 0
+  FM_CAPTURE_OUTPUT="$STATE/.fm-capture-output.${WATCHER_PID:-$$}"
+}
+
 fm_capture_output_cleanup() {
   [ -z "$FM_CAPTURE_OUTPUT" ] || rm -f -- "$FM_CAPTURE_OUTPUT"
   FM_CAPTURE_OUTPUT=
+}
+
+# Read the capture buffer into WATCHER_CAPTURE with the value `$(cat)` gave.
+# A NUL-delimited read stops at a NUL byte and reports finding it, where
+# end-of-file reports failure, so a pane that emitted one is re-read through cat
+# instead of being silently truncated. Rendered panes carry no NUL, so the
+# common path starts no program at all.
+fm_capture_output_read() {
+  WATCHER_CAPTURE=
+  [ -f "$FM_CAPTURE_OUTPUT" ] && [ -r "$FM_CAPTURE_OUTPUT" ] || return 0
+  if IFS= read -r -d '' WATCHER_CAPTURE < "$FM_CAPTURE_OUTPUT"; then
+    WATCHER_CAPTURE=$(cat "$FM_CAPTURE_OUTPUT" 2>/dev/null || true)
+    return 0
+  fi
+  while [ "${WATCHER_CAPTURE%$'\n'}" != "$WATCHER_CAPTURE" ]; do
+    WATCHER_CAPTURE=${WATCHER_CAPTURE%$'\n'}
+  done
 }
 
 # watcher_capture: fm_backend_capture into WATCHER_CAPTURE with its exit status.
@@ -2420,9 +2507,8 @@ fm_capture_output_cleanup() {
 # recorded like a check's, so watcher_cleanup stops a read still in flight.
 watcher_capture() {  # <backend> <target> <lines> [expected-label]
   local rc pgid
-  fm_capture_output_cleanup
   WATCHER_CAPTURE=
-  FM_CAPTURE_OUTPUT=$(mktemp "$STATE/.fm-capture-output.XXXXXX") || return 1
+  fm_capture_output_arm
   FM_CHECK_SIGNAL_PENDING=
   trap 'FM_CHECK_SIGNAL_PENDING=1' HUP INT TERM
   # The group's stderr is redirected before the fork: bash 3.2 on macOS can
@@ -2435,18 +2521,26 @@ watcher_capture() {  # <backend> <target> <lines> [expected-label]
   set +m
   watcher_stop_signals
   [ -z "$FM_CHECK_SIGNAL_PENDING" ] || exit 1
-  pgid=$(ps -o pgid= -p "$FM_ACTIVE_CHECK_PID" 2>/dev/null | tr -d '[:space:]')
+  # A process group whose id is the child's pid can only be led by that child,
+  # because the pid is still ours and pids are unique, so signalling it proves
+  # the fork got its own group with no program start. The probe fails both when
+  # job control did not apply and when the child has already finished, and
+  # neither is provable from here, so those ask ps exactly as before.
+  if kill -0 "-$FM_ACTIVE_CHECK_PID" 2>/dev/null; then
+    pgid=$FM_ACTIVE_CHECK_PID
+  else
+    pgid=$(ps -o pgid= -p "$FM_ACTIVE_CHECK_PID" 2>/dev/null) || pgid=
+    pgid=${pgid//[[:space:]]/}
+  fi
   if [ -n "$pgid" ] && [ "$pgid" != "$FM_ACTIVE_CHECK_PGID" ]; then
     fm_active_check_stop || true
-    fm_capture_output_cleanup
     return 1
   fi
   wait "$FM_ACTIVE_CHECK_PID"
   rc=$?
   FM_ACTIVE_CHECK_PID=
-  fm_active_check_stop || { fm_capture_output_cleanup; return 1; }
-  WATCHER_CAPTURE=$(cat "$FM_CAPTURE_OUTPUT" 2>/dev/null || true)
-  fm_capture_output_cleanup
+  fm_active_check_stop || return 1
+  fm_capture_output_read
   return "$rc"
 }
 
@@ -2948,17 +3042,22 @@ resurface_after_downtime() {
   wake "check: rearm-resurface"
 }
 
-# Cadence ages and the per-poll marker reads below are filled through output
-# variables rather than command substitution, so declare them before the loop.
+# The per-poll cadence memos and marker reads below are filled through output
+# variables rather than command substitution, and each cadence memo outlives the
+# cycle that filled it, so declare them all before the loop.
 home_summary_age=999999
 check_age=999999
 heartbeat_age=999999
+reconcile_age=999999
+liveness_age=999999
 watch_lock_pid=
 watcher_beat_epoch=0
 poll_windows=
 stale_seen=
 count_prev=0
 prev=
+last=
+last_read=0
 
 while :; do
   # Home-gone exit: a deleted home, state directory, or code root means this
@@ -3000,11 +3099,20 @@ while :; do
   fm_epoch_seconds_to watcher_beat_epoch
   printf 'heartbeat_epoch=%s\n' "$watcher_beat_epoch" > "$STATE/.last-watcher-beat"
 
+  # Every cadence this cycle consults, aged at one instant with one read.
+  cadence_ages_read "$STATE/home-summary.json" "$STATE/.last-check" \
+    "$STATE/.last-heartbeat" "$STATE/$FM_INACTIVE_RECONCILE_MARKER_NAME" \
+    "$STATE/.secondmate-liveness-tick"
+  home_summary_age=${CADENCE_AGES[0]}
+  check_age=${CADENCE_AGES[1]}
+  heartbeat_age=${CADENCE_AGES[2]}
+  reconcile_age=${CADENCE_AGES[3]}
+  liveness_age=${CADENCE_AGES[4]}
+
   # Opt-in fleet activity ledger (docs/fleet-ledger.md): pick up newly appended
   # status lines before this cycle can exit on a wake. Off costs one file test.
   [ ! -e "$CONFIG/fleet-ledger" ] || FM_HOME=$FM_HOME FM_STATE_OVERRIDE=$STATE FM_CONFIG_OVERRIDE=$CONFIG "$SCRIPT_DIR/fm-fleet-ledger.sh" capture || true
 
-  age_of "$STATE/home-summary.json" home_summary_age
   if [ "$home_summary_age" -ge "$HOME_SUMMARY_INTERVAL" ]; then
     home_summary_refresh_detached
   fi
@@ -3058,14 +3166,16 @@ while :; do
   # The existing poll loop also owns the bounded inactive-outcome cadence.
   # This is mechanical and silent unless a durable terminal-outcome obligation
   # was created, so quiet cycles never wake firstmate or consume model tokens.
-  inactive_out=
-  if inactive_out=$(FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" \
-    "$SCRIPT_DIR/fm-inactive-reconcile.sh" scan 2>/dev/null); then
-    if [ -n "$inactive_out" ]; then
-      wake "check: inactive-outcome"
+  if fm_inactive_reconcile_scan_useful "$FM_HOME" "$reconcile_age"; then
+    inactive_out=
+    if inactive_out=$(FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" \
+      "$SCRIPT_DIR/fm-inactive-reconcile.sh" scan 2>/dev/null); then
+      if [ -n "$inactive_out" ]; then
+        wake "check: inactive-outcome"
+      fi
+    else
+      triage_log "inactive-outcome reconciliation unavailable"
     fi
-  else
-    triage_log "inactive-outcome reconciliation unavailable"
   fi
 
   # Slow per-task checks (firstmate writes these, e.g. a merged-PR poll).
@@ -3075,7 +3185,6 @@ while :; do
   # keeps producing signals - the slow poll (e.g. merge detection) would then
   # never run until the fleet went quiet. Checks are due only every
   # CHECK_INTERVAL, so most cycles skip this block and fall straight through.
-  age_of "$STATE/.last-check" check_age
   if [ "$check_age" -ge "$CHECK_INTERVAL" ]; then
     rejected_checks=
     contribution_check_output=
@@ -3347,10 +3456,8 @@ EOF
     # exemption below, because a mate's steers land in an inbox too.
     [ -z "$task" ] || inbox_steer_check "$w" "$task"
     key=$FM_WIN_KEY
-    last=$(status_declared_wait_line "$STATE/$task.status")
-    if ! status_is_paused_or_captain_held "$last" && [ -e "$STATE/.paused-$key" ]; then
-      clear_pause_tracking "$key"
-    fi
+    last=
+    last_read=0
     # An idle secondmate endpoint is healthy by design, so a mate is admitted to
     # the pane-stale path ONLY to serve a status-declared wait's bounded
     # re-surface. This gate reads the shared predicate rather than the pause verb
@@ -3358,8 +3465,17 @@ EOF
     # in the backlog while the mate still says `working:` or `done:` is outside
     # this guard: reaching it would require backlog reads for windows this gate
     # deliberately skips, putting that read on the ordinary poll hot path.
-    if [ "$kind" = secondmate ] && ! status_is_paused_or_captain_held "$last"; then
-      continue
+    # Both branches want the declared-wait line, the most expensive read of this
+    # window's poll, and an ordinary crewmate with no pause marker reaches
+    # neither, so it is read here rather than at the top of every window.
+    if [ "$kind" = secondmate ] || [ -e "$STATE/.paused-$key" ]; then
+      declared_wait_line_for_window
+      if ! status_is_paused_or_captain_held "$last" && [ -e "$STATE/.paused-$key" ]; then
+        clear_pause_tracking "$key"
+      fi
+      if [ "$kind" = secondmate ] && ! status_is_paused_or_captain_held "$last"; then
+        continue
+      fi
     fi
     label=
     [ -z "$FM_WIN_TASK" ] || label="fm-$FM_WIN_TASK"
@@ -3422,6 +3538,7 @@ EOF
           # Daemon owns triage: one-shot per distinct stale hash, as before,
           # except that a captain-held pane is never handed over while the
           # away-posture record exists (captain_held_silenced).
+          declared_wait_line_for_window
           if captain_held_silenced "$last"; then
             printf '%s' "$h" > "$sf"
             triage_log "absorbed stale (captain-held, never rechecked while the away-posture record exists): $w"
@@ -3596,7 +3713,6 @@ EOF
   [ "$streak" -gt 12 ] && streak=12
   hb=$(( HEARTBEAT * (1 << streak) ))
   [ "$hb" -gt "$HEARTBEAT_MAX" ] && hb=$HEARTBEAT_MAX
-  age_of "$STATE/.last-heartbeat" heartbeat_age
   if [ "$heartbeat_age" -ge "$hb" ]; then
     # Triage: in always-on mode a heartbeat is benign unless the cheap fleet-scan
     # turns up a captain-relevant status the per-wake path missed. Absorb the

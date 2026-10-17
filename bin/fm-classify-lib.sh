@@ -1074,12 +1074,13 @@ EOF
 # nothing. Callers compare the resolved path, never the file name, so a
 # parent-replies.status in any other home shape stays an ordinary task log.
 status_scan_parent_channel_exclude() {  # <state>
-  local state=$1 exclude
+  local state=$1 exclude home
   if ! command -v fm_parent_channel_outbound_status >/dev/null 2>&1; then
     # shellcheck source=bin/fm-parent-channel-lib.sh
     . "$_FM_CLASSIFY_LIB_DIR/fm-parent-channel-lib.sh"
   fi
-  exclude=$(fm_parent_channel_outbound_status "$(dirname "$state")" "$state") || return 0
+  fm_dirname_to home "$state"
+  exclude=$(fm_parent_channel_outbound_status "$home" "$state") || return 0
   printf '%s\n' "$exclude"
 }
 

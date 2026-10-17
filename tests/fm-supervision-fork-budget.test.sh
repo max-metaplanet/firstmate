@@ -49,7 +49,10 @@ budget_debug() {
     budget_last_pid=$BASHPID
     printf 'shell %s\n' "$BASHPID" >> "$EVENTS"
   fi
-  case "$command" in /usr/bin/stat\ *) printf 'program stat\n' >> "$EVENTS" ;; esac
+  # A native BSD stat is addressed absolutely, so it bypasses the shims, and a
+  # caller may prefix it with an assignment. Match the program anywhere in the
+  # command so a prefixed call cannot go uncounted.
+  case "$command" in /usr/bin/stat\ *|*\ /usr/bin/stat\ *) printf 'program stat\n' >> "$EVENTS" ;; esac
   [ "$BASHPID" = "${BUDGET_OWNER:-}" ] || return 0
   case "$BUDGET_LOOP:$caller:$command" in
     watch:main:event_wait_or_sleep|attach:attach_and_wait:healthy_watcher|host:await_close:boundary_reached|autoarm:start_handling_successor:'sleep 0.2'|autoarm:start_handling_successor:'fm_poll_wait 0.2')
@@ -79,11 +82,15 @@ trap 'budget_debug "$BASH_COMMAND" "${FUNCNAME[0]:-main}"' DEBUG
 SH
 
 make_idle_home() {
-  local dir=$1
+  local dir=$1 now
   mkdir -p "$dir/state" "$dir/config"
   touch "$dir/state/.last-check" "$dir/state/.last-heartbeat" \
-    "$dir/state/home-summary.json" "$dir/state/.secondmate-liveness-tick" \
-    "$dir/state/.inactive-outcome-reconcile"
+    "$dir/state/home-summary.json" "$dir/state/.secondmate-liveness-tick"
+  # The reconcile marker as a scan leaves it, not a bare touch: its recorded
+  # epoch is what the watcher reads to find the cadence unelapsed, and a marker
+  # without one falls back to an mtime read the sample would then count.
+  now=$(date +%s)
+  printf 'epoch=%s\ncursor=\n' "$now" > "$dir/state/.inactive-outcome-reconcile"
   fm_test_track_watcher_state "$dir/state"
 }
 
@@ -120,9 +127,12 @@ measure() { # <loop> <home> <target> [args...]
     }
     END { for(i=2;i<=4;i++) if(!waits[i])bad=1; exit bad }
   ' "$EVENTS" || fail "$loop skipped its full timed wait or changed its interval"
-  case "$loop" in watch) limit=18 ;; *) limit=0 ;; esac
+  # A warmed idle watcher poll starts ONE program: the single read that ages
+  # every cadence marker this cycle consults. Every other read it still makes is
+  # answered by a shell builtin. The other loops start none.
+  case "$loop" in watch) limit=1 ;; *) limit=0 ;; esac
   [ "$max_programs" -le "$limit" ] || fail "$loop exceeded $limit programs per cycle"
-  case "$loop" in watch) limit=52 ;; *) limit=0 ;; esac
+  case "$loop" in watch) limit=2 ;; *) limit=0 ;; esac
   [ "$max_shells" -le "$limit" ] || fail "$loop exceeded $limit shell children per cycle"
 }
 
