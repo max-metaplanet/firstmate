@@ -152,16 +152,23 @@
 # It takes the same optional trailing forge argument, because the rule that keeps
 # a worker off a remote is exactly the rule that changes when the forge does.
 
+# Builtin path resolution, computed once (no dirname/cd/pwd subshell per
+# sourced sibling): this library is sourced on every fm-crew-state.sh read, so
+# the five per-line subshells this replaced were five forks on every call; see
+# bin/fm-watch.sh's SCRIPT_DIR derivation for the same pattern.
+_FM_DOD_LIB_DIR=${BASH_SOURCE[0]%/*}
+[ "$_FM_DOD_LIB_DIR" != "${BASH_SOURCE[0]}" ] || _FM_DOD_LIB_DIR=.
+case $_FM_DOD_LIB_DIR in /*) ;; .) _FM_DOD_LIB_DIR=$PWD ;; *) _FM_DOD_LIB_DIR=$PWD/${_FM_DOD_LIB_DIR#./} ;; esac
 # shellcheck source=bin/fm-pr-lib.sh
-. "$(d=${BASH_SOURCE[0]%/*}; [ "$d" != "${BASH_SOURCE[0]}" ] || d=.; cd "${d:-/}" && pwd)/fm-pr-lib.sh"
+. "$_FM_DOD_LIB_DIR/fm-pr-lib.sh"
 # shellcheck source=bin/fm-classify-lib.sh
-. "$(d=${BASH_SOURCE[0]%/*}; [ "$d" != "${BASH_SOURCE[0]}" ] || d=.; cd "${d:-/}" && pwd)/fm-classify-lib.sh"
+. "$_FM_DOD_LIB_DIR/fm-classify-lib.sh"
 # shellcheck source=bin/fm-nm-run-lib.sh
-. "$(d=${BASH_SOURCE[0]%/*}; [ "$d" != "${BASH_SOURCE[0]}" ] || d=.; cd "${d:-/}" && pwd)/fm-nm-run-lib.sh"
+. "$_FM_DOD_LIB_DIR/fm-nm-run-lib.sh"
 # shellcheck source=bin/fm-brief-heading-lib.sh
-. "$(d=${BASH_SOURCE[0]%/*}; [ "$d" != "${BASH_SOURCE[0]}" ] || d=.; cd "${d:-/}" && pwd)/fm-brief-heading-lib.sh"
+. "$_FM_DOD_LIB_DIR/fm-brief-heading-lib.sh"
 # shellcheck source=bin/fm-external-review-lib.sh
-. "$(d=${BASH_SOURCE[0]%/*}; [ "$d" != "${BASH_SOURCE[0]}" ] || d=.; cd "${d:-/}" && pwd)/fm-external-review-lib.sh"
+. "$_FM_DOD_LIB_DIR/fm-external-review-lib.sh"
 
 # The bound on the one live `git ls-remote origin` the named-head gate makes.
 # Overridable so a test can prove a stalled remote refuses rather than hangs.
@@ -934,7 +941,7 @@ fm_dod_gerrit_change_carries_head() {  # <worktree> <url>
   local wt=$1 url=$2 revision head_tree revision_tree lib
   fm_pr_url_parse "$url" || return 1
   [ "$FM_PR_PROVIDER" = gerrit ] || return 1
-  lib="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/fm-pr-lib.sh"
+  lib="$_FM_DOD_LIB_DIR/fm-pr-lib.sh"
   # shellcheck disable=SC2016  # The inner script expands after bash -c receives positional args.
   revision=$(fm_run_timed 10 bash -c '
     . "$1"
