@@ -633,8 +633,8 @@ test_crew_state_and_snapshot_stay_within_their_fork_budget() {
   grep -q '^state: ' "$home/crew-state.out" \
     || fail "crew-state produced no verdict to budget: $(cat "$home/crew-state.err")"
   printf 'crew-state: shell-children=%s programs=%s\n' "$shells" "$programs"
-  [ "$shells" -le 70 ] || fail "one crew-state read started $shells shell children (budget 70)"
-  [ "$programs" -le 20 ] || fail "one crew-state read started $programs programs (budget 20)"
+  [ "$shells" -le 32 ] || fail "one crew-state read started $shells shell children (budget 32)"
+  [ "$programs" -le 10 ] || fail "one crew-state read started $programs programs (budget 10)"
 
   read -r shells programs <<< "$(fork_budget_count "$home" snapshot "$subject/bin/fm-fleet-snapshot.sh" --json)"
   [ "$(jq -r '.tasks | length' "$home/snapshot.out" 2>/dev/null)" = 3 ] \

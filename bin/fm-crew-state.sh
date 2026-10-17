@@ -215,8 +215,14 @@
 # of state; exit 2 only on a usage error (no id).
 set -u
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+# Builtin path resolution (no dirname/cd/pwd subshell): matches bin/fm-watch.sh's
+# fork-free SCRIPT_DIR derivation, which this script's own worktree pool
+# invocation shape already relies on (no symlinked bin/, always run from an
+# absolute path).
+SCRIPT_DIR=${BASH_SOURCE[0]%/*}
+[ "$SCRIPT_DIR" != "${BASH_SOURCE[0]}" ] || SCRIPT_DIR=.
+case $SCRIPT_DIR in /*) ;; .) SCRIPT_DIR=$PWD ;; *) SCRIPT_DIR=$PWD/${SCRIPT_DIR#./} ;; esac
+FM_ROOT="${FM_ROOT_OVERRIDE:-${SCRIPT_DIR%/*}}"
 FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 
@@ -325,11 +331,13 @@ emit_ship_status_done() {  # [extra-detail]
 }
 
 map_log_state() {  # <line>
+  local verb
   if status_is_paused "$1"; then
     echo paused
     return
   fi
-  case "$(status_line_verb "$1")" in
+  status_line_verb "$1" verb
+  case "$verb" in
     working)        echo working ;;
     needs-decision) echo parked ;;
     blocked)        echo blocked ;;
@@ -340,7 +348,7 @@ map_log_state() {  # <line>
 }
 
 LOG_LINE=$(status_current_line "$LOG" "$KIND")
-LOG_VERB=$(status_line_verb "$LOG_LINE")
+status_line_verb "$LOG_LINE" LOG_VERB
 
 # --- remote secondmate: the true source is the remote endpoint ---------------
 # A remote mate's recorded worktree and backend target live on its own host, so
@@ -358,7 +366,7 @@ if [ -n "$REMOTE_HOST" ]; then
     fm-remote-secondmate-control.sh state "$ID" < /dev/null 2>/dev/null); then
     REMOTE_STATE=
   fi
-  REMOTE_STATE=$(printf '%s\n' "$REMOTE_STATE" | tail -1)
+  REMOTE_STATE=${REMOTE_STATE##*$'\n'}
   case "$REMOTE_STATE" in
     alive)
       if [ -n "$LOG_VERB" ]; then
@@ -388,8 +396,8 @@ fi
 # (fm_backend_of_meta defaults absent backend= to tmux, the P1 contract): a
 # herdr task is read through fm_backend_capture while tmux uses the shared
 # endpoint-existence predicate.
-TASK_BACKEND=$(fm_backend_of_meta "$META")
-BACKEND_TARGET=$(fm_backend_target_of_meta "$META")
+fm_backend_of_meta_to TASK_BACKEND "$META"
+fm_backend_target_of_meta_to BACKEND_TARGET "$META"
 EXPECTED_LABEL="fm-$ID"
 pane_readable() {  # <target>
   case "$TASK_BACKEND" in
@@ -1016,7 +1024,13 @@ nm_runs_list() {
 
 # CREW_BRANCH is empty at detached HEAD (a just-spawned crew, or a scout's
 # scratch worktree); with no branch there is no run to attribute to this crew.
-CREW_BRANCH=$(git -C "$WT" symbolic-ref --quiet --short HEAD 2>/dev/null || true)
+# Scouts and secondmates never drive a no-mistakes validation of their own
+# worktree (the lookup below skips them on $KIND alone), so this probe - and
+# the git fork behind it - only runs when that lookup could actually use it.
+CREW_BRANCH=''
+if [ "$KIND" = ship ] && command -v no-mistakes >/dev/null 2>&1; then
+  CREW_BRANCH=$(git -C "$WT" symbolic-ref --quiet --short HEAD 2>/dev/null || true)
+fi
 
 # 0 if the active axi-status run's head field matches this worktree's code
 # identity. Branch match is a precondition (caller). Rule owned by

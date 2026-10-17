@@ -22,8 +22,14 @@
 # KILL on every mechanism, which is what keeps a probe's deadline from leaving
 # a no-mistakes CLI behind reparented to init, one more copy on every
 # supervision pass.
+# Builtin path resolution (no dirname/cd/pwd subshell): this library is
+# sourced on every fm-crew-state.sh read, so its own sourcing cost is paid at
+# fleet scale; see bin/fm-watch.sh's SCRIPT_DIR derivation for the same pattern.
+_FM_NM_RUN_LIB_DIR=${BASH_SOURCE[0]%/*}
+[ "$_FM_NM_RUN_LIB_DIR" != "${BASH_SOURCE[0]}" ] || _FM_NM_RUN_LIB_DIR=.
+case $_FM_NM_RUN_LIB_DIR in /*) ;; .) _FM_NM_RUN_LIB_DIR=$PWD ;; *) _FM_NM_RUN_LIB_DIR=$PWD/${_FM_NM_RUN_LIB_DIR#./} ;; esac
 # shellcheck source=bin/fm-timeout-lib.sh
-. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/fm-timeout-lib.sh"
+. "$_FM_NM_RUN_LIB_DIR/fm-timeout-lib.sh"
 
 # Bounded call to an arbitrary command in dir $1, timeout $2 seconds, and its
 # `no-mistakes "$@"` specialization. The bounded
