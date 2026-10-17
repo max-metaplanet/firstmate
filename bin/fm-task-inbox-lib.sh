@@ -479,7 +479,14 @@ fm_task_inbox_due_action() {  # <state-dir> <task-id>
   local dir oldest base now grace max ladder rec_base count last
   dir=$(fm_task_inbox_dir "$1" "$2")
   if ! oldest=$(fm_task_inbox_oldest_unhandled "$1" "$2"); then
-    rm -f "$dir/.ring-state" "$dir/.escalated" "$dir/.busy-state" 2>/dev/null || true
+    # A quiet inbox is the steady state of every poll of every task, and these
+    # three ring records are absent in it, so removing them unconditionally was
+    # a program start per task per poll with nothing to remove.
+    if [ -e "$dir/.ring-state" ] || [ -L "$dir/.ring-state" ] \
+      || [ -e "$dir/.escalated" ] || [ -L "$dir/.escalated" ] \
+      || [ -e "$dir/.busy-state" ] || [ -L "$dir/.busy-state" ]; then
+      rm -f "$dir/.ring-state" "$dir/.escalated" "$dir/.busy-state" 2>/dev/null || true
+    fi
     # The one retry ring exists only while config/wait-no-turns is present.
     # Absent, a mark is left untouched and the inbox stays quiet, as before.
     if [ -e "${FM_CONFIG_OVERRIDE:-${FM_HOME:-}/config}/wait-no-turns" ]; then

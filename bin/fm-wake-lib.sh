@@ -164,6 +164,18 @@ fm_path_mtime() {
   fi
 }
 
+# Every file's mtime in one program start, one line each, in argument order.
+# A caller that reads several markers per cycle pays one program instead of one
+# per marker. An unreadable path prints no line, so the caller must pass only
+# paths it has tested and check the line count before mapping them.
+fm_path_mtimes() {  # <file>...
+  if [ "$_FM_UNAME" = Darwin ]; then
+    /usr/bin/stat -f %m "$@" 2>/dev/null
+  else
+    stat -c %Y "$@" 2>/dev/null
+  fi
+}
+
 fm_path_age() {
   local path=$1 m now
   m=$(fm_path_mtime "$path") || { echo 999999; return; }
@@ -190,6 +202,72 @@ fm_watcher_beacon_age_to() {  # <output-variable> <beacon>
     beacon_age=999999
   fi
   printf -v "$1" '%s' "$beacon_age"
+}
+
+# Single owner of the inactive-outcome reconcile cadence, which both
+# bin/fm-inactive-reconcile.sh and the watcher poll that calls it must agree on:
+# the watcher decides with these whether launching that scan can do anything at
+# all, and launching it per poll to learn "not yet" was the whole cost.
+FM_INACTIVE_RECONCILE_SECS_DEFAULT=900
+FM_INACTIVE_RECONCILE_SECS_MIN=60
+FM_INACTIVE_RECONCILE_SECS_MAX=1800
+FM_INACTIVE_RECONCILE_MARKER_NAME=.inactive-outcome-reconcile
+
+# Non-zero when FM_INACTIVE_RECONCILE_SECS is set to something outside the
+# supported range, so the caller reports it rather than reconciling on a
+# cadence nobody asked for.
+fm_inactive_reconcile_secs_to() {  # <output-variable>
+  local fm_cadence_secs=${FM_INACTIVE_RECONCILE_SECS:-$FM_INACTIVE_RECONCILE_SECS_DEFAULT}
+  case "$fm_cadence_secs" in ''|*[!0-9]*) return 1 ;; esac
+  [ "$fm_cadence_secs" -ge "$FM_INACTIVE_RECONCILE_SECS_MIN" ] || return 1
+  [ "$fm_cadence_secs" -le "$FM_INACTIVE_RECONCILE_SECS_MAX" ] || return 1
+  printf -v "$1" '%s' "$fm_cadence_secs"
+}
+
+# Age of the scan marker <marker>, or 999999 when no usable marker exists.
+# A symlink is not a marker this fleet wrote, so it reads as never scanned.
+# The MTIME decides, because ageing this file is how an operator, a session
+# start, or a test forces the next scan, and a recorded epoch would not move.
+# FM_INACTIVE_RECONCILE_NOW pins the clock for the subtraction.
+fm_inactive_reconcile_marker_age_to() {  # <output-variable> <marker>
+  local fm_marker_epoch fm_marker_now fm_marker_age
+  if [ ! -e "$2" ] || [ -L "$2" ]; then
+    printf -v "$1" '%s' 999999
+    return 0
+  fi
+  fm_marker_epoch=$(fm_path_mtime "$2") || fm_marker_epoch=
+  case "$fm_marker_epoch" in
+    ''|*[!0-9]*) printf -v "$1" '%s' 999999; return 0 ;;
+  esac
+  case "${FM_INACTIVE_RECONCILE_NOW:-}" in
+    ''|*[!0-9]*) fm_epoch_seconds_to fm_marker_now ;;
+    *) fm_marker_now=$FM_INACTIVE_RECONCILE_NOW ;;
+  esac
+  fm_marker_age=$((fm_marker_now - fm_marker_epoch))
+  [ "$fm_marker_age" -ge 0 ] || fm_marker_age=0
+  printf -v "$1" '%s' "$fm_marker_age"
+}
+
+# 0 when launching bin/fm-inactive-reconcile.sh's scan can do anything this
+# poll, given the scan marker's age this poll already read. In a main home whose
+# cadence has not elapsed it cannot: that process would read the same marker,
+# reach the same verdict, and exit, which is a bash start plus its own library
+# reads per poll per home for an answer already in hand. A secondmate home
+# always runs it, because its ledger-first parent delivery is per poll rather
+# than per cadence. Anything these tests cannot settle - a marker in any other
+# shape, an override outside its range - runs the scan, which owns the real
+# verdict and its diagnostics.
+# The marker test is deliberately weaker than fm_parent_channel_home_id, which
+# owns what a VALID marker is: a marker in any shape sends the decision there.
+fm_inactive_reconcile_scan_useful() {  # <home> <marker-age>
+  local fm_scan_secs fm_scan_marker="$1/.fm-secondmate-home"
+  [ ! -e "$fm_scan_marker" ] && [ ! -L "$fm_scan_marker" ] || return 0
+  # A pinned clock is the scan's own seam, and the age handed in here was read
+  # against the real one, so that case goes to the scan to decide.
+  case "${FM_INACTIVE_RECONCILE_NOW:-}" in '') ;; *) return 0 ;; esac
+  fm_inactive_reconcile_secs_to fm_scan_secs || return 0
+  [ "$2" -lt "$fm_scan_secs" ] || return 0
+  return 1
 }
 
 # fm_poll_derived_grace [poll-seconds]
@@ -1045,6 +1123,15 @@ _fm_recovery_marker_arm_check() {
   local marker=$1 lock line quarantine
   FM_RECOVERY_MARKER_ACTION='none'
   lock="${marker}.lock"
+  # No marker and no queued row is the quiet steady state of every poll, and the
+  # locked path below writes nothing in it. Two file tests decide it with no
+  # program start; any other shape takes the full locked read unchanged. The
+  # locks are not skipped evidence: a row or marker that lands between these
+  # tests and the next poll is read then, exactly as one landing an instant
+  # after the locked read would have been.
+  if [ ! -e "$marker" ] && [ ! -L "$marker" ] && ! fm_recovery_queue_has_work; then
+    return 0
+  fi
   fm_lock_acquire_wait "$FM_WAKE_QUEUE_LOCK" || return 1
   if ! fm_lock_acquire_wait "$lock"; then
     fm_lock_release "$FM_WAKE_QUEUE_LOCK"

@@ -377,6 +377,7 @@ test_busy_child_does_not_starve_later_ledger_outcomes() {
   write_child "$MATE" a-busy 'done: busy child finished, PR https://example.test/owner/repo/pull/1 checks green'
   write_child "$MATE" b-ready 'done: later child finished, PR https://example.test/owner/repo/pull/1 checks green'
   printf 'epoch=%s\ncursor=\n' "$(date +%s)" > "$MATE/state/.inactive-outcome-reconcile"
+  : > "$MATE/state/.wake-queue"
   FM_HOME="$MATE" FM_STATE_OVERRIDE="$MATE/state" bash -c '
     . "$1/bin/fm-wake-lib.sh"
     lock=$(fm_meta_lock_path "$FM_STATE_OVERRIDE/a-busy.meta")
@@ -962,6 +963,73 @@ test_watcher_poll_delivers_child_ledger_line_to_parent() {
   pass "the real watcher poll delivers a child's terminal ledger line to the parent channel"
 }
 
+# The watcher poll launches the reconcile scan only when that process can do
+# something. A main home whose cadence has not elapsed gets nothing from it, so
+# the directories the scan creates on entry are the evidence that it ran at all.
+# A secondmate home runs it on every poll regardless, because its ledger-first
+# parent delivery is per poll rather than per cadence.
+test_watcher_poll_launches_the_scan_only_when_it_can_act() {
+  local pid i marker
+
+  make_world watcher-gate; write_child "$MAIN" child 'done: green'
+  prime_seen "$MAIN/state" "$MAIN/state/child.status"
+  marker="$MAIN/state/.inactive-outcome-reconcile"
+  printf 'epoch=%s\ncursor=\n' "$(date +%s)" > "$marker"
+  rm -rf "$MAIN/state/terminal-outcomes"
+  run_gate_watcher "$MAIN" "$WORLD/fresh.out"; pid=$LEG_PID; sleep 3; reap "$pid"
+  [ ! -d "$MAIN/state/terminal-outcomes" ] \
+    || fail "a main-home poll inside the cadence still launched the reconcile scan"
+
+  # Ageing the marker is how the cadence elapses, and the next poll must reach
+  # the scan, so the gate can never swallow a due scan.
+  set_mtime "$(( $(date +%s) - 1000 ))" "$marker"
+  : > "$MAIN/state/.wake-queue"
+  rm -rf "$MAIN/state"/.watcher-down*
+  run_gate_watcher "$MAIN" "$WORLD/due.out"; pid=$LEG_PID
+  i=0
+  while [ "$i" -lt 100 ]; do
+    [ -d "$MAIN/state/terminal-outcomes" ] && break
+    kill -0 "$pid" 2>/dev/null || break
+    sleep 0.1
+    i=$((i + 1))
+  done
+  reap "$pid"
+  [ -d "$MAIN/state/terminal-outcomes" ] \
+    || fail "an elapsed cadence did not reach the scan: $(cat "$WORLD/due.out")"
+
+  # A secondmate home delivers its child's terminal ledger line on a poll whose
+  # cadence has NOT elapsed, so the gate must never hold that home back.
+  make_world watcher-gate-mate; bind_secondmate local
+  write_child "$MATE" child 'done: PR https://example.test/owner/repo/pull/1 checks green'
+  prime_seen "$MATE/state" "$MATE/state/child.status"
+  printf 'epoch=%s\ncursor=\n' "$(date +%s)" > "$MATE/state/.inactive-outcome-reconcile"
+  run_gate_watcher "$MATE" "$WORLD/mate.out"; pid=$LEG_PID
+  i=0
+  while [ "$i" -lt 150 ]; do
+    grep -q 'child-outcome-child-done' "$MAIN/state/mate.status" 2>/dev/null && break
+    kill -0 "$pid" 2>/dev/null || break
+    sleep 0.1
+    i=$((i + 1))
+  done
+  reap "$pid"
+  grep -q 'child-outcome-child-done' "$MAIN/state/mate.status" 2>/dev/null \
+    || fail "a secondmate poll inside the cadence stopped delivering its child's ledger line: $(cat "$WORLD/mate.out")"
+
+  pass "the watcher poll launches the reconcile scan only when it can act, and never holds back a due scan or a secondmate home"
+}
+
+# One watcher leg for the gate test. The pid lands in LEG_PID because capturing
+# it through $(...) would orphan the watcher.
+run_gate_watcher() {  # <home> <output>
+  PATH="$WORLD/fakebin:$PATH" FM_HOME="$1" FM_STATE_OVERRIDE="$1/state" \
+    FM_DATA_OVERRIDE="$1/data" FM_CONFIG_OVERRIDE="$1/config" \
+    FM_INACTIVE_RECONCILE_SECS=900 FM_INACTIVE_CREW_STATE_BIN="$WORLD/fakebin/fm-crew-state.sh" \
+    FM_FORGE_LOG="$WORLD/forge.log" FM_POLL=1 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 \
+    FM_HEARTBEAT=999999 FM_SECONDMATE_LIVENESS_SECS=999999 FM_FAKE_CREW_STATE='done' \
+    "$WATCH" > "$2" 2>&1 &
+  LEG_PID=$!
+}
+
 # A stalled authoritative state read consumes only the aggregate scan budget.
 # The durable scan position lets the next invocation reach the following child.
 test_stalled_state_read_is_bounded_and_scan_progresses() {
@@ -1119,6 +1187,7 @@ test_idle_not_due_poll_skips_timed_reexec
 test_nonterminal_and_captain_held_states_do_not_report
 test_watcher_hook_and_idle_secondmate_exemption
 test_watcher_poll_delivers_child_ledger_line_to_parent
+test_watcher_poll_launches_the_scan_only_when_it_can_act
 test_stalled_state_read_is_bounded_and_scan_progresses
 test_full_scan_budget_includes_wake_lock_wait
 test_notice_recovery_does_not_duplicate_wake
