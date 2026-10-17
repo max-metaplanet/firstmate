@@ -5,7 +5,9 @@
 # the whole watcher to obtain handle_push_transition. Its source list is limited
 # to the four production boundaries the transition handler actually calls.
 
-FM_PUSH_TRANSITION_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+FM_PUSH_TRANSITION_LIB_DIR=${BASH_SOURCE[0]%/*}
+[ "$FM_PUSH_TRANSITION_LIB_DIR" != "${BASH_SOURCE[0]}" ] || FM_PUSH_TRANSITION_LIB_DIR=.
+case $FM_PUSH_TRANSITION_LIB_DIR in /*) ;; .) FM_PUSH_TRANSITION_LIB_DIR=$PWD ;; *) FM_PUSH_TRANSITION_LIB_DIR=$PWD/${FM_PUSH_TRANSITION_LIB_DIR#./} ;; esac
 
 # shellcheck source=bin/fm-wake-lib.sh
 . "$FM_PUSH_TRANSITION_LIB_DIR/fm-wake-lib.sh"

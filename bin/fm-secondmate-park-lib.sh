@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Read-only secondmate park predicates. The parent record is authoritative;
 # bin/fm-secondmate-park.sh owns its format and lifecycle.
-FM_SM_PARK_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+FM_SM_PARK_LIB_DIR=${BASH_SOURCE[0]%/*}
+[ "$FM_SM_PARK_LIB_DIR" != "${BASH_SOURCE[0]}" ] || FM_SM_PARK_LIB_DIR=.
+case $FM_SM_PARK_LIB_DIR in /*) ;; .) FM_SM_PARK_LIB_DIR=$PWD ;; *) FM_SM_PARK_LIB_DIR=$PWD/${FM_SM_PARK_LIB_DIR#./} ;; esac
 # shellcheck source=bin/fm-secondmate-parent-lib.sh
 . "$FM_SM_PARK_LIB_DIR/fm-secondmate-parent-lib.sh"
 

@@ -47,7 +47,9 @@
 # Directory of this library, used to locate the sibling fm-crew-state.sh reader.
 # Resolved at source time from BASH_SOURCE so it works whether sourced by a
 # bin/ script (which sets its own SCRIPT_DIR) or directly by a test.
-_FM_CLASSIFY_LIB_DIR="$(d=${BASH_SOURCE[0]%/*}; [ "$d" != "${BASH_SOURCE[0]}" ] || d=.; cd "${d:-/}" && pwd 2>/dev/null)" || _FM_CLASSIFY_LIB_DIR="."
+_FM_CLASSIFY_LIB_DIR=${BASH_SOURCE[0]%/*}
+[ "$_FM_CLASSIFY_LIB_DIR" != "${BASH_SOURCE[0]}" ] || _FM_CLASSIFY_LIB_DIR=.
+case $_FM_CLASSIFY_LIB_DIR in /*) ;; .) _FM_CLASSIFY_LIB_DIR=$PWD ;; *) _FM_CLASSIFY_LIB_DIR=$PWD/${_FM_CLASSIFY_LIB_DIR#./} ;; esac
 
 # The kernel name, read once at source time rather than forked by every status
 # stat helper below. These helpers mostly run inside $() subshells, where a lazy
@@ -1202,20 +1204,23 @@ FM_OPEN_DECISIONS_FOLD_VERSION=10
 
 # Portable device:inode identity for the rotation/recreation check below.
 _fm_open_decisions_file_ident() {  # <file> -> strongest available identity
-  local f=$1 epoch birth ident
+  local f=$1 epoch birth ident raw
   if [ -n "${FM_STATUS_IDENTITY_READER:-}" ]; then
     "$FM_STATUS_IDENTITY_READER" "$f"
     return
   fi
+  # One stat carries device, inode and birth time together. Reading them
+  # separately started three programs for every status file examined.
   if [ "$_FM_CLASSIFY_UNAME_S" = Darwin ]; then
-    ident=$(LC_ALL=C /usr/bin/stat -f '%d:%i' "$f" 2>/dev/null) || return 1
-    epoch=$(LC_ALL=C /usr/bin/stat -f '%B' "$f" 2>/dev/null) || epoch=0
-    if [ "$epoch" != 0 ]; then birth=$(LC_ALL=C /usr/bin/stat -f '%FB' "$f" 2>/dev/null) || birth=''; else birth=''; fi
+    raw=$(LC_ALL=C /usr/bin/stat -f '%d:%i|%B|%FB' "$f" 2>/dev/null) || return 1
   else
-    ident=$(LC_ALL=C stat -c '%d:%i' "$f" 2>/dev/null) || return 1
-    epoch=$(LC_ALL=C stat -c '%W' "$f" 2>/dev/null) || epoch=0
-    if [ "$epoch" != 0 ]; then birth=$(LC_ALL=C stat -c '%w' "$f" 2>/dev/null) || birth=''; else birth=''; fi
+    raw=$(LC_ALL=C stat -c '%d:%i|%W|%w' "$f" 2>/dev/null) || return 1
   fi
+  case "$raw" in *'|'*'|'*) ;; *) return 1 ;; esac
+  ident=${raw%%|*}; raw=${raw#*|}
+  epoch=${raw%%|*}
+  birth=${raw#*|}
+  [ "$epoch" != 0 ] || birth=''
   case "$ident$birth" in *$'\t'*|*$'\n'*|'') return 1 ;; esac
   if [ -n "$birth" ]; then printf 'strong:%s:%s' "$ident" "$birth"; else printf 'weak:%s' "$ident"; fi
 }
@@ -2400,8 +2405,8 @@ window_to_task() {
 
 status_home_appends_path() {  # <status-file>
   local f=$1 dir base
-  dir=$(dirname "$f")
-  base=$(basename "$f")
+  fm_dirname_to dir "$f"
+  fm_basename_to base "$f"
   printf '%s/.%s.home-appends' "$dir" "${base%.status}"
 }
 

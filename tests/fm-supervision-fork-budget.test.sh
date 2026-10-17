@@ -22,10 +22,19 @@ budget_cleanup() {
 }
 trap budget_cleanup EXIT
 SUBJECT_ROOT=${FM_FORK_BUDGET_ROOT:-$ROOT}
+# Budget for the walk from exec to the first poll, which runs again on every
+# wake a watcher delivers.
+# The ceiling leaves a little room for the per-platform programs this walk
+# differs by: a Linux /proc identity read costs more programs than the portable
+# ps fallback. It is still tight enough that one library going back to a
+# cd-and-pwd subshell, worth two shell children and a program start, shows up.
+FORK_BUDGET_WATCH_START_PROGRAMS=${FORK_BUDGET_WATCH_START_PROGRAMS:-22}
+FORK_BUDGET_WATCH_START_SHELLS=${FORK_BUDGET_WATCH_START_SHELLS:-22}
 mkdir -p "$TMP_ROOT/shims"
 EVENTS="$TMP_ROOT/events"
 export EVENTS
-for tool in cat ps stat grep date sed jq sleep touch awk tr uname mkdir; do
+for tool in cat ps stat grep date sed jq sleep touch awk tr uname mkdir \
+  basename dirname readlink ln mktemp rm rmdir wc cut tail mv; do
   real=$(command -v "$tool") || continue
   cat > "$TMP_ROOT/shims/$tool" <<SH
 #!/bin/sh
@@ -96,6 +105,7 @@ make_idle_home() {
 
 measure() { # <loop> <home> <target> [args...]
   local loop=$1 home=$2 target=$3 summary programs shells max_programs max_shells limit interval
+  local start_programs start_shells
   shift 3
   EVENTS="$home/events"
   : > "$EVENTS"
@@ -109,15 +119,19 @@ measure() { # <loop> <home> <target> [args...]
   fi
   summary=$(awk '
     $1 == "cycle" { cycle=$2; if (cycle==5) ended=1; next }
+    cycle==0 && $1=="program" { sp++ }
     cycle>=2 && cycle<=4 && $1=="program" { programs++; p[cycle]++ }
     $1=="shell" {
       # exec into another instrumented Bash can log the same pid twice.
-      if (!seen[$2]++ && cycle>=2 && cycle<=4) { shells++; s[cycle]++ }
+      if (seen[$2]++) next
+      if (cycle==0) ss++
+      if (cycle>=2 && cycle<=4) { shells++; s[cycle]++ }
     }
-    END { if (!ended) exit 1; for (i=2;i<=4;i++) { if(p[i]>mp)mp=p[i]; if(s[i]>ms)ms=s[i] }; printf "%d %d %d %d", programs, shells, mp, ms }
+    END { if (!ended) exit 1; for (i=2;i<=4;i++) { if(p[i]>mp)mp=p[i]; if(s[i]>ms)ms=s[i] }; printf "%d %d %d %d %d %d", programs, shells, mp, ms, sp, ss }
   ' "$EVENTS") || fail "$loop did not complete five boundaries: $(cat "$home/output")"
-  read -r programs shells max_programs max_shells <<< "$summary"
-  printf '%s: programs=%s/3 shell-children=%s/3\n' "$loop" "$programs" "$shells"
+  read -r programs shells max_programs max_shells start_programs start_shells <<< "$summary"
+  printf '%s: programs=%s/3 shell-children=%s/3 startup-programs=%s startup-shell-children=%s\n' \
+    "$loop" "$programs" "$shells" "$start_programs" "$start_shells"
   [ "${FM_FORK_BUDGET_REPORT_ONLY:-0}" != 1 ] || return 0
   case "$loop" in watch) interval=1 ;; attach) interval=0.1 ;; host) interval=0.5 ;; autoarm) interval=0.2 ;; esac
   awk -v interval="$interval" '
@@ -134,6 +148,18 @@ measure() { # <loop> <home> <target> [args...]
   [ "$max_programs" -le "$limit" ] || fail "$loop exceeded $limit programs per cycle"
   case "$loop" in watch) limit=2 ;; *) limit=0 ;; esac
   [ "$max_shells" -le "$limit" ] || fail "$loop exceeded $limit shell children per cycle"
+  # Reaching the first poll is the fleet's most repeated cost: a watcher is
+  # started again on every wake it delivers. Library directories resolve by
+  # parameter expansion and the lock path reads its markers with builtins, so
+  # the walk from exec to the first wait stays inside this budget.
+  case "$loop" in
+    watch)
+      [ "$start_programs" -le "$FORK_BUDGET_WATCH_START_PROGRAMS" ] ||
+        fail "watch startup exceeded $FORK_BUDGET_WATCH_START_PROGRAMS programs: $start_programs"
+      [ "$start_shells" -le "$FORK_BUDGET_WATCH_START_SHELLS" ] ||
+        fail "watch startup exceeded $FORK_BUDGET_WATCH_START_SHELLS shell children: $start_shells"
+      ;;
+  esac
 }
 
 # Real watcher, with no tasks or due maintenance. This is also the live Mac

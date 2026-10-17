@@ -198,15 +198,21 @@ case "$CYCLE_LOG_KEEP_LINES" in ''|*[!0-9]*|0) CYCLE_LOG_KEEP_LINES=1000 ;; esac
 # cannot stall an otherwise healthy watcher cycle. Take-over also uses the
 # owner's row as stop evidence; missing evidence takes the safe recovery path
 # (docs/watcher-continuity.md "Generation reuse").
-cycle_clean_field() {
-  printf '%s' "$1" | tr '\t\r\n' '   ' | cut -c1-512
+# Both write through an output variable: one closed cycle used to cost about
+# thirty forks in field cleaning and lock reads alone, and every one of them is
+# answered by a parameter expansion or a builtin read.
+cycle_clean_field_to() {  # <output-variable> <value>
+  local cycle_field=${2//[$'\t\r\n']/ }
+  printf -v "$1" '%s' "${cycle_field:0:512}"
 }
 
-lock_snapshot() {
-  local pid identity
-  pid=$(cat "$WATCH_LOCK/pid" 2>/dev/null || true)
-  identity=$(cat "$WATCH_LOCK/pid-identity" 2>/dev/null || true)
-  printf 'pid:%s|identity:%s' "$(cycle_clean_field "${pid:-none}")" "$(cycle_clean_field "${identity:-none}")"
+lock_snapshot_to() {  # <output-variable>
+  local snap_pid snap_identity
+  fm_read_file_to snap_pid "$WATCH_LOCK/pid" || snap_pid=
+  fm_read_file_to snap_identity "$WATCH_LOCK/pid-identity" || snap_identity=
+  cycle_clean_field_to snap_pid "${snap_pid:-none}"
+  cycle_clean_field_to snap_identity "${snap_identity:-none}"
+  printf -v "$1" 'pid:%s|identity:%s' "$snap_pid" "$snap_identity"
 }
 
 WATCH_DELIVERY_LOG="$STATE/.watch-deliveries.log"
@@ -223,8 +229,8 @@ cycle_begin() {
   cycle_watcher_pid=$1
   cycle_origin=$2
   cycle_watcher_identity=$3
-  cycle_started_at=$(date +%s)
-  cycle_lock_before=$(lock_snapshot)
+  fm_epoch_seconds_to cycle_started_at
+  lock_snapshot_to cycle_lock_before
   cycle_active=1
 }
 
@@ -233,7 +239,7 @@ cycle_refresh_lock_before() {
   if [ "$HEALTHY_PID" = "$cycle_watcher_pid" ] && [ -n "$HEALTHY_IDENTITY" ]; then
     cycle_watcher_identity=$HEALTHY_IDENTITY
   fi
-  cycle_lock_before=$(lock_snapshot)
+  lock_snapshot_to cycle_lock_before
 }
 
 cycle_signal_name() {
@@ -248,10 +254,20 @@ cycle_signal_name() {
 
 cycle_log_append() {
   local exit_code=$1 signal=$2 reason=$3 successor=$4 ended_at beacon_age lock_after size tmp raw i
+  local clean_watcher_pid clean_origin clean_exit clean_signal clean_reason
+  local clean_lock_before clean_lock_after clean_successor
   [ "$cycle_active" -eq 1 ] || return 0
-  ended_at=$(date +%s)
+  fm_epoch_seconds_to ended_at
   beacon_age=$(fm_path_age "$BEAT")
-  lock_after=$(lock_snapshot)
+  lock_snapshot_to lock_after
+  cycle_clean_field_to clean_watcher_pid "$cycle_watcher_pid"
+  cycle_clean_field_to clean_origin "$cycle_origin"
+  cycle_clean_field_to clean_exit "$exit_code"
+  cycle_clean_field_to clean_signal "$signal"
+  cycle_clean_field_to clean_reason "$reason"
+  cycle_clean_field_to clean_lock_before "$cycle_lock_before"
+  cycle_clean_field_to clean_lock_after "$lock_after"
+  cycle_clean_field_to clean_successor "$successor"
 
   i=0
   while ! fm_lock_try_acquire "$CYCLE_LOG_LOCK"; do
@@ -261,19 +277,20 @@ cycle_log_append() {
   done
   printf 'arm_pid=%s\twatcher_pid=%s\torigin=%s\tstarted_at=%s\tended_at=%s\texit_code=%s\tsignal=%s\treason=%s\tbeacon_age=%s\tlock_before=%s\tlock_after=%s\tsuccessor=%s\n' \
     "$ARM_PID" \
-    "$(cycle_clean_field "$cycle_watcher_pid")" \
-    "$(cycle_clean_field "$cycle_origin")" \
+    "$clean_watcher_pid" \
+    "$clean_origin" \
     "$cycle_started_at" \
     "$ended_at" \
-    "$(cycle_clean_field "$exit_code")" \
-    "$(cycle_clean_field "$signal")" \
-    "$(cycle_clean_field "$reason")" \
+    "$clean_exit" \
+    "$clean_signal" \
+    "$clean_reason" \
     "$beacon_age" \
-    "$(cycle_clean_field "$cycle_lock_before")" \
-    "$(cycle_clean_field "$lock_after")" \
-    "$(cycle_clean_field "$successor")" >> "$CYCLE_LOG" 2>/dev/null || true
+    "$clean_lock_before" \
+    "$clean_lock_after" \
+    "$clean_successor" >> "$CYCLE_LOG" 2>/dev/null || true
 
-  size=$(wc -c < "$CYCLE_LOG" 2>/dev/null | tr -d '[:space:]')
+  size=$(wc -c < "$CYCLE_LOG" 2>/dev/null)
+  size=${size//[[:space:]]/}
   case "$size" in
     ''|*[!0-9]*) ;;
     *)
@@ -298,7 +315,7 @@ cycle_log_append() {
 # extra synthetic lifecycle row. A taking-over arm names itself instead, so its
 # record of the cycle it took over names the cycle it started.
 cycle_mark_predecessor_successor() {
-  local successor=$1 predecessor=${2:-${FM_WATCH_PREDECESSOR_ARM_PID:-}} i tmp
+  local successor=$1 predecessor=${2:-${FM_WATCH_PREDECESSOR_ARM_PID:-}} i tmp clean_successor
   case "$predecessor" in
     ''|*[!0-9]*) return 0 ;;
   esac
@@ -310,7 +327,8 @@ cycle_mark_predecessor_successor() {
     i=$((i + 1))
   done
   tmp="$CYCLE_LOG.link.$ARM_PID"
-  awk -v target="arm_pid=$predecessor" -v replacement="successor=$(cycle_clean_field "$successor")" '
+  cycle_clean_field_to clean_successor "$successor"
+  awk -v target="arm_pid=$predecessor" -v replacement="successor=$clean_successor" '
     {
       lines[NR] = $0
       count = split($0, fields, "\t")

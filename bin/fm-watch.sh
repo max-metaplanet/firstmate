@@ -199,15 +199,20 @@
 # to this process alone and never signals another watcher.
 set -u
 
-SCRIPT_DIR="$(d=${BASH_SOURCE[0]%/*}; [ "$d" != "${BASH_SOURCE[0]}" ] || d=.; cd "${d:-/}" && pwd)"
-FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+# Resolved by parameter expansion rather than a cd-and-pwd subshell: a watcher
+# start is the fleet's most repeated program run, and this ran before it.
+SCRIPT_DIR=${BASH_SOURCE[0]%/*}
+[ "$SCRIPT_DIR" != "${BASH_SOURCE[0]}" ] || SCRIPT_DIR=.
+case $SCRIPT_DIR in /*) ;; .) SCRIPT_DIR=$PWD ;; *) SCRIPT_DIR=$PWD/${SCRIPT_DIR#./} ;; esac
+FM_ROOT=${FM_ROOT_OVERRIDE:-${SCRIPT_DIR%/*}}
+[ -n "$FM_ROOT" ] || FM_ROOT=/
 FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 # shellcheck source=bin/fm-secondmate-park-lib.sh
 . "$SCRIPT_DIR/fm-secondmate-park-lib.sh"
 if fm_secondmate_home_parked "$FM_HOME"; then exit 0; fi
 CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
-mkdir -p "$STATE"
+[ -d "$STATE" ] || mkdir -p "$STATE"
 # A home that never existed (a state-only test fixture) is not a home that
 # disappeared, so the per-poll home-gone exit below applies only when it did.
 WATCH_HOME_EXISTED=0
@@ -299,7 +304,7 @@ WATCHER_DOWNTIME_MARKER="$STATE/.watcher-down"
 # watcher mid-cycle. Detect the platform once and pick the right form.
 # On Darwin, call /usr/bin/stat rather than PATH-resolved stat so GNU coreutils
 # cannot shadow the BSD `-f` syntax.
-if [ "$(uname)" = Darwin ]; then
+if [ "${_FM_UNAME:-$(uname)}" = Darwin ]; then
   stat_mtime() { /usr/bin/stat -f %m "$1" 2>/dev/null; }        # epoch seconds of mtime
 else
   stat_mtime() { stat -c %Y "$1" 2>/dev/null; }
@@ -317,14 +322,20 @@ POLL=${FM_POLL:-15}                   # seconds between cycles
 # derivation - see docs/turnend-guard.md "Guard grace and the poll cadence".
 # This recomputes the library default above now that the real configured
 # POLL is known.
-WATCHER_STALE_GRACE=${FM_WATCHER_STALE_GRACE:-${FM_GUARD_GRACE:-$(fm_poll_derived_grace "$POLL")}}
+if [ -n "${FM_WATCHER_STALE_GRACE:-}" ]; then
+  WATCHER_STALE_GRACE=$FM_WATCHER_STALE_GRACE
+elif [ -n "${FM_GUARD_GRACE:-}" ]; then
+  WATCHER_STALE_GRACE=$FM_GUARD_GRACE
+else
+  fm_poll_derived_grace_to WATCHER_STALE_GRACE "$POLL"
+fi
 # Hard bound on a live holder's beacon age. Under it a re-arm refuses and asks
 # for inspection (the grace above); at or past it the re-arm evicts the holder
 # instead, because a watcher whose beacon has stalled that long is not polling
 # and nothing else would ever replace it (evict_stalled_holder below).
 # fm_watcher_stall_bound (bin/fm-wake-lib.sh) owns the derivation, shared with
 # the arm that follows this watcher.
-WATCHER_STALL_BOUND=$(fm_watcher_stall_bound "$POLL")
+fm_watcher_stall_bound_to WATCHER_STALL_BOUND "$POLL"
 HEARTBEAT=${FM_HEARTBEAT:-600}        # base seconds between heartbeat scans
 HEARTBEAT_MAX=${FM_HEARTBEAT_MAX:-7200}  # heartbeat backoff cap
 # The *.check.sh sweep covers authenticated merge/CI polls, the Relay x-watch
