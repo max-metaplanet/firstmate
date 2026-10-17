@@ -410,6 +410,7 @@ STALE_ESCALATE_SECS=${FM_STALE_ESCALATE_SECS:-240}  # idle secs before a provabl
 # any legitimate interval without observable progress, including silent long
 # tool calls, builds, or test runs.
 BUSY_TURN_MAX_SECS=${FM_BUSY_TURN_MAX_SECS:-3600}
+BUSY_TURN_THRESHOLD="$STATE/.busy-turn-threshold"
 # A local secondmate's foreign queue is checked on every poll, but only after this
 # bounded interval with no drain progress can it produce a parent notification.
 # A healthy mate drains its queue between turns, not inside one, so this default
@@ -488,8 +489,14 @@ captain_held_silenced() {  # <status-line>
   status_is_captain_held "$1" && away_record_present
 }
 
-hash_pane() {
-  if command -v md5 >/dev/null 2>&1; then md5 -q; else md5sum | cut -d' ' -f1; fi
+hash_pane() {  # <text> -> hash on stdout, no stdin pipe or second program
+  local text=${1-} out
+  if command -v md5 >/dev/null 2>&1; then
+    out=$(md5 -q -s "$text")
+  else
+    out=$(md5sum <<< "$text")
+  fi
+  printf '%s\n' "${out%% *}"
 }
 
 # window_is_busy: 0 (busy) iff the task's harness is PROVABLY working, through
@@ -881,7 +888,7 @@ signal_turnend_panes_churned() {  # <file> ...
     watcher_capture "$backend" "$w" 40 "$label" || return 1
     now=$WATCHER_CAPTURE
     [ -n "$now" ] || return 1
-    [ "$(printf '%s' "$now" | hash_pane)" != "$prev" ] || return 1
+    [ "$(hash_pane "$now")" != "$prev" ] || return 1
     churned_keys+=("$key")
   done
   # Enforce the deferral bound BEFORE any .stale- state is touched, so a wake that
@@ -1716,7 +1723,35 @@ busy_turn_over_age() {  # <task>
   [ -e "$f" ] || f="$STATE/$task.meta"
   progress="$STATE/$task.progress"
   if [ -f "$progress" ] && [ "$progress" -nt "$f" ]; then f="$progress"; fi
-  [ "$(age_of "$f")" -ge "$BUSY_TURN_MAX_SECS" ]
+  # Every busy window asks this once per poll, so a per-call stat_mtime fork
+  # (age_of) turns into one fork per busy window per cycle. BUSY_TURN_THRESHOLD
+  # is touched to "now - BUSY_TURN_MAX_SECS" once per poll (busy_turn_threshold_refresh,
+  # called from the main loop); -ot is a builtin mtime comparison, and bash's
+  # test treats a missing <f> as older than an existing <marker>, matching
+  # age_of's 999999-when-missing fallback. Fall back to the fork-based read
+  # only before the marker exists at all (the first cycle of a fresh watcher).
+  if [ -e "$BUSY_TURN_THRESHOLD" ]; then
+    [ "$f" -ot "$BUSY_TURN_THRESHOLD" ]
+  else
+    [ "$(age_of "$f")" -ge "$BUSY_TURN_MAX_SECS" ]
+  fi
+}
+
+# busy_turn_threshold_refresh: touch BUSY_TURN_THRESHOLD's mtime to
+# "<now> - BUSY_TURN_MAX_SECS" once per poll, so busy_turn_over_age's per-window
+# check above costs a builtin -ot test instead of a stat fork. touch -t's
+# "[[CC]YY]MMDDhhmm[.SS]" form is accepted by both BSD and GNU touch.
+if [ "${BASH_VERSINFO[0]}" -gt 4 ] || { [ "${BASH_VERSINFO[0]}" -eq 4 ] && [ "${BASH_VERSINFO[1]}" -ge 2 ]; }; then
+  busy_turn_threshold_stamp() { printf -v "$1" '%(%Y%m%d%H%M.%S)T' "$2"; }
+else
+  busy_turn_threshold_stamp() { printf -v "$1" '%s' "$(date -r "$2" '+%Y%m%d%H%M.%S')"; }
+fi
+
+busy_turn_threshold_refresh() {  # <now-epoch>
+  local threshold=$(( $1 - BUSY_TURN_MAX_SECS )) stamp
+  [ "$threshold" -ge 0 ] || threshold=0
+  busy_turn_threshold_stamp stamp "$threshold"
+  touch -t "$stamp" "$BUSY_TURN_THRESHOLD" 2>/dev/null || true
 }
 
 # Absorb a stale pane under a declared external-wait pause (paused:) or a
@@ -2580,7 +2615,7 @@ signal_files_actionable() {  # <status-file> ...
   for f in "$@"; do
     case "$f" in *.status) ;; *) continue ;; esac
     [ -e "$f" ] || [ -L "$f" ] || continue
-    task=$(basename "$f"); task="${task%.status}"
+    task=${f##*/}; task="${task%.status}"
     record=''; needs_decision=0
     status_span_first_actionable_record "$f" \
       "$(fm_wake_signal_seen_size "$STATE" "$f")" record needs_decision
@@ -2645,7 +2680,7 @@ heartbeat_scan_finds_actionable() {
   for f in "$STATE"/*.status; do
     [ -e "$f" ] || [ -L "$f" ] || continue
     [ "$f" = "$exclude" ] && continue
-    task=$(basename "$f"); task="${task%.status}"
+    task=${f##*/}; task="${task%.status}"
     record=$(status_span_first_actionable_record "$f" "$(hb_surfaced_offset "$task")")
     rc=$?
     [ "$rc" -eq 1 ] && [ -z "$record" ] && continue
@@ -3455,6 +3490,10 @@ EOF
   # remembers the hash already classified, or the declaration a busy pane's
   # crossed turn bound already handed to the away-mode daemon).
   recorded_windows poll_windows
+  # One touch, paid only when a window will actually be polled, buys every busy
+  # window's busy_turn_over_age check a builtin -ot test instead of its own stat
+  # fork; an idle watcher with no recorded windows pays nothing here.
+  [ -z "$poll_windows" ] || busy_turn_threshold_refresh "$watcher_beat_epoch"
   while IFS= read -r w; do
     [ -n "$w" ] || continue
     # One metadata resolution per window per poll; every helper below reads the
@@ -3496,7 +3535,7 @@ EOF
     # poll already takes, and a miss drops a name the away daemon saved.
     dialog=$(fm_composer_blocking_dialog "$tail40") || dialog=
     [ -n "$dialog" ] || clear_dialog_suffix "$task"
-    h=$(printf '%s' "$tail40" | hash_pane)
+    h=$(hash_pane "$tail40")
     hf="$STATE/.hash-$key"
     cf="$STATE/.count-$key"
     sf="$STATE/.stale-$key"
