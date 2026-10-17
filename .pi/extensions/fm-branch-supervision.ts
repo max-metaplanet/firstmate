@@ -1697,14 +1697,8 @@ ${context.command}
     // Stage it verbatim and remember the future persisted index for turn_end's
     // duplicate suppression. Operational extension injections are not dialog.
     // A run opened by a custom message carries no prompt and is never captain
-    // dialog; it only tells whether this extension's own request opened the run.
-    if (!("prompt" in event)) {
-      processingOpenedThisRun =
-        queuedProcessingContent !== null &&
-        isProcessingCustomMessage(event.message) &&
-        event.message.content === queuedProcessingContent;
-      return;
-    }
+    // dialog, so isCustomBeforeAgentStart above has already answered it and
+    // returned; every event still here carries a prompt.
     const prompt = event.prompt;
     processingOpenedThisRun = queuedProcessingContent !== null && prompt === queuedProcessingContent;
     const trimmed = prompt.trim();
