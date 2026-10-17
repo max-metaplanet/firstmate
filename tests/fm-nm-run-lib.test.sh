@@ -71,6 +71,35 @@ STUB
   pass 'a no-mistakes probe runs in its worktree with lazy fetching disabled for that child alone'
 }
 
+# Callers such as the run-inventory reader and bin/fm-pipeline-spend.sh feed
+# their program on stdin through fm_nm_bounded, and every mechanism starts the
+# bounded command asynchronously, where bash would otherwise hand it /dev/null.
+# The fake-timeout row stands in for GNU/BSD timeout on a host without one.
+test_a_bounded_command_reads_its_callers_stdin() {
+  local label path override shim out
+  shim="$TMP_ROOT/fake-timeout"
+  mkdir -p "$shim"
+  cat > "$shim/timeout" <<'STUB'
+#!/usr/bin/env bash
+shift 3
+exec "$@"
+STUB
+  chmod +x "$shim/timeout"
+  while IFS='|' read -r label path override; do
+    out=$(
+      # shellcheck source=bin/fm-nm-run-lib.sh
+      . "$ROOT/bin/fm-nm-run-lib.sh"
+      export PATH="$path"
+      [ -z "$override" ] || export FM_TIMEOUT_MECHANISM_OVERRIDE="$override"
+      fm_nm_bounded "$WT" 10 bash -s first second <<'SH'
+printf 'heredoc %s %s\n' "$1" "$2"
+SH
+    )
+    assert_equals "heredoc first second" "$out" "$label: the bounded command did not receive the caller's heredoc on stdin"
+  done < <(mechanisms; printf 'fake-timeout|%s|\n' "$shim:$NO_TIMEOUT_PATH")
+  pass "a bounded command reads its caller's stdin on every mechanism"
+}
+
 test_a_probe_that_hits_its_bound_leaves_no_descendant_behind() {
   local label path override stub rc self_pid child_pid before after
   while IFS='|' read -r label path override; do
@@ -143,5 +172,6 @@ test_resolving_a_missing_commit_answers_absent_without_fetching() {
 }
 
 test_a_probe_runs_no_mistakes_with_lazy_fetching_disabled
+test_a_bounded_command_reads_its_callers_stdin
 test_a_probe_that_hits_its_bound_leaves_no_descendant_behind
 test_resolving_a_missing_commit_answers_absent_without_fetching
