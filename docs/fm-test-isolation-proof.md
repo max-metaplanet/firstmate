@@ -256,7 +256,7 @@ A candidate failure fails the aggregate run and requires investigation rather th
 
 ```sh
 bin/fm-test-isolation-proof.sh --list
-bin/fm-test-isolation-proof.sh --jobs 4 --json /tmp/fm-isolation-proof.json
+bin/fm-test-isolation-proof.sh --jobs 4 --json ../.fm-test-scratch/fm-isolation-proof.json
 bin/fm-test-run.sh --check-coverage
 ```
 
