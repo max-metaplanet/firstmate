@@ -1880,6 +1880,8 @@ families_for_changed_path() {
       # The Claude Code Fleet mod parses the snapshot's --json, and its portable suite
       # runs the real producer to prove the parser still reads what it writes.
       printf '%s\n' __script__:fm-fleet-mod.test.sh
+      # The snapshot's per-task fork budget lives with the fork-free helpers.
+      printf '%s\n' __script__:fm-fork-free-helpers.test.sh
       ;;
     bin/fm-install-herdr.sh|bin/fm-install-treehouse.sh|bin/fm-herdr-ci-cleanup.sh)
       printf '%s\n' pure-contract-unit

@@ -66,20 +66,30 @@ fm_nm_run() {  # <dir> <timeout_secs> <args...>
   fm_nm_run_checked "$@" || true
 }
 
+# Trim through a named variable so a caller in a hot loop needs no subshell;
+# fm_nm_trim is the printing form for callers that want a captured value. The
+# local is name-mangled so a caller may trim a variable back into itself.
+fm_nm_trim_to() {  # <out-var> <text>
+  local __fmnt=${2:-}
+  __fmnt="${__fmnt#"${__fmnt%%[![:space:]]*}"}"
+  __fmnt="${__fmnt%"${__fmnt##*[![:space:]]}"}"
+  printf -v "$1" '%s' "$__fmnt"
+}
+
 fm_nm_trim() {
-  local s=${1:-}
-  s="${s#"${s%%[![:space:]]*}"}"
-  s="${s%"${s##*[![:space:]]}"}"
+  local s
+  fm_nm_trim_to s "${1:-}"
   printf '%s' "$s"
 }
 
 fm_nm_strip_quotes() {
   local s
-  s=$(fm_nm_trim "${1:-}")
+  fm_nm_trim_to s "${1:-}"
   case "$s" in
     \"*\") s=${s#\"}; s=${s%\"} ;;
   esac
-  fm_nm_trim "$s"
+  fm_nm_trim_to s "$s"
+  printf '%s' "$s"
 }
 
 # Path of no-mistakes' local state database as the CLI would see it from
@@ -546,7 +556,7 @@ fm_nm_runs_status_for_worktree() {  # <worktree> <branch> <runs-list-output> [ex
   local_full=$(git -C "$wt" rev-parse HEAD 2>/dev/null) || return 0
   [ -n "$list" ] || return 0
   while IFS= read -r row; do
-    row=$(fm_nm_trim "$row")
+    fm_nm_trim_to row "$row"
     [ -n "$row" ] || continue
     IFS=$' \t' read -r st br sha day clock pr extra <<< "$row"
     [ -n "$st" ] && [ -n "$br" ] && [ -n "$sha" ] && [ -n "$day" ] && [ -n "$clock" ] || break

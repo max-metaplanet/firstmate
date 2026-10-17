@@ -442,6 +442,211 @@ SH
   pass "window metadata fields match the grep/cut pipeline, never answer for another window, and follow a changed meta"
 }
 
+# Every reader the per-task snapshot and crew-state paths call now has an
+# <out-var> twin beside its printing form. The twin is only safe if it answers
+# exactly what the printing form answered through $( ), status included, so
+# each pair is compared here on the same inputs rather than spot-checked.
+test_out_var_readers_match_their_printing_forms() {
+  local script="$TMP_ROOT/outvar.sh" dir="$TMP_ROOT/outvar"
+  mkdir -p "$dir"
+  printf 'backend=herdr\nwindow=sess:w1\nkind=ship\nspawn_gen=s1\n' > "$dir/alpha.meta"
+  printf 'backend=orca\nterminal=term-2\nwindow=sess:w2\n' > "$dir/beta.meta"
+  printf 'window=sess:w3\n' > "$dir/gamma.meta"
+  printf 'kind=scout\n' > "$dir/delta.meta"
+  printf 'window=a=b=c\nwindow=last=wins\n' > "$dir/eps.meta"
+  printf '%s\n' \
+    'needs-decision [key=api-shape] [at=1700000000]: REST or gRPC?' \
+    'working [at=1700000100]: building' \
+    'blocked: [key=credential] the token expired' \
+    'resolved [key=api-shape]: captain picked REST' \
+    'paused [at=17:00]: waiting on CI' \
+    'done [at=bad]: shipped' \
+    'needs-decision which base branch' \
+    'needs-decision [key=bad slug]: malformed' \
+    'plain prose with no verb' \
+    '' > "$dir/task.status"
+  cat > "$script" <<'SH'
+. "$1/bin/fm-classify-lib.sh"
+. "$1/bin/fm-backend.sh"
+. "$1/bin/fm-nm-run-lib.sh"
+dir=$2
+compare() {  # <label> <printed> <printed-rc> <got> <got-rc>
+  [ "$2" = "$4" ] || printf '%s: out-var %q, printing form %q\n' "$1" "$4" "$2"
+  [ "$3" = "$5" ] || printf '%s: out-var status %s, printing form %s\n' "$1" "$5" "$3"
+}
+while IFS= read -r line || [ -n "$line" ]; do
+  want=$(status_line_note "$line"); want_rc=$?
+  got=''; status_line_note_to got "$line"; got_rc=$?
+  compare "note ${line}" "$want" "$want_rc" "$got" "$got_rc"
+  want=$(_fm_decision_key "$line"); want_rc=$?
+  got=''; _fm_decision_key_to got "$line"; got_rc=$?
+  compare "key ${line}" "$want" "$want_rc" "$got" "$got_rc"
+  want=$(_fm_key_at_note_head "$line"); want_rc=$?
+  got=''; _fm_key_at_note_head_to got "$line"; got_rc=$?
+  compare "note-head key ${line}" "$want" "$want_rc" "$got" "$got_rc"
+  want=$(status_line_at_epoch "$line"); want_rc=$?
+  got=''; status_line_at_epoch_to got "$line"; got_rc=$?
+  compare "epoch ${line}" "$want" "$want_rc" "$got" "$got_rc"
+  want=$(fm_nm_trim "$line"); got=$line; fm_nm_trim_to got "$got"
+  compare "trim ${line}" "$want" 0 "$got" 0
+done < "$dir/task.status"
+# fm_nm_strip_quotes now trims in place twice, so its own contract is restated
+# here against literal expectations rather than against itself.
+for pair in '  "a b"  |a b' '"q"|q' 'bare|bare' '  |' '""|' '"|"'; do
+  want=${pair#*|}
+  got=$(fm_nm_strip_quotes "${pair%%|*}")
+  compare "strip-quotes ${pair%%|*}" "$want" 0 "$got" 0
+done
+# The whole-file fold, and the per-line fold the two fold strategies share.
+want=$(status_open_decisions "$dir/task.status")
+got=''; status_open_decisions_to got "$dir/task.status"
+compare 'open decisions' "$want" 0 "$got" 0
+open=''
+while IFS= read -r line || [ -n "$line" ]; do
+  want=$(_fm_decision_fold_line "$open" "$line" resolved captain-held)
+  got=$open; _fm_decision_fold_line_to got "$open" "$line" resolved captain-held
+  compare "fold ${line}" "$want" 0 "$got" 0
+  open=$got
+done < "$dir/task.status"
+for key in api-shape credential absent ''; do
+  want=$(_fm_decision_drop "$open" "$key")
+  got=$open; _fm_decision_drop_to got "$open" "$key"
+  compare "drop ${key}" "$want" 0 "$got" 0
+done
+# Metadata readers, including the absent file and the absent key.
+for meta in "$dir"/*.meta "$dir/missing.meta"; do
+  for key in backend window terminal kind spawn_gen absent; do
+    want=$(fm_meta_get "$meta" "$key"); want_rc=$?
+    got=''; fm_meta_get_to got "$meta" "$key"; got_rc=$?
+    compare "meta ${meta##*/} ${key}" "$want" "$want_rc" "$got" "$got_rc"
+  done
+  want=$(fm_backend_of_meta "$meta"); want_rc=$?
+  got=''; fm_backend_of_meta_to got "$meta"; got_rc=$?
+  compare "backend ${meta##*/}" "$want" "$want_rc" "$got" "$got_rc"
+  want=$(fm_backend_target_of_meta "$meta")
+  got=''; fm_backend_target_of_meta_to got "$meta"
+  compare "target ${meta##*/}" "$want" 0 "$got" 0
+done
+SH
+  run_everywhere "out-var readers" "$script" "$dir"
+  pass "every out-var reader returns what its printing form returned, status included"
+}
+
+# A per-invocation budget for the two readers supervision runs most often. The
+# watcher reads one crew's current state per task and the fleet view reads the
+# whole snapshot, so whatever one invocation costs is multiplied by every task
+# in every home. These counts come from executing the real commands against a
+# throwaway home: shell children from the pid each DEBUG event reports, program
+# starts from PATH shims that exec the real tool. The budgets are ceilings with
+# headroom, not exact counts, because the bounded-call mechanism and the shell
+# differ per host; FM_TIMEOUT_MECHANISM_OVERRIDE pins the one choice that would
+# otherwise change the shape of the work itself.
+fork_budget_home() {  # <dir> <ntasks>
+  local dir=$1 count=$2 i=1 status round
+  mkdir -p "$dir/state" "$dir/config" "$dir/data" "$dir/projects" "$dir/shim"
+  cat > "$dir/shim/tmux" <<'SH'
+#!/bin/sh
+case "$1" in
+  capture-pane) printf 'idle pane\n$ \n' ;;
+  list-windows) printf 'fm-t1\nfm-t2\nfm-t3\n' ;;
+esac
+exit 0
+SH
+  chmod +x "$dir/shim/tmux"
+  printf '# Backlog\n\n## In flight\n\n## Queued\n\n## Done\n' > "$dir/data/backlog.md"
+  while [ "$i" -le "$count" ]; do
+    mkdir -p "$dir/wt$i"
+    printf 'window=sess:w%s\nendpoint_task_id=t%s\nworktree=%s/wt%s\nkind=scout\nharness=claude\nbackend=tmux\nspawn_gen=s1.%s\n' \
+      "$i" "$i" "$dir" "$i" "$i" > "$dir/state/t$i.meta"
+    status="$dir/state/t$i.status"
+    # An ordinary-width event log, not a two-line one: the decision fold runs
+    # per line, so a per-line regression has to be visible in the count.
+    : > "$status"
+    for round in 1 2 3; do
+      printf '%s\n' \
+        "working [at=170000${round}00]: started round $round" \
+        "needs-decision [key=api-shape] [at=170000${round}10]: REST or gRPC?" \
+        "working [at=170000${round}20]: continuing" \
+        "blocked [key=credential] [at=170000${round}30]: the token expired" \
+        "resolved [key=api-shape] [at=170000${round}40]: captain picked REST" \
+        "resolved [key=credential] [at=170000${round}50]: rotated" \
+        "paused [at=170000${round}60]: waiting on CI" >> "$status"
+    done
+    printf 'working [at=1700009999]: resumed\n' >> "$status"
+    i=$((i + 1))
+  done
+}
+
+fork_budget_count() {  # <home> <label> <command...> -> "<shell-children> <programs>"
+  local home=$1 label=$2 tool real events
+  events="$home/$label.events"
+  shift 2
+  mkdir -p "$home/shim"
+  for tool in cat ps stat grep date sed jq sleep touch awk tr uname mkdir \
+    basename dirname head tail wc cp rm mktemp python3 perl; do
+    real=$(command -v "$tool") || continue
+    case "$real" in "$home/shim/"*) continue ;; esac
+    cat > "$home/shim/$tool" <<SH
+#!/bin/sh
+printf 'program $tool\n' >> "\$FORK_BUDGET_EVENTS"
+exec '$real' "\$@"
+SH
+    chmod +x "$home/shim/$tool"
+  done
+  cat > "$home/instrument" <<'SH'
+[ "${BASH_VERSINFO[0]}" -ge 4 ] || return 0
+fork_budget_debug() {
+  if [ "${fork_budget_pid:-}" != "$BASHPID" ]; then
+    fork_budget_pid=$BASHPID
+    printf 'shell %s\n' "$BASHPID" >> "$FORK_BUDGET_EVENTS"
+  fi
+}
+set -T
+trap fork_budget_debug DEBUG
+SH
+  : > "$events"
+  FORK_BUDGET_EVENTS="$events" FM_HOME="$home" FM_ROOT_OVERRIDE="$home" \
+    FM_STATE_OVERRIDE="$home/state" FM_CONFIG_OVERRIDE="$home/config" \
+    FM_DATA_OVERRIDE="$home/data" FM_PROJECTS_OVERRIDE="$home/projects" \
+    FM_CREW_STATE_NO_FORGE=1 FM_TIMEOUT_MECHANISM_OVERRIDE=bash \
+    BASH_ENV="$home/instrument" PATH="$home/shim:$PATH" \
+    "$@" > "$home/$label.out" 2> "$home/$label.err"
+  awk '$1 == "shell" { if (!seen[$2]++) shells++ } $1 == "program" { programs++ }
+       END { printf "%d %d", shells - 1, programs }' "$events"
+}
+
+test_crew_state_and_snapshot_stay_within_their_fork_budget() {
+  local home="$TMP_ROOT/budget" shells programs subject
+  # FM_FORK_BUDGET_ROOT points the same sampler at a saved pre-change bin/, the
+  # way tests/fm-supervision-fork-budget.test.sh does, so a claimed cut can be
+  # read off the two runs rather than asserted.
+  subject=${FM_FORK_BUDGET_ROOT:-$ROOT}
+  if [ "${BASH_VERSINFO[0]}" -lt 4 ] \
+    || { [ "${BASH_VERSINFO[0]}" -eq 4 ] && [ "${BASH_VERSINFO[1]}" -lt 2 ]; }; then
+    printf 'skip: the fork sampler needs BASHPID (Bash 4.2+)\n'
+    return 0
+  fi
+  command -v jq >/dev/null 2>&1 || { printf 'skip: fleet snapshot needs jq\n'; return 0; }
+  fork_budget_home "$home" 3
+
+  read -r shells programs <<< "$(fork_budget_count "$home" crew-state "$subject/bin/fm-crew-state.sh" t1)"
+  grep -q '^state: ' "$home/crew-state.out" \
+    || fail "crew-state produced no verdict to budget: $(cat "$home/crew-state.err")"
+  printf 'crew-state: shell-children=%s programs=%s\n' "$shells" "$programs"
+  [ "$shells" -le 70 ] || fail "one crew-state read started $shells shell children (budget 70)"
+  [ "$programs" -le 20 ] || fail "one crew-state read started $programs programs (budget 20)"
+
+  read -r shells programs <<< "$(fork_budget_count "$home" snapshot "$subject/bin/fm-fleet-snapshot.sh" --json)"
+  [ "$(jq -r '.tasks | length' "$home/snapshot.out" 2>/dev/null)" = 3 ] \
+    || fail "fleet snapshot did not report its three crews: $(cat "$home/snapshot.err")"
+  printf 'fleet-snapshot: shell-children=%s programs=%s\n' "$shells" "$programs"
+  # Three crews, so a per-task regression shows up as roughly three times its
+  # own size here rather than hiding inside the fixed cost.
+  [ "$shells" -le 300 ] || fail "one three-crew snapshot started $shells shell children (budget 300)"
+  [ "$programs" -le 135 ] || fail "one three-crew snapshot started $programs programs (budget 135)"
+  pass "one crew-state read and one three-crew fleet snapshot stay within their per-invocation fork budgets"
+}
+
 if [ -n "${FM_TEST_ONLY:-}" ]; then
   "$FM_TEST_ONLY"
 else
@@ -456,4 +661,6 @@ else
   test_status_signature_matches_the_per_field_readers
   test_watcher_termination_during_wait
   test_window_fields_match_the_meta_pipeline
+  test_out_var_readers_match_their_printing_forms
+  test_crew_state_and_snapshot_stay_within_their_fork_budget
 fi
