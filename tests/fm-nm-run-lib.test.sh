@@ -37,9 +37,7 @@ run_probe() {
   (
     # shellcheck source=bin/fm-nm-run-lib.sh
     . "$ROOT/bin/fm-nm-run-lib.sh"
-    export PATH="$stub:$path"
-    [ -z "$override" ] || export FM_TIMEOUT_MECHANISM_OVERRIDE="$override"
-    fm_nm_run_bounded "$WT" "$@"
+    PATH="$stub:$path" FM_TIMEOUT_MECHANISM_OVERRIDE="$override" fm_nm_run_bounded "$WT" "$@"
   )
 }
 
@@ -89,9 +87,8 @@ STUB
     out=$(
       # shellcheck source=bin/fm-nm-run-lib.sh
       . "$ROOT/bin/fm-nm-run-lib.sh"
-      export PATH="$path"
-      [ -z "$override" ] || export FM_TIMEOUT_MECHANISM_OVERRIDE="$override"
-      fm_nm_bounded "$WT" 10 bash -s first second <<'SH'
+      PATH="$path" FM_TIMEOUT_MECHANISM_OVERRIDE="$override" \
+        fm_nm_bounded "$WT" 10 bash -s first second <<'SH'
 printf 'heredoc %s %s\n' "$1" "$2"
 SH
     )
