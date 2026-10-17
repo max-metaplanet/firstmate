@@ -65,7 +65,10 @@ STUB
     assert_grep "pwd=$WT" "$record" "$label: the probe did not run in the worktree it was given"
     assert_grep 'args=axi status' "$record" "$label: the probe lost its own arguments"
   done < <(mechanisms)
-  [ -z "${GIT_NO_LAZY_FETCH-}" ] || fail "the probe leaked GIT_NO_LAZY_FETCH into the calling shell instead of setting it for the child alone"
+  # Read the exported environment rather than the shell variable: what must
+  # not leak is what a later child would inherit, and nothing here exports it.
+  ! env | grep -q '^GIT_NO_LAZY_FETCH=' ||
+    fail 'the probe leaked GIT_NO_LAZY_FETCH into the calling environment instead of setting it for the child alone'
   pass 'a no-mistakes probe runs in its worktree with lazy fetching disabled for that child alone'
 }
 
