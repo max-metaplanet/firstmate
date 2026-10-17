@@ -40,6 +40,10 @@ REARM_REPORT_POLLS=700
 # wait_for_exit polls every 0.1s. The arm can spend its confirmation budget again
 # waiting for a successor before it reports a failure, so this outlasts it too.
 REARM_EXIT_POLLS=400
+# The slow-recovery fixture holds this many tool calls for two seconds each, so
+# the cycle it slows runs past the old fixed wait whatever the lock path's own
+# fork count happens to be.
+REARM_DELAYED_CALLS=8
 
 # Both starters background a real process the test later waits on, so they set a
 # global instead of echoing: a command substitution would make the pid a child of
@@ -520,12 +524,16 @@ test_slow_rearm_recovery_is_still_surfaced() {
     real=$(command -v "$tool") || fail "no $tool to delay"
     cat > "$fakebin/$tool" <<SH
 #!/bin/sh
-[ -e "$state/.last-watcher-beat" ] && sleep 0.6
+if [ -e "$state/.last-watcher-beat" ]; then
+  printf 'x' >> "$state/.delayed-calls"
+  [ "\$(wc -c < "$state/.delayed-calls")" -gt $REARM_DELAYED_CALLS ] || sleep 2
+fi
 exec "$real" "\$@"
 SH
     chmod +x "$fakebin/$tool"
   done
 
+  rm -f "$state/.delayed-calls"
   started=$(date +%s)
   start_rearm_arm "$home" "$state" "$fakebin" "$armout"
   wait_for_exit "$ARM_PID" "$REARM_EXIT_POLLS"
@@ -535,8 +543,13 @@ SH
   expect_code 0 "$status" "slow re-arm recovery must close successfully"
   grep -F 'check: rearm-resurface' "$armout" >/dev/null \
     || fail "slow re-arm did not report the durable recovery wake: $(cat "$armout")"
-  # Without this, a change that stopped the delay from applying would pass here
-  # while no longer testing a slow cycle at all.
+  # Without these, a change that stopped the delay from applying would pass here
+  # while no longer testing a slow cycle at all. The fixture delays a fixed
+  # number of calls rather than every call, so cutting the lock path's forks
+  # changes how long the work takes without changing how long it is held.
+  delayed=$(wc -c < "$state/.delayed-calls" 2>/dev/null) || delayed=0
+  [ "${delayed:-0}" -ge "$REARM_DELAYED_CALLS" ] \
+    || fail "the delayed tools ran $delayed times, too few to slow the cycle"
   [ $(( $(date +%s) - started )) -ge 12 ] \
     || fail "the delayed tools did not hold the re-arm past the old fixed wait"
   FM_HOME="$home" FM_STATE_OVERRIDE="$state" "$DRAIN" > "$dir/drain.out" \
