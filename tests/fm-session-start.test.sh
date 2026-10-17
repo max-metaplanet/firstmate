@@ -231,6 +231,19 @@ for argument in "$@"; do
   previous=$argument
 done
 case "$*" in
+  *"ppid=,comm="*)
+    parent=1
+    if [ -n "${FM_FAKE_HARNESS_PID:-}" ]; then
+      parent=$(/bin/ps -o ppid= -p "$pid") || exit 1
+    fi
+    if [ -z "${FM_FAKE_HARNESS_PID:-}" ] || [ "$pid" = "$FM_FAKE_HARNESS_PID" ] \
+      || [ "$pid" = "${FM_FAKE_LIVE_HOLDER_PID:-}" ]; then
+      printf '%s /usr/local/bin/%s\n' "$parent" "$harness"
+    else
+      printf '%s /bin/bash\n' "$parent"
+    fi
+    exit 0
+    ;;
   *"comm="*)
     if [ -z "${FM_FAKE_HARNESS_PID:-}" ] || [ "$pid" = "$FM_FAKE_HARNESS_PID" ] \
       || [ "$pid" = "${FM_FAKE_LIVE_HOLDER_PID:-}" ]; then
@@ -272,6 +285,14 @@ for arg in "\$@"; do
   prev="\$arg"
 done
 case "\$*" in
+  *"ppid=,comm="*)
+    if [ "\$pid" = "$holder_pid" ]; then
+      printf '1 /usr/local/bin/$harness\n'
+    else
+      printf '$holder_pid /bin/zsh\n'
+    fi
+    exit 0
+    ;;
   *"comm="*)
     if [ "\$pid" = "$holder_pid" ]; then
       printf '/usr/local/bin/$harness\n'

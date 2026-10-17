@@ -192,6 +192,11 @@ while [ "$#" -gt 0 ]; do
   esac
 done
 case "$pid:$field:${FM_TEST_SIGNED_SHAPE:-exact}" in
+  100:ppid=,comm=:*) printf '%s\n' '200 /test/Pi.app/bin/pi' ;;
+  200:ppid=,comm=:exact) printf '%s\n' '1 /opt/test/bin/pi-signed' ;;
+  200:ppid=,comm=:helper) printf '%s\n' '1 /opt/test/bin/pi-signed-helper' ;;
+  200:ppid=,comm=:plain) printf '%s\n' '1 /bin/zsh' ;;
+  *:ppid=,comm=:*) printf '%s\n' '100 bash' ;;
   100:comm=:*) printf '%s\n' '/test/Pi.app/bin/pi' ;;
   100:args=:*) printf '%s\n' 'Pi' ;;
   100:ppid=:*) printf '%s\n' 200 ;;
@@ -255,6 +260,14 @@ while [ "$#" -gt 0 ]; do
 done
 [ -n "${FM_TEST_PS_LOG:-}" ] && printf '%s:%s\n' "$pid" "$field" >> "$FM_TEST_PS_LOG"
 case "$pid:$field" in
+  4242:ppid=,comm=) printf '%s\n' '1 /opt/test/bin/codex' ;;
+  5252:ppid=,comm=)
+    if [ -n "${FM_TEST_PS_LIVENESS_PROBE:-}" ]; then
+      printf '%s\n' '4242 -codex'
+    else
+      printf '%s\n' '4242 -zsh'
+    fi ;;
+  *:ppid=,comm=) printf '%s -zsh\n' "${FM_TEST_PS_PARENT:-4242}" ;;
   4242:comm=) printf '%s\n' '/opt/test/bin/codex' ;;
   4242:args=) printf '%s\n' 'codex' ;;
   4242:ppid=) printf '%s\n' 1 ;;
