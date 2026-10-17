@@ -1129,6 +1129,8 @@ It changes account only by being replaced, which `bin/fm-seat.sh lead-restart` d
 The armed watch asks the same threshold question about firstmate's own seat, and firstmate carries that move out itself on the resulting wake without captain approval.
 The watch hands it over with the exact command rather than performing it, because replacing firstmate drops the conversation whose open work has to be written down first and only firstmate can write it.
 
+That replacement also carries the Remote Control the outgoing session had, because Remote Control belongs to the process rather than to the resumed session.
+
 ## Codex seats
 
 Codex uses the same seat resolver with provider `codex`, separate from Claude's settings.

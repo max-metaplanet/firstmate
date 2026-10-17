@@ -449,6 +449,13 @@ So it is sent fire-and-forget, with no acknowledgement expected and no re-ring s
 Supervision is a separate process with its own lock and is deliberately not stopped, so the cycle count goes from one to one across the swap.
 Its engine still follows the move, at its next turn; see [The engine's seat](supervision-host.md#the-engines-seat).
 
+**Remote Control follows firstmate, by default.** Remote Control belongs to the process, so a replacement starts without it even though it resumes the same session, and it used to have to be turned back on by hand.
+So the outgoing session's state is read first, and the replacement is launched with it when it was on - whether it was started that way or given `/rc` later.
+The state is read from the session record Claude Code keeps for that process, never guessed: a record that cannot be read, or that names a different session, means the state is undeterminable, nothing is turned on, and `state/.lead-restart.result` says so.
+After the replacement takes the home, the same field is read back on it, so that record reports whether Remote Control actually came back rather than that a flag was passed.
+When the state was undeterminable, or Remote Control was on but is not confirmed back on in the replacement, firstmate is also woken with a check wake that names the outcome, so a lost Remote Control is never left for the captain to notice.
+This is firstmate's own restart only; no worker, second mate, or ordinary relaunch carries Remote Control.
+
 **`--persisted` is a gate, not a flag.** The replacement drops firstmate's conversation and keeps every durable record, so the open work held only in that conversation has to be written down first - the same persist step a second mate gets before its restart.
 The command refuses without it.
 

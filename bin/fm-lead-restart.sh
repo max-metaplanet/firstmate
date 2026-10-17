@@ -53,6 +53,24 @@
 #      and the lock-owning process's real argv. `establish_launch_command` below
 #      owns why a flattened argv is accepted only when it provably round-trips.
 #
+# REMOTE CONTROL FOLLOWS THE LEAD, by default. Remote Control is a property of
+# the PROCESS, so a replacement starts without it even though it resumes the
+# same session, and the captain had to turn it back on by hand. So the outgoing
+# lead's state is read first and the replacement is launched with
+# `--remote-control` when it was on. The state is EVIDENCE, never a guess: the
+# per-pid session record Claude Code keeps in <profile>/sessions/<pid>.json
+# carries `bridgeSessionId` while Remote Control is connected, whether it was
+# turned on by that flag or by `/rc` in the running session, and carries null or
+# nothing once it is off (verified 2026-10-16 on Claude Code 2.1.301;
+# docs/verification/runtime-backends.md owns the exact commands and output).
+# A record that cannot be read, or that does not name the session being handed
+# over, means the state is UNDETERMINABLE: nothing is turned on, and the outcome
+# line says so rather than guessing. After the successor takes the home the same
+# field is read back on it, so the outcome reports whether Remote Control
+# actually followed rather than that a flag was passed.
+# This is the LEAD's restart only: no worker, secondmate, or ordinary relaunch
+# reads or carries any of it.
+#
 # THE HANDOVER. Between the old lead's exit and the successor's own acquisition
 # the lock names a dead pid, which every other session reads as reclaimable. So
 # a bounded reservation is armed first, through bin/fm-lock.sh handover, while
@@ -78,6 +96,9 @@
 #   FM_LEAD_RESTART_EXIT_WAIT    seconds to wait for it to exit after TERM (30)
 #   FM_LEAD_RESTART_START_WAIT   seconds to wait for the successor process (120)
 #   FM_LEAD_RESTART_CLAIM_WAIT   seconds to wait for it to take the lock (300)
+#   FM_LEAD_RESTART_RC_WAIT      seconds to wait for Remote Control to connect
+#                                in the replacement before the outcome reports
+#                                that it did not follow (60)
 #
 # Exit status: 0 the handover is armed and the detached stage is running (or,
 # with --check, everything needed is established); 1 a refusal, with the old
@@ -120,6 +141,7 @@ GRACE=${FM_LEAD_RESTART_GRACE:-5}
 EXIT_WAIT=${FM_LEAD_RESTART_EXIT_WAIT:-30}
 START_WAIT=${FM_LEAD_RESTART_START_WAIT:-120}
 CLAIM_WAIT=${FM_LEAD_RESTART_CLAIM_WAIT:-300}
+RC_WAIT=${FM_LEAD_RESTART_RC_WAIT:-60}
 NOTICE_WAIT=30
 
 # --- establishment -----------------------------------------------------------
@@ -172,6 +194,44 @@ established_pane() {
 established_lead_profile() {
   fm_session_lock_runtime_field "$STATE" profile ||
     die "the account the lead itself runs on is not recorded for this session, so this cannot tell which seat it is moving off; it is recorded at the next session start"
+}
+
+# --- remote control ----------------------------------------------------------
+
+# The directory Claude Code keeps its per-pid session records in, for a session
+# running under profile $1. An empty profile is the ambient default profile,
+# whose records live under $HOME/.claude; a seat profile symlinks that same body
+# in, so both spellings reach one registry and reading the profile's own path
+# stays correct for a seat that does not.
+rc_records_dir() {  # <profile>
+  if [ -n "$1" ]; then
+    printf '%s/sessions\n' "$1"
+    return 0
+  fi
+  [ -n "${HOME:-}" ] || return 1
+  printf '%s/.claude/sessions\n' "$HOME"
+}
+
+# Print `on`, `off`, or `undeterminable` for the Claude session running as pid $1
+# under profile $2 and resuming session id $3.
+#
+# The record is proof only while it provably describes THAT session: the file is
+# named by pid, and its own sessionId must be the id being handed over, so a
+# recycled pid or a stale record left by an earlier session is undeterminable
+# rather than evidence. `bridgeSessionId` is the Remote Control connection; it is
+# absent before Remote Control is ever used and null after it is disconnected,
+# and both mean off.
+rc_state_of() {  # <pid> <profile> <session-id>
+  local pid=$1 profile=$2 session=$3 dir record recorded bridge
+  dir=$(rc_records_dir "$profile") || { printf 'undeterminable\n'; return 0; }
+  record="$dir/$pid.json"
+  command -v jq >/dev/null 2>&1 || { printf 'undeterminable\n'; return 0; }
+  [ -f "$record" ] && [ ! -L "$record" ] || { printf 'undeterminable\n'; return 0; }
+  recorded=$(jq -r '.sessionId // empty' "$record" 2>/dev/null) || recorded=''
+  [ -n "$recorded" ] && [ "$recorded" = "$session" ] || { printf 'undeterminable\n'; return 0; }
+  bridge=$(jq -r 'if (.bridgeSessionId // null) == null then "" else (.bridgeSessionId | tostring) end' \
+    "$record" 2>/dev/null) || { printf 'undeterminable\n'; return 0; }
+  [ -n "$bridge" ] && printf 'on\n' || printf 'off\n'
 }
 
 # --- launch command ----------------------------------------------------------
@@ -247,8 +307,12 @@ establish_launch_argv() {  # <pid>
 # would be ambiguous and --fork-session would mint a NEW session id, which is
 # exactly the successor that could not take this handover: the reservation and
 # the lock sidecar both name the id being resumed.
-compose_successor_command() {  # <profile-dir> <session-id> <ambient-profile>  (argv on stdin)
-  local profile=$1 session=$2 ambient=$3 token drop_value=0 out=''
+# When <follow-rc> is 1, the replacement also carries --remote-control, so the
+# Remote Control the outgoing lead had comes back up with it. An argv that
+# already names the flag keeps its own spelling, including the session name it
+# may carry: adding a second one would rename the remote session for no reason.
+compose_successor_command() {  # <profile-dir> <session-id> <ambient-profile> <follow-rc>  (argv on stdin)
+  local profile=$1 session=$2 ambient=$3 follow_rc=${4:-0} token drop_value=0 out='' has_rc=0
   while IFS= read -r token; do
     [ -n "$token" ] || continue
     if [ "$drop_value" -eq 1 ]; then
@@ -263,9 +327,14 @@ compose_successor_command() {  # <profile-dir> <session-id> <ambient-profile>  (
       --resume=* | --session-id=* | --teleport=* | --from-pr=* | --continue | -c | --fork-session)
         continue
         ;;
+      --remote-control | --remote-control=*) has_rc=1 ;;
     esac
     out="$out $(printf '%q' "$token")"
   done
+  # Safe immediately before --resume: the flag's argument is optional and
+  # Claude Code does not take a following `-`-prefixed token as its value
+  # (verified 2026-10-16 on 2.1.301).
+  [ "$follow_rc" != 1 ] || [ "$has_rc" -eq 1 ] || out="$out --remote-control"
   # A successor is a persistent session even when the outgoing lead was
   # launched as a Claude child; clear that inherited marker in the pane too.
   printf 'FM_AMBIENT_CLAUDE_CONFIG_DIR=%q CLAUDE_CONFIG_DIR=%q env -u CLAUDE_CODE_CHILD_SESSION CLAUDE_CODE_FORCE_SESSION_PERSISTENCE=1%s --resume %q\n' "$ambient" "$profile" "$out" "$session"
@@ -281,9 +350,11 @@ SESSION_ID=''
 TO_PROFILE=''
 LAUNCH_ARGV=''
 SUCCESSOR_CMD=''
+# on, off, undeterminable, or kept (not on, but the launch command names it).
+LEAD_RC=''
 
 preflight() {  # <launch-command-override>
-  local override=$1 state
+  local override=$1 state follow=0
   [ -n "$TO_SEAT" ] || die "no destination seat was named; bin/fm-seat.sh owns which seat to move to and passes it here"
   [ "$TO_SEAT" != "$FM_SEAT_DEFAULT_NAME" ] ||
     die "the ambient default profile is never a lead-restart destination: nothing here can tell which account it currently holds, and the lead must not be moved onto an account nobody named"
@@ -327,7 +398,21 @@ preflight() {  # <launch-command-override>
     LAUNCH_ARGV=$(establish_launch_argv "$LEAD_PID") ||
       die "the lead's own launch command could not be established from its running process, so the replacement could not be started with the same flags; re-run with --launch-command '<the exact command this session was started with>'"
   fi
-  SUCCESSOR_CMD=$(printf '%s\n' "$LAUNCH_ARGV" | compose_successor_command "$TO_PROFILE" "$SESSION_ID" "${FM_AMBIENT_CLAUDE_CONFIG_DIR-$LEAD_PROFILE}")
+  LEAD_RC=$(rc_state_of "$LEAD_PID" "$LEAD_PROFILE" "$SESSION_ID")
+  [ "$LEAD_RC" != on ] || follow=1
+  [ "$LEAD_RC" = on ] || ! printf '%s\n' "$LAUNCH_ARGV" | grep -Eq -- '^--remote-control(=|$)' || LEAD_RC=kept
+  SUCCESSOR_CMD=$(printf '%s\n' "$LAUNCH_ARGV" | compose_successor_command "$TO_PROFILE" "$SESSION_ID" "${FM_AMBIENT_CLAUDE_CONFIG_DIR-$LEAD_PROFILE}" "$follow")
+}
+
+# What the plan, the check, and the outcome all say about Remote Control, from
+# the state $1 established before the swap.
+rc_plan_line() {  # <state>
+  case "$1" in
+    on) printf 'on in this session, so the replacement is launched with it\n' ;;
+    off) printf 'off in this session, so the replacement is not given it\n' ;;
+    kept) printf 'not on in this session, but the replacement keeps the --remote-control its launch command already names\n' ;;
+    *) printf 'undeterminable for this session, so the replacement is not given it\n' ;;
+  esac
 }
 
 report_plan() {
@@ -335,6 +420,7 @@ report_plan() {
   printf 'destination seat: %s (%s)\n' "$TO_SEAT" "$TO_PROFILE"
   printf 'session resumed: %s\n' "$SESSION_ID"
   printf 'terminal: %s %s\n' "$ESTABLISHED_BACKEND" "$ESTABLISHED_TARGET"
+  printf 'remote control: %s\n' "$(rc_plan_line "$LEAD_RC")"
   printf 'replacement command: %s\n' "$SUCCESSOR_CMD"
 }
 
@@ -356,6 +442,8 @@ arm_handover() {
   done
   # Every bounded step the stage can spend before the successor claims: the crew
   # notice, the grace, both exit waits, the pane settling, the start, the claim.
+  # RC_WAIT is deliberately NOT here: the Remote Control read-back runs after the
+  # successor has claimed the home, which is where the reservation already ends.
   window=$(( crew * NOTICE_WAIT + GRACE + EXIT_WAIT + 10 + 10 + START_WAIT + CLAIM_WAIT ))
 
   stage_file="$STATE/.lead-restart.launch"
@@ -379,6 +467,8 @@ arm_handover() {
     printf 'exit_wait=%s\n' "$EXIT_WAIT"
     printf 'start_wait=%s\n' "$START_WAIT"
     printf 'claim_wait=%s\n' "$CLAIM_WAIT"
+    printf 'rc_wait=%s\n' "$RC_WAIT"
+    printf 'follow_rc=%s\n' "$LEAD_RC"
   } > "$PLAN"); then
     rm -f "$stage_file" 2>/dev/null || true
     die "could not record the restart plan"
@@ -430,10 +520,12 @@ plan_field() {  # <key>
 }
 
 CREW_UNREACHED=''
+RC_NOTE=''
 # Written whole and renamed into place, so a reader polling for state= never
 # sees the state line without the detail that explains it.
 record_result() {  # <state> <detail>
   local detail=$2
+  [ -z "$RC_NOTE" ] || detail="$detail; $RC_NOTE"
   [ -z "$CREW_UNREACHED" ] ||
     detail="$detail; the restart notice could not be delivered to: $CREW_UNREACHED"
   (umask 077; {
@@ -469,18 +561,36 @@ notify_crew() {  # <what-the-lead-is-doing>
 # runtime record bound to it puts that session on the destination profile. That
 # is the successor holding this home, which a reservation that merely reached
 # its deadline cannot fake.
+SUCCESSOR_PID=''
 successor_holds_lock() {  # <old-pid> <to-profile>
   local profile
+  SUCCESSOR_PID=''
   fm_session_lock_inspect "$STATE"
   [ "$FM_LOCK_INSPECT_STATE" = held ] && [ "$FM_LOCK_INSPECT_PID" != "$1" ] || return 1
   profile=$(fm_session_lock_runtime_field "$STATE" profile) || return 1
-  [ "$profile" = "$2" ]
+  [ "$profile" = "$2" ] || return 1
+  SUCCESSOR_PID=$FM_LOCK_INSPECT_PID
+}
+
+# Read the SAME field back on the successor, so the outcome reports what Remote
+# Control actually did rather than that a flag was passed. The connection is made
+# after the session is up, so a bounded wait is given; a state that never arrives
+# is reported once and never chased with a retry loop.
+verify_rc_followed() {  # <successor-pid> <to-profile> <session-id> <wait>
+  local waited=0
+  while [ "$waited" -lt "$4" ]; do
+    [ "$(rc_state_of "$1" "$2" "$3")" != on ] || return 0
+    sleep 2
+    waited=$((waited + 2))
+  done
+  [ "$(rc_state_of "$1" "$2" "$3")" = on ]
 }
 
 handover_stage() {  # <plan-file>
   PLAN_FILE=$1
   [ -f "$PLAN_FILE" ] || exit 1
   local nonce pid backend target to_seat to_profile grace exit_wait start_wait claim_wait waited notice outcome
+  local session follow_rc rc_wait rc_wake=''
   nonce=$(plan_field nonce)
   pid=$(plan_field pid)
   backend=$(plan_field backend)
@@ -494,8 +604,20 @@ handover_stage() {  # <plan-file>
   P_COMMAND=$(plan_field command)
   P_LAUNCH_FILE=$(plan_field launch_file)
   P_SOURCE_LINE=". $(printf '%q' "$P_LAUNCH_FILE")"
+  session=$(plan_field session)
+  follow_rc=$(plan_field follow_rc)
+  rc_wait=$(plan_field rc_wait)
+  case "$rc_wait" in ''|*[!0-9]*) rc_wait=0 ;; esac
   case "$pid" in ''|*[!0-9]*) exit 1 ;; esac
   case "$grace$exit_wait$start_wait$claim_wait" in ''|*[!0-9]*) exit 1 ;; esac
+
+  # Carried into every outcome below, including the ones that never reach a
+  # successor: an undeterminable state is the one the captain has to know about,
+  # because it is the case where Remote Control was deliberately not turned on.
+  if [ "$follow_rc" = undeterminable ]; then
+    RC_NOTE='whether Remote Control was on could not be determined for the previous session, so it was not turned on'
+    rc_wake="whether Remote Control was on in the previous firstmate session could not be determined, so the replacement on Claude seat $to_seat was started without it; if it should be on, turn it on there with /rc"
+  fi
 
   if [ "$(plan_field from_profile)" = "$to_profile" ]; then
     notice="restarting in place on Claude seat $to_seat"
@@ -587,11 +709,25 @@ handover_stage() {  # <plan-file>
     waited=$((waited + 5))
   done
   if ! successor_holds_lock "$pid" "$to_profile"; then
+    # No successor to read the field back on, so the follow is reported as
+    # requested rather than as achieved.
+    [ "$follow_rc" != on ] ||
+      RC_NOTE='the replacement was launched with Remote Control, which could not be confirmed because it has not taken this home yet'
     record_result started "the replacement is running on seat $to_seat but has not taken this home's lock yet; the reservation lapses on its own"
+    [ -z "$rc_wake" ] || fm_wake_append check lead-restart "check: lead-restart: $rc_wake" || true
     exit 0
   fi
   rm -f "$P_LAUNCH_FILE" 2>/dev/null || true
+  if [ "$follow_rc" = on ]; then
+    if verify_rc_followed "$SUCCESSOR_PID" "$to_profile" "$session" "$rc_wait"; then
+      RC_NOTE='Remote Control was on before and is on again'
+    else
+      RC_NOTE="Remote Control was on before the restart but could not be confirmed on in the replacement within ${rc_wait}s; turn it back on there with /rc"
+      rc_wake="Remote Control was on in the previous firstmate session but could not be confirmed on in the replacement on Claude seat $to_seat within ${rc_wait}s; turn it back on there with /rc"
+    fi
+  fi
   record_result 'done' "the firstmate session $outcome in the same terminal, resuming the same session"
+  [ -z "$rc_wake" ] || fm_wake_append check lead-restart "check: lead-restart: $rc_wake" || true
   exit 0
 }
 

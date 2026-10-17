@@ -53,6 +53,7 @@ Treat that as an ordinary blocker: it is captain-facing only when the captain ha
 ## When a swap does not complete
 
 A `check: lead-restart` wake means the swap ended somewhere other than a clean handover, and `state/.lead-restart.result` holds the outcome.
+A `check: lead-restart` wake that names Remote Control is the exception: the swap may have completed, but Remote Control was undeterminable or did not come back in the replacement, and the line itself says what to do there.
 
 - `refused` - the previous session would not end, so nothing moved and that session is still in charge.
   Nothing to recover; report that the seat is unchanged.
@@ -60,6 +61,6 @@ A `check: lead-restart` wake means the swap ended somewhere other than a clean h
   The result record holds the exact command to run there, which is also staged as a file to source.
   This one is captain-facing, because only someone at that terminal can run it.
 - `started` - the replacement is running but had not taken the home's lock yet when the stage stopped watching.
-  This outcome queues no wake, so it is seen only by reading the record; confirm with `bin/fm-lock.sh status`, and the reservation lapses on its own either way.
+  This outcome queues no wake of its own, so it is seen only by reading the record; confirm with `bin/fm-lock.sh status`, and the reservation lapses on its own either way.
 
 Nothing else is ever affected by a failed swap, because the command only ever replaces one process: every task, local copy, PR, and durable record is exactly as it was.

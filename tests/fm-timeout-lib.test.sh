@@ -394,17 +394,22 @@ test_run_timed_passes_a_natural_exit_through_a_fired_bound() {
   pass 'fm_run_timed passes a natural exit through when the bound fired after completion'
 }
 
-# A bounded command must never see the caller's stdin. Callers that hit the
-# incident forced `< /dev/null` at their own call sites (bin/fm-spawn.sh's agy
-# model probe and the quota-axi probes); the redirect lives in the library now,
-# so every mechanism inherits it.
-test_bounded_runners_give_the_command_no_stdin() {
+# The caller's stdin reaches the bounded command. Upstream gave every mechanism
+# `< /dev/null` here on the premise that no caller feeds stdin through
+# fm_run_timed; on this fork that premise is false, because bin/fm-nm-run-lib.sh
+# hands its probe program to fm_nm_bounded on stdin (fork PR #91, pinned by
+# tests/fm-nm-run-lib.test.sh). The incident upstream was fixing is a TERMINAL
+# read from a background process group, and that half is kept - the child swaps
+# a tty stdin for /dev/null, which
+# test_a_backgrounded_bounded_command_never_freezes_on_the_terminal below drives
+# from a real pty.
+test_bounded_runners_pass_the_callers_stdin_to_the_command() {
   local out
   out=$(printf 'data\n' | run_timed 5 bash -c 'read -r line || true; printf "got=%s\n" "${line:-eof}"')
-  [ "$out" = "got=eof" ] || fail "fm_run_timed passed the caller's stdin to the command (got '$out')"
+  [ "$out" = "got=data" ] || fail "fm_run_timed did not pass the caller's stdin to the command (got '$out')"
   out=$(printf 'data\n' | exec_timed "$PERL_ONLY" 5 1 bash -c 'read -r line || true; printf "got=%s\n" "${line:-eof}"')
-  [ "$out" = "got=eof" ] || fail "fm_exec_timed passed the caller's stdin to the command (got '$out')"
-  pass 'fm_run_timed and fm_exec_timed give the bounded command stdin at /dev/null'
+  [ "$out" = "got=data" ] || fail "fm_exec_timed did not pass the caller's stdin to the command (got '$out')"
+  pass 'fm_run_timed and fm_exec_timed pass a non-terminal stdin through to the bounded command'
 }
 
 # A bounded command that reads the caller's terminal from its own process group
@@ -471,7 +476,7 @@ test_passes_the_command_status_and_output_through
 test_system_bash_preserves_completion_and_signal_statuses
 test_run_timed_reports_the_bound_when_the_wrapper_records_a_signal_death
 test_run_timed_passes_a_natural_exit_through_a_fired_bound
-test_bounded_runners_give_the_command_no_stdin
+test_bounded_runners_pass_the_callers_stdin_to_the_command
 test_a_backgrounded_bounded_command_never_freezes_on_the_terminal
 test_term_ends_a_cooperative_command_at_the_bound
 test_kill_ends_a_term_ignoring_command_after_the_grace

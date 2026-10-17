@@ -14,6 +14,16 @@ Busy hooks verified 2026-07-28 on Claude Code 2.1.220.
 | Effort | `--effort <low\|medium\|high\|xhigh\|max>`, verified on 2.1.196. |
 | Permissions | `--dangerously-skip-permissions` by default, or `--permission-mode auto` when `config/claude-permission-mode` is `auto`; the `auto` shape verified on 2.1.269. See [`Claude permission mode`](../../../../../docs/configuration.md#claude-permission-mode-configclaude-permission-mode) for the launch grant and configuration. |
 
+## Remote Control
+
+Remote Control belongs to the PROCESS, not to the session it resumes, so anything that replaces a Claude process loses it even when the conversation comes back.
+`--remote-control [name]` starts a session with it on and composes with `--resume`; there is no CLI query for the state on 2.1.301, where `claude daemon remote-control list` answers that it is not available in this environment.
+The state is readable instead from the per-pid record Claude Code publishes under its own profile, `<profile>/sessions/<pid>.json`: `bridgeSessionId` holds the connection while Remote Control is on, whether it was given by the flag or by `/rc` in the running session, and is null or absent once it is off.
+Verified 2026-10-16 on 2.1.301; [`../../../../../docs/verification/runtime-backends.md`](../../../../../docs/verification/runtime-backends.md#claude-remote-control-state) owns the exact commands and output.
+
+Only the LEAD's own restart acts on this: `../../../bin/fm-lead-restart.sh` reads the outgoing lead's record, launches the replacement with the flag when it was on, reads the same field back on the successor, and reports an undeterminable state rather than turning anything on.
+No worker, secondmate, or ordinary relaunch reads or carries Remote Control.
+
 ## Workspace trust
 
 Claude gates a folder it has never seen behind an interactive workspace-trust dialog (titled "Quick safety check: Is this a project you created or one you trust?"), so every fresh task worktree would hit it, and so would every secondmate home no operator has opened by hand.
