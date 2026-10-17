@@ -53,6 +53,23 @@
 #      and the lock-owning process's real argv. `establish_launch_command` below
 #      owns why a flattened argv is accepted only when it provably round-trips.
 #
+# WHY THE REPLACEMENT IS GIVEN A PROMPT. A resumed Claude session comes up at
+# an empty composer and takes no turn until something is submitted to it, and
+# the home's lock is taken by an AGENT action - bin/fm-session-start.sh, run in
+# the replacement's first turn - not by the process coming up. So a replacement
+# launched with nothing to do holds this home's terminal while the home itself
+# stays unlocked and unsupervised until a human types into it (observed
+# 2026-10-17: a successor sat idle for about eight hours). Claude Code's native
+# session-open adapter cannot close that gap either, because a `--resume` is
+# routed to the nudge tier, and a nudge in context is still only read on a turn
+# that nothing starts. The replacement therefore carries an initial prompt, the
+# one session-start instruction bin/fm-operational-input.sh owns, delivered the
+# way every other Claude launch prompt carries Firstmate instructions: the
+# envelope is published as a record in this home's operational inbox and only
+# its printable doorbell rides the command line, because Claude Code strips the
+# typed marker from a launch prompt. A record that cannot be published is a
+# refusal, before anything is touched.
+#
 # REMOTE CONTROL FOLLOWS THE LEAD, by default. Remote Control is a property of
 # the PROCESS, so a replacement starts without it even though it resumes the
 # same session, and the captain had to turn it back on by hand. So the outgoing
@@ -123,6 +140,10 @@ CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
 . "$SCRIPT_DIR/fm-backend.sh"
 # shellcheck source=bin/fm-wake-lib.sh
 . "$SCRIPT_DIR/fm-wake-lib.sh"
+# The successor's initial prompt is Firstmate operational input, and this file
+# owns both its wording and the record-backed carrier Claude needs for it.
+# shellcheck source=bin/fm-operational-input.sh
+. "$SCRIPT_DIR/fm-operational-input.sh"
 # The persist gate this refuses without is the same contract a second mate's
 # restart applies; that file owns its wording.
 # shellcheck source=bin/fm-persist-request-lib.sh
@@ -311,8 +332,12 @@ establish_launch_argv() {  # <pid>
 # Remote Control the outgoing lead had comes back up with it. An argv that
 # already names the flag keeps its own spelling, including the session name it
 # may carry: adding a second one would rename the remote session for no reason.
-compose_successor_command() {  # <profile-dir> <session-id> <ambient-profile> <follow-rc>  (argv on stdin)
-  local profile=$1 session=$2 ambient=$3 follow_rc=${4:-0} token drop_value=0 out='' has_rc=0
+# <prompt> is the initial prompt the replacement starts its first turn on (the
+# header's "WHY THE REPLACEMENT IS GIVEN A PROMPT"). It is the trailing
+# positional argument, where Claude Code takes a launch prompt, so it can never
+# be read as the optional value of the --resume immediately before it.
+compose_successor_command() {  # <profile-dir> <session-id> <ambient-profile> <follow-rc> <prompt>  (argv on stdin)
+  local profile=$1 session=$2 ambient=$3 follow_rc=${4:-0} prompt=${5-} token drop_value=0 out='' has_rc=0
   while IFS= read -r token; do
     [ -n "$token" ] || continue
     if [ "$drop_value" -eq 1 ]; then
@@ -337,7 +362,19 @@ compose_successor_command() {  # <profile-dir> <session-id> <ambient-profile> <f
   [ "$follow_rc" != 1 ] || [ "$has_rc" -eq 1 ] || out="$out --remote-control"
   # A successor is a persistent session even when the outgoing lead was
   # launched as a Claude child; clear that inherited marker in the pane too.
-  printf 'FM_AMBIENT_CLAUDE_CONFIG_DIR=%q CLAUDE_CONFIG_DIR=%q env -u CLAUDE_CODE_CHILD_SESSION CLAUDE_CODE_FORCE_SESSION_PERSISTENCE=1%s --resume %q\n' "$ambient" "$profile" "$out" "$session"
+  printf 'FM_AMBIENT_CLAUDE_CONFIG_DIR=%q CLAUDE_CONFIG_DIR=%q env -u CLAUDE_CODE_CHILD_SESSION CLAUDE_CODE_FORCE_SESSION_PERSISTENCE=1%s --resume %q %q\n' "$ambient" "$profile" "$out" "$session" "$prompt"
+}
+
+# The initial prompt the replacement comes up on, published as a record in this
+# home's operational inbox; the doorbell naming it is what the command line
+# carries. Publishing here rather than at arm time means the printed plan is
+# the command that will actually run, and a home whose record cannot be written
+# refuses while the old lead is still untouched.
+establish_session_start_prompt() {
+  local doorbell
+  fm_operational_record_write "$STATE" session-start "$FM_OPERATIONAL_SESSION_START_BODY" doorbell ||
+    die "the session-start instruction the replacement starts on could not be recorded under $STATE/$FM_OPERATIONAL_RECORD_DIRNAME, so the replacement would come up with nothing to do and this home would stay unheld"
+  printf '%s\n' "$doorbell"
 }
 
 # --- shared preflight --------------------------------------------------------
@@ -349,6 +386,7 @@ LEAD_SEAT=''
 SESSION_ID=''
 TO_PROFILE=''
 LAUNCH_ARGV=''
+SUCCESSOR_PROMPT=''
 SUCCESSOR_CMD=''
 # on, off, undeterminable, or kept (not on, but the launch command names it).
 LEAD_RC=''
@@ -401,7 +439,8 @@ preflight() {  # <launch-command-override>
   LEAD_RC=$(rc_state_of "$LEAD_PID" "$LEAD_PROFILE" "$SESSION_ID")
   [ "$LEAD_RC" != on ] || follow=1
   [ "$LEAD_RC" = on ] || ! printf '%s\n' "$LAUNCH_ARGV" | grep -Eq -- '^--remote-control(=|$)' || LEAD_RC=kept
-  SUCCESSOR_CMD=$(printf '%s\n' "$LAUNCH_ARGV" | compose_successor_command "$TO_PROFILE" "$SESSION_ID" "${FM_AMBIENT_CLAUDE_CONFIG_DIR-$LEAD_PROFILE}" "$follow")
+  SUCCESSOR_PROMPT=$(establish_session_start_prompt) || exit 1
+  SUCCESSOR_CMD=$(printf '%s\n' "$LAUNCH_ARGV" | compose_successor_command "$TO_PROFILE" "$SESSION_ID" "${FM_AMBIENT_CLAUDE_CONFIG_DIR-$LEAD_PROFILE}" "$follow" "$SUCCESSOR_PROMPT")
 }
 
 # What the plan, the check, and the outcome all say about Remote Control, from
@@ -419,6 +458,7 @@ report_plan() {
   printf 'lead seat: %s\n' "$LEAD_SEAT"
   printf 'destination seat: %s (%s)\n' "$TO_SEAT" "$TO_PROFILE"
   printf 'session resumed: %s\n' "$SESSION_ID"
+  printf 'first turn: the replacement is prompted to run bin/fm-session-start.sh and take this home\n'
   printf 'terminal: %s %s\n' "$ESTABLISHED_BACKEND" "$ESTABLISHED_TARGET"
   printf 'remote control: %s\n' "$(rc_plan_line "$LEAD_RC")"
   printf 'replacement command: %s\n' "$SUCCESSOR_CMD"
@@ -709,13 +749,21 @@ handover_stage() {  # <plan-file>
     waited=$((waited + 5))
   done
   if ! successor_holds_lock "$pid" "$to_profile"; then
+    # The replacement is up but never took the home, which is the outcome this
+    # stage exists to catch: the process coming up is not the handover, the
+    # lock record naming it is. It is recorded as a failure rather than as a
+    # swap still in progress, because nothing else will come back to finish it.
+    # The reservation is deliberately left to lapse rather than dropped: the
+    # replacement still holds the nonce and may yet claim the home with it.
     # No successor to read the field back on, so the follow is reported as
     # requested rather than as achieved.
     [ "$follow_rc" != on ] ||
-      RC_NOTE='the replacement was launched with Remote Control, which could not be confirmed because it has not taken this home yet'
-    record_result started "the replacement is running on seat $to_seat but has not taken this home's lock yet; the reservation lapses on its own"
+      RC_NOTE='the replacement was launched with Remote Control, which could not be confirmed because it never took this home'
+    record_result failed "the replacement is running on seat $to_seat but never took this home's lock within ${claim_wait}s, so this home has no firstmate holding it; steer that terminal to run bin/fm-session-start.sh, or end what is there and run '$P_SOURCE_LINE' in it"
+    fm_wake_append check lead-restart \
+      "check: lead-restart: the replacement firstmate came up on Claude seat $to_seat but never took this home's lock within ${claim_wait}s, so nothing is holding this home; the outcome and the exact recovery command are in $RESULT" || true
     [ -z "$rc_wake" ] || fm_wake_append check lead-restart "check: lead-restart: $rc_wake" || true
-    exit 0
+    exit 1
   fi
   rm -f "$P_LAUNCH_FILE" 2>/dev/null || true
   if [ "$follow_rc" = on ]; then

@@ -467,8 +467,13 @@ It needs no approval: you set the threshold, so the threshold firing is the inst
 The watch hands the move to firstmate rather than performing it, because the poll runs in a separate process and cannot write firstmate's conversation down for it - so firstmate persists that open work first, then runs the same command above.
 The watch hands over nothing unless the move is actually available, so a crossing with no signed-in destination, or no established terminal, names that blocker instead.
 
-**If it fails after the previous process has ended** there is no going back to it: the outcome is recorded in `state/.lead-restart.result`, the home's reservation is dropped, and firstmate is woken.
+**The replacement starts itself.** A resumed Claude session comes up at an empty composer, and the home's lock is taken by firstmate's own session start rather than by the process coming up, so a replacement with nothing to do would hold the terminal while the home stayed unheld and unsupervised until someone typed into it.
+So the replacement is launched on one instruction - run `bin/fm-session-start.sh` - and the swap counts as complete only once this home's lock record names that new process.
+A replacement that comes up but never takes the home within the claim window is recorded as a failure and firstmate is woken, rather than left reading as a swap still in progress.
+
+**If it fails after the previous process has ended** there is no going back to it: the outcome is recorded in `state/.lead-restart.result` and firstmate is woken.
 Recovery is one command in that same terminal, printed in that record and staged as a file to source.
+The home's reservation is dropped with it, except where the replacement is running and may still claim the home, in which case it is left to lapse on its own.
 Nothing else is affected, because the command only ever replaced one process: every task, local copy, PR, and durable record is exactly as it was.
 
 ## Idle seats and lapsed tokens

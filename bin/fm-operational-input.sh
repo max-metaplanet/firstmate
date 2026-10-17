@@ -58,6 +58,13 @@ FM_OPERATIONAL_VERSION=v1
 FM_OPERATIONAL_HEADER_PREFIX="${FM_OPERATIONAL_PREFIX}${FM_OPERATIONAL_VERSION} "
 FM_OPERATIONAL_KINDS='session-start watcher turn-end-guard away-supervisor launch-brief branch-outcome'
 
+# The one-line body every current session-start producer carries: the native
+# session-open nudge (bin/fm-sessionstart-nudge.sh) and the initial prompt a
+# replacement lead is launched with (bin/fm-lead-restart.sh). One copy, because
+# a session-start instruction that differs by producer is two contracts.
+# shellcheck disable=SC2034,SC2016 # Public source-library variable; literal prompt markup.
+FM_OPERATIONAL_SESSION_START_BODY='Run `bin/fm-session-start.sh` now, exactly once, before executing any other instructions.'
+
 # Compatibility name retained for the away-mode owner and its tests.
 # shellcheck disable=SC2034 # Public source-library variable used by callers.
 FM_INJECT_MARK=$FM_OPERATIONAL_MARK

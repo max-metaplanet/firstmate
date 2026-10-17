@@ -60,7 +60,8 @@ A `check: lead-restart` wake that names Remote Control is the exception: the swa
 - `stranded` - the previous session ended and the replacement did not come up in its terminal.
   The result record holds the exact command to run there, which is also staged as a file to source.
   This one is captain-facing, because only someone at that terminal can run it.
-- `started` - the replacement is running but had not taken the home's lock yet when the stage stopped watching.
-  This outcome queues no wake of its own, so it is seen only by reading the record; confirm with `bin/fm-lock.sh status`, and the reservation lapses on its own either way.
+- `failed` - the replacement came up in the terminal but never took the home's lock, so nothing is holding this home.
+  The record names the recovery: steer that terminal to run `bin/fm-session-start.sh`, or end what is there and source the staged command.
+  The reservation is left alone because the replacement can still claim the home with it, and it lapses on its own otherwise.
 
 Nothing else is ever affected by a failed swap, because the command only ever replaces one process: every task, local copy, PR, and durable record is exactly as it was.
