@@ -2691,9 +2691,6 @@ declare -a WORKER_SCRIPTS=()
 # shellcheck disable=SC2329
 cleanup_run() {
   rm -rf "$RUN_TMP"
-  if type fm_test_scratch_root_cleanup >/dev/null 2>&1; then
-    fm_test_scratch_root_cleanup
-  fi
 }
 
 trap cleanup_run EXIT

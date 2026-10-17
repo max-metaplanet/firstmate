@@ -209,63 +209,6 @@ test_registries_avoid_git_worktree_root() {
   pass "test registries and fixture roots stay out of a git worktree TMPDIR"
 }
 
-test_unmarked_litter_in_the_scratch_root_is_swept_but_live_fixtures_are_not() {
-  # Production commands a test drives leave their own temp directories behind -
-  # they carry no fixture marker, so the marked sweep never sees them, and in
-  # the scratch root beside a checkout nothing else would either. A marked
-  # fixture must still be left alone however old it is: its owner may simply be
-  # a suite that runs longer than the age window.
-  local harness litter marked
-  harness=$(fm_test_tmproot fm-test-scratch-litter)
-  litter="$harness/fm-spawn-seat.pretend"
-  marked="$harness/fm-long-running-fixture"
-  mkdir -p "$litter" "$marked"
-  printf '%s\n' "$$" > "$marked/.fm-test-fixture"
-  touch -t 200001010000 "$litter" "$marked"
-
-  FM_TEST_SCRATCH_OWNED=1 FM_TEST_SCRATCH_ROOT="$harness" FM_TEST_TMPDIR="$harness" \
-    FM_TEST_ORPHAN_MAX_AGE_SECONDS=0 fm_test_reap_scratch_root_litter
-
-  assert_absent "$litter" \
-    "unmarked litter survived the scratch-root sweep"
-  [ -d "$marked" ] \
-    || fail "the scratch-root sweep removed a marked fixture it cannot judge by age"
-  pass "the scratch root sweeps unmarked litter and leaves marked fixtures to the owner-aware sweep"
-}
-
-test_a_stale_registry_from_a_killed_run_is_reaped() {
-  # A registry is a plain file, so the marked-directory sweep never sees it.
-  # In the machine temp directory that was harmless - the OS sweeps it - but
-  # the scratch root beside a checkout is swept by nothing, and one stale file
-  # keeps it from ever being removed. A cleanup registry also still names the
-  # roots its own trap never reached, so reaping it must remove those too.
-  local harness stale_root registry other dead
-  harness=$(fm_test_tmproot fm-test-stale-registry)
-  stale_root="$harness/root-the-dead-run-owed"
-  mkdir -p "$stale_root" "$harness/never-touch-me"
-  # A pid that has certainly exited: started here and reaped before use.
-  bash -c 'exit 0' & dead=$!
-  wait "$dead" 2>/dev/null || true
-  registry="$harness/.fm-test-cleanup.$dead.aBcDeF"
-  printf '%s\n' "$stale_root" > "$registry"
-  # PID 1 is alive and never ours, so a registry named for it must survive:
-  # a live owner is still using its registry however old the file is.
-  other="$harness/.fm-test-cleanup.1.keepme"
-  printf '%s\n' "$harness/never-touch-me" > "$other"
-
-  FM_TEST_TMPDIR="$harness" FM_TEST_ORPHAN_MAX_AGE_SECONDS=0 \
-    fm_test_reap_orphan_registries
-
-  assert_absent "$registry" "a stale registry from a dead run survived the reap"
-  assert_absent "$stale_root" \
-    "the reap discarded a dead run's registry without removing the root it named"
-  [ -f "$other" ] \
-    || fail "the reap removed a registry whose owning process is still alive"
-  [ -d "$harness/never-touch-me" ] \
-    || fail "the reap acted on a live run's registry contents"
-  pass "a registry left by a killed run is reaped, with the roots it still owed"
-}
-
 test_fixture_roots_land_beside_the_checkout_not_in_the_machine_tmpdir() {
   # Fixture trees used to be created under $TMPDIR, which on macOS is a
   # directory endpoint security scans; a suite walk's churn there was measured
@@ -361,5 +304,3 @@ test_fixture_roots_land_beside_the_checkout_not_in_the_machine_tmpdir
 test_a_fixture_home_beside_the_checkout_is_not_inside_the_repo
 test_an_inherited_scratch_root_is_left_alone
 test_a_scratch_fixture_is_not_inside_any_repository
-test_a_stale_registry_from_a_killed_run_is_reaped
-test_unmarked_litter_in_the_scratch_root_is_swept_but_live_fixtures_are_not

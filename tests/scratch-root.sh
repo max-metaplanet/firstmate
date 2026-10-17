@@ -12,10 +12,11 @@
 # Why it exists: mktemp defaults to $TMPDIR, which on macOS is a per-user
 # directory under /private/var/folders. Endpoint security scans that directory,
 # and a suite walk fills it with thousands of short-lived fixture trees - churn
-# measured at 7-8% of one operator machine's whole scan load. The directory the
-# checkout itself sits in is already excluded from that scanning wherever
-# firstmate puts a checkout (a worktree pool slot, a validation copy), so the
-# scratch moves there instead of into the machine temp directory.
+# measured at 7-8% of one operator machine's whole scan load. The scratch moves
+# to the directory the checkout sits in instead. For a worktree pool slot and a
+# validation worktree that directory is already excluded from the scanning. A
+# run from a primary checkout is not covered: its parent is an ordinary,
+# scanned directory, so its scratch is still scanned there.
 #
 # Beside the checkout, not inside it. A fixture firstmate home inside the
 # firstmate repo is refused on purpose - "secondmate home cannot be inside the
@@ -35,14 +36,9 @@
 #   wherever you point it and takes this file out of the decision.
 #   Every fixture under the root is still created and removed by the same
 #   mktemp and cleanup that owned it before, so concurrent runs cannot collide
-#   and nothing new is left behind; the root itself is removed when the last
-#   run leaves it empty. Init installs an EXIT trap that removes it; a caller
-#   that sets its own EXIT trap afterwards replaces that, so it calls
-#   fm_test_scratch_root_cleanup from its own trap to keep the removal. Scope is test scratch only: no non-test command's
-#   TMPDIR is touched.
-
-# Set when THIS process created the root, so only its owner tries to remove it.
-FM_TEST_SCRATCH_OWNED=${FM_TEST_SCRATCH_OWNED:-0}
+#   and no fixture is left behind. The root itself is left in place: runs
+#   beside the same checkout share it, so no one run can know it is the last.
+#   Scope is test scratch only: no non-test command's TMPDIR is touched.
 
 fm_test_scratch_root_init() {  # <checkout-root>
   local checkout=${1:-} parent root
@@ -69,7 +65,6 @@ fm_test_scratch_root_init() {  # <checkout-root>
   chmod 0700 "$root" 2>/dev/null || true
   root=$(CDPATH='' cd -- "$root" && pwd -P) || return 1
   FM_TEST_SCRATCH_ROOT=$root
-  FM_TEST_SCRATCH_OWNED=1
   TMPDIR=$root
   TMP=$root
   # A fixture directory that is deliberately NOT a git repository has to stay
@@ -80,18 +75,4 @@ fm_test_scratch_root_init() {  # <checkout-root>
   # can climb past it.
   GIT_CEILING_DIRECTORIES=$root
   export FM_TEST_SCRATCH_ROOT TMPDIR TMP GIT_CEILING_DIRECTORIES
-  # Covers an exit before the caller installs its own EXIT trap - a --help or
-  # --list, a missing-tool skip. A caller's later trap replaces this one and
-  # calls fm_test_scratch_root_cleanup itself.
-  trap fm_test_scratch_root_cleanup EXIT
-}
-
-# Remove the scratch root once the run that created it has cleaned its fixtures
-# out. rmdir refuses a non-empty directory, so a concurrent run still holding
-# fixtures keeps it; the next run to finish alone takes it away. That keeps a
-# worktree pool slot carrying no leftover from a suite that ran in it.
-fm_test_scratch_root_cleanup() {
-  [ "${FM_TEST_SCRATCH_OWNED:-0}" = 1 ] || return 0
-  [ -n "${FM_TEST_SCRATCH_ROOT:-}" ] || return 0
-  rmdir "$FM_TEST_SCRATCH_ROOT" 2>/dev/null || true
 }

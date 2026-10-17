@@ -401,7 +401,7 @@ PROOF_ROOT=$(mktemp -d "${TMPDIR:-/tmp}/fm-isolation-proof.XXXXXX")
 chmod 0700 "$PROOF_ROOT" || die "could not chmod 0700 proof root $PROOF_ROOT"
 RECORDS="$PROOF_ROOT/records.tsv"
 : >"$RECORDS"
-trap 'rm -rf "$PROOF_ROOT"; fm_test_scratch_root_cleanup' EXIT
+trap 'rm -rf "$PROOF_ROOT"' EXIT
 
 GIT_BEFORE=$(global_git_snapshot)
 RUN_STARTED_ISO=$(now_iso)

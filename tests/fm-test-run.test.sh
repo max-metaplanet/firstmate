@@ -1967,9 +1967,11 @@ SH
   case "$scratch" in
     "$repo"|"$repo"/*) fail "the scratch root was placed inside the checkout: $scratch" ;;
   esac
-  # Cleanup is unchanged and the root goes with it, so a pool slot the suite
-  # ran in carries no leftover.
-  assert_absent "$scratch" "the run left its scratch root behind beside the checkout"
+  # Cleanup is unchanged: every root the run and its script created is gone,
+  # and only the shared scratch directory itself stays.
+  leftovers=$(find "$scratch" -mindepth 1 2>/dev/null)
+  [ -z "$leftovers" ] \
+    || fail "the run left scratch behind beside the checkout:"$'\n'"$leftovers"
   rm -rf "$tmp"
   pass "the runner's scratch, and every script's, lands beside the checkout instead of in the machine temp directory"
 }
