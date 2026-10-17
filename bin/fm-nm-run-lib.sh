@@ -16,29 +16,44 @@
 # direction is unsafe: a false negative hides a genuinely parked run, and a
 # false positive lets teardown act on a run it does not own.
 #
+# Bounded execution itself is bin/fm-timeout-lib.sh's alone; this library adds
+# only the working directory and the `no-mistakes "$@"` specialization. That
+# owner runs the bounded command in its own process GROUP and escalates TERM to
+# KILL on every mechanism, which is what keeps a probe's deadline from leaving
+# a no-mistakes CLI behind reparented to init, one more copy on every
+# supervision pass.
+# shellcheck source=bin/fm-timeout-lib.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/fm-timeout-lib.sh"
+
 # Bounded call to an arbitrary command in dir $1, timeout $2 seconds, and its
 # `no-mistakes "$@"` specialization. The bounded
 # form preserves stdout, stderr, and exit status; the checked form discards
 # stderr, while fm_nm_run keeps the fail-open query contract for read-only callers.
 fm_nm_bounded() {  # <dir> <timeout_secs> <command> <args...>
-  local dir=$1 timeout_secs=$2 have_timeout=none
+  local dir=$1 timeout_secs=$2
   shift 2
-  if command -v timeout >/dev/null 2>&1; then have_timeout=timeout
-  elif command -v gtimeout >/dev/null 2>&1; then have_timeout=gtimeout
-  elif command -v perl >/dev/null 2>&1; then have_timeout=perl
-  fi
-  case "$have_timeout" in
-    timeout)  ( cd "$dir" && timeout "$timeout_secs" "$@" ) ;;
-    gtimeout) ( cd "$dir" && gtimeout "$timeout_secs" "$@" ) ;;
-    perl)     ( cd "$dir" && perl -e 'my $t = shift; my $pid = fork; die "fork failed" unless defined $pid; if (!$pid) { setpgrp(0, 0); exec @ARGV } local $SIG{ALRM} = sub { kill "TERM", -$pid; select undef, undef, undef, 0.2; kill "KILL", -$pid; exit 124 }; alarm $t; waitpid $pid, 0; exit($? >> 8)' "$timeout_secs" "$@" ) ;;
-    *)        return 1 ;;
-  esac
+  ( cd "$dir" && fm_run_timed "$timeout_secs" "$@" )
 }
 
+# Every no-mistakes call made through this library is a read-only status or
+# inspection probe, plus fm-teardown.sh's own `axi abort` of a run it has
+# already attributed: never a validation run, sync, push, or drive. None of
+# them may fetch. A core worktree is a partial clone, so no-mistakes resolving
+# a run commit this copy does not hold - `git cat-file -e <sha>^{commit}` -
+# otherwise makes the promisor fetch it, measured at about 10 seconds and
+# about 500 MB per call on every supervision pass. GIT_NO_LAZY_FETCH=1 turns
+# the missing object into an immediate "absent", which is the answer the
+# attribution rules below already expect. It is exported inside this call's
+# own subshell rather than through `env`, so it reaches the probe and nothing
+# else and the hot path keeps its PATH dependencies. A caller that
+# legitimately needs a fetch must not reach for this helper.
 fm_nm_run_bounded() {  # <dir> <timeout_secs> <args...>
   local dir=$1 timeout_secs=$2
   shift 2
-  fm_nm_bounded "$dir" "$timeout_secs" no-mistakes "$@"
+  (
+    export GIT_NO_LAZY_FETCH=1
+    fm_nm_bounded "$dir" "$timeout_secs" no-mistakes "$@"
+  )
 }
 
 fm_nm_run_checked() {  # <dir> <timeout_secs> <args...>
@@ -86,9 +101,12 @@ fm_nm_field() {  # <toon-output> <key>
 
 # Full commit sha for sha-ish $2 as seen from worktree $1's own object store;
 # empty when the object is absent or ambiguous. Read-only: never fetches,
-# never moves refs or custody.
+# never moves refs or custody. GIT_NO_LAZY_FETCH=1 is what makes the
+# never-fetches half of that true in a partial clone, where resolving a run
+# commit this copy does not hold would otherwise cost a promisor fetch for an
+# answer this function reports as "absent" either way.
 fm_nm_resolve_commit() {  # <worktree> <sha-ish>
-  git -C "$1" rev-parse --verify --quiet "${2}^{commit}" 2>/dev/null || true
+  GIT_NO_LAZY_FETCH=1 git -C "$1" rev-parse --verify --quiet "${2}^{commit}" 2>/dev/null || true
 }
 
 # 0 if run head $2 matches worktree $1's code identity, per the same rule
