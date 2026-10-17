@@ -2265,8 +2265,13 @@ test_lsof_error_never_clears_index_lock() {
   rc=$?
   set -e
 
+  # Upstream reaches the return here and refuses there, because its lock
+  # staleness proof needs the same lsof. This fork stops one step earlier:
+  # refuse_unowned_worktree_processes will not hand the worktree to
+  # `treehouse return --force` on a scan it could not complete. Either way the
+  # lock is never removed on unprovable evidence, which is what this case owns.
   expect_code 1 "$rc" "lsof-error-index-lock: teardown should refuse while the lock cannot be proven stale"
-  assert_grep "not provably stale" "$case_dir/stderr" \
+  assert_grep "keeping the worktree slot rather than returning it" "$case_dir/stderr" \
     "lsof-error-index-lock: teardown did not explain the refusal"
   assert_not_contains "$(cat "$case_dir/stderr")" "removed provably-stale git lock" \
     "lsof-error-index-lock: teardown removed a lock after lsof failed"
