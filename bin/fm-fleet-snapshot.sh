@@ -716,7 +716,7 @@ prefetch_task_current_states() {
 task_json_lines() {
   local meta original_meta id kind harness mode yolo project worktree home projects spawn_gen backend target branch status_log report_path
   local remote_host remote_root current_file endpoint_file observation_line index=0
-  local pr pr_source current_json endpoint_exists agent_alive pr_from_status
+  local pr pr_head pr_source current_json endpoint_exists agent_alive pr_from_status meta_line meta_key
   local open_decisions_tsv
   local status_path status_raw status_verb status_note status_epoch status_age status_present
   local meta_present report_path_present report_present_hint worktree_present
@@ -727,19 +727,21 @@ task_json_lines() {
     index=$((index + 1))
     id=$(basename "$meta" .meta)
     original_meta="$STATE/$id.meta"
-    kind=$(meta_value "$meta" kind)
+    # This is the already captured metadata, not a cache of live decisions.
+    # Read each row once and reset absent fields so they cannot leak from the
+    # preceding task. Only literal field names may become variable names.
+    kind='' harness='' mode='' yolo='' project='' worktree='' home='' projects=''
+    spawn_gen='' branch='' remote_host='' remote_root='' pr='' pr_head=''
+    while IFS= read -r meta_line || [ -n "$meta_line" ]; do
+      case "$meta_line" in
+        kind=*|harness=*|mode=*|yolo=*|project=*|worktree=*|home=*|projects=*|\
+        spawn_gen=*|branch=*|remote_host=*|remote_root=*|pr=*|pr_head=*)
+          meta_key=${meta_line%%=*}
+          printf -v "$meta_key" '%s' "${meta_line#*=}"
+          ;;
+      esac
+    done < "$meta" 2>/dev/null || true
     [ -n "$kind" ] || kind=ship
-    harness=$(meta_value "$meta" harness)
-    mode=$(meta_value "$meta" mode)
-    yolo=$(meta_value "$meta" yolo)
-    project=$(meta_value "$meta" project)
-    worktree=$(meta_value "$meta" worktree)
-    home=$(meta_value "$meta" home)
-    projects=$(meta_value "$meta" projects)
-    spawn_gen=$(meta_value "$meta" spawn_gen)
-    branch=$(meta_value "$meta" branch)
-    remote_host=$(meta_value "$meta" remote_host)
-    remote_root=$(meta_value "$meta" remote_root)
     if [ -n "$remote_host" ]; then
       backend=$(meta_value "$meta" remote_backend)
       [ -n "$backend" ] || backend=unknown
@@ -750,7 +752,6 @@ task_json_lines() {
     fi
     status_log="$SNAPSHOT_TASK_DIR/$id.status"
     report_path="$SNAPSHOT_TASK_DIR/$id.report"
-    pr=$(meta_value "$meta" pr)
     pr_source=meta
     if [ -z "$pr" ]; then
       pr_from_status=$(first_pr_url_in_file "$status_log" || true)
@@ -863,7 +864,7 @@ task_json_lines() {
       --arg remote_root "$remote_root" \
       --arg pr "$pr" \
       --arg pr_source "$pr_source" \
-      --arg pr_head "$(meta_value "$meta" pr_head)" \
+      --arg pr_head "$pr_head" \
       --arg agent_alive "$agent_alive" \
       --arg observed_at "$SNAPSHOT_NOW" \
       --argjson current_state "$current_json" \

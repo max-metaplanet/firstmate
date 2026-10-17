@@ -1269,6 +1269,58 @@ EOF
   pass "home summary reports an unreadable child state as current-state-unavailable"
 }
 
+test_captured_metadata_fields_and_fork_budget() {
+  local home fakebin out trace log real_bash count
+  home=$(make_home metadata-budget)
+  fakebin=$(fm_fakebin "$home")
+  fm_write_meta "$home/state/a.meta" \
+    'kind=scout' 'project=old' 'project=final = value' 'mode=direct-PR' \
+    'harness=claude' 'yolo=off' 'branch=fm/one' 'spawn_gen=first' \
+    'worktree=/missing/firstmate-budget' 'window=fixture-only'
+  printf 'pr_head=last=value' >> "$home/state/a.meta"
+  printf 'kind=scout\nworktree=/missing/firstmate-budget\nwindow=fixture-only\n' > "$home/state/b.meta"
+  # No real endpoint or vendor CLI is contacted by this measurement.
+  printf '#!/bin/sh\nexit 1\n' > "$fakebin/tmux"
+  printf '#!/bin/sh\nexit 1\n' > "$fakebin/no-mistakes"
+  chmod +x "$fakebin/tmux" "$fakebin/no-mistakes"
+  log="$home/bash-pids"
+  trace="$home/trace-env"
+  : > "$log"
+  : > "$trace"
+  if [ "${BASH_VERSINFO[0]}" -ge 4 ]; then
+    real_bash=$(command -v bash)
+    cat > "$fakebin/bash" <<SH
+#!/bin/sh
+printf '%s\n' "\$\$" >> "\$FM_SNAPSHOT_FORK_LOG"
+exec '$real_bash' "\$@"
+SH
+    chmod +x "$fakebin/bash"
+    # The counting shim sees execs; inherited DEBUG records command-substitution
+    # children too. Deduplication keeps an exec in the same PID from counting twice.
+    cat > "$trace" <<'SH'
+set -T
+trap 'if [ "${FM_COUNTED_PID:-}" != "$BASHPID" ]; then FM_COUNTED_PID=$BASHPID; printf "%s\n" "$BASHPID" >> "$FM_SNAPSHOT_FORK_LOG"; fi' DEBUG
+SH
+  fi
+  out=$(PATH="$fakebin:$PATH" FM_HOME="$home" BASH_ENV="$trace" FM_SNAPSHOT_FORK_LOG="$log" \
+    FM_SNAPSHOT_NOW=2026-10-17T04:00:00Z FM_SNAPSHOT_NOW_EPOCH=1792209600 "$SNAPSHOT" --json) \
+    || fail 'metadata snapshot failed'
+  printf '%s' "$out" | jq -e '
+    (.tasks[0] | .id == "a" and .project == "final = value" and .mode == "direct-PR"
+      and .harness == "claude" and .branch == "fm/one" and .pr.head == "last=value")
+    and (.tasks[1] | .id == "b" and .project == "" and .mode == "" and .branch == null and .pr.head == null)
+  ' >/dev/null || fail 'captured metadata lost fields, last-key-wins, the final line, or per-row isolation'
+  if [ "${BASH_VERSINFO[0]}" -ge 4 ]; then
+    count=$(sort -u "$log" | wc -l | tr -d ' ')
+    [ "$count" -gt 0 ] && [ "$count" -le 180 ] \
+      || fail "two-task snapshot exceeded its 180 Bash-process budget: $count"
+  else
+    printf 'skip: Bash process counting requires BASHPID (Bash 4+); metadata behavior checked\n'
+  fi
+  pass 'captured metadata preserves all row fields without per-field Bash forks'
+}
+
+test_captured_metadata_fields_and_fork_budget
 test_empty_fleet_json
 test_fixture_snapshot_json
 test_remote_secondmate_home_present_is_null

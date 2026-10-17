@@ -472,6 +472,44 @@ test_stdin_grok_schema_deny
 test_stdin_claude_codex_schema_allow
 test_stdin_claude_codex_schema_deny
 test_stdin_unrelated_command_allowed
+test_foreign_host_prefilter_preserves_verdict_and_jq_budget() {
+  local dir real payload expected rc count
+  dir=$(fm_test_tmproot fm-hook-host-budget)
+  mkdir -p "$dir/bin"
+  real=$(command -v jq)
+  : > "$dir/calls"
+  cat > "$dir/bin/jq" <<SH
+#!/bin/sh
+printf 'jq\n' >> '$dir/calls'
+exec '$real' "\$@"
+SH
+  chmod +x "$dir/bin/jq"
+  while IFS='|' read -r expected payload; do
+    : > "$dir/calls"
+    rc=0
+    PATH="$dir/bin:$PATH" bash -c '. "$1"; fm_hook_payload_is_foreign_host "$2"' \
+      _ "$ROOT/bin/fm-hook-host-lib.sh" "$payload" || rc=$?
+    [ "$rc" -eq 0 ] || rc=1
+    assert_equals "$expected" "$rc" "foreign-host prefilter changed the verdict for $payload"
+    if [ "$payload" = '{"tool_name":"Bash"}' ]; then
+      [ ! -s "$dir/calls" ] || fail 'ordinary Claude payload exceeded its zero-jq host-check budget'
+    else
+      count=$(wc -l < "$dir/calls" | tr -d ' ')
+      assert_equals 1 "$count" 'a possible foreign-host payload must reach the parser exactly once'
+    fi
+  done <<'CASES'
+1|{"tool_name":"Bash"}
+0|{"cursor_version":"1"}
+0|{"\u0063ursor_version":"1"}
+1|{"cursor_version":42}
+1|{"tool_input":{"cursor_version":"1"}}
+1|{"text":"cursor_version"}
+1|{"cursor_version":
+CASES
+  pass 'foreign-host fast path skips jq only for impossible matches, preserving escaped and nested-key decisions'
+}
+
+test_foreign_host_prefilter_preserves_verdict_and_jq_budget
 test_prefilter_is_strict_superset
 test_failopen_empty_stdin
 test_failopen_garbage_stdin

@@ -3456,6 +3456,35 @@ test_missing_meta() {
   pass "missing meta is handled gracefully"
 }
 
+test_metadata_read_has_no_pipeline_forks() {
+  reset_fakes
+  local d out tool real log
+  d=$(new_case metadata-budget)
+  make_fakebin "$d" >/dev/null
+  log="$d/meta-execs"
+  : > "$log"
+  for tool in grep tail cut; do
+    real=$(command -v "$tool")
+    cat > "$d/fakebin/$tool" <<SH
+#!/bin/sh
+printf '%s\n' '$tool' >> "\$FM_META_EXEC_LOG"
+exec '$real' "\$@"
+SH
+    chmod +x "$d/fakebin/$tool"
+  done
+  mkdir -p "$d/present=path"
+  printf 'worktree=%s\nkind=secondmate\nkind=scout\nremote_host=old\nremote_host=\nworktree=%s' \
+    "$d/present=path" "$d/missing path=final" > "$d/state/metadata.meta"
+  out=$(FM_META_EXEC_LOG="$log" run_crew_state "$d" metadata) || fail 'metadata read failed'
+  assert_contains "$out" 'worktree gone (torn down?)' 'the last unterminated metadata field was not read'
+  [ ! -s "$log" ] || fail "metadata read exceeded its zero grep/tail/cut budget: $(cat "$log")"
+  printf 'kind=secondmate\n' > "$d/state/metadata.meta"
+  printf 'phase=parked\nresume_mode=resume\n' > "$d/state/.secondmate-park-metadata"
+  out=$(FM_META_EXEC_LOG="$log" run_crew_state "$d" metadata) || fail 'fresh metadata read failed'
+  assert_contains "$out" 'state: parked' 'a second invocation reused old metadata'
+  pass 'metadata is read freshly with last-key-wins and no grep/tail/cut launches'
+}
+
 # (k) crew_is_provably_working end-to-end over the REAL fm-crew-state.sh (not a
 # canned fake verdict, unlike tests/fm-watch-triage.test.sh's classifier
 # coverage). This is the direct regression pair for the 2026-07-02 herdr
@@ -6093,6 +6122,7 @@ test_remote_alive_idle_is_healthy_not_gone
 test_remote_unreachable_is_unknown_remote_not_dead
 test_remote_dead_reports_remote_verdict
 test_missing_meta
+test_metadata_read_has_no_pipeline_forks
 test_provably_working_via_runs_list_fallback
 test_not_provably_working_when_stopped
 test_usage_error

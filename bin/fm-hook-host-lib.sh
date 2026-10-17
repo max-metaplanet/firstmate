@@ -29,6 +29,13 @@
 fm_hook_payload_is_foreign_host() {  # <payload>
   local payload=${1-}
   [ -n "$payload" ] || return 1
+  # A literal key must occur in the payload bytes; an escaped key contains a
+  # backslash. Only their absence proves this is not Cursor without parsing.
+  # Positive matches still use jq, including nested keys and escaped spelling.
+  case "$payload" in
+    *cursor_version*|*\\*) ;;
+    *) return 1 ;;
+  esac
   command -v jq >/dev/null 2>&1 || return 1
   printf '%s' "$payload" | jq -e '
     type == "object" and has("cursor_version") and (.cursor_version | type) == "string"
