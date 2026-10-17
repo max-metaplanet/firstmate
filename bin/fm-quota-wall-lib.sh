@@ -68,7 +68,9 @@
 # Resolved from this file rather than a caller's variable so a test can source
 # the library alone, and overridable so a test can stub the two commands this
 # library shells out to without a real seat tree or a real agent.
-_FM_QUOTA_WALL_LIB_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+_FM_QUOTA_WALL_LIB_DIR=${BASH_SOURCE[0]%/*}
+[ "$_FM_QUOTA_WALL_LIB_DIR" != "${BASH_SOURCE[0]}" ] || _FM_QUOTA_WALL_LIB_DIR=.
+case $_FM_QUOTA_WALL_LIB_DIR in /*) ;; .) _FM_QUOTA_WALL_LIB_DIR=$PWD ;; *) _FM_QUOTA_WALL_LIB_DIR=$PWD/${_FM_QUOTA_WALL_LIB_DIR#./} ;; esac
 FM_QUOTA_WALL_SEAT_BIN="${FM_QUOTA_WALL_SEAT_BIN:-$_FM_QUOTA_WALL_LIB_DIR/fm-seat.sh}"
 FM_QUOTA_WALL_CONTROL_BIN="${FM_QUOTA_WALL_CONTROL_BIN:-$_FM_QUOTA_WALL_LIB_DIR/fm-control.sh}"
 

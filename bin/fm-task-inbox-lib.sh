@@ -92,7 +92,9 @@
 #   FM_TASK_INBOX_RING_MAX     default 3; delivery attempts before escalation
 #   FM_TASK_INBOX_BUSY_MAX     default 2; consecutive busy-deferred due polls before escalation
 
-_FM_TASK_INBOX_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+_FM_TASK_INBOX_LIB_DIR=${BASH_SOURCE[0]%/*}
+[ "$_FM_TASK_INBOX_LIB_DIR" != "${BASH_SOURCE[0]}" ] || _FM_TASK_INBOX_LIB_DIR=.
+case $_FM_TASK_INBOX_LIB_DIR in /*) ;; .) _FM_TASK_INBOX_LIB_DIR=$PWD ;; *) _FM_TASK_INBOX_LIB_DIR=$PWD/${_FM_TASK_INBOX_LIB_DIR#./} ;; esac
 # Both dependencies are canonical lint roots in their own right. Keep them as
 # analysis boundaries here so ShellCheck's external-source traversal does not
 # recursively duplicate the full backend graph for every inbox consumer.
