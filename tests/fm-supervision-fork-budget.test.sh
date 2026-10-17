@@ -328,3 +328,110 @@ then
   fail 'unsupported FIFO setup was retried or changed the fallback interval'
 fi
 pass 'unsupported FIFO setup falls back once without adding per-poll setup forks'
+
+# One-shot supervision commands, counted the same way: PATH shims observe which
+# programs an invocation actually starts, never its implementation text. These
+# commands run on the supervision cycle too, and their budget is a FIXED cost,
+# not one paid per durable record or per ancestor process.
+ONESHOT_ROOT=$TMP_ROOT/oneshot
+mkdir -p "$ONESHOT_ROOT/shims"
+ONESHOT_EVENTS=$ONESHOT_ROOT/events
+export ONESHOT_EVENTS
+for tool in jq awk wc cat sed grep cut tail tr basename dirname mktemp mv chmod \
+  rm rmdir ln readlink stat date perl shasum ps head touch mkdir uname sort; do
+  real=$(command -v "$tool") || continue
+  cat > "$ONESHOT_ROOT/shims/$tool" <<SH
+#!/bin/sh
+printf '%s\n' "$tool" >> "\$ONESHOT_EVENTS"
+exec '$real' "\$@"
+SH
+  chmod +x "$ONESHOT_ROOT/shims/$tool"
+done
+
+# Count the recorded starts without starting a program to do it.
+oneshot_count() {  # [program-name]
+  local line total=0 named=0
+  while IFS= read -r line; do
+    total=$((total + 1))
+    [ "$line" != "${1:-}" ] || named=$((named + 1))
+  done < "$ONESHOT_EVENTS"
+  [ "$#" -eq 0 ] && { printf '%s\n' "$total"; return 0; }
+  printf '%s\n' "$named"
+}
+
+oneshot_home() {  # <dir>
+  rm -rf "$1"
+  mkdir -p "$1/state/procevent" "$1/config" "$1/data"
+  printf '{"backlog":{"present":true,"rows":[]},"tasks":[]}\n' > "$1/input.json"
+}
+
+snapshot_programs() {  # <records>
+  local records=$1 home="$ONESHOT_ROOT/snapshot" i
+  oneshot_home "$home"
+  for ((i = 1; i <= records; i++)); do
+    mkdir -p "$home/data/task-$i"
+    printf '{"schema":"fm-contributions.v1","task":"task-%s","records":[{"url":"https://github.com/o/r/pull/%s","kind":"pr","checked_at":"2026-10-17T10:00:00Z","error":null,"observation":null,"verdict":null,"seen":[],"pending":[],"notified":[]}]}\n' \
+      "$i" "$i" > "$home/data/task-$i/contributions.json"
+  done
+  : > "$ONESHOT_EVENTS"
+  FM_HOME="$home" FM_ROOT_OVERRIDE="$home" FM_STATE_OVERRIDE="$home/state" \
+    FM_DATA_OVERRIDE="$home/data" FM_CONFIG_OVERRIDE="$home/config" \
+    FM_CONTRIBUTIONS_NOW=2026-10-17T11:00:00Z PATH="$ONESHOT_ROOT/shims:$PATH" \
+    "$SUBJECT_ROOT/bin/fm-contributions.sh" snapshot "$home/input.json" > "$home/out" 2>&1 \
+    || fail "contribution snapshot over $records records failed: $(cat "$home/out")"
+  oneshot_count
+}
+
+two=$(snapshot_programs 2)
+twenty=$(snapshot_programs 20)
+printf 'contributions snapshot: programs=%s at 2 records, %s at 20\n' "$two" "$twenty"
+[ "$two" = "$twenty" ] || fail "contribution snapshot starts programs per durable record ($two then $twenty)"
+[ "$twenty" -le 8 ] || fail "contribution snapshot exceeded 8 programs ($twenty)"
+
+: > "$ONESHOT_EVENTS"
+home=$ONESHOT_ROOT/procevent
+oneshot_home "$home"
+FM_HOME="$home" FM_ROOT_OVERRIDE="$home" FM_STATE_OVERRIDE="$home/state" \
+  FM_DATA_OVERRIDE="$home/data" FM_CONFIG_OVERRIDE="$home/config" \
+  PATH="$ONESHOT_ROOT/shims:$PATH" \
+  "$SUBJECT_ROOT/bin/fm-procevent.sh" reconcile > "$home/out" 2>&1 \
+  || fail "procevent reconcile failed: $(cat "$home/out")"
+programs=$(oneshot_count)
+printf 'procevent reconcile: programs=%s\n' "$programs"
+[ "$programs" -le 6 ] || fail "procevent reconcile exceeded 6 programs ($programs)"
+pass 'one-shot supervision commands pay a fixed program budget, not a per-record one'
+
+# The harness ancestry walk reads each ancestor once. Against a chain that
+# reports bash all the way to pid 1 the walk is deterministic: eight levels, one
+# process read each, and the pathname split never leaves the shell. Reading a
+# level twice, or forking basename per level, shows up as a higher count.
+ANCESTRY_BIN=$ONESHOT_ROOT/ancestry
+mkdir -p "$ANCESTRY_BIN"
+cat > "$ANCESTRY_BIN/ps" <<'SH'
+#!/bin/sh
+printf 'ps\n' >> "$ONESHOT_EVENTS"
+case "$*" in
+  '-o ppid=,comm= -p '*) printf '%s %s\n' 1 bash ;;
+  '-o comm= -p '*) printf '%s\n' bash ;;
+  '-o args= -p '*) printf '%s\n' bash ;;
+  '-o ppid= -p '*) printf '%s\n' 1 ;;
+  *) exit 1 ;;
+esac
+SH
+real_basename=$(command -v basename)
+cat > "$ANCESTRY_BIN/basename" <<SH
+#!/bin/sh
+printf 'basename\n' >> "\$ONESHOT_EVENTS"
+exec '$real_basename' "\$@"
+SH
+chmod +x "$ANCESTRY_BIN/ps" "$ANCESTRY_BIN/basename"
+
+: > "$ONESHOT_EVENTS"
+PATH="$ANCESTRY_BIN:$PATH" "$SUBJECT_ROOT/bin/fm-harness.sh" ancestry > /dev/null 2>&1 \
+  || fail 'harness ancestry walk could not run'
+ps_starts=$(oneshot_count ps)
+basename_starts=$(oneshot_count basename)
+printf 'harness ancestry: process-reads=%s basename=%s\n' "$ps_starts" "$basename_starts"
+[ "$ps_starts" -le 8 ] || fail "harness ancestry read ancestors more than once ($ps_starts process reads)"
+[ "$basename_starts" -eq 0 ] || fail "harness ancestry still forks basename ($basename_starts)"
+pass 'the harness ancestry walk reads each ancestor with one program and no basename'

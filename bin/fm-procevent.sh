@@ -242,7 +242,7 @@
 # about the source side of the handoff.
 set -u
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(d=${BASH_SOURCE[0]%/*}; [ "$d" != "${BASH_SOURCE[0]}" ] || d=.; cd "${d:-/}" && pwd)"
 FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
@@ -263,7 +263,7 @@ usage() { sed -n '2,/^set -u$/p' "${BASH_SOURCE[0]}" | sed '$d; s/^# \{0,1\}//';
 
 case "${1-}" in ''|-h|--help|help) usage ;; esac
 
-REG=$(fm_procevent_registry_dir "$STATE")
+fm_procevent_registry_dir_to REG "$STATE"
 MAX_OUTPUT_BYTES=${FM_PROCEVENT_MAX_OUTPUT_BYTES:-1048576}
 EXTENSION_HOST="$SCRIPT_DIR/fm-extension.mjs"
 EXTENSION_LIFECYCLE_LOCK="$REG/.extension-binding-lifecycle.lock"
@@ -274,7 +274,7 @@ state_root_bind() {  # [create]
     (umask 077; mkdir -p "$STATE") || return 1
   fi
   STATE=$(fm_procevent_state_root_resolve "$STATE") || return 1
-  REG=$(fm_procevent_registry_dir "$STATE")
+  fm_procevent_registry_dir_to REG "$STATE"
   EXTENSION_LIFECYCLE_LOCK="$REG/.extension-binding-lifecycle.lock"
   FM_STATE_OVERRIDE=$STATE
   export FM_STATE_OVERRIDE
@@ -1689,7 +1689,7 @@ stranded_leaderless_detail() {  # <source-id>
 
 cmd_reconcile() {
   local rec id published started=0 stopped=0 uncertain=0 failed=0 claim owner pid token identity claim_state stop_state task_pending
-  local launch_identity launch_stamp launch_mark unconfirmed entry
+  local launch_identity launch_stamp launch_mark unconfirmed entry claim_root
   local -a launched=()
   # Rejected before anything is launched, and by name. A window this command
   # cannot use makes every launch unconfirmable, so validating it later would
@@ -1702,7 +1702,8 @@ cmd_reconcile() {
   # Stop a runner this home owns whose source is no longer registered. Without
   # this, unregistering a source that never completes leaves its child blocked
   # forever with nothing left to reap it.
-  for claim in "$(fm_procevent_claim_root)"/*.claim; do
+  fm_procevent_claim_root_to claim_root
+  for claim in "$claim_root"/*.claim; do
     [ -e "$claim" ] || continue
     id=${claim##*/}; id=${id%.claim}
     fm_procevent_source_id_valid "$id" || continue

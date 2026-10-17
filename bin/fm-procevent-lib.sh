@@ -31,12 +31,18 @@
 
 # Machine-wide claim root. Homes can share one underlying source store, so the
 # "one owner per canonical source" rule cannot live inside a single home.
-fm_procevent_claim_root() {
-  printf '%s\n' "${FM_PROCEVENT_CLAIM_ROOT:-${XDG_STATE_HOME:-$HOME/.local/state}/firstmate/procevent-claims}"
+# Each derived path has one spelling, in the output-variable form, because a
+# caller on the reconcile path that spells it through `$( )` pays a subshell for
+# a parameter expansion and every supervision cycle runs reconcile.
+fm_procevent_claim_root_to() {  # <output-variable>
+  printf -v "$1" '%s' "${FM_PROCEVENT_CLAIM_ROOT:-${XDG_STATE_HOME:-$HOME/.local/state}/firstmate/procevent-claims}"
 }
+fm_procevent_registry_dir_to() { printf -v "$1" '%s/procevent' "$2"; }
+fm_procevent_inbox_dir_to() { printf -v "$1" '%s/procevent-inbox' "$2"; }
 
-fm_procevent_registry_dir() { printf '%s\n' "$1/procevent"; }
-fm_procevent_inbox_dir()    { printf '%s\n' "$1/procevent-inbox"; }
+fm_procevent_claim_root() { local p; fm_procevent_claim_root_to p; printf '%s\n' "$p"; }
+fm_procevent_registry_dir() { local p; fm_procevent_registry_dir_to p "$1"; printf '%s\n' "$p"; }
+fm_procevent_inbox_dir() { local p; fm_procevent_inbox_dir_to p "$1"; printf '%s\n' "$p"; }
 fm_procevent_capture_reservation_dir() { printf '%s\n' "$1/procevent-capture-reservations"; }
 
 # A source id names a private file and a bounded wake slug, so it is held to the
@@ -120,17 +126,25 @@ fm_procevent_any_registered() {
 # is untouched: that home refreshes its own lease. Nothing here keys on a script
 # name, a command line, or a process name, all of which are shared across homes.
 
+fm_procevent_owner_lease_path_to() {  # <output-variable> <state-root>
+  local _fm_lease_reg
+  fm_procevent_registry_dir_to _fm_lease_reg "$2"
+  printf -v "$1" '%s/.owner-lease' "$_fm_lease_reg"
+}
+
 fm_procevent_owner_lease_path() {  # <state-root>
-  printf '%s/.owner-lease\n' "$(fm_procevent_registry_dir "$1")"
+  local p
+  fm_procevent_owner_lease_path_to p "$1"
+  printf '%s\n' "$p"
 }
 
 # Record owner-presence activity in this home's process-event state. Best
 # effort by design: a home with no registry directory yet owns no runner.
 fm_procevent_owner_lease_touch() {  # <state-root>
   local reg lease tmp now
-  reg=$(fm_procevent_registry_dir "$1")
+  fm_procevent_registry_dir_to reg "$1"
   [ -d "$reg" ] && [ ! -L "$reg" ] || return 1
-  lease=$(fm_procevent_owner_lease_path "$1")
+  fm_procevent_owner_lease_path_to lease "$1"
   now=$(perl -MTime::HiRes=clock_gettime,CLOCK_MONOTONIC -e \
     'printf "%.6f\n", clock_gettime(CLOCK_MONOTONIC)') || return 1
   tmp=$(umask 077; mktemp "$reg/.owner-lease.XXXXXX") || return 1
@@ -1222,7 +1236,7 @@ fm_procevent_result_owner_task() {  # <result-path>
 # instead of silently losing the result.
 fm_procevent_pending() {
   local state=$1 inbox result base seq
-  inbox=$(fm_procevent_inbox_dir "$state")
+  fm_procevent_inbox_dir_to inbox "$state"
   [ -d "$inbox" ] || return 0
   for result in "$inbox"/*.result; do
     [ -f "$result" ] && [ ! -L "$result" ] || continue
