@@ -127,6 +127,7 @@ fail() { printf 'fm-contributions: %s\n' "$*" >&2; exit 1; }
 usage() { sed -n '2,/^set -eu$/s/^# \{0,1\}//p' "$0"; }
 case "${1:-}" in -h|--help) usage; exit 0 ;; esac
 command -v jq >/dev/null 2>&1 || fail 'jq is required to measure contribution coverage'
+command -v awk >/dev/null 2>&1 || fail 'awk is required to read durable contribution records'
 NOW=${FM_CONTRIBUTIONS_NOW:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}
 EPOCH=$(jq -nr --arg now "$NOW" '$now | fromdateiso8601') || fail 'invalid observation clock'
 MAX_AGE=${FM_CONTRIBUTIONS_MAX_AGE:-900}
@@ -154,30 +155,77 @@ jq_lib() { # jq options/program via final argument
   jq -L "$SCRIPT_DIR" "$@" "include \"fm-contributions\"; $program"
 }
 
+# Every candidate record is read once by awk and validated once by jq, instead
+# of starting wc and three jq runs per record: a home holding a hundred records
+# otherwise paid four hundred program starts on every fleet snapshot.
+# The durable task identity still comes from fm_dirname_to and fm_basename_to
+# here, never from awk, whose single-character split() also breaks on a newline
+# and would misread a task directory whose name carries one. awk only stamps
+# each document with its own operand position, and the identities travel beside
+# it NUL-separated, which a directory name cannot contain.
+# The frame separators are RS between candidates and US after the position.
+# Both control characters are illegal raw in JSON, inside strings and out, so no
+# record body can forge a frame boundary. A candidate awk could not read emits
+# no frame, so the candidate arithmetic below counts it unreadable exactly as
+# the per-record validation did; awk's own absence is refused at startup.
 read_saved() {
-  local file dir task
-  : > "$TMP/saved.jsonl"
+  local file dir task invalid rows
+  local -a candidates=()
   ERRORS=0
   if [ -L "$DATA" ]; then
     ERRORS=1; printf '[]\n' > "$TMP/saved.json"; return 0
   fi
+  : > "$TMP/saved.batch"
   for file in "$DATA"/*/contributions.json; do
     [ -e "$file" ] || [ -L "$file" ] || continue
     fm_dirname_to dir "$file"
     fm_basename_to task "$dir"
-    if [ -L "$file" ] || [ -L "$dir" ] || [ ! -f "$file" ] \
-      || [ "$(wc -c < "$file")" -gt 1048576 ] \
-      || ! jq_lib -ne --slurpfile record "$file" '($record | length) == 1 and ($record[0] | valid_record)' >/dev/null 2>&1; then
+    if [ -L "$file" ] || [ -L "$dir" ] || [ ! -f "$file" ]; then
       ERRORS=$((ERRORS + 1))
       continue
     fi
-    # A file's task identity must match its durable directory, not arbitrary JSON.
-    if ! jq -e --arg task "$task" '.task == $task' "$file" >/dev/null; then
-      ERRORS=$((ERRORS + 1)); continue
-    fi
-    jq -c . "$file" >> "$TMP/saved.jsonl"
-  done
-  jq -s . "$TMP/saved.jsonl" > "$TMP/saved.json"
+    candidates+=("$file")
+    printf '%s\0' "$task"
+  done > "$TMP/saved.tasks"
+  if [ "${#candidates[@]}" -gt 0 ]; then
+    # Byte-oriented, because a record is arbitrary bytes until jq parses it.
+    LC_ALL=C awk '
+      FNR == 1 {
+        for (i = 1; i < ARGC; i++)
+          if (ARGV[i] == FILENAME) { printf "\036%d\037", i; break }
+      }
+      { print }
+    ' "${candidates[@]}" > "$TMP/saved.batch" 2>/dev/null || true
+  fi
+  # One compact line with the unreadable-record count, then one with the valid
+  # rows, so both come back without a second program start.
+  jq_lib -R -s -c --argjson errors "$ERRORS" --argjson candidates "${#candidates[@]}" \
+    --rawfile tasks "$TMP/saved.tasks" '
+    def parsed($names):
+      (index("\u001f")) as $i
+      | if $i == null then null
+        else
+          $names[(.[0:$i] | tonumber) - 1] as $task
+          | .[$i+1:] as $doc
+          | if $task == null then null
+            # The ceiling stays in bytes, as `wc -c` measured it.
+            elif ($doc | utf8bytelength) > 1048576 then null
+            else
+              ($doc | try fromjson catch null) as $record
+              # A record identity must match its durable directory, not arbitrary JSON.
+              | if ($record | valid_record) and $record.task == $task then $record else null end
+            end
+        end;
+    (($tasks / "\u0000")[:-1]) as $names
+    | [ (. / "\u001e")[1:][] | parsed($names) | select(. != null) ] as $valid
+    | ($errors + $candidates - ($valid | length)), $valid' \
+    < "$TMP/saved.batch" > "$TMP/saved.out" \
+    || fail 'durable contribution records could not be read'
+  { IFS= read -r invalid && IFS= read -r rows; } < "$TMP/saved.out" \
+    || fail 'durable contribution records could not be read'
+  case "$invalid" in ''|*[!0-9]*) fail 'durable contribution records could not be read' ;; esac
+  ERRORS=$invalid
+  printf '%s\n' "$rows" > "$TMP/saved.json"
 }
 
 get_input() {

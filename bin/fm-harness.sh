@@ -72,6 +72,8 @@ FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
 
+# shellcheck source=bin/fm-path-lib.sh
+. "$SCRIPT_DIR/fm-path-lib.sh"
 # shellcheck source=bin/fm-cursor-lib.sh
 . "$SCRIPT_DIR/fm-cursor-lib.sh"
 # shellcheck source=bin/fm-gemini-lib.sh
@@ -159,11 +161,14 @@ harness_marker() {
 # same anchored match as the ancestry walk below, kept separate so the marker
 # precedence above can demand real process evidence before trusting FM_OMP_HARNESS.
 ancestry_names_omp() {
-  local pid=$$ comm
+  local pid=$$ comm base line
   for _ in 1 2 3 4 5 6 7 8; do
-    comm=$(ps -o comm= -p "$pid" 2>/dev/null) || return 1
-    [ "$(basename -- "$comm")" = omp ] && return 0
-    pid=$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d ' ')
+    # One `ps` reads both this ancestor's name and its parent, so the walk
+    # starts one program per level instead of two plus a `tr` pipeline.
+    line=$(ps -o ppid=,comm= -p "$pid" 2>/dev/null) || return 1
+    read -r pid comm <<< "$line"
+    fm_basename_to base "$comm"
+    [ "$base" = omp ] && return 0
     [ -n "$pid" ] && [ "$pid" -gt 1 ] || return 1
   done
   return 1
@@ -177,19 +182,26 @@ ancestry_names_omp() {
 #          script path it was handed. This is the weakest inference in this file
 #          (any node process holding a harness-shaped path matches it), so it is
 #          used only when no marker is present.
-harness_process_verdict() {  # <pid>
-  local pid=$1 comm args argv0
-  comm=$(ps -o comm= -p "$pid" 2>/dev/null) || return 0
+# Set HARNESS_VERDICT and return 0 when one process identifies a harness, or
+# return 1 leaving it empty. harness_ancestry calls this directly: capturing the
+# printing wrapper below cost one subshell per ancestor on every walk.
+_harness_process_verdict_to() {  # <pid> [<process-name>]
+  # The caller may pass the process name it has already read, so a walk that
+  # reads name and parent together does not read the name a second time.
+  local pid=$1 comm=${2-} args argv0 base
+  HARNESS_VERDICT=
+  [ -n "$comm" ] || comm=$(ps -o comm= -p "$pid" 2>/dev/null) || return 1
   argv0=$(fm_cursor_argv0_for_pid "$pid" "$comm" 2>/dev/null || true)
   if fm_cursor_process_matches "$comm" '' "$argv0"; then
-    echo "comm cursor"
-    return
+    HARNESS_VERDICT="comm cursor"
+    return 0
   fi
   if fm_gemini_path_is_gemini "$comm"; then
-    echo "comm gemini"
-    return
+    HARNESS_VERDICT="comm gemini"
+    return 0
   fi
-  case "$(basename -- "$comm")" in
+  fm_basename_to base "$comm"
+  case "$base" in
     # gemini precedes claude here for the same precedence reason as the
     # marker layer above, so a gemini worker under a claude primary is never
     # read as claude. This arm covers a natively-named gemini binary only.
@@ -203,23 +215,23 @@ harness_process_verdict() {  # <pid>
     # MainThread to the interpreter arm to close this: that would make the
     # args of EVERY node process searchable and let an unrelated node
     # command carrying a harness name in its arguments claim an identity.
-    *claude*) echo "comm claude"; return ;;
-    *codex*) echo "comm codex"; return ;;
-    *opencode*) echo "comm opencode"; return ;;
-    *grok*) echo "comm grok"; return ;;
-    kimi) echo "comm kimi"; return ;;
-    rovo) echo "comm rovo"; return ;;
+    *claude*) HARNESS_VERDICT="comm claude"; return 0 ;;
+    *codex*) HARNESS_VERDICT="comm codex"; return 0 ;;
+    *opencode*) HARNESS_VERDICT="comm opencode"; return 0 ;;
+    *grok*) HARNESS_VERDICT="comm grok"; return 0 ;;
+    kimi) HARNESS_VERDICT="comm kimi"; return 0 ;;
+    rovo) HARNESS_VERDICT="comm rovo"; return 0 ;;
       # muse's installed launcher ~/.local/bin/muse execs ~/.local/bin/muse-bin-<version>
       # (verified in the published launcher, muse 0.1.0-R708.1), so the live process
       # name carries the version and CHANGES on every auto-update. Match the stable
       # prefix rather than any exact name. Deliberately anchored, never *muse*, so
       # unrelated commands (musescore, amuse) cannot be misread as this harness.
-    muse|muse-bin-*) echo "comm muse"; return ;;
+    muse|muse-bin-*) HARNESS_VERDICT="comm muse"; return 0 ;;
     # Both Pi identities share this launcher name. Ancestry can only prove the
     # FAMILY; only the launch-boundary marker selects the signed identity, which
     # is why detect_own keeps a marker that agrees on the family.
-    pi-signed) echo "comm pi"; return ;;
-    pi) echo "comm pi"; return ;;
+    pi-signed) HARNESS_VERDICT="comm pi"; return 0 ;;
+    pi) HARNESS_VERDICT="comm pi"; return 0 ;;
     # omp is a Bun-compiled single binary whose process name is exactly `omp`
     # (verified, omp 18.1.11: `ps -o comm=` reports omp from both its `!`
     # bash path and the model's bash tool). Anchored, never *omp*, so ompd,
@@ -228,7 +240,7 @@ harness_process_verdict() {  # <pid>
     # optional claude-bridge extension runs a nested executable literally
     # named `claude` with its own node child, and that fallback's *claude*
     # args glob would otherwise claim it if that subtree were ever walked.
-    omp) echo "comm omp"; return ;;
+    omp) HARNESS_VERDICT="comm omp"; return 0 ;;
     # agy (Antigravity CLI) is a Go-compiled single binary whose process name
     # is exactly `agy` (verified, agy 1.2.0: `ps -o comm=` reports agy and
     # Herdr's process-info reports name agy with argv[0] agy). Anchored, never
@@ -237,39 +249,51 @@ harness_process_verdict() {  # <pid>
     # carries no AGY_* or ANTIGRAVITY_* variable; AGENT=1 seen there is an
     # inherited launcher value, not an agy identity), so like muse it is
     # detected by ancestry alone.
-    agy) echo "comm agy"; return ;;
-    devin) echo "comm devin"; return ;;
+    agy) HARNESS_VERDICT="comm agy"; return 0 ;;
+    devin) HARNESS_VERDICT="comm devin"; return 0 ;;
     # Command Code runs as a node bundle that sets its own process title, so
     # the kernel process name is exactly `command-code` (verified, Command Code
     # 1.74.1: comm=command-code and the rewritten argv is the same word).
     # Anchored, so an unrelated command containing that fragment never matches.
-    command-code) echo "comm commandcode"; return ;;
+    command-code) HARNESS_VERDICT="comm commandcode"; return 0 ;;
     node*|python*)
       # Bare interpreter: match the harness name in its script path.
       args=$(ps -o args= -p "$pid" 2>/dev/null)
       if fm_gemini_args_are_gemini "$args"; then
-        echo "args gemini"
-        return
+        HARNESS_VERDICT="args gemini"
+        return 0
       fi
       case "$args" in
-        *claude*) echo "args claude"; return ;;
-        *codex*) echo "args codex"; return ;;
-        *opencode*) echo "args opencode"; return ;;
-        *grok*) echo "args grok"; return ;;
-        *" pi "*|*/pi) echo "args pi"; return ;;
+        *claude*) HARNESS_VERDICT="args claude"; return 0 ;;
+        *codex*) HARNESS_VERDICT="args codex"; return 0 ;;
+        *opencode*) HARNESS_VERDICT="args opencode"; return 0 ;;
+        *grok*) HARNESS_VERDICT="args grok"; return 0 ;;
+        *" pi "*|*/pi) HARNESS_VERDICT="args pi"; return 0 ;;
       esac ;;
   esac
+  return 1
+}
+
+harness_process_verdict() {  # <pid> [<process-name>]
+  _harness_process_verdict_to "$@" || return 0
+  printf '%s\n' "$HARNESS_VERDICT"
 }
 
 # Print the verdict for the NEAREST harness process in the parent chain, or
 # nothing when the walk finds none. The nearest match wins, so a worker nested
 # inside another harness resolves to its own harness.
 harness_ancestry() {  # [<pid>]
-  local pid=${1:-$$} verdict
+  local pid=${1:-$$} comm line next
   for _ in 1 2 3 4 5 6 7 8; do
-    verdict=$(harness_process_verdict "$pid")
-    [ -z "$verdict" ] || { echo "$verdict"; return; }
-    pid=$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d ' ')
+    # One `ps` per ancestor supplies both the name the verdict reads and the
+    # parent the walk steps to, replacing two `ps` calls and a `tr` pipeline.
+    line=$(ps -o ppid=,comm= -p "$pid" 2>/dev/null) || line=''
+    read -r next comm <<< "$line"
+    if _harness_process_verdict_to "$pid" "$comm"; then
+      printf '%s\n' "$HARNESS_VERDICT"
+      return
+    fi
+    pid=$next
     # Stop only once the walk has EXAMINED the top of the chain. Inside a PID
     # namespace the harness itself is pid 1 - a container, or the `codex sandbox`
     # this boundary was proven in - so breaking as soon as the next pid is 1

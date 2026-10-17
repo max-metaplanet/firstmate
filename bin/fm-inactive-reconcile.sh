@@ -125,21 +125,25 @@ if [ "$FM_INACTIVE_RECONCILE_BUDGET_SECS" -gt 30 ]; then
   exit 2
 fi
 
-if [ "$(uname)" = Darwin ]; then
-  file_mtime() { /usr/bin/stat -f %m "$1" 2>/dev/null; }
-else
-  file_mtime() { stat -c %Y "$1" 2>/dev/null; }
-fi
-
-reconcile_now() {
+# The clock lands in a caller variable: every scan reads it inside the cadence
+# marker write and the budget deadline, and `$(date +%s)` cost both a subshell
+# and a program start each time.
+reconcile_now_to() {  # <output-variable>
+  # The scratch name is prefixed so a caller passing its own `now` is not
+  # shadowed by this frame's local.
+  local _fm_reconcile_now
   case "${FM_INACTIVE_RECONCILE_NOW:-}" in
-    ''|*[!0-9]*) date +%s ;;
-    *) printf '%s\n' "$FM_INACTIVE_RECONCILE_NOW" ;;
+    ''|*[!0-9]*) fm_epoch_seconds_to _fm_reconcile_now ;;
+    *) _fm_reconcile_now=$FM_INACTIVE_RECONCILE_NOW ;;
   esac
+  printf -v "$1" '%s' "$_fm_reconcile_now"
 }
 
+# LC_ALL=C is exported above, so a parameter expansion counts the same bytes
+# `tr` rewrote and `cut -c` truncated.
 clean_field() {
-  printf '%s' "$1" | LC_ALL=C tr '\t\r\n' '   ' | cut -c1-1200
+  local field=${1//[$'\t\r\n']/ }
+  printf '%s\n' "${field:0:1200}"
 }
 
 valid_id() {
@@ -159,10 +163,30 @@ sha256_text() {
 
 record_path() { printf '%s/%s.%s\n' "$OUTCOME_DIR" "$1" "$2"; }
 
+# The last value for <key> in a small key=value file, printed like the
+# `grep | tail -1 | cut -d= -f2-` it replaces, including an absent key printing
+# nothing. That pipeline cost three programs and two pipeline forks per read,
+# and a scan reads a dozen keys for every task it visits.
+keyed_field_to() {  # <output-variable> <file> <key>
+  local _fm_keyed_line _fm_keyed_value=''
+  if [ -f "$2" ] && [ -r "$2" ]; then
+    while IFS= read -r _fm_keyed_line || [ -n "$_fm_keyed_line" ]; do
+      case "$_fm_keyed_line" in "$3="*) _fm_keyed_value=${_fm_keyed_line#*=} ;; esac
+    done < "$2"
+  fi
+  printf -v "$1" '%s' "$_fm_keyed_value"
+}
+
+keyed_field() {  # <file> <key>
+  local _fm_keyed
+  keyed_field_to _fm_keyed "$1" "$2"
+  printf '%s\n' "$_fm_keyed"
+}
+
 record_value() {
   local record=$1 key=$2
   [ -f "$record" ] && [ ! -L "$record" ] || return 0
-  grep "^${key}=" "$record" 2>/dev/null | tail -1 | cut -d= -f2- || true
+  keyed_field "$record" "$key"
 }
 
 record_phase_set() {
@@ -192,7 +216,8 @@ record_field_set() {
 }
 
 ensure_record() { # <fingerprint> <task> <incarnation> <state> <outcome-key> <origin> <phase> <pr> [status-head]
-  local fingerprint=$1 task=$2 incarnation=$3 state=$4 outcome_key=$5 origin=$6 phase=$7 pr=$8 status_head=${9:-} tmp
+  local fingerprint=$1 task=$2 incarnation=$3 state=$4 outcome_key=$5 origin=$6 phase=$7 pr=$8 status_head=${9:-} tmp now
+  reconcile_now_to now
   RECORD_PENDING=$(record_path "$fingerprint" pending)
   RECORD_PRESENTED=$(record_path "$fingerprint" presented)
   RECORD_REPORTED=$(record_path "$fingerprint" reported)
@@ -216,7 +241,7 @@ ensure_record() { # <fingerprint> <task> <incarnation> <state> <outcome-key> <or
     printf 'origin=%s\n' "$origin"
     printf 'phase=%s\n' "$phase"
     printf 'pr=%s\n' "$pr"
-    printf 'created_epoch=%s\n' "$(reconcile_now)"
+    printf 'created_epoch=%s\n' "$now"
     printf 'notice_emitted=0\n'
     [ -z "$status_head" ] || printf 'status_head=%s\n' "$status_head"
   } > "$tmp" || { rm -f "$tmp"; return 1; }
@@ -234,7 +259,10 @@ mark_reported() { # <record>
 queue_key_exists() { # <key>
   local key=$1 queued
   queued=$(fm_wake_queued_keys check 2>/dev/null || true)
-  printf '%s\n' "$queued" | grep -Fx -- "$key" >/dev/null 2>&1
+  # A whole-line match against the newline-delimited keys, as `grep -Fx` made
+  # it, without the pipeline fork and the program start it cost.
+  case $'\n'"$queued"$'\n' in *$'\n'"$key"$'\n'*) return 0 ;; esac
+  return 1
 }
 
 publish_actionable() { # <key> <payload>
@@ -261,14 +289,20 @@ queue_presentation() { # <record> <fingerprint> <payload>
 }
 
 last_activity_age() { # <meta> <status> <turn-ended>
-  local meta=$1 status=$2 turn=$3 now m newest=0 file
-  now=$(reconcile_now)
+  local meta=$1 status=$2 turn=$3 now m newest=0 file mtimes=''
+  local -a present=()
+  reconcile_now_to now
   for file in "$meta" "$status" "$turn"; do
     [ -e "$file" ] || continue
-    m=$(file_mtime "$file" 2>/dev/null || true)
+    present+=("$file")
+  done
+  # One program start for the markers this task has, the way bin/fm-wake-lib.sh
+  # already batches the watcher's cadence markers.
+  [ "${#present[@]}" -eq 0 ] || mtimes=$(fm_path_mtimes "${present[@]}" || true)
+  while IFS= read -r m; do
     case "$m" in ''|*[!0-9]*) continue ;; esac
     [ "$m" -le "$newest" ] || newest=$m
-  done
+  done <<< "$mtimes"
   [ "$newest" -gt 0 ] || { printf '0\n'; return; }
   if [ "$now" -lt "$newest" ]; then printf '0\n'; else printf '%s\n' $((now - newest)); fi
 }
@@ -293,14 +327,15 @@ scan_marker_age() {  # [output-variable]
 
 scan_marker_cursor() {
   [ -f "$SCAN_MARKER" ] && [ ! -L "$SCAN_MARKER" ] || return 0
-  grep '^cursor=' "$SCAN_MARKER" 2>/dev/null | tail -1 | cut -d= -f2- || true
+  keyed_field "$SCAN_MARKER" cursor
 }
 
 write_scan_marker() { # <cursor>
-  local cursor=$1 marker_tmp
+  local cursor=$1 marker_tmp now
+  reconcile_now_to now
   marker_tmp=$(mktemp "$STATE/.inactive-outcome-reconcile.XXXXXX") || return 1
   {
-    printf 'epoch=%s\n' "$(reconcile_now)"
+    printf 'epoch=%s\n' "$now"
     printf 'cursor=%s\n' "$cursor"
   } > "$marker_tmp" || { rm -f "$marker_tmp"; return 1; }
   chmod 600 "$marker_tmp" 2>/dev/null || true
@@ -308,19 +343,25 @@ write_scan_marker() { # <cursor>
 }
 
 meta_field() {
-  grep "^$2=" "$1" 2>/dev/null | tail -1 | cut -d= -f2- || true
+  keyed_field "$1" "$2"
+}
+
+meta_field_to() {  # <output-variable> <meta> <key>
+  keyed_field_to "$1" "$2" "$3"
 }
 
 meta_incarnation() { # <meta>
-  local meta=$1 incarnation identity
-  incarnation=$(meta_field "$meta" spawn_gen)
+  local meta=$1 incarnation identity window worktree
+  meta_field_to incarnation "$meta" spawn_gen
   if valid_id "$incarnation"; then
     printf '%s\n' "$incarnation"
     return
   fi
-  identity=$(meta_field "$meta" tasktmp)
+  meta_field_to identity "$meta" tasktmp
   if [ -z "$identity" ]; then
-    identity="$(meta_field "$meta" window)|$(meta_field "$meta" worktree)"
+    meta_field_to window "$meta" window
+    meta_field_to worktree "$meta" worktree
+    identity="$window|$worktree"
   fi
   printf 'legacy-%s\n' "$(sha256_text "$identity")"
 }
@@ -333,9 +374,10 @@ meta_incarnation() { # <meta>
 # delivery.
 # A scout never delivers a PR, so it never carries one.
 pr_for_task() { # <meta> [preferred-line]
-  local meta=$1 preferred=${2:-} value
-  [ "$(meta_field "$meta" kind)" != scout ] || return 0
-  value=$(meta_field "$meta" pr)
+  local meta=$1 preferred=${2:-} value kind
+  meta_field_to kind "$meta" kind
+  [ "$kind" != scout ] || return 0
+  meta_field_to value "$meta" pr
   if [ -z "$value" ] && [ -n "$preferred" ]; then
     value=$(printf '%s\n' "$preferred" \
       | sed -nE 's|^done( \[at=[^]]*\])?: PR (https?://[^[:space:])"]+/pull/[0-9]+)( checks green)?$|\2|p' \
@@ -392,16 +434,20 @@ child_terminal_ledger_line() { # <status>
 # without that lock. The claim stores the exact ledger fingerprint: a retry of
 # this event stays suppressed, while a later terminal line remains a new event.
 claim_inactive_report_for_ledger() { # <task> <incarnation> <state> <ledger-fingerprint> <predecessor-head>
-  local task=$1 incarnation=$2 state=$3 ledger_fingerprint=$4 predecessor_head=$5 record key claim
+  local task=$1 incarnation=$2 state=$3 ledger_fingerprint=$4 predecessor_head=$5 record key claim field
   for record in "$OUTCOME_DIR"/*.reported; do
     [ -f "$record" ] && [ ! -L "$record" ] || continue
-    [ "$(record_value "$record" task_id)" = "$task" ] || continue
-    [ "$(record_value "$record" incarnation)" = "$incarnation" ] || continue
-    [ "$(record_value "$record" state)" = "$state" ] || continue
-    key=$(record_value "$record" outcome_key)
+    keyed_field_to field "$record" task_id
+    [ "$field" = "$task" ] || continue
+    keyed_field_to field "$record" incarnation
+    [ "$field" = "$incarnation" ] || continue
+    keyed_field_to field "$record" state
+    [ "$field" = "$state" ] || continue
+    keyed_field_to key "$record" outcome_key
     case "$key" in inactive-outcome-*) ;; *) continue ;; esac
-    [ "$(record_value "$record" status_head)" = "$predecessor_head" ] || continue
-    claim=$(record_value "$record" ledger_claim)
+    keyed_field_to field "$record" status_head
+    [ "$field" = "$predecessor_head" ] || continue
+    keyed_field_to claim "$record" ledger_claim
     if [ "$claim" = "$ledger_fingerprint" ]; then
       return 0
     fi
@@ -417,7 +463,7 @@ claim_inactive_report_for_ledger() { # <task> <incarnation> <state> <ledger-fing
 # delivered, or nothing is owed, and 1 when it is owed but the parent channel
 # could not be written (the notice is queued once per record).
 report_child_ledger_locked() { # <id> <meta>
-  local id=$1 meta=$2 status last previous state note pr mode yolo data incarnation fingerprint predecessor_head outcome_key line
+  local id=$1 meta=$2 status last previous state note pr mode yolo data incarnation fingerprint predecessor_head outcome_key line kind worktree project
   status="$STATE/$id.status"
   last=$(child_terminal_ledger_line "$status") || return 0
   state=$(status_line_verb "$last")
@@ -426,9 +472,10 @@ report_child_ledger_locked() { # <id> <meta>
   fingerprint=$(sha256_text "$incarnation|$id|$state|ledger|$last")
   if [ "$state" = "done" ] && [ ! -f "$(record_path "$fingerprint" reported)" ] \
     && [ ! -f "$(record_path "$fingerprint" pending)" ] \
-    && ! fm_dod_accept_ship_done "$(meta_field "$meta" kind)" "$(meta_field "$meta" mode)" \
-      "$(meta_field "$meta" worktree)" "$(meta_field "$meta" project)" "$last" \
-      "$STATE" "$id" "$meta" >/dev/null; then
+    && { meta_field_to kind "$meta" kind; meta_field_to mode "$meta" mode;
+         meta_field_to worktree "$meta" worktree; meta_field_to project "$meta" project;
+         ! fm_dod_accept_ship_done "$kind" "$mode" "$worktree" "$project" "$last" \
+           "$STATE" "$id" "$meta" >/dev/null; }; then
     return 0
   fi
   outcome_key="child-outcome-$id-$state-${fingerprint:0:8}"
@@ -445,8 +492,10 @@ report_child_ledger_locked() { # <id> <meta>
     return 1
   fi
   note=$(clean_field "$(status_line_note "$last")")
-  mode=$(clean_field "$(meta_field "$meta" mode)")
-  yolo=$(clean_field "$(meta_field "$meta" yolo)")
+  meta_field_to mode "$meta" mode
+  mode=$(clean_field "$mode")
+  meta_field_to yolo "$meta" yolo
+  yolo=$(clean_field "$yolo")
   data="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
   line="$state [key=$outcome_key]: child $id $state: $note"
   [ -z "$pr" ] || line="$line pr=$pr"
@@ -469,16 +518,18 @@ report_child_ledger_locked() { # <id> <meta>
 # runs on every poll in a secondmate home; a delivery failure is already queued as a
 # notice and never fails the scan.
 ledger_pass() {
-  local meta id lock
+  local meta id lock kind
   for meta in "$STATE"/*.meta; do
     [ -f "$meta" ] || continue
-    id=$(basename "$meta" .meta)
+    fm_basename_to id "$meta"
+    id=${id%.meta}
     valid_id "$id" || continue
-    [ "$(meta_field "$meta" kind)" != secondmate ] || continue
+    meta_field_to kind "$meta" kind
+    [ "$kind" != secondmate ] || continue
     lock=$(fm_meta_lock_path "$meta") || continue
     fm_lock_try_acquire "$lock" || continue
-    if [ ! -f "$meta" ] || [ -L "$meta" ] \
-      || [ "$(meta_field "$meta" kind)" = secondmate ]; then
+    meta_field_to kind "$meta" kind
+    if [ ! -f "$meta" ] || [ -L "$meta" ] || [ "$kind" = secondmate ]; then
       fm_lock_release "$lock"
       continue
     fi
@@ -489,25 +540,27 @@ ledger_pass() {
 
 # The `report <task-id>` entry point: the caller holds the child's meta lock.
 report_child() { # <id>
-  local id=$1 meta rc=0
+  local id=$1 meta rc=0 kind
   mkdir -p "$STATE" "$OUTCOME_DIR" || return 1
   [ ! -L "$OUTCOME_DIR" ] || return 1
   home_secondmate_id >/dev/null || { rc=$?; [ "$rc" -eq 1 ] && return 0; return 1; }
   meta="$STATE/$id.meta"
   [ -f "$meta" ] && [ ! -L "$meta" ] || return 0
-  [ "$(meta_field "$meta" kind)" != secondmate ] || return 0
+  meta_field_to kind "$meta" kind
+  [ "$kind" != secondmate ] || return 0
   report_child_ledger_locked "$id" "$meta"
 }
 
 reconcile_direct_child_locked() { # <id> <meta> <secondmate-id-or-empty> <timeout>
-  local id=$1 meta=$2 self=${3:-} timeout=$4 status turn last age state_line state pr incarnation fingerprint outcome_key payload kind state_rc=0
+  local id=$1 meta=$2 self=${3:-} timeout=$4 status turn last age state_line state pr incarnation fingerprint outcome_key payload kind state_rc=0 held_verb
   [ -f "$meta" ] && [ ! -L "$meta" ] || return 0
-  kind=$(meta_field "$meta" kind)
+  meta_field_to kind "$meta" kind
   [ "$kind" = secondmate ] && return 0
   status="$STATE/$id.status"
   turn="$STATE/$id.turn-ended"
   last=$(last_status_line "$status")
-  status_line_verb "$last" | grep -Fx captain-held >/dev/null 2>&1 && return 0
+  status_line_verb "$last" held_verb
+  [ "$held_verb" != captain-held ] || return 0
   # A ledger that states its own outcome is the ledger-first path's to deliver.
   if [ -n "$self" ]; then
     child_terminal_ledger_line "$status" >/dev/null
@@ -572,10 +625,11 @@ reconcile_direct_child() { # <id> <meta> <secondmate-id-or-empty> <timeout>
 # first visit, such a scan would return 3 having examined no child at all while
 # write_scan_marker had already advanced the cursor past the skipped child.
 scan_pass() { # <cursor> <after|through> <deadline> <secondmate-id-or-empty>
-  local cursor=$1 range=$2 deadline=$3 self=${4:-} meta id remaining rc first
+  local cursor=$1 range=$2 deadline=$3 self=${4:-} meta id remaining rc first now
   for meta in "$STATE"/*.meta; do
     [ -f "$meta" ] || continue
-    id=$(basename "$meta" .meta)
+    fm_basename_to id "$meta"
+    id=${id%.meta}
     valid_id "$id" || continue
     case "$range" in
       after) [ -z "$cursor" ] || [[ "$id" > "$cursor" ]] || continue ;;
@@ -586,11 +640,13 @@ scan_pass() { # <cursor> <after|through> <deadline> <secondmate-id-or-empty>
       first=1
       SCAN_FIRST_VISIT_PENDING=0
     fi
+    reconcile_now_to now
     if [ "$first" -eq 0 ]; then
-      [ "$(date +%s)" -lt "$deadline" ] || return 3
+      [ "$now" -lt "$deadline" ] || return 3
     fi
     write_scan_marker "$id" || return 1
-    remaining=$((deadline - $(date +%s)))
+    reconcile_now_to now
+    remaining=$((deadline - now))
     if [ "$first" -eq 1 ] && [ "$remaining" -lt 1 ]; then
       remaining=1
     fi
@@ -604,7 +660,7 @@ scan_pass() { # <cursor> <after|through> <deadline> <secondmate-id-or-empty>
 }
 
 scan() {
-  local startup=${1:-0} self='' cursor deadline rc=0 marker_rc=0 marker_age
+  local startup=${1:-0} self='' cursor deadline rc=0 marker_rc=0 marker_age now
   ensure_outcome_dir || return 1
   if self=$(home_secondmate_id); then
     # The ledger-first delivery is per poll, not per cadence.
@@ -625,7 +681,8 @@ scan() {
       "inactive terminal outcomes remain unreconciled: invalid .fm-secondmate-home marker" || true
     return 0
   fi
-  deadline=$(( $(date +%s) + FM_INACTIVE_RECONCILE_BUDGET_SECS ))
+  reconcile_now_to now
+  deadline=$(( now + FM_INACTIVE_RECONCILE_BUDGET_SECS ))
   SCAN_FIRST_VISIT_PENDING=1
   scan_pass "$cursor" after "$deadline" "$self" || rc=$?
   if [ "$rc" -eq 0 ] && [ -n "$cursor" ]; then

@@ -274,7 +274,13 @@ fm_cursor_process_matches() {  # <comm> <args> [argv0]
   local comm=$1 argv0=${3:-} base
   [ -n "$comm" ] || [ -n "$argv0" ] || return 1
   argv0=${argv0:-$comm}
-  base=$(basename -- "$comm")
+  # bin/fm-path-lib.sh's reader when a caller has loaded it: this runs once per
+  # ancestor on the harness walk, where forking `basename` per level showed up.
+  if command -v fm_basename_to >/dev/null 2>&1; then
+    fm_basename_to base "$comm"
+  else
+    base=$(basename -- "$comm")
+  fi
   base=${base#-}
   case "$base" in
     cursor-agent) return 0 ;;
