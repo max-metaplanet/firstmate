@@ -431,7 +431,8 @@ family_for_basename() {
     fm-calm-claude-mod-plugin.test.sh|fm-calm-claude-mod-live-e2e.test.sh|\
     fm-calm-pi-queue-retention-live-e2e.test.sh|\
     fm-quota-claude-mod-plugin.test.sh|fm-fleet-mod-plugin.test.sh|\
-    fm-herdr-submit-confirm-live-e2e.test.sh)
+    fm-herdr-submit-confirm-live-e2e.test.sh|\
+    fm-lead-restart-successor-live-e2e.test.sh)
       printf '%s\n' live-harness-optin
       ;;
     fm-backend-herdr.test.sh|fm-backend-tmux-smoke.test.sh|fm-backend.test.sh|\
@@ -833,6 +834,7 @@ tests/fm-inbox.test.sh 6260
 tests/fm-jev-mem-guard.test.sh 339
 tests/fm-kimi-harness.test.sh 62712
 tests/fm-launch-prompt-signals-live-e2e.test.sh 103
+tests/fm-lead-restart-successor-live-e2e.test.sh 120
 tests/fm-lead-restart.test.sh 51472
 tests/fm-lint-workflows.test.sh 872
 tests/fm-live-gate.test.sh 8546
@@ -1743,6 +1745,9 @@ families_for_changed_path() {
       ;;
     bin/fm-lead-restart.sh)
       printf '%s\n' "__script__:fm-lead-restart.test.sh"
+      # Whether a resumed Claude takes a turn on its own, so the successor ever
+      # runs session start, is a vendor behavior only the live guard can answer.
+      printf '%s\n' "__script__:fm-lead-restart-successor-live-e2e.test.sh"
       ;;
     bin/fm-quota-choose.sh)
       printf '%s\n' "__script__:fm-quota-choose.test.sh"

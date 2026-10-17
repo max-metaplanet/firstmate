@@ -560,6 +560,43 @@ The optional `[name]` argument does not take a following `-`-prefixed token as i
 `tests/fm-lead-restart.test.sh` pins the logic around that field with a stand-in that publishes the same record shape, including the cases this evidence cannot reach without a credential: a state that cannot be read, and a connection that never establishes in the replacement.
 The probe sessions were ended and their private tmux server was killed.
 
+## Lead restart successor
+
+Verified 2026-10-17 on Claude Code 2.1.302 and Herdr 0.9.1, macOS arm64 (Darwin 27.0.0), in an isolated `fm-lab-` session.
+
+A lead restart replaces the primary process with `claude --resume <id>` in the same terminal, and this home's lock is taken by an agent action - the first turn running `bin/fm-session-start.sh` - rather than by the process coming up.
+So whether a resumed session takes any turn at all on its own decides whether the home is held after a restart.
+It does not do so unprompted: Claude Code's own session-open adapter routes a `resume` source to the nudge tier, and a nudge in context is read only on a turn something else starts.
+On 2026-10-17 a real successor sat idle for about eight hours on that gap, with the home unheld and its supervision down, until the captain typed.
+
+A trailing positional prompt is submitted by a RESUMED interactive session on its own, which is what closes it.
+A probe launched a session, recorded its id, ended the process, and relaunched the same session with a prompt and nothing typed afterwards:
+
+```sh
+claude --dangerously-skip-permissions --resume 4351fadc-d84d-4e6e-8464-9d2424466da0 'Reply with exactly FMRESUMEPROBE11103 and nothing else.'
+```
+
+```text
+phase2 token occurrences=2 (2 or more means the resumed launch prompt submitted itself)
+```
+
+Two occurrences are the submitted prompt and the model's reply, so the launch argument became a turn rather than sitting in the composer.
+Claude Code strips the typed operational marker from a launch prompt, so the instruction itself travels as a record plus doorbell, the same carrier `bin/fm-spawn.sh` uses for a Claude worker's brief.
+
+`tests/fm-lead-restart.test.sh` pins the launch shape and the lock-confirmation outcome portably, with no harness: the replacement command must end with the published session-start doorbell as the argument after the session it resumes, and a replacement that comes up but never takes the home must be recorded `failed` and wake firstmate rather than read as a swap still in progress.
+Refresh the live proof of the whole transaction with:
+
+```sh
+FM_LEAD_RESTART_SUCCESSOR_LIVE=1 tests/fm-lead-restart-successor-live-e2e.test.sh
+```
+
+Observed 2026-10-17:
+
+```text
+ok - live lead restart: Claude Code (2.1.302 (Claude Code)) on herdr 0.9.1 submits its launch prompt unaided and takes the lab home as session b7086f1a-427e-4d72-bddd-3c0a52e0222f
+ok - live lead restart: Claude Code (2.1.302 (Claude Code)) on herdr 0.9.1 resumes session b7086f1a-427e-4d72-bddd-3c0a52e0222f on its own, runs session start, and takes the home with nothing typed into its terminal after the restart was armed
+```
+
 ## Pi seeded-secondmate project trust
 
 [`fm-spawn.sh --help`](../../bin/fm-spawn.sh) owns the seeded-secondmate project-trust approval contract and compatibility fallback.
