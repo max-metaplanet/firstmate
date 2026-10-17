@@ -146,13 +146,14 @@ case_dir="$TMP_ROOT/spawn"
 fakebin=$(make_spawn_fakebin "$case_dir/fake" claude)
 fm_fake_exit0 "$fakebin" commandcode
 home="$case_dir/home"
-proj="$case_dir/project"
-wt="$case_dir/wt"
+proj="$case_dir/cc-low/project"
+wt="$case_dir/cc-low/wt"
 fm_test_spawn_home "$home" commandcode
-fm_git_worktree "$proj" "$wt" commandcode-test
 spawn_case() {  # <id> <model> <effort>
+  local spawn_proj="$case_dir/$1/project" spawn_wt="$case_dir/$1/wt"
+  fm_git_worktree "$spawn_proj" "$spawn_wt" "$1"
   fm_test_spawn_brief "$home" "$1"
-  FM_FAKE_LAUNCH_LOG="$case_dir/$1.launch" fm_test_run_spawn "$home" "$wt" "$fakebin" "$1" "$proj" \
+  FM_FAKE_LAUNCH_LOG="$case_dir/$1.launch" fm_test_run_spawn "$home" "$spawn_wt" "$fakebin" "$1" "$spawn_proj" \
     --scout --harness commandcode --model "$2" --effort "$3" 2>&1
 }
 out=$(spawn_case cc-low deepseek/deepseek-v4.1-flash low) || fail "spawn failed: $out"

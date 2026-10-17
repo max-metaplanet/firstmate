@@ -101,6 +101,8 @@ STUB
       assert_equals 1 "$(cat "$record")" "$label/$wrapper allowed a background update check"
     done
   done < <(mechanisms)
+  # Keep this caller-environment assertion isolated from other test cases.
+  # shellcheck disable=SC2030,SC2031
   (
     export NO_MISTAKES_NO_UPDATE_CHECK=0
     NM_STUB_RECORD="$record" run_probe "$PATH" '' "$stub" 10 axi status >/dev/null || true

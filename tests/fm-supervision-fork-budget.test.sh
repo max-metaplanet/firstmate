@@ -4,6 +4,7 @@
 # FM_FORK_BUDGET_ROOT permits the same sampler against a saved pre-change bin/;
 # FM_FORK_BUDGET_REPORT_ONLY=1 reports that baseline without enforcing new budgets.
 set -u
+# shellcheck source=tests/wake-helpers.sh
 . "$(dirname "${BASH_SOURCE[0]}")/wake-helpers.sh"
 . "$ROOT/bin/fm-timeout-lib.sh"
 if [ "${BASH_VERSINFO[0]}" -lt 4 ] || { [ "${BASH_VERSINFO[0]}" -eq 4 ] && [ "${BASH_VERSINFO[1]}" -lt 2 ]; }; then
@@ -391,14 +392,23 @@ printf 'contributions snapshot: programs=%s at 2 records, %s at 20\n' "$two" "$t
 : > "$ONESHOT_EVENTS"
 home=$ONESHOT_ROOT/procevent
 oneshot_home "$home"
+# The private-root owner and mode checks use absolute BSD stat on macOS.
+# PATH shims alone miss those two starts, making this budget OS-dependent.
+cat > "$ONESHOT_ROOT/instrument" <<'SH'
+set -T
+trap 'case "$BASH_COMMAND" in /usr/bin/stat\ *) printf "stat\n" >> "$ONESHOT_EVENTS" ;; esac' DEBUG
+SH
 FM_HOME="$home" FM_ROOT_OVERRIDE="$home" FM_STATE_OVERRIDE="$home/state" \
   FM_DATA_OVERRIDE="$home/data" FM_CONFIG_OVERRIDE="$home/config" \
+  BASH_ENV="$ONESHOT_ROOT/instrument" \
   PATH="$ONESHOT_ROOT/shims:$PATH" \
   "$SUBJECT_ROOT/bin/fm-procevent.sh" reconcile > "$home/out" 2>&1 \
   || fail "procevent reconcile failed: $(cat "$home/out")"
 programs=$(oneshot_count)
 printf 'procevent reconcile: programs=%s\n' "$programs"
-[ "$programs" -le 6 ] || fail "procevent reconcile exceeded 6 programs ($programs)"
+# Two uname calls, two private-root stat checks, and perl/mktemp/mv for the
+# monotonic owner lease are seven starts on both supported OS families.
+[ "$programs" -le 7 ] || fail "procevent reconcile exceeded 7 programs ($programs)"
 pass 'one-shot supervision commands pay a fixed program budget, not a per-record one'
 
 # The harness ancestry walk reads each ancestor once. Against a chain that

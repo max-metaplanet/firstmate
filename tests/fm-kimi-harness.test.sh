@@ -993,6 +993,8 @@ for arg in "$@"; do
   prev=$arg
 done
 case "$field:$pid" in
+  ppid=,comm=:4242) printf '1 /opt/kimi/bin/kimi\n' ;;
+  ppid=,comm=:*) printf '4242 /bin/bash\n' ;;
   comm=:4242) printf '/opt/kimi/bin/kimi\n' ;;
   comm=:*) printf '/bin/bash\n' ;;
   ppid=:4242) printf '1\n' ;;
