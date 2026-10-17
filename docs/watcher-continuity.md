@@ -422,6 +422,7 @@ The default 300-second grace is unchanged.
 Only the watcher process touches `state/.last-watcher-beat`.
 No helper process can make a wedged watcher appear healthy.
 An arm whose own script path sits under a disposable no-mistakes validation checkout (`.no-mistakes/worktrees/`) refuses with the typed failure line before touching any state, because a watcher started there outlives the validation step and keeps writing the real home's state from a checkout about to be deleted.
+An arm from a treehouse pool slot (`.treehouse/`) refuses the same way unless that copy is the firstmate home whose state it writes; the [arm header](../bin/fm-watch-arm.sh) owns the exact rule.
 Once per poll the watcher checks that its home, its state directory, and its own code root still exist, and exits with a logged reason when one is gone, scoped to itself alone, so a torn-down temporary home or a discarded checkout never leaves an orphan watcher behind.
 The watcher uses bash's native fatal handling for HUP and TERM, including during a blocked check or a blocked `fm_backend_capture` pane read, so both run its EXIT cleanup and stop that read.
 `watcher_stop_signals` in `bin/fm-watch.sh` owns the signal-handling rationale.
@@ -479,7 +480,7 @@ They also prove that a legacy or handoff-phase watcher marker from an absent rep
 - A take-over that stays quiet after a confirmed TERM, still surfaces queued work and self-exit downtime, and attaches without stopping a cycle the named arm does not own.
 - A live watcher whose first beacon lands after the base window, which must be confirmed rather than TERMed, against a dead watcher that still fails promptly and a lock-holding watcher that never beacons and still fails at the ceiling.
 - The pre-lock confirmation budget's scaling with the run queue per CPU, its ceiling clamp, and its fallback to the base window when the load average is unreadable.
-- The disposable-checkout arm refusal.
+- The disposable-checkout and treehouse-worktree arm refusals.
 - The home-gone and state-gone watcher exits.
 - The test reaper that stops a watcher armed for a temporary home.
 
