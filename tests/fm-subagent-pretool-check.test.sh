@@ -350,6 +350,26 @@ test_builtin_prefilter_is_a_strict_superset() {
   pass "the builtin prefilter is a strict superset of the real stem match, including through punctuation and case"
 }
 
+test_normalization_has_no_tr_forks() {
+  local fakebin real log tool
+  fakebin=$(fm_fakebin "$TMP_ROOT/normalization-budget")
+  real=$(command -v tr)
+  log="$TMP_ROOT/normalization-execs"
+  : > "$log"
+  cat > "$fakebin/tr" <<SH
+#!/bin/sh
+printf 'tr\n' >> '$log'
+exec '$real' "\$@"
+SH
+  chmod +x "$fakebin/tr"
+  for tool in 'rEAd' 'ta_skOuTput' 'tASK-upDATE' 'mcp__tasks__get_task'; do
+    expect_allow 'fork-free normalization' "$tool" PATH="$fakebin:$PATH"
+  done
+  [ ! -s "$log" ] || fail 'ordinary, exempt, or MCP tool normalization still forks tr'
+  pass 'tool normalization preserves exact mixed-case exemptions with zero tr launches'
+}
+
+test_normalization_has_no_tr_forks
 test_guard_denies_every_currently_known_delegation_tool
 test_guard_denies_hypothetical_future_tools
 test_guard_allows_ordinary_and_observe_only_tools

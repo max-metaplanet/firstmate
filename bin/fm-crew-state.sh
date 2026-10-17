@@ -273,13 +273,22 @@ emit() {  # <state> <source> [detail]
 [ -f "$META" ] || emit unknown none "no metadata for $ID"
 
 meta_value() {  # <key>
-  grep "^$1=" "$META" 2>/dev/null | tail -1 | cut -d= -f2- || true
+  fm_meta_get "$META" "$1"
 }
 
-WT=$(meta_value worktree)
-KIND=$(meta_value kind)
-HARNESS=$(meta_value harness)
-REMOTE_HOST=$(meta_value remote_host)
+# Read these related fields together, without a pipeline or subshell per key.
+# Last-key-wins and an unterminated final line match fm_meta_get; later probes
+# still read their live inputs, with no cross-invocation cache.
+WT='' KIND='' HARNESS='' REMOTE_HOST=''
+while IFS= read -r meta_line || [ -n "$meta_line" ]; do
+  case "$meta_line" in
+    worktree=*) WT=${meta_line#*=} ;;
+    kind=*) KIND=${meta_line#*=} ;;
+    harness=*) HARNESS=${meta_line#*=} ;;
+    remote_host=*) REMOTE_HOST=${meta_line#*=} ;;
+  esac
+done < "$META" 2>/dev/null || true
+unset meta_line
 [ -n "$KIND" ] || KIND=ship
 
 if [ "$KIND" = secondmate ] && { [ -e "$STATE/.secondmate-park-$ID" ] || [ -L "$STATE/.secondmate-park-$ID" ]; }; then

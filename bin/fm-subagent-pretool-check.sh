@@ -172,8 +172,6 @@ fi
 
 [ -n "$TOOL" ] || exit 0
 
-LC_ALL=C NORMALIZED=$(printf '%s' "$TOOL" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9')
-
 # An MCP tool belongs to an external integration, not to the harness's own
 # delegation surface, and its name is chosen by that server. Never classify one
 # here: an MCP server with a task or agent noun in a tool name is common and
@@ -182,8 +180,13 @@ case "$TOOL" in
   mcp__*) exit 0 ;;
 esac
 
+# ASCII normalization and matching need no tr pipeline. nocasematch replaces
+# lowercasing while exact exemptions remain exact, including on Bash 3.2.
+LC_ALL=C
+NORMALIZED=${TOOL//[^a-zA-Z0-9]/}
+shopt -s nocasematch
 for allowed in $OBSERVE_ONLY_TOOLS $PLAN_ONLY_TOOLS; do
-  [ "$NORMALIZED" != "$allowed" ] || exit 0
+  case "$NORMALIZED" in "$allowed") exit 0 ;; esac
 done
 
 MATCHED=""
@@ -192,6 +195,7 @@ for stem in $DELEGATION_STEMS; do
     *"$stem"*) MATCHED=$stem; break ;;
   esac
 done
+shopt -u nocasematch
 [ -n "$MATCHED" ] || exit 0
 
 # The single deliberate escape hatch. It is an environment variable rather than
