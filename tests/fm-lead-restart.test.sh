@@ -33,15 +33,29 @@ set -u
 SEAT="$ROOT/bin/fm-seat.sh"
 LEAD_RESTART="$ROOT/bin/fm-lead-restart.sh"
 LOCK="$ROOT/bin/fm-lock.sh"
+OPINPUT="$ROOT/bin/fm-operational-input.sh"
+# The launch-prompt assertions below rebuild the doorbell the replacement must
+# carry from the record it names, so they pin the delivered prompt rather than
+# a copy of the wording.
+# shellcheck source=bin/fm-operational-input.sh
+. "$OPINPUT"
 # The lab paths below live under this root. Its tmux servers are addressed by
 # socket NAME (`tmux -L`), so their sockets sit in tmux's own directory and no
 # unix-socket path length depends on how deep this root is.
 TMP_ROOT=$(mktemp -d "${TMPDIR:-/tmp}/fm-lead-restart.XXXXXX")
 CLEAN_TMUX=()
 cleanup() {
-  local sock
+  local sock pid
   for sock in ${CLEAN_TMUX[@]+"${CLEAN_TMUX[@]}"}; do
     tmux -L "$sock" kill-server >/dev/null 2>&1 || true
+  done
+  # Then every stand-in harness still running outside those servers. Each one
+  # carries this run's unique scratch root in its own argv, so the sweep reaps
+  # exactly this run's processes on EVERY exit path - including a failing
+  # assertion, which exits before the test reaches its own stop_case. A leaked
+  # stand-in is not idle: it forks a sleep every second until someone finds it.
+  for pid in $(pgrep -f "$TMP_ROOT" 2>/dev/null || true); do
+    [ "$pid" = "$$" ] || kill "$pid" 2>/dev/null || true
   done
   rm -rf "$TMP_ROOT"
 }
@@ -167,6 +181,43 @@ test_check_establishes_every_part_of_the_move() {
   kill -0 "$LEAD_PID" 2>/dev/null || fail "--check disturbed the running lead"
   stop_case
   pass "a check establishes the lead's seat, its destination, its session, and the replacement command"
+}
+
+# The gap this closes: a resumed Claude comes up at an empty composer and the
+# home's lock is taken by an agent action, so a replacement launched with
+# nothing to do leaves the home unheld until a human types. The prompt is
+# asserted as the TRAILING argument after the resumed session, which is where
+# Claude Code takes a launch prompt.
+test_the_replacement_is_launched_on_the_session_start_instruction() {
+  local rec out cmd records record body doorbell expected
+  rec=$(make_case start-prompt); read_case "$rec"
+  stub_pane_exists "$FAKEBIN"
+  out=$(run_home "$LEAD_RESTART" --check --to beta) ||
+    fail "check refused an establishable move: $out"
+  case "$out" in
+    *"first turn: the replacement is prompted to run bin/fm-session-start.sh"*) ;;
+    *) fail "the plan does not say the replacement starts itself: $out" ;;
+  esac
+
+  records=("$HOME_DIR/state/operational-inbox/"*.msg)
+  [ "${#records[@]}" -eq 1 ] && [ -f "${records[0]}" ] ||
+    fail "the session-start instruction was not published as exactly one record: ${records[*]}"
+  record=${records[0]}
+  [ "$(run_home "$OPINPUT" kind < "$record")" = session-start ] ||
+    fail "the published record is not typed session-start: $(cat "$record")"
+  body=$(run_home "$OPINPUT" body < "$record")
+  [ "$body" = "$FM_OPERATIONAL_SESSION_START_BODY" ] ||
+    fail "the record does not carry the session-start instruction: $body"
+
+  cmd=$(printf '%s\n' "$out" | sed -n 's/^replacement command: //p')
+  [ -n "$cmd" ] || fail "the plan printed no replacement command: $out"
+  doorbell="${FM_OPERATIONAL_DOORBELL_PREFIX}${record}${FM_OPERATIONAL_DOORBELL_SUFFIX}"
+  expected="--resume lead-session-1 $(printf '%q' "$doorbell")"
+  [ "$cmd" != "${cmd%"$expected"}" ] ||
+    fail "the replacement is not launched on the session-start instruction it published: $cmd"
+  kill -0 "$LEAD_PID" 2>/dev/null || fail "--check disturbed the running lead"
+  stop_case
+  pass "the replacement is launched on the published session-start instruction, as the argument after the session it resumes"
 }
 
 test_refuses_without_the_persist_gate() {
@@ -934,6 +985,42 @@ test_a_replacement_that_never_comes_up_is_reported_stranded() {
   pass "a replacement that exits at once is reported stranded, not running"
 }
 
+# A replacement process is not a handover: the lock record naming it is. This
+# one comes up and stays up without ever taking the home, which is exactly the
+# shape of a Claude sitting at an empty composer, and must be recorded as a
+# failure that wakes firstmate rather than as a swap still in progress.
+test_a_replacement_that_never_takes_the_home_is_reported_failed() {
+  local out new wake
+  command -v tmux >/dev/null 2>&1 || { echo "ok - # skip: tmux not found, the real-terminal swap needs one"; return 0; }
+  start_lab no-claim
+  lead_run "$LAB" "FM_LEAD_RESTART_CLAIM_WAIT=5 FM_HOME=$LAB/home FM_STATE_OVERRIDE=$LAB/home/state FM_CONFIG_OVERRIDE=$LAB/home/config FM_DATA_OVERRIDE=$LAB/home/data PATH=$FAKEBIN:\$PATH $SEAT lead-restart --to beta --persisted --launch-command '$FAKE_CLAUDE $SLEEPER'"
+  wait_for 30 "grep -q 'handover armed' '$LAB/cmd.log' 2>/dev/null" ||
+    fail "the restart was never armed: $(cat "$LAB/cmd.log" 2>/dev/null)"
+  wait_for 120 "grep -q '^state=' '$LAB/home/state/.lead-restart.result' 2>/dev/null" ||
+    fail "the swap never reported an outcome"
+  out=$(cat "$LAB/home/state/.lead-restart.result")
+  case "$out" in
+    *"state=failed"*"never took this home's lock within 5s"*) ;;
+    *) fail "a replacement that never took the home was not reported failed: $out" ;;
+  esac
+  case "$out" in
+    *"state=started"*) fail "the outcome still reads as a swap in progress: $out" ;;
+  esac
+  wake="check: lead-restart: the replacement firstmate came up on Claude seat beta but never took this home's lock within 5s"
+  wait_for 30 "grep -qF \"\$wake\" '$LAB/home/state/.wake-queue' 2>/dev/null" ||
+    fail "firstmate was not woken about the home nothing is holding: $(cat "$LAB/home/state/.wake-queue" 2>/dev/null)"
+  [ "$(grep -cF "$wake" "$LAB/home/state/.wake-queue")" = 1 ] ||
+    fail "more than one wake was queued for one failed handover: $(cat "$LAB/home/state/.wake-queue")"
+  # The replacement still holds the nonce, so the reservation is left to lapse
+  # rather than dropped out from under a successor that may yet claim.
+  [ -f "$LAB/home/state/.lock-handover" ] ||
+    fail "the reservation was dropped while the replacement that holds its token is still running"
+  new=$(pgrep -f "[c]laude $SLEEPER" | head -1)
+  [ -n "$new" ] || fail "the replacement is not running, so this proves nothing about a live one that never claims"
+  kill "$new" 2>/dev/null || true
+  pass "a replacement that comes up but never takes the home is recorded as a failure and wakes firstmate"
+}
+
 test_the_replacement_comes_up_with_the_remote_control_the_lead_had() {
   local out new
   command -v tmux >/dev/null 2>&1 || { echo "ok - # skip: tmux not found, the real-terminal swap needs one"; return 0; }
@@ -1053,6 +1140,7 @@ test_a_same_seat_refresh_tells_the_crew_it_restarts_in_place() {
 }
 
 test_check_establishes_every_part_of_the_move
+test_the_replacement_is_launched_on_the_session_start_instruction
 test_refuses_without_the_persist_gate
 test_refuses_a_destination_that_is_not_proven_signed_in
 test_refuses_when_the_terminal_or_the_lead_profile_is_not_established
@@ -1075,6 +1163,7 @@ test_the_lead_trigger_reports_the_blocker_rather_than_an_impossible_move
 test_a_transient_blocker_does_not_spend_the_crossing
 test_the_lead_is_replaced_in_its_own_terminal_with_supervision_unbroken
 test_a_replacement_that_never_comes_up_is_reported_stranded
+test_a_replacement_that_never_takes_the_home_is_reported_failed
 test_the_replacement_comes_up_with_the_remote_control_the_lead_had
 test_a_remote_control_that_does_not_come_back_is_reported_on_the_outcome
 test_an_undeterminable_remote_control_state_is_logged_and_nothing_is_turned_on
