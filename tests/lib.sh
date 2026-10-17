@@ -89,6 +89,12 @@ TOML
 # shellcheck disable=SC2034
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
+# Resolve this process tree's scratch root before anything here mktemps; the
+# helper's header owns that contract and why it exists.
+# shellcheck source=tests/scratch-root.sh
+. "$(dirname "${BASH_SOURCE[0]}")/scratch-root.sh"
+fm_test_scratch_root_init "$ROOT" || return 1
+
 # --- reporters --------------------------------------------------------------
 
 fail() {
@@ -147,30 +153,35 @@ fm_test_launch_command() {  # <launch>
 
 # fm_test_tmpdir: directory used for registries and fixture roots.
 # Resolves absolute or relative TMPDIR to an existing physical directory,
-# falling back to /tmp if resolution fails or the directory contains .git.
+# falling back if resolution fails or the directory contains .git.
 # Keep registries out of git worktree roots so concurrent git add -A cannot
-# accidentally stage live test state.
+# accidentally stage live test state. TMPDIR normally resolves to the scratch
+# root tests/scratch-root.sh points it at, which sits beside the checkout and
+# holds no .git, so it passes that check unchanged; that root is also where an
+# unusable TMPDIR falls back to, so a refused TMPDIR never drops this suite's
+# scratch back into the machine temp directory.
 fm_test_tmpdir() {
   local base=${TMPDIR:-/tmp} physical
+  local fallback=${FM_TEST_SCRATCH_ROOT:-/tmp}
   base=${base%/}
-  [ -n "$base" ] || base=/tmp
+  [ -n "$base" ] || base=$fallback
   case "$base" in
     /*) ;;
     *)
       if physical=$(CDPATH='' cd -- "$base" 2>/dev/null && pwd -P); then
         base=$physical
       else
-        base=/tmp
+        base=$fallback
       fi
       ;;
   esac
   if physical=$(CDPATH='' cd -- "$base" 2>/dev/null && pwd -P); then
     base=$physical
   else
-    base=/tmp
+    base=$fallback
   fi
   if [ -e "$base/.git" ]; then
-    printf '%s\n' /tmp
+    printf '%s\n' "$fallback"
     return 0
   fi
   printf '%s\n' "$base"
@@ -306,6 +317,14 @@ fm_test_cleanup() {
     done < "$FM_TEST_CLEANUP_REGISTRY"
     rm -f "$FM_TEST_CLEANUP_REGISTRY"
   fi
+  # A child this suite killed without its traps - a tmux-hosted fixture, say -
+  # leaves its own registry behind, and one such file would keep the root below
+  # from ever being removed. Its owner is gone by now, so clear it here rather
+  # than leaving the root standing until some later run sweeps it.
+  fm_test_reap_orphan_registries
+  fm_test_reap_scratch_root_litter
+  # Last, once everything this suite put under it is gone.
+  fm_test_scratch_root_cleanup
 }
 
 fm_test_tmproot() {
@@ -370,6 +389,89 @@ fm_test_reap_orphans() {
     [ $((now - mtime)) -ge "$FM_TEST_ORPHAN_MAX_AGE_SECONDS" ] || continue
     dir=$(dirname "$marker")
     fm_test_remove_tree "$dir"
+  done
+  fm_test_reap_orphan_registries
+  fm_test_reap_scratch_root_litter
+}
+
+# The registry files above are plain files, so the marker sweep never sees
+# them, and a run killed hard enough to skip its traps leaves one behind.
+# That used to be invisible: the machine temp directory they sat in is swept by
+# the OS and shared with everything else. The scratch root is neither - it is a
+# directory beside a checkout that nothing else cleans - and one stale file in
+# it keeps fm_test_scratch_root_cleanup's rmdir from ever emptying it, so a
+# worktree pool slot would carry the litter of every run that ever died in it.
+# A cleanup registry still names the roots its own trap never got to remove, so
+# honour it before discarding it: that is exactly the work the trap owed.
+fm_test_reap_orphan_registries() {
+  local reg name pid dir
+  for reg in "$FM_TEST_TMPDIR"/.fm-test-cleanup.*.* \
+             "$FM_TEST_TMPDIR"/.fm-test-procevent.*.* \
+             "$FM_TEST_TMPDIR"/.fm-test-watcher.*.*; do
+    [ -f "$reg" ] || continue
+    # .fm-test-<kind>.<pid>.<random>: the pid is the field after the kind, and
+    # the name's own leading dot is a field separator too.
+    name=${reg##*/}
+    pid=${name#.}
+    pid=${pid#*.}
+    pid=${pid%%.*}
+    case "$pid" in
+      '' | *[!0-9]*) continue ;;
+    esac
+    # A live pid is a run still using its registry, whatever its age. Asked
+    # with ps rather than kill -0, which cannot see a live process belonging to
+    # another user: it is refused, and a refusal is indistinguishable from the
+    # process being gone.
+    if ps -p "$pid" >/dev/null 2>&1; then
+      continue
+    fi
+    # No age window here, unlike the sweeps that judge a directory nobody
+    # claims: a registry names the one process that owns it, and once that
+    # process is gone the file can never be wanted again. Waiting an hour to
+    # believe it would leave the scratch root un-removable for that hour after
+    # every run whose child was killed without its traps - a tmux-hosted
+    # fixture, say - which is exactly the case this is here to clear.
+    case "$name" in
+      .fm-test-cleanup.*)
+        while IFS= read -r dir; do
+          [ -n "$dir" ] && fm_test_remove_tree "$dir"
+        done < "$reg"
+        ;;
+    esac
+    rm -f "$reg"
+  done
+}
+
+# The sweep above deliberately removes only directories carrying the fixture
+# marker, so a real firstmate command's temp directory is never mistaken for a
+# fixture. That rule exists because the machine temp directory is shared with
+# everything else on the host. The scratch root is not: tests/scratch-root.sh
+# creates it, and only a test process tree is ever pointed at it, so anything
+# left in it IS test-run litter. That distinction matters because production
+# commands a test drives do leave temp directories behind - bin/fm-spawn.sh's
+# seat memo on one path, for instance - and those carry no marker, so without
+# this they would collect in a worktree pool slot run after run, where nothing
+# else would ever sweep them. Restricted to the root we created, and to the
+# same age window the unowned-fixture fallback uses, so a concurrent run's
+# live fixtures are never taken out from under it.
+fm_test_reap_scratch_root_litter() {
+  local entry mtime now
+  [ "${FM_TEST_SCRATCH_OWNED:-0}" = 1 ] || return 0
+  [ -n "${FM_TEST_SCRATCH_ROOT:-}" ] || return 0
+  [ "$FM_TEST_TMPDIR" = "$FM_TEST_SCRATCH_ROOT" ] || return 0
+  now=$(date +%s)
+  for entry in "$FM_TEST_SCRATCH_ROOT"/*; do
+    [ -e "$entry" ] || continue
+    # A marked fixture belongs to the sweep above, which can tell a live owner
+    # from a dead one. This one cannot, so it must never judge a marked
+    # directory by age alone: a suite that runs longer than the age window is
+    # still using its fixtures.
+    if [ -e "$entry/.fm-test-fixture" ]; then
+      continue
+    fi
+    mtime=$(stat -c %Y "$entry" 2>/dev/null || stat -f %m "$entry" 2>/dev/null) || continue
+    [ $((now - mtime)) -ge "$FM_TEST_ORPHAN_MAX_AGE_SECONDS" ] || continue
+    fm_test_remove_tree "$entry"
   done
 }
 

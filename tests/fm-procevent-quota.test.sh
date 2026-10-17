@@ -4,6 +4,13 @@ set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+
+# Keep this suite's scratch beside the checkout rather than in the machine temp
+# directory; tests/scratch-root.sh owns that contract. Done here because this
+# suite does not source tests/lib.sh, which does it for every suite that does.
+# shellcheck source=tests/scratch-root.sh
+. "$FM_ROOT/tests/scratch-root.sh"
+fm_test_scratch_root_init "$FM_ROOT" || exit 1
 BIN="$FM_ROOT/bin"
 LAB=$(mktemp -d "${TMPDIR:-/tmp}/fm-procevent-quota.XXXXXX")
 FAKEBIN="$LAB/fakebin"
