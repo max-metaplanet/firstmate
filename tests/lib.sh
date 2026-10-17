@@ -383,6 +383,11 @@ fi
 # no-mistakes gate worktree instead of being refused by
 # bin/fm-gate-refuse-lib.sh.
 #
+# On every path that returns 0, fm_live_gate also sets FM_LIVE_GATE_REQUESTED
+# to 1 or 0: a guard that checks several alternative tools itself (rather than
+# passing them to this gate, so one absent tool does not skip the others) reads
+# that flag to tell an explicit request from the "nothing to check" skip case.
+#
 # Every path that lets a live run proceed also exports DISABLE_AUTOUPDATER=1,
 # so a live harness invocation never lets Claude Code's auto-updater rewrite
 # the installed binary out from under the host.
@@ -450,6 +455,7 @@ fm_live_gate() {
   done
 
   export DISABLE_AUTOUPDATER=1
+  export FM_LIVE_GATE_REQUESTED=$requested
   return 0
 }
 

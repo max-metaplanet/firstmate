@@ -2673,10 +2673,17 @@ if ! fm_recovery_marker_arm_check "$WATCHER_DOWNTIME_MARKER"; then
   echo "watcher: recovery state could not be consumed safely; retaining stale lock evidence" >&2
   exit 1
 fi
+# A recovery the marker arm check approved has already passed the announcement
+# gate once, under the queue lock and over the marker this cycle read. The poll
+# loop must not apply that gate a second time: an approval the marker owns -
+# a quarantined malformed marker above all, which is approved over no queue row
+# at all - would otherwise be absorbed and the arm would never report it.
+WATCHER_RECOVERY_MARKER_APPROVED=0
 if [ "${FM_WATCH_HANDLING_SUCCESSOR:-0}" = 1 ]; then
   WATCHER_RECOVERY_PENDING=0
 elif [ "$FM_RECOVERY_MARKER_ACTION" = recover ]; then
   WATCHER_RECOVERY_PENDING=1
+  WATCHER_RECOVERY_MARKER_APPROVED=1
 fi
 # Side-band ledger publication, detached from the poll loop.
 #
@@ -2848,7 +2855,7 @@ resurface_after_downtime() {
       exit 1
     fi
     [ "$FM_RECOVERY_MARKER_ACTION" = recover ] || return 0
-  elif ! fm_recovery_queue_has_work; then
+  elif [ "$WATCHER_RECOVERY_MARKER_APPROVED" -ne 1 ] && ! fm_recovery_queue_has_work; then
     # A stale lock this cycle reclaimed is evidence of a GAP, not of work to
     # drain, and this arm consults no marker, so the queue is the only record
     # that says whether the announcement has anything for its reader. Checked on

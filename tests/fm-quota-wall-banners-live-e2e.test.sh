@@ -16,8 +16,11 @@
 # those CLIs exist, rather than waiting for someone to opt in after an upgrade.
 #
 # An absent vendor CLI is reported explicitly and skipped rather than passed
-# over in silence, and a run that checked no vendor at all FAILS, because a
-# guard that proved nothing must not report success.
+# over in silence, after the vendors that were checked. A run that checked no
+# vendor at all skips with one summary line, like every live guard on a host
+# that cannot run it, unless FM_QUOTA_WALL_BANNERS_LIVE=1 or FM_LIVE=1 asked
+# for it - then it FAILS, because a requested guard that proved nothing must
+# not report success.
 #
 # When this guard fails, the fix is to re-extract the vendor's current banner
 # text, update fm_quota_wall_needles and the affected tests/captures/ frames and
@@ -35,6 +38,7 @@ fm_live_gate default-on FM_QUOTA_WALL_BANNERS_LIVE
 . "$ROOT/bin/fm-quota-wall-lib.sh"
 
 CHECKED=0
+ABSENT=()
 
 # vendor_version <tool>
 vendor_version() {
@@ -73,7 +77,7 @@ check_vendor() {
   local tool=$1 vendor=$2 sentinel=$3
   local version artifact class needle typographic missing=''
   if ! command -v "$tool" >/dev/null 2>&1; then
-    printf 'skip: live: %s absent, so %s banner text was not re-read\n' "$tool" "$vendor"
+    ABSENT+=("$tool absent, so $vendor banner text was not re-read")
     return 0
   fi
   version=$(vendor_version "$tool")
@@ -102,5 +106,14 @@ check_vendor() {
 check_vendor codex codex 'Your workspace is out of credits'
 check_vendor claude claude 'Usage limit reached'
 
-[ "$CHECKED" -gt 0 ] \
-  || fail 'neither vendor CLI was installed, so this guard proved nothing; install codex or claude, or run it where they are'
+if [ "$CHECKED" -eq 0 ]; then
+  if [ "$FM_LIVE_GATE_REQUESTED" -eq 1 ]; then
+    fail 'neither vendor CLI was installed, so this guard proved nothing; install codex or claude, or run it where they are'
+  fi
+  printf 'skip: live: neither codex nor claude is installed, so this guard proved nothing\n'
+  exit 0
+fi
+
+for absent in "${ABSENT[@]+"${ABSENT[@]}"}"; do
+  printf 'skip: live: %s\n' "$absent"
+done

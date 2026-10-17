@@ -797,6 +797,15 @@ print_status_presentation() {  # [<deduped-raw-rows>]
     printf 'STATUS PRESENTATION INCOMPLETE: status snapshot could not be read.\n'
     rc=1
   }
+  # Every section below, and the acknowledgement and commit after them, asks
+  # for the same two cursor offsets per task. Derive each one once here, from
+  # the snapshot this presentation is already built on, rather than once per
+  # section (fm-classify-lib.sh "shared presentation cursor index"). The index
+  # answers what the uncached functions would have answered; it is closed again
+  # before returning so nothing outside this presentation reads it.
+  if [ "$rc" -eq 0 ] && [ -n "$snapshot" ]; then
+    status_presentation_index_open "$STATE" "$snapshot"
+  fi
   if [ "$rc" -eq 0 ] && [ -n "$rows" ]; then
     fm_wake_print_annotations "$rows" "$snapshot" || rc=1
     if [ "$rc" -eq 0 ]; then
@@ -805,6 +814,7 @@ print_status_presentation() {  # [<deduped-raw-rows>]
     fi
   fi
   if [ "$rc" -eq 0 ] && [ -n "$snapshot" ]; then print_status_sections "$snapshot" "$fully_presented" || rc=1; fi
+  status_presentation_index_close
   fm_lock_release "$lock"
   return "$rc"
 }
