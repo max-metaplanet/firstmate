@@ -10,6 +10,13 @@ set -u
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
+# Keep this suite's scratch beside the checkout rather than in the machine temp
+# directory; tests/scratch-root.sh owns that contract. Done here because this
+# suite does not source tests/lib.sh, which does it for every suite that does.
+# shellcheck source=tests/scratch-root.sh
+. "$ROOT/tests/scratch-root.sh"
+fm_test_scratch_root_init "$ROOT" || exit 1
+
 fail() { printf 'not ok - %s\n' "$1" >&2; cleanup_all; exit 1; }
 pass() { printf 'ok - %s\n' "$1"; }
 

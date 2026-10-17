@@ -57,6 +57,15 @@ set -eu
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT" || exit 1
 
+# Resolve this proof's scratch root before PROOF_ROOT and every worker TMPDIR
+# below is derived from it; tests/scratch-root.sh owns that contract. This is a
+# test entry point of its own - it runs whole suites concurrently rather than
+# through bin/fm-test-run.sh - so without this its proof tree, and every
+# worker's, would still land in the machine temp directory.
+# shellcheck source=tests/scratch-root.sh
+. "$ROOT/tests/scratch-root.sh"
+fm_test_scratch_root_init "$ROOT" || exit 1
+
 JOBS=4
 JSON_PATH=
 LIST_ONLY=0

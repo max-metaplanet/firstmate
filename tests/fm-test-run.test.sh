@@ -1912,6 +1912,108 @@ puts JSON.generate(
   pass "Herdr CI family-run step times out at 20 min under a 75 min job backstop"
 }
 
+# Every fixture tree this suite builds used to land in $TMPDIR, which on macOS
+# is a directory endpoint security scans; the churn of a suite walk there was
+# measured at 7-8% of one machine's whole scan load. The runner now points its
+# own scratch, and every worker's, beside the checkout it is running from. The
+# control TMPDIR proves the move: it must still be empty after a run that
+# created a worker root, a per-script output capture and a fixture directory.
+test_run_scratch_lands_beside_the_checkout_not_in_the_machine_tmpdir() {
+  local tmp repo scratch control probe handed fixture rc leftovers
+  tmp=$(mktemp -d "${TMPDIR:-/tmp}/fm-test-run-scratch.XXXXXX")
+  repo="$tmp/repo"
+  scratch="$tmp/.fm-test-scratch"
+  control="$tmp/control-tmpdir"
+  probe=tests/fm-scratch-probe.test.sh
+  mkdir -p "$repo/bin" "$repo/tests" "$control"
+  cp "$RUNNER" "$repo/bin/fm-test-run.sh"
+  cp "$ROOT/tests/git-config-helpers.sh" "$repo/tests/"
+  cp "$ROOT/tests/scratch-root.sh" "$repo/tests/"
+  # The probe stands in for a real suite: it takes a fixture root from mktemp
+  # and clears it on exit, so what is left over afterwards is the runner's own.
+  cat >"$repo/$probe" <<'SH'
+#!/usr/bin/env bash
+fixture=$(mktemp -d "${TMPDIR:-/tmp}/fm-scratch-probe-fixture.XXXXXX") || exit 1
+trap 'rm -rf "$fixture"' EXIT
+printf '%s\n%s\n' "$TMPDIR" "$fixture" >"$FM_SCRATCH_PROBE_RECORD"
+echo "ok - scratch probe"
+SH
+  chmod +x "$repo/bin/fm-test-run.sh" "$repo/$probe"
+  # The scratch root this suite is itself running under must not reach the
+  # child: inheriting it is exactly what makes a nested runner keep the TMPDIR
+  # it was handed, which is the NEXT case's property, not this one's.
+  set +e
+  ( cd "$repo" \
+    && env -u FM_TEST_SCRATCH_ROOT -u GIT_CEILING_DIRECTORIES \
+         TMPDIR="$control" TMP="$control" \
+         FM_SCRATCH_PROBE_RECORD="$tmp/probe-tmpdir" \
+         bin/fm-test-run.sh "$probe" ) >"$tmp/out" 2>&1
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || fail "the probe run failed with $rc"$'\n'"$(cat "$tmp/out")"
+  handed=$(sed -n '1p' "$tmp/probe-tmpdir" 2>/dev/null || true)
+  fixture=$(sed -n '2p' "$tmp/probe-tmpdir" 2>/dev/null || true)
+  case "$handed" in
+    "$scratch"|"$scratch"/*) : ;;
+    *) fail "the runner handed its script a TMPDIR outside $scratch: '$handed'" ;;
+  esac
+  case "$fixture" in
+    "$scratch"/*) : ;;
+    *) fail "the script's own fixture root landed outside $scratch: '$fixture'" ;;
+  esac
+  leftovers=$(find "$control" -mindepth 1 2>/dev/null)
+  [ -z "$leftovers" ] \
+    || fail "the run wrote into the machine temp directory it inherited:"$'\n'"$leftovers"
+  case "$scratch" in
+    "$repo"|"$repo"/*) fail "the scratch root was placed inside the checkout: $scratch" ;;
+  esac
+  # Cleanup is unchanged: every root the run and its script created is gone,
+  # and only the shared scratch directory itself stays.
+  leftovers=$(find "$scratch" -mindepth 1 2>/dev/null)
+  [ -z "$leftovers" ] \
+    || fail "the run left scratch behind beside the checkout:"$'\n'"$leftovers"
+  rm -rf "$tmp"
+  pass "the runner's scratch, and every script's, lands beside the checkout instead of in the machine temp directory"
+}
+
+# An entry point above the runner owns the redirection: a worker's private
+# per-script TMPDIR, and a fixture repository's nested runner, must both keep
+# the scratch they were handed rather than re-pointing at their own checkout.
+test_run_keeps_an_inherited_scratch_root() {
+  local tmp repo inherited probe recorded rc
+  tmp=$(mktemp -d "${TMPDIR:-/tmp}/fm-test-run-inherit.XXXXXX")
+  repo="$tmp/repo"
+  inherited="$tmp/inherited-scratch"
+  probe=tests/fm-scratch-probe.test.sh
+  mkdir -p "$repo/bin" "$repo/tests" "$inherited"
+  cp "$RUNNER" "$repo/bin/fm-test-run.sh"
+  cp "$ROOT/tests/git-config-helpers.sh" "$repo/tests/"
+  cp "$ROOT/tests/scratch-root.sh" "$repo/tests/"
+  cat >"$repo/$probe" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$TMPDIR" >"$FM_SCRATCH_PROBE_RECORD"
+echo "ok - scratch probe"
+SH
+  chmod +x "$repo/bin/fm-test-run.sh" "$repo/$probe"
+  set +e
+  ( cd "$repo" \
+    && FM_TEST_SCRATCH_ROOT="$inherited" TMPDIR="$inherited" TMP="$inherited" \
+       FM_SCRATCH_PROBE_RECORD="$tmp/probe-tmpdir" \
+       bin/fm-test-run.sh "$probe" ) >"$tmp/out" 2>&1
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || fail "the inherited-scratch run failed with $rc"$'\n'"$(cat "$tmp/out")"
+  recorded=$(cat "$tmp/probe-tmpdir" 2>/dev/null || true)
+  case "$recorded" in
+    "$inherited"|"$inherited"/*) : ;;
+    *) fail "the runner left the inherited scratch root for '$recorded'" ;;
+  esac
+  [ ! -d "$tmp/.fm-test-scratch" ] \
+    || fail "the runner created its own scratch root although one was already in force"
+  rm -rf "$tmp"
+  pass "a runner under an inherited scratch root keeps it instead of opening its own"
+}
+
 test_aggregate_json() {
   local tmp a b
   tmp=$(mktemp -d "${TMPDIR:-/tmp}/fm-test-run-aggjson.XXXXXX")
@@ -1999,3 +2101,5 @@ test_max_wall_ms_is_a_result_not_advice
 test_jobs_parallel_scheduler_and_failure_propagation
 test_herdr_ci_family_run_has_a_step_timeout
 test_aggregate_json
+test_run_scratch_lands_beside_the_checkout_not_in_the_machine_tmpdir
+test_run_keeps_an_inherited_scratch_root

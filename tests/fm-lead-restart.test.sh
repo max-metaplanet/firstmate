@@ -33,9 +33,10 @@ set -u
 SEAT="$ROOT/bin/fm-seat.sh"
 LEAD_RESTART="$ROOT/bin/fm-lead-restart.sh"
 LOCK="$ROOT/bin/fm-lock.sh"
-# Short root: a tmux socket and the lab paths below both live under it, and a
-# long path is not addressable as a unix socket.
-TMP_ROOT=$(mktemp -d "/tmp/fm-lead-restart.XXXXXX")
+# The lab paths below live under this root. Its tmux servers are addressed by
+# socket NAME (`tmux -L`), so their sockets sit in tmux's own directory and no
+# unix-socket path length depends on how deep this root is.
+TMP_ROOT=$(mktemp -d "${TMPDIR:-/tmp}/fm-lead-restart.XXXXXX")
 CLEAN_TMUX=()
 cleanup() {
   local sock

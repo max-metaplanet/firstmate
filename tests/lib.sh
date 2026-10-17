@@ -89,6 +89,12 @@ TOML
 # shellcheck disable=SC2034
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
+# Resolve this process tree's scratch root before anything here mktemps; the
+# helper's header owns that contract and why it exists.
+# shellcheck source=tests/scratch-root.sh
+. "$(dirname "${BASH_SOURCE[0]}")/scratch-root.sh"
+fm_test_scratch_root_init "$ROOT" || return 1
+
 # --- reporters --------------------------------------------------------------
 
 fail() {
@@ -147,30 +153,35 @@ fm_test_launch_command() {  # <launch>
 
 # fm_test_tmpdir: directory used for registries and fixture roots.
 # Resolves absolute or relative TMPDIR to an existing physical directory,
-# falling back to /tmp if resolution fails or the directory contains .git.
+# falling back if resolution fails or the directory contains .git.
 # Keep registries out of git worktree roots so concurrent git add -A cannot
-# accidentally stage live test state.
+# accidentally stage live test state. TMPDIR normally resolves to the scratch
+# root tests/scratch-root.sh points it at, which sits beside the checkout and
+# holds no .git, so it passes that check unchanged; that root is also where an
+# unusable TMPDIR falls back to, so a refused TMPDIR never drops this suite's
+# scratch back into the machine temp directory.
 fm_test_tmpdir() {
   local base=${TMPDIR:-/tmp} physical
+  local fallback=${FM_TEST_SCRATCH_ROOT:-/tmp}
   base=${base%/}
-  [ -n "$base" ] || base=/tmp
+  [ -n "$base" ] || base=$fallback
   case "$base" in
     /*) ;;
     *)
       if physical=$(CDPATH='' cd -- "$base" 2>/dev/null && pwd -P); then
         base=$physical
       else
-        base=/tmp
+        base=$fallback
       fi
       ;;
   esac
   if physical=$(CDPATH='' cd -- "$base" 2>/dev/null && pwd -P); then
     base=$physical
   else
-    base=/tmp
+    base=$fallback
   fi
   if [ -e "$base/.git" ]; then
-    printf '%s\n' /tmp
+    printf '%s\n' "$fallback"
     return 0
   fi
   printf '%s\n' "$base"

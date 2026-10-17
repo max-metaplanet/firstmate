@@ -181,6 +181,17 @@ RUN_STARTED_MS=$(now_ms)
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT" || exit 1
 
+# Resolve this run's scratch root before RUN_TMP or any worker TMPDIR below is
+# derived from it; tests/scratch-root.sh owns that contract. The helper is
+# absent only in the synthetic repositories tests/fm-test-run.test.sh builds to
+# exercise selection, and those already run under the scratch root their parent
+# suite exported, so skipping it there redirects nothing twice.
+if [ -r "$ROOT/tests/scratch-root.sh" ]; then
+  # shellcheck source=tests/scratch-root.sh
+  . "$ROOT/tests/scratch-root.sh"
+  fm_test_scratch_root_init "$ROOT" || exit 1
+fi
+
 MODE=
 LIST_ONLY=0
 LIST_SCHEDULED=0
@@ -1947,6 +1958,13 @@ families_for_changed_path() {
         families_for_test_reference "fixtures/$fixture_ref" \
           || printf '%s\n' "__unmapped__:$path"
       fi
+      ;;
+    tests/scratch-root.sh)
+      # Every suite's scratch location. The reference scan follows only shared
+      # helper libraries, not lib.sh or this script, so match the suites that
+      # name lib.sh as well: most inherit this file only through it.
+      families_for_test_reference scratch-root.sh lib.sh \
+        || printf '%s\n' "__unmapped__:$path"
       ;;
     tests/lib.sh|tests/*-helpers.sh|tests/fixtures.sh|tests/*-fixture.sh)
       # Shared top-level test files, selected by the suites that name them.

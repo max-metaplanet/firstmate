@@ -209,6 +209,90 @@ test_registries_avoid_git_worktree_root() {
   pass "test registries and fixture roots stay out of a git worktree TMPDIR"
 }
 
+test_fixture_roots_land_beside_the_checkout_not_in_the_machine_tmpdir() {
+  # Fixture trees used to be created under $TMPDIR, which on macOS is a
+  # directory endpoint security scans; a suite walk's churn there was measured
+  # at 7-8% of one machine's whole scan load. A suite that runs on its own,
+  # with no runner above it, must still place its fixtures beside the checkout.
+  # The control TMPDIR is the contrast: it must be empty afterwards.
+  local expected harness control child_out child_dir leftovers
+  expected="$(dirname "$ROOT")/.fm-test-scratch"
+  harness=$(fm_test_tmproot fm-test-scratch-standalone)
+  control="$harness/control-tmpdir"
+  mkdir -p "$control"
+  # shellcheck disable=SC2016  # the child reads its OWN scratch root, not ours.
+  child_out=$(env -u FM_TEST_SCRATCH_ROOT TMPDIR="$control" TMP="$control" bash -c '
+    # shellcheck source=tests/lib.sh
+    . "$1"
+    printf "%s\n" "$(fm_test_tmproot fm-test-scratch-standalone-child)"
+    printf "%s\n" "$FM_TEST_SCRATCH_ROOT"
+  ' _ "$LIB")
+  child_dir=$(printf '%s\n' "$child_out" | sed -n '1p')
+  case "$child_dir" in
+    "$expected"/*) : ;;
+    *) fail "a standalone suite placed its fixture root outside $expected: '$child_dir'" ;;
+  esac
+  [ "$(printf '%s\n' "$child_out" | sed -n '2p')" = "$expected" ] \
+    || fail "the standalone suite published the wrong scratch root:"$'\n'"$child_out"
+  leftovers=$(find "$control" -mindepth 1 2>/dev/null)
+  [ -z "$leftovers" ] \
+    || fail "a standalone suite wrote into the machine temp directory it inherited:"$'\n'"$leftovers"
+  assert_absent "$child_dir" \
+    "the standalone suite's fixture root survived its owning process's exit"
+  pass "a standalone suite's fixtures land beside the checkout instead of in the machine temp directory"
+}
+
+test_a_fixture_home_beside_the_checkout_is_not_inside_the_repo() {
+  # The reason the scratch root is a sibling of the checkout rather than a
+  # directory in it: a firstmate home inside the firstmate repo is refused on
+  # purpose, so fixtures that build one would all start failing.
+  local expected
+  expected="$(dirname "$ROOT")/.fm-test-scratch"
+  case "$expected" in
+    "$ROOT"|"$ROOT"/*)
+      fail "the scratch root is inside the firstmate repo, where a fixture home is refused: $expected"
+      ;;
+  esac
+  case "$(fm_test_tmproot fm-test-scratch-home)" in
+    "$ROOT"|"$ROOT"/*)
+      fail "a fixture root was placed inside the firstmate repo, where a fixture home is refused"
+      ;;
+  esac
+  pass "a fixture root is placed beside the firstmate repo, never inside it"
+}
+
+test_an_inherited_scratch_root_is_left_alone() {
+  # bin/fm-test-run.sh hands each concurrent worker a private TMPDIR under the
+  # scratch root so their mktemp roots cannot collide. Re-pointing TMPDIR here
+  # would collapse every worker back onto one directory, so an inherited
+  # FM_TEST_SCRATCH_ROOT means the entry point above already decided.
+  local harness inherited worker child_tmpdir
+  harness=$(fm_test_tmproot fm-test-scratch-inherited)
+  inherited="$harness/scratch"
+  worker="$inherited/w1/tmp"
+  mkdir -p "$worker"
+  child_tmpdir=$(FM_TEST_SCRATCH_ROOT="$inherited" TMPDIR="$worker" TMP="$worker" bash -c '
+    # shellcheck source=tests/lib.sh
+    . "$1"
+    printf "%s\n" "$TMPDIR"
+  ' _ "$LIB")
+  [ "$child_tmpdir" = "$worker" ] \
+    || fail "sourcing the library re-pointed a worker's inherited TMPDIR: '$child_tmpdir'"
+  pass "a suite under an inherited scratch root keeps the TMPDIR it was handed"
+}
+
+test_a_scratch_fixture_is_not_inside_any_repository() {
+  # Git's upward search for a .git would hand a fixture that is deliberately
+  # NOT a repository whatever repository encloses the scratch root - the exact
+  # signal bin/fm-role-lib.sh reads to decide a project IS firstmate.
+  local dir out
+  dir="$(fm_test_tmproot fm-test-scratch-lineage)/not-a-repo"
+  mkdir -p "$dir"
+  out=$(git -C "$dir" rev-parse --git-common-dir 2>&1) \
+    && fail "a fixture under the scratch root resolved a repository: $out"
+  pass "a fixture directory under the scratch root is not inside any git repository"
+}
+
 test_fixture_root_gone_after_normal_exit
 test_fixture_root_gone_after_sigterm
 test_cleanup_registry_resists_precreation
@@ -216,3 +300,7 @@ test_fixture_registration_failure_rolls_back_root
 test_orphan_sweep_respects_fixture_ownership
 test_orphan_sweep_reaps_read_only_package_tree
 test_registries_avoid_git_worktree_root
+test_fixture_roots_land_beside_the_checkout_not_in_the_machine_tmpdir
+test_a_fixture_home_beside_the_checkout_is_not_inside_the_repo
+test_an_inherited_scratch_root_is_left_alone
+test_a_scratch_fixture_is_not_inside_any_repository

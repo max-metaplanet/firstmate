@@ -1559,8 +1559,14 @@ test_branch_prefix_value_is_validated() {
 test_branch_prefix_command_is_shell_safe() {
   local home id prefix marker brief command repo branch
   home="$TMP_ROOT/branch-prefix-shell-safe-home"
-  marker="$TMP_ROOT/branch-prefix-shell-safe-marker"
   id='brief-branch-safe-g3'
+  # The marker is named relative to the fixture repository the command runs in,
+  # never by absolute path: a branch prefix becomes part of a ref name, and a
+  # ref rejects any component starting with a dot - which every absolute path
+  # under this suite's scratch root has, the checkout living in a dot
+  # directory. An absolute marker would make the prefix ref-format-invalid and
+  # test the refusal instead of the shell-safety this is about.
+  marker='branch-prefix-shell-safe-marker'
   prefix="\$(touch\${IFS}$marker)"
   mkdir -p "$home/data"
   FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj --mode local-only --branch-prefix "$prefix" >/dev/null 2>&1 \
@@ -1572,7 +1578,7 @@ test_branch_prefix_command_is_shell_safe() {
   repo="$TMP_ROOT/branch-prefix-shell-safe-repo"
   git init -q "$repo" || fail "could not initialize shell-safety fixture repository"
   ( cd "$repo" && eval "$command" ) || fail "generated branch-creation command did not run"
-  assert_absent "$marker" "generated branch command executed the prefix's command substitution"
+  assert_absent "$repo/$marker" "generated branch command executed the prefix's command substitution"
   branch=$(git -C "$repo" branch --show-current)
   [ "$branch" = "$prefix$id" ] \
     || fail "generated branch command did not create the literal configured branch (got '$branch')"
