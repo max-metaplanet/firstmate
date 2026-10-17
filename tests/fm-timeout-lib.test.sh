@@ -394,10 +394,90 @@ test_run_timed_passes_a_natural_exit_through_a_fired_bound() {
   pass 'fm_run_timed passes a natural exit through when the bound fired after completion'
 }
 
+# The caller's stdin reaches the bounded command. Upstream gave every mechanism
+# `< /dev/null` here on the premise that no caller feeds stdin through
+# fm_run_timed; on this fork that premise is false, because bin/fm-nm-run-lib.sh
+# hands its probe program to fm_nm_bounded on stdin (fork PR #91, pinned by
+# tests/fm-nm-run-lib.test.sh). The incident upstream was fixing is a TERMINAL
+# read from a background process group, and that half is kept - the child swaps
+# a tty stdin for /dev/null, which
+# test_a_backgrounded_bounded_command_never_freezes_on_the_terminal below drives
+# from a real pty.
+test_bounded_runners_pass_the_callers_stdin_to_the_command() {
+  local out
+  out=$(printf 'data\n' | run_timed 5 bash -c 'read -r line || true; printf "got=%s\n" "${line:-eof}"')
+  [ "$out" = "got=data" ] || fail "fm_run_timed did not pass the caller's stdin to the command (got '$out')"
+  out=$(printf 'data\n' | exec_timed "$PERL_ONLY" 5 1 bash -c 'read -r line || true; printf "got=%s\n" "${line:-eof}"')
+  [ "$out" = "got=data" ] || fail "fm_exec_timed did not pass the caller's stdin to the command (got '$out')"
+  pass 'fm_run_timed and fm_exec_timed pass a non-terminal stdin through to the bounded command'
+}
+
+# A bounded command that reads the caller's terminal from its own process group
+# is stopped by SIGTTIN and freezes in T state for as long as its caller holds
+# locks (the STAT T .task-set.lock hold behind this fix). Drive each runner from
+# a real pty in a job-control shell - the shape a backgrounded tool call takes -
+# and require the terminal-reading command to finish with its own status.
+test_a_backgrounded_bounded_command_never_freezes_on_the_terminal() {
+  local helper mode out
+  if ! command -v python3 >/dev/null 2>&1; then
+    pass "a backgrounded bounded command never freezes on the terminal (skipped: no python3 on this host)"
+    return 0
+  fi
+  helper="$TMP_ROOT/freeze-probe.py"
+  cat > "$helper" <<'PY'
+import os
+import pty
+import signal
+import subprocess
+import sys
+import time
+
+root, out_dir, mode = sys.argv[1], sys.argv[2], sys.argv[3]
+rc_file = os.path.join(out_dir, "rc-" + mode + ".txt")
+if os.path.exists(rc_file):
+    os.unlink(rc_file)
+snippets = {
+    "run": f'. "{root}/bin/fm-timeout-lib.sh"; fm_run_timed 30 cat; printf "rc=%s\\n" "$?" > "{rc_file}"',
+    "bash": f'. "{root}/bin/fm-timeout-lib.sh"; FM_TIMEOUT_MECHANISM_OVERRIDE=bash fm_run_timed 30 cat; printf "rc=%s\\n" "$?" > "{rc_file}"',
+    "exec": f'. "{root}/bin/fm-timeout-lib.sh"; ( fm_exec_timed 30 5 cat ); printf "rc=%s\\n" "$?" > "{rc_file}"',
+}
+pid, _ = pty.fork()
+if pid == 0:
+    os.execvp("bash", ["bash", "-c", "set -m; " + snippets[mode]])
+start = time.time()
+frozen = 0
+completed = False
+while time.time() - start < 10:
+    time.sleep(0.5)
+    if os.path.exists(rc_file):
+        completed = True
+        break
+    ps = subprocess.run(["ps", "-eo", "state,args"], capture_output=True, text=True).stdout
+    frozen += sum(1 for line in ps.splitlines() if line.startswith("T") and line.rstrip().endswith("cat"))
+status = "unknown"
+if completed:
+    with open(rc_file) as fh:
+        status = fh.read().strip()
+print("completed=%s frozen=%d %s" % ("yes" if completed else "no", frozen, status))
+os.kill(pid, signal.SIGKILL)
+os.waitpid(pid, 0)
+PY
+  for mode in run bash exec; do
+    out=$(python3 "$helper" "$ROOT" "$TMP_ROOT" "$mode" 2>&1) \
+      || fail "the terminal probe failed for the $mode runner: $out"
+    assert_contains "$out" "completed=yes" "the $mode runner froze instead of finishing a terminal read: $out"
+    assert_contains "$out" "rc=0" "the $mode runner lost the command to SIGTTIN instead of running it: $out"
+    assert_contains "$out" "frozen=0" "the $mode runner left a command stopped in T state: $out"
+  done
+  pass 'every bounded runner finishes a terminal-reading command instead of freezing it (SIGTTIN)'
+}
+
 test_passes_the_command_status_and_output_through
 test_system_bash_preserves_completion_and_signal_statuses
 test_run_timed_reports_the_bound_when_the_wrapper_records_a_signal_death
 test_run_timed_passes_a_natural_exit_through_a_fired_bound
+test_bounded_runners_pass_the_callers_stdin_to_the_command
+test_a_backgrounded_bounded_command_never_freezes_on_the_terminal
 test_term_ends_a_cooperative_command_at_the_bound
 test_kill_ends_a_term_ignoring_command_after_the_grace
 test_the_bound_replaces_the_calling_shell

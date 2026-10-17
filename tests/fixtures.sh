@@ -134,30 +134,37 @@ case "$*" in
     exit 0
     ;;
 esac
+window_file="$(dirname "$0")/.spawn-window"
 case "${1:-}" in
   display-message) printf 'firstmate\n'; exit 0 ;;
   list-windows)
     if [ -n "${FM_FAKE_DUPLICATE_WINDOW:-}" ]; then
       printf '%s\n' "$FM_FAKE_DUPLICATE_WINDOW"
     fi
+    [ ! -s "$window_file" ] || cat "$window_file"
     exit 0
     ;;
   new-window)
+    name=
+    previous=
+    for arg in "$@"; do
+      [ "$previous" = -n ] && name=$arg
+      previous=$arg
+    done
+    printf '%s\n' "$name" > "$window_file"
     # Only under the opt-in above does this answer with a window id, so the
     # per-window lookup has a target to key on; otherwise it stays silent and
     # the spawn resolves an empty target exactly as it does today.
     if [ -n "${FM_FAKE_PANE_PATH_BY_WINDOW:-}" ]; then
-      fm_name=
-      fm_prev=
-      for fm_a in "$@"; do
-        [ "$fm_prev" != "-n" ] || fm_name=$fm_a
-        fm_prev=$fm_a
-      done
-      [ -z "$fm_name" ] || printf '@%s\n' "$fm_name"
+      [ -z "$name" ] || printf '@%s\n' "$name"
     fi
     exit 0
     ;;
-  has-session|new-session|kill-window|set-window-option) exit 0 ;;
+  kill-window)
+    : > "$window_file"
+    exit 0
+    ;;
+  has-session|new-session|set-window-option) exit 0 ;;
   send-keys)
     if [ -n "${FM_FAKE_LAUNCH_LOG:-}" ]; then
       prev=

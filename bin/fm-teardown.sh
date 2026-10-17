@@ -2215,30 +2215,30 @@ $dir_pids"
 reap_task_backend_process_group() {  # <label>
   local label=$1 leader leader_start pgid current_pgid own_pgid
   if [ "$BACKEND" != tmux ]; then
-    echo "warning: lsof is unavailable; cannot resolve a process-group fallback for $BACKEND task $ID" >&2
+    echo "warning: lsof is unavailable or failed; cannot resolve a process-group fallback for $BACKEND task $ID" >&2
     return 0
   fi
   leader=$(tmux display-message -p -t "$T" '#{pane_pid}' 2>/dev/null) || leader=""
   case "$leader" in ''|*[!0-9]*)
-    echo "warning: lsof is unavailable; cannot resolve the tmux pane process group for $ID" >&2
+    echo "warning: lsof is unavailable or failed; cannot resolve the tmux pane process group for $ID" >&2
     return 0
     ;;
   esac
   leader_start=$(task_process_identity "$leader") || {
-    echo "warning: lsof is unavailable; cannot identify the tmux pane process group for $ID" >&2
+    echo "warning: lsof is unavailable or failed; cannot identify the tmux pane process group for $ID" >&2
     return 0
   }
   pgid=$(ps -o pgid= -p "$leader" 2>/dev/null) || pgid=""
   pgid=$(printf '%s' "$pgid" | tr -d '[:space:]')
   case "$pgid" in ''|*[!0-9]*|0|1)
-    echo "warning: lsof is unavailable; cannot resolve the tmux pane process group for $ID" >&2
+    echo "warning: lsof is unavailable or failed; cannot resolve the tmux pane process group for $ID" >&2
     return 0
     ;;
   esac
   own_pgid=$(ps -o pgid= -p "$$" 2>/dev/null) || own_pgid=""
   own_pgid=$(printf '%s' "$own_pgid" | tr -d '[:space:]')
   if [ "$pgid" = "$own_pgid" ]; then
-    echo "warning: lsof is unavailable; refusing to signal teardown's own process group for $ID" >&2
+    echo "warning: lsof is unavailable or failed; refusing to signal teardown's own process group for $ID" >&2
     return 0
   fi
   task_process_identity_matches "$leader" "$leader_start" || return 0
@@ -2256,6 +2256,53 @@ reap_task_backend_process_group() {  # <label>
   fi
 }
 
+# The lsof scan could not produce a safe result: lsof failed, timed out under
+# load, or its output was unusable. Force-kill every leaked process this reap
+# already PROVED to be this task's own (the caller's tracked_pids /
+# tracked_identities, filled only past task_pid_belongs_to_task) that still
+# matches its recorded identity, take the same backend process-group fallback
+# the missing-lsof path takes, then re-verify: teardown proceeds only when no
+# identified process survives. Refusing on every scan error left the task's
+# worktree and its processes behind forever (the stale-pool-slot leak), while
+# proceeding with a known survivor would orphan it under a deleted cwd.
+#
+# The proceed half is tmux-only. reap_task_backend_process_group is a no-op on
+# every other backend, so on herdr (and any future non-tmux endpoint) a scan
+# error leaves this reap with no account of what is still rooted under the
+# roots about to be deleted: the force-kill above covers only what an earlier
+# successful scan already named, and nothing covers a process that scan never
+# saw. Removing the worktree on that evidence is the one outcome teardown must
+# not produce, so a non-tmux backend keeps the refusal it has today and
+# firstmate retries the teardown once the scan works again.
+reap_task_pids_scan_fallback() {  # <label>
+  local i pid state killed=0 survivors=""
+  echo "teardown: lsof could not enumerate leaked processes under ${TASK_PIDS_FAILED_DIR:-<missing>} for $ID; falling back to the $BACKEND process-group cleanup" >&2
+  for i in "${!tracked_pids[@]}"; do
+    pid=${tracked_pids[$i]}
+    if task_process_identity_matches "$pid" "${tracked_identities[$i]}"; then
+      kill -KILL "$pid" 2>/dev/null || true
+      killed=1
+    fi
+  done
+  reap_task_backend_process_group "$1"
+  if [ "$BACKEND" != tmux ]; then
+    echo "REFUSED: cannot determine leaked processes under ${TASK_PIDS_FAILED_DIR:-<missing>} for $ID (lsof failed) and $BACKEND has no process-group fallback; preserving the worktree/tasktmp for manual inspection or retry." >&2
+    return 1
+  fi
+  [ "$killed" -eq 1 ] || return 0
+  sleep 1
+  for i in "${!tracked_pids[@]}"; do
+    pid=${tracked_pids[$i]}
+    task_process_identity_matches "$pid" "${tracked_identities[$i]}" || continue
+    state=$(ps -o stat= -p "$pid" 2>/dev/null | tr -d '[:space:]')
+    case "$state" in Z*) continue ;; esac
+    survivors="$survivors $pid"
+  done
+  [ -z "$survivors" ] && return 0
+  echo "REFUSED: leaked $1 process(es) for $ID survived a force-kill after the lsof scan failed:$survivors; preserving the worktree/tasktmp for manual inspection or retry." >&2
+  return 1
+}
+
 # Reap this task's OWN leaked processes before its worktree or tasktmp is
 # removed. The cwd scan only finds candidates: a working directory under those
 # roots says where a process stands, not whose it is, and anything else on the
@@ -2268,12 +2315,14 @@ reap_task_backend_process_group() {  # <label>
 # TERM first, then KILL after a short grace period for anything still alive; a
 # process that exits on its own between the two passes is simply absent from
 # the recheck. A missing lsof uses the backend process-group fallback; an lsof
-# scan error refuses before destructive teardown, and an endpoint that can no
-# longer name its leader preserves every candidate instead of guessing.
+# scan that fails or times out under load takes
+# reap_task_pids_scan_fallback above, which force-kills what was already proved
+# and proceeds on tmux, and refuses on every other backend; an endpoint that
+# can no longer name its leader preserves every candidate instead of guessing.
 reap_task_worktree_processes() {  # <label> <dir>...
   local label=$1 pids pid identity current_pids i pass=1 max_passes=3
   local unowned remaining
-  local -a tracked_pids tracked_identities remaining_pids remaining_identities
+  local -a tracked_pids=() tracked_identities=() remaining_pids remaining_identities
   shift
   if ! command -v lsof >/dev/null 2>&1; then
     reap_task_backend_process_group "$label"
@@ -2286,8 +2335,8 @@ reap_task_worktree_processes() {  # <label> <dir>...
   TASK_PRESERVED_REPORTED=
   while [ "$pass" -le "$max_passes" ]; do
     if ! task_pids_under_roots "$@"; then
-      echo "REFUSED: cannot determine leaked processes under ${TASK_PIDS_FAILED_DIR:-<missing>} for $ID (lsof failed); preserving the worktree/tasktmp for manual inspection or retry." >&2
-      return 1
+      reap_task_pids_scan_fallback "$label"
+      return
     fi
     pids=$TASK_PIDS
     [ -n "$pids" ] || return 0
@@ -2305,8 +2354,8 @@ reap_task_worktree_processes() {  # <label> <dir>...
       [ -n "$pid" ] || continue
       if ! identity=$(task_process_identity "$pid"); then
         if ! task_pids_under_roots "$@"; then
-          echo "REFUSED: cannot determine leaked processes under ${TASK_PIDS_FAILED_DIR:-<missing>} for $ID (lsof failed); preserving the worktree/tasktmp for manual inspection or retry." >&2
-          return 1
+          reap_task_pids_scan_fallback "$label"
+          return
         fi
         if task_pid_list_contains "$TASK_PIDS" "$pid"; then
           echo "REFUSED: cannot verify leaked process $pid identity for $ID; preserving the worktree/tasktmp for manual inspection or retry." >&2
@@ -2335,8 +2384,8 @@ EOF
       continue
     fi
     if ! task_pids_under_roots "$@"; then
-      echo "REFUSED: cannot determine leaked processes under ${TASK_PIDS_FAILED_DIR:-<missing>} for $ID (lsof failed); preserving the worktree/tasktmp for manual inspection or retry." >&2
-      return 1
+      reap_task_pids_scan_fallback "$label"
+      return
     fi
     current_pids=$TASK_PIDS
     echo "teardown: reaping leaked $label process(es) for $ID: ${tracked_pids[*]}" >&2
@@ -2350,8 +2399,8 @@ EOF
     done
     sleep 1
     if ! task_pids_under_roots "$@"; then
-      echo "REFUSED: cannot determine leaked processes under ${TASK_PIDS_FAILED_DIR:-<missing>} for $ID (lsof failed); preserving the worktree/tasktmp for manual inspection or retry." >&2
-      return 1
+      reap_task_pids_scan_fallback "$label"
+      return
     fi
     current_pids=$TASK_PIDS
     remaining_pids=()
@@ -2368,8 +2417,8 @@ EOF
     if [ "${#remaining_pids[@]}" -gt 0 ]; then
       echo "teardown: force-killing leaked $label process(es) for $ID: ${remaining_pids[*]}" >&2
       if ! task_pids_under_roots "$@"; then
-        echo "REFUSED: cannot determine leaked processes under ${TASK_PIDS_FAILED_DIR:-<missing>} for $ID (lsof failed); preserving the worktree/tasktmp for manual inspection or retry." >&2
-        return 1
+        reap_task_pids_scan_fallback "$label"
+        return
       fi
       current_pids=$TASK_PIDS
       for i in "${!remaining_pids[@]}"; do
@@ -2384,8 +2433,8 @@ EOF
     pass=$((pass + 1))
   done
   if ! task_pids_under_roots "$@"; then
-    echo "REFUSED: cannot determine leaked processes under ${TASK_PIDS_FAILED_DIR:-<missing>} for $ID (lsof failed); preserving the worktree/tasktmp for manual inspection or retry." >&2
-    return 1
+    reap_task_pids_scan_fallback "$label"
+    return
   fi
   [ -z "$TASK_PIDS" ] && return 0
   # Only this task's OWN survivors count as a failed reap. A process that was
@@ -3468,7 +3517,7 @@ cleanup_firstmate_home_children() {
       "$sub_state/$child_id.claude-settings.json" "$sub_state/$child_id.devin-config.json" \
       "$sub_state/.$child_id.branch-outcome-index"
     chmod u+w "$sub_state/$child_id.git-hooks" 2>/dev/null || true
-    rm -rf "$sub_state/$child_id.git-hooks"
+    rm -rf "$sub_state/$child_id.git-hooks" "$sub_state/$child_id.push-guard"
   done
 }
 
@@ -3988,9 +4037,10 @@ rm -f "$STATE/$ID.turn-ended" "$STATE/$ID.progress" \
 # retired endpoint; teardown only runs after landing is confirmed, so any
 # leftover unhandled steer here is moot rather than unlanded work.
 # state/<id>.git-hooks is the spawn-owned commit-msg strip directory, left
-# read-only by its installer.
+# read-only by its installer, and state/<id>.push-guard is a forge=external
+# task's read-only push guard record (bin/fm-git-push-guard.sh).
 chmod u+w "$STATE/$ID.git-hooks" 2>/dev/null || true
-rm -rf "$STATE/$ID.inbox" "$STATE/$ID.git-hooks"
+rm -rf "$STATE/$ID.inbox" "$STATE/$ID.git-hooks" "$STATE/$ID.push-guard"
 # A presentation journal the close path left behind is orphaned once the
 # recorded pane is proven gone (the Herdr gate above) unless it still names a
 # live projected workspace - a version 2 binding of some other pane, or a

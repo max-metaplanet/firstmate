@@ -11,7 +11,9 @@
 #       to force the dependency-free fallback.
 #
 #   fm_run_timed <seconds> <command> [args...]
-#       Runs the command with a hard bound. Exit status is the command's own,
+#       Runs the command with a hard bound and no stdin: the command reads EOF
+#       rather than any caller terminal or pipe, so a backgrounded bounded call
+#       can never be stopped by SIGTTIN. Exit status is the command's own,
 #       except 124, which means the bound was hit (GNU timeout's convention,
 #       reproduced by the perl and bash fallbacks), and a command killed by
 #       signal n, which reports 128+n on every mechanism - so a SIGKILLed child
@@ -26,7 +28,9 @@
 #   fm_exec_timed <seconds> <grace-seconds> <command> [args...]
 #       Replaces the calling shell with the bounded command, so it must be the
 #       last command of a subshell: the bound kills the command, not the
-#       caller. The command runs in its own process group; TERM goes to that
+#       caller. Like fm_run_timed it gives the command stdin at /dev/null, so a
+#       bounded call can never be stopped by SIGTTIN on a caller terminal.
+#       The command runs in its own process group; TERM goes to that
 #       group at the bound, and KILL once <grace-seconds> more have passed,
 #       for a command that ignores TERM or is mid-way through work it will not
 #       abandon. A TERM, INT, or HUP delivered to the bounding process is
@@ -94,8 +98,17 @@ fm_run_bash_timeout() {
   deadline_status="${command_status}.deadline"
   case $- in *m*) monitor_was_on=1 ;; esac
   set -m
+  # The caller's stdin passes through, because callers do feed the bounded
+  # command: bin/fm-nm-run-lib.sh hands its probe program to fm_nm_bounded on
+  # stdin. A TERMINAL is the one exception. The bounded command runs in its own
+  # process group, where reading the caller's terminal raises SIGTTIN and
+  # freezes the call in T state for as long as the caller holds its locks (the
+  # STAT T .task-set.lock hold behind this guard), so a tty stdin is replaced
+  # with /dev/null inside the child instead. Both halves are pinned by tests:
+  # a pipe reaches the command, and a pty-driven run never freezes.
   (
     set +m
+    if [ -t 0 ]; then exec < /dev/null; fi
     "$@"
     command_rc=$?
     printf '%s\n' "$command_rc" > "$command_status"
@@ -141,10 +154,18 @@ fm_run_external_timeout() {
   # A shell wrapper can exit promptly on TERM while one of its descendants
   # ignores TERM; timeout then considers the command finished and does not send
   # its configured KILL. Explicitly reap that leftover group on a real timeout.
+  #
+  # The caller's stdin passes through, for the reason fm_run_bash_timeout above
+  # records: callers do feed the bounded command. The invocation is backgrounded
+  # and timeout runs the command in its own process group, so a TERMINAL stdin
+  # would be read from a background group, raise SIGTTIN and freeze the call in
+  # T state for as long as the caller holds its locks (the STAT T
+  # .task-set.lock hold). The child replaces a tty stdin with /dev/null first.
   # shellcheck disable=SC2016  # Expansion is deliberately deferred to the child shell.
   "$runner" -k 1 "$seconds" bash -c '
     status_file=$1
     shift
+    if [ -t 0 ]; then exec < /dev/null; fi
     "$@"
     command_rc=$?
     printf "%s\n" "$command_rc" > "$status_file"
@@ -185,6 +206,10 @@ fm_run_timed() {  # <seconds> <command...>
     timeout) fm_run_external_timeout timeout "$seconds" "$@" ;;
     gtimeout) fm_run_external_timeout gtimeout "$seconds" "$@" ;;
     perl)
+      # Same stdin contract as the other mechanisms: pass the caller's stdin
+      # through, and swap only a terminal for /dev/null before the bounded
+      # command runs in its own process group.
+      if [ -t 0 ]; then exec < /dev/null; fi
       perl -e 'my $t = shift; my $pid = fork; die "fork failed" unless defined $pid; if (!$pid) { setpgrp(0, 0); exec @ARGV } local $SIG{ALRM} = sub { kill "TERM", -$pid; select undef, undef, undef, 0.2; kill "KILL", -$pid; exit 124 }; alarm $t; waitpid $pid, 0; exit(($? & 127) ? 128 + ($? & 127) : $? >> 8)' \
         "$seconds" "$@"
       ;;
@@ -222,6 +247,12 @@ fm_exec_timed() {  # <seconds> <grace-seconds> <command...>
   fi
   owner=${FM_EXEC_TIMED_OWNER_PID:-$$}
   unset FM_EXEC_TIMED_OWNER_PID
+  # The caller's stdin reaches the bounded command on every mechanism below.
+  # Only a TERMINAL is swapped for /dev/null: each mechanism runs the command in
+  # its own process group, where reading the caller's terminal raises SIGTTIN
+  # and freezes the call in T state (fm_run_bash_timeout above owns the full
+  # note). Done once here so no arm can drift from the contract.
+  if [ -t 0 ]; then exec < /dev/null; fi
   if command -v perl >/dev/null 2>&1; then
     exec perl -MPOSIX=WNOHANG,setpgid -MTime::HiRes=time -e '
       my ($bound, $grace, $owner, $shell_parent) = (shift, shift, shift, shift);

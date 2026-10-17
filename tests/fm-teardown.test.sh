@@ -2265,9 +2265,14 @@ test_lsof_error_never_clears_index_lock() {
   rc=$?
   set -e
 
-  expect_code 1 "$rc" "lsof-error-index-lock: teardown should refuse when lsof errors"
-  assert_grep "REFUSED: cannot determine leaked processes" "$case_dir/stderr" \
-    "lsof-error-index-lock: teardown did not report the lsof failure"
+  # Upstream reaches the return here and refuses there, because its lock
+  # staleness proof needs the same lsof. This fork stops one step earlier:
+  # refuse_unowned_worktree_processes will not hand the worktree to
+  # `treehouse return --force` on a scan it could not complete. Either way the
+  # lock is never removed on unprovable evidence, which is what this case owns.
+  expect_code 1 "$rc" "lsof-error-index-lock: teardown should refuse while the lock cannot be proven stale"
+  assert_grep "keeping the worktree slot rather than returning it" "$case_dir/stderr" \
+    "lsof-error-index-lock: teardown did not explain the refusal"
   assert_not_contains "$(cat "$case_dir/stderr")" "removed provably-stale git lock" \
     "lsof-error-index-lock: teardown removed a lock after lsof failed"
   [ -e "$lock" ] || fail "lsof-error-index-lock: lock file was removed after lsof failed"
@@ -2950,6 +2955,61 @@ case "\${1:-} \${2:-}" in
 esac
 SH
   chmod +x "$case_dir/fakebin/herdr"
+}
+
+# The scan-failure fallback's proceed half is tmux-only. On herdr (and any
+# other non-tmux endpoint) reap_task_backend_process_group cannot name the
+# endpoint's process group, so a failed lsof scan leaves teardown with no
+# account of what still stands under the roots it is about to delete. The
+# refusal must survive there: the same fixture completes with a working lsof
+# (test_herdr_teardown_clears_escalation_marker), and only the broken scan
+# changes the outcome.
+test_lsof_error_on_a_non_tmux_backend_refuses() {
+  local case_dir rc
+  case_dir=$(make_case lsof-error-herdr-refusal)
+  write_meta "$case_dir" local-only ship
+  sed -i.bak 's/^window=.*/window=default:wG:pQ/' "$case_dir/state/task-x1.meta"
+  rm -f "$case_dir/state/task-x1.meta.bak"
+  printf '%s\n' \
+    'backend=herdr' \
+    'herdr_session=default' \
+    'herdr_workspace_id=wG' \
+    'herdr_tab_id=wG:tQ' \
+    'herdr_pane_id=wG:pQ' >> "$case_dir/state/task-x1.meta"
+  cat > "$case_dir/fakebin/herdr" <<SH
+#!/usr/bin/env bash
+case "\${1:-} \${2:-}" in
+  "session list") printf '%s\n' '{"sessions":[{"name":"default","running":true,"socket_path":"$case_dir/herdr.sock"}]}' ;;
+  "status --json") printf '%s\n' '{"server":{"running":true}}' ;;
+  "pane get") printf '%s\n' '{"error":{"code":"pane_not_found"}}'; exit 1 ;;
+  *) exit 0 ;;
+esac
+SH
+  chmod +x "$case_dir/fakebin/herdr"
+  cat > "$case_dir/fakebin/treehouse" <<SH
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >> "$case_dir/treehouse.log"
+exit 0
+SH
+  chmod +x "$case_dir/fakebin/treehouse"
+  : > "$case_dir/treehouse.log"
+  add_lsof_error "$case_dir"
+
+  rc=0
+  run_teardown "$case_dir" --force > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+
+  if [ "$rc" -eq 0 ]; then
+    fail "lsof-error-herdr-refusal: teardown completed although the scan could not name what stands under the copy"
+  fi
+  assert_grep "has no process-group fallback" "$case_dir/stderr" \
+    "lsof-error-herdr-refusal: the non-tmux refusal was not explained visibly"
+  [ -d "$case_dir/wt" ] || fail "lsof-error-herdr-refusal: the refusal removed the isolated copy"
+  [ -e "$case_dir/state/task-x1.meta" ] \
+    || fail "lsof-error-herdr-refusal: the refusal erased the durable endpoint metadata"
+  if [ -s "$case_dir/treehouse.log" ]; then
+    fail "lsof-error-herdr-refusal: the refusal still returned the pool slot: $(cat "$case_dir/treehouse.log")"
+  fi
+  pass "a failed lsof scan on a non-tmux backend refuses and preserves the isolated copy"
 }
 
 test_herdr_flat_teardown_refuses_orphaning_records_then_retry_completes() {
@@ -5295,31 +5355,187 @@ EOF
   pass "missing lsof falls back to reaping the tmux pane process group"
 }
 
-test_lsof_error_refuses_before_removal() {
-  local case_dir rc
-  case_dir=$(make_case lsof-error-refusal)
+# An lsof scan that fails or times out under load used to abort the whole
+# teardown with REFUSED, leaving the task's worktree and its processes behind
+# forever (the stale-pool-slot leak). The reap now takes the same backend
+# process-group fallback a missing lsof takes, and the teardown completes. The
+# fixture runs a real leaked process in its own process group and reports it as
+# the tmux pane pid, so the fallback has a real group to reap.
+test_lsof_error_falls_back_to_the_process_group_reap() {
+  local case_dir rc pid
+  case_dir=$(make_case lsof-error-pgid-fallback)
   write_meta "$case_dir" no-mistakes ship
   land_shippable_commit "$case_dir"
-  cat > "$case_dir/fakebin/lsof" <<'SH'
-#!/usr/bin/env bash
-exit 1
-SH
+  add_lsof_error "$case_dir"
   cat > "$case_dir/fakebin/treehouse" <<EOF
 #!/usr/bin/env bash
 printf 'return\n' >> "$case_dir/treehouse.log"
 EOF
-  chmod +x "$case_dir/fakebin/lsof" "$case_dir/fakebin/treehouse"
+  chmod +x "$case_dir/fakebin/treehouse"
+
+  perl -e 'setpgrp(0, 0); chdir shift or die; exec "sleep", "300"' "$case_dir/wt" &
+  pid=$!
+  disown
+  sleep 0.3
+  kill -0 "$pid" 2>/dev/null || fail "lsof-error-pgid-fallback: setup sleeper did not start"
+  cat > "$case_dir/fakebin/tmux" <<EOF
+#!/usr/bin/env bash
+if [ "\${1:-}" = display-message ] && [ "\${*: -1}" = '#{pane_pid}' ]; then
+  printf '%s\n' '$pid'
+fi
+exit 0
+EOF
+  chmod +x "$case_dir/fakebin/tmux"
 
   rc=0
   run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
 
-  expect_code 1 "$rc" "lsof-error-refusal: teardown should refuse"
-  assert_grep "REFUSED: cannot determine leaked processes under $case_dir/wt for task-x1 (lsof failed)" "$case_dir/stderr" \
-    "lsof-error-refusal: teardown did not explain the lsof refusal"
-  assert_present "$case_dir/wt" "lsof-error-refusal: teardown removed the worktree"
-  assert_present "$case_dir/state/task-x1.meta" "lsof-error-refusal: teardown removed task metadata"
-  assert_absent "$case_dir/treehouse.log" "lsof-error-refusal: teardown returned the worktree"
-  pass "an erroring lsof scan refuses teardown and preserves the task"
+  assert_grep "falling back to the tmux process-group cleanup" "$case_dir/stderr" \
+    "lsof-error-pgid-fallback: teardown did not report the process-group fallback"
+  assert_grep "reaping leaked worktree process group" "$case_dir/stderr" \
+    "lsof-error-pgid-fallback: teardown did not reap the backend process group"
+  if kill -0 "$pid" 2>/dev/null; then
+    kill -KILL "$pid" 2>/dev/null || true
+    fail "lsof-error-pgid-fallback: the leaked process group survived the fallback"
+  fi
+  # The reap itself no longer refuses - the fallback above owns it. The return
+  # still does not happen here, because refuse_unowned_worktree_processes asks a
+  # second question this scan error cannot answer either: whether anything that
+  # is NOT this task's own still stands in the worktree `treehouse return
+  # --force` is about to terminate. A failed scan is no evidence that nothing
+  # does, so the slot is kept and a rerun picks it up once lsof works.
+  [ "$rc" -ne 0 ] || fail "lsof-error-pgid-fallback: teardown returned the slot although the pre-return scan could not vet it"
+  assert_grep "keeping the worktree slot rather than returning it" "$case_dir/stderr" \
+    "lsof-error-pgid-fallback: the pre-return refusal was not explained visibly"
+  assert_absent "$case_dir/treehouse.log" \
+    "lsof-error-pgid-fallback: the pre-return refusal still returned the slot"
+  pass "an erroring lsof scan falls back to the backend process-group reap, then keeps the slot the pre-return scan cannot vet"
+}
+
+# A scan that fails after the reap already identified a leaked process must
+# not hand an identified survivor to worktree removal: the fallback force-kills
+# it first. The fixture's lsof is real until the TERM-ignoring leaked process
+# receives TERM, then every cwd scan fails, so the post-grace rescan takes the
+# fallback with that process already tracked. The default tmux stub reports no
+# pane pid, so only the fallback's own KILL can end the process.
+test_lsof_error_after_identification_force_kills_the_tracked_process() {
+  local case_dir rc leader pid marker real_lsof
+  case_dir=$(make_case lsof-error-tracked-kill)
+  write_meta "$case_dir" no-mistakes ship
+  land_shippable_commit "$case_dir"
+  marker="$case_dir/termed"
+  real_lsof=$(command -v lsof) || fail "lsof-error-tracked-kill: lsof is required"
+  cat > "$case_dir/fakebin/lsof" <<EOF
+#!/usr/bin/env bash
+case " \$* " in
+  *" -d cwd "*) [ ! -f "$marker" ] || exit 2 ;;
+esac
+exec "$real_lsof" "\$@"
+EOF
+  cat > "$case_dir/fakebin/treehouse" <<EOF
+#!/usr/bin/env bash
+printf 'return\n' >> "$case_dir/treehouse.log"
+EOF
+  # The leaked process must be PROVABLY this task's own, or the reaper never
+  # signals it at all: it is a child of the endpoint leader, so the parent
+  # chain proves it, and it puts itself in its own process group so the
+  # fallback's backend process-group reap cannot reach it. Only the fallback's
+  # own force-kill can end it, which is what this case exists to prove.
+  cat > "$case_dir/termer.pl" <<'EOF'
+use POSIX ();
+POSIX::setpgid(0, 0);
+my $file = shift;
+$SIG{TERM} = sub { open my $fh, ">", $file or die "open"; close $fh; };
+sleep 1 while 1;
+EOF
+  chmod +x "$case_dir/fakebin/lsof" "$case_dir/fakebin/treehouse"
+
+  start_endpoint_leader "$case_dir" "cmd:$case_dir/wt:exec perl $case_dir/termer.pl $marker"
+  leader=$(leader_record "$case_dir" leader)
+  pid=$(leader_record "$case_dir" pid1)
+  kill -0 "$pid" 2>/dev/null \
+    || fail_after_case_cleanup "$case_dir" "lsof-error-tracked-kill: setup sleeper did not start"
+
+  rc=0
+  FM_FAKE_TMUX_PANE_PID="$leader" \
+    run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+
+  if kill -0 "$pid" 2>/dev/null; then
+    fail_after_case_cleanup "$case_dir" "lsof-error-tracked-kill: the identified leaked process survived the scan-failure fallback" "$pid"
+  fi
+  stop_endpoint_leader "$case_dir"
+  assert_present "$marker" "lsof-error-tracked-kill: the leaked process never received TERM"
+  assert_grep "falling back to the tmux process-group cleanup" "$case_dir/stderr" \
+    "lsof-error-tracked-kill: teardown did not take the scan-failure fallback"
+  # Upstream completes the return here. This fork does not, and the difference
+  # is refuse_unowned_worktree_processes: the same broken scan that the reap
+  # fallback worked around still cannot say whether anything that is NOT this
+  # task's own stands in the worktree `treehouse return --force` would kill, so
+  # the slot is kept. The fallback's force-kill above is the part that lands.
+  [ "$rc" -ne 0 ] || fail "lsof-error-tracked-kill: teardown returned the slot although the pre-return scan could not vet it"
+  assert_grep "keeping the worktree slot rather than returning it" "$case_dir/stderr" \
+    "lsof-error-tracked-kill: the pre-return refusal was not explained visibly"
+  assert_absent "$case_dir/treehouse.log" \
+    "lsof-error-tracked-kill: the pre-return refusal still returned the slot"
+  pass "a scan failure after identification force-kills the tracked process, then keeps the slot the pre-return scan cannot vet"
+}
+
+# An identified process that still matches its identity after the fallback's
+# force-kill must keep the worktree: proceeding would orphan it under a deleted
+# cwd. The fake pid never exists, so KILL cannot end it and its identity keeps
+# matching; lsof lists it for the first two cwd scans, then fails.
+test_lsof_error_with_a_surviving_tracked_process_refuses() {
+  local case_dir rc wt_path leader leader_pgid fake_pid=99999997
+  case_dir=$(make_case lsof-error-tracked-survivor)
+  write_meta "$case_dir" no-mistakes ship
+  land_shippable_commit "$case_dir"
+  wt_path=$(cd "$case_dir/wt" && pwd -P)
+  # A real endpoint leader in its own process group, so the fake survivor can
+  # be PROVED to be this task's own: without that proof the reaper preserves
+  # it instead of tracking it, and the fallback has nothing to force-kill.
+  start_endpoint_leader "$case_dir"
+  leader=$(leader_record "$case_dir" leader)
+  leader_pgid=$(process_lineage "$leader" | cut -d' ' -f2)
+  cat > "$case_dir/fakebin/lsof" <<EOF
+#!/usr/bin/env bash
+count=0
+[ ! -f "$case_dir/lsof-count" ] || count=\$(cat "$case_dir/lsof-count")
+count=\$((count + 1))
+printf '%s\n' "\$count" > "$case_dir/lsof-count"
+[ "\$count" -le 2 ] || exit 2
+printf 'p%s\nfcwd\nn%s\n' '$fake_pid' '$wt_path'
+EOF
+  cat > "$case_dir/fakebin/ps" <<'SH'
+#!/usr/bin/env bash
+if [ "${1:-}" = -p ] && [ "${2:-}" = "${FM_FAKE_PERSISTENT_PID:-}" ]; then
+  if [ "${3:-}" = -o ] && [ "${4:-}" = lstart= ]; then
+    printf 'Tue Aug  4 10:00:00 2026
+'
+    exit 0
+  fi
+  # The survivor carries the endpoint leader's process group, which is the
+  # one identifier task_pid_belongs_to_task needs to call it this task's own.
+  if [ "${3:-}" = -o ] && [ "${4:-}" = 'ppid=,pgid=,tty=' ]; then
+    printf '1 %s ttyfmA
+' "${FM_FAKE_PERSISTENT_PGID:?}"
+    exit 0
+  fi
+fi
+exec "$REAL_PS_FOR_TEST" "$@"
+SH
+  chmod +x "$case_dir/fakebin/lsof" "$case_dir/fakebin/ps"
+
+  rc=0
+  FM_PROC_ROOT_OVERRIDE="$case_dir/no-proc" FM_FAKE_PERSISTENT_PID="$fake_pid" \
+    FM_FAKE_PERSISTENT_PGID="$leader_pgid" FM_FAKE_TMUX_PANE_PID="$leader" \
+    run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+  stop_endpoint_leader "$case_dir"
+
+  expect_code 1 "$rc" "lsof-error-tracked-survivor: teardown should refuse"
+  assert_grep "survived a force-kill" "$case_dir/stderr" \
+    "lsof-error-tracked-survivor: teardown did not report the surviving process"
+  assert_present "$case_dir/wt" "lsof-error-tracked-survivor: teardown removed the worktree"
+  pass "a tracked process that survives the fallback force-kill refuses teardown"
 }
 
 test_reused_pid_identity_is_not_force_killed() {
@@ -5797,6 +6013,7 @@ test_a_lone_record_in_a_symlinked_home_is_not_its_own_collision
 test_released_claim_unblocks_the_record_that_keeps_the_copy
 test_a_released_record_cleans_up_without_touching_the_copy
 test_herdr_teardown_clears_escalation_marker
+test_lsof_error_on_a_non_tmux_backend_refuses
 test_herdr_flat_teardown_refuses_orphaning_records_then_retry_completes
 test_herdr_flat_teardown_refuses_records_on_unparseable_presence
 test_herdr_flat_teardown_preflight_refuses_before_changes
@@ -5900,7 +6117,9 @@ test_leaked_process_matched_only_by_proc_session_is_reaped
 test_unresolvable_leader_preserves_every_candidate
 test_leaderless_backend_closes_its_own_pane_before_the_return_scan
 test_lsof_absent_reaps_tmux_process_group
-test_lsof_error_refuses_before_removal
+test_lsof_error_falls_back_to_the_process_group_reap
+test_lsof_error_after_identification_force_kills_the_tracked_process
+test_lsof_error_with_a_surviving_tracked_process_refuses
 test_reused_pid_identity_is_not_force_killed
 test_exec_changed_process_is_still_reaped
 test_process_spawned_during_grace_is_reaped_on_later_pass

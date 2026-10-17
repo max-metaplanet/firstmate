@@ -3451,6 +3451,10 @@ await waitFor(
 if (replacement.prompts.filter((message) => message.includes("signal: streaming queued actionable outcome")).length !== 1) {
   throw new Error(`replacement did not replay the unconsumed follow-up exactly once: ${replacement.prompts.join(" | ")}`);
 }
+replacement.handlers.get("before_agent_start")?.({
+  messageType: "custom",
+  message: { role: "custom", customType: "fixture", content: replacement.prompts[0], display: true },
+}, {});
 await replacement.handlers.get("session_shutdown")?.({ type: "session_shutdown", reason: "new" }, {});
 
 const finalMod = await import(`${pathToFileURL(process.env.PLUGIN).href}?replacement=idle-followup`);
@@ -3472,6 +3476,13 @@ if (finalSession.prompts.filter((message) => message.includes("signal: streaming
 }
 finalSession.handlers.get("before_agent_start")?.({ messageType: "user", prompt: finalSession.prompts[0] }, {});
 await new Promise((resolve) => setTimeout(resolve, 20));
+await finalSession.handlers.get("session_shutdown")?.({ type: "session_shutdown", reason: "new" }, {});
+const consumedMod = await import(`${pathToFileURL(process.env.PLUGIN).href}?replacement=consumed-user`);
+const consumed = makePi();
+consumedMod.default(consumed.pi);
+await consumed.handlers.get("session_start")?.({ type: "session_start", reason: "new" }, {});
+if (consumed.prompts.length !== 0) throw new Error("a consumed user wake replayed after replacement");
+await consumed.handlers.get("session_shutdown")?.({ type: "session_shutdown", reason: "exit" }, {});
 process.exit(0);
 EOF
 )
@@ -3575,6 +3586,17 @@ if (wakes("signal: streaming chain wake 2") !== 1) throw new Error(`wrong second
 await waitFor(() => arms() === 3, "successor after the second streaming-time delivery");
 if (beforeAgentStarts !== 0) throw new Error(`streaming follow-ups raised before_agent_start ${beforeAgentStarts} times`);
 
+// Pi 1.2 emits an idle custom-message trigger without prompt. Its content
+// matching a queued user wake must not mark that wake consumed.
+await handlers.get("before_agent_start")?.({
+  type: "before_agent_start",
+  messageType: "custom",
+  message: {
+    role: "custom", customType: "fixture", content: prompts[1],
+    display: false, timestamp: Date.now(),
+  },
+  systemPrompt: "fixture", systemPromptOptions: {},
+}, {});
 // The run reaches the first queued follow-up; the second is still queued when
 // the captain replaces the session, so only the second rides the handoff.
 consumeQueued(prompts[0]);

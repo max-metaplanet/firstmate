@@ -54,8 +54,10 @@ document:
 # Reuse the CI classifier and its fm-test-run.sh changed-file map. The classifier
 # owns local contract coverage for workflow configuration and conservative
 # full-suite fallbacks when a safe narrow selection is unknown.
+# Strict dual-SDK compilation belongs to this compiler-owning phase, not Test.
+# The existing type-regression owner also runs in the required portable CI lane.
 commands:
-  lint: 'bin/fm-lint.sh'
+  lint: 'bin/fm-lint.sh && bash tests/fm-pi-primary-types.test.sh'
   test: |
     bash <<'NM_TEST'
     set -euf

@@ -197,6 +197,10 @@
       "audience": "agent-runtime"
     },
     {
+      "path": ".agents/skills/harness-adapters/references/harness/commandcode.md",
+      "audience": "agent-runtime"
+    },
+    {
       "path": ".agents/skills/harness-adapters/references/harness/cursor.md",
       "audience": "agent-runtime"
     },
@@ -397,6 +401,10 @@
       "audience": "maintainer-verification"
     },
     {
+      "path": "docs/external-review-forge.md",
+      "audience": "maintainer-architecture"
+    },
+    {
       "path": "docs/gerrit-forge-integration.md",
       "audience": "maintainer-architecture"
     },
@@ -510,6 +518,10 @@
     },
     {
       "path": "docs/verification/claude-seats.md",
+      "audience": "maintainer-verification"
+    },
+    {
+      "path": "docs/verification/commandcode.md",
       "audience": "maintainer-verification"
     },
     {
