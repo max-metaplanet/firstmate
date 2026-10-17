@@ -445,3 +445,43 @@ printf 'harness ancestry: process-reads=%s basename=%s\n' "$ps_starts" "$basenam
 [ "$ps_starts" -le 8 ] || fail "harness ancestry read ancestors more than once ($ps_starts process reads)"
 [ "$basename_starts" -eq 0 ] || fail "harness ancestry still forks basename ($basename_starts)"
 pass 'the harness ancestry walk reads each ancestor with one program and no basename'
+
+# A drain's total forks - bash subshells (command substitutions, pipelines,
+# ( ) groups) and external program starts alike - counted by xtrace's PID over
+# source line, not the program-only shim count above: a bare command
+# substitution around a pure-builtin helper (fm_lease_actor, a lock's owner-dir
+# allocation) forks without ever starting a shimmed program, so a program-only
+# count would miss it. Each new $BASHPID that xtrace reports is exactly one
+# fork, whatever it ran.
+drain_fork_count() {  # <home> <label>
+  local home=$1 label=$2 trace pids
+  trace="$home/drain.trace"
+  FM_HOME="$home" FM_ROOT_OVERRIDE="$home" FM_STATE_OVERRIDE="$home/state" \
+    FM_CONFIG_OVERRIDE="$home/config" FM_DATA_OVERRIDE="$home/data" \
+    PS4='+PID=$BASHPID ' bash -x "$SUBJECT_ROOT/bin/fm-wake-drain.sh" \
+    > "$home/drain.out" 2> "$trace" \
+    || fail "$label drain failed: $(cat "$home/drain.out")"
+  pids=$(grep -oE 'PID=[0-9]+' "$trace" | sort -u | wc -l | tr -d ' ')
+  printf 'wake drain forks (%s): %s\n' "$label" "$pids" >&2
+  printf '%s' "$pids"
+}
+
+drain_home() {  # <dir>
+  mkdir -p "$1/state" "$1/config" "$1/data"
+  : > "$1/config/supervision-host-off"
+}
+
+home=$ONESHOT_ROOT/drain-idle
+rm -rf "$home"
+drain_home "$home"
+: > "$home/state/.wake-queue"
+idle_forks=$(drain_fork_count "$home" 'idle, empty queue file present')
+[ "$idle_forks" -le 21 ] || fail "wake drain over an idle queue exceeded 21 forks ($idle_forks)"
+
+home=$ONESHOT_ROOT/drain-queued
+rm -rf "$home"
+drain_home "$home"
+printf '%s\t1\tsignal\ttask1\tfoo: bar\n' "$(date +%s)" > "$home/state/.wake-queue"
+queued_forks=$(drain_fork_count "$home" 'one queued signal row')
+[ "$queued_forks" -le 56 ] || fail "wake drain over one queued row exceeded 56 forks ($queued_forks)"
+pass 'wake drain stays within its idle and single-row fork budgets'

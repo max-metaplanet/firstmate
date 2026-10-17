@@ -74,7 +74,8 @@ case "$PRESENTATION_LOCK_TIMEOUT" in ''|*[!0-9]*|0) PRESENTATION_LOCK_TIMEOUT=10
 # not a cutoff comparison, is what makes a mixed main-only + task-local queue
 # safe to split: the branch's ack can never remove a row it was not granted,
 # so it can never swallow a main-owned row still waiting for main.
-ACTOR=$(fm_lease_actor) || exit 2
+ACTOR=
+fm_lease_actor_to ACTOR || exit 2
 ELIGIBLE_ROWS_FILE="$STATE/.branch-eligible-rows"
 ELIGIBLE_OWNER_FILE="$STATE/.branch-eligible-owner"
 MAIN_ROWS_FILE="$STATE/.main-eligible-rows"
@@ -110,7 +111,9 @@ reclaim_stale_branch_grant_locked() {
 # acknowledgeable, and failing the whole drain would strand them too.
 retire_unconsumable_rows_locked() {
   local retired unusable queued kept
-  [ -f "$FM_WAKE_QUEUE" ] || return 0
+  # An empty queue has 0 queued and 0 unusable rows either way, so skip the
+  # mktemp and three awk passes a non-empty file still needs below.
+  [ -s "$FM_WAKE_QUEUE" ] || return 0
   if DRAIN_TMP=$(mktemp "$STATE/.wake-queue.retire.XXXXXX") \
     && chmod 0600 "$DRAIN_TMP" \
     && unusable=$(awk -F '\t' -v keep="$DRAIN_TMP" '

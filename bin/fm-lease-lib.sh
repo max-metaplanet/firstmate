@@ -127,11 +127,19 @@ fm_lease_home_runs_host() {
 # fm_lease_actor: print the current actor after validating it. Returns 1 (with
 # stderr) for an unknown FM_SUPERVISION_ACTOR value.
 fm_lease_actor() {
-  local actor=${FM_SUPERVISION_ACTOR:-main}
-  case "$actor" in
-    main|branch) printf '%s\n' "$actor" ;;
+  local actor
+  fm_lease_actor_to actor || return 1
+  printf '%s\n' "$actor"
+}
+
+# fm_lease_actor_to <output-variable>: same validation as fm_lease_actor,
+# without the capturing subshell a bare $(fm_lease_actor) forks on every call.
+fm_lease_actor_to() {
+  local fm_lease_actor_val=${FM_SUPERVISION_ACTOR:-main}
+  case "$fm_lease_actor_val" in
+    main|branch) printf -v "$1" '%s' "$fm_lease_actor_val" ;;
     *)
-      echo "error: unknown FM_SUPERVISION_ACTOR '$actor' (expected main or branch)" >&2
+      echo "error: unknown FM_SUPERVISION_ACTOR '$fm_lease_actor_val' (expected main or branch)" >&2
       return 1
       ;;
   esac
