@@ -299,17 +299,20 @@ esac
 
 command -v jq >/dev/null 2>&1 || { echo "fm-fleet-snapshot: jq not found" >&2; exit 1; }
 
-bool_json() {
-  if [ "$1" = 1 ]; then printf 'true'; else printf 'false'; fi
+meta_value_to() {  # <out-var> <meta-file> <key>
+  fm_meta_get_to "$1" "$2" "$3"
 }
 
-meta_value() {  # <meta-file> <key>
-  fm_meta_get "$1" "$2"
-}
-
-last_nonempty_line() {  # <file>
-  [ -f "$1" ] || return 1
-  grep -v '^[[:space:]]*$' "$1" 2>/dev/null | tail -1
+last_nonempty_line_to() {  # <out-var> <file>
+  local __fmlnl_line __fmlnl_last=''
+  printf -v "$1" '%s' ''
+  [ -f "$2" ] || return 1
+  while IFS= read -r __fmlnl_line || [ -n "$__fmlnl_line" ]; do
+    case "$__fmlnl_line" in
+      *[![:space:]]*) __fmlnl_last=$__fmlnl_line ;;
+    esac
+  done < "$2" 2>/dev/null
+  printf -v "$1" '%s' "$__fmlnl_last"
 }
 
 # A local crew-state read is bounded so one slow child cannot extend this
@@ -329,7 +332,7 @@ crew_state_json() {  # <id> [<captured-meta>] [<captured-status>]
       FM_CONFIG_OVERRIDE="$CONFIG" \
       "$SCRIPT_DIR/fm-crew-state.sh" "$id" 2>/dev/null || true
   )
-  raw=$(printf '%s\n' "$raw" | head -1)
+  raw=${raw%%$'\n'*}
   sep=' · '
   state=unknown
   source=none
@@ -349,9 +352,18 @@ crew_state_json() {  # <id> [<captured-meta>] [<captured-status>]
     '{state:$state,source:$source,detail:$detail,raw:$raw}'
 }
 
-first_pr_url_in_file() {  # <file>
-  [ -f "$1" ] || return 1
-  grep -Eo 'https?://[^[:space:])"]+/pull/[0-9]+' "$1" 2>/dev/null | head -1
+_FM_SNAPSHOT_PR_URL_RE='https?://[^[:space:])"]+/pull/[0-9]+'
+first_pr_url_in_file_to() {  # <out-var> <file>
+  local __fmpr_line
+  printf -v "$1" '%s' ''
+  [ -f "$2" ] || return 1
+  while IFS= read -r __fmpr_line || [ -n "$__fmpr_line" ]; do
+    if [[ $__fmpr_line =~ $_FM_SNAPSHOT_PR_URL_RE ]]; then
+      printf -v "$1" '%s' "${BASH_REMATCH[0]}"
+      return 0
+    fi
+  done < "$2" 2>/dev/null
+  return 1
 }
 
 backlog_json() (  # [<backlog-path>] - defaults to this home's $BACKLOG
@@ -588,9 +600,9 @@ snapshot_task_generation_is_current() {  # <captured-meta> <id>
   local captured_meta=$1 id=$2 current_meta captured_gen current_gen captured_contents current_contents
   current_meta="$STATE/$id.meta"
   [ -f "$current_meta" ] || return 1
-  captured_gen=$(meta_value "$captured_meta" spawn_gen)
+  meta_value_to captured_gen "$captured_meta" spawn_gen
   if [ -n "$captured_gen" ]; then
-    current_gen=$(meta_value "$current_meta" spawn_gen)
+    meta_value_to current_gen "$current_meta" spawn_gen
     [ "$current_gen" = "$captured_gen" ]
   else
     # Legacy metadata has no generation token. Exact equality is the strongest
@@ -605,7 +617,7 @@ prefetch_task_observations() {  # <meta> <id>
   local meta=$1 id=$2 remote_host current_file endpoint_file current_pid='' current_rc=0
   local status_log status_capture report_path report_capture
   local kind backend target endpoint_exists=null agent_alive=not_checked generation_current=1
-  remote_host=$(meta_value "$meta" remote_host)
+  meta_value_to remote_host "$meta" remote_host
   current_file="$SNAPSHOT_TASK_DIR/$id.json"
   endpoint_file="$SNAPSHOT_TASK_DIR/$id.endpoint"
   status_log="$STATE/$id.status"
@@ -626,9 +638,9 @@ prefetch_task_observations() {  # <meta> <id>
   elif [ "$generation_current" = 1 ]; then
     crew_state_json "$id" "$meta" "$status_capture" > "$current_file" &
     current_pid=$!
-    kind=$(meta_value "$meta" kind)
-    backend=$(fm_backend_of_meta "$meta")
-    target=$(fm_backend_target_of_meta "$meta")
+    meta_value_to kind "$meta" kind
+    fm_backend_of_meta_to backend "$meta"
+    fm_backend_target_of_meta_to target "$meta"
     if [ -n "$target" ]; then
       if fm_backend_target_exists "$backend" "$target" "fm-$id" >/dev/null 2>&1; then
         endpoint_exists=true
@@ -673,7 +685,7 @@ prefetch_task_current_states() {
   # composition one coherent task manifest even if publication or teardown races it.
   for meta in "$STATE"/*.meta; do
     [ -e "$meta" ] || continue
-    id=$(basename "$meta" .meta)
+    id=${meta##*/}; id=${id%.meta}
     captured_meta="$SNAPSHOT_TASK_DIR/$id.meta"
     if ! cp -- "$meta" "$captured_meta" 2>"$captured_meta.copy-error"; then
       # Teardown may unlink a task after the glob selected it but before cp opens
@@ -693,7 +705,7 @@ prefetch_task_current_states() {
   done
   while [ "$index" -lt "$SNAPSHOT_TASK_META_COUNT" ]; do
     meta=${SNAPSHOT_TASK_METAS[index]}
-    id=$(basename "$meta" .meta)
+    id=${meta##*/}; id=${id%.meta}
     prefetch_task_observations "$meta" "$id" &
     pids[active]=$!
     active=$((active + 1))
@@ -725,7 +737,7 @@ task_json_lines() {
   while [ "$index" -lt "$SNAPSHOT_TASK_META_COUNT" ]; do
     meta=${SNAPSHOT_TASK_METAS[index]}
     index=$((index + 1))
-    id=$(basename "$meta" .meta)
+    id=${meta##*/}; id=${id%.meta}
     original_meta="$STATE/$id.meta"
     # This is the already captured metadata, not a cache of live decisions.
     # Read each row once and reset absent fields so they cannot leak from the
@@ -743,18 +755,18 @@ task_json_lines() {
     done < "$meta" 2>/dev/null || true
     [ -n "$kind" ] || kind=ship
     if [ -n "$remote_host" ]; then
-      backend=$(meta_value "$meta" remote_backend)
+      meta_value_to backend "$meta" remote_backend
       [ -n "$backend" ] || backend=unknown
-      target=$(meta_value "$meta" remote_target)
+      meta_value_to target "$meta" remote_target
     else
-      backend=$(fm_backend_of_meta "$meta")
-      target=$(fm_backend_target_of_meta "$meta")
+      fm_backend_of_meta_to backend "$meta"
+      fm_backend_target_of_meta_to target "$meta"
     fi
     status_log="$SNAPSHOT_TASK_DIR/$id.status"
     report_path="$SNAPSHOT_TASK_DIR/$id.report"
     pr_source=meta
     if [ -z "$pr" ]; then
-      pr_from_status=$(first_pr_url_in_file "$status_log" || true)
+      first_pr_url_in_file_to pr_from_status "$status_log" || true
       pr=$pr_from_status
       pr_source=status_event
     fi
@@ -772,17 +784,17 @@ task_json_lines() {
     # is read from the captured/observed copy ($status_log) - the same
     # contract-vs-observed split used below for meta/report/worktree/home.
     status_path="$STATE/$id.status"
-    status_present=0
+    status_present=false
     status_raw=''
     status_verb=''
     status_note=''
     status_age=null
     if [ -f "$status_log" ]; then
-      status_present=1
-      status_raw=$(last_nonempty_line "$status_log" || true)
-      status_verb=$(status_line_verb "$status_raw")
-      status_note=$(status_line_note "$status_raw")
-      status_epoch=$(status_line_at_epoch "$status_raw") || status_epoch=null
+      status_present=true
+      last_nonempty_line_to status_raw "$status_log" || true
+      status_line_verb "$status_raw" status_verb
+      status_line_note_to status_note "$status_raw"
+      status_line_at_epoch_to status_epoch "$status_raw" || status_epoch=null
       if [ "$status_epoch" != null ] && [ "$status_epoch" -le "$SNAPSHOT_EPOCH" ]; then
         status_age=$((SNAPSHOT_EPOCH - status_epoch))
       fi
@@ -806,7 +818,7 @@ task_json_lines() {
     # never clear another concern's keyed decision. A parked/blocked state, or a
     # non-authoritative status-log/none read on a still-live task, keeps the fold's
     # open decision surfacing.
-    open_decisions_tsv=$(status_open_decisions "$status_log")
+    status_open_decisions_to open_decisions_tsv "$status_log"
 
     endpoint_exists=null
     agent_alive=not_checked
@@ -821,24 +833,24 @@ task_json_lines() {
       return 1
     }
 
-    meta_present=0
-    [ -e "$meta" ] && meta_present=1
-    report_present_hint=0
-    [ -f "$report_path" ] && report_present_hint=1
-    report_path_present=0
-    [ -e "$report_path" ] && report_path_present=1
-    worktree_present=0
-    [ -n "$worktree" ] && [ -e "$worktree" ] && worktree_present=1
+    meta_present=false
+    [ -e "$meta" ] && meta_present=true
+    report_present_hint=false
+    [ -f "$report_path" ] && report_present_hint=true
+    report_path_present=false
+    [ -e "$report_path" ] && report_path_present=true
+    worktree_present=false
+    [ -n "$worktree" ] && [ -e "$worktree" ] && worktree_present=true
     if [ -n "$home" ] && [ -n "$remote_host" ]; then
       home_present_mode=null
-      home_present_bool=0
+      home_present_bool=false
     elif [ -n "$home" ]; then
       home_present_mode=bool
-      home_present_bool=0
-      [ -e "$home" ] && home_present_bool=1
+      home_present_bool=false
+      [ -e "$home" ] && home_present_bool=true
     else
       home_present_mode=bool
-      home_present_bool=0
+      home_present_bool=false
     fi
 
     # One jq pass builds this crew's whole row: path presence, the status-log
@@ -855,7 +867,7 @@ task_json_lines() {
       --arg worktree_path "$worktree" \
       --arg home_path "$home" \
       --arg home_present_mode "$home_present_mode" \
-      --argjson home_present_bool "$(bool_json "$home_present_bool")" \
+      --argjson home_present_bool "$home_present_bool" \
       --arg projects "$projects" \
       --arg spawn_gen "$spawn_gen" \
       --arg backend "$backend" \
@@ -869,13 +881,13 @@ task_json_lines() {
       --arg observed_at "$SNAPSHOT_NOW" \
       --argjson current_state "$current_json" \
       --arg meta_path "$original_meta" \
-      --argjson meta_present "$(bool_json "$meta_present")" \
+      --argjson meta_present "$meta_present" \
       --arg report_path "$DATA/$id/report.md" \
-      --argjson report_path_present "$(bool_json "$report_path_present")" \
-      --argjson report_present_hint "$(bool_json "$report_present_hint")" \
-      --argjson worktree_present "$(bool_json "$worktree_present")" \
+      --argjson report_path_present "$report_path_present" \
+      --argjson report_present_hint "$report_present_hint" \
+      --argjson worktree_present "$worktree_present" \
       --arg status_path "$status_path" \
-      --argjson status_present "$(bool_json "$status_present")" \
+      --argjson status_present "$status_present" \
       --arg status_raw "$status_raw" \
       --arg status_verb "$status_verb" \
       --arg status_note "$status_note" \
@@ -1989,16 +2001,19 @@ scout_report_lines() {
 
 BACKLOG_JSON=$(backlog_json) || { echo "fm-fleet-snapshot: backlog read failed" >&2; exit 1; }
 contribution_tasks_json() {
-  local meta id merge_authority
+  local meta id merge_authority task_kind task_pr_url task_pr_head
   for meta in "$STATE"/*.meta; do
     [ -f "$meta" ] && [ ! -L "$meta" ] || continue
-    id=$(basename "$meta" .meta)
+    id=${meta##*/}; id=${id%.meta}
     merge_authority=unknown
     if fm_merge_authority_resolve "$FM_HOME" "$STATE" "$meta" "$id"; then
       merge_authority=$FM_MERGE_AUTHORITY
     fi
-    jq -n --arg id "$id" --arg kind "$(meta_value "$meta" kind)" \
-      --arg url "$(meta_value "$meta" pr)" --arg head "$(meta_value "$meta" pr_head)" \
+    meta_value_to task_kind "$meta" kind
+    meta_value_to task_pr_url "$meta" pr
+    meta_value_to task_pr_head "$meta" pr_head
+    jq -n --arg id "$id" --arg kind "$task_kind" \
+      --arg url "$task_pr_url" --arg head "$task_pr_head" \
       --arg merge_authority "$merge_authority" '{id:$id,kind:$kind,pr:{url:$url,head:$head},merge_authority:$merge_authority}'
   done | jq -s .
 }
