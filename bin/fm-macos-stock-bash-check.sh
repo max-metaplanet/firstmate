@@ -111,8 +111,10 @@ churn_count=$(printf '%s\n' "$churn_output" | grep -c '^ok - ')
 helpers_output=$(/bin/bash tests/fm-fork-free-helpers.test.sh)
 printf '%s\n' "$helpers_output"
 helpers_count=$(printf '%s\n' "$helpers_output" | grep -c '^ok - ')
-[ "$helpers_count" -eq 11 ] || {
-  echo "::error::expected 11 fork-free helper bash 3.2 regressions, got $helpers_count"
+# Twelve, not thirteen: the fork-budget sampler needs BASHPID and
+# capability-skips here, so it contributes no passing line under 3.2.
+[ "$helpers_count" -eq 12 ] || {
+  echo "::error::expected 12 fork-free helper bash 3.2 regressions, got $helpers_count"
   exit 1
 }
 
