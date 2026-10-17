@@ -36,7 +36,9 @@
 #   Every fixture under the root is still created and removed by the same
 #   mktemp and cleanup that owned it before, so concurrent runs cannot collide
 #   and nothing new is left behind; the root itself is removed when the last
-#   run leaves it empty. Scope is test scratch only: no non-test command's
+#   run leaves it empty. Init installs an EXIT trap that removes it; a caller
+#   that sets its own EXIT trap afterwards replaces that, so it calls
+#   fm_test_scratch_root_cleanup from its own trap to keep the removal. Scope is test scratch only: no non-test command's
 #   TMPDIR is touched.
 
 # Set when THIS process created the root, so only its owner tries to remove it.
@@ -78,6 +80,10 @@ fm_test_scratch_root_init() {  # <checkout-root>
   # can climb past it.
   GIT_CEILING_DIRECTORIES=$root
   export FM_TEST_SCRATCH_ROOT TMPDIR TMP GIT_CEILING_DIRECTORIES
+  # Covers an exit before the caller installs its own EXIT trap - a --help or
+  # --list, a missing-tool skip. A caller's later trap replaces this one and
+  # calls fm_test_scratch_root_cleanup itself.
+  trap fm_test_scratch_root_cleanup EXIT
 }
 
 # Remove the scratch root once the run that created it has cleaned its fixtures
