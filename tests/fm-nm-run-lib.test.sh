@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Behavior tests for bin/fm-nm-run-lib.sh's bounded no-mistakes probe: the
-# child runs in the worktree with lazy promisor fetching disabled, a probe that
+# child runs with lazy promisor fetching and background update checks disabled, a probe that
 # hits its bound leaves no descendant behind, and the library's own commit
 # lookup answers "absent" instead of fetching. Each probe case runs on every
 # bound mechanism bin/fm-timeout-lib.sh can select on this host, because the
@@ -37,7 +37,7 @@ run_probe() {
   (
     # shellcheck source=bin/fm-nm-run-lib.sh
     . "$ROOT/bin/fm-nm-run-lib.sh"
-    PATH="$stub:$path" FM_TIMEOUT_MECHANISM_OVERRIDE="$override" fm_nm_run_bounded "$WT" "$@"
+    PATH="$stub:$path" FM_TIMEOUT_MECHANISM_OVERRIDE="$override" "${NM_PROBE_WRAPPER:-fm_nm_run_bounded}" "$WT" "$@"
   )
 }
 
@@ -70,6 +70,43 @@ STUB
   ! env | grep -q '^GIT_NO_LAZY_FETCH=' ||
     fail 'the probe leaked GIT_NO_LAZY_FETCH into the calling environment instead of setting it for the child alone'
   pass 'a no-mistakes probe runs in its worktree with lazy fetching disabled for that child alone'
+}
+
+test_probe_wrappers_suppress_update_checks_without_extra_launches() {
+  local label path override stub wrapper record out rc count
+  stub="$TMP_ROOT/update-check-stub"
+  mkdir -p "$stub"
+  record="$stub/calls"
+  cat > "$stub/no-mistakes" <<'STUB'
+#!/usr/bin/env bash
+printf '%s\n' "${NO_MISTAKES_NO_UPDATE_CHECK-unset}" >> "$NM_STUB_RECORD"
+printf 'run: r1\n'
+exit 17
+STUB
+  chmod +x "$stub/no-mistakes"
+  while IFS='|' read -r label path override; do
+    for wrapper in fm_nm_run_bounded fm_nm_run_checked fm_nm_run; do
+      : > "$record"
+      rc=0
+      out=$(NO_MISTAKES_NO_UPDATE_CHECK=0 NM_PROBE_WRAPPER="$wrapper" NM_STUB_RECORD="$record" \
+        run_probe "$path" "$override" "$stub" 10 axi status) || rc=$?
+      if [ "$wrapper" = fm_nm_run ]; then
+        assert_equals 0 "$rc" "$label/$wrapper must preserve its fail-open status"
+      else
+        assert_equals 17 "$rc" "$label/$wrapper must preserve the probe failure"
+      fi
+      assert_equals 'run: r1' "$out" "$label/$wrapper lost stdout"
+      count=$(wc -l < "$record" | tr -d ' ')
+      assert_equals 1 "$count" "$label/$wrapper exceeded its one-command probe budget"
+      assert_equals 1 "$(cat "$record")" "$label/$wrapper allowed a background update check"
+    done
+  done < <(mechanisms)
+  (
+    export NO_MISTAKES_NO_UPDATE_CHECK=0
+    NM_STUB_RECORD="$record" run_probe "$PATH" '' "$stub" 10 axi status >/dev/null || true
+    assert_equals 0 "$NO_MISTAKES_NO_UPDATE_CHECK" 'the probe changed its caller environment'
+  )
+  pass 'all probe wrappers launch once with update checks disabled, preserving output, status, and caller environment'
 }
 
 # Callers such as the run-inventory reader and bin/fm-pipeline-spend.sh feed
@@ -172,6 +209,7 @@ test_resolving_a_missing_commit_answers_absent_without_fetching() {
 }
 
 test_a_probe_runs_no_mistakes_with_lazy_fetching_disabled
+test_probe_wrappers_suppress_update_checks_without_extra_launches
 test_a_bounded_command_reads_its_callers_stdin
 test_a_probe_that_hits_its_bound_leaves_no_descendant_behind
 test_resolving_a_missing_commit_answers_absent_without_fetching

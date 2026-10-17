@@ -47,11 +47,13 @@ fm_nm_bounded() {  # <dir> <timeout_secs> <command> <args...>
 # own subshell rather than through `env`, so it reaches the probe and nothing
 # else and the hot path keeps its PATH dependencies. A caller that
 # legitimately needs a fetch must not reach for this helper.
+# Background CLI update checks are also disabled for these frequent probes;
+# they are unrelated to the requested status and otherwise add a child per call.
 fm_nm_run_bounded() {  # <dir> <timeout_secs> <args...>
   local dir=$1 timeout_secs=$2
   shift 2
   (
-    export GIT_NO_LAZY_FETCH=1
+    export GIT_NO_LAZY_FETCH=1 NO_MISTAKES_NO_UPDATE_CHECK=1
     fm_nm_bounded "$dir" "$timeout_secs" no-mistakes "$@"
   )
 }

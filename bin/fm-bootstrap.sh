@@ -862,7 +862,7 @@ treehouse_supports_lease() {
 tool_version_parts() {  # <tool>
   local tool=$1 output parts major minor patch extra
   command -v "$tool" >/dev/null 2>&1 || return 1
-  output=$("$tool" --version 2>/dev/null) || return 1
+  output=$(NO_MISTAKES_NO_UPDATE_CHECK=1 "$tool" --version 2>/dev/null) || return 1
   parts=$(printf '%s\n' "$output" | sed -nE 's/.*[vV]?([0-9]+)\.([0-9]+)\.([0-9]+).*/\1 \2 \3/p' | head -n 1)
   IFS=' ' read -r major minor patch extra <<< "$parts"
   [ -n "$major" ] && [ -n "$minor" ] && [ -n "$patch" ] && [ -z "$extra" ] || return 1
