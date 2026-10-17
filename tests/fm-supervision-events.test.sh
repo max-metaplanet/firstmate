@@ -30,6 +30,7 @@ WAKE_LOG="$TMP/wakes"
 SLEEP_LOG="$TMP/sleeps"
 wake() { printf '%s\n' "$1" >> "$WAKE_LOG"; return 0; }
 sleep() { printf 'SLEEP %s\n' "${1:-}" >> "$SLEEP_LOG"; }
+fm_poll_wait() { sleep "$@"; }
 
 reset_state() {
   rm -f "$STATE_DIR"/*.meta "$STATE_DIR"/*.status "$STATE_DIR"/.wake-queue \

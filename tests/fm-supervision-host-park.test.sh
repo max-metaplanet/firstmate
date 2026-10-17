@@ -13,8 +13,8 @@ set -u
 . "$(dirname "${BASH_SOURCE[0]}")/supervision-host-helpers.sh"
 
 # The parked host samples its arm's exit at the unchanged half-second interval.
-# Keep external sleep because a timed read can interrupt signal-triggered EXIT
-# cleanup. Verify the interval and that an arm's close still reaches the host.
+# Observe either timed builtin reads or the stock Bash sleep fallback.
+# Verify the interval and that an arm's close still reaches the host.
 test_park_exit_probe_keeps_cadence_and_takes_close() {
   local home host_pid started interval
   home=$(make_home park-cadence attended)
@@ -30,13 +30,28 @@ fi
 exec /bin/sleep "$@"
 SH
   chmod +x "$home/fakebin/sleep"
-  start_host "$home"
+  cat > "$home/probe-read" <<'SH'
+read() {
+  local _fm_probe_pid='' _fm_probe_arg _fm_probe_timeout='' _fm_probe_next=0
+  if [ -f "$FM_HOME/probe-host" ]; then
+    IFS= builtin read -r _fm_probe_pid < "$FM_HOME/probe-host" || true
+    if [ "${BASHPID:-$$}" = "$_fm_probe_pid" ]; then
+      for _fm_probe_arg in "$@"; do
+        if [ "$_fm_probe_next" -eq 1 ]; then _fm_probe_timeout=$_fm_probe_arg; break; fi
+        [ "$_fm_probe_arg" != -t ] || _fm_probe_next=1
+      done
+      [ -z "$_fm_probe_timeout" ] || printf '%s\n' "$_fm_probe_timeout" >> "$FM_HOME/park-sleeps"
+    fi
+  fi
+  builtin read "$@"
+}
+SH
+  BASH_ENV="$home/probe-read" start_host "$home"
   wait_until 150 watcher_live "$home" || fail "park-cadence: no watcher started"
   host_pid=$(awk -F '\t' '$1 == "host" { print $2; exit }' "$home/state/.supervision-host")
   [ -n "$host_pid" ] || fail "park-cadence: no recorded host"
   printf '%s\n' "$host_pid" > "$home/probe-host"
-  # Timed reads can interrupt signal-triggered EXIT cleanup. Keep the safe
-  # child wait and prove the existing half-second probe cadence is preserved.
+  # Both supported wait implementations must preserve the half-second probe.
   sleep 3
   started=$(grep -c . "$home/park-sleeps" 2>/dev/null || true)
   [ "${started:-0}" -gt 0 ] || fail "park-cadence: no host exit probe observed"

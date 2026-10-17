@@ -337,11 +337,10 @@ handle_autoarm_signal() {
   exit 0
 }
 
-trap 'handle_autoarm_signal HUP' HUP
-trap 'handle_autoarm_signal TERM' TERM
-trap 'handle_autoarm_signal INT' INT
-# Signal handling performs durable cleanup, so it must not inherit a timed
-# read's outstanding timer. Keep external waits just as the host does.
+trap 'fm_poll_wait_signal handle_autoarm_signal HUP' HUP
+trap 'fm_poll_wait_signal handle_autoarm_signal TERM' TERM
+trap 'fm_poll_wait_signal handle_autoarm_signal INT' INT
+# Defer durable signal cleanup until a timed poll read has returned.
 
 # X mode cadence: source the generated config so an X instance polls at its
 # 30s cadence (fm-bootstrap.sh x_mode_setup contract).
@@ -384,7 +383,7 @@ run_arm() {  # <output file, or empty for none>
 # SUCCESSOR_FAILURE to the banner line for an unconfirmed successor.
 SUCCESSOR_FAILURE=
 start_handling_successor() {  # <closed-arm-pid>
-  local out pid deadline budget line monitor_was_on=0
+  local out pid deadline budget line now output_line confirmed failed monitor_was_on=0
   # The arm's own pre-lock budget, which grows with the host's run queue, so a
   # loaded machine is not reported as an unconfirmed successor while the arm is
   # still legitimately waiting for its watcher (bin/fm-wake-lib.sh).
@@ -400,15 +399,24 @@ start_handling_successor() {  # <closed-arm-pid>
     nohup "$SCRIPT_DIR/fm-watch-arm.sh" >"$out" 2>&1 </dev/null &
   pid=$!
   [ "$monitor_was_on" -eq 1 ] || set +m 2>/dev/null || true
-  deadline=$(( $(date +%s) + budget + 2 ))
+  fm_epoch_seconds_to now
+  deadline=$((now + budget + 2))
   while :; do
-    if grep -Eq '^watcher: (started|attached) pid=[0-9]+' "$out" 2>/dev/null; then
+    confirmed=0 failed=0
+    while IFS= read -r output_line || [ -n "$output_line" ]; do
+      if [[ $output_line =~ ^watcher:\ (started|attached)\ pid=[0-9]+ ]]; then
+        confirmed=1
+      fi
+      case "$output_line" in 'watcher: FAILED'*) failed=1 ;; esac
+    done < "$out"
+    if [ "$confirmed" -eq 1 ]; then
       rm -f "$out" 2>/dev/null || true
       return 0
     fi
-    grep -q '^watcher: FAILED' "$out" 2>/dev/null && break
-    [ "$(date +%s)" -ge "$deadline" ] && break
-    sleep 0.2
+    [ "$failed" -eq 0 ] || break
+    fm_epoch_seconds_to now
+    [ "$now" -ge "$deadline" ] && break
+    fm_poll_wait 0.2
   done
   line=$(grep '^watcher: FAILED' "$out" 2>/dev/null | head -n 1 || true)
   rm -f "$out" 2>/dev/null || true

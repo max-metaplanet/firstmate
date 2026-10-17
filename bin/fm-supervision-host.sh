@@ -183,7 +183,7 @@
 # Park duration uses Bash's process-relative SECONDS counter (including Bash
 # 3.2), while durable timestamps still use epoch time. This is not a portable
 # monotonic-clock guarantee. Arm exit probes wait 0.5 seconds at a time with
-# sleep, inside the unchanged POLL-cadence maintenance and boundary checks;
+# a timed builtin read, inside the unchanged POLL-cadence boundary checks;
 # close observation and a shell-only caught signal may wait that interval plus
 # work/scheduling time. No stop-signal disposition or cleanup bound changes.
 # FM_TEST_SUPERVISION_HOST_CLOCK names a file holding the park's elapsed
@@ -549,29 +549,38 @@ boundary_exit() {
 
 # Print the first cycle's status line once the arm has written it in full.
 stream_ready_line() {
-  local complete line
-  complete=$(wc -l < "$ARM_OUT" 2>/dev/null | tr -d ' ')
-  case "$complete" in ''|0|*[!0-9]*) return 0 ;; esac
-  line=$(head -n "$complete" "$ARM_OUT" 2>/dev/null | grep -E -m 1 '^watcher: (started|attached) ' || true)
-  [ -n "$line" ] || return 0
-  printf '%s\n' "$line"
-  READY_LINE=$line
-  READY_PENDING=0
+  local line
+  while IFS= read -r line; do
+    case "$line" in
+      'watcher: started '*|'watcher: attached '*)
+        printf '%s\n' "$line"
+        READY_LINE=$line
+        READY_PENDING=0
+        return 0
+        ;;
+    esac
+  done < "$ARM_OUT"
+  return 0
 }
 
 # Wait for the current arm to close. Returns 0 with ARM_TEXT set,
 # or 1 when the park boundary arrives first.
 await_close() {
-  local i
+  local i refreshed=0
   while fm_pid_alive "$ARM_PID"; do
-    refresh_process "$ARM_PID"
     [ "$READY_PENDING" -eq 0 ] || stream_ready_line
+    # Refresh the launched arm's durable identity once readiness proves exec
+    # completed, rather than repeating the lookup throughout the same cycle.
+    if [ "$refreshed" -eq 0 ]; then
+      refresh_process "$ARM_PID"
+      [ "$READY_PENDING" -ne 0 ] || refreshed=1
+    fi
     boundary_reached && return 1
     # Probe the arm's exit twice a second between POLL-cadence checks, without
-    # changing the outer identity refresh, readiness, or boundary cadence.
+    # changing readiness or boundary cadence.
     i=$((POLL * 2))
     while [ "$i" -gt 0 ] && fm_pid_alive "$ARM_PID"; do
-      sleep 0.5
+      fm_poll_wait 0.5
       i=$((i - 1))
     done
   done
@@ -1116,11 +1125,10 @@ if ! host_still_owner; then
   stand_down "this session does not own supervision"
 fi
 trap cleanup EXIT
-trap 'exit 129' HUP
-trap 'exit 143' TERM
-trap 'exit 130' INT
-# Keep external waits here: a timed read's outstanding timer can interrupt
-# signal-triggered EXIT cleanup even with explicit terminating signal traps.
+trap 'fm_poll_wait_signal exit 129' HUP
+trap 'fm_poll_wait_signal exit 143' TERM
+trap 'fm_poll_wait_signal exit 130' INT
+# Let the timed read return before signal-triggered EXIT cleanup starts.
 activate || { echo "supervision-host stood down: the host record could not be written"; exit 0; }
 log_line "start	gen=$GEN	primary=$PRIMARY"
 

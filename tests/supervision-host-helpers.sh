@@ -178,6 +178,19 @@ HOMES_FILE="$TMP_ROOT/homes"
 # Stop whatever a case left running, by the exact pids its home recorded.
 stop_home_processes() {  # <home>
   local home=$1 pid arms='' i=0
+  # End the hook owner before its host when this fixture ends the session.
+  # Otherwise the hook can correctly retry the host between this snapshot and
+  # the final wait, leaving the fixture waiting on a fresh multi-hour park.
+  if [ -e "$home/session.stop" ]; then
+    FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" bash -c '
+      . "$1/bin/fm-wake-lib.sh"
+      if fm_autoarm_ledger_read "$STATE" && [ "$FM_AUTOARM_OUTCOME" = arming ] \
+        && current=$(fm_pid_identity "$FM_AUTOARM_OWNER") \
+        && [ "$current" = "$FM_AUTOARM_IDENTITY" ]; then
+        kill -TERM "$FM_AUTOARM_OWNER" 2>/dev/null || true
+      fi
+    ' _ "$ROOT" 2>/dev/null || true
+  fi
   if [ -f "$home/state/.supervision-host" ]; then
     arms=$(awk -F '\t' '$1 == "arm" { print $2 }' "$home/state/.supervision-host")
     pid=$(awk -F '\t' '$1 == "host" { print $2; exit }' "$home/state/.supervision-host")
