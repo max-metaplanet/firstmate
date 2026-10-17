@@ -38,7 +38,8 @@
 # because that script has no registry access at all, and bin/fm-spawn.sh checks
 # its value against the registry; bin/fm-project-mode.sh's header owns the
 # binding and bin/fm-dod-lib.sh owns what it changes for the worker, including
-# the refusal of a forge on local-only.
+# the refusal of a forge on local-only. A forge=external project is refused
+# outright, because its push guard is installed only by a ship spawn.
 # --ticket <ENG-123|no-ticket> with --commit-type <type> promotes the scout onto
 # the captain's ticket convention: the ship branch becomes
 # "<type>/<ticket>-<task-id>" instead of the "fm/" prefix, the promoted ship
@@ -170,6 +171,13 @@ refuse_impossible_forge_posture() {
   fm_forge_valid_for_mode "$FORGE" "$MODE" fm-promote.sh || return 1
   if [ "$FORGE" = gerrit ] && [ "$YOLO" = on ]; then
     echo "error: --yolo on is refused for forge=gerrit: a Code-Review+2 is a positive attributed claim that a named human approved and firstmate must not manufacture one (captain's decision 2026-09-15); promote with --yolo off and take any landing on a current explicit captain instruction naming that concrete change" >&2
+    return 1
+  fi
+  # A scout launches without the per-task push guard a forge=external ship
+  # carries (bin/fm-spawn.sh), and its task record has no forge=external line
+  # for the ready-report gate, so promotion cannot hand it that contract safely.
+  if [ "$FORGE" = external ]; then
+    echo "error: promotion is refused for forge=external: a scout launches without the push guard and the task record that keep task branches off the shared origin; spawn a fresh ship task with bin/fm-brief.sh --forge external instead" >&2
     return 1
   fi
   return 0

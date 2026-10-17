@@ -1694,6 +1694,78 @@ test_paused_until_that_passed_is_rechecked_before_the_cadence() {
   pass "a declared wait whose until time has passed is rechecked at once, then held to the cadence"
 }
 
+# --- a live worker paused on its own background job --------------------------
+# A worker declared `paused:` on its own background job and the job then ended
+# without a new status line, so only the passage of time can tell the watcher
+# the wait should be over. Without `until`, the first-sight alert spends the
+# declaration's re-surface throttle and every later sight - including the one
+# after the job ended - is held for PAUSE_RESURFACE_SECS. Naming the job's
+# start plus its timeout as `until` gives that same declaration one recheck once
+# the job can no longer be running.
+bg_job_paused_case() {  # <name> <status-line> -> dir
+  local dir state window key
+  dir=$(make_case "$1"); state="$dir/state"; window="test:fm-parked"
+  printf 'window=%s\nkind=scout\nharness=grok\nbackend=tmux\n' "$window" > "$state/parked.meta"
+  printf '%s\n' "$2" > "$state/parked.status"
+  printf '%s' "$(seen_sig "$state/parked.status")" > "$state/.seen-parked_status"
+  key=$(printf '%s' "$window" | tr ':/.' '___')
+  printf 'nightly build running' > "$dir/pane.txt"
+  printf '%s' "$(hash_text 'nightly build running')" > "$state/.hash-$key"
+  printf '1\n' > "$state/.count-$key"
+  printf '%s\n' "$dir"
+}
+
+bg_job_stale_wakes() {  # <state> -> count of stale wakes queued for the parked window
+  awk -F '\t' '$3 == "stale" && $4 == "test:fm-parked" { n++ } END { print n + 0 }' \
+    "$1/.wake-queue" 2>/dev/null || echo 0
+}
+
+test_paused_bg_job_without_until_stays_silent_after_the_job_ends() {
+  local dir state
+  dir=$(bg_job_paused_case bg-job-no-until \
+    "paused [key=nightly-build] [at=$(date +%s)]: nightly build; resume when the job finishes")
+  state="$dir/state"
+  parked_watch_round "$state" "$dir/fakebin" "$dir/watch.out" "$dir/pane.txt" test:fm-parked exit \
+    || fail "first sight of a worker paused on its background job did not surface"
+  ack_stopped_cycle "$state" || fail "could not acknowledge the first-sight alert"
+  printf '[bg failed] nightly build - Exited with code 1' > "$dir/pane.txt"
+  parked_watch_round "$state" "$dir/fakebin" "$dir/watch.out" "$dir/pane.txt" test:fm-parked absorb \
+    || fail "the ended job surfaced although the declaration names no time"
+  [ "$(bg_job_stale_wakes "$state")" -eq 0 ] \
+    || fail "the ended job surfaced inside the cadence although the declaration names no time"
+  pass "without until, a worker paused on its own ended background job is not rechecked inside the cadence"
+}
+
+test_paused_bg_job_until_timeout_rechecks_after_the_job_ends() {
+  local dir state started
+  started=$(date +%s)
+  dir=$(bg_job_paused_case bg-job-until-running \
+    "paused [key=nightly-build] [at=$started]: nightly build (background job, 600s timeout); resume when it ends, until $(iso_utc_at "$(( started + 600 ))")")
+  state="$dir/state"
+  parked_watch_round "$state" "$dir/fakebin" "$dir/watch.out" "$dir/pane.txt" test:fm-parked absorb \
+    || fail "a worker paused on its running background job woke before the job's timeout"
+  [ "$(bg_job_stale_wakes "$state")" -eq 0 ] || fail "the running job surfaced before its timeout"
+  started=$(( $(date +%s) - 180 ))
+  dir=$(bg_job_paused_case bg-job-until \
+    "paused [key=nightly-build] [at=$started]: nightly build (background job, 120s timeout); resume when it ends, until $(iso_utc_at "$(( started + 120 ))")")
+  state="$dir/state"
+  printf '[bg failed] nightly build - Exited with code 1' > "$dir/pane.txt"
+  parked_watch_round "$state" "$dir/fakebin" "$dir/watch.out" "$dir/pane.txt" test:fm-parked exit \
+    || fail "the job's timeout passed without a recheck of the worker paused on it"
+  [ "$(bg_job_stale_wakes "$state")" -eq 1 ] || fail "the passed timeout queued the wrong number of rechecks"
+  awk -F '\t' '$3 == "stale" && $5 == "stale: test:fm-parked" { found = 1 } END { exit !found }' \
+    "$state/.wake-queue" || fail "the recheck carried an unexpected reason: $(cat "$state/.wake-queue")"
+  case "$(cat "$state/.paused-resurfaced-test_fm-parked" 2>/dev/null)" in
+    *:due) ;;
+    *) fail "the recheck was not recorded as the passed declared time" ;;
+  esac
+  ack_stopped_cycle "$state" || fail "could not acknowledge the due recheck"
+  printf '[bg failed] nightly build - Exited with code 1 (idle)' > "$dir/pane.txt"
+  parked_watch_round "$state" "$dir/fakebin" "$dir/watch.out" "$dir/pane.txt" test:fm-parked absorb \
+    || fail "the due recheck repeated instead of returning to the cadence"
+  pass "until set to a background job's timeout rechecks the worker paused on it once the job must have ended"
+}
+
 # FM_TEST_ONLY runs a single named case, the same entry point the sibling
 # suites expose.
 if [ -n "${FM_TEST_ONLY:-}" ]; then
@@ -1741,3 +1813,5 @@ test_captain_held_rechecked_under_a_quiet_record
 test_paused_until_near_future_is_quiet_before_the_cadence
 test_paused_until_wrong_year_is_bounded_by_the_cadence
 test_paused_until_that_passed_is_rechecked_before_the_cadence
+test_paused_bg_job_without_until_stays_silent_after_the_job_ends
+test_paused_bg_job_until_timeout_rechecks_after_the_job_ends

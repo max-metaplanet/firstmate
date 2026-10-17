@@ -19,10 +19,11 @@
 // queued while main is streaming joins the running run without ever raising
 // before_agent_start, so waiting on that event stalls every later close.
 // Consumption is tracked only so a replacement can replay a follow-up Pi had
-// not consumed. An idle main consumes at before_agent_start; a streaming main
-// consumes at the user message_start carrying the exact wake text; either
-// event finishes the pending record, and a still-unconsumed record rides the
-// replacement handoff.
+// not consumed. An idle main consumes at a prompt-bearing before_agent_start;
+// a streaming main consumes at the user message_start carrying the exact wake
+// text. A no-prompt custom trigger cannot consume it, even with equal content.
+// Either user boundary finishes the pending record, and a still-unconsumed
+// record rides the replacement handoff.
 //
 // Postures (stated once here; docs/pi-supervision-branch.md "Postures"):
 // the away-posture record state/.afk-contract is read as a file at every
@@ -1201,7 +1202,7 @@ export default function (pi: ExtensionAPI) {
 
   pi.on?.("before_agent_start", (event) => {
     // A wake is a user follow-up; a run opened by a custom message carries no
-    // prompt and cannot consume one.
+    // prompt and cannot consume one, even with equal text.
     if (!("prompt" in event)) return;
     consumeWake(generation, event.prompt);
   });

@@ -33,6 +33,14 @@ concurrency:
 # tiers and their rationale; tests/fm-ci-workflow.test.sh guards this workflow.
 # Each job comment identifies the tier implemented by its executable value.
 
+# Fork opt-out: a fork sets the repository variable FM_CI_SKIP_PUSH to 1 to
+# skip the push run, and FM_CI_SKIP_MACOS to 1 to skip the macOS job, without
+# a tracked edit that drifts from upstream; with neither set, every job runs
+# exactly as before. The skip is a job-level condition, repeated per job
+# because workflow syntax has no shared anchor, and never a trigger filter: a
+# job skipped by its condition reports success, while a workflow filtered out
+# at the trigger stays pending and blocks the merge. CONTRIBUTING.md documents
+# the variables.
 jobs:
   # Change-scope gates. One owner of the path sets and of the change-scoped
   # test selection: bin/fm-ci-change-scope.sh, pinned by
@@ -53,6 +61,7 @@ jobs:
   changes:
     name: Change scope
     runs-on: ubuntu-latest
+    if: ${{ !(github.event_name == 'push' && vars.FM_CI_SKIP_PUSH == '1') }}
     # Fast tier (see the timeout policy above): one diff and one classification.
     timeout-minutes: 5
     outputs:
@@ -82,7 +91,7 @@ jobs:
     # Shell lint reads only bin/ and tests/ plus the workflow YAML, so prose
     # that reaches no test cannot change its verdict.
     needs: changes
-    if: needs.changes.outputs.behavior == 'true'
+    if: ${{ needs.changes.outputs.behavior == 'true' && !(github.event_name == 'push' && vars.FM_CI_SKIP_PUSH == '1') }}
     # Normal tier (see the timeout policy above).
     timeout-minutes: 30
     strategy:
@@ -141,6 +150,7 @@ jobs:
   test-coverage:
     name: Test coverage guard
     runs-on: ubuntu-latest
+    if: ${{ !(github.event_name == 'push' && vars.FM_CI_SKIP_PUSH == '1') }}
     # Fast tier: the coverage guard is a seconds-long local computation.
     timeout-minutes: 5
     steps:
@@ -162,7 +172,7 @@ jobs:
     needs: changes
     # `parallel`, not `full`: these two lanes are also the pull request's
     # bounded fallback when no change-scoped selection can be trusted.
-    if: needs.changes.outputs.parallel == 'true'
+    if: ${{ needs.changes.outputs.parallel == 'true' && !(github.event_name == 'push' && vars.FM_CI_SKIP_PUSH == '1') }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -209,7 +219,7 @@ jobs:
     timeout-minutes: 30
     needs: changes
     # Gated with its sibling lane above, for the same reason.
-    if: needs.changes.outputs.parallel == 'true'
+    if: ${{ needs.changes.outputs.parallel == 'true' && !(github.event_name == 'push' && vars.FM_CI_SKIP_PUSH == '1') }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -260,7 +270,7 @@ jobs:
     # shards carry their own job bound while every other lane keeps 30.
     timeout-minutes: 45
     needs: changes
-    if: needs.changes.outputs.full == 'true'
+    if: ${{ needs.changes.outputs.full == 'true' && !(github.event_name == 'push' && vars.FM_CI_SKIP_PUSH == '1') }}
     strategy:
       # Every shard reports so one failure never hides another shard's result.
       fail-fast: false
@@ -293,9 +303,9 @@ jobs:
           set -eu
           npm install -g tasks-axi
           tasks-axi --version
-      # The Pi extension tests read the installed Pi package's own types and
-      # runtime, so without it they gate-skip and pass silently. It is a public
-      # npm package and needs no credential, so CI can hold the real thing.
+      # Runtime-facing Pi extension probes need the installed public package
+      # to avoid capability skips. tests/fm-pi-primary-types.test.sh owns its
+      # separate compiler dependencies.
       - name: Install the Pi package for the Pi extension tests
         run: |
           set -eu
@@ -318,8 +328,6 @@ jobs:
         run: |
           set -eu
           mkdir -p "$RUNNER_TEMP/fm-test"
-          # The Pi package is installed above and CI provides npm and tsc, so
-          # any missing typecheck prerequisite is a broken lane, not a valid skip.
           bin/fm-test-run.sh --lane "$FM_SERIAL_LANE" \
             --fail-on-gate-skip 'Pi extension typecheck prerequisite not found' \
             --json "$RUNNER_TEMP/fm-test/fm-test-timing-portable-serial-${FM_SERIAL_SHARD}.json"
@@ -351,7 +359,7 @@ jobs:
     # keeps a packed job far under this; the bound stays a hang tripwire.
     timeout-minutes: 30
     needs: changes
-    if: needs.changes.outputs.selected_matrix != ''
+    if: ${{ needs.changes.outputs.selected_matrix != '' && !(github.event_name == 'push' && vars.FM_CI_SKIP_PUSH == '1') }}
     strategy:
       # Every packed job reports so one failure never hides another's result.
       fail-fast: false
@@ -436,7 +444,7 @@ jobs:
     # The required Herdr lane owns its whole family, so a change-scoped
     # selection that reaches any member sends the work here rather than into a
     # job with no Herdr installed.
-    if: needs.changes.outputs.herdr == 'true'
+    if: ${{ needs.changes.outputs.herdr == 'true' && !(github.event_name == 'push' && vars.FM_CI_SKIP_PUSH == '1') }}
     # Heavy tier (see the timeout policy above): the last-resort job backstop.
     # The family-run step below owns the hang tripwire, so a wedged suite fails
     # there with the always() cleanup and timing upload still running.
@@ -570,7 +578,7 @@ jobs:
     # lanes were gated off: there would be no artifact to download at all.
     # `parallel` is the widest gate any lane it waits on uses, so this job runs
     # for the bounded fallback round too.
-    if: always() && needs.changes.outputs.parallel == 'true'
+    if: ${{ always() && needs.changes.outputs.parallel == 'true' && !(github.event_name == 'push' && vars.FM_CI_SKIP_PUSH == '1') }}
     steps:
       - uses: actions/checkout@v6
       - name: Download lane timing artifacts
@@ -619,7 +627,7 @@ jobs:
     # owns which paths can change its verdict, and bin/fm-macos-stock-bash-check.sh
     # owns what the check is, so both halves stay the same check.
     needs: changes
-    if: github.event_name != 'pull_request' && needs.changes.outputs.macos == 'true'
+    if: ${{ github.event_name != 'pull_request' && needs.changes.outputs.macos == 'true' && !(github.event_name == 'push' && vars.FM_CI_SKIP_PUSH == '1') && vars.FM_CI_SKIP_MACOS != '1' }}
     steps:
       - uses: actions/checkout@v6
       - name: Run snapshot consumers with stock Bash
@@ -641,7 +649,7 @@ jobs:
     # Fast tier (see the timeout policy above): one 1.4-second suite.
     timeout-minutes: 5
     needs: changes
-    if: needs.changes.outputs.behavior == 'false'
+    if: ${{ needs.changes.outputs.behavior == 'false' && !(github.event_name == 'push' && vars.FM_CI_SKIP_PUSH == '1') }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -652,6 +660,7 @@ jobs:
   invariants:
     name: Repo invariants
     runs-on: ubuntu-latest
+    if: ${{ !(github.event_name == 'push' && vars.FM_CI_SKIP_PUSH == '1') }}
     # Fast tier: the invariant checks are seconds-long file comparisons.
     timeout-minutes: 5
     steps:
@@ -692,7 +701,7 @@ jobs:
     runs-on: ubuntu-latest
     # Fast tier (see the timeout policy above): one results comparison.
     timeout-minutes: 5
-    if: always()
+    if: ${{ always() && !(github.event_name == 'push' && vars.FM_CI_SKIP_PUSH == '1') }}
     needs:
       - changes
       - lint
