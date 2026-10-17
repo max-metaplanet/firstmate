@@ -161,6 +161,7 @@ fi
 # shellcheck source=bin/fm-wake-lib.sh
 . "$SCRIPT_DIR/fm-wake-lib.sh"
 
+FM_WATCHER_IDENTITY_CACHE=1
 WATCH="$SCRIPT_DIR/fm-watch.sh"
 WATCH_LOCK="$STATE/.watch.lock"
 BEAT="$STATE/.last-watcher-beat"
@@ -358,7 +359,7 @@ healthy_watcher() {
 
 report_attached() {
   local age
-  age=$(fm_path_age "$BEAT")
+  fm_watcher_beacon_age_to age "$BEAT"
   echo "watcher: attached pid=$HEALTHY_PID (beacon ${age}s)"
 }
 
@@ -422,7 +423,7 @@ close_unobserved_cycle() {
 # the identity this arm's current cycle attached to, whatever its beacon age.
 attached_holder_live() {
   local pid=$1 lock_pid
-  lock_pid=$(cat "$WATCH_LOCK/pid" 2>/dev/null || true)
+  fm_read_file_to lock_pid "$WATCH_LOCK/pid" || lock_pid=
   [ "$lock_pid" = "$pid" ] || return 1
   fm_pid_alive "$pid" || return 1
   fm_watcher_lock_matches_pid "$STATE" "$WATCH" "$pid" "$FM_HOME" || return 1
@@ -448,13 +449,13 @@ attach_and_wait() {
         cycle_begin "$attached_pid" attached "$HEALTHY_IDENTITY"
         report_attached
       fi
-      sleep "$ATTACH_POLL"
+      fm_poll_wait "$ATTACH_POLL"
       continue
     fi
     if attached_holder_live "$attached_pid"; then
-      age=$(fm_path_age "$BEAT")
+      fm_watcher_beacon_age_to age "$BEAT"
       if [ "$age" -lt "$STALL_BOUND" ]; then
-        sleep "$ATTACH_POLL"
+        fm_poll_wait "$ATTACH_POLL"
         continue
       fi
       cycle_log_append unknown unknown attached-holder-stalled none
@@ -485,9 +486,9 @@ handle_attached_signal() {
   exit "$rc"
 }
 
-trap 'handle_attached_signal HUP 129' HUP
-trap 'handle_attached_signal TERM 143' TERM
-trap 'handle_attached_signal INT 130' INT
+trap 'fm_poll_wait_signal handle_attached_signal HUP 129' HUP
+trap 'fm_poll_wait_signal handle_attached_signal TERM 143' TERM
+trap 'fm_poll_wait_signal handle_attached_signal INT 130' INT
 
 watch_output_has_wake() {
   local out=$1
@@ -561,7 +562,7 @@ fi
 STOPPED_PID=
 stop_home_watcher() {
   local lock_pid watch_path=$WATCH i
-  lock_pid=$(cat "$WATCH_LOCK/pid" 2>/dev/null || true)
+  fm_read_file_to lock_pid "$WATCH_LOCK/pid" || lock_pid=
   fm_pid_alive "$lock_pid" || return 0
   if [ "$mode" = stop ]; then
     # Explicit lifecycle stop belongs to the home, even when its watcher was
@@ -714,9 +715,9 @@ handle_arm_signal() {
   exit "$rc"
 }
 
-trap 'handle_arm_signal HUP 129' HUP
-trap 'handle_arm_signal TERM 143' TERM
-trap 'handle_arm_signal INT 130' INT
+trap 'fm_poll_wait_signal handle_arm_signal HUP 129' HUP
+trap 'fm_poll_wait_signal handle_arm_signal TERM 143' TERM
+trap 'fm_poll_wait_signal handle_arm_signal INT 130' INT
 
 child_out=$(mktemp "$STATE/.watch-arm-output.XXXXXX") || {
   echo "watcher: FAILED - no live watcher with a fresh beacon"

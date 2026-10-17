@@ -918,7 +918,7 @@ signal_turnend_panes_churned() {  # <file> ...
 }
 
 recorded_windows() {
-  local meta w seen=
+  local meta w seen='' window_records=''
   for meta in "$STATE"/*.meta; do
     [ -e "$meta" ] || continue
     w=$(fm_backend_target_of_meta "$meta")
@@ -927,8 +927,13 @@ recorded_windows() {
       *"|$w|"*) continue ;;
     esac
     seen="$seen|$w|"
-    printf '%s\n' "$w"
+    window_records+="$w"$'\n'
   done
+  if [ "$#" -gt 0 ]; then
+    printf -v "$1" '%s' "$window_records"
+  else
+    printf '%s' "$window_records"
+  fi
 }
 
 # Print the oldest structurally valid ACTIONABLE row in a local secondmate's
@@ -1055,7 +1060,8 @@ secondmate_ring_to_drain() {  # <task> <window>
 # Receipts close the append-before-marker crash window without changing the
 # foreign queue.
 secondmate_wake_stall_tick() {
-  local now=$(( $(date +%s) )) threshold=$SECONDMATE_WAKE_STALL_SECS
+  local now threshold=$SECONDMATE_WAKE_STALL_SECS
+  fm_epoch_seconds_to now
   local meta task kind remote_host home queue row epoch seq row_key marker progress_marker ring_marker progress observed_at observed_key
   local receipt receipt_dir notify_key queued idle reason episode_alerted already_rung w
   # Endpoint metadata admits this queue-loop check; secondmate-liveness owns registered mates whose endpoint is missing or dead.
@@ -1168,7 +1174,9 @@ EOF
 # other is mid-relaunch on.
 secondmate_liveness_tick() {
   local tick_marker="$STATE/.secondmate-liveness-tick"
-  [ "$(age_of "$tick_marker")" -ge "$SECONDMATE_LIVENESS_SECS" ] || return 0
+  local tick_age
+  age_of "$tick_marker" tick_age
+  [ "$tick_age" -ge "$SECONDMATE_LIVENESS_SECS" ] || return 0
   touch "$tick_marker" || return 1
   local now=$(( $(date +%s) )) meta id kind
   local bound_marker attempts notify_key reason queued err first_reason='' failed=0
@@ -2199,16 +2207,19 @@ age_of() {  # <file> [output-variable]; seconds since mtime, 999999 when missing
 # The caller records reported state only after surfacing or intentional absorption,
 # and commits a status classification position only after a successful span read.
 scan_signals() {
-  local f sig sf exclude seen_sig
+  local f sig sf exclude='' exclude_read=0 seen_sig signal_records=''
   # A remote mate's own parent channel is not a self-home task status log; the
   # home-shape-aware exclusion and its precedent live in
   # status_scan_parent_channel_exclude (fm-classify-lib.sh).
-  exclude=$(status_scan_parent_channel_exclude "$STATE")
   for f in "$STATE"/*.status "$STATE"/*.turn-ended; do
-    [ "$f" = "$exclude" ] && continue
     if [ ! -e "$f" ]; then
       case "$f" in *.status) [ -L "$f" ] || continue ;; *) continue ;; esac
     fi
+    if [ "$exclude_read" -eq 0 ]; then
+      exclude=$(status_scan_parent_channel_exclude "$STATE")
+      exclude_read=1
+    fi
+    [ "$f" = "$exclude" ] && continue
     sig=$(fm_wake_signal_sig "$f") || continue
     [ -n "$sig" ] || continue
     sf=$(fm_wake_signal_seen_path "$STATE" "$f")
@@ -2217,8 +2228,13 @@ scan_signals() {
       *) fm_read_file_to seen_sig "$sf" || seen_sig=
          [ "$sig" = "$seen_sig" ] && continue ;;
     esac
-    printf '%s\t%s\t%s\n' "$sf" "$sig" "$f"
+    signal_records+="$sf"$'\t'"$sig"$'\t'"$f"$'\n'
   done
+  if [ "$#" -gt 0 ]; then
+    printf -v "$1" '%s' "$signal_records"
+  else
+    printf '%s' "$signal_records"
+  fi
   return 0
 }
 
@@ -2554,10 +2570,25 @@ heartbeat_scan_finds_actionable() {
 # loop is the permanent fail-closed backstop). This preserves the single live
 # supervision cycle: the reader is a short-lived subprocess of THIS watcher, not
 # a second watcher, so every guard/beacon/arm/turn-end mechanism is unchanged.
+watcher_poll_stop() {
+  watcher_stop_signals
+  kill -s "$1" "$$"
+}
+
+watcher_poll_wait() {
+  trap 'fm_poll_wait_signal watcher_poll_stop HUP' HUP
+  trap 'fm_poll_wait_signal watcher_poll_stop TERM' TERM
+  trap 'fm_poll_wait_signal exit 1' INT
+  fm_poll_wait "$1"
+  watcher_stop_signals
+}
+
 event_wait_or_sleep() {
   local w b session first_backend="" first_session="" rec rc wait_started wait_waited
-  local windows=()
+  local windows=() recorded
+  recorded_windows recorded
   while IFS= read -r w; do
+    [ -n "$w" ] || continue
     window_fields_forget
     window_fields "$w"
     b=$FM_WIN_BACKEND
@@ -2576,10 +2607,10 @@ event_wait_or_sleep() {
       continue
     fi
     windows+=("$w")
-  done < <(recorded_windows)
+  done <<< "$recorded"
 
   if [ "${#windows[@]}" -eq 0 ]; then
-    sleep "$POLL"
+    watcher_poll_wait "$POLL"
     return
   fi
 
@@ -2595,7 +2626,7 @@ event_wait_or_sleep() {
     _event_cap_fails=0
   fi
   if [ "$_event_cap_ok" != 1 ]; then
-    sleep "$POLL"
+    watcher_poll_wait "$POLL"
     return
   fi
 
@@ -2613,7 +2644,7 @@ event_wait_or_sleep() {
       # pure polling for the rest of this watcher process.
       _event_cap_fails=$((_event_cap_fails + 1))
       [ "$_event_cap_fails" -ge "$EVENT_CAP_FAIL_MAX" ] && _event_cap_ok=0
-      sleep "$POLL"
+      watcher_poll_wait "$POLL"
       ;;
     *)
       # 1: no actionable edge. The wait has "effectively already slept" only
@@ -2923,6 +2954,8 @@ home_summary_age=999999
 check_age=999999
 heartbeat_age=999999
 watch_lock_pid=
+watcher_beat_epoch=0
+poll_windows=
 stale_seen=
 count_prev=0
 prev=
@@ -2962,9 +2995,10 @@ while :; do
     exit 0
   fi
 
-  # Liveness beacon for fm-guard.sh: a fresh mtime here means a watcher is
-  # alive. Supervision scripts warn when this goes stale with tasks in flight.
-  touch "$STATE/.last-watcher-beat"
+  # Publish an epoch for builtin freshness reads; writing also updates mtime
+  # for older arms and guards during rolling upgrades.
+  fm_epoch_seconds_to watcher_beat_epoch
+  printf 'heartbeat_epoch=%s\n' "$watcher_beat_epoch" > "$STATE/.last-watcher-beat"
 
   # Opt-in fleet activity ledger (docs/fleet-ledger.md): pick up newly appended
   # status lines before this cycle can exit on a wake. Off costs one file test.
@@ -3175,7 +3209,7 @@ EOF
   # hook land seconds apart, and reporting them as separate actionable wakes
   # costs a full firstmate turn each. The re-scan also picks up a newer
   # signature for an already-pending file (last write wins below).
-  pending=$(scan_signals)
+  scan_signals pending
   if [ -n "$pending" ]; then
     sleep "$SIGNAL_GRACE"
     pending=$(printf '%s\n%s' "$pending" "$(scan_signals)")
@@ -3300,7 +3334,9 @@ EOF
   # stale hash is surfaced, absorbed, or timed toward escalation once (.stale-*
   # remembers the hash already classified, or the declaration a busy pane's
   # crossed turn bound already handed to the away-mode daemon).
+  recorded_windows poll_windows
   while IFS= read -r w; do
+    [ -n "$w" ] || continue
     # One metadata resolution per window per poll; every helper below reads the
     # published fields rather than resolving the same window again.
     window_fields_forget
@@ -3549,7 +3585,7 @@ EOF
         clear_pause_tracking "$key"
       fi
     fi
-  done < <(recorded_windows)
+  done <<< "$poll_windows"
 
   # Heartbeat: the watcher runs a cheap fleet-scan at a regular cadence no matter
   # what. Time-based via .last-heartbeat mtime; interval doubles per consecutive

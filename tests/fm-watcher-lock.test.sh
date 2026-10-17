@@ -1371,6 +1371,7 @@ test_stopped_watcher_is_live_but_stale_then_exit_is_classified() {
   grep -qF "watcher: started pid=$watcher_pid" "$armout" || fail "load counterfactual watcher did not start"
 
   kill -STOP "$watcher_pid" 2>/dev/null || fail "could not SIGSTOP watcher"
+  printf 'heartbeat_epoch=946684800\n' > "$state/.last-watcher-beat"
   touch -t 200001010000 "$state/.last-watcher-beat"
   FM_STATE_OVERRIDE="$state" bash -c '. "$1"; fm_pid_alive "$2"' _ "$LIB" "$watcher_pid" \
     || fail "SIGSTOP watcher was not classified as a live pid"

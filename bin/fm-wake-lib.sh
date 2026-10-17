@@ -57,6 +57,55 @@ else
   fm_epoch_seconds_to() { printf -v "$1" '%s' "$(date +%s)"; }
 fi
 
+# A held-open FIFO has neither data nor EOF, so read waits the full timeout.
+# Allocate once per polling process. Bash 3.2 lacks fractional read timeouts
+# and dynamic descriptors; retain sleep there (and for sleep's unit syntax).
+# Signal handlers using this wait must call fm_poll_wait_signal: running EXIT
+# cleanup inside read's signal trap leaves its timeout armed during cleanup.
+fm_poll_wait() {  # <seconds>
+  local wait_status=0 wait_dir
+  if [ "${_FM_POLL_WAIT_DISABLED:-0}" -eq 1 ] || [ "${BASH_VERSINFO[0]}" -lt 4 ] \
+    || { [ "${BASH_VERSINFO[0]}" -eq 4 ] && [ "${BASH_VERSINFO[1]}" -lt 1 ]; } \
+    || [[ ! $1 =~ ^[0-9]+([.][0-9]+)?$ ]]; then
+    sleep "$1"
+    return
+  fi
+  if [ -z "${FM_POLL_WAIT_FD:-}" ]; then
+    wait_dir=$(mktemp -d "$STATE/.poll-wait.XXXXXX") || { _FM_POLL_WAIT_DISABLED=1; sleep "$1"; return; }
+    if mkfifo "$wait_dir/fifo" && { exec {FM_POLL_WAIT_FD}<> "$wait_dir/fifo"; }; then
+      rm -f "$wait_dir/fifo"
+      rmdir "$wait_dir"
+    else
+      # Some supported shells run on hosts without usable FIFOs. Probe once,
+      # rather than adding failed setup processes to every fallback sleep.
+      _FM_POLL_WAIT_DISABLED=1
+      rm -f "$wait_dir/fifo"
+      rmdir "$wait_dir"
+      sleep "$1"
+      return
+    fi
+  fi
+  FM_POLL_WAIT_ACTIVE=1
+  IFS= read -r -t "$1" -u "$FM_POLL_WAIT_FD" _fm_wait_unused || wait_status=$?
+  FM_POLL_WAIT_ACTIVE=0
+  if [ "${#FM_POLL_WAIT_DEFERRED[@]}" -gt 0 ]; then
+    "${FM_POLL_WAIT_DEFERRED[@]}"
+    FM_POLL_WAIT_DEFERRED=()
+  elif [ "$wait_status" -le 128 ]; then
+    # An invalid/closed descriptor must not turn supervision into a busy loop.
+    sleep "$1"
+  fi
+}
+FM_POLL_WAIT_ACTIVE=0
+FM_POLL_WAIT_DEFERRED=()
+fm_poll_wait_signal() {  # <handler> [arguments...]
+  if [ "$FM_POLL_WAIT_ACTIVE" -eq 1 ]; then
+    FM_POLL_WAIT_DEFERRED=("$@")
+  else
+    "$@"
+  fi
+}
+
 fm_pid_alive() {
   local pid=$1
   case "$pid" in
@@ -120,6 +169,27 @@ fm_path_age() {
   m=$(fm_path_mtime "$path") || { echo 999999; return; }
   fm_epoch_seconds_to now
   echo $(( now - m ))
+}
+
+# New watchers publish an epoch as well as updating the beacon's mtime.
+# Older watchers leave an empty file; keep their mtime-based freshness test.
+fm_watcher_beacon_age_to() {  # <output-variable> <beacon>
+  local beacon_epoch beacon_now beacon_age
+  fm_read_file_to beacon_epoch "$2" || beacon_epoch=
+  case "$beacon_epoch" in
+    heartbeat_epoch=*) beacon_epoch=${beacon_epoch#heartbeat_epoch=} ;;
+    *) beacon_epoch= ;;
+  esac
+  if [[ ! $beacon_epoch =~ ^(0|[1-9][0-9]{0,10})$ ]]; then
+    beacon_epoch=$(fm_path_mtime "$2") || beacon_epoch=
+  fi
+  if [ -n "$beacon_epoch" ]; then
+    fm_epoch_seconds_to beacon_now
+    beacon_age=$((beacon_now - beacon_epoch))
+  else
+    beacon_age=999999
+  fi
+  printf -v "$1" '%s' "$beacon_age"
 }
 
 # fm_poll_derived_grace [poll-seconds]
@@ -235,18 +305,29 @@ fm_watcher_lock_unheld() {
 }
 
 FM_WATCHER_MATCHED_IDENTITY=
+FM_WATCHER_IDENTITY_CACHE=0
+_FM_WATCHER_IDENTITY_KEY=
 fm_watcher_lock_matches_pid() {
-  local state=$1 watch_path=$2 pid=$3 home=${4:-$FM_HOME} lockdir lock_home lock_path lock_identity current_identity
+  local state=$1 watch_path=$2 pid=$3 home=${4:-$FM_HOME} lockdir lock_home lock_path lock_identity current_identity identity_key old_key
   FM_WATCHER_MATCHED_IDENTITY=
+  old_key=$_FM_WATCHER_IDENTITY_KEY
+  _FM_WATCHER_IDENTITY_KEY=
   lockdir="$state/.watch.lock"
-  lock_home=$(cat "$lockdir/fm-home" 2>/dev/null || true)
-  lock_path=$(cat "$lockdir/watcher-path" 2>/dev/null || true)
-  lock_identity=$(cat "$lockdir/pid-identity" 2>/dev/null || true)
+  fm_pid_alive "$pid" || return 1
+  fm_read_file_to lock_home "$lockdir/fm-home" || return 1
+  fm_read_file_to lock_path "$lockdir/watcher-path" || return 1
+  fm_read_file_to lock_identity "$lockdir/pid-identity" || return 1
   [ "$lock_home" = "$home" ] || return 1
   [ "$lock_path" = "$watch_path" ] || return 1
   [ -n "$lock_identity" ] || return 1
-  current_identity=$(fm_pid_identity "$pid") || return 1
-  [ "$current_identity" = "$lock_identity" ] || return 1
+  # Only an attaching arm opts in. Every poll checks liveness and all lock
+  # contents; any failed check or changed field discards the identity proof.
+  printf -v identity_key '%q ' "$state" "$pid" "$lock_home" "$lock_path" "$lock_identity"
+  if [ "$FM_WATCHER_IDENTITY_CACHE" != 1 ] || [ "$identity_key" != "$old_key" ]; then
+    current_identity=$(fm_pid_identity "$pid") || return 1
+    [ "$current_identity" = "$lock_identity" ] || return 1
+  fi
+  _FM_WATCHER_IDENTITY_KEY=$identity_key
   FM_WATCHER_MATCHED_IDENTITY=$lock_identity
 }
 
@@ -258,11 +339,10 @@ fm_watcher_healthy() {
   FM_WATCHER_HEALTHY_IDENTITY=
   lockdir="$state/.watch.lock"
   beat="$state/.last-watcher-beat"
-  pid=$(cat "$lockdir/pid" 2>/dev/null || true)
-  fm_pid_alive "$pid" || return 1
+  fm_read_file_to pid "$lockdir/pid" || pid=
   fm_watcher_lock_matches_pid "$state" "$watch_path" "$pid" "$home" || return 1
   identity=$FM_WATCHER_MATCHED_IDENTITY
-  age=$(fm_path_age "$beat")
+  fm_watcher_beacon_age_to age "$beat"
   [ "$age" -lt "$grace" ] || return 1
   # shellcheck disable=SC2034 # Read by callers after fm_watcher_healthy returns.
   FM_WATCHER_HEALTHY_PID=$pid

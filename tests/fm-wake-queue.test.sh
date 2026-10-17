@@ -18,6 +18,24 @@ GUARD="$ROOT/bin/fm-guard.sh"
 
 TMP_ROOT=$(fm_test_tmproot fm-wake-tests)
 
+# The foreign-stall fixture freezes that tick's clock. It now reads through
+# fm_epoch_seconds_to on modern Bash; other cadence clocks still use real time,
+# just as they did when this fixture intercepted only date(1).
+cat > "$TMP_ROOT/stall-clock-env" <<'SH'
+printf() {
+  local _stall_now
+  if [ "${1:-}" = -v ] && [ "${3:-}" = '%(%s)T' ] \
+    && [ "${FUNCNAME[2]:-}" = secondmate_wake_stall_tick ] \
+    && [ -n "${FM_FAKE_NOW_FILE:-}" ]; then
+    IFS= read -r _stall_now < "$FM_FAKE_NOW_FILE" || return 1
+    builtin printf -v "$2" '%s' "$_stall_now"
+  else
+    builtin printf "$@"
+  fi
+}
+SH
+export BASH_ENV="$TMP_ROOT/stall-clock-env"
+
 
 test_concurrent_append_and_drain() {
   local dir state out1 out2 pids i pid count unique malformed sequence generation
