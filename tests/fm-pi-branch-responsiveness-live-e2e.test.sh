@@ -154,17 +154,30 @@ console.log(`MEDIAN_MS=${delays[Math.floor(delays.length / 2)].toFixed(1)}`);
 console.log(`ALL_MS=${delays.map((delay) => delay.toFixed(0)).join(",")}`);
 JS
 
-wait_for_pane_text() {
-  local expected=$1 attempts=${2:-120} i=0
+# Any one of the given strings carries a positive verdict, so no single
+# spelling of what Pi rendered is load-bearing.
+wait_for_pane_text() {  # <attempts> <expected>...
+  local attempts=$1 i=0 pane expected
+  shift
   while [ "$i" -lt "$attempts" ]; do
-    if "$TMUX" -L "$SOCKET" capture-pane -p -t "$SESSION" 2>/dev/null | grep -Fq "$expected"; then
-      return 0
-    fi
+    pane=$("$TMUX" -L "$SOCKET" capture-pane -p -t "$SESSION" 2>/dev/null) || pane=
+    for expected in "$@"; do
+      case "$pane" in *"$expected"*) return 0 ;; esac
+    done
     sleep 0.25
     i=$((i + 1))
   done
   return 1
 }
+
+# Pi abbreviates a path under the home directory to a leading `~`, and the lab
+# lives under the scratch root beside the checkout - inside $HOME on a GitHub
+# runner and on an operator machine alike. Both spellings name the same
+# project, so the status line holds one of them once the TUI has drawn.
+PROJECT_RENDERED=$PROJECT
+case "$PROJECT" in
+  "$HOME"/*) PROJECT_RENDERED="~${PROJECT#"$HOME"}" ;;
+esac
 
 # One arm: launch Pi, let it settle, optionally seed outcomes that the
 # trigger will deliver, then measure. Prints the probe's own key=value lines.
@@ -184,7 +197,7 @@ run_arm() {
      FM_ROOT_OVERRIDE='$ROOT' LAB_PROJECT='$PROJECT' '$LAB/launch.sh' ${pi_args[*]@Q}"
   # The lab project path in Pi's own status line is the readiness signal: it
   # appears only once the TUI has drawn, unlike any prompt character.
-  wait_for_pane_text "$PROJECT" 240 \
+  wait_for_pane_text 240 "$PROJECT" "$PROJECT_RENDERED" \
     || { "$TMUX" -L "$SOCKET" capture-pane -p -t "$SESSION" >&2; fail "Pi $PI_VERSION never drew its TUI in the $label arm"; }
   sleep 2
 

@@ -105,10 +105,23 @@ find_chrome() {
 render_export_dom() {
   local chrome=$1 source_file=$2 out_file=$3 pi_version=$4
   local attempt pid status wait_count wait_limit reap_wait log profile report timed_out
+  local chrome_tmp
   local -a profile_arg
   report="$TMP_ROOT/chrome-render-report.txt"
   wait_limit=${FM_CHROME_RENDER_WAIT_TICKS:-300}
   : >"$report"
+  # Chrome's process singleton binds a unix socket at
+  # $TMPDIR/com.google.Chrome.XXXXXX/SingletonSocket, and a sockaddr_un path
+  # holds 107 usable bytes on Linux and 103 on macOS. A CI worker's TMPDIR
+  # under the scratch root beside the checkout is already around 70 of them,
+  # so that address overflows and Chrome aborts with exit 134 before writing
+  # any DOM. Hence a short temp directory of its own, which is one short-lived
+  # directory per render rather than the fixture-tree churn
+  # tests/scratch-root.sh moved out of the machine temp directory.
+  chrome_tmp=$(mktemp -d /tmp/fmc.XXXXXX) || {
+    printf 'could not create a short temp directory for Chrome'
+    return 1
+  }
   for attempt in 1 2 3; do
     log="$TMP_ROOT/chrome-render-$attempt.err"
     profile="$TMP_ROOT/chrome-home-$attempt"
@@ -131,6 +144,7 @@ render_export_dom() {
       *) profile_arg=() ;;
     esac
     HOME="$profile" XDG_CONFIG_HOME="$profile/.config" XDG_CACHE_HOME="$profile/.cache" \
+      TMPDIR="$chrome_tmp" TMP="$chrome_tmp" \
       "$chrome" \
       ${profile_arg[@]+"${profile_arg[@]}"} \
       --headless=new \
@@ -168,11 +182,15 @@ render_export_dom() {
     fi
     status=0
     wait "$pid" 2>/dev/null || status=$?
-    grep -Fq '</html>' "$out_file" 2>/dev/null && return 0
+    if grep -Fq '</html>' "$out_file" 2>/dev/null; then
+      rm -rf "$chrome_tmp"
+      return 0
+    fi
     printf 'attempt %s: exit=%s timed_out=%s bytes=%s stderr=%s\n' \
       "$attempt" "$status" "$timed_out" "$(wc -c <"$out_file" | tr -d ' ')" \
       "$(tail -c 400 "$log" 2>/dev/null | tr '\n' ' ')" >>"$report"
   done
+  rm -rf "$chrome_tmp"
   printf 'chrome=%s chrome_version=%s pi=%s; %s' \
     "$chrome" "$("$chrome" --version 2>&1 | head -1)" "$pi_version" \
     "$(tr '\n' ' ' <"$report")"

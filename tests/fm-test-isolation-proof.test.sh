@@ -35,6 +35,9 @@ test_family_pool_json_identifies_admission() {
   skipped_json="$tmp/skipped-proof.json"
   mkdir -p "$repo/bin" "$repo/tests"
   cp "$PROOF" "$proof"
+  # The proof is its own test entry point, so it resolves the scratch root
+  # itself and needs that owner beside it in the fixture repository too.
+  cp "$ROOT/tests/scratch-root.sh" "$repo/tests/"
   cat >"$repo/bin/fm-test-run.sh" <<'SH'
 #!/usr/bin/env bash
 if { [ "$1" = --list ] || [ "$1" = --list-scheduled ]; } && [ "$2" = --family ]; then
