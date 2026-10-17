@@ -79,6 +79,7 @@ SH
   cat > "$fakebin/no-mistakes" <<'SH'
 #!/usr/bin/env bash
 if [ "${1:-}" = --version ]; then
+  [ "${NO_MISTAKES_NO_UPDATE_CHECK:-}" = 1 ] || exit 97
   printf '%s\n' "${FM_FAKE_NO_MISTAKES_VERSION:-no-mistakes version v1.46.0 (fake) 2026-06-27T00:02:18Z}"
   exit 0
 fi
