@@ -442,8 +442,12 @@ test_promotion_persists_the_selected_ship_branch() {
 test_promotion_branch_command_is_shell_safe() {
   local home id prefix marker meta instructions command repo branch
   home="$TMP_ROOT/promote-branch-shell-safe/home"
-  marker="$TMP_ROOT/promote-branch-shell-safe-marker"
+  marker='promote-branch-shell-safe-marker'
   id=promote-branch-safe-e3
+  # The marker is named relative to the fixture repository the command runs
+  # in: an absolute path under this suite's scratch root has a dot component,
+  # which a ref name rejects, so an absolute marker would test that refusal
+  # instead of the shell safety this is about.
   prefix="\$(touch\${IFS}$marker)/"
   meta="$home/state/$id.meta"
   mkdir -p "$home/state"
@@ -462,7 +466,7 @@ test_promotion_branch_command_is_shell_safe() {
   repo="$TMP_ROOT/promote-branch-shell-safe-repo"
   git init -q "$repo" || fail "could not initialize shell-safety fixture repository"
   ( cd "$repo" && eval "$command" ) || fail "promotion branch-creation command did not run"
-  assert_absent "$marker" "promotion branch command executed the prefix's command substitution"
+  assert_absent "$repo/$marker" "promotion branch command executed the prefix's command substitution"
   branch=$(git -C "$repo" branch --show-current)
   [ "$branch" = "$prefix$id" ] \
     || fail "promotion branch command did not create the literal configured branch (got '$branch')"
