@@ -30,17 +30,20 @@ mkdir -p "$FM_STATE_OVERRIDE"
 EVENTS="$TMP_ROOT/events"
 SHIMS="$TMP_ROOT/shims"
 mkdir -p "$SHIMS"
+ARGV_LOG="$TMP_ROOT/argv"
 for tool in md5 md5sum touch date; do
   real=$(command -v "$tool") || continue
   cat > "$SHIMS/$tool" <<SH
 #!/bin/sh
 printf 'program $tool\n' >> "$EVENTS"
+printf '%s\n' "\$*" >> "$ARGV_LOG"
 exec '$real' "\$@"
 SH
   chmod +x "$SHIMS/$tool"
 done
 PATH="$SHIMS:$PATH"
 
+# shellcheck disable=SC2120  # called both with a tool name and bare for the running total
 count_programs() {  # [tool] -> count of programs recorded since last reset
   local line total=0 named=0
   [ -f "$EVENTS" ] || { printf '0\n'; return 0; }
@@ -57,13 +60,16 @@ count_programs() {  # [tool] -> count of programs recorded since last reset
 for i in 1 2 3 4 5; do
   hash_pane "pane content $i" > /dev/null
 done
+# shellcheck disable=SC2119  # the bare call intentionally means "no tool filter"
 programs=$(count_programs)
 [ "$programs" -le 5 ] || fail "hash_pane cost $programs programs for 5 calls, expected at most 5 (one hash program per call, no pipeline)"
 [ "$programs" -ge 1 ] || fail "hash_pane recorded no program start; the shim did not observe the real hash tool"
 pass "hash_pane costs exactly one program per call, no pipeline subshells"
 
 # Byte-identical to the old `printf '%s' "$x" | { md5 -q || md5sum | cut ...; }`
-# pipeline, so the stale-pane hash comparison it feeds is unchanged.
+# pipeline, so every .hash-* and .stale-* marker a live home already has on
+# disk still compares equal (and so tests/wake-helpers.sh's hash_text, used
+# throughout the suite to seed and verify those markers, stays correct).
 old_pipeline_hash() {
   if command -v md5 > /dev/null 2>&1; then
     printf '%s' "$1" | md5 -q
@@ -78,6 +84,16 @@ for sample in '' 'a' 'pane with spaces and a trailing newline
   [ "$old" = "$new" ] || fail "hash_pane('$sample') = '$new', expected '$old' to match the pipeline it replaced"
 done
 pass "hash_pane matches the pipeline-based hash it replaced byte for byte"
+
+# A pane can carry a crew's own secrets, so the content must reach the hash
+# program on stdin, never as a command-line argument any other local user
+# could read with `ps`. `md5 -q -s <text>` would have put it on argv; confirm
+# the actual argv the hash program received never contains it.
+: > "$ARGV_LOG"
+secret='correct-horse-battery-staple-SENTINEL'
+hash_pane "pane content with $secret inside" > /dev/null
+grep -qF "$secret" "$ARGV_LOG" && fail "hash_pane passed pane content on argv: $(cat "$ARGV_LOG")"
+pass "hash_pane never places pane content on the hash program's argv"
 
 # --- busy_turn_over_age: one stat_mtime call per poll, not one per window ---
 
@@ -94,7 +110,7 @@ make_task() {  # <task> <age-seconds>
   local task=$1 age=$2 f
   f="$FM_STATE_OVERRIDE/$task.turn-ended"
   : > "$f"
-  touch -t "$(date -v-${age}S '+%Y%m%d%H%M.%S' 2>/dev/null || date -d "-${age} seconds" '+%Y%m%d%H%M.%S')" "$f"
+  touch -t "$(date -v-"${age}"S '+%Y%m%d%H%M.%S' 2>/dev/null || date -d "-${age} seconds" '+%Y%m%d%H%M.%S')" "$f"
 }
 
 for n in 1 5 20; do

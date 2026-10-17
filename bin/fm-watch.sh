@@ -489,12 +489,18 @@ captain_held_silenced() {  # <status-line>
   status_is_captain_held "$1" && away_record_present
 }
 
-hash_pane() {  # <text> -> hash on stdout, no stdin pipe or second program
+hash_pane() {  # <text> -> hash on stdout, byte-identical to the old
+  # `printf '%s' "$text" | hash_pane` pipeline this replaced, so every .hash-*
+  # and .stale-* marker already on disk in a live home still compares equal.
+  # A pane's rendered content can carry a crew's own secrets, so it is fed in
+  # through process substitution (a local shell redirection) on both
+  # platforms, never on argv - unlike `md5 -q -s "$text"`, which would put it
+  # on this process's command line for any other local user to read with ps.
   local text=${1-} out
   if command -v md5 >/dev/null 2>&1; then
-    out=$(md5 -q -s "$text")
+    out=$(md5 -q < <(printf '%s' "$text"))
   else
-    out=$(md5sum <<< "$text")
+    out=$(md5sum < <(printf '%s' "$text"))
   fi
   printf '%s\n' "${out%% *}"
 }
