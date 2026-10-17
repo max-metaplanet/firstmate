@@ -508,6 +508,54 @@ The lab home was deleted and the test entry was removed from the store and verif
 That automated spawn case runs against a fake claude, so it asserts the store entry and the launch command and nothing more; the live arms above are what establish that the entry actually suppresses the dialog.
 The composer-classification record below observes the same gate from the other side, where an untrusted worktree left Claude, Grok, and Muse unverified because the guard reads a first-launch trust dialog as an unreadable composer.
 
+## Claude Remote Control state
+
+Verified 2026-10-16 on Claude Code 2.1.301, macOS arm64 (Darwin 27.0.0).
+A lead restart replaces the primary process, and Remote Control is a property of that process rather than of the session it resumes, so `bin/fm-lead-restart.sh` has to read the outgoing session's state and hand it to the replacement.
+Both halves of that - a readable state and a launch flag that carries it - were established against the installed CLI.
+
+The flag exists and takes an optional session name:
+
+```sh
+claude --version
+claude --help | grep -A 3 -- '--remote-control '
+```
+
+```
+2.1.301 (Claude Code)
+  --remote-control [name]               Start an interactive session with Remote
+                                        Control enabled (optionally named)
+  --remote-control-session-name-prefix <prefix>
+      Prefix for auto-generated Remote Control session names (default: hostname)
+```
+
+There is no CLI query surface for the state on this build: `claude daemon remote-control list --json` answers `'daemon remote-control' is not available in this environment.`
+
+The state is instead readable from the per-pid session record Claude Code publishes under its own profile, `<profile>/sessions/<pid>.json`.
+Two interactive sessions were launched in a private tmux server, one plain and one with the flag.
+The plain session, pid 34076, carried no `bridgeSessionId` key at all; the flagged session, pid 34129, carried one:
+
+```
+{"pid":34129,"sessionId":"15e07da0-6781-4b73-bfe5-74625675610a",...,"bridgeSessionId":"session_01BLMY8VeUp5cAYMRzDkdetv"}
+```
+
+Its pane printed the matching address, so the field is the same connection the operator sees:
+
+```
+  /remote-control is active - Continue here, on your phone, or at
+  https://claude.ai/code/session_01BLMY8VeUp5cAYMRzDkdetv
+```
+
+The field tracks the RUNNING state rather than the launch flag, which is what makes it usable as evidence for the captain's case - Remote Control turned on by hand after the session started.
+`/rc` typed into the already-running plain session 34076 gave that record a `bridgeSessionId` of `session_01PkCwz6GcgKLaw2FfTaLtsr`, and selecting "Disconnect this session" from a second `/rc` left the pane printing `Remote Control disconnected.` and the record reading `"bridgeSessionId":null`.
+So a non-empty string is on, while null and absent are both off.
+
+The flag composes with `--resume`, which is the shape a lead restart launches: `claude --dangerously-skip-permissions --remote-control --resume f78f1658-be76-442d-9df1-69c7524cfb51` came up as pid 28446 on that same `sessionId` with `"bridgeSessionId":"session_012gYF6FbMvcUKkhADj2Rc2D"`.
+The optional `[name]` argument does not take a following `-`-prefixed token as its value, so the flag is safe immediately before the resume.
+
+`tests/fm-lead-restart.test.sh` pins the logic around that field with a stand-in that publishes the same record shape, including the cases this evidence cannot reach without a credential: a state that cannot be read, and a connection that never establishes in the replacement.
+The probe sessions were ended and their private tmux server was killed.
+
 ## Pi seeded-secondmate project trust
 
 [`fm-spawn.sh --help`](../../bin/fm-spawn.sh) owns the seeded-secondmate project-trust approval contract and compatibility fallback.
