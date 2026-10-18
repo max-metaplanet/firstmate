@@ -492,10 +492,12 @@ run:
   awaiting_agent: parked 2m10s
   head: "${FM_FAKE_RUN_HEAD:-abc1234}"
   pr: ""
+gate:
+  step: review
+  status: fix_review
   findings[2]{id,severity,file,line,action,description}:
     r1,warning,a.go,,auto-fix,ignored error
     r2,error,b.go,,ask-user,changes product behavior
-gate: review
 EOF
 }
 
@@ -515,10 +517,12 @@ run:
   awaiting_agent: parked 2m10s
   head: "${FM_FAKE_RUN_HEAD:-abc1234}"
   pr: ""
+gate:
+  step: review
+  status: fix_review
   findings[2]{id,severity,file,line,action,description}:
     r1,warning,a.go,,auto-fix,the action field is one of no-op, auto-fix, ask-user, so pick one
     r2,warning,b.go,,auto-fix,ignored error
-gate: review
 EOF
 }
 
@@ -534,10 +538,12 @@ run:
   awaiting_agent: parked 2m10s
   head: "${FM_FAKE_RUN_HEAD:-abc1234}"
   pr: ""
+gate:
+  step: review
+  status: fix_review
   findings[2]{severity,action,id,file,line,description}:
     warning,auto-fix,r1,a.go,,ignored error
     error,ask-user,r2,b.go,,changes product behavior
-gate: review
 EOF
 }
 
@@ -556,9 +562,11 @@ run:
   awaiting_agent: parked 2m10s
   head: "${FM_FAKE_RUN_HEAD:-abc1234}"
   pr: ""
+gate:
+  step: review
+  status: fix_review
   findings[1]{id,severity,file,line,description,action}:
     r1,warning,a.go,12,the action field is one of auto-fix, ask-user,auto-fix
-gate: review
 EOF
 }
 
@@ -582,9 +590,11 @@ run:
   findings[2]:
     prior-1,warning,a.go,ask-user,an earlier already-resolved block
     prior-2,info,b.go,ask-user,another earlier row
+gate:
+  step: review
+  status: fix_review
   findings[1]{id,severity,file,action,description}:
     r1,warning,a.go,auto-fix,the live gate is owed to the crewmate
-gate: review
 EOF
 }
 
@@ -610,11 +620,11 @@ run:
   status: running
   head: "${FM_FAKE_RUN_HEAD:-abc1234}"
   pr: ""
-  findings[1]{id,severity,file,line,action,description}:
-    r1,error,b.go,,ask-user,changes product behavior
 gate:
   step: review
   status: fix_review
+  findings[1]{id,severity,file,line,action,description}:
+    r1,error,b.go,,ask-user,changes product behavior
 steps[3]{step,status,findings,duration_ms}:
   intent,completed,0,0
   review,fix_review,1,0
@@ -1113,6 +1123,7 @@ test_parked_human_decision_comes_from_the_action_column() {
     "the fixture description must carry the token where the comma walk would accept it"
   out=$(run_crew_state "$d" feat-af)
   assert_contains "$out" "state: parked" "an unsafe findings header still reports parked"
+  assert_contains "$out" "gate authority: undecided" "unsafe columns leave authority explicitly undecided"
   assert_not_contains "$out" " · ask-user: authority decision" \
     "a findings header that puts free text before action must not mint the human-decision component"
 
@@ -1143,6 +1154,94 @@ test_parked_human_decision_comes_from_the_action_column() {
   pass "the parked human-decision component is derived from the findings table's action column"
 }
 
+# Captured read-only on 2026-10-18 with no-mistakes v1.84.0 (4822244), via
+# `no-mistakes axi status --run <recorded-run-id>`. The source was genuinely
+# parked at CI. Identity, paths, plan hash, PR, and check name are redacted;
+# layout, gate status, finding action, and counts remain as emitted. Historical
+# tables and malformed gates below are composed counterfactuals, not captures.
+current_gate_capture() {
+  awk -v head="$FM_FAKE_RUN_HEAD" '
+    /^  branch:/ { print "  branch: fm/current-gate"; next }
+    /^  head:/ { print "  head: " head; next }
+    /^  head_sha:/ { print "  head_sha: " head; next }
+    { print }
+  ' "$ROOT/tests/captures/no-mistakes-v1.84.0/parked-redacted.toon"
+}
+
+test_current_gate_owns_finding_authority() {
+  local d out captured variant toolbin
+  reset_fakes
+  d=$(new_case current-gate-authority)
+  make_repo_on_branch "$d/wt" fm/current-gate
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/current.meta" "worktree=$d/wt" "kind=ship"
+  captured=$(current_gate_capture)
+  toolbin=$(make_no_python_toolbin "$d")
+  for variant in captured-human current-human current-auto earlier-auto-current-human missing-table \
+    duplicate-table duplicate-gate truncated-table unsafe-columns legacy-scalar missing-status \
+    unknown-action quoted-path quoted-whitespace-action unterminated-file empty-table; do
+    FM_FAKE_AXI_STATUS=$(printf '%s\n' "$captured" | awk -v variant="$variant" '
+      /^gate:/ {
+        # The earlier resolved table is deliberately BRACED, with a different
+        # count and an ask-user action, so the original global search fails.
+        if (variant != "captured-human") {
+          print "resolved_round:"
+          print "  step: review"
+          print "  findings[2]{id,severity,file,action,description}:"
+          prior_action = variant == "earlier-auto-current-human" ? "auto-fix" : "ask-user"
+          print "    old-1,warning,old.sh," prior_action ",already resolved"
+          print "    old-2,info,old.sh,info,already resolved"
+        }
+        in_gate = 1
+        if (variant == "duplicate-gate") print "gate: review"
+        if (variant == "legacy-scalar") { print "gate: ci"; next }
+      }
+      in_gate && /^  status:/ && variant == "missing-status" { next }
+      in_gate && /^  findings\[/ {
+        if (variant == "missing-table") { skip_row = 1; next }
+        if (variant == "duplicate-table") print
+        if (variant == "empty-table") { sub(/\[1\]/, "[0]"); skip_row = 1 }
+        if (variant == "truncated-table") sub(/\[1\]/, "[2]")
+        if (variant == "unsafe-columns") sub(/file,action,description/, "file,description,action")
+      }
+      in_gate && /^    ci-1,/ {
+        if (skip_row) next
+        if (variant == "current-auto") sub(/ask-user/, "auto-fix")
+        if (variant == "unknown-action") sub(/ask-user/, "new-action")
+        if (variant == "quoted-path") sub(/""/, "\"a,b.sh\"")
+        if (variant == "quoted-whitespace-action") sub(/ask-user/, "\" ask-user \"")
+        if (variant == "unterminated-file") sub(/""/, "\"bad")
+      }
+      { print }
+    ')
+    out=$(run_crew_state "$d" current)
+    assert_contains "$out" 'state: parked' "$variant retains the known parked gate"
+    case "$variant" in
+      captured-human|current-human|earlier-auto-current-human|quoted-path)
+        assert_contains "$out" 'parked at ci: 1 finding(s)' "$variant counts only current gate rows"
+        assert_contains "$out" ' · ask-user: authority decision' "$variant proves current ask-user authority"
+        assert_not_contains "$out" 'gate authority: undecided' "$variant establishes authority" ;;
+      current-auto|empty-table)
+        assert_not_contains "$out" ' · ask-user: authority decision' "$variant ignores the resolved ask-user"
+        assert_not_contains "$out" 'gate authority: undecided' "$variant establishes crewmate authority"
+        if [ "$variant" = current-auto ]; then
+          assert_contains "$out" 'parked at ci: 1 finding(s)' 'the historical table cannot supply the count'
+        else
+          assert_contains "$out" 'parked at ci: 0 finding(s)' 'the empty current table is authoritative'
+        fi ;;
+      *)
+        assert_not_contains "$out" ' · ask-user: authority decision' "$variant cannot claim human authority"
+        assert_contains "$out" 'gate authority: undecided (could not establish current gate findings)' \
+          "$variant explicitly reports unestablished authority" ;;
+    esac
+    # This reader is shared by all harness/backend paths and must keep working
+    # with the portable shell/awk toolchain, without optional Python inventory.
+    assert_equals "$(PATH="$d/fakebin:$toolbin" FM_STATE_OVERRIDE="$d/state" "$CREW_STATE" current)" \
+      "$out" "$variant gives the same reading without Python"
+  done
+  pass 'current gate findings alone establish authority; ambiguous inputs stay undecided'
+}
+
 test_scalar_gate_parked_not_superseded() {
   reset_fakes
   local d; d=$(new_case parked-scalar-gate)
@@ -1155,7 +1254,8 @@ test_scalar_gate_parked_not_superseded() {
   assert_contains "$out" "state: parked" "scalar gate wait -> parked"
   assert_contains "$out" "source: run-step" "scalar gate wait -> run-step source"
   assert_contains "$out" "parked at review" "scalar gate wait names the gate"
-  assert_contains "$out" "1 finding(s)" "scalar gate wait includes finding count"
+  assert_contains "$out" "gate authority: undecided" "scalar gate cannot establish findings ownership"
+  assert_not_contains "$out" " · ask-user: authority decision" "scalar gate cannot claim human authority"
   assert_not_contains "$out" "superseded" "scalar gate wait not flagged stale"
   pass "scalar gate parked run is not flagged superseded"
 }
@@ -6077,6 +6177,8 @@ test_newest_open_decision_supplies_the_reported_detail
 test_single_owner_terminal_declaration_keeps_the_open_decision
 test_latest_status_preserves_legacy_completions
 test_latest_status_subshell_work_does_not_grow_with_history
+test_current_gate_owns_finding_authority
+
 test_genuine_parked_not_superseded
 test_parked_human_decision_comes_from_the_action_column
 test_scalar_gate_parked_not_superseded

@@ -1,0 +1,32 @@
+current_branch: fm/redacted-current
+other_branch_run:
+  id: "01REDACTED"
+  branch: fm/redacted-run
+  status: running
+  awaiting_agent: parked 2d7h
+  head: abcdef01
+  head_sha: abcdef0123456789abcdef0123456789abcdef0123
+  verification_plan:
+    path: /redacted/run-inputs/01REDACTED/verification-plan.txt
+    sha256: 0000000000000000000000000000000000000000000000000000000000000000
+    source_path: /redacted/verification-plan.txt
+    captured_at: 1792089624
+  pr: "https://github.com/example/repo/pull/1"
+  findings: "1 awaiting, 1 auto-fix"
+  steps[9]{step,status,findings,duration_ms}:
+    intent,completed,0,7
+    rebase,completed,0,3499
+    review,completed,1,815977
+    test,completed,0,1153849
+    document,completed,0,64554
+    lint,completed,0,23314
+    push,completed,0,8653
+    pr,completed,0,45247
+    ci,awaiting_approval,1,14731083
+gate:
+  step: ci
+  status: awaiting_approval
+  summary: CI checks were cancelled without reporting a verdict
+  findings[1]{id,severity,file,action,description}:
+    ci-1,warning,"",ask-user,"CI check cancelled without a verdict: redacted check - the provider cancelled it rather than reporting a job failure, and no rerun is outstanding to replace that result, so it needs a decision rather than a code fix"
+help[2]: The explicitly selected gate for run 01REDACTED is inspection-only; no run-scoped response command exists,Run `no-mistakes axi logs --run 01REDACTED --step ci --full` to read the full step log
