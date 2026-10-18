@@ -7,6 +7,27 @@
 # case where the two disagree fails here instead of drifting silently.
 set -u
 
+# One selection drives both execution and the stock-Bash check's expected count.
+TEST_CASES=(
+  test_path_helpers_match_dirname_and_basename
+  test_epoch_helper_matches_date_and_never_forks_more
+  test_signal_seen_path_and_lock_abs_path_are_unchanged
+  test_recovery_marker_read_accepts_exactly_one_newline
+  test_window_to_task_matches_the_meta_pipeline
+  test_classify_stat_helpers_read_the_kernel_name_once
+  test_file_read_helper_matches_cat
+  test_hex_encoder_matches_od
+  test_status_signature_matches_the_per_field_readers
+  test_watcher_termination_during_wait
+  test_window_fields_match_the_meta_pipeline
+  test_out_var_readers_match_their_printing_forms
+  test_crew_state_and_snapshot_stay_within_their_fork_budget
+)
+if [ "${1:-}" = --list-tests ]; then
+  printf '%s\n' "${TEST_CASES[@]}"
+  exit 0
+fi
+
 # shellcheck source=tests/lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
@@ -650,17 +671,7 @@ test_crew_state_and_snapshot_stay_within_their_fork_budget() {
 if [ -n "${FM_TEST_ONLY:-}" ]; then
   "$FM_TEST_ONLY"
 else
-  test_path_helpers_match_dirname_and_basename
-  test_epoch_helper_matches_date_and_never_forks_more
-  test_signal_seen_path_and_lock_abs_path_are_unchanged
-  test_recovery_marker_read_accepts_exactly_one_newline
-  test_window_to_task_matches_the_meta_pipeline
-  test_classify_stat_helpers_read_the_kernel_name_once
-  test_file_read_helper_matches_cat
-  test_hex_encoder_matches_od
-  test_status_signature_matches_the_per_field_readers
-  test_watcher_termination_during_wait
-  test_window_fields_match_the_meta_pipeline
-  test_out_var_readers_match_their_printing_forms
-  test_crew_state_and_snapshot_stay_within_their_fork_budget
+  for test_case in "${TEST_CASES[@]}"; do
+    "$test_case"
+  done
 fi

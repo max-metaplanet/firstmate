@@ -66,28 +66,57 @@ PATH="$(npm prefix -g)/bin:$PATH"
 export PATH
 command -v tasks-axi >/dev/null || { echo "::error::tasks-axi is required for the stock Bash regressions"; exit 1; }
 
-snapshot_output=$(/bin/bash tests/fm-fleet-snapshot-view.test.sh)
+# Derive full-suite expectations from the same manifest that executes them,
+# never from their output: a silent skip must still fail the passing-count check.
+suite_count() {  # <suite> [known capability-skipped test]
+  local selected test_case count=0
+  selected=$(/bin/bash "$1" --list-tests) || return 1
+  while IFS= read -r test_case; do
+    [ -n "$test_case" ] || continue
+    [ "$test_case" != "${2:-}" ] || continue
+    count=$((count + 1))
+  done <<EOF
+$selected
+EOF
+  [ "$count" -gt 0 ] || { echo "::error::empty test selection: $1" >&2; return 1; }
+  printf '%s\n' "$count"
+}
+
+# Keep failing-suite diagnostics visible even though passing output is captured.
+run_suite() {
+  local output rc=0
+  output=$(/bin/bash "$@") || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    printf '%s\n' "$output" >&2
+    return "$rc"
+  fi
+  printf '%s\n' "$output"
+}
+
+snapshot_expected=$(suite_count tests/fm-fleet-snapshot-view.test.sh)
+snapshot_output=$(run_suite tests/fm-fleet-snapshot-view.test.sh)
 printf '%s\n' "$snapshot_output"
-snapshot_count=$(printf '%s\n' "$snapshot_output" | grep -c '^ok - ')
-[ "$snapshot_count" -eq 21 ] || {
-  echo "::error::expected 21 snapshot/fleet-view tests, got $snapshot_count"
+snapshot_count=$(printf '%s\n' "$snapshot_output" | grep -c '^ok - ' || true)
+[ "$snapshot_count" -eq "$snapshot_expected" ] || {
+  echo "::error::expected $snapshot_expected snapshot/fleet-view tests, got $snapshot_count"
   exit 1
 }
 
-bearings_output=$(/bin/bash tests/fm-bearings-snapshot.test.sh)
+bearings_expected=$(suite_count tests/fm-bearings-snapshot.test.sh)
+bearings_output=$(run_suite tests/fm-bearings-snapshot.test.sh)
 printf '%s\n' "$bearings_output"
-bearings_count=$(printf '%s\n' "$bearings_output" | grep -c '^ok - ')
-[ "$bearings_count" -eq 60 ] || {
-  echo "::error::expected 60 Bearings tests, got $bearings_count"
+bearings_count=$(printf '%s\n' "$bearings_output" | grep -c '^ok - ' || true)
+[ "$bearings_count" -eq "$bearings_expected" ] || {
+  echo "::error::expected $bearings_expected Bearings tests, got $bearings_count"
   exit 1
 }
 
 # The full public-followup suite is not a stock-bash snapshot; run only
 # the empty-lock register regression under real /bin/bash 3.2.
 pf_output=$(FM_TEST_ONLY=test_first_register_succeeds_with_empty_lock_list_under_bash32 \
-  /bin/bash tests/fm-public-followup.test.sh)
+  run_suite tests/fm-public-followup.test.sh)
 printf '%s\n' "$pf_output"
-pf_count=$(printf '%s\n' "$pf_output" | grep -c '^ok - ')
+pf_count=$(printf '%s\n' "$pf_output" | grep -c '^ok - ' || true)
 [ "$pf_count" -eq 1 ] || {
   echo "::error::expected 1 public-followup bash 3.2 register regression, got $pf_count"
   exit 1
@@ -97,9 +126,9 @@ pf_count=$(printf '%s\n' "$pf_output" | grep -c '^ok - ')
 # marked churn window expands an empty array that only stock Bash
 # treats as an unbound variable under set -u.
 churn_output=$(FM_TEST_ONLY=test_turn_ended_churn_existing_marker_absorbed \
-  /bin/bash tests/fm-watch-triage.test.sh)
+  run_suite tests/fm-watch-triage.test.sh)
 printf '%s\n' "$churn_output"
-churn_count=$(printf '%s\n' "$churn_output" | grep -c '^ok - ')
+churn_count=$(printf '%s\n' "$churn_output" | grep -c '^ok - ' || true)
 [ "$churn_count" -eq 1 ] || {
   echo "::error::expected 1 watcher churn-deferral bash 3.2 regression, got $churn_count"
   exit 1
@@ -108,21 +137,22 @@ churn_count=$(printf '%s\n' "$churn_output" | grep -c '^ok - ')
 # The fork-free hot-path helpers must stay byte-identical to the
 # commands they replace under stock Bash 3.2, which lacks the
 # printf %(...)T clock and falls back to date.
-helpers_output=$(/bin/bash tests/fm-fork-free-helpers.test.sh)
+# The fork-budget sampler capability-skips under 3.2 because it needs BASHPID.
+helpers_expected=$(suite_count tests/fm-fork-free-helpers.test.sh \
+  test_crew_state_and_snapshot_stay_within_their_fork_budget)
+helpers_output=$(run_suite tests/fm-fork-free-helpers.test.sh)
 printf '%s\n' "$helpers_output"
-helpers_count=$(printf '%s\n' "$helpers_output" | grep -c '^ok - ')
-# Twelve, not thirteen: the fork-budget sampler needs BASHPID and
-# capability-skips here, so it contributes no passing line under 3.2.
-[ "$helpers_count" -eq 12 ] || {
-  echo "::error::expected 12 fork-free helper bash 3.2 regressions, got $helpers_count"
+helpers_count=$(printf '%s\n' "$helpers_output" | grep -c '^ok - ' || true)
+[ "$helpers_count" -eq "$helpers_expected" ] || {
+  echo "::error::expected $helpers_expected fork-free helper bash 3.2 regressions, got $helpers_count"
   exit 1
 }
 
 backend_output=$(FM_TEST_ONLY=test_backend_source_requires_adapter_file \
   FM_TEST_BASH=/bin/bash \
-  /bin/bash tests/fm-backend.test.sh)
+  run_suite tests/fm-backend.test.sh)
 printf '%s\n' "$backend_output"
-backend_count=$(printf '%s\n' "$backend_output" | grep -c '^ok - ')
+backend_count=$(printf '%s\n' "$backend_output" | grep -c '^ok - ' || true)
 [ "$backend_count" -eq 2 ] || {
   echo "::error::expected 2 backend adapter-file bash 3.2 regressions, got $backend_count"
   exit 1
