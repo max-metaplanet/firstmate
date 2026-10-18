@@ -42,13 +42,12 @@
 # captain's question), and bin/fm-captain-hold.sh answer stays the only act
 # that closes the call.
 # REFUSES if the worktree holds work that has not LANDED, because cleanup
-# hard-resets/removes the worktree and kills its processes. Work has landed when it is
-# reachable from any remote-tracking branch (a fork counts as a remote, so
-# upstream-contribution PRs pushed to a fork satisfy this in any mode), OR - for a
-# normal ship task whose commits are not so reachable - when its PR is merged and
-# GitHub reports a PR head that contains the current local work, or its content is
-# already present in the up-to-date default branch. This recognizes the common
-# squash-merge-then-delete-branch flow, where the branch's own commits live nowhere
+# hard-resets/removes the worktree and kills its processes. For PR-based ships,
+# pushing a branch is not landing: bin/fm-unlanded-work-lib.sh must prove its PR
+# merged with a head containing the current local work, or its content is
+# already present in the up-to-date default branch without a known unmerged PR.
+# This recognizes the common squash-merge-then-delete-branch flow, where the
+# branch's own commits live nowhere
 # on a remote yet the change is fully in main. A task whose meta records
 # base_branch= (bin/fm-spawn.sh) runs that content check against origin's copy of
 # its base branch instead of the default branch.
@@ -69,9 +68,9 @@
 # teardown refuses rather than risk discarding unlanded work.
 # Uncommitted changes are never landed; dirty refusals distinguish untracked-only
 # leftovers from tracked edits and list at most ten non-exempt untracked paths.
-# local-only projects additionally accept work merged into the local default
-# branch (firstmate performs that merge after configured approval) as a fallback
-# for the common case where there is no remote at all.
+# local-only projects accept work reachable from any remote-tracking branch
+# (including a fork), or merged into the local default branch (firstmate performs
+# that merge after configured approval) when there is no remote copy.
 # Scout tasks (kind=scout in meta) carve out of that check: their worktree is
 # declared scratch and the report at data/<task-id>/report.md is the work
 # product. Teardown proceeds only once the report exists and the shared
@@ -1877,16 +1876,16 @@ validate_worktree_teardown_safety() {
     report_worktree_dirt "$dirty"
     echo "Commit them (or get the captain's explicit OK to discard, then --force)." >&2
     return 1
-  elif [ -n "$unpushed" ]; then
+  elif [ "$MODE" != local-only ]; then
     branch=${TEARDOWN_WORKTREE_BRANCH_FOR_SAFETY:-}
     if [ -z "$branch" ]; then
       branch=$(git -C "$WT" rev-parse --abbrev-ref HEAD 2>/dev/null || echo HEAD)
       TEARDOWN_WORKTREE_BRANCH_FOR_SAFETY=$branch
     fi
     if ! work_is_landed "$branch"; then
-      echo "REFUSED: worktree $WT has work not on any remote and not landed." >&2
-      printf 'unpushed commits:\n%s\n' "$unpushed" >&2
-      echo "Push the branch, land its PR, or get the captain's explicit OK to discard, then --force." >&2
+      echo "REFUSED: worktree $WT has work not landed; a pushed branch is not proof of landing." >&2
+      [ -z "$unpushed" ] || printf 'unpushed commits:\n%s\n' "$unpushed" >&2
+      echo "Land its PR, or get the captain's explicit OK to discard, then --force." >&2
       return 1
     fi
   fi

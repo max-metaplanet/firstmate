@@ -4,8 +4,8 @@
 # ONE OWNER for that judgement. bin/fm-teardown.sh asks it before discarding a
 # copy, and bin/fm-slot-release.sh asks it before letting one of two colliding
 # records stop naming a copy the other record's cleanup will then reset. Both
-# need the same answer for the same reason - work that is neither on a remote
-# nor landed must never be destroyed - so the test lives here.
+# need the same answer for the same reason - work whose landing is unproved
+# must never be destroyed - so the test lives here.
 #
 # The judgement is deliberately conservative in one direction only: every
 # inconclusive read (no default ref, a merge conflict, a forge error, a missing
@@ -21,6 +21,7 @@
 
 # shellcheck disable=SC2034 # Output global, read by the sourcing caller.
 FM_UNLANDED_PR_URL=
+FM_UNLANDED_PR_UNMERGED=0
 
 # The project's default branch: origin/HEAD when the clone records one, else
 # whichever of main or master exists locally.
@@ -89,10 +90,11 @@ fm_unlanded_patch_id() {  # <copy> <commit>
     | awk 'NR == 1 { print $1 }'
 }
 
-# Is every commit the copy holds off its remotes already present, by patch id,
-# in the PR head? That is what makes a squash- or rebase-merged PR provable.
+# Is every commit the copy holds beyond its common ancestor with the PR head
+# already present, by patch id, in the PR head? That is what makes a squash- or
+# rebase-merged PR provable, without treating a published commit as landed.
 fm_unlanded_patches_are_in_pr_head() {  # <copy> <pr-head>
-  local copy=$1 pr_head=$2 current base pr_patch_ids commit patch_id unpushed
+  local copy=$1 pr_head=$2 current base pr_patch_ids commit patch_id local_commits
   current=$(git -C "$copy" rev-parse --verify HEAD 2>/dev/null) || return 1
   base=$(git -C "$copy" merge-base "$current" "$pr_head" 2>/dev/null) || return 1
   pr_patch_ids=$(
@@ -104,15 +106,15 @@ fm_unlanded_patches_are_in_pr_head() {  # <copy> <pr-head>
       | sort -u
   ) || return 1
   [ -n "$pr_patch_ids" ] || return 1
-  unpushed=$(git -C "$copy" log --format=%H HEAD --not --remotes -- 2>/dev/null) || return 1
-  [ -n "$unpushed" ] || return 1
+  local_commits=$(git -C "$copy" log --format=%H "$base..$current" -- 2>/dev/null) || return 1
+  [ -n "$local_commits" ] || return 1
   while IFS= read -r commit; do
     [ -n "$commit" ] || continue
     patch_id=$(fm_unlanded_patch_id "$copy" "$commit") || return 1
     [ -n "$patch_id" ] || return 1
     printf '%s\n' "$pr_patch_ids" | grep -qxF "$patch_id" || return 1
   done <<EOF
-$unpushed
+$local_commits
 EOF
 }
 
@@ -120,11 +122,13 @@ EOF
 # from the recorded URL first, then from the branch name, and asks the forge for
 # both the PR state and head. Returns non-zero when the PR is not merged, the
 # current work is not contained in the PR head, no PR is found, or any gh error
-# occurs - the caller then falls back to the content check. On success the
-# resolved URL is in FM_UNLANDED_PR_URL.
+# occurs. A known unmerged PR sets FM_UNLANDED_PR_UNMERGED so the caller cannot
+# mistake equivalent default-branch content for that PR's landing. On success
+# the resolved URL is in FM_UNLANDED_PR_URL.
 fm_unlanded_pr_is_merged() {  # <copy> <branch> <pr-url>
   local copy=$1 branch=$2 pr_url=$3
   local target view state remainder head resolved_url current landed=0
+  FM_UNLANDED_PR_UNMERGED=0
   if [ -n "$pr_url" ]; then
     target=$pr_url
   else
@@ -139,7 +143,10 @@ fm_unlanded_pr_is_merged() {  # <copy> <branch> <pr-url>
   if declare -F fm_pr_url_parse >/dev/null 2>&1 \
     && fm_pr_url_parse "$target" && [ "$FM_PR_PROVIDER" = forgejo ]; then
     fm_pr_forgejo_read_record "$FM_PR_HOST" "$FM_PR_PATH" "$FM_PR_NUMBER" || return 1
-    [ "$FM_PR_RECORD_MERGED" = true ] || return 1
+    if [ "$FM_PR_RECORD_MERGED" != true ]; then
+      FM_UNLANDED_PR_UNMERGED=1
+      return 1
+    fi
     head=$FM_PR_RECORD_HEAD
     fm_pr_head_valid "$head" || return 1
     resolved_url=$FM_PR_URL
@@ -153,6 +160,7 @@ fm_unlanded_pr_is_merged() {  # <copy> <branch> <pr-url>
     [ "$head" != "$remainder" ] || return 1
     case "$state" in
       MERGED|merged) ;;
+      OPEN|open|CLOSED|closed) FM_UNLANDED_PR_UNMERGED=1; return 1 ;;
       *) return 1 ;;
     esac
   fi
@@ -201,10 +209,10 @@ fm_unlanded_content_in_default() {  # <copy> <project> [<base-branch>]
   [ "$merged_tree" = "$default_tree" ]
 }
 
-# Has the copy's committed work actually LANDED, though its commits are not
-# reachable from any remote-tracking branch? True when a merged PR proves the
+# Has the copy's committed work actually LANDED? True when a merged PR proves the
 # current local work is contained in the PR head, OR the content is already in
-# the default branch (fallback, which also covers the no-PR and gh-error paths).
+# the default branch (fallback for no-PR and gh-error paths, never a known
+# unmerged PR). Remote reachability alone proves only publication, not landing.
 # False only for genuinely unlanded work. FM_UNLANDED_PR_URL carries the PR URL
 # the caller passed in, replaced by the resolved one when a branch lookup found
 # it.
@@ -212,5 +220,6 @@ fm_unlanded_work_is_landed() {  # <copy> <project> <branch> <pr-url> [<base-bran
   local copy=$1 project=$2 branch=$3 pr_url=$4 base=${5:-}
   FM_UNLANDED_PR_URL=$pr_url
   fm_unlanded_pr_is_merged "$copy" "$branch" "$pr_url" && return 0
+  [ "$FM_UNLANDED_PR_UNMERGED" = 0 ] || return 1
   fm_unlanded_content_in_default "$copy" "$project" "$base"
 }
