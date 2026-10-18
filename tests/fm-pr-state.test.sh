@@ -42,13 +42,23 @@ serve() {
     "api /repos/o/r/pulls/7/reviews?per_page=100 --paginate --jq "*)
       printf '%s\n' "${FM_TEST_REVIEWS:-[]}"
       ;;
-    "pr checks "*" --required --json name,state,bucket --jq "*)
+    "pr view "*" --json headRefOid,baseRefName,statusCheckRollup")
       if [ -n "${FM_TEST_CHECKS_ERROR-}" ]; then
         printf '%s\n' "$FM_TEST_CHECKS_ERROR" >&2
         exit 1
       fi
-      checks='[{"name":"lint","state":"SUCCESS","bucket":"pass","workflow":"ci"},{"name":"optional","state":"SKIPPED","bucket":"skipping","workflow":"ci"}]'
-      printf '%s\n' "${FM_TEST_REQUIRED_CHECKS:-$checks}"
+      checks='[{"name":"lint","state":"SUCCESS","bucket":"pass"},{"name":"optional","state":"SKIPPED","bucket":"skipping"}]'
+      printf '%s\n' "${FM_TEST_REQUIRED_CHECKS:-$checks}" | jq --arg head "$head" '
+        {headRefOid:$head,baseRefName:"main",statusCheckRollup:map({
+          __typename:"CheckRun",name,
+          status:(if .bucket == "pending" then "IN_PROGRESS" else "COMPLETED" end),conclusion:.state})}'
+      ;;
+    "api repos/o/r/branches/main")
+      printf '%s\n' '{"protected":false}'
+      ;;
+    "api --paginate repos/o/r/rules/branches/main")
+      printf '%s\n' "${FM_TEST_REQUIRED_NAMES:-[\"lint\",\"optional\"]}" | jq '
+        [{type:"required_status_checks",parameters:{required_status_checks:map({context:.})}}]'
       ;;
     *)
       printf 'unexpected gh call: %s\n' "$*" >&2
@@ -56,7 +66,7 @@ serve() {
       ;;
   esac
 }
-prog=
+prog=.
 prev=
 for arg in "$@"; do
   [ "$prev" != --jq ] || prog=$arg
@@ -187,50 +197,40 @@ test_pending_approval_is_not_a_blocker() {
 
 test_required_failure_is_a_blocker() {
   local out
-  out=$(FM_TEST_REQUIRED_CHECKS='[{"name":"CI Status","state":"FAILURE","bucket":"fail","workflow":"ci"},{"name":"lint","state":"SUCCESS","bucket":"pass","workflow":"ci"}]' run_state) \
+  out=$(FM_TEST_REQUIRED_NAMES='["CI Status","lint"]' FM_TEST_REQUIRED_CHECKS='[{"name":"CI Status","state":"FAILURE","bucket":"fail","workflow":"ci"},{"name":"lint","state":"SUCCESS","bucket":"pass","workflow":"ci"}]' run_state) \
     || fail "blocked fixture was refused"
-  assert_contains "$out" 'REQUIRED CHECK: CI Status (FAILURE)' \
+  assert_contains "$out" 'REQUIRED CHECK: CI Status (red)' \
     "required failure was not reported"
   assert_not_contains "$out" 'lint' \
     "a passing required check is not a blocker"
   pass "required failure blocks readiness"
 }
 
-# The next two cases supply gh's own "nothing reported" sentences through
-# FM_TEST_CHECKS_ERROR, so they prove the behaviour GIVEN those strings and
-# nothing about the strings themselves. A gh reword is invisible to this
-# hermetic suite; only a run against a real gh would catch one.
 test_unreported_required_checks_are_unconfirmed() {
-  local out status
-  out=$(FM_TEST_CHECKS_ERROR="no required checks reported on the 'fm/fixture' branch" run_state) \
+  local out status=0
+  out=$(FM_TEST_REQUIRED_CHECKS='[]' FM_TEST_REQUIRED_NAMES='["CI gate"]' run_state) \
     || fail "a head without reported required checks was refused"
-  [ "$out" = 'CHECKS: no required check has reported; readiness unconfirmed' ] \
-    || fail "a head where nothing required has reported must not pass silently as ready, got: $out"
-  # This asserts the branch taken for that sentence, not that gh still says it.
-
-  status=0
+  [ "$out" = 'REQUIRED CHECK: CI gate (missing)' ] \
+    || fail "missing required check must not read as ready: $out"
   FM_TEST_CHECKS_ERROR='HTTP 502: Bad Gateway' run_state >/dev/null 2>&1 || status=$?
-  [ "$status" -ne 0 ] || fail "a real check lookup failure must still refuse"
-  pass "given gh's sentence, an unreported required check is unconfirmed, other check lookup failures refuse"
+  [ "$status" -ne 0 ] || fail "a check lookup failure must refuse"
+  pass "unreported requirements are named and lookup failures refuse"
 }
 
 test_no_reported_checks_is_unverified() {
   local out
-  out=$(FM_TEST_CHECKS_ERROR="no checks reported on the 'fm/fixture' branch" run_state) \
-    || fail "a head without reported checks was refused"
-  [ "$out" = 'CHECKS: none reported yet' ] \
-    || fail "a head with no reported checks must read as unverified, not ready, got: $out"
-  # This asserts the branch taken for that sentence, not that gh still says it.
-  pass "given gh's sentence, a head with no reported checks is unverified rather than ready"
+  out=$(FM_TEST_REQUIRED_CHECKS='[]' run_state) || fail "unreported checks refused"
+  assert_contains "$out" 'REQUIRED CHECK: lint (missing)' "missing required check lost"
+  pass "a head with no reported checks is unverified"
 }
 
 test_help_states_what_silence_means_and_what_is_out_of_scope() {
   local out
   out=$("$SCRIPT" --help) || fail "help was refused"
-  assert_contains "$out" 'it does not mean the pull request is ready to merge' \
+  assert_contains "$out" 'does not mean the pull request is ready to merge' \
     "help must not let empty output read as a verdict that the pull request can merge"
-  assert_contains "$out" 'is absent from what this command reads' \
-    "help must name the limit: a required context that never reported is absent from what is read"
+  assert_contains "$out" 'including checks not yet reported' \
+    "help must explain that unreported requirements are checked"
   assert_contains "$out" "Unresolved review-thread state is out of this command's scope" \
     "help must state the thread-resolution boundary without inventing a reason for it"
   pass "help states what empty output means and what is out of scope"

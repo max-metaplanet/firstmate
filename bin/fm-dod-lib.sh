@@ -596,7 +596,7 @@ EOF
 
 fm_dod_block() {  # <mode> <task-id> [branch] [<forge>] [<base>] [<consent>] [<ticket-header>] [<ticket-nm-retitle>]
   local mode=$1 id=$2 forge=${4:-none} base=${5:-} consent=${6:-} ticket_header=${7:-} ticket_retitle=${8:-}
-  local branch=${3:-fm/$id} pr_base='' nm_base='' base_q contract_forge='' contract_consent='' forge_cli=gh-axi draft_check origin_steps retitle_cmd adapter
+  local branch=${3:-fm/$id} pr_base='' nm_base='' base_q contract_forge='' contract_consent='' forge_cli=gh-axi draft_check origin_steps retitle_cmd adapter ci_wait=
   fm_forge_valid_for_mode "$forge" "$mode" fm_dod_block || return 1
   fm_base_branch_valid "$base" "$mode" "$forge" fm_dod_block || return 1
   if [ -n "$consent" ]; then
@@ -615,6 +615,11 @@ Edit it with \`gh-axi pr edit <PR URL> --title '<the corrected title>'\`, then r
 1. \`git remote get-url origin\` - the \`<owner>/<repo>\` it names is your PR target, and \`origin\` is the only remote you push to.
 2. \`git symbolic-ref --quiet --short refs/remotes/origin/HEAD\` - drop the leading \`origin/\` for your base branch; when it prints nothing, read the \`HEAD branch:\` line of \`git remote show origin\`. When the Delivery contract above names a base branch, use that branch instead of the default.
 3. \`git push -u origin $branch\`, then \`gh-axi pr create -R <owner>/<repo> --base <base branch> --head $branch --title ... --body ...\`."
+  case "$forge" in
+    none|github)
+      ci_wait="For a separate GitHub CI wait, use \`$_FM_DOD_LIB_DIR/fm-pr-checks.sh --watch <pr-url>\` (policy: \`fm-pr-checks-lib.sh\`); advisory checks do not block."
+      ;;
+  esac
   if [ "$forge" = forgejo ]; then
     contract_forge=' forge=forgejo'
     forge_cli=tea
@@ -638,6 +643,7 @@ Ship branch: $branch$ticket_header
 This task ships **direct-PR** to a Gerrit review server: you publish the change yourself, without the no-mistakes pipeline.
 Gerrit has no pull requests, so there is nothing to open; publishing creates the change.
 The task is complete only when committed on your branch.
+$ci_wait
 When it is implemented and committed, publish it.
 EOF
       fm_gerrit_publish_block
@@ -713,6 +719,7 @@ Delivery contract: mode=direct-PR$contract_forge$contract_consent
 Ship branch: $branch$ticket_header
 This task ships **direct-PR**: you raise the PR yourself, without the no-mistakes pipeline.
 The task is complete only when committed on your branch.
+$ci_wait
 When it is implemented and committed, push your branch to \`origin\` and open a PR with \`$forge_cli\` that is ready for review, not a draft$pr_base.
 $origin_steps
 Before you report done, read the PR back from the forge and confirm it is not a draft $draft_check
@@ -754,6 +761,7 @@ $ticket_retitle$retitle_cmd
 EOF
       cat <<EOF
 
+$ci_wait
 After /no-mistakes reports CI green (the CI-ready return point - do not wait for it to keep monitoring in the background until merge), read the PR back from the forge and confirm it is not a draft $draft_check
 A draft cannot be merged, so a done report on one leaves the merge unasked.
 Then append \`done [at=<epoch>]: PR {url} checks green\` and stop. You are finished.
