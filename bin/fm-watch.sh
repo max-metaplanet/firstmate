@@ -39,7 +39,10 @@
 #                          also carries a "demand-deep-inspection" marker so the
 #                          wake payload itself, not just repetition, forces a
 #                          closer look instead of another routine supervision
-#                          resume. When the pane shows the Claude background-task
+#                          resume. Fresh activity reported by the attributed run
+#                          defers up to RUN_ACTIVITY_ABSORB_MAX stale checks;
+#                          the next demands independent proof of forward motion.
+#                          When the pane shows the Claude background-task
 #                          exit picker, that same parenthetical ends with
 #                          "blocked-on-prompt:" and the picker's name, after the
 #                          demand-deep-inspection clause when that clause is
@@ -608,7 +611,7 @@ window_label() {
 # The ONE derivation of a window's per-window marker key: `:`, `/` and `.` become
 # `_` so a window name is usable as a filename suffix. Every per-window file the
 # watcher keeps is named by it (.hash-, .count-, .stale-, .stale-since-,
-# .wedge-escalations-, .paused-*, .writing-*, .waiting-*), and live homes hold those markers on
+# .wedge-escalations-, .run-activity-, .paused-*, .writing-*, .waiting-*), and live homes hold those markers on
 # disk under the current format, so the format lives here alone: a second copy is
 # how a future change to it silently orphans a window's markers instead of clearing
 # them. The helpers below take the derived key rather than re-deriving it, so one
@@ -1285,6 +1288,12 @@ secondmate_liveness_tick() {
 # pane/hash state resets to genuinely active (see the two rm-on-reset call sites
 # below).
 FM_WEDGE_DEMAND_INSPECT_COUNT=${FM_WEDGE_DEMAND_INSPECT_COUNT:-3}
+# Three stale windows (12 minutes at the default cadence) give a pipeline agent
+# room to work without treating its parent pane silence as a wedge. The next
+# check still demands independent proof: recency alone can be misleading. This
+# allowance is per lane/run, survives watcher restarts and pane churn, and stays
+# spent after an alert; only a different attributed run starts a new allowance.
+RUN_ACTIVITY_ABSORB_MAX=3
 
 # One bounded re-surface for a pane the watcher is deliberately absorbing, so no
 # absorb can rot invisibly. <age> is how long the current absorb has held and
@@ -1373,8 +1382,7 @@ wait_record() {  # <kind> <subject> <whom> <action> <age-record>
 # The generated brief promises that declaring one buys the long recheck cadence
 # instead of a wedge, and the wedge timer is reachable while that declaration
 # stands: a crew that declares a wait and then has an active run or busy pane
-# attributed to it is handed to the timer as provably-working, and the timer then
-# escalates on elapsed idle time alone. The declaration is what the worker said
+# attributed to it is handed to the timer as provably-working. The declaration is what the worker said
 # about its OWN silence, so it outranks a liveness verdict that only says
 # something is running.
 #
@@ -1664,20 +1672,21 @@ wedge_dead_record() {  # <window> <since-file> <triage-label> <idle-age> <pane-h
 # can be absorbed this way: the plain non-terminal path, and the
 # stale_is_terminal-overridden path (a captain-relevant status-log line that an
 # active run/busy pane outranked).
-# The wait-evidence consult (wedge_wait_evidence), the worktree write probe, and
-# the dead-record probe (wedge_dead_record) run ONLY here, inside the
-# at-threshold branch that is about to escalate: at most one each per window per
+# The wait-evidence consult (wedge_wait_evidence), the run-activity read, the
+# worktree write probe, and the dead-record probe (wedge_dead_record) run ONLY
+# here, inside the at-threshold branch that is about to escalate: at most one each per window per
 # STALE_ESCALATE_SECS, never on an ordinary poll. The crew-state read
 # wedge_wait_evidence may take under config/wedge-defer-parked-gate keeps that
 # same bound however long the wait lasts, because the deferral it feeds restarts
 # the idle timer like every other deferral below; an unconfigured home never
-# reaches that read at all. The wait consult runs first, because a pane that can
+# reaches the gate consult. The wait consult runs first, because a pane that can
 # account for its own quiet has nothing to prove through its worktree. The dead-record probe
-# runs last of the three, so the two cheaper deferrals keep the panes they
+# runs last, so the cheaper deferrals keep the panes they
 # already own on their existing bounded cadences and only a pane that would
 # otherwise alarm pays for a backend read.
 wedge_timer_check() {  # <window> <since-file> <triage-label> <escalation-count-file> <task> <pane-hash> [dialog-name]
   local win=$1 since_file=$2 label=$3 escalation_file=$4 task=$5 hash=$6 dialog=${7-} since age n reason evidence
+  local run activity_file prior_run absorbs activity_bound=0 activity_detail
   since=$(cat "$since_file" 2>/dev/null || true)
   case "$since" in
     ''|*[!0-9]*)
@@ -1695,7 +1704,37 @@ wedge_timer_check() {  # <window> <since-file> <triage-label> <escalation-count-
            wedge_defer_wait "$win" "$since_file" "$label" "$age" "$evidence"; then
           return 0
         fi
-        if crew_worktree_written_since "$task" "$STATE" "$since_file"; then
+        if run=$(crew_run_recent_activity "$task"); then
+          activity_file="$STATE/.run-activity-$(window_key "$win")"
+          activity_detail="recent run activity already deferred $RUN_ACTIVITY_ABSORB_MAX stale checks"
+          prior_run=; absorbs=0
+          if [ -e "$activity_file" ] \
+            && ! IFS=' ' read -r prior_run absorbs < "$activity_file"; then
+            prior_run=$run; absorbs=$RUN_ACTIVITY_ABSORB_MAX
+            activity_detail='run-activity deferral bookkeeping is unreadable'
+          fi
+          if [ "$prior_run" != "$run" ]; then
+            absorbs=0
+          else
+            # Corrupt bookkeeping must not grant an unlimited allowance.
+            case "$absorbs" in ''|*[!0-9]*)
+              absorbs=$RUN_ACTIVITY_ABSORB_MAX
+              activity_detail='run-activity deferral bookkeeping is malformed'
+              ;;
+            esac
+          fi
+          if [ "$absorbs" -lt "$RUN_ACTIVITY_ABSORB_MAX" ]; then
+            if printf '%s %s\n' "$run" "$((absorbs + 1))" > "$activity_file"; then
+              absorbs=$((absorbs + 1))
+              date +%s > "$since_file"
+              triage_log "absorbed $label (recent run activity, deferral $absorbs/$RUN_ACTIVITY_ABSORB_MAX, run $run): $win"
+              return 0
+            fi
+            activity_detail='run-activity deferral allowance could not be recorded'
+          fi
+          activity_bound=1
+        fi
+        if [ "$activity_bound" -eq 0 ] && crew_worktree_written_since "$task" "$STATE" "$since_file"; then
           wedge_defer_writing "$win" "$since_file" "$label" "$age"
           return 0
         fi
@@ -1705,7 +1744,9 @@ wedge_timer_check() {  # <window> <since-file> <triage-label> <escalation-count-
         n=$(( $(cat "$escalation_file" 2>/dev/null || echo 0) + 1 ))
         echo "$n" > "$escalation_file"
         reason="stale: $win (idle ${age}s, possible wedge, escalation $n)"
-        if [ "$n" -ge "$FM_WEDGE_DEMAND_INSPECT_COUNT" ]; then
+        if [ "$activity_bound" -eq 1 ]; then
+          reason="stale: $win (idle ${age}s, possible wedge, escalation $n, demand-deep-inspection: $activity_detail - verify commit or run-record forward motion across samples; do not re-absorb on run-step/activity alone)"
+        elif [ "$n" -ge "$FM_WEDGE_DEMAND_INSPECT_COUNT" ]; then
           reason="stale: $win (idle ${age}s, possible wedge, escalation $n, demand-deep-inspection: same pane has wedge-escalated $n times in a row - do not re-absorb on the run-step/pane state alone)"
         fi
         reason=$(stale_reason_naming_dialog "$reason" "$dialog")

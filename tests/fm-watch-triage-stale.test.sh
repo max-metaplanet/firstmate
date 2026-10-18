@@ -1170,8 +1170,8 @@ working: still parked at that gate'
 # otherwise defers - human-owed gate, open decision keyed to that run, every
 # signal the armed cases assert on - must escalate on the unchanged schedule
 # with the unchanged reason and demand-deep-inspection wording, and the evidence
-# arm must not even be reached: no current-state read is spent and no recheck
-# throttle is written. The fixture is byte-identical to the armed case above
+# arm must not even be reached: only the unconditional run-activity read is
+# spent and no recheck throttle is written. The fixture is identical to the armed case above
 # except for the flag, so the difference is attributable to the flag alone.
 test_wedge_threshold_parked_gate_is_off_until_armed() {
   local dir state fakebin out capture window key n unarmed_probes armed_probes
@@ -1204,13 +1204,12 @@ working: still parked at that gate'
   unarmed_probes=$(wc -l < "$FM_FAKE_CREW_STATE_LOG" | tr -d ' ')
   unset FM_FAKE_CREW_STATE_LOG
 
-  [ "$unarmed_probes" -eq 0 ] \
-    || fail "an unarmed home spent $unarmed_probes current-state read(s) on a parked gate over three thresholds"
+  [ "$unarmed_probes" -eq 3 ] \
+    || fail "an unarmed home spent $unarmed_probes current-state reads instead of one activity read per threshold"
 
   # The same fixture with only the flag added, counted the same way, so the
-  # zero above is the flag's doing rather than a fixture that could never have
-  # reached the reader: one armed threshold must spend a read. A guard placed
-  # after the consult instead of before it would make both counts nonzero.
+  # armed threshold defers before the activity consult and still spends only
+  # one read. Consulting the gate while unarmed would double the count above.
   dir=$(wedge_threshold_fixture parked-gate-armed-probe-count "$escalated" 2000)
   arm_parked_gate "$dir"
   state="$dir/state"; fakebin="$dir/fakebin"; out="$dir/watch.out"; capture="$dir/pane.txt"
@@ -1221,9 +1220,9 @@ working: still parked at that gate'
   ack_stopped_cycle "$state" || fail "could not acknowledge the armed control recheck"
   armed_probes=$(wc -l < "$FM_FAKE_CREW_STATE_LOG" | tr -d ' ')
   unset FM_FAKE_CREW_STATE_LOG
-  [ "$armed_probes" -gt 0 ] \
-    || fail "the armed control spent no current-state read, so the probe count proves nothing"
-  pass "with config/wedge-defer-parked-gate absent a parked gate keeps the unchanged ladder, wording and reads"
+  [ "$armed_probes" -eq 1 ] \
+    || fail "the armed gate did not defer before the separate activity consult"
+  pass "an unarmed parked gate keeps the unchanged ladder and one activity read per threshold"
 }
 
 # --- a parked human-owed gate also needs the human to still owe an answer ----
@@ -2371,13 +2370,6 @@ test_closed_exit_picker_drops_saved_dialog_name() {
   pass "a closed picker drops the saved dialog name, and the stale stays ordinary"
 }
 
-# FM_TEST_ONLY runs a single named case, the same entry point the sibling
-# suites expose.
-if [ -n "${FM_TEST_ONLY:-}" ]; then
-  "$FM_TEST_ONLY"
-  exit 0
-fi
-
 # --- vendor quota wall: moved, not escalated as a wedge ---------------------
 # The condition the stale ladder cannot answer. A worker whose seat ran out of
 # credits stops mid-task, and the same wall stops it appending a status line
@@ -2447,6 +2439,79 @@ CONTROLFAKE
 }
 
 
+# Recent pipeline activity explains a quiet pane, but three deferrals on the
+# same run must still demand proof from a different source. Pane churn and a
+# watcher restart must not replenish that allowance.
+test_wedge_threshold_rechecks_run_activity_with_a_hard_bound() {
+  local dir state fakebin out key verdict n
+  dir=$(wedge_threshold_fixture recent-run 'working: validating' 20 500)
+  state="$dir/state"; fakebin="$dir/fakebin"; out="$dir/watch.out"
+  key=test_fm-wedge
+  verdict='state: working · source: run-step · validating (fixing) · run activity: recent · run: 01LIVE'
+  export FM_TEST_STALE_ESCALATE=240 FM_FAKE_CREW_STATE_LOG="$dir/reads"
+  for n in 1 2 3; do
+    printf '%s' "$(hash_text "$(cat "$dir/pane.txt")")" > "$state/.hash-$key"
+    printf '%s' "$(cat "$state/.hash-$key")" > "$state/.stale-$key"
+    printf '%s\n' "$(( $(date +%s) - 500 ))" > "$state/.stale-since-$key"
+    wedge_threshold_round "$state" "$fakebin" "$out" "$dir/pane.txt" test:fm-wedge "$verdict" absorb \
+      || fail "fresh pipeline activity raised a wedge on deferral $n: $(cat "$out")"
+    [ ! -s "$state/.wake-queue" ] || fail "fresh activity queued a wedge before its bound"
+    [ "$(wc -l < "$dir/reads" | tr -d ' ')" = "$n" ] \
+      || fail "activity read was not limited to one per stale window"
+    ack_stopped_cycle "$state" || fail "could not acknowledge the activity deferral"
+    # The allowance belongs to the lane/run, not its current rendered hash.
+    printf 'pipeline parent display %s\n' "$n" > "$dir/pane.txt"
+  done
+  printf '%s' "$(hash_text "$(cat "$dir/pane.txt")")" > "$state/.hash-$key"
+  printf '%s' "$(cat "$state/.hash-$key")" > "$state/.stale-$key"
+  printf '%s\n' "$(( $(date +%s) - 500 ))" > "$state/.stale-since-$key"
+  wedge_threshold_round "$state" "$fakebin" "$out" "$dir/pane.txt" test:fm-wedge "$verdict" exit \
+    || fail "recent activity hid the lane beyond three stale windows"
+  grep -F 'demand-deep-inspection:' "$out" >/dev/null || fail "activity bound did not demand independent inspection"
+  grep -F 'commit or run-record forward motion across samples' "$out" >/dev/null \
+    || fail "the demand did not name proof independent of the recency verdict"
+  ack_stopped_cycle "$state" || fail "could not acknowledge the inspection demand"
+  # Re-reading the same activity cannot absorb the next alarm either.
+  printf '%s\n' "$(( $(date +%s) - 500 ))" > "$state/.stale-since-$key"
+  wedge_threshold_round "$state" "$fakebin" "$out" "$dir/pane.txt" test:fm-wedge "$verdict" exit \
+    || fail "a surfaced demand replenished the activity allowance"
+  ack_stopped_cycle "$state" || fail "could not acknowledge the repeated activity demand"
+  verdict=${verdict/01LIVE/01NEXT}
+  printf '%s\n' "$(( $(date +%s) - 500 ))" > "$state/.stale-since-$key"
+  wedge_threshold_round "$state" "$fakebin" "$out" "$dir/pane.txt" test:fm-wedge "$verdict" absorb \
+    || fail "a different attributed run inherited the exhausted allowance"
+  unset FM_TEST_STALE_ESCALATE FM_FAKE_CREW_STATE_LOG
+  pass "fresh pipeline activity defers three stale checks, then demands independent proof across restarts and pane churn"
+}
+
+test_wedge_activity_requires_authoritative_current_evidence() {
+  local dir verdict suffix
+  for suffix in quiet no-run pane unreadable prose; do
+    dir=$(wedge_threshold_fixture "activity-$suffix" 'working: validating' 20 500)
+    case "$suffix" in
+      quiet) verdict='state: working · source: run-step · validating (fixing) · run: 01LIVE' ;;
+      no-run) verdict='state: unknown · source: none · no current run' ;;
+      pane) verdict='state: working · source: pane · run activity: recent · run: 01LIVE' ;;
+      unreadable) verdict='state: unreadable · source: run-step · run activity: recent · run: 01LIVE' ;;
+      prose) verdict='state: working · source: run-step · note: run activity: recent · run: 01LIVE' ;;
+    esac
+    wedge_threshold_round "$dir/state" "$dir/fakebin" "$dir/watch.out" "$dir/pane.txt" test:fm-wedge "$verdict" exit \
+      || fail "$suffix evidence suppressed a genuine wedge"
+    grep -F 'possible wedge, escalation 1)' "$dir/watch.out" >/dev/null \
+      || fail "$suffix evidence changed the existing wedge reason"
+  done
+  pass "quiet, absent, non-run and unreadable evidence keep the existing wedge escalation"
+}
+
+# FM_TEST_ONLY runs a single named case, the same entry point the sibling
+# suites expose. Keep it after every definition so quota-wall cases work too.
+if [ -n "${FM_TEST_ONLY:-}" ]; then
+  "$FM_TEST_ONLY"
+  exit 0
+fi
+
+test_wedge_threshold_rechecks_run_activity_with_a_hard_bound
+test_wedge_activity_requires_authoritative_current_evidence
 test_stale_terminal_status_overridden_by_active_run
 test_nonterminal_stale_provably_working_absorbed_then_escalated
 test_wedge_escalation_marks_demand_deep_inspection_after_threshold

@@ -2781,6 +2781,28 @@ crew_is_paused() {  # <id>
   [ "$(crew_absorb_class "$1")" = paused ]
 }
 
+# The run reader owns recency; the stale timer consumes only its exact component
+# on a working run-step line. Return the attributed run id so a different run
+# cannot inherit this run's allowance. One bounded crew-state read at threshold,
+# never a pane-string match or a cached first-sighting working verdict.
+FM_RUN_ACTIVITY_RECENT='run activity: recent'
+crew_run_recent_activity() {  # <id> -> <run-id>
+  local line rest part recent='' run=''
+  [ -n "$1" ] || return 1
+  line=$("$FM_CREW_STATE_BIN" "$1" 2>/dev/null) || return 1
+  case "$line" in 'state: working · source: run-step · '*) ;; *) return 1 ;; esac
+  rest="$line · "
+  while [ -n "$rest" ]; do
+    part=${rest%% · *}
+    rest=${rest#* · }
+    [ "$part" = "$FM_RUN_ACTIVITY_RECENT" ] && recent=1
+    case "$part" in 'run: '?*) run=${part#run: } ;; esac
+  done
+  [ -n "$recent" ] && [ -n "$run" ] || return 1
+  case "$run" in *[[:space:]]*) return 1 ;; esac
+  printf '%s\n' "$run"
+}
+
 # The one spelling of the verdict component that says a parked gate's answer is
 # owed by a HUMAN. bin/fm-crew-state.sh mints it (nm_gate_awaits_human_decision
 # owns the derivation: the findings table's `action` column, read by position);
