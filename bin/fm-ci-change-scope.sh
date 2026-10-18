@@ -32,8 +32,16 @@
 # classifier, and local Test contract suites before asking the runner for a
 # selection, which is a far narrower set than the owning family CI selects for
 # the same paths. Other changed paths retain their normal mapping. --local also
-# keeps the complete-suite fallback in place of the bounded lane fallback
-# below, because the lanes it names are CI jobs its consumer cannot run.
+# keeps the conservative full-scope signal in place of the CI lane fallback.
+# Local consumers run local_scripts, never expand full/herdr into suites:
+#   local_scripts=<space separated paths>  bounded fast local coverage
+#   local_budget_ms=<integer>              modeled and execution budget
+#   local_deferred=<space separated paths> coverage left to CI
+# These outputs exist only with --local. Real-Herdr and live-harness families
+# always stay out of local_scripts, even when installed or opted in. Other
+# candidates run cheapest first within the measured serial-work budget below.
+# If every candidate is deferred, run the local Test contract instead.
+# The Test command enforces the same budget as a hard execution deadline.
 #
 # Inputs, all optional and read from the environment:
 #   FM_CI_EVENT               the GitHub event name (default: pull_request)
@@ -124,8 +132,8 @@
 # its round queueing behind itself and behind every sibling round; the
 # complete coverage it gives up is run on the very next push to main and again
 # overnight, which is where a serial-lane regression is caught instead.
-# --local keeps the complete-suite fallback, because its consumer runs scripts
-# rather than CI jobs and has no lane to fall back to.
+# --local preserves full=true as scope information and emits bounded local
+# coverage separately; it never instructs its consumer to run the full suite.
 #
 # The packing is what keeps a one-script change from spending 23 runners: the
 # smallest bin count whose worst bin fits the budget wins, so a single-script
@@ -293,11 +301,12 @@ full=$behavior
 parallel=$behavior
 herdr=$behavior
 selected_matrix=
+local_weighted=
 
 # Give up on a pull request's change-scoped selection. The header's fallback
 # paragraph owns why a pull request lands on the two portable parallel lanes
 # and the required Herdr lane instead of the complete sixteen-shard fan-out,
-# and why --local keeps the complete-suite fallback instead.
+# and why --local preserves the full-scope signal instead.
 fall_back() {
   [ "$local_mode" = false ] || return 0
   full=false
@@ -362,6 +371,8 @@ $(bin/fm-test-run.sh --list-weighted "$doc_suite" 2>/dev/null)"
     fi
   fi
 
+  local_weighted=$weighted
+
   # The required Herdr lane owns its whole family, so a selected member sends
   # the work there rather than into a job with no Herdr installed.
   herdr_members=$(bin/fm-test-run.sh --list --family real-herdr-gated 2>/dev/null) || herdr_members=
@@ -407,6 +418,55 @@ EOF
 
 select_tests
 
+# Five minutes of modeled serial work, using fm-test-run.sh --list-weighted's
+# CI duration hints (docs/fm-test-portable-shards.md). This admits the 156781ms
+# runner contract while excluding the 334000-434000ms supervision-host suites;
+# cheapest-first admission also bounds a large family of individually fast tests.
+# This is the single local budget; commands.test enforces it as a hard deadline
+# too, because CI timing hints can understate a loaded developer machine.
+LOCAL_BUDGET_MS=300000
+local_scripts=
+local_deferred=
+select_local_tests() {
+  local excluded admission kind script
+  if [ "$behavior" = false ]; then
+    local_scripts=tests/fm-documentation-audiences.test.sh
+    return
+  fi
+  # A known selection may merely be too large to pack for CI. Keep its
+  # relevant fast portion; use the full inventory only when mapping is unknown.
+  if [ "$full" = true ] && [ -z "$local_weighted" ]; then
+    local_weighted=$(bin/fm-test-run.sh --list-weighted --all)
+  fi
+  [ -n "$local_weighted" ] || { printf '%s\n' 'selector returned no tests' >&2; return 1; }
+  excluded=$(bin/fm-test-run.sh --list --family real-herdr-gated &&
+    bin/fm-test-run.sh --list --family live-harness-optin)
+  admission=$(printf '%s\n' "$local_weighted" | LC_ALL=C sort -t "$TAB" -k1,1n -k2,2 |
+    awk -F'\t' -v budget="$LOCAL_BUDGET_MS" '
+      FILENAME == ARGV[1] { gated[$0] = 1; next }
+      !seen[$2]++ {
+        if (!gated[$2] && used + $1 <= budget) {
+          used += $1; print "run\t" $2
+        } else { print "defer\t" $2 }
+      }
+    ' <(printf '%s\n' "$excluded") -)
+  while IFS="$TAB" read -r kind script; do
+    [ -n "$script" ] || continue
+    case "$kind" in
+      run) local_scripts="${local_scripts:+$local_scripts }$script" ;;
+      defer) local_deferred="${local_deferred:+$local_deferred }$script" ;;
+    esac
+  done <<EOF
+$admission
+EOF
+  # All-slow or all-live changes still exercise the local Test contract. This
+  # is fallback coverage, not a claim that the deferred behavior was tested.
+  [ -n "$local_scripts" ] || local_scripts=tests/fm-nm-test-contract.test.sh
+}
+if [ "$local_mode" = true ]; then
+  select_local_tests
+fi
+
 # The behavior gate also covers the macOS job: a change that reaches no test at
 # all cannot reach the stock-Bash job either, and a shell change sets both.
 printf 'behavior=%s\n' "$behavior"
@@ -415,3 +475,8 @@ printf 'full=%s\n' "$full"
 printf 'parallel=%s\n' "$parallel"
 printf 'herdr=%s\n' "$herdr"
 printf 'selected_matrix=%s\n' "$selected_matrix"
+if [ "$local_mode" = true ]; then
+  printf 'local_scripts=%s\n' "$local_scripts"
+  printf 'local_budget_ms=%s\n' "$LOCAL_BUDGET_MS"
+  printf 'local_deferred=%s\n' "$local_deferred"
+fi

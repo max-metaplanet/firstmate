@@ -63,25 +63,21 @@ commands:
     set -euf
     scope=$(FM_CI_EVENT=pull_request FM_CI_BASE_SHA=origin/main bash bin/fm-ci-change-scope.sh --local)
     printf '%s\n' "$scope"
-    if printf '%s\n' "$scope" | grep -qx 'behavior=false'; then
-      exec bash bin/fm-test-run.sh tests/fm-documentation-audiences.test.sh
-    elif printf '%s\n' "$scope" | grep -qx 'full=true'; then
-      exec bash bin/fm-test-run.sh --all --per-script-timeout-secs 1500
-    fi
-    matrix=$(printf '%s\n' "$scope" | sed -n 's/^selected_matrix=//p')
-    selected=
-    if [ -n "$matrix" ]; then
-      selected=$(printf '%s\n' "$matrix" | jq -er '[.include[].scripts] | join(" ")')
-    fi
-    if printf '%s\n' "$scope" | grep -qx 'herdr=true'; then
-      selected="$selected $(bash bin/fm-test-run.sh --list --family real-herdr-gated)"
+    selected=$(printf '%s\n' "$scope" | sed -n 's/^local_scripts=//p')
+    budget=$(printf '%s\n' "$scope" | sed -n 's/^local_budget_ms=//p')
+    deferred=$(printf '%s\n' "$scope" | sed -n 's/^local_deferred=//p')
+    if [ -n "$deferred" ]; then
+      printf "Left to CI's required lanes (CI gate): %s\n" "$deferred"
     fi
     [ -n "$selected" ] || { printf '%s\n' 'selector returned no tests' >&2; exit 1; }
+    case "$budget" in ''|*[!0-9]*) printf '%s\n' 'selector returned invalid budget' >&2; exit 1 ;; esac
+    [ "$budget" -ge 1000 ] || exit 1
     # The selector emits repository-owned test paths without whitespace.
     # Globbing is disabled above; split only its space/newline-delimited path list.
     # shellcheck disable=SC2086
     set -- $selected
-    exec bash bin/fm-test-run.sh --per-script-timeout-secs 1500 "$@"
+    . bin/fm-timeout-lib.sh
+    fm_exec_timed "$((budget / 1000))" 5 bash bin/fm-test-run.sh --per-script-timeout-secs 1500 "$@"
     NM_TEST
 
 # Trusted Test-step policy. The scope paragraph keeps local validation targeted so
@@ -93,10 +89,11 @@ test:
   instructions: |
     Read the configured Test command's selector output and results first.
     Do not repeat suites that already passed for this head; use their evidence and run only additional intent-targeted checks needed for changed behavior or uncovered direct consumers.
-    If the selector reports full=true, its safe narrow mapping is unknown; retain that conservative fallback rather than inventing a second path map.
+    Use the classifier's local_scripts selection and local_deferred report even when full=true; the classifier owns the local budget and CI owns deferred coverage.
+    Do not expand full=true or herdr=true into local suite families, or run deferred suites locally.
     Run a live lab scenario only when the change alters live lifecycle behavior, through the guarded lab helpers described below.
     Do not run the full suite families, and do not re-run slow suites that do not cover the changed paths; CI already runs them (tests/fm-supervision-host.test.sh alone takes 22-30 minutes).
-    When the change touches what a slow suite covers, still run that suite, or a filtered part of it that exercises the changed behavior, and plan the step's time around it; never give a verdict that rests on zero tests for a touched file.
+    Cover unmet intent with fast targeted scenarios or a filtered case that fits the classifier's local budget; report deferred coverage explicitly and require CI green before merge.
     Finish well inside this step's time limit and report your verdict on the targeted and live checks you ran.
 
     Run live Herdr scenarios only through bin/fm-herdr-lab.sh with a named non-default fm-lab-* session, following that helper's prepare, provision, run, and teardown contract exactly.
