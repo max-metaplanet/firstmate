@@ -28,10 +28,12 @@ PROCS = []
 # The suite may itself run inside a Claude session. Its CLAUDE_CODE_SESSION_ID
 # and CLAUDE_PID are scrubbed so the foreign-owner negative control below is
 # genuinely id-less; the same-session positive control sets its own.
+# Keep the test-only bypass exported by the entry point's tests/lib.sh: the
+# replacement-owner control arms a real watcher, including in a gate checkout.
 BASE_ENV = {
     k: v
     for k, v in os.environ.items()
-    if not k.startswith(
+    if k == "FM_GATE_REFUSE_BYPASS" or not k.startswith(
         ("FM_", "HERDR_", "PI_", "CLAUDE_PROJECT_DIR", "CLAUDE_CODE_SESSION_ID", "CLAUDE_PID", "GROK_", "CURSOR_")
     )
 }
