@@ -1,0 +1,8 @@
+{
+  "app": "portal",
+  "test_account_role": "anonymous",
+  "pr_url": "https://github.com/metaplanet-jp/core/pull/2244",
+  "head_sha": "b7e244483b83c4eda7ab013d8faddab7738bc716",
+  "input_hash": "40ca53169ac19938a0433afc9d38e20def2785dde1572eba22676fd4036566b9",
+  "record_id": "0a59a7f6f935873b5b2491426c7f27452c1b834d72e5e3648df9a3f638e3fd4e"
+}

@@ -1,0 +1,11 @@
+{
+  "app": "admin-center",
+  "phase": "pre-merge",
+  "run": true,
+  "reason": "preview of core-admin-center for https://github.com/metaplanet-jp/core/pull/2247",
+  "pr": {
+    "url": "https://github.com/metaplanet-jp/core/pull/2247",
+    "number": 2247,
+    "headSha": "70050af4055592a3d222065474eabe83a060e5e0"
+  }
+}

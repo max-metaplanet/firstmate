@@ -120,6 +120,7 @@ write_pulls() {  # <home> <merged-secs-ago> [title]
     '[{number:2214,html_url:$url,title:$title,merged_at:$merged,
        head:{sha:$head},merge_commit_sha:$merge}]' \
     > "$home/fx/pulls.json"
+  jq -n --arg stamp "$merged" '[{id:8001,state:"success",created_at:$stamp}]' > "$home/fx/deployment-statuses.json"
 }
 
 # Two merged candidates, so a poll that may read fewer than the whole set has
@@ -138,7 +139,7 @@ write_two_pulls() {  # <home>
 # PR's preview verdict still exists once production has replaced its section.
 write_preview_artifact() {  # <home> <app> <verdict>
   local home=$1 app=$2 verdict=$3 dir
-  jq -n '{workflow_runs:[{id:38887740485,conclusion:"success"}]}' > "$home/fx/runs-$HEAD_SHA.json"
+  jq -n --arg head "$HEAD_SHA" '{workflow_runs:[{id:38887740485,head_sha:$head,run_attempt:1,conclusion:"success"}]}' > "$home/fx/runs-$HEAD_SHA.json"
   jq -n '{artifacts:[{id:12040000001,name:"jev-check-records",expired:false}]}' \
     > "$home/fx/artifacts-38887740485.json"
   dir="$home/fx/art-build"
@@ -146,12 +147,16 @@ write_preview_artifact() {  # <home> <app> <verdict>
   jq -n --arg app "$app" --arg url "$PR_URL" --arg head "$HEAD_SHA" \
     '{run:true,phase:"pre-merge",app:$app,jevEnv:"qa",
       pr:{url:$url,number:2214,headSha:$head}}' > "$dir/context.json"
-  jq -nc --arg v "$verdict" \
-    '{event:"check",at:"2026-10-16T09:00:00Z",record:{verdict:$v,phase:"pre-merge"},publish:true}' \
+  jq -n --arg app "$app" --arg url "$PR_URL" --arg head "$HEAD_SHA" \
+    '{app:$app,pr_url:$url,head_sha:$head,input_hash:"fixture-input"}' > "$dir/plan.json"
+  mkdir -p "$dir/plan"
+  mv "$dir/plan.json" "$dir/plan/plan.json"
+  jq -nc --arg v "$verdict" --arg url "$PR_URL" --arg head "$HEAD_SHA" \
+    '{event:"check",at:"2026-10-16T09:00:00Z",record:{verdict:$v,phase:"pre-merge",head_sha:$head,pr_url:$url,input_set_hash:"fixture-input"},publish:true}' \
     > "$dir/records.jsonl"
   jq -nc '{event:"delivery",at:"2026-10-16T09:00:01Z",record_id:"x"}' >> "$dir/records.jsonl"
   rm -f "$home/fx/artifact-12040000001.zip"
-  (cd "$dir" && zip -q "$home/fx/artifact-12040000001.zip" context.json records.jsonl)
+  (cd "$dir" && zip -q "$home/fx/artifact-12040000001.zip" context.json records.jsonl plan/plan.json)
 }
 
 # No pre-merge run at all, so the preview half cannot be established.
@@ -188,6 +193,16 @@ case "\$path" in
   */actions/artifacts/*/zip)
     a=\${path#*/actions/artifacts/}; a=\${a%/zip}
     cat "\$FX/artifact-\$a.zip" ;;
+  */deployments\?*)
+    [ ! -e "\$FX/fail-deployments" ] || exit 1
+    if [ -f "\$FX/deployments.json" ]; then cat "\$FX/deployments.json"; else
+      printf '[{"id":7001,"sha":"$MERGE_SHA","environment":"Production – core-metaplanet","created_at":"2025-10-09T06:53:20Z"}]'; fi ;;
+  */deployments/*/statuses\?*)
+    d=\${path#*/deployments/}; d=\${d%%/*}
+    if [ -f "\$FX/deployment-statuses-\$d.json" ]; then cat "\$FX/deployment-statuses-\$d.json"; elif [ -f "\$FX/deployment-statuses.json" ]; then cat "\$FX/deployment-statuses.json"; else
+      printf '[{"id":8001,"state":"success","created_at":"2025-10-09T06:53:20Z"}]'; fi ;;
+  */commits/*/status)
+    if [ -f "\$FX/statuses.json" ]; then cat "\$FX/statuses.json"; else printf '{"statuses":[]}'; fi ;;
   *) exit 1 ;;
 esac
 EOF
@@ -610,7 +625,7 @@ test_an_artifact_verdict_outside_the_vocabulary_is_not_established() {
            record:{verdict:"proven\nwoken\t2214/portal/forged",phase:"pre-merge"}}' \
     > "$dir/records.jsonl"
   rm -f "$home/fx/artifact-12040000001.zip"
-  (cd "$dir" && zip -q "$home/fx/artifact-12040000001.zip" context.json records.jsonl)
+  (cd "$dir" && zip -q "$home/fx/artifact-12040000001.zip" context.json records.jsonl plan/plan.json)
 
   out=$(poll "$home")
   assert_equals "" "$out" "it batches rather than waking at once"
@@ -954,6 +969,7 @@ test_the_read_budget_fits_a_lowered_check_timeout() {
 
 test_saved_lists_survive_full_rotations() {
   local home mode n i out expected actual
+  local PR_URL=$PR_URL
   for mode in clean regression pending; do
     home=$(make_home "saved-rotation-$mode")
     configure "$home"
@@ -972,6 +988,15 @@ test_saved_lists_survive_full_rotations() {
       write_no_preview_artifact "$home"
     fi
     for i in 0 1 2 3 4 5; do
+      if [ "$mode" = regression ]; then
+        if [ $((i % 2)) -eq 0 ]; then
+          write_preview_artifact "$home" portal proven
+        else
+          PR_URL="https://github.com/$REPO/pull/2215"
+          write_preview_artifact "$home" portal proven
+          PR_URL="https://github.com/$REPO/pull/2214"
+        fi
+      fi
       out=$(poll "$home" FM_JEV_PROD_MAX_PRS=1 FM_JEV_PROD_NOW="$((NOW + i))")
       if [ "$mode" = regression ] && [ "$i" -lt 2 ]; then
         assert_contains "$out" "jev-prod: regression" "initial regressions wake immediately"
@@ -987,6 +1012,15 @@ test_saved_lists_survive_full_rotations() {
       expected=$(printf '%s\tcouldnt-check\n%s\tcouldnt-check' "$NOW" "$((NOW + 1))")
       assert_equals "$expected" "$actual" "each pending timestamp and class stays on its own row"
       assert_equals 2 "$(awk -F '\t' '$1 == "pending" && NF == 4 {n++} END {print n+0}' "$home/state/.jev-prod-monitor")" "each pending evidence is one tab-separated field"
+      if [ "$mode" = regression ]; then
+        if [ $((i % 2)) -eq 0 ]; then
+          write_preview_artifact "$home" portal proven
+        else
+          PR_URL="https://github.com/$REPO/pull/2215"
+          write_preview_artifact "$home" portal proven
+          PR_URL="https://github.com/$REPO/pull/2214"
+        fi
+      fi
       out=$(poll "$home" FM_JEV_PROD_MAX_PRS=1 FM_JEV_PROD_NOW="$((NOW + 21601))")
       assert_contains "$out" "2 verdicts" "the batch counts the distinct saved evidence rows"
       assert_contains "$out" "/pull/2214 " "first evidence survives reloads"
@@ -996,6 +1030,339 @@ test_saved_lists_survive_full_rotations() {
   pass "fm-jev-prod-check: saved woken and pending lists survive three candidate rotations"
 }
 
+REAL_FX="$ROOT/tests/fixtures/jev-prod-monitor"
+
+real_candidate() {  # <home> <pr>
+  jq --argjson n "$2" '[.[] | select(.number == $n)]' "$REAL_FX/pulls.json" > "$1/fx/pulls.json"
+  cp "$REAL_FX/comments-$2.json" "$1/fx/comments-$2.json"
+  cp "$REAL_FX/deployments-$2.json" "$1/fx/deployments.json"
+  cp "$REAL_FX/statuses-$2.json" "$1/fx/statuses.json"
+  cp "$REAL_FX"/deployment-statuses-*.json "$1/fx/"
+}
+
+install_captured_artifact() {  # <home> <fixture-prefix> <id> <name>
+  local home=$1 prefix=$2 id=$3 name=$4 dir="$1/fx/captured-$3"
+  mkdir -p "$dir/plan"
+  cp "$REAL_FX/$prefix-context.json" "$dir/context.json"
+  [ ! -f "$REAL_FX/$prefix-plan.json" ] || cp "$REAL_FX/$prefix-plan.json" "$dir/plan/plan.json"
+  [ ! -f "$REAL_FX/$prefix-records.jsonl" ] || cp "$REAL_FX/$prefix-records.jsonl" "$dir/records.jsonl"
+  (cd "$dir" && zip -qr "$home/fx/artifact-$id.zip" .)
+  jq -n --argjson id "$id" --arg name "$name" '{artifacts:[{id:$id,name:$name,expired:false}]}' > "$home/fx/artifacts-39078284927.json"
+}
+
+repack_preview() {
+  rm -f "$1/fx/artifact-12040000001.zip"
+  (cd "$1/fx/art-build" && zip -qr "$1/fx/artifact-12040000001.zip" .)
+}
+
+change_json() {  # <file> <jq-filter>
+  jq "$2" "$1" > "$1.new" && mv "$1.new" "$1"
+}
+
+test_real_completed_outcomes_and_run_attempts() {
+  local home out sha n
+  local NOW=1792296000
+  for n in 2244 2246 2247; do
+    home=$(make_home "real-completed-$n")
+    configure "$home" 'lookback-hours:336'
+    fake_gh "$home" >/dev/null
+    real_candidate "$home" "$n"
+    if [ "$n" = 2244 ]; then
+      sha=$(jq -r '.[0].merge_commit_sha' "$home/fx/pulls.json")
+      jq -s '{workflow_runs:.}' "$REAL_FX/run-39065201369.json" > "$home/fx/runs-$sha.json"
+      install_captured_artifact "$home" legacy 12097900001 jev-check-records
+      mv "$home/fx/artifacts-39078284927.json" "$home/fx/artifacts-39065201369.json"
+    fi
+    out=$(poll "$home")
+    if [ "$n" = 2244 ]; then
+      assert_grep 'run-39065201369-attempt-1-proven-eb33ce8736ce' "$home/state/.jev-prod-monitor" "captured legacy context, plan and record bind the published result to its run"
+    fi
+    assert_equals "" "$out" "captured proven and not-applicable outcomes are silent"
+    assert_equals 2 "$(grep -c '^woken	' "$home/state/.jev-prod-monitor")" "both completed app outcomes are deduped"
+    assert_no_grep 'pending	' "$home/state/.jev-prod-monitor" "not-applicable never enters the inability batch"
+    assert_grep 'not-applicable' "$home/state/.jev-prod-monitor" "not-applicable remains distinct from proven"
+    assert_grep 'nothing this pull request changed' "$home/state/.jev-prod-monitor" "the reason survives persistence"
+  done
+  sha=$(jq -r '.[0].merge_commit_sha' "$home/fx/pulls.json")
+  jq -s '{workflow_runs:.}' "$REAL_FX/run-39078284927.json" > "$home/fx/runs-$sha.json"
+  install_captured_artifact "$home" not-applicable 12118504083 jev-check-records-portal
+  out=$(poll "$home")
+  assert_equals "" "$out" "a completed run with verified identity remains silent"
+  assert_grep 'run-39078284927-attempt-1-not-applicable' "$home/state/.jev-prod-monitor" "no-plan outcomes use verified workflow run and attempt"
+  change_json "$home/fx/runs-$sha.json" '.workflow_runs[0].run_attempt=2'
+  out=$(poll "$home")
+  assert_equals "" "$out" "a distinct not-applicable attempt stays completed"
+  assert_grep 'run-39078284927-attempt-2-not-applicable' "$home/state/.jev-prod-monitor" "a later attempt is independently recorded"
+  assert_equals 2 "$(grep -c '^outcome	.*portal/' "$home/state/.jev-prod-monitor")" "each run keeps its reason"
+  change_json "$home/fx/comments-2247.json" '.[0].body |= sub("not applicable in production";"unexpected completed title")'
+  out=$(poll "$home" FM_JEV_PROD_BATCH_SECS=0)
+  assert_contains "$out" 'production=unreadable ' "malformed outcomes never inherit the completed artifact verdict"
+  grep -q 'unparsed-.*run-39078284927-attempt-2' "$home/state/.jev-prod-monitor" || fail "an unparsed outcome still has a verified run identity"
+  change_json "$home/fx/runs-$sha.json" '.workflow_runs[0].run_attempt=3'
+  out=$(poll "$home" FM_JEV_PROD_BATCH_SECS=0)
+  assert_contains "$out" 'production=unreadable ' "a later run with the same malformed title is independently reported"
+  grep -q 'unparsed-.*run-39078284927-attempt-3' "$home/state/.jev-prod-monitor" || fail "new malformed attempts are not hidden by a static skip key"
+  pass "fm-jev-prod-check: real completed outcomes preserve reasons and distinct workflow attempts"
+}
+
+test_known_nonpassing_and_unknown_titles() {
+  local home out verdict
+  for verdict in refused unverified 'looks proven' 'not applicable' 'proven with caveats'; do
+    home=$(make_home "known-nonpassing-$(printf '%s' "$verdict" | tr ' ' '-')")
+    configure "$home"
+    fake_gh "$home" >/dev/null
+    write_pulls "$home" 7200
+    write_comments "$home" 2214 900101 "$(section portal "$verdict" post-merge production titlecase)"
+    write_preview_artifact "$home" portal proven
+    out=$(poll "$home" FM_JEV_PROD_BATCH_SECS=0)
+    assert_contains "$out" 'jev-prod: couldnt-check' "nonpassing and unknown titles never become a pass or regression"
+    case "$verdict" in
+      refused|unverified) assert_contains "$out" "production=$verdict " "known explicit nonpassing outcomes retain their names" ;;
+      *) assert_contains "$out" 'production=unreadable ' "an unknown complete title is not read from its final word" ;;
+    esac
+  done
+  pass "fm-jev-prod-check: complete titles distinguish known nonpassing outcomes and malformed titles"
+}
+
+test_real_skipped_builds_and_unreadable_inventory() {
+  local home out
+  local NOW=1792296000
+  home=$(make_home real-canceled-build)
+  configure "$home" 'lookback-hours:336'
+  fake_gh "$home" >/dev/null
+  real_candidate "$home" 2245
+  out=$(poll "$home" FM_JEV_PROD_BATCH_SECS=0)
+  assert_contains "$out" 'production=build-skipped ' "captured success statuses describing canceled builds are not deployment proof"
+  assert_no_grep '/deployments/' "$home/fx/gh-argv.log" "generic production and protected-secrets environments never count"
+  touch "$home/fx/fail-deployments"
+  out=$(poll "$home" FM_JEV_PROD_BATCH_SECS=0)
+  assert_contains "$out" 'production=deployment-unreadable ' "unreadable deployment inventory has a distinct outcome"
+  rm "$home/fx/fail-deployments"
+  printf '{"statuses":[{"state":"success","context":"unrelated","description":"ok"}]}' > "$home/fx/statuses.json"
+  out=$(poll "$home" FM_JEV_PROD_BATCH_SECS=0)
+  assert_contains "$out" 'production=not-deployed ' "generic success never starts the deployment grace"
+  pass "fm-jev-prod-check: real canceled builds and unrelated environments are distinct from unreadable deployments"
+}
+
+test_deployment_grace_late_result_and_redeploy() {
+  local home out stamp
+  home=$(make_home deployment-grace)
+  configure "$home"
+  fake_gh "$home" >/dev/null
+  write_pulls "$home" 7200
+  write_comments "$home" 2214 900102 "$(section portal proven pre-merge qa previewrec)"
+  stamp=$(jq -nr --argjson t "$((NOW - 60))" '$t | todateiso8601')
+  jq -n --arg stamp "$stamp" '[{id:1,state:"success",created_at:$stamp}]' > "$home/fx/deployment-statuses.json"
+  out=$(poll "$home" FM_JEV_PROD_BATCH_SECS=0)
+  assert_equals "" "$out" "an old merge with a recent successful deployment is inside grace"
+  if grep -Eq '^(pending|woken)' "$home/state/.jev-prod-monitor"; then fail "grace does not settle a missing result"; fi
+  out=$(poll "$home" FM_JEV_PROD_NOW="$((NOW+3601))" FM_JEV_PROD_BATCH_SECS=0)
+  assert_contains "$out" 'production=none ' "a deployed app with Jev missing wakes after deployment grace"
+  write_comments "$home" 2214 900102 "$(section portal failed post-merge production late-result)"
+  write_preview_artifact "$home" portal proven
+  out=$(poll "$home" FM_JEV_PROD_NOW="$((NOW+3602))")
+  assert_contains "$out" 'jev-prod: regression' "a late result is not suppressed by the missing-result key"
+  out=$(poll "$home" FM_JEV_PROD_NOW="$((NOW+3603))")
+  assert_equals "" "$out" "the late result is delivered once"
+  write_comments "$home" 2214 900102 "$(section portal proven pre-merge qa previewrec)"
+  jq -n --arg sha "$MERGE_SHA" '[{id:7002,sha:$sha,environment:"Production – core-metaplanet",created_at:"2025-10-09T00:00:00Z"}]' > "$home/fx/deployments.json"
+  out=$(poll "$home" FM_JEV_PROD_NOW="$((NOW+3604))" FM_JEV_PROD_BATCH_SECS=0)
+  assert_contains "$out" 'production=none ' "a distinct deployment gets its own missing-result identity"
+  change_json "$home/fx/deployments.json" '.[0].sha="ffffffffffffffffffffffffffffffffffffffff"'
+  out=$(poll "$home" FM_JEV_PROD_BATCH_SECS=0)
+  assert_contains "$out" 'production=not-deployed ' "a supported environment on another SHA is not this app deployment"
+  pass "fm-jev-prod-check: deployment grace, late results, and redeploy identities are independent"
+}
+
+test_persona_pairing_rejects_mismatches() {
+  local home out mismatch
+  for mismatch in none context-app context-head context-phase context-persona plan-app plan-head plan-persona plan-input record-head record-phase run-head; do
+    home=$(make_home "persona-$mismatch")
+    configure "$home"
+    fake_gh "$home" >/dev/null
+    write_pulls "$home" 7200
+    write_comments "$home" 2214 900103 "$(section portal:portal-foreign failed post-merge production foreignrec)"
+    write_preview_artifact "$home" portal proven
+    change_json "$home/fx/artifacts-38887740485.json" '.artifacts[0].name="jev-check-records-portal-foreign"'
+    change_json "$home/fx/art-build/context.json" '.memberPersona="portal-foreign"'
+    change_json "$home/fx/art-build/plan/plan.json" '.test_account_role="portal-foreign"'
+    case "$mismatch" in
+      context-app) change_json "$home/fx/art-build/context.json" '.app="admin-center"' ;;
+      context-head) change_json "$home/fx/art-build/context.json" '.pr.headSha="ffffffff"' ;;
+      context-phase) change_json "$home/fx/art-build/context.json" '.phase="post-merge"' ;;
+      context-persona) change_json "$home/fx/art-build/context.json" '.memberPersona="portal-previous"' ;;
+      plan-app) change_json "$home/fx/art-build/plan/plan.json" '.app="admin-center"' ;;
+      plan-head) change_json "$home/fx/art-build/plan/plan.json" '.head_sha="ffffffff"' ;;
+      plan-persona) change_json "$home/fx/art-build/plan/plan.json" '.test_account_role="portal-unverified"' ;;
+      plan-input) change_json "$home/fx/art-build/plan/plan.json" '.input_hash="another-plan"' ;;
+      record-head) change_json "$home/fx/art-build/records.jsonl" 'if .event=="check" then .record.head_sha="ffffffff" else . end' ;;
+      record-phase) change_json "$home/fx/art-build/records.jsonl" 'if .event=="check" then .record.phase="post-merge" else . end' ;;
+      run-head) change_json "$home/fx/runs-$HEAD_SHA.json" '.workflow_runs[0].head_sha="ffffffff"' ;;
+    esac
+    repack_preview "$home"
+    out=$(poll "$home" FM_JEV_PROD_BATCH_SECS=0)
+    assert_contains "$out" 'app=portal:portal-foreign ' "persona identity survives into evidence"
+    if [ "$mismatch" = none ]; then
+      assert_contains "$out" 'jev-prod: regression' "only the matching app, persona, phase, head and plan pair"
+    else
+      assert_contains "$out" 'jev-prod: couldnt-check' "a $mismatch mismatch cannot establish preview proof"
+    fi
+  done
+  pass "fm-jev-prod-check: persona pairing checks context, plan, record, and workflow identity"
+}
+
+test_captured_persona_artifact_context_wins_over_name() {
+  local home out sha
+  local NOW=1792296000
+  home=$(make_home real-persona-wrong-app)
+  configure "$home" 'lookback-hours:336'
+  fake_gh "$home" >/dev/null
+  real_candidate "$home" 2247
+  sha=$(jq -r '.[0].head.sha' "$home/fx/pulls.json")
+  jq -s '{workflow_runs:.}' "$REAL_FX/run-39077760909.json" > "$home/fx/runs-$sha.json"
+  cp "$REAL_FX/artifacts-39077760909.json" "$home/fx/artifacts-39077760909.json"
+  install_captured_artifact "$home" foreign 12117397213 jev-check-records-portal-foreign
+  change_json "$home/fx/comments-2247.json" '.[0].body |= gsub("portal -->";"portal:portal-foreign -->") | .[0].body |= gsub("not applicable in production";"failed")'
+  out=$(poll "$home" FM_JEV_PROD_BATCH_SECS=0)
+  assert_contains "$out" 'app=portal:portal-foreign production=failed preview=unknown' "the actual foreign-named artifact has admin-center context and cannot prove portal"
+  pass "fm-jev-prod-check: captured persona artifact is rejected when its context names the other app"
+}
+
+test_reseed_backs_up_corruption_and_never_seeds_malformed_outcomes() {
+  local home out backup before
+  home=$(make_home reseed-corruption)
+  configure "$home"
+  fake_gh "$home" >/dev/null
+  write_two_pulls "$home"
+  write_comments "$home" 2214 900104 "$(section portal failed post-merge production knownrec)"
+  write_comments "$home" 2215 900105 "$(section portal 'looks proven' post-merge production unknownrec)"
+  write_preview_artifact "$home" portal proven
+  printf 'fm-jev-prod-monitor-v1\nwoken\t2246/portal/unparsed2245/admin-center/no-production-verdict\npending\t%s\tcouldnt-check\tfirst evidence%scouldnt-check glued evidence\n' "$NOW" "$NOW" > "$home/state/.jev-prod-monitor"
+  before=$(cat "$home/state/.jev-prod-monitor")
+  out=$(env PATH="$home/bin:$PATH" FM_HOME="$home" FM_JEV_PROD_NOW="$NOW" "$CHECK" reseed 2>&1)
+  expect_code 0 "$?" "explicit reseed succeeds from current verified recorder outcomes"
+  backup=${out##*backup=}
+  assert_equals "$before" "$(cat "$backup")" "the backup preserves the entire corrupt state before rebuilding"
+  assert_equals 'woken	2214/portal/knownrec' "$(grep '^woken' "$home/state/.jev-prod-monitor")" "only the current known outcome is seeded, never historical glued rows or an unknown title"
+  out=$(poll "$home" FM_JEV_PROD_BATCH_SECS=0)
+  assert_contains "$out" '/pull/2215 ' "malformed current outcomes remain an inability to check"
+  if [[ "$out" == *'/pull/2214 '* ]]; then fail "the known baseline must not redeliver"; fi
+  before=$(cat "$home/state/.jev-prod-monitor")
+  touch "$home/fx/fail-comments"
+  out=$(env PATH="$home/bin:$PATH" FM_HOME="$home" FM_JEV_PROD_NOW="$NOW" "$CHECK" reseed 2>&1)
+  expect_code 1 "$?" "an incomplete reseed fails closed"
+  assert_equals "$before" "$(cat "$home/state/.jev-prod-monitor")" "failed reseed leaves the original state intact"
+  pass "fm-jev-prod-check: explicit reseed backs up corruption and seeds only verified current outcomes"
+}
+
+test_recorded_run_identity_survives_read_failures() {
+  local home out
+  home=$(make_home recorded-attempts)
+  configure "$home"
+  fake_gh "$home" >/dev/null
+  write_pulls "$home" 7200
+  write_comments "$home" 2214 900106 "$(section portal proven post-merge production productionrec)"
+  write_preview_artifact "$home" portal proven
+  change_json "$home/fx/art-build/context.json" '.phase="post-merge"'
+  change_json "$home/fx/art-build/records.jsonl" 'if .event=="check" then .record.phase="post-merge" | .record.record_id="productionrec" else . end'
+  repack_preview "$home"
+  jq -n --arg sha "$MERGE_SHA" '{workflow_runs:[{id:38887740485,head_sha:$sha,event:"deployment_status",conclusion:"success",run_attempt:1}]}' > "$home/fx/runs-$MERGE_SHA.json"
+  touch "$home/fx/fail-runs"
+  out=$(poll "$home")
+  assert_equals "" "$out" "a production pass with no run metadata remains silent"
+  assert_grep 'woken	2214/portal/productionrec' "$home/state/.jev-prod-monitor" "the fallback is recorded before enrichment"
+  rm "$home/fx/fail-runs"
+  out=$(poll "$home")
+  assert_equals "" "$out" "a production pass with verified run identity remains silent"
+  assert_grep 'run-38887740485-attempt-1-proven-productionrec' "$home/state/.jev-prod-monitor" "the record binds the comment to the same production run"
+  touch "$home/fx/fail-runs"
+  out=$(poll "$home")
+  assert_equals "" "$out" "temporary metadata failure cannot redeliver a recorded result"
+  assert_equals 1 "$(grep -c '^woken' "$home/state/.jev-prod-monitor")" "metadata failure cannot create a fallback duplicate key"
+  rm "$home/fx/fail-runs"
+  change_json "$home/fx/runs-$MERGE_SHA.json" '.workflow_runs[0].run_attempt=2'
+  out=$(poll "$home")
+  assert_equals "" "$out" "a new proven attempt remains silent"
+  assert_grep 'run-38887740485-attempt-2-proven-productionrec' "$home/state/.jev-prod-monitor" "a new verified workflow attempt gets its own key"
+  pass "fm-jev-prod-check: recorded run identity survives metadata failure and distinguishes attempts"
+}
+
+test_sibling_personas_never_exchange_preview_verdicts() {
+  local home out
+  home=$(make_home sibling-personas)
+  configure "$home"
+  fake_gh "$home" >/dev/null
+  write_pulls "$home" 7200
+  write_comments "$home" 2214 900107 "$(section portal:portal-foreign failed post-merge production foreignfailed)"
+  write_preview_artifact "$home" portal proven
+  cp "$home/fx/artifact-12040000001.zip" "$home/fx/default.zip"
+  change_json "$home/fx/art-build/context.json" '.memberPersona="portal-foreign"'
+  change_json "$home/fx/art-build/plan/plan.json" '.test_account_role="portal-foreign"'
+  change_json "$home/fx/art-build/records.jsonl" 'if .event=="check" then .record.verdict="failed" else . end'
+  repack_preview "$home"
+  mv "$home/fx/artifact-12040000001.zip" "$home/fx/artifact-12040000002.zip"
+  mv "$home/fx/default.zip" "$home/fx/artifact-12040000001.zip"
+  jq -n '{artifacts:[{id:12040000001,name:"jev-check-records-portal",expired:false},{id:12040000002,name:"jev-check-records-portal-foreign",expired:false}]}' > "$home/fx/artifacts-38887740485.json"
+  out=$(poll "$home" FM_JEV_PROD_BATCH_SECS=0)
+  assert_contains "$out" 'jev-prod: still-flagged' "the foreign failure pairs with its own failed preview, not the proven default preview"
+  assert_contains "$out" 'app=portal:portal-foreign production=failed preview=failed' "evidence preserves the matching persona verdicts"
+  pass "fm-jev-prod-check: sibling personas never exchange preview verdicts"
+}
+
+test_real_older_nonpassing_comments() {
+  local home out n
+  local NOW=1792296000
+  for n in 2216 2230; do
+    home=$(make_home "real-older-$n")
+    configure "$home" 'lookback-hours:336'
+    fake_gh "$home" >/dev/null
+    real_candidate "$home" "$n"
+    out=$(poll "$home" FM_JEV_PROD_BATCH_SECS=0)
+    assert_contains "$out" 'jev-prod:' "captured old nonpassing outcomes remain visible"
+    if [ "$n" = 2230 ]; then
+      assert_contains "$out" 'production=failed ' "the historical portal failure stays nonpassing"
+      assert_contains "$out" 'production=unproven ' "the historical admin-center inability stays nonpassing"
+    else
+      assert_contains "$out" 'preview=skipped ' "the older pre-merge skip is still recognizable"
+    fi
+  done
+  pass "fm-jev-prod-check: real older skipped and failed comments remain nonpassing"
+}
+
+test_malformed_sections_never_settle_as_proven() {
+  local home out variant body
+  for variant in missing-close nested duplicate-title missing-record; do
+    home=$(make_home "malformed-section-$variant")
+    configure "$home"
+    fake_gh "$home" >/dev/null
+    write_pulls "$home" 7200
+    body=$(section portal proven post-merge production malformed)
+    case "$variant" in
+      missing-close) body=$(printf '%s' "$body" | sed '/^<!-- \/jev-check-app:/d') ;;
+      nested) body=$(printf '%s' "$body" | sed '/^Head /a\
+<!-- jev-check-app:admin-center -->') ;;
+      duplicate-title) body=$(printf '%s' "$body" | sed '/^Head /a\
+**Browser check - failed** (advisory; blocks no merge)') ;;
+      missing-record) body=$(printf '%s' "$body" | sed '/^Plan /d') ;;
+    esac
+    write_comments "$home" 2214 900108 "$body"
+    out=$(poll "$home" FM_JEV_PROD_BATCH_SECS=0)
+    assert_contains "$out" 'production=unreadable ' "a $variant malformed section never settles as proven"
+  done
+  pass "fm-jev-prod-check: malformed section structure and incomplete proven outcomes stay nonpassing"
+}
+
+test_recorded_run_identity_survives_read_failures
+test_sibling_personas_never_exchange_preview_verdicts
+test_real_older_nonpassing_comments
+test_malformed_sections_never_settle_as_proven
+test_real_completed_outcomes_and_run_attempts
+test_known_nonpassing_and_unknown_titles
+test_real_skipped_builds_and_unreadable_inventory
+test_deployment_grace_late_result_and_redeploy
+test_persona_pairing_rejects_mismatches
+test_captured_persona_artifact_context_wins_over_name
+test_reseed_backs_up_corruption_and_never_seeds_malformed_outcomes
 test_saved_lists_survive_full_rotations
 test_help_and_usage
 test_unconfigured_home_is_silent_and_spends_nothing

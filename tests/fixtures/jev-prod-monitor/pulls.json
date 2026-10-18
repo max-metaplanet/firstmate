@@ -1,0 +1,62 @@
+[
+  {
+    "number": 2244,
+    "html_url": "https://github.com/metaplanet-jp/core/pull/2244",
+    "title": "fix/ENG-2729(dashboard): stabilize the footer build timestamp to stop React #418 on the signed-in dashboard",
+    "merged_at": "2026-10-17T20:00:28Z",
+    "head": {
+      "sha": "b7e244483b83c4eda7ab013d8faddab7738bc716"
+    },
+    "merge_commit_sha": "3d0ac11732be7934f07631f0785a3e1cb4f54122"
+  },
+  {
+    "number": 2245,
+    "html_url": "https://github.com/metaplanet-jp/core/pull/2245",
+    "title": "fix/ENG-2726: re-pin the jev vendor so a production sign-in keeps the session it writes",
+    "merged_at": "2026-10-17T20:09:08Z",
+    "head": {
+      "sha": "e8539c55804dc3d4e37ab149fb3d1657a9fbe6ae"
+    },
+    "merge_commit_sha": "e5645d01e957735d074ddcb14ae44b97797af5f4"
+  },
+  {
+    "number": 2246,
+    "html_url": "https://github.com/metaplanet-jp/core/pull/2246",
+    "title": "chore/ENG-2406(qa-env): publish the core-qa drift measurement instead of committing it",
+    "merged_at": "2026-10-17T21:24:30Z",
+    "head": {
+      "sha": "5905e87656eb06748affb413b1da73bb7564de79"
+    },
+    "merge_commit_sha": "be9bbcfc89e010e380a33ea45c57b43a50f3f812"
+  },
+  {
+    "number": 2247,
+    "html_url": "https://github.com/metaplanet-jp/core/pull/2247",
+    "title": "feat/ENG-2728(jev-check): add member robot personas across tiers",
+    "merged_at": "2026-10-17T23:12:25Z",
+    "head": {
+      "sha": "70050af4055592a3d222065474eabe83a060e5e0"
+    },
+    "merge_commit_sha": "65e574f6eaaa8eb687d2e2a00ea33a798dc7f074"
+  },
+  {
+    "number": 2216,
+    "html_url": "https://github.com/metaplanet-jp/core/pull/2216",
+    "title": "feat/ENG-2669(ci): generate plans through the OpenAI API and turn the lane on",
+    "merged_at": "2026-10-16T19:53:09Z",
+    "head": {
+      "sha": "ebae165b8967f4d294195567e86d26be8a9478d1"
+    },
+    "merge_commit_sha": "353629997f5920384e97b60bac96935a248e1246"
+  },
+  {
+    "number": 2230,
+    "html_url": "https://github.com/metaplanet-jp/core/pull/2230",
+    "title": "feat/ENG-2716: add Jev routing picks, helper grades and gate predictions to Work impact",
+    "merged_at": "2026-10-17T01:20:56Z",
+    "head": {
+      "sha": "4b3602c3fbc1318f5f356c8211e496c6cc22403e"
+    },
+    "merge_commit_sha": "2cda7f32dcb94fe16967f79a0c5d8783447facef"
+  }
+]

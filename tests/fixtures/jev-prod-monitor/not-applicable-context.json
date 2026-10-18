@@ -1,0 +1,13 @@
+{
+  "app": "portal",
+  "phase": "post-merge",
+  "run": false,
+  "publishSkip": true,
+  "notApplicable": true,
+  "reason": "nothing this pull request changed names a page a production check may open (admin-center: 1 file(s), database: 7 file(s), docs: 1 file(s), shared packages: 5 file(s), tests: 7 file(s), tooling/CI: 29 file(s))",
+  "pr": {
+    "url": "https://github.com/metaplanet-jp/core/pull/2247",
+    "number": 2247,
+    "headSha": "70050af4055592a3d222065474eabe83a060e5e0"
+  }
+}

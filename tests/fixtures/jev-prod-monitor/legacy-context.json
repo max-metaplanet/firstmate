@@ -1,0 +1,11 @@
+{
+  "app": "portal",
+  "phase": "post-merge",
+  "run": true,
+  "reason": "production of core-metaplanet for https://github.com/metaplanet-jp/core/pull/2244",
+  "pr": {
+    "url": "https://github.com/metaplanet-jp/core/pull/2244",
+    "number": 2244,
+    "headSha": "b7e244483b83c4eda7ab013d8faddab7738bc716"
+  }
+}

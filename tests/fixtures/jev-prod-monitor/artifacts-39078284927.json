@@ -1,0 +1,24 @@
+{
+  "artifacts": [
+    {
+      "id": 12118245375,
+      "name": "jev-check-records-portal-unverified",
+      "expired": false
+    },
+    {
+      "id": 12118230878,
+      "name": "jev-check-records-portal-foreign",
+      "expired": false
+    },
+    {
+      "id": 12118230867,
+      "name": "jev-check-records-portal-previous",
+      "expired": false
+    },
+    {
+      "id": 12118210969,
+      "name": "jev-check-records-portal",
+      "expired": false
+    }
+  ]
+}

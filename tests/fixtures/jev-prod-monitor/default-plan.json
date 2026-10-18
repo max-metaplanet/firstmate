@@ -1,0 +1,8 @@
+{
+  "app": "admin-center",
+  "test_account_role": "staff",
+  "pr_url": "https://github.com/metaplanet-jp/core/pull/2247",
+  "head_sha": "70050af4055592a3d222065474eabe83a060e5e0",
+  "input_hash": "1f25a84685ded9d98273fa22e76bd95a364694dc5f68bcb6a67efdf2f8ef63c6",
+  "record_id": "64346fedcd9dcaf511ce442416ef4d8b9cf666251c3b778824adc5e20c399362"
+}
