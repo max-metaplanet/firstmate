@@ -420,9 +420,9 @@ test_workflow_configuration_has_separate_local_coverage() {
   pass "CI selects the owning family while local configuration coverage stays narrow"
 }
 
-# The bounded lane fallback is a CI shape: its consumer runs scripts, not
-# jobs, so --local keeps falling back to the complete suite instead.
-test_local_mode_keeps_the_complete_suite_fallback() {
+# Full remains scope information with --local; local_scripts separately
+# bounds what its consumer executes, while CI uses the bounded lane fallback.
+test_local_mode_preserves_the_full_scope_signal() {
   local path
   for path in tests/lib.sh tests/fixtures.sh tests/wake-helpers.sh \
     bin/fm-dod-lib.sh tests/stray-note.txt docs/arm-pretool-check.md; do
@@ -431,7 +431,79 @@ test_local_mode_keeps_the_complete_suite_fallback() {
   done
   SCOPE_MODE=--local assert_full_suite 'local configuration plus an oversized selection' \
     .no-mistakes.yaml bin/fm-afk-launch.sh bin/fm-session-start.sh bin/fm-pr-merge.sh bin/fm-spawn.sh
-  pass "local mode keeps the complete-suite fallback where CI uses the bounded lanes"
+  pass "local mode preserves full scope information where CI uses bounded lanes"
+}
+
+test_local_budget_covers_fast_tests_and_defers_long_or_live_work() {
+  local selected deferred weighted sum budget
+  SCOPE_MODE=--local classify bin/fm-quota-choose.sh
+  assert_equals 'tests/fm-quota-choose.test.sh' "$(scope_value local_scripts)" "ordinary narrow coverage is unchanged"
+  assert_equals '' "$(scope_value local_deferred)" "ordinary narrow coverage defers nothing"
+
+  SCOPE_MODE=--local classify tests/fm-backend-herdr-smoke.test.sh tests/fm-quota-choose.test.sh
+  assert_equals false "$(scope_value full)" "Herdr plus narrow code is not a full fallback"
+  assert_equals true "$(scope_value herdr)" "Herdr scope remains visible"
+  assert_equals 'tests/fm-quota-choose.test.sh' "$(scope_value local_scripts)" "Herdr selection retains relevant fast tests"
+  assert_contains "$(scope_value local_deferred)" 'tests/fm-backend-herdr-smoke.test.sh' "real Herdr is deferred even if installed"
+
+  SCOPE_MODE=--local classify tests/fm-backend-herdr-smoke.test.sh
+  assert_equals 'tests/fm-nm-test-contract.test.sh' "$(scope_value local_scripts)" "all-live changes exercise the local Test contract"
+  SCOPE_MODE=--local classify tests/fm-supervision-host.test.sh tests/fm-quota-choose.test.sh
+  assert_equals false "$(scope_value full)" "a long narrow selection stays narrow"
+  assert_equals 'tests/fm-quota-choose.test.sh' "$(scope_value local_scripts)" "a long narrow selection retains its fast portion"
+  assert_equals 'tests/fm-supervision-host.test.sh' "$(scope_value local_deferred)" "long serial work is deferred"
+
+  SCOPE_MODE=--local classify tests/lib.sh
+  selected=$(scope_value local_scripts)
+  deferred=$(scope_value local_deferred)
+  budget=$(scope_value local_budget_ms)
+  assert_contains "$SCOPE_OUT" 'full=true' "full scope remains conservative"
+  [ -n "$selected" ] || fail "full scope cannot pass with zero fast tests"
+  assert_contains "$deferred" 'tests/fm-supervision-host.test.sh' "full scope defers long serial work"
+  assert_contains "$deferred" 'tests/fm-backend-herdr-smoke.test.sh' "full scope defers Herdr"
+  assert_contains "$deferred" 'tests/fm-supervision-host-live-e2e.test.sh' "full scope defers live harnesses"
+  # Repository-owned paths contain no whitespace. Ask the runner for weights
+  # of the actual admitted scripts, rather than copying its timing hints.
+  # shellcheck disable=SC2086
+  weighted=$(bash "$ROOT/bin/fm-test-run.sh" --list-weighted $selected) || fail "cannot weigh local selection"
+  sum=$(printf '%s\n' "$weighted" | awk '{ total += $1 } END { print total }')
+  [ "$sum" -le "$budget" ] || fail "local full selection exceeds its modeled budget: $sum > $budget"
+  pass "real local classification retains fast coverage and defers long/live suites"
+}
+
+test_local_budget_bounds_aggregate_work() {
+  local repo="$TMP_ROOT/local-budget" output
+  mkdir -p "$repo/bin"
+  cp "$SCOPE" "$repo/bin/fm-ci-change-scope.sh"
+  cat > "$repo/bin/fm-test-run.sh" <<'SH'
+#!/usr/bin/env bash
+case "$1" in
+  --list-weighted)
+    case "$*" in *--all*) [ "${REFUSE_ALL:-0}" = 0 ] || exit 2 ;; esac
+    printf '%s\n' "$TEST_WEIGHTS"
+    ;;
+  --list) [ "$3" != real-herdr-gated ] || printf '%s\n' tests/herdr.test.sh ;;
+  *) exit 2 ;;
+esac
+SH
+  chmod +x "$repo/bin/fm-test-run.sh"
+  printf '%s\n' tests/a.test.sh > "$repo/paths"
+  output=$(TEST_WEIGHTS=$'100001\ttests/c.test.sh\n100000\ttests/b.test.sh\n100000\ttests/a.test.sh\n1\ttests/herdr.test.sh' \
+    FM_CI_CHANGED_PATHS_FILE="$repo/paths" bash "$repo/bin/fm-ci-change-scope.sh" --local) \
+    || fail "aggregate budget classification failed"
+  assert_contains "$output" 'local_scripts=tests/a.test.sh tests/b.test.sh' "the cheapest scripts run in deterministic order"
+  assert_contains "$output" 'local_deferred=tests/herdr.test.sh tests/c.test.sh' "aggregate overflow and Herdr go to CI"
+  output=$(TEST_WEIGHTS=$'300000\ttests/exact.test.sh\n300001\ttests/over.test.sh' \
+    FM_CI_CHANGED_PATHS_FILE="$repo/paths" bash "$repo/bin/fm-ci-change-scope.sh" --local) \
+    || fail "boundary classification failed"
+  assert_contains "$output" 'local_scripts=tests/exact.test.sh' "a script at the budget is admitted"
+  assert_contains "$output" 'local_deferred=tests/over.test.sh' "a script beyond the budget is deferred"
+  output=$(TEST_WEIGHTS=$'1000\ttests/relevant.test.sh\n3600001\ttests/long.test.sh' REFUSE_ALL=1 \
+    FM_CI_CHANGED_PATHS_FILE="$repo/paths" bash "$repo/bin/fm-ci-change-scope.sh" --local) \
+    || fail "oversized mapped selection must not widen to the full inventory"
+  assert_contains "$output" 'full=true' "oversized mapped work retains full scope information"
+  assert_contains "$output" 'local_scripts=tests/relevant.test.sh' "oversized mapped work retains its relevant fast portion"
+  pass "the local budget bounds aggregate work, not just individual scripts"
 }
 
 test_prose_only_changes_turn_both_gates_off
@@ -456,4 +528,7 @@ test_prose_only_changes_select_nothing_at_all
 test_a_selected_herdr_member_runs_the_herdr_lane
 
 test_workflow_configuration_has_separate_local_coverage
-test_local_mode_keeps_the_complete_suite_fallback
+test_local_mode_preserves_the_full_scope_signal
+
+test_local_budget_covers_fast_tests_and_defers_long_or_live_work
+test_local_budget_bounds_aggregate_work
