@@ -155,7 +155,7 @@ mv "$TEST_ROOT/quota-next" "$TEST_ROOT/codex/work/quota.json"
 out=$(choose)
 [ "$out" = 'codex work' ] || fail 'renewable expiry must not be classified signed out'
 assert_grep 'auth=expired_refreshable' "$TEST_ROOT/evidence" 'selected auth evidence must be visible'
-[ "$(rg -c "^codex .* 1$" "$LEAD_TEST_CALLS")" = 1 ] || fail 'one uncertain candidate must have exactly one JSON fallback'
+[ "$(grep -c "^codex .* 1$" "$LEAD_TEST_CALLS")" = 1 ] || fail 'one uncertain candidate must have exactly one JSON fallback'
 jq '.providers[0].state.authStatus="credentials_invalid"' "$TEST_ROOT/codex/work/quota.json" > "$TEST_ROOT/quota-next"
 mv "$TEST_ROOT/quota-next" "$TEST_ROOT/codex/work/quota.json"
 out=$(choose)
