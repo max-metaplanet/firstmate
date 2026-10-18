@@ -20,9 +20,10 @@ export REAL_GIT
 fixture() {
   FIX="$TMP_ROOT/$1"
   export FIX NM_HOME="$TMP_ROOT/$1/nm"
+  export FM_HOME="$FIX/home" FM_TASK_ID=task FM_STATE_OVERRIDE="$FIX/home/state"
   WT="$FIX/repo"
   GATE="$NM_HOME/repos/0123456789ab.git"
-  mkdir -p "$WT" "$NM_HOME/repos"
+  mkdir -p "$WT" "$NM_HOME/repos" "$FM_HOME/state"
   git init -q -b fm/task "$WT"
   git -C "$WT" config user.name Test
   git -C "$WT" config user.email test@example.test
@@ -55,6 +56,12 @@ with sqlite3.connect(sys.argv[1]) as db:
     db.execute('INSERT INTO runs VALUES (?,?,?,?,?)', ('run1','0123456789ab','fm/task','cancelled',1))
 PY
   write_status custody_returned ahead run_pipeline
+}
+
+local_parent() {
+  mkdir -p "$FIX/parent/state"
+  printf '%s\n' mate > "$FM_HOME/.fm-secondmate-home"
+  printf 'schema=fm-secondmate-parent.v1\nroute=local\nparent_home=%s\n' "$FIX/parent" > "$FM_HOME/.fm-secondmate-parent"
 }
 
 write_status() {
@@ -96,12 +103,19 @@ assert_preserved() {
   assert_equals "$OLD" "$(git --git-dir="$GATE" rev-parse refs/heads/fm/other)" 'other task untouched'
   assert_equals "$HEAD_SHA" "$(git -C "$WT" rev-parse HEAD)" 'local HEAD unchanged'
   assert_equals '' "$(git -C "$WT" status --porcelain)" 'worktree clean'
+  assert_grep 'no-mistakes gate ref removed' "$FM_HOME/state/task.status" 'local deletion record'
+  assert_grep "\"home\": \"$FM_HOME\"" "$FM_HOME/state/task.status" 'record identifies owning home'
+  assert_grep '"task": "task"' "$FM_HOME/state/task.status" 'record identifies task'
+  assert_grep '"ref": "refs/heads/fm/task"' "$FM_HOME/state/task.status" 'record identifies removed ref'
+  assert_equals 1 "$(wc -l < "$FM_HOME/state/task.status" | tr -d ' ')" 'one local report per deletion'
   recover
   expect_code 0 "$RC" retry
   assert_contains "$OUT" 'changed: false'
+  assert_equals 1 "$(wc -l < "$FM_HOME/state/task.status" | tr -d ' ')" 'no duplicate report for a no-op'
 }
 
 fixture mirror-loop
+local_parent
 # The original patch survives in history, followed by an intentional edit.
 printf 'superseded\n' > "$WT/feature"
 git -C "$WT" commit -qam 'supersede original line'
@@ -109,14 +123,24 @@ HEAD_SHA=$(git -C "$WT" rev-parse HEAD)
 git -C "$WT" update-ref refs/no-mistakes/recover-local/run1 "$OLD"
 write_status custody_returned ahead run_pipeline
 recover
+assert_contains "$OUT" 'parent_report: delivered'
+assert_grep 'no-mistakes gate ref removed' "$FIX/parent/state/mate.status" 'parent receives deletion report'
+assert_equals "$(cat "$FM_HOME/state/task.status")" "$(cat "$FIX/parent/state/mate.status")" 'parent receives the complete home, task and ref event'
 assert_preserved
-pass 'cancelled mirror recovery loop clears with an existing recovery anchor and superseded patch'
+assert_equals 1 "$(wc -l < "$FIX/parent/state/mate.status" | tr -d ' ')" 'no parent report on no-op'
+git --git-dir="$GATE" update-ref refs/heads/fm/task "$OLD"
+recover
+expect_code 0 "$RC" 'second actual deletion'
+assert_equals 2 "$(wc -l < "$FIX/parent/state/mate.status" | tr -d ' ')" 'each deletion receives its own parent event'
+assert_equals 2 "$(wc -l < "$FM_HOME/state/task.status" | tr -d ' ')" 'each deletion receives its own local event'
+pass 'cancelled mirror recovery reports the home, task and removed ref through the existing parent channel'
 
 fixture unpublished-rebased
 write_status user_owned diverged ''
 recover
+assert_contains "$OUT" 'parent_report: not_applicable_primary_home'
 assert_preserved
-pass 'unpublished rebased submitted head recovers without resetting local history or an empty merge'
+pass 'primary-home recovery records the deletion locally and explicitly reports no parent channel'
 
 fixture syncstate-wrong
 write_status custody_returned ahead run_pipeline
@@ -125,6 +149,7 @@ assert_preserved
 pass 'returned custody with stale pre-rebase gate head recovers despite no-op supported sync'
 
 fixture unique
+local_parent
 git -C "$WT" checkout -qb unique "$OLD"
 printf 'gate only\n' > "$WT/unique"
 git -C "$WT" add .
@@ -137,6 +162,8 @@ expect_code 1 "$RC" 'unique refusal'
 assert_contains "$OUT" "$UNIQUE unique gate work"
 assert_equals "$UNIQUE" "$(git --git-dir="$GATE" rev-parse refs/heads/fm/task)" 'unique ref preserved'
 assert_equals '' "$(git -C "$WT" for-each-ref --format='%(refname)' refs/no-mistakes)" 'refusal created no anchor'
+assert_absent "$FM_HOME/state/task.status" 'proof refusal emits no local deletion report'
+assert_absent "$FIX/parent/state/mate.status" 'proof refusal emits no parent report'
 pass 'unique gate work refuses with the exact commit and subject'
 
 fixture wrong-branch
@@ -216,6 +243,52 @@ expect_code 1 "$RC" 'merge commit proof'
 assert_contains "$OUT" "$MERGE unproven gate merge"
 pass 'gate-only merge commit refuses even when its parents have equivalent patches'
 
+fixture remote-report
+printf '%s\n' mate > "$FM_HOME/.fm-secondmate-home"
+printf 'schema=fm-secondmate-parent.v1\nroute=remote\nparent_host=remote.example\n' > "$FM_HOME/.fm-secondmate-parent"
+recover
+assert_contains "$OUT" 'parent_report: delivered'
+assert_grep '"ref": "refs/heads/fm/task"' "$FM_HOME/state/parent-replies.status" 'remote parent outbox'
+assert_preserved
+pass 'remote home reports through the existing parent-channel outbox'
+
+fixture failed-parent-report
+local_parent
+mkdir "$FIX/parent/state/mate.status"
+recover
+expect_code 3 "$RC" 'parent delivery failure'
+assert_contains "$OUT" 'changed: true'
+assert_contains "$OUT" 'parent_report: failed'
+assert_contains "$OUT" 'deletion already completed'
+if git --git-dir="$GATE" show-ref --verify --quiet refs/heads/fm/task; then
+  fail 'report failure undid or hid the deletion'
+fi
+assert_grep 'no-mistakes gate ref removed' "$FM_HOME/state/task.status" 'deletion recorded despite delivery failure'
+assert_grep 'parent report failed' "$FM_HOME/state/task.status" 'delivery failure is durable locally'
+pass 'parent reporting failure remains visible after deletion and never restores the stale ref'
+
+fixture failed-local-report
+local_parent
+mkdir "$FM_HOME/state/task.status"
+recover
+expect_code 3 "$RC" 'local recording failure'
+assert_contains "$OUT" 'changed: true'
+assert_contains "$OUT" 'local recovery record failed'
+assert_contains "$OUT" 'parent_report: delivered'
+assert_grep '"ref": "refs/heads/fm/task"' "$FIX/parent/state/mate.status" 'parent still receives deletion despite local failure'
+if git --git-dir="$GATE" show-ref --verify --quiet refs/heads/fm/task; then
+  fail 'local recording failure restored the stale ref'
+fi
+pass 'local recording failure is visible and does not suppress parent delivery'
+
+fixture missing-report-identity
+unset FM_TASK_ID
+recover
+expect_code 1 "$RC" 'missing reporting identity'
+assert_contains "$OUT" 'deletion reporting requires'
+assert_equals "$OLD" "$(git --git-dir="$GATE" rev-parse refs/heads/fm/task)" 'no unattributed deletion'
+pass 'missing home or task identity refuses before gate deletion'
+
 fixture race
 cat > "$TMP_ROOT/fakebin/git" <<'SH'
 #!/usr/bin/env bash
@@ -231,6 +304,7 @@ recover
 expect_code 1 "$RC" 'concurrent ref update'
 assert_equals "$BASE" "$(git --git-dir="$GATE" rev-parse refs/heads/fm/task)" 'new gate head survives CAS refusal'
 assert_equals "$OLD" "$(git -C "$WT" rev-parse "refs/no-mistakes/recover-local/run1-$OLD")" 'old head remains archived'
+assert_absent "$FM_HOME/state/task.status" 'failed deletion emits no deletion report'
 pass 'expected-old guard preserves a gate ref moved after the proof'
 rm "$TMP_ROOT/fakebin/git"
 

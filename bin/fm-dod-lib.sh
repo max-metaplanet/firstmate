@@ -562,7 +562,7 @@ Do not hand-edit, commit, or fix findings yourself while a run is active - the p
 $drive_block
 A killed or timed-out call is never evidence the daemon died: the daemon accepts your response immediately and runs the round in the background, so the call was only ever waiting for a read while the run kept working.
 Reattach and keep going rather than reporting the pipeline blocked; rule 7 owns the checks that decide when a pipeline block is real.
-After an interrupted terminal run refuses a fresh run or rerun, use \`bash "$_FM_DOD_LIB_DIR/fm-nm-recover.sh" "<task-worktree>" "<exact-task-branch>"\` and follow its action.
+After an interrupted terminal run refuses a fresh run or rerun, use \`bash "$_FM_DOD_LIB_DIR/fm-nm-recover.sh" "<task-worktree>" "<exact-task-branch>" --home "<owning-home>" --task "<task-id>"\` and follow its action.
 
 Two firstmate-specific rules layer on top of that guidance:
 - ask-user findings are never yours to answer: escalate to firstmate using rule 6's ask-user format and stop.

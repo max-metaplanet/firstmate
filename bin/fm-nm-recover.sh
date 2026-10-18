@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Recover a terminal run's stale private mirror without rewriting task history.
-# Usage: fm-nm-recover.sh <task-worktree> <exact-branch>
+# Usage: fm-nm-recover.sh <task-worktree> <exact-branch> [--home <home>] [--task <id>]
 #
 # Reads version-matched `axi status` TOON and the registered local state DB.
 # An active run is reattached, never cancelled. Unreturned custody must first
@@ -15,6 +15,15 @@
 # Recheck task/run identity, then delete only the stale gate branch with its
 # expected old value. The gate receives no objects, tags, or other ref writes.
 # No reset, merge, push, daemon operation, DB write, or pipeline start occurs.
+# Deletion requires the owning FM_HOME and FM_TASK_ID (or --home and --task).
+# Every successful deletion is recorded in that home's state/<task>.status and
+# published through fm-parent-channel-lib.sh with home, task, ref and old head.
+# FM_STATE_OVERRIDE selects the local state directory when set. A primary home
+# has no parent channel: its local task status is the durable record and output
+# explicitly says parent_report: not_applicable_primary_home. A reporting error
+# returns 3 with changed:true already printed and the deletion left intact;
+# local status and stderr name a failed parent report. No report is emitted for
+# a refused proof or a no-op. Each actual deletion gets its own event key.
 # Retry the original run/rerun command after action: retry_pipeline. Repeated
 # invocation after deletion is a no-op. Unknown schemas or unsafe states fail
 # closed. Python 3 (stdlib sqlite3), Git, and no-mistakes are required.
@@ -23,11 +32,12 @@ if [ "${1:-}" = --help ]; then
   sed -n '2,/^set -/p' "$0" | sed '$d; s/^# *//'
   exit 0
 fi
-if [ "$#" -ne 2 ]; then
-  echo "usage: fm-nm-recover.sh <task-worktree> <exact-branch>" >&2
+if [ "$#" -lt 2 ]; then
+  echo "usage: fm-nm-recover.sh <task-worktree> <exact-branch> [--home <home>] [--task <id>]" >&2
   exit 2
 fi
-exec python3 - "$@" <<'PY'
+exec python3 - "${BASH_SOURCE[0]}" "$@" <<'PY'
+import argparse
 import json
 import os
 from pathlib import Path
@@ -35,10 +45,15 @@ import re
 import sqlite3
 import subprocess
 import sys
+import uuid
 from contextlib import closing
 
 
 class Refused(Exception):
+    pass
+
+
+class ReportFailed(Exception):
     pass
 
 
@@ -73,7 +88,14 @@ def toon(text):
 
 
 def recover():
-    wt, branch = Path(sys.argv[1]).resolve(strict=True), sys.argv[2]
+    publisher = Path(sys.argv[1]).resolve().parent / "fm-parent-channel-lib.sh"
+    parser = argparse.ArgumentParser()
+    parser.add_argument("worktree")
+    parser.add_argument("branch")
+    parser.add_argument("--home", default=os.environ.get("FM_HOME"))
+    parser.add_argument("--task", default=os.environ.get("FM_TASK_ID"))
+    args = parser.parse_args(sys.argv[2:])
+    wt, branch = Path(args.worktree).resolve(strict=True), args.branch
     # A caller's repository-location overrides must not redirect any Git write.
     overrides = ("GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_INDEX_FILE",
                  "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES",
@@ -187,6 +209,14 @@ def recover():
             unique.append(sha + " " + subject)
     if unique:
         raise Refused("gate commits without a patch-ID preservation proof:\n" + "\n".join(unique))
+    # Require explicit attribution before deletion. Never infer the owning home
+    # from the project checkout or derive the task id from its branch spelling.
+    if not args.home or not args.task or args.task.startswith(".") or not re.fullmatch(r"[A-Za-z0-9._-]+", args.task):
+        raise Refused("deletion reporting requires FM_HOME and FM_TASK_ID, or --home and --task")
+    home = Path(args.home).resolve(strict=True)
+    if not home.is_dir() or not publisher.is_file():
+        raise Refused("owning home or parent-channel publisher is unavailable")
+    state_dir = Path(os.environ.get("FM_STATE_OVERRIDE") or home / "state").resolve()
     anchor = "refs/no-mistakes/recover-local/" + run_id + "-" + old
     # Fetch objects only, then use a create-only ref guard in the task repo.
     git("fetch", "--no-tags", "--no-write-fetch-head", str(gate_dir), old)
@@ -209,10 +239,59 @@ def recover():
     print("action: retry_pipeline\nchanged: true\nrun: %s\nbranch: %s\nanchor: %s\n"
           "reason: stale gate head preserved; all gate-only patches occur in local history" %
           (run_id, branch, anchor))
+    # The deletion has happened. Always show that outcome, even if delivery
+    # fails, and retain the local event independently of parent delivery.
+    sys.stdout.flush()
+    event = "nm-recover-" + uuid.uuid4().hex
+    line = "note [key=%s]: no-mistakes gate ref removed %s" % (event, json.dumps({
+        "home": str(home), "task": args.task, "ref": ref, "old_head": old,
+        "run": run_id, "anchor": anchor}, ensure_ascii=True))
+    try:
+        report = subprocess.run(["bash", "-c", r'''
+set -u
+# shellcheck source=bin/fm-parent-channel-lib.sh
+. "$1" || exit 3
+report_home=$2 report_state=$3 report_task=$4
+line=$(status_stamp_line "$5")
+local_rc=0 parent_rc=0
+fm_parent_channel_append_once "$report_state/$report_task.status" "$line" || local_rc=$?
+fm_parent_channel_report "$report_home" "$report_state" "$line" || parent_rc=$?
+if [ "$local_rc" -eq 0 ]; then
+  printf 'local_record: %s\n' "$report_state/$report_task.status"
+else
+  echo 'local_record: failed'
+fi
+case "$parent_rc" in
+  0) echo 'parent_report: delivered' ;;
+  1) echo 'parent_report: not_applicable_primary_home' ;;
+  *)
+    printf 'parent_report: failed\nparent_report_code: %s\n' "$parent_rc"
+    failure="note: recovery deletion already completed; parent report failed (rc=$parent_rc): $line"
+    printf '%s\n' "$failure" >&2
+    fm_parent_channel_append_once "$report_state/$report_task.status" "$(status_stamp_line "$failure")" || local_rc=$?
+    ;;
+esac
+if [ "$local_rc" -ne 0 ]; then
+  echo 'recovery deletion already completed; local recovery record failed' >&2
+fi
+[ "$local_rc" -eq 0 ] && [ "$parent_rc" -le 1 ]
+''', "fm-nm-recover-report", str(publisher), str(home), str(state_dir), args.task, line],
+            cwd=wt, env=env, text=True, capture_output=True, timeout=30)
+    except (OSError, subprocess.TimeoutExpired) as error:
+        raise ReportFailed("deletion already completed; report could not finish: " + str(error))
+    if report.stdout:
+        print(report.stdout, end="")
+    if report.stderr:
+        print(report.stderr, end="", file=sys.stderr)
+    if report.returncode:
+        raise ReportFailed("deletion already completed; reporting failed (exit %s)" % report.returncode)
 
 
 try:
     recover()
+except ReportFailed as error:
+    print("report: failed\nreason: " + str(error), file=sys.stderr)
+    sys.exit(3)
 except (Refused, OSError, TypeError, ValueError, sqlite3.Error, subprocess.TimeoutExpired) as error:
     print("action: refused\nreason: " + str(error), file=sys.stderr)
     sys.exit(1)
