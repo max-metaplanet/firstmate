@@ -84,6 +84,7 @@ The other owners read the file at every arm.
 ### The report surface
 
 `bin/fm-branch-report.sh` appends to the outcome store (`bin/fm-branch-outcome.sh`) plus a per-turn receipt the host requires.
+`bin/fm-wake-drain.sh` enforces those receipts before host-branch acknowledgement; its header owns the report requirement.
 A non-silent row an away turn records after the captain returned is also queued for main as a durable check wake.
 Silent outcomes remain in the store but are not queued or relayed as notes.
 An attended turn queues nothing: its captain rows reach main through the host's `branch-outcome` exit and the drain, and its routine rows stay in the store.

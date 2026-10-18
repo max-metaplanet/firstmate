@@ -64,6 +64,102 @@ test_report_surface_enforces_actor_turn_and_scope() {
   pass "report surface: only the branch actor's current turn may report, and only on the tasks its wake names"
 }
 
+test_branch_ack_requires_successful_current_turn_reports() {
+  local home state drained ack out rc
+  home="$TMP_ROOT/report-before-ack"
+  state="$home/state"
+  mkdir -p "$state"
+  printf 'project=fixture\n' > "$state/alpha.meta"
+  printf 'project=fixture\n' > "$state/beta.meta"
+  append_wake "$state" signal alpha.status 'signal: alpha.status'
+  append_wake "$state" signal beta.status 'signal: beta.status'
+  FM_HOME="$home" "$ROOT/bin/fm-wake-grant.sh" activate "$$" report-ack || fail "fixture: activate grant"
+  FM_HOME="$home" "$ROOT/bin/fm-wake-grant.sh" publish report-ack 1 2 || fail "fixture: publish grant"
+  printf 'turn=t1\nrows=1 2\ntasks=alpha beta\nunscoped=0\nposture=attended\nwake=signal: alpha.status\n' > "$state/.supervision-host-turn"
+  printf 'old-turn\t1\troutine\talpha\nold-turn\t2\troutine\tbeta\n' > "$state/.supervision-host-receipts"
+  drained=$(FM_HOME="$home" FM_SUPERVISION_ACTOR=branch FM_BRANCH_REPORT_TURN=t1 "$ROOT/bin/fm-wake-drain.sh" 2>&1)
+  ack=$(printf '%s\n' "$drained" | sed -n 's/^WAKE_ACK_REQUIRED: after handling completes run bin\/fm-wake-drain.sh //p')
+  [ -n "$ack" ] || fail "fixture: branch drain did not print its acknowledgement"
+
+  # Reproduce the engine's semicolon sequence: the refusal must also stop the
+  # independent acknowledgement, even without shell errexit or an && chain.
+  # shellcheck disable=SC2086 # exact acknowledgement arguments printed by drain
+  out=$(FM_HOME="$home" FM_SUPERVISION_ACTOR=branch FM_BRANCH_REPORT_TURN=t1 bash -c '
+    "$1" --task fleet --verdict routine --summary quiet;
+    shift
+    "$@"
+  ' _ "$REPORT" "$ROOT/bin/fm-wake-drain.sh" $ack 2>&1); rc=$?
+  [ "$rc" -ne 0 ] || fail "a refused report still allowed the following acknowledgement: $out"
+  assert_contains "$out" 'report refused:' "the reproduction must reach the report scope guard"
+  [ "$(wc -l < "$state/.wake-queue" | tr -d ' ')" = 2 ] || fail "a refused report consumed wake rows"
+  drained=$(FM_HOME="$home" FM_SUPERVISION_ACTOR=branch FM_BRANCH_REPORT_TURN=t1 "$ROOT/bin/fm-wake-drain.sh" 2>&1)
+  assert_contains "$drained" 'signal: alpha.status' "the refused report's wake must be re-presented"
+  assert_contains "$drained" 'signal: beta.status' "every unreported wake must be re-presented"
+
+  FM_HOME="$home" FM_SUPERVISION_ACTOR=branch FM_BRANCH_REPORT_TURN=t1 "$REPORT" \
+    --task alpha --verdict routine --summary handled >/dev/null || fail "valid alpha report refused"
+  # shellcheck disable=SC2086 # exact acknowledgement arguments printed by drain
+  out=$(FM_HOME="$home" FM_SUPERVISION_ACTOR=branch FM_BRANCH_REPORT_TURN=t1 "$ROOT/bin/fm-wake-drain.sh" $ack 2>&1); rc=$?
+  [ "$rc" -ne 0 ] || fail "one task's report acknowledged another unreported task"
+  FM_HOME="$home" FM_SUPERVISION_ACTOR=branch FM_BRANCH_REPORT_TURN=t1 "$REPORT" \
+    --task beta --verdict routine --summary handled >/dev/null || fail "valid beta report refused"
+  # shellcheck disable=SC2086 # exact acknowledgement arguments printed by drain
+  out=$(FM_HOME="$home" FM_SUPERVISION_ACTOR=branch FM_BRANCH_REPORT_TURN=old-turn "$ROOT/bin/fm-wake-drain.sh" $ack 2>&1); rc=$?
+  [ "$rc" -ne 0 ] || fail "an ended host turn acknowledged the current turn's rows"
+  # shellcheck disable=SC2086 # exact acknowledgement arguments printed by drain
+  out=$(FM_HOME="$home" FM_SUPERVISION_ACTOR=branch FM_BRANCH_REPORT_TURN=t1 "$ROOT/bin/fm-wake-drain.sh" $ack 2>&1); rc=$?
+  expect_code 0 "$rc" "successful current-turn reports must permit acknowledgement"
+  [ ! -s "$state/.wake-queue" ] || fail "successful reports left their wakes queued"
+  # shellcheck disable=SC2086 # replay the identical engine action
+  out=$(FM_HOME="$home" FM_SUPERVISION_ACTOR=branch FM_BRANCH_REPORT_TURN=t1 "$ROOT/bin/fm-wake-drain.sh" $ack 2>&1); rc=$?
+  [ "$rc" -ne 0 ] || fail "a consumed branch snapshot was acknowledged twice"
+  pass "branch acknowledgement: refused reports replay, successful reports consume once, and old-turn receipts cannot authorize consumption"
+}
+
+test_unscoped_host_ack_requires_a_report_without_changing_pi_or_main() {
+  local home state drained ack out rc
+  home="$TMP_ROOT/unscoped-report-before-ack"
+  state="$home/state"
+  mkdir -p "$state"
+  append_wake "$state" check heartbeat 'heartbeat'
+  FM_HOME="$home" "$ROOT/bin/fm-wake-grant.sh" activate "$$" unscoped-ack || fail "fixture: activate grant"
+  FM_HOME="$home" "$ROOT/bin/fm-wake-grant.sh" publish unscoped-ack 1 || fail "fixture: publish grant"
+  printf 'turn=t2\nrows=1\ntasks=\nunscoped=1\nposture=attended\nwake=heartbeat\n' > "$state/.supervision-host-turn"
+  drained=$(FM_HOME="$home" FM_SUPERVISION_ACTOR=branch FM_BRANCH_REPORT_TURN=t2 "$ROOT/bin/fm-wake-drain.sh" 2>&1)
+  ack=$(printf '%s\n' "$drained" | sed -n 's/^WAKE_ACK_REQUIRED: after handling completes run bin\/fm-wake-drain.sh //p')
+  [ -n "$ack" ] || fail "fixture: missing unscoped acknowledgement"
+  # shellcheck disable=SC2086 # exact acknowledgement arguments printed by drain
+  out=$(FM_HOME="$home" FM_SUPERVISION_ACTOR=branch FM_BRANCH_REPORT_TURN=t2 "$ROOT/bin/fm-wake-drain.sh" $ack 2>&1); rc=$?
+  [ "$rc" -ne 0 ] || fail "an unscoped host turn acknowledged without a report"
+  [ -s "$state/.wake-queue" ] || fail "the missing unscoped report lost its wake"
+  FM_HOME="$home" FM_SUPERVISION_ACTOR=branch FM_BRANCH_REPORT_TURN=t2 "$REPORT" \
+    --task fleet --verdict routine --summary quiet --silent true >/dev/null || fail "valid fleet report refused"
+  # shellcheck disable=SC2086 # exact acknowledgement arguments printed by drain
+  FM_HOME="$home" FM_SUPERVISION_ACTOR=branch FM_BRANCH_REPORT_TURN=t2 "$ROOT/bin/fm-wake-drain.sh" $ack \
+    || fail "a successful unscoped report did not authorize acknowledgement"
+  [ ! -s "$state/.wake-queue" ] || fail "the unscoped wake was not acknowledged"
+
+  # Pi's native branch has no host turn id; main never needs host receipts.
+  rm -f "$state/.supervision-host-receipts"
+  append_wake "$state" check pi 'check: native branch'
+  FM_HOME="$home" "$ROOT/bin/fm-wake-grant.sh" publish unscoped-ack 2 || fail "fixture: publish native branch grant"
+  drained=$(FM_HOME="$home" FM_SUPERVISION_ACTOR=branch FM_BRANCH_REPORT_TURN='' "$ROOT/bin/fm-wake-drain.sh" 2>&1)
+  ack=$(printf '%s\n' "$drained" | sed -n 's/^WAKE_ACK_REQUIRED: after handling completes run bin\/fm-wake-drain.sh //p')
+  [ -n "$ack" ] || fail "fixture: missing native branch acknowledgement"
+  # shellcheck disable=SC2086 # exact acknowledgement arguments printed by drain
+  FM_HOME="$home" FM_SUPERVISION_ACTOR=branch FM_BRANCH_REPORT_TURN='' "$ROOT/bin/fm-wake-drain.sh" $ack \
+    || fail "native branch acknowledgement acquired a host receipt requirement"
+  append_wake "$state" check main 'check: main'
+  drained=$(FM_HOME="$home" FM_SUPERVISION_ACTOR=main FM_BRANCH_REPORT_TURN=t2 "$ROOT/bin/fm-wake-drain.sh" 2>&1)
+  ack=$(printf '%s\n' "$drained" | sed -n 's/^WAKE_ACK_REQUIRED: after handling completes run bin\/fm-wake-drain.sh //p')
+  [ -n "$ack" ] || fail "fixture: missing main acknowledgement"
+  # shellcheck disable=SC2086 # exact acknowledgement arguments printed by drain
+  FM_HOME="$home" FM_SUPERVISION_ACTOR=main FM_BRANCH_REPORT_TURN=t2 "$ROOT/bin/fm-wake-drain.sh" $ack \
+    || fail "main acknowledgement acquired a host receipt requirement"
+  [ ! -s "$state/.wake-queue" ] || fail "native branch or main failed to consume its wake"
+  pass "branch acknowledgement: an unscoped host turn needs one report, while native Pi and main keep their existing paths"
+}
+
 # The return brief is rendered after the record is archived, so a non-silent
 # report made after that may be missing from it: the report queues its relay
 # for main, while a report made during the away window only waits for the brief.
@@ -804,6 +900,8 @@ if [ -n "${FM_TEST_ONLY:-}" ]; then
 fi
 
 test_report_surface_enforces_actor_turn_and_scope
+test_branch_ack_requires_successful_current_turn_reports
+test_unscoped_host_ack_requires_a_report_without_changing_pi_or_main
 test_report_after_the_return_is_queued_for_main
 test_dispatch_entry_scopes_rows_and_renders_the_away_tail
 test_branch_outcomes_only_on_a_host_home_off_pi
