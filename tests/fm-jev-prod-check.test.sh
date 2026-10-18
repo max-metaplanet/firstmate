@@ -952,6 +952,51 @@ test_the_read_budget_fits_a_lowered_check_timeout() {
   pass "fm-jev-prod-check: the read budget stays inside a lowered watcher check timeout"
 }
 
+test_saved_lists_survive_full_rotations() {
+  local home mode n i out expected actual
+  for mode in clean regression pending; do
+    home=$(make_home "saved-rotation-$mode")
+    configure "$home"
+    fake_gh "$home" >/dev/null
+    write_two_pulls "$home"
+    for n in 2214 2215; do
+      if [ "$mode" = clean ]; then
+        write_comments "$home" "$n" "$n" "$(section portal proven post-merge production "record$n")"
+      else
+        write_comments "$home" "$n" "$n" "$(section portal failed post-merge production "record$n")"
+      fi
+    done
+    if [ "$mode" = regression ]; then
+      write_preview_artifact "$home" portal proven
+    else
+      write_no_preview_artifact "$home"
+    fi
+    for i in 0 1 2 3 4 5; do
+      out=$(poll "$home" FM_JEV_PROD_MAX_PRS=1 FM_JEV_PROD_NOW="$((NOW + i))")
+      if [ "$mode" = regression ] && [ "$i" -lt 2 ]; then
+        assert_contains "$out" "jev-prod: regression" "initial regressions wake immediately"
+      else
+        assert_equals "" "$out" "persisted outcomes must not wake on a second rotation"
+      fi
+    done
+    expected=$(printf '2214/portal/record2214\n2215/portal/record2215')
+    actual=$(sed -n 's/^woken	//p' "$home/state/.jev-prod-monitor")
+    assert_equals "$expected" "$actual" "saved keys stay exact across three rotations, including clean appends"
+    if [ "$mode" = pending ]; then
+      actual=$(awk -F '\t' '$1 == "pending" {print $2 "\t" $3}' "$home/state/.jev-prod-monitor")
+      expected=$(printf '%s\tcouldnt-check\n%s\tcouldnt-check' "$NOW" "$((NOW + 1))")
+      assert_equals "$expected" "$actual" "each pending timestamp and class stays on its own row"
+      assert_equals 2 "$(awk -F '\t' '$1 == "pending" && NF == 4 {n++} END {print n+0}' "$home/state/.jev-prod-monitor")" "each pending evidence is one tab-separated field"
+      out=$(poll "$home" FM_JEV_PROD_MAX_PRS=1 FM_JEV_PROD_NOW="$((NOW + 21601))")
+      assert_contains "$out" "2 verdicts" "the batch counts the distinct saved evidence rows"
+      assert_contains "$out" "/pull/2214 " "first evidence survives reloads"
+      assert_contains "$out" "/pull/2215 " "second evidence survives reloads"
+    fi
+  done
+  pass "fm-jev-prod-check: saved woken and pending lists survive three candidate rotations"
+}
+
+test_saved_lists_survive_full_rotations
 test_help_and_usage
 test_unconfigured_home_is_silent_and_spends_nothing
 test_config_parsing_and_arm_refusals
