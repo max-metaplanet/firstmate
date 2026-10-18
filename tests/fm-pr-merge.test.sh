@@ -4550,6 +4550,38 @@ test_pending_required_check_refuses_merge() {
   pass 'pending required checks still block the merge gate'
 }
 
+test_empty_required_set_keeps_merge_checks() {
+  local case_dir state conclusion expected marker head=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  for state in IN_PROGRESS COMPLETED; do
+    conclusion=FAILURE
+    [ "$state" != IN_PROGRESS ] || conclusion=-
+    for marker in blocking advisory; do
+      case_dir=$(make_case "empty-required-$state-$marker")
+      add_gh_mocks "$case_dir" "$head"
+      if [ "$marker" = advisory ]; then
+        write_github_rollup_json "$case_dir" "$head" \
+          "$(check_run ci COMPLETED SUCCESS)" \
+          "$(check_run 'Mac (advisory)' "$state" "$conclusion")" \
+          "$(status_context 'status (advisory)' FAILURE)"
+        expected=0
+      else
+        write_github_rollup_json "$case_dir" "$head" "$(check_run ci "$state" "$conclusion")"
+        expected=1
+      fi
+      write_github_required "$case_dir"
+      run_required_case "$case_dir" 92
+      expect_code "$expected" "$RC" "empty-required $state $marker: $(cat "$case_dir/stderr")"
+      if [ "$expected" = 0 ]; then
+        assert_logged_gh_merge "$case_dir" 92 example/repo --squash
+      else
+        assert_grep "check 'ci' is not green" "$case_dir/stderr" 'non-advisory check was ignored'
+        assert_no_grep 'pr merge' "$case_dir/gh.log" 'merged with a non-advisory check unready'
+      fi
+    done
+  done
+  pass 'empty required sets preserve pending/red merge guards except explicitly advisory checks'
+}
+
 test_required_producer_identity() {
   local case_dir head kind variant expected app
   head=a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1
@@ -5506,6 +5538,7 @@ test_allow_missing_follows_the_allow_red_rules
 
 test_advisory_checks_never_block_merge
 test_pending_required_check_refuses_merge
+test_empty_required_set_keeps_merge_checks
 test_required_producer_identity
 test_app_bound_required_status_context_matches_by_name
 test_required_partial_reads_report_all_failures

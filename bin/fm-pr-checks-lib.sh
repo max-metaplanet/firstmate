@@ -4,9 +4,11 @@
 # github_read_required_contexts <base> reads classic protection and effective
 # rulesets, retaining producer bindings and errors in FM_PR_GITHUB_REQUIRED{,_ERROR}.
 # github_checks_not_green <pr-json> <requirements-json> emits pending/red TAB name
-# for required contexts only; github_required_checks_missing also requires the
-# current head's producers for app-bound requirements. Advisory checks never count.
-# Read errors fail closed; an empty, successfully read required set is valid.
+# for required contexts; github_required_checks_missing also requires the
+# current head's producers for app-bound requirements. When no requirements are
+# configured, every reported check counts except a name/context containing the
+# exact case-sensitive marker "(advisory)". Configured requirements always win.
+# Read errors fail closed.
 # The forge's required CI gate is treated like any other required context.
 
 github_urlencode_path_segment() {
@@ -41,7 +43,7 @@ github_branch_rules_unavailable_on_plan() {
   return 1
 }
 
-# Every required GitHub check that is not green in the given live pull-request JSON, one
+# Every counted GitHub check that is not green in the given live pull-request JSON, one
 # name per line. An entry is green when it is a status context whose state is
 # SUCCESS, or a check run that completed with SUCCESS, NEUTRAL, or SKIPPED (so
 # a pending check is not green either). Exits nonzero when the rollup cannot be
@@ -84,7 +86,11 @@ github_checks_not_green() {
         | to_entries[]
         | .key as $i
         | .value
-        | select(. as $check | any($required[]; .context == (if $check.__typename == "CheckRun" then $check.name else $check.context end)))
+        | select(
+            (if .__typename == "CheckRun" then .name else .context end) as $name
+            | if ($required | length) > 0 then any($required[]; .context == $name)
+              else (($name // "") | contains("(advisory)") | not) end
+          )
         | if .__typename == "CheckRun" then
             {
               kind: "check_run",
