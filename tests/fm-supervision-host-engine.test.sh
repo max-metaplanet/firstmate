@@ -115,7 +115,7 @@ test_lead_seat_move_moves_the_next_engine_launch() {
   # before the move, and start_host started it with CLAUDE_CONFIG_DIR naming
   # seat-a, so its own environment still names the seat the lead left.
   lock_pid=$(cat "$home/state/.lock")
-  printf 'pid=%s\nprofile=%s\n' "$lock_pid" "$seat_b" > "$home/state/.lock-runtime"
+  printf 'pid=%s\nharness=claude\nprofile=%s\n' "$lock_pid" "$seat_b" > "$home/state/.lock-runtime"
   append_status "$home" 'step two'
   wait_until 250 handled_at_least "$home" 2 || fail "seat-move: the second wake was not handled: $(cat "$home/state/.supervision-host.log")"
   second="$home/engine-call.2"
@@ -129,6 +129,37 @@ test_lead_seat_move_moves_the_next_engine_launch() {
     || fail "the new conversation reused the old session id ($first_session)"
   assert_grep "profile=$seat_b" "$home/state/.supervision-host-engine" "the conversation must record the new seat"
   pass "host: a lead seat move moves the next engine launch and opens a new conversation"
+}
+
+test_codex_lead_retains_a_separate_claude_engine_seat() {
+  local home lock_pid codex_profile claude_profile
+  home=$(make_home codex-seat away)
+  codex_profile="$home/seats/codex"
+  claude_profile="$home/seats/seat-b"
+  mkdir -p "$codex_profile"
+  start_host "$home"
+  wait_until 150 watcher_live "$home" || fail "codex-seat: the host never started a watcher cycle"
+  lock_pid=$(cat "$home/state/.lock")
+  printf 'pid=%s\nharness=codex\nprofile=%s\nclaude_profile=%s\n' \
+    "$lock_pid" "$codex_profile" "$claude_profile" > "$home/state/.lock-runtime"
+  append_status "$home" 'Codex lead with retained Claude credentials'
+  wait_until 250 handled_at_least "$home" 1 || fail "codex-seat: the wake was not handled: $(cat "$home/host.out")"
+  assert_re "^profile=$claude_profile\$" "$home/engine-call.1" "the Claude engine must use the retained Claude seat"
+  assert_no_re "^profile=$codex_profile\$" "$home/engine-call.1" "the Codex seat must never be passed to Claude"
+
+  printf 'pid=%s\nharness=codex\nprofile=%s\nclaude_profile=\n' \
+    "$lock_pid" "$codex_profile" > "$home/state/.lock-runtime"
+  append_status "$home" 'Codex lead with ambient Claude credentials'
+  wait_until 250 handled_at_least "$home" 2 || fail "codex-seat: the ambient wake was not handled"
+  assert_re '^profile=$' "$home/engine-call.2" "an explicitly ambient Claude seat must clear the inherited profile"
+
+  printf 'pid=%s\nharness=codex\nprofile=%s\n' "$lock_pid" "$codex_profile" > "$home/state/.lock-runtime"
+  append_status "$home" 'Codex lead without Claude credentials record'
+  wait_until 250 host_exited "$home" || fail "codex-seat: the missing Claude profile was not handed back"
+  assert_grep 'no retained Claude profile' "$home/host.out" "the handback must name the absent Claude profile"
+  [ "$(engine_calls "$home")" -eq 2 ] || fail "the engine launched without a retained Claude profile"
+  assert_grep 'demo.status' "$home/state/.wake-queue" "the unhandled wake must stay durable for main"
+  pass "host: a Codex lead uses only its retained Claude engine seat and refuses a missing record"
 }
 
 # The lead runs on the ambient default login, so its record names no profile,
@@ -439,6 +470,7 @@ fi
 test_away_wake_is_handled_on_the_engine_and_never_reaches_main
 test_away_turn_without_a_report_hands_the_wake_to_main
 test_lead_seat_move_moves_the_next_engine_launch
+test_codex_lead_retains_a_separate_claude_engine_seat
 test_ambient_default_lead_seat_clears_the_hosts_inherited_seat
 test_unreadable_lead_seat_record_hands_the_wake_to_main
 test_departed_leads_seat_record_is_never_spent

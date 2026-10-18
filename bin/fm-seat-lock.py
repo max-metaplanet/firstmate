@@ -424,7 +424,8 @@ def _records(provider, profile, home, process_ids, deadline):
             result.append({"pid": 0, "reason": "recorded-state-unreadable"})
             continue
         if path.name == ".lock-runtime":
-            if provider != "claude":
+            record.setdefault("harness", "claude")
+            if record["harness"] != provider:
                 continue
             try:
                 lock = state / ".lock"
@@ -436,7 +437,6 @@ def _records(provider, profile, home, process_ids, deadline):
                 continue
             if record.get("pid") != current_pid:
                 continue
-            record["harness"] = "claude"
         if record.get("remote_host") or record.get("harness", provider) != provider:
             continue
         selected = _record_profile(record, provider, home)

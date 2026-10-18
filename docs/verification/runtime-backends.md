@@ -562,40 +562,60 @@ The probe sessions were ended and their private tmux server was killed.
 
 ## Lead restart successor
 
-Verified 2026-10-17 on Claude Code 2.1.302 and Herdr 0.9.1, macOS arm64 (Darwin 27.0.0), in an isolated `fm-lab-` session.
+Verified 2026-10-18 on Claude Code 2.1.302, Codex CLI 0.162.0, and Herdr 0.9.1, macOS arm64 (Darwin 27.0.0), using isolated named Herdr lab sessions.
+The active guard is `tests/fm-lead-restart-successor-live-e2e.test.sh`; `tests/fm-lead-restart.test.sh` covers command construction and refusal outcomes without model calls.
 
-A lead restart replaces the primary process with `claude --resume <id>` in the same terminal, and this home's lock is taken by an agent action - the first turn running `bin/fm-session-start.sh` - rather than by the process coming up.
-So whether a resumed session takes any turn at all on its own decides whether the home is held after a restart.
-It does not do so unprompted: Claude Code's own session-open adapter routes a `resume` source to the nudge tier, and a nudge in context is read only on a turn something else starts.
-On 2026-10-17 a real successor sat idle for about eight hours on that gap, with the home unheld and its supervision down, until the captain typed.
+The home lock is acquired by the successor's session-start action, so starting an interactive process alone does not establish a successful handover.
+Claude's `resume` session-open source uses the nudge tier, which requires a turn before the agent reads it.
+The positional startup prompt supplies that turn.
+Claude strips the typed operational marker from launch prompts, so `bin/fm-operational-input.sh` publishes the instruction as a record and carries its printable doorbell on the command line.
 
-A trailing positional prompt is submitted by a RESUMED interactive session on its own, which is what closes it.
-A probe launched a session, recorded its id, ended the process, and relaunched the same session with a prompt and nothing typed afterwards:
+Each provider run began with a real Claude lead and performed two replacements, with no input submitted after either restart was armed until that successor had acquired the lock and completed session start.
+The outgoing lead received `FM_HOME` inline; its pane shell had `FM_HOME` unset and a different marked fallback home.
+Both successors acquired the intended home, and the fallback remained untouched.
+The second replacement omitted `--launch-command`, exercising the recorded argument vector without carrying forward the previous startup prompt.
+Claude resumed its session; Codex started a fresh `gpt-6.1-sol` session with `--no-daemon` and locked its native TUI process rather than a shared daemon.
+The real Codex session-start output selected the existing foreground checkpoint protocol.
+
+For Codex, the guard copied only `auth.json` into a private seat home with real directories, approved the repository hooks in a separate lab pane before arming the restart, and deleted the credential copy during cleanup.
+A fresh Codex TUI can briefly display its composer before presenting hook review; the guard requires actual review acceptance before treating setup as complete.
+The persisted trust records covered SessionStart, both PreToolUse hooks, and Stop, with no hooks disabled.
+That evidence establishes registration and trust, not invocation of every hook during this narrow guard.
+Both successful runs passed the lab helper's default-fleet tripwire during cleanup.
+
+Commands, with the named credential profiles used for these runs:
 
 ```sh
-claude --dangerously-skip-permissions --resume 4351fadc-d84d-4e6e-8464-9d2424466da0 'Reply with exactly FMRESUMEPROBE11103 and nothing else.'
+FM_LEAD_RESTART_SUCCESSOR_LIVE=1 \
+FM_LEAD_RESTART_SUCCESSOR_LIVE_PROVIDER=claude \
+FM_LEAD_RESTART_SUCCESSOR_LIVE_SEAT_DIR="$HOME/.claude-seats/seat-max" \
+bash tests/fm-lead-restart-successor-live-e2e.test.sh
+
+FM_LEAD_RESTART_SUCCESSOR_LIVE=1 \
+FM_LEAD_RESTART_SUCCESSOR_LIVE_PROVIDER=codex \
+FM_LEAD_RESTART_SUCCESSOR_LIVE_SEAT_DIR="$HOME/.claude-seats/seat-max" \
+FM_LEAD_RESTART_SUCCESSOR_LIVE_CODEX_HOME="$HOME/.codex-seats/codex-max" \
+bash tests/fm-lead-restart-successor-live-e2e.test.sh
 ```
+
+Observed successor assertions:
 
 ```text
-phase2 token occurrences=2 (2 or more means the resumed launch prompt submitted itself)
+ok - live lead restart: claude round 1 self-started, completed session start, and acquired the inline-bound home without follow-up input
+ok - live lead restart: claude round 2 self-started, completed session start, and acquired the inline-bound home without follow-up input
+ok - live lead restart: codex round 1 self-started, completed session start, and acquired the inline-bound home without follow-up input
+ok - live lead restart: codex round 2 self-started, completed session start, and acquired the inline-bound home without follow-up input
 ```
 
-Two occurrences are the submitted prompt and the model's reply, so the launch argument became a turn rather than sitting in the composer.
-Claude Code strips the typed operational marker from a launch prompt, so the instruction itself travels as a record plus doorbell, the same carrier `bin/fm-spawn.sh` uses for a Claude worker's brief.
-
-`tests/fm-lead-restart.test.sh` pins the launch shape and the lock-confirmation outcome portably, with no harness: the replacement command must end with the published session-start doorbell as the argument after the session it resumes, and a replacement that comes up but never takes the home must be recorded `failed` and wake firstmate rather than read as a swap still in progress.
-Refresh the live proof of the whole transaction with:
-
-```sh
-FM_LEAD_RESTART_SUCCESSOR_LIVE=1 tests/fm-lead-restart-successor-live-e2e.test.sh
-```
-
-Observed 2026-10-17:
+Observed in the Codex successor's session-start output:
 
 ```text
-ok - live lead restart: Claude Code (2.1.302 (Claude Code)) on herdr 0.9.1 submits its launch prompt unaided and takes the lab home as session b7086f1a-427e-4d72-bddd-3c0a52e0222f
-ok - live lead restart: Claude Code (2.1.302 (Claude Code)) on herdr 0.9.1 resumes session b7086f1a-427e-4d72-bddd-3c0a52e0222f on its own, runs session start, and takes the home with nothing typed into its terminal after the restart was armed
+SUPERVISION OPERATING INSTRUCTIONS - primary harness: codex
+Mode: Codex foreground checkpoint.
 ```
+
+These runs do not establish Codex Remote Control: the embedded TUI has no remote-control handle, as documented by the [Codex adapter](../../.agents/skills/harness-adapters/references/harness/codex.md#remote-control).
+The [automatic Codex leader destination gate](../configuration.md#automatic-codex-leader-destinations-configlead-codex-auto) remains off by default.
 
 ## Pi seeded-secondmate project trust
 

@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # fm-lead-restart.sh - move or refresh the PRIMARY firstmate session on a
-# Claude seat, by replacing its own process in its own terminal.
+# Claude or Codex seat, by replacing its own process in its own terminal.
 #
 # Usage:
-#   fm-lead-restart.sh --check --to <seat> [--refresh]
-#   fm-lead-restart.sh --to <seat> --persisted [--refresh] [--launch-command <cmd>] [--grace <s>]
+#   fm-lead-restart.sh --check [--provider claude|codex] --to <seat> [--refresh]
+#   fm-lead-restart.sh [--provider claude|codex] --to <seat> --persisted [--refresh]
+#                      [--launch-command <cmd>] [--grace <s>]
 #   fm-lead-restart.sh --handover-stage <plan-file>     (internal; detached)
 #
 # --refresh permits the explicitly named seat to be the lead's current seat.
@@ -17,7 +18,7 @@
 # until something replaces its process. There is no way to move a running Claude
 # Code process to another credential store, so the only way the lead itself
 # changes account is to be replaced: tell the crew, start another claude on the
-# new seat in the same terminal, resuming the same session, and end the old
+# new seat in the same terminal, resuming only a Claude-to-Claude session, and end the old
 # process. A seat is a profile directory whose contents symlink the
 # shared ~/.claude body, so the session the successor resumes is the same
 # session: the seat is the brain, the sessions and settings are the body.
@@ -40,18 +41,25 @@
 # THE FIVE THINGS THAT MUST BE ESTABLISHED, never guessed. Any one of them
 # missing is a refusal, and a refusal at this stage leaves the old lead running
 # and in charge, because nothing has been touched yet:
-#   1. This home's lock is held by a live CLAUDE session. Other harnesses are
-#      refused by name; no adapter is built for them here.
+#   1. This home's lock is held by a live Claude or embedded Codex session.
+#      A shared Codex app-server is never terminated as a leader.
 #   2. The lead's OWN profile, from state/.lock-runtime (bin/fm-lock.sh writes
 #      it bound to the lock's pid). config/claude-seat is NOT that answer: it
 #      names the seat new workers get and moves without the lead.
 #   3. The destination seat, named by the caller, with a profile directory that
 #      exists and a login the probe proves usable. bin/fm-seat.sh owns seat
 #      selection; this command never picks one.
-#   4. The session id to resume, from the sidecar beside the lock.
+#   4. For Claude-to-Claude, the session id to resume from the lock sidecar.
+#      Cross-provider moves and all Codex moves start fresh from durable records.
 #   5. The pane, and the lead's own launch command, from the lock-runtime record
 #      and the lock-owning process's real argv. `establish_launch_command` below
 #      owns why a flattened argv is accepted only when it provably round-trips.
+#
+# Codex successors always use --no-daemon: tool ancestry then belongs to the
+# TUI rather than a shared app-server. Remote Control is not available through
+# the separate managed daemon for this embedded session. Automatic selection
+# excludes Codex unless config/lead-codex-auto explicitly enables it; fm-seat.sh
+# owns that policy. An explicit --provider codex is a manual destination.
 #
 # WHY THE REPLACEMENT IS GIVEN A PROMPT. A resumed Claude session comes up at
 # an empty composer and takes no turn until something is submitted to it, and
@@ -179,15 +187,11 @@ established_lock_pid() {
   printf '%s\n' "$pid"
 }
 
-# The lead is a Claude session or this refuses. The evidence is the session id
-# recorded beside the lock: bin/fm-lock.sh writes it only for a session that
-# proved a trusted Claude session id, so its presence IS the harness proof and
-# its value is the id the successor resumes. No other harness is supported and
-# none is guessed at: an adapter that cannot resume a session by id in a new
-# process would be a different mechanism, not a flag on this one.
+# A Claude outgoing session must prove its session id from the lock sidecar.
+# Codex has no cross-provider resume identity and uses nonce-only handover.
 established_session_id() {
   fm_session_lock_recorded_session_id "$STATE" ||
-    die "this home's lead is not a Claude session with a resumable session id (nothing is recorded beside the lock), and a lead restart is built for Claude only; no other worker runtime is supported here"
+    die "this home's lead is not a Claude session with a resumable session id (nothing is recorded beside the lock), so its Claude conversation cannot be resumed"
 }
 
 # The pane the lead runs in, from the lock-owner runtime record. bin/fm-lock.sh
@@ -209,8 +213,8 @@ established_pane() {
     die "the lead's own terminal ($ESTABLISHED_TARGET) could not be confirmed to exist, so nothing would be started there"
 }
 
-# The profile the LEAD itself runs under, as recorded beside the lock. An empty
-# value is the ambient default profile, which is a real answer; a record that
+# The native profile the LEAD itself runs under, as recorded beside the lock.
+# An empty Claude value is the ambient default profile, which is a real answer; a record that
 # does not name the current lock owner is no answer at all.
 established_lead_profile() {
   fm_session_lock_runtime_field "$STATE" profile ||
@@ -336,8 +340,10 @@ establish_launch_argv() {  # <pid>
 # header's "WHY THE REPLACEMENT IS GIVEN A PROMPT"). It is the trailing
 # positional argument, where Claude Code takes a launch prompt, so it can never
 # be read as the optional value of the --resume immediately before it.
-compose_successor_command() {  # <profile-dir> <session-id> <ambient-profile> <follow-rc> <prompt>  (argv on stdin)
-  local profile=$1 session=$2 ambient=$3 follow_rc=${4:-0} prompt=${5-} token drop_value=0 out='' has_rc=0
+compose_successor_command() {  # <profile> <session> <ambient> <follow-rc> <prompt>; argv on stdin
+  local profile=$1 session=$2 ambient=$3 follow_rc=${4:-0} prompt=${5-}
+  local token drop_value=0 out='' has_rc=0 argv_json claude_profile
+  local -a words=()
   while IFS= read -r token; do
     [ -n "$token" ] || continue
     if [ "$drop_value" -eq 1 ]; then
@@ -346,23 +352,38 @@ compose_successor_command() {  # <profile-dir> <session-id> <ambient-profile> <f
     fi
     case "$token" in
       --resume | -r | --session-id | --teleport | --from-pr)
-        drop_value=1
-        continue
-        ;;
+        drop_value=1; continue ;;
       --resume=* | --session-id=* | --teleport=* | --from-pr=* | --continue | -c | --fork-session)
-        continue
-        ;;
+        continue ;;
       --remote-control | --remote-control=*) has_rc=1 ;;
+      "$FM_OPERATIONAL_DOORBELL_PREFIX"*) continue ;;
     esac
-    out="$out $(printf '%q' "$token")"
+    words+=("$token")
   done
-  # Safe immediately before --resume: the flag's argument is optional and
-  # Claude Code does not take a following `-`-prefixed token as its value
-  # (verified 2026-10-16 on 2.1.301).
-  [ "$follow_rc" != 1 ] || [ "$has_rc" -eq 1 ] || out="$out --remote-control"
-  # A successor is a persistent session even when the outgoing lead was
-  # launched as a Claude child; clear that inherited marker in the pane too.
-  printf 'FM_AMBIENT_CLAUDE_CONFIG_DIR=%q CLAUDE_CONFIG_DIR=%q env -u CLAUDE_CODE_CHILD_SESSION CLAUDE_CODE_FORCE_SESSION_PERSISTENCE=1%s --resume %q %q\n' "$ambient" "$profile" "$out" "$session" "$prompt"
+  # Persist the prompt-free argv so a second restart does not depend on ps's
+  # flattened rendering of the previous one-shot, multiword launch prompt.
+  argv_json=$(printf '%s\n' "${words[@]}" | jq -Rsc 'split("\n")[:-1]') || return 1
+  for token in "${words[@]}"; do out="$out $(printf '%q' "$token")"; done
+  claude_profile=$profile
+  if [ "$TO_PROVIDER" = codex ]; then
+    claude_profile=$(fm_session_lock_runtime_field "$STATE" claude_profile) || claude_profile=$LEAD_PROFILE
+  fi
+  # A pane shell does not retain assignments prefixed onto the old launch.
+  # Carry this home's identity explicitly rather than inherit the shell's home.
+  printf 'FM_HOME=%q FM_ROOT_OVERRIDE=%q FM_STATE_OVERRIDE=%q FM_CONFIG_OVERRIDE=%q FM_DATA_OVERRIDE=%q FM_LEAD_LAUNCH_ARGV=%q ' \
+    "$FM_HOME" "$FM_ROOT" "$STATE" "$CONFIG" "${FM_DATA_OVERRIDE:-$FM_HOME/data}" "$argv_json"
+  printf 'FM_AMBIENT_CLAUDE_CONFIG_DIR=%q CLAUDE_CONFIG_DIR=%q ' "$ambient" "$claude_profile"
+  if [ "$TO_PROVIDER" = codex ]; then
+    printf 'CODEX_HOME=%q env -u CLAUDE_CODE_SESSION_ID -u CLAUDE_PID -u CLAUDECODE%s %q\n' "$profile" "$out" "$prompt"
+  else
+    [ "$follow_rc" != 1 ] || [ "$has_rc" -eq 1 ] || out="$out --remote-control"
+    printf 'env -u CLAUDE_SECURESTORAGE_CONFIG_DIR -u CLAUDE_CODE_CHILD_SESSION CLAUDE_CODE_FORCE_SESSION_PERSISTENCE=1%s ' "$out"
+    if [ "$SESSION_MODE" = resume ]; then
+      printf -- '--resume %q %q\n' "$session" "$prompt"
+    else
+      printf -- '--session-id %q %q\n' "$session" "$prompt"
+    fi
+  fi
 }
 
 # The initial prompt the replacement comes up on, published as a record in this
@@ -379,6 +400,11 @@ establish_session_start_prompt() {
 
 # --- shared preflight --------------------------------------------------------
 
+TO_PROVIDER=claude
+LEAD_HARNESS=''
+SESSION_MODE=resume
+SUCCESSOR_SESSION=''
+KEEP_HOST=0
 TO_SEAT=''
 LEAD_PID=''
 LEAD_PROFILE=''
@@ -392,18 +418,37 @@ SUCCESSOR_CMD=''
 LEAD_RC=''
 
 preflight() {  # <launch-command-override>
-  local override=$1 state follow=0
+  local override=$1 state follow=0 recorded args permission ambient
   [ -n "$TO_SEAT" ] || die "no destination seat was named; bin/fm-seat.sh owns which seat to move to and passes it here"
   [ "$TO_SEAT" != "$FM_SEAT_DEFAULT_NAME" ] ||
     die "the ambient default profile is never a lead-restart destination: nothing here can tell which account it currently holds, and the lead must not be moved onto an account nobody named"
   fm_seat_name_valid "$TO_SEAT" || die "invalid seat name: $TO_SEAT"
-  TO_PROFILE=$(fm_seat_dir "$TO_SEAT") || die "seat '$TO_SEAT' does not resolve to a profile directory"
+  FM_SEAT_PROVIDER=$TO_PROVIDER
+  TO_PROFILE=$(fm_seat_config_dir "$TO_SEAT") || die "seat '$TO_SEAT' does not resolve to a profile directory"
   [ -d "$TO_PROFILE" ] || die "seat '$TO_SEAT' has no profile directory at $TO_PROFILE"
 
   LEAD_PID=$(established_lock_pid) || exit 1
-  SESSION_ID=$(established_session_id) || exit 1
+  LEAD_HARNESS=$(fm_session_lock_runtime_field "$STATE" harness) || LEAD_HARNESS=claude
+  case "$LEAD_HARNESS" in
+    claude) SESSION_ID=$(established_session_id) || exit 1 ;;
+    codex)
+      args=$(ps -ww -o args= -p "$LEAD_PID" 2>/dev/null) || die 'cannot inspect the Codex lock owner'
+      case " $args " in
+        *' --no-daemon '*) ;;
+        *) die 'the Codex lock owner is not an embedded TUI (--no-daemon); refusing to terminate a potentially shared daemon' ;;
+      esac
+      SESSION_ID="pid-$LEAD_PID"
+      ;;
+    *) die "leader restart does not support $LEAD_HARNESS" ;;
+  esac
+  SESSION_MODE=fresh
+  [ "$LEAD_HARNESS:$TO_PROVIDER" != claude:claude ] || SESSION_MODE=resume
+  SUCCESSOR_SESSION=$SESSION_ID
+  if [ "$SESSION_MODE" = fresh ] && [ "$TO_PROVIDER" = claude ]; then
+    SUCCESSOR_SESSION=$(python3 -c 'import uuid; print(uuid.uuid4())') || die 'could not create a fresh Claude session id'
+  fi
   LEAD_PROFILE=$(established_lead_profile) || exit 1
-  LEAD_SEAT=$(fm_seat_name_of_profile "$LEAD_PROFILE")
+  LEAD_SEAT=$(FM_SEAT_PROVIDER="$LEAD_HARNESS" fm_seat_name_of_profile "$LEAD_PROFILE")
   [ "$LEAD_PROFILE" != "$TO_PROFILE" ] || [ "$REFRESH" -eq 1 ] ||
     die "the lead is already running on seat '$TO_SEAT'; use --refresh to restart in place"
   established_pane || exit 1
@@ -422,7 +467,14 @@ preflight() {  # <launch-command-override>
     *) die "seat '$TO_SEAT' could not be confirmed logged in, and a lead restart never crosses that uncertainty" ;;
   esac
 
-  if [ -n "$override" ]; then
+  if [ "$TO_PROVIDER" = codex ]; then
+    [ -z "$override" ] || die 'Codex leaders use the verified embedded launch; --launch-command is Claude-only'
+    command -v codex >/dev/null 2>&1 || die 'codex is not installed'
+    codex --help 2>/dev/null | grep -q -- '--no-daemon' || die 'this Codex CLI does not support the required --no-daemon launch'
+    # A Codex leader always starts fresh on the agreed model. CLI configuration
+    # supplies effort and project hooks; worker hook-disabling flags do not apply.
+    LAUNCH_ARGV=$(printf '%s\n' codex --no-daemon --model gpt-6.1-sol --dangerously-bypass-approvals-and-sandbox)
+  elif [ -n "$override" ]; then
     # An operator-stated command is already exact; it is split on whitespace
     # only because it was typed as one string, with globbing off so no word is
     # expanded, and the composed result is printed before anything runs.
@@ -432,21 +484,49 @@ preflight() {  # <launch-command-override>
     override_words=($override)
     set +f
     LAUNCH_ARGV=$(printf '%s\n' "${override_words[@]}")
+  elif [ "$LEAD_HARNESS" = codex ]; then
+    permission=$(cat "$CONFIG/claude-permission-mode" 2>/dev/null || printf bypass)
+    case "$permission" in
+      bypass) LAUNCH_ARGV=$(printf '%s\n' claude --model opus --dangerously-skip-permissions) ;;
+      auto) LAUNCH_ARGV=$(printf '%s\n' claude --model opus --permission-mode auto) ;;
+      *) die 'invalid config/claude-permission-mode; expected bypass or auto' ;;
+    esac
   else
-    LAUNCH_ARGV=$(establish_launch_argv "$LEAD_PID") ||
+    recorded=$(fm_session_lock_runtime_field "$STATE" launch_argv) || recorded=''
+    if [ -n "$recorded" ]; then
+      LAUNCH_ARGV=$(printf '%s' "$recorded" | jq -er 'select(type == "array" and length > 0 and all(.[]; type == "string" and (contains("\n") | not))) | .[]') || die 'recorded leader launch argv is invalid'
+    else
+      LAUNCH_ARGV=$(establish_launch_argv "$LEAD_PID") ||
       die "the lead's own launch command could not be established from its running process, so the replacement could not be started with the same flags; re-run with --launch-command '<the exact command this session was started with>'"
+    fi
   fi
-  LEAD_RC=$(rc_state_of "$LEAD_PID" "$LEAD_PROFILE" "$SESSION_ID")
+  LEAD_RC=off
+  [ "$LEAD_HARNESS" != claude ] || LEAD_RC=$(rc_state_of "$LEAD_PID" "$LEAD_PROFILE" "$SESSION_ID")
   [ "$LEAD_RC" != on ] || follow=1
-  [ "$LEAD_RC" = on ] || ! printf '%s\n' "$LAUNCH_ARGV" | grep -Eq -- '^--remote-control(=|$)' || LEAD_RC=kept
+  if [ "$TO_PROVIDER" = codex ]; then
+    LEAD_RC=unavailable
+  elif [ "$LEAD_HARNESS" = codex ]; then
+    LEAD_RC=requested; follow=1
+  else
+    [ "$LEAD_RC" = on ] || ! printf '%s\n' "$LAUNCH_ARGV" | grep -Eq -- '^--remote-control(=|$)' || LEAD_RC=kept
+  fi
+  ambient=$(fm_session_lock_runtime_field "$STATE" ambient) || ambient=${FM_AMBIENT_CLAUDE_CONFIG_DIR-${CLAUDE_CONFIG_DIR:-}}
+  [ "$LEAD_HARNESS" != claude ] || ambient=${FM_AMBIENT_CLAUDE_CONFIG_DIR-$LEAD_PROFILE}
+  KEEP_HOST=0
+  if [ "$LEAD_HARNESS:$TO_PROVIDER" = claude:codex ] && [ ! -e "$CONFIG/supervision-host" ] && [ ! -e "$CONFIG/supervision-host-off" ]; then
+    KEEP_HOST=1
+  fi
   SUCCESSOR_PROMPT=$(establish_session_start_prompt) || exit 1
-  SUCCESSOR_CMD=$(printf '%s\n' "$LAUNCH_ARGV" | compose_successor_command "$TO_PROFILE" "$SESSION_ID" "${FM_AMBIENT_CLAUDE_CONFIG_DIR-$LEAD_PROFILE}" "$follow" "$SUCCESSOR_PROMPT")
+  SUCCESSOR_CMD=$(printf '%s\n' "$LAUNCH_ARGV" | compose_successor_command "$TO_PROFILE" "$SUCCESSOR_SESSION" "$ambient" "$follow" "$SUCCESSOR_PROMPT") || die 'could not compose the successor command'
+
 }
 
 # What the plan, the check, and the outcome all say about Remote Control, from
 # the state $1 established before the swap.
 rc_plan_line() {  # <state>
   case "$1" in
+    unavailable) printf 'unavailable for the embedded Codex successor; automatic Codex moves require explicit opt-in\n' ;;
+    requested) printf 'requested for the fresh Claude successor, with connection read-back after claim\n' ;;
     on) printf 'on in this session, so the replacement is launched with it\n' ;;
     off) printf 'off in this session, so the replacement is not given it\n' ;;
     kept) printf 'not on in this session, but the replacement keeps the --remote-control its launch command already names\n' ;;
@@ -455,9 +535,14 @@ rc_plan_line() {  # <state>
 }
 
 report_plan() {
+  printf 'providers: %s -> %s\n' "$LEAD_HARNESS" "$TO_PROVIDER"
   printf 'lead seat: %s\n' "$LEAD_SEAT"
   printf 'destination seat: %s (%s)\n' "$TO_SEAT" "$TO_PROFILE"
-  printf 'session resumed: %s\n' "$SESSION_ID"
+  if [ "$SESSION_MODE" = resume ]; then
+    printf 'session resumed: %s\n' "$SESSION_ID"
+  else
+    printf 'session: fresh %s, rebuilt from durable records\n' "$TO_PROVIDER"
+  fi
   printf 'first turn: the replacement is prompted to run bin/fm-session-start.sh and take this home\n'
   printf 'terminal: %s %s\n' "$ESTABLISHED_BACKEND" "$ESTABLISHED_TARGET"
   printf 'remote control: %s\n' "$(rc_plan_line "$LEAD_RC")"
@@ -489,12 +574,14 @@ arm_handover() {
   stage_file="$STATE/.lead-restart.launch"
   # A previous attempt's outcome would otherwise be read as this one's below.
   rm -f "$stage_file" "$RESULT" 2>/dev/null || true
-  (umask 077; printf 'FM_LEAD_HANDOVER=%s %s\n' "$nonce" "$SUCCESSOR_CMD" > "$stage_file") ||
+  (umask 077; printf '( cd -- %q || exit; FM_LEAD_HANDOVER=%s %s )\n' "$FM_ROOT" "$nonce" "$SUCCESSOR_CMD" > "$stage_file") ||
     die "could not stage the replacement command"
 
   if ! (umask 077; {
     printf 'nonce=%s\n' "$nonce"
-    printf 'session=%s\n' "$SESSION_ID"
+    printf 'session=%s\n' "$SUCCESSOR_SESSION"
+    printf 'provider=%s\n' "$TO_PROVIDER"
+    printf 'session_mode=%s\n' "$SESSION_MODE"
     printf 'pid=%s\n' "$LEAD_PID"
     printf 'backend=%s\n' "$ESTABLISHED_BACKEND"
     printf 'target=%s\n' "$ESTABLISHED_TARGET"
@@ -512,6 +599,11 @@ arm_handover() {
   } > "$PLAN"); then
     rm -f "$stage_file" 2>/dev/null || true
     die "could not record the restart plan"
+  fi
+
+  if [ "$KEEP_HOST" -eq 1 ]; then
+    (umask 077; set -C; printf 'claude\n' > "$CONFIG/supervision-host") ||
+      die 'could not preserve the Claude supervision host for the Codex primary'
   fi
 
   # The reservation is armed while the old lead is still holding the lock, so
@@ -603,12 +695,14 @@ notify_crew() {  # <what-the-lead-is-doing>
 # its deadline cannot fake.
 SUCCESSOR_PID=''
 successor_holds_lock() {  # <old-pid> <to-profile>
-  local profile
+  local profile harness
   SUCCESSOR_PID=''
   fm_session_lock_inspect "$STATE"
   [ "$FM_LOCK_INSPECT_STATE" = held ] && [ "$FM_LOCK_INSPECT_PID" != "$1" ] || return 1
   profile=$(fm_session_lock_runtime_field "$STATE" profile) || return 1
   [ "$profile" = "$2" ] || return 1
+  harness=$(fm_session_lock_runtime_field "$STATE" harness) || harness=claude
+  [ "$harness" = "${3:-claude}" ] || return 1
   SUCCESSOR_PID=$FM_LOCK_INSPECT_PID
 }
 
@@ -630,7 +724,10 @@ handover_stage() {  # <plan-file>
   PLAN_FILE=$1
   [ -f "$PLAN_FILE" ] || exit 1
   local nonce pid backend target to_seat to_profile grace exit_wait start_wait claim_wait waited notice outcome
-  local session follow_rc rc_wait rc_wake=''
+  local session follow_rc rc_wait rc_wake='' provider mode label
+  provider=$(plan_field provider); provider=${provider:-claude}
+  mode=$(plan_field session_mode); mode=${mode:-resume}
+  label=Claude; [ "$provider" != codex ] || label=Codex
   nonce=$(plan_field nonce)
   pid=$(plan_field pid)
   backend=$(plan_field backend)
@@ -656,15 +753,15 @@ handover_stage() {  # <plan-file>
   # because it is the case where Remote Control was deliberately not turned on.
   if [ "$follow_rc" = undeterminable ]; then
     RC_NOTE='whether Remote Control was on could not be determined for the previous session, so it was not turned on'
-    rc_wake="whether Remote Control was on in the previous firstmate session could not be determined, so the replacement on Claude seat $to_seat was started without it; if it should be on, turn it on there with /rc"
+    rc_wake="whether Remote Control was on in the previous firstmate session could not be determined, so the replacement on $label seat $to_seat was started without it; if it should be on, turn it on there with /rc"
   fi
 
   if [ "$(plan_field from_profile)" = "$to_profile" ]; then
-    notice="restarting in place on Claude seat $to_seat"
-    outcome="restarted in place on Claude seat $to_seat"
+    notice="restarting in place on $label seat $to_seat"
+    outcome="restarted in place on $label seat $to_seat"
   else
-    notice="restarting onto another Claude seat ($to_seat)"
-    outcome="moved to Claude seat $to_seat"
+    notice="restarting onto another $label seat ($to_seat)"
+    outcome="moved to $label seat $to_seat"
   fi
   notify_crew "$notice"
   sleep "$grace"
@@ -693,7 +790,7 @@ handover_stage() {  # <plan-file>
     rm -f "$P_LAUNCH_FILE" 2>/dev/null || true
     record_result refused "the firstmate session would not end, so it is still running and still in charge; nothing moved to seat $to_seat"
     fm_wake_append check lead-restart \
-      "check: lead-restart: the move to Claude seat $to_seat was abandoned because the current firstmate session would not end; it is still in charge" || true
+      "check: lead-restart: the move to $label seat $to_seat was abandoned because the current firstmate session would not end; it is still in charge" || true
     exit 1
   fi
 
@@ -744,11 +841,11 @@ handover_stage() {  # <plan-file>
   # successor; a reservation that is merely gone may just have lapsed.
   waited=0
   while [ "$waited" -lt "$claim_wait" ]; do
-    successor_holds_lock "$pid" "$to_profile" && break
+    successor_holds_lock "$pid" "$to_profile" "$provider" && break
     sleep 5
     waited=$((waited + 5))
   done
-  if ! successor_holds_lock "$pid" "$to_profile"; then
+  if ! successor_holds_lock "$pid" "$to_profile" "$provider"; then
     # The replacement is up but never took the home, which is the outcome this
     # stage exists to catch: the process coming up is not the handover, the
     # lock record naming it is. It is recorded as a failure rather than as a
@@ -761,20 +858,31 @@ handover_stage() {  # <plan-file>
       RC_NOTE='the replacement was launched with Remote Control, which could not be confirmed because it never took this home'
     record_result failed "the replacement is running on seat $to_seat but never took this home's lock within ${claim_wait}s, so this home has no firstmate holding it; steer that terminal to run bin/fm-session-start.sh, or end what is there and run '$P_SOURCE_LINE' in it"
     fm_wake_append check lead-restart \
-      "check: lead-restart: the replacement firstmate came up on Claude seat $to_seat but never took this home's lock within ${claim_wait}s, so nothing is holding this home; the outcome and the exact recovery command are in $RESULT" || true
+      "check: lead-restart: the replacement firstmate came up on $label seat $to_seat but never took this home's lock within ${claim_wait}s, so nothing is holding this home; the outcome and the exact recovery command are in $RESULT" || true
     [ -z "$rc_wake" ] || fm_wake_append check lead-restart "check: lead-restart: $rc_wake" || true
     exit 1
   fi
   rm -f "$P_LAUNCH_FILE" 2>/dev/null || true
-  if [ "$follow_rc" = on ]; then
+  if [ "$follow_rc" = on ] || [ "$follow_rc" = requested ]; then
     if verify_rc_followed "$SUCCESSOR_PID" "$to_profile" "$session" "$rc_wait"; then
-      RC_NOTE='Remote Control was on before and is on again'
+      if [ "$follow_rc" = on ]; then
+        RC_NOTE='Remote Control was on before and is on again'
+      else
+        RC_NOTE='Remote Control is connected in the fresh Claude successor'
+      fi
     else
-      RC_NOTE="Remote Control was on before the restart but could not be confirmed on in the replacement within ${rc_wait}s; turn it back on there with /rc"
-      rc_wake="Remote Control was on in the previous firstmate session but could not be confirmed on in the replacement on Claude seat $to_seat within ${rc_wait}s; turn it back on there with /rc"
+      RC_NOTE="Remote Control was requested but could not be confirmed on in the replacement within ${rc_wait}s; turn it on there with /rc"
+      [ "$follow_rc" != on ] || RC_NOTE="Remote Control was on before the restart but could not be confirmed on in the replacement within ${rc_wait}s; turn it back on there with /rc"
+      rc_wake="Remote Control was requested for the fresh replacement on $label seat $to_seat but could not be confirmed within ${rc_wait}s; turn it on there with /rc"
+      [ "$follow_rc" != on ] || rc_wake="Remote Control was on in the previous firstmate session but could not be confirmed on in the replacement on $label seat $to_seat within ${rc_wait}s; turn it back on there with /rc"
     fi
   fi
-  record_result 'done' "the firstmate session $outcome in the same terminal, resuming the same session"
+  [ "$follow_rc" != unavailable ] || RC_NOTE='Remote Control is unavailable for this embedded Codex session'
+  if [ "$mode" = resume ]; then
+    record_result 'done' "the firstmate session $outcome in the same terminal, resuming the same session"
+  else
+    record_result 'done' "the firstmate session $outcome in the same terminal, starting fresh from durable records"
+  fi
   [ -z "$rc_wake" ] || fm_wake_append check lead-restart "check: lead-restart: $rc_wake" || true
   exit 0
 }
@@ -790,6 +898,7 @@ P_COMMAND=''
 P_LAUNCH_FILE=''
 while [ "$#" -gt 0 ]; do
   case "$1" in
+    --provider) [ "$#" -ge 2 ] || usage; TO_PROVIDER=$2; shift 2 ;;
     --check) MODE=check; shift ;;
     --persisted) PERSISTED=1; shift ;;
     --refresh) REFRESH=1; shift ;;
@@ -801,6 +910,8 @@ while [ "$#" -gt 0 ]; do
     *) usage ;;
   esac
 done
+
+case "$TO_PROVIDER" in claude|codex) ;; *) die "unsupported leader provider: $TO_PROVIDER" ;; esac
 
 case "$GRACE" in ''|*[!0-9]*) die "--grace takes a whole number of seconds" ;; esac
 

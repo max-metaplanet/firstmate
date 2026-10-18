@@ -29,6 +29,19 @@ So crewmate and scout launches disable Codex's hook layer outright (`bin/fm-spaw
 A crewmate loses nothing: its turn-end signal is the `-c notify=` program on the same launch, and the Firstmate hooks in a project's `.codex/hooks.json` are primary-session infrastructure that stands down in a child worktree.
 A secondmate is a primary in its own home and keeps its hooks, so an unanswerable modal there is still possible and is the operator's own hook review to settle.
 
+## Remote Control
+
+Codex Remote Control requires an app-server with a Remote Control transport; it is not automatically enabled for each terminal session.
+`codex remote-control start --json` starts the managed server with Remote Control enabled, as documented in [OpenAI's CLI reference](https://learn.chatgpt.com/docs/cli/reference#codex-remote-control).
+It does not expose a separate `codex --no-daemon` terminal: that terminal uses an in-process server with no Remote Control handle ([Codex source](https://github.com/openai/codex/blob/rust-v0.162.0/codex-rs/app-server/src/in_process.rs#L516)).
+`codex remote-control --no-daemon` is a different command that starts a foreground Remote Control server; it does not attach Remote Control to an existing terminal session.
+Firstmate's isolated Codex leader launch therefore cannot claim Remote Control support through a separately started daemon.
+The installed CLI's `codex remote-control start --help` owns the current command options.
+Enabling the server alone does not prove that a successor took its first turn or acquired the correct Firstmate home lock.
+
+The message `Remote control is enabled on <host> but the connection is errored` means the server reported an errored connection, not that an account or login was diagnosed.
+The same status covers an invalid relay URL, network-policy denial, and other connection failures; inspect the server's underlying error before choosing a remedy ([connection handling](https://github.com/openai/codex/blob/rust-v0.162.0/codex-rs/app-server-transport/src/transport/remote_control/websocket.rs#L695)).
+
 ## Skill popup
 
 A `$<skill>` invocation opens a `$` autocomplete popup.

@@ -327,17 +327,20 @@ A captain message typed during the park waits for the checkpoint to return, at m
 ## The engine's seat
 
 The engine spends a Claude account, so which seat it launches on is resolved before every turn and never inherited from the host process.
-The seat is read from the one record that names the account this firstmate session itself is running on: the profile recorded beside the home's session lock, which is bound to the lock's current owner.
+The seat is read from the runtime record beside the home's session lock, which is bound to the lock's current owner.
+A Claude primary supplies its own seat; a Codex primary supplies the Claude credentials retained for the engine separately from its Codex seat.
+`fm_supervision_engine_seat` in `bin/fm-supervision-engine-lib.sh` owns that distinction and its legacy-record handling.
 `config/claude-seat` is not that record, because it names the seat new workers get and moves without the lead.
 
 This matters because a host process outlives the turn that started it.
-When the lead moves onto another seat ([claude-seats.md](claude-seats.md#moving-firstmate-itself)), the successor session records its own seat beside the lock, and the host picks it up at its next engine launch; no host restart is needed, and a record left by the lead that has already gone names a pid the lock no longer owns, so it is no verdict rather than a stale answer.
-Without that resolution the host would keep spending the seat the lead has just left, which is usually the seat it left because its quota was low.
+When the lead moves onto another Claude seat ([claude-seats.md](claude-seats.md#moving-firstmate-itself)), the successor session records its own seat beside the lock, and the host picks it up at its next engine launch; no host restart is needed, and a record left by the lead that has already gone names a pid the lock no longer owns, so it is no verdict rather than a stale answer.
+A move to Codex retains the recorded Claude engine account; moving the leader does not move the engine's spending to Codex.
 
 A launch on a seat other than the one the recorded conversation was opened on starts a new conversation, because a conversation lives under the profile directory of the seat it was opened on.
 
-The host hands the wake to main, with the reason on its `supervision-host:` line, when that record names no current lock owner or names a profile directory that is not there.
-No login is probed: the profile it resolves is the one the live lock-holding session is running on, so that session is the evidence the seat holds a usable login, and a seat whose credentials are genuinely gone fails the launch itself, which is already a [path that hands the wake back](#paths-that-hand-the-wake-back) and counts toward [the latch](#the-broken-session-latch).
+The host hands the wake to main, with the reason on its `supervision-host:` line, when that record names no current lock owner, lacks the retained Claude account for a Codex primary, or names a profile directory that is not there.
+No login is probed: a Claude primary demonstrates its own usable login, while retained credentials beside a Codex primary are only an account selection.
+Credentials that are no longer usable fail the engine launch itself, which is already a [path that hands the wake back](#paths-that-hand-the-wake-back) and counts toward [the latch](#the-broken-session-latch).
 
 ## Engine conversations
 
@@ -366,6 +369,8 @@ Each engine turn's line carries these fields, and this log is where engine cost 
 
 A verified engine is a headless mode of a harness whose isolation, actor propagation, promptless permissions, bounding, and caching were measured.
 Today the only verified engine is Claude's print mode, measured on Claude Code 2.1.278 and 2.1.281.
+The engine stays on Claude when the primary moves to Codex because `bin/fm-supervision-engine-lib.sh` implements only Claude's launch and result contracts, including hook isolation, promptless tool permissions, conversation reuse, and usage accounting.
+There is no architectural requirement that the engine use Claude; changing it requires implementing and verifying another engine adapter.
 
 ### Claude print mode behavior
 

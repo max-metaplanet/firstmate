@@ -218,12 +218,24 @@ while not pathlib.Path(sys.argv[2]).exists(): time.sleep(.03)
     foreign.mkdir(parents=True)
     (foreign / "foreign.meta").write_text("harness=claude\nclaude_seat={}\npid={}\n".format(profile, plain.pid))
     assert not any(row["pid"] == plain.pid for row in module.owners("claude", profile, home)), "other homes' records must not be scanned"
+    # Remove the worker record so it cannot mask the leader's provider binding.
+    (home / "state" / "worker.meta").unlink()
     (home / "state" / ".lock").write_text(str(plain.pid) + "\n")
     (home / "state" / ".lock-runtime").write_text("pid={}\nprofile={}\n".format(plain.pid, profile))
     assert {"pid": plain.pid, "reason": "recorded-owner"} in module.owners("claude", profile, home)
+    assert not any(row["pid"] == plain.pid for row in module.owners("codex", profile, home)), "legacy lead records mean Claude only"
+    (home / "state" / ".lock-runtime").write_text("pid={}\nharness=claude\nprofile={}\n".format(plain.pid, profile))
+    assert {"pid": plain.pid, "reason": "recorded-owner"} in module.owners("claude", profile, home)
+    (home / "state" / ".lock-runtime").write_text(
+        "pid={}\nharness=codex\nprofile={}\nclaude_profile={}\n".format(plain.pid, profile, other))
+    assert {"pid": plain.pid, "reason": "recorded-owner"} in module.owners("codex", alias, home), "Codex lead protects its credential identity, including aliases"
+    for selected in (profile, other):
+        assert not any(row["pid"] == plain.pid for row in module.owners("claude", selected, home)), "a Codex lead owns neither a mislabelled profile nor its retained Claude engine profile"
     (home / "state" / ".lock").write_text("999999999\n")
-    assert not any(row["pid"] == plain.pid for row in module.owners("claude", profile, home)), "stale lead records are not ownership"
-    print("ok - recorded workers and a bound live lead hold renewal without scanning another home", flush=True)
+    assert not any(row["pid"] == plain.pid for row in module.owners("codex", profile, home)), "stale Codex lead records are not ownership"
+    (home / "state" / ".lock-runtime").write_text("pid={}\nprofile={}\n".format(plain.pid, profile))
+    assert not any(row["pid"] == plain.pid for row in module.owners("claude", profile, home)), "stale legacy lead records are not ownership"
+    print("ok - recorded workers and bound Claude/Codex leads protect only their own credentials without scanning another home", flush=True)
 
     original_home = os.environ.get("HOME")
     user_home = scratch / "ordinary-user"

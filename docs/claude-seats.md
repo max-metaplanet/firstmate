@@ -83,7 +83,8 @@ A file-level `auth.json` alias selects the authoritative credential owner's enti
 A task already recorded on a different alias home requires an explicit seat move before relaunch; its store never changes implicitly.
 `list`, `status`, `threshold`, `destination-min`, `auto-exclude`, `auto-include`, `auto`, `arm`, and `retire` work with the same provider prefix.
 Codex quota probes are profile-only and non-renewing, so a missing login cannot fall back to another credential source.
-Claude's paid extra-usage and floor controls, pipeline wrapper, and lead restart are not Codex operations.
+Claude's paid extra-usage and floor controls and pipeline wrapper are not Codex operations.
+The separate [leader replacement](#moving-firstmate-itself) supports Claude and Codex destinations without changing worker dispatch.
 The empty-seat refusal described under [the five controls](#the-five-controls) is a Codex operation: a switch onto a home with no quota left is refused with its reset time, and with every Codex home empty the watch moves nothing and names the Claude seat that still has headroom.
 [`configuration.md`](configuration.md#codex-seats) owns the settings and recorded worker-home contract.
 
@@ -229,8 +230,8 @@ A seat that is resting below the floor or held out of rotation by hand still has
 The empty-week case is what keeps a [mid-task move off a walled seat](#when-a-running-worker-hits-the-wall) working: a seat whose week is spent is one the work cannot stay on, so any seat with real headroom takes the work.
 
 The comparison belongs to the automatic paths.
-A move asked for **by hand** is the operator's own choice of where to put work, so `bin/fm-seat.sh switch <name>`, `switch --next`, and `lead-restart` with no `--to` all ask only which seats are usable at all.
-The automatic lead move is not one of those: it chooses its destination under this comparison and then names it with `--to`.
+A worker-seat move asked for **by hand** is the operator's own choice of where to put work, so `bin/fm-seat.sh switch <name>` and `switch --next` ask only which seats are usable at all.
+Leader destinations use the separate cross-provider selection described under [Moving firstmate itself](#moving-firstmate-itself).
 Arming the watch asks the usable-seat question too, so a fleet whose active seat is simply the best one still arms - the watch is what catches that seat's own later crossing.
 
 **Every percentage names its window.**
@@ -300,7 +301,8 @@ Such a seat should be reachable deliberately and never be picked up by an automa
 
 **What an exclusion changes, and what it does not.**
 
-- `switch --next`, the armed watch's switch, the watch's instruction to move firstmate itself, and the `lead-restart` destination all skip an excluded seat. They read one shared candidate list, so none of them can be the one that forgets.
+- `switch --next` and the armed watch's worker switch skip an excluded seat through their shared candidate list.
+  Automatic leader selection also honors each provider's exclusions.
 - `switch <name>` still reaches it. That is the point: the seat stays a deliberate choice and stops being an automatic one.
 - An excluded seat is listed with its reason whenever a rotation refuses, so a switch that found nowhere to go never leaves you guessing which seats were withheld.
 - Nothing moves when you exclude a seat. Excluding the **active** seat keeps it active and keeps new workers launching there; it only stops being a future automatic destination. Nothing moves a worker already running on it either, and an excluded seat is no more a destination for a [stopped worker's move](#when-a-running-worker-hits-the-wall) than for a new launch.
@@ -429,46 +431,58 @@ Seat switches above govern new workers and pipeline agents.
 Firstmate itself is not a worker, and no switch moves it.
 It keeps the account its own process launched on, so after a few switches firstmate is commonly on a different seat from the one new workers get; `bin/fm-seat.sh status` prints both.
 
-No running Claude Code process can change credential store, so firstmate changes account only by being replaced:
+Firstmate changes account by replacing its process in the same terminal:
 
 ```
 bin/fm-seat.sh lead-restart --check              # establish the move, change nothing
 bin/fm-seat.sh lead-restart --persisted          # do it
+bin/fm-seat.sh lead-restart --provider codex --to <seat> --check
 bin/fm-lead-restart.sh --to <current-seat> --refresh --persisted  # restart in place
 ```
 
-Firstmate tells its crew it is about to restart, another `claude` starts on the new seat in the same terminal, resuming the same session, and the current process ends.
+Firstmate tells its crew it is about to restart, ends its current process, and starts the successor on the selected seat.
+A Claude-to-Claude move resumes the same session.
+A Codex successor starts a fresh `gpt-6.1-sol` session; a Codex-to-Claude move starts a fresh `opus` session.
+Fresh sessions recover open work from durable records, because conversation history cannot resume across providers.
 The replacement carries the ambient login the previous process started from, so the `default` seat still names that login for workers launched afterwards rather than the seat firstmate moved to.
-A seat is a profile directory whose contents symlink the shared `~/.claude` body, which is what lets any seat resume the same session: the seat is the brain, the sessions and settings are the body.
-Without `--to`, the destination is the ordinary rotation, anchored on the seat firstmate is on rather than the seat new workers get, and it skips an excluded seat like every other automatic path.
+A Claude seat links shared settings and sessions under `~/.claude`, so a move between Claude seats can resume the same session.
+Without an explicit destination, `bin/fm-seat.sh leader-destination` evaluates configured Claude and Codex seats against their native catalogs, authentication evidence, quota, and startup runway, and ranks eligible candidates by quota-axi's `spendPriority`.
+It reports withheld candidates and uncertainty and refuses an unresolved tie rather than preferring a provider or array position.
+Automatic Codex destinations require the opt-in defined by [configuration.md](configuration.md#automatic-codex-leader-destinations-configlead-codex-auto); an explicit Codex destination remains available manually.
 Naming the seat firstmate is already on is refused unless `--refresh` is given; a refresh restarts firstmate in place on that seat to pick up a corrected launch environment, through the same persist gate and handover, and changes no seat record or rotation.
 
 **Running workers are told, and are otherwise untouched.** Before the current process ends, each live worker gets one short notice that firstmate is restarting onto another seat, or in place for a refresh, that its own work, seat, and steering inbox are unaffected, and that it should carry on without replying.
 The notice is cheap because nothing changes for a worker: its steering is a durable inbox, its status is a durable log, and it keeps the seat recorded in its own task record.
 So it is sent fire-and-forget, with no acknowledgement expected and no re-ring spanning the swap, and a worker it cannot reach never blocks the restart; that worker is named in `state/.lead-restart.result` instead.
 Supervision is a separate process with its own lock and is deliberately not stopped, so the cycle count goes from one to one across the swap.
-Its engine still follows the move, at its next turn; see [The engine's seat](supervision-host.md#the-engines-seat).
+Its engine remains on Claude and uses the successor's recorded Claude account; see [The engine's seat](supervision-host.md#the-engines-seat).
+When a Claude primary was using the default enabled host without a configuration file, a move to Codex records that existing choice explicitly so the host remains enabled.
 
-**Remote Control follows firstmate, by default.** Remote Control belongs to the process, so a replacement starts without it even though it resumes the same session, and it used to have to be turned back on by hand.
+**Claude Remote Control follows firstmate, by default.** Remote Control belongs to the process, so a replacement starts without it even though it resumes the same session, and it used to have to be turned back on by hand.
 So the outgoing session's state is read first, and the replacement is launched with it when it was on - whether it was started that way or given `/rc` later.
 The state is read from the session record Claude Code keeps for that process, never guessed: a record that cannot be read, or that names a different session, means the state is undeterminable, nothing is turned on, and `state/.lead-restart.result` says so.
 After the replacement takes the home, the same field is read back on it, so that record reports whether Remote Control actually came back rather than that a flag was passed.
 When the state was undeterminable, or Remote Control was on but is not confirmed back on in the replacement, firstmate is also woken with a check wake that names the outcome, so a lost Remote Control is never left for the captain to notice.
 This is firstmate's own restart only; no worker, second mate, or ordinary relaunch carries Remote Control.
+A Codex-to-Claude move requests Remote Control on the fresh Claude successor and reads back its connection state.
+A Codex successor uses an embedded terminal session to preserve process-owned home locking, and that session does not support Remote Control through Codex's separate managed daemon.
+The [Codex adapter](../.agents/skills/harness-adapters/references/harness/codex.md#remote-control) records that limitation; a successful Codex handover is not a Remote Control success.
 
 **`--persisted` is a gate, not a flag.** The replacement drops firstmate's conversation and keeps every durable record, so the open work held only in that conversation has to be written down first - the same persist step a second mate gets before its restart.
 The command refuses without it.
 
-**It refuses rather than guesses.** A destination that is not proven signed in, a firstmate that is not a Claude session, a terminal or launch command that cannot be established from the running process, or a caller that is not this home's firstmate each refuse before anything is touched, leaving the current session running and in charge.
+**It refuses rather than guesses.** A destination that is not proven signed in, a firstmate that is neither a Claude nor an embedded Codex session, a terminal or launch command that cannot be established from the running process, or a caller that is not this home's firstmate each refuse before anything is touched, leaving the current session running and in charge.
+A shared Codex app-server is never terminated as a leader.
 For the launch command that means an argument vector this machine can only read back flattened - where a multi-word argument is indistinguishable from two arguments - is reported as not established rather than split; state it exactly with `--launch-command` when that happens.
 
-**Automatically**, the armed watch asks the same threshold question about firstmate's own seat, and firstmate carries that move out itself when the crossing fires.
+**Automatically**, the existing Claude-seat watch applies its threshold to firstmate's recorded native seat on either provider, and firstmate carries the selected move out itself when the crossing fires.
+The Codex-seat watch continues to control workers only; changing the leader's provider adds no second leader controller and changes no worker dispatch rule.
 It needs no approval: you set the threshold, so the threshold firing is the instruction, and the move happens whether or not you are at the terminal.
 The watch hands the move to firstmate rather than performing it, because the poll runs in a separate process and cannot write firstmate's conversation down for it - so firstmate persists that open work first, then runs the same command above.
 The watch hands over nothing unless the move is actually available, so a crossing with no signed-in destination, or no established terminal, names that blocker instead.
 
-**The replacement starts itself.** A resumed Claude session comes up at an empty composer, and the home's lock is taken by firstmate's own session start rather than by the process coming up, so a replacement with nothing to do would hold the terminal while the home stayed unheld and unsupervised until someone typed into it.
-So the replacement is launched on one instruction - run `bin/fm-session-start.sh` - and the swap counts as complete only once this home's lock record names that new process.
+**Startup is part of the handover.** The replacement receives the operational session-start instruction, and the swap counts as complete only once this home's lock record names the successor.
+`bin/fm-lead-restart.sh` owns prompt delivery, pinned home and code-root context, and reusable launch arguments that exclude the previous startup prompt.
 A replacement that comes up but never takes the home within the claim window is recorded as a failure and firstmate is woken, rather than left reading as a swap still in progress.
 
 **If it fails after the previous process has ended** there is no going back to it: the outcome is recorded in `state/.lead-restart.result` and firstmate is woken.

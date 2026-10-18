@@ -459,7 +459,10 @@ fm_session_lock_handover_admits() {  # <state> [<ancestry-pids>]
 #
 # One key=value per line in state/.lock-runtime:
 #   pid=<the anchor pid on lock line 1 when this was written>
-#   profile=<its CLAUDE_CONFIG_DIR; absent means the ambient default profile>
+#   harness=<detected primary harness; legacy records omitted this for Claude>
+#   profile=<CLAUDE_CONFIG_DIR for Claude, CODEX_HOME for Codex>
+#   claude_profile=<Claude engine profile retained when the leader uses Codex>
+#   launch_argv=<JSON argv of the leader command, excluding its startup prompt>
 #   ambient=<the profile a worker spawned on the default seat gets from it,
 #           per fm_seat_config_dir; read by pipeline launches on that seat>
 #   backend=<tmux|herdr> and target=<pane>, both absent unless the pane was
