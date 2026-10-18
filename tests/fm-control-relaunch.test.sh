@@ -3091,3 +3091,30 @@ QUOTA
   pass "Codex explicit moves journal both stores and missing stores refuse before stopping"
 }
 test_codex_relaunch_seat_override_and_missing_store
+
+
+test_relaunch_refuses_a_missing_recorded_claude_seat_before_stop() {
+  local dir out rc
+  dir=$(new_case claude-seatmissing claude-seatmissing)
+  add_ship_task "$dir" claude-seatmissing claude
+  printf 'claude_seat=%s\n' "$dir/seats/missing" >> "$dir/home/state/claude-seatmissing.meta"
+  cp "$dir/home/state/claude-seatmissing.meta" "$dir/meta.before"
+  out=$(run_control "$dir" claude-seatmissing relaunch --note "missing profile"); rc=$?
+  expect_code 1 "$rc" "missing recorded Claude seat must refuse relaunch: $out"
+  assert_contains "$out" "seat 'missing' has no profile directory at $dir/seats/missing" "refusal must identify the missing seat"
+  cmp -s "$dir/meta.before" "$dir/home/state/claude-seatmissing.meta" || fail "refusal changed metadata"
+  [ "$(cat "$dir/fake/command")" = claude ] || fail "refusal stopped the running worker"
+  [ ! -s "$dir/fake/literal" ] && [ ! -s "$dir/fake/keys" ] || fail "refusal sent lifecycle input"
+  assert_absent "$dir/seats/missing" "relaunch must not create the missing seat"
+  # The launch owner must also refuse when called directly on a stopped task.
+  printf 'zsh' > "$dir/fake/command"
+  out=$(run_spawn "$dir" claude-seatmissing --relaunch); rc=$?
+  expect_code 1 "$rc" "direct spawn relaunch must refuse a missing recorded seat: $out"
+  assert_contains "$out" "seat 'missing' has no profile directory at $dir/seats/missing" "direct relaunch must use the same refusal"
+  cmp -s "$dir/meta.before" "$dir/home/state/claude-seatmissing.meta" || fail "direct relaunch changed metadata"
+  assert_no_grep 'claude --dangerously-skip-permissions' "$dir/fake/literal" "direct relaunch started Claude"
+  assert_absent "$dir/seats/missing" "direct relaunch must not recreate the missing profile"
+  pass "relaunch and direct spawn relaunch refuse a missing recorded Claude seat"
+}
+
+test_relaunch_refuses_a_missing_recorded_claude_seat_before_stop

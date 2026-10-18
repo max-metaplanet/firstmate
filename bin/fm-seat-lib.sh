@@ -182,6 +182,17 @@ fm_seat_dir() {
   printf '%s/%s\n' "$root" "$name"
 }
 
+# fm_seat_require_profile_dir <name> <profile-dir>
+# Launch validation shared by named-seat resolution and recorded-seat relaunch.
+# Empty is the ambient default; constructing a path for `seat add` stays separate.
+fm_seat_require_profile_dir() {
+  local name=$1 dir=$2
+  [ -z "$dir" ] || [ -d "$dir" ] || {
+    echo "error: seat '$name' has no profile directory at $dir" >&2
+    return 1
+  }
+}
+
 # fm_seat_active [config-dir]
 # The configured active seat NAME, or the default seat name when unset. An
 # unreadable or malformed value is reported as the default rather than guessed
@@ -213,8 +224,8 @@ fm_seat_active() {
 #      its destination seat, so that restart carries the ambient it started
 #      from in FM_AMBIENT_CLAUDE_CONFIG_DIR, which wins when set
 #   3. empty - the single-store default, which adds no launch prefix at all
-# The login probe and the threshold read resolve through this too, so they
-# always inspect the same profile a worker on that seat would spend.
+# Named profile directories must exist; a missing one never falls back to the
+# ambient profile. The login probe and threshold read use this resolution too.
 fm_seat_config_dir() {
   local name=${1-} dir
   if [ "${FM_SEAT_PROVIDER:-claude}" = codex ] && [ "$name" != "$FM_SEAT_DEFAULT_NAME" ]; then
@@ -222,6 +233,7 @@ fm_seat_config_dir() {
   fi
   if [ "$name" != "$FM_SEAT_DEFAULT_NAME" ]; then
     if dir=$(fm_seat_dir "$name"); then
+      fm_seat_require_profile_dir "$name" "$dir" || return 1
       if [ "${FM_SEAT_PROVIDER:-claude}" = codex ]; then
         fm_seat_codex_home "$dir"
       else
@@ -247,7 +259,7 @@ fm_seat_relaunch_destination() {
   if [ "$name" != "$FM_SEAT_DEFAULT_NAME" ]; then
     fm_seat_name_valid "$name" || { echo "error: invalid seat name: $name" >&2; return 1; }
     dir=$(fm_seat_dir "$name") || return 1
-    [ -d "$dir" ] || { echo "error: seat '$name' has no profile directory at $dir" >&2; return 1; }
+    fm_seat_require_profile_dir "$name" "$dir" || return 1
   fi
   dir=$(fm_seat_config_dir "$name") || return 1
   if fm_seat_logged_in "$dir"; then

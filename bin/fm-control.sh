@@ -1149,6 +1149,11 @@ resolve_relaunch_profile() {
   if [ "$KIND" != secondmate ]; then
     fm_exclude_tools_check "$TARGET_HARNESS" 0 "$CONFIG" >/dev/null || return 1
   fi
+  if [ "$SEAT_SET" = 0 ] && [ "$TARGET_HARNESS" = claude ] && [ "$PRIOR_RECORDED_HARNESS" = claude ]; then
+    local recorded_claude_profile
+    recorded_claude_profile=$(fm_meta_get "$META" claude_seat)
+    fm_seat_require_profile_dir "${recorded_claude_profile##*/}" "$recorded_claude_profile" || return 1
+  fi
   if [ "$SEAT_SET" = 0 ] && [ "$TARGET_HARNESS" = codex ] && [ "$PRIOR_RECORDED_HARNESS" = codex ]; then
     local recorded_codex_home owner_codex_home
     recorded_codex_home=$(fm_meta_get "$META" codex_seat)

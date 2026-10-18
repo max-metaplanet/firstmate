@@ -869,3 +869,49 @@ test_secondmate_leased_worktree_home_is_trusted
 test_secondmate_home_trust_refuses_everything_unseeded
 test_worktree_mode_still_refuses_a_secondmate_home
 test_secondmate_spawn_fails_closed_when_home_trust_cannot_be_recorded
+
+
+test_missing_profile_directory_is_not_created() {
+  local rec out missing
+  rec=$(make_case missing-profile)
+  read_case "$rec"
+  missing="$CASE_DIR/seats/missing"
+  out=$(run_trust "$missing" "$WT" "$PROJ")
+  expect_code 1 $? "trust must refuse a missing profile directory: $out"
+  assert_contains "$out" "$missing" "trust refusal must identify the missing profile directory"
+  assert_absent "$missing" "trust must not create a missing profile directory"
+  pass "fm-claude-trust.sh: a missing profile directory is refused without creating it"
+}
+
+test_missing_profile_directory_is_not_created
+
+
+test_secondmate_spawn_refuses_a_missing_seat_directory() {
+  local case_dir home primary fakebin out rc config selection
+  for selection in inherited local; do
+    case_dir="$TMP_ROOT/sm-missing-seat-$selection"
+    home="$case_dir/fm-homes/missing-seat"
+    primary="$case_dir/primary"
+    seed_secondmate_home "$home" missing-seat clone
+    fakebin=$(make_spawn_fakebin "$case_dir/fake" claude)
+    fm_test_spawn_home "$primary" claude
+    config="$primary/config"
+    if [ "$selection" = local ]; then
+      : > "$home/config/claude-seat-local"
+      config="$home/config"
+    fi
+    printf '%s\n' "$case_dir/seats" > "$config/claude-seats-root"
+    printf 'missing\n' > "$config/claude-seat"
+    : > "$case_dir/launch.log"
+    out=$(FM_FAKE_LAUNCH_LOG="$case_dir/launch.log" \
+      fm_test_run_spawn "$primary" "$home" "$fakebin" missing-seat "$home" claude --secondmate); rc=$?
+    expect_code 1 "$rc" "secondmate spawn must refuse a missing seat: $out"
+    assert_contains "$out" "seat 'missing' has no profile directory at $case_dir/seats/missing" "secondmate refusal must name seat and directory"
+    assert_absent "$case_dir/seats/missing" "secondmate spawn must not create a seat"
+    assert_absent "$primary/state/missing-seat.meta" "refusal must not publish secondmate metadata"
+    assert_no_grep 'claude --dangerously-skip-permissions' "$case_dir/launch.log" "refusal must not launch Claude"
+    pass "fm-spawn.sh: secondmate spawn refuses a missing $selection seat directory"
+  done
+}
+
+test_secondmate_spawn_refuses_a_missing_seat_directory
