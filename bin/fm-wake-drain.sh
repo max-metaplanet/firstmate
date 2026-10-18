@@ -16,6 +16,12 @@
 # locked drain rotates such leftovers away before doing anything else.
 # FM_STATUS_PRESENTATION_LOCK_TIMEOUT sets the positive whole-second wait for
 # presentation-path locks (default 10); queue mutation locks remain blocking.
+# A host branch (FM_BRANCH_REPORT_TURN set) may acknowledge only after the
+# current turn has successful fm-branch-report.sh receipts for every scoped
+# task, or at least one receipt for an unscoped turn. This check runs under
+# the queue lock before any acknowledgement side effect, even when an engine
+# invokes report and ack as independent shell commands. Pi uses its own report
+# tool without that host-turn environment and retains its existing consume path.
 set -u
 
 SCRIPT_DIR="$(d=${BASH_SOURCE[0]%/*}; [ "$d" != "${BASH_SOURCE[0]}" ] || d=.; cd "${d:-/}" && pwd)"
@@ -205,6 +211,36 @@ require_branch_eligible_rows() {
     echo "wake drain: no branch-eligible row snapshot at $ELIGIBLE_ROWS_FILE; refusing to guess what this actor may consume" >&2
     return 1
   }
+}
+
+require_host_turn_reports() {
+  local turn=${FM_BRANCH_REPORT_TURN:-} turn_file="$STATE/.supervision-host-turn"
+  local receipts="$STATE/.supervision-host-receipts"
+  [ "$ACTOR" = branch ] && [ -n "$turn" ] || return 0
+  if [ -f "$turn_file" ] && [ ! -L "$turn_file" ] \
+    && [ -f "$receipts" ] && [ ! -L "$receipts" ] \
+    && awk -F '\t' -v turn="$turn" '
+      FILENAME == ARGV[1] {
+        eq = index($0, "=")
+        if (eq) fields[substr($0, 1, eq - 1)] = substr($0, eq + 1)
+        next
+      }
+      NF == 4 && $1 == turn && $2 ~ /^[1-9][0-9]*$/ && ($3 == "routine" || $3 == "captain") {
+        reported[$4] = 1; count++
+      }
+      END {
+        if (fields["turn"] != turn || !count) exit 1
+        if (fields["unscoped"] == "1") exit 0
+        if (fields["unscoped"] != "0") exit 1
+        n = split(fields["tasks"], tasks, " ")
+        if (!n) exit 1
+        for (i = 1; i <= n; i++) if (!(tasks[i] in reported)) exit 1
+      }
+    ' "$turn_file" "$receipts"; then
+    return 0
+  fi
+  printf 'wake drain: acknowledgement refused: host turn %s needs successful reports for every scoped task (or one report for an unscoped turn); report successfully before acknowledging\n' "$turn" >&2
+  return 1
 }
 
 # The highest sequence this actor has already been presented: the branch's
@@ -858,6 +894,7 @@ reclaim_stale_branch_grant_locked || exit 1
 [ "$ACTOR" != branch ] || require_branch_eligible_rows || exit 1
 
 if [ -n "$ACK_THROUGH" ]; then
+  require_host_turn_reports || exit 1
   if [ "$ACTOR" = branch ]; then
     PRESENTED_MAX=$(presented_max_row "$ELIGIBLE_ROWS_FILE") || exit 1
   else
