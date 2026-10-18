@@ -2804,8 +2804,8 @@ crew_run_recent_activity() {  # <id> -> <run-id>
 }
 
 # The one spelling of the verdict component that says a parked gate's answer is
-# owed by a HUMAN. bin/fm-crew-state.sh mints it (nm_gate_awaits_human_decision
-# owns the derivation: the findings table's `action` column, read by position);
+# owed by a HUMAN. bin/fm-crew-state.sh mints it (nm_gate_findings
+# owns the derivation: the current gate table's `action` column, read by position);
 # crew_gate_awaits_human_decision below is its only consumer.
 FM_GATE_HUMAN_DECISION='ask-user: authority decision'
 

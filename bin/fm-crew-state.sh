@@ -626,10 +626,6 @@ passed_pr_detail() {
       ;;
   esac
 }
-# Finding count from a findings[N]{...} table header; empty when none.
-nm_findings_count() {
-  printf '%s\n' "$RUN_OUT" | grep -oE 'findings\[[0-9]+\]' | head -1 | grep -oE '[0-9]+'
-}
 nm_gate_step_row() {
   local row step rest status findings
   row=$(printf '%s\n' "$RUN_OUT" | grep -E "$FM_NM_GATE_ROW_RE" | head -1)
@@ -671,95 +667,85 @@ nm_gate_name() {
   row=$(nm_gate_step_row)
   [ -n "$row" ] && printf '%s' "${row%%|*}"
 }
-nm_gate_findings_count() {
-  local f row rest
-  f=$(nm_findings_count)
-  [ -n "$f" ] && { printf '%s' "$f"; return; }
-  row=$(nm_gate_step_row)
-  [ -n "$row" ] || return 0
-  rest=${row#*|}
-  rest=${rest#*|}
-  rest=${rest%%|*}
-  case "$rest" in ''|*[!0-9]*) return 0 ;; esac
-  printf '%s' "$rest"
-}
-# 0 when the gate's own findings table holds at least one row whose `action`
-# column is exactly `ask-user` - the pipeline's own record that this gate's
-# answer is owed by a HUMAN, not by the crewmate (the gate's shape -
-# awaiting_approval, fix_review, awaiting_agent - is reported parked in every
-# case and does not by itself say who owes the answer; only a findings row whose
-# `action` column is exactly `ask-user` does).
-#
-# Read POSITIONALLY, the way nm_gate_step_row above reads its row: locate the
-# `findings[N]{...}` header, take the index of the `action` column from it, walk
-# each of the N rows that follow to that index, and compare for EQUALITY. A
-# substring search over the run payload cannot make this distinction - the
-# trailing `description` column is free text that routinely quotes finding
-# actions, and the payload also carries the branch name and step names, so a
-# gate owed the crewmate's own answer would match just as readily as one owed a
-# human. Column order is read from the header rather than assumed, so a table
-# that grows a column keeps answering correctly. Both the header match and the
-# row scan require the BRACE, so the count, the index and the rows all come from
-# the same block: an earlier unbraced `findings[N]:` line from a resolved round
-# must not supply the rows while the braced gate table supplies the index, which
-# would read the wrong block's rows at the right block's offset
-# (tests/fm-crew-state.test.sh's unbraced-precursor case pins it).
-#
-# Reading the index out of the header and then walking RAW COMMAS to it is only
-# positional in name: the walk is sound only while every column before `action`
-# is comma-free, and the producer does not quote commas inside `description`
-# (tests/fm-crew-state.test.sh's own fixture proves it). A header ordering that
-# puts free text before `action` would therefore let a row's description mint
-# the marker - silently, with no error - which is the same class of hole the
-# positional derivation exists to close, arriving by a different route. So the
-# columns preceding `action` are checked against a WHITELIST of names this table
-# is known to carry as short comma-free scalars, and anything else refuses:
-# a whitelist rather than a blacklist of free-text names, because an unknown
-# column must read as unsafe rather than as safe. When the table's shape is not
-# provably safe the correct answer is the noisy one - a crewmate that went quiet
-# before answering its own gate is the failure that must never be silenced.
-# Residual bound, which no unquoted positional parse of this table escapes: a
-# comma inside a whitelisted field's own value (a path with a comma in it, say)
-# still shifts the walk.
-nm_gate_awaits_human_decision() {
-  local header count cols idx i name field rows row rest
-  header=$(printf '%s\n' "$RUN_OUT" | grep -E '^[[:space:]]*findings\[[0-9]+\]\{[^}]*\}:' | head -1)
-  [ -n "$header" ] || return 1
-  count=$(printf '%s' "$header" | sed -n 's/^[[:space:]]*findings\[\([0-9][0-9]*\)\].*/\1/p')
-  case "$count" in ''|*[!0-9]*) return 1 ;; esac
-  [ "$count" -gt 0 ] || return 1
-  cols=$(printf '%s' "$header" | sed -n 's/^[^{]*{\([^}]*\)}.*/\1/p')
-  [ -n "$cols" ] || return 1
-  idx=0
-  i=0
-  while [ -n "$cols" ]; do
-    i=$((i + 1))
-    name=$(strip_quotes "$(trim "${cols%%,*}")")
-    if [ "$name" = action ]; then idx=$i; break; fi
-    case "$name" in
-      id|severity|file|line) ;;
-      *) return 1 ;;
-    esac
-    case "$cols" in *,*) cols=${cols#*,} ;; *) cols='' ;; esac
-  done
-  [ "$idx" -gt 0 ] || return 1
-  rows=$(printf '%s\n' "$RUN_OUT" \
-    | awk -v n="$count" 'f { print; if (++c >= n) exit; next } /^[[:space:]]*findings\[[0-9]+\]\{/ { f = 1 }')
-  while IFS= read -r row; do
-    case "$row" in *,*) ;; *) continue ;; esac
-    rest=$row
-    i=1
-    while [ "$i" -lt "$idx" ]; do
-      case "$rest" in *,*) rest=${rest#*,} ;; *) rest=''; break ;; esac
-      i=$((i + 1))
-    done
-    [ -n "$rest" ] || continue
-    field=$(strip_quotes "$(trim "${rest%%,*}")")
-    [ "$field" = ask-user ] && return 0
-  done <<EOF
-$rows
-EOF
-  return 1
+# Read only the unique top-level gate object emitted by AXI status. Findings
+# elsewhere in the payload belong to other steps/rounds and prove no authority
+# over this gate. Return <count>|<human|crewmate|undecided>; an unidentifiable
+# table leaves count empty. Validate the entire table before claiming authority,
+# including its row count, so a truncated ask-user row cannot decide the gate.
+# No harness/backend-specific evidence is involved: every adapter uses this
+# serialized no-mistakes contract, pinned by tests/fm-crew-state.test.sh.
+nm_gate_findings() {
+  printf '%s\n' "$RUN_OUT" | awk '
+    function trim(s) { sub(/^[[:space:]]+/, "", s); sub(/[[:space:]]+$/, "", s); return s }
+    function scalar(s) {
+      s = trim(s)
+      if (s ~ /^"[^"]*"$/) s = substr(s, 2, length(s) - 2)
+      return s
+    }
+    # Parse through the action field, respecting quoted commas and escapes.
+    # Description is allowed unquoted commas, so never use its fields as action.
+    function action(row, idx, ncols,    i, c, n, quoted, closed, field) {
+      n = 1; field = ""; quoted = 0; closed = 0
+      for (i = 1; i <= length(row); i++) {
+        c = substr(row, i, 1)
+        if (quoted) {
+          if (c == "\\") { field = field c substr(row, ++i, 1); continue }
+          if (c == "\"") { quoted = 0; closed = 1; continue }
+          field = field c; continue
+        }
+        if (c == ",") {
+          if (n == idx) return closed ? field : trim(field)
+          n++; field = ""; closed = 0; continue
+        }
+        if (c == "\"") {
+          if (trim(field) != "" || closed) return ""
+          field = ""; quoted = 1; continue
+        }
+        if (closed) { if (c !~ /[[:space:]]/) return ""; continue }
+        field = field c
+      }
+      if (!quoted && n == idx && idx == ncols) return closed ? field : trim(field)
+      return ""
+    }
+    /^gate:/ {
+      gates++; in_gate = 1; in_table = 0
+      if ($0 !~ /^gate:[[:space:]]*$/) bad = 1
+      next
+    }
+    /^[^[:space:]]/ { in_gate = 0; in_table = 0 }
+    !in_gate || /^[[:space:]]*$/ { next }
+    /^  step:/ { steps++; step = scalar(substr($0, 8)); in_table = 0; next }
+    /^  status:/ { statuses++; status = scalar(substr($0, 10)); in_table = 0; next }
+    /^  findings/ {
+      tables++; in_table = 0
+      if ($0 !~ /^  findings\[[0-9]+\]\{[^}]+\}:[[:space:]]*$/) { bad = 1; next }
+      count = $0; sub(/^  findings\[/, "", count); sub(/\].*$/, "", count)
+      header = $0; sub(/^[^{]*\{/, "", header); sub(/\}.*$/, "", header)
+      ncols = split(header, cols, ","); idx = 0
+      for (j = 1; j <= ncols; j++) {
+        name = scalar(cols[j])
+        if (name == "action") { if (idx) unsafe = 1; idx = j }
+        else if (!idx && name !~ /^(id|severity|file|line)$/) unsafe = 1
+      }
+      if (!idx) unsafe = 1
+      in_table = 1; next
+    }
+    in_table && /^    [^[:space:]]/ {
+      rows++
+      value = action(substr($0, 5), idx, ncols)
+      if (value == "ask-user") human = 1
+      else if (value !~ /^(auto-fix|info|no-op)$/) unsafe = 1
+      next
+    }
+    in_table { in_table = 0 }
+    END {
+      if (gates != 1 || steps != 1 || step == "" || statuses != 1 ||
+          status !~ /^(awaiting_approval|fix_review)$/ || tables != 1 || bad || rows + 0 != count + 0) {
+        print "|undecided"; exit
+      }
+      print count "|" (unsafe ? "undecided" : (human ? "human" : "crewmate"))
+    }
+  '
 }
 log_reports_ci_ready() {
   [ "$LOG_VERB" = "done" ] || return 1
@@ -1255,14 +1241,21 @@ if [ "$HAVE_RUN" = 1 ]; then
       [ -n "$gate" ] || gate=gate
       RUN_STATE=parked
       RUN_DETAIL="parked at $gate"
-      fcount=$(nm_gate_findings_count)
+      gate_findings=$(nm_gate_findings)
+      fcount=${gate_findings%%|*}
+      if [ -z "$fcount" ]; then
+        gate_row=$(nm_gate_step_row)
+        fcount=${gate_row##*|}
+        case "$fcount" in *[!0-9]*) fcount= ;; esac
+      fi
       [ -n "$fcount" ] && RUN_DETAIL="$RUN_DETAIL: $fcount finding(s)"
       # Its own ${SEP} component, not free text inside the detail: consumers
       # compare a whole component for equality, so nothing a gate name or a
       # later note happens to contain can mint it.
-      if nm_gate_awaits_human_decision; then
-        RUN_DETAIL="$RUN_DETAIL${SEP}$FM_GATE_HUMAN_DECISION"
-      fi
+      case "${gate_findings#*|}" in
+        human) RUN_DETAIL="$RUN_DETAIL${SEP}$FM_GATE_HUMAN_DECISION" ;;
+        undecided) RUN_DETAIL="$RUN_DETAIL${SEP}gate authority: undecided (could not establish current gate findings)" ;;
+      esac
     else
       case "$status" in
         ci)             RUN_STATE=working; RUN_DETAIL="ci running" ;;
