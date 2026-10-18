@@ -261,16 +261,10 @@ case ${CLAUDE_CONFIG_DIR:-} in
   '' | /*) ;;
   *) refuse "CLAUDE_CONFIG_DIR '$CLAUDE_CONFIG_DIR' is a relative path, so the store the worker reads cannot be guaranteed to be the one written here; set it to an absolute path" ;;
 esac
-# fm-spawn forwards a set CLAUDE_CONFIG_DIR onto the launch without requiring it
-# to exist, because claude creates its own store directory. Create it here for
-# the same reason, and refuse only when it genuinely cannot be written, since a
-# store this cannot reach means the worker meets the dialog after all.
+# Trust registration may create the store inside an existing profile, but must
+# never replace a removed seat with an empty, signed-out profile.
 CONFIG_DIR_REAL=$(real_dir "$CONFIG_DIR") || true
-if [ -z "$CONFIG_DIR_REAL" ]; then
-  mkdir -p "$CONFIG_DIR" 2>/dev/null || true
-  CONFIG_DIR_REAL=$(real_dir "$CONFIG_DIR") || true
-fi
-[ -n "$CONFIG_DIR_REAL" ] || refuse "Claude config directory '$CONFIG_DIR' does not exist and could not be created"
+[ -n "$CONFIG_DIR_REAL" ] || refuse "Claude config directory '$CONFIG_DIR' does not exist"
 
 # The filesystem root, a home directory, and the config directory are never
 # something this registers, in either mode. Checked explicitly so the refusal

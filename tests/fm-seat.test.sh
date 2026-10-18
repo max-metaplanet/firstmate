@@ -1532,6 +1532,21 @@ test_spawn_without_a_seat_sets_no_config_dir() {
   pass "an unset seat setting leaves the launch and the task record exactly as before"
 }
 
+test_spawn_refuses_a_missing_active_seat_directory() {
+  local rec id out rc
+  id=seat-missing-dir
+  rec=$(spawn_case spawn-missing-seat "$id")
+  read_spawn_case "$rec"
+  printf 'missing\n' > "$HOME_DIR/config/claude-seat"
+  out=$(run_spawn_here "$HOME_DIR" "$WT_DIR" "$FAKEBIN" "$LAUNCH_LOG" "$id" "$PROJ_DIR" 2>&1); rc=$?
+  expect_code 1 "$rc" "a missing seat directory must refuse spawn: $out"
+  assert_contains "$out" "seat 'missing' has no profile directory at $SEATS_DIR/missing" "refusal must name the seat and directory"
+  assert_absent "$SEATS_DIR/missing" "spawn must not create the missing seat"
+  assert_absent "$HOME_DIR/state/$id.meta" "refused spawn must not publish a task record"
+  assert_no_grep 'claude --dangerously-skip-permissions' "$LAUNCH_LOG" "refused spawn must not launch Claude"
+  pass "spawn refuses a missing seat directory without creating it"
+}
+
 test_spawn_uses_the_active_seat_and_records_it() {
   local rec id out launch
   id=seat-active-1
@@ -1604,6 +1619,7 @@ test_ambient_config_dir_still_reaches_workers_when_no_seat_is_set() {
   id=seat-ambient-1
   rec=$(spawn_case spawn-ambient "$id")
   read_spawn_case "$rec"
+  mkdir -p "$CASE_DIR/ambient-profile"
 
   # No seat configured, but firstmate itself runs under a non-default profile.
   # That predates seats and must keep working: the worker gets the same store.
@@ -1668,7 +1684,7 @@ test_a_restarted_lead_spawns_the_default_seat_on_its_original_ambient() {
   id=seat-restarted-lead-1
   rec=$(spawn_case spawn-restarted-lead "$id")
   read_spawn_case "$rec"
-  mkdir -p "$SEATS_DIR/beta"
+  mkdir -p "$SEATS_DIR/beta" "$CASE_DIR/ambient-profile"
 
   # A lead moved to beta by bin/fm-lead-restart.sh runs with beta as its own
   # CLAUDE_CONFIG_DIR and carries the ambient it started from.
@@ -5119,3 +5135,5 @@ test_a_dispatch_gate_read_records_the_physical_quota_tool_directory
 test_an_unconfigured_gate_records_no_quota_tool_directory
 test_a_blind_process_records_nothing_and_keeps_the_existing_record
 test_the_recorded_quota_tool_directory_is_checked_rather_than_trusted
+
+test_spawn_refuses_a_missing_active_seat_directory

@@ -3090,6 +3090,16 @@ spawn_seat_session_gate() {
     "$active" "$dest" >&2
 }
 
+# Refuse a missing selected seat before quota routing can mask it or choose a
+# different profile. Resolve again at launch so a removed directory still fails.
+if [ "$KIND" != secondmate ] && [ "$RELAUNCH" -eq 0 ] && { [ "$HARNESS" = claude ] || [ "$HARNESS" = codex ]; }; then
+  SEAT_CONFIG=$(spawn_seat_config)
+  SEAT_NAME=$(FM_SEAT_PROVIDER=$HARNESS CONFIG=$SEAT_CONFIG fm_seat_active)
+  if [ "$SEAT_NAME" != "$FM_SEAT_DEFAULT_NAME" ]; then
+    FM_SEAT_PROVIDER=$HARNESS CONFIG=$SEAT_CONFIG fm_seat_config_dir "$SEAT_NAME" >/dev/null || exit 1
+  fi
+fi
+
 [ "$KIND" = secondmate ] || spawn_seat_session_gate
 [ "$KIND" = secondmate ] || spawn_seat_dispatch_gate
 [ "$KIND" = secondmate ] || spawn_provider_depletion_gate
@@ -5311,6 +5321,9 @@ if [ "$HARNESS" = claude ] || [ "$HARNESS" = codex ]; then
     [ -n "$SEAT_CONFIG_DIR" ] ||
       SEAT_CONFIG_DIR=$(FM_SEAT_PROVIDER=$HARNESS CONFIG=$SEAT_CONFIG fm_seat_spawn_config_dir) || exit 1
     SEAT_RECORD=$SEAT_CONFIG_DIR
+  fi
+  if [ "$HARNESS" = claude ]; then
+    fm_seat_require_profile_dir "${SEAT_CONFIG_DIR##*/}" "$SEAT_CONFIG_DIR" || exit 1
   fi
   if [ "$HARNESS" = codex ]; then
     CODEX_OWNER_HOME=$(fm_seat_codex_home "$SEAT_CONFIG_DIR") || exit 1
