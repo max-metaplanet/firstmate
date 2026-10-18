@@ -82,3 +82,30 @@ assert_grep 'classic (missing)' "$TASK_TMP/out" 'classic requirement lost'
 printf 'unreadable\n' > "$TASK_TMP/rules.json"
 expect_result 2
 pass 'classic and ruleset requirements compose; unreadable requirements fail closed'
+
+printf '{"protected":false}\n' > "$TASK_TMP/branch.json"
+printf '[]\n' > "$TASK_TMP/rules.json"
+fallback_view() {
+  view "$@" | jq '.statusCheckRollup |= map(
+    if .name == "Mac" then .name = "Mac (advisory)"
+    elif .context == "optional-status" then .context = "status (advisory)"
+    else . end)'
+}
+fallback_view COMPLETED FAILURE COMPLETED SUCCESS > "$TASK_TMP/view.json"
+expect_result 1
+assert_grep 'CI gate (red)' "$TASK_TMP/out" 'unprotected red check was ignored'
+fallback_view IN_PROGRESS '' COMPLETED SUCCESS > "$TASK_TMP/view.json"
+expect_result 8
+assert_grep 'CI gate (pending)' "$TASK_TMP/out" 'unprotected pending check was ignored'
+pass 'without configured requirements, red and pending checks still block'
+
+fallback_view COMPLETED SUCCESS IN_PROGRESS '' > "$TASK_TMP/view.json"
+expect_result 0 --watch
+fallback_view COMPLETED SUCCESS COMPLETED FAILURE > "$TASK_TMP/view.json"
+expect_result 0 --watch
+pass 'without configured requirements, explicit advisory runs and statuses do not block'
+
+printf '[{"type":"required_status_checks","parameters":{"required_status_checks":[{"context":"Mac (advisory)"}]}}]\n' > "$TASK_TMP/rules.json"
+expect_result 1
+assert_grep 'Mac (advisory) (red)' "$TASK_TMP/out" 'advisory marker overrode a configured requirement'
+pass 'configured requirements take precedence over the advisory marker'
