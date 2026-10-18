@@ -1,0 +1,10 @@
+[
+  {
+    "id": 6222561557,
+    "body": "<!-- jev-check-browser-v1 -->\n<!-- jev-check-app:portal -->\n### portal\n\n**Browser check \u2014 skipped** (advisory; blocks no merge)\n\nhttps://github.com/metaplanet-jp/core/pull/2216\nHead `ebae165b8967f4d294195567e86d26be8a9478d1` \u00b7 pre-merge\n\nSkipped: the plan step wrote neither a plan nor a generator record; the run log names the error. No plan was generated and no browser opened, so this is not a pass.\n\n<!-- /jev-check-app:portal -->\n\n<!-- jev-check-app:admin-center -->\n### admin-center\n\n**Browser check \u2014 skipped** (advisory; blocks no merge)\n\nhttps://github.com/metaplanet-jp/core/pull/2216\nHead `ebae165b8967f4d294195567e86d26be8a9478d1` \u00b7 pre-merge\n\nSkipped: the plan step wrote neither a plan nor a generator record; the run log names the error. No plan was generated and no browser opened, so this is not a pass.\n\n<!-- /jev-check-app:admin-center -->\n",
+    "updated_at": "2026-10-16T19:42:53Z",
+    "user": {
+      "login": "github-actions[bot]"
+    }
+  }
+]

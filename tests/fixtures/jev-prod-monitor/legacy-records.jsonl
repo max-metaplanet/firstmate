@@ -1,0 +1,1 @@
+{"event": "check", "record": {"verdict": "proven", "phase": "post-merge", "head_sha": "b7e244483b83c4eda7ab013d8faddab7738bc716", "pr_url": "https://github.com/metaplanet-jp/core/pull/2244", "input_set_hash": "40ca53169ac19938a0433afc9d38e20def2785dde1572eba22676fd4036566b9", "record_id": "eb33ce8736ceb6fbe9f413820fcdd726be51eec1cbe124edca2b20593fbeea0b"}}

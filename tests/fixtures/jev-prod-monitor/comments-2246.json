@@ -1,0 +1,10 @@
+[
+  {
+    "id": 6241167013,
+    "body": "<!-- jev-check-browser-v1 -->\n<!-- jev-check-app:portal -->\n### portal\n\n**Browser check \u2014 not applicable in production** (advisory; blocks no merge)\n\nhttps://github.com/metaplanet-jp/core/pull/2246\nHead `5905e87656eb06748affb413b1da73bb7564de79` \u00b7 post-merge\n\nNot applicable in production: nothing this pull request changed names a page a production check may open (database: 1 file(s), docs: 1 file(s), other: 1 file(s), shared packages: 1 file(s), tooling/CI: 9 file(s)). No plan was generated and no planner call was spent. This is neither a pass nor a failure \u2014 there was nothing this production check is allowed to open.\n\n<!-- /jev-check-app:portal -->\n\n<!-- jev-check-app:admin-center -->\n### admin-center\n\n**Browser check \u2014 not applicable in production** (advisory; blocks no merge)\n\nhttps://github.com/metaplanet-jp/core/pull/2246\nHead `5905e87656eb06748affb413b1da73bb7564de79` \u00b7 post-merge\n\nNot applicable in production: nothing this pull request changed names a page a production check may open (database: 1 file(s), docs: 1 file(s), other: 1 file(s), shared packages: 1 file(s), tooling/CI: 9 file(s)). No plan was generated and no planner call was spent. This is neither a pass nor a failure \u2014 there was nothing this production check is allowed to open.\n\n<!-- /jev-check-app:admin-center -->\n",
+    "updated_at": "2026-10-17T21:29:32Z",
+    "user": {
+      "login": "github-actions[bot]"
+    }
+  }
+]

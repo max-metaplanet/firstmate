@@ -5,6 +5,7 @@
 # Usage:
 #   fm-jev-prod-check.sh [check]
 #   fm-jev-prod-check.sh arm
+#   fm-jev-prod-check.sh reseed
 #   fm-jev-prod-check.sh disarm
 #   fm-jev-prod-check.sh --help
 #
@@ -35,9 +36,8 @@
 # preview section for that app: the live comment yields the current verdict and
 # its phase, never both phases at once. The preview verdict for a merged PR
 # survives only in the pre-merge run's uploaded `jev-check-records` artifact.
-# Hence: the comment is read first (one call, and the only call a clean PR ever
-# costs), and the artifact is read only when production came back bad and the
-# pairing is what decides whether that is new.
+# The comment is read first. Artifacts bind a result to its workflow run and
+# attempt when available, and recover preview evidence for nonpassing outcomes.
 #
 # EVERYTHING IT READS IS UNTRUSTED. A pull request comment can be written by
 # anybody who can comment on the pull request, and an artifact is whatever a
@@ -70,14 +70,28 @@
 # past it, so no single slow pull request can hold the monitor in place.
 #
 # DEDUPE. state/.jev-prod-monitor is the one owner. A verdict is keyed by
-# <pr>/<app>/<record-id>, the recorder's own identifier for the run that
-# produced it, so a re-poll of an already-woken PR+run prints nothing. The key
+# <pr>/<app[:persona]>/<record-id-or-outcome-run>. The recorder digest or a
+# verified workflow run and attempt identifies the outcome, so a re-poll of an already-woken PR+run prints nothing. The key
 # is deliberately per RUN and not per pull request: production can be deployed
 # again - a rollback, a promotion - and that fires a fresh post-merge run with a
 # fresh verdict, which has to be able to wake even though the pull request has
 # been seen before. So no pull request is ever retired early; a candidate leaves
 # the set by ageing out of the lookback, and within the set the keys are what
 # keep each verdict to one wake.
+#
+# RESEED. Explicit `reseed` backs up the current record to a private sibling
+# `.jev-prod-monitor.backup.XXXXXX` before reading the current candidate inventory.
+# It seeds only known post-merge recorder outcomes on the PR head, without wakes,
+# and drops old pending batches and historical keys rather than splitting glued
+# rows or claiming they were delivered. Unknown current outcomes remain unseeded.
+# Incomplete forge reads or an exhausted budget retain the original state.
+# Run it after updating the monitor with FM_HOME set to the intended home.
+# It uses the same lookback, candidate inventory and read budget as `check`, but
+# must finish every candidate in that inventory before replacing the state.
+# Not-applicable outcomes retain their reason in `outcome` rows and never claim
+# a browser pass. When run metadata is unavailable, a recorded digest or section
+# fingerprint is the fallback identity; malformed sections also use the comment
+# revision. A fallback later enriched with a run ID is not delivered twice.
 #
 # ROTATION. Because candidates are not retired, a busy repository can hold more
 # of them than one poll should read. They are therefore rotated by a cursor in
@@ -114,7 +128,9 @@ MARKER='<!-- jev-check-browser-v1 -->'
 # GET /user; this is the same default, overridable for a project that renamed it.
 RECORDER_LOGIN_DEFAULT='github-actions[bot]'
 # The verdicts upstream's recorder can publish. Anything else is not a verdict.
-VERDICT_SHAPE='^(proven|failed|unproven|skipped|stale)$'
+VERDICT_SHAPE='^(proven|failed|unproven|skipped|stale|not-applicable|refused|unverified)$'
+RESEED=0
+RECORD_OUTCOMES=
 # An artifact entry is read through a byte cap: a compressed size says nothing
 # about what it expands to.
 UNZIP_MAX_BYTES=262144
@@ -138,6 +154,8 @@ Usage:
                                   verdict needs firstmate (silent when
                                   unconfigured, unchanged, or all clean)
   fm-jev-prod-check.sh arm       write and register state/jev-prod-monitor.check.sh
+  fm-jev-prod-check.sh reseed    back up the dedupe record, then seed current known
+                                  post-merge outcomes without delivering them
   fm-jev-prod-check.sh disarm    remove the check shim, its trust binding, and
                                   the dedupe record
   fm-jev-prod-check.sh --help    print this help
@@ -161,10 +179,8 @@ case "$NOW" in ''|*[!0-9]*) NOW=$(date +%s) ;; esac
 BATCH_SECS=${FM_JEV_PROD_BATCH_SECS:-21600}
 case "$BATCH_SECS" in ''|*[!0-9]*) BATCH_SECS=21600 ;; esac
 
-# A production run reports minutes after the deployment, so a PR whose comment
-# shows a preview verdict and no production one is not yet late. Past this grace
-# it is: the production half never reported, which is itself the thing nobody
-# was watching for.
+# The grace starts at the successful supported production deployment status,
+# never at the merge or a generic commit status.
 GRACE_SECS=${FM_JEV_PROD_GRACE_SECS:-3600}
 case "$GRACE_SECS" in ''|*[!0-9]*) GRACE_SECS=3600 ;; esac
 
@@ -276,6 +292,7 @@ record_read() {
   RECORD_WOKEN=
   RECORD_PENDING=
   RECORD_CURSOR=
+  RECORD_OUTCOMES=
   [ -f "$RECORD" ] || return 0
   while IFS= read -r line || [ -n "$line" ]; do
     case "$line" in
@@ -285,11 +302,11 @@ record_read() {
 " ;;
       pending?*) RECORD_PENDING="${RECORD_PENDING}${line#pending	}
 " ;;
+      outcome?*) RECORD_OUTCOMES="${RECORD_OUTCOMES}${line#outcome	}
+" ;;
       cursor?*) RECORD_CURSOR=${line#cursor	} ;;
     esac
   done < "$RECORD"
-  RECORD_WOKEN=${RECORD_WOKEN%$'\n'}
-  RECORD_PENDING=${RECORD_PENDING%$'\n'}
   case "$RECORD_CURSOR" in ''|*[!0-9]*) RECORD_CURSOR= ;; esac
   return 0
 }
@@ -310,6 +327,7 @@ record_write() {  # <reported> <woken-list> <pending-list> <cursor>
     # candidate still inside the lookback can present.
     [ -z "$woken" ] || printf '%s\n' "$woken" | tail -n "$WOKEN_KEEP" | sed 's/^/woken\t/'
     [ -z "$pending" ] || printf '%s\n' "$pending" | sed 's/^/pending\t/'
+    [ -z "$RECORD_OUTCOMES" ] || printf '%s' "$RECORD_OUTCOMES" | tail -n "$WOKEN_KEEP" | sed 's/^/outcome\t/'
     [ -z "$cursor" ] || printf 'cursor\t%s\n' "$cursor"
   } > "$tmp" || { rm -f -- "$tmp"; return 1; }
   chmod 0600 "$tmp" 2>/dev/null || { rm -f -- "$tmp"; return 1; }
@@ -320,6 +338,15 @@ record_write() {  # <reported> <woken-list> <pending-list> <cursor>
 list_has() {  # <newline-list> <exact-entry>
   [ -n "$2" ] || return 1
   printf '%s\n' "$1" | grep -qxF -- "$2"
+}
+
+promote_alias() {  # <fallback-key> <verified-run-key>
+  woken="$(printf '%s' "$woken" | awk -v old="$1" -v new="$2" '
+    {if ($0 == old) $0=new; print}')"$'\n'
+  if [ -n "$RECORD_OUTCOMES" ]; then
+    RECORD_OUTCOMES="$(printf '%s' "$RECORD_OUTCOMES" | awk -F '\t' -v old="$1" -v new="$2" '
+      {if ($1 == old) $0=new substr($0,index($0,"\t")); print}')"$'\n'
+  fi
 }
 
 # --- forge reads ------------------------------------------------------------
@@ -344,6 +371,23 @@ gh_json() {  # <api-path> ; prints the raw body
   printf '%s\n' "$out"
 }
 
+gh_json_cached() {
+  local cache
+  cache="$TMP/get-$(printf '%s' "$1" | cksum | awk '{print $1 "-" $2}')"
+  if [ ! -s "$cache" ]; then
+    gh_json "$1" > "$cache" || { rm -f "$cache"; return 1; }
+  fi
+  cat "$cache"
+}
+
+artifact_download() {  # <repo> <artifact-id> <zip>
+  [ -s "$3" ] && return 0
+  fm_run_timed "$READ_SECS" gh api "repos/$1/actions/artifacts/$2/zip" > "$3" 2>/dev/null || {
+    rm -f "$3"
+    return 1
+  }
+}
+
 # --- bounded tokens ---------------------------------------------------------
 # A last line of defence for anything rendered: the wake is ONE line and the
 # record is tab-separated, so no field may carry a separator of its own.
@@ -366,6 +410,18 @@ token_ok() {  # <value> <extended-regex>
 
 verdict_token_ok() { token_ok "$1" "$VERDICT_SHAPE"; }
 app_token_ok() { token_ok "$1" '^[A-Za-z0-9_-]{1,64}$'; }
+section_identity() {  # <section-token>; default persona is explicit internally
+  SECTION_APP=${1%%:*}
+  SECTION_PERSONA=${1#*:}
+  app_token_ok "$SECTION_APP" || return 1
+  if [ "$SECTION_PERSONA" = "$1" ]; then
+    SECTION_PERSONA=default
+    return 0
+  fi
+  [ "$SECTION_APP" = portal ] || return 1
+  case "$SECTION_PERSONA" in portal-foreign|portal-previous|portal-unverified) return 0 ;; esac
+  return 1
+}
 phase_token_ok() { token_ok "$1" '^(pre-merge|post-merge)$'; }
 record_token_ok() { token_ok "$1" '^[0-9A-Za-z-]{1,64}$'; }
 comment_id_ok() { token_ok "$1" '^[0-9]{1,20}$'; }
@@ -388,22 +444,42 @@ ticket_from_title() {  # <title>
 # One app's section of the marker comment, between core's own wrappers.
 section_of() {  # <body-file> <app>
   awk -v app="$2" '
-    $0 == "<!-- jev-check-app:" app " -->" { inside = 1; next }
-    $0 == "<!-- /jev-check-app:" app " -->" { inside = 0 }
-    inside { print }
+    $0 == "<!-- jev-check-app:" app " -->" { starts++; inside=1; next }
+    $0 == "<!-- /jev-check-app:" app " -->" { ends++; inside=0; next }
+    inside && /^<!-- \/?jev-check-app:/ { invalid=1 }
+    inside { body=body $0 "\n" }
+    END {
+      if (invalid || starts != 1 || ends != 1 || inside) exit 1
+      printf "%s", body
+    }
   ' "$1"
 }
 
 # Every app this comment holds a section for, in the order it holds them.
 apps_in_body() {  # <body-file>
-  sed -n 's|^<!-- jev-check-app:\([A-Za-z0-9_-]\{1,64\}\) -->$|\1|p' "$1"
+  sed -n 's|^<!-- jev-check-app:\([A-Za-z0-9_:-]\{1,128\}\) -->$|\1|p' "$1"
 }
 
-# The verdict word from `**Browser check - <verdict>** (advisory; ...)`. Matched
-# as "the last word before the closing bold", so the separator core renders
-# between them is never load-bearing here.
+# Parse the complete title, including the one known multiword outcome.
 verdict_of() {  # <section-file>
-  sed -n 's|^\*\*Browser check .*[^A-Za-z-]\([A-Za-z-]\{1,32\}\)\*\*.*|\1|p' "$1" | head -1
+  local title
+  title=$(sed -n 's|^\*\*Browser check \(.*\)\*\* (advisory;.*|\1|p' "$1")
+  case "$title" in
+    '- not applicable in production'|'— not applicable in production') printf 'not-applicable' ;;
+    '- '*|'— '*)
+      title=${title#* }
+      verdict_token_ok "$title" && [ "$title" != not-applicable ] && printf '%s' "$title"
+      ;;
+  esac
+}
+
+head_of() {
+  # shellcheck disable=SC2016
+  sed -n 's|^Head `\([0-9a-f]\{7,40\}\)` .*|\1|p' "$1"
+}
+
+section_fingerprint() {
+  cksum < "$1" | awk '{print $1 "-" $2}'
 }
 
 # The phase from the metadata line. A published result renders
@@ -411,7 +487,7 @@ verdict_of() {  # <section-file>
 # `Head `sha` . <phase>`. Both are read by taking the field after the head sha.
 phase_of() {  # <section-file>
   # shellcheck disable=SC2016 # The backticks are core's own comment bytes, not a command.
-  sed -n 's|^Head `[0-9a-f]\{7,40\}` [^ ]* \([a-z-]\{1,16\}\).*|\1|p' "$1" | head -1
+  sed -n 's|^Head `[0-9a-f]\{7,40\}` [^ ]* \([a-z-]\{1,16\}\).*|\1|p' "$1"
 }
 
 # The recorder's own identifier for the run that produced this verdict, which is
@@ -420,20 +496,17 @@ phase_of() {  # <section-file>
 # to the digest's alphabet cannot quietly stop this from parsing.
 record_of() {  # <section-file>
   # shellcheck disable=SC2016 # The backticks are core's own comment bytes, not a command.
-  sed -n 's|^Plan `[0-9A-Za-z]\{1,64\}` .* record `\([0-9A-Za-z]\{1,64\}\)`.*|\1|p' "$1" | head -1
+  sed -n 's|^Plan `[0-9A-Za-z]\{1,64\}` .* record `\([0-9A-Za-z]\{1,64\}\)`.*|\1|p' "$1"
 }
 
-# --- the preview half -------------------------------------------------------
-# The pre-merge verdict for a merged PR, read from the pre-merge run's uploaded
-# records. This is the only place it survives once the production run has
-# replaced that app's comment section, and it is reached only when production
-# came back bad - a clean production verdict never pays for it.
-#
-# Prints "<verdict>\t<run-url>" on success. A non-zero exit means "not
-# established", which the caller turns into `couldnt-check`, never into a
-# preview that happened to be fine.
-PREVIEW_VERDICT=
-PREVIEW_RUN_URL=
+# --- workflow artifacts -----------------------------------------------------
+# The uploaded context, plan and check record must describe the same app,
+# persona, phase and PR head. Matching production artifacts add workflow run
+# identity; matching preview artifacts recover the overwritten preview verdict.
+# The artifact reader sets ARTIFACT_VERDICT, ARTIFACT_RUN_URL and ARTIFACT_RUN_KEY.
+# A non-zero exit means the evidence was not established.
+ARTIFACT_VERDICT=
+ARTIFACT_RUN_URL=
 
 # One entry out of an artifact, bounded by the byte cap and by the clock. It
 # runs as `bash -c` rather than a function because fm_run_timed EXECS what it is
@@ -444,53 +517,154 @@ unzip_capped() {  # <zip> <entry>
     'unzip -p "$1" "$2" 2>/dev/null | head -c "$3"' _ "$1" "$2" "$UNZIP_MAX_BYTES"
 }
 
-preview_verdict() {  # <repo> <head-sha> <app>
-  local repo=$1 head=$2 app=$3 runs run_id artifacts art_id zip verdict ctx_app
-  PREVIEW_VERDICT=
-  PREVIEW_RUN_URL=
+# An artifact name is only a search hint. Context, plan, and record identities
+# must agree before a preview can establish anything.
+artifact_verdict() {  # <repo> <head-sha> <app> <persona> <pr-url> <phase> <lookup-sha> [record-prefix]
+  local repo=$1 head=$2 app=$3 persona=$4 pr_url=$5 phase=$6 lookup=$7 rec=${8:-}
+  local runs rid attempt artifacts aid zip verdict
+  ARTIFACT_VERDICT=
+  ARTIFACT_RUN_URL=
+  ARTIFACT_RUN_KEY=
   budget_left || return 1
-  runs=$(gh_json "repos/$repo/actions/workflows/jev-check.yml/runs?head_sha=$head&per_page=100") || return 1
-  run_id=$(printf '%s' "$runs" | jq -r '
-    if type == "object" and (.workflow_runs | type) == "array" then
-      .workflow_runs[] | select(.conclusion == "success") | .id
-    else empty end' 2>/dev/null) || return 1
-  [ -n "$run_id" ] || return 1
-  while IFS= read -r rid; do
-    [ -n "$rid" ] || continue
+  runs=$(gh_json_cached "repos/$repo/actions/workflows/jev-check.yml/runs?head_sha=$lookup&per_page=100") || return 1
+  runs=$(printf '%s' "$runs" | jq -r --arg head "$lookup" '
+    .workflow_runs[] | select(.conclusion == "success" and .head_sha == $head)
+    | select((.id | type) == "number" and (.run_attempt | type) == "number")
+    | [.id,.run_attempt] | @tsv' 2>/dev/null) || return 1
+  while IFS=$'\t' read -r rid attempt; do
+    comment_id_ok "$rid" || continue
+    comment_id_ok "$attempt" || continue
     budget_left || return 1
-    artifacts=$(gh_json "repos/$repo/actions/runs/$rid/artifacts") || continue
-    art_id=$(printf '%s' "$artifacts" | jq -r '
-      if type == "object" and (.artifacts | type) == "array" then
-        [.artifacts[] | select(.name == "jev-check-records" and .expired == false) | .id] | .[0] // empty
-      else empty end' 2>/dev/null) || continue
-    [ -n "$art_id" ] || continue
-    budget_left || return 1
-    zip="$TMP/preview-$rid.zip"
-    fm_run_timed "$READ_SECS" gh api "repos/$repo/actions/artifacts/$art_id/zip" > "$zip" 2>/dev/null || continue
-    [ -s "$zip" ] || continue
-    # The app lives in context.json and the verdict in records.jsonl; both are
-    # in this one artifact, so the two are read from the same download.
-    # Both reads are bounded twice: by the remaining wall clock, and by a byte
-    # cap, because an artifact's compressed size says nothing about what it
-    # expands to and this runs inside the watcher's own per-check timeout.
-    ctx_app=$(unzip_capped "$zip" context.json | jq -r '
-      if type == "object" and (.app | type) == "string" and (.phase | type) == "string"
-      then (if .phase == "pre-merge" then .app else empty end) else empty end' 2>/dev/null) || continue
-    [ "$ctx_app" = "$app" ] || continue
-    verdict=$(unzip_capped "$zip" records.jsonl | jq -rs '
-      [ .[] | select(type == "object" and .event == "check")
-            | select((.record.verdict | type) == "string") | .record.verdict ]
-      | last // empty' 2>/dev/null) || continue
-    # An artifact is whatever a run uploaded, so its verdict is a verdict only if
-    # it is one of the words the recorder can publish.
-    verdict_token_ok "$verdict" || continue
-    PREVIEW_VERDICT=$verdict
-    PREVIEW_RUN_URL="https://github.com/$repo/actions/runs/$rid"
-    return 0
+    artifacts=$(gh_json_cached "repos/$repo/actions/runs/$rid/artifacts") || continue
+    artifacts=$(printf '%s' "$artifacts" | jq -r '
+      .artifacts[] | select(.expired == false)
+      | select(.name == "jev-check-records" or (.name | test("^jev-check-records-portal(-foreign|-previous|-unverified)?$")))
+      | .id' 2>/dev/null) || continue
+    while IFS= read -r aid; do
+      comment_id_ok "$aid" || continue
+      budget_left || return 1
+      zip="$TMP/artifact-$aid.zip"
+      artifact_download "$repo" "$aid" "$zip" || continue
+      unzip_capped "$zip" context.json > "$TMP/context.json"
+      unzip_capped "$zip" plan/plan.json > "$TMP/plan.json"
+      unzip_capped "$zip" records.jsonl > "$TMP/records.jsonl"
+      verdict=$(jq -nr --slurpfile ctx "$TMP/context.json" --slurpfile plan "$TMP/plan.json" \
+        --slurpfile records "$TMP/records.jsonl" --arg app "$app" --arg persona "$persona" \
+        --arg head "$head" --arg url "$pr_url" --arg phase "$phase" --arg rec "$rec" '
+        def role($a; $r):
+          if $a == "portal" then
+            if $r == null or $r == "anonymous" or $r == "portal" then "default" else $r end
+          else if $r == null or $r == "anonymous" or $r == "staff" then "default" else $r end end;
+        $ctx[0] as $c | $plan[0] as $p
+        | select($c.app == $app and $p.app == $app and $c.phase == $phase)
+        | select($c.pr.headSha == $head and $p.head_sha == $head)
+        | select($p.phase == null or $p.phase == $phase)
+        | select($c.pr.url == $url and $p.pr_url == $url)
+        | select(role($app; $p.test_account_role) == $persona)
+        | select($c.memberPersona == null or role($app; $c.memberPersona) == $persona)
+        | [$records[] | select(.event == "check") | .record
+           | select(.head_sha == $head and .phase == $phase and .pr_url == $url)
+           | select((.input_set_hash | type) == "string" and .input_set_hash == $p.input_hash)
+           | select($rec == "" or ((.record_id // "") | startswith($rec)))
+           | .verdict] | last // empty' 2>/dev/null) || continue
+      verdict_token_ok "$verdict" || continue
+      ARTIFACT_VERDICT=$verdict
+      ARTIFACT_RUN_URL="https://github.com/$repo/actions/runs/$rid/attempts/$attempt"
+      ARTIFACT_RUN_KEY="run-$rid-attempt-$attempt"
+      return 0
+    done <<EOF
+$artifacts
+EOF
   done <<EOF
-$run_id
+$runs
 EOF
   return 1
+}
+
+# No-plan comments lack a record ID. A matching production context can still
+# bind their outcome to an authoritative workflow run and attempt.
+outcome_run() {  # <merge-sha> <app> <persona> <verdict> <reason> <head> <pr-url>
+  local merge=$1 app=$2 persona=$3 verdict=$4 reason=$5 head=$6 url=$7
+  local runs rid attempt artifacts aid zip matched
+  OUTCOME_RUN=
+  budget_left || return 1
+  runs=$(gh_json_cached "repos/$CONFIG_REPO/actions/workflows/jev-check.yml/runs?head_sha=$merge&per_page=100") || return 1
+  runs=$(printf '%s' "$runs" | jq -r --arg sha "$merge" '
+    .workflow_runs[] | select(.head_sha == $sha and .event == "deployment_status")
+    | select((.id|type) == "number" and (.run_attempt|type) == "number")
+    | [.id,.run_attempt] | @tsv' 2>/dev/null) || return 1
+  while IFS=$'\t' read -r rid attempt; do
+    comment_id_ok "$rid" || continue
+    comment_id_ok "$attempt" || continue
+    budget_left || return 1
+    artifacts=$(gh_json_cached "repos/$CONFIG_REPO/actions/runs/$rid/artifacts") || continue
+    artifacts=$(printf '%s' "$artifacts" | jq -r '
+      .artifacts[] | select(.expired == false)
+      | select(.name == "jev-check-records" or (.name | test("^jev-check-records-portal(-foreign|-previous|-unverified)?$")))
+      | .id' 2>/dev/null) || continue
+    while IFS= read -r aid; do
+      comment_id_ok "$aid" || continue
+      budget_left || return 1
+      zip="$TMP/artifact-$aid.zip"
+      artifact_download "$CONFIG_REPO" "$aid" "$zip" || continue
+      matched=$(unzip_capped "$zip" context.json | jq -r --arg app "$app" --arg persona "$persona" \
+        --arg verdict "$verdict" --arg reason "$reason" --arg head "$head" --arg url "$url" '
+        select(.app == $app and .phase == "post-merge")
+        | select(.pr.headSha == $head and .pr.url == $url)
+        | select((.memberPersona // "default" | if . == "portal" then "default" else . end) == $persona)
+        | select($verdict == "identity-only" or
+            (.publishSkip == true and
+              (if .notApplicable == true then "not-applicable" else "skipped" end) == $verdict and
+              (.reason | type) == "string" and (.reason as $r | $reason | contains($r))))
+        | "yes"' 2>/dev/null) || continue
+      [ "$matched" = yes ] || continue
+      OUTCOME_RUN="run-$rid-attempt-$attempt"
+      return 0
+    done <<EOF
+$artifacts
+EOF
+  done <<EOF
+$runs
+EOF
+  return 1
+}
+
+# A commit status is never deployment proof. Only the latest successful status
+# of an exact supported Production environment on this merge SHA starts grace.
+deployment_of() {  # <merge-sha> <app>
+  local sha=$1 app=$2 project deployments rows did statuses stamp state commit_status
+  DEPLOYMENT_OUTCOME=deployment-unreadable
+  DEPLOYMENT_ID=
+  DEPLOYMENT_AT=
+  case "$app" in portal) project=core-metaplanet ;; admin-center) project=core-admin-center ;; *) return 0 ;; esac
+  deployments=$(gh_json_cached "repos/$CONFIG_REPO/deployments?sha=$sha&per_page=100") || return 0
+  rows=$(printf '%s' "$deployments" | jq -r --arg sha "$sha" --arg env "Production – $project" '
+    if type != "array" or length >= 100 then error("incomplete inventory") else
+      [.[] | select(.sha == $sha and .environment == $env)] | sort_by(.created_at) | reverse
+      | .[] | .id end' 2>/dev/null)
+  printf '%s' "$deployments" | jq -e 'type == "array" and length < 100' >/dev/null 2>&1 || return 0
+  DEPLOYMENT_OUTCOME=not-deployed
+  while IFS= read -r did; do
+    comment_id_ok "$did" || continue
+    budget_left || { DEPLOYMENT_OUTCOME=deployment-unreadable; return 0; }
+    statuses=$(gh_json "repos/$CONFIG_REPO/deployments/$did/statuses?per_page=100") || { DEPLOYMENT_OUTCOME=deployment-unreadable; return 0; }
+    state=$(printf '%s' "$statuses" | jq -er 'if type == "array" and length > 0 then sort_by(.created_at,.id) | last | .state else error("no status") end' 2>/dev/null) || { DEPLOYMENT_OUTCOME=deployment-unreadable; return 0; }
+    [ "$state" = success ] || continue
+    stamp=$(printf '%s' "$statuses" | jq -er 'sort_by(.created_at,.id) | last | .created_at | fromdateiso8601' 2>/dev/null) || { DEPLOYMENT_OUTCOME=deployment-unreadable; return 0; }
+    token_ok "$stamp" '^[0-9]{1,12}$' || { DEPLOYMENT_OUTCOME=deployment-unreadable; return 0; }
+    DEPLOYMENT_OUTCOME=deployed
+    DEPLOYMENT_ID=$did
+    DEPLOYMENT_AT=$stamp
+    return 0
+  done <<EOF
+$rows
+EOF
+  commit_status=$(gh_json_cached "repos/$CONFIG_REPO/commits/$sha/status") || return 0
+  if printf '%s' "$commit_status" | jq -e --arg ctx "Vercel – $project" '
+    [.statuses[] | select(.context == $ctx)] | sort_by(.created_at) | last
+    | .description == "Canceled by Ignored Build Step" or .description == "Skipped - Not affected"' >/dev/null 2>&1; then
+    DEPLOYMENT_OUTCOME=build-skipped
+  fi
 }
 
 # --- classification ---------------------------------------------------------
@@ -519,10 +693,19 @@ action_check() {
   local regressions='' regression_count=0
   local examined=0
 
-  config_read || return 0
+  if ! config_read; then
+    [ "$RESEED" -eq 0 ] && return 0
+    printf 'fm-jev-prod-check: reseed requires valid configuration\n' >&2
+    return 1
+  fi
 
-  TMP=$(mktemp -d "${TMPDIR:-/tmp}/fm-jev-prod.XXXXXX") || return 0
-  record_read
+  mkdir -p "$STATE" || return 1
+  TMP=$(mktemp -d "$STATE/.fm-jev-prod.XXXXXX") || return 0
+  if [ "$RESEED" -eq 1 ] && [ -e "$RECORD" ]; then
+    RESEED_BACKUP=$(umask 077; mktemp "$RECORD.backup.XXXXXX") || return 1
+    cp "$RECORD" "$RESEED_BACKUP" || return 1
+  fi
+  if [ "$RESEED" -eq 0 ]; then record_read; else RECORD_WOKEN=; RECORD_PENDING=; RECORD_CURSOR=; RECORD_OUTCOMES=; fi
   woken=$RECORD_WOKEN
   pending=$RECORD_PENDING
   cursor=$RECORD_CURSOR
@@ -544,6 +727,7 @@ action_check() {
   fi
 
   if [ -n "$standing" ]; then
+    [ "$RESEED" -eq 0 ] || { printf 'fm-jev-prod-check: reseed refused: %s\n' "$standing" >&2; return 1; }
     reported="jev-prod: couldnt-check $standing"
     if [ "$reported" != "$RECORD_REPORTED" ]; then
       fm_cap_line_var "$reported" "$MAX_LINE"
@@ -553,6 +737,9 @@ action_check() {
     return 0
   fi
 
+  if [ "$RESEED" -eq 1 ]; then
+    printf '%s' "$prs" | jq -e 'type == "array"' >/dev/null 2>&1 || return 1
+  fi
   pr_rows=$(printf '%s' "$prs" | jq -r --argjson now "$NOW" --argjson window "$((CONFIG_LOOKBACK * 3600))" '
     if type == "array" then
       .[] | select((.merged_at | type) == "string")
@@ -562,7 +749,7 @@ action_check() {
           | [ (.number | tostring), .html_url, (.head.sha // ""), (.merge_commit_sha // ""),
               ((.merged_at | fromdateiso8601) | tostring), (.title // "") ]
           | @tsv
-    else empty end' 2>/dev/null) || pr_rows=
+    else empty end' 2>/dev/null) || { [ "$RESEED" -eq 0 ] || return 1; pr_rows=; }
 
   # Rotate the candidate set from just after the last pull request examined, so
   # a window the budget cut short is finished first on the next poll.
@@ -577,6 +764,7 @@ action_check() {
       offset=$(( ${offset:-0} % total ))
     fi
     window=$MAX_PRS
+    [ "$RESEED" -eq 0 ] || window=$total
     [ "$window" -le "$total" ] || window=$total
     candidates=$(printf '%s\n' "$pr_rows" "$pr_rows" | grep . | tail -n +"$((offset + 1))" | head -n "$window")
   fi
@@ -584,7 +772,7 @@ action_check() {
   local number url head_sha merge_sha merged_at title
   while IFS=$'\t' read -r number url head_sha merge_sha merged_at title; do
     [ -n "$number" ] || continue
-    [ "$examined" -lt "$MAX_PRS" ] || break
+    [ "$RESEED" -eq 1 ] || [ "$examined" -lt "$MAX_PRS" ] || break
     budget_left || break
     examined=$((examined + 1))
     examine_pr "$number" "$url" "$head_sha" "$merge_sha" "$merged_at" "$title" || break
@@ -592,6 +780,16 @@ action_check() {
   done <<EOF
 $candidates
 EOF
+
+  if [ "$RESEED" -eq 1 ]; then
+    [ "$examined" -eq "$total" ] && budget_left && [ "$RESEED_FAILED" -eq 0 ] || {
+      printf 'fm-jev-prod-check: reseed incomplete; original state retained\n' >&2
+      return 1
+    }
+    record_write '' "$woken" '' '' || return 1
+    printf 'reseeded: %s backup=%s\n' "$RECORD" "${RESEED_BACKUP:-none}"
+    return 0
+  fi
 
   # A regression goes out on the poll that found it; a ready batch waits for the
   # next one, so neither wake ever arrives as two mixed lines.
@@ -630,9 +828,11 @@ budget_cut_deferrable() {
 examine_pr() {  # <number> <url> <head-sha> <merge-sha> <merged-at> <title>
   local number=$1 url=$2 head_sha=$3 merge_sha=$4 merged_at=$5 title=$6
   local comments body_file comment_id ticket apps app verdict phase rec
-  local checks_url key class preview preview_run
+  local comment_revision record_id fallback alias_promoted
+  local checks_url key class preview preview_run persona section section_head fingerprint reason identity
 
   comments=$(gh_json "repos/$CONFIG_REPO/issues/$number/comments?per_page=100") || {
+    [ "$RESEED" -eq 0 ] || { RESEED_FAILED=1; return 1; }
     budget_cut_deferrable && return 1
     budget_left && return 0
     pr_url_ok "$url" "$number" || return 0
@@ -642,6 +842,9 @@ examine_pr() {  # <number> <url> <head-sha> <merge-sha> <merged-at> <title>
       "$url" "https://github.com/$CONFIG_REPO/commit/$merge_sha/checks" ''
     return 0
   }
+  if [ "$RESEED" -eq 1 ]; then
+    printf '%s' "$comments" | jq -e 'type == "array" and length < 100' >/dev/null 2>&1 || { RESEED_FAILED=1; return 1; }
+  fi
   body_file="$TMP/body-$number"
   # ONLY the recorder's own comment is a verdict. Anybody who can comment on the
   # pull request can write the marker, and the earliest marker comment is the one
@@ -682,58 +885,124 @@ examine_pr() {  # <number> <url> <head-sha> <merge-sha> <merged-at> <title>
     2>/dev/null > "$body_file"
   [ -s "$body_file" ] || return 0
 
+  comment_revision=$(printf '%s' "$comments" | jq -r --arg id "$comment_id" '
+    .[] | select((.id|tostring) == $id) | .updated_at // "unknown"' 2>/dev/null)
+  token_ok "$comment_revision" '^[0-9TZ:-]{1,32}$' || comment_revision=unknown
   ticket=$(ticket_from_title "$title")
   checks_url="https://github.com/$CONFIG_REPO/commit/$merge_sha/checks"
   apps=$(apps_in_body "$body_file")
   [ -n "$apps" ] || return 0
 
-  while IFS= read -r app; do
-    [ -n "$app" ] || continue
-    section_of "$body_file" "$app" > "$TMP/section"
-    app_token_ok "$app" || continue
+  while IFS= read -r section; do
+    [ -n "$section" ] || continue
+    section_identity "$section" || continue
+    app=$SECTION_APP
+    persona=$SECTION_PERSONA
+    section_of "$body_file" "$section" > "$TMP/section"
     verdict=$(verdict_of "$TMP/section")
     phase=$(phase_of "$TMP/section")
+    section_head=$(head_of "$TMP/section")
+    fingerprint=$(section_fingerprint "$TMP/section")
+    rec=$(record_of "$TMP/section")
+    record_token_ok "$rec" || rec=
+    record_id=$rec
+    if [ "$verdict" = proven ] && [ -z "$rec" ]; then verdict=; fi
     verdict_token_ok "$verdict" || verdict=
     phase_token_ok "$phase" || phase=
-    if [ -z "$verdict" ] || [ -z "$phase" ]; then
-      # A section that does not parse is never read as a pass.
-      key="$number/$app/unparsed"
+    token_ok "$section_head" '^[0-9a-f]{7,40}$' || section_head=
+    if [ -z "$verdict" ] || [ -z "$phase" ] || [ -z "$section_head" ] || { [ "$phase" = post-merge ] && [ "$section_head" != "$head_sha" ]; }; then
+      [ "$RESEED" -eq 0 ] || continue
+      identity="unparsed-$fingerprint"
+      if [ "$phase" = post-merge ] && [ "$section_head" = "$head_sha" ] && \
+        outcome_run "$merge_sha" "$app" "$persona" identity-only '' "$head_sha" "$url"; then
+        identity="$identity-$OUTCOME_RUN"
+      elif budget_cut_deferrable; then
+        return 1
+      else
+        identity="$identity-$comment_revision"
+      fi
+      key="$number/$section/$identity"
       list_has "$woken" "$key" && continue
-      queue_item couldnt-check "$key" "$url" "$ticket" "$app" "$(scrub_field "${verdict:-unreadable}")" '' \
+      queue_item couldnt-check "$key" "$url" "$ticket" "$section" unreadable '' \
         "$url#issuecomment-$comment_id" "$checks_url" ''
       continue
     fi
     if [ "$phase" != post-merge ]; then
-      # The production half has not reported for this app yet. Past the grace it
-      # is late, and that silence is exactly what nobody was watching for.
-      if [ $((NOW - merged_at)) -gt "$GRACE_SECS" ]; then
-        key="$number/$app/no-production-verdict"
-        list_has "$woken" "$key" && continue
-        queue_item couldnt-check "$key" "$url" "$ticket" "$app" none "$verdict" \
-          "$url#issuecomment-$comment_id" "$checks_url" ''
+      [ "$RESEED" -eq 0 ] || continue
+      deployment_of "$merge_sha" "$app"
+      budget_cut_deferrable && return 1
+      if [ "$DEPLOYMENT_OUTCOME" = deployed ]; then
+        [ $((NOW - DEPLOYMENT_AT)) -gt "$GRACE_SECS" ] || continue
+        identity="deployment-$DEPLOYMENT_ID"
+        if outcome_run "$merge_sha" "$app" "$persona" identity-only '' "$head_sha" "$url"; then
+          identity="$identity-$OUTCOME_RUN"
+        elif budget_cut_deferrable; then
+          return 1
+        fi
+        verdict=none
+      else
+        verdict=$DEPLOYMENT_OUTCOME
+        identity=$DEPLOYMENT_OUTCOME
       fi
+      key="$number/$section/no-production-verdict-$identity"
+      list_has "$woken" "$key" && continue
+      queue_item couldnt-check "$key" "$url" "$ticket" "$section" "$verdict" "$(verdict_of "$TMP/section")" \
+        "$url#issuecomment-$comment_id" "$checks_url" ''
       continue
     fi
-    rec=$(record_of "$TMP/section")
-    record_token_ok "$rec" || rec=
-    [ -n "$rec" ] || rec="$phase-${verdict}-$(printf '%s' "$head_sha" | cut -c1-12)"
-    key="$number/$app/$rec"
-    if list_has "$woken" "$key"; then
-      continue
+    reason=$(sed -n 's/^Not applicable in production: //p; s/^Skipped: //p' "$TMP/section" | head -1)
+    if [ "$RESEED" -eq 1 ]; then
+      [ -n "$rec" ] || rec="$phase-$verdict-$fingerprint"
+    elif [ -n "$rec" ]; then
+      if artifact_verdict "$CONFIG_REPO" "$head_sha" "$app" "$persona" "$url" post-merge "$merge_sha" "$rec"; then
+        rec="$ARTIFACT_RUN_KEY-$verdict-$rec"
+      elif budget_cut_deferrable; then
+        return 1
+      fi
+    else
+      rec="$phase-$verdict-$fingerprint"
+      if outcome_run "$merge_sha" "$app" "$persona" "$verdict" "$reason" "$head_sha" "$url"; then
+        rec="$OUTCOME_RUN-$verdict-$fingerprint"
+      elif budget_cut_deferrable; then
+        return 1
+      fi
     fi
-    if verdict_is_clean "$verdict"; then
-      # Clean production is the outcome everybody wanted. It is recorded so it is
-      # never re-examined, and it wakes nobody: a check that reports routine
-      # success is a check firstmate learns to skim.
+    key="$number/$section/$rec"
+    # A read failure must not redeliver a known record under its fallback key.
+    # Conversely, enriching a fallback with a run ID does not create a new result.
+    if [[ "$rec" == run-* ]]; then
+      alias_promoted=0
+      for fallback in "$number/$section/$record_id" "$number/$section/$phase-$verdict-$fingerprint"; do
+        if list_has "$woken" "$fallback"; then
+          promote_alias "$fallback" "$key"
+          alias_promoted=1
+          break
+        fi
+      done
+      [ "$alias_promoted" -eq 0 ] || continue
+    else
+      if printf '%s' "$woken" | awk -v prefix="$number/$section/run-" -v suffix="-$rec" '
+        index($0,prefix) == 1 && substr($0,length($0)-length(suffix)+1) == suffix {found=1}
+        END {exit !found}'; then continue; fi
+      if [ -z "$record_id" ] && printf '%s' "$woken" | awk -v prefix="$number/$section/run-" -v suffix="-$verdict-$fingerprint" '
+        index($0,prefix) == 1 && substr($0,length($0)-length(suffix)+1) == suffix {found=1}
+        END {exit !found}'; then continue; fi
+    fi
+    list_has "$woken" "$key" && continue
+    if [ "$verdict" = not-applicable ] || verdict_is_clean "$verdict" || [ "$RESEED" -eq 1 ]; then
       woken="${woken}${key}
 "
+      if [ "$verdict" = not-applicable ]; then
+        RECORD_OUTCOMES="${RECORD_OUTCOMES}${key}	${verdict}	$(scrub_field "$reason")
+"
+      fi
       continue
     fi
     preview=
     preview_run=
-    if preview_verdict "$CONFIG_REPO" "$head_sha" "$app"; then
-      preview=$PREVIEW_VERDICT
-      preview_run=$PREVIEW_RUN_URL
+    if artifact_verdict "$CONFIG_REPO" "$head_sha" "$app" "$persona" "$url" pre-merge "$head_sha"; then
+      preview=$ARTIFACT_VERDICT
+      preview_run=$ARTIFACT_RUN_URL
     elif budget_cut_deferrable; then
       return 1
     fi
@@ -746,7 +1015,7 @@ examine_pr() {  # <number> <url> <head-sha> <merge-sha> <merged-at> <title>
     else
       class=couldnt-check
     fi
-    queue_item "$class" "$key" "$url" "$ticket" "$app" "$verdict" "$preview" \
+    queue_item "$class" "$key" "$url" "$ticket" "$section" "$verdict" "$preview" \
       "$url#issuecomment-$comment_id" "$checks_url" "$preview_run"
   done <<EOF
 $apps
@@ -829,6 +1098,7 @@ action_disarm() {
 
 case "${1:-check}" in
   check) action_check ;;
+  reseed) RESEED=1; RESEED_FAILED=0; RESEED_BACKUP=; action_check ;;
   arm) action_arm ;;
   disarm) action_disarm ;;
   -h|--help) usage ;;

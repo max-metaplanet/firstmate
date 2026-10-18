@@ -1844,7 +1844,7 @@ This file is not inherited by secondmate homes, so each home follows the project
 
 Three environment variables tune the poll and exist mainly so the behaviour is testable; the defaults are the supported settings.
 `FM_JEV_PROD_BATCH_SECS` (default 21600) is how long a batched class waits before it goes out.
-`FM_JEV_PROD_GRACE_SECS` (default 3600) is how long after a merge a production verdict may still be missing before its absence is itself reported.
+`FM_JEV_PROD_GRACE_SECS` (default 3600) is how long after a successful supported production deployment a production verdict may still be missing before its absence is itself reported.
 `FM_JEV_PROD_BUDGET` (default 20, capped to `FM_CHECK_TIMEOUT` less three seconds) bounds one poll's forge reads, and `FM_JEV_PROD_MAX_PRS` (default 8) bounds how many merged pull requests one poll examines.
 
 ## Mail plane (.env)

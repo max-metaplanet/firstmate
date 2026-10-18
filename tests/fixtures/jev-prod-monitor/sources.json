@@ -1,0 +1,38 @@
+{
+  "repository": "metaplanet-jp/core",
+  "method": "Read-only gh-axi api GET and gh-axi run download.",
+  "pull_requests": [
+    2244,
+    2245,
+    2246,
+    2247,
+    2216,
+    2230
+  ],
+  "workflow_runs": [
+    39078284927,
+    39078318415,
+    39071028057,
+    39070996912,
+    39065201369,
+    39077760909
+  ],
+  "endpoints": [
+    "repos/metaplanet-jp/core/pulls/{pr}",
+    "repos/metaplanet-jp/core/issues/{pr}/comments?per_page=100",
+    "repos/metaplanet-jp/core/deployments?sha={merge_sha}&per_page=100",
+    "repos/metaplanet-jp/core/deployments/{id}/statuses?per_page=100",
+    "repos/metaplanet-jp/core/commits/{merge_sha}/status",
+    "repos/metaplanet-jp/core/actions/runs/{id}",
+    "repos/metaplanet-jp/core/actions/runs/{id}/artifacts"
+  ],
+  "artifacts": {
+    "foreign": "39077760909/jev-check-records-portal-foreign",
+    "default": "39077760909/jev-check-records-portal",
+    "not-applicable": "39078284927/jev-check-records-portal",
+    "legacy": "39065201369/jev-check-records"
+  },
+  "sanitization": "Only recorder comments, PR identity, deployment/status identity, workflow identity, context identity and reason, plan identity, and check record identity are retained. No environment files, credentials, screenshots, account profiles, bearer values, or arbitrary artifact files are fixture inputs.",
+  "controlled_variants": "The test suite constructs malformed titles, workflow rerun attempts, delayed success timestamps, and context/plan/record identity mismatches from the captured shapes. Original captured files remain unchanged.",
+  "captured_date": "2026-10-18"
+}
