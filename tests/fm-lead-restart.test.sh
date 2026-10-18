@@ -348,7 +348,7 @@ SH
   assert_grep 'session=lead-session-1' "$HOME_DIR/state/.lock-handover" "refresh must reserve the same session"
   assert_grep "from_profile=$SEATS_DIR/alpha" "$HOME_DIR/state/.lead-restart" "refresh must leave the current seat"
   assert_grep "to_profile=$SEATS_DIR/alpha" "$HOME_DIR/state/.lead-restart" "refresh must target the same seat"
-  assert_grep "CLAUDE_CONFIG_DIR=$SEATS_DIR/alpha env -u CLAUDE_CODE_CHILD_SESSION CLAUDE_CODE_FORCE_SESSION_PERSISTENCE=1" \
+  assert_grep "CLAUDE_CONFIG_DIR=$SEATS_DIR/alpha env -u CLAUDE_SECURESTORAGE_CONFIG_DIR -u CLAUDE_CODE_CHILD_SESSION CLAUDE_CODE_FORCE_SESSION_PERSISTENCE=1" \
     "$HOME_DIR/state/.lead-restart.launch" "refresh must stage the same seat with the persistence prefix"
   assert_grep '--resume lead-session-1' "$HOME_DIR/state/.lead-restart.launch" "refresh must resume the same session"
   cmp -s "$CASE_DIR/runtime.before" "$HOME_DIR/state/.lock-runtime" || fail "refresh changed the lead's seat record"
@@ -528,7 +528,7 @@ test_an_unreadable_or_foreign_record_is_undeterminable_rather_than_a_guess() {
 }
 
 test_an_argv_that_already_names_remote_control_keeps_its_own_spelling() {
-  local rec out
+  local rec out cmd count
   command -v jq >/dev/null 2>&1 ||
     { echo "ok - # skip: jq not found, reading the session record needs one"; return 0; }
   rec=$(make_case rc-already); read_case "$rec"
@@ -541,7 +541,10 @@ test_an_argv_that_already_names_remote_control_keeps_its_own_spelling() {
     *--remote-control=lead-box*) ;;
     *) fail "the named remote session was dropped: $out" ;;
   esac
-  [ "$(printf '%s\n' "$out" | grep -o -- '--remote-control' | wc -l | tr -d ' ')" -eq 1 ] ||
+  cmd=$(sed -n 's/^replacement command: //p' <<< "$out")
+  # The environment retains reusable argv too; count only actual flag tokens.
+  count=$(printf '%s\n' "$cmd" | python3 -c 'import shlex,sys; print(sum(arg == "--remote-control" or arg.startswith("--remote-control=") for arg in shlex.split(sys.stdin.read())))')
+  [ "$count" -eq 1 ] ||
     fail "a second Remote Control flag was added beside the one already there: $out"
   write_session_record "$SEATS_DIR/alpha" "$LEAD_PID" lead-session-1
   out=$(run_home "$LEAD_RESTART" --check --to beta \
