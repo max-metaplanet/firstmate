@@ -62,6 +62,7 @@ Read the two authoritative sources yourself before believing the claim:
 A refused connection or missing socket from `daemon status` is positive daemon-down evidence and must be escalated even if the persisted run record still says running or fixing; that record can be stale after the daemon exits.
 Otherwise, if the run is still running or fixing with recent activity, the claim is wrong: steer the crewmate to reattach with `no-mistakes axi run` from its own worktree, which is safe and idempotent while the run still matches its `HEAD`, and tell it a timeout is not daemon death.
 Nothing reaches the captain in that case.
+For a terminal run whose restart refuses after a crash or quota cutoff, use [`bin/fm-nm-recover.sh`](../../../bin/fm-nm-recover.sh) with the exact task worktree, branch, `--home`, and `--task`, and follow its action.
 
 Never restart, stop, or update the shared daemon on a crewmate's claim.
 It is one instance serving every lane and home, so a restart kills other lanes' in-flight runs.
