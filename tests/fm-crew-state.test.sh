@@ -6008,6 +6008,47 @@ test_vendor_quota_wall_never_outranks_live_work_or_a_quiet_pane() {
 }
 
 
+test_run_activity_is_reported_only_from_recent_active_steps() {
+  reset_fakes
+  local d out shape
+  d=$(new_case run-activity)
+  make_repo_on_branch "$d/wt" fm/activity
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/activity.meta" "window=fm:fm-activity" "worktree=$d/wt" "kind=ship"
+  printf 'working: validating\n' > "$d/state/activity.status"
+  FM_FAKE_AXI_STATUS="$(run_fixing_active_recent fm/activity)"
+  out=$(run_crew_state "$d" activity)
+  assert_contains "$out" ' · run activity: recent' 'a live fix round exposes the pipeline recency verdict'
+  assert_contains "$out" ' · run: 01RUN' 'the activity belongs to the attributed run'
+  FM_FAKE_AXI_STATUS="$(run_fixing fm/activity)
+  active_steps[1]{step,status,active_for,round_active_for,last_activity,agent_pid,round}:
+    review,fixing,12m3s,2m,\"8s ago: log: quiet parser test, passed\",44121,auto-fix"
+  out=$(run_crew_state "$d" activity)
+  assert_contains "$out" ' · run activity: recent' 'current quoted log detail cannot hide recent activity'
+  for shape in quiet absent malformed free-text truncated terminal unknown; do
+    case "$shape" in
+      quiet) FM_FAKE_AXI_STATUS="$(run_fixing_active_quiet fm/activity)" ;;
+      absent) FM_FAKE_AXI_STATUS="$(run_fixing fm/activity)" ;;
+      malformed) FM_FAKE_AXI_STATUS="$(run_fixing_active_recent fm/activity | sed 's/8s/unknown/')" ;;
+      free-text) FM_FAKE_AXI_STATUS="$(run_fixing fm/activity)
+  active_steps[1]{step,description,last_activity}:
+    review,8s,unknown" ;;
+      truncated) FM_FAKE_AXI_STATUS="$(run_fixing_active_recent fm/activity | sed 's/active_steps\[1\]/active_steps[2]/')" ;;
+      terminal) FM_FAKE_AXI_STATUS="$(run_fixing_active_recent fm/activity | sed 's/status: fixing/status: completed/')" ;;
+      unknown) FM_FAKE_AXI_STATUS="$(run_fixing_active_recent fm/activity | sed 's/status: fixing/status: unfamiliar/')" ;;
+    esac
+    out=$(run_crew_state "$d" activity)
+    assert_not_contains "$out" ' · run activity: recent' "$shape is not recent activity proof"
+  done
+  pass 'only an attributed run with a recognized recent active step publishes activity evidence'
+}
+
+if [ -n "${FM_TEST_ONLY:-}" ]; then
+  "$FM_TEST_ONLY"
+  exit 0
+fi
+
+test_run_activity_is_reported_only_from_recent_active_steps
 test_captured_axi_status_shapes
 test_captured_inventory_replay
 test_captured_authority_transition

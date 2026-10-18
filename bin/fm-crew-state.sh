@@ -791,22 +791,6 @@ log_claims_pipeline_unreachable() {  # <line>
   return 1
 }
 
-# Rows of the `active_steps[N]{...}:` table in the captured run output
-# ($RUN_OUT), which the pipeline emits only while a step is actually running or
-# fixing. Column order is deliberately not assumed: the header's own indentation
-# bounds the block, and callers below read the table as text.
-nm_active_steps_rows() {
-  printf '%s\n' "$RUN_OUT" | awk '
-    /^[[:space:]]*active_steps\[[0-9]+\]\{/ { hdr = index($0, "active_steps"); inblock = 1; next }
-    inblock {
-      if ($0 ~ /^[[:space:]]*$/) { inblock = 0; next }
-      match($0, /[^ \t]/)
-      if (RSTART <= hdr) { inblock = 0; next }
-      print
-    }
-  '
-}
-
 # Rows of the `steps[N]{step,status,findings,duration_ms}:` table in the
 # captured run output ($RUN_OUT) - the full per-step ledger, present on
 # terminal runs too, unlike active_steps[] which the pipeline emits only while
@@ -830,13 +814,36 @@ nm_steps_rows() {
 # step log or native-agent lifecycle event has arrived for longer than its
 # configured quiet warning, so its own recency verdict is the signal here rather
 # than a second threshold invented in firstmate. Positive evidence is required:
-# an absent table is not recency, so a run record that merely still says
-# `running` while nothing executes it never reads as alive.
+# an absent/malformed activity field is not recency. Read last_activity by its
+# header position, accepting only known comma-free columns before it, so free
+# text elsewhere cannot mint this proof. The optional quoted log detail after
+# its duration is not part of the verdict.
 nm_run_activity_is_recent() {
-  local rows
-  rows=$(nm_active_steps_rows)
-  [ -n "$rows" ] || return 1
-  ! printf '%s\n' "$rows" | grep -q 'quiet'
+  printf '%s\n' "$RUN_OUT" | awk '
+    /^[[:space:]]*active_steps\[[0-9]+\]\{/ {
+      if (++tables > 1) exit 1
+      hdr = index($0, "active_steps")
+      expected = $0; sub(/^.*active_steps\[/, "", expected); sub(/\].*/, "", expected)
+      cols = $0; sub(/^[^{]*\{/, "", cols); sub(/\}.*/, "", cols)
+      n = split(cols, names, ","); idx = 0
+      for (i = 1; i <= n; i++) {
+        if (names[i] == "last_activity") { idx = i; break }
+        if (names[i] !~ /^(step|status|active_for|round_active_for)$/) exit 1
+      }
+      if (!idx) exit 1
+      inblock = 1; next
+    }
+    inblock {
+      match($0, /[^ \t]/)
+      if (!RSTART || RSTART <= hdr) { inblock = 0; next }
+      split($0, fields, ",")
+      activity = fields[idx]
+      sub(/^[ \t]*"?/, "", activity); sub(/"?[ \t]*$/, "", activity)
+      if (activity !~ /^[0-9]+[dhms]([0-9]+[dhms])*($| ago(:|$))/) exit 1
+      seen++
+    }
+    END { if (!seen || seen != expected) exit 1 }
+  '
 }
 
 # 0 when a terminal failed or cancelled run ended at the ci monitor and the
@@ -1359,6 +1366,14 @@ if [ "$HAVE_RUN" = 1 ]; then
       ;;
   esac
 
+  # Export the pipeline's own recency verdict for the stale timer to recheck.
+  # A coarse status word, parked gate or terminal run is never activity proof.
+  if [ "$RUN_STATE" = working ] && [ "$RUN_SOURCE" = full ] \
+    && fm_nm_run_is_executing "$RUN_OUT" \
+    && nm_run_activity_is_recent; then
+    RUN_DETAIL="$RUN_DETAIL${SEP}$FM_RUN_ACTIVITY_RECENT"
+    [ -n "$SELECTED_RUN_ID" ] || SELECTED_RUN_ID=$(strip_quotes "$(nm_field id)")
+  fi
   [ -z "$SELECTED_RUN_ID" ] || RUN_DETAIL="$RUN_DETAIL${SEP}run: $SELECTED_RUN_ID"
   emit "$RUN_STATE" run-step "$RUN_DETAIL"
 fi
