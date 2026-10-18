@@ -2,6 +2,35 @@
 # Behavior tests for the read-only fleet snapshot and its human renderer.
 set -u
 
+# One selection drives both execution and the stock-Bash check's expected count.
+TEST_CASES=(
+  test_captured_metadata_fields_and_fork_budget
+  test_empty_fleet_json
+  test_fixture_snapshot_json
+  test_remote_secondmate_home_present_is_null
+  test_home_summary_excludes_secondmate_from_child_inventory
+  test_home_summary_treats_unreadable_child_as_unavailable
+  test_undated_captain_hold_phrasing_and_aging
+  test_hold_buckets_are_total_and_text_blind
+  test_main_inventory_orphan_and_unstructured_disclosure
+  test_normalized_roles_and_plural_blocker_readiness
+  test_event_hints_follow_reconciled_current_state
+  test_open_decision_survives_later_unrelated_event
+  test_secondmate_open_decision_survives_live_endpoint
+  test_open_decision_transfers_to_captain_hold
+  test_open_decision_clears_on_keyed_resolution
+  test_completed_scout_decision_clears_only_when_closed
+  test_parked_scout_decision_stays_pending
+  test_scout_reports_include_teardown_reports
+  test_backlog_tasks_axi_forms_and_overrides
+  test_view_renders_snapshot
+  test_view_renders_dead_secondmate_agent_status
+)
+if [ "${1:-}" = --list-tests ]; then
+  printf '%s\n' "${TEST_CASES[@]}"
+  exit 0
+fi
+
 # shellcheck source=tests/lib.sh
 # shellcheck disable=SC1091
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
@@ -1320,24 +1349,6 @@ SH
   pass 'captured metadata preserves all row fields without per-field Bash forks'
 }
 
-test_captured_metadata_fields_and_fork_budget
-test_empty_fleet_json
-test_fixture_snapshot_json
-test_remote_secondmate_home_present_is_null
-test_home_summary_excludes_secondmate_from_child_inventory
-test_home_summary_treats_unreadable_child_as_unavailable
-test_undated_captain_hold_phrasing_and_aging
-test_hold_buckets_are_total_and_text_blind
-test_main_inventory_orphan_and_unstructured_disclosure
-test_normalized_roles_and_plural_blocker_readiness
-test_event_hints_follow_reconciled_current_state
-test_open_decision_survives_later_unrelated_event
-test_secondmate_open_decision_survives_live_endpoint
-test_open_decision_transfers_to_captain_hold
-test_open_decision_clears_on_keyed_resolution
-test_completed_scout_decision_clears_only_when_closed
-test_parked_scout_decision_stays_pending
-test_scout_reports_include_teardown_reports
-test_backlog_tasks_axi_forms_and_overrides
-test_view_renders_snapshot
-test_view_renders_dead_secondmate_agent_status
+for test_case in "${TEST_CASES[@]}"; do
+  "$test_case"
+done

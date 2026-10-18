@@ -718,6 +718,101 @@ test_macos_check_refuses_a_non_stock_interpreter() {
   pass "the stock-Bash check refuses a non-stock interpreter and an unknown argument"
 }
 
+# Exercise the executable check with tiny suites so missing output cannot be
+# confused with an independently selected expectation. This needs real 3.2.
+test_macos_check_derives_counts_and_rejects_missing_passes() {
+  case "$(/bin/bash -c 'printf "%s" "$BASH_VERSION"')" in
+    3.2.57*) ;;
+    *) printf 'skip: stock-Bash count guard needs /bin/bash 3.2.57\n'; return 0 ;;
+  esac
+  local fixture suite out rc
+  fixture=$(fm_test_tmproot fm-macos-counts)
+  mkdir -p "$fixture/bin" "$fixture/tests" "$fixture/scratch"
+  cp "$MACOS_CHECK" "$fixture/bin/"
+  printf '#!/bin/sh\nexit 0\n' > "$fixture/bin/fm-lint.sh"
+  printf '#!/bin/sh\nexit 0\n' > "$fixture/bin/tasks-axi"
+  cat > "$fixture/bin/npm" <<'SH'
+#!/bin/sh
+case "$1" in prefix) printf '%s\n' "${0%/bin/npm}" ;; esac
+SH
+  chmod +x "$fixture/bin/"*
+  for suite in fm-fleet-snapshot-view fm-bearings-snapshot fm-fork-free-helpers; do
+    cat > "$fixture/tests/$suite.test.sh" <<'SH'
+set -eu
+cases=(test_one test_two test_added_later)
+if [ "${1:-}" = --list-tests ]; then
+  [ "${FM_COUNT_EMPTY:-0}" = 0 ] || exit 0
+  printf '%s\n' "${cases[@]}"
+  case "$0" in
+    *fm-fork-free-helpers*) printf '%s\n' test_crew_state_and_snapshot_stay_within_their_fork_budget ;;
+  esac
+  exit 0
+fi
+for test_case in "${cases[@]}"; do
+  [ "$test_case" != "${FM_COUNT_OMIT:-}" ] || continue
+  [ "${FM_COUNT_ZERO:-0}" = 0 ] || continue
+  printf 'ok - %s\n' "$test_case"
+done
+if [ "${FM_COUNT_EXIT:-0}" -ne 0 ]; then
+  printf 'not ok - real regression diagnostics\n'
+fi
+exit "${FM_COUNT_EXIT:-0}"
+SH
+  done
+  for suite in fm-public-followup fm-watch-triage fm-backend; do
+    cat > "$fixture/tests/$suite.test.sh" <<'SH'
+printf 'ok - selected regression\n'
+case "$0" in *fm-backend*) printf 'ok - second adapter assertion\n' ;; esac
+SH
+  done
+  out=$(PATH="$fixture/bin:$PATH" RUNNER_TEMP="$fixture/scratch" \
+    /bin/bash "$fixture/bin/fm-macos-stock-bash-check.sh" 2>&1) \
+    || fail "derived counts must accept added cases and the known sampler skip: $out"
+
+  rc=0
+  out=$(PATH="$fixture/bin:$PATH" RUNNER_TEMP="$fixture/scratch" FM_COUNT_OMIT=test_two \
+    /bin/bash "$fixture/bin/fm-macos-stock-bash-check.sh" 2>&1) || rc=$?
+  [ "$rc" -ne 0 ] || fail "a silently skipped selected test passed"
+  assert_contains "$out" 'expected 3 snapshot/fleet-view tests, got 2' 'missing-pass diagnostic'
+
+  rc=0
+  out=$(PATH="$fixture/bin:$PATH" RUNNER_TEMP="$fixture/scratch" FM_COUNT_ZERO=1 \
+    /bin/bash "$fixture/bin/fm-macos-stock-bash-check.sh" 2>&1) || rc=$?
+  [ "$rc" -ne 0 ] || fail "a suite that ran no tests passed"
+  assert_contains "$out" 'expected 3 snapshot/fleet-view tests, got 0' 'zero-pass diagnostic'
+
+  rc=0
+  out=$(PATH="$fixture/bin:$PATH" RUNNER_TEMP="$fixture/scratch" FM_COUNT_EMPTY=1 \
+    /bin/bash "$fixture/bin/fm-macos-stock-bash-check.sh" 2>&1) || rc=$?
+  [ "$rc" -ne 0 ] || fail "an empty selection passed"
+  assert_contains "$out" 'empty test selection' 'empty-selection diagnostic'
+
+  rc=0
+  out=$(PATH="$fixture/bin:$PATH" RUNNER_TEMP="$fixture/scratch" FM_COUNT_EXIT=7 \
+    /bin/bash "$fixture/bin/fm-macos-stock-bash-check.sh" 2>&1) || rc=$?
+  [ "$rc" -eq 7 ] || fail "a suite failure must propagate even with all passing lines: $rc"
+  assert_contains "$out" 'not ok - real regression diagnostics' 'failing-suite output stays visible'
+  pass 'stock-Bash counts follow selection and reject missing, zero, empty, and failed runs'
+}
+
+# Listing uses the suites' public interface and must not execute their cases.
+test_stock_bash_suites_list_their_selection() {
+  local suite selected count unique
+  for suite in fm-fleet-snapshot-view fm-bearings-snapshot fm-fork-free-helpers; do
+    selected=$(/bin/bash "$ROOT/tests/$suite.test.sh" --list-tests) \
+      || fail "$suite could not list tests"
+    count=$(printf '%s\n' "$selected" | grep -c '^test_[a-z0-9_]*$')
+    [ "$count" -gt 0 ] || fail "$suite has no selected tests"
+    [ "$count" -eq "$(printf '%s\n' "$selected" | wc -l | tr -d ' ')" ] \
+      || fail "$suite listing executed test output"
+    unique=$(printf '%s\n' "$selected" | sort -u | wc -l | tr -d ' ')
+    [ "$count" -eq "$unique" ] || fail "$suite lists a case twice"
+  done
+  pass 'stock-Bash suites expose a nonempty unique selection without running cases'
+}
+
+test_macos_check_derives_counts_and_rejects_missing_passes
+test_stock_bash_suites_list_their_selection
 test_ci_matrices_match_executable_partitions
 test_macos_advisory_runs_the_same_check_outside_the_prs_verdict
 test_macos_check_refuses_a_non_stock_interpreter
