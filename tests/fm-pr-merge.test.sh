@@ -105,6 +105,7 @@ write_github_required() {
 # Args: case_dir head_sha
 write_github_live_json() {
   local case_dir=$1 head=$2
+  write_github_required "$case_dir" classic:ci
   printf '%s\n' "$head" > "$case_dir/github-head"
   cat > "$case_dir/github-view.json" <<JSON
 {"state":"OPEN","isDraft":false,"mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","headRefOid":"$head","baseRefName":"main","statusCheckRollup":[{"__typename":"CheckRun","name":"ci","status":"COMPLETED","conclusion":"SUCCESS"}]}
@@ -113,6 +114,7 @@ JSON
 
 write_github_red_json() {
   local case_dir=$1 head=$2 name=$3
+  write_github_required "$case_dir" "classic:$name"
   printf '%s\n' "$head" > "$case_dir/github-head"
   cat > "$case_dir/github-view.json" <<JSON
 {"state":"OPEN","isDraft":false,"mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","headRefOid":"$head","baseRefName":"main","statusCheckRollup":[{"__typename":"CheckRun","name":"$name","status":"COMPLETED","conclusion":"FAILURE"}]}
@@ -143,11 +145,15 @@ status_context() {
 # stays CLEAN because that is what GitHub reports for exactly this case.
 # Args: case_dir head_sha <rollup-entry-json>...
 write_github_rollup_json() {
-  local case_dir=$1 head=$2 entry rollup=''
+  local case_dir=$1 head=$2 entry name rollup=''
+  local requirements=()
   shift 2
   for entry in "$@"; do
     rollup="${rollup:+$rollup,}$entry"
+    name=$(printf '%s' "$entry" | jq -r '.name // .context')
+    requirements+=("classic:$name")
   done
+  write_github_required "$case_dir" "${requirements[@]}"
   printf '%s\n' "$head" > "$case_dir/github-head"
   cat > "$case_dir/github-view.json" <<JSON
 {"state":"OPEN","isDraft":false,"mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","headRefOid":"$head","baseRefName":"main","statusCheckRollup":[$rollup]}
@@ -3390,6 +3396,7 @@ test_secondmate_without_parent_binding_is_loud() {
   pass "a secondmate home that cannot report upward says so instead of merging in silence"
 }
 
+if [ "$#" -eq 0 ]; then
 test_github_zero_exit_queue_required_refuses_with_exact_retry
 test_github_closed_unqueued_outcome_omits_retry_flags
 test_github_agreeing_queue_rules_keep_retry_guidance
@@ -3465,6 +3472,8 @@ test_forgejo_missing_tool_refuses_before_recording
 test_forgejo_rejected_merge_is_never_trusted_by_exit_status
 test_forgejo_transient_confirm_read_failure_still_persists_authority
 test_forgejo_merge_method_and_extra_args
+
+fi
 
 # The merge gate asks whether the task is still held for the captain. A home
 # that carries no backlog records no captain calls at all, so nothing can be
@@ -3654,7 +3663,7 @@ test_github_red_checks_refuse_and_allow_red_waives_named() {
   set -e
   expect_code 1 "$rc" "github-red: a red check must refuse"
   assert_grep "check 'lint' is not green" "$case_dir/stderr" \
-    "github-red: the red check was not named"
+    "github-red: the red check was not named: $(cat "$case_dir/stderr")"
   assert_no_grep 'pr merge' "$case_dir/gh.log" \
     "github-red: gh pr merge ran on a red PR"
 
@@ -4510,6 +4519,37 @@ run_required_case() {
   set -e
 }
 
+test_advisory_checks_never_block_merge() {
+  local case_dir state conclusion head=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  for state in IN_PROGRESS COMPLETED; do
+    case_dir=$(make_case "github-advisory-$state")
+    add_gh_mocks "$case_dir" "$head"
+    conclusion=FAILURE
+    [ "$state" != IN_PROGRESS ] || conclusion=-
+    write_github_rollup_json "$case_dir" "$head" \
+      "$(check_run 'CI gate' COMPLETED SUCCESS)" \
+      "$(check_run Mac "$state" "$conclusion")" \
+      "$(status_context optional FAILURE)"
+    write_github_required "$case_dir" 'ruleset:CI gate'
+    run_required_case "$case_dir" 90
+    expect_code 0 "$RC" "advisory $state must not block: $(cat "$case_dir/stderr")"
+    assert_logged_gh_merge "$case_dir" 90 example/repo --squash
+  done
+  pass 'pending/red advisory checks never block the merge gate'
+}
+
+test_pending_required_check_refuses_merge() {
+  local case_dir head=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  case_dir=$(make_case github-required-pending)
+  add_gh_mocks "$case_dir" "$head"
+  write_github_rollup_json "$case_dir" "$head" "$(check_run ci IN_PROGRESS -)"
+  run_required_case "$case_dir" 91
+  expect_code 1 "$RC" 'pending required check must refuse'
+  assert_no_grep 'pr merge' "$case_dir/gh.log" 'merged with pending required check'
+  assert_grep "check 'ci' is not green" "$case_dir/stderr" 'required check not named'
+  pass 'pending required checks still block the merge gate'
+}
+
 test_required_producer_identity() {
   local case_dir head kind variant expected app
   head=a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1
@@ -4671,7 +4711,7 @@ test_required_checks_reported_and_green_merge() {
     "required-present: the branch protection summary was not read"
   assert_grep 'api --paginate repos/example/repo/rules/branches/main' "$case_dir/gh.log" \
     "required-present: the branch rules were not read"
-  assert_grep "every unwaived required check reported and every unwaived check green at head $head" \
+  assert_grep "every unwaived required check reported and every unwaived required check green at head $head" \
     "$case_dir/stderr" "required-present: the verified line did not state the required checks reported"
   assert_logged_gh_merge "$case_dir" 91 example/repo --squash
   pass "fm-pr-merge merges when every required check reported and is green"
@@ -4795,7 +4835,7 @@ test_allow_missing_waives_only_the_named_unreported_check() {
   case_dir=$(make_case github-allow-missing-other-red)
   add_gh_mocks "$case_dir" "$head"
   write_github_red_json "$case_dir" "$head" lint
-  write_github_required "$case_dir" ruleset:validate
+  write_github_required "$case_dir" ruleset:validate classic:lint
   run_required_case "$case_dir" 98 --allow-missing validate
   expect_code 1 "$RC" "allow-missing-other-red: a red check must still refuse"
   assert_grep "check 'lint' is not green" "$case_dir/stderr" \
@@ -5403,6 +5443,16 @@ test_allow_missing_refused_on_forgejo() {
   pass "fm-pr-merge refuses --allow-missing on Forgejo"
 }
 
+# Optional named cases keep local verification focused; CI still runs all cases.
+if [ "$#" -gt 0 ]; then
+  for test_case in "$@"; do
+    case "$test_case" in test_*) ;; *) fail "expected a test_ function" ;; esac
+    declare -F "$test_case" >/dev/null || fail "unknown case: $test_case"
+    "$test_case"
+  done
+  exit 0
+fi
+
 test_gitlab_head_override_args_refuse_before_recording
 test_secondmate_merge_reports_upward_once
 test_secondmate_merge_reports_on_the_local_route
@@ -5454,6 +5504,8 @@ test_unreadable_required_set_refuses
 test_allow_missing_waives_only_the_named_unreported_check
 test_allow_missing_follows_the_allow_red_rules
 
+test_advisory_checks_never_block_merge
+test_pending_required_check_refuses_merge
 test_required_producer_identity
 test_app_bound_required_status_context_matches_by_name
 test_required_partial_reads_report_all_failures

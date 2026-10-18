@@ -4,12 +4,9 @@
 # This is a one-shot, read-only command. It reads the current pull request,
 # reported checks, submitted reviews, and review decision from GitHub at
 # invocation time. It never posts, requests, approves, or merges.
-# It reports on checks that have reported. A required context that has never
-# reported on this head is absent from what this command reads and cannot be
-# enumerated here. Empty output therefore means that no reported required check
-# is failing or pending; it does not mean the pull request is ready to merge.
-# When nothing has reported, or nothing required has, that is printed rather
-# than read as ready. Advisory checks do not block and are omitted.
+# Required-check blockers, including checks not yet reported, come from
+# bin/fm-pr-checks.sh; its shared library owns the check policy.
+# Empty output does not mean the pull request is ready to merge.
 # A pull request that only awaits an approval (reviewDecision REVIEW_REQUIRED)
 # is not reported as blocked. GitHub's reviewDecision owns whether reviews
 # block; review history is printed only to explain CHANGES_REQUESTED, naming
@@ -103,27 +100,12 @@ case "$MERGEABILITY" in
   *) die "GitHub returned invalid mergeability for $URL" ;;
 esac
 
-GH_STDERR=$(mktemp "${TMPDIR:-/tmp}/fm-pr-state.XXXXXX") \
-  || die "could not create temporary file"
-trap 'rm -f "$GH_STDERR"' EXIT INT TERM
-if ! REQUIRED=$(gh pr checks "$URL" --required --json name,state,bucket --jq '
-  .[]
-  | select(.bucket != "pass" and .bucket != "skipping")
-  | "REQUIRED CHECK: \(.name) (\(.state))"' 2>"$GH_STDERR"); then
-  # These two sentences are gh's own human-readable error text, verified against
-  # gh 2.100.0 on 2026-09-12. gh reports "nothing reported" as an error rather
-  # than as structured data, so matching its text is the only way to tell that
-  # apart from a real lookup failure. An unrecognised message falls through to
-  # the refusal below, so a reword degrades loudly rather than silently.
-  if grep -q "^no checks reported on the '" "$GH_STDERR"; then
-    REQUIRED="CHECKS: none reported yet"
-  elif grep -q "^no required checks reported on the '" "$GH_STDERR"; then
-    REQUIRED="CHECKS: no required check has reported; readiness unconfirmed"
-  else
-    cat "$GH_STDERR" >&2
-    die "could not read required checks for $URL"
-  fi
-fi
+CHECK_STATUS=0
+REQUIRED=$("$SCRIPT_DIR/fm-pr-checks.sh" "$URL") || CHECK_STATUS=$?
+case "$CHECK_STATUS" in
+  0|1|8) ;;
+  *) die "could not read required checks for $URL" ;;
+esac
 [ -z "$REQUIRED" ] || printf '%s\n' "$REQUIRED"
 
 if [ "$REVIEW_DECISION" = CHANGES_REQUESTED ]; then
