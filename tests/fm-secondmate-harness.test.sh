@@ -529,7 +529,7 @@ make_seeded_home() {
 # non-worktree home). Inspect <world>/home/state/<id>.meta and <home>/config after.
 spawn_secondmate() {
   local world=$1 id=$2 home=$3 harness=${4:-} fakebin
-  mkdir -p "$world/home/state" "$world/home/data"
+  mkdir -p "$world/home/state" "$world/home/data" "$world/home/user-home"
   fakebin=$(make_noop_tmux "$world/tmux-$id")
   # An empty harness must contribute zero args, not an empty positional; build the
   # arg list explicitly so the optional harness is omitted cleanly.
@@ -670,7 +670,7 @@ test_spawn_launches_a_declining_home_on_its_own_seat() {
   w="$TMP_ROOT/spawn-seat-decline-launch"
   declining="$w/sm-optout"
   launchlog="$w/launch.log"
-  mkdir -p "$w/home/config" "$w/home/state" "$w/home/data" "$w/home/projects" "$w/fleet-seats/work"
+  mkdir -p "$w/home/config" "$w/home/state" "$w/home/data" "$w/home/projects" "$w/home/user-home" "$w/fleet-seats/work"
   printf 'work\n' > "$w/home/config/claude-seat"
   printf '%s\n' "$w/fleet-seats" > "$w/home/config/claude-seats-root"
   # The primary's own extra-usage gate would hold here (stop, no readable
@@ -868,7 +868,7 @@ sm_claude_settings() {  # <world> <id>
 spawn_secondmate_capture() {
   local world=$1 id=$2 home=$3 launchlog=$4 fakebin
   shift 4
-  mkdir -p "$world/home/state" "$world/home/data"
+  mkdir -p "$world/home/state" "$world/home/data" "$world/home/user-home"
   fakebin=$(make_launch_capturing_tmux "$world/tmux-$id")
   : > "$launchlog"
   PATH="$fakebin:$BLIND_BIN:$BASE_PATH" TMUX='' CLAUDECODE=1 \
@@ -1631,7 +1631,7 @@ test_spawn_secondmate_claude_grants_parent_inbox_dir() {
     w="$TMP_ROOT/spawn-claude-adddir-$mode"
     sm="$w/sm"
     launchlog="$w/launch.log"
-    mkdir -p "$w/home/config" "$w/home/state" "$w/home/data"
+    mkdir -p "$w/home/config" "$w/home/state" "$w/home/data" "$w/home/user-home"
     printf 'claude\n' > "$w/home/config/secondmate-harness"
     printf '%s\n' "$mode" > "$w/home/config/claude-permission-mode"
     make_seeded_home "$sm" sm

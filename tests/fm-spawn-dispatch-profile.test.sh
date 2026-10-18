@@ -257,6 +257,7 @@ test_claude_secondmate_launch_brief_publishes_into_its_own_home() {
   sm="$CASE_DIR/secondmate-home"
   make_seeded_secondmate_home "$sm" "$id"
 
+  mkdir -p "$CASE_DIR/claude-work"
   out=$(FM_TEST_CLAUDE_CONFIG_DIR="$CASE_DIR/claude-work" \
     run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$sm" --secondmate)
   status=$?
@@ -1856,9 +1857,10 @@ test_claude_forwards_firstmate_config_dir_when_set() {
   rec=$(make_spawn_case profile-claude-cfgdir claude "$id")
   read_case_record "$rec"
 
-  # A creatable path: this spawn now pre-registers workspace trust in that store
-  # (bin/fm-claude-trust.sh), so an unwritable directory is a genuine blocker.
+  # An existing profile: this spawn pre-registers workspace trust in that store
+  # (bin/fm-claude-trust.sh), so a missing directory is a genuine blocker.
   # The forwarding assertion below is what this case proves and is unchanged.
+  mkdir -p "$CASE_DIR/claude-work"
   out=$(FM_TEST_CLAUDE_CONFIG_DIR="$CASE_DIR/claude-work" \
     run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR")
   status=$?
@@ -1994,6 +1996,7 @@ test_claude_secondmate_launch_omits_task_control_channel_authority() {
   sm="$CASE_DIR/secondmate-home"
   make_seeded_secondmate_home "$sm" "$id"
 
+  mkdir -p "$CASE_DIR/claude-work"
   out=$(FM_TEST_CLAUDE_CONFIG_DIR="$CASE_DIR/claude-work" \
     run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$sm" --secondmate)
   status=$?
@@ -2096,6 +2099,7 @@ test_claude_secondmate_launch_carries_the_attribution_policy() {
   sm="$CASE_DIR/secondmate-home"
   make_seeded_secondmate_home "$sm" "$id"
 
+  mkdir -p "$CASE_DIR/claude-work"
   out=$(FM_TEST_CLAUDE_CONFIG_DIR="$CASE_DIR/claude-work" \
     run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$sm" --secondmate)
   status=$?
