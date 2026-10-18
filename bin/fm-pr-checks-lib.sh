@@ -236,6 +236,8 @@ github_required_checks_missing() {
 
 # Read producer evidence only when a required check is app-bound.
 FM_PR_GITHUB_PRODUCERS='[]'
+# The result is read by fm-pr-checks.sh and fm-pr-merge.sh.
+# shellcheck disable=SC2034
 github_read_required_producers() {
   local head=$1 runs
   FM_PR_GITHUB_PRODUCERS='[]'
