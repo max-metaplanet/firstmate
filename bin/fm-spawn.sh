@@ -224,6 +224,11 @@
 #   A batch reports such a pair as `batch: DEFERRED` and exits 75 when nothing
 #   else failed. A relaunch and a --secondmate spawn are never counted against
 #   capacity.
+#   Fleet capacity: when this machine declares how many agents its whole local
+#   fleet runs at once (config/fleet-capacity; bin/fm-fleet-capacity-lib.sh owns
+#   the declaration, what holds a place, and its lock), every fresh spawn,
+#   --secondmate included, is admitted or deferred the same way under that
+#   fleet lock; a relaunch is not counted.
 #   With no harness arg, a crewmate/scout spawn resolves the CREW harness only when
 #   config/crew-dispatch.json is absent. When that file exists, crewmate/scout
 #   spawns require an explicit harness so firstmate cannot silently skip dispatch
@@ -788,6 +793,8 @@ fm_backlog_directory_present "$STATE" "state directory" || {
 . "$SCRIPT_DIR/fm-timeout-lib.sh"
 # shellcheck source=bin/fm-project-capacity-lib.sh
 . "$SCRIPT_DIR/fm-project-capacity-lib.sh"
+# shellcheck source=bin/fm-fleet-capacity-lib.sh
+. "$SCRIPT_DIR/fm-fleet-capacity-lib.sh"
 # shellcheck source=bin/fm-worker-account-lib.sh
 . "$SCRIPT_DIR/fm-worker-account-lib.sh"
 # shellcheck source=bin/fm-quota-axi-lib.sh
@@ -1460,6 +1467,8 @@ SPAWN_TASK_SET_LOCK=
 SPAWN_TASK_SET_LOCK_HELD=0
 SPAWN_TREEHOUSE_PROJECT_LOCK=
 SPAWN_TREEHOUSE_PROJECT_LOCK_HELD=0
+SPAWN_FLEET_LOCK=
+SPAWN_FLEET_LOCK_HELD=0
 SPAWN_SLOT_CLAIMED=0
 RELAUNCH_REPLACEMENT_PENDING=0
 RELAUNCH_REPLACEMENT_BUSY_GEN=
@@ -1631,6 +1640,10 @@ spawn_abort_cleanup() {
   if [ "$SPAWN_TREEHOUSE_PROJECT_LOCK_HELD" = 1 ]; then
     SPAWN_TREEHOUSE_PROJECT_LOCK_HELD=0
     fm_lock_release "$SPAWN_TREEHOUSE_PROJECT_LOCK" || true
+  fi
+  if [ "$SPAWN_FLEET_LOCK_HELD" = 1 ]; then
+    SPAWN_FLEET_LOCK_HELD=0
+    fm_lock_release "$SPAWN_FLEET_LOCK" || true
   fi
   if [ "$SPAWN_TASK_SET_LOCK_HELD" = 1 ]; then
     SPAWN_TASK_SET_LOCK_HELD=0
@@ -3783,6 +3796,38 @@ if [ -n "$SPAWN_PROJECT_CAPACITY" ]; then
   if [ "$FM_PROJECT_CAPACITY_OCCUPANTS" -ge "$SPAWN_PROJECT_CAPACITY" ]; then
     echo "deferred: project $(basename "$PROJ_ABS") admits $SPAWN_PROJECT_CAPACITY worker(s) at once on this machine ($FM_PROJECT_CAPACITY_FILE) and $FM_PROJECT_CAPACITY_OCCUPANTS already hold a place ($FM_PROJECT_CAPACITY_OCCUPANT_IDS); task $ID was not launched and its backlog item stays queued - dispatch it again once one of them records its ready PR or is cleaned up" >&2
     exit "$FM_PROJECT_CAPACITY_DEFER_EXIT"
+  fi
+fi
+# Fleet capacity admission (bin/fm-fleet-capacity-lib.sh owns the
+# declaration, what holds a place, and the lock). It caps every fresh local
+# agent, secondmates included, and defers exactly like project capacity above.
+if [ "$RELAUNCH" -eq 0 ]; then
+  SPAWN_FLEET_CONFIG=$(fm_project_capacity_config_dir "$FM_HOME" "$CONFIG") || {
+    echo "error: could not resolve the root Firstmate home that declares fleet capacity" >&2
+    exit 1
+  }
+  if ! fm_fleet_capacity_lookup "$SPAWN_FLEET_CONFIG"; then
+    echo "error: spawn refused: the fleet capacity declaration is unreadable ($FM_FLEET_CAPACITY_ERROR); fix it so the captain's fleet limit is known (docs/configuration.md \"Fleet capacity\")" >&2
+    exit 1
+  fi
+  if [ -n "$FM_FLEET_CAPACITY" ]; then
+    SPAWN_FLEET_LOCK=$(fm_fleet_capacity_lock_path "$FM_HOME") || {
+      echo "error: could not resolve the fleet capacity lock for $FM_HOME" >&2
+      exit 1
+    }
+    if ! fm_lock_acquire_wait_max "$SPAWN_FLEET_LOCK" 120; then
+      echo "deferred: another spawn has held the fleet capacity lock ($SPAWN_FLEET_LOCK) for 120s; task $ID was not launched and its backlog item stays queued - dispatch it again shortly" >&2
+      exit "$FM_PROJECT_CAPACITY_DEFER_EXIT"
+    fi
+    SPAWN_FLEET_LOCK_HELD=1
+    if ! fm_fleet_capacity_occupants "$STATE" "$ID"; then
+      echo "error: spawn refused: this machine declares a fleet capacity of $FM_FLEET_CAPACITY, but its task records cannot all be read to count it ($FM_FLEET_CAPACITY_ERROR)" >&2
+      exit 1
+    fi
+    if [ "$FM_FLEET_CAPACITY_OCCUPANTS" -ge "$FM_FLEET_CAPACITY" ]; then
+      echo "deferred: this machine runs at most $FM_FLEET_CAPACITY agent(s) at once ($FM_FLEET_CAPACITY_FILE) and $FM_FLEET_CAPACITY_OCCUPANTS are running ($FM_FLEET_CAPACITY_OCCUPANT_IDS); task $ID was not launched and its backlog item stays queued - dispatch it again once one of them is cleaned up or stops" >&2
+      exit "$FM_PROJECT_CAPACITY_DEFER_EXIT"
+    fi
   fi
 fi
 [ -f "$BRIEF" ] || {
@@ -6121,6 +6166,10 @@ fi
 if [ "$SPAWN_TREEHOUSE_PROJECT_LOCK_HELD" = 1 ]; then
   SPAWN_TREEHOUSE_PROJECT_LOCK_HELD=0
   fm_lock_release "$SPAWN_TREEHOUSE_PROJECT_LOCK"
+fi
+if [ "$SPAWN_FLEET_LOCK_HELD" = 1 ]; then
+  SPAWN_FLEET_LOCK_HELD=0
+  fm_lock_release "$SPAWN_FLEET_LOCK"
 fi
 if [ "$SPAWN_TASK_SET_LOCK_HELD" = 1 ]; then
   # The record is published, so this task is now part of the set a teardown

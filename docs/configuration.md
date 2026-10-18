@@ -1294,6 +1294,22 @@ A malformed or unreadable file refuses every fresh ship or scout spawn until it 
 Firstmate cannot see which part of a worker's life uses the resource, so the number bounds whole workers from launch to handoff, and the tightest resource every worker needs should decide it.
 [`bin/fm-project-capacity-lib.sh`](../bin/fm-project-capacity-lib.sh) owns the file format, what holds a place, and why concurrent spawns cannot both take the last one.
 
+## Fleet capacity (config/fleet-capacity)
+
+The optional local, gitignored `config/fleet-capacity` caps how many agents the whole local fleet runs at once on this machine, whatever project they work on, so the machine cannot run out of memory from too many at once.
+It lives in the machine's root Firstmate home and holds one positive integer; blank lines and `#` lines are ignored.
+
+```text
+# at most six agents at once
+6
+```
+
+Every running ship, scout, and secondmate in the root home or any local secondmate home holds a place, including one waiting on a recorded PR; the supervising lead does not.
+A task record whose agent is no longer running holds no place, and one whose agent cannot be checked does.
+At the cap, `bin/fm-spawn.sh` defers a fresh ship, scout, or local secondmate exactly as project capacity does: nothing is launched, the backlog item stays queued, and it exits 75; a relaunch replaces an existing agent and is not capped.
+A malformed or unreadable file refuses every fresh spawn until it is fixed.
+[`bin/fm-fleet-capacity-lib.sh`](../bin/fm-fleet-capacity-lib.sh) owns the file format, what holds a place, and the lock that keeps concurrent spawns from both taking the last one.
+
 ## Crew dispatch profiles (config/crew-dispatch.json)
 
 `config/crew-dispatch.json` is an optional local, gitignored file containing natural-language rules that firstmate reads before dispatching a crewmate or scout.
