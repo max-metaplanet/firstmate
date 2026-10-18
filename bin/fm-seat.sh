@@ -2,7 +2,7 @@
 # Choose which Claude or Codex account NEW workers launch on.
 # Use --provider codex before the command for Codex (default: claude).
 # Codex add <name> --home <absolute-existing-home> registers a directory alias
-# without copying authentication. Lead restart, pipeline, quota floor, session
+# without copying authentication. Pipeline, quota floor, session
 # share, and paid extra-usage policy commands currently support Claude only.
 #
 # Usage:
@@ -28,7 +28,8 @@
 #   fm-seat.sh floor-dwell [<seconds>|off]
 #   fm-seat.sh session-share [<percent-of-a-week>|off]
 #   fm-seat.sh resting [wake <name>]
-#   fm-seat.sh lead-restart [--to <name>] [--check] [--persisted]
+#   fm-seat.sh leader-destination [--horizon <seconds>]
+#   fm-seat.sh lead-restart [--provider claude|codex] [--to <name>] [--check] [--persisted]
 #                           [--launch-command <cmd>]
 #   fm-seat.sh threshold-reached
 #   fm-seat.sh auto
@@ -162,21 +163,17 @@
 #            again if it is still at or below the floor.
 # lead-restart
 #            Move FIRSTMATE ITSELF to another seat, which `switch` cannot do: a
-#            switch moves only what the next spawn reads, and no running Claude
-#            process can change credential store. So the lead is REPLACED -
-#            another claude starts on the new seat in the same terminal,
-#            resuming the same session, and the current process ends. Running
+#            switch moves only what the next spawn reads. The successor starts
+#            in the same terminal on the destination provider and credential
+#            profile, and the current process ends. Running
 #            workers get one fire-and-forget notice and are otherwise
 #            untouched: their steering, status, and recorded seat are all
 #            durable, and supervision is a separate process that is
 #            deliberately left alone. `--check`
 #            establishes everything and changes nothing. Without `--to` the
-#            destination is chosen by the same rotation `switch --next` uses,
-#            anchored on the seat the LEAD is on rather than the seat new
-#            workers get; like that rotation it is the operator's own move and
-#            asks only which seats are usable. The automatic lead move names
-#            its destination with `--to`, having already applied the headroom
-#            rule in docs/claude-seats.md, "Which seat carries work".
+#            destination is chosen by leader-destination across both providers.
+#            Claude successors resume a Claude session when available; Codex
+#            successors start a fresh session from durable records.
 #            It refuses until `--persisted` says the open work held only in this
 #            conversation is written down, because the replacement drops that
 #            conversation. bin/fm-lead-restart.sh owns the transaction, its
@@ -254,7 +251,7 @@ esac
 export FM_SEAT_PROVIDER
 if [ "$FM_SEAT_PROVIDER" = codex ]; then
   case "${1-}" in
-    lead-restart|pipeline-*|floor|floor-readd|floor-dwell|session-share|resting|extra-usage) echo "error: $1 supports Claude seats only" >&2; exit 1 ;;
+    pipeline-*|floor|floor-readd|floor-dwell|session-share|resting|extra-usage) echo "error: $1 supports Claude seats only" >&2; exit 1 ;;
   esac
 fi
 
@@ -432,7 +429,7 @@ declining_secondmate_homes() {
 
 cmd_status() {
   local active profile threshold minimum policy reason rows excluded floor pipeline label
-  local headroom
+  local headroom lead_provider
   label=Claude; [ "$FM_SEAT_PROVIDER" != codex ] || label=Codex
   active=$(fm_seat_active)
   printf 'active seat for NEW workers: %s\n' "$active"
@@ -456,14 +453,15 @@ cmd_status() {
     (if .profileRecorded then empty else "pipeline default-seat profile not recorded for this home'"'"'s lead; launches use the wrapper'"'"'s installed default profile until a lead restart records it" end),
     (.liveAgents[] | "live pipeline agent: pid=" + (.pid | tostring) + " seat=" + .seat
       + (if .override then " (override)" else "" end))'
+  fi
   # The lead's own seat is a separate fact from the active one: a switch moves
   # what new workers get and leaves the running lead where it launched, so the
   # two drift apart by design and only `lead-restart` closes that gap.
   if profile=$(lead_profile); then
-    printf 'firstmate itself is running on: %s\n' "$(fm_seat_name_of_profile "$profile")"
+    lead_provider=$(fm_session_lock_runtime_field "$STATE" harness) || lead_provider=claude
+    printf 'firstmate itself is running on: %s (%s)\n' "$(FM_SEAT_PROVIDER="$lead_provider" fm_seat_name_of_profile "$profile")" "$lead_provider"
   else
     printf 'firstmate itself is running on: (not recorded for this session)\n'
-  fi
   fi
   if threshold=$(fm_seat_threshold); then
     printf 'auto-switch trigger: at or below %s%% left on the active seat\n' "$threshold"
@@ -1280,7 +1278,7 @@ cmd_add() {
 }
 
 # lead_profile
-# The Claude profile the LEAD itself runs under, from the record beside the
+# The native profile the LEAD itself runs under, from the record beside the
 # session lock. Empty output with a zero status is the ambient default profile,
 # which is a real answer; a nonzero status means this home has not recorded one
 # for its current lead, so nothing here may guess.
@@ -1288,13 +1286,202 @@ lead_profile() {
   fm_session_lock_runtime_field "$STATE" profile
 }
 
-# The operator surface for replacing the lead itself. Seat SELECTION stays here,
-# where every other rotation decision lives, and the restart transaction stays
-# in bin/fm-lead-restart.sh, which owns every refusal and what a failure leaves.
+# Single rollout switch for automatic Codex leader destinations. Explicit
+# lead-restart --provider codex --to NAME bypasses selection and remains usable.
+# config/lead-codex-auto is exactly on|off; absent means off, malformed refuses.
+fm_seat_lead_codex_auto() {
+  local value=off
+  if [ -e "$CONFIG/lead-codex-auto" ]; then
+    value=$(cat "$CONFIG/lead-codex-auto") || return 1
+  fi
+  case "$value" in
+    on|off) printf '%s\n' "$value" ;;
+    *) echo 'error: config/lead-codex-auto must contain on or off' >&2; return 1 ;;
+  esac
+}
+
+# Validate the settings selection consumes before considering any destination.
+# The generic seat readers intentionally conflate absent and malformed settings;
+# the leader must not interpret a malformed gate as permission to route around it.
+leader_selection_config() {
+  local root setting value entry name
+  root=$(fm_seat_root)
+  if [ -e "$CONFIG/$FM_SEAT_PROVIDER-seats-root" ]; then
+    value=$(cat "$CONFIG/$FM_SEAT_PROVIDER-seats-root") || return 1
+    [ "$value" = "$root" ] && [ -d "$root" ] || {
+      echo "error: invalid $FM_SEAT_PROVIDER seats root: expected an existing absolute directory without whitespace" >&2
+      return 1
+    }
+  fi
+  case "$root" in /*) ;; *) echo "error: invalid $FM_SEAT_PROVIDER seats root: must be absolute" >&2; return 1 ;; esac
+  for setting in destination-min threshold floor floor-readd session-share; do
+    [ ! -e "$CONFIG/$FM_SEAT_PROVIDER-seat-$setting" ] || {
+      value=$(cat "$CONFIG/$FM_SEAT_PROVIDER-seat-$setting") || return 1
+      if ! [[ "$value" =~ ^[0-9]+(\.[0-9]+)?$ ]] || ! fm_seat_percent_file "$CONFIG/$FM_SEAT_PROVIDER-seat-$setting" >/dev/null; then
+        echo "error: invalid $FM_SEAT_PROVIDER seat $setting" >&2
+        return 1
+      fi
+    }
+  done
+  if [ -e "$CONFIG/$FM_SEAT_PROVIDER-seat-extra-usage" ]; then
+    value=$(cat "$CONFIG/$FM_SEAT_PROVIDER-seat-extra-usage") || return 1
+    if [[ "$value" == *$'\n'* ]] || ! fm_seat_extra_usage_policy >/dev/null; then
+      echo "error: invalid $FM_SEAT_PROVIDER extra-usage policy" >&2; return 1
+    fi
+  fi
+  if [ -e "$CONFIG/$FM_SEAT_PROVIDER-seat-resting" ] && fm_seat_floor >/dev/null; then
+    jq -e 'type == "object" and (.seats | type) == "object"' "$CONFIG/$FM_SEAT_PROVIDER-seat-resting" >/dev/null 2>&1 || {
+      echo "error: invalid $FM_SEAT_PROVIDER resting record" >&2; return 1;
+    }
+  fi
+  if [ -e "$CONFIG/$FM_SEAT_PROVIDER-seat-auto-exclude" ]; then
+    while IFS= read -r name || [ -n "$name" ]; do
+      [ -z "$name" ] || fm_seat_name_valid "$name" || {
+        echo "error: invalid $FM_SEAT_PROVIDER excluded seat name" >&2; return 1;
+      }
+    done < "$CONFIG/$FM_SEAT_PROVIDER-seat-auto-exclude"
+  fi
+  for entry in "$root"/*; do
+    [ -d "$entry" ] || continue
+    fm_seat_name_valid "${entry##*/}" || {
+      echo "error: invalid $FM_SEAT_PROVIDER seat directory: $entry" >&2; return 1;
+    }
+  done
+}
+
+# leader-destination ranks named seats of BOTH native providers for the leader.
+# It reads each credential profile's default TOON once; only ambiguous evidence
+# permits one JSON fallback. The separate Claude dispatch policy gate is retained.
+# Catalogs: Claude's --help native opus alias, Codex's profile models_cache.json.
+# Missing discovery stays explicit uncertainty; a catalog omitting the model
+# excludes it. Both use the strongest native class (opus / gpt-6.1-sol).
+# The 180s default horizon is expected successor startup, not an estimate of
+# an indefinitely supervised session. Unknown runway never proves that floor.
+# Prints "provider seat", all candidate evidence on stderr. Ties refuse to pick.
+# Codex destinations obey the single lead-codex-auto rollout switch above.
+cmd_leader_destination() {
+  local horizon=180 current_provider current_profile provider seat profile model catalog reason
+  local snapshot evidence bound minimum decision candidates='' identity current_identity seen='' tied candidate used_json codex_auto
+  local -a quota_args=()
+  if [ "${1-}" = --horizon ]; then
+    [ "$#" -eq 2 ] || usage
+    horizon=$2
+  elif [ "$#" -ne 0 ]; then
+    usage
+  fi
+  [[ "$horizon" =~ ^[1-9][0-9]*$ ]] || die 'leader horizon must be positive seconds'
+  codex_auto=$(fm_seat_lead_codex_auto) || return 1
+  for provider in claude codex; do
+    FM_SEAT_PROVIDER=$provider leader_selection_config || return 1
+  done
+  current_provider=$(fm_session_lock_runtime_field "$STATE" harness) || current_provider=claude
+  case "$current_provider" in claude|codex) ;; *) die "unsupported leader harness: $current_provider" ;; esac
+  current_profile=$(lead_profile) || die 'leader profile is not recorded'
+  current_identity=$(FM_SEAT_PROVIDER="$current_provider" fm_seat_credential_identity "$current_profile") || return 1
+  for provider in claude codex; do
+    local FM_SEAT_PROVIDER=$provider
+    minimum=$(fm_seat_destination_min) || minimum=''
+    if [ -f "$CONFIG/$provider-seat-destination-min" ] && [ -z "$minimum" ]; then
+      die "invalid $provider destination minimum"
+    fi
+    while IFS= read -r seat; do
+      profile=$(fm_seat_config_dir "$seat") || return 1
+      reason='' catalog='unknown' evidence='{}' used_json=false
+      model=opus; [ "$provider" != codex ] || model=gpt-6.1-sol
+      identity=$(fm_seat_credential_identity "$profile") || return 1
+      case "$seen" in
+        *"|$provider:$identity|"*) reason='configuration error: duplicate credential profile' ;;
+      esac
+      seen+="|$provider:$identity|"
+      if [ "$provider" = "$current_provider" ] && [ "$identity" = "$current_identity" ]; then
+        reason=${reason:-'current leader credential store'}
+      elif fm_seat_auto_excluded "$seat"; then
+        reason=${reason:-'excluded from automatic rotation'}
+      elif fm_seat_resting "$seat"; then
+        reason=${reason:-'resting below configured quota floor'}
+      elif [ "$provider" = codex ] && [ "$codex_auto" = off ]; then
+        reason=${reason:-'policy withheld: config/lead-codex-auto is off'}
+      fi
+      if [ "$provider" = claude ]; then
+        bound=$(fm_seat_read_bound) || bound=1
+        snapshot=$(fm_run_timed "$bound" claude --help 2>/dev/null </dev/null) || snapshot=''
+        if [[ "$snapshot" == *opus* ]]; then
+          catalog='claude --help: opus alias'
+        elif [ -n "$snapshot" ]; then
+          catalog='claude --help omits opus'; reason=${reason:-'model unsupported by native discovery'}
+        fi
+      elif [ -f "$profile/models_cache.json" ]; then
+        if jq -e --arg model "$model" '.models[]? | select(.slug == $model)' "$profile/models_cache.json" >/dev/null 2>&1; then
+          catalog="models_cache.json: $model"
+        elif jq -e '.models | type == "array"' "$profile/models_cache.json" >/dev/null 2>&1; then
+          catalog="models_cache.json omits $model"; reason=${reason:-'model unsupported by native catalog'}
+        fi
+      fi
+      if [ -z "$reason" ] && [ "$provider" = claude ]; then
+        decision=$(fm_seat_dispatch_decision "$profile")
+        case "$decision" in hold*) reason="Claude dispatch gate: $decision" ;; esac
+      fi
+      if [ -z "$reason" ]; then
+        quota_args=(--provider "$provider" --no-credential-refresh)
+        [ "$provider" != codex ] || quota_args+=(--profile-only)
+        bound=$(fm_seat_read_bound) || bound=0
+        snapshot=''
+        [ "$bound" -gt 0 ] || reason='selection read deadline exhausted'
+        if [ "$bound" -gt 0 ]; then
+          snapshot=$(fm_run_timed "$bound" env -u CLAUDE_SECURESTORAGE_CONFIG_DIR "$(fm_seat_env_name)=$profile" quota-axi "${quota_args[@]}" 2>/dev/null </dev/null) || :
+        fi
+        evidence=$(printf '%s\n' "$snapshot" | python3 "$SCRIPT_DIR/fm-lead-seat.py" evidence "$provider" "$model" "$horizon" "$minimum" 2>/dev/null) || evidence='{"fallback":true}'
+        if [ "$(jq -r '.fallback' <<< "$evidence")" = true ]; then
+          used_json=true
+          bound=$(fm_seat_read_bound) || bound=0
+          snapshot=''
+          [ "$bound" -gt 0 ] || reason='selection read deadline exhausted'
+          if [ "$bound" -gt 0 ]; then
+            snapshot=$(fm_run_timed "$bound" env -u CLAUDE_SECURESTORAGE_CONFIG_DIR "$(fm_seat_env_name)=$profile" quota-axi "${quota_args[@]}" --json 2>/dev/null </dev/null) || :
+          fi
+          evidence=$(printf '%s\n' "$snapshot" | python3 "$SCRIPT_DIR/fm-lead-seat.py" evidence "$provider" "$model" "$horizon" "$minimum" 2>/dev/null) || evidence='{"reason":"quota evidence unreadable"}'
+        fi
+      fi
+      candidates+=$(jq -cn --arg provider "$provider" --arg seat "$seat" --arg profile "$profile" \
+        --arg model "$model" --arg catalog "$catalog" --arg reason "$reason" --argjson evidence "$evidence" --argjson used_json "$used_json" \
+        '{provider:$provider,seat:$seat,profile:$profile,model:$model,catalog:$catalog,reason:$reason,evidence:$evidence,used_json:$used_json}')$'\n'
+    done < <(fm_seat_list)
+  done
+  # A genuine TOON tie permits the same single JSON fallback as unknown quota.
+  # Never take another snapshot for a candidate that already used that fallback.
+  tied=$(printf '%s' "$candidates" | jq -cs '
+    map(select(.reason == "" and .evidence.feasible and (.evidence.spendPriority | type) == "number")) |
+    if length == 0 then [] else (map(.evidence.spendPriority) | max) as $best |
+      map(select(.evidence.spendPriority == $best)) | if length > 1 then . else [] end end |
+    .[] | select(.used_json | not)')
+  while IFS= read -r candidate; do
+    [ -n "$candidate" ] || continue
+    provider=$(jq -r '.provider' <<< "$candidate")
+    local FM_SEAT_PROVIDER=$provider
+    profile=$(jq -r '.profile' <<< "$candidate")
+    model=$(jq -r '.model' <<< "$candidate")
+    minimum=$(fm_seat_destination_min) || minimum=''
+    quota_args=(--provider "$provider" --no-credential-refresh --json)
+    [ "$provider" != codex ] || quota_args+=(--profile-only)
+    bound=$(fm_seat_read_bound) || { echo 'leader selection held: read deadline exhausted during tie fallback' >&2; return 1; }
+    snapshot=''
+    if [ "$bound" -gt 0 ]; then
+      snapshot=$(fm_run_timed "$bound" env -u CLAUDE_SECURESTORAGE_CONFIG_DIR "$(fm_seat_env_name)=$profile" quota-axi "${quota_args[@]}" 2>/dev/null </dev/null) || :
+    fi
+    evidence=$(printf '%s\n' "$snapshot" | python3 "$SCRIPT_DIR/fm-lead-seat.py" evidence "$provider" "$model" "$horizon" "$minimum" 2>/dev/null) || evidence='{"reason":"quota evidence unreadable"}'
+    candidates=$(printf '%s' "$candidates" | jq -c --arg provider "$provider" --arg profile "$profile" --argjson evidence "$evidence" '
+      if .provider == $provider and .profile == $profile then .evidence=$evidence | .used_json=true else . end')$'\n'
+  done <<< "$tied"
+  printf '%s' "$candidates" | python3 "$SCRIPT_DIR/fm-lead-seat.py" select
+}
+
+# The restart transaction stays in fm-lead-restart.sh; both manual and automatic
+# unspecified destinations share the cross-provider leader-only selection.
 cmd_lead_restart() {
-  local to='' profile anchor forwarded=()
+  local to='' provider=$FM_SEAT_PROVIDER choice forwarded=()
   while [ "$#" -gt 0 ]; do
     case "$1" in
+      --provider) [ "$#" -ge 2 ] || usage; provider=$2; shift 2 ;;
       --to) [ "$#" -ge 2 ] || usage; to=$2; shift 2 ;;
       --check | --persisted) forwarded+=("$1"); shift ;;
       --launch-command | --grace) [ "$#" -ge 2 ] || usage; forwarded+=("$1" "$2"); shift 2 ;;
@@ -1302,20 +1489,12 @@ cmd_lead_restart() {
     esac
   done
   if [ -z "$to" ]; then
-    profile=$(lead_profile) ||
-      die "the account firstmate itself runs on is not recorded for this session, so there is no seat to rotate away from; it is recorded at the next session start"
-    anchor=$(fm_seat_name_of_profile "$profile")
-    # Asked for by hand, like `switch --next`: the operator has decided to move
-    # the lead, so this answers which seats are usable rather than which one
-    # improves on this seat. The automatic move does not come through here - it
-    # chooses its own destination under the headroom rule and then names it
-    # with --to, which is what the watch's instruction tells firstmate to run.
-    to=$(next_seat --any "$anchor") ||
-      die "no seat under the seats root qualifies as a destination for firstmate itself (each skipped seat and its reason is printed above); add and log into another seat, put an excluded seat back with 'fm-seat.sh auto-include <name>', or lower 'fm-seat.sh destination-min' (docs/claude-seats.md)"
+    choice=$(cmd_leader_destination) || die 'no seat qualifies as a destination for firstmate itself'
+    read -r provider to <<< "$choice"
   fi
   FM_HOME="$FM_HOME" FM_ROOT_OVERRIDE="$FM_ROOT" FM_STATE_OVERRIDE="$STATE" \
     FM_CONFIG_OVERRIDE="$CONFIG" FM_DATA_OVERRIDE="$DATA" \
-    "$SCRIPT_DIR/fm-lead-restart.sh" --to "$to" ${forwarded[@]+"${forwarded[@]}"}
+    "$SCRIPT_DIR/fm-lead-restart.sh" --provider "$provider" --to "$to" ${forwarded[@]+"${forwarded[@]}"}
 }
 
 # write_percent_setting <file-name> <label> <value>
@@ -1839,8 +2018,10 @@ cmd_auto() {
 }
 
 # auto_lead_trigger <threshold>
-# The same crossing, asked about FIRSTMATE'S OWN seat. It is a separate question
-# from auto_trigger's because the lead keeps the account it launched on while
+# The Claude-seat watch is the single leader controller. Its Claude threshold
+# applies to the recorded incumbent's native provider, including Codex; the
+# Codex-seat watch remains worker-only. A successor needs no second watch.
+# The crossing is separate from auto_trigger because the lead keeps its account while
 # config/claude-seat moves under it, so the two can be on different seats and
 # cross at different times.
 #
@@ -1860,15 +2041,18 @@ cmd_auto() {
 # self-sufficient so it is still complete with no skill loaded.
 #
 # Nothing is reported unless the move is actually available: the destination is
-# chosen by the ordinary rotation and then put through the whole restart
+# chosen across native providers by leader-destination, then put through restart
 # preflight, so a crossing with no signed-in destination, no established launch
 # command, session, or terminal, says exactly that instead of offering a
 # restart that would refuse.
 auto_lead_trigger() {  # <threshold>
-  local threshold=$1 profile seat remaining phrase target reported out
+  local threshold=$1 profile seat remaining phrase target reported out provider choice incumbent selection
+  provider=$(fm_session_lock_runtime_field "$STATE" harness) || provider=claude
+  case "$provider" in claude|codex) ;; *) return 0 ;; esac
   profile=$(lead_profile) || return 0
-  seat=$(fm_seat_name_of_profile "$profile")
-  IFS=$'\t' read -r _ remaining phrase < <(seat_crossing "$seat") || return 0
+  seat=$(FM_SEAT_PROVIDER="$provider" fm_seat_name_of_profile "$profile")
+  incumbent="$provider:$seat"
+  IFS=$'\t' read -r _ remaining phrase < <(FM_SEAT_PROVIDER="$provider" seat_crossing "$seat") || return 0
   [ -n "$remaining" ] || return 0
   if ! jq -en --arg r "$remaining" --arg t "$threshold" \
     '($r | tonumber) <= ($t | tonumber)' >/dev/null 2>&1; then
@@ -1876,26 +2060,31 @@ auto_lead_trigger() {  # <threshold>
     return 0
   fi
   reported=$(auto_record_get lead) || reported=''
-  [ "$reported" != "$seat" ] || return 0
-  if ! target=$(next_seat "$seat" 2>/dev/null); then
-    [ "$reported" != "blocked:$seat:" ] || return 0
-    auto_record_set lead "blocked:$seat:"
+  [ "$reported" != "$incumbent" ] || return 0
+  if ! selection=$(cmd_leader_destination 2>&1); then
+    [ "$reported" != "blocked:$incumbent:" ] || return 0
+    auto_record_set lead "blocked:$incumbent:"
+    printf '%s\n' "$selection"
     printf '%s-seat: firstmate itself is on %s at %s and no seat qualifies as a destination, so it stays where it is\n' "$FM_SEAT_PROVIDER" \
       "$seat" "$phrase"
     return 0
   fi
+  choice=${selection##*$'\n'}
+  read -r provider target <<< "$choice"
   if ! out=$(FM_HOME="$FM_HOME" FM_ROOT_OVERRIDE="$FM_ROOT" FM_STATE_OVERRIDE="$STATE" \
     FM_CONFIG_OVERRIDE="$CONFIG" FM_DATA_OVERRIDE="$DATA" \
-    "$SCRIPT_DIR/fm-lead-restart.sh" --check --to "$target" 2>&1); then
-    [ "$reported" != "blocked:$seat:$target" ] || return 0
-    auto_record_set lead "blocked:$seat:$target"
+    "$SCRIPT_DIR/fm-lead-restart.sh" --check --provider "$provider" --to "$target" 2>&1); then
+    [ "$reported" != "blocked:$incumbent:$provider:$target" ] || return 0
+    auto_record_set lead "blocked:$incumbent:$provider:$target"
+    printf '%s\n' "${selection%$'\n'*}"
     printf '%s-seat: firstmate itself is on %s at %s and cannot move to %s: %s\n' "$FM_SEAT_PROVIDER" \
-      "$seat" "$phrase" "$target" "$(printf '%s' "$out" | sed -n '/./{s/^error: //;s/[[:space:]]\{1,\}/ /g;p;q;}')"
+      "$seat" "$phrase" "$provider:$target" "$(printf '%s' "$out" | sed -n '/./{s/^error: //;s/[[:space:]]\{1,\}/ /g;p;q;}')"
     return 0
   fi
-  auto_record_set lead "$seat"
-  printf '%s-seat: firstmate itself is on %s at %s and moves to %s now, on this wake, without asking the captain (load the claude-seat-lead-restart skill). Replacing this session drops its conversation and keeps every durable record, so FIRST %s THEN run exactly: %s/bin/fm-seat.sh lead-restart --to %s --persisted\n' "$FM_SEAT_PROVIDER" \
-    "$seat" "$phrase" "$target" "$FM_PERSIST_OPEN_RECORDS_CONTRACT" "$FM_ROOT" "$target"
+  auto_record_set lead "$incumbent"
+  printf '%s\n' "${selection%$'\n'*}"
+  printf '%s-seat: firstmate itself is on %s at %s and moves to %s now, on this wake, without asking the captain (load the claude-seat-lead-restart skill). Replacing this session drops its conversation and keeps every durable record, so FIRST %s THEN run exactly: %s/bin/fm-seat.sh lead-restart --provider %s --to %s --persisted\n' "$FM_SEAT_PROVIDER" \
+    "$seat" "$phrase" "$provider:$target" "$FM_PERSIST_OPEN_RECORDS_CONTRACT" "$FM_ROOT" "$provider" "$target"
 }
 
 # auto_trigger <threshold> <policy>
@@ -2505,6 +2694,7 @@ case "${1-}" in
   floor-dwell)       shift; cmd_floor_dwell "${1-}" ;;
   session-share)     shift; cmd_session_share "${1-}" ;;
   resting)           shift; cmd_resting "${1-}" "${2-}" ;;
+  leader-destination) shift; cmd_leader_destination "$@" ;;
   lead-restart)      shift; cmd_lead_restart "$@" ;;
   threshold-reached) shift; cmd_threshold_reached ;;
   auto)              shift; cmd_auto ;;

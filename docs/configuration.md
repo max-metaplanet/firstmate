@@ -1086,7 +1086,8 @@ The fourth, `config/claude-seat-auto-exclude`, holds seat names rather than a nu
 Blank lines are ignored, and a line naming no seat simply matches nothing, so a stale entry never excludes a seat it did not name; absent or empty means every named seat under the root is a rotation candidate.
 It withholds a seat regardless of headroom, which is what the percentage settings cannot express: the case is an account usable on this machine that should nonetheless never be picked up by an automatic switch, such as a personal account on a work machine.
 `bin/fm-seat.sh auto-exclude <name>` and `auto-include <name>` are the only writers of that last file; both are idempotent, an exclusion is refused for a name with no seat directory and for the `default` login that is never an automatic target, and `bin/fm-seat.sh status` and `list` each report which seats are excluded.
-Every automatic path reads the exclusion through one shared candidate filter - `switch --next`, the armed watch's switch, the watch's instruction to move firstmate itself, the lead-restart destination, and the feasibility check `arm` makes - while an explicit `switch <name>` does not consult it at all, so an excluded seat stays manually reachable.
+Worker rotation and the feasibility check `arm` makes share one candidate filter, while automatic leader selection honors each provider's exclusions through its cross-provider selector.
+An explicit `switch <name>` or named manual leader destination remains available for a deliberate choice.
 Excluding every candidate falls through to the existing no-destination refusal rather than any new behaviour, and excluding the active seat withholds it as a future destination without moving any worker off it.
 Four more optional files drive the QUOTA FLOOR, which withholds a seat automatically while a window of it is spent and returns it on its own once a reading proves it recovered; absent, no seat is ever rested and no extra quota is read.
 `config/claude-seat-floor` holds one percentage between 0 and 100: the percent left at or below which the armed watch rests a seat out of automatic rotation.
@@ -1129,7 +1130,14 @@ It changes account only by being replaced, which `bin/fm-seat.sh lead-restart` d
 The armed watch asks the same threshold question about firstmate's own seat, and firstmate carries that move out itself on the resulting wake without captain approval.
 The watch hands it over with the exact command rather than performing it, because replacing firstmate drops the conversation whose open work has to be written down first and only firstmate can write it.
 
-That replacement also carries the Remote Control the outgoing session had, because Remote Control belongs to the process rather than to the resumed session.
+The [leader replacement procedure](claude-seats.md#moving-firstmate-itself) owns provider selection, Claude Remote Control follow, and the embedded Codex leader's Remote Control limitation.
+
+## Automatic Codex leader destinations (config/lead-codex-auto)
+
+The optional local, gitignored `config/lead-codex-auto` contains exactly `on` or `off`; absent means `off`, and any other value refuses automatic leader selection.
+`on` admits Codex seats to the cross-provider leader selector; `off` withholds them without changing explicit manual Codex destinations or worker dispatch.
+This is the single automatic Codex leader gate and is local to the home.
+`bin/fm-seat.sh` owns its validation and selection mechanics, and [Moving firstmate itself](claude-seats.md#moving-firstmate-itself) owns the operator procedure and current Remote Control limitation.
 
 ## Codex seats
 

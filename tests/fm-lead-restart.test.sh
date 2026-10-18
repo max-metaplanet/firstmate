@@ -84,10 +84,11 @@ make_case() {  # <name> [<seat-for-lead>] [<backend>] [<target>]
   home="$dir/home"
   seats="$dir/seats"
   spec="$dir/quota-spec"
-  mkdir -p "$home/config" "$home/state" "$home/data" "$seats/alpha" "$seats/beta"
+  mkdir -p "$home/config" "$home/state" "$home/data" "$seats/alpha" "$seats/beta" "$dir/codex-seats"
   fakebin=$(fm_fakebin "$dir/fake")
   fm_test_make_quota_fake "$fakebin" "$spec"
   printf '%s\n' "$seats" > "$home/config/claude-seats-root"
+  printf '%s\n' "$dir/codex-seats" > "$home/config/codex-seats-root"
   printf '%s\n%s\n' "$seats/alpha" "$seats/beta" > "$spec/oauth"
   printf '90\n' > "$spec/remaining"
 
@@ -159,7 +160,7 @@ test_check_establishes_every_part_of_the_move() {
   local rec out
   rec=$(make_case check-ok); read_case "$rec"
   stub_pane_exists "$FAKEBIN"
-  out=$(run_home "$SEAT" lead-restart --check) ||
+  out=$(run_home "$SEAT" lead-restart --check --to beta) ||
     fail "check refused an establishable move: $out"
   case "$out" in
     *"lead seat: alpha"*) ;;
@@ -224,7 +225,7 @@ test_refuses_without_the_persist_gate() {
   local rec out
   rec=$(make_case no-persist); read_case "$rec"
   stub_pane_exists "$FAKEBIN"
-  out=$(run_as_lead "$SEAT" lead-restart) && fail "a restart ran with no persist gate: $out"
+  out=$(run_as_lead "$SEAT" lead-restart --to beta) && fail "a restart ran with no persist gate: $out"
   case "$out" in
     *'Open-record persistence'*) ;;
     *) fail "the refusal does not name the persist contract: $out" ;;
@@ -680,10 +681,17 @@ test_the_lead_trigger_fires_once_per_seat_and_hands_over_the_gate() {
   rec=$(make_case auto-lead); read_case "$rec"
   stub_pane_exists "$FAKEBIN"
   printf '%s\t5\n%s\t90\n' "$SEATS_DIR/alpha" "$SEATS_DIR/beta" > "$SPEC_DIR/remaining_map"
+  # Keep the shared fixture's per-profile quota, adding the leader rank scalar.
+  mv "$FAKEBIN/quota-axi" "$FAKEBIN/quota-axi.base"
+  cat > "$FAKEBIN/quota-axi" <<'QUOTA'
+#!/usr/bin/env bash
+"$0.base" "$@" | jq '.providers[].quotaSemantics.effectiveAvailability[].selection = {spendPriority:0.9}'
+QUOTA
+  chmod +x "$FAKEBIN/quota-axi"
   run_home "$SEAT" threshold 15 >/dev/null
   out=$(run_home "$SEAT" auto)
   case "$out" in
-    *"firstmate itself is on alpha at 5% left across its account windows and moves to beta now"*) ;;
+    *"firstmate itself is on alpha at 5% left across its account windows and moves to claude:beta now"*) ;;
     *) fail "the lead's own crossing was not reported: $out" ;;
   esac
   case "$out" in
@@ -691,7 +699,7 @@ test_the_lead_trigger_fires_once_per_seat_and_hands_over_the_gate() {
     *) fail "the report does not hand over the persist gate: $out" ;;
   esac
   case "$out" in
-    *"lead-restart --to beta --persisted"*) ;;
+    *"lead-restart --provider claude --to beta --persisted"*) ;;
     *) fail "the report does not name the exact command: $out" ;;
   esac
   # The wake is an INSTRUCTION firstmate acts on, not an option to put to the
@@ -717,7 +725,7 @@ test_the_lead_trigger_fires_once_per_seat_and_hands_over_the_gate() {
   printf '%s\t5\n%s\t90\n' "$SEATS_DIR/alpha" "$SEATS_DIR/beta" > "$SPEC_DIR/remaining_map"
   out=$(run_home "$SEAT" auto)
   case "$out" in
-    *"moves to beta now"*) ;;
+    *"moves to claude:beta now"*) ;;
     *) fail "the crossing did not re-arm after the seat recovered: $out" ;;
   esac
   kill -0 "$LEAD_PID" 2>/dev/null || fail "the automatic pass disturbed the lead"
@@ -729,14 +737,21 @@ test_the_lead_trigger_reports_the_blocker_rather_than_an_impossible_move() {
   local rec out
   rec=$(make_case auto-lead-blocked alpha tmux ''); read_case "$rec"
   printf '%s\t5\n%s\t90\n' "$SEATS_DIR/alpha" "$SEATS_DIR/beta" > "$SPEC_DIR/remaining_map"
+  # Keep the shared fixture's per-profile quota, adding the leader rank scalar.
+  mv "$FAKEBIN/quota-axi" "$FAKEBIN/quota-axi.base"
+  cat > "$FAKEBIN/quota-axi" <<'QUOTA'
+#!/usr/bin/env bash
+"$0.base" "$@" | jq '.providers[].quotaSemantics.effectiveAvailability[].selection = {spendPriority:0.9}'
+QUOTA
+  chmod +x "$FAKEBIN/quota-axi"
   run_home "$SEAT" threshold 15 >/dev/null
   out=$(run_home "$SEAT" auto)
   case "$out" in
-    *"cannot move to beta"*"terminal the lead runs in is not established"*) ;;
+    *"cannot move to claude:beta"*"terminal the lead runs in is not established"*) ;;
     *) fail "an unavailable move was not reported as one: $out" ;;
   esac
   case "$out" in
-    *lead-restart*) fail "a restart command was offered for a move that would refuse: $out" ;;
+    *"THEN run exactly:"*) fail "a restart command was offered for a move that would refuse: $out" ;;
   esac
   stop_case
   pass "a crossing the lead cannot act on names the blocker instead of offering a restart"
@@ -746,10 +761,17 @@ test_a_transient_blocker_does_not_spend_the_crossing() {
   local rec out
   rec=$(make_case auto-lead-transient alpha tmux ''); read_case "$rec"
   printf '%s\t5\n%s\t90\n' "$SEATS_DIR/alpha" "$SEATS_DIR/beta" > "$SPEC_DIR/remaining_map"
+  # Keep the shared fixture's per-profile quota, adding the leader rank scalar.
+  mv "$FAKEBIN/quota-axi" "$FAKEBIN/quota-axi.base"
+  cat > "$FAKEBIN/quota-axi" <<'QUOTA'
+#!/usr/bin/env bash
+"$0.base" "$@" | jq '.providers[].quotaSemantics.effectiveAvailability[].selection = {spendPriority:0.9}'
+QUOTA
+  chmod +x "$FAKEBIN/quota-axi"
   run_home "$SEAT" threshold 15 >/dev/null
   out=$(run_home "$SEAT" auto)
   case "$out" in
-    *"cannot move to beta"*) ;;
+    *"cannot move to claude:beta"*) ;;
     *) fail "the first blocked poll did not name its blocker: $out" ;;
   esac
   [ -z "$(run_home "$SEAT" auto)" ] || fail "the same blocker was reported on every poll"
@@ -759,7 +781,7 @@ test_a_transient_blocker_does_not_spend_the_crossing() {
   stub_pane_exists "$FAKEBIN"
   out=$(run_home "$SEAT" auto)
   case "$out" in
-    *"moves to beta now"*) ;;
+    *"moves to claude:beta now"*) ;;
     *) fail "a crossing whose blocker cleared never handed over the move: $out" ;;
   esac
   [ -z "$(run_home "$SEAT" auto)" ] || fail "the move instruction was handed over twice"
@@ -1138,6 +1160,106 @@ test_a_same_seat_refresh_tells_the_crew_it_restarts_in_place() {
   kill "$(cat "$LAB/home/state/.lock")" 2>/dev/null || true
   pass "a same-seat refresh tells the crew and the outcome that the lead restarted in place"
 }
+
+# Focused cases can be named explicitly without running the terminal swap layer.
+test_successor_pins_home_and_reuses_prompt_free_argv() {
+  local rec out cmd captured
+  rec=$(make_case pinned-home); read_case "$rec"
+  stub_pane_exists "$FAKEBIN"
+  cat > "$FAKEBIN/claude" <<'SH'
+#!/usr/bin/env bash
+python3 - "$@" <<'PY'
+import json, os, sys
+print(json.dumps({"home":os.environ.get("FM_HOME"), "state":os.environ.get("FM_STATE_OVERRIDE"), "root":os.environ.get("FM_ROOT_OVERRIDE"), "argv":sys.argv[1:], "recorded":json.loads(os.environ["FM_LEAD_LAUNCH_ARGV"])}))
+PY
+SH
+  chmod +x "$FAKEBIN/claude"
+  printf 'launch_argv=["claude","--model","opus"]\n' >> "$HOME_DIR/state/.lock-runtime"
+  out=$(run_home "$LEAD_RESTART" --check --to beta) || fail "recorded argv refused: $out"
+  cmd=$(sed -n 's/^replacement command: //p' <<< "$out")
+  captured=$(FM_HOME=/wrong FM_ROOT_OVERRIDE=/wrong FM_STATE_OVERRIDE=/wrong PATH="$FAKEBIN:$PATH" bash -c "$cmd") || fail 'successor command failed'
+  jq -e --arg home "$HOME_DIR" --arg root "$ROOT" '.home == $home and .state == ($home+"/state") and .root == $root and .recorded == ["claude","--model","opus"] and (.argv | length) == 5' <<< "$captured" >/dev/null || fail "successor inherited the pane shell or polluted its next argv: $captured"
+  [ "$(jq -r '.argv[-2]' <<< "$captured")" = lead-session-1 ] || fail 'resume identity lost'
+  stop_case
+  pass 'successor explicitly pins its home and keeps reusable argv free of the startup prompt'
+}
+
+test_codex_destination_is_fresh_embedded_and_keeps_claude_engine_profile() {
+  local rec out cmd captured
+  rec=$(make_case codex-destination); read_case "$rec"
+  stub_pane_exists "$FAKEBIN"
+  mkdir -p "$CASE_DIR/codex-seats/next"
+  printf '%s\n' "$CASE_DIR/codex-seats" > "$HOME_DIR/config/codex-seats-root"
+  cat > "$FAKEBIN/quota-axi" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' '{"schemaVersion":6,"providers":[{"provider":"codex","accountKey":"codex-home","source":"oauth","windows":[]}]}'
+SH
+  cat > "$FAKEBIN/codex" <<'SH'
+#!/usr/bin/env bash
+if [ "${1-}" = --help ]; then printf '%s\n' '--no-daemon'; exit; fi
+python3 - "$@" <<'PY'
+import json, os, sys
+print(json.dumps({"profile":os.environ.get("CODEX_HOME"), "claude":os.environ.get("CLAUDE_CONFIG_DIR"), "argv":sys.argv[1:]}))
+PY
+SH
+  chmod +x "$FAKEBIN/codex" "$FAKEBIN/quota-axi"
+  out=$(run_home "$LEAD_RESTART" --check --provider codex --to next) || fail "Codex destination refused: $out"
+  cmd=$(sed -n 's/^replacement command: //p' <<< "$out")
+  captured=$(PATH="$FAKEBIN:$PATH" bash -c "$cmd") || fail 'Codex successor command failed'
+  jq -e --arg profile "$CASE_DIR/codex-seats/next" --arg claude "$SEATS_DIR/alpha" '.profile == $profile and .claude == $claude and .argv[0:4] == ["--no-daemon","--model","gpt-6.1-sol","--dangerously-bypass-approvals-and-sandbox"] and (.argv | length) == 5' <<< "$captured" >/dev/null || fail "wrong Codex launch: $captured"
+  case "$out" in *'session: fresh codex'*'remote control: unavailable'*) ;; *) fail "fresh/RC limit missing: $out" ;; esac
+  [ ! -f "$HOME_DIR/config/supervision-host" ] || fail 'check mutated host configuration'
+  stop_case
+  pass 'Codex destination starts a fresh embedded session, retains Claude engine credentials and discloses RC limit'
+}
+
+test_shared_codex_daemon_is_never_a_restart_target() {
+  local rec out
+  rec=$(make_case codex-daemon); read_case "$rec"
+  printf 'harness=codex\n' >> "$HOME_DIR/state/.lock-runtime"
+  rm "$HOME_DIR/state/.lock-session"
+  out=$(run_home "$LEAD_RESTART" --check --to beta) && fail "shared daemon accepted: $out"
+  case "$out" in *'potentially shared daemon'*) ;; *) fail "wrong refusal: $out" ;; esac
+  kill -0 "$LEAD_PID" || fail 'the shared process was signaled'
+  stop_case
+  pass 'a Codex owner without embedded-process proof is refused before any handover'
+}
+
+
+test_codex_to_claude_starts_a_new_session() {
+  local rec out cmd
+  rec=$(make_case from-codex); read_case "$rec"
+  stub_pane_exists "$FAKEBIN"
+  stop_case
+  ln -s /bin/bash "$FAKE_CLAUDE_DIR/codex"
+  "$FAKE_CLAUDE_DIR/codex" "$SLEEPER" --no-daemon >/dev/null 2>&1 &
+  LEAD_PID=$!
+  printf '%s\n' "$LEAD_PID" > "$HOME_DIR/state/.lock"
+  printf 'pid=%s\nharness=codex\nprofile=%s\nclaude_profile=%s\nbackend=tmux\ntarget=%%9\n' \
+    "$LEAD_PID" "$CASE_DIR/codex-seats/source" "$SEATS_DIR/alpha" > "$HOME_DIR/state/.lock-runtime"
+  rm "$HOME_DIR/state/.lock-session"
+  out=$(run_home "$LEAD_RESTART" --check --provider claude --to beta) || fail "fresh Claude move refused: $out"
+  cmd=$(sed -n 's/^replacement command: //p' <<< "$out")
+  case "$cmd" in *'claude --model opus --dangerously-skip-permissions --remote-control --session-id '*) ;; *) fail "wrong fresh Claude command: $cmd" ;; esac
+  case "$cmd" in *'--resume '*) fail 'cross-provider conversation was resumed' ;; esac
+  case "$out" in *'session: fresh claude'*'requested for the fresh Claude successor'*) ;; *) fail "fresh session/RC reporting incorrect: $out" ;; esac
+  stop_case
+  pass 'Codex-to-Claude starts a new Claude conversation and explicitly requests Remote Control'
+}
+
+if [ "$#" -gt 0 ]; then
+  for case_name in "$@"; do
+    case "$case_name" in test_*) ;; *) fail "invalid case: $case_name" ;; esac
+    declare -F "$case_name" >/dev/null || fail "unknown case: $case_name"
+    "$case_name"
+  done
+  exit 0
+fi
+
+test_codex_to_claude_starts_a_new_session
+test_successor_pins_home_and_reuses_prompt_free_argv
+test_codex_destination_is_fresh_embedded_and_keeps_claude_engine_profile
+test_shared_codex_daemon_is_never_a_restart_target
 
 test_check_establishes_every_part_of_the_move
 test_the_replacement_is_launched_on_the_session_start_instruction

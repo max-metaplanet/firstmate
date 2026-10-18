@@ -1,7 +1,7 @@
 ---
 name: claude-seat-lead-restart
 description: >-
-  Agent-only procedure for moving firstmate itself onto another Claude seat.
+  Agent-only procedure for moving firstmate itself onto another Claude or Codex seat.
   Load on a `check:` wake whose line begins `claude-seat: firstmate itself`, and on any `check: lead-restart` wake.
   Firstmate carries the move out itself on that wake, with no captain approval; this skill owns that standing authority, the persist step that comes first, and the recovery half when a swap does not complete.
 user-invocable: false
@@ -12,7 +12,8 @@ metadata:
 # claude-seat-lead-restart
 
 A seat switch moves only what the next spawn reads, so it has never moved firstmate.
-No running Claude Code process can change credential store, so firstmate changes account only by being replaced: another `claude` starts on the new seat in the same terminal, resuming the same session, and the current process ends.
+Firstmate changes account by replacing its process in the same terminal.
+A Claude-to-Claude move resumes the session; a Codex successor or a cross-provider move starts fresh from durable records.
 `bin/fm-lead-restart.sh` owns that transaction, every refusal, and what a failure leaves; `docs/claude-seats.md` owns the operator's view of it.
 This skill owns only what firstmate does when the watch reports the crossing.
 
@@ -24,7 +25,9 @@ Do not ask the captain first, do not offer it as an option, and do not report th
 The captain set the threshold, so the threshold firing is the instruction.
 
 That authority is scoped to exactly this action and grants nothing else.
-It never becomes authority to merge, to answer an ask-user finding, or to take any destructive, irreversible, or security-sensitive action, and it never reaches a seat the captain did not configure, because `bin/fm-seat.sh` chooses the destination by the ordinary rotation.
+It never becomes authority to merge, to answer an ask-user finding, or to take any destructive, irreversible, or security-sensitive action, and it never reaches a seat the captain did not configure.
+`bin/fm-seat.sh leader-destination` owns cross-provider selection and its evidence, including the automatic Codex gate defined in [configuration.md](../../../docs/configuration.md#automatic-codex-leader-destinations-configlead-codex-auto).
+The existing Claude-seat watch and threshold remain the single leader controller on either provider; a Codex-seat watch controls workers only, so the wake trigger above remains unchanged.
 
 The away and quiet postures do not change it.
 A seat runs out of quota whether or not the captain is present, and the durable records the successor reads are the same ones either way, so an away window is the case this exists for rather than a reason to hold.
@@ -45,7 +48,7 @@ The wake line is self-sufficient and carries the exact command; run the steps in
    Do not start new work, do not promise the captain a follow-up from this session, and do not wait for the swap: the successor picks up from durable records at its own session start, and anything arriving meanwhile is held by the durable wake queue.
 
 Supervision needs nothing from you across the move.
-The supervision host reads the seat it spends from the record the successor leaves beside the home's lock, so it follows the move at its next engine turn with no restart; [docs/supervision-host.md](../../../docs/supervision-host.md#the-engines-seat) owns that behavior and what it does when the seat cannot be resolved.
+The supervision host remains on Claude and reads its account from the successor's lock-runtime record, which keeps retained Claude credentials separate from a Codex leader's seat; [docs/supervision-host.md](../../../docs/supervision-host.md#the-engines-seat) owns that behavior and its failure handling.
 
 A crossing the move cannot act on is reported as a blocker instead, naming what could not be established.
 Treat that as an ordinary blocker: it is captain-facing only when the captain has to act, such as a destination seat that needs their login.

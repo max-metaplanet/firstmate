@@ -332,9 +332,11 @@ _fm_engine_reap() {
 
 # fm_supervision_engine_seat <state-dir>
 # The Claude seat the engine's NEXT launch must spend, read from the one
-# record that names the seat this firstmate session itself runs on: the
-# lock-owner runtime record's profile field (bin/fm-session-lock-lib.sh, which
-# must be sourced first). Sets FM_SUPERVISION_ENGINE_PROFILE to that profile
+# lock-owner runtime record (bin/fm-session-lock-lib.sh, which must be sourced
+# first). A Codex primary carries its retained Claude credentials separately in
+# claude_profile; profile names its Codex seat and must never reach Claude.
+# Other primaries and legacy records use profile. Sets
+# FM_SUPERVISION_ENGINE_PROFILE to that profile
 # directory, or to empty for the ambient default login, and returns 0. On no
 # verdict it leaves the profile empty, sets
 # FM_SUPERVISION_ENGINE_SEAT_PROBLEM to one plain sentence, and returns 1.
@@ -351,20 +353,26 @@ _fm_engine_reap() {
 # cannot be read off config/claude-seat either: that file names the seat NEW
 # workers get and moves without the lead.
 #
-# WHY NO LOGIN PROBE. The profile this resolves is the one the live
-# lock-holding Claude session is running on, so that session IS the evidence
-# the seat holds a usable login, and a `quota-axi` probe (fm_seat_logged_in)
-# would spend a bounded read per wake to re-derive it while reporting
+# WHY NO LOGIN PROBE. A Claude primary's own session demonstrates a usable
+# login; a Codex primary only records retained Claude credentials, not proof
+# they remain usable. A `quota-axi` probe (fm_seat_logged_in) would spend a
+# bounded read per wake while reporting
 # "undecided" for a rate-limited or Keychain-gated read of a perfectly good
 # seat. A profile directory that is not there is still refused here, and a
 # profile whose credentials are genuinely gone fails the launch itself, which
 # the host already hands to main and counts toward its latch.
 # shellcheck disable=SC2034 # Output globals, read by the sourcing caller.
 fm_supervision_engine_seat() {
-  local state_dir=${1-} profile
+  local state_dir=${1-} profile harness field=profile
   FM_SUPERVISION_ENGINE_PROFILE=''
   FM_SUPERVISION_ENGINE_SEAT_PROBLEM=''
-  if ! profile=$(fm_session_lock_runtime_field "$state_dir" profile); then
+  harness=$(fm_session_lock_runtime_field "$state_dir" harness) || harness=claude
+  [ "$harness" != codex ] || field=claude_profile
+  if ! profile=$(fm_session_lock_runtime_field "$state_dir" "$field"); then
+    if [ "$harness" = codex ]; then
+      FM_SUPERVISION_ENGINE_SEAT_PROBLEM="the Codex session has no retained Claude profile in its current lock-owner record, so the seat the engine must spend is unknown"
+      return 1
+    fi
     FM_SUPERVISION_ENGINE_SEAT_PROBLEM="the record of the Claude seat this session runs on does not name the current lock owner, so the seat the engine must spend is unknown"
     return 1
   fi

@@ -29,7 +29,7 @@
 # nothing, so a failed handover can never wedge a home permanently.
 # bin/fm-session-lock-lib.sh owns the record's format and both admission proofs.
 #
-# The owning session also records what it is running in - its Claude profile and
+# The owning session also records what it is running in - its harness, profile and
 # its pane - in state/.lock-runtime, bound to the pid on line 1, because neither
 # is derivable elsewhere: the lead's own seat is not config/claude-seat (that
 # names the seat NEW workers get), and neither value can be read out of a
@@ -240,20 +240,26 @@ publish_lock_session() {
   return 0
 }
 
-# Record what this session is running in - its Claude profile and its pane -
+# Record this session's harness, native profile, retained Claude profile and pane,
 # bound to the pid now on line 1. Best effort by design: it is evidence for the
 # lead-restart path, never ownership, so a failure to write it must not refuse a
 # lock the session has already verified it owns. The pane is recorded only when
 # bin/fm-supervisor-target-lib.sh established one; its guessed fallback is left
 # out so a later reader refuses rather than restarts into the wrong terminal.
 publish_lock_runtime() {
-  local tmp pid target backend
+  local tmp pid target backend harness profile
   pid=$(cat "$LOCK" 2>/dev/null || true)
   case "$pid" in ''|*[!0-9]*) return 0 ;; esac
   tmp=$(mktemp "$STATE/.lock-runtime.XXXXXX" 2>/dev/null) || return 0
+  harness=$("$SCRIPT_DIR/fm-harness.sh") || harness=unknown
+  profile=${CLAUDE_CONFIG_DIR:-}
+  [ "$harness" != codex ] || profile=${CODEX_HOME:-${HOME:-}/.codex}
   {
     printf 'pid=%s\n' "$pid"
-    printf 'profile=%s\n' "${CLAUDE_CONFIG_DIR:-}"
+    printf 'harness=%s\n' "$harness"
+    printf 'profile=%s\n' "$profile"
+    printf 'claude_profile=%s\n' "${CLAUDE_CONFIG_DIR:-}"
+    [ -z "${FM_LEAD_LAUNCH_ARGV:-}" ] || printf 'launch_argv=%s\n' "$FM_LEAD_LAUNCH_ARGV"
     printf 'ambient=%s\n' "${FM_AMBIENT_CLAUDE_CONFIG_DIR-${CLAUDE_CONFIG_DIR:-}}"
     if target=$(discover_supervisor_target) && backend=$(discover_supervisor_backend); then
       printf 'backend=%s\n' "$backend"

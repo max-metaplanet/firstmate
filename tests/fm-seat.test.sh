@@ -35,7 +35,8 @@ make_seat_case() {
   home="$case_dir/home"
   seats="$case_dir/seats"
   spec="$case_dir/quota-spec"
-  mkdir -p "$home/config" "$home/state" "$home/data" "$seats"
+  mkdir -p "$home/config" "$home/state" "$home/data" "$seats" "$case_dir/codex-seats"
+  printf '%s\n' "$case_dir/codex-seats" > "$home/config/codex-seats-root"
   fakebin=$(fm_fakebin "$case_dir/fake")
   make_quota_fake "$fakebin" "$spec"
   printf '%s\n' "$seats" > "$home/config/claude-seats-root"
@@ -1401,8 +1402,7 @@ test_the_lead_restart_destination_skips_an_excluded_seat() {
   mkdir -p "$SEATS_DIR/work" "$SEATS_DIR/personal"
   seat_logged_in "$SPEC_DIR" "$SEATS_DIR/work" "$SEATS_DIR/personal"
   # Firstmate itself is on 'work'. The destination for a lead restart is chosen
-  # by the same rotation, anchored on the seat the LEAD is on, so the exclusion
-  # has to reach that choice too.
+  # by the leader-only cross-provider chooser; its exclusion must apply too.
   printf '4242424\n' > "$HOME_DIR/state/.lock"
   { printf 'pid=4242424\n'; printf 'profile=%s\n' "$SEATS_DIR/work"; } > "$HOME_DIR/state/.lock-runtime"
 
@@ -1414,9 +1414,9 @@ test_the_lead_restart_destination_skips_an_excluded_seat() {
   out=$(run_seat "$HOME_DIR" "$FAKEBIN" lead-restart --check)
   status=$?
   expect_code 1 "$status" "a lead restart with its only destination excluded must refuse"
-  assert_contains "$out" "no seat under the seats root qualifies as a destination for firstmate itself" \
+  assert_contains "$out" "no seat qualifies as a destination for firstmate itself" \
     "the lead restart must refuse through the ordinary no-destination path"
-  assert_contains "$out" "seat personal: skipped, excluded from automatic rotation" \
+  assert_contains "$out" "excluded from automatic rotation" \
     "the lead restart must report the exclusion as the reason"
   assert_not_contains "$out" "--to personal" "the lead restart must never choose an excluded seat"
   pass "the lead-restart destination choice skips an excluded seat like every other automatic path"
@@ -4682,7 +4682,7 @@ test_the_destination_minimum_still_applies_on_top_of_the_anchor_rule() {
   pass "the destination minimum still refuses a candidate the anchor rule alone would accept"
 }
 
-test_the_lead_move_also_requires_a_seat_with_more_headroom() {
+test_the_lead_move_requires_measured_spend_priority() {
   local rec out
   rec=$(make_seat_case policy-lead-anchor)
   read_seat_case "$rec"
@@ -4700,10 +4700,10 @@ test_the_lead_move_also_requires_a_seat_with_more_headroom() {
   out=$(run_seat "$HOME_DIR" "$FAKEBIN" auto)
   assert_contains "$out" "firstmate itself is on alpha" "the lead's own crossing must be reported"
   assert_contains "$out" "no seat qualifies as a destination, so it stays where it is" \
-    "the lead must stay put rather than move onto a seat with no more headroom"
-  assert_not_contains "$out" "lead-restart --to" \
-    "no move instruction may be issued for a same-or-worse seat"
-  pass "the lead's own move refuses a destination with no more weekly spare than the seat it is on"
+    "the lead must stay put when the fixture has no spendPriority evidence"
+  assert_not_contains "$out" "THEN run exactly:" \
+    "no move instruction may be issued without a measured spendPriority"
+  pass "the lead's own move requires measured spendPriority rather than weekly-spare arithmetic"
 }
 
 test_an_unreadable_anchor_leaves_the_absolute_rules_in_charge() {
@@ -4853,7 +4853,7 @@ TABLE
   pass "the 2026-10-16 readings route work by weekly spare, wait out a five-hour dip, and never bounce"
 }
 
-test_a_resting_lead_seat_never_moves_onto_a_seat_with_less_weekly_spare() {
+test_a_resting_lead_seat_still_requires_measured_spend_priority() {
   local rec out
   rec=$(make_seat_case policy-resting-anchor)
   read_seat_case "$rec"
@@ -4873,20 +4873,20 @@ test_a_resting_lead_seat_never_moves_onto_a_seat_with_less_weekly_spare() {
   run_seat "$HOME_DIR" "$FAKEBIN" auto >/dev/null
   assert_grep alpha "$HOME_DIR/config/claude-seat-resting" "precondition: alpha must be resting below the floor"
 
-  # Its week then crosses the trigger while it is still resting. beta clears the
-  # destination minimum but has LESS weekly spare, so moving the lead there is a
-  # move to a worse seat whatever alpha's resting record says.
+  # Its week then crosses while it is still resting. The legacy fixture has no
+  # spendPriority evidence: resting must not authorize an unmeasured leader move.
+  # The worker's independent weekly-spare policy also keeps its seat unchanged.
   seat_windows_clear "$SPEC_DIR"
   seat_windows "$SPEC_DIR" "$SEATS_DIR/alpha" 3 '2026-10-16T05:40:00Z' 15 '2026-10-21T06:00:00Z' -40 -20
   seat_windows "$SPEC_DIR" "$SEATS_DIR/beta" 90 '2026-10-16T05:40:00Z' 12 '2026-10-21T06:00:00Z' 40 -30
   out=$(run_seat "$HOME_DIR" "$FAKEBIN" auto)
   assert_grep alpha "$HOME_DIR/config/claude-seat-resting" "precondition: alpha must still be resting at the crossing"
   assert_contains "$out" "no seat qualifies as a destination, so it stays where it is" \
-    "a resting lead seat must stay put rather than move onto less weekly spare"
-  assert_not_contains "$out" "lead-restart --to" \
-    "no move instruction may be issued for a seat with less weekly spare"
+    "a resting lead still needs measured spendPriority for a destination"
+  assert_not_contains "$out" "THEN run exactly:" \
+    "no leader move instruction may be issued without measured spendPriority"
   assert_grep alpha "$HOME_DIR/config/claude-seat" "the active seat must not rotate onto the worse seat either"
-  pass "a resting seat's crossing still refuses a destination with less weekly spare"
+  pass "a resting leader requires measured spendPriority while worker rotation keeps its weekly-spare policy"
 }
 
 # spawn_session_case <name> <id>
@@ -4970,13 +4970,13 @@ test_a_new_worker_is_held_when_no_seat_has_five_hour_room() {
 
 echo "# all fm-seat tests passed"
 
-test_a_resting_lead_seat_never_moves_onto_a_seat_with_less_weekly_spare
+test_a_resting_lead_seat_still_requires_measured_spend_priority
 test_a_new_worker_launches_off_a_seat_with_no_five_hour_room
 test_a_new_worker_is_held_when_no_seat_has_five_hour_room
 test_a_crossing_never_moves_onto_a_seat_with_no_more_headroom
 test_a_crossing_still_moves_onto_a_seat_that_is_genuinely_better
 test_the_destination_minimum_still_applies_on_top_of_the_anchor_rule
-test_the_lead_move_also_requires_a_seat_with_more_headroom
+test_the_lead_move_requires_measured_spend_priority
 test_an_unreadable_anchor_leaves_the_absolute_rules_in_charge
 test_a_walled_worker_moves_off_an_empty_seat_but_not_onto_an_equal_one
 test_a_five_hour_dip_alone_never_moves_a_seat_or_the_lead
