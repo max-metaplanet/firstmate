@@ -65,6 +65,13 @@ test_branch_prompt_is_byte_stable_and_above_cache_floor() {
     *"A worker whose pull request has landed is finished, not stuck"*"\`check: merge landed:\` wake names exactly that moment"*"\`bin/fm-teardown.sh <task>\` with no flags"*"never forced, worked around, or repaired by hand"*) ;;
     *) fail "branch prompt lost the landed-work cleanup rule" ;;
   esac
+  # shellcheck disable=SC2016 # The emitted Markdown contains literal backticks.
+  assert_contains "$out_a" \
+    'a direct-PR `done:` means ready for review, and a pushed branch or idle worker proves no landing.' \
+    'branch prompt treats readiness or publication as landing'
+  assert_contains "$out_a" \
+    'An open or unmerged PR stays recorded and monitored; report any new readiness or blocker to MAIN and do not call teardown for it.' \
+    'branch prompt permits stale-wake cleanup of an open PR'
   case "$out_a" in
     *"A second mate's status log is a relay channel for its child work"*"retiring a second mate is MAIN's alone"*"Report a second mate's signal wake from the status lines that wake newly presents"*"A second mate's stale wake is a liveness event: report it even when it presents no new status lines."*) ;;
     *) fail "branch prompt lost the second-mate relay, signal-span, or stale-liveness rule" ;;
