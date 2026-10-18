@@ -1255,6 +1255,112 @@ test_reseed_backs_up_corruption_and_never_seeds_malformed_outcomes() {
   pass "fm-jev-prod-check: explicit reseed backs up corruption and seeds only verified current outcomes"
 }
 
+# Advance a fixture clock after inventory retrieval, without sleeping or reading
+# a live home. The public command must honor its deadline under each mode.
+test_reseed_and_check_budget_bounds() {
+  local home out mode budget timeout elapsed expected rc
+  while read -r mode budget timeout elapsed expected; do
+    home=$(make_home "bounds-$mode-$budget-$timeout-$elapsed")
+    configure "$home"
+    fake_gh "$home" >/dev/null
+    write_pulls "$home" 7200
+    printf '[]' > "$home/fx/comments-2214.json"
+    printf '%s\n' "$NOW" > "$home/fx/clock"
+    cat > "$home/bin/date" <<EOF
+#!/usr/bin/env bash
+cat '$home/fx/clock'
+EOF
+    mv "$home/bin/gh" "$home/bin/gh-fixture"
+    cat > "$home/bin/gh" <<EOF
+#!/usr/bin/env bash
+'$home/bin/gh-fixture' "\$@"
+case "\${2:-}" in */pulls\?*) printf '%s\n' '$((NOW + elapsed))' > '$home/fx/clock' ;; esac
+EOF
+    chmod +x "$home/bin/date" "$home/bin/gh"
+    out=$(env -u FM_JEV_PROD_NOW PATH="$home/bin:$PATH" FM_HOME="$home" \
+      FM_JEV_PROD_BUDGET="$budget" FM_CHECK_TIMEOUT="$timeout" "$CHECK" "$mode" 2>&1)
+    rc=$?
+    if [ "$expected" = success ]; then
+      expect_code 0 "$rc" "manual reseed has its own budget"
+      assert_contains "$out" 'reseeded:' "manual reseed finishes after the watcher deadline"
+    elif [ "$mode" = reseed ]; then
+      expect_code 1 "$rc" "manual reseed stays bounded"
+      assert_contains "$out" "budget ran out after ${expected}s, examined 0 of 1 candidates; raise FM_JEV_PROD_BUDGET" "budget refusal names effective limit and progress"
+      assert_contains "$out" 'original state retained' "budget refusal retains state"
+    else
+      expect_code 0 "$rc" "watcher budget exhaustion defers"
+      if [ -e "$home/fx/gh-argv.log" ] && grep -q '/issues/' "$home/fx/gh-argv.log"; then
+        fail "check must not examine a candidate beyond its clamp"
+      fi
+    fi
+  done <<EOF
+reseed 120 5 30 success
+reseed 0 5 30 success
+reseed 999 5 301 300
+reseed 120 5 121 120
+check 120 100 26 clamped
+check 120 5 3 clamped
+EOF
+  pass "fm-jev-prod-check: reseed honors its manual budget and ceiling while check keeps both clamps"
+}
+
+test_reseed_names_refusals_and_preserves_state() {
+  local home out kind expected before
+  for kind in config pulls array candidates comments comment-array truncated state scratch backup copy replace; do
+    home=$(make_home "refusal-$kind")
+    configure "$home"
+    fake_gh "$home" >/dev/null
+    write_pulls "$home" 7200
+    printf '[]' > "$home/fx/comments-2214.json"
+    printf 'original record\n' > "$home/state/.jev-prod-monitor"
+    before=$(cat "$home/state/.jev-prod-monitor")
+    case "$kind" in
+      config) printf 'repo:invalid\n' > "$home/config/jev-prod-monitor"; expected='invalid configuration: invalid repo: invalid' ;;
+      pulls) touch "$home/fx/fail-pulls"; expected='the merged pull request list for metaplanet-jp/core could not be read' ;;
+      array) printf '{}' > "$home/fx/pulls.json"; expected='PR list was not a JSON array' ;;
+      candidates) jq '.[0].merged_at = "bad-date"' "$home/fx/pulls.json" > "$home/fx/bad.json"; mv "$home/fx/bad.json" "$home/fx/pulls.json"; expected='PR list candidates could not be parsed' ;;
+      comments) touch "$home/fx/fail-comments"; expected="PR $PR_URL comment list could not be read" ;;
+      comment-array) printf '{}' > "$home/fx/comments-2214.json"; expected="PR $PR_URL comment list was not a JSON array" ;;
+      truncated) jq -n '[range(100) | {}]' > "$home/fx/comments-2214.json"; expected="PR $PR_URL has a 100+ comment inventory that cannot be read completely" ;;
+      state) printf '#!/usr/bin/env bash\nexit 1\n' > "$home/bin/mkdir"; chmod +x "$home/bin/mkdir"; expected='cannot create state directory' ;;
+      scratch|backup)
+        cat > "$home/bin/mktemp" <<EOF
+#!/usr/bin/env bash
+case "\$*" in *$( [ "$kind" = scratch ] && printf '.fm-jev-prod.' || printf '.backup.' )*) exit 1 ;; esac
+exec /usr/bin/mktemp "\$@"
+EOF
+        chmod +x "$home/bin/mktemp"
+        if [ "$kind" = scratch ]; then expected='cannot create scratch directory'; else expected='cannot create backup file'; fi ;;
+      copy) printf '#!/usr/bin/env bash\nexit 1\n' > "$home/bin/cp"; chmod +x "$home/bin/cp"; expected='cannot copy original state to backup' ;;
+      replace) printf '#!/usr/bin/env bash\nexit 1\n' > "$home/bin/mv"; chmod +x "$home/bin/mv"; expected='cannot replace state record' ;;
+    esac
+    out=$(env PATH="$home/bin:$PATH" FM_HOME="$home" FM_JEV_PROD_NOW="$NOW" "$CHECK" reseed 2>&1)
+    expect_code 1 "$?" "reseed refuses $kind"
+    assert_contains "$out" "reseed refused: $expected; original state retained" "reseed names $kind refusal"
+    assert_equals "$before" "$(cat "$home/state/.jev-prod-monitor")" "$kind leaves the original state intact"
+  done
+  pass "fm-jev-prod-check: reseed names configuration, inventory, comment, and filesystem refusals"
+}
+
+test_reseed_reports_full_inventory_without_paginating() {
+  local home out
+  home=$(make_home reseed-full-page)
+  configure "$home"
+  fake_gh "$home" >/dev/null
+  write_pulls "$home" 7200
+  # Repeating a valid candidate keeps this fixture small while presenting a
+  # complete page of in-window rows to the executable.
+  jq '[range(50) as $i | .[0]]' "$home/fx/pulls.json" > "$home/fx/full.json"
+  mv "$home/fx/full.json" "$home/fx/pulls.json"
+  printf '[]' > "$home/fx/comments-2214.json"
+  out=$(env PATH="$home/bin:$PATH" FM_HOME="$home" FM_JEV_PROD_NOW="$NOW" "$CHECK" reseed 2>&1)
+  expect_code 0 "$?" "reseed finishes its current single-page inventory"
+  assert_contains "$out" 'all 50 PRs are inside the lookback; single-page inventory may be truncated' "a full page explicitly warns about inventory scope"
+  assert_contains "$out" 'reseeded:' "the warning does not refuse a complete current page"
+  assert_equals 1 "$(grep -c '/pulls?' "$home/fx/gh-argv.log")" "reseed retains its single-page contract"
+  pass "fm-jev-prod-check: reseed reports a potentially truncated full inventory without pagination"
+}
+
 test_recorded_run_identity_survives_read_failures() {
   local home out
   home=$(make_home recorded-attempts)
@@ -1363,6 +1469,9 @@ test_deployment_grace_late_result_and_redeploy
 test_persona_pairing_rejects_mismatches
 test_captured_persona_artifact_context_wins_over_name
 test_reseed_backs_up_corruption_and_never_seeds_malformed_outcomes
+test_reseed_and_check_budget_bounds
+test_reseed_names_refusals_and_preserves_state
+test_reseed_reports_full_inventory_without_paginating
 test_saved_lists_survive_full_rotations
 test_help_and_usage
 test_unconfigured_home_is_silent_and_spends_nothing

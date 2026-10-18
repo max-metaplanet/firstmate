@@ -86,8 +86,11 @@
 # rows or claiming they were delivered. Unknown current outcomes remain unseeded.
 # Incomplete forge reads or an exhausted budget retain the original state.
 # Run it after updating the monitor with FM_HOME set to the intended home.
-# It uses the same lookback, candidate inventory and read budget as `check`, but
-# must finish every candidate in that inventory before replacing the state.
+# It uses the same lookback and single-page inventory as `check`, and must
+# finish every candidate in that inventory before replacing the state. A full
+# 50-PR page warns that older candidates may be missing; reseed does not paginate.
+# Its manual read budget is FM_JEV_PROD_BUDGET (default 120 seconds, capped at
+# 300), independent of FM_CHECK_TIMEOUT. Each forge read remains capped at 5s.
 # Not-applicable outcomes retain their reason in `outcome` rows and never claim
 # a browser pass. When run metadata is unavailable, a recorded digest or section
 # fingerprint is the fallback identity; malformed sections also use the comment
@@ -164,6 +167,8 @@ Configuration is opt-in: config/jev-prod-monitor (local, gitignored) names the
 repository to watch. An unconfigured home runs no check and spends nothing.
 docs/configuration.md owns the schema; the `bearings` skill's "Jev production
 verdict follow-up" section owns what firstmate does with each class.
+Manual reseed uses FM_JEV_PROD_BUDGET (default 120 seconds, maximum 300),
+independent of the watcher timeout, with each forge read bounded to 5 seconds.
 EOF
 }
 
@@ -193,12 +198,18 @@ case "$MAX_PRS" in ''|*[!0-9]*|0) MAX_PRS=8 ;; esac
 # keep, so a poll is never killed mid-write.
 CHECK_TIMEOUT=${FM_CHECK_TIMEOUT:-30}
 case "$CHECK_TIMEOUT" in ''|*[!0-9]*|0) CHECK_TIMEOUT=30 ;; esac
-BUDGET=${FM_JEV_PROD_BUDGET:-20}
-case "$BUDGET" in ''|*[!0-9]*|0) BUDGET=20 ;; esac
-[ "$BUDGET" -le 25 ] || BUDGET=25
-BUDGET_CAP=$((CHECK_TIMEOUT - 3))
-[ "$BUDGET_CAP" -ge 1 ] || BUDGET_CAP=1
-[ "$BUDGET" -le "$BUDGET_CAP" ] || BUDGET=$BUDGET_CAP
+if [ "${1:-check}" = reseed ]; then
+  BUDGET=${FM_JEV_PROD_BUDGET:-120}
+  case "$BUDGET" in ''|*[!0-9]*|0) BUDGET=120 ;; esac
+  [ "$BUDGET" -le 300 ] || BUDGET=300
+else
+  BUDGET=${FM_JEV_PROD_BUDGET:-20}
+  case "$BUDGET" in ''|*[!0-9]*|0) BUDGET=20 ;; esac
+  [ "$BUDGET" -le 25 ] || BUDGET=25
+  BUDGET_CAP=$((CHECK_TIMEOUT - 3))
+  [ "$BUDGET_CAP" -ge 1 ] || BUDGET_CAP=1
+  [ "$BUDGET" -le "$BUDGET_CAP" ] || BUDGET=$BUDGET_CAP
+fi
 # No single forge read may eat the whole budget.
 READ_SECS=5
 [ "$READ_SECS" -le "$BUDGET" ] || READ_SECS=$BUDGET
@@ -687,6 +698,11 @@ render_item() {  # <class> <pr-url> <ticket> <app> <prod-verdict> <preview-verdi
 }
 
 # --- check ------------------------------------------------------------------
+reseed_refuse() {
+  printf 'fm-jev-prod-check: reseed refused: %s; original state retained\n' "$(scrub_field "$1")" >&2
+  return 1
+}
+
 action_check() {
   local prs pr_rows reported='' standing=''
   local woken pending cursor
@@ -695,15 +711,22 @@ action_check() {
 
   if ! config_read; then
     [ "$RESEED" -eq 0 ] && return 0
-    printf 'fm-jev-prod-check: reseed requires valid configuration\n' >&2
+    reseed_refuse "invalid configuration: ${CONFIG_ERROR:-missing repo directive or config file}"
     return 1
   fi
 
-  mkdir -p "$STATE" || return 1
-  TMP=$(mktemp -d "$STATE/.fm-jev-prod.XXXXXX") || return 0
+  mkdir -p "$STATE" || {
+    [ "$RESEED" -eq 0 ] || reseed_refuse "cannot create state directory"
+    return 1
+  }
+  TMP=$(mktemp -d "$STATE/.fm-jev-prod.XXXXXX") || {
+    [ "$RESEED" -eq 0 ] && return 0
+    reseed_refuse "cannot create scratch directory"
+    return 1
+  }
   if [ "$RESEED" -eq 1 ] && [ -e "$RECORD" ]; then
-    RESEED_BACKUP=$(umask 077; mktemp "$RECORD.backup.XXXXXX") || return 1
-    cp "$RECORD" "$RESEED_BACKUP" || return 1
+    RESEED_BACKUP=$(umask 077; mktemp "$RECORD.backup.XXXXXX") || { reseed_refuse "cannot create backup file"; return 1; }
+    cp "$RECORD" "$RESEED_BACKUP" || { reseed_refuse "cannot copy original state to backup"; return 1; }
   fi
   if [ "$RESEED" -eq 0 ]; then record_read; else RECORD_WOKEN=; RECORD_PENDING=; RECORD_CURSOR=; RECORD_OUTCOMES=; fi
   woken=$RECORD_WOKEN
@@ -727,7 +750,7 @@ action_check() {
   fi
 
   if [ -n "$standing" ]; then
-    [ "$RESEED" -eq 0 ] || { printf 'fm-jev-prod-check: reseed refused: %s\n' "$standing" >&2; return 1; }
+    [ "$RESEED" -eq 0 ] || { reseed_refuse "$standing"; return 1; }
     reported="jev-prod: couldnt-check $standing"
     if [ "$reported" != "$RECORD_REPORTED" ]; then
       fm_cap_line_var "$reported" "$MAX_LINE"
@@ -738,7 +761,7 @@ action_check() {
   fi
 
   if [ "$RESEED" -eq 1 ]; then
-    printf '%s' "$prs" | jq -e 'type == "array"' >/dev/null 2>&1 || return 1
+    printf '%s' "$prs" | jq -e 'type == "array"' >/dev/null 2>&1 || { reseed_refuse "PR list was not a JSON array"; return 1; }
   fi
   pr_rows=$(printf '%s' "$prs" | jq -r --argjson now "$NOW" --argjson window "$((CONFIG_LOOKBACK * 3600))" '
     if type == "array" then
@@ -749,13 +772,16 @@ action_check() {
           | [ (.number | tostring), .html_url, (.head.sha // ""), (.merge_commit_sha // ""),
               ((.merged_at | fromdateiso8601) | tostring), (.title // "") ]
           | @tsv
-    else empty end' 2>/dev/null) || { [ "$RESEED" -eq 0 ] || return 1; pr_rows=; }
+    else empty end' 2>/dev/null) || { [ "$RESEED" -eq 0 ] || { reseed_refuse "PR list candidates could not be parsed"; return 1; }; pr_rows=; }
 
   # Rotate the candidate set from just after the last pull request examined, so
   # a window the budget cut short is finished first on the next poll.
   local candidates total offset window
   total=$(printf '%s\n' "$pr_rows" | grep -c . || true)
   total=${total:-0}
+  if [ "$RESEED" -eq 1 ] && [ "$total" -ge 50 ]; then
+    printf 'fm-jev-prod-check: reseed warning: all 50 PRs are inside the lookback; single-page inventory may be truncated\n' >&2
+  fi
   candidates=
   if [ "$total" -gt 0 ]; then
     offset=0
@@ -782,11 +808,16 @@ $candidates
 EOF
 
   if [ "$RESEED" -eq 1 ]; then
-    [ "$examined" -eq "$total" ] && budget_left && [ "$RESEED_FAILED" -eq 0 ] || {
-      printf 'fm-jev-prod-check: reseed incomplete; original state retained\n' >&2
+    if ! budget_left; then
+      reseed_refuse "budget ran out after ${BUDGET}s, examined $examined of $total candidates; raise FM_JEV_PROD_BUDGET (maximum 300)"
       return 1
-    }
-    record_write '' "$woken" '' '' || return 1
+    fi
+    if [ -n "$RESEED_FAILED" ]; then
+      reseed_refuse "$RESEED_FAILED"
+      return 1
+    fi
+    [ "$examined" -eq "$total" ] || { reseed_refuse "candidate examination stopped after $examined of $total candidates"; return 1; }
+    record_write '' "$woken" '' '' || { reseed_refuse "cannot replace state record"; return 1; }
     printf 'reseeded: %s backup=%s\n' "$RECORD" "${RESEED_BACKUP:-none}"
     return 0
   fi
@@ -832,7 +863,7 @@ examine_pr() {  # <number> <url> <head-sha> <merge-sha> <merged-at> <title>
   local checks_url key class preview preview_run persona section section_head fingerprint reason identity
 
   comments=$(gh_json "repos/$CONFIG_REPO/issues/$number/comments?per_page=100") || {
-    [ "$RESEED" -eq 0 ] || { RESEED_FAILED=1; return 1; }
+    [ "$RESEED" -eq 0 ] || { RESEED_FAILED="PR $url comment list could not be read"; return 1; }
     budget_cut_deferrable && return 1
     budget_left && return 0
     pr_url_ok "$url" "$number" || return 0
@@ -843,7 +874,12 @@ examine_pr() {  # <number> <url> <head-sha> <merge-sha> <merged-at> <title>
     return 0
   }
   if [ "$RESEED" -eq 1 ]; then
-    printf '%s' "$comments" | jq -e 'type == "array" and length < 100' >/dev/null 2>&1 || { RESEED_FAILED=1; return 1; }
+    printf '%s' "$comments" | jq -e 'type == "array"' >/dev/null 2>&1 || {
+      RESEED_FAILED="PR $url comment list was not a JSON array"; return 1;
+    }
+    printf '%s' "$comments" | jq -e 'length < 100' >/dev/null 2>&1 || {
+      RESEED_FAILED="PR $url has a 100+ comment inventory that cannot be read completely"; return 1;
+    }
   fi
   body_file="$TMP/body-$number"
   # ONLY the recorder's own comment is a verdict. Anybody who can comment on the
@@ -1098,7 +1134,7 @@ action_disarm() {
 
 case "${1:-check}" in
   check) action_check ;;
-  reseed) RESEED=1; RESEED_FAILED=0; RESEED_BACKUP=; action_check ;;
+  reseed) RESEED=1; RESEED_FAILED=; RESEED_BACKUP=; action_check ;;
   arm) action_arm ;;
   disarm) action_disarm ;;
   -h|--help) usage ;;
