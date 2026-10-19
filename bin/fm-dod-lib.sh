@@ -65,6 +65,8 @@
 # plus the convention sentences fm_ticket_resolve renders, which this function
 # takes already rendered as its seventh argument and only places; bin/fm-spawn.sh
 # refuses a ship whose ticket or commit type disagrees with those lines.
+# A real ticket also carries the instruction to read that ticket in full before
+# working, which fm_ticket_resolve omits for the ticketless marker.
 # A ticketed no-mistakes task also takes fm_ticket_resolve's PR-retitle step as
 # its eighth argument: the pipeline's PR step drafts a conventional title with no
 # ticket in it, so the worker corrects that title as soon as the PR exists rather
@@ -357,10 +359,16 @@ fm_ticket_resolve() {  # <ticket> <commit-type> <task-id> <branch-prefix> <branc
     return 1
   }
   FM_TICKET_BRANCH=$(fm_ticket_branch "$commit_type" "$ticket" "$id")
+  local read_ticket=''
+  [ "$ticket" = "$FM_TICKET_NONE" ] || read_ticket="
+Before you start the work, read ticket $ticket in full: its description, every comment, its subtasks, its linked tasks, and its attachments.
+Weigh the comments people wrote first; treat automated status and risk-score comments as the weakest signal and read only the latest of each.
+Any ClickUp read path will do - where this home installs the private \`cu-*\` helper, \`cu-task $ticket\` is one example - and the ticket's own page carries whatever a command does not print.
+If you cannot read it, report that in your first status line rather than proceeding silently on this brief alone."
   # shellcheck disable=SC2034 # Output global, read by the sourcing caller.
   FM_TICKET_HEADER="
 Ticket: $ticket
-Commit type: $commit_type
+Commit type: $commit_type$read_ticket
 Every commit subject on this branch and the pull request title must read \`$commit_type/$ticket(<scope>): <message>\`, where \`<scope>\` names the area changed and \`<message>\` is a short imperative description.
 The branch is exactly \`$FM_TICKET_BRANCH\`; do not rename it."
   # shellcheck disable=SC2034 # Output global, read by the sourcing caller.

@@ -1663,8 +1663,9 @@ test_worker_role_scope
 # scaffold must prohibit the administrative act itself. The rule is emitted from
 # one shared string so the ship and scout copies cannot drift apart.
 # The ticket convention binds a ship's branch, commit subjects, and PR title to
-# a ClickUp id. The brief is where the worker learns all three, so the exact
-# formats must be rendered literally rather than described.
+# a ClickUp id, and a real id also sends the worker to read that ticket first.
+# The brief is where the worker learns all of it, so the exact formats must be
+# rendered literally rather than described.
 test_ticket_renders_the_convention_and_branch() {
   local home id mode brief
   home="$TMP_ROOT/ticket-render-home"
@@ -1688,6 +1689,14 @@ test_ticket_renders_the_convention_and_branch() {
     # shellcheck disable=SC2016  # literal backticks around the branch name must stay unexpanded
     assert_grep "\`git checkout -b feat/ENG-630-$id --\`" "$brief" \
       "$mode: the Setup step must create the ticketed branch"
+    assert_grep 'read ticket ENG-630 in full' "$brief" \
+      "$mode: a ticketed brief must send the worker to the ticket before working"
+    assert_grep 'its subtasks, its linked tasks, and its attachments' "$brief" \
+      "$mode: the brief must name every part of the ticket to read"
+    assert_grep 'automated status and risk-score comments as the weakest signal' "$brief" \
+      "$mode: the brief must rank people's comments above automated ones"
+    assert_grep 'report that in your first status line' "$brief" \
+      "$mode: an unreadable ticket must be reported rather than passed over"
   done
   pass "fm-brief.sh: --ticket renders the convention and branch in every ship mode"
 }
@@ -1709,6 +1718,8 @@ test_no_ticket_marker_still_follows_the_convention() {
   # shellcheck disable=SC2016  # the literal backticked format must stay unexpanded
   assert_grep 'must read `chore/no-ticket(<scope>): <message>`' "$brief" \
     "the no-ticket marker must appear in the commit-subject format"
+  assert_no_grep 'in full: its description, every comment' "$brief" \
+    "the no-ticket marker names work with no ticket to read"
   pass "fm-brief.sh: the explicit no-ticket marker follows the convention"
 }
 
@@ -1732,6 +1743,8 @@ test_unticketed_brief_carries_no_convention() {
       "$mode: an unticketed brief must carry no commit-type header"
     assert_no_grep '(<scope>): <message>' "$brief" \
       "$mode: an unticketed brief must carry no convention text"
+    assert_no_grep 'in full: its description, every comment' "$brief" \
+      "$mode: an unticketed brief has no ticket to read"
   done
   pass "fm-brief.sh: omitting --ticket leaves the brief exactly as it was"
 }
