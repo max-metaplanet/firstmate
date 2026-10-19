@@ -1,0 +1,6 @@
+ok - absent or off setting: no plan, no key, and not a single Herdr call
+ok - on with zero tasks: plan and sync stay quiet and exit 0
+ok - on: one group per project, status order needs-captain, problem, running, done
+ok - rules: line order sets group order; task prefix beats repo beats catch-all; bad rules warn
+ok - all-invalid rules: empty RULE_GROUP still plans via project fallback
+not ok - agents view set once for the session (expected '/tmp/fm-groups-s1.sock	set', got '/private/tmp/fm-groups-s1.sock	set')

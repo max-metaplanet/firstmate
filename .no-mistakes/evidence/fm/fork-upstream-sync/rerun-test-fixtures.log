@@ -1,0 +1,4 @@
+ok - runner and shared helpers isolate host Git config and preserve explicit config and outside commits
+ok - shared helpers and runner keep fixture Git off an inherited repository location
+not ok - with a compiler, a multicall host sleep must still yield a stand-in
+not ok - agent stand-in multicall case

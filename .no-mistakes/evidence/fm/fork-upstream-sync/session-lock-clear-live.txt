@@ -1,0 +1,47 @@
+## before /clear
+lock line1: 89644 -> 
+lock-session: 9a403347-1d47-4c1c-a879-53d9deb6e6c7
+  - Startup checks: nothing to report, and no notifications were waiting.
+  - Fleet: empty. There is no work under way, no backlog, no projects, no second mates, no captain preferences and no learnings, so every one of those records is absent.
+  - Network checks: still running when the output was printed (3s in, with a 120s limit). None of them can be treated as passed yet, including GitHub authentication.
+  - Supervision: handled by the session's end-of-turn hook with the supervision host turned on.
+  The two lock files contain:
+  89644
+  9a403347-1d47-4c1c-a879-53d9deb6e6c7
+  state/.lock holds the harness pid and state/.lock-session holds the session id.
+  As you asked, I did nothing else.
+✻ Cogitated for 18s · done 2:19 AM
+seat-max2 5h 91% · 7d 24% (4d 4h)  │  others tightest claude seat-max 6% (6m old, stale)                                                                                                            [-]
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ 
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  -- INSERT -- ⏵⏵ auto mode on (shift+tab to cycle)
+## after /clear + second session start
+lock line1: 89644 -> 
+lock-session: bf0dfa9a-586b-4e13-ac78-bc7ef56a4d27
+ ▐▛███▛█   Claude Code v2.1.303
+▝▜██████▀  Opus 5.5 · Claude Team
+ ▝▝   ▝▝   ~/.no-mistakes/worktrees/61c6dd39b831/01M59BMTQ0HMMTEJAGWF8WX8ET
+❯ /clear
+❯ Run exactly: bin/fm-session-start.sh ; then cat "$FM_HOME/state/.lock" "$FM_HOME/state/.lock-session". Report the output and do nothing else.
+  Ran 1 shell command
+⏺ Captain, here's the output.
+  Session start (bin/fm-session-start.sh), with the home at /private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab.xBjASV:
+  - Lock: acquired by harness pid 89644.
+  - Home role: user (the default).
+  - Bootstrap: no problems reported.
+  - Queued notifications: none.
+  - Supervision: handled by the automatic end-of-turn hook, with the supervision host on. Away and quiet modes are off.
+  - Work under way: none. No status logs without a matching task record, and no away record.
+  - Network checks: finished in 3s with no problems found.
+  - Context files: all absent: backlog, projects, secondmates, captain, captain-shared and learnings.
+  Lock files:
+  state/.lock          → 89644
+  state/.lock-session  → bf0dfa9a-586b-4e13-ac78-bc7ef56a4d27
+✻ Brewed for 15s · done 2:20 AM
+seat-max2 5h 90% · 7d 24% (4d 4h)  │  others tightest claude seat-max 6% (7m old, stale)                                                                                                            [-]
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ 
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  -- INSERT -- ⏵⏵ auto mode on (shift+tab to cycle)
+anchor pid 89644 process: claude

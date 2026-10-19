@@ -1,0 +1,16 @@
+## latest published per version_url: 2.1.303
+## real claude on PATH: 2.1.303 (Claude Code)
+## case A: installed 0.0.1 (fake binary) with version_url -> update available
+tool updates: claude update available: 2.1.303 published at https://downloads.claude.ai/claude-code-releases/latest, PATH resolves 0.0.1
+exit=0
+## case B: real installed (current) claude with version_url -> silent
+exit=0
+## case C (adversarial): http:// version_url refused
+tool updates: watched tool registry: tool claude version_url must be one https URL
+exit=0
+## case D (adversarial): version_url body has no version
+tool updates: claude update available: 1.6 published at https://example.com/, PATH resolves 0.0.1
+exit=0
+## case E (adversarial): version_url without command
+tool updates: watched tool registry: tool claude needs command, git, or both
+exit=0

@@ -1,0 +1,19 @@
+## brief inbox line:
+86:When a terminal message says an instruction is waiting there - and at any natural checkpoint when you are unsure - list them with `find '/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.xBjASV/state/unborn-t1.inbox' -maxdepth 1 -name '*.msg' 2>/dev/null | sort -V`, read and act on each message in numeric order, then acknowledge each handled message by moving it: `mv '/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.xBjASV/state/unborn-t1.inbox'/NNN.msg '/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.xBjASV/state/unborn-t1.inbox'/handled/`.
+## extracted command: find '/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.xBjASV/state/unborn-t1.inbox' -maxdepth 1 -name '*.msg' 2>/dev/null | sort -V
+## bash, absent inbox:
+exit=0
+## zsh, absent inbox:
+exit=0
+## bash, empty inbox:
+exit=0
+## zsh, empty inbox:
+exit=0
+## bash, three messages (numeric order expected 2,10,1000):
+/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.xBjASV/state/unborn-t1.inbox/2.msg
+/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.xBjASV/state/unborn-t1.inbox/10.msg
+/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.xBjASV/state/unborn-t1.inbox/1000.msg
+exit=0
+## contrast: old bare-glob listing on empty inbox in zsh
+zsh:1: no matches found: /var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.xBjASV/state/empty.inbox/*.msg
+exit=1

@@ -1,0 +1,12 @@
+## project HEAD state:
+fatal: Needed a single revision
+## fm-spawn.sh unborn-t1 <lab>/projects/unborn --mode local-only --yolo off --backend tmux
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab.xBjASV
+error: spawn refused: project /private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab.xBjASV/projects/unborn has no commit yet (unborn HEAD), so there is nothing to branch a worktree from; make one commit in the project, for example 'git -C /private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab.xBjASV/projects/unborn commit --allow-empty -m "chore: initial commit"', then spawn again
+exit=1 elapsed=2s
+## state after:
+empty.inbox
+unborn-t1.inbox
+## commits in project:        0
+## lab tmux sessions:
+error connecting to /private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab.xBjASV/tmux/tmux-501/fm-lab (No such file or directory)

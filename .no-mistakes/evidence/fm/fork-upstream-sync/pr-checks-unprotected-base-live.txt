@@ -1,0 +1,50 @@
+## fm-pr-checks.sh https://github.com/max-metaplanet/firstmate/pull/122
+exit=0
+## fm-pr-state.sh https://github.com/max-metaplanet/firstmate/pull/122
+STATE: merged at 2026-10-18T09:12:44Z
+exit=0
+## gh reported checks (oracle)
+   1 Behavior portable parallel 1	skipping
+   1 Behavior portable parallel 2	skipping
+   1 Behavior portable serial ${{ matrix.shard }}	skipping
+   1 Behavior selected 1	pass
+   1 Behavior selected 2	pass
+   1 Behavior selected 3	pass
+   1 Behavior tests (Herdr)	skipping
+   1 Behavior timing aggregate	skipping
+   1 CI gate	pass
+   2 Change scope	pass
+   1 Documentation audience guard	skipping
+   1 Lint 1	pass
+   1 Lint 2	pass
+   1 Lint 3	pass
+   1 PR must be raised via no-mistakes	pass
+   1 Repo invariants	pass
+   1 Stock macOS Bash snapshot compatibility	skipping
+   1 Stock macOS Bash snapshot compatibility (advisory)	pass
+   1 Test coverage guard	pass
+## fm-pr-checks.sh https://github.com/max-metaplanet/firstmate/pull/118
+REQUIRED CHECK: CI gate (red)
+REQUIRED CHECK: Lint 2 (red)
+exit=1
+## fm-pr-state.sh https://github.com/max-metaplanet/firstmate/pull/118
+STATE: merged at 2026-10-18T06:32:28Z
+exit=0
+## gh reported checks (oracle)
+   1 Behavior portable parallel 1	pass
+   1 Behavior portable parallel 2	pass
+   1 Behavior portable serial ${{ matrix.shard }}	skipping
+   1 Behavior selected ${{ matrix.shard }}	skipping
+   1 Behavior tests (Herdr)	pass
+   1 Behavior timing aggregate	pass
+   1 CI gate	fail
+   2 Change scope	pass
+   1 Documentation audience guard	skipping
+   1 Lint 1	pass
+   1 Lint 2	fail
+   1 Lint 3	pass
+   1 PR must be raised via no-mistakes	pass
+   1 Repo invariants	pass
+   1 Stock macOS Bash snapshot compatibility	skipping
+   1 Stock macOS Bash snapshot compatibility (advisory)	pass
+   1 Test coverage guard	pass
