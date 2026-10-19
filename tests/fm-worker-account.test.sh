@@ -532,7 +532,6 @@ test_raw_claude_command_receives_the_pin
 test_raw_claude_account_override_refuses_under_a_pin
 test_raw_claude_account_override_is_kept_without_a_pin
 test_local_secondmate_reads_the_launching_home_pin
+test_secondmate_pin_cannot_override_an_active_named_seat
 
 echo "# all fm-worker-account tests passed"
-
-test_secondmate_pin_cannot_override_an_active_named_seat
