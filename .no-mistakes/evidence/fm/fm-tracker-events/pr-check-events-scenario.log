@@ -1,0 +1,6 @@
+first record rc=0
+armed: state/task-x1.check.sh
+re-arm same URL rc=0
+--- consumer received ---
+{"schema":"firstmate.task-event","version":1,"event":"pr-opened","task_id":"task-x1","ticket":"ENG-700","pr_url":"https://github.com/acme/app/pull/77","merge":null,"timestamp":"2026-10-19T06:48:35Z","summary":"PR opened for the export endpoint","key":null,"home":"/private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-pc-lab.Kaympq/home","sequence":1}
+PASS  P1 PR registration emits pr-opened once; re-arm of same URL emits nothing

@@ -1,0 +1,14 @@
+== T1 normal teardown of a done task emits finished with worker summary
+    teardown rc=0; last line: Backlog: task-x1 just finished (this home keeps no markdown backlog at /private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-td-lab.1wSrJm/done/data/backlog.md). Update /private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-td-lab.1wSrJm/done/data/backlog.md - move task-x1 to Done, keep Done to the 10 most recent, then re-scan Queued and dispatch only work whose blockers are gone and date is due.
+    consumer: {"schema":"firstmate.task-event","version":1,"event":"finished","task_id":"task-x1","ticket":"ENG-900","pr_url":"https://github.com/acme/app/pull/90","merge":null,"timestamp":"2026-10-19T06:47:24Z","summary":"export endpoint shipped, PR merged","key":null,"home":"/private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-td-lab.1wSrJm/done","sequence":1}
+PASS  T1 finished emitted after successful teardown
+== T2 forced teardown of an unfinished task emits cancelled
+    teardown rc=0; last line: Backlog: task-x1 just finished (this home keeps no markdown backlog at /private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-td-lab.1wSrJm/force/data/backlog.md). Update /private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-td-lab.1wSrJm/force/data/backlog.md - move task-x1 to Done, keep Done to the 10 most recent, then re-scan Queued and dispatch only work whose blockers are gone and date is due.
+    consumer: {"schema":"firstmate.task-event","version":1,"event":"cancelled","task_id":"task-x1","ticket":"ENG-900","pr_url":"https://github.com/acme/app/pull/90","merge":null,"timestamp":"2026-10-19T06:47:28Z","summary":"halfway through migration","key":null,"home":"/private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-td-lab.1wSrJm/force","sequence":1}
+PASS  T2 cancelled emitted for forced removal without done status
+== T3 adversarial (R3-F1): done status + surfaced hook failure, then --force teardown is still finished
+    teardown rc=0
+    consumer: {"schema":"firstmate.task-event","version":1,"event":"finished","task_id":"task-x1","ticket":"ENG-900","pr_url":"https://github.com/acme/app/pull/90","merge":null,"timestamp":"2026-10-19T06:47:31Z","summary":"PR ready for review","key":null,"home":"/private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-td-lab.1wSrJm/failnote","sequence":1}
+PASS  T3 failure notice does not impersonate worker status at teardown
+
+TOTAL_FAILS=0

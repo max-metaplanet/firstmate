@@ -1,0 +1,60 @@
+== S1 full lifecycle through the public CLI: ordered, tracker-neutral JSON
+    --- consumer received (/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-ev-lab.qQjFdo/s1/events) ---
+    {"sequence":1,"event":"started","task_id":"t1","ticket":"ENG-123","pr_url":null,"merge":null,"key":null,"summary":"wiring the export endpoint"}
+    {"sequence":2,"event":"blocked","task_id":"t1","ticket":"ENG-123","pr_url":null,"merge":null,"key":"creds","summary":"staging credential expired"}
+    {"sequence":3,"event":"waiting","task_id":"t1","ticket":"ENG-123","pr_url":null,"merge":null,"key":"captain-hold-t1-1","summary":"Pick v1 or v2 schema?"}
+    {"sequence":4,"event":"decision-answered","task_id":"t1","ticket":"ENG-123","pr_url":null,"merge":null,"key":"captain-hold-t1-1","summary":"staging credential expired"}
+    {"sequence":5,"event":"resumed","task_id":"t1","ticket":"ENG-123","pr_url":null,"merge":null,"key":"captain-hold-t1-1","summary":"staging credential expired"}
+    {"sequence":6,"event":"pr-opened","task_id":"t1","ticket":"ENG-123","pr_url":"https://github.com/acme/app/pull/11","merge":null,"key":null,"summary":"PR opened, all checks green"}
+    {"sequence":7,"event":"pr-merged","task_id":"t1","ticket":"ENG-123","pr_url":"https://github.com/acme/app/pull/11","merge":"final","key":null,"summary":"PR opened, all checks green"}
+    {"sequence":8,"event":"finished","task_id":"t1","ticket":"ENG-123","pr_url":"https://github.com/acme/app/pull/11","merge":null,"key":null,"summary":"PR opened, all checks green"}
+PASS  S1 every lifecycle event delivered in order with task id, ticket, PR url, worker summary
+PASS  S1 payload is tracker-neutral (no ClickUp knowledge)
+== S2 keyed blocker fold (real fm-classify-lib status reader) emits blocked/waiting/resumed
+    --- consumer received (/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-ev-lab.qQjFdo/s2/events) ---
+    {"sequence":1,"event":"blocked","task_id":"t2","ticket":"ENG-200","pr_url":null,"merge":null,"key":"ci","summary":"CI runner offline"}
+    {"sequence":2,"event":"waiting","task_id":"t2","ticket":"ENG-200","pr_url":null,"merge":null,"key":"api","summary":"keep old endpoint?"}
+    {"sequence":3,"event":"resumed","task_id":"t2","ticket":"ENG-200","pr_url":null,"merge":null,"key":"api","summary":"keep it"}
+PASS  S2 any keyed blocker emits blocked/waiting; resumed only after the last blocker clears; repeat fold silent
+== S3 partial vs final merge across two tasks sharing a ticket (real fm_merge_outcome_report)
+    --- consumer received (/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-ev-lab.qQjFdo/s3/events) ---
+    {"sequence":1,"event":"pr-opened","task_id":"a","ticket":"ENG-300","pr_url":"https://github.com/acme/app/pull/21","merge":null,"key":null,"summary":""}
+    {"sequence":2,"event":"pr-opened","task_id":"b","ticket":"ENG-300","pr_url":"https://github.com/acme/app/pull/22","merge":null,"key":null,"summary":""}
+    {"sequence":3,"event":"pr-merged","task_id":"a","ticket":"ENG-300","pr_url":"https://github.com/acme/app/pull/21","merge":"partial","key":null,"summary":""}
+    {"sequence":4,"event":"pr-merged","task_id":"b","ticket":"ENG-300","pr_url":"https://github.com/acme/app/pull/22","merge":"final","key":null,"summary":""}
+PASS  S3 first merge partial, last merge final; repeated merge poll emits nothing
+== S4 adversarial: superseded PR and cancel of last open PR still reach final (R2-F2/F1)
+    --- consumer received (/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-ev-lab.qQjFdo/s4/events) ---
+    {"sequence":1,"event":"pr-opened","task_id":"a","ticket":"ENG-400","pr_url":"https://x/pull/1","merge":null,"key":null,"summary":""}
+    {"sequence":2,"event":"pr-opened","task_id":"a","ticket":"ENG-400","pr_url":"https://x/pull/2","merge":null,"key":null,"summary":""}
+    {"sequence":3,"event":"pr-opened","task_id":"b","ticket":"ENG-400","pr_url":"https://x/pull/3","merge":null,"key":null,"summary":""}
+    {"sequence":4,"event":"pr-merged","task_id":"a","ticket":"ENG-400","pr_url":"https://x/pull/2","merge":"partial","key":null,"summary":""}
+    {"sequence":5,"event":"cancelled","task_id":"b","ticket":"ENG-400","pr_url":null,"merge":"final","key":null,"summary":""}
+PASS  S4 superseded PR ignored; cancelling the last open PR yields cancelled merge=final
+== S5 legacy compat: only config/ticket-sync-hook keeps tracker syncing via adapter
+    --- legacy hook argv ---
+    ["ENG-500","start"]
+    ["ENG-500","waiting","Need captain sign-off"]
+    ["ENG-500","review","https://x/pull/7"]
+    ["ENG-500","review","https://x/pull/8"]
+    ["ENG-500","done"]
+    --- task-events.log ---
+    2026-10-19T06:47:47Z compatibility: config/ticket-sync-hook alone delivers task events through bin/fm-ticket-sync.sh; name a consumer in config/task-event-hook to migrate
+PASS  S5 legacy hook gets start/waiting/review/done; partial merge does not send done; cancel-final sends done
+PASS  S5 compatibility path logged exactly once naming config/task-event-hook
+== S6 consumer failure/hang never blocks the producer; surfaced once; summary not hijacked
+    producer returned rc=0 in .188s while consumer hangs 30s
+PASS  S6 hung consumer does not block or fail the producer
+    --- task-events.log ---
+    2026-10-19T06:47:52Z task_id=t event=pr-opened exit=124
+    2026-10-19T06:47:54Z task_id=t event=finished exit=9
+    --- task status ---
+    done: PR ready for review
+    actionable [at=1792392472]: task event hook failed event=pr-opened exit=124; see state/task-events.log
+PASS  S6 timeout (124) and failure (9) logged
+PASS  S6 one actionable status line, rate-limited
+PASS  S6 later summary still the worker's own status text
+== S7 disabled home: no hook config -> no events, no state, no process
+PASS  S7 unconfigured home produces no side effects
+
+TOTAL_FAILS=0
