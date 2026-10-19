@@ -63,7 +63,10 @@
 # captain's ticket convention: the branch becomes "<type>/<ticket>-<task-id>"
 # instead of the "fm/" prefix, and the Definition of done's machine-readable
 # header gains "Ticket:" and "Commit type:" lines plus the exact commit-subject
-# and PR-title format the worker must follow. bin/fm-dod-lib.sh's
+# and PR-title format the worker must follow. A real ticket id also instructs
+# the worker to read that whole ticket before working; the "no-ticket" marker
+# names work with no ticket to read and gets no such instruction.
+# bin/fm-dod-lib.sh's
 # fm_ticket_resolve owns the ticket and type grammar, the branch it resolves,
 # and that rendered text. The two flags come as a pair: a ticket without a type
 # is refused rather than given a guessed one, a type without a ticket has no
