@@ -3097,6 +3097,7 @@ SH
   chmod +x "$case_dir/ticket-hook"
   : > "$case_dir/ticket-calls"
   printf '%s\n' "$case_dir/ticket-hook" > "$home/config/ticket-sync-hook"
+  printf '%s\n' "$ROOT/bin/fm-ticket-sync.sh" > "$home/config/task-event-hook"
 
   out=$(run_spawn "$case_dir" "$id" "$case_dir/project" --mode no-mistakes --yolo off \
     --ticket ENG-2653 --commit-type feat) || fail "ticketed spawn failed: $out"
@@ -3133,6 +3134,7 @@ SH
   chmod +x "$case_dir/ticket-hook"
   : > "$case_dir/ticket-calls"
   printf '%s\n' "$case_dir/ticket-hook" > "$home/config/ticket-sync-hook"
+  printf '%s\n' "$ROOT/bin/fm-ticket-sync.sh" > "$home/config/task-event-hook"
 
   out=$(run_ship_spawn "$case_dir" "$id") || fail "unticketed spawn failed: $out"
   assert_contains "$out" "spawned $id" "the unticketed spawn did not report success"

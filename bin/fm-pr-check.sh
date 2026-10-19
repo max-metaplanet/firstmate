@@ -260,14 +260,10 @@ fi
 # The merge-time re-record is not a new review-ready PR, so it writes nothing.
 [ ! -e "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}/fleet-ledger" ] || [ "${FM_PR_CHECK_MERGE:-}" = 1 ] \
   || FM_HOME=$FM_HOME FM_STATE_OVERRIDE=$STATE "$SCRIPT_DIR/fm-fleet-ledger.sh" pr_ready "$ID" "$URL" || true
-# Opt-in ticket-sync hook (docs/configuration.md); off costs one file test.
-# This is the task's own PR registration, so the ticket moves to review here.
-# The merge-time re-record is not a review event, and re-arming a URL this task
-# already had is the same transition rather than a new one: both fire nothing,
-# which is what keeps one ticket comment per milestone.
-[ ! -e "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}/ticket-sync-hook" ] || [ "${FM_PR_CHECK_MERGE:-}" = 1 ] \
+# Registration owns pr-opened; re-arm and merge-time re-record are not new PRs.
+{ [ ! -e "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}/task-event-hook" ] && [ ! -e "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}/ticket-sync-hook" ]; } || [ "${FM_PR_CHECK_MERGE:-}" = 1 ] \
   || [ "$PRIOR_PR" = "$URL" ] \
-  || FM_HOME=$FM_HOME FM_STATE_OVERRIDE=$STATE "$SCRIPT_DIR/fm-ticket-sync.sh" "$ID" review "$URL" || true
+  || FM_HOME=$FM_HOME FM_STATE_OVERRIDE=$STATE "$SCRIPT_DIR/fm-task-event.sh" "$ID" pr-opened --pr "$URL" || true
 # The contribution observer uses the same authenticated check mechanism and
 # owns verdict freshness, required actors and external feedback separately from
 # the exact merged-state poll. Registration is local and performs no forge read.

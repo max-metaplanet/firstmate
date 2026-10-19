@@ -4663,6 +4663,7 @@ SH
   chmod +x "$home/ticket-hook"
   : > "$home/ticket-calls"
   printf '%s\n' "$home/ticket-hook" > "$home/config/ticket-sync-hook"
+  printf '%s\n' "$ROOT/bin/fm-ticket-sync.sh" > "$home/config/task-event-hook"
 }
 
 # The hook runs detached, so wait for its effect rather than assuming it landed.
@@ -4719,6 +4720,58 @@ test_a_fresh_captain_hold_moves_its_ticket_to_waiting() {
   pass "a fresh captain hold moves its ticket to waiting exactly once"
 }
 
+test_captain_answer_emits_events_once_per_occurrence() {
+  local home id mode expected count
+  for mode in release close; do
+    home=$(make_home "answer-events-$mode")
+    id=sample-answer-events
+    tasks_in "$home" add "$id" "Choose the rollout" --kind ship --repo sample >/dev/null \
+      || fail "could not create answer event fixture"
+    fm_write_meta "$home/state/$id.meta" \
+      "window=firstmate:fm-$id" "endpoint_task_id=$id" "worktree=$home/projects/$id" \
+      "project=$home/projects/sample" "harness=codex" "kind=ship" "mode=no-mistakes" \
+      "ticket=issue/123" "spawn_gen=fixture-$id"
+    cat > "$home/event-hook" <<SH
+#!/usr/bin/env bash
+printf '%s\n' "\$1" >> "$home/events"
+SH
+    chmod +x "$home/event-hook"
+    printf '%s\n' "$home/event-hook" > "$home/config/task-event-hook"
+    run_captain "$home" hold "$id" --reason "Choose the rollout order" >/dev/null \
+      || fail "could not hold answer event fixture"
+    wait_for_ticket_lines "$home/events" 1 || fail "hold event was not emitted"
+    printf 'working: The rollout order is ready.\n' > "$home/state/$id.status"
+    printf 'Use the staged rollout.\n' > "$home/decision.txt"
+    if [ "$mode" = release ]; then
+      run_captain "$home" answer "$id" --decision-file "$home/decision.txt" --release >/dev/null \
+        || fail "release answer failed"
+      expected='["decision-answered","resumed","waiting"]'
+      count=3
+    else
+      run_captain "$home" answer "$id" --decision-file "$home/decision.txt" >/dev/null \
+        || fail "closing answer failed"
+      expected='["decision-answered","waiting"]'
+      count=2
+    fi
+    wait_for_ticket_lines "$home/events" "$count" || fail "$mode answer events were not emitted"
+    jq -es --argjson expected "$expected" --arg id "$id" '
+      (map(.event) | sort) == $expected and
+      all(.[]; .task_id == $id and .ticket == "issue/123") and
+      ([.[] | select(.event == "decision-answered")][0].summary == "The rollout order is ready.")
+    ' "$home/events" >/dev/null || fail "$mode answer event payloads were incorrect: $(cat "$home/events")"
+    if [ "$mode" = release ]; then
+      run_captain "$home" answer "$id" --decision-file "$home/decision.txt" --release >/dev/null \
+        || fail "release answer replay failed"
+    else
+      run_captain "$home" answer "$id" --decision-file "$home/decision.txt" >/dev/null \
+        || fail "closing answer replay failed"
+    fi
+    sleep 0.3
+    [ "$(wc -l < "$home/events")" -eq "$count" ] || fail "$mode answer replay emitted duplicate events"
+  done
+  pass "captain answers emit a decision and release resumes once, including answer replay"
+}
+
 test_a_verified_merge_completes_its_ticket() {
   local home id pr repo wt
   home=$(make_home merge-ticket-sync)
@@ -4738,18 +4791,18 @@ test_a_verified_merge_completes_its_ticket() {
   printf 'done: merge ready\n' > "$home/state/$id.status"
 
   # The hook is configured to fail: a merge that the forge proved landed must
-  # still be reported as landed, with the hook's failure named on the task.
+  # still be reported as landed, with the hook's failure in the event log.
   run_pr_merge "$home" "$id" "$pr" > "$home/merge.out" 2> "$home/merge.err" \
     || fail "a failing ticket hook broke a proven merge: $(cat "$home/merge.err")"
   wait_for_ticket_lines "$home/ticket-calls" 1 \
     || fail "a proven merge never reached the ticket hook"
   assert_grep "ENG-2653 done $pr" "$home/ticket-calls" \
     "the merge did not complete the ticket with its pull request URL"
-  wait_for_ticket_lines "$home/state/$id.status" 2 \
-    || fail "the failing hook wrote no status line on the merged task"
-  assert_grep 'ticket sync hook failed ticket=ENG-2653 event=done exit=7' \
-    "$home/state/$id.status" \
-    "the failing hook was not reported as a status line naming the event"
+  wait_for_ticket_lines "$home/state/task-events.log" 1 \
+    || fail "the failing hook wrote no event failure log"
+  assert_grep "task_id=$id event=pr-merged exit=7" \
+    "$home/state/task-events.log" \
+    "the failing hook was not reported in the event log"
   pass "a verified merge completes its ticket and survives a failing hook"
 }
 
@@ -4816,3 +4869,4 @@ test_captain_hold_mutations_address_the_beads_backend
 test_hold_creates_a_captain_row_when_beads_requires_due_without_custom_type
 test_a_fresh_captain_hold_moves_its_ticket_to_waiting
 test_a_verified_merge_completes_its_ticket
+test_captain_answer_emits_events_once_per_occurrence

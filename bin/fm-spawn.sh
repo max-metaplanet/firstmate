@@ -6814,10 +6814,7 @@ SPAWN_ACCOUNT=
 [ -z "$WORKER_ACCOUNT_PROVIDER" ] || SPAWN_ACCOUNT="$SPAWN_ACCOUNT account_provider=$WORKER_ACCOUNT_PROVIDER"
 # Opt-in fleet activity ledger (docs/fleet-ledger.md); off costs one file test.
 [ ! -e "$CONFIG/fleet-ledger" ] || [ "$RELAUNCH" -eq 1 ] || FM_HOME=$FM_HOME FM_STATE_OVERRIDE=$STATE FM_CONFIG_OVERRIDE=$CONFIG "$SCRIPT_DIR/fm-fleet-ledger.sh" dispatched "$ID" "$KIND" "${PROJ_ABS##*/}" "$HARNESS" "$MODEL" || true
-# Opt-in ticket-sync hook (docs/configuration.md); off costs one file test.
-# The worker is launched and its backlog item committed, so this is the moment
-# the ticket's own tracker should say the work started. A relaunch republishes
-# an existing task rather than starting one, so it fires nothing, and an
-# unticketed task is skipped by the hook script itself.
-[ ! -e "$CONFIG/ticket-sync-hook" ] || [ "$RELAUNCH" -eq 1 ] || FM_HOME=$FM_HOME FM_STATE_OVERRIDE=$STATE FM_CONFIG_OVERRIDE=$CONFIG "$SCRIPT_DIR/fm-ticket-sync.sh" "$ID" start || true
+# Fresh dispatch owns started; relaunch preserves the existing lifecycle.
+{ [ ! -e "$CONFIG/task-event-hook" ] && [ ! -e "$CONFIG/ticket-sync-hook" ]; } || [ "$RELAUNCH" -eq 1 ] || FM_HOME=$FM_HOME FM_STATE_OVERRIDE=$STATE FM_CONFIG_OVERRIDE=$CONFIG "$SCRIPT_DIR/fm-task-event.sh" "$ID" started || true
+
 echo "spawned $ID harness=$HARNESS kind=$KIND$SPAWN_DELIVERY window=$META_WINDOW worktree=$WT$SPAWN_ACCOUNT"

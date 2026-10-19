@@ -3619,6 +3619,7 @@ SH
   chmod +x "$dir/ticket-hook"
   : > "$dir/ticket-calls"
   printf '%s\n' "$dir/ticket-hook" > "$dir/home/config/ticket-sync-hook"
+  printf '%s\n' "$ROOT/bin/fm-ticket-sync.sh" > "$dir/home/config/task-event-hook"
 }
 
 # The hook runs detached, so wait for its effect rather than assuming it landed.

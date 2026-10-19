@@ -37,7 +37,9 @@
 # open-decisions fold" below) also writes: it persists a per-status-file byte
 # cursor and folded open-set as a side effect, so a per-drain fleet-wide scan
 # stays bounded by new appends instead of re-reading each task's whole lifetime
-# log every time. status_home_appends_record writes the per-task home-owned
+# log every time. After committing that cursor it emits optional task events for
+# new keyed transitions through bin/fm-task-event.sh. Pure readers never emit.
+# status_home_appends_record writes the per-task home-owned
 # append ledger (see "home-owned status-append ledger" below) so the wake scan
 # can treat this home's own bookkeeping bytes as already owned.
 # crew_worktree_written_since reads the task's meta file and walks a bounded slice
@@ -172,6 +174,26 @@ last_status_line() {  # <status-file> [<previous-event-var>]
   fi
   [ "$#" -lt 2 ] || printf -v "$2" '%s' "${scan%%$'\n'*}"
   printf '%s\n' "${scan##*$'\n'}"
+}
+
+# Return the last line declaring a recognized status verb, so home-appended
+# notices such as task-event failures never stand in for the worker's status.
+last_worker_status_line() {  # <status-file>
+  local f=$1 scan=''
+  [ -f "$f" ] && [ -r "$f" ] || return 0
+  scan=$(tail -n "$FM_CLASSIFY_EVENT_WINDOW_LINES" "$f" 2>/dev/null | _fm_status_recognized_scan) \
+    || scan=$(_fm_status_recognized_scan < "$f") || :
+  printf '%s\n' "$scan"
+}
+
+_fm_status_recognized_scan() {  # stdin -> last recognized-verb line; 1 when none
+  local line verb last=''
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in *:*) status_line_verb "$line" verb ;; *) continue ;; esac
+    _fm_status_verb_recognized "$verb" && last=$line
+  done
+  printf '%s' "$last"
+  [ -n "$last" ]
 }
 
 # 0 when <verb> is exactly one recognized status verb, with no leftover token.
@@ -1182,7 +1204,7 @@ EOF
 # shared fold rule retires removes one.
 #
 # The cursor format is `version` (FM_OPEN_DECISIONS_FOLD_VERSION), `offset`,
-# `ident`, then the folded open set.
+# `ident`, `event-waits` (comma-delimited keyed pauses), then the folded open set.
 # FM_OPEN_DECISIONS_FOLD_VERSION must be bumped whenever
 # _fm_decision_fold_line semantics change, so persisted state from an older
 # interpretation is discarded and rebuilt from byte 0. The version carries no
@@ -1248,7 +1270,14 @@ _fm_open_decisions_cursor_path() {  # <status-file>
 # Version 4 was already spent on the bracketed-tag parser change above, and a
 # cursor persisted under that reading predates this one, so it must still be
 # discarded and rebuilt from byte 0 under the new reading.
-FM_OPEN_DECISIONS_FOLD_VERSION=10
+# 11: a separate event-waits header tracks keyed pauses for lifecycle events
+# without changing the operational open-decision set.
+FM_OPEN_DECISIONS_FOLD_VERSION=11
+
+_fm_byte_length() {  # <text> <out-var>
+  local LC_ALL=C
+  printf -v "$2" '%s' "$((${#1} + 0))"
+}
 
 # Portable device:inode identity for the rotation/recreation check below.
 _fm_open_decisions_file_ident() {  # <file> -> strongest available identity
@@ -1326,7 +1355,13 @@ _fm_status_read_span() {  # <status-file> <start-offset> <byte-length>
 status_open_decisions_incremental() {  # <status-file> [<captured-end-offset>]
   local f=$1 captured_end=${2:-} cf offset ident open='' trusted_open='' cursor_data first rest offset_line ident_line
   local version='' size actual_size cur_ident resolve held chunk_file chunk_size line cursor_dirty=0
-  local target_cursor fold_version
+  local target_cursor fold_version event_rows='' event_verb event_key event_note event_type event_before
+  local event_state event_home event_config event_task event_waits=, event_waited event_prior_verb
+  local event_quiet_end=0 event_quiet event_pos=0 event_line_bytes
+  event_task=${f##*/}; event_task=${event_task%.status}
+  event_state=${f%/*}
+  event_home=${FM_HOME:-${event_state%/*}}
+  event_config=${FM_CONFIG_OVERRIDE:-$event_home/config}
   [ -f "$f" ] && [ -r "$f" ] && [ ! -L "$f" ] || return 0
   # The fold is kind-independent, so the task kind is deliberately absent from
   # the persisted version: folding it in discarded an otherwise-valid cursor and
@@ -1364,6 +1399,12 @@ status_open_decisions_incremental() {  # <status-file> [<captured-end-offset>]
                       case "$rest" in
                         *$'\n'*) open=${rest#*$'\n'} ;;
                       esac
+                      case "$open" in
+                        event-waits=*)
+                          event_waits=${open%%$'\n'*}; event_waits=${event_waits#event-waits=}
+                          case "$open" in *$'\n'*) open=${open#*$'\n'} ;; *) open='' ;; esac
+                          ;;
+                      esac
                       if [ -n "$version" ] && [ -n "$ident" ]; then trusted_open=$open; fi
                       ;;
                     *) offset=0; version='' ;;
@@ -1397,9 +1438,18 @@ status_open_decisions_incremental() {  # <status-file> [<captured-end-offset>]
   fi
 
   if [ -z "$version" ] || [ -z "$ident" ] || [ "$ident" != "$cur_ident" ] || [ "$offset" -gt "$actual_size" ]; then
+    # A discarded cursor already emitted its history; rebuild that span quietly.
+    if [ -n "${cursor_data:-}" ]; then
+      if [ "$ident" = "$cur_ident" ] && [ "$offset" -le "$actual_size" ]; then
+        event_quiet_end=$offset
+      else
+        event_quiet_end=$size
+      fi
+    fi
     offset=0
     open=''
     trusted_open=''
+    event_waits=,
     cursor_dirty=1
   fi
 
@@ -1422,7 +1472,50 @@ status_open_decisions_incremental() {  # <status-file> [<captured-end-offset>]
     resolve=${FM_CLASSIFY_RESOLVE_VERB:-$FM_CLASSIFY_RESOLVE_VERB_DEFAULT}
     held=${FM_CLASSIFY_CAPTAIN_HELD_VERB:-$FM_CLASSIFY_CAPTAIN_HELD_VERB_DEFAULT}
     while IFS= read -r line || [ -n "$line" ]; do
+      event_before=$open
       open=$(_fm_decision_fold_line "$open" "$line" "$resolve" "$held")
+      event_quiet=0
+      if [ "$event_pos" -lt "$event_quiet_end" ]; then
+        event_quiet=1
+        _fm_byte_length "$line" event_line_bytes
+        event_pos=$((event_pos + event_line_bytes + 1))
+      fi
+      if [ -e "$event_config/task-event-hook" ] || [ -e "$event_config/ticket-sync-hook" ]; then
+        status_line_verb "$line" event_verb
+        event_type=''
+        # Only explicit keys identify lifecycle transitions. Captain-hold
+        # mirrors belong to their hold owner, not to the parent task's work.
+        case "$line" in *'[key='*']'*) ;; *) continue ;; esac
+        _fm_decision_key_to event_key "$line" '' || continue
+        [ -n "$event_key" ] || continue
+        case "$event_key" in captain-hold-*) continue ;; esac
+        status_line_note_to event_note "$line"
+        _fm_decision_key_transition_allowed "$event_key" "$event_note" || continue
+        event_waited=0
+        case "$event_waits" in *",$event_key,"*) event_waited=1 ;; esac
+        case "$event_verb" in
+          blocked|needs-decision)
+            event_prior_verb=$(_fm_open_set_verb "$event_before" "$event_key")
+            [ "$event_prior_verb" != "$event_verb" ] || [ "$event_waited" = 1 ] || continue
+            event_waits=${event_waits/,$event_key,/,}
+            if [ "$event_verb" = blocked ]; then event_type=blocked; else event_type=waiting; fi
+            ;;
+          "${FM_CLASSIFY_PAUSED_VERB:-$FM_CLASSIFY_PAUSED_VERB_DEFAULT}")
+            [ "$event_waited" = 0 ] || continue
+            event_waits="$event_waits$event_key,"
+            event_type=waiting
+            ;;
+          "$resolve")
+            if [ "$event_waited" = 0 ] && ! _fm_open_set_has "$event_before" "$event_key"; then continue; fi
+            event_waits=${event_waits/,$event_key,/,}
+            [ -z "$open" ] && [ "$event_waits" = , ] || continue
+            event_type=resumed
+            ;;
+          "$held") event_waits=${event_waits/,$event_key,/,} ;;
+        esac
+        [ -n "$event_type" ] && [ "$event_quiet" = 0 ] || continue
+        event_rows="${event_rows}${event_type}"$'\t'"${event_key}"$'\t'"${event_note}"$'\n'
+      fi
     done < "$chunk_file"
     rm -f "$chunk_file"
     offset=$size
@@ -1434,10 +1527,21 @@ status_open_decisions_incremental() {  # <status-file> [<captured-end-offset>]
       printf 'version=%s\n' "$fold_version"
       printf 'offset=%s\n' "$offset"
       printf 'ident=%s\n' "$cur_ident"
+      printf 'event-waits=%s\n' "$event_waits"
       if [ -n "$open" ]; then printf '%s' "$open"; fi
     } > "$target_cursor" || return 1
     mv -f "$target_cursor" "$cf" || return 1
   fi
+  # The existing cursor owns repeat suppression; emit only once its snapshot
+  # is durable, and never let an optional hook alter the classifier's result.
+  while IFS=$'\t' read -r event_type event_key event_note; do
+    [ -n "$event_type" ] || continue
+    FM_HOME=$event_home FM_STATE_OVERRIDE=$event_state FM_CONFIG_OVERRIDE=$event_config \
+      "$_FM_CLASSIFY_LIB_DIR/fm-task-event.sh" "$event_task" "$event_type" \
+      --key "$event_key" --summary "$event_note" >/dev/null 2>&1 || true
+  done <<EOF
+$event_rows
+EOF
   printf '%s' "$open"
 }
 

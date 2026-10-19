@@ -576,31 +576,65 @@ See [`trace-context.md`](trace-context.md) for carrier semantics, supported rout
 
 See [`fleet-ledger.md`](fleet-ledger.md) for the opt-in setup, record contract, and limits.
 
-## Ticket-sync hook (config/ticket-sync-hook)
+## Task-event hook (config/task-event-hook)
 
-The optional local, gitignored `config/ticket-sync-hook` names one executable this home runs as a task's work reaches each milestone, so an external tracker follows the work instead of depending on firstmate remembering to move a ticket by hand.
-Firstmate ships no tracker integration: the hook, and any credentials it needs, stay private to the home that configured it.
-With the file absent every milestone costs one file test and starts no process, which is what every home that has not opted in does.
+The optional local, gitignored `config/task-event-hook` names one executable that receives lifecycle events from the supervising home's transition owners.
+Workers report status and never call the tracker; the configured consumer is the sole tracker writer.
+Firstmate ships no tracker integration or credentials.
+With neither this file nor the legacy `config/ticket-sync-hook` present, producers perform file tests only and start no hook process.
+The file contains one absolute executable path, ignoring blank lines and `#` comment lines; arguments and shell expressions are not accepted.
+This opt-in requires `jq` and is local to the home, not inherited by secondmates.
 
-The file holds exactly one directive line, with blank lines and `#` comment lines ignored, naming an absolute path to an executable.
-A relative path, a second directive line, or a path that is not an executable file resolves to a hook that cannot be run, and is reported on the task rather than silently skipped.
+The executable receives one compact JSON argument with this versioned record:
 
-Firstmate invokes it as `<hook> <ticket-id> <event> [args...]`, where the ticket id is the task's recorded `ticket=` (`bin/fm-dod-lib.sh` owns that grammar) and the event is one of:
+```json
+{"schema":"firstmate.task-event","version":1,"sequence":1,"event":"blocked","task_id":"example","ticket":"issue-42","pr_url":null,"merge":null,"timestamp":"2026-10-19T12:00:00Z","summary":"Waiting for the build service","key":"build","home":"/path/to/home"}
+```
 
-| Event | Fired when | Producer |
-| --- | --- | --- |
-| `start` | A ticketed task's worker has launched and its backlog item is committed. A relaunch republishes an existing task and fires nothing. | `bin/fm-spawn.sh` |
-| `review <pr-url>` | The task's pull request is first recorded. Re-arming the same URL and the merge-time re-record fire nothing. | `bin/fm-pr-check.sh` |
-| `done <pr-url>` | A confirmed merge was recorded, whether this home performed it, its merge poll detected one a queue or auto-merge finished later, or the captain merged on the forge. | `bin/fm-merge-outcome-lib.sh` |
-| `waiting <text>` | The task became held for the captain, with the hold reason as the text. Repeating an already active hold fires nothing. | `bin/fm-captain-hold.sh` |
+`ticket` is the opaque recorded `ticket=` value, or JSON `null` when absent or explicitly ticketless.
+The emitter never parses ticket names from prose or applies a provider's ticket grammar; a consumer may interpret that value however its tracker requires.
+`pr_url` is the relevant supplied or recorded PR URL, otherwise `null`.
+`key` is the transition's decision key when available, otherwise `null`.
+`timestamp` is the emission time in UTC.
+`sequence` increases within the home and identifies a delivery together with `home`, including a replay after a drainer crash.
+`summary` is the note of the worker's latest recognized status line (home-appended notices such as consumer failures are skipped), with status metadata removed, whitespace flattened, and length limited to 500 characters; a transition owner can supply its exact status note, and an unavailable note is an empty string.
+Consumers must tolerate additional fields in version 1.
 
-Each event fires once per transition rather than once per poll, so a hook may comment on a ticket without deduplicating.
-A task with no recorded ticket, or the explicit `no-ticket` marker, never reaches the hook, and a ticket is never parsed out of task prose.
-A scout carries no ticket today, because `--ticket` applies only to ship work; a promoted scout fires `start` when it is spawned as a ship.
+| Event | Transition owner |
+| --- | --- |
+| `started` | `fm-spawn.sh`, after the fresh worker launch and backlog commit; relaunch emits nothing. |
+| `blocked`, `waiting` | The incremental keyed-status fold in `fm-classify-lib.sh`; blocked stays blocked, needs-decision and paused become waiting. A new captain hold is emitted by `fm-captain-hold.sh`. A discarded fold cursor rebuilds its already-emitted span without emitting. |
+| `resumed` | The keyed-status fold after resolution clears the remaining blockers, or the captain-hold owner when releasing a held task. |
+| `decision-answered` | `fm-captain-hold.sh`, once an answer is durably recorded. |
+| `pr-opened` | `fm-pr-check.sh`, when recording a new PR; re-arm and merge-time re-record emit nothing. |
+| `pr-merged` | `fm-merge-outcome-lib.sh`, for every confirmed merge, including externally merged PRs. |
+| `finished`, `cancelled` | `fm-teardown.sh`, after successful cleanup; forced removal without a done status is cancellation. |
 
-The hook can neither delay nor fail the work: it runs in a detached child with a bounded runtime, holding none of the producer's streams, and its exit status never reaches the producer's control flow.
-A hook that fails, hits its bound, or cannot be run is reported as one status line on the task naming the event and the exit code, which supervision reads like any other unread status.
-`bin/fm-ticket-sync.sh` owns the firing mechanics, the status line, and the bound.
+For `pr-merged` and `cancelled`, `merge` is `final` when all live PRs recorded by this hook for the ticket have confirmed merges, otherwise `partial`; a `cancelled` event for a ticket with no live recorded PR carries `merge: null`.
+A task tracks one PR: its later `pr-opened` supersedes its earlier unmerged PR, and its `cancelled` retires its unmerged PR.
+Unticketed tasks aggregate their own PRs only.
+The local `state/task-event-prs.jsonl` retains PR facts across task teardown and across multiple tasks sharing a ticket; earlier history from before the hook was enabled is not reconstructed from the forge.
+All other event types carry `merge: null`.
+
+`bin/fm-task-event.sh` snapshots the task context before teardown can remove it and publishes an ordered record under `state/task-events/`.
+Only that local publication takes a foreground lock, with a one-second bound; the caller never waits for a consumer.
+A detached drainer invokes one consumer at a time per home, in sequence order, with each attempt bounded by `FM_TASK_EVENT_TIMEOUT` (default 60 seconds).
+Merge completeness is captured at publication, so delayed delivery cannot turn an earlier partial merge into a final one.
+Consumer failure never fails the lifecycle operation or prevents later entries from being attempted; errors append locally to `state/task-events.log`, naming the task, event and exit code (124 for timeout, 125 for local publication failure, 126 for invalid executable configuration).
+A failed, timed-out or unrunnable consumer call also appends `actionable: task event hook failed event=<event> exit=<code>; see state/task-events.log` to the task's status while the task is live, at most once per task per hour, so supervision surfaces it.
+Delivery is best effort: a consumer failure is logged without retry, while a drainer crash before removing an entry can replay it on the next emission.
+No idle retry daemon runs.
+Transition owners suppress routine poll and replay duplicates, but consumers should deduplicate `home` and `sequence` across crash recovery.
+No worker-facing instruction should ask a worker to update a tracker directly.
+
+### Existing milestone-hook adapter
+
+`bin/fm-ticket-sync.sh` is the compatibility consumer for homes that already have `config/ticket-sync-hook` configured.
+When `config/task-event-hook` is absent, that legacy file alone keeps lifecycle delivery on through this adapter, and `state/task-events.log` records the compatibility path once.
+Writing the absolute path to `bin/fm-ticket-sync.sh` into `config/task-event-hook` selects the same adapter explicitly.
+The adapter maps started to `start`, resumed to `review <url>` when the task has a PR and `start` otherwise, blocked/waiting to `waiting <summary>`, pr-opened to `review <url>`, only a final pr-merged to `done <url>`, and a cancelled event with `merge: "final"` to `done`, using the existing `<ticket> <event> [args...]` calling convention.
+Unticketed and other new events are ignored by this legacy adapter.
+To switch to a richer consumer, replace the single executable path in `config/task-event-hook`; no producer or worker changes are needed.
 
 ## Firstmate role (config/firstmate-role)
 
@@ -2731,7 +2765,7 @@ FM_BACKLOG_ROW_TIMEOUT_SECS=10   # seconds bounding each backlog row read (bin/f
 FM_BOOTSTRAP_DETECT_ONLY=0   # internal/read-only session-start mode: skip bootstrap's mutating sweeps and print advisory TANGLE wording
 FM_BOOTSTRAP_NETWORK=all   # internal session-start phase split: all, skip (local steps only), or only (network steps only); see bin/fm-bootstrap.sh
 FM_STARTUP_NETWORK_TIMEOUT=120   # seconds bounding the deferred inactive-outcome scan plus network checks, including the lock waits the worker makes before them; hitting it prints an actionable NETWORK_CHECKS line, and a lock a live process still holds at the deadline ends the worker with a failed-rerun record (publication and delivery are bounded by FM_SESSION_START_TIMEOUT the same way)
-FM_TICKET_SYNC_TIMEOUT=60   # seconds the detached ticket-sync hook is given (bin/fm-ticket-sync.sh); nonpositive or invalid values fall back to 60, and hitting the bound is reported as exit=124 on the task
+FM_TASK_EVENT_TIMEOUT=60   # seconds the detached task-event consumer is given; invalid values use 60, timeout logs exit=124 in state/task-events.log
 FM_TASKS_AXI_COMPATIBLE=   # internal one-hop handoff of an already-computed tasks-axi compatibility verdict (0 or 1); consumed when bin/fm-tasks-axi-lib.sh is sourced
 FM_GUARD_READ_ONLY=0    # internal/read-only guard mode: keep alarms but suppress drain, supervision repair, and checkout repair commands
 FM_GUARD_CONTINUE_LINE='This is a supervision warning only; the guarded operation WILL still run.'   # banner continuation line; fm-send.sh overrides it to name the requested message specifically
