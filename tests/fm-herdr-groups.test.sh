@@ -55,6 +55,10 @@ SH
   printf '%s\n' "$fakebin"
 }
 
+# The adapter hands the agents-view helper the canonical socket path, so the
+# fake's /tmp socket arrives with /tmp resolved (/private/tmp on macOS).
+VIEW_SOCKET="$(cd /tmp && pwd -P)/fm-groups-s1.sock"
+
 # new_home <name>: sets HOME_DIR, FAKE_DIR, FAKEBIN, and empty logs.
 new_home() {
   FAKE_DIR="$TMP_ROOT/$1"
@@ -246,7 +250,7 @@ test_sync_reports_only_differences_and_sets_the_view() {
   assert_equals "1" "$(printf '%s\n' "$ws_reports" | grep -c 'report-metadata')" "workspace reports"
   assert_contains "$ws_reports" "workspace report-metadata w2 --source firstmate --token fm_group=storefront --token fm_state=running --token fm_group_order=000.storefront" \
     "only the exactly bound projected workspace gets workspace tokens"
-  assert_equals "/tmp/fm-groups-s1.sock	set" "$(cat "$FAKE_VIEW_LOG")" "agents view set once for the session"
+  assert_equals "$VIEW_SOCKET	set" "$(cat "$FAKE_VIEW_LOG")" "agents view set once for the session"
 
   : > "$FAKE_HERDR_LOG"; : > "$FAKE_VIEW_LOG"
   rm -f "$HOME_DIR/state/flat-task.meta"
@@ -261,7 +265,7 @@ test_sync_reports_only_differences_and_sets_the_view() {
     "$(reports pane)" "a status change reports only the changed pane tokens"
   assert_contains "$(reports workspace)" "--token fm_state=needs-captain --session s1" "workspace status token follows"
   assert_not_contains "$(reports workspace)" "fm_group=" "unchanged workspace tokens are not re-reported"
-  assert_equals "/tmp/fm-groups-s1.sock	set" "$(cat "$FAKE_VIEW_LOG")" "agents view re-set after a pane change"
+  assert_equals "$VIEW_SOCKET	set" "$(cat "$FAKE_VIEW_LOG")" "agents view re-set after a pane change"
   assert_not_contains "$(cat "$FAKE_HERDR_LOG")" $'\x1fmove' "sync never moves anything"
   assert_not_contains "$(cat "$FAKE_HERDR_LOG")" $'\x1fclose' "sync never closes anything"
   assert_not_contains "$(cat "$FAKE_HERDR_LOG")" $'\x1ffocus' "sync never changes focus"
@@ -291,7 +295,7 @@ test_clear_removes_tokens_and_the_view_even_when_off() {
   add_v2_journal web-run w2
   write_live_lists 1
   out=$(groups clear 2>&1) || fail "clear failed: $out"
-  assert_equals "/tmp/fm-groups-s1.sock	clear" "$(cat "$FAKE_VIEW_LOG")" "agents view cleared"
+  assert_equals "$VIEW_SOCKET	clear" "$(cat "$FAKE_VIEW_LOG")" "agents view cleared"
   assert_contains "$(reports pane)" "pane report-metadata w2:p2 --source firstmate --clear-token fm_group --clear-token fm_state --clear-token fm_task --clear-token fm_sort" \
     "pane tokens cleared"
   assert_contains "$(reports workspace)" "workspace report-metadata w2 --source firstmate --clear-token fm_group --clear-token fm_state --clear-token fm_group_order" \
@@ -325,7 +329,8 @@ test_sidebar_config_apply_backs_up_and_refuses_twice() {
 test_agent_view_helper_sends_only_the_whitelisted_requests() {
   local dir sock server out status
   command -v python3 >/dev/null 2>&1 || { pass "agent view helper: skipped, python3 not found"; return 0; }
-  dir="$TMP_ROOT/view-helper"; mkdir -p "$dir"
+  # A macOS TMPDIR fixture path overruns the 104-byte AF_UNIX limit.
+  dir=$(TMPDIR=/tmp fm_test_tmproot fm-hg-view) || fail "could not create a short socket fixture root"
   sock="$dir/s.sock"
   for action in set clear; do
     rm -f "$sock" "$dir/request.json"
