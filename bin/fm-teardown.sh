@@ -4019,6 +4019,17 @@ retire_busy_state "$STATE" "$ID" "$BUSY_GEN" || exit 1
 # Opt-in fleet activity ledger (docs/fleet-ledger.md), before the status log is
 # retired so its last lines are captured; off costs one file test.
 [ ! -e "$CONFIG/fleet-ledger" ] || FM_HOME=$FM_HOME FM_STATE_OVERRIDE=$STATE FM_CONFIG_OVERRIDE=$CONFIG "$SCRIPT_DIR/fm-fleet-ledger.sh" cleaned_up "$ID" || true
+# Capture task context before retirement; delivery waits for successful cleanup.
+TASK_EVENT_TICKET=''
+TASK_EVENT_SUMMARY=''
+TASK_EVENT_TYPE=finished
+if [ -e "$CONFIG/task-event-hook" ] && [ "$KIND" != secondmate ]; then
+  TASK_EVENT_TICKET=$(meta_value "$META" ticket)
+  TASK_EVENT_STATUS=$(last_status_line "$STATE/$ID.status")
+  status_line_note_to TASK_EVENT_SUMMARY "$TASK_EVENT_STATUS"
+  status_line_verb "$TASK_EVENT_STATUS" TASK_EVENT_VERB
+  if [ "$FORCE" = --force ] && [ "$TASK_EVENT_VERB" != "done" ]; then TASK_EVENT_TYPE=cancelled; fi
+fi
 status_retire_presentation_task "$STATE" "$ID" || exit 1
 fm_wake_queue_prune_task "$STATE" "$ID" "$T" 2>/dev/null || true
 rm -f "$STATE/$ID.turn-ended" "$STATE/$ID.progress" \
@@ -4085,6 +4096,11 @@ else
 fi
 fm_lock_release "$META_LOCK"
 META_LOCK_HELD=0
+if [ -e "$CONFIG/task-event-hook" ] && [ "$KIND" != secondmate ]; then
+  FM_HOME=$FM_HOME FM_STATE_OVERRIDE=$STATE FM_CONFIG_OVERRIDE=$CONFIG \
+    "$SCRIPT_DIR/fm-task-event.sh" "$ID" "$TASK_EVENT_TYPE" \
+      --ticket "$TASK_EVENT_TICKET" --pr "$PR_URL" --summary "$TASK_EVENT_SUMMARY" >/dev/null 2>&1 || true
+fi
 if [ "$KIND" != scout ] && [ "$KIND" != secondmate ] && [ "$MODE" != local-only ]; then
   "$FM_ROOT/bin/fm-fleet-sync.sh" "$PROJ" || true
 fi

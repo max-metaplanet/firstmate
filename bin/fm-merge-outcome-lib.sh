@@ -121,13 +121,7 @@ fm_merge_outcome_report() {  # <home> <state> <task-id> <pr-url> <origin> [autho
   fm_lock_release "$lock"
   # Opt-in fleet activity ledger (docs/fleet-ledger.md); off costs one file test.
   [ ! -e "${FM_CONFIG_OVERRIDE:-$home/config}/fleet-ledger" ] || [ "$status" -ne 0 ] || FM_HOME=$home FM_STATE_OVERRIDE=$state "$_FM_MERGE_OUTCOME_LIB_DIR/fm-fleet-ledger.sh" merged "$id" pr "$FM_PR_URL" || true
-  # Opt-in ticket-sync hook (docs/configuration.md); off costs one file test.
-  # The ticket completes here rather than in the merge entrypoint, because this
-  # is where EVERY confirmed merge is recorded: a merge this home performed, one
-  # its queue or auto-merge only finishes later, and one the captain made on the
-  # forge all arrive through this operation. The already-notified guard above
-  # returns before this point, so the event fires once per merged pull request
-  # however many polls observe it.
-  [ ! -e "${FM_CONFIG_OVERRIDE:-$home/config}/ticket-sync-hook" ] || [ "$status" -ne 0 ] || FM_HOME=$home FM_STATE_OVERRIDE=$state "$_FM_MERGE_OUTCOME_LIB_DIR/fm-ticket-sync.sh" "$id" 'done' "$FM_PR_URL" || true
+  # Every confirmed merge reaches this owner, including externally landed PRs.
+  [ ! -e "${FM_CONFIG_OVERRIDE:-$home/config}/task-event-hook" ] || [ "$status" -ne 0 ] || FM_HOME=$home FM_STATE_OVERRIDE=$state "$_FM_MERGE_OUTCOME_LIB_DIR/fm-task-event.sh" "$id" pr-merged --pr "$FM_PR_URL" || true
   return "$status"
 }

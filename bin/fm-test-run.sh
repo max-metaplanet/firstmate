@@ -476,6 +476,7 @@ family_for_basename() {
     fm-backend-orca.test.sh)
       printf '%s\n' orca
       ;;
+    fm-task-event.test.sh|fm-task-event-status.test.sh|fm-ticket-sync.test.sh|\
     fm-branch-supervision.test.sh|fm-busy-adapter-wiring.test.sh|\
     fm-busy-state.test.sh|fm-classify-corr-token.test.sh|\
     fm-claude-stop-autoarm.test.sh|fm-cursor-harness.test.sh|\
@@ -1655,6 +1656,7 @@ families_for_changed_path() {
     bin/fm-watch*|bin/fm-wake*|bin/fm-inactive-reconcile.sh|\
     bin/fm-classify-lib.sh|bin/fm-daemon*|bin/fm-turnend-guard*|bin/fm-guard.sh)
       printf '%s\n' watcher-wake-lock
+      printf '%s\n' "__script__:fm-task-event-status.test.sh"
       ;;
     bin/fm-afk*)
       printf '%s\n' afk
@@ -1847,12 +1849,11 @@ families_for_changed_path() {
       printf '%s\n' watcher-wake-lock
       printf '%s\n' "__script__:fm-procevent-quota.test.sh"
       ;;
-    bin/fm-ticket-sync.sh)
-      # The optional milestone hook's own contract, plus the four producers
-      # that fire it: PR registration and merge (pr-forge), the captain hold
-      # (pure-contract-unit), and the ticketed dispatch at the spawn's commit
-      # point (session-bootstrap).
+    bin/fm-ticket-sync.sh|bin/fm-task-event.sh)
+      # The lifecycle consumer, compatibility adapter, and transition owners.
       printf '%s\n' "__script__:fm-ticket-sync.test.sh"
+      printf '%s\n' "__script__:fm-task-event.test.sh"
+      printf '%s\n' "__script__:fm-task-event-status.test.sh"
       printf '%s\n' pr-forge
       printf '%s\n' pure-contract-unit
       printf '%s\n' session-bootstrap
@@ -1860,6 +1861,7 @@ families_for_changed_path() {
     bin/fm-pr-*|bin/fm-merge-local.sh|bin/fm-teardown.sh|bin/fm-review-diff.sh|\
     bin/fm-x-*|bin/fm-check*|bin/fm-pipeline-spend.sh)
       printf '%s\n' pr-forge
+      printf '%s\n' "__script__:fm-task-event-status.test.sh"
       ;;
     bin/fm-nm-recover.sh)
       printf '%s\n' "__script__:fm-nm-recover.test.sh"
