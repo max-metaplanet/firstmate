@@ -2303,6 +2303,10 @@ if [ "$RELAUNCH" -eq 1 ]; then
   case "$RELAUNCH_PRIOR_HARNESS" in
     claude|codex) RELAUNCH_SEAT=$(fm_meta_get "$RELAUNCH_META" "${RELAUNCH_PRIOR_HARNESS}_seat") ;;
   esac
+  # A Claude seat recorded from the worker account pin is the pin's, not a seat
+  # choice, so it does not outlive the pin.
+  [ "$RELAUNCH_PRIOR_HARNESS" != claude ] || [ "$RELAUNCH_SEAT" != "$(fm_meta_get "$RELAUNCH_META" account)" ] \
+    || RELAUNCH_SEAT=
   KIND=$(fm_meta_get "$RELAUNCH_META" kind)
   [ -n "$KIND" ] || KIND=ship
   # A secondmate whose endpoint is gone already has ONE owner for that

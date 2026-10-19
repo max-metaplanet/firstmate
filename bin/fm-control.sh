@@ -1194,6 +1194,7 @@ resolve_relaunch_profile() {
   if [ "$SEAT_SET" = 0 ] && [ -z "$account" ] && [ "$TARGET_HARNESS" = claude ] && [ "$PRIOR_RECORDED_HARNESS" = claude ]; then
     local recorded_claude_profile
     recorded_claude_profile=$(fm_meta_get "$META" claude_seat)
+    [ "$recorded_claude_profile" != "$(fm_meta_get "$META" account)" ] || recorded_claude_profile=
     fm_seat_require_profile_dir "${recorded_claude_profile##*/}" "$recorded_claude_profile" || return 1
   fi
   if [ "$SEAT_SET" = 0 ] && [ "$TARGET_HARNESS" = codex ] && [ "$PRIOR_RECORDED_HARNESS" = codex ]; then
