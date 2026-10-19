@@ -158,6 +158,7 @@ SH
     "worktree=$home/gone-worktree" "project=$home/project" \
     'kind=ship' 'mode=local-only' 'spawn_gen=task-event-fixture' 'ticket=issue-42'
   printf '%s: worker terminal summary\n' "$declaration" > "$home/state/task.status"
+  : > "$home/state/.task.decision-event-1"
   FM_HOME=$home FM_STATE_OVERRIDE=$home/state FM_CONFIG_OVERRIDE=$home/config FM_DATA_OVERRIDE=$home/data \
     FM_ROOT_OVERRIDE=$ROOT PATH="$home/fakebin:$PATH" \
     "$ROOT/bin/fm-teardown.sh" task --force > "$home/teardown.out" 2> "$home/teardown.err" \
@@ -170,5 +171,6 @@ SH
     || fail 'teardown lost its terminal payload'
   assert_absent "$home/state/task.meta" 'teardown emitted without retiring the task'
   assert_absent "$home/state/task.status" 'teardown emitted without retiring the status'
+  assert_absent "$home/state/.task.decision-event-1" 'teardown kept a decision-event marker'
   pass "successful teardown emits $expected with the retired task context"
 done

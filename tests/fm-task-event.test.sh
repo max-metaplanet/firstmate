@@ -88,6 +88,20 @@ wait_lines "$home/events" 5
 tail -1 "$home/events" | jq -e '.merge == "final"' >/dev/null || fail 'superseded or cancelled PRs blocked final'
 pass 'a replaced PR and a cancelled task PR no longer hold the ticket partial'
 
+home=$(make_home cancel-final)
+printf 'ticket=ISSUE/custom-42\n' > "$home/state/other.meta"
+emit "$home" task pr-opened --pr https://example.org/pull/1
+emit "$home" other pr-opened --pr https://example.org/pull/2
+emit "$home" task pr-merged --pr https://example.org/pull/1
+emit "$home" other cancelled
+printf 'ticket=ISSUE/no-prs\n' > "$home/state/idle.meta"
+emit "$home" idle cancelled
+wait_lines "$home/events" 5
+jq -es '[.[] | select(.event == "pr-merged" or .event == "cancelled") | [.task_id, .merge]]
+  == [["task","partial"],["other","final"],["idle",null]]' "$home/events" >/dev/null \
+  || fail 'cancelled did not report whether the ticket remaining PRs all merged'
+pass 'cancelling the last open PR reports a final merge, and a PR-less cancel reports none'
+
 home=$(make_home failure)
 printf '#!/usr/bin/env bash\nexit 7\n' > "$home/hook"
 emit "$home" task started
@@ -97,7 +111,30 @@ printf '%s\n' relative > "$home/config/task-event-hook"
 emit "$home" task blocked
 wait_lines "$home/state/task-events.log" 2
 assert_grep 'event=blocked exit=126' "$home/state/task-events.log" 'invalid hook was not logged'
-pass 'failing or invalid consumers never fail the producer'
+[ "$(grep -c '^actionable \[at=[0-9]*\]: task event hook failed event=started exit=7; see state/task-events.log$' "$home/state/task.status")" = 1 ] \
+  || fail "consumer failure was not surfaced once on the task: $(cat "$home/state/task.status")"
+[ "$(grep -c 'task event hook failed' "$home/state/task.status")" = 1 ] || fail 'repeated failures flooded the task status'
+emit "$home" absent started
+wait_lines "$home/state/task-events.log" 3
+assert_absent "$home/state/absent.status" 'failure surfaced into a task without a live status'
+pass 'failing or invalid consumers never fail the producer and surface once per task'
+
+home=$(make_home legacy-only)
+rm "$home/config/task-event-hook"
+cat > "$home/legacy" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$FM_HOME/legacy-calls"
+SH
+chmod +x "$home/legacy"
+printf '%s\n' "$home/legacy" > "$home/config/ticket-sync-hook"
+emit "$home" task started
+emit "$home" task pr-opened --pr https://example.org/pull/9
+wait_lines "$home/legacy-calls" 2
+[ "$(cat "$home/legacy-calls")" = $'ISSUE/custom-42 start\nISSUE/custom-42 review https://example.org/pull/9' ] \
+  || fail "legacy-only home lost tracker updates: $(cat "$home/legacy-calls")"
+[ "$(grep -c 'compatibility: config/ticket-sync-hook .*config/task-event-hook' "$home/state/task-events.log")" = 1 ] \
+  || fail 'compatibility path was not logged exactly once'
+pass 'a home with only the legacy hook keeps syncing through the adapter and says so once'
 
 home=$(make_home hanging)
 printf '#!/usr/bin/env bash\nsleep 60\n' > "$home/hook"

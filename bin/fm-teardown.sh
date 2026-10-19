@@ -1124,7 +1124,7 @@ remote_secondmate_teardown() {
   rm -f -- "$STATE/$ID.turn-ended" "$STATE/$ID.progress" \
     "$(fm_wake_signal_seen_path "$STATE" "$STATE/$ID.turn-ended")" \
     "$STATE/.secondmate-relaunch-$ID" "$STATE/.secondmate-relaunch-bound-$ID" "$STATE/.secondmate-park-$ID" \
-  "$STATE/.$ID".decision-event-*
+    "$STATE/.$ID".decision-event-* "$STATE/.$ID.task-event-failure"
   printf 'teardown %s complete (remote %s:%s)\n' "$ID" "$remote_host" "$remote_home"
   return "$rc"
 }
@@ -4024,7 +4024,7 @@ retire_busy_state "$STATE" "$ID" "$BUSY_GEN" || exit 1
 TASK_EVENT_TICKET=''
 TASK_EVENT_SUMMARY=''
 TASK_EVENT_TYPE=finished
-if [ -e "$CONFIG/task-event-hook" ]; then
+if [ -e "$CONFIG/task-event-hook" ] || [ -e "$CONFIG/ticket-sync-hook" ]; then
   TASK_EVENT_TICKET=$(meta_value "$META" ticket)
   TASK_EVENT_STATUS=$(last_status_line "$STATE/$ID.status")
   status_line_note_to TASK_EVENT_SUMMARY "$TASK_EVENT_STATUS"
@@ -4043,7 +4043,8 @@ rm -f "$STATE/$ID.turn-ended" "$STATE/$ID.progress" \
   "$STATE/$ID.reconcile-nudged" "$STATE/$ID.gemini-settings.json" \
   "$STATE/$ID.claude-settings.json" "$STATE/$ID.devin-config.json" \
   "$STATE/.$ID.branch-outcome-index" "$STATE/$ID.merged-at" \
-  "$STATE/.secondmate-relaunch-$ID" "$STATE/.secondmate-relaunch-bound-$ID" "$STATE/.secondmate-park-$ID"
+  "$STATE/.secondmate-relaunch-$ID" "$STATE/.secondmate-relaunch-bound-$ID" "$STATE/.secondmate-park-$ID" \
+  "$STATE/.$ID".decision-event-* "$STATE/.$ID.task-event-failure"
 # The steering inbox (bin/fm-task-inbox-lib.sh) is runtime state for the
 # retired endpoint; teardown only runs after landing is confirmed, so any
 # leftover unhandled steer here is moot rather than unlanded work.
@@ -4097,7 +4098,7 @@ else
 fi
 fm_lock_release "$META_LOCK"
 META_LOCK_HELD=0
-if [ -e "$CONFIG/task-event-hook" ]; then
+if [ -e "$CONFIG/task-event-hook" ] || [ -e "$CONFIG/ticket-sync-hook" ]; then
   FM_HOME=$FM_HOME FM_STATE_OVERRIDE=$STATE FM_CONFIG_OVERRIDE=$CONFIG \
     "$SCRIPT_DIR/fm-task-event.sh" "$ID" "$TASK_EVENT_TYPE" \
       --ticket "$TASK_EVENT_TICKET" --pr "$PR_URL" --summary "$TASK_EVENT_SUMMARY" >/dev/null 2>&1 || true

@@ -12,7 +12,11 @@
 # Empty-queue handoff holds the enqueue lock while releasing the delivery lock,
 # so an enqueue racing drainer exit cannot lose its wake.
 # The hook receives one JSON argument, never a shell-evaluated command string.
-# Failures append to state/task-events.log and never fail a lifecycle producer.
+# A home with only config/ticket-sync-hook delivers through bin/fm-ticket-sync.sh
+# and logs that compatibility path once.
+# Failures append to state/task-events.log and never fail a lifecycle producer;
+# a consumer failure also appends one actionable line to a live task's status,
+# at most once per task per hour.
 # FM_TASK_EVENT_TIMEOUT sets the hook bound in seconds (default 60).
 set -u
 
@@ -21,7 +25,8 @@ FM_HOME=${FM_HOME:-${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}}
 STATE=${FM_STATE_OVERRIDE:-$FM_HOME/state}
 CONFIG=${FM_CONFIG_OVERRIDE:-$FM_HOME/config}
 export FM_HOME FM_STATE_OVERRIDE="$STATE" FM_CONFIG_OVERRIDE="$CONFIG"
-if [ "${1:-}" != --drain ] && [ ! -e "$CONFIG/task-event-hook" ]; then exit 0; fi
+events_enabled() { [ -e "$CONFIG/task-event-hook" ] || [ -e "$CONFIG/ticket-sync-hook" ]; }
+if [ "${1:-}" != --drain ] && ! events_enabled; then exit 0; fi
 
 QUEUE="$STATE/task-events"
 ENQUEUE_LOCK="$STATE/.task-event-enqueue.lock"
@@ -33,22 +38,51 @@ report_failure() {
   printf '%s task_id=%s event=%s exit=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$ID" "$EVENT" "$1" >> "$STATE/task-events.log" 2>/dev/null || true
 }
 
+surface_failure() {  # <exit-code>
+  local status="$STATE/$ID.status" marker="$STATE/.$ID.task-event-failure" now last=0
+  [ -f "$status" ] && [ ! -L "$status" ] || return 0
+  now=$(date +%s) || return 0
+  [ ! -f "$marker" ] || IFS= read -r last < "$marker" || true
+  case "$last" in ''|*[!0-9]*) last=0 ;; esac
+  [ $((now - last)) -ge 3600 ] || return 0
+  printf '%s\n' "$now" > "$marker" 2>/dev/null || return 0
+  # shellcheck source=bin/fm-classify-lib.sh
+  . "$SCRIPT_DIR/fm-classify-lib.sh"
+  printf '%s\n' "$(status_stamp_line "actionable: task event hook failed event=$EVENT exit=$1; see state/task-events.log")" \
+    >> "$status" 2>/dev/null || true
+}
+
+fail_delivery() {  # <exit-code>
+  report_failure "$1"
+  surface_failure "$1"
+}
+
 deliver() {
   local hook='' count=0 line bound=${FM_TASK_EVENT_TIMEOUT:-60} rc=0
   case "$bound" in ''|*[!0-9]*|0) bound=60 ;; esac
-  [ -f "$CONFIG/task-event-hook" ] || { report_failure 126; return; }
-  while IFS= read -r line || [ -n "$line" ]; do
-    case "$line" in ''|'#'*) continue ;; esac
-    hook=$line; count=$((count + 1))
-  done < "$CONFIG/task-event-hook"
-  if [ "$count" -ne 1 ] || [ "${hook#/}" = "$hook" ] || [ ! -f "$hook" ] || [ ! -x "$hook" ]; then
-    report_failure 126
-    return
+  if [ -e "$CONFIG/task-event-hook" ]; then
+    [ -f "$CONFIG/task-event-hook" ] || { fail_delivery 126; return; }
+    while IFS= read -r line || [ -n "$line" ]; do
+      case "$line" in ''|'#'*) continue ;; esac
+      hook=$line; count=$((count + 1))
+    done < "$CONFIG/task-event-hook"
+    if [ "$count" -ne 1 ] || [ "${hook#/}" = "$hook" ] || [ ! -f "$hook" ] || [ ! -x "$hook" ]; then
+      fail_delivery 126
+      return
+    fi
+  elif [ -e "$CONFIG/ticket-sync-hook" ]; then
+    hook="$SCRIPT_DIR/fm-ticket-sync.sh"
+    if [ ! -e "$STATE/.task-event-compat-noted" ] && : > "$STATE/.task-event-compat-noted" 2>/dev/null; then
+      printf '%s compatibility: config/ticket-sync-hook alone delivers task events through bin/fm-ticket-sync.sh; name a consumer in config/task-event-hook to migrate\n' \
+        "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$STATE/task-events.log" 2>/dev/null || true
+    fi
+  else
+    return 0
   fi
   # shellcheck source=bin/fm-timeout-lib.sh
   . "$SCRIPT_DIR/fm-timeout-lib.sh"
   fm_run_timed "$bound" "$hook" "$PAYLOAD" >/dev/null 2>&1 || rc=$?
-  [ "$rc" -eq 0 ] || report_failure "$rc"
+  [ "$rc" -eq 0 ] || fail_delivery "$rc"
 }
 
 first_queued() {
@@ -94,7 +128,7 @@ if [ "${1:-}" = --drain ]; then
   drain
   exit 0
 fi
-[ -e "$CONFIG/task-event-hook" ] || exit 0
+events_enabled || exit 0
 
 usage() {
   echo 'usage: fm-task-event.sh <task-id> <event> [--summary text] [--key key] [--ticket ticket] [--pr url]' >&2
@@ -170,7 +204,7 @@ case "$EVENT" in
     ;;
 esac
 
-if [ "$EVENT" = pr-merged ]; then
+if [ "$EVENT" = pr-merged ] || [ "$EVENT" = cancelled ]; then
   PAYLOAD=$(jq -cs --argjson event "$PAYLOAD" '
     [ .[] | select(if $event.ticket == null then .task_id == $event.task_id
       else .ticket == $event.ticket end) ] |
@@ -181,7 +215,7 @@ if [ "$EVENT" = pr-merged ]; then
           .[$fact.pr_url] = {task: $fact.task_id, merged: (.[$fact.pr_url].merged // false)}
         else . end
       end) |
-    $event + {merge: (if all(.[]; .merged) then "final" else "partial" end)}
+    $event + {merge: (if length == 0 then null elif all(.[]; .merged) then "final" else "partial" end)}
   ' "$STATE/task-event-prs.jsonl" 2>/dev/null) || { report_failure 125; exit 0; }
 fi
 

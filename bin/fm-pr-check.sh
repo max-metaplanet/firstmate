@@ -261,7 +261,7 @@ fi
 [ ! -e "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}/fleet-ledger" ] || [ "${FM_PR_CHECK_MERGE:-}" = 1 ] \
   || FM_HOME=$FM_HOME FM_STATE_OVERRIDE=$STATE "$SCRIPT_DIR/fm-fleet-ledger.sh" pr_ready "$ID" "$URL" || true
 # Registration owns pr-opened; re-arm and merge-time re-record are not new PRs.
-[ ! -e "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}/task-event-hook" ] || [ "${FM_PR_CHECK_MERGE:-}" = 1 ] \
+{ [ ! -e "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}/task-event-hook" ] && [ ! -e "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}/ticket-sync-hook" ]; } || [ "${FM_PR_CHECK_MERGE:-}" = 1 ] \
   || [ "$PRIOR_PR" = "$URL" ] \
   || FM_HOME=$FM_HOME FM_STATE_OVERRIDE=$STATE "$SCRIPT_DIR/fm-task-event.sh" "$ID" pr-opened --pr "$URL" || true
 # The contribution observer uses the same authenticated check mechanism and

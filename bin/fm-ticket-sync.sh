@@ -1,16 +1,17 @@
 #!/usr/bin/env bash
 # fm-ticket-sync.sh - compatibility adapter for the former ticket-sync hook.
 #
-# Configure this executable in config/task-event-hook to retain an existing
-# config/ticket-sync-hook integration while migrating it to task events.
+# bin/fm-task-event.sh delivers here when config/ticket-sync-hook is the only
+# configuration; it may also be named explicitly in config/task-event-hook.
 # Usage: fm-ticket-sync.sh '<firstmate.task-event v1 JSON>'
 # docs/configuration.md owns the event contract; bin/fm-task-event.sh bounds
 # this adapter.
 #
 # Mapping: started/resumed -> <ticket> start, or review <pr-url> when a resumed
 # event carries one; blocked/waiting -> <ticket> waiting <summary>; pr-opened
-# -> <ticket> review <pr-url>; final pr-merged ->
-# <ticket> done <pr-url>. Other events and null tickets do nothing.
+# -> <ticket> review <pr-url>; final pr-merged -> <ticket> done <pr-url>;
+# cancelled with merge final -> <ticket> done. Other events and null tickets
+# do nothing.
 # No ticket syntax is imposed here: the event producer owns ticket selection.
 #
 # config/ticket-sync-hook contains one absolute executable path, ignoring blank
@@ -60,6 +61,10 @@ case "$EVENT" in
     PR=$(printf '%s' "$PAYLOAD" | jq -r '.pr_url // empty')
     [ -n "$PR" ] || exit 2
     set -- "$TICKET" "done" "$PR"
+    ;;
+  cancelled)
+    [ "$(printf '%s' "$PAYLOAD" | jq -r '.merge')" = final ] || exit 0
+    set -- "$TICKET" "done"
     ;;
   *) exit 0 ;;
 esac

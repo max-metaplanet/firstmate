@@ -1460,7 +1460,7 @@ status_open_decisions_incremental() {  # <status-file> [<captured-end-offset>]
         _fm_byte_length "$line" event_line_bytes
         event_pos=$((event_pos + event_line_bytes + 1))
       fi
-      if [ -e "$event_config/task-event-hook" ]; then
+      if [ -e "$event_config/task-event-hook" ] || [ -e "$event_config/ticket-sync-hook" ]; then
         status_line_verb "$line" event_verb
         event_type=''
         # Only explicit keys identify lifecycle transitions. Captain-hold

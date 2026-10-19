@@ -57,7 +57,7 @@ test_event_mapping_preserves_arguments() {
   summary=$'Waiting for "choice"; $literal\nand a second line'
   run_sync "$home" "$(payload resumed issue/123 final "$summary" null)" \
     || fail "resumed without PR mapping failed"
-  for event in started resumed blocked waiting pr-opened pr-merged; do
+  for event in started resumed blocked waiting pr-opened pr-merged cancelled; do
     run_sync "$home" "$(payload "$event" issue/123 final "$summary")" \
       || fail "$event mapping failed"
   done
@@ -66,7 +66,7 @@ test_event_mapping_preserves_arguments() {
     ["issue/123", "review", "https://github.com/o/r/pull/7"],
     ["issue/123", "waiting", $summary], ["issue/123", "waiting", $summary],
     ["issue/123", "review", "https://github.com/o/r/pull/7"],
-    ["issue/123", "done", "https://github.com/o/r/pull/7"]]')
+    ["issue/123", "done", "https://github.com/o/r/pull/7"], ["issue/123", "done"]]')
   [ "$(jq -cs . "$home/calls")" = "$expected" ] \
     || fail "event mapping changed argument values: $(cat "$home/calls")"
   pass "legacy hook arguments preserve arbitrary tickets, URLs, and worker text"
@@ -76,9 +76,11 @@ test_nonlegacy_events_and_null_tickets_are_skipped() {
   local home event
   home=$(make_home skipped)
   install_hook "$home"
-  for event in decision-answered finished cancelled; do
+  for event in decision-answered finished; do
     run_sync "$home" "$(payload "$event")" || fail "$event was not skipped"
   done
+  run_sync "$home" "$(payload cancelled issue/123 partial)" || fail "partial cancel failed"
+  run_sync "$home" "$(payload cancelled issue/123 null)" || fail "PR-less cancel failed"
   run_sync "$home" "$(payload pr-merged issue/123 partial)" || fail "partial merge failed"
   run_sync "$home" "$(payload started null)" || fail "null ticket failed"
   [ ! -s "$home/calls" ] || fail "an event without a legacy transition reached the hook"

@@ -581,7 +581,7 @@ See [`fleet-ledger.md`](fleet-ledger.md) for the opt-in setup, record contract, 
 The optional local, gitignored `config/task-event-hook` names one executable that receives lifecycle events from the supervising home's transition owners.
 Workers report status and never call the tracker; the configured consumer is the sole tracker writer.
 Firstmate ships no tracker integration or credentials.
-With the file absent, producers perform one file test and start no hook process.
+With neither this file nor the legacy `config/ticket-sync-hook` present, producers perform file tests only and start no hook process.
 The file contains one absolute executable path, ignoring blank lines and `#` comment lines; arguments and shell expressions are not accepted.
 This opt-in requires `jq` and is local to the home, not inherited by secondmates.
 
@@ -610,7 +610,7 @@ Consumers must tolerate additional fields in version 1.
 | `pr-merged` | `fm-merge-outcome-lib.sh`, for every confirmed merge, including externally merged PRs. |
 | `finished`, `cancelled` | `fm-teardown.sh`, after successful cleanup; forced removal without a done status is cancellation. |
 
-For `pr-merged`, `merge` is `final` when all live PRs recorded by this hook for the ticket have confirmed merges, otherwise `partial`.
+For `pr-merged` and `cancelled`, `merge` is `final` when all live PRs recorded by this hook for the ticket have confirmed merges, otherwise `partial`; a `cancelled` event for a ticket with no live recorded PR carries `merge: null`.
 A task tracks one PR: its later `pr-opened` supersedes its earlier unmerged PR, and its `cancelled` retires its unmerged PR.
 Unticketed tasks aggregate their own PRs only.
 The local `state/task-event-prs.jsonl` retains PR facts across task teardown and across multiple tasks sharing a ticket; earlier history from before the hook was enabled is not reconstructed from the forge.
@@ -621,6 +621,7 @@ Only that local publication takes a foreground lock, with a one-second bound; th
 A detached drainer invokes one consumer at a time per home, in sequence order, with each attempt bounded by `FM_TASK_EVENT_TIMEOUT` (default 60 seconds).
 Merge completeness is captured at publication, so delayed delivery cannot turn an earlier partial merge into a final one.
 Consumer failure never fails the lifecycle operation or prevents later entries from being attempted; errors append locally to `state/task-events.log`, naming the task, event and exit code (124 for timeout, 125 for local publication failure, 126 for invalid executable configuration).
+A failed, timed-out or unrunnable consumer call also appends `actionable: task event hook failed event=<event> exit=<code>; see state/task-events.log` to the task's status while the task is live, at most once per task per hour, so supervision surfaces it.
 Delivery is best effort: a consumer failure is logged without retry, while a drainer crash before removing an entry can replay it on the next emission.
 No idle retry daemon runs.
 Transition owners suppress routine poll and replay duplicates, but consumers should deduplicate `home` and `sequence` across crash recovery.
@@ -628,11 +629,11 @@ No worker-facing instruction should ask a worker to update a tracker directly.
 
 ### Existing milestone-hook adapter
 
-`bin/fm-ticket-sync.sh` is an optional compatibility consumer for homes that already have `config/ticket-sync-hook` configured.
-To retain the existing private rules, keep that file pointing at the existing executable and write the absolute path to `bin/fm-ticket-sync.sh` into `config/task-event-hook`.
-The adapter maps started to `start`, resumed to `review <url>` when the task has a PR and `start` otherwise, blocked/waiting to `waiting <summary>`, pr-opened to `review <url>`, and only a final pr-merged to `done <url>`, using the existing `<ticket> <event> [args...]` calling convention.
+`bin/fm-ticket-sync.sh` is the compatibility consumer for homes that already have `config/ticket-sync-hook` configured.
+When `config/task-event-hook` is absent, that legacy file alone keeps lifecycle delivery on through this adapter, and `state/task-events.log` records the compatibility path once.
+Writing the absolute path to `bin/fm-ticket-sync.sh` into `config/task-event-hook` selects the same adapter explicitly.
+The adapter maps started to `start`, resumed to `review <url>` when the task has a PR and `start` otherwise, blocked/waiting to `waiting <summary>`, pr-opened to `review <url>`, only a final pr-merged to `done <url>`, and a cancelled event with `merge: "final"` to `done`, using the existing `<ticket> <event> [args...]` calling convention.
 Unticketed and other new events are ignored by this legacy adapter.
-The old configuration alone no longer enables lifecycle delivery.
 To switch to a richer consumer, replace the single executable path in `config/task-event-hook`; no producer or worker changes are needed.
 
 ## Firstmate role (config/firstmate-role)

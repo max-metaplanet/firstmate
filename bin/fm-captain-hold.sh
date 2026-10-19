@@ -1012,7 +1012,7 @@ command_hold() {
     || fail "task $id lost its hold-set stamp while being held"
   publish_parent_hold "$id" "$occurrence" needs-decision "$reason"
   # The hold owner emits once; its parent-channel mirror is not a new wait.
-  [ ! -e "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}/task-event-hook" ] || [ "$preserve_hold_set" = 1 ] \
+  { [ ! -e "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}/task-event-hook" ] && [ ! -e "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}/ticket-sync-hook" ]; } || [ "$preserve_hold_set" = 1 ] \
     || FM_HOME=$FM_HOME FM_STATE_OVERRIDE=$STATE "$SCRIPT_DIR/fm-task-event.sh" "$id" waiting \
       --key "captain-hold-$id-$occurrence" --summary "$reason" >/dev/null 2>&1 || true
   printf '%s\n' "$id"
@@ -1526,7 +1526,7 @@ publish_parent_resolution_then_retire() {  # <task-id> <occurrence> <note>
   # This helper also repairs interrupted/replayed answers. Claim the occurrence
   # under the already-held task control lock before best-effort delivery.
   local event_marker="$STATE/.$id.decision-event-$occurrence"
-  if [ -e "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}/task-event-hook" ] && [ ! -e "$event_marker" ]; then
+  if { [ -e "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}/task-event-hook" ] || [ -e "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}/ticket-sync-hook" ]; } && [ ! -e "$event_marker" ]; then
     if (umask 077; : > "$event_marker"); then
       FM_HOME=$FM_HOME FM_STATE_OVERRIDE=$STATE "$SCRIPT_DIR/fm-task-event.sh" "$id" decision-answered \
         --key "captain-hold-$id-$occurrence" >/dev/null 2>&1 || true
