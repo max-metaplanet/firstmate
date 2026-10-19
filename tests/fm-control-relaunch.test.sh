@@ -1185,6 +1185,35 @@ test_worker_account_pin_follows_the_relaunch() {
   pass "fm-control relaunch: the replacement follows the home's current worker account pin"
 }
 
+test_named_seat_survives_a_worker_account_pin() {
+  local dir out rc id=rl-seat-pin seats
+  dir=$(new_case seat-pin "$id")
+  add_ship_task "$dir" "$id" claude
+  make_claude_auth_stub "$dir"
+  seats="$dir/seats"
+  mkdir -p "$seats/work" "$dir/home/config" "$dir/pin"
+  printf '%s\n' "$seats" > "$dir/home/config/claude-seats-root"
+  printf 'claude_seat=%s\n' "$seats/work" >> "$dir/home/state/$id.meta"
+  : > "$dir/pin/.credentials.json"
+  printf '%s\n' "$dir/pin" > "$dir/home/config/claude-account"
+  out=$(run_control "$dir" "$id" relaunch --note "pinned"); rc=$?
+  expect_code 0 "$rc" "a pinned relaunch of a seated task should succeed"$'\n'"$out"
+  assert_contains "$(cat "$dir/fake/literal")" "CLAUDE_CONFIG_DIR='$dir/pin'" \
+    "the pinned replacement should launch under the pin"
+  [ "$(meta_field "$dir" "$id" account)" = "$dir/pin" ] || fail "the record should carry the pinned account"
+  [ "$(meta_field "$dir" "$id" claude_seat)" = "$seats/work" ] \
+    || fail "the pin must not overwrite the recorded seat, got '$(meta_field "$dir" "$id" claude_seat)'"
+  rm "$dir/home/config/claude-account"
+  : > "$dir/fake/literal"
+  out=$(run_control "$dir" "$id" relaunch --note "pin removed"); rc=$?
+  expect_code 0 "$rc" "a relaunch after the pin is removed should succeed"$'\n'"$out"
+  assert_contains "$(cat "$dir/fake/literal")" "CLAUDE_CONFIG_DIR='$seats/work'" \
+    "removing the pin must return the task to its recorded seat"
+  assert_not_contains "$(cat "$dir/fake/literal")" "$dir/pin" "the old pin must not outlive its removal"
+  [ "$(meta_field "$dir" "$id" claude_seat)" = "$seats/work" ] || fail "the recorded seat must survive the pin"
+  pass "fm-control relaunch: a named seat survives a worker account pin and returns once it is removed"
+}
+
 test_secondmate_account_pin_follows_relaunch_and_refuses_before_stop() {
   local dir out rc id=rl-sm-acct harness file variable pin
   for harness in claude pi; do
@@ -1243,7 +1272,8 @@ SH
     assert_contains "$(cat "$dir/fake/literal")" "$variable='$dir/new-mate'" "relaunch must not reuse the old recorded account"
     if [ "$harness" = claude ]; then
       assert_contains "$(cat "$dir/new-mate/.claude.json")" "$dir/wt" "changed pin must receive workspace trust"
-      [ "$(meta_field "$dir" "$id" claude_seat)" = "$dir/new-mate" ] || fail "the recorded store must follow the durable pin"
+      [ "$(meta_field "$dir" "$id" account)" = "$dir/new-mate" ] || fail "the recorded account must follow the durable pin"
+      [ -z "$(meta_field "$dir" "$id" claude_seat)" ] || fail "a pin must not be recorded as the task's seat"
     fi
     rm "$dir/new-mate/.credentials.json" "$dir/new-mate/signed-in"
     cp "$dir/home/state/$id.meta" "$dir/meta-before"
@@ -3218,6 +3248,7 @@ test_relaunch_from_claude_onto_another_harness_drops_the_seat
 test_native_ultra_relaunch_preserves_profile_and_rejects_before_stop
 test_signed_out_worker_account_pin_refuses_before_stop
 test_worker_account_pin_follows_the_relaunch
+test_named_seat_survives_a_worker_account_pin
 test_secondmate_account_pin_follows_relaunch_and_refuses_before_stop
 test_pi_exclude_tools_follow_the_relaunch
 test_exclude_tools_refusals_happen_before_the_agent_stops

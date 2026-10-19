@@ -2303,10 +2303,6 @@ if [ "$RELAUNCH" -eq 1 ]; then
   case "$RELAUNCH_PRIOR_HARNESS" in
     claude|codex) RELAUNCH_SEAT=$(fm_meta_get "$RELAUNCH_META" "${RELAUNCH_PRIOR_HARNESS}_seat") ;;
   esac
-  # A Claude seat recorded from the worker account pin is the pin's, not a seat
-  # choice, so it does not outlive the pin.
-  [ "$RELAUNCH_PRIOR_HARNESS" != claude ] || [ "$RELAUNCH_SEAT" != "$(fm_meta_get "$RELAUNCH_META" account)" ] \
-    || RELAUNCH_SEAT=
   KIND=$(fm_meta_get "$RELAUNCH_META" kind)
   [ -n "$KIND" ] || KIND=ship
   # A secondmate whose endpoint is gone already has ONE owner for that
@@ -5617,10 +5613,7 @@ spawn_assert_agent_worktree
 # Relaunches retain that task's store instead of following later home switches.
 # Explicit --seat moves use the same provider's validated destination.
 if [ "$HARNESS" = claude ] || [ "$HARNESS" = codex ]; then
-  if [ "$HARNESS" = claude ] && [ -n "$WORKER_ACCOUNT" ]; then
-    SEAT_CONFIG_DIR=$WORKER_ACCOUNT_ROOT
-    SEAT_RECORD=$WORKER_ACCOUNT_ROOT
-  elif [ "$RELAUNCH" -eq 1 ] && [ "$RELAUNCH_PRIOR_HARNESS" = "$HARNESS" ]; then
+  if [ "$RELAUNCH" -eq 1 ] && [ "$RELAUNCH_PRIOR_HARNESS" = "$HARNESS" ]; then
     SEAT_RECORD=$RELAUNCH_SEAT
     if [ "$SEAT_OVERRIDE_SET" = 1 ]; then
       SEAT_CONFIG_DIR=$RELAUNCH_SEAT
@@ -5634,6 +5627,9 @@ if [ "$HARNESS" = claude ] || [ "$HARNESS" = codex ]; then
       SEAT_CONFIG_DIR=$(FM_SEAT_PROVIDER=$HARNESS CONFIG=$SEAT_CONFIG fm_seat_spawn_config_dir) || exit 1
     SEAT_RECORD=$SEAT_CONFIG_DIR
   fi
+  # An applicable Claude account pin is the store this launch reads and trusts,
+  # but the record keeps the task's seat so it is still there once the pin goes.
+  [ "$HARNESS" != claude ] || [ -z "$WORKER_ACCOUNT" ] || SEAT_CONFIG_DIR=$WORKER_ACCOUNT_ROOT
   if [ "$HARNESS" = claude ]; then
     fm_seat_require_profile_dir "${SEAT_CONFIG_DIR##*/}" "$SEAT_CONFIG_DIR" || exit 1
   fi
