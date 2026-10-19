@@ -1,0 +1,3 @@
+fm-worker-account exit=0
+fm-control-relaunch exit=0
+fm-seat exit=0
