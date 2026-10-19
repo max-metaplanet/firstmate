@@ -224,6 +224,48 @@ test_no_reported_checks_is_unverified() {
   pass "a head with no reported checks is unverified"
 }
 
+# A stacked pull request can target an unprotected branch, so gh's required
+# view can report nothing while a check on this head has already failed.
+UNPROTECTED_BASE='[]'
+
+test_failing_reported_check_is_shown_when_nothing_is_required() {
+  local out expected
+  out=$(FM_TEST_REQUIRED_NAMES=$UNPROTECTED_BASE \
+    FM_TEST_REQUIRED_CHECKS='[{"name":"backend","state":"FAILURE","bucket":"fail","workflow":"ci"},{"name":"lint","state":"SUCCESS","bucket":"pass","workflow":"ci"}]' \
+    run_state) || fail "stacked failing fixture was refused"
+  expected='REQUIRED CHECK: backend (red)'
+  [ "$out" = "$expected" ] \
+    || fail "a failure on a head whose base requires nothing must still be shown, using the shared blocker policy, got: $out"
+  pass "a failing reported check is shown when the base has no required checks"
+}
+
+test_pending_reported_check_is_shown_when_nothing_is_required() {
+  local out status
+  out=$(FM_TEST_REQUIRED_NAMES=$UNPROTECTED_BASE \
+    FM_TEST_REQUIRED_CHECKS='[{"name":"backend","state":"IN_PROGRESS","bucket":"pending","workflow":"ci"},{"name":"optional","state":"SKIPPED","bucket":"skipping","workflow":"ci"}]' \
+    run_state) || fail "stacked pending fixture was refused"
+  assert_contains "$out" 'REQUIRED CHECK: backend (pending)' \
+    "a check still running on a head whose base requires nothing must be shown"
+  assert_not_contains "$out" 'optional' \
+    "a skipped reported check is not worth a line"
+
+  status=0
+  FM_TEST_REQUIRED_NAMES=$UNPROTECTED_BASE FM_TEST_CHECKS_ERROR='HTTP 502: Bad Gateway' \
+    run_state >/dev/null 2>&1 || status=$?
+  [ "$status" -ne 0 ] || fail "a failed read of the reported checks must refuse, not pass as unconfirmed"
+  pass "a pending reported check is shown when the base has no required checks, and a failed fallback read refuses"
+}
+
+test_protected_base_reports_only_required_checks() {
+  local out
+  out=$(FM_TEST_REQUIRED_NAMES='["CI Status"]' \
+    FM_TEST_REQUIRED_CHECKS='[{"name":"CI Status","state":"FAILURE","bucket":"fail"},{"name":"unrequired","state":"FAILURE","bucket":"fail"}]' \
+    run_state) || fail "protected-base fixture was refused"
+  [ "$out" = 'REQUIRED CHECK: CI Status (red)' ] \
+    || fail "a base with required checks keeps the required view and never consults the unfiltered one, got: $out"
+  pass "a protected base reports only required checks"
+}
+
 test_help_states_what_silence_means_and_what_is_out_of_scope() {
   local out
   out=$("$SCRIPT" --help) || fail "help was refused"
@@ -281,6 +323,9 @@ test_pending_approval_is_not_a_blocker
 test_required_failure_is_a_blocker
 test_unreported_required_checks_are_unconfirmed
 test_no_reported_checks_is_unverified
+test_failing_reported_check_is_shown_when_nothing_is_required
+test_pending_reported_check_is_shown_when_nothing_is_required
+test_protected_base_reports_only_required_checks
 test_help_states_what_silence_means_and_what_is_out_of_scope
 test_unknown_mergeability_is_a_blocker
 test_refusals_exit_nonzero

@@ -66,7 +66,7 @@ A stopped agent whose pane still shows dialog text needs no confirmation.
 Removing a worktree, closing an endpoint, or discarding work stays with [`bin/fm-teardown.sh`](../bin/fm-teardown.sh), which owns the landed-work test.
 
 **`resume` is not a verb.**
-It is not deterministic across the verified adapters: codex, grok, gemini, devin, and commandcode resume only from a session id printed at exit, opencode continues the most recent session for the cwd, and claude, pi, pi-signed, omp, kimi, and agy have no verified general pane-resume contract.
+It is not deterministic across the verified adapters: codex, grok, gemini, devin, and commandcode resume only from a session id printed at exit, polytoken resumes only from a session id held in its own sessions registry, opencode continues the most recent session for the cwd, and claude, pi, pi-signed, omp, kimi, and agy have no verified general pane-resume contract.
 `relaunch` uses the brief on disk - not a harness-private session - as the durable instruction when the backend can prove the old agent stopped and the composer is empty; Devin on Herdr currently fails that composer check and refuses.
 A relaunch does take one session reference when the endpoint's own runtime recorded it - see [the relaunch transaction](#transactional-relaunch) - but that is a relaunch input, not a caller-facing verb.
 
@@ -80,10 +80,10 @@ A relaunch does take one session reference when the endpoint's own runtime recor
    A ship or scout keeps the harness already recorded for it, because that harness comes from firstmate's dispatch-profile judgment at intake and must not be silently re-read from configuration.
    A recorded raw-command basename that differs from its resolved adapter cannot reproduce the command actually running, so relaunch refuses before the checkpoint unless the caller passes an explicit `--harness` to choose the replacement runtime deliberately.
    A harness change resets model and effort unless they are named too, because a model chosen for one adapter does not transfer to another.
-   A Claude or Pi replacement must also pass the home's [worker account pin](configuration.md#worker-account-pin-configclaude-account-configpi-account), so a pin that no longer resolves or is signed out refuses before the old agent stops.
+   A Claude or Pi replacement must also pass the home's [worker account pin](configuration.md#worker-account-pin-configclaude-account-configpi-account), or a secondmate's own [per-secondmate account pin](configuration.md#per-secondmate-account-pins) when one is set, so a pin that no longer resolves or is signed out refuses before the old agent stops.
    `--seat <name|default>` is a deliberate same-harness Claude or Codex move, validated before stopping the old agent with the same login evidence as a seat switch without `--force`.
    It accepts a renewable login, refuses a missing profile, a signed-out or unreadable login, and a destination conflicting with the worker account pin, and warns when the destination is resting.
-   Without `--seat`, a same-harness replacement keeps its recorded vendor profile.
+   Without `--seat`, a same-harness replacement keeps its recorded vendor profile, except that an applicable Claude account pin supersedes the recorded Claude profile for the launch; the recorded profile stays on the task record and applies again once the pin is removed.
    A Codex offer from the [resting-worker warning](claude-seats.md#resting-a-seat-below-a-quota-floor) uses `--harness codex` and its matched rule's model and effort, without `--seat`; the same transaction applies and the published Codex record no longer carries a Claude seat.
    The relaunch journal records both profile paths; the launch owner publishes the new seat with the replacement's record, so a failed launch before publication retains the prior seat.
    For example: `FM_HOME=/path/to/home bin/fm-control.sh task-id relaunch --seat spare --note "Continue from the preserved files and instruction inbox."`.

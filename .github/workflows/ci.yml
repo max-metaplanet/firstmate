@@ -1,6 +1,8 @@
 name: CI
 
 on:
+  # Manual full-suite verification of a feature branch before landing.
+  workflow_dispatch:
   push:
     branches: [main]
   pull_request:

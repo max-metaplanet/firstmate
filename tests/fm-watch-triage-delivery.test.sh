@@ -474,7 +474,7 @@ case "${1:-}" in
     exit 0 ;;
   capture-pane)
     n=$(( $(cat "$FM_FAKE_TMUX_TICKS" 2>/dev/null || echo 0) + 1 ))
-    echo "$n" > "$FM_FAKE_TMUX_TICKS"
+    echo "$n" > "$FM_FAKE_TMUX_TICKS.$$" && mv "$FM_FAKE_TMUX_TICKS.$$" "$FM_FAKE_TMUX_TICKS"
     printf 'Working... (%d.%ds) lavish-axi poll' "$(( 7200 + n ))" "$(( n % 10 ))"
     exit 0 ;;
   display-message)
