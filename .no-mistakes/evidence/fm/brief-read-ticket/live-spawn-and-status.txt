@@ -1,0 +1,25 @@
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab.qq6N3R
+notice: tk-local-a1 ships mode=local-only while the standing posture for proj.VfIO is no-mistakes - less rigor than the captain's standing posture; proceed only on a current explicit captain instruction or an intake judgment you can state
+spawned tk-local-a1 harness=claude kind=ship mode=local-only yolo=off window=primary:fm-tk-local-a1 worktree=~/.treehouse/proj.VfIO-cab3a4/1/proj.VfIO
+rc=0
+--- status file:
+working [at=1792447316]: setup done on feat/ENG-630-tk-local-a1 in isolated worktree; ticket ENG-630 unreadable (cu-task returned null task, no ClickUp data) - proceeding on brief alone; lab spec: no file changes, no commits
+--- meta:
+window=primary:fm-tk-local-a1
+endpoint_task_id=tk-local-a1
+worktree=~/.treehouse/proj.VfIO-cab3a4/1/proj.VfIO
+project=/private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab.qq6N3R/proj.VfIO
+harness=claude
+kind=ship
+mode=local-only
+yolo=off
+branch=feat/ENG-630-tk-local-a1
+tasktmp=/tmp/fm-tk-local-a1
+ticket=ENG-630
+commit_type=feat
+dispatched_at=1792447273
+model=default
+effort=default
+claude_seat=~/.claude-seats/seat-max-gmail
+busy_gen=g1792447272.87930.1322
+spawn_gen=s1792447273.74854.23937

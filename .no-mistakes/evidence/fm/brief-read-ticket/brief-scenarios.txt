@@ -1,0 +1,46 @@
+== ticketed no-mistakes rc=0
+Ticket: ENG-630
+Commit type: feat
+Before you start the work, read ticket ENG-630 in full: its description, every comment, its subtasks, its linked tasks, and its attachments.
+Weigh the comments people wrote first; treat automated status and risk-score comments as the weakest signal and read only the latest of each.
+Any ClickUp read path will do - where this home installs the private `cu-*` helper, `cu-task ENG-630` is one example - and the ticket's own page carries whatever a command does not print.
+If you cannot read it, report that in your first status line rather than proceeding silently on this brief alone.
+Every commit subject on this branch and the pull request title must read `feat/ENG-630(<scope>): <message>`, where `<scope>` names the area changed and `<message>` is a short imperative description.
+The branch is exactly `feat/ENG-630-tk-no-a1`; do not rename it.
+-- spawn-side header parse:
+ENG-630
+feat
+== ticketed direct-PR rc=0
+Ticket: ENG-630
+Commit type: feat
+Before you start the work, read ticket ENG-630 in full: its description, every comment, its subtasks, its linked tasks, and its attachments.
+Weigh the comments people wrote first; treat automated status and risk-score comments as the weakest signal and read only the latest of each.
+Any ClickUp read path will do - where this home installs the private `cu-*` helper, `cu-task ENG-630` is one example - and the ticket's own page carries whatever a command does not print.
+If you cannot read it, report that in your first status line rather than proceeding silently on this brief alone.
+Every commit subject on this branch and the pull request title must read `feat/ENG-630(<scope>): <message>`, where `<scope>` names the area changed and `<message>` is a short imperative description.
+The branch is exactly `feat/ENG-630-tk-direct-a1`; do not rename it.
+-- spawn-side header parse:
+ENG-630
+feat
+== ticketed local-only rc=0
+Ticket: ENG-630
+Commit type: feat
+Before you start the work, read ticket ENG-630 in full: its description, every comment, its subtasks, its linked tasks, and its attachments.
+Weigh the comments people wrote first; treat automated status and risk-score comments as the weakest signal and read only the latest of each.
+Any ClickUp read path will do - where this home installs the private `cu-*` helper, `cu-task ENG-630` is one example - and the ticket's own page carries whatever a command does not print.
+If you cannot read it, report that in your first status line rather than proceeding silently on this brief alone.
+Every commit subject on this branch and the pull request title must read `feat/ENG-630(<scope>): <message>`, where `<scope>` names the area changed and `<message>` is a short imperative description.
+The branch is exactly `feat/ENG-630-tk-local-a1`; do not rename it.
+-- spawn-side header parse:
+ENG-630
+feat
+== no-ticket rc=0
+Ticket: no-ticket
+Commit type: chore
+Every commit subject on this branch and the pull request title must read `chore/no-ticket(<scope>): <message>`, where `<scope>` names the area changed and `<message>` is a short imperative description.
+The branch is exactly `chore/no-ticket-nt-a2`; do not rename it.
+read-instruction lines: 0
+== unticketed rc=0
+Ticket lines: 0; read-instruction lines: 0
+error: fm-brief.sh: --ticket ENG-630 requires --commit-type <type>; the type is never guessed from the task text, so a ticketed task without one is refused
+== ticket without type rc=1
