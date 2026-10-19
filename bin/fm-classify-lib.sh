@@ -1254,6 +1254,11 @@ _fm_open_decisions_cursor_path() {  # <status-file>
 # without changing the operational open-decision set.
 FM_OPEN_DECISIONS_FOLD_VERSION=11
 
+_fm_byte_length() {  # <text> <out-var>
+  local LC_ALL=C
+  printf -v "$2" '%s' "$((${#1} + 0))"
+}
+
 # Portable device:inode identity for the rotation/recreation check below.
 _fm_open_decisions_file_ident() {  # <file> -> strongest available identity
   local f=$1 epoch birth ident raw
@@ -1332,6 +1337,7 @@ status_open_decisions_incremental() {  # <status-file> [<captured-end-offset>]
   local version='' size actual_size cur_ident resolve held chunk_file chunk_size line cursor_dirty=0
   local target_cursor fold_version event_rows='' event_verb event_key event_note event_type event_before
   local event_state event_home event_config event_task event_waits=, event_waited event_prior_verb
+  local event_quiet_end=0 event_quiet event_pos=0 event_line_bytes
   event_task=${f##*/}; event_task=${event_task%.status}
   event_state=${f%/*}
   event_home=${FM_HOME:-${event_state%/*}}
@@ -1412,6 +1418,14 @@ status_open_decisions_incremental() {  # <status-file> [<captured-end-offset>]
   fi
 
   if [ -z "$version" ] || [ -z "$ident" ] || [ "$ident" != "$cur_ident" ] || [ "$offset" -gt "$actual_size" ]; then
+    # A discarded cursor already emitted its history; rebuild that span quietly.
+    if [ -n "${cursor_data:-}" ]; then
+      if [ "$ident" = "$cur_ident" ] && [ "$offset" -le "$actual_size" ]; then
+        event_quiet_end=$offset
+      else
+        event_quiet_end=$size
+      fi
+    fi
     offset=0
     open=''
     trusted_open=''
@@ -1440,6 +1454,12 @@ status_open_decisions_incremental() {  # <status-file> [<captured-end-offset>]
     while IFS= read -r line || [ -n "$line" ]; do
       event_before=$open
       open=$(_fm_decision_fold_line "$open" "$line" "$resolve" "$held")
+      event_quiet=0
+      if [ "$event_pos" -lt "$event_quiet_end" ]; then
+        event_quiet=1
+        _fm_byte_length "$line" event_line_bytes
+        event_pos=$((event_pos + event_line_bytes + 1))
+      fi
       if [ -e "$event_config/task-event-hook" ]; then
         status_line_verb "$line" event_verb
         event_type=''
@@ -1473,7 +1493,7 @@ status_open_decisions_incremental() {  # <status-file> [<captured-end-offset>]
             ;;
           "$held") event_waits=${event_waits/,$event_key,/,} ;;
         esac
-        [ -n "$event_type" ] || continue
+        [ -n "$event_type" ] && [ "$event_quiet" = 0 ] || continue
         event_rows="${event_rows}${event_type}"$'\t'"${event_key}"$'\t'"${event_note}"$'\n'
       fi
     done < "$chunk_file"

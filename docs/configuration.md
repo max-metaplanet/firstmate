@@ -603,14 +603,15 @@ Consumers must tolerate additional fields in version 1.
 | Event | Transition owner |
 | --- | --- |
 | `started` | `fm-spawn.sh`, after the fresh worker launch and backlog commit; relaunch emits nothing. |
-| `blocked`, `waiting` | The incremental keyed-status fold in `fm-classify-lib.sh`; blocked stays blocked, needs-decision and paused become waiting. A new captain hold is emitted by `fm-captain-hold.sh`. |
+| `blocked`, `waiting` | The incremental keyed-status fold in `fm-classify-lib.sh`; blocked stays blocked, needs-decision and paused become waiting. A new captain hold is emitted by `fm-captain-hold.sh`. A discarded fold cursor rebuilds its already-emitted span without emitting. |
 | `resumed` | The keyed-status fold after resolution clears the remaining blockers, or the captain-hold owner when releasing a held task. |
 | `decision-answered` | `fm-captain-hold.sh`, once an answer is durably recorded. |
 | `pr-opened` | `fm-pr-check.sh`, when recording a new PR; re-arm and merge-time re-record emit nothing. |
 | `pr-merged` | `fm-merge-outcome-lib.sh`, for every confirmed merge, including externally merged PRs. |
 | `finished`, `cancelled` | `fm-teardown.sh`, after successful cleanup; forced removal without a done status is cancellation. |
 
-For `pr-merged`, `merge` is `final` when all PRs recorded by this hook for the ticket have confirmed merges, otherwise `partial`.
+For `pr-merged`, `merge` is `final` when all live PRs recorded by this hook for the ticket have confirmed merges, otherwise `partial`.
+A task tracks one PR: its later `pr-opened` supersedes its earlier unmerged PR, and its `cancelled` retires its unmerged PR.
 Unticketed tasks aggregate their own PRs only.
 The local `state/task-event-prs.jsonl` retains PR facts across task teardown and across multiple tasks sharing a ticket; earlier history from before the hook was enabled is not reconstructed from the forge.
 All other event types carry `merge: null`.
@@ -629,7 +630,7 @@ No worker-facing instruction should ask a worker to update a tracker directly.
 
 `bin/fm-ticket-sync.sh` is an optional compatibility consumer for homes that already have `config/ticket-sync-hook` configured.
 To retain the existing private rules, keep that file pointing at the existing executable and write the absolute path to `bin/fm-ticket-sync.sh` into `config/task-event-hook`.
-The adapter maps started/resumed to `start`, blocked/waiting to `waiting <summary>`, pr-opened to `review <url>`, and only a final pr-merged to `done <url>`, using the existing `<ticket> <event> [args...]` calling convention.
+The adapter maps started to `start`, resumed to `review <url>` when the task has a PR and `start` otherwise, blocked/waiting to `waiting <summary>`, pr-opened to `review <url>`, and only a final pr-merged to `done <url>`, using the existing `<ticket> <event> [args...]` calling convention.
 Unticketed and other new events are ignored by this legacy adapter.
 The old configuration alone no longer enables lifecycle delivery.
 To switch to a richer consumer, replace the single executable path in `config/task-event-hook`; no producer or worker changes are needed.

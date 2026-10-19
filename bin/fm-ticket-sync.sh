@@ -7,8 +7,9 @@
 # docs/configuration.md owns the event contract; bin/fm-task-event.sh bounds
 # this adapter.
 #
-# Mapping: started/resumed -> <ticket> start; blocked/waiting -> <ticket>
-# waiting <summary>; pr-opened -> <ticket> review <pr-url>; final pr-merged ->
+# Mapping: started/resumed -> <ticket> start, or review <pr-url> when a resumed
+# event carries one; blocked/waiting -> <ticket> waiting <summary>; pr-opened
+# -> <ticket> review <pr-url>; final pr-merged ->
 # <ticket> done <pr-url>. Other events and null tickets do nothing.
 # No ticket syntax is imposed here: the event producer owns ticket selection.
 #
@@ -40,7 +41,11 @@ TICKET=$(printf '%s' "$PAYLOAD" | jq -r '.ticket // empty')
 [ -n "$TICKET" ] || exit 0
 EVENT=$(printf '%s' "$PAYLOAD" | jq -r '.event')
 case "$EVENT" in
-  started|resumed) set -- "$TICKET" start ;;
+  started) set -- "$TICKET" start ;;
+  resumed)
+    PR=$(printf '%s' "$PAYLOAD" | jq -r '.pr_url // empty')
+    if [ -n "$PR" ]; then set -- "$TICKET" review "$PR"; else set -- "$TICKET" start; fi
+    ;;
   blocked|waiting)
     SUMMARY=$(printf '%s' "$PAYLOAD" | jq -r '.summary')
     set -- "$TICKET" waiting "$SUMMARY"

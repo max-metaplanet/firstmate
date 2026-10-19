@@ -27,12 +27,13 @@ SH
   printf '%s\n' "$home/hook" > "$home/config/ticket-sync-hook"
 }
 
-payload() {  # <event> [ticket] [merge] [summary]
+payload() {  # <event> [ticket] [merge] [summary] [pr-url]
   jq -cn --arg event "$1" --arg ticket "${2:-issue/123}" \
     --arg merge "${3:-final}" --arg summary "${4:-Worker status text}" \
+    --arg pr "${5:-https://github.com/o/r/pull/7}" \
     '{schema:"firstmate.task-event", version:1, event:$event, task_id:"task-a",
       ticket:(if $ticket == "null" then null else $ticket end),
-      merge:$merge, summary:$summary, pr_url:"https://github.com/o/r/pull/7"}'
+      merge:$merge, summary:$summary, pr_url:(if $pr == "null" then null else $pr end)}'
 }
 
 run_sync() {
@@ -54,12 +55,15 @@ test_event_mapping_preserves_arguments() {
   home=$(make_home events)
   install_hook "$home"
   summary=$'Waiting for "choice"; $literal\nand a second line'
+  run_sync "$home" "$(payload resumed issue/123 final "$summary" null)" \
+    || fail "resumed without PR mapping failed"
   for event in started resumed blocked waiting pr-opened pr-merged; do
     run_sync "$home" "$(payload "$event" issue/123 final "$summary")" \
       || fail "$event mapping failed"
   done
   expected=$(jq -cn --arg summary "$summary" '[
     ["issue/123", "start"], ["issue/123", "start"],
+    ["issue/123", "review", "https://github.com/o/r/pull/7"],
     ["issue/123", "waiting", $summary], ["issue/123", "waiting", $summary],
     ["issue/123", "review", "https://github.com/o/r/pull/7"],
     ["issue/123", "done", "https://github.com/o/r/pull/7"]]')

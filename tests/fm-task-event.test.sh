@@ -77,6 +77,17 @@ wait_lines "$home/events" 4
 tail -1 "$home/events" | jq -e '.merge == "final"' >/dev/null || fail 'last merge should be final'
 pass 'all recorded PRs for the ticket determine partial versus final across tasks and cleanup'
 
+home=$(make_home superseded)
+printf 'ticket=ISSUE/custom-42\n' > "$home/state/other.meta"
+emit "$home" task pr-opened --pr https://example.org/pull/1
+emit "$home" task pr-opened --pr https://example.org/pull/2
+emit "$home" other pr-opened --pr https://example.org/pull/3
+emit "$home" other cancelled
+emit "$home" task pr-merged --pr https://example.org/pull/2
+wait_lines "$home/events" 5
+tail -1 "$home/events" | jq -e '.merge == "final"' >/dev/null || fail 'superseded or cancelled PRs blocked final'
+pass 'a replaced PR and a cancelled task PR no longer hold the ticket partial'
+
 home=$(make_home failure)
 printf '#!/usr/bin/env bash\nexit 7\n' > "$home/hook"
 emit "$home" task started

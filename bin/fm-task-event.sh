@@ -161,8 +161,10 @@ PAYLOAD=$(jq -cn --arg event "$EVENT" --arg id "$ID" --arg ticket "$TICKET" \
 
 # One append per confirmed PR fact, independent of consumer delivery. Preserve
 # these across task teardown so another task for the same ticket sees all PRs.
+# A task tracks one PR: its next pr-opened supersedes and cancelled retires its
+# unmerged PR, so final means every live PR for the ticket has merged.
 case "$EVENT" in
-  pr-opened|pr-merged)
+  pr-opened|pr-merged|cancelled)
     printf '%s\n' "$PAYLOAD" >> "$STATE/task-event-prs.jsonl" 2>/dev/null \
       || { report_failure 125; exit 0; }
     ;;
@@ -172,9 +174,14 @@ if [ "$EVENT" = pr-merged ]; then
   PAYLOAD=$(jq -cs --argjson event "$PAYLOAD" '
     [ .[] | select(if $event.ticket == null then .task_id == $event.task_id
       else .ticket == $event.ticket end) ] |
-    reduce .[] as $fact ({}; .[$fact.pr_url] =
-      ((.[$fact.pr_url] // false) or ($fact.event == "pr-merged"))) |
-    $event + {merge: (if all(.[]; . == true) then "final" else "partial" end)}
+    reduce .[] as $fact ({};
+      if $fact.event == "pr-merged" then .[$fact.pr_url] = {task: $fact.task_id, merged: true}
+      else with_entries(select(.value.merged or .value.task != $fact.task_id)) |
+        if $fact.event == "pr-opened" then
+          .[$fact.pr_url] = {task: $fact.task_id, merged: (.[$fact.pr_url].merged // false)}
+        else . end
+      end) |
+    $event + {merge: (if all(.[]; .merged) then "final" else "partial" end)}
   ' "$STATE/task-event-prs.jsonl" 2>/dev/null) || { report_failure 125; exit 0; }
 fi
 

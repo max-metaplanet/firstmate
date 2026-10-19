@@ -1123,7 +1123,8 @@ remote_secondmate_teardown() {
   fm_backlog_atomic_transition remove "$STATE/$ID.meta" "task record" "$STATE" || return 1
   rm -f -- "$STATE/$ID.turn-ended" "$STATE/$ID.progress" \
     "$(fm_wake_signal_seen_path "$STATE" "$STATE/$ID.turn-ended")" \
-    "$STATE/.secondmate-relaunch-$ID" "$STATE/.secondmate-relaunch-bound-$ID" "$STATE/.secondmate-park-$ID"
+    "$STATE/.secondmate-relaunch-$ID" "$STATE/.secondmate-relaunch-bound-$ID" "$STATE/.secondmate-park-$ID" \
+  "$STATE/.$ID".decision-event-*
   printf 'teardown %s complete (remote %s:%s)\n' "$ID" "$remote_host" "$remote_home"
   return "$rc"
 }
@@ -4023,7 +4024,7 @@ retire_busy_state "$STATE" "$ID" "$BUSY_GEN" || exit 1
 TASK_EVENT_TICKET=''
 TASK_EVENT_SUMMARY=''
 TASK_EVENT_TYPE=finished
-if [ -e "$CONFIG/task-event-hook" ] && [ "$KIND" != secondmate ]; then
+if [ -e "$CONFIG/task-event-hook" ]; then
   TASK_EVENT_TICKET=$(meta_value "$META" ticket)
   TASK_EVENT_STATUS=$(last_status_line "$STATE/$ID.status")
   status_line_note_to TASK_EVENT_SUMMARY "$TASK_EVENT_STATUS"
@@ -4096,7 +4097,7 @@ else
 fi
 fm_lock_release "$META_LOCK"
 META_LOCK_HELD=0
-if [ -e "$CONFIG/task-event-hook" ] && [ "$KIND" != secondmate ]; then
+if [ -e "$CONFIG/task-event-hook" ]; then
   FM_HOME=$FM_HOME FM_STATE_OVERRIDE=$STATE FM_CONFIG_OVERRIDE=$CONFIG \
     "$SCRIPT_DIR/fm-task-event.sh" "$ID" "$TASK_EVENT_TYPE" \
       --ticket "$TASK_EVENT_TICKET" --pr "$PR_URL" --summary "$TASK_EVENT_SUMMARY" >/dev/null 2>&1 || true

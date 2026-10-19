@@ -114,6 +114,24 @@ jq -se 'length == 1 and .[0].key == "ordinary"' "$home/events.jsonl" >/dev/null 
   || fail 'parent-channel hold mirror emitted a duplicate lifecycle event'
 pass 'pure readers and captain-hold mirror rows never emit lifecycle events'
 
+home=$(make_home rebuilt)
+cat > "$home/state/task.status" <<'STATUS'
+blocked [key=ci]: checks failing
+resolved [key=ci]: checks fixed
+STATUS
+fold "$home" >/dev/null
+await_events "$home" 2
+cursor=$(bash -c '. "$1"; _fm_open_decisions_cursor_path "$2"' _ \
+  "$ROOT/bin/fm-classify-lib.sh" "$home/state/task.status")
+sed -e '1s/.*/version=0/' "$cursor" > "$cursor.old" && mv "$cursor.old" "$cursor"
+printf 'blocked [key=review]: awaiting reviewer\n' >> "$home/state/task.status"
+fold "$home" >/dev/null
+await_events "$home" 3
+sleep 0.15
+jq -se 'map(.event + ":" + .key) == ["blocked:ci","resumed:ci","blocked:review"]' \
+  "$home/events.jsonl" >/dev/null || fail 'discarded cursor replayed emitted history'
+pass 'a discarded cursor rebuilds history silently and emits only new bytes'
+
 home=$(make_home disabled)
 rm "$home/config/task-event-hook"
 printf 'blocked [key=access]: waiting for access\n' > "$home/state/task.status"
