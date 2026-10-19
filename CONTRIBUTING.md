@@ -139,6 +139,7 @@ Portable shard balance evidence lives in `docs/fm-test-portable-shards.md`.
 Family selection is the ordinary local path; `--all` is deliberate full regression only.
 CI owns broad regression across required portable parallel shards, the portable serial lane's separate-runner shards, the Herdr lane, lint, invariants, the coverage guard, and stock macOS Bash compatibility in [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
 A pull request runs only the suites that cover its changed paths, packed into a few jobs; push to main and a nightly schedule run everything.
+For a complete pre-merge run, dispatch the CI workflow on the feature branch with `gh-axi workflow run ci.yml --ref <branch>`; manual dispatch uses the complete-suite classifier fallback.
 The stock macOS Bash check is blocking there and advisory on a pull request, where it reports its own check from a separate workflow outside the `CI gate` verdict.
 Pushing a new head to a pull request cancels that pull request's still-running CI so only the current head is validated; pushes to `main` are never cancelled, and the workflow owns that contract and its rationale.
 A fork can set the repository variable `FM_CI_SKIP_PUSH` to `1` to skip the push run of `CI`, and `FM_CI_SKIP_MACOS` to `1` to skip the stock macOS Bash job, without a tracked edit that drifts from upstream.

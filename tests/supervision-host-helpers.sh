@@ -391,13 +391,21 @@ present_unacknowledged_outcome_twice() {  # <name>
 # Change the task immediately before the second offer computation, rather
 # than racing the successor startup. The first offer accepts the close; the
 # turn-boundary offer must see the new main-owned decision.
-turn_main_only_at_second_offer() {  # <home> [quiet]
-  local real_node turn
+turn_main_only_at_second_offer() {  # <home> [quiet|snapshot]
+  local real_node turn snapshot=':'
   real_node=$(command -v node)
   turn='printf '"'"'needs-decision [at=%s]: which export format?\n'"'"' "$(date +%s)" >> "$FM_HOME/state/demo.status"'
   # Quiet: the offer alone turns main-only, with no status line for the
   # successor watcher to close on.
   [ "${2:-}" != quiet ] || turn='echo eligible=0; exit 0'
+  if [ "${2:-}" = snapshot ]; then
+    # Freeze the accepted queue before the new status can reach the successor.
+    # Pi must see the old signal plus the new status, not a later decision wake.
+    snapshot='mkdir -p "$FM_HOME/pi-offer-state"
+      cp "$FM_HOME/state/.wake-queue" "$FM_HOME/state/demo.meta" "$FM_HOME/pi-offer-state/"'
+    turn="$turn"'
+      cp "$FM_HOME/state/demo.status" "$FM_HOME/pi-offer-state/"'
+  fi
   cat > "$1/fakebin/node" <<SH
 #!/usr/bin/env bash
 case "\$*" in
@@ -406,6 +414,7 @@ case "\$*" in
     count=\$((count + 1))
     printf '%s\n' "\$count" > "\$FM_HOME/offer-count"
     if [ "\$count" -eq 2 ]; then
+      $snapshot
       $turn
     fi ;;
 esac
