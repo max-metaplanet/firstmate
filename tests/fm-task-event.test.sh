@@ -121,7 +121,11 @@ pass 'failing or invalid consumers never fail the producer and surface once per 
 
 home=$(make_home failure-then-merge)
 printf 'done: PR ready for review\n' > "$home/state/task.status"
-printf '#!/usr/bin/env bash\n[ "$(printf "%%s" "$1" | jq -r .event)" != pr-opened ] || exit 7\nprintf "%%s\\n" "$1" >> "$FM_HOME/events"\n' > "$home/hook"
+cat > "$home/hook" <<'SH'
+#!/usr/bin/env bash
+[ "$(printf '%s' "$1" | jq -r .event)" != pr-opened ] || exit 7
+printf '%s\n' "$1" >> "$FM_HOME/events"
+SH
 emit "$home" task pr-opened --pr https://example.org/pull/5
 wait_lines "$home/state/task-events.log" 1
 assert_grep 'task event hook failed event=pr-opened exit=7' "$home/state/task.status" 'failure was not surfaced'
