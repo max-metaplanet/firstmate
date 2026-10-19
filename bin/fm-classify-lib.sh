@@ -176,6 +176,26 @@ last_status_line() {  # <status-file> [<previous-event-var>]
   printf '%s\n' "${scan##*$'\n'}"
 }
 
+# Return the last line declaring a recognized status verb, so home-appended
+# notices such as task-event failures never stand in for the worker's status.
+last_worker_status_line() {  # <status-file>
+  local f=$1 scan=''
+  [ -f "$f" ] && [ -r "$f" ] || return 0
+  scan=$(tail -n "$FM_CLASSIFY_EVENT_WINDOW_LINES" "$f" 2>/dev/null | _fm_status_recognized_scan) \
+    || scan=$(_fm_status_recognized_scan < "$f") || :
+  printf '%s\n' "$scan"
+}
+
+_fm_status_recognized_scan() {  # stdin -> last recognized-verb line; 1 when none
+  local line verb last=''
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in *:*) status_line_verb "$line" verb ;; *) continue ;; esac
+    _fm_status_verb_recognized "$verb" && last=$line
+  done
+  printf '%s' "$last"
+  [ -n "$last" ]
+}
+
 # 0 when <verb> is exactly one recognized status verb, with no leftover token.
 _fm_status_verb_recognized() {  # <verb>
   case "$1" in

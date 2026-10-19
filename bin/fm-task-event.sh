@@ -166,7 +166,7 @@ if [ "$SUMMARY_SET" -eq 0 ]; then
   # Reuse the status parser, including stamped and note-head keyed records.
   # shellcheck source=bin/fm-classify-lib.sh
   . "$SCRIPT_DIR/fm-classify-lib.sh"
-  SUMMARY=$(status_line_note "$(last_status_line "$STATE/$ID.status")")
+  SUMMARY=$(status_line_note "$(last_worker_status_line "$STATE/$ID.status")")
 fi
 
 fm_lock_acquire_wait_bounded "$ENQUEUE_LOCK" 1 || { report_failure 125; exit 0; }

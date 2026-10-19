@@ -4026,7 +4026,7 @@ TASK_EVENT_SUMMARY=''
 TASK_EVENT_TYPE=finished
 if [ -e "$CONFIG/task-event-hook" ] || [ -e "$CONFIG/ticket-sync-hook" ]; then
   TASK_EVENT_TICKET=$(meta_value "$META" ticket)
-  TASK_EVENT_STATUS=$(last_status_line "$STATE/$ID.status")
+  TASK_EVENT_STATUS=$(last_worker_status_line "$STATE/$ID.status")
   status_line_note_to TASK_EVENT_SUMMARY "$TASK_EVENT_STATUS"
   status_line_verb "$TASK_EVENT_STATUS" TASK_EVENT_VERB
   if [ "$FORCE" = --force ] && [ "$TASK_EVENT_VERB" != "done" ]; then TASK_EVENT_TYPE=cancelled; fi

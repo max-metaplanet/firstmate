@@ -597,7 +597,7 @@ The emitter never parses ticket names from prose or applies a provider's ticket 
 `key` is the transition's decision key when available, otherwise `null`.
 `timestamp` is the emission time in UTC.
 `sequence` increases within the home and identifies a delivery together with `home`, including a replay after a drainer crash.
-`summary` is the worker's status note, with status metadata removed, whitespace flattened, and length limited to 500 characters; a transition owner can supply its exact status note, and an unavailable note is an empty string.
+`summary` is the note of the worker's latest recognized status line (home-appended notices such as consumer failures are skipped), with status metadata removed, whitespace flattened, and length limited to 500 characters; a transition owner can supply its exact status note, and an unavailable note is an empty string.
 Consumers must tolerate additional fields in version 1.
 
 | Event | Transition owner |

@@ -158,6 +158,8 @@ SH
     "worktree=$home/gone-worktree" "project=$home/project" \
     'kind=ship' 'mode=local-only' 'spawn_gen=task-event-fixture' 'ticket=issue-42'
   printf '%s: worker terminal summary\n' "$declaration" > "$home/state/task.status"
+  printf 'actionable [at=200]: task event hook failed event=pr-opened exit=124; see state/task-events.log\n' \
+    >> "$home/state/task.status"
   : > "$home/state/.task.decision-event-1"
   FM_HOME=$home FM_STATE_OVERRIDE=$home/state FM_CONFIG_OVERRIDE=$home/config FM_DATA_OVERRIDE=$home/data \
     FM_ROOT_OVERRIDE=$ROOT PATH="$home/fakebin:$PATH" \

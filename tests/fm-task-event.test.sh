@@ -119,6 +119,18 @@ wait_lines "$home/state/task-events.log" 3
 assert_absent "$home/state/absent.status" 'failure surfaced into a task without a live status'
 pass 'failing or invalid consumers never fail the producer and surface once per task'
 
+home=$(make_home failure-then-merge)
+printf 'done: PR ready for review\n' > "$home/state/task.status"
+printf '#!/usr/bin/env bash\n[ "$(printf "%%s" "$1" | jq -r .event)" != pr-opened ] || exit 7\nprintf "%%s\\n" "$1" >> "$FM_HOME/events"\n' > "$home/hook"
+emit "$home" task pr-opened --pr https://example.org/pull/5
+wait_lines "$home/state/task-events.log" 1
+assert_grep 'task event hook failed event=pr-opened exit=7' "$home/state/task.status" 'failure was not surfaced'
+emit "$home" task pr-merged --pr https://example.org/pull/5
+wait_lines "$home/events" 1
+jq -e '.event == "pr-merged" and .summary == "PR ready for review"' "$home/events" >/dev/null \
+  || fail "surfaced failure replaced the worker summary: $(cat "$home/events")"
+pass 'a surfaced consumer failure never replaces the worker status summary'
+
 home=$(make_home legacy-only)
 rm "$home/config/task-event-hook"
 cat > "$home/legacy" <<'SH'
