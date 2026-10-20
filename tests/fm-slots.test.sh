@@ -52,6 +52,8 @@ holder "$CHILD" unreadable claude
 holder "$MAIN" eng2765 claude
 holder "$MAIN" eng2767 claude
 holder "$MAIN" eng2100 claude
+holder "$MAIN" finished claude scout
+holder "$MAIN" stuck claude
 mkdir "$CHILD/state/unreadable.status"
 printf 'claude_seat=work\n' >> "$MAIN/state/busy.meta"
 URL=https://github.com/example/widget/pull/42
@@ -70,7 +72,9 @@ bash "$EV" arm "$CHILD/state" resumed --source claude-hook >/dev/null
 printf 'working [at=123]: resolving a rebase conflict\n' > "$MAIN/state/eng2765.status"
 printf 'paused [at=123]: no-mistakes fix round, waiting for review\n' > "$MAIN/state/eng2767.status"
 printf 'needs-decision [at=123] [key=gate]: authorize fixes\nresolved [at=124] [key=gate]: fixes approved\npaused [at=125]: pipeline fix round, waiting for completion\n' > "$MAIN/state/eng2100.status"
-for id in eng2765 eng2767 eng2100; do
+printf 'done [at=123]: report written\n' > "$MAIN/state/finished.status"
+printf 'blocked [at=123]: needs firstmate\n' > "$MAIN/state/stuck.status"
+for id in eng2765 eng2767 eng2100 finished stuck; do
   bash "$EV" arm "$MAIN/state" "$id" --state idle --source claude-hook >/dev/null
 done
 
@@ -128,6 +132,8 @@ assert_contains "$out" 'busy | widget | ship | working | claude seat=work' 'trus
 assert_contains "$out" 'decision | widget | ship | waiting on decision' 'unresolved question survives unrelated working event'
 assert_contains "$out" 'unknown | widget | ship | working' 'working declaration uses the shared crew-state mapping'
 assert_contains "$out" 'unreadable | widget | ship | unknown' 'unreadable status remains unknown'
+assert_contains "$out" 'finished | widget | scout | idle-parked' 'finished worker on an idle hook is idle-parked'
+assert_contains "$out" 'stuck | widget | ship | unknown' 'blocked worker on an idle hook stays unknown'
 assert_contains "$out" 'idle | widget | secondmate | idle-parked' 'idle hook without a work declaration is parked'
 assert_contains "$out" 'resumed | widget | ship | working' 'current busy evidence outranks old completion'
 assert_contains "$out" 'unready | widget | ship | working' 'paused validation is work, not a merge wait'

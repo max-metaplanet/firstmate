@@ -11,8 +11,9 @@
 # State projects local declarations through fm-crew-state-lib.sh's shared
 # mapping, with trusted, generation-bound busy records taking precedence.
 # Working and paused workers remain working even when their harness is idle
-# during validation. Idle-parked requires an idle hook without a work or wait
-# declaration. A matching green completion plus recorded pr= marks a declared
+# during validation. Idle-parked requires an idle hook with no declaration
+# beyond done; blocked and failed wait on firstmate action, so they stay
+# unknown. A matching green completion plus recorded pr= marks a declared
 # merge wait. This is recorded state, not fm-crew-state.sh's live pipeline read.
 # No pane capture, pipeline, forge, or LLM calls are made for display state.
 # The queue uses fm-tasks-axi.sh's derived blocked/held fields and admission's
@@ -90,7 +91,6 @@ holder_state() { # <meta> <id> <harness> <pr>
       if [ -n "$pr" ] && [[ "$line" == *"PR $pr checks green"* ]]; then
         printf 'waiting on merge *'; return
       fi
-      printf unknown; return
       ;;
     blocked|failed) printf unknown; return ;;
   esac
@@ -135,16 +135,9 @@ printf 'QUEUE (%s)\n' "$QUEUE_HOME"
 fm_project_capacity_lookup "$CONFIG" '' || fail "$FM_PROJECT_CAPACITY_ERROR"
 capacity_rows=
 if [ -n "$FM_PROJECT_CAPACITY_ANY" ]; then
-  while IFS= read -r entry || [ -n "$entry" ]; do
-    entry=${entry%$'\r'}
-    entry=${entry#"${entry%%[![:space:]]*}"}
-    entry=${entry%"${entry##*[![:space:]]}"}
-    case "$entry" in
-      ''|'#'|'#'[[:space:]]*) continue ;;
-      '#'*) case "${entry##*[[:space:]]}" in *[!0-9]*) continue ;; esac ;;
-    esac
-    cap=${entry##*[[:space:]]}
-    name=${entry%"$cap"}; name=${name%"${name##*[![:space:]]}"}
+  for i in "${!FM_PROJECT_CAPACITY_NAMES[@]}"; do
+    name=${FM_PROJECT_CAPACITY_NAMES[i]}
+    cap=${FM_PROJECT_CAPACITY_CAPS[i]}
     project=$QUEUE_HOME/projects/$name
     reason=
     if ! lock=$(fm_treehouse_project_lock_path "$project" 2>/dev/null); then
@@ -155,7 +148,7 @@ if [ -n "$FM_PROJECT_CAPACITY_ANY" ]; then
       reason="project capacity $FM_PROJECT_CAPACITY_OCCUPANTS/$cap"
     fi
     [ -z "$reason" ] || capacity_rows+="$name"$'\t'"$reason"$'\n'
-  done < "$FM_PROJECT_CAPACITY_FILE"
+  done
 fi
 # Explicitly address the chosen home even when launched under a worker's
 # inherited overrides. No per-item reads or staging files are needed.
