@@ -2014,6 +2014,52 @@ SH
   pass "a runner under an inherited scratch root keeps it instead of opening its own"
 }
 
+test_run_removes_read_only_hooks_without_changing_exit_status() {
+  local tmp repo scratch probe suite_rc expected_rc rc hooks
+  tmp=$(fm_test_tmproot fm-test-run-readonly)
+  repo="$tmp/repo"
+  scratch="$tmp/scratch"
+  probe=tests/fm-cd-pretool-check.test.sh
+  init_changed_fixture_repo "$repo"
+  mkdir -p "$scratch" "$tmp/outside.git-hooks"
+  printf 'outside\n' >"$tmp/outside.git-hooks/pre-commit"
+  chmod -R a-w "$tmp/outside.git-hooks"
+  cat >"$repo/$probe" <<'SH'
+#!/usr/bin/env bash
+hooks="$TMPDIR/remote-home/state/parent-route/ios.git-hooks"
+mkdir -p "$hooks" || exit 99
+printf 'hook\n' >"$hooks/pre-commit"
+chmod -R a-w "$hooks" || exit 99
+printf '%s\n' "$hooks" >"$FM_SCRATCH_PROBE_RECORD"
+exit "$FM_SCRATCH_PROBE_EXIT"
+SH
+  for suite_rc in 0 7; do
+    expected_rc=0
+    [ "$suite_rc" -eq 0 ] || expected_rc=1
+    set +e
+    (cd "$repo" && FM_TEST_SCRATCH_ROOT="$scratch" TMPDIR="$scratch" TMP="$scratch" \
+      FM_SCRATCH_PROBE_RECORD="$tmp/hooks-path" FM_SCRATCH_PROBE_EXIT="$suite_rc" \
+      bin/fm-test-run.sh --jobs 2 "$probe" tests/fm-ask-user-authority.test.sh) \
+      >"$tmp/out" 2>"$tmp/err"
+    rc=$?
+    set -e
+    expect_code "$expected_rc" "$rc" "cleanup preserves the runner verdict for suite exit $suite_rc"
+    hooks=$(cat "$tmp/hooks-path")
+    case "$hooks" in
+      "$scratch"/fm-test-run.*/w*/tmp/*) ;;
+      *) fail "read-only fixture did not land in the runner's worker scratch: $hooks" ;;
+    esac
+    [ ! -e "$hooks" ] || fail "runner left read-only hooks behind: $hooks"
+    [ -z "$(find "$scratch" -mindepth 1)" ] || fail "runner left its scratch tree behind"
+    [ ! -s "$tmp/err" ] || fail "runner cleanup emitted errors: $(cat "$tmp/err")"
+    [ -f "$tmp/outside.git-hooks/pre-commit" ] || fail "cleanup removed an unrelated hook"
+    [ ! -w "$tmp/outside.git-hooks" ] || fail "cleanup changed permissions outside its scratch"
+  done
+  chmod -R u+w "$tmp/outside.git-hooks"
+  rm -rf "$tmp"
+  pass "runner removes read-only hooks while preserving successful and failing suite verdicts"
+}
+
 test_aggregate_json() {
   local tmp a b
   tmp=$(mktemp -d "${TMPDIR:-/tmp}/fm-test-run-aggjson.XXXXXX")
@@ -2103,3 +2149,4 @@ test_herdr_ci_family_run_has_a_step_timeout
 test_aggregate_json
 test_run_scratch_lands_beside_the_checkout_not_in_the_machine_tmpdir
 test_run_keeps_an_inherited_scratch_root
+test_run_removes_read_only_hooks_without_changing_exit_status
