@@ -1,0 +1,46 @@
+## Tue Oct 20 09:16:30 EDT 2026 worker agent before
+18
+## slots before
+slots 0/2 (source: /private/tmp/fmpark.eQt0ix/home/config/fleet-capacity)
+SLOTS (local records; * still holds a slot)
+PARKED/WAITING (no active slot)
+QUEUE (/private/tmp/fmpark.eQt0ix/home)
+A. ready for a slot (priority, then oldest)
+  (empty)
+B. waiting on captain
+  (empty)
+## appended upstream-maintainer pause at 09:16:30; waiting for watcher tick
+## 09:16:40 park record
+phase=parked
+generation=s1792501692.20491.25777
+endpoint=firstmate:fm-lab653eb2905a67-worker
+reason=paused [at=1792502190]: waiting on upstream maintainer to review PR
+until=0
+queued_at=0
+wake_reason=
+status_line=paused [at=1792502190]: waiting on upstream maintainer to review PR
+resume_error=0
+## slots after
+slots 0/2 (source: /private/tmp/fmpark.eQt0ix/home/config/fleet-capacity)
+SLOTS (local records; * still holds a slot)
+PARKED/WAITING (no active slot)
+  /private/tmp/fmpark.eQt0ix/home | lab653eb2905a67-worker | parked | paused [at=1792502190]: waiting on upstream maintainer to review PR
+QUEUE (/private/tmp/fmpark.eQt0ix/home)
+A. ready for a slot (priority, then oldest)
+  (empty)
+B. waiting on captain
+  (empty)
+C. other queued
+  (empty)
+## crew-state
+state: parked · source: park-record · parked; waiting on paused [at=1792502190]: waiting on upstream maintainer to review PR
+## worktree/branch kept
+fm/lab653eb2905a67-worker
+## worker pane process tree after park
+pane shell 28476 cmd=zsh; children:
+31625 zsh
+## worker pane process tree after park
+28476 -zsh
+31194 treehouse get
+31625 /bin/zsh -i -l
+(no further children - no claude agent in worker pane)

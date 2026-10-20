@@ -1,0 +1,42 @@
+## fleet cap 1, worker active (done, ready branch)
+slots 1/1 (source: /private/tmp/fmpark.eQt0ix/home/config/fleet-capacity)
+SLOTS (local records; * still holds a slot)
+  /private/tmp/fmpark.eQt0ix/home | lab653eb2905a67-worker | notes | ship | idle-parked | claude seat=~/.claude-seats/seat-max-gmail
+agent under pane: 31194 treehouse get
+## explicit park on captain merge word
+stopped lab653eb2905a67-worker harness=claude backend=tmux endpoint=firstmate:fm-lab653eb2905a67-worker worktree=/private/tmp/fmpark.eQt0ix/treehouse/.treehouse/notes-073939/1/notes
+parked: lab653eb2905a67-worker waiting on waiting on captain merge word
+rc=0
+phase=parked
+reason=waiting on captain merge word
+wake_reason=
+## pane processes after park:
+31194 treehouse get
+(no claude agent for lab653eb2905a67-worker)
+slots 0/1 (source: /private/tmp/fmpark.eQt0ix/home/config/fleet-capacity)
+SLOTS (local records; * still holds a slot)
+PARKED/WAITING (no active slot)
+  /private/tmp/fmpark.eQt0ix/home | lab653eb2905a67-worker | parked | waiting on captain merge word
+QUEUE (/private/tmp/fmpark.eQt0ix/home)
+A. ready for a slot (priority, then oldest)
+## teardown parked task (no live worker)
+REFUSED: local-only worktree /private/tmp/fmpark.eQt0ix/treehouse/.treehouse/notes-073939/1/notes has work not yet merged into main and not on any remote.
+commits not yet on main:
+1a19503 Add count_notes
+Merge the branch into local main first (bin/fm-merge-local.sh after the captain approves), or push to a fork/remote, or get the captain's explicit OK to discard, then --force.
+teardown rc=1
+## records after
+lab653eb2905a67-worker.control-relaunch
+lab653eb2905a67-worker.control-relaunch.brief-prior
+lab653eb2905a67-worker.control-relaunch.meta-prior
+lab653eb2905a67-worker.control-relaunch.note
+lab653eb2905a67-worker.git-hooks
+lab653eb2905a67-worker.inbox
+lab653eb2905a67-worker.meta
+lab653eb2905a67-worker.park
+lab653eb2905a67-worker.status
+lab653eb2905a67-worker.turn-ended
++ fm/lab653eb2905a67-worker
+lab
+fm-lab653eb2905a67-worker
+main

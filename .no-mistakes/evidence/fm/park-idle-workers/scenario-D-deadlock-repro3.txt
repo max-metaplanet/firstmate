@@ -1,0 +1,15 @@
+## repro 3: 08:54:27 park
+stopped lab2fdd27a6b5c4-worker harness=claude backend=tmux endpoint=firstmate:fm-lab2fdd27a6b5c4-worker worktree=/private/tmp/fmpark.Re4ods/treehouse/.treehouse/notes-cfa88d/1/notes
+parked: lab2fdd27a6b5c4-worker waiting on waiting on captain merge word
+phase=parked
+## 08:54:32 fm-send (bounded by 120s alarm)
+## 08:55:17 +45s snapshot
+ 6866       00:45 bash bin/fm-send.sh lab2fdd27a6b5c4-worker Lab test: third feedback. No action needed; just end your turn.
+ 7476       00:45 bash /private/tmp/fmpark.Re4ods/home/bin/fm-worker-park.sh wake lab2fdd27a6b5c4-worker steering received or decision answered
+ 7608       00:45 bash /private/tmp/fmpark.Re4ods/home/bin/fm-control.sh lab2fdd27a6b5c4-worker relaunch --note Automatically resumed from external wa
+lease lock pid: 6866
+phase=queued
+/tmp/fmpark-drv/repro3.sh: line 6:  6866 Alarm clock: 14            $D perl -e 'alarm 120; exec @ARGV' bash bin/fm-send.sh $W "Lab test: third feedback. No action needed; just end your turn." > /tmp/fmpark-drv/send3.out 2>&1
+## 08:56:32 fm-send rc=142 after 120s (142 = killed by alarm)
+phase=queued
+1

@@ -1,0 +1,40 @@
+## Tue Oct 20 08:50:38 EDT 2026 TERM stuck fm-send 61694
+## Tue Oct 20 08:50:45 EDT 2026 relaunch process ended
+## park record
+phase=active
+generation=s1792500641.74779.22912
+endpoint=firstmate:fm-lab2fdd27a6b5c4-worker
+reason=paused [at=1792500095]: waiting on upstream maintainer to review PR
+until=0
+queued_at=0
+wake_reason=
+status_line=paused [at=1792500095]: waiting on upstream maintainer to review PR
+resume_error=0
+## relaunch journal
+v1
+task=lab2fdd27a6b5c4-worker
+phase=complete
+ts=2026-10-20T12:50:44Z
+backend=tmux
+endpoint=firstmate:fm-lab2fdd27a6b5c4-worker
+worktree=/private/tmp/fmpark.Re4ods/treehouse/.treehouse/notes-cfa88d/1/notes
+kind=ship
+from_harness=claude
+from_model=sonnet
+## new worker agent
+78302       00:02 /opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/Resources/Python.a
+78364       00:02 claude --permission-mode auto --add-dir /private/tmp/fmpark.Re4ods/home/state/operational-inbox --add-
+## progress note in brief
+103:## Progress note (2026-10-20T12:50:38Z)
+104-
+105-This task was relaunched. Continue from here; the local copy and every
+106-uncommitted change are exactly as the previous worker left them.
+## meta spawn_gen
+spawn_gen=s1792500641.74779.22912
+## slots
+slots 1/unlimited (source: /private/tmp/fmpark.Re4ods/home/config/fleet-capacity)
+SLOTS (local records; * still holds a slot)
+  /private/tmp/fmpark.Re4ods/home | lab2fdd27a6b5c4-worker | notes | ship | working | claude seat=~/.claude-seats/seat-max-gmail
+PARKED/WAITING (no active slot)
+QUEUE (/private/tmp/fmpark.Re4ods/home)
+A. ready for a slot (priority, then oldest)

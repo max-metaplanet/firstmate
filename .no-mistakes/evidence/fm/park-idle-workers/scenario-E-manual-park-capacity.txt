@@ -1,0 +1,19 @@
+## before: watcher did not auto-park a non-external pause
+phase=active
+slots 1/2 (source: /private/tmp/fmpark.Re4ods/home/config/fleet-capacity)
+SLOTS (local records; * still holds a slot)
+  /private/tmp/fmpark.Re4ods/home | lab2fdd27a6b5c4-worker | notes | ship | working | claude seat=~/.claude-seats/seat-max-gmail
+agent pid=78364
+## explicit park
+stopped lab2fdd27a6b5c4-worker harness=claude backend=tmux endpoint=firstmate:fm-lab2fdd27a6b5c4-worker worktree=/private/tmp/fmpark.Re4ods/treehouse/.treehouse/notes-cfa88d/1/notes
+parked: lab2fdd27a6b5c4-worker waiting on waiting on captain merge word
+rc=0
+agent 78364 exited
+phase=parked
+reason=waiting on captain merge word
+wake_reason=
+slots 0/2 (source: /private/tmp/fmpark.Re4ods/home/config/fleet-capacity)
+SLOTS (local records; * still holds a slot)
+PARKED/WAITING (no active slot)
+  /private/tmp/fmpark.Re4ods/home | lab2fdd27a6b5c4-worker | parked | waiting on captain merge word
+QUEUE (/private/tmp/fmpark.Re4ods/home)

@@ -1,0 +1,13 @@
+lab: /private/tmp/fmpark.Re4ods (tear down with: bin/fm-live-lab.sh down /private/tmp/fmpark.Re4ods)
+tree: c02f7eefce3bf78dea2fcaf4e87aa8a145377500 from ~/.no-mistakes/worktrees/61c6dd39b831/01M5CH85N7P2016Q0HKTY52R9Z
+spawned lab2fdd27a6b5c4-worker harness=claude kind=ship mode=local-only yolo=on window=firstmate:fm-lab2fdd27a6b5c4-worker worktree=/private/tmp/fmpark.Re4ods/treehouse/.treehouse/notes-cfa88d/1/notes
+gate: /private/tmp/fmpark.Re4ods/home/data/lab2fdd27a6b5c4-worker/gate (touch, then message the worker to resume)
+primary: claude --setting-sources project,local --model sonnet --effort medium --permission-mode auto
+ok primary: claude pid 44664 in /private/tmp/fmpark.Re4ods/home
+ok probe: the primary answered LABREADY-2fdd27a6b5c4
+ok trust: /private/tmp/fmpark.Re4ods/home is trusted in the Claude store
+fail host: supervision host pid 57718 runs (expected none)
+ok watcher: live watcher with a fresh beacon
+ok worker: lab2fdd27a6b5c4-worker parked on /private/tmp/fmpark.Re4ods/home/data/lab2fdd27a6b5c4-worker/gate
+ok treehouse: ~/.treehouse unchanged
+not ready after 600s; the lab is left up for inspection: bin/fm-live-lab.sh pane /private/tmp/fmpark.Re4ods, then bin/fm-live-lab.sh down /private/tmp/fmpark.Re4ods

@@ -1,0 +1,39 @@
+## lab supervision host (lease guard engaged):
+97067 bash /private/tmp/fmpark.eQt0ix/home/bin/fm-supervision-host.sh park
+## park record before
+phase=parked
+## 09:21:17 fm-send review feedback to parked worker (bounded by 120s alarm)
+fm-send: doorbell not typed because the agent in firstmate:fm-lab653eb2905a67-worker has exited; the steer is durably recorded at /tmp/fmpark.eQt0ix/home/state/lab653eb2905a67-worker.inbox/001.msg for recovery (stuck-crewmate-recovery), and the watcher will not re-ring a dead pane
+## fm-send rc=0 after 1s
+phase=queued
+wake_reason=steering received or decision answered
+## pending inbox
+001.msg
+handled
+## 09:21:34 after watcher tick (17s since send)
+phase=active
+generation=s1792502488.84030.2002
+113:Automatically resumed from external wait. Reason: steering received or decision answered. Read the durable instruction inbox before continuing.
+progress notes in brief: 1
+slots 1/2 (source: /private/tmp/fmpark.eQt0ix/home/config/fleet-capacity)
+SLOTS (local records; * still holds a slot)
+  /private/tmp/fmpark.eQt0ix/home | lab653eb2905a67-worker | notes | ship | working | claude seat=~/.claude-seats/seat-max-gmail
+PARKED/WAITING (no active slot)
+QUEUE (/private/tmp/fmpark.eQt0ix/home)
+## unrelated fm-control in same home (must not hang)
+error: no task 'nosuchtask' in /tmp/fmpark.eQt0ix/home/state (fm-control resolves an exact task id only)
+rc=1 in 1s
+ ▝▝   ▝▝   /private/tmp/fmpark.eQt0ix/treehouse/.treehouse/notes-073939/1/notes
+❯ : Firstmate operational input waiting: read '/private/tmp/fmpark.eQt0ix/home/state/operational-inbox/1792502489-fd04bfa1e0f9c1dd.msg' and handle its contents as Firstmate operational input.                             
+  Read 1 file, listed 1 directory, ran 2 shell commands                                               
+⏺ Gate exists. Implementing.                                                                                            
+  Ran 1 shell command     
+⏺ count_notes() is added to notes/__init__.py with a test in tests/test_notes.py. It's committed on fm/lab653eb2905a67-worker.
+  I confirmed the gate file exists before starting. python3 -m unittest discover -s tests ran 2 tests and passed, and the worktree is clean. I haven't checked whether main has advanced since this branch was cut. I moved
+  the inbox message to handled/ and appended the done status line.
+✻ Crunched for 21s · done 9:21 AM
+                                                                                                                      tmux focus-events off · add 'set -g focus-events on' to ~/.tmux.conf and reattach for focus tracking
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ 
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  -- INSERT -- ⏵⏵ auto mode on (shift+tab to cycle)               

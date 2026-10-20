@@ -1,0 +1,25 @@
+## Tue Oct 20 08:50:07 EDT 2026 - fm-send to parked worker started 08:44:0x, still blocked
+61694 61678       05:49 bash bin/fm-send.sh lab2fdd27a6b5c4-worker Lab test: review feedback arrived. Append the status line 'paused: lab review feedback received' (with the at= stamp) and end your tu
+62868 61694       05:47 bash /private/tmp/fmpark.Re4ods/home/bin/fm-worker-park.sh wake lab2fdd27a6b5c4-worker steering received or decision answered
+63053 62868       05:47 bash /private/tmp/fmpark.Re4ods/home/bin/fm-control.sh lab2fdd27a6b5c4-worker relaunch --note Automatically resumed from external wait. Reason: steering received or decision an
+## lease command lock holder (fm-send pid)
+61694
+## park lock holder (worker-park wake pid)
+62868
+## supervision host config (enables lease guard)
+[31m[bat error][0m: '/private/tmp/fmpark.Re4ods/home/config/supervision-host': No such file or directory (os error 2)
+## park record
+phase=queued
+generation=s1792499406.20509.12953
+endpoint=firstmate:fm-lab2fdd27a6b5c4-worker
+reason=paused [at=1792500095]: waiting on upstream maintainer to review PR
+until=0
+queued_at=1792500260
+wake_reason=steering received or decision answered
+status_line=paused [at=1792500095]: waiting on upstream maintainer to review PR
+resume_error=0
+## worker agent processes for this task
+       0
+## another lease-guarded command against an unrelated id (should normally return immediately)
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/tmp/fmpark.Re4ods/home
+rc=142 (142 = killed by 20s alarm while waiting)

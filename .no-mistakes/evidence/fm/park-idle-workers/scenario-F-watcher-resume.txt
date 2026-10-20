@@ -1,0 +1,18 @@
+## Tue Oct 20 08:52:10 EDT 2026 request (queue only)
+phase=queued
+queued_at=1792500730
+wake_reason=CI failed and needs a fix
+slots 0/2 (source: /private/tmp/fmpark.Re4ods/home/config/fleet-capacity)
+SLOTS (local records; * still holds a slot)
+PARKED/WAITING (no active slot)
+  /private/tmp/fmpark.Re4ods/home | lab2fdd27a6b5c4-worker | queued | waiting on captain merge word
+QUEUE (/private/tmp/fmpark.Re4ods/home)
+## Tue Oct 20 08:52:25 EDT 2026 after watcher tick
+phase=active
+generation=s1792500743.33687.10907
+125:Automatically resumed from external wait. Reason: CI failed and needs a fix. Read the durable instruction inbox before continuing.
+1
+slots 1/2 (source: /private/tmp/fmpark.Re4ods/home/config/fleet-capacity)
+SLOTS (local records; * still holds a slot)
+  /private/tmp/fmpark.Re4ods/home | lab2fdd27a6b5c4-worker | notes | ship | working | claude seat=~/.claude-seats/seat-max-gmail
+PARKED/WAITING (no active slot)
