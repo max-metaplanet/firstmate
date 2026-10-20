@@ -65,9 +65,8 @@
 # reach, or ran out in the middle of after an earlier one had spent part of it,
 # is examined first on the next poll; that is deferral, not a failure, and it
 # reports nothing: a read the budget cut short is not evidence about a verdict,
-# so it is never queued or recorded as woken. A pull request that exhausts a
-# whole fresh budget on its own is couldnt-check instead, and the rotation moves
-# past it, so no single slow pull request can hold the monitor in place.
+# so it is never queued or recorded as woken. This also applies when the first
+# pull request exhausts a fresh budget: it stays unfinished for the next poll.
 #
 # DEDUPE. state/.jev-prod-monitor is the one owner. A verdict is keyed by
 # <pr>/<app[:persona]>/<record-id-or-outcome-run>. The recorder digest or a
@@ -311,7 +310,13 @@ record_read() {
       reported?*) RECORD_REPORTED=${line#reported	} ;;
       woken?*) RECORD_WOKEN="${RECORD_WOKEN}${line#woken	}
 " ;;
-      pending?*) RECORD_PENDING="${RECORD_PENDING}${line#pending	}
+      pending?*)
+        # Older versions queued unaffected builds and budget cuts as failures.
+        # They are not terminal failures even when read from a saved batch.
+        case "$line" in
+          *' production=build-skipped '*|*' production=read-budget-exhausted '*) continue ;;
+        esac
+        RECORD_PENDING="${RECORD_PENDING}${line#pending	}
 " ;;
       outcome?*) RECORD_OUTCOMES="${RECORD_OUTCOMES}${line#outcome	}
 " ;;
@@ -846,19 +851,11 @@ EOF
   return 0
 }
 
-# The budget ran out, and an earlier pull request this poll (the caller's
-# `examined`) had already spent part of it.
-budget_cut_deferrable() {
-  ! budget_left && [ "$examined" -gt 1 ]
-}
-
 # Examine one merged pull request. Appends to the caller's regressions, woken
 # and pending; those are the caller's locals on purpose, because this is one
 # function split out for readability rather than a second owner of the record.
-# Returns non-zero only when the budget ran out mid-read after an earlier pull
-# request this poll had spent part of it, leaving whatever it had not finished
-# unqueued and unrecorded for the next poll. The first pull request of a poll had
-# the whole budget, so running out is its honest couldnt-check.
+# Returns non-zero when the budget ran out mid-read, leaving whatever it had
+# not finished unqueued and unrecorded for the next poll.
 examine_pr() {  # <number> <url> <head-sha> <merge-sha> <merged-at> <title>
   local number=$1 url=$2 head_sha=$3 merge_sha=$4 merged_at=$5 title=$6
   local comments body_file comment_id ticket apps app verdict phase rec
@@ -867,13 +864,7 @@ examine_pr() {  # <number> <url> <head-sha> <merge-sha> <merged-at> <title>
 
   comments=$(gh_json "repos/$CONFIG_REPO/issues/$number/comments?per_page=100") || {
     [ "$RESEED" -eq 0 ] || { RESEED_FAILED="PR $url comment list could not be read"; return 1; }
-    budget_cut_deferrable && return 1
-    budget_left && return 0
-    pr_url_ok "$url" "$number" || return 0
-    key="$number/-/read-budget-exhausted"
-    list_has "$woken" "$key" && return 0
-    queue_item couldnt-check "$key" "$url" "$(ticket_from_title "$title")" - none '' \
-      "$url" "https://github.com/$CONFIG_REPO/commit/$merge_sha/checks" ''
+    ! budget_left && return 1
     return 0
   }
   if [ "$RESEED" -eq 1 ]; then
@@ -955,7 +946,7 @@ examine_pr() {  # <number> <url> <head-sha> <merge-sha> <merged-at> <title>
       if [ "$phase" = post-merge ] && [ "$section_head" = "$head_sha" ] && \
         outcome_run "$merge_sha" "$app" "$persona" identity-only '' "$head_sha" "$url"; then
         identity="$identity-$OUTCOME_RUN"
-      elif budget_cut_deferrable; then
+      elif ! budget_left; then
         return 1
       else
         identity="$identity-$comment_revision"
@@ -969,13 +960,13 @@ examine_pr() {  # <number> <url> <head-sha> <merge-sha> <merged-at> <title>
     if [ "$phase" != post-merge ]; then
       [ "$RESEED" -eq 0 ] || continue
       deployment_of "$merge_sha" "$app"
-      budget_cut_deferrable && return 1
+      ! budget_left && return 1
       if [ "$DEPLOYMENT_OUTCOME" = deployed ]; then
         [ $((NOW - DEPLOYMENT_AT)) -gt "$GRACE_SECS" ] || continue
         identity="deployment-$DEPLOYMENT_ID"
         if outcome_run "$merge_sha" "$app" "$persona" identity-only '' "$head_sha" "$url"; then
           identity="$identity-$OUTCOME_RUN"
-        elif budget_cut_deferrable; then
+        elif ! budget_left; then
           return 1
         fi
         verdict=none
@@ -1002,14 +993,14 @@ examine_pr() {  # <number> <url> <head-sha> <merge-sha> <merged-at> <title>
     elif [ -n "$rec" ]; then
       if artifact_verdict "$CONFIG_REPO" "$head_sha" "$app" "$persona" "$url" post-merge "$merge_sha" "$rec"; then
         rec="$ARTIFACT_RUN_KEY-$verdict-$rec"
-      elif budget_cut_deferrable; then
+      elif ! budget_left; then
         return 1
       fi
     else
       rec="$phase-$verdict-$fingerprint"
       if outcome_run "$merge_sha" "$app" "$persona" "$verdict" "$reason" "$head_sha" "$url"; then
         rec="$OUTCOME_RUN-$verdict-$fingerprint"
-      elif budget_cut_deferrable; then
+      elif ! budget_left; then
         return 1
       fi
     fi
@@ -1049,7 +1040,7 @@ examine_pr() {  # <number> <url> <head-sha> <merge-sha> <merged-at> <title>
     if artifact_verdict "$CONFIG_REPO" "$head_sha" "$app" "$persona" "$url" pre-merge "$head_sha"; then
       preview=$ARTIFACT_VERDICT
       preview_run=$ARTIFACT_RUN_URL
-    elif budget_cut_deferrable; then
+    elif ! budget_left; then
       return 1
     fi
     if [ -z "$preview" ] || ! verdict_is_flagged "$verdict"; then
