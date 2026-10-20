@@ -197,3 +197,73 @@ for interpreter in "$BASH" /bin/bash; do
     || fail "metadata lookup behavior or child budget failed under $interpreter"
 done
 pass "window lookup keeps first-match, last-value, fresh-read semantics without per-candidate shell children"
+
+watcher_script="$TMP_ROOT/watcher-metadata.sh"
+cat > "$watcher_script" <<'SH'
+#!/usr/bin/env bash
+set -eu
+root=$1
+fixture=$2
+mkdir -p "$fixture/state" "$fixture/config"
+export FM_HOME=$fixture FM_STATE_OVERRIDE=$fixture/state FM_CONFIG_OVERRIDE=$fixture/config
+. "$root/bin/fm-watch.sh"
+for backend in tmux herdr zellij orca cmux; do
+  printf 'window=%s:window\nterminal=%s:terminal\nkind=discarded\nkind=scout\nbackend=discarded\nbackend=%s\nharness=discarded\nharness=codex' \
+    "$backend" "$backend" "$backend" > "$STATE/$backend.meta"
+  window_fields_forget
+  window_fields "$backend:window"
+  [ "$FM_WIN_KIND" = scout ] && [ "$FM_WIN_BACKEND" = "$backend" ] \
+    && [ "$FM_WIN_HARNESS" = codex ] && [ "$FM_WIN_TASK" = "$backend" ]
+done
+recorded_windows windows || exit 1
+[ "$windows" = $'cmux:window\nherdr:window\norca:terminal\ntmux:window\nzellij:window\n' ]
+printf 'window=tmux:window\n' > "$STATE/duplicate.meta"
+printf 'backend=orca\nwindow=fallback\nterminal=\n' > "$STATE/fallback.meta"
+printf 'window=\nterminal=\n' > "$STATE/empty.meta"
+recorded_windows windows || exit 1
+[ "$windows" = $'cmux:window\ntmux:window\nfallback\nherdr:window\norca:terminal\nzellij:window\n' ]
+window_fields_forget
+window_fields fallback
+[ "$FM_WIN_KIND" = ship ] && [ "$FM_WIN_BACKEND" = orca ] && [ -z "$FM_WIN_HARNESS" ]
+printf 'window=fallback\nkind=secondmate\nharness=pi\n' > "$STATE/fallback.meta"
+window_fields_forget
+window_fields fallback
+[ "$FM_WIN_KIND" = secondmate ] && [ "$FM_WIN_BACKEND" = tmux ] && [ "$FM_WIN_HARNESS" = pi ]
+rm "$STATE/fallback.meta"
+window_fields_forget
+window_fields fallback
+[ "$FM_WIN_KIND" = unknown ] && [ "$FM_WIN_BACKEND" = tmux ] && [ -z "$FM_WIN_HARNESS" ]
+rm "$STATE"/*.meta
+for n in 1 5 20; do
+  for ((i=1;i<=n;i++)); do
+    printf 'window=session:fm-task-%s\nkind=secondmate\nkind=ship\nharness=codex\n' "$i" > "$STATE/task-$i.meta"
+  done
+  if [ "${BASH_VERSINFO[0]}" -ge 4 ]; then
+    exec 9> "$fixture/forks"
+    last_pid=$BASHPID
+    set -T
+    trap 'if [ "$last_pid" != "$BASHPID" ]; then last_pid=$BASHPID; printf "%s\n" "$BASHPID" >&9; fi' DEBUG
+  fi
+  recorded_windows windows || exit 1
+  secondmate_wake_stall_tick
+  for ((i=1;i<=n;i++)); do
+    window_fields_forget
+    window_fields "session:fm-task-$i"
+    [ "$FM_WIN_KIND" = ship ] && [ "$FM_WIN_BACKEND" = tmux ] && [ "$FM_WIN_HARNESS" = codex ]
+  done
+  if [ "${BASH_VERSINFO[0]}" -ge 4 ]; then
+    trap - DEBUG
+    exec 9>&-
+    children=0
+    while IFS= read -r _; do children=$((children + 1)); done < "$fixture/forks"
+    [ "$children" -eq "$n" ] || { printf 'metadata readers launched %s children for %s windows\n' "$children" "$n"; exit 1; }
+  fi
+done
+SH
+watcher_run=0
+for interpreter in "$BASH" /bin/bash; do
+  watcher_run=$((watcher_run + 1))
+  "$interpreter" "$watcher_script" "$ROOT" "$TMP_ROOT/watcher-$watcher_run" \
+    || fail "watcher metadata behavior or child budget failed under $interpreter"
+done
+pass "watcher metadata readers preserve defaults, remaps, enumeration and one lookup child per window"
