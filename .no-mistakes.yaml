@@ -77,7 +77,8 @@ commands:
     # shellcheck disable=SC2086
     set -- $selected
     . bin/fm-timeout-lib.sh
-    fm_exec_timed "$((budget / 1000))" 5 bash bin/fm-test-run.sh --per-script-timeout-secs 1500 "$@"
+    # CI duration hints bound coverage; allow loaded local execution more time.
+    fm_exec_timed "$((budget * 3 / 1000))" 5 bash bin/fm-test-run.sh --per-script-timeout-secs 1500 "$@"
     NM_TEST
 
 # Trusted Test-step policy. The scope paragraph keeps local validation targeted so
