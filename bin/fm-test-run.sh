@@ -1917,6 +1917,9 @@ families_for_changed_path() {
       # lane's contract coverage re-runs.
       printf '%s\n' real-herdr-gated
       ;;
+    bin/fm-crew-state-lib.sh)
+      printf '%s\n' __script__:fm-crew-state.test.sh __script__:fm-slots.test.sh
+      ;;
     bin/fm-lint.sh|bin/fm-lint-workflows.sh|bin/fm-install-shellcheck.sh|\
     bin/fm-install-actionlint.sh|\
     bin/fm-brief.sh|bin/fm-ensure-agents-md.sh|bin/fm-crew-state.sh|\

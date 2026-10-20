@@ -331,7 +331,7 @@ test_daemon_and_crew_state_case_arms_read_through_the_token() {
   # Two consumers switch on the verb STRING rather than on a helper, so they
   # cannot be proven through status_is_*: bin/fm-supervise-daemon.sh matches
   # working|resolved|captain-held to take the transient-stale path instead of
-  # the terminal one, and bin/fm-crew-state.sh's map_log_state maps each verb to
+  # the terminal one, and bin/fm-crew-state-lib.sh's fm_crew_log_state maps each verb to
   # a run state, falling through to "unknown" on anything else.
   #
   # Before this fix a correlated line matched no arm of either: a correlated
@@ -347,9 +347,9 @@ test_daemon_and_crew_state_case_arms_read_through_the_token() {
   done
   for verb in working needs-decision blocked 'done' failed; do
     [ "$(status_line_verb "$verb corr=$CORR: note")" = "$verb" ] \
-      || fail "map_log_state would still read a correlated $verb as unknown"
+      || fail "fm_crew_log_state would still read a correlated $verb as unknown"
     [ "$(status_line_verb "$verb: note")" = "$verb" ] \
-      || fail "map_log_state regressed for an untokened $verb"
+      || fail "fm_crew_log_state regressed for an untokened $verb"
   done
 
   # The same arms must stay closed to prose and to a malformed token, or a

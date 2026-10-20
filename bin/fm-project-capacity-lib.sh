@@ -95,6 +95,8 @@ fm_project_capacity_config_dir() {  # <spawning-home> <spawning-config-dir>
 # Sets FM_PROJECT_CAPACITY_FILE to the declaration path, FM_PROJECT_CAPACITY
 # to the project's capacity, or to empty when the project declares none, and
 # FM_PROJECT_CAPACITY_ANY to 1 when the declaration caps any project at all.
+# FM_PROJECT_CAPACITY_NAMES and FM_PROJECT_CAPACITY_CAPS hold every declared
+# name and its capacity, in file order.
 # Returns 1 with FM_PROJECT_CAPACITY_ERROR when the declaration is unreadable.
 fm_project_capacity_lookup() {  # <config-dir> <project-name>
   local name=$2 line lineno=0 pname pcap seen='|'
@@ -102,6 +104,8 @@ fm_project_capacity_lookup() {  # <config-dir> <project-name>
   FM_PROJECT_CAPACITY=
   FM_PROJECT_CAPACITY_ANY=
   FM_PROJECT_CAPACITY_ERROR=
+  FM_PROJECT_CAPACITY_NAMES=()
+  FM_PROJECT_CAPACITY_CAPS=()
   if [ ! -e "$FM_PROJECT_CAPACITY_FILE" ] && [ ! -L "$FM_PROJECT_CAPACITY_FILE" ]; then
     return 0
   fi
@@ -155,6 +159,8 @@ fm_project_capacity_lookup() {  # <config-dir> <project-name>
         ;;
     esac
     seen="$seen$pname|"
+    FM_PROJECT_CAPACITY_NAMES+=("$pname")
+    FM_PROJECT_CAPACITY_CAPS+=("$pcap")
     [ "$pname" != "$name" ] || FM_PROJECT_CAPACITY=$pcap
   done < "$FM_PROJECT_CAPACITY_FILE"
   [ "$seen" = '|' ] || FM_PROJECT_CAPACITY_ANY=1
