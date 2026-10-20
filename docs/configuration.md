@@ -595,6 +595,7 @@ The executable receives one compact JSON argument with this versioned record:
 `ticket` is the opaque recorded `ticket=` value, or JSON `null` when absent or explicitly ticketless.
 The emitter never parses ticket names from prose or applies a provider's ticket grammar; a consumer may interpret that value however its tracker requires.
 `ticket_scope` is `complete` only when the task's `state/<id>.meta` records `ticket_scope=complete`; every other value, including an absent or null field from older producers, means `partial`.
+A `cancelled` event publishes `complete` only when that task's own recorded PR is recorded as merged in `state/task-event-prs.jsonl`; a cancelled task whose PR never merged, or that never opened one, delivered nothing and publishes `partial`.
 Intake defaults to partial; `--ticket-scope complete|partial` on `fm-brief.sh`, `fm-spawn.sh`, or `fm-promote.sh` selects a scope only with a real `--ticket` (see their headers for usage).
 A ticket-linked worker checks its change against the ticket's acceptance criteria and declares `ticket-scope=complete` or `ticket-scope=partial` on its PR-ready `done: PR <url> ...` status line.
 PR registration and the incremental status fold record the latest explicit declaration in the same metadata field, allowing either an upgrade or a downgrade; no declaration preserves the intake value.

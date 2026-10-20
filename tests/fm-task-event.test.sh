@@ -234,3 +234,18 @@ for scope in complete partial invalid ''; do
     || fail "recorded $scope was not normalized on every event"
 done
 pass 'every event snapshots recorded scope, defaulting invalid and empty records to partial'
+
+home=$(make_home cancel-scope)
+emit "$home" task-a pr-opened --ticket ENG-1 --ticket-scope partial --pr https://example.org/pull/1
+emit "$home" task-a pr-merged --ticket ENG-1 --ticket-scope partial --pr https://example.org/pull/1
+emit "$home" task-b pr-opened --ticket ENG-1 --ticket-scope complete --pr https://example.org/pull/2
+emit "$home" task-b cancelled --ticket ENG-1 --ticket-scope complete --pr https://example.org/pull/2
+emit "$home" task-c cancelled --ticket ENG-1 --ticket-scope complete
+emit "$home" task-d pr-opened --ticket ENG-2 --ticket-scope complete --pr https://example.org/pull/3
+emit "$home" task-d pr-merged --ticket ENG-2 --ticket-scope complete --pr https://example.org/pull/3
+emit "$home" task-d cancelled --ticket ENG-2 --ticket-scope complete --pr https://example.org/pull/3
+wait_lines "$home/events" 8
+jq -se '[.[] | select(.event == "cancelled") | [.task_id, .merge, .ticket_scope]]
+  == [["task-b","final","partial"],["task-c","final","partial"],["task-d","final","complete"]]' "$home/events" >/dev/null \
+  || fail "a cancelled task without its own merged PR published complete scope: $(cat "$home/events")"
+pass 'a cancelled task publishes complete scope only when its own PR is recorded as merged'

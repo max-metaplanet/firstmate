@@ -2724,9 +2724,11 @@ test_codex_seat_launch_store() {
 }
 test_codex_seat_launch_store
 
-# Intake scope survives the full spawn metadata path and a relaunch, independent
-# of the selected harness; the task-event hook consumes this durable record.
-test_ticket_scope_survives_spawn_and_relaunch() {
+# Intake scope survives the full spawn metadata path, independent of the
+# selected harness; the task-event hook consumes this durable record.
+# tests/fm-control-relaunch.test.sh owns relaunch preservation, because only
+# that suite's fixture gets a relaunch past endpoint validation.
+test_ticket_scope_survives_spawn() {
   local scope rec id brief out expected scope_args=()
   for scope in default complete partial; do
     id="scope-spawn-$scope"
@@ -2748,13 +2750,7 @@ EOF
     expected=$scope
     [ "$scope" != default ] || expected=partial
     assert_grep "ticket_scope=$expected" "$HOME_DIR/state/$id.meta" 'spawn did not persist intake scope'
-    # Simulate the worker's later explicit declaration before relaunch.
-    sed 's/^ticket_scope=.*/ticket_scope=complete/' "$HOME_DIR/state/$id.meta" > "$CASE_DIR/meta.next"
-    mv "$CASE_DIR/meta.next" "$HOME_DIR/state/$id.meta"
-    out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" --relaunch) \
-      || fail "ticket scope relaunch failed: $out"
-    assert_grep 'ticket_scope=complete' "$HOME_DIR/state/$id.meta" 'relaunch replaced the worker declaration'
   done
-  pass 'ticket scope intake defaults partial and relaunch preserves the latest declaration'
+  pass 'ticket scope intake defaults partial and spawn persists an explicit scope'
 }
-test_ticket_scope_survives_spawn_and_relaunch
+test_ticket_scope_survives_spawn

@@ -204,7 +204,9 @@ PAYLOAD=$(jq -cn --arg event "$EVENT" --arg id "$ID" --arg ticket "$TICKET" \
 # One append per confirmed PR fact, independent of consumer delivery. Preserve
 # these across task teardown so another task for the same ticket sees all PRs.
 # A task tracks one PR: its next pr-opened supersedes and cancelled retires its
-# unmerged PR, so final means every live PR for the ticket has merged.
+# unmerged PR, so final means every live PR for the ticket has merged. A
+# cancelled task whose own PR never merged delivered nothing, so it publishes
+# partial scope whatever it declared.
 case "$EVENT" in
   pr-opened|pr-merged|cancelled)
     printf '%s\n' "$PAYLOAD" >> "$STATE/task-event-prs.jsonl" 2>/dev/null \
@@ -214,6 +216,7 @@ esac
 
 if [ "$EVENT" = pr-merged ] || [ "$EVENT" = cancelled ]; then
   PAYLOAD=$(jq -cs --argjson event "$PAYLOAD" '
+    any(.[]; .event == "pr-merged" and .pr_url == $event.pr_url) as $own_merged |
     [ .[] | select(if $event.ticket == null then .task_id == $event.task_id
       else .ticket == $event.ticket end) ] |
     reduce .[] as $fact ({};
@@ -224,6 +227,7 @@ if [ "$EVENT" = pr-merged ] || [ "$EVENT" = cancelled ]; then
         else . end
       end) |
     $event + {merge: (if length == 0 then null elif all(.[]; .merged) then "final" else "partial" end)}
+      + (if $event.event == "cancelled" and ($own_merged | not) then {ticket_scope: "partial"} else {} end)
   ' "$STATE/task-event-prs.jsonl" 2>/dev/null) || { report_failure 125; exit 0; }
 fi
 
