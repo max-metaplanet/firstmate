@@ -6165,6 +6165,9 @@ test_teardown_suppresses_git_auto_maintenance() {
     || fail "auto-maintenance: loose objects do not exceed Git's sampled threshold"
   git -C "$case_dir/wt" config gc.auto 1
   git -C "$case_dir/wt" config maintenance.auto true
+  # Newer Git defaults auto-maintenance to the geometric strategy, which never
+  # runs gc or its hook; pin the gc strategy so every Git version takes it.
+  git -C "$case_dir/wt" config maintenance.strategy gc
   git -C "$case_dir/wt" config gc.autoDetach false
   git -C "$case_dir/wt" config maintenance.autoDetach false
   cat > "$hooks/pre-auto-gc" <<SH
