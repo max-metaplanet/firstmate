@@ -229,7 +229,7 @@ Act by class:
   Comment on the ticket the same way and file the follow-up in the backlog; raise it to the captain only when the behaviour is user-visible or it is the second verdict on the same ticket.
 - `couldnt-check` - production's verdict could not be established, either side was a `skipped` or `stale` non-answer, the pairing could not be completed, or production never reported at all.
   This is NOT a pass and must never be filed as one. Establish what is missing from the linked evidence; a lane that stopped reporting is itself the finding, and a repeat for the same project is a broken monitor to fix rather than a verdict to chase.
-- A clean production verdict never wakes at all. It is recorded and nothing is asked of firstmate, so an absent wake means nothing needed doing, never that nothing was checked.
+- A clean production verdict, or an app whose production build Vercel skipped as unaffected by the merge, never wakes at all. It is recorded and nothing is asked of firstmate, so an absent wake means nothing needed doing, never that nothing was checked.
 
 A ticket comment is the record, not the decision: no class here authorizes a merge, a revert, a deploy, or a rollback.
 Where a verdict argues for one, carry it through `captain-hold-lifecycle` and surface it as the captain's call.
