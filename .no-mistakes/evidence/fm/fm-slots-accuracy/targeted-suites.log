@@ -1,0 +1,30 @@
+FM_TEST_BEGIN 2026-10-20T09:45:23Z tests/fm-slots.test.sh family=backend-dispatch expected_gate_skip=none
+ok - shared occupancy, honest local state, main queue order, and read-only behavior
+ok - project capacity uses admission identity and handoff semantics
+ok - queue cap and remainder count
+ok - unreadable inputs refuse without creating state
+FM_TEST_END 2026-10-20T09:46:01Z tests/fm-slots.test.sh exit=0 duration_ms=37666 gate_skip=false
+FM_TEST_BEGIN 2026-10-20T09:46:01Z tests/fm-project-capacity.test.sh family=backend-dispatch expected_gate_skip=none
+ok - a project with no declared capacity keeps today's uncapped dispatch
+ok - a spawn is admitted while its project still has a free place
+ok - a spawn beyond capacity is deferred before any record, brief, endpoint, worktree, or backlog move exists
+ok - a project name with spaces is declared by taking the capacity from the last field
+ok - a project name beginning with # is declared, and a # comment stays a comment
+ok - a home reached through a symlink counts each of its workers once
+ok - a recorded PR handoff or a cleanup each frees exactly one place
+ok - a restart of a task id does not count that task's own record
+ok - only this project's ship and scout records hold places
+ok - every local home shares one declared capacity per project origin, and remote homes do not count
+ok - an unreadable state directory or task record refuses admission rather than undercounting
+ok - concurrent spawns can never both take the last place
+ok - a spawn that fails after admission leaves no record and holds no place
+ok - an unreadable declaration refuses every fresh spawn rather than guessing the limit
+ok - a batch reports a capacity deferral as deferred, not failed
+ok - an Orca spawn takes the shared project lock whenever a same-origin clone is capped and defers before creating anything
+FM_TEST_END 2026-10-20T09:49:18Z tests/fm-project-capacity.test.sh exit=0 duration_ms=196747 gate_skip=false
+FM_TEST_SUMMARY total=2 failed=0 skipped_gate=0 duration_ms=234708
+FM_TEST_SUMMARY_FAMILY family=backend-dispatch count=2 duration_ms=234413 failed=0
+FM_TEST_SLOWEST rank=1 script=tests/fm-project-capacity.test.sh duration_ms=196747
+FM_TEST_SLOWEST rank=2 script=tests/fm-slots.test.sh duration_ms=37666
+bash bin/fm-test-run.sh --per-script-timeout-secs 600 tests/fm-slots.test.sh   57.49s user 51.58s system 46% cpu 3:54.78 total
+exit=0

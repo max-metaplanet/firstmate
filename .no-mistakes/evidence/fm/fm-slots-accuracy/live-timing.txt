@@ -1,0 +1,7 @@
+before run1 exit=0 wall=0.548s
+before run2 exit=0 wall=0.457s
+before run3 exit=0 wall=0.437s
+after run1 exit=0 wall=0.806s
+after run2 exit=0 wall=0.564s
+after run3 exit=0 wall=0.620s
+home snapshot unchanged across 6 runs

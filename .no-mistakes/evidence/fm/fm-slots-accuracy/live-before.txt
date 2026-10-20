@@ -1,0 +1,25 @@
+slots 6/8 (source: /private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab.UKY3ZX/config/fleet-capacity)
+SLOTS (local records; * still holds a slot)
+  /private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab.UKY3ZX | asker | metaplanet | ship | waiting on decision | claude
+  /private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab.UKY3ZX | blocked-one | metaplanet | ship | idle | claude
+  /private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab.UKY3ZX | eng2100 | metaplanet | ship | idle | claude
+  /private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab.UKY3ZX | eng2765 | metaplanet | ship | idle | claude
+  /private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab.UKY3ZX | eng2767 | metaplanet | ship | idle | claude
+  /private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab.UKY3ZX | scout-done | metaplanet | ship | idle | claude
+QUEUE (/private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab.UKY3ZX)
+  ready | backlog-1 | Older backlog item 1
+  ready | backlog-2 | Older backlog item 2
+  ready | backlog-3 | Older backlog item 3
+  ready | backlog-4 | Older backlog item 4
+  ready | backlog-5 | Older backlog item 5
+  ready | backlog-6 | Older backlog item 6
+  ready | backlog-7 | Older backlog item 7
+  ready | backlog-8 | Older backlog item 8
+  ready | backlog-9 | Older backlog item 9
+  ready | backlog-10 | Older backlog item 10
+  ready | backlog-11 | Older backlog item 11
+  ready | backlog-12 | Older backlog item 12
+  ready | backlog-13 | Older backlog item 13
+  ready | backlog-14 | Older backlog item 14
+  ready | backlog-15 | Older backlog item 15
+  +41 more

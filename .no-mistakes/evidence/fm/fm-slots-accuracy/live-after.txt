@@ -1,0 +1,31 @@
+slots 6/8 (source: /private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab.UKY3ZX/config/fleet-capacity)
+SLOTS (local records; * still holds a slot)
+  /private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab.UKY3ZX | asker | metaplanet | ship | waiting on decision | claude
+  /private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab.UKY3ZX | blocked-one | metaplanet | ship | unknown | claude
+  /private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab.UKY3ZX | eng2100 | metaplanet | ship | working | claude
+  /private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab.UKY3ZX | eng2765 | metaplanet | ship | working | claude
+  /private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab.UKY3ZX | eng2767 | metaplanet | ship | working | claude
+  /private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab.UKY3ZX | scout-done | metaplanet | ship | idle-parked | claude
+QUEUE (/private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab.UKY3ZX)
+A. ready for a slot (priority, then oldest)
+  ready | eng2769-dblocal-cleanup | ENG-2769 | ENG-2769 db local cleanup
+  ready | eng2772-qa-access | ENG-2772 | ENG-2772 QA access
+  ready | eng2773-robots-nonprod | ENG-2773 | ENG-2773 robots nonprod
+  ready | backlog-1 | Older backlog item 1
+  ready | backlog-2 | Older backlog item 2
+  ready | backlog-3 | Older backlog item 3
+  ready | backlog-4 | Older backlog item 4
+  ready | backlog-5 | Older backlog item 5
+  ready | backlog-6 | Older backlog item 6
+  ready | backlog-7 | Older backlog item 7
+  ready | backlog-8 | Older backlog item 8
+  ready | backlog-9 | Older backlog item 9
+  ready | backlog-10 | Older backlog item 10
+  ready | backlog-11 | Older backlog item 11
+  ready | backlog-12 | Older backlog item 12
+  +38 more
+B. waiting on captain
+  decision: captain picks DB | work-impact-schema-db-choice | Pick DB for work impact schema
+  decision: captain item | rea-install-local | Install rea locally
+C. other queued
+  hold: date gate until 2099-01-01 | gated | Gated work
