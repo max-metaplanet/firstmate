@@ -72,7 +72,10 @@ expect_code 1 "$RC" "invalid budget"
 assert_equals "<not run>" "$ARGV" "invalid budget must not run unbounded"
 run_cmd $'local_budget_ms=300000\nlocal_scripts=tests/a.test.sh' 0 1
 expect_code 1 "$RC" "failing selected test"
-RUN_SLEEP=3 run_cmd $'local_budget_ms=1000\nlocal_scripts=tests/a.test.sh'
+RUN_SLEEP=2 run_cmd $'local_budget_ms=1000\nlocal_scripts=tests/a.test.sh'
+expect_code 0 "$RC" "loaded execution may exceed modeled work"
+assert_equals "--per-script-timeout-secs 1500 tests/a.test.sh" "$ARGV" "load allowance preserves selected coverage and per-script bounds"
+RUN_SLEEP=5 run_cmd $'local_budget_ms=1000\nlocal_scripts=tests/a.test.sh'
 expect_code 124 "$RC" "stale weights hit a hard deadline"
 pass "empty/failed selection, failed tests, and a hard deadline cannot pass silently"
 

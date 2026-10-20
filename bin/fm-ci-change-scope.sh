@@ -35,13 +35,13 @@
 # keeps the conservative full-scope signal in place of the CI lane fallback.
 # Local consumers run local_scripts, never expand full/herdr into suites:
 #   local_scripts=<space separated paths>  bounded fast local coverage
-#   local_budget_ms=<integer>              modeled and execution budget
+#   local_budget_ms=<integer>              modeled serial-work budget
 #   local_deferred=<space separated paths> coverage left to CI
 # These outputs exist only with --local. Real-Herdr and live-harness families
 # always stay out of local_scripts, even when installed or opted in. Other
 # candidates run cheapest first within the measured serial-work budget below.
 # If every candidate is deferred, run the local Test contract instead.
-# The Test command enforces the same budget as a hard execution deadline.
+# The Test command owns the hard execution deadline and its local load allowance.
 #
 # Inputs, all optional and read from the environment:
 #   FM_CI_EVENT               the GitHub event name (default: pull_request)
@@ -422,8 +422,8 @@ select_tests
 # CI duration hints (docs/fm-test-portable-shards.md). This admits the 156781ms
 # runner contract while excluding the 334000-434000ms supervision-host suites;
 # cheapest-first admission also bounds a large family of individually fast tests.
-# This is the single local budget; commands.test enforces it as a hard deadline
-# too, because CI timing hints can understate a loaded developer machine.
+# This bounds selection only; commands.test allows execution headroom because
+# CI timing hints can understate a loaded developer machine.
 LOCAL_BUDGET_MS=300000
 local_scripts=
 local_deferred=
