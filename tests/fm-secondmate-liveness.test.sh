@@ -406,13 +406,13 @@ test_sweep_respawns_confirmed_dead_secondmate() {
 }
 
 test_sweep_does_not_relaunch_parked_secondmate() {
-  local w fb tmuxfb log out cycle
+  local w fb tmuxfb log out _
   w=$(new_world sweep-parked)
   add_sm_home "$w" sm1 firstmate:fm-sm1
   fb=$(make_toolchain "$w"); tmuxfb=$(make_liveness_tmux "$w")
   printf 'schema=1\nhome=%s\nphase=parked\npersisted=1\n' "$w/sm1" > "$w/home/state/.secondmate-park-sm1"
   log="$w/calls.log"; : > "$log"
-  for cycle in 1 2; do
+  for _ in 1 2; do
     out=$(run_bootstrap "$tmuxfb:$fb" "$w/home" zsh "$log")
     assert_not_contains "$out" 'SECONDMATE_LIVENESS:' "parked mate triggered recovery: $out"
   done
