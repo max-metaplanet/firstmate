@@ -96,7 +96,8 @@ fm_fleet_capacity_lookup() {  # <config-dir>
 # FM_FLEET_CAPACITY_ERROR when the local homes or a task record cannot be read.
 # shellcheck disable=SC2034 # the FM_FLEET_CAPACITY_* results are read by bin/fm-spawn.sh.
 fm_fleet_capacity_occupants() {  # <first-state> <own-id>
-  local first=$1 self=$2 state meta kind backend target label
+  local first=$1 self=$2 state meta kind backend target label i n=0 gone=,
+  local -a metas=() states=() backends=() targets=()
   FM_FLEET_CAPACITY_OCCUPANTS=0
   FM_FLEET_CAPACITY_OCCUPANT_IDS=
   FM_FLEET_CAPACITY_OCCUPANT_METAS=()
@@ -125,18 +126,40 @@ fm_fleet_capacity_occupants() {  # <first-state> <own-id>
       fm_backend_of_meta_to backend "$meta"
       fm_backend_target_of_meta_to target "$meta"
       [ -n "$target" ] || fm_meta_get_to target "$meta" window
-      if [ -n "$target" ]; then
-        case "$(fm_backend_agent_state "$backend" "$target" 2>/dev/null)" in
-          dead | missing) continue ;;
-        esac
-      fi
-      label=${meta##*/}
-      label=${label%.meta}
-      [ "$state" = "$first" ] || label="$label in ${state%/*}"
-      FM_FLEET_CAPACITY_OCCUPANTS=$((FM_FLEET_CAPACITY_OCCUPANTS + 1))
-      FM_FLEET_CAPACITY_OCCUPANT_METAS+=("$meta")
-      FM_FLEET_CAPACITY_OCCUPANT_IDS="${FM_FLEET_CAPACITY_OCCUPANT_IDS:+$FM_FLEET_CAPACITY_OCCUPANT_IDS, }$label"
+      metas[n]=$meta
+      states[n]=$state
+      backends[n]=$backend
+      targets[n]=$target
+      n=$((n + 1))
     done
+  done
+  while IFS= read -r i; do gone="$gone$i,"; done < <(
+    i=0
+    while [ "$i" -lt "$n" ]; do
+      if [ -n "${targets[i]}" ]; then
+        (
+          case "$(fm_backend_agent_state "${backends[i]}" "${targets[i]}" 2>/dev/null)" in
+            dead | missing) printf '%s\n' "$i" ;;
+          esac
+        ) &
+      fi
+      i=$((i + 1))
+    done
+    wait
+  )
+  i=0
+  while [ "$i" -lt "$n" ]; do
+    case "$gone" in
+      *",$i,"*) i=$((i + 1)); continue ;;
+    esac
+    meta=${metas[i]}
+    label=${meta##*/}
+    label=${label%.meta}
+    [ "${states[i]}" = "$first" ] || label="$label in ${states[i]%/*}"
+    FM_FLEET_CAPACITY_OCCUPANTS=$((FM_FLEET_CAPACITY_OCCUPANTS + 1))
+    FM_FLEET_CAPACITY_OCCUPANT_METAS+=("$meta")
+    FM_FLEET_CAPACITY_OCCUPANT_IDS="${FM_FLEET_CAPACITY_OCCUPANT_IDS:+$FM_FLEET_CAPACITY_OCCUPANT_IDS, }$label"
+    i=$((i + 1))
   done
   return 0
 }

@@ -94,7 +94,21 @@ case "$*" in
 esac
 case "${1:-}" in
   display-message) printf 'firstmate\n' ;;
-  list-windows) [ ! -s "$window_file" ] || cat "$window_file" ;;
+  list-windows)
+    # With a probe barrier, a listing answers only once every expected probe
+    # is waiting at once, so a one-at-a-time occupancy read times out here.
+    if [ -n "${FM_FAKE_PROBE_BARRIER:-}" ]; then
+      mkdir -p "$FM_FAKE_PROBE_BARRIER"
+      : > "$FM_FAKE_PROBE_BARRIER/$$"
+      i=0
+      while [ "$(find "$FM_FAKE_PROBE_BARRIER" -type f | wc -l)" -lt "$FM_FAKE_PROBE_EXPECT" ]; do
+        i=$((i + 1))
+        [ "$i" -lt 60 ] || { printf 'probe barrier timed out\n' >> "$FM_FAKE_CALL_LOG"; break; }
+        sleep 0.05
+      done
+    fi
+    [ ! -s "$window_file" ] || cat "$window_file"
+    ;;
   new-window)
     name=
     previous=
@@ -317,8 +331,53 @@ test_unreadable_declaration_refuses_every_spawn() {
   pass "a malformed fleet declaration refuses spawns rather than guessing the limit"
 }
 
+# The admission library's occupancy read for <home>, one result per line: the
+# count, the holder labels, then each holder's metadata path.
+read_occupants() (  # <case-dir> <home>
+  local case_dir=$1 home=$2
+  export FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" FM_CONFIG_OVERRIDE="$home/config"
+  export FM_FAKE_CALL_LOG="$case_dir/calls.log" FM_FAKE_PROBE_BARRIER="$case_dir/barrier" FM_FAKE_PROBE_EXPECT=5
+  export PATH="$case_dir/fakebin:$PATH"
+  # shellcheck source=bin/fm-wake-lib.sh
+  . "$ROOT/bin/fm-wake-lib.sh"
+  # shellcheck source=bin/fm-secondmate-registry-lib.sh
+  . "$ROOT/bin/fm-secondmate-registry-lib.sh"
+  # shellcheck source=bin/fm-backend.sh
+  . "$ROOT/bin/fm-backend.sh"
+  # shellcheck source=bin/fm-project-capacity-lib.sh
+  . "$ROOT/bin/fm-project-capacity-lib.sh"
+  # shellcheck source=bin/fm-fleet-capacity-lib.sh
+  . "$ROOT/bin/fm-fleet-capacity-lib.sh"
+  fm_fleet_capacity_occupants "$home/state" '' || return 1
+  printf '%s\n' "$FM_FLEET_CAPACITY_OCCUPANTS" "$FM_FLEET_CAPACITY_OCCUPANT_IDS" "${FM_FLEET_CAPACITY_OCCUPANT_METAS[@]}"
+)
+
+# Every recorded endpoint is probed at once, and the holders are still exactly
+# the running agents in record order: the gone ones are dropped and nothing else.
+test_endpoint_probes_run_together_with_serial_verdicts() {
+  local case_dir home mate out
+  case_dir=$(make_case probes)
+  home="$case_dir/home"
+  mate="$case_dir/mate"
+  make_home "$mate"
+  printf '%s\n' schema=fm-secondmate-parent.v1 route=local "parent_home=$home" > "$mate/.fm-secondmate-parent"
+  printf -- '- mate - a local mate (home: %s; scope: project work; projects: project; added 2026-09-01)\n' "$mate" \
+    > "$home/data/secondmates.md"
+  write_running "$case_dir" "$home" live-a "$case_dir/project"
+  write_live "$home" gone-b "$case_dir/project"
+  write_running "$case_dir" "$home" live-c "$case_dir/project"
+  write_live "$mate" gone-d "$case_dir/project"
+  write_running "$case_dir" "$mate" live-e "$case_dir/project"
+  out=$(read_occupants "$case_dir" "$home") || fail "the occupancy read failed: $out"
+  assert_equals $'3\nlive-a, live-c, live-e in '"$mate"$'\n'"$home/state/live-a.meta"$'\n'"$home/state/live-c.meta"$'\n'"$mate/state/live-e.meta" \
+    "$out" "concurrent probes changed the holder count, set, or order"
+  assert_not_contains "$(cat "$case_dir/calls.log")" "probe barrier timed out" "endpoint probes ran one at a time"
+  pass "endpoint probes run together and count exactly the running holders in record order"
+}
+
 test_undeclared_fleet_stays_uncapped
 test_full_fleet_defers_without_leaving_anything_behind
 test_dead_agents_free_their_place
 test_fleet_is_shared_by_every_local_home
 test_unreadable_declaration_refuses_every_spawn
+test_endpoint_probes_run_together_with_serial_verdicts

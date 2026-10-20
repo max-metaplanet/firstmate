@@ -88,6 +88,23 @@ holder_state() { # <meta> <id> <harness> <pr>
   case "$busy" in idle\ *) printf idle ;; *) printf unknown ;; esac
 }
 
+holder_states=()
+while IFS=$'\t' read -r i holder; do holder_states[i]=$holder; done < <(
+  i=0
+  for meta in ${FM_FLEET_CAPACITY_OCCUPANT_METAS[@]+"${FM_FLEET_CAPACITY_OCCUPANT_METAS[@]}"}; do
+    (
+      id=${meta##*/}; id=${id%.meta}
+      fm_meta_get_to harness "$meta" harness
+      fm_meta_get_to pr "$meta" pr
+      holder=$(holder_state "$meta" "$id" "$harness" "$pr")
+      printf '%s\t%s\n' "$i" "$holder"
+    ) &
+    i=$((i + 1))
+  done
+  wait
+)
+
+i=0
 for meta in ${FM_FLEET_CAPACITY_OCCUPANT_METAS[@]+"${FM_FLEET_CAPACITY_OCCUPANT_METAS[@]}"}; do
   home=${meta%/state/*}
   id=${meta##*/}; id=${id%.meta}
@@ -97,10 +114,9 @@ for meta in ${FM_FLEET_CAPACITY_OCCUPANT_METAS[@]+"${FM_FLEET_CAPACITY_OCCUPANT_
   fm_meta_get_to harness "$meta" harness
   fm_meta_get_to pr "$meta" pr
   fm_meta_get_to seat "$meta" "${harness}_seat"
-  [ -n "$seat" ] || fm_meta_get_to seat "$meta" seat
-  state=$(holder_state "$meta" "$id" "$harness" "$pr")
-  printf '  %s | %s | %s | %s | %s | %s%s%s\n' "$home" "$id" "${project:-unknown}" "${kind:-unknown}" "$state" \
-    "${harness:-unknown}" "${seat:+ seat=$seat}" "${pr:+ | $pr}"
+  printf '  %s | %s | %s | %s | %s | %s%s%s\n' "$home" "$id" "${project:-unknown}" "${kind:-unknown}" \
+    "${holder_states[i]:-unknown}" "${harness:-unknown}" "${seat:+ seat=$seat}" "${pr:+ | $pr}"
+  i=$((i + 1))
 done
 
 printf 'QUEUE (%s)\n' "$QUEUE_HOME"
