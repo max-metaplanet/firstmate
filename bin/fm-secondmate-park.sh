@@ -2,9 +2,15 @@
 # Park a registered local secondmate without removing its home or records.
 # Usage: FM_HOME=<parent> fm-secondmate-park.sh <id> park|unpark
 #
-# park asks the existing correlated open-record persist gate, refuses without
-# its answer, then stops the agent through fm-control exit and stops its home
-# supervision host and watcher. Any child metadata, in-flight backlog work, or
+# A live mate must answer the correlated open-record persist gate before
+# fm-control exit stops its agent and its home supervision host and watcher.
+# A stopped mate substitutes durable proof only when its verified endpoint state
+# is dead, or missing and proven gone by fm-control's endpoint absence proof, its
+# readable state directory contains no child metadata, its backlog has no
+# in-flight work, and its latest recognized parent-channel status event body
+# (helper-written or direct) equals the readiness phrase printed below by --help.
+# Unproven or unknown endpoints refuse this path. The phrase is defined once in STOPPED_READY_BODY below.
+# Any child metadata, in-flight backlog work, or
 # outstanding incoming instruction refuses parking. unpark uses fm-spawn's
 # relaunch or missing-endpoint secondmate respawn path and is also fm-send's automatic wake path; fm-crew-state
 # shows the parked state. Exact session resume uses the existing recorded reference
@@ -26,7 +32,8 @@
 set -u
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
-case "${1:-}" in -h|--help) sed -n '2,/^set -u/{ /^set -u/d; s/^# \{0,1\}//; p; }' "$0"; exit 0 ;; esac
+STOPPED_READY_BODY='ready to park - no conversation-only open work'
+case "${1:-}" in -h|--help) sed -n '2,/^set -u/{ /^set -u/d; s/^# \{0,1\}//; p; }' "$0"; printf '\nStopped readiness status body: %s\n' "$STOPPED_READY_BODY"; exit 0 ;; esac
 ID=${1:-} ACTION=${2:-}
 case "$ID" in ''|*[!A-Za-z0-9._-]*) echo 'error: an exact secondmate id is required' >&2; exit 2 ;; esac
 case "$ACTION:$#" in park:2|unpark:2) ;; *) echo 'usage: fm-secondmate-park.sh <id> park | unpark' >&2; exit 2 ;; esac
@@ -45,6 +52,10 @@ STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 . "$SCRIPT_DIR/fm-secondmate-restart-lib.sh"
 # shellcheck source=bin/fm-secondmate-resume-lib.sh
 . "$SCRIPT_DIR/fm-secondmate-resume-lib.sh"
+# shellcheck source=bin/fm-control-lib.sh
+. "$SCRIPT_DIR/fm-control-lib.sh"
+# shellcheck source=bin/fm-classify-lib.sh
+. "$SCRIPT_DIR/fm-classify-lib.sh"
 # shellcheck source=bin/fm-pending-reply-lib.sh
 . "$SCRIPT_DIR/fm-pending-reply-lib.sh"
 # shellcheck source=bin/fm-tasks-axi-lib.sh
@@ -110,8 +121,12 @@ read_record() {
 }
 check_idle() {
   local child pending backend listing
+  if [ "${1:-}" = stopped ]; then
+    [ -r "$MATE_HOME/state" ] && [ -x "$MATE_HOME/state" ] || { echo 'error: cannot prove secondmate child records absent: state directory unreadable' >&2; return 1; }
+    [ -d "$MATE_HOME/data" ] && [ ! -L "$MATE_HOME/data" ] && [ -r "$MATE_HOME/data" ] && [ -x "$MATE_HOME/data" ] && [ ! -L "$MATE_HOME/data/backlog.md" ] || { echo 'error: cannot prove secondmate backlog idle: data directory unreadable or backlog symlinked' >&2; return 1; }
+  fi
   for child in "$MATE_HOME/state"/*.meta; do
-    [ ! -e "$child" ] || { echo "error: secondmate has outstanding child work: $child" >&2; return 1; }
+    [ ! -e "$child" ] && [ ! -L "$child" ] || { echo "error: secondmate has outstanding child work: $child" >&2; return 1; }
   done
   backend=$(fm_tasks_axi_backend "$MATE_HOME") || return 1
   if [ "$backend" != markdown ] || [ -e "$MATE_HOME/data/backlog.md" ]; then
@@ -192,6 +207,7 @@ if [ "$ACTION" = unpark ]; then
   fi
   wake_parked
 fi
+[ -d "$MATE_HOME/state" ] && [ ! -L "$MATE_HOME/state" ] || fail 'cannot prove secondmate child records absent: state directory missing or symlinked'
 CHILD_SET_LOCK=$(fm_task_set_lock_path "$MATE_HOME/state") || fail 'cannot resolve child task set lock'
 fm_lock_try_acquire "$CHILD_SET_LOCK" || { CHILD_SET_LOCK=''; fail 'child task publication is in progress; retry park'; }
 if fm_secondmate_park_present "$STATE" "$ID"; then
@@ -201,32 +217,53 @@ if fm_secondmate_park_present "$STATE" "$ID"; then
   [ "$PERSISTED" = 1 ] || { rm -f "$RECORD" || fail 'cannot clear interrupted persist preparation'; }
 fi
 if [ "$PERSISTED" != 1 ]; then
-  check_idle || exit 1
   fm_secondmate_restart_capable "$META" || fail "$FM_SECONDMATE_RESTART_REASON"
-  WAIT=${FM_SECONDMATE_PERSIST_WAIT:-900} POLL=${FM_SECONDMATE_PERSIST_POLL:-5}
-  case "$WAIT" in ''|*[!0-9]*) fail 'invalid persist wait' ;; esac
-  case "$POLL" in ''|0|*[!0-9]*) fail 'invalid persist poll' ;; esac
-  REQUEST="I am about to park your agent. Before that, $FM_PERSIST_OPEN_RECORDS_CONTRACT Then acknowledge this instruction in your durable inbox and reply on your parent channel saying it is done, or saying what you deliberately left alone and why."
-  CORR=$(fm_pending_reply_create "$FM_HOME" "$STATE" "$ID" "$REQUEST") || fail 'cannot track persist answer'
-  OWN_PREPARING=1
-  write_record preparing || fail 'cannot record persist preparation'
-  if ! FM_PENDING_REPLY_EXISTING_CORR="$CORR" "$SCRIPT_DIR/fm-send.sh" "$ID" "$REQUEST"; then
-    rm -f "$RECORD"
-    fm_pending_reply_discard_undelivered "$STATE" "$CORR" || true
-    fail 'persist request delivery failed; agent was not stopped'
+  current_state=$(fm_backend_agent_state "$(fm_backend_of_meta "$META")" "$(fm_backend_target_of_meta "$META")") || current_state=unreadable
+  if [ "$current_state" = missing ]; then
+    absence=$(fm_control_endpoint_absence_verdict "$(fm_backend_of_meta "$META")" "$(fm_backend_target_of_meta "$META")")
+    case "${absence%%$'\t'*}" in
+      gone|dead) current_state=dead ;;
+      *) fail "endpoint is not verified stopped (state=missing, absence=${absence%%$'\t'*}); cannot substitute durable proof for a live persist answer" ;;
+    esac
   fi
-  deadline=$(($(date +%s) + WAIT))
-  until fm_pending_reply_try_resolve "$STATE" "$CORR"; do
-    if [ "$(date +%s)" -ge "$deadline" ]; then
-      rm -f "$RECORD"
-      report 'park refused: persist answer missing; agent left running' || true
-      exit 1
-    fi
-    sleep "$POLL"
-  done
-  # Recheck child work after the mate wrote its durable records. New parent
-  # inbox work is deferred and wakes the mate once the stop completes.
-  if ! check_idle after-persist; then rm -f "$RECORD"; exit 1; fi
+  case "$current_state" in
+    dead)
+      check_idle stopped || exit 1
+      [ -f "$STATE/$ID.status" ] && [ ! -L "$STATE/$ID.status" ] || fail "latest parent status must say: $STOPPED_READY_BODY"
+      latest_status=$(last_worker_status_line "$STATE/$ID.status")
+      latest_body=$(printf '%s\n' "$latest_status" | sed -n 's/^[a-z][a-z-]*\( \[[^]]*\]\)*: //p')
+      latest_body=${latest_body% (via-helper)}
+      [ "$latest_body" = "$STOPPED_READY_BODY" ] || fail "latest parent status must say: $STOPPED_READY_BODY"
+      ;;
+    alive)
+      check_idle || exit 1
+      WAIT=${FM_SECONDMATE_PERSIST_WAIT:-900} POLL=${FM_SECONDMATE_PERSIST_POLL:-5}
+      case "$WAIT" in ''|*[!0-9]*) fail 'invalid persist wait' ;; esac
+      case "$POLL" in ''|0|*[!0-9]*) fail 'invalid persist poll' ;; esac
+      REQUEST="I am about to park your agent. Before that, $FM_PERSIST_OPEN_RECORDS_CONTRACT Then acknowledge this instruction in your durable inbox and reply on your parent channel saying it is done, or saying what you deliberately left alone and why."
+      CORR=$(fm_pending_reply_create "$FM_HOME" "$STATE" "$ID" "$REQUEST") || fail 'cannot track persist answer'
+      OWN_PREPARING=1
+      write_record preparing || fail 'cannot record persist preparation'
+      if ! FM_PENDING_REPLY_EXISTING_CORR="$CORR" "$SCRIPT_DIR/fm-send.sh" "$ID" "$REQUEST"; then
+        rm -f "$RECORD"
+        fm_pending_reply_discard_undelivered "$STATE" "$CORR" || true
+        fail 'persist request delivery failed; agent was not stopped'
+      fi
+      deadline=$(($(date +%s) + WAIT))
+      until fm_pending_reply_try_resolve "$STATE" "$CORR"; do
+        if [ "$(date +%s)" -ge "$deadline" ]; then
+          rm -f "$RECORD"
+          report 'park refused: persist answer missing; agent left running' || true
+          exit 1
+        fi
+        sleep "$POLL"
+      done
+      # Recheck child work after the mate wrote its durable records. New parent
+      # inbox work is deferred and wakes the mate once the stop completes.
+      if ! check_idle after-persist; then rm -f "$RECORD"; exit 1; fi
+      ;;
+    *) fail "endpoint is not verified dead (state=$current_state); cannot substitute durable proof for a live persist answer" ;;
+  esac
   fm_secondmate_resume_capture "$META" || fail 'cannot capture resume disposition'
   MODE=$FM_SECONDMATE_RESUME_MODE RESUME_HARNESS=$FM_SECONDMATE_RESUME_HARNESS REF=$FM_SECONDMATE_RESUME_REF
   PERSISTED=1
