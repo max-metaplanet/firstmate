@@ -265,6 +265,8 @@ fi
 . "$SCRIPT_DIR/fm-task-inbox-lib.sh"
 # shellcheck source=bin/fm-secondmate-park-lib.sh
 . "$SCRIPT_DIR/fm-secondmate-park-lib.sh"
+# shellcheck source=bin/fm-worker-park-lib.sh
+. "$SCRIPT_DIR/fm-worker-park-lib.sh"
 # shellcheck source=bin/fm-timeout-lib.sh
 . "$SCRIPT_DIR/fm-timeout-lib.sh"
 
@@ -843,10 +845,19 @@ fm_send_feed_resolved_holds() { # <answer-text>
 # send implementation. A failed backend send is still surfaced below as a hard
 # error with the attempted resolution attached.
 
-# Wake only this recorded local secondmate. The park persist request itself
-# must reach the old agent while its owner holds the lifecycle lock.
+# Wake a parked worker only after durable steering enqueue. A secondmate
+# persist request must still reach its old agent during the park transaction.
 fm_send_wake_parked() {
-  local id record
+  local id record rc=0
+  if [ -n "$TARGET_META" ] && fm_worker_park_load "$TARGET_META"; then
+    id=$(fm_send_id_from_meta "$TARGET_META")
+    "$SCRIPT_DIR/fm-worker-park.sh" wake "$id" 'steering received or decision answered' || rc=$?
+    [ "$rc" -eq 0 ] || [ "$rc" -eq 75 ] || return "$rc"
+    T=$(fm_backend_target_of_meta "$TARGET_META")
+    TARGET_BACKEND=$(fm_backend_of_meta "$TARGET_META")
+    TARGET_HARNESS=$(fm_meta_get "$TARGET_META" harness)
+    return 0
+  fi
   [ -n "$TARGET_META" ] && [ "$(fm_meta_get "$TARGET_META" kind)" = secondmate ] || return 0
   id=$(fm_send_id_from_meta "$TARGET_META")
   fm_secondmate_park_present "$STATE" "$id" || return 0

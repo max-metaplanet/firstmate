@@ -910,6 +910,7 @@ test_no_mistakes_pushed_merged_pr_allows() {
   append_pr_meta_for_current_head "$case_dir"
   add_gh_pr_merged_for_head "$case_dir" "$(git -C "$case_dir/wt" rev-parse HEAD)"
 
+  printf 'phase=parked\ngeneration=legacy\nendpoint=fm-task-x1\nreason=merge approval\nuntil=0\nqueued_at=0\n' > "$case_dir/state/task-x1.park"
   set +e
   run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr"
   rc=$?
@@ -919,7 +920,8 @@ test_no_mistakes_pushed_merged_pr_allows() {
   ! grep -q REFUSED "$case_dir/stderr" || fail "nm-origin: teardown printed a REFUSED line"
   grep -F 'blockers are gone and date is due' "$case_dir/stdout" >/dev/null \
     || fail "nm-origin: teardown manual prompt did not preserve date-gate check"
-  pass "no-mistakes worktree with pushed HEAD in a merged PR is torn down"
+  assert_absent "$case_dir/state/task-x1.park" "landed teardown removes parking state"
+  pass "parked no-mistakes worktree with pushed HEAD in a merged PR is torn down"
 }
 
 test_no_mistakes_truly_unpushed_refuses() {

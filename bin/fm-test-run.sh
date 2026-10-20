@@ -363,7 +363,7 @@ family_for_basename() {
     fm-mail.test.sh|fm-mail-check.test.sh|\
     fm-turnend-foreign-owner-arm-fix.test.sh|\
     fm-supervision-fork-budget.test.sh|fm-wake-queue.test.sh|fm-watch-arm.test.sh|fm-watch-checkpoint.test.sh|fm-watch-recovery-loop.test.sh|\
-    fm-watch-triage.test.sh|fm-watch-triage-stale.test.sh|fm-watch-triage-delivery.test.sh|\
+    fm-watch-worker-park.test.sh|fm-watch-triage.test.sh|fm-watch-triage-stale.test.sh|fm-watch-triage-delivery.test.sh|\
     fm-task-inbox.test.sh|\
     fm-watcher-lock.test.sh|fm-inactive-reconcile.test.sh)
       printf '%s\n' watcher-wake-lock
@@ -447,7 +447,7 @@ family_for_basename() {
     fm-trace-context-spawn.test.sh|fm-spawn-worktree-settle.test.sh|\
     fm-spawn-compact-adviser-disable.test.sh|\
     fm-spawn-compact-adviser-disable-remote.test.sh|\
-    fm-project-capacity.test.sh|fm-fleet-capacity.test.sh|fm-slots.test.sh|\
+    fm-project-capacity.test.sh|fm-fleet-capacity.test.sh|fm-slots.test.sh|fm-worker-park.test.sh|\
     fm-teardown-endpoint-safety.test.sh)
       printf '%s\n' backend-dispatch
       ;;

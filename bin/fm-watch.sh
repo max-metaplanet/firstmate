@@ -292,6 +292,8 @@ WATCH_HOME_EXISTED=0
 # (quota_wall_handle below).
 # shellcheck source=bin/fm-quota-wall-lib.sh
 . "$SCRIPT_DIR/fm-quota-wall-lib.sh"
+# shellcheck source=bin/fm-worker-park-lib.sh
+. "$SCRIPT_DIR/fm-worker-park-lib.sh"
 
 WATCH_LOCK="$STATE/.watch.lock"
 WATCH_PATH="$SCRIPT_DIR/fm-watch.sh"
@@ -953,6 +955,7 @@ recorded_windows() {
   local meta w seen='' window_records=''
   for meta in "$STATE"/*.meta; do
     [ -e "$meta" ] || continue
+    fm_worker_park_load "$meta" && continue
     fm_backend_target_of_meta_to w "$meta"
     [ -n "$w" ] || continue
     case "$seen" in
@@ -3312,6 +3315,8 @@ while :; do
   # for older arms and guards during rolling upgrades.
   fm_epoch_seconds_to watcher_beat_epoch
   printf 'heartbeat_epoch=%s\n' "$watcher_beat_epoch" > "$STATE/.last-watcher-beat"
+
+  "$SCRIPT_DIR/fm-worker-park.sh" tick >/dev/null 2>&1 || true
 
   # Every cadence this cycle consults, aged at one instant with one read.
   cadence_ages_read "$STATE/home-summary.json" "$STATE/.last-check" \

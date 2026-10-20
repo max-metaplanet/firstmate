@@ -47,8 +47,9 @@
 #     no longer uses local resources.
 # A place therefore frees when a PR-based ship records its ready PR, or when any
 # task is cleaned up and its record removed. A local-only ship and a scout have
-# no recorded handoff and hold their place until cleanup. A worker that is
-# steered back into work after its PR handoff is not counted again.
+# no recorded handoff and hold their place until cleanup or verified parking
+# (fm-worker-park-lib.sh). A resumed parked worker holds a place again until
+# its next park or cleanup, including one with a PR.
 # The declaration is matched by the spawning clone's directory name, so clones
 # of one origin share the cap only when they use that same directory name. A
 # clone of that origin under a different directory name finds no declaration
@@ -180,6 +181,9 @@ fm_project_capacity_lookup() {  # <config-dir> <project-name>
 # FM_PROJECT_CAPACITY_ERROR when the local homes cannot be enumerated, or when
 # a state directory or task record in them cannot be read, since skipping it
 # could undercount the holders.
+# shellcheck source=bin/fm-worker-park-lib.sh
+. "${BASH_SOURCE[0]%/*}/fm-worker-park-lib.sh"
+
 fm_project_capacity_occupants() {  # <project-lock> <project-dir> <first-state> <own-id>
   local want=$1 own=$2 first=$3 self=$4 state meta kind project lock id label i
   local -a cache_dirs cache_locks
@@ -204,9 +208,12 @@ fm_project_capacity_occupants() {  # <project-lock> <project-dir> <first-state> 
         FM_PROJECT_CAPACITY_ERROR="task record $meta cannot be read"
         return 1
       }
+      fm_worker_park_load "$meta" && continue
       kind=$(fm_meta_get "$meta" kind)
       [ "$kind" != secondmate ] || continue
-      [ -z "$(fm_meta_get "$meta" pr)" ] || continue
+      if [ -n "$(fm_meta_get "$meta" pr)" ]; then
+        case "$(fm_meta_get "${meta%.meta}.park" phase)" in active|queued|parking) ;; *) continue ;; esac
+      fi
       project=$(fm_meta_get "$meta" project)
       [ -n "$project" ] || continue
       lock=

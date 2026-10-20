@@ -93,7 +93,8 @@ case "$*" in
     ;;
 esac
 case "${1:-}" in
-  display-message) printf 'firstmate\n' ;;
+  display-message)
+    case "$*" in *pane_current_command*) printf '%s\n' "${FM_FAKE_AGENT_COMMAND:-firstmate}" ;; *) printf 'firstmate\n' ;; esac ;;
   list-windows)
     # With a probe barrier, a listing answers only once every expected probe
     # is waiting at once, so a one-at-a-time occupancy read times out here.
@@ -375,6 +376,70 @@ test_endpoint_probes_run_together_with_serial_verdicts() {
   pass "endpoint probes run together and count exactly the running holders in record order"
 }
 
+write_park() { # home id phase
+  printf 'phase=%s\ngeneration=s-%s\nendpoint=firstmate:fm-%s\nreason=upstream maintainer\nuntil=0\nqueued_at=1\n' "$3" "$2" "$2" > "$1/state/$2.park"
+}
+
+test_parked_capacity_and_priority() {
+  local case_dir home out rc=0 pane
+  case_dir=$(make_case parked task-c)
+  home="$case_dir/home"
+  declare_fleet "$home" 1
+  write_running "$case_dir" "$home" parked-a "$case_dir/project"
+  write_park "$home" parked-a parked
+  out=$(spawn_ship "$case_dir" task-c) || rc=$?
+  expect_code 0 "$rc" "verified parked record did not free capacity: $out"
+  assert_present "$home/state/task-c.meta" 'fresh task takes the released slot'
+
+  case_dir=$(make_case pending task-c)
+  home="$case_dir/home"
+  declare_fleet "$home" 2
+  write_live "$home" parked-a "$case_dir/project"
+  write_park "$home" parked-a queued
+  pane=$(new_worktree "$case_dir" task-c)
+  rc=0
+  out=$(spawn_ship "$case_dir" task-c "$pane") || rc=$?
+  expect_code 75 "$rc" "fresh dispatch overtook queued resume: $out"
+  assert_contains "$out" 'resumes ahead of task task-c' 'admission enforces resume priority'
+  assert_absent "$home/state/task-c.meta" 'priority deferral creates no record'
+
+  write_park "$home" parked-a parking
+  declare_fleet "$home" 1
+  rc=0
+  out=$(spawn_ship "$case_dir" task-c "$pane") || rc=$?
+  expect_code 75 "$rc" "an unverified exit freed its slot: $out"
+  assert_contains "$out" '1 are running' 'unverified exit keeps capacity even on a dead endpoint'
+  pass 'parked capacity, unverified exit reservation and priority over fresh dispatch'
+}
+
+test_parked_relaunch_respects_both_caps() {
+  local case_dir home pane out rc=0
+  case_dir=$(make_case resume-cap)
+  home="$case_dir/home"
+  pane=$(new_worktree "$case_dir" parked-a)
+  write_brief "$home" parked-a
+  write_running "$case_dir" "$home" parked-a "$case_dir/project"
+  sed "s|^worktree=.*|worktree=$pane|" "$home/state/parked-a.meta" > "$home/state/parked-a.meta.next"
+  mv "$home/state/parked-a.meta.next" "$home/state/parked-a.meta"
+  write_park "$home" parked-a queued
+  write_running "$case_dir" "$home" occupied "$case_dir/project"
+  write_park "$home" occupied parking
+  declare_fleet "$home" 1
+  out=$(FM_FAKE_AGENT_COMMAND=bash run_spawn "$case_dir" "$home" "$pane" parked-a --relaunch --harness codex) || rc=$?
+  expect_code 75 "$rc" "parked relaunch bypassed fleet cap: $out"
+  assert_contains "$out" 'runs at most 1 agent(s)' 'resumption uses fleet admission'
+  rm "$home/config/fleet-capacity"
+  declare_capacity "$home" 'project 1'
+  rc=0
+  out=$(FM_FAKE_AGENT_COMMAND=bash run_spawn "$case_dir" "$home" "$pane" parked-a --relaunch --harness codex) || rc=$?
+  expect_code 75 "$rc" "parked relaunch bypassed project cap: $out"
+  assert_contains "$out" 'project project admits 1 worker(s)' 'resumption uses project admission'
+  assert_present "$home/state/parked-a.park" 'cap deferral preserves the request'
+  pass 'parked relaunch respects fleet and project capacity'
+}
+
+test_parked_relaunch_respects_both_caps
+test_parked_capacity_and_priority
 test_undeclared_fleet_stays_uncapped
 test_full_fleet_defers_without_leaving_anything_behind
 test_dead_agents_free_their_place

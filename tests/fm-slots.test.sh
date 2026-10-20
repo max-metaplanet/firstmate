@@ -210,3 +210,12 @@ if FM_HOME=$missing bash "$SLOTS" >/dev/null 2>&1; then fail 'missing state must
 printf 'bad\n' > "$MAIN/config/fleet-capacity"
 if FM_HOME=$MAIN bash "$SLOTS" >/dev/null 2>&1; then fail 'bad cap must refuse'; fi
 pass 'unreadable inputs refuse without creating state'
+
+printf '12\n' > "$MAIN/config/fleet-capacity"
+holder "$MAIN" external codex
+printf 'phase=parked\ngeneration=legacy\nendpoint=external\nreason=upstream maintainer\nuntil=0\nqueued_at=0\n' > "$MAIN/state/external.park"
+out=$(FM_HOME=$MAIN bash "$SLOTS")
+assert_contains "$out" 'PARKED/WAITING (no active slot)' 'parked workers have a separate section'
+assert_contains "$out" 'external | parked | upstream maintainer' 'parked section states the wait'
+slots=${out%%PARKED/WAITING*}
+assert_not_contains "$slots" 'external' 'parked worker is not a slot'

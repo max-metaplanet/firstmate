@@ -463,10 +463,33 @@ observe() { # canonical GitHub URL -> normalized JSON
     | valid_record' >/dev/null || unobserved 'observation failed validation'
 }
 
+worker_observation() { # task row-file
+  local task=$1 row=$2 actor reason
+  [ -f "$STATE/$task.meta" ] || return 0
+  IFS=$'\t' read -r actor reason < <(jq_lib -nr --arg task "$task" --slurpfile row "$row" --argjson now "$EPOCH" --argjson max_age "$MAX_AGE" '
+    projected({tasks:[],backlog:{records:[]}}; [{task:$task,records:[$row[0]]}]; $now; $max_age)
+    | .[] | [.actor,.reason] | @tsv')
+  case "$actor/$reason" in
+    captain/*)
+      [ "$(fm_meta_get "$STATE/$task.meta" yolo)" = off ] || return 0
+      "$SCRIPT_DIR/fm-worker-park.sh" hint "$task" "$reason" >/dev/null || return 1 ;;
+    maintainer/*|fleet/'checks still running')
+      "$SCRIPT_DIR/fm-worker-park.sh" hint "$task" "$reason" >/dev/null || return 1 ;;
+    fleet/'checks failed'|fleet/'forge requests changes')
+      "$SCRIPT_DIR/fm-worker-park.sh" request "$task" "$reason" >/dev/null || return 1 ;;
+    nobody/'forge reports merged')
+      "$SCRIPT_DIR/fm-worker-park.sh" request "$task" 'merge completed; reconcile any remaining post-merge work' >/dev/null || return 1 ;;
+  esac
+}
+
 publish_pending() { # task canonical-url record-file
   local task=$1 url=$2 record=$3 token key count emitted status
   count=$(jq '.pending | length' "$record")
+  worker_observation "$task" "$record" || return 1
   [ "$count" -gt 0 ] || return 0
+  if [ -f "$STATE/$task.meta" ]; then
+    "$SCRIPT_DIR/fm-worker-park.sh" request "$task" "new upstream review or comment on $url" >/dev/null || return 1
+  fi
   while IFS= read -r token; do
     [ -n "$token" ] || continue
     key=$(printf '%s\n%s\n' "$url" "$token" | shasum -a 256 | awk '{print $1}')

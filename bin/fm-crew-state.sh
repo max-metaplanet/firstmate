@@ -310,6 +310,12 @@ done < "$META" 2>/dev/null || true
 unset meta_line
 [ -n "$KIND" ] || KIND=ship
 
+# shellcheck source=bin/fm-worker-park-lib.sh
+. "$SCRIPT_DIR/fm-worker-park-lib.sh"
+if fm_worker_park_load "$META"; then
+  emit parked park-record "$FM_WORKER_PARK_PHASE; waiting on $FM_WORKER_PARK_REASON"
+fi
+
 if [ "$KIND" = secondmate ] && { [ -e "$STATE/.secondmate-park-$ID" ] || [ -L "$STATE/.secondmate-park-$ID" ]; }; then
   park_record="$STATE/.secondmate-park-$ID"
   park_phase=$(sed -n 's/^phase=//p' "$park_record")

@@ -3947,10 +3947,14 @@ fi
 # for a project whose declared capacity is already held is deferred here, before
 # any brief render, endpoint, worktree, record, or backlog move exists, so the
 # deferral leaves the task exactly as queued as it was. A relaunch replaces a
-# worker that already holds a place, and a secondmate is not a worker.
+# worker that already holds a place unless it was parked; a secondmate is not a worker.
+SPAWN_PARK_RESUME=0
+if [ "$RELAUNCH" -eq 1 ] && fm_worker_park_load "$STATE/$ID.meta"; then
+  SPAWN_PARK_RESUME=1
+fi
 SPAWN_PROJECT_CAPACITY=
 SPAWN_PROJECT_CAPACITY_ANY=
-if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" != secondmate ]; then
+if { [ "$RELAUNCH" -eq 0 ] || [ "$SPAWN_PARK_RESUME" = 1 ]; } && [ "$KIND" != secondmate ]; then
   SPAWN_CAPACITY_CONFIG=$(fm_project_capacity_config_dir "$FM_HOME" "$CONFIG") || {
     echo "error: could not resolve the root Firstmate home that declares project capacity for $PROJ_ABS" >&2
     exit 1
@@ -3962,7 +3966,7 @@ if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" != secondmate ]; then
   SPAWN_PROJECT_CAPACITY=$FM_PROJECT_CAPACITY
   SPAWN_PROJECT_CAPACITY_ANY=$FM_PROJECT_CAPACITY_ANY
 fi
-if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" != secondmate ] &&
+if { [ "$RELAUNCH" -eq 0 ] || [ "$SPAWN_PARK_RESUME" = 1 ]; } && [ "$KIND" != secondmate ] &&
   { [ "$BACKEND" != orca ] || [ -n "$SPAWN_PROJECT_CAPACITY_ANY" ]; }; then
   SPAWN_TREEHOUSE_PROJECT_LOCK=$(fm_treehouse_project_lock_path "$PROJ_ABS") || {
     echo "error: could not resolve the shared Treehouse project lock for $PROJ_ABS" >&2
@@ -3991,7 +3995,7 @@ fi
 # Fleet capacity admission (bin/fm-fleet-capacity-lib.sh owns the
 # declaration, what holds a place, and the lock). It caps every fresh local
 # agent, secondmates included, and defers exactly like project capacity above.
-if [ "$RELAUNCH" -eq 0 ]; then
+if [ "$RELAUNCH" -eq 0 ] || [ "$SPAWN_PARK_RESUME" = 1 ]; then
   SPAWN_FLEET_CONFIG=$(fm_project_capacity_config_dir "$FM_HOME" "$CONFIG") || {
     echo "error: could not resolve the root Firstmate home that declares fleet capacity" >&2
     exit 1
@@ -4000,7 +4004,8 @@ if [ "$RELAUNCH" -eq 0 ]; then
     echo "error: spawn refused: the fleet capacity declaration is unreadable ($FM_FLEET_CAPACITY_ERROR); fix it so the captain's fleet limit is known (docs/configuration.md \"Fleet capacity\")" >&2
     exit 1
   fi
-  if [ -n "$FM_FLEET_CAPACITY" ]; then
+  SPAWN_RESUME_FRONT=$(fm_worker_park_front "$STATE") || exit 1
+  if [ -n "$FM_FLEET_CAPACITY" ] || [ -n "$SPAWN_RESUME_FRONT" ] || [ "$SPAWN_PARK_RESUME" = 1 ]; then
     SPAWN_FLEET_LOCK=$(fm_fleet_capacity_lock_path "$FM_HOME") || {
       echo "error: could not resolve the fleet capacity lock for $FM_HOME" >&2
       exit 1
@@ -4010,11 +4015,20 @@ if [ "$RELAUNCH" -eq 0 ]; then
       exit "$FM_PROJECT_CAPACITY_DEFER_EXIT"
     fi
     SPAWN_FLEET_LOCK_HELD=1
+    SPAWN_RESUME_FRONT=$(fm_worker_park_front "$STATE") || exit 1
+    if [ -n "$SPAWN_RESUME_FRONT" ] && [ "$SPAWN_RESUME_FRONT" != "$STATE/$ID.meta" ]; then
+      echo "deferred: parked worker $SPAWN_RESUME_FRONT resumes ahead of task $ID" >&2
+      exit "$FM_PROJECT_CAPACITY_DEFER_EXIT"
+    fi
+    if [ "$SPAWN_PARK_RESUME" = 1 ] && [ -z "$SPAWN_RESUME_FRONT" ]; then
+      echo "deferred: request a parked-worker wake through fm-worker-park.sh first" >&2
+      exit "$FM_PROJECT_CAPACITY_DEFER_EXIT"
+    fi
     if ! fm_fleet_capacity_occupants "$STATE" "$ID"; then
       echo "error: spawn refused: this machine declares a fleet capacity of $FM_FLEET_CAPACITY, but its task records cannot all be read to count it ($FM_FLEET_CAPACITY_ERROR)" >&2
       exit 1
     fi
-    if [ "$FM_FLEET_CAPACITY_OCCUPANTS" -ge "$FM_FLEET_CAPACITY" ]; then
+    if [ -n "$FM_FLEET_CAPACITY" ] && [ "$FM_FLEET_CAPACITY_OCCUPANTS" -ge "$FM_FLEET_CAPACITY" ]; then
       echo "deferred: this machine runs at most $FM_FLEET_CAPACITY agent(s) at once ($FM_FLEET_CAPACITY_FILE) and $FM_FLEET_CAPACITY_OCCUPANTS are running ($FM_FLEET_CAPACITY_OCCUPANT_IDS); task $ID was not launched and its backlog item stays queued - dispatch it again once one of them is cleaned up or stops" >&2
       exit "$FM_PROJECT_CAPACITY_DEFER_EXIT"
     fi

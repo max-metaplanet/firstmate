@@ -924,7 +924,11 @@ for meta in "$STATE"/*.meta; do
 
   window=$(fm_meta_get "$meta" window)
   target=$(fm_backend_target_of_meta "$meta")
-  if [ -n "$window" ]; then
+  # shellcheck source=bin/fm-worker-park-lib.sh
+  . "$SCRIPT_DIR/fm-worker-park-lib.sh"
+  if fm_worker_park_load "$meta"; then
+    printf 'endpoint: parked/waiting (%s; %s)\n' "$FM_WORKER_PARK_PHASE" "$FM_WORKER_PARK_REASON"
+  elif [ -n "$window" ]; then
     backend=$(fm_backend_of_meta "$meta")
     endpoint_rc=0
     fm_session_start_endpoint_read "$backend" "${target:-$window}" "fm-$id" || endpoint_rc=$?
