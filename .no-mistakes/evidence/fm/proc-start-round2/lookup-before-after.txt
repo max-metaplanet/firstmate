@@ -1,0 +1,18 @@
+== base
+fm:w01 -> task01.metarc=0
+fm:w05 -> aa-dup.metarc=0
+fm:w18 -> task18.metarc=0
+fm:old-03 -> rc=1
+lab:pane-7 -> zz-herdr.metarc=0
+fm:missing -> rc=1
+<empty> -> rc=1
+distinct_bash_pids=1
+== head
+fm:w01 -> task01.metarc=0
+fm:w05 -> aa-dup.metarc=0
+fm:w18 -> task18.metarc=0
+fm:old-03 -> rc=1
+lab:pane-7 -> zz-herdr.metarc=0
+fm:missing -> rc=1
+<empty> -> rc=1
+distinct_bash_pids=1

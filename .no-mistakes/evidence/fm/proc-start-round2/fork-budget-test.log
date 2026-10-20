@@ -1,0 +1,13 @@
+ok - hash_pane costs exactly one program per call, no pipeline subshells
+ok - hash_pane matches the pipeline-based hash it replaced byte for byte
+ok - hash_pane never places pane content on the hash program's argv
+busy_turn_over_age at 1 windows: stat_mtime calls=0
+busy_turn_over_age at 5 windows: stat_mtime calls=0
+busy_turn_over_age at 20 windows: stat_mtime calls=0
+ok - busy_turn_over_age costs one shared touch per poll and zero further stat_mtime calls per window
+ok - busy_turn_over_age still reports a genuinely over-age turn marker
+ok - busy_turn_over_age treats a missing progress marker as over age
+ok lookup semantics and fork budget
+ok lookup semantics and fork budget
+ok - window lookup keeps first-match, last-value, fresh-read semantics without per-candidate shell children
+exit=0 secs=6

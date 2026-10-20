@@ -1,0 +1,5 @@
+Child bash PIDs (excluding caller) inside one fm_backend_meta_for_window call; 20 metas in dir
+base target=fm:w18 children=38
+head target=fm:w18 children=0
+base target=fm:missing children=40
+head target=fm:missing children=0
