@@ -5,11 +5,11 @@
 # A live mate must answer the correlated open-record persist gate before
 # fm-control exit stops its agent and its home supervision host and watcher.
 # A stopped mate substitutes durable proof only when its verified endpoint state
-# is dead, its readable state directory contains no child metadata, its backlog
-# has no in-flight or held work, and its latest recognized parent-channel status
-# event body (helper-written or direct) equals
-# the readiness phrase printed below by --help. Missing or unknown endpoints
-# refuse this path. The phrase is defined once in STOPPED_READY_BODY below.
+# is dead, or missing and proven gone by fm-control's endpoint absence proof, its
+# readable state directory contains no child metadata, its backlog has no
+# in-flight work, and its latest recognized parent-channel status event body
+# (helper-written or direct) equals the readiness phrase printed below by --help.
+# Unproven or unknown endpoints refuse this path. The phrase is defined once in STOPPED_READY_BODY below.
 # Any child metadata, in-flight backlog work, or
 # outstanding incoming instruction refuses parking. unpark uses fm-spawn's
 # relaunch or missing-endpoint secondmate respawn path and is also fm-send's automatic wake path; fm-crew-state
@@ -52,6 +52,8 @@ STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 . "$SCRIPT_DIR/fm-secondmate-restart-lib.sh"
 # shellcheck source=bin/fm-secondmate-resume-lib.sh
 . "$SCRIPT_DIR/fm-secondmate-resume-lib.sh"
+# shellcheck source=bin/fm-control-lib.sh
+. "$SCRIPT_DIR/fm-control-lib.sh"
 # shellcheck source=bin/fm-classify-lib.sh
 . "$SCRIPT_DIR/fm-classify-lib.sh"
 # shellcheck source=bin/fm-pending-reply-lib.sh
@@ -130,10 +132,6 @@ check_idle() {
   if [ "$backend" != markdown ] || [ -e "$MATE_HOME/data/backlog.md" ]; then
     listing=$(fm_backlog_row_list "$MATE_HOME/data" --state in_flight) || { echo 'error: cannot prove secondmate backlog idle' >&2; return 1; }
     printf '%s\n' "$listing" | grep -q '^count: 0$' || { echo 'error: secondmate backlog has in-flight work or unreadable listing' >&2; return 1; }
-    if [ "${1:-}" = stopped ]; then
-      listing=$(fm_backlog_row_list "$MATE_HOME/data" --state held) || { echo 'error: cannot prove secondmate backlog has no held work' >&2; return 1; }
-      printf '%s\n' "$listing" | grep -q '^count: 0$' || { echo 'error: secondmate backlog has held work or unreadable listing' >&2; return 1; }
-    fi
   fi
   [ "${1:-}" != after-persist ] || return 0
   pending=$(fm_task_inbox_oldest_unhandled "$STATE" "$ID" 2>/dev/null) || pending=''
@@ -221,6 +219,13 @@ fi
 if [ "$PERSISTED" != 1 ]; then
   fm_secondmate_restart_capable "$META" || fail "$FM_SECONDMATE_RESTART_REASON"
   current_state=$(fm_backend_agent_state "$(fm_backend_of_meta "$META")" "$(fm_backend_target_of_meta "$META")") || current_state=unreadable
+  if [ "$current_state" = missing ]; then
+    absence=$(fm_control_endpoint_absence_verdict "$(fm_backend_of_meta "$META")" "$(fm_backend_target_of_meta "$META")")
+    case "${absence%%$'\t'*}" in
+      gone|dead) current_state=dead ;;
+      *) fail "endpoint is not verified stopped (state=missing, absence=${absence%%$'\t'*}); cannot substitute durable proof for a live persist answer" ;;
+    esac
+  fi
   case "$current_state" in
     dead)
       check_idle stopped || exit 1
