@@ -3,7 +3,7 @@
 #
 # The whole-cycle sampler in fm-supervision-fork-budget.test.sh only ever runs
 # against an idle home with no recorded windows, so it cannot see a cost that
-# scales with window count. Two such costs live in the busy-pane path every
+# scales with window count. These costs live in the per-window path every
 # live fleet actually exercises:
 #   - hash_pane used to pipe into a second program (`| md5 -q` / `| md5sum |
 #     cut`), forking two pipeline subshells plus the hash program itself on
@@ -11,7 +11,9 @@
 #   - busy_turn_over_age used to resolve each window's progress-marker mtime
 #     through stat_mtime, forking a `stat` on every BUSY window on every poll -
 #     the single most common case in a live fleet.
-# This measures both directly, at increasing window/task counts, and holds
+#   - metadata lookup walks the whole task list for each window, so field
+#     command substitutions create a quadratic number of shell children.
+# This measures them directly, at increasing window/task counts, and holds
 # each to a fixed per-call or per-poll program budget instead of one that
 # grows with the count.
 set -u
@@ -147,3 +149,51 @@ now=$(date +%s)
 busy_turn_threshold_refresh "$now"
 busy_turn_over_age missing-task || fail "busy_turn_over_age did not treat a missing progress marker as over age"
 pass "busy_turn_over_age treats a missing progress marker as over age"
+
+# Lookup walks the recorded metadata on each call, including a full miss.
+# Counting child PIDs catches per-candidate shells that program shims miss.
+lookup_script="$TMP_ROOT/lookup.sh"
+cat > "$lookup_script" <<'SH'
+#!/usr/bin/env bash
+set -eu
+root=$1
+fixture=$2
+mkdir -p "$fixture"
+. "$root/bin/fm-backend.sh"
+for backend in tmux herdr zellij orca cmux; do
+  printf 'backend=%s\nwindow=old\nwindow=%s:last\nterminal=discarded\nterminal=%s:terminal' "$backend" "$backend" "$backend" > "$fixture/$backend.meta"
+  for field in last terminal; do
+    got=$(fm_backend_meta_for_window "$backend:$field" "$fixture")
+    [ "$got" = "$fixture/$backend.meta" ] || exit 1
+  done
+  if fm_backend_meta_for_window old "$fixture" > "$fixture/output"; then exit 1; fi
+  [ ! -s "$fixture/output" ]
+done
+printf 'window=shared\n' > "$fixture/00-first.meta"
+printf 'terminal=shared\n' > "$fixture/01-second.meta"
+[ "$(fm_backend_meta_for_window shared "$fixture")" = "$fixture/00-first.meta" ]
+printf 'window=replaced\n' > "$fixture/00-first.meta"
+[ "$(fm_backend_meta_for_window shared "$fixture")" = "$fixture/01-second.meta" ]
+rm "$fixture/01-second.meta"
+if fm_backend_meta_for_window shared "$fixture" > "$fixture/output"; then exit 1; fi
+[ ! -s "$fixture/output" ]
+if fm_backend_meta_for_window '' "$fixture" > "$fixture/output"; then exit 1; fi
+[ ! -s "$fixture/output" ]
+# A miss visits every candidate, so it exposes per-field child launches.
+if [ "${BASH_VERSINFO[0]}" -ge 4 ]; then
+  exec 9> "$fixture/forks"
+  last_pid=$BASHPID
+  set -T
+  trap 'if [ "$last_pid" != "$BASHPID" ]; then last_pid=$BASHPID; printf "%s\n" "$BASHPID" >&9; fi' DEBUG
+  if fm_backend_meta_for_window missing "$fixture" > "$fixture/output"; then exit 1; fi
+  trap - DEBUG
+  exec 9>&-
+  [ ! -s "$fixture/forks" ] || { printf 'unexpected lookup shell children\n'; exit 1; }
+fi
+printf 'ok lookup semantics and fork budget\n'
+SH
+for interpreter in "$BASH" /bin/bash; do
+  "$interpreter" "$lookup_script" "$ROOT" "$TMP_ROOT/lookup-${interpreter##*/}" \
+    || fail "metadata lookup behavior or child budget failed under $interpreter"
+done
+pass "window lookup keeps first-match, last-value, fresh-read semantics without per-candidate shell children"
