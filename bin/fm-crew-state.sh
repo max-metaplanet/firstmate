@@ -232,6 +232,8 @@ STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 . "$SCRIPT_DIR/fm-backend.sh"
 # shellcheck source=bin/fm-classify-lib.sh
 . "$SCRIPT_DIR/fm-classify-lib.sh"
+# shellcheck source=bin/fm-crew-state-lib.sh
+. "$SCRIPT_DIR/fm-crew-state-lib.sh"
 # shellcheck source=bin/fm-busy-lib.sh
 . "$SCRIPT_DIR/fm-busy-lib.sh"
 # The vendor quota wall: this reader mints the state, that library owns which
@@ -341,23 +343,6 @@ emit_ship_status_done() {  # [extra-detail]
   emit blocked status-log "$reason"
 }
 
-map_log_state() {  # <line>
-  local verb
-  if status_is_paused "$1"; then
-    echo paused
-    return
-  fi
-  status_line_verb "$1" verb
-  case "$verb" in
-    working)        echo working ;;
-    needs-decision) echo parked ;;
-    blocked)        echo blocked ;;
-    done)           echo "done" ;;
-    failed)         echo failed ;;
-    *)              echo unknown ;;
-  esac
-}
-
 LOG_LINE=$(status_current_line "$LOG" "$KIND")
 status_line_verb "$LOG_LINE" LOG_VERB
 
@@ -381,7 +366,7 @@ if [ -n "$REMOTE_HOST" ]; then
   case "$REMOTE_STATE" in
     alive)
       if [ -n "$LOG_VERB" ]; then
-        LOG_STATE=$(map_log_state "$LOG_LINE")
+        LOG_STATE=$(fm_crew_log_state "$LOG_LINE")
         if [ "$LOG_STATE" != unknown ]; then
           emit "$LOG_STATE" status-log "$(status_line_note "$LOG_LINE")${SEP}remote endpoint alive on $REMOTE_HOST"
         fi
@@ -1355,7 +1340,7 @@ if [ "$HAVE_RUN" = 1 ]; then
       # its gate or its blocker first hand; a record the dead instrument left
       # behind is the weaker witness, so the log answers and the unverified
       # record is reported as the reason rather than replacing it.
-      LOG_TIP_STATE=$(map_log_state "$LOG_LINE")
+      LOG_TIP_STATE=$(fm_crew_log_state "$LOG_LINE")
       if [ -n "$RUN_DEAD_DAEMON" ]; then
         emit "$LOG_TIP_STATE" status-log "$(status_line_note "$LOG_LINE")${SEP}${RUN_DEAD_DAEMON}${SELECTED_RUN_ID:+${SEP}run: $SELECTED_RUN_ID}"
       fi
@@ -1389,7 +1374,7 @@ if [ "$HAVE_RUN" = 1 ]; then
 fi
 
 # --- idle-age short-circuit: skip the live probe for a long-parked crew ----
-# A crew already declared paused or parked (map_log_state's verdict on the
+# A crew already declared paused or parked (fm_crew_log_state's verdict on the
 # already-computed LOG_LINE - no new read), whose status log AND metadata have
 # BOTH sat unchanged for FM_CREW_STATE_IDLE_SHORT_CIRCUIT_SECONDS (default
 # 86400, 24h), skips every live probe below and reports that last known state
@@ -1405,7 +1390,7 @@ case "$FM_CREW_STATE_IDLE_SHORT_CIRCUIT_SECONDS" in
   ''|*[!0-9]*) FM_CREW_STATE_IDLE_SHORT_CIRCUIT_SECONDS=86400 ;;
 esac
 if [ -n "$LOG_VERB" ]; then
-  IDLE_LOG_STATE=$(map_log_state "$LOG_LINE")
+  IDLE_LOG_STATE=$(fm_crew_log_state "$LOG_LINE")
   case "$IDLE_LOG_STATE" in
     paused|parked)
       IDLE_LOG_MTIME=$(_fm_status_file_mtime "$LOG") || IDLE_LOG_MTIME=
@@ -1527,14 +1512,14 @@ fi
 # resolved: must never become the current state or leak its resolution prose as the
 # detail. Skipping it lets a just-resolved idle crew (typically a secondmate, which
 # has no busy check above) fall through to the idle default instead of rendering
-# `unknown` with the resolution note as `doing`. map_log_state is the single owner of
+# `unknown` with the resolution note as `doing`. fm_crew_log_state is the single owner of
 # the verb->state mapping (including the configurable paused verb), so reusing its
 # `unknown` verdict as the "not a state" test needs no second verb list here.
 if [ -n "$LOG_VERB" ]; then
   if [ "$LOG_VERB" = "done" ]; then
     emit_ship_status_done
   fi
-  LOG_STATE=$(map_log_state "$LOG_LINE")
+  LOG_STATE=$(fm_crew_log_state "$LOG_LINE")
   if [ "$LOG_STATE" != unknown ]; then
     emit "$LOG_STATE" status-log "$(status_line_note "$LOG_LINE")"
   fi
