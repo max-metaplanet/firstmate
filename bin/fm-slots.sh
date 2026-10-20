@@ -11,9 +11,9 @@
 # State projects local declarations through fm-crew-state-lib.sh's shared
 # mapping, with trusted, generation-bound busy records taking precedence.
 # Working and paused workers remain working even when their harness is idle
-# during validation. Idle-parked requires an idle hook with no declaration
-# beyond done; blocked and failed wait on firstmate action, so they stay
-# unknown. A matching green completion plus recorded pr= marks a declared
+# during validation. Idle-parked requires an idle hook and a status line that
+# declares nothing beyond done; a missing status line stays unknown, and
+# blocked and failed wait on firstmate action, so they stay unknown too. A matching green completion plus recorded pr= marks a declared
 # merge wait. This is recorded state, not fm-crew-state.sh's live pipeline read.
 # No pane capture, pipeline, forge, or LLM calls are made for display state.
 # The queue uses fm-tasks-axi.sh's derived blocked/held fields and admission's
