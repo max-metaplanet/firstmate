@@ -1138,7 +1138,7 @@ test_real_skipped_builds_and_unreadable_inventory() {
   real_candidate "$home" 2245
   out=$(poll "$home" FM_JEV_PROD_BATCH_SECS=0)
   assert_equals "" "$out" "captured unaffected builds need no production browser verdict"
-  assert_grep 'outcome.*not-applicable.*build-skipped' "$home/state/.jev-prod-monitor" "the skipped build is recorded as not applicable, never as a pass"
+  assert_grep $'\tnot-applicable\tbuild-skipped' "$home/state/.jev-prod-monitor" "the skipped build is recorded as not applicable, never as a pass"
   assert_no_grep '/deployments/' "$home/fx/gh-argv.log" "generic production and protected-secrets environments never count"
   touch "$home/fx/fail-deployments"
   out=$(poll "$home" FM_JEV_PROD_BATCH_SECS=0)
@@ -1165,7 +1165,7 @@ test_unaffected_builds_and_missing_builds() {
       out=$(poll "$home" FM_JEV_PROD_BATCH_SECS=0)
       if [ "$state" = success ] && [ "$description" != 'Deployment has completed' ]; then
         assert_equals "" "$out" "a confirmed unaffected app has no verdict to chase"
-        assert_grep 'outcome.*not-applicable.*build-skipped' "$home/state/.jev-prod-monitor" "the reason survives in the public state record"
+        assert_grep $'\tnot-applicable\tbuild-skipped' "$home/state/.jev-prod-monitor" "the reason survives in the public state record"
       else
         assert_contains "$out" 'couldnt-check' "a missing build remains an actual gap"
         assert_contains "$out" 'production=not-deployed ' "unconfirmed skips and generic successes do not establish an unaffected app"
@@ -1178,7 +1178,7 @@ test_unaffected_builds_and_missing_builds() {
 test_portal_persona_reads_scoped_deployment_inventory() {
   local home out persona
   for persona in portal portal:portal-foreign portal:portal-previous portal:portal-unverified; do
-    home=$(make_home "scoped-$persona")
+    home=$(make_home "scoped-${persona//:/-}")
     configure "$home"
     fake_gh "$home" >/dev/null
     write_pulls "$home" 7200
@@ -1474,12 +1474,13 @@ test_real_older_nonpassing_comments() {
     fake_gh "$home" >/dev/null
     real_candidate "$home" "$n"
     out=$(poll "$home" FM_JEV_PROD_BATCH_SECS=0)
-    assert_contains "$out" 'jev-prod:' "captured old nonpassing outcomes remain visible"
     if [ "$n" = 2230 ]; then
+      assert_contains "$out" 'jev-prod:' "captured old production failures remain visible"
       assert_contains "$out" 'production=failed ' "the historical portal failure stays nonpassing"
       assert_contains "$out" 'production=unproven ' "the historical admin-center inability stays nonpassing"
     else
-      assert_contains "$out" 'preview=skipped ' "the older pre-merge skip is still recognizable"
+      assert_equals "" "$out" "an older pre-merge skip needs no production verdict when its build was unaffected"
+      assert_grep $'\tnot-applicable\tbuild-skipped' "$home/state/.jev-prod-monitor" "the unaffected build reason survives the skipped preview"
     fi
   done
   pass "fm-jev-prod-check: real older skipped and failed comments remain nonpassing"
