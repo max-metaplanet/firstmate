@@ -2015,7 +2015,7 @@ SH
 }
 
 test_run_removes_read_only_hooks_without_changing_exit_status() {
-  local tmp repo scratch probe suite_rc expected_rc rc hooks
+  local tmp repo scratch probe suite_rc expected_rc rc hooks outside_mode
   tmp=$(fm_test_tmproot fm-test-run-readonly)
   repo="$tmp/repo"
   scratch="$tmp/scratch"
@@ -2024,6 +2024,7 @@ test_run_removes_read_only_hooks_without_changing_exit_status() {
   mkdir -p "$scratch" "$tmp/outside.git-hooks"
   printf 'outside\n' >"$tmp/outside.git-hooks/pre-commit"
   chmod -R a-w "$tmp/outside.git-hooks"
+  outside_mode=$(stat -c %a "$tmp/outside.git-hooks" 2>/dev/null || stat -f %Lp "$tmp/outside.git-hooks")
   cat >"$repo/$probe" <<'SH'
 #!/usr/bin/env bash
 hooks="$TMPDIR/remote-home/state/parent-route/ios.git-hooks"
@@ -2053,7 +2054,8 @@ SH
     [ -z "$(find "$scratch" -mindepth 1)" ] || fail "runner left its scratch tree behind"
     [ ! -s "$tmp/err" ] || fail "runner cleanup emitted errors: $(cat "$tmp/err")"
     [ -f "$tmp/outside.git-hooks/pre-commit" ] || fail "cleanup removed an unrelated hook"
-    [ ! -w "$tmp/outside.git-hooks" ] || fail "cleanup changed permissions outside its scratch"
+    [ "$(stat -c %a "$tmp/outside.git-hooks" 2>/dev/null || stat -f %Lp "$tmp/outside.git-hooks")" = "$outside_mode" ] \
+      || fail "cleanup changed permissions outside its scratch"
   done
   chmod -R u+w "$tmp/outside.git-hooks"
   rm -rf "$tmp"
