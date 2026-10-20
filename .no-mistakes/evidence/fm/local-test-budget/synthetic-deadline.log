@@ -1,0 +1,4 @@
+base commands.test, modeled budget 1000ms, runner sleeps 2s -> exit 124 in 1.41s
+base commands.test, modeled budget 1000ms, runner sleeps 5s -> exit 124 in 1.43s
+head commands.test, modeled budget 1000ms, runner sleeps 2s -> exit 0 in 2.35s
+head commands.test, modeled budget 1000ms, runner sleeps 5s -> exit 124 in 3.37s
