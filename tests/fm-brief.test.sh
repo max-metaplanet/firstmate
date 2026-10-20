@@ -1691,6 +1691,8 @@ test_ticket_renders_the_convention_and_branch() {
       "$mode: the Setup step must create the ticketed branch"
     assert_grep 'read ticket ENG-630 in full' "$brief" \
       "$mode: a ticketed brief must send the worker to the ticket before working"
+    assert_grep "If ticket ENG-630 has a different scope from the task in this brief, or explicitly says it must stay open or must not be implemented, stop before implementing or making any implementation commit and append a blocked status line using this brief's status protocol, naming ENG-630 and the mismatch, because merging the pull request auto-closes the linked ticket." "$brief" \
+      "$mode: a ticket mismatch must block implementation through the brief's status protocol"
     assert_grep 'its subtasks, its linked tasks, and its attachments' "$brief" \
       "$mode: the brief must name every part of the ticket to read"
     assert_grep 'automated status and risk-score comments as the weakest signal' "$brief" \
@@ -1720,6 +1722,8 @@ test_no_ticket_marker_still_follows_the_convention() {
     "the no-ticket marker must appear in the commit-subject format"
   assert_no_grep 'in full: its description, every comment' "$brief" \
     "the no-ticket marker names work with no ticket to read"
+  assert_no_grep 'has a different scope from the task in this brief' "$brief" \
+    "the no-ticket marker must not carry the ticket mismatch instruction"
   pass "fm-brief.sh: the explicit no-ticket marker follows the convention"
 }
 
@@ -1745,6 +1749,8 @@ test_unticketed_brief_carries_no_convention() {
       "$mode: an unticketed brief must carry no convention text"
     assert_no_grep 'in full: its description, every comment' "$brief" \
       "$mode: an unticketed brief has no ticket to read"
+    assert_no_grep 'has a different scope from the task in this brief' "$brief" \
+      "$mode: an unticketed brief must not carry the ticket mismatch instruction"
   done
   pass "fm-brief.sh: omitting --ticket leaves the brief exactly as it was"
 }

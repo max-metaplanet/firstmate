@@ -362,6 +362,7 @@ fm_ticket_resolve() {  # <ticket> <commit-type> <task-id> <branch-prefix> <branc
   local read_ticket=''
   [ "$ticket" = "$FM_TICKET_NONE" ] || read_ticket="
 Before you start the work, read ticket $ticket in full: its description, every comment, its subtasks, its linked tasks, and its attachments.
+If ticket $ticket has a different scope from the task in this brief, or explicitly says it must stay open or must not be implemented, stop before implementing or making any implementation commit and append a blocked status line using this brief's status protocol, naming $ticket and the mismatch, because merging the pull request auto-closes the linked ticket.
 Weigh the comments people wrote first; treat automated status and risk-score comments as the weakest signal and read only the latest of each.
 Any ClickUp read path will do - where this home installs the private \`cu-*\` helper, \`cu-task $ticket\` is one example - and the ticket's own page carries whatever a command does not print.
 If you cannot read it, report that in your first status line rather than proceeding silently on this brief alone."
