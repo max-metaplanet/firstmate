@@ -192,6 +192,12 @@ if [ -r "$ROOT/tests/scratch-root.sh" ]; then
   fm_test_scratch_root_init "$ROOT" || exit 1
 fi
 
+remove_scratch_dir() {
+  local tmp=$1
+  chmod -R u+w "$tmp" 2>/dev/null || true
+  rm -rf "$tmp"
+}
+
 MODE=
 LIST_ONLY=0
 LIST_SCHEDULED=0
@@ -990,7 +996,7 @@ portable_serial_unhinted() {
   portable_serial_weight_hints | awk 'NF { print $1 }' | LC_ALL=C sort -u >"$tmp/hinted"
   list_portable_serial | LC_ALL=C sort -u >"$tmp/serial"
   comm -23 "$tmp/serial" "$tmp/hinted"
-  rm -rf "$tmp"
+  remove_scratch_dir "$tmp"
 }
 
 # Sum serial weights for paths on stdin, including the unmeasured default.
@@ -1232,7 +1238,7 @@ run_coverage_guard() {
   if [ -s "$tmp/shard_dups" ]; then
     log "coverage guard: portable parallel shards share scripts:"
     cat "$tmp/shard_dups" >&2
-    rm -rf "$tmp"
+    remove_scratch_dir "$tmp"
     return 1
   fi
   cat "$tmp/s1" "$tmp/s2" | LC_ALL=C sort -u >"$tmp/shards_union"
@@ -1242,7 +1248,7 @@ run_coverage_guard() {
     log "coverage guard: portable shards must equal the proven-isolated set"
     [ -z "$missing" ] || { log "missing from shards:"; printf '%s\n' "$missing" >&2; }
     [ -z "$extra" ] || { log "extra beyond proven:"; printf '%s\n' "$extra" >&2; }
-    rm -rf "$tmp"
+    remove_scratch_dir "$tmp"
     return 1
   fi
 
@@ -1260,7 +1266,7 @@ run_coverage_guard() {
     if [ "${#SCRIPTS[@]}" -eq 0 ]; then
       log "coverage guard: portable serial shard $shard of $PORTABLE_SERIAL_SHARDS is empty"
       SCRIPTS=("${saved_scripts[@]+"${saved_scripts[@]}"}")
-      rm -rf "$tmp"
+      remove_scratch_dir "$tmp"
       return 1
     fi
     printf '%s\n' "${SCRIPTS[@]+"${SCRIPTS[@]}"}" >>"$tmp/serial_shards_raw"
@@ -1281,7 +1287,7 @@ run_coverage_guard() {
   if [ -s "$tmp/serial_shard_dups" ]; then
     log "coverage guard: portable serial shards share scripts:"
     cat "$tmp/serial_shard_dups" >&2
-    rm -rf "$tmp"
+    remove_scratch_dir "$tmp"
     return 1
   fi
   LC_ALL=C sort -u "$tmp/serial_shards_raw" >"$tmp/serial_shards"
@@ -1291,7 +1297,7 @@ run_coverage_guard() {
     log "coverage guard: portable serial shards must equal the portable serial lane"
     [ -z "$missing" ] || { log "missing from serial shards:"; printf '%s\n' "$missing" >&2; }
     [ -z "$extra" ] || { log "extra beyond serial lane:"; printf '%s\n' "$extra" >&2; }
-    rm -rf "$tmp"
+    remove_scratch_dir "$tmp"
     return 1
   fi
 
@@ -1302,7 +1308,7 @@ run_coverage_guard() {
     if [ -s "$tmp/overlap" ]; then
       log "coverage guard: overlap between $a and $b:"
       cat "$tmp/overlap" >&2
-      rm -rf "$tmp"
+      remove_scratch_dir "$tmp"
       return 1
     fi
   done
@@ -1312,7 +1318,7 @@ run_coverage_guard() {
   if [ -s "$tmp/union_dups" ]; then
     log "coverage guard: duplicate scripts across lanes:"
     cat "$tmp/union_dups" >&2
-    rm -rf "$tmp"
+    remove_scratch_dir "$tmp"
     return 1
   fi
   LC_ALL=C sort -u "$tmp/union_raw" >"$tmp/union"
@@ -1322,7 +1328,7 @@ run_coverage_guard() {
     log "coverage guard: union of portable shards + portable serial + Herdr must equal tests/*.test.sh"
     [ -z "$missing" ] || { log "missing from union:"; printf '%s\n' "$missing" >&2; }
     [ -z "$extra" ] || { log "extra beyond inventory:"; printf '%s\n' "$extra" >&2; }
-    rm -rf "$tmp"
+    remove_scratch_dir "$tmp"
     return 1
   fi
 
@@ -1339,14 +1345,14 @@ run_coverage_guard() {
     log "coverage guard: $unhinted of $serial_total portable serial scripts have no measured duration hint (max ${PORTABLE_SERIAL_MAX_UNHINTED_PERCENT}%)"
     log "refresh the hints from a green run's timing artifacts: docs/fm-test-portable-shards.md"
     cat "$tmp/unhinted" >&2
-    rm -rf "$tmp"
+    remove_scratch_dir "$tmp"
     return 1
   fi
 
   if [ "$serial_max_ms" -gt "$PORTABLE_SERIAL_MAX_WEIGHT_MS" ]; then
     log "coverage guard: largest portable serial shard packs ${serial_max_ms}ms above the ${PORTABLE_SERIAL_MAX_WEIGHT_MS}ms target"
     log "refresh CI hints and rebalance or add shards; a single script over budget needs a runtime fix, not a timeout raise: docs/fm-test-portable-shards.md"
-    rm -rf "$tmp"
+    remove_scratch_dir "$tmp"
     return 1
   fi
 
@@ -1355,7 +1361,7 @@ run_coverage_guard() {
     if ! cmp -s "$tmp/proven" "$tmp/proof_list"; then
       log "coverage guard: embedded proven-isolated set diverges from bin/fm-test-isolation-proof.sh --list"
       comm -3 "$tmp/proven" "$tmp/proof_list" >&2 || true
-      rm -rf "$tmp"
+      remove_scratch_dir "$tmp"
       return 1
     fi
   fi
@@ -1381,7 +1387,7 @@ run_coverage_guard() {
     "$serial_max_ms" \
     "$PORTABLE_SERIAL_MAX_WEIGHT_MS" \
     "$(wc -l <"$tmp/herdr" | tr -d ' ')"
-  rm -rf "$tmp"
+  remove_scratch_dir "$tmp"
   return 0
 }
 
@@ -2710,7 +2716,7 @@ declare -a WORKER_SCRIPTS=()
 # Invoked indirectly by the EXIT trap below.
 # shellcheck disable=SC2329
 cleanup_run() {
-  rm -rf "$RUN_TMP"
+  remove_scratch_dir "$RUN_TMP"
 }
 
 trap cleanup_run EXIT
