@@ -1,0 +1,33 @@
+== no-mistakes ticketed exit=0
+101-Before you start the work, read ticket ENG-1817 in full: its description, every comment, its subtasks, its linked tasks, and its attachments.
+102:If ticket ENG-1817 has a different scope from the task in this brief, or explicitly says it must stay open or must not be implemented, stop before implementing or making any implementation commit and append a blocked status line using this brief's status protocol, naming ENG-1817 and the mismatch, because merging the pull request auto-closes the linked ticket.
+103-Weigh the comments people wrote first; treat automated status and risk-score comments as the weakest signal and read only the latest of each.
+20:If the top-level path is the primary checkout or not the worktree you were launched in, STOP - do not branch or commit here - append `blocked [at=<epoch>]: launched in primary checkout, not an isolated worktree` to the status file and stop.
+28:   Outside the worktree, write only that task material and the status and steering-inbox records authorized below.
+31:4. Report status by appending one line:
+32:   `echo "{state} [at=<epoch>]: {one short line}" >> '/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-brief-ev.40naxN/state/ev-no-mistakes.status' && { [ ! -e '/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-brief-ev.40naxN/config/fleet-ledger' ] || '~/.no-mistakes/worktrees/61c6dd39b831/01M5CET554FKANGZJR7QCACMVB/bin/fm-fleet-ledger.sh' appended '/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-brief-ev.40naxN/config' '/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-brief-ev.40naxN/state/ev-no-mistakes.status' >/dev/null 2>&1 || true; }`
+39:   Whenever you mention a PR anywhere - a status line, your terminal, a summary - write its full
+== direct-PR ticketed exit=0
+98-Before you start the work, read ticket ENG-1817 in full: its description, every comment, its subtasks, its linked tasks, and its attachments.
+99:If ticket ENG-1817 has a different scope from the task in this brief, or explicitly says it must stay open or must not be implemented, stop before implementing or making any implementation commit and append a blocked status line using this brief's status protocol, naming ENG-1817 and the mismatch, because merging the pull request auto-closes the linked ticket.
+100-Weigh the comments people wrote first; treat automated status and risk-score comments as the weakest signal and read only the latest of each.
+20:If the top-level path is the primary checkout or not the worktree you were launched in, STOP - do not branch or commit here - append `blocked [at=<epoch>]: launched in primary checkout, not an isolated worktree` to the status file and stop.
+27:   Outside the worktree, write only that task material and the status and steering-inbox records authorized below.
+30:4. Report status by appending one line:
+31:   `echo "{state} [at=<epoch>]: {one short line}" >> '/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-brief-ev.40naxN/state/ev-direct-pr.status' && { [ ! -e '/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-brief-ev.40naxN/config/fleet-ledger' ] || '~/.no-mistakes/worktrees/61c6dd39b831/01M5CET554FKANGZJR7QCACMVB/bin/fm-fleet-ledger.sh' appended '/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-brief-ev.40naxN/config' '/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-brief-ev.40naxN/state/ev-direct-pr.status' >/dev/null 2>&1 || true; }`
+38:   Whenever you mention a PR anywhere - a status line, your terminal, a summary - write its full
+== local-only ticketed exit=0
+98-Before you start the work, read ticket ENG-1817 in full: its description, every comment, its subtasks, its linked tasks, and its attachments.
+99:If ticket ENG-1817 has a different scope from the task in this brief, or explicitly says it must stay open or must not be implemented, stop before implementing or making any implementation commit and append a blocked status line using this brief's status protocol, naming ENG-1817 and the mismatch, because merging the pull request auto-closes the linked ticket.
+100-Weigh the comments people wrote first; treat automated status and risk-score comments as the weakest signal and read only the latest of each.
+20:If the top-level path is the primary checkout or not the worktree you were launched in, STOP - do not branch or commit here - append `blocked [at=<epoch>]: launched in primary checkout, not an isolated worktree` to the status file and stop.
+27:   Outside the worktree, write only that task material and the status and steering-inbox records authorized below.
+30:4. Report status by appending one line:
+31:   `echo "{state} [at=<epoch>]: {one short line}" >> '/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-brief-ev.40naxN/state/ev-local-only.status' && { [ ! -e '/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-brief-ev.40naxN/config/fleet-ledger' ] || '~/.no-mistakes/worktrees/61c6dd39b831/01M5CET554FKANGZJR7QCACMVB/bin/fm-fleet-ledger.sh' appended '/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-brief-ev.40naxN/config' '/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-brief-ev.40naxN/state/ev-local-only.status' >/dev/null 2>&1 || true; }`
+38:   Whenever you mention a PR anywhere - a status line, your terminal, a summary - write its full
+== no-ticket exit=0
+0
+== absent exit=0
+0
+== scout exit=0
+0
