@@ -53,6 +53,11 @@ printf 'done: PR %s\n' "$URL" > "$FM_HOME/state/task.status"
 bash "$PARK" auto task >/dev/null
 assert_grep 'phase=parked' "$FM_HOME/state/task.park" 'registered direct-PR completion parks'
 fixture
+bash "$PARK" hint task 'waiting on upstream maintainer'
+bash "$PARK" request task 'upstream feedback needs work'
+bash "$PARK" auto task
+assert_grep 'phase=active' "$FM_HOME/state/task.park" 'feedback cancels an unconsumed parking hint'
+fixture
 printf 'yolo=on\n' >> "$FM_HOME/state/task.meta"
 bash "$PARK" auto task
 assert_absent "$FM_HOME/state/task.park" 'yolo does not auto park a green PR'

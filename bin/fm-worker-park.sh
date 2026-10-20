@@ -161,7 +161,12 @@ auto() {
 }
 
 queue_wake() {
-  fm_worker_park_load "$META" || return 0
+  if ! fm_worker_park_load "$META"; then
+    if [ "$(fm_meta_get "$RECORD" phase)" = hint ]; then
+      write_record active "$1" 0 0 '' "$(status_current_line "$STATE/$ID.status" '')"
+    fi
+    return 0
+  fi
   local at=$FM_WORKER_PARK_QUEUED_AT error
   error=$(fm_meta_get "$RECORD" resume_error)
   [ "$VERB" != wake ] || error=0
@@ -197,7 +202,9 @@ one() {
   esac
   local lock
   lock="$STATE/.worker-park-$ID.lock"
-  fm_lock_try_acquire "$lock" || return 0
+  if ! fm_lock_try_acquire "$lock"; then
+    case "$VERB" in request|wake) return 75 ;; *) return 0 ;; esac
+  fi
   case "${3:-}" in *$'\n'*|*$'\r'*) fail 'reason must be one line' ;; esac
   case "$VERB" in
     auto) auto ;;
