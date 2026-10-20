@@ -1,0 +1,22 @@
+--- state/rl-pr.meta after relaunch onto claude ---
+window=fmses:fm-rl-pr
+endpoint_task_id=rl-pr
+worktree=~/.no-mistakes/worktrees/61c6dd39b831/.fm-test-scratch/fm-control-relaunch.k58sDZ/pr-poll-24082/wt
+project=~/.no-mistakes/worktrees/61c6dd39b831/.fm-test-scratch/fm-control-relaunch.k58sDZ/pr-poll-24082/proj
+harness=claude
+kind=ship
+mode=no-mistakes
+yolo=off
+branch=fm/rl-pr
+tasktmp=/tmp/fm-rl-pr
+model=default
+effort=default
+busy_gen=g1792511537.74116.26190
+spawn_gen=s1792511538.73189.5126
+pr=https://github.com/example/repo/pull/19
+pr_head=1111111111111111111111111111111111111111
+pr_at=100
+control_relaunch_tx=72459.20261020T155216Z.24869
+traceparent=00-abf0357f03c9d988f4756cf0139269e4-b41c3d2aae240163-01
+watcher PR poll validation: REJECTED (watcher would report: check: rejected unauthenticated state checks)
+not ok - the original PR poll artifacts must survive relaunch onto claude

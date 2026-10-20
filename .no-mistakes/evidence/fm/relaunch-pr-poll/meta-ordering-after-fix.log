@@ -1,0 +1,42 @@
+--- state/rl-pr.meta after relaunch onto claude ---
+traceparent=00-a7a2ee8299984599f1b3736ef673b498-e7240ea7ec4ef5d4-01
+window=fmses:fm-rl-pr
+endpoint_task_id=rl-pr
+worktree=~/.no-mistakes/worktrees/61c6dd39b831/.fm-test-scratch/fm-control-relaunch.MUXpJs/pr-poll-26032/wt
+project=~/.no-mistakes/worktrees/61c6dd39b831/.fm-test-scratch/fm-control-relaunch.MUXpJs/pr-poll-26032/proj
+harness=claude
+kind=ship
+mode=no-mistakes
+yolo=off
+branch=fm/rl-pr
+tasktmp=/tmp/fm-rl-pr
+model=default
+effort=default
+busy_gen=g1792511527.66446.2439
+spawn_gen=s1792511528.64917.4998
+control_relaunch_tx=63899.20261020T155206Z.12433
+pr=https://github.com/example/repo/pull/19
+pr_head=1111111111111111111111111111111111111111
+pr_at=100
+watcher PR poll validation: ACCEPTED
+--- state/rl-pr.meta after relaunch onto codex ---
+traceparent=00-a7a2ee8299984599f1b3736ef673b498-e7240ea7ec4ef5d4-01
+window=fmses:fm-rl-pr
+endpoint_task_id=rl-pr
+worktree=~/.no-mistakes/worktrees/61c6dd39b831/.fm-test-scratch/fm-control-relaunch.MUXpJs/pr-poll-26032/wt
+project=~/.no-mistakes/worktrees/61c6dd39b831/.fm-test-scratch/fm-control-relaunch.MUXpJs/pr-poll-26032/proj
+harness=codex
+kind=ship
+mode=no-mistakes
+yolo=off
+branch=fm/rl-pr
+tasktmp=/tmp/fm-rl-pr
+model=default
+effort=default
+spawn_gen=s1792511532.69496.8946
+control_relaunch_tx=68858.20261020T155211Z.1903
+pr=https://github.com/example/repo/pull/19
+pr_head=1111111111111111111111111111111111111111
+pr_at=100
+watcher PR poll validation: ACCEPTED
+ok - fm-control relaunch: registered PR monitoring survives repeated and switched-harness relaunches

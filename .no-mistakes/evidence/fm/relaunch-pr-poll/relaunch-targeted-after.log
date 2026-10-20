@@ -1,0 +1,7 @@
+ok - fm-control relaunch: registered PR monitoring survives repeated and switched-harness relaunches
+ok - fm-control relaunch: a same-harness relaunch replaces the agent in the same endpoint and worktree
+ok - fm-control relaunch: durable task metadata survives replacement launch publication
+ok - fm-control relaunch: delivery and concurrent task metadata publication serialize
+ok - fm-control relaunch: disabling tracing clears metadata and pane context
+ok - fm-control relaunch: switching harness is one ordinary relaunch, and the old wiring goes with the old agent
+bash tests/zz-filtered-relaunch.test.sh  7.79s user 10.15s system 58% cpu 30.749 total
