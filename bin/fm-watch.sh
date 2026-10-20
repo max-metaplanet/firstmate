@@ -570,11 +570,11 @@ window_fields() {  # <window>
   window_key "$w" FM_WIN_KEY
   meta=$(fm_backend_meta_for_window "$w" "$STATE" 2>/dev/null || true)
   if [ -n "$meta" ]; then
-    FM_WIN_KIND=$(fm_meta_get "$meta" kind)
+    fm_meta_get_to FM_WIN_KIND "$meta" kind
     [ -n "$FM_WIN_KIND" ] || FM_WIN_KIND=ship
-    FM_WIN_BACKEND=$(fm_meta_get "$meta" backend)
+    fm_meta_get_to FM_WIN_BACKEND "$meta" backend
     [ -n "$FM_WIN_BACKEND" ] || FM_WIN_BACKEND=tmux
-    FM_WIN_HARNESS=$(fm_meta_get "$meta" harness)
+    fm_meta_get_to FM_WIN_HARNESS "$meta" harness
     FM_WIN_TASK=${meta##*/}
     FM_WIN_TASK=${FM_WIN_TASK%.meta}
   else
@@ -953,7 +953,7 @@ recorded_windows() {
   local meta w seen='' window_records=''
   for meta in "$STATE"/*.meta; do
     [ -e "$meta" ] || continue
-    w=$(fm_backend_target_of_meta "$meta")
+    fm_backend_target_of_meta_to w "$meta"
     [ -n "$w" ] || continue
     case "$seen" in
       *"|$w|"*) continue ;;
@@ -1099,7 +1099,7 @@ secondmate_wake_stall_tick() {
   # Endpoint metadata admits this queue-loop check; secondmate-liveness owns registered mates whose endpoint is missing or dead.
   for meta in "$STATE"/*.meta; do
     [ -e "$meta" ] || continue
-    kind=$(fm_meta_get "$meta" kind)
+    fm_meta_get_to kind "$meta" kind
     [ "$kind" = secondmate ] || continue
     remote_host=$(fm_meta_get "$meta" remote_host)
     [ -z "$remote_host" ] || continue
