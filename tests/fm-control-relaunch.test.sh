@@ -481,11 +481,14 @@ test_relaunch_preserves_registered_pr_poll() {
   dir=$(new_case pr-poll rl-pr)
   add_ship_task "$dir" rl-pr claude
   state="$dir/home/state"
+  printf '%s\n' "$$" > "$state/.lock"
+  printf '%s on\n' "$$" > "$state/.trace-context-effective"
   printf '%s\n' 'pr=https://github.com/example/repo/pull/19' \
     'pr_head=1111111111111111111111111111111111111111' 'pr_at=100' >> "$state/rl-pr.meta"
   fm_pr_poll_prepare "$state" rl-pr github https://github.com/example/repo/pull/19 \
     github.com example/repo 19 "$ROOT/bin/fm-pr-poll.sh" \
-    && fm_pr_poll_publish_prepared || fail "could not register the PR poll"
+    || fail "could not prepare the PR poll"
+  fm_pr_poll_publish_prepared || fail "could not register the PR poll"
   fm_pr_poll_snapshot_capture "$state" rl-pr "$ROOT/bin/fm-pr-poll.sh" \
     || fail "the PR poll must validate before relaunch"
 
@@ -495,10 +498,12 @@ test_relaunch_preserves_registered_pr_poll() {
     expect_code 0 "$rc" "relaunch onto $harness should succeed"$'\n'"$out"
     [ -n "$(meta_field "$dir" rl-pr control_relaunch_tx)" ] \
       || fail "the real relaunch must publish its transaction marker"
+    fm_trace_context_valid "$(meta_field "$dir" rl-pr traceparent)" \
+      || fail "the real relaunch must publish its trace context"
+    fm_pr_poll_snapshot_matches "$state" rl-pr "$ROOT/bin/fm-pr-poll.sh" \
+      || fail "the original PR poll artifacts must survive relaunch onto $harness"
     fm_pr_poll_snapshot_capture "$state" rl-pr "$ROOT/bin/fm-pr-poll.sh" \
       || fail "the registered PR poll must validate after relaunch onto $harness"
-    fm_pr_poll_snapshot_matches "$state" rl-pr "$ROOT/bin/fm-pr-poll.sh" \
-      || fail "the PR poll artifacts must remain authenticated after relaunch"
   done
   printf '%s\n' 'unknown_relaunch_field=unsafe' >> "$state/rl-pr.meta"
   if fm_pr_poll_snapshot_capture "$state" rl-pr "$ROOT/bin/fm-pr-poll.sh"; then
