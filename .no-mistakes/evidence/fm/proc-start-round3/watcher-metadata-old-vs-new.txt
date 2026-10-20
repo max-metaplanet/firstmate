@@ -1,0 +1,54 @@
+== old 5.3.9(1)-release
+fields s:fm-a kind=secondmate backend=herdr harness=codex task=a
+fields s:fm-b kind=ship backend=tmux harness= task=b
+fields orca-term-c kind=scout backend=orca harness= task=c
+fields s:fm-d kind=ship backend=orca harness= task=d
+fields s:fm-e kind=ship backend=tmux harness= task=e
+fields s:fm-none kind=unknown backend=tmux harness= task=none
+recorded=s:fm-a,s:fm-b,orca-term-c,s:fm-d,s:fm-e,
+memo-held kind=secondmate backend=zellij
+after-forget kind=scout backend=tmux
+after-delete kind=unknown task=b
+children recorded_windows=31
+children secondmate_wake_stall_tick=31
+children window_fields_one=4
+exit=0
+== new 5.3.9(1)-release
+fields s:fm-a kind=secondmate backend=herdr harness=codex task=a
+fields s:fm-b kind=ship backend=tmux harness= task=b
+fields orca-term-c kind=scout backend=orca harness= task=c
+fields s:fm-d kind=ship backend=orca harness= task=d
+fields s:fm-e kind=ship backend=tmux harness= task=e
+fields s:fm-none kind=unknown backend=tmux harness= task=none
+recorded=s:fm-a,s:fm-b,orca-term-c,s:fm-d,s:fm-e,
+memo-held kind=secondmate backend=zellij
+after-forget kind=scout backend=tmux
+after-delete kind=unknown task=b
+children recorded_windows=0
+children secondmate_wake_stall_tick=0
+children window_fields_one=1
+exit=0
+== old 3.2.57(1)-release
+fields s:fm-a kind=secondmate backend=herdr harness=codex task=a
+fields s:fm-b kind=ship backend=tmux harness= task=b
+fields orca-term-c kind=scout backend=orca harness= task=c
+fields s:fm-d kind=ship backend=orca harness= task=d
+fields s:fm-e kind=ship backend=tmux harness= task=e
+fields s:fm-none kind=unknown backend=tmux harness= task=none
+recorded=s:fm-a,s:fm-b,orca-term-c,s:fm-d,s:fm-e,
+memo-held kind=secondmate backend=zellij
+after-forget kind=scout backend=tmux
+after-delete kind=unknown task=b
+exit=0
+== new 3.2.57(1)-release
+fields s:fm-a kind=secondmate backend=herdr harness=codex task=a
+fields s:fm-b kind=ship backend=tmux harness= task=b
+fields orca-term-c kind=scout backend=orca harness= task=c
+fields s:fm-d kind=ship backend=orca harness= task=d
+fields s:fm-e kind=ship backend=tmux harness= task=e
+fields s:fm-none kind=unknown backend=tmux harness= task=none
+recorded=s:fm-a,s:fm-b,orca-term-c,s:fm-d,s:fm-e,
+memo-held kind=secondmate backend=zellij
+after-forget kind=scout backend=tmux
+after-delete kind=unknown task=b
+exit=0

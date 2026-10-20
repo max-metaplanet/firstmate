@@ -1,0 +1,13 @@
+   8 + printf -v FM_WIN_BACKEND %s ''
+   5 + printf -v FM_WIN_BACKEND %s tmux
+   8 + printf -v FM_WIN_HARNESS %s claude
+   5 + printf -v FM_WIN_HARNESS %s codex
+   4 + printf -v FM_WIN_KIND %s ''
+   4 + printf -v FM_WIN_KIND %s secondmate
+   5 + printf -v FM_WIN_KIND %s ship
+   3 + printf -v kind %s ''
+   3 + printf -v kind %s secondmate
+   3 + printf -v kind %s ship
+   5 + printf -v w %s fleet:fm-alpha
+   5 + printf -v w %s fleet:fm-bravo
+   5 + printf -v w %s fleet:fm-mate
