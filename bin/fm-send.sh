@@ -845,13 +845,16 @@ fm_send_feed_resolved_holds() { # <answer-text>
 # send implementation. A failed backend send is still surfaced below as a hard
 # error with the attempted resolution attached.
 
-# Wake a parked worker only after durable steering enqueue. A secondmate
-# persist request must still reach its old agent during the park transaction.
+# Wake a parked worker only after durable steering enqueue. A worker resume is
+# only queued here: fm-send still holds the lease-command lock, which the
+# relaunch's own lease guard would wait on forever, so the watcher tick runs it.
+# A secondmate persist request must still reach its old agent during the park
+# transaction.
 fm_send_wake_parked() { # [direct]
   local id record rc=0
   if [ -n "$TARGET_META" ] && fm_worker_park_load "$TARGET_META"; then
     id=$(fm_send_id_from_meta "$TARGET_META")
-    "$SCRIPT_DIR/fm-worker-park.sh" wake "$id" 'steering received or decision answered' || rc=$?
+    "$SCRIPT_DIR/fm-worker-park.sh" request "$id" 'steering received or decision answered' || rc=$?
     [ "$rc" -eq 0 ] || [ "$rc" -eq 75 ] || return "$rc"
     if [ "${1:-}" = direct ] && fm_worker_park_load "$TARGET_META"; then
       echo "error: task $id is parked and its resume is still queued, so no agent can receive a direct key or command yet; send it again once the worker resumes" >&2

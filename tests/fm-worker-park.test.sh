@@ -20,6 +20,11 @@ if [ "$2" = exit ]; then
   fi
   printf dead > "$FM_HOME/agent"
 else
+  # Real relaunch takes the lease-command lock; a held one would block forever.
+  if [ -n "${FM_SUPERVISION_ACTOR:-}" ] && [ -d "$FM_HOME/state/.fm-lease-command.lock" ]; then
+    printf 'relaunch blocked on held lease lock\n' >> "$FM_HOME/control.log"
+    exit 1
+  fi
   [ ! -e "$FM_HOME/full" ] || exit 75
   [ ! -e "$FM_HOME/resume-fails" ] || exit 1
   printf alive > "$FM_HOME/agent"
@@ -154,4 +159,17 @@ assert_grep 'could not resume' "$FM_HOME/state/.wake-queue" 'resume failure wake
 rm "$FM_HOME/resume-fails"
 bash "$PARK" wake task 'lifecycle repaired' >/dev/null
 assert_grep 'phase=active' "$FM_HOME/state/task.park" 'explicit retry clears the repair hold'
+# fm-send holds the lease-command lock across the steer, so it may only queue
+# the resume; the watcher tick relaunches once the lock is free.
+fixture
+bash "$PARK" auto task >/dev/null
+rc=0
+FM_SUPERVISION_ACTOR=main bash "$TMP_ROOT/bin/fm-send.sh" task 'review feedback: fix the null check' >/dev/null 2>&1 || rc=$?
+assert_equals "$rc" 0 'steering a parked worker under the lease guard succeeds'
+assert_present "$FM_HOME/state/task.inbox/001.msg" 'steer is durably recorded'
+assert_grep 'phase=queued' "$FM_HOME/state/task.park" 'steer queues the parked worker'
+if grep -q 'relaunch' "$FM_HOME/control.log"; then fail 'fm-send must not relaunch while it holds the lease lock'; fi
+FM_SUPERVISION_ACTOR=main bash "$PARK" tick >/dev/null
+assert_grep 'phase=active' "$FM_HOME/state/task.park" 'watcher tick resumes the steered worker'
+assert_grep 'steering received' "$FM_HOME/control.log" 'resume note names the steer'
 pass 'verified parking, safety exceptions, external waits and durable resume reasons'

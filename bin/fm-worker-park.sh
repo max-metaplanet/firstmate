@@ -19,8 +19,9 @@
 # config/worker-park-minutes (positive integer, default 10). External waits may
 # also name until; its expiry and changed/resolved status queue a resume.
 # tick is driven by the existing watcher, never a separate polling daemon.
-# Existing contribution feedback and fm-send steering call wake. wake durably
-# queues first; tick retries deferred resumes and wakes parked workers with
+# Contribution feedback and fm-send steering call request, because their
+# callers may hold locks the relaunch needs; wake durably queues, then resumes
+# at once. tick retries deferred resumes and wakes parked workers with
 # pending inbox steering. fm-spawn owns both capacity checks and priority
 # admission. Exit 75 means deferred, not failed: the request is queued, or the
 # record was busy and the caller retries from its own durable source.
