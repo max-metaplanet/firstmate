@@ -933,6 +933,20 @@ test_park_stopped_with_durable_proof() {
   pass 'stopped mate parks on durable proof and both liveness modes suppress recovery'
 }
 
+test_park_stopped_helper_status_with_trailing_notice() {
+  local dir out rc
+  dir=$(new_case park-stopped-helper); add_park_mate "$dir"
+  printf 'zsh' > "$dir/fake/command"
+  FM_HOME="$dir/sm1-home" "$ROOT/bin/fm-secondmate-report.sh" done 0123456789abcdef 'ready to park - no conversation-only open work' \
+    || fail 'report helper could not write the parent status'
+  assert_grep '(via-helper)' "$dir/home/state/sm1.status" 'report helper wrote the parent status'
+  printf 'spawn notice: auto-relaunch failed; deferred\n' >> "$dir/home/state/sm1.status"
+  out=$(FM_TEST_PERSIST_WAIT=0 run_park "$dir" sm1 park); rc=$?
+  expect_code 0 "$rc" "helper-written readiness followed by a home notice must park: $out"
+  assert_grep 'phase=parked' "$dir/home/state/.secondmate-park-sm1" 'helper readiness publishes durable authority'
+  pass 'stopped park accepts helper-written readiness behind a home notice'
+}
+
 test_park_stopped_missing_proofs() {
   local dir out rc proof expected
   for proof in status stale-status negated-status child dangling-child in-flight held unreadable-backlog dangling-backlog missing-state ambiguous missing; do
@@ -1170,6 +1184,7 @@ SH
 }
 
 test_park_stopped_with_durable_proof
+test_park_stopped_helper_status_with_trailing_notice
 test_park_stopped_missing_proofs
 test_park_live_ready_status_still_needs_reply
 test_park_missing_endpoint_respawns_same_session

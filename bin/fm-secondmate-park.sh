@@ -6,7 +6,8 @@
 # fm-control exit stops its agent and its home supervision host and watcher.
 # A stopped mate substitutes durable proof only when its verified endpoint state
 # is dead, its readable state directory contains no child metadata, its backlog
-# has no in-flight or held work, and its latest parent-channel status body equals
+# has no in-flight or held work, and its latest recognized parent-channel status
+# event body (helper-written or direct) equals
 # the readiness phrase printed below by --help. Missing or unknown endpoints
 # refuse this path. The phrase is defined once in STOPPED_READY_BODY below.
 # Any child metadata, in-flight backlog work, or
@@ -51,6 +52,8 @@ STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 . "$SCRIPT_DIR/fm-secondmate-restart-lib.sh"
 # shellcheck source=bin/fm-secondmate-resume-lib.sh
 . "$SCRIPT_DIR/fm-secondmate-resume-lib.sh"
+# shellcheck source=bin/fm-classify-lib.sh
+. "$SCRIPT_DIR/fm-classify-lib.sh"
 # shellcheck source=bin/fm-pending-reply-lib.sh
 . "$SCRIPT_DIR/fm-pending-reply-lib.sh"
 # shellcheck source=bin/fm-tasks-axi-lib.sh
@@ -115,15 +118,13 @@ read_record() {
   SPAWN_GEN=$(fm_meta_get "$RECORD" spawn_gen)
 }
 check_idle() {
-  local child pending backend listing children
+  local child pending backend listing
   if [ "${1:-}" = stopped ]; then
-    [ -d "$MATE_HOME/state" ] && [ ! -L "$MATE_HOME/state" ] && [ -r "$MATE_HOME/state" ] && [ -x "$MATE_HOME/state" ] || { echo 'error: cannot prove secondmate child records absent: state directory unreadable or missing' >&2; return 1; }
-    children=$(find "$MATE_HOME/state" -maxdepth 1 -name '*.meta' -print) || { echo 'error: cannot prove secondmate child records absent: state listing failed' >&2; return 1; }
-    [ -z "$children" ] || { echo "error: secondmate has outstanding child work: $children" >&2; return 1; }
+    [ -r "$MATE_HOME/state" ] && [ -x "$MATE_HOME/state" ] || { echo 'error: cannot prove secondmate child records absent: state directory unreadable' >&2; return 1; }
     [ -d "$MATE_HOME/data" ] && [ ! -L "$MATE_HOME/data" ] && [ -r "$MATE_HOME/data" ] && [ -x "$MATE_HOME/data" ] && [ ! -L "$MATE_HOME/data/backlog.md" ] || { echo 'error: cannot prove secondmate backlog idle: data directory unreadable or backlog symlinked' >&2; return 1; }
   fi
   for child in "$MATE_HOME/state"/*.meta; do
-    [ ! -e "$child" ] || { echo "error: secondmate has outstanding child work: $child" >&2; return 1; }
+    [ ! -e "$child" ] && [ ! -L "$child" ] || { echo "error: secondmate has outstanding child work: $child" >&2; return 1; }
   done
   backend=$(fm_tasks_axi_backend "$MATE_HOME") || return 1
   if [ "$backend" != markdown ] || [ -e "$MATE_HOME/data/backlog.md" ]; then
@@ -224,8 +225,9 @@ if [ "$PERSISTED" != 1 ]; then
     dead)
       check_idle stopped || exit 1
       [ -f "$STATE/$ID.status" ] && [ ! -L "$STATE/$ID.status" ] || fail "latest parent status must say: $STOPPED_READY_BODY"
-      latest_status=$(tail -n 1 "$STATE/$ID.status") || fail 'latest parent status cannot be read'
+      latest_status=$(last_worker_status_line "$STATE/$ID.status")
       latest_body=$(printf '%s\n' "$latest_status" | sed -n 's/^[a-z][a-z-]*\( \[[^]]*\]\)*: //p')
+      latest_body=${latest_body% (via-helper)}
       [ "$latest_body" = "$STOPPED_READY_BODY" ] || fail "latest parent status must say: $STOPPED_READY_BODY"
       ;;
     alive)
