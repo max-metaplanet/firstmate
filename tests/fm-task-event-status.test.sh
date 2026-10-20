@@ -166,10 +166,12 @@ SH
     "$ROOT/bin/fm-teardown.sh" task --force > "$home/teardown.out" 2> "$home/teardown.err" \
     || fail "terminal event teardown failed: $(cat "$home/teardown.err")"
   await_events "$home" 1
-  expected=finished
-  [ "$declaration" = "done" ] || expected=cancelled
-  jq -se --arg event "$expected" 'length == 1 and .[0].event == $event and
-    .[0].ticket == "issue-42" and .[0].ticket_scope == "complete" and .[0].summary == "worker terminal summary"' "$home/events.jsonl" >/dev/null \
+  expected=finished expected_scope=complete
+  # A cancelled task whose own PR never merged delivered nothing, so its
+  # declared complete scope is published as partial.
+  [ "$declaration" = "done" ] || { expected=cancelled; expected_scope=partial; }
+  jq -se --arg event "$expected" --arg scope "$expected_scope" 'length == 1 and .[0].event == $event and
+    .[0].ticket == "issue-42" and .[0].ticket_scope == $scope and .[0].summary == "worker terminal summary"' "$home/events.jsonl" >/dev/null \
     || fail 'teardown lost its terminal payload'
   assert_absent "$home/state/task.meta" 'teardown emitted without retiring the task'
   assert_absent "$home/state/task.status" 'teardown emitted without retiring the status'
