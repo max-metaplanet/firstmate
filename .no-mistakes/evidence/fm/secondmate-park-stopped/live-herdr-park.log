@@ -1,0 +1,28 @@
+== herdr herdr 0.9.1; session=fm-lab-parkgone-79717; NO_MISTAKES_GATE=set
+== created tab=w1:t2 pane=w1:p2
+-- agent state while pane exists (no agent): dead
+-- closed pane rc=0
+-- agent state after close: missing
+-- parent status:
+done [corr=0123456789abcdef] [at=1792497494]: ready to park - no conversation-only open work (via-helper)
+$ fm-secondmate-park.sh sm1 park
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab.o892OK
+endpoint-gone sm1 harness=claude backend=herdr endpoint=fm-lab-parkgone-79717:w1:p2 worktree=/private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab-mate.PwqRcW
+watcher: none running
+supervision-host: stopped
+sm1: parked; session=fresh
+rc=0
+-- park record:
+schema=1
+home=/private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab-mate.PwqRcW
+phase=parked
+persist_corr=
+persisted=1
+resume_mode=fresh
+resume_harness=claude
+resume_ref=
+spawn_gen=
+-- inbox (must be absent): No such file or directory
+liveness full: status=silent state=parked
+liveness poll: status=silent state=parked
+== teardown: lab session fm-lab-parkgone-79717 removed

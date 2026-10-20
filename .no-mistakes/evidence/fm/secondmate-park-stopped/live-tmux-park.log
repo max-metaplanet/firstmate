@@ -1,0 +1,90 @@
+== tmux server: tmux 3.6a; NO_MISTAKES_GATE=set
+== S0: --help names the readiness phrase
+Stopped readiness status body: ready to park - no conversation-only open work
+
+== S1: stopped mate (bare zsh in its window) + helper-written readiness + home notice -> park
+report rc=0
+-- parent status file:
+done [corr=0123456789abcdef] [at=1792497416]: ready to park - no conversation-only open work (via-helper)
+spawn notice: auto-relaunch failed; deferred
+-- pane command before: zsh
+$ fm-secondmate-park.sh jevlab park
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab.UrNDTz
+already-stopped jevlab harness=claude backend=tmux endpoint=fmses:fm-jevlab worktree=/private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab-mates.4jflQN/jevlab-home
+watcher: none running
+supervision-host: stopped
+jevlab: parked; session=fresh
+rc=0
+-- park record:
+schema=1
+home=/private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab-mates.4jflQN/jevlab-home
+phase=parked
+persist_corr=
+persisted=1
+resume_mode=fresh
+resume_harness=claude
+resume_ref=
+spawn_gen=
+-- inbox (must be absent): ls: /private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab.UrNDTz/state/jevlab.inbox: No such file or directory
+-- pending-replies (must be absent): ls: /private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab.UrNDTz/state/pending-replies: No such file or directory
+-- pane content unchanged: no keystrokes sent
+-- parent status after park:
+done [corr=0123456789abcdef] [at=1792497416]: ready to park - no conversation-only open work (via-helper)
+spawn notice: auto-relaunch failed; deferred
+
+== S2: liveness probe (full + poll) on parked mate against real tmux
+full: status=silent state=parked
+poll: status=silent state=parked
+== S2b: two real bootstrap network sweeps (FM_BOOTSTRAP_NETWORK=only)
+cycle 1 rc=0 SECONDMATE_LIVENESS lines: 0
+   SECONDMATE_SYNC: secondmate jevlab: skipped: primary default-branch commit cannot be resolved
+cycle 2 rc=0 SECONDMATE_LIVENESS lines: 0
+   SECONDMATE_SYNC: secondmate jevlab: skipped: primary default-branch commit cannot be resolved
+-- windows after sweeps: placeholder fm-jevlab 
+-- relaunch ledger (must be absent): ls: /private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab.UrNDTz/state/.secondmate-relaunch-jevlab: No such file or directory
+
+== S3: adversarial refusals on stopped mates (each must refuse with no record, no inbox, no keystrokes)
+$ fm-secondmate-park.sh stale park (stale: newer status after readiness)
+error: latest parent status must say: ready to park - no conversation-only open work
+rc=1
+   record: No such file or directory
+   inbox: No such file or directory
+   pane unchanged
+$ fm-secondmate-park.sh negated park (negated phrase)
+error: latest parent status must say: ready to park - no conversation-only open work
+rc=1
+   record: No such file or directory
+   inbox: No such file or directory
+   pane unchanged
+$ fm-secondmate-park.sh child park (child record present)
+error: secondmate has outstanding child work: /private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab-mates.4jflQN/child-home/state/task1.meta
+rc=1
+   record: No such file or directory
+   inbox: No such file or directory
+   pane unchanged
+$ fm-secondmate-park.sh inflight park (in-flight backlog)
+error: secondmate backlog has in-flight work or unreadable listing
+rc=1
+   record: No such file or directory
+   inbox: No such file or directory
+   pane unchanged
+$ fm-secondmate-park.sh nostatus park (no status file)
+error: latest parent status must say: ready to park - no conversation-only open work
+rc=1
+   record: No such file or directory
+   inbox: No such file or directory
+   pane unchanged
+$ fm-secondmate-park.sh gone park (tmux window missing: absence unprovable on tmux)
+error: endpoint is not verified stopped (state=missing, absence=unproven); cannot substitute durable proof for a live persist answer
+rc=1
+   record: No such file or directory
+   inbox: No such file or directory
+
+== S4: held backlog items do not block a stopped park (F3 decision)
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab.UrNDTz
+already-stopped held harness=claude backend=tmux endpoint=fmses:fm-held worktree=/private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab-mates.4jflQN/held-home
+watcher: none running
+supervision-host: stopped
+held: parked; session=fresh
+rc=0
+phase=parked
