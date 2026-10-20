@@ -915,6 +915,69 @@ add_park_mate() {
 }
 run_park() ( RESTART="$ROOT/bin/fm-secondmate-park.sh"; run_restart "$@"; )
 
+test_park_stopped_with_durable_proof() {
+  local dir out rc mode
+  dir=$(new_case park-stopped); add_park_mate "$dir"
+  printf 'zsh' > "$dir/fake/command"
+  printf 'done [at=123]: ready to park - no conversation-only open work\n' > "$dir/home/state/sm1.status"
+  out=$(FM_TEST_PERSIST_WAIT=0 run_park "$dir" sm1 park); rc=$?
+  expect_code 0 "$rc" "stopped mate with durable proof must park: $out"
+  assert_grep '^phase=parked$' "$dir/home/state/.secondmate-park-sm1" 'stopped park publishes durable authority'
+  assert_absent "$dir/home/state/sm1.inbox" 'stopped park never sends a persist request'
+  assert_absent "$dir/home/state/pending-replies" 'stopped park never creates a live reply expectation'
+  [ ! -s "$dir/fake/literal" ] || fail 'stopped park sent input to an agent'
+  for mode in full poll; do
+    out=$(FM_HOME="$dir/home" bash -c '. "$1/bin/fm-secondmate-liveness-lib.sh"; fm_secondmate_liveness_probe "$2/state/sm1.meta" sm1 "$3"; printf "%s %s" "$FM_SM_LIVE_STATUS" "$FM_SM_LIVE_STATE"' _ "$ROOT" "$dir/home" "$mode")
+    [ "$out" = 'silent parked' ] || fail "$mode liveness would recover a parked stopped mate: $out"
+  done
+  pass 'stopped mate parks on durable proof and both liveness modes suppress recovery'
+}
+
+test_park_stopped_missing_proofs() {
+  local dir out rc proof expected
+  for proof in status stale-status negated-status child dangling-child in-flight held unreadable-backlog dangling-backlog missing-state ambiguous missing; do
+    dir=$(new_case "park-stopped-$proof"); add_park_mate "$dir"
+    printf 'zsh' > "$dir/fake/command"
+    printf 'done: ready to park - no conversation-only open work\n' > "$dir/home/state/sm1.status"
+    case "$proof" in
+      status) rm "$dir/home/state/sm1.status"; expected='latest parent status must say' ;;
+      stale-status) printf 'working: new conversation-only work\n' >> "$dir/home/state/sm1.status"; expected='latest parent status must say' ;;
+      negated-status) printf 'blocked: not ready to park - no conversation-only open work\n' > "$dir/home/state/sm1.status"; expected='latest parent status must say' ;;
+      child) printf 'kind=ship\n' > "$dir/sm1-home/state/child.meta"; expected='outstanding child work' ;;
+      dangling-child) ln -s missing "$dir/sm1-home/state/child.meta"; expected='outstanding child work' ;;
+      in-flight) printf '# Backlog\n\n## In flight\n\n- [ ] child - Work\n' > "$dir/sm1-home/data/backlog.md"; expected='backlog has in-flight work' ;;
+      held)
+        printf '# Backlog\n\n## Queued\n\n- [ ] child - Work\n' > "$dir/sm1-home/data/backlog.md"
+        tasks-axi hold child --kind captain --reason choose --file "$dir/sm1-home/data/backlog.md" >/dev/null || fail 'could not create held backlog fixture'
+        expected='backlog has held work' ;;
+      unreadable-backlog) mkdir "$dir/sm1-home/data/backlog.md"; expected='cannot prove secondmate backlog idle' ;;
+      dangling-backlog) ln -s missing "$dir/sm1-home/data/backlog.md"; expected='cannot prove secondmate backlog idle' ;;
+      missing-state) rm -rf "$dir/sm1-home/state"; expected='cannot prove secondmate child records absent' ;;
+      ambiguous) printf 'python' > "$dir/fake/command"; expected='endpoint is not verified dead (state=ambiguous)' ;;
+      missing) : > "$dir/fake/windows"; expected='endpoint is not verified dead (state=missing)' ;;
+    esac
+    out=$(FM_TEST_PERSIST_WAIT=0 run_park "$dir" sm1 park); rc=$?
+    expect_code 1 "$rc" "missing $proof must refuse: $out"
+    assert_contains "$out" "$expected" "refusal must name missing $proof proof"
+    assert_absent "$dir/home/state/.secondmate-park-sm1" 'refusal leaves no park authority'
+    assert_absent "$dir/home/state/sm1.inbox" 'missing stopped proof never sends persistence'
+    [ ! -s "$dir/fake/literal" ] || fail "missing $proof proof touched the endpoint"
+  done
+  pass 'stopped park refuses each missing proof and preserves records'
+}
+
+test_park_live_ready_status_still_needs_reply() {
+  local dir out rc
+  dir=$(new_case park-live-ready); add_park_mate "$dir"
+  printf 'done: ready to park - no conversation-only open work\n' > "$dir/home/state/sm1.status"
+  out=$(FM_TEST_PERSIST_WAIT=0 run_park "$dir" sm1 park); rc=$?
+  expect_code 1 "$rc" 'live mate must still answer the correlated persist request'
+  assert_present "$dir/home/state/sm1.inbox/001.msg" 'live mate receives persistence even with an earlier ready status'
+  assert_absent "$dir/home/state/.secondmate-park-sm1" 'unanswered live gate leaves no park authority'
+  assert_no_grep '^/exit$' "$dir/fake/literal" 'unanswered live gate never stops the agent'
+  pass 'live ready status cannot substitute for the existing persist gate'
+}
+
 test_park_persist_and_idle_gates() {
   local dir out rc
   dir=$(new_case park-no-answer); add_park_mate "$dir"
@@ -1106,6 +1169,9 @@ SH
   pass 'work queued while park waits for persistence wakes the mate after the stop'
 }
 
+test_park_stopped_with_durable_proof
+test_park_stopped_missing_proofs
+test_park_live_ready_status_still_needs_reply
 test_park_missing_endpoint_respawns_same_session
 test_park_dead_endpoint_wake_keeps_model_effort
 test_park_wakes_for_work_queued_during_persist
