@@ -10,8 +10,9 @@
 # Only fm-worker-park.sh writes these records; verified relaunch marks active.
 # Guarded teardown removes the record after landing. Teardown remains the sole landed-work cleanup gate.
 # Pending resumes sort by queued_at then full metadata path. Under a declared
-# fleet cap each one reserves a place ahead of later resumes and fresh work;
-# a resume_error hold reserves nothing until an explicit wake clears it.
+# fleet or project cap each one reserves a place in that cap ahead of later
+# resumes and fresh work (FM_WORKER_PARK_RESERVES); a resume_error hold
+# reserves nothing until an explicit wake clears it.
 # Requires fm_meta_get and fm_backend_target_of_meta. No side effects on source.
 
 fm_worker_park_load() { # <meta>
@@ -27,7 +28,16 @@ fm_worker_park_load() { # <meta>
   FM_WORKER_PARK_UNTIL=$(fm_meta_get "$record" until)
   FM_WORKER_PARK_QUEUED_AT=$(fm_meta_get "$record" queued_at)
   case "$FM_WORKER_PARK_UNTIL:$FM_WORKER_PARK_QUEUED_AT" in *[!0-9:]*|:*|*:) return 1 ;; esac
+  FM_WORKER_PARK_RESERVES=0
+  if [ "$FM_WORKER_PARK_PHASE" = queued ] && [ "$(fm_meta_get "$record" resume_error)" != 1 ]; then
+    FM_WORKER_PARK_RESERVES=1
+  fi
   [ -n "$FM_WORKER_PARK_REASON" ]
+}
+
+fm_worker_park_rank() { # <own-meta>; reads queued_at<TAB>meta rows, prints how many precede own
+  LC_ALL=C sort -t $'\t' -k1,1n -k2,2 |
+    awk -F '\t' -v own="$1" '$2 == own { print NR - 1; found = 1; exit } END { if (!found) print NR }'
 }
 
 fm_worker_park_ahead() { # <state> <own-meta>; prints how many resumes queue ahead
@@ -35,12 +45,9 @@ fm_worker_park_ahead() { # <state> <own-meta>; prints how many resumes queue ahe
   fm_local_firstmate_state_dirs "$1" || return 1
   for state in "${FM_LOCAL_FIRSTMATE_STATES[@]}"; do
     for meta in "$state"/*.meta; do
-      fm_worker_park_load "$meta" || continue
-      [ "$FM_WORKER_PARK_PHASE" = queued ] || continue
-      [ "$(fm_meta_get "${meta%.meta}.park" resume_error)" != 1 ] || continue
+      fm_worker_park_load "$meta" && [ "$FM_WORKER_PARK_RESERVES" = 1 ] || continue
       rows+="$FM_WORKER_PARK_QUEUED_AT"$'\t'"$meta"$'\n'
     done
   done
-  printf '%s' "$rows" | LC_ALL=C sort -t $'\t' -k1,1n -k2,2 |
-    awk -F '\t' -v own="$2" '$2 == own { print NR - 1; found = 1; exit } END { if (!found) print NR }'
+  printf '%s' "$rows" | fm_worker_park_rank "$2"
 }

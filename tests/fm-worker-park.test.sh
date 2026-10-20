@@ -110,7 +110,7 @@ fixture
 printf 'paused: external service until 2099-01-01T00:00Z\n' > "$FM_HOME/state/task.status"
 bash "$PARK" auto task >/dev/null
 assert_grep 'phase=parked' "$FM_HOME/state/task.park" 'long declared deadline parks'
-for reason in 'merge word answered' 'red CI' 'new upstream review' 'decision answered' 'merge completed'; do
+for reason in 'merge word answered' 'red CI' 'new upstream review' 'decision answered'; do
   fixture
   bash "$PARK" auto task >/dev/null
   touch "$FM_HOME/full"

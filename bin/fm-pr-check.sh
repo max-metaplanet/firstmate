@@ -292,7 +292,3 @@ case "$READY_RC" in
   *) printf 'actionable: PR %s is registered but its ready line did not reach the parent channel (rc=%s)\n' "$URL" "$READY_RC" >&2 ;;
 esac
 printf 'armed: state/%s.check.sh\n' "$ID"
-
-if [ "${FM_PR_CHECK_MERGE:-}" != 1 ] && [ "$PR_YOLO" = off ]; then
-  "$SCRIPT_DIR/fm-worker-park.sh" hint "$ID" "merge approval for $URL" >/dev/null || true
-fi

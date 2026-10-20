@@ -431,6 +431,40 @@ test_parked_capacity_and_priority() {
   pass 'parked capacity, unverified exit reservation and priority over fresh dispatch'
 }
 
+test_parked_resume_has_project_priority() {
+  local case_dir home out rc=0
+  case_dir=$(make_case project-priority task-c)
+  home="$case_dir/home"
+  declare_capacity "$home" 'project 1'
+  write_live "$home" parked-a "$case_dir/project"
+  write_park "$home" parked-a queued
+  out=$(spawn_ship "$case_dir" task-c) || rc=$?
+  expect_code 75 "$rc" "fresh dispatch took the project place a queued resume waits for: $out"
+  assert_contains "$out" 'in project project and resume ahead of task task-c' 'project admission enforces resume priority'
+  assert_absent "$home/state/task-c.meta" 'project priority deferral creates no record'
+
+  case_dir=$(make_case project-repair task-c)
+  home="$case_dir/home"
+  declare_capacity "$home" 'project 1'
+  write_live "$home" parked-a "$case_dir/project"
+  write_park "$home" parked-a queued
+  printf 'resume_error=1\n' >> "$home/state/parked-a.park"
+  rc=0
+  out=$(spawn_ship "$case_dir" task-c) || rc=$?
+  expect_code 0 "$rc" "a resume held for repair reserved a project place: $out"
+
+  case_dir=$(make_case project-unrelated task-c)
+  home="$case_dir/home"
+  fm_git_init_commit "$case_dir/other"
+  declare_capacity "$home" 'project 1' 'other 1'
+  write_live "$home" parked-a "$case_dir/other"
+  write_park "$home" parked-a queued
+  rc=0
+  out=$(spawn_ship "$case_dir" task-c) || rc=$?
+  expect_code 0 "$rc" "a resume queued for another project blocked spare capacity: $out"
+  pass 'queued resumes take priority for their own project cap only'
+}
+
 test_parked_relaunch_respects_both_caps() {
   local case_dir home pane out rc=0
   case_dir=$(make_case resume-cap)
@@ -459,6 +493,7 @@ test_parked_relaunch_respects_both_caps() {
 
 test_parked_relaunch_respects_both_caps
 test_parked_capacity_and_priority
+test_parked_resume_has_project_priority
 test_undeclared_fleet_stays_uncapped
 test_full_fleet_defers_without_leaving_anything_behind
 test_dead_agents_free_their_place

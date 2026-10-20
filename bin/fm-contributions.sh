@@ -477,8 +477,6 @@ worker_observation() { # task row-file
       "$SCRIPT_DIR/fm-worker-park.sh" hint "$task" "$reason" >/dev/null || return 1 ;;
     fleet/'checks failed'|fleet/'forge requests changes')
       "$SCRIPT_DIR/fm-worker-park.sh" request "$task" "$reason" >/dev/null || [ "$?" -eq 75 ] || return 1 ;;
-    nobody/'forge reports merged')
-      "$SCRIPT_DIR/fm-worker-park.sh" request "$task" 'merge completed; reconcile any remaining post-merge work' >/dev/null || [ "$?" -eq 75 ] || return 1 ;;
   esac
 }
 

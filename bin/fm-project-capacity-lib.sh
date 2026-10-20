@@ -180,13 +180,16 @@ fm_project_capacity_lookup() {  # <config-dir> <project-name>
 # each outside <first-state> qualified with its home. Returns 1 with
 # FM_PROJECT_CAPACITY_ERROR when the local homes cannot be enumerated, or when
 # a state directory or task record in them cannot be read, since skipping it
-# could undercount the holders.
+# could undercount the holders. Queued parked resumes for the project hold no
+# place; their queued_at<TAB>meta rows are left in FM_PROJECT_CAPACITY_RESUME_ROWS
+# for priority admission.
 # shellcheck source=bin/fm-worker-park-lib.sh
 . "${BASH_SOURCE[0]%/*}/fm-worker-park-lib.sh"
 
 fm_project_capacity_occupants() {  # <project-lock> <project-dir> <first-state> <own-id>
-  local want=$1 own=$2 first=$3 self=$4 state meta kind project lock id label i
+  local want=$1 own=$2 first=$3 self=$4 state meta kind project lock id label i resume
   local -a cache_dirs cache_locks
+  FM_PROJECT_CAPACITY_RESUME_ROWS=
   FM_PROJECT_CAPACITY_OCCUPANTS=0
   FM_PROJECT_CAPACITY_OCCUPANT_IDS=
   FM_PROJECT_CAPACITY_ERROR=
@@ -208,7 +211,11 @@ fm_project_capacity_occupants() {  # <project-lock> <project-dir> <first-state> 
         FM_PROJECT_CAPACITY_ERROR="task record $meta cannot be read"
         return 1
       }
-      fm_worker_park_load "$meta" && continue
+      resume=
+      if fm_worker_park_load "$meta"; then
+        [ "$FM_WORKER_PARK_RESERVES" = 1 ] || continue
+        resume="$FM_WORKER_PARK_QUEUED_AT"$'\t'"$meta"
+      fi
       kind=$(fm_meta_get "$meta" kind)
       [ "$kind" != secondmate ] || continue
       if [ -n "$(fm_meta_get "$meta" pr)" ]; then
@@ -231,6 +238,10 @@ fm_project_capacity_occupants() {  # <project-lock> <project-dir> <first-state> 
         cache_locks+=("$lock")
       fi
       [ -n "$lock" ] && [ "$lock" = "$want" ] || continue
+      if [ -n "$resume" ]; then
+        FM_PROJECT_CAPACITY_RESUME_ROWS+="$resume"$'\n'
+        continue
+      fi
       id=$(basename "$meta" .meta)
       label=$id
       [ "$state" = "$first" ] || label="$id in $(dirname "$state")"
