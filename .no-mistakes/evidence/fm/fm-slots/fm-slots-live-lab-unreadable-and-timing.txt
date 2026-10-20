@@ -1,0 +1,14 @@
+### unreadable holder record (chmod 000 child/state/locked.meta)
+slots unknown/4 (source: <lab>/main/config/fleet-capacity)
+fm-slots: task record <lab>/child/state/locked.meta cannot be read
+exit=1
+--- admission (HEAD lib) on same state
+exit=1
+
+### timing: 5 end-to-end runs vs 5 admission-only reads (lab: 3 live holders, 21 queue rows)
+run 1 view=3.47s (exit 0) admission=0.58s
+run 2 view=3.19s (exit 0) admission=0.88s
+run 3 view=3.63s (exit 0) admission=1.50s
+run 4 view=3.62s (exit 0) admission=1.39s
+run 5 view=2.18s (exit 0) admission=2.56s
+23:04  up 2 days,  3:41, 2 users, load averages: 18.41 21.08 19.52

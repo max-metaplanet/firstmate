@@ -1,0 +1,55 @@
+### queue ordering (--home child: added held, blocked, ready in that order)
+QUEUE (<lab>/child)
+  ready | c-ready | ENG-3003 | Child ready ENG-3003
+  blocked by c-dep | c-wait | Blocked on dep
+  decision: needs captain | c-held | Captain call on schema
+
+### a holder window dies -> slot freed (kill fm-beta)
+slots 3/4 (source: <lab>/main/config/fleet-capacity)
+SLOTS (local records; * still holds a slot)
+  <lab>/main | alpha | widget | ship | working | claude seat=work
+  <lab>/main | note | widget | scout | waiting on decision | claude
+  <lab>/child | gamma | widget | secondmate | unknown | pi
+QUEUE (<lab>/main)
+--- admission read after kill
+count=3 cap=4
+ids=alpha, note, gamma in <lab>/child
+count=3 cap=4
+ids=alpha, note, gamma in <lab>/child
+
+### unreadable capacity declaration
+fm-slots: <lab>/main/config/fleet-capacity line 1 is not a positive integer
+exit=1
+
+### unreadable holder record (meta is a directory in child)
+slots 3/4 (source: <lab>/main/config/fleet-capacity)
+SLOTS (local records; * still holds a slot)
+  <lab>/main | alpha | widget | ship | working | claude seat=work
+  <lab>/main | note | widget | scout | waiting on decision | claude
+  <lab>/child | gamma | widget | secondmate | unknown | pi
+QUEUE (<lab>/main)
+  ready | r1 | ENG-2001 | ENG-2001 fix login
+  ready | r2 | Plain ready task
+  ready | x1 | Extra queued 1
+  ready | x2 | Extra queued 2
+  ready | x3 | Extra queued 3
+  ready | x4 | Extra queued 4
+  ready | x5 | Extra queued 5
+  ready | x6 | Extra queued 6
+  ready | x7 | Extra queued 7
+  ready | x8 | Extra queued 8
+  ready | x9 | Extra queued 9
+  ready | x10 | Extra queued 10
+  ready | x11 | Extra queued 11
+  ready | x12 | Extra queued 12
+  ready | x13 | Extra queued 13
+  +3 more
+exit=0
+
+### missing state dir refused, not created
+fm-slots: state cannot be read: <lab>/nostate/state
+exit=1 state_exists=no
+
+### bad args
+usage: fm-slots.sh [--home <main-home>]
+exit=2

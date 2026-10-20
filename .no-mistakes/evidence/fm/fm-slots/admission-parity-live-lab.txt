@@ -1,0 +1,6 @@
+--- serial (base 541c4bd1) admission read
+count=4 cap=4
+ids=alpha, beta, note, gamma in /private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-slots-lab.Fyht2r/child
+--- concurrent (HEAD) admission read
+count=4 cap=4
+ids=alpha, beta, note, gamma in /private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-slots-lab.Fyht2r/child
