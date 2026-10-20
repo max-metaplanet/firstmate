@@ -139,7 +139,7 @@ fm_fleet_capacity_occupants() {  # <first-state> <own-id>
       if [ -n "${targets[i]}" ]; then
         (
           case "$(fm_backend_agent_state "${backends[i]}" "${targets[i]}" 2>/dev/null)" in
-            dead | missing) printf '%s\n' "$i" ;;
+            (dead | missing) printf '%s\n' "$i" ;;
           esac
         ) &
       fi
