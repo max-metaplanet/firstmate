@@ -3,6 +3,7 @@
 # remain covered by fm-control.test.sh; the control fixture here exposes verified
 # success/failure and admission deferral without driving a real worker.
 set -u
+# shellcheck source=tests/lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 TMP_ROOT=$(fm_test_tmproot fm-worker-park)
 mkdir -p "$TMP_ROOT/bin"

@@ -2,6 +2,7 @@
 # A deliberate worker park silences endpoint recovery, while the same dead
 # endpoint without that record still produces its ordinary actionable wake.
 set -u
+# shellcheck source=tests/watch-triage-helpers.sh
 . "$(dirname "${BASH_SOURCE[0]}")/watch-triage-helpers.sh"
 dir=$(wedge_threshold_fixture intentional-park 'working: still compiling' 0 10)
 state="$dir/state"; fakebin="$dir/fakebin"; out="$dir/watch.out"; capture="$dir/pane.txt"
