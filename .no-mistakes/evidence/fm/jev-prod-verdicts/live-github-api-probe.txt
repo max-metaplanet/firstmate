@@ -1,0 +1,36 @@
+== a7ade6204e90a89d1e381181cc30a7af1e0273ed unscoped:
+count=25 envs=production,protected-secrets
+-- scoped core-metaplanet:
+count=0 
+-- scoped core-admin-center:
+count=0 
+-- Vercel statuses:
+Vercel – core-redemption-shim | success | Canceled by Ignored Build Step
+Vercel – core-magazine | success | Canceled by Ignored Build Step
+Vercel – qr | success | Canceled by Ignored Build Step
+Vercel – core-admin-center | success | Canceled by Ignored Build Step
+Vercel – core-metaplanet | success | Canceled by Ignored Build Step
+== ea29f38c938ba95b4be371cf573d9d0d1ca02697 unscoped:
+count=32 envs=Production – core-admin-center,Production – core-magazine,Production – core-metaplanet,Production – core-redemption-shim,Production – qr,dev,production,protected-secrets,qa
+-- scoped core-metaplanet:
+count=1 7195689137 Production – core-metaplanet
+-- scoped core-admin-center:
+count=1 7195714050 Production – core-admin-center
+-- Vercel statuses:
+Vercel – qr | success | Deployment has completed
+Vercel – core-redemption-shim | success | Deployment has completed
+Vercel – core-magazine | success | Deployment has completed
+Vercel – core-metaplanet | success | Deployment has completed
+Vercel – core-admin-center | success | Deployment has completed
+== d2904761c8bed4ac74e08da104f74ae2c6dbb571 unscoped:
+count=27 envs=Production – core-admin-center,Production – core-magazine,Production – core-metaplanet,Production – core-redemption-shim,Production – qr,dev,production,protected-secrets,qa
+-- scoped core-metaplanet:
+count=1 7195440115 Production – core-metaplanet
+-- scoped core-admin-center:
+count=1 7195445178 Production – core-admin-center
+-- Vercel statuses:
+Vercel – qr | success | Deployment has completed
+Vercel – core-redemption-shim | success | Deployment has completed
+Vercel – core-magazine | success | Deployment has completed
+Vercel – core-metaplanet | success | Deployment has completed
+Vercel – core-admin-center | success | Deployment has completed

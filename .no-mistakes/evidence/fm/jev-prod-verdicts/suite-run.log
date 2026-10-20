@@ -1,0 +1,54 @@
+FM_TEST_BEGIN 2026-10-20T10:50:36Z tests/fm-jev-prod-check.test.sh family=unclassified expected_gate_skip=none
+ok - fm-jev-prod-check: recorded run identity survives metadata failure and distinguishes attempts
+ok - fm-jev-prod-check: sibling personas never exchange preview verdicts
+ok - fm-jev-prod-check: real older skipped and failed comments remain nonpassing
+ok - fm-jev-prod-check: malformed section structure and incomplete proven outcomes stay nonpassing
+ok - fm-jev-prod-check: real completed outcomes preserve reasons and distinct workflow attempts
+ok - fm-jev-prod-check: complete titles distinguish known nonpassing outcomes and malformed titles
+ok - fm-jev-prod-check: real canceled builds and unrelated environments are distinct from unreadable deployments
+ok - fm-jev-prod-check: only successful unaffected-build statuses settle as not applicable
+ok - fm-jev-prod-check: portal personas read their production deployment beyond unrelated first-page rows
+ok - fm-jev-prod-check: deployment grace, late results, and redeploy identities are independent
+ok - fm-jev-prod-check: persona pairing checks context, plan, record, and workflow identity
+ok - fm-jev-prod-check: captured persona artifact is rejected when its context names the other app
+ok - fm-jev-prod-check: explicit reseed backs up corruption and seeds only verified current outcomes
+ok - fm-jev-prod-check: reseed honors its manual budget and ceiling while check keeps both clamps
+ok - fm-jev-prod-check: reseed names configuration, inventory, comment, and filesystem refusals
+ok - fm-jev-prod-check: reseed reports a potentially truncated full inventory without pagination
+ok - fm-jev-prod-check: saved woken and pending lists survive three candidate rotations
+ok - fm-jev-prod-check: help prints and an unknown action is refused
+ok - fm-jev-prod-check: an unconfigured home runs no check and spends nothing
+ok - fm-jev-prod-check: the config parses comments and whitespace and refuses every ambiguous directive
+ok - fm-jev-prod-check: a clean production verdict is recorded under its run key and wakes nobody
+ok - fm-jev-prod-check: a regression wakes on the poll that finds it, with its class, PR, ticket and evidence
+ok - fm-jev-prod-check: a still-flagged verdict batches, stays quiet in the window, and goes out once
+ok - fm-jev-prod-check: a production problem whose preview cannot be read is couldnt-check, never clean
+ok - fm-jev-prod-check: a production run that never reported is couldnt-check, not a settled pass
+ok - fm-jev-prod-check: a production verdict still inside its grace window reports nothing
+ok - fm-jev-prod-check: a skipped production run is couldnt-check, never read as a pass
+ok - fm-jev-prod-check: a skipped preview paired with a production failure is couldnt-check, never still-flagged
+ok - fm-jev-prod-check: a section this parser cannot read is couldnt-check, never clean
+ok - fm-jev-prod-check: a forge failure is couldnt-check, reported once per episode, and never silence
+ok - fm-jev-prod-check: a missing tool is reported as couldnt-check and refuses arming
+ok - fm-jev-prod-check: a PR title outside the ticket pattern carries no ticket, never a guessed one
+ok - fm-jev-prod-check: each app section is paired and classified on its own
+ok - fm-jev-prod-check: a pull request with no jev-check comment reports nothing
+ok - fm-jev-prod-check: a marker comment from another author is not a verdict
+ok - fm-jev-prod-check: the recorder identity is configurable and bounded
+ok - fm-jev-prod-check: an artifact verdict outside the recorder's vocabulary is not established
+ok - fm-jev-prod-check: a comment verdict outside the recorder's vocabulary is couldnt-check
+ok - fm-jev-prod-check: a comment inventory that may be truncated is couldnt-check, never silence
+ok - fm-jev-prod-check: the lookback bounds which merged pull requests are examined
+ok - fm-jev-prod-check: arm writes and binds the shim and disarm removes every trace
+ok - fm-jev-prod-check: the armed shim runs the real check against its own home
+ok - fm-jev-prod-check: more candidates than one poll reads are rotated so none is starved
+ok - fm-jev-prod-check: each rotation bucket advances by a whole window of pull requests
+ok - fm-jev-prod-check: a long batch carries every verdict it settles, uncut
+ok - fm-jev-prod-check: a window the read budget cut short is finished on the very next poll
+ok - fm-jev-prod-check: a preview read the budget cut short is deferred, never filed as couldnt-check
+ok - fm-jev-prod-check: a pull request slow on every poll is couldnt-check and never holds the monitor
+ok - fm-jev-prod-check: the read budget stays inside a lowered watcher check timeout
+FM_TEST_END 2026-10-20T10:56:24Z tests/fm-jev-prod-check.test.sh exit=0 duration_ms=347306 gate_skip=false
+FM_TEST_SUMMARY total=1 failed=0 skipped_gate=0 duration_ms=347955
+FM_TEST_SUMMARY_FAMILY family=unclassified count=1 duration_ms=347306 failed=0
+FM_TEST_SLOWEST rank=1 script=tests/fm-jev-prod-check.test.sh duration_ms=347306

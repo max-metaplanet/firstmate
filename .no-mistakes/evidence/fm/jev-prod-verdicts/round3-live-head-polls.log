@@ -1,0 +1,52 @@
+### head-688c1b4f poll 1 exit=0 elapsed=21s cursor none -> 2293
+### head-688c1b4f poll 2 exit=0 elapsed=21s cursor 2293 -> 2292
+### head-688c1b4f poll 3 exit=0 elapsed=24s cursor 2292 -> 2283
+jev-prod: couldnt-check pr=https://github.com/metaplanet-jp/core/pull/2283 ticket=ENG-2767 app=portal:portal-previous production=read-budget-exhausted preview=unproven comment=https://github.com/metaplanet-jp/core/pull/2283#issuecomment-6284884426 checks=https://github.com/metaplanet-jp/core/commit/ea29f38c938ba95b4be371cf573d9d0d1ca02697/checks
+### head-688c1b4f poll 4 exit=0 elapsed=20s cursor 2283 -> 2272
+### head-688c1b4f poll 5 exit=0 elapsed=22s cursor 2272 -> 2275
+### head-688c1b4f poll 6 exit=0 elapsed=20s cursor 2275 -> 2285
+### head-688c1b4f poll 7 exit=0 elapsed=22s cursor 2285 -> 2282
+### head-688c1b4f poll 8 exit=0 elapsed=20s cursor 2282 -> 2284
+### final record (keys + outcomes):
+fm-jev-prod-monitor-v1
+woken	2293/portal/no-production-verdict-not-applicable
+woken	2293/admin-center/post-merge-not-applicable-393954730-995
+woken	2292/portal/no-production-verdict-not-applicable
+woken	2292/admin-center/no-production-verdict-not-applicable
+woken	2283/portal/post-merge-not-applicable-3844106186-597
+woken	2283/admin-center/post-merge-not-applicable-2349546685-603
+woken	2283/portal:portal-previous/no-production-verdict-read-budget-exhausted
+woken	2272/portal/run-39395718220-attempt-1-proven-8478b0a8e440
+woken	2272/admin-center/post-merge-not-applicable-784665399-1087
+woken	2275/portal/post-merge-not-applicable-3551573315-925
+woken	2275/admin-center/post-merge-not-applicable-2144497541-638
+woken	2287/portal/no-production-verdict-not-applicable
+woken	2287/admin-center/no-production-verdict-not-applicable
+woken	2286/portal/no-production-verdict-not-applicable
+woken	2286/admin-center/no-production-verdict-not-applicable
+woken	2285/admin-center/no-production-verdict-not-applicable
+woken	2285/portal:portal-unverified/no-production-verdict-not-applicable
+woken	2282/portal/post-merge-not-applicable-39589230-629
+woken	2282/admin-center/post-merge-not-applicable-634438139-1026
+woken	2284/portal/no-production-verdict-not-applicable
+woken	2284/admin-center/no-production-verdict-not-applicable
+outcome	2293/portal/no-production-verdict-not-applicable	not-applicable	build-skipped
+outcome	2293/admin-center/post-merge-not-applicable-393954730-995	not-applicable	this pull request changes sign-in-only pages (/, /tools/engineering-board, /tools/engineering-board/[ticketId]); a prod
+outcome	2292/portal/no-production-verdict-not-applicable	not-applicable	build-skipped
+outcome	2292/admin-center/no-production-verdict-not-applicable	not-applicable	build-skipped
+outcome	2283/portal/post-merge-not-applicable-3844106186-597	not-applicable	nothing this pull request changed names a page a production check may open (admin-center: 1 file(s), database: 2 file(s), do
+outcome	2283/admin-center/post-merge-not-applicable-2349546685-603	not-applicable	nothing this pull request changed names a page a production check may open (admin-center: 1 file(s), database: 2 file(
+outcome	2272/admin-center/post-merge-not-applicable-784665399-1087	not-applicable	this pull request changes sign-in-only pages (/, /analytics, /analytics/benefits, /analytics/email and 133 more); a pr
+outcome	2275/portal/post-merge-not-applicable-3551573315-925	not-applicable	this pull request changes sign-in-only pages (/redeem/consent); a production check opens only the pages on this app's allowl
+outcome	2275/admin-center/post-merge-not-applicable-2144497541-638	not-applicable	nothing this pull request changed names a page a production check may open (admin-center: 3 file(s), app code naming n
+outcome	2287/portal/no-production-verdict-not-applicable	not-applicable	build-skipped
+outcome	2287/admin-center/no-production-verdict-not-applicable	not-applicable	build-skipped
+outcome	2286/portal/no-production-verdict-not-applicable	not-applicable	build-skipped
+outcome	2286/admin-center/no-production-verdict-not-applicable	not-applicable	build-skipped
+outcome	2285/admin-center/no-production-verdict-not-applicable	not-applicable	build-skipped
+outcome	2285/portal:portal-unverified/no-production-verdict-not-applicable	not-applicable	build-skipped
+outcome	2282/portal/post-merge-not-applicable-39589230-629	not-applicable	nothing this pull request changed names a page a production check may open (admin-center: 4 file(s), admin-center pages: 5 fil
+outcome	2282/admin-center/post-merge-not-applicable-634438139-1026	not-applicable	this pull request changes sign-in-only pages (/tools/audience-builder); a production check opens only the pages on thi
+outcome	2284/portal/no-production-verdict-not-applicable	not-applicable	build-skipped
+outcome	2284/admin-center/no-production-verdict-not-applicable	not-applicable	build-skipped
+cursor	2284

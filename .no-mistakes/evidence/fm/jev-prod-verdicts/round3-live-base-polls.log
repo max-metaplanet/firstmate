@@ -1,0 +1,52 @@
+### base-d9717ac7 poll 1 exit=0 elapsed=21s cursor none -> 2293
+jev-prod: couldnt-check pr=https://github.com/metaplanet-jp/core/pull/2293 ticket=ENG-2618 app=portal production=build-skipped preview=skipped comment=https://github.com/metaplanet-jp/core/pull/2293#issuecomment-6287995197 checks=https://github.com/metaplanet-jp/core/commit/ec006867a5f46dd37409480e947f26444321ee6e/checks
+### base-d9717ac7 poll 2 exit=0 elapsed=21s cursor 2293 -> 2292
+jev-prod: 2 verdicts: couldnt-check pr=https://github.com/metaplanet-jp/core/pull/2292 ticket=ENG-2719 app=portal production=build-skipped preview=proven comment=https://github.com/metaplanet-jp/core/pull/2292#issuecomment-6287671622 checks=https://github.com/metaplanet-jp/core/commit/a7ade6204e90a89d1e381181cc30a7af1e0273ed/checks;
+    couldnt-check pr=https://github.com/metaplanet-jp/core/pull/2292 ticket=ENG-2719 app=admin-center production=build-skipped preview=proven comment=https://github.com/metaplanet-jp/core/pull/2292#issuecomment-6287671622 checks=https://github.com/metaplanet-jp/core/commit/a7ade6204e90a89d1e381181cc30a7af1e0273ed/checks
+### base-d9717ac7 poll 3 exit=0 elapsed=24s cursor 2292 -> 2283
+jev-prod: couldnt-check pr=https://github.com/metaplanet-jp/core/pull/2283 ticket=ENG-2767 app=portal:portal-previous production=deployment-unreadable preview=unproven comment=https://github.com/metaplanet-jp/core/pull/2283#issuecomment-6284884426 checks=https://github.com/metaplanet-jp/core/commit/ea29f38c938ba95b4be371cf573d9d0d1ca02697/checks
+### base-d9717ac7 poll 4 exit=0 elapsed=20s cursor 2283 -> 2272
+### base-d9717ac7 poll 5 exit=0 elapsed=21s cursor 2272 -> 2275
+### base-d9717ac7 poll 6 exit=0 elapsed=20s cursor 2275 -> 2285
+jev-prod: 6 verdicts: couldnt-check pr=https://github.com/metaplanet-jp/core/pull/2287 ticket=ENG-2777 app=portal production=build-skipped preview=unproven comment=https://github.com/metaplanet-jp/core/pull/2287#issuecomment-6286198402 checks=https://github.com/metaplanet-jp/core/commit/8b2633c1ac2da70f4541b6ac75d302ba9aaaaf92/checks;
+    couldnt-check pr=https://github.com/metaplanet-jp/core/pull/2287 ticket=ENG-2777 app=admin-center production=build-skipped preview=proven comment=https://github.com/metaplanet-jp/core/pull/2287#issuecomment-6286198402 checks=https://github.com/metaplanet-jp/core/commit/8b2633c1ac2da70f4541b6ac75d302ba9aaaaf92/checks;
+    couldnt-check pr=https://github.com/metaplanet-jp/core/pull/2286 ticket=ENG-2745 app=portal production=build-skipped preview=proven comment=https://github.com/metaplanet-jp/core/pull/2286#issuecomment-6285312767 checks=https://github.com/metaplanet-jp/core/commit/ab90db29ab66a7ed6fd068cff833eb7db60e7d0b/checks;
+    couldnt-check pr=https://github.com/metaplanet-jp/core/pull/2286 ticket=ENG-2745 app=admin-center production=build-skipped preview=failed comment=https://github.com/metaplanet-jp/core/pull/2286#issuecomment-6285312767 checks=https://github.com/metaplanet-jp/core/commit/ab90db29ab66a7ed6fd068cff833eb7db60e7d0b/checks;
+    couldnt-check pr=https://github.com/metaplanet-jp/core/pull/2285 ticket=ENG-2708 app=admin-center production=build-skipped preview=unproven comment=https://github.com/metaplanet-jp/core/pull/2285#issuecomment-6284969792 checks=https://github.com/metaplanet-jp/core/commit/596fd5845eb4184b986feb639938cf46bc1a97ad/checks;
+    couldnt-check pr=https://github.com/metaplanet-jp/core/pull/2285 ticket=ENG-2708 app=portal:portal-unverified production=build-skipped preview=unproven comment=https://github.com/metaplanet-jp/core/pull/2285#issuecomment-6284969792 checks=https://github.com/metaplanet-jp/core/commit/596fd5845eb4184b986feb639938cf46bc1a97ad/checks
+### base-d9717ac7 poll 7 exit=0 elapsed=23s cursor 2285 -> 2282
+### base-d9717ac7 poll 8 exit=0 elapsed=20s cursor 2282 -> 2284
+jev-prod: 2 verdicts: couldnt-check pr=https://github.com/metaplanet-jp/core/pull/2284 ticket=ENG-2749 app=portal production=build-skipped preview=unproven comment=https://github.com/metaplanet-jp/core/pull/2284#issuecomment-6284871710 checks=https://github.com/metaplanet-jp/core/commit/3511c399aafd43d63530605c195c944da911ef87/checks;
+    couldnt-check pr=https://github.com/metaplanet-jp/core/pull/2284 ticket=ENG-2749 app=admin-center production=build-skipped preview=failed comment=https://github.com/metaplanet-jp/core/pull/2284#issuecomment-6284871710 checks=https://github.com/metaplanet-jp/core/commit/3511c399aafd43d63530605c195c944da911ef87/checks
+### final record (keys + outcomes):
+fm-jev-prod-monitor-v1
+woken	2293/portal/no-production-verdict-build-skipped
+woken	2293/admin-center/post-merge-not-applicable-393954730-995
+woken	2292/portal/no-production-verdict-build-skipped
+woken	2292/admin-center/no-production-verdict-build-skipped
+woken	2283/portal/post-merge-not-applicable-3844106186-597
+woken	2283/admin-center/post-merge-not-applicable-2349546685-603
+woken	2283/portal:portal-previous/no-production-verdict-deployment-unreadable
+woken	2272/portal/run-39395718220-attempt-1-proven-8478b0a8e440
+woken	2272/admin-center/post-merge-not-applicable-784665399-1087
+woken	2275/portal/post-merge-not-applicable-3551573315-925
+woken	2275/admin-center/post-merge-not-applicable-2144497541-638
+woken	2287/portal/no-production-verdict-build-skipped
+woken	2287/admin-center/no-production-verdict-build-skipped
+woken	2286/portal/no-production-verdict-build-skipped
+woken	2286/admin-center/no-production-verdict-build-skipped
+woken	2285/admin-center/no-production-verdict-build-skipped
+woken	2285/portal:portal-unverified/no-production-verdict-build-skipped
+woken	2282/portal/post-merge-not-applicable-39589230-629
+woken	2282/admin-center/post-merge-not-applicable-634438139-1026
+woken	2284/portal/no-production-verdict-build-skipped
+woken	2284/admin-center/no-production-verdict-build-skipped
+outcome	2293/admin-center/post-merge-not-applicable-393954730-995	not-applicable	this pull request changes sign-in-only pages (/, /tools/engineering-board, /tools/engineering-board/[ticketId]); a prod
+outcome	2283/portal/post-merge-not-applicable-3844106186-597	not-applicable	nothing this pull request changed names a page a production check may open (admin-center: 1 file(s), database: 2 file(s), do
+outcome	2283/admin-center/post-merge-not-applicable-2349546685-603	not-applicable	nothing this pull request changed names a page a production check may open (admin-center: 1 file(s), database: 2 file(
+outcome	2272/admin-center/post-merge-not-applicable-784665399-1087	not-applicable	this pull request changes sign-in-only pages (/, /analytics, /analytics/benefits, /analytics/email and 133 more); a pr
+outcome	2275/portal/post-merge-not-applicable-3551573315-925	not-applicable	this pull request changes sign-in-only pages (/redeem/consent); a production check opens only the pages on this app's allowl
+outcome	2275/admin-center/post-merge-not-applicable-2144497541-638	not-applicable	nothing this pull request changed names a page a production check may open (admin-center: 3 file(s), app code naming n
+outcome	2282/portal/post-merge-not-applicable-39589230-629	not-applicable	nothing this pull request changed names a page a production check may open (admin-center: 4 file(s), admin-center pages: 5 fil
+outcome	2282/admin-center/post-merge-not-applicable-634438139-1026	not-applicable	this pull request changes sign-in-only pages (/tools/audience-builder); a production check opens only the pages on thi
+cursor	2284

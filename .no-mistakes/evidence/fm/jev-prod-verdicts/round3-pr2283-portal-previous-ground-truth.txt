@@ -1,0 +1,15 @@
+## Production – core-metaplanet deployments for PR 2283 merge ea29f38c938ba95b4be371cf573d9d0d1ca02697
+7195689137	Production – core-metaplanet	2026-10-20T08:58:59Z
+## statuses of 7195689137
+success	2026-10-20T08:58:59Z
+## recorder comment sections on PR 2283 (headers + phase lines)
+### portal
+**Browser check — not applicable in production** (advisory; blocks no merge)
+Head `b9655c9ecbab4e7104265e9fbcb8526eb7b4bff6` · post-merge
+Not applicable in production: nothing this pull request changed names a page a production check may open (admin-center: 1 file(s), database: 2 file(s), docs: 2 file(s), shared packages: 1 file(s), tests: 5 file(s), tooling/CI: 1 file(s)). No plan was generated and no planner call was spent. This is neither a pass nor a failure — there was nothing this production check is allowed to open.
+### admin-center
+**Browser check — not applicable in production** (advisory; blocks no merge)
+Head `b9655c9ecbab4e7104265e9fbcb8526eb7b4bff6` · post-merge
+Not applicable in production: nothing this pull request changed names a page a production check may open (admin-center: 1 file(s), database: 2 file(s), docs: 2 file(s), shared packages: 1 file(s), tests: 5 file(s), tooling/CI: 1 file(s)). No plan was generated and no planner call was spent. This is neither a pass nor a failure — there was nothing this production check is allowed to open.
+### portal:portal-previous
+Head `4e261a1e4fc0152dc5515c2b5380e23d44759f3c` · pre-merge · qa-preview · navigator `scripted`

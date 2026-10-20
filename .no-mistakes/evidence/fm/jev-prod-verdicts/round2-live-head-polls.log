@@ -1,0 +1,14 @@
+### head de072346 poll 1 (default budget, BATCH_SECS=0)
+exit=0 elapsed=20s
+### head de072346 poll 2 (default budget, BATCH_SECS=0)
+exit=0 elapsed=20s
+### head de072346 poll 3 (default budget, BATCH_SECS=0)
+exit=0 elapsed=20s
+### head de072346 poll 4 (default budget, BATCH_SECS=0)
+exit=0 elapsed=21s
+### head de072346 poll 5 (default budget, BATCH_SECS=0)
+exit=0 elapsed=20s
+### head de072346 poll 6 (default budget, BATCH_SECS=0)
+exit=0 elapsed=20s
+### head de072346 poll 7 (default budget, BATCH_SECS=0)
+exit=0 elapsed=20s

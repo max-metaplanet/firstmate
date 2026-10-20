@@ -1,0 +1,13 @@
+### poll 1
+exit=0
+### poll 2
+jev-prod: couldnt-check pr=https://github.com/metaplanet-jp/core/pull/2283 ticket=ENG-2767 app=portal:portal-previous production=deployment-unreadable preview=unproven comment=https://github.com/metaplanet-jp/core/pull/2283#issuecomment-6284884426 checks=https://github.com/metaplanet-jp/core/commit/ea29f38c938ba95b4be371cf573d9d0d1ca02697/checks
+exit=0
+### poll 3
+exit=0
+### poll 4
+exit=0
+### poll 5
+exit=0
+### poll 6
+exit=0

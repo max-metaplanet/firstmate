@@ -1,0 +1,15 @@
+### poll 1
+jev-prod: 2 verdicts: couldnt-check pr=https://github.com/metaplanet-jp/core/pull/2292 ticket=ENG-2719 app=portal production=build-skipped preview=proven comment=https://github.com/metaplanet-jp/core/pull/2292#issuecomment-6287671622 checks=https://github.com/metaplanet-jp/core/commit/a7ade6204e90a89d1e381181cc30a7af1e0273ed/checks; couldnt-check pr=https://github.com/metaplanet-jp/core/pull/2292 ticket=ENG-2719 app=admin-center production=build-skipped preview=proven comment=https://github.com/metaplanet-jp/core/pull/2292#issuecomment-6287671622 checks=https://github.com/metaplanet-jp/core/commit/a7ade6204e90a89d1e381181cc30a7af1e0273ed/checks
+exit=0
+### poll 2
+jev-prod: couldnt-check pr=https://github.com/metaplanet-jp/core/pull/2283 ticket=ENG-2767 app=portal:portal-previous production=deployment-unreadable preview=unproven comment=https://github.com/metaplanet-jp/core/pull/2283#issuecomment-6284884426 checks=https://github.com/metaplanet-jp/core/commit/ea29f38c938ba95b4be371cf573d9d0d1ca02697/checks
+exit=0
+### poll 3
+exit=0
+### poll 4
+exit=0
+### poll 5
+jev-prod: 6 verdicts: couldnt-check pr=https://github.com/metaplanet-jp/core/pull/2287 ticket=ENG-2777 app=portal production=build-skipped preview=unproven comment=https://github.com/metaplanet-jp/core/pull/2287#issuecomment-6286198402 checks=https://github.com/metaplanet-jp/core/commit/8b2633c1ac2da70f4541b6ac75d302ba9aaaaf92/checks; couldnt-check pr=https://github.com/metaplanet-jp/core/pull/2287 ticket=ENG-2777 app=admin-center production=build-skipped preview=proven comment=https://github.com/metaplanet-jp/core/pull/2287#issuecomment-6286198402 checks=https://github.com/metaplanet-jp/core/commit/8b2633c1ac2da70f4541b6ac75d302ba9aaaaf92/checks; couldnt-check pr=https://github.com/metaplanet-jp/core/pull/2286 ticket=ENG-2745 app=portal production=build-skipped preview=proven comment=https://github.com/metaplanet-jp/core/pull/2286#issuecomment-6285312767 checks=https://github.com/metaplanet-jp/core/commit/ab90db29ab66a7ed6fd068cff833eb7db60e7d0b/checks; couldnt-check pr=https://github.com/metaplanet-jp/core/pull/2286 ticket=ENG-2745 app=admin-center production=build-skipped preview=failed comment=https://github.com/metaplanet-jp/core/pull/2286#issuecomment-6285312767 checks=https://github.com/metaplanet-jp/core/commit/ab90db29ab66a7ed6fd068cff833eb7db60e7d0b/checks; couldnt-check pr=https://github.com/metaplanet-jp/core/pull/2285 ticket=ENG-2708 app=admin-center production=build-skipped preview=unproven comment=https://github.com/metaplanet-jp/core/pull/2285#issuecomment-6284969792 checks=https://github.com/metaplanet-jp/core/commit/596fd5845eb4184b986feb639938cf46bc1a97ad/checks; couldnt-check pr=https://github.com/metaplanet-jp/core/pull/2285 ticket=ENG-2708 app=portal:portal-unverified production=build-skipped preview=unproven comment=https://github.com/metaplanet-jp/core/pull/2285#issuecomment-6284969792 checks=https://github.com/metaplanet-jp/core/commit/596fd5845eb4184b986feb639938cf46bc1a97ad/checks
+exit=0
+### poll 6
+exit=0

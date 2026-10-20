@@ -1,0 +1,12 @@
+### head poll 1 (default FM_CHECK_TIMEOUT/BUDGET, BATCH_SECS=0)
+exit=0 elapsed=20s
+### head poll 2 (default FM_CHECK_TIMEOUT/BUDGET, BATCH_SECS=0)
+jev-prod: couldnt-check pr=https://github.com/metaplanet-jp/core/pull/2283 ticket=ENG-2767 app=portal:portal-previous production=deployment-unreadable preview=unproven comment=https://github.com/metaplanet-jp/core/pull/2283#issuecomment-6284884426 checks=https://github.com/metaplanet-jp/core/commit/ea29f38c938ba95b4be371cf573d9d0d1ca02697/checks
+exit=0 elapsed=20s
+### head poll 3 (default FM_CHECK_TIMEOUT/BUDGET, BATCH_SECS=0)
+exit=0 elapsed=21s
+### live GitHub: scoped production deployment for ea29f38 (PR 2283) and its status
+7195689137 Production – core-metaplanet
+success 2026-10-20T08:58:59Z
+### Jev Check workflow runs on ea29f38 the persona artifact scan walks:
+96

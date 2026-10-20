@@ -1,0 +1,42 @@
+### traced poll 9 at de072346: examine_pr calls, section counter, budget-cut deferral, cursor
++ cursor=2292
++ examine_pr 2283 https://github.com/metaplanet-jp/core/pull/2283 b9655c9ecbab4e7104265e9fbcb8526eb7b4bff6 ea29f38c938ba95b4be371cf573d9d0d1ca02697 1792486501 'fix/ENG-2767: fix the profiles self-update RLS recursion and revoke authenticated'\''s UPDATE grant'
++ sections=1
++ section_identity portal
++ return 1
++ return 1
++ return 1
++ return 1
++ return 1
++ return 1
++ return 1
++ return 1
++ return 1
++ return 1
++ return 1
++ return 1
++ return 1
++ return 1
++ return 1
++ return 1
++ return 1
++ return 1
++ return 1
++ return 1
++ return 1
++ return 1
++ return 1
++ return 1
++ return 1
++ return 1
++ return 1
++ return 1
++ budget_cut_deferrable
++ sections=2
++ section_identity admin-center
++ return 1
++ return 1
++ budget_cut_deferrable
++ return 1
+### cursor after: cursor	2292
+### Jev artifact listing reads this poll: 114

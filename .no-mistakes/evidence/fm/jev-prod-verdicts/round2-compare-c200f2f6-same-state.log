@@ -1,0 +1,8 @@
+### c200f2f6 (before round-1 budget fix), starting from the same record (cursor 2292) the head polls are stuck on
+## poll 1
+jev-prod: couldnt-check pr=https://github.com/metaplanet-jp/core/pull/2283 ticket=ENG-2767 app=portal:portal-previous production=deployment-unreadable preview=unproven comment=https://github.com/metaplanet-jp/core/pull/2283#issuecomment-6284884426 checks=https://github.com/metaplanet-jp/core/commit/ea29f38c938ba95b4be371cf573d9d0d1ca02697/checks
+exit=0 cursor	2283
+## poll 2
+exit=0 cursor	2272
+## poll 3
+exit=0 cursor	2275
