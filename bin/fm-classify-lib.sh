@@ -215,9 +215,11 @@ status_pr_ticket_scope() {  # <status-file> <pr-url>
 status_record_ticket_scope() (  # <status-file>
   local f=$1 meta=${1%.status}.meta lock tmp='' line ticket='' pr='' scope
   [ -f "$meta" ] && [ ! -L "$meta" ] || return 0
-  # shellcheck source=bin/fm-wake-lib.sh
+  # Both libraries are canonical lint roots; keep them an analysis boundary
+  # as fm_afk_contract_lock_helpers does.
+  # shellcheck source=/dev/null
   . "$_FM_CLASSIFY_LIB_DIR/fm-wake-lib.sh"
-  # shellcheck source=bin/fm-pr-lib.sh
+  # shellcheck source=/dev/null
   . "$_FM_CLASSIFY_LIB_DIR/fm-pr-lib.sh"
   lock=$(fm_meta_lock_path "$meta") || return 1
   fm_lock_acquire_wait_bounded "$lock" 1 || return 1
