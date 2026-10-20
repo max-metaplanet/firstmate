@@ -405,6 +405,23 @@ test_sweep_respawns_confirmed_dead_secondmate() {
   pass "sweep: a confirmed-dead secondmate endpoint is killed and respawned"
 }
 
+test_sweep_does_not_relaunch_parked_secondmate() {
+  local w fb tmuxfb log out cycle
+  w=$(new_world sweep-parked)
+  add_sm_home "$w" sm1 firstmate:fm-sm1
+  fb=$(make_toolchain "$w"); tmuxfb=$(make_liveness_tmux "$w")
+  printf 'schema=1\nhome=%s\nphase=parked\npersisted=1\n' "$w/sm1" > "$w/home/state/.secondmate-park-sm1"
+  log="$w/calls.log"; : > "$log"
+  for cycle in 1 2; do
+    out=$(run_bootstrap "$tmuxfb:$fb" "$w/home" zsh "$log")
+    assert_not_contains "$out" 'SECONDMATE_LIVENESS:' "parked mate triggered recovery: $out"
+  done
+  assert_no_grep 'kill-window' "$log" 'parked dead endpoint must not be killed'
+  assert_no_grep 'new-window' "$log" 'parked dead endpoint must not be relaunched'
+  assert_absent "$w/home/state/.secondmate-relaunch-sm1" 'parked mate must not accrue relaunch attempts'
+  pass 'sweep: repeated sweeps leave a parked stopped mate untouched'
+}
+
 test_sweep_recovers_the_durable_secondmate_account() {
   local w fb tmuxfb log out
   w=$(new_world sweep-account)
@@ -825,6 +842,7 @@ test_tmux_agent_state_rejects_malformed_targets_before_probe
 test_herdr_agent_state_preserves_husk_classifier
 test_agent_state_dispatcher_and_compatibility
 test_sweep_respawns_confirmed_dead_secondmate
+test_sweep_does_not_relaunch_parked_secondmate
 test_sweep_recovers_the_durable_secondmate_account
 test_sweep_serializes_distinct_secondmate_relaunches
 test_sweep_leaves_alive_secondmate_untouched

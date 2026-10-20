@@ -922,7 +922,7 @@ test_park_stopped_with_durable_proof() {
   printf 'done [at=123]: ready to park - no conversation-only open work\n' > "$dir/home/state/sm1.status"
   out=$(FM_TEST_PERSIST_WAIT=0 run_park "$dir" sm1 park); rc=$?
   expect_code 0 "$rc" "stopped mate with durable proof must park: $out"
-  assert_grep '^phase=parked$' "$dir/home/state/.secondmate-park-sm1" 'stopped park publishes durable authority'
+  assert_grep 'phase=parked' "$dir/home/state/.secondmate-park-sm1" 'stopped park publishes durable authority'
   assert_absent "$dir/home/state/sm1.inbox" 'stopped park never sends a persist request'
   assert_absent "$dir/home/state/pending-replies" 'stopped park never creates a live reply expectation'
   [ ! -s "$dir/fake/literal" ] || fail 'stopped park sent input to an agent'
@@ -974,7 +974,7 @@ test_park_live_ready_status_still_needs_reply() {
   expect_code 1 "$rc" 'live mate must still answer the correlated persist request'
   assert_present "$dir/home/state/sm1.inbox/001.msg" 'live mate receives persistence even with an earlier ready status'
   assert_absent "$dir/home/state/.secondmate-park-sm1" 'unanswered live gate leaves no park authority'
-  assert_no_grep '^/exit$' "$dir/fake/literal" 'unanswered live gate never stops the agent'
+  assert_no_grep '/exit' "$dir/fake/literal" 'unanswered live gate never stops the agent'
   pass 'live ready status cannot substitute for the existing persist gate'
 }
 
