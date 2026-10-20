@@ -1,0 +1,11 @@
+ok - fm-jev-prod-check: the archived wake batch reports only the deployment gap
+ok - fm-jev-prod-check: real canceled builds and unrelated environments are distinct from unreadable deployments
+ok - fm-jev-prod-check: only successful unaffected-build statuses settle as not applicable
+ok - fm-jev-prod-check: a window the read budget cut short is finished on the very next poll
+ok - fm-jev-prod-check: a preview read the budget cut short is deferred, never filed as couldnt-check
+ok - fm-jev-prod-check: a sibling deployment budget cut is silently retried on the next poll
+ok - fm-jev-prod-check: a first PR budget cut is silently retried on the next poll
+ok - fm-jev-prod-check: a pull request slow on every poll is retried silently and never holds the monitor
+ok - fm-jev-prod-check: a deployment inventory budget cut retries without a terminal outcome
+ok - fm-jev-prod-check: a first comment budget cut retries without a terminal outcome
+ok - fm-jev-prod-check: a forge failure is couldnt-check, reported once per episode, and never silence
