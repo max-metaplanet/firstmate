@@ -3995,12 +3995,7 @@ if [ -n "$SPAWN_PROJECT_CAPACITY" ]; then
     echo "deferred: project $(basename "$PROJ_ABS") admits $SPAWN_PROJECT_CAPACITY worker(s) at once on this machine ($FM_PROJECT_CAPACITY_FILE) and $FM_PROJECT_CAPACITY_OCCUPANTS already hold a place ($FM_PROJECT_CAPACITY_OCCUPANT_IDS); task $ID was not launched and its backlog item stays queued - dispatch it again once one of them records its ready PR or is cleaned up" >&2
     exit "$FM_PROJECT_CAPACITY_DEFER_EXIT"
   fi
-  SPAWN_RESUMES_AHEAD=$({
-    printf '%s' "$FM_PROJECT_CAPACITY_RESUME_ROWS"
-    if fm_worker_park_load "$STATE/$ID.meta" && [ "$FM_WORKER_PARK_RESERVES" = 1 ]; then
-      printf '%s\t%s\n' "$FM_WORKER_PARK_QUEUED_AT" "$STATE/$ID.meta"
-    fi
-  } | fm_worker_park_rank "$STATE/$ID.meta")
+  SPAWN_RESUMES_AHEAD=$(fm_project_capacity_resumes_ahead "$STATE/$ID.meta")
   if [ $((FM_PROJECT_CAPACITY_OCCUPANTS + SPAWN_RESUMES_AHEAD)) -ge "$SPAWN_PROJECT_CAPACITY" ]; then
     echo "deferred: $SPAWN_RESUMES_AHEAD queued parked-worker resume(s) hold the remaining place(s) in project $(basename "$PROJ_ABS") and resume ahead of task $ID" >&2
     exit "$FM_PROJECT_CAPACITY_DEFER_EXIT"
@@ -4032,7 +4027,14 @@ if [ "$RELAUNCH" -eq 0 ] || [ "$SPAWN_PARK_RESUME" = 1 ]; then
       echo "error: spawn refused: this machine declares a fleet capacity of $FM_FLEET_CAPACITY, but its task records cannot all be read to count it ($FM_FLEET_CAPACITY_ERROR)" >&2
       exit 1
     fi
-    SPAWN_RESUMES_AHEAD=$(fm_worker_park_ahead "$STATE" "$STATE/$ID.meta") || exit 1
+    SPAWN_RESUME_ROWS=$(fm_worker_park_rows "$STATE") || exit 1
+    SPAWN_RESUMES_AHEAD=$(printf '%s\n' "$SPAWN_RESUME_ROWS" | while IFS=$'\t' read -r at meta; do
+      [ -n "$meta" ] || continue
+      if [ "$meta" = "$STATE/$ID.meta" ] ||
+        ( fm_project_capacity_admits_resume "$SPAWN_FLEET_CONFIG" "$STATE" "$meta" ); then
+        printf '%s\t%s\n' "$at" "$meta"
+      fi
+    done | fm_worker_park_rank "$STATE/$ID.meta")
     if [ "$FM_FLEET_CAPACITY_OCCUPANTS" -ge "$FM_FLEET_CAPACITY" ]; then
       echo "deferred: this machine runs at most $FM_FLEET_CAPACITY agent(s) at once ($FM_FLEET_CAPACITY_FILE) and $FM_FLEET_CAPACITY_OCCUPANTS are running ($FM_FLEET_CAPACITY_OCCUPANT_IDS); task $ID was not launched and its backlog item stays queued - dispatch it again once one of them is cleaned up or stops" >&2
       exit "$FM_PROJECT_CAPACITY_DEFER_EXIT"

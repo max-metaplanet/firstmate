@@ -436,12 +436,19 @@ test_parked_resume_has_project_priority() {
   case_dir=$(make_case project-priority task-c)
   home="$case_dir/home"
   declare_capacity "$home" 'project 1'
-  write_live "$home" parked-a "$case_dir/project"
+  write_running "$case_dir" "$home" parked-a "$case_dir/project"
   write_park "$home" parked-a queued
+  pane=$(new_worktree "$case_dir" parked-a)
+  write_brief "$home" parked-a
+  sed "s|^worktree=.*|worktree=$pane|" "$home/state/parked-a.meta" > "$home/state/parked-a.meta.next"
+  mv "$home/state/parked-a.meta.next" "$home/state/parked-a.meta"
   out=$(spawn_ship "$case_dir" task-c) || rc=$?
   expect_code 75 "$rc" "fresh dispatch took the project place a queued resume waits for: $out"
   assert_contains "$out" 'in project project and resume ahead of task task-c' 'project admission enforces resume priority'
   assert_absent "$home/state/task-c.meta" 'project priority deferral creates no record'
+  rc=0
+  out=$(FM_FAKE_AGENT_COMMAND=bash run_spawn "$case_dir" "$home" "$pane" parked-a --relaunch --harness codex) || rc=$?
+  expect_code 0 "$rc" "the queued resume was not admitted to the place it reserved: $out"
 
   case_dir=$(make_case project-repair task-c)
   home="$case_dir/home"
@@ -462,6 +469,18 @@ test_parked_resume_has_project_priority() {
   rc=0
   out=$(spawn_ship "$case_dir" task-c) || rc=$?
   expect_code 0 "$rc" "a resume queued for another project blocked spare capacity: $out"
+
+  case_dir=$(make_case project-blocked-fleet task-c)
+  home="$case_dir/home"
+  fm_git_init_commit "$case_dir/other"
+  declare_capacity "$home" 'other 1'
+  declare_fleet "$home" 2
+  write_running "$case_dir" "$home" holder "$case_dir/other"
+  write_live "$home" parked-a "$case_dir/other"
+  write_park "$home" parked-a queued
+  rc=0
+  out=$(spawn_ship "$case_dir" task-c) || rc=$?
+  expect_code 0 "$rc" "a resume its full project cannot admit held the spare fleet place: $out"
   pass 'queued resumes take priority for their own project cap only'
 }
 

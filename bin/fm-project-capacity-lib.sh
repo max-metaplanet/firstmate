@@ -251,3 +251,30 @@ fm_project_capacity_occupants() {  # <project-lock> <project-dir> <first-state> 
   done
   return 0
 }
+
+# After fm_project_capacity_occupants, print how many of the project's queued
+# resumes precede <own-meta> (all of them when it is not a reserving resume).
+fm_project_capacity_resumes_ahead() {  # <own-meta>
+  {
+    printf '%s' "$FM_PROJECT_CAPACITY_RESUME_ROWS"
+    if fm_worker_park_load "$1" && [ "$FM_WORKER_PARK_RESERVES" = 1 ]; then
+      printf '%s\t%s\n' "$FM_WORKER_PARK_QUEUED_AT" "$1"
+    fi
+  } | fm_worker_park_rank "$1"
+}
+
+# Succeed when the project of the queued resume <meta> could admit it now: no
+# declared cap, or holders plus earlier resumes for that project leave a place.
+# An unreadable count keeps the resume admissible, so it still reserves.
+# Overwrites the FM_PROJECT_CAPACITY_* globals; run it in a subshell.
+fm_project_capacity_admits_resume() {  # <config-dir> <first-state> <meta>
+  local project lock ahead
+  project=$(fm_meta_get "$3" project)
+  [ -n "$project" ] || return 0
+  fm_project_capacity_lookup "$1" "$(basename "$project")" || return 0
+  [ -n "$FM_PROJECT_CAPACITY" ] || return 0
+  lock=$(fm_treehouse_project_lock_path "$project" 2>/dev/null) || return 0
+  fm_project_capacity_occupants "$lock" "$project" "$2" "$(basename "$3" .meta)" || return 0
+  ahead=$(fm_project_capacity_resumes_ahead "$3")
+  [ $((FM_PROJECT_CAPACITY_OCCUPANTS + ahead)) -lt "$FM_PROJECT_CAPACITY" ]
+}

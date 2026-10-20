@@ -12,7 +12,8 @@
 # Pending resumes sort by queued_at then full metadata path. Under a declared
 # fleet or project cap each one reserves a place in that cap ahead of later
 # resumes and fresh work (FM_WORKER_PARK_RESERVES); a resume_error hold
-# reserves nothing until an explicit wake clears it.
+# reserves nothing until an explicit wake clears it, and fm-spawn reserves no
+# fleet place for a resume its own project cap cannot admit yet.
 # Requires fm_meta_get and fm_backend_target_of_meta. No side effects on source.
 
 fm_worker_park_load() { # <meta>
@@ -40,7 +41,7 @@ fm_worker_park_rank() { # <own-meta>; reads queued_at<TAB>meta rows, prints how 
     awk -F '\t' -v own="$1" '$2 == own { print NR - 1; found = 1; exit } END { if (!found) print NR }'
 }
 
-fm_worker_park_ahead() { # <state> <own-meta>; prints how many resumes queue ahead
+fm_worker_park_rows() { # <state>; prints queued_at<TAB>meta for every reserving resume
   local state meta rows=''
   fm_local_firstmate_state_dirs "$1" || return 1
   for state in "${FM_LOCAL_FIRSTMATE_STATES[@]}"; do
@@ -49,5 +50,5 @@ fm_worker_park_ahead() { # <state> <own-meta>; prints how many resumes queue ahe
       rows+="$FM_WORKER_PARK_QUEUED_AT"$'\t'"$meta"$'\n'
     done
   done
-  printf '%s' "$rows" | fm_worker_park_rank "$2"
+  printf '%s' "$rows"
 }
