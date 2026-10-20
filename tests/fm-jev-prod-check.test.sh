@@ -223,6 +223,25 @@ poll() {  # <home> [env-assignment...]
   env PATH="$bin:$PATH" FM_HOME="$home" FM_JEV_PROD_NOW="$NOW" "$@" "$CHECK" check 2>&1
 }
 
+test_recorded_legacy_batch_only_wakes_for_actual_gaps() {
+  local home out
+  local NOW=1792513506
+  home=$(make_home legacy-pending)
+  configure "$home"
+  fake_gh "$home" >/dev/null
+  printf '[]\n' > "$home/fx/pulls.json"
+  cp "$ROOT/tests/fixtures/jev-prod-monitor/legacy-pending.tsv" "$home/state/.jev-prod-monitor"
+  out=$(poll "$home" FM_JEV_PROD_BATCH_SECS=0)
+  assert_no_grep $'pending\t' "$home/state/.jev-prod-monitor" "the delivered batch leaves no pending rows"
+  assert_contains "$out" 'production=deployment-unreadable ' "the actual deployment gap still wakes"
+  assert_not_contains "$out" 'production=build-skipped ' "legacy unaffected builds never wake"
+  assert_not_contains "$out" 'production=read-budget-exhausted ' "legacy budget cuts never wake"
+  assert_grep $'woken\t2292/portal/no-production-verdict-build-skipped' "$home/state/.jev-prod-monitor" "the silent skipped build remains recorded"
+  out=$(poll "$home" FM_JEV_PROD_BATCH_SECS=0)
+  assert_equals "" "$out" "the completed batch is not delivered twice"
+  pass "fm-jev-prod-check: the archived wake batch reports only the deployment gap"
+}
+
 test_help_and_usage() {
   local out
   out=$("$CHECK" --help)
@@ -926,7 +945,7 @@ test_a_preview_read_the_budget_cut_short_is_deferred_not_couldnt_check() {
   pass "fm-jev-prod-check: a preview read the budget cut short is deferred, never filed as couldnt-check"
 }
 
-test_a_deployment_read_after_a_sibling_spent_the_budget_never_holds_the_monitor() {
+test_a_deployment_read_after_a_sibling_spent_the_budget_is_retried() {
   local home
   home=$(make_home budget-sibling)
   configure "$home"
@@ -936,25 +955,28 @@ test_a_deployment_read_after_a_sibling_spent_the_budget_never_holds_the_monitor(
 $(section portal:portal-previous proven pre-merge preview previewrec)"
   write_no_comments "$home" 2215
   write_preview_artifact "$home" portal proven
-  # On every poll the first section's production lookup spends the whole budget
+  # The first section's production lookup spends the whole budget
   # before the sibling persona reaches its deployment read.
-  slow_gh "$home" '*actions/workflows/jev-check.yml/runs*' always
+  slow_gh "$home" '*actions/workflows/jev-check.yml/runs*' once
 
   : > "$home/fx/gh-argv.log"
   budget_poll "$home" >/dev/null
   assert_no_grep 'deployment-unreadable' "$home/state/.jev-prod-monitor" \
     "a deployment read the budget cut short is not an unreadable deployment"
-  assert_grep 'app=portal:portal-previous production=read-budget-exhausted ' "$home/state/.jev-prod-monitor" \
-    "a sibling a whole fresh budget could not reach is couldnt-check for budget exhaustion"
+  assert_no_grep 'read-budget-exhausted' "$home/state/.jev-prod-monitor" \
+    "the unfinished deployment read is neither queued nor settled"
+  assert_no_grep $'pending\t' "$home/state/.jev-prod-monitor" "budget cuts never enter the inability batch"
 
   : > "$home/fx/gh-argv.log"
   budget_poll "$home" >/dev/null
-  assert_equals "2215" "$(comment_reads "$home" | cut -d' ' -f1)" \
-    "the next poll must move on to the next pull request"
-  pass "fm-jev-prod-check: a deployment read a sibling's budget spend cut short is budget exhaustion and never holds the monitor"
+  assert_equals "2215 2214 " "$(comment_reads "$home")" \
+    "the next poll must move past the unfinished pull request and retry it when the rotation reaches it"
+  assert_grep 'no-production-verdict-deployment-7001' "$home/state/.jev-prod-monitor" \
+    "the retried sibling can establish its actual production gap"
+  pass "fm-jev-prod-check: a sibling deployment budget cut is silently retried on the next poll"
 }
 
-test_a_pull_request_slow_on_every_poll_never_holds_the_monitor() {
+test_a_first_pull_request_budget_cut_is_retried() {
   local home
   home=$(make_home budget-stuck)
   configure "$home"
@@ -963,23 +985,87 @@ test_a_pull_request_slow_on_every_poll_never_holds_the_monitor() {
   write_comments "$home" 2214 900023 "$(section portal failed post-merge production 5170c4000023)"
   write_no_comments "$home" 2215
   write_preview_artifact "$home" portal proven
-  # 2214's preview lookup outlasts a whole fresh budget on every poll.
-  slow_gh "$home" '*actions/workflows/jev-check.yml/runs*' always
+  # The first PR exhausts a fresh budget before its preview can be paired.
+  slow_gh "$home" '*actions/workflows/jev-check.yml/runs*' once
 
   : > "$home/fx/gh-argv.log"
   budget_poll "$home" >/dev/null
   assert_equals "2214 " "$(comment_reads "$home")" "the first poll must spend its whole budget on the slow pull request"
-  assert_grep "couldnt-check	couldnt-check pr=https://github.com/$REPO/pull/2214 " \
-    "$home/state/.jev-prod-monitor" \
-    "a pull request a whole fresh budget could not read must be couldnt-check, not deferred forever"
-  assert_grep "woken	2214/portal/5170c4000023" "$home/state/.jev-prod-monitor" \
-    "the couldnt-check verdict must be recorded so it is not queued again"
+  assert_no_grep $'pending\t' "$home/state/.jev-prod-monitor" "a fresh budget cut never queues a failure"
+  assert_no_grep $'woken\t' "$home/state/.jev-prod-monitor" "a budget cut never dedupes an unestablished verdict"
 
   : > "$home/fx/gh-argv.log"
-  budget_poll "$home" >/dev/null
-  assert_equals "2215" "$(comment_reads "$home" | cut -d' ' -f1)" \
-    "the next poll must move on to the next pull request"
-  pass "fm-jev-prod-check: a pull request slow on every poll is couldnt-check and never holds the monitor"
+  local out
+  out=$(budget_poll "$home")
+  assert_equals "2215 2214 " "$(comment_reads "$home")" \
+    "the next poll moves past the unfinished first PR and retries it when the rotation reaches it"
+  assert_contains "$out" 'jev-prod: regression' "the recovered preview read reports the actual regression"
+  pass "fm-jev-prod-check: a first PR budget cut is silently retried on the next poll"
+}
+
+test_a_pull_request_slow_on_every_poll_never_holds_the_monitor() {
+  local home out
+  home=$(make_home budget-always)
+  configure "$home"
+  fake_gh "$home" >/dev/null
+  write_real_pulls "$home" '[2214,2215]'
+  write_comments "$home" 2214 900027 "$(section portal failed post-merge production 5170c4000027)"
+  write_comments "$home" 2215 900028 "$(section portal proven post-merge production completedrec)"
+  # 2214's comment read outlasts a whole fresh budget on every poll.
+  slow_gh "$home" '*issues/2214/comments*' always
+
+  : > "$home/fx/gh-argv.log"
+  out=$(budget_poll "$home")
+  assert_equals "2214 " "$(comment_reads "$home")" "the first poll spends its whole budget on the slow pull request"
+  assert_equals "" "$out" "a fresh budget exhaustion never wakes"
+
+  : > "$home/fx/gh-argv.log"
+  out=$(budget_poll "$home")
+  assert_equals "2215 2214 " "$(comment_reads "$home")" \
+    "the next poll moves past the slow pull request and retries it when the rotation reaches it"
+  assert_equals "" "$out" "a pull request slow on every poll never wakes"
+  assert_grep $'woken\t2215/portal/completedrec' "$home/state/.jev-prod-monitor" \
+    "the pull request behind the slow one is still examined"
+  assert_no_grep $'woken\t2214/' "$home/state/.jev-prod-monitor" "the slow pull request is never settled"
+  assert_no_grep $'pending\t' "$home/state/.jev-prod-monitor" "the slow pull request is never queued"
+  pass "fm-jev-prod-check: a pull request slow on every poll is retried silently and never holds the monitor"
+}
+
+test_a_deployment_budget_cut_is_retried() {
+  local home out
+  home=$(make_home budget-deployment)
+  configure "$home"
+  fake_gh "$home" >/dev/null
+  write_real_pulls "$home" '[2214]'
+  write_comments "$home" 2214 900026 "$(section portal proven pre-merge preview previewrec)"
+  slow_gh "$home" '*deployments?*' once
+  out=$(budget_poll "$home")
+  assert_equals "" "$out" "a timed-out deployment inventory read never wakes"
+  assert_no_grep $'pending\t' "$home/state/.jev-prod-monitor" "a timed-out deployment read never queues"
+  assert_no_grep $'woken\t' "$home/state/.jev-prod-monitor" "a timed-out deployment read never settles"
+  out=$(budget_poll "$home")
+  assert_equals "" "$out" "the recovered missing verdict waits for its batch"
+  assert_grep 'no-production-verdict-deployment-7001' "$home/state/.jev-prod-monitor" "the next poll retries and records the actual deployment result"
+  assert_no_grep 'read-budget-exhausted' "$home/state/.jev-prod-monitor" "the recovered read does not persist budget exhaustion"
+  pass "fm-jev-prod-check: a deployment inventory budget cut retries without a terminal outcome"
+}
+
+test_a_first_comment_read_budget_cut_is_retried() {
+  local home out
+  home=$(make_home budget-first-comments)
+  configure "$home"
+  fake_gh "$home" >/dev/null
+  write_real_pulls "$home" '[2214]'
+  write_comments "$home" 2214 900025 "$(section portal proven post-merge production completedrec)"
+  slow_gh "$home" '*issues/2214/comments*' once
+  out=$(budget_poll "$home")
+  assert_equals "" "$out" "an exhausted comment read never wakes"
+  assert_no_grep $'pending\t' "$home/state/.jev-prod-monitor" "an exhausted comment read never queues"
+  assert_no_grep $'woken\t' "$home/state/.jev-prod-monitor" "an exhausted comment read never settles"
+  out=$(budget_poll "$home")
+  assert_equals "" "$out" "the recovered passing verdict is silent"
+  assert_grep $'woken\t2214/portal/completedrec' "$home/state/.jev-prod-monitor" "the next poll retries and records the actual result"
+  pass "fm-jev-prod-check: a first comment budget cut retries without a terminal outcome"
 }
 
 test_the_read_budget_fits_a_lowered_check_timeout() {
@@ -1558,6 +1644,7 @@ test_reseed_and_check_budget_bounds
 test_reseed_names_refusals_and_preserves_state
 test_reseed_reports_full_inventory_without_paginating
 test_saved_lists_survive_full_rotations
+test_recorded_legacy_batch_only_wakes_for_actual_gaps
 test_help_and_usage
 test_unconfigured_home_is_silent_and_spends_nothing
 test_config_parsing_and_arm_refusals
@@ -1588,6 +1675,9 @@ test_a_rotation_bucket_advances_by_a_whole_window
 test_a_long_batch_carries_every_verdict_uncut
 test_a_window_the_budget_cut_short_is_finished_on_the_next_poll
 test_a_preview_read_the_budget_cut_short_is_deferred_not_couldnt_check
-test_a_deployment_read_after_a_sibling_spent_the_budget_never_holds_the_monitor
+test_a_deployment_read_after_a_sibling_spent_the_budget_is_retried
+test_a_first_pull_request_budget_cut_is_retried
 test_a_pull_request_slow_on_every_poll_never_holds_the_monitor
+test_a_deployment_budget_cut_is_retried
+test_a_first_comment_read_budget_cut_is_retried
 test_the_read_budget_fits_a_lowered_check_timeout
