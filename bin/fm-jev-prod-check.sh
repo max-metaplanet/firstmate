@@ -642,13 +642,15 @@ EOF
 
 # A commit status is never deployment proof. Only the latest successful status
 # of an exact supported Production environment on this merge SHA starts grace.
+# Scope the inventory at GitHub so unrelated deployment environments cannot fill
+# the bounded first page and hide this app's production deployment.
 deployment_of() {  # <merge-sha> <app>
   local sha=$1 app=$2 project deployments rows did statuses stamp state commit_status
   DEPLOYMENT_OUTCOME=deployment-unreadable
   DEPLOYMENT_ID=
   DEPLOYMENT_AT=
   case "$app" in portal) project=core-metaplanet ;; admin-center) project=core-admin-center ;; *) return 0 ;; esac
-  deployments=$(gh_json_cached "repos/$CONFIG_REPO/deployments?sha=$sha&per_page=100") || return 0
+  deployments=$(gh_json_cached "repos/$CONFIG_REPO/deployments?sha=$sha&environment=Production%20%E2%80%93%20$project&per_page=100") || return 0
   rows=$(printf '%s' "$deployments" | jq -r --arg sha "$sha" --arg env "Production – $project" '
     if type != "array" or length >= 100 then error("incomplete inventory") else
       [.[] | select(.sha == $sha and .environment == $env)] | sort_by(.created_at) | reverse
@@ -657,7 +659,7 @@ deployment_of() {  # <merge-sha> <app>
   DEPLOYMENT_OUTCOME=not-deployed
   while IFS= read -r did; do
     comment_id_ok "$did" || continue
-    budget_left || { DEPLOYMENT_OUTCOME=deployment-unreadable; return 0; }
+    budget_left || { DEPLOYMENT_OUTCOME=read-budget-exhausted; return 0; }
     statuses=$(gh_json "repos/$CONFIG_REPO/deployments/$did/statuses?per_page=100") || { DEPLOYMENT_OUTCOME=deployment-unreadable; return 0; }
     state=$(printf '%s' "$statuses" | jq -er 'if type == "array" and length > 0 then sort_by(.created_at,.id) | last | .state else error("no status") end' 2>/dev/null) || { DEPLOYMENT_OUTCOME=deployment-unreadable; return 0; }
     [ "$state" = success ] || continue
@@ -673,8 +675,9 @@ EOF
   commit_status=$(gh_json_cached "repos/$CONFIG_REPO/commits/$sha/status") || return 0
   if printf '%s' "$commit_status" | jq -e --arg ctx "Vercel – $project" '
     [.statuses[] | select(.context == $ctx)] | sort_by(.created_at) | last
-    | .description == "Canceled by Ignored Build Step" or .description == "Skipped - Not affected"' >/dev/null 2>&1; then
-    DEPLOYMENT_OUTCOME=build-skipped
+    | .state == "success" and
+      (.description == "Canceled by Ignored Build Step" or .description == "Skipped - Not affected")' >/dev/null 2>&1; then
+    DEPLOYMENT_OUTCOME=not-applicable
   fi
 }
 
@@ -982,6 +985,13 @@ examine_pr() {  # <number> <url> <head-sha> <merge-sha> <merged-at> <title>
       fi
       key="$number/$section/no-production-verdict-$identity"
       list_has "$woken" "$key" && continue
+      if [ "$verdict" = not-applicable ]; then
+        woken="${woken}${key}
+"
+        RECORD_OUTCOMES="${RECORD_OUTCOMES}${key}	${verdict}	build-skipped
+"
+        continue
+      fi
       queue_item couldnt-check "$key" "$url" "$ticket" "$section" "$verdict" "$(verdict_of "$TMP/section")" \
         "$url#issuecomment-$comment_id" "$checks_url" ''
       continue

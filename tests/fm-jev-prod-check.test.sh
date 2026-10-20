@@ -195,7 +195,12 @@ case "\$path" in
     cat "\$FX/artifact-\$a.zip" ;;
   */deployments\?*)
     [ ! -e "\$FX/fail-deployments" ] || exit 1
-    if [ -f "\$FX/deployments.json" ]; then cat "\$FX/deployments.json"; else
+    if [ -f "\$FX/deployment-inventory.json" ]; then
+      case "\$path" in
+        *'environment=Production%20%E2%80%93%20core-metaplanet&'*) jq '[.[] | select(.environment == "Production – core-metaplanet")] | .[:100]' "\$FX/deployment-inventory.json" ;;
+        *) jq '.[:100]' "\$FX/deployment-inventory.json" ;;
+      esac
+    elif [ -f "\$FX/deployments.json" ]; then cat "\$FX/deployments.json"; else
       printf '[{"id":7001,"sha":"$MERGE_SHA","environment":"Production – core-metaplanet","created_at":"2025-10-09T06:53:20Z"}]'; fi ;;
   */deployments/*/statuses\?*)
     d=\${path#*/deployments/}; d=\${d%%/*}
@@ -921,6 +926,34 @@ test_a_preview_read_the_budget_cut_short_is_deferred_not_couldnt_check() {
   pass "fm-jev-prod-check: a preview read the budget cut short is deferred, never filed as couldnt-check"
 }
 
+test_a_deployment_read_after_a_sibling_spent_the_budget_never_holds_the_monitor() {
+  local home
+  home=$(make_home budget-sibling)
+  configure "$home"
+  fake_gh "$home" >/dev/null
+  write_real_pulls "$home" '[2214,2215]'
+  write_comments "$home" 2214 900024 "$(section portal failed post-merge production 5170c4000024)
+$(section portal:portal-previous proven pre-merge preview previewrec)"
+  write_no_comments "$home" 2215
+  write_preview_artifact "$home" portal proven
+  # On every poll the first section's production lookup spends the whole budget
+  # before the sibling persona reaches its deployment read.
+  slow_gh "$home" '*actions/workflows/jev-check.yml/runs*' always
+
+  : > "$home/fx/gh-argv.log"
+  budget_poll "$home" >/dev/null
+  assert_no_grep 'deployment-unreadable' "$home/state/.jev-prod-monitor" \
+    "a deployment read the budget cut short is not an unreadable deployment"
+  assert_grep 'app=portal:portal-previous production=read-budget-exhausted ' "$home/state/.jev-prod-monitor" \
+    "a sibling a whole fresh budget could not reach is couldnt-check for budget exhaustion"
+
+  : > "$home/fx/gh-argv.log"
+  budget_poll "$home" >/dev/null
+  assert_equals "2215" "$(comment_reads "$home" | cut -d' ' -f1)" \
+    "the next poll must move on to the next pull request"
+  pass "fm-jev-prod-check: a deployment read a sibling's budget spend cut short is budget exhaustion and never holds the monitor"
+}
+
 test_a_pull_request_slow_on_every_poll_never_holds_the_monitor() {
   local home
   home=$(make_home budget-stuck)
@@ -1132,7 +1165,8 @@ test_real_skipped_builds_and_unreadable_inventory() {
   fake_gh "$home" >/dev/null
   real_candidate "$home" 2245
   out=$(poll "$home" FM_JEV_PROD_BATCH_SECS=0)
-  assert_contains "$out" 'production=build-skipped ' "captured success statuses describing canceled builds are not deployment proof"
+  assert_equals "" "$out" "captured unaffected builds need no production browser verdict"
+  assert_grep $'\tnot-applicable\tbuild-skipped' "$home/state/.jev-prod-monitor" "the skipped build is recorded as not applicable, never as a pass"
   assert_no_grep '/deployments/' "$home/fx/gh-argv.log" "generic production and protected-secrets environments never count"
   touch "$home/fx/fail-deployments"
   out=$(poll "$home" FM_JEV_PROD_BATCH_SECS=0)
@@ -1142,6 +1176,54 @@ test_real_skipped_builds_and_unreadable_inventory() {
   out=$(poll "$home" FM_JEV_PROD_BATCH_SECS=0)
   assert_contains "$out" 'production=not-deployed ' "generic success never starts the deployment grace"
   pass "fm-jev-prod-check: real canceled builds and unrelated environments are distinct from unreadable deployments"
+}
+
+test_unaffected_builds_and_missing_builds() {
+  local home out description state
+  while IFS=: read -r state description; do
+    home=$(make_home "build-$state-${description// /-}")
+    configure "$home"
+    fake_gh "$home" >/dev/null
+    write_pulls "$home" 7200
+    write_comments "$home" 2214 900110 "$(section portal proven pre-merge preview previewrec)"
+    printf '[]' > "$home/fx/deployments.json"
+    jq -n --arg desc "$description" --arg state "$state" \
+      '{statuses:[{context:"Vercel – core-metaplanet",state:$state,description:$desc}]}' > "$home/fx/statuses.json"
+    out=$(poll "$home" FM_JEV_PROD_BATCH_SECS=0)
+    if [ "$state" = success ] && [ "$description" != 'Deployment has completed' ]; then
+      assert_equals "" "$out" "a confirmed unaffected app has no verdict to chase"
+      assert_grep $'\tnot-applicable\tbuild-skipped' "$home/state/.jev-prod-monitor" "the reason survives in the public state record"
+    else
+      assert_contains "$out" 'couldnt-check' "a missing build remains an actual gap"
+      assert_contains "$out" 'production=not-deployed ' "unconfirmed skips and generic successes do not establish an unaffected app"
+    fi
+  done <<'EOF'
+success:Canceled by Ignored Build Step
+success:Skipped - Not affected
+failure:Canceled by Ignored Build Step
+pending:Skipped - Not affected
+success:Deployment has completed
+EOF
+  pass "fm-jev-prod-check: only successful unaffected-build statuses settle as not applicable"
+}
+
+test_portal_persona_reads_scoped_deployment_inventory() {
+  local home out persona
+  for persona in portal portal:portal-previous; do
+    home=$(make_home "scoped-${persona//:/-}")
+    configure "$home"
+    fake_gh "$home" >/dev/null
+    write_pulls "$home" 7200
+    write_comments "$home" 2214 900111 "$(section "$persona" proven pre-merge preview previewrec)"
+    jq -n --arg sha "$MERGE_SHA" \
+      '[range(100) | {id:(8000+.),sha:$sha,environment:"protected-secrets",created_at:"2025-10-09T06:53:20Z"}] +
+       [{id:7001,sha:$sha,environment:"Production – core-metaplanet",created_at:"2025-10-09T06:53:20Z"}]' > "$home/fx/deployment-inventory.json"
+    out=$(poll "$home" FM_JEV_PROD_BATCH_SECS=0)
+    assert_contains "$out" "app=$persona production=none " "a successful deployment with missing Jev is distinct from an unreadable inventory"
+    assert_grep 'environment=Production%20%E2%80%93%20core-metaplanet&' "$home/fx/gh-argv.log" "the GitHub request scopes the inventory to the portal production environment"
+    assert_grep '/deployments/7001/statuses' "$home/fx/gh-argv.log" "the matching production deployment status is read"
+  done
+  pass "fm-jev-prod-check: portal personas read their production deployment beyond unrelated first-page rows"
 }
 
 test_deployment_grace_late_result_and_redeploy() {
@@ -1424,12 +1506,13 @@ test_real_older_nonpassing_comments() {
     fake_gh "$home" >/dev/null
     real_candidate "$home" "$n"
     out=$(poll "$home" FM_JEV_PROD_BATCH_SECS=0)
-    assert_contains "$out" 'jev-prod:' "captured old nonpassing outcomes remain visible"
     if [ "$n" = 2230 ]; then
+      assert_contains "$out" 'jev-prod:' "captured old production failures remain visible"
       assert_contains "$out" 'production=failed ' "the historical portal failure stays nonpassing"
       assert_contains "$out" 'production=unproven ' "the historical admin-center inability stays nonpassing"
     else
-      assert_contains "$out" 'preview=skipped ' "the older pre-merge skip is still recognizable"
+      assert_equals "" "$out" "an older pre-merge skip needs no production verdict when its build was unaffected"
+      assert_grep $'\tnot-applicable\tbuild-skipped' "$home/state/.jev-prod-monitor" "the unaffected build reason survives the skipped preview"
     fi
   done
   pass "fm-jev-prod-check: real older skipped and failed comments remain nonpassing"
@@ -1465,6 +1548,8 @@ test_malformed_sections_never_settle_as_proven
 test_real_completed_outcomes_and_run_attempts
 test_known_nonpassing_and_unknown_titles
 test_real_skipped_builds_and_unreadable_inventory
+test_unaffected_builds_and_missing_builds
+test_portal_persona_reads_scoped_deployment_inventory
 test_deployment_grace_late_result_and_redeploy
 test_persona_pairing_rejects_mismatches
 test_captured_persona_artifact_context_wins_over_name
@@ -1503,5 +1588,6 @@ test_a_rotation_bucket_advances_by_a_whole_window
 test_a_long_batch_carries_every_verdict_uncut
 test_a_window_the_budget_cut_short_is_finished_on_the_next_poll
 test_a_preview_read_the_budget_cut_short_is_deferred_not_couldnt_check
+test_a_deployment_read_after_a_sibling_spent_the_budget_never_holds_the_monitor
 test_a_pull_request_slow_on_every_poll_never_holds_the_monitor
 test_the_read_budget_fits_a_lowered_check_timeout
