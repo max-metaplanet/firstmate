@@ -149,7 +149,8 @@
 #   FM_CONTROL_ARM_WAIT          wait for an armed interrupt's rendered proof
 #                                after the press gap (1.5)
 #   FM_CONTROL_EXIT_WAIT         alive->dead wait after the exit command (30)
-#   A parked relaunch deferred by capacity returns 75 and preserves its request.
+#   A parked relaunch deferred by capacity returns 75, restores the brief and
+#   preserves its request.
 #   FM_CONTROL_LAUNCH_WAIT       dead->alive wait after a relaunch (90)
 #   FM_CONTROL_EXIT_RETRIES      Enter retries for the exit command (3)
 set -eu
@@ -1394,7 +1395,16 @@ do_relaunch() {
     spawn_rc=$?
     [ "$(fm_meta_get "$META" control_relaunch_tx)" != "$RELAUNCH_TX" ] \
       || RELAUNCH_META_PUBLISHED=1
-    if [ "$spawn_rc" -eq 75 ]; then exit 75; fi
+    if [ "$spawn_rc" -eq 75 ] && [ "$RELAUNCH_META_PUBLISHED" = 0 ]; then
+      if [ -n "$RELAUNCH_BRIEF" ] && [ -f "$BRIEF_PRIOR" ]; then
+        cp -p "$BRIEF_PRIOR" "$RELAUNCH_BRIEF" \
+          || die "task $ID's relaunch was deferred by capacity, but its original instructions could not be restored"
+      fi
+      RELAUNCH_ACTIVE=0
+      journal_write deferred "${CHECKPOINT_LINES[@]}" "$note_line" "rollback=instructions-restored" || true
+      echo "deferred: relaunch of $ID was not admitted by capacity; its instructions were restored and no agent is running" >&2
+      exit 75
+    fi
     die "the replacement agent for $ID could not be launched on $TARGET_HARNESS"
   fi
 

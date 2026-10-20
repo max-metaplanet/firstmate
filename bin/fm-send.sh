@@ -847,12 +847,16 @@ fm_send_feed_resolved_holds() { # <answer-text>
 
 # Wake a parked worker only after durable steering enqueue. A secondmate
 # persist request must still reach its old agent during the park transaction.
-fm_send_wake_parked() {
+fm_send_wake_parked() { # [direct]
   local id record rc=0
   if [ -n "$TARGET_META" ] && fm_worker_park_load "$TARGET_META"; then
     id=$(fm_send_id_from_meta "$TARGET_META")
     "$SCRIPT_DIR/fm-worker-park.sh" wake "$id" 'steering received or decision answered' || rc=$?
     [ "$rc" -eq 0 ] || [ "$rc" -eq 75 ] || return "$rc"
+    if [ "${1:-}" = direct ] && fm_worker_park_load "$TARGET_META"; then
+      echo "error: task $id is parked and its resume is still queued, so no agent can receive a direct key or command yet; send it again once the worker resumes" >&2
+      return 1
+    fi
     T=$(fm_backend_target_of_meta "$TARGET_META")
     TARGET_BACKEND=$(fm_backend_of_meta "$TARGET_META")
     TARGET_HARNESS=$(fm_meta_get "$TARGET_META" harness)
@@ -872,7 +876,7 @@ fm_send_wake_parked() {
 
 
 if [ "${1:-}" = "--key" ]; then
-  fm_send_wake_parked || exit 1
+  fm_send_wake_parked direct || exit 1
   [ -z "$FIRE_AND_FORGET_ID" ] ||
     {
       echo "error: --fire-and-forget cannot accompany --key" >&2
@@ -1003,7 +1007,7 @@ else
       esac
     fi
   fi
-  if [ "$INBOX_PLANE" = 0 ] && ! fm_send_wake_parked; then
+  if [ "$INBOX_PLANE" = 0 ] && ! fm_send_wake_parked direct; then
     fm_send_known_undelivered_cleanup ||
       echo "error: known-undelivered pending-reply state could not be reset for $TARGET_TASK_ID" >&2
     exit 1

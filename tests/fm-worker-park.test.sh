@@ -132,6 +132,13 @@ printf 'resolved: wait cleared\n' >> "$FM_HOME/state/task.status"
 bash "$PARK" tick >/dev/null
 assert_grep 'task status changed' "$FM_HOME/control.log" 'cleared pause relaunches with reason'
 fixture
+bash "$PARK" auto task >/dev/null
+mkdir -p "$FM_HOME/state/task.inbox"
+printf 'steer\n' > "$FM_HOME/state/task.inbox/1.msg"
+bash "$PARK" tick >/dev/null
+assert_grep 'phase=active' "$FM_HOME/state/task.park" 'pending inbox steering resumes a parked worker'
+assert_grep 'steering waiting in the instruction inbox' "$FM_HOME/control.log" 'inbox resume carries its reason'
+fixture
 touch "$FM_HOME/steer-on-exit"
 bash "$PARK" auto task >/dev/null
 assert_grep 'phase=queued' "$FM_HOME/state/task.park" 'steering during exit cannot be overwritten'

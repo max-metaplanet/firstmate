@@ -12,9 +12,9 @@ External waits release memory by exiting the worker through the existing lifecyc
 The worktree, branch, PR, task record and merge observer remain available for landing without an agent.
 [`bin/fm-worker-park.sh`](../bin/fm-worker-park.sh) owns parking eligibility, the configurable wait threshold, adoption of hand-exited workers, and wake commands.
 [`bin/fm-worker-park-lib.sh`](../bin/fm-worker-park-lib.sh) owns the durable state and resume ordering.
-The watcher drives that owner on its existing cycle and excludes verified parked endpoints from stale and dead-worker recovery.
+The watcher starts that owner beside its existing cycle, so parking never delays wake delivery, and excludes verified parked endpoints from stale and dead-worker recovery.
 Contribution observations and durable steering request resumption without consuming their original events.
-Admission checks parked resumptions against the existing fleet and project caps before allowing fresh dispatches to overtake them.
+Parked resumptions pass the existing fleet and project caps; under a fleet cap each queued resumption reserves a place ahead of later resumptions and fresh dispatches.
 An unverified exit continues to reserve memory capacity.
 The guarded merge and teardown paths retain their existing authority and landed-work checks.
 

@@ -393,14 +393,14 @@ test_parked_capacity_and_priority() {
 
   case_dir=$(make_case pending task-c)
   home="$case_dir/home"
-  declare_fleet "$home" 2
+  declare_fleet "$home" 1
   write_live "$home" parked-a "$case_dir/project"
   write_park "$home" parked-a queued
   pane=$(new_worktree "$case_dir" task-c)
   rc=0
   out=$(spawn_ship "$case_dir" task-c "$pane") || rc=$?
   expect_code 75 "$rc" "fresh dispatch overtook queued resume: $out"
-  assert_contains "$out" 'resumes ahead of task task-c' 'admission enforces resume priority'
+  assert_contains "$out" 'resume ahead of task task-c' 'admission enforces resume priority'
   assert_absent "$home/state/task-c.meta" 'priority deferral creates no record'
 
   write_park "$home" parked-a parking
@@ -409,6 +409,25 @@ test_parked_capacity_and_priority() {
   out=$(spawn_ship "$case_dir" task-c "$pane") || rc=$?
   expect_code 75 "$rc" "an unverified exit freed its slot: $out"
   assert_contains "$out" '1 are running' 'unverified exit keeps capacity even on a dead endpoint'
+
+  case_dir=$(make_case spare task-c)
+  home="$case_dir/home"
+  declare_fleet "$home" 2
+  write_live "$home" parked-a "$case_dir/project"
+  write_park "$home" parked-a queued
+  rc=0
+  out=$(spawn_ship "$case_dir" task-c) || rc=$?
+  expect_code 0 "$rc" "a queued resume blocked a spare fleet place: $out"
+
+  case_dir=$(make_case held task-c)
+  home="$case_dir/home"
+  declare_fleet "$home" 1
+  write_live "$home" parked-a "$case_dir/project"
+  write_park "$home" parked-a queued
+  printf 'resume_error=1\n' >> "$home/state/parked-a.park"
+  rc=0
+  out=$(spawn_ship "$case_dir" task-c) || rc=$?
+  expect_code 0 "$rc" "a resume held for repair blocked fresh dispatch: $out"
   pass 'parked capacity, unverified exit reservation and priority over fresh dispatch'
 }
 

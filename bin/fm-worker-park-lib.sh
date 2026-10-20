@@ -9,7 +9,9 @@
 # (epoch or 0), wake_reason, status_line, resume_error (0 or 1). Values are single lines, never sourced.
 # Only fm-worker-park.sh writes these records; verified relaunch marks active.
 # Guarded teardown removes the record after landing. Teardown remains the sole landed-work cleanup gate.
-# Pending resumes sort by queued_at then full metadata path, before fresh work.
+# Pending resumes sort by queued_at then full metadata path. Under a declared
+# fleet cap each one reserves a place ahead of later resumes and fresh work;
+# a resume_error hold reserves nothing until an explicit wake clears it.
 # Requires fm_meta_get and fm_backend_target_of_meta. No side effects on source.
 
 fm_worker_park_load() { # <meta>
@@ -28,16 +30,17 @@ fm_worker_park_load() { # <meta>
   [ -n "$FM_WORKER_PARK_REASON" ]
 }
 
-fm_worker_park_front() { # <state>; prints full metadata path of first resume
+fm_worker_park_ahead() { # <state> <own-meta>; prints how many resumes queue ahead
   local state meta rows=''
   fm_local_firstmate_state_dirs "$1" || return 1
   for state in "${FM_LOCAL_FIRSTMATE_STATES[@]}"; do
     for meta in "$state"/*.meta; do
       fm_worker_park_load "$meta" || continue
       [ "$FM_WORKER_PARK_PHASE" = queued ] || continue
+      [ "$(fm_meta_get "${meta%.meta}.park" resume_error)" != 1 ] || continue
       rows+="$FM_WORKER_PARK_QUEUED_AT"$'\t'"$meta"$'\n'
     done
   done
-  [ -n "$rows" ] || return 0
-  printf '%s' "$rows" | LC_ALL=C sort -t $'\t' -k1,1n -k2,2 | head -1 | cut -f2-
+  printf '%s' "$rows" | LC_ALL=C sort -t $'\t' -k1,1n -k2,2 |
+    awk -F '\t' -v own="$2" '$2 == own { print NR - 1; found = 1; exit } END { if (!found) print NR }'
 }

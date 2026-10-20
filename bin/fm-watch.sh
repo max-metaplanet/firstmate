@@ -3103,6 +3103,22 @@ home_summary_refresh_detached() {
   HOME_SUMMARY_PID=$!
 }
 
+# Worker park and resume can each wait on a lifecycle transition, so they run
+# beside the poll exactly like publication; per-task park locks keep an
+# overlapping tick from acting on the same worker twice.
+WORKER_PARK_PID=
+worker_park_tick_detached() {
+  if [ -n "$WORKER_PARK_PID" ]; then
+    if kill -0 "$WORKER_PARK_PID" 2>/dev/null; then
+      return 0
+    fi
+    wait "$WORKER_PARK_PID" 2>/dev/null || true
+    WORKER_PARK_PID=
+  fi
+  "$SCRIPT_DIR/fm-worker-park.sh" tick </dev/null >/dev/null 2>&1 &
+  WORKER_PARK_PID=$!
+}
+
 RECONCILE_REQUEST_PID=
 reconcile_requests_pending() {
   local request
@@ -3316,7 +3332,7 @@ while :; do
   fm_epoch_seconds_to watcher_beat_epoch
   printf 'heartbeat_epoch=%s\n' "$watcher_beat_epoch" > "$STATE/.last-watcher-beat"
 
-  "$SCRIPT_DIR/fm-worker-park.sh" tick >/dev/null 2>&1 || true
+  worker_park_tick_detached
 
   # Every cadence this cycle consults, aged at one instant with one read.
   cadence_ages_read "$STATE/home-summary.json" "$STATE/.last-check" \

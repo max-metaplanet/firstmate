@@ -476,9 +476,9 @@ worker_observation() { # task row-file
     maintainer/*|fleet/'checks still running')
       "$SCRIPT_DIR/fm-worker-park.sh" hint "$task" "$reason" >/dev/null || return 1 ;;
     fleet/'checks failed'|fleet/'forge requests changes')
-      "$SCRIPT_DIR/fm-worker-park.sh" request "$task" "$reason" >/dev/null || return 1 ;;
+      "$SCRIPT_DIR/fm-worker-park.sh" request "$task" "$reason" >/dev/null || [ "$?" -eq 75 ] || return 1 ;;
     nobody/'forge reports merged')
-      "$SCRIPT_DIR/fm-worker-park.sh" request "$task" 'merge completed; reconcile any remaining post-merge work' >/dev/null || return 1 ;;
+      "$SCRIPT_DIR/fm-worker-park.sh" request "$task" 'merge completed; reconcile any remaining post-merge work' >/dev/null || [ "$?" -eq 75 ] || return 1 ;;
   esac
 }
 
@@ -488,7 +488,10 @@ publish_pending() { # task canonical-url record-file
   worker_observation "$task" "$record" || return 1
   [ "$count" -gt 0 ] || return 0
   if [ -f "$STATE/$task.meta" ]; then
-    "$SCRIPT_DIR/fm-worker-park.sh" request "$task" "new upstream review or comment on $url" >/dev/null || return 1
+    status=0
+    "$SCRIPT_DIR/fm-worker-park.sh" request "$task" "new upstream review or comment on $url" >/dev/null || status=$?
+    [ "$status" -ne 75 ] || return 0
+    [ "$status" -eq 0 ] || return 1
   fi
   while IFS= read -r token; do
     [ -n "$token" ] || continue

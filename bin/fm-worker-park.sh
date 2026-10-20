@@ -20,8 +20,10 @@
 # also name until; its expiry and changed/resolved status queue a resume.
 # tick is driven by the existing watcher, never a separate polling daemon.
 # Existing contribution feedback and fm-send steering call wake. wake durably
-# queues first; tick retries deferred resumes. fm-spawn owns both capacity
-# checks and priority admission. Exit 75 means queued, not failed.
+# queues first; tick retries deferred resumes and wakes parked workers with
+# pending inbox steering. fm-spawn owns both capacity checks and priority
+# admission. Exit 75 means deferred, not failed: the request is queued, or the
+# record was busy and the caller retries from its own durable source.
 set -uo pipefail
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 FM_HOME=${FM_HOME:-${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}}
@@ -176,12 +178,10 @@ queue_wake() {
 }
 
 resume() {
-  local reason rc=0 front failure_phase
+  local reason rc=0 failure_phase
   fm_worker_park_load "$META" || return 0
   [ "$FM_WORKER_PARK_PHASE" = queued ] || return 0
   [ "$(fm_meta_get "$RECORD" resume_error)" != 1 ] || return 0
-  front=$(fm_worker_park_front "$STATE") || return 1
-  [ "$front" = "$META" ] || return 75
   reason=$(fm_meta_get "$RECORD" wake_reason)
   "$SCRIPT_DIR/fm-control.sh" "$ID" relaunch --note "Automatically resumed from external wait. Reason: $reason. Read the durable instruction inbox before continuing." || rc=$?
   if [ "$rc" -ne 0 ] && [ "$rc" -ne 75 ]; then
@@ -225,7 +225,9 @@ one() {
           local line old
           line=$(status_current_line "$STATE/$ID.status" '')
           old=$(fm_meta_get "$RECORD" status_line)
-          if [ "$line" != "$old" ]; then
+          if [ -n "$(find "$STATE/$ID.inbox" -maxdepth 1 -name '*.msg' -print 2>/dev/null)" ]; then
+            queue_wake 'steering waiting in the instruction inbox'
+          elif [ "$line" != "$old" ]; then
             queue_wake "task status changed: $line"
           elif [ "$FM_WORKER_PARK_UNTIL" -gt 0 ] && [ "$(date +%s)" -ge "$FM_WORKER_PARK_UNTIL" ]; then
             queue_wake 'declared wait time reached'
