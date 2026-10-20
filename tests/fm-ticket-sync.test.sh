@@ -171,6 +171,8 @@ test_polled_merge_reaches_legacy_hook_once
 
 home=$(make_home partial-scope)
 install_hook "$home"
+printf '%s\n' '{"event":"pr-merged","ticket":"issue/123","pr_url":"https://github.com/o/r/pull/7"}' \
+  > "$home/state/task-event-prs.jsonl"
 for event in pr-merged cancelled; do
   for scope in partial null absent; do
     event_payload=$(payload "$event" issue/123 final text https://github.com/o/r/pull/7)
@@ -188,3 +190,33 @@ run_sync "$home" "$(payload cancelled issue/123 final text null partial)" || fai
 tail -1 "$home/calls" | jq -e '. == ["issue/123","review"]' >/dev/null \
   || fail 'PR-less partial cancellation did not retain review'
 pass 'final merges and cancellations require explicit complete scope to close a ticket'
+
+emit_event() {  # <home> <task> <event> <pr-url>
+  FM_HOME="$1" FM_STATE_OVERRIDE="$1/state" FM_CONFIG_OVERRIDE="$1/config" \
+    "$ROOT/bin/fm-task-event.sh" "$2" "$3" --ticket ENG-1 --ticket-scope partial --pr "$4"
+}
+
+wait_calls() {  # <home> <count>
+  local i
+  for ((i=0; i<200; i++)); do
+    [ -f "$1/calls" ] && [ "$(wc -l < "$1/calls")" -ge "$2" ] && return 0
+    sleep 0.05
+  done
+  fail "waiting for $2 legacy hook calls: $(cat "$1/calls")"
+}
+
+home=$(make_home abandoned-cancel)
+install_hook "$home"
+emit_event "$home" task-a pr-opened https://github.com/o/r/pull/1
+emit_event "$home" task-a pr-merged https://github.com/o/r/pull/1
+emit_event "$home" task-b pr-opened https://github.com/o/r/pull/2
+wait_calls "$home" 3
+emit_event "$home" task-b cancelled https://github.com/o/r/pull/2
+wait_calls "$home" 4
+tail -1 "$home/calls" | jq -e '. == ["ENG-1","review"]' >/dev/null \
+  || fail "cancelled unmerged PR was sent to the ticket: $(tail -1 "$home/calls")"
+emit_event "$home" task-a cancelled https://github.com/o/r/pull/1
+wait_calls "$home" 5
+tail -1 "$home/calls" | jq -e '. == ["ENG-1","review","https://github.com/o/r/pull/1"]' >/dev/null \
+  || fail "cancelled merged PR lost its URL: $(tail -1 "$home/calls")"
+pass 'a partial cancellation names its PR only when that PR is recorded as merged'

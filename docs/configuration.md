@@ -639,7 +639,7 @@ No worker-facing instruction should ask a worker to update a tracker directly.
 `bin/fm-ticket-sync.sh` is the compatibility consumer for homes that already have `config/ticket-sync-hook` configured.
 When `config/task-event-hook` is absent, that legacy file alone keeps lifecycle delivery on through this adapter, and `state/task-events.log` records the compatibility path once.
 Writing the absolute path to `bin/fm-ticket-sync.sh` into `config/task-event-hook` selects the same adapter explicitly.
-The adapter maps started to `start`, resumed to `review <url>` when the task has a PR and `start` otherwise, blocked/waiting to `waiting <summary>`, pr-opened to `review <url>`, a final pr-merged to `done <url>` only for complete ticket scope (otherwise `review <url>`), and a cancelled event with `merge: "final"` to `done` only for complete scope (otherwise `review`, with its URL when available), using the existing `<ticket> <event> [args...]` calling convention.
+The adapter maps started to `start`, resumed to `review <url>` when the task has a PR and `start` otherwise, blocked/waiting to `waiting <summary>`, pr-opened to `review <url>`, a final pr-merged to `done <url>` only for complete ticket scope (otherwise `review <url>`), and a cancelled event with `merge: "final"` to `done` only for complete scope (otherwise `review <url>` only when `state/task-event-prs.jsonl` records that PR as merged, and a bare `review` otherwise, so a ticket is never pointed at an abandoned PR), using the existing `<ticket> <event> [args...]` calling convention.
 Unticketed and other new events are ignored by this legacy adapter.
 To switch to a richer consumer, replace the single executable path in `config/task-event-hook`; no producer or worker changes are needed.
 
