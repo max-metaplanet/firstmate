@@ -4049,10 +4049,12 @@ retire_busy_state "$STATE" "$ID" "$BUSY_GEN" || exit 1
 [ ! -e "$CONFIG/fleet-ledger" ] || FM_HOME=$FM_HOME FM_STATE_OVERRIDE=$STATE FM_CONFIG_OVERRIDE=$CONFIG "$SCRIPT_DIR/fm-fleet-ledger.sh" cleaned_up "$ID" || true
 # Capture task context before retirement; delivery waits for successful cleanup.
 TASK_EVENT_TICKET=''
+TASK_EVENT_TICKET_SCOPE=partial
 TASK_EVENT_SUMMARY=''
 TASK_EVENT_TYPE=finished
 if [ -e "$CONFIG/task-event-hook" ] || [ -e "$CONFIG/ticket-sync-hook" ]; then
   TASK_EVENT_TICKET=$(meta_value "$META" ticket)
+  TASK_EVENT_TICKET_SCOPE=$(meta_value "$META" ticket_scope)
   TASK_EVENT_STATUS=$(last_worker_status_line "$STATE/$ID.status")
   status_line_note_to TASK_EVENT_SUMMARY "$TASK_EVENT_STATUS"
   status_line_verb "$TASK_EVENT_STATUS" TASK_EVENT_VERB
@@ -4135,7 +4137,8 @@ META_LOCK_HELD=0
 if [ -e "$CONFIG/task-event-hook" ] || [ -e "$CONFIG/ticket-sync-hook" ]; then
   FM_HOME=$FM_HOME FM_STATE_OVERRIDE=$STATE FM_CONFIG_OVERRIDE=$CONFIG \
     "$SCRIPT_DIR/fm-task-event.sh" "$ID" "$TASK_EVENT_TYPE" \
-      --ticket "$TASK_EVENT_TICKET" --pr "$PR_URL" --summary "$TASK_EVENT_SUMMARY" >/dev/null 2>&1 || true
+      --ticket "$TASK_EVENT_TICKET" --ticket-scope "$TASK_EVENT_TICKET_SCOPE" \
+      --pr "$PR_URL" --summary "$TASK_EVENT_SUMMARY" >/dev/null 2>&1 || true
 fi
 if [ "$KIND" != scout ] && [ "$KIND" != secondmate ] && [ "$MODE" != local-only ]; then
   "$FM_ROOT/bin/fm-fleet-sync.sh" "$PROJ" || true

@@ -4,6 +4,8 @@
 # It also stamps pr_at=<epoch>, the moment this task's pull request first became
 # known, which bin/fm-task-timing.sh reads at cleanup; re-arming the same URL
 # keeps the original stamp.
+# A ticket-linked PR-ready status declaration is folded into ticket_scope=
+# under the same metadata lock; no declaration preserves the intake value.
 # Refuses when bin/fm-dod-lib.sh will not accept the named head as reachable
 # outside the worker's disposable copy; in no-mistakes mode a forge-reported
 # head is that named head and is already stored on the forge.
@@ -208,14 +210,27 @@ STATE_DEVICE=$(fm_pr_file_device "$STATE") || exit 1
 META_TMP=$(mktemp "$STATE/.fm-pr-meta.XXXXXX") || exit 1
 PRIOR_PR=
 PRIOR_PR_AT=
+TICKET=
+TICKET_SCOPE=partial
 while IFS= read -r line || [ -n "$line" ]; do
   case "$line" in
     pr=*) PRIOR_PR=${line#pr=} ;;
     pr_at=*) PRIOR_PR_AT=${line#pr_at=} ;;
     pr_head=*) ;;
+    ticket=*) TICKET=${line#ticket=}; printf '%s\n' "$line" >> "$META_TMP" || exit 1 ;;
+    ticket_scope=*) TICKET_SCOPE=${line#ticket_scope=} ;;
     *) printf '%s\n' "$line" >> "$META_TMP" || exit 1 ;;
   esac
 done < "$META"
+case "$TICKET" in
+  ''|no-ticket|none) ;;
+  *)
+    DECLARED_SCOPE=$(status_pr_ticket_scope "$STATE/$ID.status" "$URL")
+    [ -z "$DECLARED_SCOPE" ] || TICKET_SCOPE=$DECLARED_SCOPE
+    [ "$TICKET_SCOPE" = complete ] || TICKET_SCOPE=partial
+    printf 'ticket_scope=%s\n' "$TICKET_SCOPE" >> "$META_TMP" || exit 1
+    ;;
+esac
 printf 'pr=%s\n' "$URL" >> "$META_TMP" || exit 1
 # When this is the moment the task's pull request became known, stamp it so
 # bin/fm-task-timing.sh can measure how long the work waited before review.

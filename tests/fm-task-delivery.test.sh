@@ -1511,12 +1511,14 @@ test_promotion_persists_the_selected_ticket() {
   fill_brief_subsections "$home/data/$id/brief.md" \
     "Promote the ticket fixture." "Use the configured branch exactly."
   out=$(FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" "$PROMOTE" "$id" \
-    --mode local-only --yolo off --ticket ENG-630 --commit-type feat) \
+    --mode local-only --yolo off --ticket ENG-630 --commit-type feat --ticket-scope complete) \
     || fail "ticket promotion should succeed"
   instructions="$home/data/$id/ship-instructions.md"
   assert_grep "branch=feat/ENG-630-$id" "$meta" \
     "promotion did not persist the ticketed ship branch"
   assert_grep "ticket=ENG-630" "$meta" "promotion did not persist the ticket"
+  assert_grep "ticket_scope=complete" "$meta" "promotion did not persist the ticket scope"
+  assert_grep "Ticket scope: complete" "$instructions" "promotion did not deliver the scope"
   assert_grep "commit_type=feat" "$meta" "promotion did not persist the commit type"
   assert_grep "git checkout -b feat/ENG-630-$id --" "$instructions" \
     "promotion did not deliver the ticketed branch-creation command"
@@ -1896,3 +1898,30 @@ test_forge_forgejo_rides_the_same_binding
 test_spawn_and_promote_require_filled_task_subsections
 test_project_mode_resolves_branch_prefix
 echo "# all fm-task-delivery tests passed"
+
+rec=$(make_home scope-agree "- proj [no-mistakes] - fixture (added 2026-01-01)")
+IFS='|' read -r home proj fakebin <<EOF
+$rec
+EOF
+FM_HOME="$home" "$BRIEF" scope-agree proj --mode no-mistakes \
+  --ticket ENG-630 --commit-type feat --ticket-scope complete >/dev/null || fail 'scope agreement brief failed'
+fill_brief_subsections "$home/data/scope-agree/brief.md" 'Ship this change.' 'Preserve scope.'
+out=$(run_spawn "$home" "$fakebin" scope-agree "$proj" claude --mode no-mistakes --yolo off \
+  --ticket ENG-630 --commit-type feat)
+assert_contains "$out" 'ticket scope mismatch' 'spawn accepted a scope different from its brief'
+assert_absent "$home/state/scope-agree.meta" 'scope mismatch still spawned'
+out=$(run_spawn "$home" "$fakebin" scope-agree --relaunch --ticket-scope complete)
+assert_contains "$out" '--ticket-scope cannot override them' 'relaunch accepted a scope override'
+pass 'spawn scope must agree with the brief and relaunch preserves the recorded scope'
+
+for ticket in '' no-ticket; do
+  scope_args=()
+  [ -z "$ticket" ] || scope_args=(--ticket "$ticket" --commit-type feat)
+  out=$(run_spawn "$home" "$fakebin" scope-refused "$proj" claude --mode no-mistakes --yolo off \
+    "${scope_args[@]}" --ticket-scope complete)
+  assert_contains "$out" '--ticket-scope requires a real --ticket' 'spawn accepted scope without a real ticket'
+  out=$(FM_HOME="$home" "$PROMOTE" scope-refused --mode local-only --yolo off \
+    "${scope_args[@]}" --ticket-scope complete 2>&1)
+  assert_contains "$out" '--ticket-scope requires a real --ticket' 'promotion accepted scope without a real ticket'
+done
+pass 'spawn and promotion refuse ticket scope for ticketless tasks'

@@ -1756,6 +1756,25 @@ test_spawn_relaunch_of_promoted_scout_uses_the_recorded_ticket() {
   pass "fm-spawn --relaunch: a promoted scout with a recorded ticket relaunches on it instead of being refused"
 }
 
+# A worker's PR-ready declaration rewrites ticket_scope after intake; the
+# relaunch must carry that latest recorded value, not reset it to the default.
+test_spawn_relaunch_preserves_the_declared_ticket_scope() {
+  local dir out scope id
+  for scope in complete partial; do
+    id="rl-scope-$scope"
+    dir=$(new_case "scope-$scope" "$id")
+    add_ship_task "$dir" "$id" claude
+    printf 'branch=feat/ENG-630-%s\nticket=ENG-630\ncommit_type=feat\nticket_scope=%s\n' "$id" "$scope" \
+      >> "$dir/home/state/$id.meta"
+    printf 'zsh' > "$dir/fake/command"
+    out=$(run_spawn "$dir" "$id" --relaunch)
+    assert_contains "$out" "spawned $id" "the relaunch with recorded $scope scope should complete"
+    [ "$(meta_field "$dir" "$id" ticket_scope)" = "$scope" ] \
+      || fail "the declared $scope ticket scope must survive the relaunch"
+  done
+  pass "fm-spawn --relaunch: the latest declared ticket scope survives the relaunch"
+}
+
 # A "Ticket:" line pasted into the captain's intent is task text, not the
 # brief's ticket header, so it must not refuse a relaunch on the recorded ticket
 # nor replace the ticket the task record carries.
@@ -3267,6 +3286,7 @@ test_ship_relaunch_ignores_the_crew_harness_config
 test_spawn_relaunch_without_a_harness_reuses_the_recorded_one
 test_spawn_relaunch_of_promoted_scout_uses_the_recorded_branch
 test_spawn_relaunch_of_promoted_scout_uses_the_recorded_ticket
+test_spawn_relaunch_preserves_the_declared_ticket_scope
 test_spawn_relaunch_ignores_a_ticket_line_in_the_task_text
 test_spawn_relaunch_is_not_refused_by_the_claimed_copy_guard
 test_spawn_relaunch_refuses_a_record_that_released_its_copy

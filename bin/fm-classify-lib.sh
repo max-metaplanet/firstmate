@@ -37,7 +37,8 @@
 # open-decisions fold" below) also writes: it persists a per-status-file byte
 # cursor and folded open-set as a side effect, so a per-drain fleet-wide scan
 # stays bounded by new appends instead of re-reading each task's whole lifetime
-# log every time. After committing that cursor it emits optional task events for
+# log every time, and records explicit PR-ready ticket scope under the task
+# metadata lock. After committing that cursor it emits optional task events for
 # new keyed transitions through bin/fm-task-event.sh. Pure readers never emit.
 # status_home_appends_record writes the per-task home-owned
 # append ledger (see "home-owned status-append ledger" below) so the wake scan
@@ -185,6 +186,59 @@ last_worker_status_line() {  # <status-file>
     || scan=$(_fm_status_recognized_scan < "$f") || :
   printf '%s\n' "$scan"
 }
+
+# Latest explicit scope on a PR-ready worker report for this exact PR.
+# Registration and the incremental fold record it under the metadata lock.
+status_pr_ticket_scope() {  # <status-file> <pr-url>
+  local line verb note token scope='' tokens=()
+  [ -f "$1" ] && [ -r "$1" ] && [ ! -L "$1" ] || return 0
+  while IFS= read -r line || [ -n "$line" ]; do
+    status_line_verb "$line" verb
+    [ "$verb" = "done" ] || continue
+    status_line_note_to note "$line"
+    if [ -n "$2" ]; then
+      case "$note" in "PR $2 "*) ;; *) continue ;; esac
+    else
+      case "$note" in 'PR https://'*) ;; *) continue ;; esac
+    fi
+    read -r -a tokens <<< "$note"
+    for token in "${tokens[@]}"; do
+      case "$token" in ticket-scope=complete|ticket-scope=partial) scope=${token#ticket-scope=} ;; esac
+    done
+  done < "$1"
+  printf '%s' "$scope"
+}
+
+# Called only when the incremental fold sees a PR-ready scope declaration.
+# Re-read the latest declaration under the task lock so replay and registration
+# cannot replace a later explicit declaration with an earlier one.
+status_record_ticket_scope() (  # <status-file>
+  local f=$1 meta=${1%.status}.meta lock tmp='' line ticket='' pr='' scope
+  [ -f "$meta" ] && [ ! -L "$meta" ] || return 0
+  # Both libraries are canonical lint roots; keep them an analysis boundary
+  # as fm_afk_contract_lock_helpers does.
+  # shellcheck source=/dev/null
+  . "$_FM_CLASSIFY_LIB_DIR/fm-wake-lib.sh"
+  # shellcheck source=/dev/null
+  . "$_FM_CLASSIFY_LIB_DIR/fm-pr-lib.sh"
+  lock=$(fm_meta_lock_path "$meta") || return 1
+  fm_lock_acquire_wait_bounded "$lock" 1 || return 1
+  trap '[ -z "$tmp" ] || rm -f -- "$tmp"; fm_lock_release "$lock"' EXIT
+  [ -f "$meta" ] && [ ! -L "$meta" ] || return 0
+  [ "$(fm_pr_file_link_count "$meta")" = 1 ] || return 1
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in ticket=*) ticket=${line#ticket=} ;; pr=*) pr=${line#pr=} ;; esac
+  done < "$meta"
+  case "$ticket" in ''|no-ticket|none) return 0 ;; esac
+  scope=$(status_pr_ticket_scope "$f" "$pr")
+  [ -n "$scope" ] || return 0
+  tmp=$(mktemp "${meta%/*}/.fm-ticket-scope.XXXXXX") || return 1
+  printf 'ticket_scope=%s\n' "$scope" > "$tmp" || return 1
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in ticket_scope=*) ;; *) printf '%s\n' "$line" >> "$tmp" || return 1 ;; esac
+  done < "$meta"
+  chmod 0600 "$tmp" && mv -f -- "$tmp" "$meta"
+)
 
 _fm_status_recognized_scan() {  # stdin -> last recognized-verb line; 1 when none
   local line verb last=''
@@ -1357,7 +1411,7 @@ status_open_decisions_incremental() {  # <status-file> [<captured-end-offset>]
   local version='' size actual_size cur_ident resolve held chunk_file chunk_size line cursor_dirty=0
   local target_cursor fold_version event_rows='' event_verb event_key event_note event_type event_before
   local event_state event_home event_config event_task event_waits=, event_waited event_prior_verb
-  local event_quiet_end=0 event_quiet event_pos=0 event_line_bytes
+  local event_quiet_end=0 event_quiet event_pos=0 event_line_bytes scope_seen=0
   event_task=${f##*/}; event_task=${event_task%.status}
   event_state=${f%/*}
   event_home=${FM_HOME:-${event_state%/*}}
@@ -1472,6 +1526,7 @@ status_open_decisions_incremental() {  # <status-file> [<captured-end-offset>]
     resolve=${FM_CLASSIFY_RESOLVE_VERB:-$FM_CLASSIFY_RESOLVE_VERB_DEFAULT}
     held=${FM_CLASSIFY_CAPTAIN_HELD_VERB:-$FM_CLASSIFY_CAPTAIN_HELD_VERB_DEFAULT}
     while IFS= read -r line || [ -n "$line" ]; do
+      case "$line" in *ticket-scope=complete*|*ticket-scope=partial*) scope_seen=1 ;; esac
       event_before=$open
       open=$(_fm_decision_fold_line "$open" "$line" "$resolve" "$held")
       event_quiet=0
@@ -1518,6 +1573,7 @@ status_open_decisions_incremental() {  # <status-file> [<captured-end-offset>]
       fi
     done < "$chunk_file"
     rm -f "$chunk_file"
+    [ "$scope_seen" = 0 ] || status_record_ticket_scope "$f" || return 1
     offset=$size
     cursor_dirty=1
   fi

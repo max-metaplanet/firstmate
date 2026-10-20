@@ -1963,3 +1963,28 @@ test_ticket_and_commit_type_are_validated_as_a_pair
 test_ticket_is_refused_where_it_does_not_apply
 test_crewmate_scaffolds_forbid_pool_administration
 test_checked_convention_reaches_every_escalation_path
+
+home="$TMP_ROOT/ticket-scope-intake"
+for scope in complete partial; do
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "scope-$scope" proj --mode no-mistakes \
+    --ticket ENG-630 --commit-type feat --ticket-scope "$scope" >/dev/null \
+    || fail "scope $scope brief failed"
+  brief="$home/data/scope-$scope/brief.md"
+  assert_grep "Ticket scope: $scope" "$brief" 'scope did not reach the worker contract'
+  assert_grep 'acceptance criteria' "$brief" 'worker did not receive the acceptance-criteria check'
+  assert_grep 'ticket-scope=complete' "$brief" 'worker did not receive the scope declaration instruction'
+done
+FM_HOME="$home" "$ROOT/bin/fm-brief.sh" scope-default proj --mode no-mistakes \
+  --ticket ENG-630 --commit-type feat >/dev/null || fail 'default scope brief failed'
+assert_grep 'Ticket scope: partial' "$home/data/scope-default/brief.md" 'scope did not default to partial'
+for ticket in '' no-ticket; do
+  args=()
+  [ -z "$ticket" ] || args=(--ticket "$ticket" --commit-type feat)
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" scope-refused proj --mode no-mistakes \
+    "${args[@]}" --ticket-scope complete >/dev/null 2>&1 && fail 'scope without a real ticket was accepted'
+done
+for scope in '' invalid; do
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" scope-invalid proj --mode no-mistakes \
+    --ticket ENG-630 --commit-type feat --ticket-scope="$scope" >/dev/null 2>&1 && fail 'invalid scope was accepted'
+done
+pass 'ticket-scope intake is explicit, defaults partial, and requires a real ticket'

@@ -4787,7 +4787,7 @@ test_a_verified_merge_completes_its_ticket() {
   fm_write_meta "$home/state/$id.meta" \
     "window=firstmate:fm-$id" "endpoint_task_id=$id" "worktree=$wt" \
     "project=$repo" "harness=codex" "kind=ship" "mode=no-mistakes" \
-    "ticket=ENG-2653" "commit_type=feat" "spawn_gen=fixture-$id" "pr=$pr"
+    "ticket=ENG-2653" "ticket_scope=complete" "commit_type=feat" "spawn_gen=fixture-$id" "pr=$pr"
   printf 'done: merge ready\n' > "$home/state/$id.status"
 
   # The hook is configured to fail: a merge that the forge proved landed must

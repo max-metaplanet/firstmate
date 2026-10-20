@@ -14,7 +14,7 @@
 # charters still use a single `{TASK}` charter fill. Firstmate may adjust other
 # sections when the task genuinely deviates (e.g. working an existing external
 # PR instead of shipping a new one).
-# Usage: fm-brief.sh <task-id> <repo-name> --mode <no-mistakes|direct-PR|local-only> [--branch-prefix <prefix>] [--ticket <ENG-123|no-ticket> --commit-type <type>] [--base-branch <branch>] [--forge <none|gerrit|forgejo|external> [--shape squash]] [--herdr-lab]
+# Usage: fm-brief.sh <task-id> <repo-name> --mode <no-mistakes|direct-PR|local-only> [--branch-prefix <prefix>] [--ticket <ENG-123|no-ticket> --commit-type <type> [--ticket-scope <complete|partial>]] [--base-branch <branch>] [--forge <none|gerrit|forgejo|external> [--shape squash]] [--herdr-lab]
 #        fm-brief.sh <task-id> <repo-name> --scout [--base-branch <branch>] [--herdr-lab]
 #        fm-brief.sh <task-id> --secondmate {<project>...|--no-projects}
 #   --scout writes the scout contract instead: the deliverable is a report at
@@ -164,6 +164,9 @@
 # typed dispatch resolution routes declared deployment-configuration paths by
 # that fact (contract: docs/configuration.md "Typed dispatch resolution").
 # Refuses to overwrite an existing brief.
+# --ticket-scope complete|partial is valid only with a real --ticket and
+# defaults to partial; docs/configuration.md "Task-event hook" owns its contract.
+
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -234,6 +237,8 @@ MODE_SET=0
 BRANCH_PREFIX=fm/
 BRANCH_PREFIX_SET=0
 TICKET=
+TICKET_SCOPE=partial
+TICKET_SCOPE_SET=0
 TICKET_SET=0
 COMMIT_TYPE=
 COMMIT_TYPE_SET=0
@@ -258,6 +263,7 @@ for a in "$@"; do
       mode) MODE=$a; MODE_SET=1 ;;
       branch-prefix) BRANCH_PREFIX=$a; BRANCH_PREFIX_SET=1 ;;
       ticket) TICKET=$a; TICKET_SET=1 ;;
+      ticket-scope) TICKET_SCOPE=$a; TICKET_SCOPE_SET=1 ;;
       commit-type) COMMIT_TYPE=$a; COMMIT_TYPE_SET=1 ;;
       base-branch) BASE_BRANCH=$a; BASE_BRANCH_SET=1 ;;
       forge) FORGE=$a; FORGE_SET=1 ;;
@@ -278,6 +284,8 @@ for a in "$@"; do
     --mode=*) MODE=${a#--mode=}; MODE_SET=1 ;;
     --branch-prefix) want_value="branch-prefix" ;;
     --branch-prefix=*) BRANCH_PREFIX=${a#--branch-prefix=}; BRANCH_PREFIX_SET=1 ;;
+    --ticket-scope) want_value="ticket-scope" ;;
+    --ticket-scope=*) TICKET_SCOPE=${a#--ticket-scope=}; TICKET_SCOPE_SET=1 ;;
     --ticket) want_value="ticket" ;;
     --ticket=*) TICKET=${a#--ticket=}; TICKET_SET=1 ;;
     --commit-type) want_value="commit-type" ;;
@@ -326,7 +334,7 @@ if [ "$KIND" != ship ] && [ "$BRANCH_PREFIX_SET" -eq 1 ]; then
   echo "error: --branch-prefix applies only to ship briefs; a scout makes no branch and a secondmate charter is not a delivery contract" >&2
   exit 1
 fi
-if [ "$KIND" != ship ] && { [ "$TICKET_SET" -eq 1 ] || [ "$COMMIT_TYPE_SET" -eq 1 ]; }; then
+if [ "$KIND" != ship ] && { [ "$TICKET_SET" -eq 1 ] || [ "$COMMIT_TYPE_SET" -eq 1 ] || [ "$TICKET_SCOPE_SET" -eq 1 ]; }; then
   echo "error: --ticket and --commit-type apply only to ship briefs; a scout makes no branch and opens no pull request, and a secondmate charter is not a delivery contract" >&2
   exit 1
 fi
@@ -415,7 +423,8 @@ fi
 ID=${POS[0]}
 # fm-dod-lib.sh owns the ticket grammar and the branch each case resolves, so
 # the brief, the spawn, and a scout promotion cannot name different branches.
-fm_ticket_resolve "$TICKET" "$COMMIT_TYPE" "$ID" "$BRANCH_PREFIX" "$BRANCH_PREFIX_SET" "fm-brief.sh" || exit 1
+fm_ticket_scope_valid "$TICKET" "$TICKET_SCOPE" "$TICKET_SCOPE_SET" "fm-brief.sh" || exit 1
+fm_ticket_resolve "$TICKET" "$COMMIT_TYPE" "$ID" "$BRANCH_PREFIX" "$BRANCH_PREFIX_SET" "fm-brief.sh" "$TICKET_SCOPE" || exit 1
 BRANCH=$FM_TICKET_BRANCH
 TICKET_HEADER=$FM_TICKET_HEADER
 TICKET_NM_RETITLE=$FM_TICKET_NM_RETITLE

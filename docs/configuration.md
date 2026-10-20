@@ -589,11 +589,16 @@ This opt-in requires `jq` and is local to the home, not inherited by secondmates
 The executable receives one compact JSON argument with this versioned record:
 
 ```json
-{"schema":"firstmate.task-event","version":1,"sequence":1,"event":"blocked","task_id":"example","ticket":"issue-42","pr_url":null,"merge":null,"timestamp":"2026-10-19T12:00:00Z","summary":"Waiting for the build service","key":"build","home":"/path/to/home"}
+{"schema":"firstmate.task-event","version":1,"sequence":1,"event":"blocked","task_id":"example","ticket":"issue-42","ticket_scope":"partial","pr_url":null,"merge":null,"timestamp":"2026-10-19T12:00:00Z","summary":"Waiting for the build service","key":"build","home":"/path/to/home"}
 ```
 
 `ticket` is the opaque recorded `ticket=` value, or JSON `null` when absent or explicitly ticketless.
 The emitter never parses ticket names from prose or applies a provider's ticket grammar; a consumer may interpret that value however its tracker requires.
+`ticket_scope` is `complete` only when the task's `state/<id>.meta` records `ticket_scope=complete`; every other value, including an absent or null field from older producers, means `partial`.
+A `cancelled` event publishes `complete` only when that task's own recorded PR is recorded as merged in `state/task-event-prs.jsonl`; a cancelled task whose PR never merged, or that never opened one, delivered nothing and publishes `partial`.
+Intake defaults to partial; `--ticket-scope complete|partial` on `fm-brief.sh`, `fm-spawn.sh`, or `fm-promote.sh` selects a scope only with a real `--ticket` (see their headers for usage).
+A ticket-linked worker checks its change against the ticket's acceptance criteria and declares `ticket-scope=complete` or `ticket-scope=partial` on its PR-ready `done: PR <url> ...` status line.
+PR registration and the incremental status fold record the latest explicit declaration in the same metadata field, allowing either an upgrade or a downgrade; no declaration preserves the intake value.
 `pr_url` is the relevant supplied or recorded PR URL, otherwise `null`.
 `key` is the transition's decision key when available, otherwise `null`.
 `timestamp` is the emission time in UTC.
@@ -616,6 +621,8 @@ A task tracks one PR: its later `pr-opened` supersedes its earlier unmerged PR, 
 Unticketed tasks aggregate their own PRs only.
 The local `state/task-event-prs.jsonl` retains PR facts across task teardown and across multiple tasks sharing a ticket; earlier history from before the hook was enabled is not reconstructed from the forge.
 All other event types carry `merge: null`.
+Only `pr-merged` or `cancelled` with both `merge: "final"` and `ticket_scope: "complete"` may close a ticket.
+A final merge with partial scope records the PR and moves the ticket to review or verification instead of completing it; `merge` describes recorded PR aggregation, not ticket acceptance.
 
 `bin/fm-task-event.sh` snapshots the task context before teardown can remove it and publishes an ordered record under `state/task-events/`.
 Only that local publication takes a foreground lock, with a one-second bound; the caller never waits for a consumer.
@@ -633,7 +640,7 @@ No worker-facing instruction should ask a worker to update a tracker directly.
 `bin/fm-ticket-sync.sh` is the compatibility consumer for homes that already have `config/ticket-sync-hook` configured.
 When `config/task-event-hook` is absent, that legacy file alone keeps lifecycle delivery on through this adapter, and `state/task-events.log` records the compatibility path once.
 Writing the absolute path to `bin/fm-ticket-sync.sh` into `config/task-event-hook` selects the same adapter explicitly.
-The adapter maps started to `start`, resumed to `review <url>` when the task has a PR and `start` otherwise, blocked/waiting to `waiting <summary>`, pr-opened to `review <url>`, only a final pr-merged to `done <url>`, and a cancelled event with `merge: "final"` to `done`, using the existing `<ticket> <event> [args...]` calling convention.
+The adapter maps started to `start`, resumed to `review <url>` when the task has a PR and `start` otherwise, blocked/waiting to `waiting <summary>`, pr-opened to `review <url>`, a final pr-merged to `done <url>` only for complete ticket scope (otherwise `review <url>`), and a cancelled event with `merge: "final"` to `done` only for complete scope (otherwise `review <url>` only when `state/task-event-prs.jsonl` records that PR as merged, and a bare `review` otherwise, so a ticket is never pointed at an abandoned PR), using the existing `<ticket> <event> [args...]` calling convention.
 Unticketed and other new events are ignored by this legacy adapter.
 To switch to a richer consumer, replace the single executable path in `config/task-event-hook`; no producer or worker changes are needed.
 
