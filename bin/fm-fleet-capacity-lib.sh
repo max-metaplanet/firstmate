@@ -89,13 +89,17 @@ fm_fleet_capacity_lookup() {  # <config-dir>
 # Count the live agents holding a place in the fleet.
 # <own-id> in <first-state> is the task being admitted and is not counted.
 # Sets FM_FLEET_CAPACITY_OCCUPANTS and FM_FLEET_CAPACITY_OCCUPANT_IDS, each
-# holder outside <first-state> qualified with its home. Returns 1 with
+# holder outside <first-state> qualified with its home, and the array
+# FM_FLEET_CAPACITY_OCCUPANT_METAS with those exact holders' metadata paths.
+# An empty <own-id> counts every record (read-only display callers).
+# Returns 1 with
 # FM_FLEET_CAPACITY_ERROR when the local homes or a task record cannot be read.
 # shellcheck disable=SC2034 # the FM_FLEET_CAPACITY_* results are read by bin/fm-spawn.sh.
 fm_fleet_capacity_occupants() {  # <first-state> <own-id>
   local first=$1 self=$2 state meta kind backend target label
   FM_FLEET_CAPACITY_OCCUPANTS=0
   FM_FLEET_CAPACITY_OCCUPANT_IDS=
+  FM_FLEET_CAPACITY_OCCUPANT_METAS=()
   FM_FLEET_CAPACITY_ERROR=
   fm_local_firstmate_state_dirs "$first" || {
     FM_FLEET_CAPACITY_ERROR=$FM_LOCAL_FIRSTMATE_ERROR
@@ -113,22 +117,24 @@ fm_fleet_capacity_occupants() {  # <first-state> <own-id>
         FM_FLEET_CAPACITY_ERROR="task record $meta cannot be read"
         return 1
       }
-      kind=$(fm_meta_get "$meta" kind)
+      fm_meta_get_to kind "$meta" kind
       case "$kind" in
         ship | scout | secondmate) ;;
         *) continue ;;
       esac
-      backend=$(fm_backend_of_meta "$meta")
-      target=$(fm_backend_target_of_meta "$meta")
-      target=${target:-$(fm_meta_get "$meta" window)}
+      fm_backend_of_meta_to backend "$meta"
+      fm_backend_target_of_meta_to target "$meta"
+      [ -n "$target" ] || fm_meta_get_to target "$meta" window
       if [ -n "$target" ]; then
         case "$(fm_backend_agent_state "$backend" "$target" 2>/dev/null)" in
           dead | missing) continue ;;
         esac
       fi
-      label=$(basename "$meta" .meta)
-      [ "$state" = "$first" ] || label="$label in $(dirname "$state")"
+      label=${meta##*/}
+      label=${label%.meta}
+      [ "$state" = "$first" ] || label="$label in ${state%/*}"
       FM_FLEET_CAPACITY_OCCUPANTS=$((FM_FLEET_CAPACITY_OCCUPANTS + 1))
+      FM_FLEET_CAPACITY_OCCUPANT_METAS+=("$meta")
       FM_FLEET_CAPACITY_OCCUPANT_IDS="${FM_FLEET_CAPACITY_OCCUPANT_IDS:+$FM_FLEET_CAPACITY_OCCUPANT_IDS, }$label"
     done
   done
