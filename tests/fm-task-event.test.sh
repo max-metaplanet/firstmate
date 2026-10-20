@@ -40,7 +40,7 @@ for event in started blocked waiting resumed decision-answered pr-opened pr-merg
   wait_lines "$home/events" "$count"
   tail -1 "$home/events" | jq -e --arg event "$event" --arg home "$home" '
     .schema == "firstmate.task-event" and .version == 1 and .event == $event
-    and .task_id == "task" and .ticket == "ISSUE/custom-42" and .key == "build"
+    and .task_id == "task" and .ticket == "ISSUE/custom-42" and .ticket_scope == "partial" and .key == "build"
     and .home == $home and .summary == "worker says \"ready\""
     and .pr_url == "https://example.org/repo/pull/1"
     and (.timestamp | test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T"))' >/dev/null \
@@ -220,3 +220,17 @@ emit "$home" task resumed
 wait_lines "$home/events" 1
 jq -e '.event == "resumed"' "$home/events" >/dev/null || fail 'dead drainer lock blocked delivery'
 pass 'the existing lock recovery permits delivery after a drainer dies'
+
+for scope in complete partial invalid ''; do
+  home=$(make_home "scope-${scope:-empty}")
+  printf 'ticket_scope=%s\n' "$scope" >> "$home/state/task.meta"
+  for event in started blocked waiting resumed decision-answered pr-opened pr-merged finished cancelled; do
+    emit "$home" task "$event" --pr https://example.org/repo/pull/1
+  done
+  wait_lines "$home/events" 9
+  expected=partial
+  [ "$scope" != complete ] || expected=complete
+  jq -se --arg scope "$expected" 'length == 9 and all(.[]; .ticket_scope == $scope)' "$home/events" >/dev/null \
+    || fail "recorded $scope was not normalized on every event"
+done
+pass 'every event snapshots recorded scope, defaulting invalid and empty records to partial'

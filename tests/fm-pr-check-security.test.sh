@@ -3728,3 +3728,20 @@ test_custom_snapshot_cleanup_on_signal
 test_returned_custom_check_descendants_are_drained
 test_teardown_removes_poll_artifacts
 test_pr_registration_moves_its_ticket_to_review_once
+
+dir=$(make_case worker-ticket-scope)
+write_task_meta "$dir"
+printf 'ticket=ENG-630\nticket_scope=partial\n' >> "$dir/home/state/task-a.meta"
+url=https://github.com/o/r/pull/7
+for scope in complete partial; do
+  printf 'done [at=100]: PR %s checks green ticket-scope=%s\n' "$url" "$scope" >> "$dir/home/state/task-a.status"
+  run_check_entry "$dir" task-a "$url" >/dev/null 2> "$dir/stderr" \
+    || fail "worker scope registration failed: $(cat "$dir/stderr")"
+  grep -qx "ticket_scope=$scope" "$dir/home/state/task-a.meta" || fail "scope $scope was not recorded"
+done
+printf 'done: PR %s checks green\n' "$url" >> "$dir/home/state/task-a.status"
+run_check_entry "$dir" task-a "$url" >/dev/null 2> "$dir/stderr" || fail 'scope preservation rearm failed'
+grep -qx 'ticket_scope=partial' "$dir/home/state/task-a.meta" || fail 'missing declaration replaced scope'
+[ "$(grep -c '^ticket_scope=' "$dir/home/state/task-a.meta")" = 1 ] || fail 'scope record was duplicated'
+fm_pr_metadata_identity_parse "$dir/home/state/task-a.meta" || fail 'scope recording invalidated the PR identity'
+pass 'PR registration records worker scope overrides and preserves a single authoritative value'

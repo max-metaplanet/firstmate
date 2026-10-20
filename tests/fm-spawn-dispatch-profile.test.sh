@@ -2723,3 +2723,38 @@ test_codex_seat_launch_store() {
   pass "Codex launches and records its selected home"
 }
 test_codex_seat_launch_store
+
+# Intake scope survives the full spawn metadata path and a relaunch, independent
+# of the selected harness; the task-event hook consumes this durable record.
+test_ticket_scope_survives_spawn_and_relaunch() {
+  local scope rec id brief out expected scope_args=()
+  for scope in default complete partial; do
+    id="scope-spawn-$scope"
+    rec=$(make_spawn_case "$id" codex "$id")
+    IFS='|' read -r CASE_DIR HOME_DIR PROJ_DIR WT_DIR FAKEBIN_DIR LAUNCH_LOG <<EOF
+$rec
+EOF
+    brief="$HOME_DIR/data/$id/brief.md"
+    rm "$brief"
+    scope_args=()
+    [ "$scope" = default ] || scope_args=(--ticket-scope "$scope")
+    FM_HOME="$HOME_DIR" "$ROOT/bin/fm-brief.sh" "$id" proj --mode no-mistakes \
+      --ticket ENG-630 --commit-type feat "${scope_args[@]}" >/dev/null || fail 'ticket scope brief failed'
+    sed -e 's/{TASK}/Ship the change./' -e 's/{FIRSTMATE_SPEC}/Preserve the selected scope./' "$brief" > "$brief.filled"
+    mv "$brief.filled" "$brief"
+    out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" \
+      --harness codex --ticket ENG-630 --commit-type feat "${scope_args[@]}") \
+      || fail "scope $scope spawn failed: $out"
+    expected=$scope
+    [ "$scope" != default ] || expected=partial
+    assert_grep "ticket_scope=$expected" "$HOME_DIR/state/$id.meta" 'spawn did not persist intake scope'
+    # Simulate the worker's later explicit declaration before relaunch.
+    sed 's/^ticket_scope=.*/ticket_scope=complete/' "$HOME_DIR/state/$id.meta" > "$CASE_DIR/meta.next"
+    mv "$CASE_DIR/meta.next" "$HOME_DIR/state/$id.meta"
+    out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" --relaunch) \
+      || fail "ticket scope relaunch failed: $out"
+    assert_grep 'ticket_scope=complete' "$HOME_DIR/state/$id.meta" 'relaunch replaced the worker declaration'
+  done
+  pass 'ticket scope intake defaults partial and relaunch preserves the latest declaration'
+}
+test_ticket_scope_survives_spawn_and_relaunch

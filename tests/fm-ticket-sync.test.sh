@@ -30,10 +30,10 @@ SH
 payload() {  # <event> [ticket] [merge] [summary] [pr-url]
   jq -cn --arg event "$1" --arg ticket "${2:-issue/123}" \
     --arg merge "${3:-final}" --arg summary "${4:-Worker status text}" \
-    --arg pr "${5:-https://github.com/o/r/pull/7}" \
+    --arg pr "${5:-https://github.com/o/r/pull/7}" --arg scope "${6:-complete}" \
     '{schema:"firstmate.task-event", version:1, event:$event, task_id:"task-a",
       ticket:(if $ticket == "null" then null else $ticket end),
-      merge:$merge, summary:$summary, pr_url:(if $pr == "null" then null else $pr end)}'
+      ticket_scope:$scope, merge:$merge, summary:$summary, pr_url:(if $pr == "null" then null else $pr end)}'
 }
 
 run_sync() {
@@ -147,7 +147,7 @@ test_polled_merge_reaches_legacy_hook_once() {
   url=https://github.com/acme/sample/pull/7
   fm_write_meta "$home/state/polled.meta" \
     "window=firstmate:fm-polled" "worktree=$home/wt" "kind=ship" \
-    "mode=no-mistakes" "ticket=issue/456" "commit_type=feat" "pr=$url"
+    "mode=no-mistakes" "ticket=issue/456" "ticket_scope=complete" "commit_type=feat" "pr=$url"
   report_merge "$home" polled "$url" poll || fail "polled merge was not recorded"
   for ((i=0; i<200; i++)); do
     [ -s "$home/calls" ] && break
@@ -168,3 +168,23 @@ test_hook_failures_propagate_to_the_emitter
 test_malformed_payloads_are_refused
 test_invalid_hook_configuration_is_refused
 test_polled_merge_reaches_legacy_hook_once
+
+home=$(make_home partial-scope)
+install_hook "$home"
+for event in pr-merged cancelled; do
+  for scope in partial null absent; do
+    event_payload=$(payload "$event" issue/123 final text https://github.com/o/r/pull/7)
+    case "$scope" in
+      absent) event_payload=$(printf '%s' "$event_payload" | jq 'del(.ticket_scope)') ;;
+      null) event_payload=$(printf '%s' "$event_payload" | jq '.ticket_scope = null') ;;
+      *) event_payload=$(printf '%s' "$event_payload" | jq '.ticket_scope = "partial"') ;;
+    esac
+    run_sync "$home" "$event_payload" || fail "$event with $scope scope failed"
+  done
+done
+jq -se 'length == 6 and all(.[]; . == ["issue/123","review","https://github.com/o/r/pull/7"])' "$home/calls" >/dev/null \
+  || fail 'final merge or cancellation completed a partial/unknown ticket'
+run_sync "$home" "$(payload cancelled issue/123 final text null partial)" || fail 'PR-less partial cancellation failed'
+tail -1 "$home/calls" | jq -e '. == ["issue/123","review"]' >/dev/null \
+  || fail 'PR-less partial cancellation did not retain review'
+pass 'final merges and cancellations require explicit complete scope to close a ticket'

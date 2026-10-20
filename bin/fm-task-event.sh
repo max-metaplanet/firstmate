@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # fm-task-event.sh - publish an optional, tracker-neutral lifecycle event.
 # Usage: fm-task-event.sh <task-id> <event> [--summary <text>] [--key <key>]
-#        [--ticket <opaque-ticket>] [--pr <url>]
+#        [--ticket <opaque-ticket>] [--pr <url>] [--ticket-scope <complete|partial>]
+# --ticket-scope supplies the teardown snapshot after metadata retirement.
 # docs/configuration.md owns the hook and versioned JSON contract.
 # Snapshot local metadata and publish an ordered spool entry before returning.
 # A detached --drain process serializes hook calls using the shared lock helpers.
@@ -131,7 +132,7 @@ fi
 events_enabled || exit 0
 
 usage() {
-  echo 'usage: fm-task-event.sh <task-id> <event> [--summary text] [--key key] [--ticket ticket] [--pr url]' >&2
+  echo 'usage: fm-task-event.sh <task-id> <event> [--summary text] [--key key] [--ticket ticket] [--pr url] [--ticket-scope complete|partial]' >&2
   exit 2
 }
 [ "$#" -ge 2 ] || usage
@@ -143,10 +144,14 @@ case "$EVENT" in
   *) usage ;;
 esac
 
-TICKET='' PR='' SUMMARY='' KEY='' SUMMARY_SET=0
+TICKET='' PR='' SUMMARY='' KEY='' SUMMARY_SET=0 TICKET_SCOPE=partial
 if [ -f "$STATE/$ID.meta" ] && [ ! -L "$STATE/$ID.meta" ]; then
   while IFS= read -r line || [ -n "$line" ]; do
-    case "$line" in ticket=*) TICKET=${line#ticket=} ;; pr=*) PR=${line#pr=} ;; esac
+    case "$line" in
+      ticket=*) TICKET=${line#ticket=} ;;
+      pr=*) PR=${line#pr=} ;;
+      ticket_scope=*) TICKET_SCOPE=${line#ticket_scope=} ;;
+    esac
   done < "$STATE/$ID.meta"
 fi
 while [ "$#" -gt 0 ]; do
@@ -155,6 +160,7 @@ while [ "$#" -gt 0 ]; do
     --summary) SUMMARY=$2; SUMMARY_SET=1 ;;
     --key) KEY=$2 ;;
     --ticket) TICKET=$2 ;;
+    --ticket-scope) TICKET_SCOPE=$2 ;;
     --pr) PR=$2 ;;
     *) usage ;;
   esac
@@ -162,6 +168,7 @@ while [ "$#" -gt 0 ]; do
 done
 case "$EVENT" in pr-opened|pr-merged) [ -n "$PR" ] || usage ;; esac
 case "$TICKET" in no-ticket|none) TICKET= ;; esac
+[ "$TICKET_SCOPE" = complete ] && [ -n "$TICKET" ] || TICKET_SCOPE=partial
 if [ "$SUMMARY_SET" -eq 0 ]; then
   # Reuse the status parser, including stamped and note-head keyed records.
   # shellcheck source=bin/fm-classify-lib.sh
@@ -184,10 +191,11 @@ if ! printf '%s\n' "$SEQUENCE" > "$QUEUE/.sequence.next" \
   report_failure 125; exit 0
 fi
 PAYLOAD=$(jq -cn --arg event "$EVENT" --arg id "$ID" --arg ticket "$TICKET" \
+  --arg ticket_scope "$TICKET_SCOPE" \
   --arg pr "$PR" --arg summary "$SUMMARY" --arg key "$KEY" --arg home "$FM_HOME" \
   --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --argjson sequence "$SEQUENCE" \
   '{schema:"firstmate.task-event",version:1,event:$event,task_id:$id,
-    ticket:($ticket|if length==0 then null else . end),
+    ticket:($ticket|if length==0 then null else . end),ticket_scope:$ticket_scope,
     pr_url:($pr|if length==0 then null else . end),merge:null,timestamp:$at,
     summary:($summary|gsub("[\\r\\n\\t]+";" ")|.[0:500]),
     key:($key|if length==0 then null else . end),home:$home,sequence:$sequence}' 2>/dev/null) \

@@ -61,10 +61,10 @@
 # forge=external block appends " forge=forgejo" or " forge=external". The "Ship branch: <branch>"
 # line under it is machine-readable the same way: bin/fm-spawn.sh refuses a ship
 # whose spawn-selected branch disagrees with it.
-# A ticketed task adds "Ticket: <id>" and "Commit type: <type>" to that header
+# A ticketed task adds ticket, commit type, and (for a real ticket) scope lines
 # plus the convention sentences fm_ticket_resolve renders, which this function
 # takes already rendered as its seventh argument and only places; bin/fm-spawn.sh
-# refuses a ship whose ticket or commit type disagrees with those lines.
+# refuses a fresh ship whose ticket, commit type, or scope disagrees with them.
 # A real ticket also carries the instruction to read that ticket in full before
 # working, which fm_ticket_resolve omits for the ticketless marker.
 # A ticketed no-mistakes task also takes fm_ticket_resolve's PR-retitle step as
@@ -266,18 +266,19 @@ fm_brief_base_branches() {  # <brief>
   ' "$1"
 }
 
-# Print the "Ticket:" value, then the "Commit type:" value, of the last rendered
+# Print the "Ticket:", "Commit type:", and "Ticket scope:" values of the last rendered
 # Definition of done header (heading, "Delivery contract:", "Ship branch:", then
-# the ticket lines directly after it), one per line and empty when absent. Lines
+# the ticket lines directly after it), one per line (scope defaults to partial). Lines
 # anywhere else in the brief, such as pasted task text, are ignored.
 fm_brief_ticket_header() {  # <brief>
   awk '
     s == 3 && sub(/^Ticket: /, "") { t = $0; s = 4; next }
-    s == 4 && sub(/^Commit type: /, "") { c = $0; s = 0; next }
-    s == 2 && /^Ship branch: / { t = ""; c = ""; s = 3; next }
+    s == 5 && sub(/^Ticket scope: /, "") { scope = $0; s = 0; next }
+    s == 4 && sub(/^Commit type: /, "") { c = $0; s = 5; next }
+    s == 2 && /^Ship branch: / { t = ""; c = ""; scope = "partial"; s = 3; next }
     s == 1 && /^Delivery contract: mode=/ { s = 2; next }
     { s = ($0 == "# Definition of done") ? 1 : 0 }
-    END { print t; print c }
+    END { print t; print c; print (scope == "" ? "partial" : scope) }
   ' "$1"
 }
 
@@ -334,7 +335,13 @@ fm_ticket_branch() {  # <commit-type> <ticket> <task-id>
 # --branch-prefix, which a ticket contradicts because the convention owns the
 # whole branch name. An unticketed call resolves the unchanged
 # "<prefix><task-id>" branch and writes nothing.
-fm_ticket_resolve() {  # <ticket> <commit-type> <task-id> <branch-prefix> <branch-prefix-set> <caller>
+fm_ticket_scope_valid() {  # <ticket> <scope> <explicitly-set> <caller>
+  [ "$3" = 1 ] || return 0
+  case "$2" in complete|partial) ;; *) echo "error: $4: --ticket-scope must be complete or partial" >&2; return 1 ;; esac
+  case "$1" in ''|no-ticket) echo "error: $4: --ticket-scope requires a real --ticket" >&2; return 1 ;; esac
+}
+
+fm_ticket_resolve() {  # <ticket> <commit-type> <task-id> <branch-prefix> <branch-prefix-set> <caller> [ticket-scope]
   local ticket=$1 commit_type=$2 id=$3 prefix=$4 prefix_set=$5 caller=$6
   FM_TICKET_BRANCH="$prefix$id"
   # shellcheck disable=SC2034 # Output global, read by the sourcing caller.
@@ -359,16 +366,20 @@ fm_ticket_resolve() {  # <ticket> <commit-type> <task-id> <branch-prefix> <branc
     return 1
   }
   FM_TICKET_BRANCH=$(fm_ticket_branch "$commit_type" "$ticket" "$id")
-  local read_ticket=''
+  local read_ticket='' scope_header=''
+  [ "$ticket" = "$FM_TICKET_NONE" ] || scope_header="
+Ticket scope: ${7:-partial}"
   [ "$ticket" = "$FM_TICKET_NONE" ] || read_ticket="
 Before you start the work, read ticket $ticket in full: its description, every comment, its subtasks, its linked tasks, and its attachments.
 Weigh the comments people wrote first; treat automated status and risk-score comments as the weakest signal and read only the latest of each.
 Any ClickUp read path will do - where this home installs the private \`cu-*\` helper, \`cu-task $ticket\` is one example - and the ticket's own page carries whatever a command does not print.
-If you cannot read it, report that in your first status line rather than proceeding silently on this brief alone."
+If you cannot read it, report that in your first status line rather than proceeding silently on this brief alone.
+Before reporting the PR ready, check your change against the ticket's acceptance criteria and append \`ticket-scope=complete\` or \`ticket-scope=partial\` to your PR-ready status line.
+Declare complete only when this change completes the entire ticket, including required verification; otherwise declare partial."
   # shellcheck disable=SC2034 # Output global, read by the sourcing caller.
   FM_TICKET_HEADER="
 Ticket: $ticket
-Commit type: $commit_type$read_ticket
+Commit type: $commit_type$scope_header$read_ticket
 Every commit subject on this branch and the pull request title must read \`$commit_type/$ticket(<scope>): <message>\`, where \`<scope>\` names the area changed and \`<message>\` is a short imperative description.
 The branch is exactly \`$FM_TICKET_BRANCH\`; do not rename it."
   # shellcheck disable=SC2034 # Output global, read by the sourcing caller.

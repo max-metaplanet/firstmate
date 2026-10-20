@@ -49,11 +49,14 @@
 # combines with --branch-prefix; bin/fm-dod-lib.sh's fm_ticket_resolve owns the
 # grammar and the branch each case resolves, so promotion and bin/fm-brief.sh
 # cannot name different branches for the same inputs.
-# Usage: fm-promote.sh <task-id> --mode <no-mistakes|direct-PR|local-only> --yolo <on|off> [--branch-prefix <prefix>] [--ticket <ENG-123|no-ticket> --commit-type <type>] [--upstream-consent <host>/<owner>/<repo>]
+# Usage: fm-promote.sh <task-id> --mode <no-mistakes|direct-PR|local-only> --yolo <on|off> [--branch-prefix <prefix>] [--ticket <ENG-123|no-ticket> --commit-type <type> [--ticket-scope <complete|partial>]] [--upstream-consent <host>/<owner>/<repo>]
 # --upstream-consent records the captain's one-off approval for this task to
 # publish to firstmate's own upstream repository; promotion applies the same
 # self-repository publication gate as bin/fm-spawn.sh (bin/fm-role-lib.sh), so
 # a promoted scout cannot gain authority a fresh ship spawn would be refused.
+# --ticket-scope complete|partial is valid only with a real --ticket and
+# defaults to partial; docs/configuration.md "Task-event hook" owns its contract.
+
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -87,6 +90,8 @@ YOLO=
 BRANCH_PREFIX=fm/
 BRANCH_PREFIX_SET=0
 TICKET=
+TICKET_SCOPE=partial
+TICKET_SCOPE_SET=0
 COMMIT_TYPE=
 MODE_SET=0
 YOLO_SET=0
@@ -105,6 +110,7 @@ for a in "$@"; do
       yolo) YOLO=$a; YOLO_SET=1 ;;
       branch-prefix) BRANCH_PREFIX=$a; BRANCH_PREFIX_SET=1 ;;
       ticket) TICKET=$a ;;
+      ticket-scope) TICKET_SCOPE=$a; TICKET_SCOPE_SET=1 ;;
       commit-type) COMMIT_TYPE=$a ;;
       upstream-consent) UPSTREAM_CONSENT=$a; UPSTREAM_CONSENT_SET=1 ;;
     esac
@@ -118,6 +124,8 @@ for a in "$@"; do
     --yolo=*) YOLO=${a#--yolo=}; YOLO_SET=1 ;;
     --branch-prefix) want_value="branch-prefix" ;;
     --branch-prefix=*) BRANCH_PREFIX=${a#--branch-prefix=}; BRANCH_PREFIX_SET=1 ;;
+    --ticket-scope) want_value="ticket-scope" ;;
+    --ticket-scope=*) TICKET_SCOPE=${a#--ticket-scope=}; TICKET_SCOPE_SET=1 ;;
     --ticket) want_value="ticket" ;;
     --ticket=*) TICKET=${a#--ticket=} ;;
     --commit-type) want_value="commit-type" ;;
@@ -186,7 +194,8 @@ refuse_impossible_forge_posture || exit 1
 
 ID=${POS[0]}
 fm_task_id_creation_valid "$ID" || { echo "error: invalid task id" >&2; exit 2; }
-fm_ticket_resolve "$TICKET" "$COMMIT_TYPE" "$ID" "$BRANCH_PREFIX" "$BRANCH_PREFIX_SET" "fm-promote.sh" || exit 1
+fm_ticket_scope_valid "$TICKET" "$TICKET_SCOPE" "$TICKET_SCOPE_SET" "fm-promote.sh" || exit 1
+fm_ticket_resolve "$TICKET" "$COMMIT_TYPE" "$ID" "$BRANCH_PREFIX" "$BRANCH_PREFIX_SET" "fm-promote.sh" "$TICKET_SCOPE" || exit 1
 BRANCH=$FM_TICKET_BRANCH
 TICKET_HEADER=$FM_TICKET_HEADER
 TICKET_NM_RETITLE=$FM_TICKET_NM_RETITLE
@@ -399,7 +408,7 @@ fi
 BRIEF_REPLACEMENT=
 
 TMP="$STATE/.$ID.meta.promote.${BASHPID:-$$}"
-grep -v -e '^kind=' -e '^mode=' -e '^yolo=' -e '^branch=' -e '^ticket=' -e '^commit_type=' -e '^upstream_consent=' "$META" > "$TMP"
+grep -v -e '^kind=' -e '^mode=' -e '^yolo=' -e '^branch=' -e '^ticket=' -e '^ticket_scope=' -e '^commit_type=' -e '^upstream_consent=' "$META" > "$TMP"
 {
   echo "kind=ship"
   echo "mode=$MODE"
@@ -408,6 +417,7 @@ grep -v -e '^kind=' -e '^mode=' -e '^yolo=' -e '^branch=' -e '^ticket=' -e '^com
   # Recorded at the promotion that decided it, so a later relaunch and cleanup
   # read the ticket rather than re-deriving it from the branch name.
   [ -z "$TICKET" ] || echo "ticket=$TICKET"
+  case "$TICKET" in ''|no-ticket) ;; *) echo "ticket_scope=$TICKET_SCOPE" ;; esac
   [ -z "$COMMIT_TYPE" ] || echo "commit_type=$COMMIT_TYPE"
   [ -z "$UPSTREAM_CONSENT" ] || echo "upstream_consent=$UPSTREAM_CONSENT"
 } >> "$TMP"

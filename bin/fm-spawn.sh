@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Spawn a direct report: a crewmate in a treehouse or Orca worktree, or a
 # secondmate in its isolated firstmate home.
-# Usage: fm-spawn.sh <task-id> <project-dir> --mode <no-mistakes|direct-PR|local-only> --yolo <on|off> [--branch-prefix <prefix>] [--ticket <ENG-123|no-ticket> --commit-type <type>] [--base-branch <branch>] [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>] [--herdr-resume-lock-wait]
+# Usage: fm-spawn.sh <task-id> <project-dir> --mode <no-mistakes|direct-PR|local-only> --yolo <on|off> [--branch-prefix <prefix>] [--ticket <ENG-123|no-ticket> --commit-type <type> [--ticket-scope <complete|partial>]] [--base-branch <branch>] [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>] [--herdr-resume-lock-wait]
 #        fm-spawn.sh <task-id> <project-dir> --scout [--base-branch <branch>] [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>] [--herdr-resume-lock-wait]
 #        fm-spawn.sh <task-id> [<firstmate-home>] [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>] --secondmate
 #   --mode and --yolo are this task's delivery contract, REQUIRED for every ship
@@ -640,6 +640,9 @@
 #   identity is owned by the parent home that holds its task metadata, while the
 #   pane export happens on the remote host (bin/fm-remote-secondmate-control.sh).
 #   Local spawns never pass it and resolve their own carrier exactly as before.
+# --ticket-scope complete|partial is valid only with a real --ticket and
+# defaults to partial; docs/configuration.md "Task-event hook" owns its contract.
+
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -861,6 +864,8 @@ MODE_SET=0
 YOLO_SET=0
 BRANCH_PREFIX_SET=0
 TICKET=
+TICKET_SCOPE=partial
+TICKET_SCOPE_SET=0
 TICKET_SET=0
 COMMIT_TYPE=
 COMMIT_TYPE_SET=0
@@ -922,6 +927,10 @@ for a in "$@"; do
     ticket)
       TICKET=$a
       TICKET_SET=1
+      ;;
+    ticket-scope)
+      TICKET_SCOPE=$a
+      TICKET_SCOPE_SET=1
       ;;
     commit-type)
       COMMIT_TYPE=$a
@@ -996,6 +1005,8 @@ for a in "$@"; do
     BRANCH_PREFIX=${a#--branch-prefix=}
     BRANCH_PREFIX_SET=1
     ;;
+  --ticket-scope) want_value="ticket-scope" ;;
+  --ticket-scope=*) TICKET_SCOPE=${a#--ticket-scope=}; TICKET_SCOPE_SET=1 ;;
   --ticket) want_value="ticket" ;;
   --ticket=*)
     TICKET=${a#--ticket=}
@@ -1106,8 +1117,8 @@ if [ "$RELAUNCH" -eq 1 ]; then
     echo "error: --relaunch reuses the task's recorded ship branch; --branch-prefix cannot override it" >&2
     exit 1
   }
-  { [ "$TICKET_SET" -eq 0 ] && [ "$COMMIT_TYPE_SET" -eq 0 ]; } || {
-    echo "error: --relaunch reuses the task's recorded ticket and commit type; --ticket and --commit-type cannot override them" >&2
+  { [ "$TICKET_SET" -eq 0 ] && [ "$COMMIT_TYPE_SET" -eq 0 ] && [ "$TICKET_SCOPE_SET" -eq 0 ]; } || {
+    echo "error: --relaunch reuses the task's recorded ticket and commit type; --ticket, --commit-type and --ticket-scope cannot override them" >&2
     exit 1
   }
   [ "$BASE_BRANCH_SET" -eq 0 ] || {
@@ -1174,7 +1185,7 @@ else
       echo "error: --branch-prefix applies only to ship spawns; a scout makes no branch and a secondmate records no ship branch" >&2
       exit 1
     }
-    { [ "$TICKET_SET" -eq 0 ] && [ "$COMMIT_TYPE_SET" -eq 0 ]; } || {
+    { [ "$TICKET_SET" -eq 0 ] && [ "$COMMIT_TYPE_SET" -eq 0 ] && [ "$TICKET_SCOPE_SET" -eq 0 ]; } || {
       echo "error: --ticket and --commit-type apply only to ship spawns; a scout makes no branch and opens no pull request, and a secondmate records no delivery contract" >&2
       exit 1
     }
@@ -1907,7 +1918,7 @@ if [ "${#POS[@]}" -gt 0 ] && [ "${POS[0]}" != "$idpart" ] && case "$idpart" in *
   [ "$MODE_SET" -eq 0 ] || shared_args+=(--mode "$MODE")
   [ "$YOLO_SET" -eq 0 ] || shared_args+=(--yolo "$YOLO")
   [ "$BRANCH_PREFIX_SET" -eq 0 ] || shared_args+=(--branch-prefix "$BRANCH_PREFIX")
-  { [ "$TICKET_SET" -eq 0 ] && [ "$COMMIT_TYPE_SET" -eq 0 ]; } || {
+  { [ "$TICKET_SET" -eq 0 ] && [ "$COMMIT_TYPE_SET" -eq 0 ] && [ "$TICKET_SCOPE_SET" -eq 0 ]; } || {
     echo "error: batch dispatch does not share --ticket or --commit-type; each ticketed task carries its own ticket, so spawn it explicitly" >&2
     exit 2
   }
@@ -1959,7 +1970,8 @@ fi
 if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" = ship ]; then
   # fm-dod-lib.sh owns the ticket grammar and the branch each case resolves, so
   # the spawn and the brief it validates against cannot drift apart.
-  fm_ticket_resolve "$TICKET" "$COMMIT_TYPE" "$ID" "$BRANCH_PREFIX" "$BRANCH_PREFIX_SET" "fm-spawn.sh" || exit 1
+  fm_ticket_scope_valid "$TICKET" "$TICKET_SCOPE" "$TICKET_SCOPE_SET" "fm-spawn.sh" || exit 1
+  fm_ticket_resolve "$TICKET" "$COMMIT_TYPE" "$ID" "$BRANCH_PREFIX" "$BRANCH_PREFIX_SET" "fm-spawn.sh" "$TICKET_SCOPE" || exit 1
   BRANCH=$FM_TICKET_BRANCH
   if ! git check-ref-format --branch "$BRANCH" >/dev/null 2>&1; then
     if [ -n "$TICKET" ]; then
@@ -4056,6 +4068,8 @@ if [ "$KIND" = ship ] || [ "$KIND" = scout ]; then
   if [ "$RELAUNCH" -eq 1 ]; then
     TICKET=$(fm_meta_get "$RELAUNCH_META" ticket)
     COMMIT_TYPE=$(fm_meta_get "$RELAUNCH_META" commit_type)
+    TICKET_SCOPE=$(fm_meta_get "$RELAUNCH_META" ticket_scope)
+    [ "$TICKET_SCOPE" = complete ] || TICKET_SCOPE=partial
   fi
   if [ "$RELAUNCH" -eq 1 ]; then
     BASE_BRANCH=$(fm_meta_get "$RELAUNCH_META" base_branch)
@@ -4152,7 +4166,7 @@ if [ "$KIND" = ship ]; then
   # ship branch, so a brief and its spawn can never tell the worker one
   # commit-subject format while the task record carries another. A brief that
   # carries them refuses a spawn without the flags, and vice versa.
-  { IFS= read -r BRIEF_TICKET; IFS= read -r BRIEF_COMMIT_TYPE; } < <(fm_brief_ticket_header "$BRIEF")
+  { IFS= read -r BRIEF_TICKET; IFS= read -r BRIEF_COMMIT_TYPE; IFS= read -r BRIEF_TICKET_SCOPE; } < <(fm_brief_ticket_header "$BRIEF")
   if [ "$BRIEF_TICKET" != "$TICKET" ] || [ "$BRIEF_COMMIT_TYPE" != "$COMMIT_TYPE" ]; then
     # A relaunch's ticket comes from the meta record (the flags are refused
     # there), so a promoted scout - whose brief.md is still the scout brief and
@@ -4165,6 +4179,10 @@ if [ "$KIND" = ship ]; then
       echo "error: ticket mismatch for $ID: the brief says ticket=${BRIEF_TICKET:-none} commit type=${BRIEF_COMMIT_TYPE:-none} but this spawn passed ticket=${TICKET:-none} commit type=${COMMIT_TYPE:-none}; correct the flags or re-scaffold the brief so the worker's instructions and the task record agree" >&2
       exit 1
     fi
+  fi
+  if [ "$RELAUNCH" -eq 0 ] && [ "$BRIEF_TICKET_SCOPE" != "$TICKET_SCOPE" ]; then
+    echo "error: ticket scope mismatch for $ID: brief=$BRIEF_TICKET_SCOPE spawn=$TICKET_SCOPE" >&2
+    exit 1
   fi
   if [ -z "$BRIEF_MODE" ]; then
     echo "warning: $BRIEF records no delivery contract line (scaffolded before ship briefs recorded one); launching on the explicit --mode $MODE - confirm its definition of done matches" >&2
@@ -6392,6 +6410,7 @@ preserve_relaunch_meta() {
   # which is what bin/fm-task-timing.sh measures a task's lead time from.
   if [ "$RELAUNCH" -eq 0 ]; then
     [ -z "$TICKET" ] || echo "ticket=$TICKET"
+    case "$TICKET" in ''|no-ticket) ;; *) echo "ticket_scope=$TICKET_SCOPE" ;; esac
     [ -z "$COMMIT_TYPE" ] || echo "commit_type=$COMMIT_TYPE"
     [ "$KIND" = secondmate ] || echo "dispatched_at=$(date +%s)"
   fi

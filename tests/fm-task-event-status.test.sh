@@ -156,7 +156,7 @@ SH
   fm_write_meta "$home/state/task.meta" \
     'window=isolated:fm-task' 'endpoint_task_id=task' \
     "worktree=$home/gone-worktree" "project=$home/project" \
-    'kind=ship' 'mode=local-only' 'spawn_gen=task-event-fixture' 'ticket=issue-42'
+    'kind=ship' 'mode=local-only' 'spawn_gen=task-event-fixture' 'ticket=issue-42' 'ticket_scope=complete'
   printf '%s: worker terminal summary\n' "$declaration" > "$home/state/task.status"
   printf 'actionable [at=200]: task event hook failed event=pr-opened exit=124; see state/task-events.log\n' \
     >> "$home/state/task.status"
@@ -169,10 +169,36 @@ SH
   expected=finished
   [ "$declaration" = "done" ] || expected=cancelled
   jq -se --arg event "$expected" 'length == 1 and .[0].event == $event and
-    .[0].ticket == "issue-42" and .[0].summary == "worker terminal summary"' "$home/events.jsonl" >/dev/null \
+    .[0].ticket == "issue-42" and .[0].ticket_scope == "complete" and .[0].summary == "worker terminal summary"' "$home/events.jsonl" >/dev/null \
     || fail 'teardown lost its terminal payload'
   assert_absent "$home/state/task.meta" 'teardown emitted without retiring the task'
   assert_absent "$home/state/task.status" 'teardown emitted without retiring the status'
   assert_absent "$home/state/.task.decision-event-1" 'teardown kept a decision-event marker'
   pass "successful teardown emits $expected with the retired task context"
 done
+
+home=$(make_home scope-status)
+rm "$home/config/task-event-hook"
+printf 'ticket_scope=partial\n' >> "$home/state/task.meta"
+url=https://github.com/o/r/pull/7
+printf 'done [at=100]: PR %s checks green ticket-scope=complete\n' "$url" > "$home/state/task.status"
+fold "$home" >/dev/null || fail 'scope fold failed'
+grep -qx 'ticket_scope=complete' "$home/state/task.meta" || fail 'worker did not upgrade scope'
+printf 'done: PR %s checks green ticket-scope=partial\n' "$url" >> "$home/state/task.status"
+fold "$home" >/dev/null || fail 'scope downgrade fold failed'
+grep -qx 'ticket_scope=partial' "$home/state/task.meta" || fail 'worker did not downgrade scope'
+printf 'done: PR %s checks green\nworking: ticket-scope=complete\n' "$url" >> "$home/state/task.status"
+fold "$home" >/dev/null || fail 'nondeclaration fold failed'
+grep -qx 'ticket_scope=partial' "$home/state/task.meta" || fail 'non-ready status changed scope'
+# A registered PR binds later scope reports to that URL.
+printf 'pr=%s\n' "$url" >> "$home/state/task.meta"
+printf 'done: PR https://github.com/o/r/pull/8 checks green ticket-scope=complete\n' >> "$home/state/task.status"
+fold "$home" >/dev/null || fail 'other PR fold failed'
+grep -qx 'ticket_scope=partial' "$home/state/task.meta" || fail 'another PR changed scope'
+for ticket in no-ticket none ''; do
+  printf 'ticket=%s\nticket_scope=partial\n' "$ticket" > "$home/state/task.meta"
+  printf 'done: PR %s checks green ticket-scope=complete\n' "$url" >> "$home/state/task.status"
+  fold "$home" >/dev/null || fail 'ticketless fold failed'
+  grep -qx 'ticket_scope=partial' "$home/state/task.meta" || fail 'ticketless status gained complete scope'
+done
+pass 'PR-ready status folding records explicit upgrades and downgrades without requiring a hook'
