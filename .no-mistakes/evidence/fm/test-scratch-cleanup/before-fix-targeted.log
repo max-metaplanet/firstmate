@@ -1,0 +1,1 @@
+not ok - cleanup preserves the runner verdict for suite exit 0: expected exit 0, got 1

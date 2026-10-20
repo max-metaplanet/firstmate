@@ -1,0 +1,597 @@
+FM_TEST_BEGIN 2026-10-20T13:29:19Z tests/fm-arm-pretool-check.test.sh family=pure-contract-unit expected_gate_skip=none
+ok - matrix A01: allow through all five entry forms
+ok - matrix A02: allow through all five entry forms
+ok - matrix A03: allow through all five entry forms
+ok - matrix A04: allow through all five entry forms
+ok - matrix A05: allow through all five entry forms
+ok - matrix A06: allow through all five entry forms
+ok - matrix A07: allow through all five entry forms
+ok - matrix A08: allow through all five entry forms
+ok - matrix A09: allow through all five entry forms
+ok - matrix A10: allow through all five entry forms
+ok - matrix A11: allow through all five entry forms
+ok - matrix A12: allow through all five entry forms
+ok - matrix A13: allow through all five entry forms
+ok - matrix A14: allow through all five entry forms
+ok - matrix A15: allow through all five entry forms
+ok - matrix A16: allow through all five entry forms
+ok - matrix A17: allow through all five entry forms
+ok - matrix R01: allow through all five entry forms
+ok - matrix R02: allow through all five entry forms
+ok - matrix R03: allow through all five entry forms
+ok - matrix R04: allow through all five entry forms
+ok - matrix R05: allow through all five entry forms
+ok - matrix R06: allow through all five entry forms
+ok - matrix R07: allow through all five entry forms
+ok - matrix R08: allow through all five entry forms
+ok - matrix R09: allow through all five entry forms
+ok - matrix R10: allow through all five entry forms
+ok - matrix R11: allow through all five entry forms
+ok - matrix R12: allow through all five entry forms
+ok - matrix R13: allow through all five entry forms
+ok - matrix R14: allow through all five entry forms
+ok - matrix R15: allow through all five entry forms
+ok - matrix R16: allow through all five entry forms
+ok - matrix R17: allow through all five entry forms
+ok - matrix R18: allow through all five entry forms
+ok - matrix R19: allow through all five entry forms
+ok - matrix R20: allow through all five entry forms
+ok - matrix R21: allow through all five entry forms
+ok - matrix D01: deny through all five entry forms
+ok - matrix D02: deny through all five entry forms
+ok - matrix D03: deny through all five entry forms
+ok - matrix D04: deny through all five entry forms
+ok - matrix D05: deny through all five entry forms
+ok - matrix D06: deny through all five entry forms
+ok - matrix D07: deny through all five entry forms
+ok - matrix D08: deny through all five entry forms
+ok - matrix D09: deny through all five entry forms
+ok - matrix D10: deny through all five entry forms
+ok - matrix D11: deny through all five entry forms
+ok - matrix D12: deny through all five entry forms
+ok - matrix D13: deny through all five entry forms
+ok - matrix D14: deny through all five entry forms
+ok - matrix D15: deny through all five entry forms
+ok - matrix D16: deny through all five entry forms
+ok - matrix D17: deny through all five entry forms
+ok - matrix D18: deny through all five entry forms
+ok - matrix D19: deny through all five entry forms
+ok - matrix D20: deny through all five entry forms
+ok - matrix D21: deny through all five entry forms
+ok - matrix D22: deny through all five entry forms
+ok - matrix D23: deny through all five entry forms
+ok - matrix D24: deny through all five entry forms
+ok - matrix D25: deny through all five entry forms
+ok - matrix D26: deny through all five entry forms
+ok - matrix D27: deny through all five entry forms
+ok - matrix D28: deny through all five entry forms
+ok - matrix D29: deny through all five entry forms
+ok - matrix D30: deny through all five entry forms
+ok - matrix D31: deny through all five entry forms
+ok - matrix D32: deny through all five entry forms
+ok - matrix D33: deny through all five entry forms
+ok - matrix D34: deny through all five entry forms
+ok - matrix D35: deny through all five entry forms
+ok - matrix D36: deny through all five entry forms
+ok - matrix D37: deny through all five entry forms
+ok - matrix D38: deny through all five entry forms
+ok - matrix D39: deny through all five entry forms
+ok - matrix D40: deny through all five entry forms
+ok - matrix D41: deny through all five entry forms
+ok - matrix D42: deny through all five entry forms
+ok - matrix D43: deny through all five entry forms
+ok - matrix D44: deny through all five entry forms
+ok - matrix D45: deny through all five entry forms
+ok - matrix D46: deny through all five entry forms
+ok - matrix D47: deny through all five entry forms
+ok - matrix D48: deny through all five entry forms
+ok - matrix D49: deny through all five entry forms
+ok - matrix D50: deny through all five entry forms
+ok - matrix D51: deny through all five entry forms
+ok - matrix D52: deny through all five entry forms
+ok - matrix D53: deny through all five entry forms
+ok - matrix D54: deny through all five entry forms
+ok - matrix D55: deny through all five entry forms
+ok - matrix D56: deny through all five entry forms
+ok - matrix D57: deny through all five entry forms
+ok - matrix D58: deny through all five entry forms
+ok - matrix D59: deny through all five entry forms
+ok - matrix D60: deny through all five entry forms
+ok - matrix D61: deny through all five entry forms
+ok - matrix D62: deny through all five entry forms
+ok - matrix D63: deny through all five entry forms
+ok - matrix D64: deny through all five entry forms
+ok - matrix D65: deny through all five entry forms
+ok - matrix E01: allow through all five entry forms
+ok - matrix E02: allow through all five entry forms
+ok - matrix E03: allow through all five entry forms
+ok - matrix E04: allow through all five entry forms
+ok - matrix E05: deny through all five entry forms
+ok - matrix E06: deny through all five entry forms
+ok - matrix E07: deny through all five entry forms
+ok - matrix E08: deny through all five entry forms
+ok - matrix E09: deny through all five entry forms
+ok - matrix E10: deny through all five entry forms
+ok - matrix E11: deny through all five entry forms
+ok - matrix E12: allow through all five entry forms
+ok - matrix E13: allow through all five entry forms
+ok - matrix E14: allow through all five entry forms
+ok - matrix E15: allow through all five entry forms
+ok - matrix E16: allow through all five entry forms
+ok - matrix E17: allow through all five entry forms
+ok - direct policy direct-data-pkill: allow
+ok - direct policy direct-broad-pkill: deny	broad-watcher-kill
+ok - direct policy direct-loop-broad-pkill: deny	broad-watcher-kill
+ok - direct policy direct-loop-broad-kill-pgrep: deny	broad-watcher-kill
+ok - direct policy direct-loop-no-kill-allowed: allow
+ok - direct policy direct-pipeline: deny	watcher-pipeline
+ok - direct policy direct-leading-redirection: deny	watcher-redirection
+ok - direct policy direct-unclassifiable: deny	unclassifiable-protected-command
+ok - direct policy direct-unsupported: deny	unclassifiable-protected-command
+ok - direct policy direct-constructed-payload: deny	watcher-nested
+ok - direct policy direct-parameter-export: allow
+ok - direct policy direct-expanded-arm-blessed: allow
+ok - direct policy direct-expanded-arm-background: deny	watcher-background
+ok - direct policy direct-expanded-arm-pipeline: deny	watcher-pipeline
+ok - direct policy direct-watch-not-blessed: deny	watcher-direct
+ok - direct policy direct-watch-expanded: deny	watcher-direct
+ok - direct policy direct-watch-safe-shape: deny	watcher-direct
+ok - direct policy direct-heredoc-data: allow
+ok - direct policy direct-heredoc-watcher: deny	watcher-redirection
+ok - --command=<val> equals-form parses correctly
+ok - --background is accepted for interface parity and is never itself a deny signal
+ok - unknown CLI flag is rejected
+ok - stdin grok schema (toolInput.command): denied with Grok-shaped stdout JSON
+ok - stdin claude/codex schema (tool_input.command): blessed shape allowed
+ok - stdin claude/codex schema (tool_input.command): backgrounded shape denied
+ok - stdin: unrelated command is a fast allow
+ok - foreign-host fast path skips jq only for impossible matches, preserving escaped and nested-key decisions
+ok - transport prefilter is a strict superset: non-fm-watch fast-allows, every fm-watch and quoting-decoder-marker command reaches the classifier
+ok - fail-open: empty stdin
+ok - fail-open: unparseable JSON on stdin
+ok - fail-open: missing jq on stdin path
+ok - fail-open: missing classifier runtime
+ok - --claude: stdout empty, stderr carries hookSpecificOutput deny JSON
+ok - default mode: stdout carries Grok-shaped decision JSON on deny
+ok - allow is silent on both stdout and stderr in default and --claude mode
+ok - bin/fm-arm-pretool-check.sh is clean under bin/fm-lint.sh
+FM_TEST_END 2026-10-20T13:30:25Z tests/fm-arm-pretool-check.test.sh exit=0 duration_ms=66108 gate_skip=false
+FM_TEST_BEGIN 2026-10-20T13:30:25Z tests/fm-vendor-auth-probe.test.sh family=pure-contract-unit expected_gate_skip=none
+FM_TEST_BEGIN 2026-10-20T13:30:25Z tests/fm-bearings-board.test.sh family=pure-contract-unit expected_gate_skip=none
+FM_TEST_BEGIN 2026-10-20T13:30:25Z tests/fm-task-delivery.test.sh family=pure-contract-unit expected_gate_skip=none
+FM_TEST_BEGIN 2026-10-20T13:30:25Z tests/fm-polytoken-harness.test.sh family=pure-contract-unit expected_gate_skip=none
+ok - the probe accepts no harness, model, or provider and so can hold no routing mapping
+ok - the probe never reads quota, leaving one intake snapshot to the dispatch owner
+ok - every probe result exits alike because the script renders no verdict
+ok - only a registered probe name runs, and an unregistered one is a usage error
+ok - an authenticated vendor session is reported as ground truth
+ok - an unauthenticated vendor session is reported as ground truth
+ok - unrecognized, blank-led, and silent probe output is indeterminate, never authenticated
+ok - an absent vendor CLI is reported rather than assumed authenticated
+ok - a hanging vendor CLI is hard-bounded, reported, and cannot wedge an intake
+ok - zero and all-zero bounds fall back to the default instead of removing the hard bound
+ok - a malformed bound is replaced by the default rather than forwarded
+ok - the bounded probe runs with stdin closed and cannot read caller input
+ok - the vendor CLI is invoked only through its two fixed, non-destructive argv forms
+ok - the fact line is one sanitized line with no raw vendor output or credential material
+ok - a vendor CLI version change is recorded and disclosed for re-verification
+ok - the pinned verified vendor version is recognized
+ok - --help succeeds and names the registered probes
+FM_TEST_END 2026-10-20T13:31:18Z tests/fm-vendor-auth-probe.test.sh exit=0 duration_ms=52645 gate_skip=false
+FM_TEST_BEGIN 2026-10-20T13:31:18Z tests/fm-rovo-harness.test.sh family=pure-contract-unit expected_gate_skip=none
+ok - fm-harness.sh: ancestry detects a natively-named polytoken command
+ok - fm-harness.sh: ancestry rejects unrelated polytoken mentions
+ok - fm-harness.sh: no inherited launcher marker claims the polytoken identity
+ok - fm-control-lib: polytoken mechanics are REST interrupt, /quit exit, no secondmates
+ok - fm-control-lib: polytoken wiring tables name every generated artifact and no project file
+ok - bin/fm-agent-process-lib.sh: polytoken is an agent, fragments are not
+ok - fm-busy-lib: the polytoken-hook source is scoped to polytoken tasks
+ok - fm-composer-lib: only the pinned Running-for row carries the polytoken busy verdict
+ok - fm-composer-lib: the polytoken separated shape reads empty, pending, and unknown exactly
+ok - fm-composer-lib: the queued-Enter conversion covers polytoken's verified queue behavior
+ok - fm-tmux-lib: only a polytoken-identity pane confirms a submit from its Running-for row
+ok - fm-polytoken-lib: the config mirror enforces the unattended posture
+ok - fm-polytoken-lib: the worker facet carries the role contract and no model pin
+ok - fm-polytoken-lib: the no-argv busy writer opens, closes, and never fails
+ok - fm-polytoken-lib: the hook layer binds the three events and refuses to clobber
+ok - fm-polytoken-lib: the model ref composes the effort axis and refuses unlisted models
+ok - fm-polytoken-lib: an unreachable listing refuses an unprovable pin
+ok - fm-polytoken-lib: the REST interrupt reports cancelled, not-running, and refuses unauthorized
+ok - fm-polytoken-lib: the interrupt close lands after mid-turn rewrites and spares a reopened or running turn
+ok - fm-polytoken-lib: the typed settle postcondition follows GET /sync
+ok - fm-spawn: the polytoken launch carries the hybrid contract end to end
+ok - fm-spawn: polytoken maps an unlisted effort and retains the requested axis
+ok - fm-spawn: polytoken requires explicit model and effort axes
+ok - fm-spawn: an unlisted polytoken model refuses before pane creation
+ok - fm-spawn: polytoken cannot be launched as a secondmate
+ok - fm-spawn: a project's own polytoken hook layer is refused, not clobbered
+ok - fm-spawn: a whitespace-bearing state dir refuses polytoken wiring before writing any
+ok - fm-spawn: a failed readiness gate fails loudly, reaps, and retires its wiring
+ok - fm-spawn: a gate failure after publication drops the slot claim with the record
+ok - fm-spawn: the polytoken busy contract arms and advances through the generated writer
+FM_TEST_END 2026-10-20T13:31:55Z tests/fm-polytoken-harness.test.sh exit=0 duration_ms=89605 gate_skip=false
+FM_TEST_BEGIN 2026-10-20T13:31:55Z tests/fm-timeout-lib.test.sh family=pure-contract-unit expected_gate_skip=none
+ok - fm_exec_timed passes a command's status and output through unchanged
+ok - system Bash top-level and subshell calls preserve success, failure, and signal status
+Terminated: 15             "$@"
+ok - fm_run_timed reports 124 when the bound TERMs a read whose wrapper recorded 143
+ok - fm_run_timed passes a natural exit through when the bound fired after completion
+ok - fm_run_timed and fm_exec_timed pass a non-terminal stdin through to the bounded command
+ok - every bounded runner finishes a terminal-reading command instead of freezing it (SIGTTIN)
+ok - fm_exec_timed sends TERM at the bound and a cooperative command ends there
+ok - fm_exec_timed kills a TERM-ignoring command once the grace has passed
+ok - fm_exec_timed replaces the calling shell instead of wrapping it
+ok - fm_exec_timed reaps a descendant that would otherwise hold the output past the bound
+ok - fm_exec_timed forwards a TERM it receives to the bounded command
+ok - fm_exec_timed ends the command when its named owner is already gone
+ok - fm_exec_timed ends the command when its owner dies during watchdog startup
+ok - fm_exec_timed preserves a top-level shell's parent across exec startup
+ok - fm_exec_timed prefers its perl watchdog over timeout
+ok - fm_exec_timed refuses instead of running unbounded when no mechanism exists
+ok - fm_exec_timed rejects a zero, padded, non-numeric, or missing bound and a missing command
+ok - fm_exec_timed's GNU timeout fallback (skipped: no timeout binary on this host)
+ok - fm_timed_out accepts 124 and 137 and nothing else
+FM_TEST_END 2026-10-20T13:32:08Z tests/fm-timeout-lib.test.sh exit=0 duration_ms=13525 gate_skip=false
+FM_TEST_BEGIN 2026-10-20T13:32:09Z tests/fm-commandcode-harness.test.sh family=pure-contract-unit expected_gate_skip=none
+ok - fm-spawn: rovo launches bare, waits for readiness, and delivers its brief pointer
+ok - fm-spawn: rovo omits efficiencyLevel for xhigh but keeps its allowedExternalPaths grant, recording xhigh in task metadata
+ok - fm-spawn: rovo's supported effort values merge into the same --config-override as its allowedExternalPaths grant
+ok - fm-spawn: rovo never sends the brief pointer before an observable ready signal, and tears down the created endpoint on failure
+ok - fm-spawn: rovo treats a silent pointer drop as a failed spawn, and tears down the created endpoint
+ok - fm-spawn: missing rovo executable refuses before pane creation
+ok - fm-spawn: rovo cannot be launched as a secondmate
+ok - fm-harness: rovo's markers outrank an inherited CLAUDECODE, and markerless ancestry still resolves rovo
+ok - fm-control-lib: rovo's lifecycle table matches its verified facts
+ok - busy detection: rovo's rendered busy line classifies through its own isolated fallback
+ok - busy detection: a rovo busy marker scrolled out of the tail classifies unknown, never idle
+FM_TEST_END 2026-10-20T13:32:31Z tests/fm-rovo-harness.test.sh exit=0 duration_ms=72631 gate_skip=false
+FM_TEST_BEGIN 2026-10-20T13:32:31Z tests/fm-dod-lib.test.sh family=pure-contract-unit expected_gate_skip=none
+ok - path prints the stable home-scoped board location
+ok - build refuses malformed payloads before touching the board
+ok - charted kind is optional and accepts queued and warning
+ok - build injects the payload, binds any-origin, then arms the source
+ok - registration can consume answers only after any-origin binding exists
+ok - build establishes the Lavish session before binding and arming
+ok - rebuild refreshes the board in place without double-arming
+ok - build refuses a template without exactly one data slot
+ok - a board build reopens a session the captain ended instead of arming a dead one
+ok - build reopens a session that ends between establish and listing
+ok - build refuses to arm a poll on a session that stays ended
+ok - a rebuild starts a listener when an already-armed board has none
+ok - build drops decision cards whose subject already landed and keeps open ones
+ok - build keeps remote decisions absent from the main backlog
+ok - build fails when reconcile cannot prove a live listener
+ok - every decision card carries exactly one reconcile choice
+ok - build refuses a payload that occupies the reserved reconcile value
+ok - build reserves reconcile across non-decision cards
+FM_TEST_END 2026-10-20T13:32:42Z tests/fm-bearings-board.test.sh exit=0 duration_ms=137118 gate_skip=false
+FM_TEST_BEGIN 2026-10-20T13:32:42Z tests/fm-classify-decision-key.test.sh family=pure-contract-unit expected_gate_skip=none
+ok - Command Code native identity; anchored liveness
+ok - worker-only resolution, single-press interrupt, rewind-picker hazard, and lifecycle capabilities
+ok - composer placeholder, draft safety, identity-scoped ceiling, and independent delivery signals
+ok - busy mod: run_start busy, run_end and session end idle, stale and unconfigured writes refused
+ok - scout launch carries model, verified effort only, autonomy, typed brief, and the per-process mod
+ok - Command Code launches are refused on zellij, cmux, and orca
+FM_TEST_END 2026-10-20T13:32:50Z tests/fm-commandcode-harness.test.sh exit=0 duration_ms=41026 gate_skip=false
+FM_TEST_BEGIN 2026-10-20T13:32:50Z tests/fm-harness-precedence.test.sh family=pure-contract-unit expected_gate_skip=none
+ok - a stated [key=X] opens X whether it precedes or follows the verb colon
+ok - a keyless needs-decision still opens and closes the default key
+ok - a resolution closes its decision regardless of either line's key position
+ok - blocked [key=X] opens X in both key positions
+ok - two colon-form keyed decisions never collapse into one shared bucket
+ok - a [key=x] mentioned mid-note is prose, never an opened or closed key
+ok - a malformed stated key is rejected in both positions, never folded as default
+ok - status_line_verb strips every bracket tag before the colon, in any order, and recovers the bare verb
+ok - a [corr=...] tag ahead of [key=...] no longer swallows the verb: opens and closes under the stated key
+ok - a [corr=...] tag with no stated key opens under 'default', exactly like a bare needs-decision line
+ok - a [key=x] tag alone (no corr tag) still opens x - no regression from the tag-stripping fix
+ok - blocked/resolved parse their bare verb with any bracket-tag order preceding the colon
+ok - the incremental fold matches the full fold across appends in both key positions
+ok - status_key_closing_verb separates resolution, durable transfer, and still-open
+ok - status_key_closing_verb reports the last real transition, in either key position
+ok - per-key reads retain resolutions without subprocess work growing with unrelated history
+ok - overridden resolve and durable-transfer verbs still close keys behind unrelated history
+ok - done and failed declarations never close a decision on any task kind
+ok - a done: line retires neither the unkeyed nor the keyed decision around it
+ok - both documented key positions close a decision that outlived a terminal line
+ok - neither prose nor a genuine terminal declaration closes a decision
+ok - a stated default retraction closes its decision and leaves an unrelated keyless wait standing
+ok - a declared wait outlives answers for other keys beyond the event window, and its own resolved line retracts it
+ok - only a colon-bearing or keyed line is a decision transition in the fold
+ok - a recorded line stays recorded across a later resolve
+FM_TEST_END 2026-10-20T13:32:57Z tests/fm-classify-decision-key.test.sh exit=0 duration_ms=14749 gate_skip=false
+FM_TEST_BEGIN 2026-10-20T13:32:57Z tests/fm-devin-harness.test.sh family=pure-contract-unit expected_gate_skip=none
+ok - a markerless harness keeps its identity under an inherited foreign marker
+ok - a harness that publishes a marker inside its own process tree is unchanged
+ok - with ancestry silent, the marker layer and its cursor-first ordering still decide
+ok - a retained cursor marker does not rename a nested claude worker
+ok - an agreeing marker keeps Pi's finer identity that ancestry cannot prove
+ok - an interpreter script-path match answers alone but never outranks a marker
+ok - a native harness binary under an interpreter shim decides at comm strength
+ok - a harness that is pid 1 of its own namespace is examined, not skipped
+ok - the descent probe reaches comm strength where the top-of-session probe sees only args
+ok - the descent probe reports no verdict from a sibling branch detection cannot reach
+ok - a foreign args-only verdict at the deepest vantage leaves the comm-strength identity intact
+ok - equal-depth descent ties prefer the comm-strength leaf regardless of spawn order
+ok - a supervision branch resolves own, crew, and secondmate to the primary's pinned harness
+ok - a supervision branch refuses to resolve a harness from a pin that names none
+ok - session start renders the Codex protocol for a Codex primary holding a retained CLAUDECODE
+FM_TEST_END 2026-10-20T13:33:06Z tests/fm-harness-precedence.test.sh exit=0 duration_ms=15676 gate_skip=false
+FM_TEST_BEGIN 2026-10-20T13:33:06Z tests/fm-test-isolation-proof.test.sh family=pure-contract-unit expected_gate_skip=none
+ok - Devin native identity; anchored liveness
+ok - worker-only resolution and lifecycle capabilities
+ok - composer draft safety and independent delivery signals
+ok - private config preserves user hooks; lifecycle and stale-generation rejection
+ok - worker config forces attribution off and Claude Code hook import off
+ok - keep-ai-trailers leaves Devin attribution on
+ok - scout launch carries Fusion, autonomy, typed brief and hooks; effort recorded only
+FM_TEST_END 2026-10-20T13:33:10Z tests/fm-devin-harness.test.sh exit=0 duration_ms=12460 gate_skip=false
+FM_TEST_BEGIN 2026-10-20T13:33:10Z tests/fm-calm-claude-mod.test.sh family=pure-contract-unit expected_gate_skip=none
+ok - scout done: is not gated
+ok - unpushed ship done: is refused
+ok - a no-mistakes done: naming no PR is refused with the pipeline remedy
+ok - a CI-ready no-mistakes done: is not caught by the no-PR refusal
+ok - named head on a remote-tracking ref is accepted
+ok - a moved remote branch that lacks the named head is refused
+ok - a 40-hex token in the note is not the named head
+ok - a recorded merged PR satisfies the gate after prune
+ok - the merged-PR short-circuit applies only to the recorded PR the done line names
+ok - a forge-recorded head for the named PR is accepted without a local object
+ok - a direct-PR recorded head does not cover a later unpushed commit
+ok - CI-ready notes require checks green and an actual PR reference
+ok - no-mistakes CI-ready done: with extra text is gated
+ok - keyed and spaced ship done: lines are gated
+ok - local-only linked named branch is reachable from the project clone
+ok - local-only detached HEAD only in the disposable copy is refused
+ok - standalone local-only done: requires the named head in the project clone
+ok - non-done lines are not gated
+ok - fenced and indented Captain lines are not authorized intent
+ok - PR-based DoD draft check uses gh-axi
+ok - promotion keeps a scout's recorded base branch and refuses local-only for it
+ok - the no-mistakes DoD runs the pipeline from the implementation commit
+ok - forge=external composes with direct-PR only and refuses a base branch
+ok - external rule one forbids origin and task-prefixed pushes and names only the backup copy
+ok - external DoD renders the contract, the review grammar, and the adapter, and refuses without one
+ok - external review done: accepted on a canonical URL alone without a backup; PR, non-https, query, fragment, forge, and pattern mismatches refused
+ok - external review done with a backup: refused until HEAD is under refs/remotes/backup/backup/, then accepted
+ok - worker role names the skill and its fallback skill file
+ok - a direct-PR PR on the fork's parent repository is refused
+ok - a direct-PR PR on the fork's own origin is accepted
+ok - a plain clone's direct-PR PR is bound to its own origin
+ok - a wrong-repository PR is refused before the recorded-PR path
+ok - a direct-PR origin through an SSH alias accepts its own PR only
+ok - the origin binding covers direct-PR forge origins only
+ok - a pushed head is accepted through a narrowed remote.origin.fetch
+ok - a head origin never received is still refused, with safe-ref guidance
+fatal: update_ref failed for ref 'refs/heads/x$(touch${IFS}~/.no-mistakes/worktrees/61c6dd39b831/.fm-test-scratch/fm-test-run.QZyraC/w9/tmp/fm-dod-lib.okFwmj/hostile-marker)y': refusing to update ref with bad name 'refs/heads/x$(touch${IFS}~/.no-mistakes/worktrees/61c6dd39b831/.fm-test-scratch/fm-test-run.QZyraC/w9/tmp/fm-dod-lib.okFwmj/hostile-marker)y'
+ok - a hostile remote ref name is read as data, not run
+ok - an origin that cannot be read keeps the refusal rather than accepting
+ok - a stalled origin read is cut off by the gate's bound
+ok - local-only keeps its project-heads rule and reads no remote
+all fm-dod-lib tests passed
+FM_TEST_END 2026-10-20T13:33:21Z tests/fm-dod-lib.test.sh exit=0 duration_ms=50553 gate_skip=false
+FM_TEST_BEGIN 2026-10-20T13:33:21Z tests/fm-operational-input.test.sh family=pure-contract-unit expected_gate_skip=none
+ok - the Calm mod is one hooks module, linked into the project's auto-load path, with no command, skill, agent, or classic hook path that bypasses its exact opt-in
+ok - the Pi working ship renders byte-for-byte the shared sprite core's frame painted in standard ANSI, at every width, cadence step, freeze, clamp, and reset
+ok - the Raster packing lays the shared frame out row-major in Claude Code's dark or light theme palette, using light as the both-readable fallback, with plain padding, default backgrounds, BMP glyphs, clipping, and a standard base64 encoding
+ok - the Calm policy resolves the shared preference exactly as Pi does, reads on, max, and off as Pi does, and shares Pi's 240-character-or-newline preservation behavior while classifying working notes by stop reason, tool use, and restored transcript shape
+ok - the supervision notes read the store owner's tail copy and markers as Pi does: sailboat and anchor lines, silent rows skipped, bounded replay of unread and unprocessed rows not already shown in the session, and latch notes
+ok - the mod's operational-input classifier agrees with bin/fm-operational-input.sh on all 77 corpus cases: every current kind the owner encodes, every legacy shape, and every near miss
+ok - the mod's doorbell port agrees with bin/fm-operational-input.sh doorbell-kind on all 28 cases: every record the owner writes and every unbacked or malformed near miss
+FM_TEST_END 2026-10-20T13:33:22Z tests/fm-calm-claude-mod.test.sh exit=0 duration_ms=11599 gate_skip=false
+FM_TEST_BEGIN 2026-10-20T13:33:22Z tests/fm-documentation-audiences.test.sh family=pure-contract-unit expected_gate_skip=none
+ok - unknown candidate pools are refused
+ok - family pool JSON scopes jobs admission to proven concurrency
+ok - candidate --list is non-empty, sorted, unique, and real
+ok - serial classes remain excluded from the parallel candidate set
+ok - audited fake-backend and stub-network extras are candidates
+ok - exclusion list documents serial reasons
+ok - isolation-proof contract test is family-mapped
+ok - parallel shards consume the proven-isolated set only
+ok - fixture repositories pin their initial branch to main
+FM_TEST_END 2026-10-20T13:33:23Z tests/fm-test-isolation-proof.test.sh exit=0 duration_ms=17469 gate_skip=false
+FM_TEST_BEGIN 2026-10-20T13:33:23Z tests/fm-subagent-pretool-check.test.sh family=pure-contract-unit expected_gate_skip=none
+ok - documentation inventory classifies every maintained prose surface exactly once
+ok - classification, setup routing, and maintained-prose scope fail safely
+ok - required documentation owner pointers cannot silently disappear
+ok - local links resolve while dates, versions, commands, and incident prose remain semantically reviewed
+FM_TEST_END 2026-10-20T13:33:25Z tests/fm-documentation-audiences.test.sh exit=0 duration_ms=3353 gate_skip=false
+FM_TEST_BEGIN 2026-10-20T13:33:25Z tests/fm-fleet-mod.test.sh family=pure-contract-unit expected_gate_skip=none
+ok - the Fleet mod is one hooks module, linked into the project's auto-load path, with no command, skill, agent, or classic hook path that bypasses its activation flag
+ok - the Fleet mod activates on the exact value 1 alone, and on no other value, empty, or unset name, and resolves its reader from the tracked code root rather than from the home FM_HOME selects
+ok - the Fleet mod's reader parses bin/fm-fleet-snapshot.sh --json as the producer actually writes it: task state, the last event as an event, the open-decision set, and the producer's own live-versus-dated captain-hold classification
+ok - the Fleet mod's reading policy holds: a reading that is not this snapshot refuses, only decisions, merge asks and blockers wait on the captain, a failed or aged reading is named rather than drawn as an empty healthy fleet, the text answer carries every row the pane draws, and a notice fires once per real transition
+FM_TEST_END 2026-10-20T13:33:27Z tests/fm-fleet-mod.test.sh exit=0 duration_ms=1631 gate_skip=false
+FM_TEST_BEGIN 2026-10-20T13:33:27Z tests/fm-lint-workflows.test.sh family=pure-contract-unit expected_gate_skip=none
+ok - tool normalization preserves exact mixed-case exemptions with zero tr launches
+ok - the guard independently denies every work-creating delegation tool by shape
+ok - the guard denies delegation-shaped tools that no deny list knows about yet
+ok - the guard leaves ordinary tools and observe-or-stop operations alone
+ok - the guard leaves the session-local todo list alone
+ok - the plan-only exclusion releases exactly two names and nothing that merely contains them
+ok - MCP tool names are never classified as harness delegation
+ok - deny defers to intake classification and degrades gracefully without fm-scout.sh
+ok - the single documented escape hatch releases the guard only on the exact opt-in value
+ok - the guard is inert in a crewmate task worktree and in a non-firstmate repo
+ok - a marked secondmate home is guarded even though it is a linked worktree
+ok - both stdin transports classify correctly and Claude's deny keeps stdout empty
+ok - malformed, empty, and tool-name-less payloads fail open rather than blocking every tool call
+ok - missing jq for stdin transport fails open rather than denying every tool call
+ok - the builtin stdin prefilter never changes the delegation-shape verdict for any known fixture
+ok - the builtin prefilter is a strict superset of the real stem match, including through punctuation and case
+FM_TEST_END 2026-10-20T13:33:38Z tests/fm-subagent-pretool-check.test.sh exit=0 duration_ms=14056 gate_skip=false
+FM_TEST_BEGIN 2026-10-20T13:33:38Z tests/fm-fork-free-helpers.test.sh family=pure-contract-unit expected_gate_skip=none
+ok - operational input: every current generic envelope retains its exact structured kind
+ok - operational input: the established from-firstmate carrier remains structurally typed and byte-compatible
+ok - operational input: untyped landed FIRSTMATE_OP transcripts are explicit legacy-operational input
+ok - operational input: historical prose compatibility is isolated from current parsing
+ok - operational input: quoted, ASCII-only, arbitrary-U+2063, altered-legacy, and label-only near misses stay genuine
+ok - operational input: the OpenCode adapter constructs through the canonical owner
+ok - operational input: current construction rejects legacy kinds and empty bodies
+ok - record-backed carrier: Claude-only selection, an ASCII doorbell naming an exact envelope record, home-bound open, and no recognition without the record
+ok - record pruning: expired records past one argument list are all pruned on a write
+FM_TEST_END 2026-10-20T13:33:39Z tests/fm-operational-input.test.sh exit=0 duration_ms=17931 gate_skip=false
+FM_TEST_BEGIN 2026-10-20T13:33:40Z tests/fm-quota-claude-mod.test.sh family=pure-contract-unit expected_gate_skip=none
+ok - fm-lint-workflows.sh pins an explicit actionlint version (1.7.12)
+ok - current .github/workflows YAML files parse
+ok - column-0 heredoc workflow fails validation with a clear error
+ok - valid fixture workflow passes
+ok - empty workflows directory fails closed
+ok - explicit malformed workflow path fails validation
+ok - non-mapping workflow YAML root fails
+ok - missing actionlint fails closed
+ok - fm-lint-workflows.sh refuses to lint under a non-pinned actionlint version
+ok - actionlint installer retries a transient download failure
+ok - actionlint installer selects the official archive, URL, and checksum per OS/arch
+ok - actionlint installer rejects a wrong checksum
+ok - actionlint installer falls back to shasum -a 256 when sha256sum is absent
+ok - actionlint installer prefers sha256sum when both hashers are present
+ok - actionlint installer rejects an unsupported OS or architecture
+ok - fm-lint.sh default path catches a self-broken ci.yml
+FM_TEST_END 2026-10-20T13:33:40Z tests/fm-lint-workflows.test.sh exit=0 duration_ms=12394 gate_skip=false
+FM_TEST_BEGIN 2026-10-20T13:33:40Z tests/fm-trace-context-lib.test.sh family=pure-contract-unit expected_gate_skip=none
+ok - the Quota mod declares one hooks module, nothing that loads on its own, and is reachable from the project auto-load path
+ok - the live-seat policy converts percent used to percent left, clamps nonsense, draws nothing for an empty reading, and never guesses a reset
+ok - the all-seats policy dates every figure, calls anything past the board's cache window stale, says when a seat has no reading, and refuses a reading of another schema
+ok - the refresh cadence defaults to ten minutes, cannot be driven below its floor, and spends one interval on one read however often it is asked
+# all fm-quota-claude-mod tests passed
+FM_TEST_END 2026-10-20T13:33:41Z tests/fm-quota-claude-mod.test.sh exit=0 duration_ms=1230 gate_skip=false
+FM_TEST_BEGIN 2026-10-20T13:33:41Z tests/fm-forge-detect.test.sh family=pure-contract-unit expected_gate_skip=none
+ok - fm_trace_context_valid accepts a conformant W3C traceparent
+ok - fm_trace_context_valid rejects all-zero ids, ff version, uppercase, wrong length, missing field, shell metacharacters, and empty
+ok - a command-substitution-shaped value is rejected as inert data, never executed
+ok - fm_trace_context_hex yields exact-length lowercase hex, distinct per call
+ok - fm_trace_context_mint starts a valid sampled root trace
+ok - every mint is an unrelated fresh root - one trace per task, no parent adoption
+ok - a minted root is the fixed 55-char W3C form (hex and hyphens only), so firstmate originates no free-form content in the carrier
+ok - enablement is default-off; FM_TRACE_CONTEXT overrides with truthy/other precedence, and unset or empty defers to config/trace-context
+ok - session start normalizes config and environment precedence into frozen on/off state
+ok - session state is atomically published through a same-directory replacement
+ok - a stale on record is inactive when publication fails in a new locked session
+ok - missing or invalid frozen session state defaults off
+ok - resolve omits the carrier and returns success when the capability is off (byte-identical default)
+ok - resolve mints a valid traceparent when enabled
+ok - Secondmate home-session state stays off or on despite later file state; ambient TRACEPARENT is never adopted, so each routed task roots its own trace
+ok - resolve reuses a valid recorded traceparent verbatim on relaunch (stable identity across restarts)
+ok - disabling the capability omits the carrier even for a task with a recorded identity
+ok - a corrupt recorded traceparent is re-minted rather than propagated
+ok - resolve yields exactly one carrier per logical task, so the recorded and injected values are identical by construction
+ok - entropy failure omits telemetry safely: mint reports failure, resolve returns success with no carrier
+ok - the resolver has no sleep/timeout/command hang source and always returns success
+ok - the carrier is minted identically for every harness, backend, and spawn kind (no such branching in the lib code)
+ok - the lib code never reads a brief, prompt, report, or status - it cannot leak content
+ok - config/trace-context is inherited into secondmate homes, keeping the nested chain enabled end to end
+# fm-trace-context-lib.test.sh: all assertions passed
+FM_TEST_END 2026-10-20T13:33:41Z tests/fm-trace-context-lib.test.sh exit=0 duration_ms=1229 gate_skip=false
+FM_TEST_BEGIN 2026-10-20T13:33:42Z tests/fm-ask-user-authority.test.sh family=pure-contract-unit expected_gate_skip=none
+ok - primary workers and secondmates receive the authority rule through generated instructions
+FM_TEST_END 2026-10-20T13:33:42Z tests/fm-ask-user-authority.test.sh exit=0 duration_ms=761 gate_skip=false
+FM_TEST_BEGIN 2026-10-20T13:33:43Z tests/fm-harness-adapter-references.test.sh family=pure-contract-unit expected_gate_skip=none
+ok - harness adapter routing artifact is normalized and every target is readable
+FM_TEST_END 2026-10-20T13:33:44Z tests/fm-harness-adapter-references.test.sh exit=0 duration_ms=588 gate_skip=false
+ok - an origin on SSH port 29418 proposes forge=gerrit and names the evidence
+ok - a refs/for/ push refspec proposes forge=gerrit and names the evidence
+ok - a remote carrying neither Gerrit fact proposes forge=none
+ok - detection reads the clone's config and changes nothing
+ok - a directory that is not a git work tree is refused with exit 2
+# all fm-forge-detect tests passed
+FM_TEST_END 2026-10-20T13:33:44Z tests/fm-forge-detect.test.sh exit=0 duration_ms=2575 gate_skip=false
+ok - fm-spawn/fm-promote: authorized intent preserves exact words and refuses operator-address lines
+ok - fm-spawn: every legacy worker receives scoped role instructions without changing project or primary instructions
+ok - fm-spawn: a ship spawn requires a valid explicit mode and yolo before anything is created
+ok - fm-spawn: scout and secondmate spawns refuse ship delivery flags
+ok - fm-spawn: the brief's recorded mode and the spawn's explicit mode must agree
+ok - fm-spawn: a rigor downgrade against the registered posture is announced, never blocked
+ok - fm-spawn: a scout spawn resolves no delivery posture from the registry
+ok - fm-promote: promotion requires the delivery contract and records it exactly once
+ok - fm-promote: a symlinked task record is refused and its target is left untouched
+ok - fm-promote: a promoted worker receives the same mode-specific delivery contract a briefed one does
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ok - fm-promote: a selected branch prefix reaches both worker instructions and durable task state
+Switched to a new branch '$(touch${IFS}promote-branch-shell-safe-marker)/promote-branch-safe-e3'
+ok - fm-promote: ref-format-valid shell metacharacters stay literal in promotion branch commands
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ok - fm-merge-local: a registry change cannot redirect an in-flight local-only task
+ok - fm-project-mode: the registry lookup matches a whole multi-word name, not just its first token
+ok - fm-project-mode: the conditional policy is accepted, mapped for mechanical callers, and readable raw
+ok - fm-project-mode: the forge binds from its own token and is reported only through --forge
+ok - fm-project-mode: only a malformed forge binding refuses; every other token keeps its old tolerance
+ok - forge=gerrit: yolo is refused with its reason, never silently dropped
+ok - forge=external: promoting a scout is refused because only a ship spawn installs the push guard
+ok - forge=gerrit: no-mistakes runs with its forge steps skipped, recovers its fixes, then publishes one change
+ok - forge=gerrit: direct-PR publishes one squashed change and a stack is refused with its reason
+ok - fm-spawn: a registered forge must reach the worker's brief
+ok - fm-spawn: the brief must carry the spawn's selected ship branch, and the selection is validated before anything is created
+ok - fm-spawn: a ship's ticket must agree with the brief that instructs its worker
+ok - fm-spawn: a ticket line in the task text is not the brief's ticket header
+ok - fm-spawn: a relaunch refuses a ticket override and keeps the recorded pair
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ok - fm-promote: a selected ticket reaches both worker instructions and durable task state
+ok - fm-spawn: a ship branch that deviates from the registered prefix is announced, never blocked
+ok - fm-spawn: a registry forge token the parser refuses stops the launch, reason included
+ok - fm-promote: a promoted worker receives the project's registered forge contract with no flag to remember
+ok - forge=forgejo: spawn agreement and promotion carry the binding, name tea, and keep yolo
+ok - fm-spawn/fm-promote: leftover Task placeholders are refused until both subsections are filled
+ok - fm-project-mode: --branch-prefix resolves order-independently and defaults to the legacy fm/ prefix
+# all fm-task-delivery tests passed
+ok - spawn scope must agree with the brief and relaunch preserves the recorded scope
+ok - spawn and promotion refuse ticket scope for ticketless tasks
+FM_TEST_END 2026-10-20T13:34:06Z tests/fm-task-delivery.test.sh exit=0 duration_ms=221373 gate_skip=false
+ok - fm_dirname_to and fm_basename_to match dirname and basename on every edge case
+ok - fm_epoch_seconds_to reads the clock like date +%s and forks date at most as often
+ok - signal seen paths and absolute lock paths are byte-identical to the dirname/basename/tr forms
+ok - recovery marker reads accept exactly the one-line records wc -l accepted
+ok - window_to_task resolves every recorded window exactly as the grep/tail/cut pipeline did
+ok - classify stat helpers resolve the kernel name once per process
+ok - fm_read_file_to returns what cat returned, including for empty, unreadable, missing and non-regular files
+ok - _fm_hex_encode_to produces the bytes od -An -v -tx1 | tr -d ' \n' produced
+ok - status_observed_signature is byte-identical to the four-stat, od-piped form it replaced
+ok - watcher exits on TERM during its poll wait and releases ownership
+ok - window metadata fields match the grep/cut pipeline, never answer for another window, and follow a changed meta
+ok - every out-var reader returns what its printing form returned, status included
+crew-state: shell-children=22 programs=6
+fleet-snapshot: shell-children=136 programs=84
+ok - one crew-state read and one three-crew fleet snapshot stay within their per-invocation fork budgets
+FM_TEST_END 2026-10-20T13:34:19Z tests/fm-fork-free-helpers.test.sh exit=0 duration_ms=41676 gate_skip=false
+FM_TEST_BEGIN 2026-10-20T13:34:20Z tests/fm-test-fixtures.test.sh family=standalone expected_gate_skip=none
+ok - runner and shared helpers isolate host Git config and preserve explicit config and outside commits
+ok - shared helpers and runner keep fixture Git off an inherited repository location
+not ok - with a compiler, a multicall host sleep must still yield a stand-in
+not ok - agent stand-in multicall case
+FM_TEST_END 2026-10-20T13:34:55Z tests/fm-test-fixtures.test.sh exit=1 duration_ms=35011 gate_skip=false
+FM_TEST_SUMMARY total=26 failed=1 skipped_gate=0 duration_ms=338114
+FM_TEST_SUMMARY_FAMILY family=pure-contract-unit count=25 duration_ms=913961 failed=0
+FM_TEST_SUMMARY_FAMILY family=standalone count=1 duration_ms=35011 failed=1
+FM_TEST_SLOWEST rank=1 script=tests/fm-task-delivery.test.sh duration_ms=221373
+FM_TEST_SLOWEST rank=2 script=tests/fm-bearings-board.test.sh duration_ms=137118
+FM_TEST_SLOWEST rank=3 script=tests/fm-polytoken-harness.test.sh duration_ms=89605
+FM_TEST_SLOWEST rank=4 script=tests/fm-rovo-harness.test.sh duration_ms=72631
+FM_TEST_SLOWEST rank=5 script=tests/fm-arm-pretool-check.test.sh duration_ms=66108
+FM_TEST_SLOWEST rank=6 script=tests/fm-vendor-auth-probe.test.sh duration_ms=52645
+FM_TEST_SLOWEST rank=7 script=tests/fm-dod-lib.test.sh duration_ms=50553
+FM_TEST_SLOWEST rank=8 script=tests/fm-fork-free-helpers.test.sh duration_ms=41676
+FM_TEST_SLOWEST rank=9 script=tests/fm-commandcode-harness.test.sh duration_ms=41026
+FM_TEST_SLOWEST rank=10 script=tests/fm-test-fixtures.test.sh duration_ms=35011
+FM_TEST_SLOWEST rank=11 script=tests/fm-operational-input.test.sh duration_ms=17931
+FM_TEST_SLOWEST rank=12 script=tests/fm-test-isolation-proof.test.sh duration_ms=17469
+FM_TEST_SLOWEST rank=13 script=tests/fm-harness-precedence.test.sh duration_ms=15676
+FM_TEST_SLOWEST rank=14 script=tests/fm-classify-decision-key.test.sh duration_ms=14749
+FM_TEST_SLOWEST rank=15 script=tests/fm-subagent-pretool-check.test.sh duration_ms=14056

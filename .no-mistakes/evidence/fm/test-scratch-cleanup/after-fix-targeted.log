@@ -1,0 +1,4 @@
+ok - runner removes read-only hooks while preserving successful and failing suite verdicts
+ok - a runner under an inherited scratch root keeps it instead of opening its own
+ok - the runner's scratch, and every script's, lands beside the checkout instead of in the machine temp directory
+bash $F  0.60s user 0.70s system 54% cpu 2.395 total
