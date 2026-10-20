@@ -847,23 +847,26 @@ EOF
 }
 
 # The budget ran out, and an earlier pull request this poll (the caller's
-# `examined`) had already spent part of it.
+# `examined`) or an earlier section of this one (examine_pr's `sections`) had
+# already spent part of it.
 budget_cut_deferrable() {
-  ! budget_left && [ "$examined" -gt 1 ]
+  ! budget_left && { [ "$examined" -gt 1 ] || [ "${sections:-0}" -gt 1 ]; }
 }
 
 # Examine one merged pull request. Appends to the caller's regressions, woken
 # and pending; those are the caller's locals on purpose, because this is one
 # function split out for readability rather than a second owner of the record.
 # Returns non-zero only when the budget ran out mid-read after an earlier pull
-# request this poll had spent part of it, leaving whatever it had not finished
-# unqueued and unrecorded for the next poll. The first pull request of a poll had
-# the whole budget, so running out is its honest couldnt-check.
+# request or an earlier section of this one had spent part of it, leaving
+# whatever it had not finished unqueued and unrecorded for the next poll. The
+# first section of a poll had the whole budget, so running out is its honest
+# couldnt-check.
 examine_pr() {  # <number> <url> <head-sha> <merge-sha> <merged-at> <title>
   local number=$1 url=$2 head_sha=$3 merge_sha=$4 merged_at=$5 title=$6
   local comments body_file comment_id ticket apps app verdict phase rec
   local comment_revision record_id fallback alias_promoted
   local checks_url key class preview preview_run persona section section_head fingerprint reason identity
+  local sections=0
 
   comments=$(gh_json "repos/$CONFIG_REPO/issues/$number/comments?per_page=100") || {
     [ "$RESEED" -eq 0 ] || { RESEED_FAILED="PR $url comment list could not be read"; return 1; }
@@ -934,6 +937,7 @@ examine_pr() {  # <number> <url> <head-sha> <merge-sha> <merged-at> <title>
 
   while IFS= read -r section; do
     [ -n "$section" ] || continue
+    sections=$((sections + 1))
     section_identity "$section" || continue
     app=$SECTION_APP
     persona=$SECTION_PERSONA

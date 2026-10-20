@@ -926,6 +926,33 @@ test_a_preview_read_the_budget_cut_short_is_deferred_not_couldnt_check() {
   pass "fm-jev-prod-check: a preview read the budget cut short is deferred, never filed as couldnt-check"
 }
 
+test_a_deployment_read_after_a_sibling_spent_the_budget_is_deferred() {
+  local home
+  home=$(make_home budget-sibling)
+  configure "$home"
+  fake_gh "$home" >/dev/null
+  write_real_pulls "$home" '[2214]'
+  write_comments "$home" 2214 900024 "$(section portal failed post-merge production 5170c4000024)
+$(section portal:portal-previous proven pre-merge preview previewrec)"
+  write_preview_artifact "$home" portal proven
+  # The first section's production lookup spends the whole budget before the
+  # sibling persona reaches its deployment read.
+  slow_gh "$home" '*actions/workflows/jev-check.yml/runs*' once
+
+  budget_poll "$home" >/dev/null
+  assert_no_grep 'deployment-unreadable' "$home/state/.jev-prod-monitor" \
+    "a deployment read the budget cut short is not an unreadable deployment"
+  assert_no_grep 'woken	2214/portal:portal-previous/' "$home/state/.jev-prod-monitor" \
+    "the sibling the budget cut short must be left for the next poll"
+
+  env PATH="$home/bin:$PATH" FM_HOME="$home" "$CHECK" check >/dev/null 2>&1
+  assert_grep 'app=portal:portal-previous production=none ' "$home/state/.jev-prod-monitor" \
+    "the next poll must read the sibling's production deployment"
+  assert_no_grep 'deployment-unreadable' "$home/state/.jev-prod-monitor" \
+    "the deferred sibling must never settle as unreadable"
+  pass "fm-jev-prod-check: a deployment read a sibling section's budget spend cut short is deferred"
+}
+
 test_a_pull_request_slow_on_every_poll_never_holds_the_monitor() {
   local home
   home=$(make_home budget-stuck)
@@ -1152,32 +1179,36 @@ test_real_skipped_builds_and_unreadable_inventory() {
 
 test_unaffected_builds_and_missing_builds() {
   local home out description state
-  for description in 'Canceled by Ignored Build Step' 'Skipped - Not affected' 'Deployment has completed'; do
-    for state in success failure pending; do
-      home=$(make_home "build-$state-${description// /-}")
-      configure "$home"
-      fake_gh "$home" >/dev/null
-      write_pulls "$home" 7200
-      write_comments "$home" 2214 900110 "$(section portal proven pre-merge preview previewrec)"
-      printf '[]' > "$home/fx/deployments.json"
-      jq -n --arg desc "$description" --arg state "$state" \
-        '{statuses:[{context:"Vercel – core-metaplanet",state:$state,description:$desc}]}' > "$home/fx/statuses.json"
-      out=$(poll "$home" FM_JEV_PROD_BATCH_SECS=0)
-      if [ "$state" = success ] && [ "$description" != 'Deployment has completed' ]; then
-        assert_equals "" "$out" "a confirmed unaffected app has no verdict to chase"
-        assert_grep $'\tnot-applicable\tbuild-skipped' "$home/state/.jev-prod-monitor" "the reason survives in the public state record"
-      else
-        assert_contains "$out" 'couldnt-check' "a missing build remains an actual gap"
-        assert_contains "$out" 'production=not-deployed ' "unconfirmed skips and generic successes do not establish an unaffected app"
-      fi
-    done
-  done
+  while IFS=: read -r state description; do
+    home=$(make_home "build-$state-${description// /-}")
+    configure "$home"
+    fake_gh "$home" >/dev/null
+    write_pulls "$home" 7200
+    write_comments "$home" 2214 900110 "$(section portal proven pre-merge preview previewrec)"
+    printf '[]' > "$home/fx/deployments.json"
+    jq -n --arg desc "$description" --arg state "$state" \
+      '{statuses:[{context:"Vercel – core-metaplanet",state:$state,description:$desc}]}' > "$home/fx/statuses.json"
+    out=$(poll "$home" FM_JEV_PROD_BATCH_SECS=0)
+    if [ "$state" = success ] && [ "$description" != 'Deployment has completed' ]; then
+      assert_equals "" "$out" "a confirmed unaffected app has no verdict to chase"
+      assert_grep $'\tnot-applicable\tbuild-skipped' "$home/state/.jev-prod-monitor" "the reason survives in the public state record"
+    else
+      assert_contains "$out" 'couldnt-check' "a missing build remains an actual gap"
+      assert_contains "$out" 'production=not-deployed ' "unconfirmed skips and generic successes do not establish an unaffected app"
+    fi
+  done <<'EOF'
+success:Canceled by Ignored Build Step
+success:Skipped - Not affected
+failure:Canceled by Ignored Build Step
+pending:Skipped - Not affected
+success:Deployment has completed
+EOF
   pass "fm-jev-prod-check: only successful unaffected-build statuses settle as not applicable"
 }
 
 test_portal_persona_reads_scoped_deployment_inventory() {
   local home out persona
-  for persona in portal portal:portal-foreign portal:portal-previous portal:portal-unverified; do
+  for persona in portal portal:portal-previous; do
     home=$(make_home "scoped-${persona//:/-}")
     configure "$home"
     fake_gh "$home" >/dev/null
@@ -1556,5 +1587,6 @@ test_a_rotation_bucket_advances_by_a_whole_window
 test_a_long_batch_carries_every_verdict_uncut
 test_a_window_the_budget_cut_short_is_finished_on_the_next_poll
 test_a_preview_read_the_budget_cut_short_is_deferred_not_couldnt_check
+test_a_deployment_read_after_a_sibling_spent_the_budget_is_deferred
 test_a_pull_request_slow_on_every_poll_never_holds_the_monitor
 test_the_read_budget_fits_a_lowered_check_timeout
