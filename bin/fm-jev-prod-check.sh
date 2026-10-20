@@ -65,8 +65,10 @@
 # reach, or ran out in the middle of after an earlier one had spent part of it,
 # is examined first on the next poll; that is deferral, not a failure, and it
 # reports nothing: a read the budget cut short is not evidence about a verdict,
-# so it is never queued or recorded as woken. This also applies when the first
-# pull request exhausts a fresh budget: it stays unfinished for the next poll.
+# so it is never queued or recorded as woken. A pull request that exhausts a
+# whole fresh budget on its own is not a wake either: it stays unfinished and is
+# retried on a later poll, but the rotation moves past it, so no single slow
+# pull request can hold the monitor in place.
 #
 # DEDUPE. state/.jev-prod-monitor is the one owner. A verdict is keyed by
 # <pr>/<app[:persona]>/<record-id-or-outcome-run>. The recorder digest or a
@@ -809,7 +811,10 @@ action_check() {
     [ "$RESEED" -eq 1 ] || [ "$examined" -lt "$MAX_PRS" ] || break
     budget_left || break
     examined=$((examined + 1))
-    examine_pr "$number" "$url" "$head_sha" "$merge_sha" "$merged_at" "$title" || break
+    if ! examine_pr "$number" "$url" "$head_sha" "$merge_sha" "$merged_at" "$title"; then
+      [ "$examined" -gt 1 ] || cursor=$number
+      break
+    fi
     cursor=$number
   done <<EOF
 $candidates
@@ -855,7 +860,7 @@ EOF
 # and pending; those are the caller's locals on purpose, because this is one
 # function split out for readability rather than a second owner of the record.
 # Returns non-zero when the budget ran out mid-read, leaving whatever it had
-# not finished unqueued and unrecorded for the next poll.
+# not finished unqueued and unrecorded for a later poll.
 examine_pr() {  # <number> <url> <head-sha> <merge-sha> <merged-at> <title>
   local number=$1 url=$2 head_sha=$3 merge_sha=$4 merged_at=$5 title=$6
   local comments body_file comment_id ticket apps app verdict phase rec
