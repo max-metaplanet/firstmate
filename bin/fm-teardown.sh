@@ -341,6 +341,12 @@
 # ignored here, because cleanup has already succeeded by the time it is written.
 set -eu
 
+# Keep every Git call in this teardown, including landed-work helpers and
+# backend/treehouse children, from starting maintenance in the worktree that
+# the later leaked-process scan must inspect. Append command-scope settings
+# after inherited parameters; never persist them in project or global config.
+export GIT_CONFIG_PARAMETERS="${GIT_CONFIG_PARAMETERS:+$GIT_CONFIG_PARAMETERS }'gc.auto=0' 'maintenance.auto=false'"
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"

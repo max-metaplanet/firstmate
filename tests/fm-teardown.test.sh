@@ -6143,6 +6143,74 @@ test_retained_sources_still_reach_the_ordinary_refusal() {
   pass "present required sources still reach the ordinary teardown refusal"
 }
 
+
+# The public Git pre-auto-gc hook proves this loose-object fixture really is
+# eligible for auto-GC. Vetoing in that hook makes the regression deterministic
+# on fast hosts without leaving detached maintenance behind after a failed test.
+# The separate real-process cases below keep the worktree-leak refusal covered.
+test_teardown_suppresses_git_auto_maintenance() {
+  local case_dir rc i config hooks objects
+  case_dir=$(make_case auto-maintenance)
+  write_meta "$case_dir" no-mistakes ship
+  config="$case_dir/project/.git/config"
+  hooks="$case_dir/project/.git/hooks"
+  objects="$case_dir/loose-inputs"
+  mkdir -p "$objects"
+  for ((i = 0; i < 2048; i++)); do
+    printf 'auto-maintenance fixture %s\n' "$i" > "$objects/$i"
+    printf '%s\n' "$objects/$i"
+  done > "$case_dir/object-paths"
+  git -C "$case_dir/wt" hash-object -w --stdin-paths < "$case_dir/object-paths" > "$case_dir/object-ids"
+  [ "$(grep -c '^17' "$case_dir/object-ids")" -gt 1 ] \
+    || fail "auto-maintenance: loose objects do not exceed Git's sampled threshold"
+  git -C "$case_dir/wt" config gc.auto 1
+  git -C "$case_dir/wt" config maintenance.auto true
+  git -C "$case_dir/wt" config gc.autoDetach false
+  git -C "$case_dir/wt" config maintenance.autoDetach false
+  cat > "$hooks/pre-auto-gc" <<SH
+#!/usr/bin/env bash
+printf 'attempted\n' >> '$case_dir/auto-gc-attempts'
+exit 1
+SH
+  chmod +x "$hooks/pre-auto-gc"
+  # A real fetch takes the same entry point as the landed-work test.
+  git -C "$case_dir/wt" fetch --quiet origin
+  assert_present "$case_dir/auto-gc-attempts" "auto-maintenance: the control fetch never triggered auto-GC"
+  rm "$case_dir/auto-gc-attempts"
+  cp "$config" "$case_dir/config-before"
+  printf '[fixture]\n  global = preserved\n' > "$case_dir/global-config"
+  cp "$case_dir/global-config" "$case_dir/global-before"
+
+  # The external removal tool must inherit suppression too, while unrelated
+  # inherited command configuration still works. These are real Git reads.
+  cat > "$case_dir/fakebin/treehouse" <<SH
+#!/usr/bin/env bash
+set -e
+for key in gc.auto maintenance.auto fixture.count fixture.parameter fixture.global; do
+  git -C '$case_dir/wt' config --get "\$key"
+done > '$case_dir/removal-config'
+SH
+  chmod +x "$case_dir/fakebin/treehouse"
+  rc=0
+  GIT_CONFIG_GLOBAL="$case_dir/global-config" \
+    GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=fixture.count GIT_CONFIG_VALUE_0=preserved \
+    GIT_CONFIG_PARAMETERS="'fixture.parameter=preserved' 'gc.auto=1' 'maintenance.auto=true'" \
+    run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+  expect_code 0 "$rc" "auto-maintenance: teardown should complete"
+  assert_absent "$case_dir/auto-gc-attempts" "auto-maintenance: teardown triggered auto-GC"
+  printf '0\nfalse\npreserved\npreserved\npreserved\n' > "$case_dir/expected-config"
+  cmp -s "$case_dir/expected-config" "$case_dir/removal-config" \
+    || fail "auto-maintenance: removal child lost suppression or inherited configuration"
+  cmp -s "$config" "$case_dir/config-before" \
+    || fail "auto-maintenance: repository config was changed"
+  cmp -s "$case_dir/global-config" "$case_dir/global-before" \
+    || fail "auto-maintenance: global config was changed"
+  assert_absent "$case_dir/state/task-x1.meta" "auto-maintenance: task record was not cleaned up"
+  pass "teardown suppresses real fetch auto-GC and removal-child maintenance without writing config"
+}
+
+test_teardown_suppresses_git_auto_maintenance
+
 test_teardown_preserves_opencode_busy_plugin_on_pool_return
 test_missing_startup_source_refuses_before_cleanup
 test_unreadable_startup_source_refuses_before_cleanup
