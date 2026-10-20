@@ -1416,7 +1416,7 @@ A task record whose agent is no longer running holds no place, and one whose age
 Verified worker parking and resume priority are owned by [`bin/fm-worker-park.sh`](../bin/fm-worker-park.sh).
 At the cap, `bin/fm-spawn.sh` defers a fresh ship, scout, or local secondmate exactly as project capacity does: nothing is launched, the backlog item stays queued, and it exits 75.
 Relaunching a parked worker re-enters admission under both caps; replacing an active agent retains its existing place.
-Each queued parked-worker resume reserves one place under the fleet cap and under its project's cap, ahead of fresh spawns and later resumes; a resume held for repair reserves none.
+Each queued parked-worker resume reserves one place under its project's cap and under the fleet cap, ahead of fresh spawns and later resumes; a resume held for repair reserves none, and one its project cap cannot yet admit reserves no fleet place.
 A malformed or unreadable file refuses every fresh spawn until it is fixed.
 [`bin/fm-fleet-capacity-lib.sh`](../bin/fm-fleet-capacity-lib.sh) owns the file format, what holds a place, and the lock that keeps concurrent spawns from both taking the last one.
 
