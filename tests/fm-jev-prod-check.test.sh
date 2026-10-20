@@ -195,7 +195,12 @@ case "\$path" in
     cat "\$FX/artifact-\$a.zip" ;;
   */deployments\?*)
     [ ! -e "\$FX/fail-deployments" ] || exit 1
-    if [ -f "\$FX/deployments.json" ]; then cat "\$FX/deployments.json"; else
+    if [ -f "\$FX/deployment-inventory.json" ]; then
+      case "\$path" in
+        *'environment=Production%20%E2%80%93%20core-metaplanet&'*) jq '[.[] | select(.environment == "Production – core-metaplanet")] | .[:100]' "\$FX/deployment-inventory.json" ;;
+        *) jq '.[:100]' "\$FX/deployment-inventory.json" ;;
+      esac
+    elif [ -f "\$FX/deployments.json" ]; then cat "\$FX/deployments.json"; else
       printf '[{"id":7001,"sha":"$MERGE_SHA","environment":"Production – core-metaplanet","created_at":"2025-10-09T06:53:20Z"}]'; fi ;;
   */deployments/*/statuses\?*)
     d=\${path#*/deployments/}; d=\${d%%/*}
@@ -1132,7 +1137,8 @@ test_real_skipped_builds_and_unreadable_inventory() {
   fake_gh "$home" >/dev/null
   real_candidate "$home" 2245
   out=$(poll "$home" FM_JEV_PROD_BATCH_SECS=0)
-  assert_contains "$out" 'production=build-skipped ' "captured success statuses describing canceled builds are not deployment proof"
+  assert_equals "" "$out" "captured unaffected builds need no production browser verdict"
+  assert_grep 'outcome.*not-applicable.*build-skipped' "$home/state/.jev-prod-monitor" "the skipped build is recorded as not applicable, never as a pass"
   assert_no_grep '/deployments/' "$home/fx/gh-argv.log" "generic production and protected-secrets environments never count"
   touch "$home/fx/fail-deployments"
   out=$(poll "$home" FM_JEV_PROD_BATCH_SECS=0)
@@ -1142,6 +1148,50 @@ test_real_skipped_builds_and_unreadable_inventory() {
   out=$(poll "$home" FM_JEV_PROD_BATCH_SECS=0)
   assert_contains "$out" 'production=not-deployed ' "generic success never starts the deployment grace"
   pass "fm-jev-prod-check: real canceled builds and unrelated environments are distinct from unreadable deployments"
+}
+
+test_unaffected_builds_and_missing_builds() {
+  local home out description state
+  for description in 'Canceled by Ignored Build Step' 'Skipped - Not affected' 'Deployment has completed'; do
+    for state in success failure pending; do
+      home=$(make_home "build-$state-${description// /-}")
+      configure "$home"
+      fake_gh "$home" >/dev/null
+      write_pulls "$home" 7200
+      write_comments "$home" 2214 900110 "$(section portal proven pre-merge preview previewrec)"
+      printf '[]' > "$home/fx/deployments.json"
+      jq -n --arg desc "$description" --arg state "$state" \
+        '{statuses:[{context:"Vercel – core-metaplanet",state:$state,description:$desc}]}' > "$home/fx/statuses.json"
+      out=$(poll "$home" FM_JEV_PROD_BATCH_SECS=0)
+      if [ "$state" = success ] && [ "$description" != 'Deployment has completed' ]; then
+        assert_equals "" "$out" "a confirmed unaffected app has no verdict to chase"
+        assert_grep 'outcome.*not-applicable.*build-skipped' "$home/state/.jev-prod-monitor" "the reason survives in the public state record"
+      else
+        assert_contains "$out" 'couldnt-check' "a missing build remains an actual gap"
+        assert_contains "$out" 'production=not-deployed ' "unconfirmed skips and generic successes do not establish an unaffected app"
+      fi
+    done
+  done
+  pass "fm-jev-prod-check: only successful unaffected-build statuses settle as not applicable"
+}
+
+test_portal_persona_reads_scoped_deployment_inventory() {
+  local home out persona
+  for persona in portal portal:portal-foreign portal:portal-previous portal:portal-unverified; do
+    home=$(make_home "scoped-$persona")
+    configure "$home"
+    fake_gh "$home" >/dev/null
+    write_pulls "$home" 7200
+    write_comments "$home" 2214 900111 "$(section "$persona" proven pre-merge preview previewrec)"
+    jq -n --arg sha "$MERGE_SHA" \
+      '[range(100) | {id:(8000+.),sha:$sha,environment:"protected-secrets",created_at:"2025-10-09T06:53:20Z"}] +
+       [{id:7001,sha:$sha,environment:"Production – core-metaplanet",created_at:"2025-10-09T06:53:20Z"}]' > "$home/fx/deployment-inventory.json"
+    out=$(poll "$home" FM_JEV_PROD_BATCH_SECS=0)
+    assert_contains "$out" "app=$persona production=none " "a successful deployment with missing Jev is distinct from an unreadable inventory"
+    assert_grep 'environment=Production%20%E2%80%93%20core-metaplanet&' "$home/fx/gh-argv.log" "the GitHub request scopes the inventory to the portal production environment"
+    assert_grep '/deployments/7001/statuses' "$home/fx/gh-argv.log" "the matching production deployment status is read"
+  done
+  pass "fm-jev-prod-check: portal personas read their production deployment beyond unrelated first-page rows"
 }
 
 test_deployment_grace_late_result_and_redeploy() {
@@ -1465,6 +1515,8 @@ test_malformed_sections_never_settle_as_proven
 test_real_completed_outcomes_and_run_attempts
 test_known_nonpassing_and_unknown_titles
 test_real_skipped_builds_and_unreadable_inventory
+test_unaffected_builds_and_missing_builds
+test_portal_persona_reads_scoped_deployment_inventory
 test_deployment_grace_late_result_and_redeploy
 test_persona_pairing_rejects_mismatches
 test_captured_persona_artifact_context_wins_over_name
