@@ -1,0 +1,61 @@
+### S1 partial (default) scope, single PR merges -> review, never done
+tracker calls:
+  ENG-1 review https://x/pull/1
+  ENG-1 review https://x/pull/1
+published facts (event ticket_scope merge pr):
+  a pr-opened scope=partial pr=https://x/pull/1
+  a pr-merged scope=partial pr=https://x/pull/1
+
+### S2 declared complete, PR merges -> done
+tracker calls:
+  ENG-1 review https://x/pull/1
+  ENG-1 done https://x/pull/1
+published facts (event ticket_scope merge pr):
+  a pr-opened scope=complete pr=https://x/pull/1
+  a pr-merged scope=complete pr=https://x/pull/1
+
+### S3 complete scope but sibling PR still open -> no close (merge partial)
+tracker calls:
+  ENG-1 review https://x/pull/1
+  ENG-1 review https://x/pull/2
+published facts (event ticket_scope merge pr):
+  a pr-opened scope=complete pr=https://x/pull/1
+  b pr-opened scope=complete pr=https://x/pull/2
+  a pr-merged scope=complete pr=https://x/pull/1
+
+### S4 A partial merged, B complete cancelled unmerged -> bare review, no done, no abandoned URL
+tracker calls:
+  ENG-1 review https://x/pull/1
+  ENG-1 review https://x/pull/1
+  ENG-1 review https://x/pull/2
+  ENG-1 review
+published facts (event ticket_scope merge pr):
+  a pr-opened scope=partial pr=https://x/pull/1
+  a pr-merged scope=partial pr=https://x/pull/1
+  b pr-opened scope=partial pr=https://x/pull/2
+  b cancelled scope=complete pr=https://x/pull/2
+
+### S5 complete task cancelled after own PR merged -> done allowed
+tracker calls:
+  ENG-1 review https://x/pull/1
+  ENG-1 done https://x/pull/1
+  ENG-1 done
+published facts (event ticket_scope merge pr):
+  a pr-opened scope=complete pr=https://x/pull/1
+  a pr-merged scope=complete pr=https://x/pull/1
+  a cancelled scope=complete pr=https://x/pull/1
+
+### S6 adversarial: malformed scope value treated as partial
+tracker calls:
+  ENG-1 review https://x/pull/1
+  ENG-1 review https://x/pull/1
+published facts (event ticket_scope merge pr):
+  a pr-opened scope=partial pr=https://x/pull/1
+  a pr-merged scope=partial pr=https://x/pull/1
+
+### S7 adversarial: ticketless complete scope publishes partial, no tracker call
+tracker calls:
+  (none)
+published facts (event ticket_scope merge pr):
+  a pr-merged scope=partial pr=https://x/pull/1
+

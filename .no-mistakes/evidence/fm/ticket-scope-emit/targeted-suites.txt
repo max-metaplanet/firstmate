@@ -1,0 +1,30 @@
+# Targeted suite results (head 4a0a21fc)
+## fm-ticket-sync
+ok - final merges and cancellations require explicit complete scope to close a ticket
+ok - a partial cancellation names its PR only when that PR is recorded as merged
+## fm-task-event-status
+ok - successful teardown emits cancelled with the retired task context
+## fm-brief
+ok - fm-brief: scaffolds leave the worker role scope to the launch boundary and keep the secondmate contract
+ok - ticket-scope intake is explicit, defaults partial, and requires a real ticket
+## fm-task-delivery
+ok - fm-spawn: every legacy worker receives scoped role instructions without changing project or primary instructions
+ok - spawn scope must agree with the brief and relaunch preserves the recorded scope
+ok - spawn and promotion refuse ticket scope for ticketless tasks
+## fm-task-event (isolated rerun, exit 0)
+ok - all event types preserve opaque ticket, worker summary, key, home and PR
+ok - unticketed and removed tasks retain lifecycle events
+ok - absent config is a no-op
+ok - all recorded PRs for the ticket determine partial versus final across tasks and cleanup
+ok - a replaced PR and a cancelled task PR no longer hold the ticket partial
+ok - cancelling the last open PR reports a final merge, and a PR-less cancel reports none
+ok - failing or invalid consumers never fail the producer and surface once per task
+ok - a surfaced consumer failure never replaces the worker status summary
+ok - a home with only the legacy hook keeps syncing through the adapter and says so once
+ok - hanging consumer is detached, bounded, and holds no caller stream
+ok - delayed and failed consumers preserve event order and publication-time merge outcomes
+ok - a timed-out consumer releases the queue for the next event
+ok - the existing lock recovery permits delivery after a drainer dies
+ok - every event snapshots recorded scope, defaulting invalid and empty records to partial
+ok - a cancelled task publishes complete scope only when its own PR is recorded as merged
+## fm-task-event under parallel load (two runs): not ok - waiting for 9 lines ... scope-complete / scope-empty (timing)

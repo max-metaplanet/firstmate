@@ -1,0 +1,81 @@
+== S1 ENG-2645 replay: task with no scope declaration merges its only PR
+-- events (event task ticket_scope merge pr_url):
+pr-opened	a	ENG-2645	partial	null	https://github.com/o/r/pull/2274
+pr-merged	a	ENG-2645	partial	final	https://github.com/o/r/pull/2274
+-- legacy ticket hook calls:
+ENG-2645 review https://github.com/o/r/pull/2274
+ENG-2645 review https://github.com/o/r/pull/2274
+
+== S2 task declaring ticket_scope=complete merges
+-- events (event task ticket_scope merge pr_url):
+pr-opened	a	ENG-1	complete	null	https://github.com/o/r/pull/1
+pr-merged	a	ENG-1	complete	final	https://github.com/o/r/pull/1
+-- legacy ticket hook calls:
+ENG-1 review https://github.com/o/r/pull/1
+ENG-1 done https://github.com/o/r/pull/1
+
+== S3 two PRs for one ticket: partial A merges first, complete B merges last
+-- events (event task ticket_scope merge pr_url):
+pr-opened	a	ENG-1	partial	null	https://github.com/o/r/pull/1
+pr-opened	b	ENG-1	complete	null	https://github.com/o/r/pull/2
+pr-merged	a	ENG-1	partial	partial	https://github.com/o/r/pull/1
+pr-merged	b	ENG-1	complete	final	https://github.com/o/r/pull/2
+-- legacy ticket hook calls:
+ENG-1 review https://github.com/o/r/pull/1
+ENG-1 review https://github.com/o/r/pull/2
+ENG-1 done https://github.com/o/r/pull/2
+
+== S4 adversarial: A partial merged PR1; B declared complete, cancelled with PR2 unmerged
+-- events (event task ticket_scope merge pr_url):
+pr-opened	a	ENG-1	partial	null	https://github.com/o/r/pull/1
+pr-merged	a	ENG-1	partial	final	https://github.com/o/r/pull/1
+pr-opened	b	ENG-1	complete	null	https://github.com/o/r/pull/2
+cancelled	b	ENG-1	partial	final	https://github.com/o/r/pull/2
+-- legacy ticket hook calls:
+ENG-1 review https://github.com/o/r/pull/1
+ENG-1 review https://github.com/o/r/pull/1
+ENG-1 review https://github.com/o/r/pull/2
+ENG-1 review
+
+== S5 adversarial: A partial merged PR1; B partial cancelled with PR2 unmerged (no abandoned URL)
+-- events (event task ticket_scope merge pr_url):
+pr-opened	a	ENG-1	partial	null	https://github.com/o/r/pull/1
+pr-merged	a	ENG-1	partial	final	https://github.com/o/r/pull/1
+pr-opened	b	ENG-1	partial	null	https://github.com/o/r/pull/2
+cancelled	b	ENG-1	partial	final	https://github.com/o/r/pull/2
+-- legacy ticket hook calls:
+ENG-1 review https://github.com/o/r/pull/1
+ENG-1 review https://github.com/o/r/pull/1
+ENG-1 review https://github.com/o/r/pull/2
+ENG-1 review
+
+== S6 complete task whose own PR merged is then cancelled (calls log reset before cancel)
+-- events (event task ticket_scope merge pr_url):
+pr-opened	a	ENG-1	complete	null	https://github.com/o/r/pull/1
+pr-merged	a	ENG-1	complete	final	https://github.com/o/r/pull/1
+cancelled	a	ENG-1	complete	final	https://github.com/o/r/pull/1
+-- legacy ticket hook calls:
+ENG-1 review https://github.com/o/r/pull/1
+ENG-1 done https://github.com/o/r/pull/1
+ENG-1 done
+
+== S7 partial task whose own PR merged is then cancelled (calls log reset before cancel)
+-- events (event task ticket_scope merge pr_url):
+pr-opened	a	ENG-1	partial	null	https://github.com/o/r/pull/1
+pr-merged	a	ENG-1	partial	final	https://github.com/o/r/pull/1
+cancelled	a	ENG-1	partial	final	https://github.com/o/r/pull/1
+-- legacy ticket hook calls:
+ENG-1 review https://github.com/o/r/pull/1
+ENG-1 review https://github.com/o/r/pull/1
+ENG-1 review https://github.com/o/r/pull/1
+
+== S8 adversarial: uppercase COMPLETE scope, and complete scope on a ticketless task
+-- events (event task ticket_scope merge pr_url):
+pr-opened	a	ENG-1	partial	null	https://github.com/o/r/pull/1
+pr-merged	a	ENG-1	partial	final	https://github.com/o/r/pull/1
+pr-opened	n		partial	null	https://github.com/o/r/pull/9
+pr-merged	n		partial	final	https://github.com/o/r/pull/9
+-- legacy ticket hook calls:
+ENG-1 review https://github.com/o/r/pull/1
+ENG-1 review https://github.com/o/r/pull/1
+

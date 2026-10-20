@@ -1,0 +1,7 @@
+# Payloads delivered to config/task-event-hook (new consumer contract)
+{"event":"pr-opened","task_id":"a","ticket":"ENG-1","ticket_scope":"partial","merge":null,"pr_url":"https://x/pull/1"}
+{"event":"pr-merged","task_id":"a","ticket":"ENG-1","ticket_scope":"partial","merge":"final","pr_url":"https://x/pull/1"}
+{"event":"pr-opened","task_id":"b","ticket":"ENG-1","ticket_scope":"complete","merge":null,"pr_url":"https://x/pull/2"}
+{"event":"cancelled","task_id":"b","ticket":"ENG-1","ticket_scope":"partial","merge":"final","pr_url":"https://x/pull/2"}
+{"event":"pr-opened","task_id":"c","ticket":"ENG-2","ticket_scope":"complete","merge":null,"pr_url":"https://x/pull/3"}
+{"event":"pr-merged","task_id":"c","ticket":"ENG-2","ticket_scope":"complete","merge":"final","pr_url":"https://x/pull/3"}

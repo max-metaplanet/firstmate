@@ -1,0 +1,22 @@
+$ fm-brief.sh t-complete proj --mode no-mistakes --ticket ENG-2645 --commit-type feat --ticket-scope complete
+scaffolded: /var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-scope-live.9lYOcH/brief-home/data/t-complete/brief.md (ship, mode=no-mistakes; replace {TASK} and {FIRSTMATE_SPEC})
+exit=0
+101:Ticket scope: complete
+106:Before reporting the PR ready, check your change against the ticket's acceptance criteria and append `ticket-scope=complete` or `ticket-scope=partial` to your PR-ready status line.
+
+$ fm-brief.sh t-default proj --mode no-mistakes --ticket ENG-2645 --commit-type feat
+scaffolded: /var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-scope-live.9lYOcH/brief-home/data/t-default/brief.md (ship, mode=no-mistakes; replace {TASK} and {FIRSTMATE_SPEC})
+exit=0
+101:Ticket scope: partial
+
+$ fm-brief.sh t-bad proj --mode no-mistakes --ticket ENG-2645 --commit-type feat --ticket-scope done
+error: fm-brief.sh: --ticket-scope must be complete or partial
+exit=1
+
+$ fm-brief.sh t-noticket proj --mode no-mistakes --ticket no-ticket --commit-type feat --ticket-scope complete
+error: fm-brief.sh: --ticket-scope requires a real --ticket
+exit=1
+
+$ fm-brief.sh t-scout proj --scout --ticket-scope complete
+error: --ticket and --commit-type apply only to ship briefs; a scout makes no branch and opens no pull request, and a secondmate charter is not a delivery contract
+exit=1

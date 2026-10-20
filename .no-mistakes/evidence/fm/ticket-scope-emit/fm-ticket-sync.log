@@ -1,0 +1,9 @@
+ok - the unconfigured adapter is a no-op
+ok - legacy hook arguments preserve arbitrary tickets, URLs, and worker text
+ok - partial merges, other events, and null tickets do not move a legacy ticket
+ok - hook failure propagates so the emitter can record it
+ok - invalid payloads are refused before invoking the legacy hook
+ok - legacy hook configuration requires one absolute executable path
+ok - polled and self-reported merge outcomes reach the legacy hook only once
+ok - final merges and cancellations require explicit complete scope to close a ticket
+ok - a partial cancellation names its PR only when that PR is recorded as merged

@@ -1,0 +1,10 @@
+ok - keyed blockers retain worker summaries and resume only after every blocker clears
+ok - keyed declared waits emit waiting and resume when resolved
+ok - paused keys survive drains and repeated or unsolicited status declarations do not emit
+ok - configured wait vocabulary uses the same lifecycle transitions
+ok - pure readers and captain-hold mirror rows never emit lifecycle events
+ok - a discarded cursor rebuilds history silently and emits only new bytes
+ok - absent hook leaves the status classifier unchanged
+ok - successful teardown emits finished with the retired task context
+ok - successful teardown emits cancelled with the retired task context
+ok - PR-ready status folding records explicit upgrades and downgrades without requiring a hook
