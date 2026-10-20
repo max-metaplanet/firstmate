@@ -1,0 +1,27 @@
+-- private tmux (TMUX_TMPDIR=/tmp/fmt.L02p) windows before teardown:
+   firstmate:fm-task-x1 pane_pid=93355
+== [base] teardown exit=1
+-- stderr (tail):
+teardown: preserving process(es) working under this task's worktree that are not task-x1's own (neither its endpoint leader 93355, nor in that leader's process group or session, nor descended from it): 99385 99392
+teardown: preserving process(es) working under this task's worktree that are not task-x1's own (neither its endpoint leader 93355, nor in that leader's process group or session, nor descended from it): 99964
+REFUSED: process(es) that are not provably task-x1's own still work under its worktree ~/.no-mistakes/worktrees/61c6dd39b831/.fm-test-scratch/fm-teardown-tests.vxSRqP/live-base/wt; keeping the slot instead of returning it, because the return would kill them and teardown never touches anything outside the task. Stop each one, then rerun teardown:
+  pid 99385: /Applications/Xcode.app/Contents/Developer/usr/libexec/git-core/git maintenance run --auto --quiet --detach (cwd ~/.no-mistakes/worktrees/61c6dd39b831/.fm-test-scratch/fm-teardown-tests.vxSRqP/live-base/wt)
+  pid 99392: /Applications/Xcode.app/Contents/Developer/usr/libexec/git-core/git gc --auto --quiet --no-detach (cwd ~/.no-mistakes/worktrees/61c6dd39b831/.fm-test-scratch/fm-teardown-tests.vxSRqP/live-base/wt)
+  pid 99964: /Applications/Xcode.app/Contents/Developer/usr/libexec/git-core/git prune --expire 2.weeks.ago --no-progress (cwd ~/.no-mistakes/worktrees/61c6dd39b831/.fm-test-scratch/fm-teardown-tests.vxSRqP/live-base/wt)
+-- auto-maintenance children started by teardown's git (trace2 child_start argv):
+   1    git gc --auto --quiet --no-detach
+   1    git maintenance run --auto --quiet --detach
+   1    git reflog expire --all
+-- task meta after teardown: RETAINED
+-- live git gc/maintenance/reflog processes for this case after 3s:
+   none
+-- fm-slots for the case home after teardown:
+slots 1/4 (source: ~/.no-mistakes/worktrees/61c6dd39b831/.fm-test-scratch/fm-teardown-tests.vxSRqP/live-base/config/fleet-capacity)
+SLOTS (local records; * still holds a slot)
+  ~/.no-mistakes/worktrees/61c6dd39b831/.fm-test-scratch/fm-teardown-tests.vxSRqP/live-base | task-x1 | project | ship | unknown | unknown
+QUEUE (~/.no-mistakes/worktrees/61c6dd39b831/.fm-test-scratch/fm-teardown-tests.vxSRqP/live-base)
+  (empty)
+-- private tmux windows after:
+   firstmate:fm-task-x1
+rm: ~/.no-mistakes/worktrees/61c6dd39b831/.fm-test-scratch/fm-teardown-tests.vxSRqP/live-base: Directory not empty
+rm: ~/.no-mistakes/worktrees/61c6dd39b831/.fm-test-scratch/fm-teardown-tests.vxSRqP: Directory not empty

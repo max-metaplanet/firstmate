@@ -1,0 +1,2 @@
+ok - teardown suppresses real fetch auto-GC and removal-child maintenance without writing config
+bash tests/.nm-filter-teardown.test.sh  1.76s user 6.22s system 36% cpu 21.910 total

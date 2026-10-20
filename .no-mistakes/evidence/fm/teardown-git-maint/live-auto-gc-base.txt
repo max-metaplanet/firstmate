@@ -1,0 +1,13 @@
+== [base] teardown exit=1
+-- stderr (tail):
+teardown: cannot resolve the tmux endpoint leader for task-x1, so no process under this task's worktree can be proved to be its own; preserving 31456 31460 31518for manual inspection
+REFUSED: process(es) that are not provably task-x1's own still work under its worktree ~/.no-mistakes/worktrees/61c6dd39b831/.fm-test-scratch/fm-teardown-tests.XFBbMC/live-base/wt; keeping the slot instead of returning it, because the return would kill them and teardown never touches anything outside the task. Stop each one, then rerun teardown:
+  pid 31456: /Applications/Xcode.app/Contents/Developer/usr/libexec/git-core/git maintenance run --auto --quiet --detach (cwd ~/.no-mistakes/worktrees/61c6dd39b831/.fm-test-scratch/fm-teardown-tests.XFBbMC/live-base/wt)
+  pid 31460: /Applications/Xcode.app/Contents/Developer/usr/libexec/git-core/git gc --auto --quiet --no-detach (cwd ~/.no-mistakes/worktrees/61c6dd39b831/.fm-test-scratch/fm-teardown-tests.XFBbMC/live-base/wt)
+-- auto-maintenance children started by teardown's git (trace2 child_start argv):
+   1    git gc --auto --quiet --no-detach
+   1    git maintenance run --auto --quiet --detach
+   1    git reflog expire --all
+-- task meta after teardown: RETAINED
+-- live git gc/maintenance/reflog processes for this case after 3s:
+   none

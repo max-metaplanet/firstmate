@@ -1,0 +1,6 @@
+== [head] teardown exit=0
+-- stderr (tail):
+-- auto-maintenance children started by teardown's git (trace2 child_start argv):
+-- task meta after teardown: removed
+-- live git gc/maintenance/reflog processes for this case after 3s:
+   none

@@ -1,0 +1,15 @@
+-- private tmux (TMUX_TMPDIR=/tmp/fmt.LH8d) windows before teardown:
+   firstmate:fm-task-x1 pane_pid=82415
+== [head] teardown exit=0
+-- stderr (tail):
+-- auto-maintenance children started by teardown's git (trace2 child_start argv):
+-- task meta after teardown: removed
+-- live git gc/maintenance/reflog processes for this case after 3s:
+   none
+-- fm-slots for the case home after teardown:
+slots 0/4 (source: ~/.no-mistakes/worktrees/61c6dd39b831/.fm-test-scratch/fm-teardown-tests.tZqoVc/live-head/config/fleet-capacity)
+SLOTS (local records; * still holds a slot)
+QUEUE (~/.no-mistakes/worktrees/61c6dd39b831/.fm-test-scratch/fm-teardown-tests.tZqoVc/live-head)
+  (empty)
+-- private tmux windows after:
+no server running on /private/tmp/fmt.LH8d/tmux-501/default
