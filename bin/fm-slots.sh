@@ -128,6 +128,13 @@ for meta in ${FM_FLEET_CAPACITY_OCCUPANT_METAS[@]+"${FM_FLEET_CAPACITY_OCCUPANT_
   i=$((i + 1))
 done
 
+printf 'PARKED/WAITING (no active slot)\n'
+for meta in ${FM_FLEET_CAPACITY_PARKED_METAS[@]+"${FM_FLEET_CAPACITY_PARKED_METAS[@]}"}; do
+  fm_worker_park_load "$meta" || continue
+  id=${meta##*/}; id=${id%.meta}
+  printf '  %s | %s | %s | %s\n' "${meta%/state/*}" "$id" "$FM_WORKER_PARK_PHASE" "$FM_WORKER_PARK_REASON"
+done
+
 printf 'QUEUE (%s)\n' "$QUEUE_HOME"
 # Validate the declaration with its owner before reading its project names.
 # Only capped projects need another local admission read; uncapped fleets pay

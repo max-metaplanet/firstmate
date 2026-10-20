@@ -3397,6 +3397,24 @@ QUOTA
 test_codex_relaunch_seat_override_and_missing_store
 
 
+test_deferred_parked_relaunch_restores_the_instructions() {
+  local dir out rc brief
+  dir=$(new_case parkdefer rl90)
+  add_ship_task "$dir" rl90 claude
+  brief="$dir/home/data/rl90/brief.md"
+  cp "$brief" "$dir/brief.before"
+  printf 'phase=parked\ngeneration=legacy\nendpoint=fmses:fm-rl90\nreason=upstream maintainer\nuntil=0\nqueued_at=0\nstatus_line=\nresume_error=0\n' \
+    > "$dir/home/state/rl90.park"
+  for attempt in 1 2; do
+    out=$(run_control "$dir" rl90 relaunch --note "resume attempt $attempt"); rc=$?
+    expect_code 75 "$rc" "a parked relaunch refused by admission must report deferral: $out"
+  done
+  cmp -s "$dir/brief.before" "$brief" || fail "deferred relaunches left progress notes in the instructions"
+  [ "$(journal_field "$dir" rl90 phase)" = deferred ] || fail "a deferral was journaled as a failed launch"
+  assert_present "$dir/home/state/rl90.park" "deferral must keep the park record"
+  pass "fm-control relaunch: an admission deferral restores the instructions byte-exact on every retry"
+}
+
 test_relaunch_refuses_a_missing_recorded_claude_seat_before_stop() {
   local dir out rc
   dir=$(new_case claude-seatmissing claude-seatmissing)
@@ -3421,5 +3439,6 @@ test_relaunch_refuses_a_missing_recorded_claude_seat_before_stop() {
   pass "relaunch and direct spawn relaunch refuse a missing recorded Claude seat"
 }
 
+test_deferred_parked_relaunch_restores_the_instructions
 test_relaunch_refuses_a_missing_recorded_claude_seat_before_stop
 test_away_branch_relaunch_accepts_existing_dispatchable_items

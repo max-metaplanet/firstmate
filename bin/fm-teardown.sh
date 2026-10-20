@@ -4132,6 +4132,7 @@ else
     exit 1
   fi
 fi
+rm -f "$STATE/$ID.park"
 fm_lock_release "$META_LOCK"
 META_LOCK_HELD=0
 if [ -e "$CONFIG/task-event-hook" ] || [ -e "$CONFIG/ticket-sync-hook" ]; then

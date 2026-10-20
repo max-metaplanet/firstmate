@@ -6,6 +6,18 @@ The [README](../README.md) carries the high-level diagram and a short synopsis.
 This document expands every part of it.
 firstmate's supervisor contract and routing index for conditional procedures is [`AGENTS.md`](../AGENTS.md); this is the human-facing companion.
 
+## Worker parking
+
+External waits release memory by exiting the worker through the existing lifecycle control plane.
+The worktree, branch, PR, task record and merge observer remain available for landing without an agent.
+[`bin/fm-worker-park.sh`](../bin/fm-worker-park.sh) owns parking eligibility, the configurable wait threshold, adoption of hand-exited workers, and wake commands.
+[`bin/fm-worker-park-lib.sh`](../bin/fm-worker-park-lib.sh) owns the durable state and resume ordering.
+The watcher starts that owner beside its existing cycle, so parking never delays wake delivery, and excludes verified parked endpoints from stale and dead-worker recovery.
+Contribution observations and durable steering request resumption without consuming their original events.
+Parked resumptions pass the existing fleet and project caps and are admitted ahead of fresh dispatches; [configuration](configuration.md#fleet-capacity-configfleet-capacity) owns which queued resumptions reserve a place.
+An unverified exit continues to reserve memory capacity.
+The guarded merge and teardown paths retain their existing authority and landed-work checks.
+
 ## Event-driven supervision
 
 The declared-wait vocabulary, including the legacy "external wait" label, is owned by [`bin/fm-classify-lib.sh`](../bin/fm-classify-lib.sh); worker declaration instructions and the ship worker's scratch-location and clean-worktree contract are owned by [`bin/fm-brief.sh`](../bin/fm-brief.sh).

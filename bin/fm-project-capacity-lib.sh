@@ -47,8 +47,9 @@
 #     no longer uses local resources.
 # A place therefore frees when a PR-based ship records its ready PR, or when any
 # task is cleaned up and its record removed. A local-only ship and a scout have
-# no recorded handoff and hold their place until cleanup. A worker that is
-# steered back into work after its PR handoff is not counted again.
+# no recorded handoff and hold their place until cleanup or verified parking
+# (fm-worker-park-lib.sh). A resumed parked worker holds a place again until
+# its next park or cleanup, including one with a PR.
 # The declaration is matched by the spawning clone's directory name, so clones
 # of one origin share the cap only when they use that same directory name. A
 # clone of that origin under a different directory name finds no declaration
@@ -179,10 +180,16 @@ fm_project_capacity_lookup() {  # <config-dir> <project-name>
 # each outside <first-state> qualified with its home. Returns 1 with
 # FM_PROJECT_CAPACITY_ERROR when the local homes cannot be enumerated, or when
 # a state directory or task record in them cannot be read, since skipping it
-# could undercount the holders.
+# could undercount the holders. Queued parked resumes for the project hold no
+# place; their queued_at<TAB>meta rows are left in FM_PROJECT_CAPACITY_RESUME_ROWS
+# for priority admission.
+# shellcheck source=bin/fm-worker-park-lib.sh
+. "${BASH_SOURCE[0]%/*}/fm-worker-park-lib.sh"
+
 fm_project_capacity_occupants() {  # <project-lock> <project-dir> <first-state> <own-id>
-  local want=$1 own=$2 first=$3 self=$4 state meta kind project lock id label i
+  local want=$1 own=$2 first=$3 self=$4 state meta kind project lock id label i resume
   local -a cache_dirs cache_locks
+  FM_PROJECT_CAPACITY_RESUME_ROWS=
   FM_PROJECT_CAPACITY_OCCUPANTS=0
   FM_PROJECT_CAPACITY_OCCUPANT_IDS=
   FM_PROJECT_CAPACITY_ERROR=
@@ -204,9 +211,16 @@ fm_project_capacity_occupants() {  # <project-lock> <project-dir> <first-state> 
         FM_PROJECT_CAPACITY_ERROR="task record $meta cannot be read"
         return 1
       }
+      resume=
+      if fm_worker_park_load "$meta"; then
+        [ "$FM_WORKER_PARK_RESERVES" = 1 ] || continue
+        resume="$FM_WORKER_PARK_QUEUED_AT"$'\t'"$meta"
+      fi
       kind=$(fm_meta_get "$meta" kind)
       [ "$kind" != secondmate ] || continue
-      [ -z "$(fm_meta_get "$meta" pr)" ] || continue
+      if [ -n "$(fm_meta_get "$meta" pr)" ]; then
+        case "$(fm_meta_get "${meta%.meta}.park" phase)" in active|queued|parking) ;; *) continue ;; esac
+      fi
       project=$(fm_meta_get "$meta" project)
       [ -n "$project" ] || continue
       lock=
@@ -224,6 +238,10 @@ fm_project_capacity_occupants() {  # <project-lock> <project-dir> <first-state> 
         cache_locks+=("$lock")
       fi
       [ -n "$lock" ] && [ "$lock" = "$want" ] || continue
+      if [ -n "$resume" ]; then
+        FM_PROJECT_CAPACITY_RESUME_ROWS+="$resume"$'\n'
+        continue
+      fi
       id=$(basename "$meta" .meta)
       label=$id
       [ "$state" = "$first" ] || label="$id in $(dirname "$state")"
@@ -232,4 +250,31 @@ fm_project_capacity_occupants() {  # <project-lock> <project-dir> <first-state> 
     done
   done
   return 0
+}
+
+# After fm_project_capacity_occupants, print how many of the project's queued
+# resumes precede <own-meta> (all of them when it is not a reserving resume).
+fm_project_capacity_resumes_ahead() {  # <own-meta>
+  {
+    printf '%s' "$FM_PROJECT_CAPACITY_RESUME_ROWS"
+    if fm_worker_park_load "$1" && [ "$FM_WORKER_PARK_RESERVES" = 1 ]; then
+      printf '%s\t%s\n' "$FM_WORKER_PARK_QUEUED_AT" "$1"
+    fi
+  } | fm_worker_park_rank "$1"
+}
+
+# Succeed when the project of the queued resume <meta> could admit it now: no
+# declared cap, or holders plus earlier resumes for that project leave a place.
+# An unreadable count keeps the resume admissible, so it still reserves.
+# Overwrites the FM_PROJECT_CAPACITY_* globals; run it in a subshell.
+fm_project_capacity_admits_resume() {  # <config-dir> <first-state> <meta>
+  local project lock ahead
+  project=$(fm_meta_get "$3" project)
+  [ -n "$project" ] || return 0
+  fm_project_capacity_lookup "$1" "$(basename "$project")" || return 0
+  [ -n "$FM_PROJECT_CAPACITY" ] || return 0
+  lock=$(fm_treehouse_project_lock_path "$project" 2>/dev/null) || return 0
+  fm_project_capacity_occupants "$lock" "$project" "$2" "$(basename "$3" .meta)" || return 0
+  ahead=$(fm_project_capacity_resumes_ahead "$3")
+  [ $((FM_PROJECT_CAPACITY_OCCUPANTS + ahead)) -lt "$FM_PROJECT_CAPACITY" ]
 }

@@ -3959,10 +3959,18 @@ fi
 # for a project whose declared capacity is already held is deferred here, before
 # any brief render, endpoint, worktree, record, or backlog move exists, so the
 # deferral leaves the task exactly as queued as it was. A relaunch replaces a
-# worker that already holds a place, and a secondmate is not a worker.
+# worker that already holds a place unless it was parked; a secondmate is not a worker.
+SPAWN_PARK_RESUME=0
+if [ "$RELAUNCH" -eq 1 ] && fm_worker_park_load "$STATE/$ID.meta"; then
+  SPAWN_PARK_RESUME=1
+  if [ "$FM_WORKER_PARK_PHASE" != queued ]; then
+    echo "deferred: request a parked-worker wake through fm-worker-park.sh first" >&2
+    exit "$FM_PROJECT_CAPACITY_DEFER_EXIT"
+  fi
+fi
 SPAWN_PROJECT_CAPACITY=
 SPAWN_PROJECT_CAPACITY_ANY=
-if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" != secondmate ]; then
+if { [ "$RELAUNCH" -eq 0 ] || [ "$SPAWN_PARK_RESUME" = 1 ]; } && [ "$KIND" != secondmate ]; then
   SPAWN_CAPACITY_CONFIG=$(fm_project_capacity_config_dir "$FM_HOME" "$CONFIG") || {
     echo "error: could not resolve the root Firstmate home that declares project capacity for $PROJ_ABS" >&2
     exit 1
@@ -3974,7 +3982,7 @@ if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" != secondmate ]; then
   SPAWN_PROJECT_CAPACITY=$FM_PROJECT_CAPACITY
   SPAWN_PROJECT_CAPACITY_ANY=$FM_PROJECT_CAPACITY_ANY
 fi
-if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" != secondmate ] &&
+if { [ "$RELAUNCH" -eq 0 ] || [ "$SPAWN_PARK_RESUME" = 1 ]; } && [ "$KIND" != secondmate ] &&
   { [ "$BACKEND" != orca ] || [ -n "$SPAWN_PROJECT_CAPACITY_ANY" ]; }; then
   SPAWN_TREEHOUSE_PROJECT_LOCK=$(fm_treehouse_project_lock_path "$PROJ_ABS") || {
     echo "error: could not resolve the shared Treehouse project lock for $PROJ_ABS" >&2
@@ -3999,11 +4007,16 @@ if [ -n "$SPAWN_PROJECT_CAPACITY" ]; then
     echo "deferred: project $(basename "$PROJ_ABS") admits $SPAWN_PROJECT_CAPACITY worker(s) at once on this machine ($FM_PROJECT_CAPACITY_FILE) and $FM_PROJECT_CAPACITY_OCCUPANTS already hold a place ($FM_PROJECT_CAPACITY_OCCUPANT_IDS); task $ID was not launched and its backlog item stays queued - dispatch it again once one of them records its ready PR or is cleaned up" >&2
     exit "$FM_PROJECT_CAPACITY_DEFER_EXIT"
   fi
+  SPAWN_RESUMES_AHEAD=$(fm_project_capacity_resumes_ahead "$STATE/$ID.meta")
+  if [ $((FM_PROJECT_CAPACITY_OCCUPANTS + SPAWN_RESUMES_AHEAD)) -ge "$SPAWN_PROJECT_CAPACITY" ]; then
+    echo "deferred: $SPAWN_RESUMES_AHEAD queued parked-worker resume(s) hold the remaining place(s) in project $(basename "$PROJ_ABS") and resume ahead of task $ID" >&2
+    exit "$FM_PROJECT_CAPACITY_DEFER_EXIT"
+  fi
 fi
 # Fleet capacity admission (bin/fm-fleet-capacity-lib.sh owns the
 # declaration, what holds a place, and the lock). It caps every fresh local
 # agent, secondmates included, and defers exactly like project capacity above.
-if [ "$RELAUNCH" -eq 0 ]; then
+if [ "$RELAUNCH" -eq 0 ] || [ "$SPAWN_PARK_RESUME" = 1 ]; then
   SPAWN_FLEET_CONFIG=$(fm_project_capacity_config_dir "$FM_HOME" "$CONFIG") || {
     echo "error: could not resolve the root Firstmate home that declares fleet capacity" >&2
     exit 1
@@ -4026,8 +4039,20 @@ if [ "$RELAUNCH" -eq 0 ]; then
       echo "error: spawn refused: this machine declares a fleet capacity of $FM_FLEET_CAPACITY, but its task records cannot all be read to count it ($FM_FLEET_CAPACITY_ERROR)" >&2
       exit 1
     fi
+    SPAWN_RESUME_ROWS=$(fm_worker_park_rows "$STATE") || exit 1
+    SPAWN_RESUMES_AHEAD=$(printf '%s\n' "$SPAWN_RESUME_ROWS" | while IFS=$'\t' read -r at meta; do
+      [ -n "$meta" ] || continue
+      if [ "$meta" = "$STATE/$ID.meta" ] ||
+        ( fm_project_capacity_admits_resume "$SPAWN_FLEET_CONFIG" "$STATE" "$meta" ); then
+        printf '%s\t%s\n' "$at" "$meta"
+      fi
+    done | fm_worker_park_rank "$STATE/$ID.meta")
     if [ "$FM_FLEET_CAPACITY_OCCUPANTS" -ge "$FM_FLEET_CAPACITY" ]; then
       echo "deferred: this machine runs at most $FM_FLEET_CAPACITY agent(s) at once ($FM_FLEET_CAPACITY_FILE) and $FM_FLEET_CAPACITY_OCCUPANTS are running ($FM_FLEET_CAPACITY_OCCUPANT_IDS); task $ID was not launched and its backlog item stays queued - dispatch it again once one of them is cleaned up or stops" >&2
+      exit "$FM_PROJECT_CAPACITY_DEFER_EXIT"
+    fi
+    if [ $((FM_FLEET_CAPACITY_OCCUPANTS + SPAWN_RESUMES_AHEAD)) -ge "$FM_FLEET_CAPACITY" ]; then
+      echo "deferred: $SPAWN_RESUMES_AHEAD queued parked-worker resume(s) hold the remaining fleet place(s) and resume ahead of task $ID" >&2
       exit "$FM_PROJECT_CAPACITY_DEFER_EXIT"
     fi
   fi

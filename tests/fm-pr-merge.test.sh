@@ -795,6 +795,7 @@ write_away_record() {
 test_verified_merge_records_pr_and_head() {
   local case_dir rc
   case_dir=$(make_case records-before-merge)
+  printf 'phase=parked\ngeneration=legacy\nendpoint=fm-task-x1\nreason=merge approval\nuntil=0\nqueued_at=0\n' > "$case_dir/state/task-x1.park"
   mkdir -p "$case_dir/wt"
   add_gh_mocks "$case_dir" deadbeefcafefeed0000000000000000deadbeef
   : > "$case_dir/gh-axi.log"

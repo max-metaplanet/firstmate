@@ -27,7 +27,9 @@
 # does not report dead or missing (fm_backend_agent_state in bin/fm-backend.sh).
 # A record whose agent state cannot be established holds a place, so an
 # unreadable endpoint never lets the fleet grow past the cap. A recorded PR
-# handoff does not free a place, because a waiting agent still uses memory.
+# handoff alone does not free a place. fm-worker-park-lib.sh owns verified
+# parked records; those release their place, while incomplete exits and launch
+# reservations retain it.
 # The supervising lead of the root home has no task record and is not counted.
 # Remote homes are never walked, because their agents run on another machine.
 #
@@ -38,6 +40,9 @@
 #
 # Requires bin/fm-project-capacity-lib.sh and its own prerequisites to be
 # sourced first. No side effects on source.
+
+# shellcheck source=bin/fm-worker-park-lib.sh
+. "${BASH_SOURCE[0]%/*}/fm-worker-park-lib.sh"
 
 # The one lock serializing fleet capacity admission across every local home,
 # kept in the root home's state directory.
@@ -101,6 +106,7 @@ fm_fleet_capacity_occupants() {  # <first-state> <own-id>
   FM_FLEET_CAPACITY_OCCUPANTS=0
   FM_FLEET_CAPACITY_OCCUPANT_IDS=
   FM_FLEET_CAPACITY_OCCUPANT_METAS=()
+  FM_FLEET_CAPACITY_PARKED_METAS=()
   FM_FLEET_CAPACITY_ERROR=
   fm_local_firstmate_state_dirs "$first" || {
     FM_FLEET_CAPACITY_ERROR=$FM_LOCAL_FIRSTMATE_ERROR
@@ -123,9 +129,19 @@ fm_fleet_capacity_occupants() {  # <first-state> <own-id>
         ship | scout | secondmate) ;;
         *) continue ;;
       esac
+      if fm_worker_park_load "$meta"; then
+        FM_FLEET_CAPACITY_PARKED_METAS+=("$meta")
+        continue
+      fi
       fm_backend_of_meta_to backend "$meta"
       fm_backend_target_of_meta_to target "$meta"
       [ -n "$target" ] || fm_meta_get_to target "$meta" window
+      # An unverified exit and an in-flight launch retain their reservation.
+      if [ "$(fm_meta_get "${meta%.meta}.park" phase)" = parking ]; then target=; fi
+      label=${meta##*/}; label=${label%.meta}
+      if [ -f "$state/.spawn-$label.lock/pid" ] && kill -0 "$(cat "$state/.spawn-$label.lock/pid")" 2>/dev/null; then target=; fi
+      if [ -f "${meta%.meta}.park" ] && [ -f "$state/.control-$label.lock/pid" ] &&
+        kill -0 "$(cat "$state/.control-$label.lock/pid")" 2>/dev/null; then target=; fi
       metas[n]=$meta
       states[n]=$state
       backends[n]=$backend
