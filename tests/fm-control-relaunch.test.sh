@@ -27,6 +27,8 @@ set -u
 . "$ROOT/bin/fm-trace-context-lib.sh"
 # shellcheck source=/dev/null
 . "$ROOT/bin/fm-tasks-axi-lib.sh"
+# shellcheck source=/dev/null
+. "$ROOT/bin/fm-pr-lib.sh"
 
 CONTROL="$ROOT/bin/fm-control.sh"
 SPAWN="$ROOT/bin/fm-spawn.sh"
@@ -472,6 +474,42 @@ test_relaunch_from_linked_home_preserves_recorded_worktree() {
   assert_grep 'unfinished task work' "$dir/wt/task.txt" "relaunch discarded unfinished task work"
   [ ! -e "$fetch_head" ] || fail "relaunch fetched instead of preserving the recorded copy"
   pass "fm-control relaunch: a linked spawning home preserves committed and unfinished work in the recorded copy"
+}
+
+test_relaunch_preserves_registered_pr_poll() {
+  local dir state out rc harness
+  dir=$(new_case pr-poll rl-pr)
+  add_ship_task "$dir" rl-pr claude
+  state="$dir/home/state"
+  printf '%s\n' "$$" > "$state/.lock"
+  printf '%s on\n' "$$" > "$state/.trace-context-effective"
+  printf '%s\n' 'pr=https://github.com/example/repo/pull/19' \
+    'pr_head=1111111111111111111111111111111111111111' 'pr_at=100' >> "$state/rl-pr.meta"
+  fm_pr_poll_prepare "$state" rl-pr github https://github.com/example/repo/pull/19 \
+    github.com example/repo 19 "$ROOT/bin/fm-pr-poll.sh" \
+    || fail "could not prepare the PR poll"
+  fm_pr_poll_publish_prepared || fail "could not register the PR poll"
+  fm_pr_poll_snapshot_capture "$state" rl-pr "$ROOT/bin/fm-pr-poll.sh" \
+    || fail "the PR poll must validate before relaunch"
+
+  for harness in claude codex; do
+    printf '%s' "$harness" > "$dir/fake/becomes"
+    out=$(run_control "$dir" rl-pr relaunch --harness "$harness" --note "continue PR monitoring"); rc=$?
+    expect_code 0 "$rc" "relaunch onto $harness should succeed"$'\n'"$out"
+    [ -n "$(meta_field "$dir" rl-pr control_relaunch_tx)" ] \
+      || fail "the real relaunch must publish its transaction marker"
+    fm_trace_context_valid "$(meta_field "$dir" rl-pr traceparent)" \
+      || fail "the real relaunch must publish its trace context"
+    fm_pr_poll_snapshot_matches "$state" rl-pr "$ROOT/bin/fm-pr-poll.sh" \
+      || fail "the original PR poll artifacts must survive relaunch onto $harness"
+    fm_pr_poll_snapshot_capture "$state" rl-pr "$ROOT/bin/fm-pr-poll.sh" \
+      || fail "the registered PR poll must validate after relaunch onto $harness"
+  done
+  printf '%s\n' 'unknown_relaunch_field=unsafe' >> "$state/rl-pr.meta"
+  if fm_pr_poll_snapshot_capture "$state" rl-pr "$ROOT/bin/fm-pr-poll.sh"; then
+    fail "unknown post-PR metadata must still invalidate the poll"
+  fi
+  pass "fm-control relaunch: registered PR monitoring survives repeated and switched-harness relaunches"
 }
 
 test_relaunch_preserves_durable_task_metadata() {
@@ -3237,6 +3275,7 @@ SH
   pass "fm-control exit removes the dialog file before it releases the control lock"
 }
 
+test_relaunch_preserves_registered_pr_poll
 test_relaunch_off_opencode_removes_tracked_wiring
 test_exit_and_relaunch_remove_the_dialog_file
 test_exit_removes_the_dialog_file_before_releasing_the_lock
