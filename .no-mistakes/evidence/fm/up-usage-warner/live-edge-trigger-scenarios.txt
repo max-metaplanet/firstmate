@@ -1,0 +1,70 @@
+$ config: five_hour:80 five_hour:95 model:fable:50
+$ # quota-axi now reports {"five_hour":85,"seven_day":10,"model:fable":10}
+$ fm-usage-warner.sh check
+usage-warner: five_hour at 85% (>=80%)
+  (exit=0, notifications so far=2)
+$ # quota-axi now reports {"five_hour":96,"seven_day":10,"model:fable":10}
+$ fm-usage-warner.sh check
+usage-warner: five_hour at 96% (>=95%)
+  (exit=0, notifications so far=3)
+$ # quota-axi now reports {"five_hour":97,"seven_day":10,"model:fable":10}
+$ fm-usage-warner.sh check
+  (exit=0, notifications so far=3)
+$ # quota-axi now reports {"five_hour":5,"seven_day":10,"model:fable":10}
+$ fm-usage-warner.sh check
+  (exit=0, notifications so far=3)
+$ # quota-axi now reports {"five_hour":85,"seven_day":10,"model:fable":10}
+$ fm-usage-warner.sh check
+usage-warner: five_hour at 85% (>=80%)
+  (exit=0, notifications so far=4)
+$ # absent window: model:fable crosses, then disappears, then returns still above
+$ # quota-axi now reports {"five_hour":85,"seven_day":10,"model:fable":60}
+$ fm-usage-warner.sh check
+usage-warner: model:fable at 60% (>=50%)
+  (exit=0, notifications so far=5)
+$ # quota-axi now reports {"five_hour":85,"seven_day":10}
+$ fm-usage-warner.sh check
+  (exit=0, notifications so far=5)
+$ # quota-axi now reports {"five_hour":85,"seven_day":10,"model:fable":61}
+$ fm-usage-warner.sh check
+  (exit=0, notifications so far=5)
+$ # batching: two windows cross in one read
+$ # quota-axi now reports {"five_hour":92,"seven_day":97}
+$ fm-usage-warner.sh check
+usage-warner: five_hour at 92% (>=80%); seven_day at 97% (>=90%)
+  (exit=0, notifications so far=6)
+$ # standing read failure reported once until it changes
+$ fm-usage-warner.sh check
+usage-warner: quota-axi returned an unexpected response shape
+  (exit=0, notifications so far=6)
+$ fm-usage-warner.sh check
+  (exit=0, notifications so far=6)
+$ # v1 record upgrade: old id-only record must not re-warn
+$ # quota-axi now reports {"five_hour":88}
+$ fm-usage-warner.sh check
+  (exit=0, notifications so far=6)
+$ # quota-axi now reports {"five_hour":96}
+$ fm-usage-warner.sh check
+usage-warner: five_hour at 96% (>=95%)
+  (exit=0, notifications so far=7)
+fm-usage-warner-v2
+reported=usage-warner: five_hour at 96% (>=95%)
+notified-begin
+five_hour:80
+five_hour:95
+notified-end
+$ real osascript calls (pass-through log):
+osascript argv: -e on run argv -e display notification (item 1 of argv) with title "Firstmate: Claude usage" -e end run seven_day at 45% (>=40%)
+real osascript exit=0
+osascript argv: -e on run argv -e display notification (item 1 of argv) with title "Firstmate: Claude usage" -e end run five_hour at 85% (>=80%)
+real osascript exit=0
+osascript argv: -e on run argv -e display notification (item 1 of argv) with title "Firstmate: Claude usage" -e end run five_hour at 96% (>=95%)
+real osascript exit=0
+osascript argv: -e on run argv -e display notification (item 1 of argv) with title "Firstmate: Claude usage" -e end run five_hour at 85% (>=80%)
+real osascript exit=0
+osascript argv: -e on run argv -e display notification (item 1 of argv) with title "Firstmate: Claude usage" -e end run model:fable at 60% (>=50%)
+real osascript exit=0
+osascript argv: -e on run argv -e display notification (item 1 of argv) with title "Firstmate: Claude usage" -e end run five_hour at 92% (>=80%); seven_day at 97% (>=90%)
+real osascript exit=0
+osascript argv: -e on run argv -e display notification (item 1 of argv) with title "Firstmate: Claude usage" -e end run five_hour at 96% (>=95%)
+real osascript exit=0

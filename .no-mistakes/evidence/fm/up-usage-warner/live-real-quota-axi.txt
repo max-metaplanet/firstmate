@@ -1,0 +1,23 @@
+$ # S1: unconfigured home
+$ ls config/; fm-usage-warner.sh check
+exit=0 stdout-above(empty means silent)
+state contents:
+$ fm-usage-warner.sh arm
+fm-usage-warner: no threshold configured at /var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.OYeJE6/config/usage-warner
+exit=1
+
+$ # S2: real quota-axi read, thresholds configured at 1% (forces a crossing on any nonzero usage)
+$ quota-axi --provider claude --json --full --no-credential-refresh | jq windows
+[{"id":"five_hour","percentUsed":33},{"id":"seven_day","percentUsed":45},{"id":"model:fable","percentUsed":3}]
+$ fm-usage-warner.sh check   (1st)
+usage-warner: five_hour at 33% (>=1%); seven_day at 45% (>=1%)
+exit=0
+$ fm-usage-warner.sh check   (2nd, same crossing)
+exit=0 (empty = de-duped)
+$ cat state/.usage-warner
+fm-usage-warner-v2
+reported=
+notified-begin
+five_hour:1
+seven_day:1
+notified-end

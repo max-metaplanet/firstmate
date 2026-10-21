@@ -1,0 +1,15 @@
+$ FM_CHECK_INTERVAL=0 fm-watch.sh   (real watcher, lab home, bounded to 90s)
+watch exit=0
+check: /var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.OYeJE6/state/usage-warner.check.sh: usage-warner: seven_day at 45% (>=40%)
+$ osascript.log
+osascript argv: -e on run argv -e display notification (item 1 of argv) with title "Firstmate: Claude usage" -e end run seven_day at 45% (>=40%)
+real osascript exit=0
+$ wake records mentioning usage-warner
+$ cat state/.usage-warner
+fm-usage-warner-v2
+reported=usage-warner: seven_day at 45% (>=40%)
+notified-begin
+five_hour:1
+seven_day:1
+seven_day:40
+notified-end

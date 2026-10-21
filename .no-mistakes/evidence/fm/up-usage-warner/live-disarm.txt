@@ -1,0 +1,5 @@
+$ fm-usage-warner.sh disarm
+disarmed: state/usage-warner.check.sh
+exit=0
+remaining usage-warner state:
+(none)

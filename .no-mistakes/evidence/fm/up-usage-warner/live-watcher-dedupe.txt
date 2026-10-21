@@ -1,0 +1,5 @@
+$ # second watcher cycle, same real usage: expect no usage-warner wake and no new notification
+watcher output:
+check: rearm-resurface
+usage-warner lines in watcher output: 0
+osascript calls before=       2 after=       2
