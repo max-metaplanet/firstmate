@@ -1,0 +1,27 @@
+FM_TEST_BEGIN 2026-10-22T04:43:28Z tests/fm-ci-change-scope.test.sh family=unclassified expected_gate_skip=none
+ok - prose no test reads turns both the behavior and macOS gates off
+ok - a shell or CI workflow change keeps both gates on
+ok - test-affecting non-shell changes run the behavior suites but skip macOS
+ok - prose and data a test reads keeps the behavior gate on
+ok - a single relevant path turns its gate back on for the whole change set
+ok - a rename out of a test-read path keeps the behavior gate on
+ok - an unrecognized path keeps both gates on
+ok - push events, unknown events and unusable change sets keep both gates on
+ok - an unknown argument is refused rather than silently classified
+ok - a one-script change selects its own suite in a single job
+ok - a selection no packing fits under the budget falls back to the bounded lanes
+ok - CI setup selects the families that own it instead of the complete suite
+ok - shared scaffolding and broadly shared libraries run the bounded lanes
+ok - push to main and the nightly schedule always run the complete suite
+ok - a pull request never runs the complete sixteen-shard suite
+ok - a path the changed-file map refuses falls back to the bounded lanes
+ok - a behavior-relevant path that maps to no tests runs the bounded lanes
+ok - prose beside code keeps the documentation-audience suite
+ok - a prose-only change selects nothing and keeps the documentation guard
+ok - a selected Herdr-family member runs the required Herdr lane instead
+ok - CI selects the owning family while local configuration coverage stays narrow
+not ok - tests/fm-ci-change-scope.test.sh exceeded the per-script bound of 590s and was terminated
+FM_TEST_END 2026-10-22T04:53:19Z tests/fm-ci-change-scope.test.sh exit=124 duration_ms=590396 gate_skip=false
+FM_TEST_SUMMARY total=1 failed=1 skipped_gate=0 duration_ms=590523
+FM_TEST_SUMMARY_FAMILY family=unclassified count=1 duration_ms=590396 failed=1
+FM_TEST_SLOWEST rank=1 script=tests/fm-ci-change-scope.test.sh duration_ms=590396

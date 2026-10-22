@@ -1,0 +1,11 @@
+FM_TEST_BEGIN 2026-10-22T04:53:19Z tests/fm-nm-test-contract.test.sh family=unclassified expected_gate_skip=none
+ok - ordinary narrow selection runs unchanged
+ok - behavior-inert changes run the documentation-audience suite
+ok - full scope does not expand to --all or a Herdr family
+ok - Herdr selection runs only fast local coverage
+ok - empty/failed selection, failed tests, and a hard deadline cannot pass silently
+ok - configured Test consumes real classification and bounds its full fallback
+FM_TEST_END 2026-10-22T04:55:06Z tests/fm-nm-test-contract.test.sh exit=0 duration_ms=107560 gate_skip=false
+FM_TEST_SUMMARY total=1 failed=0 skipped_gate=0 duration_ms=107712
+FM_TEST_SUMMARY_FAMILY family=unclassified count=1 duration_ms=107560 failed=0
+FM_TEST_SLOWEST rank=1 script=tests/fm-nm-test-contract.test.sh duration_ms=107560
