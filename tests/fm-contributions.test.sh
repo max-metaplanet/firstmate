@@ -44,6 +44,14 @@ mutate_record() {
   mv "$1/update.json" "$1/data/$2/contributions.json"
 }
 
+# The resumed worker found nothing to do and parked again, keeping whatever its
+# record already names.
+repark_record() { # <park record>
+  grep -v '^phase=' "$1" > "$1.next" || fail 'park fixture lost its phase'
+  printf 'phase=parked\n' >> "$1.next"
+  mv "$1.next" "$1"
+}
+
 test_actor_coverage() {
   local home out
   home=$(new_home actors)
@@ -138,7 +146,10 @@ case "$*" in
   'api repos/o/r/pulls/'*'/reviews?'*) jq -s . "$FORGE/reviews.json" ;;
   'api repos/o/r/pulls/'*'/comments?'*) jq -s . "$FORGE/inline.json" ;;
   'api repos/o/r/commits/'*'/check-runs?'*)
-    printf '[{"check_runs":[{"name":"test","id":1,"status":"completed","conclusion":"%s","started_at":"2026-09-16T08:00:00Z"}]}]\n' "$(cat "$FORGE/conclusion" 2>/dev/null || printf success)" ;;
+    jq -n --arg conclusion "$(cat "$FORGE/conclusion" 2>/dev/null || printf success)" \
+      --argjson extra "$(cat "$FORGE/extra-checks.json" 2>/dev/null || printf '[]')" '
+      [{check_runs:([{name:"test",id:1,status:"completed",conclusion:$conclusion,
+        started_at:"2026-09-16T08:00:00Z"}] + $extra)}]' ;;
   'api repos/o/r/commits/'*'/statuses?'*) printf '[[]]\n' ;;
   'api repos/o/r') printf '{"permissions":{"push":false}}\n' ;;
   *) printf 'unexpected gh fixture call: %s\n' "$*" >&2; exit 1 ;;
@@ -1691,7 +1702,21 @@ test_parked_red_ci_reenters_queue() {
   with_home "$home" "$ROOT/bin/fm-contributions.sh" poll >/dev/null || fail 'red CI observation failed'
   assert_grep 'phase=queued' "$home/state/delivery.park" 'red CI requests parked worker admission'
   assert_grep 'wake_reason=checks failed' "$home/state/delivery.park" 'red CI wake explains the failed check'
-  pass 'red CI queues the parked worker without consuming observation events'
+  assert_grep "failing_checks={\"head\":\"$HEAD_A\",\"failing\":[\"test\"]}" "$home/state/delivery.park" 'the wake records the red lane by name on its head'
+  repark_record "$home/state/delivery.park"
+  with_home "$home" "$ROOT/bin/fm-contributions.sh" poll >/dev/null || fail 'repeat red CI observation failed'
+  assert_grep 'phase=parked' "$home/state/delivery.park" 'the same red lane never wakes the worker twice'
+  printf '[{"name":"integration","id":2,"status":"completed","conclusion":"failure","started_at":"2026-09-16T08:00:01Z"}]\n' \
+    > "$home/forge/extra-checks.json"
+  with_home "$home" "$ROOT/bin/fm-contributions.sh" poll >/dev/null || fail 'second red lane observation failed'
+  assert_grep 'phase=queued' "$home/state/delivery.park" 'a newly failing lane wakes the parked worker'
+  assert_grep "failing_checks={\"head\":\"$HEAD_A\",\"failing\":[\"integration\",\"test\"]}" "$home/state/delivery.park" 'the wake records the grown red set'
+  repark_record "$home/state/delivery.park"
+  printf '%s\n' "$HEAD_B" > "$home/forge/head"
+  with_home "$home" "$ROOT/bin/fm-contributions.sh" poll >/dev/null || fail 'red CI on a new head observation failed'
+  assert_grep 'phase=queued' "$home/state/delivery.park" 'the same red lanes on a pushed head wake the parked worker'
+  assert_grep "failing_checks={\"head\":\"$HEAD_B\",\"failing\":[\"integration\",\"test\"]}" "$home/state/delivery.park" 'the wake records the red set on the new head'
+  pass 'red CI queues a parked worker once per distinct failing set and head, without consuming observation events'
 }
 
 failures=0

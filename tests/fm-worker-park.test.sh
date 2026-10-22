@@ -173,4 +173,34 @@ if grep -q 'relaunch' "$FM_HOME/control.log"; then fail 'fm-send must not relaun
 FM_SUPERVISION_ACTOR=main bash "$PARK" tick >/dev/null
 assert_grep 'phase=active' "$FM_HOME/state/task.park" 'watcher tick resumes the steered worker'
 assert_grep 'steering received' "$FM_HOME/control.log" 'resume note names the steer'
-pass 'verified parking, safety exceptions, external waits and durable resume reasons'
+RED='["windows / integration"]'
+RED_PLUS='["lint","windows / integration"]'
+# Park a worker whose record already names the red checks it was last woken
+# for, the state a resumed-and-re-parked worker returns to.
+park_with_red() { # <canonical failing set>
+  fixture
+  bash "$PARK" auto task >/dev/null
+  bash "$PARK" request task 'checks failed' "$1" >/dev/null
+  bash "$PARK" tick >/dev/null
+  printf 'done: PR %s checks green (rechecked)\n' "$URL" >> "$FM_HOME/state/task.status"
+  bash "$PARK" auto task >/dev/null
+}
+park_with_red "$RED"
+assert_grep 'phase=parked' "$FM_HOME/state/task.park" 'a resumed worker parks again'
+assert_grep "failing_checks=$RED" "$FM_HOME/state/task.park" 'the red set survives the resume and the next park'
+bash "$PARK" request task 'checks failed' "$RED"
+assert_grep 'phase=parked' "$FM_HOME/state/task.park" 'an unchanged red set never wakes the worker again'
+bash "$PARK" request task 'checks failed' "$RED_PLUS"
+assert_grep 'phase=queued' "$FM_HOME/state/task.park" 'a newly failing check wakes the worker'
+assert_grep "failing_checks=$RED_PLUS" "$FM_HOME/state/task.park" 'the wake records the red set it acted on'
+park_with_red "$RED"
+bash "$PARK" request task 'merge word answered'
+assert_grep 'phase=queued' "$FM_HOME/state/task.park" 'a resume naming no red set is unaffected by the recorded one'
+# A record written before the field existed proves nothing about its red set.
+fixture
+bash "$PARK" auto task >/dev/null
+grep -v '^failing_checks=' "$FM_HOME/state/task.park" > "$FM_HOME/legacy.park"
+mv "$FM_HOME/legacy.park" "$FM_HOME/state/task.park"
+bash "$PARK" request task 'checks failed' "$RED"
+assert_grep 'phase=queued' "$FM_HOME/state/task.park" 'a park record with no recorded red set still resumes'
+pass 'verified parking, safety exceptions, external waits, durable resume reasons and the unchanged-red-set gate'
