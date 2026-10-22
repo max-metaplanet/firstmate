@@ -606,12 +606,27 @@ PR registration and the incremental status fold record the latest explicit decla
 `summary` is the note of the worker's latest recognized status line (home-appended notices such as consumer failures are skipped), with status metadata removed, whitespace flattened, and length limited to 500 characters; a transition owner can supply its exact status note, and an unavailable note is an empty string.
 Consumers must tolerate additional fields in version 1.
 
+The optional tracker-neutral `progress` object describes facts supplied by the lifecycle producer, independently of the raw `summary`.
+Its `version` is `1`, with optional `outcome` text, `next_actions` text array, `evidence` object array, and `decisions` text array.
+Each evidence object requires `summary` and may include an HTTP or HTTPS `url`, timezone-qualified ISO `observed_at`, `limits` text, and a canonical SHA-256 event identity in `event_key`.
+Text values are nonempty and at most 4000 characters, and arrays contain at most 20 entries.
+An omitted or null `next_actions` retains earlier actions; an empty array clears them.
+Current producers use short, plain lifecycle descriptions, without task identifiers, decision keys, local paths, validation step names, or shell commands.
+They never extract progress from worker status, steer bodies, or decision bodies, which remain available in `summary` for history.
+PR registration emits an outcome, a review action, and evidence with the PR URL and observation time; that evidence explicitly leaves checks and live behavior unverified.
+A confirmed merge emits an outcome and dated PR evidence with a live-verification limit, and clears the review action.
+Successful finished-work cleanup emits a completion outcome and clears earlier actions; it does not claim ticket completion or live verification.
+A blocked transition emits a plain statement that the assigned work is blocked and needs assistance, without guessing its cause from prose.
+A durably answered decision emits a short decision receipt without asserting which choice was made.
+Started, waiting, resumed, and cancelled events omit `progress` because those transitions alone establish no new implementation outcome.
+Consumers that ignore `progress` continue to receive the unchanged version 1 lifecycle fields.
+
 | Event | Transition owner |
 | --- | --- |
 | `started` | `fm-spawn.sh`, after the fresh worker launch and backlog commit; relaunch emits nothing. |
 | `blocked`, `waiting` | The incremental keyed-status fold in `fm-classify-lib.sh`; blocked stays blocked, needs-decision and paused become waiting. A new captain hold is emitted by `fm-captain-hold.sh`. A discarded fold cursor rebuilds its already-emitted span without emitting. |
 | `resumed` | The keyed-status fold after resolution clears the remaining blockers, or the captain-hold owner when releasing a held task. |
-| `decision-answered` | `fm-captain-hold.sh`, once an answer is durably recorded. |
+| `decision-answered` | `fm-captain-hold.sh`, once an answer is durably recorded, or `fm-send.sh --resolve-key`, after a needs-decision answer is delivered and its status key is confirmed closed. Ordinary blocker steering emits no decision receipt. |
 | `pr-opened` | `fm-pr-check.sh`, when recording a new PR; re-arm and merge-time re-record emit nothing. |
 | `pr-merged` | `fm-merge-outcome-lib.sh`, for every confirmed merge, including externally merged PRs. |
 | `finished`, `cancelled` | `fm-teardown.sh`, after successful cleanup; forced removal without a done status is cancellation. |

@@ -787,6 +787,7 @@ fi
 # path untouched.
 fm_send_close_resolved_keys() { # <answer-text>
   local note=$1 k close_note append_rc still manual_close_cmd close_lines=() i=0
+  local event_config=${FM_CONFIG_OVERRIDE:-$FM_HOME/config}
   note=$(printf '%s' "$note" | tr '\n\r\t' '   ' | LC_ALL=C tr -d '\000-\037\177')
   for k in $RESOLVE_STATUS_KEYS; do
     close_note=$(fm_send_resolve_close_note "$k" "$note")
@@ -813,6 +814,14 @@ fm_send_close_resolved_keys() { # <answer-text>
     esac
     i=$((i + 1))
   done
+  if [ -e "$event_config/task-event-hook" ] || [ -e "$event_config/ticket-sync-hook" ]; then
+    for k in $RESOLVE_STATUS_KEYS; do
+      [ "$(_fm_open_set_verb "$resolve_open_set" "$k")" = needs-decision ] || continue
+      FM_HOME=$FM_HOME FM_STATE_OVERRIDE=$STATE FM_CONFIG_OVERRIDE=$event_config \
+        "$SCRIPT_DIR/fm-task-event.sh" "$RESOLVE_TASK_ID" decision-answered \
+        --key "$k" --summary "$note" >/dev/null 2>&1 || true
+    done
+  fi
 }
 
 # Feed the answered captain-held tasks to the ONE keyed-answer intake, as keyed
