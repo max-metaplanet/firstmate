@@ -652,10 +652,9 @@ SH
 
 test_imported_work_uses_capacity_refresh_and_launch_commit() {
   [ "$HAVE_TASKS_AXI" = 1 ] || return 0
-  local case_dir home id=source-item out rc fresh wt i
-  case_dir=$(make_case imported-queue "$id")
+  local case_dir home id out rc fresh wt i
+  case_dir=$(make_case imported-queue)
   home="$case_dir/home"
-  tasks-axi update "$id" --body 'Ticket: ENG-1' --file "$home/data/backlog.md" >/dev/null
   cp "$ROOT/tests/fixtures/clickup-queue-v1.json" "$case_dir/snapshot.json"
   cat > "$case_dir/source" <<'SOURCE'
 #!/usr/bin/env python3
@@ -676,7 +675,8 @@ SOURCE
   printf '%s\n' "$case_dir/source" > "$home/config/work-intake-hook"
   printf '1\n' > "$home/config/work-intake-enabled"
   FM_HOME="$home" "$ROOT/bin/fm-work-intake.sh" poll --json > "$case_dir/poll.json" || fail 'could not import the source fixture'
-  rm "$home/data/$id/brief.md"
+  id=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["imported"][0])' "$case_dir/poll.json") || fail 'source fixture was not imported'
+  assert_equals queued "$(row_state "$home" "$id")" 'intake did not create a queued row'
   FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" project --mode no-mistakes --ticket ENG-1 --commit-type feat >/dev/null || fail 'could not scaffold imported brief'
   out=$(cat "$home/data/$id/brief.md")
   out=${out//'{TASK}'/Implement the accepted fixture.}
