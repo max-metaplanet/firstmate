@@ -192,8 +192,6 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 24.22.1
-      - name: Print Node version
-        run: node --version
       - name: Install tasks-axi
         run: |
           set -eu
@@ -244,8 +242,6 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 24.22.1
-      - name: Print Node version
-        run: node --version
       - name: Install tasks-axi
         run: |
           set -eu
@@ -313,8 +309,6 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 24.22.1
-      - name: Print Node version
-        run: node --version
       - name: Install tasks-axi for backlog-handoff delegation
         run: |
           set -eu
@@ -409,8 +403,6 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 24.22.1
-      - name: Print Node version
-        run: node --version
       - name: Install tasks-axi
         run: |
           set -eu
