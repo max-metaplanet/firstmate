@@ -203,7 +203,7 @@ exit "$rc"
                 self.assertEqual(out['imported'],[])
                 state=json.loads((home/'state/work-intake.json').read_text())
                 entry=state['entries']['opaque-fixture-one']
-                self.assertEqual(entry['phase'],'conflict' if kind=='split' else 'imported')
+                self.assertEqual(entry['phase'],'conflict' if kind=='split' else 'existing')
                 self.assertNotIn('intake-',task('list'))
 
     def test_live_worker_ticket_from_meta_does_not_duplicate(self):
@@ -214,7 +214,7 @@ exit "$rc"
         out=self.call('poll')
         self.assertEqual(out['imported'],[])
         entry=self.receipt()['entries']['opaque-fixture-one']
-        self.assertEqual((entry['phase'],entry['local_id']),('imported','existing'))
+        self.assertEqual((entry['phase'],entry['local_id']),('existing','existing'))
         self.assertNotIn('intake-',self.tasks('list'))
 
     def test_archived_ticket_after_new_import_in_same_scan_does_not_duplicate(self):
@@ -229,7 +229,7 @@ exit "$rc"
         out=self.call('poll')
         self.assertEqual(len(out['imported']),1)
         entry=self.receipt()['entries']['opaque-fixture-two']
-        self.assertEqual((entry['phase'],entry['local_id']),('imported','finished'))
+        self.assertEqual((entry['phase'],entry['local_id']),('existing','finished'))
         self.assertIn('count: 1',self.tasks('list'))
 
     def test_registered_secondmate_owner_is_preserved(self):
@@ -243,7 +243,56 @@ exit "$rc"
         entry=self.receipt()['entries']['opaque-fixture-one']
         self.assertEqual(entry['owner_home'],str(other))
         self.assertIn('count: 0',self.tasks('list'))
-        self.call('check','mate-task',ok=False)
+        self.assertEqual(self.call('check','mate-task')['result'],'independent')
+
+    def test_leading_title_ticket_key_is_identity_for_queued_live_and_archived_rows(self):
+        for kind,title in (('queued','ENG-1 rollout: finish the migration'),('live','eng-1 part 2: connect event'),
+                           ('archive','ENG-1 rollout: shipped earlier')):
+            with self.subTest(kind=kind):
+                home=self.home/kind
+                for name in ('data','config','state'): (home/name).mkdir(parents=True)
+                (home/'.tasks.toml').write_text((self.home/'.tasks.toml').read_text())
+                (home/'data/backlog.md').write_text('## In flight\n\n## Queued\n\n## Done\n')
+                (home/'config/work-intake-enabled').write_text('1')
+                (home/'config/work-intake-hook').write_text(str(self.hook))
+                env={**self.env,'FM_HOME':str(home),'FM_DATA_OVERRIDE':str(home/'data'),
+                     'FM_STATE_OVERRIDE':str(home/'state'),'FM_CONFIG_OVERRIDE':str(home/'config')}
+                self.tasks('add','eng1-work',title,home=home)
+                self.tasks('add','eng10-work','ENG-10 rollout: a different ticket',home=home)
+                if kind=='live': self.tasks('start','eng1-work',home=home)
+                if kind=='archive': self.tasks('done','eng1-work',home=home)
+                out=self.call('poll',env=env)
+                self.assertEqual(out['imported'],[])
+                entry=json.loads((home/'state/work-intake.json').read_text())['entries']['opaque-fixture-one']
+                self.assertEqual((entry['phase'],entry['local_id']),('existing','eng1-work'))
+                self.assertNotIn('intake-',self.tasks('list',home=home))
+
+    def test_pre_existing_rows_are_never_held_or_gated(self):
+        for eligible in (True,False):
+            with self.subTest(eligible=eligible):
+                home=self.home/('eligible' if eligible else 'ineligible')
+                for name in ('data','config','state'): (home/name).mkdir(parents=True)
+                (home/'.tasks.toml').write_text((self.home/'.tasks.toml').read_text())
+                (home/'data/backlog.md').write_text('## In flight\n\n## Queued\n\n## Done\n')
+                (home/'config/work-intake-enabled').write_text('1')
+                (home/'config/work-intake-hook').write_text(str(self.hook))
+                env={**self.env,'FM_HOME':str(home),'FM_DATA_OVERRIDE':str(home/'data'),
+                     'FM_STATE_OVERRIDE':str(home/'state'),'FM_CONFIG_OVERRIDE':str(home/'config')}
+                self.snapshot=deepcopy(BASE)
+                if not eligible:
+                    self.snapshot['candidates'][0]['eligibility'].update(eligible=False,exclusion_reasons=['other_owner'])
+                self.save()
+                self.tasks('add','eng5-fix','Captain authorized','--body','Ticket: ENG-1',home=home)
+                self.call('poll',env=env)
+                self.assertIn('Captain authorized,no\n',self.tasks('list','--fields','held',home=home))
+                self.assertEqual(self.call('check','eng5-fix',env=env)['result'],'independent')
+                self.snapshot['candidates']=[]
+                self.save()
+                state=json.loads((home/'state/work-intake.json').read_text());state['next_poll']=0
+                (home/'state/work-intake.json').write_text(json.dumps(state))
+                self.call('poll',env=env)
+                self.assertIn('Captain authorized,no\n',self.tasks('list','--fields','held',home=home))
+                self.assertEqual(self.call('check','eng5-fix',env=env)['result'],'independent')
 
     def test_authority_holds_future_and_blockers_override_urgency(self):
         self.snapshot['candidates'][0]['priority'].update(value='urgent',rank=1)

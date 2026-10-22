@@ -444,6 +444,7 @@ Removing it suspends imported dispatch while independent local work continues.
 Changing source namespace requires explicit reconciliation, never automatic withdrawal of the old source.
 Each source attempt is bounded and failed attempts back off without interpreting partial scans as absence.
 The source receipt retains identity after Done pruning and keeps source observations separate from considered local notes.
+A ticket that already has a local row, matched by explicit ticket lines or a leading ticket key in the title, is recorded as a dedupe tombstone and that row is never held or gated by intake.
 A selected imported item receives a fresh full read during spawn preflight.
 Remote ownership without readable evidence prevents new imports rather than guessing that no duplicate exists.
 No ClickUp write occurs during import or review.

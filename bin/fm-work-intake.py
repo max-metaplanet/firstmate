@@ -224,7 +224,9 @@ def matches(row, candidate):
     body = row.get('body', '')
     identities = {'Source reference: ' + candidate['source_ref'], 'Ticket: ' + candidate['ticket'],
                   'Ticket URL: ' + candidate['url']}
-    return any(line.strip() in identities for line in body.splitlines())
+    key = re.match(r'\s*([A-Za-z]+-\d+)(?![\w-])', row.get('title', ''))
+    return (any(line.strip() in identities for line in body.splitlines())
+            or bool(key) and key[1].upper() == candidate['ticket'].upper())
 
 
 def mutate(*args):
@@ -366,7 +368,7 @@ def poll(state, hook):
                 continue
             ident = found[0]['id'] if len(found) == 1 else 'intake-' + digest([state['source_namespace'], ref])[:20]
             entry = dict(source_ref=ref, local_id=ident, owner_home=found[0]['owner_home'] if len(found) == 1 else str(HOME),
-                         phase='imported' if len(found) == 1 else 'conflict' if found else 'planned',
+                         phase='existing' if len(found) == 1 else 'conflict' if found else 'planned',
                          eligible_since=now, candidate=candidate, present=True)
             if len(found) > 1:
                 entry['conflicts'] = [{'id': r['id'], 'owner_home': r['owner_home']} for r in found]
@@ -403,7 +405,7 @@ def poll(state, hook):
             entry['present'] = False
             entry.pop('review', None)
             matching = [r for r in rows if r['id'] == entry['local_id'] and r['owner_home'] == entry['owner_home']]
-            if matching:
+            if entry['phase'] == 'imported' and matching:
                 hold(entry, matching[0], True)
     state['snapshot'] = snapshot
     atomic(RECEIPT, state)
@@ -445,7 +447,8 @@ def main():
                                priority=entry['candidate']['priority']))
         ranked.sort(key=lambda item: (not item['runnable'], item['order']))
         return dict(result='status', ranked=ranked)
-    if args.command == 'check' and not any(e['local_id'] == args.id for e in state['entries'].values()):
+    if args.command == 'check' and not any(e['local_id'] == args.id and e['phase'] != 'existing'
+                                           for e in state['entries'].values()):
         return dict(result='independent')
     if args.command == 'poll' and not enabled:
         return dict(result='disabled')
@@ -464,7 +467,7 @@ def main():
             return poll(state, hook)
         require(args.id, 'local id required')
         entry = current(state, args.id)
-        require(entry['phase'] == 'imported', 'identity conflict requires reconciliation')
+        require(entry['phase'] == 'imported', 'pre-existing local work or identity conflict is not intake-owned')
         row = local_row(entry)
         require(row['state'] == 'queued', 'existing execution or terminal receipt cannot start another worker')
         require(not state.get('source_error') or time.time() >= state.get('next_poll', 0),

@@ -18,14 +18,18 @@
 # Polls coalesce for 300 seconds, back off after failures, and bound each source
 # invocation to 55 seconds. check always performs a fresh full-candidate read.
 # Source failures prevent imported dispatch, never independent local work.
-# Receipt state/work-intake.json owns stable identity, planned/imported/conflict
-# phases, owning home, source observations, cached semantic review and tombstones.
+# Receipt state/work-intake.json owns stable identity, planned/imported/existing/
+# conflict phases, owning home, source observations, cached semantic review and tombstones.
 # One home-local advisory lock serializes receipt writers; atomic replacement
 # publishes state. A planned receipt precedes add, so a crash after add recovers
 # that exact ID rather than minting another. Receipts are never pruned with Done.
-# Existing explicit source/ticket links, archive rows and registered local
-# secondmates are reconciled before add. Unavailable remote ownership blocks new
-# imports. Multiple matches are a conflict, never an automatic split or handoff.
+# Existing queued, live, archived and registered local secondmate rows are
+# reconciled before add. Identity is an exact Source reference:, Ticket: or
+# Ticket URL: body line, a live task's meta ticket, or the ticket key leading the
+# row title. One match records an existing-phase dedupe tombstone; intake never
+# holds, gates or refuses rows it did not create. Unavailable remote ownership
+# blocks new imports. Multiple matches are a conflict, never an automatic split
+# or handoff.
 #
 # review consumes a firstmate-authored JSON decision with authorized=true,
 # project, kind (ship|scout), reason, source_revision, and identity_checked=true. Optional
@@ -37,7 +41,7 @@
 # Only this source's exact external hold may be released; competing holds stay.
 # Local notes, dependencies, priority overrides and briefs are never replaced.
 #
-# check returns 0 for independent work and eligible, reviewed imported work;
+# check returns 0 for independent or pre-existing work and eligible, reviewed imported work;
 # 1 for ineligible/unreviewed/unavailable imported work; 2 for invalid invocation.
 # Live import activation is an operator action outside the preview workflow.
 set -eu

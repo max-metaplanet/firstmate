@@ -27,6 +27,7 @@ An ownership coverage gap is an outcome to report.
 Give verified resume requests their existing admission priority before selecting new work.
 Use `status --json` for the ranked receipt view and its gating reasons.
 For new imports, inspect the receipt and explicit ticket links for existing queued, live, archived, split-scope, or secondmate-owned work.
+A single existing match is recorded only as a dedupe tombstone; intake never holds or gates a row it did not create.
 A conflict requires reconciliation, never a new ID or another worker.
 A remote owner whose inventory is unavailable prevents a new import until that ownership is reconciled through the existing supervised path.
 Route fitting work through registered secondmate scopes and the existing handoff owner, retaining the receipt as a tombstone in this home.
