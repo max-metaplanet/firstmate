@@ -1,0 +1,39 @@
+== A: event -> progress ==
+{"event":"started","key":null,"summary":"starting","progress":null}
+{"event":"pr-opened","key":null,"summary":"opened pr","progress":{"version":1,"outcome":"A pull request is available for review.","next_actions":["Review the pull request."],"evidence":[{"summary":"Pull request registered for review.","url":"https://github.com/example/repo/pull/77","observed_at":"2026-10-22T09:00:39Z","limits":"Records registration only; checks and live behavior are unverified."}]}}
+{"event":"blocked","key":"reconcile","summary":"published ). Only offered command is git checkout --detach. ","progress":null}
+{"event":"decision-answered","key":"reconcile","summary":"Decision recorded. run the offered `git checkout --detach `","progress":{"version":1,"decisions":["The requested decision has been answered."]}}
+{"event":"resumed","key":"reconcile","summary":"resumed","progress":null}
+{"event":"waiting","key":"scope","summary":"needs-decision raw ~/path","progress":null}
+{"event":"pr-merged","key":null,"summary":"merged","progress":{"version":1,"outcome":"The pull request was merged.","next_actions":[],"evidence":[{"summary":"Pull request merge confirmed.","url":"https://github.com/example/repo/pull/77","observed_at":"2026-10-22T09:00:41Z","limits":"Confirms the merge; live behavior is unverified."}]}}
+{"event":"finished","key":null,"summary":"done raw","progress":{"version":1,"outcome":"The assigned work is finished.","next_actions":[]}}
+{"event":"cancelled","key":null,"summary":"cancel raw","progress":null}
+lab socket=/private/tmp/fml.raM2HQ/tmux-501/fm-lab
+== B: answer needs-decision via --resolve-key ==
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab.posFY2
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  3 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the requested message WILL still be sent.
+●  watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+fm-send rc=0
+needs-decision [key=api-shape]: pick REST or RPC /private/x git checkout --detach
+resolved [key=api-shape]: answered: go with REST, run git checkout --detach abc
+{"event":"decision-answered","task_id":"t1","key":"api-shape","summary":"go with REST, run git checkout --detach abc","progress":{"version":1,"decisions":["The requested decision has been answered."]}}
+== C: ordinary blocker steer via --resolve-key (expect no decision receipt) ==
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab.posFY2
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+fm-send rc=0
+blocked [key=creds]: need the deploy token
+resolved [key=creds]: answered: token is in the vault now
+events before=       1 after=       1
+== D: failed enqueue of a needs-decision answer (expect no close, no receipt) ==
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+mkdir: /private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab.posFY2/state/t9.inbox: Not a directory
+error: steer not sent to t9: its inbox record could not be written under /private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab.posFY2/state/t9.inbox
+fm-send rc=1
+needs-decision [key=src]: choose the credential source
+events before=       1 after=       1
+lab=/private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab.posFY2

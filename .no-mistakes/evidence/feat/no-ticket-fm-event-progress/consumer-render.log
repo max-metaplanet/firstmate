@@ -1,0 +1,55 @@
+parsed started            progress=no  -> Event
+parsed pr-opened          progress=yes -> Event
+parsed blocked            progress=no  -> Event
+parsed decision-answered  progress=yes -> Event
+parsed resumed            progress=no  -> Event
+parsed waiting            progress=no  -> Event
+parsed pr-merged          progress=yes -> Event
+parsed finished           progress=yes -> Event
+parsed cancelled          progress=no  -> Event
+---- briefing rendered after the full A sequence ----
+**Ticket summary | ENG-2798**
+
+In progress. Blocked on the open items below.
+The assigned work is finished.
+An automated work session was cancelled. This does not cancel the ticket scope or resolve open holds.
+
+**Next**
+
+- Open blocker: Waiting; details are in the ticket history.
+
+**Progress and evidence**
+
+- Reported Pull request registered for review. https://github.com/example/repo/pull/77. Observed 2026-10-22 09:00 UTC; less than a minute before this update. Records registration only; checks and live behavior are unverified.
+- Reported Pull request merge confirmed. https://github.com/example/repo/pull/77. Observed 2026-10-22 09:00 UTC; less than a minute before this update. Confirms the merge; live behavior is unverified.
+- These are recorded reports; they have not been independently rechecked for this update.
+- https://github.com/example/repo/pull/77 (merged), recorded 2026-10-22 09:00 UTC; less than a minute before this update. Checks and deployment are unconfirmed.
+
+**Recent changes**
+
+- 2026-10-22 09:00 UTC. The requested decision has been answered.
+
+Updated 2026-10-22 09:00 UTC. Evidence ages are relative to this update.
+Maintained automatically by clickup-axi. Full event history is available through clickup-axi history.
+---- briefing rendered after pr-opened, blocked, decision-answered, resumed ----
+**Ticket summary | ENG-2798**
+
+In progress.
+A pull request is available for review.
+
+**Next**
+
+- Review the pull request.
+
+**Progress and evidence**
+
+- Reported Pull request registered for review. https://github.com/example/repo/pull/77. Observed 2026-10-22 09:00 UTC; less than a minute before this update. Records registration only; checks and live behavior are unverified.
+- These are recorded reports; they have not been independently rechecked for this update.
+- https://github.com/example/repo/pull/77 (open), recorded 2026-10-22 09:00 UTC; less than a minute before this update. Checks and deployment are unconfirmed.
+
+**Recent changes**
+
+- 2026-10-22 09:00 UTC. The requested decision has been answered.
+
+Updated 2026-10-22 09:00 UTC. Evidence ages are relative to this update.
+Maintained automatically by clickup-axi. Full event history is available through clickup-axi history.
