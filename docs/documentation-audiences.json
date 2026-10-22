@@ -647,6 +647,10 @@
     {
       "path": ".agents/skills/validation-supervision/SKILL.md",
       "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/work-intake/SKILL.md",
+      "audience": "agent-runtime"
     }
   ]
 }

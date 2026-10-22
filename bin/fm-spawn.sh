@@ -4664,6 +4664,11 @@ herdr_projection_existing_meta_allows_flat() { # <meta>
 # a live pane. The authoritative mutation still runs under the meta lock below.
 BACKLOG_TRANSITION=0
 BACKLOG_ROW_STATE=
+if [ "$KIND" != secondmate ] && [ "$RELAUNCH" -ne 1 ]; then
+  # Independent local rows pass without invoking a source.
+  FM_HOME="$FM_HOME" FM_CONFIG_OVERRIDE="$CONFIG" FM_DATA_OVERRIDE="$DATA" FM_STATE_OVERRIDE="$STATE" \
+    bash "$SCRIPT_DIR/fm-work-intake.sh" check "$ID" >/dev/null || exit 1
+fi
 if fm_backlog_transition_applies "$CONFIG" "$DATA" "$KIND"; then
   BACKLOG_TRANSITION=1
   if fm_backlog_row_probe "$DATA" "$ID"; then

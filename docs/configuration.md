@@ -411,6 +411,45 @@ Run every routine Firstmate backlog command through [`bin/fm-tasks-axi.sh`](../b
 Like lifecycle transitions, it addresses this home's backlog and archive from any working directory.
 Bootstrap reports a code-root `data/backlog.md` or `data/done-archive.md` that is not this home's own file as a `BACKLOG_RECONCILE: code-root ...` line, even in a read-only session.
 
+
+## Optional work intake
+
+Source polling is disabled by default and uses the existing watcher heartbeat and queue-reconsideration path.
+It creates no daemon, persistent session, or alternate scheduler.
+The source supplies evidence, while tasks-axi, ordinary authority checks, dispatch profiles, capacity admission, and existing lifecycle events retain their owners.
+[`bin/fm-work-intake.sh --help`](../bin/fm-work-intake.sh) owns the command and receipt contract.
+The [work-intake skill](../.agents/skills/work-intake/SKILL.md) owns semantic triage and ranking.
+Python 3.11 or newer and a compatible transactional tasks-axi backlog are required.
+Manual-backend homes and the no-backlog exemption cannot activate intake.
+
+`config/work-intake-hook` contains one absolute path to a trusted executable.
+The hook accepts `--json` for a complete scan and `--json --refresh <opaque-reference>` for one full candidate.
+The supported v1 producer is [`clickup-axi queue`](https://github.com/metaplanet-jp/clickup-axi/blob/main/docs/queue.md).
+A private wrapper can invoke `clickup-axi queue "$@"` with its private configuration.
+Verify that configuration selects the intended owner before previewing.
+Credentials, board identifiers, owner IDs, and the wrapper stay outside tracked shared code.
+The source must perform GET-only remote reads and emit no lifecycle event.
+
+Preview with `bin/fm-work-intake.sh preview --hook /absolute/private-wrapper --json` before activation.
+Preview does not write the queue, receipt, or source.
+It shows import candidates, exclusions and reasons, the ownership coverage gap, and proposal-only Backlog work.
+The approved ClickUp pilot takes only sole-owner Active Up next tickets.
+Unassigned tickets, Requests, and other owners' work never fill an empty eligible queue.
+Backlog promotion remains proposal-only.
+Review live exclusions before separately approving activation.
+This feature's installation does not grant that approval.
+
+Only after separate activation approval, a local `config/work-intake-enabled` file containing `1` permits polling and receipt writes.
+Removing it suspends imported dispatch while independent local work continues.
+Changing source namespace requires explicit reconciliation, never automatic withdrawal of the old source.
+Each source attempt is bounded and failed attempts back off without interpreting partial scans as absence.
+The source receipt retains identity after Done pruning and keeps source observations separate from considered local notes.
+A ticket that already has a local row, matched by explicit ticket lines or a leading ticket key in the title, is recorded as a dedupe tombstone and that row is never held or gated by intake.
+A selected imported item receives a fresh full read during spawn preflight.
+Remote ownership without readable evidence prevents new imports rather than guessing that no duplicate exists.
+No ClickUp write occurs during import or review.
+The existing main-home event consumer remains the only fleet-owned ClickUp writer after a successful launch.
+
 ## Runtime backend (config/backend / FM_BACKEND)
 
 For spawn-capable adapters, the runtime session-provider backend controls where task windows/endpoints are created, captured, sent to, watched, and killed.
