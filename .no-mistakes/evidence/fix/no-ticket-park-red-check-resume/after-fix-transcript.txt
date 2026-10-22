@@ -1,0 +1,31 @@
+== source: ~/.no-mistakes/worktrees/61c6dd39b831/01M5GRBY39T8JMF9X90YW1VSQG
+S0 worker parks on a green PR                              phase=parked  relaunches=0 failing_checks=
+S1 permanent windows lane goes red -> poll                 phase=queued  relaunches=0 failing_checks={"head":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","failing":["windows / integration"]}
+  watcher tick (resume)                                    phase=active  relaunches=1 failing_checks={"head":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","failing":["windows / integration"]}
+  worker finds nothing new, parks again                    phase=parked  relaunches=1 failing_checks={"head":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","failing":["windows / integration"]}
+S2 same red lane, same head, observer cycle 2              phase=parked  relaunches=1 failing_checks={"head":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","failing":["windows / integration"]}
+S2 same red lane, same head, observer cycle 3              phase=parked  relaunches=1 failing_checks={"head":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","failing":["windows / integration"]}
+S2 same red lane, same head, observer cycle 4              phase=parked  relaunches=1 failing_checks={"head":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","failing":["windows / integration"]}
+S3 lane rerun (new id), still red on same head             phase=parked  relaunches=1 failing_checks={"head":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","failing":["windows / integration"]}
+S4 a second lane (lint) newly fails                        phase=queued  relaunches=1 failing_checks={"head":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","failing":["lint","windows / integration"]}
+  watcher tick (resume)                                    phase=active  relaunches=2 failing_checks={"head":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","failing":["lint","windows / integration"]}
+  worker finds nothing new, parks again                    phase=parked  relaunches=2 failing_checks={"head":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","failing":["lint","windows / integration"]}
+S5 worker pushes new head, same lanes red                  phase=queued  relaunches=2 failing_checks={"head":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","failing":["lint","windows / integration"]}
+  watcher tick (resume)                                    phase=active  relaunches=3 failing_checks={"head":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","failing":["lint","windows / integration"]}
+  worker finds nothing new, parks again                    phase=parked  relaunches=3 failing_checks={"head":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","failing":["lint","windows / integration"]}
+S6 unrelated resume request (no failing set)               phase=queued  relaunches=3 failing_checks={"head":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","failing":["lint","windows / integration"]}
+  watcher tick (resume)                                    phase=active  relaunches=4 failing_checks={"head":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","failing":["lint","windows / integration"]}
+  worker finds nothing new, parks again                    phase=parked  relaunches=4 failing_checks={"head":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","failing":["lint","windows / integration"]}
+S7 multi-line failing set via CLI (rc=1: worker-park: the failing-check set must be one line) phase=parked  relaunches=4 failing_checks={"head":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","failing":["lint","windows / integration"]}
+-- final park record:
+phase=parked
+generation=relaunched-8
+endpoint=test:fm-delivery
+reason=merge approval for https://github.com/o/r/pull/8
+until=0
+queued_at=0
+wake_reason=
+status_line=done: PR https://github.com/o/r/pull/8 checks green (rechecked 4; red lane is unrelated)
+resume_error=0
+failing_checks={"head":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","failing":["lint","windows / integration"]}
+-- total relaunches: 4

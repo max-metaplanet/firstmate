@@ -1,0 +1,38 @@
+== source: /var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-base.l7SJT7
+S0 worker parks on a green PR                              phase=parked  relaunches=0 failing_checks=
+S1 permanent windows lane goes red -> poll                 phase=queued  relaunches=0 failing_checks=
+  watcher tick (resume)                                    phase=active  relaunches=1 failing_checks=
+  worker finds nothing new, parks again                    phase=parked  relaunches=1 failing_checks=
+S2 same red lane, same head, observer cycle 2              phase=queued  relaunches=1 failing_checks=
+  watcher tick (resume)                                    phase=active  relaunches=2 failing_checks=
+  worker finds nothing new, parks again                    phase=parked  relaunches=2 failing_checks=
+S2 same red lane, same head, observer cycle 3              phase=queued  relaunches=2 failing_checks=
+  watcher tick (resume)                                    phase=active  relaunches=3 failing_checks=
+  worker finds nothing new, parks again                    phase=parked  relaunches=3 failing_checks=
+S2 same red lane, same head, observer cycle 4              phase=queued  relaunches=3 failing_checks=
+  watcher tick (resume)                                    phase=active  relaunches=4 failing_checks=
+  worker finds nothing new, parks again                    phase=parked  relaunches=4 failing_checks=
+S3 lane rerun (new id), still red on same head             phase=queued  relaunches=4 failing_checks=
+  watcher tick (resume)                                    phase=active  relaunches=5 failing_checks=
+  worker finds nothing new, parks again                    phase=parked  relaunches=5 failing_checks=
+S4 a second lane (lint) newly fails                        phase=queued  relaunches=5 failing_checks=
+  watcher tick (resume)                                    phase=active  relaunches=6 failing_checks=
+  worker finds nothing new, parks again                    phase=parked  relaunches=6 failing_checks=
+S5 worker pushes new head, same lanes red                  phase=queued  relaunches=6 failing_checks=
+  watcher tick (resume)                                    phase=active  relaunches=7 failing_checks=
+  worker finds nothing new, parks again                    phase=parked  relaunches=7 failing_checks=
+S6 unrelated resume request (no failing set)               phase=queued  relaunches=7 failing_checks=
+  watcher tick (resume)                                    phase=active  relaunches=8 failing_checks=
+  worker finds nothing new, parks again                    phase=parked  relaunches=8 failing_checks=
+S7 multi-line failing set via CLI (rc=0: )                 phase=queued  relaunches=8 failing_checks=
+-- final park record:
+phase=queued
+generation=relaunched-16
+endpoint=test:fm-delivery
+reason=merge approval for https://github.com/o/r/pull/8
+until=0
+queued_at=1792639884
+wake_reason=checks failed
+status_line=done: PR https://github.com/o/r/pull/8 checks green (rechecked 8; red lane is unrelated)
+resume_error=0
+-- total relaunches: 8
