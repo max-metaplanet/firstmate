@@ -113,6 +113,26 @@ setup_home() {  # <name> -> echoes a fresh home dir with an empty state/
   printf '%s\n' "$home"
 }
 
+enable_events() {
+  local home=$1
+  mkdir -p "$home/config"
+  cat > "$home/event-hook" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$1" >> "$FM_HOME/events.jsonl"
+SH
+  chmod +x "$home/event-hook"
+  printf '%s\n' "$home/event-hook" > "$home/config/task-event-hook"
+}
+
+await_events() {
+  local home=$1 count=$2 i
+  for ((i=0; i<100; i++)); do
+    if [ -f "$home/events.jsonl" ] && [ "$(wc -l < "$home/events.jsonl")" -ge "$count" ]; then return; fi
+    /bin/sleep 0.1
+  done
+  fail "expected $count events in $home"
+}
+
 drain_out() {  # <home>
   FM_STATE_OVERRIDE="$1/state" "$DRAIN" 2>/dev/null
 }
@@ -130,6 +150,7 @@ test_answer_send_closes_open_decision() {
   printf '%s' "$out" | grep -F '[key=api-shape]' >/dev/null \
     || fail "precondition: the buried decision should list as open before the answer"
 
+  enable_events "$home"
   run_send "$fb" "$home" "$log" t1 --resolve-key api-shape "go with REST"; rc=$?
   expect_code 0 "$rc" "an answer send with --resolve-key should succeed"
   grep -qF "go with REST" "$home/state/t1.inbox/001.msg" \
@@ -137,6 +158,11 @@ test_answer_send_closes_open_decision() {
   assert_contains "$(cat "$log")" "Firstmate instruction waiting" "the doorbell should be rung for the answer"
   sed -E 's/ \[at=[0-9]+\]//' "$home/state/t1.status" | grep -qF 'resolved [key=api-shape]: answered: go with REST' \
     || fail "fm-send did not append the closing resolved line:"$'\n'"$(cat "$home/state/t1.status")"
+  await_events "$home" 1
+  jq -se 'length == 1 and .[0].event == "decision-answered" and .[0].key == "api-shape" and
+    .[0].summary == "go with REST" and .[0].progress ==
+      {version:1,decisions:["The requested decision has been answered."]}' "$home/events.jsonl" >/dev/null \
+    || fail 'the delivered decision lost its structured receipt or copied its body into progress'
   # The drain folded the worker's `working:` line but never listed it, so the
   # close must leave the file for the watcher instead of marking it seen.
   if FM_STATE_OVERRIDE="$home/state" bash -c '
@@ -403,6 +429,7 @@ test_failed_ring_still_closes_at_enqueue() {
   dir="$TMP_ROOT/ring-fail"; mkdir -p "$dir"
   fb=$(make_stubs "$dir"); log="$dir/send.log"
   home=$(setup_home ring-fail)
+  enable_events "$home"
   fm_write_meta "$home/state/t5.meta" "window=sess:fm-t5" "kind=ship"
   printf 'blocked [key=creds]: need the deploy token\n' > "$home/state/t5.status"
 
@@ -415,6 +442,7 @@ test_failed_ring_still_closes_at_enqueue() {
     || fail "the answer must be durably recorded despite the failed ring"
   sed -E 's/ \[at=[0-9]+\]//' "$home/state/t5.status" | grep -qF 'resolved [key=creds]: answered: token is in the vault now' \
     || fail "the enqueued answer must close the decision at answer time: $(cat "$home/state/t5.status")"
+  assert_absent "$home/state/task-events/.sequence" 'ordinary blocker steering invented a decision'
   out=$(drain_out "$home")
   if printf '%s' "$out" | grep -F '[key=creds]' >/dev/null; then
     fail "the answered blocker still lists as open after an enqueue-time close: $out"
@@ -429,8 +457,9 @@ test_failed_enqueue_does_not_close() {
   dir="$TMP_ROOT/enqueue-fail"; mkdir -p "$dir"
   fb=$(make_stubs "$dir"); log="$dir/send.log"
   home=$(setup_home enqueue-fail)
+  enable_events "$home"
   fm_write_meta "$home/state/t5.meta" "window=sess:fm-t5" "kind=ship"
-  printf 'blocked [key=creds]: need the deploy token\n' > "$home/state/t5.status"
+  printf 'needs-decision [key=creds]: choose the credential source\n' > "$home/state/t5.status"
   : > "$home/state/t5.inbox"   # a FILE where the inbox dir must go
 
   : > "$log"
@@ -442,6 +471,7 @@ test_failed_enqueue_does_not_close() {
     fail "a failed enqueue still closed the decision: $(cat "$home/state/t5.status")"
   fi
   [ ! -s "$log" ] || fail "a failed enqueue still typed something: $(cat "$log")"
+  assert_absent "$home/state/task-events/.sequence" 'a failed enqueue published a decision answer'
   out=$(drain_out "$home")
   printf '%s' "$out" | grep -F '[key=creds]' >/dev/null \
     || fail "the blocker vanished after a failed enqueue: $out"

@@ -44,8 +44,9 @@ STATUS
 fold "$home" >/dev/null || fail 'first fold failed'
 await_events "$home" 2
 jq -se 'length == 2 and all(.[]; .task_id == "task" and .ticket == "issue-42") and
-  any(.[]; .event == "blocked" and .key == "credential" and .summary == "service credential expired") and
-  any(.[]; .event == "waiting" and .key == "scope" and .summary == "choose compatibility scope")' \
+  any(.[]; .event == "blocked" and .key == "credential" and .summary == "service credential expired" and
+    (has("progress") | not)) and
+  any(.[]; .event == "waiting" and .key == "scope" and .summary == "choose compatibility scope" and (has("progress") | not))' \
   "$home/events.jsonl" >/dev/null || fail 'keyed blockers lost payload context or resumed before the final blocker cleared'
 printf 'resolved [key=scope]: compatibility scope approved\n' >> "$home/state/task.status"
 fold "$home" >/dev/null || fail 'resolution fold failed'
@@ -171,7 +172,9 @@ SH
   # declared complete scope is published as partial.
   [ "$declaration" = "done" ] || { expected=cancelled; expected_scope=partial; }
   jq -se --arg event "$expected" --arg scope "$expected_scope" 'length == 1 and .[0].event == $event and
-    .[0].ticket == "issue-42" and .[0].ticket_scope == $scope and .[0].summary == "worker terminal summary"' "$home/events.jsonl" >/dev/null \
+    .[0].ticket == "issue-42" and .[0].ticket_scope == $scope and .[0].summary == "worker terminal summary" and
+    (if $event == "finished" then .[0].progress == {version:1,outcome:"The assigned work is finished.",next_actions:[]}
+     else (.[0] | has("progress") | not) end)' "$home/events.jsonl" >/dev/null \
     || fail 'teardown lost its terminal payload'
   assert_absent "$home/state/task.meta" 'teardown emitted without retiring the task'
   assert_absent "$home/state/task.status" 'teardown emitted without retiring the status'

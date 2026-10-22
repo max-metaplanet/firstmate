@@ -48,6 +48,33 @@ for event in started blocked waiting resumed decision-answered pr-opened pr-merg
 done
 pass 'all event types preserve opaque ticket, worker summary, key, home and PR'
 
+jq -se '
+  all(.[] | select(.event == "started" or .event == "blocked" or .event == "waiting" or .event == "resumed" or .event == "cancelled"); has("progress") | not) and
+  all(.[] | select(has("progress")); .progress.version == 1) and
+  any(.[]; .event == "pr-opened" and .progress.outcome == "A pull request is available for review." and
+    .progress.next_actions == ["Review the pull request."] and
+    .progress.evidence == [{summary:"Pull request registered for review.",url:.pr_url,observed_at:.timestamp,
+      limits:"Records registration only; checks and live behavior are unverified."}]) and
+  any(.[]; .event == "pr-merged" and .progress.outcome == "The pull request was merged." and
+    .progress.next_actions == [] and .progress.evidence == [{summary:"Pull request merge confirmed.",
+      url:.pr_url,observed_at:.timestamp,limits:"Confirms the merge; live behavior is unverified."}]) and
+  any(.[]; .event == "finished" and .progress.outcome == "The assigned work is finished." and .progress.next_actions == []) and
+  any(.[]; .event == "blocked") and
+  any(.[]; .event == "decision-answered" and .progress.decisions == ["The requested decision has been answered."])
+' "$home/events" >/dev/null || fail 'structured lifecycle facts or omission contract changed'
+pass 'typed lifecycle facts supply progress and dated evidence without inventing checks or live verification'
+
+home=$(make_home raw-history)
+raw='task-secret key-secret /private/path git checkout --detach abc; pipeline Review drive18'
+for event in blocked decision-answered finished pr-opened; do
+  emit "$home" task "$event" --summary "$raw" --pr https://example.org/repo/pull/1 --key key-secret
+done
+wait_lines "$home/events" 4
+jq -se --arg raw "$raw" 'all(.[]; .summary == $raw and
+  ([.progress | .. | strings] | all(.[]; test("task-secret|key-secret|/private/path|git checkout|Review drive18") | not)))' \
+  "$home/events" >/dev/null || fail 'raw worker or decision text leaked into structured progress'
+pass 'raw status and steer bodies remain in history without entering progress'
+
 home=$(make_home unticketed)
 emit "$home" absent finished --summary 'completed without metadata'
 wait_lines "$home/events" 1

@@ -4,6 +4,7 @@
 #        [--ticket <opaque-ticket>] [--pr <url>] [--ticket-scope <complete|partial>]
 # --ticket-scope supplies the teardown snapshot after metadata retirement.
 # docs/configuration.md owns the hook and versioned JSON contract.
+# Progress comes only from the typed lifecycle fact, never the status summary.
 # Snapshot local metadata and publish an ordered spool entry before returning.
 # A detached --drain process serializes hook calls using the shared lock helpers.
 # Only local publication takes a foreground lock, bounded to one second.
@@ -198,7 +199,21 @@ PAYLOAD=$(jq -cn --arg event "$EVENT" --arg id "$ID" --arg ticket "$TICKET" \
     ticket:($ticket|if length==0 then null else . end),ticket_scope:$ticket_scope,
     pr_url:($pr|if length==0 then null else . end),merge:null,timestamp:$at,
     summary:($summary|gsub("[\\r\\n\\t]+";" ")|.[0:500]),
-    key:($key|if length==0 then null else . end),home:$home,sequence:$sequence}' 2>/dev/null) \
+    key:($key|if length==0 then null else . end),home:$home,sequence:$sequence}
+  + (if $event == "pr-opened" then
+      {progress:{version:1,outcome:"A pull request is available for review.",
+        next_actions:["Review the pull request."],
+        evidence:[{summary:"Pull request registered for review.",url:$pr,observed_at:$at,
+          limits:"Records registration only; checks and live behavior are unverified."}]}}
+    elif $event == "pr-merged" then
+      {progress:{version:1,outcome:"The pull request was merged.",next_actions:[],
+        evidence:[{summary:"Pull request merge confirmed.",url:$pr,observed_at:$at,
+          limits:"Confirms the merge; live behavior is unverified."}]}}
+    elif $event == "finished" then
+      {progress:{version:1,outcome:"The assigned work is finished.",next_actions:[]}}
+    elif $event == "decision-answered" then
+      {progress:{version:1,decisions:["The requested decision has been answered."]}}
+    else {} end)' 2>/dev/null) \
   || { report_failure 125; exit 0; }
 
 # One append per confirmed PR fact, independent of consumer delivery. Preserve
