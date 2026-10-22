@@ -211,9 +211,12 @@ done < "$2"
     for path in STATE.glob('*.meta'):
         meta = dict(line.split('=', 1) for line in path.read_text().splitlines() if '=' in line)
         if meta.get('ticket') and meta['ticket'] != 'no-ticket':
-            ident = path.stem
-            if not any(r['id'] == ident and r['owner_home'] == str(HOME) for r in rows):
-                rows.append(dict(id=ident, state='in_flight', body='Ticket: ' + meta['ticket'], owner_home=str(HOME)))
+            ident, line = path.stem, 'Ticket: ' + meta['ticket']
+            own = [r for r in rows if r['id'] == ident and r['owner_home'] == str(HOME)]
+            for row in own:
+                row['body'] = row.get('body', '') + '\n' + line
+            if not own:
+                rows.append(dict(id=ident, state='in_flight', body=line, owner_home=str(HOME)))
     return rows, unavailable
 
 
@@ -388,7 +391,7 @@ def poll(state, hook):
                                   'Ticket URL: ' + candidate['url'], 'Source evidence is retained in the intake receipt.'])
                 mutate('add', entry['local_id'], candidate['title'], '--kind', 'ship', '--body', body, '--queue')
                 # A test source may kill its parent after observing add; the planned receipt survives.
-                rows = queue_rows() + [r for r in rows if r['owner_home'] != str(HOME)]
+                rows = index()[0]
             entry['phase'] = 'imported'
             imported.append(entry['local_id'])
             atomic(RECEIPT, state)

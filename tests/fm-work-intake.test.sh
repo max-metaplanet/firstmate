@@ -206,6 +206,32 @@ exit "$rc"
                 self.assertEqual(entry['phase'],'conflict' if kind=='split' else 'imported')
                 self.assertNotIn('intake-',task('list'))
 
+    def test_live_worker_ticket_from_meta_does_not_duplicate(self):
+        self.tasks('add','existing','Existing','--body','Plain brief without identity lines')
+        self.tasks('start','existing')
+        (self.home/'state/existing.meta').write_text('ticket=ENG-1\n')
+        self.activate()
+        out=self.call('poll')
+        self.assertEqual(out['imported'],[])
+        entry=self.receipt()['entries']['opaque-fixture-one']
+        self.assertEqual((entry['phase'],entry['local_id']),('imported','existing'))
+        self.assertNotIn('intake-',self.tasks('list'))
+
+    def test_archived_ticket_after_new_import_in_same_scan_does_not_duplicate(self):
+        second=deepcopy(BASE['candidates'][0])
+        second.update(source_ref='opaque-fixture-two',ticket='ENG-2',url='https://app.clickup.com/t/fixture-two',
+                      source_revision='fixture-two-r1')
+        self.snapshot['candidates'].append(second)
+        self.save()
+        self.tasks('add','finished','Finished','--body','Ticket: ENG-2')
+        self.tasks('done','finished')
+        self.activate()
+        out=self.call('poll')
+        self.assertEqual(len(out['imported']),1)
+        entry=self.receipt()['entries']['opaque-fixture-two']
+        self.assertEqual((entry['phase'],entry['local_id']),('imported','finished'))
+        self.assertIn('count: 1',self.tasks('list'))
+
     def test_registered_secondmate_owner_is_preserved(self):
         other=self.home/'mate'
         for name in ('data','config','state'): (other/name).mkdir(parents=True)
