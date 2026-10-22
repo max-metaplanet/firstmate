@@ -1,0 +1,66 @@
+FM_TEST_BEGIN 2026-10-22T21:28:01Z tests/fm-work-intake.test.sh family=pure-contract-unit expected_gate_skip=none
+test_archived_ticket_after_new_import_in_same_scan_does_not_duplicate (__main__.IntakeTests.test_archived_ticket_after_new_import_in_same_scan_does_not_duplicate) ... ok
+test_authority_holds_future_and_blockers_override_urgency (__main__.IntakeTests.test_authority_holds_future_and_blockers_override_urgency) ... ok
+test_crash_after_row_creation_recovers_planned_identity (__main__.IntakeTests.test_crash_after_row_creation_recovers_planned_identity) ... ok
+test_default_disabled_and_preview_are_read_only (__main__.IntakeTests.test_default_disabled_and_preview_are_read_only) ... ok
+test_existing_queued_live_archive_and_split_scope_do_not_duplicate (__main__.IntakeTests.test_existing_queued_live_archive_and_split_scope_do_not_duplicate) ... ok
+test_full_refresh_detects_scope_changes_with_unchanged_scan_revision (__main__.IntakeTests.test_full_refresh_detects_scope_changes_with_unchanged_scan_revision) ... ok
+test_incidental_ticket_mentions_are_not_duplicate_identity (__main__.IntakeTests.test_incidental_ticket_mentions_are_not_duplicate_identity) ... ok
+test_intake_rows_titled_with_another_ticket_key_do_not_absorb_it (__main__.IntakeTests.test_intake_rows_titled_with_another_ticket_key_do_not_absorb_it) ... ok
+test_invalid_snapshot_and_namespace_change_preserve_identity (__main__.IntakeTests.test_invalid_snapshot_and_namespace_change_preserve_identity) ... ok
+test_leading_title_ticket_key_is_identity_for_queued_live_and_archived_rows (__main__.IntakeTests.test_leading_title_ticket_key_is_identity_for_queued_live_and_archived_rows) ... ok
+test_live_snapshot_ownership_gap_and_proposals_never_widen (__main__.IntakeTests.test_live_snapshot_ownership_gap_and_proposals_never_widen) ... ok
+test_live_worker_ticket_from_meta_does_not_duplicate (__main__.IntakeTests.test_live_worker_ticket_from_meta_does_not_duplicate) ... ok
+test_outage_retains_receipts_and_independent_work_remains_dispatchable (__main__.IntakeTests.test_outage_retains_receipts_and_independent_work_remains_dispatchable) ... ok
+test_pre_existing_rows_are_never_held_or_gated (__main__.IntakeTests.test_pre_existing_rows_are_never_held_or_gated) ... ok
+test_registered_secondmate_owner_is_preserved (__main__.IntakeTests.test_registered_secondmate_owner_is_preserved) ... ok
+test_remote_ownership_and_manual_backends_fail_closed (__main__.IntakeTests.test_remote_ownership_and_manual_backends_fail_closed) ... ok
+test_repeat_concurrent_scan_and_restart_import_exactly_once (__main__.IntakeTests.test_repeat_concurrent_scan_and_restart_import_exactly_once) ... ok
+test_review_revision_binding_and_ranking_preserve_explicit_order (__main__.IntakeTests.test_review_revision_binding_and_ranking_preserve_explicit_order) ... ok
+test_source_changes_preserve_local_notes_and_priority (__main__.IntakeTests.test_source_changes_preserve_local_notes_and_priority) ... ok
+test_terminal_tombstone_does_not_reimport_a_reopened_source (__main__.IntakeTests.test_terminal_tombstone_does_not_reimport_a_reopened_source) ... ok
+test_withdrawal_reassignment_invalid_state_and_partial_scan_are_conservative (__main__.IntakeTests.test_withdrawal_reassignment_invalid_state_and_partial_scan_are_conservative) ... ok
+
+----------------------------------------------------------------------
+Ran 21 tests in 172.885s
+
+OK
+FM_TEST_END 2026-10-22T21:30:59Z tests/fm-work-intake.test.sh exit=0 duration_ms=177860 gate_skip=false
+FM_TEST_BEGIN 2026-10-22T21:30:59Z tests/fm-tasks-axi.test.sh family=unclassified expected_gate_skip=none
+ok - bootstrap reports a regular code-root backlog and stays silent for a link into the home or no copy
+ok - bootstrap reports a code-root backlog linked elsewhere and a forked archive
+ok - bootstrap stays silent when the code root is the home
+ok - bare tasks-axi replaced the code-root link and bootstrap reported the fork
+ok - fm-tasks-axi.sh writes, holds, archives, and reads relative body files through to the home from the code root
+ok - fm-tasks-axi.sh pins the home's backlog over an ambient TASKS_AXI_FILE and serves the dashboard
+ok - fm-tasks-axi.sh refuses caller --file, a symlinked home backlog, and an unresolvable home
+ok - fm-tasks-axi.sh refuses add --start while plain add and start <id> pass through
+ok - fm-tasks-axi.sh keeps the single-home layout addressing its own code-root backlog
+FM_TEST_END 2026-10-22T21:31:12Z tests/fm-tasks-axi.test.sh exit=0 duration_ms=12803 gate_skip=false
+FM_TEST_BEGIN 2026-10-22T21:31:12Z tests/fm-project-capacity.test.sh family=backend-dispatch expected_gate_skip=none
+ok - imported work stays queued under capacity and source holds, then emits one start at the ordinary launch commit
+ok - a project with no declared capacity keeps today's uncapped dispatch
+ok - a spawn is admitted while its project still has a free place
+ok - a spawn beyond capacity is deferred before any record, brief, endpoint, worktree, or backlog move exists
+ok - a project name with spaces is declared by taking the capacity from the last field
+ok - a project name beginning with # is declared, and a # comment stays a comment
+ok - a home reached through a symlink counts each of its workers once
+ok - a recorded PR handoff or a cleanup each frees exactly one place
+ok - a restart of a task id does not count that task's own record
+ok - only this project's ship and scout records hold places
+ok - every local home shares one declared capacity per project origin, and remote homes do not count
+ok - an unreadable state directory or task record refuses admission rather than undercounting
+ok - concurrent spawns can never both take the last place
+ok - a spawn that fails after admission leaves no record and holds no place
+ok - an unreadable declaration refuses every fresh spawn rather than guessing the limit
+ok - a batch reports a capacity deferral as deferred, not failed
+ok - an Orca spawn takes the shared project lock whenever a same-origin clone is capped and defers before creating anything
+FM_TEST_END 2026-10-22T21:34:06Z tests/fm-project-capacity.test.sh exit=0 duration_ms=173559 gate_skip=false
+FM_TEST_SUMMARY total=3 failed=0 skipped_gate=0 duration_ms=364906
+FM_TEST_SUMMARY_FAMILY family=backend-dispatch count=1 duration_ms=173559 failed=0
+FM_TEST_SUMMARY_FAMILY family=pure-contract-unit count=1 duration_ms=177860 failed=0
+FM_TEST_SUMMARY_FAMILY family=unclassified count=1 duration_ms=12803 failed=0
+FM_TEST_SLOWEST rank=1 script=tests/fm-work-intake.test.sh duration_ms=177860
+FM_TEST_SLOWEST rank=2 script=tests/fm-project-capacity.test.sh duration_ms=173559
+FM_TEST_SLOWEST rank=3 script=tests/fm-tasks-axi.test.sh duration_ms=12803
+exit=0 elapsed=365s

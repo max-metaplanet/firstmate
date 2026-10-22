@@ -1,0 +1,334 @@
+=== S1: board with zero Max-assigned Up next tickets (unassigned, other person's, Requests, Max backlog) ===
+$ fm-work-intake.sh preview --json
+{
+  "result": "preview",
+  "would_import": [],
+  "excluded": [
+    {
+      "ticket": "ENG-10",
+      "source_ref": "u1",
+      "reasons": [
+        "unassigned"
+      ]
+    },
+    {
+      "ticket": "ENG-11",
+      "source_ref": "o1",
+      "reasons": [
+        "assigned_to_other"
+      ]
+    },
+    {
+      "ticket": "ENG-12",
+      "source_ref": "q1",
+      "reasons": [
+        "requests_list"
+      ]
+    },
+    {
+      "ticket": "ENG-13",
+      "source_ref": "b1",
+      "reasons": [
+        "status_backlog"
+      ]
+    }
+  ],
+  "backlog_proposals": [
+    {
+      "ticket": "ENG-13",
+      "source_ref": "b1",
+      "title": "Max backlog item",
+      "scope": {
+        "description": "Acceptance: x",
+        "comments_complete": false,
+        "comments": null,
+        "parent": null
+      },
+      "dates": {
+        "hard_deadline": null,
+        "due_at": null,
+        "time_estimate_ms": null
+      },
+      "priority": {
+        "value": "normal",
+        "rank": 3,
+        "provenance": "unset",
+        "native": null
+      },
+      "blockers": [
+        "status_backlog"
+      ],
+      "reason": "proposal only; scope, acceptance criteria, project and deferrals require review"
+    }
+  ],
+  "additional_backlog_proposals": 0,
+  "source_report": {
+    "ownership_coverage_gap": false,
+    "eligible_count": 0
+  },
+  "ownership_coverage_gap": false,
+  "eligible_count": 0
+}
+[exit=0]
+--- queue after preview (must be empty, no receipt) ---
+count: 0
+tasks: 0 queued tasks in this backlog
+=== S2: poll without activation is a no-op ===
+$ fm-work-intake.sh poll --json
+{
+  "result": "disabled"
+}
+[exit=0]
+=== S3: Max Up next ticket appears; captain already has a title-convention row for ENG-21 ===
+$ fm-work-intake.sh preview --json
+{
+  "result": "preview",
+  "would_import": [
+    {
+      "ticket": "ENG-20",
+      "source_ref": "m1",
+      "title": "Implement intake target",
+      "reason": "source eligible; scope review required"
+    }
+  ],
+  "excluded": [
+    {
+      "ticket": "ENG-21",
+      "source_ref": "m2",
+      "reasons": [
+        "existing_explicit_identity:eng21-rollout"
+      ]
+    },
+    {
+      "ticket": "ENG-11",
+      "source_ref": "o1",
+      "reasons": [
+        "assigned_to_other"
+      ]
+    }
+  ],
+  "backlog_proposals": [],
+  "additional_backlog_proposals": 0,
+  "source_report": {
+    "ownership_coverage_gap": false,
+    "eligible_count": 2
+  },
+  "ownership_coverage_gap": false,
+  "eligible_count": 2
+}
+[exit=0]
+$ fm-work-intake.sh poll --json
+{
+  "result": "polled",
+  "changed": true,
+  "imported": [
+    "intake-87d3baeea36e90c94909"
+  ],
+  "would_import": [
+    {
+      "ticket": "ENG-20",
+      "source_ref": "m1",
+      "title": "Implement intake target",
+      "reason": "source eligible; scope review required"
+    }
+  ],
+  "excluded": [
+    {
+      "ticket": "ENG-21",
+      "source_ref": "m2",
+      "reasons": [
+        "existing_explicit_identity:eng21-rollout"
+      ]
+    },
+    {
+      "ticket": "ENG-11",
+      "source_ref": "o1",
+      "reasons": [
+        "assigned_to_other"
+      ]
+    }
+  ],
+  "backlog_proposals": [],
+  "additional_backlog_proposals": 0,
+  "source_report": {
+    "ownership_coverage_gap": false,
+    "eligible_count": 2
+  },
+  "ownership_coverage_gap": false,
+  "eligible_count": 2
+}
+[exit=0]
+--- queue after first poll ---
+count: 2
+tasks[2]{id,state,kind,repo,title,body}:
+  eng21-rollout,queued,task,"-","ENG-21 rollout: captain-authored",""
+  intake-87d3baeea36e90c94909,queued,ship,"-",Implement intake target,"Source reference: m1\nTicket: ENG-20\nTicket URL: https://app.clickup.com/t/m1\nSource evidence is retained in the intake receipt."
+help[1]:
+  - Run `tasks-axi show <id>` for full notes on a task
+=== S4: second poll (cooldown expired) imports nothing new ===
+$ fm-work-intake.sh poll --json
+{
+  "result": "polled",
+  "changed": false,
+  "imported": [],
+  "would_import": [],
+  "excluded": [
+    {
+      "ticket": "ENG-20",
+      "source_ref": "m1",
+      "reasons": [
+        "already_recorded:imported"
+      ]
+    },
+    {
+      "ticket": "ENG-21",
+      "source_ref": "m2",
+      "reasons": [
+        "already_recorded:existing"
+      ]
+    },
+    {
+      "ticket": "ENG-11",
+      "source_ref": "o1",
+      "reasons": [
+        "assigned_to_other"
+      ]
+    }
+  ],
+  "backlog_proposals": [],
+  "additional_backlog_proposals": 0,
+  "source_report": {
+    "ownership_coverage_gap": false,
+    "eligible_count": 2
+  },
+  "ownership_coverage_gap": false,
+  "eligible_count": 2
+}
+[exit=0]
+--- queued row count ---
+count: 2
+tasks[2]{id,state,kind,repo,title}:
+  eng21-rollout,queued,task,"-","ENG-21 rollout: captain-authored"
+=== S5: dispatch gate — imported intake-87d3baeea36e90c94909 refused before review; captain row eng21-rollout not gated ===
+$ fm-work-intake.sh check intake-87d3baeea36e90c94909 --json
+work-intake: source, scope, dependency or competing hold prevents dispatch
+[exit=1]
+$ fm-work-intake.sh check eng21-rollout --json
+{
+  "result": "independent"
+}
+[exit=0]
+--- review then check ---
+$ fm-work-intake.sh review intake-87d3baeea36e90c94909 --decision-file /var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-intake-live.ZEVe6z/decision.json --json
+{
+  "result": "cleared",
+  "candidate": {
+    "source_ref": "m1",
+    "source_revision": "r1-full",
+    "ticket": "ENG-20",
+    "title": "Implement intake target",
+    "url": "https://app.clickup.com/t/m1",
+    "eligibility": {
+      "eligible": true,
+      "exclusion_reasons": [],
+      "proposal": null,
+      "requires_scope_review": true
+    },
+    "priority": {
+      "value": "normal",
+      "rank": 3,
+      "provenance": "unset",
+      "native": null
+    },
+    "dates": {
+      "hard_deadline": null,
+      "due_at": null,
+      "time_estimate_ms": null
+    },
+    "scope": {
+      "description": "Acceptance: x",
+      "comments_complete": true,
+      "comments": [],
+      "parent": null
+    },
+    "source_evidence": {
+      "ownership": "sole",
+      "status": "up next",
+      "blocked_tags": []
+    },
+    "observed_at": "2026-10-22T21:35:09.300500+00:00"
+  },
+  "local_id": "intake-87d3baeea36e90c94909",
+  "order": [
+    1e+20,
+    1,
+    1e+20,
+    3,
+    1e+20,
+    0,
+    1792704898.62598,
+    "m1"
+  ]
+}
+[exit=0]
+$ fm-work-intake.sh check intake-87d3baeea36e90c94909 --json
+{
+  "result": "cleared",
+  "candidate": {
+    "source_ref": "m1",
+    "source_revision": "r1-full",
+    "ticket": "ENG-20",
+    "title": "Implement intake target",
+    "url": "https://app.clickup.com/t/m1",
+    "eligibility": {
+      "eligible": true,
+      "exclusion_reasons": [],
+      "proposal": null,
+      "requires_scope_review": true
+    },
+    "priority": {
+      "value": "normal",
+      "rank": 3,
+      "provenance": "unset",
+      "native": null
+    },
+    "dates": {
+      "hard_deadline": null,
+      "due_at": null,
+      "time_estimate_ms": null
+    },
+    "scope": {
+      "description": "Acceptance: x",
+      "comments_complete": true,
+      "comments": [],
+      "parent": null
+    },
+    "source_evidence": {
+      "ownership": "sole",
+      "status": "up next",
+      "blocked_tags": []
+    },
+    "observed_at": "2026-10-22T21:35:10.677428+00:00"
+  },
+  "local_id": "intake-87d3baeea36e90c94909",
+  "order": [
+    1e+20,
+    1,
+    1e+20,
+    3,
+    1e+20,
+    0,
+    1792704898.62598,
+    "m1"
+  ]
+}
+[exit=0]
+=== source calls (GET-only hook) ===
+GET ['--json']
+GET ['--json']
+GET ['--json']
+GET ['--json']
+GET ['--json', '--refresh', 'm1']
+GET ['--json', '--refresh', 'm1']
+GET ['--json', '--refresh', 'm1']
+GET ['--json', '--refresh', 'm1']

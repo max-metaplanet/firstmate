@@ -1,0 +1,433 @@
+=== S1: zero Max-assigned Up next tickets (matches live board) — preview reports it, does not widen ===
+$ fm-work-intake.sh preview --json
+[exit=0]
+{
+    "result": "preview",
+    "would_import": [],
+    "excluded": [
+        {
+            "ticket": "ENG-10",
+            "source_ref": "r-unassigned",
+            "reasons": [
+                "unassigned"
+            ]
+        },
+        {
+            "ticket": "ENG-11",
+            "source_ref": "r-other",
+            "reasons": [
+                "assigned_to_other"
+            ]
+        },
+        {
+            "ticket": "ENG-12",
+            "source_ref": "r-backlog",
+            "reasons": [
+                "status_backlog"
+            ]
+        }
+    ],
+    "backlog_proposals": [
+        {
+            "ticket": "ENG-12",
+            "source_ref": "r-backlog",
+            "title": "Max backlog item",
+            "scope": {
+                "description": "Acceptance criteria: retain the accepted scope.",
+                "comments_complete": false,
+                "comments": null,
+                "parent": null
+            },
+            "dates": {
+                "hard_deadline": null,
+                "due_at": null,
+                "time_estimate_ms": null
+            },
+            "priority": {
+                "value": "normal",
+                "rank": 3,
+                "provenance": "unset",
+                "native": null
+            },
+            "blockers": [
+                "status_backlog"
+            ],
+            "reason": "proposal only; scope, acceptance criteria, project and deferrals require review"
+        }
+    ],
+    "additional_backlog_proposals": 0,
+    "source_report": {
+        "ownership_coverage_gap": false,
+        "eligible_count": 0
+    },
+    "ownership_coverage_gap": false,
+    "eligible_count": 0
+}
+queue after preview:
+## In flight
+
+## Queued
+
+## Done
+state dir:
+
+=== S2: one eligible ticket; preview is read-only ===
+$ fm-work-intake.sh preview --json
+[exit=0]
+{
+ "would_import": [
+  {
+   "ticket": "ENG-20",
+   "source_ref": "r-max1",
+   "title": "Max up next one",
+   "reason": "source eligible; scope review required"
+  }
+ ],
+ "excluded": [
+  {
+   "ticket": "ENG-11",
+   "source_ref": "r-other",
+   "reasons": [
+    "assigned_to_other"
+   ]
+  },
+  {
+   "ticket": "ENG-12",
+   "source_ref": "r-backlog",
+   "reasons": [
+    "status_backlog"
+   ]
+  }
+ ],
+ "backlog_proposals": [
+  {
+   "ticket": "ENG-12",
+   "source_ref": "r-backlog",
+   "title": "Max backlog item",
+   "scope": {
+    "description": "Acceptance criteria: retain the accepted scope.",
+    "comments_complete": false,
+    "comments": null,
+    "parent": null
+   },
+   "dates": {
+    "hard_deadline": null,
+    "due_at": null,
+    "time_estimate_ms": null
+   },
+   "priority": {
+    "value": "normal",
+    "rank": 3,
+    "provenance": "unset",
+    "native": null
+   },
+   "blockers": [
+    "status_backlog"
+   ],
+   "reason": "proposal only; scope, acceptance criteria, project and deferrals require review"
+  }
+ ],
+ "eligible_count": 1
+}
+backlog unchanged by preview
+no receipt written by preview
+
+=== S3: poll without activation is a no-op ===
+$ fm-work-intake.sh poll --json
+{
+  "result": "disabled"
+}
+[exit=0]
+backlog unchanged
+
+=== S4: activated poll imports eligible ticket exactly once ===
+$ fm-work-intake.sh poll --json
+[exit=0]
+{
+    "result": "polled",
+    "changed": true,
+    "imported": [
+        "intake-0b45354356cc27e6838c"
+    ],
+    "would_import": [
+        {
+            "ticket": "ENG-20",
+            "source_ref": "r-max1",
+            "title": "Max up next one",
+            "reason": "source eligible; scope review required"
+        }
+    ],
+    "excluded": [
+        {
+            "ticket": "ENG-11",
+            "source_ref": "r-other",
+            "reasons": [
+                "assigned_to_other"
+            ]
+        },
+        {
+            "ticket": "ENG-12",
+            "source_ref": "r-backlog",
+            "reasons": [
+                "status_backlog"
+            ]
+        }
+    ],
+## In flight
+
+## Queued
+- [ ] intake-0b45354356cc27e6838c - Max up next one (kind: ship) (since 2026-10-22) (hold: work intake intake-0b45354356cc27e6838c requires source and scope clearance) (hold-kind: external)
+  Source reference: r-max1
+  Ticket: ENG-20
+  Ticket URL: https://app.clickup.com/t/r-max1
+  Source evidence is retained in the intake receipt.
+## Done
+--- second poll (coalesce window expired) ---
+$ fm-work-intake.sh poll --json
+[exit=0]
+{
+    "result": "polled",
+    "changed": false,
+    "imported": [],
+    "would_import": [],
+    "excluded": [
+        {
+            "ticket": "ENG-20",
+            "source_ref": "r-max1",
+            "reasons": [
+                "already_recorded:imported"
+            ]
+        },
+        {
+            "ticket": "ENG-11",
+intake rows in backlog: 1
+{
+    "entries": {
+        "r-max1": {
+            "candidate": {
+                "dates": {
+                    "due_at": null,
+                    "hard_deadline": null,
+                    "time_estimate_ms": null
+                },
+                "eligibility": {
+                    "eligible": true,
+                    "exclusion_reasons": [],
+                    "proposal": null,
+                    "requires_scope_review": true
+                },
+                "observed_at": "2026-10-22T20:22:51.876966+00:00",
+                "priority": {
+                    "native": null,
+                    "provenance": "unset",
+                    "rank": 3,
+                    "value": "normal"
+                },
+                "scope": {
+                    "comments": null,
+                    "comments_complete": false,
+                    "description": "Acceptance criteria: retain the accepted scope.",
+                    "parent": null
+                },
+                "source_evidence": {
+                    "blocked_tags": [],
+                    "ownership": "sole",
+                    "status": "up next"
+                },
+                "source_ref": "r-max1",
+                "source_revision": "r-max1-r1",
+                "ticket": "ENG-20",
+                "title": "Max up next one",
+                "url": "https://app.clickup.com/t/r-max1"
+            },
+            "eligible_since": 1792700568.2789152,
+            "local_id": "intake-0b45354356cc27e6838c",
+            "owner_home": "/private/tmp/fm-intake-live.ip2G4j",
+            "phase": "imported",
+            "present": true,
+            "scan_revision": "r-max1-r1",
+            "source_ref": "r-max1"
+        }
+    },
+    "failures": 0,
+    "next_poll": 1792700871.686259,
+    "snapshot": {
+        "candidates": [
+            {
+                "dates": {
+                    "due_at": null,
+                    "hard_deadline": null,
+                    "time_estimate_ms": null
+                },
+                "eligibility": {
+                    "eligible": true,
+
+=== S5: imported row is gated until firstmate review; then dispatchable ===
+$ fm-work-intake.sh check intake-0b45354356cc27e6838c --json
+work-intake: source, scope, dependency or competing hold prevents dispatch
+[exit=1]
+$ fm-work-intake.sh refresh intake-0b45354356cc27e6838c --json
+[exit=0]
+$ fm-work-intake.sh review intake-0b45354356cc27e6838c --decision-file /tmp/fm-intake-live.ip2G4j/decision.json --json
+{
+  "result": "cleared",
+  "candidate": {
+    "source_ref": "r-max1",
+    "source_revision": "r-max1-r1-full",
+    "ticket": "ENG-20",
+    "title": "Max up next one",
+    "url": "https://app.clickup.com/t/r-max1",
+    "eligibility": {
+      "eligible": true,
+      "exclusion_reasons": [],
+      "proposal": null,
+      "requires_scope_review": true
+    },
+    "priority": {
+      "value": "normal",
+      "rank": 3,
+      "provenance": "unset",
+      "native": null
+    },
+    "dates": {
+      "hard_deadline": null,
+      "due_at": null,
+      "time_estimate_ms": null
+    },
+    "scope": {
+      "description": "Acceptance criteria: retain the accepted scope.",
+      "comments_complete": true,
+      "comments": [],
+      "parent": null
+    },
+    "source_evidence": {
+      "ownership": "sole",
+      "status": "up next",
+      "blocked_tags": []
+    },
+    "observed_at": "2026-10-22T20:22:59.314476+00:00"
+  },
+  "local_id": "intake-0b45354356cc27e6838c",
+  "order": [
+    1e+20,
+    1,
+    1e+20,
+    3,
+    1e+20,
+    0,
+    1792700568.2789152,
+    "r-max1"
+  ]
+}
+[exit=0]
+$ fm-work-intake.sh check intake-0b45354356cc27e6838c --json
+{
+  "result": "cleared",
+  "candidate": {
+    "source_ref": "r-max1",
+    "source_revision": "r-max1-r1-full",
+    "ticket": "ENG-20",
+    "title": "Max up next one",
+    "url": "https://app.clickup.com/t/r-max1",
+    "eligibility": {
+      "eligible": true,
+      "exclusion_reasons": [],
+      "proposal": null,
+      "requires_scope_review": true
+    },
+    "priority": {
+      "value": "normal",
+      "rank": 3,
+      "provenance": "unset",
+      "native": null
+    },
+    "dates": {
+      "hard_deadline": null,
+      "due_at": null,
+      "time_estimate_ms": null
+    },
+    "scope": {
+      "description": "Acceptance criteria: retain the accepted scope.",
+      "comments_complete": true,
+      "comments": [],
+      "parent": null
+    },
+    "source_evidence": {
+      "ownership": "sole",
+      "status": "up next",
+      "blocked_tags": []
+    },
+    "observed_at": "2026-10-22T20:23:01.437783+00:00"
+  },
+  "local_id": "intake-0b45354356cc27e6838c",
+  "order": [
+    1e+20,
+    1,
+    1e+20,
+    3,
+    1e+20,
+    0,
+    1792700568.2789152,
+    "r-max1"
+  ]
+}
+[exit=0]
+
+=== S6: captain's pre-existing row titled 'ENG-30 rollout: ...' + eligible ENG-30 → dedupe tombstone only, never held ===
+ok: added eng30-rollout (ship) -> Queued
+task:
+  id: eng30-rollout
+  title: "ENG-30 rollout: captain authored"
+  state: queued
+  blocked: no
+  blocked_by: none
+  held: no
+  hold_reason: "-"
+  hold_kind: "-"
+  hold_until: "-"
+  kind: ship
+  repo: "-"
+  priority: "-"
+  created: 2026-10-22
+  closed: "-"
+  deps: none
+  links: none
+  body: ""
+help[2]:
+  - Run `tasks-axi start eng30-rollout` to move it to in flight
+  - Run `tasks-axi block eng30-rollout --by <other>` to record a dependency
+add exit=0
+$ fm-work-intake.sh poll --json
+[exit=0]
+imported: []
+excluded: [('ENG-20', ['already_recorded:imported']), ('ENG-11', ['assigned_to_other']), ('ENG-12', ['status_backlog']), ('ENG-30', ['existing_explicit_identity:eng30-rollout'])]
+r-max2 phase= existing local_id= eng30-rollout
+- [ ] eng30-rollout - ENG-30 rollout: captain authored (kind: ship) (since 2026-10-22)
+## Done
+$ fm-work-intake.sh check eng30-rollout --json
+{
+  "result": "independent"
+}
+[exit=0]
+intake rows in backlog: 1
+$ fm-work-intake.sh check local-work --json
+{
+  "result": "independent"
+}
+[exit=0]
+
+=== source calls (GET only, never writes) ===
+GET ['--json']
+GET ['--json']
+GET ['--json']
+GET ['--json']
+GET ['--json', '--refresh', 'r-max1']
+GET ['--json', '--refresh', 'r-max1']
+GET ['--json', '--refresh', 'r-max1']
+GET ['--json', '--refresh', 'r-max1']
+GET ['--json']
+
+=== no lifecycle events emitted / no worker started ===
+.work-intake.lock
+work-intake.json
+lab removed
