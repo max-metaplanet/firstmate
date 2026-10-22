@@ -26,7 +26,7 @@
 # Existing queued, live, archived and registered local secondmate rows are
 # reconciled before add. Identity is an exact Source reference:, Ticket: or
 # Ticket URL: body line, a live task's meta ticket, or the ticket key leading the
-# row title. One match records an existing-phase dedupe tombstone; intake never
+# title of a row without a Source reference: line. One match records an existing-phase dedupe tombstone; intake never
 # holds, gates or refuses rows it did not create. Unavailable remote ownership
 # blocks new imports. Multiple matches are a conflict, never an automatic split
 # or handoff.

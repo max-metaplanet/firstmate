@@ -224,9 +224,12 @@ def matches(row, candidate):
     body = row.get('body', '')
     identities = {'Source reference: ' + candidate['source_ref'], 'Ticket: ' + candidate['ticket'],
                   'Ticket URL: ' + candidate['url']}
+    lines = [line.strip() for line in body.splitlines()]
+    if any(line in identities for line in lines):
+        return True
     key = re.match(r'\s*([A-Za-z]+-\d+)(?![\w-])', row.get('title', ''))
-    return (any(line.strip() in identities for line in body.splitlines())
-            or bool(key) and key[1].upper() == candidate['ticket'].upper())
+    return (not any(line.startswith('Source reference: ') for line in lines)
+            and bool(key) and key[1].upper() == candidate['ticket'].upper())
 
 
 def mutate(*args):

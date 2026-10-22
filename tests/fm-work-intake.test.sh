@@ -217,6 +217,27 @@ exit "$rc"
         self.assertEqual((entry['phase'],entry['local_id']),('existing','existing'))
         self.assertNotIn('intake-',self.tasks('list'))
 
+    def test_intake_rows_titled_with_another_ticket_key_do_not_absorb_it(self):
+        split=deepcopy(BASE['candidates'][0])
+        split.update(source_ref='opaque-split',ticket='ENG-2400',title='ENG-2389 part 2: connect event',
+                     url='https://app.clickup.com/t/fixture-split',source_revision='split-r1')
+        original=deepcopy(BASE['candidates'][0])
+        original.update(source_ref='opaque-original',ticket='ENG-2389',title='ENG-2400 groundwork: original event',
+                        url='https://app.clickup.com/t/fixture-original',source_revision='original-r1')
+        self.snapshot['candidates']=[split,original]
+        self.save()
+        self.assertEqual(len(self.call('preview')['would_import']),2)
+        self.activate()
+        out=self.call('poll')
+        self.assertEqual(len(out['imported']),2)
+        entries=self.receipt()['entries']
+        self.assertEqual({entries[r]['phase'] for r in ('opaque-split','opaque-original')},{'imported'})
+        self.assertNotEqual(entries['opaque-split']['local_id'],entries['opaque-original']['local_id'])
+        self.expire()
+        later=self.call('poll')
+        self.assertEqual(later['imported'],[])
+        self.assertIn('count: 2',self.tasks('list'))
+
     def test_archived_ticket_after_new_import_in_same_scan_does_not_duplicate(self):
         second=deepcopy(BASE['candidates'][0])
         second.update(source_ref='opaque-fixture-two',ticket='ENG-2',url='https://app.clickup.com/t/fixture-two',
