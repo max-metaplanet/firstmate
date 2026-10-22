@@ -47,10 +47,11 @@ def failed_of($checks):
   [$checks[] | select(.status == "completed" and .conclusion != null
     and .conclusion != "" and (.conclusion | IN("success","skipped","neutral") | not))];
 # The red lanes a parked worker has already been told about, as one canonical
-# line. Names only: a rerun changes a lane's id and URL while its red stays the same.
+# line bound to the head they failed on. Names, not ids: a rerun changes a
+# lane's id and URL while its red on that head stays the same.
 def failing_identities($record):
   (($record.observation.checks // []) | latest_checks) as $checks
-  | [failed_of($checks)[] | .name] | unique | tojson;
+  | {head:($record.observation.head // null),failing:([failed_of($checks)[] | .name] | unique)} | tojson;
 def projected($input; $saved; $now; $max_age):
   known($input; $saved) as $known
   | [$known[] as $k

@@ -1702,7 +1702,7 @@ test_parked_red_ci_reenters_queue() {
   with_home "$home" "$ROOT/bin/fm-contributions.sh" poll >/dev/null || fail 'red CI observation failed'
   assert_grep 'phase=queued' "$home/state/delivery.park" 'red CI requests parked worker admission'
   assert_grep 'wake_reason=checks failed' "$home/state/delivery.park" 'red CI wake explains the failed check'
-  assert_grep 'failing_checks=["test"]' "$home/state/delivery.park" 'the wake records the red lane by name'
+  assert_grep "failing_checks={\"head\":\"$HEAD_A\",\"failing\":[\"test\"]}" "$home/state/delivery.park" 'the wake records the red lane by name on its head'
   repark_record "$home/state/delivery.park"
   with_home "$home" "$ROOT/bin/fm-contributions.sh" poll >/dev/null || fail 'repeat red CI observation failed'
   assert_grep 'phase=parked' "$home/state/delivery.park" 'the same red lane never wakes the worker twice'
@@ -1710,8 +1710,13 @@ test_parked_red_ci_reenters_queue() {
     > "$home/forge/extra-checks.json"
   with_home "$home" "$ROOT/bin/fm-contributions.sh" poll >/dev/null || fail 'second red lane observation failed'
   assert_grep 'phase=queued' "$home/state/delivery.park" 'a newly failing lane wakes the parked worker'
-  assert_grep 'failing_checks=["integration","test"]' "$home/state/delivery.park" 'the wake records the grown red set'
-  pass 'red CI queues a parked worker once per distinct failing set, without consuming observation events'
+  assert_grep "failing_checks={\"head\":\"$HEAD_A\",\"failing\":[\"integration\",\"test\"]}" "$home/state/delivery.park" 'the wake records the grown red set'
+  repark_record "$home/state/delivery.park"
+  printf '%s\n' "$HEAD_B" > "$home/forge/head"
+  with_home "$home" "$ROOT/bin/fm-contributions.sh" poll >/dev/null || fail 'red CI on a new head observation failed'
+  assert_grep 'phase=queued' "$home/state/delivery.park" 'the same red lanes on a pushed head wake the parked worker'
+  assert_grep "failing_checks={\"head\":\"$HEAD_B\",\"failing\":[\"integration\",\"test\"]}" "$home/state/delivery.park" 'the wake records the red set on the new head'
+  pass 'red CI queues a parked worker once per distinct failing set and head, without consuming observation events'
 }
 
 failures=0
