@@ -211,8 +211,6 @@ PAYLOAD=$(jq -cn --arg event "$EVENT" --arg id "$ID" --arg ticket "$TICKET" \
           limits:"Confirms the merge; live behavior is unverified."}]}}
     elif $event == "finished" then
       {progress:{version:1,outcome:"The assigned work is finished.",next_actions:[]}}
-    elif $event == "blocked" then
-      {progress:{version:1,outcome:"The assigned work is blocked and needs assistance."}}
     elif $event == "decision-answered" then
       {progress:{version:1,decisions:["The requested decision has been answered."]}}
     else {} end)' 2>/dev/null) \

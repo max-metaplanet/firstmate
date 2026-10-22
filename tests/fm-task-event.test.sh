@@ -49,7 +49,7 @@ done
 pass 'all event types preserve opaque ticket, worker summary, key, home and PR'
 
 jq -se '
-  all(.[] | select(.event == "started" or .event == "waiting" or .event == "resumed" or .event == "cancelled"); has("progress") | not) and
+  all(.[] | select(.event == "started" or .event == "blocked" or .event == "waiting" or .event == "resumed" or .event == "cancelled"); has("progress") | not) and
   all(.[] | select(has("progress")); .progress.version == 1) and
   any(.[]; .event == "pr-opened" and .progress.outcome == "A pull request is available for review." and
     .progress.next_actions == ["Review the pull request."] and
@@ -59,7 +59,7 @@ jq -se '
     .progress.next_actions == [] and .progress.evidence == [{summary:"Pull request merge confirmed.",
       url:.pr_url,observed_at:.timestamp,limits:"Confirms the merge; live behavior is unverified."}]) and
   any(.[]; .event == "finished" and .progress.outcome == "The assigned work is finished." and .progress.next_actions == []) and
-  any(.[]; .event == "blocked" and .progress.outcome == "The assigned work is blocked and needs assistance.") and
+  any(.[]; .event == "blocked") and
   any(.[]; .event == "decision-answered" and .progress.decisions == ["The requested decision has been answered."])
 ' "$home/events" >/dev/null || fail 'structured lifecycle facts or omission contract changed'
 pass 'typed lifecycle facts supply progress and dated evidence without inventing checks or live verification'

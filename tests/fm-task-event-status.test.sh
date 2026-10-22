@@ -45,7 +45,7 @@ fold "$home" >/dev/null || fail 'first fold failed'
 await_events "$home" 2
 jq -se 'length == 2 and all(.[]; .task_id == "task" and .ticket == "issue-42") and
   any(.[]; .event == "blocked" and .key == "credential" and .summary == "service credential expired" and
-    .progress == {version:1,outcome:"The assigned work is blocked and needs assistance."}) and
+    (has("progress") | not)) and
   any(.[]; .event == "waiting" and .key == "scope" and .summary == "choose compatibility scope" and (has("progress") | not))' \
   "$home/events.jsonl" >/dev/null || fail 'keyed blockers lost payload context or resumed before the final blocker cleared'
 printf 'resolved [key=scope]: compatibility scope approved\n' >> "$home/state/task.status"

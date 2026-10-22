@@ -616,9 +616,8 @@ They never extract progress from worker status, steer bodies, or decision bodies
 PR registration emits an outcome, a review action, and evidence with the PR URL and observation time; that evidence explicitly leaves checks and live behavior unverified.
 A confirmed merge emits an outcome and dated PR evidence with a live-verification limit, and clears the review action.
 Successful finished-work cleanup emits a completion outcome and clears earlier actions; it does not claim ticket completion or live verification.
-A blocked transition emits a plain statement that the assigned work is blocked and needs assistance, without guessing its cause from prose.
 A durably answered decision emits a short decision receipt without asserting which choice was made.
-Started, waiting, resumed, and cancelled events omit `progress` because those transitions alone establish no new implementation outcome.
+Started, blocked, waiting, resumed, and cancelled events omit `progress` because those transitions alone establish no new implementation outcome, so they never erase the last substantive progress account.
 Consumers that ignore `progress` continue to receive the unchanged version 1 lifecycle fields.
 
 | Event | Transition owner |
