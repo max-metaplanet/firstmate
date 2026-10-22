@@ -3956,6 +3956,21 @@ EOF
   hb=$(( HEARTBEAT * (1 << streak) ))
   [ "$hb" -gt "$HEARTBEAT_MAX" ] && hb=$HEARTBEAT_MAX
   if [ "$heartbeat_age" -ge "$hb" ]; then
+    if [ "$(cat "$CONFIG/work-intake-enabled" 2>/dev/null || true)" = 1 ]; then
+      intake_data=${FM_DATA_OVERRIDE:-$FM_HOME/data}
+      if intake_result=$(FM_HOME="$FM_HOME" FM_CONFIG_OVERRIDE="$CONFIG" FM_DATA_OVERRIDE="$intake_data" FM_STATE_OVERRIDE="$STATE" \
+        bash "$SCRIPT_DIR/fm-work-intake.sh" poll --json 2>&1); then
+        if printf '%s\n' "$intake_result" | grep -q '"changed": true'; then
+          fm_wake_append check work-intake 'work-intake: source evidence changed; load work-intake for queue reconsideration' || exit 1
+          touch "$STATE/.last-heartbeat"
+          wake 'check: work-intake source evidence changed'
+        fi
+      else
+        fm_wake_append check work-intake 'work-intake: source unavailable; inspect receipt debt and retain imported work queued' || exit 1
+        touch "$STATE/.last-heartbeat"
+        wake 'check: work-intake source unavailable'
+      fi
+    fi
     # Triage: in always-on mode a heartbeat is benign unless the cheap fleet-scan
     # turns up a captain-relevant status the per-wake path missed. Absorb the
     # no-change case (advance the schedule and back off exactly as wake() would,

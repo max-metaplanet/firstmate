@@ -354,7 +354,7 @@ family_for_basename() {
     fm-send-popup-settle.test.sh|fm-send-settle.test.sh|\
     fm-subagent-pretool-check.test.sh|\
     fm-supervision-instructions.test.sh|fm-task-delivery.test.sh|\
-    fm-timeout-lib.test.sh|fm-nm-run-lib.test.sh|fm-nm-recover.test.sh|\
+    fm-work-intake.test.sh|fm-timeout-lib.test.sh|fm-nm-run-lib.test.sh|fm-nm-recover.test.sh|\
     fm-tmux-submit-busy.test.sh|fm-trace-context-lib.test.sh|\
     fm-transition-lib.test.sh|\
     fm-test-run.test.sh|fm-test-isolation-proof.test.sh)
@@ -1857,6 +1857,12 @@ families_for_changed_path() {
       printf '%s\n' secondmate
       printf '%s\n' watcher-wake-lock
       printf '%s\n' "__script__:fm-procevent-quota.test.sh"
+      ;;
+    bin/fm-work-intake.sh|bin/fm-work-intake.py|tests/fixtures/clickup-queue-v1.json)
+      printf '%s\n' __script__:fm-work-intake.test.sh
+      ;;
+    bin/fm-tasks-axi.sh)
+      printf '%s\n' __script__:fm-tasks-axi.test.sh __script__:fm-work-intake.test.sh
       ;;
     bin/fm-ticket-sync.sh|bin/fm-task-event.sh)
       # The lifecycle consumer, compatibility adapter, and transition owners.

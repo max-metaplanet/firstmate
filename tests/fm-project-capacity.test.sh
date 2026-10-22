@@ -649,6 +649,76 @@ SH
   pass "an Orca spawn takes the shared project lock whenever a same-origin clone is capped and defers before creating anything"
 }
 
+
+test_imported_work_uses_capacity_refresh_and_launch_commit() {
+  [ "$HAVE_TASKS_AXI" = 1 ] || return 0
+  local case_dir home id=source-item out rc fresh wt i
+  case_dir=$(make_case imported-queue "$id")
+  home="$case_dir/home"
+  tasks-axi update "$id" --body 'Ticket: ENG-1' --file "$home/data/backlog.md" >/dev/null
+  cp "$ROOT/tests/fixtures/clickup-queue-v1.json" "$case_dir/snapshot.json"
+  cat > "$case_dir/source" <<'SOURCE'
+#!/usr/bin/env python3
+from datetime import datetime, timezone
+import json, pathlib, sys
+p=pathlib.Path(__file__).parent
+v=json.loads((p/'snapshot.json').read_text())
+v['observed_at']=datetime.now(timezone.utc).isoformat()
+if '--refresh' in sys.argv:
+    v['mode']='refresh'
+    v['coverage'].update(complete=False,all_pages_read=False,absence_means_withdrawal=False)
+    v['candidates'][0]['scope']['comments_complete']=True
+    v['candidates'][0]['scope']['comments']=[]
+    v['candidates'][0]['source_revision']='full-scope'
+print(json.dumps(v))
+SOURCE
+  chmod +x "$case_dir/source"
+  printf '%s\n' "$case_dir/source" > "$home/config/work-intake-hook"
+  printf '1\n' > "$home/config/work-intake-enabled"
+  FM_HOME="$home" "$ROOT/bin/fm-work-intake.sh" poll --json > "$case_dir/poll.json" || fail 'could not import the source fixture'
+  rm "$home/data/$id/brief.md"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" project --mode no-mistakes --ticket ENG-1 --commit-type feat >/dev/null || fail 'could not scaffold imported brief'
+  out=$(cat "$home/data/$id/brief.md")
+  out=${out//'{TASK}'/Implement the accepted fixture.}
+  out=${out//'{FIRSTMATE_SPEC}'/Verify source dispatch.}
+  printf '%s\n' "$out" > "$home/data/$id/brief.md"
+  declare_capacity "$home" 'project 1'
+  write_live "$home" live-a "$case_dir/project"
+  cat > "$case_dir/event-hook" <<HOOK
+#!/usr/bin/env bash
+printf '%s\n' "\$1" >> "$case_dir/events.jsonl"
+HOOK
+  chmod +x "$case_dir/event-hook"
+  printf '%s\n' "$case_dir/event-hook" > "$home/config/task-event-hook"
+  rc=0
+  out=$(run_spawn "$case_dir" "$home" "$case_dir/unused" "$id" "$case_dir/project" --mode no-mistakes --yolo off --ticket ENG-1 --commit-type feat) || rc=$?
+  expect_code "$DEFER_EXIT" "$rc" "imported work bypassed capacity: $out"
+  assert_equals queued "$(row_state "$home" "$id")" 'capacity refusal started imported work'
+  assert_absent "$case_dir/events.jsonl" 'capacity refusal emitted an event'
+  printf 'pr=https://github.com/example/project/pull/99\n' >> "$home/state/live-a.meta"
+  rc=0
+  out=$(run_spawn "$case_dir" "$home" "$case_dir/unused" "$id" "$case_dir/project" --mode no-mistakes --yolo off --ticket ENG-1 --commit-type feat) || rc=$?
+  [ "$rc" != 0 ] && [ "$rc" != "$DEFER_EXIT" ] || fail "unreviewed source was not rejected: $out"
+  assert_contains "$out" 'prevents dispatch' 'spawn did not reach the source authority guard'
+  assert_absent "$home/state/$id.meta" 'source refusal created a worker'
+  fresh=$(FM_HOME="$home" "$ROOT/bin/fm-work-intake.sh" refresh "$id" --json) || fail 'source refresh failed'
+  printf '%s\n' "$fresh" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(json.dumps(dict(source_revision=d["candidate"]["source_revision"], authorized=True, identity_checked=True, project="project",kind="ship",reason="accepted fixture scope")))' > "$case_dir/decision.json"
+  FM_HOME="$home" "$ROOT/bin/fm-work-intake.sh" review "$id" --decision-file "$case_dir/decision.json" >/dev/null || fail 'source review failed'
+  wt=$(new_worktree "$case_dir" "$id")
+  out=$(run_spawn "$case_dir" "$home" "$wt" "$id" "$case_dir/project" --mode no-mistakes --yolo off --ticket ENG-1 --commit-type feat) || fail "reviewed source dispatch failed: $out"
+  assert_equals in_flight "$(row_state "$home" "$id")" 'successful source dispatch did not commit the queue transition'
+  i=0
+  while [ ! -s "$case_dir/events.jsonl" ] && [ "$i" -lt 100 ]; do sleep 0.1; i=$((i+1)); done
+  python3 - "$case_dir/events.jsonl" <<'CHECK' || fail 'successful imported dispatch did not emit exactly one start'
+import json, pathlib, sys
+rows=[json.loads(line) for line in pathlib.Path(sys.argv[1]).read_text().splitlines()]
+assert sum(row.get('event')=='started' for row in rows)==1, rows
+CHECK
+  pass 'imported work stays queued under capacity and source holds, then emits one start at the ordinary launch commit'
+}
+
+test_imported_work_uses_capacity_refresh_and_launch_commit
+
 test_undeclared_capacity_keeps_dispatch_uncapped
 test_available_capacity_admits_the_worker
 test_exhausted_capacity_defers_without_leaving_anything_behind

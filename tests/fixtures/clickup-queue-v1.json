@@ -1,0 +1,26 @@
+{
+  "schema": "clickup-axi.queue",
+  "version": 1,
+  "source_namespace": "fixture-owner-source",
+  "mode": "scan",
+  "coverage": {
+    "complete": true,
+    "all_pages_read": true,
+    "absence_means_withdrawal": true,
+    "task_count": 1,
+    "scope": "active_nonclosed_tasks"
+  },
+  "report": {"ownership_coverage_gap": false, "eligible_count": 1},
+  "candidates": [{
+    "source_ref": "opaque-fixture-one",
+    "source_revision": "scan-one",
+    "ticket": "ENG-1",
+    "title": "Implement the accepted ticket",
+    "url": "https://app.clickup.com/t/fixture-one",
+    "eligibility": {"eligible": true, "exclusion_reasons": [], "proposal": null, "requires_scope_review": true},
+    "priority": {"value": "normal", "rank": 3, "provenance": "unset", "native": null},
+    "dates": {"hard_deadline": null, "due_at": null, "time_estimate_ms": null},
+    "scope": {"description": "Acceptance criteria: retain the accepted scope.", "comments_complete": false, "comments": null, "parent": null},
+    "source_evidence": {"ownership": "sole", "status": "up next", "blocked_tags": []}
+  }]
+}
