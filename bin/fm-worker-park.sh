@@ -4,7 +4,7 @@
 #        fm-worker-park.sh park <id> <reason> [until-epoch]
 #        fm-worker-park.sh record-exited <id> <reason> [until-epoch]
 #        fm-worker-park.sh wake <id> <reason>
-#        fm-worker-park.sh request <id> <reason>
+#        fm-worker-park.sh request <id> <reason> [failing-check-set]
 #        fm-worker-park.sh hint <id> <external-wait-reason>
 #        fm-worker-park.sh tick
 #
@@ -21,8 +21,12 @@
 # tick is driven by the existing watcher, never a separate polling daemon.
 # Contribution feedback and fm-send steering call request, because their
 # callers may hold locks the relaunch needs; wake durably queues, then resumes
-# at once. tick retries deferred resumes and wakes parked workers with
-# pending inbox steering. fm-spawn owns both capacity checks and priority
+# at once. A request may name the canonical set of red check identities the
+# observer saw; an identical set already recorded on the parked worker queues
+# nothing, because that worker has acted on exactly those red lanes already.
+# A set that differs, is absent, or cannot be recognized queues as before.
+# tick retries deferred resumes and wakes parked workers with pending inbox
+# steering. fm-spawn owns both capacity checks and priority
 # admission. Exit 75 means deferred, not failed: the request is queued, or the
 # record was busy and the caller retries from its own durable source.
 set -uo pipefail
@@ -45,22 +49,26 @@ CONFIG=${FM_CONFIG_OVERRIDE:-$FM_HOME/config}
 
 fail() { printf 'worker-park: %s\n' "$*" >&2; exit 1; }
 VERB=${1:-}; ID=${2:-}
+FAILING_CHECKS=''
 case "$VERB" in
   -h|--help) sed -n '2,/^set /{ /^#/s/^# \{0,1\}//p; }' "$0"; exit 0 ;;
   auto|park|record-exited|wake|request|hint)
-    case "$ID" in ''|*[!A-Za-z0-9._-]*|.*) fail 'an exact task id is required' ;; esac ;;
+    case "$ID" in ''|*[!A-Za-z0-9._-]*|.*) fail 'an exact task id is required' ;; esac
+    case "$VERB/${4:-}" in request/*$'\n'*|request/*$'\r'*) fail 'the failing-check set must be one line' ;; esac ;;
   tick) ;;
   *) fail 'expected auto, park, record-exited, wake or tick' ;;
 esac
 
-write_record() { # phase reason until queued_at wake_reason status_line
+write_record() { # phase reason until queued_at wake_reason status_line [resume_error]
+  # FAILING_CHECKS rides every write, so a recorded red set survives the
+  # resume and the next park rather than resetting each cycle.
   local staged generation endpoint
   generation=$(fm_meta_get "$META" spawn_gen)
   endpoint=$(fm_backend_target_of_meta "$META")
   [ -n "$endpoint" ] || return 1
   staged=$(mktemp "$STATE/.$ID.park.XXXXXX") || return 1
-  { printf 'phase=%s\ngeneration=%s\nendpoint=%s\nreason=%s\nuntil=%s\nqueued_at=%s\nwake_reason=%s\nstatus_line=%s\nresume_error=%s\n' \
-      "$1" "${generation:-legacy}" "$endpoint" "$2" "$3" "$4" "$5" "$6" "${7:-0}"; } > "$staged" &&
+  { printf 'phase=%s\ngeneration=%s\nendpoint=%s\nreason=%s\nuntil=%s\nqueued_at=%s\nwake_reason=%s\nstatus_line=%s\nresume_error=%s\nfailing_checks=%s\n' \
+      "$1" "${generation:-legacy}" "$endpoint" "$2" "$3" "$4" "$5" "$6" "${7:-0}" "$FAILING_CHECKS"; } > "$staged" &&
     chmod 600 "$staged" && mv "$staged" "$RECORD"
   local rc=$?
   rm -f "$staged"
@@ -163,6 +171,15 @@ auto() {
   esac
 }
 
+# A parked worker was already relaunched for the red checks its record names
+# and found nothing new to do there, so the same set earns no second slot and
+# no second relaunch. A different, absent or unrecognized set still does.
+failing_set_is_new() { # <canonical failing set, empty when the caller names none>
+  [ -n "$1" ] || return 0
+  fm_worker_park_load "$META" || return 0
+  [ "$(fm_meta_get "$RECORD" failing_checks)" != "$1" ]
+}
+
 queue_wake() {
   if ! fm_worker_park_load "$META"; then
     if [ "$(fm_meta_get "$RECORD" phase)" = hint ]; then
@@ -207,6 +224,7 @@ one() {
     case "$VERB" in request|wake) return 75 ;; *) return 0 ;; esac
   fi
   case "${3:-}" in *$'\n'*|*$'\r'*) fail 'reason must be one line' ;; esac
+  FAILING_CHECKS=$(fm_meta_get "$RECORD" failing_checks)
   case "$VERB" in
     auto) auto ;;
     park|record-exited) park "${3:-external wait}" "${4:-0}" ;;
@@ -218,7 +236,11 @@ one() {
           write_record hint "${3:-external wait}" 0 0 '' "$line"
         fi
       fi ;;
-    request) queue_wake "${3:-external wait cleared}" ;;
+    request)
+      if failing_set_is_new "${4:-}"; then
+        [ -z "${4:-}" ] || FAILING_CHECKS=$4
+        queue_wake "${3:-external wait cleared}"
+      fi ;;
     wake) queue_wake "${3:-external wait cleared}" && resume ;;
     tick)
       if fm_worker_park_load "$META"; then

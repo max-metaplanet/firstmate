@@ -6,7 +6,11 @@
 # it; queued retains the verified exit and adds a FIFO resume request. A new
 # spawn_gen invalidates the record. Unknown or malformed records release nothing.
 # Fields: phase, generation, endpoint, reason, until (epoch or 0), queued_at
-# (epoch or 0), wake_reason, status_line, resume_error (0 or 1). Values are single lines, never sourced.
+# (epoch or 0), wake_reason, status_line, resume_error (0 or 1), failing_checks.
+# failing_checks is the observer-supplied canonical set of red check identities
+# this worker was last told about, retained across resume and re-park; an absent
+# or unrecognized value makes a checks-failed resume request queue as before.
+# Values are single lines, never sourced.
 # Only fm-worker-park.sh writes these records; verified relaunch marks active.
 # Guarded teardown removes the record after landing. Teardown remains the sole landed-work cleanup gate.
 # Pending resumes sort by queued_at then full metadata path. Under a declared

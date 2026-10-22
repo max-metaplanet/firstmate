@@ -464,7 +464,7 @@ observe() { # canonical GitHub URL -> normalized JSON
 }
 
 worker_observation() { # task row-file
-  local task=$1 row=$2 actor reason
+  local task=$1 row=$2 actor reason failing
   [ -f "$STATE/$task.meta" ] || return 0
   IFS=$'\t' read -r actor reason < <(jq_lib -nr --arg task "$task" --slurpfile row "$row" --argjson now "$EPOCH" --argjson max_age "$MAX_AGE" '
     projected({tasks:[],backlog:{records:[]}}; [{task:$task,records:[$row[0]]}]; $now; $max_age)
@@ -475,7 +475,12 @@ worker_observation() { # task row-file
       "$SCRIPT_DIR/fm-worker-park.sh" hint "$task" "$reason" >/dev/null || return 1 ;;
     maintainer/*|fleet/'checks still running')
       "$SCRIPT_DIR/fm-worker-park.sh" hint "$task" "$reason" >/dev/null || return 1 ;;
-    fleet/'checks failed'|fleet/'forge requests changes')
+    fleet/'checks failed')
+      # The parked worker is told which lanes are red, so a red set it has
+      # already worked through cannot spend its slot again.
+      failing=$(jq_lib -nr --slurpfile row "$row" 'failing_identities($row[0])') || return 1
+      "$SCRIPT_DIR/fm-worker-park.sh" request "$task" "$reason" "$failing" >/dev/null || [ "$?" -eq 75 ] || return 1 ;;
+    fleet/'forge requests changes')
       "$SCRIPT_DIR/fm-worker-park.sh" request "$task" "$reason" >/dev/null || [ "$?" -eq 75 ] || return 1 ;;
   esac
 }

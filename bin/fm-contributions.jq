@@ -43,6 +43,14 @@ def known($input; $saved):
   | map(select(. as $pair | any($retired[]; . == $pair) | not));
 def latest_checks:
   group_by(.name) | map(sort_by([(.started_at // ""),(.id // 0)]) | last);
+def failed_of($checks):
+  [$checks[] | select(.status == "completed" and .conclusion != null
+    and .conclusion != "" and (.conclusion | IN("success","skipped","neutral") | not))];
+# The red lanes a parked worker has already been told about, as one canonical
+# line. Names only: a rerun changes a lane's id and URL while its red stays the same.
+def failing_identities($record):
+  (($record.observation.checks // []) | latest_checks) as $checks
+  | [failed_of($checks)[] | .name] | unique | tojson;
 def projected($input; $saved; $now; $max_age):
   known($input; $saved) as $known
   | [$known[] as $k
@@ -66,8 +74,7 @@ def projected($input; $saved; $now; $max_age):
     | (($o.checks // []) | latest_checks) as $checks
     | [$checks[] | select(.status == "completed" and (.conclusion == null or .conclusion == ""))] as $no_verdict
     | [$checks[] | select(.status != "completed")] as $pending
-    | [$checks[] | select(.status == "completed" and .conclusion != null
-        and .conclusion != "" and (.conclusion | IN("success","skipped","neutral") | not))] as $failed
+    | failed_of($checks) as $failed
     | (($record.verdict != null) and $observed_head != null and ($record.verdict.head != $observed_head)) as $stale
     | (if $record.verdict == null then null
        else $record.verdict + {freshness:(if $stale then "STALE" elif $fresh then "current" else "unverified" end)} end) as $verdict
