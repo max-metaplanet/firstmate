@@ -189,6 +189,11 @@ jobs:
           set -eu
           bin/fm-install-actionlint.sh "$RUNNER_TEMP/bin"
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.22.1
+      - name: Print Node version
+        run: node --version
       - name: Install tasks-axi
         run: |
           set -eu
@@ -236,6 +241,11 @@ jobs:
           set -eu
           bin/fm-install-actionlint.sh "$RUNNER_TEMP/bin"
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.22.1
+      - name: Print Node version
+        run: node --version
       - name: Install tasks-axi
         run: |
           set -eu
@@ -300,6 +310,11 @@ jobs:
             exit 1
           }
           tmux -V
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.22.1
+      - name: Print Node version
+        run: node --version
       - name: Install tasks-axi for backlog-handoff delegation
         run: |
           set -eu
@@ -391,6 +406,11 @@ jobs:
             exit 1
           }
           tmux -V
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.22.1
+      - name: Print Node version
+        run: node --version
       - name: Install tasks-axi
         run: |
           set -eu
