@@ -1,0 +1,14 @@
+### sweep 2 (same standing crossing, ~20s of FM_CHECK_INTERVAL=0 sweeps)
+--- watcher stdout (sweep 2):
+check: rearm-resurface
+watch exit=0
+--- new wake-queue lines since sweep 1:
+(none)
+--- banners total:
+       1
+--- quota-axi reads during sweeps (all read-only):
+   5 --provider claude --json --full --no-credential-refresh
+### disarm
+disarmed: state/usage-warner.check.sh
+exit=0
+(no usage-warner files remain)

@@ -1,0 +1,26 @@
+### drain pending wake rows (firstmate's own consumer)
+drain exit=1
+### re-arm (disarm cleared the record, so the standing crossing is new again)
+(eval):7: command too long: env -u FM_ROOT_OVERRIDE -u FM_STATE_OVERRIDE -u FM_CONFIG_OVERRIDE -u FM_DATA_OVERRIDE -u FM_PROJECTS_OVERRIDE -u NO_MISTAKES_GATE -u FM_GATE_REFUSE_BYPASS PATH=/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.xBDjjN/rec:/Library/Frameworks/Python.framework/Versions/3.13/bin:/opt/homebrew/bin:/opt/homebrew/sbin:~/.local/share/gem/ruby/3.4.0/gems/cocoapods-1.16.2/lib:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/pkg/env/global/bin:/Library/Apple/usr/bin:/opt/homebrew/bin:~/go/bin:/opt/homebrew/opt/libpq/bin:~/.jenv/bin:~/Library/pnpm:~/dotfiles/bin:~/.local/bin-private:~/.local/bin:~/.jenv/shims:~/.local/state/fnm_multishells/34958_1792721564901/bin:~/.local/share/zinit/polaris/bin:/Library/Frameworks/Python.framework/Versions/3.13/bin:/opt/homebrew/sbin:~/.cargo/bin:~/bin:/usr/local/sbin:~/.orbstack/bin:~/.orbstack/bin FM_HOME=/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.xBDjjN
+### watcher run A
+watcher stdout: [check: rearm-resurface
+watch exit=0]
+quota-axi reads so far:       10
+banners so far:        0
+drain exit=1; drained text mentions usage-warner: 0
+### watcher run B
+watcher stdout: [check: rearm-resurface
+watch exit=0]
+quota-axi reads so far:       10
+banners so far:        0
+drain exit=1; drained text mentions usage-warner: 0
+### watcher run C
+watcher stdout: [check: rearm-resurface
+watch exit=0]
+quota-axi reads so far:       10
+banners so far:        0
+drain exit=1; drained text mentions usage-warner: 0
+--- banners:
+--- record:
+cat: /var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.xBDjjN/state/.usage-warner: No such file or directory
+(eval):14: command too long: env -u FM_ROOT_OVERRIDE -u FM_STATE_OVERRIDE -u FM_CONFIG_OVERRIDE -u FM_DATA_OVERRIDE -u FM_PROJECTS_OVERRIDE -u NO_MISTAKES_GATE -u FM_GATE_REFUSE_BYPASS PATH=/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.xBDjjN/rec:/Library/Frameworks/Python.framework/Versions/3.13/bin:/opt/homebrew/bin:/opt/homebrew/sbin:~/.local/share/gem/ruby/3.4.0/gems/cocoapods-1.16.2/lib:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/pkg/env/global/bin:/Library/Apple/usr/bin:/opt/homebrew/bin:~/go/bin:/opt/homebrew/opt/libpq/bin:~/.jenv/bin:~/Library/pnpm:~/dotfiles/bin:~/.local/bin-private:~/.local/bin:~/.jenv/shims:~/.local/state/fnm_multishells/34958_1792721564901/bin:~/.local/share/zinit/polaris/bin:/Library/Frameworks/Python.framework/Versions/3.13/bin:/opt/homebrew/sbin:~/.cargo/bin:~/bin:/usr/local/sbin:~/.orbstack/bin:~/.orbstack/bin FM_HOME=/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.xBDjjN

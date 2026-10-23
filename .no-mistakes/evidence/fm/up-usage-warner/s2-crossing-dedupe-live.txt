@@ -1,0 +1,24 @@
+### real quota-axi windows right now:
+[{"id":"five_hour","percentUsed":4},{"id":"seven_day","percentUsed":19},{"id":"model:fable","percentUsed":0},{"id":"extra_usage","percentUsed":null}]
+### S2 config:
+five_hour:1
+seven_day:95
+model:fable:99
+not_a_window:5
+$ check (1st)
+usage-warner: five_hour at 4% (>=1%)
+exit=0
+$ check (2nd, same standing crossing)
+exit=0
+$ check (3rd)
+exit=0
+--- de-dupe record state/.usage-warner:
+fm-usage-warner-v2
+reported=
+notified-begin
+five_hour:1
+notified-end
+--- banners posted via real osascript:
+five_hour at 4% (>=1%)
+--- quota-axi argv recorded:
+   3 --provider claude --json --full --no-credential-refresh

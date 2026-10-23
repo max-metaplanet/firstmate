@@ -1,0 +1,41 @@
+### S3 tiered thresholds: add five_hour:3 and five_hour:50 alongside the already-reported five_hour:1
+$ check
+usage-warner: five_hour at 4% (>=3%)
+exit=0
+$ check again
+exit=0
+--- record:
+fm-usage-warner-v2
+reported=
+notified-begin
+five_hour:1
+five_hour:3
+notified-end
+--- banners:
+five_hour at 4% (>=3%)
+
+### S4 re-arm: seed record claiming seven_day:95 was crossed earlier; real seven_day now reads below 95
+$ check
+exit=0
+--- record after (seven_day:95 must be gone = re-armed; five_hour keys kept):
+fm-usage-warner-v2
+reported=
+notified-begin
+five_hour:1
+five_hour:3
+notified-end
+
+### S5 v1 record upgrade: bare 'five_hour' entry from an old record
+$ check
+exit=0
+--- record after:
+fm-usage-warner-v2
+reported=
+notified-begin
+five_hour:1
+five_hour:3
+notified-end
+--- banners (expect none):
+
+### real osascript call exit status (same argv form the warner uses):
+osascript exit=0

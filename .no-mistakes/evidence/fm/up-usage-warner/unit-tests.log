@@ -5,6 +5,8 @@ ok - fm-usage-warner: edge-triggered de-dupe crosses once, stays quiet, and re-a
 ok - fm-usage-warner: tiered thresholds on one window each warn on their own crossing
 ok - fm-usage-warner: a v1 de-dupe record is read without crashing or re-warning
 ok - fm-usage-warner: multiple crossings in one read batch into a single notification
+ok - fm-usage-warner: a repeated directive reports its crossing once
+ok - fm-usage-warner: overlapping checks warn once for one crossing
 ok - fm-usage-warner: a configured but absent window id is silently skipped
 ok - fm-usage-warner: a window missing from one read keeps its crossing recorded
 ok - fm-usage-warner: the read is always strictly read-only

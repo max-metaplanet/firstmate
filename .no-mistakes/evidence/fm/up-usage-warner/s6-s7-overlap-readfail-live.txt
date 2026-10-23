@@ -1,0 +1,22 @@
+### S6 two overlapping callers on a fresh crossing (real quota-axi)
+caller1 exit=0 out=[usage-warner: five_hour at 4% (>=2%)]
+caller2 exit=0 out=[]
+banners posted:        1
+five_hour at 4% (>=2%)
+lock left behind? none
+
+### S7 standing read failure: quota-axi missing from PATH, reported once until it changes
+(quota-axi not resolvable on the reduced PATH)
+$ check
+usage-warner: quota-axi is not installed
+exit=0
+$ check
+exit=0
+--- record:
+fm-usage-warner-v2
+reported=usage-warner: quota-axi is not installed
+notified-begin
+five_hour:2
+notified-end
+$ check with quota-axi back (crossing still recorded, no re-warn)
+exit=0

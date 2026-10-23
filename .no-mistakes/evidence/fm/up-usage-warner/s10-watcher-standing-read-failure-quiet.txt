@@ -1,0 +1,16 @@
+### S9 fresh lab: crossing already reported on demand, then the watcher's periodic sweeps must stay quiet
+$ fm-usage-warner.sh check   (on-demand caller)
+usage-warner: quota-axi read failed
+exit=0
+$ fm-usage-warner.sh arm
+armed: state/usage-warner.check.sh
+exit=0
+watcher ran ~25s with FM_CHECK_INTERVAL=0
+periodic quota-axi reads by the watcher-dispatched shim: 2
+watcher stdout (empty = no wake): []
+wake-queue rows naming usage-warner: 0
+banners total (1 = the on-demand crossing only):
+disarmed: state/usage-warner.check.sh
+
+--- cause of the read failure (real quota-axi, rate limited after repeated lab reads):
+{"status":"rate_limited","stale":false,"error":"Claude quota endpoint rate limited","retryAfter":"2026-10-23T09:04:37.954Z","sourcesTried":["oauth-file","keychain"]}

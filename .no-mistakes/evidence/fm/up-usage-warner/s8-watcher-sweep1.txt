@@ -1,0 +1,7 @@
+--- watcher stdout (sweep 1):
+check: /var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.xBDjjN/state/usage-warner.check.sh: usage-warner: five_hour at 4% (>=3%)
+watch exit=0
+--- durable wake queue after sweep 1:
+1792746010	1	check	/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.xBDjjN/state/usage-warner.check.sh	check: /var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.xBDjjN/state/usage-warner.check.sh: usage-warner: five_hour at 4% (>=3%)
+--- banners after sweep 1:
+five_hour at 4% (>=3%)
