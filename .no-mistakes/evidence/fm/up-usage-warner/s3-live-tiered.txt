@@ -1,0 +1,23 @@
+## S3 tiered thresholds on one window, live read (five_hour already reported at >=10)
+five_hour:10
+five_hour:15
+five_hour:95
+seven_day:99
+model:fable:1
+oracle: [{"id":"five_hour","percentUsed":16},{"id":"seven_day","percentUsed":79},{"id":"model:fable","percentUsed":5}]
+$ check
+usage-warner: five_hour at 16% (>=15%)
+rc=0
+$ check (again)
+rc=0 stdout=[]
+notification log:
+five_hour at 16% (>=10%); model:fable at 5% (>=1%)
+five_hour at 16% (>=15%)	(osascript rc=0)
+record:
+fm-usage-warner-v2
+reported=
+notified-begin
+five_hour:10
+five_hour:15
+model:fable:1
+notified-end

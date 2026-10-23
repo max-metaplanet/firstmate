@@ -1,0 +1,14 @@
+## S1 unconfigured home: check is silent, no quota-axi call, arm refuses
+$ fm-usage-warner.sh check
+rc=0 stdout+stderr=[]
+quota-axi invocations: 0
+state files: 
+$ fm-usage-warner.sh arm
+fm-usage-warner: no threshold configured at /var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.PZHNZA/config/usage-warner
+rc=1
+state files after arm: 
+
+## S1b comment-only config is still unconfigured
+rc=0 out=[] quota-axi invocations: 0
+fm-usage-warner: no threshold configured at /var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.PZHNZA/config/usage-warner
+arm rc=1

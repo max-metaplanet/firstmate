@@ -1,0 +1,31 @@
+## S4 edge-trigger lifecycle (quota-axi replaced by a scripted snapshot at the external boundary)
+five_hour:80
+five_hour:95
+model:opus:80
+[1] windows={"id":"five_hour","percentUsed":70},{"id":"model:opus","percentUsed":10} -> stdout=[]
+[2] windows={"id":"five_hour","percentUsed":85},{"id":"model:opus","percentUsed":85} -> stdout=[usage-warner: five_hour at 85% (>=80%); model:opus at 85% (>=80%)]
+[3] windows={"id":"five_hour","percentUsed":90},{"id":"model:opus","percentUsed":88} -> stdout=[]
+[4] windows={"id":"five_hour","percentUsed":96} -> stdout=[usage-warner: five_hour at 96% (>=95%)]
+[5] windows={"id":"five_hour","percentUsed":97},{"id":"model:opus","percentUsed":89} -> stdout=[]
+[6] windows={"id":"five_hour","percentUsed":5},{"id":"model:opus","percentUsed":89} -> stdout=[]
+[7] windows={"id":"five_hour","percentUsed":82},{"id":"model:opus","percentUsed":89} -> stdout=[usage-warner: five_hour at 82% (>=80%)]
+notifications:
+five_hour at 85% (>=80%); model:opus at 85% (>=80%)	(osascript rc=0)
+five_hour at 96% (>=95%)	(osascript rc=0)
+five_hour at 82% (>=80%)	(osascript rc=0)
+
+## S5 standing read failure reported once, crossings preserved across it
+[fail 1] stdout=[usage-warner: quota-axi read failed]
+[fail 2] stdout=[]
+[recover] windows={"id":"five_hour","percentUsed":83},{"id":"model:opus","percentUsed":89} -> stdout=[]
+
+## S6 pre-existing v1 (id-only) record: no crash, no re-warn
+[v1] windows={"id":"five_hour","percentUsed":97},{"id":"model:opus","percentUsed":10} -> stdout=[]
+record after:
+fm-usage-warner-v2
+reported=
+notified-begin
+five_hour:80
+five_hour:95
+notified-end
+notifications: 0

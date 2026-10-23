@@ -1,0 +1,25 @@
+## S2 live read against the machine's real Claude quota (quota-axi, read-only)
+independent oracle read (quota-axi directly):
+[{"id":"five_hour","percentUsed":16},{"id":"seven_day","percentUsed":79},{"id":"model:fable","percentUsed":5}]
+config:
+five_hour:10
+seven_day:99
+model:fable:1
+model:not-a-window:5
+$ fm-usage-warner.sh check   (1st, on demand)
+usage-warner: five_hour at 16% (>=10%); model:fable at 5% (>=1%)
+rc=0
+notifications posted so far: 1
+five_hour at 16% (>=10%); model:fable at 5% (>=1%)
+de-dupe record:
+fm-usage-warner-v2
+reported=usage-warner: five_hour at 16% (>=10%); model:fable at 5% (>=1%)
+notified-begin
+five_hour:10
+model:fable:1
+notified-end
+$ fm-usage-warner.sh check   (2nd, same crossing)
+rc=0 stdout=[]
+notifications posted so far: 1
+quota-axi argv seen (every call):
+--provider claude --json --full --no-credential-refresh
