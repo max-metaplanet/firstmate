@@ -3503,6 +3503,15 @@ EOF
             triage_log "retired a merge poll armed on secondmate $id without reporting an outcome"
             continue
           fi
+          # Queue before retiring the poll, so a parked worker retains its
+          # return request even when no contribution read fits this tick.
+          park_request_rc=0
+          "$SCRIPT_DIR/fm-worker-park.sh" request "$id" "forge reports merged" '' "$url|merged" >/dev/null || park_request_rc=$?
+          if [ "$park_request_rc" -ne 0 ]; then
+            pr_poll_control_release || exit 1
+            [ "$park_request_rc" -eq 75 ] || exit 1
+            continue
+          fi
           if ! fm_merge_authority_read "$STATE" "$id" \
               "$provider" "$host" "$path" "$number"; then
             triage_log "no matching persisted merge authority for $id; recording an external merge outcome"
