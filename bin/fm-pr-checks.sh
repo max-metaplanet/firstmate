@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
 # Read or wait for required GitHub checks, using bin/fm-pr-checks-lib.sh's policy.
-# Usage: fm-pr-checks.sh [--watch] <pr-url>
+# Usage: fm-pr-checks.sh [--watch [--settled]] <pr-url>
 # Prints REQUIRED CHECK: <name> (pending|red|missing) for each blocker.
 # Exit: 0 required checks green, 1 required check red, 8 pending/missing,
 # 2 unreadable state or usage. --watch waits through pending/missing only,
 # re-reading the head and base requirements every FM_PR_CHECKS_POLL seconds
-# (default 20). Advisory checks never delay success or cause failure.
+# (default 20). By default advisory checks never delay success or cause failure.
+# --settled requires --watch and waits for every reported check on the head
+# to finish, including advisory checks, before returning a red/green verdict.
+# It batches CI repair rounds without changing which failures block readiness.
 # Apply a caller-owned timeout when a bounded foreground wait is needed.
 set -eu
 
@@ -17,12 +20,20 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 die() { printf 'fm-pr-checks: %s\n' "$*" >&2; exit 2; }
 WATCH=false
+SETTLED=false
 if [ "${1:-}" = --help ]; then
   sed -n '2,/^set -eu$/s/^# \{0,1\}//p' "$0"
   exit 0
 fi
-if [ "${1:-}" = --watch ]; then WATCH=true; shift; fi
-[ "$#" -eq 1 ] || die 'usage: fm-pr-checks.sh [--watch] <pr-url>'
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --watch) WATCH=true; shift ;;
+    --settled) SETTLED=true; shift ;;
+    *) break ;;
+  esac
+done
+[ "$SETTLED" = false ] || [ "$WATCH" = true ] || die '--settled requires --watch'
+[ "$#" -eq 1 ] || die 'usage: fm-pr-checks.sh [--watch [--settled]] <pr-url>'
 URL=$1
 fm_pr_url_parse "$URL" && [ "$FM_PR_PROVIDER" = github ] \
   || die 'expected a GitHub pull-request URL'
@@ -59,6 +70,19 @@ EOF
   done <<EOF
 $MISSING
 EOF
-  [ "$WATCH" = true ] && [ "$RESULT" = 8 ] || exit "$RESULT"
+  EXECUTING=false
+  if [ "$SETTLED" = true ]; then
+    EXECUTING=$(printf '%s' "$JSON" | jq -r '
+      [.statusCheckRollup[] | if .__typename == "CheckRun" then
+        .status != "COMPLETED"
+      elif .__typename == "StatusContext" then
+        .state == "PENDING" or .state == "EXPECTED"
+      else error("unknown check type") end] | any
+    ') || die 'unreadable head check states'
+    if [ "$EXECUTING" = true ]; then
+      printf 'HEAD CHECKS: still executing at %s\n' "$HEAD"
+    fi
+  fi
+  [ "$WATCH" = true ] && { [ "$RESULT" = 8 ] || [ "$EXECUTING" = true ]; } || exit "$RESULT"
   sleep "${FM_PR_CHECKS_POLL:-20}"
 done

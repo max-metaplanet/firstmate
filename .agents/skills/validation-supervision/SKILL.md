@@ -29,5 +29,17 @@ Resume fleet supervision immediately after the decision lands.
 
 Judge validation by the resolved state line from [`bin/fm-crew-state.sh`](../../../bin/fm-crew-state.sh), whose header owns outcome mappings and CI-monitor/daemon exceptions, never by shell liveness, the last status event, or a raw run record.
 Workers parked at approval or fix-review must follow the active gate help.
-A worker hand-editing, committing, aborting, or restarting during an active validation run duplicates pipeline ownership outside the supersession sequence above; steer it back to the gate response flow.
+A worker hand-editing, committing, pushing, aborting, or restarting during an active validation run duplicates pipeline ownership outside the supersession sequence above; steer it back to the gate response flow.
+For each CI repair round, require the pipeline to wait for all executing checks on the current head, collect the complete failure set, repair the actionable failures together, validate locally, and publish once for that round.
+Keep a CI gate's full actionable failure set together rather than approving separate repair rounds per check.
+Cancelled checks, checks held for approval, and unreadable results need their own resolution; never create an empty push to retry them.
+The installed no-mistakes version's CI monitor and publication path own this behavior.
+If its own auto-fix loop publishes per failure or repairs before the head's checks finish, report its version and round evidence plus the needed configuration or upstream fix; do not fork it or have the worker take over its pushes.
+The existing `auto_fix.ci`, `ci.revalidate_repairs`, and `ci.rerun_transient` settings control retry limits, revalidation, and cancelled-check reruns respectively, not push batching.
+`bin/fm-dod-lib.sh` owns the equivalent worker-controlled CI repair contract for direct-PR tasks.
+
+For pipeline-created GitHub PRs, enable `providers.github.draft_pull_requests: true` in the no-mistakes global config on every worker host that runs the pipeline, or in the target repository's `.no-mistakes.yaml`.
+An explicit repository value overrides the global setting; changing this home's config alone does not configure another worker host.
+The setting changes PR creation only and does not mark a PR ready automatically.
+Follow [ship-landing](../ship-landing/SKILL.md) for the draft-to-ready transition and the unchanged non-draft done gate.
 The worker reports the PR when CI first becomes green rather than waiting for merge monitoring to finish.

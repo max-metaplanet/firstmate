@@ -10,6 +10,7 @@ cat > "$FAKEBIN/gh" <<'SH'
 #!/usr/bin/env bash
 case "$*" in
   'pr view '*)
+    printf 'view\n' >> "$CHECK_FIXTURE/reads"
     cat "$CHECK_FIXTURE/view.json"
     if [ -f "$CHECK_FIXTURE/next.json" ]; then
       mv "$CHECK_FIXTURE/next.json" "$CHECK_FIXTURE/view.json"
@@ -75,6 +76,37 @@ view COMPLETED SUCCESS IN_PROGRESS '' > "$TASK_TMP/next.json"
 FM_PR_CHECKS_POLL=0 expect_result 0 --watch
 assert_grep 'CI gate (pending)' "$TASK_TMP/out" 'watch skipped required pending'
 pass 'watch re-reads pending required checks until they pass'
+
+view COMPLETED FAILURE IN_PROGRESS '' > "$TASK_TMP/view.json"
+view COMPLETED FAILURE COMPLETED FAILURE > "$TASK_TMP/next.json"
+: > "$TASK_TMP/reads"
+FM_PR_CHECKS_POLL=0 expect_result 1 --watch --settled
+[ "$(wc -l < "$TASK_TMP/reads" | tr -d ' ')" = 2 ] || fail 'settled repair wait returned on first failure before the other check completed'
+assert_grep 'HEAD CHECKS: still executing' "$TASK_TMP/out" 'settled wait did not report pending head checks'
+pass 'settled repair wait collects a later advisory failure before returning required red'
+
+view COMPLETED SUCCESS IN_PROGRESS '' > "$TASK_TMP/view.json"
+view COMPLETED SUCCESS COMPLETED FAILURE > "$TASK_TMP/next.json"
+: > "$TASK_TMP/reads"
+FM_PR_CHECKS_POLL=0 expect_result 0 --settled --watch
+[ "$(wc -l < "$TASK_TMP/reads" | tr -d ' ')" = 2 ] || fail 'settled wait did not wait for advisory completion'
+pass 'settled wait includes advisory execution without making advisory failures required'
+
+view COMPLETED FAILURE COMPLETED SUCCESS | jq '.statusCheckRollup[-1].state = "PENDING"' > "$TASK_TMP/view.json"
+view COMPLETED FAILURE COMPLETED SUCCESS > "$TASK_TMP/next.json"
+: > "$TASK_TMP/reads"
+FM_PR_CHECKS_POLL=0 expect_result 1 --watch --settled
+[ "$(wc -l < "$TASK_TMP/reads" | tr -d ' ')" = 2 ] || fail 'settled wait ignored a pending status context'
+expect_result 2 --settled
+pass 'settled wait includes pending status contexts and requires watch mode'
+
+view COMPLETED FAILURE IN_PROGRESS '' > "$TASK_TMP/view.json"
+view COMPLETED SUCCESS COMPLETED SUCCESS | jq '.headRefOid = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"' > "$TASK_TMP/next.json"
+: > "$TASK_TMP/reads"
+FM_PR_CHECKS_POLL=0 expect_result 0 --watch --settled
+[ "$(wc -l < "$TASK_TMP/reads" | tr -d ' ')" = 2 ] || fail 'settled wait did not re-read the new PR head'
+pass 'settled wait follows the current head rather than returning an older failure'
+view COMPLETED SUCCESS COMPLETED SUCCESS > "$TASK_TMP/view.json"
 
 printf '{"protected":true,"protection":{"required_status_checks":{"contexts":["classic"]}}}\n' > "$TASK_TMP/branch.json"
 expect_result 8

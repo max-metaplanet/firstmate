@@ -9,6 +9,11 @@
 # HEAD-continuity guard; see docs/architecture.md "No-mistakes gate authority boundary."
 disable_project_settings: true
 
+# The worker readiness transition is owned by ship-landing.
+providers:
+  github:
+    draft_pull_requests: true
+
 # Review remains mandatory. v1.84.0 has no repository-level hard timeout;
 # review_agent_timeout is global-only. This caps automatic repair rounds only.
 auto_fix:
