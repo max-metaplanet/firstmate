@@ -785,7 +785,7 @@ Follow the CI-round policy in validation-supervision; never hand-fix or push aro
 As soon as the pipeline opens its PR, read it by its full URL.
 If it is a draft, confirm the pipeline's local review, test and lint steps passed and the work is ready, then mark it ready using the forge command below BEFORE waiting for CI green.
 A draft-skipping workflow needs that ready transition to run its full suites; skipped draft checks alone never prove the ready PR green.
-Require fresh results from the ready-triggered workflows on this head before treating CI as green.
+If this head's checks were skipped while it was draft, require fresh results from the workflows the ready transition triggers on this head before treating CI as green; otherwise completed, non-skipped results on this same head count.
 Your only \`done:\` is the CI-ready line below, and a ship \`done:\` naming no PR is refused rather than recorded, because the work is not shipped.
 ${nm_base}
 EOF
@@ -797,7 +797,7 @@ EOF
 
 $ci_wait
 After /no-mistakes reports CI green (the CI-ready return point - do not wait for it to keep monitoring in the background until merge), read the PR back from the forge and confirm it is not a draft $draft_check
-If that read found a draft, wait for the newly ready PR's full CI again before reporting done.
+If that read found a draft whose head checks were skipped while draft, wait for the newly ready PR's fresh results on that head before reporting done; completed, non-skipped results on the same head otherwise stand.
 A draft cannot be merged, so a done report on one leaves the merge unasked.
 Then append \`done [at=<epoch>]: PR {url} checks green\` and stop. You are finished.
 That CI-ready \`done:\` is accepted only when this copy's HEAD - your latest commit - is one the /no-mistakes run pushed, so commit nothing after the run; the check tests that commit, not merely that a branch moved.

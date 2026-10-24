@@ -38,8 +38,7 @@ If its own auto-fix loop publishes per failure or repairs before the head's chec
 The existing `auto_fix.ci`, `ci.revalidate_repairs`, and `ci.rerun_transient` settings control retry limits, revalidation, and cancelled-check reruns respectively, not push batching.
 `bin/fm-dod-lib.sh` owns the equivalent worker-controlled CI repair contract for direct-PR tasks.
 
-For pipeline-created GitHub PRs, enable `providers.github.draft_pull_requests: true` in the no-mistakes global config on every worker host that runs the pipeline, or in the target repository's `.no-mistakes.yaml`.
-An explicit repository value overrides the global setting; changing this home's config alone does not configure another worker host.
+For pipeline-created GitHub PRs, enable `providers.github.draft_pull_requests: true` in the target repository's `.no-mistakes.yaml` when its workflows skip heavy suites on drafts and run them on `ready_for_review`; leave it off where CI does not skip drafts.
 The setting changes PR creation only and does not mark a PR ready automatically.
 Follow [ship-landing](../ship-landing/SKILL.md) for the draft-to-ready transition and the unchanged non-draft done gate.
 The worker reports the PR when CI first becomes green rather than waiting for merge monitoring to finish.

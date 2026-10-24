@@ -9,10 +9,10 @@ metadata:
 # Ship landing
 
 PR-based workers open drafts and keep them draft while implementation or local validation is incomplete.
-A worker marks the PR ready once local validation has passed and the work is ready for review, before waiting for full CI on the ready PR.
+A worker marks the PR ready once local validation has passed and the work is ready for review, before the final CI wait.
 For no-mistakes, the pipeline's completed local review, test and lint supply that local validation; the worker only changes the PR's readiness and continues driving the pipeline.
 The ready transition needs no commit or push.
-Draft-skipped checks do not establish that the ready PR's full suites passed.
+Draft-skipped checks do not establish that the ready PR's full suites passed: when a head's checks were skipped while draft, require fresh post-ready results on that head; otherwise completed, non-skipped results on the same head stand.
 `bin/fm-dod-lib.sh` owns the generated worker commands; [validation-supervision](../validation-supervision/SKILL.md) owns pipeline draft configuration and CI repair rounds.
 For PR-based ship tasks, the ready signal depends on mode: `no-mistakes` reports `done [at=<epoch>]: PR <url> checks green` after CI is green, while `direct-PR` reports `done [at=<epoch>]: PR <url>` after local validation and the ready transition, each only for a non-draft PR.
 A lane that deliberately holds a draft declares a wait instead, and `bin/fm-pr-check.sh` refuses to arm merge monitoring on a draft.

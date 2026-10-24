@@ -506,6 +506,8 @@ test_draft_first_and_batched_repairs() {
         assert_grep 'pipeline owns the push; never push from this copy' "$brief" 'pipeline publication ownership was lost'
         assert_grep 'BEFORE waiting for CI green' "$brief" 'pipeline drafts must become ready before final CI'
         assert_grep 'skipped draft checks alone never prove' "$brief" 'draft-skipped suites cannot establish CI green'
+        assert_grep 'otherwise completed, non-skipped results on this same head count' "$brief" 'post-ready CI must be required only for draft-skipped heads'
+        assert_no_grep 'Require fresh results from the ready-triggered workflows' "$brief" 'unconditional post-ready CI rule survived'
         ;;
       local-only)
         assert_no_grep 'open a draft PR' "$brief" 'local-only inherited PR creation'
