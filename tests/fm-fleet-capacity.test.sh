@@ -567,6 +567,23 @@ test_adaptive_off_and_observe() {
   pass 'off has no sample; observe reports a critical desired cap and never refuses'
 }
 
+test_json_off_without_fleet_cap_stays_uncapped() {
+  local case_dir home out rc=0
+  case_dir=$(make_case adaptive-off-uncapped task-a)
+  home="$case_dir/home"
+  printf '{"mode":"off"}\n' > "$home/config/fleet-load-policy"
+  # An unreadable record would refuse a capped spawn; uncapped admission never counts.
+  printf 'kind=ship\n' > "$home/state/stranger.meta"
+  chmod 000 "$home/state/stranger.meta"
+  out=$(spawn_ship "$case_dir" task-a) || rc=$?
+  chmod 600 "$home/state/stranger.meta"
+  expect_code 0 "$rc" "JSON off without a fleet cap refused a spawn: $out"
+  assert_not_contains "$out" 'integer expression' 'uncapped JSON-off admission compared against an empty cap'
+  assert_not_contains "$out" 'cannot all be read' 'uncapped JSON-off admission counted fleet records'
+  assert_present "$home/state/task-a.meta" 'uncapped JSON-off spawn did not launch'
+  pass 'JSON off without a declared fleet cap admits uncapped without counting'
+}
+
 test_adaptive_drop_recover_and_static_clamp() {
   local case_dir home at out rc=0 before worktrees state
   case_dir=$(make_case adaptive-cpu task-a)
@@ -787,6 +804,7 @@ SENSOR
 test_adaptive_memory_paging_and_history
 test_adaptive_native_sensor_and_projection
 test_adaptive_off_and_observe
+test_json_off_without_fleet_cap_stays_uncapped
 test_adaptive_drop_recover_and_static_clamp
 test_adaptive_critical_stale_and_invalid
 test_adaptive_queue_priority
