@@ -639,7 +639,7 @@ Edit it with \`gh-axi pr edit <PR URL> --title '<the corrected title>'\`, then r
   case "$forge" in
     none|github)
       ci_wait="For a separate GitHub CI wait, use \`$_FM_DOD_LIB_DIR/fm-pr-checks.sh --watch <pr-url>\` (policy: \`fm-pr-checks-lib.sh\`); advisory checks do not block."
-      ready_wait=" When checks were skipped while draft, read the ready time with \`gh api --paginate repos/<owner>/<repo>/issues/<number>/timeline --jq '.[] | select(.event == \"ready_for_review\") | .created_at' | tail -n 1\` and wait with \`$_FM_DOD_LIB_DIR/fm-pr-checks.sh --watch --after <ready time> <pr-url>\`, so no check from before the ready transition counts."
+      ready_wait=" When checks were skipped while draft, read the ready time with \`gh api --paginate repos/<owner>/<repo>/issues/<number>/timeline --jq '.[] | select(.event == \"ready_for_review\") | .created_at' | tail -n 1\` and wait with \`$_FM_DOD_LIB_DIR/fm-pr-checks.sh --watch --after <ready time> <pr-url>\`, so no check skipped before the ready transition counts."
       ;;
   esac
   if [ "$forge" = forgejo ]; then

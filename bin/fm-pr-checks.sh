@@ -9,9 +9,10 @@
 # --settled requires --watch and waits for every reported check on the head
 # to finish, including advisory checks, before returning a red/green verdict.
 # It batches CI repair rounds without changing which failures block readiness.
-# --after YYYY-MM-DDTHH:MM:SSZ ignores checks started before that bound, so a
-# check with no run since then is missing; pass the PR's ready_for_review time
-# when its checks were skipped while it was a draft.
+# --after YYYY-MM-DDTHH:MM:SSZ ignores a check whose latest run before that
+# bound was SKIPPED, so it is missing until a run at or after the bound reports;
+# completed non-skipped earlier results still count. Pass the PR's
+# ready_for_review time when its checks were skipped while it was a draft.
 # Apply a caller-owned timeout when a bounded foreground wait is needed.
 set -eu
 
@@ -63,7 +64,7 @@ while :; do
   github_read_required_producers "$HEAD" || die "could not read required check producers at head $HEAD"
   STALE=
   if [ -n "$AFTER" ]; then
-    BOUNDED=$(github_rollup_started_after "$JSON" "$AFTER") || die 'unreadable checks'
+    BOUNDED=$(github_rollup_without_skips_before "$JSON" "$AFTER") || die 'unreadable checks'
     STALE=$(github_checks_without_fresh_run "$JSON" "$BOUNDED" "$FM_PR_GITHUB_REQUIRED") \
       || die 'unreadable checks'
     JSON=$BOUNDED
