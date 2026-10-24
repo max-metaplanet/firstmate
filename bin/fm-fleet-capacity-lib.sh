@@ -37,6 +37,8 @@
 # before counting and keeps it until the new task record is published, so two
 # concurrent spawns anywhere on this machine can never both take the last place.
 # The lock is taken only when a cap is declared. Freeing a place needs no lock.
+# A busy admission lock defers with exit 75 rather than waiting under other
+# lifecycle locks; parked secondmate relaunches also re-enter fleet admission.
 #
 # Requires bin/fm-project-capacity-lib.sh and its own prerequisites to be
 # sourced first. No side effects on source.

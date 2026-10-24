@@ -232,7 +232,7 @@
 #   fleet runs at once (config/fleet-capacity; bin/fm-fleet-capacity-lib.sh owns
 #   the declaration, what holds a place, and its lock), every fresh spawn,
 #   --secondmate included, is admitted or deferred the same way under that
-#   fleet lock; a relaunch is not counted.
+#   fleet lock; a parked secondmate relaunch is admitted again as well.
 #   With no harness arg, a crewmate/scout spawn resolves the CREW harness only when
 #   config/crew-dispatch.json is absent. When that file exists, crewmate/scout
 #   spawns require an explicit harness so firstmate cannot silently skip dispatch
@@ -3926,7 +3926,12 @@ if [ "$KIND" = secondmate ]; then
       echo "error: could not resolve secondmate inheritance lock for $PROJ_ABS" >&2
       exit 1
     }
-    if ! fm_lock_acquire_wait "$CONFIG_INHERIT_LOCK"; then
+    if [ -n "$PARK_RESUME_MARKER" ]; then
+      if ! fm_lock_try_acquire "$CONFIG_INHERIT_LOCK"; then
+        echo "deferred: secondmate $ID inheritance is busy; retry unpark after its caller releases the lock" >&2
+        exit "$FM_PROJECT_CAPACITY_DEFER_EXIT"
+      fi
+    elif ! fm_lock_acquire_wait "$CONFIG_INHERIT_LOCK"; then
       echo "error: could not acquire secondmate inheritance lock for $PROJ_ABS" >&2
       exit 1
     fi
@@ -4016,7 +4021,7 @@ fi
 # Fleet capacity admission (bin/fm-fleet-capacity-lib.sh owns the
 # declaration, what holds a place, and the lock). It caps every fresh local
 # agent, secondmates included, and defers exactly like project capacity above.
-if [ "$RELAUNCH" -eq 0 ] || [ "$SPAWN_PARK_RESUME" = 1 ]; then
+if [ "$RELAUNCH" -eq 0 ] || [ "$SPAWN_PARK_RESUME" = 1 ] || [ -n "$PARK_RESUME_MARKER" ]; then
   SPAWN_FLEET_CONFIG=$(fm_project_capacity_config_dir "$FM_HOME" "$CONFIG") || {
     echo "error: could not resolve the root Firstmate home that declares fleet capacity" >&2
     exit 1
@@ -4030,8 +4035,8 @@ if [ "$RELAUNCH" -eq 0 ] || [ "$SPAWN_PARK_RESUME" = 1 ]; then
       echo "error: could not resolve the fleet capacity lock for $FM_HOME" >&2
       exit 1
     }
-    if ! fm_lock_acquire_wait_max "$SPAWN_FLEET_LOCK" 120; then
-      echo "deferred: another spawn has held the fleet capacity lock ($SPAWN_FLEET_LOCK) for 120s; task $ID was not launched and its backlog item stays queued - dispatch it again shortly" >&2
+    if ! fm_lock_try_acquire "$SPAWN_FLEET_LOCK"; then
+      echo "deferred: another spawn holds the fleet capacity lock ($SPAWN_FLEET_LOCK); task $ID was not launched and its backlog item stays queued - dispatch it again shortly" >&2
       exit "$FM_PROJECT_CAPACITY_DEFER_EXIT"
     fi
     SPAWN_FLEET_LOCK_HELD=1

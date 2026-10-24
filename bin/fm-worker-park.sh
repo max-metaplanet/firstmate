@@ -26,7 +26,8 @@
 # nothing, because that worker has acted on exactly those red lanes already.
 # A set that differs, is absent, or cannot be recognized queues as before.
 # tick retries deferred resumes and wakes parked workers with pending inbox
-# steering. fm-spawn owns both capacity checks and priority
+# steering, including parked secondmates through fm-secondmate-park.sh tick.
+# fm-spawn owns both capacity checks and priority
 # admission. Exit 75 means deferred, not failed: the request is queued, or the
 # record was busy and the caller retries from its own durable source.
 set -uo pipefail
@@ -270,6 +271,12 @@ if [ "$VERB" = tick ]; then
   for meta in "$STATE"/*.meta; do
     [ -f "$meta" ] || continue
     ID=${meta##*/}; ID=${ID%.meta}
+    if [ "$(fm_meta_get "$meta" kind)" = secondmate ]; then
+      if [ -e "$STATE/.secondmate-park-$ID" ] || [ -L "$STATE/.secondmate-park-$ID" ]; then
+        "$SCRIPT_DIR/fm-secondmate-park.sh" "$ID" tick || true
+      fi
+      continue
+    fi
     one || true
   done
 else

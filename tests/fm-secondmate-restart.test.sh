@@ -1056,6 +1056,8 @@ test_park_wake_and_status() {
   [ "$(wc -l < "$dir/fake/literal")" = "$before" ] || fail 'repeat park touched stopped endpoint'
   out=$(env PATH="$dir/fakebin:$PATH" FM_HOME="$dir/home" FM_FAKE_DIR="$dir/fake" FM_SPAWN_NO_GUARD=1 "$ROOT/bin/fm-send.sh" sm1 'new routed work' 2>&1); rc=$?
   expect_code 0 "$rc" "send must durably queue and wake: $out"
+  out=$(park_tick "$dir" 2>&1); rc=$?
+  expect_code 0 "$rc" "deferred wake tick: $out"
   assert_absent "$dir/home/state/.secondmate-park-sm1" "successful wake clears marker: $out"
   assert_grep 'new routed work' "$dir/home/state/sm1.inbox/002.msg" 'work survives in durable inbox'
   assert_present "$dir/sm1-home/data/keep.md" 'wake preserves home data'
@@ -1071,7 +1073,9 @@ test_park_failed_wake_preserves_delivery() {
   printf 'invalid-permission\n' > "$dir/home/config/claude-permission-mode"
   out=$(env PATH="$dir/fakebin:$PATH" FM_HOME="$dir/home" FM_FAKE_DIR="$dir/fake" FM_SPAWN_NO_GUARD=1 "$ROOT/bin/fm-send.sh" sm1 'work retained after failed wake' 2>&1); rc=$?
   expect_code 0 "$rc" "durable enqueue must succeed even when wake refuses: $out"
-  assert_contains "$out" 'Do not resend' 'failed wake distinguishes durable delivery'
+  out=$(park_tick "$dir" 2>&1); rc=$?
+  expect_code 0 "$rc" "tick retains failed wake: $out"
+  assert_grep 'wake failed' "$dir/home/state/.wake-queue" 'failed wake reports on the parent channel'
   assert_present "$dir/home/state/.secondmate-park-sm1" 'failed wake retains park authority'
   assert_grep 'work retained after failed wake' "$dir/home/state/sm1.inbox/002.msg" 'failed wake retains exact work'
   before=$(find "$dir/home/state/pending-replies" -mindepth 1 2>/dev/null | sort)
@@ -1109,6 +1113,8 @@ test_park_missing_endpoint_respawns_same_session() {
   out=$(env TMUX='' PATH="$dir/fakebin:$PATH" FM_HOME="$dir/home" FM_FAKE_DIR="$dir/fake" FM_SPAWN_NO_GUARD=1 FM_FAKE_CAPTURE_LAUNCH=1 \
     "$ROOT/bin/fm-send.sh" sm1 'work after endpoint loss' 2>&1); rc=$?
   expect_code 0 "$rc" "missing endpoint wake: $out"
+  out=$(park_tick "$dir" 2>&1); rc=$?
+  expect_code 0 "$rc" "deferred wake tick: $out"
   assert_absent "$dir/home/state/.secondmate-park-sm1" "respawn clears marker: $out"
   assert_grep 'created' "$dir/fake/created" 'missing endpoint uses the existing respawn owner'
   assert_grep 'exact-park-session' "$dir/fake/replacement-launch" 'respawn preserves captured session reference'
@@ -1126,6 +1132,8 @@ test_park_dead_endpoint_wake_keeps_model_effort() {
   out=$(env PATH="$dir/fakebin:$PATH" FM_HOME="$dir/home" FM_FAKE_DIR="$dir/fake" FM_SPAWN_NO_GUARD=1 FM_FAKE_CAPTURE_LAUNCH=1 \
     "$ROOT/bin/fm-send.sh" sm1 'work for dead endpoint' 2>&1); rc=$?
   expect_code 0 "$rc" "dead endpoint wake: $out"
+  out=$(park_tick "$dir" 2>&1); rc=$?
+  expect_code 0 "$rc" "deferred wake tick: $out"
   assert_absent "$dir/home/state/.secondmate-park-sm1" "relaunch clears marker: $out"
   assert_grep 'pinned-model' "$dir/fake/replacement-launch" 'relaunch keeps the mate model'
   assert_grep "model=pinned-model" "$dir/home/state/sm1.meta" "relaunched record keeps the mate model"
@@ -1141,6 +1149,8 @@ test_park_interrupted_preparation_restores_delivery() {
   out=$(env PATH="$dir/fakebin:$PATH" FM_HOME="$dir/home" FM_FAKE_DIR="$dir/fake" FM_SPAWN_NO_GUARD=1 \
     "$ROOT/bin/fm-send.sh" sm1 'work after interrupted preparation' 2>&1); rc=$?
   expect_code 0 "$rc" "interrupted preparation wake: $out"
+  out=$(park_tick "$dir" 2>&1); rc=$?
+  expect_code 0 "$rc" "deferred wake tick: $out"
   assert_absent "$dir/home/state/.secondmate-park-sm1" 'stale unconfirmed preparation is removed under lock'
   assert_grep 'doorbell' "$dir/fake/rings" 'the still-running mate receives its inbox doorbell'
   assert_grep 'work after interrupted preparation' "$dir/home/state/sm1.inbox/001.msg" 'recovery retains work'
@@ -1204,6 +1214,94 @@ SH
   [ "$(grep -c doorbell "$dir/fake/rings")" -ge 2 ] || fail 'woken mate was not rung for its queued work'
   pass 'work queued while park waits for persistence wakes the mate after the stop'
 }
+
+
+# A process-group timeout bounds the pre-fix deadlock and cleans up only this
+# fixture's descendants, including a spawn stuck below fm-send.
+park_bounded() {
+  python3 - "$@" <<'PYTIME'
+import os
+import signal
+import subprocess
+import sys
+
+proc = subprocess.Popen(sys.argv[1:], start_new_session=True)
+try:
+    sys.exit(proc.wait(timeout=20))
+except subprocess.TimeoutExpired:
+    os.killpg(proc.pid, signal.SIGKILL)
+    proc.wait()
+    print("fixture command exceeded 20 seconds", file=sys.stderr)
+    sys.exit(124)
+PYTIME
+}
+
+park_tick() {
+  local dir=$1
+  park_bounded env PATH="$dir/fakebin:$PATH" FM_HOME="$dir/home" FM_FAKE_DIR="$dir/fake" \
+    FM_SPAWN_NO_GUARD=1 FM_SUPERVISION_ACTOR=main FM_FAKE_CAPTURE_LAUNCH=1 "$ROOT/bin/fm-worker-park.sh" tick
+}
+
+test_park_send_defers_under_caller_lock_and_capacity() {
+  local dir out rc lock before
+  dir=$(new_case park-send-capacity); add_park_mate "$dir"; arm_answer "$dir" sm1
+  out=$(run_park "$dir" sm1 park); rc=$?
+  expect_code 0 "$rc" "setup park must succeed: $out"
+  printf '1\n' > "$dir/home/config/fleet-capacity"
+  printf 'kind=ship\nbackend=tmux\nwindow=fmses:fm-holder\n' > "$dir/home/state/holder.meta"
+  printf 'fm-holder\n' >> "$dir/fake/windows"
+  # Model the config-push caller: its inherited configuration lock stays held
+  # until fm-send returns. The unrelated lease lock is held by fm-send itself.
+  lock="$dir/sm1-home/state/.fm-inherited-config.lock"
+  mkdir "$lock"
+  printf '%s\n' "$$" > "$lock/pid"
+  out=$(park_bounded env PATH="$dir/fakebin:$PATH" FM_HOME="$dir/home" FM_FAKE_DIR="$dir/fake" \
+    FM_SPAWN_NO_GUARD=1 FM_SUPERVISION_ACTOR=main \
+    "$ROOT/bin/fm-send.sh" sm1 --fire-and-forget 0123456789abcdef CONFIG_REREAD 2>&1); rc=$?
+  expect_code 0 "$rc" "steer must return while caller holds inheritance lock: $out"
+  assert_grep CONFIG_REREAD "$dir/home/state/sm1.inbox/002.msg" 'configuration steer is durably queued'
+  assert_absent "$dir/home/state/.fm-lease-command.lock" 'send releases its lease-command lock'
+  assert_grep 'phase=parked' "$dir/home/state/.secondmate-park-sm1" 'send leaves relaunch to the deferred tick'
+  before=$(wc -l < "$dir/fake/literal")
+  out=$(park_bounded env PATH="$dir/fakebin:$PATH" FM_HOME="$dir/home" FM_FAKE_DIR="$dir/fake" \
+    FM_SPAWN_NO_GUARD=1 "$ROOT/bin/fm-secondmate-park.sh" sm1 unpark 2>&1); rc=$?
+  expect_code 75 "$rc" "busy inheritance lock must defer unpark: $out"
+  assert_grep 'phase=parked' "$dir/home/state/.secondmate-park-sm1" 'lock deferral preserves parked authority'
+  rm "$lock/pid"
+  rmdir "$lock"
+  out=$(park_bounded env PATH="$dir/fakebin:$PATH" FM_HOME="$dir/home" FM_FAKE_DIR="$dir/fake" \
+    FM_SPAWN_NO_GUARD=1 "$ROOT/bin/fm-secondmate-park.sh" sm1 unpark 2>&1); rc=$?
+  expect_code 75 "$rc" "full fleet must defer parked secondmate relaunch: $out"
+  assert_contains "$out" 'runs at most 1 agent(s)' 'full fleet is the deferral predicate'
+  out=$(park_tick "$dir" 2>&1); rc=$?
+  expect_code 0 "$rc" "tick must retain a capacity-deferred resume: $out"
+  assert_grep 'phase=parked' "$dir/home/state/.secondmate-park-sm1" 'full fleet retains the pending wake'
+  assert_equals "$(wc -l < "$dir/fake/literal")" "$before" 'deferral launches no replacement'
+  assert_present "$dir/home/state/sm1.inbox/002.msg" 'deferred ticks preserve the steer'
+  printf 'zsh' > "$dir/fake/command.fmses:fm-holder"
+  for lock in "$dir/home/state/.secondmate-liveness-sm1.lock" "$dir/home/state/.fleet-capacity.lock"; do
+    mkdir "$lock"
+    printf '%s\n' "$$" > "$lock/pid"
+    out=$(park_bounded env PATH="$dir/fakebin:$PATH" FM_HOME="$dir/home" FM_FAKE_DIR="$dir/fake" \
+      FM_SPAWN_NO_GUARD=1 "$ROOT/bin/fm-secondmate-park.sh" sm1 unpark 2>&1); rc=$?
+    expect_code 75 "$rc" "contended admission must defer without waiting: $out"
+    assert_grep 'phase=parked' "$dir/home/state/.secondmate-park-sm1" 'contended admission retains park authority'
+    rm "$lock/pid"
+    rmdir "$lock"
+  done
+  out=$(park_tick "$dir" 2>&1); rc=$?
+  expect_code 0 "$rc" "slot release must resume deferred secondmate: $out"
+  assert_absent "$dir/home/state/.secondmate-park-sm1" 'successful deferred resume clears park authority'
+  assert_grep 'unpark complete' "$dir/home/state/.wake-queue" 'deferred resume reports completion'
+  assert_present "$dir/home/state/sm1.inbox/002.msg" 'successful resume preserves the durable steer'
+  before=$(wc -l < "$dir/fake/literal")
+  out=$(park_tick "$dir" 2>&1); rc=$?
+  expect_code 0 "$rc" "repeated tick succeeds: $out"
+  assert_equals "$(wc -l < "$dir/fake/literal")" "$before" 'repeated tick never relaunches twice'
+  pass 'parked secondmate sends release locks and deferred ticks resume once capacity frees'
+}
+
+test_park_send_defers_under_caller_lock_and_capacity
 
 test_park_stopped_with_durable_proof
 test_park_stopped_helper_status_with_trailing_notice
