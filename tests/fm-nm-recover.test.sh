@@ -188,6 +188,19 @@ assert_contains "$OUT" 'action: reattach_active_run'
 assert_equals "$OLD" "$(git --git-dir="$GATE" rev-parse refs/heads/fm/task)" 'active ref preserved'
 pass 'active run reattaches without ref mutation'
 
+fixture interrupted-monitor
+python3 - "$NM_HOME/state.sqlite" <<'PY2'
+import sqlite3,sys
+with sqlite3.connect(sys.argv[1]) as db:
+    db.execute("UPDATE runs SET status='ci_monitor_interrupted' WHERE id='run1'")
+PY2
+sed 's/status: cancelled/status: ci_monitor_interrupted/' "$FIX/status" > "$FIX/interrupted"
+mv "$FIX/interrupted" "$FIX/status"
+recover
+assert_not_contains "$OUT" 'reattach' 'interrupted run is not told to reattach'
+assert_preserved
+pass 'interrupted CI monitor follows terminal recovery instead of reattachment'
+
 fixture unreturned
 write_status pipeline_owned diverged recover_custody
 recover
