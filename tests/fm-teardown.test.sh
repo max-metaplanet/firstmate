@@ -4221,6 +4221,7 @@ test_teardown_records_the_task_delivery_timing() {
     "pr=https://github.com/example/repo/pull/7" \
     "pr_at=1791603600"
   printf '1791610800\n' > "$case_dir/state/task-x1.merged-at"
+  printf 'held\n' > "$case_dir/state/task-x1.pr-refresh"
   land_shippable_commit "$case_dir"
 
   run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
@@ -4239,6 +4240,7 @@ test_teardown_records_the_task_delivery_timing() {
   ' "$ledger" >/dev/null || fail "task-timing: the recorded timing is wrong: $(cat "$ledger")"
   assert_absent "$case_dir/state/task-x1.meta" "task-timing: teardown kept the task record"
   assert_absent "$case_dir/state/task-x1.merged-at" "task-timing: teardown kept the merge stamp"
+  assert_absent "$case_dir/state/task-x1.pr-refresh" "teardown kept the conflict-only refresh hold"
   pass "teardown records the task's delivery timing before removing its records"
 }
 

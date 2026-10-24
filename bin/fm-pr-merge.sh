@@ -89,8 +89,10 @@
 # own view still proves a landed merge, and every outcome it cannot prove
 # refuses, reporting the failed gh read and naming both failed reads when the
 # gh-axi view could not prove the outcome either.
-# After a verified GitHub merge, cancel queued, waiting, or in_progress workflow
-# runs for the exact verified PR head SHA, across all API pages.
+# After a verified GitHub merge and its outcome report, cancel queued, waiting,
+# or in_progress workflow runs for the exact verified PR head SHA that were
+# created before the PR's merged_at, across all API pages, so runs the merge
+# itself triggers (pull_request closed) are left alone.
 # Cancellation is best-effort and reported; failed reads or cancellations never
 # change the merge outcome. Queued merges do not cancel runs, and other forges
 # report that this GitHub-only cleanup was skipped.
@@ -1893,15 +1895,38 @@ case "$PROVIDER" in
     ;;
 esac
 
+# Reached only after the forge confirmed the merge landed: set -e exits on a
+# refused or failed merge above, and a queued forge merge exits without an
+# outcome while its existing poll remains armed.
+outcome_rc=0
+fm_merge_outcome_report "$FM_HOME" "$STATE" "$ID" "$URL" self \
+  "${FM_PR_MERGE_AUTHORITY:-}" || outcome_rc=$?
+case "$outcome_rc" in
+  0) ;;
+  3)
+    printf 'actionable: merged %s but could not report it upward: this home has no readable secondmate identity or parent binding (.fm-secondmate-home, .fm-secondmate-parent)\n' \
+      "$URL" >&2
+    ;;
+  *)
+    printf 'actionable: merged %s but could not record the outcome for supervision\n' "$URL" >&2
+    ;;
+esac
+
 github_cancel_head_runs() {
-  local json runs run_id output cancelled=0 failed=0
+  local merged_at json runs run_id output cancelled=0 failed=0
+  merged_at=$(gh api "repos/$PR_PATH/pulls/$PR_NUMBER" --jq '.merged_at // ""' 2>/dev/null) || merged_at=
+  if ! [[ "$merged_at" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]]; then
+    printf 'warning: merged %s; could not read its merge time, so leftover workflow runs were not cancelled\n' "$URL" >&2
+    return 0
+  fi
   if ! json=$(gh api --paginate "repos/$PR_PATH/actions/runs?head_sha=$FM_PR_MERGE_HEAD&per_page=100" 2>&1); then
     printf 'warning: merged %s; could not list leftover workflow runs at %s: %s\n' "$URL" "$FM_PR_MERGE_HEAD" "$json" >&2
     return 0
   fi
-  if ! runs=$(printf '%s' "$json" | jq -r --arg head "$FM_PR_MERGE_HEAD" '
+  if ! runs=$(printf '%s' "$json" | jq -r --arg head "$FM_PR_MERGE_HEAD" --arg merged "$merged_at" '
       if (.workflow_runs | type) != "array" then error("missing workflow_runs") else
         .workflow_runs[] | select(.head_sha == $head) |
+        select((.created_at | type) == "string" and .created_at < $merged) |
         select(.status == "queued" or .status == "waiting" or .status == "in_progress") |
         .id | if type == "number" and . > 0 and floor == . then . else error("invalid run id") end
       end' 2>/dev/null); then
@@ -1926,20 +1951,3 @@ if [ "$PROVIDER" = github ]; then
 else
   printf 'cleanup: leftover workflow run cancellation skipped for %s (GitHub only)\n' "$URL"
 fi
-
-# Reached only after the forge confirmed the merge landed: set -e exits on a
-# refused or failed merge above, and a queued forge merge exits without an
-# outcome while its existing poll remains armed.
-outcome_rc=0
-fm_merge_outcome_report "$FM_HOME" "$STATE" "$ID" "$URL" self \
-  "${FM_PR_MERGE_AUTHORITY:-}" || outcome_rc=$?
-case "$outcome_rc" in
-  0) ;;
-  3)
-    printf 'actionable: merged %s but could not report it upward: this home has no readable secondmate identity or parent binding (.fm-secondmate-home, .fm-secondmate-parent)\n' \
-      "$URL" >&2
-    ;;
-  *)
-    printf 'actionable: merged %s but could not record the outcome for supervision\n' "$URL" >&2
-    ;;
-esac

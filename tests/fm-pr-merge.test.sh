@@ -321,6 +321,11 @@ case "${1:-} ${2:-}" in
   api\ *)
     case_dir=$(dirname "$FM_TEST_GH_LOG")
     case " $* " in
+      *"/pulls/"*)
+        [ ! -f "$case_dir/merged-at-fail" ] || { echo 'pull read denied' >&2; exit 1; }
+        echo '2026-01-01T00:00:10Z'
+        exit 0
+        ;;
       *"/actions/runs?"*)
         [ ! -f "$case_dir/workflow-list-fail" ] || { echo 'workflow listing denied' >&2; exit 1; }
         if [ -f "$case_dir/workflow-runs.json" ]; then cat "$case_dir/workflow-runs.json"; else echo '{"workflow_runs":[]}'; fi
@@ -900,11 +905,12 @@ test_github_merge_cancels_only_active_head_workflow_runs() {
   add_gh_mocks "$case_dir" "$head"
   cat > "$case_dir/workflow-runs.json" <<JSON
 {"workflow_runs":[
- {"id":101,"head_sha":"$head","status":"queued"},
- {"id":102,"head_sha":"$head","status":"in_progress"},
- {"id":103,"head_sha":"$head","status":"completed"},
- {"id":104,"head_sha":"another-head","status":"queued"}]}
-{"workflow_runs":[{"id":105,"head_sha":"$head","status":"waiting"}]}
+ {"id":101,"head_sha":"$head","status":"queued","created_at":"2026-01-01T00:00:01Z"},
+ {"id":102,"head_sha":"$head","status":"in_progress","created_at":"2026-01-01T00:00:02Z"},
+ {"id":103,"head_sha":"$head","status":"completed","created_at":"2026-01-01T00:00:03Z"},
+ {"id":104,"head_sha":"another-head","status":"queued","created_at":"2026-01-01T00:00:04Z"},
+ {"id":106,"head_sha":"$head","status":"queued","created_at":"2026-01-01T00:00:11Z"}]}
+{"workflow_runs":[{"id":105,"head_sha":"$head","status":"waiting","created_at":"2026-01-01T00:00:05Z"}]}
 JSON
   : > "$case_dir/cancel-fail-102"
   run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/51 > "$case_dir/out" 2>&1     || fail "a cancellation failure changed the successful merge"
@@ -913,18 +919,25 @@ JSON
   for run in 101 102 105; do
     assert_grep "api --method POST repos/example/repo/actions/runs/$run/cancel" "$case_dir/gh.log" "active head run was not cancelled"
   done
-  [ "$(grep -c '/cancel$' "$case_dir/gh.log")" -eq 3 ] || fail 'cancelled a completed or foreign-head run'
+  [ "$(grep -c '/cancel$' "$case_dir/gh.log")" -eq 3 ] || fail 'cancelled a completed, foreign-head, or post-merge run'
   assert_grep 'cancellation-requested=2 failed=1' "$case_dir/out" 'cleanup counts missing'
   assert_grep 'cancellation denied' "$case_dir/out" 'cancellation failure not reported'
-  pass 'verified GitHub merge cancels active exact-head runs across pages without failing the merge'
+  pass 'verified GitHub merge cancels active exact-head pre-merge runs across pages without failing the merge'
 }
 
 test_github_merge_run_listing_is_best_effort() {
   local case_dir
-  for response in fail malformed; do
+  for response in fail malformed merged-at; do
     case_dir=$(make_case "github-cancel-list-$response")
     add_gh_mocks "$case_dir" 1010101010101010101010101010101010101010
-    if [ "$response" = fail ]; then touch "$case_dir/workflow-list-fail"; else echo '{}' > "$case_dir/workflow-runs.json"; fi
+    case "$response" in
+      fail) touch "$case_dir/workflow-list-fail" ;;
+      malformed) echo '{}' > "$case_dir/workflow-runs.json" ;;
+      merged-at)
+        touch "$case_dir/merged-at-fail"
+        printf '{"workflow_runs":[{"id":101,"head_sha":"1010101010101010101010101010101010101010","status":"queued","created_at":"2026-01-01T00:00:01Z"}]}\n' > "$case_dir/workflow-runs.json"
+        ;;
+    esac
     run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/51 > "$case_dir/out" 2>&1       || fail 'a run-list failure changed the successful merge'
     assert_grep 'warning: merged https://github.com/example/repo/pull/51' "$case_dir/out" 'run-list failure not reported'
     ! grep -q '/cancel$' "$case_dir/gh.log" || fail 'unreadable run list cancelled something'
