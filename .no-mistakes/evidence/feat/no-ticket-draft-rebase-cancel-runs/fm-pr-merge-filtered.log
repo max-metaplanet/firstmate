@@ -1,0 +1,8 @@
+ok - fm-pr-merge refuses a GitHub merge call that leaves the PR open and unqueued
+ok - fm-pr-merge verifies a genuinely merged GitHub pull request
+ok - verified GitHub merge cancels active exact-head pre-merge runs across pages without failing the merge
+ok - workflow listing failures preserve a verified merge
+ok - fm-pr-merge accepts and accurately reports a GitHub merge-queue entry
+ok - fm-pr-merge merges a GitLab merge request through glab instead of refusing it
+ok - fm-pr-merge merges a Forgejo pull request through tea api instead of refusing it
+ok - merge rejects unfinished ready reruns while accepting replacements and lone path skips

@@ -1,0 +1,12 @@
+ok - a failed or unconfirmed draft conversion prevents publication
+held: https://github.com/example/repo/pull/9 awaits firstmate ready call (publication exit=0)
+conflict-only refresh is held for firstmate readiness; declare a paused wait, not done, until fm-pr-refresh.sh ready clears the hold
+ok - draft is confirmed before publication and its hold blocks done and merge registration
+held: https://github.com/example/repo/pull/9 awaits firstmate ready call (publication exit=0)
+held: https://github.com/example/repo/pull/9 awaits firstmate ready call (publication exit=7)
+ok - retries preserve draft and failed publication retains the hold
+ok - failed ready CI keeps the hold for retry
+ok - ready requires an explicit ready CI policy
+ok - reruns policy waits past draft-skipped checks and resolves the hold only on fresh green CI
+ok - unchanged policy accepts a legitimate lone skip without waiting for a ready-triggered rerun
+bash tests/$t.test.sh  0.69s user 0.91s system 64% cpu 2.494 total

@@ -1,0 +1,77 @@
+=== S1: conflict-only refresh of a non-draft PR converts it to draft BEFORE the push ===
+$ <wt>/bin/fm-pr-refresh.sh prepare t1 https://github.com/acme/core/pull/2442 -- publish-rebase
+{"isDraft":true}
+publish-rebase: PR isDraft at push time = true
+held: https://github.com/acme/core/pull/2442 awaits firstmate ready call (publication exit=0)
+[exit=0]
+PR isDraft now: true
+hold file: https://github.com/acme/core/pull/2442
+status log:
+paused [at=1792842644]: conflict-only refresh of https://github.com/acme/core/pull/2442 held in draft; publication exit=0; awaiting firstmate ready call
+API order:
+gh pr view https://github.com/acme/core/pull/2442 --json state,isDraft,id
+gh-axi api POST /graphql --raw-field query=mutation($id: ID!) { convertPullRequestToDraft(input: {pullRequestId: $id}) { pullRequest { isDraft } } } --raw-field id=PR_node_2442
+gh pr view https://github.com/acme/core/pull/2442 --json state,isDraft,id
+
+=== S2 (adversarial): draft conversion denied -> publication never runs, no hold ===
+$ <wt>/bin/fm-pr-refresh.sh prepare t1 https://github.com/acme/core/pull/2442 -- publish-rebase
+GraphQL: forbidden
+fm-pr-refresh: could not convert PR to draft; nothing published
+[exit=1]
+hold exists? no
+publication did not run
+
+=== S3 (adversarial): while held, worker cannot register the PR or be accepted as done ===
+$ <wt>/bin/fm-pr-check.sh t1 https://github.com/acme/core/pull/2442
+error: conflict-only refresh held for firstmate readiness; run fm-pr-refresh.sh ready before registering https://github.com/acme/core/pull/2442
+[exit=1]
+$ fm_dod_accept_ship_done (done gate used by fm-crew-state/fm-inactive-reconcile/fm-pr-check) for: done [at=1792842644]: rebased onto main https://github.com/acme/core/pull/2442
+conflict-only refresh is held for firstmate readiness; declare a paused wait, not done, until fm-pr-refresh.sh ready clears the hold
+[gate exit=1]
+
+=== S4 (adversarial): ready without an explicit CI policy is refused; PR stays draft ===
+$ <wt>/bin/fm-pr-refresh.sh ready t1 https://github.com/acme/core/pull/2442
+fm-pr-refresh: ready expects --ready-ci reruns|unchanged
+[exit=1]
+PR isDraft: true
+
+=== S5: firstmate ready --ready-ci reruns: draft-era skip does not count; waits for fresh rerun ===
+$ (timeout 60s) <wt>/bin/fm-pr-refresh.sh ready t1 https://github.com/acme/core/pull/2442 --ready-ci reruns
+marked ready
+REQUIRED CHECK: CI gate (pending)
+REQUIRED CHECK: CI gate (pending)
+ready: https://github.com/acme/core/pull/2442 checks green (ready CI reruns)
+[exit=0]
+polls of checks: 3
+hold exists? no
+resolved [at=1792842648]: conflict-refresh hold cleared for https://github.com/acme/core/pull/2442 after ready CI passed
+
+=== S6 (adversarial): reruns policy with ONLY the draft-era skip never resolves the hold ===
+$ (timeout 6s) <wt>/bin/fm-pr-refresh.sh ready t1 https://github.com/acme/core/pull/2442 --ready-ci reruns
+marked ready
+REQUIRED CHECK: CI gate (missing)
+REQUIRED CHECK: CI gate (missing)
+REQUIRED CHECK: CI gate (missing)
+REQUIRED CHECK: CI gate (missing)
+REQUIRED CHECK: CI gate (missing)
+[exit=124]
+polls: 5  hold exists? yes
+
+=== S7: ready --ready-ci unchanged accepts a legitimate lone path-filter skip ===
+$ (timeout 30s) <wt>/bin/fm-pr-refresh.sh ready t1 https://github.com/acme/core/pull/2442 --ready-ci unchanged
+ready: https://github.com/acme/core/pull/2442 checks green (ready CI unchanged)
+[exit=0]
+hold exists? no
+timeline reads in this run (expect only from S6): 1
+
+=== S8: generated worker briefs carry the refresh contract (GitHub PR modes only) ===
+--- direct-PR brief, refresh lines:
+99:For a conflict-only rebase or conflict resolution of an already-open PR, use `FM_HOME=/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-refresh-drive.nySOUq/home <wt>/bin/fm-pr-refresh.sh prepare b-direct-PR <pr-url>` before any push or pipeline refresh; its header owns classification, publication wrapping, and the firstmate-controlled ready call.
+101:This hold overrides the ordinary ready/done instructions below: keep the draft and declared wait until firstmate explicitly asks for the helper's `ready` call.
+102:Do not report done or mark it ready while `state/b-direct-PR.pr-refresh` exists.
+--- no-mistakes brief, refresh lines:
+103:For a conflict-only rebase or conflict resolution of an already-open PR, use `FM_HOME=/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-refresh-drive.nySOUq/home <wt>/bin/fm-pr-refresh.sh prepare b-no-mistakes <pr-url>` before any push or pipeline refresh; its header owns classification, publication wrapping, and the firstmate-controlled ready call.
+105:This hold overrides the ordinary ready/done instructions below: keep the draft and declared wait until firstmate explicitly asks for the helper's `ready` call.
+106:Do not report done or mark it ready while `state/b-no-mistakes.pr-refresh` exists.
+--- local-only brief, refresh lines:
+(none)

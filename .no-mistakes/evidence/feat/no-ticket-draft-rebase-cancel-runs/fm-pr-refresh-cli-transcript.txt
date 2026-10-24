@@ -1,0 +1,48 @@
+### 1. Worker: prepare conflict-only refresh on a READY PR, publication after --
+$ fm-pr-refresh.sh prepare task https://github.com/example/repo/pull/9 -- publish
+{"data":{"convertPullRequestToDraft":{"pullRequest":{"isDraft":true}}}}
+publish: running push while PR isDraft=true
+held: https://github.com/example/repo/pull/9 awaits firstmate ready call (publication exit=0)
+exit=0
+hold file: https://github.com/example/repo/pull/9
+status: paused [at=1792841234]: conflict-only refresh of https://github.com/example/repo/pull/9 held in draft; publication exit=0; awaiting firstmate ready call
+
+### 2. Adversarial: worker reports done while hold exists (DoD gate)
+bin/fm-dod-lib.sh:.:165: no such file or directory: ~/.no-mistakes/worktrees/61c6dd39b831/01M5PQJTPT7MZBHR9M6597P52Y/fm-pr-lib.sh
+bin/fm-dod-lib.sh:.:167: no such file or directory: ~/.no-mistakes/worktrees/61c6dd39b831/01M5PQJTPT7MZBHR9M6597P52Y/fm-classify-lib.sh
+bin/fm-dod-lib.sh:.:169: no such file or directory: ~/.no-mistakes/worktrees/61c6dd39b831/01M5PQJTPT7MZBHR9M6597P52Y/fm-nm-run-lib.sh
+bin/fm-dod-lib.sh:.:171: no such file or directory: ~/.no-mistakes/worktrees/61c6dd39b831/01M5PQJTPT7MZBHR9M6597P52Y/fm-brief-heading-lib.sh
+bin/fm-dod-lib.sh:.:173: no such file or directory: ~/.no-mistakes/worktrees/61c6dd39b831/01M5PQJTPT7MZBHR9M6597P52Y/fm-external-review-lib.sh
+fm_dod_should_gate_ship_done:2: command not found: status_line_verb
+accept rc=0
+
+### 3. Adversarial: firstmate tries to arm merge monitoring while held
+error: conflict-only refresh held for firstmate readiness; run fm-pr-refresh.sh ready before registering https://github.com/example/repo/pull/9
+exit=1
+
+### 4. Adversarial: hold for a different PR URL
+fm-pr-refresh: refresh hold belongs to another PR or is unreadable
+exit=1
+
+### 5. Firstmate explicit ready call
+ready
+ready: https://github.com/example/repo/pull/9 checks green after 2026-10-20T11:00:00Z
+exit=0
+hold present after ready? no
+status: resolved [at=1792841236]: conflict-refresh hold cleared for https://github.com/example/repo/pull/9 after ready CI passed
+
+### 6. Non-GitHub URL refused before publication
+fm-pr-refresh: expected a GitHub PR URL; nothing published
+exit=1
+
+### Forge API call order
+gh pr view https://github.com/example/repo/pull/9 --json state,isDraft,id
+gh-axi api POST /graphql --raw-field query=mutation($id: ID!) { convertPullRequestToDraft(input: {pullRequestId: $id}) { pullRequest { isDraft } } } --raw-field id=PR_x
+gh pr view https://github.com/example/repo/pull/9 --json state,isDraft,id
+gh pr view https://github.com/example/repo/pull/9 --json state,isDraft,id
+gh-axi pr ready 9 --repo example/repo
+gh pr view https://github.com/example/repo/pull/9 --json state,isDraft,id
+gh api --paginate repos/example/repo/issues/9/timeline --jq .[] | select(.event == "ready_for_review") | .created_at
+gh pr view https://github.com/example/repo/pull/9 --json headRefOid,baseRefName,statusCheckRollup
+gh api repos/example/repo/branches/main
+gh api --paginate repos/example/repo/rules/branches/main

@@ -1,0 +1,31 @@
+### 2b. prepare without publication command (no-mistakes: pipeline publishes later)
+{"data":{"convertPullRequestToDraft":{"pullRequest":{"isDraft":true}}}}
+held: https://github.com/example/repo/pull/9 awaits firstmate ready call (publication exit=0)
+exit=0 draft=true
+
+### 2c. Adversarial: worker reports done while hold exists (DoD gate, bash)
+conflict-only refresh is held for firstmate readiness; declare a paused wait, not done, until fm-pr-refresh.sh ready clears the hold
+accept rc=1
+
+### 7. Emitted worker brief (direct-PR, github) - refresh section
+error: fm_dod_block: unknown forge 'github' (expected none, gerrit, forgejo, or external)
+
+### 8. Emitted worker brief (no-mistakes, github) - refresh section
+error: fm_dod_block: unknown forge 'github' (expected none, gerrit, forgejo, or external)
+### Emitted worker brief (direct-PR, forge=none i.e. GitHub default) - refresh section
+For a conflict-only rebase or conflict resolution of an already-open PR, use `FM_HOME=~ ~/.no-mistakes/worktrees/61c6dd39b831/01M5PQJTPT7MZBHR9M6597P52Y/bin/fm-pr-refresh.sh prepare task-7 <pr-url>` before any push or pipeline refresh; its header owns classification, publication wrapping, and the firstmate-controlled ready call.
+In direct-PR mode, pass the publication command after `--` to that helper; in no-mistakes mode, prepare first and let the pipeline publish.
+This hold overrides the ordinary ready/done instructions below: keep the draft and declared wait until firstmate explicitly asks for the helper's `ready` call.
+Do not report done or mark it ready while `state/task-7.pr-refresh` exists.
+For a separate GitHub CI wait, use `~/.no-mistakes/worktrees/61c6dd39b831/01M5PQJTPT7MZBHR9M6597P52Y/bin/fm-pr-checks.sh --watch <pr-url>` (policy: `fm-pr-checks-lib.sh`); advisory checks do not block.
+
+### Emitted worker brief (no-mistakes, forge=none i.e. GitHub default) - refresh section
+For a conflict-only rebase or conflict resolution of an already-open PR, use `FM_HOME=~ ~/.no-mistakes/worktrees/61c6dd39b831/01M5PQJTPT7MZBHR9M6597P52Y/bin/fm-pr-refresh.sh prepare task-7 <pr-url>` before any push or pipeline refresh; its header owns classification, publication wrapping, and the firstmate-controlled ready call.
+In direct-PR mode, pass the publication command after `--` to that helper; in no-mistakes mode, prepare first and let the pipeline publish.
+This hold overrides the ordinary ready/done instructions below: keep the draft and declared wait until firstmate explicitly asks for the helper's `ready` call.
+Do not report done or mark it ready while `state/task-7.pr-refresh` exists.
+Follow the CI-round policy in validation-supervision; never hand-fix or push around the pipeline's repair loop.
+
+### forgejo brief has no GitHub refresh section:
+error: fm_dod_block: a base branch is not supported on forge=forgejo
+0

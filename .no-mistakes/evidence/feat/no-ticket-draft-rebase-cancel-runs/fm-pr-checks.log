@@ -1,0 +1,16 @@
+ok - advisory pending/red check runs and red status contexts never block
+ok - required pending waits and required red fails
+ok - watch waits for an unreported required check and finishes while advisory is pending
+ok - watch re-reads pending required checks until they pass
+ok - settled repair wait collects a later advisory failure before returning required red
+ok - settled wait includes advisory execution without making advisory failures required
+ok - settled wait includes pending status contexts and requires watch mode
+ok - settled wait follows the current head rather than returning an older failure
+ok - without --after a skip stays green; --after ignores pre-ready skips, waits for a post-ready run, and counts post-ready skips
+ok - --after holds only draft-skipped checks; draft passes and status contexts still count
+ok - --after holds back stale checks with no configured requirements and rejects a malformed bound
+ok - classic and ruleset requirements compose; unreadable requirements fail closed
+ok - without configured requirements, red and pending checks still block
+ok - without configured requirements, explicit advisory runs and statuses do not block
+ok - configured requirements take precedence over the advisory marker
+ok - unfinished replacements are pending beside old skips or failures, passing replacements and lone path skips stay green

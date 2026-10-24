@@ -1,0 +1,85 @@
+ok - verified GitHub merge cancels active exact-head pre-merge runs across pages without failing the merge
+ok - workflow listing failures preserve a verified merge
+ok - fm-pr-merge accepts and accurately reports a GitHub merge-queue entry
+ok - fm-pr-merge merges a Forgejo pull request through tea api instead of refusing it
+
+===== case github-cancel-runs: fm-pr-merge.sh output =====
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+armed: state/task-x1.check.sh
+verified: https://github.com/example/repo/pull/51 is open and mergeable, with every unwaived required check reported and every unwaived required check green at head 1010101010101010101010101010101010101010
+verified: https://github.com/example/repo/pull/51 is merged (state=MERGED, merged=true, isInMergeQueue=false)
+cleanup: cancellation requested for workflow run 101 at head 1010101010101010101010101010101010101010 of https://github.com/example/repo/pull/51
+warning: merged https://github.com/example/repo/pull/51; could not cancel workflow run 102: cancellation denied
+cleanup: cancellation requested for workflow run 105 at head 1010101010101010101010101010101010101010 of https://github.com/example/repo/pull/51
+cleanup: https://github.com/example/repo/pull/51 leftover workflow runs cancellation-requested=2 failed=1
+--- workflow-run API calls made ---
+api repos/example/repo/pulls/51 --jq .merged_at // ""
+api --paginate repos/example/repo/actions/runs?head_sha=1010101010101010101010101010101010101010&per_page=100
+api --method POST repos/example/repo/actions/runs/101/cancel
+api --method POST repos/example/repo/actions/runs/102/cancel
+api --method POST repos/example/repo/actions/runs/105/cancel
+
+===== case github-cancel-list-fail: fm-pr-merge.sh output =====
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+armed: state/task-x1.check.sh
+verified: https://github.com/example/repo/pull/51 is open and mergeable, with every unwaived required check reported and every unwaived required check green at head 1010101010101010101010101010101010101010
+verified: https://github.com/example/repo/pull/51 is merged (state=MERGED, merged=true, isInMergeQueue=false)
+warning: merged https://github.com/example/repo/pull/51; could not list leftover workflow runs at 1010101010101010101010101010101010101010: workflow listing denied
+--- workflow-run API calls made ---
+api repos/example/repo/pulls/51 --jq .merged_at // ""
+api --paginate repos/example/repo/actions/runs?head_sha=1010101010101010101010101010101010101010&per_page=100
+
+===== case github-cancel-list-malformed: fm-pr-merge.sh output =====
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+armed: state/task-x1.check.sh
+verified: https://github.com/example/repo/pull/51 is open and mergeable, with every unwaived required check reported and every unwaived required check green at head 1010101010101010101010101010101010101010
+verified: https://github.com/example/repo/pull/51 is merged (state=MERGED, merged=true, isInMergeQueue=false)
+warning: merged https://github.com/example/repo/pull/51; leftover workflow run list was unreadable
+--- workflow-run API calls made ---
+api repos/example/repo/pulls/51 --jq .merged_at // ""
+api --paginate repos/example/repo/actions/runs?head_sha=1010101010101010101010101010101010101010&per_page=100
+
+===== case github-cancel-list-merged-at: fm-pr-merge.sh output =====
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+armed: state/task-x1.check.sh
+verified: https://github.com/example/repo/pull/51 is open and mergeable, with every unwaived required check reported and every unwaived required check green at head 1010101010101010101010101010101010101010
+verified: https://github.com/example/repo/pull/51 is merged (state=MERGED, merged=true, isInMergeQueue=false)
+warning: merged https://github.com/example/repo/pull/51; could not read its merge time, so leftover workflow runs were not cancelled
+--- workflow-run API calls made ---
+api repos/example/repo/pulls/51 --jq .merged_at // ""
+
+===== case forgejo-merges stdout =====
+armed: state/task-x1.check.sh
+cleanup: leftover workflow run cancellation skipped for https://forgejo.example/fixture/fixture-repo/pulls/9 (GitHub only)
+--- workflow-run API calls ---
+0
+
+===== case github-verified-queued stdout =====
+armed: state/task-x1.check.sh
+verified: https://github.com/example/repo/pull/53 is queued (state=OPEN, merged=false, isInMergeQueue=true)
+--- workflow-run API calls ---
+0
