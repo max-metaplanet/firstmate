@@ -140,6 +140,44 @@ github_checks_not_green() {
   ' 2>/dev/null || return 1
 }
 
+# The live pull-request JSON with only the checks that started at or after the
+# given whole-second UTC bound (YYYY-MM-DDTHH:MM:SSZ), for a wait that must not
+# accept results from before a transition such as draft-to-ready. A check run
+# with no start time is kept only while it has not completed, so it can wait but
+# never pass; an undated status context is dropped. A required check left with no
+# qualifying run is then missing, while a qualifying run counts as usual,
+# including a SKIPPED conclusion. Exits nonzero on an unreadable rollup or bound.
+github_rollup_started_after() {
+  local json=$1 after=$2
+  printf '%s' "$json" | jq -c --arg after "$after" '
+    def settled_at:
+      if type == "string" and test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$")
+      then . else null end;
+    if ($after | settled_at) == null then error("invalid bound") else . end
+    | if (.statusCheckRollup | type) != "array" then error("no check rollup") else . end
+    | .statusCheckRollup |= map(select(
+        ((.startedAt // .createdAt) | settled_at) as $at
+        | if $at != null then $at >= $after
+          elif .__typename == "CheckRun" then .status != "COMPLETED"
+          else false end))
+  ' 2>/dev/null || return 1
+}
+
+# Counted check names in the full rollup with no run left in the bounded one,
+# one per line. Only needed when no requirements are configured; configured
+# requirements already report the same gap as missing.
+github_checks_without_fresh_run() {
+  local json=$1 bounded=$2 required=$3
+  [ "$required" = '[]' ] || return 0
+  jq -nr --argjson full "$json" --argjson bounded "$bounded" '
+    def check_name: (if .__typename == "CheckRun" then .name else .context end) // "";
+    [$bounded.statusCheckRollup[] | check_name] as $fresh
+    | [$full.statusCheckRollup[] | check_name | select(contains("(advisory)") | not)]
+    | unique[] | select(. as $n | any($fresh[]; . == $n) | not)
+    | if . == "" then "(unnamed check)" else . end
+  ' 2>/dev/null || return 1
+}
+
 FM_PR_GITHUB_REQUIRED=
 FM_PR_GITHUB_REQUIRED_ERROR=
 github_read_required_contexts() {

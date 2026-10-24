@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Read or wait for required GitHub checks, using bin/fm-pr-checks-lib.sh's policy.
-# Usage: fm-pr-checks.sh [--watch [--settled]] <pr-url>
+# Usage: fm-pr-checks.sh [--watch [--settled]] [--after <UTC time>] <pr-url>
 # Prints REQUIRED CHECK: <name> (pending|red|missing) for each blocker.
 # Exit: 0 required checks green, 1 required check red, 8 pending/missing,
 # 2 unreadable state or usage. --watch waits through pending/missing only,
@@ -9,6 +9,9 @@
 # --settled requires --watch and waits for every reported check on the head
 # to finish, including advisory checks, before returning a red/green verdict.
 # It batches CI repair rounds without changing which failures block readiness.
+# --after YYYY-MM-DDTHH:MM:SSZ ignores checks started before that bound, so a
+# check with no run since then is missing; pass the PR's ready_for_review time
+# when its checks were skipped while it was a draft.
 # Apply a caller-owned timeout when a bounded foreground wait is needed.
 set -eu
 
@@ -21,6 +24,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 die() { printf 'fm-pr-checks: %s\n' "$*" >&2; exit 2; }
 WATCH=false
 SETTLED=false
+AFTER=
 if [ "${1:-}" = --help ]; then
   sed -n '2,/^set -eu$/s/^# \{0,1\}//p' "$0"
   exit 0
@@ -29,11 +33,16 @@ while [ "$#" -gt 0 ]; do
   case "$1" in
     --watch) WATCH=true; shift ;;
     --settled) SETTLED=true; shift ;;
+    --after)
+      [ "$#" -ge 2 ] || die '--after requires a UTC time'
+      [[ $2 =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]] \
+        || die '--after expects YYYY-MM-DDTHH:MM:SSZ'
+      AFTER=$2; shift 2 ;;
     *) break ;;
   esac
 done
 [ "$SETTLED" = false ] || [ "$WATCH" = true ] || die '--settled requires --watch'
-[ "$#" -eq 1 ] || die 'usage: fm-pr-checks.sh [--watch [--settled]] <pr-url>'
+[ "$#" -eq 1 ] || die 'usage: fm-pr-checks.sh [--watch [--settled]] [--after <UTC time>] <pr-url>'
 URL=$1
 fm_pr_url_parse "$URL" && [ "$FM_PR_PROVIDER" = github ] \
   || die 'expected a GitHub pull-request URL'
@@ -52,6 +61,13 @@ while :; do
   fm_pr_head_valid "$HEAD" || die 'invalid head'
   github_read_required_contexts "$BASE" || die "$FM_PR_GITHUB_REQUIRED_ERROR"
   github_read_required_producers "$HEAD" || die "could not read required check producers at head $HEAD"
+  STALE=
+  if [ -n "$AFTER" ]; then
+    BOUNDED=$(github_rollup_started_after "$JSON" "$AFTER") || die 'unreadable checks'
+    STALE=$(github_checks_without_fresh_run "$JSON" "$BOUNDED" "$FM_PR_GITHUB_REQUIRED") \
+      || die 'unreadable checks'
+    JSON=$BOUNDED
+  fi
   RED=$(github_checks_not_green "$JSON" "$FM_PR_GITHUB_REQUIRED") || die 'unreadable checks'
   MISSING=$(github_required_checks_missing "$JSON" "$FM_PR_GITHUB_REQUIRED" "$FM_PR_GITHUB_PRODUCERS") \
     || die 'unreadable checks'
@@ -69,6 +85,7 @@ EOF
     [ "$RESULT" != 0 ] || RESULT=8
   done <<EOF
 $MISSING
+$STALE
 EOF
   EXECUTING=false
   if [ "$SETTLED" = true ]; then

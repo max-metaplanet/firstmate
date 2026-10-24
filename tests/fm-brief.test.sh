@@ -499,6 +499,7 @@ test_draft_first_and_batched_repairs() {
         assert_grep '--head fm/batch-direct-PR --draft' "$brief" 'create command must include the draft flag'
         assert_grep 'fm-pr-checks.sh --watch --settled <pr-url>' "$brief" 'CI repairs must wait for all head checks'
         assert_grep 'push ONCE for the round' "$brief" 'CI repairs must batch publication'
+        assert_grep 'fm-pr-checks.sh --watch --after <ready time> <pr-url>' "$brief" 'post-ready CI wait must exclude draft-era checks'
         assert_grep 'local validation has passed' "$brief" 'ready transition needs local validation'
         assert_no_grep 'ready for review, not a draft' "$brief" 'old ready-on-create rule survived'
         ;;
@@ -507,6 +508,8 @@ test_draft_first_and_batched_repairs() {
         assert_grep 'BEFORE waiting for CI green' "$brief" 'pipeline drafts must become ready before final CI'
         assert_grep 'skipped draft checks alone never prove' "$brief" 'draft-skipped suites cannot establish CI green'
         assert_grep 'otherwise completed, non-skipped results on this same head count' "$brief" 'post-ready CI must be required only for draft-skipped heads'
+        assert_grep 'select(.event == "ready_for_review")' "$brief" 'post-ready CI wait must use the forge ready time'
+        assert_grep 'fm-pr-checks.sh --watch --after <ready time> <pr-url>' "$brief" 'post-ready CI wait must exclude draft-era checks'
         assert_no_grep 'Require fresh results from the ready-triggered workflows' "$brief" 'unconditional post-ready CI rule survived'
         ;;
       local-only)
@@ -520,6 +523,7 @@ test_draft_first_and_batched_repairs() {
   brief="$home/data/batch-forgejo/brief.md"
   assert_grep 'a title prefixed with WIP:' "$brief" 'forgejo draft convention was lost'
   assert_no_grep 'gh-axi pr create' "$brief" 'GitHub command leaked into Forgejo'
+  assert_no_grep 'fm-pr-checks.sh --watch --after' "$brief" 'GitHub check wait leaked into Forgejo'
   pass 'briefs start draft, batch worker CI repairs, and preserve pipeline and local-only ownership'
 }
 

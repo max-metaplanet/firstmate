@@ -106,6 +106,35 @@ view COMPLETED SUCCESS COMPLETED SUCCESS | jq '.headRefOid = "bbbbbbbbbbbbbbbbbb
 FM_PR_CHECKS_POLL=0 expect_result 0 --watch --settled
 [ "$(wc -l < "$TASK_TMP/reads" | tr -d ' ')" = 2 ] || fail 'settled wait did not re-read the new PR head'
 pass 'settled wait follows the current head rather than returning an older failure'
+
+READY=2026-10-20T11:00:00Z
+gate_runs() {
+  jq -nc --arg head "$HEAD" --argjson runs "$1" \
+    '{headRefOid:$head,baseRefName:"main",statusCheckRollup:[
+      $runs[] | {__typename:"CheckRun",name:"CI gate",status:"COMPLETED",conclusion:.[0],startedAt:.[1]}]}'
+}
+gate_runs '[["SKIPPED","2026-10-20T10:00:00Z"]]' > "$TASK_TMP/view.json"
+expect_result 0
+[ ! -s "$TASK_TMP/out" ] || fail 'a SKIPPED required run without --after stopped counting green'
+expect_result 8 --after "$READY"
+assert_grep 'CI gate (missing)' "$TASK_TMP/out" 'a draft-skipped run counted after the ready bound'
+gate_runs '[["SKIPPED","2026-10-20T10:00:00Z"],["SUCCESS","2026-10-20T11:00:04Z"]]' > "$TASK_TMP/next.json"
+: > "$TASK_TMP/reads"
+FM_PR_CHECKS_POLL=0 expect_result 0 --watch --after "$READY"
+[ "$(wc -l < "$TASK_TMP/reads" | tr -d ' ')" = 2 ] || fail 'bounded watch did not wait for a post-ready run'
+gate_runs '[["FAILURE","2026-10-20T10:00:00Z"],["SKIPPED","2026-10-20T11:00:00Z"]]' > "$TASK_TMP/view.json"
+expect_result 0 --after "$READY"
+pass 'without --after a skip stays green; --after ignores pre-ready runs, waits for a post-ready run, and counts post-ready skips'
+
+printf '[]\n' > "$TASK_TMP/rules.json"
+gate_runs '[["SKIPPED","2026-10-20T10:00:00Z"]]' > "$TASK_TMP/view.json"
+expect_result 0
+expect_result 8 --after "$READY"
+assert_grep 'CI gate (missing)' "$TASK_TMP/out" 'an unconfigured repo counted a pre-ready skip after the ready bound'
+expect_result 2 --after 2026-10-20
+expect_result 2 --after
+pass '--after holds back stale checks with no configured requirements and rejects a malformed bound'
+printf '[{"type":"required_status_checks","parameters":{"required_status_checks":[{"context":"CI gate"}]}}]\n' > "$TASK_TMP/rules.json"
 view COMPLETED SUCCESS COMPLETED SUCCESS > "$TASK_TMP/view.json"
 
 printf '{"protected":true,"protection":{"required_status_checks":{"contexts":["classic"]}}}\n' > "$TASK_TMP/branch.json"
