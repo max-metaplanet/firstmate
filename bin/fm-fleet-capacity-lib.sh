@@ -182,6 +182,9 @@ fm_fleet_capacity_occupants() {  # <first-state> <own-id>
 
 # Optional load policy: root config/fleet-load-policy is absent, `off`, or a
 # JSON object {"mode":"observe"|"enforce","floor":6,"ceiling":8,"start":8}.
+# A JSON object with mode off is invalid: status reports it and admission keeps
+# the static cap. Mode is not part of the state identity, so observed history
+# carries into enforce. Capacity-change wakes are sent only in enforce mode.
 # Enabled limits are positive integers with floor <= start <= ceiling and
 # require fleet-capacity. The static cap always bounds the policy. Observe
 # reports the desired cap/hold but never applies either. Off does no sampling.
@@ -197,13 +200,12 @@ fm_fleet_load_enabled() { # <config-dir>
   local raw
   [ -e "$1/fleet-load-policy" ] || [ -L "$1/fleet-load-policy" ] || return 1
   raw=$(cat "$1/fleet-load-policy" 2>/dev/null) || return 0
-  [ "$raw" != off ] || return 1
-  if printf '%s\n' "$raw" | jq -e 'type == "object" and .mode == "off"' >/dev/null 2>&1; then return 1; fi
-  return 0
+  [ "$raw" != off ]
 }
 
 # Sets FM_FLEET_LOAD_JSON and FM_FLEET_EFFECTIVE_CAPACITY. A hold is a 75 only
-# in enforce mode (or invalid configuration); observe retains static admission.
+# in enforce mode (or invalid configuration); observe retains static admission,
+# as does an invalid configuration that reports no hold.
 fm_fleet_load_evaluate() { # <home> <config-dir> <refresh|status>
   local root mode hold staged
   root=$(fm_firstmate_root_home "$1") || return 1
@@ -233,7 +235,7 @@ fm_fleet_load_evaluate() { # <home> <config-dir> <refresh|status>
       fi
     fi
   fi
-  if [ "$mode" = invalid ] || { [ "$mode" = enforce ] && [ -n "$hold" ]; }; then return 75; fi
+  if { [ "$mode" = invalid ] || [ "$mode" = enforce ]; } && [ -n "$hold" ]; then return 75; fi
 }
 
 fm_fleet_load_tick() { # <home> <config-dir>

@@ -42,22 +42,14 @@ def clock():
     return time.time(), time.monotonic(), boot
 
 
-def centi(load, cpus):
-    match = re.fullmatch(r"(\d*)(?:\.(\d*))?", load)
-    if not match or not any(match.groups()) or cpus < 1:
-        raise ValueError("invalid load telemetry")
-    whole, frac = match.groups()
-    return (int(whole or 0) * 100 + int(((frac or "") + "00")[:2])) // cpus
-
-
 def telemetry():
     if os.environ.get("FM_FLEET_LOAD_TELEMETRY"):
         value = read_json(os.environ["FM_FLEET_LOAD_TELEMETRY"])
     else:
         if platform.system() != "Darwin":
             raise ValueError("unsupported platform: policy requires macOS")
-        load1, load5 = run("sysctl", "-n", "vm.loadavg").strip("{} ").split()[:2]
-        cpus = int(run("sysctl", "-n", "hw.ncpu"))
+        load_lib = str(Path(__file__).with_name("fm-load-lib.sh"))
+        loads = run("bash", "-c", '. "$1"; fm_machine_load_sample', "fleet-load", load_lib).split()
         pressure = run("sysctl", "-n", "kern.memorystatus_vm_pressure_level")
         # XNU's sysctl converts its internal enum to dispatch flags: 1/2/4.
         # bsd/kern/kern_memorystatus_notify.c, sysctl_memorystatus_vm_pressure_level.
@@ -68,8 +60,8 @@ def telemetry():
             return int(re.search(r"^" + name + r":\s+(\d+)\.", vm, re.M)[1])
         swap = run("sysctl", "-n", "vm.swapusage")
         used = re.search(r"used\s*=\s*([0-9.]+)([KMG])", swap)
-        value = dict(load1=float(load1), load5=float(load5), cpus=cpus,
-                     load1_centi=centi(load1, cpus), load5_centi=centi(load5, cpus), pressure=pressure,
+        value = dict(load1=float(loads[0]), load5=float(loads[1]), cpus=int(loads[2]),
+                     load1_centi=int(loads[3]), load5_centi=int(loads[4]), pressure=pressure,
                      page_size=page_size, swapouts=pages("Swapouts"), swapins=pages("Swapins"),
                      swap_used_bytes=float(used[1]) * {"K": 1024, "M": 1024**2, "G": 1024**3}[used[2]])
     for key in ("load1", "load5", "load1_centi", "load5_centi", "swapouts", "swapins", "swap_used_bytes"):
@@ -81,6 +73,10 @@ def telemetry():
     return value
 
 
+class OffSpelling(ValueError):
+    pass
+
+
 def policy(config, static):
     path = config / "fleet-load-policy"
     if not path.exists() and not path.is_symlink():
@@ -89,10 +85,11 @@ def policy(config, static):
     if raw == "off":
         return {"mode": "off"}
     value = json.loads(raw)
-    if not isinstance(value, dict) or value.get("mode") not in ("off", "observe", "enforce"):
-        raise ValueError("policy mode must be off, observe or enforce")
-    if value["mode"] == "off":
-        return {"mode": "off"}
+    if isinstance(value, dict) and value.get("mode") == "off":
+        raise OffSpelling("JSON mode off is invalid; write the bare word off or remove config/fleet-load-policy "
+                          "(admission uses the static cap until then)")
+    if not isinstance(value, dict) or value.get("mode") not in ("observe", "enforce"):
+        raise ValueError("policy mode must be observe or enforce; write the bare word off to disable")
     if set(value) != {"mode", "floor", "ceiling", "start"}:
         raise ValueError("policy requires only mode, floor, ceiling and start")
     for key in ("floor", "ceiling", "start"):
@@ -185,7 +182,8 @@ def evaluate(root, config, static, refresh):
     try:
         p = policy(config, static)
     except (OSError, ValueError, TypeError) as error:
-        result.update(mode="invalid", hold="invalid policy", reason=str(error))
+        result.update(mode="invalid", hold="" if isinstance(error, OffSpelling) else "invalid policy",
+                      reason=str(error))
         return result
     result["mode"] = p["mode"]
     if p["mode"] == "off":
@@ -193,7 +191,7 @@ def evaluate(root, config, static, refresh):
     result.update(floor=min(p["floor"], static), ceiling=min(p["ceiling"], static),
                   start=min(p["start"], static))
     path = root / "state" / "fleet-load.json"
-    identity = json.dumps(p, sort_keys=True)
+    identity = json.dumps({key: p[key] for key in ("floor", "ceiling", "start")}, sort_keys=True)
     state = None
     try:
         now, mono, boot = clock()
@@ -254,9 +252,10 @@ def evaluate(root, config, static, refresh):
 if __name__ == "__main__":
     root, config, static, action = sys.argv[1:]
     result = evaluate(Path(root), Path(config), int(static) if static else None, action == "refresh")
-    # Bash owns durable wake publication. The fingerprint also suppresses
-    # repeated stale/critical wakes after the previous queue entry was drained.
-    if action == "refresh" and result["mode"] != "off":
+    # Bash owns durable wake publication, only where admission follows the
+    # policy. The fingerprint also suppresses repeated stale/critical wakes
+    # after the previous queue entry was drained.
+    if action == "refresh" and result["mode"] == "enforce":
         fingerprint = json.dumps([result["mode"], result["effective"], result["desired"], result["hold"]], separators=(",", ":"))
         notice = Path(root) / "state" / ".fleet-load-notice"
         try:

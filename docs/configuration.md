@@ -1483,7 +1483,8 @@ A malformed or unreadable file refuses every fresh spawn until it is fixed.
 ### Optional load-aware capacity (config/fleet-load-policy)
 
 The root home's optional `config/fleet-load-policy` adds a macOS resource-based target below `fleet-capacity`.
-It is off when absent or set to `off`, and installations ship without an enabled policy.
+It is off when absent or set to the bare word `off`, and installations ship without an enabled policy.
+A JSON object with `"mode":"off"` is invalid configuration: status reports it as an error and admission keeps the static cap without adaptation.
 Enabling it requires a positive `fleet-capacity`; that manual limit always remains the upper bound.
 An enabled policy on an unsupported platform reports an admission hold instead of guessing resource health.
 
@@ -1495,13 +1496,14 @@ An observation-only pilot uses this JSON in the root home's gitignored `config/f
 
 `observe` shows telemetry, the proposed effective cap, and any admission hold while continuing to admit through the static cap.
 Changing `mode` to `enforce` explicitly opts that machine into applying the target and holds to new workers and parked resumes.
+The mode is not part of the sampled history, so the target and streaks observed in `observe` carry into `enforce`; changing `floor`, `ceiling` or `start` restarts that history.
 The policy never stops running workers, even when occupancy exceeds the target.
 Lowering `fleet-capacity` clamps the target immediately; raising it does not bypass the policy ceiling or its recovery window.
 Setting the policy to `off` restores static admission and stops sampling.
 No machine's configuration changes automatically as part of installation or an update.
 
 The existing watcher parking tick samples at most once per minute for the whole local fleet under the shared admission lock.
-It reads load per online CPU, macOS kernel memory pressure, and `vm_stat` paging counters using the reported page size.
+It reads load per online CPU through [`bin/fm-load-lib.sh`](../bin/fm-load-lib.sh), macOS kernel memory pressure, and `vm_stat` paging counters using the reported page size.
 Residual swap usage is observation data and does not by itself prevent recovery.
 Three overloaded CPU samples reduce the target by one; sustained overload can reduce it again after two more samples.
 Two warning-pressure or high swap-out intervals also reduce it by one, combining simultaneous stress into one step.
@@ -1511,7 +1513,8 @@ Missing, duplicate, late, rebooted, or backward-clock history never manufactures
 
 In enforce mode, a sensor older than three minutes, unreadable required telemetry, or incompatible state defers admission with exit 75 and preserves queued work.
 The watcher or the next admission attempts a bounded refresh, with a one-minute retry interval after sensor failures.
-Capacity and hold transitions produce a deduplicated operational wake; queued resumes retain their existing priority.
+In enforce mode, capacity and hold transitions produce a deduplicated operational wake; `observe` sends no wakes.
+Queued resumes retain their existing priority.
 Without a watcher, stale telemetry is visible and further admissions stay deferred until a valid refresh succeeds.
 
 `FM_HOME=<home> bash bin/fm-worker-park.sh status` returns a read-only JSON observation with static, effective and desired caps, policy limits, occupancy, queued resumes, sample age, reason and recovery condition.

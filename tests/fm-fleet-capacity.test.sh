@@ -548,12 +548,16 @@ test_adaptive_off_and_observe() {
   printf '{"mode":"off"}\n' > "$home/config/fleet-load-policy"
   rm "$home/config/fleet-capacity"
   load_tick "$case_dir"
-  load_expect "$case_dir" "$home" '.mode == "off" and .configured == null' 'JSON off also preserves undeclared capacity'
-  assert_absent "$home/state/fleet-load.json" 'JSON off sampled without a declared cap'
+  load_expect "$case_dir" "$home" '.mode == "invalid" and .hold == "" and .configured == null and (.reason | contains("bare word off"))' 'JSON off is reported as invalid configuration'
   declare_fleet "$home" 3
+  load_tick "$case_dir"
+  load_expect "$case_dir" "$home" '.mode == "invalid" and .hold == "" and .effective == 3' 'JSON off admits through the static cap'
+  assert_absent "$home/state/fleet-load.json" 'JSON off sampled'
   load_policy "$home" observe
   load_tick "$case_dir"
   load_expect "$case_dir" "$home" '.mode == "observe" and .desired == 1 and .effective == 3 and (.hold | contains("critical"))' 'observe projects critical hold without applying it'
+  assert_absent "$home/state/.fleet-load-notice" 'observe mode published a capacity wake'
+  assert_not_contains "$(cat "$home/state/.wake-queue" 2>/dev/null)" 'fleet-load capacity' 'observe mode queued a capacity wake'
   state=$(cat "$home/state/fleet-load.json")
   out=$(spawn_ship "$case_dir" task-a) || rc=$?
   expect_code 0 "$rc" "observe refused an admission: $out"
@@ -715,9 +719,12 @@ test_adaptive_memory_paging_and_history() {
   load_expect "$case_dir" "$home" '.state.healthy == 0 and .state.sample_epoch == 1000' 'backward clock invalidates history'
   load_fixture "$case_dir" 1060 normal 40 40 1 next-boot; load_tick "$case_dir"
   load_expect "$case_dir" "$home" '.state.healthy == 0 and .state.boot == "next-boot"' 'reboot starts with no healthy history'
+  load_policy "$home" observe
+  load_fixture "$case_dir" 1120 normal 40 40 1 next-boot; load_tick "$case_dir"
+  load_expect "$case_dir" "$home" '.mode == "observe" and .state.healthy == 1' 'a mode change keeps observed history'
   load_policy "$home" observe 1 2 2
   load_tick "$case_dir"
-  load_expect "$case_dir" "$home" '.mode == "observe" and .desired == 2 and .state.healthy == 0' 'policy changes invalidate history'
+  load_expect "$case_dir" "$home" '.mode == "observe" and .desired == 2 and .state.healthy == 0' 'policy limit changes invalidate history'
   unset FM_FLEET_LOAD_CLOCK FM_FLEET_LOAD_TELEMETRY
   pass 'memory pressure, measured paging and clock/config/boot invalidation govern history'
 }
