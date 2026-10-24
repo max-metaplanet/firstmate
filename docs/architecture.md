@@ -13,7 +13,8 @@ The worktree, branch, PR, task record and merge observer remain available for la
 [`bin/fm-worker-park.sh`](../bin/fm-worker-park.sh) owns parking eligibility, the configurable wait threshold, adoption of hand-exited workers, and wake commands.
 [`bin/fm-worker-park-lib.sh`](../bin/fm-worker-park-lib.sh) owns the durable state and resume ordering.
 The watcher starts that owner beside its existing cycle, so parking never delays wake delivery, and excludes verified parked endpoints from stale and dead-worker recovery.
-Contribution observations and durable steering request resumption without consuming their original events.
+Contribution observations, the PR merge poll and durable steering request resumption without consuming their original events.
+A PR observation requests it only for a completed check verdict, a head change, a review, a conflict, a close or a merge, so pending lanes and rerun starts never spend a slot, and one close or merge seen by both observers queues once.
 Failed checks request it only when their failing set or head differs from the set recorded on the parked worker, so a known permanently red lane on an unchanged head cannot keep waking the same worker.
 Parked resumptions pass the existing fleet and project caps and are admitted ahead of fresh dispatches; [configuration](configuration.md#fleet-capacity-configfleet-capacity) owns which queued resumptions reserve a place.
 An unverified exit continues to reserve memory capacity.
