@@ -215,9 +215,10 @@ def evaluate(root, config, static, refresh):
                                       result["floor"], result["ceiling"], result["start"])
                 same = True
             except (OSError, ValueError, KeyError, TypeError, IndexError, subprocess.SubprocessError) as error:
-                state = dict(state or dict(version=VERSION, identity=identity, boot=boot,
-                                          sample_epoch=0, sample_monotonic=0, target=result["start"],
-                                          sample_valid=False), sensor_error="required telemetry unreadable: " + str(error),
+                current = state and state.get("identity") == identity and state.get("boot") == boot
+                state = dict(state if current else dict(version=VERSION, identity=identity, boot=boot,
+                                                        sample_epoch=0, sample_monotonic=0, target=result["start"],
+                                                        sample_valid=False), sensor_error="required telemetry unreadable: " + str(error),
                              healthy=0, cpu_streak=0, memory_streak=0, swap_streak=0, normal_streak=0,
                              attempt_monotonic=mono, attempt_boot=boot)
             state.update(attempt_monotonic=mono, attempt_boot=boot)

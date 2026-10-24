@@ -278,12 +278,17 @@ if [ "$VERB" = status ]; then
   fm_fleet_capacity_observation "$FM_HOME" "$CONFIG" "$STATE"
 elif [ "$VERB" = tick ]; then
   # Sampling/admission uses the shared root lock, released before relaunch.
-  fm_fleet_load_tick "$FM_HOME" "$CONFIG" || exit 1
+  TICK_RC=0
+  if ! fm_fleet_load_tick "$FM_HOME" "$CONFIG"; then
+    echo "fm-worker-park: fleet load evaluation failed; parking and resumes continue under the last admission state" >&2
+    TICK_RC=1
+  fi
   for meta in "$STATE"/*.meta; do
     [ -f "$meta" ] || continue
     ID=${meta##*/}; ID=${ID%.meta}
     one || true
   done
+  exit "$TICK_RC"
 else
   one "$@"
 fi
