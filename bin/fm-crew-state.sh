@@ -1098,7 +1098,7 @@ if [ "$KIND" = ship ] && [ -n "$CREW_BRANCH" ] && command -v no-mistakes >/dev/n
           emit unreadable run-step "could not confirm the selected run: it answered with another id or branch; run ids: $candidate_ids"
         fi
         case "$(strip_quotes "$(nm_field status)")" in
-          pending|running|fixing|ci|awaiting_approval|fix_review|completed|failed|cancelled) ;;
+          pending|running|fixing|ci|awaiting_approval|fix_review|completed|failed|cancelled|ci_monitor_interrupted) ;;
           *) emit unreadable run-step "could not settle the selected run's status: it reports a word this reader does not recognize; run ids: $candidate_ids" ;;
         esac
         if fm_nm_run_is_active "$RUN_OUT"; then current_class=live; else current_class=terminal; fi
@@ -1213,6 +1213,7 @@ if [ "$HAVE_RUN" = 1 ]; then
           RUN_STATE=failed; RUN_DETAIL="run failed"
         fi ;;
       cancelled) RUN_STATE=unknown; RUN_DETAIL="run cancelled: no verdict" ;;
+      ci_monitor_interrupted) RUN_STATE=unknown; RUN_DETAIL="CI monitoring interrupted: no verdict" ;;
       *)         RUN_STATE=unreadable; RUN_DETAIL="could not settle this run's state: the ledger reports a status this reader does not recognize ($COARSE_STATUS)" ;;
     esac
   else
@@ -1224,7 +1225,9 @@ if [ "$HAVE_RUN" = 1 ]; then
     has_gate=0
     nm_has_gate && has_gate=1
 
-    if [ -n "$outcome" ]; then
+    if [ "$status" = ci_monitor_interrupted ] || [ "$outcome" = ci-monitor-interrupted ]; then
+      RUN_STATE=unknown; RUN_DETAIL="CI monitoring interrupted: no verdict"
+    elif [ -n "$outcome" ]; then
       case "$outcome" in
         passed|passed-with-override) RUN_STATE="done"; RUN_DETAIL=$(passed_pr_detail) ;;
         passed-with-skips) RUN_STATE="done"; RUN_DETAIL="$(passed_pr_detail) (publication/CI verification skipped)" ;;

@@ -164,7 +164,7 @@ def recover():
                               "ORDER BY created_at DESC, id DESC", (rid, branch)).fetchall()
         if not rows or rows[0][0] != run_id:
             raise Refused("selected status run differs from the newest registered branch run")
-        if any(st not in ("completed", "failed", "cancelled") for _, st in rows):
+        if any(st not in ("completed", "failed", "cancelled", "ci_monitor_interrupted") for _, st in rows):
             raise Refused("branch has an active or unknown registered run; reattach instead")
         if state.get("run.status") != rows[0][1]:
             raise Refused("run status disagrees with registered terminal state")
