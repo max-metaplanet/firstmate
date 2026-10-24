@@ -1790,10 +1790,26 @@ test_parked_lane_progress_waits_for_a_verdict() {
     > "$home/forge/extra-checks.json"
   with_home "$home" "$ROOT/bin/fm-contributions.sh" poll >/dev/null || fail 'in-progress lane observation failed'
   assert_grep 'phase=parked' "$home/state/delivery.park" 'queued to in_progress does not spend a worker slot'
-  printf '[{"name":"lint","id":2,"status":"completed","conclusion":"failure","started_at":"2026-09-16T08:00:01Z"}]\n' \
+  printf '[{"name":"lint","id":2,"status":"in_progress","conclusion":null,"started_at":"2026-09-16T08:00:01Z"},
+    {"name":"build","id":4,"status":"queued","conclusion":null,"started_at":"2026-09-16T08:00:02Z"}]\n' \
+    > "$home/forge/extra-checks.json"
+  with_home "$home" "$ROOT/bin/fm-contributions.sh" poll >/dev/null || fail 'new pending lane observation failed'
+  assert_grep 'phase=parked' "$home/state/delivery.park" 'a lane appearing while pending does not spend a worker slot'
+  printf '[{"name":"lint","id":2,"status":"in_progress","conclusion":null,"started_at":"2026-09-16T08:00:01Z"},
+    {"name":"build","id":4,"status":"queued","conclusion":null,"started_at":"2026-09-16T08:00:02Z"},
+    {"name":"test","id":5,"status":"in_progress","conclusion":null,"started_at":"2026-09-16T08:00:03Z"}]\n' \
+    > "$home/forge/extra-checks.json"
+  with_home "$home" "$ROOT/bin/fm-contributions.sh" poll >/dev/null || fail 'rerun start observation failed'
+  assert_grep 'phase=parked' "$home/state/delivery.park" 'a rerun starting over a completed lane does not spend a worker slot'
+  printf '[{"name":"lint","id":2,"status":"completed","conclusion":"failure","started_at":"2026-09-16T08:00:01Z"},
+    {"name":"build","id":4,"status":"queued","conclusion":null,"started_at":"2026-09-16T08:00:02Z"},
+    {"name":"test","id":5,"status":"in_progress","conclusion":null,"started_at":"2026-09-16T08:00:03Z"}]\n' \
     > "$home/forge/extra-checks.json"
   with_home "$home" "$ROOT/bin/fm-contributions.sh" poll >/dev/null || fail 'failed lane observation failed'
   assert_grep 'phase=queued' "$home/state/delivery.park" 'a lane reaching a red verdict queues the parked worker'
+  repark_record "$home/state/delivery.park"
+  with_home "$home" "$ROOT/bin/fm-contributions.sh" poll >/dev/null || fail 'repeat red lane observation failed'
+  assert_grep 'phase=parked' "$home/state/delivery.park" 'the same red verdict wakes the worker only once'
   pass 'parked workers return on a check verdict, not on lane progress'
 }
 
