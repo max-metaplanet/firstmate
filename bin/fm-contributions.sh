@@ -482,7 +482,7 @@ worker_observation() { # task row-file
       failing=''
       if [ "$reason" = 'PR checks or head changed' ]; then
         failing=$(jq_lib -nr --slurpfile row "$row" '
-          if ($row[0].observation.checks | latest_checks | failed_of(.) | length) > 0
+          if ($row[0].observation.checks | completed_checks | failed_of(.) | length) > 0
           then failing_identities($row[0]) else "" end') || return 1
         [ -z "$failing" ] || reason='checks failed'
       fi
