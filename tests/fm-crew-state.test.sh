@@ -6243,11 +6243,64 @@ test_run_activity_is_reported_only_from_recent_active_steps() {
   pass 'only an attributed run with a recognized recent active step publishes activity evidence'
 }
 
+test_interrupted_monitor_selection() {
+  local surface d out head before after
+  for surface in pure capped; do
+    if [ "$surface" = pure ]; then
+      make_competing_runs_case interrupted-pure ci_monitor_interrupted completed
+    else
+      make_capped_runs_case interrupted-capped ci_monitor_interrupted completed hidden
+    fi
+    d=$TMP_ROOT/interrupted-$surface
+    head=$FM_FAKE_RUN_HEAD
+    FM_FAKE_AXI_STATUS="$(run_failed fm/competing | sed 's/01RUN/01NEW/; s/status: completed/status: ci_monitor_interrupted/; /outcome:/d')"
+    FM_FAKE_AXI_STATUS_RUN="$FM_FAKE_AXI_STATUS"
+    before=$(git -C "$d/wt" rev-parse HEAD)
+    out=$(run_crew_state "$d" competing)
+    assert_contains "$out" 'state: unknown' "$surface interruption has no verdict"
+    assert_contains "$out" 'source: run-step' "$surface interruption remains attributable"
+    assert_contains "$out" 'CI monitoring interrupted: no verdict' "$surface interruption is recognized"
+    assert_not_contains "$out" 'state: done' "$surface interruption is never green"
+    assert_not_contains "$out" 'state: failed' "$surface interruption is not a code failure"
+    FM_FAKE_AXI_STATUS_RUN="$FM_FAKE_AXI_STATUS
+outcome: ci-monitor-interrupted
+gate: review"
+    out=$(run_crew_state "$d" competing)
+    assert_contains "$out" 'state: unknown' "$surface real interruption outcome wins over stale gates"
+    assert_not_contains "$out" 'state: parked' "$surface terminal interruption cannot retain gate custody"
+    after=$(git -C "$d/wt" rev-parse HEAD)
+    assert_equals "$before" "$after" 'reader preserves the task head'
+    FM_FAKE_RUN_HEAD=f0f0f0f0
+    FM_FAKE_AXI_STATUS_RUN="$(run_failed fm/competing | sed 's/01RUN/01NEW/; s/status: completed/status: ci_monitor_interrupted/; /outcome:/d')"
+    out=$(run_crew_state "$d" competing)
+    assert_not_contains "$out" 'source: run-step' "$surface interruption retains strict head attribution"
+    FM_FAKE_RUN_HEAD=$head
+    FM_FAKE_AXI_STATUS_RUN="$(run_failed fm/foreign | sed 's/01RUN/01NEW/; s/status: completed/status: ci_monitor_interrupted/; /outcome:/d')"
+    out=$(run_crew_state "$d" competing)
+    assert_contains "$out" 'state: unreadable' "$surface interruption cannot substitute another branch"
+
+    if [ "$surface" = pure ]; then
+      make_competing_runs_case interrupted-replaced-pure running ci_monitor_interrupted
+    else
+      make_capped_runs_case interrupted-replaced-capped running ci_monitor_interrupted hidden
+    fi
+    d=$TMP_ROOT/interrupted-replaced-$surface
+    FM_FAKE_AXI_STATUS="$(run_failed fm/competing | sed 's/01RUN/01OLD/; s/status: completed/status: ci_monitor_interrupted/; /outcome:/d')"
+    FM_FAKE_AXI_STATUS_RUN="$(run_running fm/competing | sed 's/01RUN/01NEW/')"
+    out=$(run_crew_state "$d" competing)
+    assert_contains "$out" 'state: working' "$surface newer active run outranks interruption"
+    assert_contains "$out" 'source: run-step' "$surface replacement retains full detail"
+    assert_not_contains "$out" 'CI monitoring interrupted' "$surface old interruption cannot answer for replacement"
+  done
+  pass 'pure and capped interruption reads preserve identity and replacement precedence'
+}
+
 if [ -n "${FM_TEST_ONLY:-}" ]; then
   "$FM_TEST_ONLY"
   exit 0
 fi
 
+test_interrupted_monitor_selection
 test_run_activity_is_reported_only_from_recent_active_steps
 test_captured_axi_status_shapes
 test_captured_inventory_replay

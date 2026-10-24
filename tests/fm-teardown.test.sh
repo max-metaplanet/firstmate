@@ -4516,6 +4516,35 @@ EOF
   pass "a terminal status with a stale gate never reaches ledger cleanup"
 }
 
+test_interrupted_monitor_with_stale_gate_never_aborts() {
+  local case_dir rc advanced_short anchor_short terminal_status
+  case_dir=$(make_case interrupted-monitor-gate)
+  write_meta "$case_dir" no-mistakes ship
+  land_shippable_commit "$case_dir"
+  anchor_short=$(git -C "$case_dir/wt" rev-parse --short=7 HEAD)
+  advanced_short=$anchor_short
+  terminal_status=$(parked_axi_status_toon fm/task-x1 "$advanced_short")
+  terminal_status=${terminal_status/status: awaiting_approval/status: ci_monitor_interrupted}
+
+  rc=0
+  FM_FAKE_AXI_STATUS="$terminal_status" \
+  FM_FAKE_NM_RUNS_LIST="$(cat <<EOF
+$(ledger_row running fm/task-x1 "$advanced_short" 2026-09-03 07:55)
+$(ledger_row failed fm/task-x1 "$anchor_short" 2026-09-02 06:36)
+EOF
+)" \
+  FM_FAKE_NM_RUNS_LOG="$case_dir/nm-runs.log" \
+  FM_FAKE_NM_ABORT_LOG="$case_dir/nm-abort.log" \
+    run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+
+  expect_code 0 "$rc" "interrupted-monitor-gate: teardown should still succeed"
+  assert_absent "$case_dir/nm-runs.log" \
+    "interrupted-monitor-gate: terminal status queried the ledger fallback"
+  assert_absent "$case_dir/nm-abort.log" \
+    "interrupted-monitor-gate: terminal status with a stale gate aborted"
+  pass "a terminal status with a stale gate never reaches ledger cleanup"
+}
+
 # Counterfactual twin of the unfetched defect above: the SAME parked-run shape
 # with the pipeline's advanced fix head FETCHED into the task copy (objects
 # only - no ref moves) resolves through the strict object-local rule alone,
@@ -6324,6 +6353,7 @@ test_parked_run_with_mismatched_ledger_head_is_never_aborted
 test_parked_run_with_malformed_ledger_row_is_never_aborted
 test_parked_run_with_impossible_ledger_date_is_never_aborted
 test_terminal_status_with_gate_never_queries_or_aborts_ledger_fallback
+test_interrupted_monitor_with_stale_gate_never_aborts
 test_parked_run_advanced_head_locally_fetched_is_still_aborted
 test_parked_advanced_run_without_anchor_is_never_aborted
 test_parked_advanced_run_ancestor_anchor_is_never_aborted

@@ -99,6 +99,15 @@ chmod +x "$TMP_ROOT/bin/fm-crew-state.sh"
 PATH="$TMP_ROOT/fakebin:$PATH" bash "$PARK" auto task
 assert_absent "$FM_HOME/state/task.park" 'live validation never parks'
 fixture
+printf 'mode=no-mistakes\n' >> "$FM_HOME/state/task.meta"
+cat > "$TMP_ROOT/fakebin/no-mistakes" <<'SH'
+#!/usr/bin/env bash
+printf 'status: ci_monitor_interrupted\noutcome: ci-monitor-interrupted\n'
+SH
+PATH="$TMP_ROOT/fakebin:$PATH" bash "$PARK" auto task
+assert_grep 'phase=parked' "$FM_HOME/state/task.park" 'terminal interrupted monitor permits verified worker parking'
+
+fixture
 touch "$FM_HOME/exit-fails"
 if bash "$PARK" auto task; then fail 'unverified exit must fail'; fi
 assert_grep 'phase=parking' "$FM_HOME/state/task.park" 'unverified exit never publishes parked'

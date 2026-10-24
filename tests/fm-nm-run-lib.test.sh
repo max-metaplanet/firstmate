@@ -210,6 +210,26 @@ test_resolving_a_missing_commit_answers_absent_without_fetching() {
   pass 'fm_nm_resolve_commit answers absent for a commit only the promisor holds, without fetching it'
 }
 
+test_interrupted_monitor_is_terminal() {
+  # shellcheck source=bin/fm-nm-run-lib.sh
+  . "$ROOT/bin/fm-nm-run-lib.sh"
+  local record overview selected
+  record=$'run:\n  id: 01INTERRUPTED\n  branch: fm/interrupted\n  head: 12345678\n  status: ci_monitor_interrupted\nbranch_sync:\n  state: pipeline_owned'
+  assert_equals terminal "$(fm_nm_run_status_class ci_monitor_interrupted)" 'interrupted monitor is terminal'
+  if fm_nm_run_is_active "$record" || fm_nm_run_is_executing "$record" || fm_nm_run_is_pipeline_owned_active "$record"; then
+    fail 'interrupted monitor must never retain active custody'
+  fi
+  assert_equals fm/interrupted "$(fm_nm_field "$record" branch)" 'interruption preserves branch'
+  assert_equals 12345678 "$(fm_nm_field "$record" head)" 'interruption preserves head'
+  overview=$'count: 1 of 1 total\nruns[1]{id,branch,status,head,pr}:\n  01INTERRUPTED,fm/interrupted,ci_monitor_interrupted,12345678,""'
+  selected=$(fm_nm_select_run fm/interrupted "$overview" "$WT" 5)
+  assert_equals 'selected|01INTERRUPTED|ci_monitor_interrupted|01INTERRUPTED' "$selected" 'interrupted row is selectable'
+  overview=$'count: 2 of 2 total\nruns[2]{id,branch,status,head,pr}:\n  01ACTIVE,fm/interrupted,running,abcdef12,""\n  01INTERRUPTED,fm/interrupted,ci_monitor_interrupted,12345678,""'
+  assert_equals 'selected|01ACTIVE|running|01ACTIVE, 01INTERRUPTED' "$(fm_nm_select_run fm/interrupted "$overview" "$WT" 5)" 'new active run outranks interruption'
+  pass 'interrupted monitor is terminal and newer active runs retain precedence'
+}
+
+test_interrupted_monitor_is_terminal
 test_a_probe_runs_no_mistakes_with_lazy_fetching_disabled
 test_probe_wrappers_suppress_update_checks_without_extra_launches
 test_a_bounded_command_reads_its_callers_stdin
