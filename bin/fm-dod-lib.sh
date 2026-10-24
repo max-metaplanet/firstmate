@@ -617,7 +617,7 @@ EOF
 
 fm_dod_block() {  # <mode> <task-id> [branch] [<forge>] [<base>] [<consent>] [<ticket-header>] [<ticket-nm-retitle>]
   local mode=$1 id=$2 forge=${4:-none} base=${5:-} consent=${6:-} ticket_header=${7:-} ticket_retitle=${8:-}
-  local branch=${3:-fm/$id} pr_base='' nm_base='' draft_create='--draft' base_q contract_forge='' contract_consent='' forge_cli=gh-axi draft_check origin_steps retitle_cmd adapter ci_wait='' ready_wait=''
+  local branch=${3:-fm/$id} pr_base='' nm_base='' draft_create='--draft' base_q contract_forge='' contract_consent='' forge_cli=gh-axi draft_check origin_steps retitle_cmd adapter ci_wait='' ready_wait='' refresh='' refresh_home_q
   fm_forge_valid_for_mode "$forge" "$mode" fm_dod_block || return 1
   fm_base_branch_valid "$base" "$mode" "$forge" fm_dod_block || return 1
   if [ -n "$consent" ]; then
@@ -640,6 +640,12 @@ Edit it with \`gh-axi pr edit <PR URL> --title '<the corrected title>'\`, then r
     none|github)
       ci_wait="For a separate GitHub CI wait, use \`$_FM_DOD_LIB_DIR/fm-pr-checks.sh --watch <pr-url>\` (policy: \`fm-pr-checks-lib.sh\`); advisory checks do not block."
       ready_wait=" When checks were skipped while draft, read the ready time with \`gh api --paginate repos/<owner>/<repo>/issues/<number>/timeline --jq '.[] | select(.event == \"ready_for_review\") | .created_at' | tail -n 1\` and wait with \`$_FM_DOD_LIB_DIR/fm-pr-checks.sh --watch --after <ready time> <pr-url>\`, so no check skipped before the ready transition counts."
+      printf -v refresh_home_q '%q' "${FM_HOME:-<task-home>}"
+      refresh="
+For a conflict-only rebase or conflict resolution of an already-open PR, use \`FM_HOME=$refresh_home_q $_FM_DOD_LIB_DIR/fm-pr-refresh.sh prepare $id <pr-url>\` before any push or pipeline refresh; its header owns classification, publication wrapping, and the firstmate-controlled ready call.
+In direct-PR mode, pass the publication command after \`--\` to that helper; in no-mistakes mode, prepare first and let the pipeline publish.
+This hold overrides the ordinary ready/done instructions below: keep the draft and declared wait until firstmate explicitly asks for the helper's \`ready\` call.
+Do not report done or mark it ready while \`state/$id.pr-refresh\` exists."
       ;;
   esac
   if [ "$forge" = forgejo ]; then
@@ -742,6 +748,7 @@ Delivery contract: mode=direct-PR$contract_forge$contract_consent
 Ship branch: $branch$ticket_header
 This task ships **direct-PR**: you raise the PR yourself, without the no-mistakes pipeline.
 The task is complete only when committed on your branch.
+$refresh
 $ci_wait
 When it is committed, publish your branch to \`origin\` and open a draft PR with \`$forge_cli\` using \`$draft_create\`$pr_base.
 Keep it draft throughout implementation and local iteration.
@@ -782,6 +789,7 @@ Ship branch: $branch$ticket_header
 The implementation is complete only when committed on your branch; the TASK is complete only when the pipeline has turned that commit into a PR with green checks.
 As soon as the implementation is committed and your tree is clean, invoke /no-mistakes yourself and drive the run to its outcome: do not report done first, and do not wait for firstmate to send you the pipeline.
 The pipeline owns the push; never push from this copy.
+$refresh
 Follow the CI-round policy in validation-supervision; never hand-fix or push around the pipeline's repair loop.
 As soon as the pipeline opens its PR, read it by its full URL.
 If it is a draft, confirm the pipeline's local review, test and lint steps passed and the work is ready, then mark it ready using the forge command below BEFORE waiting for CI green.
@@ -1204,6 +1212,10 @@ fm_dod_pr_url_on_origin() {  # <mode> <worktree> <project> <url>
 fm_dod_accept_ship_done() {  # <kind> <mode> <worktree> <project> <line> [<state> <id> <meta>]
   local kind=$1 mode=$2 wt=$3 project=$4 line=$5 state=${6:-} id=${7:-} meta=${8:-} url sha gerrit
   fm_dod_should_gate_ship_done "$kind" "$mode" "$line" || return 0
+  if [ -n "$state" ] && [ -n "$id" ] && { [ -e "$state/$id.pr-refresh" ] || [ -L "$state/$id.pr-refresh" ]; }; then
+    printf '%s\n' 'conflict-only refresh is held for firstmate readiness; declare a paused wait, not done, until fm-pr-refresh.sh ready clears the hold'
+    return 1
+  fi
   if [ -n "$meta" ] && [ "$(fm_dod_meta_value "$meta" forge)" = external ]; then
     fm_dod_accept_external_review_done "$wt" "$project" "$line" "$meta"
     return

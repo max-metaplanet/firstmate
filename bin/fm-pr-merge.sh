@@ -89,6 +89,11 @@
 # own view still proves a landed merge, and every outcome it cannot prove
 # refuses, reporting the failed gh read and naming both failed reads when the
 # gh-axi view could not prove the outcome either.
+# After a verified GitHub merge, cancel queued, waiting, or in_progress workflow
+# runs for the exact verified PR head SHA, across all API pages.
+# Cancellation is best-effort and reported; failed reads or cancellations never
+# change the merge outcome. Queued merges do not cancel runs, and other forges
+# report that this GitHub-only cleanup was skipped.
 # If the pull request remains open and the base branch has an effective
 # merge_queue rule, an attended refusal names the queue's configured merge
 # method and exact --attended-override -- --auto --<method> retry flags. While
@@ -1887,6 +1892,40 @@ case "$PROVIDER" in
     exit 2
     ;;
 esac
+
+github_cancel_head_runs() {
+  local json runs run_id output cancelled=0 failed=0
+  if ! json=$(gh api --paginate "repos/$PR_PATH/actions/runs?head_sha=$FM_PR_MERGE_HEAD&per_page=100" 2>&1); then
+    printf 'warning: merged %s; could not list leftover workflow runs at %s: %s\n' "$URL" "$FM_PR_MERGE_HEAD" "$json" >&2
+    return 0
+  fi
+  if ! runs=$(printf '%s' "$json" | jq -r --arg head "$FM_PR_MERGE_HEAD" '
+      if (.workflow_runs | type) != "array" then error("missing workflow_runs") else
+        .workflow_runs[] | select(.head_sha == $head) |
+        select(.status == "queued" or .status == "waiting" or .status == "in_progress") |
+        .id | if type == "number" and . > 0 and floor == . then . else error("invalid run id") end
+      end' 2>/dev/null); then
+    printf 'warning: merged %s; leftover workflow run list was unreadable\n' "$URL" >&2
+    return 0
+  fi
+  while IFS= read -r run_id; do
+    [ -n "$run_id" ] || continue
+    if output=$(gh api --method POST "repos/$PR_PATH/actions/runs/$run_id/cancel" 2>&1); then
+      printf 'cleanup: cancellation requested for workflow run %s at head %s of %s\n' "$run_id" "$FM_PR_MERGE_HEAD" "$URL"
+      cancelled=$((cancelled + 1))
+    else
+      printf 'warning: merged %s; could not cancel workflow run %s: %s\n' "$URL" "$run_id" "$output" >&2
+      failed=$((failed + 1))
+    fi
+  done <<< "$(printf '%s\n' "$runs" | sort -u)"
+  printf 'cleanup: %s leftover workflow runs cancellation-requested=%s failed=%s\n' "$URL" "$cancelled" "$failed"
+}
+
+if [ "$PROVIDER" = github ]; then
+  github_cancel_head_runs
+else
+  printf 'cleanup: leftover workflow run cancellation skipped for %s (GitHub only)\n' "$URL"
+fi
 
 # Reached only after the forge confirmed the merge landed: set -e exits on a
 # refused or failed merge above, and a queued forge merge exits without an

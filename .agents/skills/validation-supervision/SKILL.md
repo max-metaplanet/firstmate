@@ -40,5 +40,7 @@ The existing `auto_fix.ci`, `ci.revalidate_repairs`, and `ci.rerun_transient` se
 
 For pipeline-created GitHub PRs, enable `providers.github.draft_pull_requests: true` in the target repository's `.no-mistakes.yaml` when its workflows skip heavy suites on drafts and run them on `ready_for_review`; leave it off where CI does not skip drafts.
 The setting changes PR creation only and does not mark a PR ready automatically.
+Before a pipeline refresh for a conflict-only rebase of an existing PR, use the conflict-refresh helper through [ship-landing](../ship-landing/SKILL.md), including when the pipeline monitor itself will rebase and publish.
+Its held draft is an explicit wait and overrides ordinary worker readiness; if the installed pipeline cannot preserve that hold, stop and report that limitation before publication.
 Follow [ship-landing](../ship-landing/SKILL.md) for the draft-to-ready transition and the unchanged non-draft done gate.
 The worker reports the PR when CI first becomes green rather than waiting for merge monitoring to finish.

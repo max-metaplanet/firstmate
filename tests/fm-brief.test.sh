@@ -495,6 +495,8 @@ test_draft_first_and_batched_repairs() {
     brief="$home/data/batch-$mode/brief.md"
     case "$mode" in
       direct-PR)
+        assert_grep 'fm-pr-refresh.sh prepare batch-direct-PR <pr-url>' "$brief" 'conflict-only publication must use the draft helper'
+        assert_grep 'firstmate explicitly asks' "$brief" 'held refresh must wait for firstmate readiness'
         assert_grep 'open a draft PR' "$brief" 'direct-PR must start as draft'
         assert_grep '--head fm/batch-direct-PR --draft' "$brief" 'create command must include the draft flag'
         assert_grep 'fm-pr-checks.sh --watch --settled <pr-url>' "$brief" 'CI repairs must wait for all head checks'
@@ -504,6 +506,8 @@ test_draft_first_and_batched_repairs() {
         assert_no_grep 'ready for review, not a draft' "$brief" 'old ready-on-create rule survived'
         ;;
       no-mistakes)
+        assert_grep 'fm-pr-refresh.sh prepare batch-no-mistakes <pr-url>' "$brief" 'pipeline refresh must prepare the draft before publication'
+        assert_grep 'firstmate explicitly asks' "$brief" 'pipeline refresh must keep its declared hold'
         assert_grep 'pipeline owns the push; never push from this copy' "$brief" 'pipeline publication ownership was lost'
         assert_grep 'BEFORE waiting for CI green' "$brief" 'pipeline drafts must become ready before final CI'
         assert_grep 'skipped draft checks alone never prove' "$brief" 'draft-skipped suites cannot establish CI green'
@@ -513,6 +517,7 @@ test_draft_first_and_batched_repairs() {
         assert_no_grep 'Require fresh results from the ready-triggered workflows' "$brief" 'unconditional post-ready CI rule survived'
         ;;
       local-only)
+        assert_no_grep 'fm-pr-refresh.sh' "$brief" 'local-only must not acquire a PR refresh lifecycle'
         assert_no_grep 'open a draft PR' "$brief" 'local-only inherited PR creation'
         assert_no_grep 'push ONCE' "$brief" 'local-only inherited push instructions'
         ;;
