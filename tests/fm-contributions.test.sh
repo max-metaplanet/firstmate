@@ -135,9 +135,10 @@ case "$*" in
   'pr view '*headRefOid*) cat "$FORGE/head" ;;
   'pr view '*state*) printf 'OPEN\n' ;;
   'api repos/o/r/pulls/8'|'api repos/o/r/pulls/9'|'api repos/o/r/pulls/10')
-    jq -n --arg head "$(cat "$FORGE/head")" --arg state "$(cat "$FORGE/state" 2>/dev/null || printf open)" '
+    jq -n --arg head "$(cat "$FORGE/head")" --arg state "$(cat "$FORGE/state" 2>/dev/null || printf open)" \
+      --arg mergeable "$(cat "$FORGE/mergeable" 2>/dev/null || printf true)" '
       {state:(if $state == "open" then "open" else "closed" end),user:{login:"author"},head:{sha:$head},draft:false,
-       mergeable:(if $state == "open" then true else null end),
+       mergeable:(if $state == "open" then ($mergeable == "true") else null end),
        merged_at:(if $state == "merged" then "2026-09-16T07:00:00Z" else null end)}' ;;
   'api repos/o/r/issues/9')
     jq -n --slurpfile labels "$FORGE/labels.json" '{state:"open",user:{login:"author"},labels:$labels[0]}' ;;
@@ -1706,6 +1707,9 @@ test_parked_red_ci_reenters_queue() {
   repark_record "$home/state/delivery.park"
   with_home "$home" "$ROOT/bin/fm-contributions.sh" poll >/dev/null || fail 'repeat red CI observation failed'
   assert_grep 'phase=parked' "$home/state/delivery.park" 'the same red lane never wakes the worker twice'
+  printf '[{"name":"test","id":3,"status":"completed","conclusion":"failure","started_at":"2026-09-16T08:00:01Z"}]\n' > "$home/forge/extra-checks.json"
+  with_home "$home" "$ROOT/bin/fm-contributions.sh" poll >/dev/null || fail 'identical red rerun observation failed'
+  assert_grep 'phase=parked' "$home/state/delivery.park" 'a rerun with the identical red set does not spend a slot'
   printf '[{"name":"integration","id":2,"status":"completed","conclusion":"failure","started_at":"2026-09-16T08:00:01Z"}]\n' \
     > "$home/forge/extra-checks.json"
   with_home "$home" "$ROOT/bin/fm-contributions.sh" poll >/dev/null || fail 'second red lane observation failed'
@@ -1719,8 +1723,105 @@ test_parked_red_ci_reenters_queue() {
   pass 'red CI queues a parked worker once per distinct failing set and head, without consuming observation events'
 }
 
+test_parked_observer_transitions() {
+  local home event queued
+  for event in checks review conflict closed merged; do
+    home=$(new_home "parked-event-$event")
+    forge_home "$home"
+    printf 'window=test:fm-delivery\n' >> "$home/state/delivery.meta"
+    case "$event" in review|conflict) printf failure > "$home/forge/conclusion" ;; esac
+    with_home "$home" "$ROOT/bin/fm-contributions.sh" poll >/dev/null || fail 'baseline observation failed'
+    printf 'phase=parked\ngeneration=legacy\nendpoint=test:fm-delivery\nreason=CI-only wait\nuntil=0\nqueued_at=0\n' > "$home/state/delivery.park"
+    printf 'failing_checks={"head":"%s","failing":["test"]}\n' "$HEAD_A" >> "$home/state/delivery.park"
+    case "$event" in
+      checks) printf neutral > "$home/forge/conclusion" ;;
+      review) jq -n --arg head "$HEAD_A" '[{id:7,user:{login:"reviewer"},author_association:"CONTRIBUTOR",
+        state:"APPROVED",submitted_at:"2026-09-16T08:01:00Z",commit_id:$head,html_url:"https://github.com/o/r/pull/8#pullrequestreview-7"}]' > "$home/forge/reviews.json" ;;
+      conflict) printf false > "$home/forge/mergeable" ;;
+      closed|merged) printf '%s' "$event" > "$home/forge/state" ;;
+    esac
+    # The terminal observation is durable before a busy park lock allows its
+    # request. The next poll must retry it without another forge read.
+    if [ "$event" = closed ]; then
+      mkdir "$home/state/.worker-park-delivery.lock"
+      printf '%s\n' "$$" > "$home/state/.worker-park-delivery.lock/pid"
+      with_home "$home" "$ROOT/bin/fm-contributions.sh" poll >/dev/null || fail 'deferred close observation failed'
+      assert_grep 'phase=parked' "$home/state/delivery.park" 'busy park lock defers a terminal resume'
+      rm -rf "$home/state/.worker-park-delivery.lock"
+    fi
+    with_home "$home" "$ROOT/bin/fm-contributions.sh" poll >/dev/null || fail "$event observation failed"
+    assert_grep 'phase=queued' "$home/state/delivery.park" "$event durably requests re-entry"
+    queued=$(sed -n 's/^queued_at=//p' "$home/state/delivery.park")
+    with_home "$home" "$ROOT/bin/fm-contributions.sh" poll >/dev/null || fail "$event queued repeat failed"
+    assert_equals "$(sed -n 's/^queued_at=//p' "$home/state/delivery.park")" "$queued" "$event preserves FIFO queue age"
+    repark_record "$home/state/delivery.park"
+    with_home "$home" "$ROOT/bin/fm-contributions.sh" poll >/dev/null || fail "$event repeated observation failed"
+    assert_grep 'phase=parked' "$home/state/delivery.park" "$event is not delivered twice after re-parking"
+  done
+  pass 'changed checks, all reviews, conflicts, close and merge queue once, including deferred terminal recovery'
+}
+
+test_running_worker_hint_survives_green_checks() {
+  local home
+  home=$(new_home running-hint-green)
+  forge_home "$home"
+  printf 'window=test:fm-delivery\n' >> "$home/state/delivery.meta"
+  printf '[{"name":"lint","id":2,"status":"in_progress","conclusion":null,"started_at":"2026-09-16T08:00:01Z"}]\n' \
+    > "$home/forge/extra-checks.json"
+  with_home "$home" "$ROOT/bin/fm-contributions.sh" poll >/dev/null || fail 'running checks observation failed'
+  assert_grep 'phase=hint' "$home/state/delivery.park" 'running checks leave a park hint on the busy worker'
+  printf '[{"name":"lint","id":2,"status":"completed","conclusion":"success","started_at":"2026-09-16T08:00:01Z"}]\n' \
+    > "$home/forge/extra-checks.json"
+  with_home "$home" "$ROOT/bin/fm-contributions.sh" poll >/dev/null || fail 'green checks observation failed'
+  assert_grep 'phase=hint' "$home/state/delivery.park" 'green checks keep the hint so the worker can still park'
+  pass 'non-actionable check progress never cancels a running worker park hint'
+}
+
+test_parked_lane_progress_waits_for_a_verdict() {
+  local home
+  home=$(new_home parked-lane-progress)
+  forge_home "$home"
+  printf 'window=test:fm-delivery\n' >> "$home/state/delivery.meta"
+  printf '[{"name":"lint","id":2,"status":"queued","conclusion":null,"started_at":"2026-09-16T08:00:01Z"}]\n' \
+    > "$home/forge/extra-checks.json"
+  with_home "$home" "$ROOT/bin/fm-contributions.sh" poll >/dev/null || fail 'queued lane observation failed'
+  printf 'phase=parked\ngeneration=legacy\nendpoint=test:fm-delivery\nreason=CI-only wait\nuntil=0\nqueued_at=0\n' > "$home/state/delivery.park"
+  printf '[{"name":"lint","id":2,"status":"in_progress","conclusion":null,"started_at":"2026-09-16T08:00:01Z"}]\n' \
+    > "$home/forge/extra-checks.json"
+  with_home "$home" "$ROOT/bin/fm-contributions.sh" poll >/dev/null || fail 'in-progress lane observation failed'
+  assert_grep 'phase=parked' "$home/state/delivery.park" 'queued to in_progress does not spend a worker slot'
+  printf '[{"name":"lint","id":2,"status":"in_progress","conclusion":null,"started_at":"2026-09-16T08:00:01Z"},
+    {"name":"build","id":4,"status":"queued","conclusion":null,"started_at":"2026-09-16T08:00:02Z"}]\n' \
+    > "$home/forge/extra-checks.json"
+  with_home "$home" "$ROOT/bin/fm-contributions.sh" poll >/dev/null || fail 'new pending lane observation failed'
+  assert_grep 'phase=parked' "$home/state/delivery.park" 'a lane appearing while pending does not spend a worker slot'
+  printf '[{"name":"lint","id":2,"status":"in_progress","conclusion":null,"started_at":"2026-09-16T08:00:01Z"},
+    {"name":"build","id":4,"status":"queued","conclusion":null,"started_at":"2026-09-16T08:00:02Z"},
+    {"name":"test","id":5,"status":"in_progress","conclusion":null,"started_at":"2026-09-16T08:00:03Z"}]\n' \
+    > "$home/forge/extra-checks.json"
+  with_home "$home" "$ROOT/bin/fm-contributions.sh" poll >/dev/null || fail 'rerun start observation failed'
+  assert_grep 'phase=parked' "$home/state/delivery.park" 'a rerun starting over a completed lane does not spend a worker slot'
+  printf '[{"name":"lint","id":2,"status":"completed","conclusion":"failure","started_at":"2026-09-16T08:00:01Z"},
+    {"name":"build","id":4,"status":"queued","conclusion":null,"started_at":"2026-09-16T08:00:02Z"},
+    {"name":"test","id":5,"status":"in_progress","conclusion":null,"started_at":"2026-09-16T08:00:03Z"}]\n' \
+    > "$home/forge/extra-checks.json"
+  with_home "$home" "$ROOT/bin/fm-contributions.sh" poll >/dev/null || fail 'failed lane observation failed'
+  assert_grep 'phase=queued' "$home/state/delivery.park" 'a lane reaching a red verdict queues the parked worker'
+  repark_record "$home/state/delivery.park"
+  with_home "$home" "$ROOT/bin/fm-contributions.sh" poll >/dev/null || fail 'repeat red lane observation failed'
+  assert_grep 'phase=parked' "$home/state/delivery.park" 'the same red verdict wakes the worker only once'
+  printf '[{"name":"lint","id":2,"status":"completed","conclusion":"failure","started_at":"2026-09-16T08:00:01Z"},
+    {"name":"lint","id":6,"status":"queued","conclusion":null,"started_at":"2026-09-16T08:00:04Z"},
+    {"name":"build","id":4,"status":"completed","conclusion":"success","started_at":"2026-09-16T08:00:02Z"},
+    {"name":"test","id":5,"status":"in_progress","conclusion":null,"started_at":"2026-09-16T08:00:03Z"}]\n' \
+    > "$home/forge/extra-checks.json"
+  with_home "$home" "$ROOT/bin/fm-contributions.sh" poll >/dev/null || fail 'green lane during red rerun observation failed'
+  assert_grep 'phase=parked' "$home/state/delivery.park" 'an unrelated green verdict during a rerun of the known red lane does not spend a slot'
+  pass 'parked workers return on a check verdict, not on lane progress'
+}
+
 failures=0
-for test_name in test_parked_red_ci_reenters_queue test_actor_coverage test_stale_verdict test_unchecked_is_not_silence test_newest_check_has_no_verdict test_comment_wake test_review_wake test_inline_wake test_ready_issue_wake test_fresh_issue_requires_maintainer test_missing_lane_remains_missing test_partial_freshness_keeps_measured_rows test_malformed_record_cannot_prove_silence test_issue_timeline_and_exact_ack test_verdict_retains_judged_head test_verdict_actor_values_are_discoverable test_observed_replacement_refreshes_verdict test_unobserved_head_leaves_verdict_unknown test_away_yolo_is_fleet_work test_away_yolo_cross_home_is_fleet_work test_retired_and_unsupported_coverage test_unsupported_forge_is_not_fleet_work test_held_unsupported_forge_is_not_captain_work test_unsupported_poll_is_silent_and_clears_legacy_errors test_legacy_cleanup_preserves_supported_failure test_shared_contribution_signal_wakes_once test_watcher_keeps_diagnostics_separate_from_contribution_wakes test_expired_child_unsupported_forge_stays_unmeasured test_watcher_surfaces_new_contribution_once test_home_summary_coverage test_unreadable_pending_is_not_empty test_record_task_identity_matches_dirname_basename test_read_only_views_create_no_state test_budget_refusal_between_calls test_budget_bounded_call_timeout test_genuine_failure_near_deadline_is_unavailable test_http_500_once_retries_without_waking test_http_500_twice_records_the_failed_read test_http_404_is_not_retried test_real_gh_errors_drive_retry_and_summary test_next_url_does_not_inherit_a_forge_diagnostic test_shared_url_observed_once test_terminal_contribution_settles test_late_owner_inherits_terminal_observation test_interrupted_multi_owner_poll_settles_every_owner test_done_task_open_pr_still_observed test_reservation_defers_later_url_when_fifteen_seconds_do_not_remain test_three_second_pr_reads_complete_fresh_in_one_cycle test_slow_read_deadline_kill_is_budget_refusal test_unmeasured_url_does_not_starve_the_tail test_budget_is_cut_down_to_the_watcher_check_bound test_arm_plumbs_a_configured_budget_into_the_check_shim test_unavailable_forge_records_error_and_wakes_once_per_episode test_late_owner_keeps_failure_episode_suppressed test_retire_ends_observation_of_a_gone_contribution test_late_owner_of_a_retired_final_contribution_is_not_retired test_retire_is_idempotent_and_refuses_unknown_pairs test_many_reviews_stay_readable; do
+for test_name in test_parked_lane_progress_waits_for_a_verdict test_running_worker_hint_survives_green_checks test_parked_observer_transitions test_parked_red_ci_reenters_queue test_actor_coverage test_stale_verdict test_unchecked_is_not_silence test_newest_check_has_no_verdict test_comment_wake test_review_wake test_inline_wake test_ready_issue_wake test_fresh_issue_requires_maintainer test_missing_lane_remains_missing test_partial_freshness_keeps_measured_rows test_malformed_record_cannot_prove_silence test_issue_timeline_and_exact_ack test_verdict_retains_judged_head test_verdict_actor_values_are_discoverable test_observed_replacement_refreshes_verdict test_unobserved_head_leaves_verdict_unknown test_away_yolo_is_fleet_work test_away_yolo_cross_home_is_fleet_work test_retired_and_unsupported_coverage test_unsupported_forge_is_not_fleet_work test_held_unsupported_forge_is_not_captain_work test_unsupported_poll_is_silent_and_clears_legacy_errors test_legacy_cleanup_preserves_supported_failure test_shared_contribution_signal_wakes_once test_watcher_keeps_diagnostics_separate_from_contribution_wakes test_expired_child_unsupported_forge_stays_unmeasured test_watcher_surfaces_new_contribution_once test_home_summary_coverage test_unreadable_pending_is_not_empty test_record_task_identity_matches_dirname_basename test_read_only_views_create_no_state test_budget_refusal_between_calls test_budget_bounded_call_timeout test_genuine_failure_near_deadline_is_unavailable test_http_500_once_retries_without_waking test_http_500_twice_records_the_failed_read test_http_404_is_not_retried test_real_gh_errors_drive_retry_and_summary test_next_url_does_not_inherit_a_forge_diagnostic test_shared_url_observed_once test_terminal_contribution_settles test_late_owner_inherits_terminal_observation test_interrupted_multi_owner_poll_settles_every_owner test_done_task_open_pr_still_observed test_reservation_defers_later_url_when_fifteen_seconds_do_not_remain test_three_second_pr_reads_complete_fresh_in_one_cycle test_slow_read_deadline_kill_is_budget_refusal test_unmeasured_url_does_not_starve_the_tail test_budget_is_cut_down_to_the_watcher_check_bound test_arm_plumbs_a_configured_budget_into_the_check_shim test_unavailable_forge_records_error_and_wakes_once_per_episode test_late_owner_keeps_failure_episode_suppressed test_retire_ends_observation_of_a_gone_contribution test_late_owner_of_a_retired_final_contribution_is_not_retired test_retire_is_idempotent_and_refuses_unknown_pairs test_many_reviews_stay_readable; do
   ( "$test_name" ) || failures=$((failures + 1))
 done
 [ "$failures" -eq 0 ] || fail "$failures contribution regressions"

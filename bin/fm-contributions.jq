@@ -43,6 +43,8 @@ def known($input; $saved):
   | map(select(. as $pair | any($retired[]; . == $pair) | not));
 def latest_checks:
   group_by(.name) | map(sort_by([(.started_at // ""),(.id // 0)]) | last);
+def completed_checks:
+  [.[] | select(.status == "completed")] | latest_checks;
 def failed_of($checks):
   [$checks[] | select(.status == "completed" and .conclusion != null
     and .conclusion != "" and (.conclusion | IN("success","skipped","neutral") | not))];
@@ -50,8 +52,16 @@ def failed_of($checks):
 # line bound to the head they failed on. Names, not ids: a rerun changes a
 # lane's id and URL while its red on that head stays the same.
 def failing_identities($record):
-  (($record.observation.checks // []) | latest_checks) as $checks
+  (($record.observation.checks // []) | completed_checks) as $checks
   | {head:($record.observation.head // null),failing:([failed_of($checks)[] | .name] | unique)} | tojson;
+# Semantic return events carry only each lane's newest completed verdict, so
+# attempt ids, timestamps, pending lanes and rerun starts never spend a worker
+# slot, and an identical red set on the same head does not spend another.
+def worker_signal:
+  .observation as $o
+  | {head:$o.head,state:$o.state,mergeable:$o.mergeable,review_decision:$o.review_decision,
+     reviews:($o.reviews | sort_by(.id)),events:([$o.events[].token] | sort),
+     checks:($o.checks | completed_checks | map({name,conclusion}) | sort_by(.name))};
 def projected($input; $saved; $now; $max_age):
   known($input; $saved) as $known
   | [$known[] as $k

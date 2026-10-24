@@ -98,6 +98,74 @@ printf '#!/usr/bin/env bash\nprintf "state: working source: run-step\\n"\n' > "$
 chmod +x "$TMP_ROOT/bin/fm-crew-state.sh"
 PATH="$TMP_ROOT/fakebin:$PATH" bash "$PARK" auto task
 assert_absent "$FM_HOME/state/task.park" 'live validation never parks'
+# Interrupted CI is terminal but not green. Its published head and the full
+# observer are required independently of the old status-log completion.
+cat > "$TMP_ROOT/fakebin/no-mistakes" <<'SH'
+#!/usr/bin/env bash
+cat "$FM_HOME/nm-status"
+SH
+cat > "$TMP_ROOT/fakebin/gh-axi" <<'SH'
+#!/usr/bin/env bash
+[ "$1 $3 $4" = "api --jq {head:.head.sha,state:.state}" ] || exit 1
+cat "$FM_HOME/forge-pr.toon"
+SH
+chmod +x "$TMP_ROOT/fakebin/gh-axi"
+interrupted_fixture() {
+  fixture
+  printf 'mode=no-mistakes\n' >> "$FM_HOME/state/task.meta"
+  printf 'paused: CI-only monitor interrupted\n' > "$FM_HOME/state/task.status"
+  local head branch
+  head=$(git -C "$FM_HOME/project" rev-parse HEAD)
+  branch=$(git -C "$FM_HOME/project" symbolic-ref --short HEAD)
+  cat > "$FM_HOME/nm-status" <<EOF
+run:
+  id: interrupted
+  branch: $branch
+  status: ci_monitor_interrupted
+  head_sha: $head
+  pr: "$URL"
+  steps[2]{step,status,findings,duration_ms}:
+    push,completed,0,10
+    pr,completed,0,10
+EOF
+  printf 'head: %s\nstate: open\n' "$head" > "$FM_HOME/forge-pr.toon"
+  mkdir -p "$FM_HOME/data/task"
+  jq -n --arg url "$URL" --arg head "$head" --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '
+    {schema:"fm-contributions.v1",task:"task",records:[{url:$url,kind:"pr",checked_at:$at,error:null,
+      pending:[],seen:[],observation:{state:"open",head:$head,draft:false,mergeable:"mergeable",
+        can_merge:false,review_decision:"",checks:[],reviews:[],events:[]}}]}' > "$FM_HOME/data/task/contributions.json"
+  printf '#!/bin/sh\nexit 0\n' > "$FM_HOME/state/contributions.check.sh"
+  chmod 700 "$FM_HOME/state/contributions.check.sh"
+  bash "$TMP_ROOT/bin/fm-check-register.sh" contributions >/dev/null
+}
+park_nm() { PATH="$TMP_ROOT/fakebin:$PATH" bash "$PARK" "$@"; }
+interrupted_fixture
+park_nm auto task >/dev/null
+assert_grep 'phase=parked' "$FM_HOME/state/task.park" 'terminal interrupted CI parks with matching publication and full observer'
+assert_grep 'paused: CI-only monitor interrupted' "$FM_HOME/state/task.status" 'parking never reports interrupted CI as green'
+for refusal in dirty decision fixing pending-ci missing-observer stale-observer wrong-owner wrong-observer-head wrong-pr-head closed-pr unpublished wrong-branch gate fix-round; do
+  interrupted_fixture
+  expected=''
+  case "$refusal" in
+    dirty) touch "$FM_HOME/project/dirty"; expected='worktree is dirty' ;;
+    decision) printf 'needs-decision [key=choice]: choose\n' >> "$FM_HOME/state/task.status"; expected='open decision' ;;
+    fixing) sed 's/status: ci_monitor_interrupted/status: fixing/' "$FM_HOME/nm-status" > "$FM_HOME/nm-next"; mv "$FM_HOME/nm-next" "$FM_HOME/nm-status"; expected='run is active' ;;
+    pending-ci) sed 's/status: ci_monitor_interrupted/status: running/' "$FM_HOME/nm-status" > "$FM_HOME/nm-next"; mv "$FM_HOME/nm-next" "$FM_HOME/nm-status"; printf 'current_step: ci\n' >> "$FM_HOME/nm-status"; expected='has not reached CI-ready' ;;
+    missing-observer) rm "$FM_HOME/state/contributions.check-trust"; expected='not authenticated and armed' ;;
+    stale-observer) sed 's/"checked_at": ".*"/"checked_at": "2000-01-01T00:00:00Z"/' "$FM_HOME/data/task/contributions.json" > "$FM_HOME/next.json"; mv "$FM_HOME/next.json" "$FM_HOME/data/task/contributions.json"; expected='coverage is stale' ;;
+    wrong-owner) jq '.task="another-task"' "$FM_HOME/data/task/contributions.json" > "$FM_HOME/next.json"; mv "$FM_HOME/next.json" "$FM_HOME/data/task/contributions.json"; expected='coverage is stale' ;;
+    wrong-observer-head) jq '.records[0].observation.head="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"' "$FM_HOME/data/task/contributions.json" > "$FM_HOME/next.json"; mv "$FM_HOME/next.json" "$FM_HOME/data/task/contributions.json"; expected='coverage is stale' ;;
+    wrong-pr-head) printf 'head: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nstate: open\n' > "$FM_HOME/forge-pr.toon"; expected='published PR head differs' ;;
+    closed-pr) printf 'head: %s\nstate: closed\n' "$(git -C "$FM_HOME/project" rev-parse HEAD)" > "$FM_HOME/forge-pr.toon"; expected='PR is terminal' ;;
+    unpublished) sed 's/pr,completed/pr,pending/' "$FM_HOME/nm-status" > "$FM_HOME/nm-next"; mv "$FM_HOME/nm-next" "$FM_HOME/nm-status"; expected='publication are not completed' ;;
+    wrong-branch) sed 's/branch: .*/branch: another-task/' "$FM_HOME/nm-status" > "$FM_HOME/nm-next"; mv "$FM_HOME/nm-next" "$FM_HOME/nm-status"; expected='does not name the task branch' ;;
+    gate) printf 'gate:\n  status: awaiting_approval\n' >> "$FM_HOME/nm-status"; expected='validation gate or fix round' ;;
+    fix-round) printf '  active_steps[1]{step,status}:\n    review,fixing,\n' >> "$FM_HOME/nm-status"; expected='validation gate or fix round' ;;
+  esac
+  if park_nm park task 'CI-only wait' > "$FM_HOME/refusal.out" 2>&1; then fail "$refusal must refuse"; fi
+  assert_absent "$FM_HOME/state/task.park" "$refusal retains the worker slot"
+  assert_grep "$expected" "$FM_HOME/refusal.out" "$refusal names its exact refusal"
+done
 fixture
 touch "$FM_HOME/exit-fails"
 if bash "$PARK" auto task; then fail 'unverified exit must fail'; fi
@@ -203,4 +271,12 @@ grep -v '^failing_checks=' "$FM_HOME/state/task.park" > "$FM_HOME/legacy.park"
 mv "$FM_HOME/legacy.park" "$FM_HOME/state/task.park"
 bash "$PARK" request task 'checks failed' "$RED"
 assert_grep 'phase=queued' "$FM_HOME/state/task.park" 'a park record with no recorded red set still resumes'
+fixture
+bash "$PARK" auto task >/dev/null
+bash "$PARK" request task 'forge reports merged' '' "$URL|merged"
+bash "$PARK" tick >/dev/null
+printf 'done: PR %s checks green (rechecked)\n' "$URL" >> "$FM_HOME/state/task.status"
+bash "$PARK" auto task >/dev/null
+bash "$PARK" request task 'forge reports merged' '' "$URL|merged"
+assert_grep 'phase=parked' "$FM_HOME/state/task.park" 'two observers cannot spend a second slot for the same terminal PR event'
 pass 'verified parking, safety exceptions, external waits, durable resume reasons and the unchanged-red-set gate'

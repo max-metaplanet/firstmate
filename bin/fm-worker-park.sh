@@ -4,7 +4,7 @@
 #        fm-worker-park.sh park <id> <reason> [until-epoch]
 #        fm-worker-park.sh record-exited <id> <reason> [until-epoch]
 #        fm-worker-park.sh wake <id> <reason>
-#        fm-worker-park.sh request <id> <reason> [failing-check-set]
+#        fm-worker-park.sh request <id> <reason> [failing-check-set] [event-token]
 #        fm-worker-park.sh hint <id> <external-wait-reason>
 #        fm-worker-park.sh tick
 #        fm-worker-park.sh status  # read-only JSON capacity observation
@@ -13,7 +13,10 @@
 # serialize on state/.worker-park-<id>.lock. Park always uses fm-control exit;
 # record-exited adopts a hand-exited worker only after the same verified exit.
 # Dirty/unreadable worktrees, open decisions and live/unreadable validation
-# state refuse parking. No teardown, merge, push or quota action is performed.
+# state refuse parking with a specific diagnostic. Terminal interrupted CI
+# monitors additionally require a published matching head and an authenticated,
+# fresh contribution observer for the exact PR. No teardown, merge, push or
+# quota action is performed.
 # auto recognizes registered ready PRs with yolo=off and paused declarations
 # naming upstream/maintainer, merge bot/queue, captain review/merge, or CI-only
 # waits. Other paused waits need an until farther away than the threshold in
@@ -26,6 +29,8 @@
 # observer saw; an identical set already recorded on the parked worker queues
 # nothing, because that worker has acted on exactly those red lanes already.
 # A set that differs, is absent, or cannot be recognized queues as before.
+# An optional event token deduplicates the same terminal PR event across
+# observers and remains recorded across resume and re-park.
 # tick retries deferred resumes and wakes parked workers with pending inbox
 # steering, including parked secondmates through fm-secondmate-park.sh tick.
 # fm-spawn owns both capacity checks and priority
@@ -59,11 +64,12 @@ CONFIG=${FM_CONFIG_OVERRIDE:-$FM_HOME/config}
 fail() { printf 'worker-park: %s\n' "$*" >&2; exit 1; }
 VERB=${1:-}; ID=${2:-}
 FAILING_CHECKS=''
+EVENT_TOKEN=''
 case "$VERB" in
   -h|--help) sed -n '2,/^set /{ /^#/s/^# \{0,1\}//p; }' "$0"; exit 0 ;;
   auto|park|record-exited|wake|request|hint)
     case "$ID" in ''|*[!A-Za-z0-9._-]*|.*) fail 'an exact task id is required' ;; esac
-    case "$VERB/${4:-}" in request/*$'\n'*|request/*$'\r'*) fail 'the failing-check set must be one line' ;; esac ;;
+    case "$VERB/${4:-}/${5:-}" in request/*$'\n'*|request/*$'\r'*) fail 'the failing-check set and event token must be one line' ;; esac ;;
   tick|status) ;;
   *) fail 'expected auto, park, record-exited, wake or tick' ;;
 esac
@@ -76,13 +82,15 @@ write_record() { # phase reason until queued_at wake_reason status_line [resume_
   endpoint=$(fm_backend_target_of_meta "$META")
   [ -n "$endpoint" ] || return 1
   staged=$(mktemp "$STATE/.$ID.park.XXXXXX") || return 1
-  { printf 'phase=%s\ngeneration=%s\nendpoint=%s\nreason=%s\nuntil=%s\nqueued_at=%s\nwake_reason=%s\nstatus_line=%s\nresume_error=%s\nfailing_checks=%s\n' \
-      "$1" "${generation:-legacy}" "$endpoint" "$2" "$3" "$4" "$5" "$6" "${7:-0}" "$FAILING_CHECKS"; } > "$staged" &&
+  { printf 'phase=%s\ngeneration=%s\nendpoint=%s\nreason=%s\nuntil=%s\nqueued_at=%s\nwake_reason=%s\nstatus_line=%s\nresume_error=%s\nfailing_checks=%s\nevent_token=%s\n' \
+      "$1" "${generation:-legacy}" "$endpoint" "$2" "$3" "$4" "$5" "$6" "${7:-0}" "$FAILING_CHECKS" "$EVENT_TOKEN"; } > "$staged" &&
     chmod 600 "$staged" && mv "$staged" "$RECORD"
   local rc=$?
   rm -f "$staged"
   return "$rc"
 }
+
+refuse_park() { printf 'worker-park: %s cannot park: %s\n' "$ID" "$*" >&2; return 1; }
 
 safe_to_park() {
   local wt dirty probe run_status busy backend endpoint harness
@@ -91,36 +99,42 @@ safe_to_park() {
   harness=$(fm_meta_get "$META" harness)
   busy=$(fm_busy_classify "$backend" "$endpoint" "$harness" "$ID" "$STATE" 2>/dev/null) || busy=unknown
   if [ "$VERB" = record-exited ]; then
-    [ "$(fm_backend_agent_state "$backend" "$endpoint" 2>/dev/null)" = dead ] || return 1
+    [ "$(fm_backend_agent_state "$backend" "$endpoint" 2>/dev/null)" = dead ] || { refuse_park "worker exit is not verified"; return 1; }
   else
     case "$busy" in
       idle\ *) ;;
-      busy\ *) return 1 ;;
+      busy\ *) refuse_park "worker is busy ($busy)"; return 1 ;;
       *)
         # Marker-only adapters have no semantic idle hook. A completed turn
         # newer than the declaration is the existing positive completion signal.
-        [ -f "$STATE/$ID.turn-ended" ] && [ "$STATE/$ID.turn-ended" -nt "$STATE/$ID.status" ] || return 1 ;;
+        [ -f "$STATE/$ID.turn-ended" ] && [ "$STATE/$ID.turn-ended" -nt "$STATE/$ID.status" ] || { refuse_park "worker idle state is unconfirmed ($busy)"; return 1; } ;;
     esac
   fi
-  [ -z "$(find "$STATE/$ID.inbox" -maxdepth 1 -name '*.msg' -print 2>/dev/null)" ] || return 1
-  case "$(fm_meta_get "$META" kind)" in ship|scout) ;; *) return 1 ;; esac
-  [ -f "$STATE/$ID.status" ] && [ -r "$STATE/$ID.status" ] && [ ! -L "$STATE/$ID.status" ] || return 1
-  [ -z "$(status_own_open_decisions "$STATE/$ID.status")" ] || return 1
+  [ -z "$(find "$STATE/$ID.inbox" -maxdepth 1 -name '*.msg' -print 2>/dev/null)" ] || { refuse_park "steering is pending in the instruction inbox"; return 1; }
+  case "$(fm_meta_get "$META" kind)" in ship|scout) ;; *) refuse_park "task kind is not ship or scout"; return 1 ;; esac
+  [ -f "$STATE/$ID.status" ] && [ -r "$STATE/$ID.status" ] && [ ! -L "$STATE/$ID.status" ] || { refuse_park "task status is unavailable or unsafe"; return 1; }
+  [ -z "$(status_own_open_decisions "$STATE/$ID.status")" ] || { refuse_park "task has an open decision or blocker"; return 1; }
   wt=$(fm_meta_get "$META" worktree)
-  [ -d "$wt" ] || return 1
-  dirty=$(git -C "$wt" status --porcelain --untracked-files=normal 2>/dev/null) || return 1
-  [ -z "$dirty" ] || return 1
+  [ -d "$wt" ] || { refuse_park "worktree is unavailable"; return 1; }
+  dirty=$(git -C "$wt" status --porcelain --untracked-files=normal 2>/dev/null) || { refuse_park "worktree cleanliness could not be read"; return 1; }
+  [ -z "$dirty" ] || { refuse_park "worktree is dirty"; return 1; }
   if [ "$(fm_meta_get "$META" mode)" = no-mistakes ]; then
-    probe=$(fm_nm_run_checked "$wt" 15 axi status) || return 1
+    probe=$(fm_nm_run_checked "$wt" 15 axi status) || { refuse_park "no-mistakes status could not be read"; return 1; }
     run_status=$(fm_nm_strip_quotes "$(fm_nm_field "$probe" status)")
-    case "$run_status" in
-      completed|failed|cancelled) ;;
-      '') printf '%s' "$probe" | grep -Eq '^runs_on_current_branch: 0$|no active run|no run|run: null' || return 1 ;;
+    case "$(fm_nm_run_status_class "$run_status")/$run_status" in
+      terminal/ci_monitor_interrupted)
+        fm_worker_park_interrupted_ready "$META" "$probe" "$STATE" || return 1 ;;
+      terminal/*) ;;
+      */'') printf '%s' "$probe" | grep -Eq '^runs_on_current_branch: 0$|no active run|no run|run: null' || { refuse_park "no-mistakes run status is missing"; return 1; } ;;
       *)
+        if [ "$run_status" = fixing ] || [ "$run_status" = pending ]; then
+          refuse_park "no-mistakes run is active ($run_status; step $(fm_nm_field "$probe" current_step))"
+          return 1
+        fi
         # no-mistakes may retain its merge monitor after the CI-ready return.
         # crew-state owns that distinction from executing validation.
-        probe=$("$SCRIPT_DIR/fm-crew-state.sh" "$ID" 2>/dev/null) || return 1
-        case "$probe" in 'state: done '* ) ;; *) return 1 ;; esac ;;
+        probe=$("$SCRIPT_DIR/fm-crew-state.sh" "$ID" 2>/dev/null) || { refuse_park "crew validation state could not be read"; return 1; }
+        case "$probe" in 'state: done '* ) ;; *) refuse_park "no-mistakes run has not reached CI-ready completion ($run_status)"; return 1 ;; esac ;;
     esac
   fi
 }
@@ -130,7 +144,7 @@ park() {
   case "$until" in ''|*[!0-9]*) fail 'until must be epoch seconds' ;; esac
   fm_worker_park_load "$META" && return 0
   if ! safe_to_park; then
-    case "$VERB" in park|record-exited) printf 'worker-park: %s is not safe to park\n' "$ID" >&2; return 1 ;; esac
+    case "$VERB" in park|record-exited) return 1 ;; esac
     return 0
   fi
   line=$(status_current_line "$STATE/$ID.status" '')
@@ -223,17 +237,21 @@ resume() {
 
 one() {
   META="$STATE/$ID.meta"; RECORD="$STATE/$ID.park"
-  [ -f "$META" ] && [ ! -L "$META" ] || return 0
+  if [ ! -f "$META" ] || [ -L "$META" ]; then
+    case "$VERB" in park|record-exited) refuse_park "task metadata is unavailable or unsafe"; return 1 ;; esac
+    return 0
+  fi
   case "$VERB" in
     auto|tick|hint) [ -n "$(fm_backend_target_of_meta "$META")" ] || return 0 ;;
   esac
   local lock
   lock="$STATE/.worker-park-$ID.lock"
   if ! fm_lock_try_acquire "$lock"; then
-    case "$VERB" in request|wake) return 75 ;; *) return 0 ;; esac
+    case "$VERB" in request|wake) return 75 ;; park|record-exited) refuse_park "park record lock is busy"; return 75 ;; *) return 0 ;; esac
   fi
   case "${3:-}" in *$'\n'*|*$'\r'*) fail 'reason must be one line' ;; esac
   FAILING_CHECKS=$(fm_meta_get "$RECORD" failing_checks)
+  EVENT_TOKEN=$(fm_meta_get "$RECORD" event_token)
   case "$VERB" in
     auto) auto ;;
     park|record-exited) park "${3:-external wait}" "${4:-0}" ;;
@@ -246,7 +264,8 @@ one() {
         fi
       fi ;;
     request)
-      if failing_set_is_new "${4:-}"; then
+      if { [ -z "${5:-}" ] || [ "$EVENT_TOKEN" != "$5" ]; } && failing_set_is_new "${4:-}"; then
+        [ -z "${5:-}" ] || EVENT_TOKEN=$5
         [ -z "${4:-}" ] || FAILING_CHECKS=$4
         queue_wake "${3:-external wait cleared}"
       fi ;;

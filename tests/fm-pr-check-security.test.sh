@@ -2299,6 +2299,7 @@ test_merged_poll_retires_once() {
   write_poll_meta "$state" task-a https://github.com/o/r/pull/1
   meta_before=$(cat "$state/task-a.meta")
   seed_canonical_poll "$dir" task-a https://github.com/o/r/pull/1
+  printf 'phase=parked\ngeneration=legacy\nendpoint=fm-task-a\nreason=external wait\nuntil=0\nqueued_at=0\n' > "$state/task-a.park"
   add_stop_custom_check "$dir"
 
   set +e
@@ -2307,6 +2308,8 @@ test_merged_poll_retires_once() {
   set -e
   [ "$rc" -eq 0 ] || fail "merged retirement watcher failed: $(cat "$dir/watch-1.err")"
   first=$(cat "$dir/watch-1.out")
+  assert_grep 'phase=queued' "$state/task-a.park" 'the merge poll durably queues a parked worker before retirement'
+  assert_grep 'wake_reason=forge reports merged' "$state/task-a.park" 'the merge poll queues the terminal reason'
   case "$first" in check:*task-a.check.sh:*merged) ;; *) fail "first merged notification was not preserved: $first" ;; esac
   ack_watcher_cycle "$state" || fail "first merged notification handling acknowledgement failed"
   assert_poll_absent "$state" task-a
