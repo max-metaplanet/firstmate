@@ -335,17 +335,6 @@ fm_load_normalize_centi() { # <load> <cpus>; invalid readings return 1
   printf '%s\n' $(( (10#$whole * 100 + 10#${frac:0:2}) / cpus ))
 }
 
-# Explicit-validity machine load reading for capacity sampling. No fallback
-# may masquerade as health: load1 load5 CPUs normalized-load1 normalized-load5.
-fm_machine_load_sample() {
-  local load1 load5 cpus one five
-  read -r load1 load5 _ < <(sysctl -n vm.loadavg 2>/dev/null | tr -d '{}') || return 1
-  cpus=$(sysctl -n hw.ncpu 2>/dev/null) || return 1
-  one=$(fm_load_normalize_centi "$load1" "$cpus") || return 1
-  five=$(fm_load_normalize_centi "$load5" "$cpus") || return 1
-  printf '%s %s %s %s %s\n' "$load1" "$load5" "$cpus" "$one" "$five"
-}
-
 fm_load_per_cpu_centi() {
   local proc_root load cpus
   proc_root=${FM_PROC_ROOT_OVERRIDE:-/proc}

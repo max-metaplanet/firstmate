@@ -42,14 +42,22 @@ def clock():
     return time.time(), time.monotonic(), boot
 
 
+def centi(load, cpus):
+    match = re.fullmatch(r"(\d*)(?:\.(\d*))?", load)
+    if not match or not any(match.groups()) or cpus < 1:
+        raise ValueError("invalid load telemetry")
+    whole, frac = match.groups()
+    return (int(whole or 0) * 100 + int(((frac or "") + "00")[:2])) // cpus
+
+
 def telemetry():
     if os.environ.get("FM_FLEET_LOAD_TELEMETRY"):
         value = read_json(os.environ["FM_FLEET_LOAD_TELEMETRY"])
     else:
         if platform.system() != "Darwin":
             raise ValueError("unsupported platform: policy requires macOS")
-        wake_lib = str(Path(__file__).with_name("fm-wake-lib.sh"))
-        loads = run("bash", "-c", '. "$1"; fm_machine_load_sample', "fleet-load", wake_lib).split()
+        load1, load5 = run("sysctl", "-n", "vm.loadavg").strip("{} ").split()[:2]
+        cpus = int(run("sysctl", "-n", "hw.ncpu"))
         pressure = run("sysctl", "-n", "kern.memorystatus_vm_pressure_level")
         # XNU's sysctl converts its internal enum to dispatch flags: 1/2/4.
         # bsd/kern/kern_memorystatus_notify.c, sysctl_memorystatus_vm_pressure_level.
@@ -60,8 +68,8 @@ def telemetry():
             return int(re.search(r"^" + name + r":\s+(\d+)\.", vm, re.M)[1])
         swap = run("sysctl", "-n", "vm.swapusage")
         used = re.search(r"used\s*=\s*([0-9.]+)([KMG])", swap)
-        value = dict(load1=float(loads[0]), load5=float(loads[1]), cpus=int(loads[2]),
-                     load1_centi=int(loads[3]), load5_centi=int(loads[4]), pressure=pressure,
+        value = dict(load1=float(load1), load5=float(load5), cpus=cpus,
+                     load1_centi=centi(load1, cpus), load5_centi=centi(load5, cpus), pressure=pressure,
                      page_size=page_size, swapouts=pages("Swapouts"), swapins=pages("Swapins"),
                      swap_used_bytes=float(used[1]) * {"K": 1024, "M": 1024**2, "G": 1024**3}[used[2]])
     for key in ("load1", "load5", "load1_centi", "load5_centi", "swapouts", "swapins", "swap_used_bytes"):
