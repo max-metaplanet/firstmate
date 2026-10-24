@@ -23,7 +23,9 @@ FM_LOCK_STALE_AFTER="${FM_LOCK_STALE_AFTER:-2}"
 # confirm and 0.5s attach polls, and forking uname per call is a measurable cost on
 # the platform (Git Bash/MSYS) that already pays the highest fork price.
 [ -n "${_FM_UNAME:-}" ] || _FM_UNAME=$(uname 2>/dev/null || echo unknown)
-[ -d "$STATE" ] || mkdir -p "$STATE"
+# Observational importers may suppress state initialization; mutating callers
+# retain the default. Reading an uninitialized home must not initialize it.
+[ -d "$STATE" ] || [ "${FM_WAKE_READ_ONLY:-0}" = 1 ] || mkdir -p "$STATE"
 
 # Most wake-library consumers need only queue and lock primitives, including
 # deliberately minimal recovery fixtures and remote installations.
@@ -318,10 +320,12 @@ fm_poll_derived_grace() {
 # means one runnable process per CPU, 1100 means eleven. Prints 100 when the
 # platform exposes neither figure, so a load-scaled budget keeps its unscaled
 # base rather than guessing. Reads the compatible /proc first (honouring
-# FM_PROC_ROOT_OVERRIDE like fm_pid_identity), then sysctl, then uptime, and does
-# its own fixed-point arithmetic so no caller depends on a float-capable tool.
+# FM_PROC_ROOT_OVERRIDE like fm_pid_identity), then sysctl, then uptime, and
+# normalizes through fm-load-lib.sh, loaded only here.
 fm_load_per_cpu_centi() {
-  local proc_root load cpus whole frac
+  local proc_root load cpus
+  # shellcheck source=bin/fm-load-lib.sh
+  command -v fm_load_normalize_centi >/dev/null 2>&1 || . "$FM_WAKE_LIB_DIR/fm-load-lib.sh"
   proc_root=${FM_PROC_ROOT_OVERRIDE:-/proc}
   load=
   if [ -r "$proc_root/loadavg" ]; then
@@ -333,18 +337,10 @@ fm_load_per_cpu_centi() {
   if [ -z "$load" ]; then
     load=$(uptime 2>/dev/null | sed -n 's/.*load average[s]*:[^0-9]*\([0-9][0-9]*\(\.[0-9][0-9]*\)\{0,1\}\).*/\1/p') || load=
   fi
-  case "$load" in
-    ''|*[!0-9.]*) printf '100\n'; return 0 ;;
-    *.*.*) printf '100\n'; return 0 ;;
-    *.*) whole=${load%%.*}; frac=${load#*.} ;;
-    *) whole=$load; frac=0 ;;
-  esac
-  [ -n "$whole" ] || whole=0
-  frac="${frac}00"
   cpus=$(getconf _NPROCESSORS_ONLN 2>/dev/null) || cpus=
   case "$cpus" in ''|*[!0-9]*|0) cpus=$(sysctl -n hw.ncpu 2>/dev/null) || cpus= ;; esac
   case "$cpus" in ''|*[!0-9]*|0) cpus=1 ;; esac
-  printf '%s\n' $(( (whole * 100 + 10#${frac:0:2}) / cpus ))
+  fm_load_normalize_centi "$load" "$cpus" || printf '100\n'
 }
 
 # fm_arm_confirm_ceiling [base-seconds]

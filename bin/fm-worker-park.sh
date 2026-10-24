@@ -7,6 +7,7 @@
 #        fm-worker-park.sh request <id> <reason> [failing-check-set]
 #        fm-worker-park.sh hint <id> <external-wait-reason>
 #        fm-worker-park.sh tick
+#        fm-worker-park.sh status  # read-only JSON capacity observation
 #
 # fm-worker-park-lib.sh owns the record and queue format. All record writes
 # serialize on state/.worker-park-<id>.lock. Park always uses fm-control exit;
@@ -35,6 +36,7 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 FM_HOME=${FM_HOME:-${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}}
 export FM_HOME
 CONFIG=${FM_CONFIG_OVERRIDE:-$FM_HOME/config}
+[ "${1:-}" != status ] || FM_WAKE_READ_ONLY=1
 # shellcheck source=bin/fm-wake-lib.sh
 . "$SCRIPT_DIR/fm-wake-lib.sh"
 # shellcheck source=bin/fm-backend.sh
@@ -47,6 +49,12 @@ CONFIG=${FM_CONFIG_OVERRIDE:-$FM_HOME/config}
 . "$SCRIPT_DIR/fm-nm-run-lib.sh"
 # shellcheck source=bin/fm-busy-lib.sh
 . "$SCRIPT_DIR/fm-busy-lib.sh"
+# shellcheck source=bin/fm-project-capacity-lib.sh
+. "$SCRIPT_DIR/fm-project-capacity-lib.sh"
+# shellcheck source=bin/fm-fleet-capacity-lib.sh
+. "$SCRIPT_DIR/fm-fleet-capacity-lib.sh"
+# shellcheck source=bin/fm-secondmate-registry-lib.sh
+. "$SCRIPT_DIR/fm-secondmate-registry-lib.sh"
 
 fail() { printf 'worker-park: %s\n' "$*" >&2; exit 1; }
 VERB=${1:-}; ID=${2:-}
@@ -56,7 +64,7 @@ case "$VERB" in
   auto|park|record-exited|wake|request|hint)
     case "$ID" in ''|*[!A-Za-z0-9._-]*|.*) fail 'an exact task id is required' ;; esac
     case "$VERB/${4:-}" in request/*$'\n'*|request/*$'\r'*) fail 'the failing-check set must be one line' ;; esac ;;
-  tick) ;;
+  tick|status) ;;
   *) fail 'expected auto, park, record-exited, wake or tick' ;;
 esac
 
@@ -267,7 +275,15 @@ one() {
   return "$rc"
 }
 
-if [ "$VERB" = tick ]; then
+if [ "$VERB" = status ]; then
+  fm_fleet_capacity_observation "$FM_HOME" "$CONFIG" "$STATE"
+elif [ "$VERB" = tick ]; then
+  # Sampling/admission uses the shared root lock, released before relaunch.
+  TICK_RC=0
+  if ! fm_fleet_load_tick "$FM_HOME" "$CONFIG"; then
+    echo "fm-worker-park: fleet load evaluation failed; parking and resumes continue under the last admission state" >&2
+    TICK_RC=1
+  fi
   for meta in "$STATE"/*.meta; do
     [ -f "$meta" ] || continue
     ID=${meta##*/}; ID=${ID%.meta}
@@ -281,6 +297,7 @@ if [ "$VERB" = tick ]; then
     fi
     one || true
   done
+  exit "$TICK_RC"
 else
   one "$@"
 fi

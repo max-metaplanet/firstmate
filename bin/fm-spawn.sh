@@ -4040,7 +4040,7 @@ if [ "$RELAUNCH" -eq 0 ] || [ "$SPAWN_PARK_RESUME" = 1 ] || [ -n "$PARK_RESUME_M
     echo "error: spawn refused: the fleet capacity declaration is unreadable ($FM_FLEET_CAPACITY_ERROR); fix it so the captain's fleet limit is known (docs/configuration.md \"Fleet capacity\")" >&2
     exit 1
   fi
-  if [ -n "$FM_FLEET_CAPACITY" ]; then
+  if [ -n "$FM_FLEET_CAPACITY" ] || fm_fleet_load_enabled "$SPAWN_FLEET_CONFIG"; then
     SPAWN_FLEET_LOCK=$(fm_fleet_capacity_lock_path "$FM_HOME") || {
       echo "error: could not resolve the fleet capacity lock for $FM_HOME" >&2
       exit 1
@@ -4055,25 +4055,39 @@ if [ "$RELAUNCH" -eq 0 ] || [ "$SPAWN_PARK_RESUME" = 1 ] || [ -n "$PARK_RESUME_M
       exit "$FM_PROJECT_CAPACITY_DEFER_EXIT"
     fi
     SPAWN_FLEET_LOCK_HELD=1
-    if ! fm_fleet_capacity_occupants "$STATE" "$ID"; then
-      echo "error: spawn refused: this machine declares a fleet capacity of $FM_FLEET_CAPACITY, but its task records cannot all be read to count it ($FM_FLEET_CAPACITY_ERROR)" >&2
-      exit 1
+    if ! fm_fleet_load_evaluate "$FM_HOME" "$SPAWN_FLEET_CONFIG" refresh; then
+      echo "deferred: fleet load policy refuses admission: ${FM_FLEET_LOAD_JSON:-sensor unavailable}; task $ID stays queued" >&2
+      exit "$FM_PROJECT_CAPACITY_DEFER_EXIT"
     fi
-    SPAWN_RESUME_ROWS=$(fm_worker_park_rows "$STATE") || exit 1
-    SPAWN_RESUMES_AHEAD=$(printf '%s\n' "$SPAWN_RESUME_ROWS" | while IFS=$'\t' read -r at meta; do
-      [ -n "$meta" ] || continue
-      if [ "$meta" = "$STATE/$ID.meta" ] ||
-        ( fm_project_capacity_admits_resume "$SPAWN_FLEET_CONFIG" "$STATE" "$meta" ); then
-        printf '%s\t%s\n' "$at" "$meta"
+    if [ -n "$FM_FLEET_LOAD_JSON" ]; then
+      echo "fleet capacity: $FM_FLEET_LOAD_JSON" >&2
+    fi
+    if [ -n "$FM_FLEET_EFFECTIVE_CAPACITY" ]; then
+      if ! fm_fleet_capacity_occupants "$STATE" "$ID"; then
+        echo "error: spawn refused: this machine declares a fleet capacity of $FM_FLEET_CAPACITY, but its task records cannot all be read to count it ($FM_FLEET_CAPACITY_ERROR)" >&2
+        exit 1
       fi
-    done | fm_worker_park_rank "$STATE/$ID.meta")
-    if [ "$FM_FLEET_CAPACITY_OCCUPANTS" -ge "$FM_FLEET_CAPACITY" ]; then
-      echo "deferred: this machine runs at most $FM_FLEET_CAPACITY agent(s) at once ($FM_FLEET_CAPACITY_FILE) and $FM_FLEET_CAPACITY_OCCUPANTS are running ($FM_FLEET_CAPACITY_OCCUPANT_IDS); task $ID was not launched and its backlog item stays queued - dispatch it again once one of them is cleaned up or stops" >&2
-      exit "$FM_PROJECT_CAPACITY_DEFER_EXIT"
-    fi
-    if [ $((FM_FLEET_CAPACITY_OCCUPANTS + SPAWN_RESUMES_AHEAD)) -ge "$FM_FLEET_CAPACITY" ]; then
-      echo "deferred: $SPAWN_RESUMES_AHEAD queued parked-worker resume(s) hold the remaining fleet place(s) and resume ahead of task $ID" >&2
-      exit "$FM_PROJECT_CAPACITY_DEFER_EXIT"
+      SPAWN_RESUME_ROWS=$(fm_worker_park_rows "$STATE") || exit 1
+      SPAWN_RESUMES_AHEAD=$(printf '%s\n' "$SPAWN_RESUME_ROWS" | while IFS=$'\t' read -r at meta; do
+        [ -n "$meta" ] || continue
+        if [ "$meta" = "$STATE/$ID.meta" ] ||
+          ( fm_project_capacity_admits_resume "$SPAWN_FLEET_CONFIG" "$STATE" "$meta" ); then
+          printf '%s\t%s\n' "$at" "$meta"
+        fi
+      done | fm_worker_park_rank "$STATE/$ID.meta")
+      SPAWN_FLEET_LIMIT="$FM_FLEET_EFFECTIVE_CAPACITY agent(s) at once ($FM_FLEET_CAPACITY_FILE"
+      if [ "$FM_FLEET_EFFECTIVE_CAPACITY" != "$FM_FLEET_CAPACITY" ]; then
+        SPAWN_FLEET_LIMIT+=" declares $FM_FLEET_CAPACITY; the fleet load policy lowers it: $(printf '%s\n' "$FM_FLEET_LOAD_JSON" | jq -r '.reason')"
+      fi
+      SPAWN_FLEET_LIMIT+=")"
+      if [ "$FM_FLEET_CAPACITY_OCCUPANTS" -ge "$FM_FLEET_EFFECTIVE_CAPACITY" ]; then
+        echo "deferred: this machine runs at most $SPAWN_FLEET_LIMIT and $FM_FLEET_CAPACITY_OCCUPANTS are running ($FM_FLEET_CAPACITY_OCCUPANT_IDS); task $ID was not launched and its backlog item stays queued - dispatch it again once one of them is cleaned up or stops" >&2
+        exit "$FM_PROJECT_CAPACITY_DEFER_EXIT"
+      fi
+      if [ $((FM_FLEET_CAPACITY_OCCUPANTS + SPAWN_RESUMES_AHEAD)) -ge "$FM_FLEET_EFFECTIVE_CAPACITY" ]; then
+        echo "deferred: $SPAWN_RESUMES_AHEAD queued parked-worker resume(s) hold the remaining fleet place(s) under the limit of $SPAWN_FLEET_LIMIT and resume ahead of task $ID" >&2
+        exit "$FM_PROJECT_CAPACITY_DEFER_EXIT"
+      fi
     fi
   fi
 fi

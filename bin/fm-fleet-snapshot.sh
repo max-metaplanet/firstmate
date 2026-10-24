@@ -11,6 +11,7 @@
 #
 # Top-level fields:
 #   schema: stable schema id.
+#   capacity: read-only fleet capacity observation from fm-fleet-capacity-lib.sh.
 #   generated: UTC observation time for this fresh command execution.
 #   fm_home: resolved operational home.
 #   roots: resolved root/config/data/state/projects directories.
@@ -993,6 +994,7 @@ main_inventory_json() {  # <backlog-json-file> <tasks-json-file>
 # nested secondmates.
 secondmate_home_summary_json() {  # <backlog-json-file> <tasks-json-file>
   jq -n \
+    --argjson capacity "$CAPACITY_JSON" \
     --arg generated "$SNAPSHOT_NOW" \
     --argjson generated_epoch "$SNAPSHOT_EPOCH" \
     --arg home "$FM_HOME" \
@@ -1126,6 +1128,7 @@ secondmate_home_summary_json() {  # <backlog-json-file> <tasks-json-file>
        else "no_active_work" end) as $state
     | {
         schema:"fm-secondmate-home-summary.v1",
+        capacity:$capacity,
         hold_classifier_schema:"fm-captain-hold-buckets.v1",
         contributions:$contributions[0],
         generated:$generated,
@@ -2058,6 +2061,7 @@ FM_CONTRIBUTIONS_NOW="$SNAPSHOT_NOW" "$SCRIPT_DIR/fm-contributions.sh" snapshot 
   "$JSON_TRANSPORT_DIR/contribution-input.json" > "$CONTRIBUTIONS_JSON_FILE" \
   || { echo "fm-fleet-snapshot: contribution coverage unavailable" >&2; exit 1; }
 
+CAPACITY_JSON=$("$SCRIPT_DIR/fm-worker-park.sh" status) || CAPACITY_JSON='{"error":"capacity observation unreadable"}'
 if [ "$OUTPUT_MODE" = secondmate-home-summary ]; then
   secondmate_home_summary_json "$BACKLOG_JSON_FILE" "$TASKS_JSON_FILE" \
     || { echo "fm-fleet-snapshot: secondmate home summary failed" >&2; exit 1; }
@@ -2074,6 +2078,7 @@ secondmate_landed_from_current_json "$SECONDMATE_CURRENT_JSON_FILE" "$SECONDMATE
   || { echo "fm-fleet-snapshot: secondmate landed projection failed" >&2; exit 1; }
 
 jq -n \
+  --argjson capacity "$CAPACITY_JSON" \
   --arg generated "$SNAPSHOT_NOW" \
   --arg fm_home "$FM_HOME" \
   --arg fm_root "$FM_ROOT" \
@@ -2099,6 +2104,7 @@ jq -n \
    def report_kind($id): (task_by_id($id).kind // backlog_by_id($id).kind // "scout");
    {
      schema:"fm-fleet-snapshot.v1",
+     capacity:$capacity,
      generated:$generated,
      fm_home:$fm_home,
      roots:{fm_root:$fm_root,state:$state,data:$data,config:$config,projects:$projects},

@@ -182,3 +182,99 @@ fm_fleet_capacity_occupants() {  # <first-state> <own-id>
   done
   return 0
 }
+
+# Optional load policy: root config/fleet-load-policy is absent, `off`, or a
+# JSON object {"mode":"observe"|"enforce","floor":6,"ceiling":8,"start":8}.
+# A JSON object with mode off is invalid: status reports it and admission keeps
+# the static cap. Mode is not part of the state identity, so observed history
+# carries into enforce. Capacity-change wakes are sent only in enforce mode.
+# Enabled limits are positive integers with floor <= start <= ceiling and
+# require fleet-capacity. The static cap always bounds the policy. Observe
+# reports the desired cap/hold but never applies either. Off does no sampling.
+# macOS sampling/reduction is delegated to fm-fleet-load.py, not a daemon.
+# state/fleet-load.json is one atomic v1 record containing config/boot identity,
+# raw signals, monotonic/UTC time, target, streaks, last adjustment and hold.
+# The caller holds .fleet-capacity.lock across refresh, counting and publication.
+# Tick releases it before any relaunch. Status never refreshes or writes it.
+# FM_FLEET_LOAD_TELEMETRY and FM_FLEET_LOAD_CLOCK name isolated JSON test inputs;
+# the helper's reader owns their shape. Never set them for an operational home.
+
+fm_fleet_load_enabled() { # <config-dir>
+  local raw
+  [ -e "$1/fleet-load-policy" ] || [ -L "$1/fleet-load-policy" ] || return 1
+  raw=$(cat "$1/fleet-load-policy" 2>/dev/null) || return 0
+  [ "$raw" != off ]
+}
+
+# Sets FM_FLEET_LOAD_JSON and FM_FLEET_EFFECTIVE_CAPACITY. A hold is a 75 only
+# in enforce mode (or invalid configuration); observe retains static admission,
+# as does an invalid configuration that reports no hold.
+# shellcheck disable=SC2034 # FM_FLEET_EFFECTIVE_CAPACITY is read by bin/fm-spawn.sh.
+fm_fleet_load_evaluate() { # <home> <config-dir> <refresh|status>
+  local root mode hold staged
+  root=$(fm_firstmate_root_home "$1") || return 1
+  FM_FLEET_EFFECTIVE_CAPACITY=$FM_FLEET_CAPACITY
+  FM_FLEET_LOAD_JSON=
+  if ! fm_fleet_load_enabled "$2"; then return 0; fi
+  if ! FM_FLEET_LOAD_JSON=$(python3 "${BASH_SOURCE[0]%/*}/fm-fleet-load.py" "$root" "$2" "$FM_FLEET_CAPACITY" "$3"); then
+    mode=$(jq -r '.mode? // "invalid"' "$2/fleet-load-policy" 2>/dev/null) || mode=invalid
+    [ "$mode" = observe ] && [ -n "$FM_FLEET_CAPACITY" ] || [ "$mode" = enforce ] || mode=invalid
+    FM_FLEET_LOAD_JSON=$(jq -cn --arg mode "$mode" --arg cap "$FM_FLEET_CAPACITY" \
+      '{mode:$mode,configured:(($cap|tonumber?) // null),effective:(($cap|tonumber?) // null),hold:"fleet-load helper failed",reason:"fleet-load helper failed"}')
+    [ "$mode" = observe ] || return 75
+    return 0
+  fi
+  FM_FLEET_EFFECTIVE_CAPACITY=$(printf '%s\n' "$FM_FLEET_LOAD_JSON" | jq -r '.effective // empty')
+  mode=$(printf '%s\n' "$FM_FLEET_LOAD_JSON" | jq -r '.mode')
+  hold=$(printf '%s\n' "$FM_FLEET_LOAD_JSON" | jq -r '.hold')
+  if [ "$3" = refresh ] && [ "$(printf '%s\n' "$FM_FLEET_LOAD_JSON" | jq -r '.transition // false')" = true ]; then
+    if STATE="$root/state" FM_WAKE_QUEUE="$root/state/.wake-queue" FM_WAKE_QUEUE_LOCK="$root/state/.wake-queue.lock" \
+      fm_wake_append check fleet-load-capacity "check: fleet-load capacity changed; reconsider queued work: $FM_FLEET_LOAD_JSON"; then
+      # A failed wake never marks the transition delivered; the next tick retries.
+      staged=$(mktemp "$root/state/.fleet-load-notice.XXXXXX") || staged=
+      if [ -n "$staged" ]; then
+        printf '%s\n' "$FM_FLEET_LOAD_JSON" | jq -rj '.notice_fingerprint' > "$staged" &&
+          mv "$staged" "$root/state/.fleet-load-notice"
+        rm -f "$staged"
+      fi
+    fi
+  fi
+  if { [ "$mode" = invalid ] || [ "$mode" = enforce ]; } && [ -n "$hold" ]; then return 75; fi
+}
+
+fm_fleet_load_tick() { # <home> <config-dir>
+  local config lock rc=0
+  config=$(fm_project_capacity_config_dir "$1" "$2") || return 1
+  fm_fleet_load_enabled "$config" || return 0
+  fm_fleet_capacity_lookup "$config" || return 1
+  lock=$(fm_fleet_capacity_lock_path "$1") || return 1
+  fm_lock_try_acquire "$lock" || return 0
+  fm_fleet_load_evaluate "$1" "$config" refresh || rc=$?
+  fm_lock_release "$lock" || return 1
+  [ "$rc" = 0 ] || [ "$rc" = 75 ]
+}
+
+# One structured projection for worker-park status and fleet snapshot.
+# Endpoint uncertainty is included in occupancy; unreadable inventory is explicit.
+fm_fleet_capacity_observation() { # <home> <config-dir> <state-dir>
+  local config policy rc=0 occupancy_error='' rows queued
+  config=$(fm_project_capacity_config_dir "$1" "$2") || return 1
+  fm_fleet_capacity_lookup "$config" || return 1
+  fm_fleet_load_evaluate "$1" "$config" status || rc=$?
+  [ "$rc" = 0 ] || [ "$rc" = 75 ] || return "$rc"
+  policy=${FM_FLEET_LOAD_JSON:-}
+  if [ -z "$policy" ]; then
+    policy=$(jq -n --arg cap "$FM_FLEET_CAPACITY" '{mode:"off",configured:($cap|tonumber?),effective:($cap|tonumber?),hold:"",reason:"static capacity; adaptation off"}')
+    [ -n "$policy" ] || policy='{"mode":"off","configured":null,"effective":null,"hold":""}'
+  fi
+  fm_fleet_capacity_occupants "$3" '' || occupancy_error=$FM_FLEET_CAPACITY_ERROR
+  if rows=$(fm_worker_park_rows "$3"); then
+    queued=$(printf '%s\n' "$rows" | awk 'NF {n++} END {print n+0}')
+  else
+    queued=null
+    occupancy_error=${occupancy_error:-parked-worker resume queue unreadable}
+  fi
+  printf '%s\n' "$policy" | jq --arg error "$occupancy_error" --arg ids "$FM_FLEET_CAPACITY_OCCUPANT_IDS" \
+    --argjson occupied "$FM_FLEET_CAPACITY_OCCUPANTS" --argjson queued "$queued" \
+    '. + {occupancy:(if $error == "" then $occupied else null end),occupancy_error:$error,holders:$ids,queued_resumes:$queued}'
+}
