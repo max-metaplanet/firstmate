@@ -206,6 +206,7 @@ fm_fleet_load_enabled() { # <config-dir>
 # Sets FM_FLEET_LOAD_JSON and FM_FLEET_EFFECTIVE_CAPACITY. A hold is a 75 only
 # in enforce mode (or invalid configuration); observe retains static admission,
 # as does an invalid configuration that reports no hold.
+# shellcheck disable=SC2034 # FM_FLEET_EFFECTIVE_CAPACITY is read by bin/fm-spawn.sh.
 fm_fleet_load_evaluate() { # <home> <config-dir> <refresh|status>
   local root mode hold staged
   root=$(fm_firstmate_root_home "$1") || return 1
@@ -224,8 +225,8 @@ fm_fleet_load_evaluate() { # <home> <config-dir> <refresh|status>
   mode=$(printf '%s\n' "$FM_FLEET_LOAD_JSON" | jq -r '.mode')
   hold=$(printf '%s\n' "$FM_FLEET_LOAD_JSON" | jq -r '.hold')
   if [ "$3" = refresh ] && [ "$(printf '%s\n' "$FM_FLEET_LOAD_JSON" | jq -r '.transition // false')" = true ]; then
-    if ( STATE="$root/state"; FM_WAKE_QUEUE="$STATE/.wake-queue"; FM_WAKE_QUEUE_LOCK="$STATE/.wake-queue.lock"
-      fm_wake_append check fleet-load-capacity "check: fleet-load capacity changed; reconsider queued work: $FM_FLEET_LOAD_JSON" ); then
+    if STATE="$root/state" FM_WAKE_QUEUE="$root/state/.wake-queue" FM_WAKE_QUEUE_LOCK="$root/state/.wake-queue.lock" \
+      fm_wake_append check fleet-load-capacity "check: fleet-load capacity changed; reconsider queued work: $FM_FLEET_LOAD_JSON"; then
       # A failed wake never marks the transition delivered; the next tick retries.
       staged=$(mktemp "$root/state/.fleet-load-notice.XXXXXX") || staged=
       if [ -n "$staged" ]; then

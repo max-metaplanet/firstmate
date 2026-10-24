@@ -688,6 +688,7 @@ test_adaptive_concurrent_homes() {
   load_fixture "$case_dir" 1000 normal 40 40
   hold="$case_dir/hold"; wt=$(new_worktree "$case_dir" task-a)
   FM_FAKE_HOLD="$hold" spawn_ship "$case_dir" task-a "$wt" > "$case_dir/first.out" 2>&1 &
+  # shellcheck disable=SC2031 # The background PID is captured immediately in this shell.
   first=$!
   i=0
   while [ ! -f "$hold.reached" ]; do
@@ -695,6 +696,7 @@ test_adaptive_concurrent_homes() {
     sleep 0.05
   done
   run_spawn "$case_dir" "$mate" "$case_dir/unused" task-b "$case_dir/other-project" --mode no-mistakes --yolo off > "$case_dir/second.out" 2>&1 &
+  # shellcheck disable=SC2031 # The background PID is captured immediately in this shell.
   second=$!
   : > "$hold.release"
   wait "$first" || first_rc=$?
@@ -708,7 +710,7 @@ test_adaptive_concurrent_homes() {
 }
 
 test_adaptive_memory_paging_and_history() {
-  local case_dir home at previous output state
+  local case_dir home at state
   case_dir=$(make_case adaptive-history)
   home="$case_dir/home"
   declare_fleet "$home" 3
