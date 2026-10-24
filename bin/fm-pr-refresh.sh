@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Hold an existing GitHub PR in draft for a conflict-only refresh.
 # Usage: FM_HOME=<home> fm-pr-refresh.sh prepare <task-id> <pr-url> [-- <command> [args...]]
-#        FM_HOME=<home> fm-pr-refresh.sh ready <task-id> <pr-url>
+#        FM_HOME=<home> fm-pr-refresh.sh ready <task-id> <pr-url> --ready-ci reruns|unchanged
 #
 # Conflict-only means replaying the already-authorized change onto its base,
 # including the minimum conflict resolutions needed to preserve that intent.
@@ -12,9 +12,12 @@
 # Without a command it prepares a later pipeline-owned push; workers must not
 # take over a pipeline's publication. It records state/<id>.pr-refresh and a
 # paused status even if publication fails, leaving the draft held for firstmate.
-# ready is called only on firstmate's explicit instruction. It marks ready,
-# reads the ready_for_review timeline bound, and waits through fm-pr-checks.sh
-# --after before removing the hold. A failed wait preserves the hold for retry.
+# ready is called only on firstmate's explicit instruction. It marks ready and
+# waits through fm-pr-checks.sh --watch before removing the hold; a failed wait
+# preserves the hold for retry. --ready-ci states the repository's CI policy:
+# reruns when ready_for_review re-runs draft-skipped checks (the wait adds
+# --after the ready_for_review timeline time, so draft-era skips never count),
+# unchanged when it does not (same-head skips, such as path filters, stand).
 # Other forges fail closed before any publication; ask firstmate for their
 # equivalent draft/ready procedure. This script never pushes by default.
 set -eu
@@ -43,8 +46,13 @@ HOLD=$STATE/$ID.pr-refresh
 if ! fm_pr_regular_destination_or_absent "$HOLD" || ! fm_pr_regular_destination_or_absent "$STATE/$ID.status"; then
   die 'unsafe refresh hold or status destination'
 fi
-if [ "$#" -gt 0 ]; then
-  [ "$ACTION" = prepare ] && [ "$1" = -- ] && [ "$#" -gt 1 ] || die 'expected -- <publication command>'
+READY_CI=
+if [ "$ACTION" = ready ]; then
+  [ "$#" = 2 ] && [ "$1" = --ready-ci ] || die 'ready expects --ready-ci reruns|unchanged'
+  case "$2" in reruns|unchanged) READY_CI=$2 ;; *) die 'ready expects --ready-ci reruns|unchanged' ;; esac
+  shift 2
+elif [ "$#" -gt 0 ]; then
+  [ "$1" = -- ] && [ "$#" -gt 1 ] || die 'expected -- <publication command>'
   shift
 fi
 if [ -e "$HOLD" ] || [ -L "$HOLD" ]; then
@@ -87,10 +95,14 @@ if [ "$DRAFT" = true ]; then
 fi
 read_pr
 [ "$DRAFT" = false ] || die 'ready transition was not confirmed'
-READY_AT=$(gh api --paginate "repos/$FM_PR_PATH/issues/$FM_PR_NUMBER/timeline" \
-  --jq '.[] | select(.event == "ready_for_review") | .created_at' | tail -n 1) || die 'could not read ready timeline; hold retained'
-[[ "$READY_AT" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]] || die 'ready timeline time unavailable; hold retained'
-"$SCRIPT_DIR/fm-pr-checks.sh" --watch --after "$READY_AT" "$URL"
+if [ "$READY_CI" = reruns ]; then
+  READY_AT=$(gh api --paginate "repos/$FM_PR_PATH/issues/$FM_PR_NUMBER/timeline" \
+    --jq '.[] | select(.event == "ready_for_review") | .created_at' | tail -n 1) || die 'could not read ready timeline; hold retained'
+  [[ "$READY_AT" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]] || die 'ready timeline time unavailable; hold retained'
+  "$SCRIPT_DIR/fm-pr-checks.sh" --watch --after "$READY_AT" "$URL"
+else
+  "$SCRIPT_DIR/fm-pr-checks.sh" --watch "$URL"
+fi
 rm "$HOLD"
 printf 'resolved [at=%s]: conflict-refresh hold cleared for %s after ready CI passed\n' "$(date +%s)" "$URL" >> "$STATE/$ID.status"
-printf 'ready: %s checks green after %s\n' "$URL" "$READY_AT"
+printf 'ready: %s checks green (ready CI %s)\n' "$URL" "$READY_CI"

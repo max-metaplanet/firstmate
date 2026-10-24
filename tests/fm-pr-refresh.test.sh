@@ -104,16 +104,36 @@ expect_refusal prepare task https://gitlab.example/g/r/-/merge_requests/9 -- pub
 pass 'retries preserve draft and failed publication retains the hold'
 
 checks FAILURE 2026-10-20T11:00:04Z > "$TASK_TMP/checks.json"
-expect_refusal ready task "$URL"
+expect_refusal ready task "$URL" --ready-ci reruns
 [ -f "$FM_HOME/state/task.pr-refresh" ] || fail 'red CI removed refresh hold'
 pass 'failed ready CI keeps the hold for retry'
 
 checks SKIPPED 2026-10-20T10:00:00Z > "$TASK_TMP/checks.json"
+for policy in '' '--ready-ci' '--ready-ci sometimes'; do
+  # shellcheck disable=SC2086 # Each policy case is an intentional word list.
+  expect_refusal ready task "$URL" $policy
+  [ -f "$FM_HOME/state/task.pr-refresh" ] || fail "ready without an explicit CI policy ($policy) cleared the hold"
+done
+pass 'ready requires an explicit ready CI policy'
+
+cp "$FM_HOME/state/task.pr-refresh" "$TASK_TMP/hold"
+checks SKIPPED 2026-10-20T10:00:00Z > "$TASK_TMP/checks.json"
 checks SUCCESS 2026-10-20T11:00:04Z > "$TASK_TMP/next-checks.json"
-refresh ready task "$URL" > "$TASK_TMP/ready-out"
+refresh ready task "$URL" --ready-ci reruns > "$TASK_TMP/ready-out"
 assert_grep 'CI gate (missing)' "$TASK_TMP/ready-out" 'ready call counted draft-era skipped checks'
 [ "$(cat "$TASK_TMP/draft")" = false ] || fail 'ready command left draft'
 [ ! -e "$FM_HOME/state/task.pr-refresh" ] || fail 'green fresh CI left hold'
 grep -Eq '^resolved \[at=[0-9]+\]:' "$FM_HOME/state/task.status" || fail 'wait was not resolved'
-expect_refusal ready task "$URL"
-pass 'ready waits past draft-skipped checks and resolves the hold only on fresh green CI'
+expect_refusal ready task "$URL" --ready-ci reruns
+pass 'reruns policy waits past draft-skipped checks and resolves the hold only on fresh green CI'
+
+cp "$TASK_TMP/hold" "$FM_HOME/state/task.pr-refresh"
+echo true > "$TASK_TMP/draft"
+checks SKIPPED 2026-10-20T10:00:00Z > "$TASK_TMP/checks.json"
+rm -f "$TASK_TMP/next-checks.json"
+touch "$TASK_TMP/timeline-fails"
+refresh ready task "$URL" --ready-ci unchanged > "$TASK_TMP/ready-out"
+rm "$TASK_TMP/timeline-fails"
+[ "$(cat "$TASK_TMP/draft")" = false ] || fail 'unchanged policy left draft'
+[ ! -e "$FM_HOME/state/task.pr-refresh" ] || fail 'a legitimate lone skip without a ready rerun kept the hold'
+pass 'unchanged policy accepts a legitimate lone skip without waiting for a ready-triggered rerun'
