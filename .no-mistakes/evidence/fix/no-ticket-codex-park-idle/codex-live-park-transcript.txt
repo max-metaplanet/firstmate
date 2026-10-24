@@ -1,0 +1,35 @@
+== generated launch notify arg:
+notify=[\"bash\",\"-c\",\"touch
+== busy classify:
+unknown codex-unverified== park BEFORE any real codex turn (expect refusal):
+worker-park: codex-live-park is not safe to park
+rc=1
+ls: /var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.iMrrXQ/park/home/control.log: No such file or directory
+== launching REAL codex TUI with the spawn-generated notify target
+spawn-generated notify value: ["bash","-c","touch '/private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab.iMrrXQ/park/home/state/codex-live-park.turn-ended'"]
+-rw-r--r--@ 1 max  staff  22 Oct 24 07:26:31 2026 /var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.iMrrXQ/park/home/state/codex-live-park.status
+-rw-r--r--@ 1 max  staff   0 Oct 24 07:26:41 2026 /var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.iMrrXQ/park/home/state/codex-live-park.turn-ended
+     /private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab.iMrrXQ/wt
+  permissions: YOLO mode
+› Reply with exactly the word WAITING and nothing else. Do not run any commands.
+• WAITING
+  Worked for 2s • 7:26 AM
+› Ask Codex to do anything
+  GPT-6.1-Sol medium · /private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab.iMrrXQ/wt
+  ? for shortcuts                                                                                                                                                              ⚠ 1 warning · f2 to view
+== park AFTER real codex turn-end:
+parked: codex-live-park waiting on ci-wait
+rc=0
+== park record:
+phase=parked
+generation=s1792841187.32820.26558
+endpoint=firstmate:fm-codex-live-park
+reason=ci-wait
+until=0
+queued_at=0
+wake_reason=
+status_line=paused: waiting on CI
+resume_error=0
+failing_checks=
+== control log:
+codex-live-park exit
