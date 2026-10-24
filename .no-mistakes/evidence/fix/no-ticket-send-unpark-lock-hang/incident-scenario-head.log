@@ -1,0 +1,28 @@
+## setup: park sm1 -> rc=0
+phase=parked
+## fleet-capacity=2, held by live ship 'holder' + live mate sm2; config-push caller holds ~/.no-mistakes/worktrees/61c6dd39b831/.fm-test-scratch/fm-secondmate-restart.wZJias/incident-20966/sm1-home/state/.fm-inherited-config.lock
+## S1: fm-send sm1 --fire-and-forget CONFIG_REREAD (observed trigger), concurrently fm-send sm2 'steer'
+send->sm1 rc=0 elapsed=0.43s rc=0
+  sm1> WARNING: queued wakes pending - drain them with bin/fm-wake-drain.sh before anything else.
+  sm1> fm-send: steer queued at ~/.no-mistakes/worktrees/61c6dd39b831/.fm-test-scratch/fm-secondmate-restart.wZJias/incident-20966/home/state/sm1.inbox/002.msg; the worker-park tick resumes parked secondmate sm1 or reports why it cannot on the parent channel
+send->sm2 rc=0 elapsed=1.35s rc=0
+lease-command lock after sends: released
+sm1 inbox: 001.msg 002.msg handled  ; CONFIG_REREAD queued: 1
+sm2 inbox has steer: 1
+phase=parked
+## S2: watcher worker-park ticks while the fleet stays full
+tick 1 rc=0 elapsed=2.01s rc=0 phase=parked
+tick 2 rc=0 elapsed=1.50s rc=0 phase=parked
+tick 3 rc=0 elapsed=1.42s rc=0 phase=parked
+tick 4 rc=0 elapsed=1.91s rc=0 phase=parked
+sm1 launch commands while full: 0
+locks left in home state: 0
+direct unpark while full:
+  deferred: this machine runs at most 2 agent(s) at once (~/.no-mistakes/worktrees/61c6dd39b831/.fm-test-scratch/fm-secondmate-restart.wZJias/incident-20966/home/config/fleet-capacity) and 2 are running (holder, sm2); secondmate sm1 stays parked with its inbox preserved - the worker-park tick retries it
+  elapsed=1.14s rc=75
+  unpark rc=75
+## S3: slot frees (holder exits) -> next tick resumes sm1 exactly once
+tick 5 rc=0 elapsed=4.36s rc=0 park-record=cleared
+tick 6 rc=0 elapsed=0.11s rc=0 park-record=cleared
+sm1 launch commands total: 1 ; 'unpark complete' reports: 1
+CONFIG_REREAD still in durable inbox: 1

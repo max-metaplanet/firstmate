@@ -1,0 +1,7 @@
+not ok - steer must return while caller holds inheritance lock: WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+WARNING: queued wakes pending - drain them with bin/fm-wake-drain.sh before anything else.
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+warning: secondmate sm1 sync skipped before launch: primary default-branch commit cannot be resolved
+fixture command exceeded 20 seconds: expected exit 0, got 124
+bash "$B/tests/repro.test.sh"  1.06s user 1.82s system 11% cpu 25.514 total

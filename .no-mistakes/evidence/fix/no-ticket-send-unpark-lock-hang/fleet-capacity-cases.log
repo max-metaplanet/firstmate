@@ -1,0 +1,4 @@
+ok - queued resumes take priority for their own project cap only
+ok - a full fleet defers a fresh spawn and leaves it queued with nothing created
+ok - a fresh spawn waits for a briefly busy fleet capacity lock
+# filtered fleet cases passed

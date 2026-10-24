@@ -1,0 +1,20 @@
+ok - parked secondmate sends release locks and deferred ticks resume once capacity frees
+ok - stopped mate parks on durable proof and both liveness modes suppress recovery
+ok - stopped park accepts helper-written readiness behind a home notice
+ok - stopped mate with a proven-gone herdr endpoint parks on durable proof
+ok - stopped park refuses each missing proof and preserves records
+ok - live ready status cannot substitute for the existing persist gate
+ok - missing parked endpoint respawns into its home with the captured session and durable inbox
+ok - dead parked endpoint relaunches with its recorded model and effort
+ok - work queued while park waits for persistence wakes the mate after the stop
+ok - interrupted preparation restores delivery and transitional phases do not claim parked
+ok - TERM rolls back unconfirmed park preparation without discarding its instruction
+ok - park requires persistence and refuses child work without discarding it
+ok - park state suppresses liveness and watcher startup; routed send wakes with inbox intact
+ok - remote park refuses before lifecycle mutation
+ok - failed automatic wake retains the durable inbox and explicit unpark retries
+ok - an unfinished park with queued work reports once instead of every tick
+ok - only fire-and-forget work sent after the park resumes a parked mate
+ok - tick failures before the park record is trusted report once per reason
+# filtered park cases passed
+bash "$W/park.test.sh"  26.19s user 42.65s system 61% cpu 1:52.76 total

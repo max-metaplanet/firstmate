@@ -1,0 +1,29 @@
+## setup: park sm1 -> rc=0
+phase=parked
+## fleet-capacity=2, held by live ship 'holder' + live mate sm2; config-push caller holds /private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/.fm-test-scratch/fm-secondmate-restart.pRxMay/incident-15755/sm1-home/state/.fm-inherited-config.lock
+## S1: fm-send sm1 --fire-and-forget CONFIG_REREAD (observed trigger), concurrently fm-send sm2 'steer'
+send->sm1 rc=124 elapsed=30.06s rc=124
+  sm1> WARNING: queued wakes pending - drain them with bin/fm-wake-drain.sh before anything else.
+send->sm2 rc=124 elapsed=30.13s rc=124
+lease-command lock after sends: PRESENT
+sm1 inbox: 001.msg 002.msg handled  ; CONFIG_REREAD queued: 1
+sm2 inbox has steer: 1
+phase=waking
+## S2: watcher worker-park ticks while the fleet stays full
+tick 1 rc=0 elapsed=0.42s rc=0 phase=waking
+tick 2 rc=0 elapsed=0.58s rc=0 phase=waking
+tick 3 rc=0 elapsed=0.56s rc=0 phase=waking
+tick 4 rc=0 elapsed=0.38s rc=0 phase=waking
+sm1 launch commands while full: 0
+locks left in home state: 5
+direct unpark while full:
+  warning: secondmate sm1 sync skipped before launch: primary default-branch commit cannot be resolved
+  error: task sm1's endpoint is in '/private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/.fm-test-scratch/fm-secondmate-restart.pRxMay/incident-15755/sm2-home', not its recorded worktree '/private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/.fm-test-scratch/fm-secondmate-restart.pRxMay/incident-15755/sm1-home'; refusing to relaunch an agent outside the copy holding its work
+  sm1: wake failed; still parked, inbox preserved; session=fresh
+  elapsed=4.38s rc=1
+  unpark rc=1
+## S3: slot frees (holder exits) -> next tick resumes sm1 exactly once
+tick 5 rc=0 elapsed=0.59s rc=0 park-record=present
+tick 6 rc=0 elapsed=0.35s rc=0 park-record=present
+sm1 launch commands total: 0 ; 'unpark complete' reports: 0
+CONFIG_REREAD still in durable inbox: 1
