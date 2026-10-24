@@ -123,7 +123,7 @@ safe_to_park() {
     run_status=$(fm_nm_strip_quotes "$(fm_nm_field "$probe" status)")
     case "$(fm_nm_run_status_class "$run_status")/$run_status" in
       terminal/ci_monitor_interrupted)
-        fm_worker_park_interrupted_ready "$META" "$probe" || return 1 ;;
+        fm_worker_park_interrupted_ready "$META" "$probe" "$STATE" || return 1 ;;
       terminal/*) ;;
       */'') printf '%s' "$probe" | grep -Eq '^runs_on_current_branch: 0$|no active run|no run|run: null' || { refuse_park "no-mistakes run status is missing"; return 1; } ;;
       *)

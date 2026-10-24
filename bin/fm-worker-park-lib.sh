@@ -61,8 +61,8 @@ fm_worker_park_rows() { # <state>; prints queued_at<TAB>meta for every reserving
 # A terminal interrupted monitor has released validation custody, but is not
 # CI-ready. Only the full contribution observer covers all its return events.
 # Requires the caller's no-mistakes helpers and refuse_park diagnostic.
-fm_worker_park_interrupted_ready() { # <meta> <axi-status>
-  local meta=$1 probe=$2 wt branch pr head observed file now max_age task
+fm_worker_park_interrupted_ready() { # <meta> <axi-status> <state>
+  local meta=$1 probe=$2 state=$3 wt branch pr head observed file now max_age task
   wt=$(fm_meta_get "$meta" worktree)
   branch=$(git -C "$wt" symbolic-ref --quiet --short HEAD) || { refuse_park "task branch could not be read"; return 1; }
   [ "$(fm_nm_strip_quotes "$(fm_nm_field "$probe" branch)")" = "$branch" ] || { refuse_park "interrupted run does not name the task branch"; return 1; }
@@ -87,7 +87,7 @@ fm_worker_park_interrupted_ready() { # <meta> <axi-status>
   # shellcheck source=bin/fm-check-lib.sh
   . "${BASH_SOURCE[0]%/*}/fm-check-lib.sh"
   fm_pr_url_parse "$pr" && [ "$FM_PR_PROVIDER" = github ] || { refuse_park "PR has no supported full contribution observer"; return 1; }
-  fm_custom_check_registered "$STATE" contributions || { refuse_park "contribution observer is not authenticated and armed"; return 1; }
+  fm_custom_check_registered "$state" contributions || { refuse_park "contribution observer is not authenticated and armed"; return 1; }
   task=${meta##*/}; task=${task%.meta}
   file="${FM_DATA_OVERRIDE:-$FM_HOME/data}/$task/contributions.json"
   [ -f "$file" ] && [ ! -L "$file" ] && [ "$(wc -c < "$file")" -le 1048576 ] || { refuse_park "contribution observer record is unavailable"; return 1; }
