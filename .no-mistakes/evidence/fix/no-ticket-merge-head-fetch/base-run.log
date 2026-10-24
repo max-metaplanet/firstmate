@@ -1,0 +1,11 @@
+ok - fm-pr-merge reads a plan-gated 403 on branch rules as no merge queue, not unreadable
+ok - away merge proceeds on a plan-gated 403 because that repository cannot have a merge queue
+not ok - remote-only updated head with worker worker must merge: ●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+error: named head e774ad571d425c8f9792e4d9e6056808fe7e7229 is unreachable outside the worker copy: no ref either copy holds carries it and origin does not advertise it, or origin could not be read - push that commit and report again; never change remote.origin.fetch, which rewrites the clone configuration every pooled worktree shares and breaks later worktree creation once the branch is deleted, and if you need a local ref fetch it once with `git fetch origin <branch>:refs/remotes/origin/<branch>`: expected exit 0, got 1
+BASE exit=1

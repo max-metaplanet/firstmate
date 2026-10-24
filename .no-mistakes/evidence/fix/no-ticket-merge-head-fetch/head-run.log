@@ -1,0 +1,18 @@
+ok - fm-pr-merge reads a plan-gated 403 on branch rules as no merge queue, not unreadable
+ok - away merge proceeds on a plan-gated 403 because that repository cannot have a merge queue
+ok - remote-only updated direct-PR head proves ancestry with or without a worker, refuses unrelated or unpushed work, and leaves no-mistakes unchanged
+fetchfail rc=1 stderr: ●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+fatal: '~/.no-mistakes/worktrees/61c6dd39b831/.fm-test-scratch/fm-pr-merge-tests.1HxVyr/remote-head-fetchfail/origin.git' does not appear to be a git repository
+fatal: Could not read from remote repository.
+
+Please make sure you have the correct access rights
+and the repository exists.
+error: recorded PR head 22a8a6b205a43611aee1ed068228ad72b0008637 is not a proven ancestor of live head 194c377579d11432de6c76bb048787e83cc7e1fd for https://github.com/example/repo/pull/9; fetch or ancestry verification failed
+ok - direct-PR merge refuses when the PR head cannot be fetched
+HEAD exit=0
