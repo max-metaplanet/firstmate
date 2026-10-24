@@ -86,7 +86,10 @@ fm_sm_live_require_locks
 if [ "$ACTION" = park ]; then
   fm_lock_acquire_wait "$STATE/.secondmate-liveness-$ID.lock"
 else
-  fm_lock_try_acquire "$STATE/.secondmate-liveness-$ID.lock" || exit 75
+  if ! fm_lock_try_acquire "$STATE/.secondmate-liveness-$ID.lock"; then
+    [ "$ACTION" = tick ] || echo "deferred: secondmate $ID lifecycle is busy; retry" >&2
+    exit 75
+  fi
 fi
 CHILD_SET_LOCK=''
 OWN_PREPARING=0
