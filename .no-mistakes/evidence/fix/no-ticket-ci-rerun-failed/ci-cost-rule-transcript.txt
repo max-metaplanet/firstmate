@@ -1,0 +1,27 @@
+# CI cost rule as rendered in generated briefs (fm-brief.sh, disposable FM_HOME)
+== brief-t-direct-PR-forgejo.md
+100:Keep it draft throughout implementation and local iteration.
+103:When a required check is red, read its failure log.
+104:If the log shows no cause in your own change, rerun only the failed jobs instead of pushing, using the forge equivalent where one exists.
+105:Never push an empty, no-op, or "retrigger" commit to rerun CI.
+106:Commit all fixes for that round locally, then push ONCE for the round; never push each individual fix.
+== brief-t-direct-PR-none.md
+100:Keep it draft throughout implementation and local iteration.
+103:When a required check is red, read its failure log.
+104:If the log shows no cause in your own change, rerun only the failed jobs instead of pushing, using `gh-axi run rerun <run-id> --failed`.
+105:Never push an empty, no-op, or "retrigger" commit to rerun CI.
+106:Commit all fixes for that round locally, then push ONCE for the round; never push each individual fix.
+== brief-t-local.md
+(no CI rerun or push instructions: this brief does not publish)
+== brief-t-no-mistakes-forgejo.md
+103:When a required check is red, read its failure log.
+104:If the log shows no cause in your own change, rerun only the failed jobs instead of pushing, using the forge equivalent where one exists.
+105:Never push an empty, no-op, or "retrigger" commit to rerun CI.
+106:When no-mistakes owns CI, apply this rule through its CI step; its "skip as unrelated with evidence" path remains valid.
+== brief-t-no-mistakes-none.md
+103:When a required check is red, read its failure log.
+104:If the log shows no cause in your own change, rerun only the failed jobs instead of pushing, using `gh-axi run rerun <run-id> --failed`.
+105:Never push an empty, no-op, or "retrigger" commit to rerun CI.
+106:When no-mistakes owns CI, apply this rule through its CI step; its "skip as unrelated with evidence" path remains valid.
+== brief-t-scout.md
+(no CI rerun or push instructions: this brief does not publish)
