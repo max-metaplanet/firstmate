@@ -10,6 +10,7 @@ cat > "$FAKEBIN/gh" <<'SH'
 #!/usr/bin/env bash
 case "$*" in
   'pr view '*)
+    printf 'view\n' >> "$CHECK_FIXTURE/reads"
     cat "$CHECK_FIXTURE/view.json"
     if [ -f "$CHECK_FIXTURE/next.json" ]; then
       mv "$CHECK_FIXTURE/next.json" "$CHECK_FIXTURE/view.json"
@@ -75,6 +76,83 @@ view COMPLETED SUCCESS IN_PROGRESS '' > "$TASK_TMP/next.json"
 FM_PR_CHECKS_POLL=0 expect_result 0 --watch
 assert_grep 'CI gate (pending)' "$TASK_TMP/out" 'watch skipped required pending'
 pass 'watch re-reads pending required checks until they pass'
+
+view COMPLETED FAILURE IN_PROGRESS '' > "$TASK_TMP/view.json"
+view COMPLETED FAILURE COMPLETED FAILURE > "$TASK_TMP/next.json"
+: > "$TASK_TMP/reads"
+FM_PR_CHECKS_POLL=0 expect_result 1 --watch --settled
+[ "$(wc -l < "$TASK_TMP/reads" | tr -d ' ')" = 2 ] || fail 'settled repair wait returned on first failure before the other check completed'
+assert_grep 'HEAD CHECKS: still executing' "$TASK_TMP/out" 'settled wait did not report pending head checks'
+pass 'settled repair wait collects a later advisory failure before returning required red'
+
+view COMPLETED SUCCESS IN_PROGRESS '' > "$TASK_TMP/view.json"
+view COMPLETED SUCCESS COMPLETED FAILURE > "$TASK_TMP/next.json"
+: > "$TASK_TMP/reads"
+FM_PR_CHECKS_POLL=0 expect_result 0 --settled --watch
+[ "$(wc -l < "$TASK_TMP/reads" | tr -d ' ')" = 2 ] || fail 'settled wait did not wait for advisory completion'
+pass 'settled wait includes advisory execution without making advisory failures required'
+
+view COMPLETED FAILURE COMPLETED SUCCESS | jq '.statusCheckRollup[-1].state = "PENDING"' > "$TASK_TMP/view.json"
+view COMPLETED FAILURE COMPLETED SUCCESS > "$TASK_TMP/next.json"
+: > "$TASK_TMP/reads"
+FM_PR_CHECKS_POLL=0 expect_result 1 --watch --settled
+[ "$(wc -l < "$TASK_TMP/reads" | tr -d ' ')" = 2 ] || fail 'settled wait ignored a pending status context'
+expect_result 2 --settled
+pass 'settled wait includes pending status contexts and requires watch mode'
+
+view COMPLETED FAILURE IN_PROGRESS '' > "$TASK_TMP/view.json"
+view COMPLETED SUCCESS COMPLETED SUCCESS | jq '.headRefOid = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"' > "$TASK_TMP/next.json"
+: > "$TASK_TMP/reads"
+FM_PR_CHECKS_POLL=0 expect_result 0 --watch --settled
+[ "$(wc -l < "$TASK_TMP/reads" | tr -d ' ')" = 2 ] || fail 'settled wait did not re-read the new PR head'
+pass 'settled wait follows the current head rather than returning an older failure'
+
+READY=2026-10-20T11:00:00Z
+gate_runs() {
+  jq -nc --arg head "$HEAD" --argjson runs "$1" \
+    '{headRefOid:$head,baseRefName:"main",statusCheckRollup:[
+      $runs[] | {__typename:"CheckRun",name:"CI gate",status:"COMPLETED",conclusion:.[0],startedAt:.[1]}]}'
+}
+gate_runs '[["SKIPPED","2026-10-20T10:00:00Z"]]' > "$TASK_TMP/view.json"
+expect_result 0
+[ ! -s "$TASK_TMP/out" ] || fail 'a SKIPPED required run without --after stopped counting green'
+expect_result 8 --after "$READY"
+assert_grep 'CI gate (missing)' "$TASK_TMP/out" 'a draft-skipped run counted after the ready bound'
+gate_runs '[["SKIPPED","2026-10-20T10:00:00Z"],["SUCCESS","2026-10-20T11:00:04Z"]]' > "$TASK_TMP/next.json"
+: > "$TASK_TMP/reads"
+FM_PR_CHECKS_POLL=0 expect_result 0 --watch --after "$READY"
+[ "$(wc -l < "$TASK_TMP/reads" | tr -d ' ')" = 2 ] || fail 'bounded watch did not wait for a post-ready run'
+gate_runs '[["FAILURE","2026-10-20T10:00:00Z"],["SKIPPED","2026-10-20T11:00:00Z"]]' > "$TASK_TMP/view.json"
+expect_result 0 --after "$READY"
+pass 'without --after a skip stays green; --after ignores pre-ready skips, waits for a post-ready run, and counts post-ready skips'
+
+printf '[{"type":"required_status_checks","parameters":{"required_status_checks":[{"context":"CI gate"},{"context":"Lint"},{"context":"Vercel"}]}}]\n' > "$TASK_TMP/rules.json"
+draft_passes() {
+  gate_runs "$1" | jq '.statusCheckRollup += [
+    {__typename:"CheckRun",name:"Lint",status:"COMPLETED",conclusion:"SUCCESS",startedAt:"2026-10-20T09:00:00Z"},
+    {__typename:"StatusContext",context:"Vercel",state:"SUCCESS",startedAt:"2026-10-20T09:00:00Z"}]'
+}
+draft_passes '[["SKIPPED","2026-10-20T10:00:00Z"]]' > "$TASK_TMP/view.json"
+draft_passes '[["SKIPPED","2026-10-20T10:00:00Z"],["SUCCESS","2026-10-20T11:00:04Z"]]' > "$TASK_TMP/next.json"
+: > "$TASK_TMP/reads"
+FM_PR_CHECKS_POLL=0 expect_result 0 --watch --after "$READY"
+[ "$(wc -l < "$TASK_TMP/reads" | tr -d ' ')" = 2 ] || fail 'bounded watch accepted the draft skip before its replacement'
+assert_grep 'CI gate (missing)' "$TASK_TMP/out" 'the draft-skipped check was not held for its replacement'
+assert_no_grep 'Lint' "$TASK_TMP/out" 'a draft pass that never reruns was held back'
+assert_no_grep 'Vercel' "$TASK_TMP/out" 'a push-time status context was held back'
+pass '--after holds only draft-skipped checks; draft passes and status contexts still count'
+printf '[{"type":"required_status_checks","parameters":{"required_status_checks":[{"context":"CI gate"}]}}]\n' > "$TASK_TMP/rules.json"
+
+printf '[]\n' > "$TASK_TMP/rules.json"
+gate_runs '[["SKIPPED","2026-10-20T10:00:00Z"]]' > "$TASK_TMP/view.json"
+expect_result 0
+expect_result 8 --after "$READY"
+assert_grep 'CI gate (missing)' "$TASK_TMP/out" 'an unconfigured repo counted a pre-ready skip after the ready bound'
+expect_result 2 --after 2026-10-20
+expect_result 2 --after
+pass '--after holds back stale checks with no configured requirements and rejects a malformed bound'
+printf '[{"type":"required_status_checks","parameters":{"required_status_checks":[{"context":"CI gate"}]}}]\n' > "$TASK_TMP/rules.json"
+view COMPLETED SUCCESS COMPLETED SUCCESS > "$TASK_TMP/view.json"
 
 printf '{"protected":true,"protection":{"required_status_checks":{"contexts":["classic"]}}}\n' > "$TASK_TMP/branch.json"
 expect_result 8

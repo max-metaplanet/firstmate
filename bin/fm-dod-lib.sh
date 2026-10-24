@@ -617,7 +617,7 @@ EOF
 
 fm_dod_block() {  # <mode> <task-id> [branch] [<forge>] [<base>] [<consent>] [<ticket-header>] [<ticket-nm-retitle>]
   local mode=$1 id=$2 forge=${4:-none} base=${5:-} consent=${6:-} ticket_header=${7:-} ticket_retitle=${8:-}
-  local branch=${3:-fm/$id} pr_base='' nm_base='' base_q contract_forge='' contract_consent='' forge_cli=gh-axi draft_check origin_steps retitle_cmd adapter ci_wait=
+  local branch=${3:-fm/$id} pr_base='' nm_base='' draft_create='--draft' base_q contract_forge='' contract_consent='' forge_cli=gh-axi draft_check origin_steps retitle_cmd adapter ci_wait='' ready_wait=''
   fm_forge_valid_for_mode "$forge" "$mode" fm_dod_block || return 1
   fm_base_branch_valid "$base" "$mode" "$forge" fm_dod_block || return 1
   if [ -n "$consent" ]; then
@@ -635,15 +635,17 @@ Edit it with \`gh-axi pr edit <PR URL> --title '<the corrected title>'\`, then r
   origin_steps="Resolve the PR target from \`origin\` first and name it on the create - never leave the repository for \`gh\` to pick, because \`gh pr create\` with no \`-R\` defaults to a FORK's parent repository, and on a fork clone that opens the PR on a repository nobody authorized:
 1. \`git remote get-url origin\` - the \`<owner>/<repo>\` it names is your PR target, and \`origin\` is the only remote you push to.
 2. \`git symbolic-ref --quiet --short refs/remotes/origin/HEAD\` - drop the leading \`origin/\` for your base branch; when it prints nothing, read the \`HEAD branch:\` line of \`git remote show origin\`. When the Delivery contract above names a base branch, use that branch instead of the default.
-3. \`git push -u origin $branch\`, then \`gh-axi pr create -R <owner>/<repo> --base <base branch> --head $branch --title ... --body ...\`."
+3. \`git push -u origin $branch\`, then \`gh-axi pr create -R <owner>/<repo> --base <base branch> --head $branch --draft --title ... --body ...\`."
   case "$forge" in
     none|github)
       ci_wait="For a separate GitHub CI wait, use \`$_FM_DOD_LIB_DIR/fm-pr-checks.sh --watch <pr-url>\` (policy: \`fm-pr-checks-lib.sh\`); advisory checks do not block."
+      ready_wait=" When checks were skipped while draft, read the ready time with \`gh api --paginate repos/<owner>/<repo>/issues/<number>/timeline --jq '.[] | select(.event == \"ready_for_review\") | .created_at' | tail -n 1\` and wait with \`$_FM_DOD_LIB_DIR/fm-pr-checks.sh --watch --after <ready time> <pr-url>\`, so no check skipped before the ready transition counts."
       ;;
   esac
   if [ "$forge" = forgejo ]; then
     contract_forge=' forge=forgejo'
     forge_cli=tea
+    draft_create='a title prefixed with WIP:'
     draft_check="(\`tea api --repo <owner>/<repo> /repos/{owner}/{repo}/pulls/<number>\` must show \`draft\` as false, where <owner>/<repo> and <number> come from your PR URL); Forgejo marks a draft by a work-in-progress title prefix such as \`WIP:\`, so if it is a draft, remove that prefix with \`tea pulls edit <number> --repo <owner>/<repo> --title '<title without the prefix>'\`."
     origin_steps="Resolve the PR target from \`origin\` first and name it on the create, never leaving the repository for the CLI to default: \`git remote get-url origin\` names the \`<owner>/<repo>\` you open the PR on, and \`origin\` is the only remote you push to."
     retitle_cmd="
@@ -741,7 +743,14 @@ Ship branch: $branch$ticket_header
 This task ships **direct-PR**: you raise the PR yourself, without the no-mistakes pipeline.
 The task is complete only when committed on your branch.
 $ci_wait
-When it is implemented and committed, push your branch to \`origin\` and open a PR with \`$forge_cli\` that is ready for review, not a draft$pr_base.
+When it is committed, publish your branch to \`origin\` and open a draft PR with \`$forge_cli\` using \`$draft_create\`$pr_base.
+Keep it draft throughout implementation and local iteration.
+For each CI fix round, wait for ALL reported checks on the current head to finish before collecting the failures; on GitHub use \`$_FM_DOD_LIB_DIR/fm-pr-checks.sh --watch --settled <pr-url>\` even if a check is already red.
+Read the complete failure set, fix every actionable failure together, and run the relevant local validation, including lint and formatting affected by the fixes.
+Commit all fixes for that round locally, then push ONCE for the round; never push each individual fix or use an empty push to retry CI.
+Re-read the PR head before publishing; if it changed, collect the new head's completed checks before starting another round.
+Once local validation has passed and the work is ready for review, mark the PR ready before the final CI wait so suites skipped on drafts can run.$ready_wait
+The ready transition must not require another commit or push.
 $origin_steps
 Before you report done, read the PR back from the forge and confirm it is not a draft $draft_check
 A draft cannot be merged, so a done report on one leaves the merge unasked.
@@ -773,6 +782,11 @@ Ship branch: $branch$ticket_header
 The implementation is complete only when committed on your branch; the TASK is complete only when the pipeline has turned that commit into a PR with green checks.
 As soon as the implementation is committed and your tree is clean, invoke /no-mistakes yourself and drive the run to its outcome: do not report done first, and do not wait for firstmate to send you the pipeline.
 The pipeline owns the push; never push from this copy.
+Follow the CI-round policy in validation-supervision; never hand-fix or push around the pipeline's repair loop.
+As soon as the pipeline opens its PR, read it by its full URL.
+If it is a draft, confirm the pipeline's local review, test and lint steps passed and the work is ready, then mark it ready using the forge command below BEFORE waiting for CI green.
+A draft-skipping workflow needs that ready transition to run its full suites; skipped draft checks alone never prove the ready PR green.
+If this head's checks were skipped while it was draft, require fresh results from the workflows the ready transition triggers on this head before treating CI as green; otherwise completed, non-skipped results on this same head count.$ready_wait
 Your only \`done:\` is the CI-ready line below, and a ship \`done:\` naming no PR is refused rather than recorded, because the work is not shipped.
 ${nm_base}
 EOF
@@ -784,6 +798,7 @@ EOF
 
 $ci_wait
 After /no-mistakes reports CI green (the CI-ready return point - do not wait for it to keep monitoring in the background until merge), read the PR back from the forge and confirm it is not a draft $draft_check
+If that read found a draft whose head checks were skipped while draft, wait for the newly ready PR's fresh results on that head before reporting done; completed, non-skipped results on the same head otherwise stand.$ready_wait
 A draft cannot be merged, so a done report on one leaves the merge unasked.
 Then append \`done [at=<epoch>]: PR {url} checks green\` and stop. You are finished.
 That CI-ready \`done:\` is accepted only when this copy's HEAD - your latest commit - is one the /no-mistakes run pushed, so commit nothing after the run; the check tests that commit, not merely that a branch moved.

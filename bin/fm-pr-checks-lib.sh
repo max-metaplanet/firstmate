@@ -140,6 +140,52 @@ github_checks_not_green() {
   ' 2>/dev/null || return 1
 }
 
+# The live pull-request JSON without the runs of any check run whose latest run
+# started before the given whole-second UTC bound (YYYY-MM-DDTHH:MM:SSZ)
+# concluded SKIPPED, for a wait after a draft-to-ready transition: a draft-skipped
+# check then needs a run at or after the bound, so a required one with no
+# replacement is missing, while a replacement counts as usual, even SKIPPED.
+# Every other check, including status contexts and completed non-skipped draft
+# runs that are never re-triggered, is kept unchanged. Unnamed check runs are
+# judged alone. Exits nonzero on an unreadable rollup or bound.
+github_rollup_without_skips_before() {
+  local json=$1 after=$2
+  printf '%s' "$json" | jq -c --arg after "$after" '
+    def settled_at:
+      if type == "string" and test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$")
+      then . else null end;
+    def earlier_run($i):
+      if .__typename == "CheckRun" and ((.startedAt | settled_at) // $after) < $after
+      then {key: (if (.name // "") == "" then "#\($i)" else .name end),
+            at: .startedAt,
+            skipped: (.status == "COMPLETED" and .conclusion == "SKIPPED")}
+      else empty end;
+    if ($after | settled_at) == null then error("invalid bound") else . end
+    | if (.statusCheckRollup | type) != "array" then error("no check rollup") else . end
+    | ([.statusCheckRollup | to_entries[] | .key as $i | .value | earlier_run($i)]
+      | group_by(.key)
+      | map(([.[].at] | max) as $latest | select(any(.[]; .at == $latest and .skipped)) | .[0].key)
+      ) as $skipped
+    | .statusCheckRollup |= [to_entries[] | .key as $i | .value
+        | select([earlier_run($i) | .key] | any(. as $k | $skipped | index([$k])) | not)]
+  ' 2>/dev/null || return 1
+}
+
+# Counted check names in the full rollup with no run left in the bounded one,
+# one per line. Only needed when no requirements are configured; configured
+# requirements already report the same gap as missing.
+github_checks_without_fresh_run() {
+  local json=$1 bounded=$2 required=$3
+  [ "$required" = '[]' ] || return 0
+  jq -nr --argjson full "$json" --argjson bounded "$bounded" '
+    def check_name: (if .__typename == "CheckRun" then .name else .context end) // "";
+    [$bounded.statusCheckRollup[] | check_name] as $fresh
+    | [$full.statusCheckRollup[] | check_name | select(contains("(advisory)") | not)]
+    | unique[] | select(. as $n | any($fresh[]; . == $n) | not)
+    | if . == "" then "(unnamed check)" else . end
+  ' 2>/dev/null || return 1
+}
+
 FM_PR_GITHUB_REQUIRED=
 FM_PR_GITHUB_REQUIRED_ERROR=
 github_read_required_contexts() {

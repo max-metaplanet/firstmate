@@ -8,7 +8,15 @@ metadata:
 
 # Ship landing
 
-For PR-based ship tasks, the ready signal depends on mode: `no-mistakes` reports `done [at=<epoch>]: PR <url> checks green` after CI is green, while `direct-PR` reports `done [at=<epoch>]: PR <url>` after opening the PR, each only for a non-draft PR; a lane that deliberately holds a draft declares a wait instead, and `bin/fm-pr-check.sh` refuses to arm merge monitoring on a draft.
+PR-based workers open drafts and keep them draft while implementation or local validation is incomplete.
+A worker marks the PR ready once local validation has passed and the work is ready for review, before the final CI wait.
+For no-mistakes, the pipeline's completed local review, test and lint supply that local validation; the worker only changes the PR's readiness and continues driving the pipeline.
+The ready transition needs no commit or push.
+Draft-skipped checks do not establish that the ready PR's full suites passed: when a head's checks were skipped while draft, require fresh post-ready results on that head; otherwise completed, non-skipped results on the same head stand.
+On GitHub, `bin/fm-pr-checks.sh --watch --after <ready time>`, given the PR's `ready_for_review` timeline time, waits for post-ready replacements of the checks skipped while draft and keeps other completed results.
+`bin/fm-dod-lib.sh` owns the generated worker commands; [validation-supervision](../validation-supervision/SKILL.md) owns pipeline draft configuration and CI repair rounds.
+For PR-based ship tasks, the ready signal depends on mode: `no-mistakes` reports `done [at=<epoch>]: PR <url> checks green` after CI is green, while `direct-PR` reports `done [at=<epoch>]: PR <url>` after local validation and the ready transition, each only for a non-draft PR.
+A lane that deliberately holds a draft declares a wait instead, and `bin/fm-pr-check.sh` refuses to arm merge monitoring on a draft.
 Run `bin/fm-pr-check.sh <id> <PR url>` with the URL copied from that ready signal or the resolved checks-green `fm-crew-state.sh` line - it records `pr=` and the forge's `pr_head=` when available in the task's meta and arms the watcher's merge poll.
 Verified worker parking and priority resumption are owned by [`bin/fm-worker-park.sh`](../../../bin/fm-worker-park.sh); merge and guarded teardown require no live worker.
 `bin/fm-dod-lib.sh` owns the named-head gate on that ready signal: a ship `done:` whose named head exists only in the worker's disposable copy is not ready (`bin/fm-crew-state.sh` reports blocked, `bin/fm-pr-check.sh` refuses to register, and a secondmate does not publish that done upstream).

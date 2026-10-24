@@ -1,11 +1,18 @@
 #!/usr/bin/env bash
 # Read or wait for required GitHub checks, using bin/fm-pr-checks-lib.sh's policy.
-# Usage: fm-pr-checks.sh [--watch] <pr-url>
+# Usage: fm-pr-checks.sh [--watch [--settled]] [--after <UTC time>] <pr-url>
 # Prints REQUIRED CHECK: <name> (pending|red|missing) for each blocker.
 # Exit: 0 required checks green, 1 required check red, 8 pending/missing,
 # 2 unreadable state or usage. --watch waits through pending/missing only,
 # re-reading the head and base requirements every FM_PR_CHECKS_POLL seconds
-# (default 20). Advisory checks never delay success or cause failure.
+# (default 20). By default advisory checks never delay success or cause failure.
+# --settled requires --watch and waits for every reported check on the head
+# to finish, including advisory checks, before returning a red/green verdict.
+# It batches CI repair rounds without changing which failures block readiness.
+# --after YYYY-MM-DDTHH:MM:SSZ ignores a check whose latest run before that
+# bound was SKIPPED, so it is missing until a run at or after the bound reports;
+# completed non-skipped earlier results still count. Pass the PR's
+# ready_for_review time when its checks were skipped while it was a draft.
 # Apply a caller-owned timeout when a bounded foreground wait is needed.
 set -eu
 
@@ -17,12 +24,26 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 die() { printf 'fm-pr-checks: %s\n' "$*" >&2; exit 2; }
 WATCH=false
+SETTLED=false
+AFTER=
 if [ "${1:-}" = --help ]; then
   sed -n '2,/^set -eu$/s/^# \{0,1\}//p' "$0"
   exit 0
 fi
-if [ "${1:-}" = --watch ]; then WATCH=true; shift; fi
-[ "$#" -eq 1 ] || die 'usage: fm-pr-checks.sh [--watch] <pr-url>'
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --watch) WATCH=true; shift ;;
+    --settled) SETTLED=true; shift ;;
+    --after)
+      [ "$#" -ge 2 ] || die '--after requires a UTC time'
+      [[ $2 =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]] \
+        || die '--after expects YYYY-MM-DDTHH:MM:SSZ'
+      AFTER=$2; shift 2 ;;
+    *) break ;;
+  esac
+done
+[ "$SETTLED" = false ] || [ "$WATCH" = true ] || die '--settled requires --watch'
+[ "$#" -eq 1 ] || die 'usage: fm-pr-checks.sh [--watch [--settled]] [--after <UTC time>] <pr-url>'
 URL=$1
 fm_pr_url_parse "$URL" && [ "$FM_PR_PROVIDER" = github ] \
   || die 'expected a GitHub pull-request URL'
@@ -41,6 +62,13 @@ while :; do
   fm_pr_head_valid "$HEAD" || die 'invalid head'
   github_read_required_contexts "$BASE" || die "$FM_PR_GITHUB_REQUIRED_ERROR"
   github_read_required_producers "$HEAD" || die "could not read required check producers at head $HEAD"
+  STALE=
+  if [ -n "$AFTER" ]; then
+    BOUNDED=$(github_rollup_without_skips_before "$JSON" "$AFTER") || die 'unreadable checks'
+    STALE=$(github_checks_without_fresh_run "$JSON" "$BOUNDED" "$FM_PR_GITHUB_REQUIRED") \
+      || die 'unreadable checks'
+    JSON=$BOUNDED
+  fi
   RED=$(github_checks_not_green "$JSON" "$FM_PR_GITHUB_REQUIRED") || die 'unreadable checks'
   MISSING=$(github_required_checks_missing "$JSON" "$FM_PR_GITHUB_REQUIRED" "$FM_PR_GITHUB_PRODUCERS") \
     || die 'unreadable checks'
@@ -58,7 +86,21 @@ EOF
     [ "$RESULT" != 0 ] || RESULT=8
   done <<EOF
 $MISSING
+$STALE
 EOF
-  [ "$WATCH" = true ] && [ "$RESULT" = 8 ] || exit "$RESULT"
+  EXECUTING=false
+  if [ "$SETTLED" = true ]; then
+    EXECUTING=$(printf '%s' "$JSON" | jq -r '
+      [.statusCheckRollup[] | if .__typename == "CheckRun" then
+        .status != "COMPLETED"
+      elif .__typename == "StatusContext" then
+        .state == "PENDING" or .state == "EXPECTED"
+      else error("unknown check type") end] | any
+    ') || die 'unreadable head check states'
+    if [ "$EXECUTING" = true ]; then
+      printf 'HEAD CHECKS: still executing at %s\n' "$HEAD"
+    fi
+  fi
+  [ "$WATCH" = true ] && { [ "$RESULT" = 8 ] || [ "$EXECUTING" = true ]; } || exit "$RESULT"
   sleep "${FM_PR_CHECKS_POLL:-20}"
 done

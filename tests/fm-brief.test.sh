@@ -239,7 +239,7 @@ test_forge_selection_renders_correct_cli() {
   assert_grep "3. Use gh-axi for GitHub operations and chrome-devtools-axi for browser operations." "$brief" \
     "a brief with no --forge must render the exact pre-existing gh-axi Rule 3 line"
   # shellcheck disable=SC2016 # Backticks are literal generated brief text.
-  assert_grep 'open a PR with `gh-axi`' "$brief" \
+  assert_grep 'open a draft PR with `gh-axi`' "$brief" \
     "a direct-PR brief with no --forge must still tell the worker to open the PR with gh-axi"
   grep -qx "Delivery contract: mode=direct-PR" "$brief" \
     || fail "a brief with no --forge must keep the bare delivery contract line"
@@ -250,7 +250,7 @@ test_forge_selection_renders_correct_cli() {
   assert_grep "3. Use tea for Forgejo operations and chrome-devtools-axi for browser operations." "$brief" \
     "--forge forgejo must render the tea Rule 3 line"
   # shellcheck disable=SC2016 # Backticks are literal generated brief text.
-  assert_grep 'open a PR with `tea`' "$brief" \
+  assert_grep 'open a draft PR with `tea`' "$brief" \
     "--forge forgejo's direct-PR DOD must tell the worker to open the PR with tea"
   grep -qx "Delivery contract: mode=direct-PR forge=forgejo" "$brief" \
     || fail "--forge forgejo must mark the delivery contract line for the spawn's registry check"
@@ -482,6 +482,49 @@ test_pr_based_dod_requires_non_draft() {
       "$mode: a deliberate draft must declare a wait instead of done"
   done
   pass "fm-brief.sh: PR-based done requires a non-draft PR; a deliberate draft declares a wait"
+}
+
+# The emitted worker brief is the public contract, not an implementation proxy.
+test_draft_first_and_batched_repairs() {
+  local home mode brief
+  home="$TMP_ROOT/push-batching-home"
+  mkdir -p "$home/data"
+  for mode in direct-PR no-mistakes local-only; do
+    FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "batch-$mode" proj --mode "$mode" >/dev/null 2>&1 \
+      || fail "$mode: scaffold failed"
+    brief="$home/data/batch-$mode/brief.md"
+    case "$mode" in
+      direct-PR)
+        assert_grep 'open a draft PR' "$brief" 'direct-PR must start as draft'
+        assert_grep '--head fm/batch-direct-PR --draft' "$brief" 'create command must include the draft flag'
+        assert_grep 'fm-pr-checks.sh --watch --settled <pr-url>' "$brief" 'CI repairs must wait for all head checks'
+        assert_grep 'push ONCE for the round' "$brief" 'CI repairs must batch publication'
+        assert_grep 'fm-pr-checks.sh --watch --after <ready time> <pr-url>' "$brief" 'post-ready CI wait must exclude draft-era checks'
+        assert_grep 'local validation has passed' "$brief" 'ready transition needs local validation'
+        assert_no_grep 'ready for review, not a draft' "$brief" 'old ready-on-create rule survived'
+        ;;
+      no-mistakes)
+        assert_grep 'pipeline owns the push; never push from this copy' "$brief" 'pipeline publication ownership was lost'
+        assert_grep 'BEFORE waiting for CI green' "$brief" 'pipeline drafts must become ready before final CI'
+        assert_grep 'skipped draft checks alone never prove' "$brief" 'draft-skipped suites cannot establish CI green'
+        assert_grep 'otherwise completed, non-skipped results on this same head count' "$brief" 'post-ready CI must be required only for draft-skipped heads'
+        assert_grep 'select(.event == "ready_for_review")' "$brief" 'post-ready CI wait must use the forge ready time'
+        assert_grep 'fm-pr-checks.sh --watch --after <ready time> <pr-url>' "$brief" 'post-ready CI wait must exclude draft-era checks'
+        assert_no_grep 'Require fresh results from the ready-triggered workflows' "$brief" 'unconditional post-ready CI rule survived'
+        ;;
+      local-only)
+        assert_no_grep 'open a draft PR' "$brief" 'local-only inherited PR creation'
+        assert_no_grep 'push ONCE' "$brief" 'local-only inherited push instructions'
+        ;;
+    esac
+  done
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" batch-forgejo proj --mode direct-PR --forge forgejo >/dev/null 2>&1 \
+    || fail 'forgejo scaffold failed'
+  brief="$home/data/batch-forgejo/brief.md"
+  assert_grep 'a title prefixed with WIP:' "$brief" 'forgejo draft convention was lost'
+  assert_no_grep 'gh-axi pr create' "$brief" 'GitHub command leaked into Forgejo'
+  assert_no_grep 'fm-pr-checks.sh --watch --after' "$brief" 'GitHub check wait leaked into Forgejo'
+  pass 'briefs start draft, batch worker CI repairs, and preserve pipeline and local-only ownership'
 }
 
 # Pin the specific line the bug lived on: the no-mistakes DOD's no-mistakes
@@ -1404,7 +1447,7 @@ test_base_branch_is_rendered_and_bounded() {
   base=$(fm_brief_base_branches "$brief")
   [ "$base" = feature/hub ] || fail "the direct-PR brief recorded base '$base', not feature/hub"
   # shellcheck disable=SC2016  # literal backticks in rendered prose must stay unexpanded
-  assert_grep 'open a PR with `gh-axi` that is ready for review, not a draft, against the base branch `feature/hub` (`--base feature/hub`)' "$brief" \
+  assert_grep 'open a draft PR with `gh-axi` using `--draft`, against the base branch `feature/hub` (`--base feature/hub`)' "$brief" \
     "the direct-PR definition of done does not target the base branch"
   # shellcheck disable=SC2016
   assert_grep 'Never push to the base branch `feature/hub` or the default branch' "$brief" \
@@ -1928,6 +1971,7 @@ test_faster_paths_use_configured_authority_without_stacked_review
 test_no_mistakes_dod_wording
 test_no_mistakes_dod_green_detection
 test_pr_based_dod_requires_non_draft
+test_draft_first_and_batched_repairs
 test_direct_pr_dod_binds_the_pr_target_to_origin
 test_ask_user_escalation_format
 test_ship_project_memory_wording
