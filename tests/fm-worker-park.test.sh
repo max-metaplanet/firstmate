@@ -104,12 +104,12 @@ cat > "$TMP_ROOT/fakebin/no-mistakes" <<'SH'
 #!/usr/bin/env bash
 cat "$FM_HOME/nm-status"
 SH
-cat > "$TMP_ROOT/fakebin/gh" <<'SH'
+cat > "$TMP_ROOT/fakebin/gh-axi" <<'SH'
 #!/usr/bin/env bash
-[ "$1" = api ] || exit 1
-cat "$FM_HOME/forge-pr.json"
+[ "$1 $3 $4" = "api --jq {head:.head.sha,state:.state}" ] || exit 1
+cat "$FM_HOME/forge-pr.toon"
 SH
-chmod +x "$TMP_ROOT/fakebin/gh"
+chmod +x "$TMP_ROOT/fakebin/gh-axi"
 interrupted_fixture() {
   fixture
   printf 'mode=no-mistakes\n' >> "$FM_HOME/state/task.meta"
@@ -128,7 +128,7 @@ run:
     push,completed,0,10
     pr,completed,0,10
 EOF
-  printf '{"state":"open","head":{"sha":"%s"}}\n' "$head" > "$FM_HOME/forge-pr.json"
+  printf 'head: %s\nstate: open\n' "$head" > "$FM_HOME/forge-pr.toon"
   mkdir -p "$FM_HOME/data/task"
   jq -n --arg url "$URL" --arg head "$head" --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '
     {schema:"fm-contributions.v1",task:"task",records:[{url:$url,kind:"pr",checked_at:$at,error:null,
@@ -143,7 +143,7 @@ interrupted_fixture
 park_nm auto task >/dev/null
 assert_grep 'phase=parked' "$FM_HOME/state/task.park" 'terminal interrupted CI parks with matching publication and full observer'
 assert_grep 'paused: CI-only monitor interrupted' "$FM_HOME/state/task.status" 'parking never reports interrupted CI as green'
-for refusal in dirty decision fixing pending-ci missing-observer stale-observer wrong-owner wrong-observer-head wrong-pr-head unpublished wrong-branch gate fix-round; do
+for refusal in dirty decision fixing pending-ci missing-observer stale-observer wrong-owner wrong-observer-head wrong-pr-head closed-pr unpublished wrong-branch gate fix-round; do
   interrupted_fixture
   expected=''
   case "$refusal" in
@@ -155,7 +155,8 @@ for refusal in dirty decision fixing pending-ci missing-observer stale-observer 
     stale-observer) sed 's/"checked_at": ".*"/"checked_at": "2000-01-01T00:00:00Z"/' "$FM_HOME/data/task/contributions.json" > "$FM_HOME/next.json"; mv "$FM_HOME/next.json" "$FM_HOME/data/task/contributions.json"; expected='coverage is stale' ;;
     wrong-owner) jq '.task="another-task"' "$FM_HOME/data/task/contributions.json" > "$FM_HOME/next.json"; mv "$FM_HOME/next.json" "$FM_HOME/data/task/contributions.json"; expected='coverage is stale' ;;
     wrong-observer-head) jq '.records[0].observation.head="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"' "$FM_HOME/data/task/contributions.json" > "$FM_HOME/next.json"; mv "$FM_HOME/next.json" "$FM_HOME/data/task/contributions.json"; expected='coverage is stale' ;;
-    wrong-pr-head) printf '{"state":"open","head":{"sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}\n' > "$FM_HOME/forge-pr.json"; expected='published PR head differs' ;;
+    wrong-pr-head) printf 'head: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nstate: open\n' > "$FM_HOME/forge-pr.toon"; expected='published PR head differs' ;;
+    closed-pr) printf 'head: %s\nstate: closed\n' "$(git -C "$FM_HOME/project" rev-parse HEAD)" > "$FM_HOME/forge-pr.toon"; expected='PR is terminal' ;;
     unpublished) sed 's/pr,completed/pr,pending/' "$FM_HOME/nm-status" > "$FM_HOME/nm-next"; mv "$FM_HOME/nm-next" "$FM_HOME/nm-status"; expected='publication are not completed' ;;
     wrong-branch) sed 's/branch: .*/branch: another-task/' "$FM_HOME/nm-status" > "$FM_HOME/nm-next"; mv "$FM_HOME/nm-next" "$FM_HOME/nm-status"; expected='does not name the task branch' ;;
     gate) printf 'gate:\n  status: awaiting_approval\n' >> "$FM_HOME/nm-status"; expected='validation gate or fix round' ;;

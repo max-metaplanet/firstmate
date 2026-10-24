@@ -52,13 +52,15 @@ def failed_of($checks):
 def failing_identities($record):
   (($record.observation.checks // []) | latest_checks) as $checks
   | {head:($record.observation.head // null),failing:([failed_of($checks)[] | .name] | unique)} | tojson;
-# Semantic return events ignore check attempt ids and timestamps, so an
-# identical red set on the same head does not spend another worker slot.
+# Semantic return events ignore check attempt ids, timestamps and progress
+# between non-terminal check states, so an identical red set on the same head
+# or a lane moving from queued to in_progress does not spend a worker slot.
 def worker_signal:
   .observation as $o
   | {head:$o.head,state:$o.state,mergeable:$o.mergeable,review_decision:$o.review_decision,
      reviews:($o.reviews | sort_by(.id)),events:([$o.events[].token] | sort),
-     checks:($o.checks | latest_checks | map({name,status,conclusion}) | sort_by(.name))};
+     checks:($o.checks | latest_checks
+       | map({name,status:(if .status == "completed" then "completed" else "pending" end),conclusion}) | sort_by(.name))};
 def projected($input; $saved; $now; $max_age):
   known($input; $saved) as $known
   | [$known[] as $k

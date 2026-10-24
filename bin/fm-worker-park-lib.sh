@@ -100,6 +100,7 @@ fm_worker_park_interrupted_ready() { # <meta> <axi-status>
     | select((.checked_at | fromdateiso8601) as $at | $now >= $at and ($now - $at) <= $age)
     | .observation.head' 2>/dev/null) || { refuse_park "PR observer coverage is stale, unavailable, or on a different head"; return 1; }
   [ "$observed" = "$head" ] || { refuse_park "PR observer head is ambiguous"; return 1; }
-  observed=$(fm_nm_bounded "$wt" 10 gh api "repos/$FM_PR_PATH/pulls/$FM_PR_NUMBER" 2>/dev/null) || { refuse_park "published PR head could not be read"; return 1; }
-  printf '%s' "$observed" | jq -e --arg head "$head" '.head.sha == $head and .state == "open"' >/dev/null 2>&1 || { refuse_park "published PR head differs from pipeline head or PR is terminal"; return 1; }
+  observed=$(fm_nm_bounded "$wt" 10 gh-axi api "repos/$FM_PR_PATH/pulls/$FM_PR_NUMBER" --jq '{head:.head.sha,state:.state}' 2>/dev/null) || { refuse_park "published PR head could not be read"; return 1; }
+  [ "$(fm_nm_strip_quotes "$(fm_nm_field "$observed" head)")" = "$head" ] &&
+    [ "$(fm_nm_strip_quotes "$(fm_nm_field "$observed" state)")" = open ] || { refuse_park "published PR head differs from pipeline head or PR is terminal"; return 1; }
 }
