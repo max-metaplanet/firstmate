@@ -4072,7 +4072,7 @@ rm -f "$STATE/$ID.turn-ended" "$STATE/$ID.progress" \
   "$STATE/$ID.reconcile-nudged" "$STATE/$ID.gemini-settings.json" \
   "$STATE/$ID.claude-settings.json" "$STATE/$ID.devin-config.json" \
   "$STATE/$ID.polytoken-busy.sh" \
-  "$STATE/.$ID.branch-outcome-index" "$STATE/$ID.merged-at" \
+  "$STATE/.$ID.branch-outcome-index" "$STATE/$ID.merged-at" "$STATE/$ID.pr-refresh" \
   "$STATE/.secondmate-relaunch-$ID" "$STATE/.secondmate-relaunch-bound-$ID" "$STATE/.secondmate-park-$ID" \
   "$STATE/.$ID".decision-event-* "$STATE/.$ID.task-event-failure"
 # The steering inbox (bin/fm-task-inbox-lib.sh) is runtime state for the

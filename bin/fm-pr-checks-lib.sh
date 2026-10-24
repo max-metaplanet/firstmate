@@ -70,9 +70,11 @@ github_branch_rules_unavailable_on_plan() {
 # unnamed checks must not be treated as one.
 #
 # Each line is the check's state, a tab, then that reported name. The state is
-# "pending" when every non-green run behind the name is one GitHub has not
-# finished - a queued or running check run, a PENDING or EXPECTED status context
-# - and "red" as soon as one of them has. That distinction is what lets the
+# "pending" while any run of that check is unfinished, including queued,
+# waiting, and in-progress runs, even beside older completed failures or skips.
+# Completed failures are judged only after every run has settled.
+# PENDING and EXPECTED status contexts are pending independently.
+# That distinction is what lets the
 # freshness re-verify wait for the lanes the branch update re-triggered without
 # a second check evaluator, while a red check refuses either way.
 github_checks_not_green() {
@@ -131,7 +133,7 @@ github_checks_not_green() {
                 or ([.reds[] | .at] | max) >= .newest_green
               )
             )
-          | {name, pending: all(.reds[]; .completed | not)}
+          | {name, pending: any(.reds[]; .completed | not)}
         )
       )
     | (if .pending then "pending" else "red" end)

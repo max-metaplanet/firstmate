@@ -458,7 +458,7 @@ family_for_basename() {
       printf '%s\n' backend-dispatch
       ;;
     fm-check-unregister.test.sh|fm-pipeline-spend.test.sh|fm-pr-check-security.test.sh|\
-    fm-pr-ci-validated.test.sh|\
+    fm-pr-ci-validated.test.sh|fm-pr-refresh.test.sh|\
     fm-pr-merge.test.sh|fm-pr-checks.test.sh|fm-pr-reviewers.test.sh|fm-pr-state.test.sh|\
     fm-review-diff.test.sh|fm-teardown.test.sh|fm-teardown-before-merge.test.sh|fm-x-mode.test.sh)
       printf '%s\n' pr-forge

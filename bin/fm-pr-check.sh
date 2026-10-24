@@ -59,6 +59,10 @@ NUMBER=$FM_PR_NUMBER
 
 # Task-derived paths are constructed only after the canonical ID validation.
 META="$STATE/$ID.meta"
+if [ -e "$STATE/$ID.pr-refresh" ] || [ -L "$STATE/$ID.pr-refresh" ]; then
+  echo "error: conflict-only refresh held for firstmate readiness; run fm-pr-refresh.sh ready before registering $URL" >&2
+  exit 1
+fi
 if [ ! -f "$META" ] || [ -L "$META" ] || [ "$(fm_pr_file_link_count "$META")" != 1 ]; then
   echo "error: task metadata is unavailable" >&2
   exit 1

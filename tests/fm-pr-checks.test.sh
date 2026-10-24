@@ -187,3 +187,18 @@ printf '[{"type":"required_status_checks","parameters":{"required_status_checks"
 expect_result 1
 assert_grep 'Mac (advisory) (red)' "$TASK_TMP/out" 'advisory marker overrode a configured requirement'
 pass 'configured requirements take precedence over the advisory marker'
+
+printf '[{"type":"required_status_checks","parameters":{"required_status_checks":[{"context":"CI gate"}]}}]\n' > "$TASK_TMP/rules.json"
+for prior in SKIPPED FAILURE; do
+  for running in QUEUED WAITING IN_PROGRESS; do
+    gate_runs "[[\"$prior\",\"2026-10-20T10:00:00Z\"]]" | jq --arg status "$running" '.statusCheckRollup += [{__typename:"CheckRun",name:"CI gate",status:$status,conclusion:null,startedAt:"2026-10-20T11:00:00Z"}]' > "$TASK_TMP/view.json"
+    expect_result 8
+    assert_grep 'CI gate (pending)' "$TASK_TMP/out" 'an unfinished rerun must be pending beside older completed checks'
+  done
+  gate_runs "[[\"$prior\",\"2026-10-20T10:00:00Z\"],[\"SUCCESS\",\"2026-10-20T11:00:00Z\"]]" > "$TASK_TMP/view.json"
+  expect_result 0
+  [ ! -s "$TASK_TMP/out" ] || fail 'successful replacement did not supersede the old check'
+done
+gate_runs '[["SKIPPED","2026-10-20T10:00:00Z"]]' > "$TASK_TMP/view.json"
+expect_result 0
+pass 'unfinished replacements are pending beside old skips or failures, passing replacements and lone path skips stay green'

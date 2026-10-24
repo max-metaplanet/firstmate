@@ -319,6 +319,26 @@ case "${1:-} ${2:-}" in
     exit 0
     ;;
   api\ *)
+    case_dir=$(dirname "$FM_TEST_GH_LOG")
+    case " $* " in
+      *"/pulls/"*)
+        [ ! -f "$case_dir/merged-at-fail" ] || { echo 'pull read denied' >&2; exit 1; }
+        echo '2026-01-01T00:00:10Z'
+        exit 0
+        ;;
+      *"/actions/runs?"*)
+        [ ! -f "$case_dir/workflow-list-fail" ] || { echo 'workflow listing denied' >&2; exit 1; }
+        if [ -f "$case_dir/workflow-runs.json" ]; then cat "$case_dir/workflow-runs.json"; else echo '{"workflow_runs":[]}'; fi
+        exit 0
+        ;;
+      *"/actions/runs/"*"/cancel"*)
+        run_id=${*: -1}
+        run_id=${run_id%/cancel}
+        run_id=${run_id##*/}
+        [ ! -f "$case_dir/cancel-fail-$run_id" ] || { echo 'cancellation denied' >&2; exit 1; }
+        exit 0
+        ;;
+    esac
     # The required-check reads: the branch itself, and its rules read without
     # the merge-queue filter the queue reader below applies.
     case " $* " in
@@ -879,6 +899,52 @@ test_github_merged_outcome_is_verified() {
   pass "fm-pr-merge verifies a genuinely merged GitHub pull request"
 }
 
+test_github_merge_cancels_only_active_head_workflow_runs() {
+  local case_dir head=1010101010101010101010101010101010101010
+  case_dir=$(make_case github-cancel-runs)
+  add_gh_mocks "$case_dir" "$head"
+  cat > "$case_dir/workflow-runs.json" <<JSON
+{"workflow_runs":[
+ {"id":101,"head_sha":"$head","status":"queued","created_at":"2026-01-01T00:00:01Z"},
+ {"id":102,"head_sha":"$head","status":"in_progress","created_at":"2026-01-01T00:00:02Z"},
+ {"id":103,"head_sha":"$head","status":"completed","created_at":"2026-01-01T00:00:03Z"},
+ {"id":104,"head_sha":"another-head","status":"queued","created_at":"2026-01-01T00:00:04Z"},
+ {"id":106,"head_sha":"$head","status":"queued","created_at":"2026-01-01T00:00:11Z"}]}
+{"workflow_runs":[{"id":105,"head_sha":"$head","status":"waiting","created_at":"2026-01-01T00:00:05Z"}]}
+JSON
+  : > "$case_dir/cancel-fail-102"
+  run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/51 > "$case_dir/out" 2>&1     || fail "a cancellation failure changed the successful merge"
+  assert_grep "actions/runs?head_sha=$head&per_page=100" "$case_dir/gh.log" "cleanup must query the verified head"
+  assert_grep 'api --paginate' "$case_dir/gh.log" "cleanup must paginate"
+  for run in 101 102 105; do
+    assert_grep "api --method POST repos/example/repo/actions/runs/$run/cancel" "$case_dir/gh.log" "active head run was not cancelled"
+  done
+  [ "$(grep -c '/cancel$' "$case_dir/gh.log")" -eq 3 ] || fail 'cancelled a completed, foreign-head, or post-merge run'
+  assert_grep 'cancellation-requested=2 failed=1' "$case_dir/out" 'cleanup counts missing'
+  assert_grep 'cancellation denied' "$case_dir/out" 'cancellation failure not reported'
+  pass 'verified GitHub merge cancels active exact-head pre-merge runs across pages without failing the merge'
+}
+
+test_github_merge_run_listing_is_best_effort() {
+  local case_dir
+  for response in fail malformed merged-at; do
+    case_dir=$(make_case "github-cancel-list-$response")
+    add_gh_mocks "$case_dir" 1010101010101010101010101010101010101010
+    case "$response" in
+      fail) touch "$case_dir/workflow-list-fail" ;;
+      malformed) echo '{}' > "$case_dir/workflow-runs.json" ;;
+      merged-at)
+        touch "$case_dir/merged-at-fail"
+        printf '{"workflow_runs":[{"id":101,"head_sha":"1010101010101010101010101010101010101010","status":"queued","created_at":"2026-01-01T00:00:01Z"}]}\n' > "$case_dir/workflow-runs.json"
+        ;;
+    esac
+    run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/51 > "$case_dir/out" 2>&1       || fail 'a run-list failure changed the successful merge'
+    assert_grep 'warning: merged https://github.com/example/repo/pull/51' "$case_dir/out" 'run-list failure not reported'
+    ! grep -q '/cancel$' "$case_dir/gh.log" || fail 'unreadable run list cancelled something'
+  done
+  pass 'workflow listing failures preserve a verified merge'
+}
+
 test_github_verified_merge_requires_poll_recording() {
   local case_dir rc
   case_dir=$(make_case github-poll-recording-fails)
@@ -926,6 +992,7 @@ test_github_open_unqueued_outcome_refuses() {
     "github-open-unqueued: the attempted merge lost its PR reference"
   assert_present "$case_dir/state/task-x1.check.sh" \
     "github-open-unqueued: the attempted merge did not leave its poll armed"
+  assert_no_grep '/actions/runs' "$case_dir/gh.log" "unconfirmed merge must not cancel workflows"
   pass "fm-pr-merge refuses a GitHub merge call that leaves the PR open and unqueued"
 }
 
@@ -2075,6 +2142,7 @@ test_github_queued_outcome_is_verified() {
   expect_code 0 "$rc" "github-verified-queued: a queued PR should succeed"
   assert_grep 'verified: https://github.com/example/repo/pull/53 is queued' \
     "$case_dir/stdout" "github-verified-queued: success was not reported as queued"
+  assert_no_grep '/actions/runs' "$case_dir/gh.log" "queued merge must not cancel workflows"
   assert_no_grep 'merged:' "$case_dir/stdout" \
     "github-verified-queued: the forge CLI's unverified merged report leaked through"
   assert_grep 'pr=https://github.com/example/repo/pull/53' "$case_dir/state/task-x1.meta" \
@@ -3437,6 +3505,8 @@ test_github_failed_merge_names_an_observed_landed_state
 test_github_without_gh_still_uses_gh_axi_merge
 test_github_without_gh_failed_read_keeps_bookkeeping
 test_github_merged_outcome_is_verified
+test_github_merge_cancels_only_active_head_workflow_runs
+test_github_merge_run_listing_is_best_effort
 test_github_verified_merge_requires_poll_recording
 test_github_queued_outcome_is_verified
 test_github_queue_required_refusal_names_retry_flags
@@ -5680,3 +5750,36 @@ test_allow_red_refused_on_forgejo
 test_allow_missing_refused_on_forgejo
 test_allow_no_pipeline_merges_only_a_null_head_pipeline
 test_allow_no_pipeline_is_attended_only_and_gitlab_only
+
+# Both public callers must reject a ready-stage rerun beside the draft skip.
+test_draft_skip_waits_for_ready_rerun() {
+  local case_dir status head=eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+  for status in QUEUED WAITING IN_PROGRESS; do
+    case_dir=$(make_case "draft-rerun-$status")
+    add_gh_mocks "$case_dir" "$head"
+    write_github_rollup_json "$case_dir" "$head" \
+      "$(check_run ci COMPLETED SKIPPED 2026-01-01T00:00:01Z)" \
+      "$(check_run ci "$status" - 2026-01-01T00:00:02Z)"
+    if run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/92 > "$case_dir/out" 2>&1; then
+      fail 'merge accepted a draft skip while its ready replacement was unfinished'
+    fi
+    assert_no_grep 'pr merge' "$case_dir/gh.log" 'merge command ran while ready CI was pending'
+    assert_grep "check 'ci' is not green" "$case_dir/out" 'unfinished required rerun was not reported'
+  done
+  for status in replaced lone; do
+    case_dir=$(make_case "draft-skip-$status")
+    add_gh_mocks "$case_dir" "$head"
+    if [ "$status" = replaced ]; then
+      write_github_rollup_json "$case_dir" "$head" \
+        "$(check_run ci COMPLETED SKIPPED 2026-01-01T00:00:01Z)" \
+        "$(check_run ci COMPLETED SUCCESS 2026-01-01T00:00:02Z)"
+    else
+      write_github_rollup_json "$case_dir" "$head" "$(check_run ci COMPLETED SKIPPED 2026-01-01T00:00:01Z)"
+    fi
+    run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/92 > "$case_dir/out" 2>&1 \
+      || fail 'merge rejected passing ready CI or a legitimate lone path-filter skip'
+    assert_logged_gh_merge "$case_dir" 92 example/repo --squash
+  done
+  pass 'merge rejects unfinished ready reruns while accepting replacements and lone path skips'
+}
+test_draft_skip_waits_for_ready_rerun
