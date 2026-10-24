@@ -1,0 +1,119 @@
+# Real bin/fm-contributions.sh poll against the parked lab worker; forge reads go to the disposable gh stub.
+## lane appears queued
+forge check-runs: [["test",1,"completed","success"],["lint",2,"queued",null]]
+$ grep phase/wake_reason/failing_checks state/delivery.park
+phase=parked
+queued_at=0
+wake_reason=
+failing_checks=
+
+## lane progress queued -> in_progress (expect parked)
+forge check-runs: [["test",1,"completed","success"],["lint",2,"in_progress",null]]
+$ grep phase/wake_reason/failing_checks state/delivery.park
+phase=parked
+queued_at=0
+wake_reason=
+failing_checks=
+
+## rerun of test starts (expect parked)
+forge check-runs: [["test",1,"completed","success"],["test",3,"queued",null],["lint",2,"in_progress",null]]
+$ grep phase/wake_reason/failing_checks state/delivery.park
+phase=parked
+queued_at=0
+wake_reason=
+failing_checks=
+
+## lint reaches a red verdict (expect queued, checks failed)
+forge check-runs: [["test",1,"completed","success"],["test",3,"queued",null],["lint",2,"completed","failure"]]
+$ grep phase/wake_reason/failing_checks state/delivery.park
+phase=queued
+queued_at=1792842312
+wake_reason=checks failed
+failing_checks={"head":"35b39114763d105194d2d6e517bfe7714d1a8a93","failing":["lint"]}
+
+## same observation polled again (expect queued_at unchanged)
+forge check-runs: [["test",1,"completed","success"],["test",3,"queued",null],["lint",2,"completed","failure"]]
+$ grep phase/wake_reason/failing_checks state/delivery.park
+phase=queued
+queued_at=1792842312
+wake_reason=checks failed
+failing_checks={"head":"35b39114763d105194d2d6e517bfe7714d1a8a93","failing":["lint"]}
+
+(worker resumed, found nothing new, re-parked -> phase=parked)
+
+## identical red set, re-parked worker (expect parked)
+forge check-runs: [["test",1,"completed","success"],["test",3,"queued",null],["lint",2,"completed","failure"]]
+$ grep phase/wake_reason/failing_checks state/delivery.park
+queued_at=1792842312
+wake_reason=checks failed
+failing_checks={"head":"35b39114763d105194d2d6e517bfe7714d1a8a93","failing":["lint"]}
+phase=parked
+
+## rerun of red lint starts and unrelated build goes green (expect parked)
+forge check-runs: [["test",1,"completed","success"],["test",3,"queued",null],["lint",2,"completed","failure"],["lint",4,"queued",null],["build",5,"completed","success"]]
+$ grep phase/wake_reason/failing_checks state/delivery.park
+queued_at=1792842312
+wake_reason=checks failed
+failing_checks={"head":"35b39114763d105194d2d6e517bfe7714d1a8a93","failing":["lint"]}
+phase=parked
+
+## test rerun completes red: new failing set (expect queued)
+forge check-runs: [["test",1,"completed","success"],["test",3,"completed","failure"],["lint",2,"completed","failure"],["lint",4,"queued",null],["build",5,"completed","success"]]
+$ grep phase/wake_reason/failing_checks state/delivery.park
+phase=queued
+queued_at=1792842315
+wake_reason=checks failed
+failing_checks={"head":"35b39114763d105194d2d6e517bfe7714d1a8a93","failing":["lint","test"]}
+
+(worker resumed, found nothing new, re-parked -> phase=parked)
+
+## maintainer requests changes (expect queued, review reason)
+forge check-runs: [["test",1,"completed","success"],["test",3,"completed","failure"],["lint",2,"completed","failure"],["lint",4,"queued",null],["build",5,"completed","success"]]
+contribution-wake: check: contributions delivery 09b5446688d375dac68d258e79bee7eff761cfb5a82b42036b34d66ab1f87014
+$ grep phase/wake_reason/failing_checks state/delivery.park
+phase=queued
+queued_at=1792842315
+wake_reason=new upstream review or comment
+failing_checks={"head":"35b39114763d105194d2d6e517bfe7714d1a8a93","failing":["lint","test"]}
+
+(worker resumed, found nothing new, re-parked -> phase=parked)
+
+## PR becomes conflicting (expect queued, conflict reason)
+forge check-runs: [["test",1,"completed","success"],["test",3,"completed","failure"],["lint",2,"completed","failure"],["lint",4,"queued",null],["build",5,"completed","success"]]
+$ grep phase/wake_reason/failing_checks state/delivery.park
+phase=queued
+queued_at=1792842317
+wake_reason=PR has conflicts
+failing_checks={"head":"35b39114763d105194d2d6e517bfe7714d1a8a93","failing":["lint","test"]}
+
+(worker resumed, found nothing new, re-parked -> phase=parked)
+
+## PR merged on forge (expect queued, forge reports merged, event_token set)
+forge check-runs: [["test",1,"completed","success"],["test",3,"completed","failure"],["lint",2,"completed","failure"],["lint",4,"queued",null],["build",5,"completed","success"]]
+$ grep phase/wake_reason/failing_checks state/delivery.park
+phase=queued
+queued_at=1792842318
+wake_reason=forge reports merged
+failing_checks={"head":"35b39114763d105194d2d6e517bfe7714d1a8a93","failing":["lint","test"]}
+
+event_token=https://github.com/o/r/pull/8|merged
+(worker resumed, found nothing new, re-parked -> phase=parked)
+
+## merge poll (second observer) requests the same merge event
+$ fm-worker-park.sh request delivery 'forge reports merged' '' 'https://github.com/o/r/pull/8|merged'
+rc=0
+wake_reason=forge reports merged
+event_token=https://github.com/o/r/pull/8|merged
+phase=parked
+
+$ fm-worker-park.sh status
+{
+  "mode": "off",
+  "configured": null,
+  "effective": null,
+  "hold": "",
+  "occupancy": 0,
+  "occupancy_error": "",
+  "holders": "",
+  "queued_resumes": 0
+}

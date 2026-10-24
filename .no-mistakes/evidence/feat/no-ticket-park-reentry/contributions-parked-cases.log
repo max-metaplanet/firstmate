@@ -1,0 +1,7 @@
+ok - parked workers return on a check verdict, not on lane progress
+ok - non-actionable check progress never cancels a running worker park hint
+ok - changed checks, all reviews, conflicts, close and merge queue once, including deferred terminal recovery
+ok - red CI queues a parked worker once per distinct failing set and head, without consuming observation events
+ok - a merged or closed contribution settles once, is not re-read, and never wakes again
+ok - a late owner inherits a terminal observation without a forge read or wake
+bash tests/.nm-filtered-contrib.test.sh  10.58s user 18.66s system 74% cpu 39.051 total

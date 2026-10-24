@@ -1,0 +1,48 @@
+# Lab FM_HOME=/private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab.bvHB87; worker window firstmate:fm-delivery on private tmux socket fm-lab
+$ no-mistakes axi status   (boundary stub)
+run:
+  id: interrupted
+  branch: feat/demo
+  status: ci_monitor_interrupted
+  head_sha: 35b39114763d105194d2d6e517bfe7714d1a8a93
+  pr: "https://github.com/o/r/pull/8"
+  steps[2]{step,status,findings,duration_ms}:
+    push,completed,0,10
+    pr,completed,0,10
+
+$ fm-worker-park.sh park delivery 'CI-only wait'
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab.bvHB87
+already-stopped delivery harness=claude backend=tmux endpoint=firstmate:fm-delivery worktree=/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.bvHB87/projects/demo
+parked: delivery waiting on CI-only wait
+rc=0
+
+$ cat state/delivery.park
+phase=parked
+generation=original
+endpoint=firstmate:fm-delivery
+reason=CI-only wait
+until=0
+queued_at=0
+wake_reason=
+status_line=paused: CI-only monitor interrupted
+resume_error=0
+failing_checks=
+event_token=
+
+$ cat state/delivery.status
+paused: CI-only monitor interrupted
+
+$ fm-worker-park.sh status
+{
+  "mode": "off",
+  "configured": null,
+  "effective": null,
+  "hold": "",
+  "occupancy": 0,
+  "occupancy_error": "",
+  "holders": "",
+  "queued_resumes": 0
+}
+
+$ tmux -L fm-lab list-windows
+firstmate:fm-delivery bash

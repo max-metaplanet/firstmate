@@ -1,0 +1,6 @@
+worker-park: task cannot park: worktree is dirty
+worker-park: task cannot park: worker is busy (busy hook)
+worker-park: task cannot park: worker idle state is unconfirmed (unknown codex-unverified)
+worker-park: task cannot park: no-mistakes run has not reached CI-ready completion (running)
+ok - verified parking, safety exceptions, external waits, durable resume reasons and the unchanged-red-set gate
+bash tests/fm-worker-park.test.sh  5.35s user 9.24s system 66% cpu 22.022 total

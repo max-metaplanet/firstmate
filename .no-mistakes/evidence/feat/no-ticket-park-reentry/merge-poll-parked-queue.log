@@ -1,0 +1,3 @@
+ok - validated merged polls notify once and retire before the next watcher cycle
+ok - a repeat identical merged poll for an already-notified task is absorbed, never queued as a main-blocking row
+bash tests/.nm-filtered-prcheck.test.sh  4.15s user 6.90s system 74% cpu 14.774 total

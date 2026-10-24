@@ -1,0 +1,74 @@
+# Lab FM_HOME=/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.bvHB87 (fm-lab-home marked), tmux socket fm-lab, worker window firstmate:fm-delivery (bare shell, harness exited)
+# Boundary stubs: no-mistakes axi status (ci_monitor_interrupted run), gh-axi PR head/state probe, gh REST for the observer.
+
+$ fm-worker-park.sh park delivery 'CI-only wait'   # dirty worktree
+worker-park: delivery cannot park: worktree is dirty
+rc=1 park-record: phase=hint
+
+$ fm-worker-park.sh park delivery 'CI-only wait'   # open decision
+worker-park: delivery cannot park: task has an open decision or blocker
+rc=1 park-record: phase=hint
+
+$ fm-worker-park.sh park delivery 'CI-only wait'   # active fix round (run status fixing)
+worker-park: delivery cannot park: no-mistakes run is active (fixing; step )
+rc=1 park-record: phase=hint
+
+$ fm-worker-park.sh park delivery 'CI-only wait'   # interrupted run with a step still fixing
+worker-park: delivery cannot park: interrupted run still has a validation gate or fix round
+rc=1 park-record: phase=hint
+
+$ fm-worker-park.sh park delivery 'CI-only wait'   # PR not published by the pipeline
+worker-park: delivery cannot park: pipeline push and PR publication are not completed
+rc=1 park-record: phase=hint
+
+$ fm-worker-park.sh park delivery 'CI-only wait'   # stale observer record
+worker-park: delivery cannot park: PR observer coverage is stale, unavailable, or on a different head
+rc=1 park-record: phase=hint
+
+$ fm-worker-park.sh park delivery 'CI-only wait'   # forge PR head differs from pipeline head
+worker-park: delivery cannot park: published PR head differs from pipeline head or PR is terminal
+rc=1 park-record: phase=hint
+
+$ fm-worker-park.sh park delivery 'CI-only wait'   # PR closed on forge
+worker-park: delivery cannot park: published PR head differs from pipeline head or PR is terminal
+rc=1 park-record: phase=hint
+
+$ fm-worker-park.sh park delivery 'CI-only wait'   # contribution observer not armed
+worker-park: delivery cannot park: contribution observer is not authenticated and armed
+rc=1 park-record: phase=hint
+
+# --- all conditions satisfied ---
+$ fm-worker-park.sh park delivery 'CI-only wait'   # interrupted CI, published matching head, fresh armed observer
+error: refusing fleet lifecycle from inside a no-mistakes gate worktree (~/.no-mistakes/repos/61c6dd39b831.git)
+rc=1 park-record: phase=parking
+
+$ cat state/delivery.park
+phase=parking
+generation=original
+endpoint=firstmate:fm-delivery
+reason=CI-only wait
+until=0
+queued_at=0
+wake_reason=
+status_line=paused: CI-only monitor interrupted
+resume_error=0
+failing_checks=
+event_token=
+
+$ cat state/delivery.status   # never rewritten to green
+paused: CI-only monitor interrupted
+
+$ fm-worker-park.sh status
+{
+  "mode": "off",
+  "configured": null,
+  "effective": null,
+  "hold": "",
+  "occupancy": 1,
+  "occupancy_error": "",
+  "holders": "delivery",
+  "queued_resumes": 0
+}
+
+$ gh-axi calls
+   3 api repos/o/r/pulls/8 --jq {head:.head.sha,state:.state}
