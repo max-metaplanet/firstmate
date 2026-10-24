@@ -812,6 +812,65 @@ write_away_record() {
     "$ROOT/bin/fm-afk-contract.sh" enter "$@" >/dev/null
 }
 
+test_remote_only_updated_head_preserves_recorded_work() {
+  local case_dir variant recorded live before_heads before_config rc
+  for variant in worker missing unrelated; do
+    case_dir=$(make_case "remote-head-$variant")
+    git clone -q --bare "$case_dir/wt" "$case_dir/origin.git"
+    git clone -q --single-branch --branch main "$case_dir/origin.git" "$case_dir/project"
+    git -C "$case_dir/project" config "url.$case_dir/origin.git.insteadOf" https://github.com/example/repo.git
+    before_heads=$(git -C "$case_dir/project" for-each-ref --format='%(refname) %(objectname)' refs/heads)
+    before_config=$(git -C "$case_dir/project" config --local --list)
+    printf 'keep local edits\n' > "$case_dir/project/untracked"
+    git -C "$case_dir/wt" checkout -qb task
+    git -C "$case_dir/wt" commit -q --allow-empty -m 'worker implementation'
+    recorded=$(git -C "$case_dir/wt" rev-parse HEAD)
+    git -C "$case_dir/wt" checkout -q main
+    git -C "$case_dir/wt" commit -q --allow-empty -m 'base advances'
+    if [ "$variant" = unrelated ]; then
+      recorded=$(git -C "$case_dir/wt" rev-parse HEAD)
+      git -C "$case_dir/wt" checkout -q task
+      git -C "$case_dir/wt" commit -q --allow-empty -m 'unrelated live head'
+    else
+      git -C "$case_dir/wt" checkout -q task
+      git -C "$case_dir/wt" merge -q --no-ff main -m 'update branch from main'
+    fi
+    live=$(git -C "$case_dir/wt" rev-parse HEAD)
+    git -C "$case_dir/wt" push -q "$case_dir/origin.git" task refs/heads/task:refs/pull/9/head
+    git -C "$case_dir/wt" checkout -q --detach "$recorded"
+    add_gh_mocks "$case_dir" "$live"
+    fm_write_meta "$case_dir/state/task-x1.meta" \
+      "worktree=$case_dir/wt" "project=$case_dir/project" 'kind=ship' \
+      'mode=direct-PR' 'pr=https://github.com/example/repo/pull/9' "pr_head=$recorded"
+    if [ "$variant" != worker ]; then
+      rm -rf "$case_dir/wt"
+    fi
+    if git -C "$case_dir/project" cat-file -e "$live^{commit}" 2>/dev/null; then
+      fail 'remote-only fixture already holds the live head locally'
+    fi
+    rc=0
+    run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/9 \
+      > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+    if [ "$variant" = unrelated ]; then
+      expect_code 1 "$rc" 'unrelated recorded work must refuse'
+      assert_no_grep 'pr merge' "$case_dir/gh.log" 'unrelated recorded work reached forge merge'
+    else
+      expect_code 0 "$rc" "remote-only updated head with $variant worker must merge: $(cat "$case_dir/stderr")"
+      assert_logged_gh_merge "$case_dir" 9 example/repo --squash
+      assert_grep "pr_head=$recorded" "$case_dir/state/task-x1.meta" 'recorded worker head was lost'
+    fi
+    [ "$(git -C "$case_dir/project" for-each-ref --format='%(refname) %(objectname)' refs/heads)" = "$before_heads" ] \
+      || fail 'merge proof changed a project local branch'
+    [ "$(git -C "$case_dir/project" config --local --list)" = "$before_config" ] \
+      || fail 'merge proof changed project configuration'
+    [ "$(git -C "$case_dir/project" status --porcelain)" = '?? untracked' ] \
+      || fail 'merge proof changed project working files or index'
+    [ "$(cat "$case_dir/project/untracked")" = 'keep local edits' ] \
+      || fail 'merge proof changed a project working file'
+  done
+  pass 'remote-only updated PR head proves ancestry with or without a worker and refuses unrelated work'
+}
+
 test_verified_merge_records_pr_and_head() {
   local case_dir rc
   case_dir=$(make_case records-before-merge)
@@ -3470,6 +3529,7 @@ test_github_zero_exit_queue_required_refuses_with_exact_retry
 test_github_closed_unqueued_outcome_omits_retry_flags
 test_github_agreeing_queue_rules_keep_retry_guidance
 test_github_conflicting_queue_rules_report_ambiguity
+test_remote_only_updated_head_preserves_recorded_work
 test_verified_merge_records_pr_and_head
 test_pr_metadata_is_recorded_before_the_forge_call
 test_merge_failure_propagates_after_recording
