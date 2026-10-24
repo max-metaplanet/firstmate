@@ -37,6 +37,9 @@
 # before counting and keeps it until the new task record is published, so two
 # concurrent spawns anywhere on this machine can never both take the last place.
 # The lock is taken only when a cap is declared. Freeing a place needs no lock.
+# A spawn waits at most 120s for a busy admission lock, then defers with exit
+# 75. A parked secondmate relaunch re-enters fleet admission and defers at once
+# rather than waiting under its lifecycle lock.
 #
 # Requires bin/fm-project-capacity-lib.sh and its own prerequisites to be
 # sourced first. No side effects on source.

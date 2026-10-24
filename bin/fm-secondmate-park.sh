@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Park a registered local secondmate without removing its home or records.
-# Usage: FM_HOME=<parent> fm-secondmate-park.sh <id> park|unpark
+# Usage: FM_HOME=<parent> fm-secondmate-park.sh <id> park|unpark|tick
 #
 # A live mate must answer the correlated open-record persist gate before
 # fm-control exit stops its agent and its home supervision host and watcher.
@@ -12,7 +12,8 @@
 # Unproven or unknown endpoints refuse this path. The phrase is defined once in STOPPED_READY_BODY below.
 # Any child metadata, in-flight backlog work, or
 # outstanding incoming instruction refuses parking. unpark uses fm-spawn's
-# relaunch or missing-endpoint secondmate respawn path and is also fm-send's automatic wake path; fm-crew-state
+# relaunch or missing-endpoint secondmate respawn path; tick retries it for
+# queued inbox work from the existing worker-park tick. fm-crew-state
 # shows the parked state. Exact session resume uses the existing recorded reference
 # when available, otherwise output explicitly reports a fresh session.
 # Remote homes are unsupported and refuse before mutation.
@@ -28,7 +29,9 @@
 # outcomes are parent-channel check wakes. Commands never retire registration.
 # FM_SECONDMATE_PERSIST_WAIT (900) and FM_SECONDMATE_PERSIST_POLL (5) have the
 # same meanings as fm-secondmate-restart. Work durably queued while park holds
-# the lock wakes the mate as soon as park records parked.
+# the lock wakes the mate as soon as park records parked. Unpark and tick
+# return 75 without waiting when the lifecycle or inheritance lock is busy,
+# or fleet capacity defers launch; the park record and inbox remain intact.
 set -u
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
@@ -36,7 +39,7 @@ STOPPED_READY_BODY='ready to park - no conversation-only open work'
 case "${1:-}" in -h|--help) sed -n '2,/^set -u/{ /^set -u/d; s/^# \{0,1\}//; p; }' "$0"; printf '\nStopped readiness status body: %s\n' "$STOPPED_READY_BODY"; exit 0 ;; esac
 ID=${1:-} ACTION=${2:-}
 case "$ID" in ''|*[!A-Za-z0-9._-]*) echo 'error: an exact secondmate id is required' >&2; exit 2 ;; esac
-case "$ACTION:$#" in park:2|unpark:2) ;; *) echo 'usage: fm-secondmate-park.sh <id> park | unpark' >&2; exit 2 ;; esac
+case "$ACTION:$#" in park:2|unpark:2|tick:2) ;; *) echo 'usage: fm-secondmate-park.sh <id> park | unpark | tick' >&2; exit 2 ;; esac
 [ -n "${FM_HOME:-}" ] && [ -d "$FM_HOME" ] || { echo 'error: explicit FM_HOME is required' >&2; exit 1; }
 STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 # The child's binding names parent/state, so a different state directory would
@@ -67,6 +70,23 @@ STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 fail() { echo "error: $*" >&2; exit 1; }
 META="$STATE/$ID.meta"
 RECORD="$STATE/.secondmate-park-$ID"
+TICK_REPORT="$STATE/.secondmate-tick-report-$ID"
+if [ "$ACTION" = tick ]; then
+  # Failures before the park record is trusted report once per distinct reason.
+  fail() {
+    local hash tmp
+    echo "error: $*" >&2
+    hash=$(printf '%s' "$*" | cksum | awk '{ print $1 "-" $2 }')
+    [ "$(cat "$TICK_REPORT" 2>/dev/null)" != "$hash" ] || exit 1
+    fm_wake_append check "secondmate-park-$ID" "check: secondmate $ID wake failed: $*; still parked, inbox preserved" || exit 1
+    if tmp=$(mktemp "$TICK_REPORT.XXXXXX"); then
+      if ! { printf '%s\n' "$hash" > "$tmp" && mv -f "$tmp" "$TICK_REPORT"; }; then
+        rm -f "$tmp"
+      fi
+    fi
+    exit 1
+  }
+fi
 validate_identity() {
   secondmate_registry_line_for_id "$FM_HOME/data/secondmates.md" "$ID" || fail "no unique registered secondmate $ID"
   [ "$SECONDMATE_REGISTRY_REMOTE" = 0 ] && [ -z "$(fm_meta_get "$META" remote_host)" ] || fail 'remote secondmate parking is unsupported'
@@ -80,7 +100,14 @@ validate_identity() {
 }
 validate_identity
 fm_sm_live_require_locks
-fm_lock_acquire_wait "$STATE/.secondmate-liveness-$ID.lock"
+if [ "$ACTION" = park ]; then
+  fm_lock_acquire_wait "$STATE/.secondmate-liveness-$ID.lock"
+else
+  if ! fm_lock_try_acquire "$STATE/.secondmate-liveness-$ID.lock"; then
+    [ "$ACTION" = tick ] || echo "deferred: secondmate $ID lifecycle is busy; retry" >&2
+    exit 75
+  fi
+fi
 CHILD_SET_LOCK=''
 OWN_PREPARING=0
 # shellcheck disable=SC2329 # Invoked by the EXIT and signal traps below.
@@ -97,13 +124,30 @@ trap 'exit 129' HUP
 trap 'exit 130' INT
 trap 'exit 143' TERM
 validate_identity
-PERSISTED=0 CORR='' MODE=fresh RESUME_HARNESS='' REF=''
+PERSISTED=0 CORR='' MODE=fresh RESUME_HARNESS='' REF='' INBOX_HWM=0 FAILED_SEQ='' FAILED_CONFIG=''
 SPAWN_GEN=$(fm_meta_get "$META" spawn_gen)
 write_record() { # <phase>
   local tmp
   tmp=$(mktemp "$RECORD.XXXXXX") || return 1
-  { printf 'schema=1\nhome=%s\nphase=%s\npersist_corr=%s\npersisted=%s\nresume_mode=%s\nresume_harness=%s\nresume_ref=%s\nspawn_gen=%s\n' \
-    "$MATE_HOME" "$1" "$CORR" "$PERSISTED" "$MODE" "$RESUME_HARNESS" "$REF" "$SPAWN_GEN" > "$tmp" && mv -f "$tmp" "$RECORD"; } || { rm -f "$tmp"; return 1; }
+  { printf 'schema=1\nhome=%s\nphase=%s\npersist_corr=%s\npersisted=%s\nresume_mode=%s\nresume_harness=%s\nresume_ref=%s\nspawn_gen=%s\ninbox_hwm=%s\nwake_failed_seq=%s\nwake_failed_config=%s\n' \
+    "$MATE_HOME" "$1" "$CORR" "$PERSISTED" "$MODE" "$RESUME_HARNESS" "$REF" "$SPAWN_GEN" "$INBOX_HWM" "$FAILED_SEQ" "$FAILED_CONFIG" > "$tmp" && mv -f "$tmp" "$RECORD"; } || { rm -f "$tmp"; return 1; }
+}
+inbox_newest_seq() {
+  local next
+  next=$(fm_task_inbox_next_seq "$(fm_task_inbox_dir "$STATE" "$ID")")
+  printf '%s' "$((10#$next - 1))"
+}
+config_stamp() {
+  find "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}" -type f -exec cksum {} + 2>/dev/null | sort | cksum | awk '{ print $1 "-" $2 }'
+}
+# A failed wake reports once; tick retries only after newer inbox work or a
+# configuration change. Explicit unpark always retries.
+note_wake_failure() { # <phase>
+  FAILED_SEQ=$(inbox_newest_seq) FAILED_CONFIG=$(config_stamp)
+  write_record "$1"
+}
+wake_failure_unchanged() {
+  [ -n "$FAILED_SEQ" ] && [ "$FAILED_SEQ" = "$(inbox_newest_seq)" ] && [ "$FAILED_CONFIG" = "$(config_stamp)" ]
 }
 report() { # <outcome>
   printf '%s: %s; session=%s\n' "$ID" "$1" "$MODE"
@@ -118,6 +162,10 @@ read_record() {
   RESUME_HARNESS=$(fm_meta_get "$RECORD" resume_harness)
   REF=$(fm_meta_get "$RECORD" resume_ref)
   SPAWN_GEN=$(fm_meta_get "$RECORD" spawn_gen)
+  INBOX_HWM=$(fm_meta_get "$RECORD" inbox_hwm)
+  case "$INBOX_HWM" in ''|*[!0-9]*) INBOX_HWM=0 ;; esac
+  FAILED_SEQ=$(fm_meta_get "$RECORD" wake_failed_seq)
+  FAILED_CONFIG=$(fm_meta_get "$RECORD" wake_failed_config)
 }
 check_idle() {
   local child pending backend listing
@@ -146,6 +194,7 @@ ring_pending() {
 }
 wake_parked() {
   [ "$(fm_meta_get "$RECORD" phase)" = parked ] || fail 'park did not finish; retry park to finish stopping before waking'
+  FAILED_SEQ='' FAILED_CONFIG=''
   write_record waking || fail 'cannot record wake'
   backend=$(fm_backend_of_meta "$META")
   current_state=$(fm_backend_agent_state "$backend" "$(fm_backend_target_of_meta "$META")") || current_state=unreadable
@@ -160,7 +209,9 @@ wake_parked() {
     missing) spawn_args=("$ID" "$MATE_HOME" --secondmate --backend "$backend") ;;
     *) fail "parked endpoint state is $current_state; refusing duplicate launch" ;;
   esac
-  if "$SCRIPT_DIR/fm-spawn.sh" "${spawn_args[@]}"; then
+  local rc=0
+  "$SCRIPT_DIR/fm-spawn.sh" "${spawn_args[@]}" || rc=$?
+  if [ "$rc" -eq 0 ]; then
     rm -f "$RECORD" || fail 'agent launched but park record could not be cleared'
     report 'unpark complete' || exit 1
     # An explicit unpark also delivers already queued work, including work whose
@@ -168,23 +219,37 @@ wake_parked() {
     ring_pending
     exit 0
   fi
-  write_record parked || true
+  if [ "$rc" -eq 75 ]; then
+    write_record parked || true
+    exit 75
+  fi
+  note_wake_failure parked || true
   report 'wake failed; still parked, inbox preserved' || true
   exit 1
 }
 queued_during_park() {
-  local f
+  local f n
   for f in "$(fm_task_inbox_dir "$STATE" "$ID")"/*.msg; do
     [ -e "$f" ] || continue
-    fm_task_inbox_is_fire_and_forget "$f" && continue
+    n=$(fm_task_inbox_seq_of "${f##*/}") || continue
+    [ "$n" -gt "$INBOX_HWM" ] || continue
     [ -n "$CORR" ] && grep -qF "$CORR" "$f" && continue
     return 0
   done
   return 1
 }
-if [ "$ACTION" = unpark ]; then
-  if ! fm_secondmate_park_present "$STATE" "$ID"; then printf '%s: already unparked\n' "$ID"; exit 0; fi
+if [ "$ACTION" = unpark ] || [ "$ACTION" = tick ]; then
+  if ! fm_secondmate_park_present "$STATE" "$ID"; then rm -f "$TICK_REPORT"; printf '%s: already unparked\n' "$ID"; exit 0; fi
   read_record
+  if [ "$ACTION" = tick ]; then
+    rm -f "$TICK_REPORT"
+    fail() {
+      echo "error: $*" >&2
+      note_wake_failure "$(fm_meta_get "$RECORD" phase)" || true
+      report "wake failed: $*; still parked, inbox preserved" || true
+      exit 1
+    }
+  fi
   if [ "$(fm_meta_get "$RECORD" phase)" = preparing ] && [ "$PERSISTED" = 0 ]; then
     # Acquiring the park lock proves the previous preparation no longer owns
     # it. It never stopped the mate; restore normal delivery, including after
@@ -193,6 +258,10 @@ if [ "$ACTION" = unpark ]; then
     report 'interrupted park cancelled; normal delivery restored' || exit 1
     ring_pending
     exit 0
+  fi
+  if [ "$ACTION" = tick ]; then
+    queued_during_park || exit 0
+    ! wake_failure_unchanged || exit 0
   fi
   [ "$PERSISTED" = 1 ] || fail 'park persistence was not confirmed; retry park before waking'
   if [ "$(fm_meta_get "$RECORD" phase)" = waking ]; then
@@ -217,6 +286,7 @@ if fm_secondmate_park_present "$STATE" "$ID"; then
   [ "$PERSISTED" = 1 ] || { rm -f "$RECORD" || fail 'cannot clear interrupted persist preparation'; }
 fi
 if [ "$PERSISTED" != 1 ]; then
+  INBOX_HWM=$(inbox_newest_seq)
   fm_secondmate_restart_capable "$META" || fail "$FM_SECONDMATE_RESTART_REASON"
   current_state=$(fm_backend_agent_state "$(fm_backend_of_meta "$META")" "$(fm_backend_target_of_meta "$META")") || current_state=unreadable
   if [ "$current_state" = missing ]; then
@@ -268,6 +338,7 @@ if [ "$PERSISTED" != 1 ]; then
   MODE=$FM_SECONDMATE_RESUME_MODE RESUME_HARNESS=$FM_SECONDMATE_RESUME_HARNESS REF=$FM_SECONDMATE_RESUME_REF
   PERSISTED=1
 fi
+FAILED_SEQ='' FAILED_CONFIG=''
 write_record parking || fail 'cannot record parking'
 if ! "$SCRIPT_DIR/fm-control.sh" "$ID" exit; then report 'park incomplete: agent stop failed; retry park' || true; exit 1; fi
 if ! FM_HOME="$MATE_HOME" FM_STATE_OVERRIDE="$MATE_HOME/state" FM_CONFIG_OVERRIDE="$MATE_HOME/config" \

@@ -219,8 +219,8 @@ Do not hand off `local-only` items.
 
 ## Parking and recovery
 
-Use [`bin/fm-secondmate-park.sh --help`](../../../bin/fm-secondmate-park.sh) for the `park` and `unpark` commands and their persist, idle-work, and retry guards.
-A parked local secondmate stays registered with its home and inbox intact, is excluded from liveness recovery, and wakes automatically when `fm-send` queues work for it.
+Use [`bin/fm-secondmate-park.sh --help`](../../../bin/fm-secondmate-park.sh) for the `park`, `unpark`, and `tick` commands and their persist, idle-work, and retry guards.
+A parked local secondmate stays registered with its home and inbox intact, is excluded from liveness recovery, and resumes from the watcher's worker-park tick once `fm-send` queues work for it after the park; a typed send refuses until it resumes.
 Its current fleet state reports `parked` and whether wake resumes an exact recorded session or starts fresh from persisted records.
 Remote secondmates do not support parking.
 

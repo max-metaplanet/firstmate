@@ -39,9 +39,9 @@
 # fire-and-forget request instead retries with its same caller-supplied delivery
 # id. A still-unconfirmed reply-bearing request keeps its reply expectation
 # preserved for the record that may have landed.
-# A parked local secondmate is woken after durable enqueue through
-# bin/fm-secondmate-park.sh; failed wake preserves the record and reports a
-# parent-channel check event. Typed sends wake before submission.
+# A parked local secondmate resumes through the existing worker-park tick
+# after durable enqueue. Typed sends refuse until it resumes or is explicitly
+# unparked through bin/fm-secondmate-park.sh.
 #
 # Pending-reply bookkeeping trouble after a durable enqueue NEVER exits
 # nonzero: with the recovery marker stored the watcher reconciles it silently,
@@ -854,11 +854,12 @@ fm_send_feed_resolved_holds() { # <answer-text>
 # send implementation. A failed backend send is still surfaced below as a hard
 # error with the attempted resolution attached.
 
-# Wake a parked worker only after durable steering enqueue. A worker resume is
-# only queued here: fm-send still holds the lease-command lock, which the
-# relaunch's own lease guard would wait on forever, so the watcher tick runs it.
+# Queue parked resumes only after durable steering enqueue. The caller may
+# hold the inheritance lock a secondmate spawn needs, and fm-send holds the
+# lease-command lock, so only the watcher tick may attempt the relaunch.
 # A secondmate persist request must still reach its old agent during the park
 # transaction.
+PARKED_SECONDMATE=''
 fm_send_wake_parked() { # [direct]
   local id record rc=0
   if [ -n "$TARGET_META" ] && fm_worker_park_load "$TARGET_META"; then
@@ -880,10 +881,13 @@ fm_send_wake_parked() { # [direct]
   record="$STATE/.secondmate-park-$id"
   if [ "$(fm_meta_get "$record" phase)" = preparing ] &&
     [ -n "$PENDING_REPLY_CORR" ] && [ "$PENDING_REPLY_CORR" = "$(fm_meta_get "$record" persist_corr)" ]; then return 0; fi
-  "$SCRIPT_DIR/fm-secondmate-park.sh" "$id" unpark || return 1
-  T=$(fm_backend_target_of_meta "$TARGET_META")
-  TARGET_BACKEND=$(fm_backend_of_meta "$TARGET_META")
-  TARGET_HARNESS=$(fm_meta_get "$TARGET_META" harness)
+  if [ "${1:-}" = direct ]; then
+    echo "error: secondmate $id is parked; retry after it resumes or explicitly unpark it before sending a direct key or command" >&2
+    return 1
+  fi
+  # The inbox itself is the durable resume request, including CONFIG_REREAD.
+  PARKED_SECONDMATE=$id
+  return 0
 }
 
 
@@ -1218,6 +1222,10 @@ else
     # Enqueue precedes wake, so even a failed launch cannot lose the steer.
     if ! fm_send_wake_parked; then
       echo "warning: steer durably recorded at $INBOX_RECORD; secondmate wake failed. Do not resend; retry unpark." >&2
+      exit 0
+    fi
+    if [ -n "$PARKED_SECONDMATE" ]; then
+      echo "fm-send: steer queued at $INBOX_RECORD; the worker-park tick resumes parked secondmate $PARKED_SECONDMATE or reports why it cannot on the parent channel" >&2
       exit 0
     fi
     # Ring the doorbell, best-effort: no ring outcome changes the exit status,
