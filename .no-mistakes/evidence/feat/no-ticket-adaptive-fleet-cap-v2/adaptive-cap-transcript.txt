@@ -1,0 +1,58 @@
+
+=== S1 pilot observe floor6/ceiling8/start8: sustained CPU decline is reported, not enforced, no wake ===
+{"mode":"observe","configured":8,"desired":7,"effective":8,"hold":"","reason":"sustained CPU load","occupancy":6,"queued_resumes":0}
+PASS: observe desired=7 effective=8 reason=sustained CPU load
+PASS: observe queued no capacity wake
+spawn task-x rc=0
+fleet capacity: {"mode": "observe", "configured": 8, "effective": 8, "desired": 7, "hold": "", "reason": "sustained CPU load", "sample_age_seconds": 0, "floor": 6, "ceiling": 8, "start": 8, "state": {"attempt_boot": "fixture-boot", "attempt_monotonic": 1120, "boot": "fixture-boot", "cpu_reduced": true, "cpu_streak": 0, "critical_hold": false, "healthy": 0, "identity": "{\"ceiling\": 8, \"floor\": 6, \"start\": 8}", "last_adjustment": 1120, "memory_streak": 0, "normal_streak": 3, "reason": "sustained CPU load", "sample_epoch": 1120, "sample_monotonic": 1120, "sample_valid": true, "sensor_error": "", "signals": {"cpus": 1, "load1": 150, "load1_centi": 150, "load5": 140, "load5_centi": 140, "page_size": 16384, "pressure": "normal", "swap_used_bytes": 9999999999, "swapins": 0, "swapouts": 0}, "swap_in_bytes_per_second": 0.0, "swap_out_bytes_per_second": 0.0, "swap_streak": 0, "swap_used_delta_bytes": 0, "target": 7, "version": 1}, "next_condition": "two normal samples clear critical hold; ten healthy minutes add one slot"}
+PASS: observe admits 7th worker (static cap 8)
+
+=== S2 switch pilot to enforce: observed history carries over, effective=7 defers 8th, wake sent ===
+{"mode":"enforce","desired":7,"effective":7,"hold":"","reason":"waiting for ten healthy minutes","occupancy":7}
+PASS: enforce keeps observed target 7
+PASS: enforce queued a capacity-change wake
+spawn task-y rc=75
+deferred: this machine runs at most 7 agent(s) at once (~/.no-mistakes/worktrees/61c6dd39b831/.fm-test-scratch/fm-fleet-capacity.FlCgnV/pilot/home/config/fleet-capacity declares 8; the fleet load policy lowers it: waiting for ten healthy minutes) and 7 are running (live-1, live-2, live-3, live-4, live-5, live-6, task-x); task task-y was not launched and its backlog item stays queued - dispatch it again once one of them is cleaned up or stops
+PASS: enforce defers 8th worker with exit 75 and names reason
+PASS: deferred spawn created nothing
+PASS: no running worker was stopped
+
+=== S3 slow recovery: 9 healthy minutes stay at 7, the 10th floats back to 8, then admits ===
+{"effective":7,"healthy":9,"reason":"waiting for ten healthy minutes"}
+PASS: nine healthy minutes do not recover
+{"effective":8,"healthy":0,"reason":"ten healthy minutes"}
+PASS: tenth healthy minute restores slot 8
+PASS: recovered capacity admits 8th worker
+spawn task-z rc=75 deferred: this machine runs at most 8 agent(s) at once (~/.no-mistakes/worktrees/61c6dd39b831/.fm-test-scratch/fm-fleet-capacity.FlCgnV/pilot/home/config/fleet-capacity) and 8 are running (live-1, live-2, live-3, live-4, live-5, live-6, task-x, task-y); task task-z was not launched and its backlog item stays queued - dispatch it again once one of them is cleaned up or stops
+PASS: hand-set cap 8 still bounds (9th defers)
+
+=== S4 critical memory pressure holds admission below the floor on an empty fleet ===
+spawn rc=75 deferred: fleet load policy refuses admission: {"mode": "enforce", "configured": 8, "effective": 6, "desired": 6, "hold": "critical memory pressure hold", "reason": "critical memory pressure", "sample
+{"occupancy":0,"desired":6,"hold":"critical memory pressure hold"}
+PASS: critical hold defers with 0 occupants
+
+=== S5 adversarial: stale/unreadable sensor in enforce defers instead of guessing ===
+spawn rc=75 deferred: fleet load policy refuses admission: {"mode": "enforce", "configured": 8, "effective": 8, "desired": 8, "hold": "stale sensor (older than 180 seconds)", "reason": "at policy ceiling", "sample_age_seconds": 300, "floor": 6, "ceilin
+PASS: stale sensor defers and names stale reason
+PASS: unreadable sensor cannot authorise recovery (healthy reset)
+
+=== S6 adversarial: JSON {mode:off} with no fleet cap and an unreadable task record ===
+spawn rc=0
+fleet capacity: {"mode": "invalid", "configured": null, "effective": null, "desired": null, "hold": "", "reason": "JSON mode off is invalid; write the bare word off or remove config/fleet-load-policy (admission uses the static cap until then)", "sample_age_sec
+PASS: spawn admitted uncapped
+PASS: no integer-comparison diagnostic, no record counting
+{"mode":"invalid","hold":"","reason":"JSON mode off is invalid; write the bare word off or remove config/fleet-load-policy (admission uses the static cap until then)"}
+PASS: status reports JSON off as actionable invalid config
+
+=== S7 default off: no policy file means no sampling and static behaviour ===
+{"mode":"off","effective":8,"reason":"static capacity; adaptation off"}
+PASS: absent policy = off, no fleet-load.json
+
+=== S8 native macOS sensor (no fixture) in observe; snapshot/home-summary project same capacity read-only ===
+{"mode":"observe","desired":8,"effective":8,"hold":"","sample_age_seconds":0.19017910957336426,"signals":{"cpus":10,"load1":13.29,"load1_centi":132,"load5":14.49,"load5_centi":144,"page_size":16384,"pressure":"normal","swap_used_bytes":8765246013.44,"swapins":21933145,"swapouts":25195613}}
+PASS: native sample valid with real load/pressure
+snapshot.capacity: {"mode":"observe","desired":8,"effective":8,"occupancy":0}
+PASS: snapshot capacity equals status
+PASS: snapshot did not refresh telemetry
+
+OVERALL=PASS
