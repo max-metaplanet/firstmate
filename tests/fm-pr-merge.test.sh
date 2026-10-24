@@ -813,8 +813,8 @@ write_away_record() {
 }
 
 test_remote_only_updated_head_preserves_recorded_work() {
-  local case_dir variant recorded live before_heads before_config rc
-  for variant in worker missing unrelated; do
+  local case_dir variant recorded live before_heads before_config rc mode
+  for variant in worker missing missing-nm unrelated unrelated-nm; do
     case_dir=$(make_case "remote-head-$variant")
     git clone -q --bare "$case_dir/wt" "$case_dir/origin.git"
     git clone -q --single-branch --branch main "$case_dir/origin.git" "$case_dir/project"
@@ -827,7 +827,7 @@ test_remote_only_updated_head_preserves_recorded_work() {
     recorded=$(git -C "$case_dir/wt" rev-parse HEAD)
     git -C "$case_dir/wt" checkout -q main
     git -C "$case_dir/wt" commit -q --allow-empty -m 'base advances'
-    if [ "$variant" = unrelated ]; then
+    if [[ "$variant" = unrelated* ]]; then
       recorded=$(git -C "$case_dir/wt" rev-parse HEAD)
       git -C "$case_dir/wt" checkout -q task
       git -C "$case_dir/wt" commit -q --allow-empty -m 'unrelated live head'
@@ -838,10 +838,16 @@ test_remote_only_updated_head_preserves_recorded_work() {
     live=$(git -C "$case_dir/wt" rev-parse HEAD)
     git -C "$case_dir/wt" push -q "$case_dir/origin.git" task refs/heads/task:refs/pull/9/head
     git -C "$case_dir/wt" checkout -q --detach "$recorded"
+    if [[ "$variant" = unrelated* ]]; then
+      git -C "$case_dir/wt" push -q "$case_dir/origin.git" "$recorded:refs/heads/unrelated"
+      git -C "$case_dir/project" fetch -q origin refs/heads/unrelated:refs/remotes/origin/unrelated
+    fi
     add_gh_mocks "$case_dir" "$live"
+    mode=direct-PR
+    [[ "$variant" != *-nm ]] || mode=no-mistakes
     fm_write_meta "$case_dir/state/task-x1.meta" \
       "worktree=$case_dir/wt" "project=$case_dir/project" 'kind=ship' \
-      'mode=direct-PR' 'pr=https://github.com/example/repo/pull/9' "pr_head=$recorded"
+      "mode=$mode" 'pr=https://github.com/example/repo/pull/9' "pr_head=$recorded"
     if [ "$variant" != worker ]; then
       rm -rf "$case_dir/wt"
     fi
@@ -851,7 +857,7 @@ test_remote_only_updated_head_preserves_recorded_work() {
     rc=0
     run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/9 \
       > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
-    if [ "$variant" = unrelated ]; then
+    if [[ "$variant" = unrelated* ]]; then
       expect_code 1 "$rc" 'unrelated recorded work must refuse'
       assert_no_grep 'pr merge' "$case_dir/gh.log" 'unrelated recorded work reached forge merge'
     else
@@ -863,6 +869,8 @@ test_remote_only_updated_head_preserves_recorded_work() {
       || fail 'merge proof changed a project local branch'
     [ "$(git -C "$case_dir/project" config --local --list)" = "$before_config" ] \
       || fail 'merge proof changed project configuration'
+    [ "$(git -C "$case_dir/project" symbolic-ref HEAD)" = refs/heads/main ] \
+      || fail 'merge proof changed the project checkout'
     [ "$(git -C "$case_dir/project" status --porcelain)" = '?? untracked' ] \
       || fail 'merge proof changed project working files or index'
     [ "$(cat "$case_dir/project/untracked")" = 'keep local edits' ] \
