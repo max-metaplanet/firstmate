@@ -814,7 +814,7 @@ write_away_record() {
 
 test_remote_only_updated_head_preserves_recorded_work() {
   local case_dir variant recorded live before_heads before_config rc mode
-  for variant in worker missing missing-nm unrelated unrelated-nm; do
+  for variant in worker unpushed missing missing-nm unrelated unrelated-nm; do
     case_dir=$(make_case "remote-head-$variant")
     git clone -q --bare "$case_dir/wt" "$case_dir/origin.git"
     git clone -q --single-branch --branch main "$case_dir/origin.git" "$case_dir/project"
@@ -838,6 +838,9 @@ test_remote_only_updated_head_preserves_recorded_work() {
     live=$(git -C "$case_dir/wt" rev-parse HEAD)
     git -C "$case_dir/wt" push -q "$case_dir/origin.git" task refs/heads/task:refs/pull/9/head
     git -C "$case_dir/wt" checkout -q --detach "$recorded"
+    if [ "$variant" = unpushed ]; then
+      git -C "$case_dir/wt" commit -q --allow-empty -m 'unpushed worker follow-up'
+    fi
     if [[ "$variant" = unrelated* ]]; then
       git -C "$case_dir/wt" push -q "$case_dir/origin.git" "$recorded:refs/heads/unrelated"
       git -C "$case_dir/project" fetch -q origin refs/heads/unrelated:refs/remotes/origin/unrelated
@@ -848,7 +851,7 @@ test_remote_only_updated_head_preserves_recorded_work() {
     fm_write_meta "$case_dir/state/task-x1.meta" \
       "worktree=$case_dir/wt" "project=$case_dir/project" 'kind=ship' \
       "mode=$mode" 'pr=https://github.com/example/repo/pull/9' "pr_head=$recorded"
-    if [ "$variant" != worker ]; then
+    if [ "$variant" != worker ] && [ "$variant" != unpushed ]; then
       rm -rf "$case_dir/wt"
     fi
     if git -C "$case_dir/project" cat-file -e "$live^{commit}" 2>/dev/null; then
@@ -860,6 +863,11 @@ test_remote_only_updated_head_preserves_recorded_work() {
     if [[ "$variant" = unrelated* ]]; then
       expect_code 1 "$rc" 'unrelated recorded work must refuse'
       assert_no_grep 'pr merge' "$case_dir/gh.log" 'unrelated recorded work reached forge merge'
+      assert_grep 'is not a proven ancestor of live head' "$case_dir/stderr" 'unrelated recorded work was refused for another reason'
+    elif [ "$variant" = unpushed ]; then
+      expect_code 1 "$rc" 'unpushed worker commit must refuse'
+      assert_no_grep 'pr merge' "$case_dir/gh.log" 'unpushed worker commit reached forge merge'
+      assert_grep 'is not contained in live head' "$case_dir/stderr" 'unpushed worker commit was refused for another reason'
     else
       expect_code 0 "$rc" "remote-only updated head with $variant worker must merge: $(cat "$case_dir/stderr")"
       assert_logged_gh_merge "$case_dir" 9 example/repo --squash
@@ -876,7 +884,7 @@ test_remote_only_updated_head_preserves_recorded_work() {
     [ "$(cat "$case_dir/project/untracked")" = 'keep local edits' ] \
       || fail 'merge proof changed a project working file'
   done
-  pass 'remote-only updated PR head proves ancestry with or without a worker and refuses unrelated work'
+  pass 'remote-only updated PR head proves ancestry with or without a worker and refuses unrelated or unpushed work'
 }
 
 test_verified_merge_records_pr_and_head() {

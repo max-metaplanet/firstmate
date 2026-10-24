@@ -26,6 +26,7 @@
 # for teardown and must be an ancestor of the live head.
 # A changed head is fetched from the forge into refs/remotes/fm-pr/pull/<n>/head
 # in the project clone, without changing its checkout, branches, or fetch config.
+# A direct-PR worker copy that still exists must have its HEAD in the live head.
 # The recorded pr= also frees the task's place in a declared project capacity
 # (bin/fm-project-capacity-lib.sh).
 # Usage: fm-pr-check.sh <task-id> <pr-url>
@@ -200,6 +201,15 @@ if [ "${FM_PR_CHECK_MERGE:-}" = 1 ] && [ "$PROVIDER" = github ] \
         || [ "$(git -C "$PROJECT" rev-parse --verify "$PULL_REF^{commit}" 2>/dev/null)" != "$PR_HEAD" ] \
         || ! git -C "$PROJECT" merge-base --is-ancestor "$RECORDED_HEAD" "$PR_HEAD" 2>/dev/null; then
         echo "error: recorded PR head $RECORDED_HEAD is not a proven ancestor of live head $PR_HEAD for $URL; fetch or ancestry verification failed" >&2
+        exit 1
+      fi
+    fi
+    if ! fm_dod_forge_head_is_named_head "$MODE" && [ -n "$WT" ] && [ -d "$WT" ] \
+      && git -C "$WT" rev-parse --git-dir >/dev/null 2>&1; then
+      WT_HEAD=$(git -C "$WT" rev-parse --verify HEAD 2>/dev/null) || WT_HEAD=
+      if [ -z "$WT_HEAD" ] || { [ "$WT_HEAD" != "$RECORDED_HEAD" ] && [ "$WT_HEAD" != "$PR_HEAD" ] \
+        && ! git -C "$WT" merge-base --is-ancestor "$WT_HEAD" "$PR_HEAD" 2>/dev/null; }; then
+        echo "error: worker copy HEAD ${WT_HEAD:-<unresolved>} is not contained in live head $PR_HEAD of $URL - push that commit and report again" >&2
         exit 1
       fi
     fi
