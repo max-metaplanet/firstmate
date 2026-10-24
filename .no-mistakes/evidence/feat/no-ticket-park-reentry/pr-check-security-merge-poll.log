@@ -1,0 +1,5 @@
+ok - validated merged polls notify once and retire before the next watcher cycle
+ok - a repeat identical merged poll for an already-notified task is absorbed, never queued as a main-blocking row
+ok - open/red, closed-unmerged, malformed, and forge errors remain armed until an exact merged transition
+bash tests/.fm-prcs-filtered.test.sh  9.68s user 16.60s system 71% cpu 36.545 total
+rc=0

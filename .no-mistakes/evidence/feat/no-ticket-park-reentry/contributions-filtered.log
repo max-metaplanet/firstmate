@@ -1,0 +1,10 @@
+ok - parked workers return on a check verdict, not on lane progress
+ok - non-actionable check progress never cancels a running worker park hint
+ok - changed checks, all reviews, conflicts, close and merge queue once, including deferred terminal recovery
+ok - red CI queues a parked worker once per distinct failing set and head, without consuming observation events
+ok - shared contribution signal wakes once while retaining both acknowledgements
+ok - a merged or closed contribution settles once, is not re-read, and never wakes again
+ok - a late owner inherits a terminal observation without a forge read or wake
+ok - a retry converges every owner whose saved row is not terminal, keeping its own acknowledgement state
+bash tests/.fm-contributions-filtered.test.sh  13.76s user 19.63s system 77% cpu 43.210 total
+rc=0

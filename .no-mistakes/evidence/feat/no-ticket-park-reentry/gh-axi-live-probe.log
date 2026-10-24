@@ -1,0 +1,12 @@
+PR 146 raw gh-axi output:
+head: c1d72a21cd042ae436a896387cdd2bb027fb2e3c
+state: closed
+parsed head=c1d72a21cd042ae436a896387cdd2bb027fb2e3c state=closed headvalid=yes
+=> refuses: published PR head differs from pipeline head or PR is terminal
+
+PR 147 raw gh-axi output:
+head: 5e06b4ad9d3137f452359e5cf3fb44b854378728
+state: open
+parsed head=5e06b4ad9d3137f452359e5cf3fb44b854378728 state=open headvalid=yes
+=> would pass the open-PR gate (if head matches pipeline head)
+
