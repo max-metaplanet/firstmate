@@ -5033,7 +5033,7 @@ branch_sync:
 
 # The same live run reads working for every EXECUTING status word the CLI can
 # actually deliver here. `fm_nm_select_run` validates the overview status column
-# against pending|running|completed|failed|cancelled, so those are the only live
+# against the shared ledger vocabulary, so those are the only live
 # words that reach the predicate; the overview and the id-addressed detail read
 # the same runs.status column, so the fixture carries one word in BOTH surfaces.
 test_live_rebased_run_reads_working_for_every_executing_status() {
@@ -6262,6 +6262,7 @@ test_interrupted_monitor_selection() {
     assert_contains "$out" 'CI monitoring interrupted: no verdict' "$surface interruption is recognized"
     assert_not_contains "$out" 'state: done' "$surface interruption is never green"
     assert_not_contains "$out" 'state: failed' "$surface interruption is not a code failure"
+    FM_FAKE_CI_LOGS="all CI checks passed - still monitoring until merged or closed"
     FM_FAKE_AXI_STATUS_RUN="$FM_FAKE_AXI_STATUS
 outcome: ci-monitor-interrupted
 gate: review"
@@ -6273,7 +6274,8 @@ gate: review"
     FM_FAKE_RUN_HEAD=f0f0f0f0
     FM_FAKE_AXI_STATUS_RUN="$(run_failed fm/competing | sed 's/01RUN/01NEW/; s/status: completed/status: ci_monitor_interrupted/; /outcome:/d')"
     out=$(run_crew_state "$d" competing)
-    assert_not_contains "$out" 'source: run-step' "$surface interruption retains strict head attribution"
+    assert_contains "$out" 'state: unreadable' "$surface interruption retains strict head attribution"
+    assert_contains "$out" 'could not tie the selected run' "$surface missing head cannot inherit custody"
     FM_FAKE_RUN_HEAD=$head
     FM_FAKE_AXI_STATUS_RUN="$(run_failed fm/foreign | sed 's/01RUN/01NEW/; s/status: completed/status: ci_monitor_interrupted/; /outcome:/d')"
     out=$(run_crew_state "$d" competing)
