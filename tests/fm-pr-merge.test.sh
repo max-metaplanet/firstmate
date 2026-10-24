@@ -860,7 +860,13 @@ test_remote_only_updated_head_preserves_recorded_work() {
     rc=0
     run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/9 \
       > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
-    if [[ "$variant" = unrelated* ]]; then
+    if [[ "$variant" = *-nm ]]; then
+      expect_code 0 "$rc" "no-mistakes $variant merge must stay unchanged: $(cat "$case_dir/stderr")"
+      assert_logged_gh_merge "$case_dir" 9 example/repo --squash
+      assert_no_grep 'pr_head=' "$case_dir/state/task-x1.meta" 'no-mistakes merge without a worker recorded a head it never read'
+      [ -z "$(git -C "$case_dir/project" for-each-ref refs/remotes/fm-pr)" ] \
+        || fail 'no-mistakes merge fetched the PR head'
+    elif [ "$variant" = unrelated ]; then
       expect_code 1 "$rc" 'unrelated recorded work must refuse'
       assert_no_grep 'pr merge' "$case_dir/gh.log" 'unrelated recorded work reached forge merge'
       assert_grep 'is not a proven ancestor of live head' "$case_dir/stderr" 'unrelated recorded work was refused for another reason'
@@ -884,7 +890,7 @@ test_remote_only_updated_head_preserves_recorded_work() {
     [ "$(cat "$case_dir/project/untracked")" = 'keep local edits' ] \
       || fail 'merge proof changed a project working file'
   done
-  pass 'remote-only updated PR head proves ancestry with or without a worker and refuses unrelated or unpushed work'
+  pass 'remote-only updated direct-PR head proves ancestry with or without a worker, refuses unrelated or unpushed work, and leaves no-mistakes unchanged'
 }
 
 test_verified_merge_records_pr_and_head() {

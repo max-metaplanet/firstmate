@@ -22,8 +22,8 @@
 # draft state does not refuse, matching how the head read below is optional.
 # bin/fm-pr-merge.sh records through this script with FM_PR_CHECK_MERGE=1 and
 # skips this refusal, because its own merge-time draft refusal is authoritative.
-# For an already-recorded GitHub PR at merge time, the recorded head is kept
-# for teardown and must be an ancestor of the live head.
+# For an already-recorded direct-PR GitHub PR at merge time, the recorded head
+# is kept for teardown and must be an ancestor of the live head.
 # A changed head is fetched from the forge into refs/remotes/fm-pr/pull/<n>/head
 # in the project clone, without changing its checkout, branches, or fetch config.
 # A direct-PR worker copy that still exists must have its HEAD in the live head.
@@ -167,7 +167,7 @@ PROJECT=$(grep '^project=' "$META" | tail -1 | cut -d= -f2- || true)
 WT=$(grep '^worktree=' "$META" | tail -1 | cut -d= -f2- || true)
 PR_HEAD=
 PR_READ_DIR=$WT
-[ -d "$PR_READ_DIR" ] || PR_READ_DIR=$PROJECT
+[ -d "$PR_READ_DIR" ] || fm_dod_forge_head_is_named_head "$MODE" || PR_READ_DIR=$PROJECT
 if [ "$PROVIDER" = github ] && [ -d "$PR_READ_DIR" ] && command -v gh >/dev/null 2>&1; then
   if REMOTE_HEAD=$(cd "$PR_READ_DIR" && gh pr view "$URL" --json headRefOid -q .headRefOid 2>/dev/null) \
     && fm_pr_head_valid "$REMOTE_HEAD"; then
@@ -177,6 +177,7 @@ fi
 
 MERGE_HEAD_PROVEN=0
 if [ "${FM_PR_CHECK_MERGE:-}" = 1 ] && [ "$PROVIDER" = github ] \
+  && ! fm_dod_forge_head_is_named_head "$MODE" \
   && [ "$(fm_dod_meta_value "$META" pr)" = "$URL" ]; then
   RECORDED_HEAD=$(fm_dod_meta_value "$META" pr_head)
   if [ -n "$RECORDED_HEAD" ]; then
@@ -204,8 +205,7 @@ if [ "${FM_PR_CHECK_MERGE:-}" = 1 ] && [ "$PROVIDER" = github ] \
         exit 1
       fi
     fi
-    if ! fm_dod_forge_head_is_named_head "$MODE" && [ -n "$WT" ] && [ -d "$WT" ] \
-      && git -C "$WT" rev-parse --git-dir >/dev/null 2>&1; then
+    if [ -n "$WT" ] && [ -d "$WT" ] && git -C "$WT" rev-parse --git-dir >/dev/null 2>&1; then
       WT_HEAD=$(git -C "$WT" rev-parse --verify HEAD 2>/dev/null) || WT_HEAD=
       if [ -z "$WT_HEAD" ] || { [ "$WT_HEAD" != "$RECORDED_HEAD" ] && [ "$WT_HEAD" != "$PR_HEAD" ] \
         && ! git -C "$WT" merge-base --is-ancestor "$WT_HEAD" "$PR_HEAD" 2>/dev/null; }; then
