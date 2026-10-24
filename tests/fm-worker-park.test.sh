@@ -104,11 +104,12 @@ cat > "$TMP_ROOT/fakebin/no-mistakes" <<'SH'
 #!/usr/bin/env bash
 cat "$FM_HOME/nm-status"
 SH
-cat > "$TMP_ROOT/fakebin/gh-axi" <<'SH'
+cat > "$TMP_ROOT/fakebin/gh" <<'SH'
 #!/usr/bin/env bash
+[ "$1" = api ] || exit 1
 cat "$FM_HOME/forge-pr.json"
 SH
-chmod +x "$TMP_ROOT/fakebin/gh-axi"
+chmod +x "$TMP_ROOT/fakebin/gh"
 interrupted_fixture() {
   fixture
   printf 'mode=no-mistakes\n' >> "$FM_HOME/state/task.meta"

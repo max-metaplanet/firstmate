@@ -488,9 +488,15 @@ worker_observation() { # task row-file
       fi
       event_token=$(jq -r 'if .observation.state == "closed" or .observation.state == "merged"
         then .url + "|" + .observation.state else "" end' "$row") || return 1
-      "$SCRIPT_DIR/fm-worker-park.sh" request "$task" "$reason" "$failing" "$event_token" >/dev/null || rc=$?
-      [ "$rc" -ne 75 ] || return 0
-      [ "$rc" -eq 0 ] || return 1
+      case "$reason/$(sed -n 's/^phase=//p' "$STATE/$task.park" 2>/dev/null | tail -n 1)" in
+        'PR checks or head changed'/parked|'PR checks or head changed'/parking|'PR checks or head changed'/queued) ;;
+        'PR checks or head changed'/*) rc=-1 ;;
+      esac
+      if [ "$rc" -eq 0 ]; then
+        "$SCRIPT_DIR/fm-worker-park.sh" request "$task" "$reason" "$failing" "$event_token" >/dev/null || rc=$?
+        [ "$rc" -ne 75 ] || return 0
+        [ "$rc" -eq 0 ] || return 1
+      fi
       jq --argjson signal "$signal" '.worker_resume=$signal' "$row" > "$TMP/worker-resume.json" || return 1
       mv "$TMP/worker-resume.json" "$row"
       write_record "$task" "$row" || return 1
