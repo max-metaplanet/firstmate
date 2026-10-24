@@ -1,0 +1,19 @@
+{"checks":[{"at":"2026-10-22T21:51:43Z","c":"FAILURE","n":"PR must be raised via no-mistakes","s":"COMPLETED"},{"at":"2026-10-22T21:51:43Z","c":"SUCCESS","n":"Change scope","s":"COMPLETED"},{"at":"2026-10-22T22:13:14Z","c":"SUCCESS","n":"PR must be raised via no-mistakes","s":"COMPLETED"},{"at":"2026-10-22T22:13:07Z","c":"SUCCESS","n":"PR must be raised via no-mistakes","s":"COMPLETED"},{"at":"2026-10-22T21:51:43Z","c":"SUCCESS","n":"Change scope","s":"COMPLETED"},{"at":"2026-10-22T21:51:43Z","c":"SUCCESS","n":"Test coverage guard","s":"COMPLETED"},{"at":"2026-10-22T21:51:54Z","c":"SUCCESS","n":"Stock macOS Bash snapshot compatibility (advisory)","s":"COMPLETED"},{"at":"2026-10-22T21:51:43Z","c":"SUCCESS","n":"Repo invariants","s":"COMPLETED"},{"at":"2026-10-22T21:51:53Z","c":"SUCCESS","n":"Lint 1","s":"COMPLETED"},{"at":"2026-10-22T21:51:53Z","c":"SUCCESS","n":"Lint 2","s":"COMPLETED"},{"at":"2026-10-22T21:51:53Z","c":"SUCCESS","n":"Lint 3","s":"COMPLETED"},{"at":"2026-10-22T21:51:53Z","c":"SUCCESS","n":"Behavior portable parallel 1","s":"COMPLETED"},{"at":"2026-10-22T21:51:54Z","c":"SUCCESS","n":"Behavior portable parallel 2","s":"COMPLETED"},{"at":"2026-10-22T21:51:52Z","c":"SKIPPED","n":"Behavior portable serial ${{ matrix.shard }}","s":"COMPLETED"},{"at":"2026-10-22T21:51:52Z","c":"SKIPPED","n":"Behavior selected ${{ matrix.shard }}","s":"COMPLETED"},{"at":"2026-10-22T21:51:54Z","c":"SUCCESS","n":"Behavior tests (Herdr)","s":"COMPLETED"},{"at":"2026-10-22T21:51:52Z","c":"SKIPPED","n":"Stock macOS Bash snapshot compatibility","s":"COMPLETED"},{"at":"2026-10-22T21:51:52Z","c":"SKIPPED","n":"Documentation audience guard","s":"COMPLETED"},{"at":"2026-10-22T22:07:48Z","c":"SUCCESS","n":"Behavior timing aggregate","s":"COMPLETED"},{"at":"2026-10-22T22:10:38Z","c":"SUCCESS","n":"CI gate","s":"COMPLETED"}],"head":"828b7351934f77b3698ce1e5ce626ef540abdc33","isDraft":false}
+$ bin/fm-pr-checks.sh  https://github.com/max-metaplanet/firstmate/pull/143
+exit=0
+$ bin/fm-pr-checks.sh --after 2026-10-01T00:00:00Z https://github.com/max-metaplanet/firstmate/pull/143
+exit=0
+$ bin/fm-pr-checks.sh --after 2030-01-01T00:00:00Z https://github.com/max-metaplanet/firstmate/pull/143
+REQUIRED CHECK: Behavior portable serial ${{ matrix.shard }} (missing)
+REQUIRED CHECK: Behavior selected ${{ matrix.shard }} (missing)
+REQUIRED CHECK: Documentation audience guard (missing)
+REQUIRED CHECK: Stock macOS Bash snapshot compatibility (missing)
+exit=8
+$ bin/fm-pr-checks.sh --watch --settled https://github.com/max-metaplanet/firstmate/pull/143
+exit=0
+$ bin/fm-pr-checks.sh --settled https://github.com/max-metaplanet/firstmate/pull/143
+fm-pr-checks: --settled requires --watch
+exit=2
+$ bin/fm-pr-checks.sh --after 2026-10-20 https://github.com/max-metaplanet/firstmate/pull/143
+fm-pr-checks: --after expects YYYY-MM-DDTHH:MM:SSZ
+exit=2
