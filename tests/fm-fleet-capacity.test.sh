@@ -281,6 +281,24 @@ test_full_fleet_defers_without_leaving_anything_behind() {
   pass "a full fleet defers a fresh spawn and leaves it queued with nothing created"
 }
 
+# Another spawn's admission holds the fleet lock only briefly, so a fresh spawn
+# waits for it instead of deferring at once.
+test_fresh_spawn_waits_for_a_briefly_busy_fleet_lock() {
+  local case_dir home out rc=0 lock
+  case_dir=$(make_case busy-lock task-c)
+  home="$case_dir/home"
+  declare_fleet "$home" "2"
+  lock="$home/state/.fleet-capacity.lock"
+  mkdir "$lock"
+  printf '%s\n' "$$" > "$lock/pid"
+  ( sleep 1; rm -f "$lock/pid"; rmdir "$lock" ) &
+  out=$(spawn_ship "$case_dir" task-c) || rc=$?
+  wait
+  expect_code 0 "$rc" "a fresh spawn deferred instead of waiting for a released fleet lock: $out"
+  assert_present "$home/state/task-c.meta" "the admitted spawn published no record"
+  pass "a fresh spawn waits for a briefly busy fleet capacity lock"
+}
+
 test_dead_agents_free_their_place() {
   local case_dir home out rc=0
   case_dir=$(make_case dead task-c)
@@ -516,6 +534,7 @@ test_parked_resume_has_project_priority
 test_undeclared_fleet_stays_uncapped
 test_full_fleet_defers_without_leaving_anything_behind
 test_dead_agents_free_their_place
+test_fresh_spawn_waits_for_a_briefly_busy_fleet_lock
 test_fleet_is_shared_by_every_local_home
 test_unreadable_declaration_refuses_every_spawn
 test_endpoint_probes_run_together_with_serial_verdicts

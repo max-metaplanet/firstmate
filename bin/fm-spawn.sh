@@ -4035,8 +4035,13 @@ if [ "$RELAUNCH" -eq 0 ] || [ "$SPAWN_PARK_RESUME" = 1 ] || [ -n "$PARK_RESUME_M
       echo "error: could not resolve the fleet capacity lock for $FM_HOME" >&2
       exit 1
     }
-    if ! fm_lock_try_acquire "$SPAWN_FLEET_LOCK"; then
-      echo "deferred: another spawn holds the fleet capacity lock ($SPAWN_FLEET_LOCK); task $ID was not launched and its backlog item stays queued - dispatch it again shortly" >&2
+    if [ -n "$PARK_RESUME_MARKER" ]; then
+      if ! fm_lock_try_acquire "$SPAWN_FLEET_LOCK"; then
+        echo "deferred: another spawn holds the fleet capacity lock ($SPAWN_FLEET_LOCK); secondmate $ID stays parked with its inbox preserved - the worker-park tick retries it" >&2
+        exit "$FM_PROJECT_CAPACITY_DEFER_EXIT"
+      fi
+    elif ! fm_lock_acquire_wait_max "$SPAWN_FLEET_LOCK" 120; then
+      echo "deferred: another spawn has held the fleet capacity lock ($SPAWN_FLEET_LOCK) for 120s; task $ID was not launched and its backlog item stays queued - dispatch it again shortly" >&2
       exit "$FM_PROJECT_CAPACITY_DEFER_EXIT"
     fi
     SPAWN_FLEET_LOCK_HELD=1

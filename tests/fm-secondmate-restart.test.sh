@@ -1078,6 +1078,20 @@ test_park_failed_wake_preserves_delivery() {
   assert_grep 'wake failed' "$dir/home/state/.wake-queue" 'failed wake reports on the parent channel'
   assert_present "$dir/home/state/.secondmate-park-sm1" 'failed wake retains park authority'
   assert_grep 'work retained after failed wake' "$dir/home/state/sm1.inbox/002.msg" 'failed wake retains exact work'
+  out=$(park_tick "$dir" 2>&1); rc=$?
+  expect_code 0 "$rc" "unchanged failed wake tick: $out"
+  assert_equals 1 "$(grep -c 'wake failed' "$dir/home/state/.wake-queue")" 'an unchanged failed wake reports only once'
+  out=$(env PATH="$dir/fakebin:$PATH" FM_HOME="$dir/home" FM_FAKE_DIR="$dir/fake" FM_SPAWN_NO_GUARD=1 "$ROOT/bin/fm-send.sh" sm1 'newer work after failed wake' 2>&1); rc=$?
+  expect_code 0 "$rc" "newer work enqueues: $out"
+  out=$(park_tick "$dir" 2>&1); rc=$?
+  expect_code 0 "$rc" "newer work tick: $out"
+  assert_equals 2 "$(grep -c 'wake failed' "$dir/home/state/.wake-queue")" 'newer inbox work retries the failed wake'
+  printf 'still-invalid\n' > "$dir/home/config/claude-permission-mode"
+  out=$(park_tick "$dir" 2>&1); rc=$?
+  expect_code 0 "$rc" "changed config tick: $out"
+  assert_equals 3 "$(grep -c 'wake failed' "$dir/home/state/.wake-queue")" 'a configuration change retries the failed wake'
+  out=$(park_tick "$dir" 2>&1); rc=$?
+  assert_equals 3 "$(grep -c 'wake failed' "$dir/home/state/.wake-queue")" 'the retried failure again reports only once'
   before=$(find "$dir/home/state/pending-replies" -mindepth 1 2>/dev/null | sort)
   out=$(env PATH="$dir/fakebin:$PATH" FM_HOME="$dir/home" FM_FAKE_DIR="$dir/fake" FM_SPAWN_NO_GUARD=1 "$ROOT/bin/fm-send.sh" sm1 '/compact' 2>&1); rc=$?
   expect_code 1 "$rc" "typed send must fail when wake refuses: $out"
@@ -1089,6 +1103,49 @@ test_park_failed_wake_preserves_delivery() {
   assert_absent "$dir/home/state/.secondmate-park-sm1" 'retry clears park after launch'
   assert_present "$dir/home/state/sm1.inbox/002.msg" 'unpark never deletes queued work'
   pass 'failed automatic wake retains the durable inbox and explicit unpark retries'
+}
+
+test_park_unfinished_park_reports_once() {
+  local dir out rc
+  dir=$(new_case park-unfinished); add_park_mate "$dir"; arm_answer "$dir" sm1
+  out=$(run_park "$dir" sm1 park); rc=$?
+  expect_code 0 "$rc" "setup park must succeed: $out"
+  sed 's/^phase=parked$/phase=parking/' "$dir/home/state/.secondmate-park-sm1" > "$dir/record" &&
+    mv "$dir/record" "$dir/home/state/.secondmate-park-sm1"
+  out=$(env PATH="$dir/fakebin:$PATH" FM_HOME="$dir/home" FM_FAKE_DIR="$dir/fake" FM_SPAWN_NO_GUARD=1 "$ROOT/bin/fm-send.sh" sm1 'work for unfinished park' 2>&1); rc=$?
+  expect_code 0 "$rc" "send to unfinished park enqueues: $out"
+  park_tick "$dir" >/dev/null 2>&1
+  park_tick "$dir" >/dev/null 2>&1
+  assert_equals 1 "$(grep -c 'park did not finish' "$dir/home/state/.wake-queue")" 'an unfinished park with queued work reports once'
+  assert_grep 'phase=parking' "$dir/home/state/.secondmate-park-sm1" 'tick leaves the unfinished park for park to finish'
+  pass 'an unfinished park with queued work reports once instead of every tick'
+}
+
+test_park_ignores_fire_and_forget_left_before_park() {
+  local dir out rc before
+  dir=$(new_case park-stale-ff); add_park_mate "$dir"
+  printf 'zsh' > "$dir/fake/command"
+  out=$(env PATH="$dir/fakebin:$PATH" FM_HOME="$dir/home" FM_FAKE_DIR="$dir/fake" FM_SPAWN_NO_GUARD=1 \
+    "$ROOT/bin/fm-send.sh" sm1 --fire-and-forget 0123456789abcdef CONFIG_REREAD 2>&1); rc=$?
+  expect_code 0 "$rc" "fire-and-forget to a stopped mate enqueues: $out"
+  assert_present "$dir/home/state/sm1.inbox/001.msg" 'leftover fire-and-forget record exists'
+  printf 'done [at=123]: ready to park - no conversation-only open work\n' > "$dir/home/state/sm1.status"
+  before=$(wc -l < "$dir/fake/literal")
+  out=$(FM_TEST_PERSIST_WAIT=0 run_park "$dir" sm1 park); rc=$?
+  expect_code 0 "$rc" "stopped mate parks despite a leftover fire-and-forget record: $out"
+  assert_grep 'phase=parked' "$dir/home/state/.secondmate-park-sm1" 'a pre-park fire-and-forget record does not undo the park'
+  out=$(park_tick "$dir" 2>&1); rc=$?
+  expect_code 0 "$rc" "tick with only pre-park work: $out"
+  assert_grep 'phase=parked' "$dir/home/state/.secondmate-park-sm1" 'tick ignores fire-and-forget work that predates the park'
+  assert_equals "$(wc -l < "$dir/fake/literal")" "$before" 'no relaunch for pre-park work'
+  out=$(env PATH="$dir/fakebin:$PATH" FM_HOME="$dir/home" FM_FAKE_DIR="$dir/fake" FM_SPAWN_NO_GUARD=1 \
+    "$ROOT/bin/fm-send.sh" sm1 --fire-and-forget fedcba9876543210 CONFIG_REREAD 2>&1); rc=$?
+  expect_code 0 "$rc" "fire-and-forget to the parked mate enqueues: $out"
+  assert_contains "$out" 'resumes from the worker-park tick' 'send to a parked mate reports the queued resume'
+  out=$(park_tick "$dir" 2>&1); rc=$?
+  expect_code 0 "$rc" "tick with post-park fire-and-forget: $out"
+  assert_absent "$dir/home/state/.secondmate-park-sm1" "fire-and-forget sent after the park resumes the mate: $out"
+  pass 'only fire-and-forget work sent after the park resumes a parked mate'
 }
 
 test_park_remote_refusal() {
@@ -1317,6 +1374,8 @@ test_park_persist_and_idle_gates
 test_park_wake_and_status
 test_park_remote_refusal
 test_park_failed_wake_preserves_delivery
+test_park_unfinished_park_reports_once
+test_park_ignores_fire_and_forget_left_before_park
 
 test_registered_id_precedes_selector_prefix
 test_persist_gates_and_asks_only_for_open_records

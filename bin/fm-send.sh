@@ -859,6 +859,7 @@ fm_send_feed_resolved_holds() { # <answer-text>
 # lease-command lock, so only the watcher tick may attempt the relaunch.
 # A secondmate persist request must still reach its old agent during the park
 # transaction.
+PARKED_SECONDMATE=''
 fm_send_wake_parked() { # [direct]
   local id record rc=0
   if [ -n "$TARGET_META" ] && fm_worker_park_load "$TARGET_META"; then
@@ -885,6 +886,7 @@ fm_send_wake_parked() { # [direct]
     return 1
   fi
   # The inbox itself is the durable resume request, including CONFIG_REREAD.
+  PARKED_SECONDMATE=$id
   return 0
 }
 
@@ -1220,6 +1222,10 @@ else
     # Enqueue precedes wake, so even a failed launch cannot lose the steer.
     if ! fm_send_wake_parked; then
       echo "warning: steer durably recorded at $INBOX_RECORD; secondmate wake failed. Do not resend; retry unpark." >&2
+      exit 0
+    fi
+    if [ -n "$PARKED_SECONDMATE" ]; then
+      echo "fm-send: steer queued at $INBOX_RECORD; parked secondmate $PARKED_SECONDMATE resumes from the worker-park tick" >&2
       exit 0
     fi
     # Ring the doorbell, best-effort: no ring outcome changes the exit status,
