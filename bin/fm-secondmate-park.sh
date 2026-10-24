@@ -79,7 +79,11 @@ if [ "$ACTION" = tick ]; then
     hash=$(printf '%s' "$*" | cksum | awk '{ print $1 "-" $2 }')
     [ "$(cat "$TICK_REPORT" 2>/dev/null)" != "$hash" ] || exit 1
     fm_wake_append check "secondmate-park-$ID" "check: secondmate $ID wake failed: $*; still parked, inbox preserved" || exit 1
-    tmp=$(mktemp "$TICK_REPORT.XXXXXX") && { printf '%s\n' "$hash" > "$tmp" && mv -f "$tmp" "$TICK_REPORT" || rm -f "$tmp"; }
+    if tmp=$(mktemp "$TICK_REPORT.XXXXXX"); then
+      if ! { printf '%s\n' "$hash" > "$tmp" && mv -f "$tmp" "$TICK_REPORT"; }; then
+        rm -f "$tmp"
+      fi
+    fi
     exit 1
   }
 fi
