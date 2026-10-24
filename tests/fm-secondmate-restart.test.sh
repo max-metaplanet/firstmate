@@ -1141,11 +1141,37 @@ test_park_ignores_fire_and_forget_left_before_park() {
   out=$(env PATH="$dir/fakebin:$PATH" FM_HOME="$dir/home" FM_FAKE_DIR="$dir/fake" FM_SPAWN_NO_GUARD=1 \
     "$ROOT/bin/fm-send.sh" sm1 --fire-and-forget fedcba9876543210 CONFIG_REREAD 2>&1); rc=$?
   expect_code 0 "$rc" "fire-and-forget to the parked mate enqueues: $out"
-  assert_contains "$out" 'resumes from the worker-park tick' 'send to a parked mate reports the queued resume'
+  assert_contains "$out" 'reports why it cannot on the parent channel' 'send to a parked mate names where a failed resume is reported'
   out=$(park_tick "$dir" 2>&1); rc=$?
   expect_code 0 "$rc" "tick with post-park fire-and-forget: $out"
   assert_absent "$dir/home/state/.secondmate-park-sm1" "fire-and-forget sent after the park resumes the mate: $out"
   pass 'only fire-and-forget work sent after the park resumes a parked mate'
+}
+
+test_park_tick_reports_invalid_identity_once() {
+  local dir out rc registry
+  dir=$(new_case park-tick-identity); add_park_mate "$dir"; arm_answer "$dir" sm1
+  out=$(run_park "$dir" sm1 park); rc=$?
+  expect_code 0 "$rc" "setup park must succeed: $out"
+  out=$(env PATH="$dir/fakebin:$PATH" FM_HOME="$dir/home" FM_FAKE_DIR="$dir/fake" FM_SPAWN_NO_GUARD=1 "$ROOT/bin/fm-send.sh" sm1 'work for a mate that cannot resume' 2>&1); rc=$?
+  expect_code 0 "$rc" "send enqueues: $out"
+  registry=$(cat "$dir/home/data/secondmates.md")
+  : > "$dir/home/data/secondmates.md"
+  park_tick "$dir" >/dev/null 2>&1
+  park_tick "$dir" >/dev/null 2>&1
+  assert_equals 1 "$(grep -c 'no unique registered secondmate sm1' "$dir/home/state/.wake-queue")" 'a removed registry line reports once across ticks'
+  printf '%s\n' "$registry" > "$dir/home/data/secondmates.md"
+  cp "$dir/home/state/.secondmate-park-sm1" "$dir/record"
+  printf 'schema=9\n' > "$dir/home/state/.secondmate-park-sm1"
+  park_tick "$dir" >/dev/null 2>&1
+  park_tick "$dir" >/dev/null 2>&1
+  assert_equals 1 "$(grep -c 'park record identity is invalid' "$dir/home/state/.wake-queue")" 'a corrupt park record reports once across ticks'
+  mv "$dir/record" "$dir/home/state/.secondmate-park-sm1"
+  out=$(park_tick "$dir" 2>&1); rc=$?
+  expect_code 0 "$rc" "restored identity resumes: $out"
+  assert_absent "$dir/home/state/.secondmate-park-sm1" "restored identity resumes the mate: $out"
+  assert_absent "$dir/home/state/.secondmate-tick-report-sm1" 'a successful tick clears the report marker'
+  pass 'tick failures before the park record is trusted report once per reason'
 }
 
 test_park_remote_refusal() {
@@ -1379,6 +1405,7 @@ test_park_remote_refusal
 test_park_failed_wake_preserves_delivery
 test_park_unfinished_park_reports_once
 test_park_ignores_fire_and_forget_left_before_park
+test_park_tick_reports_invalid_identity_once
 
 test_registered_id_precedes_selector_prefix
 test_persist_gates_and_asks_only_for_open_records

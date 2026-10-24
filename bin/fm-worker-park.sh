@@ -274,6 +274,8 @@ if [ "$VERB" = tick ]; then
     if [ "$(fm_meta_get "$meta" kind)" = secondmate ]; then
       if [ -e "$STATE/.secondmate-park-$ID" ] || [ -L "$STATE/.secondmate-park-$ID" ]; then
         "$SCRIPT_DIR/fm-secondmate-park.sh" "$ID" tick || true
+      else
+        rm -f "$STATE/.secondmate-tick-report-$ID"
       fi
       continue
     fi

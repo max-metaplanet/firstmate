@@ -70,6 +70,19 @@ STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 fail() { echo "error: $*" >&2; exit 1; }
 META="$STATE/$ID.meta"
 RECORD="$STATE/.secondmate-park-$ID"
+TICK_REPORT="$STATE/.secondmate-tick-report-$ID"
+if [ "$ACTION" = tick ]; then
+  # Failures before the park record is trusted report once per distinct reason.
+  fail() {
+    local hash tmp
+    echo "error: $*" >&2
+    hash=$(printf '%s' "$*" | cksum | awk '{ print $1 "-" $2 }')
+    [ "$(cat "$TICK_REPORT" 2>/dev/null)" != "$hash" ] || exit 1
+    fm_wake_append check "secondmate-park-$ID" "check: secondmate $ID wake failed: $*; still parked, inbox preserved" || exit 1
+    tmp=$(mktemp "$TICK_REPORT.XXXXXX") && { printf '%s\n' "$hash" > "$tmp" && mv -f "$tmp" "$TICK_REPORT" || rm -f "$tmp"; }
+    exit 1
+  }
+fi
 validate_identity() {
   secondmate_registry_line_for_id "$FM_HOME/data/secondmates.md" "$ID" || fail "no unique registered secondmate $ID"
   [ "$SECONDMATE_REGISTRY_REMOTE" = 0 ] && [ -z "$(fm_meta_get "$META" remote_host)" ] || fail 'remote secondmate parking is unsupported'
@@ -222,9 +235,10 @@ queued_during_park() {
   return 1
 }
 if [ "$ACTION" = unpark ] || [ "$ACTION" = tick ]; then
-  if ! fm_secondmate_park_present "$STATE" "$ID"; then printf '%s: already unparked\n' "$ID"; exit 0; fi
+  if ! fm_secondmate_park_present "$STATE" "$ID"; then rm -f "$TICK_REPORT"; printf '%s: already unparked\n' "$ID"; exit 0; fi
   read_record
   if [ "$ACTION" = tick ]; then
+    rm -f "$TICK_REPORT"
     fail() {
       echo "error: $*" >&2
       note_wake_failure "$(fm_meta_get "$RECORD" phase)" || true

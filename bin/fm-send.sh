@@ -1225,7 +1225,7 @@ else
       exit 0
     fi
     if [ -n "$PARKED_SECONDMATE" ]; then
-      echo "fm-send: steer queued at $INBOX_RECORD; parked secondmate $PARKED_SECONDMATE resumes from the worker-park tick" >&2
+      echo "fm-send: steer queued at $INBOX_RECORD; the worker-park tick resumes parked secondmate $PARKED_SECONDMATE or reports why it cannot on the parent channel" >&2
       exit 0
     fi
     # Ring the doorbell, best-effort: no ring outcome changes the exit status,
