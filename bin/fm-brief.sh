@@ -45,6 +45,7 @@
 #   direct-PR    implement -> draft PR -> local validation -> ready PR -> configured merge authority
 #   local-only   implement on branch, stop and report "ready in branch" (no push/PR);
 #                the configured merge authority approves, firstmate merges to local main
+# fm-dod-lib.sh owns CI cost discipline and batched publication for PR delivery.
 # no-mistakes-prod-only is a registry policy, not a task mode; resolve it to one of
 # the three concrete modes at intake before calling this script.
 # --branch-prefix <prefix> optionally overrides the ship branch's "fm/" prefix, so

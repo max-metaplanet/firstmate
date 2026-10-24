@@ -617,7 +617,7 @@ EOF
 
 fm_dod_block() {  # <mode> <task-id> [branch] [<forge>] [<base>] [<consent>] [<ticket-header>] [<ticket-nm-retitle>]
   local mode=$1 id=$2 forge=${4:-none} base=${5:-} consent=${6:-} ticket_header=${7:-} ticket_retitle=${8:-}
-  local branch=${3:-fm/$id} pr_base='' nm_base='' draft_create='--draft' base_q contract_forge='' contract_consent='' forge_cli=gh-axi draft_check origin_steps retitle_cmd adapter ci_wait='' ready_wait='' refresh='' refresh_home_q
+  local branch=${3:-fm/$id} pr_base='' nm_base='' draft_create='--draft' base_q contract_forge='' contract_consent='' forge_cli=gh-axi draft_check origin_steps retitle_cmd adapter ci_wait='' ready_wait='' refresh='' refresh_home_q ci_cost='' ci_rerun='the forge equivalent where one exists'
   fm_forge_valid_for_mode "$forge" "$mode" fm_dod_block || return 1
   fm_base_branch_valid "$base" "$mode" "$forge" fm_dod_block || return 1
   if [ -n "$consent" ]; then
@@ -638,6 +638,7 @@ Edit it with \`gh-axi pr edit <PR URL> --title '<the corrected title>'\`, then r
 3. \`git push -u origin $branch\`, then \`gh-axi pr create -R <owner>/<repo> --base <base branch> --head $branch --draft --title ... --body ...\`."
   case "$forge" in
     none|github)
+      ci_rerun="\`gh-axi run rerun <run-id> --failed\`"
       ci_wait="For a separate GitHub CI wait, use \`$_FM_DOD_LIB_DIR/fm-pr-checks.sh --watch <pr-url>\` (policy: \`fm-pr-checks-lib.sh\`); advisory checks do not block."
       ready_wait=" When checks were skipped while draft, read the ready time with \`gh api --paginate repos/<owner>/<repo>/issues/<number>/timeline --jq '.[] | select(.event == \"ready_for_review\") | .created_at' | tail -n 1\` and wait with \`$_FM_DOD_LIB_DIR/fm-pr-checks.sh --watch --after <ready time> <pr-url>\`, so no check skipped before the ready transition counts."
       printf -v refresh_home_q '%q' "${FM_HOME:-<task-home>}"
@@ -657,6 +658,9 @@ Do not report done or mark it ready while \`state/$id.pr-refresh\` exists."
     retitle_cmd="
 Edit it with \`tea pulls edit <number> --repo <owner>/<repo> --title '<the corrected title>'\`, then read the pull request back with \`tea api --repo <owner>/<repo> /repos/{owner}/{repo}/pulls/<number>\` and confirm the title it prints is the corrected one."
   fi
+  ci_cost="When a required check is red, read its failure log.
+If the log shows no cause in your own change, rerun only the failed jobs instead of pushing, using $ci_rerun.
+Never push an empty, no-op, or \"retrigger\" commit to rerun CI."
   if [ -n "$base" ]; then
     printf -v base_q '%q' "$base"
     pr_base=", against the base branch \`$base\` (\`--base $base_q\`), not the repository default"
@@ -754,7 +758,8 @@ When it is committed, publish your branch to \`origin\` and open a draft PR with
 Keep it draft throughout implementation and local iteration.
 For each CI fix round, wait for ALL reported checks on the current head to finish before collecting the failures; on GitHub use \`$_FM_DOD_LIB_DIR/fm-pr-checks.sh --watch --settled <pr-url>\` even if a check is already red.
 Read the complete failure set, fix every actionable failure together, and run the relevant local validation, including lint and formatting affected by the fixes.
-Commit all fixes for that round locally, then push ONCE for the round; never push each individual fix or use an empty push to retry CI.
+$ci_cost
+Commit all fixes for that round locally, then push ONCE for the round; never push each individual fix.
 Re-read the PR head before publishing; if it changed, collect the new head's completed checks before starting another round.
 Once local validation has passed and the work is ready for review, mark the PR ready before the final CI wait so suites skipped on drafts can run.$ready_wait
 The ready transition must not require another commit or push.
@@ -791,6 +796,8 @@ As soon as the implementation is committed and your tree is clean, invoke /no-mi
 The pipeline owns the push; never push from this copy.
 $refresh
 Follow the CI-round policy in validation-supervision; never hand-fix or push around the pipeline's repair loop.
+$ci_cost
+When no-mistakes owns CI, apply this rule through its CI step; its "skip as unrelated with evidence" path remains valid.
 As soon as the pipeline opens its PR, read it by its full URL.
 If it is a draft, confirm the pipeline's local review, test and lint steps passed and the work is ready, then mark it ready using the forge command below BEFORE waiting for CI green.
 A draft-skipping workflow needs that ready transition to run its full suites; skipped draft checks alone never prove the ready PR green.

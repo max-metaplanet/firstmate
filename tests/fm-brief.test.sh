@@ -532,6 +532,43 @@ test_draft_first_and_batched_repairs() {
   pass 'briefs start draft, batch worker CI repairs, and preserve pipeline and local-only ownership'
 }
 
+test_ci_cost_discipline() {
+  local home mode forge brief
+  home="$TMP_ROOT/ci-cost-home"
+  mkdir -p "$home/data"
+  for mode in direct-PR no-mistakes; do
+    for forge in none forgejo; do
+      FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "cost-$mode-$forge" proj --mode "$mode" --forge "$forge" >/dev/null 2>&1 \
+        || fail "$mode/$forge: scaffold failed"
+      brief="$home/data/cost-$mode-$forge/brief.md"
+      assert_grep 'When a required check is red, read its failure log' "$brief" "$mode/$forge: missing log inspection"
+      assert_grep 'If the log shows no cause in your own change, rerun only the failed jobs instead of pushing' "$brief" \
+        "$mode/$forge: unrelated failures must rerun only failed jobs"
+      assert_grep 'Never push an empty, no-op, or "retrigger" commit to rerun CI' "$brief" \
+        "$mode/$forge: CI retrigger commits must be forbidden"
+      if [ "$forge" = forgejo ]; then
+        assert_grep 'forge equivalent where one exists' "$brief" 'Forgejo needs a supported rerun equivalent'
+        assert_no_grep 'gh-axi run rerun' "$brief" 'GitHub rerun command leaked into Forgejo'
+      else
+        assert_grep 'gh-axi run rerun <run-id> --failed' "$brief" "$mode/$forge: missing failed-only GitHub rerun"
+      fi
+      if [ "$mode" = no-mistakes ]; then
+        assert_grep 'apply this rule through its CI step' "$brief" "$forge: pipeline must retain CI ownership"
+        assert_grep 'skip as unrelated with evidence' "$brief" "$forge: pipeline unrelated-CI exception was lost"
+      fi
+    done
+  done
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" cost-scout proj --scout >/dev/null 2>&1 \
+    || fail 'scout scaffold failed'
+  brief="$home/data/cost-scout/brief.md"
+  assert_grep 'Never push to any remote and never open a PR' "$brief" 'scouts must not publish'
+  assert_no_grep 'rerun only the failed jobs' "$brief" 'non-publishing scouts inherited CI repair instructions'
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" cost-local proj --mode local-only >/dev/null 2>&1 \
+    || fail 'local-only scaffold failed'
+  assert_no_grep 'rerun only the failed jobs' "$home/data/cost-local/brief.md" 'local-only inherited forge CI instructions'
+  pass 'publishing ship briefs minimize CI reruns while scouts and local-only tasks never publish'
+}
+
 # Pin the specific line the bug lived on: the no-mistakes DOD's no-mistakes
 # reference must render as plain prose with no dangling apostrophe artifact.
 test_no_mistakes_dod_wording() {
@@ -1977,6 +2014,7 @@ test_no_mistakes_dod_wording
 test_no_mistakes_dod_green_detection
 test_pr_based_dod_requires_non_draft
 test_draft_first_and_batched_repairs
+test_ci_cost_discipline
 test_direct_pr_dod_binds_the_pr_target_to_origin
 test_ask_user_escalation_format
 test_ship_project_memory_wording
