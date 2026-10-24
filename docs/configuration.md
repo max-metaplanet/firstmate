@@ -1480,6 +1480,46 @@ Each queued parked-worker resume reserves one place under its project's cap and 
 A malformed or unreadable file refuses every fresh spawn until it is fixed.
 [`bin/fm-fleet-capacity-lib.sh`](../bin/fm-fleet-capacity-lib.sh) owns the file format, what holds a place, and the lock that keeps concurrent spawns from both taking the last one.
 
+### Optional load-aware capacity (config/fleet-load-policy)
+
+The root home's optional `config/fleet-load-policy` adds a macOS resource-based target below `fleet-capacity`.
+It is off when absent or set to `off`, and installations ship without an enabled policy.
+Enabling it requires a positive `fleet-capacity`; that manual limit always remains the upper bound.
+An enabled policy on an unsupported platform reports an admission hold instead of guessing resource health.
+
+An observation-only pilot uses this JSON in the root home's gitignored `config/fleet-load-policy`:
+
+```json
+{"mode":"observe","floor":6,"ceiling":8,"start":8}
+```
+
+`observe` shows telemetry, the proposed effective cap, and any admission hold while continuing to admit through the static cap.
+Changing `mode` to `enforce` explicitly opts that machine into applying the target and holds to new workers and parked resumes.
+The policy never stops running workers, even when occupancy exceeds the target.
+Lowering `fleet-capacity` clamps the target immediately; raising it does not bypass the policy ceiling or its recovery window.
+Setting the policy to `off` restores static admission and stops sampling.
+No machine's configuration changes automatically as part of installation or an update.
+
+The existing watcher parking tick samples at most once per minute for the whole local fleet under the shared admission lock.
+It reads load per online CPU, macOS kernel memory pressure, and `vm_stat` paging counters using the reported page size.
+Residual swap usage is observation data and does not by itself prevent recovery.
+Three overloaded CPU samples reduce the target by one; sustained overload can reduce it again after two more samples.
+Two warning-pressure or high swap-out intervals also reduce it by one, combining simultaneous stress into one step.
+Critical pressure immediately sets the target to the floor and holds every further admission, including below the floor.
+Two consecutive normal-pressure samples clear that hold; ten healthy minutes are required for each one-slot increase.
+Missing, duplicate, late, rebooted, or backward-clock history never manufactures healthy minutes.
+
+In enforce mode, a sensor older than three minutes, unreadable required telemetry, or incompatible state defers admission with exit 75 and preserves queued work.
+The watcher or the next admission attempts a bounded refresh, with a one-minute retry interval after sensor failures.
+Capacity and hold transitions produce a deduplicated operational wake; queued resumes retain their existing priority.
+Without a watcher, stale telemetry is visible and further admissions stay deferred until a valid refresh succeeds.
+
+`FM_HOME=<home> bash bin/fm-worker-park.sh status` returns a read-only JSON observation with static, effective and desired caps, policy limits, occupancy, queued resumes, sample age, reason and recovery condition.
+The fleet snapshot and published home summary expose the same observation as `capacity`.
+Unknown endpoint state continues to hold a place, and an unreadable fleet inventory appears as an explicit occupancy error.
+[`bin/fm-fleet-capacity-lib.sh`](../bin/fm-fleet-capacity-lib.sh) owns policy/state format and interfaces; its `fm-fleet-load.py` helper owns sampling thresholds and hysteresis.
+[`tests/fm-fleet-capacity.test.sh`](../tests/fm-fleet-capacity.test.sh) verifies these admission guarantees with isolated telemetry and clocks, without a live concurrency or pressure ramp.
+
 ## Crew dispatch profiles (config/crew-dispatch.json)
 
 `config/crew-dispatch.json` is an optional local, gitignored file containing natural-language rules that firstmate reads before dispatching a crewmate or scout.

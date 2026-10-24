@@ -18,6 +18,7 @@ unset TASKS_AXI_BACKEND || :
 SPAWN="$ROOT/bin/fm-spawn.sh"
 TMP_ROOT=$(fm_test_tmproot fm-fleet-capacity)
 DEFER_EXIT=75
+TEST_PATH=$PATH
 HAVE_TASKS_AXI=0
 command -v tasks-axi >/dev/null 2>&1 && HAVE_TASKS_AXI=1
 
@@ -510,6 +511,279 @@ test_parked_relaunch_respects_both_caps() {
   pass 'parked relaunch respects fleet and project capacity'
 }
 
+# Adaptive policy uses real tick/status/spawn commands with fixture telemetry.
+load_policy() { # home mode [floor ceiling start]
+  printf '{"mode":"%s","floor":%s,"ceiling":%s,"start":%s}\n' "$2" "${3:-1}" "${4:-3}" "${5:-3}" > "$1/config/fleet-load-policy"
+}
+
+load_fixture() { # case epoch pressure load1-centi load5-centi [swapouts] [boot]
+  export FM_FLEET_LOAD_CLOCK="$1/clock.json" FM_FLEET_LOAD_TELEMETRY="$1/telemetry.json"
+  printf '{"epoch":%s,"monotonic":%s,"boot":"%s"}\n' "$2" "$2" "${7:-fixture-boot}" > "$FM_FLEET_LOAD_CLOCK"
+  printf '{"load1":%s,"load5":%s,"cpus":1,"load1_centi":%s,"load5_centi":%s,"pressure":"%s","swapouts":%s,"swapins":0,"page_size":16384,"swap_used_bytes":9999999999}\n' \
+    "$4" "$5" "$4" "$5" "$3" "${6:-0}" > "$FM_FLEET_LOAD_TELEMETRY"
+}
+
+park_command() { # case home verb
+  FM_ROOT_OVERRIDE='' FM_HOME="$2" FM_STATE_OVERRIDE='' FM_DATA_OVERRIDE='' FM_PROJECTS_OVERRIDE='' FM_CONFIG_OVERRIDE='' \
+    FM_FAKE_CALL_LOG="$1/calls.log" FM_BACKEND=tmux PATH="$1/fakebin:$TEST_PATH" bash "$ROOT/bin/fm-worker-park.sh" "$3"
+}
+
+load_expect() { # case home jq-expression message
+  local observation
+  observation=$(park_command "$1" "$2" status) || fail "status failed: $4"
+  printf '%s\n' "$observation" | jq -e "$3" >/dev/null || fail "$4: $observation"
+}
+
+load_tick() { park_command "$1" "$1/home" tick || fail 'capacity tick failed'; }
+
+test_adaptive_off_and_observe() {
+  local case_dir home out rc=0 state
+  case_dir=$(make_case adaptive-off task-a)
+  home="$case_dir/home"
+  declare_fleet "$home" 3
+  printf 'off\n' > "$home/config/fleet-load-policy"
+  load_fixture "$case_dir" 1000 critical 200 200
+  load_tick "$case_dir"
+  assert_absent "$home/state/fleet-load.json" 'off mode did not retain the no-sampling path'
+  printf '{"mode":"off"}\n' > "$home/config/fleet-load-policy"
+  rm "$home/config/fleet-capacity"
+  load_tick "$case_dir"
+  load_expect "$case_dir" "$home" '.mode == "off" and .configured == null' 'JSON off also preserves undeclared capacity'
+  assert_absent "$home/state/fleet-load.json" 'JSON off sampled without a declared cap'
+  declare_fleet "$home" 3
+  load_policy "$home" observe
+  load_tick "$case_dir"
+  load_expect "$case_dir" "$home" '.mode == "observe" and .desired == 1 and .effective == 3 and (.hold | contains("critical"))' 'observe projects critical hold without applying it'
+  state=$(cat "$home/state/fleet-load.json")
+  out=$(spawn_ship "$case_dir" task-a) || rc=$?
+  expect_code 0 "$rc" "observe refused an admission: $out"
+  assert_equals "$state" "$(cat "$home/state/fleet-load.json")" 'duplicate tick/admission sampled twice in a minute'
+  assert_not_contains "$(cat "$case_dir/calls.log")" 'kill-window' 'adaptive sampling stopped a running worker'
+  unset FM_FLEET_LOAD_CLOCK FM_FLEET_LOAD_TELEMETRY
+  pass 'off has no sample; observe reports a critical desired cap and never refuses'
+}
+
+test_adaptive_drop_recover_and_static_clamp() {
+  local case_dir home at out rc=0 before worktrees state
+  case_dir=$(make_case adaptive-cpu task-a)
+  home="$case_dir/home"
+  declare_fleet "$home" 3
+  load_policy "$home" enforce
+  write_running "$case_dir" "$home" live-a "$case_dir/project"
+  write_running "$case_dir" "$home" live-b "$case_dir/other-project"
+  for at in 1000 1060 1120; do
+    load_fixture "$case_dir" "$at" normal 150 140
+    load_tick "$case_dir"
+  done
+  load_expect "$case_dir" "$home" '.effective == 2 and .occupancy == 2 and .state.reason == "sustained CPU load"' 'three CPU samples reduce one slot'
+  before=$(call_count "$case_dir"); worktrees=$(worktree_list "$case_dir")
+  out=$(spawn_ship "$case_dir" task-a "$case_dir/unused") || rc=$?
+  expect_code 75 "$rc" "effective target did not defer: $out"
+  assert_nothing_created "$case_dir" "$home" task-a "$before" "$worktrees"
+  for at in 1180 1240 1300 1360 1420 1480 1540 1600 1660; do
+    load_fixture "$case_dir" "$at" normal 40 40
+    load_tick "$case_dir"
+  done
+  load_expect "$case_dir" "$home" '.effective == 2 and .state.healthy == 9' 'nine healthy minutes cannot recover'
+  load_fixture "$case_dir" 1720 normal 40 40
+  load_tick "$case_dir"
+  load_expect "$case_dir" "$home" '.effective == 3 and .state.healthy == 0' 'ten healthy minutes recover one slot despite residual swap use'
+  declare_fleet "$home" 1
+  load_tick "$case_dir"
+  load_expect "$case_dir" "$home" '.effective == 1 and .floor == 1 and .ceiling == 1' 'manual cap immediately bounds policy'
+  declare_fleet "$home" 3
+  load_tick "$case_dir"
+  load_expect "$case_dir" "$home" '.effective == 1' 'raising the manual cap cannot restore slots without healthy history'
+  assert_not_contains "$(cat "$case_dir/calls.log")" 'kill-window' 'lowering effective target stopped existing occupants'
+  unset FM_FLEET_LOAD_CLOCK FM_FLEET_LOAD_TELEMETRY
+  pass 'enforce drops, recovers slowly, clamps to static cap and never stops occupants'
+}
+
+test_adaptive_critical_stale_and_invalid() {
+  local case_dir home out rc=0 before worktrees notices
+  case_dir=$(make_case adaptive-holds task-a)
+  home="$case_dir/home"
+  declare_fleet "$home" 3
+  load_policy "$home" enforce 2 3 3
+  load_fixture "$case_dir" 1000 critical 40 40
+  load_tick "$case_dir"
+  out=$(spawn_ship "$case_dir" task-a "$case_dir/unused") || rc=$?
+  expect_code 75 "$rc" "critical hold admitted below the floor: $out"
+  load_expect "$case_dir" "$home" '.occupancy == 0 and .desired == 2 and (.hold | contains("critical"))' 'critical pressure holds even an empty fleet'
+  load_fixture "$case_dir" 1060 normal 40 40; load_tick "$case_dir"
+  load_expect "$case_dir" "$home" '(.hold | contains("critical"))' 'one normal sample cannot clear critical'
+  load_fixture "$case_dir" 1120 normal 40 40; load_tick "$case_dir"
+  load_expect "$case_dir" "$home" '.hold == "" and .effective == 2' 'two normal samples clear the hold without recovering capacity'
+  load_fixture "$case_dir" 1301 normal 40 40
+  printf 'unreadable sensor\n' > "$FM_FLEET_LOAD_TELEMETRY"
+  before=$(call_count "$case_dir"); worktrees=$(worktree_list "$case_dir"); rc=0
+  out=$(spawn_ship "$case_dir" task-a "$case_dir/unused") || rc=$?
+  expect_code 75 "$rc" "stale telemetry admitted new work: $out"
+  assert_contains "$out" 'stale sensor' 'stale admission names the observed reason'
+  assert_nothing_created "$case_dir" "$home" task-a "$before" "$worktrees"
+  notices=$(cat "$home/state/.fleet-load-notice")
+  load_tick "$case_dir"
+  assert_equals "$notices" "$(cat "$home/state/.fleet-load-notice")" 'identical hold changed its wake fingerprint'
+  load_expect "$case_dir" "$home" '.state.healthy == 0 and .desired == 2 and .sample_age_seconds == 181' 'failed sensor retains target and resets healthy history'
+  load_fixture "$case_dir" 1361 normal 40 40; load_tick "$case_dir"
+  load_expect "$case_dir" "$home" '.hold == "" and .state.healthy == 0' 'gap resets recovery without stranding sensor retry'
+  printf '{"version":99}\n' > "$home/state/fleet-load.json"
+  rc=0; out=$(spawn_ship "$case_dir" task-a "$case_dir/unused") || rc=$?
+  expect_code 75 "$rc" "incompatible state did not defer: $out"
+  assert_contains "$out" 'incompatible fleet-load state' 'incompatible state is disclosed'
+  printf '{"mode":"enforce","floor":0}\n' > "$home/config/fleet-load-policy"
+  rc=0; out=$(spawn_ship "$case_dir" task-a "$case_dir/unused") || rc=$?
+  expect_code 75 "$rc" "malformed enabled policy did not defer: $out"
+  unset FM_FLEET_LOAD_CLOCK FM_FLEET_LOAD_TELEMETRY
+  pass 'critical and stale holds defer below floor; healthy recovery, schema and config failures stay explicit'
+}
+
+test_adaptive_queue_priority() {
+  local case_dir home out rc=0
+  case_dir=$(make_case adaptive-priority task-c)
+  home="$case_dir/home"
+  declare_fleet "$home" 3
+  load_policy "$home" enforce 1 1 1
+  load_fixture "$case_dir" 1000 normal 40 40
+  write_live "$home" parked-a "$case_dir/project"
+  write_park "$home" parked-a queued
+  out=$(spawn_ship "$case_dir" task-c "$case_dir/unused") || rc=$?
+  expect_code 75 "$rc" "fresh spawn overtook queued resume under effective target: $out"
+  assert_contains "$out" 'resume ahead of task task-c' 'adaptive cap retains queued-resume priority'
+  load_expect "$case_dir" "$home" '.queued_resumes == 1 and .effective == 1' 'status includes the durable queue'
+  unset FM_FLEET_LOAD_CLOCK FM_FLEET_LOAD_TELEMETRY
+  pass 'effective capacity preserves queued-resume priority'
+}
+
+test_adaptive_concurrent_homes() {
+  local case_dir home mate hold wt i first second first_rc=0 second_rc=0
+  case_dir=$(make_case adaptive-concurrent task-a)
+  home="$case_dir/home"; mate="$case_dir/mate"
+  make_home "$mate" task-b
+  printf '%s\n' schema=fm-secondmate-parent.v1 route=local "parent_home=$home" > "$mate/.fm-secondmate-parent"
+  printf -- '- mate - local (home: %s; scope: project work; projects: project; added 2026-09-01)\n' "$mate" > "$home/data/secondmates.md"
+  declare_fleet "$home" 3
+  load_policy "$home" enforce 1 1 1
+  load_fixture "$case_dir" 1000 normal 40 40
+  hold="$case_dir/hold"; wt=$(new_worktree "$case_dir" task-a)
+  FM_FAKE_HOLD="$hold" spawn_ship "$case_dir" task-a "$wt" > "$case_dir/first.out" 2>&1 &
+  first=$!
+  i=0
+  while [ ! -f "$hold.reached" ]; do
+    i=$((i + 1)); [ "$i" -lt 400 ] || fail "first admission never reached launch: $(cat "$case_dir/first.out")"
+    sleep 0.05
+  done
+  run_spawn "$case_dir" "$mate" "$case_dir/unused" task-b "$case_dir/other-project" --mode no-mistakes --yolo off > "$case_dir/second.out" 2>&1 &
+  second=$!
+  : > "$hold.release"
+  wait "$first" || first_rc=$?
+  wait "$second" || second_rc=$?
+  expect_code 0 "$first_rc" "first admission failed: $(cat "$case_dir/first.out")"
+  expect_code 75 "$second_rc" "concurrent local-home admission exceeded effective target: $(cat "$case_dir/second.out")"
+  assert_absent "$mate/state/task-b.meta" 'concurrent root/local-home spawn exceeded effective cap'
+  load_expect "$case_dir" "$home" '.effective == 1 and .occupancy == 1' 'shared effective target bounds both homes'
+  unset FM_FLEET_LOAD_CLOCK FM_FLEET_LOAD_TELEMETRY
+  pass 'concurrent root/local-home admissions cannot both take the effective last place'
+}
+
+test_adaptive_memory_paging_and_history() {
+  local case_dir home at previous output state
+  case_dir=$(make_case adaptive-history)
+  home="$case_dir/home"
+  declare_fleet "$home" 3
+  load_policy "$home" enforce
+  for at in 1000 1060; do
+    load_fixture "$case_dir" "$at" warning 40 40
+    load_tick "$case_dir"
+  done
+  load_expect "$case_dir" "$home" '.effective == 2 and .state.reason == "memory pressure"' 'two warning samples reduce capacity'
+  load_fixture "$case_dir" 1120 normal 40 40 100000; load_tick "$case_dir"
+  load_fixture "$case_dir" 1180 normal 40 40 200000; load_tick "$case_dir"
+  load_expect "$case_dir" "$home" '.effective == 1 and .state.reason == "swap-out churn" and .state.swap_out_bytes_per_second > 16777216' 'two measured paging intervals reduce capacity using actual page size'
+  for at in 1240 1300 1360; do
+    load_fixture "$case_dir" "$at" normal 40 40 200000; load_tick "$case_dir"
+  done
+  load_expect "$case_dir" "$home" '.state.healthy == 3' 'healthy history accumulates'
+  load_fixture "$case_dir" 1420 normal 40 40 1; load_tick "$case_dir"
+  load_expect "$case_dir" "$home" '.state.healthy == 0 and .state.swap_out_bytes_per_second == null' 'paging counter reset cannot authorize recovery'
+  load_fixture "$case_dir" 1600 normal 40 40 1; load_tick "$case_dir"
+  load_expect "$case_dir" "$home" '.state.healthy == 0' 'missed sampling intervals cannot count as healthy'
+  state=$(cat "$home/state/fleet-load.json")
+  park_command "$case_dir" "$home" status >/dev/null
+  assert_equals "$state" "$(cat "$home/state/fleet-load.json")" 'status mutated policy state'
+  load_fixture "$case_dir" 1000 normal 40 40 1; load_tick "$case_dir"
+  load_expect "$case_dir" "$home" '.state.healthy == 0 and .state.sample_epoch == 1000' 'backward clock invalidates history'
+  load_fixture "$case_dir" 1060 normal 40 40 1 next-boot; load_tick "$case_dir"
+  load_expect "$case_dir" "$home" '.state.healthy == 0 and .state.boot == "next-boot"' 'reboot starts with no healthy history'
+  load_policy "$home" observe 1 2 2
+  load_tick "$case_dir"
+  load_expect "$case_dir" "$home" '.mode == "observe" and .desired == 2 and .state.healthy == 0' 'policy changes invalidate history'
+  unset FM_FLEET_LOAD_CLOCK FM_FLEET_LOAD_TELEMETRY
+  pass 'memory pressure, measured paging and clock/config/boot invalidation govern history'
+}
+
+test_adaptive_native_sensor_and_projection() {
+  local case_dir home status snapshot summary state
+  case_dir=$(make_case adaptive-native)
+  home="$case_dir/home"
+  declare_fleet "$home" 3
+  load_policy "$home" observe
+  load_fixture "$case_dir" 1000 normal 40 40
+  unset FM_FLEET_LOAD_TELEMETRY
+  # Run the production collector using read-only tool fixtures, including XNU
+  # dispatch pressure values, rather than injecting its normalized output.
+  cat > "$case_dir/fakebin/sysctl" <<'SENSOR'
+#!/usr/bin/env bash
+case "$*" in
+  '-n vm.loadavg') printf '{ 8.00 4.00 2.00 }\n' ;;
+  '-n hw.ncpu') printf '4\n' ;;
+  '-n kern.memorystatus_vm_pressure_level') cat "$FM_FAKE_CALL_LOG.pressure" ;;
+  '-n vm.swapusage') printf 'total = 100M used = 50.0M free = 50M\n' ;;
+  *) exit 1 ;;
+esac
+SENSOR
+  cat > "$case_dir/fakebin/vm_stat" <<'SENSOR'
+#!/usr/bin/env bash
+printf 'Mach Virtual Memory Statistics: (page size of 16384 bytes)\nSwapins: 10.\nSwapouts: 20.\n'
+SENSOR
+  # The collector is macOS-only; a sysctl fixture never claims Linux is macOS.
+  if [ "$(uname -s)" = Darwin ]; then
+    chmod +x "$case_dir/fakebin/sysctl" "$case_dir/fakebin/vm_stat"
+    printf '1\n' > "$case_dir/calls.log.pressure"
+    load_tick "$case_dir"
+    load_expect "$case_dir" "$home" '.state.signals.load1_centi == 200 and .state.signals.load5_centi == 100 and .state.signals.page_size == 16384 and .state.signals.pressure == "normal"' 'native collector normalizes CPU and dispatch pressure'
+    printf '2\n' > "$case_dir/calls.log.pressure"
+    printf '{"epoch":1060,"monotonic":1060,"boot":"fixture-boot"}\n' > "$FM_FLEET_LOAD_CLOCK"
+    load_tick "$case_dir"
+    load_expect "$case_dir" "$home" '.state.signals.pressure == "warning"' 'dispatch flag two means warning'
+    printf '4\n' > "$case_dir/calls.log.pressure"
+    printf '{"epoch":1120,"monotonic":1120,"boot":"fixture-boot"}\n' > "$FM_FLEET_LOAD_CLOCK"
+    load_tick "$case_dir"
+    load_expect "$case_dir" "$home" '.state.signals.pressure == "critical" and .desired == 1' 'dispatch flag four means critical'
+  else
+    load_tick "$case_dir"
+    load_expect "$case_dir" "$home" '.mode == "observe" and .effective == 3 and (.hold | length > 0)' 'unsupported platform reports a policy hold without refusing observation'
+    load_fixture "$case_dir" 1060 normal 40 40
+    load_tick "$case_dir"
+  fi
+  state=$(cat "$home/state/fleet-load.json")
+  status=$(park_command "$case_dir" "$home" status)
+  snapshot=$(FM_HOME="$home" FM_ROOT_OVERRIDE='' FM_STATE_OVERRIDE='' FM_CONFIG_OVERRIDE='' FM_DATA_OVERRIDE='' FM_PROJECTS_OVERRIDE='' FM_FAKE_CALL_LOG="$case_dir/calls.log" FM_BACKEND=tmux PATH="$case_dir/fakebin:$TEST_PATH" bash "$ROOT/bin/fm-fleet-snapshot.sh" --json) || fail 'fleet snapshot failed'
+  assert_equals "$(printf '%s' "$status" | jq -cS .)" "$(printf '%s' "$snapshot" | jq -cS .capacity)" 'snapshot and status disagree on capacity'
+  summary=$(FM_HOME="$home" FM_ROOT_OVERRIDE='' FM_STATE_OVERRIDE='' FM_CONFIG_OVERRIDE='' FM_DATA_OVERRIDE='' FM_PROJECTS_OVERRIDE='' FM_FAKE_CALL_LOG="$case_dir/calls.log" FM_BACKEND=tmux PATH="$case_dir/fakebin:$TEST_PATH" bash "$ROOT/bin/fm-fleet-snapshot.sh" --secondmate-home-summary) || fail 'home summary failed'
+  assert_equals "$(printf '%s' "$status" | jq -cS .)" "$(printf '%s' "$summary" | jq -cS .capacity)" 'home summary and status disagree on capacity'
+  assert_equals "$state" "$(cat "$home/state/fleet-load.json")" 'snapshot or summary refreshed telemetry'
+  unset FM_FLEET_LOAD_CLOCK FM_FLEET_LOAD_TELEMETRY
+  pass 'native collector and common read-only status/snapshot/home-summary projection'
+}
+
+test_adaptive_memory_paging_and_history
+test_adaptive_native_sensor_and_projection
+test_adaptive_off_and_observe
+test_adaptive_drop_recover_and_static_clamp
+test_adaptive_critical_stale_and_invalid
+test_adaptive_queue_priority
+test_adaptive_concurrent_homes
 test_parked_relaunch_respects_both_caps
 test_parked_capacity_and_priority
 test_parked_resume_has_project_priority
