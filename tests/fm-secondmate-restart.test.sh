@@ -1330,8 +1330,11 @@ test_park_send_defers_under_caller_lock_and_capacity() {
     FM_SPAWN_NO_GUARD=1 "$ROOT/bin/fm-secondmate-park.sh" sm1 unpark 2>&1); rc=$?
   expect_code 75 "$rc" "full fleet must defer parked secondmate relaunch: $out"
   assert_contains "$out" 'runs at most 1 agent(s)' 'full fleet is the deferral predicate'
+  touch "$dir/before-tick"
+  sleep 1
   out=$(park_tick "$dir" 2>&1); rc=$?
   expect_code 0 "$rc" "tick must retain a capacity-deferred resume: $out"
+  assert_equals '' "$(find "$dir/sm1-home" -newer "$dir/before-tick" -print)" 'a full fleet defers before syncing or propagating into the parked home'
   assert_grep 'phase=parked' "$dir/home/state/.secondmate-park-sm1" 'full fleet retains the pending wake'
   assert_equals "$(wc -l < "$dir/fake/literal")" "$before" 'deferral launches no replacement'
   assert_present "$dir/home/state/sm1.inbox/002.msg" 'deferred ticks preserve the steer'

@@ -3889,6 +3889,16 @@ if [ "$KIND" = secondmate ]; then
     fi
     SECONDMATE_PROJECTS=$SECONDMATE_REGISTRY_MATCH_PROJECTS
   fi
+  # A parked resume into a full fleet defers before touching the parked home;
+  # the locked admission below stays authoritative.
+  if [ -n "$PARK_RESUME_MARKER" ] &&
+    sm_fleet_config=$(fm_project_capacity_config_dir "$FM_HOME" "$CONFIG") &&
+    fm_fleet_capacity_lookup "$sm_fleet_config" && [ -n "$FM_FLEET_CAPACITY" ] &&
+    fm_fleet_capacity_occupants "$STATE" "$ID" &&
+    [ "$FM_FLEET_CAPACITY_OCCUPANTS" -ge "$FM_FLEET_CAPACITY" ]; then
+    echo "deferred: this machine runs at most $FM_FLEET_CAPACITY agent(s) at once ($FM_FLEET_CAPACITY_FILE) and $FM_FLEET_CAPACITY_OCCUPANTS are running ($FM_FLEET_CAPACITY_OCCUPANT_IDS); secondmate $ID stays parked with its inbox preserved - the worker-park tick retries it" >&2
+    exit "$FM_PROJECT_CAPACITY_DEFER_EXIT"
+  fi
   WT="$PROJ_ABS"
   # Local-HEAD sync: before launch, fast-forward this secondmate's worktree to the
   # PRIMARY checkout's current default-branch commit, so a freshly spawned or
