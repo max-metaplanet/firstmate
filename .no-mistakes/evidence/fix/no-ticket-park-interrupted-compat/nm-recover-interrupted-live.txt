@@ -1,0 +1,42 @@
+gate ref before: d436d39dfabe00a2c3790f33421bac763643f372
+=== BASE 76d257eb bin/fm-nm-recover.sh <wt> fm/lab1
+action: refused
+reason: branch has an active or unknown registered run; reattach instead
+exit=1
+gate ref after base: d436d39dfabe00a2c3790f33421bac763643f372
+
+=== HEAD c1d72a21 bin/fm-nm-recover.sh <wt> fm/lab1
+action: refused
+reason: custody is not returned; follow installed axi sync guidance first
+exit=1
+gate ref after head: d436d39dfabe00a2c3790f33421bac763643f372
+local HEAD: d436d39dfabe00a2c3790f33421bac763643f372  status: 0 dirty entries
+run row status: ci_monitor_interrupted
+
+##### custody returned, local rewritten (relation: diverged, outcome: ci-monitor-interrupted)
+gate ref before: d436d39dfabe00a2c3790f33421bac763643f372
+=== BASE recover
+action: refused
+reason: branch has an active or unknown registered run; reattach instead
+exit=1
+=== HEAD recover
+action: retry_pipeline
+changed: true
+run: 01LABINTERRUPTED
+branch: fm/lab1
+anchor: refs/no-mistakes/recover-local/01LABINTERRUPTED-d436d39dfabe00a2c3790f33421bac763643f372
+reason: stale gate head preserved; all gate-only patches occur in local history
+local_record: /private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/nmlab.hAhm2i/fm/state/lab1.status
+parent_report: not_applicable_primary_home
+exit=0
+gate ref after: <absent>
+anchor: refs/no-mistakes/recover-local/01LABINTERRUPTED-d436d39dfabe00a2c3790f33421bac763643f372 d436d39dfabe00a2c3790f33421bac763643f372
+local HEAD: 5308e3143bfa43e37290c083f8bbcf463f60cde3
+status record:
+note [key=nm-recover-490bf712e246496b884e258c2566cf9c] [at=1792826359]: no-mistakes gate ref removed {"home": "/private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/nmlab.hAhm2i/fm", "task": "lab1", "ref": "refs/heads/fm/lab1", "old_head": "d436d39dfabe00a2c3790f33421bac763643f372", "run": "01LABINTERRUPTED", "anchor": "refs/no-mistakes/recover-local/01LABINTERRUPTED-d436d39dfabe00a2c3790f33421bac763643f372"}
+=== HEAD recover retry
+action: retry_pipeline
+changed: false
+reason: task gate ref already absent
+exit=0
+run row status: ci_monitor_interrupted

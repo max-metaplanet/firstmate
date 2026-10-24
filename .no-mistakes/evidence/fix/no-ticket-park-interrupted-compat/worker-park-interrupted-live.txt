@@ -1,0 +1,12 @@
+##### park an interrupted-monitor worker (decision: stays refused this step)
+worker-park: lab1 is not safe to park
+exit=1
+park records: none
+++ FM_CREW_STATE_BIN=~/.no-mistakes/worktrees/61c6dd39b831/01M5PBH07F3868FYX00RHAQWD1/bin/fm-crew-state.sh
+
+##### with a turn-ended marker so safe_to_park reaches the run-status gate (bash -x excerpts):
++ run_status=ci_monitor_interrupted
++ probe='state: unknown · source: none · backend target gone: fm-lab-none:fm-lab1'
++ printf 'worker-park: %s is not safe to park\n' lab1
+worker-park: lab1 is not safe to park
+park records: none

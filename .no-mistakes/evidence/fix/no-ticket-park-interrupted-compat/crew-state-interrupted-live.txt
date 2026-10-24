@@ -1,0 +1,33 @@
+=== real `no-mistakes axi status` (lab NM_HOME)
+run:
+  id: "01LABINTERRUPTED"
+  branch: fm/lab1
+  status: ci_monitor_interrupted
+  head: d436d39d
+  head_sha: d436d39dfabe00a2c3790f33421bac763643f372
+  verification_plan: none
+  pr: "https://github.com/example/lab/pull/1"
+  findings: none
+
+=== BASE 76d257eb bin/fm-crew-state.sh lab1
+state: unreadable · source: run-step · could not settle the run status for this branch: the runs table lists a word this reader does not recognize; run ids: 01LABINTERRUPTED; last reported run id: 01LABINTERRUPTED
+exit=0
+
+=== HEAD c1d72a21 bin/fm-crew-state.sh lab1
+state: unknown · source: run-step · CI monitoring interrupted: no verdict · run: 01LABINTERRUPTED
+exit=0
+
+##### after recovery: local head 5308e31 differs from interrupted run head d436d39 (adversarial: stale run must not claim this task copy)
+=== HEAD crew-state
+state: unknown · source: none · backend target gone: fm-lab-none:fm-lab1
+exit=0
+
+##### newer running run 01LABNEWACTIVE at local head inserted beside interrupted run
+  running      fm/lab1              5308e314  2026-10-24 03:19
+  ci_monitor_interrupted fm/lab1              d436d39d  2026-10-24 03:18  https://github.com/example/lab/pull/1
+=== BASE crew-state
+state: unreadable · source: run-step · could not settle the run status for this branch: the runs table lists a word this reader does not recognize; run ids: 01LABNEWACTIVE, 01LABINTERRUPTED; last reported run id: 01LABNEWACTIVE
+exit=0
+=== HEAD crew-state
+state: working · source: run-step · validating (running) · run: 01LABNEWACTIVE
+exit=0
