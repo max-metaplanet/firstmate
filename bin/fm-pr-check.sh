@@ -22,6 +22,11 @@
 # draft state does not refuse, matching how the head read below is optional.
 # bin/fm-pr-merge.sh records through this script with FM_PR_CHECK_MERGE=1 and
 # skips this refusal, because its own merge-time draft refusal is authoritative.
+# For an already-recorded direct-PR GitHub PR at merge time, the recorded head
+# is kept for teardown and must be an ancestor of the live head.
+# A changed head is fetched from the forge into refs/remotes/fm-pr/pull/<n>/head
+# in the project clone, without changing its checkout, branches, or fetch config.
+# A direct-PR worker copy that still exists must have its HEAD in the live head.
 # The recorded pr= also frees the task's place in a declared project capacity
 # (bin/fm-project-capacity-lib.sh).
 # Usage: fm-pr-check.sh <task-id> <pr-url>
@@ -157,17 +162,62 @@ fi
 # bin/fm-pr-merge.sh reads a GitLab or Forgejo head live at merge time for the
 # same reason, and treats a recorded value that disagrees as stale rather than
 # authoritative.
+MODE=$(grep '^mode=' "$META" | tail -1 | cut -d= -f2- || true)
+PROJECT=$(grep '^project=' "$META" | tail -1 | cut -d= -f2- || true)
 WT=$(grep '^worktree=' "$META" | tail -1 | cut -d= -f2- || true)
 PR_HEAD=
-if [ "$PROVIDER" = github ] && [ -n "$WT" ] && [ -d "$WT" ] && command -v gh >/dev/null 2>&1; then
-  if REMOTE_HEAD=$(cd "$WT" && gh pr view "$URL" --json headRefOid -q .headRefOid 2>/dev/null) \
+PR_READ_DIR=$WT
+[ -d "$PR_READ_DIR" ] || [ "$MODE" != direct-PR ] || PR_READ_DIR=$PROJECT
+if [ "$PROVIDER" = github ] && [ -d "$PR_READ_DIR" ] && command -v gh >/dev/null 2>&1; then
+  if REMOTE_HEAD=$(cd "$PR_READ_DIR" && gh pr view "$URL" --json headRefOid -q .headRefOid 2>/dev/null) \
     && fm_pr_head_valid "$REMOTE_HEAD"; then
     PR_HEAD=$REMOTE_HEAD
   fi
 fi
 
-MODE=$(grep '^mode=' "$META" | tail -1 | cut -d= -f2- || true)
-PROJECT=$(grep '^project=' "$META" | tail -1 | cut -d= -f2- || true)
+MERGE_HEAD_PROVEN=0
+if [ "${FM_PR_CHECK_MERGE:-}" = 1 ] && [ "$PROVIDER" = github ] \
+  && [ "$MODE" = direct-PR ] \
+  && [ "$(fm_dod_meta_value "$META" pr)" = "$URL" ]; then
+  RECORDED_HEAD=$(fm_dod_meta_value "$META" pr_head)
+  if [ -n "$RECORDED_HEAD" ]; then
+    if ! GATE_REASON=$(fm_dod_pr_url_on_origin "$MODE" "$WT" "$PROJECT" "$URL"); then
+      echo "error: $GATE_REASON" >&2
+      exit 1
+    fi
+    if ! fm_pr_head_valid "$RECORDED_HEAD" || ! fm_pr_head_valid "$PR_HEAD"; then
+      echo "error: could not verify the recorded PR head against the live head of $URL" >&2
+      exit 1
+    fi
+    if [ "$RECORDED_HEAD" != "$PR_HEAD" ]; then
+      PULL_REF="refs/remotes/fm-pr/pull/$NUMBER/head"
+      FETCH_SOURCE="https://$HOST/$PROJECT_PATH.git"
+      ORIGIN_IDENTITY=$(fm_dod_origin_forge_identity "$PROJECT") || ORIGIN_IDENTITY=
+      if [ -n "$ORIGIN_IDENTITY" ] && fm_dod_forge_path_equal "${ORIGIN_IDENTITY#*/}" "$PROJECT_PATH"; then
+        FETCH_SOURCE=origin
+      fi
+      if ! GIT_TERMINAL_PROMPT=0 fm_run_timed 30 git -C "$PROJECT" fetch \
+        --quiet --no-tags --no-write-fetch-head --no-auto-maintenance "$FETCH_SOURCE" \
+        "+refs/pull/$NUMBER/head:$PULL_REF" \
+        || [ "$(git -C "$PROJECT" rev-parse --verify "$PULL_REF^{commit}" 2>/dev/null)" != "$PR_HEAD" ] \
+        || ! git -C "$PROJECT" merge-base --is-ancestor "$RECORDED_HEAD" "$PR_HEAD" 2>/dev/null; then
+        echo "error: recorded PR head $RECORDED_HEAD is not a proven ancestor of live head $PR_HEAD for $URL; fetch or ancestry verification failed" >&2
+        exit 1
+      fi
+    fi
+    if [ -n "$WT" ] && [ -d "$WT" ] && git -C "$WT" rev-parse --git-dir >/dev/null 2>&1; then
+      WT_HEAD=$(git -C "$WT" rev-parse --verify HEAD 2>/dev/null) || WT_HEAD=
+      if [ -z "$WT_HEAD" ] || { [ "$WT_HEAD" != "$RECORDED_HEAD" ] && [ "$WT_HEAD" != "$PR_HEAD" ] \
+        && ! git -C "$WT" merge-base --is-ancestor "$WT_HEAD" "$PR_HEAD" 2>/dev/null; }; then
+        echo "error: worker copy HEAD ${WT_HEAD:-<unresolved>} is not contained in live head $PR_HEAD of $URL - push that commit and report again" >&2
+        exit 1
+      fi
+    fi
+    PR_HEAD=$RECORDED_HEAD
+    MERGE_HEAD_PROVEN=1
+  fi
+fi
+
 # The gate is asked about the ready report this task's worker was told to give;
 # on a Gerrit change both publishing modes report the same published line.
 case "$PROVIDER:$MODE" in
@@ -175,7 +225,8 @@ case "$PROVIDER:$MODE" in
   *:no-mistakes|*:) DONE_LINE="done: PR $URL checks green" ;;
   *) DONE_LINE="done: PR $URL" ;;
 esac
-if { [ -z "$PR_HEAD" ] || ! fm_dod_forge_head_is_named_head "$MODE"; } \
+if [ "$MERGE_HEAD_PROVEN" != 1 ] \
+  && { [ -z "$PR_HEAD" ] || ! fm_dod_forge_head_is_named_head "$MODE"; } \
   && ! GATE_REASON=$(fm_dod_accept_ship_done "${KIND:-ship}" "$MODE" "$WT" "$PROJECT" "$DONE_LINE" "$STATE" "$ID" "$META"); then
   echo "error: $GATE_REASON" >&2
   exit 1
