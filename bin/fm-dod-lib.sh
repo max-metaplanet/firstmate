@@ -294,7 +294,8 @@ fm_brief_ticket_header() {  # <brief>
 # --ticket entirely leaves the task on the unchanged "fm/" ship branch and
 # writes no header lines at all. The commit type is never guessed from prose,
 # so a ticketed task without an explicit type is refused rather than given an
-# invented one.
+# invented one. The explicit hotfix alias resolves to fix for both branch and
+# title, matching the ticket convention's accepted bug-fix type.
 FM_TICKET_NONE=no-ticket
 
 fm_ticket_valid() {  # <ticket> <caller>
@@ -328,7 +329,8 @@ fm_ticket_branch() {  # <commit-type> <ticket> <task-id>
 
 # Resolve a ship task's branch and the Definition of done header its ticket
 # adds, so bin/fm-brief.sh, bin/fm-spawn.sh, and bin/fm-promote.sh cannot drift
-# apart on either. Sets FM_TICKET_BRANCH to the branch the task ships on,
+# apart on either. Sets FM_TICKET_COMMIT_TYPE to the resolved conventional type,
+# FM_TICKET_BRANCH to the branch the task ships on,
 # FM_TICKET_HEADER to the extra header text, and FM_TICKET_NM_RETITLE to the
 # PR-retitle step a ticketed no-mistakes block places; the last two are empty
 # when the task carries no ticket. <branch-prefix-set> is 1 when the caller was passed an explicit
@@ -343,6 +345,7 @@ fm_ticket_scope_valid() {  # <ticket> <scope> <explicitly-set> <caller>
 
 fm_ticket_resolve() {  # <ticket> <commit-type> <task-id> <branch-prefix> <branch-prefix-set> <caller> [ticket-scope]
   local ticket=$1 commit_type=$2 id=$3 prefix=$4 prefix_set=$5 caller=$6
+  FM_TICKET_COMMIT_TYPE=$commit_type
   FM_TICKET_BRANCH="$prefix$id"
   # shellcheck disable=SC2034 # Output global, read by the sourcing caller.
   FM_TICKET_HEADER=
@@ -361,6 +364,8 @@ fm_ticket_resolve() {  # <ticket> <commit-type> <task-id> <branch-prefix> <branc
     return 1
   }
   fm_commit_type_valid "$commit_type" "$caller" || return 1
+  [ "$commit_type" != hotfix ] || commit_type=fix
+  FM_TICKET_COMMIT_TYPE=$commit_type
   [ "$prefix_set" -eq 0 ] || {
     echo "error: $caller: --branch-prefix cannot be combined with --ticket; a ticketed ship branch is <commit-type>/<ticket>-<task-id> by the convention" >&2
     return 1

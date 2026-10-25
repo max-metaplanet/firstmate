@@ -426,6 +426,7 @@ ID=${POS[0]}
 # the brief, the spawn, and a scout promotion cannot name different branches.
 fm_ticket_scope_valid "$TICKET" "$TICKET_SCOPE" "$TICKET_SCOPE_SET" "fm-brief.sh" || exit 1
 fm_ticket_resolve "$TICKET" "$COMMIT_TYPE" "$ID" "$BRANCH_PREFIX" "$BRANCH_PREFIX_SET" "fm-brief.sh" "$TICKET_SCOPE" || exit 1
+COMMIT_TYPE=$FM_TICKET_COMMIT_TYPE
 BRANCH=$FM_TICKET_BRANCH
 TICKET_HEADER=$FM_TICKET_HEADER
 TICKET_NM_RETITLE=$FM_TICKET_NM_RETITLE

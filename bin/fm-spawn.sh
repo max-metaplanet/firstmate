@@ -1972,6 +1972,7 @@ if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" = ship ]; then
   # the spawn and the brief it validates against cannot drift apart.
   fm_ticket_scope_valid "$TICKET" "$TICKET_SCOPE" "$TICKET_SCOPE_SET" "fm-spawn.sh" || exit 1
   fm_ticket_resolve "$TICKET" "$COMMIT_TYPE" "$ID" "$BRANCH_PREFIX" "$BRANCH_PREFIX_SET" "fm-spawn.sh" "$TICKET_SCOPE" || exit 1
+  COMMIT_TYPE=$FM_TICKET_COMMIT_TYPE
   BRANCH=$FM_TICKET_BRANCH
   if ! git check-ref-format --branch "$BRANCH" >/dev/null 2>&1; then
     if [ -n "$TICKET" ]; then
