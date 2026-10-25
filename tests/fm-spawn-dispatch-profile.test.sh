@@ -2729,8 +2729,8 @@ test_codex_seat_launch_store
 # tests/fm-control-relaunch.test.sh owns relaunch preservation, because only
 # that suite's fixture gets a relaunch past endpoint validation.
 test_ticket_scope_survives_spawn() {
-  local scope rec id brief out expected scope_args=()
-  for scope in default complete partial; do
+  local scope rec id brief out expected commit_type resolved_type scope_args=()
+  for scope in default complete partial hotfix; do
     id="scope-spawn-$scope"
     rec=$(make_spawn_case "$id" codex "$id")
     IFS='|' read -r CASE_DIR HOME_DIR PROJ_DIR WT_DIR FAKEBIN_DIR LAUNCH_LOG <<EOF
@@ -2739,17 +2739,25 @@ EOF
     brief="$HOME_DIR/data/$id/brief.md"
     rm "$brief"
     scope_args=()
-    [ "$scope" = default ] || scope_args=(--ticket-scope "$scope")
+    commit_type=feat
+    resolved_type=feat
+    case "$scope" in
+      default) ;;
+      hotfix) commit_type=hotfix; resolved_type=fix ;;
+      *) scope_args=(--ticket-scope "$scope") ;;
+    esac
     FM_HOME="$HOME_DIR" "$ROOT/bin/fm-brief.sh" "$id" proj --mode no-mistakes \
-      --ticket ENG-630 --commit-type feat "${scope_args[@]}" >/dev/null || fail 'ticket scope brief failed'
+      --ticket ENG-630 --commit-type "$commit_type" "${scope_args[@]}" >/dev/null || fail 'ticket scope brief failed'
     sed -e 's/{TASK}/Ship the change./' -e 's/{FIRSTMATE_SPEC}/Preserve the selected scope./' "$brief" > "$brief.filled"
     mv "$brief.filled" "$brief"
     out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" \
-      --harness codex --ticket ENG-630 --commit-type feat "${scope_args[@]}") \
+      --harness codex --ticket ENG-630 --commit-type "$commit_type" "${scope_args[@]}") \
       || fail "scope $scope spawn failed: $out"
     expected=$scope
-    [ "$scope" != default ] || expected=partial
+    case "$scope" in default|hotfix) expected=partial ;; esac
     assert_grep "ticket_scope=$expected" "$HOME_DIR/state/$id.meta" 'spawn did not persist intake scope'
+    assert_grep "commit_type=$resolved_type" "$HOME_DIR/state/$id.meta" 'spawn did not persist resolved commit type'
+    assert_grep "branch=$resolved_type/ENG-630-$id" "$HOME_DIR/state/$id.meta" 'spawn did not persist resolved branch'
   done
   pass 'ticket scope intake defaults partial and spawn persists an explicit scope'
 }

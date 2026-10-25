@@ -1788,6 +1788,29 @@ test_ticket_renders_the_convention_and_branch() {
   pass "fm-brief.sh: --ticket renders the convention and branch in every ship mode"
 }
 
+test_hotfix_uses_fix_branch_and_title() {
+  local home ticket mode id brief
+  home="$TMP_ROOT/hotfix-home"
+  mkdir -p "$home/data"
+  for ticket in ENG-630 no-ticket; do
+    for mode in no-mistakes direct-PR local-only; do
+      id="hotfix-$ticket-$mode"
+      FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj --mode "$mode" \
+        --ticket "$ticket" --commit-type hotfix >/dev/null 2>&1 \
+        || fail "$mode: a hotfix brief should scaffold"
+      brief="$home/data/$id/brief.md"
+      assert_grep "Ship branch: fix/$ticket-$id" "$brief" 'hotfix must ship on fix/'
+      assert_grep 'Commit type: fix' "$brief" 'hotfix must use the fix commit type'
+      assert_grep "must read \`fix/$ticket(<scope>): <message>\`" "$brief" \
+        'hotfix must use an accepted fix PR title'
+      assert_grep "git checkout -b fix/$ticket-$id --" "$brief" 'setup must create the resolved branch'
+      if [ "$mode" = no-mistakes ]; then
+        assert_grep "becomes \`fix/$ticket(ci): x\`" "$brief" 'retitle must preserve the fix type'
+      fi
+    done
+  done
+  pass 'hotfix briefs use fix branches and titles in every delivery mode'
+}
 # "no-ticket" is the explicit marker for genuinely ticketless work, so it still
 # produces the convention rather than falling back to the fm/ prefix.
 test_no_ticket_marker_still_follows_the_convention() {
@@ -2043,6 +2066,7 @@ test_branch_prefix_is_refused_where_it_does_not_apply
 test_branch_prefix_value_is_validated
 test_branch_prefix_command_is_shell_safe
 test_ticket_renders_the_convention_and_branch
+test_hotfix_uses_fix_branch_and_title
 test_no_ticket_marker_still_follows_the_convention
 test_unticketed_brief_carries_no_convention
 test_ticketed_no_mistakes_retitles_the_pipeline_pr

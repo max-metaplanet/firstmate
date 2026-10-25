@@ -196,6 +196,7 @@ ID=${POS[0]}
 fm_task_id_creation_valid "$ID" || { echo "error: invalid task id" >&2; exit 2; }
 fm_ticket_scope_valid "$TICKET" "$TICKET_SCOPE" "$TICKET_SCOPE_SET" "fm-promote.sh" || exit 1
 fm_ticket_resolve "$TICKET" "$COMMIT_TYPE" "$ID" "$BRANCH_PREFIX" "$BRANCH_PREFIX_SET" "fm-promote.sh" "$TICKET_SCOPE" || exit 1
+COMMIT_TYPE=$FM_TICKET_COMMIT_TYPE
 BRANCH=$FM_TICKET_BRANCH
 TICKET_HEADER=$FM_TICKET_HEADER
 TICKET_NM_RETITLE=$FM_TICKET_NM_RETITLE
