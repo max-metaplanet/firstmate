@@ -1,0 +1,71 @@
+=== both-writes-journal-pending  modes={'assign': 'pending', 'status': 'pending'}
+$ fm-work-intake.sh check intake-251821b2ace986321647 --json   -> exit 0
+stdout: {
+  "result": "cleared",
+  "candidate": {
+    "source_ref": "opaque-fixture-one",
+    "source_revision": "scan-one-full-assign-status",
+    "ticket": "ENG-1",
+    "title": "Implement the accepted tick
+stderr: work-intake: clickup-axi assign applied; journal delivery pending
+work-intake: clickup-axi status applied; journal delivery pending
+clickup writes issued: ['assign', 'status'] | task held: False
+RESULT: PASS 
+
+=== status-journal-pending-only  modes={'status': 'pending'}
+$ fm-work-intake.sh check intake-251821b2ace986321647 --json   -> exit 0
+stdout: {
+  "result": "cleared",
+  "candidate": {
+    "source_ref": "opaque-fixture-one",
+    "source_revision": "scan-one-full-assign-status",
+    "ticket": "ENG-1",
+    "title": "Implement the accepted tick
+stderr: work-intake: clickup-axi status applied; journal delivery pending
+clickup writes issued: ['assign', 'status'] | task held: False
+RESULT: PASS 
+
+=== baseline-clean-writes  modes={}
+$ fm-work-intake.sh check intake-251821b2ace986321647 --json   -> exit 0
+stdout: {
+  "result": "cleared",
+  "candidate": {
+    "source_ref": "opaque-fixture-one",
+    "source_revision": "scan-one-full-assign-status",
+    "ticket": "ENG-1",
+    "title": "Implement the accepted tick
+stderr: <empty>
+clickup writes issued: ['assign', 'status'] | task held: False
+RESULT: PASS 
+
+=== assign-real-write-failure  modes={'assign': 'hard-fail'}
+$ fm-work-intake.sh check intake-251821b2ace986321647 --json   -> exit 1
+stdout: <empty>
+stderr: work-intake: take assign failed; dispatch refused: command failed: clickup-axi
+clickup writes issued: ['assign'] | task held: True
+RESULT: PASS 
+
+=== status-real-write-failure  modes={'status': 'hard-fail'}
+$ fm-work-intake.sh check intake-251821b2ace986321647 --json   -> exit 1
+stdout: <empty>
+stderr: work-intake: take status failed; dispatch refused: command failed: clickup-axi
+clickup writes issued: ['assign', 'status'] | task held: True
+RESULT: PASS 
+
+=== journal-pending-but-readback-fails  modes={'assign': 'pending-readfail'}
+$ fm-work-intake.sh check intake-251821b2ace986321647 --json   -> exit 1
+stdout: <empty>
+stderr: work-intake: clickup-axi assign applied; journal delivery pending
+work-intake: take assign failed; dispatch refused: command failed: source
+clickup writes issued: ['assign'] | task held: True
+RESULT: PASS 
+
+=== journal-pending-but-write-not-applied  modes={'status': 'noop'}
+$ fm-work-intake.sh check intake-251821b2ace986321647 --json   -> exit 1
+stdout: <empty>
+stderr: work-intake: clickup-axi status applied; journal delivery pending
+work-intake: take status failed; dispatch refused: read-back changed scope or did not confirm the requested change
+clickup writes issued: ['assign', 'status'] | task held: True
+RESULT: PASS 
+
+ALL PASS
