@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Public-interface receipt, recovery, ownership and preflight behavior with a fake
-# GET-only ClickUp producer and the real tasks-axi queue. No live source calls.
+# ClickUp boundary and the real tasks-axi queue. No live source calls.
 set -eu
 # shellcheck source=tests/lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
@@ -26,7 +26,7 @@ REAL_TASKS = shutil.which('tasks-axi')
 class IntakeTests(unittest.TestCase):
     def setUp(self):
         self.home = SCRATCH / self._testMethodName
-        for name in ('state', 'config', 'data', 'fakebin'):
+        for name in ('state', 'config', 'data', 'fakebin', 'fakeclickup'):
             (self.home / name).mkdir(parents=True)
         (self.home / '.tasks.toml').write_text('backend="markdown"\n[markdown]\npath="data/backlog.md"\narchive="data/retired.md"\ndone_keep=0\n')
         (self.home / 'data/backlog.md').write_text('## In flight\n\n## Queued\n\n## Done\n')
@@ -48,18 +48,46 @@ if '--refresh' in sys.argv:
  v['candidates']=[r for r in v['candidates'] if r['source_ref']==ref]
  v['coverage'].update(complete=False,all_pages_read=False,absence_means_withdrawal=False)
  for r in v['candidates']:
-  r['source_revision']=r.get('full_revision',r['source_revision']+'-full')
+  r['source_revision']=r.pop('full_revision',r['source_revision']+'-full')
   r['scope']['comments_complete']=True
-  r['scope']['comments']=r['scope'].get('full_comments',[])
+  r['scope']['comments']=r['scope'].pop('full_comments',[])
 v['coverage']['task_count']=len(v['candidates'])
 for r in v['candidates']: r['observed_at']=v['observed_at']
 print(json.dumps(v))
 ''')
         self.hook.chmod(0o755)
+        clickup = self.home / 'fakeclickup/clickup-axi'
+        clickup.write_text('''#!/usr/bin/env python3
+import json, os, pathlib, sys
+p=pathlib.Path(__file__).resolve().parent.parent
+args=sys.argv[1:]
+if args == ['queue','--help']:
+ print('queue --json' + ('' if os.environ.get('INTAKE_OLD_CLICKUP') else ' --include-backlog-and-unassigned'))
+ sys.exit(0)
+with (p/'writes').open('a') as stream: stream.write(json.dumps(args)+'\\n')
+step=args[0]
+if os.environ.get('INTAKE_FAIL_STEP') == step: sys.exit(1)
+v=json.loads((p/'source.json').read_text());r=v['candidates'][0];e=r['source_evidence']
+if os.environ.get('INTAKE_NOOP_STEP') != step:
+ if step == 'assign':
+  e.update(ownership='sole',assignee_ids=[int(args[args.index('--add')+1])],is_unassigned=False)
+ elif step == 'status':
+  e.update(status=args[args.index('--to')+1],is_backlog=False)
+  r['scope']['full_comments']=r['scope'].get('full_comments',[])+[{'id':'summary','text':'Up next. Maintained automatically by clickup-axi.'}]
+  if os.environ.get('INTAKE_SUMMARY_REPLY'):
+   r['scope']['full_comments'][-1]['replies']=[{'id':'reply','text':'Wait for a product decision'}]
+ else: sys.exit(2)
+ r['full_revision']=r.get('full_revision',r['source_revision']+'-full')+'-'+step
+ if os.environ.get('INTAKE_CHANGE_SCOPE') == step: r['scope']['description']='Unreviewed new scope'
+ (p/'source.json').write_text(json.dumps(v))
+if os.environ.get('INTAKE_FAIL_AFTER_STEP') == step: sys.exit(1)
+print(json.dumps({'result':'applied'}))
+''')
+        clickup.chmod(0o755)
         (self.home / 'config/work-intake-hook').write_text(str(self.hook) + '\n')
         self.env = {**os.environ, 'FM_HOME': str(self.home), 'FM_DATA_OVERRIDE': str(self.home / 'data'),
                     'FM_STATE_OVERRIDE': str(self.home / 'state'), 'FM_CONFIG_OVERRIDE': str(self.home / 'config'),
-                    'FM_TEST_SEAM': '1'}
+                    'FM_TEST_SEAM': '1', 'PATH': str(clickup.parent) + os.pathsep + os.environ['PATH']}
         self.env.pop('TASKS_AXI_FILE', None)
         self.env.pop('TASKS_AXI_BACKEND', None)
         self.env.pop('FM_TASK_ID', None)
@@ -108,6 +136,113 @@ print(json.dumps(v))
         path = self.home / 'decision.json'
         path.write_text(json.dumps(decision))
         return self.call('review', ident, '--decision-file', str(path))
+
+    def autopilot(self, *, unassigned=True, backlog=True):
+        (self.home / 'config/work-intake-include-backlog-and-unassigned').write_text('1\n')
+        self.snapshot['candidates'][0]['source_evidence'].update(
+            ownership='unassigned' if unassigned else 'sole', assignee_ids=[] if unassigned else [42],
+            status='backlog' if backlog else 'up next', is_unassigned=unassigned, is_backlog=backlog,
+            configured_user_id=42)
+        self.save()
+
+    def writes(self):
+        path = self.home / 'writes'
+        return [json.loads(line) for line in path.read_text().splitlines()] if path.exists() else []
+
+    def test_take_assigns_then_promotes_and_is_idempotent(self):
+        self.autopilot()
+        ident = self.imported()
+        self.assertEqual(self.writes(), [])
+        self.review(ident)
+        self.assertEqual(self.writes(), [])
+        result = self.call('check', ident)
+        self.assertEqual(result['result'], 'cleared')
+        self.assertEqual(self.writes(), [['assign', 'ENG-1', '--add', '42', '--json'],
+                                        ['status', 'ENG-1', '--to', 'up next', '--json']])
+        evidence = result['candidate']['source_evidence']
+        self.assertEqual((evidence['assignee_ids'], evidence['status']), ([42], 'up next'))
+        self.call('check', ident)
+        self.assertEqual(len(self.writes()), 2)
+        self.assertIn('--include-backlog-and-unassigned', (self.home / 'calls').read_text())
+
+    def test_take_assigned_up_next_needs_no_writes(self):
+        self.autopilot(unassigned=False, backlog=False)
+        ident = self.imported(); self.review(ident)
+        self.assertEqual(self.call('check', ident)['result'], 'cleared')
+        self.assertEqual(self.writes(), [])
+
+    def test_take_held_ticket_is_untouched(self):
+        self.autopilot()
+        ident = self.imported()
+        self.review(ident, authorized=False, unresolved_scope=True)
+        self.call('check', ident, ok=False)
+        self.assertEqual(self.writes(), [])
+        evidence = json.loads(self.fixture.read_text())['candidates'][0]['source_evidence']
+        self.assertEqual((evidence['assignee_ids'], evidence['status']), ([], 'backlog'))
+        self.review(ident)
+        self.tasks('hold', ident, '--kind', 'captain', '--reason', 'Pending captain choice')
+        self.call('check', ident, ok=False)
+        self.assertEqual(self.writes(), [])
+
+    def test_take_assign_failure_stops_promotion_and_dispatch(self):
+        self.autopilot()
+        ident = self.imported(); self.review(ident)
+        result = self.call('check', ident, ok=False, env={**self.env, 'INTAKE_FAIL_STEP': 'assign'})
+        self.assertIn('take assign failed; dispatch refused', result.stderr)
+        self.assertEqual([w[0] for w in self.writes()], ['assign'])
+        self.assertIn('state: queued', self.tasks('show', ident))
+        self.assertEqual(json.loads(self.fixture.read_text())['candidates'][0]['source_evidence']['status'], 'backlog')
+        self.call('check', ident)
+        self.assertEqual([w[0] for w in self.writes()], ['assign', 'assign', 'status'])
+
+    def test_take_status_failure_retries_without_reassigning(self):
+        self.autopilot()
+        ident = self.imported(); self.review(ident)
+        self.call('check', ident, ok=False, env={**self.env, 'INTAKE_FAIL_STEP': 'status'})
+        self.call('check', ident)
+        self.assertEqual([w[0] for w in self.writes()], ['assign', 'status', 'status'])
+
+    def test_take_recovers_uncertain_assign_and_status_delivery(self):
+        for step in ('assign', 'status'):
+            with self.subTest(step=step):
+                self.autopilot()
+                if step == 'assign':
+                    ident = self.imported()
+                self.review(ident)
+                self.call('check', ident, ok=False, env={**self.env, 'INTAKE_FAIL_AFTER_STEP': step})
+                before = len(self.writes())
+                self.call('check', ident)
+                self.assertEqual(len(self.writes()) - before, 1 if step == 'assign' else 0)
+                self.assertEqual(self.writes()[-1][0], 'status')
+
+    def test_take_verifies_each_write_and_rejects_changed_scope(self):
+        self.autopilot()
+        ident = self.imported(); self.review(ident)
+        self.call('check', ident, ok=False, env={**self.env, 'INTAKE_NOOP_STEP': 'assign'})
+        self.assertEqual([w[0] for w in self.writes()], ['assign'])
+        self.call('check', ident, ok=False, env={**self.env, 'INTAKE_CHANGE_SCOPE': 'assign'})
+        self.assertEqual([w[0] for w in self.writes()], ['assign', 'assign'])
+        self.call('check', ident, ok=False)
+        self.assertEqual(len(self.writes()), 2)
+
+    def test_take_generated_status_summary_cannot_hide_a_scope_reply(self):
+        self.autopilot()
+        ident = self.imported(); self.review(ident)
+        self.call('check', ident, ok=False, env={**self.env, 'INTAKE_SUMMARY_REPLY': '1'})
+        self.assertEqual([w[0] for w in self.writes()], ['assign', 'status'])
+        self.call('check', ident, ok=False)
+        self.assertEqual(len(self.writes()), 2)
+
+    def test_queue_opt_in_defaults_off_and_older_cli_reports_fallback(self):
+        self.call('preview')
+        self.assertNotIn('--include-backlog-and-unassigned', (self.home / 'calls').read_text())
+        self.autopilot()
+        result = subprocess.run(['bash', str(ROOT / 'bin/fm-work-intake.sh'), 'preview', '--json'],
+                                env={**self.env, 'INTAKE_OLD_CLICKUP': '1'}, text=True, capture_output=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('using the default queue eligibility', result.stderr)
+        self.assertNotIn('--include-backlog-and-unassigned', (self.home / 'calls').read_text())
+        self.assertEqual(self.writes(), [])
 
     def test_default_disabled_and_preview_are_read_only(self):
         self.assertEqual(self.call('poll')['result'], 'disabled')

@@ -102,8 +102,24 @@ def hook_path(override=None):
     return str(path)
 
 
+def include_backlog_and_unassigned():
+    path = CONFIG / 'work-intake-include-backlog-and-unassigned'
+    return path.exists() and path.read_text().strip() == '1'
+
+
 def source(hook, reference=None):
     args = [hook, '--json']
+    if include_backlog_and_unassigned():
+        flag = '--include-backlog-and-unassigned'
+        try:
+            supported = flag in run(['clickup-axi', 'queue', '--help'])
+        except (IntakeError, OSError):
+            supported = False
+        if supported:
+            args.append(flag)
+        else:
+            print('work-intake: installed clickup-axi lacks ' + flag
+                  + '; using the default queue eligibility', file=sys.stderr)
     if reference is not None:
         args += ['--refresh', reference]
     value = json.loads(run(args, timeout=55))
@@ -279,6 +295,43 @@ def eligible(entry):
     return entry.get('present') is True and entry['candidate']['eligibility']['eligible'] is True
 
 
+def take_evidence(candidate, step):
+    # Only the fields changed by assign/status may differ from the reviewed read.
+    value = {k: v for k, v in candidate.items()
+             if k not in ('source_revision', 'source_updated_at', 'observed_at')}
+    value['source_evidence'] = {k: v for k, v in candidate['source_evidence'].items()
+                                if k not in ('ownership', 'assignee_ids', 'is_unassigned',
+                                             'status', 'status_type', 'is_backlog')}
+    value['eligibility'] = {k: v for k, v in candidate['eligibility'].items() if k != 'proposal'}
+    if step == 'status':
+        scope = dict(candidate['scope'])
+        comments = []
+        for comment in scope.get('comments', []):
+            text = comment.get('text')
+            if isinstance(text, str) and any(marker in text for marker in (
+                    'Maintained automatically by clickup-axi.', '<!-- clickup-axi:summary:v1 -->')):
+                # status rewrites its managed summary; replies still carry scope.
+                comments.extend(comment.get('replies', []))
+            else:
+                comments.append(comment)
+        scope['comments'] = comments
+        value['scope'] = scope
+    return value
+
+
+def take_target(pending, candidate):
+    before = pending['candidate']['source_evidence']
+    after = candidate['source_evidence']
+    if take_evidence(pending['candidate'], pending['step']) != take_evidence(candidate, pending['step']):
+        return False
+    if pending['step'] == 'assign':
+        return (after.get('ownership') == 'sole' and after.get('assignee_ids') == [pending['user']]
+                and after.get('is_unassigned') is False and after.get('status') == before['status']
+                and after.get('is_backlog') == before.get('is_backlog'))
+    return (after.get('status') == 'up next' and after.get('is_backlog') is False
+            and all(after.get(k) == before.get(k) for k in ('ownership', 'assignee_ids', 'is_unassigned')))
+
+
 def refresh(state, entry, hook):
     value = source(hook, entry['source_ref'])
     require(value['source_namespace'] == state['source_namespace'], 'source namespace changed; reconcile configuration')
@@ -286,9 +339,51 @@ def refresh(state, entry, hook):
     if row['eligibility']['eligible'] and not eligible(entry):
         entry['eligible_since'] = time.time()
     if entry.get('full_revision') != row['source_revision']:
-        entry.pop('review', None)
+        if entry.get('review') and entry.get('take') and take_target(entry['take'], row):
+            entry['review']['revision'] = row['source_revision']
+        else:
+            entry.pop('review', None)
     entry.update(candidate=row, full_revision=row['source_revision'], present=True)
     return row
+
+
+def take(state, entry, row, hook):
+    candidate = entry['candidate']
+    evidence = candidate.get('source_evidence', {})
+    if evidence.get('ownership') != 'unassigned' and evidence.get('status') != 'backlog':
+        entry.pop('take', None)
+        atomic(RECEIPT, state)
+        return
+    require(include_backlog_and_unassigned(), 'taking backlog or unassigned work requires the queue opt-in')
+    user = evidence.get('configured_user_id')
+    require(type(user) is int and user > 0, 'take requires a configured positive ClickUp user ID')
+    for step in ('assign', 'status'):
+        evidence = entry['candidate']['source_evidence']
+        if step == 'assign':
+            if evidence.get('ownership') != 'unassigned':
+                continue
+            require(evidence.get('is_unassigned') is True and evidence.get('assignee_ids') == [],
+                    'take assignment requires verified unassigned evidence')
+            command = ['clickup-axi', 'assign', candidate['ticket'], '--add', str(user), '--json']
+        else:
+            if evidence.get('status') != 'backlog':
+                continue
+            require(evidence.get('is_backlog') is True and evidence.get('ownership') == 'sole'
+                    and evidence.get('assignee_ids') == [user], 'take promotion requires sole configured ownership')
+            command = ['clickup-axi', 'status', candidate['ticket'], '--to', 'up next', '--json']
+        entry['take'] = dict(step=step, user=user, candidate=entry['candidate'])
+        atomic(RECEIPT, state)
+        try:
+            run(command, timeout=55)
+            verified = refresh(state, entry, hook)
+            require(take_target(entry['take'], verified) and review_valid(entry, row),
+                    'read-back changed scope or did not confirm the requested change')
+        except (IntakeError, OSError, ValueError) as error:
+            hold(entry, row, True)
+            atomic(RECEIPT, state)
+            raise IntakeError('take ' + step + ' failed; dispatch refused: ' + str(error)) from None
+        entry.pop('take', None)
+        atomic(RECEIPT, state)
 
 
 def order(entry, row=None):
@@ -507,6 +602,7 @@ def main():
             row = local_row(entry)
             entry['review'] = dict(revision=candidate['source_revision'], decision=decision,
                                    local_scope=digest({k: row.get(k) for k in ('body', 'blocked_by')}))
+            entry.pop('take', None)
         cleared = eligible(entry) and review_valid(entry, row)
         hold(entry, row, not cleared)
         atomic(RECEIPT, state)
@@ -515,6 +611,8 @@ def main():
                     and (row.get('held') != 'yes' or (row.get('hold_kind') == 'external'
                          and row.get('hold_reason') == source_hold(entry))),
                     'source, scope, dependency or competing hold prevents dispatch')
+            take(state, entry, row, hook)
+            candidate = entry['candidate']
         return dict(result='cleared' if cleared else 'held', candidate=candidate,
                     local_id=entry['local_id'], order=order(entry, row))
 

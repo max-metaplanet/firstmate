@@ -433,9 +433,13 @@ The source must perform GET-only remote reads and emit no lifecycle event.
 Preview with `bin/fm-work-intake.sh preview --hook /absolute/private-wrapper --json` before activation.
 Preview does not write the queue, receipt, or source.
 It shows import candidates, exclusions and reasons, the ownership coverage gap, and proposal-only Backlog work.
-The approved ClickUp pilot takes only sole-owner Active Up next tickets.
-Unassigned tickets, Requests, and other owners' work never fill an empty eligible queue.
-Backlog promotion remains proposal-only.
+By default, the ClickUp queue takes only sole-owner Active Up next tickets.
+Backlog and unassigned tickets remain proposals, while Requests and other owners' work remain excluded.
+Setting `config/work-intake-include-backlog-and-unassigned` to `1` opts into the producer's `--include-backlog-and-unassigned` mode on scans and refreshes.
+The private hook must forward that argument to `clickup-axi queue`.
+The hook and take verbs must use the same private clickup-axi configuration.
+An older installed CLI without the flag reports a warning and retains default queue eligibility.
+This option is off by default and installation changes no home's configuration.
 Review live exclusions before separately approving activation.
 This feature's installation does not grant that approval.
 
@@ -448,7 +452,10 @@ A ticket that already has a local row, matched by explicit ticket lines or a lea
 A selected imported item receives a fresh full read during spawn preflight.
 Remote ownership without readable evidence prevents new imports rather than guessing that no duplicate exists.
 No ClickUp write occurs during import or review.
-The existing main-home event consumer remains the only fleet-owned ClickUp writer after a successful launch.
+For opt-in candidates, the cleared spawn preflight assigns an unassigned ticket to the producer's configured user with `clickup-axi assign --add`, then promotes Backlog to Up next with `clickup-axi status`.
+It verifies each step through a fresh source read and refuses dispatch on failure or changed scope.
+Existing authority, review, dependency, and hold checks run before these writes, so tickets needing a decision remain untouched.
+The existing main-home event consumer owns subsequent lifecycle updates after a successful launch.
 
 ## Runtime backend (config/backend / FM_BACKEND)
 

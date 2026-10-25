@@ -68,15 +68,17 @@ Keep equivalent-reasoning Codex alternatives within the matched configured rule 
 If no viable authorized alternative exists, leave work queued and report why.
 Do not change profiles, pins, quota thresholds, or running workers to make an import fit.
 
-## Proposal-only work and delivery
+## Proposals and delivery
 
-When no runnable Up next work remains, present one short ranked batch of sole-owner Backlog proposals.
+With default queue eligibility, when no runnable Up next work remains, present one short ranked batch of sole-owner Backlog proposals.
 Refresh leading candidates through the source adapter before recommending them.
 Show scope, acceptance criteria, project, blockers or deferrals, deadline evidence, priority provenance, effort uncertainty, and the reason each would be next.
 Record any unresolved approval with the existing captain-hold lifecycle as one batch.
-Unassigned tickets require assignment proposals only.
+With default queue eligibility, unassigned tickets require assignment proposals only.
 Requests and other owners' tickets supply no autonomous work.
-Do not promote, claim, or import Backlog as runnable work.
+Default queue eligibility never promotes, claims, or imports Backlog as runnable work.
+When the configured queue opt-in includes Backlog and unassigned candidates, apply the same refresh, scope, identity, authority, and captain-hold gates before considering them runnable.
+The cleared spawn preflight owns taking those candidates under `bin/fm-work-intake.sh --help`; do not assign or promote them separately.
 
 Only the successful existing launch commit emits `started`.
 Retain failed or uncertain outbound delivery as sync debt and repair the original event through its existing owner.
