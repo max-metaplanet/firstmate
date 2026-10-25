@@ -167,7 +167,7 @@ PROJECT=$(grep '^project=' "$META" | tail -1 | cut -d= -f2- || true)
 WT=$(grep '^worktree=' "$META" | tail -1 | cut -d= -f2- || true)
 PR_HEAD=
 PR_READ_DIR=$WT
-[ -d "$PR_READ_DIR" ] || fm_dod_forge_head_is_named_head "$MODE" || PR_READ_DIR=$PROJECT
+[ -d "$PR_READ_DIR" ] || [ "$MODE" != direct-PR ] || PR_READ_DIR=$PROJECT
 if [ "$PROVIDER" = github ] && [ -d "$PR_READ_DIR" ] && command -v gh >/dev/null 2>&1; then
   if REMOTE_HEAD=$(cd "$PR_READ_DIR" && gh pr view "$URL" --json headRefOid -q .headRefOid 2>/dev/null) \
     && fm_pr_head_valid "$REMOTE_HEAD"; then
@@ -177,7 +177,7 @@ fi
 
 MERGE_HEAD_PROVEN=0
 if [ "${FM_PR_CHECK_MERGE:-}" = 1 ] && [ "$PROVIDER" = github ] \
-  && ! fm_dod_forge_head_is_named_head "$MODE" \
+  && [ "$MODE" = direct-PR ] \
   && [ "$(fm_dod_meta_value "$META" pr)" = "$URL" ]; then
   RECORDED_HEAD=$(fm_dod_meta_value "$META" pr_head)
   if [ -n "$RECORDED_HEAD" ]; then
