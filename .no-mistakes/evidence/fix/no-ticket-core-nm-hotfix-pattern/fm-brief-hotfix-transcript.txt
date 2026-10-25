@@ -1,0 +1,70 @@
+=== fm-brief.sh hf-ENG-630-no-mistakes proj --mode no-mistakes --ticket ENG-630 --commit-type hotfix
+scaffolded: /var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/tmp.sGxHUlJipt/data/hf-ENG-630-no-mistakes/brief.md (ship, mode=no-mistakes; replace {TASK} and {FIRSTMATE_SPEC})
+exit=0
+22:1. First action: create your branch: `git checkout -b fix/ENG-630-hf-ENG-630-no-mistakes --`
+98:Ship branch: fix/ENG-630-hf-ENG-630-no-mistakes
+100:Commit type: fix
+109:Every commit subject on this branch and the pull request title must read `fix/ENG-630(<scope>): <message>`, where `<scope>` names the area changed and `<message>` is a short imperative description.
+110:The branch is exactly `fix/ENG-630-hf-ENG-630-no-mistakes`; do not rename it.
+160:Do not wait for that check to go red: the moment the run has a PR URL - read it from `no-mistakes axi status` as soon as the PR step has opened the PR, before the CI wait - edit the title ONCE to insert `/ENG-630` after the type, keeping the pipeline's own scope and message, so `fix(ci): x` becomes `fix/ENG-630(ci): x`.
+=== fm-brief.sh hf-no-ticket-no-mistakes proj --mode no-mistakes --ticket no-ticket --commit-type hotfix
+scaffolded: /var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/tmp.sGxHUlJipt/data/hf-no-ticket-no-mistakes/brief.md (ship, mode=no-mistakes; replace {TASK} and {FIRSTMATE_SPEC})
+exit=0
+22:1. First action: create your branch: `git checkout -b fix/no-ticket-hf-no-ticket-no-mistakes --`
+98:Ship branch: fix/no-ticket-hf-no-ticket-no-mistakes
+100:Commit type: fix
+101:Every commit subject on this branch and the pull request title must read `fix/no-ticket(<scope>): <message>`, where `<scope>` names the area changed and `<message>` is a short imperative description.
+102:The branch is exactly `fix/no-ticket-hf-no-ticket-no-mistakes`; do not rename it.
+152:Do not wait for that check to go red: the moment the run has a PR URL - read it from `no-mistakes axi status` as soon as the PR step has opened the PR, before the CI wait - edit the title ONCE to insert `/no-ticket` after the type, keeping the pipeline's own scope and message, so `fix(ci): x` becomes `fix/no-ticket(ci): x`.
+=== fm-brief.sh hf-ENG-630-direct-PR proj --mode direct-PR --ticket ENG-630 --commit-type hotfix
+scaffolded: /var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/tmp.sGxHUlJipt/data/hf-ENG-630-direct-PR/brief.md (ship, mode=direct-PR; replace {TASK} and {FIRSTMATE_SPEC})
+exit=0
+22:1. First action: create your branch: `git checkout -b fix/ENG-630-hf-ENG-630-direct-PR --`
+25:1. Never push to the default branch and never push to any remote but `origin` (push only your `fix/ENG-630-hf-ENG-630-direct-PR` branch, to `origin`). Never merge a PR.
+95:Ship branch: fix/ENG-630-hf-ENG-630-direct-PR
+97:Commit type: fix
+106:Every commit subject on this branch and the pull request title must read `fix/ENG-630(<scope>): <message>`, where `<scope>` names the area changed and `<message>` is a short imperative description.
+107:The branch is exactly `fix/ENG-630-hf-ENG-630-direct-PR`; do not rename it.
+130:3. `git push -u origin fix/ENG-630-hf-ENG-630-direct-PR`, then `gh-axi pr create -R <owner>/<repo> --base <base branch> --head fix/ENG-630-hf-ENG-630-direct-PR --draft --title ... --body ...`.
+=== fm-brief.sh hf-no-ticket-direct-PR proj --mode direct-PR --ticket no-ticket --commit-type hotfix
+scaffolded: /var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/tmp.sGxHUlJipt/data/hf-no-ticket-direct-PR/brief.md (ship, mode=direct-PR; replace {TASK} and {FIRSTMATE_SPEC})
+exit=0
+22:1. First action: create your branch: `git checkout -b fix/no-ticket-hf-no-ticket-direct-PR --`
+25:1. Never push to the default branch and never push to any remote but `origin` (push only your `fix/no-ticket-hf-no-ticket-direct-PR` branch, to `origin`). Never merge a PR.
+95:Ship branch: fix/no-ticket-hf-no-ticket-direct-PR
+97:Commit type: fix
+98:Every commit subject on this branch and the pull request title must read `fix/no-ticket(<scope>): <message>`, where `<scope>` names the area changed and `<message>` is a short imperative description.
+99:The branch is exactly `fix/no-ticket-hf-no-ticket-direct-PR`; do not rename it.
+122:3. `git push -u origin fix/no-ticket-hf-no-ticket-direct-PR`, then `gh-axi pr create -R <owner>/<repo> --base <base branch> --head fix/no-ticket-hf-no-ticket-direct-PR --draft --title ... --body ...`.
+=== fm-brief.sh hf-ENG-630-local-only proj --mode local-only --ticket ENG-630 --commit-type hotfix
+scaffolded: /var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/tmp.sGxHUlJipt/data/hf-ENG-630-local-only/brief.md (ship, mode=local-only; replace {TASK} and {FIRSTMATE_SPEC})
+exit=0
+22:1. First action: create your branch: `git checkout -b fix/ENG-630-hf-ENG-630-local-only --`
+25:1. Never push to any remote and never open a PR. Work only on your `fix/ENG-630-hf-ENG-630-local-only` branch; firstmate handles the merge into local `main`.
+95:Ship branch: fix/ENG-630-hf-ENG-630-local-only
+97:Commit type: fix
+106:Every commit subject on this branch and the pull request title must read `fix/ENG-630(<scope>): <message>`, where `<scope>` names the area changed and `<message>` is a short imperative description.
+107:The branch is exactly `fix/ENG-630-hf-ENG-630-local-only`; do not rename it.
+109:The task is complete only when committed on your branch `fix/ENG-630-hf-ENG-630-local-only`. Do NOT push, do NOT open a PR, do NOT merge.
+112:When it is implemented and committed, append `done [at=<epoch>]: ready in branch fix/ENG-630-hf-ENG-630-local-only` to the status file and stop.
+=== fm-brief.sh hf-no-ticket-local-only proj --mode local-only --ticket no-ticket --commit-type hotfix
+scaffolded: /var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/tmp.sGxHUlJipt/data/hf-no-ticket-local-only/brief.md (ship, mode=local-only; replace {TASK} and {FIRSTMATE_SPEC})
+exit=0
+22:1. First action: create your branch: `git checkout -b fix/no-ticket-hf-no-ticket-local-only --`
+25:1. Never push to any remote and never open a PR. Work only on your `fix/no-ticket-hf-no-ticket-local-only` branch; firstmate handles the merge into local `main`.
+95:Ship branch: fix/no-ticket-hf-no-ticket-local-only
+97:Commit type: fix
+98:Every commit subject on this branch and the pull request title must read `fix/no-ticket(<scope>): <message>`, where `<scope>` names the area changed and `<message>` is a short imperative description.
+99:The branch is exactly `fix/no-ticket-hf-no-ticket-local-only`; do not rename it.
+101:The task is complete only when committed on your branch `fix/no-ticket-hf-no-ticket-local-only`. Do NOT push, do NOT open a PR, do NOT merge.
+104:When it is implemented and committed, append `done [at=<epoch>]: ready in branch fix/no-ticket-hf-no-ticket-local-only` to the status file and stop.
+=== adversarial: feat stays feat
+scaffolded: /var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/tmp.sGxHUlJipt/data/feat-x/brief.md (ship, mode=no-mistakes; replace {TASK} and {FIRSTMATE_SPEC})
+98:Ship branch: feat/ENG-1-feat-x
+100:Commit type: feat
+=== adversarial: bogus type rejected
+scaffolded: /var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/tmp.sGxHUlJipt/data/bogus-x/brief.md (ship, mode=no-mistakes; replace {TASK} and {FIRSTMATE_SPEC})
+exit=0
+=== adversarial: hotfix without ticket
+error: fm-brief.sh: --commit-type has no meaning without --ticket; the convention binds a type to a ticket id or to its explicit no-ticket marker
+exit=1

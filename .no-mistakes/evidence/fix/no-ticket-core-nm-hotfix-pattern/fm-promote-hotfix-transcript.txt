@@ -1,0 +1,25 @@
+=== fm-promote.sh sc1 --mode no-mistakes --yolo off --ticket ENG-630 --commit-type hotfix
+●  watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+promoted sc1 to ship mode=no-mistakes yolo=off (teardown protection restored)
+wrote ship instructions for mode=no-mistakes: /var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/tmp.rknEf3yjvb/data/sc1/ship-instructions.md
+next: FM_HOME=/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/tmp.rknEf3yjvb bin/fm-send.sh fm-sc1 "$(cat /var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/tmp.rknEf3yjvb/data/sc1/ship-instructions.md)"
+exit=0
+--- meta
+window=fm-sc1
+worktree=/tmp/wt
+kind=ship
+mode=no-mistakes
+yolo=off
+branch=fix/ENG-630-sc1
+ticket=ENG-630
+ticket_scope=partial
+commit_type=fix
+--- ship-instructions lines
+8:If these promotion steps were already completed before a relaunch, preserve the existing `fix/ENG-630-sc1` branch and continue from its current state; do not repeat them destructively.
+11:3. Return to a clean default-branch base, then create your branch: `git checkout -b fix/ENG-630-sc1 --`.
+39:Ship branch: fix/ENG-630-sc1
+41:Commit type: fix
+50:Every commit subject on this branch and the pull request title must read `fix/ENG-630(<scope>): <message>`, where `<scope>` names the area changed and `<message>` is a short imperative description.
+51:The branch is exactly `fix/ENG-630-sc1`; do not rename it.
+101:Do not wait for that check to go red: the moment the run has a PR URL - read it from `no-mistakes axi status` as soon as the PR step has opened the PR, before the CI wait - edit the title ONCE to insert `/ENG-630` after the type, keeping the pipeline's own scope and message, so `fix(ci): x` becomes `fix/ENG-630(ci): x`.
