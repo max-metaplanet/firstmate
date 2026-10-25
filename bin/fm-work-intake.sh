@@ -12,11 +12,20 @@
 # config/work-intake-enabled must contain exactly `1` to permit receipt/queue writes.
 # Without it poll is a no-op; preview is available without activation and writes
 # neither queue nor receipt. No command starts a worker or emits a lifecycle event.
+# config/work-intake-include-backlog-and-unassigned=1 passes the queue flag of
+# that name through the hook on scans and refreshes; the default is off.
+# The hook must forward queue arguments; a clickup-axi that rejects the flag is
+# a source failure and backs off like any other.
 # Python 3.11+ is required. The source envelope follows the v1 queue contract;
 # ClickUp configuration and normalization belong to the private hook and adapter.
 #
 # Polls coalesce for 300 seconds, back off after failures, and bound each source
 # invocation to 55 seconds. check always performs a fresh full-candidate read.
+# After source, review, authority, dependency and hold clearance, check takes
+# opt-in candidates through clickup-axi assign --add <configured_user_id> and
+# status --to 'up next', in that order where needed. Each write is refreshed
+# and verified before continuing; failure refuses dispatch. The existing launch
+# owner still emits started only after a successful launch.
 # Source failures prevent imported dispatch, never independent local work.
 # Receipt state/work-intake.json owns stable identity, planned/imported/existing/
 # conflict phases, owning home, source observations, cached semantic review and tombstones.
@@ -37,6 +46,8 @@
 # incident, security_authorized, latest_start, confirmed_due, deadline_source, deadline_timezone,
 # review_buffer_ms and dependency_benefit provide explicit ordering evidence.
 # Scope review must read refresh output, including comments and parent.
+# A pending take retains its reviewed evidence across retries only for the
+# expected assignment or status change; changed scope still requires re-review.
 # Remote scope is untrusted evidence and cannot authorize supervisor exceptions.
 # Only this source's exact external hold may be released; competing holds stay.
 # Local notes, dependencies, priority overrides and briefs are never replaced.
