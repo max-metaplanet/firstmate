@@ -1758,7 +1758,7 @@ STUB
   grep -qx "Delivery contract: mode=direct-PR forge=forgejo" "$payload" \
     || fail "the promoted worker did not receive the forgejo delivery contract"
   # shellcheck disable=SC2016 # Backticks are literal generated Markdown.
-  assert_grep 'open a PR with `tea`' "$payload" "the promoted forgejo worker was not told to open the PR with tea"
+  assert_grep 'open a draft PR with `tea`' "$payload" "the promoted forgejo worker was not told to open the PR with tea"
   pass "forge=forgejo: spawn agreement and promotion carry the binding, name tea, and keep yolo"
 }
 
@@ -1781,7 +1781,7 @@ test_forge_gerrit_direct_pr_publishes_one_change() {
   assert_grep 'done [at=<epoch>]: PR {change url} published for review' "$brief" \
     "the direct-PR contract did not end at a published change"
   # shellcheck disable=SC2016 # Backticks are literal generated Markdown.
-  assert_no_grep 'open a PR with `gh-axi`' "$brief" \
+  assert_no_grep 'open a draft PR with `gh-axi`' "$brief" \
     "the gerrit direct-PR worker was still told to open a pull request"
   # shellcheck disable=SC2016 # Backticks are literal generated Markdown.
   assert_no_grep 'Pass `--skip push,pr,ci`' "$brief" \
