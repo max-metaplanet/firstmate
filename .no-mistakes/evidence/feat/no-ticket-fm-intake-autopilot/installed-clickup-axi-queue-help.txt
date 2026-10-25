@@ -1,0 +1,14 @@
+usage: clickup-axi queue [-h] [--refresh SOURCE_REF]
+                         [--include-backlog-and-unassigned] [--config CONFIG]
+                         [--json]
+
+options:
+  -h, --help            show this help message and exit
+  --refresh SOURCE_REF  re-read one opaque source_ref with comments and parent
+  --include-backlog-and-unassigned
+                        allow Active Backlog and Up next candidates owned
+                        solely by the configured user or unassigned
+  --config CONFIG       trusted shell config; otherwise CLICKUP_CONFIG,
+                        environment, or ~/.secrets then ~/.config/metaplanet-
+                        dev/clickup.sh
+  --json                emit one machine-readable JSON object

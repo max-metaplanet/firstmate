@@ -1,0 +1,48 @@
+
+===== SCENARIO happy: unassigned Backlog ticket, opt-in on =====
+ClickUp before: {'assignee_ids': [], 'status': 'backlog', 'is_unassigned': True, 'is_backlog': True}
+$ fm-work-intake.sh poll   # import
+  exit=0 stdout={"result": "polled", "imported": ["intake-251821b2ace986321647"]}
+  stderr=
+scan args seen by hook: GET ['--json', '--include-backlog-and-unassigned']
+$ fm-work-intake.sh check intake-251821b2ace986321647   # spawn preflight take
+  exit=0 stdout={"result": "cleared", "candidate": {"source_ref": "opaque-fixture-one", "source_revision": "scan-one-full-assign-status", "ticket": "ENG-1", "title": "Implement the accepted ticket", "url": "https://app.clickup.com/t/fixture-one", "eligibility": {"eligible": true, "exclusion_reasons": [], "proposal": null, "requires_scope_review": true}, "priority": {"value": "normal", "rank": 3, "provenance": "unset", "native": null}, "dates": {"hard_deadline": null, "due_at": null, "time_estimate_ms": null}, "scope": {"description": "Acceptance criteria: retain the accepted scope.", "comments_complete": true
+  stderr=
+clickup-axi writes: [['assign', 'ENG-1', '--add', '42', '--json'], ['status', 'ENG-1', '--to', 'up next', '--json']]
+ClickUp after: {'assignee_ids': [42], 'status': 'up next', 'is_unassigned': False, 'is_backlog': False}
+local row: state: queued | held: no
+$ fm-work-intake.sh check intake-251821b2ace986321647   # re-check (idempotent)
+  exit=0 stdout={"result": "cleared", "candidate": {"source_ref": "opaque-fixture-one", "source_revision": "scan-one-full-assign-status", "ticket": "ENG-1", "title": "Implement the accepted ticket", "url": "https://app.clickup.com/t/fixture-one", "eligibility": {"eligible": true, "exclusion_reasons": [], "proposal": null, "requires_scope_review": true}, "priority": {"value": "normal", "rank": 3, "provenance": "unset", "native": null}, "dates": {"hard_deadline": null, "due_at": null, "time_estimate_ms": null}, "scope": {"description": "Acceptance criteria: retain the accepted scope.", "comments_complete": true
+  stderr=
+clickup-axi writes total: 2
+
+===== SCENARIO held: unassigned Backlog ticket, opt-in on =====
+ClickUp before: {'assignee_ids': [], 'status': 'backlog', 'is_unassigned': True, 'is_backlog': True}
+$ fm-work-intake.sh poll   # import
+  exit=0 stdout={"result": "polled", "imported": ["intake-251821b2ace986321647"]}
+  stderr=
+scan args seen by hook: GET ['--json', '--include-backlog-and-unassigned']
+$ fm-work-intake.sh check intake-251821b2ace986321647   # spawn preflight take
+  exit=1 stdout=
+  stderr=work-intake: source, scope, dependency or competing hold prevents dispatch
+clickup-axi writes: []
+ClickUp after: {'assignee_ids': [], 'status': 'backlog', 'is_unassigned': True, 'is_backlog': True}
+local row: state: queued | held: yes
+
+===== SCENARIO assignfail: unassigned Backlog ticket, opt-in on =====
+ClickUp before: {'assignee_ids': [], 'status': 'backlog', 'is_unassigned': True, 'is_backlog': True}
+$ fm-work-intake.sh poll   # import
+  exit=0 stdout={"result": "polled", "imported": ["intake-251821b2ace986321647"]}
+  stderr=
+scan args seen by hook: GET ['--json', '--include-backlog-and-unassigned']
+$ fm-work-intake.sh check intake-251821b2ace986321647   # spawn preflight take
+  exit=1 stdout=
+  stderr=work-intake: take assign failed; dispatch refused: command failed: clickup-axi
+clickup-axi writes: [['assign', 'ENG-1', '--add', '42', '--json']]
+ClickUp after: {'assignee_ids': [], 'status': 'backlog', 'is_unassigned': True, 'is_backlog': True}
+local row: state: queued | held: yes
+$ fm-work-intake.sh check intake-251821b2ace986321647   # retry after transient failure
+  exit=0 stdout={"result": "cleared", "candidate": {"source_ref": "opaque-fixture-one", "source_revision": "scan-one-full-assign-status", "ticket": "ENG-1", "title": "Implement the accepted ticket", "url": "https://app.clickup.com/t/fixture-one", "eligibility": {"eligible": true, "exclusion_reasons": [], "proposal": null, "requires_scope_review": true}, "priority": {"value": "normal", "rank": 3, "provenance": "unset", "native": null}, "dates": {"hard_deadline": null, "due_at": null, "time_estimate_ms": null}, "scope": {"description": "Acceptance criteria: retain the accepted scope.", "comments_complete": true
+  stderr=
+clickup-axi writes: [['assign', 'ENG-1', '--add', '42', '--json'], ['assign', 'ENG-1', '--add', '42', '--json'], ['status', 'ENG-1', '--to', 'up next', '--json']]
+ClickUp after: {'assignee_ids': [42], 'status': 'up next', 'is_unassigned': False, 'is_backlog': False}

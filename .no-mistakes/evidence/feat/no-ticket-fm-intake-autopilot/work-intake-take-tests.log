@@ -1,0 +1,51 @@
+test_archived_ticket_after_new_import_in_same_scan_does_not_duplicate (__main__.IntakeTests.test_archived_ticket_after_new_import_in_same_scan_does_not_duplicate) ... ok
+test_authority_holds_future_and_blockers_override_urgency (__main__.IntakeTests.test_authority_holds_future_and_blockers_override_urgency) ... ok
+test_crash_after_row_creation_recovers_planned_identity (__main__.IntakeTests.test_crash_after_row_creation_recovers_planned_identity) ... ok
+test_default_disabled_and_preview_are_read_only (__main__.IntakeTests.test_default_disabled_and_preview_are_read_only) ... ok
+test_existing_queued_live_archive_and_split_scope_do_not_duplicate (__main__.IntakeTests.test_existing_queued_live_archive_and_split_scope_do_not_duplicate) ... ok
+test_full_refresh_detects_scope_changes_with_unchanged_scan_revision (__main__.IntakeTests.test_full_refresh_detects_scope_changes_with_unchanged_scan_revision) ... ok
+test_incidental_ticket_mentions_are_not_duplicate_identity (__main__.IntakeTests.test_incidental_ticket_mentions_are_not_duplicate_identity) ... ok
+test_intake_rows_titled_with_another_ticket_key_do_not_absorb_it (__main__.IntakeTests.test_intake_rows_titled_with_another_ticket_key_do_not_absorb_it) ... ok
+test_invalid_snapshot_and_namespace_change_preserve_identity (__main__.IntakeTests.test_invalid_snapshot_and_namespace_change_preserve_identity) ... ok
+test_leading_title_ticket_key_is_identity_for_queued_live_and_archived_rows (__main__.IntakeTests.test_leading_title_ticket_key_is_identity_for_queued_live_and_archived_rows) ... ok
+test_live_snapshot_ownership_gap_and_proposals_never_widen (__main__.IntakeTests.test_live_snapshot_ownership_gap_and_proposals_never_widen) ... ok
+test_live_worker_ticket_from_meta_does_not_duplicate (__main__.IntakeTests.test_live_worker_ticket_from_meta_does_not_duplicate) ... ok
+test_outage_retains_receipts_and_independent_work_remains_dispatchable (__main__.IntakeTests.test_outage_retains_receipts_and_independent_work_remains_dispatchable) ... ok
+test_pre_existing_rows_are_never_held_or_gated (__main__.IntakeTests.test_pre_existing_rows_are_never_held_or_gated) ... ok
+test_queue_opt_in_defaults_off_and_rejected_flag_is_source_failure (__main__.IntakeTests.test_queue_opt_in_defaults_off_and_rejected_flag_is_source_failure) ... ok
+test_registered_secondmate_owner_is_preserved (__main__.IntakeTests.test_registered_secondmate_owner_is_preserved) ... FAIL
+test_remote_ownership_and_manual_backends_fail_closed (__main__.IntakeTests.test_remote_ownership_and_manual_backends_fail_closed) ... ok
+test_repeat_concurrent_scan_and_restart_import_exactly_once (__main__.IntakeTests.test_repeat_concurrent_scan_and_restart_import_exactly_once) ... ok
+test_review_revision_binding_and_ranking_preserve_explicit_order (__main__.IntakeTests.test_review_revision_binding_and_ranking_preserve_explicit_order) ... ok
+test_source_changes_preserve_local_notes_and_priority (__main__.IntakeTests.test_source_changes_preserve_local_notes_and_priority) ... ok
+test_take_assign_failure_stops_promotion_and_dispatch (__main__.IntakeTests.test_take_assign_failure_stops_promotion_and_dispatch) ... ok
+test_take_assigned_up_next_needs_no_writes (__main__.IntakeTests.test_take_assigned_up_next_needs_no_writes) ... ok
+test_take_assigns_then_promotes_and_is_idempotent (__main__.IntakeTests.test_take_assigns_then_promotes_and_is_idempotent) ... ok
+test_take_generated_status_summary_cannot_hide_a_scope_reply (__main__.IntakeTests.test_take_generated_status_summary_cannot_hide_a_scope_reply) ... ok
+test_take_held_ticket_is_untouched (__main__.IntakeTests.test_take_held_ticket_is_untouched) ... ok
+test_take_read_back_failure_starts_source_backoff (__main__.IntakeTests.test_take_read_back_failure_starts_source_backoff) ... ok
+test_take_recovers_uncertain_assign_and_status_delivery (__main__.IntakeTests.test_take_recovers_uncertain_assign_and_status_delivery) ... ok
+test_take_repeated_failure_keeps_row_held (__main__.IntakeTests.test_take_repeated_failure_keeps_row_held) ... ok
+test_take_retry_survives_poll_of_expected_change (__main__.IntakeTests.test_take_retry_survives_poll_of_expected_change) ... ok
+test_take_status_failure_retries_without_reassigning (__main__.IntakeTests.test_take_status_failure_retries_without_reassigning) ... ok
+test_take_verifies_each_write_and_rejects_changed_scope (__main__.IntakeTests.test_take_verifies_each_write_and_rejects_changed_scope) ... ok
+test_terminal_tombstone_does_not_reimport_a_reopened_source (__main__.IntakeTests.test_terminal_tombstone_does_not_reimport_a_reopened_source) ... ok
+test_withdrawal_reassignment_invalid_state_and_partial_scan_are_conservative (__main__.IntakeTests.test_withdrawal_reassignment_invalid_state_and_partial_scan_are_conservative) ... ok
+
+======================================================================
+FAIL: test_registered_secondmate_owner_is_preserved (__main__.IntakeTests.test_registered_secondmate_owner_is_preserved)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/tmp.satNRD0L5A/t.py", line 423, in test_registered_secondmate_owner_is_preserved
+    self.assertEqual(entry['owner_home'],str(other))
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: '/private/var/folders/1l/gg6b5zsx0qn753wwhc[76 chars]mate' != '/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr00[68 chars]mate'
+- /private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/tmp.13N0EFGgL4/test_registered_secondmate_owner_is_preserved/mate
+? --------
++ /var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/tmp.13N0EFGgL4/test_registered_secondmate_owner_is_preserved/mate
+
+
+----------------------------------------------------------------------
+Ran 33 tests in 261.321s
+
+FAILED (failures=1)
