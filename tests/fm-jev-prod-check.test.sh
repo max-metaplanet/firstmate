@@ -1293,6 +1293,48 @@ EOF
   pass "fm-jev-prod-check: only successful unaffected-build statuses settle as not applicable"
 }
 
+test_historical_portal_personas_follow_current_parent_scope() {
+  local home out parent body variants
+  for parent in proven failed 'not applicable in production' missing malformed preview wrong-head; do
+    home=$(make_home "historical-personas-${parent// /-}")
+    configure "$home"
+    fake_gh "$home" >/dev/null
+    write_pulls "$home" 7200
+    write_no_preview_artifact "$home"
+    variants="$(HEAD_SHA=1111111111111111111111111111111111111111 section portal:portal-previous failed pre-merge preview oldprevious)
+$(HEAD_SHA=2222222222222222222222222222222222222222 section portal:portal-unverified failed pre-merge preview oldunverified)"
+    case "$parent" in
+      missing) body=$variants ;;
+      malformed) body="$(section portal unexpected post-merge production parentrec)
+$variants" ;;
+      preview) body="$(section portal proven pre-merge preview parentrec)
+$variants" ;;
+      wrong-head) body="$(HEAD_SHA=3333333333333333333333333333333333333333 section portal proven post-merge production parentrec)
+$variants" ;;
+      *) body="$(section portal "$parent" post-merge production parentrec)
+$variants" ;;
+    esac
+    body="$body
+$(section investor-hub proven pre-merge preview otherrec)"
+    write_comments "$home" 2214 900112 "$body"
+    out=$(poll "$home" FM_JEV_PROD_BATCH_SECS=0)
+    assert_contains "$out" 'couldnt-check' "a genuinely uncheckable app still wakes"
+    assert_contains "$out" 'app=investor-hub ' "parent scope never hides another app's missing production result"
+    case "$parent" in
+      proven|failed|'not applicable in production')
+        assert_not_contains "$out" 'app=portal:portal-previous ' "a historical previous-persona preview follows the current parent scope"
+        assert_not_contains "$out" 'app=portal:portal-unverified ' "a historical unverified-persona preview follows the current parent scope"
+        if [ "$parent" = failed ]; then
+          assert_contains "$out" 'app=portal production=failed ' "the parent's actual failure still wakes"
+        fi ;;
+      *)
+        assert_contains "$out" 'app=portal:portal-previous ' "an unestablished current parent cannot settle a persona gap"
+        assert_contains "$out" 'app=portal:portal-unverified ' "both historical persona gaps remain visible without a current parent" ;;
+    esac
+  done
+  pass "fm-jev-prod-check: historical portal previews follow only an established current parent production scope"
+}
+
 test_portal_persona_reads_scoped_deployment_inventory() {
   local home out persona
   for persona in portal portal:portal-previous; do
@@ -1635,6 +1677,7 @@ test_real_completed_outcomes_and_run_attempts
 test_known_nonpassing_and_unknown_titles
 test_real_skipped_builds_and_unreadable_inventory
 test_unaffected_builds_and_missing_builds
+test_historical_portal_personas_follow_current_parent_scope
 test_portal_persona_reads_scoped_deployment_inventory
 test_deployment_grace_late_result_and_redeploy
 test_persona_pairing_rejects_mismatches

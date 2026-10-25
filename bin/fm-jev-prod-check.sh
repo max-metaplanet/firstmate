@@ -864,7 +864,7 @@ EOF
 examine_pr() {  # <number> <url> <head-sha> <merge-sha> <merged-at> <title>
   local number=$1 url=$2 head_sha=$3 merge_sha=$4 merged_at=$5 title=$6
   local comments body_file comment_id ticket apps app verdict phase rec
-  local comment_revision record_id fallback alias_promoted
+  local comment_revision record_id fallback alias_promoted parent_verdict
   local checks_url key class preview preview_run persona section section_head fingerprint reason identity
 
   comments=$(gh_json "repos/$CONFIG_REPO/issues/$number/comments?per_page=100") || {
@@ -963,6 +963,18 @@ examine_pr() {  # <number> <url> <head-sha> <merge-sha> <merged-at> <title>
       continue
     fi
     if [ "$phase" != post-merge ]; then
+      # Core can suppress a persona after the changed routes or production
+      # scope change. Its older preview then survives beside the current parent.
+      if [ "$app" = portal ] && [ "$persona" != default ] && [ "$section_head" != "$head_sha" ] &&
+        section_of "$body_file" portal > "$TMP/parent-section" &&
+        [ "$(phase_of "$TMP/parent-section")" = post-merge ] &&
+        [ "$(head_of "$TMP/parent-section")" = "$head_sha" ]; then
+        parent_verdict=$(verdict_of "$TMP/parent-section")
+        if verdict_token_ok "$parent_verdict" &&
+          { [ "$parent_verdict" != proven ] || record_token_ok "$(record_of "$TMP/parent-section")"; }; then
+          continue
+        fi
+      fi
       [ "$RESEED" -eq 0 ] || continue
       deployment_of "$merge_sha" "$app"
       ! budget_left && return 1
