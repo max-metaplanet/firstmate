@@ -345,6 +345,7 @@ fm_ticket_scope_valid() {  # <ticket> <scope> <explicitly-set> <caller>
 
 fm_ticket_resolve() {  # <ticket> <commit-type> <task-id> <branch-prefix> <branch-prefix-set> <caller> [ticket-scope]
   local ticket=$1 commit_type=$2 id=$3 prefix=$4 prefix_set=$5 caller=$6
+  # shellcheck disable=SC2034 # Output global, read by the sourcing caller.
   FM_TICKET_COMMIT_TYPE=$commit_type
   FM_TICKET_BRANCH="$prefix$id"
   # shellcheck disable=SC2034 # Output global, read by the sourcing caller.
@@ -365,6 +366,7 @@ fm_ticket_resolve() {  # <ticket> <commit-type> <task-id> <branch-prefix> <branc
   }
   fm_commit_type_valid "$commit_type" "$caller" || return 1
   [ "$commit_type" != hotfix ] || commit_type=fix
+  # shellcheck disable=SC2034 # Output global, read by the sourcing caller.
   FM_TICKET_COMMIT_TYPE=$commit_type
   [ "$prefix_set" -eq 0 ] || {
     echo "error: $caller: --branch-prefix cannot be combined with --ticket; a ticketed ship branch is <commit-type>/<ticket>-<task-id> by the convention" >&2
