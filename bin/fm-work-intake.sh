@@ -14,8 +14,8 @@
 # neither queue nor receipt. No command starts a worker or emits a lifecycle event.
 # config/work-intake-include-backlog-and-unassigned=1 passes the queue flag of
 # that name through the hook on scans and refreshes; the default is off.
-# The hook must forward queue arguments. An older clickup-axi without the flag
-# reports a warning and uses default eligibility instead.
+# The hook must forward queue arguments; a clickup-axi that rejects the flag is
+# a source failure and backs off like any other.
 # Python 3.11+ is required. The source envelope follows the v1 queue contract;
 # ClickUp configuration and normalization belong to the private hook and adapter.
 #

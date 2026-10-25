@@ -438,7 +438,7 @@ Backlog and unassigned tickets remain proposals, while Requests and other owners
 Setting `config/work-intake-include-backlog-and-unassigned` to `1` opts into the producer's `--include-backlog-and-unassigned` mode on scans and refreshes.
 The private hook must forward that argument to `clickup-axi queue`.
 The hook and take verbs must use the same private clickup-axi configuration.
-An older installed CLI without the flag reports a warning and retains default queue eligibility.
+An installed CLI that rejects the flag fails the scan or refresh, which backs off like any other source failure.
 This option is off by default and installation changes no home's configuration.
 Review live exclusions before separately approving activation.
 This feature's installation does not grant that approval.

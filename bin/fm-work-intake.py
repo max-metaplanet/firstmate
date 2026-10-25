@@ -110,16 +110,7 @@ def include_backlog_and_unassigned():
 def source(hook, reference=None):
     args = [hook, '--json']
     if include_backlog_and_unassigned():
-        flag = '--include-backlog-and-unassigned'
-        try:
-            supported = flag in run(['clickup-axi', 'queue', '--help'])
-        except (IntakeError, OSError):
-            supported = False
-        if supported:
-            args.append(flag)
-        else:
-            print('work-intake: installed clickup-axi lacks ' + flag
-                  + '; using the default queue eligibility', file=sys.stderr)
+        args.append('--include-backlog-and-unassigned')
     if reference is not None:
         args += ['--refresh', reference]
     value = json.loads(run(args, timeout=55))

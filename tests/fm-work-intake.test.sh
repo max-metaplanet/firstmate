@@ -35,12 +35,13 @@ class IntakeTests(unittest.TestCase):
         self.save()
         self.hook = self.home / 'source'
         self.hook.write_text('''#!/usr/bin/env python3
-import json, pathlib, sys
+import json, os, pathlib, sys
 from datetime import datetime, timezone
 p=pathlib.Path(__file__).parent
 with (p/'calls').open('a') as stream: stream.write('GET ' + repr(sys.argv[1:]) + '\\n')
 v=json.loads((p/'source.json').read_text())
 if v.get('fail'): sys.exit(1)
+if os.environ.get('INTAKE_OLD_CLICKUP') and '--include-backlog-and-unassigned' in sys.argv: sys.exit(2)
 v['observed_at']=datetime.now(timezone.utc).isoformat()
 if '--refresh' in sys.argv:
  ref=sys.argv[sys.argv.index('--refresh')+1]
@@ -61,9 +62,6 @@ print(json.dumps(v))
 import json, os, pathlib, sys
 p=pathlib.Path(__file__).resolve().parent.parent
 args=sys.argv[1:]
-if args == ['queue','--help']:
- print('queue --json' + ('' if os.environ.get('INTAKE_OLD_CLICKUP') else ' --include-backlog-and-unassigned'))
- sys.exit(0)
 with (p/'writes').open('a') as stream: stream.write(json.dumps(args)+'\\n')
 step=args[0]
 if os.environ.get('INTAKE_FAIL_STEP') == step: sys.exit(1)
@@ -266,15 +264,17 @@ print(json.dumps({'result':'applied'}))
         self.call('check', ident, ok=False)
         self.assertEqual(len(self.writes()), 2)
 
-    def test_queue_opt_in_defaults_off_and_older_cli_reports_fallback(self):
+    def test_queue_opt_in_defaults_off_and_rejected_flag_is_source_failure(self):
         self.call('preview')
         self.assertNotIn('--include-backlog-and-unassigned', (self.home / 'calls').read_text())
         self.autopilot()
-        result = subprocess.run(['bash', str(ROOT / 'bin/fm-work-intake.sh'), 'preview', '--json'],
-                                env={**self.env, 'INTAKE_OLD_CLICKUP': '1'}, text=True, capture_output=True)
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn('using the default queue eligibility', result.stderr)
-        self.assertNotIn('--include-backlog-and-unassigned', (self.home / 'calls').read_text())
+        self.activate()
+        self.call('poll', ok=False, env={**self.env, 'INTAKE_OLD_CLICKUP': '1'})
+        self.assertIn('--include-backlog-and-unassigned', (self.home / 'calls').read_text())
+        receipt = self.receipt()
+        self.assertTrue(receipt.get('source_error'))
+        self.assertEqual(receipt['failures'], 1)
+        self.assertEqual(receipt['entries'], {})
         self.assertEqual(self.writes(), [])
 
     def test_default_disabled_and_preview_are_read_only(self):
