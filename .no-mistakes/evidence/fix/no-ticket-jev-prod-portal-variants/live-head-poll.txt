@@ -1,0 +1,17 @@
+$ FM_HOME=<disposable> FM_JEV_PROD_NOW=2026-10-23T03:00Z FM_JEV_PROD_BATCH_SECS=0 fm-jev-prod-check.sh check   # head (ce69b641); live reads of metaplanet-jp/core PRs 2327, 2333
+--- poll 1
+jev-prod: couldnt-check pr=https://github.com/metaplanet-jp/core/pull/2333 ticket=ENG-2815 app=portal production=failed preview=unknown comment=https://github.com/metaplanet-jp/core/pull/2333#issuecomment-6321254901 checks=https://github.com/metaplanet-jp/core/commit/7f6f28781c505407cee10cbd8a994b09a5e9a08c/checks
+exit=0 (117s)
+--- poll 2
+exit=0 (112s)
+--- poll 3
+exit=0 (118s)
+--- state rows
+woken	2327/portal/run-39620794243-attempt-1-not-applicable-3106534004-572
+woken	2327/admin-center/run-39620782749-attempt-1-not-applicable-4231019433-578
+woken	2333/portal/run-39642051583-attempt-1-failed-15fcc2387a8b
+woken	2333/admin-center/run-39641731224-attempt-1-not-applicable-1918531500-579
+outcome	2327/portal/run-39620794243-attempt-1-not-applicable-3106534004-572	not-applicable	nothing this pull request changed names a page a production check may open (database: 3 file(s), docs: 2 file(s), shared packages
+outcome	2327/admin-center/run-39620782749-attempt-1-not-applicable-4231019433-578	not-applicable	nothing this pull request changed names a page a production check may open (database: 3 file(s), docs: 2 file(s), shared pa
+outcome	2333/admin-center/run-39641731224-attempt-1-not-applicable-1918531500-579	not-applicable	nothing this pull request changed names a page a production check may open (admin-center: 1 file(s), app code naming no rou
+cursor	2333
