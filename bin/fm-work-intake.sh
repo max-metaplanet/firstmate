@@ -24,8 +24,10 @@
 # After source, review, authority, dependency and hold clearance, check takes
 # opt-in candidates through clickup-axi assign --add <configured_user_id> and
 # status --to 'up next', in that order where needed. Each write is refreshed
-# and verified before continuing; failure refuses dispatch. The existing launch
-# owner still emits started only after a successful launch.
+# and verified before continuing; exit 3 means the verified remote write applied
+# with journal delivery pending, so log a note and continue through read-back.
+# Every other nonzero or failed read-back refuses dispatch. Intake never runs
+# replay-db. The launch owner still emits started only after a successful launch.
 # Source failures prevent imported dispatch, never independent local work.
 # Receipt state/work-intake.json owns stable identity, planned/imported/existing/
 # conflict phases, owning home, source observations, cached semantic review and tombstones.

@@ -77,7 +77,7 @@ def locked():
         yield
 
 
-def run(command, *, env=None, timeout=15):
+def run(command, *, env=None, timeout=15, allow_journal_pending=False):
     process = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                                stderr=subprocess.PIPE, text=True, env=env, start_new_session=True)
     try:
@@ -90,7 +90,10 @@ def run(command, *, env=None, timeout=15):
             os.killpg(process.pid, signal.SIGKILL)
             process.communicate()
         raise IntakeError('bounded command exceeded its deadline') from None
-    require(process.returncode == 0, 'command failed: ' + Path(command[0]).name)
+    if allow_journal_pending and process.returncode == 3:
+        print('work-intake: clickup-axi ' + command[1] + ' applied; journal delivery pending', file=sys.stderr)
+    else:
+        require(process.returncode == 0, 'command failed: ' + Path(command[0]).name)
     return out
 
 
@@ -372,7 +375,7 @@ def take(state, entry, row, hook):
                 command = ['clickup-axi', 'status', candidate['ticket'], '--to', 'up next', '--json']
             entry['take'] = dict(step=step, user=user, candidate=entry['candidate'])
             atomic(RECEIPT, state)
-            run(command, timeout=55)
+            run(command, timeout=55, allow_journal_pending=True)
             try:
                 verified = refresh(state, entry, hook)
             except (IntakeError, OSError, ValueError) as error:

@@ -41,6 +41,7 @@ p=pathlib.Path(__file__).parent
 with (p/'calls').open('a') as stream: stream.write('GET ' + repr(sys.argv[1:]) + '\\n')
 v=json.loads((p/'source.json').read_text())
 if v.get('fail'): sys.exit(1)
+if os.environ.get('INTAKE_SOURCE_EXIT'): sys.exit(int(os.environ['INTAKE_SOURCE_EXIT']))
 if os.environ.get('INTAKE_OLD_CLICKUP') and '--include-backlog-and-unassigned' in sys.argv: sys.exit(2)
 v['observed_at']=datetime.now(timezone.utc).isoformat()
 if '--refresh' in sys.argv:
@@ -79,6 +80,9 @@ if os.environ.get('INTAKE_NOOP_STEP') != step:
  if os.environ.get('INTAKE_CHANGE_SCOPE') == step: r['scope']['description']='Unreviewed new scope'
  (p/'source.json').write_text(json.dumps(v))
 if os.environ.get('INTAKE_FAIL_AFTER_STEP') == step: sys.exit(1)
+if os.environ.get('INTAKE_FAIL_READ_AFTER_STEP') == step:
+ v['fail']=True;(p/'source.json').write_text(json.dumps(v))
+if step in os.environ.get('INTAKE_EXIT_STEPS', '').split(','): sys.exit(int(os.environ['INTAKE_EXIT_CODE']))
 print(json.dumps({'result':'applied'}))
 ''')
         clickup.chmod(0o755)
@@ -96,12 +100,12 @@ print(json.dumps({'result':'applied'}))
     def activate(self):
         (self.home / 'config/work-intake-enabled').write_text('1\n')
 
-    def call(self, *args, ok=True, env=None):
+    def call(self, *args, ok=True, env=None, raw=False):
         result = subprocess.run(['bash', str(ROOT / 'bin/fm-work-intake.sh'), *args, '--json'],
                                 env=env or self.env, text=True, capture_output=True, timeout=80)
         if ok:
             self.assertEqual(result.returncode, 0, result.stderr)
-            return json.loads(result.stdout)
+            return result if raw else json.loads(result.stdout)
         self.assertNotEqual(result.returncode, 0, result.stdout)
         return result
 
@@ -162,6 +166,75 @@ print(json.dumps({'result':'applied'}))
         self.call('check', ident)
         self.assertEqual(len(self.writes()), 2)
         self.assertIn('--include-backlog-and-unassigned', (self.home / 'calls').read_text())
+
+    def test_take_journal_pending_proceeds_and_logs_each_write(self):
+        self.autopilot()
+        ident = self.imported()
+        for steps in ('assign', 'status', 'assign,status'):
+            with self.subTest(steps=steps):
+                self.autopilot()
+                self.review(ident)
+                before = len(self.writes())
+                result = self.call('check', ident, raw=True, env={
+                    **self.env, 'INTAKE_EXIT_STEPS': steps, 'INTAKE_EXIT_CODE': '3'})
+                self.assertEqual(json.loads(result.stdout)['result'], 'cleared')
+                self.assertEqual([w[0] for w in self.writes()[before:]], ['assign', 'status'])
+                notes = result.stderr.splitlines()
+                self.assertEqual(len(notes), len(steps.split(',')))
+                for step, note in zip(steps.split(','), notes):
+                    self.assertIn(step, note)
+                    self.assertIn('journal delivery pending', note)
+                self.assertNotIn('take', self.receipt()['entries']['opaque-fixture-one'])
+
+    def test_take_other_nonzero_codes_refuse_dispatch(self):
+        self.autopilot()
+        ident = self.imported()
+        for step in ('assign', 'status'):
+            for code in (1, 2, 4):
+                with self.subTest(step=step, code=code):
+                    self.autopilot()
+                    self.review(ident)
+                    before = len(self.writes())
+                    result = self.call('check', ident, ok=False, env={
+                        **self.env, 'INTAKE_EXIT_STEPS': step, 'INTAKE_EXIT_CODE': str(code)})
+                    self.assertIn('take ' + step + ' failed; dispatch refused', result.stderr)
+                    self.assertNotIn('journal delivery pending', result.stderr)
+                    expected = ['assign'] if step == 'assign' else ['assign', 'status']
+                    self.assertEqual([w[0] for w in self.writes()[before:]], expected)
+                    self.assertIn('held: yes', self.tasks('show', ident))
+                    self.assertIn('state: queued', self.tasks('show', ident))
+
+    def test_take_journal_pending_still_requires_verified_write(self):
+        self.autopilot()
+        ident = self.imported()
+        for step in ('assign', 'status'):
+            for failure in ('INTAKE_NOOP_STEP', 'INTAKE_CHANGE_SCOPE'):
+                with self.subTest(step=step, failure=failure):
+                    self.autopilot()
+                    self.review(ident)
+                    result = self.call('check', ident, ok=False, env={
+                        **self.env, 'INTAKE_EXIT_STEPS': step, 'INTAKE_EXIT_CODE': '3', failure: step})
+                    self.assertIn('read-back changed scope or did not confirm', result.stderr)
+                    self.assertIn('held: yes', self.tasks('show', ident))
+
+    def test_take_journal_pending_read_failure_refuses_dispatch(self):
+        self.autopilot()
+        ident = self.imported(); self.review(ident)
+        result = self.call('check', ident, ok=False, env={
+            **self.env, 'INTAKE_EXIT_STEPS': 'assign', 'INTAKE_EXIT_CODE': '3',
+            'INTAKE_FAIL_READ_AFTER_STEP': 'assign'})
+        self.assertIn('take assign failed; dispatch refused', result.stderr)
+        self.assertEqual([w[0] for w in self.writes()], ['assign'])
+        self.assertTrue(self.receipt().get('source_error'))
+        self.assertIn('held: yes', self.tasks('show', ident))
+
+    def test_take_source_exit_three_refuses_dispatch(self):
+        self.autopilot()
+        ident = self.imported(); self.review(ident)
+        self.call('check', ident, ok=False, env={**self.env, 'INTAKE_SOURCE_EXIT': '3'})
+        self.assertEqual(self.writes(), [])
+        self.assertTrue(self.receipt().get('source_error'))
+        self.assertIn('held: yes', self.tasks('show', ident))
 
     def test_take_assigned_up_next_needs_no_writes(self):
         self.autopilot(unassigned=False, backlog=False)
