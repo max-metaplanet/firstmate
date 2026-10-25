@@ -347,6 +347,12 @@ def refresh(state, entry, hook):
     return row
 
 
+def backoff(state, error):
+    state['source_error'] = str(error)
+    state['failures'] = min(state.get('failures', 0) + 1, 5)
+    state['next_poll'] = time.time() + 300 * 2 ** (state['failures'] - 1)
+
+
 def take(state, entry, row, hook):
     candidate = entry['candidate']
     evidence = candidate.get('source_evidence', {})
@@ -354,36 +360,41 @@ def take(state, entry, row, hook):
         entry.pop('take', None)
         atomic(RECEIPT, state)
         return
-    require(include_backlog_and_unassigned(), 'taking backlog or unassigned work requires the queue opt-in')
-    user = evidence.get('configured_user_id')
-    require(type(user) is int and user > 0, 'take requires a configured positive ClickUp user ID')
-    for step in ('assign', 'status'):
-        evidence = entry['candidate']['source_evidence']
-        if step == 'assign':
-            if evidence.get('ownership') != 'unassigned':
-                continue
-            require(evidence.get('is_unassigned') is True and evidence.get('assignee_ids') == [],
-                    'take assignment requires verified unassigned evidence')
-            command = ['clickup-axi', 'assign', candidate['ticket'], '--add', str(user), '--json']
-        else:
-            if evidence.get('status') != 'backlog':
-                continue
-            require(evidence.get('is_backlog') is True and evidence.get('ownership') == 'sole'
-                    and evidence.get('assignee_ids') == [user], 'take promotion requires sole configured ownership')
-            command = ['clickup-axi', 'status', candidate['ticket'], '--to', 'up next', '--json']
-        entry['take'] = dict(step=step, user=user, candidate=entry['candidate'])
-        atomic(RECEIPT, state)
-        try:
+    step = 'setup'
+    try:
+        require(include_backlog_and_unassigned(), 'taking backlog or unassigned work requires the queue opt-in')
+        user = evidence.get('configured_user_id')
+        require(type(user) is int and user > 0, 'take requires a configured positive ClickUp user ID')
+        for step in ('assign', 'status'):
+            evidence = entry['candidate']['source_evidence']
+            if step == 'assign':
+                if evidence.get('ownership') != 'unassigned':
+                    continue
+                require(evidence.get('is_unassigned') is True and evidence.get('assignee_ids') == [],
+                        'take assignment requires verified unassigned evidence')
+                command = ['clickup-axi', 'assign', candidate['ticket'], '--add', str(user), '--json']
+            else:
+                if evidence.get('status') != 'backlog':
+                    continue
+                require(evidence.get('is_backlog') is True and evidence.get('ownership') == 'sole'
+                        and evidence.get('assignee_ids') == [user], 'take promotion requires sole configured ownership')
+                command = ['clickup-axi', 'status', candidate['ticket'], '--to', 'up next', '--json']
+            entry['take'] = dict(step=step, user=user, candidate=entry['candidate'])
+            atomic(RECEIPT, state)
             run(command, timeout=55)
-            verified = refresh(state, entry, hook)
+            try:
+                verified = refresh(state, entry, hook)
+            except (IntakeError, OSError, ValueError) as error:
+                backoff(state, error)
+                raise
             require(take_target(entry['take'], verified) and review_valid(entry, row),
                     'read-back changed scope or did not confirm the requested change')
-        except (IntakeError, OSError, ValueError) as error:
-            hold(entry, row, True)
+            entry.pop('take', None)
             atomic(RECEIPT, state)
-            raise IntakeError('take ' + step + ' failed; dispatch refused: ' + str(error)) from None
-        entry.pop('take', None)
+    except (IntakeError, OSError, ValueError) as error:
+        hold(entry, local_row(entry), True)
         atomic(RECEIPT, state)
+        raise IntakeError('take ' + step + ' failed; dispatch refused: ' + str(error)) from None
 
 
 def order(entry, row=None):
@@ -441,9 +452,7 @@ def poll(state, hook):
                 'source namespace changed; reconcile configuration')
         rows, unavailable = index()
     except (IntakeError, OSError, ValueError) as error:
-        state['failures'] = min(state.get('failures', 0) + 1, 5)
-        state['next_poll'] = now + 300 * 2 ** (state['failures'] - 1)
-        state['source_error'] = str(error)
+        backoff(state, error)
         atomic(RECEIPT, state)
         raise
     previous = state.get('snapshot', {}).get('candidates', [])
@@ -472,7 +481,7 @@ def poll(state, hook):
                 entry['conflicts'] = [{'id': r['id'], 'owner_home': r['owner_home']} for r in found]
             state['entries'][ref] = entry
             atomic(RECEIPT, state)
-        if entry.get('scan_revision') != candidate['source_revision']:
+        if entry.get('scan_revision') != candidate['source_revision'] and not entry.get('take'):
             entry.pop('review', None)
         if candidate['eligibility']['eligible'] and not eligible(entry):
             entry['eligible_since'] = now
@@ -573,9 +582,7 @@ def main():
         try:
             candidate = refresh(state, entry, hook)
         except (IntakeError, OSError, ValueError) as error:
-            state['source_error'] = str(error)
-            state['failures'] = min(state.get('failures', 0) + 1, 5)
-            state['next_poll'] = time.time() + 300 * 2 ** (state['failures'] - 1)
+            backoff(state, error)
             hold(entry, row, True)
             atomic(RECEIPT, state)
             raise

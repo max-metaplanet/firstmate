@@ -195,6 +195,39 @@ print(json.dumps({'result':'applied'}))
         self.call('check', ident)
         self.assertEqual([w[0] for w in self.writes()], ['assign', 'assign', 'status'])
 
+    def test_take_repeated_failure_keeps_row_held(self):
+        self.autopilot()
+        ident = self.imported(); self.review(ident)
+        for attempt in range(2):
+            self.call('check', ident, ok=False, env={**self.env, 'INTAKE_FAIL_STEP': 'assign'})
+            self.assertIn('held: yes', self.tasks('show', ident), attempt)
+
+    def test_take_read_back_failure_starts_source_backoff(self):
+        self.autopilot()
+        ident = self.imported(); self.review(ident)
+        clickup = self.home / 'fakeclickup/clickup-axi'
+        clickup.write_text(clickup.read_text().replace("print(json.dumps({'result':'applied'}))",
+            "s=json.loads((p/'source.json').read_text());s['fail']=True;(p/'source.json').write_text(json.dumps(s))"))
+        self.call('check', ident, ok=False)
+        self.assertTrue(self.receipt().get('source_error'))
+        self.assertIn('held: yes', self.tasks('show', ident))
+        snapshot = json.loads(self.fixture.read_text()); snapshot.pop('fail'); self.fixture.write_text(json.dumps(snapshot))
+        result = self.call('check', ident, ok=False)
+        self.assertIn('source backoff active', result.stderr)
+        self.assertEqual([w[0] for w in self.writes()], ['assign'])
+
+    def test_take_retry_survives_poll_of_expected_change(self):
+        self.autopilot()
+        ident = self.imported(); self.review(ident)
+        self.call('check', ident, ok=False, env={**self.env, 'INTAKE_FAIL_STEP': 'status'})
+        snapshot = json.loads(self.fixture.read_text())
+        snapshot['candidates'][0]['source_revision'] += '-assigned'
+        self.fixture.write_text(json.dumps(snapshot))
+        self.expire()
+        self.call('poll')
+        self.assertEqual(self.call('check', ident)['result'], 'cleared')
+        self.assertEqual([w[0] for w in self.writes()], ['assign', 'status', 'status'])
+
     def test_take_status_failure_retries_without_reassigning(self):
         self.autopilot()
         ident = self.imported(); self.review(ident)
