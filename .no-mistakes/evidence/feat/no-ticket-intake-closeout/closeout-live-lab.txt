@@ -1,0 +1,107 @@
+## S1 ticket ENG-1 dispatched; worker in flight -> no close-out
+$ fm-tasks-axi add eng1-work ENG-1 rollout: dispatched work
+ok: added eng1-work -> Queued
+task:
+  id: eng1-work
+  title: "ENG-1 rollout: dispatched work"
+$ fm-tasks-axi start eng1-work
+ok: start eng1-work -> In flight
+help[1]:
+  - Run `tasks-axi done eng1-work --pr <url>` when it ships
+$ fm-work-intake.sh poll --json
+rc=0
+{
+ "changed": true,
+ "closeout": [],
+ "closeout_surfaced": false
+}
+--- close-out wakes queued:
+0
+
+## S2 follow-up in flight while first row done -> still no close-out
+$ fm-tasks-axi done eng1-work --pr https://github.com/o/r/pull/7
+ok: done eng1-work -> Done (pr https://github.com/o/r/pull/7); pruned 1
+help[1]:
+  - Run `tasks-axi ready` to dispatch work unblocked by this
+$ fm-tasks-axi add eng1-part2 ENG-1 part 2: remaining scope
+ok: added eng1-part2 -> Queued
+task:
+  id: eng1-part2
+  title: "ENG-1 part 2: remaining scope"
+$ fm-tasks-axi start eng1-part2
+ok: start eng1-part2 -> In flight
+help[1]:
+  - Run `tasks-axi done eng1-part2 --pr <url>` when it ships
+$ fm-work-intake.sh poll --json
+rc=0
+{
+ "changed": false,
+ "closeout": [],
+ "closeout_surfaced": false
+}
+--- close-out wakes queued:
+0
+
+## S3 all rows done, ticket still open -> real watcher heartbeat rings close-out
+$ fm-tasks-axi done eng1-part2 --pr https://github.com/o/r/pull/9
+ok: done eng1-part2 -> Done (pr https://github.com/o/r/pull/9); pruned 1
+help[1]:
+  - Run `tasks-axi ready` to dispatch work unblocked by this
+watcher rc=0
+--- watcher output:
+check: work-intake close-out
+receipt: {'opaque-fixture-one': ('existing', 'eng1-work', {'revision': 'scan-one', 'surfaced_at': 1792993118.772469})}
+--- close-out wakes queued:
+1
+work-intake: close-out ENG-1 - finished task work eng1-work, eng1-part2 (ENG-1 rollout: dispatched work https://github.com/o/r/pull/7 (merged 2026-10-26); ENG-1 part 2: remaining scope https://github.com/o/r/pull/9 (merged 2026-10-26)) left the ticket open at "up next"; load work-intake to settle it: https://app.clickup.com/t/fixture-one
+
+## S4 repoll, unchanged source -> no duplicate wake
+$ fm-work-intake.sh poll --json
+rc=0
+{
+ "changed": false,
+ "closeout": [
+  {
+   "ticket": "ENG-1",
+   "source_ref": "opaque-fixture-one",
+   "local_id": "eng1-work",
+   "local_ids": [
+    "eng1-work",
+    "eng1-part2"
+   ],
+   "url": "https://app.clickup.com/t/fixture-one",
+   "kinds": [
+    "task"
+   ],
+   "evidence": "ENG-1 rollout: dispatched work https://github.com/o/r/pull/7 (merged 2026-10-26); ENG-1 part 2: remaining scope https://github.com/o/r/pull/9 (merged 2026-10-26)",
+   "source_status": "up next",
+   "revision": "scan-one",
+   "surfaced": true
+  }
+ ],
+ "closeout_surfaced": false
+}
+--- close-out wakes queued:
+1
+work-intake: close-out ENG-1 - finished task work eng1-work, eng1-part2 (ENG-1 rollout: dispatched work https://github.com/o/r/pull/7 (merged 2026-10-26); ENG-1 part 2: remaining scope https://github.com/o/r/pull/9 (merged 2026-10-26)) left the ticket open at "up next"; load work-intake to settle it: https://app.clickup.com/t/fixture-one
+
+## S5 ticket closed on the board (leaves active scan) -> record retired, no wake
+$ fm-work-intake.sh poll --json
+rc=0
+{
+ "changed": true,
+ "closeout": [],
+ "closeout_surfaced": false
+}
+--- close-out wakes queued:
+1
+work-intake: close-out ENG-1 - finished task work eng1-work, eng1-part2 (ENG-1 rollout: dispatched work https://github.com/o/r/pull/7 (merged 2026-10-26); ENG-1 part 2: remaining scope https://github.com/o/r/pull/9 (merged 2026-10-26)) left the ticket open at "up next"; load work-intake to settle it: https://app.clickup.com/t/fixture-one
+closeout record present: False
+
+## boundary: no ClickUp write command was invoked by intake (source hook calls only):
+['--json']
+['--json']
+['--json']
+['--json']
+['--json']
+lab removed

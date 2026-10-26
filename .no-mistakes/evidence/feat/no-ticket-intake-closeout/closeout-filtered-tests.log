@@ -1,0 +1,11 @@
+test_closeout_covers_dispatched_ticket_work_and_retires_with_the_ticket (__main__.IntakeTests.test_closeout_covers_dispatched_ticket_work_and_retires_with_the_ticket) ... ok
+test_closeout_ignores_unfinished_work (__main__.IntakeTests.test_closeout_ignores_unfinished_work) ... ok
+test_closeout_labels_each_finished_kind_for_a_scout_and_its_ship_follow_up (__main__.IntakeTests.test_closeout_labels_each_finished_kind_for_a_scout_and_its_ship_follow_up) ... ok
+test_closeout_leaves_another_home_to_settle_its_own_ticket (__main__.IntakeTests.test_closeout_leaves_another_home_to_settle_its_own_ticket) ... ok
+test_closeout_surfaces_finished_ticket_once_until_the_source_changes (__main__.IntakeTests.test_closeout_surfaces_finished_ticket_once_until_the_source_changes) ... ok
+test_closeout_waits_for_live_follow_up_work_on_the_same_ticket (__main__.IntakeTests.test_closeout_waits_for_live_follow_up_work_on_the_same_ticket) ... ok
+
+----------------------------------------------------------------------
+Ran 6 tests in 71.104s
+
+OK
