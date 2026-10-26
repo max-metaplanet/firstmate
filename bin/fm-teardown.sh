@@ -66,8 +66,12 @@
 # by itself causes a false refusal of landed work.
 # A gh lookup error falls back to the content check; if that is also inconclusive,
 # teardown refuses rather than risk discarding unlanded work.
-# Uncommitted changes are never landed; dirty refusals distinguish untracked-only
-# leftovers from tracked edits and list at most ten non-exempt untracked paths.
+# Uncommitted changes are unlanded work unless every one of them already holds
+# exactly what the freshly fetched remote base holds, in which case nothing
+# unique can be lost and cleanup proceeds without --force; teardown_dirt_is_in_base
+# below owns that proof and bin/fm-unlanded-work-lib.sh owns the judgement.
+# Otherwise dirty refusals distinguish untracked-only leftovers from tracked
+# edits and list at most ten non-exempt untracked paths.
 # local-only projects accept work reachable from any remote-tracking branch
 # (including a fork), or merged into the local default branch (firstmate performs
 # that merge after configured approval) when there is no remote copy.
@@ -83,7 +87,9 @@
 # The second -f removes nested repositories, and -x stays off so ignored files remain.
 # A ship teardown without --force does not run that clean: it refuses untracked
 # entries, except those under the .claude/ allowance, so a nested repository
-# there can still survive the return.
+# there can still survive the return. The one exception is a copy whose every
+# uncommitted path was proved to be the base's own content: those leftovers are
+# authorized to discard, so the clean runs and the pool gets its slot back.
 # After a return that succeeds, teardown reads `git status --porcelain --untracked-files=all`.
 # Any remaining output, a status read that fails, or a copy that is missing or
 # no longer a readable worktree is reported at once with the lost pool slot and
@@ -1799,6 +1805,50 @@ teardown_treehouse_return() {
   return 1
 }
 
+# Untracked leftovers the dirty predicate never counts as work: the harness's
+# own per-copy settings and turn-ended markers. One owner, applied to the
+# collapsed snapshot the refusal prints and to the exhaustive path list the
+# base-identity proof compares.
+TEARDOWN_DIRT_EXEMPT_RE='^\?\? (\.claude/|\.fm-(grok|kimi)-turnend$)'
+
+# Every path the copy has dirty, NUL-separated: untracked directories expanded
+# to their files and rename sources included, because the identity proof needs
+# one path per file and must see the source a rename emptied. The refusal
+# diagnostic keeps the collapsed snapshot it already prints.
+teardown_dirty_paths_z() {  # <worktree>
+  local wt=$1 record xy path orig
+  while IFS= read -r -d '' record; do
+    xy=${record:0:2}
+    path=${record:3}
+    case "$xy" in
+      R?|?R|C?|?C)
+        IFS= read -r -d '' orig || orig=
+        [ -z "$orig" ] || printf '%s\0' "$orig"
+        ;;
+    esac
+    if [[ "$xy $path" =~ $TEARDOWN_DIRT_EXEMPT_RE ]]; then
+      continue
+    fi
+    printf '%s\0' "$path"
+  done < <(git -C "$wt" -c core.quotePath=false status --porcelain=v1 -z --untracked-files=all 2>/dev/null)
+}
+
+# Is every one of this copy's uncommitted paths already exactly what the remote
+# base holds? Such leftovers - a branch update that restaged files identical to
+# the base is the usual source - carry nothing unique, so the captain has
+# nothing to approve discarding and cleanup needs no --force. The judgement and
+# the proof line belong to bin/fm-unlanded-work-lib.sh; a differing path, a
+# failed fetch, or an unreadable base keeps the refusal below.
+teardown_dirt_is_in_base() {
+  teardown_dirty_paths_z "$WT" | fm_unlanded_dirt_is_in_base "$WT" "$PROJ" "${BASE_BRANCH:-}"
+}
+
+# Set by validate_worktree_teardown_safety when it proved every uncommitted
+# path to be a copy of the base. The leftovers are then authorized to discard,
+# so the scrub before the Treehouse return clears them rather than leaving the
+# pool a slot it will skip.
+TEARDOWN_DIRT_IS_BASE_COPY=0
+
 report_worktree_dirt() {
   # Use the same porcelain snapshot and exemptions as the refusal predicate.
   printf '%s\n' "$1" | awk '
@@ -1848,7 +1898,7 @@ teardown_note_dirty_return() {
 }
 
 validate_worktree_teardown_safety() {
-  local dirty_raw dirty unpushed_raw unpushed DEFAULT unmerged_raw unmerged branch
+  local dirty_raw dirty dirt_proof unpushed_raw unpushed DEFAULT unmerged_raw unmerged branch
   [ -d "$WT" ] || return 0
   [ "$FORCE" != "--force" ] || return 0
   case "$KIND" in
@@ -1863,7 +1913,12 @@ validate_worktree_teardown_safety() {
     echo "Restore the git index state, or get the captain's explicit OK to discard, then --force." >&2
     return 1
   fi
-  dirty=$(printf '%s\n' "$dirty_raw" | grep -vE '^\?\? (\.claude/|\.fm-(grok|kimi)-turnend$)' || true)
+  dirty=$(printf '%s\n' "$dirty_raw" | grep -vE "$TEARDOWN_DIRT_EXEMPT_RE" || true)
+  if [ -n "$dirty" ] && dirt_proof=$(teardown_dirt_is_in_base); then
+    echo "teardown: worktree $WT holds uncommitted changes, but $dirt_proof; nothing unique would be discarded." >&2
+    dirty=
+    TEARDOWN_DIRT_IS_BASE_COPY=1
+  fi
 
   if ! unpushed_raw=$(git -C "$WT" log --oneline HEAD --not --remotes -- 2>/dev/null); then
     if worktree_safety_blocked_by_lock "commits not on a remote"; then
@@ -3878,7 +3933,7 @@ elif [ -d "$WT" ] && [ "$KIND" != secondmate ]; then
   if [ "$FORCE" != "--force" ] && [ "$KIND" != scout ] && [ "$KIND" != secondmate ]; then
     post_lock_cleanup_check=validate_worktree_teardown_safety
   fi
-  if [ "$KIND" = scout ] || [ "$FORCE" = "--force" ]; then
+  if [ "$KIND" = scout ] || [ "$FORCE" = "--force" ] || [ "$TEARDOWN_DIRT_IS_BASE_COPY" = 1 ]; then
     teardown_scrub_scratch_copy "$WT" || exit 1
   fi
   wt_pool_slot=0

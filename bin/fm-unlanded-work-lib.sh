@@ -1,11 +1,16 @@
 # shellcheck shell=bash
-# Shared "has this copy's committed work actually landed" test.
+# Shared "has this copy's work actually landed" test, for its commits and for
+# its uncommitted leftovers alike.
 #
 # ONE OWNER for that judgement. bin/fm-teardown.sh asks it before discarding a
 # copy, and bin/fm-slot-release.sh asks it before letting one of two colliding
 # records stop naming a copy the other record's cleanup will then reset. Both
 # need the same answer for the same reason - work whose landing is unproved
 # must never be destroyed - so the test lives here.
+#
+# The uncommitted half is fm_unlanded_dirt_is_in_base: leftovers that already
+# hold exactly what the remote base holds carry nothing unique, so destroying
+# them discards a copy of the base rather than anyone's work.
 #
 # The judgement is deliberately conservative in one direction only: every
 # inconclusive read (no default ref, a merge conflict, a forge error, a missing
@@ -180,6 +185,82 @@ fm_unlanded_pr_is_merged() {  # <copy> <branch> <pr-url>
   return 0
 }
 
+# The ref this copy's work is supposed to land on, freshly fetched. A task
+# started from a named base landed its work there, not on the project default,
+# so that base is the comparison ref when the caller names one. A project with
+# no origin compares against the local branch, which is where firstmate's
+# approved local-only merge puts the work. Echoes the ref; returns non-zero
+# when the fetch fails or no such ref exists, so every caller refuses rather
+# than deciding a landing question against a stale or missing ref.
+fm_unlanded_base_ref() {  # <copy> <project> [<base-branch>]
+  local copy=$1 project=$2 name=${3:-}
+  [ -n "$name" ] || name=$(fm_unlanded_default_branch "$project") || return 1
+  if git -C "$copy" remote get-url origin >/dev/null 2>&1; then
+    git -C "$copy" fetch --quiet origin "+refs/heads/$name:refs/remotes/origin/$name" >/dev/null 2>&1 || return 1
+    echo "refs/remotes/origin/$name"
+    return 0
+  fi
+  git -C "$copy" rev-parse --quiet --verify "refs/heads/$name" >/dev/null 2>&1 || return 1
+  echo "refs/heads/$name"
+}
+
+# How many dirty paths the identity proof below compares. A copy holding more
+# dirt than this is pathological, and proving it path by path would hold up
+# cleanup longer than the refusal it would lift, so such a copy keeps today's
+# refusal.
+FM_UNLANDED_DIRT_PATH_LIMIT=${FM_UNLANDED_DIRT_PATH_LIMIT:-2000}
+case "$FM_UNLANDED_DIRT_PATH_LIMIT" in ''|*[!0-9]*) FM_UNLANDED_DIRT_PATH_LIMIT=2000 ;; esac
+
+# Does the copy's uncommitted state hold anything the base ref does not hold
+# already? Reads the dirty paths NUL-separated on stdin, because the caller
+# owns which paths count as dirt, its own exemptions included; this answers
+# only whether any of them carries unique content.
+#
+# A path matches when the working tree holds exactly what the base ref holds
+# there: the same regular-file blob with the same executable bit, or nothing on
+# either side, which is what makes a leftover deletion of a path the base never
+# had provably empty. Anything else keeps the caller's refusal - a differing
+# blob, a mode or type change, a symlink or submodule entry, a path the base
+# has but the copy removed, an unreadable file, a failed fetch, or an empty
+# path set.
+#
+# On a match it prints the one-line proof naming the ref, the commit compared,
+# and the path count, so the caller can log why it did not refuse.
+fm_unlanded_dirt_is_in_base() {  # <copy> <project> [<base-branch>]
+  local copy=$1 project=$2 base=${3:-}
+  local ref commit path count=0 entry mode type object wt_object
+  ref=$(fm_unlanded_base_ref "$copy" "$project" "$base") || return 1
+  commit=$(git -C "$copy" rev-parse --quiet --verify "$ref" 2>/dev/null) || return 1
+  [ -n "$commit" ] || return 1
+  while IFS= read -r -d '' path; do
+    count=$((count + 1))
+    [ "$count" -le "$FM_UNLANDED_DIRT_PATH_LIMIT" ] || return 1
+    entry=$(git -C "$copy" ls-tree "$ref" -- "$path" 2>/dev/null) || return 1
+    if [ ! -e "$copy/$path" ] && [ ! -L "$copy/$path" ]; then
+      [ -z "$entry" ] || return 1
+      continue
+    fi
+    [ -n "$entry" ] || return 1
+    # `<mode> SP <type> SP <object> TAB <path>`: the tab splits the object from
+    # a path that may itself hold spaces.
+    read -r mode type object _ <<<"$entry"
+    [ "$type" = blob ] || return 1
+    [ -f "$copy/$path" ] && [ ! -L "$copy/$path" ] || return 1
+    case "$mode" in
+      100644) [ ! -x "$copy/$path" ] || return 1 ;;
+      100755) [ -x "$copy/$path" ] || return 1 ;;
+      *) return 1 ;;
+    esac
+    # --path applies the clean filters the stored blob was written with, so a
+    # repo with .gitattributes filters does not read as different.
+    wt_object=$(git -C "$copy" hash-object --path "$path" -- "$path" 2>/dev/null) || return 1
+    [ "$wt_object" = "$object" ] || return 1
+  done
+  [ "$count" -gt 0 ] || return 1
+  printf 'every uncommitted path already holds what %s (%s) holds: %d path(s)\n' \
+    "$ref" "${commit:0:12}" "$count"
+}
+
 # Is the branch's content already present in the up-to-date default branch?
 # Fetches first, then 3-way merges the default branch with HEAD: when HEAD
 # introduces nothing the default branch does not already contain (e.g. its
@@ -190,18 +271,7 @@ fm_unlanded_pr_is_merged() {  # <copy> <branch> <pr-url>
 # rather than guesses.
 fm_unlanded_content_in_default() {  # <copy> <project> [<base-branch>]
   local copy=$1 project=$2 name=${3:-} ref default_tree merged_tree
-  # A task started from a named base landed its work there, not on the project
-  # default, so that base is what the content is compared against when the caller
-  # names one.
-  [ -n "$name" ] || name=$(fm_unlanded_default_branch "$project") || return 1
-  if git -C "$copy" remote get-url origin >/dev/null 2>&1; then
-    git -C "$copy" fetch --quiet origin "+refs/heads/$name:refs/remotes/origin/$name" >/dev/null 2>&1 || return 1
-    ref="refs/remotes/origin/$name"
-  elif git -C "$copy" rev-parse --quiet --verify "refs/heads/$name" >/dev/null 2>&1; then
-    ref="refs/heads/$name"
-  else
-    return 1
-  fi
+  ref=$(fm_unlanded_base_ref "$copy" "$project" "$name") || return 1
   default_tree=$(git -C "$copy" rev-parse --quiet --verify "$ref^{tree}" 2>/dev/null) || return 1
   [ -n "$default_tree" ] || return 1
   merged_tree=$(git -C "$copy" merge-tree --write-tree "$ref" HEAD 2>/dev/null) || return 1
