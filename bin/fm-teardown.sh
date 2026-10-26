@@ -1846,7 +1846,9 @@ teardown_dirt_is_in_base() {
 # Set by validate_worktree_teardown_safety when it proved every uncommitted
 # path to be a copy of the base. The leftovers are then authorized to discard,
 # so the scrub before the Treehouse return clears them rather than leaving the
-# pool a slot it will skip.
+# pool a slot it will skip. The agent may still be writing until that return,
+# so the scrub proves the dirt again first and is skipped when it no longer
+# holds; the post-lock safety check then refuses the new dirt.
 TEARDOWN_DIRT_IS_BASE_COPY=0
 
 report_worktree_dirt() {
@@ -3933,7 +3935,8 @@ elif [ -d "$WT" ] && [ "$KIND" != secondmate ]; then
   if [ "$FORCE" != "--force" ] && [ "$KIND" != scout ] && [ "$KIND" != secondmate ]; then
     post_lock_cleanup_check=validate_worktree_teardown_safety
   fi
-  if [ "$KIND" = scout ] || [ "$FORCE" = "--force" ] || [ "$TEARDOWN_DIRT_IS_BASE_COPY" = 1 ]; then
+  if [ "$KIND" = scout ] || [ "$FORCE" = "--force" ] \
+     || { [ "$TEARDOWN_DIRT_IS_BASE_COPY" = 1 ] && teardown_dirt_is_in_base >/dev/null; }; then
     teardown_scrub_scratch_copy "$WT" || exit 1
   fi
   wt_pool_slot=0

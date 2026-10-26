@@ -34,6 +34,7 @@
 #   (i3) landed + one dirty path with content of its own        -> REFUSE
 #   (i4) landed + base-identical dirt but the fetch fails       -> REFUSE
 #   (i5) landed + staged rename that empties a path the base has -> REFUSE
+#   (i6) landed + staged blob the working tree no longer shows  -> REFUSE
 #   (j) no-mistakes + gh lookup errors + content not in default -> REFUSE (fail-safe)
 #   (k) no-mistakes + merged PR but HEAD moved afterward        -> REFUSE (stale PR)
 #   (l) no-mistakes + stale origin/main but fetched content     -> ALLOW  (fresh fetch)
@@ -1514,6 +1515,48 @@ test_staged_rename_is_compared_on_its_source_too() {
     || fail "dirt-in-base-rename: the proof ignored the path the rename emptied"
   [ -f "$case_dir/state/task-x1.meta" ] || fail "dirt-in-base-rename: task record removed"
   pass "a staged rename is judged on the path it emptied, not only its destination"
+}
+
+# Staged content is work too: the working tree can show the base's bytes, or
+# nothing at all, while the index alone holds a blob found nowhere else.
+assert_staged_only_content_refuses() {
+  local label=$1 case_dir=$2 rc before
+  before=$(git -C "$case_dir/wt" status --porcelain)
+
+  set +e
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 1 "$rc" "$label: staged content of its own must refuse"
+  grep -q REFUSED "$case_dir/stderr" || fail "$label: no REFUSED line"
+  ! grep -q 'every uncommitted path already holds' "$case_dir/stderr" \
+    || fail "$label: the proof ignored the staged blob"
+  [ -f "$case_dir/state/task-x1.meta" ] || fail "$label: task record removed"
+  [ "$before" = "$(git -C "$case_dir/wt" status --porcelain)" ] \
+    || fail "$label: worktree changed"
+}
+
+test_staged_add_with_file_removed_refuses() {
+  local case_dir
+  case_dir=$(make_case dirt-in-base-staged-add)
+  setup_landed_task_with_main_file "$case_dir" main-only.txt "from main"
+  printf '%s\n' "only staged" > "$case_dir/wt/new.txt"
+  git -C "$case_dir/wt" add -- new.txt
+  rm -- "$case_dir/wt/new.txt"
+  assert_staged_only_content_refuses dirt-in-base-staged-add "$case_dir"
+  pass "a staged add whose file was removed keeps the refusal"
+}
+
+test_staged_edit_with_tree_reverted_to_base_refuses() {
+  local case_dir
+  case_dir=$(make_case dirt-in-base-staged-edit)
+  setup_landed_task_with_main_file "$case_dir" main-only.txt "from main"
+  printf '%s\n' "staged edit" > "$case_dir/wt/main-only.txt"
+  git -C "$case_dir/wt" add -- main-only.txt
+  printf '%s\n' "from main" > "$case_dir/wt/main-only.txt"
+  assert_staged_only_content_refuses dirt-in-base-staged-edit "$case_dir"
+  pass "a staged edit hidden behind base bytes in the working tree keeps the refusal"
 }
 
 test_one_differing_path_still_refuses() {
@@ -6491,6 +6534,8 @@ test_untracked_main_identical_dirt_allows
 test_removal_of_a_path_the_base_lacks_allows
 test_one_differing_path_still_refuses
 test_staged_rename_is_compared_on_its_source_too
+test_staged_add_with_file_removed_refuses
+test_staged_edit_with_tree_reverted_to_base_refuses
 test_failed_base_fetch_still_refuses
 test_untracked_only_refusal_diagnostic
 test_tracked_edit_refusal_diagnostic

@@ -219,16 +219,17 @@ case "$FM_UNLANDED_DIRT_PATH_LIMIT" in ''|*[!0-9]*) FM_UNLANDED_DIRT_PATH_LIMIT=
 # A path matches when the working tree holds exactly what the base ref holds
 # there: the same regular-file blob with the same executable bit, or nothing on
 # either side, which is what makes a leftover deletion of a path the base never
-# had provably empty. Anything else keeps the caller's refusal - a differing
-# blob, a mode or type change, a symlink or submodule entry, a path the base
-# has but the copy removed, an unreadable file, a failed fetch, or an empty
-# path set.
+# had provably empty. The index must hold either no entry for the path or that
+# same base entry, so staged content the working tree no longer shows is still
+# judged. Anything else keeps the caller's refusal - a differing blob, a mode or
+# type change, a symlink or submodule entry, a path the base has but the copy
+# removed, an unreadable file, a failed fetch, or an empty path set.
 #
 # On a match it prints the one-line proof naming the ref, the commit compared,
 # and the path count, so the caller can log why it did not refuse.
 fm_unlanded_dirt_is_in_base() {  # <copy> <project> [<base-branch>]
   local copy=$1 project=$2 base=${3:-}
-  local ref commit path count=0 entry mode type object wt_object
+  local ref commit path count=0 entry staged mode type object wt_object
   ref=$(fm_unlanded_base_ref "$copy" "$project" "$base") || return 1
   commit=$(git -C "$copy" rev-parse --quiet --verify "$ref" 2>/dev/null) || return 1
   [ -n "$commit" ] || return 1
@@ -236,8 +237,9 @@ fm_unlanded_dirt_is_in_base() {  # <copy> <project> [<base-branch>]
     count=$((count + 1))
     [ "$count" -le "$FM_UNLANDED_DIRT_PATH_LIMIT" ] || return 1
     entry=$(git -C "$copy" ls-tree "$ref" -- "$path" 2>/dev/null) || return 1
+    staged=$(git --literal-pathspecs -C "$copy" ls-files --stage -- "$path" 2>/dev/null) || return 1
     if [ ! -e "$copy/$path" ] && [ ! -L "$copy/$path" ]; then
-      [ -z "$entry" ] || return 1
+      [ -z "$entry" ] && [ -z "$staged" ] || return 1
       continue
     fi
     [ -n "$entry" ] || return 1
@@ -245,6 +247,9 @@ fm_unlanded_dirt_is_in_base() {  # <copy> <project> [<base-branch>]
     # a path that may itself hold spaces.
     read -r mode type object _ <<<"$entry"
     [ "$type" = blob ] || return 1
+    # ls-files prints `<mode> SP <object> SP <stage> TAB <path>`, quoting the
+    # path as ls-tree does, so the base entry rebuilt in that shape is exact.
+    [ -z "$staged" ] || [ "$staged" = "$mode $object 0"$'\t'"${entry#*$'\t'}" ] || return 1
     [ -f "$copy/$path" ] && [ ! -L "$copy/$path" ] || return 1
     case "$mode" in
       100644) [ ! -x "$copy/$path" ] || return 1 ;;
