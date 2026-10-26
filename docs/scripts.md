@@ -159,7 +159,7 @@ The shared no-mistakes gate lifecycle boundary is summarized in [architecture.md
 | `fm-teardown.sh`         | Fail-closed teardown: return landed ship worktrees, require completed scout deliverables, retire secondmate homes |
 | `fm-slot-release.sh`     | Release one task record's claim on a working copy a second record also names, only once that copy is proved to hold no unlanded work |
 | `fm-slot-record-lib.sh`  | Shared scan for another local task record naming a working copy, used by the launch and cleanup refusals and by `fm-slot-release.sh` |
-| `fm-unlanded-work-lib.sh` | Shared test for whether a copy's committed work has actually landed, used before anything may discard it |
+| `fm-unlanded-work-lib.sh` | Shared test for whether a copy's committed work has landed and its uncommitted leftovers already match the base, used before anything may discard it |
 | `fm-harness.sh`          | Detect the running harness, resolve crew or secondmate harness, model, and effort, and validate the native-only `ultra` effort |
 | `fm-lock.sh`             | Per-home firstmate session lock                                                      |
 | `fm-x-lib.sh`            | Shared Relay config, relay, and reply-threading helpers                              |

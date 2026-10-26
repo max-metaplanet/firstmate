@@ -30,6 +30,11 @@
 #   (g) no-mistakes + squash-merged PR, exact PR head          -> ALLOW  (squash fix)
 #   (h) no-mistakes + no PR but content already in default     -> ALLOW  (content fallback)
 #   (i) no-mistakes + dirty worktree, even when work landed     -> REFUSE (dirty wins)
+#   (i2) landed + every dirty path already in the fetched base  -> ALLOW  (nothing unique)
+#   (i3) landed + one dirty path with content of its own        -> REFUSE
+#   (i4) landed + base-identical dirt but the fetch fails       -> REFUSE
+#   (i5) landed + staged rename that empties a path the base has -> REFUSE
+#   (i6) landed + staged blob the working tree no longer shows  -> REFUSE
 #   (j) no-mistakes + gh lookup errors + content not in default -> REFUSE (fail-safe)
 #   (k) no-mistakes + merged PR but HEAD moved afterward        -> REFUSE (stale PR)
 #   (l) no-mistakes + stale origin/main but fetched content     -> ALLOW  (fresh fetch)
@@ -1385,6 +1390,250 @@ test_dirty_worktree_refuses() {
   grep -q REFUSED "$case_dir/stderr" || fail "dirty-wt: no REFUSED line in stderr"
   grep -q "uncommitted changes" "$case_dir/stderr" || fail "dirty-wt: refusal did not cite uncommitted changes"
   pass "dirty worktree is refused even when its committed work has landed (dirty always wins)"
+}
+
+# A merged task whose copy was left holding files the remote base already has
+# byte for byte: the common source is a branch update that restages main's own
+# content. Nothing unique can be lost, so teardown proves it and proceeds
+# without the captain's OK and without --force.
+# Sets up a squash-merged task, lands <file>=<content> on origin/main afterwards,
+# and leaves the copy's committed work provably landed. Echoes nothing.
+setup_landed_task_with_main_file() {
+  local case_dir=$1 file=$2 content=$3
+  write_meta "$case_dir" no-mistakes ship
+  wt_commit_file "$case_dir" feature.txt hello "add feature"
+  land_on_origin_main "$case_dir" feature.txt hello
+  append_pr_meta_for_current_head "$case_dir"
+  add_gh_pr_merged_for_head "$case_dir" "$(git -C "$case_dir/wt" rev-parse HEAD)"
+  land_on_origin_main "$case_dir" "$file" "$content"
+}
+
+# Make every `git fetch` in the copy fail, leaving every other git command real.
+add_git_fetch_failure() {
+  local case_dir=$1
+  cat > "$case_dir/fakebin/git" <<'SH'
+#!/usr/bin/env bash
+real=${REAL_GIT_FOR_TEST:?}
+for arg in "$@"; do
+  if [ "$arg" = fetch ]; then
+    echo "fatal: simulated network failure" >&2
+    exit 128
+  fi
+done
+exec "$real" "$@"
+SH
+  chmod +x "$case_dir/fakebin/git"
+}
+
+test_staged_main_identical_dirt_allows() {
+  local case_dir rc
+  case_dir=$(make_case dirt-in-base)
+  setup_landed_task_with_main_file "$case_dir" main-only.txt "from main"
+  # The branch update staged main's own file into this copy, byte for byte.
+  printf '%s\n' "from main" > "$case_dir/wt/main-only.txt"
+  git -C "$case_dir/wt" add -- main-only.txt
+
+  set +e
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 0 "$rc" "dirt-in-base: teardown should proceed when every dirty path is already in the base"
+  ! grep -q REFUSED "$case_dir/stderr" || fail "dirt-in-base: teardown printed a REFUSED line"
+  assert_grep 'every uncommitted path already holds what refs/remotes/origin/main' \
+    "$case_dir/stderr" "dirt-in-base: no proof line naming the base ref"
+  assert_grep '1 path(s)' "$case_dir/stderr" "dirt-in-base: proof line did not count the paths"
+  assert_absent "$case_dir/state/task-x1.meta" "dirt-in-base: task record was not removed"
+  pass "staged leftovers identical to the remote base are torn down without --force"
+}
+
+test_untracked_main_identical_dirt_allows() {
+  local case_dir rc
+  case_dir=$(make_case dirt-in-base-untracked)
+  setup_landed_task_with_main_file "$case_dir" main-only.txt "from main"
+  # Same bytes as the base holds, but never added: the path is untracked here.
+  printf '%s\n' "from main" > "$case_dir/wt/main-only.txt"
+
+  set +e
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 0 "$rc" "dirt-in-base-untracked: an untracked copy of a base file should not refuse"
+  ! grep -q REFUSED "$case_dir/stderr" || fail "dirt-in-base-untracked: teardown printed a REFUSED line"
+  assert_grep '1 path(s)' "$case_dir/stderr" "dirt-in-base-untracked: no proof line"
+  assert_absent "$case_dir/state/task-x1.meta" "dirt-in-base-untracked: task record was not removed"
+  pass "an untracked leftover identical to the remote base is torn down without --force"
+}
+
+test_removal_of_a_path_the_base_lacks_allows() {
+  local case_dir rc
+  case_dir=$(make_case dirt-in-base-removal)
+  write_meta "$case_dir" no-mistakes ship
+  wt_commit_file "$case_dir" feature.txt hello "add feature"
+  land_on_origin_main "$case_dir" feature.txt hello
+  append_pr_meta_for_current_head "$case_dir"
+  add_gh_pr_merged_for_head "$case_dir" "$(git -C "$case_dir/wt" rev-parse HEAD)"
+  # The copy staged the removal of a file the base never had. Its content lives
+  # in the landed PR head, so the empty working-tree state matches the base.
+  wt_commit_file "$case_dir" branch-only.txt scratch "add branch-only file"
+  git -C "$case_dir/wt" rm -q -- branch-only.txt
+  add_gh_pr_merged_for_head "$case_dir" "$(git -C "$case_dir/wt" rev-parse HEAD)"
+
+  set +e
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 0 "$rc" "dirt-in-base-removal: a removal the base already lacks should not refuse"
+  ! grep -q REFUSED "$case_dir/stderr" || fail "dirt-in-base-removal: teardown printed a REFUSED line"
+  assert_grep '1 path(s)' "$case_dir/stderr" "dirt-in-base-removal: no proof line"
+  pass "a staged removal of a path the remote base lacks is torn down without --force"
+}
+
+test_staged_rename_is_compared_on_its_source_too() {
+  local case_dir rc
+  case_dir=$(make_case dirt-in-base-rename)
+  write_meta "$case_dir" no-mistakes ship
+  wt_commit_file "$case_dir" renamed-from.txt original "add the file that gets renamed"
+  land_on_origin_main "$case_dir" renamed-from.txt original
+  # The base holds both names with the same bytes, so the rename's destination
+  # matches it while the source the rename emptied does not.
+  land_on_origin_main "$case_dir" newname.txt original
+  append_pr_meta_for_current_head "$case_dir"
+  add_gh_pr_merged_for_head "$case_dir" "$(git -C "$case_dir/wt" rev-parse HEAD)"
+  git -C "$case_dir/wt" mv renamed-from.txt newname.txt
+
+  set +e
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 1 "$rc" "dirt-in-base-rename: a rename that empties a path the base holds must refuse"
+  grep -q REFUSED "$case_dir/stderr" || fail "dirt-in-base-rename: no REFUSED line"
+  ! grep -q 'every uncommitted path already holds' "$case_dir/stderr" \
+    || fail "dirt-in-base-rename: the proof ignored the path the rename emptied"
+  [ -f "$case_dir/state/task-x1.meta" ] || fail "dirt-in-base-rename: task record removed"
+  pass "a staged rename is judged on the path it emptied, not only its destination"
+}
+
+# Staged content is work too: the working tree can show the base's bytes, or
+# nothing at all, while the index alone holds a blob found nowhere else.
+assert_staged_only_content_refuses() {
+  local label=$1 case_dir=$2 rc before
+  before=$(git -C "$case_dir/wt" status --porcelain)
+
+  set +e
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 1 "$rc" "$label: staged content of its own must refuse"
+  grep -q REFUSED "$case_dir/stderr" || fail "$label: no REFUSED line"
+  ! grep -q 'every uncommitted path already holds' "$case_dir/stderr" \
+    || fail "$label: the proof ignored the staged blob"
+  [ -f "$case_dir/state/task-x1.meta" ] || fail "$label: task record removed"
+  [ "$before" = "$(git -C "$case_dir/wt" status --porcelain)" ] \
+    || fail "$label: worktree changed"
+}
+
+test_staged_add_with_file_removed_refuses() {
+  local case_dir
+  case_dir=$(make_case dirt-in-base-staged-add)
+  setup_landed_task_with_main_file "$case_dir" main-only.txt "from main"
+  printf '%s\n' "only staged" > "$case_dir/wt/new.txt"
+  git -C "$case_dir/wt" add -- new.txt
+  rm -- "$case_dir/wt/new.txt"
+  assert_staged_only_content_refuses dirt-in-base-staged-add "$case_dir"
+  pass "a staged add whose file was removed keeps the refusal"
+}
+
+test_staged_edit_with_tree_reverted_to_base_refuses() {
+  local case_dir
+  case_dir=$(make_case dirt-in-base-staged-edit)
+  setup_landed_task_with_main_file "$case_dir" main-only.txt "from main"
+  printf '%s\n' "staged edit" > "$case_dir/wt/main-only.txt"
+  git -C "$case_dir/wt" add -- main-only.txt
+  printf '%s\n' "from main" > "$case_dir/wt/main-only.txt"
+  assert_staged_only_content_refuses dirt-in-base-staged-edit "$case_dir"
+  pass "a staged edit hidden behind base bytes in the working tree keeps the refusal"
+}
+
+# Base-identical leftovers lift the refusal, not the .claude/ allowance: a
+# nested repository there was never proved and must survive the return.
+test_main_identical_dirt_keeps_nested_claude_repo() {
+  local case_dir rc nested
+  case_dir=$(make_case dirt-in-base-nested-claude)
+  setup_landed_task_with_main_file "$case_dir" main-only.txt "from main"
+  printf '%s\n' "from main" > "$case_dir/wt/main-only.txt"
+  nested="$case_dir/wt/.claude/worktrees/side"
+  mkdir -p "$nested"
+  git init -q "$nested"
+  printf 'side work\n' > "$nested/side.txt"
+  git -C "$nested" add side.txt
+  git -C "$nested" -c user.email=t@t -c user.name=t commit -q -m "side work"
+  add_treehouse_clean_fd "$case_dir"
+
+  set +e
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 0 "$rc" "dirt-in-base-nested-claude: base-identical dirt should not refuse"
+  assert_grep '1 path(s)' "$case_dir/stderr" "dirt-in-base-nested-claude: no proof line"
+  [ "$(git -C "$nested" log -1 --format=%s 2>/dev/null)" = "side work" ] \
+    || fail "dirt-in-base-nested-claude: the nested repository under .claude/ was discarded"
+  assert_absent "$case_dir/wt/main-only.txt" "dirt-in-base-nested-claude: the return left the proved leftover"
+  pass "base-identical leftovers are discarded while a nested repo under .claude/ survives"
+}
+
+test_one_differing_path_still_refuses() {
+  local case_dir rc before
+  case_dir=$(make_case dirt-in-base-one-differs)
+  setup_landed_task_with_main_file "$case_dir" main-only.txt "from main"
+  printf '%s\n' "from main" > "$case_dir/wt/main-only.txt"
+  # One path carries content of its own, so the whole set stays unproved.
+  printf '%s\n' "only here" > "$case_dir/wt/unique.txt"
+  git -C "$case_dir/wt" add -- main-only.txt unique.txt
+  before=$(git -C "$case_dir/wt" status --porcelain)
+
+  set +e
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 1 "$rc" "dirt-in-base-one-differs: one differing path must still refuse"
+  grep -q REFUSED "$case_dir/stderr" || fail "dirt-in-base-one-differs: no REFUSED line"
+  grep -q "uncommitted changes" "$case_dir/stderr" \
+    || fail "dirt-in-base-one-differs: refusal did not cite uncommitted changes"
+  ! grep -q 'every uncommitted path already holds' "$case_dir/stderr" \
+    || fail "dirt-in-base-one-differs: teardown claimed a proof it does not have"
+  [ -f "$case_dir/state/task-x1.meta" ] || fail "dirt-in-base-one-differs: task record removed"
+  [ "$before" = "$(git -C "$case_dir/wt" status --porcelain)" ] \
+    || fail "dirt-in-base-one-differs: worktree changed"
+  pass "one path with content of its own keeps the uncommitted-changes refusal"
+}
+
+test_failed_base_fetch_still_refuses() {
+  local case_dir rc
+  case_dir=$(make_case dirt-in-base-fetch-fails)
+  setup_landed_task_with_main_file "$case_dir" main-only.txt "from main"
+  printf '%s\n' "from main" > "$case_dir/wt/main-only.txt"
+  git -C "$case_dir/wt" add -- main-only.txt
+  # Without a fresh base the comparison would be decided against a stale ref.
+  add_git_fetch_failure "$case_dir"
+
+  set +e
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 1 "$rc" "dirt-in-base-fetch-fails: an unfetchable base must still refuse"
+  grep -q REFUSED "$case_dir/stderr" || fail "dirt-in-base-fetch-fails: no REFUSED line"
+  ! grep -q 'every uncommitted path already holds' "$case_dir/stderr" \
+    || fail "dirt-in-base-fetch-fails: teardown proved identity without a fresh base"
+  [ -f "$case_dir/state/task-x1.meta" ] || fail "dirt-in-base-fetch-fails: task record removed"
+  pass "a failed base fetch keeps the uncommitted-changes refusal"
 }
 
 assert_dirty_diagnostic() {
@@ -6308,6 +6557,15 @@ test_content_in_default_fallback_allows
 test_content_fallback_uses_recorded_base_branch
 test_content_fallback_refreshes_stale_origin_ref
 test_dirty_worktree_refuses
+test_staged_main_identical_dirt_allows
+test_untracked_main_identical_dirt_allows
+test_removal_of_a_path_the_base_lacks_allows
+test_one_differing_path_still_refuses
+test_staged_rename_is_compared_on_its_source_too
+test_staged_add_with_file_removed_refuses
+test_staged_edit_with_tree_reverted_to_base_refuses
+test_main_identical_dirt_keeps_nested_claude_repo
+test_failed_base_fetch_still_refuses
 test_untracked_only_refusal_diagnostic
 test_tracked_edit_refusal_diagnostic
 test_mixed_refusal_diagnostic
