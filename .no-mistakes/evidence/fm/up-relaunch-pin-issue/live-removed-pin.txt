@@ -1,0 +1,27 @@
+## Scenario: pin removed since spawn, ambient account differs -> relaunch refuses
+$ rm config/claude-account
+$ grep ^account= state/pinlive.meta
+account=~/.claude-seats/seat-max-gmail
+$ env -u CLAUDE_CONFIG_DIR bin/fm-control.sh pinlive relaunch --note pin-removed
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab.geWHbZ
+error: task pinlive was launched on account ~/.claude-seats/seat-max-gmail, but config/claude-account is now absent, so the relaunch would use the ordinary account (~/.claude with CLAUDE_CONFIG_DIR unset); relaunching would move the task to a different account directory, and the replacement would start without the outgoing worker's session state, which stays under the recorded account. Set config/claude-account back to '~/.claude-seats/seat-max-gmail' to relaunch this task, or leave it and start a fresh task on the new account
+rc=1
+task record: byte-identical after refusal
+
+## Scenario: pin removed, ambient CLAUDE_CONFIG_DIR is the recorded account -> relaunch proceeds
+$ CLAUDE_CONFIG_DIR=~/.claude-seats/seat-max-gmail bin/fm-control.sh pinlive relaunch --note ambient-same
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab.geWHbZ
+error: exit-delivered pinlive interrupt=delivered verified=agent-alive cancel=unconfirmed exit-command=delivered agent-state=alive exit=unconfirmed; the agent did not stop within 30s
+error: relaunch of pinlive failed while stopping the old agent, which is still running; its original instructions were restored
+rc=1
+$ grep ^account= state/pinlive.meta
+account=~/.claude-seats/seat-max-gmail
+(retry after the busy worker failed to stop within 30s)
+$ CLAUDE_CONFIG_DIR=~/.claude-seats/seat-max-gmail bin/fm-control.sh pinlive relaunch --note ambient-same
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab.geWHbZ
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab.geWHbZ
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+relaunched pinlive harness=claude from=claude model=default effort=default backend=tmux endpoint=primary:fm-pinlive worktree=~/.treehouse/proj-df33d6/1/proj
+rc=0
+$ grep ^account= state/pinlive.meta
+(no account= line)

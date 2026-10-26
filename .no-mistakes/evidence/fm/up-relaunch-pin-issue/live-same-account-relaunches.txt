@@ -1,0 +1,43 @@
+## Scenario: pin back on the recorded account (symlink spelling) -> relaunch proceeds
+$ cat config/claude-account
+/private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab.geWHbZ/seat-link
+(symlink -> ~/.claude-seats/seat-max-gmail)
+worker pane before: 78899 2.1.310
+$ bin/fm-control.sh pinlive relaunch --note same-account
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab.geWHbZ
+error: config/claude-account pins Claude workers to /private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab.geWHbZ/seat-link, which is not signed in (claude auth status); sign in with CLAUDE_CONFIG_DIR=/private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab.geWHbZ/seat-link claude, then /login, or change the pin
+rc=1
+$ grep ^account= state/pinlive.meta
+account=~/.claude-seats/seat-max-gmail
+worker pane after: 78899 2.1.310
+--- replacement worker screen:
+ ▐▛███▛█   Claude Code v2.1.310
+▝▜██████▀  Opus 5.5 · Claude Max
+ ▝▝   ▝▝   ~/.treehouse/proj-df33d6/1/proj
+❯ : Firstmate operational input waiting: read '/private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab.geWHbZ/state/operational-inbox/1793045071-72d574af9e9bd506.msg' and handle its contents
+  as Firstmate operational input.
+  Read 1 file, listed 1 directory, ran 1 shell command
+⏺ Write the report first, then run the completion gate.
+  Ran 2 shell commands
+
+## Scenario: pin restored to the exact recorded account -> relaunch proceeds
+$ cat config/claude-account
+~/.claude-seats/seat-max-gmail
+worker pane before: 78899 2.1.310
+$ bin/fm-control.sh pinlive relaunch --note same-account
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab.geWHbZ
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab.geWHbZ
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+relaunched pinlive harness=claude from=claude model=default effort=default backend=tmux endpoint=primary:fm-pinlive worktree=~/.treehouse/proj-df33d6/1/proj
+rc=0
+$ grep ^account= state/pinlive.meta
+account=~/.claude-seats/seat-max-gmail
+worker pane after: 78899 2.1.310
+replacement claude CLAUDE_CONFIG_DIR: 
+--- replacement worker screen:
+ ▐▛███▛█   Claude Code v2.1.310
+▝▜██████▀  Opus 5.5 · Claude Max
+ ▝▝   ▝▝   ~/.treehouse/proj-df33d6/1/proj
+❯ : Firstmate operational input waiting: read '/private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab.geWHbZ/state/operational-inbox/1793045161-1714b999b3bcdae0.msg' and handle its contents
+  as Firstmate operational input.
+  Running cat '/private/var/folders/1l/gg6b5zsx0qn753wwhcmm…
