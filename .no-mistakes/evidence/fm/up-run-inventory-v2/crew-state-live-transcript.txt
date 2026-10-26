@@ -1,0 +1,31 @@
+# Live fm-crew-state.sh transcript: real no-mistakes CLI (v1.99.0-1531-1535-evidence-push-recovery-jobless-cancel+f4b9ede6edd2), disposable NM_HOME=/tmp/fmcs.9vBuAr/nm (daemon stopped), lab FM_HOME=/tmp/fmcs.9vBuAr/fm
+# primary checkout: /private/tmp/fmcs.9vBuAr/repo ; task worktree: /private/tmp/fmcs.9vBuAr/wt on fm/task ; 25 newer runs on other branches push fm/task's run out of the overview's 10-row window
+# target = 562dd14d (this change), base = 127f0f30
+
+$ (in task worktree) no-mistakes axi | grep -E "^repo|^count"
+repo: /private/tmp/fmcs.9vBuAr/repo
+count: 10 of 26 total
+
+## S1 task worktree with a capped run inventory, run readable (state DB keyed by primary checkout)
+target: state: working · source: run-step · validating (running) · run: 01TASKRUN001
+base:   state: working · source: run-step · validating (running) · run: 01TASKRUN001
+
+## S2 primary 'no-mistakes axi status' hangs (real CLI copy SIGSTOPped, FM_CREW_STATE_NM_TIMEOUT=3); status log says 'working:'
+target: state: unreadable · source: run-step · could not read the run: `no-mistakes axi status` did not answer   [stopped 90504: no-mistakes axi status]
+base:   state: unknown · source: none · backend target gone: fm:fm-task   [stopped 91772: no-mistakes axi status]
+
+## S3 state database unreadable (chmod 000): real CLI reports error, reader must say unreadable with the reason
+target: state: unreadable · source: run-step · could not read the run inventory: `no-mistakes axi` failed; run ids: 
+base:   state: unknown · source: run-step · run inventory unreadable; run ids: , unavailable
+
+## S4 state database holds a same-branch run row that fails validation (head_sha 'not-a-sha')
+target: state: unreadable · source: run-step · could not read this branch's run inventory: the state database's own run rows for this branch did not validate; run ids: 01TASKOLD001, 01TASKRUN001; last reported run id: 01TASKRUN001
+base:   state: unknown · source: run-step · complete same-branch run inventory unreadable; run ids: 01TASKOLD001, 01TASKRUN001; last reported run id: 01TASKRUN001
+
+## S5 hostile branch name with a comma ('fm/a,b') in the displayed window must not trip a false unreadable
+  "01COMMA001","fm/a,b",completed,b9f20d58,""
+target: state: working · source: run-step · validating (running) · run: 01TASKRUN001
+
+## S6 worker on a branch with no run of its own (fm/none, runs_on_current_branch: 0) is NOT reported unreadable
+target: state: unknown · source: none · backend target gone: fm:fm-none
+base:   state: unknown · source: none · backend target gone: fm:fm-none
