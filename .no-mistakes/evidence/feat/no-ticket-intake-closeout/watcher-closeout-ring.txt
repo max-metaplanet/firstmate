@@ -1,0 +1,14 @@
+.
+----------------------------------------------------------------------
+Ran 1 test in 18.604s
+
+OK
+worker finished intake-251821b2ace986321647 with PR 7
+
+$ fm-watch.sh   # ticket ENG-1 still open after finished work
+exit 0 stdout: check: work-intake close-out
+queued check wakes: ['work-intake-closeout:ENG-1']
+
+$ fm-watch.sh   # same source revision, already surfaced
+exit 0 stdout: check: rearm-resurface
+queued check wakes: ['work-intake-closeout:ENG-1']

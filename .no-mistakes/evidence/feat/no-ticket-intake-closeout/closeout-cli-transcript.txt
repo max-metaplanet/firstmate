@@ -1,0 +1,76 @@
+.
+----------------------------------------------------------------------
+Ran 1 test in 14.463s
+
+OK
+imported local task intake-251821b2ace986321647
+
+$ fm-work-intake.sh poll --json   # worker still queued
+{
+ "closeout": [],
+ "closeout_surfaced": false,
+ "changed": false
+}
+wake-queue work-intake-closeout:ENG-1 rows: []
+
+$ tasks-axi done intake-251821b2ace986321647 --pr .../pull/7
+
+$ fm-work-intake.sh poll --json   # after worker finished
+{
+ "closeout": [
+  {
+   "ticket": "ENG-1",
+   "source_ref": "opaque-fixture-one",
+   "local_id": "intake-251821b2ace986321647",
+   "local_ids": [
+    "intake-251821b2ace986321647"
+   ],
+   "url": "https://app.clickup.com/t/fixture-one",
+   "kinds": [
+    "task"
+   ],
+   "evidence": "Implement the accepted ticket https://github.com/o/r/pull/7 (kind: ship) (merged 2026-10-26) (hold: work intake intake-251821b2ace986321647 requires source and scope clearance) (hold-kind: external)",
+   "source_status": "up next",
+   "revision": "scan-one",
+   "surfaced": true
+  }
+ ],
+ "closeout_surfaced": true,
+ "changed": false
+}
+wake-queue work-intake-closeout:ENG-1 rows: ['work-intake: close-out ENG-1 - finished task work intake-251821b2ace986321647 (Implement the accepted ticket https://github.com/o/r/pull/7 (kind: ship) (merged 2026-10-26) (hold: work intake intake-251821b2ace986321647 requires source and scope clearance) (hold-kind: external)) left the ticket open at "up next"; load work-intake to settle it: https://app.clickup.com/t/fixture-one']
+watcher ring field present: True
+
+$ fm-work-intake.sh poll --json   # repeat poll, same source revision
+{
+ "closeout": [
+  {
+   "ticket": "ENG-1",
+   "source_ref": "opaque-fixture-one",
+   "local_id": "intake-251821b2ace986321647",
+   "local_ids": [
+    "intake-251821b2ace986321647"
+   ],
+   "url": "https://app.clickup.com/t/fixture-one",
+   "kinds": [
+    "task"
+   ],
+   "evidence": "Implement the accepted ticket https://github.com/o/r/pull/7 (kind: ship) (merged 2026-10-26) (hold: work intake intake-251821b2ace986321647 requires source and scope clearance) (hold-kind: external)",
+   "source_status": "up next",
+   "revision": "scan-one",
+   "surfaced": true
+  }
+ ],
+ "closeout_surfaced": false,
+ "changed": false
+}
+wake-queue work-intake-closeout:ENG-1 rows: ['work-intake: close-out ENG-1 - finished task work intake-251821b2ace986321647 (Implement the accepted ticket https://github.com/o/r/pull/7 (kind: ship) (merged 2026-10-26) (hold: work intake intake-251821b2ace986321647 requires source and scope clearance) (hold-kind: external)) left the ticket open at "up next"; load work-intake to settle it: https://app.clickup.com/t/fixture-one']
+
+$ fm-work-intake.sh poll --json   # ticket closed in ClickUp
+{
+ "closeout": [],
+ "closeout_surfaced": false,
+ "changed": true
+}
+wake-queue work-intake-closeout:ENG-1 rows: ['work-intake: close-out ENG-1 - finished task work intake-251821b2ace986321647 (Implement the accepted ticket https://github.com/o/r/pull/7 (kind: ship) (merged 2026-10-26) (hold: work intake intake-251821b2ace986321647 requires source and scope clearance) (hold-kind: external)) left the ticket open at "up next"; load work-intake to settle it: https://app.clickup.com/t/fixture-one']
+receipt closeout record: None
