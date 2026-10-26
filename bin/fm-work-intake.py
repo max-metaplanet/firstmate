@@ -410,7 +410,8 @@ def closeout(entry, rows):
     # A kept row carries its completion links; an archived one keeps them in its title.
     links = [r.get('links') if r.get('links') not in (None, '', 'none', '-') else r.get('title') for r in finished]
     return dict(ticket=candidate['ticket'], source_ref=entry['source_ref'], local_id=entry['local_id'],
-                local_ids=[r['id'] for r in finished], url=candidate['url'], kind=row.get('kind', '-'),
+                local_ids=[r['id'] for r in finished], url=candidate['url'],
+                kinds=list(dict.fromkeys(r.get('kind', '-') for r in finished)),
                 evidence='; '.join(link for link in links if link) or 'none',
                 source_status=candidate.get('source_evidence', {}).get('status'),
                 revision=entry.get('scan_revision'))
@@ -418,7 +419,7 @@ def closeout(entry, rows):
 
 def closeout_wake(item):
     # The existing wake owner handles durable delivery and watcher recovery.
-    message = ('work-intake: close-out ' + item['ticket'] + ' - finished ' + item['kind'] + ' work '
+    message = ('work-intake: close-out ' + item['ticket'] + ' - finished ' + '/'.join(item['kinds']) + ' work '
                + ', '.join(item['local_ids']) + ' (' + item['evidence'] + ') left the ticket open at "'
                + str(item['source_status']) + '"; load work-intake to settle it: ' + item['url'])
     try:

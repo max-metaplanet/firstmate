@@ -45,8 +45,8 @@
 # poll also reconciles close-out. A receipt this home owns, imported or recorded
 # as a dedupe tombstone, whose own task row is done while its ticket is still in
 # the active non-closed scan and no other task row for that ticket is still live,
-# becomes one close-out item in the poll result with the ticket, the local ids
-# and recorded completion links of every finished row for it, kind and source
+# becomes one close-out item in the poll result with the ticket, the local ids,
+# kinds and recorded completion links of every finished row for it, and source
 # status, plus
 # closeout_surfaced for the watcher's ring. Each new item queues one check wake
 # keyed work-intake-closeout:<ticket> BEFORE the receipt records the surfacing,

@@ -88,7 +88,7 @@ A ready PR frees only the capacity its existing owners define.
 
 ## Settle the ticket when the work is done
 
-A `work-intake-closeout:<ticket>` check wake names one ticket whose work in this home finished while the ticket is still open, with the local ids, the kind, and the completion links every finished row for that ticket recorded.
+A `work-intake-closeout:<ticket>` check wake names one ticket whose work in this home finished while the ticket is still open, with the local ids, the kinds, and the completion links every finished row for that ticket recorded.
 Read the ticket and its comments with `clickup-axi read <ticket> --json` for the acceptance criteria, then read the named evidence itself: the merged PR, the scout report, or the local-main note.
 `state/task-event-prs.jsonl` holds that task's last declared ticket scope when the merge's own coverage is unsettled.
 Close the ticket with `clickup-axi finished <ticket> --reason`, citing that evidence in the reason and in one evidence comment, only once the evidence proves every criterion.

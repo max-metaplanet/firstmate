@@ -665,6 +665,20 @@ exit "$rc"
         self.assertNotIn('closeout',self.receipt()['entries']['opaque-fixture-one'])
         self.assertEqual(len(self.wakes('work-intake-closeout:ENG-1')),1)
 
+    def test_closeout_labels_each_finished_kind_for_a_scout_and_its_ship_follow_up(self):
+        toml=self.home/'.tasks.toml';toml.write_text(toml.read_text().replace('done_keep=0','done_keep=5'))
+        self.tasks('add','eng1-scout','ENG-1 scout: what remains','--kind','scout')
+        self.activate();self.assertEqual(self.call('poll')['closeout'],[])
+        self.assertEqual(self.receipt()['entries']['opaque-fixture-one']['local_id'],'eng1-scout')
+        self.tasks('done','eng1-scout','--report','data/eng1-scout/report.md')
+        self.tasks('add','eng1-ship','ENG-1 ship: remaining scope','--kind','ship')
+        self.tasks('done','eng1-ship','--pr','https://github.com/o/r/pull/11')
+        self.expire();item=self.call('poll')['closeout'][0]
+        self.assertEqual((item['local_ids'],item['kinds']),(['eng1-scout','eng1-ship'],['scout','ship']))
+        queued=self.wakes('work-intake-closeout:ENG-1')
+        self.assertEqual(len(queued),1)
+        self.assertIn('finished scout/ship work eng1-scout, eng1-ship',queued[0][4])
+
     def test_closeout_ignores_unfinished_work(self):
         ident=self.imported()
         self.expire();self.assertEqual(self.call('poll')['closeout'],[])
