@@ -681,8 +681,14 @@ exit "$rc"
         self.assertEqual(self.wakes('work-intake-closeout:ENG-1'),[])
         self.tasks('done','eng1-part2','--pr','https://github.com/o/r/pull/9')
         self.expire();settled=self.call('poll')
-        self.assertEqual([i['local_id'] for i in settled['closeout']],[ident])
-        self.assertEqual(len(self.wakes('work-intake-closeout:ENG-1')),1)
+        item=settled['closeout'][0]
+        self.assertEqual((item['local_id'],sorted(item['local_ids'])),(ident,sorted([ident,'eng1-part2'])))
+        self.assertIn('https://github.com/o/r/pull/7',item['evidence'])
+        self.assertIn('https://github.com/o/r/pull/9',item['evidence'])
+        queued=self.wakes('work-intake-closeout:ENG-1')
+        self.assertEqual(len(queued),1)
+        self.assertIn('eng1-part2',queued[0][4])
+        self.assertIn('https://github.com/o/r/pull/9',queued[0][4])
 
     def test_closeout_leaves_another_home_to_settle_its_own_ticket(self):
         other=self.home/'mate'

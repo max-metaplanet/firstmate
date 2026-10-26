@@ -403,12 +403,15 @@ def closeout(entry, rows):
     if len(matching) != 1 or matching[0].get('state') != 'done':
         return None
     candidate, row = entry['candidate'], matching[0]
-    if any(r.get('state') != 'done' for r in rows if matches(r, candidate)):
+    siblings = [r for r in rows if matches(r, candidate) and r is not row]
+    if any(r.get('state') != 'done' for r in siblings):
         return None
+    finished = [row] + siblings
     # A kept row carries its completion links; an archived one keeps them in its title.
-    links = row.get('links') if row.get('links') not in (None, '', 'none', '-') else row.get('title')
+    links = [r.get('links') if r.get('links') not in (None, '', 'none', '-') else r.get('title') for r in finished]
     return dict(ticket=candidate['ticket'], source_ref=entry['source_ref'], local_id=entry['local_id'],
-                url=candidate['url'], kind=row.get('kind', '-'), evidence=links or 'none',
+                local_ids=[r['id'] for r in finished], url=candidate['url'], kind=row.get('kind', '-'),
+                evidence='; '.join(link for link in links if link) or 'none',
                 source_status=candidate.get('source_evidence', {}).get('status'),
                 revision=entry.get('scan_revision'))
 
@@ -416,7 +419,7 @@ def closeout(entry, rows):
 def closeout_wake(item):
     # The existing wake owner handles durable delivery and watcher recovery.
     message = ('work-intake: close-out ' + item['ticket'] + ' - finished ' + item['kind'] + ' work '
-               + item['local_id'] + ' (' + item['evidence'] + ') left the ticket open at "'
+               + ', '.join(item['local_ids']) + ' (' + item['evidence'] + ') left the ticket open at "'
                + str(item['source_status']) + '"; load work-intake to settle it: ' + item['url'])
     try:
         run(['bash', '-c', '. "$1"; fm_wake_append check "$2" "$3"', 'work-intake-closeout',
