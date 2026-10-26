@@ -272,7 +272,7 @@ if [ -n "$HOST_SNIPPET" ]; then
   printf '%s\n' '- Supervision host: on; it takes away-posture wakes and, where the dialog mirror is verified, eligible attended wakes itself, and hands the rest to you (protocol at the end of this block).'
 fi
 if [ -f "$CONFIG/work-intake-hook" ]; then
-  printf '%s\n' '- Queue reconsideration with source intake enabled: load work-intake; bin/fm-work-intake.sh owns polling, receipts and pre-dispatch refresh.'
+  printf '%s\n' '- Queue reconsideration with source intake enabled: load work-intake; bin/fm-work-intake.sh owns polling, receipts, close-out detection and pre-dispatch refresh.'
 fi
 ordinary_wake_line
 printf '\n'

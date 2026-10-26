@@ -1,8 +1,9 @@
 ---
 name: work-intake
 description: >-
-  Load on a work-intake check wake, before considering an imported source item,
-  or when queue reconsideration finds config/work-intake-enabled set to 1.
+  Load on a work-intake check wake, including a close-out wake naming a finished
+  ticket, before considering an imported source item, or when queue
+  reconsideration finds config/work-intake-enabled set to 1.
 user-invocable: false
 metadata:
   internal: true
@@ -84,5 +85,17 @@ Only the successful existing launch commit emits `started`.
 Retain failed or uncertain outbound delivery as sync debt and repair the original event through its existing owner.
 Never synthesize another start, relaunch to repair tracking, or move a later human workflow stage backwards.
 A ready PR frees only the capacity its existing owners define.
-Partial ticket delivery remains partial after merge, and unresolved work or holds prevent ticket completion.
-Workers never call ClickUp.
+
+## Settle the ticket when the work is done
+
+A `work-intake-closeout:<ticket>` check wake names one ticket whose work in this home finished while the ticket is still open, with the local id, the kind, and the completion links that finished row recorded.
+Read the ticket and its comments with `clickup-axi read <ticket> --json` for the acceptance criteria, then read the named evidence itself: the merged PR, the scout report, or the local-main note.
+`state/task-event-prs.jsonl` holds that task's last declared ticket scope when the merge's own coverage is unsettled.
+Close the ticket with `clickup-axi finished <ticket> --reason`, citing that evidence in the reason and in one evidence comment, only once the evidence proves every criterion.
+Partial ticket delivery remains partial after merge: a `ticket-scope=partial` delivery never closes its ticket on its own merge, and unresolved work or holds prevent ticket completion.
+When a criterion is unproven and a read-only check could prove it, dispatch a scout for CI history and public reads with no production writes, then settle the ticket on its report.
+Otherwise mark the ticket with `clickup-axi blocked <ticket> --reason` naming exactly what evidence or whose decision it waits on, so the board carries the holdup instead of an idle stage.
+Read the ticket back after any write and confirm the status it shows is the intended one.
+Post at most one evidence note per ticket and never re-post a note that is already there.
+Workers never call ClickUp; firstmate alone closes or marks a ticket.
+Closing the ticket retires the item by itself, because a closed ticket leaves the active scan; a ticket that changes while it is still open surfaces exactly once more.

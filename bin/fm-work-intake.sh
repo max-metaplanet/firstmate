@@ -42,6 +42,19 @@
 # blocks new imports. Multiple matches are a conflict, never an automatic split
 # or handoff.
 #
+# poll also reconciles close-out. A receipt this home owns, imported or recorded
+# as a dedupe tombstone, whose own task row is done while its ticket is still in
+# the active non-closed scan, becomes one close-out item in the poll result with
+# the ticket, local id, kind, recorded completion links and source status, plus
+# closeout_surfaced for the watcher's ring. Each new item queues one check wake
+# keyed work-intake-closeout:<ticket> BEFORE the receipt records the surfacing,
+# so a lost write re-surfaces the ticket rather than leaving it open with nobody
+# to settle it. The recorded scan revision bounds that to one supervision turn
+# per finished ticket until the source itself changes, and a closed or withdrawn
+# ticket drops the record so a reopened one surfaces again. Detection reads only
+# records intake already reads; the supervising firstmate alone closes or marks
+# the ticket, and no command here writes one.
+#
 # review consumes a firstmate-authored JSON decision with authorized=true,
 # project, kind (ship|scout), reason, source_revision, and identity_checked=true. Optional
 # deferred/blocked/unresolved_scope flags keep work held. captain_order,

@@ -456,6 +456,8 @@ For opt-in candidates, the cleared spawn preflight assigns an unassigned ticket 
 It verifies each step through a fresh source read and refuses dispatch on failure or changed scope.
 Existing authority, review, dependency, and hold checks run before these writes, so tickets needing a decision remain untouched.
 The existing main-home event consumer owns subsequent lifecycle updates after a successful launch.
+Each poll also reconciles close-out: a ticket whose own task row in this home is done while the ticket is still open becomes one close-out notification for that ticket, queued once until the ticket itself changes, so finished work cannot leave its ticket waiting unnoticed.
+Settling that ticket stays a supervised step with its own cited evidence, and no command here closes or marks a ticket.
 
 ## Runtime backend (config/backend / FM_BACKEND)
 

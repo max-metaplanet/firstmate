@@ -391,6 +391,39 @@ def take(state, entry, row, hook):
         raise IntakeError('take ' + step + ' failed; dispatch refused: ' + str(error)) from None
 
 
+def closeout(entry, rows):
+    # Finished local work whose source ticket is still open. The scan covers active
+    # non-closed tickets, so presence is the open-ticket evidence; a done row is the
+    # terminal outcome its teardown recorded, with its own completion links.
+    if entry['phase'] not in ('imported', 'existing') or entry['owner_home'] != str(HOME):
+        return None
+    if entry.get('present') is not True:
+        return None
+    matching = [r for r in rows if r['id'] == entry['local_id'] and r['owner_home'] == str(HOME)]
+    if len(matching) != 1 or matching[0].get('state') != 'done':
+        return None
+    candidate, row = entry['candidate'], matching[0]
+    # A kept row carries its completion links; an archived one keeps them in its title.
+    links = row.get('links') if row.get('links') not in (None, '', 'none', '-') else row.get('title')
+    return dict(ticket=candidate['ticket'], source_ref=entry['source_ref'], local_id=entry['local_id'],
+                url=candidate['url'], kind=row.get('kind', '-'), evidence=links or 'none',
+                source_status=candidate.get('source_evidence', {}).get('status'),
+                revision=entry.get('scan_revision'))
+
+
+def closeout_wake(item):
+    # The existing wake owner handles durable delivery and watcher recovery.
+    message = ('work-intake: close-out ' + item['ticket'] + ' - finished ' + item['kind'] + ' work '
+               + item['local_id'] + ' (' + item['evidence'] + ') left the ticket open at "'
+               + str(item['source_status']) + '"; load work-intake to settle it: ' + item['url'])
+    try:
+        run(['bash', '-c', '. "$1"; fm_wake_append check "$2" "$3"', 'work-intake-closeout',
+             str(BIN / 'fm-wake-lib.sh'), 'work-intake-closeout:' + item['ticket'], message])
+        return True
+    except (IntakeError, OSError):
+        return False
+
+
 def order(entry, row=None):
     decision = entry.get('review', {}).get('decision', {})
     candidate = entry['candidate']
@@ -508,9 +541,23 @@ def poll(state, hook):
             matching = [r for r in rows if r['id'] == entry['local_id'] and r['owner_home'] == entry['owner_home']]
             if entry['phase'] == 'imported' and matching:
                 hold(entry, matching[0], True)
+    pending, surfaced = [], False
+    for entry in state['entries'].values():
+        item = closeout(entry, rows)
+        if item is None:
+            entry.pop('closeout', None)
+            continue
+        item['surfaced'] = entry.get('closeout', {}).get('revision') == item['revision']
+        if not item['surfaced'] and closeout_wake(item):
+            # Queue the wake before recording it, so a lost write re-surfaces the
+            # ticket rather than leaving it open with nobody to settle it.
+            entry['closeout'] = dict(revision=item['revision'], surfaced_at=now)
+            item['surfaced'] = surfaced = True
+        pending.append(item)
     state['snapshot'] = snapshot
     atomic(RECEIPT, state)
-    return dict(result='polled', changed=changed, imported=imported, **result)
+    return dict(result='polled', changed=changed, imported=imported, closeout=pending,
+                closeout_surfaced=surfaced, **result)
 
 
 def main():
