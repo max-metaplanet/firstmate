@@ -87,9 +87,9 @@
 # The second -f removes nested repositories, and -x stays off so ignored files remain.
 # A ship teardown without --force does not run that clean: it refuses untracked
 # entries, except those under the .claude/ allowance, so a nested repository
-# there can still survive the return. The one exception is a copy whose every
-# uncommitted path was proved to be the base's own content: those leftovers are
-# authorized to discard, so the clean runs and the pool gets its slot back.
+# there can still survive the return. A copy whose every uncommitted path was
+# proved to be the base's own content skips the refusal but not that rule: the
+# return's own reset discards the proved leftovers, and .claude/ is untouched.
 # After a return that succeeds, teardown reads `git status --porcelain --untracked-files=all`.
 # Any remaining output, a status read that fails, or a copy that is missing or
 # no longer a readable worktree is reported at once with the lost pool slot and
@@ -1843,14 +1843,6 @@ teardown_dirt_is_in_base() {
   teardown_dirty_paths_z "$WT" | fm_unlanded_dirt_is_in_base "$WT" "$PROJ" "${BASE_BRANCH:-}"
 }
 
-# Set by validate_worktree_teardown_safety when it proved every uncommitted
-# path to be a copy of the base. The leftovers are then authorized to discard,
-# so the scrub before the Treehouse return clears them rather than leaving the
-# pool a slot it will skip. The agent may still be writing until that return,
-# so the scrub proves the dirt again first and is skipped when it no longer
-# holds; the post-lock safety check then refuses the new dirt.
-TEARDOWN_DIRT_IS_BASE_COPY=0
-
 report_worktree_dirt() {
   # Use the same porcelain snapshot and exemptions as the refusal predicate.
   printf '%s\n' "$1" | awk '
@@ -1919,7 +1911,6 @@ validate_worktree_teardown_safety() {
   if [ -n "$dirty" ] && dirt_proof=$(teardown_dirt_is_in_base); then
     echo "teardown: worktree $WT holds uncommitted changes, but $dirt_proof; nothing unique would be discarded." >&2
     dirty=
-    TEARDOWN_DIRT_IS_BASE_COPY=1
   fi
 
   if ! unpushed_raw=$(git -C "$WT" log --oneline HEAD --not --remotes -- 2>/dev/null); then
@@ -3935,8 +3926,7 @@ elif [ -d "$WT" ] && [ "$KIND" != secondmate ]; then
   if [ "$FORCE" != "--force" ] && [ "$KIND" != scout ] && [ "$KIND" != secondmate ]; then
     post_lock_cleanup_check=validate_worktree_teardown_safety
   fi
-  if [ "$KIND" = scout ] || [ "$FORCE" = "--force" ] \
-     || { [ "$TEARDOWN_DIRT_IS_BASE_COPY" = 1 ] && teardown_dirt_is_in_base >/dev/null; }; then
+  if [ "$KIND" = scout ] || [ "$FORCE" = "--force" ]; then
     teardown_scrub_scratch_copy "$WT" || exit 1
   fi
   wt_pool_slot=0

@@ -208,8 +208,7 @@ fm_unlanded_base_ref() {  # <copy> <project> [<base-branch>]
 # dirt than this is pathological, and proving it path by path would hold up
 # cleanup longer than the refusal it would lift, so such a copy keeps today's
 # refusal.
-FM_UNLANDED_DIRT_PATH_LIMIT=${FM_UNLANDED_DIRT_PATH_LIMIT:-2000}
-case "$FM_UNLANDED_DIRT_PATH_LIMIT" in ''|*[!0-9]*) FM_UNLANDED_DIRT_PATH_LIMIT=2000 ;; esac
+FM_UNLANDED_DIRT_PATH_LIMIT=2000
 
 # Does the copy's uncommitted state hold anything the base ref does not hold
 # already? Reads the dirty paths NUL-separated on stdin, because the caller

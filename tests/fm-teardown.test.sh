@@ -1559,6 +1559,34 @@ test_staged_edit_with_tree_reverted_to_base_refuses() {
   pass "a staged edit hidden behind base bytes in the working tree keeps the refusal"
 }
 
+# Base-identical leftovers lift the refusal, not the .claude/ allowance: a
+# nested repository there was never proved and must survive the return.
+test_main_identical_dirt_keeps_nested_claude_repo() {
+  local case_dir rc nested
+  case_dir=$(make_case dirt-in-base-nested-claude)
+  setup_landed_task_with_main_file "$case_dir" main-only.txt "from main"
+  printf '%s\n' "from main" > "$case_dir/wt/main-only.txt"
+  nested="$case_dir/wt/.claude/worktrees/side"
+  mkdir -p "$nested"
+  git init -q "$nested"
+  printf 'side work\n' > "$nested/side.txt"
+  git -C "$nested" add side.txt
+  git -C "$nested" -c user.email=t@t -c user.name=t commit -q -m "side work"
+  add_treehouse_clean_fd "$case_dir"
+
+  set +e
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 0 "$rc" "dirt-in-base-nested-claude: base-identical dirt should not refuse"
+  assert_grep '1 path(s)' "$case_dir/stderr" "dirt-in-base-nested-claude: no proof line"
+  [ "$(git -C "$nested" log -1 --format=%s 2>/dev/null)" = "side work" ] \
+    || fail "dirt-in-base-nested-claude: the nested repository under .claude/ was discarded"
+  assert_absent "$case_dir/wt/main-only.txt" "dirt-in-base-nested-claude: the return left the proved leftover"
+  pass "base-identical leftovers are discarded while a nested repo under .claude/ survives"
+}
+
 test_one_differing_path_still_refuses() {
   local case_dir rc before
   case_dir=$(make_case dirt-in-base-one-differs)
@@ -6536,6 +6564,7 @@ test_one_differing_path_still_refuses
 test_staged_rename_is_compared_on_its_source_too
 test_staged_add_with_file_removed_refuses
 test_staged_edit_with_tree_reverted_to_base_refuses
+test_main_identical_dirt_keeps_nested_claude_repo
 test_failed_base_fetch_still_refuses
 test_untracked_only_refusal_diagnostic
 test_tracked_edit_refusal_diagnostic
