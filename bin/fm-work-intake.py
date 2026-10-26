@@ -403,6 +403,8 @@ def closeout(entry, rows):
     if len(matching) != 1 or matching[0].get('state') != 'done':
         return None
     candidate, row = entry['candidate'], matching[0]
+    if any(r.get('state') != 'done' for r in rows if matches(r, candidate)):
+        return None
     # A kept row carries its completion links; an archived one keeps them in its title.
     links = row.get('links') if row.get('links') not in (None, '', 'none', '-') else row.get('title')
     return dict(ticket=candidate['ticket'], source_ref=entry['source_ref'], local_id=entry['local_id'],

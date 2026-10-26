@@ -672,6 +672,18 @@ exit "$rc"
         self.expire();self.assertEqual(self.call('poll')['closeout'],[])
         self.assertEqual(self.wakes('work-intake-closeout:ENG-1'),[])
 
+    def test_closeout_waits_for_live_follow_up_work_on_the_same_ticket(self):
+        ident=self.imported()
+        self.tasks('done',ident,'--pr','https://github.com/o/r/pull/7')
+        self.tasks('add','eng1-part2','ENG-1 part 2: remaining scope');self.tasks('start','eng1-part2')
+        self.expire();result=self.call('poll')
+        self.assertEqual((result['closeout'],result['closeout_surfaced']),([],False))
+        self.assertEqual(self.wakes('work-intake-closeout:ENG-1'),[])
+        self.tasks('done','eng1-part2','--pr','https://github.com/o/r/pull/9')
+        self.expire();settled=self.call('poll')
+        self.assertEqual([i['local_id'] for i in settled['closeout']],[ident])
+        self.assertEqual(len(self.wakes('work-intake-closeout:ENG-1')),1)
+
     def test_closeout_leaves_another_home_to_settle_its_own_ticket(self):
         other=self.home/'mate'
         for name in ('data','config','state'): (other/name).mkdir(parents=True)
