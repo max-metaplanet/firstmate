@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Regression test for the fm-spawn.sh treehouse-get worktree-detection settle
-# loop (bin/fm-spawn.sh, the `for _ in $(seq 1 60)` loop after `treehouse get`).
+# loop and acquisition safety.
 #
 # On some tmux/WSL setups a brand-new window's pane_current_path transiently
 # reports a stale, unrelated-but-real path on the very first poll, before the
@@ -253,6 +253,40 @@ test_unborn_head_project_is_refused_at_once() {
   pass "a project with an unborn HEAD is refused at once with its cause named"
 }
 
+test_slow_acquisition_survives_the_old_poll_limit() {
+  local rec id out status
+  id=settle-slow-get-z6
+  rec=$(make_primary_case settle-slow-get "$id" 65)
+  read_settle_record "$rec"
+  fm_test_fake_sleep_noop "$FAKEBIN_DIR"
+  out=$(run_settle_spawn "$id")
+  status=$?
+  expect_code 0 "$status" "spawn must allow an acquisition beyond 60 polls"$'\n'"$out"
+  assert_grep "worktree=$WT_DIR" "$HOME_DIR/state/$id.meta" "slow acquisition recorded the wrong worktree"
+  pass "an acquisition past the old 60-poll limit succeeds"
+}
+
+test_copied_gitdir_is_refused_before_refresh() {
+  local rec id out status before
+  id=settle-alias-z7
+  rec=$(make_settle_case settle-alias "$id" 0)
+  read_settle_record "$rec"
+  before=$(git -C "$WT_DIR" rev-parse HEAD)
+  mkdir "$WT_DIR-copy"
+  cp "$WT_DIR/.git" "$WT_DIR-copy/.git"
+  WT_DIR="$WT_DIR-copy"
+  out=$(run_settle_spawn "$id")
+  status=$?
+  [ "$status" -ne 0 ] || fail "spawn accepted a copied worktree sharing another worktree's gitdir"
+  assert_contains "$out" "gitdir" "alias refusal did not explain the shared gitdir"
+  [ ! -e "$HOME_DIR/state/$id.meta" ] || fail "aliased candidate published task metadata"
+  [ "$(git -C "$WT_DIR" rev-parse HEAD)" = "$before" ] || fail "alias refusal moved the shared HEAD"
+  [ -f "$WT_DIR/.git" ] || fail "alias refusal removed the candidate"
+  pass "a copied gitdir is refused without moving HEAD or deleting the copy"
+}
+
+test_slow_acquisition_survives_the_old_poll_limit
+test_copied_gitdir_is_refused_before_refresh
 test_single_stale_first_read_is_not_accepted
 test_already_settled_pane_costs_one_confirm_read
 test_transient_primary_checkout_is_not_accepted
