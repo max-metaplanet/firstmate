@@ -1,0 +1,59 @@
+=== BEFORE (base f64491e2): 34 staged base-identical files
+--- git status --porcelain (count / sample):
+34
+A  app/run.sh
+A  "app/sub dir/f1.txt"
+A  "app/sub dir/f10.txt"
+--- fm-teardown.sh task-x1 exit=1; stderr:
+    REFUSED: worktree ~/.no-mistakes/worktrees/61c6dd39b831/.fm-test-scratch/fm-teardown-tests.LzrTHu/pg-old/wt has uncommitted changes.
+    uncommitted changes present (includes tracked edits)
+    Commit them (or get the captain's explicit OK to discard, then --force).
+--- task record: STILL PRESENT
+--- staged entries after: 34
+=== AFTER (this change): 34 staged base-identical files
+--- git status --porcelain (count / sample):
+34
+A  app/run.sh
+A  "app/sub dir/f1.txt"
+A  "app/sub dir/f10.txt"
+--- fm-teardown.sh task-x1 exit=0; stderr:
+    teardown: worktree ~/.no-mistakes/worktrees/61c6dd39b831/.fm-test-scratch/fm-teardown-tests.LzrTHu/pg-new/wt holds uncommitted changes, but every uncommitted path already holds what refs/remotes/origin/main (1625c18c3e08) holds: 34 path(s); nothing unique would be discarded.
+--- task record: removed (teardown completed)
+--- staged entries after: 34
+=== ADVERSARIAL: 33 identical + 1 edited file
+--- git status --porcelain (count / sample):
+34
+A  app/run.sh
+A  "app/sub dir/f1.txt"
+A  "app/sub dir/f10.txt"
+--- fm-teardown.sh task-x1 exit=1; stderr:
+    REFUSED: worktree ~/.no-mistakes/worktrees/61c6dd39b831/.fm-test-scratch/fm-teardown-tests.LzrTHu/pg-one-byte/wt has uncommitted changes.
+    uncommitted changes present (includes tracked edits)
+    Commit them (or get the captain's explicit OK to discard, then --force).
+--- task record: STILL PRESENT
+--- staged entries after: 34
+=== ADVERSARIAL: identical bytes but exec bit dropped
+--- git status --porcelain (count / sample):
+34
+AM app/run.sh
+A  "app/sub dir/f1.txt"
+A  "app/sub dir/f10.txt"
+--- fm-teardown.sh task-x1 exit=1; stderr:
+    REFUSED: worktree ~/.no-mistakes/worktrees/61c6dd39b831/.fm-test-scratch/fm-teardown-tests.LzrTHu/pg-mode/wt has uncommitted changes.
+    uncommitted changes present (includes tracked edits)
+    Commit them (or get the captain's explicit OK to discard, then --force).
+--- task record: STILL PRESENT
+--- staged entries after: 34
+=== ADVERSARIAL: staged unique blob, working tree reverted to base bytes
+--- git status --porcelain (count / sample):
+34
+A  app/run.sh
+A  "app/sub dir/f1.txt"
+A  "app/sub dir/f10.txt"
+--- fm-teardown.sh task-x1 exit=1; stderr:
+    REFUSED: worktree ~/.no-mistakes/worktrees/61c6dd39b831/.fm-test-scratch/fm-teardown-tests.LzrTHu/pg-staged-hidden/wt has uncommitted changes.
+    uncommitted changes present (includes tracked edits)
+    Commit them (or get the captain's explicit OK to discard, then --force).
+--- task record: STILL PRESENT
+--- staged entries after: 34
+=== ESCAPE HATCH: unique dirt + --force exit=0
