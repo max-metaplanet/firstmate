@@ -119,6 +119,11 @@ print(json.dumps({'result':'applied'}))
     def receipt(self):
         return json.loads((self.home / 'state/work-intake.json').read_text())
 
+    def wakes(self, key):
+        queue = self.home / 'state/.wake-queue'
+        rows = queue.read_text().splitlines() if queue.exists() else []
+        return [row.split('\t') for row in rows if row.split('\t')[2:4] == ['check', key]]
+
     def expire(self):
         path = self.home / 'state/work-intake.json'
         state = json.loads(path.read_text())
@@ -622,6 +627,95 @@ exit "$rc"
         self.call('check',ident,ok=False)
         self.assertIn('count: 0',self.tasks('list'))
         self.assertEqual(len(self.receipt()['entries']),1)
+
+    def test_closeout_surfaces_finished_ticket_once_until_the_source_changes(self):
+        ident=self.imported()
+        self.tasks('done',ident,'--pr','https://github.com/o/r/pull/7')
+        self.expire();raw=self.call('poll',raw=True)
+        # The watcher rings on this exact rendered field.
+        self.assertIn('"closeout_surfaced": true',raw.stdout)
+        result=json.loads(raw.stdout);item=result['closeout'][0]
+        self.assertEqual((item['ticket'],item['local_id'],item['source_status']),('ENG-1',ident,'up next'))
+        self.assertIn('https://github.com/o/r/pull/7',item['evidence'])
+        self.assertTrue(result['closeout_surfaced'] and item['surfaced'])
+        queued=self.wakes('work-intake-closeout:ENG-1')
+        self.assertEqual(len(queued),1)
+        self.assertIn('load work-intake',queued[0][4])
+        self.assertIn('https://app.clickup.com/t/fixture-one',queued[0][4])
+        self.expire();again=self.call('poll')
+        self.assertFalse(again['closeout_surfaced'])
+        self.assertTrue(again['closeout'][0]['surfaced'])
+        self.assertEqual(len(self.wakes('work-intake-closeout:ENG-1')),1)
+        self.snapshot['candidates'][0]['source_revision']='scan-two';self.save()
+        self.expire();changed=self.call('poll')
+        self.assertTrue(changed['closeout_surfaced'])
+        self.assertEqual(len(self.wakes('work-intake-closeout:ENG-1')),2)
+
+    def test_closeout_covers_dispatched_ticket_work_and_retires_with_the_ticket(self):
+        self.tasks('add','eng1-work','ENG-1 rollout: dispatched without intake')
+        self.tasks('done','eng1-work','--report','data/eng1-work/report.md')
+        self.activate();result=self.call('poll')
+        self.assertEqual(self.receipt()['entries']['opaque-fixture-one']['phase'],'existing')
+        self.assertEqual([i['local_id'] for i in result['closeout']],['eng1-work'])
+        self.assertIn('data/eng1-work/report.md',result['closeout'][0]['evidence'])
+        self.assertEqual(len(self.wakes('work-intake-closeout:ENG-1')),1)
+        self.snapshot['candidates']=[];self.snapshot['coverage']['task_count']=0;self.save()
+        self.expire();closed=self.call('poll')
+        self.assertEqual((closed['closeout'],closed['closeout_surfaced']),([],False))
+        self.assertNotIn('closeout',self.receipt()['entries']['opaque-fixture-one'])
+        self.assertEqual(len(self.wakes('work-intake-closeout:ENG-1')),1)
+
+    def test_closeout_labels_each_finished_kind_for_a_scout_and_its_ship_follow_up(self):
+        toml=self.home/'.tasks.toml';toml.write_text(toml.read_text().replace('done_keep=0','done_keep=5'))
+        self.tasks('add','eng1-scout','ENG-1 scout: what remains','--kind','scout')
+        self.activate();self.assertEqual(self.call('poll')['closeout'],[])
+        self.assertEqual(self.receipt()['entries']['opaque-fixture-one']['local_id'],'eng1-scout')
+        self.tasks('done','eng1-scout','--report','data/eng1-scout/report.md')
+        self.tasks('add','eng1-ship','ENG-1 ship: remaining scope','--kind','ship')
+        self.tasks('done','eng1-ship','--pr','https://github.com/o/r/pull/11')
+        self.expire();item=self.call('poll')['closeout'][0]
+        self.assertEqual((item['local_ids'],item['kinds']),(['eng1-scout','eng1-ship'],['scout','ship']))
+        queued=self.wakes('work-intake-closeout:ENG-1')
+        self.assertEqual(len(queued),1)
+        self.assertIn('finished scout/ship work eng1-scout, eng1-ship',queued[0][4])
+
+    def test_closeout_ignores_unfinished_work(self):
+        ident=self.imported()
+        self.expire();self.assertEqual(self.call('poll')['closeout'],[])
+        self.tasks('start',ident)
+        self.expire();self.assertEqual(self.call('poll')['closeout'],[])
+        self.assertEqual(self.wakes('work-intake-closeout:ENG-1'),[])
+
+    def test_closeout_waits_for_live_follow_up_work_on_the_same_ticket(self):
+        ident=self.imported()
+        self.tasks('done',ident,'--pr','https://github.com/o/r/pull/7')
+        self.tasks('add','eng1-part2','ENG-1 part 2: remaining scope');self.tasks('start','eng1-part2')
+        self.expire();result=self.call('poll')
+        self.assertEqual((result['closeout'],result['closeout_surfaced']),([],False))
+        self.assertEqual(self.wakes('work-intake-closeout:ENG-1'),[])
+        self.tasks('done','eng1-part2','--pr','https://github.com/o/r/pull/9')
+        self.expire();settled=self.call('poll')
+        item=settled['closeout'][0]
+        self.assertEqual((item['local_id'],sorted(item['local_ids'])),(ident,sorted([ident,'eng1-part2'])))
+        self.assertIn('https://github.com/o/r/pull/7',item['evidence'])
+        self.assertIn('https://github.com/o/r/pull/9',item['evidence'])
+        queued=self.wakes('work-intake-closeout:ENG-1')
+        self.assertEqual(len(queued),1)
+        self.assertIn('eng1-part2',queued[0][4])
+        self.assertIn('https://github.com/o/r/pull/9',queued[0][4])
+
+    def test_closeout_leaves_another_home_to_settle_its_own_ticket(self):
+        other=self.home/'mate'
+        for name in ('data','config','state'): (other/name).mkdir(parents=True)
+        (other/'.tasks.toml').write_text((self.home/'.tasks.toml').read_text())
+        (other/'data/backlog.md').write_text('## In flight\n\n## Queued\n\n## Done\n')
+        self.tasks('add','mate-task','Accepted elsewhere','--body','Ticket: ENG-1',home=other)
+        self.tasks('done','mate-task','--pr','https://github.com/o/r/pull/8',home=other)
+        (self.home/'data/secondmates.md').write_text(f'- mate - Test domain (home: {other}; scope: test; projects: test; added 2026-10-22)\n')
+        self.activate();result=self.call('poll')
+        self.assertEqual(self.receipt()['entries']['opaque-fixture-one']['owner_home'],str(other))
+        self.assertEqual((result['closeout'],result['closeout_surfaced']),([],False))
+        self.assertEqual(self.wakes('work-intake-closeout:ENG-1'),[])
 
     def test_source_changes_preserve_local_notes_and_priority(self):
         ident=self.imported()

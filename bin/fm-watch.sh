@@ -3973,6 +3973,11 @@ EOF
           fm_wake_append check work-intake 'work-intake: source evidence changed; load work-intake for queue reconsideration' || exit 1
           touch "$STATE/.last-heartbeat"
           wake 'check: work-intake source evidence changed'
+        elif printf '%s\n' "$intake_result" | grep -q '"closeout_surfaced": true'; then
+          # The receipt owner already queued one durable wake per finished ticket;
+          # a local teardown changes no source evidence, so only the ring is left.
+          touch "$STATE/.last-heartbeat"
+          wake 'check: work-intake close-out'
         fi
       else
         fm_wake_append check work-intake 'work-intake: source unavailable; inspect receipt debt and retain imported work queued' || exit 1
