@@ -91,7 +91,7 @@ A ready PR frees only the capacity its existing owners define.
 A `work-intake-closeout:<ticket>` check wake names one ticket whose work in this home finished while the ticket is still open, with the local ids, the kinds, and the completion links every finished row for that ticket recorded.
 Read the ticket and its comments with `clickup-axi read <ticket> --json` for the acceptance criteria, then read the named evidence itself: the merged PR, the scout report, or the local-main note.
 `state/task-event-prs.jsonl` holds that task's last declared ticket scope when the merge's own coverage is unsettled.
-Close the ticket with `clickup-axi finished <ticket> --reason`, citing that evidence in the reason and in one evidence comment, only once the evidence proves every criterion.
+Close the ticket with `clickup-axi status <ticket> --to complete --reason`, citing that evidence in the reason and in one evidence comment, only once the evidence proves every criterion.
 Partial ticket delivery remains partial after merge: a `ticket-scope=partial` delivery never closes its ticket on its own merge, and unresolved work or holds prevent ticket completion.
 When a criterion is unproven and a read-only check could prove it, dispatch a scout for CI history and public reads with no production writes, then settle the ticket on its report.
 When the ticket is open because work remains, such as a `ticket-scope=partial` merge or a scout whose findings call for implementation, queue follow-up work for the remaining scope: add a new local task with `tasks-axi add` linked to the same ticket, write the remaining scope in its body, and dispatch it through the existing brief and spawn owners.
