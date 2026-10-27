@@ -253,6 +253,29 @@ test_inherited_hookspath_env_does_not_decide_the_chain() {
   pass "an inherited GIT_CONFIG hooksPath does not become the chained previous hooks"
 }
 
+test_nested_launch_still_runs_the_project_hook() {
+  local parent_repo repo parent hooks
+  parent_repo="$TMP_ROOT/nested-parent-wt"
+  repo="$TMP_ROOT/nested-child-wt"
+  make_repo "$parent_repo"
+  make_repo "$repo"
+  write_marker_hook "$repo/.git/hooks/pre-commit" project-pre-commit
+  parent="$TMP_ROOT/hooks-nested-parent"
+  hooks="$TMP_ROOT/hooks-nested-child"
+  "$STRIP" install "$parent" "$parent_repo" || fail "parent install should succeed"
+  [ ! -e "$parent/pre-commit" ] || fail "a hookless parent worktree got a pre-commit wrapper"
+  with_hooks_env "$parent" "$STRIP" install "$hooks" "$repo" || fail "child install should succeed"
+  printf 'note\n' >>"$repo/README.md"
+  git -C "$repo" add README.md
+  GIT_CONFIG_COUNT=2 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=$parent \
+    GIT_CONFIG_KEY_1=core.hooksPath GIT_CONFIG_VALUE_1=$hooks \
+    git -C "$repo" commit -q --trailer 'Co-authored-by: Cursor <cursoragent@cursor.com>' -m 'fix: nested launch'
+  [ -f "$repo/project-pre-commit.ran" ] || fail "a nested launch skipped the project's pre-commit hook"
+  assert_not_contains "$(git -C "$repo" log -1 --format=%B)" "Co-authored-by: Cursor" \
+    "Cursor trailer survived a nested launch"
+  pass "a nested launch whose parent lacks a wrapper still runs the project's own hook"
+}
+
 test_project_hook_generated_after_install_runs_after_reinstall() {
   local repo hooks
   repo="$TMP_ROOT/late-husky"
@@ -564,6 +587,7 @@ test_install_refuses_the_project_hooks_directory
 test_previous_commit_msg_hook_still_runs
 test_relative_project_hookspath_still_runs
 test_inherited_hookspath_env_does_not_decide_the_chain
+test_nested_launch_still_runs_the_project_hook
 test_project_hook_generated_after_install_runs_after_reinstall
 test_pane_hookspath_does_not_reroute_another_repository
 test_empty_project_hookspath_runs_no_repository_hook

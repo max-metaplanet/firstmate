@@ -176,41 +176,48 @@ write_executable() {
 # point here, so the wrapper cannot recurse into itself. An empty
 # core.hooksPath makes that lookup fail, but plain git reads it as "no hooks",
 # so the wrapper runs none; any other failure reruns the lookup to show git's
-# error and refuses.
+# error and refuses. When the lookup names an inherited launch's directory
+# (a nested spawn) that has no wrapper for this name, its entries are dropped
+# too and the lookup repeats, so the repository's own hook still runs.
 runtime_chain_body() {
   local ours=$1
   cat <<EOF
 ours=$(quote_for_hook "$ours")
-case \${GIT_CONFIG_COUNT:-} in
-'' | *[!0-9]*) ;;
-*)
-  count=\$((10#\$GIT_CONFIG_COUNT)) i=0 kept=0
-  while [ "\$i" -lt "\$count" ]; do
-    key=GIT_CONFIG_KEY_\$i value=GIT_CONFIG_VALUE_\$i
-    if [ "\${!key-}" != core.hooksPath ] || [ "\${!value-}" != "\$ours" ]; then
-      [ "\$i" = "\$kept" ] || export "GIT_CONFIG_KEY_\$kept=\${!key-}" "GIT_CONFIG_VALUE_\$kept=\${!value-}"
-      kept=\$((kept + 1))
-    fi
-    i=\$((i + 1))
-  done
-  export GIT_CONFIG_COUNT=\$kept
-  ;;
-esac
 name=\${0##*/}
-orig=\$(unset GIT_CONFIG_PARAMETERS; git rev-parse --path-format=absolute --git-path hooks 2>/dev/null) || {
-  if hooks_path=\$(unset GIT_CONFIG_PARAMETERS; git config --get --type=path core.hooksPath 2>/dev/null) && [ -z "\$hooks_path" ]; then
+drop=\$ours
+while :; do
+  case \${GIT_CONFIG_COUNT:-} in
+  '' | *[!0-9]*) ;;
+  *)
+    count=\$((10#\$GIT_CONFIG_COUNT)) i=0 kept=0
+    while [ "\$i" -lt "\$count" ]; do
+      key=GIT_CONFIG_KEY_\$i value=GIT_CONFIG_VALUE_\$i
+      if [ "\${!key-}" != core.hooksPath ] || [ "\${!value-}" != "\$drop" ]; then
+        [ "\$i" = "\$kept" ] || export "GIT_CONFIG_KEY_\$kept=\${!key-}" "GIT_CONFIG_VALUE_\$kept=\${!value-}"
+        kept=\$((kept + 1))
+      fi
+      i=\$((i + 1))
+    done
+    export GIT_CONFIG_COUNT=\$kept
+    ;;
+  esac
+  orig=\$(unset GIT_CONFIG_PARAMETERS; git rev-parse --path-format=absolute --git-path hooks 2>/dev/null) || {
+    if hooks_path=\$(unset GIT_CONFIG_PARAMETERS; git config --get --type=path core.hooksPath 2>/dev/null) && [ -z "\$hooks_path" ]; then
+      exit 0
+    fi
+    (unset GIT_CONFIG_PARAMETERS; git rev-parse --path-format=absolute --git-path hooks >/dev/null)
+    echo "fm-git-strip-ai-trailers: cannot resolve this repository's hooks directory; refusing to skip its \$name hook" >&2
+    exit 1
+  }
+  if [ "\$orig" = "\$ours" ]; then
     exit 0
   fi
-  (unset GIT_CONFIG_PARAMETERS; git rev-parse --path-format=absolute --git-path hooks >/dev/null)
-  echo "fm-git-strip-ai-trailers: cannot resolve this repository's hooks directory; refusing to skip its \$name hook" >&2
-  exit 1
-}
-if [ "\$orig" = "\$ours" ]; then
-  exit 0
-fi
-if [ -x "\$orig/\$name" ]; then
-  exec "\$orig/\$name" "\$@"
-fi
+  if [ -x "\$orig/\$name" ]; then
+    exec "\$orig/\$name" "\$@"
+  fi
+  [ "\$orig" != "\$drop" ] || break
+  drop=\$orig
+done
 EOF
 }
 
