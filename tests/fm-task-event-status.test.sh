@@ -207,3 +207,51 @@ for ticket in no-ticket none ''; do
   grep -qx 'ticket_scope=partial' "$home/state/task.meta" || fail 'ticketless status gained complete scope'
 done
 pass 'PR-ready status folding records explicit upgrades and downgrades without requiring a hook'
+
+for scenario in complete unreported unknown malformed; do
+  home=$(make_home "scope-events-$scenario")
+  expected=partial declaration=''
+  case "$scenario" in
+    complete) declaration='ticket-scope=complete'; expected=complete ;;
+    unknown) declaration='ticket-scope=unknown' ;;
+    malformed)
+      printf 'ticket_scope=complete\n' >> "$home/state/task.meta"
+      declaration='ticket-scope=partial-suffix'; expected=complete
+      ;;
+  esac
+  printf 'done [at=100]: PR %s checks green %s\n' "$url" "$declaration" > "$home/state/task.status"
+  fold "$home" >/dev/null || fail "$scenario scope fold failed"
+  if [ "$scenario" = complete ] || [ "$scenario" = malformed ]; then
+    grep -qx "ticket_scope=$expected" "$home/state/task.meta" || fail "$scenario scope metadata changed unexpectedly"
+  else
+    ! grep -q '^ticket_scope=' "$home/state/task.meta" || fail "$scenario declaration overwrote metadata"
+  fi
+  for event in pr-opened pr-merged; do
+    FM_HOME=$home FM_STATE_OVERRIDE=$home/state FM_CONFIG_OVERRIDE=$home/config \
+      "$ROOT/bin/fm-task-event.sh" task "$event" --pr "$url" || fail "$scenario $event emission failed"
+  done
+  await_events "$home" 2
+  jq -se --arg scope "$expected" --arg url "$url" '
+    map(.event) == ["pr-opened", "pr-merged"] and
+    all(.[]; .ticket_scope == $scope and .pr_url == $url and .ticket == "issue-42")' \
+    "$home/events.jsonl" >/dev/null || fail "$scenario scope did not reach PR events"
+  jq -se --arg scope "$expected" '
+    map(select(.event == "pr-merged")) | length == 1 and .[0].ticket_scope == $scope' \
+    "$home/state/task-event-prs.jsonl" >/dev/null || fail "$scenario scope did not reach the merge ledger"
+done
+pass 'PR events and merge ledger use reported scope, default partial, and preserve scope on invalid declarations'
+
+home=$(make_home scope-update-before-merge)
+printf 'pr=%s\nticket_scope=partial\n' "$url" >> "$home/state/task.meta"
+printf 'done: PR %s checks green ticket-scope=complete\n' "$url" > "$home/state/task.status"
+fold "$home" >/dev/null || fail 'initial scope fold failed'
+FM_HOME=$home FM_STATE_OVERRIDE=$home/state FM_CONFIG_OVERRIDE=$home/config \
+  "$ROOT/bin/fm-task-event.sh" task pr-opened --pr "$url" || fail 'initial PR event failed'
+printf 'done: PR %s checks green ticket-scope=partial\n' "$url" >> "$home/state/task.status"
+fold "$home" >/dev/null || fail 'updated scope fold failed'
+FM_HOME=$home FM_STATE_OVERRIDE=$home/state FM_CONFIG_OVERRIDE=$home/config \
+  "$ROOT/bin/fm-task-event.sh" task pr-merged --pr "$url" || fail 'updated merge event failed'
+await_events "$home" 2
+jq -se 'map([.event, .ticket_scope]) == [["pr-opened", "complete"], ["pr-merged", "partial"]]' \
+  "$home/events.jsonl" >/dev/null || fail 'merge used scope from registration instead of current metadata'
+pass 'a later PR-ready report changes the scope used at merge time'
