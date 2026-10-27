@@ -1551,7 +1551,10 @@ SPAWN_TREEHOUSE_ACQUIRE=
 # a late fork preparing another copy after the acquisition lock is released.
 spawn_stop_acquisition_tree() { # <pid>
   local pid=$1 child children snapshot
-  kill -STOP "$pid" 2>/dev/null || { ! kill -0 "$pid" 2>/dev/null; return; }
+  if ! kill -STOP "$pid" 2>/dev/null; then
+    if kill -0 "$pid" 2>/dev/null; then return 1; fi
+    return 0
+  fi
   snapshot=$(LC_ALL=C ps -axo pid=,ppid=) || return 1
   children=$(awk -v parent="$pid" '$2 == parent {print $1}' <<< "$snapshot")
   for child in $children; do
