@@ -7008,6 +7008,11 @@ fi
 # launch and the launch-env-allowlist `env -i` wrapper.
 LAUNCH="export FM_TASK_INBOX=$(shell_quote "$STATE_REAL/$ID.inbox"); $LAUNCH"
 LAUNCH="export COMPACT_ADVISER_DISABLE=1; $LAUNCH"
+# Ship and scout workers skip the full project pre-push suite inside any
+# filtered launch environment, including one sourced from another session.
+if [ "$KIND" = ship ] || [ "$KIND" = scout ]; then
+  LAUNCH="export PREPUSH_TESTS=0; $LAUNCH"
+fi
 # When the live-harness gate has exported DISABLE_AUTOUPDATER into this spawn's
 # own environment, carry it into the launch command text so Claude Code's
 # auto-updater cannot rewrite the shared binary during a live run. Embedding the
@@ -7062,14 +7067,12 @@ fi
 # Mark the pane as a task worker so bin/fm-test-run.sh can refuse to run the
 # suite in the repository's primary checkout. Ship and scout workers are the
 # ones assigned an isolated worktree; a secondmate runs its own home instead.
-# Skip the full project pre-push suite in the pane and inside any filtered
-# launch environment, including one sourced from another session.
+# Skip the full project pre-push suite in the pane shell too.
 # The id reached a validated bare-slug charset above, so it carries no shell
 # syntax of its own.
 if [ "$KIND" = ship ] || [ "$KIND" = scout ]; then
   spawn_send_text_line "$T" "export FM_TASK_ID=$ID"
   spawn_send_text_line "$T" "export PREPUSH_TESTS=0"
-  LAUNCH="export PREPUSH_TESTS=0; $LAUNCH"
 fi
 # Send through the exact channel that already ships GOTMPDIR, so every backend
 # and harness - ship, scout, and secondmate - gets it before launch. Skipped
