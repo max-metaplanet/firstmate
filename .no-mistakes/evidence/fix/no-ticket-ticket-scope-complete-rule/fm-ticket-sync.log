@@ -1,0 +1,15 @@
+FM_TEST_BEGIN 2026-10-27T12:22:51Z tests/fm-ticket-sync.test.sh family=standalone expected_gate_skip=none
+ok - the unconfigured adapter is a no-op
+ok - legacy hook arguments preserve arbitrary tickets, URLs, and worker text
+ok - partial merges, other events, and null tickets do not move a legacy ticket
+ok - hook failure propagates so the emitter can record it
+ok - invalid payloads are refused before invoking the legacy hook
+ok - legacy hook configuration requires one absolute executable path
+ok - polled and self-reported merge outcomes reach the legacy hook only once
+ok - final merges and cancellations require explicit complete scope to close a ticket
+ok - a partial cancellation names its PR only when that PR is recorded as merged
+FM_TEST_END 2026-10-27T12:24:09Z tests/fm-ticket-sync.test.sh exit=0 duration_ms=77485 gate_skip=false
+FM_TEST_SUMMARY total=1 failed=0 skipped_gate=0 duration_ms=80314
+FM_TEST_SUMMARY_FAMILY family=standalone count=1 duration_ms=77485 failed=0
+FM_TEST_SLOWEST rank=1 script=tests/fm-ticket-sync.test.sh duration_ms=77485
+exit=0 secs=81

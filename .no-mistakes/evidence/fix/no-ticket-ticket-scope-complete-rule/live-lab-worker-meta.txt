@@ -1,0 +1,4 @@
+kind=ship
+branch=chore/no-ticket-lab74b7e8530818-worker
+ticket=no-ticket
+commit_type=chore

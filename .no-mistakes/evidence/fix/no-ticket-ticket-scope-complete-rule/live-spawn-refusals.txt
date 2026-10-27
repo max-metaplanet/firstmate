@@ -1,0 +1,20 @@
+$ fm-spawn.sh tick-none $LAB/projects/notes --mode local-only --yolo off --harness claude
+error: ship spawns require --ticket ENG-<n> or --ticket no-ticket for genuinely ticketless work; --branch-prefix alone does not record a ticket choice
+exit=1
+state meta: none
+
+$ fm-spawn.sh tick-none $LAB/projects/notes --mode local-only --yolo off --branch-prefix fm/ --harness claude
+error: ship spawns require --ticket ENG-<n> or --ticket no-ticket for genuinely ticketless work; --branch-prefix alone does not record a ticket choice
+exit=1
+state meta: none
+
+$ fm-spawn.sh tick-none $LAB/projects/notes --mode local-only --yolo off --ticket ENG-77 --harness claude
+error: fm-spawn.sh: --ticket ENG-77 requires --commit-type <type>; the type is never guessed from the task text, so a ticketed task without one is refused
+exit=1
+state meta: none
+
+$ fm-spawn.sh tick-none $LAB/projects/notes --mode local-only --yolo off --ticket no-ticket --commit-type chore --branch-prefix fm/ --harness claude
+error: fm-spawn.sh: --branch-prefix cannot be combined with --ticket; a ticketed ship branch is <commit-type>/<ticket>-<task-id> by the convention
+exit=1
+state meta: none
+

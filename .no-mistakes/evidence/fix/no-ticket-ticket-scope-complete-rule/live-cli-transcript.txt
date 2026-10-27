@@ -1,0 +1,78 @@
+
+===== S1 brief with --ticket ENG-123: emitted ticket instructions =====
+exit=0
+98:Ship branch: feat/ENG-123-t1
+99:Ticket: ENG-123
+107:Before reporting the PR ready, check your change against the ticket's acceptance criteria and append `ticket-scope=complete` or `ticket-scope=partial` to your PR-ready status line.
+108:Plan and perform synthetic verification of every acceptance criterion before reporting the PR ready, using whatever means a worker can (tests, a probe PR, or a scripted dev/QA run), and record the evidence (test names, probe PR, or scripted run) in the PR body.
+109:Declare complete only when this PR delivers every acceptance criterion and you have verified each one yourself by those means; only post-merge live checks remain.
+110:Otherwise declare partial.
+
+===== S2 ship spawn with no ticket flag (branch-prefix only) is refused =====
+exit=1
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab.JzgHEi
+error: ship spawns require --ticket ENG-<n> or --ticket no-ticket for genuinely ticketless work; --branch-prefix alone does not record a ticket choice
+no meta written
+
+===== S2b ship spawn with no ticket flag at all is refused =====
+exit=1
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab.JzgHEi
+error: ship spawns require --ticket ENG-<n> or --ticket no-ticket for genuinely ticketless work; --branch-prefix alone does not record a ticket choice
+
+===== S3 ship spawn with --ticket no-ticket clears ticket validation (stops only at refusing fake tmux) =====
+exit=1
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab.JzgHEi
+--- fake tmux log (reached backend after ticket validation):
+fake-tmux reached: has-session -t firstmate
+fake-tmux reached: new-session -d -s firstmate
+
+===== S3b ship spawn with --ticket ENG-123 clears ticket validation =====
+exit=1
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab.JzgHEi
+--- fake tmux log:
+fake-tmux reached: has-session -t firstmate
+fake-tmux reached: new-session -d -s firstmate
+
+===== S3c ticket + branch-prefix combined is refused =====
+exit=1
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab.JzgHEi
+error: fm-spawn.sh: --branch-prefix cannot be combined with --ticket; a ticketed ship branch is <commit-type>/<ticket>-<task-id> by the convention
+
+===== S4 batch: real ticket refused, no-ticket shared =====
+exit=2
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab.JzgHEi
+error: batch dispatch does not share --ticket or --commit-type for real tickets; each ticketed task carries its own ticket, so spawn it explicitly (ticketless batches use --ticket no-ticket --commit-type <type>)
+exit=1
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab.JzgHEi
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab.JzgHEi
+batch: FAILED to spawn b1 (projects/proj)
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab.JzgHEi
+batch: FAILED to spawn b2 (projects/proj)
+--- fake tmux log (batch pairs reached backend):
+fake-tmux reached: has-session -t firstmate
+fake-tmux reached: new-session -d -s firstmate
+fake-tmux reached: list-windows -t firstmate -F #{window_name}
+fake-tmux reached: new-window -dP -F #{window_id} -t firstmate: -n fm-b1 -c /private/var/folders/1l/gg6b5zsx0qn753wwhcmm
+
+===== S5 scout promotion: refused without --ticket, accepted with ENG and no-ticket =====
+branch-prefix-only exit=1
+error: promotion creates ship work and requires --ticket ENG-<n> or --ticket no-ticket for genuinely ticketless work; --branch-prefix alone does not record a ticket choice
+kind=scout
+ENG exit=0
+kind=ship
+branch=fix/ENG-77-s1
+ticket=ENG-77
+commit_type=fix
+no-ticket exit=0
+kind=ship
+branch=chore/no-ticket-s2
+ticket=no-ticket
+commit_type=chore
+49:Plan and perform synthetic verification of every acceptance criterion before reporting the PR ready, using whatever means a worker can (tests, a probe PR, or a scripted dev/QA run), and record the evidence (test names, probe PR, or scripted run) in the PR body.
+50:Declare complete only when this PR delivers every acceptance criterion and you have verified each one yourself by those means; only post-merge live checks remain.
+
+===== S6 ticket sync: pr-merged final complete -> done; partial -> review =====
+complete exit=0
+partial exit=0
+ENG-77|done|https://example.invalid/pr/1|
+ENG-77|review|https://example.invalid/pr/1|

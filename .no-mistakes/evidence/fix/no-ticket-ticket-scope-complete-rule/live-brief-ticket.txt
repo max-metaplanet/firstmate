@@ -1,0 +1,12 @@
+$ fm-brief.sh tick-eng notes --mode direct-PR --ticket ENG-4242 --commit-type fix
+scaffolded: /var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.KlmFeh/data/tick-eng/brief.md (ship, mode=direct-PR; replace {TASK} and {FIRSTMATE_SPEC})
+exit=0
+--- generated brief: ticket section ---
+95:Ship branch: fix/ENG-4242-tick-eng
+96:Ticket: ENG-4242
+97:Commit type: fix
+98:Ticket scope: partial
+104:Before reporting the PR ready, check your change against the ticket's acceptance criteria and append `ticket-scope=complete` or `ticket-scope=partial` to your PR-ready status line.
+105:Plan and perform synthetic verification of every acceptance criterion before reporting the PR ready, using whatever means a worker can (tests, a probe PR, or a scripted dev/QA run), and record the evidence (test names, probe PR, or scripted run) in the PR body.
+106:Declare complete only when this PR delivers every acceptance criterion and you have verified each one yourself by those means; only post-merge live checks remain.
+107:Otherwise declare partial.

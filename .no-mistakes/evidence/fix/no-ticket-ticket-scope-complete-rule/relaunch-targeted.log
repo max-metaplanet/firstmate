@@ -1,0 +1,6 @@
+ok - fm-control relaunch: registered PR monitoring survives repeated and switched-harness relaunches
+ok - fm-control relaunch: durable task metadata survives replacement launch publication
+ok - fm-control relaunch: delivery and concurrent task metadata publication serialize
+ok - fm-promote/fm-spawn --relaunch: the current ship contract supersedes stale scout delivery text
+ok - fm-promote: promotion participates in lifecycle serialization
+bash $f  14.18s user 20.07s system 8% cpu 6:22.21 total

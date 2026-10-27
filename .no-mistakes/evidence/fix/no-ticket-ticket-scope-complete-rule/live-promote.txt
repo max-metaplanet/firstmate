@@ -1,0 +1,46 @@
+$ fm-promote.sh scout-a --mode local-only --yolo off
+error: promotion creates ship work and requires --ticket ENG-<n> or --ticket no-ticket for genuinely ticketless work; --branch-prefix alone does not record a ticket choice
+exit=1
+meta:
+  kind=scout
+
+$ fm-promote.sh scout-a --mode local-only --yolo off --branch-prefix fix/
+error: promotion creates ship work and requires --ticket ENG-<n> or --ticket no-ticket for genuinely ticketless work; --branch-prefix alone does not record a ticket choice
+exit=1
+meta:
+  kind=scout
+
+$ fm-promote.sh scout-a --mode local-only --yolo off --ticket no-ticket --commit-type chore
+promoted scout-a to ship mode=local-only yolo=off (teardown protection restored)
+wrote ship instructions for mode=local-only: /private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab.KlmFeh/data/scout-a/ship-instructions.md
+next: FM_HOME=/private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab.KlmFeh bin/fm-send.sh fm-scout-a "$(cat /private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab.KlmFeh/data/scout-a/ship-instructions.md)"
+exit=0
+meta:
+  kind=ship
+  branch=chore/no-ticket-scout-a
+  ticket=no-ticket
+  commit_type=chore
+
+$ fm-promote.sh scout-b --mode local-only --yolo off --ticket ENG-9001 --commit-type feat
+promoted scout-b to ship mode=local-only yolo=off (teardown protection restored)
+wrote ship instructions for mode=local-only: /private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab.KlmFeh/data/scout-b/ship-instructions.md
+next: FM_HOME=/private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab.KlmFeh bin/fm-send.sh fm-scout-b "$(cat /private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab.KlmFeh/data/scout-b/ship-instructions.md)"
+exit=0
+meta:
+  kind=ship
+  branch=feat/ENG-9001-scout-b
+  ticket=ENG-9001
+  ticket_scope=partial
+  commit_type=feat
+
+--- scout-b ship-instructions ticket lines ---
+8:If these promotion steps were already completed before a relaunch, preserve the existing `feat/ENG-9001-scout-b` branch and continue from its current state; do not repeat them destructively.
+11:3. Return to a clean default-branch base, then create your branch: `git checkout -b feat/ENG-9001-scout-b --`.
+30:1. Never push to any remote and never open a PR. Work only on your `feat/ENG-9001-scout-b` branch; firstmate handles the merge into local `main`.
+34:Ship branch: feat/ENG-9001-scout-b
+35:Ticket: ENG-9001
+38:Before you start the work, read ticket ENG-9001 in full: its description, every comment, its subtasks, its linked tasks, and its attachments.
+39:If ticket ENG-9001 has a different scope from the task in this brief, or explicitly says it must stay open or must not be implemented, stop before implementing or making any implementation commit and append a blocked status line using this brief's status protocol, naming ENG-9001 and the mismatch, because merging the pull request auto-closes the linked ticket.
+41:Any ClickUp read path will do - where this home installs the private `cu-*` helper, `cu-task ENG-9001` is one example - and the ticket's own page carries whatever a command does not print.
+44:Plan and perform synthetic verification of every acceptance criterion before reporting the PR ready, using whatever means a worker can (tests, a probe PR, or a scripted dev/QA run), and record the evidence (test names, probe PR, or scripted run) in the PR body.
+45:Declare complete only when this PR delivers every acceptance criterion and you have verified each one yourself by those means; only post-merge live checks remain.

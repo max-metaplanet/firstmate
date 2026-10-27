@@ -1,0 +1,15 @@
+lab: /private/tmp/fmlab.icEbux (tear down with: bin/fm-live-lab.sh down /private/tmp/fmlab.icEbux)
+tree: f6ad492d23c58d02193182a7331391a3e0c53fdf from ~/.no-mistakes/worktrees/61c6dd39b831/01M5YHR5QDVE79B8MGYQ104CCD
+spawned lab74b7e8530818-worker harness=claude kind=ship mode=local-only yolo=on window=firstmate:fm-lab74b7e8530818-worker worktree=/private/tmp/fmlab.icEbux/treehouse/.treehouse/notes-a34991/1/notes
+gate: /private/tmp/fmlab.icEbux/home/data/lab74b7e8530818-worker/gate (touch, then message the worker to resume)
+primary: claude --setting-sources project,local --model sonnet --effort medium --permission-mode auto
+ok primary: claude pid 76883 in /private/tmp/fmlab.icEbux/home
+ok probe: the primary answered LABREADY-74b7e8530818
+ok trust: /private/tmp/fmlab.icEbux/home is trusted in the Claude store
+ok mirror: verified writer, check passed, captain=1 main=1
+ok host: supervision host pid 25603
+ok watcher: live watcher with a fresh beacon
+ok worker: lab74b7e8530818-worker parked on /private/tmp/fmlab.icEbux/home/data/lab74b7e8530818-worker/gate
+ok treehouse: ~/.treehouse unchanged
+ready: /private/tmp/fmlab.icEbux
+up exit=0
