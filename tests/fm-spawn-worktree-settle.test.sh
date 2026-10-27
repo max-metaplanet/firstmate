@@ -112,6 +112,12 @@ Exercise settled-worktree detection for $id.
 
 ## Firstmate spec
 Record only the pane's stable worktree.
+
+# Definition of done
+Delivery contract: mode=no-mistakes
+Ship branch: chore/no-ticket-$id
+Ticket: no-ticket
+Commit type: chore
 EOF
   touch "$home/state/.last-watcher-beat"
   printf '%s\n' "$case_dir|$home|$proj|$wt|$stale|$fakebin|$countfile|$stale_reads"
@@ -132,7 +138,7 @@ run_settle_spawn() {
     FM_FAKE_PANE_PATH="$WT_DIR" FM_FAKE_PANE_STALE="$STALE_DIR" \
     FM_FAKE_PANE_STALE_READS="$STALE_READS" FM_FAKE_PANE_COUNTFILE="$COUNTFILE" \
     PATH="$FAKEBIN_DIR:$PATH" \
-    "$SPAWN" "$id" "$PROJ_DIR" --mode no-mistakes --yolo off 2>&1
+    "$SPAWN" "$id" "$PROJ_DIR" --mode no-mistakes --yolo off --ticket no-ticket --commit-type chore 2>&1
 }
 
 # A single stale first read (the exact incident) must not be accepted: the
@@ -196,7 +202,7 @@ make_primary_case() {
   fm_test_spawn_home "$home" codex
   fm_git_worktree "$primary" "$proj" "mate-$name"
   git -C "$primary" worktree add --quiet -b "slot-$name" "$wt"
-  fm_test_spawn_brief "$home" "$id" "Exercise primary-checkout transient detection for $id."
+  fm_test_spawn_ship_brief "$home" "$id" "Exercise primary-checkout transient detection for $id."
   printf '%s\n' "$case_dir|$home|$proj|$wt|$primary|$fakebin|$countfile|$stale_reads"
 }
 

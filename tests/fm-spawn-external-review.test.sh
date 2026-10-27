@@ -48,7 +48,9 @@ Exercise the external review spawn path.
 
 # Definition of done
 Delivery contract: mode=direct-PR forge=external
-Ship branch: fm/$id
+Ship branch: chore/no-ticket-$id
+Ticket: no-ticket
+Commit type: chore
 EOF
 }
 
@@ -68,40 +70,40 @@ test_spawn_refusals_before_launch() {
   local id out status
   id=ext-yolo-r1
   make_case yolo "$id"
-  out=$(run_spawn "$id" --mode direct-PR --yolo on); status=$?
+  out=$(run_spawn "$id" --mode direct-PR --yolo on --ticket no-ticket --commit-type chore); status=$?
   refused_before_launch "$id" "a --yolo on spawn on forge=external" "--yolo on is refused" "$out" "$status"
 
   id=ext-noadapter-r1
   make_case noadapter "$id"
   rm -f "$HOME_DIR/config/external-review.md"
-  out=$(run_spawn "$id" --mode direct-PR --yolo off); status=$?
+  out=$(run_spawn "$id" --mode direct-PR --yolo off --ticket no-ticket --commit-type chore); status=$?
   refused_before_launch "$id" "a spawn with no review tool adapter" "external-review.md" "$out" "$status"
 
   id=ext-nobackup-r1
   make_case nobackup "$id"
   printf 'backup\n' > "$HOME_DIR/config/external-review-backup"
-  out=$(run_spawn "$id" --mode direct-PR --yolo off); status=$?
+  out=$(run_spawn "$id" --mode direct-PR --yolo off --ticket no-ticket --commit-type chore); status=$?
   refused_before_launch "$id" "a spawn naming an absent backup remote" "does not have" "$out" "$status"
 
   id=ext-alias-r1
   make_case alias "$id"
   printf 'backup\n' > "$HOME_DIR/config/external-review-backup"
   git -C "$PROJECT_DIR" remote add backup "file://$ORIGIN_DIR/"
-  out=$(run_spawn "$id" --mode direct-PR --yolo off); status=$?
+  out=$(run_spawn "$id" --mode direct-PR --yolo off --ticket no-ticket --commit-type chore); status=$?
   refused_before_launch "$id" "a backup remote aliasing origin" "points at the project's shared origin" "$out" "$status"
 
   id=ext-prefix-r1
   make_case prefix "$id"
-  printf 'backup\nprefix=fm/copies/\n' > "$HOME_DIR/config/external-review-backup"
+  printf 'backup\nprefix=chore/no-ticket-copies/\n' > "$HOME_DIR/config/external-review-backup"
   git init --quiet --bare "$CASE_DIR/backup.git"
   git -C "$PROJECT_DIR" remote add backup "file://$CASE_DIR/backup.git"
-  out=$(run_spawn "$id" --mode direct-PR --yolo off); status=$?
+  out=$(run_spawn "$id" --mode direct-PR --yolo off --ticket no-ticket --commit-type chore); status=$?
   refused_before_launch "$id" "a backup prefix inside the task prefix" "starts with the task branch prefix" "$out" "$status"
 
   id=ext-mismatch-r1
   make_case mismatch "$id"
   sed -i.bak 's/^Delivery contract: mode=direct-PR forge=external$/Delivery contract: mode=direct-PR/' "$HOME_DIR/data/$id/brief.md"
-  out=$(run_spawn "$id" --mode direct-PR --yolo off); status=$?
+  out=$(run_spawn "$id" --mode direct-PR --yolo off --ticket no-ticket --commit-type chore); status=$?
   refused_before_launch "$id" "a brief without forge=external" "forge mismatch" "$out" "$status"
   pass "forge=external spawn: yolo, a missing adapter, an absent or aliasing backup, an overlapping prefix, and a forge mismatch all refuse before launch"
 }
@@ -114,7 +116,7 @@ test_spawn_installs_the_guard_and_records_the_task() {
   printf 'backup\n' > "$HOME_DIR/config/external-review-backup"
   git init --quiet --bare "$CASE_DIR/backup.git"
   git -C "$PROJECT_DIR" remote add backup "file://$CASE_DIR/backup.git"
-  out=$(run_spawn "$id" --mode direct-PR --yolo off); status=$?
+  out=$(run_spawn "$id" --mode direct-PR --yolo off --ticket no-ticket --commit-type chore); status=$?
   expect_code 0 "$status" "a forge=external direct-PR spawn should launch"$'\n'"$out"
   meta="$HOME_DIR/state/$id.meta"
   assert_grep 'forge=external' "$meta" "the spawn did not record forge=external"
@@ -123,9 +125,9 @@ test_spawn_installs_the_guard_and_records_the_task() {
   hooks=$(cd "$HOME_DIR/state" && pwd -P)/$id.git-hooks
   [ -x "$hooks/pre-push" ] || fail "keep-ai-trailers skipped the push guard hooks"
   out=$(GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=$hooks \
-    git -C "$POOL_DIR" push origin "HEAD:refs/heads/fm/$id" 2>&1) && fail "the installed guard let the task branch reach origin"
+    git -C "$POOL_DIR" push origin "HEAD:refs/heads/chore/no-ticket-$id" 2>&1) && fail "the installed guard let the task branch reach origin"
   assert_contains "$out" "fm-git-push-guard: refused:" "the task-branch push was not refused by the guard"
-  git -C "$ORIGIN_DIR" rev-parse --verify --quiet "refs/heads/fm/$id" >/dev/null \
+  git -C "$ORIGIN_DIR" rev-parse --verify --quiet "refs/heads/chore/no-ticket-$id" >/dev/null \
     && fail "the task branch reached the shared origin"
   GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=$hooks \
     git -C "$POOL_DIR" push --quiet backup "HEAD:refs/heads/backup/$id" \

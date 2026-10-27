@@ -1162,13 +1162,19 @@ test_spawn_fallback_chain_and_crew_scout_unaffected() {
   fakebin=$(make_launch_capturing_tmux "$w/tmux-crew")
   fm_git_worktree "$proj" "$wt" "wt-crew"
   mkdir -p "$home/data/$id" "$home/projects" "$home/state"
-  cat > "$home/data/$id/brief.md" <<'EOF'
+  cat > "$home/data/$id/brief.md" <<EOF
 # Task
 ## Captain's intent
 Exercise an ordinary crew launch.
 
 ## Firstmate spec
 Verify secondmate harness settings do not affect it.
+
+# Definition of done
+Delivery contract: mode=no-mistakes
+Ship branch: chore/no-ticket-$id
+Ticket: no-ticket
+Commit type: chore
 EOF
   : > "$launchlog"
   PATH="$fakebin:$BASE_PATH" TMUX="fake,1,0" CLAUDECODE=1 \
@@ -1176,7 +1182,7 @@ EOF
     FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
     FM_PROJECTS_OVERRIDE="$home/projects" FM_CONFIG_OVERRIDE="$home/config" \
     FM_SPAWN_NO_GUARD=1 FM_FAKE_PANE_PATH="$wt" FM_FAKE_LAUNCH_LOG="$launchlog" \
-    "$ROOT/bin/fm-spawn.sh" "$id" "$proj" --mode no-mistakes --yolo off >/dev/null 2>&1
+    "$ROOT/bin/fm-spawn.sh" "$id" "$proj" --mode no-mistakes --ticket no-ticket --commit-type chore --yolo off >/dev/null 2>&1
   meta="$home/state/$id.meta"
   [ "$(meta_field "$meta" kind)" = ship ] || fail "crew-unaffected: expected an ordinary ship task"
   [ "$(meta_field "$meta" harness)" = codex ] || fail "crew-unaffected: crew harness resolution changed"

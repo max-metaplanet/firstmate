@@ -78,7 +78,7 @@ printf 'schema=fm-secondmate-parent.v1\nroute=local\nparent_home=%s\n' \
   "$TMP_ROOT/parent" > "$TMP_ROOT/home/.fm-secondmate-parent"
 printf 'phase=parked\n' > "$TMP_ROOT/parent/state/.secondmate-park-mate"
 if out=$(FM_HOME="$TMP_ROOT/home" FM_SPAWN_NO_GUARD=1 bash "$ROOT/bin/fm-spawn.sh" \
-  child "$TMP_ROOT/home" --harness claude --backend tmux --mode direct-PR --yolo off 2>&1); then
+  child "$TMP_ROOT/home" --harness claude --backend tmux --mode direct-PR --ticket no-ticket --commit-type chore --yolo off 2>&1); then
   fail "a parked home must refuse new children"
 fi
 assert_contains "$out" 'this secondmate home is parked' "fresh children must be refused under the task-set lock"

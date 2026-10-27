@@ -42,7 +42,7 @@ capture_codex_launch() {
   id="codex-hook-layer-$name"
   fakebin=$(fm_test_make_spawn_fakebin "$case_dir/fake")
   fm_test_spawn_home "$home" codex
-  fm_test_spawn_brief "$home" "$id"
+  fm_test_spawn_ship_brief "$home" "$id"
   fm_git_worktree "$proj" "$wt" "wt-$name"
   : > "$launchlog"
   FM_FAKE_LAUNCH_LOG="$launchlog" \
@@ -62,7 +62,7 @@ codex_global_flags() {
 
 test_installed_codex_disables_hooks_for_the_captured_crewmate_launch() {
   local launch flags state
-  launch=$(capture_codex_launch ship --mode no-mistakes --yolo off)
+  launch=$(capture_codex_launch ship --mode no-mistakes --ticket no-ticket --commit-type chore --yolo off)
   flags=$(codex_global_flags "$launch")
 
   # The whole point: every flag firstmate will launch with, handed to the real

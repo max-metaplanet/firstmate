@@ -38,6 +38,9 @@ Exercise project capacity admission.
 
 # Definition of done
 Delivery contract: mode=no-mistakes
+Ship branch: chore/no-ticket-$2
+Ticket: no-ticket
+Commit type: chore
 EOF
 }
 
@@ -195,7 +198,7 @@ run_spawn() {  # <case-dir> <home> <pane-path> <args...>
 spawn_ship() {  # <case-dir> <id> [pane-path]
   local case_dir=$1 id=$2 pane=${3:-}
   [ -n "$pane" ] || pane=$(new_worktree "$case_dir" "$id")
-  run_spawn "$case_dir" "$case_dir/home" "$pane" "$id" "$case_dir/project" --mode no-mistakes --yolo off
+  run_spawn "$case_dir" "$case_dir/home" "$pane" "$id" "$case_dir/project" --mode no-mistakes --ticket no-ticket --commit-type chore --yolo off
 }
 
 # Everything a deferred spawn must not have created for <id>; <worktrees-before>
@@ -280,7 +283,7 @@ test_spaced_project_name_is_declared() {
   git clone -q "$(git -C "$case_dir/project" remote get-url origin)" "$spaced"
   declare_capacity "$home" "   # my  heavy project 9" "my  heavy project 1" "project 5"
   write_live "$home" live-a "$spaced"
-  out=$(run_spawn "$case_dir" "$home" "$case_dir/unused" task-c "$spaced" --mode no-mistakes --yolo off) || rc=$?
+  out=$(run_spawn "$case_dir" "$home" "$case_dir/unused" task-c "$spaced" --mode no-mistakes --ticket no-ticket --commit-type chore --yolo off) || rc=$?
   expect_code "$DEFER_EXIT" "$rc" "a project whose name holds spaces was not capped by its declaration: $out"
   assert_contains "$out" "deferred: project my  heavy project admits 1 worker(s) at once" \
     "the deferral did not use the spaced project's declared capacity"
@@ -302,7 +305,7 @@ test_hash_prefixed_project_name_is_declared() {
   git clone -q "$(git -C "$case_dir/other-project" remote get-url origin)" "$spaced"
   declare_capacity "$home" "# serves 2" "#not-a-capacity" "#hash-project 1"
   write_live "$home" live-a "$hashed"
-  out=$(run_spawn "$case_dir" "$home" "$case_dir/unused" task-c "$hashed" --mode no-mistakes --yolo off) || rc=$?
+  out=$(run_spawn "$case_dir" "$home" "$case_dir/unused" task-c "$hashed" --mode no-mistakes --ticket no-ticket --commit-type chore --yolo off) || rc=$?
   expect_code "$DEFER_EXIT" "$rc" "a project whose name begins with # was not capped by its declaration: $out"
   assert_contains "$out" "deferred: project #hash-project admits 1 worker(s) at once" \
     "the deferral did not use the hash-prefixed project's declared capacity"
@@ -313,7 +316,7 @@ test_hash_prefixed_project_name_is_declared() {
   git -C "$spaced" worktree add --quiet -b wt-d "$case_dir/wt-d"
   wt="$case_dir/wt-d"
   rc=0
-  out=$(run_spawn "$case_dir" "$home" "$wt" task-d "$spaced" --mode no-mistakes --yolo off) || rc=$?
+  out=$(run_spawn "$case_dir" "$home" "$wt" task-d "$spaced" --mode no-mistakes --ticket no-ticket --commit-type chore --yolo off) || rc=$?
   expect_code 0 "$rc" "a '#' comment that ends with a number was read as a capacity: $out"
   assert_contains "$out" "spawned task-d" "a project whose declaration line is a comment did not stay uncapped"
   pass "a project name beginning with # is declared, and a # comment stays a comment"
@@ -329,7 +332,7 @@ test_symlinked_home_counts_each_worker_once() {
   declare_capacity "$home" "project 2"
   write_live "$home" live-a "$case_dir/project"
   out=$(run_spawn "$case_dir" "$case_dir/home-link" "$(new_worktree "$case_dir" task-c)" \
-    task-c "$case_dir/project" --mode no-mistakes --yolo off) || rc=$?
+    task-c "$case_dir/project" --mode no-mistakes --ticket no-ticket --commit-type chore --yolo off) || rc=$?
   expect_code 0 "$rc" "a spawn through a symlinked home counted its own worker twice: $out"
   assert_contains "$out" "spawned task-c" "a spawn through a symlinked home did not launch"
   pass "a home reached through a symlink counts each of its workers once"
@@ -438,14 +441,14 @@ test_capacity_is_shared_by_every_local_home() {
   declare_capacity "$root" "project 1"
   write_live "$root" live-a "$case_dir/project"
   git -C "$mate_project" worktree add --quiet -b wt-m "$case_dir/wt-m"
-  out=$(run_spawn "$case_dir" "$mate" "$case_dir/wt-m" task-m "$mate_project" --mode no-mistakes --yolo off) || rc=$?
+  out=$(run_spawn "$case_dir" "$mate" "$case_dir/wt-m" task-m "$mate_project" --mode no-mistakes --ticket no-ticket --commit-type chore --yolo off) || rc=$?
   expect_code "$DEFER_EXIT" "$rc" "a local secondmate launched past the machine's capacity: $out"
   assert_contains "$out" "admits 1 worker(s) at once on this machine ($root/config/project-capacity) and 1 already hold a place (live-a in $root)" \
     "the secondmate did not count the root home's worker against the root's declaration"
   assert_absent "$mate/state/task-m.meta" "the deferred secondmate spawn published a record"
   printf 'pr=%s\n' "https://github.com/o/r/pull/8" >> "$root/state/live-a.meta"
   rc=0
-  out=$(run_spawn "$case_dir" "$mate" "$case_dir/wt-m" task-m "$mate_project" --mode no-mistakes --yolo off) || rc=$?
+  out=$(run_spawn "$case_dir" "$mate" "$case_dir/wt-m" task-m "$mate_project" --mode no-mistakes --ticket no-ticket --commit-type chore --yolo off) || rc=$?
   expect_code 0 "$rc" "the remote home's worker, or a handed-off one, took the machine's place: $out"
   pass "every local home shares one declared capacity per project origin, and remote homes do not count"
 }
@@ -573,7 +576,7 @@ test_batch_reports_a_deferred_pair() {
   home="$case_dir/home"
   declare_capacity "$home" "project 1"
   write_live "$home" live-a "$case_dir/project"
-  out=$(run_spawn "$case_dir" "$home" "$case_dir/unused" "task-c=$case_dir/project" --mode no-mistakes --yolo off) || rc=$?
+  out=$(run_spawn "$case_dir" "$home" "$case_dir/unused" "task-c=$case_dir/project" --mode no-mistakes --ticket no-ticket --commit-type chore --yolo off) || rc=$?
   expect_code "$DEFER_EXIT" "$rc" "a batch whose only pair was deferred did not exit with the deferral status: $out"
   assert_contains "$out" "batch: DEFERRED task-c ($case_dir/project) - its project is at capacity, so it stays queued" \
     "the batch did not report the deferral"
@@ -624,10 +627,10 @@ SH
     sleep 0.05
   done
   out=$(run_spawn "$case_dir" "$home" "$case_dir/unused" task-o "$case_dir/project" \
-    --backend orca --mode no-mistakes --yolo off) || rc=$?
+    --backend orca --mode no-mistakes --ticket no-ticket --commit-type chore --yolo off) || rc=$?
   rc2=0
   out2=$(run_spawn "$case_dir" "$home" "$case_dir/unused" task-o "$case_dir/project-2" \
-    --backend orca --mode no-mistakes --yolo off) || rc2=$?
+    --backend orca --mode no-mistakes --ticket no-ticket --commit-type chore --yolo off) || rc2=$?
   : > "$case_dir/holder.release"
   wait "$holder" || true
   expect_code 1 "$rc" "an Orca spawn ignored a held project lock: $out"
@@ -642,7 +645,7 @@ SH
   write_live "$home" live-a "$case_dir/project"
   rc=0
   out=$(run_spawn "$case_dir" "$home" "$case_dir/unused" task-o "$case_dir/project" \
-    --backend orca --mode no-mistakes --yolo off) || rc=$?
+    --backend orca --mode no-mistakes --ticket no-ticket --commit-type chore --yolo off) || rc=$?
   expect_code "$DEFER_EXIT" "$rc" "an Orca spawn beyond capacity was not deferred: $out"
   assert_absent "$home/state/task-o.meta" "the deferred Orca spawn published a record"
   assert_no_grep "orca " "$case_dir/calls.log" "the deferred Orca spawn created an Orca worktree"

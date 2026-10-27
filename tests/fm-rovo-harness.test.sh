@@ -153,13 +153,19 @@ make_spawn_case() {
   wt="$case_dir/wt"
   fakebin=$(make_rovo_fakebin "$case_dir/fake")
   mkdir -p "$home/data/$id" "$home/projects" "$home/state" "$home/config"
-  cat > "$home/data/$id/brief.md" <<'EOF'
+  cat > "$home/data/$id/brief.md" <<EOF
 # Task
 ## Captain's intent
 Exercise Rovo dispatch.
 
 ## Firstmate spec
 Verify launch and delivery behavior.
+
+# Definition of done
+Delivery contract: mode=no-mistakes
+Ship branch: chore/no-ticket-$id
+Ticket: no-ticket
+Commit type: chore
 EOF
   printf 'rovo\n' > "$home/config/crew-harness"
   fm_git_worktree "$proj" "$wt" "wt-$name"
@@ -195,7 +201,7 @@ run_spawn() {
     FM_FAKE_ROVO_DELIVERY="${FM_FAKE_ROVO_DELIVERY:-yes}" \
     FM_ROVO_READY_POLLS=3 FM_ROVO_DELIVERY_POLLS=3 FM_ROVO_POLL_INTERVAL=0 \
     PATH="$fakebin:$BASE_PATH" \
-    "$SPAWN" "$id" "$proj" --harness rovo --mode no-mistakes --yolo off "$@" 2>&1
+    "$SPAWN" "$id" "$proj" --harness rovo --mode no-mistakes --ticket no-ticket --commit-type chore --yolo off "$@" 2>&1
 }
 
 test_rovo_launch_then_send_is_verified() {

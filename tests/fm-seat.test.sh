@@ -1496,7 +1496,7 @@ spawn_case() {
   mkdir -p "$seats"
   fakebin=$(fm_test_make_spawn_fakebin "$case_dir/fake")
   fm_test_spawn_home "$home" claude
-  fm_test_spawn_brief "$home" "$id"
+  fm_test_spawn_ship_brief "$home" "$id"
   fm_git_worktree "$proj" "$wt" "wt-$name"
   printf '%s\n' "$seats" > "$home/config/claude-seats-root"
   printf '%s\n' "$case_dir|$home|$proj|$wt|$fakebin|$launchlog|$seats"
@@ -1513,7 +1513,7 @@ run_spawn_here() {
   shift 4
   : > "$launchlog"
   CLAUDE_CONFIG_DIR='' FM_FAKE_LAUNCH_LOG="$launchlog" \
-    fm_test_run_spawn "$home" "$wt" "$fakebin" "$@" --mode no-mistakes --yolo off
+    fm_test_run_spawn "$home" "$wt" "$fakebin" "$@" --mode no-mistakes --ticket no-ticket --commit-type chore --yolo off
 }
 
 test_spawn_without_a_seat_sets_no_config_dir() {
@@ -1599,7 +1599,7 @@ test_a_later_spawn_uses_the_new_seat_while_the_old_task_keeps_its_own() {
   # Switch, then spawn a second task from a second worktree in the same home.
   printf 'spare\n' > "$HOME_DIR/config/claude-seat"
   id2=seat-second-1
-  fm_test_spawn_brief "$HOME_DIR" "$id2"
+  fm_test_spawn_ship_brief "$HOME_DIR" "$id2"
   git -C "$PROJ_DIR" worktree add --quiet -b wt-two-seats-2 "$CASE_DIR/wt2"
   out=$(run_spawn_here "$HOME_DIR" "$CASE_DIR/wt2" "$FAKEBIN" "$LAUNCH_LOG" "$id2" "$PROJ_DIR")
   expect_code 0 "$?" "the second spawn should succeed: $out"
@@ -1626,7 +1626,7 @@ test_ambient_config_dir_still_reaches_workers_when_no_seat_is_set() {
   : > "$LAUNCH_LOG"
   out=$(FM_TEST_CLAUDE_CONFIG_DIR="$CASE_DIR/ambient-profile" \
     FM_FAKE_LAUNCH_LOG="$LAUNCH_LOG" \
-    fm_test_run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN" "$id" "$PROJ_DIR" --mode no-mistakes --yolo off 2>&1)
+    fm_test_run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN" "$id" "$PROJ_DIR" --mode no-mistakes --ticket no-ticket --commit-type chore --yolo off 2>&1)
   expect_code 0 "$?" "a spawn under an ambient config dir should succeed: $out"
   launch=$(cat "$LAUNCH_LOG")
   assert_contains "$launch" "CLAUDE_CONFIG_DIR='$CASE_DIR/ambient-profile'" \
@@ -1669,7 +1669,7 @@ test_active_seat_overrides_the_ambient_config_dir() {
   : > "$LAUNCH_LOG"
   out=$(FM_TEST_CLAUDE_CONFIG_DIR="$CASE_DIR/ambient-profile" \
     FM_FAKE_LAUNCH_LOG="$LAUNCH_LOG" \
-    fm_test_run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN" "$id" "$PROJ_DIR" --mode no-mistakes --yolo off 2>&1)
+    fm_test_run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN" "$id" "$PROJ_DIR" --mode no-mistakes --ticket no-ticket --commit-type chore --yolo off 2>&1)
   expect_code 0 "$?" "a spawn with both a seat and an ambient dir should succeed: $out"
   launch=$(cat "$LAUNCH_LOG")
   assert_contains "$launch" "CLAUDE_CONFIG_DIR='$SEATS_DIR/work'" \
@@ -1692,7 +1692,7 @@ test_a_restarted_lead_spawns_the_default_seat_on_its_original_ambient() {
   out=$(FM_TEST_CLAUDE_CONFIG_DIR="$SEATS_DIR/beta" \
     FM_AMBIENT_CLAUDE_CONFIG_DIR="$CASE_DIR/ambient-profile" \
     FM_FAKE_LAUNCH_LOG="$LAUNCH_LOG" \
-    fm_test_run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN" "$id" "$PROJ_DIR" --mode no-mistakes --yolo off 2>&1)
+    fm_test_run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN" "$id" "$PROJ_DIR" --mode no-mistakes --ticket no-ticket --commit-type chore --yolo off 2>&1)
   expect_code 0 "$?" "a default-seat spawn from a restarted lead should succeed: $out"
   launch=$(cat "$LAUNCH_LOG")
   assert_contains "$launch" "CLAUDE_CONFIG_DIR='$CASE_DIR/ambient-profile'" \
@@ -4928,7 +4928,7 @@ test_a_new_worker_launches_off_a_seat_with_no_five_hour_room() {
   seat_windows_clear "$CASE_DIR/quota-spec"
   seat_windows "$CASE_DIR/quota-spec" "$SEATS_DIR/seat-max" 0 '2026-10-16T05:40:00Z' 65 '2026-10-21T06:00:00Z' -60 22
   seat_windows "$CASE_DIR/quota-spec" "$SEATS_DIR/seat-max-gmail" 90 '2026-10-16T05:40:00Z' 80 '2026-10-21T06:00:00Z' 40 30
-  fm_test_spawn_brief "$HOME_DIR" seat-session-route-2
+  fm_test_spawn_ship_brief "$HOME_DIR" seat-session-route-2
   git -C "$PROJ_DIR" worktree add --quiet -b wt-session-route-2 "$CASE_DIR/wt2"
   out=$(run_spawn_here "$HOME_DIR" "$CASE_DIR/wt2" "$FAKEBIN" "$LAUNCH_LOG" seat-session-route-2 "$PROJ_DIR" 2>&1)
   expect_code 0 "$?" "a spawn off a spent five-hour window must be routed, not held: $out"

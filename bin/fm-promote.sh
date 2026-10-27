@@ -22,7 +22,7 @@
 # never passes the provenance gate as the ask (bin/fm-dod-lib.sh).
 # A scout records no delivery posture, so promotion is where this task's delivery
 # contract is decided: --mode, --yolo, and the ship branch resolved from
-# --branch-prefix or from --ticket with --commit-type are written into the meta
+# --ticket with --commit-type are written into the meta
 # alongside the kind= flip. Firstmate resolves all three at promotion time, having just
 # read the scout's report (AGENTS.md section 7); data/projects.md holds the
 # captain's standing posture as context, and this script never looks that posture
@@ -40,7 +40,9 @@
 # binding and bin/fm-dod-lib.sh owns what it changes for the worker, including
 # the refusal of a forge on local-only. A forge=external project is refused
 # outright, because its push guard is installed only by a ship spawn.
-# --ticket <ENG-123|no-ticket> with --commit-type <type> promotes the scout onto
+# Promotion requires --ticket <ENG-123|no-ticket> with --commit-type <type>.
+# --branch-prefix alone is refused because every new ship records a ticket choice.
+# This pair promotes the scout onto
 # the captain's ticket convention: the ship branch becomes
 # "<type>/<ticket>-<task-id>" instead of the "fm/" prefix, the promoted ship
 # instructions carry the exact commit-subject and PR-title format, and the pair
@@ -49,7 +51,7 @@
 # combines with --branch-prefix; bin/fm-dod-lib.sh's fm_ticket_resolve owns the
 # grammar and the branch each case resolves, so promotion and bin/fm-brief.sh
 # cannot name different branches for the same inputs.
-# Usage: fm-promote.sh <task-id> --mode <no-mistakes|direct-PR|local-only> --yolo <on|off> [--branch-prefix <prefix>] [--ticket <ENG-123|no-ticket> --commit-type <type> [--ticket-scope <complete|partial>]] [--upstream-consent <host>/<owner>/<repo>]
+# Usage: fm-promote.sh <task-id> --mode <no-mistakes|direct-PR|local-only> --yolo <on|off> --ticket <ENG-123|no-ticket> --commit-type <type> [--ticket-scope <complete|partial>] [--upstream-consent <host>/<owner>/<repo>]
 # --upstream-consent records the captain's one-off approval for this task to
 # publish to firstmate's own upstream repository; promotion applies the same
 # self-repository publication gate as bin/fm-spawn.sh (bin/fm-role-lib.sh), so
@@ -195,6 +197,10 @@ refuse_impossible_forge_posture || exit 1
 ID=${POS[0]}
 fm_task_id_creation_valid "$ID" || { echo "error: invalid task id" >&2; exit 2; }
 fm_ticket_scope_valid "$TICKET" "$TICKET_SCOPE" "$TICKET_SCOPE_SET" "fm-promote.sh" || exit 1
+[ -n "$TICKET" ] || {
+  echo "error: promotion creates ship work and requires --ticket ENG-<n> or --ticket no-ticket for genuinely ticketless work; --branch-prefix alone does not record a ticket choice" >&2
+  exit 1
+}
 fm_ticket_resolve "$TICKET" "$COMMIT_TYPE" "$ID" "$BRANCH_PREFIX" "$BRANCH_PREFIX_SET" "fm-promote.sh" "$TICKET_SCOPE" || exit 1
 COMMIT_TYPE=$FM_TICKET_COMMIT_TYPE
 BRANCH=$FM_TICKET_BRANCH

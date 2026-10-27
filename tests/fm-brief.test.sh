@@ -2084,6 +2084,12 @@ for scope in complete partial; do
   assert_grep "Ticket scope: $scope" "$brief" 'scope did not reach the worker contract'
   assert_grep 'acceptance criteria' "$brief" 'worker did not receive the acceptance-criteria check'
   assert_grep 'ticket-scope=complete' "$brief" 'worker did not receive the scope declaration instruction'
+  assert_grep 'Plan and perform synthetic verification of every acceptance criterion before reporting the PR ready' "$brief" 'worker must plan and perform verification before readiness'
+  assert_grep 'record the evidence (test names, probe PR, or scripted run) in the PR body' "$brief" 'verification evidence must be reviewable'
+  assert_grep 'Declare complete only when this PR delivers every acceptance criterion and you have verified each one yourself' "$brief" 'complete must require worker verification'
+  assert_grep 'only post-merge live checks remain' "$brief" 'post-merge checks must not force partial scope'
+  assert_no_grep 'including required verification' "$brief" 'the ambiguous complete definition survived'
+
 done
 FM_HOME="$home" "$ROOT/bin/fm-brief.sh" scope-default proj --mode no-mistakes \
   --ticket ENG-630 --commit-type feat >/dev/null || fail 'default scope brief failed'

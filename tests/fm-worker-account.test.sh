@@ -114,12 +114,12 @@ spawn_ship() {
   local id=$1
   shift
   retire_records_naming_the_case_copy
-  fm_test_spawn_brief "$HOME_DIR" "$id"
+  fm_test_spawn_ship_brief "$HOME_DIR" "$id"
   signed_in_claude_root "$CASE/ambient-claude"
   : > "$CASE/launch.log"
   FM_FAKE_LAUNCH_LOG="$CASE/launch.log" FM_TEST_CLAUDE_CONFIG_DIR="$CASE/ambient-claude" \
     ANTHROPIC_API_KEY=ambient-invoker-key \
-    fm_test_run_spawn "$HOME_DIR" "$WT" "$FAKEBIN" "$id" "$PROJ" --mode no-mistakes --yolo off "$@"
+    fm_test_run_spawn "$HOME_DIR" "$WT" "$FAKEBIN" "$id" "$PROJ" --mode no-mistakes --ticket no-ticket --commit-type chore --yolo off "$@"
 }
 
 # run_pane: execute the recorded launch in a pane whose ambient environment

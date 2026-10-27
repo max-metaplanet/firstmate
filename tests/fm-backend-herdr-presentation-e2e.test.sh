@@ -451,6 +451,12 @@ $description
 
 ## Firstmate spec
 Verify projected workspace behavior for $id.
+
+# Definition of done
+Delivery contract: mode=no-mistakes
+Ship branch: chore/no-ticket-$id
+Ticket: no-ticket
+Commit type: chore
 EOF
 }
 
@@ -461,7 +467,7 @@ spawn_task() {  # <id> <home> <project> [extra fm-spawn args...]; SPAWN_DEADLINE
   [ -z "${SPAWN_DEADLINE_SECONDS:-}" ] || deadline_cmd=(fm_run_timed "$SPAWN_DEADLINE_SECONDS")
   FM_GATE_REFUSE_BYPASS=1 FM_SPAWN_NO_GUARD=1 FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" \
     ${deadline_cmd[@]+"${deadline_cmd[@]}"} "$ROOT/bin/fm-spawn.sh" "$id" "$project" "sh -c 'while :; do sleep 60; done'" \
-    --mode no-mistakes --yolo off --backend herdr "$@"
+    --mode no-mistakes --ticket no-ticket --commit-type chore --yolo off --backend herdr "$@"
 }
 
 finish_concurrent_spawn() {  # <id> <status> <stdout> <stderr>

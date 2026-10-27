@@ -26,7 +26,7 @@ make_spawn_case() {  # <name> <harness> <id>
   fakebin=$(make_spawn_fakebin "$case_dir/fake" pi opencode claude codex gemini)
   fm_test_spawn_home "$home" "$harness"
   fm_git_worktree "$proj" "$wt" "wt-$name"
-  fm_test_spawn_brief "$home" "$id"
+  fm_test_spawn_ship_brief "$home" "$id"
   printf '%s\n' "$case_dir|$home|$proj|$wt|$fakebin"
 }
 
@@ -37,7 +37,7 @@ run_spawn() {  # <home> <wt> <fakebin> <spawn-args...>
   local home=$1 wt=$2 fakebin=$3
   shift 3
   GROK_HOME="$home/grok-home" \
-    fm_test_run_spawn "$home" "$wt" "$fakebin" "$@" --mode no-mistakes --yolo off
+    fm_test_run_spawn "$home" "$wt" "$fakebin" "$@" --mode no-mistakes --ticket no-ticket --commit-type chore --yolo off
 }
 
 read_case_record() {

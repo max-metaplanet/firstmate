@@ -1914,7 +1914,7 @@ test_promoted_scout_relaunch_receives_the_current_delivery_contract() {
     printf '%s' "$dir/wt" > "$dir/fake/cwd"
 
     out=$(FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" \
-      "$PROMOTE" "$id" --mode "$mode" --yolo off 2>&1) \
+      "$PROMOTE" "$id" --mode "$mode" --ticket no-ticket --commit-type chore --yolo off 2>&1) \
       || fail "$mode: scout promotion should succeed: $out"
     assert_grep 'This is a SCOUT task' "$brief" \
       "$mode: the reproduction fixture lost the original scout delivery text"
@@ -1931,15 +1931,15 @@ test_promoted_scout_relaunch_receives_the_current_delivery_contract() {
       "$mode: the replacement launch left the stale scout prohibition readable at face value"
     case "$mode" in
       direct-PR)
-        rule="1. Never push to the default branch and never push to any remote but \`origin\` (push only your \`fm/$id\` branch, to \`origin\`). Never merge a PR." ;;
+        rule="1. Never push to the default branch and never push to any remote but \`origin\` (push only your \`chore/no-ticket-$id\` branch, to \`origin\`). Never merge a PR." ;;
       local-only)
-        rule="1. Never push to any remote and never open a PR. Work only on your \`fm/$id\` branch; firstmate handles the merge into local \`main\`." ;;
+        rule="1. Never push to any remote and never open a PR. Work only on your \`chore/no-ticket-$id\` branch; firstmate handles the merge into local \`main\`." ;;
       *)
         rule='1. Never push to the default branch. Never merge a PR.' ;;
     esac
     assert_grep "$rule" "$launch" \
       "$mode: the replacement launch did not receive the current ship push and merge safety rule"
-    assert_grep "git checkout -b fm/$id" "$launch" \
+    assert_grep "git checkout -b chore/no-ticket-$id" "$launch" \
       "$mode: the replacement launch did not receive its promoted branch name"
     assert_grep 'Inventory this worktree' "$launch" \
       "$mode: the replacement launch did not receive the scratch-state inventory step"
@@ -2476,7 +2476,7 @@ test_promotion_participates_in_the_lifecycle_lock_before_metadata_resolution() {
     i=$((i + 1))
   done
   [ -e "$lock" ] || fail "could not stage the promotion lifecycle lock"
-  out=$(FM_HOME="$dir/home" "$PROMOTE" rl29 --mode direct-PR --yolo on 2>&1); rc=$?
+  out=$(FM_HOME="$dir/home" "$PROMOTE" rl29 --mode direct-PR --ticket no-ticket --commit-type chore --yolo on 2>&1); rc=$?
   kill "$holder" 2>/dev/null || true
   wait "$holder" 2>/dev/null || true
   expect_code 1 "$rc" "promotion should refuse a concurrent lifecycle action"
