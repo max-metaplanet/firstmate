@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # tests/fm-spawn-compact-adviser-disable.test.sh - every agent this fleet
 # launches must start with COMPACT_ADVISER_DISABLE=1 in its environment.
+# Ship and scout launches also set PREPUSH_TESTS=0, including on relaunch.
 #
 # The assertions never read bin/fm-spawn.sh's source. They drive the real spawn
 # against a fake pane and a real isolated git worktree, then EXECUTE the launch
@@ -79,9 +80,17 @@ emitted_launch_env() {
   # what the pane holds, and dropping them would test a pane that never existed.
   preamble=$(grep '^export ' "$panelog")
   env -i HOME="$TMP_ROOT/pane-home" PATH="$fakebin:$PATH" TERM=xterm \
-    TMUX=synthetic-pane COMPACT_ADVISER_DISABLE="$CONTRARY" \
+    TMUX=synthetic-pane COMPACT_ADVISER_DISABLE="$CONTRARY" PREPUSH_TESTS=1 \
     /bin/sh -c "$preamble
 $launch"
+}
+
+assert_prepush_env() {  # <harness> <expected>
+  local seen
+  install_env_probe "$FAKEBIN_DIR" "$1" PREPUSH_TESTS
+  seen=$(emitted_launch_env "$FAKEBIN_DIR" "$LAUNCH_LOG" "$PANE_LOG") \
+    || fail "the emitted launch failed to run the pre-push probe"
+  assert_equals "$2" "$seen" "the launched $1 agent must receive the expected pre-push setting"
 }
 
 pane_export_lines() { grep -c '^export COMPACT_ADVISER_DISABLE=1$' "$1" || true; }
@@ -114,6 +123,7 @@ test_ship_allowlist_absent() {
     || fail "ship, allowlist absent: the emitted launch failed to run"
   assert_equals 1 "$seen" \
     "a ship worker launched with the ambient environment must start with the compact adviser disabled"
+  assert_prepush_env codex 0
   pass "ship launch with no allowlist starts its agent with the compact-adviser switch on"
 }
 
@@ -137,6 +147,7 @@ test_ship_allowlist_enabled() {
     || fail "ship, allowlist enabled: the emitted launch failed to run"
   assert_equals 1 "$seen" \
     "a ship worker launched under the cleared allowlisted environment must still start with the compact adviser disabled"
+  assert_prepush_env codex 0
   pass "ship launch under an enabled allowlist keeps the compact-adviser switch through the cleared environment"
 }
 
@@ -160,6 +171,11 @@ test_launch_command_carries_the_switch_without_the_pane_export() {
       || fail "allowlist=$setting: the emitted launch failed to run without the pane exports"
     assert_equals 1 "$seen" \
       "allowlist=$setting: the launch command alone must set the compact-adviser switch, overriding a contrary pane value"
+    install_env_probe "$FAKEBIN_DIR" codex PREPUSH_TESTS
+    seen=$(env -i HOME="$TMP_ROOT/pane-home" PATH="$FAKEBIN_DIR:$PATH" TERM=xterm \
+      TMUX=synthetic-pane PREPUSH_TESTS=1 /bin/sh -c "$launch") \
+      || fail "allowlist=$setting: the launch command alone failed to run the pre-push probe"
+    assert_equals 0 "$seen" "allowlist=$setting: the launch command alone must set PREPUSH_TESTS=0"
   done
   pass "the launch command sets the switch on its own, whichever allowlist posture is in force"
 }
@@ -186,6 +202,11 @@ test_secondmate_launch() {
       || fail "secondmate, allowlist $setting: the emitted launch failed to run"
     assert_equals 1 "$seen" \
       "a secondmate launched with allowlist=$setting must start with the compact adviser disabled"
+    if [ "$setting" = absent ]; then
+      assert_prepush_env codex 1
+    else
+      assert_prepush_env codex unset
+    fi
   done
   pass "a secondmate launch carries the compact-adviser switch in both allowlist postures"
 }
@@ -225,6 +246,20 @@ test_launch_exports_task_inbox() {
   pass "ship and secondmate launches export their absolute steering inbox as FM_TASK_INBOX"
 }
 
+test_scout_prepush_env() {
+  local setting rec out status
+  for setting in absent enabled; do
+    rec=$(make_case "scout-$setting" claude "scout-$setting-a1")
+    read_case "$rec"
+    [ "$setting" = absent ] || : > "$HOME_DIR/config/launch-env-allowlist"
+    out=$(run_case_spawn "scout-$setting-a1" "$PROJ_DIR" --scout)
+    status=$?
+    expect_code 0 "$status" "scout spawn with allowlist=$setting should succeed: $out"
+    assert_prepush_env claude 0
+  done
+  pass "Claude scout launches receive PREPUSH_TESTS=0 in both allowlist postures"
+}
+
 # --- relaunch ---------------------------------------------------------------
 #
 # bin/fm-control.sh relaunch stops the agent and rebuilds the launch through
@@ -262,7 +297,7 @@ case "${1:-}" in
       printf '%s\n' "$payload" >> "$D/literal"
       case "$payload" in
         /exit|/quit) printf 'zsh' > "$D/command" ;;
-        *'encode launch-brief'*) printf 'codex' > "$D/command" ;;
+        *'encode launch-brief'*|*'Firstmate operational input waiting: read'*) cat "$D/becomes" > "$D/command" ;;
       esac
     else
       printf '%s\n' "$payload" >> "$D/keys"
@@ -291,10 +326,10 @@ SH
 }
 
 test_relaunch_rebuilds_the_switch() {
-  local setting dir home proj wt id out status seen launch preamble
+  local harness=$1 setting dir home proj wt id out status seen launch preamble
   for setting in absent enabled; do
-    id="relaunch-$setting-a1"
-    dir="$TMP_ROOT/relaunch-$setting"
+    id="relaunch-$harness-$setting-a1"
+    dir="$TMP_ROOT/relaunch-$harness-$setting"
     home="$dir/home"
     proj="$dir/proj"
     wt="$dir/wt"
@@ -302,11 +337,12 @@ test_relaunch_rebuilds_the_switch() {
     touch "$home/state/.last-watcher-beat"
     [ "$setting" = absent ] || : > "$home/config/launch-env-allowlist"
     make_relaunch_stub "$dir"
-    fm_git_worktree "$proj" "$wt" "wt-relaunch-$setting"
+    fm_git_worktree "$proj" "$wt" "wt-relaunch-$harness-$setting"
     fm_test_spawn_brief "$home" "$id"
     : > "$dir/fake/literal"
     : > "$dir/fake/keys"
-    printf 'codex' > "$dir/fake/command"
+    printf '%s' "$harness" > "$dir/fake/command"
+    printf '%s' "$harness" > "$dir/fake/becomes"
     printf '%s\n' "fm-$id" > "$dir/fake/windows"
     printf '%s' "$wt" > "$dir/fake/cwd"
     {
@@ -314,7 +350,7 @@ test_relaunch_rebuilds_the_switch() {
       echo "endpoint_task_id=$id"
       echo "worktree=$wt"
       echo "project=$proj"
-      echo "harness=codex"
+      echo "harness=$harness"
       echo "kind=ship"
       echo "mode=no-mistakes"
       echo "yolo=off"
@@ -333,9 +369,9 @@ test_relaunch_rebuilds_the_switch() {
 
     grep -qx 'export COMPACT_ADVISER_DISABLE=1' "$dir/fake/keys" \
       || fail "relaunch with allowlist=$setting did not re-export the compact-adviser switch into the pane"
-    launch=$(grep 'encode launch-brief' "$dir/fake/literal" | tail -1)
+    launch=$(grep -E 'encode launch-brief|Firstmate operational input waiting: read' "$dir/fake/literal" | tail -1)
     [ -n "$launch" ] || fail "relaunch with allowlist=$setting sent no replacement launch command"
-    install_env_probe "$dir/fakebin" codex
+    install_env_probe "$dir/fakebin" "$harness"
     preamble=$(grep '^export ' "$dir/fake/keys")
     seen=$(env -i HOME="$dir/user-home" PATH="$dir/fakebin:$PATH" TERM=xterm \
       TMUX=synthetic-pane COMPACT_ADVISER_DISABLE="$CONTRARY" \
@@ -344,8 +380,13 @@ $launch") \
       || fail "relaunch with allowlist=$setting: the replacement launch failed to run"
     assert_equals 1 "$seen" \
       "a relaunched agent with allowlist=$setting must start with the compact adviser disabled, exactly as a fresh spawn does"
+    install_env_probe "$dir/fakebin" "$harness" PREPUSH_TESTS
+    seen=$(env -i HOME="$dir/user-home" PATH="$dir/fakebin:$PATH" TERM=xterm \
+      TMUX=synthetic-pane PREPUSH_TESTS=1 /bin/sh -c "$preamble
+$launch") || fail "$harness relaunch pre-push probe failed"
+    assert_equals 0 "$seen" "$harness relaunch with allowlist=$setting must receive PREPUSH_TESTS=0"
   done
-  pass "relaunch rebuilds the compact-adviser switch for the replacement agent in both allowlist postures"
+  pass "$harness relaunches retain compact-adviser and pre-push settings in both allowlist postures"
 }
 
 # A command-prefix assignment only covers the first simple command. A raw
@@ -387,5 +428,7 @@ test_ship_allowlist_enabled
 test_launch_command_carries_the_switch_without_the_pane_export
 test_secondmate_launch
 test_launch_exports_task_inbox
-test_relaunch_rebuilds_the_switch
+test_scout_prepush_env
+test_relaunch_rebuilds_the_switch codex
+test_relaunch_rebuilds_the_switch claude
 test_raw_compound_launch_command_carries_the_switch
