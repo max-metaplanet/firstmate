@@ -19,7 +19,7 @@ make_spawn_case() {
   id="grok-$name-x1"
   mkdir -p "$grok_home"
   fm_test_spawn_home "$home"
-  fm_test_spawn_brief "$home" "$id" brief
+  fm_test_spawn_ship_brief "$home" "$id" brief
   fm_git_worktree "$proj" "$wt" "fm/$id"
   printf '%s\n' "$case_dir|$home|$proj|$wt|$fakebin|$grok_home|$id"
 }
@@ -28,7 +28,7 @@ run_grok_spawn() {
   local home=$1 proj=$2 wt=$3 fakebin=$4 grok_home=$5 id=$6
   GROK_HOME="$grok_home" \
     fm_test_run_spawn "$home" "$wt" "$fakebin" \
-    "$id" "$proj" grok --mode no-mistakes --yolo off
+    "$id" "$proj" grok --mode no-mistakes --ticket no-ticket --commit-type chore --yolo off
 }
 
 test_grok_hook_requires_registered_token() {

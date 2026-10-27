@@ -53,7 +53,7 @@ make_case() {  # <name> <on|off>
   printf '%s\n' "$$" > "$HOME_DIR/state/.lock"
   touch "$HOME_DIR/state/.last-watcher-beat"
   [ "$2" = off ] || : > "$HOME_DIR/config/fleet-ledger"
-  fm_git_worktree "$PROJ_DIR" "$WT_DIR" "fm/$TASK"
+  fm_git_worktree "$PROJ_DIR" "$WT_DIR" "chore/no-ticket-$TASK"
   cat > "$HOME_DIR/data/$TASK/brief.md" <<EOF
 # Task
 ## Captain's intent
@@ -61,6 +61,12 @@ Exercise the fleet ledger for $TASK.
 
 ## Firstmate spec
 Nothing to build.
+
+# Definition of done
+Delivery contract: mode=${3:-local-only}
+Ship branch: chore/no-ticket-$TASK
+Ticket: no-ticket
+Commit type: chore
 EOF
   FAKEBIN=$(make_fakebin "$dir")
 }
@@ -77,7 +83,7 @@ in_home() {  # <command...>: run one real script against the case home
 # Spawn, write status lines, poll once, land locally, clean up.
 run_lifecycle() {
   local out
-  out=$(in_home "$ROOT/bin/fm-spawn.sh" "$TASK" "$PROJ_DIR" --mode local-only --yolo off 2>&1) \
+  out=$(in_home "$ROOT/bin/fm-spawn.sh" "$TASK" "$PROJ_DIR" --mode local-only --ticket no-ticket --commit-type chore --yolo off 2>&1) \
     || fail "spawn failed: $out"
   {
     printf 'working [at=1790000000]: setup done\n'
@@ -152,11 +158,11 @@ EOF
 
 test_flag_on_records_a_pr_registration() {
   local pr_url=https://github.com/acme/sample/pull/9 rows out
-  make_case on-pr-ready on
+  make_case on-pr-ready on direct-PR
   # An unreadable forge answer: no draft refusal and no recorded head.
   printf '#!/usr/bin/env bash\nexit 1\n' > "$FAKEBIN/gh"
   chmod +x "$FAKEBIN/gh"
-  out=$(in_home "$ROOT/bin/fm-spawn.sh" "$TASK" "$PROJ_DIR" --mode direct-PR --yolo off 2>&1) \
+  out=$(in_home "$ROOT/bin/fm-spawn.sh" "$TASK" "$PROJ_DIR" --mode direct-PR --ticket no-ticket --commit-type chore --yolo off 2>&1) \
     || fail "spawn failed: $out"
   printf 'done: PR %s\n' "$pr_url" >> "$HOME_DIR/state/$TASK.status"
   out=$(in_home "$ROOT/bin/fm-pr-check.sh" "$TASK" "$pr_url" 2>&1) || fail "PR registration failed: $out"
@@ -181,7 +187,7 @@ worker_status_command() {  # <state> <note> [<state-dir> [<config-dir>]]
   rm -rf "${HOME_DIR:?}/data/$TASK"
   (cd "$HOME_DIR" && in_home env FM_STATE_OVERRIDE="${3:-$HOME_DIR/state}" \
     FM_CONFIG_OVERRIDE="${4:-$HOME_DIR/config}" \
-    "$ROOT/bin/fm-brief.sh" "$TASK" sample --mode no-mistakes >/dev/null) \
+    "$ROOT/bin/fm-brief.sh" "$TASK" sample --mode no-mistakes --ticket no-ticket --commit-type chore >/dev/null) \
     || fail "brief scaffold failed"
   # shellcheck disable=SC2016 # Match literal backticks in the generated brief.
   cmd=$(sed -n '/`echo "{state}/s/.*`\(echo .*\)`.*/\1/p' "$HOME_DIR/data/$TASK/brief.md" | head -1)

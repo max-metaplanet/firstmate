@@ -24,7 +24,7 @@ command -v tasks-axi >/dev/null 2>&1 && HAVE_TASKS_AXI=1
 
 # --- fixture ----------------------------------------------------------------
 
-write_brief() {  # <home> <id>
+write_brief() {  # <home> <id> [legacy]
   mkdir -p "$1/data/$2"
   cat > "$1/data/$2/brief.md" <<EOF
 # Task
@@ -37,6 +37,9 @@ Exercise fleet capacity admission.
 # Definition of done
 Delivery contract: mode=no-mistakes
 EOF
+  if [ "${3:-}" != legacy ]; then
+    printf 'Ship branch: chore/no-ticket-%s\nTicket: no-ticket\nCommit type: chore\n' "$2" >> "$1/data/$2/brief.md"
+  fi
 }
 
 # A Firstmate home with its own backlog (when tasks-axi is installed) and a
@@ -208,7 +211,7 @@ run_spawn() {  # <case-dir> <home> <pane-path> <args...>
 spawn_ship() {  # <case-dir> <id> [pane-path]
   local case_dir=$1 id=$2 pane=${3:-}
   [ -n "$pane" ] || pane=$(new_worktree "$case_dir" "$id")
-  run_spawn "$case_dir" "$case_dir/home" "$pane" "$id" "$case_dir/project" --mode no-mistakes --yolo off
+  run_spawn "$case_dir" "$case_dir/home" "$pane" "$id" "$case_dir/project" --mode no-mistakes --ticket no-ticket --commit-type chore --yolo off
 }
 
 # Everything a deferred spawn must not have created for <id>; <worktrees-before>
@@ -331,7 +334,7 @@ test_fleet_is_shared_by_every_local_home() {
   write_running "$case_dir" "$root" live-a "$case_dir/project"
   write_running "$case_dir" "$mate" live-m "$mate_project"
   git -C "$mate_project" worktree add --quiet -b wt-m "$case_dir/wt-m"
-  out=$(run_spawn "$case_dir" "$mate" "$case_dir/wt-m" task-m "$mate_project" --mode no-mistakes --yolo off) || rc=$?
+  out=$(run_spawn "$case_dir" "$mate" "$case_dir/wt-m" task-m "$mate_project" --mode no-mistakes --ticket no-ticket --commit-type chore --yolo off) || rc=$?
   expect_code "$DEFER_EXIT" "$rc" "a local secondmate launched past the machine's fleet capacity: $out"
   assert_contains "$out" "($root/config/fleet-capacity) and 2 are running" \
     "the secondmate did not read the root's declaration or count both homes"
@@ -458,7 +461,7 @@ test_parked_resume_has_project_priority() {
   write_running "$case_dir" "$home" parked-a "$case_dir/project"
   write_park "$home" parked-a queued
   pane=$(new_worktree "$case_dir" parked-a)
-  write_brief "$home" parked-a
+  write_brief "$home" parked-a legacy
   sed "s|^worktree=.*|worktree=$pane|" "$home/state/parked-a.meta" > "$home/state/parked-a.meta.next"
   mv "$home/state/parked-a.meta.next" "$home/state/parked-a.meta"
   out=$(spawn_ship "$case_dir" task-c) || rc=$?
@@ -508,7 +511,7 @@ test_parked_relaunch_respects_both_caps() {
   case_dir=$(make_case resume-cap)
   home="$case_dir/home"
   pane=$(new_worktree "$case_dir" parked-a)
-  write_brief "$home" parked-a
+  write_brief "$home" parked-a legacy
   write_running "$case_dir" "$home" parked-a "$case_dir/project"
   sed "s|^worktree=.*|worktree=$pane|" "$home/state/parked-a.meta" > "$home/state/parked-a.meta.next"
   mv "$home/state/parked-a.meta.next" "$home/state/parked-a.meta"
@@ -713,7 +716,7 @@ test_adaptive_concurrent_homes() {
     i=$((i + 1)); [ "$i" -lt 400 ] || fail "first admission never reached launch: $(cat "$case_dir/first.out")"
     sleep 0.05
   done
-  run_spawn "$case_dir" "$mate" "$case_dir/unused" task-b "$case_dir/other-project" --mode no-mistakes --yolo off > "$case_dir/second.out" 2>&1 &
+  run_spawn "$case_dir" "$mate" "$case_dir/unused" task-b "$case_dir/other-project" --mode no-mistakes --ticket no-ticket --commit-type chore --yolo off > "$case_dir/second.out" 2>&1 &
   # shellcheck disable=SC2031 # The background PID is captured immediately in this shell.
   second=$!
   : > "$hold.release"

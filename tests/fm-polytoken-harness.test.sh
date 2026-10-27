@@ -787,13 +787,19 @@ make_polytoken_spawn_case() {
   wt="$case_dir/wt"
   mkdir -p "$home/data/$id" "$home/projects" "$home/state" "$home/config" \
     "$home/.config/polytoken"
-  cat > "$home/data/$id/brief.md" <<'EOF'
+  cat > "$home/data/$id/brief.md" <<EOF
 # Task
 ## Captain's intent
 Exercise Polytoken dispatch.
 
 ## Firstmate spec
 Verify launch and delivery behavior.
+
+# Definition of done
+Delivery contract: mode=no-mistakes
+Ship branch: chore/no-ticket-$id
+Ticket: no-ticket
+Commit type: chore
 EOF
   printf 'polytoken\n' > "$home/config/crew-harness"
   printf 'version: 4\nproviders:\n  zai:\n    auth:\n      type: static_key\n      key: k\nmodels:\n  zai/glm-5.3-flash:\n    enabled: true\ndefault_permission_matcher: standard\n' \
@@ -899,7 +905,7 @@ run_polytoken_spawn() {
     FM_POLYTOKEN_READY_POLLS="${FM_POLYTOKEN_READY_POLLS:-40}" \
     FM_POLYTOKEN_POLL_INTERVAL="${FM_POLYTOKEN_POLL_INTERVAL:-0.1}" \
     PATH="$fakebin:$BASE_PATH" \
-    "$SPAWN" "$id" "$proj" --harness polytoken --model zai/glm-5.3-flash --effort low --mode no-mistakes --yolo off "$@" 2>&1
+    "$SPAWN" "$id" "$proj" --harness polytoken --model zai/glm-5.3-flash --effort low --mode no-mistakes --ticket no-ticket --commit-type chore --yolo off "$@" 2>&1
 }
 
 test_polytoken_launch_carries_the_hybrid_contract() {

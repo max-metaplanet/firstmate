@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Spawn a direct report: a crewmate in a treehouse or Orca worktree, or a
 # secondmate in its isolated firstmate home.
-# Usage: fm-spawn.sh <task-id> <project-dir> --mode <no-mistakes|direct-PR|local-only> --yolo <on|off> [--branch-prefix <prefix>] [--ticket <ENG-123|no-ticket> --commit-type <type> [--ticket-scope <complete|partial>]] [--base-branch <branch>] [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>] [--herdr-resume-lock-wait]
+# Usage: fm-spawn.sh <task-id> <project-dir> --mode <no-mistakes|direct-PR|local-only> --yolo <on|off> --ticket <ENG-123|no-ticket> --commit-type <type> [--ticket-scope <complete|partial>] [--base-branch <branch>] [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>] [--herdr-resume-lock-wait]
 #        fm-spawn.sh <task-id> <project-dir> --scout [--base-branch <branch>] [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>] [--herdr-resume-lock-wait]
 #        fm-spawn.sh <task-id> [<firstmate-home>] [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>] --secondmate
 #   --mode and --yolo are this task's delivery contract, REQUIRED for every ship
@@ -36,13 +36,9 @@
 #   loud one-line deviation notice is printed and the spawn continues.
 #   no-mistakes-prod-only is a registry policy rather than a task mode and is
 #   refused as a flag value.
-#   --branch-prefix is the optional prefix selected at intake for this ship's
-#   immutable branch, defaulting to "fm/". It must agree with the branch recorded
-#   in the brief, and is refused on scouts, secondmates, and relaunches. When the
-#   selected branch does not match the project's registered prefix, the spawn
-#   prints a one-line deviation notice and continues, because the registered
-#   prefix is the captain's standing preference and the brief agreement above
-#   already guarantees the worker's instructions match the branch.
+#   --branch-prefix is a legacy intake flag. Fresh ships require the ticket
+#   convention below, which cannot combine with it; scouts, secondmates, and
+#   relaunches refuse it as well. Existing tasks retain their recorded branch.
 #   --ticket <ENG-123|no-ticket> with --commit-type <type> ships the task on the
 #   captain's ticket convention instead of the "fm/" prefix: the branch becomes
 #   "<type>/<ticket>-<task-id>" and the worker's instructions carry the exact
@@ -51,9 +47,13 @@
 #   its "Ship branch:" line, and a brief carrying those lines refuses a spawn
 #   without the flags. The pair is recorded as ticket= and commit_type= in
 #   state/<id>.meta, which a relaunch preserves and cleanup reads; the flags are
-#   refused on scouts, secondmates, relaunches, batch dispatch, and alongside
-#   --branch-prefix, because one ticket names one task.
-#   Without them nothing changes. bin/fm-dod-lib.sh's fm_ticket_resolve owns the
+#   refused on scouts, secondmates, relaunches, and alongside --branch-prefix.
+#   A real ticket is refused on batch dispatch because it names one task; the
+#   explicit no-ticket marker and commit type may be shared by a ticketless batch.
+#   Fresh ship spawns require an explicit ticket choice, including no-ticket
+#   for genuinely ticketless work; --branch-prefix alone is refused. Relaunches
+#   preserve the recorded contract without these flags.
+#   bin/fm-dod-lib.sh's fm_ticket_resolve owns the
 #   grammar and the branch each case resolves.
 #   --base-branch is the optional branch selected at intake for a ship or scout
 #   to start from and target instead of origin's default branch. A fresh launch
@@ -1970,10 +1970,13 @@ if [ "${#POS[@]}" -gt 0 ] && [ "${POS[0]}" != "$idpart" ] && case "$idpart" in *
   [ "$MODE_SET" -eq 0 ] || shared_args+=(--mode "$MODE")
   [ "$YOLO_SET" -eq 0 ] || shared_args+=(--yolo "$YOLO")
   [ "$BRANCH_PREFIX_SET" -eq 0 ] || shared_args+=(--branch-prefix "$BRANCH_PREFIX")
-  { [ "$TICKET_SET" -eq 0 ] && [ "$COMMIT_TYPE_SET" -eq 0 ] && [ "$TICKET_SCOPE_SET" -eq 0 ]; } || {
-    echo "error: batch dispatch does not share --ticket or --commit-type; each ticketed task carries its own ticket, so spawn it explicitly" >&2
-    exit 2
-  }
+  if [ "$TICKET_SET" -eq 1 ] || [ "$COMMIT_TYPE_SET" -eq 1 ] || [ "$TICKET_SCOPE_SET" -eq 1 ]; then
+    { [ "$TICKET" = "$FM_TICKET_NONE" ] && [ "$TICKET_SCOPE_SET" -eq 0 ]; } || {
+      echo "error: batch dispatch does not share --ticket or --commit-type for real tickets; each ticketed task carries its own ticket, so spawn it explicitly (ticketless batches use --ticket no-ticket --commit-type <type>)" >&2
+      exit 2
+    }
+    shared_args+=(--ticket "$TICKET" --commit-type "$COMMIT_TYPE")
+  fi
   [ "$BASE_BRANCH_SET" -eq 0 ] || shared_args+=(--base-branch "$BASE_BRANCH")
   [ "$HERDR_RESUME_LOCK_WAIT" -eq 0 ] || shared_args+=(--herdr-resume-lock-wait)
   for pair in "${POS[@]}"; do
@@ -2023,6 +2026,10 @@ if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" = ship ]; then
   # fm-dod-lib.sh owns the ticket grammar and the branch each case resolves, so
   # the spawn and the brief it validates against cannot drift apart.
   fm_ticket_scope_valid "$TICKET" "$TICKET_SCOPE" "$TICKET_SCOPE_SET" "fm-spawn.sh" || exit 1
+  [ -n "$TICKET" ] || {
+    echo "error: ship spawns require --ticket ENG-<n> or --ticket no-ticket for genuinely ticketless work; --branch-prefix alone does not record a ticket choice" >&2
+    exit 1
+  }
   fm_ticket_resolve "$TICKET" "$COMMIT_TYPE" "$ID" "$BRANCH_PREFIX" "$BRANCH_PREFIX_SET" "fm-spawn.sh" "$TICKET_SCOPE" || exit 1
   COMMIT_TYPE=$FM_TICKET_COMMIT_TYPE
   BRANCH=$FM_TICKET_BRANCH
@@ -4268,7 +4275,7 @@ if [ "$KIND" = ship ]; then
     if [ "$RELAUNCH" -eq 1 ]; then
       echo "warning: $BRIEF records no ship branch; relaunching on the task's recorded branch $BRANCH" >&2
     else
-      echo "error: $BRIEF records no ship branch; regenerate it with --branch-prefix before spawning $BRANCH" >&2
+      echo "error: $BRIEF records no ship branch; regenerate it with --ticket and --commit-type before spawning $BRANCH" >&2
       exit 1
     fi
   else

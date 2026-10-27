@@ -337,6 +337,20 @@ Exercise the spawn behavior under test.
 EOF
 }
 
+# fm_test_spawn_ship_brief <home> <id> [captain-intent] [mode]
+# A generic new ship explicitly records its ticketless convention.
+fm_test_spawn_ship_brief() {
+  fm_test_spawn_brief "$1" "$2" "${3:-brief for $2}"
+  cat >> "$1/data/$2/brief.md" <<EOF
+
+# Definition of done
+Delivery contract: mode=${4:-no-mistakes}
+Ship branch: chore/no-ticket-$2
+Ticket: no-ticket
+Commit type: chore
+EOF
+}
+
 # fm_test_make_spawn_fakebin <dir> [extra-exit0-tool...]
 # Creates <dir>/fakebin with the spawn tmux stub, a no-op treehouse, and any
 # extra exit-0 tools. Echoes the fakebin path.

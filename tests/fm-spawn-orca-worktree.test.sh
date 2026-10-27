@@ -163,6 +163,12 @@ Exercise an Orca-backed spawn for $id.
 
 ## Firstmate spec
 Confirm the launch enters the worktree Orca created for it.
+
+# Definition of done
+Delivery contract: mode=no-mistakes
+Ship branch: chore/no-ticket-$id
+Ticket: no-ticket
+Commit type: chore
 EOF
   fb=$(make_orca_fakebin "$case_dir")
 
@@ -170,7 +176,7 @@ EOF
     FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
     FM_PROJECTS_OVERRIDE="$home/projects" FM_CONFIG_OVERRIDE="$home/config" \
     FM_SPAWN_NO_GUARD=1 FM_TEST_ORCA_DIR="$case_dir" PATH="$fb:$PATH" \
-    "$SPAWN" "$id" "$case_dir/project" --mode no-mistakes --yolo off --backend orca 2>&1)
+    "$SPAWN" "$id" "$case_dir/project" --mode no-mistakes --yolo off --ticket no-ticket --commit-type chore --backend orca 2>&1)
   status=$?
 
   expect_code 0 "$status" "an Orca-backed spawn should succeed"$'\n'"$out"
@@ -259,6 +265,12 @@ Verify the controlled Orca environment source.
 
 ## Firstmate spec
 Execute read-only environment checks.
+
+# Definition of done
+Delivery contract: mode=direct-PR
+Ship branch: chore/no-ticket-$id
+Ticket: no-ticket
+Commit type: chore
 EOF
     cat > "$case_dir/probe.sh" <<'EOF'
 #!/bin/sh
@@ -295,7 +307,7 @@ EOF
       FM_TEST_ORCA_SEND_FAIL="$([ "$setting" = sendfail ] && echo 1 || echo 0)" \
       FM_TEST_ORCA_CONSUME=1 \
       PATH="$fb:$PATH" "$SPAWN" "$id" "$case_dir/project" \
-      --mode direct-PR --yolo off --backend orca --harness "/bin/sh '$case_dir/probe.sh' '$case_dir/stage-path'" 2>&1)
+      --mode direct-PR --yolo off --ticket no-ticket --commit-type chore --backend orca --harness "/bin/sh '$case_dir/probe.sh' '$case_dir/stage-path'" 2>&1)
     status=$?
     if [ "$setting" = absent ] || [ "$setting" = unavailable ] || [ "$setting" = malformed ] || [ "$setting" = nonregular ] || [ "$setting" = missing ]; then
       expect_code 1 "$status" "unavailable source must refuse: $out"
@@ -401,6 +413,12 @@ Exercise a failed Orca spawn after launch delivery.
 
 ## Firstmate spec
 Confirm a slow pane still receives the staged launch file before the spawn fails later.
+
+# Definition of done
+Delivery contract: mode=no-mistakes
+Ship branch: chore/no-ticket-$id
+Ticket: no-ticket
+Commit type: chore
 EOF
   fb=$(make_orca_fakebin "$case_dir")
   printf '#!/bin/sh\necho "GH_TOKEN=synthetic-token"\n' > "$fb/tmux"
@@ -418,7 +436,7 @@ SH
     FM_PROJECTS_OVERRIDE="$home/projects" FM_CONFIG_OVERRIDE="$home/config" \
     FM_SPAWN_NO_GUARD=1 FM_TEST_ORCA_DIR="$case_dir" \
     FM_TEST_ORCA_LOG="$case_dir/terminal.log" FM_TEST_ORCA_CONSUME=1 FM_TEST_ORCA_CONSUME_DELAY=3 \
-    PATH="$fb:$PATH" "$SPAWN" "$id" "$case_dir/project" --mode no-mistakes --yolo off --backend orca 2>&1)
+    PATH="$fb:$PATH" "$SPAWN" "$id" "$case_dir/project" --mode no-mistakes --yolo off --ticket no-ticket --commit-type chore --backend orca 2>&1)
   status=$?
   [ "$status" -ne 0 ] || fail "a spawn whose backlog transition failed reported success: $out"
   assert_contains "$out" "could not be moved to In flight" "the spawn did not fail at the backlog transition"
@@ -449,6 +467,12 @@ Exercise an Orca pane that never runs the launch command.
 
 ## Firstmate spec
 Confirm the staged credential file is reclaimed.
+
+# Definition of done
+Delivery contract: mode=no-mistakes
+Ship branch: chore/no-ticket-$id
+Ticket: no-ticket
+Commit type: chore
 EOF
   fb=$(make_orca_fakebin "$case_dir")
   printf '#!/bin/sh\necho "GH_TOKEN=synthetic-token"\n' > "$fb/tmux"
@@ -458,7 +482,7 @@ EOF
     FM_PROJECTS_OVERRIDE="$home/projects" FM_CONFIG_OVERRIDE="$home/config" \
     FM_SPAWN_NO_GUARD=1 FM_TEST_ORCA_DIR="$case_dir" FM_ORCA_LAUNCH_CONSUME_POLLS=2 \
     FM_TEST_ORCA_LOG="$case_dir/terminal.log" PATH="$fb:$PATH" \
-    "$SPAWN" "$id" "$case_dir/project" --mode no-mistakes --yolo off --backend orca 2>&1)
+    "$SPAWN" "$id" "$case_dir/project" --mode no-mistakes --yolo off --ticket no-ticket --commit-type chore --backend orca 2>&1)
   status=$?
   expect_code 1 "$status" "a spawn whose pane never ran the launch command must fail: $out"
   assert_contains "$out" "did not run the launch command" "the failure must name the unrun launch command"
@@ -491,6 +515,12 @@ Exercise an Orca pane that unlinks the launch file at the reclaim deadline.
 
 ## Firstmate spec
 Confirm the spawn treats the launch as consumed.
+
+# Definition of done
+Delivery contract: mode=no-mistakes
+Ship branch: chore/no-ticket-$id
+Ticket: no-ticket
+Commit type: chore
 EOF
   fb=$(make_orca_fakebin "$case_dir")
   real_rm=$(command -v rm)
@@ -510,7 +540,7 @@ SH
     FM_PROJECTS_OVERRIDE="$home/projects" FM_CONFIG_OVERRIDE="$home/config" \
     FM_SPAWN_NO_GUARD=1 FM_TEST_ORCA_DIR="$case_dir" FM_ORCA_LAUNCH_CONSUME_POLLS=2 \
     FM_TEST_ORCA_LOG="$case_dir/terminal.log" PATH="$fb:$PATH" \
-    "$SPAWN" "$id" "$case_dir/project" --mode no-mistakes --yolo off --backend orca 2>&1)
+    "$SPAWN" "$id" "$case_dir/project" --mode no-mistakes --yolo off --ticket no-ticket --commit-type chore --backend orca 2>&1)
   status=$?
   expect_code 0 "$status" "a spawn whose pane won the launch-file race must succeed: $out"
   assert_contains "$out" "spawned $id" "the spawn must report success when the pane consumed the launch file"
@@ -542,6 +572,12 @@ Exercise an Orca pane that cannot remove the launch file.
 
 ## Firstmate spec
 Confirm the worker is refused and the terminal stays open.
+
+# Definition of done
+Delivery contract: mode=no-mistakes
+Ship branch: chore/no-ticket-$id
+Ticket: no-ticket
+Commit type: chore
 EOF
   fb=$(make_orca_fakebin "$case_dir")
   printf '#!/bin/sh\necho "GH_TOKEN=synthetic-token"\n' > "$fb/tmux"
@@ -551,7 +587,7 @@ EOF
     FM_PROJECTS_OVERRIDE="$home/projects" FM_CONFIG_OVERRIDE="$home/config" \
     FM_SPAWN_NO_GUARD=1 FM_TEST_ORCA_DIR="$case_dir" FM_ORCA_LAUNCH_CONSUME_POLLS=10 \
     FM_TEST_ORCA_LOG="$case_dir/terminal.log" FM_TEST_ORCA_RM_FAIL=1 PATH="$fb:$PATH" \
-    "$SPAWN" "$id" "$case_dir/project" --mode no-mistakes --yolo off --backend orca 2>&1)
+    "$SPAWN" "$id" "$case_dir/project" --mode no-mistakes --yolo off --ticket no-ticket --commit-type chore --backend orca 2>&1)
   status=$?
   expect_code 1 "$status" "a spawn whose pane could not remove the launch file must fail: $out"
   assert_contains "$(cat "$case_dir/pane.out")" 'cannot remove private launch file' "the pane must refuse the worker launch"
@@ -590,6 +626,12 @@ Exercise an interrupted Orca spawn after launch delivery.
 
 ## Firstmate spec
 Confirm the staged credential file is reclaimed.
+
+# Definition of done
+Delivery contract: mode=direct-PR
+Ship branch: chore/no-ticket-$id
+Ticket: no-ticket
+Commit type: chore
 EOF
       fb=$(make_orca_fakebin "$case_dir")
       printf '#!/bin/sh\necho "GH_TOKEN=synthetic-interrupt-token"\n' > "$fb/tmux"
@@ -603,7 +645,7 @@ EOF
         FM_TEST_ORCA_LOG="$case_dir/terminal.log" \
         FM_TEST_ORCA_HOLD_TEXT="$([ "$phase" = enter ] && echo 1 || echo 0)" \
         PATH="$fb:$PATH" python3 -c 'import os,signal,sys; signal.signal(signal.SIGINT, signal.SIG_DFL); os.execvp(sys.argv[1], sys.argv[1:])' \
-        "$SPAWN" "$id" "$case_dir/project" --mode direct-PR --yolo off --backend orca \
+        "$SPAWN" "$id" "$case_dir/project" --mode direct-PR --yolo off --ticket no-ticket --commit-type chore --backend orca \
         --harness "touch '$case_dir/worker-ran'" > "$case_dir/spawn.log" 2>&1 &
       pid=$!
       for ((i = 0; i < 300; i++)); do
@@ -675,6 +717,12 @@ Exercise an Orca spawn interrupted before launch delivery.
 
 ## Firstmate spec
 Confirm the staged credential file is removed.
+
+# Definition of done
+Delivery contract: mode=direct-PR
+Ship branch: chore/no-ticket-$id
+Ticket: no-ticket
+Commit type: chore
 EOF
     fb=$(make_orca_fakebin "$case_dir")
     printf '#!/bin/sh\necho "GH_TOKEN=synthetic-interrupt-token"\n' > "$fb/tmux"
@@ -697,7 +745,7 @@ SH
       FM_SPAWN_NO_GUARD=1 FM_TEST_ORCA_DIR="$case_dir" \
       FM_TEST_ORCA_LOG="$case_dir/terminal.log" \
       PATH="$fb:$PATH" python3 -c 'import os,signal,sys; signal.signal(signal.SIGINT, signal.SIG_DFL); os.execvp(sys.argv[1], sys.argv[1:])' \
-      "$SPAWN" "$id" "$case_dir/project" --mode direct-PR --yolo off --backend orca \
+      "$SPAWN" "$id" "$case_dir/project" --mode direct-PR --yolo off --ticket no-ticket --commit-type chore --backend orca \
       --harness "touch '$case_dir/worker-ran'" > "$case_dir/spawn.log" 2>&1 &
     pid=$!
     for ((i = 0; i < 300; i++)); do
@@ -773,13 +821,19 @@ Exercise an Orca allowlist without a configured source.
 
 ## Firstmate spec
 Confirm the spawn reports where allowlisted values come from.
+
+# Definition of done
+Delivery contract: mode=no-mistakes
+Ship branch: chore/no-ticket-$id
+Ticket: no-ticket
+Commit type: chore
 EOF
     fb=$(make_orca_fakebin "$case_dir")
     out=$(FM_ROOT_OVERRIDE='' FM_HOME="$home" HOME="$case_dir/user-home" \
       FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
       FM_PROJECTS_OVERRIDE="$home/projects" FM_CONFIG_OVERRIDE="$home/config" \
       FM_SPAWN_NO_GUARD=1 FM_TEST_ORCA_DIR="$case_dir" PATH="$fb:$PATH" \
-      "$SPAWN" "$id" "$case_dir/project" --mode no-mistakes --yolo off --backend orca 2>&1)
+      "$SPAWN" "$id" "$case_dir/project" --mode no-mistakes --yolo off --ticket no-ticket --commit-type chore --backend orca 2>&1)
     status=$?
     expect_code 0 "$status" "an Orca allowlist without a source should still spawn"$'\n'"$out"
     if [ "$allowlist" = named ]; then

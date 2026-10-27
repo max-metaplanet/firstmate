@@ -383,7 +383,9 @@ Weigh the comments people wrote first; treat automated status and risk-score com
 Any ClickUp read path will do - where this home installs the private \`cu-*\` helper, \`cu-task $ticket\` is one example - and the ticket's own page carries whatever a command does not print.
 If you cannot read it, report that in your first status line rather than proceeding silently on this brief alone.
 Before reporting the PR ready, check your change against the ticket's acceptance criteria and append \`ticket-scope=complete\` or \`ticket-scope=partial\` to your PR-ready status line.
-Declare complete only when this change completes the entire ticket, including required verification; otherwise declare partial."
+Plan and perform synthetic verification of every acceptance criterion before reporting the PR ready, using whatever means a worker can (tests, a probe PR, or a scripted dev/QA run), and record the evidence (test names, probe PR, or scripted run) in the PR body.
+Declare complete only when this PR delivers every acceptance criterion and you have verified each one yourself by those means; only post-merge live checks remain.
+Otherwise declare partial."
   # shellcheck disable=SC2034 # Output global, read by the sourcing caller.
   FM_TICKET_HEADER="
 Ticket: $ticket

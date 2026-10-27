@@ -25,7 +25,7 @@ make_case() {
 
   mkdir -p "$home/data/$id" "$home/projects" "$home/state" "$home/config"
   printf 'codex\n' > "$home/config/crew-harness"
-  fm_test_spawn_brief "$home" "$id"
+  fm_test_spawn_ship_brief "$home" "$id"
   touch "$home/state/.last-watcher-beat"
 
   git init --quiet -b "$default" "$project"
@@ -169,7 +169,7 @@ test_stale_pool_base_refreshes_before_branching() {
   rec=$(make_case current-base "$id")
   read_case_record "$rec"
 
-  out=$(run_spawn "$id" --mode no-mistakes --yolo off)
+  out=$(run_spawn "$id" --mode no-mistakes --yolo off --ticket no-ticket --commit-type chore)
   status=$?
   expect_code 0 "$status" "spawn should refresh a stale pooled worktree"
   assert_contains "$out" "spawned $id" "spawn did not report success"
@@ -184,19 +184,19 @@ test_stale_pool_base_refreshes_before_branching() {
   fi
 
   id='pool-current-base-repeat-r1'
-  fm_test_spawn_brief "$HOME_DIR" "$id"
+  fm_test_spawn_ship_brief "$HOME_DIR" "$id"
   # The pool hands one slot to the next task only after the previous task's
   # cleanup returned it and removed its record. Retire that record here so the
   # repeat models a real reuse; leaving it would be two live records naming one
   # copy, which the launch refuses by design.
   rm -f "$HOME_DIR/state/pool-current-base-r1.meta"
-  out=$(run_spawn "$id" --mode no-mistakes --yolo off)
+  out=$(run_spawn "$id" --mode no-mistakes --yolo off --ticket no-ticket --commit-type chore)
   status=$?
   expect_code 0 "$status" "repeating the base refresh should be idempotent"
   [ "$(git -C "$POOL_DIR" rev-parse HEAD)" = "$current" ] \
     || fail "an idempotent repeat moved the pool away from current origin/main"
 
-  git -C "$POOL_DIR" checkout --quiet -b "fm/$id"
+  git -C "$POOL_DIR" checkout --quiet -b "chore/no-ticket-$id"
   git -C "$POOL_DIR" diff --exit-code origin/main...HEAD >/dev/null \
     || fail "a branch created after spawn differs from current origin/main"
   assert_grep 'must survive a newly spawned branch' "$POOL_DIR/advanced-main.txt" \
@@ -210,7 +210,7 @@ test_non_main_default_branch_refreshes_before_branching() {
   rec=$(make_case current-trunk "$id" trunk)
   read_case_record "$rec"
 
-  out=$(run_spawn "$id" --mode no-mistakes --yolo off)
+  out=$(run_spawn "$id" --mode no-mistakes --yolo off --ticket no-ticket --commit-type chore)
   status=$?
   expect_code 0 "$status" "spawn should refresh a stale pooled worktree on a non-main default branch"
   current=$(git -C "$POOL_DIR" rev-parse "origin/$DEFAULT_BRANCH")
@@ -230,7 +230,7 @@ make_originless_case() {  # <name> <id>
 
   mkdir -p "$home/data/$id" "$home/projects" "$home/state" "$home/config"
   printf 'codex\n' > "$home/config/crew-harness"
-  fm_test_spawn_brief "$home" "$id"
+  fm_test_spawn_ship_brief "$home" "$id"
   touch "$home/state/.last-watcher-beat"
 
   git init --quiet -b main "$project"
@@ -252,7 +252,7 @@ test_originless_pool_launches_without_a_freshness_fetch() {
     || fail "fixture unexpectedly configured an origin remote"
   before=$(git -C "$POOL_DIR" rev-parse HEAD)
 
-  out=$(run_spawn "$id" --mode no-mistakes --yolo off)
+  out=$(run_spawn "$id" --mode no-mistakes --yolo off --ticket no-ticket --commit-type chore)
   status=$?
   expect_code 0 "$status" "spawn should launch a local-only pooled worktree with no origin"$'\n'"$out"
   assert_contains "$out" "spawned $id" "spawn did not report success for the origin-less pool"
@@ -275,7 +275,7 @@ test_originless_dirty_pool_refuses_without_discarding_work() {
   before=$(git -C "$POOL_DIR" rev-parse HEAD)
   printf 'keep this local work\n' > "$POOL_DIR/uncommitted.txt"
 
-  out=$(run_spawn "$id" --mode no-mistakes --yolo off)
+  out=$(run_spawn "$id" --mode no-mistakes --yolo off --ticket no-ticket --commit-type chore)
   status=$?
   [ "$status" -ne 0 ] || fail "spawn succeeded despite a dirty origin-less pooled worktree"
   assert_contains "$out" "is not clean" \
@@ -295,7 +295,7 @@ test_origin_config_without_url_refuses_pool() {
   git -C "$POOL_DIR" config remote.origin.fetch '+refs/heads/*:refs/remotes/origin/*'
   before=$(git -C "$POOL_DIR" rev-parse HEAD)
 
-  out=$(run_spawn "$id" --mode no-mistakes --yolo off)
+  out=$(run_spawn "$id" --mode no-mistakes --yolo off --ticket no-ticket --commit-type chore)
   status=$?
   [ "$status" -ne 0 ] || fail "spawn succeeded despite an origin configuration with no URL"
   assert_contains "$out" "could not fetch origin" \
@@ -315,7 +315,7 @@ test_empty_origin_config_section_refuses_pool() {
   printf '\n[remote "origin"]\n' >> "$config"
   before=$(git -C "$POOL_DIR" rev-parse HEAD)
 
-  out=$(run_spawn "$id" --mode no-mistakes --yolo off)
+  out=$(run_spawn "$id" --mode no-mistakes --yolo off --ticket no-ticket --commit-type chore)
   status=$?
   [ "$status" -ne 0 ] || fail "spawn succeeded despite an empty origin configuration section"
   assert_contains "$out" "could not fetch origin" \
@@ -337,7 +337,7 @@ test_empty_only_included_origin_config_section_launches_pool() {
   git -C "$POOL_DIR" config include.path "$(basename "$included")"
   before=$(git -C "$POOL_DIR" rev-parse HEAD)
 
-  out=$(run_spawn "$id" --mode no-mistakes --yolo off)
+  out=$(run_spawn "$id" --mode no-mistakes --yolo off --ticket no-ticket --commit-type chore)
   status=$?
   expect_code 0 "$status" "spawn should proceed when an included empty origin section is not enumerable"$'\n'"$out"
   assert_contains "$out" "spawned $id" "spawn did not report success for the undetectable included section"
@@ -359,7 +359,7 @@ test_inactive_conditional_origin_include_launches_pool() {
   git -C "$POOL_DIR" config 'includeIf.gitdir:/never/matches/this/worktree/.path' "$included"
   before=$(git -C "$POOL_DIR" rev-parse HEAD)
 
-  out=$(run_spawn "$id" --mode no-mistakes --yolo off)
+  out=$(run_spawn "$id" --mode no-mistakes --yolo off --ticket no-ticket --commit-type chore)
   status=$?
   expect_code 0 "$status" "spawn should ignore an inactive conditional origin include"$'\n'"$out"
   assert_contains "$out" "spawned $id" "spawn did not report success with an inactive origin include"
@@ -376,7 +376,7 @@ test_unreachable_origin_refuses_stale_pool_base() {
   git -C "$POOL_DIR" remote set-url origin "file://$CASE_DIR/missing-origin.git"
   before=$(git -C "$POOL_DIR" rev-parse HEAD)
 
-  out=$(run_spawn "$id" --mode no-mistakes --yolo off)
+  out=$(run_spawn "$id" --mode no-mistakes --yolo off --ticket no-ticket --commit-type chore)
   status=$?
   [ "$status" -ne 0 ] || fail "spawn succeeded despite an unreachable origin"
   assert_contains "$out" "could not fetch origin" \
@@ -398,7 +398,8 @@ test_direct_pr_and_scout_refresh_before_launch() {
     if [ "$contract" = scout ]; then
       out=$(run_spawn "$id" --scout)
     else
-      out=$(run_spawn "$id" --mode direct-PR --yolo off)
+      fm_test_spawn_ship_brief "$HOME_DIR" "$id" "Exercise a direct-PR spawn." direct-PR
+      out=$(run_spawn "$id" --mode direct-PR --yolo off --ticket no-ticket --commit-type chore)
     fi
     status=$?
     expect_code 0 "$status" "$contract spawn should refresh a stale pooled worktree"
@@ -422,7 +423,7 @@ test_dirty_pool_refuses_without_discarding_work() {
   before=$(git -C "$POOL_DIR" rev-parse HEAD)
   printf 'keep this local work\n' > "$POOL_DIR/uncommitted.txt"
 
-  out=$(run_spawn "$id" --mode no-mistakes --yolo off)
+  out=$(run_spawn "$id" --mode no-mistakes --yolo off --ticket no-ticket --commit-type chore)
   status=$?
   [ "$status" -ne 0 ] || fail "spawn succeeded despite a dirty pooled worktree"
   assert_contains "$out" "is not clean" "spawn did not clearly refuse a dirty pooled worktree"
@@ -445,7 +446,7 @@ test_unresolved_remote_default_refuses_pool() {
   git --git-dir="$CASE_DIR/origin.git" symbolic-ref HEAD refs/heads/missing-default
   before=$(git -C "$POOL_DIR" rev-parse HEAD)
 
-  out=$(run_spawn "$id" --mode no-mistakes --yolo off)
+  out=$(run_spawn "$id" --mode no-mistakes --yolo off --ticket no-ticket --commit-type chore)
   status=$?
   [ "$status" -ne 0 ] || fail "spawn succeeded despite an unresolved remote default branch"
   assert_contains "$out" "could not resolve origin's current default branch" \
@@ -477,7 +478,7 @@ make_submodule_case() {  # <name> <id>
 
   mkdir -p "$home/data/$id" "$home/projects" "$home/state" "$home/config"
   printf 'codex\n' > "$home/config/crew-harness"
-  fm_test_spawn_brief "$home" "$id"
+  fm_test_spawn_ship_brief "$home" "$id"
   touch "$home/state/.last-watcher-beat"
 
   git init --quiet -b main "$sub"
@@ -524,8 +525,8 @@ EOF
 # starts from residue this code path actually produced rather than a hand-built one.
 strand_submodule_pin_via_spawn() {  # <seed-id>
   local id=$1 out status
-  fm_test_spawn_brief "$HOME_DIR" "$id"
-  out=$(run_spawn "$id" --mode no-mistakes --yolo off)
+  fm_test_spawn_ship_brief "$HOME_DIR" "$id"
+  out=$(run_spawn "$id" --mode no-mistakes --yolo off --ticket no-ticket --commit-type chore)
   status=$?
   expect_code 0 "$status" "the spawn that moves the submodule pin should succeed"
   assert_contains "$out" "spawned $id" "the spawn that moves the submodule pin did not report success"
@@ -550,7 +551,7 @@ test_stale_submodule_pin_explains_itself() {
   before=$(git -C "$POOL_DIR" rev-parse HEAD)
   before_sub=$(git -C "$POOL_DIR/ui" rev-parse HEAD)
 
-  out=$(run_spawn "$id" --mode no-mistakes --yolo off)
+  out=$(run_spawn "$id" --mode no-mistakes --yolo off --ticket no-ticket --commit-type chore)
   status=$?
   [ "$status" -ne 0 ] || fail "the second spawn launched from a slot carrying a stale submodule pin"
   assert_contains "$out" "stale submodule checkout" \
@@ -597,7 +598,7 @@ test_unpushed_submodule_commit_is_still_uncommitted_work() {
   before=$(git -C "$POOL_DIR" rev-parse HEAD)
   before_sub=$unpushed
 
-  out=$(run_spawn "$id" --mode no-mistakes --yolo off)
+  out=$(run_spawn "$id" --mode no-mistakes --yolo off --ticket no-ticket --commit-type chore)
   status=$?
   [ "$status" -ne 0 ] || fail "spawn launched from a slot holding an unpushed submodule commit"
   assert_contains "$out" "refusing to discard uncommitted work" \
@@ -628,7 +629,7 @@ test_work_inside_submodule_is_still_uncommitted_work() {
   git -C "$POOL_DIR/ui" checkout --quiet "$SUBPIN2"
   printf 'work that must survive\n' > "$POOL_DIR/ui/keep-me.txt"
 
-  out=$(run_spawn "$id" --mode no-mistakes --yolo off)
+  out=$(run_spawn "$id" --mode no-mistakes --yolo off --ticket no-ticket --commit-type chore)
   status=$?
   [ "$status" -ne 0 ] || fail "spawn launched from a slot holding work inside a submodule"
   assert_contains "$out" "refusing to discard uncommitted work" \
@@ -650,7 +651,7 @@ test_stale_pin_carrying_real_work_is_not_called_stale() {
   # the refusal must stay the conservative one.
   printf 'work that must survive\n' > "$POOL_DIR/ui/keep-me.txt"
 
-  out=$(run_spawn "$id" --mode no-mistakes --yolo off)
+  out=$(run_spawn "$id" --mode no-mistakes --yolo off --ticket no-ticket --commit-type chore)
   status=$?
   [ "$status" -ne 0 ] || fail "spawn launched from a slot with a stale pin and work inside it"
   assert_contains "$out" "refusing to discard uncommitted work" \
@@ -672,7 +673,7 @@ test_stale_pin_beside_other_dirt_reports_one_verdict() {
   # The conservative verdict must not arrive contradicted by a stale-pin line.
   printf 'notes the operator still wants\n' > "$POOL_DIR/zz-notes.txt"
 
-  out=$(run_spawn "$id" --mode no-mistakes --yolo off)
+  out=$(run_spawn "$id" --mode no-mistakes --yolo off --ticket no-ticket --commit-type chore)
   status=$?
   [ "$status" -ne 0 ] || fail "spawn launched from a slot with a stale pin beside an untracked file"
   assert_contains "$out" "refusing to discard uncommitted work" \
@@ -746,7 +747,7 @@ test_pool_slot_claim_follows_the_spawn_outcome() {
   read_case_record "$rec"
   lay_out_as_pool_slot
   git -C "$POOL_DIR" config remote.origin.fetch '+refs/heads/*:refs/remotes/origin/*'
-  out=$(run_spawn "$id" --mode no-mistakes --yolo off)
+  out=$(run_spawn "$id" --mode no-mistakes --yolo off --ticket no-ticket --commit-type chore)
   status=$?
   [ "$status" -ne 0 ] || fail "spawn succeeded despite an unusable origin on the slot"
   assert_contains "$out" "could not fetch origin" \
@@ -842,7 +843,7 @@ test_refused_launch_leaves_the_pool_for_a_retry_and_a_second_task() {
   rm -rf "/tmp/fm-$id" "/tmp/fm-$other"
   rec=$(make_case refused-retry "$id")
   read_case_record "$rec"
-  fm_test_spawn_brief "$HOME_DIR" "$other"
+  fm_test_spawn_ship_brief "$HOME_DIR" "$other"
   mkdir -p "$CASE_DIR/publisher/.polytoken"
   printf '[]\n' > "$CASE_DIR/publisher/.polytoken/hooks.json"
   git -C "$CASE_DIR/publisher" add .polytoken/hooks.json
@@ -867,7 +868,7 @@ exit 0
 SH
   chmod +x "$FAKEBIN_DIR/polytoken"
 
-  out=$(run_spawn "$id" --harness polytoken --model zai/glm-5.3-flash --effort low --mode no-mistakes --yolo off)
+  out=$(run_spawn "$id" --harness polytoken --model zai/glm-5.3-flash --effort low --mode no-mistakes --yolo off --ticket no-ticket --commit-type chore)
   status=$?
   [ "$status" -ne 0 ] || fail "a polytoken launch into a project with its own hook layer should refuse"
   assert_contains "$out" "not firstmate's to clobber" "the refusal message changed"$'\n'"$out"
@@ -877,13 +878,13 @@ SH
   [ ! -e "$claim1" ] && [ ! -e "$claim2" ] || fail "the refused launch left a slot claim behind"
   [ ! -e "/tmp/fm-$id" ] || fail "the refused launch left its task temp root behind"
 
-  out=$(run_spawn "$id" --harness codex --mode no-mistakes --yolo off)
+  out=$(run_spawn "$id" --harness codex --mode no-mistakes --yolo off --ticket no-ticket --commit-type chore)
   status=$?
   expect_code 0 "$status" "the retry of the refused task should launch"$'\n'"$out"
   assert_grep "worktree=$slot_root/1/project" "$HOME_DIR/state/$id.meta" \
     "the retry did not land on the slot the refused launch returned"
 
-  out=$(run_spawn "$other" --harness codex --mode no-mistakes --yolo off)
+  out=$(run_spawn "$other" --harness codex --mode no-mistakes --yolo off --ticket no-ticket --commit-type chore)
   status=$?
   expect_code 0 "$status" "a second task spawned after the retry should launch"$'\n'"$out"
   assert_grep "worktree=$slot_root/2/project" "$HOME_DIR/state/$other.meta" \
@@ -940,7 +941,7 @@ exit 0
 SH
   chmod +x "$FAKEBIN_DIR/polytoken"
 
-  out=$(run_spawn "$id" --harness polytoken --model zai/glm-5.3-flash --effort low --mode no-mistakes --yolo off)
+  out=$(run_spawn "$id" --harness polytoken --model zai/glm-5.3-flash --effort low --mode no-mistakes --yolo off --ticket no-ticket --commit-type chore)
   status=$?
   holder_pid=$(cat "$CASE_DIR/holder.pid" 2>/dev/null || true)
   [ -z "$holder_pid" ] || kill "$holder_pid" 2>/dev/null || true
@@ -972,7 +973,7 @@ test_non_polytoken_refused_launch_keeps_its_window() {
   world="$CASE_DIR/tmux-world"
   install_pool_world_tmux "$FAKEBIN_DIR" "$world" "$slot_root"
 
-  out=$(run_spawn "$id" --harness codex --mode no-mistakes --yolo off)
+  out=$(run_spawn "$id" --harness codex --mode no-mistakes --yolo off --ticket no-ticket --commit-type chore)
   status=$?
   [ "$status" -ne 0 ] || fail "a codex launch on a slot with an unusable origin should refuse"
   assert_contains "$out" "could not fetch origin" "the codex refusal message changed"$'\n'"$out"
@@ -1017,7 +1018,7 @@ test_treehouse_isolation_refusal_points_at_what_survives() {
   read_case_record "$rec"
   fm_test_fake_sleep_noop "$FAKEBIN_DIR"
   install_isolation_flip_git "$FAKEBIN_DIR" "$POOL_DIR"
-  out=$(run_spawn "$id" --harness codex --mode no-mistakes --yolo off)
+  out=$(run_spawn "$id" --harness codex --mode no-mistakes --yolo off --ticket no-ticket --commit-type chore)
   status=$?
   [ "$status" -ne 0 ] || fail "a codex spawn whose slot stopped being isolated should refuse"
   assert_contains "$out" "treehouse get did not yield an isolated worktree" \
@@ -1040,7 +1041,7 @@ esac
 exit 0
 SH
   chmod +x "$FAKEBIN_DIR/polytoken"
-  out=$(run_spawn "$id" --harness polytoken --model zai/glm-5.3-flash --effort low --mode no-mistakes --yolo off)
+  out=$(run_spawn "$id" --harness polytoken --model zai/glm-5.3-flash --effort low --mode no-mistakes --yolo off --ticket no-ticket --commit-type chore)
   status=$?
   [ "$status" -ne 0 ] || fail "a polytoken spawn whose slot stopped being isolated should refuse"
   assert_contains "$out" "treehouse get did not yield an isolated worktree" \
@@ -1062,7 +1063,7 @@ publish_feature_branch() { # <branch>
 }
 
 brief_with_base() { # <id> <base> [<intent>]
-  fm_test_spawn_brief "$HOME_DIR" "$1" ${3:+"$3"}
+  fm_test_spawn_ship_brief "$HOME_DIR" "$1" "${3:-Exercise named-base branch selection.}" direct-PR
   printf '\n# Setup\nYou are in a disposable git worktree of project, at a detached HEAD on a clean copy of its base branch.\nBase branch: %s\n' "$2" >> "$HOME_DIR/data/$1/brief.md"
 }
 
@@ -1075,7 +1076,7 @@ test_named_base_branch_starts_from_that_branch() {
     publish_feature_branch feature/hub
     brief_with_base "$id" feature/hub
     if [ "$kind" = ship ]; then
-      out=$(run_spawn "$id" --mode direct-PR --yolo off --base-branch feature/hub)
+      out=$(run_spawn "$id" --mode direct-PR --yolo off --ticket no-ticket --commit-type chore --base-branch feature/hub)
     else
       out=$(run_spawn "$id" --scout --base-branch feature/hub)
     fi
@@ -1103,7 +1104,7 @@ test_named_base_branch_starts_from_that_branch() {
   rec=$(make_case named-base-local-only "$id")
   read_case_record "$rec"
   brief_with_base "$id" feature/hub
-  out=$(run_spawn "$id" --mode local-only --yolo off --base-branch feature/hub)
+  out=$(run_spawn "$id" --mode local-only --yolo off --ticket no-ticket --commit-type chore --base-branch feature/hub)
   status=$?
   [ "$status" -ne 0 ] || fail "a base branch on a local-only ship should refuse the spawn"
   assert_contains "$out" "mode=local-only" "the local-only refusal did not explain itself"
@@ -1119,7 +1120,7 @@ test_base_branch_must_agree_with_the_brief() {
     publish_feature_branch feature/hub
     case "$case_name" in
     flag-only)
-      fm_test_spawn_brief "$HOME_DIR" "$id"
+      fm_test_spawn_ship_brief "$HOME_DIR" "$id"
       out=$(run_spawn "$id" --scout --base-branch feature/hub)
       ;;
     line-only)
@@ -1146,7 +1147,7 @@ test_prose_base_branch_line_is_ignored() {
   id='pool-base-prose-none-r1'
   rec=$(make_case base-prose-none "$id")
   read_case_record "$rec"
-  fm_test_spawn_brief "$HOME_DIR" "$id" $'Fix the release.\nBase branch: release/1.2'
+  fm_test_spawn_ship_brief "$HOME_DIR" "$id" $'Fix the release.\nBase branch: release/1.2'
   out=$(run_spawn "$id" --scout)
   status=$?
   expect_code 0 "$status" "a no-base brief quoting a Base branch line should launch"$'\n'"$out"

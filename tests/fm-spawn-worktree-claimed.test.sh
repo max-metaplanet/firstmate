@@ -49,7 +49,7 @@ make_case() {
   fakebin=$(make_claimed_fakebin "$case_dir/fake")
   fm_test_spawn_home "$home" codex
   fm_git_worktree "$proj" "$wt" "slot-$name"
-  fm_test_spawn_brief "$home" "$id" "Exercise claimed-worktree refusal for $id."
+  fm_test_spawn_ship_brief "$home" "$id" "Exercise claimed-worktree refusal for $id."
   printf '%s\n' "$case_dir|$home|$proj|$wt|$fakebin"
 }
 
@@ -67,7 +67,7 @@ run_case_spawn() {  # <id> [extra spawn args...]
     FM_PROJECTS_OVERRIDE="$HOME_DIR/projects" FM_CONFIG_OVERRIDE="$HOME_DIR/config" \
     FM_SPAWN_NO_GUARD=1 TMUX="fake,1,0" FM_FAKE_PANE_PATH="$WT_DIR" \
     PATH="$FAKEBIN_DIR:$PATH" \
-    "$ROOT/bin/fm-spawn.sh" "$id" "$PROJ_DIR" --mode no-mistakes --yolo off "$@" 2>&1
+    "$ROOT/bin/fm-spawn.sh" "$id" "$PROJ_DIR" --mode no-mistakes --yolo off --ticket no-ticket --commit-type chore "$@" 2>&1
 }
 
 test_copy_named_by_another_record_in_this_home_is_refused() {

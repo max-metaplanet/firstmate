@@ -59,7 +59,9 @@
 # header owns that format and its --branch-prefix query) is the captain's
 # standing per-project preference, and firstmate resolves it per task at intake
 # and passes the explicit flag. Refused on --scout and --secondmate: a scout
-# makes no branch and a charter is not a delivery contract.
+# makes no branch and a charter is not a delivery contract. The prefix is legacy:
+# bin/fm-spawn.sh and bin/fm-promote.sh refuse a new ship without --ticket, so a
+# brief meant to ship needs the ticket pair below.
 # --ticket <ENG-123|no-ticket> with --commit-type <type> puts the ship on the
 # captain's ticket convention: the branch becomes "<type>/<ticket>-<task-id>"
 # instead of the "fm/" prefix, and the Definition of done's machine-readable
@@ -72,7 +74,7 @@
 # and that rendered text. The two flags come as a pair: a ticket without a type
 # is refused rather than given a guessed one, a type without a ticket has no
 # meaning, and neither combines with --branch-prefix, which the convention
-# replaces. Omitting --ticket changes nothing at all. Refused on --scout and
+# replaces. Omitting --ticket leaves the brief unchanged. Refused on --scout and
 # --secondmate for the same reason --branch-prefix is.
 # --base-branch <branch> starts the task from origin's <branch> instead of the
 # repository default, for work that belongs on a named integration, feature, or

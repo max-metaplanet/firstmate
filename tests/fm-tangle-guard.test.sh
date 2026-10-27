@@ -128,7 +128,7 @@ test_brief_assertion_precedes_branch() {
   local home brief iso br
   home="$TMP_ROOT/brief-home"
   mkdir -p "$home/data"
-  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" tangle-brief-cc3 alpha --mode no-mistakes >/dev/null 2>&1
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" tangle-brief-cc3 alpha --mode no-mistakes --ticket no-ticket --commit-type chore >/dev/null 2>&1
   brief="$home/data/tangle-brief-cc3/brief.md"
   assert_present "$brief" "brief was not scaffolded"
   # shellcheck disable=SC2016 # The generated instruction keeps the stamp literal.
@@ -141,7 +141,7 @@ test_brief_assertion_precedes_branch() {
   assert_no_grep "they are identical in the primary checkout" "$brief" \
     "brief must not claim the primary checkout has identical git dirs"
   iso=$(grep -n 'launched in primary checkout, not an isolated worktree' "$brief" | head -1 | cut -d: -f1)
-  br=$(grep -n 'git checkout -b fm/' "$brief" | head -1 | cut -d: -f1)
+  br=$(grep -n 'git checkout -b chore/no-ticket-' "$brief" | head -1 | cut -d: -f1)
   if [ -z "$iso" ] || [ -z "$br" ]; then
     fail "brief missing assertion ($iso) or branch step ($br)"
   fi
@@ -154,9 +154,9 @@ test_brief_assertion_precedes_branch() {
 # Spawn isolation uses the shared spawn fakebin (pane path + window ops).
 run_spawn() {
   local home=$1 id=$2 proj=$3 pane=$4 fakebin=$5
-  fm_test_spawn_brief "$home" "$id" brief
+  fm_test_spawn_ship_brief "$home" "$id" brief
   FM_TREEHOUSE_GET_TIMEOUT=5 fm_test_run_spawn "$home" "$pane" "$fakebin" \
-    "$id" "$proj" codex --mode no-mistakes --yolo off
+    "$id" "$proj" codex --mode no-mistakes --ticket no-ticket --commit-type chore --yolo off
 }
 
 test_spawn_isolation_abort() {
@@ -260,10 +260,10 @@ SH
 
 run_spawn_record() {
   local home=$1 id=$2 proj=$3 pane=$4 fakebin=$5 rec=$6
-  fm_test_spawn_brief "$home" "$id" brief
+  fm_test_spawn_ship_brief "$home" "$id" brief
   FM_TMUX_REC="$rec" \
     fm_test_run_spawn "$home" "$pane" "$fakebin" \
-    "$id" "$proj" codex --mode no-mistakes --yolo off
+    "$id" "$proj" codex --mode no-mistakes --ticket no-ticket --commit-type chore --yolo off
 }
 
 test_spawn_tmux_window_construction() {
