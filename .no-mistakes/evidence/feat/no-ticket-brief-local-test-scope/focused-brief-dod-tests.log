@@ -1,0 +1,106 @@
+FM_TEST_BEGIN 2026-10-27T10:49:15Z tests/fm-brief.test.sh family=pure-contract-unit expected_gate_skip=none
+ok - fm-brief: scaffolds leave the worker role scope to the launch boundary and keep the secondmate contract
+ok - fm-brief.sh: bash -n succeeds
+~/.no-mistakes/worktrees/61c6dd39b831/.fm-test-scratch/fm-test-run.mh6DYT/w1/tmp/fm-brief.1G8pel/heredoc-in-substitution.sh:2
+ok - fm-brief.sh: no heredoc is nested inside a command substitution (Bash 3.2 parse-safe)
+ok - fm-brief.sh: --help renders the complete header
+ok - fm-brief.sh: no-mistakes/direct-PR/local-only briefs generate cleanly
+ok - fm-brief.sh: --forge forgejo names tea in Rule 3, the direct-PR DOD, and the draft read-back, marks the delivery contract, and the closed set refuses everything else
+ok - fm-brief.sh: --forge external renders the no-push rule, the review contract, and the adapter, and refuses every impossible shape
+ok - fm-brief.sh: ship --mode is required and closed-set validated
+ok - fm-brief.sh: the explicit ship mode wins over the registered posture
+ok - fm-brief.sh: --yolo and scout/secondmate --mode are refused, never silently dropped
+ok - fm-brief.sh: faster paths use configured authority without stacked review
+ok - fm-brief.sh: no-mistakes DOD keeps its apostrophe prose and bans --yes outright
+ok - fm-brief.sh: no-mistakes DOD detects a green PR from the drive call, not a status poll
+ok - fm-brief.sh: PR-based done requires a non-draft PR; a deliberate draft declares a wait
+ok - briefs start draft and preserve one worker push, pipeline ownership, and local-only delivery
+ok - all ship briefs scope local validation, preserve publication ownership, and forbid worker CI reruns
+ok - fm-brief.sh: the direct-PR DOD binds the PR target and base branch to origin
+ok - fm-brief.sh: no-mistakes ask-user findings use one event plus a verbatim snapshot
+ok - fm-brief.sh: ship project-memory wording bounds edits to corrections of wrong information
+ok - fm-brief.sh: --herdr-lab emits the complete hard safety contract
+ok - fm-brief.sh: --herdr-lab uses its quoted Firstmate-owned helper path
+ok - fm-brief.sh: ship and scout scaffolds make omitted Herdr intent fail-visible
+ok - fm-brief.sh: the documented {TASK} and {FIRSTMATE_SPEC} fills cannot corrupt the Herdr safety gate
+ok - fm-brief.sh: Herdr lab contract covers scouts and rejects secondmate misuse
+ok - fm-brief.sh: --no-projects scaffolds a project-less charter and guards misuse
+ok - fm-brief.sh: marked requests avoid generic acknowledgements and preserve material reporting
+ok - fm-brief.sh: relative directory inputs ignore CDPATH, render stable absolute charter paths, or fail loudly
+ok - fm-brief.sh: custom pause verb renders in every scaffold
+ok - fm-brief.sh: ship and scout scaffolds declare a validation-round pause once, then hold it
+ok - fm-brief.sh: investigation and visual-review completions load the shared decision policy
+ok - fm-brief: scout and secondmate code paths still scaffold well-formed briefs
+ok - fm-brief.sh: scout Lavish hosting follows the bootstrap lavish-axi floor
+ok - fm-brief: inbox listing is silent on empty/absent inbox and numerically ordered
+ok - fm-brief: workers end the turn on a decision, wait in one bounded shell command, and never poll
+ok - fm-brief: without config/wait-no-turns the brief and drive text stay as they were
+ok - fm-brief.sh: the home brief include lands last on ship and scout, verbatim, and fails closed
+ok - fm-brief.sh: --base-branch records the base, targets the PR at it, and is refused where no PR carries it
+ok - fm-brief.sh: --branch-prefix omitted defaults every ship mode to fm/<task-id>
+ok - fm-brief.sh: a --branch-prefix override renders identically across every generated section
+ok - fm-brief.sh: an empty --branch-prefix override resolves to a bare <task-id> branch
+ok - fm-brief.sh: --branch-prefix is refused on scout and secondmate scaffolds
+ok - fm-brief.sh: --branch-prefix value is validated against embedded spaces and a leading dash
+Switched to a new branch '$(touch${IFS}branch-prefix-shell-safe-marker)brief-branch-safe-g3'
+ok - fm-brief.sh: ref-format-valid shell metacharacters stay literal in generated branch commands
+ok - fm-brief.sh: --ticket renders the convention and branch in every ship mode
+ok - hotfix briefs use fix branches and titles in every delivery mode
+ok - fm-brief.sh: the explicit no-ticket marker follows the convention
+ok - fm-brief.sh: omitting --ticket leaves the brief exactly as it was
+ok - fm-brief.sh: a ticketed no-mistakes brief corrects the pipeline's PR title
+ok - fm-brief.sh: the ticket and commit type are validated as a closed pair
+ok - fm-brief.sh: --ticket and --commit-type are refused on scouts and charters
+ok - fm-brief.sh: every crewmate scaffold forbids administering the shared worktree pool
+ok - fm-brief.sh: ship, scout, and secondmate escalation paths all require the checked part
+ok - ticket-scope intake is explicit, defaults partial, and requires a real ticket
+FM_TEST_END 2026-10-27T10:55:53Z tests/fm-brief.test.sh exit=0 duration_ms=397110 gate_skip=false
+FM_TEST_BEGIN 2026-10-27T10:55:53Z tests/fm-dod-lib.test.sh family=pure-contract-unit expected_gate_skip=none
+ok - scout done: is not gated
+ok - unpushed ship done: is refused
+ok - a no-mistakes done: naming no PR is refused with the pipeline remedy
+ok - a CI-ready no-mistakes done: is not caught by the no-PR refusal
+ok - named head on a remote-tracking ref is accepted
+ok - a moved remote branch that lacks the named head is refused
+ok - a 40-hex token in the note is not the named head
+ok - a recorded merged PR satisfies the gate after prune
+ok - the merged-PR short-circuit applies only to the recorded PR the done line names
+ok - a forge-recorded head for the named PR is accepted without a local object
+ok - a direct-PR recorded head does not cover a later unpushed commit
+ok - CI-ready notes require checks green and an actual PR reference
+ok - no-mistakes CI-ready done: with extra text is gated
+ok - keyed and spaced ship done: lines are gated
+ok - local-only linked named branch is reachable from the project clone
+ok - local-only detached HEAD only in the disposable copy is refused
+ok - standalone local-only done: requires the named head in the project clone
+ok - non-done lines are not gated
+ok - fenced and indented Captain lines are not authorized intent
+ok - PR-based DoD draft check uses gh-axi
+ok - promotion keeps a scout's recorded base branch and refuses local-only for it
+ok - the no-mistakes DoD runs the pipeline from the implementation commit
+ok - forge=external composes with direct-PR only and refuses a base branch
+ok - external rule one forbids origin and task-prefixed pushes and names only the backup copy
+ok - external DoD renders the contract, the review grammar, and the adapter, and refuses without one
+ok - external review done: accepted on a canonical URL alone without a backup; PR, non-https, query, fragment, forge, and pattern mismatches refused
+ok - external review done with a backup: refused until HEAD is under refs/remotes/backup/backup/, then accepted
+ok - worker role names the skill and its fallback skill file
+ok - a direct-PR PR on the fork's parent repository is refused
+ok - a direct-PR PR on the fork's own origin is accepted
+ok - a plain clone's direct-PR PR is bound to its own origin
+ok - a wrong-repository PR is refused before the recorded-PR path
+ok - a direct-PR origin through an SSH alias accepts its own PR only
+ok - the origin binding covers direct-PR forge origins only
+ok - a pushed head is accepted through a narrowed remote.origin.fetch
+ok - a head origin never received is still refused, with safe-ref guidance
+fatal: update_ref failed for ref 'refs/heads/x$(touch${IFS}~/.no-mistakes/worktrees/61c6dd39b831/.fm-test-scratch/fm-test-run.mh6DYT/w2/tmp/fm-dod-lib.MYzYCE/hostile-marker)y': refusing to update ref with bad name 'refs/heads/x$(touch${IFS}~/.no-mistakes/worktrees/61c6dd39b831/.fm-test-scratch/fm-test-run.mh6DYT/w2/tmp/fm-dod-lib.MYzYCE/hostile-marker)y'
+ok - a hostile remote ref name is read as data, not run
+ok - an origin that cannot be read keeps the refusal rather than accepting
+ok - a stalled origin read is cut off by the gate's bound
+ok - local-only keeps its project-heads rule and reads no remote
+all fm-dod-lib tests passed
+FM_TEST_END 2026-10-27T10:59:44Z tests/fm-dod-lib.test.sh exit=0 duration_ms=230300 gate_skip=false
+FM_TEST_SUMMARY total=2 failed=0 skipped_gate=0 duration_ms=632431
+FM_TEST_SUMMARY_FAMILY family=pure-contract-unit count=2 duration_ms=627410 failed=0
+FM_TEST_SLOWEST rank=1 script=tests/fm-brief.test.sh duration_ms=397110
+FM_TEST_SLOWEST rank=2 script=tests/fm-dod-lib.test.sh duration_ms=230300
+bash bin/fm-test-run.sh tests/fm-brief.test.sh tests/fm-dod-lib.test.sh  26.72s user 37.99s system 10% cpu 10:34.42 total
