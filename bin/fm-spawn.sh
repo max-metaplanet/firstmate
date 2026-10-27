@@ -6468,7 +6468,8 @@ EOF
 # rather than shipping a runtime that cannot strip.
 # A forge=external ship always gets this directory, because its pre-push
 # wrapper carries the guard that keeps task branches off the shared origin; a
-# home that keeps trailers gets a commit-msg wrapper that only chains.
+# home that keeps trailers gets a commit-msg wrapper only when the repository
+# has a commit-msg hook, and that wrapper only chains.
 GIT_HOOKS_DIR="$STATE_REAL/$ID.git-hooks"
 GIT_HOOKS_INSTALLED=0
 if [ "$EXTERNAL_REVIEW" = 1 ]; then

@@ -276,6 +276,26 @@ test_nested_launch_still_runs_the_project_hook() {
   pass "a nested launch whose parent lacks a wrapper still runs the project's own hook"
 }
 
+test_nested_launch_keeps_a_custom_hookspath_override() {
+  local repo custom hooks
+  repo="$TMP_ROOT/nested-custom-wt"
+  make_repo "$repo"
+  write_refusing_pre_push "$repo/.git/hooks/pre-commit" "$TMP_ROOT/nested-custom.pre-commit"
+  custom="$TMP_ROOT/nested-custom-hooks"
+  mkdir -p "$custom"
+  hooks="$TMP_ROOT/hooks-nested-custom"
+  with_hooks_env "$custom" "$STRIP" install "$hooks" "$repo" || fail "child install should succeed"
+  printf 'note\n' >>"$repo/README.md"
+  git -C "$repo" add README.md
+  GIT_CONFIG_COUNT=2 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=$custom \
+    GIT_CONFIG_KEY_1=core.hooksPath GIT_CONFIG_VALUE_1=$hooks \
+    git -C "$repo" commit -q -m 'fix: custom override' ||
+    fail "the commit failed although the inherited custom hooksPath has no pre-commit"
+  [ ! -e "$TMP_ROOT/nested-custom.pre-commit" ] ||
+    fail "an inherited custom hooksPath was bypassed to run the repository's pre-commit"
+  pass "an inherited non-fleet hooksPath override stands, as in plain git"
+}
+
 test_project_hook_generated_after_install_runs_after_reinstall() {
   local repo hooks
   repo="$TMP_ROOT/late-husky"
@@ -606,6 +626,7 @@ test_previous_commit_msg_hook_still_runs
 test_relative_project_hookspath_still_runs
 test_inherited_hookspath_env_does_not_decide_the_chain
 test_nested_launch_still_runs_the_project_hook
+test_nested_launch_keeps_a_custom_hookspath_override
 test_project_hook_generated_after_install_runs_after_reinstall
 test_lfs_pre_push_in_another_repository_runs
 test_pane_hookspath_does_not_reroute_another_repository

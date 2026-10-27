@@ -177,9 +177,11 @@ write_executable() {
 # point here, so the wrapper cannot recurse into itself. An empty
 # core.hooksPath makes that lookup fail, but plain git reads it as "no hooks",
 # so the wrapper runs none; any other failure reruns the lookup to show git's
-# error and refuses. When the lookup names an inherited launch's directory
-# (a nested spawn) that has no wrapper for this name, its entries are dropped
-# too and the lookup repeats, so the repository's own hook still runs.
+# error and refuses. When the lookup names another launch's directory, which
+# install marks with .fm-git-hooks (a nested spawn), and it has no wrapper for
+# this name, its entries are dropped too and the lookup repeats, so the
+# repository's own hook still runs. Any other inherited core.hooksPath stands,
+# as in plain git.
 runtime_chain_body() {
   local ours=$1
   cat <<EOF
@@ -219,6 +221,7 @@ while :; do
   if [ -x "\$orig/\$name" ]; then
     exec "\$orig/\$name" "\$@"
   fi
+  [ -e "\$orig/.fm-git-hooks" ] || break
   drop=\$orig
 done
 EOF
@@ -313,6 +316,7 @@ install_hooks() {
   rm -rf "$hooks_dir"
   mkdir -p "$hooks_dir" || return 1
   chmod 700 "$hooks_dir" 2>/dev/null || true
+  : >"$hooks_dir/.fm-git-hooks" || return 1
   hooks_dir=$(CDPATH='' cd -- "$hooks_dir" && pwd -P) || return 1
 
   chain=
