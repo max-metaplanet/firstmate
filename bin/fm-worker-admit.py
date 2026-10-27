@@ -20,7 +20,7 @@ Exit 75 is the only capacity retry; under replay, fm-spawn also exits 75 for
 the away spend cap and seat-quota holds. A fleet-wide or spend-cap deferral
 ends the tick's replays; a project or seat deferral skips that project's or
 harness's remaining records until the next tick. Any other refusal backs off and retries;
-after REFUSALS consecutive refusals the record is quarantined with its reason,
+after REFUSALS refusals since the last explicit dispatch the record is quarantined with its reason,
 reported once as a blocked line in state/<id>.status, and never replayed. An
 explicit dispatch clears it: launching consumes the record and a new capacity
 deferral rewrites it without the refusal history a replay carries forward.
