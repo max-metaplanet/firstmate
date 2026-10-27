@@ -28,7 +28,8 @@
 # per-project counts, allocated bytes selected by dry run, and allocated bytes
 # removed by apply. Dry run is a single pass; apply prints one pass per removal,
 # or one pass that removes nothing. Allocation is measured with du -sk, not an
-# APFS physical-free-space guarantee.
+# APFS physical-free-space guarantee. A copy whose allocation cannot be measured
+# is still pruned and reports null allocated bytes.
 set -eu
 if [ "${1:-}" = --help ] || [ "${1:-}" = -h ]; then
   sed -n '2,/^set /{ /^#/s/^# \{0,1\}//p; }' "$0"

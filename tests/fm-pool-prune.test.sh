@@ -154,6 +154,18 @@ else:
         self.assertEqual(rc, 0, self.output)
         self.assertEqual(report['copies_pruned'], 0)
 
+    def test_unmeasured_copy_still_pruned(self):
+        slots = [self.slot() for _ in range(2)]
+        self.tool("du", "import sys; sys.exit(1)")
+        self.cap(0)
+        rc, report = self.invoke(True)
+        self.assertEqual(rc, 0, self.output)
+        self.assertFalse(any(p.exists() for p in slots))
+        self.assertEqual(sum(r['copies_pruned'] for r in self.reports), 2)
+        self.assertEqual(sum(r['bytes_reclaimed'] for r in self.reports), 0)
+        pruned = [c for r in self.reports for c in r['copies'] if c['decision'] == 'pruned']
+        self.assertEqual([c['allocated_bytes'] for c in pruned], [None, None])
+
     def test_active_and_leased_excluded(self):
         active = self.slot(status='in-use', processes=[dict(pid=123, name='worker')])
         leased = self.slot(status='leased', lease_id='durable')

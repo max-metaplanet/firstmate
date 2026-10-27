@@ -135,7 +135,10 @@ def refusal(row, project, copies):
 
 
 def allocated(path):
-    return int(run("du", "-sk", str(path)).split()[0]) * 1024
+    try:
+        return int(run("du", "-sk", str(path)).split()[0]) * 1024
+    except (ValueError, IndexError, OSError, subprocess.SubprocessError):
+        return None
 
 
 def main():
@@ -171,7 +174,7 @@ def main():
                 decision.update(decision="refuse", reason=reason)
                 continue
             path = Path(row["path"])
-            size = 0 if args.no_measure else allocated(path)
+            size = None if args.no_measure else allocated(path)
             run("treehouse", "destroy", str(path), cwd=project)
             if args.apply:
                 # Re-read both ownership planes after the provider preview.
@@ -185,10 +188,10 @@ def main():
                 if path.exists():
                     raise ValueError("Treehouse left the copy present")
                 report["copies_pruned"] += 1
-                report["bytes_reclaimed"] += size
+                report["bytes_reclaimed"] += size or 0
             else:
                 report["copies_would_prune"] += 1
-                report["bytes_would_reclaim"] += size
+                report["bytes_would_reclaim"] += size or 0
             decision.update(decision="pruned" if args.apply else "would-prune", allocated_bytes=size)
             excess -= 1
             selected += 1
