@@ -4187,7 +4187,7 @@ if [ "$TREEHOUSE_PROJECT_LOCK_HELD" = 1 ] && [ "${wt_pool_slot:-0}" = 1 ] &&
    [ "$TEARDOWN_POOL_SLOT_LOST" = 0 ]; then
   # shellcheck source=bin/fm-pool-prune-lib.sh
   . "$SCRIPT_DIR/fm-pool-prune-lib.sh"
-  fm_pool_prune_locked "$PROJ" "$CONFIG" "$STATE" --apply ||
+  fm_pool_prune_locked "$PROJ" "$CONFIG" "$STATE" --apply >/dev/null ||
     echo 'warning: idle Treehouse pool cap could not be met; protected copies were retained' >&2
 fi
 if [ -e "$CONFIG/task-event-hook" ] || [ -e "$CONFIG/ticket-sync-hook" ]; then

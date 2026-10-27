@@ -9,9 +9,9 @@ import subprocess
 import sys
 
 
-def run(*args, cwd=None):
+def run(*args, cwd=None, timeout=60):
     return subprocess.check_output(args, cwd=cwd, text=True, stderr=subprocess.PIPE,
-                                   timeout=60).strip()
+                                   timeout=timeout).strip()
 
 
 def git(path, *args):
@@ -100,12 +100,19 @@ def publication(path):
     raise ValueError("HEAD is not published on origin")
 
 
-def refusal(row, project, copies):
-    path = Path(row["path"])
+def activity(row):
     if row["lease_id"] or row.get("lease_holder") or row.get("leased_at") or row["status"] == "leased":
         return "leased"
     if row["processes"] or row["status"] in ("in-use", "you're here"):
         return "in use"
+    return ""
+
+
+def refusal(row, project, copies):
+    path = Path(row["path"])
+    reason = activity(row)
+    if reason:
+        return reason
     marker = path.parent / ".fm-slot-owner"
     if marker.exists() or marker.is_symlink():
         return "Firstmate slot claim exists"
@@ -145,8 +152,7 @@ def main():
         raise ValueError("safe exact-target destroy requires Treehouse >=3.1.3")
     rows = inventory(project)
     copies = task_copies(args.state_dirs)
-    idle = [row for row in rows if not row["lease_id"] and row["status"] not in
-            ("leased", "in-use", "you're here") and not row["processes"]]
+    idle = [row for row in rows if not activity(row)]
     excess = max(0, len(idle) - cap)
     report = dict(project=project.name, cap=cap, idle_before=len(idle), dry_run=not args.apply,
                   copies_pruned=0, bytes_reclaimed=0, copies_would_prune=0,
@@ -172,7 +178,7 @@ def main():
                 reason = refusal(fresh[str(path)], project, task_copies(args.state_dirs))
                 if reason:
                     raise ValueError(reason)
-                run("treehouse", "destroy", str(path), "--yes", cwd=project)
+                run("treehouse", "destroy", str(path), "--yes", cwd=project, timeout=None)
                 if path.exists():
                     raise ValueError("Treehouse left the copy present")
                 report["copies_pruned"] += 1
