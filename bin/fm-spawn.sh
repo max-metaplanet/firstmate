@@ -223,8 +223,10 @@
 #   place for a capped clone of the same origin - and holds it through metadata
 #   publication. A spawn that finds
 #   every place held prints one `deferred:` line and exits 75 before any brief
-#   render, endpoint, worktree, record, or backlog move exists, so the task stays
-#   exactly as queued as it was; an unreadable declaration refuses with exit 1.
+#   render, endpoint, worktree, task metadata, or backlog move exists. A fresh
+#   ship with a filled brief records its resolved replay contract through
+#   fm-worker-admit.py; the existing worker-park tick retries it automatically.
+#   Unreadable declarations refuse with exit 1.
 #   A batch reports such a pair as `batch: DEFERRED` and exits 75 when nothing
 #   else failed. A relaunch and a --secondmate spawn are never counted against
 #   capacity.
@@ -1627,6 +1629,17 @@ spawn_orca_reclaim_launch_file() {
 
 spawn_abort_cleanup() {
   local status=$?
+  if [ "$status" = 75 ] && [ "${SPAWN_CAPACITY_REPLAY_READY:-0}" = 1 ]; then
+    if fm_brief_task_content_valid "$BRIEF" && ! fm_brief_task_placeholders_present "$BRIEF"; then
+      FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" FM_DATA_OVERRIDE="$DATA" FM_CONFIG_OVERRIDE="$CONFIG" \
+        python3 "$SCRIPT_DIR/fm-worker-admit.py" record "$ID" "$PROJ_ABS" "$MODE" "$YOLO" \
+          "$TICKET" "$COMMIT_TYPE" "$BRANCH_PREFIX" "$BASE_BRANCH" "$HARNESS" "$MODEL" "$EFFORT" \
+          "$BACKEND" "$UPSTREAM_CONSENT" "$TICKET_SCOPE" "$IGNORE_SEAT_HOLD" "$HERDR_RESUME_LOCK_WAIT" ||
+        echo "warning: task $ID has no complete automatic replay record; dispatch explicitly after capacity frees" >&2
+    else
+      echo "warning: task $ID has an incomplete brief; automatic admission skipped" >&2
+    fi
+  fi
   if [ -n "$SPAWN_TREEHOUSE_ACQUIRE" ]; then
     if spawn_cancel_treehouse_acquisition; then
       echo "treehouse get cancelled; pending acquisition stopped or prevented from starting" >&2
@@ -4028,6 +4041,14 @@ fi
 # any brief render, endpoint, worktree, record, or backlog move exists, so the
 # deferral leaves the task exactly as queued as it was. A relaunch replaces a
 # worker that already holds a place unless it was parked; a secondmate is not a worker.
+if [ "${FM_WORKER_AUTO_ADMIT:-0}" = 1 ]; then
+  FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" FM_DATA_OVERRIDE="$DATA" FM_CONFIG_OVERRIDE="$CONFIG" \
+    python3 "$SCRIPT_DIR/fm-worker-admit.py" verify "$ID" "${FM_WORKER_AUTO_ADMIT_DIGEST:-}" || exit 1
+fi
+SPAWN_CAPACITY_REPLAY_READY=0
+if [ "$RELAUNCH" = 0 ] && [ "$KIND" = ship ] && [ "$RAW_LAUNCH" = 0 ]; then
+  SPAWN_CAPACITY_REPLAY_READY=1
+fi
 SPAWN_PARK_RESUME=0
 if [ "$RELAUNCH" -eq 1 ] && fm_worker_park_load "$STATE/$ID.meta"; then
   SPAWN_PARK_RESUME=1
@@ -4144,6 +4165,7 @@ if [ "$RELAUNCH" -eq 0 ] || [ "$SPAWN_PARK_RESUME" = 1 ] || [ -n "$PARK_RESUME_M
     fi
   fi
 fi
+SPAWN_CAPACITY_REPLAY_READY=0
 [ -f "$BRIEF" ] || {
   echo "error: task $ID has no brief at inaccessible data path $BRIEF" >&2
   exit 1
@@ -4783,10 +4805,18 @@ herdr_projection_existing_meta_allows_flat() { # <meta>
 BACKLOG_TRANSITION=0
 BACKLOG_ROW_STATE=
 if [ "$KIND" != secondmate ] && [ "$RELAUNCH" -ne 1 ]; then
+  if [ "${FM_WORKER_AUTO_ADMIT:-0}" = 1 ]; then
+    IFS=',' read -r -a ADMISSION_TICKETS <<<"${FM_WORKER_AUTO_ADMIT_TICKETS:-}"
+    for ADMISSION_TICKET in ${ADMISSION_TICKETS[@]+"${ADMISSION_TICKETS[@]}"}; do
+      FM_HOME="$FM_HOME" FM_CONFIG_OVERRIDE="$CONFIG" FM_DATA_OVERRIDE="$DATA" FM_STATE_OVERRIDE="$STATE" \
+        bash "$SCRIPT_DIR/fm-work-intake.sh" admission-check "$ADMISSION_TICKET" >/dev/null || exit 1
+    done
+  fi
   # Independent local rows pass without invoking a source.
   FM_HOME="$FM_HOME" FM_CONFIG_OVERRIDE="$CONFIG" FM_DATA_OVERRIDE="$DATA" FM_STATE_OVERRIDE="$STATE" \
     bash "$SCRIPT_DIR/fm-work-intake.sh" check "$ID" >/dev/null || exit 1
 fi
+unset FM_WORKER_AUTO_ADMIT FM_WORKER_AUTO_ADMIT_DIGEST FM_WORKER_AUTO_ADMIT_TICKETS
 if fm_backlog_transition_applies "$CONFIG" "$DATA" "$KIND"; then
   BACKLOG_TRANSITION=1
   if fm_backlog_row_probe "$DATA" "$ID"; then

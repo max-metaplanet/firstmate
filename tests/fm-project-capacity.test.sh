@@ -251,6 +251,31 @@ test_available_capacity_admits_the_worker() {
   pass "a spawn is admitted while its project still has a free place"
 }
 
+test_freed_slot_automatically_admits_one_recorded_ship() {
+  local case_dir home pane out rc=0 id
+  case_dir=$(make_case autoadmit next-a next-b)
+  home="$case_dir/home"
+  declare_capacity "$home" "project 1"
+  write_live "$home" live-a "$case_dir/project"
+  for id in next-a next-b; do
+    rc=0
+    out=$(spawn_ship "$case_dir" "$id" "$case_dir/unused") || rc=$?
+    expect_code "$DEFER_EXIT" "$rc" "expected recorded capacity deferral: $out"
+  done
+  rm "$home/state/live-a.meta"
+  pane=$(new_worktree "$case_dir" admitted)
+  FM_ROOT_OVERRIDE='' FM_HOME="$home" FM_STATE_OVERRIDE='' FM_DATA_OVERRIDE='' FM_CONFIG_OVERRIDE='' \
+    FM_SPAWN_NO_GUARD=1 TMUX="fake,1,0" FM_BACKEND=tmux \
+    FM_FAKE_PANE_PATH="$pane" FM_FAKE_CALL_LOG="$case_dir/calls.log" PATH="$case_dir/fakebin:$PATH" \
+    bash "$ROOT/bin/fm-worker-park.sh" tick >"$case_dir/tick.log" 2>&1 || fail "automatic tick failed: $(cat "$case_dir/tick.log")"
+  assert_present "$home/state/next-a.meta" "a freed slot did not admit its first authorized ship"
+  assert_absent "$home/state/next-b.meta" "automatic admission exceeded project capacity"
+  assert_absent "$home/state/next-a.deferred-spawn.json" "successful admission retained its launch request"
+  assert_present "$home/state/next-b.deferred-spawn.json" "capacity deferral lost its retry"
+  assert_grep '"result": "admitted"' "$home/state/worker-admission.jsonl" "automatic admission left no durable outcome"
+  pass "freed project slot admits the recorded ship through real spawn and retains overflow"
+}
+
 test_exhausted_capacity_defers_without_leaving_anything_behind() {
   local case_dir home out rc=0 before worktrees
   case_dir=$(make_case exhausted task-c)
@@ -267,6 +292,11 @@ test_exhausted_capacity_defers_without_leaving_anything_behind() {
   assert_contains "$out" "task task-c was not launched and its backlog item stays queued" \
     "the deferral did not say the task stays queued"
   assert_nothing_created "$case_dir" "$home" task-c "$before" "$worktrees"
+  assert_present "$home/state/task-c.deferred-spawn.json" "capacity deferral lost the automatic replay contract"
+  jq -e --arg project "$case_dir/project" '.version == 1 and .task == "task-c" and .project == $project
+    and .mode == "no-mistakes" and .yolo == "off" and .harness == "codex" and .backend == "tmux"
+    and .branch_prefix == "fm/" and .base_branch == "" and (.brief_sha256 | length == 64)' \
+    "$home/state/task-c.deferred-spawn.json" >/dev/null || fail "replay contract omitted resolved launch axes"
   pass "a spawn beyond capacity is deferred before any record, brief, endpoint, worktree, or backlog move exists"
 }
 
@@ -735,3 +765,5 @@ test_failed_spawn_after_admission_holds_no_place
 test_unreadable_declaration_refuses_every_spawn
 test_batch_reports_a_deferred_pair
 test_orca_spawn_is_admitted_under_the_shared_project_lock
+
+test_freed_slot_automatically_admits_one_recorded_ship

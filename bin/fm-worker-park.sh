@@ -33,6 +33,8 @@
 # observers and remains recorded across resume and re-park.
 # tick retries deferred resumes and wakes parked workers with pending inbox
 # steering, including parked secondmates through fm-secondmate-park.sh tick.
+# After resumes, tick admits capacity-deferred ships through fm-worker-admit.py,
+# whose header owns replay records, ordering, audit and race safety.
 # fm-spawn owns both capacity checks and priority
 # admission. Exit 75 means deferred, not failed: the request is queued, or the
 # record was busy and the caller retries from its own durable source.
@@ -316,6 +318,8 @@ elif [ "$VERB" = tick ]; then
     fi
     one || true
   done
+  FM_DATA_OVERRIDE="${FM_DATA_OVERRIDE:-$FM_HOME/data}" FM_CONFIG_OVERRIDE="$CONFIG" FM_STATE_OVERRIDE="$STATE" \
+    python3 "$SCRIPT_DIR/fm-worker-admit.py" tick || TICK_RC=1
   exit "$TICK_RC"
 else
   one "$@"

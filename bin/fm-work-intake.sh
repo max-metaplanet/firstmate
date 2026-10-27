@@ -6,6 +6,10 @@
 #        fm-work-intake.sh refresh <local-id> [--json]
 #        fm-work-intake.sh review <local-id> --decision-file <path> [--json]
 #        fm-work-intake.sh check <local-id> [--json]
+#        fm-work-intake.sh admission-check <ENG-n> [--json]
+# admission-check is a read-only fresh source eligibility/ownership check for
+# automatic replay, including pre-existing tickets not owned by intake receipts.
+# It reuses the source adapter's ownership exclusions and refuses missing evidence.
 #
 # config/work-intake-hook contains one absolute executable path, never shell text.
 # The trusted, GET-only source receives `--json` or `--json --refresh <opaque-ref>`.
@@ -88,7 +92,7 @@ fi
 . "$SCRIPT_DIR/fm-tasks-axi-lib.sh"
 # shellcheck source=bin/fm-backlog-transition-lib.sh
 . "$SCRIPT_DIR/fm-backlog-transition-lib.sh"
-if [ "${1:-}" != check ] && [ "${1:-}" != preview ] && [ "${1:-}" != status ] && [ "$(cat "$CONFIG/work-intake-enabled" 2>/dev/null || true)" = 1 ]; then
+if [ "${1:-}" != check ] && [ "${1:-}" != admission-check ] && [ "${1:-}" != preview ] && [ "${1:-}" != status ] && [ "$(cat "$CONFIG/work-intake-enabled" 2>/dev/null || true)" = 1 ]; then
   if ! fm_backlog_transition_applies "$CONFIG" "$DATA" ship; then
     printf 'work-intake: requires transactional tasks-axi backlog: %s\n' "${FM_BACKLOG_TRANSITION_ERROR:-$FM_BACKLOG_TRANSITION_SKIP}" >&2
     exit 2

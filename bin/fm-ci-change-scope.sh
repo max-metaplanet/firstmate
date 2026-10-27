@@ -9,10 +9,9 @@
 #   macos=true|false      the stock macOS Bash snapshot job's sources changed
 #   full=true|false       run the COMPLETE behavior suite: both portable
 #                         parallel lanes and all 16 portable serial shards.
-#                         Only a push to main, the nightly schedule, or an
-#                         unrecognized event sets it; a pull request never
-#                         does, because those two events own the complete
-#                         coverage a pull request now trades away for speed.
+#                         Push to main, the nightly schedule, unrecognized
+#                         events and spawn/admission changes run the complete suite
+#                         on pull requests, including the real-Herdr lane.
 #   parallel=true|false   run the two portable parallel lanes. True whenever
 #                         `full` is, and true on its own for the bounded
 #                         pull-request fallback described below.
@@ -127,7 +126,7 @@
 # run the complete suite: `full` stays true and nothing is narrowed. A pull
 # request runs the bounded lane fallback instead - both portable parallel
 # lanes and the required Herdr lane, three runners - rather than the complete
-# sixteen-shard serial fan-out. The fork holds about twenty concurrent
+# sixteen-shard serial fan-out, except for spawn/admission changes. The fork holds about twenty concurrent
 # runners, so a pull request that fans out to nineteen long-lived jobs spends
 # its round queueing behind itself and behind every sibling round; the
 # complete coverage it gives up is run on the very next push to main and again
@@ -325,6 +324,9 @@ select_tests() {
   # and never fall back: they are what the complete suite runs on.
   [ "${FM_CI_EVENT:-pull_request}" = pull_request ] || return 0
   [ -n "$paths" ] || { fall_back; return 0; }
+  if [ "$local_mode" = false ] && printf '%s\n' "$paths" | grep -Eq '^bin/(fm-spawn\.sh|fm-worker-(park(-lib)?\.sh|admit\.py))$'; then
+    return 0
+  fi
   [ -x bin/fm-test-run.sh ] || { fall_back; return 0; }
 
   selection_paths=
