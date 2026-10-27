@@ -854,8 +854,8 @@ test_a_long_batch_carries_every_verdict_uncut() {
 # Wrap a home's fake gh so a read matching <pattern> logs itself and then hangs
 # past the read bound, spending the whole read budget: only the first such read
 # with `once`, every one with `always`.
-slow_gh() {  # <home> <case-pattern> <once|always>
-  local home=$1 bin="$1/bin" consume=
+slow_gh() {  # <home> <case-pattern> <once|always> [sleep-secs]
+  local home=$1 bin="$1/bin" consume= secs=${4:-4}
   [ "$3" = always ] || consume="rm -f '$home/fx/slow-read'"
   mv "$bin/gh" "$bin/gh-fixture"
   cat > "$bin/gh" <<EOF
@@ -865,7 +865,7 @@ case "\$*" in
     if [ -e '$home/fx/slow-read' ]; then
       $consume
       printf '%s\n' "\$*" >> '$home/fx/gh-argv.log'
-      sleep 4
+      sleep $secs
       exit 1
     fi ;;
 esac
@@ -889,8 +889,8 @@ write_real_pulls() {  # <home> <json-array-of-numbers>
 }
 
 # One poll on the real wall clock.
-budget_poll() {  # <home>
-  env PATH="$1/bin:$PATH" FM_HOME="$1" FM_JEV_PROD_BUDGET=3 \
+budget_poll() {  # <home> [budget-secs]
+  env PATH="$1/bin:$PATH" FM_HOME="$1" FM_JEV_PROD_BUDGET="${2:-3}" \
     FM_JEV_PROD_MAX_PRS=3 "$CHECK" check 2>&1
 }
 
@@ -1058,12 +1058,14 @@ test_a_first_comment_read_budget_cut_is_retried() {
   fake_gh "$home" >/dev/null
   write_real_pulls "$home" '[2214]'
   write_comments "$home" 2214 900025 "$(section portal proven post-merge production completedrec)"
-  slow_gh "$home" '*issues/2214/comments*' once
-  out=$(budget_poll "$home")
+  # A 12-second budget leaves the retrying poll's reads a clear margin on a
+  # loaded host; the stalled read outlasts it, so the first poll is still cut.
+  slow_gh "$home" '*issues/2214/comments*' once 15
+  out=$(budget_poll "$home" 12)
   assert_equals "" "$out" "an exhausted comment read never wakes"
   assert_no_grep $'pending\t' "$home/state/.jev-prod-monitor" "an exhausted comment read never queues"
   assert_no_grep $'woken\t' "$home/state/.jev-prod-monitor" "an exhausted comment read never settles"
-  out=$(budget_poll "$home")
+  out=$(budget_poll "$home" 12)
   assert_equals "" "$out" "the recovered passing verdict is silent"
   assert_grep $'woken\t2214/portal/completedrec' "$home/state/.jev-prod-monitor" "the next poll retries and records the actual result"
   pass "fm-jev-prod-check: a first comment budget cut retries without a terminal outcome"
