@@ -10,15 +10,17 @@ Usage: fm-worker-admit.py record ID PROJECT MODE YOLO TICKET COMMIT_TYPE
 Only a fresh ship's capacity deferral records authorization. The v1 record at
 state/<id>.deferred-spawn.json binds every resolved launch axis to the filled
 brief's SHA256; empty optional axes explicitly retain their default semantics.
-Records are data, never shell. Changed briefs and incomplete records require a
-new explicit dispatch. A successful launch consumes the record; crash recovery
-never replays a record whose task metadata already exists.
+Records are data, never shell. Changed briefs and incomplete records are
+discarded and require a new explicit dispatch. Any successful fresh launch of
+the task consumes the record; crash recovery never replays a record whose task
+metadata already exists.
 
 The parking tick resumes workers first, then calls tick here. A home-local
 advisory lock serializes selection through launch. Spawn's existing task-set,
 task, project and fleet locks remain authoritative against all other launches.
 tasks-axi ready owns dependency/hold clearance; priority then queue age orders
-new work. Every attempted or skipped admission appends worker-admission.jsonl.
+new work. worker-admission.jsonl records the first deferral, each admission or
+refusal, and each discarded record; records still waiting append nothing.
 The watcher already calls this tick independently of a firstmate turn, including
 after teardown, park and verified exit. This helper never merges or polls.
 """
@@ -86,7 +88,8 @@ def record(args):
     value = dict(zip(KEYS, values), version=1, task=ident, queued_at=time.time(),
                  brief_sha256=brief_digest(ident))
     validate(value, ident)
-    if path.exists() and not path.is_symlink():
+    existed = path.exists() and not path.is_symlink()
+    if existed:
         old = json.loads(path.read_text())
         value['queued_at'] = old.get('queued_at', value['queued_at'])
     staged = path.with_suffix('.json.' + str(os.getpid()))
@@ -100,7 +103,8 @@ def record(args):
         os.replace(staged, path)
     finally:
         staged.unlink(missing_ok=True)
-    event(ident, 'deferred', 'capacity; recorded resolved launch')
+    if not existed:
+        event(ident, 'deferred', 'capacity; recorded resolved launch')
 
 
 def argv(record):
@@ -157,9 +161,11 @@ def tick():
             ident = row['id']
             require(re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]*', ident), 'invalid backlog id')
             path = STATE / (ident + '.deferred-spawn.json')
+            if not (path.exists() or path.is_symlink()):
+                continue
+            if ident not in ready or row.get('held') != 'no' or row['kind'] != 'ship':
+                continue
             try:
-                require(ident in ready and row.get('held') == 'no' and row['kind'] == 'ship',
-                        'hold, dependency, date gate or non-ship work')
                 require(not (STATE / (ident + '.meta')).exists(), 'task already recorded')
                 require(path.is_file() and not path.is_symlink(), 'incomplete launch record')
                 payload = path.read_bytes()
@@ -167,7 +173,8 @@ def tick():
                 validate(value, ident)
                 pending.append((row, value, path, hashlib.sha256(payload).hexdigest()))
             except (OSError, ValueError) as error:
-                event(ident, 'skipped', str(error))
+                event(ident, 'skipped', str(error) + '; record discarded')
+                path.unlink(missing_ok=True)
         pending.sort(key=lambda item: queue_order(intake, item[0], item[1], receipts['entries']))
         for row, value, path, expected in pending:
             ident = row['id']
@@ -189,8 +196,8 @@ def tick():
             if result.returncode == 0:
                 event(ident, 'admitted', reason)
                 path.unlink(missing_ok=True)
-            else:
-                event(ident, 'deferred' if result.returncode == 75 else 'skipped', reason)
+            elif result.returncode != 75:
+                event(ident, 'skipped', reason)
 
 
 if __name__ == '__main__':

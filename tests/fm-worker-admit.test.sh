@@ -92,6 +92,9 @@ PY_SPAWN
         self.tick()
         self.assertEqual(self.launches(), [])
         self.assertTrue(record.exists())
+        self.tick()
+        audit = (self.home / 'state/worker-admission.jsonl').read_text().splitlines()
+        self.assertEqual([json.loads(line)['result'] for line in audit], ['deferred'])
         (self.home / 'full').unlink()
         self.tick()
         self.assertEqual(self.launches(), [['next', str(self.home / 'project'), '--mode', 'direct-PR',
@@ -117,11 +120,18 @@ PY_SPAWN
         path = self.add('missing', 0)
         path.unlink()
         self.add('eligible', 4)
+        audit_path = self.home / 'state/worker-admission.jsonl'
+        audit_path.unlink()
+        self.tick()
         self.tick()
         self.assertEqual([args[0] for args in self.launches()], ['eligible'])
-        audit = [json.loads(line) for line in (self.home / 'state/worker-admission.jsonl').read_text().splitlines()]
-        skipped = {row['task'] for row in audit if row['result'] == 'skipped'}
-        self.assertTrue({'held', 'blocked', 'future', 'incomplete', 'changed', 'missing'} <= skipped)
+        audit = [json.loads(line) for line in audit_path.read_text().splitlines()]
+        self.assertEqual(sorted((row['task'], row['result']) for row in audit),
+                         [('changed', 'skipped'), ('eligible', 'admitted'), ('incomplete', 'skipped')])
+        for ident in ('held', 'blocked', 'future'):
+            self.assertTrue((self.home / 'state' / (ident + '.deferred-spawn.json')).exists())
+        for ident in ('incomplete', 'changed'):
+            self.assertFalse((self.home / 'state' / (ident + '.deferred-spawn.json')).exists())
 
     def test_priority_age_and_concurrent_frees_admit_once(self):
         self.add('old-normal', 2)
@@ -148,6 +158,7 @@ PY_SPAWN
         path.write_text(json.dumps(value))
         self.tick()
         self.assertEqual([args[0] for args in self.launches()], ['branch'])
+        self.assertFalse((self.home / 'state/existing.deferred-spawn.json').exists())
         self.assertIn('--branch-prefix', self.launches()[0])
         self.assertIn('accepted/', self.launches()[0])
 

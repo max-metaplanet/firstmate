@@ -4093,7 +4093,7 @@ if [ -n "$SPAWN_PROJECT_CAPACITY" ]; then
     exit 1
   fi
   if [ "$FM_PROJECT_CAPACITY_OCCUPANTS" -ge "$SPAWN_PROJECT_CAPACITY" ]; then
-    echo "deferred: project $(basename "$PROJ_ABS") admits $SPAWN_PROJECT_CAPACITY worker(s) at once on this machine ($FM_PROJECT_CAPACITY_FILE) and $FM_PROJECT_CAPACITY_OCCUPANTS already hold a place ($FM_PROJECT_CAPACITY_OCCUPANT_IDS); task $ID was not launched and its backlog item stays queued - dispatch it again once one of them records its ready PR or is cleaned up" >&2
+    echo "deferred: project $(basename "$PROJ_ABS") admits $SPAWN_PROJECT_CAPACITY worker(s) at once on this machine ($FM_PROJECT_CAPACITY_FILE) and $FM_PROJECT_CAPACITY_OCCUPANTS already hold a place ($FM_PROJECT_CAPACITY_OCCUPANT_IDS); task $ID was not launched and its backlog item stays queued - the worker-park tick replays a recorded launch once one of them records its ready PR or is cleaned up" >&2
     exit "$FM_PROJECT_CAPACITY_DEFER_EXIT"
   fi
   SPAWN_RESUMES_AHEAD=$(fm_project_capacity_resumes_ahead "$STATE/$ID.meta")
@@ -4125,7 +4125,7 @@ if [ "$RELAUNCH" -eq 0 ] || [ "$SPAWN_PARK_RESUME" = 1 ] || [ -n "$PARK_RESUME_M
         exit "$FM_PROJECT_CAPACITY_DEFER_EXIT"
       fi
     elif ! fm_lock_acquire_wait_max "$SPAWN_FLEET_LOCK" 120; then
-      echo "deferred: another spawn has held the fleet capacity lock ($SPAWN_FLEET_LOCK) for 120s; task $ID was not launched and its backlog item stays queued - dispatch it again shortly" >&2
+      echo "deferred: another spawn has held the fleet capacity lock ($SPAWN_FLEET_LOCK) for 120s; task $ID was not launched and its backlog item stays queued - the worker-park tick replays a recorded launch shortly" >&2
       exit "$FM_PROJECT_CAPACITY_DEFER_EXIT"
     fi
     SPAWN_FLEET_LOCK_HELD=1
@@ -4155,7 +4155,7 @@ if [ "$RELAUNCH" -eq 0 ] || [ "$SPAWN_PARK_RESUME" = 1 ] || [ -n "$PARK_RESUME_M
       fi
       SPAWN_FLEET_LIMIT+=")"
       if [ "$FM_FLEET_CAPACITY_OCCUPANTS" -ge "$FM_FLEET_EFFECTIVE_CAPACITY" ]; then
-        echo "deferred: this machine runs at most $SPAWN_FLEET_LIMIT and $FM_FLEET_CAPACITY_OCCUPANTS are running ($FM_FLEET_CAPACITY_OCCUPANT_IDS); task $ID was not launched and its backlog item stays queued - dispatch it again once one of them is cleaned up or stops" >&2
+        echo "deferred: this machine runs at most $SPAWN_FLEET_LIMIT and $FM_FLEET_CAPACITY_OCCUPANTS are running ($FM_FLEET_CAPACITY_OCCUPANT_IDS); task $ID was not launched and its backlog item stays queued - the worker-park tick replays a recorded launch once one of them is cleaned up or stops" >&2
         exit "$FM_PROJECT_CAPACITY_DEFER_EXIT"
       fi
       if [ $((FM_FLEET_CAPACITY_OCCUPANTS + SPAWN_RESUMES_AHEAD)) -ge "$FM_FLEET_EFFECTIVE_CAPACITY" ]; then
@@ -7396,6 +7396,7 @@ if [ -n "$SPAWN_DEFERRED_SIGNAL" ]; then
 fi
 fm_lock_release "$SPAWN_META_LOCK"
 SPAWN_META_LOCK_HELD=0
+[ "$RELAUNCH" -eq 1 ] || rm -f "$STATE/$ID.deferred-spawn.json"
 
 SPAWN_DELIVERY=
 [ -z "$MODE" ] || SPAWN_DELIVERY=" mode=$MODE yolo=$YOLO"

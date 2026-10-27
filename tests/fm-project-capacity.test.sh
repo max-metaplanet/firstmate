@@ -276,6 +276,24 @@ test_freed_slot_automatically_admits_one_recorded_ship() {
   pass "freed project slot admits the recorded ship through real spawn and retains overflow"
 }
 
+test_manual_dispatch_consumes_the_recorded_launch() {
+  local case_dir home out rc=0
+  case_dir=$(make_case manual task-c)
+  home="$case_dir/home"
+  declare_capacity "$home" "project 1"
+  write_live "$home" live-a "$case_dir/project"
+  out=$(spawn_ship "$case_dir" task-c "$case_dir/unused") || rc=$?
+  expect_code "$DEFER_EXIT" "$rc" "expected recorded capacity deferral: $out"
+  assert_present "$home/state/task-c.deferred-spawn.json" "capacity deferral recorded no replay contract"
+  rm "$home/state/live-a.meta"
+  rc=0
+  out=$(spawn_ship "$case_dir" task-c) || rc=$?
+  expect_code 0 "$rc" "manual dispatch after the slot freed was refused: $out"
+  assert_present "$home/state/task-c.meta" "manual dispatch published no task record"
+  assert_absent "$home/state/task-c.deferred-spawn.json" "manual dispatch left a stale replay contract"
+  pass "a successful manual dispatch consumes the recorded automatic replay"
+}
+
 test_exhausted_capacity_defers_without_leaving_anything_behind() {
   local case_dir home out rc=0 before worktrees
   case_dir=$(make_case exhausted task-c)
@@ -767,3 +785,4 @@ test_batch_reports_a_deferred_pair
 test_orca_spawn_is_admitted_under_the_shared_project_lock
 
 test_freed_slot_automatically_admits_one_recorded_ship
+test_manual_dispatch_consumes_the_recorded_launch
