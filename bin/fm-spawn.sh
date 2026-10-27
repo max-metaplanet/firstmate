@@ -392,7 +392,10 @@
 #   An enabled task trace also retains TRACEPARENT. Explicit Firstmate launch
 #   assignments still apply inside the filtered environment, including the
 #   FM_TASK_INBOX export every launch carries (the absolute state/<id>.inbox
-#   path the steering doorbell names). Raw commands must
+#   path the steering doorbell names). Ship and scout launches also export
+#   PREPUSH_TESTS=0 VITEST_MAX_WORKERS=1 PIPELINE_TEST_MAX_WORKERS=1, including
+#   on relaunch, to skip pre-push suites and bound local test forks.
+#   Raw commands must
 #   be POSIX sh compatible under this opt-in; the absent-file path is unchanged.
 #   This is an exec environment boundary, not a sandbox for the pane's startup
 #   shell, credential files, same-user processes, or later shell initialization.
@@ -7008,10 +7011,13 @@ fi
 # launch and the launch-env-allowlist `env -i` wrapper.
 LAUNCH="export FM_TASK_INBOX=$(shell_quote "$STATE_REAL/$ID.inbox"); $LAUNCH"
 LAUNCH="export COMPACT_ADVISER_DISABLE=1; $LAUNCH"
-# Ship and scout workers skip the full project pre-push suite inside any
-# filtered launch environment, including one sourced from another session.
+# Core reads VITEST_MAX_WORKERS for ordinary Vitest runs and
+# PIPELINE_TEST_MAX_WORKERS for its pipeline's explicit --maxWorkers flag.
+# One fork leaves room for other fleet workers; the same assignments reach
+# both the agent and pane shell, including filtered launches and relaunches.
 if [ "$KIND" = ship ] || [ "$KIND" = scout ]; then
-  LAUNCH="export PREPUSH_TESTS=0; $LAUNCH"
+  WORKER_TEST_ENV='PREPUSH_TESTS=0 VITEST_MAX_WORKERS=1 PIPELINE_TEST_MAX_WORKERS=1'
+  LAUNCH="export $WORKER_TEST_ENV; $LAUNCH"
 fi
 # When the live-harness gate has exported DISABLE_AUTOUPDATER into this spawn's
 # own environment, carry it into the launch command text so Claude Code's
@@ -7067,12 +7073,12 @@ fi
 # Mark the pane as a task worker so bin/fm-test-run.sh can refuse to run the
 # suite in the repository's primary checkout. Ship and scout workers are the
 # ones assigned an isolated worktree; a secondmate runs its own home instead.
-# Skip the full project pre-push suite in the pane shell too.
+# Apply the worker test controls in the pane shell too.
 # The id reached a validated bare-slug charset above, so it carries no shell
 # syntax of its own.
 if [ "$KIND" = ship ] || [ "$KIND" = scout ]; then
   spawn_send_text_line "$T" "export FM_TASK_ID=$ID"
-  spawn_send_text_line "$T" "export PREPUSH_TESTS=0"
+  spawn_send_text_line "$T" "export $WORKER_TEST_ENV"
 fi
 # Send through the exact channel that already ships GOTMPDIR, so every backend
 # and harness - ship, scout, and secondmate - gets it before launch. Skipped
