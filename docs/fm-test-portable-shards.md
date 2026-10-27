@@ -76,6 +76,11 @@ Assignment is longest-processing-time bin packing over per-script duration hints
 [Verification inputs](#verification-inputs) owns the measurement provenance and exceptions.
 A script with no hint gets the conservative `PORTABLE_SERIAL_DEFAULT_WEIGHT_MS` default.
 Hints only affect balance: the coverage guard keeps the partition complete and disjoint whatever they say, so a stale hint costs a slower shard rather than lost coverage.
+
+The hints are Ubuntu CI measurements, so they size work and never predict another host's wall clock.
+`bin/fm-ci-change-scope.sh --local` spends its `LOCAL_BUDGET_MS` on them to choose which suites a developer machine runs, and that is the only question they may answer there.
+One watcher-adjacent change measured on an Apple M4 at load average 22 ran `tests/fm-watch-checkpoint.test.sh` at 0.93x its hint, `tests/fm-session-lock-ancestry.test.sh` at 11.1x, and `tests/fm-lint-workflows.test.sh` at 46.7x, so the divergence is per script rather than a factor any caller could apply to a modeled total.
+A local caller therefore bounds its own wall clock with `bin/fm-test-run.sh --deadline-secs`, which defers the suites it cannot start and names them, rather than multiplying a modeled budget into a deadline that a missed hint turns into a failed step.
 Balance is still worth keeping current, because enough unmeasured scripts let one shard carry more than twice another shard's real work and reach the job cap while another runner sits idle.
 `bin/fm-test-run.sh --check-coverage` reports the unmeasured share as `serial_unhinted=` and refuses past `PORTABLE_SERIAL_MAX_UNHINTED_PERCENT`.
 That catches missing hints, not stale existing hints: the host suite still had a 41512 ms hint after growing to over 1000 seconds in CI, so the old split placed it beside another 12 minutes of work while passing the guard.

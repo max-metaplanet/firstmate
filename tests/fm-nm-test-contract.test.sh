@@ -26,6 +26,7 @@ SH
 cat > "$FIX/bin/fm-test-run.sh" <<'SH'
 printf '%s\n' "$*" > "$RUN_LOG"
 [ -z "${RUN_SLEEP:-}" ] || sleep "$RUN_SLEEP"
+[ -z "${RUN_DEFER:-}" ] || printf 'FM_TEST_DEADLINE deadline_secs=240 deferred=%s\n' "$RUN_DEFER"
 exit "${RUN_RC:-0}"
 SH
 
@@ -42,23 +43,23 @@ run_cmd() {
 
 run_cmd $'behavior=true\nfull=false\nherdr=false\nlocal_budget_ms=300000\nlocal_scripts=tests/a.test.sh tests/b.test.sh tests/c.test.sh\nlocal_deferred='
 expect_code 0 "$RC" "ordinary narrow selection"
-assert_equals "--per-script-timeout-secs 1500 tests/a.test.sh tests/b.test.sh tests/c.test.sh" "$ARGV" "narrow scripts reach the runner unchanged"
+assert_equals "--deadline-secs 240 --per-script-timeout-secs 600 tests/a.test.sh tests/b.test.sh tests/c.test.sh" "$ARGV" "narrow scripts reach the runner unchanged"
 pass "ordinary narrow selection runs unchanged"
 
 run_cmd $'behavior=false\nlocal_budget_ms=300000\nlocal_scripts=tests/fm-documentation-audiences.test.sh\nlocal_deferred='
 expect_code 0 "$RC" "behavior-inert change"
-assert_equals "--per-script-timeout-secs 1500 tests/fm-documentation-audiences.test.sh" "$ARGV" "prose runs the documentation suite"
+assert_equals "--deadline-secs 240 --per-script-timeout-secs 600 tests/fm-documentation-audiences.test.sh" "$ARGV" "prose runs the documentation suite"
 pass "behavior-inert changes run the documentation-audience suite"
 
 run_cmd $'behavior=true\nfull=true\nherdr=true\nlocal_budget_ms=300000\nlocal_scripts=tests/fast.test.sh\nlocal_deferred=tests/slow.test.sh tests/herdr.test.sh'
 expect_code 0 "$RC" "full scope"
-assert_equals "--per-script-timeout-secs 1500 tests/fast.test.sh" "$ARGV" "full scope runs only its local selection"
+assert_equals "--deadline-secs 240 --per-script-timeout-secs 600 tests/fast.test.sh" "$ARGV" "full scope runs only its local selection"
 assert_contains "$OUT" "Left to CI's required lanes (CI gate): tests/slow.test.sh tests/herdr.test.sh" "deferrals are explicit on one line"
 pass "full scope does not expand to --all or a Herdr family"
 
 run_cmd $'behavior=true\nfull=false\nherdr=true\nlocal_budget_ms=300000\nlocal_scripts=tests/fast.test.sh\nlocal_deferred=tests/herdr.test.sh'
 expect_code 0 "$RC" "Herdr selection"
-assert_equals "--per-script-timeout-secs 1500 tests/fast.test.sh" "$ARGV" "Herdr coverage stays with CI"
+assert_equals "--deadline-secs 240 --per-script-timeout-secs 600 tests/fast.test.sh" "$ARGV" "Herdr coverage stays with CI"
 pass "Herdr selection runs only fast local coverage"
 
 run_cmd $'local_budget_ms=300000\nlocal_scripts='
@@ -74,10 +75,20 @@ run_cmd $'local_budget_ms=300000\nlocal_scripts=tests/a.test.sh' 0 1
 expect_code 1 "$RC" "failing selected test"
 RUN_SLEEP=2 run_cmd $'local_budget_ms=1000\nlocal_scripts=tests/a.test.sh'
 expect_code 0 "$RC" "loaded execution may exceed modeled work"
-assert_equals "--per-script-timeout-secs 1500 tests/a.test.sh" "$ARGV" "load allowance preserves selected coverage and per-script bounds"
+assert_equals "--deadline-secs 240 --per-script-timeout-secs 600 tests/a.test.sh" "$ARGV" "load allowance preserves selected coverage and per-script bounds"
+# Execution far past the modeled work is what a contended local host does, and
+# it must no longer end the step: the runner's own wall deadline defers the
+# suites it cannot start, and the command reports them. The outer bound is a
+# backstop for a wedged runner, derived in the command from the deadline it
+# passes plus one per-script bound, so it is not timed here.
 RUN_SLEEP=5 run_cmd $'local_budget_ms=1000\nlocal_scripts=tests/a.test.sh'
-expect_code 124 "$RC" "stale weights hit a hard deadline"
-pass "empty/failed selection, failed tests, and a hard deadline cannot pass silently"
+expect_code 0 "$RC" "execution past the modeled budget defers rather than failing"
+RUN_DEFER='tests/b.test.sh tests/c.test.sh' \
+  run_cmd $'local_budget_ms=300000\nlocal_scripts=tests/a.test.sh tests/b.test.sh tests/c.test.sh'
+expect_code 0 "$RC" "a deferring run passes on the coverage it proved"
+assert_contains "$OUT" 'FM_TEST_DEADLINE deadline_secs=240 deferred=tests/b.test.sh tests/c.test.sh' \
+  "the step reports the coverage the wall deadline left unstarted"
+pass "empty/failed selection and failed tests cannot pass silently, and a slow host defers"
 
 # Execute real classification and selection without running any selected suite.
 cp "$ROOT/bin/fm-ci-change-scope.sh" "$FIX/bin/fm-ci-change-scope.sh"
@@ -93,9 +104,15 @@ for path in .github/workflows/ci.yml .github/actions/example/action.yml .no-mist
   printf '%s\n' "$path" bin/fm-quota-choose.sh > "$TMP_ROOT/changed-paths"
   REAL_RUNNER="$ROOT/bin/fm-test-run.sh" FM_CI_CHANGED_PATHS_FILE="$TMP_ROOT/changed-paths" run_cmd ''
   expect_code 0 "$RC" "real local classifier for $path"
-  scripts=$(printf '%s\n' "$ARGV" | tr ' ' '\n' | tail -n +3 | LC_ALL=C sort)
-  assert_equals $'tests/fm-ci-change-scope.test.sh\ntests/fm-ci-workflow.test.sh\ntests/fm-gate-refuse.test.sh\ntests/fm-lint-workflows.test.sh\ntests/fm-nm-test-contract.test.sh\ntests/fm-quota-choose.test.sh' \
+  scripts=$(printf '%s\n' "$ARGV" | tr ' ' '\n' | grep '^tests/' | LC_ALL=C sort)
+  # tests/fm-ci-change-scope.test.sh is the one configuration contract the
+  # local budget cannot admit, because it carries no measured duration hint and
+  # so is priced at the runner's conservative default. CI's own selection still
+  # runs it, and the command reports it as deferred on the line asserted below.
+  assert_equals $'tests/fm-ci-workflow.test.sh\ntests/fm-gate-refuse.test.sh\ntests/fm-lint-workflows.test.sh\ntests/fm-nm-test-contract.test.sh\ntests/fm-quota-choose.test.sh' \
     "$scripts" "local Test runs configuration contracts plus narrow code coverage"
+  assert_contains "$OUT" "Left to CI's required lanes (CI gate): tests/fm-ci-change-scope.test.sh" \
+    "the unhinted configuration contract is named as deferred, not silently dropped"
 done
 
 # Shared scaffolding forces full scope; the real command must still run fast

@@ -472,7 +472,7 @@ test_local_budget_covers_fast_tests_and_defers_long_or_live_work() {
 }
 
 test_local_budget_bounds_aggregate_work() {
-  local repo="$TMP_ROOT/local-budget" output
+  local repo="$TMP_ROOT/local-budget" output budget half
   mkdir -p "$repo/bin"
   cp "$SCOPE" "$repo/bin/fm-ci-change-scope.sh"
   cat > "$repo/bin/fm-test-run.sh" <<'SH'
@@ -488,16 +488,30 @@ esac
 SH
   chmod +x "$repo/bin/fm-test-run.sh"
   printf '%s\n' tests/a.test.sh > "$repo/paths"
-  output=$(TEST_WEIGHTS=$'100001\ttests/c.test.sh\n100000\ttests/b.test.sh\n100000\ttests/a.test.sh\n1\ttests/herdr.test.sh' \
+  # Weigh the fixtures against the budget the script itself reports, so these
+  # admission rules keep holding when that figure is retuned.
+  budget=$(TEST_WEIGHTS=$'1\ttests/a.test.sh' FM_CI_CHANGED_PATHS_FILE="$repo/paths" \
+    bash "$repo/bin/fm-ci-change-scope.sh" --local | sed -n 's/^local_budget_ms=//p')
+  case "$budget" in '' | *[!0-9]*) fail "classifier reported no local budget: $budget" ;; esac
+  [ "$budget" -ge 2 ] || fail "local budget too small to weigh fixtures against: $budget"
+  half=$((budget / 2))
+  output=$(TEST_WEIGHTS="$((half + 1))	tests/c.test.sh
+$half	tests/b.test.sh
+$half	tests/a.test.sh
+1	tests/herdr.test.sh" \
     FM_CI_CHANGED_PATHS_FILE="$repo/paths" bash "$repo/bin/fm-ci-change-scope.sh" --local) \
     || fail "aggregate budget classification failed"
   assert_contains "$output" 'local_scripts=tests/a.test.sh tests/b.test.sh' "the cheapest scripts run in deterministic order"
   assert_contains "$output" 'local_deferred=tests/herdr.test.sh tests/c.test.sh' "aggregate overflow and Herdr go to CI"
-  output=$(TEST_WEIGHTS=$'300000\ttests/exact.test.sh\n300001\ttests/over.test.sh' \
+  output=$(TEST_WEIGHTS="$budget	tests/exact.test.sh
+$((budget + 1))	tests/over.test.sh" \
     FM_CI_CHANGED_PATHS_FILE="$repo/paths" bash "$repo/bin/fm-ci-change-scope.sh" --local) \
     || fail "boundary classification failed"
   assert_contains "$output" 'local_scripts=tests/exact.test.sh' "a script at the budget is admitted"
   assert_contains "$output" 'local_deferred=tests/over.test.sh' "a script beyond the budget is deferred"
+  # This last case turns on the CI packing bound, not the local budget: a
+  # script no bin can hold forces full scope, and the local selection must
+  # still keep its fast portion rather than widening to the full inventory.
   output=$(TEST_WEIGHTS=$'1000\ttests/relevant.test.sh\n3600001\ttests/long.test.sh' REFUSE_ALL=1 \
     FM_CI_CHANGED_PATHS_FILE="$repo/paths" bash "$repo/bin/fm-ci-change-scope.sh" --local) \
     || fail "oversized mapped selection must not widen to the full inventory"

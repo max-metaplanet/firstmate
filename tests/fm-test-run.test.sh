@@ -1744,6 +1744,149 @@ SH
   pass "--max-wall-ms fails an over-budget run and refuses a malformed budget"
 }
 
+# --deadline-secs is the opposite verdict from --max-wall-ms above: a caller
+# whose selection was sized by a duration estimate wants a missed estimate to
+# cost coverage, not the whole invocation.
+test_deadline_defers_unstarted_work_without_failing() {
+  local tmp repo runner slow b c rc
+  tmp=$(mktemp -d "${TMPDIR:-/tmp}/fm-test-run-deadline.XXXXXX")
+  repo="$tmp/repo"
+  runner="$repo/bin/fm-test-run.sh"
+  slow=tests/fm-deadline-slow.test.sh
+  b=tests/fm-deadline-b.test.sh
+  c=tests/fm-deadline-c.test.sh
+  mkdir -p "$repo/bin" "$repo/tests"
+  cp "$RUNNER" "$runner"
+  cp "$ROOT/tests/git-config-helpers.sh" "$repo/tests/"
+  cat >"$repo/$slow" <<'SH'
+#!/usr/bin/env bash
+sleep 3
+echo "ok - deadline slow fixture"
+SH
+  for fixture in "$b" "$c"; do
+    cat >"$repo/$fixture" <<'SH'
+#!/usr/bin/env bash
+echo "ok - deadline fixture that must not start"
+SH
+  done
+  chmod +x "$runner" "$repo/$slow" "$repo/$b" "$repo/$c"
+
+  # Deadline the whole selection meets: every script runs and nothing is said.
+  set +e
+  (cd "$repo" && "$runner" --deadline-secs 120 "$b" "$c") >"$tmp/under" 2>"$tmp/under.err"
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || fail "a selection inside its deadline must pass, got $rc: $(cat "$tmp/under.err")"
+  grep -Eq '^FM_TEST_SUMMARY total=2 failed=0 ' "$tmp/under" \
+    || fail "an inside-deadline run did not run both scripts: $(cat "$tmp/under")"
+  ! grep -q '^FM_TEST_DEADLINE ' "$tmp/under" \
+    || fail "an inside-deadline run must not report deferred coverage: $(cat "$tmp/under")"
+
+  # Deadline crossed by the first script: the rest are never started, are named,
+  # and the run still passes on the coverage it did prove.
+  set +e
+  (cd "$repo" && "$runner" --deadline-secs 1 "$slow" "$b" "$c") >"$tmp/over" 2>"$tmp/over.err"
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || fail "deferring unstarted work must not fail the run, got $rc: $(cat "$tmp/over.err")"
+  grep -Eq "^FM_TEST_DEADLINE deadline_secs=1 deferred=$b $c\$" "$tmp/over" \
+    || fail "the crossed deadline did not name its deferred scripts: $(cat "$tmp/over")"
+  grep -Eq '^FM_TEST_SUMMARY total=1 failed=0 ' "$tmp/over" \
+    || fail "a deferred script was still accounted as run: $(cat "$tmp/over")"
+  for fixture in "$b" "$c"; do
+    ! grep -q "^FM_TEST_BEGIN .* $fixture " "$tmp/over" \
+      || fail "$fixture started after the deadline instead of being deferred: $(cat "$tmp/over")"
+  done
+
+  # Deferral is not a way to pass: a script that ran and failed still fails.
+  cat >"$repo/$slow" <<'SH'
+#!/usr/bin/env bash
+sleep 3
+echo "not ok - deadline slow fixture failed"
+exit 1
+SH
+  set +e
+  (cd "$repo" && "$runner" --deadline-secs 1 "$slow" "$b") >"$tmp/failed" 2>"$tmp/failed.err"
+  rc=$?
+  set -e
+  [ "$rc" -eq 1 ] || fail "a failure before the deadline must still fail the run, got $rc"
+  grep -q "^FM_TEST_DEADLINE deadline_secs=1 deferred=$b\$" "$tmp/failed" \
+    || fail "a failing run omitted its deferred coverage: $(cat "$tmp/failed")"
+
+  # A deadline shorter than the run's own startup must still prove something:
+  # the first script is never deferred, so this cannot report a pass on
+  # nothing. The slow fixture is the only script, so it runs despite the
+  # deadline already having passed when it was reached.
+  set +e
+  (cd "$repo" && "$runner" --deadline-secs 1 "$slow") >"$tmp/first" 2>"$tmp/first.err"
+  rc=$?
+  set -e
+  [ "$rc" -eq 1 ] || fail "the only script must still run and report its own verdict, got $rc"
+  grep -Eq '^FM_TEST_SUMMARY total=1 failed=1 ' "$tmp/first" \
+    || fail "the first script was deferred instead of run: $(cat "$tmp/first")"
+  ! grep -q '^FM_TEST_DEADLINE ' "$tmp/first" \
+    || fail "a run that deferred nothing must not report a deadline: $(cat "$tmp/first")"
+
+  # A malformed deadline is refused rather than silently ignored.
+  set +e
+  (cd "$repo" && "$runner" --deadline-secs nope "$b") >"$tmp/bad" 2>"$tmp/bad.err"
+  rc=$?
+  set -e
+  [ "$rc" -eq 2 ] || fail "--deadline-secs with a non-number must be refused (exit 2), got $rc"
+
+  rm -rf "$tmp"
+  pass "--deadline-secs defers unstarted scripts, names them, and keeps real verdicts"
+}
+
+# The concurrent path reaches its deadline differently: waiting for a worker
+# slot can cross it after the check that let the script through, and a script
+# dispatched then would outrun what a caller sizing its own bound from the
+# deadline and the per-script bound can allow.
+test_deadline_is_rechecked_after_waiting_for_a_worker_slot() {
+  local tmp repo runner slow_a slow_b waiter rc started
+  tmp=$(mktemp -d "${TMPDIR:-/tmp}/fm-test-run-deadline-jobs.XXXXXX")
+  repo="$tmp/repo"
+  runner="$repo/bin/fm-test-run.sh"
+  # Three names the runner's own proven-isolated set admits for --jobs, all on
+  # the same unhinted weight, so the scheduler orders them by path: these two
+  # occupy both workers and the third can only wait.
+  slow_a=tests/fm-arm-pretool-check.test.sh
+  slow_b=tests/fm-brief.test.sh
+  waiter=tests/fm-cd-pretool-check.test.sh
+  mkdir -p "$repo/bin" "$repo/tests"
+  cp "$RUNNER" "$runner"
+  cp "$ROOT/tests/git-config-helpers.sh" "$repo/tests/"
+  for fixture in "$slow_a" "$slow_b"; do
+    cat >"$repo/$fixture" <<'SH'
+#!/usr/bin/env bash
+sleep 10
+echo "ok - occupies a worker past the deadline"
+SH
+  done
+  cat >"$repo/$waiter" <<'SH'
+#!/usr/bin/env bash
+echo "ok - must not start after waiting for a slot"
+SH
+  chmod +x "$runner" "$repo/$slow_a" "$repo/$slow_b" "$repo/$waiter"
+
+  set +e
+  # The deadline must outlast this runner's own startup, so that the slot wait
+  # is what crosses it rather than selection; the occupying scripts outlast it
+  # by enough that a loaded host cannot reorder which check fires.
+  (cd "$repo" && "$runner" --jobs 2 --deadline-secs 6 "$slow_a" "$slow_b" "$waiter") \
+    >"$tmp/out" 2>"$tmp/err"
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || fail "the concurrent deadline must not fail the run, got $rc: $(cat "$tmp/err")"
+  started=$(grep -c '^FM_TEST_BEGIN' "$tmp/out" || true)
+  [ "$started" -eq 2 ] || fail "expected both workers filled and the third deferred, started $started: $(cat "$tmp/out")"
+  grep -Eq "^FM_TEST_DEADLINE deadline_secs=6 deferred=$waiter\$" "$tmp/out" \
+    || fail "the slot wait crossed the deadline without deferring: $(cat "$tmp/out")"
+
+  rm -rf "$tmp"
+  pass "--deadline-secs is rechecked after a worker-slot wait crosses it"
+}
+
 test_jobs_parallel_scheduler_and_failure_propagation() {
   local tmp repo runner evidence fake_bin a b c d rc begin_n end_n
   tmp=$(mktemp -d "${TMPDIR:-/tmp}/fm-test-run-jobs-sched.XXXXXX")
@@ -2146,6 +2289,8 @@ test_concurrent_runs_are_ordered_longest_first
 test_per_script_timeout_bounds_a_hang
 test_changed_bound_gives_slow_watcher_suites_headroom
 test_max_wall_ms_is_a_result_not_advice
+test_deadline_defers_unstarted_work_without_failing
+test_deadline_is_rechecked_after_waiting_for_a_worker_slot
 test_jobs_parallel_scheduler_and_failure_propagation
 test_herdr_ci_family_run_has_a_step_timeout
 test_aggregate_json
