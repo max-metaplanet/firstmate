@@ -1,0 +1,9 @@
+FM_TEST_BEGIN 2026-10-27T11:04:01Z tests/fm-spawn-compact-adviser-disable.test.sh family=backend-dispatch expected_gate_skip=none
+ok - ship launch with no allowlist starts its agent with the compact-adviser switch on
+ok - ship launch under an enabled allowlist keeps the compact-adviser switch through the cleared environment
+ok - the launch command sets the switch on its own, whichever allowlist posture is in force
+ok - a secondmate launch carries the compact-adviser switch in both allowlist postures
+ok - ship and secondmate launches export their absolute steering inbox as FM_TASK_INBOX
+ok - Claude scout launches receive PREPUSH_TESTS=0 in both allowlist postures
+ok - codex relaunches retain compact-adviser and pre-push settings in both allowlist postures
+ok - claude relaunches retain compact-adviser and pre-push settings in both allowlist postures
