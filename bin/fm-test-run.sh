@@ -874,6 +874,7 @@ tests/fm-pi-windows-shell-invocation.test.sh 5121
 tests/fm-pipeline-spend.test.sh 1559
 tests/fm-polytoken-harness.test.sh 21090
 tests/fm-polytoken-signals-live-e2e.test.sh 103
+tests/fm-pool-prune.test.sh 11591
 tests/fm-pr-check-security.test.sh 300675
 tests/fm-pr-reviewers.test.sh 158
 tests/fm-pr-state-live-e2e.test.sh 50
