@@ -338,6 +338,8 @@ test_forge_external_renders_the_review_rail() {
   # shellcheck disable=SC2016 # Backticks are literal generated brief text.
   assert_grep '`git push backup HEAD:refs/heads/backup/brief-ext-backup`' "$home/data/brief-ext-backup/brief.md" \
     "--forge external with a backup must name the durable copy"
+  assert_grep 'if further changes need another backup push, report them to firstmate as a blocked event' \
+    "$home/data/brief-ext-backup/brief.md" "external backup must preserve one worker push per task"
 
   while IFS='|' read -r label args expect; do
     [ -n "$label" ] || continue
@@ -485,7 +487,7 @@ test_pr_based_dod_requires_non_draft() {
 }
 
 # The emitted worker brief is the public contract, not an implementation proxy.
-test_draft_first_and_batched_repairs() {
+test_draft_first_and_publication_ownership() {
   local home mode brief
   home="$TMP_ROOT/push-batching-home"
   mkdir -p "$home/data"
@@ -499,8 +501,9 @@ test_draft_first_and_batched_repairs() {
         assert_grep 'firstmate explicitly asks' "$brief" 'held refresh must wait for firstmate readiness'
         assert_grep 'open a draft PR' "$brief" 'direct-PR must start as draft'
         assert_grep '--head fm/batch-direct-PR --draft' "$brief" 'create command must include the draft flag'
-        assert_grep 'fm-pr-checks.sh --watch --settled <pr-url>' "$brief" 'CI repairs must wait for all head checks'
-        assert_grep 'push ONCE for the round' "$brief" 'CI repairs must batch publication'
+        assert_grep 'push ONCE per task when ready' "$brief" 'worker publication must wait until ready'
+        assert_grep 'do not start another worker-driven push round' "$brief" 'CI code failures must return to firstmate'
+        assert_no_grep 'push ONCE for the round' "$brief" 'worker CI repair pushes contradict one push per task'
         assert_grep 'fm-pr-checks.sh --watch --after <ready time> <pr-url>' "$brief" 'post-ready CI wait must exclude draft-era checks'
         assert_grep 'local validation has passed' "$brief" 'ready transition needs local validation'
         assert_no_grep 'ready for review, not a draft' "$brief" 'old ready-on-create rule survived'
@@ -519,7 +522,8 @@ test_draft_first_and_batched_repairs() {
       local-only)
         assert_no_grep 'fm-pr-refresh.sh' "$brief" 'local-only must not acquire a PR refresh lifecycle'
         assert_no_grep 'open a draft PR' "$brief" 'local-only inherited PR creation'
-        assert_no_grep 'push ONCE' "$brief" 'local-only inherited push instructions'
+        assert_grep 'local-only never pushes' "$brief" 'shared publication policy must preserve local-only'
+        assert_no_grep 'git push -u origin' "$brief" 'local-only inherited a publication command'
         ;;
     esac
   done
@@ -529,31 +533,52 @@ test_draft_first_and_batched_repairs() {
   assert_grep 'a title prefixed with WIP:' "$brief" 'forgejo draft convention was lost'
   assert_no_grep 'gh-axi pr create' "$brief" 'GitHub command leaked into Forgejo'
   assert_no_grep 'fm-pr-checks.sh --watch --after' "$brief" 'GitHub check wait leaked into Forgejo'
-  pass 'briefs start draft, batch worker CI repairs, and preserve pipeline and local-only ownership'
+  pass 'briefs start draft and preserve one worker push, pipeline ownership, and local-only delivery'
 }
 
 test_ci_cost_discipline() {
-  local home mode forge brief
+  local home mode forge forges brief
   home="$TMP_ROOT/ci-cost-home"
-  mkdir -p "$home/data"
-  for mode in direct-PR no-mistakes; do
-    for forge in none forgejo; do
+  mkdir -p "$home/data" "$home/config"
+  printf '%s\n' 'Upload the local commits for review.' > "$home/config/external-review.md"
+  for mode in direct-PR no-mistakes local-only; do
+    case "$mode" in
+      direct-PR) forges='none forgejo gerrit external' ;;
+      no-mistakes) forges='none forgejo gerrit' ;;
+      local-only) forges=none ;;
+    esac
+    for forge in $forges; do
       FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "cost-$mode-$forge" proj --mode "$mode" --forge "$forge" >/dev/null 2>&1 \
         || fail "$mode/$forge: scaffold failed"
       brief="$home/data/cost-$mode-$forge/brief.md"
+      assert_grep 'Run locally only the tests for what you changed' "$brief" "$mode/$forge: local tests must cover changed behavior"
+      assert_grep 'Never run or wait on full-suite local hooks (including Husky pre-commit/pre-push suites) or a full monorepo test run' \
+        "$brief" "$mode/$forge: broad local suites must be forbidden"
+      assert_grep 'git -c core.hooksPath=/dev/null commit ...' "$brief" "$mode/$forge: missing command-scoped commit hook bypass"
+      assert_grep "authorized \`git -c core.hooksPath=/dev/null push ...\`" "$brief" "$mode/$forge: missing command-scoped authorized push hook bypass"
+      assert_grep 'never disable hooks globally or bypass the no-mistakes gate' "$brief" "$mode/$forge: hook bypass must preserve the pipeline"
+      assert_grep 'push ONCE per task when ready; no-mistakes owns its push, and local-only never pushes' \
+        "$brief" "$mode/$forge: publication limits must respect delivery ownership"
+      assert_grep 'PR CI is the full regression gate for PR delivery' "$brief" "$mode/$forge: missing full regression gate"
+      assert_grep 'never trigger extra CI reruns yourself, including failed-job reruns or manual workflow dispatches' \
+        "$brief" "$mode/$forge: worker-triggered CI reruns must be forbidden"
+      assert_grep "configured test step, repair loop, and \`ci.rerun_transient\` behavior unchanged" \
+        "$brief" "$mode/$forge: pipeline configuration must remain authoritative"
+      [ "$(grep -Fc 'Run locally only the tests for what you changed' "$brief")" -eq 1 ] \
+        || fail "$mode/$forge: local scope policy must render exactly once"
+      assert_no_grep 'rerun only the failed jobs' "$brief" "$mode/$forge: old CI rerun policy survived"
+      assert_no_grep 'gh-axi run rerun' "$brief" "$mode/$forge: worker must never receive a CI rerun command"
+      case "$mode:$forge" in
+        local-only:*|*:gerrit|*:external) continue ;;
+      esac
       assert_grep 'When a required check is red, read its failure log' "$brief" "$mode/$forge: missing log inspection"
-      assert_grep 'If the log shows no cause in your own change, rerun only the failed jobs instead of pushing' "$brief" \
-        "$mode/$forge: unrelated failures must rerun only failed jobs"
+      assert_grep 'blocked [at=<epoch>]: unrelated CI failure - job {job name}, run {run URL}' "$brief" \
+        "$mode/$forge: unrelated CI failures must report the job and run to firstmate"
+      assert_grep 'report the evidence to firstmate without rerunning CI' "$brief" "$mode/$forge: unrelated failures must not trigger CI"
       assert_grep 'Never push an empty, no-op, or "retrigger" commit to rerun CI' "$brief" \
         "$mode/$forge: CI retrigger commits must be forbidden"
-      if [ "$forge" = forgejo ]; then
-        assert_grep 'forge equivalent where one exists' "$brief" 'Forgejo needs a supported rerun equivalent'
-        assert_no_grep 'gh-axi run rerun' "$brief" 'GitHub rerun command leaked into Forgejo'
-      else
-        assert_grep 'gh-axi run rerun <run-id> --failed' "$brief" "$mode/$forge: missing failed-only GitHub rerun"
-      fi
       if [ "$mode" = no-mistakes ]; then
-        assert_grep 'apply this rule through its CI step' "$brief" "$forge: pipeline must retain CI ownership"
+        assert_grep 'report unrelated failures through its CI step' "$brief" "$forge: pipeline must retain CI ownership"
         assert_grep 'skip as unrelated with evidence' "$brief" "$forge: pipeline unrelated-CI exception was lost"
       fi
     done
@@ -562,11 +587,9 @@ test_ci_cost_discipline() {
     || fail 'scout scaffold failed'
   brief="$home/data/cost-scout/brief.md"
   assert_grep 'Never push to any remote and never open a PR' "$brief" 'scouts must not publish'
+  assert_no_grep 'Run locally only the tests for what you changed' "$brief" 'scout inherited the ship DoD policy'
   assert_no_grep 'rerun only the failed jobs' "$brief" 'non-publishing scouts inherited CI repair instructions'
-  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" cost-local proj --mode local-only >/dev/null 2>&1 \
-    || fail 'local-only scaffold failed'
-  assert_no_grep 'rerun only the failed jobs' "$home/data/cost-local/brief.md" 'local-only inherited forge CI instructions'
-  pass 'publishing ship briefs minimize CI reruns while scouts and local-only tasks never publish'
+  pass 'all ship briefs scope local validation, preserve publication ownership, and forbid worker CI reruns'
 }
 
 # Pin the specific line the bug lived on: the no-mistakes DOD's no-mistakes
@@ -2036,7 +2059,7 @@ test_faster_paths_use_configured_authority_without_stacked_review
 test_no_mistakes_dod_wording
 test_no_mistakes_dod_green_detection
 test_pr_based_dod_requires_non_draft
-test_draft_first_and_batched_repairs
+test_draft_first_and_publication_ownership
 test_ci_cost_discipline
 test_direct_pr_dod_binds_the_pr_target_to_origin
 test_ask_user_escalation_format
