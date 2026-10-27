@@ -67,7 +67,17 @@ case "${1:-}" in
     exit 0 ;;
   kill-window) : > "$window_file"; exit 0 ;;
   has-session|new-session) exit 0 ;;
-  send-keys) exit 0 ;;
+  send-keys)
+    if [ "${FM_FAKE_EXEC_GET:-0}" = 1 ]; then
+      for arg in "$@"; do
+        case "$arg" in
+          bash\ *get.sh*)
+            (/bin/sleep "${FM_FAKE_GET_QUEUE_DELAY:-0}"; /bin/bash -c "$arg") </dev/null >"$FM_FAKE_GET_LOG" 2>&1 &
+            ;;
+        esac
+      done
+    fi
+    exit 0 ;;
 esac
 exit 0
 SH
@@ -219,7 +229,7 @@ test_primary_checkout_that_never_settles_fails_at_the_deadline() {
   read_settle_record "$rec"
   fm_test_fake_sleep_noop "$FAKEBIN_DIR"
 
-  out=$(run_settle_spawn "$id")
+  out=$(FM_TREEHOUSE_GET_TIMEOUT=2 run_settle_spawn "$id")
   status=$?
   [ "$status" -ne 0 ] || fail "spawn accepted a pane that never left the primary checkout"$'\n'"$out"
   assert_contains "$out" "did not enter an isolated worktree" \
@@ -285,8 +295,81 @@ test_copied_gitdir_is_refused_before_refresh() {
   pass "a copied gitdir is refused without moving HEAD or deleting the copy"
 }
 
+test_timeout_stops_get_and_its_copy_process() {
+  local rec id out status pid stat file
+  id=settle-timeout-z8
+  rec=$(make_primary_case settle-timeout "$id" 100000)
+  read_settle_record "$rec"
+  cat > "$FAKEBIN_DIR/treehouse" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$$" > "$FM_FAKE_GET_LOG.pid"
+/bin/bash -c 'printf "%s\n" "$$" > "$FM_FAKE_GET_LOG.child"; /bin/sleep 6; touch "$FM_FAKE_GET_LOG.late-copy"' &
+wait
+SH
+  out=$(FM_TREEHOUSE_GET_TIMEOUT=3 FM_FAKE_EXEC_GET=1 FM_FAKE_GET_LOG="$COUNTFILE.get" run_settle_spawn "$id")
+  status=$?
+  [ "$status" -ne 0 ] || fail "spawn accepted an acquisition that never settled"
+  assert_contains "$out" "within 3s" "timeout refusal did not name its configured bound"
+  assert_contains "$out" "pending acquisition stopped" "timeout did not confirm cancellation"$'\n'"$out"
+  for file in "$COUNTFILE.get.pid" "$COUNTFILE.get.child"; do
+    [ -s "$file" ] || fail "timeout test never started its acquisition/copy process"
+    pid=$(cat "$file")
+    stat=$(ps -p "$pid" -o stat= 2>/dev/null || true)
+    case "$stat" in ''|*Z*) ;; *) fail "timeout left process $pid running ($stat)" ;; esac
+  done
+  /bin/sleep 4
+  [ ! -e "$COUNTFILE.get.late-copy" ] || fail "timed-out get left a late physical copy"
+  [ ! -e "$HOME_DIR/state/$id.meta" ] || fail "timed-out spawn published task metadata"
+  pass "timeout stops get and its pending copy subprocess before a late copy can appear"
+}
+
+test_canonical_slot_with_an_aliased_neighbor_is_refused() {
+  local rec id out status case_dir before
+  id=settle-alias-neighbor-z10
+  rec=$(make_settle_case settle-alias-neighbor "$id" 0)
+  read_settle_record "$rec"
+  case_dir=${COUNTFILE%/*}
+  mkdir -p "$case_dir/pool/1" "$case_dir/pool/2/project"
+  git -C "$PROJ_DIR" worktree add --quiet --detach "$case_dir/pool/1/project" HEAD
+  WT_DIR="$case_dir/pool/1/project"
+  cp "$WT_DIR/.git" "$case_dir/pool/2/project/.git"
+  printf '{}\n' > "$case_dir/pool/treehouse-state.json"
+  before=$(git -C "$WT_DIR" reflog)
+  out=$(run_settle_spawn "$id")
+  status=$?
+  [ "$status" -ne 0 ] || fail "spawn accepted a canonical slot whose neighbor shares its gitdir"
+  assert_contains "$out" "shares gitdir" "canonical slot refusal did not explain the alias"
+  assert_contains "$out" "$case_dir/pool/2/project" "alias refusal did not identify the other copy"
+  [ ! -e "$HOME_DIR/state/$id.meta" ] || fail "aliased canonical slot published metadata"
+  [ "$(git -C "$WT_DIR" reflog)" = "$before" ] || fail "alias refusal reset the shared HEAD"
+  [ -f "$case_dir/pool/2/project/.git" ] || fail "alias refusal deleted the other copy"
+  pass "a canonical slot is refused when another physical pool slot aliases its gitdir"
+}
+
+test_timeout_prevents_a_queued_get_from_starting() {
+  local rec id out status
+  id=settle-queued-z9
+  rec=$(make_primary_case settle-queued "$id" 100000)
+  read_settle_record "$rec"
+  cat > "$FAKEBIN_DIR/treehouse" <<'SH'
+#!/usr/bin/env bash
+touch "$FM_FAKE_GET_LOG.started"
+SH
+  out=$(FM_TREEHOUSE_GET_TIMEOUT=1 FM_FAKE_EXEC_GET=1 FM_FAKE_GET_QUEUE_DELAY=4 \
+    FM_FAKE_GET_LOG="$COUNTFILE.get" run_settle_spawn "$id")
+  status=$?
+  [ "$status" -ne 0 ] || fail "spawn accepted a queued acquisition"
+  /bin/sleep 5
+  [ ! -e "$COUNTFILE.get.started" ] || fail "queued get began after the timeout refusal"
+  [ ! -e "$HOME_DIR/state/$id.meta" ] || fail "queued acquisition published metadata"
+  pass "a queued get cannot start after timeout"
+}
+
 test_slow_acquisition_survives_the_old_poll_limit
 test_copied_gitdir_is_refused_before_refresh
+test_timeout_stops_get_and_its_copy_process
+test_timeout_prevents_a_queued_get_from_starting
+test_canonical_slot_with_an_aliased_neighbor_is_refused
 test_single_stale_first_read_is_not_accepted
 test_already_settled_pane_costs_one_confirm_read
 test_transient_primary_checkout_is_not_accepted

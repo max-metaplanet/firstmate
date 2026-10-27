@@ -155,7 +155,7 @@ test_brief_assertion_precedes_branch() {
 run_spawn() {
   local home=$1 id=$2 proj=$3 pane=$4 fakebin=$5
   fm_test_spawn_brief "$home" "$id" brief
-  fm_test_run_spawn "$home" "$pane" "$fakebin" \
+  FM_TREEHOUSE_GET_TIMEOUT=5 fm_test_run_spawn "$home" "$pane" "$fakebin" \
     "$id" "$proj" codex --mode no-mistakes --yolo off
 }
 
@@ -294,7 +294,7 @@ test_spawn_tmux_window_construction() {
     "must disable allow-rename on the spawned window"
 
   # Bug 2 fix (b): treehouse-get and the worktree wait loop target the stable id.
-  assert_grep "send-keys -t @spawnwid treehouse get Enter" "$rec" \
+  assert_grep "send-keys -t @spawnwid bash .*/get.sh.* Enter" "$rec" \
     "treehouse get must be sent to the stable window id"
   assert_grep "display-message -p -t @spawnwid #{pane_current_path}" "$rec" \
     "the worktree wait loop must query the stable window id, not the name"
