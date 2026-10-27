@@ -178,6 +178,7 @@ path=\${2:-}
 case "\$path" in
   */pulls\?*)
     [ ! -e "\$FX/fail-pulls" ] || exit 1
+    [ ! -f "\$FX/pulls-delay" ] || sleep "\$(cat "\$FX/pulls-delay")"
     cat "\$FX/pulls.json" ;;
   */issues/*/comments\?*)
     [ ! -e "\$FX/fail-comments" ] || exit 1
@@ -853,8 +854,8 @@ test_a_long_batch_carries_every_verdict_uncut() {
 # Wrap a home's fake gh so a read matching <pattern> logs itself and then hangs
 # past the read bound, spending the whole read budget: only the first such read
 # with `once`, every one with `always`.
-slow_gh() {  # <home> <case-pattern> <once|always>
-  local home=$1 bin="$1/bin" consume=
+slow_gh() {  # <home> <case-pattern> <once|always> [sleep-secs]
+  local home=$1 bin="$1/bin" consume='' secs=${4:-4}
   [ "$3" = always ] || consume="rm -f '$home/fx/slow-read'"
   mv "$bin/gh" "$bin/gh-fixture"
   cat > "$bin/gh" <<EOF
@@ -864,7 +865,7 @@ case "\$*" in
     if [ -e '$home/fx/slow-read' ]; then
       $consume
       printf '%s\n' "\$*" >> '$home/fx/gh-argv.log'
-      sleep 4
+      sleep $secs
       exit 1
     fi ;;
 esac
@@ -888,8 +889,8 @@ write_real_pulls() {  # <home> <json-array-of-numbers>
 }
 
 # One poll on the real wall clock.
-budget_poll() {  # <home>
-  env PATH="$1/bin:$PATH" FM_HOME="$1" FM_JEV_PROD_BUDGET=3 \
+budget_poll() {  # <home> [budget-secs]
+  env PATH="$1/bin:$PATH" FM_HOME="$1" FM_JEV_PROD_BUDGET="${2:-3}" \
     FM_JEV_PROD_MAX_PRS=3 "$CHECK" check 2>&1
 }
 
@@ -1057,12 +1058,14 @@ test_a_first_comment_read_budget_cut_is_retried() {
   fake_gh "$home" >/dev/null
   write_real_pulls "$home" '[2214]'
   write_comments "$home" 2214 900025 "$(section portal proven post-merge production completedrec)"
-  slow_gh "$home" '*issues/2214/comments*' once
-  out=$(budget_poll "$home")
+  # A 12-second budget leaves the retrying poll's reads a clear margin on a
+  # loaded host; the stalled read outlasts it, so the first poll is still cut.
+  slow_gh "$home" '*issues/2214/comments*' once 15
+  out=$(budget_poll "$home" 12)
   assert_equals "" "$out" "an exhausted comment read never wakes"
   assert_no_grep $'pending\t' "$home/state/.jev-prod-monitor" "an exhausted comment read never queues"
   assert_no_grep $'woken\t' "$home/state/.jev-prod-monitor" "an exhausted comment read never settles"
-  out=$(budget_poll "$home")
+  out=$(budget_poll "$home" 12)
   assert_equals "" "$out" "the recovered passing verdict is silent"
   assert_grep $'woken\t2214/portal/completedrec' "$home/state/.jev-prod-monitor" "the next poll retries and records the actual result"
   pass "fm-jev-prod-check: a first comment budget cut retries without a terminal outcome"
@@ -1084,6 +1087,57 @@ test_the_read_budget_fits_a_lowered_check_timeout() {
   assert_grep "woken	2214/portal/b0d9e7000001" "$home/state/.jev-prod-monitor" \
     "the poll must still reach and record the verdict under a tight bound"
   pass "fm-jev-prod-check: the read budget stays inside a lowered watcher check timeout"
+}
+
+test_a_slow_merged_pull_list_still_reaches_the_verdict() {
+  local home out
+  home=$(make_home slow-pulls)
+  configure "$home"
+  fake_gh "$home" >/dev/null
+  write_pulls "$home" 7200
+  write_comments "$home" 2214 900013 "$(section portal proven post-merge production slowpulls)"
+  printf '6\n' > "$home/fx/pulls-delay"
+
+  out=$(poll "$home" FM_JEV_PROD_BATCH_SECS=0)
+  expect_code 0 "$?" "a successful six-second inventory read must complete"
+  assert_equals "" "$out" "a successful slow inventory must not report couldnt-check"
+  assert_grep $'woken\t2214/portal/slowpulls' "$home/state/.jev-prod-monitor" \
+    "the slow inventory must still reach and settle the production verdict"
+  pass "fm-jev-prod-check: a merged pull list taking longer than five seconds reaches the verdict"
+}
+
+test_a_late_read_uses_only_the_remaining_budget() {
+  local home out started elapsed
+  home=$(make_home late-read)
+  configure "$home"
+  fake_gh "$home" >/dev/null
+  cat > "$home/bin/date" <<EOF
+#!/usr/bin/env bash
+if [ ! -e '$home/fx/clock-started' ]; then
+  touch '$home/fx/clock-started'
+  printf '%s\n' '$NOW'
+else
+  printf '%s\n' '$((NOW + 19))'
+fi
+EOF
+  cat > "$home/bin/gh" <<EOF
+#!/usr/bin/env bash
+exec >/dev/null 2>&1
+sleep 10
+printf '[]\n'
+EOF
+  chmod +x "$home/bin/date" "$home/bin/gh"
+
+  started=$SECONDS
+  out=$(env -u FM_JEV_PROD_NOW PATH="$home/bin:$PATH" FM_HOME="$home" \
+    FM_JEV_PROD_BUDGET=20 "$CHECK" check 2>&1)
+  expect_code 0 "$?" "an inventory timeout must report cleanly"
+  elapsed=$((SECONDS - started))
+  # A read given the full 15-second allowance would run all ten seconds; the
+  # margin below that absorbs process startup on a loaded host.
+  [ "$elapsed" -lt 8 ] || fail "one second left must return before a ten-second read completes (took ${elapsed}s)"
+  assert_contains "$out" 'couldnt-check the merged pull request list' "a timed-out inventory must not count as clean"
+  pass "fm-jev-prod-check: a late read cannot spend the full per-read allowance"
 }
 
 test_saved_lists_survive_full_rotations() {
@@ -1724,3 +1778,5 @@ test_a_pull_request_slow_on_every_poll_never_holds_the_monitor
 test_a_deployment_budget_cut_is_retried
 test_a_first_comment_read_budget_cut_is_retried
 test_the_read_budget_fits_a_lowered_check_timeout
+test_a_slow_merged_pull_list_still_reaches_the_verdict
+test_a_late_read_uses_only_the_remaining_budget

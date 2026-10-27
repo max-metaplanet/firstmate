@@ -91,7 +91,8 @@
 # finish every candidate in that inventory before replacing the state. A full
 # 50-PR page warns that older candidates may be missing; reseed does not paginate.
 # Its manual read budget is FM_JEV_PROD_BUDGET (default 120 seconds, capped at
-# 300), independent of FM_CHECK_TIMEOUT. Each forge read remains capped at 5s.
+# 300), independent of FM_CHECK_TIMEOUT. Each forge read is capped at 15s and
+# the remaining budget.
 # Not-applicable outcomes retain their reason in `outcome` rows and never claim
 # a browser pass. When run metadata is unavailable, a recorded digest or section
 # fingerprint is the fallback identity; malformed sections also use the comment
@@ -169,7 +170,8 @@ repository to watch. An unconfigured home runs no check and spends nothing.
 docs/configuration.md owns the schema; the `bearings` skill's "Jev production
 verdict follow-up" section owns what firstmate does with each class.
 Manual reseed uses FM_JEV_PROD_BUDGET (default 120 seconds, maximum 300),
-independent of the watcher timeout, with each forge read bounded to 5 seconds.
+independent of the watcher timeout, with each forge read bounded to 15 seconds
+and the remaining budget.
 EOF
 }
 
@@ -212,7 +214,7 @@ else
   [ "$BUDGET" -le "$BUDGET_CAP" ] || BUDGET=$BUDGET_CAP
 fi
 # No single forge read may eat the whole budget.
-READ_SECS=5
+READ_SECS=15
 [ "$READ_SECS" -le "$BUDGET" ] || READ_SECS=$BUDGET
 
 TMP=
@@ -380,9 +382,19 @@ budget_left() {
   [ "$now" -lt "$DEADLINE" ]
 }
 
+read_timed() {  # <command...>
+  local now seconds=$READ_SECS remaining
+  now=$(date +%s)
+  [ -n "${FM_JEV_PROD_NOW:-}" ] && now=$NOW
+  remaining=$((DEADLINE - now))
+  [ "$remaining" -gt 0 ] || return 1
+  [ "$seconds" -le "$remaining" ] || seconds=$remaining
+  fm_run_timed "$seconds" "$@"
+}
+
 gh_json() {  # <api-path> ; prints the raw body
   local out rc=0
-  out=$(fm_run_timed "$READ_SECS" gh api "$1" 2>/dev/null)
+  out=$(read_timed gh api "$1" 2>/dev/null)
   rc=$?
   [ "$rc" -eq 0 ] || return 1
   [ -n "$out" ] || return 1
@@ -400,7 +412,7 @@ gh_json_cached() {
 
 artifact_download() {  # <repo> <artifact-id> <zip>
   [ -s "$3" ] && return 0
-  fm_run_timed "$READ_SECS" gh api "repos/$1/actions/artifacts/$2/zip" > "$3" 2>/dev/null || {
+  read_timed gh api "repos/$1/actions/artifacts/$2/zip" > "$3" 2>/dev/null || {
     rm -f "$3"
     return 1
   }
@@ -531,7 +543,7 @@ ARTIFACT_RUN_URL=
 # given, and an exported function is not something timeout(1) can exec.
 unzip_capped() {  # <zip> <entry>
   # shellcheck disable=SC2016 # The inner shell expands these, not this one.
-  fm_run_timed "$READ_SECS" bash -c \
+  read_timed bash -c \
     'unzip -p "$1" "$2" 2>/dev/null | head -c "$3"' _ "$1" "$2" "$UNZIP_MAX_BYTES"
 }
 
