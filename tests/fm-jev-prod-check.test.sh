@@ -1121,7 +1121,7 @@ EOF
   cat > "$home/bin/gh" <<EOF
 #!/usr/bin/env bash
 exec >/dev/null 2>&1
-sleep 4
+sleep 10
 printf '[]\n'
 EOF
   chmod +x "$home/bin/date" "$home/bin/gh"
@@ -1131,7 +1131,9 @@ EOF
     FM_JEV_PROD_BUDGET=20 "$CHECK" check 2>&1)
   expect_code 0 "$?" "an inventory timeout must report cleanly"
   elapsed=$((SECONDS - started))
-  [ "$elapsed" -lt 4 ] || fail "one second left must return before a four-second read completes (took ${elapsed}s)"
+  # A read given the full 15-second allowance would run all ten seconds; the
+  # margin below that absorbs process startup on a loaded host.
+  [ "$elapsed" -lt 8 ] || fail "one second left must return before a ten-second read completes (took ${elapsed}s)"
   assert_contains "$out" 'couldnt-check the merged pull request list' "a timed-out inventory must not count as clean"
   pass "fm-jev-prod-check: a late read cannot spend the full per-read allowance"
 }
