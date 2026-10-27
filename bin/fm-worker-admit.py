@@ -17,9 +17,9 @@ Held, blocked and date-gated queued ships keep theirs. Any successful fresh
 launch of the task consumes the record.
 
 Exit 75 is the only capacity retry; under replay, fm-spawn also exits 75 for
-the away spend cap and seat-quota holds. A fleet-wide deferral ends the tick's
-replays and a project deferral skips that project's remaining records until
-the next tick. Any other refusal backs off and retries;
+the away spend cap and seat-quota holds. A fleet-wide or spend-cap deferral
+ends the tick's replays; a project or seat deferral skips that project's or
+harness's remaining records until the next tick. Any other refusal backs off and retries;
 after REFUSALS consecutive refusals the record is quarantined with its reason,
 reported once as a blocked line in state/<id>.status, and never replayed. An
 explicit dispatch clears it: launching consumes the record and a new capacity
@@ -154,8 +154,9 @@ def argv(record):
         if record[key]:
             args += ['--' + key.replace('_', '-'), record[key]]
     if record['ticket']:
-        args += ['--ticket', record['ticket'], '--commit-type', record['commit_type'],
-                 '--ticket-scope', record['ticket_scope']]
+        args += ['--ticket', record['ticket'], '--commit-type', record['commit_type']]
+        if record['ticket'] != 'no-ticket':
+            args += ['--ticket-scope', record['ticket_scope']]
     else:
         args += ['--branch-prefix', record['branch_prefix']]
     for key in ('ignore_seat_hold', 'herdr_resume_lock_wait'):
@@ -218,10 +219,10 @@ def tick():
                 event(ident, 'skipped', str(error) + '; record discarded')
                 path.unlink(missing_ok=True)
         pending.sort(key=lambda item: queue_order(intake, item[0], item[1], receipts['entries']))
-        deferred_projects = set()
+        waiting = set()
         for row, value, path, expected in pending:
             ident = row['id']
-            if value['project'] in deferred_projects:
+            if {('project', value['project']), ('harness', value['harness'])} & waiting:
                 continue
             tickets = set(re.findall(r'^Ticket: (ENG-\d+)\s*$', row.get('body', ''), re.MULTILINE))
             if value['ticket'].startswith('ENG-'):
@@ -244,7 +245,9 @@ def tick():
             elif result.returncode != 75:
                 refuse(ident, path, expected, reason)
             elif re.search(r'^deferred: (project |.* in project )', reason, re.MULTILINE):
-                deferred_projects.add(value['project'])
+                waiting.add(('project', value['project']))
+            elif re.search(r'^deferred: harness ', reason, re.MULTILINE):
+                waiting.add(('harness', value['harness']))
             elif re.search(r'^deferred:', reason, re.MULTILINE):
                 break
 

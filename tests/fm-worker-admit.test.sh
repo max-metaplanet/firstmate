@@ -18,6 +18,21 @@ ROOT = Path(os.environ['ROOT'])
 SCRATCH = Path(os.environ['ADMIT_TEST_ROOT'])
 
 
+AWAY_CAP_ONE = """version: 1
+entered: 2026-09-20T01:00:00Z
+entered_epoch: 1789600000
+expected_return: 2026-09-20T09:00:00Z
+reach_channels: none
+reach_announced: No phone channel is configured; anything that needs you waits for your return.
+spend_max_concurrent_workers: 1
+merge_grants:
+confirmed: 2026-09-20T01:00:05Z
+confirmed_epoch: 1789600005
+words: |-
+  work the queue overnight
+"""
+
+
 class AdmissionTests(unittest.TestCase):
     def setUp(self):
         self.home = SCRATCH / self._testMethodName
@@ -36,6 +51,8 @@ exec python3 - "$@" <<'PY_SPAWN'
 import json, os, pathlib, subprocess, sys, time
 h=pathlib.Path(os.environ['FM_HOME']); args=sys.argv[1:]; ident=args[0]
 with (h/'attempts').open('a') as f: f.write(ident+'\\n')
+if (h/'real').exists(): os.execvp('bash', ['bash', os.path.join(os.path.dirname(os.path.realpath(h/'bin/fm-tasks-axi.sh')), 'fm-spawn.sh'), *args])
+if (h/'seat-held').exists() and args[args.index('--harness')+1] == (h/'seat-held').read_text(): print('deferred: harness '+args[args.index('--harness')+1]+' has no seat room'); sys.exit(75)
 if (h/'full').exists(): print((h/'full').read_text()); sys.exit(75)
 if (h/'refuse').exists(): print('error: refused by fixture'); sys.exit(1)
 subprocess.run(['python3', str(h/'bin/fm-worker-admit.py'), 'verify', ident, os.environ['FM_WORKER_AUTO_ADMIT_DIGEST']], check=True)
@@ -65,16 +82,16 @@ PY_SPAWN
     def tasks(self, *args):
         return self.command('bash', str(self.home / 'bin/fm-tasks-axi.sh'), *args)
 
-    def add(self, ident, priority=2, ticket='no-ticket', project=None):
+    def add(self, ident, priority=2, ticket='no-ticket', project=None, harness='codex'):
         self.tasks('add', ident, ident, '--kind', 'ship', '--queue', '--priority', str(priority))
         directory = self.home / 'data' / ident
         directory.mkdir()
         (directory / 'brief.md').write_text("# Task\n## Captain's intent\nImplement accepted work.\n## Firstmate spec\nUse recorded flags.\n")
-        return self.add_record(ident, ticket, project)
+        return self.add_record(ident, ticket, project, harness)
 
-    def add_record(self, ident, ticket='no-ticket', project=None):
+    def add_record(self, ident, ticket='no-ticket', project=None, harness='codex'):
         args = [str(project or self.home / 'project'), 'direct-PR', 'off', ticket, 'feat', 'fm/',
-                'release/test', 'codex', 'model/accepted', 'high', 'tmux', '', 'partial', '0', '0']
+                'release/test', harness, 'model/accepted', 'high', 'tmux', '', 'partial', '0', '0']
         self.command('python3', str(self.home / 'bin/fm-worker-admit.py'), 'record', ident, *args)
         return self.home / 'state' / (ident + '.deferred-spawn.json')
 
@@ -112,7 +129,7 @@ PY_SPAWN
         self.assertEqual(self.launches(), [['next', str(self.home / 'project'), '--mode', 'direct-PR',
             '--yolo', 'off', '--base-branch', 'release/test', '--harness', 'codex', '--model',
             'model/accepted', '--effort', 'high', '--backend', 'tmux', '--ticket', 'no-ticket',
-            '--commit-type', 'feat', '--ticket-scope', 'partial']])
+            '--commit-type', 'feat']])
         self.assertFalse(record.exists())
         self.tick()
         self.assertEqual(len(self.launches()), 1)
@@ -186,6 +203,28 @@ PY_SPAWN
         self.tick()
         self.assertEqual(self.attempts(), ['first', 'other-project', 'first'])
         self.assertEqual(self.audit(), ['deferred'] * 3)
+
+    def test_away_spend_cap_ends_the_tick_without_counting_refusals(self):
+        for ident in ('first', 'second', 'third'):
+            self.add(ident)
+        (self.home / 'state/.afk-contract').write_text(AWAY_CAP_ONE)
+        (self.home / 'state/live.meta').write_text('kind=ship\n')
+        (self.home / 'real').touch()
+        self.tick()
+        self.tick()
+        self.assertEqual(self.attempts(), ['first', 'first'])
+        self.assertEqual(self.audit(), ['deferred'] * 3)
+        self.assertEqual(self.launches(), [])
+
+    def test_seat_hold_skips_its_harness_without_starving_another(self):
+        self.add('claude-first', 0, harness='claude')
+        self.add('claude-second', 1, harness='claude')
+        self.add('codex-next', 2)
+        (self.home / 'seat-held').write_text('claude')
+        self.tick()
+        self.assertEqual(self.attempts(), ['claude-first', 'codex-next'])
+        self.assertEqual([args[0] for args in self.launches()], ['codex-next'])
+        self.assertTrue((self.home / 'state/claude-second.deferred-spawn.json').exists())
 
     def test_refusals_back_off_then_quarantine_once_until_explicit_dispatch(self):
         path = self.add('refused')

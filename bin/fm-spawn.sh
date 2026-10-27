@@ -2072,8 +2072,15 @@ fi
 if [ "$RELAUNCH" -ne 1 ]; then
   fm_lease_forbid_branch "new-task spawn (fm-spawn)" --away-relocated
 fi
-SPAWN_WAIT_EXIT=1
-[ "${FM_WORKER_AUTO_ADMIT:-0}" != 1 ] || SPAWN_WAIT_EXIT=75
+spawn_wait_exit() {  # <scope>: home or harness
+  [ "${FM_WORKER_AUTO_ADMIT:-0}" = 1 ] || exit 1
+  if [ "$1" = home ]; then
+    echo "deferred: the away spend cap holds new work in this home; task $ID stays queued" >&2
+  else
+    echo "deferred: harness $HARNESS has no seat room for new work; task $ID stays queued" >&2
+  fi
+  exit 75
+}
 spawn_refuse_if_away_spend_cap() {
   local cap live
   [ "$RELAUNCH" -ne 1 ] || return 0
@@ -2094,7 +2101,7 @@ spawn_refuse_if_away_spend_cap() {
   esac
   if [ "$live" -ge "$cap" ]; then
     echo "error: spawn refused - the away-posture record caps concurrent workers at $cap and $live ordinary task(s) are live in this home; task $ID stays queued for the captain's return or for a worker to finish (spend cap: bin/fm-afk-contract.sh)" >&2
-    exit "$SPAWN_WAIT_EXIT"
+    spawn_wait_exit home
   fi
 }
 # Spend cap (bin/fm-afk-contract.sh's spend_max_concurrent_workers): while an
@@ -3153,7 +3160,7 @@ spawn_seat_dispatch_gate() {
       printf '%s\n' "$SEAT_DISPATCH" | sed 's/^/  /'
       echo "re-run with --ignore-seat-hold to start this task anyway, or change the policy with bin/fm-seat.sh extra-usage"
     } >&2
-    exit "$SPAWN_WAIT_EXIT"
+    spawn_wait_exit harness
   fi
   case "$SEAT_DISPATCH" in
     *source=last-good-fallback*) printf 'Claude dispatch: %s\n' "$SEAT_DISPATCH" >&2 ;;
@@ -3267,7 +3274,7 @@ spawn_provider_depletion_gate() {
   if fm_seat_dry_announce "$STATE" "$HARNESS" "$notice"; then
     fm_wake_append check "seat-depleted:$HARNESS" "check: $notice" || true
   fi
-  exit "$SPAWN_WAIT_EXIT"
+  spawn_wait_exit harness
 }
 
 # Five-hour launch routing: a five-hour dip never rotates the active seat or
@@ -3294,7 +3301,7 @@ spawn_seat_session_gate() {
       echo "  re-run with --ignore-seat-hold to start this task on the active seat anyway"
     } >&2
     rm -f -- "$err"
-    exit "$SPAWN_WAIT_EXIT"
+    spawn_wait_exit harness
   fi
   rm -f -- "$err"
   active=$(FM_SEAT_PROVIDER=claude CONFIG=$seat_config fm_seat_active)
