@@ -254,6 +254,130 @@ test_available_capacity_admits_the_worker() {
   pass "a spawn is admitted while its project still has a free place"
 }
 
+# The watcher's parking tick, which replays recorded launches through real spawn.
+admission_tick() {  # <case-dir> <pane-path>
+  FM_ROOT_OVERRIDE='' FM_HOME="$1/home" FM_STATE_OVERRIDE='' FM_DATA_OVERRIDE='' FM_CONFIG_OVERRIDE='' \
+    FM_SPAWN_NO_GUARD=1 TMUX="fake,1,0" FM_BACKEND=tmux \
+    FM_FAKE_PANE_PATH="$2" FM_FAKE_CALL_LOG="$1/calls.log" PATH="$1/fakebin:$PATH" \
+    bash "$ROOT/bin/fm-worker-park.sh" tick >"$1/tick.log" 2>&1 || fail "automatic tick failed: $(cat "$1/tick.log")"
+}
+
+test_freed_slot_automatically_admits_one_recorded_ship() {
+  local case_dir home pane out rc=0 id
+  case_dir=$(make_case autoadmit next-a next-b)
+  home="$case_dir/home"
+  declare_capacity "$home" "project 1"
+  write_live "$home" live-a "$case_dir/project"
+  for id in next-a next-b; do
+    rc=0
+    out=$(spawn_ship "$case_dir" "$id" "$case_dir/unused") || rc=$?
+    expect_code "$DEFER_EXIT" "$rc" "expected recorded capacity deferral: $out"
+  done
+  rm "$home/state/live-a.meta"
+  admission_tick "$case_dir" "$(new_worktree "$case_dir" admitted)"
+  assert_present "$home/state/next-a.meta" "a freed slot did not admit its first authorized ship"
+  assert_absent "$home/state/next-b.meta" "automatic admission exceeded project capacity"
+  assert_absent "$home/state/next-a.deferred-spawn.json" "successful admission retained its launch request"
+  assert_present "$home/state/next-b.deferred-spawn.json" "capacity deferral lost its retry"
+  assert_grep '"result": "admitted"' "$home/state/worker-admission.jsonl" "automatic admission left no durable outcome"
+  pass "freed project slot admits the recorded ship through real spawn and retains overflow"
+}
+
+test_replay_refuses_a_ticket_owned_elsewhere_from_row_evidence() {
+  [ "$HAVE_TASKS_AXI" = 1 ] || return 0
+  local case_dir home out rc=0
+  case_dir=$(make_case owned task-c)
+  home="$case_dir/home"
+  tasks-axi update task-c --body 'Ticket: ENG-1' --file "$home/data/backlog.md" >/dev/null
+  python3 - "$ROOT/tests/fixtures/clickup-queue-v1.json" "$case_dir/snapshot.json" <<'FIXTURE'
+import json, sys
+v=json.load(open(sys.argv[1]))
+row=v['candidates'][0]
+assert row['ticket'] == 'ENG-1'
+row['eligibility'].update(eligible=False, exclusion_reasons=['andrew_owned'])
+row['scope']['comments_complete']=True
+json.dump(v, open(sys.argv[2], 'w'))
+FIXTURE
+  cat > "$case_dir/source" <<'SOURCE'
+#!/usr/bin/env python3
+from datetime import datetime, timezone
+import json, pathlib, sys
+v=json.loads((pathlib.Path(__file__).parent/'snapshot.json').read_text())
+v['observed_at']=datetime.now(timezone.utc).isoformat()
+if '--refresh' in sys.argv:
+    v['mode']='refresh'
+    v['coverage'].update(complete=False,all_pages_read=False,absence_means_withdrawal=False)
+print(json.dumps(v))
+SOURCE
+  chmod +x "$case_dir/source"
+  printf '%s\n' "$case_dir/source" > "$home/config/work-intake-hook"
+  declare_capacity "$home" "project 1"
+  write_live "$home" live-a "$case_dir/project"
+  out=$(spawn_ship "$case_dir" task-c "$case_dir/unused") || rc=$?
+  expect_code "$DEFER_EXIT" "$rc" "expected recorded capacity deferral: $out"
+  rm "$home/state/live-a.meta"
+  admission_tick "$case_dir" "$(new_worktree "$case_dir" task-c)"
+  assert_absent "$home/state/task-c.meta" "replay launched a ticket the source marks Andrew-owned"
+  assert_equals queued "$(row_state "$home" task-c)" "a refused replay moved the backlog item"
+  assert_present "$home/state/task-c.deferred-spawn.json" "a first refusal dropped the replay record"
+  assert_grep '"result": "refused"' "$home/state/worker-admission.jsonl" "the ownership refusal left no audit row"
+  pass "replay checks the row's ticket against source ownership and refuses an Andrew-owned ticket"
+}
+
+test_away_spend_cap_defers_replay_until_a_worker_finishes() {
+  local case_dir home out rc=0
+  case_dir=$(make_case spendcap task-c)
+  home="$case_dir/home"
+  declare_capacity "$home" "project 1"
+  write_live "$home" live-a "$case_dir/project"
+  out=$(spawn_ship "$case_dir" task-c "$case_dir/unused") || rc=$?
+  expect_code "$DEFER_EXIT" "$rc" "expected recorded capacity deferral: $out"
+  cat > "$home/state/.afk-contract" <<'EOF'
+version: 1
+entered: 2026-09-20T01:00:00Z
+entered_epoch: 1789600000
+expected_return: 2026-09-20T09:00:00Z
+reach_channels: none
+reach_announced: No phone channel is configured; anything that needs you waits for your return.
+spend_max_concurrent_workers: 1
+merge_grants:
+confirmed: 2026-09-20T01:00:05Z
+confirmed_epoch: 1789600005
+words: |-
+  work the queue overnight
+EOF
+  rm "$home/state/live-a.meta"
+  write_live "$home" live-b "$case_dir/other-project"
+  admission_tick "$case_dir" "$case_dir/unused"
+  admission_tick "$case_dir" "$case_dir/unused"
+  assert_absent "$home/state/task-c.meta" "replay launched past the away spend cap"
+  assert_present "$home/state/task-c.deferred-spawn.json" "the spend cap dropped the replay record"
+  assert_no_grep '"result": "refused"' "$home/state/worker-admission.jsonl" "the spend cap counted toward quarantine"
+  rm "$home/state/live-b.meta"
+  admission_tick "$case_dir" "$(new_worktree "$case_dir" task-c)"
+  assert_present "$home/state/task-c.meta" "replay was not admitted once the spend cap cleared"
+  assert_grep '"result": "admitted"' "$home/state/worker-admission.jsonl" "the admission left no audit row"
+  pass "the away spend cap defers replay like capacity and admits once a worker finishes"
+}
+
+test_manual_dispatch_consumes_the_recorded_launch() {
+  local case_dir home out rc=0
+  case_dir=$(make_case manual task-c)
+  home="$case_dir/home"
+  declare_capacity "$home" "project 1"
+  write_live "$home" live-a "$case_dir/project"
+  out=$(spawn_ship "$case_dir" task-c "$case_dir/unused") || rc=$?
+  expect_code "$DEFER_EXIT" "$rc" "expected recorded capacity deferral: $out"
+  assert_present "$home/state/task-c.deferred-spawn.json" "capacity deferral recorded no replay contract"
+  rm "$home/state/live-a.meta"
+  rc=0
+  out=$(spawn_ship "$case_dir" task-c) || rc=$?
+  expect_code 0 "$rc" "manual dispatch after the slot freed was refused: $out"
+  assert_present "$home/state/task-c.meta" "manual dispatch published no task record"
+  assert_absent "$home/state/task-c.deferred-spawn.json" "manual dispatch left a stale replay contract"
+  pass "a successful manual dispatch consumes the recorded automatic replay"
+}
+
 test_exhausted_capacity_defers_without_leaving_anything_behind() {
   local case_dir home out rc=0 before worktrees
   case_dir=$(make_case exhausted task-c)
@@ -270,6 +394,11 @@ test_exhausted_capacity_defers_without_leaving_anything_behind() {
   assert_contains "$out" "task task-c was not launched and its backlog item stays queued" \
     "the deferral did not say the task stays queued"
   assert_nothing_created "$case_dir" "$home" task-c "$before" "$worktrees"
+  assert_present "$home/state/task-c.deferred-spawn.json" "capacity deferral lost the automatic replay contract"
+  jq -e --arg project "$case_dir/project" '.version == 1 and .task == "task-c" and .project == $project
+    and .mode == "no-mistakes" and .yolo == "off" and .harness == "codex" and .backend == "tmux"
+    and .branch_prefix == "fm/" and .base_branch == "" and (.brief_sha256 | length == 64)' \
+    "$home/state/task-c.deferred-spawn.json" >/dev/null || fail "replay contract omitted resolved launch axes"
   pass "a spawn beyond capacity is deferred before any record, brief, endpoint, worktree, or backlog move exists"
 }
 
@@ -720,6 +849,10 @@ CHECK
   pass 'imported work stays queued under capacity and source holds, then emits one start at the ordinary launch commit'
 }
 
+test_freed_slot_automatically_admits_one_recorded_ship
+test_replay_refuses_a_ticket_owned_elsewhere_from_row_evidence
+test_away_spend_cap_defers_replay_until_a_worker_finishes
+test_manual_dispatch_consumes_the_recorded_launch
 test_imported_work_uses_capacity_refresh_and_launch_commit
 
 test_undeclared_capacity_keeps_dispatch_uncapped

@@ -12,6 +12,7 @@ External waits release memory by exiting the worker through the existing lifecyc
 The worktree, branch, PR, task record and merge observer remain available for landing without an agent.
 [`bin/fm-worker-park.sh`](../bin/fm-worker-park.sh) owns parking eligibility, the configurable wait threshold, adoption of hand-exited workers, and wake commands.
 [`bin/fm-worker-park-lib.sh`](../bin/fm-worker-park-lib.sh) owns the durable state and resume ordering.
+[`bin/fm-worker-admit.py`](../bin/fm-worker-admit.py) owns capacity-deferred launch replay after those resumes.
 The watcher starts that owner beside its existing cycle, so parking never delays wake delivery, and excludes verified parked endpoints from stale and dead-worker recovery.
 Contribution observations, the PR merge poll and durable steering request resumption without consuming their original events.
 A PR observation requests it only for a completed check verdict, a head change, a review, a conflict, a close or a merge, so pending lanes and rerun starts never spend a slot, and one close or merge seen by both observers queues once.

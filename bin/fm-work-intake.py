@@ -175,16 +175,17 @@ def fields(line):
     return values
 
 
-def queue_rows(home=HOME, archive=False):
+def queue_rows(home=HOME, archive=False, ready=False):
     env = dict(os.environ, FM_HOME=str(home), FM_DATA_OVERRIDE=str(home / 'data'),
                FM_CONFIG_OVERRIDE=str(home / 'config'), FM_STATE_OVERRIDE=str(home / 'state'))
     if home == HOME:
         env.update(FM_DATA_OVERRIDE=str(DATA), FM_CONFIG_OVERRIDE=str(CONFIG), FM_STATE_OVERRIDE=str(STATE))
-    out = run([str(BIN / 'fm-tasks-axi.sh'), 'list-archive' if archive else 'list',
-               '--limit', '1000000', '--fields', 'body,links,held,hold_kind,hold_reason,blocked_by,priority,created'], env=env)
+    command = ['ready'] if ready else ['list-archive' if archive else 'list',
+               '--limit', '1000000', '--fields', 'body,links,held,hold_kind,hold_reason,blocked_by,priority,created']
+    out = run([str(BIN / 'fm-tasks-axi.sh'), *command], env=env)
     rows, columns, expected = [], None, None
     for line in out.splitlines():
-        header = re.fullmatch(r'tasks\[(\d+)\]\{([^}]+)\}:', line)
+        header = re.fullmatch(r'(?:tasks|ready)\[(\d+)\]\{([^}]+)\}:', line)
         if header:
             expected, columns = int(header[1]), header[2].split(',')
         elif columns and len(rows) < expected and line.startswith('  '):
@@ -568,12 +569,22 @@ def poll(state, hook):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('command', choices=['preview', 'poll', 'refresh', 'review', 'check', 'status'])
+    parser.add_argument('command', choices=['preview', 'poll', 'refresh', 'review', 'check', 'status', 'admission-check'])
     parser.add_argument('id', nargs='?')
     parser.add_argument('--hook')
     parser.add_argument('--decision-file', type=Path)
     parser.add_argument('--json', action='store_true')
     args = parser.parse_args()
+    if args.command == 'admission-check':
+        require(args.id and re.fullmatch(r'ENG-\d+', args.id), 'explicit ticket required')
+        hook = hook_path()
+        candidates = [row for row in source(hook)['candidates'] if row['ticket'] == args.id]
+        require(len(candidates) == 1, 'ticket source identity missing or ambiguous')
+        candidate = source(hook, candidates[0]['source_ref'])['candidates'][0]
+        require(candidate['ticket'] == args.id and candidate['eligibility']['eligible'] is True,
+                'ticket ownership or source eligibility prevents automatic admission: ' +
+                ', '.join(candidate['eligibility']['exclusion_reasons']))
+        return dict(result='cleared', candidate=candidate)
     enabled = (CONFIG / 'work-intake-enabled').exists() and (CONFIG / 'work-intake-enabled').read_text().strip() == '1'
     state = load(RECEIPT, dict(version=1, entries={}))
     require(state.get('version') == 1 and isinstance(state.get('entries'), dict), 'invalid receipt; preserve and reconcile')

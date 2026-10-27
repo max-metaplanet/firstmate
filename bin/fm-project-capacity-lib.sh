@@ -8,7 +8,8 @@
 # the captain declares how many workers the project admits on this machine, and
 # bin/fm-spawn.sh defers a fresh worker beyond that number instead of launching
 # it only to spend full-context turns retrying the resource. A deferred task
-# keeps its queued backlog item and is dispatched again when a place frees.
+# keeps its queued backlog item; fm-worker-park.sh retries recorded ship launches
+# when a place frees (fm-worker-admit.py owns the replay contract).
 # Without a declaration nothing changes and dispatch stays uncapped
 # (AGENTS.md section 7).
 #

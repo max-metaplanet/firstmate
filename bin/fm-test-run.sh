@@ -354,7 +354,7 @@ family_for_basename() {
     fm-send-popup-settle.test.sh|fm-send-settle.test.sh|\
     fm-subagent-pretool-check.test.sh|\
     fm-supervision-instructions.test.sh|fm-task-delivery.test.sh|\
-    fm-work-intake.test.sh|fm-timeout-lib.test.sh|fm-nm-run-lib.test.sh|fm-nm-recover.test.sh|\
+    fm-work-intake.test.sh|fm-worker-admit.test.sh|fm-timeout-lib.test.sh|fm-nm-run-lib.test.sh|fm-nm-recover.test.sh|\
     fm-tmux-submit-busy.test.sh|fm-trace-context-lib.test.sh|\
     fm-transition-lib.test.sh|\
     fm-test-run.test.sh|fm-test-isolation-proof.test.sh)
@@ -1900,6 +1900,9 @@ families_for_changed_path() {
       printf '%s\n' backend-dispatch
       printf '%s\n' pure-contract-unit
       printf '%s\n' live-harness-optin
+      ;;
+    bin/fm-worker-admit.py)
+      printf '%s\n' __script__:fm-worker-admit.test.sh __script__:fm-project-capacity.test.sh __script__:fm-worker-park.test.sh
       ;;
     bin/fm-fleet-load.py)
       printf '%s\n' __script__:fm-fleet-capacity.test.sh

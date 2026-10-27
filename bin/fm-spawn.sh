@@ -223,8 +223,10 @@
 #   place for a capped clone of the same origin - and holds it through metadata
 #   publication. A spawn that finds
 #   every place held prints one `deferred:` line and exits 75 before any brief
-#   render, endpoint, worktree, record, or backlog move exists, so the task stays
-#   exactly as queued as it was; an unreadable declaration refuses with exit 1.
+#   render, endpoint, worktree, task metadata, or backlog move exists. A fresh
+#   ship with a filled brief records its resolved replay contract through
+#   fm-worker-admit.py; the existing worker-park tick retries it automatically.
+#   Unreadable declarations refuse with exit 1.
 #   A batch reports such a pair as `batch: DEFERRED` and exits 75 when nothing
 #   else failed. A relaunch and a --secondmate spawn are never counted against
 #   capacity.
@@ -1627,6 +1629,17 @@ spawn_orca_reclaim_launch_file() {
 
 spawn_abort_cleanup() {
   local status=$?
+  if [ "$status" = 75 ] && [ "${SPAWN_CAPACITY_REPLAY_READY:-0}" = 1 ]; then
+    if fm_brief_task_content_valid "$BRIEF" && ! fm_brief_task_placeholders_present "$BRIEF"; then
+      FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" FM_DATA_OVERRIDE="$DATA" FM_CONFIG_OVERRIDE="$CONFIG" \
+        python3 "$SCRIPT_DIR/fm-worker-admit.py" record "$ID" "$PROJ_ABS" "$MODE" "$YOLO" \
+          "$TICKET" "$COMMIT_TYPE" "$BRANCH_PREFIX" "$BASE_BRANCH" "$HARNESS" "$MODEL" "$EFFORT" \
+          "$BACKEND" "$UPSTREAM_CONSENT" "$TICKET_SCOPE" "$IGNORE_SEAT_HOLD" "$HERDR_RESUME_LOCK_WAIT" ||
+        echo "warning: task $ID has no complete automatic replay record; dispatch explicitly after capacity frees" >&2
+    else
+      echo "warning: task $ID has an incomplete brief; automatic admission skipped" >&2
+    fi
+  fi
   if [ -n "$SPAWN_TREEHOUSE_ACQUIRE" ]; then
     if spawn_cancel_treehouse_acquisition; then
       echo "treehouse get cancelled; pending acquisition stopped or prevented from starting" >&2
@@ -2066,6 +2079,15 @@ fi
 if [ "$RELAUNCH" -ne 1 ]; then
   fm_lease_forbid_branch "new-task spawn (fm-spawn)" --away-relocated
 fi
+spawn_wait_exit() {  # <scope>: home or harness
+  [ "${FM_WORKER_AUTO_ADMIT:-0}" = 1 ] || exit 1
+  if [ "$1" = home ]; then
+    echo "deferred: the away spend cap holds new work in this home; task $ID stays queued" >&2
+  else
+    echo "deferred: harness $HARNESS has no seat room for new work; task $ID stays queued" >&2
+  fi
+  exit 75
+}
 spawn_refuse_if_away_spend_cap() {
   local cap live
   [ "$RELAUNCH" -ne 1 ] || return 0
@@ -2086,7 +2108,7 @@ spawn_refuse_if_away_spend_cap() {
   esac
   if [ "$live" -ge "$cap" ]; then
     echo "error: spawn refused - the away-posture record caps concurrent workers at $cap and $live ordinary task(s) are live in this home; task $ID stays queued for the captain's return or for a worker to finish (spend cap: bin/fm-afk-contract.sh)" >&2
-    exit 1
+    spawn_wait_exit home
   fi
 }
 # Spend cap (bin/fm-afk-contract.sh's spend_max_concurrent_workers): while an
@@ -3145,7 +3167,7 @@ spawn_seat_dispatch_gate() {
       printf '%s\n' "$SEAT_DISPATCH" | sed 's/^/  /'
       echo "re-run with --ignore-seat-hold to start this task anyway, or change the policy with bin/fm-seat.sh extra-usage"
     } >&2
-    exit 1
+    spawn_wait_exit harness
   fi
   case "$SEAT_DISPATCH" in
     *source=last-good-fallback*) printf 'Claude dispatch: %s\n' "$SEAT_DISPATCH" >&2 ;;
@@ -3259,7 +3281,7 @@ spawn_provider_depletion_gate() {
   if fm_seat_dry_announce "$STATE" "$HARNESS" "$notice"; then
     fm_wake_append check "seat-depleted:$HARNESS" "check: $notice" || true
   fi
-  exit 1
+  spawn_wait_exit harness
 }
 
 # Five-hour launch routing: a five-hour dip never rotates the active seat or
@@ -3286,7 +3308,7 @@ spawn_seat_session_gate() {
       echo "  re-run with --ignore-seat-hold to start this task on the active seat anyway"
     } >&2
     rm -f -- "$err"
-    exit 1
+    spawn_wait_exit harness
   fi
   rm -f -- "$err"
   active=$(FM_SEAT_PROVIDER=claude CONFIG=$seat_config fm_seat_active)
@@ -4035,6 +4057,14 @@ fi
 # any brief render, endpoint, worktree, record, or backlog move exists, so the
 # deferral leaves the task exactly as queued as it was. A relaunch replaces a
 # worker that already holds a place unless it was parked; a secondmate is not a worker.
+if [ "${FM_WORKER_AUTO_ADMIT:-0}" = 1 ]; then
+  FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" FM_DATA_OVERRIDE="$DATA" FM_CONFIG_OVERRIDE="$CONFIG" \
+    python3 "$SCRIPT_DIR/fm-worker-admit.py" verify "$ID" "${FM_WORKER_AUTO_ADMIT_DIGEST:-}" || exit 1
+fi
+SPAWN_CAPACITY_REPLAY_READY=0
+if [ "$RELAUNCH" = 0 ] && [ "$KIND" = ship ] && [ "$RAW_LAUNCH" = 0 ]; then
+  SPAWN_CAPACITY_REPLAY_READY=1
+fi
 SPAWN_PARK_RESUME=0
 if [ "$RELAUNCH" -eq 1 ] && fm_worker_park_load "$STATE/$ID.meta"; then
   SPAWN_PARK_RESUME=1
@@ -4079,7 +4109,7 @@ if [ -n "$SPAWN_PROJECT_CAPACITY" ]; then
     exit 1
   fi
   if [ "$FM_PROJECT_CAPACITY_OCCUPANTS" -ge "$SPAWN_PROJECT_CAPACITY" ]; then
-    echo "deferred: project $(basename "$PROJ_ABS") admits $SPAWN_PROJECT_CAPACITY worker(s) at once on this machine ($FM_PROJECT_CAPACITY_FILE) and $FM_PROJECT_CAPACITY_OCCUPANTS already hold a place ($FM_PROJECT_CAPACITY_OCCUPANT_IDS); task $ID was not launched and its backlog item stays queued - dispatch it again once one of them records its ready PR or is cleaned up" >&2
+    echo "deferred: project $(basename "$PROJ_ABS") admits $SPAWN_PROJECT_CAPACITY worker(s) at once on this machine ($FM_PROJECT_CAPACITY_FILE) and $FM_PROJECT_CAPACITY_OCCUPANTS already hold a place ($FM_PROJECT_CAPACITY_OCCUPANT_IDS); task $ID was not launched and its backlog item stays queued - the worker-park tick replays a recorded launch once one of them records its ready PR or is cleaned up" >&2
     exit "$FM_PROJECT_CAPACITY_DEFER_EXIT"
   fi
   SPAWN_RESUMES_AHEAD=$(fm_project_capacity_resumes_ahead "$STATE/$ID.meta")
@@ -4111,7 +4141,7 @@ if [ "$RELAUNCH" -eq 0 ] || [ "$SPAWN_PARK_RESUME" = 1 ] || [ -n "$PARK_RESUME_M
         exit "$FM_PROJECT_CAPACITY_DEFER_EXIT"
       fi
     elif ! fm_lock_acquire_wait_max "$SPAWN_FLEET_LOCK" 120; then
-      echo "deferred: another spawn has held the fleet capacity lock ($SPAWN_FLEET_LOCK) for 120s; task $ID was not launched and its backlog item stays queued - dispatch it again shortly" >&2
+      echo "deferred: another spawn has held the fleet capacity lock ($SPAWN_FLEET_LOCK) for 120s; task $ID was not launched and its backlog item stays queued - the worker-park tick replays a recorded launch shortly" >&2
       exit "$FM_PROJECT_CAPACITY_DEFER_EXIT"
     fi
     SPAWN_FLEET_LOCK_HELD=1
@@ -4141,7 +4171,7 @@ if [ "$RELAUNCH" -eq 0 ] || [ "$SPAWN_PARK_RESUME" = 1 ] || [ -n "$PARK_RESUME_M
       fi
       SPAWN_FLEET_LIMIT+=")"
       if [ "$FM_FLEET_CAPACITY_OCCUPANTS" -ge "$FM_FLEET_EFFECTIVE_CAPACITY" ]; then
-        echo "deferred: this machine runs at most $SPAWN_FLEET_LIMIT and $FM_FLEET_CAPACITY_OCCUPANTS are running ($FM_FLEET_CAPACITY_OCCUPANT_IDS); task $ID was not launched and its backlog item stays queued - dispatch it again once one of them is cleaned up or stops" >&2
+        echo "deferred: this machine runs at most $SPAWN_FLEET_LIMIT and $FM_FLEET_CAPACITY_OCCUPANTS are running ($FM_FLEET_CAPACITY_OCCUPANT_IDS); task $ID was not launched and its backlog item stays queued - the worker-park tick replays a recorded launch once one of them is cleaned up or stops" >&2
         exit "$FM_PROJECT_CAPACITY_DEFER_EXIT"
       fi
       if [ $((FM_FLEET_CAPACITY_OCCUPANTS + SPAWN_RESUMES_AHEAD)) -ge "$FM_FLEET_EFFECTIVE_CAPACITY" ]; then
@@ -4151,6 +4181,7 @@ if [ "$RELAUNCH" -eq 0 ] || [ "$SPAWN_PARK_RESUME" = 1 ] || [ -n "$PARK_RESUME_M
     fi
   fi
 fi
+SPAWN_CAPACITY_REPLAY_READY=0
 [ -f "$BRIEF" ] || {
   echo "error: task $ID has no brief at inaccessible data path $BRIEF" >&2
   exit 1
@@ -4790,10 +4821,18 @@ herdr_projection_existing_meta_allows_flat() { # <meta>
 BACKLOG_TRANSITION=0
 BACKLOG_ROW_STATE=
 if [ "$KIND" != secondmate ] && [ "$RELAUNCH" -ne 1 ]; then
+  if [ "${FM_WORKER_AUTO_ADMIT:-0}" = 1 ]; then
+    IFS=',' read -r -a ADMISSION_TICKETS <<<"${FM_WORKER_AUTO_ADMIT_TICKETS:-}"
+    for ADMISSION_TICKET in ${ADMISSION_TICKETS[@]+"${ADMISSION_TICKETS[@]}"}; do
+      FM_HOME="$FM_HOME" FM_CONFIG_OVERRIDE="$CONFIG" FM_DATA_OVERRIDE="$DATA" FM_STATE_OVERRIDE="$STATE" \
+        bash "$SCRIPT_DIR/fm-work-intake.sh" admission-check "$ADMISSION_TICKET" >/dev/null || exit 1
+    done
+  fi
   # Independent local rows pass without invoking a source.
   FM_HOME="$FM_HOME" FM_CONFIG_OVERRIDE="$CONFIG" FM_DATA_OVERRIDE="$DATA" FM_STATE_OVERRIDE="$STATE" \
     bash "$SCRIPT_DIR/fm-work-intake.sh" check "$ID" >/dev/null || exit 1
 fi
+unset FM_WORKER_AUTO_ADMIT FM_WORKER_AUTO_ADMIT_DIGEST FM_WORKER_AUTO_ADMIT_TICKETS
 if fm_backlog_transition_applies "$CONFIG" "$DATA" "$KIND"; then
   BACKLOG_TRANSITION=1
   if fm_backlog_row_probe "$DATA" "$ID"; then
@@ -7380,6 +7419,7 @@ if [ -n "$SPAWN_DEFERRED_SIGNAL" ]; then
 fi
 fm_lock_release "$SPAWN_META_LOCK"
 SPAWN_META_LOCK_HELD=0
+[ "$RELAUNCH" -eq 1 ] || rm -f "$STATE/$ID.deferred-spawn.json"
 
 SPAWN_DELIVERY=
 [ -z "$MODE" ] || SPAWN_DELIVERY=" mode=$MODE yolo=$YOLO"

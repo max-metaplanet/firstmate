@@ -557,6 +557,17 @@ load_expect() { # case home jq-expression message
 
 load_tick() { park_command "$1" "$1/home" tick || fail 'capacity tick failed'; }
 
+# A capacity deferral records a replay the next healthy tick would admit; these
+# sensor-policy cases hold the item so their ticks only sample.
+hold_deferred() { # home id
+  assert_present "$1/state/$2.deferred-spawn.json" 'capacity deferral did not record its replay'
+  if [ "$HAVE_TASKS_AXI" = 1 ]; then
+    tasks-axi hold "$2" --kind captain --reason 'sensor policy fixture' --file "$1/data/backlog.md" >/dev/null
+  else
+    rm "$1/state/$2.deferred-spawn.json"
+  fi
+}
+
 test_adaptive_off_and_observe() {
   local case_dir home out rc=0 state
   case_dir=$(make_case adaptive-off task-a)
@@ -622,6 +633,7 @@ test_adaptive_drop_recover_and_static_clamp() {
   out=$(spawn_ship "$case_dir" task-a "$case_dir/unused") || rc=$?
   expect_code 75 "$rc" "effective target did not defer: $out"
   assert_nothing_created "$case_dir" "$home" task-a "$before" "$worktrees"
+  hold_deferred "$home" task-a
   for at in 1180 1240 1300 1360 1420 1480 1540 1600 1660; do
     load_fixture "$case_dir" "$at" normal 40 40
     load_tick "$case_dir"
@@ -651,6 +663,7 @@ test_adaptive_critical_stale_and_invalid() {
   load_tick "$case_dir"
   out=$(spawn_ship "$case_dir" task-a "$case_dir/unused") || rc=$?
   expect_code 75 "$rc" "critical hold admitted below the floor: $out"
+  hold_deferred "$home" task-a
   load_expect "$case_dir" "$home" '.occupancy == 0 and .desired == 2 and (.hold | contains("critical"))' 'critical pressure holds even an empty fleet'
   load_fixture "$case_dir" 1060 normal 40 40; load_tick "$case_dir"
   load_expect "$case_dir" "$home" '(.hold | contains("critical"))' 'one normal sample cannot clear critical'
