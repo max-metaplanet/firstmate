@@ -113,15 +113,71 @@ test_reinstall_replaces_a_read_only_install() {
   local repo hooks body
   repo="$TMP_ROOT/reinstall"
   make_repo "$repo"
+  write_marker_hook "$repo/.git/hooks/pre-commit" original-pre-commit
   hooks="$TMP_ROOT/hooks-reinstall"
   "$STRIP" install "$hooks" "$repo" || fail "first install should succeed"
+  assert_present "$hooks/pre-commit" "the original executable hook was not wrapped"
+  chmod 600 "$repo/.git/hooks/pre-commit"
   "$STRIP" install "$hooks" "$repo" || fail "a relaunch reinstall over the read-only install failed"
+  [ ! -e "$hooks/pre-commit" ] || fail "reinstall retained a stale wrapper"
+  assert_present "$repo/.git/hooks/pre-commit" "reinstall deleted the project's hook"
+  [ ! -x "$repo/.git/hooks/pre-commit" ] || fail "reinstall changed the project's hook permissions"
   printf 'note\n' >>"$repo/README.md"
   git -C "$repo" add README.md
   with_hooks_env "$hooks" git -C "$repo" commit -q --trailer 'Co-authored-by: Cursor <cursoragent@cursor.com>' -m 'fix: after reinstall'
   body=$(git -C "$repo" log -1 --format=%B)
   assert_not_contains "$body" "cursoragent@cursor.com" "Cursor trailer survived after a reinstall"
   pass "a relaunch reinstall replaces the read-only strip dir and still strips"
+}
+
+test_absent_hooks_do_not_get_wrappers() {
+  local repo hooks name
+  repo="$TMP_ROOT/absent-hooks"
+  make_repo "$repo"
+  hooks="$TMP_ROOT/hooks-absent"
+  "$STRIP" install "$hooks" "$repo" || fail "install should succeed"
+  assert_present "$hooks/commit-msg" "the strip hook is missing"
+  for name in pre-commit prepare-commit-msg pre-rebase post-rewrite; do
+    [ ! -e "$hooks/$name" ] || fail "an absent $name got a wrapper"
+  done
+  "$STRIP" install --no-strip "$hooks" "$repo" || fail "no-strip reinstall should succeed"
+  [ ! -e "$hooks/commit-msg" ] || fail "no-strip retained an unnecessary commit-msg wrapper"
+  pass "absent repository hooks have no wrappers, including commit-msg when stripping is off"
+}
+
+test_strip_only_hook_does_not_launch_git() {
+  local repo hooks fakebin message
+  repo="$TMP_ROOT/strip-fast-path"
+  make_repo "$repo"
+  hooks="$TMP_ROOT/hooks-fast-path"
+  "$STRIP" install "$hooks" "$repo" || fail "install should succeed"
+  fakebin="$TMP_ROOT/no-runtime-git"
+  mkdir -p "$fakebin"
+  cat >"$fakebin/git" <<SH
+#!/bin/sh
+printf 'ran\\n' > '$TMP_ROOT/runtime-git.ran'
+exit 1
+SH
+  chmod 700 "$fakebin/git"
+  message="$TMP_ROOT/fast-path-message"
+  printf 'fix: fast path\n\nCo-authored-by: Cursor <cursoragent@cursor.com>\n' >"$message"
+  PATH="$fakebin:$PATH" "$hooks/commit-msg" "$message" || fail "strip-only hook failed"
+  [ ! -e "$TMP_ROOT/runtime-git.ran" ] || fail "strip-only hook launched git"
+  assert_contains "$(cat "$message")" 'fix: fast path' "the subject was lost"
+  assert_not_contains "$(cat "$message")" 'Cursor' "the AI trailer survived"
+  pass "the strip-only hook strips without launching git"
+}
+
+test_install_refuses_the_project_hooks_directory() {
+  local repo
+  repo="$TMP_ROOT/protect-project-hooks"
+  make_repo "$repo"
+  write_marker_hook "$repo/.git/hooks/pre-commit" project-pre-commit
+  "$STRIP" install "$repo/.git/hooks" "$repo" 2>/dev/null &&
+    fail "install replaced the repository's hooks directory"
+  git -C "$repo" commit -q --allow-empty -m 'fix: own hook survives'
+  assert_present "$repo/project-pre-commit.ran" "install changed the project's own hook"
+  pass "install refuses to replace the project's own hooks directory"
 }
 
 test_previous_commit_msg_hook_still_runs() {
@@ -197,22 +253,85 @@ test_inherited_hookspath_env_does_not_decide_the_chain() {
   pass "an inherited GIT_CONFIG hooksPath does not become the chained previous hooks"
 }
 
-test_project_hook_generated_after_install_still_runs() {
+test_nested_launch_still_runs_the_project_hook() {
+  local parent_repo repo parent hooks
+  parent_repo="$TMP_ROOT/nested-parent-wt"
+  repo="$TMP_ROOT/nested-child-wt"
+  make_repo "$parent_repo"
+  make_repo "$repo"
+  write_marker_hook "$repo/.git/hooks/pre-commit" project-pre-commit
+  parent="$TMP_ROOT/hooks-nested-parent"
+  hooks="$TMP_ROOT/hooks-nested-child"
+  "$STRIP" install "$parent" "$parent_repo" || fail "parent install should succeed"
+  [ ! -e "$parent/pre-commit" ] || fail "a hookless parent worktree got a pre-commit wrapper"
+  with_hooks_env "$parent" "$STRIP" install "$hooks" "$repo" || fail "child install should succeed"
+  printf 'note\n' >>"$repo/README.md"
+  git -C "$repo" add README.md
+  GIT_CONFIG_COUNT=2 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=$parent \
+    GIT_CONFIG_KEY_1=core.hooksPath GIT_CONFIG_VALUE_1=$hooks \
+    git -C "$repo" commit -q --trailer 'Co-authored-by: Cursor <cursoragent@cursor.com>' -m 'fix: nested launch'
+  [ -f "$repo/project-pre-commit.ran" ] || fail "a nested launch skipped the project's pre-commit hook"
+  assert_not_contains "$(git -C "$repo" log -1 --format=%B)" "Co-authored-by: Cursor" \
+    "Cursor trailer survived a nested launch"
+  pass "a nested launch whose parent lacks a wrapper still runs the project's own hook"
+}
+
+test_nested_launch_keeps_a_custom_hookspath_override() {
+  local repo custom hooks
+  repo="$TMP_ROOT/nested-custom-wt"
+  make_repo "$repo"
+  write_refusing_pre_push "$repo/.git/hooks/pre-commit" "$TMP_ROOT/nested-custom.pre-commit"
+  custom="$TMP_ROOT/nested-custom-hooks"
+  mkdir -p "$custom"
+  hooks="$TMP_ROOT/hooks-nested-custom"
+  with_hooks_env "$custom" "$STRIP" install "$hooks" "$repo" || fail "child install should succeed"
+  printf 'note\n' >>"$repo/README.md"
+  git -C "$repo" add README.md
+  GIT_CONFIG_COUNT=2 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=$custom \
+    GIT_CONFIG_KEY_1=core.hooksPath GIT_CONFIG_VALUE_1=$hooks \
+    git -C "$repo" commit -q -m 'fix: custom override' ||
+    fail "the commit failed although the inherited custom hooksPath has no pre-commit"
+  [ ! -e "$TMP_ROOT/nested-custom.pre-commit" ] ||
+    fail "an inherited custom hooksPath was bypassed to run the repository's pre-commit"
+  pass "an inherited non-fleet hooksPath override stands, as in plain git"
+}
+
+test_project_hook_generated_after_install_runs_after_reinstall() {
   local repo hooks
   repo="$TMP_ROOT/late-husky"
   make_repo "$repo"
   git -C "$repo" config core.hooksPath .husky/_
   hooks="$TMP_ROOT/hooks-late"
   "$STRIP" install "$hooks" "$repo" || fail "install should succeed before the project's hooks exist"
+  [ ! -e "$hooks/pre-commit" ] || fail "an absent late-generated hook got a wrapper"
   mkdir -p "$repo/.husky/_"
   write_marker_hook "$repo/.husky/_/pre-commit" late-pre-commit
+  "$STRIP" install "$hooks" "$repo" || fail "reinstall should discover the new hook"
   printf 'note\n' >>"$repo/README.md"
   git -C "$repo" add README.md
   with_hooks_env "$hooks" git -C "$repo" commit -q --trailer 'Co-authored-by: Cursor <cursoragent@cursor.com>' -m 'fix: late husky'
-  [ -f "$repo/late-pre-commit.ran" ] || fail "a project hook generated after the spawn did not run"
+  [ -f "$repo/late-pre-commit.ran" ] || fail "a project hook generated before reinstall did not run"
   assert_not_contains "$(git -C "$repo" log -1 --format=%B)" "Co-authored-by: Cursor" \
     "Cursor trailer survived a late-generated project hooks directory"
-  pass "a project hook that appears after install still runs for the rest of the task"
+  pass "reinstall discovers and chains a newly generated project hook"
+}
+
+test_lfs_pre_push_in_another_repository_runs() {
+  local repo other remote hooks
+  repo="$TMP_ROOT/lfs-task-wt"
+  other="$TMP_ROOT/lfs-other-repo"
+  remote="$TMP_ROOT/lfs-other-remote.git"
+  make_repo "$repo"
+  make_repo "$other"
+  git init -q --bare "$remote"
+  git -C "$other" remote add origin "$remote"
+  write_marker_hook "$other/.git/hooks/pre-push" lfs-pre-push
+  hooks="$TMP_ROOT/hooks-lfs-pane"
+  "$STRIP" install "$hooks" "$repo" || fail "install should succeed for a hookless task worktree"
+  with_hooks_env "$hooks" git -C "$other" push -q origin HEAD:refs/heads/main ||
+    fail "push from another repository failed"
+  [ -f "$other/lfs-pre-push.ran" ] || fail "another repository's lfs-style pre-push hook did not run"
+  pass "another repository's lfs-style pre-push runs although the task worktree has none"
 }
 
 test_pane_hookspath_does_not_reroute_another_repository() {
@@ -253,7 +372,7 @@ test_empty_project_hookspath_runs_no_repository_hook() {
   pass "an empty project core.hooksPath runs no repository hook and still strips the trailer"
 }
 
-test_unresolvable_project_hookspath_still_refuses() {
+test_unresolvable_project_hookspath_refuses_install() {
   local repo hooks head err
   repo="$TMP_ROOT/unresolvable-hookspath"
   make_repo "$repo"
@@ -261,20 +380,20 @@ test_unresolvable_project_hookspath_still_refuses() {
   git -C "$repo" add README.md
   git -C "$repo" config core.hooksPath '~fm-no-such-user-6171/hooks'
   hooks="$TMP_ROOT/hooks-unresolvable"
-  "$STRIP" install "$hooks" "$repo" || fail "install should succeed with an unresolvable core.hooksPath"
   head=$(git -C "$repo" rev-parse HEAD)
-  err=$(with_hooks_env "$hooks" git -C "$repo" commit -q -m 'fix: unresolvable hooksPath' 2>&1) &&
-    fail "a commit succeeded although the repository's hooks directory cannot be resolved"
-  assert_contains "$err" "refusing to skip its pre-commit hook" "the refusal did not name the skipped hook"
+  err=$("$STRIP" install "$hooks" "$repo" 2>&1) &&
+    fail "install succeeded although the repository's hooks directory cannot be resolved"
+  assert_contains "$err" "cannot resolve repository hooks" "the refusal did not explain the lookup failure"
   assert_equals 1 "$(printf '%s\n' "$err" | grep -c 'failed to expand user dir')" "git's lookup error was not shown exactly once"
   assert_equals "$head" "$(git -C "$repo" rev-parse HEAD)" "a refused commit still moved HEAD"
-  pass "an unresolvable project core.hooksPath still refuses the commit"
+  pass "an unresolvable project core.hooksPath refuses install"
 }
 
 test_valueless_project_hookspath_still_refuses() {
   local repo hooks head err
   repo="$TMP_ROOT/valueless-hookspath"
   make_repo "$repo"
+  write_marker_hook "$repo/.git/hooks/pre-commit" valueless-pre-commit
   hooks="$TMP_ROOT/hooks-valueless"
   "$STRIP" install "$hooks" "$repo" || fail "install should succeed before the valueless key is written"
   head=$(git -C "$repo" rev-parse HEAD)
@@ -500,13 +619,19 @@ test_human_coauthor_is_kept
 test_human_at_a_vendor_domain_is_kept
 test_hook_manager_cannot_displace_the_strip
 test_reinstall_replaces_a_read_only_install
+test_absent_hooks_do_not_get_wrappers
+test_strip_only_hook_does_not_launch_git
+test_install_refuses_the_project_hooks_directory
 test_previous_commit_msg_hook_still_runs
 test_relative_project_hookspath_still_runs
 test_inherited_hookspath_env_does_not_decide_the_chain
-test_project_hook_generated_after_install_still_runs
+test_nested_launch_still_runs_the_project_hook
+test_nested_launch_keeps_a_custom_hookspath_override
+test_project_hook_generated_after_install_runs_after_reinstall
+test_lfs_pre_push_in_another_repository_runs
 test_pane_hookspath_does_not_reroute_another_repository
 test_empty_project_hookspath_runs_no_repository_hook
-test_unresolvable_project_hookspath_still_refuses
+test_unresolvable_project_hookspath_refuses_install
 test_valueless_project_hookspath_still_refuses
 test_repository_pre_push_runs_on_every_override_channel
 test_git_c_override_still_strips_and_chains_commit_hooks

@@ -8,16 +8,17 @@
 #       Rewrites that file in place, then exits 0 so the commit proceeds.
 #   fm-git-strip-ai-trailers.sh install [--no-strip] [--push-guard <guard-file>] <hooks-dir> <worktree>
 #       Recreate <hooks-dir> as a core.hooksPath for this launch: a commit-msg
-#       hook that runs this strip, plus one wrapper per client-side hook name
-#       git documents except reference-transaction and post-index-change,
-#       which are deliberately excluded (see FM_GIT_CLIENT_HOOKS below).
+#       hook that runs this strip, plus wrappers for the git-lfs hook names and
+#       for executable repository hooks listed in FM_GIT_CLIENT_HOOKS below.
+#       Reinstall after adding another hook name; reinstall also removes
+#       wrappers for those hooks no longer present.
 #       Each wrapper removes this directory's own core.hooksPath entry from
 #       GIT_CONFIG_*, keeping every inherited entry (a scoped credential.helper,
 #       safe.directory) for the repository's hook, and then resolves
 #       core.hooksPath (or $GIT_DIR/hooks) in the repository git is actually
-#       running in, so a husky directory that only appears after npm install
-#       still runs, and git -C some-other-repo does not inherit the task
-#       worktree's hooks. That lookup also ignores GIT_CONFIG_PARAMETERS,
+#       running in, so changes to an already wrapped hook still run, and
+#       git -C some-other-repo does not inherit the task worktree's hooks.
+#       That lookup also ignores GIT_CONFIG_PARAMETERS,
 #       because git -c core.hooksPath=<this dir> (or a child process that
 #       inherits it) carries the override there, and a lookup that honored it
 #       would find this directory again and never run the repository's own
@@ -25,8 +26,8 @@
 #       repository hook, as in plain git; any other failed lookup exits
 #       nonzero rather than skipping the repository's hook. Does not touch the
 #       project's git config; the caller prefixes the pane with env-file below.
-#       --no-strip writes a commit-msg wrapper that only chains, for a home that
-#       keeps trailers but still needs the directory for the push guard.
+#       --no-strip wraps commit-msg only if the repository has that hook, for a
+#       home that keeps trailers but still needs the directory for a push guard.
 #       --push-guard copies <guard-file> into <hooks-dir> read-only and makes
 #       the pre-push wrapper run bin/fm-git-push-guard.sh on it first, with
 #       git's arguments and ref lines, chaining to the repository's pre-push
@@ -75,8 +76,6 @@
 # write bit first.
 set -u
 unset CDPATH
-
-SELF="$(cd "$(dirname "$0")" && pwd -P)/$(basename "$0")"
 
 usage() {
   cat >&2 <<'EOF'
@@ -166,7 +165,7 @@ write_executable() {
   chmod 500 "$dest"
 }
 
-# Shared body for every wrapper: after this directory's core.hooksPath entries
+# Shared body for wrappers that chain a repository hook: after this directory's core.hooksPath entries
 # are removed from GIT_CONFIG_* (later entries shift down, so inherited ones
 # such as a scoped credential.helper still reach the repository's hook; a
 # relaunch in the same pane can leave more than one), resolve this
@@ -178,41 +177,53 @@ write_executable() {
 # point here, so the wrapper cannot recurse into itself. An empty
 # core.hooksPath makes that lookup fail, but plain git reads it as "no hooks",
 # so the wrapper runs none; any other failure reruns the lookup to show git's
-# error and refuses.
+# error and refuses. When the lookup names another launch's directory, which
+# install marks with .fm-git-hooks (a nested spawn), and it has no wrapper for
+# this name, its entries are dropped too and the lookup repeats, so the
+# repository's own hook still runs. Any other inherited core.hooksPath stands,
+# as in plain git.
 runtime_chain_body() {
   local ours=$1
   cat <<EOF
 ours=$(quote_for_hook "$ours")
-case \${GIT_CONFIG_COUNT:-} in
-'' | *[!0-9]*) ;;
-*)
-  count=\$((10#\$GIT_CONFIG_COUNT)) i=0 kept=0
-  while [ "\$i" -lt "\$count" ]; do
-    key=GIT_CONFIG_KEY_\$i value=GIT_CONFIG_VALUE_\$i
-    if [ "\${!key-}" != core.hooksPath ] || [ "\${!value-}" != "\$ours" ]; then
-      [ "\$i" = "\$kept" ] || export "GIT_CONFIG_KEY_\$kept=\${!key-}" "GIT_CONFIG_VALUE_\$kept=\${!value-}"
-      kept=\$((kept + 1))
-    fi
-    i=\$((i + 1))
-  done
-  export GIT_CONFIG_COUNT=\$kept
-  ;;
-esac
 name=\${0##*/}
-orig=\$(unset GIT_CONFIG_PARAMETERS; git rev-parse --path-format=absolute --git-path hooks 2>/dev/null) || {
-  if hooks_path=\$(unset GIT_CONFIG_PARAMETERS; git config --get --type=path core.hooksPath 2>/dev/null) && [ -z "\$hooks_path" ]; then
+drop=\$ours
+while :; do
+  removed=
+  case \${GIT_CONFIG_COUNT:-} in
+  '' | *[!0-9]*) ;;
+  *)
+    count=\$((10#\$GIT_CONFIG_COUNT)) i=0 kept=0
+    while [ "\$i" -lt "\$count" ]; do
+      key=GIT_CONFIG_KEY_\$i value=GIT_CONFIG_VALUE_\$i
+      if [ "\${!key-}" != core.hooksPath ] || [ "\${!value-}" != "\$drop" ]; then
+        [ "\$i" = "\$kept" ] || export "GIT_CONFIG_KEY_\$kept=\${!key-}" "GIT_CONFIG_VALUE_\$kept=\${!value-}"
+        kept=\$((kept + 1))
+      fi
+      i=\$((i + 1))
+    done
+    [ "\$kept" = "\$count" ] || removed=1
+    export GIT_CONFIG_COUNT=\$kept
+    ;;
+  esac
+  [ -n "\$removed" ] || [ "\$drop" = "\$ours" ] || break
+  orig=\$(unset GIT_CONFIG_PARAMETERS; git rev-parse --path-format=absolute --git-path hooks 2>/dev/null) || {
+    if hooks_path=\$(unset GIT_CONFIG_PARAMETERS; git config --get --type=path core.hooksPath 2>/dev/null) && [ -z "\$hooks_path" ]; then
+      exit 0
+    fi
+    (unset GIT_CONFIG_PARAMETERS; git rev-parse --path-format=absolute --git-path hooks >/dev/null)
+    echo "fm-git-strip-ai-trailers: cannot resolve this repository's hooks directory; refusing to skip its \$name hook" >&2
+    exit 1
+  }
+  if [ "\$orig" = "\$ours" ]; then
     exit 0
   fi
-  (unset GIT_CONFIG_PARAMETERS; git rev-parse --path-format=absolute --git-path hooks >/dev/null)
-  echo "fm-git-strip-ai-trailers: cannot resolve this repository's hooks directory; refusing to skip its \$name hook" >&2
-  exit 1
-}
-if [ "\$orig" = "\$ours" ]; then
-  exit 0
-fi
-if [ -x "\$orig/\$name" ]; then
-  exec "\$orig/\$name" "\$@"
-fi
+  if [ -x "\$orig/\$name" ]; then
+    exec "\$orig/\$name" "\$@"
+  fi
+  [ -e "\$orig/.fm-git-hooks" ] || break
+  drop=\$orig
+done
 EOF
 }
 
@@ -232,14 +243,12 @@ EOF
 # to preserve. A project that does install one loses chaining for it inside
 # fleet panes only.
 #
-# The names kept are not free either, and that cost is accepted, ruled
-# 2026-09-17. Every wrapper call forks bash plus one git rev-parse. A plain
-# commit fires four wrappers, and git's sequencer fires prepare-commit-msg and
-# post-commit once per replayed commit in rebase and cherry-pick, as git am does
-# its applypatch hooks per patch. Measured on git 2.50.1 with no project hooks:
-# one commit goes ~76ms -> ~276ms, and a 60-commit rebase 0.74s -> 3.7s. They
-# stay because git-lfs installs post-commit, post-checkout, post-merge and
-# pre-push, and a slower rebase inside a pane is the accepted price.
+# Only executable hooks present at install time get wrappers, plus the names
+# git-lfs installs (FM_GIT_LFS_HOOKS), so a repository other than the task
+# worktree, such as an LFS clone, still runs those. Git can skip absent hooks
+# without starting a shell, including during sequencer replay, so another
+# repository's hook runs inside a fleet pane only for a wrapped name.
+FM_GIT_LFS_HOOKS='pre-push post-checkout post-commit post-merge'
 FM_GIT_CLIENT_HOOKS='applypatch-msg pre-applypatch post-applypatch pre-commit
 pre-merge-commit prepare-commit-msg post-commit pre-rebase post-checkout
 post-merge pre-push post-rewrite pre-auto-gc sendemail-validate'
@@ -274,7 +283,7 @@ write_env_file() {
 }
 
 install_hooks() {
-  local hooks_dir=$1 wt=$2 strip=${3:-1} guard_src=${4:-} name strip_line guard_file guard_cmd
+  local hooks_dir=$1 wt=$2 strip=${3:-1} guard_src=${4:-} name strip_line guard_file guard_cmd orig chain self hooks_path
   [ -n "$hooks_dir" ] && [ -n "$wt" ] || usage
   if [ -n "$guard_src" ] && { [ ! -f "$guard_src" ] || [ ! -r "$guard_src" ]; }; then
     echo "error: push guard file is not a readable regular file: $guard_src" >&2
@@ -288,25 +297,51 @@ install_hooks() {
     echo "error: not a git worktree: $wt" >&2
     return 1
   }
+  orig=$(unset GIT_CONFIG_PARAMETERS; git -C "$wt" rev-parse --path-format=absolute --git-path hooks 2>/dev/null) || {
+    if hooks_path=$(unset GIT_CONFIG_PARAMETERS; git -C "$wt" config --get --type=path core.hooksPath 2>/dev/null) && [ -z "$hooks_path" ]; then
+      orig=
+    else
+      (unset GIT_CONFIG_PARAMETERS; git -C "$wt" rev-parse --path-format=absolute --git-path hooks >/dev/null)
+      echo "error: cannot resolve repository hooks for $wt" >&2
+      return 1
+    fi
+  }
+  if [ -d "$hooks_dir" ] && [ -n "$orig" ] && [ -d "$orig" ] &&
+    [ "$(cd "$hooks_dir" && pwd -P)" = "$(cd "$orig" && pwd -P)" ]; then
+    echo "error: refusing to replace the repository's own hooks directory" >&2
+    return 1
+  fi
+  self="$(cd "$(dirname "$0")" && pwd -P)/$(basename "$0")"
   chmod u+w "$hooks_dir" 2>/dev/null
   rm -rf "$hooks_dir"
   mkdir -p "$hooks_dir" || return 1
   chmod 700 "$hooks_dir" 2>/dev/null || true
+  : >"$hooks_dir/.fm-git-hooks" || return 1
   hooks_dir=$(CDPATH='' cd -- "$hooks_dir" && pwd -P) || return 1
 
-  strip_line=
-  [ "$strip" = 0 ] || strip_line="$(quote_for_hook "$SELF") \"\$1\" || exit \$?"
-  write_executable "$hooks_dir/commit-msg" <<EOF
+  chain=
+  [ -z "$orig" ] || [ ! -x "$orig/commit-msg" ] || chain=$(runtime_chain_body "$hooks_dir")
+  if [ "$strip" != 0 ] || [ -n "$chain" ]; then
+    strip_line=
+    if [ "$strip" != 0 ]; then
+      if [ -n "$chain" ]; then
+        strip_line="$(quote_for_hook "$self") \"\$1\" || exit \$?"
+      else
+        strip_line="exec $(quote_for_hook "$self") \"\$1\""
+      fi
+    fi
+    write_executable "$hooks_dir/commit-msg" <<EOF
 #!/usr/bin/env bash
 set -u
 $strip_line
-$(runtime_chain_body "$hooks_dir")
+$chain
 EOF
+  fi
 
   if [ -n "$guard_src" ]; then
     guard_file="$hooks_dir/fm-push-guard"
     { cp "$guard_src" "$guard_file" && chmod 400 "$guard_file"; } || return 1
-    guard_cmd="$(quote_for_hook "${SELF%/*}/fm-git-push-guard.sh") $(quote_for_hook "$guard_file")"
+    guard_cmd="$(quote_for_hook "${self%/*}/fm-git-push-guard.sh") $(quote_for_hook "$guard_file")"
     # git passes the refs being pushed on stdin; the guard reads them, so they
     # are captured once and replayed to the repository's own pre-push hook.
     write_executable "$hooks_dir/pre-push" <<EOF
@@ -326,6 +361,10 @@ EOF
 
   for name in $FM_GIT_CLIENT_HOOKS; do
     [ -z "$guard_src" ] || [ "$name" != pre-push ] || continue
+    case " $FM_GIT_LFS_HOOKS " in
+    *" $name "*) ;;
+    *) [ -n "$orig" ] && [ -x "$orig/$name" ] || continue ;;
+    esac
     write_executable "$hooks_dir/$name" <<EOF
 #!/usr/bin/env bash
 set -u
