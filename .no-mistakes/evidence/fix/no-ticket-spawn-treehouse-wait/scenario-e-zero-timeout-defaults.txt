@@ -1,0 +1,4 @@
+# Scenario E: FM_TREEHOUSE_GET_TIMEOUT=0 (nonpositive) falls back to the default instead of failing instantly
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab.6b2iT1
+spawned lab-zero-e1 harness=codex kind=scout window=primary:fm-lab-zero-e1 worktree=/private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab.6b2iT1/pool/.treehouse/tiny-15da6c/1/tiny
+exit=0 elapsed=17s

@@ -1,0 +1,31 @@
+# Scenario C: canonical slot 1 handed out by real treehouse get while physical copy slot 2 aliases its gitdir
+## both .git files:
+gitdir: /private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab.6b2iT1/projects/tiny/.git/worktrees/tiny
+gitdir: /private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab.6b2iT1/projects/tiny/.git/worktrees/tiny
+## real treehouse status before spawn listed BOTH slots available (alias invisible to treehouse)
+## fm-spawn output:
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab.6b2iT1
+error: candidate '/private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab.6b2iT1/pool/.treehouse/tiny-15da6c/1/tiny' shares gitdir '/private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab.6b2iT1/projects/tiny/.git/worktrees/tiny' with pool worktree '/private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab.6b2iT1/pool/.treehouse/tiny-15da6c/2/tiny'; refusing to reset or launch in aliased slots; inspect window primary:fm-lab-alias-c1
+treehouse get cancelled; pending acquisition stopped or prevented from starting
+exit=1 elapsed=15s
+## slot-1 reflog before:
+f1f9c15 HEAD@{0}: 
+## slot-1 reflog after:
+f1f9c15 HEAD@{0}: 
+## aliased copy still present (not deleted):
+.
+..
+.git
+a.txt
+## task meta published?
+ls: /private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab.6b2iT1/state/lab-alias-c1.meta: No such file or directory
+## slot owner claim written?
+ls: /private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab.6b2iT1/pool/.treehouse/tiny-15da6c/1/.fm-slot-owner: No such file or directory
+## pane (no harness launch):
+bash-5.3$ bash '/private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab.6b2iT1/state/.spawn-treehouse-lab-alias-c1.rsMdhA/get.sh'
+A new version of treehouse is available: v3.1.3 → v3.1.6
+Run "treehouse update" to update
+🌳 Setting up worktree...
+🌳 Entered worktree at /private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab.6b2iT1/pool/.treehouse/tiny-15da6c/1/tiny. Type 'exit' to return.
+[1]+  Stopped                    bash '/private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab.6b2iT1/state/.spawn-treehouse-lab-alias-c1.rsMdhA/get.sh'
+bash-5.3$

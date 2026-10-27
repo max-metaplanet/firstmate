@@ -1,0 +1,44 @@
+# Scenario B: FM_TREEHOUSE_GET_TIMEOUT=10 with real treehouse get delayed 75s; spawn started 20:37:33, refused 20:37:50
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab.6b2iT1
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+error: treehouse get did not enter an isolated worktree within 10s (last seen '/private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab.6b2iT1/projects/tiny': it is the spawning project itself; spawning project '/private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab.6b2iT1/projects/tiny'); cancelling pending acquisition; inspect window primary:fm-lab-timeout-b1
+treehouse get cancelled; pending acquisition stopped or prevented from starting
+exit=1 elapsed=16s
+## checked at 20:39:21 (>75s after the get was sent)
+## shim log (non-empty would mean the real get ran after cancellation):
+(end shim log)
+## acquisition record:
+cancel
+get.sh
+pid
+start
+## wrapper pid 99844 alive?
+  PID STAT COMMAND
+no (gone)
+## lingering delayed gets:
+none
+## pool slots:
+1
+treehouse-state.json
+treehouse-state.key
+treehouse-state.lock
+## git worktree list:
+/private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab.6b2iT1/projects/tiny                       f1f9c15 [main]
+/private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab.6b2iT1/pool/.treehouse/tiny-15da6c/1/tiny  f1f9c15 (detached HEAD)
+tiny
+## live slot-1 HEAD before/after:
+f1f9c159876edb703d6fcbc5dca6fba8d42fe0a9
+f1f9c159876edb703d6fcbc5dca6fba8d42fe0a9
+## task meta published?
+ls: /private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab.6b2iT1/state/lab-timeout-b1.meta: No such file or directory
+## timed-out pane:
+bash-5.3$ bash '/private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab.6b2iT1/state/.spawn-treehouse-lab-timeout-b1.YZCune/get.sh'
+lab shim: delaying real treehouse get 75s (pid 99861)
+[1]+  Stopped                    bash '/private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-lab.6b2iT1/state/.spawn-treehouse-lab-timeout-b1.YZCune/get.sh'
+bash-5.3$
