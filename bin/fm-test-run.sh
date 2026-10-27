@@ -1904,6 +1904,9 @@ families_for_changed_path() {
     bin/fm-worker-admit.py)
       printf '%s\n' __script__:fm-worker-admit.test.sh __script__:fm-project-capacity.test.sh __script__:fm-worker-park.test.sh
       ;;
+    bin/fm-pool-prune.sh|bin/fm-pool-prune-lib.sh|bin/fm-pool-prune.py)
+      printf '%s\n' "__script__:fm-pool-prune.test.sh"
+      ;;
     bin/fm-fleet-load.py)
       printf '%s\n' __script__:fm-fleet-capacity.test.sh
       ;;

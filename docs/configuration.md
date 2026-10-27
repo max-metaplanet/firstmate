@@ -459,6 +459,23 @@ The existing main-home event consumer owns subsequent lifecycle updates after a 
 Each poll also reconciles close-out: a ticket whose own task row in this home is done while the ticket is still open, and whose other task rows are all done too, becomes one close-out notification for that ticket naming every finished row's evidence, queued once until the ticket itself changes, so finished work cannot leave its ticket waiting unnoticed.
 Settling that ticket stays a supervised step with its own cited evidence, and no command here closes or marks a ticket.
 
+## Idle Treehouse pool (config/treehouse-idle-cap)
+
+The default cap keeps two idle copies per project after task cleanup.
+Active and leased copies do not consume this allowance.
+The local root Firstmate home's optional `config/treehouse-idle-cap` file overrides it for every local home.
+Its JSON object requires `default` and `projects`, with integer caps from zero through 999999.
+Project keys are clone-directory basenames, as in the project registry.
+For example, `{"default":2,"projects":{"core":1}}` retains at most one idle core copy and two idle copies of other projects.
+A malformed or unreadable declaration prevents pruning.
+
+[`bin/fm-pool-prune.sh`](../bin/fm-pool-prune.sh) provides a per-project dry run and an explicit apply operation, and owns the exact command, safety checks, and measurement fields.
+Teardown uses the same implementation after returning its slot and retiring its task record.
+It reports a warning if protected copies prevent meeting the cap; cleanup itself can still complete.
+This requires Treehouse 3.1.3 or newer; older versions retain their copies and report the upgrade requirement.
+The cap applies to the Treehouse provider used by tmux, Herdr, zellij, and cmux, independently of the worker harness.
+Orca manages its own worktrees and does not use this pool cap.
+
 ## Runtime backend (config/backend / FM_BACKEND)
 
 For spawn-capable adapters, the runtime session-provider backend controls where task windows/endpoints are created, captured, sent to, watched, and killed.
