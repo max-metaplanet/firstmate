@@ -6,16 +6,19 @@
 # docs/configuration.md owns its schema. No file means two idle copies.
 # Teardown calls the same implementation after releasing its slot and retiring
 # its task record, while still holding the shared project lock, and removes at
-# most one copy without measuring it. Apply takes the shared project lock for
-# one removal at a time, so spawns and teardowns can interleave with a backlog;
-# it waits up to a minute for the lock before each removal.
+# most one copy without measuring it. Dry run and apply take the shared project
+# lock for one copy at a time, so spawns and teardowns can interleave with a
+# backlog; each waits up to a minute for the lock before each copy. Dry run
+# measures each selected copy after releasing the lock.
 #
 # Only unclaimed, unleased, idle, clean Git slots with HEAD and the checked-out
 # branch published on origin qualify. Any recorded task copy in a registered
 # local home is protected, even when its endpoint is gone. Refusals are reported
-# per copy; an unmet cap or any inspection/removal error exits nonzero. Active
-# copies do not count against the idle cap. Unsafe idle copies do count, but are
-# never removed. Unreadable configuration or inventory prevents all removals.
+# per copy; an unmet cap or any inspection/removal error exits nonzero. Only
+# Treehouse-available copies without a Firstmate slot claim or task record count
+# against the idle cap. Unsafe ones among them (uncommitted or unpublished work)
+# do count, but are never removed. Unreadable configuration or inventory
+# prevents all removals.
 #
 # Requires Treehouse >=3.1.3 for safe-by-default exact-target destroy, Python 3,
 # and Git. Uses only `treehouse destroy <path> --yes`, never force, bulk destroy,
@@ -26,10 +29,10 @@
 #
 # Output is one JSON line per locked pass with per-copy decisions and
 # per-project counts, allocated bytes selected by dry run, and allocated bytes
-# removed by apply. Dry run is a single pass; apply prints one pass per removal,
-# or one pass that removes nothing. Allocation is measured with du -sk, not an
-# APFS physical-free-space guarantee. A copy whose allocation cannot be measured
-# is still pruned and reports null allocated bytes.
+# removed by apply. Each pass selects at most one copy; a pass that selects none
+# ends the run. Allocation is measured with du -sk, not an APFS
+# physical-free-space guarantee. A copy whose allocation cannot be measured is
+# still pruned, reports null allocated bytes, and counts in copies_unmeasured.
 set -eu
 if [ "${1:-}" = --help ] || [ "${1:-}" = -h ]; then
   sed -n '2,/^set /{ /^#/s/^# \{0,1\}//p; }' "$0"
@@ -53,7 +56,9 @@ FM_WAKE_READ_ONLY=1
 . "$SCRIPT_DIR/fm-pool-prune-lib.sh"
 PROJECT=$(cd "$1" && pwd -P)
 LOCK=$(fm_treehouse_project_lock_path "$PROJECT")
-trap 'fm_lock_release "$LOCK"' EXIT
+CURSOR=$(mktemp "${TMPDIR:-/tmp}/fm-pool-prune.XXXXXX")
+REPORT=$(mktemp "${TMPDIR:-/tmp}/fm-pool-prune.XXXXXX")
+trap 'fm_lock_release "$LOCK"; rm -f "$CURSOR" "$REPORT"' EXIT
 while :; do
   tries=0
   until fm_lock_try_acquire "$LOCK"; do
@@ -64,9 +69,12 @@ while :; do
   rc=0
   if [ "${2:-}" = --apply ]; then
     fm_pool_prune_locked "$PROJECT" "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}" "$STATE" --apply --limit 1 || rc=$?
+    fm_lock_release "$LOCK"
   else
-    fm_pool_prune_locked "$PROJECT" "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}" "$STATE" || rc=$?
+    fm_pool_prune_locked "$PROJECT" "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}" "$STATE" \
+      --limit 1 --no-measure --cursor "$CURSOR" >"$REPORT" || rc=$?
+    fm_lock_release "$LOCK"
+    python3 "$SCRIPT_DIR/fm-pool-prune.py" --measure <"$REPORT"
   fi
-  fm_lock_release "$LOCK"
   [ "$rc" = 3 ] || exit "$rc"
 done

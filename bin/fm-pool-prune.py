@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Idle-pool decisions. Invoked under the Firstmate project lock by the shell owner."""
+"""Idle-pool decisions. Invoked under the Firstmate project lock by the shell owner; --measure runs outside it."""
 
 import argparse
 import json
@@ -108,7 +108,7 @@ def activity(row):
     return ""
 
 
-def refusal(row, project, copies):
+def owner(row, copies):
     path = Path(row["path"])
     reason = activity(row)
     if reason:
@@ -118,6 +118,14 @@ def refusal(row, project, copies):
         return "Firstmate slot claim exists"
     if path.resolve() in copies:
         return "recorded Firstmate task copy"
+    return ""
+
+
+def refusal(row, project, copies):
+    path = Path(row["path"])
+    reason = owner(row, copies)
+    if reason:
+        return reason
     if row["status"] != "available":
         return "Treehouse status " + row["status"]
     if (row.get("branch_error") or row.get("recovery_reason")
@@ -141,7 +149,22 @@ def allocated(path):
         return None
 
 
+def measured(report):
+    for copy in report["copies"]:
+        if copy["decision"] == "would-prune" and copy["allocated_bytes"] is None:
+            size = allocated(Path(copy["path"]))
+            if size is not None:
+                copy["allocated_bytes"] = size
+                report["bytes_would_reclaim"] += size
+                report["copies_unmeasured"] -= 1
+    return report
+
+
 def main():
+    if sys.argv[1:] == ["--measure"]:
+        for line in sys.stdin:
+            print(json.dumps(measured(json.loads(line))))
+        return 0
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--project", type=Path, required=True)
     parser.add_argument("--config", type=Path, required=True)
@@ -149,6 +172,7 @@ def main():
     parser.add_argument("--apply", action="store_true")
     parser.add_argument("--limit", type=int)
     parser.add_argument("--no-measure", action="store_true")
+    parser.add_argument("--cursor", type=Path)
     args = parser.parse_args()
     project = args.project.resolve()
     cap = cap_for(args.config, project)
@@ -157,16 +181,19 @@ def main():
         raise ValueError("safe exact-target destroy requires Treehouse >=3.1.3")
     rows = inventory(project)
     copies = task_copies(args.state_dirs)
-    idle = [row for row in rows if not activity(row)]
-    excess = max(0, len(idle) - cap)
+    idle = [row for row in rows if row["status"] == "available" and not owner(row, copies)]
+    cursor = dict(after="", selected=0, errors=0)
+    if args.cursor and args.cursor.read_text():
+        cursor = json.loads(args.cursor.read_text())
+    excess = max(0, len(idle) - cap - cursor["selected"])
     report = dict(project=project.name, cap=cap, idle_before=len(idle), dry_run=not args.apply,
                   copies_pruned=0, bytes_reclaimed=0, copies_would_prune=0,
-                  bytes_would_reclaim=0, inspection_errors=0, copies=[])
+                  bytes_would_reclaim=0, copies_unmeasured=0, inspection_errors=0, copies=[])
     selected = 0
     for row in sorted(rows, key=lambda item: item["path"]):
         decision = dict(path=row["path"], decision="keep")
         report["copies"].append(decision)
-        if excess == 0 or selected == args.limit:
+        if excess == 0 or selected == args.limit or row["path"] <= cursor["after"]:
             continue
         try:
             reason = refusal(row, project, copies)
@@ -192,9 +219,13 @@ def main():
             else:
                 report["copies_would_prune"] += 1
                 report["bytes_would_reclaim"] += size or 0
+            report["copies_unmeasured"] += size is None
             decision.update(decision="pruned" if args.apply else "would-prune", allocated_bytes=size)
             excess -= 1
             selected += 1
+            if args.cursor:
+                args.cursor.write_text(json.dumps(dict(after=row["path"], selected=cursor["selected"] + selected,
+                                                       errors=cursor["errors"] + report["inspection_errors"])))
         except (ValueError, OSError, subprocess.SubprocessError) as error:
             report["inspection_errors"] += 1
             decision.update(decision="refuse", reason=str(error))
@@ -203,7 +234,7 @@ def main():
     print(json.dumps(report))
     if excess and selected == args.limit:
         return 3
-    return 1 if excess or report["inspection_errors"] else 0
+    return 1 if excess or report["inspection_errors"] or cursor["errors"] else 0
 
 
 if __name__ == "__main__":

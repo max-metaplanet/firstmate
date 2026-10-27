@@ -462,7 +462,7 @@ Settling that ticket stays a supervised step with its own cited evidence, and no
 ## Idle Treehouse pool (config/treehouse-idle-cap)
 
 The default cap keeps two idle copies per project after task cleanup.
-Active and leased copies do not consume this allowance.
+Active, leased, Firstmate-claimed, and task-recorded copies do not consume this allowance, and neither do copies Treehouse does not report as available.
 The local root Firstmate home's optional `config/treehouse-idle-cap` file overrides it for every local home.
 Its JSON object requires `default` and `projects`, with integer caps from zero through 999999.
 Project keys are clone-directory basenames, as in the project registry.
@@ -472,7 +472,7 @@ A malformed or unreadable declaration prevents pruning.
 [`bin/fm-pool-prune.sh`](../bin/fm-pool-prune.sh) provides a per-project dry run and an explicit apply operation, and owns the exact command, safety checks, and measurement fields.
 Teardown uses the same implementation after returning its slot and retiring its task record, and removes at most one excess copy while it holds the shared project lock.
 It reports a warning if the pool remains above the cap; cleanup itself can still complete.
-Clear an existing backlog with the explicit apply operation, which takes the shared project lock for one removal at a time.
+Clear an existing backlog with the explicit apply operation, which takes the shared project lock for one removal at a time; the dry run takes it for one inspected copy at a time.
 This requires Treehouse 3.1.3 or newer; older versions retain their copies and report the upgrade requirement.
 The cap applies to the Treehouse provider used by tmux, Herdr, zellij, and cmux, independently of the worker harness.
 Orca manages its own worktrees and does not use this pool cap.

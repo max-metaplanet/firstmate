@@ -74,6 +74,8 @@ elif args == ['status','--json']:
 elif args[0] == 'destroy':
     target=Path(args[1])
     if (p/'reject-destroy').exists(): sys.exit(1)
+    if os.environ.get('POOL_LOCK') and '--yes' not in args:
+        with (p/'preview-owners').open('a') as f: f.write(os.readlink(os.environ['POOL_LOCK'])+'\\n')
     if '--yes' in args:
         if os.environ.get('POOL_LOCK'):
             with (p/'owners').open('a') as f: f.write(os.readlink(os.environ['POOL_LOCK'])+'\\n')
@@ -165,6 +167,22 @@ else:
         self.assertEqual(sum(r['bytes_reclaimed'] for r in self.reports), 0)
         pruned = [c for r in self.reports for c in r['copies'] if c['decision'] == 'pruned']
         self.assertEqual([c['allocated_bytes'] for c in pruned], [None, None])
+        self.assertEqual(sum(r['copies_unmeasured'] for r in self.reports), 2)
+
+    def test_claimed_and_unavailable_copies_do_not_count_as_idle(self):
+        free = [self.slot() for _ in range(3)]
+        claimed = [self.slot() for _ in range(3)]
+        for p in claimed:
+            (p.parent/'.fm-slot-owner').write_text('task=other\nhome=/foreign\n')
+        dirty = self.slot(status='dirty')
+        self.cap(2)
+        rc, report = self.invoke(True)
+        self.assertEqual(rc, 0, self.output)
+        self.assertEqual(self.reports[0]['idle_before'], 3)
+        self.assertEqual(len(self.removals()), 1, self.calls())
+        self.assertEqual(sum(p.exists() for p in free), 2)
+        self.assertTrue(all(p.exists() for p in claimed) and dirty.exists())
+        self.assertEqual(report['unmet_cap'], 0)
 
     def test_active_and_leased_excluded(self):
         active = self.slot(status='in-use', processes=[dict(pid=123, name='worker')])
@@ -177,11 +195,35 @@ else:
         self.assertTrue(active.exists() and leased.exists())
         self.assertFalse(idle.exists())
 
-    def test_apply_releases_lock_between_copies(self):
-        slots = [self.slot() for _ in range(3)]
-        self.env['POOL_LOCK'] = subprocess.check_output(
+    def lock_path(self):
+        return subprocess.check_output(
             ['bash', '-c', 'FM_WAKE_READ_ONLY=1; . "$1/bin/fm-wake-lib.sh"; fm_treehouse_project_lock_path "$2"',
              '_', str(ROOT), str(self.project)], env=self.env, text=True).strip()
+
+    def test_dry_run_releases_lock_between_copies(self):
+        slots = [self.slot() for _ in range(3)]
+        self.env['POOL_LOCK'] = self.lock_path()
+        self.tool("du", "import os, sys\n"
+                  "with open(os.path.join(os.environ['POOL_FIXTURE'], 'du-locked'), 'a') as f:\n"
+                  "    f.write(str(os.path.lexists(os.environ['POOL_LOCK'])) + chr(10))\n"
+                  "print('4' + chr(9) + sys.argv[-1])\n")
+        self.cap(0)
+        rc, report = self.invoke()
+        self.assertEqual(rc, 0, self.output)
+        self.assertTrue(all(p.exists() for p in slots))
+        self.assertEqual(self.removals(), [])
+        self.assertEqual(sum(r['copies_would_prune'] for r in self.reports), 3)
+        self.assertEqual(sum(r['bytes_would_reclaim'] for r in self.reports), 3 * 4096)
+        self.assertEqual(sum(r['copies_unmeasured'] for r in self.reports), 0)
+        owners = (self.base/'preview-owners').read_text().splitlines()
+        self.assertEqual(len(owners), 3)
+        self.assertEqual(len(set(owners)), 3, owners)
+        self.assertEqual((self.base/'du-locked').read_text().split(), ['False'] * 3)
+        self.assertFalse(os.path.lexists(self.env['POOL_LOCK']))
+
+    def test_apply_releases_lock_between_copies(self):
+        slots = [self.slot() for _ in range(3)]
+        self.env['POOL_LOCK'] = self.lock_path()
         self.cap(0)
         rc, report = self.invoke(True)
         self.assertEqual(rc, 0, self.output)
@@ -227,11 +269,20 @@ else:
         self.cap(0)
         self.refused('branch is not published')
 
+    def protected(self, p, expected):
+        free = self.slot()
+        self.cap(0)
+        rc, report = self.invoke(True)
+        self.assertEqual(rc, 0, self.output)
+        self.assertEqual(report['idle_before'], 1)
+        self.assertIn(expected, self.output)
+        self.assertTrue(p.exists())
+        self.assertFalse(free.exists())
+
     def test_foreign_claim(self):
         p = self.slot()
         (p.parent/'.fm-slot-owner').write_text('task=other\nhome=/foreign\n')
-        self.cap(0)
-        self.refused('slot claim')
+        self.protected(p, 'slot claim')
 
     def test_foreign_home_record(self):
         p = self.slot()
@@ -239,8 +290,7 @@ else:
         (child/'state').mkdir(parents=True)
         (child/'state/other.meta').write_text('worktree='+str(p)+'\n')
         (self.home/'data/secondmates.md').write_text(f'- child - testing (home: {child}; scope: testing; projects: core; added 2026-10-27)\n')
-        self.cap(0)
-        self.refused('recorded Firstmate task copy')
+        self.protected(p, 'recorded Firstmate task copy')
 
     def test_claim_appears_during_preview(self):
         self.slot()
