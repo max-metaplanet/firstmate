@@ -19,7 +19,7 @@
 # resumes and fresh work (FM_WORKER_PARK_RESERVES); a resume_error hold
 # reserves nothing until an explicit wake clears it, and fm-spawn reserves no
 # fleet place for a resume its own project cap cannot admit yet.
-# Requires fm_meta_get_to and fm_backend_target_of_meta_to. No side effects on source.
+# Requires fm_meta_get, fm_meta_get_to and fm_backend_target_of_meta_to. No side effects on source.
 
 # <record> defaults to the metadata's own sibling. A caller reading a COPY of
 # the metadata (bin/fm-fleet-snapshot.sh's captured generation) must name the
