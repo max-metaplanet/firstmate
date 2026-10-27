@@ -19,7 +19,7 @@
 # resumes and fresh work (FM_WORKER_PARK_RESERVES); a resume_error hold
 # reserves nothing until an explicit wake clears it, and fm-spawn reserves no
 # fleet place for a resume its own project cap cannot admit yet.
-# Requires fm_meta_get and fm_backend_target_of_meta. No side effects on source.
+# Requires fm_meta_get_to and fm_backend_target_of_meta_to. No side effects on source.
 
 # <record> defaults to the metadata's own sibling. A caller reading a COPY of
 # the metadata (bin/fm-fleet-snapshot.sh's captured generation) must name the
@@ -27,20 +27,23 @@
 # derived path would miss the park entirely. The generation and endpoint bind
 # below still proves the record describes the metadata it is read against.
 fm_worker_park_load() { # <meta> [<record>]
-  local meta=$1 record=${2:-${1%.meta}.park} generation endpoint
+  local meta=$1 record=${2:-${1%.meta}.park} generation endpoint recorded_generation recorded_endpoint resume_error
   [ -f "$record" ] && [ ! -L "$record" ] && [ -r "$record" ] || return 1
-  FM_WORKER_PARK_PHASE=$(fm_meta_get "$record" phase)
+  fm_meta_get_to FM_WORKER_PARK_PHASE "$record" phase
   case "$FM_WORKER_PARK_PHASE" in parked|queued) ;; *) return 1 ;; esac
-  generation=$(fm_meta_get "$meta" spawn_gen)
-  endpoint=$(fm_backend_target_of_meta "$meta")
-  [ "$(fm_meta_get "$record" generation)" = "${generation:-legacy}" ] &&
-    [ -n "$endpoint" ] && [ "$(fm_meta_get "$record" endpoint)" = "$endpoint" ] || return 1
-  FM_WORKER_PARK_REASON=$(fm_meta_get "$record" reason)
-  FM_WORKER_PARK_UNTIL=$(fm_meta_get "$record" until)
-  FM_WORKER_PARK_QUEUED_AT=$(fm_meta_get "$record" queued_at)
+  fm_meta_get_to generation "$meta" spawn_gen
+  fm_backend_target_of_meta_to endpoint "$meta"
+  fm_meta_get_to recorded_generation "$record" generation
+  fm_meta_get_to recorded_endpoint "$record" endpoint
+  [ "$recorded_generation" = "${generation:-legacy}" ] &&
+    [ -n "$endpoint" ] && [ "$recorded_endpoint" = "$endpoint" ] || return 1
+  fm_meta_get_to FM_WORKER_PARK_REASON "$record" reason
+  fm_meta_get_to FM_WORKER_PARK_UNTIL "$record" until
+  fm_meta_get_to FM_WORKER_PARK_QUEUED_AT "$record" queued_at
   case "$FM_WORKER_PARK_UNTIL:$FM_WORKER_PARK_QUEUED_AT" in *[!0-9:]*|:*|*:) return 1 ;; esac
   FM_WORKER_PARK_RESERVES=0
-  if [ "$FM_WORKER_PARK_PHASE" = queued ] && [ "$(fm_meta_get "$record" resume_error)" != 1 ]; then
+  fm_meta_get_to resume_error "$record" resume_error
+  if [ "$FM_WORKER_PARK_PHASE" = queued ] && [ "$resume_error" != 1 ]; then
     FM_WORKER_PARK_RESERVES=1
   fi
   [ -n "$FM_WORKER_PARK_REASON" ]

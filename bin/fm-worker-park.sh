@@ -39,7 +39,7 @@
 # admission. Exit 75 means deferred, not failed: the request is queued, or the
 # record was busy and the caller retries from its own durable source.
 set -uo pipefail
-SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+SCRIPT_DIR=$(d=${BASH_SOURCE[0]%/*}; [ "$d" != "${BASH_SOURCE[0]}" ] || d=.; cd "${d:-/}" && pwd)
 FM_HOME=${FM_HOME:-${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}}
 export FM_HOME
 CONFIG=${FM_CONFIG_OVERRIDE:-$FM_HOME/config}
@@ -166,23 +166,26 @@ park() {
 }
 
 auto() {
-  local line verb pr yolo until=0 now minutes=10 lowered
+  local line verb pr yolo until=0 now minutes=10 lowered phase recorded_line reason
   fm_worker_park_load "$META" && return 0
   line=$(status_current_line "$STATE/$ID.status" '')
-  if [ "$(fm_meta_get "$RECORD" phase)" = active ] && [ "$(fm_meta_get "$RECORD" status_line)" = "$line" ]; then return 0; fi
-  if [ "$(fm_meta_get "$RECORD" phase)" = hint ] && [ "$(fm_meta_get "$RECORD" status_line)" = "$line" ]; then
-    park "$(fm_meta_get "$RECORD" reason)"
+  fm_meta_get_to phase "$RECORD" phase
+  fm_meta_get_to recorded_line "$RECORD" status_line
+  if [ "$phase" = active ] && [ "$recorded_line" = "$line" ]; then return 0; fi
+  if [ "$phase" = hint ] && [ "$recorded_line" = "$line" ]; then
+    fm_meta_get_to reason "$RECORD" reason
+    park "$reason"
     return
   fi
-  verb=$(status_line_verb "$line")
-  pr=$(fm_meta_get "$META" pr)
-  yolo=$(fm_meta_get "$META" yolo)
+  status_line_verb "$line" verb
+  fm_meta_get_to pr "$META" pr
+  fm_meta_get_to yolo "$META" yolo
   if [ "$verb" = "done" ] && [ -n "$pr" ] && [ "$yolo" = off ] && [[ "$line" == *"PR $pr"* ]]; then
     park "merge approval for $pr"
     return
   fi
   [ "$verb" = paused ] || return 0
-  now=$(date +%s)
+  fm_epoch_seconds_to now
   until=$(status_paused_until "$line") || until=0
   if [ -e "$CONFIG/worker-park-minutes" ]; then
     minutes=$(cat "$CONFIG/worker-park-minutes") || return 1
@@ -238,13 +241,16 @@ resume() {
 }
 
 one() {
+  local endpoint
   META="$STATE/$ID.meta"; RECORD="$STATE/$ID.park"
   if [ ! -f "$META" ] || [ -L "$META" ]; then
     case "$VERB" in park|record-exited) refuse_park "task metadata is unavailable or unsafe"; return 1 ;; esac
     return 0
   fi
   case "$VERB" in
-    auto|tick|hint) [ -n "$(fm_backend_target_of_meta "$META")" ] || return 0 ;;
+    auto|tick|hint)
+      fm_backend_target_of_meta_to endpoint "$META"
+      [ -n "$endpoint" ] || return 0 ;;
   esac
   local lock
   lock="$STATE/.worker-park-$ID.lock"
@@ -252,8 +258,8 @@ one() {
     case "$VERB" in request|wake) return 75 ;; park|record-exited) refuse_park "park record lock is busy"; return 75 ;; *) return 0 ;; esac
   fi
   case "${3:-}" in *$'\n'*|*$'\r'*) fail 'reason must be one line' ;; esac
-  FAILING_CHECKS=$(fm_meta_get "$RECORD" failing_checks)
-  EVENT_TOKEN=$(fm_meta_get "$RECORD" event_token)
+  fm_meta_get_to FAILING_CHECKS "$RECORD" failing_checks
+  fm_meta_get_to EVENT_TOKEN "$RECORD" event_token
   case "$VERB" in
     auto) auto ;;
     park|record-exited) park "${3:-external wait}" "${4:-0}" ;;
@@ -277,7 +283,7 @@ one() {
         if [ "$FM_WORKER_PARK_PHASE" = parked ]; then
           local line old
           line=$(status_current_line "$STATE/$ID.status" '')
-          old=$(fm_meta_get "$RECORD" status_line)
+          fm_meta_get_to old "$RECORD" status_line
           if [ -n "$(find "$STATE/$ID.inbox" -maxdepth 1 -name '*.msg' -print 2>/dev/null)" ]; then
             queue_wake 'steering waiting in the instruction inbox'
           elif [ "$line" != "$old" ]; then
@@ -308,7 +314,9 @@ elif [ "$VERB" = tick ]; then
   for meta in "$STATE"/*.meta; do
     [ -f "$meta" ] || continue
     ID=${meta##*/}; ID=${ID%.meta}
-    if [ "$(fm_meta_get "$meta" kind)" = secondmate ]; then
+    kind=''
+    fm_meta_get_to kind "$meta" kind
+    if [ "$kind" = secondmate ]; then
       if [ -e "$STATE/.secondmate-park-$ID" ] || [ -L "$STATE/.secondmate-park-$ID" ]; then
         "$SCRIPT_DIR/fm-secondmate-park.sh" "$ID" tick || true
       else
