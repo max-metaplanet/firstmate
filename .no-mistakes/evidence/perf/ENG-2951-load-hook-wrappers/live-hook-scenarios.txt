@@ -1,0 +1,36 @@
+== S1 hookless repo: wrapper inventory
+.fm-git-hooks commit-msg post-checkout post-commit post-merge pre-push 
+== S1b hookless commit: hooks invoked (trace2) and trailer stripped
+   1 "hook_name":"commit-msg"
+   1 "hook_name":"post-commit"
+hook child starts: 2
+msg| feat: x
+msg| 
+== S2 repo with pre-commit: wrapped and runs
+.fm-git-hooks commit-msg post-checkout post-commit post-merge pre-commit pre-push 
+PROJECT-PRE-COMMIT-RAN
+== S3 reinstall after hook removed prunes wrapper
+.fm-git-hooks commit-msg post-checkout post-commit post-merge pre-push 
+== S4 second repo lfs-style pre-push runs from a pane for hookless task repo
+OTHER-REPO-LFS-PRE-PUSH-RAN origin $S/remote.git
+== S5 nested launch: parent fleet dir (hookless) + child dir; project pre-commit runs
+GIT_CONFIG_COUNT=2
+GIT_CONFIG_KEY_0=core.hooksPath
+GIT_CONFIG_KEY_1=core.hooksPath
+GIT_CONFIG_VALUE_0=/private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-hooks-live.6TlAfA/hp
+GIT_CONFIG_VALUE_1=/private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-hooks-live.6TlAfA/hc
+NESTED-PROJECT-PRE-COMMIT-RAN
+commit exit=0
+== S6 custom (non-fleet) inherited core.hooksPath override is honored like plain git
+plain git exit=0
+fleet pane exit=0
+== S7 push guard pre-push still installed without a project pre-push
+.fm-git-hooks commit-msg fm-push-guard post-checkout post-commit post-merge pre-push 
+== S8 --no-strip hookless: no commit-msg wrapper
+.fm-git-hooks post-checkout post-commit post-merge pre-push 
+== S9 refuse to replace project's own hooks dir
+error: refusing to replace the repository's own hooks directory
+exit=1
+applypatch-msg.sample
+commit-msg.sample
+fsmonitor-watchman.sample

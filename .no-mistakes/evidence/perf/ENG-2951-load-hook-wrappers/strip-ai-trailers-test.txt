@@ -1,0 +1,30 @@
+ok - a Cursor --trailer commit object has no AI co-author and keeps the captain identity
+ok - the Command Code trailer a worker writes into its own message is stripped
+ok - a human Co-authored-by trailer survives next to a stripped Cursor trailer
+ok - a human co-author at a vendor domain survives; only the exact bot address is stripped
+ok - a hook manager resolving the pane hooks dir fails instead of displacing the strip
+ok - a relaunch reinstall replaces the read-only strip dir and still strips
+ok - absent repository hooks have no wrappers, including commit-msg when stripping is off
+ok - the strip-only hook strips without launching git
+ok - install refuses to replace the project's own hooks directory
+ok - install chains the previous commit-msg hook after stripping
+ok - a relative project core.hooksPath resolves against the worktree and still runs
+ok - an inherited GIT_CONFIG hooksPath does not become the chained previous hooks
+ok - a nested launch whose parent lacks a wrapper still runs the project's own hook
+ok - an inherited non-fleet hooksPath override stands, as in plain git
+ok - reinstall discovers and chains a newly generated project hook
+ok - another repository's lfs-style pre-push runs although the task worktree has none
+ok - a pane GIT_CONFIG hooksPath still chains the repository git is actually in
+ok - an empty project core.hooksPath runs no repository hook and still strips the trailer
+ok - an unresolvable project core.hooksPath refuses install
+ok - a valueless project core.hooksPath still refuses the commit
+ok - the repository's pre-push runs and can refuse under every hooksPath override channel
+ok - a git -c hooksPath override still strips the trailer and chains the project's hooks
+ok - the repository's own hook keeps inherited GIT_CONFIG entries such as a scoped credential helper
+ok - env-file writes the canonical hooks path so wrappers still chain the repository hook
+ok - commit-msg file mode strips the trailer and keeps the subject
+ok - install --no-strip leaves commit messages untouched while still chaining
+ok - install --push-guard writes a read-only pre-push that runs the guard before chaining
+# all fm-git-strip-ai-trailers tests passed
+bash tests/fm-git-strip-ai-trailers.test.sh  3.71s user 6.27s system 12% cpu 1:18.73 total
+exit=0

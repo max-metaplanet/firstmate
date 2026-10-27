@@ -1,0 +1,6 @@
+== before: wrappers=15
+hook children per hookless commit: 4
+Cursor trailer lines: 0
+== after: wrappers=5
+hook children per hookless commit: 2
+Cursor trailer lines: 0
