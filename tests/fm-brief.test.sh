@@ -572,14 +572,16 @@ test_ci_cost_discipline() {
         local-only:*|*:gerrit|*:external) continue ;;
       esac
       assert_grep 'When a required check is red, read its failure log' "$brief" "$mode/$forge: missing log inspection"
-      assert_grep 'blocked [at=<epoch>]: unrelated CI failure - job {job name}, run {run URL}' "$brief" \
-        "$mode/$forge: unrelated CI failures must report the job and run to firstmate"
-      assert_grep 'report the evidence to firstmate without rerunning CI' "$brief" "$mode/$forge: unrelated failures must not trigger CI"
       assert_grep 'Never push an empty, no-op, or "retrigger" commit to rerun CI' "$brief" \
         "$mode/$forge: CI retrigger commits must be forbidden"
       if [ "$mode" = no-mistakes ]; then
         assert_grep 'report unrelated failures through its CI step' "$brief" "$forge: pipeline must retain CI ownership"
         assert_grep 'skip as unrelated with evidence' "$brief" "$forge: pipeline unrelated-CI exception was lost"
+        assert_no_grep 'unrelated CI failure - job' "$brief" "$forge: worker must not park the pipeline on an unrelated CI failure"
+      else
+        assert_grep 'blocked [at=<epoch>]: unrelated CI failure - job {job name}, run {run URL}' "$brief" \
+          "$mode/$forge: unrelated CI failures must report the job and run to firstmate"
+        assert_grep 'report the evidence to firstmate without rerunning CI' "$brief" "$mode/$forge: unrelated failures must not trigger CI"
       fi
     done
   done

@@ -673,7 +673,6 @@ PR CI is the full regression gate for PR delivery; keep CI spend down and never 
 These worker limits leave no-mistakes' configured test step, repair loop, and `ci.rerun_transient` behavior unchanged.
 EOF
   ci_cost="When a required check is red, read its failure log.
-If the log shows no cause in your own change, append \`blocked [at=<epoch>]: unrelated CI failure - job {job name}, run {run URL}\` to the status file and stop; report the evidence to firstmate without rerunning CI.
 Never push an empty, no-op, or \"retrigger\" commit to rerun CI."
   if [ -n "$base" ]; then
     printf -v base_q '%q' "$base"
@@ -775,6 +774,7 @@ $ci_wait
 When it is committed, publish your branch to \`origin\` and open a draft PR with \`$forge_cli\` using \`$draft_create\`$pr_base.
 Finish local implementation and focused validation before opening the draft.
 $ci_cost
+If the log shows no cause in your own change, append \`blocked [at=<epoch>]: unrelated CI failure - job {job name}, run {run URL}\` to the status file and stop; report the evidence to firstmate without rerunning CI.
 If CI requires a code change, report the failing job and run to firstmate as a blocked event; do not start another worker-driven push round.
 Once local validation has passed and the work is ready for review, mark the PR ready before the final CI wait so suites skipped on drafts can run.$ready_wait
 The ready transition must not require another commit or push.
