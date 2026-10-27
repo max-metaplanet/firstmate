@@ -5,7 +5,10 @@
 # config/treehouse-idle-cap in the local root home sets the per-project cap;
 # docs/configuration.md owns its schema. No file means two idle copies.
 # Teardown calls the same implementation after releasing its slot and retiring
-# its task record, while still holding the shared project lock.
+# its task record, while still holding the shared project lock, and removes at
+# most one copy without measuring it. Apply takes the shared project lock for
+# one removal at a time, so spawns and teardowns can interleave with a backlog;
+# it waits up to a minute for the lock before each removal.
 #
 # Only unclaimed, unleased, idle, clean Git slots with HEAD and the checked-out
 # branch published on origin qualify. Any recorded task copy in a registered
@@ -21,9 +24,11 @@
 # No local branch refs are deleted. Git verification reads origin's live heads
 # without fetching; inability to prove publication preserves the copy.
 #
-# Output is JSON with per-copy decisions and per-project counts, allocated
-# bytes selected by dry run, and allocated bytes removed by apply. Allocation
-# is measured with du -sk, not an APFS physical-free-space guarantee.
+# Output is one JSON line per locked pass with per-copy decisions and
+# per-project counts, allocated bytes selected by dry run, and allocated bytes
+# removed by apply. Dry run is a single pass; apply prints one pass per removal,
+# or one pass that removes nothing. Allocation is measured with du -sk, not an
+# APFS physical-free-space guarantee.
 set -eu
 if [ "${1:-}" = --help ] || [ "${1:-}" = -h ]; then
   sed -n '2,/^set /{ /^#/s/^# \{0,1\}//p; }' "$0"
@@ -47,6 +52,20 @@ FM_WAKE_READ_ONLY=1
 . "$SCRIPT_DIR/fm-pool-prune-lib.sh"
 PROJECT=$(cd "$1" && pwd -P)
 LOCK=$(fm_treehouse_project_lock_path "$PROJECT")
-fm_lock_try_acquire "$LOCK" || { echo 'pool prune: shared project lock is busy' >&2; exit 1; }
 trap 'fm_lock_release "$LOCK"' EXIT
-fm_pool_prune_locked "$PROJECT" "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}" "$STATE" "${@:2}"
+while :; do
+  tries=0
+  until fm_lock_try_acquire "$LOCK"; do
+    tries=$((tries + 1))
+    [ "$tries" -lt 60 ] || { echo 'pool prune: shared project lock is busy' >&2; exit 1; }
+    sleep 1
+  done
+  rc=0
+  if [ "${2:-}" = --apply ]; then
+    fm_pool_prune_locked "$PROJECT" "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}" "$STATE" --apply --limit 1 || rc=$?
+  else
+    fm_pool_prune_locked "$PROJECT" "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}" "$STATE" || rc=$?
+  fi
+  fm_lock_release "$LOCK"
+  [ "$rc" = 3 ] || exit "$rc"
+done

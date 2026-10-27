@@ -75,12 +75,16 @@ elif args[0] == 'destroy':
     target=Path(args[1])
     if (p/'reject-destroy').exists(): sys.exit(1)
     if '--yes' in args:
+        if os.environ.get('POOL_LOCK'):
+            with (p/'owners').open('a') as f: f.write(os.readlink(os.environ['POOL_LOCK'])+'\\n')
         if (p/'leave-present').exists(): sys.exit(0)
         target.rename(target.with_name(target.name+'.retained'))
         rows=json.loads((p/'rows.json').read_text())
         (p/'rows.json').write_text(json.dumps([r for r in rows if r['path'] != str(target)]))
     elif (p/'race-claim').exists():
         (target.parent/'.fm-slot-owner').write_text('task=other\\nhome=/foreign\\n')
+elif args[0] == 'return':
+    pass
 else:
     sys.exit(2)
 ''')
@@ -107,14 +111,17 @@ else:
         (self.base / "rows.json").write_text(json.dumps(self.rows))
         result = subprocess.run(["bash", str(ROOT / "bin/fm-pool-prune.sh"), str(self.project),
                                  *(["--apply"] if apply else [])], env=self.env,
-                                text=True, capture_output=True, timeout=60)
+                                text=True, capture_output=True, timeout=300)
         self.output = result.stdout + result.stderr
-        return result.returncode, json.loads(result.stdout) if result.stdout else None
+        self.reports = [json.loads(line) for line in result.stdout.splitlines()]
+        return result.returncode, self.reports[-1] if self.reports else None
+
+    def calls(self):
+        calls = self.base / "calls"
+        return [json.loads(line) for line in calls.read_text().splitlines()] if calls.exists() else []
 
     def removals(self):
-        calls = self.base / "calls"
-        return [json.loads(line) for line in calls.read_text().splitlines()
-                if '--yes' in json.loads(line)] if calls.exists() else []
+        return [call for call in self.calls() if '--yes' in call]
 
     def refused(self, expected):
         rc, report = self.invoke(True)
@@ -138,9 +145,9 @@ else:
         self.cap(1)
         rc, report = self.invoke(True)
         self.assertEqual(rc, 0, self.output)
-        self.assertEqual(report['copies_pruned'], 3)
+        self.assertEqual(sum(r['copies_pruned'] for r in self.reports), 3)
         self.assertEqual(sum(p.exists() for p in slots), 1)
-        self.assertGreater(report['bytes_reclaimed'], 0)
+        self.assertTrue(all(r['bytes_reclaimed'] > 0 for r in self.reports))
         self.assertTrue(all(len(c) == 3 and c[0] == 'destroy' and c[2] == '--yes' for c in self.removals()))
         self.rows = json.loads((self.base/'rows.json').read_text())
         rc, report = self.invoke(True)
@@ -154,9 +161,40 @@ else:
         self.cap(0)
         rc, report = self.invoke(True)
         self.assertEqual(rc, 0, self.output)
-        self.assertEqual(report['idle_before'], 1)
+        self.assertEqual(self.reports[0]['idle_before'], 1)
         self.assertTrue(active.exists() and leased.exists())
         self.assertFalse(idle.exists())
+
+    def test_apply_releases_lock_between_copies(self):
+        slots = [self.slot() for _ in range(3)]
+        self.env['POOL_LOCK'] = subprocess.check_output(
+            ['bash', '-c', 'FM_WAKE_READ_ONLY=1; . "$1/bin/fm-wake-lib.sh"; fm_treehouse_project_lock_path "$2"',
+             '_', str(ROOT), str(self.project)], env=self.env, text=True).strip()
+        self.cap(0)
+        rc, report = self.invoke(True)
+        self.assertEqual(rc, 0, self.output)
+        self.assertFalse(any(p.exists() for p in slots))
+        owners = (self.base/'owners').read_text().splitlines()
+        self.assertEqual(len(owners), 3)
+        self.assertEqual(len(set(owners)), 3, owners)
+        self.assertFalse(os.path.lexists(self.env['POOL_LOCK']))
+
+    def test_teardown_prunes_at_most_one_copy(self):
+        slots = [self.slot() for _ in range(4)]
+        (self.base/'pool/treehouse-state.json').write_text('{}\n')
+        (self.home/'state/task.meta').write_text(
+            f'window=firstmate:fm-task\nendpoint_task_id=task\nworktree={slots[0]}\n'
+            f'project={self.project}\nkind=scout\n')
+        self.tool("tmux", "")
+        self.cap(0)
+        (self.base / "rows.json").write_text(json.dumps(self.rows))
+        result = subprocess.run(["bash", str(ROOT / "bin/fm-teardown.sh"), "task", "--force"],
+                                env=dict(self.env, FM_GATE_REFUSE_BYPASS="1"), text=True, capture_output=True, timeout=120)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(len(self.removals()), 1, self.calls())
+        self.assertEqual(sum(p.exists() for p in slots), 3)
+        self.assertNotIn('{', result.stdout)
+        self.assertIn('still above its cap', result.stderr)
 
     def test_dirty(self):
         p = self.slot()

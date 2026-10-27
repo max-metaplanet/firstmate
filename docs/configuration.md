@@ -470,8 +470,9 @@ For example, `{"default":2,"projects":{"core":1}}` retains at most one idle core
 A malformed or unreadable declaration prevents pruning.
 
 [`bin/fm-pool-prune.sh`](../bin/fm-pool-prune.sh) provides a per-project dry run and an explicit apply operation, and owns the exact command, safety checks, and measurement fields.
-Teardown uses the same implementation after returning its slot and retiring its task record.
-It reports a warning if protected copies prevent meeting the cap; cleanup itself can still complete.
+Teardown uses the same implementation after returning its slot and retiring its task record, and removes at most one excess copy while it holds the shared project lock.
+It reports a warning if the pool remains above the cap; cleanup itself can still complete.
+Clear an existing backlog with the explicit apply operation, which takes the shared project lock for one removal at a time.
 This requires Treehouse 3.1.3 or newer; older versions retain their copies and report the upgrade requirement.
 The cap applies to the Treehouse provider used by tmux, Herdr, zellij, and cmux, independently of the worker harness.
 Orca manages its own worktrees and does not use this pool cap.

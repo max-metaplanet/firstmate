@@ -144,6 +144,8 @@ def main():
     parser.add_argument("--config", type=Path, required=True)
     parser.add_argument("--state-dirs", type=Path, nargs="+", required=True)
     parser.add_argument("--apply", action="store_true")
+    parser.add_argument("--limit", type=int)
+    parser.add_argument("--no-measure", action="store_true")
     args = parser.parse_args()
     project = args.project.resolve()
     cap = cap_for(args.config, project)
@@ -157,10 +159,11 @@ def main():
     report = dict(project=project.name, cap=cap, idle_before=len(idle), dry_run=not args.apply,
                   copies_pruned=0, bytes_reclaimed=0, copies_would_prune=0,
                   bytes_would_reclaim=0, inspection_errors=0, copies=[])
+    selected = 0
     for row in sorted(rows, key=lambda item: item["path"]):
         decision = dict(path=row["path"], decision="keep")
         report["copies"].append(decision)
-        if excess == 0:
+        if excess == 0 or selected == args.limit:
             continue
         try:
             reason = refusal(row, project, copies)
@@ -168,7 +171,7 @@ def main():
                 decision.update(decision="refuse", reason=reason)
                 continue
             path = Path(row["path"])
-            size = allocated(path)
+            size = 0 if args.no_measure else allocated(path)
             run("treehouse", "destroy", str(path), cwd=project)
             if args.apply:
                 # Re-read both ownership planes after the provider preview.
@@ -188,12 +191,15 @@ def main():
                 report["bytes_would_reclaim"] += size
             decision.update(decision="pruned" if args.apply else "would-prune", allocated_bytes=size)
             excess -= 1
+            selected += 1
         except (ValueError, OSError, subprocess.SubprocessError) as error:
             report["inspection_errors"] += 1
             decision.update(decision="refuse", reason=str(error))
     report["idle_after"] = len(idle) - report["copies_pruned"]
     report["unmet_cap"] = excess
-    print(json.dumps(report, indent=2))
+    print(json.dumps(report))
+    if excess and selected == args.limit:
+        return 3
     return 1 if excess or report["inspection_errors"] else 0
 
 
