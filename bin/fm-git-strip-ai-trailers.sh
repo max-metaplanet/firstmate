@@ -8,9 +8,10 @@
 #       Rewrites that file in place, then exits 0 so the commit proceeds.
 #   fm-git-strip-ai-trailers.sh install [--no-strip] [--push-guard <guard-file>] <hooks-dir> <worktree>
 #       Recreate <hooks-dir> as a core.hooksPath for this launch: a commit-msg
-#       hook that runs this strip, plus wrappers for executable repository
-#       hooks listed in FM_GIT_CLIENT_HOOKS below. Reinstall after adding a
-#       hook name; reinstall also removes wrappers for hooks no longer present.
+#       hook that runs this strip, plus wrappers for the git-lfs hook names and
+#       for executable repository hooks listed in FM_GIT_CLIENT_HOOKS below.
+#       Reinstall after adding another hook name; reinstall also removes
+#       wrappers for those hooks no longer present.
 #       Each wrapper removes this directory's own core.hooksPath entry from
 #       GIT_CONFIG_*, keeping every inherited entry (a scoped credential.helper,
 #       safe.directory) for the repository's hook, and then resolves
@@ -186,6 +187,7 @@ ours=$(quote_for_hook "$ours")
 name=\${0##*/}
 drop=\$ours
 while :; do
+  removed=
   case \${GIT_CONFIG_COUNT:-} in
   '' | *[!0-9]*) ;;
   *)
@@ -198,9 +200,11 @@ while :; do
       fi
       i=\$((i + 1))
     done
+    [ "\$kept" = "\$count" ] || removed=1
     export GIT_CONFIG_COUNT=\$kept
     ;;
   esac
+  [ -n "\$removed" ] || [ "\$drop" = "\$ours" ] || break
   orig=\$(unset GIT_CONFIG_PARAMETERS; git rev-parse --path-format=absolute --git-path hooks 2>/dev/null) || {
     if hooks_path=\$(unset GIT_CONFIG_PARAMETERS; git config --get --type=path core.hooksPath 2>/dev/null) && [ -z "\$hooks_path" ]; then
       exit 0
@@ -215,7 +219,6 @@ while :; do
   if [ -x "\$orig/\$name" ]; then
     exec "\$orig/\$name" "\$@"
   fi
-  [ "\$orig" != "\$drop" ] || break
   drop=\$orig
 done
 EOF
@@ -237,8 +240,12 @@ EOF
 # to preserve. A project that does install one loses chaining for it inside
 # fleet panes only.
 #
-# Only executable hooks present at install time get wrappers. Git can skip
-# absent hooks without starting a shell, including during sequencer replay.
+# Only executable hooks present at install time get wrappers, plus the names
+# git-lfs installs (FM_GIT_LFS_HOOKS), so a repository other than the task
+# worktree, such as an LFS clone, still runs those. Git can skip absent hooks
+# without starting a shell, including during sequencer replay, so another
+# repository's hook runs inside a fleet pane only for a wrapped name.
+FM_GIT_LFS_HOOKS='pre-push post-checkout post-commit post-merge'
 FM_GIT_CLIENT_HOOKS='applypatch-msg pre-applypatch post-applypatch pre-commit
 pre-merge-commit prepare-commit-msg post-commit pre-rebase post-checkout
 post-merge pre-push post-rewrite pre-auto-gc sendemail-validate'
@@ -350,7 +357,10 @@ EOF
 
   for name in $FM_GIT_CLIENT_HOOKS; do
     [ -z "$guard_src" ] || [ "$name" != pre-push ] || continue
-    [ -n "$orig" ] && [ -x "$orig/$name" ] || continue
+    case " $FM_GIT_LFS_HOOKS " in
+    *" $name "*) ;;
+    *) [ -n "$orig" ] && [ -x "$orig/$name" ] || continue ;;
+    esac
     write_executable "$hooks_dir/$name" <<EOF
 #!/usr/bin/env bash
 set -u

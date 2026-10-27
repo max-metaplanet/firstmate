@@ -137,7 +137,7 @@ test_absent_hooks_do_not_get_wrappers() {
   hooks="$TMP_ROOT/hooks-absent"
   "$STRIP" install "$hooks" "$repo" || fail "install should succeed"
   assert_present "$hooks/commit-msg" "the strip hook is missing"
-  for name in pre-commit prepare-commit-msg post-commit pre-push post-checkout; do
+  for name in pre-commit prepare-commit-msg pre-rebase post-rewrite; do
     [ ! -e "$hooks/$name" ] || fail "an absent $name got a wrapper"
   done
   "$STRIP" install --no-strip "$hooks" "$repo" || fail "no-strip reinstall should succeed"
@@ -294,6 +294,24 @@ test_project_hook_generated_after_install_runs_after_reinstall() {
   assert_not_contains "$(git -C "$repo" log -1 --format=%B)" "Co-authored-by: Cursor" \
     "Cursor trailer survived a late-generated project hooks directory"
   pass "reinstall discovers and chains a newly generated project hook"
+}
+
+test_lfs_pre_push_in_another_repository_runs() {
+  local repo other remote hooks
+  repo="$TMP_ROOT/lfs-task-wt"
+  other="$TMP_ROOT/lfs-other-repo"
+  remote="$TMP_ROOT/lfs-other-remote.git"
+  make_repo "$repo"
+  make_repo "$other"
+  git init -q --bare "$remote"
+  git -C "$other" remote add origin "$remote"
+  write_marker_hook "$other/.git/hooks/pre-push" lfs-pre-push
+  hooks="$TMP_ROOT/hooks-lfs-pane"
+  "$STRIP" install "$hooks" "$repo" || fail "install should succeed for a hookless task worktree"
+  with_hooks_env "$hooks" git -C "$other" push -q origin HEAD:refs/heads/main ||
+    fail "push from another repository failed"
+  [ -f "$other/lfs-pre-push.ran" ] || fail "another repository's lfs-style pre-push hook did not run"
+  pass "another repository's lfs-style pre-push runs although the task worktree has none"
 }
 
 test_pane_hookspath_does_not_reroute_another_repository() {
@@ -589,6 +607,7 @@ test_relative_project_hookspath_still_runs
 test_inherited_hookspath_env_does_not_decide_the_chain
 test_nested_launch_still_runs_the_project_hook
 test_project_hook_generated_after_install_runs_after_reinstall
+test_lfs_pre_push_in_another_repository_runs
 test_pane_hookspath_does_not_reroute_another_repository
 test_empty_project_hookspath_runs_no_repository_hook
 test_unresolvable_project_hookspath_refuses_install

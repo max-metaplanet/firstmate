@@ -1445,6 +1445,7 @@ A repository whose config sets `core.hooksPath` to the empty string runs no proj
 An unresolved hooks directory fails installation, and an installed chaining wrapper fails the git operation if its runtime lookup fails.
 When stripping is enabled, the hooks directory is read-only, so a hook manager run inside a fleet pane (lefthook's npm postinstall, `pre-commit install`) fails instead of displacing the strip.
 Install a project's hooks from outside the pane and relaunch the worker after adding hook names so the installer discovers them.
+The installer always wraps the git-lfs hook names `pre-push`, `post-checkout`, `post-commit`, and `post-merge`, plus `commit-msg` when stripping, and otherwise only the hook names present in the task worktree; a hook of any other repository the worker runs git in, such as a separate clone, runs only for a wrapped name.
 The flag is a home-wide attribution choice, so it is inherited into secondmate homes under the [`secondmate-provisioning`](../.agents/skills/secondmate-provisioning/SKILL.md) inherited-local-material contract and a secondmate's own workers keep AI trailers too.
 Per-machine Cursor `cli-config.json` attribution-off is not this contract: it does not travel with Firstmate, defaults back to on when unset, and only feeds the CLI's request to the server, so it suppresses the trailer rather than preventing it.
 
