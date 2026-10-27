@@ -855,7 +855,7 @@ test_a_long_batch_carries_every_verdict_uncut() {
 # past the read bound, spending the whole read budget: only the first such read
 # with `once`, every one with `always`.
 slow_gh() {  # <home> <case-pattern> <once|always> [sleep-secs]
-  local home=$1 bin="$1/bin" consume= secs=${4:-4}
+  local home=$1 bin="$1/bin" consume='' secs=${4:-4}
   [ "$3" = always ] || consume="rm -f '$home/fx/slow-read'"
   mv "$bin/gh" "$bin/gh-fixture"
   cat > "$bin/gh" <<EOF
