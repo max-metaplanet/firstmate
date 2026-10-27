@@ -1,0 +1,36 @@
+# per-project cap core=0; slot 7 has an unpublished commit; slot 8 leased
+$ treehouse status (before)
+base  main  (repository default)
+1     leased       $LAB/pool/.treehouse/core-3c48bd/1/core  (detached)
+2     available    $LAB/pool/.treehouse/core-3c48bd/2/core  (detached)
+3     available    $LAB/pool/.treehouse/core-3c48bd/3/core  (detached)
+4     dirty        $LAB/pool/.treehouse/core-3c48bd/4/core  (detached)
+6     available    $LAB/pool/.treehouse/core-3c48bd/6/core  (detached)
+7     available    $LAB/pool/.treehouse/core-3c48bd/7/core  (detached)
+
+$ fm-pool-prune.sh core --apply
+{"project": "core", "cap": 0, "idle_before": 2, "dry_run": false, "copies_pruned": 1, "bytes_reclaimed": 8192, "copies_would_prune": 0, "bytes_would_reclaim": 0, "copies_unmeasured": 0, "inspection_errors": 0, "copies": [{"path": "$LAB/pool/.treehouse/core-3c48bd/1/core", "decision": "refuse", "reason": "leased"}, {"path": "$LAB/pool/.treehouse/core-3c48bd/2/core", "decision": "refuse", "reason": "Firstmate slot claim exists"}, {"path": "$LAB/pool/.treehouse/core-3c48bd/3/core", "decision": "refuse", "reason": "recorded Firstmate task copy"}, {"path": "$LAB/pool/.treehouse/core-3c48bd/4/core", "decision": "refuse", "reason": "Treehouse status dirty"}, {"path": "$LAB/pool/.treehouse/core-3c48bd/6/core", "decision": "pruned", "allocated_bytes": 8192}, {"path": "$LAB/pool/.treehouse/core-3c48bd/7/core", "decision": "keep"}], "idle_after": 1, "unmet_cap": 1}
+{"project": "core", "cap": 0, "idle_before": 1, "dry_run": false, "copies_pruned": 0, "bytes_reclaimed": 0, "copies_would_prune": 0, "bytes_would_reclaim": 0, "copies_unmeasured": 0, "inspection_errors": 1, "copies": [{"path": "$LAB/pool/.treehouse/core-3c48bd/1/core", "decision": "refuse", "reason": "leased"}, {"path": "$LAB/pool/.treehouse/core-3c48bd/2/core", "decision": "refuse", "reason": "Firstmate slot claim exists"}, {"path": "$LAB/pool/.treehouse/core-3c48bd/3/core", "decision": "refuse", "reason": "recorded Firstmate task copy"}, {"path": "$LAB/pool/.treehouse/core-3c48bd/4/core", "decision": "refuse", "reason": "Treehouse status dirty"}, {"path": "$LAB/pool/.treehouse/core-3c48bd/7/core", "decision": "refuse", "reason": "HEAD is not published on origin"}], "idle_after": 1, "unmet_cap": 1}
+exit=1
+
+$ treehouse status (after)
+base  main  (repository default)
+1     leased       $LAB/pool/.treehouse/core-3c48bd/1/core  (detached)
+2     available    $LAB/pool/.treehouse/core-3c48bd/2/core  (detached)
+3     available    $LAB/pool/.treehouse/core-3c48bd/3/core  (detached)
+4     dirty        $LAB/pool/.treehouse/core-3c48bd/4/core  (detached)
+7     available    $LAB/pool/.treehouse/core-3c48bd/7/core  (detached)
+
+$ git -C slot7 log --oneline -1 (unpublished work retained)
+7c0d0fa unpublished
+
+# worker cannot administer
+$ FM_TASK_ID=x fm-pool-prune.sh core --apply
+pool prune: task workers cannot administer the shared pool
+exit=1
+
+# malformed cap config prevents all removals
+$ fm-pool-prune.sh core --apply
+pool prune: idle caps must be integers between 0 and 999999
+exit=1
+       6

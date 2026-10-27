@@ -1,0 +1,16 @@
+# 3 free idle copies, cap core=0: apply then dry-run (recreate copies not needed for dry run demo)
+$ fm-pool-prune.sh core --apply
+{"project": "core", "cap": 0, "idle_before": 3, "dry_run": false, "copies_pruned": 1, "bytes_reclaimed": 8192, "copies_would_prune": 0, "bytes_would_reclaim": 0, "copies_unmeasured": 0, "inspection_errors": 0, "copies": [{"path": "$LAB/pool/.treehouse/core-130808/2/core", "decision": "pruned", "allocated_bytes": 8192}, {"path": "$LAB/pool/.treehouse/core-130808/3/core", "decision": "keep"}, {"path": "$LAB/pool/.treehouse/core-130808/4/core", "decision": "keep"}], "idle_after": 2, "unmet_cap": 2}
+{"project": "core", "cap": 0, "idle_before": 2, "dry_run": false, "copies_pruned": 1, "bytes_reclaimed": 8192, "copies_would_prune": 0, "bytes_would_reclaim": 0, "copies_unmeasured": 0, "inspection_errors": 0, "copies": [{"path": "$LAB/pool/.treehouse/core-130808/3/core", "decision": "pruned", "allocated_bytes": 8192}, {"path": "$LAB/pool/.treehouse/core-130808/4/core", "decision": "keep"}], "idle_after": 1, "unmet_cap": 1}
+{"project": "core", "cap": 0, "idle_before": 1, "dry_run": false, "copies_pruned": 1, "bytes_reclaimed": 8192, "copies_would_prune": 0, "bytes_would_reclaim": 0, "copies_unmeasured": 0, "inspection_errors": 0, "copies": [{"path": "$LAB/pool/.treehouse/core-130808/4/core", "decision": "pruned", "allocated_bytes": 8192}], "idle_after": 0, "unmet_cap": 0}
+exit=0
+$ treehouse status (after)
+base  main  (repository default)
+
+# lock ownership transitions observed by a 5ms poller during --apply
+  1.421 held pid=/private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-pool-lab2.Oax0Vn/fm/state/.treehouse-project-6d375b3423e62cd8bbbcf2a0bf3f481f16438805.lock.owner.BChNdM
+ 43.889 free
+ 43.927 held pid=/private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-pool-lab2.Oax0Vn/fm/state/.treehouse-project-6d375b3423e62cd8bbbcf2a0bf3f481f16438805.lock.owner.9Qo8QA
+ 68.262 free
+ 68.315 held pid=/private/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T/fm-pool-lab2.Oax0Vn/fm/state/.treehouse-project-6d375b3423e62cd8bbbcf2a0bf3f481f16438805.lock.owner.t8IHZu
+ 85.021 free

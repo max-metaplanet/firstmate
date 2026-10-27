@@ -1,0 +1,35 @@
+# task tdtask holds leased slot 4; 3 free idle copies; per-project cap core=0
+$ treehouse status (before teardown)
+base  main  (repository default)
+1     available    $LAB/pool/.treehouse/core-130808/1/core  (detached)
+2     available    $LAB/pool/.treehouse/core-130808/2/core  (detached)
+3     available    $LAB/pool/.treehouse/core-130808/3/core  (detached)
+4     leased       $LAB/pool/.treehouse/core-130808/4/core  (detached)
+
+$ fm-teardown.sh tdtask --force
+fm-gate-refuse: gate agent lifecycle permitted only against lab home $LAB/fm
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+A new version of treehouse is available: v3.1.3 → v3.1.7
+Run "treehouse update" to update
+
+🌳 Worktree returned to pool.
+warning: idle Treehouse pool is still above its cap; run fm-pool-prune.sh <project> --apply
+teardown tdtask complete (window firstmate:fm-tdtask, worktree $LAB/pool/.treehouse/core-130808/4/core)
+Backlog: tdtask just finished (this home keeps no markdown backlog at $LAB/fm/data/backlog.md). Update $LAB/fm/data/backlog.md - move tdtask to Done, keep Done to the 10 most recent, then re-scan Queued and dispatch only work whose blockers are gone and date is due.
+exit=0
+
+$ treehouse status (after teardown)
+base  main  (repository default)
+2     available    $LAB/pool/.treehouse/core-130808/2/core  (detached)
+3     available    $LAB/pool/.treehouse/core-130808/3/core  (detached)
+4     available    $LAB/pool/.treehouse/core-130808/4/core  (detached)
+
+$ ls state
+home-summary.json
+terminal-outcomes

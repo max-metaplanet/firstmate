@@ -1,0 +1,29 @@
+test_active_and_leased_excluded (__main__.Pool.test_active_and_leased_excluded) ... ok
+test_apply_and_idempotence (__main__.Pool.test_apply_and_idempotence) ... ok
+test_apply_releases_lock_between_copies (__main__.Pool.test_apply_releases_lock_between_copies) ... ok
+test_claim_appears_during_preview (__main__.Pool.test_claim_appears_during_preview) ... ok
+test_claimed_and_unavailable_copies_do_not_count_as_idle (__main__.Pool.test_claimed_and_unavailable_copies_do_not_count_as_idle) ... ok
+test_default_and_dry_run (__main__.Pool.test_default_and_dry_run) ... ok
+test_different_repository (__main__.Pool.test_different_repository) ... ok
+test_dirty (__main__.Pool.test_dirty) ... ok
+test_dry_run_releases_lock_between_copies (__main__.Pool.test_dry_run_releases_lock_between_copies) ... ok
+test_failed_destroy (__main__.Pool.test_failed_destroy) ... ok
+test_false_destroy_success (__main__.Pool.test_false_destroy_success) ... ok
+test_foreign_claim (__main__.Pool.test_foreign_claim) ... ok
+test_foreign_home_record (__main__.Pool.test_foreign_home_record) ... ok
+test_malformed_config (__main__.Pool.test_malformed_config) ... ok
+test_old_treehouse (__main__.Pool.test_old_treehouse) ... ok
+test_teardown_prunes_at_most_one_copy (__main__.Pool.test_teardown_prunes_at_most_one_copy) ... ok
+test_unknown_remote (__main__.Pool.test_unknown_remote) ... ok
+test_unmeasured_copy_still_pruned (__main__.Pool.test_unmeasured_copy_still_pruned) ... ok
+test_unpublished_branch (__main__.Pool.test_unpublished_branch) ... ok
+test_unpublished_commit (__main__.Pool.test_unpublished_commit) ... ok
+test_unreadable_registry (__main__.Pool.test_unreadable_registry) ... ok
+test_worker_cannot_apply (__main__.Pool.test_worker_cannot_apply) ... ok
+
+----------------------------------------------------------------------
+Ran 22 tests in 656.774s
+
+OK
+bash tests/fm-pool-prune.test.sh  19.33s user 16.48s system 5% cpu 10:58.65 total
+exit=0
