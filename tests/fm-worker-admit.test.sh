@@ -37,7 +37,9 @@ class AdmissionTests(unittest.TestCase):
 exec python3 - "$@" <<'PY_SPAWN'
 import json, os, pathlib, subprocess, sys, time
 h=pathlib.Path(os.environ['FM_HOME']); args=sys.argv[1:]; ident=args[0]
+with (h/'attempts').open('a') as f: f.write(ident+'\\n')
 if (h/'full').exists(): sys.exit(75)
+if (h/'refuse').exists(): print('error: refused by fixture'); sys.exit(1)
 subprocess.run(['python3', str(h/'bin/fm-worker-admit.py'), 'verify', ident, os.environ['FM_WORKER_AUTO_ADMIT_DIGEST']], check=True)
 ticket=args[args.index('--ticket')+1] if '--ticket' in args else ''
 if ticket and ticket != 'no-ticket':
@@ -74,6 +76,9 @@ PY_SPAWN
         directory = self.home / 'data' / ident
         directory.mkdir()
         (directory / 'brief.md').write_text("# Task\n## Captain's intent\nImplement accepted work.\n## Firstmate spec\nUse recorded flags.\n")
+        return self.add_record(ident, ticket)
+
+    def add_record(self, ident, ticket='no-ticket'):
         args = [str(self.home / 'project'), 'direct-PR', 'off', ticket, 'feat', 'fm/',
                 'release/test', 'codex', 'model/accepted', 'high', 'tmux', '', 'partial', '0', '0']
         self.command('python3', str(self.home / 'bin/fm-worker-admit.py'), 'record', ident, *args)
@@ -81,6 +86,19 @@ PY_SPAWN
 
     def tick(self):
         return self.command('bash', str(self.home / 'bin/fm-worker-park.sh'), 'tick')
+
+    def attempts(self):
+        path = self.home / 'attempts'
+        return path.read_text().split() if path.exists() else []
+
+    def audit(self):
+        path = self.home / 'state/worker-admission.jsonl'
+        return [json.loads(line)['result'] for line in path.read_text().splitlines()]
+
+    def expire_backoff(self, path):
+        value = json.loads(path.read_text())
+        value['retry_after'] = 0
+        path.write_text(json.dumps(value))
 
     def launches(self):
         path = self.home / 'launches'
@@ -186,6 +204,59 @@ print(json.dumps(v))
                 self.tick()
                 self.assertTrue(path.exists())
                 self.assertEqual(self.launches(), [])
+                self.assertEqual(self.audit()[-1], 'refused')
+
+    def test_refusals_back_off_then_quarantine_once_until_explicit_dispatch(self):
+        path = self.add('refused')
+        (self.home / 'refuse').touch()
+        self.tick()
+        self.tick()
+        self.assertEqual(self.attempts(), ['refused'])
+        self.expire_backoff(path)
+        self.tick()
+        self.expire_backoff(path)
+        self.tick()
+        self.assertEqual(self.attempts(), ['refused'] * 3)
+        self.assertEqual(self.audit(), ['deferred', 'refused', 'refused', 'quarantined'])
+        status = (self.home / 'state/refused.status').read_text().splitlines()
+        self.assertEqual(len(status), 1)
+        self.assertRegex(status[0], r'^blocked \[at=\d+\]: .*quarantined.*refused by fixture')
+        self.expire_backoff(path)
+        (self.home / 'refuse').unlink()
+        self.tick()
+        self.tick()
+        self.assertEqual(len(self.attempts()), 3)
+        self.assertEqual(len((self.home / 'state/refused.status').read_text().splitlines()), 1)
+        self.assertTrue(path.exists())
+        self.add_record('refused')
+        self.tick()
+        self.assertEqual([args[0] for args in self.launches()], ['refused'])
+        self.assertFalse(path.exists())
+
+    def test_capacity_deferrals_keep_retrying_without_counting_as_refusals(self):
+        path = self.add('waiting')
+        (self.home / 'full').touch()
+        for _ in range(5):
+            self.tick()
+        self.assertEqual(self.attempts(), ['waiting'] * 5)
+        self.assertEqual(self.audit(), ['deferred'])
+        self.assertNotIn('refusals', json.loads(path.read_text()))
+        (self.home / 'full').unlink()
+        self.tick()
+        self.assertEqual([args[0] for args in self.launches()], ['waiting'])
+
+    def test_records_for_removed_done_or_non_ship_rows_are_discarded(self):
+        paths = {ident: self.add(ident) for ident in ('removed', 'closed', 'scouted', 'kept')}
+        self.tasks('rm', 'removed')
+        self.tasks('done', 'closed')
+        self.tasks('update', 'scouted', '--kind', 'scout')
+        self.tasks('hold', 'kept', '--kind', 'captain', '--reason', 'decision pending')
+        self.tick()
+        self.assertEqual(self.attempts(), [])
+        for ident in ('removed', 'closed', 'scouted'):
+            self.assertFalse(paths[ident].exists(), ident)
+        self.assertTrue(paths['kept'].exists())
+        self.assertEqual(self.audit(), ['deferred'] * 4 + ['skipped'] * 3)
 
 
 unittest.main(verbosity=2)

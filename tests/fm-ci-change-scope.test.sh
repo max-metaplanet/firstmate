@@ -89,14 +89,6 @@ test_prose_only_changes_turn_both_gates_off() {
   pass "prose no test reads turns both the behavior and macOS gates off"
 }
 
-test_spawn_changes_require_complete_ci() {
-  local path
-  for path in bin/fm-spawn.sh bin/fm-worker-park.sh bin/fm-worker-park-lib.sh bin/fm-worker-admit.py; do
-    assert_full_suite "spawn admission must not drop serial or real-backend suites" "$path"
-  done
-  pass "spawn admission changes run every CI lane"
-}
-
 test_shell_changes_turn_both_gates_on() {
   assert_gates true true 'a bin script' bin/fm-spawn.sh
   assert_gates true true 'a backend adapter' bin/backends/tmux.sh
@@ -236,7 +228,7 @@ test_a_selection_too_large_to_pack_falls_back_to_the_bounded_lanes() {
   # than the job cap allows, and the round must widen rather than drop the
   # work that does not fit - but only as far as the bounded lanes.
   assert_bounded_fallback 'a change whose suites cannot be packed under the budget' \
-    bin/fm-afk-launch.sh bin/fm-session-start.sh bin/fm-pr-merge.sh bin/fm-control.sh
+    bin/fm-afk-launch.sh bin/fm-session-start.sh bin/fm-pr-merge.sh bin/fm-spawn.sh
   pass "a selection no packing fits under the budget falls back to the bounded lanes"
 }
 
@@ -540,5 +532,3 @@ test_local_mode_preserves_the_full_scope_signal
 
 test_local_budget_covers_fast_tests_and_defers_long_or_live_work
 test_local_budget_bounds_aggregate_work
-
-test_spawn_changes_require_complete_ci

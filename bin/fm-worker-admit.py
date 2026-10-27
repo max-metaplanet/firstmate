@@ -11,16 +11,23 @@ Only a fresh ship's capacity deferral records authorization. The v1 record at
 state/<id>.deferred-spawn.json binds every resolved launch axis to the filled
 brief's SHA256; empty optional axes explicitly retain their default semantics.
 Records are data, never shell. Changed briefs and incomplete records are
-discarded and require a new explicit dispatch. Any successful fresh launch of
-the task consumes the record; crash recovery never replays a record whose task
-metadata already exists.
+discarded and require a new explicit dispatch, as are records whose backlog row
+is gone, no longer queued or no longer a ship, or whose task metadata exists.
+Held, blocked and date-gated queued ships keep theirs. Any successful fresh
+launch of the task consumes the record.
+
+Exit 75 is the only capacity retry. Any other refusal backs off and retries;
+after REFUSALS consecutive refusals the record is quarantined with its reason,
+reported once as a blocked line in state/<id>.status, and never replayed. An
+explicit dispatch clears it: launching consumes the record and a new capacity
+deferral rewrites it without the refusal history a replay carries forward.
 
 The parking tick resumes workers first, then calls tick here. A home-local
 advisory lock serializes selection through launch. Spawn's existing task-set,
 task, project and fleet locks remain authoritative against all other launches.
 tasks-axi ready owns dependency/hold clearance; priority then queue age orders
 new work. worker-admission.jsonl records the first deferral, each admission or
-refusal, and each discarded record; records still waiting append nothing.
+refusal, quarantine and discarded record; records still waiting append nothing.
 The watcher already calls this tick independently of a firstmate turn, including
 after teardown, park and verified exit. This helper never merges or polls.
 """
@@ -44,6 +51,8 @@ DATA = Path(os.environ.get('FM_DATA_OVERRIDE') or HOME / 'data')
 CONFIG = Path(os.environ.get('FM_CONFIG_OVERRIDE') or HOME / 'config')
 KEYS = ('project mode yolo ticket commit_type branch_prefix base_branch harness '
         'model effort backend upstream_consent ticket_scope ignore_seat_hold herdr_resume_lock_wait').split()
+REFUSALS = 3
+BACKOFF = 60
 
 
 def require(ok, reason):
@@ -92,6 +101,14 @@ def record(args):
     if existed:
         old = json.loads(path.read_text())
         value['queued_at'] = old.get('queued_at', value['queued_at'])
+        if os.environ.get('FM_WORKER_AUTO_ADMIT') == '1' and old.get('refusals'):
+            value['refusals'] = old['refusals']
+    write(path, value)
+    if not existed:
+        event(ident, 'deferred', 'capacity; recorded resolved launch')
+
+
+def write(path, value):
     staged = path.with_suffix('.json.' + str(os.getpid()))
     try:
         with staged.open('x') as stream:
@@ -103,8 +120,29 @@ def record(args):
         os.replace(staged, path)
     finally:
         staged.unlink(missing_ok=True)
-    if not existed:
-        event(ident, 'deferred', 'capacity; recorded resolved launch')
+
+
+def refuse(ident, path, expected, reason):
+    try:
+        payload = path.read_bytes()
+    except FileNotFoundError:
+        return
+    if hashlib.sha256(payload).hexdigest() != expected:
+        return
+    value = json.loads(payload)
+    value['refusals'] = value.get('refusals', 0) + 1
+    if value['refusals'] < REFUSALS:
+        value['retry_after'] = time.time() + BACKOFF * 2 ** (value['refusals'] - 1)
+        write(path, value)
+        event(ident, 'refused', reason)
+        return
+    value['quarantined'] = reason
+    write(path, value)
+    event(ident, 'quarantined', reason)
+    summary = (reason.splitlines() or ['no output'])[-1]
+    with (STATE / (ident + '.status')).open('a') as stream:
+        stream.write('blocked [at=%d]: automatic admission quarantined after %d refusals (%s); '
+                     'dispatch %s explicitly to clear it\n' % (time.time(), REFUSALS, summary, ident))
 
 
 def argv(record):
@@ -153,24 +191,25 @@ def tick():
             return
         intake = intake_module()
         receipts = intake.load(intake.RECEIPT, dict(entries={}))
-        rows = intake.queue_rows()
+        rows = {row['id']: row for row in intake.queue_rows()}
         ready = {row['id'] for row in intake.queue_rows(ready=True)}
-        rows = [row for row in rows if row['state'] == 'queued']
+        now = time.time()
         pending = []
-        for row in rows:
-            ident = row['id']
-            require(re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]*', ident), 'invalid backlog id')
-            path = STATE / (ident + '.deferred-spawn.json')
-            if not (path.exists() or path.is_symlink()):
-                continue
-            if ident not in ready or row.get('held') != 'no' or row['kind'] != 'ship':
-                continue
+        for path in sorted(STATE.glob('*.deferred-spawn.json')):
+            ident = path.name[:-len('.deferred-spawn.json')]
+            row = rows.get(ident)
             try:
+                require(row is not None and row['state'] == 'queued' and row['kind'] == 'ship',
+                        'backlog item is no longer a queued ship')
                 require(not (STATE / (ident + '.meta')).exists(), 'task already recorded')
+                if ident not in ready or row.get('held') != 'no':
+                    continue
                 require(path.is_file() and not path.is_symlink(), 'incomplete launch record')
                 payload = path.read_bytes()
                 value = json.loads(payload)
                 validate(value, ident)
+                if value.get('quarantined') or value.get('retry_after', 0) > now:
+                    continue
                 pending.append((row, value, path, hashlib.sha256(payload).hexdigest()))
             except (OSError, ValueError) as error:
                 event(ident, 'skipped', str(error) + '; record discarded')
@@ -197,7 +236,7 @@ def tick():
                 event(ident, 'admitted', reason)
                 path.unlink(missing_ok=True)
             elif result.returncode != 75:
-                event(ident, 'skipped', reason)
+                refuse(ident, path, expected, reason)
 
 
 if __name__ == '__main__':
