@@ -38,7 +38,7 @@ mkdir -p "$FAKEBIN"
 : > "$FOCUS_AUDIT_LOG"
 REAL_MOVER="$ROOT/bin/backends/herdr-workspace-move.py"
 export REAL_HERDR REAL_TREEHOUSE REAL_MOVER HERDR_CALL_LOG TREEHOUSE_CALL_LOG TREEHOUSE_LOCK_DIR MOVE_CALL_LOG FOCUS_AUDIT_LOG HERDR_ORIGINAL_PATH HERDR_LAB_HELPER
-export ACTIVE_SEEDED_CONTROL POST_CREATE_ABORT_CONTROL TMP_ROOT
+export ACTIVE_SEEDED_CONTROL POST_CREATE_ABORT_CONTROL TMP_ROOT FAKEBIN ROOT
 
 # Log every production-adapter call, remove its already-validated trailing
 # session flag, and send the operation through the lab helper so that helper
@@ -145,10 +145,47 @@ if [ "${1:-} ${2:-}" = "pane get" ] && [ -d "$ACTIVE_SEEDED_CONTROL" ] \
 fi
 before=
 [ -z "$mutation" ] || before=$(focus_snapshot || printf ambiguous/ambiguous)
-if out=$(env PATH="$HERDR_ORIGINAL_PATH" "$HERDR_LAB_HELPER" run "$HERDR_LAB_SESSION" "$@"); then
-  status=0
+abort_task_dir=
+if [ "${1:-} ${2:-}" = "pane get" ] && [ -d "$POST_CREATE_ABORT_CONTROL" ]; then
+  for task_dir in "$POST_CREATE_ABORT_CONTROL"/abort-*; do
+    [ -d "$task_dir" ] || continue
+    [ "${3:-}" = "$(cat "$task_dir/task-pane" 2>/dev/null || true)" ] || continue
+    abort_task_dir=$task_dir
+    abort_before=$(focus_snapshot || printf ambiguous/ambiguous)
+    break
+  done
+fi
+# The lab server starts with the real PATH; the abort fixture's non-allocating
+# Treehouse shim must also reach the command run inside its task pane.
+if [ "${1:-} ${2:-}" = "pane run" ] && [ -d "$POST_CREATE_ABORT_CONTROL" ]; then
+  for task_dir in "$POST_CREATE_ABORT_CONTROL"/abort-*; do
+    [ -d "$task_dir" ] || continue
+    [ "${3:-}" = "$(cat "$task_dir/task-pane" 2>/dev/null || true)" ] || continue
+    set -- "$1" "$2" "$3" "PATH=$(printf '%q' "$FAKEBIN"):\$PATH $4" "${@:5}"
+    break
+  done
+fi
+if [ -n "$abort_task_dir" ]; then
+  if out=$(env PATH="$HERDR_ORIGINAL_PATH" "$HERDR_LAB_HELPER" run "$HERDR_LAB_SESSION" "$@" 2>&1); then status=0; else status=$?; fi
 else
-  status=$?
+  if out=$(env PATH="$HERDR_ORIGINAL_PATH" "$HERDR_LAB_HELPER" run "$HERDR_LAB_SESSION" "$@"); then status=0; else status=$?; fi
+fi
+# A last idle pane can disappear through shell death without a pane.close call.
+# Observe its exact removal before the waiting spawn can release its lock.
+if [ -n "$abort_task_dir" ] && [ "$status" -ne 0 ] \
+   && [ ! -e "$abort_task_dir/removal-observed" ] \
+   && printf '%s' "$out" | jq -e '.error.code == "pane_not_found"' >/dev/null 2>&1; then
+  # shellcheck source=bin/fm-wake-lib.sh
+  FM_WAKE_READ_ONLY=1 . "$ROOT/bin/fm-wake-lib.sh"
+  # shellcheck source=bin/backends/herdr.sh
+  . "$ROOT/bin/backends/herdr.sh"
+  fm_backend_herdr_presentation_lock_spawn_holder "$ABORT_PRESENTATION_LOCK" || {
+    echo "abort fixture observed pane removal without a live spawn holding its presentation lock" >&2
+    exit 1
+  }
+  abort_after=$(focus_snapshot || printf ambiguous/ambiguous)
+  printf 'pane-absent\t%s\t%s\t%s\n' "$abort_before" "$abort_after" "$3" >> "$FOCUS_AUDIT_LOG"
+  : > "$abort_task_dir/removal-observed"
 fi
 if [ "$status" -eq 0 ] && [ "$mutation" = workspace-create ]; then
   case "$label" in
@@ -194,7 +231,11 @@ if [ "$refusal_probe" -eq 1 ]; then
   refusal_after=$(focus_snapshot || printf ambiguous/ambiguous)
   printf 'seeded-prune-refusal\t%s\t%s\t%s\n' "$refusal_before" "$refusal_after" "${3:-}" >> "$FOCUS_AUDIT_LOG"
 fi
-[ -z "$out" ] || printf '%s\n' "$out"
+if [ -n "$abort_task_dir" ] && [ "$status" -ne 0 ]; then
+  [ -z "$out" ] || printf '%s\n' "$out" >&2
+else
+  [ -z "$out" ] || printf '%s\n' "$out"
+fi
 exit "$status"
 SH
 
@@ -432,14 +473,19 @@ finish_concurrent_spawn() {  # <id> <status> <stdout> <stderr>
     || fail "projected spawn $id retry failed after task-set publication completed: $(cat "$err")"
 }
 
+spawn_expected_abort() {
+  FM_TREEHOUSE_GET_TIMEOUT=10 SPAWN_DEADLINE_SECONDS=120 spawn_task "$@"
+}
+
 finish_concurrent_expected_abort() {  # <id> <status> <stdout> <stderr>
   local id=$1 status=$2 out=$3 err=$4
-  [ "$status" -ne 0 ] || fail "post-create abort fixture $id unexpectedly succeeded"
-  if grep -F "task set is locked" "$err" >/dev/null 2>&1; then
-    if spawn_task "$id" "$HOME_DIR" "$PROJECT_DIR" > "$out" 2> "$err"; then
-      fail "post-create abort fixture $id unexpectedly succeeded after task-set publication completed"
-    fi
+  if [ "$status" -ne 0 ] && grep -F "task set is locked" "$err" >/dev/null 2>&1; then
+    if spawn_expected_abort "$id" "$HOME_DIR" "$PROJECT_DIR" > "$out" 2> "$err"; then status=0; else status=$?; fi
   fi
+  if fm_timed_out "$status"; then
+    fail "post-create abort fixture $id exceeded its 120s execution bound: $(cat "$err")"
+  fi
+  [ "$status" -ne 0 ] || fail "post-create abort fixture $id unexpectedly succeeded"
 }
 
 spawn_secondmate_task() {
@@ -853,48 +899,56 @@ assert_no_ordering_lifecycle_calls_since "$FAIL_START" "failed presentation orde
 pass "real Herdr lab: forced workspace.move failure leaves a successful worker in default order with a warning and no cleanup"
 
 mkdir -p "$POST_CREATE_ABORT_CONTROL"
+ABORT_PRESENTATION_LOCK=$(session_presentation_lock_path) || fail "could not resolve the abort fixture's presentation lock"
+export ABORT_PRESENTATION_LOCK
 ABORT_START=$(log_line_count)
 ABORT_FOCUS_START=$(focus_audit_line_count)
-spawn_task abort-a "$HOME_DIR" "$PROJECT_DIR" > "$TMP_ROOT/abort-a.out" 2> "$TMP_ROOT/abort-a.err" &
+spawn_expected_abort abort-a "$HOME_DIR" "$PROJECT_DIR" > "$TMP_ROOT/abort-a.out" 2> "$TMP_ROOT/abort-a.err" &
 ABORT_A_PID=$!
-spawn_task abort-b "$HOME_DIR" "$PROJECT_DIR" > "$TMP_ROOT/abort-b.out" 2> "$TMP_ROOT/abort-b.err" &
+spawn_expected_abort abort-b "$HOME_DIR" "$PROJECT_DIR" > "$TMP_ROOT/abort-b.out" 2> "$TMP_ROOT/abort-b.err" &
 ABORT_B_PID=$!
 if wait "$ABORT_A_PID"; then ABORT_A_STATUS=0; else ABORT_A_STATUS=$?; fi
 if wait "$ABORT_B_PID"; then ABORT_B_STATUS=0; else ABORT_B_STATUS=$?; fi
 finish_concurrent_expected_abort abort-a "$ABORT_A_STATUS" "$TMP_ROOT/abort-a.out" "$TMP_ROOT/abort-a.err"
 finish_concurrent_expected_abort abort-b "$ABORT_B_STATUS" "$TMP_ROOT/abort-b.out" "$TMP_ROOT/abort-b.err"
-# The forced foreground_cwd is a plain non-git directory, which the discovery
-# poll now screens out on every read rather than adopting, so the armed failure
-# arrives as the poll's own deadline refusal naming that path.
+# The no-allocation get exits without entering a worktree; the invalid cwd
+# must still produce the isolation refusal before serialized pane cleanup.
 grep -F "did not enter an isolated worktree" "$TMP_ROOT/abort-a.err" >/dev/null 2>&1 \
   || fail "post-create abort fixture A did not reach the armed validation failure"
 grep -F "did not enter an isolated worktree" "$TMP_ROOT/abort-b.err" >/dev/null 2>&1 \
   || fail "post-create abort fixture B did not reach the armed validation failure"
+for ABORT_ID in abort-a abort-b; do
+  grep -F "treehouse get exited (status 0)" "$TMP_ROOT/$ABORT_ID.err" >/dev/null 2>&1 \
+    || fail "post-create abort fixture $ABORT_ID did not run its no-allocation get shim"
+done
 ABORT_A_PANE=$(cat "$POST_CREATE_ABORT_CONTROL/abort-a/task-pane")
 ABORT_B_PANE=$(cat "$POST_CREATE_ABORT_CONTROL/abort-b/task-pane")
 ABORT_SEQUENCE=$(sed -n "$((ABORT_FOCUS_START + 1)),\$p" "$FOCUS_AUDIT_LOG" | awk -F '\t' -v a="$ABORT_A_PANE" -v b="$ABORT_B_PANE" '
   $1 == "workspace-create" && $4 ~ /^└ abort-a · p:/ { print "create-a" }
   $1 == "workspace-create" && $4 ~ /^└ abort-b · p:/ { print "create-b" }
-  $1 == "pane-close" && $4 == a { print "close-a" }
-  $1 == "pane-close" && $4 == b { print "close-b" }
+  $1 == "pane-absent" && $4 == a { print "close-a" }
+  $1 == "pane-absent" && $4 == b { print "close-b" }
 ')
 case "$ABORT_SEQUENCE" in
   $'create-a\nclose-a\ncreate-b\nclose-b'|$'create-b\nclose-b\ncreate-a\nclose-a') ;;
   *) fail "concurrent post-create abort cleanup interleaved outside the presentation lock: $ABORT_SEQUENCE" ;;
 esac
-ABORT_UNRESTORED=$(sed -n "$((ABORT_FOCUS_START + 1)),\$p" "$FOCUS_AUDIT_LOG" | awk -F '\t' -v a="$ABORT_A_PANE" -v b="$ABORT_B_PANE" '
+ABORT_UNRESTORED=$(sed -n "$((ABORT_FOCUS_START + 1)),\$p" "$FOCUS_AUDIT_LOG" | awk -F '\t' -v a="$ABORT_A_PANE" -v b="$ABORT_B_PANE" -v focus="$CAPTAIN_FOCUS" '
   ($1 == "workspace-create" || $1 == "tab-create" || $1 == "workspace-move" || ($1 == "pane-close" && $4 != a && $4 != b)) && $2 != $3 { print }
+  $1 == "pane-absent" && ($2 != focus || $3 != focus) { print }
 ')
 [ -z "$ABORT_UNRESTORED" ] \
-  || fail "post-create abort create, prune, or move changed exact focus: $ABORT_UNRESTORED"
+  || fail "post-create abort create, prune, move, or confirmed removal changed exact focus: $ABORT_UNRESTORED"
 assert_focus_is "$CAPTAIN_FOCUS" "concurrent post-create abort cleanup"
 assert_cleanup_focus_preserved "$ABORT_FOCUS_START" "$ABORT_A_PANE" "$CAPTAIN_FOCUS"
 assert_cleanup_focus_preserved "$ABORT_FOCUS_START" "$ABORT_B_PANE" "$CAPTAIN_FOCUS"
 assert_no_ordering_lifecycle_calls_since "$ABORT_START" "concurrent post-create abort cleanup"
 for ABORT_PANE in "$ABORT_A_PANE" "$ABORT_B_PANE"; do
-  if lab pane get "$ABORT_PANE" >/dev/null 2>&1; then
+  if ABORT_INFO=$(lab pane get "$ABORT_PANE" 2>&1); then
     fail "serialized post-create abort cleanup left exact task pane $ABORT_PANE alive"
   fi
+  printf '%s' "$ABORT_INFO" | jq -e '.error.code == "pane_not_found"' >/dev/null 2>&1 \
+    || fail "could not confirm exact task pane $ABORT_PANE was removed: $ABORT_INFO"
 done
 [ ! -e "$HOME_DIR/state/abort-a.meta" ] && [ ! -e "$HOME_DIR/state/abort-b.meta" ] \
   || fail "post-create abort fixtures published task metadata before launch"
