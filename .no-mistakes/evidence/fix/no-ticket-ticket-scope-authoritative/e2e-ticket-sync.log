@@ -1,0 +1,46 @@
+== scenario complete: status line: done [at=100]: PR https://github.com/example/repo/pull/7 checks green ticket-scope=complete
+meta after fold:
+  ticket_scope=complete
+  ticket=ENG-123
+fm-task-event pr-opened exit=0
+fm-task-event pr-merged exit=0
+merge ledger:
+  {"event":"pr-opened","ticket_scope":"complete","pr_url":"https://github.com/example/repo/pull/7"}
+  {"event":"pr-merged","ticket_scope":"complete","pr_url":"https://github.com/example/repo/pull/7"}
+tracker calls:
+  ENG-123 review https://github.com/example/repo/pull/7
+  ENG-123 done https://github.com/example/repo/pull/7
+== scenario unreported: status line: done [at=100]: PR https://github.com/example/repo/pull/7 checks green 
+meta after fold:
+  ticket=ENG-123
+fm-task-event pr-opened exit=0
+fm-task-event pr-merged exit=0
+merge ledger:
+  {"event":"pr-opened","ticket_scope":"partial","pr_url":"https://github.com/example/repo/pull/7"}
+  {"event":"pr-merged","ticket_scope":"partial","pr_url":"https://github.com/example/repo/pull/7"}
+tracker calls:
+  ENG-123 review https://github.com/example/repo/pull/7
+  ENG-123 review https://github.com/example/repo/pull/7
+== scenario partial: status line: done [at=100]: PR https://github.com/example/repo/pull/7 checks green ticket-scope=partial
+meta after fold:
+  ticket_scope=partial
+  ticket=ENG-123
+fm-task-event pr-opened exit=0
+fm-task-event pr-merged exit=0
+merge ledger:
+  {"event":"pr-opened","ticket_scope":"partial","pr_url":"https://github.com/example/repo/pull/7"}
+  {"event":"pr-merged","ticket_scope":"partial","pr_url":"https://github.com/example/repo/pull/7"}
+tracker calls:
+  ENG-123 review https://github.com/example/repo/pull/7
+  ENG-123 review https://github.com/example/repo/pull/7
+== scenario bogus: status line: done [at=100]: PR https://github.com/example/repo/pull/7 checks green ticket-scope=bogus
+meta after fold:
+  ticket=ENG-123
+fm-task-event pr-opened exit=0
+fm-task-event pr-merged exit=0
+merge ledger:
+  {"event":"pr-opened","ticket_scope":"partial","pr_url":"https://github.com/example/repo/pull/7"}
+  {"event":"pr-merged","ticket_scope":"partial","pr_url":"https://github.com/example/repo/pull/7"}
+tracker calls:
+  ENG-123 review https://github.com/example/repo/pull/7
+  ENG-123 review https://github.com/example/repo/pull/7
