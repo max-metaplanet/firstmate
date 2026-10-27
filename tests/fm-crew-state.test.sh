@@ -43,6 +43,9 @@
 #       failed.
 #   (m) FM_CREW_STATE_*_OVERRIDE guard: a mismatched-basename override is
 #       ignored, a matching one is honoured.
+#   (m2) a bound park record is read from the LIVE state directory even under a
+#       captured-metadata override, so a parked task never pays for the run
+#       probe; a record from a superseded generation still falls through.
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -90,6 +93,9 @@ set -u
 case "${1:-}" in
   axi)
     shift
+    # FM_FAKE_AXI_CALL_LOG records every `axi` read, so a test can prove the
+    # helper did NOT reach for the expensive run probe at all.
+    [ -z "${FM_FAKE_AXI_CALL_LOG:-}" ] || printf 'axi %s\n' "$*" >> "$FM_FAKE_AXI_CALL_LOG"
     if [ "$#" = 0 ]; then
       printf '%s\n' "${FM_FAKE_AXI_HOME:-${FM_FAKE_AXI_STATUS:-}}"
       exit "${FM_FAKE_AXI_HOME_ERROR:-0}"
@@ -344,6 +350,7 @@ reset_fakes() {
   export NM_HOME
   FM_FAKE_AXI_STATUS=""
   FM_FAKE_AXI_STATUS_ERROR=0
+  FM_FAKE_AXI_CALL_LOG=
   FM_FAKE_AXI_HOME=""
   FM_FAKE_AXI_HOME_ERROR=0
   FM_FAKE_AXI_STATUS_RUN_ERROR=0
@@ -389,7 +396,7 @@ reset_fakes() {
   export FM_FAKE_HERDR_BUSY FM_FAKE_HERDR_MISSING FM_FAKE_HERDR_READ_FAIL FM_FAKE_HERDR_HUSK FM_FAKE_HERDR_AGENT_STATUS FM_FAKE_HERDR_PROCESS FM_FAKE_HERDR_SHELL_PID FM_FAKE_CI_LOGS
   export FM_FAKE_DAEMON_DOWN FM_FAKE_DAEMON_TIMEOUT FM_FAKE_DAEMON_PROBE_LOG FM_FAKE_AXI_HOME
   export FM_FAKE_DAEMON_OUTPUT
-  export FM_FAKE_AXI_HOME_ERROR FM_FAKE_AXI_STATUS_RUN_ERROR FM_FAKE_AXI_STATUS_ERROR
+  export FM_FAKE_AXI_HOME_ERROR FM_FAKE_AXI_STATUS_RUN_ERROR FM_FAKE_AXI_STATUS_ERROR FM_FAKE_AXI_CALL_LOG
   export FM_FAKE_PR_STATE FM_FAKE_PR_MERGED FM_FAKE_PR_READ_FAIL FM_FAKE_PR_READ_LOG FM_FAKE_PR_STATE_AXI
   export FM_FAKE_GLAB_STATE FM_FAKE_GLAB_READ_FAIL FM_FAKE_GLAB_READ_LOG
   export FM_FAKE_TEA_STATE FM_FAKE_TEA_MERGED FM_FAKE_TEA_READ_FAIL FM_FAKE_TEA_READ_LOG
@@ -3645,6 +3652,75 @@ test_matched_state_override_is_honoured() {
   pass "override guard: a matching-name override still steers the read at the captured generation"
 }
 
+write_park_record() {  # <state-dir> <id> <generation> <endpoint> <reason>
+  printf 'phase=parked\ngeneration=%s\nendpoint=%s\nreason=%s\nuntil=0\nqueued_at=0\nwake_reason=\nstatus_line=\nresume_error=0\n' \
+    "$3" "$4" "$5" > "$1/$2.park"
+  chmod 600 "$1/$2.park"
+}
+
+seed_captured_generation() {  # <case-dir> <id>
+  mkdir -p "$1/snapshot"
+  cp "$1/state/$2.meta" "$1/snapshot/$2.meta"
+  cp "$1/state/$2.status" "$1/snapshot/$2.status"
+}
+
+# (m2) The park record is read from the LIVE state directory even when the
+# metadata is a snapshot's captured COPY. bin/fm-fleet-snapshot.sh copies only
+# <id>.meta and <id>.status into its capture directory, so a record path derived
+# from the captured metadata names a file that is not there: the parked task
+# then fell through to the full `axi status` probe on every snapshot, and that
+# probe spends one to two minutes of full-CPU git work per call (eng2759-brand,
+# 2026-10-26: three concurrent probes for one long-parked task).
+test_live_park_record_answers_a_captured_metadata_read() {
+  reset_fakes
+  local d out
+  d=$(new_case park-live-record)
+  make_repo_on_branch "$d/wt" fm/feat-park
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/feat-park.meta" "window=fm:fm-feat-park" "worktree=$d/wt" \
+    "kind=ship" "harness=claude" "mode=no-mistakes" "spawn_gen=s100.1.1"
+  printf 'done: PR https://github.com/o/r/pull/9 checks green\n' > "$d/state/feat-park.status"
+  seed_captured_generation "$d" feat-park
+  write_park_record "$d/state" feat-park s100.1.1 fm:fm-feat-park \
+    "merge approval for https://github.com/o/r/pull/9"
+  # A run record that would otherwise be authoritative, so a parked verdict can
+  # only come from the park record itself.
+  FM_FAKE_AXI_STATUS="$(run_fixing fm/feat-park)"
+  FM_FAKE_AXI_CALL_LOG="$d/axi-calls"
+  out=$(FM_CREW_STATE_META_OVERRIDE="$d/snapshot/feat-park.meta" \
+    FM_CREW_STATE_STATUS_OVERRIDE="$d/snapshot/feat-park.status" \
+    run_crew_state "$d" feat-park)
+  assert_contains "$out" "state: parked" "a bound live park record answers a captured-metadata read"
+  assert_contains "$out" "source: park-record" "the park record is the reported source"
+  assert_contains "$out" "waiting on merge approval" "the park reason reaches the detail"
+  [ ! -s "$d/axi-calls" ] || fail "a parked task must not pay for the axi run probe"
+  pass "a live park record answers a snapshot's captured-metadata read without probing the run"
+}
+
+test_park_record_of_another_generation_still_falls_through() {
+  reset_fakes
+  local d out
+  d=$(new_case park-stale-generation)
+  make_repo_on_branch "$d/wt" fm/feat-parkgen
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/feat-parkgen.meta" "window=fm:fm-feat-parkgen" "worktree=$d/wt" \
+    "kind=ship" "harness=claude" "mode=no-mistakes" "spawn_gen=s200.2.2"
+  printf 'working: validating\n' > "$d/state/feat-parkgen.status"
+  seed_captured_generation "$d" feat-parkgen
+  # The record belongs to a superseded spawn, so reading it live must not park a
+  # task the current generation never parked.
+  write_park_record "$d/state" feat-parkgen s199.1.1 fm:fm-feat-parkgen "merge approval"
+  FM_FAKE_AXI_STATUS="$(run_fixing fm/feat-parkgen)"
+  FM_FAKE_AXI_CALL_LOG="$d/axi-calls"
+  out=$(FM_CREW_STATE_META_OVERRIDE="$d/snapshot/feat-parkgen.meta" \
+    FM_CREW_STATE_STATUS_OVERRIDE="$d/snapshot/feat-parkgen.status" \
+    run_crew_state "$d" feat-parkgen)
+  assert_contains "$out" "state: working" "a record from another generation must not park the crew"
+  assert_contains "$out" "source: run-step" "the live run still answers for an unbound park record"
+  [ -s "$d/axi-calls" ] || fail "an unbound park record must not suppress the run probe"
+  pass "a park record from a superseded generation still falls through to the live run"
+}
+
 # (k) crew_is_provably_working end-to-end over the REAL fm-crew-state.sh (not a
 # canned fake verdict, unlike tests/fm-watch-triage.test.sh's classifier
 # coverage). This is the direct regression pair for the 2026-07-02 herdr
@@ -6423,6 +6499,8 @@ test_missing_meta
 test_metadata_read_has_no_pipeline_forks
 test_mismatched_state_override_is_ignored
 test_matched_state_override_is_honoured
+test_live_park_record_answers_a_captured_metadata_read
+test_park_record_of_another_generation_still_falls_through
 test_provably_working_via_runs_list_fallback
 test_not_provably_working_when_stopped
 test_usage_error

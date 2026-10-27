@@ -77,7 +77,8 @@
 #      (fm-on.sh + fm-remote-secondmate-control.sh state). alive falls through
 #      to the routed status log; dead/missing report the remote verdict; an
 #      unreachable or unreadable remote reports unknown-remote, never a false
-#      gone/dead.
+#      gone/dead. A bound park record in the LIVE state directory answers here
+#      and skips every probe below, including the expensive `axi status` one.
 #   2. Matching no-mistakes run for this crew's branch AND current code identity,
 #      active or terminal (from `axi status`, or the coarse `no-mistakes runs`
 #      fallback)? Branch name alone is not enough: a historical run on a reused
@@ -312,7 +313,10 @@ unset meta_line
 
 # shellcheck source=bin/fm-worker-park-lib.sh
 . "$SCRIPT_DIR/fm-worker-park-lib.sh"
-if fm_worker_park_load "$META"; then
+# The park record always comes from the LIVE state directory: a snapshot's
+# captured metadata copy has no record beside it, and deriving the path from
+# $META would miss the park and pay for a full `axi status` probe instead.
+if fm_worker_park_load "$META" "$STATE/$ID.park"; then
   emit parked park-record "$FM_WORKER_PARK_PHASE; waiting on $FM_WORKER_PARK_REASON"
 fi
 

@@ -21,8 +21,13 @@
 # fleet place for a resume its own project cap cannot admit yet.
 # Requires fm_meta_get and fm_backend_target_of_meta. No side effects on source.
 
-fm_worker_park_load() { # <meta>
-  local meta=$1 record=${1%.meta}.park generation endpoint
+# <record> defaults to the metadata's own sibling. A caller reading a COPY of
+# the metadata (bin/fm-fleet-snapshot.sh's captured generation) must name the
+# live state record instead, because no park record sits beside the copy and a
+# derived path would miss the park entirely. The generation and endpoint bind
+# below still proves the record describes the metadata it is read against.
+fm_worker_park_load() { # <meta> [<record>]
+  local meta=$1 record=${2:-${1%.meta}.park} generation endpoint
   [ -f "$record" ] && [ ! -L "$record" ] && [ -r "$record" ] || return 1
   FM_WORKER_PARK_PHASE=$(fm_meta_get "$record" phase)
   case "$FM_WORKER_PARK_PHASE" in parked|queued) ;; *) return 1 ;; esac
