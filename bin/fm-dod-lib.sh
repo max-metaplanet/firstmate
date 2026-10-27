@@ -668,7 +668,8 @@ Edit it with \`tea pulls edit <number> --repo <owner>/<repo> --title '<the corre
 Run locally only the tests for what you changed, plus affected lint and formatting checks.
 Never run or wait on full-suite local hooks (including Husky pre-commit/pre-push suites) or a full monorepo test run.
 If such a hook would run, bypass it for that command only with `git -c core.hooksPath=/dev/null commit ...` or an authorized `git -c core.hooksPath=/dev/null push ...`; never disable hooks globally or bypass the no-mistakes gate.
-Where this delivery path authorizes you to push, finish local iteration and push ONCE per task when ready; no-mistakes owns its push, and local-only never pushes.
+Where this delivery path authorizes you to push a branch that forge CI runs on, finish local iteration and push ONCE per task when ready; no-mistakes owns its push, and local-only never pushes.
+A Gerrit `gerrit-axi publish` patch set or an external-review re-upload made to correct the work before reporting done is not a second push and is not reported as blocked, because no forge CI runs on it.
 PR CI is the full regression gate for PR delivery; keep CI spend down and never trigger extra CI reruns yourself, including failed-job reruns or manual workflow dispatches.
 These worker limits leave no-mistakes' configured test step, repair loop, and `ci.rerun_transient` behavior unchanged.
 EOF

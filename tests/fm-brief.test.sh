@@ -559,6 +559,9 @@ test_ci_cost_discipline() {
       assert_grep 'never disable hooks globally or bypass the no-mistakes gate' "$brief" "$mode/$forge: hook bypass must preserve the pipeline"
       assert_grep 'push ONCE per task when ready; no-mistakes owns its push, and local-only never pushes' \
         "$brief" "$mode/$forge: publication limits must respect delivery ownership"
+      assert_grep 'push a branch that forge CI runs on' "$brief" "$mode/$forge: push-once must be scoped to forge-CI pushes"
+      assert_grep "A Gerrit \`gerrit-axi publish\` patch set or an external-review re-upload made to correct the work before reporting done is not a second push and is not reported as blocked" \
+        "$brief" "$mode/$forge: Gerrit and external re-upload exception was lost"
       assert_grep 'PR CI is the full regression gate for PR delivery' "$brief" "$mode/$forge: missing full regression gate"
       assert_grep 'never trigger extra CI reruns yourself, including failed-job reruns or manual workflow dispatches' \
         "$brief" "$mode/$forge: worker-triggered CI reruns must be forbidden"
