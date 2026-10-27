@@ -1,0 +1,7 @@
+ok - freed project slot admits the recorded ship through real spawn and retains overflow
+ok - replay checks the row's ticket against source ownership and refuses an Andrew-owned ticket
+ok - the away spend cap defers replay like capacity and admits once a worker finishes
+ok - a successful manual dispatch consumes the recorded automatic replay
+ok - imported work stays queued under capacity and source holds, then emits one start at the ordinary launch commit
+     1013.57 real        24.79 user        18.98 sys
+exit=0

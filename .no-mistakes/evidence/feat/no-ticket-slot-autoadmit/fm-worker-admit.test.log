@@ -1,0 +1,17 @@
+test_away_spend_cap_ends_the_tick_without_counting_refusals (__main__.AdmissionTests.test_away_spend_cap_ends_the_tick_without_counting_refusals) ... ok
+test_branch_prefix_and_existing_metadata_prevent_replay (__main__.AdmissionTests.test_branch_prefix_and_existing_metadata_prevent_replay) ... ok
+test_capacity_deferrals_keep_retrying_without_counting_as_refusals (__main__.AdmissionTests.test_capacity_deferrals_keep_retrying_without_counting_as_refusals) ... ok
+test_fleet_deferral_ends_the_tick_and_project_deferral_skips_its_project (__main__.AdmissionTests.test_fleet_deferral_ends_the_tick_and_project_deferral_skips_its_project) ... ok
+test_freed_slot_replays_exact_flags_once (__main__.AdmissionTests.test_freed_slot_replays_exact_flags_once) ... ok
+test_hold_dependency_future_incomplete_and_changed_brief_skip (__main__.AdmissionTests.test_hold_dependency_future_incomplete_and_changed_brief_skip) ... ok
+test_priority_age_and_concurrent_frees_admit_once (__main__.AdmissionTests.test_priority_age_and_concurrent_frees_admit_once) ... ok
+test_records_for_removed_done_or_non_ship_rows_are_discarded (__main__.AdmissionTests.test_records_for_removed_done_or_non_ship_rows_are_discarded) ... ok
+test_refusals_back_off_then_quarantine_once_until_explicit_dispatch (__main__.AdmissionTests.test_refusals_back_off_then_quarantine_once_until_explicit_dispatch) ... ok
+test_seat_hold_skips_its_harness_without_starving_another (__main__.AdmissionTests.test_seat_hold_skips_its_harness_without_starving_another) ... ok
+
+----------------------------------------------------------------------
+Ran 10 tests in 455.296s
+
+OK
+      474.16 real        20.27 user         7.68 sys
+exit=0
