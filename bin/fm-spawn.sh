@@ -320,6 +320,12 @@
 #   itself a linked worktree of the project repository still launches. A pane
 #   that never reaches an isolated worktree refuses at the end of that wait,
 #   naming the last path seen and why it was rejected.
+#   FM_TREEHOUSE_GET_TIMEOUT bounds acquisition in wall-clock seconds (default
+#   600; invalid or nonpositive values use the default). An acquisition wrapper
+#   records its process identity before starting get, so an abort cancels queued
+#   execution and stops that process tree before releasing the project lock.
+#   Before adoption, the linked Git registration must point back at this copy,
+#   and no other physical slot in its Treehouse pool may use the same gitdir.
 #   That placement is proven only at launch. Every ship or scout pane therefore
 #   also receives `export FM_TASK_ID=<task-id>` before the launch command, on
 #   the same channel as GOTMPDIR, and bin/fm-test-run.sh refuses to execute the
@@ -1539,6 +1545,45 @@ GIT_HOOKS_DIR=
 SPAWN_LAUNCH_SENT=0
 SPAWN_ENDPOINT_CLOSED=0
 SPAWN_STAGED_LAUNCH_FILE=
+SPAWN_TREEHOUSE_ACQUIRE=
+
+# Freeze parents before discovering their children, so cancellation cannot leave
+# a late fork preparing another copy after the acquisition lock is released.
+spawn_stop_acquisition_tree() { # <pid>
+  local pid=$1 child children snapshot
+  if ! kill -STOP "$pid" 2>/dev/null; then
+    if kill -0 "$pid" 2>/dev/null; then return 1; fi
+    return 0
+  fi
+  snapshot=$(LC_ALL=C ps -axo pid=,ppid=) || return 1
+  children=$(awk -v parent="$pid" '$2 == parent {print $1}' <<< "$snapshot")
+  for child in $children; do
+    spawn_stop_acquisition_tree "$child" || return 1
+  done
+  kill -KILL "$pid" 2>/dev/null || ! kill -0 "$pid" 2>/dev/null
+}
+
+spawn_cancel_treehouse_acquisition() {
+  local pid started current i stat
+  [ -n "$SPAWN_TREEHOUSE_ACQUIRE" ] || return 0
+  # Keep the cancelled directory: a command still queued in the pane must see
+  # this flag even after this spawn exits.
+  : > "$SPAWN_TREEHOUSE_ACQUIRE/cancel" || return 1
+  [ -s "$SPAWN_TREEHOUSE_ACQUIRE/pid" ] || return 0
+  pid=$(cat "$SPAWN_TREEHOUSE_ACQUIRE/pid")
+  case "$pid" in ''|*[!0-9]*) return 1 ;; esac
+  [ "$pid" -gt 1 ] && [ "$pid" != "$$" ] || return 1
+  started=$(cat "$SPAWN_TREEHOUSE_ACQUIRE/start") || return 1
+  current=$(LC_ALL=C ps -p "$pid" -o lstart= 2>/dev/null) || return 0
+  [ -n "$started" ] && [ "$started" = "$current" ] || return 1
+  spawn_stop_acquisition_tree "$pid" || return 1
+  for i in $(seq 1 50); do
+    stat=$(LC_ALL=C ps -p "$pid" -o stat= 2>/dev/null) || return 0
+    case "$stat" in *Z*) return 0 ;; esac
+    sleep 0.1
+  done
+  return 1
+}
 
 spawn_fresh_commit_rollback() {
   if fm_backlog_atomic_transition rollback "$STATE/$ID.meta" \
@@ -1582,6 +1627,13 @@ spawn_orca_reclaim_launch_file() {
 
 spawn_abort_cleanup() {
   local status=$?
+  if [ -n "$SPAWN_TREEHOUSE_ACQUIRE" ]; then
+    if spawn_cancel_treehouse_acquisition; then
+      echo "treehouse get cancelled; pending acquisition stopped or prevented from starting" >&2
+    else
+      echo "error: could not prove treehouse get stopped; acquisition record $SPAWN_TREEHOUSE_ACQUIRE requires inspection" >&2
+    fi
+  fi
   if [ "$RELAUNCH_REPLACEMENT_PENDING" = 1 ] &&
     [ "$SPAWN_META_PUBLISH_STARTED" = 1 ] &&
     [ -n "$SPAWN_META_TMP" ] &&
@@ -4499,6 +4551,37 @@ validate_spawn_worktree_unclaimed() { # <inspect-target>
   exit 1
 }
 
+validate_spawn_worktree_gitdir() {
+  local gitdir backref registered other other_real other_gitdir pool
+  gitdir=$(git -C "$WT" rev-parse --absolute-git-dir) || exit 1
+  gitdir=$(real_path_or_raw "$gitdir")
+  if [ -f "$gitdir/gitdir" ]; then
+    backref=$(cat "$gitdir/gitdir")
+    case "$backref" in /*) ;; *) backref="$gitdir/$backref" ;; esac
+    registered=$(real_path_or_raw "$(dirname "$backref")")
+    if [ "$registered" != "$(real_path_or_raw "$WT")" ]; then
+      echo "error: candidate '$WT' aliases gitdir '$gitdir', registered to '$registered'; refusing to reset or launch in a copied worktree; $(spawn_endpoint_hint)" >&2
+      exit 1
+    fi
+  fi
+  # The registration catches a copied candidate; the pool scan also catches the
+  # reverse case, where the candidate is canonical but another copy aliases it.
+  if fm_treehouse_pool_slot "$PROJ_ABS" "$WT"; then
+    pool=$(dirname "$(dirname "$(real_path_or_raw "$WT")")")
+    for other in "$pool"/*/*/.git; do
+      [ -e "$other" ] || continue
+      other=${other%/.git}
+      other_real=$(real_path_or_raw "$other")
+      [ "$other_real" != "$(real_path_or_raw "$WT")" ] || continue
+      other_gitdir=$(git -C "$other" rev-parse --absolute-git-dir 2>/dev/null) || continue
+      if [ "$(real_path_or_raw "$other_gitdir")" = "$gitdir" ]; then
+        echo "error: candidate '$WT' shares gitdir '$gitdir' with pool worktree '$other_real'; refusing to reset or launch in aliased slots; $(spawn_endpoint_hint)" >&2
+        exit 1
+      fi
+    done
+  fi
+}
+
 # A pooled slot whose only deviation is a submodule gitlink is stale, not dirty:
 # an earlier refresh moved the superproject and left the submodule checkout on
 # the pin the previous base recorded. The refusal still stands and this gate
@@ -5595,7 +5678,23 @@ elif [ "$RELAUNCH" -eq 1 ]; then
   fi
   [ "$KIND" = secondmate ] || validate_spawn_worktree "relaunch" "$T"
 elif [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ]; then
-  spawn_send_text_line "$WT_TARGET" 'treehouse get'
+  treehouse_timeout=${FM_TREEHOUSE_GET_TIMEOUT:-600}
+  case "$treehouse_timeout" in ''|*[!0-9]*|0*) treehouse_timeout=600 ;; esac
+  SPAWN_TREEHOUSE_ACQUIRE=$(mktemp -d "$STATE/.spawn-treehouse-$ID.XXXXXX") || exit 1
+  cat > "$SPAWN_TREEHOUSE_ACQUIRE/get.sh" <<'SH'
+#!/usr/bin/env bash
+acquire=${BASH_SOURCE[0]%/*}
+LC_ALL=C ps -p "$$" -o lstart= > "$acquire/start" || exit 1
+printf '%s\n' "$$" > "$acquire/pid.pending" &&
+  mv "$acquire/pid.pending" "$acquire/pid" || exit 1
+[ ! -e "$acquire/cancel" ] || exit 1
+treehouse get
+result=$?
+[ ! -d "$acquire" ] || printf '%s\n' "$result" > "$acquire/exit"
+exit "$result"
+SH
+  spawn_send_text_line "$WT_TARGET" "bash $(shell_quote "$SPAWN_TREEHOUSE_ACQUIRE/get.sh")" || exit 1
+  treehouse_deadline=$((SECONDS + treehouse_timeout))
 
   # Wait for the treehouse subshell: the pane's cwd moves from the project to the worktree.
   # Target the stable window id, not the name: if the name is ever lost (e.g. an
@@ -5632,7 +5731,7 @@ elif [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ]; then
   candidate=""
   last_seen=""
   last_reason="the pane reported no path"
-  for _ in $(seq 1 60); do
+  while [ "$SECONDS" -lt "$treehouse_deadline" ]; do
     p=$(spawn_current_path "$WT_TARGET" || true)
     [ -z "$p" ] || last_seen="$p"
     if [ -n "$p" ] && spawn_worktree_isolated "$p"; then
@@ -5647,10 +5746,14 @@ elif [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ]; then
       candidate=""
       [ -z "$p" ] || last_reason=$SPAWN_WT_REASON
     fi
+    if [ -f "$SPAWN_TREEHOUSE_ACQUIRE/exit" ]; then
+      last_reason="treehouse get exited (status $(cat "$SPAWN_TREEHOUSE_ACQUIRE/exit")); $last_reason"
+      break
+    fi
     sleep 1
   done
   if [ -z "$WT" ]; then
-    echo "error: treehouse get did not enter an isolated worktree within 60s (last seen '${last_seen:-none}': $last_reason; spawning project '$PROJ_ABS'); $(spawn_endpoint_hint)" >&2
+    echo "error: treehouse get did not enter an isolated worktree within ${treehouse_timeout}s (last seen '${last_seen:-none}': $last_reason; spawning project '$PROJ_ABS'); cancelling pending acquisition; $(spawn_endpoint_hint)" >&2
     exit 1
   fi
 
@@ -5659,7 +5762,10 @@ elif [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ]; then
   else
     validate_spawn_worktree "treehouse get" "$T"
   fi
+  validate_spawn_worktree_gitdir
   validate_spawn_worktree_unclaimed "$T"
+  rm -rf -- "$SPAWN_TREEHOUSE_ACQUIRE"
+  SPAWN_TREEHOUSE_ACQUIRE=
 
   # Claim the pool slot for this task. The interactive `treehouse get` sent to
   # the pane above records only a process lease (Treehouse's durable
