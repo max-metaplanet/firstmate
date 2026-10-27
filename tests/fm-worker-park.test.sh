@@ -280,3 +280,47 @@ bash "$PARK" auto task >/dev/null
 bash "$PARK" request task 'forge reports merged' '' "$URL|merged"
 assert_grep 'phase=parked' "$FM_HOME/state/task.park" 'two observers cannot spend a second slot for the same terminal PR event'
 pass 'verified parking, safety exceptions, external waits, durable resume reasons and the unchanged-red-set gate'
+
+cat > "$TMP_ROOT/load-record.sh" <<'SH'
+set -eu
+. "$1/bin/fm-backend.sh"
+. "$1/bin/fm-worker-park-lib.sh"
+meta=$2/load.meta
+record=$2/load.park
+events=$2/load-forks
+: > "$events"
+if [ "${BASH_VERSINFO[0]}" -ge 4 ]; then
+  owner=$BASHPID
+  set -T
+  trap '[ "$BASHPID" = "$owner" ] || printf "%s\n" "$BASHPID" >> "$events"' DEBUG
+fi
+for backend in '' tmux herdr zellij orca cmux; do
+  printf 'backend=%s\nspawn_gen=old\nspawn_gen=current\nwindow=fallback\n' "$backend" > "$meta"
+  endpoint=fallback
+  if [ "$backend" = orca ]; then
+    printf 'terminal=orca-endpoint\n' >> "$meta"
+    endpoint=orca-endpoint
+  fi
+  printf 'phase=queued\ngeneration=current\nendpoint=wrong\nendpoint=%s\nreason=literal = reason\nuntil=9999999999\nqueued_at=123\nresume_error=0\n' "$endpoint" > "$record"
+  for ((i = 0; i < 8; i++)); do
+    fm_worker_park_load "$meta"
+    [ "$FM_WORKER_PARK_PHASE" = queued ]
+    [ "$FM_WORKER_PARK_REASON" = 'literal = reason' ]
+    [ "$FM_WORKER_PARK_UNTIL" = 9999999999 ]
+    [ "$FM_WORKER_PARK_QUEUED_AT" = 123 ]
+    [ "$FM_WORKER_PARK_RESERVES" = 1 ]
+  done
+  printf 'resume_error=1\n' >> "$record"
+  fm_worker_park_load "$meta"
+  [ "$FM_WORKER_PARK_RESERVES" = 0 ]
+  printf 'spawn_gen=replacement\n' >> "$meta"
+  if fm_worker_park_load "$meta"; then exit 1; fi
+  printf 'generation=replacement\nendpoint=replaced\n' >> "$record"
+  if fm_worker_park_load "$meta"; then exit 1; fi
+  printf 'endpoint=%s\nuntil=invalid\n' "$endpoint" >> "$record"
+  if fm_worker_park_load "$meta"; then exit 1; fi
+done
+[ ! -s "$events" ]
+SH
+bash "$TMP_ROOT/load-record.sh" "$ROOT" "$TMP_ROOT" || fail 'parking reads forked, lost record fields, or accepted a stale binding'
+pass 'parking record reads stay in-process and preserve every backend binding and retry hold'
