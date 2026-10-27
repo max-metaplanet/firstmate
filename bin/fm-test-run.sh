@@ -874,6 +874,7 @@ tests/fm-pi-windows-shell-invocation.test.sh 5121
 tests/fm-pipeline-spend.test.sh 1559
 tests/fm-polytoken-harness.test.sh 21090
 tests/fm-polytoken-signals-live-e2e.test.sh 103
+tests/fm-pool-prune.test.sh 11591
 tests/fm-pr-check-security.test.sh 300675
 tests/fm-pr-reviewers.test.sh 158
 tests/fm-pr-state-live-e2e.test.sh 50
@@ -1903,6 +1904,9 @@ families_for_changed_path() {
       ;;
     bin/fm-worker-admit.py)
       printf '%s\n' __script__:fm-worker-admit.test.sh __script__:fm-project-capacity.test.sh __script__:fm-worker-park.test.sh
+      ;;
+    bin/fm-pool-prune.sh|bin/fm-pool-prune-lib.sh|bin/fm-pool-prune.py)
+      printf '%s\n' "__script__:fm-pool-prune.test.sh"
       ;;
     bin/fm-fleet-load.py)
       printf '%s\n' __script__:fm-fleet-capacity.test.sh
