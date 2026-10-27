@@ -1,0 +1,6 @@
+== head: inventory read takes 8s (fake gh) ==
+exit=0 elapsed=9s
+(eval):7: no matches found: /var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//jev-filter.XdgXAK/home/state/*
+== base: same 8s inventory read ==
+jev-prod: couldnt-check the merged pull request list for metaplanet-jp/core could not be read
+exit=0 elapsed=6s

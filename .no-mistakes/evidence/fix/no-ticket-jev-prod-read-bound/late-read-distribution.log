@@ -1,0 +1,13 @@
+ 3:41  up 4 days,  5:39, 3 users, load averages: 13.47 15.39 16.05
+run 1: real=3.86s SECONDS-delta=3
+run 2: real=1.97s SECONDS-delta=2
+run 3: real=2.06s SECONDS-delta=3
+run 4: real=1.71s SECONDS-delta=1
+run 5: real=2.08s SECONDS-delta=2
+run 6: real=1.85s SECONDS-delta=2
+run 7: real=3.82s SECONDS-delta=3
+run 8: real=1.63s SECONDS-delta=2
+run 9: real=2.19s SECONDS-delta=2
+run 10: real=2.41s SECONDS-delta=3
+run 11: real=3.60s SECONDS-delta=3
+run 12: real=2.61s SECONDS-delta=3

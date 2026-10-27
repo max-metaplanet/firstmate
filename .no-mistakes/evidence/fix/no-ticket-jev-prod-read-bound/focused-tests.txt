@@ -1,0 +1,8 @@
+ok - fm-jev-prod-check: a merged pull list taking longer than five seconds reaches the verdict
+ok - fm-jev-prod-check: a late read cannot spend the full per-read allowance
+ok - fm-jev-prod-check: the read budget stays inside a lowered watcher check timeout
+not ok - the next poll retries and records the actual deployment result
+not ok - the next poll retries and records the actual result
+/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//jevbase.zH9cFD/bn.sh: line 1672: test_a_slow_merged_pull_list_still_reaches_the_verdict: command not found
+ok - fm-jev-prod-check: a merged pull list taking longer than five seconds reaches the verdict
+ok - fm-jev-prod-check: a late read cannot spend the full per-read allowance

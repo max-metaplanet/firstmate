@@ -1,0 +1,1 @@
+not ok - a successful slow inventory must not report couldnt-check (expected '', got 'jev-prod: couldnt-check the merged pull request list for metaplanet-jp/core could not be read')

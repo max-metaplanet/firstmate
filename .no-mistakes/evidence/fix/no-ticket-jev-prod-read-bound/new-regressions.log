@@ -1,0 +1,3 @@
+ok - fm-jev-prod-check: a merged pull list taking longer than five seconds reaches the verdict
+not ok - one second left must return before a four-second read completes (took 4s)
+rc=1 elapsed=18s

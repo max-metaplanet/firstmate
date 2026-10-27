@@ -1,0 +1,7 @@
+== timing of the real inventory read ==
+gh-exit=0 took=2s
+== head check against real forge, disposable FM_HOME ==
+exit=0 elapsed=23s
+== state written ==
+fm-jev-prod-monitor-v1
+cursor	2527

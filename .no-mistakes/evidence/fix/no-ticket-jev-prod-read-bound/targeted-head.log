@@ -1,0 +1,4 @@
+ok - fm-jev-prod-check: a merged pull list taking longer than five seconds reaches the verdict
+ok - fm-jev-prod-check: a late read cannot spend the full per-read allowance
+ok - fm-jev-prod-check: a first comment budget cut retries without a terminal outcome
+ok - fm-jev-prod-check: the read budget stays inside a lowered watcher check timeout

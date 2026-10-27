@@ -1,0 +1,8 @@
+h run1: not ok - the next poll retries and records the actual deployment result [12s] (load { 16.80 16.83 14.80 })
+b run1: not ok - the next poll retries and records the actual deployment result [14s] (load { 15.27 16.50 14.72 })
+h run2: not ok - the next poll retries and records the actual deployment result [20s] (load { 17.41 16.95 14.92 })
+b run2: not ok - the next poll retries and records the actual deployment result [20s] (load { 16.48 16.76 14.90 })
+h run3: not ok - the next poll retries and records the actual deployment result [15s] (load { 15.09 16.45 14.82 })
+b run3: not ok - the next poll retries and records the actual deployment result [20s] (load { 15.66 16.50 14.88 })
+h run4: not ok - the next poll retries and records the actual deployment result [10s] (load { 15.22 16.37 14.85 })
+b run4: not ok - the next poll retries and records the actual deployment result [16s] (load { 16.46 16.62 14.97 })

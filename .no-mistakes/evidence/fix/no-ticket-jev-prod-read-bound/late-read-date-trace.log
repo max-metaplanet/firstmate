@@ -1,0 +1,18 @@
+--- run 1
+03:40:08 pid=16753 ppid=16740 args=+%s -> 1760000000
+03:40:08 pid=16848 ppid=16846 args=+%s -> 1760000019
+03:40:08 perl args: 1 gh api
+03:40:09 gh start api repos/metaplanet-jp/core/pulls?state=closed&sort=updated&direction=desc&per_page=50
+elapsed 2.88
+--- run 2
+03:40:10 pid=18594 ppid=18550 args=+%s -> 1760000000
+03:40:11 pid=18677 ppid=18674 args=+%s -> 1760000019
+03:40:11 perl args: 1 gh api
+03:40:11 gh start api repos/metaplanet-jp/core/pulls?state=closed&sort=updated&direction=desc&per_page=50
+elapsed 1.77
+--- run 3
+03:40:13 pid=20115 ppid=20004 args=+%s -> 1760000000
+03:40:13 pid=20163 ppid=20161 args=+%s -> 1760000019
+03:40:13 perl args: 1 gh api
+03:40:13 gh start api repos/metaplanet-jp/core/pulls?state=closed&sort=updated&direction=desc&per_page=50
+elapsed 1.91

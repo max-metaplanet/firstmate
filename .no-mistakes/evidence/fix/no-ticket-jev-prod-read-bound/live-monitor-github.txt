@@ -1,0 +1,26 @@
+# Live runs of the real monitor against github.com metaplanet-jp/core (Tue Oct 27 04:44:14 EDT 2026), load { 18.63 16.46 14.32 }
+=== head-nodelay (script=~/.no-mistakes/worktrees/61c6dd39b831/01M5Y21XKWK4724EW52N1MDB9H/bin/fm-jev-prod-check.sh, injected pulls delay=0s)
+exit=0 elapsed=21s
+output: <silent>
+state rows:        2
+
+=== head-delay7 (script=~/.no-mistakes/worktrees/61c6dd39b831/01M5Y21XKWK4724EW52N1MDB9H/bin/fm-jev-prod-check.sh, injected pulls delay=7s)
+exit=0 elapsed=20s
+output: <silent>
+state rows:        2
+
+=== base-delay7 (script=/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//jevbase.0m1SIL/bin/fm-jev-prod-check.sh, injected pulls delay=7s)
+exit=0 elapsed=6s
+output: jev-prod: couldnt-check the merged pull request list for metaplanet-jp/core could not be read
+state rows:        2
+
+=== head-delay30 (script=~/.no-mistakes/worktrees/61c6dd39b831/01M5Y21XKWK4724EW52N1MDB9H/bin/fm-jev-prod-check.sh, injected pulls delay=30s)
+exit=0 elapsed=17s
+output: jev-prod: couldnt-check the merged pull request list for metaplanet-jp/core could not be read
+state rows:        2
+
+=== head-delay30-budget8 (script=~/.no-mistakes/worktrees/61c6dd39b831/01M5Y21XKWK4724EW52N1MDB9H/bin/fm-jev-prod-check.sh, injected pulls delay=30s)
+exit=0 elapsed=10s
+output: jev-prod: couldnt-check the merged pull request list for metaplanet-jp/core could not be read
+state rows:        2
+

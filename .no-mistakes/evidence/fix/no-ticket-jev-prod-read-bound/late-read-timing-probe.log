@@ -1,0 +1,8 @@
+clamped-read run: 2.19s out=jev-prod: couldnt-check the merged pull request list for metaplanet-jp/core could not be read
+instant-gh baseline run: .23s out=<empty>
+clamped-read run: 4.81s out=jev-prod: couldnt-check the merged pull request list for metaplanet-jp/core could not be read
+instant-gh baseline run: .29s out=<empty>
+clamped-read run: 4.88s out=jev-prod: couldnt-check the merged pull request list for metaplanet-jp/core could not be read
+instant-gh baseline run: 1.04s out=<empty>
+ok - fm-jev-prod-check: a late read cannot spend the full per-read allowance
+not ok - one second left must return before a four-second read completes (took 5s)

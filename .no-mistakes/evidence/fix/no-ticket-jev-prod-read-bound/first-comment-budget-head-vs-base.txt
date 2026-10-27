@@ -1,0 +1,6 @@
+h run1: not ok - the next poll retries and records the actual result [17s] (load { 20.19 17.68 15.47 })
+b run1: not ok - the next poll retries and records the actual result [14s] (load { 18.26 17.36 15.40 })
+h run2: not ok - the next poll retries and records the actual result [8s] (load { 16.44 17.00 15.29 })
+b run2: ok - fm-jev-prod-check: a first comment budget cut retries without a terminal outcome [10s] (load { 16.77 17.06 15.33 })
+h run3: not ok - the next poll retries and records the actual result [12s] (load { 15.12 16.70 15.22 })
+b run3: ok - fm-jev-prod-check: a first comment budget cut retries without a terminal outcome [10s] (load { 15.16 16.64 15.22 })

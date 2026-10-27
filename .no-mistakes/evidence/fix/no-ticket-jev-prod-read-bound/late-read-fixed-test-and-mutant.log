@@ -1,0 +1,11 @@
+ 3:42  up 4 days,  5:41, 3 users, load averages: 18.69 16.01 16.16
+== fixed test x5 (fresh home each), head code
+ok - fm-jev-prod-check: a late read cannot spend the full per-read allowance
+ok - fm-jev-prod-check: a late read cannot spend the full per-read allowance
+ok - fm-jev-prod-check: a late read cannot spend the full per-read allowance
+ok - fm-jev-prod-check: a late read cannot spend the full per-read allowance
+ok - fm-jev-prod-check: a late read cannot spend the full per-read allowance
+ok - fm-jev-prod-check: a merged pull list taking longer than five seconds reaches the verdict
+rc=0
+== fixed test, mutant without remaining-budget clamp (must fail)
+not ok - one second left must return before a ten-second read completes (took 12s)

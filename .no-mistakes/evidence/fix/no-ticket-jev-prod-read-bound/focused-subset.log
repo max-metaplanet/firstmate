@@ -1,0 +1,5 @@
+ok - fm-jev-prod-check: reseed honors its manual budget and ceiling while check keeps both clamps
+ok - fm-jev-prod-check: a clean production verdict is recorded under its run key and wakes nobody
+ok - fm-jev-prod-check: a forge failure is couldnt-check, reported once per episode, and never silence
+not ok - the spent budget must stop the poll at the pull request it cut short (expected '2214 2215 ', got '2214 ')
+rc=1 elapsed=57s

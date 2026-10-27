@@ -1,0 +1,3 @@
+== head: inventory read hangs 60s (fake gh), default budget ==
+jev-prod: couldnt-check the merged pull request list for metaplanet-jp/core could not be read
+exit=0 elapsed=16s

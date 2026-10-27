@@ -1,0 +1,9 @@
+mechanism=perl
+run 1: fm_run_timed 1 <4s sleep> rc=124 elapsed=1.82s
+run 2: fm_run_timed 1 <4s sleep> rc=124 elapsed=1.94s
+run 3: fm_run_timed 1 <4s sleep> rc=124 elapsed=1.88s
+run 4: fm_run_timed 1 <4s sleep> rc=124 elapsed=1.59s
+run 5: fm_run_timed 1 <4s sleep> rc=124 elapsed=1.68s
+run 6: fm_run_timed 1 <4s sleep> rc=124 elapsed=1.51s
+run 7: fm_run_timed 1 <4s sleep> rc=124 elapsed=1.77s
+run 8: fm_run_timed 1 <4s sleep> rc=124 elapsed=2.05s

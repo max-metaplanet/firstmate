@@ -1,0 +1,22 @@
+LAB=/var/folders/1l/gg6b5zsx0qn753wwhcmmq8cr0000gn/T//fm-lab.B2vlMC repo=metaplanet-jp/core (real gh, real GitHub, read-only)
+
+### BASE 1ef37910 (inventory delay +6s) rc=0 elapsed=7s
+stdout: jev-prod: couldnt-check the merged pull request list for metaplanet-jp/core could not be read
+inventory reads: 1
+state rows: 2
+
+### HEAD 02d5dca0 (inventory delay +6s) rc=0 elapsed=20s
+stdout: <empty: nothing to report>
+inventory reads: 1
+state rows: 2
+
+### HEAD 02d5dca0 (inventory delay +0s) rc=0 elapsed=21s
+stdout: <empty: nothing to report>
+inventory reads: 1
+state rows: 2
+
+### HEAD 02d5dca0 adversarial: read beyond 15s bound (inventory delay +17s) rc=0 elapsed=17s
+stdout: jev-prod: couldnt-check the merged pull request list for metaplanet-jp/core could not be read
+inventory reads: 1
+state rows: 2
+
