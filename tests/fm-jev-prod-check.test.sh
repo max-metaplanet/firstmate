@@ -178,6 +178,7 @@ path=\${2:-}
 case "\$path" in
   */pulls\?*)
     [ ! -e "\$FX/fail-pulls" ] || exit 1
+    [ ! -f "\$FX/pulls-delay" ] || sleep "\$(cat "\$FX/pulls-delay")"
     cat "\$FX/pulls.json" ;;
   */issues/*/comments\?*)
     [ ! -e "\$FX/fail-comments" ] || exit 1
@@ -1086,6 +1087,55 @@ test_the_read_budget_fits_a_lowered_check_timeout() {
   pass "fm-jev-prod-check: the read budget stays inside a lowered watcher check timeout"
 }
 
+test_a_slow_merged_pull_list_still_reaches_the_verdict() {
+  local home out
+  home=$(make_home slow-pulls)
+  configure "$home"
+  fake_gh "$home" >/dev/null
+  write_pulls "$home" 7200
+  write_comments "$home" 2214 900013 "$(section portal proven post-merge production slowpulls)"
+  printf '6\n' > "$home/fx/pulls-delay"
+
+  out=$(poll "$home" FM_JEV_PROD_BATCH_SECS=0)
+  expect_code 0 "$?" "a successful six-second inventory read must complete"
+  assert_equals "" "$out" "a successful slow inventory must not report couldnt-check"
+  assert_grep $'woken\t2214/portal/slowpulls' "$home/state/.jev-prod-monitor" \
+    "the slow inventory must still reach and settle the production verdict"
+  pass "fm-jev-prod-check: a merged pull list taking longer than five seconds reaches the verdict"
+}
+
+test_a_late_read_uses_only_the_remaining_budget() {
+  local home out started elapsed
+  home=$(make_home late-read)
+  configure "$home"
+  fake_gh "$home" >/dev/null
+  cat > "$home/bin/date" <<EOF
+#!/usr/bin/env bash
+if [ ! -e '$home/fx/clock-started' ]; then
+  touch '$home/fx/clock-started'
+  printf '%s\n' '$NOW'
+else
+  printf '%s\n' '$((NOW + 19))'
+fi
+EOF
+  cat > "$home/bin/gh" <<EOF
+#!/usr/bin/env bash
+exec >/dev/null 2>&1
+sleep 4
+printf '[]\n'
+EOF
+  chmod +x "$home/bin/date" "$home/bin/gh"
+
+  started=$SECONDS
+  out=$(env -u FM_JEV_PROD_NOW PATH="$home/bin:$PATH" FM_HOME="$home" \
+    FM_JEV_PROD_BUDGET=20 "$CHECK" check 2>&1)
+  expect_code 0 "$?" "an inventory timeout must report cleanly"
+  elapsed=$((SECONDS - started))
+  [ "$elapsed" -lt 4 ] || fail "one second left must return before a four-second read completes (took ${elapsed}s)"
+  assert_contains "$out" 'couldnt-check the merged pull request list' "a timed-out inventory must not count as clean"
+  pass "fm-jev-prod-check: a late read cannot spend the full per-read allowance"
+}
+
 test_saved_lists_survive_full_rotations() {
   local home mode n i out expected actual
   local PR_URL=$PR_URL
@@ -1724,3 +1774,5 @@ test_a_pull_request_slow_on_every_poll_never_holds_the_monitor
 test_a_deployment_budget_cut_is_retried
 test_a_first_comment_read_budget_cut_is_retried
 test_the_read_budget_fits_a_lowered_check_timeout
+test_a_slow_merged_pull_list_still_reaches_the_verdict
+test_a_late_read_uses_only_the_remaining_budget
