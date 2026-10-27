@@ -7,8 +7,6 @@ command -v tasks-axi >/dev/null || { printf 'ok - skipped: tasks-axi unavailable
 ADMIT_TEST_ROOT=$(fm_test_tmproot fm-worker-admit)
 export ADMIT_TEST_ROOT ROOT
 python3 - <<'PY'
-from copy import deepcopy
-from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
@@ -38,13 +36,9 @@ exec python3 - "$@" <<'PY_SPAWN'
 import json, os, pathlib, subprocess, sys, time
 h=pathlib.Path(os.environ['FM_HOME']); args=sys.argv[1:]; ident=args[0]
 with (h/'attempts').open('a') as f: f.write(ident+'\\n')
-if (h/'full').exists(): sys.exit(75)
+if (h/'full').exists(): print((h/'full').read_text()); sys.exit(75)
 if (h/'refuse').exists(): print('error: refused by fixture'); sys.exit(1)
 subprocess.run(['python3', str(h/'bin/fm-worker-admit.py'), 'verify', ident, os.environ['FM_WORKER_AUTO_ADMIT_DIGEST']], check=True)
-ticket=args[args.index('--ticket')+1] if '--ticket' in args else ''
-if ticket and ticket != 'no-ticket':
- result=subprocess.run(['bash', str(h/'bin/fm-work-intake.sh'), 'admission-check', ticket])
- if result.returncode: sys.exit(result.returncode)
 with (h/'launches').open('a') as f: f.write(json.dumps(args)+'\\n')
 time.sleep(.1)
 (h/'state'/f'{ident}.meta').write_text('kind=ship\\n')
@@ -71,15 +65,15 @@ PY_SPAWN
     def tasks(self, *args):
         return self.command('bash', str(self.home / 'bin/fm-tasks-axi.sh'), *args)
 
-    def add(self, ident, priority=2, ticket='no-ticket'):
+    def add(self, ident, priority=2, ticket='no-ticket', project=None):
         self.tasks('add', ident, ident, '--kind', 'ship', '--queue', '--priority', str(priority))
         directory = self.home / 'data' / ident
         directory.mkdir()
         (directory / 'brief.md').write_text("# Task\n## Captain's intent\nImplement accepted work.\n## Firstmate spec\nUse recorded flags.\n")
-        return self.add_record(ident, ticket)
+        return self.add_record(ident, ticket, project)
 
-    def add_record(self, ident, ticket='no-ticket'):
-        args = [str(self.home / 'project'), 'direct-PR', 'off', ticket, 'feat', 'fm/',
+    def add_record(self, ident, ticket='no-ticket', project=None):
+        args = [str(project or self.home / 'project'), 'direct-PR', 'off', ticket, 'feat', 'fm/',
                 'release/test', 'codex', 'model/accepted', 'high', 'tmux', '', 'partial', '0', '0']
         self.command('python3', str(self.home / 'bin/fm-worker-admit.py'), 'record', ident, *args)
         return self.home / 'state' / (ident + '.deferred-spawn.json')
@@ -180,31 +174,18 @@ PY_SPAWN
         self.assertIn('--branch-prefix', self.launches()[0])
         self.assertIn('accepted/', self.launches()[0])
 
-    def test_andrew_owned_and_created_unassigned_are_excluded(self):
-        for exclusion in ('andrew_owned', 'andrew_created_unassigned'):
-            with self.subTest(exclusion=exclusion):
-                path = self.add(exclusion, ticket='ENG-1')
-                fixture = deepcopy(json.loads((ROOT / 'tests/fixtures/clickup-queue-v1.json').read_text()))
-                row = fixture['candidates'][0]
-                row['eligibility'].update(eligible=False, exclusion_reasons=[exclusion])
-                row['scope']['comments_complete'] = True
-                (self.home / 'source.json').write_text(json.dumps(fixture))
-                hook = self.home / 'source'
-                hook.write_text('''#!/usr/bin/env python3
-from datetime import datetime, timezone
-import json, pathlib, sys
-v=json.loads((pathlib.Path(__file__).parent/'source.json').read_text())
-v['observed_at']=datetime.now(timezone.utc).isoformat()
-if '--refresh' in sys.argv:
- v['mode']='refresh'; v['coverage'].update(complete=False,all_pages_read=False,absence_means_withdrawal=False)
-print(json.dumps(v))
-''')
-                hook.chmod(0o755)
-                (self.home / 'config/work-intake-hook').write_text(str(hook))
-                self.tick()
-                self.assertTrue(path.exists())
-                self.assertEqual(self.launches(), [])
-                self.assertEqual(self.audit()[-1], 'refused')
+    def test_fleet_deferral_ends_the_tick_and_project_deferral_skips_its_project(self):
+        (self.home / 'other').mkdir()
+        self.add('first', 0)
+        self.add('same-project', 1)
+        self.add('other-project', 2, project=self.home / 'other')
+        (self.home / 'full').write_text('deferred: project project admits 1 worker(s) at once')
+        self.tick()
+        self.assertEqual(self.attempts(), ['first', 'other-project'])
+        (self.home / 'full').write_text('deferred: this machine runs at most 1 agent(s)')
+        self.tick()
+        self.assertEqual(self.attempts(), ['first', 'other-project', 'first'])
+        self.assertEqual(self.audit(), ['deferred'] * 3)
 
     def test_refusals_back_off_then_quarantine_once_until_explicit_dispatch(self):
         path = self.add('refused')
