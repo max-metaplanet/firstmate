@@ -1,0 +1,79 @@
+== auto w1 rc=0
+parked: w1 waiting on merge approval for https://github.com/example/repo/pull/99
+== auto w4 rc=0
+
+== status w2 rc=0
+{
+  "mode": "off",
+  "configured": null,
+  "effective": null,
+  "hold": "",
+  "occupancy": 2,
+  "occupancy_error": "",
+  "holders": "w3, w5",
+  "queued_resumes": 0
+}
+== status w3 rc=0
+{
+  "mode": "off",
+  "configured": null,
+  "effective": null,
+  "hold": "",
+  "occupancy": 2,
+  "occupancy_error": "",
+  "holders": "w3, w5",
+  "queued_resumes": 0
+}
+== tick rc=0
+
+== status w6 rc=0
+{
+  "mode": "off",
+  "configured": null,
+  "effective": null,
+  "hold": "",
+  "occupancy": 3,
+  "occupancy_error": "",
+  "holders": "w3, w5, w6",
+  "queued_resumes": 0
+}
+-- w1.park
+phase=parked
+generation=g1
+endpoint=%1
+reason=merge approval for https://github.com/example/repo/pull/99
+wake_reason=
+status_line=done: PR https://github.com/example/repo/pull/99 checks green
+resume_error=0
+failing_checks=
+event_token=
+-- w2.park
+phase=parked
+generation=g2
+endpoint=pane-2
+reason=external wait
+status_line=waiting
+-- w3.park
+phase=parked
+generation=old
+endpoint=z3
+reason=stale
+-- w4.park
+phase=hint
+status_line=blocked: upstream
+reason=waiting on upstream maintainer
+-- w6.park
+phase=active
+generation=replacement
+endpoint=orca-6
+reason=external wait
+wake_reason=
+status_line=old
+resume_error=0
+failing_checks=
+event_token=
+-- control.log
+w1 exit
+w6 relaunch --note Automatically resumed from external wait. Reason: task status changed: new steer. Read the durable instruction inbox before continuing.
+######## diff base vs head ########
+IDENTICAL: base and head CLI behaviour match
