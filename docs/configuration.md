@@ -1395,6 +1395,11 @@ SSH_AUTH_SOCK
 Firstmate retains basic home, executable search, terminal, locale, temporary-directory, and backend routing variables, plus its explicit launch assignments, its ship and scout task marker, the compact-adviser kill switch described below, and enabled task trace.
 [`fm-spawn.sh --help`](../bin/fm-spawn.sh) owns the exact retained names and parsing mechanics.
 
+Ship and scout launches also carry that script's test controls to skip pre-push suites and use one local test worker, leaving capacity for concurrent fleet tasks.
+These controls apply on fresh launches and relaunches, with or without an allowlist.
+Projects must read the controls for them to take effect; project task-environment filtering still applies.
+Core's pipeline reads a separate control before passing its explicit Vitest worker flag.
+
 Other ambient names must be listed explicitly, including custom credential-store locations, proxy settings, and certificate overrides when required by the selected tools.
 The command shell and worker may still create their own variables.
 

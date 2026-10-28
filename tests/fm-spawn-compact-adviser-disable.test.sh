@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # tests/fm-spawn-compact-adviser-disable.test.sh - every agent this fleet
 # launches must start with COMPACT_ADVISER_DISABLE=1 in its environment.
-# Ship and scout launches also set PREPUSH_TESTS=0, including on relaunch.
+# Ship and scout launches also disable pre-push tests and cap local test workers,
+# including on relaunch.
 #
 # The assertions never read bin/fm-spawn.sh's source. They drive the real spawn
 # against a fake pane and a real isolated git worktree, then EXECUTE the launch
@@ -81,6 +82,7 @@ emitted_launch_env() {
   preamble=$(grep '^export ' "$panelog")
   env -i HOME="$TMP_ROOT/pane-home" PATH="$fakebin:$PATH" TERM=xterm \
     TMUX=synthetic-pane COMPACT_ADVISER_DISABLE="$CONTRARY" PREPUSH_TESTS=1 \
+    VITEST_MAX_WORKERS=9 PIPELINE_TEST_MAX_WORKERS=9 \
     /bin/sh -c "$preamble
 $launch"
 }
@@ -91,6 +93,21 @@ assert_prepush_env() {  # <harness> <expected>
   seen=$(emitted_launch_env "$FAKEBIN_DIR" "$LAUNCH_LOG" "$PANE_LOG") \
     || fail "the emitted launch failed to run the pre-push probe"
   assert_equals "$2" "$seen" "the launched $1 agent must receive the expected pre-push setting"
+}
+
+assert_test_worker_env() {  # <harness> <expected>
+  local variable seen preamble
+  for variable in VITEST_MAX_WORKERS PIPELINE_TEST_MAX_WORKERS; do
+    install_env_probe "$FAKEBIN_DIR" "$1" "$variable"
+    seen=$(emitted_launch_env "$FAKEBIN_DIR" "$LAUNCH_LOG" "$PANE_LOG") \
+      || fail "the emitted launch failed to run the $variable probe"
+    assert_equals "$2" "$seen" "the launched $1 agent must receive $variable=$2"
+    preamble=$(grep '^export ' "$PANE_LOG")
+    seen=$(env -i HOME="$TMP_ROOT/pane-home" PATH="$FAKEBIN_DIR:$PATH" \
+      VITEST_MAX_WORKERS=9 PIPELINE_TEST_MAX_WORKERS=9 /bin/sh -c "$preamble
+$1") || fail "the pane failed to run the $variable probe"
+    assert_equals "${3:-$2}" "$seen" "the pane shell must receive $variable=${3:-$2}"
+  done
 }
 
 pane_export_lines() { grep -c '^export COMPACT_ADVISER_DISABLE=1$' "$1" || true; }
@@ -124,6 +141,7 @@ test_ship_allowlist_absent() {
   assert_equals 1 "$seen" \
     "a ship worker launched with the ambient environment must start with the compact adviser disabled"
   assert_prepush_env codex 0
+  assert_test_worker_env codex 1
   pass "ship launch with no allowlist starts its agent with the compact-adviser switch on"
 }
 
@@ -148,6 +166,7 @@ test_ship_allowlist_enabled() {
   assert_equals 1 "$seen" \
     "a ship worker launched under the cleared allowlisted environment must still start with the compact adviser disabled"
   assert_prepush_env codex 0
+  assert_test_worker_env codex 1
   pass "ship launch under an enabled allowlist keeps the compact-adviser switch through the cleared environment"
 }
 
@@ -155,7 +174,7 @@ test_ship_allowlist_enabled() {
 # export was lost still has to launch its agent with the switch on. Replaying
 # the launch alone, with a contrary ambient value, is that case.
 test_launch_command_carries_the_switch_without_the_pane_export() {
-  local setting rec out status seen launch
+  local setting rec out status seen launch variable
   for setting in absent enabled; do
     rec=$(make_case "ship-nopane-$setting" codex "ship-nopane-$setting-a1")
     read_case "$rec"
@@ -176,6 +195,13 @@ test_launch_command_carries_the_switch_without_the_pane_export() {
       TMUX=synthetic-pane PREPUSH_TESTS=1 /bin/sh -c "$launch") \
       || fail "allowlist=$setting: the launch command alone failed to run the pre-push probe"
     assert_equals 0 "$seen" "allowlist=$setting: the launch command alone must set PREPUSH_TESTS=0"
+    for variable in VITEST_MAX_WORKERS PIPELINE_TEST_MAX_WORKERS; do
+      install_env_probe "$FAKEBIN_DIR" codex "$variable"
+      seen=$(env -i HOME="$TMP_ROOT/pane-home" PATH="$FAKEBIN_DIR:$PATH" TERM=xterm \
+        TMUX=synthetic-pane VITEST_MAX_WORKERS=9 PIPELINE_TEST_MAX_WORKERS=9 \
+        /bin/sh -c "$launch") || fail "allowlist=$setting: $variable launch probe failed"
+      assert_equals 1 "$seen" "allowlist=$setting: launch alone must set $variable=1"
+    done
   done
   pass "the launch command sets the switch on its own, whichever allowlist posture is in force"
 }
@@ -204,8 +230,10 @@ test_secondmate_launch() {
       "a secondmate launched with allowlist=$setting must start with the compact adviser disabled"
     if [ "$setting" = absent ]; then
       assert_prepush_env codex 1
+      assert_test_worker_env codex 9
     else
       assert_prepush_env codex unset
+      assert_test_worker_env codex unset 9
     fi
   done
   pass "a secondmate launch carries the compact-adviser switch in both allowlist postures"
@@ -256,6 +284,7 @@ test_scout_prepush_env() {
     status=$?
     expect_code 0 "$status" "scout spawn with allowlist=$setting should succeed: $out"
     assert_prepush_env claude 0
+    assert_test_worker_env claude 1
   done
   pass "Claude scout launches receive PREPUSH_TESTS=0 in both allowlist postures"
 }
@@ -326,10 +355,10 @@ SH
 }
 
 test_relaunch_rebuilds_the_switch() {
-  local harness=$1 setting dir home proj wt id out status seen launch preamble
+  local harness=$1 kind=${2:-ship} setting dir home proj wt id out status seen launch preamble variable
   for setting in absent enabled; do
-    id="relaunch-$harness-$setting-a1"
-    dir="$TMP_ROOT/relaunch-$harness-$setting"
+    id="relaunch-$harness-$kind-$setting-a1"
+    dir="$TMP_ROOT/relaunch-$harness-$kind-$setting"
     home="$dir/home"
     proj="$dir/proj"
     wt="$dir/wt"
@@ -351,7 +380,7 @@ test_relaunch_rebuilds_the_switch() {
       echo "worktree=$wt"
       echo "project=$proj"
       echo "harness=$harness"
-      echo "kind=ship"
+      echo "kind=$kind"
       echo "mode=no-mistakes"
       echo "yolo=off"
       echo "tasktmp=$dir/tasktmp"
@@ -385,6 +414,17 @@ $launch") \
       TMUX=synthetic-pane PREPUSH_TESTS=1 /bin/sh -c "$preamble
 $launch") || fail "$harness relaunch pre-push probe failed"
     assert_equals 0 "$seen" "$harness relaunch with allowlist=$setting must receive PREPUSH_TESTS=0"
+    for variable in VITEST_MAX_WORKERS PIPELINE_TEST_MAX_WORKERS; do
+      install_env_probe "$dir/fakebin" "$harness" "$variable"
+      seen=$(env -i HOME="$dir/user-home" PATH="$dir/fakebin:$PATH" TERM=xterm \
+        VITEST_MAX_WORKERS=9 PIPELINE_TEST_MAX_WORKERS=9 /bin/sh -c "$launch") \
+        || fail "$harness $kind relaunch $variable probe failed"
+      assert_equals 1 "$seen" "$harness $kind relaunch launch must set $variable=1"
+      seen=$(env -i HOME="$dir/user-home" PATH="$dir/fakebin:$PATH" TERM=xterm \
+        VITEST_MAX_WORKERS=9 PIPELINE_TEST_MAX_WORKERS=9 /bin/sh -c "$preamble
+$harness") || fail "$harness $kind relaunch pane $variable probe failed"
+      assert_equals 1 "$seen" "$harness $kind relaunch pane must set $variable=1"
+    done
   done
   pass "$harness relaunches retain compact-adviser and pre-push settings in both allowlist postures"
 }
@@ -431,4 +471,6 @@ test_launch_exports_task_inbox
 test_scout_prepush_env
 test_relaunch_rebuilds_the_switch codex
 test_relaunch_rebuilds_the_switch claude
+test_relaunch_rebuilds_the_switch codex scout
+test_relaunch_rebuilds_the_switch claude scout
 test_raw_compound_launch_command_carries_the_switch
