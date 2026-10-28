@@ -92,7 +92,7 @@ FM_SHARED_CAPTAIN_MODE="444"
 # The declared inheritable set (space-separated, config-dir-relative item paths).
 # Extend here to inherit more of the primary's local config; override via the
 # environment only in tests. Items must not contain whitespace.
-FM_INHERITABLE_CONFIG="${FM_INHERITABLE_CONFIG:-crew-dispatch.json dispatch-never-send crew-harness backlog-backend backend herdr-presentation-spaces herdr-project-groups startup-memory-budget trace-context launch-env-allowlist claude-permission-mode lavish-axi-host keep-ai-trailers supervision-host-off firstmate-role claude-seat claude-seats-root claude-seat-threshold claude-seat-destination-min claude-seat-extra-usage claude-seat-auto-exclude claude-seat-floor claude-seat-floor-readd claude-seat-floor-dwell claude-seat-session-share claude-seat-resting codex-seat codex-seats-root codex-seat-threshold codex-seat-destination-min codex-seat-auto-exclude}"
+FM_INHERITABLE_CONFIG="${FM_INHERITABLE_CONFIG:-crew-dispatch.json dispatch-never-send crew-harness backlog-backend backend herdr-presentation-spaces herdr-project-groups startup-memory-budget trace-context launch-env-allowlist claude-permission-mode lavish-axi-host keep-ai-trailers supervision-host-off firstmate-role claude-seat claude-seats-root claude-seat-threshold claude-seat-destination-min claude-seat-spare-leader claude-seat-extra-usage claude-seat-auto-exclude claude-seat-floor claude-seat-floor-readd claude-seat-floor-dwell claude-seat-session-share claude-seat-resting codex-seat codex-seats-root codex-seat-threshold codex-seat-destination-min codex-seat-spare-leader codex-seat-auto-exclude}"
 
 # firstmate-role additionally carries a proof-of-state receipt: a scoped role
 # grant (or its recorded absence) authorizes a secondmate home only while
@@ -113,7 +113,7 @@ FM_INHERITABLE_CONFIG="${FM_INHERITABLE_CONFIG:-crew-dispatch.json dispatch-neve
 # per-machine, Keychain-backed profile the owner logged in here; a remote home
 # handed its name would resolve a profile nobody logged in there, so it keeps
 # its own login exactly as before seats existed (docs/claude-seats.md).
-FM_MACHINE_LOCAL_INHERITABLE_CONFIG="claude-seat claude-seats-root claude-seat-threshold claude-seat-destination-min claude-seat-extra-usage claude-seat-auto-exclude claude-seat-floor claude-seat-floor-readd claude-seat-floor-dwell claude-seat-session-share claude-seat-resting codex-seat codex-seats-root codex-seat-threshold codex-seat-destination-min codex-seat-auto-exclude"
+FM_MACHINE_LOCAL_INHERITABLE_CONFIG="claude-seat claude-seats-root claude-seat-threshold claude-seat-destination-min claude-seat-spare-leader claude-seat-extra-usage claude-seat-auto-exclude claude-seat-floor claude-seat-floor-readd claude-seat-floor-dwell claude-seat-session-share claude-seat-resting codex-seat codex-seats-root codex-seat-threshold codex-seat-destination-min codex-seat-spare-leader codex-seat-auto-exclude"
 
 # The one per-home decline from those machine-local seat items, read in the
 # DESTINATION home's own config dir and deliberately not inheritable itself, so

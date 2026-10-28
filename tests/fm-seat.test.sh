@@ -301,6 +301,7 @@ test_codex_inheritance_has_provider_scoped_optouts_and_stays_local() {
   : > "$taking/config/claude-seat-local"
   printf 'personal\n' > "$declining/config/codex-seat"
   printf '20\n' > "$HOME_DIR/config/codex-seat-threshold"
+  printf 'on\n' > "$HOME_DIR/config/codex-seat-spare-leader"
   printf '30\n' > "$HOME_DIR/config/codex-seat-destination-min"
   printf 'spare\n' > "$HOME_DIR/config/codex-seat-auto-exclude"
   out=$(TMUX='' run_seat "$HOME_DIR" "$FAKEBIN" --provider codex switch work)
@@ -308,6 +309,8 @@ test_codex_inheritance_has_provider_scoped_optouts_and_stays_local() {
   assert_equals personal "$(cat "$declining/config/codex-seat")" 'Codex optout must preserve its local active seat'
   assert_equals work "$(cat "$taking/config/codex-seat")" 'Claude optout must not block Codex inheritance'
   assert_equals 20 "$(cat "$taking/config/codex-seat-threshold")" 'Codex threshold must inherit'
+  assert_equals on "$(cat "$taking/config/codex-seat-spare-leader")" 'spare leader must inherit locally'
+  assert_absent "$declining/config/codex-seat-spare-leader" 'spare leader must respect optout'
   assert_equals 30 "$(cat "$taking/config/codex-seat-destination-min")" 'Codex destination minimum must inherit'
   assert_equals spare "$(cat "$taking/config/codex-seat-auto-exclude")" 'Codex exclusions must inherit'
   assert_absent "$declining/config/codex-seat-threshold" 'Codex optout must preserve an absent local setting'
@@ -5139,3 +5142,168 @@ test_a_blind_process_records_nothing_and_keeps_the_existing_record
 test_the_recorded_quota_tool_directory_is_checked_rather_than_trusted
 
 test_spawn_refuses_a_missing_active_seat_directory
+
+# Spare-leader policy is tested through the CLI and real spawn entry point.
+spare_leader_case() {
+  read_seat_case "$(make_seat_case "$1")"
+  mkdir -p "$SEATS_DIR/alpha" "$SEATS_DIR/beta" "$SEATS_DIR/work"
+  seat_logged_in "$SPEC_DIR" "$SEATS_DIR/alpha" "$SEATS_DIR/beta" "$SEATS_DIR/work"
+  printf 'work\n' > "$HOME_DIR/config/claude-seat"
+  printf '%s\n' "$$" > "$HOME_DIR/state/.lock"
+  printf 'pid=%s\nharness=claude\nprofile=%s\nambient=\n' "$$" "$SEATS_DIR/alpha" > "$HOME_DIR/state/.lock-runtime"
+  printf '%s\t90\n%s\t60\n%s\t5\n' "$SEATS_DIR/alpha" "$SEATS_DIR/beta" "$SEATS_DIR/work" > "$SPEC_DIR/remaining_map"
+}
+
+test_spare_leader_ranks_last_and_falls_back() {
+  local out
+  spare_leader_case spare-leader-rank
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" worker-destination --from work)
+  assert_equals alpha "$out" 'absent mode must retain the original rotation'
+  printf 'on\n' > "$HOME_DIR/config/claude-seat-spare-leader"
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" worker-destination --from work)
+  assert_equals beta "$out" 'an eligible worker seat must rank ahead of the leader'
+  printf 'beta\n' > "$HOME_DIR/config/claude-seat-auto-exclude"
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" worker-destination --from work)
+  assert_equals alpha "$(printf '%s\n' "$out" | tail -1)" 'the leader remains the last eligible fallback'
+  printf 'off\n' > "$HOME_DIR/config/claude-seat-spare-leader"
+  : > "$HOME_DIR/config/claude-seat-auto-exclude"
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" worker-destination --from work)
+  assert_equals alpha "$out" 'explicit off must restore the original selection'
+  pass 'spare leader ranks last, falls back, and leaves disabled selection unchanged'
+}
+
+test_spare_leader_dispatch_and_watch_depart_early() {
+  local out
+  spare_leader_case spare-leader-early
+  printf 'alpha\n' > "$HOME_DIR/config/claude-seat"
+  printf 'on\n' > "$HOME_DIR/config/claude-seat-spare-leader"
+  printf '20\n' > "$HOME_DIR/config/claude-seat-threshold"
+  printf 'work\n' > "$HOME_DIR/config/claude-seat-auto-exclude"
+  seat_windows "$SPEC_DIR" "$SEATS_DIR/alpha" 90 '2099-01-01T00:00:00Z' 90 '2099-01-07T00:00:00Z' 50 50
+  seat_windows "$SPEC_DIR" "$SEATS_DIR/beta" 60 '2099-01-01T00:00:00Z' 60 '2099-01-07T00:00:00Z' 30 30
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" launch-destination)
+  assert_equals beta "$out" 'dispatch must spare a healthy leader even with more weekly spare'
+  assert_equals alpha "$(cat "$HOME_DIR/config/claude-seat")" 'dispatch must not change the active seat'
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" auto)
+  assert_contains "$out" 'to beta to spare the leader' 'the watch must move before threshold crossing'
+  assert_equals beta "$(cat "$HOME_DIR/config/claude-seat")" 'the watch must publish the alternative'
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" auto)
+  assert_not_contains "$out" 'switched' 'a second pass must not flap back to the leader'
+  printf 'alpha\n' > "$HOME_DIR/config/claude-seat"
+  printf 'beta\nwork\n' > "$HOME_DIR/config/claude-seat-auto-exclude"
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" launch-destination)
+  assert_equals alpha "$(printf '%s\n' "$out" | tail -1)" 'no alternative must retain the usable leader seat'
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" auto)
+  assert_not_contains "$out" 'switched' 'no eligible alternative must not switch'
+  pass 'spare leader departs early and retains the leader when alternatives are excluded'
+}
+
+test_spare_leader_missing_record_and_parent_binding() {
+  local out parent
+  spare_leader_case spare-leader-record
+  printf 'on\n' > "$HOME_DIR/config/claude-seat-spare-leader"
+  printf 'pid=1\nprofile=%s\n' "$SEATS_DIR/alpha" > "$HOME_DIR/state/.lock-runtime"
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" worker-destination --from work)
+  assert_equals alpha "$out" 'a stale pid-bound record must behave as off'
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" status)
+  assert_contains "$out" 'leader seat undetermined for claude; preference inactive' 'status must explain unavailable leader evidence'
+  parent="$CASE_DIR/primary"
+  mkdir -p "$parent/state"
+  printf '%s\n' "$$" > "$parent/state/.lock"
+  printf 'pid=%s\nharness=claude\nprofile=%s\n' "$$" "$SEATS_DIR/alpha" > "$parent/state/.lock-runtime"
+  : > "$HOME_DIR/.fm-secondmate-home"
+  printf 'schema=fm-secondmate-parent.v1\nroute=local\nparent_home=%s\n' "$parent" > "$HOME_DIR/.fm-secondmate-parent"
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" worker-destination --from work)
+  assert_equals beta "$out" 'a secondmate must spare its recorded primary, not itself'
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" status)
+  assert_contains "$out" 'sparing alpha (claude)' 'status must name the primary seat'
+  pass 'missing leader evidence disables preference and local children resolve the primary'
+}
+
+test_codex_spare_leader_parity() {
+  local out
+  make_codex_seat_case codex-spare-leader
+  codex_quota_fixture "$SEATS_DIR/alpha" 90
+  codex_quota_fixture "$SEATS_DIR/beta" 60
+  codex_quota_fixture "$SEATS_DIR/work" 5
+  printf 'work\n' > "$HOME_DIR/config/codex-seat"
+  printf 'on\n' > "$HOME_DIR/config/codex-seat-spare-leader"
+  printf '%s\n' "$$" > "$HOME_DIR/state/.lock"
+  printf 'pid=%s\nharness=codex\nprofile=%s\n' "$$" "$SEATS_DIR/alpha" > "$HOME_DIR/state/.lock-runtime"
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" --provider codex worker-destination --from work)
+  assert_equals beta "$out" 'Codex must prefer a non-leader seat'
+  printf 'alpha\n' > "$HOME_DIR/config/codex-seat"
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" --provider codex launch-destination)
+  assert_equals beta "$out" 'Codex dispatch must depart early without a configured trigger'
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" --provider codex launch-destination --spare-only)
+  assert_equals beta "$out" 'Codex spawn routing must use the same preference'
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" --provider codex auto)
+  assert_contains "$out" 'to beta to spare the leader' 'Codex watch must depart early'
+  printf 'beta\n' > "$HOME_DIR/config/codex-seat-auto-exclude"
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" --provider codex worker-destination --from work)
+  assert_equals alpha "$(printf '%s\n' "$out" | tail -1)" 'Codex must fall back to its leader'
+  printf 'alpha\n' > "$HOME_DIR/config/codex-seat"
+  printf 'beta\nwork\n' > "$HOME_DIR/config/codex-seat-auto-exclude"
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" --provider codex launch-destination --spare-only)
+  assert_equals alpha "$out" 'Codex dispatch with no alternative must keep its existing active-seat behavior'
+  pass 'Codex shares preference, early departure, and fallback behavior'
+}
+
+test_spawn_spares_a_healthy_leader() {
+  local id out
+  id=seat-spare-leader-spawn
+  spawn_session_case spawn-spare-leader "$id"
+  printf 'on\n' > "$HOME_DIR/config/claude-seat-spare-leader"
+  printf '%s\n' "$$" > "$HOME_DIR/state/.lock"
+  printf 'pid=%s\nharness=claude\nprofile=%s\n' "$$" "$SEATS_DIR/seat-max" > "$HOME_DIR/state/.lock-runtime"
+  seat_windows "$CASE_DIR/quota-spec" "$SEATS_DIR/seat-max" 90 '2099-01-01T00:00:00Z' 90 '2099-01-07T00:00:00Z' 50 50
+  seat_windows "$CASE_DIR/quota-spec" "$SEATS_DIR/seat-max-gmail" 60 '2099-01-01T00:00:00Z' 60 '2099-01-07T00:00:00Z' 30 30
+  out=$(run_spawn_here "$HOME_DIR" "$WT_DIR" "$FAKEBIN" "$LAUNCH_LOG" "$id" "$PROJ_DIR" 2>&1)
+  expect_code 0 "$?" "a fresh worker must start away from a healthy leader: $out"
+  assert_grep "claude_seat=$SEATS_DIR/seat-max-gmail" "$HOME_DIR/state/$id.meta" 'spawn must record the actual spared destination'
+  assert_equals seat-max "$(cat "$HOME_DIR/config/claude-seat")" 'one dispatch must not rotate active configuration'
+  pass 'real spawn uses the spare-leader launch choice'
+}
+
+test_spare_leader_preserves_destination_guards() {
+  local out
+  spare_leader_case spare-leader-guards
+  printf 'on\n' > "$HOME_DIR/config/claude-seat-spare-leader"
+  printf '70\n' > "$HOME_DIR/config/claude-seat-destination-min"
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" worker-destination --from work)
+  assert_equals alpha "$(printf '%s\n' "$out" | tail -1)" 'spare leader must not bypass the destination minimum'
+  printf '0\n' > "$HOME_DIR/config/claude-seat-destination-min"
+  printf '5\n' > "$HOME_DIR/config/claude-seat-floor"
+  printf '{"schemaVersion":1,"seats":{"beta":{"since":1,"provisional":false,"windows":{}}}}\n' > "$HOME_DIR/config/claude-seat-resting"
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" worker-destination --from work)
+  assert_equals alpha "$(printf '%s\n' "$out" | tail -1)" 'spare leader must not use a resting alternative'
+  pass 'spare leader retains destination minimum and resting guards'
+}
+
+test_spare_leader_handles_default_profile_and_codex_aliases() {
+  local out
+  spare_leader_case spare-leader-default
+  printf 'on\n' > "$HOME_DIR/config/claude-seat-spare-leader"
+  printf 'default\n' > "$HOME_DIR/config/claude-seat"
+  out=$(SEAT_TEST_AMBIENT_CONFIG_DIR="$SEATS_DIR/alpha" run_seat "$HOME_DIR" "$FAKEBIN" launch-destination)
+  assert_equals beta "$out" 'a default worker profile on the leader must use a different store'
+  make_codex_seat_case codex-spare-alias
+  codex_quota_fixture "$SEATS_DIR/alpha" 90
+  ln -s "$SEATS_DIR/alpha" "$SEATS_DIR/beta"
+  codex_quota_fixture "$SEATS_DIR/gamma" 60
+  codex_quota_fixture "$SEATS_DIR/work" 5
+  printf 'on\n' > "$HOME_DIR/config/codex-seat-spare-leader"
+  printf '%s\n' "$$" > "$HOME_DIR/state/.lock"
+  printf 'pid=%s\nharness=codex\nprofile=%s\n' "$$" "$SEATS_DIR/alpha" > "$HOME_DIR/state/.lock-runtime"
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" --provider codex worker-destination --from work)
+  assert_equals gamma "$out" 'another alias of the leader must also rank last'
+  pass 'default worker profiles and Codex aliases cannot hide the leader seat'
+}
+
+test_spare_leader_ranks_last_and_falls_back
+test_spare_leader_dispatch_and_watch_depart_early
+test_spare_leader_preserves_destination_guards
+test_spare_leader_handles_default_profile_and_codex_aliases
+test_spare_leader_missing_record_and_parent_binding
+test_codex_spare_leader_parity
+test_spawn_spares_a_healthy_leader

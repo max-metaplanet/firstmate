@@ -3296,19 +3296,29 @@ spawn_provider_depletion_gate() {
 # rotation's own gate; this only points THIS launch at its answer, writing no
 # seat file and touching no running worker. It runs first, so the extra-usage
 # and depletion gates below judge the seat the launch actually uses. A home with
-# no named seat or no switch trigger reads no quota here. Fresh Claude spawns
-# only, and --ignore-seat-hold is the same deliberate override as those gates.
+# no named seat, or neither a switch trigger nor spare-leader mode, reads no
+# quota here. Spare-leader mode also routes fresh Codex launches through the
+# shared selector. --ignore-seat-hold deliberately overrides both preferences.
 spawn_seat_session_gate() {
-  [ "$HARNESS" = claude ] && [ "$RELAUNCH" -eq 0 ] && [ "$IGNORE_SEAT_HOLD" -eq 0 ] || return 0
-  local seat_config dest active err
+  { [ "$HARNESS" = claude ] || [ "$HARNESS" = codex ]; } && [ "$RELAUNCH" -eq 0 ] && [ "$IGNORE_SEAT_HOLD" -eq 0 ] || return 0
+  local seat_config dest active err spare=0 label=Claude
+  local -a launch_options=()
+  if [ "$HARNESS" = codex ]; then
+    label=Codex
+    launch_options=(--spare-only)
+  fi
   seat_config=$(spawn_seat_config)
-  FM_SEAT_PROVIDER=claude CONFIG=$seat_config fm_seat_threshold >/dev/null || return 0
-  [ -n "$(FM_SEAT_PROVIDER=claude CONFIG=$seat_config fm_seat_list)" ] || return 0
+  FM_SEAT_PROVIDER=$HARNESS CONFIG=$seat_config fm_seat_spare_leader_enabled && spare=1
+  if [ "$spare" -eq 0 ]; then
+    [ "$HARNESS" = claude ] || return 0
+    FM_SEAT_PROVIDER=$HARNESS CONFIG=$seat_config fm_seat_threshold >/dev/null || return 0
+  fi
+  [ -n "$(FM_SEAT_PROVIDER=$HARNESS CONFIG=$seat_config fm_seat_list)" ] || return 0
   err=$(mktemp "${TMPDIR:-/tmp}/fm-spawn-session.XXXXXX") || return 0
   if ! dest=$(FM_HOME=$FM_HOME FM_CONFIG_OVERRIDE=$seat_config FM_STATE_OVERRIDE=$STATE \
-    "$SCRIPT_DIR/fm-seat.sh" --provider claude launch-destination 2>"$err"); then
+    "$SCRIPT_DIR/fm-seat.sh" --provider "$HARNESS" launch-destination ${launch_options[@]+"${launch_options[@]}"} 2>"$err"); then
     {
-      echo "error: this task is not started on a Claude seat with no 5-hour room:"
+      echo "error: this task is not started on a $label seat with no 5-hour room:"
       sed 's/^/  /' "$err"
       echo "  re-run with --ignore-seat-hold to start this task on the active seat anyway"
     } >&2
@@ -3316,11 +3326,16 @@ spawn_seat_session_gate() {
     spawn_wait_exit harness
   fi
   rm -f -- "$err"
-  active=$(FM_SEAT_PROVIDER=claude CONFIG=$seat_config fm_seat_active)
+  active=$(FM_SEAT_PROVIDER=$HARNESS CONFIG=$seat_config fm_seat_active)
   [ -n "$dest" ] && [ "$dest" != "$active" ] || return 0
-  SPAWN_SEAT_DIR=$(FM_SEAT_PROVIDER=claude CONFIG=$seat_config fm_seat_config_dir "$dest") || exit 1
-  printf "Claude seat: '%s' has no 5-hour room, so this worker launches on '%s'; the active seat is unchanged\n" \
-    "$active" "$dest" >&2
+  SPAWN_SEAT_DIR=$(FM_SEAT_PROVIDER=$HARNESS CONFIG=$seat_config fm_seat_config_dir "$dest") || exit 1
+  if [ "$spare" -eq 1 ]; then
+    printf "%s seat: this worker launches on '%s' under the spare-leader and session-room policy; active seat '%s' is unchanged\n" \
+      "$HARNESS" "$dest" "$active" >&2
+  else
+    printf "Claude seat: '%s' has no 5-hour room, so this worker launches on '%s'; the active seat is unchanged\n" \
+      "$active" "$dest" >&2
+  fi
 }
 
 # Refuse a missing selected seat before quota routing can mask it or choose a

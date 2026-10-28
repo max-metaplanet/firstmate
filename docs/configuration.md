@@ -1260,6 +1260,9 @@ Four optional files drive the automatic mode, and four more drive the quota floo
 Seven of those eight hold a percentage, and every percentage counts percent LEFT, the same direction the quota viewer reports; only `config/claude-seat-session-share` counts something else, and says so where it is defined.
 `config/claude-seat-threshold` holds one percentage between 0 and 100: the percent left on the ACTIVE seat at or below which an armed watch switches future workers to another seat.
 `config/claude-seat-destination-min` holds one percentage between 0 and 100: the percent left a candidate seat must EXCEED to be a switch destination, so a switch never lands on a nearly empty seat; absent, no headroom level is asked of a candidate.
+`config/claude-seat-spare-leader` accepts `on` or `off`; absent means `off`.
+`on` enables the [soft leader-seat preference](claude-seats.md#sparing-the-leaders-seat) for future worker and secondmate launches and automatic rotation.
+An unreadable or unrecognized value leaves the preference off.
 Separately, and with nothing configured at all, no switch lands on a seat whose live quota reads used up: every switch - automatic rotation and `bin/fm-seat.sh switch <name>` alike, for Claude and for Codex - refuses such a destination, names the seat and the reset time it comes back at, and accepts `--force` as the override.
 That refusal is computed from a fresh read each time and recorded nowhere, so a seat returns to rotation by itself once its reset has passed and a read shows headroom, with nothing to re-add by hand.
 A quota that gives no verdict is never read as used up, so an idle seat whose access token has merely lapsed stays a destination exactly as it was.
@@ -1295,12 +1298,12 @@ A home with no named seat of a vendor reads no quota in that gate and is never h
 An unreadable or ambiguous quota is never guessed at - it skips a candidate, blocks a switch, and holds dispatch, each saying so rather than implying a number; an active seat whose token has merely lapsed is the one dispatch exception, because only a launch renews it.
 A hold stops work being STARTED; a worker already running keeps its own seat and can still draw extra usage mid-task, which only the account admin setting prevents, so `stop` is never a guarantee of zero spend.
 `bin/fm-spawn.sh --ignore-seat-hold` pushes one spawn through a hold without changing the setting, and `bin/fm-seat.sh status` reports whether dispatch is held right now and why.
-All eleven are inherited into local secondmate homes through the primary-authoritative configuration contract, so a secondmate's own Claude crewmates launch on the same seat and no local home automatically rotates onto a seat the primary withheld or the floor rested; a switch, and any pass that changes which seats are resting, runs `bin/fm-config-push.sh --local-only` to carry the change to running local secondmates at once without contacting remote routes.
+These seat settings are inherited into local secondmate homes through the primary-authoritative configuration contract, so a secondmate's own Claude crewmates launch on the same seat and no local home automatically rotates onto a seat the primary withheld or the floor rested; a switch, and any pass that changes which seats are resting, runs `bin/fm-config-push.sh --local-only` to carry the change to running local secondmates at once without contacting remote routes.
 They are never sent to a remote secondmate route, because a seat is a profile logged in on this machine only.
 
 The optional `config/claude-seat-local` is how one local home declines that inheritance, for an operator who wants a single home spending a separate account - a personal or client account while the rest of the machine runs on the team account.
 It is a presence flag placed in the declining home's own `config/`, its content is never read, and it is deliberately not inheritable itself, so one home's billing choice is never set for it from another home.
-A home that carries it keeps its own `claude-seat`, `claude-seats-root`, `claude-seat-threshold`, `claude-seat-destination-min`, `claude-seat-extra-usage`, `claude-seat-auto-exclude`, `claude-seat-floor`, `claude-seat-floor-readd`, `claude-seat-floor-dwell`, `claude-seat-session-share`, and `claude-seat-resting` exactly as they are, including absent, at every local convergence point; with the flag nowhere on the machine, every local home still takes each switch together, byte for byte as before it existed.
+A home that carries it keeps its own `claude-seat`, `claude-seats-root`, `claude-seat-threshold`, `claude-seat-destination-min`, `claude-seat-spare-leader`, `claude-seat-extra-usage`, `claude-seat-auto-exclude`, `claude-seat-floor`, `claude-seat-floor-readd`, `claude-seat-floor-dwell`, `claude-seat-session-share`, and `claude-seat-resting` exactly as they are, including absent, at every local convergence point; with the flag nowhere on the machine, every local home still takes each switch together, byte for byte as before it existed.
 Any `config/claude-seat-local` path declines, whatever its type: a directory or a symlink, even a dangling one, counts the same as a plain file.
 [One home on a separate account](claude-seats.md#one-home-on-a-separate-account) owns the operator procedure and how `bin/fm-seat.sh status` and each switch report a declining home.
 
@@ -1329,9 +1332,9 @@ This is the single automatic Codex leader gate and is local to the home.
 Codex uses the same seat resolver with provider `codex`, separate from Claude's settings.
 `config/codex-seat` holds the active seat name for new Codex workers, and `config/codex-seats-root` defaults to `$HOME/.codex-seats`.
 A named seat must resolve to an existing home with `auth.json`; an invalid configured name or missing home refuses the launch instead of selecting another account.
-`config/codex-seat-threshold`, `config/codex-seat-destination-min`, and `config/codex-seat-auto-exclude` have the corresponding Claude settings' value formats and rotation semantics above.
+`config/codex-seat-threshold`, `config/codex-seat-destination-min`, `config/codex-seat-spare-leader`, and `config/codex-seat-auto-exclude` have the corresponding Claude settings' value formats and rotation semantics above.
 The used-up destination refusal and the spawn gate above apply to Codex unchanged, and when every Codex home reads used up the armed watch moves nothing at all - a switch between two empty homes is the one move worse than staying - reporting each home's reset and the Claude seat with headroom once per crossing.
-These five files are inherited by local secondmate homes only, and `config/codex-seat-local` declines only Codex inheritance using the same presence semantics as `claude-seat-local`.
+These six files are inherited by local secondmate homes only, and `config/codex-seat-local` declines only Codex inheritance using the same presence semantics as `claude-seat-local`.
 Codex does not support the Claude paid extra-usage, floor, or session-share settings.
 
 New Codex launches prefer the named seat over ambient `CODEX_HOME` and record the resolved directory as `codex_seat=`.
