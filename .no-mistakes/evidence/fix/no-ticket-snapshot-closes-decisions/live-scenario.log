@@ -1,0 +1,26 @@
+== BASE (0e3284c7) fleet snapshot ==
+{"id":"scout-busy-done","state":"working","pending":false,"blocked":false,"src":"pane","keys":[],"report":true}
+{"id":"scout-done","state":"blocked","pending":false,"blocked":true,"src":"status-log","keys":["access"],"report":true}
+{"id":"ship-answered","state":"unknown","pending":false,"blocked":false,"src":"none","keys":[],"report":false}
+{"id":"ship-busy","state":"working","pending":false,"blocked":false,"src":"pane","keys":[],"report":false}
+{"id":"ship-done","state":"parked","pending":true,"blocked":false,"src":"status-log","keys":["choice"],"report":false}
+{"id":"ship-failed","state":"parked","pending":true,"blocked":false,"src":"status-log","keys":["choice"],"report":false}
+{"id":"ship-runstep","state":"done","pending":false,"blocked":false,"src":"run-step","keys":[],"report":false}
+== FIX (HEAD) fleet snapshot ==
+{"id":"scout-busy-done","state":"working","pending":true,"blocked":false,"src":"pane","keys":["q1"],"report":true}
+{"id":"scout-done","state":"blocked","pending":false,"blocked":true,"src":"status-log","keys":["access"],"report":true}
+{"id":"ship-answered","state":"unknown","pending":false,"blocked":false,"src":"none","keys":[],"report":false}
+{"id":"ship-busy","state":"working","pending":true,"blocked":false,"src":"pane","keys":["api"],"report":false}
+{"id":"ship-done","state":"parked","pending":true,"blocked":false,"src":"status-log","keys":["choice"],"report":false}
+{"id":"ship-failed","state":"parked","pending":true,"blocked":false,"src":"status-log","keys":["choice"],"report":false}
+{"id":"ship-runstep","state":"done","pending":true,"blocked":false,"src":"run-step","keys":["choice"],"report":false}
+== authoritative fold (fm-classify-lib status_open_decisions) ==
+scout-busy-done: [q1]
+scout-done: [access]
+ship-answered: []
+ship-busy: [api]
+ship-done: [choice]
+ship-failed: [choice]
+ship-runstep: [choice]
+== adversarial: answer ship-done then re-snapshot ==
+{"id":"ship-done","state":"unknown","pending":false,"blocked":false,"src":"none","keys":[],"report":false}
