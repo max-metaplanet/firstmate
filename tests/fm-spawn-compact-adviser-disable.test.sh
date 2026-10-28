@@ -93,6 +93,11 @@ assert_prepush_env() {  # <harness> <expected>
   seen=$(emitted_launch_env "$FAKEBIN_DIR" "$LAUNCH_LOG" "$PANE_LOG") \
     || fail "the emitted launch failed to run the pre-push probe"
   assert_equals "$2" "$seen" "the launched $1 agent must receive the expected pre-push setting"
+  if [ "$2" = 0 ]; then
+    install_env_probe "$FAKEBIN_DIR" "$1" PATH
+    seen=$(emitted_launch_env "$FAKEBIN_DIR" "$LAUNCH_LOG" "$PANE_LOG") || fail 'build PATH probe failed'
+    assert_equals "$ROOT/bin/build-shims" "${seen%%:*}" 'fresh worker must prefer build shims'
+  fi
 }
 
 assert_test_worker_env() {  # <harness> <expected>
@@ -414,6 +419,10 @@ $launch") \
       TMUX=synthetic-pane PREPUSH_TESTS=1 /bin/sh -c "$preamble
 $launch") || fail "$harness relaunch pre-push probe failed"
     assert_equals 0 "$seen" "$harness relaunch with allowlist=$setting must receive PREPUSH_TESTS=0"
+    install_env_probe "$dir/fakebin" "$harness" PATH
+    seen=$(env -i HOME="$dir/user-home" PATH="$dir/fakebin:$PATH" TERM=xterm \
+      /bin/sh -c "$launch") || fail 'relaunch build PATH probe failed'
+    assert_equals "$ROOT/bin/build-shims" "${seen%%:*}" 'relaunched worker must prefer build shims'
     for variable in VITEST_MAX_WORKERS PIPELINE_TEST_MAX_WORKERS; do
       install_env_probe "$dir/fakebin" "$harness" "$variable"
       seen=$(env -i HOME="$dir/user-home" PATH="$dir/fakebin:$PATH" TERM=xterm \

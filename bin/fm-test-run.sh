@@ -337,7 +337,7 @@ cpu_count() {
 family_for_basename() {
   case "$1" in
     fm-arm-pretool-check.test.sh|fm-ask-user-authority.test.sh|\
-    fm-bearings-board.test.sh|\
+    fm-bearings-board.test.sh|fm-build-lock.test.sh|\
     fm-brief.test.sh|fm-dod-lib.test.sh|fm-vendor-auth-probe.test.sh|fm-seat-renew.test.sh|fm-seat-lock.test.sh|fm-seat-vendor-renew.test.sh|\
     fm-calm-pi-extension.test.sh|fm-cd-pretool-check.test.sh|\
     fm-classify-decision-key.test.sh|\
@@ -1716,6 +1716,11 @@ families_for_changed_path() {
       ;;
     bin/fm-procevent-quota.sh)
       printf '%s\n' "__script__:fm-procevent-quota.test.sh"
+      ;;
+    bin/fm-build-lock.py|bin/build-shims/*)
+      printf '%s\n' "__script__:fm-build-lock.test.sh"
+      printf '%s\n' "__script__:fm-spawn-compact-adviser-disable.test.sh"
+      printf '%s\n' "__script__:fm-seat.test.sh"
       ;;
     bin/fm-lead-seat.py)
       printf '%s\n' "__script__:fm-lead-seat.test.sh"

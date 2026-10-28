@@ -33,6 +33,9 @@
 # preserving stdin, stdout, argv, exit status, and signal delivery. Completed
 # records are pruned at the next launch; readers verify PID plus start stamp.
 # No running agent or pipeline run is ever cancelled, killed, or restarted here.
+# The managed agent and its children receive build-shims on PATH; this cannot
+# change the shared daemon's configured-command environment. fm-build-lock.py
+# owns supported build entrypoints, the machine lock, and explicit bypass.
 set -u
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FM_HOME=${FM_HOME:-${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}}
@@ -132,6 +135,8 @@ cmd_launch() {
   quota_path=$(quota_tool_path "$STATE") || quota_rc=$?
   [ "$quota_rc" -eq 0 ] || quota_path=''
   decision=$(
+    # The recorded quota tool path is deliberately scoped to this probe.
+    # shellcheck disable=SC2030
     [ -z "$quota_path" ] || PATH="$quota_path:$PATH"
     fm_seat_dispatch_decision "$profile"
   )
@@ -171,6 +176,9 @@ cmd_launch() {
     '. + {pid: $pid, started: $started}' > "$record" && mv "$record" "$record.json"; }; then
       rm -f "$record"; die 'could not record pipeline launch';
   fi
+  # Start from the daemon's PATH, not the quota probe's local addition.
+  # shellcheck disable=SC2031
+  export PATH="$SCRIPT_DIR/build-shims:$PATH"
   exec python3 "$SCRIPT_DIR/fm-seat-lock.py" guard --provider claude \
     --profile "$profile" -- "$native" "$@"
 }

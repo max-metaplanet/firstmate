@@ -7064,7 +7064,11 @@ LAUNCH="export COMPACT_ADVISER_DISABLE=1; $LAUNCH"
 # both the agent and pane shell, including filtered launches and relaunches.
 if [ "$KIND" = ship ] || [ "$KIND" = scout ]; then
   WORKER_TEST_ENV='PREPUSH_TESTS=0 VITEST_MAX_WORKERS=1 PIPELINE_TEST_MAX_WORKERS=1'
-  LAUNCH="export $WORKER_TEST_ENV; $LAUNCH"
+  # Keep the runtime PATH: package managers add their own bins, while our node
+  # shim still catches Next's CLI. This common site also covers relaunch and
+  # the env -i launch floor. fm-build-lock.py owns selection and lock lifetime.
+  WORKER_BUILD_ENV="export PATH=$(shell_quote "$FM_ROOT/bin/build-shims"):\$PATH"
+  LAUNCH="$WORKER_BUILD_ENV; export $WORKER_TEST_ENV; $LAUNCH"
 fi
 # When the live-harness gate has exported DISABLE_AUTOUPDATER into this spawn's
 # own environment, carry it into the launch command text so Claude Code's
@@ -7126,6 +7130,7 @@ fi
 if [ "$KIND" = ship ] || [ "$KIND" = scout ]; then
   spawn_send_text_line "$T" "export FM_TASK_ID=$ID"
   spawn_send_text_line "$T" "export $WORKER_TEST_ENV"
+  spawn_send_text_line "$T" "$WORKER_BUILD_ENV"
 fi
 # Send through the exact channel that already ships GOTMPDIR, so every backend
 # and harness - ship, scout, and secondmate - gets it before launch. Skipped

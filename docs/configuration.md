@@ -1400,6 +1400,9 @@ These controls apply on fresh launches and relaunches, with or without an allowl
 Projects must read the controls for them to take effect; project task-environment filtering still applies.
 Core's pipeline reads a separate control before passing its explicit Vitest worker flag.
 
+Ship and scout launches also prepend the heavy-build shims, as does the managed no-mistakes Claude wrapper.
+[`fm-build-lock.py`](../bin/fm-build-lock.py) owns the supported entrypoints, machine lock scope, Linux/macOS behavior, single-command bypass, and pipeline coverage limits.
+
 Other ambient names must be listed explicitly, including custom credential-store locations, proxy settings, and certificate overrides when required by the selected tools.
 The command shell and worker may still create their own variables.
 
