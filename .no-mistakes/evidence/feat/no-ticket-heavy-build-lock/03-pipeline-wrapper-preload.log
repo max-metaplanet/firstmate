@@ -1,0 +1,6 @@
+### S8 managed no-mistakes Claude wrapper gives its agent the preload; agent's next build waits for a held lock
+pipeline Claude: warning: the default seat's profile is not recorded for this home's lead; using the wrapper's installed default profile ~/.claude-seats/seat-max2. Restarting the lead records it
+agent NODE_OPTIONS=--require=/tmp/fm-blk-next.v0GW2x/install3/fm-build-lock.js
+waiting for build lock (held by pid 2712719)
+ ✓ Compiled successfully in 376ms
+wrapper rc=0

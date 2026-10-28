@@ -1,0 +1,51 @@
+05:34:38.439 [A] 
+05:34:38.442 [A] > build
+05:34:38.444 [A] > next build
+05:34:38.447 [A] 
+05:34:38.871 [A]    ▲ Next.js 15.5.28
+05:34:38.874 [A] 
+05:34:38.886 [A]    Linting and checking validity of types ...
+05:34:38.943 [A]    Creating an optimized production build ...
+05:34:39.436 [B] 
+05:34:39.440 [B] > build
+05:34:39.445 [B] > next build
+05:34:39.451 [B] 
+05:34:39.545 [B] waiting for build lock (held by pid 2686691)
+05:34:40.753 [A]  ✓ Compiled successfully in 1019ms
+05:34:40.756 [A]    Collecting page data ...
+05:34:41.164 [A]    Generating static pages (0/3) ...
+05:34:41.398 [A]  ✓ Generating static pages (3/3)
+05:34:41.618 [A]    Finalizing page optimization ...
+05:34:41.622 [A]    Collecting build traces ...
+05:34:44.517 [A] 
+05:34:44.521 [A] Route (pages)                                Size  First Load JS
+05:34:44.525 [A] ┌ ○ /                                       223 B         107 kB
+05:34:44.527 [A] └ ○ /404                                    180 B         107 kB
+05:34:44.530 [A] + First Load JS shared by all              107 kB
+05:34:44.533 [A]   ├ chunks/framework-28b60818f5cffd83.js  68.7 kB
+05:34:44.535 [A]   ├ chunks/main-4c93686ef881190d.js       37.1 kB
+05:34:44.538 [A]   └ other shared chunks (total)             952 B
+05:34:44.540 [A] 
+05:34:44.542 [A] ○  (Static)  prerendered as static content
+05:34:44.544 [A] 
+05:34:44.882 [B]    ▲ Next.js 15.5.28
+05:34:44.885 [B] 
+05:34:44.892 [B]    Linting and checking validity of types ...
+05:34:44.945 [B]    Creating an optimized production build ...
+05:34:46.750 [B]  ✓ Compiled successfully in 980ms
+05:34:46.753 [B]    Collecting page data ...
+05:34:47.055 [B]    Generating static pages (0/3) ...
+05:34:47.239 [B]  ✓ Generating static pages (3/3)
+05:34:47.383 [B]    Finalizing page optimization ...
+05:34:47.386 [B]    Collecting build traces ...
+05:34:50.029 [B] 
+05:34:50.032 [B] Route (pages)                                Size  First Load JS
+05:34:50.035 [B] ┌ ○ /                                       223 B         107 kB
+05:34:50.037 [B] └ ○ /404                                    180 B         107 kB
+05:34:50.039 [B] + First Load JS shared by all              107 kB
+05:34:50.042 [B]   ├ chunks/framework-28b60818f5cffd83.js  68.7 kB
+05:34:50.044 [B]   ├ chunks/main-4c93686ef881190d.js       37.1 kB
+05:34:50.046 [B]   └ other shared chunks (total)             952 B
+05:34:50.048 [B] 
+05:34:50.050 [B] ○  (Static)  prerendered as static content
+05:34:50.052 [B] 

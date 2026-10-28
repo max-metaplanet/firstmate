@@ -1,0 +1,26 @@
+### S9 worker pane-shell launch prefix (bash and POSIX sh panes; gen2 simulates relaunch with preload already inherited)
+--- pane wbash1
+PANE[bash gen1] NODE_OPTIONS=--max-old-space-size=4096 --require=/tmp/fm-blk-next.v0GW2x/install4/fm-build-lock.js
+waiting for build lock (held by pid 2717495)
+ ✓ Compiled successfully in 435ms
+PANE-DONE
+--- pane wbash2
+PANE[bash gen2] NODE_OPTIONS=--max-old-space-size=4096 --require=/tmp/fm-blk-next.v0GW2x/install4/fm-build-lock.js
+waiting for build lock (held by pid 2717495)
+ ✓ Compiled successfully in 352ms
+PANE-DONE
+--- pane wsh1
+waiting for build lock (held by pid 2717495)
+ ✓ Compiled successfully in 382ms
+PANE-DONE
+--- pane wsh2
+ ✓ Compiled successfully in 440ms
+PANE-DONE
+--- generated env files
+==> /tmp/fm-blk-next.v0GW2x/launchdir/build-lock.1.sh <==
+export NODE_OPTIONS='--max-old-space-size=4096 --require=/tmp/fm-blk-next.v0GW2x/install4/fm-build-lock.js'
+
+==> /tmp/fm-blk-next.v0GW2x/launchdir/build-lock.2.sh <==
+export NODE_OPTIONS='--max-old-space-size=4096 --require=/tmp/fm-blk-next.v0GW2x/install4/fm-build-lock.js'
+PANE-DONE
+PANE-sh (recaptured): SHPANE --max-old-space-size=4096 --require=/tmp/fm-blk-next.v0GW2x/install4/fm-build-lock.js

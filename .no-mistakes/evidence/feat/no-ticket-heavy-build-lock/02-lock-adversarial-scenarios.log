@@ -1,0 +1,31 @@
+### S2 non-build node commands pass through while the lock is held
+node -e 0                                     rc=0 elapsed=0.11s waited=no
+node /tmp/fm-blk-next.v0GW2x/app/node_modules/next/dist/bin/next --version rc=0 elapsed=0.11s waited=no
+node /tmp/fm-blk-next.v0GW2x/app/node_modules/next/dist/bin/next build --help rc=0 elapsed=0.10s waited=no
+### S3 FM_BUILD_LOCK_BYPASS=1 builds immediately while held
+bypass build rc=0 elapsed=5.1s waited=no holder_alive=yes
+### S4 SIGKILLed holder releases the lock to a waiting real build
+waiter waiting before kill: 1
+waiter compiling before kill: 0
+killed holder 2694827 at 05:35:26
+/tmp/fm-blk-next.v0GW2x/scen.sh: line 20: 2694827 Killed                     $R/bin/fm-build-lock.py -- sleep 15
+waiting for build lock (held by pid 2694827)
+ ✓ Compiled successfully in 379ms
+waiter rc=0
+### S5 nested build under explicit wrapper with scrubbed env (no FM_BUILD_LOCK_HELD) does not deadlock
+nested rc=0 (124=deadlock timeout) elapsed=5.0s waited=no
+### S6 a failing build's exit status propagates through the lock
+failing build rc=1 (expect non-zero)
+Failed to compile.
+Error:   [31mx[0m Unexpected eof
+### S6b unrelated process holding the lock: build waits (not misread as ancestor)
+build rc=0 elapsed=11.2s waited=yes
+### S7 removing the source checkout leaves node working (installed copy only)
+entry: --require=/tmp/fm-blk-next.v0GW2x/install2/fm-build-lock.js
+source exists after rm: no
+node -e works, rc follows
+rc=0
+ ✓ Compiled successfully in 514ms
+build rc=0
+### S7b contrast: a checkout-pinned --require to a missing file breaks node (the hazard being avoided)
+Cannot find module '/tmp/fm-blk-next.v0GW2x/gone/fm-build-lock.js'

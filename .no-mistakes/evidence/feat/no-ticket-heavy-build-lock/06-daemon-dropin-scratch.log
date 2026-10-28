@@ -1,0 +1,7 @@
+### S11 install-daemon-env into a scratch unit dir (shared daemon untouched)
+wrote /tmp/fm-blk-next.v0GW2x/units/no-mistakes-daemon-abc.service.d/fm-build-lock.conf; activates at the next `systemctl --user daemon-reload` and no-mistakes-daemon-abc.service restart
+rc=0
+[Service]
+Environment="NODE_OPTIONS=--require=/tmp/fm-blk-next.v0GW2x/install5/fm-build-lock.js"
+build lock: no no-mistakes daemon unit in /tmp/fm-blk-next.v0GW2x/empty-units
+no-unit rc=75

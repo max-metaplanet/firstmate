@@ -1,0 +1,4 @@
+### S10 fish pane shell sources the worker build-lock launch prefix (fish, version 4.9.3)
+FISHPANE --max-old-space-size=4096 --require=/tmp/fm-blk-next.v0GW2x/install4/fm-build-lock.js
+waiting for build lock (held by pid 2732093)
+(fish pane full capture from rerun: FISHPANE --max-old-space-size=4096 --require=/tmp/fm-blk-next.v0GW2x/install4/fm-build-lock.js; waiting for build lock (held by pid ...); Compiled successfully; FISH-DONE 0)
