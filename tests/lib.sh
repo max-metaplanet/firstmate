@@ -94,6 +94,9 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=tests/scratch-root.sh
 . "$(dirname "${BASH_SOURCE[0]}")/scratch-root.sh"
 fm_test_scratch_root_init "$ROOT" || return 1
+# Launches and pipeline wrappers install the build-lock preload; keep that copy
+# in scratch rather than the developer's installed one.
+export FM_BUILD_LOCK_INSTALL_DIR="${FM_TEST_SCRATCH_ROOT:-${TMPDIR:-/tmp}}/fm-build-lock-install"
 
 # --- reporters --------------------------------------------------------------
 
@@ -122,11 +125,26 @@ fm_test_launch_git_prefix() {  # <launch>
   printf '%s env-file %s%s' "$helper" "$tail" "$end"
 }
 
-# The command a pane runs after the launch's Git configuration prefix and its
+# The worker build-lock prefix, reused the same way as the Git one above;
+# tests/fm-build-lock.test.sh executes the helper it names.
+fm_test_launch_build_prefix() {  # <launch>
+  local launch=$1 helper tail end=' || return 1 2>/dev/null || exit 1; '
+  case "$launch" in
+    *' node-env-file '*"$end"*) ;;
+    *) fail "launch has no complete build-lock prefix" ;;
+  esac
+  helper=${launch%%' node-env-file '*}
+  helper=${helper##*; }
+  tail=${launch#*' node-env-file '}
+  tail=${tail%%"$end"*}
+  printf '%s node-env-file %s%s' "$helper" "$tail" "$end"
+}
+
+# The command a pane runs after the launch's configuration prefixes and its
 # leading export statements, for suites that split it into arguments.
 fm_test_launch_command() {  # <launch>
   local command=$1 end=' || return 1 2>/dev/null || exit 1; '
-  case "$command" in *"$end"*) command=${command#*"$end"} ;; esac
+  case "$command" in *"$end"*) command=${command##*"$end"} ;; esac
   while [[ "$command" == export\ *\;* ]]; do
     command=${command#*; }
   done

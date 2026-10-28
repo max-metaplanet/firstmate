@@ -7064,7 +7064,14 @@ LAUNCH="export COMPACT_ADVISER_DISABLE=1; $LAUNCH"
 # both the agent and pane shell, including filtered launches and relaunches.
 if [ "$KIND" = ship ] || [ "$KIND" = scout ]; then
   WORKER_TEST_ENV='PREPUSH_TESTS=0 VITEST_MAX_WORKERS=1 PIPELINE_TEST_MAX_WORKERS=1'
-  LAUNCH="export $WORKER_TEST_ENV; $LAUNCH"
+  # The build-lock preload rides NODE_OPTIONS, which agent shells keep even
+  # when their rc or snapshot rebuilds PATH. Like the Git configuration prefix,
+  # the helper appends to the NODE_OPTIONS the worker inherits (after any launch
+  # environment filtering) and writes one plain export statement that the pane
+  # shell, fish included, sources. fm-build-lock.py owns the installed preload,
+  # selection, and lock lifetime.
+  BUILD_LOCK_ENV_FILE=$(shell_quote "$LAUNCH_DIR/build-lock.$SPAWN_GEN.sh")
+  LAUNCH="export $WORKER_TEST_ENV; $(shell_quote "$FM_ROOT/bin/fm-build-lock.py") node-env-file $BUILD_LOCK_ENV_FILE && . $BUILD_LOCK_ENV_FILE || return 1 2>/dev/null || exit 1; $LAUNCH"
 fi
 # When the live-harness gate has exported DISABLE_AUTOUPDATER into this spawn's
 # own environment, carry it into the launch command text so Claude Code's

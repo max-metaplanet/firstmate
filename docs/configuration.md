@@ -1400,6 +1400,10 @@ These controls apply on fresh launches and relaunches, with or without an allowl
 Projects must read the controls for them to take effect; project task-environment filtering still applies.
 Core's pipeline reads a separate control before passing its explicit Vitest worker flag.
 
+Ship and scout launches also add the heavy-build lock preload to `NODE_OPTIONS`, as does the managed no-mistakes Claude wrapper; each names the copy they install under `~/.local/share/firstmate-build-lock`, never a checkout.
+`bin/fm-build-lock.py install-daemon-env` gives the no-mistakes daemon's configured commands the same preload through a systemd user drop-in; it takes effect at the daemon's next reload and restart and never restarts it.
+[`fm-build-lock.py`](../bin/fm-build-lock.py) owns the supported entrypoints, machine lock scope, Linux/macOS behavior, single-command bypass, and coverage limits.
+
 Other ambient names must be listed explicitly, including custom credential-store locations, proxy settings, and certificate overrides when required by the selected tools.
 The command shell and worker may still create their own variables.
 

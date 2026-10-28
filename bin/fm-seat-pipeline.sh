@@ -33,6 +33,9 @@
 # preserving stdin, stdout, argv, exit status, and signal delivery. Completed
 # records are pruned at the next launch; readers verify PID plus start stamp.
 # No running agent or pipeline run is ever cancelled, killed, or restarted here.
+# The managed agent and its children receive the build-lock preload in
+# NODE_OPTIONS; fm-build-lock.py install-daemon-env covers the daemon's own
+# configured commands. fm-build-lock.py owns the lock and explicit bypass.
 set -u
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FM_HOME=${FM_HOME:-${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}}
@@ -171,6 +174,11 @@ cmd_launch() {
     '. + {pid: $pid, started: $started}' > "$record" && mv "$record" "$record.json"; }; then
       rm -f "$record"; die 'could not record pipeline launch';
   fi
+  build_option=$("$SCRIPT_DIR/fm-build-lock.py" node-option) || die 'could not resolve the build lock preload'
+  case " ${NODE_OPTIONS-} " in
+    *" $build_option "*) ;;
+    *) export NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }$build_option" ;;
+  esac
   exec python3 "$SCRIPT_DIR/fm-seat-lock.py" guard --provider claude \
     --profile "$profile" -- "$native" "$@"
 }
