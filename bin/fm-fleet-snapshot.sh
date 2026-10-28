@@ -62,8 +62,8 @@
 #     age derived from it is published here. A future event time leaves that age
 #     unknown rather than clamped to zero.
 #     hints.open_decisions is the keyed open-decision set returned by
-#     fm-classify-lib.sh's authoritative status_open_decisions fold and reconciled
-#     against current_state; hints.pending_decision and hints.blocked_event are
+#     fm-classify-lib.sh's authoritative status_open_decisions fold;
+#     hints.pending_decision and hints.blocked_event are
 #     booleans derived from that set.
 #     endpoint.exists is the cheap local backend endpoint-presence read.
 #     endpoint.agent_alive is populated for local secondmates only, where it is
@@ -801,24 +801,9 @@ task_json_lines() {
       fi
     fi
 
-    # Durable keyed open-decision set: fold the WHOLE status stream
-    # (fm-classify-lib.sh's status_open_decisions) so a later unrelated event can
-    # never mask a still-open captain decision. The set is derived purely from the
-    # keyed fold - never from report bodies or decision-like prose. The single jq
-    # pass below then reconciles it against the crew LIFECYCLE (current_json's
-    # state/source plus $kind), clearing only a stale decision the crew has
-    # provably moved past. Two lifecycle signals clear it, neither of which reads
-    # any report content:
-    #   - a live activity read (run-step or busy pane) that is working/done, so a
-    #     crew that resumed past a gate is not still reported as parked; and
-    #   - a TERMINAL done/failed state on a single-owner task (scout or ship), whose
-    #     deliverable is its report or PR, so a COMPLETED scout surfaces only as a
-    #     report POINTER, never as a reopened pending decision.
-    # Secondmates are excluded from lifecycle clearing: they are persistent and
-    # multiplex many concerns onto one stream, so activity on one concern must
-    # never clear another concern's keyed decision. A parked/blocked state, or a
-    # non-authoritative status-log/none read on a still-live task, keeps the fold's
-    # open decision surfacing.
+    # Publish the authoritative keyed fold unchanged: activity and terminal
+    # lifecycle reads do not answer an open decision. Report pointers and current
+    # state remain independent of the fold's open/closed semantics.
     status_open_decisions_to open_decisions_tsv "$status_log"
 
     endpoint_exists=null
@@ -896,18 +881,9 @@ task_json_lines() {
       --argjson endpoint_exists "$endpoint_exists" \
       --arg open_decisions_tsv "$open_decisions_tsv" \
       '
-      ($current_state.state // "") as $cs_state
-      | ($current_state.source // "") as $cs_source
-      | ( [ $open_decisions_tsv | splits("\n") | select(length > 0)
-            | (capture("^(?<key>[^\t]*)\t(?<verb>[^\t]*)\t(?<summary>.*)$")?)
-            | select(. != null) ] ) as $open_all
-      | ( if ($kind != "secondmate")
-            and ( ( ( ($cs_source == "run-step") or ($cs_source == "pane") )
-                    and ($cs_state != "parked") and ($cs_state != "blocked") )
-                  or ( ($cs_state == "done") or ($cs_state == "failed") ) )
-          then []
-          else $open_all
-          end ) as $open_decisions
+      [ $open_decisions_tsv | splits("\n") | select(length > 0)
+        | (capture("^(?<key>[^\t]*)\t(?<verb>[^\t]*)\t(?<summary>.*)$")?)
+        | select(. != null) ] as $open_decisions
       | {
           id:$id,
           kind:$kind,
