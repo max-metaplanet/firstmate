@@ -41,7 +41,10 @@
 # always stay out of local_scripts, even when installed or opted in. Other
 # candidates run cheapest first within the measured serial-work budget below.
 # If every candidate is deferred, run the local Test contract instead.
-# The Test command owns the hard execution deadline and its local load allowance.
+# This budget chooses WHICH suites run, from modeled CI work. The Test command
+# owns the wall clock, through fm-test-run.sh --deadline-secs and that script's
+# per-script bound, because a contended local host diverges from the hints per
+# script rather than by a factor the budget could carry.
 #
 # Inputs, all optional and read from the environment:
 #   FM_CI_EVENT               the GitHub event name (default: pull_request)
@@ -418,13 +421,18 @@ EOF
 
 select_tests
 
-# Five minutes of modeled serial work, using fm-test-run.sh --list-weighted's
-# CI duration hints (docs/fm-test-portable-shards.md). This admits the 156781ms
-# runner contract while excluding the 334000-434000ms supervision-host suites;
-# cheapest-first admission also bounds a large family of individually fast tests.
-# This bounds selection only; commands.test allows execution headroom because
-# CI timing hints can understate a loaded developer machine.
-LOCAL_BUDGET_MS=300000
+# Modeled serial work admitted locally, using fm-test-run.sh --list-weighted's
+# CI duration hints (docs/fm-test-portable-shards.md). Cheapest-first admission
+# within it also bounds a large family of individually fast tests.
+#
+# It is deliberately far below the hints' own sum. Those hints are Ubuntu CI
+# measurements and this budget is spent on a contended developer machine, where
+# the two diverge per script rather than by a common factor; that doc owns the
+# measured spread. So this figure buys a small, cheap, relevant selection, and
+# it never doubles as a predicted duration: commands.test bounds the wall clock
+# itself with fm-test-run.sh --deadline-secs, which defers unstarted work
+# rather than failing the invocation.
+LOCAL_BUDGET_MS=45000
 local_scripts=
 local_deferred=
 select_local_tests() {

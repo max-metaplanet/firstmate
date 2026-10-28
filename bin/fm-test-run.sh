@@ -96,6 +96,21 @@
 #                   interrupt a running script; per-script hangs are
 #                   bounded by --per-script-timeout-secs. Pathological output
 #                   sinks that block finalization are explicitly out of scope.
+#   --deadline-secs N
+#                   stop STARTING scripts once the run's measured wall clock
+#                   reaches N seconds, and report every unstarted script as
+#                   deferred coverage instead of failing (0 disables, the
+#                   default). It is the opposite verdict from --max-wall-ms: a
+#                   caller whose selection was sized by a duration ESTIMATE
+#                   wants a missed estimate to cost coverage, the way the
+#                   selection's own budget already defers work, rather than to
+#                   cost the whole invocation. Scripts already running are
+#                   never interrupted, so a caller's own hard bound must allow
+#                   this deadline plus one --per-script-timeout-secs.
+#                   Deferral never changes the exit status; a failure, a gate
+#                   skip, and --max-wall-ms keep their own verdicts. The first
+#                   script is never deferred, so a bounded run always reports
+#                   coverage it actually proved.
 #   -h, --help      print this header
 #
 # Per-script machine-parseable markers (stdout):
@@ -107,6 +122,8 @@
 #   FM_TEST_SUMMARY_FAMILY family=<name> count=<n> duration_ms=<n> failed=<n>
 #   FM_TEST_SLOWEST rank=<k> script=<path> duration_ms=<n>
 #   FM_TEST_BUDGET max_wall_ms=<n> duration_ms=<n>   (only with --max-wall-ms)
+#   FM_TEST_DEADLINE deadline_secs=<n> deferred=<paths>
+#       only with --deadline-secs, and only when it left work unstarted
 #
 # Placement refusal:
 #   A task worker is assigned an isolated worktree, and that placement is
@@ -220,6 +237,7 @@ JOBS=1
 JOBS_EXPLICIT=0
 JOBS_MAX=8
 MAX_WALL_MS=
+DEADLINE_SECS=0
 PER_SCRIPT_TIMEOUT_SECS=0
 # Bound applied automatically on the automatic --changed path, derived from
 # measured healthy runtimes with margin rather than picked: the largest hint in
@@ -2336,6 +2354,15 @@ while [ "$#" -gt 0 ]; do
       MAX_WALL_MS=${1#--max-wall-ms=}
       shift
       ;;
+    --deadline-secs)
+      [ "$#" -gt 1 ] || die "--deadline-secs requires a whole number of seconds"
+      DEADLINE_SECS=$2
+      shift 2
+      ;;
+    --deadline-secs=*)
+      DEADLINE_SECS=${1#--deadline-secs=}
+      shift
+      ;;
     --per-script-timeout-secs)
       [ "$#" -gt 1 ] || die "--per-script-timeout-secs requires a whole number of seconds"
       PER_SCRIPT_TIMEOUT_SECS=$2
@@ -2491,6 +2518,10 @@ if [ -n "$MAX_WALL_MS" ]; then
   esac
   [ "$MAX_WALL_MS" -gt 0 ] || die "--max-wall-ms requires a positive integer"
 fi
+
+case "$DEADLINE_SECS" in
+  '' | *[!0-9]*) die "--deadline-secs requires a whole number of seconds" ;;
+esac
 
 case "$PER_SCRIPT_TIMEOUT_SECS" in
   ''|*[!0-9]*) die "--per-script-timeout-secs requires a whole number of seconds (0 disables)" ;;
@@ -2887,8 +2918,36 @@ run_one_serial() {
   record_script_result "$script" "$rc" "$duration" "$out" "$end_iso"
 }
 
+# Scripts --deadline-secs left unstarted. Repository-owned test paths contain
+# no whitespace, so one space-separated string holds them.
+DEADLINE_DEFERRED=
+DEADLINE_STARTED=0
+
+# True once the run's measured wall clock has reached --deadline-secs. It is
+# consulted only where the next script would START: a running script is never
+# cut short, which is why the header makes the caller's own bound allow this
+# deadline plus one --per-script-timeout-secs.
+#
+# The first script is never deferred. The deadline bounds the work added after
+# it, so a run cannot report a pass having started nothing - the state a
+# deadline shorter than this runner's own selection would otherwise produce.
+deadline_reached() {
+  [ "$DEADLINE_SECS" -gt 0 ] || return 1
+  [ "$DEADLINE_STARTED" -gt 0 ] || return 1
+  [ "$((($(now_ms) - RUN_STARTED_MS) / 1000))" -ge "$DEADLINE_SECS" ]
+}
+
+defer_past_deadline() {
+  DEADLINE_DEFERRED="${DEADLINE_DEFERRED:+$DEADLINE_DEFERRED }$1"
+}
+
 if [ "$JOBS" -eq 1 ]; then
   for script in "${SCRIPTS[@]}"; do
+    if deadline_reached; then
+      defer_past_deadline "$script"
+      continue
+    fi
+    DEADLINE_STARTED=$((DEADLINE_STARTED + 1))
     run_one_serial "$script"
   done
 else
@@ -2974,9 +3033,21 @@ else
       done
       continue
     fi
+    if deadline_reached; then
+      defer_past_deadline "$script"
+      continue
+    fi
     while [ "$active_workers" -ge "$JOBS" ]; do
       wait_one_completed_job_worker
     done
+    # Waiting for a slot can itself cross the deadline, and dispatching then
+    # would let the run reach the deadline plus that wait plus one per-script
+    # bound - past what a caller sizing its own bound from the two can allow.
+    if deadline_reached; then
+      defer_past_deadline "$script"
+      continue
+    fi
+    DEADLINE_STARTED=$((DEADLINE_STARTED + 1))
     worker_n=$((worker_n + 1))
     work="$RUN_TMP/w$worker_n"
     mkdir -p "$work/tmp"
@@ -3019,6 +3090,11 @@ else
   done
   # Unproven remainder, after every concurrent worker has finished.
   for script in "${SERIAL_TAIL_SCRIPTS[@]+"${SERIAL_TAIL_SCRIPTS[@]}"}"; do
+    if deadline_reached; then
+      defer_past_deadline "$script"
+      continue
+    fi
+    DEADLINE_STARTED=$((DEADLINE_STARTED + 1))
     run_one_serial "$script"
   done
 fi
@@ -3032,6 +3108,15 @@ fi
 
 printf 'FM_TEST_SUMMARY total=%s failed=%s skipped_gate=%s duration_ms=%s\n' \
   "$TOTAL" "$FAILED" "$SKIPPED_GATE" "$RUN_DURATION"
+
+# Coverage the wall deadline left unstarted. Naming it is the whole point of
+# deferring instead of failing: a caller reports it the way the selection
+# already reports the work it never admitted.
+if [ -n "$DEADLINE_DEFERRED" ]; then
+  printf 'FM_TEST_DEADLINE deadline_secs=%s deferred=%s\n' \
+    "$DEADLINE_SECS" "$DEADLINE_DEFERRED"
+  log "wall deadline of ${DEADLINE_SECS}s reached; left unstarted: $DEADLINE_DEFERRED"
+fi
 
 if [ -s "$FAMILIES_TSV" ]; then
   # Stable family summary order by name.

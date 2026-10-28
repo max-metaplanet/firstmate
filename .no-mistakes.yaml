@@ -77,8 +77,20 @@ commands:
     # shellcheck disable=SC2086
     set -- $selected
     . bin/fm-timeout-lib.sh
-    # CI duration hints bound coverage; allow loaded local execution more time.
-    fm_exec_timed "$((budget * 3 / 1000))" 5 bash bin/fm-test-run.sh --per-script-timeout-secs 1500 "$@"
+    # The classifier's budget chose WHICH suites run, from Ubuntu CI hints.
+    # The wall clock is bounded here instead, because a contended local host
+    # diverges from those hints per script rather than by a factor anyone could
+    # apply to their total; docs/fm-test-portable-shards.md owns that measured
+    # spread. The deadline stops STARTING suites and reports the rest as
+    # deferred, so a missed hint costs coverage the way the selection's own
+    # budget already does. The per-script bound leaves the slowest admitted
+    # hint room at that spread. The deadline cannot interrupt a running suite,
+    # so the outer bound is their sum plus slack: a backstop for a wedged
+    # runner, never the control, and derived here so the three cannot drift.
+    deadline_secs=240
+    per_script_secs=600
+    fm_exec_timed "$((deadline_secs + per_script_secs + 60))" 5 bash bin/fm-test-run.sh \
+      --deadline-secs "$deadline_secs" --per-script-timeout-secs "$per_script_secs" "$@"
     NM_TEST
 
 # Trusted Test-step policy. The scope paragraph keeps local validation targeted so
