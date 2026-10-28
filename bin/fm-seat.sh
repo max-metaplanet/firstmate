@@ -982,6 +982,11 @@ seat_rank_key() {
 # `switch --next` typed at the prompt is the operator's own rotation, not a
 # choice this makes on headroom.
 #
+# `--spare-leader` asks the same absolute question for a move that spares the
+# leader: the leader's seat is never a candidate, and with a trigger set no seat
+# at or below it is either. `--spare-fallback` is the same move with the leader
+# kept as the last fallback, for leaving a worker seat that has nothing left.
+#
 # `--session-room` adds one more rule for a NEW worker's launch: a candidate
 # must also show five-hour room above the switch trigger (session_room_reason
 # below). Used for launch routing and proactive spare-leader departures. When it refuses, it prints on
@@ -998,13 +1003,16 @@ seat_rank_key() {
 next_seat() {
   local active seats n i idx name minimum='' reason state resting skip rc
   local anchor_basis='' anchor_spare='' any=0 key session='' room
-  local spared='' fallback='' spare_move=0 left phrase
+  local spared='' fallback='' spare_move=0 skip_spared=0 left phrase
   local -a ranked=() waiting=()
-  if [ "${1-}" = --spare-leader ]; then
-    spare_move=1
-    any=1
-    shift
-  fi
+  case "${1-}" in
+    --spare-leader|--spare-fallback)
+      [ "$1" = --spare-fallback ] || skip_spared=1
+      spare_move=1
+      any=1
+      shift
+      ;;
+  esac
   if [ "${1-}" = --any ]; then
     any=1
     shift
@@ -1060,7 +1068,7 @@ next_seat() {
         "$name" "$resting" "$name" "$name" >&2
       continue
     fi
-    if [ "$spare_move" -eq 1 ] && fm_seat_matches_spared "$name" "$spared"; then
+    if [ "$skip_spared" -eq 1 ] && fm_seat_matches_spared "$name" "$spared"; then
       continue
     fi
     state=$(login_state "$name")
@@ -1159,9 +1167,10 @@ next_seat() {
 # weekly spare. Session room, the switch trigger and absolute destination gates
 # still apply, so a departure never lands on a seat the rotation must leave. Once
 # off the leader, ordinary anchor comparison and fired-state hysteresis resume.
-# A worker seat whose plan quota is used up leaves through that same ordinary
-# choice, so new work reaches the leader only when no other seat qualifies,
-# with or without a switch trigger; the empty seat is never a destination back.
+# A worker seat with nothing left to start work on, its plan quota used up and
+# no paid extra-usage policy covering it, leaves through the same rules with the
+# leader kept only as the last fallback, with or without a switch trigger; the
+# empty seat is never a destination back.
 spare_leader_destination() {
   local active=$1 spared
   local -a room=()
@@ -1171,8 +1180,8 @@ spare_leader_destination() {
     next_seat --spare-leader ${room[@]+"${room[@]}"} "$active"
     return
   fi
-  [ "$(fm_seat_quota_verdict "$(fm_seat_config_dir "$active")" | cut -f1)" = depleted ] || return 1
-  next_seat ${room[@]+"${room[@]}"} "$active"
+  fm_seat_dry "$(fm_seat_config_dir "$active")" || return 1
+  next_seat --spare-fallback ${room[@]+"${room[@]}"} "$active"
 }
 
 # write_active <name>

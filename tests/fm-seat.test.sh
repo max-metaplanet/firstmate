@@ -5299,6 +5299,28 @@ test_spare_leader_leaves_a_used_up_worker_seat_without_a_trigger() {
   pass 'spare leader leaves a used-up worker seat and reaches the leader only as the last choice'
 }
 
+test_spare_leader_leaves_a_used_up_seat_for_any_worker_seat_with_quota() {
+  local out
+  spare_leader_case spare-leader-return-anchor
+  printf 'on\n' > "$HOME_DIR/config/claude-seat-spare-leader"
+  printf '%s\t90\n%s\t40\n%s\t0\n' "$SEATS_DIR/alpha" "$SEATS_DIR/beta" "$SEATS_DIR/work" > "$SPEC_DIR/remaining_map"
+  seat_windows "$SPEC_DIR" "$SEATS_DIR/alpha" 90 '2099-01-01T00:00:00Z' 90 '2099-01-07T00:00:00Z' 50 90
+  seat_windows "$SPEC_DIR" "$SEATS_DIR/beta" 80 '2099-01-01T00:00:00Z' 40 '2099-01-07T00:00:00Z' 30 40
+  seat_windows "$SPEC_DIR" "$SEATS_DIR/work" 0 '2099-01-01T00:00:00Z' 70 '2099-01-07T00:00:00Z' 0 70
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" launch-destination)
+  assert_equals beta "$(printf '%s\n' "$out" | tail -1)" 'a worker seat with quota must beat the leader even with less weekly spare than the used-up seat'
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" auto)
+  assert_contains "$out" 'switched from work to beta' 'the watch must leave the used-up seat for the worker seat'
+  printf 'work\n' > "$HOME_DIR/config/claude-seat"
+  printf 'allow 50\n' > "$HOME_DIR/config/claude-seat-extra-usage"
+  seat_extra_spend "$SPEC_DIR" "$SEATS_DIR/work" 10
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" launch-destination)
+  assert_equals work "$(printf '%s\n' "$out" | tail -1)" 'a seat a paid extra-usage policy still covers must keep taking new work'
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" auto)
+  assert_not_contains "$out" 'switched' 'the watch must not leave a seat the paid policy still covers'
+  pass 'a used-up worker seat leaves for any eligible worker seat, and a paid-covered seat stays'
+}
+
 test_codex_spare_leader_leaves_a_used_up_worker_seat() {
   local out
   make_codex_seat_case codex-spare-leader-return
@@ -5358,6 +5380,7 @@ test_spare_leader_ranks_last_and_falls_back
 test_spare_leader_dispatch_and_watch_depart_early
 test_spare_leader_departure_respects_the_switch_trigger
 test_spare_leader_leaves_a_used_up_worker_seat_without_a_trigger
+test_spare_leader_leaves_a_used_up_seat_for_any_worker_seat_with_quota
 test_codex_spare_leader_leaves_a_used_up_worker_seat
 test_spare_leader_preserves_destination_guards
 test_spare_leader_handles_default_profile_and_codex_aliases

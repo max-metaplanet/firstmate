@@ -432,7 +432,7 @@ Automatic worker destination selection ranks its seat last among eligible seats,
 When the active worker seat is the leader's seat, new dispatch chooses an eligible alternative immediately and an armed watch switches future workers there without waiting for the quota trigger.
 This departure can choose a seat with less weekly spare than the leader; destination minimum, session-room checks when a trigger is set, resting, login, depletion, and manual exclusions still apply.
 After leaving, ordinary weekly-headroom comparison and the watch's remembered destination prevent repeated rotation.
-When the active worker seat's plan quota is used up, new dispatch and the watch move off it through the ordinary choice even with no trigger set, reaching the leader's seat only when no other seat qualifies; a used-up seat is never a destination, so the move does not flap back.
+When the active worker seat's plan quota is used up and no `allow <usd>` extra-usage policy still covers it, new dispatch and the watch move off it even with no trigger set, to any eligible worker seat whatever its weekly spare, reaching the leader's seat only when no other seat qualifies; a used-up seat is never a destination, so the move does not flap back.
 No running worker moves, and `lead-restart` and `leader-destination` retain their existing behavior.
 
 The preference reads the primary's current profile from the pid-bound runtime record beside its session lock, not from the caller's environment or the active worker seat.
