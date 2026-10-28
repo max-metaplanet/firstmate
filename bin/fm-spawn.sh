@@ -7446,11 +7446,12 @@ fm_lock_release "$SPAWN_META_LOCK"
 SPAWN_META_LOCK_HELD=0
 [ "$RELAUNCH" -eq 1 ] || rm -f "$STATE/$ID.deferred-spawn.json"
 
-# Delivery and backlog publication have committed, so failures retain a record
-# teardown can clean up. Take the project lock only after releasing the meta
-# lock, preserving teardown's project-before-meta lock ordering.
+# Delivery and backlog publication have committed, so a lease failure only
+# warns: the spawn has succeeded, and the next pre-allocation or startup restore
+# leases this record. Take the project lock only after releasing the meta lock,
+# preserving teardown's project-before-meta lock ordering.
 if [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ]; then
-  fm_treehouse_task_lease_restore "$STATE/$ID.meta" "$FM_HOME" || exit 1
+  fm_treehouse_task_lease_restore "$STATE/$ID.meta" "$FM_HOME" || true
 fi
 
 SPAWN_DELIVERY=
