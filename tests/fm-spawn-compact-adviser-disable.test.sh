@@ -96,7 +96,8 @@ assert_prepush_env() {  # <harness> <expected>
   if [ "$2" = 0 ]; then
     install_env_probe "$FAKEBIN_DIR" "$1" NODE_OPTIONS
     seen=$(emitted_launch_env "$FAKEBIN_DIR" "$LAUNCH_LOG" "$PANE_LOG") || fail 'build preload probe failed'
-    assert_equals "--require=$ROOT/bin/fm-build-lock.js" "$seen" 'fresh worker must carry the build preload once'
+    assert_equals "--require=$TMP_ROOT/pane-home/.local/share/firstmate-build-lock/fm-build-lock.js" "$seen" \
+      'fresh worker must carry the installed build preload once'
   fi
 }
 
@@ -422,9 +423,9 @@ $launch") || fail "$harness relaunch pre-push probe failed"
     install_env_probe "$dir/fakebin" "$harness" NODE_OPTIONS
     seen=$(env -i HOME="$dir/user-home" PATH="$dir/fakebin:$PATH" TERM=xterm \
       NODE_OPTIONS=--max-old-space-size=512 /bin/sh -c "$launch") || fail 'relaunch build preload probe failed'
-    expected="--max-old-space-size=512 --require=$ROOT/bin/fm-build-lock.js"
+    expected="--require=$dir/user-home/.local/share/firstmate-build-lock/fm-build-lock.js"
     # The allowlist launch floor filters ambient names; the preload still lands.
-    [ "$setting" = absent ] || expected="--require=$ROOT/bin/fm-build-lock.js"
+    [ "$setting" != absent ] || expected="--max-old-space-size=512 $expected"
     assert_equals "$expected" "$seen" "relaunched worker with allowlist=$setting must carry the build preload"
     for variable in VITEST_MAX_WORKERS PIPELINE_TEST_MAX_WORKERS; do
       install_env_probe "$dir/fakebin" "$harness" "$variable"

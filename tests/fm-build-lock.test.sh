@@ -157,6 +157,35 @@ const timer = setInterval(() => { if (fs.existsSync(process.env.RELEASE)) clearI
     assert result.returncode == 75 and b'no no-mistakes daemon unit' in result.stderr
     print('ok - daemon drop-in refuses a directory without a daemon unit')
 
+    # NODE_OPTIONS names an installed copy, so removing the checkout that
+    # installed it leaves every Node process able to start.
+    checkout = scratch / 'checkout/bin'
+    checkout.mkdir(parents=True)
+    for name in ('fm-build-lock.py', 'fm-build-lock.js'):
+        shutil.copy2(root / 'bin' / name, checkout / name)
+    installed = scratch / 'installed'
+    install_env = dict(env, FM_BUILD_LOCK_INSTALL_DIR=str(installed), NODE_OPTIONS='--max-old-space-size=512')
+    env_file = scratch / 'node-options.sh'
+    for _ in range(2):
+        subprocess.run([str(checkout / 'fm-build-lock.py'), 'node-env-file', str(env_file)],
+                       env=install_env, check=True, timeout=5)
+        install_env['NODE_OPTIONS'] = subprocess.run(
+            ['sh', '-c', '. "$1" && printf %s "$NODE_OPTIONS"', '_', str(env_file)],
+            env=install_env, capture_output=True, text=True, check=True).stdout
+    assert install_env['NODE_OPTIONS'] == f'--max-old-space-size=512 --require={installed}/fm-build-lock.js', \
+        install_env['NODE_OPTIONS']
+    if shutil.which('fish'):
+        result = subprocess.run(['fish', '-c', f"source '{env_file}'; and printf %s $NODE_OPTIONS"],
+                                env=install_env, capture_output=True, text=True, check=True)
+        assert result.stdout == install_env['NODE_OPTIONS'], result.stdout
+    shutil.rmtree(scratch / 'checkout')
+    if real_node:
+        result = subprocess.run(['node', '-e', '0'], env=install_env, capture_output=True, timeout=5)
+        assert result.returncode == 0, result.stderr
+        result = subprocess.run(['node', str(cli), 'dev'], env=install_env, capture_output=True, timeout=5)
+        assert result.returncode == 0 and result.stdout.startswith(b'pass:'), result.stderr
+    print('ok - env file appends the installed preload once and Node survives checkout removal')
+
     # Lock setup must fail promptly instead of executing a heavy command unlocked.
     result = subprocess.run([str(wrapper), '--', 'true'],
                             env=dict(env, FM_BUILD_LOCK_FILE='relative'), capture_output=True, timeout=5)

@@ -7065,13 +7065,13 @@ LAUNCH="export COMPACT_ADVISER_DISABLE=1; $LAUNCH"
 if [ "$KIND" = ship ] || [ "$KIND" = scout ]; then
   WORKER_TEST_ENV='PREPUSH_TESTS=0 VITEST_MAX_WORKERS=1 PIPELINE_TEST_MAX_WORKERS=1'
   # The build-lock preload rides NODE_OPTIONS, which agent shells keep even
-  # when their rc or snapshot rebuilds PATH. Appending keeps any project
-  # options; the line starts with export so the pane replay carries it too.
-  # This common site also covers relaunch and the env -i launch floor.
-  # fm-build-lock.py owns selection and lock lifetime.
-  BUILD_LOCK_OPTION=$("$FM_ROOT/bin/fm-build-lock.py" node-option) || exit 1
-  WORKER_BUILD_ENV="export NODE_OPTIONS; case \" \${NODE_OPTIONS-} \" in *\" $BUILD_LOCK_OPTION \"*) ;; *) NODE_OPTIONS=\"\${NODE_OPTIONS:+\$NODE_OPTIONS }$BUILD_LOCK_OPTION\" ;; esac"
-  LAUNCH="$WORKER_BUILD_ENV; export $WORKER_TEST_ENV; $LAUNCH"
+  # when their rc or snapshot rebuilds PATH. Like the Git configuration prefix,
+  # the helper appends to the NODE_OPTIONS the worker inherits (after any launch
+  # environment filtering) and writes one plain export statement that the pane
+  # shell, fish included, sources. fm-build-lock.py owns the installed preload,
+  # selection, and lock lifetime.
+  BUILD_LOCK_ENV_FILE=$(shell_quote "$LAUNCH_DIR/build-lock.$SPAWN_GEN.sh")
+  LAUNCH="export $WORKER_TEST_ENV; $(shell_quote "$FM_ROOT/bin/fm-build-lock.py") node-env-file $BUILD_LOCK_ENV_FILE && . $BUILD_LOCK_ENV_FILE || return 1 2>/dev/null || exit 1; $LAUNCH"
 fi
 # When the live-harness gate has exported DISABLE_AUTOUPDATER into this spawn's
 # own environment, carry it into the launch command text so Claude Code's
@@ -7133,7 +7133,6 @@ fi
 if [ "$KIND" = ship ] || [ "$KIND" = scout ]; then
   spawn_send_text_line "$T" "export FM_TASK_ID=$ID"
   spawn_send_text_line "$T" "export $WORKER_TEST_ENV"
-  spawn_send_text_line "$T" "$WORKER_BUILD_ENV"
 fi
 # Send through the exact channel that already ships GOTMPDIR, so every backend
 # and harness - ship, scout, and secondmate - gets it before launch. Skipped

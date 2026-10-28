@@ -3510,7 +3510,7 @@ test_pipeline_install_check_and_streams() {
   # shellcheck disable=SC2016 # Deliberately literal argument.
   assert_contains "$out" 'arg=<literal $value>' "literal arguments must survive"
   assert_contains "$out" 'stdin payload' "stdin must survive probes and exec"
-  assert_contains "$out" "node-options=--require=$ROOT/bin/fm-build-lock.js" "pipeline agent must inherit the build preload"
+  assert_contains "$out" "node-options=--require=$FM_BUILD_LOCK_INSTALL_DIR/fm-build-lock.js" "pipeline agent must inherit the build preload"
   assert_absent "$SPEC_DIR/calls" "an unset extra-usage policy must not read quota"
   printf '\n# changed\n' >> "$PIPELINE_WRAPPER"
   out=$(run_seat "$HOME_DIR" "$FAKEBIN" pipeline-check --claude "$PIPELINE_NATIVE" --destination "$PIPELINE_WRAPPER")

@@ -10,10 +10,19 @@ unlocked; their Next build leaves lock.
 
   fm-build-lock.py -- COMMAND [ARGS...]   run another heavy command locked
   fm-build-lock.py node-option            print the NODE_OPTIONS entry
+  fm-build-lock.py node-env-file OUT
+      write OUT as one export statement adding the entry to the inherited
+      NODE_OPTIONS, so a pane shell (fish included) only sources a plain export
   fm-build-lock.py install-daemon-env [--unit-dir DIR]
       write a systemd user drop-in giving every no-mistakes daemon unit the
       preload; it activates at the daemon's next restart, never restarts it.
 Bypass once: FM_BUILD_LOCK_BYPASS=1 pnpm build.
+
+Every entry names an installed copy of the preload and this script in
+~/.local/share/firstmate-build-lock (FM_BUILD_LOCK_INSTALL_DIR overrides it),
+refreshed by every command that prints or writes one, so no long-lived
+NODE_OPTIONS depends on a checkout that can be removed; a missing --require
+target stops every Node process.
 
 The default /var/tmp/firstmate-heavy-build-<uid>.lock is shared by every home
 under the same OS user, independent of HOME and TMPDIR. FM_BUILD_LOCK_FILE can
@@ -38,16 +47,48 @@ import stat
 import subprocess
 import sys
 
-PRELOAD = Path(__file__).resolve().with_name("fm-build-lock.js")
+SOURCE = Path(__file__).resolve().parent
+FILES = {"fm-build-lock.py": 0o755, "fm-build-lock.js": 0o644}
 DROP_IN = "fm-build-lock.conf"
 
 
+def install():
+    target = Path(os.environ.get("FM_BUILD_LOCK_INSTALL_DIR")
+                  or Path.home() / ".local/share/firstmate-build-lock")
+    if not target.is_absolute():
+        raise ValueError("FM_BUILD_LOCK_INSTALL_DIR must be absolute")
+    target.mkdir(parents=True, exist_ok=True)
+    for name, mode in FILES.items():
+        data = (SOURCE / name).read_bytes()
+        installed = target / name
+        if SOURCE == target or (installed.is_file() and installed.read_bytes() == data):
+            continue
+        staged = target / f".{name}.{os.getpid()}"
+        staged.write_bytes(data)
+        staged.chmod(mode)
+        staged.replace(installed)
+    return target / "fm-build-lock.js"
+
+
 def node_option():
-    option = f"--require={PRELOAD}"
+    option = f"--require={install()}"
     # NODE_OPTIONS is split on whitespace and the value is embedded in shells.
     if any(not (char.isalnum() or char in "/._-=+") for char in option):
-        raise ValueError(f"preload path is not NODE_OPTIONS-safe: {PRELOAD}")
+        raise ValueError(f"preload path is not NODE_OPTIONS-safe: {option}")
     return option
+
+
+def env_file(out):
+    option = node_option()
+    value = os.environ.get("NODE_OPTIONS", "")
+    if option not in value.split():
+        value = f"{value} {option}" if value.strip() else option
+    if "'" in value or "\\" in value:
+        raise ValueError("inherited NODE_OPTIONS has quotes or backslashes")
+    staged = Path(f"{out}.{os.getpid()}.tmp")
+    staged.write_text(f"export NODE_OPTIONS='{value}'\n")
+    staged.replace(out)
+    return 0
 
 
 def install_daemon_env(args):
@@ -126,6 +167,8 @@ def main():
     if args == ["node-option"]:
         print(node_option())
         return 0
+    if args[:1] == ["node-env-file"] and len(args) == 2:
+        return env_file(args[1])
     if args[:1] == ["install-daemon-env"]:
         return install_daemon_env(args[1:])
     if len(args) < 2 or args[0] != "--":
