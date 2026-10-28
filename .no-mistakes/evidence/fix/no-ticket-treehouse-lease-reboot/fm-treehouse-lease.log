@@ -1,0 +1,4 @@
+ok - reboot recovery durably leases a parked record, preserves work, and is idempotent
+ok - foreign, unsafe, absent, released and host-missing records never lease a slot
+ok - lease failures surface and release the project lock
+exit=0

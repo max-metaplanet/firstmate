@@ -1,0 +1,95 @@
+ok - teardown returns a recovered durable lease and removes its claim and record
+ok - teardown suppresses real fetch auto-GC and removal-child maintenance without writing config
+ok - teardown leaves opencode's busy plugin in the returned pool worktree as on main
+ok - a missing teardown startup source refuses before cleanup
+ok - an unreadable teardown startup source refuses before cleanup
+ok - a missing adapter sibling refuses before cleanup
+ok - a forced descendant with a missing adapter sibling refuses before cleanup
+ok - a forced secondmate with a missing own adapter sibling refuses before child cleanup
+ok - present required sources still reach the ordinary teardown refusal
+ok - local-only worktree with HEAD on a fork remote is torn down and the home summary is refreshed
+ok - teardown closes its own backlog item before reporting success
+ok - teardown closes a landed Gerrit task with its change URL as a note and a GitHub task with --pr
+ok - teardown closes a landed GitLab task with its merge request URL as a note and GitHub and Forgejo tasks with --pr
+ok - teardown honors config/backlog-backend=manual and still finishes cleanly
+ok - local-only worktree with truly unpushed work is refused (safety preserved)
+ok - local-only worktree with work merged into local main is torn down (no regression)
+ok - parked no-mistakes worktree with pushed HEAD in a merged PR is torn down
+ok - no-mistakes worktree with genuinely unlanded work is refused (safety preserved)
+ok - local-only worktree with unpushed work is torn down under --force (escape hatch)
+ok - fm-pr-check publishes the PR-ready line on a secondmate's parent channel once
+ok - a secondmate home's teardown delivers the child's final line or refuses until it can
+ok - teardown completes when an exact busy-state sidecar is already absent
+ok - a lone record reached through a symlinked home is not treated as its own collision
+ok - releasing one record's claim unblocks the record that keeps the copy, without tearing the released one down first
+ok - a released record cleans up and records its delivery timing without touching the copy that stayed with the other record
+ok - teardown retires a polytoken task's generated worktree wiring on pool return
+ok - teardown never deletes a tracked .polytoken hook layer
+ok - teardown never deletes a .polytoken hook layer firstmate did not generate
+ok - teardown scopes .polytoken wiring removal to polytoken tasks
+ok - herdr teardown removes pane-owned escalation dedupe state
+ok - a failed lsof scan on a non-tmux backend refuses and preserves the isolated copy
+ok - herdr flat teardown refuses before returning the isolated copy under lock contention and the retry completes cleanly
+ok - herdr flat teardown never erases records when pane presence is unparseable
+ok - herdr flat teardown preflight refuses before every destructive change
+ok - herdr teardown takes its lock in a per-account namespace another account cannot block, and still refuses a foreign-owned or wrong-mode one
+ok - forced secondmate teardown preflights every Herdr child before cleanup mutation
+ok - forced secondmate teardown holds every descendant lifecycle and metadata lock
+ok - forced secondmate teardown retains Herdr child identity until exact pane disappearance
+ok - forced teardown retains a nested secondmate home and its grandchild's Herdr identity when the grandchild close is unconfirmed
+ok - herdr projection teardown retires its journal only after confirming the exact recorded pane is gone
+ok - herdr projection teardown retains every record when post-close presence is unknown
+ok - herdr projection teardown surfaces failed focus restoration without turning confirmed cleanup into a hard failure
+ok - teardown retires the task's own watcher markers and orphaned presentation journal, leaving other tasks' markers alone
+ok - teardown retains a presentation journal bound to a pane other than the closed endpoint
+ok - teardown retires a v1 presentation journal once its token workspace is confirmed gone
+ok - teardown retains a v1 presentation journal while its token workspace is still present
+ok - teardown retains a v1 presentation journal when the workspace query is ambiguous
+ok - squash-merged + deleted-branch worktree (PR merged) is torn down (the fix)
+ok - squash-merged PR accepts a local HEAD that is an ancestor of the final PR head
+ok - teardown discovers a merged PR by branch name and tears down when no pr= was ever recorded
+ok - squash-merged PR refuses a replayed patch whose pushed parent never landed
+ok - merged PR does not allow teardown after a later local commit
+ok - squash-merged task whose local branch followed the pipeline rebase is torn down
+ok - teardown proves a Forgejo task landed from the merged pull request when the content check is inconclusive
+ok - squash-merged same-path different content still refuses
+ok - squash-merged rebased local still refuses a genuinely unlanded follow-up commit
+ok - squash-merged stale local still refuses when the forge is unreachable
+fm-contributions: data directory unavailable
+contributions: observation not armed; coverage is unconfirmed
+fm-contributions: data directory unavailable
+contributions: observation not armed; coverage is unconfirmed
+ok - fm-pr-check does not refresh PR head after HEAD moves
+fm-contributions: data directory unavailable
+contributions: observation not armed; coverage is unconfirmed
+ok - fm-pr-check records the remote PR head when the local worktree lags
+ok - worktree whose content already landed in the default branch is torn down (content fallback)
+ok - the content-landed fallback checks a task's recorded base branch, not the default branch
+ok - content fallback refreshes origin default before comparing trees
+ok - dirty worktree is refused even when its committed work has landed (dirty always wins)
+ok - staged leftovers identical to the remote base are torn down without --force
+ok - an untracked leftover identical to the remote base is torn down without --force
+ok - a staged removal of a path the remote base lacks is torn down without --force
+ok - one path with content of its own keeps the uncommitted-changes refusal
+ok - a staged rename is judged on the path it emptied, not only its destination
+ok - a staged add whose file was removed keeps the refusal
+ok - a staged edit hidden behind base bytes in the working tree keeps the refusal
+ok - base-identical leftovers are discarded while a nested repo under .claude/ survives
+ok - a failed base fetch keeps the uncommitted-changes refusal
+ok - untracked/no-mistakes: dirty refusal classifies leftovers and preserves work
+ok - untracked/local-only: dirty refusal classifies leftovers and preserves work
+ok - tracked/no-mistakes: dirty refusal classifies leftovers and preserves work
+ok - tracked/local-only: dirty refusal classifies leftovers and preserves work
+ok - mixed/no-mistakes: dirty refusal classifies leftovers and preserves work
+ok - mixed/local-only: dirty refusal classifies leftovers and preserves work
+ok - scout copy with a nested clone and a scratch file returns with no untracked entries
+ok - ship copy with a nested clone is refused and its bytes stay
+ok - a return that leaves residue names the lost slot and the remaining paths
+ok - a dirty return is reported even when a later teardown step refuses
+ok - a forced secondmate teardown returns a child scout copy with a nested clone clean
+ok - a forced secondmate teardown warns about a dirty child return and still completes
+ok - a return that leaves no readable copy reports the slot as unverified, not clean
+ok - ignored files survive the scratch clean and plain scratch does not
+ok - gh lookup error with content not in default refuses (fail-safe)
+ok - a record predating spawn_gen refuses teardown until --legacy-record is passed
+ok - a windowless leftover with no spawn_gen and no worktree tears down without --legacy-record

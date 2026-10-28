@@ -1,0 +1,29 @@
+### 1. interactive treehouse get (process lease), worker exits = reboot
+task T1 worktree: /tmp/fm-lease-live.Nq5cRs/troot/.treehouse/proj-8d7601/1/proj
+slot 1: leased=false holder=- status=available
+### 2. record task T1 (parked) in a disposable FM_HOME with its slot-owner claim
+task=T1
+home=/tmp/fm-lease-live.Nq5cRs/home
+### 3. WITHOUT restore (the reported bug): a fresh get on the clean, process-lease-lapsed slot
+probe get got: /tmp/fm-lease-live.Nq5cRs/troot/.treehouse/proj-8d7601/1/proj  (same as T1: YES-BUG)
+slot 1: leased=false holder=- status=dirty
+### 4. Firstmate restore (startup sweep)
+🌳 Leased worktree 1 at /tmp/fm-lease-live.Nq5cRs/troot/.treehouse/proj-8d7601/1/proj. Run 'treehouse return /tmp/fm-lease-live.Nq5cRs/troot/.treehouse/proj-8d7601/1/proj' to release it.
+restore rc=0
+slot 1: leased=false holder=firstmate:/tmp/fm-lease-live.Nq5cRs/home:T1 status=leased
+worktree contents unchanged: yes
+### 5. restore again (idempotent)
+rc=0
+slot 1: leased=false holder=firstmate:/tmp/fm-lease-live.Nq5cRs/home:T1 status=leased
+### 6. new interactive get after restore must not pick T1's slot (wip.txt removed: slot is clean, only the lease protects it)
+slot 1: leased=false holder=firstmate:/tmp/fm-lease-live.Nq5cRs/home:T1 status=leased
+new get got: /tmp/fm-lease-live.Nq5cRs/troot/.treehouse/proj-8d7601/2/proj  (avoids T1: yes)
+### 7. foreign-claim record is skipped (claim names other task)
+rc=0
+slot 1: leased=false holder=firstmate:/tmp/fm-lease-live.Nq5cRs/home:T1 status=leased
+slot 2: leased=false holder=- status=available
+### 8. teardown-equivalent release: treehouse return --force + claim release
+return rc=0
+0
+slot 1: leased=false holder=- status=available
+slot 2: leased=false holder=- status=available
