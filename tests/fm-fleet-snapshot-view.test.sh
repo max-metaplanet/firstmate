@@ -14,7 +14,9 @@ TEST_CASES=(
   test_hold_buckets_are_total_and_text_blind
   test_main_inventory_orphan_and_unstructured_disclosure
   test_normalized_roles_and_plural_blocker_readiness
-  test_event_hints_follow_reconciled_current_state
+  test_event_hints_preserve_open_decisions_during_activity
+  test_run_step_keeps_open_decision_until_resolved
+  test_terminal_ship_keeps_open_decision_until_resolved
   test_open_decision_survives_later_unrelated_event
   test_secondmate_open_decision_survives_live_endpoint
   test_open_decision_transfers_to_captain_hold
@@ -196,9 +198,9 @@ test_fixture_snapshot_json() {
       and .current_state.source == "pane"
       and .pr.url == "https://github.com/kunchenguid/firstmate/pull/9"
       and .backlog.body_excerpt == "Preserve this detail for bearings."
-      and .hints.pending_decision == false
+      and .hints.pending_decision == true
       and .paths.status_log.kind == "event_history"
-  ' >/dev/null || fail "ship task state, PR, body, and stale event hints wrong"
+  ' >/dev/null || fail "ship task state, PR, body, and open decision hints wrong"
   printf '%s' "$out" | jq -e '
     .tasks[] | select(.id == "scout-task")
     | .paths.report.present == true
@@ -537,7 +539,7 @@ EOF
   pass "backlog normalization preserves strict roles and resolves every blocker compatibly"
 }
 
-test_event_hints_follow_reconciled_current_state() {
+test_event_hints_preserve_open_decisions_during_activity() {
   local home fakebin out hint_gen
   home=$(make_home event-hints)
   mkdir -p \
@@ -573,7 +575,7 @@ test_event_hints_follow_reconciled_current_state() {
   hint_gen=$("$ROOT/bin/fm-busy-event.sh" arm "$home/state" stale-decision)
   "$ROOT/bin/fm-busy-event.sh" apply "$home/state" stale-decision busy --gen "$hint_gen" \
     --source claude-hook --event user-prompt-submit
-  printf 'needs-decision: already answered\n' > "$home/state/stale-decision.status"
+  printf 'needs-decision [key=choice]: choose an API shape\n' > "$home/state/stale-decision.status"
   fm_write_meta "$home/state/stale-blocked.meta" \
     "window=firstmate:fm-stale-blocked-ship-task" \
     "worktree=$home/projects/stale-blocked" \
@@ -584,7 +586,7 @@ test_event_hints_follow_reconciled_current_state() {
   hint_gen=$("$ROOT/bin/fm-busy-event.sh" arm "$home/state" stale-blocked)
   "$ROOT/bin/fm-busy-event.sh" apply "$home/state" stale-blocked busy --gen "$hint_gen" \
     --source claude-hook --event user-prompt-submit
-  printf 'blocked: old failure\n' > "$home/state/stale-blocked.status"
+  printf 'blocked [key=access]: waiting on access\n' > "$home/state/stale-blocked.status"
   fakebin=$(make_fakebin "$home")
   out=$(PATH="$fakebin:$PATH" FM_HOME="$home" "$SNAPSHOT" --json)
   printf '%s' "$out" | jq -e '
@@ -594,11 +596,95 @@ test_event_hints_follow_reconciled_current_state() {
       and task("active-blocked").current_state.state == "blocked"
       and task("active-blocked").hints.blocked_event == true
       and task("stale-decision").current_state.state == "working"
-      and task("stale-decision").hints.pending_decision == false
+      and task("stale-decision").hints.pending_decision == true
+      and (task("stale-decision").hints.open_decisions | map(.key)) == ["choice"]
       and task("stale-blocked").current_state.state == "working"
-      and task("stale-blocked").hints.blocked_event == false
-  ' >/dev/null || fail "event hints must follow reconciled current state"
-  pass "snapshot event hints follow reconciled current state"
+      and task("stale-blocked").hints.blocked_event == true
+      and (task("stale-blocked").hints.open_decisions | map(.key)) == ["access"]
+  ' >/dev/null || fail "activity must preserve the fold's open decisions"
+  pass "snapshot preserves open decisions alongside busy activity"
+}
+
+# The fold owns decision closure even when lifecycle reads terminal or active.
+test_terminal_ship_keeps_open_decision_until_resolved() {
+  local home fakebin out terminal
+  home=$(make_home terminal-ship-decisions)
+  fakebin=$(make_fakebin "$home")
+  for terminal in 'done' failed; do
+    mkdir -p "$home/projects/$terminal"
+    fm_write_meta "$home/state/$terminal.meta" \
+      "window=firstmate:fm-$terminal" "worktree=$home/projects/$terminal" \
+      'kind=ship' 'harness=claude'
+    record_claude_idle "$home/state" "$terminal"
+    printf 'needs-decision [key=choice]: choose a route\n%s: final outcome\n' \
+      "$terminal" > "$home/state/$terminal.status"
+  done
+  out=$(PATH="$fakebin:$PATH" FM_HOME="$home" "$SNAPSHOT" --json)
+  printf '%s' "$out" | jq -e '
+    .tasks | length == 2 and all(.[];
+      .paths.status_log.last_event.state == .id
+      and .hints.pending_decision == true
+      and (.hints.open_decisions | map(.key)) == ["choice"])
+  ' >/dev/null || fail "terminal ship dropped an unanswered key: $out"
+  for terminal in 'done' failed; do
+    printf 'resolved [key=choice]: route selected\n' >> "$home/state/$terminal.status"
+  done
+  out=$(PATH="$fakebin:$PATH" FM_HOME="$home" "$SNAPSHOT" --json)
+  printf '%s' "$out" | jq -e '
+    .tasks | length == 2 and all(.[];
+      .hints.pending_decision == false and .hints.open_decisions == [])
+  ' >/dev/null || fail "resolved ship decision stayed open: $out"
+  pass "terminal done and failed ships keep decisions until keyed resolution"
+}
+
+test_run_step_keeps_open_decision_until_resolved() {
+  local home fakebin out head run_status expected_state
+  home=$(make_home run-step-decision)
+  fakebin=$(make_fakebin "$home")
+  fm_git_init_commit "$home/projects/active"
+  git -C "$home/projects/active" checkout -q -b fm/active-decision
+  head=$(git -C "$home/projects/active" rev-parse HEAD)
+  fm_write_meta "$home/state/active.meta" \
+    'window=firstmate:fm-active' "worktree=$home/projects/active" \
+    'kind=ship' 'harness=claude' 'mode=no-mistakes'
+  record_claude_idle "$home/state" active
+  cat > "$fakebin/no-mistakes" <<'SH'
+#!/usr/bin/env bash
+cat "${FM_HOME:?}/run.toon"
+SH
+  chmod +x "$fakebin/no-mistakes"
+  for run_status in running completed failed; do
+    case "$run_status" in
+      running) expected_state=working ;;
+      completed) expected_state="done" ;;
+      failed) expected_state=failed ;;
+    esac
+    printf 'needs-decision [key=choice]: choose a route\n' > "$home/state/active.status"
+    cat > "$home/run.toon" <<EOF
+run:
+  id: "01ACTIVE"
+  branch: fm/active-decision
+  status: $run_status
+  head: "$head"
+  steps[1]{step,status,findings,duration_ms}:
+    review,$run_status,0,0
+EOF
+    out=$(PATH="$fakebin:$PATH" FM_HOME="$home" "$SNAPSHOT" --json)
+    printf '%s' "$out" | jq -e --arg state "$expected_state" '
+      .tasks[] | select(.id == "active")
+      | .current_state.state == $state and .current_state.source == "run-step"
+        and .hints.pending_decision == true
+        and (.hints.open_decisions | map(.key)) == ["choice"]
+    ' >/dev/null || fail "$run_status run-step dropped an unanswered key: $out"
+    printf 'resolved [key=choice]: route selected\n' >> "$home/state/active.status"
+    out=$(PATH="$fakebin:$PATH" FM_HOME="$home" "$SNAPSHOT" --json)
+    printf '%s' "$out" | jq -e --arg state "$expected_state" '
+      .tasks[] | select(.id == "active")
+      | .current_state.state == $state and .current_state.source == "run-step"
+        and .hints.pending_decision == false and .hints.open_decisions == []
+    ' >/dev/null || fail "$run_status run-step kept a resolved key open: $out"
+  done
+  pass "active, done and failed run-steps keep decisions until keyed resolution"
 }
 
 test_scout_reports_include_teardown_reports() {
@@ -1114,9 +1200,7 @@ test_completed_scout_decision_clears_only_when_closed() {
   pass "a finished task keeps its unanswered decision and becomes a pointer only once it is closed"
 }
 
-# The complementary safety property: a scout still PARKED at a decision (its last
-# event is the needs-decision, it has not finished) DOES stay pending. The terminal
-# clear must not over-fire on a live, undecided scout.
+# A scout parked at a decision keeps that key visible alongside its state.
 test_parked_scout_decision_stays_pending() {
   local home fakebin out
   home=$(make_home parked-scout)
@@ -1138,7 +1222,7 @@ test_parked_scout_decision_stays_pending() {
       and (.hints.open_decisions | length) == 1
       and .hints.open_decisions[0].key == "q1"
   ' >/dev/null || fail "a scout still parked at a decision must stay pending: $out"
-  pass "a scout still parked at a decision stays pending (terminal clear does not over-fire)"
+  pass "a scout still parked at a decision stays pending"
 }
 
 # Home-summary validity treats persistent secondmates as registered homes, not
