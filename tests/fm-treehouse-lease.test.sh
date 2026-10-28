@@ -73,3 +73,38 @@ lock=$(fm_treehouse_project_lock_path "$TMP_ROOT/project")
 fm_lock_try_acquire "$lock" || fail "failed lease leaked the project lock"
 fm_lock_release "$lock"
 pass "lease failures surface and release the project lock"
+
+# A fresh spawn holds its record's meta lock from provisional publication until
+# commit or rollback, so another process's restore must not lease that slot.
+jq 'del(.worktrees[0].leased, .worktrees[0].lease_holder)' "$TMP_ROOT/pool/treehouse-state.json" > "$TMP_ROOT/pool/state.new"
+mv "$TMP_ROOT/pool/state.new" "$TMP_ROOT/pool/treehouse-state.json"
+calls=$(wc -l < "$TMP_ROOT/pool/lease-calls" | tr -d ' ')
+meta="$FM_HOME/state/provisional.meta"
+printf 'project=%s\nworktree=%s\nkind=ship\n' "$TMP_ROOT/project" "$slot" > "$meta"
+fm_treehouse_slot_owner_claim "$slot" provisional "$FM_HOME"
+meta_lock=$(fm_meta_lock_path "$meta")
+fm_lock_try_acquire "$meta_lock" || fail "could not take the provisional record's meta lock"
+# A subshell is a different process, as a concurrent spawn's restore would be.
+(fm_treehouse_leases_restore "$FM_HOME/state" "$FM_HOME") || fail "a busy provisional record failed restore"
+jq -e '.worktrees[0].leased != true' "$TMP_ROOT/pool/treehouse-state.json" >/dev/null \
+  || fail "restore durably leased a still-provisional record"
+rm "$meta"
+fm_treehouse_slot_owner_release "$slot" provisional
+fm_lock_release "$meta_lock"
+fm_treehouse_leases_restore "$FM_HOME/state" "$FM_HOME"
+jq -e '.worktrees[0].leased != true' "$TMP_ROOT/pool/treehouse-state.json" >/dev/null \
+  || fail "failed-dispatch rollback left an orphan durable lease"
+[ "$(wc -l < "$TMP_ROOT/pool/lease-calls" | tr -d ' ')" = "$calls" ] || fail "rolled-back record leased a slot"
+pass "a provisional record rolled back after a concurrent restore leaves no durable lease"
+
+# The committing spawn and a relaunch hold the record's lock themselves.
+printf 'project=%s\nworktree=%s\nkind=ship\n' "$TMP_ROOT/project" "$slot" > "$meta"
+fm_treehouse_slot_owner_claim "$slot" provisional "$FM_HOME"
+fm_lock_try_acquire "$meta_lock" || fail "could not take the committed record's meta lock"
+fm_treehouse_leases_restore "$FM_HOME/state" "$FM_HOME"
+jq -e '.worktrees[0].leased == true' "$TMP_ROOT/pool/treehouse-state.json" >/dev/null \
+  || fail "a caller holding its own record's lock could not lease it"
+[ -e "$meta_lock" ] && [ "$(cat "$meta_lock/pid")" = "${BASHPID:-$$}" ] \
+  || fail "restore released the caller's own meta lock"
+fm_lock_release "$meta_lock"
+pass "a record whose lock the caller holds is leased without dropping that lock"

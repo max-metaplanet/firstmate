@@ -14,10 +14,14 @@
 # An optional held-lock argument limits the scan to that project and avoids
 # retaking the caller's lock. Startup scans only its own state; spawn scans the
 # existing local-home inventory before allocation and leases its committed new
-# record after launch delivery. Provisional failed spawns gain no durable lease.
+# record after launch delivery. Provisional failed spawns gain no durable lease:
+# a fresh spawn holds the record's meta lock from publication until commit or
+# rollback, so a record whose meta lock another process holds is skipped and
+# left to a later restore. Locks are taken project-before-meta, as teardown does.
 
 fm_treehouse_task_lease_restore() {  # <meta> <home> [held-project-lock]
   local meta=$1 home=$2 held=${3:-} project worktree id lock acquired=0 rc=0 pool slot lease_state root status
+  local meta_lock meta_acquired=0 me
   [ -f "$meta" ] && [ ! -L "$meta" ] || return 0
   project=$(fm_meta_get "$meta" project)
   worktree=$(fm_meta_get "$meta" worktree)
@@ -32,8 +36,20 @@ fm_treehouse_task_lease_restore() {  # <meta> <home> [held-project-lock]
     }
     acquired=1
   fi
-  # Everything authoritative is re-read inside the project lock.
-  if [ -f "$meta" ] && [ ! -L "$meta" ]; then
+  meta_lock=$(fm_meta_lock_path "$meta") || meta_lock=
+  fm_current_pid me || me=
+  if [ -z "$meta_lock" ]; then
+    :  # Not a task record name; nothing to lease.
+  elif [ -n "$me" ] && [ "$(cat "$meta_lock/pid" 2>/dev/null || true)" = "$me" ]; then
+    :  # The caller (a relaunch) already holds this record's lock.
+  elif fm_lock_try_acquire "$meta_lock"; then
+    meta_acquired=1
+  else
+    echo "TREEHOUSE_LEASE: $meta is being published or changed; a later restore leases it" >&2
+    meta_lock=
+  fi
+  # Everything authoritative is re-read inside the project and meta locks.
+  if [ -n "$meta_lock" ] && [ -f "$meta" ] && [ ! -L "$meta" ]; then
     project=$(fm_meta_get "$meta" project)
     worktree=$(fm_meta_get "$meta" worktree)
     id=${meta##*/}; id=${id%.meta}
@@ -84,6 +100,7 @@ fm_treehouse_task_lease_restore() {  # <meta> <home> [held-project-lock]
       fi
     fi
   fi
+  [ "$meta_acquired" = 0 ] || fm_lock_release "$meta_lock"
   [ "$acquired" = 0 ] || fm_lock_release "$lock"
   return "$rc"
 }
