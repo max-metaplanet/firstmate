@@ -636,7 +636,8 @@ session_room_reason() {
 
 # cmd_launch_destination
 # The seat a NEW native worker launches on, by name. An enabled spare-leader
-# preference first tries an eligible non-leader destination. --spare-only then
+# preference first tries an eligible non-leader destination, or moves off a
+# used-up worker seat, falling back to the leader last. --spare-only then
 # retains the active seat, preserving Codex dispatch's existing session policy.
 # Otherwise: With no switch trigger set,
 # or when the active seat has five-hour room or no five-hour reading, that is
@@ -1158,13 +1159,20 @@ next_seat() {
 # weekly spare. Session room, the switch trigger and absolute destination gates
 # still apply, so a departure never lands on a seat the rotation must leave. Once
 # off the leader, ordinary anchor comparison and fired-state hysteresis resume.
+# A worker seat whose plan quota is used up leaves through that same ordinary
+# choice, so new work reaches the leader only when no other seat qualifies,
+# with or without a switch trigger; the empty seat is never a destination back.
 spare_leader_destination() {
   local active=$1 spared
   local -a room=()
   spared=$(fm_seat_spared_leader) || return 1
-  fm_seat_matches_spared "$active" "$spared" || return 1
   if fm_seat_threshold >/dev/null; then room=(--session-room); fi
-  next_seat --spare-leader ${room[@]+"${room[@]}"} "$active"
+  if fm_seat_matches_spared "$active" "$spared"; then
+    next_seat --spare-leader ${room[@]+"${room[@]}"} "$active"
+    return
+  fi
+  [ "$(fm_seat_quota_verdict "$(fm_seat_config_dir "$active")" | cut -f1)" = depleted ] || return 1
+  next_seat ${room[@]+"${room[@]}"} "$active"
 }
 
 # write_active <name>
@@ -2157,11 +2165,14 @@ auto_lead_trigger() {  # <threshold>
 }
 
 # Proactively spare the leader without touching running workers or leader
-# replacement. Record the destination before publishing, as auto_trigger does.
+# replacement, and leave a used-up worker seat even with no trigger set. Record
+# the destination before publishing, as auto_trigger does.
 auto_spare_leader() {
-  local active target fired out blocked
+  local active target fired out blocked why='to spare the leader'
   active=$(fm_seat_active)
   target=$(spare_leader_destination "$active" 2>/dev/null) || return 0
+  ! fm_seat_matches_spared "$target" "$(fm_seat_spared_leader)" ||
+    why='because no other seat can take new workers'
   fired=$(auto_record_get fired) || fired=''
   auto_record_set fired "$target"
   if out=$(FM_HOME="$FM_HOME" FM_ROOT_OVERRIDE="$FM_ROOT" FM_STATE_OVERRIDE="$STATE" \
@@ -2169,15 +2180,15 @@ auto_spare_leader() {
     "$SCRIPT_DIR/fm-seat.sh" switch "$target" 2>&1); then
     auto_record_set blocked ''
     auto_record_set spare_blocked ''
-    printf '%s-seat: switched from %s to %s to spare the leader; new workers launch there\n' \
-      "$FM_SEAT_PROVIDER" "$active" "$target"
+    printf '%s-seat: switched from %s to %s %s; new workers launch there\n' \
+      "$FM_SEAT_PROVIDER" "$active" "$target" "$why"
   else
     auto_record_set fired "$fired"
     blocked=$(auto_record_get spare_blocked) || blocked=''
     [ "$blocked" != "spare:$active:failed:$target" ] || return 0
     auto_record_set spare_blocked "spare:$active:failed:$target"
-    printf '%s-seat: could not spare leader seat %s: %s\n' \
-      "$FM_SEAT_PROVIDER" "$active" "$(printf '%s' "$out" | tail -1)"
+    printf '%s-seat: could not switch from %s to %s under the spare-leader preference: %s\n' \
+      "$FM_SEAT_PROVIDER" "$active" "$target" "$(printf '%s' "$out" | tail -1)"
   fi
 }
 

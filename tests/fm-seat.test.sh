@@ -5281,6 +5281,44 @@ test_spare_leader_departure_respects_the_switch_trigger() {
   pass 'spare-leader departures never land on a seat at or below the switch trigger'
 }
 
+test_spare_leader_leaves_a_used_up_worker_seat_without_a_trigger() {
+  local out
+  spare_leader_case spare-leader-return
+  printf 'on\n' > "$HOME_DIR/config/claude-seat-spare-leader"
+  printf '%s\t90\n%s\t60\n%s\t0\n' "$SEATS_DIR/alpha" "$SEATS_DIR/beta" "$SEATS_DIR/work" > "$SPEC_DIR/remaining_map"
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" launch-destination)
+  assert_equals beta "$(printf '%s\n' "$out" | tail -1)" 'a used-up worker seat must hand new work to another worker seat first'
+  printf '%s\t90\n%s\t0\n%s\t0\n' "$SEATS_DIR/alpha" "$SEATS_DIR/beta" "$SEATS_DIR/work" > "$SPEC_DIR/remaining_map"
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" launch-destination)
+  assert_equals alpha "$(printf '%s\n' "$out" | tail -1)" 'with no other choice new work must reach the leader rather than be held'
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" auto)
+  assert_contains "$out" 'switched from work to alpha because no other seat can take new workers' 'the watch must fall back to the leader'
+  assert_equals alpha "$(cat "$HOME_DIR/config/claude-seat")" 'the watch must publish the leader seat'
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" auto)
+  assert_not_contains "$out" 'switched' 'the watch must not flap back onto a used-up worker seat'
+  pass 'spare leader leaves a used-up worker seat and reaches the leader only as the last choice'
+}
+
+test_codex_spare_leader_leaves_a_used_up_worker_seat() {
+  local out
+  make_codex_seat_case codex-spare-leader-return
+  codex_quota_fixture "$SEATS_DIR/alpha" 90
+  codex_quota_fixture "$SEATS_DIR/beta" 60
+  codex_quota_fixture "$SEATS_DIR/work" 0
+  printf 'work\n' > "$HOME_DIR/config/codex-seat"
+  printf 'beta\n' > "$HOME_DIR/config/codex-seat-auto-exclude"
+  printf 'on\n' > "$HOME_DIR/config/codex-seat-spare-leader"
+  printf '%s\n' "$$" > "$HOME_DIR/state/.lock"
+  printf 'pid=%s\nharness=codex\nprofile=%s\n' "$$" "$SEATS_DIR/alpha" > "$HOME_DIR/state/.lock-runtime"
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" --provider codex launch-destination --spare-only)
+  assert_equals alpha "$(printf '%s\n' "$out" | tail -1)" 'Codex dispatch must reach the leader instead of holding on a used-up seat'
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" --provider codex auto)
+  assert_contains "$out" 'switched from work to alpha' 'the Codex watch must fall back to the leader'
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" --provider codex auto)
+  assert_not_contains "$out" 'switched' 'the Codex watch must not flap back onto the used-up seat'
+  pass 'Codex spare leader falls back to the leader from a used-up worker seat'
+}
+
 test_spare_leader_preserves_destination_guards() {
   local out
   spare_leader_case spare-leader-guards
@@ -5319,6 +5357,8 @@ test_spare_leader_handles_default_profile_and_codex_aliases() {
 test_spare_leader_ranks_last_and_falls_back
 test_spare_leader_dispatch_and_watch_depart_early
 test_spare_leader_departure_respects_the_switch_trigger
+test_spare_leader_leaves_a_used_up_worker_seat_without_a_trigger
+test_codex_spare_leader_leaves_a_used_up_worker_seat
 test_spare_leader_preserves_destination_guards
 test_spare_leader_handles_default_profile_and_codex_aliases
 test_spare_leader_missing_record_and_parent_binding
