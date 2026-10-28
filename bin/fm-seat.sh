@@ -2177,11 +2177,15 @@ auto_lead_trigger() {  # <threshold>
 # replacement, and leave a used-up worker seat even with no trigger set. Record
 # the destination before publishing, as auto_trigger does.
 auto_spare_leader() {
-  local active target fired out blocked why='to spare the leader'
+  local active target fired out blocked spared why='to spare the leader'
   active=$(fm_seat_active)
   target=$(spare_leader_destination "$active" 2>/dev/null) || return 0
-  ! fm_seat_matches_spared "$target" "$(fm_seat_spared_leader)" ||
-    why='because no other seat can take new workers'
+  spared=$(fm_seat_spared_leader) || spared=''
+  if fm_seat_matches_spared "$target" "$spared"; then
+    why='because its quota is used up and no other seat can take new workers'
+  elif ! fm_seat_matches_spared "$active" "$spared"; then
+    why='because its quota is used up'
+  fi
   fired=$(auto_record_get fired) || fired=''
   auto_record_set fired "$target"
   if out=$(FM_HOME="$FM_HOME" FM_ROOT_OVERRIDE="$FM_ROOT" FM_STATE_OVERRIDE="$STATE" \

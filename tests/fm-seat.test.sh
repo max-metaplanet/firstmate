@@ -5292,7 +5292,7 @@ test_spare_leader_leaves_a_used_up_worker_seat_without_a_trigger() {
   out=$(run_seat "$HOME_DIR" "$FAKEBIN" launch-destination)
   assert_equals alpha "$(printf '%s\n' "$out" | tail -1)" 'with no other choice new work must reach the leader rather than be held'
   out=$(run_seat "$HOME_DIR" "$FAKEBIN" auto)
-  assert_contains "$out" 'switched from work to alpha because no other seat can take new workers' 'the watch must fall back to the leader'
+  assert_contains "$out" 'switched from work to alpha because its quota is used up and no other seat can take new workers' 'the watch must fall back to the leader'
   assert_equals alpha "$(cat "$HOME_DIR/config/claude-seat")" 'the watch must publish the leader seat'
   out=$(run_seat "$HOME_DIR" "$FAKEBIN" auto)
   assert_not_contains "$out" 'switched' 'the watch must not flap back onto a used-up worker seat'
@@ -5310,7 +5310,7 @@ test_spare_leader_leaves_a_used_up_seat_for_any_worker_seat_with_quota() {
   out=$(run_seat "$HOME_DIR" "$FAKEBIN" launch-destination)
   assert_equals beta "$(printf '%s\n' "$out" | tail -1)" 'a worker seat with quota must beat the leader even with less weekly spare than the used-up seat'
   out=$(run_seat "$HOME_DIR" "$FAKEBIN" auto)
-  assert_contains "$out" 'switched from work to beta' 'the watch must leave the used-up seat for the worker seat'
+  assert_contains "$out" 'switched from work to beta because its quota is used up;' 'the watch must leave the used-up seat for the worker seat and say why'
   printf 'work\n' > "$HOME_DIR/config/claude-seat"
   printf 'allow 50\n' > "$HOME_DIR/config/claude-seat-extra-usage"
   seat_extra_spend "$SPEC_DIR" "$SEATS_DIR/work" 10
