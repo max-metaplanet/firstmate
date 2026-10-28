@@ -35,6 +35,8 @@ set -u
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 # shellcheck source=tests/wake-helpers.sh
 . "$(dirname "${BASH_SOURCE[0]}")/wake-helpers.sh"
+# shellcheck source=tests/treehouse-lease-helpers.sh
+. "$ROOT/tests/treehouse-lease-helpers.sh"
 
 SESSION_START="$ROOT/bin/fm-session-start.sh"
 BASE_PATH=${FM_TEST_BASE_PATH:-/usr/bin:/bin:/usr/sbin:/sbin}
@@ -89,8 +91,8 @@ SH
   chmod +x "$fakebin/gh"
   cat > "$fakebin/treehouse" <<'SH'
 #!/usr/bin/env bash
-if [ "${1:-}" = get ] && [ "${2:-}" = --help ]; then
-  printf '%s\n' 'Usage: treehouse get [--lease]'
+if [ "${1:-}" = lease ] && [ "${2:-}" = --help ]; then
+  printf '%s\n' 'Usage: treehouse lease <name> [--lease-holder <holder>]'
   exit 0
 fi
 exit 0
@@ -3064,6 +3066,40 @@ EOF
   pass "session start rejects Pi loaded markers from previous sessions"
 }
 
+test_startup_restores_task_lease_only_when_locked() {
+  local rec root home fakebin slot pool out holder_pid
+  rec=$(new_world treehouse-reboot)
+  IFS='|' read -r root home fakebin <<EOF
+$rec
+EOF
+  make_fake_toolchain "$fakebin"
+  ln -sf "$(command -v node)" "$fakebin/node"
+  make_fake_ps_claude "$fakebin"
+  pool="${root%/*}/pool"
+  slot="$pool/1/project"
+  mkdir -p "$pool/1"
+  git -C "$root" worktree add -q --detach "$slot" HEAD
+  printf '{"worktrees":[{"name":"1","path":"%s"}]}\n' "$slot" > "$pool/treehouse-state.json"
+  fm_write_meta "$home/state/parked.meta" "project=$root" "worktree=$slot" "kind=ship" "worker_park_phase=parked"
+  printf 'task=parked\nhome=%s\n' "$home" > "$pool/1/.fm-slot-owner"
+  fm_test_treehouse_durable_lease "$fakebin" "$pool"
+  sleep 300 &
+  holder_pid=$!
+  printf '%s\n' "$holder_pid" > "$home/state/.lock"
+  out=$(run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
+  kill "$holder_pid" 2>/dev/null || true
+  wait "$holder_pid" 2>/dev/null || true
+  assert_contains "$out" "READ-ONLY SESSION" "fixture did not refuse the held session lock"
+  [ ! -f "$pool/lease-calls" ] || fail "lock-refused startup mutated a Treehouse lease"
+  out=$(run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
+  assert_not_contains "$out" "READ-ONLY SESSION" "recovery did not acquire the session lock"
+  jq -e '.worktrees[0].leased == true' "$pool/treehouse-state.json" >/dev/null \
+    || fail "startup left a recorded parked task available after reboot: $out"
+  unset FM_TEST_LEASE_POOL
+  pass "startup restores a parked task's durable lease only after acquiring the session lock"
+}
+
+test_startup_restores_task_lease_only_when_locked
 test_context_digest_absent_empty_present
 test_lock_refusal_read_only_path
 test_lock_write_failure_read_only_path

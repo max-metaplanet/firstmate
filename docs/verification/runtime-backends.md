@@ -6,6 +6,31 @@ This record contains reusable version-scoped evidence for active runtime guarant
 The backend guides own current setup, safety boundaries, and limitations.
 Exact task chronology, branch names, temporary homes, local paths, process ids, thread ids, and delivery transcripts remain in private reports or PR evidence.
 
+## Treehouse task lease recovery
+
+Verified on 2026-10-28 on Linux arm64 with Bash 5.3.9 and Node 24.22.1 using real fixture Git repositories and a stateful Treehouse stand-in.
+The installed Treehouse 3.1.3 `lease --help` confirms that leasing an existing slot changes only persistent lease state; the regressions exercise Firstmate's integration without rebooting the host or administering a shared pool.
+[`bin/fm-treehouse-lease-lib.sh`](../../bin/fm-treehouse-lease-lib.sh) owns recovery and its ownership checks.
+All primary harnesses share the startup entry point, and tmux, Herdr, Zellij, and cmux share the Treehouse spawn path; Orca supplies its own worktrees and skips the spawn lease calls.
+The JSON parser uses the universally required Node runtime, so the tmux path needs no additional JSON tool.
+
+Refresh the portable ownership and persistence evidence with:
+
+```sh
+bash tests/fm-treehouse-lease.test.sh
+```
+
+Observed output:
+
+```text
+ok - reboot recovery durably leases a parked record, preserves work, and is idempotent
+ok - foreign, unsafe, absent, released and host-missing records never lease a slot
+ok - lease failures surface and release the project lock
+```
+
+The allocation regression in `tests/fm-spawn-pool-base-freshen.test.sh` removes the process lease, retains a parked task record, and verifies that spawn restores its durable lease before choosing a different slot and durably leasing the new task.
+`tests/fm-session-start.test.sh` checks startup recovery and lock-refused non-mutation, while `tests/fm-teardown.test.sh` verifies that cleanup releases a recovered durable lease and removes its slot-owner claim and task record.
+
 ## Polytoken worker lifecycle
 
 Verified on 2026-10-14 with Polytoken 0.9.0 on macOS arm64 using the tmux worker path.

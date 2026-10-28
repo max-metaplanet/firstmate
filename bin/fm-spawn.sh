@@ -795,6 +795,8 @@ fi
 . "$SCRIPT_DIR/fm-ff-lib.sh"
 # shellcheck source=bin/fm-wake-lib.sh
 . "$SCRIPT_DIR/fm-wake-lib.sh"
+# shellcheck source=bin/fm-treehouse-lease-lib.sh
+. "$SCRIPT_DIR/fm-treehouse-lease-lib.sh"
 # The registry parser is already in scope through fm-ff-lib.sh above; naming it
 # here too keeps the claimed-copy scan's dependency explicit, and re-sourcing a
 # definitions-only library is a no-op.
@@ -4106,6 +4108,18 @@ if { [ "$RELAUNCH" -eq 0 ] || [ "$SPAWN_PARK_RESUME" = 1 ]; } && [ "$KIND" != se
   fi
   SPAWN_TREEHOUSE_PROJECT_LOCK_HELD=1
 fi
+if [ "$SPAWN_TREEHOUSE_PROJECT_LOCK_HELD" = 1 ] && [ "$BACKEND" != orca ]; then
+  # Restore before `get` can select an occupied slot whose process lease died.
+  fm_local_firstmate_state_dirs "$STATE" || {
+    echo "error: cannot restore Treehouse leases: $FM_LOCAL_FIRSTMATE_ERROR" >&2
+    exit 1
+  }
+  for lease_state in "${FM_LOCAL_FIRSTMATE_STATES[@]}"; do
+    lease_home=${lease_state%/state}
+    [ "$lease_state" != "$STATE" ] || lease_home=$FM_HOME
+    fm_treehouse_leases_restore "$lease_state" "$lease_home" "$SPAWN_TREEHOUSE_PROJECT_LOCK" || exit 1
+  done
+fi
 if [ -n "$SPAWN_PROJECT_CAPACITY" ]; then
   if ! fm_project_capacity_occupants "$SPAWN_TREEHOUSE_PROJECT_LOCK" "$PROJ_ABS" "$STATE" "$ID"; then
     echo "error: spawn refused: project $(basename "$PROJ_ABS") declares a capacity of $SPAWN_PROJECT_CAPACITY, but this machine's task records cannot all be read to count it ($FM_PROJECT_CAPACITY_ERROR)" >&2
@@ -5816,12 +5830,9 @@ SH
   rm -rf -- "$SPAWN_TREEHOUSE_ACQUIRE"
   SPAWN_TREEHOUSE_ACQUIRE=
 
-  # Claim the pool slot for this task. The interactive `treehouse get` sent to
-  # the pane above records only a process lease (Treehouse's durable
-  # `get --lease --lease-holder`, which bin/fm-home-seed.sh uses for secondmate
-  # homes, is not this path), so Treehouse cannot say which task a slot belongs
-  # to once that task's worker exits - and that is exactly when the slot is
-  # handed on and this task's worktree= line goes stale. The claim is what lets
+  # Claim the pool slot for this task. The interactive get records a process
+  # lease; fm-treehouse-lease-lib.sh upgrades it after the spawn commits.
+  # The claim is what lets
   # bin/fm-teardown.sh leave a slot that has since been reassigned untouched, so
   # a slot that cannot be claimed is refused here, at the cheapest point, rather
   # than launching a worker whose slot teardown could later release out from
@@ -7434,6 +7445,14 @@ fi
 fm_lock_release "$SPAWN_META_LOCK"
 SPAWN_META_LOCK_HELD=0
 [ "$RELAUNCH" -eq 1 ] || rm -f "$STATE/$ID.deferred-spawn.json"
+
+# Delivery and backlog publication have committed, so a lease failure only
+# warns: the spawn has succeeded, and the next pre-allocation or startup restore
+# leases this record. Take the project lock only after releasing the meta lock,
+# preserving teardown's project-before-meta lock ordering.
+if [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ]; then
+  fm_treehouse_task_lease_restore "$STATE/$ID.meta" "$FM_HOME" || true
+fi
 
 SPAWN_DELIVERY=
 [ -z "$MODE" ] || SPAWN_DELIVERY=" mode=$MODE yolo=$YOLO"
