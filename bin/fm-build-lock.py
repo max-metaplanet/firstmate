@@ -1,10 +1,18 @@
 #!/usr/bin/env python3
 """Serialize heavy builds across Firstmate homes on this machine.
 
-build-shims/{next,node} use this executable through PATH. Only `next build`
-and Node executing Next's resolved dist/bin/next CLI with `build` lock.
-Package managers and Turbo remain unlocked; their Next build leaves lock.
-Explicit other heavy commands: fm-build-lock.py -- COMMAND [ARGS...].
+fm-build-lock.js is a Node preload carried in NODE_OPTIONS, so it survives
+shells that rebuild PATH (rc files, version managers, agent shell snapshots).
+Only Node executing Next's resolved dist/bin/next CLI with `build` re-runs
+itself through this lock; every other Node process returns from the preload
+without starting another interpreter. Package managers and Turbo remain
+unlocked; their Next build leaves lock.
+
+  fm-build-lock.py -- COMMAND [ARGS...]   run another heavy command locked
+  fm-build-lock.py node-option            print the NODE_OPTIONS entry
+  fm-build-lock.py install-daemon-env [--unit-dir DIR]
+      write a systemd user drop-in giving every no-mistakes daemon unit the
+      preload; it activates at the daemon's next restart, never restarts it.
 Bypass once: FM_BUILD_LOCK_BYPASS=1 pnpm build.
 
 The default /var/tmp/firstmate-heavy-build-<uid>.lock is shared by every home
@@ -17,10 +25,9 @@ releases it when the last inheriting descendant exits. Recursive descendants
 reuse the logical build's lock, including runners that close extra fds or
 scrub the environment.
 
-Coverage is PATH-based: absolute Node binaries, embedded runtimes, other build
-tools, or shells that replace PATH need the explicit wrapper. Managed pipeline
-Claude agents inherit the shims; daemon-run configured commands and other
-pipeline providers do not inherit the Claude wrapper's environment.
+Coverage is NODE_OPTIONS-based: runtimes other than Node, other build tools,
+or launchers that clear NODE_OPTIONS need the explicit wrapper. The daemon
+drop-in is systemd-only; a launchd-managed daemon is not covered.
 """
 
 import fcntl
@@ -31,37 +38,40 @@ import stat
 import subprocess
 import sys
 
-
-def real_command(name):
-    """Ignore every copy of our shims, including another home's installation."""
-    for directory in os.get_exec_path():
-        candidate = Path(directory or ".") / name
-        if not candidate.is_file() or not os.access(candidate, os.X_OK):
-            continue
-        if candidate.resolve().name == "fm-build-lock.py":
-            continue
-        return str(candidate.absolute())
-    raise FileNotFoundError(f"real {name} executable not found on PATH")
+PRELOAD = Path(__file__).resolve().with_name("fm-build-lock.js")
+DROP_IN = "fm-build-lock.conf"
 
 
-def node_build(args):
-    # Node flags precede the script. Skip flags with separate values explicitly;
-    # eval/print/stdin are never a CLI script invocation.
-    value_flags = {"-r", "--require", "--import", "--loader", "--experimental-loader",
-                   "--conditions", "-C", "--icu-data-dir"}
-    index = 0
-    while index < len(args):
-        arg = args[index]
-        if arg in {"-e", "--eval", "-p", "--print", "-", "-v", "--version", "-h", "--help"}:
-            return False
-        if arg == "--":
-            index += 1
-            break
-        if not arg.startswith("-"):
-            break
-        index += 2 if arg in value_flags else 1
-    return (index + 1 < len(args) and args[index + 1] == "build"
-            and str(Path(args[index]).resolve()).endswith("/next/dist/bin/next"))
+def node_option():
+    option = f"--require={PRELOAD}"
+    # NODE_OPTIONS is split on whitespace and the value is embedded in shells.
+    if any(not (char.isalnum() or char in "/._-=+") for char in option):
+        raise ValueError(f"preload path is not NODE_OPTIONS-safe: {PRELOAD}")
+    return option
+
+
+def install_daemon_env(args):
+    if args[:1] == ["--unit-dir"] and len(args) == 2:
+        unit_dir = Path(args[1])
+    elif not args:
+        config = os.environ.get("XDG_CONFIG_HOME") or str(Path.home() / ".config")
+        unit_dir = Path(config) / "systemd" / "user"
+    else:
+        print(__doc__, file=sys.stderr)
+        return 2
+    units = sorted(unit_dir.glob("no-mistakes-daemon-*.service"))
+    if not units:
+        raise FileNotFoundError(f"no no-mistakes daemon unit in {unit_dir}")
+    text = f'[Service]\nEnvironment="NODE_OPTIONS={node_option()}"\n'
+    for unit in units:
+        directory = unit.with_name(unit.name + ".d")
+        directory.mkdir(exist_ok=True)
+        staged = directory / (DROP_IN + ".tmp")
+        staged.write_text(text)
+        staged.replace(directory / DROP_IN)
+        print(f"wrote {directory / DROP_IN}; activates at the next "
+              f"`systemctl --user daemon-reload` and {unit.name} restart")
+    return 0
 
 
 def record(fd):
@@ -112,22 +122,21 @@ def acquire():
 
 
 def main():
-    name = Path(sys.argv[0]).name
     args = sys.argv[1:]
-    if name in {"node", "next"}:
-        command = real_command(name)
-        heavy = (args[:1] == ["build"]) if name == "next" else node_build(args)
-    else:
-        if len(args) < 2 or args[0] != "--":
-            print(__doc__, file=sys.stderr)
-            return 2
-        command, args = args[1], args[2:]
-        heavy = True
-    if name in {"node", "next"} and any(arg in {"-h", "--help"} for arg in args):
-        heavy = False
-    if heavy and os.environ.get("FM_BUILD_LOCK_BYPASS") != "1":
+    if args == ["node-option"]:
+        print(node_option())
+        return 0
+    if args[:1] == ["install-daemon-env"]:
+        return install_daemon_env(args[1:])
+    if len(args) < 2 or args[0] != "--":
+        print(__doc__, file=sys.stderr)
+        return 2
+    command, args = args[1], args[2:]
+    if os.environ.get("FM_BUILD_LOCK_BYPASS") != "1":
         acquire()
-    os.execvpe(command, [command, *args], os.environ)
+    # The preload in the exec'd Node process recognizes itself by this pid.
+    os.environ["FM_BUILD_LOCK_HELD"] = str(os.getpid())
+    os.execvp(command, [command, *args])
 
 
 if __name__ == "__main__":

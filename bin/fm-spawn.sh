@@ -7064,10 +7064,13 @@ LAUNCH="export COMPACT_ADVISER_DISABLE=1; $LAUNCH"
 # both the agent and pane shell, including filtered launches and relaunches.
 if [ "$KIND" = ship ] || [ "$KIND" = scout ]; then
   WORKER_TEST_ENV='PREPUSH_TESTS=0 VITEST_MAX_WORKERS=1 PIPELINE_TEST_MAX_WORKERS=1'
-  # Keep the runtime PATH: package managers add their own bins, while our node
-  # shim still catches Next's CLI. This common site also covers relaunch and
-  # the env -i launch floor. fm-build-lock.py owns selection and lock lifetime.
-  WORKER_BUILD_ENV="export PATH=$(shell_quote "$FM_ROOT/bin/build-shims"):\$PATH"
+  # The build-lock preload rides NODE_OPTIONS, which agent shells keep even
+  # when their rc or snapshot rebuilds PATH. Appending keeps any project
+  # options; the line starts with export so the pane replay carries it too.
+  # This common site also covers relaunch and the env -i launch floor.
+  # fm-build-lock.py owns selection and lock lifetime.
+  BUILD_LOCK_OPTION=$("$FM_ROOT/bin/fm-build-lock.py" node-option) || exit 1
+  WORKER_BUILD_ENV="export NODE_OPTIONS; case \" \${NODE_OPTIONS-} \" in *\" $BUILD_LOCK_OPTION \"*) ;; *) NODE_OPTIONS=\"\${NODE_OPTIONS:+\$NODE_OPTIONS }$BUILD_LOCK_OPTION\" ;; esac"
   LAUNCH="$WORKER_BUILD_ENV; export $WORKER_TEST_ENV; $LAUNCH"
 fi
 # When the live-harness gate has exported DISABLE_AUTOUPDATER into this spawn's

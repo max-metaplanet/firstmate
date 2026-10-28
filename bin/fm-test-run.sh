@@ -1717,7 +1717,7 @@ families_for_changed_path() {
     bin/fm-procevent-quota.sh)
       printf '%s\n' "__script__:fm-procevent-quota.test.sh"
       ;;
-    bin/fm-build-lock.py|bin/build-shims/*)
+    bin/fm-build-lock.py|bin/fm-build-lock.js)
       printf '%s\n' "__script__:fm-build-lock.test.sh"
       printf '%s\n' "__script__:fm-spawn-compact-adviser-disable.test.sh"
       printf '%s\n' "__script__:fm-seat.test.sh"

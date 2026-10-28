@@ -94,9 +94,9 @@ assert_prepush_env() {  # <harness> <expected>
     || fail "the emitted launch failed to run the pre-push probe"
   assert_equals "$2" "$seen" "the launched $1 agent must receive the expected pre-push setting"
   if [ "$2" = 0 ]; then
-    install_env_probe "$FAKEBIN_DIR" "$1" PATH
-    seen=$(emitted_launch_env "$FAKEBIN_DIR" "$LAUNCH_LOG" "$PANE_LOG") || fail 'build PATH probe failed'
-    assert_equals "$ROOT/bin/build-shims" "${seen%%:*}" 'fresh worker must prefer build shims'
+    install_env_probe "$FAKEBIN_DIR" "$1" NODE_OPTIONS
+    seen=$(emitted_launch_env "$FAKEBIN_DIR" "$LAUNCH_LOG" "$PANE_LOG") || fail 'build preload probe failed'
+    assert_equals "--require=$ROOT/bin/fm-build-lock.js" "$seen" 'fresh worker must carry the build preload once'
   fi
 }
 
@@ -360,7 +360,7 @@ SH
 }
 
 test_relaunch_rebuilds_the_switch() {
-  local harness=$1 kind=${2:-ship} setting dir home proj wt id out status seen launch preamble variable
+  local harness=$1 kind=${2:-ship} setting dir home proj wt id out status seen launch preamble variable expected
   for setting in absent enabled; do
     id="relaunch-$harness-$kind-$setting-a1"
     dir="$TMP_ROOT/relaunch-$harness-$kind-$setting"
@@ -419,10 +419,13 @@ $launch") \
       TMUX=synthetic-pane PREPUSH_TESTS=1 /bin/sh -c "$preamble
 $launch") || fail "$harness relaunch pre-push probe failed"
     assert_equals 0 "$seen" "$harness relaunch with allowlist=$setting must receive PREPUSH_TESTS=0"
-    install_env_probe "$dir/fakebin" "$harness" PATH
+    install_env_probe "$dir/fakebin" "$harness" NODE_OPTIONS
     seen=$(env -i HOME="$dir/user-home" PATH="$dir/fakebin:$PATH" TERM=xterm \
-      /bin/sh -c "$launch") || fail 'relaunch build PATH probe failed'
-    assert_equals "$ROOT/bin/build-shims" "${seen%%:*}" 'relaunched worker must prefer build shims'
+      NODE_OPTIONS=--max-old-space-size=512 /bin/sh -c "$launch") || fail 'relaunch build preload probe failed'
+    expected="--max-old-space-size=512 --require=$ROOT/bin/fm-build-lock.js"
+    # The allowlist launch floor filters ambient names; the preload still lands.
+    [ "$setting" = absent ] || expected="--require=$ROOT/bin/fm-build-lock.js"
+    assert_equals "$expected" "$seen" "relaunched worker with allowlist=$setting must carry the build preload"
     for variable in VITEST_MAX_WORKERS PIPELINE_TEST_MAX_WORKERS; do
       install_env_probe "$dir/fakebin" "$harness" "$variable"
       seen=$(env -i HOME="$dir/user-home" PATH="$dir/fakebin:$PATH" TERM=xterm \
