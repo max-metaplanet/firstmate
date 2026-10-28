@@ -964,6 +964,7 @@ tests/fm-tmux-agent-liveness.test.sh 3770
 tests/fm-tool-update-check.test.sh 14414
 tests/fm-trace-context-lib.test.sh 236
 tests/fm-trace-context-spawn.test.sh 57488
+tests/fm-treehouse-lease.test.sh 2128
 tests/fm-turnend-foreign-owner-arm-fix.test.sh 5575
 tests/fm-turnend-guard.test.sh 34727
 tests/fm-update.test.sh 14543
