@@ -72,6 +72,8 @@ set -u
 
 # shellcheck source=tests/lib.sh disable=SC1091
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+# shellcheck source=tests/treehouse-lease-helpers.sh
+. "$ROOT/tests/treehouse-lease-helpers.sh"
 fm_git_identity fmtest fmtest@example.invalid
 
 TEARDOWN="$ROOT/bin/fm-teardown.sh"
@@ -6494,6 +6496,32 @@ SH
   pass "teardown suppresses real fetch auto-GC and removal-child maintenance without writing config"
 }
 
+test_teardown_releases_recovered_durable_lease() {
+  local case_dir wt out
+  case_dir=$(make_case durable-lease-return)
+  wt=$(move_case_to_pool_slot "$case_dir" 1)
+  write_meta "$case_dir" no-mistakes scout "$wt"
+  prepare_scout_teardown "$case_dir"
+  printf 'task=task-x1\nhome=%s\n' "$case_dir" > "$case_dir/pool/1/.fm-slot-owner"
+  fm_test_treehouse_durable_lease "$case_dir/fakebin" "$case_dir/pool"
+  FM_HOME="$case_dir" PATH="$case_dir/fakebin:$PATH" bash -c '
+    . "$1/bin/fm-backend.sh"
+    . "$1/bin/fm-wake-lib.sh"
+    . "$1/bin/fm-treehouse-lease-lib.sh"
+    fm_treehouse_leases_restore "$FM_HOME/state" "$FM_HOME"
+  ' _ "$ROOT"
+  jq -e '.worktrees[0].leased == true' "$case_dir/pool/treehouse-state.json" >/dev/null \
+    || fail "fixture did not recover a durable lease"
+  out=$(FM_HOME="$case_dir" run_teardown "$case_dir" 2>&1) || fail "leased-slot teardown failed: $out"
+  jq -e '.worktrees[0].leased != true' "$case_dir/pool/treehouse-state.json" >/dev/null \
+    || fail "cleanup left the durable lease behind"
+  assert_absent "$case_dir/pool/1/.fm-slot-owner" "cleanup left its slot-owner claim"
+  assert_absent "$case_dir/state/task-x1.meta" "cleanup left its task record"
+  unset FM_TEST_LEASE_POOL
+  pass "teardown returns a recovered durable lease and removes its claim and record"
+}
+
+test_teardown_releases_recovered_durable_lease
 test_teardown_suppresses_git_auto_maintenance
 
 test_teardown_preserves_opencode_busy_plugin_on_pool_return

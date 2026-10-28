@@ -10,6 +10,8 @@ set -u
 
 # shellcheck source=tests/fixtures.sh
 . "$(dirname "${BASH_SOURCE[0]}")/fixtures.sh"
+# shellcheck source=tests/treehouse-lease-helpers.sh
+. "$ROOT/tests/treehouse-lease-helpers.sh"
 
 TMP_ROOT=$(fm_test_tmproot fm-spawn-pool-base-freshen)
 
@@ -698,6 +700,7 @@ lay_out_as_pool_slot() {
     > "$slot_root/treehouse-state.json"
   POOL_DIR="$slot_root/1/project"
   SLOT_CLAIM="$slot_root/1/.fm-slot-owner"
+  fm_test_treehouse_durable_lease "$FAKEBIN_DIR" "$slot_root"
 }
 
 # The spawn side of the slot-owner claim that bin/fm-teardown.sh later reads:
@@ -765,6 +768,7 @@ test_pool_slot_claim_follows_the_spawn_outcome() {
 # the process lease real Treehouse keeps for an interactive acquire.
 install_pool_world_tmux() {  # <fakebin> <world-dir> <slot-root>
   local fakebin=$1 world=$2 slots=$3
+  fm_test_treehouse_durable_lease "$fakebin" "$slots"
   mkdir -p "$world"
   cat > "$fakebin/tmux" <<SH
 #!/usr/bin/env bash
@@ -821,6 +825,8 @@ case "$cmd" in
       w=$(window_name "$target")
       for slot in "$slots"/*/project; do
         grep -qxF -- "$slot" "$world"/*.path 2>/dev/null && continue
+        jq -e --arg path "$slot" '.worktrees[] | select(.path == $path) | .leased == true' \
+          "$slots/treehouse-state.json" >/dev/null && continue
         printf '%s\n' "$slot" > "$world/$w.path"
         break
       done
@@ -1185,6 +1191,33 @@ test_scout_base_branch_refused_on_gerrit_forge() {
   pass "a based scout on a forge=gerrit project is refused at spawn"
 }
 
+test_reboot_restores_record_before_allocating() {
+  local rec id out slot_root world
+  id='pool-reboot-new'
+  rec=$(make_case reboot-restore "$id")
+  read_case_record "$rec"
+  lay_out_as_pool_slot
+  slot_root="$CASE_DIR/slots"
+  mkdir -p "$slot_root/2"
+  git -C "$PROJECT_DIR" worktree add -q --detach "$slot_root/2/project" "$INITIAL_SHA"
+  jq --arg path "$slot_root/2/project" '.worktrees += [{name:"2",path:$path}]' \
+    "$slot_root/treehouse-state.json" > "$slot_root/state.new"
+  mv "$slot_root/state.new" "$slot_root/treehouse-state.json"
+  fm_write_meta "$HOME_DIR/state/parked.meta" "project=$PROJECT_DIR" "worktree=$POOL_DIR" "kind=ship" "worker_park_phase=parked"
+  printf 'task=parked\nhome=%s\n' "$HOME_DIR" > "$slot_root/1/.fm-slot-owner"
+  fm_test_treehouse_durable_lease "$FAKEBIN_DIR" "$slot_root"
+  world="$CASE_DIR/tmux-world"
+  install_pool_world_tmux "$FAKEBIN_DIR" "$world" "$slot_root"
+  # No terminal/process lease survives this simulated reboot.
+  out=$(run_spawn "$id" --scout) || fail "spawn after reboot failed: $out"
+  assert_grep "worktree=$slot_root/2/project" "$HOME_DIR/state/$id.meta" "spawn selected the occupied slot after reboot"
+  jq -e 'all(.worktrees[]; .leased == true)' "$slot_root/treehouse-state.json" >/dev/null \
+    || fail "both the parked task and the new spawn need durable leases"
+  pass "spawn restores the parked task before get and durably leases its own distinct slot"
+  unset FM_TEST_LEASE_POOL
+}
+
+test_reboot_restores_record_before_allocating
 test_remote_seeded_home_spawns_from_treehouse_pool
 test_pool_slot_claim_follows_the_spawn_outcome
 test_refused_launch_leaves_the_pool_for_a_retry_and_a_second_task
