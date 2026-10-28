@@ -1,0 +1,20 @@
+# fresh ship, no allowlist; spawner ambient PREPUSH_TESTS=1 VITEST_MAX_WORKERS=9 PIPELINE_TEST_MAX_WORKERS=9
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fm-lab.UYb8GS/home
+notice: lt-ship ships mode=local-only while the standing posture for proj is no-mistakes - less rigor than the captain's standing posture; proceed only on a current explicit captain instruction or an intake judgment you can state
+spawned lt-ship harness=sh kind=ship mode=local-only yolo=off window=primary:fm-lt-ship worktree=~/.treehouse/proj-85d50c/1/proj
+exit=0
+## agent process env (probe harness)
+FM_TASK_ID=lt-ship
+PIPELINE_TEST_MAX_WORKERS=1
+PREPUSH_TESTS=0
+VITEST_MAX_WORKERS=1
+## worker pane transcript
+❯ export GOTMPDIR=/tmp/fm-lt-ship/gotmp
+export COMPACT_ADVISER_DISABLE=1
+export FM_TASK_ID=lt-ship
+export PREPUSH_TESTS=0 VITEST_MAX_WORKERS=1 PIPELINE_TEST_MAX_WORKERS=1
+❯ export COMPACT_ADVISER_DISABLE=1
+❯ export FM_TASK_ID=lt-ship
+. '/tmp/fm-lt-ship+030f09b31c5b7a59c138933761b7593ee000eb3a3a0ad6bf9ecb41af3a7bfddf/launch.s1793170196.2233641.7526.sh'
+❯ export PREPUSH_TESTS=0 VITEST_MAX_WORKERS=1 PIPELINE_TEST_MAX_WORKERS=1
+❯ . '/tmp/fm-lt-ship+030f09b31c5b7a59c138933761b7593ee000eb3a3a0ad6bf9ecb41af3a7bfddf/launch.s1793170196.2233641.7526.sh'

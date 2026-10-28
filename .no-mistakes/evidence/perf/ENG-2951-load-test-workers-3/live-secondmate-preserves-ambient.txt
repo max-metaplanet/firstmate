@@ -1,0 +1,14 @@
+# secondmate lt-sm2, no allowlist; tmux global env carries PREPUSH_TESTS=1 VITEST_MAX_WORKERS=9 PIPELINE_TEST_MAX_WORKERS=9
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fm-lab.UYb8GS/home
+warning: secondmate lt-sm2 sync skipped before launch: primary default-branch commit cannot be resolved
+spawned lt-sm2 harness=sh kind=secondmate mode=secondmate yolo=off window=primary:fm-lt-sm2 worktree=/tmp/fm-lab.UYb8GS/sm-home2
+exit=0
+## agent env (unchanged ambient values expected)
+PIPELINE_TEST_MAX_WORKERS=9
+PREPUSH_TESTS=1
+VITEST_MAX_WORKERS=9
+done
+## worker pane commands (no worker test-control export)
+❯ export GOTMPDIR=/tmp/fm-lt-sm2/gotmp
+❯ export COMPACT_ADVISER_DISABLE=1
+❯ . '/tmp/fm-lt-sm2+030f09b31c5b7a59c138933761b7593ee000eb3a3a0ad6bf9ecb41af3a7bfddf/launch.s1793170325.2261878.7139.sh'

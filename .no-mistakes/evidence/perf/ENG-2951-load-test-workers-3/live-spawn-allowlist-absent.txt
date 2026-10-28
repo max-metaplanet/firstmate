@@ -1,0 +1,27 @@
+### allowlist=absent  ambient caller env: PREPUSH_TESTS=1 VITEST_MAX_WORKERS=9 PIPELINE_TEST_MAX_WORKERS=9
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fm-lab.q6MVXR
+notice: live-absent ships mode=local-only while the standing posture for proj is no-mistakes - less rigor than the captain's standing posture; proceed only on a current explicit captain instruction or an intake judgment you can state
+spawned live-absent harness=sh kind=ship mode=local-only yolo=off window=firstmate:fm-live-absent worktree=~/.treehouse/proj-feaf75/1/proj
+spawn exit=0
+--- agent process environment (from real tmux pane):
+COMPACT_ADVISER_DISABLE=1
+FM_TASK_ID=live-absent
+PIPELINE_TEST_MAX_WORKERS=1
+PREPUSH_TESTS=0
+VITEST_MAX_WORKERS=1
+--- worker window: firstmate:@1 ; pane shell exports observed by probing the pane:
+export FM_TASK_ID=live-absent
+export PREPUSH_TESTS=0 VITEST_MAX_WORKERS=1 PIPELINE_TEST_MAX_WORKERS=1
+PANE: PREPUSH_TESTS=0 VITEST_MAX_WORKERS=1 PIPELINE_TEST_MAX_WORKERS=1
+--- relaunch: fm-spawn.sh live-absent --relaunch (same contrary ambient values)
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fm-lab.q6MVXR
+notice: live-absent ships mode=local-only while the standing posture for proj is no-mistakes - less rigor than the captain's standing posture; proceed only on a current explicit captain instruction or an intake judgment you can state
+spawned live-absent harness=sh kind=ship mode=local-only yolo=off window=firstmate:fm-live-absent worktree=~/.treehouse/proj-feaf75/1/proj
+relaunch exit=0
+--- relaunched agent process environment:
+PIPELINE_TEST_MAX_WORKERS=1
+PREPUSH_TESTS=0
+VITEST_MAX_WORKERS=1
+--- treehouse pool check (must be absent):
+~/.treehouse/proj-feaf75
+note: the real treehouse binary served the pool copy of the disposable lab project; that pool copy was removed after the run.

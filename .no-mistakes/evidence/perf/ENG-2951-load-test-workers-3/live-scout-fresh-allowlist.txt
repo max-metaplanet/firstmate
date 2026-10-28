@@ -1,0 +1,9 @@
+# fresh scout lt-scout with allowlist present; spawner ambient 1/9/9
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fm-lab.UYb8GS/home
+spawned lt-scout harness=sh kind=scout window=primary:fm-lt-scout worktree=~/.treehouse/proj-85d50c/2/proj
+exit=0
+## agent env
+FM_TASK_ID=lt-scout
+PIPELINE_TEST_MAX_WORKERS=1
+PREPUSH_TESTS=0
+VITEST_MAX_WORKERS=1

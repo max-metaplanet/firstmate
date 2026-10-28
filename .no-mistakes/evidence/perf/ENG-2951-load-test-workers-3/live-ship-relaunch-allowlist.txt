@@ -1,0 +1,10 @@
+# relaunch lt-ship with config/launch-env-allowlist present (env -i filtered launch); spawner ambient 1/9/9
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fm-lab.UYb8GS/home
+notice: lt-ship ships mode=local-only while the standing posture for proj is no-mistakes - less rigor than the captain's standing posture; proceed only on a current explicit captain instruction or an intake judgment you can state
+spawned lt-ship harness=sh kind=ship mode=local-only yolo=off window=primary:fm-lt-ship worktree=~/.treehouse/proj-85d50c/1/proj
+exit=0
+## agent env
+FM_TASK_ID=lt-ship
+PIPELINE_TEST_MAX_WORKERS=1
+PREPUSH_TESTS=0
+VITEST_MAX_WORKERS=1
