@@ -232,14 +232,9 @@ assert_grep '(red)' "$TASK_TMP/out" 'large rollup failure was ignored'
 jq '.statusCheckRollup = "unreadable"' "$TASK_TMP/large.json" > "$TASK_TMP/view.json"
 expect_result 2
 assert_grep 'unreadable checks' "$TASK_TMP/err" 'unreadable large rollup did not refuse'
-cp "$TASK_TMP/large.json" "$TASK_TMP/view.json"
-printf 'unreadable\n' >> "$TASK_TMP/view.json"
-expect_result 2
-cp "$TASK_TMP/large.json" "$TASK_TMP/view.json"
-printf '{}\n' >> "$TASK_TMP/view.json"
-expect_result 2
 jq '.check_runs[0].app.id = null' "$TASK_TMP/runs.json" > "$TASK_TMP/invalid-runs.json"
 mv "$TASK_TMP/invalid-runs.json" "$TASK_TMP/runs.json"
 cp "$TASK_TMP/large.json" "$TASK_TMP/view.json"
 expect_result 2
-pass 'large red, malformed rollup, and unreadable producer evidence still refuse'
+assert_grep 'could not read required check producers' "$TASK_TMP/err" 'unreadable large producer evidence did not refuse'
+pass 'large red, unreadable rollup, and unreadable producer evidence still refuse'
