@@ -202,3 +202,39 @@ done
 gate_runs '[["SKIPPED","2026-10-20T10:00:00Z"]]' > "$TASK_TMP/view.json"
 expect_result 0
 pass 'unfinished replacements are pending beside old skips or failures, passing replacements and lone path skips stay green'
+
+# Each payload exceeds Linux's per-argument limit (128 KiB), including the
+# producer and requirement arrays independently of the full rollup.
+jq -nc --arg head "$HEAD" '{headRefOid:$head,baseRefName:"main",statusCheckRollup:[
+  range(0;400) | {__typename:"CheckRun",name:("lane-" + tostring + "-" + ("x" * 400)),
+    detailsUrl:("https://example.com/" + ("u" * 400)),status:"COMPLETED",conclusion:"SUCCESS",
+    startedAt:"2026-10-20T11:00:04Z"}]}' > "$TASK_TMP/view.json"
+cp "$TASK_TMP/view.json" "$TASK_TMP/large.json"
+printf '[]\n' > "$TASK_TMP/rules.json"
+expect_result 0 --after "$READY"
+[ ! -s "$TASK_TMP/out" ] || fail 'large green rollup reported blockers'
+pass 'large unconfigured rollup stays green after the ready bound'
+
+jq '[{type:"required_status_checks",parameters:{required_status_checks:[
+  .statusCheckRollup[] | {context:.name,integration_id:1}]}}]' "$TASK_TMP/large.json" > "$TASK_TMP/rules.json"
+jq '{check_runs:[.statusCheckRollup[] | {name,app:{id:1},head_sha:.headRefOid}]}' "$TASK_TMP/large.json" \
+  | jq --arg head "$HEAD" '.check_runs[].head_sha = $head' > "$TASK_TMP/runs.json"
+for payload in view rules runs; do
+  [ "$(wc -c < "$TASK_TMP/$payload.json")" -gt 131072 ] || fail "large $payload fixture is too small"
+done
+expect_result 0
+expect_result 0 --after "$READY"
+pass 'large app-bound requirement and producer arrays stay green'
+
+jq '.statusCheckRollup[0].conclusion = "FAILURE"' "$TASK_TMP/large.json" > "$TASK_TMP/view.json"
+expect_result 1
+assert_grep '(red)' "$TASK_TMP/out" 'large rollup failure was ignored'
+jq '.statusCheckRollup = "unreadable"' "$TASK_TMP/large.json" > "$TASK_TMP/view.json"
+expect_result 2
+assert_grep 'unreadable checks' "$TASK_TMP/err" 'unreadable large rollup did not refuse'
+jq '.check_runs[0].app.id = null' "$TASK_TMP/runs.json" > "$TASK_TMP/invalid-runs.json"
+mv "$TASK_TMP/invalid-runs.json" "$TASK_TMP/runs.json"
+cp "$TASK_TMP/large.json" "$TASK_TMP/view.json"
+expect_result 2
+assert_grep 'could not read required check producers' "$TASK_TMP/err" 'unreadable large producer evidence did not refuse'
+pass 'large red, unreadable rollup, and unreadable producer evidence still refuse'

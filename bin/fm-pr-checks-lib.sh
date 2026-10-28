@@ -8,6 +8,8 @@
 # current head's producers for app-bound requirements. When no requirements are
 # configured, every reported check counts except a name/context containing the
 # exact case-sensitive marker "(advisory)". Configured requirements always win.
+# JSON payloads are streamed through stdin, including combined inputs,
+# so rollups, requirements, and producer evidence never consume exec argv space.
 # Read errors fail closed.
 # The forge's required CI gate is treated like any other required context.
 
@@ -79,11 +81,13 @@ github_branch_rules_unavailable_on_plan() {
 # a second check evaluator, while a red check refuses either way.
 github_checks_not_green() {
   local json=$1 required=$2
-  printf '%s' "$json" | jq -r --argjson required "$required" '
+  printf '[%s,%s]\n' "$required" "$json" | jq -r '
     def settled_at:
       if type == "string" and test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$")
       then . else null end;
-    if (.statusCheckRollup | type) != "array" then error("no check rollup") else . end
+    if length != 2 then error("invalid check inputs") else . end
+    | .[0] as $required | .[1]
+    | if (.statusCheckRollup | type) != "array" then error("no check rollup") else . end
     | [ .statusCheckRollup
         | to_entries[]
         | .key as $i
@@ -179,9 +183,11 @@ github_rollup_without_skips_before() {
 github_checks_without_fresh_run() {
   local json=$1 bounded=$2 required=$3
   [ "$required" = '[]' ] || return 0
-  jq -nr --argjson full "$json" --argjson bounded "$bounded" '
+  printf '[%s,%s]\n' "$json" "$bounded" | jq -r '
     def check_name: (if .__typename == "CheckRun" then .name else .context end) // "";
-    [$bounded.statusCheckRollup[] | check_name] as $fresh
+    if length != 2 then error("invalid check inputs") else . end
+    | .[0] as $full | .[1] as $bounded
+    | [$bounded.statusCheckRollup[] | check_name] as $fresh
     | [$full.statusCheckRollup[] | check_name | select(contains("(advisory)") | not)]
     | unique[] | select(. as $n | any($fresh[]; . == $n) | not)
     | if . == "" then "(unnamed check)" else . end
@@ -263,8 +269,10 @@ github_read_required_contexts() {
 # alongside all lookup errors.
 github_required_checks_missing() {
   local json=$1 required=$2 producers=$3
-  printf '%s' "$json" | jq -r --argjson required "$required" --argjson producers "$producers" '
-    if (.statusCheckRollup | type) != "array" then error("no check rollup") else . end
+  printf '[%s,%s,%s]\n' "$required" "$producers" "$json" | jq -r '
+    if length != 3 then error("invalid check inputs") else . end
+    | .[0] as $required | .[1] as $producers | .[2]
+    | if (.statusCheckRollup | type) != "array" then error("no check rollup") else . end
     | .statusCheckRollup as $reported
     | $required
     | map(. as $requirement
