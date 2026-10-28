@@ -14,7 +14,8 @@ Never delete a live lock file: flock protects its inode, not its pathname.
 Python fcntl.flock works on Linux and macOS without the flock CLI. Errors fail
 closed. The exec'd build owns an inheritable fd; exit, including SIGKILL,
 releases it when the last inheriting descendant exits. Recursive descendants
-reuse the logical build's lock, including runners that close extra fds.
+reuse the logical build's lock, including runners that close extra fds or
+scrub the environment.
 
 Coverage is PATH-based: absolute Node binaries, embedded runtimes, other build
 tools, or shells that replace PATH need the explicit wrapper. Managed pipeline
@@ -29,7 +30,6 @@ from pathlib import Path
 import stat
 import subprocess
 import sys
-import uuid
 
 
 def real_command(name):
@@ -100,18 +100,15 @@ def acquire():
         fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except BlockingIOError:
         owner = record(fd)
-        token = os.environ.get("FM_BUILD_LOCK_TOKEN")
-        if token and token == owner.get("token") and ancestor(owner.get("pid")):
+        if isinstance(owner.get("pid"), int) and ancestor(owner["pid"]):
             os.close(fd)
             return
         print(f"waiting for build lock (held by pid {owner.get('pid', 'unknown')})", file=sys.stderr, flush=True)
         fcntl.flock(fd, fcntl.LOCK_EX)
-    token = uuid.uuid4().hex
     os.lseek(fd, 0, os.SEEK_SET)
     os.ftruncate(fd, 0)
-    os.write(fd, json.dumps({"pid": os.getpid(), "token": token}).encode())
+    os.write(fd, json.dumps({"pid": os.getpid()}).encode())
     os.set_inheritable(fd, True)
-    os.environ["FM_BUILD_LOCK_TOKEN"] = token
 
 
 def main():

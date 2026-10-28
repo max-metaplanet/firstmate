@@ -5,7 +5,6 @@ set -eu
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 TMP_ROOT=$(mktemp -d "$FM_TEST_SCRATCH_ROOT/fm-build-lock.XXXXXX")
 python3 - "$ROOT" "$TMP_ROOT" <<'PY'
-import json
 import os
 from pathlib import Path
 import shutil
@@ -19,7 +18,6 @@ wrapper = root / 'bin/fm-build-lock.py'
 env = dict(os.environ, PATH=str(shim) + os.pathsep + os.environ['PATH'],
            FM_BUILD_LOCK_FILE=str(scratch / 'build.lock'))
 env.pop('FM_BUILD_LOCK_BYPASS', None)
-env.pop('FM_BUILD_LOCK_TOKEN', None)
 children = []
 
 
@@ -69,24 +67,6 @@ try:
     assert two.wait(10) == 0
     print('ok - concurrent builds wait visibly, bypass works, SIGKILL releases lock')
 
-    # A copied token outside the owner's ancestry must still wait.
-    one = launch(explicit, 'owner')
-    wait_file(scratch / 'owner')
-    token = json.loads((scratch / 'build.lock').read_text())['token']
-    two = launch(explicit, 'unrelated', {'FM_BUILD_LOCK_TOKEN': token})
-    for _ in range(300):
-        if 'waiting for build lock' in (scratch / 'unrelated.err').read_text():
-            break
-        time.sleep(.03)
-    assert 'waiting for build lock' in (scratch / 'unrelated.err').read_text()
-    assert not (scratch / 'unrelated').exists()
-    (scratch / 'owner.release').touch()
-    assert one.wait(10) == 0
-    wait_file(scratch / 'unrelated')
-    (scratch / 'unrelated.release').touch()
-    assert two.wait(10) == 0
-    print('ok - stale/inherited ownership outside the build tree cannot bypass')
-
     real_node = shutil.which('node')
     if real_node:
         cli = scratch / 'node_modules/next/dist/bin/next'
@@ -96,7 +76,8 @@ const fs = require('fs');
 if (process.argv[2] !== 'build' || process.argv.includes('--help')) { console.log('pass:' + process.argv.slice(2).join('|')); process.exit(0); }
 if (process.env.NESTED === '1') {
   const child = require('child_process').spawnSync('node', [__filename, 'build'], {
-    env: {...process.env, NESTED: '0'}, stdio: 'inherit', timeout: 8000
+    env: {PATH: process.env.PATH, FM_BUILD_LOCK_FILE: process.env.FM_BUILD_LOCK_FILE,
+          MARKER: process.env.MARKER, RELEASE: process.env.RELEASE, NESTED: '0'}, stdio: 'inherit', timeout: 8000
   });
   if (child.error) throw child.error;
   process.exit(child.status);
@@ -128,7 +109,7 @@ const timer = setInterval(() => { if (fs.existsSync(process.env.RELEASE)) clearI
         wait_file(scratch / 'direct')
         (scratch / 'direct.release').touch()
         assert second.wait(10) == 0
-        # Node closes extra fds for spawned children; ancestor ownership survives.
+        # Node closes extra fds and the child env is scrubbed; ancestor ownership survives.
         (scratch / 'nested.release').touch()
         nested = launch(['node', '--no-warnings', str(cli), 'build'], 'nested', {'NESTED': '1'})
         assert nested.wait(12) == 0, (scratch / 'nested.err').read_text()
