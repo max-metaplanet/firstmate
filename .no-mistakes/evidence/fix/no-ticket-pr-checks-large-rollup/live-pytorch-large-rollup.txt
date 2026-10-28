@@ -1,0 +1,13 @@
+# Real public PR https://github.com/pytorch/pytorch/pull/202354 (read-only)
+rollup bytes: 132708 (Linux MAX_ARG_STRLEN=131072)
+== base (3e879a39) fm-pr-checks.sh --after 2026-01-01T00:00:00Z: exit 2
+fm-pr-checks: unreadable checks
+... (1 lines)
+== target (823832bb) fm-pr-checks.sh --after 2026-01-01T00:00:00Z: exit 1
+REQUIRED CHECK: linux-jammy-cuda13.2-py3.11-gcc11 / test (inductor, 1, 2, lf-l-x86aavx2-11-41-l4) (pending)
+REQUIRED CHECK: linux-jammy-rocm-py3.11 / build (pending)
+REQUIRED CHECK: linux-noble-rocm-py3.11-mi300 / test (distributed, 1, 5, linux.rocm.gpu.mi300.2, module:rocm, oncall:distributed) (pending)
+REQUIRED CHECK: linux-noble-rocm-py3.11-mi300 / test (distributed, 2, 5, linux.rocm.gpu.mi300.2, module:rocm, oncall:distributed) (pending)
+REQUIRED CHECK: linux-noble-rocm-py3.11-mi300 / test (distributed, 3, 5, linux.rocm.gpu.mi300.2, module:rocm, oncall:distributed) (pending)
+... (20 lines)
+== without --after: base exit 1, target exit 1; outputs identical: yes

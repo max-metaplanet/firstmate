@@ -1,0 +1,12 @@
+# Target 823832bb adversarial/fail-closed checks against real PR https://github.com/pytorch/pytorch/pull/202354 data
+== app-bound requirement with wrong app id + never-reported lane: exit 1
+REQUIRED CHECK: Auto Request Review (missing)
+REQUIRED CHECK: never-reported-lane (missing)
+== large producers with null app id: exit 2
+fm-pr-checks: could not read required check producers at head adebe7ab3ae5d9a52dec3bd6474d11f53707157a
+== large rollup replaced by non-array: exit 2
+fm-pr-checks: unreadable checks
+== rollup truncated mid-JSON (70000 bytes): exit 2
+fm-pr-checks: unreadable head
+== unconfigured: real rules (none) + non-array rollup: exit 2
+fm-pr-checks: unreadable checks

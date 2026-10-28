@@ -1,0 +1,17 @@
+# Real PR https://github.com/pytorch/pytorch/pull/202354 + real check-runs producers (1242021 bytes) + synthetic app-bound rules (337 requirements)
+== base [no --after] exit 2
+missing lines: 0
+fm-pr-checks: unreadable checks
+== base [--after 2026-01-01T00:00:00Z] exit 2
+missing lines: 0
+fm-pr-checks: unreadable checks
+== target [no --after] exit 1
+missing lines: 0
+REQUIRED CHECK: linux-jammy-cuda13.2-py3.11-gcc11 / test (inductor, 1, 2, lf-l-x86aavx2-11-41-l4) (pending)
+REQUIRED CHECK: linux-jammy-rocm-py3.11 / build (pending)
+REQUIRED CHECK: linux-noble-rocm-py3.11-mi300 / test (distributed, 1, 5, linux.rocm.gpu.mi300.2, module:rocm, oncall:distributed) (pending)
+== target [--after 2026-01-01T00:00:00Z] exit 1
+missing lines: 0
+REQUIRED CHECK: linux-jammy-cuda13.2-py3.11-gcc11 / test (inductor, 1, 2, lf-l-x86aavx2-11-41-l4) (pending)
+REQUIRED CHECK: linux-jammy-rocm-py3.11 / build (pending)
+REQUIRED CHECK: linux-noble-rocm-py3.11-mi300 / test (distributed, 1, 5, linux.rocm.gpu.mi300.2, module:rocm, oncall:distributed) (pending)
