@@ -1,0 +1,99 @@
+=== [target] status logs ===
+--- t1.status
+working: started the migration
+needs-decision [key=legacy-index]: step 2 drops the legacy index - approve?
+done: steps 1 and 3 committed; step 2 awaits the legacy-index ruling
+--- t2.status
+blocked [key=creds]: need read creds for the staging bucket
+failed: could not finish the survey without creds
+needs-decision [key=already]: which region?
+resolved [key=already]: answered: us-east
+
+=== [target] wake drain OPEN DECISIONS ===
+
+$ ~/.no-mistakes/worktrees/8bd563a85c16/01M60K7TA46SA2QHSVHBPYPMAB/bin/fm-wake-drain.sh
+STATUS OUTCOME BACKSTOP (newest captain-facing task event has no covering branch outcome):
+t1 done: steps 1 and 3 committed; step 2 awaits the legacy-index ruling
+OPEN DECISIONS (still open, folded from the durable status logs - not just the latest line):
+t1 [key=legacy-index] needs-decision: step 2 drops the legacy index - approve?
+t2 [key=creds] blocked: need read creds for the staging bucket
+OPEN DECISIONS: close one by answering it: bin/fm-send.sh <task> --resolve-key <key> '<answer>'
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  2 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[exit 0]
+
+=== [target] crew state ===
+
+$ ~/.no-mistakes/worktrees/8bd563a85c16/01M60K7TA46SA2QHSVHBPYPMAB/bin/fm-crew-state.sh t1
+state: unknown · source: none · worktree gone (torn down?)
+[exit 0]
+
+$ ~/.no-mistakes/worktrees/8bd563a85c16/01M60K7TA46SA2QHSVHBPYPMAB/bin/fm-crew-state.sh t2
+state: unknown · source: none · worktree gone (torn down?)
+[exit 0]
+
+=== [target] fm-send --resolve-key on a decision left open behind done: ===
+
+$ env FM_SEND_SETTLE=0 ~/.no-mistakes/worktrees/8bd563a85c16/01M60K7TA46SA2QHSVHBPYPMAB/bin/fm-send.sh t1 --resolve-key legacy-index approved: drop the legacy index
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fm-lab.Qj6fNv
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+[exit 0]
+--- t1.status after
+working: started the migration
+needs-decision [key=legacy-index]: step 2 drops the legacy index - approve?
+done: steps 1 and 3 committed; step 2 awaits the legacy-index ruling
+resolved [key=legacy-index] [at=1793169315]: answered: approved: drop the legacy index
+--- t1 inbox
+001.msg
+handled
+schema=fm-task-inbox.v1
+at=2026-10-28T06:35:15Z
+body-terminator=1
+--
+approved: drop the legacy index
+--- t1 pane received
+: Firstmate instruction waiting: list "$FM_TASK_INBOX"/*.msg in your 't1.inbox' steering inbox, read and act on each in numeric order, then mv each into its handled/.
+
+
+=== [target] fm-send --resolve-key on blocker behind failed: (scout) ===
+
+$ env FM_SEND_SETTLE=0 ~/.no-mistakes/worktrees/8bd563a85c16/01M60K7TA46SA2QHSVHBPYPMAB/bin/fm-send.sh t2 --resolve-key creds creds are in vault path x
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fm-lab.Qj6fNv
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+[exit 0]
+
+=== [target] adversarial: mistyped key ===
+
+$ env FM_SEND_SETTLE=0 ~/.no-mistakes/worktrees/8bd563a85c16/01M60K7TA46SA2QHSVHBPYPMAB/bin/fm-send.sh t2 --resolve-key credz typo answer
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fm-lab.Qj6fNv
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+error: --resolve-key 'credz': this lookup found nothing to answer - no line in /tmp/fm-lab.Qj6fNv/state/t2.status ever opened or closed that key, and the captain-hold ledger was searched for task ids 'credz' and 't2-decision-credz' and held neither open. That means the key is mistyped, belongs to a different task, or was never opened; it does NOT prove the decision was answered. Check the log itself before assuming it was, then resend with the right key; nothing was sent.
+[exit 1]
+
+=== [target] adversarial: already-resolved key ===
+
+$ env FM_SEND_SETTLE=0 ~/.no-mistakes/worktrees/8bd563a85c16/01M60K7TA46SA2QHSVHBPYPMAB/bin/fm-send.sh t2 --resolve-key already again
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fm-lab.Qj6fNv
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+error: --resolve-key 'already': that decision is already closed - /tmp/fm-lab.Qj6fNv/state/t2.status carries a 'resolved' line for the key, and the captain-hold ledger was searched for task ids 'already' and 't2-decision-already' and held neither open. Resend without that key; nothing was sent.
+[exit 1]
+
+=== [target] adversarial: re-answer the now-closed legacy-index ===
+
+$ env FM_SEND_SETTLE=0 ~/.no-mistakes/worktrees/8bd563a85c16/01M60K7TA46SA2QHSVHBPYPMAB/bin/fm-send.sh t1 --resolve-key legacy-index dup
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fm-lab.Qj6fNv
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+error: --resolve-key 'legacy-index': that decision is already closed - /tmp/fm-lab.Qj6fNv/state/t1.status carries a 'resolved' line for the key, and the captain-hold ledger was searched for task ids 'legacy-index' and 't1-decision-legacy-index' and held neither open. Resend without that key; nothing was sent.
+[exit 1]
+
+=== [target] wake drain after answers ===
+
+$ ~/.no-mistakes/worktrees/8bd563a85c16/01M60K7TA46SA2QHSVHBPYPMAB/bin/fm-wake-drain.sh
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+[exit 0]
+--- inbox counts: t1=1 t2=1

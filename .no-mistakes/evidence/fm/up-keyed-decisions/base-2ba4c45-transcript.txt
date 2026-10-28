@@ -1,0 +1,88 @@
+=== [base] status logs ===
+--- t1.status
+working: started the migration
+needs-decision [key=legacy-index]: step 2 drops the legacy index - approve?
+done: steps 1 and 3 committed; step 2 awaits the legacy-index ruling
+--- t2.status
+blocked [key=creds]: need read creds for the staging bucket
+failed: could not finish the survey without creds
+needs-decision [key=already]: which region?
+resolved [key=already]: answered: us-east
+
+=== [base] wake drain OPEN DECISIONS ===
+
+$ /tmp/fmkd-base.S2H1/bin/fm-wake-drain.sh
+STATUS OUTCOME BACKSTOP (newest captain-facing task event has no covering branch outcome):
+t1 done: steps 1 and 3 committed; step 2 awaits the legacy-index ruling
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  2 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[exit 0]
+
+=== [base] crew state ===
+
+$ /tmp/fmkd-base.S2H1/bin/fm-crew-state.sh t1
+state: unknown · source: none · worktree gone (torn down?)
+[exit 0]
+
+$ /tmp/fmkd-base.S2H1/bin/fm-crew-state.sh t2
+state: unknown · source: none · worktree gone (torn down?)
+[exit 0]
+
+=== [base] fm-send --resolve-key on a decision left open behind done: ===
+
+$ env FM_SEND_SETTLE=0 /tmp/fmkd-base.S2H1/bin/fm-send.sh t1 --resolve-key legacy-index approved: drop the legacy index
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fm-lab.ADm2lm
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+error: --resolve-key 'legacy-index': no open decision or blocker with that key in /tmp/fm-lab.ADm2lm/state/t1.status, and no captain-held task 'legacy-index' or 't1-decision-legacy-index' still open (already closed or mistyped). Re-check the OPEN DECISIONS listing, then resend without that key or with the right one; nothing was sent.
+[exit 1]
+--- t1.status after
+working: started the migration
+needs-decision [key=legacy-index]: step 2 drops the legacy index - approve?
+done: steps 1 and 3 committed; step 2 awaits the legacy-index ruling
+--- t1 inbox
+--- t1 pane received
+
+
+=== [base] fm-send --resolve-key on blocker behind failed: (scout) ===
+
+$ env FM_SEND_SETTLE=0 /tmp/fmkd-base.S2H1/bin/fm-send.sh t2 --resolve-key creds creds are in vault path x
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fm-lab.ADm2lm
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+error: --resolve-key 'creds': no open decision or blocker with that key in /tmp/fm-lab.ADm2lm/state/t2.status, and no captain-held task 'creds' or 't2-decision-creds' still open (already closed or mistyped). Re-check the OPEN DECISIONS listing, then resend without that key or with the right one; nothing was sent.
+[exit 1]
+
+=== [base] adversarial: mistyped key ===
+
+$ env FM_SEND_SETTLE=0 /tmp/fmkd-base.S2H1/bin/fm-send.sh t2 --resolve-key credz typo answer
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fm-lab.ADm2lm
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+error: --resolve-key 'credz': no open decision or blocker with that key in /tmp/fm-lab.ADm2lm/state/t2.status, and no captain-held task 'credz' or 't2-decision-credz' still open (already closed or mistyped). Re-check the OPEN DECISIONS listing, then resend without that key or with the right one; nothing was sent.
+[exit 1]
+
+=== [base] adversarial: already-resolved key ===
+
+$ env FM_SEND_SETTLE=0 /tmp/fmkd-base.S2H1/bin/fm-send.sh t2 --resolve-key already again
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fm-lab.ADm2lm
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+error: --resolve-key 'already': no open decision or blocker with that key in /tmp/fm-lab.ADm2lm/state/t2.status, and no captain-held task 'already' or 't2-decision-already' still open (already closed or mistyped). Re-check the OPEN DECISIONS listing, then resend without that key or with the right one; nothing was sent.
+[exit 1]
+
+=== [base] adversarial: re-answer the now-closed legacy-index ===
+
+$ env FM_SEND_SETTLE=0 /tmp/fmkd-base.S2H1/bin/fm-send.sh t1 --resolve-key legacy-index dup
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fm-lab.ADm2lm
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+error: --resolve-key 'legacy-index': no open decision or blocker with that key in /tmp/fm-lab.ADm2lm/state/t1.status, and no captain-held task 'legacy-index' or 't1-decision-legacy-index' still open (already closed or mistyped). Re-check the OPEN DECISIONS listing, then resend without that key or with the right one; nothing was sent.
+[exit 1]
+
+=== [base] wake drain after answers ===
+
+$ /tmp/fmkd-base.S2H1/bin/fm-wake-drain.sh
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+[exit 0]
+--- inbox counts: t1=0 t2=0
