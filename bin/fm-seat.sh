@@ -997,7 +997,7 @@ seat_rank_key() {
 next_seat() {
   local active seats n i idx name minimum='' reason state resting skip rc
   local anchor_basis='' anchor_spare='' any=0 key session='' room
-  local spared='' fallback='' spare_move=0
+  local spared='' fallback='' spare_move=0 left phrase
   local -a ranked=() waiting=()
   if [ "${1-}" = --spare-leader ]; then
     spare_move=1
@@ -1077,6 +1077,12 @@ next_seat() {
       esac
       continue
     fi
+    if [ "$spare_move" -eq 1 ] && [ -n "$session" ] &&
+      IFS=$'\t' read -r _ left phrase < <(seat_crossing "$name") && [ -n "$left" ] &&
+      jq -en --arg l "$left" --arg t "$session" '($l | tonumber) <= ($t | tonumber)' >/dev/null 2>&1; then
+      printf 'seat %s: skipped, at %s it is not above the %s%% switch trigger\n' "$name" "$phrase" "$session" >&2
+      continue
+    fi
     reason=$(destination_quota_check "$name" "$anchor_basis" "$anchor_spare")
     rc=$?
     if [ "$rc" -ne 0 ] && [ -n "$session" ]; then
@@ -1149,7 +1155,8 @@ next_seat() {
 }
 
 # A spared leader ranks behind any eligible worker seat even when it has more
-# weekly spare. Session room and absolute destination gates still apply. Once
+# weekly spare. Session room, the switch trigger and absolute destination gates
+# still apply, so a departure never lands on a seat the rotation must leave. Once
 # off the leader, ordinary anchor comparison and fired-state hysteresis resume.
 spare_leader_destination() {
   local active=$1 spared

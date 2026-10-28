@@ -766,8 +766,6 @@ test_serve_answers_a_loopback_host_and_refuses_a_rebinding_one
 test_serve_serves_the_board_only_under_the_path_token_it_printed
 test_stopping_serve_leaves_nothing_listening_on_its_port
 
-echo "# all fm-seat-board tests passed"
-
 test_board_explains_spare_leader() {
   local out
   read_board_case "$(make_board_case spare-leader)"
@@ -781,3 +779,5 @@ test_board_explains_spare_leader() {
   pass 'board names the spared leader seat'
 }
 test_board_explains_spare_leader
+
+echo "# all fm-seat-board tests passed"

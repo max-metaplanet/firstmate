@@ -1256,8 +1256,8 @@ Seats and worker account pins are mutually exclusive because both choose a Claud
 The optional local, gitignored `config/claude-seat` holds the active seat NAME for new Claude workers, as the file's whitespace-trimmed first line.
 Absent, empty, or malformed means the reserved seat `default`: no `CLAUDE_CONFIG_DIR` is added and launches stay byte-for-byte as they were before seats existed.
 The optional `config/claude-seats-root` holds one absolute path, the directory holding one subdirectory per named seat, and defaults to `$HOME/.claude-seats`; seats live outside the firstmate home so the owner logs into a seat once and every home on the machine reaches the same profile.
-Four optional files drive the automatic mode, and four more drive the quota floor below.
-Seven of those eight hold a percentage, and every percentage counts percent LEFT, the same direction the quota viewer reports; only `config/claude-seat-session-share` counts something else, and says so where it is defined.
+Five optional files drive the automatic mode, and four more drive the quota floor below.
+Every percentage among them counts percent LEFT, the same direction the quota viewer reports; only `config/claude-seat-session-share` counts something else, and says so where it is defined.
 `config/claude-seat-threshold` holds one percentage between 0 and 100: the percent left on the ACTIVE seat at or below which an armed watch switches future workers to another seat.
 `config/claude-seat-destination-min` holds one percentage between 0 and 100: the percent left a candidate seat must EXCEED to be a switch destination, so a switch never lands on a nearly empty seat; absent, no headroom level is asked of a candidate.
 `config/claude-seat-spare-leader` accepts `on` or `off`; absent means `off`.
@@ -1270,7 +1270,7 @@ A seat a configured `allow <usd>` extra-usage policy still covers is not treated
 The destination minimum is a separate rule and still applies to such a seat, with `--force` as its deliberate manual override.
 `config/claude-seat-extra-usage` holds one directive, either `stop` or `allow <usd>`: what to do when no seat has headroom and the active seat's plan quota is gone, so further work would run on paid extra usage.
 `stop` holds new Claude dispatch; `allow <usd>` keeps dispatching while that seat's extra-usage spend, read from the `extra_usage` window the account reports, is below that firstmate-side dollar cap, and holds once it reaches it.
-The fourth, `config/claude-seat-auto-exclude`, holds seat names rather than a number, one per whitespace-trimmed line: the seats held out of AUTOMATIC rotation only.
+The fifth, `config/claude-seat-auto-exclude`, holds seat names rather than a number, one per whitespace-trimmed line: the seats held out of AUTOMATIC rotation only.
 Blank lines are ignored, and a line naming no seat simply matches nothing, so a stale entry never excludes a seat it did not name; absent or empty means every named seat under the root is a rotation candidate.
 It withholds a seat regardless of headroom, which is what the percentage settings cannot express: the case is an account usable on this machine that should nonetheless never be picked up by an automatic switch, such as a personal account on a work machine.
 `bin/fm-seat.sh auto-exclude <name>` and `auto-include <name>` are the only writers of that last file; both are idempotent, an exclusion is refused for a name with no seat directory and for the `default` login that is never an automatic target, and `bin/fm-seat.sh status` and `list` each report which seats are excluded.

@@ -4973,7 +4973,6 @@ test_a_new_worker_is_held_when_no_seat_has_five_hour_room() {
   pass "a new worker is held, naming the soonest five-hour reset, when no seat has five-hour room"
 }
 
-echo "# all fm-seat tests passed"
 
 test_a_resting_lead_seat_still_requires_measured_spend_priority
 test_a_new_worker_launches_off_a_seat_with_no_five_hour_room
@@ -5265,6 +5264,23 @@ test_spawn_spares_a_healthy_leader() {
   pass 'real spawn uses the spare-leader launch choice'
 }
 
+test_spare_leader_departure_respects_the_switch_trigger() {
+  local out
+  spare_leader_case spare-leader-trigger
+  printf 'alpha\n' > "$HOME_DIR/config/claude-seat"
+  printf 'on\n' > "$HOME_DIR/config/claude-seat-spare-leader"
+  printf '20\n' > "$HOME_DIR/config/claude-seat-threshold"
+  printf 'work\n' > "$HOME_DIR/config/claude-seat-auto-exclude"
+  seat_windows "$SPEC_DIR" "$SEATS_DIR/alpha" 90 '2099-01-01T00:00:00Z' 90 '2099-01-07T00:00:00Z' 50 50
+  seat_windows "$SPEC_DIR" "$SEATS_DIR/beta" 80 '2099-01-01T00:00:00Z' 15 '2099-01-07T00:00:00Z' 30 5
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" launch-destination)
+  assert_equals alpha "$(printf '%s\n' "$out" | tail -1)" 'dispatch must not spare the leader onto a seat below the trigger'
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" auto)
+  assert_not_contains "$out" 'switched' 'the watch must not flap back onto a seat the rotation just left'
+  assert_equals alpha "$(cat "$HOME_DIR/config/claude-seat")" 'the leader stays the only choice while beta is below the trigger'
+  pass 'spare-leader departures never land on a seat at or below the switch trigger'
+}
+
 test_spare_leader_preserves_destination_guards() {
   local out
   spare_leader_case spare-leader-guards
@@ -5302,8 +5318,11 @@ test_spare_leader_handles_default_profile_and_codex_aliases() {
 
 test_spare_leader_ranks_last_and_falls_back
 test_spare_leader_dispatch_and_watch_depart_early
+test_spare_leader_departure_respects_the_switch_trigger
 test_spare_leader_preserves_destination_guards
 test_spare_leader_handles_default_profile_and_codex_aliases
 test_spare_leader_missing_record_and_parent_binding
 test_codex_spare_leader_parity
 test_spawn_spares_a_healthy_leader
+
+echo "# all fm-seat tests passed"
