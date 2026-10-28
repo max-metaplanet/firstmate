@@ -1,0 +1,23 @@
+# Lab fleet snapshot: open decisions across lifecycle (FM_HOME=disposable lab, private tmux socket)
+## base 0e3284c7 (before fix)
+busy-ship	working/pane	pending=false	blocked=false	keys=
+done-scout	parked/status-log	pending=true	blocked=false	keys=scope
+done-ship	parked/status-log	pending=true	blocked=false	keys=route
+failed-ship	blocked/status-log	pending=false	blocked=true	keys=creds
+rs-completed	done/run-step	pending=false	blocked=false	keys=
+rs-failed	failed/run-step	pending=false	blocked=false	keys=
+## head 50a17d56 (after fix)
+busy-ship	working/pane	pending=true	blocked=false	keys=api
+done-scout	parked/status-log	pending=true	blocked=false	keys=scope
+done-ship	parked/status-log	pending=true	blocked=false	keys=route
+failed-ship	blocked/status-log	pending=false	blocked=true	keys=creds
+rs-completed	done/run-step	pending=true	blocked=false	keys=route
+rs-failed	failed/run-step	pending=true	blocked=false	keys=route
+## head after: fm-send.sh rs-completed --resolve-key route 'Use REST.'
+resolved [key=route] [at=1793175820]: answered: Use REST.
+busy-ship	working/pane	pending=true	blocked=false	keys=api
+done-scout	parked/status-log	pending=true	blocked=false	keys=scope
+done-ship	parked/status-log	pending=true	blocked=false	keys=route
+failed-ship	blocked/status-log	pending=false	blocked=true	keys=creds
+rs-completed	done/run-step	pending=false	blocked=false	keys=
+rs-failed	failed/run-step	pending=true	blocked=false	keys=route

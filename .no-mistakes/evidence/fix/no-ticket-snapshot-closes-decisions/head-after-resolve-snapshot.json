@@ -1,0 +1,581 @@
+{
+  "schema": "fm-fleet-snapshot.v1",
+  "capacity": {
+    "mode": "off",
+    "configured": null,
+    "effective": null,
+    "hold": "",
+    "occupancy": 6,
+    "occupancy_error": "",
+    "holders": "busy-ship, done-scout, done-ship, failed-ship, rs-completed, rs-failed",
+    "queued_resumes": 0
+  },
+  "generated": "2026-10-28T08:23:48Z",
+  "fm_home": "/tmp/fm-lab.LqwE4z",
+  "roots": {
+    "fm_root": "~/.no-mistakes/worktrees/c0c4fcacb05a/01M60S7MQ3K633DF8A9RJGGATT",
+    "state": "/tmp/fm-lab.LqwE4z/state",
+    "data": "/tmp/fm-lab.LqwE4z/data",
+    "config": "/tmp/fm-lab.LqwE4z/config",
+    "projects": "/tmp/fm-lab.LqwE4z/projects"
+  },
+  "backlog": {
+    "path": "/tmp/fm-lab.LqwE4z/data/backlog.md",
+    "present": false,
+    "records": []
+  },
+  "tasks": [
+    {
+      "id": "busy-ship",
+      "kind": "ship",
+      "harness": "claude",
+      "mode": "ship",
+      "yolo": "",
+      "branch": null,
+      "project": "alpha",
+      "spawn_gen": null,
+      "backend": "tmux",
+      "remote": null,
+      "paths": {
+        "meta": {
+          "path": "/tmp/fm-lab.LqwE4z/state/busy-ship.meta",
+          "present": true
+        },
+        "status_log": {
+          "path": "/tmp/fm-lab.LqwE4z/state/busy-ship.status",
+          "present": true,
+          "kind": "event_history",
+          "last_event": {
+            "state": "needs-decision",
+            "note": "choose an API shape",
+            "raw": "needs-decision [key=api]: choose an API shape",
+            "age_seconds": null
+          }
+        },
+        "worktree": {
+          "path": "/tmp/fm-lab.LqwE4z/projects/busy-ship",
+          "present": true
+        },
+        "home": {
+          "path": null,
+          "present": false
+        },
+        "report": {
+          "path": "/tmp/fm-lab.LqwE4z/data/busy-ship/report.md",
+          "present": false
+        }
+      },
+      "secondmate_projects": [],
+      "current_state": {
+        "state": "working",
+        "source": "pane",
+        "detail": "harness busy (claude-hook)",
+        "raw": "state: working · source: pane · harness busy (claude-hook)",
+        "observed_at": "2026-10-28T08:23:48Z",
+        "freshness": "fresh"
+      },
+      "endpoint": {
+        "target": "firstmate:fm-busy-ship",
+        "exists": true,
+        "agent_alive": "not_checked",
+        "status": "unknown",
+        "observed_at": "2026-10-28T08:23:48Z",
+        "freshness": "fresh"
+      },
+      "pr": {
+        "url": null,
+        "source": "absent",
+        "head": null
+      },
+      "hints": {
+        "pending_decision": true,
+        "blocked_event": false,
+        "open_decisions": [
+          {
+            "key": "api",
+            "verb": "needs-decision",
+            "summary": "choose an API shape"
+          }
+        ],
+        "scout_report_present": false,
+        "last_event_text": "needs-decision [key=api]: choose an API shape"
+      },
+      "actions": {
+        "watch": "bin/fm-peek.sh fm-busy-ship",
+        "steer": "bin/fm-send.sh fm-busy-ship '<instruction>'",
+        "return_channel_note": null
+      },
+      "backlog": null
+    },
+    {
+      "id": "done-scout",
+      "kind": "scout",
+      "harness": "claude",
+      "mode": "scout",
+      "yolo": "",
+      "branch": null,
+      "project": "alpha",
+      "spawn_gen": null,
+      "backend": "tmux",
+      "remote": null,
+      "paths": {
+        "meta": {
+          "path": "/tmp/fm-lab.LqwE4z/state/done-scout.meta",
+          "present": true
+        },
+        "status_log": {
+          "path": "/tmp/fm-lab.LqwE4z/state/done-scout.status",
+          "present": true,
+          "kind": "event_history",
+          "last_event": {
+            "state": "done",
+            "note": "report ready",
+            "raw": "done: report ready",
+            "age_seconds": null
+          }
+        },
+        "worktree": {
+          "path": "/tmp/fm-lab.LqwE4z/projects/scout-wt",
+          "present": true
+        },
+        "home": {
+          "path": null,
+          "present": false
+        },
+        "report": {
+          "path": "/tmp/fm-lab.LqwE4z/data/done-scout/report.md",
+          "present": true
+        }
+      },
+      "secondmate_projects": [],
+      "current_state": {
+        "state": "parked",
+        "source": "status-log",
+        "detail": "widen scope?",
+        "raw": "state: parked · source: status-log · widen scope?",
+        "observed_at": "2026-10-28T08:23:48Z",
+        "freshness": "fresh"
+      },
+      "endpoint": {
+        "target": "firstmate:fm-done-scout",
+        "exists": true,
+        "agent_alive": "not_checked",
+        "status": "unknown",
+        "observed_at": "2026-10-28T08:23:48Z",
+        "freshness": "fresh"
+      },
+      "pr": {
+        "url": null,
+        "source": "absent",
+        "head": null
+      },
+      "hints": {
+        "pending_decision": true,
+        "blocked_event": false,
+        "open_decisions": [
+          {
+            "key": "scope",
+            "verb": "needs-decision",
+            "summary": "widen scope?"
+          }
+        ],
+        "scout_report_present": true,
+        "last_event_text": "done: report ready"
+      },
+      "actions": {
+        "watch": "bin/fm-peek.sh fm-done-scout",
+        "steer": "bin/fm-send.sh fm-done-scout '<instruction>'",
+        "return_channel_note": null
+      },
+      "backlog": null
+    },
+    {
+      "id": "done-ship",
+      "kind": "ship",
+      "harness": "claude",
+      "mode": "ship",
+      "yolo": "",
+      "branch": null,
+      "project": "alpha",
+      "spawn_gen": null,
+      "backend": "tmux",
+      "remote": null,
+      "paths": {
+        "meta": {
+          "path": "/tmp/fm-lab.LqwE4z/state/done-ship.meta",
+          "present": true
+        },
+        "status_log": {
+          "path": "/tmp/fm-lab.LqwE4z/state/done-ship.status",
+          "present": true,
+          "kind": "event_history",
+          "last_event": {
+            "state": "done",
+            "note": "PR opened",
+            "raw": "done: PR opened",
+            "age_seconds": null
+          }
+        },
+        "worktree": {
+          "path": "/tmp/fm-lab.LqwE4z/projects/done-ship",
+          "present": true
+        },
+        "home": {
+          "path": null,
+          "present": false
+        },
+        "report": {
+          "path": "/tmp/fm-lab.LqwE4z/data/done-ship/report.md",
+          "present": false
+        }
+      },
+      "secondmate_projects": [],
+      "current_state": {
+        "state": "parked",
+        "source": "status-log",
+        "detail": "pick REST or gRPC",
+        "raw": "state: parked · source: status-log · pick REST or gRPC",
+        "observed_at": "2026-10-28T08:23:48Z",
+        "freshness": "fresh"
+      },
+      "endpoint": {
+        "target": "firstmate:fm-done-ship",
+        "exists": true,
+        "agent_alive": "not_checked",
+        "status": "unknown",
+        "observed_at": "2026-10-28T08:23:48Z",
+        "freshness": "fresh"
+      },
+      "pr": {
+        "url": null,
+        "source": "absent",
+        "head": null
+      },
+      "hints": {
+        "pending_decision": true,
+        "blocked_event": false,
+        "open_decisions": [
+          {
+            "key": "route",
+            "verb": "needs-decision",
+            "summary": "pick REST or gRPC"
+          }
+        ],
+        "scout_report_present": false,
+        "last_event_text": "done: PR opened"
+      },
+      "actions": {
+        "watch": "bin/fm-peek.sh fm-done-ship",
+        "steer": "bin/fm-send.sh fm-done-ship '<instruction>'",
+        "return_channel_note": null
+      },
+      "backlog": null
+    },
+    {
+      "id": "failed-ship",
+      "kind": "ship",
+      "harness": "claude",
+      "mode": "ship",
+      "yolo": "",
+      "branch": null,
+      "project": "alpha",
+      "spawn_gen": null,
+      "backend": "tmux",
+      "remote": null,
+      "paths": {
+        "meta": {
+          "path": "/tmp/fm-lab.LqwE4z/state/failed-ship.meta",
+          "present": true
+        },
+        "status_log": {
+          "path": "/tmp/fm-lab.LqwE4z/state/failed-ship.status",
+          "present": true,
+          "kind": "event_history",
+          "last_event": {
+            "state": "failed",
+            "note": "tests could not run",
+            "raw": "failed: tests could not run",
+            "age_seconds": null
+          }
+        },
+        "worktree": {
+          "path": "/tmp/fm-lab.LqwE4z/projects/failed-ship",
+          "present": true
+        },
+        "home": {
+          "path": null,
+          "present": false
+        },
+        "report": {
+          "path": "/tmp/fm-lab.LqwE4z/data/failed-ship/report.md",
+          "present": false
+        }
+      },
+      "secondmate_projects": [],
+      "current_state": {
+        "state": "blocked",
+        "source": "status-log",
+        "detail": "need staging creds",
+        "raw": "state: blocked · source: status-log · need staging creds",
+        "observed_at": "2026-10-28T08:23:48Z",
+        "freshness": "fresh"
+      },
+      "endpoint": {
+        "target": "firstmate:fm-failed-ship",
+        "exists": true,
+        "agent_alive": "not_checked",
+        "status": "unknown",
+        "observed_at": "2026-10-28T08:23:48Z",
+        "freshness": "fresh"
+      },
+      "pr": {
+        "url": null,
+        "source": "absent",
+        "head": null
+      },
+      "hints": {
+        "pending_decision": false,
+        "blocked_event": true,
+        "open_decisions": [
+          {
+            "key": "creds",
+            "verb": "blocked",
+            "summary": "need staging creds"
+          }
+        ],
+        "scout_report_present": false,
+        "last_event_text": "failed: tests could not run"
+      },
+      "actions": {
+        "watch": "bin/fm-peek.sh fm-failed-ship",
+        "steer": "bin/fm-send.sh fm-failed-ship '<instruction>'",
+        "return_channel_note": null
+      },
+      "backlog": null
+    },
+    {
+      "id": "rs-completed",
+      "kind": "ship",
+      "harness": "claude",
+      "mode": "no-mistakes",
+      "yolo": "",
+      "branch": null,
+      "project": "alpha",
+      "spawn_gen": null,
+      "backend": "tmux",
+      "remote": null,
+      "paths": {
+        "meta": {
+          "path": "/tmp/fm-lab.LqwE4z/state/rs-completed.meta",
+          "present": true
+        },
+        "status_log": {
+          "path": "/tmp/fm-lab.LqwE4z/state/rs-completed.status",
+          "present": true,
+          "kind": "event_history",
+          "last_event": {
+            "state": "resolved",
+            "note": "answered: Use REST.",
+            "raw": "resolved [key=route] [at=1793175820]: answered: Use REST.",
+            "age_seconds": 8
+          }
+        },
+        "worktree": {
+          "path": "/tmp/fm-lab.LqwE4z/projects/rs-completed",
+          "present": true
+        },
+        "home": {
+          "path": null,
+          "present": false
+        },
+        "report": {
+          "path": "/tmp/fm-lab.LqwE4z/data/rs-completed/report.md",
+          "present": false
+        }
+      },
+      "secondmate_projects": [],
+      "current_state": {
+        "state": "done",
+        "source": "run-step",
+        "detail": "run completed",
+        "raw": "state: done · source: run-step · run completed",
+        "observed_at": "2026-10-28T08:23:48Z",
+        "freshness": "fresh"
+      },
+      "endpoint": {
+        "target": "firstmate:fm-rs-completed",
+        "exists": true,
+        "agent_alive": "not_checked",
+        "status": "unknown",
+        "observed_at": "2026-10-28T08:23:48Z",
+        "freshness": "fresh"
+      },
+      "pr": {
+        "url": null,
+        "source": "absent",
+        "head": null
+      },
+      "hints": {
+        "pending_decision": false,
+        "blocked_event": false,
+        "open_decisions": [],
+        "scout_report_present": false,
+        "last_event_text": "resolved [key=route] [at=1793175820]: answered: Use REST."
+      },
+      "actions": {
+        "watch": "bin/fm-peek.sh fm-rs-completed",
+        "steer": "bin/fm-send.sh fm-rs-completed '<instruction>'",
+        "return_channel_note": null
+      },
+      "backlog": null
+    },
+    {
+      "id": "rs-failed",
+      "kind": "ship",
+      "harness": "claude",
+      "mode": "no-mistakes",
+      "yolo": "",
+      "branch": null,
+      "project": "alpha",
+      "spawn_gen": null,
+      "backend": "tmux",
+      "remote": null,
+      "paths": {
+        "meta": {
+          "path": "/tmp/fm-lab.LqwE4z/state/rs-failed.meta",
+          "present": true
+        },
+        "status_log": {
+          "path": "/tmp/fm-lab.LqwE4z/state/rs-failed.status",
+          "present": true,
+          "kind": "event_history",
+          "last_event": {
+            "state": "needs-decision",
+            "note": "pick REST or gRPC",
+            "raw": "needs-decision [key=route]: pick REST or gRPC",
+            "age_seconds": null
+          }
+        },
+        "worktree": {
+          "path": "/tmp/fm-lab.LqwE4z/projects/rs-failed",
+          "present": true
+        },
+        "home": {
+          "path": null,
+          "present": false
+        },
+        "report": {
+          "path": "/tmp/fm-lab.LqwE4z/data/rs-failed/report.md",
+          "present": false
+        }
+      },
+      "secondmate_projects": [],
+      "current_state": {
+        "state": "failed",
+        "source": "run-step",
+        "detail": "run failed · status-log superseded (run failed)",
+        "raw": "state: failed · source: run-step · run failed · status-log superseded (run failed)",
+        "observed_at": "2026-10-28T08:23:48Z",
+        "freshness": "fresh"
+      },
+      "endpoint": {
+        "target": "firstmate:fm-rs-failed",
+        "exists": true,
+        "agent_alive": "not_checked",
+        "status": "unknown",
+        "observed_at": "2026-10-28T08:23:48Z",
+        "freshness": "fresh"
+      },
+      "pr": {
+        "url": null,
+        "source": "absent",
+        "head": null
+      },
+      "hints": {
+        "pending_decision": true,
+        "blocked_event": false,
+        "open_decisions": [
+          {
+            "key": "route",
+            "verb": "needs-decision",
+            "summary": "pick REST or gRPC"
+          }
+        ],
+        "scout_report_present": false,
+        "last_event_text": "needs-decision [key=route]: pick REST or gRPC"
+      },
+      "actions": {
+        "watch": "bin/fm-peek.sh fm-rs-failed",
+        "steer": "bin/fm-send.sh fm-rs-failed '<instruction>'",
+        "return_channel_note": null
+      },
+      "backlog": null
+    }
+  ],
+  "main_inventory": {
+    "valid": true,
+    "reason": null,
+    "orphan_in_flight": [],
+    "unstructured_current_count": 0
+  },
+  "contributions": {
+    "known": 0,
+    "checked": 0,
+    "counts": {
+      "captain": 0,
+      "fleet": 0,
+      "maintainer": 0,
+      "nobody": 0
+    },
+    "unmeasured": 0,
+    "complete": false,
+    "proven_clear": false,
+    "stale_verdicts": 0,
+    "missing_verdicts": 0,
+    "unreadable_records": 1,
+    "valid_until": 900,
+    "captain": [],
+    "captain_omitted": 0
+  },
+  "scout_reports": [
+    {
+      "id": "done-scout",
+      "path": "/tmp/fm-lab.LqwE4z/data/done-scout/report.md",
+      "kind": "scout"
+    }
+  ],
+  "secondmate_current": {
+    "registry": {
+      "present": false,
+      "available": true,
+      "complete": true,
+      "reason": null,
+      "provenance": "registered-table",
+      "path": "/tmp/fm-lab.LqwE4z/data/secondmates.md",
+      "freshness": {
+        "status": "fresh",
+        "observed_at": "2026-10-28T08:23:48Z"
+      },
+      "records": [],
+      "input_truncated": false,
+      "records_truncated": false,
+      "reasons": [],
+      "lines_in_window": 0,
+      "records_in_window": 0
+    },
+    "records": [],
+    "total_registered": 0,
+    "total": 0,
+    "shown": 0,
+    "truncated": 0
+  },
+  "secondmate_landed": {
+    "records": [],
+    "truncated": [],
+    "unreadable": [],
+    "partial": []
+  },
+  "secondmate_guidance": {
+    "note": "For kind=secondmate, bearings selects validated structured state from that registered home; parent events and bounded terminal evidence are fallback-only supplements and never current-state authority."
+  }
+}
