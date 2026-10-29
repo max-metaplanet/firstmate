@@ -51,7 +51,9 @@ printf '%s\n' "$SNAPSHOT" | jq -r '
     if $t.kind == "secondmate" then "\($t.actions.send) - \($t.actions.watch)"
     else $t.actions.watch end;
   def kind_of($t):
-    if $t.ad_hoc_slot then "\($t.kind) (ad hoc)" else $t.kind end;
+    if $t.ad_hoc_slot then
+      "\($t.kind) (ad hoc) [\([if $t.ad_hoc_fleet_slot then "fleet" else empty end, if $t.ad_hoc_project_slot then "project" else empty end] | join(", "))]"
+    else $t.kind end;
   def task_row($t):
     "| \($t.id) | \($t.current_state.state) / \($t.current_state.source) | \(kind_of($t)) | \(dash($t.backlog.repo // $t.project)) | \($t.backend) | \(endpoint_of($t)) | \(artifact($t)) | \(path_of($t)) | \(action_of($t)) |";
   def blocker($r):

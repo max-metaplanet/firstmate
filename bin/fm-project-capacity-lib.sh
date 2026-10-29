@@ -48,7 +48,7 @@
 #     no longer uses local resources.
 # A place therefore frees when a PR-based ship records its ready PR, or when any
 # task is cleaned up and its record removed.
-# A holder whose record carries ad_hoc_slot=1 was admitted on a one-time grant
+# A holder whose record carries ad_hoc_project_slot=1 was admitted on a one-time grant
 # above the declaration (bin/fm-spawn.sh --ad-hoc-slot). It holds a place like
 # any other worker AND raises the project's effective capacity by one for as
 # long as it holds it, so the places an ordinary spawn sees are unchanged and
@@ -100,11 +100,19 @@ fm_project_capacity_config_dir() {  # <spawning-home> <spawning-config-dir>
   fi
 }
 
-# Print 1 when the task record <meta> carries a one-time ad hoc slot grant and
-# 0 otherwise, so both capacity checks read the grant the same way.
+# Print 1 when <meta> carries a grant for <cap> (fleet, project, or any).
 # bin/fm-spawn.sh --ad-hoc-slot owns when the grant is written.
-fm_ad_hoc_slot_granted() {  # <meta>
-  if [ "$(fm_meta_get "$1" ad_hoc_slot)" = 1 ]; then printf '1\n'; else printf '0\n'; fi
+fm_ad_hoc_slot_granted() {  # <meta> [fleet|project|any]
+  case ${2:-any} in
+    fleet|project)
+      if [ "$(fm_meta_get "$1" "ad_hoc_${2}_slot")" = 1 ]; then printf '1\n'; else printf '0\n'; fi
+      ;;
+    any)
+      if [ "$(fm_meta_get "$1" ad_hoc_fleet_slot)" = 1 ] ||
+        [ "$(fm_meta_get "$1" ad_hoc_project_slot)" = 1 ]; then printf '1\n'; else printf '0\n'; fi
+      ;;
+    *) return 1 ;;
+  esac
 }
 
 # Read the declared capacity for one project.
@@ -264,7 +272,7 @@ fm_project_capacity_occupants() {  # <project-lock> <project-dir> <first-state> 
       label=$id
       [ "$state" = "$first" ] || label="$id in $(dirname "$state")"
       FM_PROJECT_CAPACITY_OCCUPANTS=$((FM_PROJECT_CAPACITY_OCCUPANTS + 1))
-      if [ "$(fm_ad_hoc_slot_granted "$meta")" = 1 ]; then
+      if [ "$(fm_ad_hoc_slot_granted "$meta" project)" = 1 ]; then
         FM_PROJECT_CAPACITY_ADHOC=$((FM_PROJECT_CAPACITY_ADHOC + 1))
         label="$label (ad hoc)"
       fi
@@ -299,5 +307,5 @@ fm_project_capacity_admits_resume() {  # <config-dir> <first-state> <meta>
   fm_project_capacity_occupants "$lock" "$project" "$2" "$(basename "$3" .meta)" || return 0
   ahead=$(fm_project_capacity_resumes_ahead "$3")
   [ $((FM_PROJECT_CAPACITY_OCCUPANTS + ahead)) -lt \
-    $((FM_PROJECT_CAPACITY + FM_PROJECT_CAPACITY_ADHOC + $(fm_ad_hoc_slot_granted "$3"))) ]
+    $((FM_PROJECT_CAPACITY + FM_PROJECT_CAPACITY_ADHOC + $(fm_ad_hoc_slot_granted "$3" project))) ]
 }

@@ -185,8 +185,17 @@ now_ms() {
 # has consumed "$@" but before any suite runs.
 INVOCATION_ARGV=("$@")
 
-RUN_STARTED_ISO=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-RUN_STARTED_MS=$(now_ms)
+# Only the lock-held replacement can inherit the original invocation clock.
+if [ "${FM_BUILD_LOCK_HELD:-}" = "$$" ] &&
+  [[ ${FM_TEST_RUN_STARTED_MS:-} =~ ^[0-9]+$ ]] &&
+  [ -n "${FM_TEST_RUN_STARTED_ISO:-}" ]; then
+  RUN_STARTED_ISO=$FM_TEST_RUN_STARTED_ISO
+  RUN_STARTED_MS=$FM_TEST_RUN_STARTED_MS
+else
+  RUN_STARTED_ISO=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  RUN_STARTED_MS=$(now_ms)
+fi
+unset FM_TEST_RUN_STARTED_MS FM_TEST_RUN_STARTED_ISO
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT" || exit 1
@@ -2711,7 +2720,8 @@ fi
 if [ "$JOBS" -gt 1 ] && [ "${FM_BUILD_LOCK_BYPASS:-}" != 1 ] &&
   [ "${FM_BUILD_LOCK_HELD:-}" != "$$" ] && [ -x "$ROOT/bin/fm-build-lock.py" ] &&
   [ -f "$ROOT/bin/fm-test-run.sh" ]; then
-  exec "$ROOT/bin/fm-build-lock.py" -- bash "$ROOT/bin/fm-test-run.sh" \
+  FM_TEST_RUN_STARTED_ISO=$RUN_STARTED_ISO FM_TEST_RUN_STARTED_MS=$RUN_STARTED_MS \
+    exec "$ROOT/bin/fm-build-lock.py" -- bash "$ROOT/bin/fm-test-run.sh" \
     ${INVOCATION_ARGV[@]+"${INVOCATION_ARGV[@]}"}
 fi
 

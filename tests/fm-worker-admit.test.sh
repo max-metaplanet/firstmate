@@ -89,9 +89,9 @@ PY_SPAWN
         (directory / 'brief.md').write_text("# Task\n## Captain's intent\nImplement accepted work.\n## Firstmate spec\nUse recorded flags.\n")
         return self.add_record(ident, ticket, project, harness)
 
-    def add_record(self, ident, ticket='no-ticket', project=None, harness='codex'):
+    def add_record(self, ident, ticket='no-ticket', project=None, harness='codex', ad_hoc_slot='0'):
         args = [str(project or self.home / 'project'), 'direct-PR', 'off', ticket, 'feat', 'fm/',
-                'release/test', harness, 'model/accepted', 'high', 'tmux', '', 'partial', '0', '0']
+                'release/test', harness, 'model/accepted', 'high', 'tmux', '', 'partial', '0', '0', ad_hoc_slot]
         self.command('python3', str(self.home / 'bin/fm-worker-admit.py'), 'record', ident, *args)
         return self.home / 'state' / (ident + '.deferred-spawn.json')
 
@@ -115,6 +115,13 @@ PY_SPAWN
         path = self.home / 'launches'
         return [json.loads(line) for line in path.read_text().splitlines()] if path.exists() else []
 
+    def test_ad_hoc_flag_survives_record_and_replay(self):
+        self.add('extra')
+        path = self.add_record('extra', ad_hoc_slot='1')
+        self.assertEqual(json.loads(path.read_text())['ad_hoc_slot'], '1')
+        self.tick()
+        self.assertIn('--ad-hoc-slot', self.launches()[0])
+
     def test_freed_slot_replays_exact_flags_once(self):
         record = self.add('next')
         (self.home / 'full').touch()
@@ -133,6 +140,14 @@ PY_SPAWN
         self.assertFalse(record.exists())
         self.tick()
         self.assertEqual(len(self.launches()), 1)
+
+    def test_existing_v1_record_has_no_implicit_grant(self):
+        path = self.add('ordinary')
+        record = json.loads(path.read_text())
+        del record['ad_hoc_slot']
+        path.write_text(json.dumps(record))
+        self.tick()
+        self.assertNotIn('--ad-hoc-slot', self.launches()[0])
         self.assertIn('admitted', (self.home / 'state/worker-admission.jsonl').read_text())
 
     def test_hold_dependency_future_incomplete_and_changed_brief_skip(self):

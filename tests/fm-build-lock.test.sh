@@ -405,6 +405,12 @@ function run(fs) {
             cli.parent.mkdir(parents=True, exist_ok=True)
             cli.write_text(head + shared)
             cli.chmod(0o755)
+        localbin = scratch / 'node_modules/.bin'
+        localbin.mkdir(exist_ok=True)
+        for name in ('vitest', 'playwright'):
+            link = localbin / name
+            link.symlink_to(scratch / entries[name][0])
+            entries[name + '-bin'] = (str(link.relative_to(scratch)), None)
         preload = {'NODE_OPTIONS': option, 'FM_HEAVY_SLOTS': '1'}
         # Off a TTY a bare vitest runs the suite once, as a package test script does.
         # The last case runs on a TTY, where only the run subcommand marks it heavy.
@@ -414,6 +420,8 @@ function run(fs) {
             ('vitest', ['--run', '--reporter=dot'], False),
             ('vitest', ['--config', 'x', 'run'], True),
             ('playwright', ['test'], False),
+            ('vitest-bin', ['run'], False),
+            ('playwright-bin', ['test'], False),
             ('tsc', ['--noEmit', '-p', 'tsconfig.json'], False),
         ]
         light = [
@@ -432,7 +440,10 @@ function run(fs) {
             (scratch / (tag + '.release')).touch()
             log = open(scratch / (tag + '.err'), 'w')
             leader, follower = pty.openpty() if tty else (None, subprocess.DEVNULL)
-            child = subprocess.Popen(['node', str(scratch / entries[name][0]), *args],
+            command = [str(scratch / entries[name][0]), *args]
+            if not name.endswith('-bin'):
+                command.insert(0, 'node')
+            child = subprocess.Popen(command,
                                      env=dict(env, MARKER=str(scratch / tag),
                                               RELEASE=str(scratch / (tag + '.release')), **preload),
                                      stdin=follower, stderr=log)

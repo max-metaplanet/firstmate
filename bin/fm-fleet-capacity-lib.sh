@@ -30,7 +30,7 @@
 # handoff alone does not free a place. fm-worker-park-lib.sh owns verified
 # parked records; those release their place, while incomplete exits and launch
 # reservations retain it.
-# A holder whose record carries ad_hoc_slot=1 was admitted on a one-time grant
+# A holder whose record carries ad_hoc_fleet_slot=1 was admitted on a one-time grant
 # above the declaration (bin/fm-spawn.sh --ad-hoc-slot). It holds a place like
 # any other agent AND raises the effective fleet cap by one while it does, so
 # the places an ordinary spawn sees are unchanged and the grant admits only the
@@ -185,7 +185,7 @@ fm_fleet_capacity_occupants() {  # <first-state> <own-id>
     [ "${states[i]}" = "$first" ] || label="$label in ${states[i]%/*}"
     FM_FLEET_CAPACITY_OCCUPANTS=$((FM_FLEET_CAPACITY_OCCUPANTS + 1))
     FM_FLEET_CAPACITY_OCCUPANT_METAS+=("$meta")
-    if [ "$(fm_ad_hoc_slot_granted "$meta")" = 1 ]; then
+    if [ "$(fm_ad_hoc_slot_granted "$meta" fleet)" = 1 ]; then
       FM_FLEET_CAPACITY_ADHOC=$((FM_FLEET_CAPACITY_ADHOC + 1))
       label="$label (ad hoc)"
     fi

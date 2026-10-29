@@ -3,7 +3,7 @@
 
 Usage: fm-worker-admit.py record ID PROJECT MODE YOLO TICKET COMMIT_TYPE
        BRANCH_PREFIX BASE_BRANCH HARNESS MODEL EFFORT BACKEND UPSTREAM_CONSENT
-       TICKET_SCOPE IGNORE_SEAT_HOLD HERDR_RESUME_LOCK_WAIT
+       TICKET_SCOPE IGNORE_SEAT_HOLD HERDR_RESUME_LOCK_WAIT AD_HOC_SLOT
        fm-worker-admit.py tick
        fm-worker-admit.py verify ID RECORD_SHA256
 
@@ -15,6 +15,8 @@ discarded and require a new explicit dispatch, as are records whose backlog row
 is gone, no longer queued or no longer a ship, or whose task metadata exists.
 Held, blocked and date-gated queued ships keep theirs. Any successful fresh
 launch of the task consumes the record.
+The requested ad_hoc_slot flag survives deferral; spawn decides which caps
+actually need a grant when replay re-enters admission.
 
 Exit 75 is the only capacity retry; under replay, fm-spawn also exits 75 for
 the away spend cap and seat-quota holds. A fleet-wide or spend-cap deferral
@@ -53,7 +55,7 @@ STATE = Path(os.environ.get('FM_STATE_OVERRIDE') or HOME / 'state')
 DATA = Path(os.environ.get('FM_DATA_OVERRIDE') or HOME / 'data')
 CONFIG = Path(os.environ.get('FM_CONFIG_OVERRIDE') or HOME / 'config')
 KEYS = ('project mode yolo ticket commit_type branch_prefix base_branch harness '
-        'model effort backend upstream_consent ticket_scope ignore_seat_hold herdr_resume_lock_wait').split()
+        'model effort backend upstream_consent ticket_scope ignore_seat_hold herdr_resume_lock_wait ad_hoc_slot').split()
 REFUSALS = 3
 BACKOFF = 60
 
@@ -77,6 +79,8 @@ def brief_digest(ident):
 def validate(record, ident):
     require(isinstance(record, dict), 'incomplete launch record')
     require(record.get('version') == 1 and record.get('task') == ident, 'invalid record identity/version')
+    # Existing v1 requests predate this flag and authorize no extra place.
+    record.setdefault('ad_hoc_slot', '0')
     require(all(isinstance(record.get(k), str) for k in KEYS), 'incomplete launch record')
     require(record['mode'] in ('no-mistakes', 'direct-PR', 'local-only') and
             record['yolo'] in ('on', 'off'), 'missing delivery authority')
@@ -85,7 +89,7 @@ def validate(record, ident):
     require(bool(record['ticket']) == bool(record['commit_type']), 'incomplete ticket convention')
     require(record['ticket'] or record['branch_prefix'], 'missing branch convention')
     require(record['ticket_scope'] in ('partial', 'complete'), 'missing ticket scope')
-    require(all(record[k] in ('0', '1') for k in ('ignore_seat_hold', 'herdr_resume_lock_wait')),
+    require(all(record[k] in ('0', '1') for k in ('ignore_seat_hold', 'herdr_resume_lock_wait', 'ad_hoc_slot')),
             'incomplete launch options')
     require(type(record.get('queued_at')) in (int, float) and math.isfinite(record['queued_at'])
             and record['queued_at'] > 0, 'missing queue age')
@@ -159,7 +163,7 @@ def argv(record):
             args += ['--ticket-scope', record['ticket_scope']]
     else:
         args += ['--branch-prefix', record['branch_prefix']]
-    for key in ('ignore_seat_hold', 'herdr_resume_lock_wait'):
+    for key in ('ignore_seat_hold', 'herdr_resume_lock_wait', 'ad_hoc_slot'):
         if record[key] == '1':
             args.append('--' + key.replace('_', '-'))
     return args

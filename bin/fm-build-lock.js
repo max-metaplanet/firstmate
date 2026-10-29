@@ -10,7 +10,7 @@
 // given a source file type-checks that file and stays unlocked, as does a tsc
 // in watch mode, which never exits and would hold its slot forever.
 const argv = process.argv;
-const ENTRIES = new Set(['next', 'vitest.mjs', 'cli.js', 'tsc', 'tsc.js']);
+const ENTRIES = new Set(['next', 'vitest', 'vitest.mjs', 'playwright', 'cli.js', 'tsc', 'tsc.js']);
 const entry = typeof argv[1] === 'string' ? argv[1].slice(argv[1].lastIndexOf('/') + 1) : '';
 const heavy = (script, args) => {
   const command = args.find((a) => !a.startsWith('-'));

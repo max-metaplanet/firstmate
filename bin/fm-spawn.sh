@@ -235,10 +235,11 @@
 #   the declaration, what holds a place, and its lock), every fresh spawn,
 #   --secondmate included, is admitted or deferred the same way under that
 #   fleet lock; a parked secondmate relaunch is admitted again as well.
-#   Ad hoc slot: --ad-hoc-slot grants ONE named task a place above both caps,
-#   writes ad_hoc_slot=1 into that task's own record, and edits no capacity
-#   declaration. Every live holder of such a grant raises both effective caps by
-#   one, so an ordinary spawn still sees the declared number of places and the
+#   Ad hoc slot: --ad-hoc-slot grants ONE named task a place above each cap
+#   that would otherwise defer it. Its own record carries ad_hoc_fleet_slot=1
+#   and/or ad_hoc_project_slot=1; a free ordinary place records no grant.
+#   Each live holder raises only the corresponding effective cap by one,
+#   so an ordinary spawn still sees the declared number of places and the
 #   grant admits only the task it was given to. Only a launch or a parked resume
 #   can take it, because those are the spawns admission runs for; a live relaunch
 #   already holds an ordinary place, so --ad-hoc-slot is refused there rather
@@ -905,8 +906,9 @@ UPSTREAM_CONSENT=
 UPSTREAM_CONSENT_SET=0
 TRACEPARENT_SET=0
 RELAUNCH=0
-AD_HOC_SLOT=0
 AD_HOC_SLOT_SET=0
+AD_HOC_FLEET_SLOT=0
+AD_HOC_PROJECT_SLOT=0
 SEAT_OVERRIDE=
 SEAT_OVERRIDE_SET=0
 IGNORE_SEAT_HOLD=0
@@ -999,7 +1001,6 @@ for a in "$@"; do
     ;;
   --relaunch) RELAUNCH=1 ;;
   --ad-hoc-slot)
-    AD_HOC_SLOT=1
     AD_HOC_SLOT_SET=1
     ;;
   --seat) want_value=seat ;;
@@ -1662,7 +1663,7 @@ spawn_abort_cleanup() {
       FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" FM_DATA_OVERRIDE="$DATA" FM_CONFIG_OVERRIDE="$CONFIG" \
         python3 "$SCRIPT_DIR/fm-worker-admit.py" record "$ID" "$PROJ_ABS" "$MODE" "$YOLO" \
           "$TICKET" "$COMMIT_TYPE" "$BRANCH_PREFIX" "$BASE_BRANCH" "$HARNESS" "$MODEL" "$EFFORT" \
-          "$BACKEND" "$UPSTREAM_CONSENT" "$TICKET_SCOPE" "$IGNORE_SEAT_HOLD" "$HERDR_RESUME_LOCK_WAIT" ||
+          "$BACKEND" "$UPSTREAM_CONSENT" "$TICKET_SCOPE" "$IGNORE_SEAT_HOLD" "$HERDR_RESUME_LOCK_WAIT" "$AD_HOC_SLOT_SET" ||
         echo "warning: task $ID has no complete automatic replay record; dispatch explicitly after capacity frees" >&2
     else
       echo "warning: task $ID has an incomplete brief; automatic admission skipped" >&2
@@ -4002,11 +4003,17 @@ if [ "$KIND" = secondmate ]; then
   fi
 fi
 
-# The one-time ad hoc grant for THIS task: the flag, or the grant this task's
-# own record already carries, so a relaunch or parked resume keeps it. It is
-# read from this task's own record alone, so no other task can inherit it.
-if [ "$AD_HOC_SLOT_SET" -eq 0 ] && { [ -e "$STATE/$ID.meta" ] || [ -L "$STATE/$ID.meta" ]; }; then
-  AD_HOC_SLOT=$(fm_ad_hoc_slot_granted "$STATE/$ID.meta")
+# Read only this task's grants. Live relaunch preserves them; admission below
+# records a grant only for a cap whose ordinary places would defer the task.
+if [ -e "$STATE/$ID.meta" ] || [ -L "$STATE/$ID.meta" ]; then
+  AD_HOC_FLEET_SLOT=$(fm_ad_hoc_slot_granted "$STATE/$ID.meta" fleet)
+  AD_HOC_PROJECT_SLOT=$(fm_ad_hoc_slot_granted "$STATE/$ID.meta" project)
+fi
+AD_HOC_FLEET_REQUEST=$AD_HOC_FLEET_SLOT
+AD_HOC_PROJECT_REQUEST=$AD_HOC_PROJECT_SLOT
+if [ "$AD_HOC_SLOT_SET" -eq 1 ]; then
+  AD_HOC_FLEET_REQUEST=1
+  AD_HOC_PROJECT_REQUEST=1
 fi
 
 if [ "$KIND" = secondmate ]; then
@@ -4031,7 +4038,7 @@ if [ "$KIND" = secondmate ]; then
     sm_fleet_config=$(fm_project_capacity_config_dir "$FM_HOME" "$CONFIG") &&
     fm_fleet_capacity_lookup "$sm_fleet_config" && [ -n "$FM_FLEET_CAPACITY" ] &&
     fm_fleet_capacity_occupants "$STATE" "$ID" &&
-    [ "$FM_FLEET_CAPACITY_OCCUPANTS" -ge $((FM_FLEET_CAPACITY + FM_FLEET_CAPACITY_ADHOC + AD_HOC_SLOT)) ]; then
+    [ "$FM_FLEET_CAPACITY_OCCUPANTS" -ge $((FM_FLEET_CAPACITY + FM_FLEET_CAPACITY_ADHOC + AD_HOC_FLEET_REQUEST)) ]; then
     echo "deferred: this machine runs at most $FM_FLEET_CAPACITY agent(s) at once ($FM_FLEET_CAPACITY_FILE) and $FM_FLEET_CAPACITY_OCCUPANTS are running ($FM_FLEET_CAPACITY_OCCUPANT_IDS); secondmate $ID stays parked with its inbox preserved - the worker-park tick retries it" >&2
     exit "$FM_PROJECT_CAPACITY_DEFER_EXIT"
   fi
@@ -4136,6 +4143,10 @@ if [ "$AD_HOC_SLOT_SET" -eq 1 ] && [ "$RELAUNCH" -eq 1 ] &&
   echo "error: --ad-hoc-slot applies to a launch or a parked resume, and task $ID is relaunching while it already holds an ordinary place; relaunch it without the flag" >&2
   exit 1
 fi
+if [ "$RELAUNCH" -eq 0 ] || [ "$SPAWN_PARK_RESUME" = 1 ] || [ -n "$PARK_RESUME_MARKER" ]; then
+  AD_HOC_FLEET_SLOT=0
+  AD_HOC_PROJECT_SLOT=0
+fi
 SPAWN_PROJECT_CAPACITY=
 SPAWN_PROJECT_CAPACITY_ANY=
 if { [ "$RELAUNCH" -eq 0 ] || [ "$SPAWN_PARK_RESUME" = 1 ]; } && [ "$KIND" != secondmate ]; then
@@ -4183,17 +4194,22 @@ if [ -n "$SPAWN_PROJECT_CAPACITY" ]; then
     echo "error: spawn refused: project $(basename "$PROJ_ABS") declares a capacity of $SPAWN_PROJECT_CAPACITY, but this machine's task records cannot all be read to count it ($FM_PROJECT_CAPACITY_ERROR)" >&2
     exit 1
   fi
-  SPAWN_PROJECT_LIMIT=$((SPAWN_PROJECT_CAPACITY + FM_PROJECT_CAPACITY_ADHOC + AD_HOC_SLOT))
+  SPAWN_RESUMES_AHEAD=$(fm_project_capacity_resumes_ahead "$STATE/$ID.meta")
+  SPAWN_PROJECT_LIMIT=$((SPAWN_PROJECT_CAPACITY + FM_PROJECT_CAPACITY_ADHOC))
+  if [ "$AD_HOC_PROJECT_REQUEST" -eq 1 ] &&
+    [ $((FM_PROJECT_CAPACITY_OCCUPANTS + SPAWN_RESUMES_AHEAD)) -ge "$SPAWN_PROJECT_LIMIT" ]; then
+    AD_HOC_PROJECT_SLOT=1
+    SPAWN_PROJECT_LIMIT=$((SPAWN_PROJECT_LIMIT + 1))
+  fi
   SPAWN_AD_HOC_NOTE=
   [ "$FM_PROJECT_CAPACITY_ADHOC" -eq 0 ] ||
     SPAWN_AD_HOC_NOTE=" plus $FM_PROJECT_CAPACITY_ADHOC ad hoc"
-  [ "$AD_HOC_SLOT" -eq 0 ] ||
+  [ "$AD_HOC_PROJECT_SLOT" -eq 0 ] ||
     SPAWN_AD_HOC_NOTE="$SPAWN_AD_HOC_NOTE plus this task's own ad hoc slot"
   if [ "$FM_PROJECT_CAPACITY_OCCUPANTS" -ge "$SPAWN_PROJECT_LIMIT" ]; then
     echo "deferred: project $(basename "$PROJ_ABS") admits $SPAWN_PROJECT_CAPACITY worker(s) at once on this machine ($FM_PROJECT_CAPACITY_FILE)$SPAWN_AD_HOC_NOTE and $FM_PROJECT_CAPACITY_OCCUPANTS already hold a place ($FM_PROJECT_CAPACITY_OCCUPANT_IDS); task $ID was not launched and its backlog item stays queued - the worker-park tick replays a recorded launch once one of them records its ready PR or is cleaned up" >&2
     exit "$FM_PROJECT_CAPACITY_DEFER_EXIT"
   fi
-  SPAWN_RESUMES_AHEAD=$(fm_project_capacity_resumes_ahead "$STATE/$ID.meta")
   if [ $((FM_PROJECT_CAPACITY_OCCUPANTS + SPAWN_RESUMES_AHEAD)) -ge "$SPAWN_PROJECT_LIMIT" ]; then
     echo "deferred: $SPAWN_RESUMES_AHEAD queued parked-worker resume(s) hold the remaining place(s) in project $(basename "$PROJ_ABS") and resume ahead of task $ID" >&2
     exit "$FM_PROJECT_CAPACITY_DEFER_EXIT"
@@ -4246,7 +4262,12 @@ if [ "$RELAUNCH" -eq 0 ] || [ "$SPAWN_PARK_RESUME" = 1 ] || [ -n "$PARK_RESUME_M
           printf '%s\t%s\n' "$at" "$meta"
         fi
       done | fm_worker_park_rank "$STATE/$ID.meta")
-      SPAWN_FLEET_EFFECTIVE=$((FM_FLEET_EFFECTIVE_CAPACITY + FM_FLEET_CAPACITY_ADHOC + AD_HOC_SLOT))
+      SPAWN_FLEET_EFFECTIVE=$((FM_FLEET_EFFECTIVE_CAPACITY + FM_FLEET_CAPACITY_ADHOC))
+      if [ "$AD_HOC_FLEET_REQUEST" -eq 1 ] &&
+        [ $((FM_FLEET_CAPACITY_OCCUPANTS + SPAWN_RESUMES_AHEAD)) -ge "$SPAWN_FLEET_EFFECTIVE" ]; then
+        AD_HOC_FLEET_SLOT=1
+        SPAWN_FLEET_EFFECTIVE=$((SPAWN_FLEET_EFFECTIVE + 1))
+      fi
       SPAWN_FLEET_LIMIT="$FM_FLEET_EFFECTIVE_CAPACITY agent(s) at once ($FM_FLEET_CAPACITY_FILE"
       if [ "$FM_FLEET_EFFECTIVE_CAPACITY" != "$FM_FLEET_CAPACITY" ]; then
         SPAWN_FLEET_LIMIT+=" declares $FM_FLEET_CAPACITY; the fleet load policy lowers it: $(printf '%s\n' "$FM_FLEET_LOAD_JSON" | jq -r '.reason')"
@@ -4254,7 +4275,7 @@ if [ "$RELAUNCH" -eq 0 ] || [ "$SPAWN_PARK_RESUME" = 1 ] || [ -n "$PARK_RESUME_M
       SPAWN_FLEET_LIMIT+=")"
       [ "$FM_FLEET_CAPACITY_ADHOC" -eq 0 ] ||
         SPAWN_FLEET_LIMIT+=" plus $FM_FLEET_CAPACITY_ADHOC ad hoc"
-      [ "$AD_HOC_SLOT" -eq 0 ] ||
+      [ "$AD_HOC_FLEET_SLOT" -eq 0 ] ||
         SPAWN_FLEET_LIMIT+=" plus this task's own ad hoc slot"
       if [ "$FM_FLEET_CAPACITY_OCCUPANTS" -ge "$SPAWN_FLEET_EFFECTIVE" ]; then
         echo "deferred: this machine runs at most $SPAWN_FLEET_LIMIT and $FM_FLEET_CAPACITY_OCCUPANTS are running ($FM_FLEET_CAPACITY_OCCUPANT_IDS); task $ID was not launched and its backlog item stays queued - the worker-park tick replays a recorded launch once one of them is cleaned up or stops" >&2
@@ -6685,7 +6706,7 @@ SPAWN_META_PATH=$SPAWN_META_TMP
 preserve_relaunch_meta() {
   awk -F= '
     BEGIN {
-      split("window endpoint_task_id worktree project harness kind mode yolo branch tasktmp base_branch ad_hoc_slot upstream_consent forge backup_remote backup_prefix model effort account account_provider busy_gen spawn_gen claude_seat codex_seat traceparent backend herdr_session herdr_workspace_id herdr_tab_id herdr_pane_id zellij_session zellij_tab_id zellij_pane_id orca_worktree_id terminal cmux_workspace_id cmux_surface_id home projects control_relaunch_tx polytoken_session polytoken_port polytoken_credential", keys, " ")
+      split("window endpoint_task_id worktree project harness kind mode yolo branch tasktmp base_branch ad_hoc_slot ad_hoc_fleet_slot ad_hoc_project_slot upstream_consent forge backup_remote backup_prefix model effort account account_provider busy_gen spawn_gen claude_seat codex_seat traceparent backend herdr_session herdr_workspace_id herdr_tab_id herdr_pane_id zellij_session zellij_tab_id zellij_pane_id orca_worktree_id terminal cmux_workspace_id cmux_surface_id home projects control_relaunch_tx polytoken_session polytoken_port polytoken_credential", keys, " ")
       for (i in keys) owned[keys[i]] = 1
     }
     !($1 in owned)
@@ -6715,9 +6736,10 @@ preserve_relaunch_meta() {
     [ -z "$COMMIT_TYPE" ] || echo "commit_type=$COMMIT_TYPE"
     [ "$KIND" = secondmate ] || echo "dispatched_at=$(date +%s)"
   fi
-  # The grant is rewritten from this task's own resolved value on every
-  # incarnation, so a relaunch keeps it and --ad-hoc-slot can add it later.
-  [ "$AD_HOC_SLOT" -eq 0 ] || echo "ad_hoc_slot=1"
+  # Admission records only the caps needing an extra place. Live relaunch
+  # preserves this task's own cap-specific grants without creating another.
+  [ "$AD_HOC_FLEET_SLOT" -eq 0 ] || echo "ad_hoc_fleet_slot=1"
+  [ "$AD_HOC_PROJECT_SLOT" -eq 0 ] || echo "ad_hoc_project_slot=1"
   [ -z "$UPSTREAM_CONSENT" ] || echo "upstream_consent=$UPSTREAM_CONSENT"
   # Read by bin/fm-dod-lib.sh's ready-report gate; absent on every other forge.
   [ "$EXTERNAL_REVIEW" = 0 ] || echo "forge=external"

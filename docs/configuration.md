@@ -1502,7 +1502,7 @@ A project name may begin with `#` when that `#` is written immediately against t
 A name that is `#`, or that begins with `#` and a space, cannot be declared, because that line is a comment.
 A place is held by every ship or scout on that project in the root home or any local secondmate home registered under it, including one working in a separate clone of the same origin, until its ready PR is recorded or it is cleaned up; a local-only ship or a scout holds its place until cleanup or verified parking.
 A resumed parked worker holds its project place again while active.
-A worker launched with `bin/fm-spawn.sh --ad-hoc-slot` holds a place like any other and raises the project's effective capacity by one while it does, so the places every other spawn sees are unchanged; "Ad hoc slots" below owns that grant.
+A task's project grant raises only that project's effective capacity while it holds a place; "Ad hoc slots" below owns that grant.
 The declaration is matched by the spawning clone's directory name, so clones of the same origin share the cap only when they use that same directory name.
 A clone of that origin under a different directory name finds no declaration and is not capped, though its workers are still counted as holders for a same-origin clone that is capped.
 When every place is held, `bin/fm-spawn.sh` launches nothing, leaves the backlog item queued, prints one `deferred:` line naming the holders, and exits 75.
@@ -1522,7 +1522,7 @@ It lives in the machine's root Firstmate home and holds one positive integer; bl
 ```
 
 Every running ship, scout, and secondmate in the root home or any local secondmate home holds a place, including one waiting on a recorded PR; the supervising lead does not.
-A place held under an ad hoc grant also raises the effective fleet cap by one while it is held; "Ad hoc slots" below owns that grant.
+A place held under a fleet grant raises the effective fleet cap by one while it is held; "Ad hoc slots" below owns that grant.
 A task record whose agent is no longer running holds no place, and one whose agent cannot be checked does.
 Verified worker parking and resume priority are owned by [`bin/fm-worker-park.sh`](../bin/fm-worker-park.sh).
 At the cap, `bin/fm-spawn.sh` defers a fresh ship, scout, or local secondmate exactly as project capacity does: nothing is launched, the backlog item stays queued, and it exits 75.
@@ -1582,13 +1582,15 @@ Only those two spawns are admitted against a cap, so only they can take the gran
 A running task already holds an ordinary place, so relaunching it with the flag is refused rather than raising both caps and letting the next ordinary queued task in.
 Neither `config/project-capacity` nor `config/fleet-capacity` is read or written differently because of it, so the declared numbers are exactly what they were when the task is cleaned up.
 
-The grant is recorded as `ad_hoc_slot=1` in that task's own `state/<id>.meta`.
+The grant is recorded separately for each cap as `ad_hoc_fleet_slot=1` and/or `ad_hoc_project_slot=1` in that task's own `state/<id>.meta`, only when that cap's ordinary limit would defer admission.
+If an ordinary place is free, the flag is ignored for that cap and no grant is recorded.
 It counts for that task alone: it is never inherited by another task, a relaunch of a different task does not carry it, and it ends when the task's record is removed at cleanup.
-A relaunch of the granted task keeps it from its own record without repeating the flag.
+A live relaunch keeps the task's cap-specific grants without repeating the flag; a parked resume re-enters admission and records only grants it still needs.
+An automatic deferred-launch replay retains the requested flag and decides which caps need it when admission runs again.
 
-While such a task holds a place, both caps it is admitted under rise by one, so an ordinary spawn still finds the declared number of places and only the granted task gets the extra one.
+While such a task holds a place, only each granted cap rises by one, so an ordinary spawn still finds the declared number of places and a grant under one cap never raises the other.
 Two granted tasks therefore add two places rather than sharing one.
-A capacity refusal names how many of the held places are ad hoc, `bin/fm-fleet-view.sh` marks those tasks and prints the ad hoc share of the places held, and the fleet snapshot carries the same `ad_hoc` count and a per-task `ad_hoc_slot` field.
+A capacity refusal names the grants for that cap, `bin/fm-fleet-view.sh` names each task's granted caps and the fleet grant share, and the fleet snapshot carries the same `ad_hoc` count plus per-task `ad_hoc_fleet_slot`, `ad_hoc_project_slot`, and their `ad_hoc_slot` union.
 Heavy-slot limits are unaffected: an ad hoc worker waits for a heavy slot exactly like every other worker.
 
 ## Heavy slots (config/heavy-slots)
