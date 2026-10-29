@@ -1,0 +1,5 @@
+no-mistakes:none: policy=1 pre-run-block=0 stale-ref=1
+no-mistakes:forgejo: policy=1 pre-run-block=0 stale-ref=1
+no-mistakes:gerrit: policy=0 pre-run-block=0 stale-ref=0
+direct-PR:none: policy=0 pre-run-block=0 stale-ref=0
+local-only:none: policy=0 pre-run-block=0 stale-ref=0

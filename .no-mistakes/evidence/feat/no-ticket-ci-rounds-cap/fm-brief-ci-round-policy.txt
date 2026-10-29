@@ -1,0 +1,2 @@
+ok - all ship briefs scope local validation, preserve publication ownership, and forbid worker CI reruns
+ok - generated CI-round contract binds later publication to reproduction, verification, and pipeline ownership

@@ -1,0 +1,5 @@
+ok - behavior-inert changes run the documentation-audience suite
+ok - full scope does not expand to --all or a Herdr family
+ok - Herdr selection runs only fast local coverage
+ok - empty/failed selection, failed tests, and a hard deadline cannot pass silently
+ok - configured Test consumes real classification and bounds its full fallback
