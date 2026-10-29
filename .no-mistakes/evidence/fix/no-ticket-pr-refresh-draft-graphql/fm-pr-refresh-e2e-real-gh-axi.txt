@@ -1,0 +1,24 @@
+== OLD script: fm-pr-refresh.sh prepare t1 <url> -- echo PUBLISHED ==
+errors[1]:
+  - extensions:
+      value: null
+      problems[1]:
+        - path: []
+          explanation: Expected value to not be null
+    locations[1]{line,column}:
+      1,10
+    message: Variable $id of type ID! was provided invalid value
+fm-pr-refresh: draft conversion was not confirmed; nothing published
+exit=1
+
+== NEW script: fm-pr-refresh.sh prepare t1 <url> -- echo PUBLISHED ==
+data:
+  convertPullRequestToDraft: null
+errors[1]:
+  - type: NOT_FOUND
+    path[1]: convertPullRequestToDraft
+    locations[1]{line,column}:
+      1,22
+    message: Could not resolve to a node with the global id of 'PR_bogusNodeId_e2e'
+fm-pr-refresh: draft conversion was not confirmed; nothing published
+exit=1

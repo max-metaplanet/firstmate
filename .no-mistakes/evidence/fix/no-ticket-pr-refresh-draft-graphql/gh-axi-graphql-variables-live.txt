@@ -1,0 +1,30 @@
+== OLD form (base): --raw-field query=... --raw-field id=PR_bogusNodeId ==
+errors[1]:
+  - extensions:
+      value: null
+      problems[1]:
+        - path: []
+          explanation: Expected value to not be null
+    locations[1]{line,column}:
+      1,10
+    message: Variable $id of type ID! was provided invalid value
+exit=0
+
+== NEW form (fix): JSON body via --input - ==
+data:
+  convertPullRequestToDraft: null
+errors[1]:
+  - type: NOT_FOUND
+    path[1]: convertPullRequestToDraft
+    locations[1]{line,column}:
+      1,22
+    message: Could not resolve to a node with the global id of 'PR_bogusNodeId'
+exit=0
+
+== NEW form, read-only node query with real PR node id (max-metaplanet/firstmate#161) ==
+node id: PR_kwDOUl835s8AAAABK9ROzw
+data:
+  node:
+    number: 161
+    isDraft: false
+exit=0
