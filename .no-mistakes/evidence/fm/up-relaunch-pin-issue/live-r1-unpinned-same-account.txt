@@ -1,0 +1,30 @@
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fm-lab.l8jnl5
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fm-lab.l8jnl5
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+warning: /tmp/fm-lab.l8jnl5/data/acct1/launch-brief.md records no ship branch; defaulting to legacy branch fm/acct1
+warning: /tmp/fm-lab.l8jnl5/data/acct1/launch-brief.md records no delivery contract line (scaffolded before ship briefs recorded one); launching on the explicit --mode no-mistakes - confirm its definition of done matches
+relaunched acct1 harness=claude from=claude model=default effort=default backend=tmux endpoint=fmses:fm-acct1 worktree=/tmp/fm-lab.l8jnl5/wt
+exit=0
+window=fmses:fm-acct1
+endpoint_task_id=acct1
+worktree=/tmp/fm-lab.l8jnl5/wt
+project=/tmp/fm-lab.l8jnl5/proj
+harness=claude
+approval_mode=bypass
+kind=ship
+mode=no-mistakes
+yolo=off
+branch=fm/acct1
+tasktmp=/tmp/fm-acct1
+model=default
+effort=default
+account=~/.claude-seats/seat-max
+busy_gen=g1793293446.1217337.4509
+spawn_gen=s1793293448.1214905.9551
+control_relaunch_tx=1209493.20261029T170358Z.7544

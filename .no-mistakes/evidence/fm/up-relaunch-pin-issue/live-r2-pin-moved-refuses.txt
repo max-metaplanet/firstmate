@@ -1,0 +1,6 @@
+# config/claude-account -> /tmp/fm-lab.l8jnl5/acct-b
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fm-lab.l8jnl5
+error: task acct1 was launched on account ~/.claude-seats/seat-max, but config/claude-account now selects account /tmp/fm-lab.l8jnl5/acct-b; relaunching would move the task to a different account directory, and the replacement would start without the outgoing worker's session state, which stays under the recorded account. Set config/claude-account back to '~/.claude-seats/seat-max' to relaunch this task, or leave it and start a fresh task on the new account
+exit=1
+agent pid before=1220467 after=1220467
+task record unchanged (account=~/.claude-seats/seat-max)

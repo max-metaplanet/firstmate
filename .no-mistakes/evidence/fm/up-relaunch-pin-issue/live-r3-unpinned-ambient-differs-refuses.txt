@@ -1,0 +1,6 @@
+# config/claude-account removed; firstmate ambient CLAUDE_CONFIG_DIR=/tmp/fm-lab.l8jnl5/acct-b
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fm-lab.l8jnl5
+error: task acct1 was launched on account ~/.claude-seats/seat-max, but config/claude-account is now absent, so no pin selects an account, and the recorded account differs from the account firstmate is currently running with, account /tmp/fm-lab.l8jnl5/acct-b; the relaunch is refused because no pin selects an account and firstmate is running with a different account than the task recorded. Set config/claude-account to '~/.claude-seats/seat-max' or run firstmate with that account to relaunch this task, or start a fresh task on the current account
+exit=1
+agent pid before=1220467 after=1220467
+task record unchanged
