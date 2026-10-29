@@ -1,0 +1,28 @@
+ok - Codex-to-Claude starts a new Claude conversation and explicitly requests Remote Control
+ok - per-seat histories are resumable before handover and retain late writes across repeated checks
+ok - missing history, conflicting history, and an unusable destination refuse check and restart while the old leader lives
+ok - shared projects, the ambient source profile, and initially absent companion directories remain resumable
+ok - successor explicitly pins its home and keeps reusable argv free of the startup prompt
+ok - Codex destination starts a fresh embedded session, retains Claude engine credentials and discloses RC limit
+ok - a Codex owner without embedded-process proof is refused before any handover
+ok - a check establishes the lead's seat, its destination, its session, and the replacement command
+ok - the replacement is launched on the published session-start instruction, as the argument after the session it resumes
+ok - without the persist gate nothing is armed and the lead keeps running
+ok - a destination that is not proven signed in is refused, undecided included
+ok - an unestablished terminal or lead account refuses instead of guessing one
+ok - a runtime record that does not name the current lock owner is no evidence
+ok - the ambient default profile and the seat the lead already holds are both refused
+ok - same-seat refresh keeps the persist gate and stages the same seat and session with persistence enabled
+ok - a session that does not hold this home cannot replace its lead
+ok - a launch command is established only when it provably round-trips, and composition leaves exactly one resume
+ok - a lead whose session record carries the Remote Control connection hands it to its replacement
+ok - a lead that never connected, and one that disconnected, both leave the replacement without Remote Control
+ok - a missing, foreign, or unparseable record is undeterminable and turns nothing on
+ok - a launch command that already names Remote Control keeps its own flag and session name, and the plan says so
+ok - a reservation refuses every session but the one it names, and the successor clears it
+ok - a reservation that lapsed holds nothing, so a failed handover cannot wedge a home
+ok - the outgoing session still confirms its lock and does not drop its own reservation
+ok - only the session holding this home's lock may reserve it for a successor
+ok - the detached stage drops the reservation it armed with the nonce it holds, and nothing else can
+ok - the lead's own crossing hands over a binding move once per seat, with the persist gate and the exact command
+ok - a crossing the lead cannot act on names the blocker instead of offering a restart

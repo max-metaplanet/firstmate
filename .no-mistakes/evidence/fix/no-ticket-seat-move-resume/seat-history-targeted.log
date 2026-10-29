@@ -1,0 +1,4 @@
+ok - per-seat histories are resumable before handover and retain late writes across repeated checks
+ok - missing history, conflicting history, and an unusable destination refuse check and restart while the old leader lives
+ok - shared projects, the ambient source profile, and initially absent companion directories remain resumable
+ok - a crossing that was blocked hands over the move as soon as it becomes available
