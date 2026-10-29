@@ -677,7 +677,7 @@ If such a hook would run, bypass it for that command only with `git -c core.hook
 Where this delivery path authorizes you to push a branch that forge CI runs on, finish local iteration and push ONCE per task when ready; no-mistakes owns its push, and local-only never pushes.
 A Gerrit `gerrit-axi publish` patch set or an external-review re-upload made to correct the work before reporting done is not a second push and is not reported as blocked, because no forge CI runs on it.
 PR CI is the full regression gate for PR delivery; keep CI spend down and never trigger extra CI reruns yourself, including failed-job reruns or manual workflow dispatches.
-The pipeline still owns its configured test step, repair loop, and `ci.rerun_transient`; no-mistakes tasks also follow the CI-round policy below before authorizing further repairs.
+The pipeline still owns its configured test step, repair loop, and `ci.rerun_transient`.
 EOF
   ci_cost="When a required check is red, read its failure log.
 Never push an empty, no-op, or \"retrigger\" commit to rerun CI."
@@ -822,6 +822,7 @@ $refresh
 Never hand-fix or push around the pipeline's repair loop.
 $ci_cost
 When no-mistakes owns CI, report unrelated failures through its CI step; its "skip as unrelated with evidence" path remains valid.
+Follow the CI-round policy below before authorizing further CI repairs.
 
 ## CI-round policy
 After three CI rounds on one PR, stop speculative publication: a fourth or later round requires a locally reproduced failure and a locally verified fix.
