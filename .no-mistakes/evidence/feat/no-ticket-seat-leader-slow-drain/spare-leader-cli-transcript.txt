@@ -1,0 +1,109 @@
+=== S1: mode OFF (absent) - baseline rotation picks the seat with most spare (the leader)
+$ fm-seat.sh worker-destination --from w2
+lead
+[exit 0]
+$ fm-seat.sh launch-destination
+lead
+[exit 0]
+  -> active seat now: lead
+spare leader: off
+
+=== S2: turn mode ON, leader active, no threshold: dispatch + watch depart the leader early
+spare leader: on - sparing lead (claude); last eligible choice
+auto-switch trigger: (unset - only spare-leader departures)
+$ fm-seat.sh worker-destination --from w2
+w1
+[exit 0]
+$ fm-seat.sh launch-destination
+w1
+[exit 0]
+  -> active seat now: lead
+$ fm-seat.sh auto
+claude-seat: switched from lead to w1 to spare the leader; new workers launch there
+[exit 0]
+  -> active seat now: w1
+--- second watch pass (anti-flap)
+$ fm-seat.sh auto
+[exit 0]
+  -> active seat now: w1
+
+=== S3: active worker w1 used up (5h=0), w2 has quota with LESS weekly spare: move to w2, not leader
+$ fm-seat.sh launch-destination
+w2
+[exit 0]
+$ fm-seat.sh auto
+claude-seat: switched from w1 to w2 because its quota is used up; new workers launch there
+[exit 0]
+  -> active seat now: w2
+$ fm-seat.sh auto
+[exit 0]
+  -> active seat now: w2
+
+=== S4: every worker seat used up: leader is the last-choice fallback, no flap afterwards
+$ fm-seat.sh launch-destination
+lead
+[exit 0]
+$ fm-seat.sh auto
+claude-seat: switched from w2 to lead because its quota is used up and no other seat can take new workers; new workers launch there
+[exit 0]
+  -> active seat now: lead
+$ fm-seat.sh auto
+[exit 0]
+  -> active seat now: lead
+
+=== S5 (adversarial): threshold=20, leader active, only alternative is below trigger: stays on leader
+$ fm-seat.sh launch-destination
+lead
+[exit 0]
+$ fm-seat.sh auto
+[exit 0]
+  -> active seat now: lead
+--- w1 recovers above trigger: departure resumes
+$ fm-seat.sh auto
+claude-seat: switched from lead to w1 to spare the leader; new workers launch there
+[exit 0]
+  -> active seat now: w1
+
+=== S6 (adversarial): runtime record missing -> preference inactive, selection as if OFF
+spare leader: on - leader seat undetermined for claude; preference inactive
+$ fm-seat.sh worker-destination --from w2
+lead
+[exit 0]
+
+=== S7: explicit 'off' restores original selection
+$ fm-seat.sh worker-destination --from w2
+lead
+[exit 0]
+spare leader: off
+
+=== S8: seat board json/html reports mode
+{"activeSeat":"w2","liveSeat":"default","floor":null,"spareLeader":"spare leader: on - sparing lead (claude); last eligible choice"}
+[render exit 0]
+<p class="rotation">pipeline seat for next managed launch: w2 (follows active seat)</p>
+<p class="rotation">spare leader: on - sparing lead (claude); last eligible choice</p>
+<p class="rotation">provider: claude</p>
+<p class="rotation">renewal: unknown</p>
+<p class="rotation">Credential usability is unknown; no renewal or login is attempted.</p>
+<p class="rotation">FM_HOME=$LAB/lab/home ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6310047DMEFFGP2W5Y05WZD/bin/fm-seat-renew.sh --provider claude default</p>
+<p class="rotation">never an automatic rotation target (the ambient login)</p>
+<p class="rotation">provider: claude</p>
+<p class="rotation">renewal: unknown</p>
+<p class="rotation">Credential usability is unknown; no renewal or login is attempted.</p>
+<p class="rotation">FM_HOME=$LAB/lab/home ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6310047DMEFFGP2W5Y05WZD/bin/fm-seat-renew.sh --provider claude lead</p>
+<p class="rotation">in rotation</p>
+<p class="rotation">provider: claude</p>
+<p class="rotation">renewal: unknown</p>
+<p class="rotation">Credential usability is unknown; no renewal or login is attempted.</p>
+<p class="rotation">FM_HOME=$LAB/lab/home ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6310047DMEFFGP2W5Y05WZD/bin/fm-seat-renew.sh --provider claude w1</p>
+<p class="rotation">in rotation</p>
+<p class="rotation">provider: claude</p>
+<p class="rotation">renewal: unknown</p>
+<p class="rotation">Credential usability is unknown; no renewal or login is attempted.</p>
+<p class="rotation">FM_HOME=$LAB/lab/home ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6310047DMEFFGP2W5Y05WZD/bin/fm-seat-renew.sh --provider claude w2</p>
+<p class="rotation">in rotation</p>
+<p class="rotation">spare leader: off</p>
+<p class="rotation">provider: codex</p>
+<p class="rotation">renewal: unknown</p>
+<p class="rotation">Credential usability is unknown; no renewal or login is attempted.</p>
+<p class="rotation">FM_HOME=$LAB/lab/home ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6310047DMEFFGP2W5Y05WZD/bin/fm-seat-renew.sh --provider codex default</p>
+<p class="rotation">never an automatic rotation target (the ambient login)</p>

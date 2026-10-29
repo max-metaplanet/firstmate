@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<title>Claude and Codex seats</title>
+<meta http-equiv="refresh" content="60">
+<style>body { font-family: -apple-system, system-ui, sans-serif; margin: 2rem; color: #1a1a1a; }
+h1 { font-size: 1.4rem; }
+.generated { color: #666; font-size: 0.85rem; }
+section.seat { border: 1px solid #ccc; border-radius: 6px; padding: 0.75rem 1rem; margin-bottom: 1rem; }
+section.seat h2 { font-size: 1.05rem; margin: 0 0 0.35rem; }
+.active { color: #0a7a2f; font-weight: bold; font-size: 0.8rem; }
+.account { color: #444; margin: 0.1rem 0; }
+.attention { color: #b30000; font-weight: bold; }
+table.windows { border-collapse: collapse; margin-top: 0.4rem; }
+table.windows th, table.windows td { text-align: left; padding: 0.15rem 0.6rem 0.15rem 0; }
+.extra { color: #444; }
+.rotation { color: #444; font-size: 0.85rem; margin: 0.1rem 0; }
+.resting { color: #9a5b00; font-weight: bold; }
+.floor { color: #666; font-size: 0.85rem; margin-top: 1rem; }</style>
+</head><body>
+<h1>Claude and Codex seats</h1>
+<p class="generated">generated 2026-10-29T05:14:19Z</p>
+<p class="rotation">pipeline seat for next managed launch: w2 (follows active seat)</p>
+<h2>claude</h2>
+<p class="rotation">spare leader: on - sparing lead (claude); last eligible choice</p>
+<section class="seat" data-provider="claude">
+<h2>default</h2>
+<p class="rotation">provider: claude</p>
+<p class="rotation">renewal: unknown</p>
+<p class="rotation">Credential usability is unknown; no renewal or login is attempted.</p>
+<p class="rotation">FM_HOME=/tmp/fm-spare-drive.dPNTsp/lab/home ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6310047DMEFFGP2W5Y05WZD/bin/fm-seat-renew.sh --provider claude default</p>
+<p class="rotation">never an automatic rotation target (the ambient login)</p>
+<p class="attention">keychain_unreachable</p>
+<table class="windows">
+<tr><th>window</th><th>left</th><th>resets</th></tr>
+</table>
+</section>
+<section class="seat" data-provider="claude">
+<h2>lead</h2>
+<p class="rotation">provider: claude</p>
+<p class="rotation">renewal: unknown</p>
+<p class="rotation">Credential usability is unknown; no renewal or login is attempted.</p>
+<p class="rotation">FM_HOME=/tmp/fm-spare-drive.dPNTsp/lab/home ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6310047DMEFFGP2W5Y05WZD/bin/fm-seat-renew.sh --provider claude lead</p>
+<p class="rotation">in rotation</p>
+<p class="account">seat--tmp-fm-spare-drive-dPNTsp-lab-seats-lead@example.test</p>
+<table class="windows">
+<tr><th>window</th><th>left</th><th>resets</th></tr>
+<tr><td>session</td><td>90%</td><td>2099-01-01T00:00:00Z</td></tr>
+<tr><td>week</td><td>90%</td><td>2099-01-07T00:00:00Z</td></tr>
+</table>
+</section>
+<section class="seat" data-provider="claude">
+<h2>w1</h2>
+<p class="rotation">provider: claude</p>
+<p class="rotation">renewal: unknown</p>
+<p class="rotation">Credential usability is unknown; no renewal or login is attempted.</p>
+<p class="rotation">FM_HOME=/tmp/fm-spare-drive.dPNTsp/lab/home ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6310047DMEFFGP2W5Y05WZD/bin/fm-seat-renew.sh --provider claude w1</p>
+<p class="rotation">in rotation</p>
+<p class="account">seat--tmp-fm-spare-drive-dPNTsp-lab-seats-w1@example.test</p>
+<table class="windows">
+<tr><th>window</th><th>left</th><th>resets</th></tr>
+<tr><td>session</td><td>60%</td><td>2099-01-01T00:00:00Z</td></tr>
+<tr><td>week</td><td>60%</td><td>2099-01-07T00:00:00Z</td></tr>
+</table>
+</section>
+<section class="seat" data-provider="claude">
+<h2>w2 <span class="active">active for new workers</span></h2>
+<p class="rotation">provider: claude</p>
+<p class="rotation">renewal: unknown</p>
+<p class="rotation">Credential usability is unknown; no renewal or login is attempted.</p>
+<p class="rotation">FM_HOME=/tmp/fm-spare-drive.dPNTsp/lab/home ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6310047DMEFFGP2W5Y05WZD/bin/fm-seat-renew.sh --provider claude w2</p>
+<p class="rotation">in rotation</p>
+<p class="account">seat--tmp-fm-spare-drive-dPNTsp-lab-seats-w2@example.test</p>
+<table class="windows">
+<tr><th>window</th><th>left</th><th>resets</th></tr>
+<tr><td>session</td><td>50%</td><td>2099-01-01T00:00:00Z</td></tr>
+<tr><td>week</td><td>40%</td><td>2099-01-07T00:00:00Z</td></tr>
+</table>
+</section>
+<p class="floor">no quota floor is configured, so no seat is ever rested out of automatic rotation</p>
+<h2>codex</h2>
+<p class="rotation">spare leader: off</p>
+<section class="seat" data-provider="codex">
+<h2>default <span class="active">active for new workers</span></h2>
+<p class="rotation">provider: codex</p>
+<p class="rotation">renewal: unknown</p>
+<p class="rotation">Credential usability is unknown; no renewal or login is attempted.</p>
+<p class="rotation">FM_HOME=/tmp/fm-spare-drive.dPNTsp/lab/home ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6310047DMEFFGP2W5Y05WZD/bin/fm-seat-renew.sh --provider codex default</p>
+<p class="rotation">never an automatic rotation target (the ambient login)</p>
+<p class="attention">not logged in</p>
+<table class="windows">
+<tr><th>window</th><th>left</th><th>resets</th></tr>
+</table>
+</section>
+<p class="floor">no quota floor is configured, so no seat is ever rested out of automatic rotation</p>
+</body></html>
