@@ -153,6 +153,10 @@
 # ordinary ship brief and the durable contract written during scout promotion.
 # It takes the same optional trailing forge argument, because the rule that keeps
 # a worker off a remote is exactly the rule that changes when the forge does.
+# The no-mistakes block also owns the worker's three-CI-round policy, emitted
+# identically by brief generation and scout promotion for every harness/backend.
+# Firstmate does not intercept the daemon's CI repair publication; this is a
+# worker gate contract, not a runtime push guard in fm-nm-run-lib.sh.
 
 # Builtin path resolution, computed once (no dirname/cd/pwd subshell per
 # sourced sibling): this library is sourced on every fm-crew-state.sh read, so
@@ -673,7 +677,7 @@ If such a hook would run, bypass it for that command only with `git -c core.hook
 Where this delivery path authorizes you to push a branch that forge CI runs on, finish local iteration and push ONCE per task when ready; no-mistakes owns its push, and local-only never pushes.
 A Gerrit `gerrit-axi publish` patch set or an external-review re-upload made to correct the work before reporting done is not a second push and is not reported as blocked, because no forge CI runs on it.
 PR CI is the full regression gate for PR delivery; keep CI spend down and never trigger extra CI reruns yourself, including failed-job reruns or manual workflow dispatches.
-These worker limits leave no-mistakes' configured test step, repair loop, and `ci.rerun_transient` behavior unchanged.
+The pipeline still owns its configured test step, repair loop, and `ci.rerun_transient`; no-mistakes tasks also follow the CI-round policy below before authorizing further repairs.
 EOF
   ci_cost="When a required check is red, read its failure log.
 Never push an empty, no-op, or \"retrigger\" commit to rerun CI."
@@ -815,9 +819,23 @@ The implementation is complete only when committed on your branch; the TASK is c
 As soon as the implementation is committed and your tree is clean, invoke /no-mistakes yourself and drive the run to its outcome: do not report done first, and do not wait for firstmate to send you the pipeline.
 The pipeline owns the push; never push from this copy.
 $refresh
-Follow the CI-round policy in validation-supervision; never hand-fix or push around the pipeline's repair loop.
+Never hand-fix or push around the pipeline's repair loop.
 $ci_cost
 When no-mistakes owns CI, report unrelated failures through its CI step; its "skip as unrelated with evidence" path remains valid.
+
+## CI-round policy
+After three CI rounds on one PR, stop speculative publication: a fourth or later round requires a locally reproduced failure and a locally verified fix.
+Count distinct published PR heads that started CI, including the initial publication, across pipeline runs, retries, rebases, and worker replacements; never reset the count by restarting validation.
+Multiple workflows on one head, draft-to-ready events, and reruns on that same head do not create another head round; worker-triggered reruns remain forbidden.
+Before starting or rerunning the pipeline, inspect the PR's head history and the installed version's effective CI repair limits, including repository overrides; reserve a round for any new publication and do not allow automatic repairs to publish beyond the third round.
+For a new PR, \`auto_fix.ci: 2\` allows the initial publication and at most two automatic repair attempts in that run; it is not a lifetime PR counter, and an existing PR has less remaining budget.
+If the history or effective limit cannot be established, or the pipeline can publish beyond that budget without a decision gate, append a blocked event naming the version, observed rounds, and required configuration or upstream change, then stop before starting that run; never edit shared daemon configuration yourself.
+At the third failed round and before authorizing any further CI repair, read all failing logs after the head's executing checks settle and give the complete actionable failure set to the pipeline in one gate response.
+Require in that response's \`--instructions\` that the pipeline reproduce each actionable failing check locally before editing, run heavy reproduction and verification inside the project's heavy-slot wrapper, apply the root-cause fix, and verify the same command passes on the candidate head before publishing once.
+Require recorded evidence of the failing command and result before the fix, the passing command and result after it, and the candidate head; relevant passing tests alone are not proof that the CI failure was reproduced.
+If local reproduction or verification is unavailable or fails, require the pipeline to hold publication and report the blocker to firstmate; do not authorize a speculative push, an empty commit, a restart to reset the budget, or a worker fix outside the pipeline.
+If the installed pipeline cannot hold publication for that evidence, report its version and the needed upstream enforcement before proceeding; a brief instruction is not a deterministic guard on the daemon.
+
 As soon as the pipeline opens its PR, read it by its full URL.
 If it is a draft, confirm the pipeline's local review, test and lint steps passed and the work is ready, then mark it ready using the forge command below BEFORE waiting for CI green.
 A draft-skipping workflow needs that ready transition to run its full suites; skipped draft checks alone never prove the ready PR green.

@@ -565,7 +565,8 @@ test_ci_cost_discipline() {
       assert_grep 'PR CI is the full regression gate for PR delivery' "$brief" "$mode/$forge: missing full regression gate"
       assert_grep 'never trigger extra CI reruns yourself, including failed-job reruns or manual workflow dispatches' \
         "$brief" "$mode/$forge: worker-triggered CI reruns must be forbidden"
-      assert_grep "configured test step, repair loop, and \`ci.rerun_transient\` behavior unchanged" \
+      # shellcheck disable=SC2016 # Literal backticks in the generated contract.
+      assert_grep 'The pipeline still owns its configured test step, repair loop, and `ci.rerun_transient`' \
         "$brief" "$mode/$forge: pipeline configuration must remain authoritative"
       [ "$(grep -Fc 'Run locally only the tests for what you changed' "$brief")" -eq 1 ] \
         || fail "$mode/$forge: local scope policy must render exactly once"
@@ -595,6 +596,45 @@ test_ci_cost_discipline() {
   assert_no_grep 'Run locally only the tests for what you changed' "$brief" 'scout inherited the ship DoD policy'
   assert_no_grep 'rerun only the failed jobs' "$brief" 'non-publishing scouts inherited CI repair instructions'
   pass 'all ship briefs scope local validation, preserve publication ownership, and forbid worker CI reruns'
+}
+
+# The generated prompt is an intentional interface, not proof of model obedience
+# or daemon enforcement. Oracle: three published CI heads per PR before local
+# fail-then-pass evidence is required, with the pipeline retaining all pushes.
+test_ci_round_policy() {
+  local home mode forge brief policy
+  home="$TMP_ROOT/ci-round-policy-home"
+  mkdir -p "$home/data" "$home/config"
+  printf '%s\n' 'Upload commits for review.' > "$home/config/external-review.md"
+  for mode in no-mistakes direct-PR local-only; do
+    for forge in none forgejo gerrit external; do
+      case "$mode:$forge" in local-only:forgejo|local-only:gerrit|local-only:external|no-mistakes:external) continue ;; esac
+      FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "round-$mode-$forge" proj --mode "$mode" --forge "$forge" >/dev/null 2>&1 \
+        || fail "$mode/$forge: scaffold failed"
+      brief="$home/data/round-$mode-$forge/brief.md"
+      if [ "$mode" != no-mistakes ] || [ "$forge" = gerrit ]; then
+        assert_no_grep '## CI-round policy' "$brief" "$mode/$forge must not acquire pipeline CI gates"
+        continue
+      fi
+      [ "$(grep -Fc '## CI-round policy' "$brief")" -eq 1 ] || fail "$forge: policy must render once"
+      policy=$(sed -n '/^## CI-round policy$/,/^As soon as the pipeline opens/p' "$brief")
+      assert_contains "$policy" 'After three CI rounds on one PR' 'threshold must include the initial round'
+      assert_contains "$policy" 'including the initial publication, across pipeline runs, retries, rebases, and worker replacements' 'a fresh run must not reset the count'
+      assert_contains "$policy" 'reruns on that same head do not create another head round' 'workflow fanout must not multiply head rounds'
+      assert_contains "$policy" 'stop before starting that run' 'unsafe automatic repair budget must fail closed'
+      assert_contains "$policy" 'auto_fix.ci: 2' 'automatic attempt limit must account for the initial publication'
+      assert_contains "$policy" 'it is not a lifetime PR counter' 'attempt limit must not masquerade as enforcement'
+      assert_contains "$policy" 'reproduce each actionable failing check locally before editing' 'reproduction must precede repair'
+      assert_contains "$policy" "inside the project's heavy-slot wrapper" 'heavy local work must use the project slot'
+      assert_contains "$policy" 'verify the same command passes on the candidate head before publishing once' 'only a verified fix may be published'
+      assert_contains "$policy" 'failing command and result before the fix' 'proof must include the original failure'
+      assert_contains "$policy" 'passing command and result after it, and the candidate head' 'proof must bind verification to the candidate'
+      assert_contains "$policy" 'hold publication and report the blocker to firstmate' 'unreproducible failure must not cause a speculative push'
+      assert_contains "$policy" 'a brief instruction is not a deterministic guard on the daemon' 'runtime limitation must stay explicit'
+      assert_no_grep 'Follow the CI-round policy in validation-supervision' "$brief" 'worker must receive the policy without loading a supervisor skill'
+    done
+  done
+  pass 'generated CI-round contract binds later publication to reproduction, verification, and pipeline ownership'
 }
 
 # Pin the specific line the bug lived on: the no-mistakes DOD's no-mistakes
@@ -2066,6 +2106,7 @@ test_no_mistakes_dod_green_detection
 test_pr_based_dod_requires_non_draft
 test_draft_first_and_publication_ownership
 test_ci_cost_discipline
+test_ci_round_policy
 test_direct_pr_dod_binds_the_pr_target_to_origin
 test_ask_user_escalation_format
 test_ship_project_memory_wording

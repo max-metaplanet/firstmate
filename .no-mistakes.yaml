@@ -13,6 +13,9 @@ disable_project_settings: true
 # review_agent_timeout is global-only. This caps automatic repair rounds only.
 auto_fix:
   review: 1
+  # Initial publication + two automatic repairs reach the third CI head.
+  # The generated worker contract owns lifetime counting and later repair gates.
+  ci: 2
 review:
   path_instructions:
     - path: "*"
