@@ -179,6 +179,12 @@ other=$(printf '%s\n' "$out" | sed -n '/^C\./,$p')
 assert_not_contains "$ready" 'capped-next' 'same-origin holders across homes gate the capped project'
 assert_contains "$ready" 'free-next' 'a full project does not gate another project'
 assert_contains "$other" 'project capacity 2/2 | capped-next' 'exact project occupancy is shown as the blocker'
+printf 'ad_hoc_slot=1\n' >> "$MAIN/state/cap-one.meta"
+out=$(FM_HOME=$MAIN bash "$SLOTS")
+assert_contains "$out" 'plus 1 ad hoc (source:' 'header names the ad hoc holder above the declared cap'
+assert_contains "$(printf '%s\n' "$out" | sed -n '/^A\./,/^B\./p')" 'capped-next' 'an ad hoc holder leaves the declared project place free, as admission does'
+grep -v '^ad_hoc_slot=' "$MAIN/state/cap-one.meta" > "$TMP_ROOT/cap-one.meta"
+mv "$TMP_ROOT/cap-one.meta" "$MAIN/state/cap-one.meta"
 printf 'pr=%s\n' "$URL" >> "$CHILD/state/cap-two.meta"
 out=$(FM_HOME=$MAIN bash "$SLOTS")
 assert_contains "$(printf '%s\n' "$out" | sed -n '/^A\./,/^B\./p')" 'capped-next' 'recorded handoff frees project capacity using admission rules'

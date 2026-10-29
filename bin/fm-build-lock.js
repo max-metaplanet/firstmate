@@ -5,15 +5,21 @@
 // in a slot and exits with that run's status.
 //
 // Heavy means a command whose peak memory can exhaust a small machine: a Next
-// production build, a Vitest run, a Playwright browser run, and a whole-project
-// tsc. A tsc given a source file type-checks that file and stays unlocked.
+// production build, a Vitest run (a bare vitest runs once off a TTY or in CI,
+// as Vitest does), a Playwright browser run, and a whole-project tsc. A tsc given a source file type-checks that file and stays unlocked.
 const argv = process.argv;
 const ENTRIES = new Set(['next', 'vitest.mjs', 'cli.js', 'tsc', 'tsc.js']);
 const entry = typeof argv[1] === 'string' ? argv[1].slice(argv[1].lastIndexOf('/') + 1) : '';
 const heavy = (script, args) => {
-  if (script.endsWith('/next/dist/bin/next')) return args[0] === 'build';
-  if (script.endsWith('/vitest/vitest.mjs')) return args[0] === 'run';
-  if (script.endsWith('/@playwright/test/cli.js')) return args[0] === 'test';
+  const command = args.find((a) => !a.startsWith('-'));
+  if (script.endsWith('/next/dist/bin/next')) return command === 'build';
+  if (script.endsWith('/vitest/vitest.mjs')) {
+    if (command === 'run' || args.includes('--run')) return true;
+    if (command === 'watch' || command === 'dev' || args.includes('--watch') ||
+        args.includes('-w')) return false;
+    return !process.stdin.isTTY || Boolean(process.env.CI);
+  }
+  if (script.endsWith('/@playwright/test/cli.js')) return command === 'test';
   if (script.endsWith('/typescript/bin/tsc') || script.endsWith('/typescript/lib/tsc.js')) {
     return !args.some((a) => a === '--version' || a === '-v' || a === '--init' ||
       /\.[cm]?tsx?$/i.test(a));

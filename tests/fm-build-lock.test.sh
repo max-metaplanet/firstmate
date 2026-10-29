@@ -319,41 +319,48 @@ function run(fs) {
             cli.write_text(head + shared)
             cli.chmod(0o755)
         preload = {'NODE_OPTIONS': option, 'FM_HEAVY_SLOTS': '1'}
-        heavy = {
-            'vitest': ['run'],
-            'playwright': ['test'],
-            'tsc': ['--noEmit', '-p', 'tsconfig.json'],
-        }
-        light = {
-            'vitest': ['--version'],
-            'playwright': ['install'],
-            'tsc': ['one-file.ts', '--noEmit'],
-        }
-        for name, args in heavy.items():
-            blocker = launch('block-' + name, slots='1')
-            assert wait_file(scratch / ('block-' + name)), f'the blocker before {name} never started'
-            (scratch / (name + '.release')).touch()
-            log = open(scratch / (name + '.err'), 'w')
+        # Off a TTY a bare vitest runs the suite once, as a package test script does.
+        heavy = [
+            ('vitest', ['run']),
+            ('vitest', []),
+            ('vitest', ['--run', '--reporter=dot']),
+            ('playwright', ['test']),
+            ('tsc', ['--noEmit', '-p', 'tsconfig.json']),
+        ]
+        light = [
+            ('vitest', ['--version']),
+            ('vitest', ['watch']),
+            ('vitest', ['--watch']),
+            ('playwright', ['install']),
+            ('tsc', ['one-file.ts', '--noEmit']),
+        ]
+        for case, (name, args) in enumerate(heavy):
+            tag = f'{name}-{case}'
+            blocker = launch('block-' + tag, slots='1')
+            assert wait_file(scratch / ('block-' + tag)), f'the blocker before {name} never started'
+            (scratch / (tag + '.release')).touch()
+            log = open(scratch / (tag + '.err'), 'w')
             child = subprocess.Popen(['node', str(scratch / entries[name][0]), *args],
-                                     env=dict(env, MARKER=str(scratch / name),
-                                              RELEASE=str(scratch / (name + '.release')), **preload),
-                                     stderr=log)
+                                     env=dict(env, MARKER=str(scratch / tag),
+                                              RELEASE=str(scratch / (tag + '.release')), **preload),
+                                     stdin=subprocess.DEVNULL, stderr=log)
             log.close()
             children.append(child)
             for _ in range(300):
-                if 'waiting for a heavy slot' in (scratch / (name + '.err')).read_text():
+                if 'waiting for a heavy slot' in (scratch / (tag + '.err')).read_text():
                     break
                 time.sleep(.03)
-            assert 'waiting for a heavy slot' in (scratch / (name + '.err')).read_text(), \
-                f'{name} {" ".join(args)} did not claim a heavy slot: ' + (scratch / (name + '.err')).read_text()
-            assert not (scratch / name).exists(), f'{name} ran while the only slot was held'
-            (scratch / ('block-' + name + '.release')).touch()
+            assert 'waiting for a heavy slot' in (scratch / (tag + '.err')).read_text(), \
+                f'{name} {" ".join(args)} did not claim a heavy slot: ' + (scratch / (tag + '.err')).read_text()
+            assert not (scratch / tag).exists(), f'{name} ran while the only slot was held'
+            (scratch / ('block-' + tag + '.release')).touch()
             assert blocker.wait(10) == 0
-            assert child.wait(30) == 0, (scratch / (name + '.err')).read_text()
-            assert (scratch / name).exists(), f'{name} never ran after its slot freed'
-        for name, args in light.items():
+            assert child.wait(30) == 0, (scratch / (tag + '.err')).read_text()
+            assert (scratch / tag).exists(), f'{name} never ran after its slot freed'
+        for name, args in light:
             result = subprocess.run(['node', str(scratch / entries[name][0]), *args],
-                                    env=dict(env, **preload), capture_output=True, timeout=30)
+                                    env=dict(env, **preload), stdin=subprocess.DEVNULL,
+                                    capture_output=True, timeout=30)
             assert result.returncode == 0 and result.stdout.startswith(b'ran:'), result.stderr
             assert b'waiting' not in result.stderr, f'{name} {" ".join(args)} took a heavy slot'
         print('ok - the preload locks Vitest, Playwright and whole-project tsc and passes the rest through')
