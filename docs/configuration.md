@@ -1596,7 +1596,7 @@ Heavy-slot limits are unaffected: an ad hoc worker waits for a heavy slot exactl
 ## Heavy slots (config/heavy-slots)
 
 A heavy slot is a place to run one memory-heavy command: a Next production build, a Vitest run, a Playwright browser run, or a whole-project `tsc`.
-It is claimed when such a command starts and released when it exits, rather than reserved when a worker spawns, so a worker that never runs one never holds a slot and a worker that runs several holds one at a time.
+It is claimed when such a command starts, rather than reserved when a worker spawns, so a worker that never runs one never holds a slot.
 The pool is machine-wide for one OS user, so every Firstmate home, every worker, and the no-mistakes daemon share it.
 
 The optional local, gitignored `config/heavy-slots` in the machine's root Firstmate home holds one positive integer; blank lines and `#` lines are ignored, and an absent file declares one slot.
@@ -1608,7 +1608,7 @@ The optional local, gitignored `config/heavy-slots` in the machine's root Firstm
 
 A worker that finds every slot taken waits for one and says so on stderr; waiting is the intended behavior, not a failure.
 Waiting is polled rather than queued, so slots are not handed out first-come-first-served.
-A heavy command started inside another one reuses its holder's slot instead of taking a second, and a slot is released on any exit, including `SIGKILL`.
+A heavy command started inside another one reuses its holder's slot instead of taking a second; the slot is released when the last process holding its inherited file descriptor exits, including through `SIGKILL`.
 `FM_BUILD_LOCK_BYPASS=1 <command>` runs one command without a slot.
 
 Covered automatically: any Node process whose `NODE_OPTIONS` carries the preload, which ship and scout launches, the managed no-mistakes Claude wrapper, and the daemon drop-in all add.
