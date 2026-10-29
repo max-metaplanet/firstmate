@@ -398,6 +398,7 @@ function run(fs) {
         entries = {
             'vitest': ('node_modules/vitest/vitest.mjs', esm),
             'playwright': ('node_modules/@playwright/test/cli.js', cjs),
+            'playwright-package': ('node_modules/playwright/cli.js', cjs),
             'tsc': ('node_modules/typescript/bin/tsc', cjs),
         }
         for name, (rel, head) in entries.items():
@@ -407,8 +408,9 @@ function run(fs) {
             cli.chmod(0o755)
         localbin = scratch / 'node_modules/.bin'
         localbin.mkdir(exist_ok=True)
-        for name in ('vitest', 'playwright'):
-            link = localbin / name
+        for name in ('vitest', 'playwright', 'playwright-package'):
+            link = localbin / name if name != 'playwright-package' else localbin / 'package' / 'playwright'
+            link.parent.mkdir(exist_ok=True)
             link.symlink_to(scratch / entries[name][0])
             entries[name + '-bin'] = (str(link.relative_to(scratch)), None)
         preload = {'NODE_OPTIONS': option, 'FM_HEAVY_SLOTS': '1'}
@@ -420,8 +422,10 @@ function run(fs) {
             ('vitest', ['--run', '--reporter=dot'], False),
             ('vitest', ['--config', 'x', 'run'], True),
             ('playwright', ['test'], False),
+            ('playwright-package', ['test'], False),
             ('vitest-bin', ['run'], False),
             ('playwright-bin', ['test'], False),
+            ('playwright-package-bin', ['test'], False),
             ('tsc', ['--noEmit', '-p', 'tsconfig.json'], False),
         ]
         light = [
@@ -429,6 +433,8 @@ function run(fs) {
             ('vitest', ['watch']),
             ('vitest', ['--watch']),
             ('playwright', ['install']),
+            ('playwright-package', ['install']),
+            ('playwright-package', ['test', '--help']),
             ('tsc', ['one-file.ts', '--noEmit']),
             ('tsc', ['--watch', '-p', 'tsconfig.json']),
             ('tsc', ['-w']),

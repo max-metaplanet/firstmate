@@ -22,7 +22,8 @@ const heavy = (script, args) => {
         args.includes('-w')) return false;
     return !process.stdin.isTTY || Boolean(process.env.CI);
   }
-  if (script.endsWith('/@playwright/test/cli.js')) return command === 'test';
+  if (script.endsWith('/@playwright/test/cli.js') ||
+      script.endsWith('/playwright/cli.js')) return command === 'test';
   if (script.endsWith('/typescript/bin/tsc') || script.endsWith('/typescript/lib/tsc.js')) {
     return !args.some((a) => a === '--version' || a === '-v' || a === '--init' ||
       a === '--watch' || a === '-w' ||
