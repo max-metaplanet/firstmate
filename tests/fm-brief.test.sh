@@ -624,8 +624,11 @@ test_ci_round_policy() {
       assert_contains "$policy" 'recount the PR'"'"'s published heads after each CI outcome' 'the stop rule must apply after every CI outcome'
       assert_contains "$policy" 'stop pushing and stop accepting automatic repair rounds: at the next gate, respond instead of approving another fix round' 'the third red head must stop automatic repairs'
       assert_not_contains "$policy" 'stop before starting' 'the round budget must never block starting a run'
-      assert_contains "$policy" 'auto_fix.ci: 2' 'automatic attempt limit must account for the initial publication'
-      assert_contains "$policy" 'it is not a lifetime PR counter' 'attempt limit must not masquerade as enforcement'
+      # shellcheck disable=SC2016 # Literal backticks in the generated contract.
+      assert_contains "$policy" 'Only where the target project sets `auto_fix.ci: 2` does a new PR'"'"'s run allow the initial publication and at most two automatic repair attempts' 'the attempt budget must be conditional on the target project setting'
+      # shellcheck disable=SC2016 # Literal backticks in the generated contract.
+      assert_not_contains "$policy" 'For a new PR, `auto_fix.ci: 2` allows' 'the brief must not assert configuration it does not control'
+      assert_contains "$policy" 'no value is a lifetime PR counter' 'attempt limit must not masquerade as enforcement'
       assert_contains "$policy" 'reproduce each actionable failing check locally before editing' 'reproduction must precede repair'
       assert_contains "$policy" "inside the project's heavy-slot wrapper" 'heavy local work must use the project slot'
       assert_contains "$policy" 'verify the same command passes on the candidate head before publishing once' 'only a verified fix may be published'

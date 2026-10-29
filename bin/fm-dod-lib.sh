@@ -828,7 +828,7 @@ Follow the CI-round policy below before authorizing further CI repairs.
 After three CI rounds on one PR, stop speculative publication: a fourth or later round requires a locally reproduced failure and a locally verified fix.
 Count distinct published PR heads that started CI, including the initial publication, across pipeline runs, retries, rebases, and worker replacements; never reset the count by restarting validation.
 Multiple workflows on one head, draft-to-ready events, and reruns on that same head do not create another head round; worker-triggered reruns remain forbidden.
-For a new PR, \`auto_fix.ci: 2\` allows the initial publication and at most two automatic repair attempts in that run; it is not a lifetime PR counter, so recount the PR's published heads after each CI outcome.
+Only where the target project sets \`auto_fix.ci: 2\` does a new PR's run allow the initial publication and at most two automatic repair attempts; other values allow different per-run attempts, and no value is a lifetime PR counter, so recount the PR's published heads after each CI outcome.
 Once the PR has three published heads and its CI is still red, stop pushing and stop accepting automatic repair rounds: at the next gate, respond instead of approving another fix round.
 Before responding, read all failing logs after the head's executing checks settle and give the complete actionable failure set to the pipeline in that one gate response.
 Require in that response's \`--instructions\` that the pipeline reproduce each actionable failing check locally before editing, run heavy reproduction and verification inside the project's heavy-slot wrapper, apply the root-cause fix, and verify the same command passes on the candidate head before publishing once.
