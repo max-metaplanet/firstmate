@@ -449,7 +449,7 @@ It keeps the account its own process launched on, so after a few switches firstm
 Firstmate changes account by replacing its process in the same terminal:
 
 ```
-bin/fm-seat.sh lead-restart --check              # establish the move, change nothing
+bin/fm-seat.sh lead-restart --check              # establish the move without ending the lead
 bin/fm-seat.sh lead-restart --persisted          # do it
 bin/fm-seat.sh lead-restart --provider codex --to <seat> --check
 bin/fm-lead-restart.sh --to <current-seat> --refresh --persisted  # restart in place
@@ -460,7 +460,8 @@ A Claude-to-Claude move resumes the same session.
 A Codex successor starts a fresh `gpt-6.1-sol` session; a Codex-to-Claude move starts a fresh `opus` session.
 Fresh sessions recover open work from durable records, because conversation history cannot resume across providers.
 The replacement carries the ambient login the previous process started from, so the `default` seat still names that login for workers launched afterwards rather than the seat firstmate moved to.
-A Claude seat links shared settings and sessions under `~/.claude`, so a move between Claude seats can resume the same session.
+Claude seats can share their history or keep separate `projects/` directories.
+The [restart preflight](../bin/fm-lead-restart.sh), including `--check`, prepares the current session's history for the destination before ending the old process and refuses a move it cannot make resumable.
 Without an explicit destination, `bin/fm-seat.sh leader-destination` evaluates configured Claude and Codex seats against their native catalogs, authentication evidence, quota, and startup runway, and ranks eligible candidates by quota-axi's `spendPriority`.
 It reports withheld candidates and uncertainty and refuses an unresolved tie rather than preferring a provider or array position.
 Automatic Codex destinations require the opt-in defined by [configuration.md](configuration.md#automatic-codex-leader-destinations-configlead-codex-auto); an explicit Codex destination remains available manually.

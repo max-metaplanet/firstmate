@@ -91,6 +91,9 @@ make_case() {  # <name> [<seat-for-lead>] [<backend>] [<target>]
   printf '%s\n' "$dir/codex-seats" > "$home/config/codex-seats-root"
   printf '%s\n%s\n' "$seats/alpha" "$seats/beta" > "$spec/oauth"
   printf '90\n' > "$spec/remaining"
+  mkdir -p "$seats/$lead_seat/projects/firstmate/lead-session-1"
+  printf '{"sessionId":"lead-session-1","message":"original"}\n' > "$seats/$lead_seat/projects/firstmate/lead-session-1.jsonl"
+  printf 'agent history\n' > "$seats/$lead_seat/projects/firstmate/lead-session-1/agent.jsonl"
 
   # Detached from this function's stdout: the caller reads it through a command
   # substitution, which would otherwise wait on the pipe this child keeps open.
@@ -121,9 +124,11 @@ stop_case() { kill "$LEAD_PID" 2>/dev/null || true; wait "$LEAD_PID" 2>/dev/null
 run_home() {  # <bin> [args...]
   local bin=$1
   shift
+  # These cases test move decisions, not the production watcher's time budget.
+  # Leave headroom for process and quota-fixture startup on a loaded test host.
   FM_HOME="$HOME_DIR" FM_ROOT_OVERRIDE="$ROOT" FM_STATE_OVERRIDE="$HOME_DIR/state" \
     FM_CONFIG_OVERRIDE="$HOME_DIR/config" FM_DATA_OVERRIDE="$HOME_DIR/data" \
-    CLAUDE_CONFIG_DIR='' PATH="$FAKEBIN:$PATH" "$bin" "$@" 2>&1
+    FM_CHECK_TIMEOUT=120 CLAUDE_CONFIG_DIR='' PATH="$FAKEBIN:$PATH" "$bin" "$@" 2>&1
 }
 
 # Run a command AS the session that holds this home: a claude-named process
@@ -155,6 +160,85 @@ SH
 }
 
 # --- layer 1: establishment and refusals, no terminal ------------------------
+
+test_per_seat_transcript_is_available_before_handover() {
+  local rec out source destination
+  rec=$(make_case per-seat-history); read_case "$rec"
+  stub_pane_exists "$FAKEBIN"
+  source="$SEATS_DIR/alpha/projects/firstmate"
+  destination="$SEATS_DIR/beta/projects/firstmate"
+  [ ! -e "$destination/lead-session-1.jsonl" ] || fail 'fixture already shares its transcript'
+  out=$(run_home "$LEAD_RESTART" --check --to beta) || fail "per-seat preflight refused: $out"
+  cmp "$source/lead-session-1.jsonl" "$destination/lead-session-1.jsonl" || fail 'destination cannot read the conversation'
+  cmp "$source/lead-session-1/agent.jsonl" "$destination/lead-session-1/agent.jsonl" || fail 'destination lost session companion files'
+  # The old lead can still write after preflight. The successor must see those
+  # final messages too, rather than a copy taken while the conversation was live.
+  printf '{"message":"after preflight"}\n' >> "$source/lead-session-1.jsonl"
+  printf 'late agent history\n' > "$source/lead-session-1/late.jsonl"
+  cmp "$source/lead-session-1.jsonl" "$destination/lead-session-1.jsonl" || fail 'destination has a stale transcript'
+  cmp "$source/lead-session-1/late.jsonl" "$destination/lead-session-1/late.jsonl" || fail 'destination missed late companion files'
+  out=$(run_home "$LEAD_RESTART" --check --to beta) || fail "repeated preflight refused: $out"
+  [ ! -e "$HOME_DIR/state/.lock-handover" ] || fail 'check armed a handover'
+  kill -0 "$LEAD_PID" || fail 'check ended the old leader'
+  stop_case
+  pass 'per-seat histories are resumable before handover and retain late writes across repeated checks'
+}
+
+test_missing_or_conflicting_transcripts_refuse_before_ending_the_lead() {
+  local rec out mode
+  for mode in missing empty conflict companion-conflict blocked-directory; do
+    rec=$(make_case "history-$mode"); read_case "$rec"
+    stub_pane_exists "$FAKEBIN"
+    case "$mode" in
+      missing) rm "$SEATS_DIR/alpha/projects/firstmate/lead-session-1.jsonl" ;;
+      empty) : > "$SEATS_DIR/alpha/projects/firstmate/lead-session-1.jsonl" ;;
+      conflict)
+        mkdir -p "$SEATS_DIR/beta/projects/firstmate"
+        printf 'preserve destination history\n' > "$SEATS_DIR/beta/projects/firstmate/lead-session-1.jsonl"
+        ;;
+      companion-conflict) mkdir -p "$SEATS_DIR/beta/projects/firstmate/lead-session-1" ;;
+      blocked-directory) printf 'not a directory\n' > "$SEATS_DIR/beta/projects" ;;
+    esac
+    out=$(run_home "$LEAD_RESTART" --check --to beta) && fail "$mode passed preflight: $out"
+    case "$out" in *'cannot resume'*) ;; *) fail "refusal did not explain resume failure: $out" ;; esac
+    out=$(run_as_lead "$LEAD_RESTART" --to beta --persisted) && fail "$mode armed a restart: $out"
+    [ ! -e "$HOME_DIR/state/.lock-handover" ] || fail "$mode reserved handover"
+    [ ! -e "$HOME_DIR/state/.lead-restart.launch" ] || fail "$mode staged a replacement"
+    kill -0 "$LEAD_PID" || fail "$mode ended the old leader"
+    if [ "$mode" = conflict ]; then
+      [ "$(cat "$SEATS_DIR/beta/projects/firstmate/lead-session-1.jsonl")" = 'preserve destination history' ] || fail 'destination history overwritten'
+    fi
+    stop_case
+  done
+  pass 'missing history, conflicting history, and an unusable destination refuse check and restart while the old leader lives'
+}
+
+test_shared_and_ambient_history_and_late_companions() {
+  local rec out mode source destination
+  for mode in shared ambient late-companions; do
+    rec=$(make_case "history-$mode"); read_case "$rec"
+    stub_pane_exists "$FAKEBIN"
+    source="$SEATS_DIR/alpha/projects/firstmate"
+    destination="$SEATS_DIR/beta/projects/firstmate"
+    case "$mode" in
+      shared) ln -s "$SEATS_DIR/alpha/projects" "$SEATS_DIR/beta/projects" ;;
+      ambient)
+        mkdir -p "$CASE_DIR/default/.claude"
+        mv "$SEATS_DIR/alpha/projects" "$CASE_DIR/default/.claude/projects"
+        sed 's/^profile=.*/profile=/' "$HOME_DIR/state/.lock-runtime" > "$CASE_DIR/runtime"
+        mv "$CASE_DIR/runtime" "$HOME_DIR/state/.lock-runtime"
+        source="$CASE_DIR/default/.claude/projects/firstmate"
+        ;;
+      late-companions) rm -r "$source/lead-session-1" ;;
+    esac
+    out=$(HOME="$CASE_DIR/default" run_home "$LEAD_RESTART" --check --to beta) || fail "$mode preflight refused: $out"
+    cmp "$source/lead-session-1.jsonl" "$destination/lead-session-1.jsonl" || fail "$mode lost conversation"
+    printf 'created after check\n' > "$source/lead-session-1/new-agent.jsonl"
+    cmp "$source/lead-session-1/new-agent.jsonl" "$destination/lead-session-1/new-agent.jsonl" || fail "$mode lost late companions"
+    stop_case
+  done
+  pass 'shared projects, the ambient source profile, and initially absent companion directories remain resumable'
+}
 
 test_check_establishes_every_part_of_the_move() {
   local rec out
@@ -886,6 +970,8 @@ start_lab() {  # <name> [rc-on]
   printf '%s\n%s\n' "$LAB/seats/alpha" "$LAB/seats/beta" > "$LAB/spec/oauth"
   printf '90\n' > "$LAB/spec/remaining"
   printf '%s\n' "$LAB/seats" > "$LAB/home/config/claude-seats-root"
+  mkdir -p "$LAB/seats/alpha/projects/firstmate"
+  printf '{"sessionId":"lead-session-1"}\n' > "$LAB/seats/alpha/projects/firstmate/lead-session-1.jsonl"
   write_stand_in_lead "$LAB/lead.sh" "$LAB"
 
   LAB_SOCK="fm-lead-restart-$1-$$"
@@ -1260,6 +1346,9 @@ if [ "$#" -gt 0 ]; then
 fi
 
 test_codex_to_claude_starts_a_new_session
+test_per_seat_transcript_is_available_before_handover
+test_missing_or_conflicting_transcripts_refuse_before_ending_the_lead
+test_shared_and_ambient_history_and_late_companions
 test_successor_pins_home_and_reuses_prompt_free_argv
 test_codex_destination_is_fresh_embedded_and_keeps_claude_engine_profile
 test_shared_codex_daemon_is_never_a_restart_target
