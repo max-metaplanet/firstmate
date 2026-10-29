@@ -210,7 +210,14 @@ def take_free_slot(paths):
     """
     free = None
     busy = []
-    for path in paths:
+    base = Path(paths[0])
+    prefix = base.name + "."
+    retired = [str(path) for path in base.parent.iterdir()
+               if path.name.startswith(prefix)
+               and (suffix := path.name[len(prefix):]).isascii()
+               and suffix.isdigit() and len(suffix) <= 6
+               and not suffix.startswith("0") and int(suffix) > len(paths)]
+    for path in [*paths, *retired]:
         fd = open_slot(path)
         try:
             fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -218,29 +225,33 @@ def take_free_slot(paths):
             busy.append(record(fd).get("pid"))
             os.close(fd)
             continue
-        if free is None:
+        if free is None and path in paths:
             free = fd
         else:
             os.close(fd)
+    if free is not None and len(busy) >= len(paths):
+        os.close(free)
+        free = None
     return free, busy
 
 
 def acquire():
-    paths = slot_paths()
-    free, busy = take_free_slot(paths)
-    # A heavy command nested inside another reuses its holder's slot, so a
-    # free slot found while scanning must be released rather than claimed.
-    if any(isinstance(pid, int) and ancestor(pid) for pid in busy):
+    waiting = False
+    while True:
+        paths = slot_paths()
+        free, busy = take_free_slot(paths)
+        if any(isinstance(pid, int) and ancestor(pid) for pid in busy):
+            if free is not None:
+                os.close(free)
+            return
         if free is not None:
-            os.close(free)
-        return
-    if free is None:
-        held = ", ".join(str(pid) for pid in busy if pid is not None) or "unknown"
-        print(f"waiting for a heavy slot ({len(paths)} on this machine, "
-              f"held by pid {held})", file=sys.stderr, flush=True)
-        while free is None:
-            time.sleep(POLL_SECONDS)
-            free, _ = take_free_slot(paths)
+            break
+        if not waiting:
+            held = ", ".join(str(pid) for pid in busy if pid is not None) or "unknown"
+            print(f"waiting for a heavy slot ({len(paths)} on this machine, "
+                  f"held by pid {held})", file=sys.stderr, flush=True)
+            waiting = True
+        time.sleep(POLL_SECONDS)
     os.lseek(free, 0, os.SEEK_SET)
     os.ftruncate(free, 0)
     os.write(free, json.dumps({"pid": os.getpid()}).encode())

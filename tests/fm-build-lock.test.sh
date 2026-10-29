@@ -296,6 +296,80 @@ try:
     assert bad.returncode == 75 and b'positive integer' in bad.stderr, bad.stderr
     print('ok - the pool size comes from the installed record and refuses a malformed value')
 
+    def publish(size):
+        subprocess.run([str(wrapper), 'node-option'], env=dict(env, FM_HEAVY_SLOTS=str(size)),
+                       check=True, capture_output=True, timeout=5)
+
+    def wait_queued(name):
+        for _ in range(300):
+            if 'waiting for a heavy slot' in (scratch / (name + '.err')).read_text():
+                return
+            time.sleep(.03)
+        raise AssertionError(f'{name} never queued')
+
+    publish(1)
+    first = launch('grow-first')
+    assert wait_file(scratch / 'grow-first')
+    waiter = launch('grow-waiter')
+    wait_queued('grow-waiter')
+    publish(2)
+    assert wait_file(scratch / 'grow-waiter'), 'an existing waiter ignored a newly published slot'
+    assert first.poll() is None, 'growth was not exercised with the original slot occupied'
+    for name in ('grow-first', 'grow-waiter'):
+        (scratch / (name + '.release')).touch()
+    assert first.wait(10) == waiter.wait(10) == 0
+
+    for release_retired in (True, False):
+        publish(2)
+        tag = 'shrink-retired' if release_retired else 'shrink-active'
+        first = launch(tag + '-first')
+        assert wait_file(scratch / (tag + '-first'))
+        second = launch(tag + '-second')
+        assert wait_file(scratch / (tag + '-second'))
+        waiter = launch(tag + '-waiter')
+        wait_queued(tag + '-waiter')
+        publish(1)
+        time.sleep(.6)
+        released = 'second' if release_retired else 'first'
+        remaining = 'first' if release_retired else 'second'
+        (scratch / (tag + '-' + released + '.release')).touch()
+        assert (second if release_retired else first).wait(10) == 0
+        assert not wait_file(scratch / (tag + '-waiter'), limit=30), \
+            'a waiter exceeded the reduced limit while an existing holder drained'
+        (scratch / (tag + '-' + remaining + '.release')).touch()
+        assert (first if release_retired else second).wait(10) == 0
+        assert wait_file(scratch / (tag + '-waiter')), 'the reduced pool never resumed admission'
+        (scratch / (tag + '-waiter.release')).touch()
+        assert waiter.wait(10) == 0
+
+    recursive = scratch / 'recursive.py'
+    recursive.write_text('''import os, pathlib, subprocess, sys, time
+pathlib.Path(os.environ['MARKER']).touch()
+while not pathlib.Path(os.environ['TRIGGER']).exists(): time.sleep(.03)
+subprocess.run([os.environ['WRAPPER'], '--', sys.executable, '-c',
+                'import os, pathlib; pathlib.Path(os.environ["NESTED_MARKER"]).touch()'],
+               check=True, timeout=5, close_fds=True)
+while not pathlib.Path(os.environ['RELEASE']).exists(): time.sleep(.03)
+''')
+    publish(2)
+    first = launch('recursive-first')
+    assert wait_file(scratch / 'recursive-first')
+    original_holder = holder
+    holder = recursive
+    second = launch('recursive-second', extra={
+        'TRIGGER': str(scratch / 'recursive-trigger'), 'WRAPPER': str(wrapper),
+        'NESTED_MARKER': str(scratch / 'recursive-nested')})
+    holder = original_holder
+    assert wait_file(scratch / 'recursive-second')
+    publish(1)
+    (scratch / 'recursive-trigger').touch()
+    assert wait_file(scratch / 'recursive-nested'), 'nested work failed to reuse a retired slot'
+    assert first.poll() is None, 'recursion was not exercised with the active slot occupied'
+    for name in ('recursive-first', 'recursive-second'):
+        (scratch / (name + '.release')).touch()
+    assert first.wait(10) == second.wait(10) == 0
+    print('ok - waiting commands observe growth and shrinkage, draining holders and retired-slot recursion')
+
     real_node = shutil.which('node')
     if real_node:
         # The CLI entry points pnpm resolves for these packages, so the preload
