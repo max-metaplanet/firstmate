@@ -19,9 +19,12 @@
 # Code process to another credential store, so the only way the lead itself
 # changes account is to be replaced: tell the crew, start another claude on the
 # new seat in the same terminal, resuming only a Claude-to-Claude session, and end the old
-# process. A seat is a profile directory whose contents symlink the
-# shared ~/.claude body, so the session the successor resumes is the same
-# session: the seat is the brain, the sessions and settings are the body.
+# process. Seats may share a projects directory or keep separate histories.
+# Claude-to-Claude preflight, including --check, makes the current transcript
+# and its companion directory available in the destination with per-session
+# links. The links retain writes made by the old lead until it exits; unrelated
+# destination history is never replaced. A missing, unreadable, ambiguous, or
+# conflicting history refuses before the old process is ended.
 #
 # WHAT THE CREW IS TOLD, AND WHY IT IS CHEAP. Before the old process is ended,
 # each live direct report of this home gets one short notice that the lead is
@@ -49,7 +52,8 @@
 #   3. The destination seat, named by the caller, with a profile directory that
 #      exists and a login the probe proves usable. bin/fm-seat.sh owns seat
 #      selection; this command never picks one.
-#   4. For Claude-to-Claude, the session id to resume from the lock sidecar.
+#   4. For Claude-to-Claude, the session id from the lock sidecar and its
+#      readable transcript in the destination profile's projects directory.
 #      Cross-provider moves and all Codex moves start fresh from durable records.
 #   5. The pane, and the lead's own launch command, from the lock-runtime record
 #      and the lock-owning process's real argv. `establish_launch_command` below
@@ -221,13 +225,48 @@ established_lead_profile() {
     die "the account the lead itself runs on is not recorded for this session, so this cannot tell which seat it is moving off; it is recorded at the next session start"
 }
 
+# Only the current session is shared, never the destination's entire projects
+# tree. Locate it under the recorded outgoing profile rather than assuming an
+# encoding of the working directory or falling back to another account's files.
+# Existing links to the same files (including a shared projects tree) are an
+# idempotent success; any other destination entry is preserved and refused.
+establish_resumable_history() {
+  local profile=${LEAD_PROFILE:-${HOME:-}/.claude} candidate source='' project destination name
+  case "$SESSION_ID" in
+    '' | *[!a-zA-Z0-9-]*) die 'cannot resume: the recorded Claude session id is not a safe history filename' ;;
+  esac
+  for candidate in "$profile/projects/"*/"$SESSION_ID.jsonl"; do
+    [ -e "$candidate" ] || continue
+    [ -z "$source" ] || die "cannot resume: session $SESSION_ID has multiple transcripts under $profile/projects"
+    source=$candidate
+  done
+  [ -n "$source" ] && [ -f "$source" ] && [ -r "$source" ] && [ -s "$source" ] ||
+    die "cannot resume: session $SESSION_ID has no readable nonempty transcript under $profile/projects"
+  project=$(cd -P -- "$(dirname "$source")" && pwd -P) || die 'cannot resume: the source project directory is inaccessible'
+  destination="$TO_PROFILE/projects/$(basename "$(dirname "$source")")"
+  # Create the companion directory even before the first subagent uses it, so
+  # companions written after preflight are visible through the same link.
+  (umask 077; mkdir -p "$project/$SESSION_ID" "$destination") ||
+    die "cannot resume: session directories could not be prepared for seat '$TO_SEAT'"
+  [ -r "$project/$SESSION_ID" ] && [ -x "$project/$SESSION_ID" ] ||
+    die "cannot resume: session $SESSION_ID companion directory is unreadable"
+  for name in "$SESSION_ID.jsonl" "$SESSION_ID"; do
+    [ ! "$project/$name" -ef "$destination/$name" ] || continue
+    [ ! -e "$destination/$name" ] && [ ! -L "$destination/$name" ] ||
+      die "cannot resume: destination history already exists at $destination/$name; refusing to replace it"
+    ln -s "$project/$name" "$destination/$name" ||
+      die "cannot resume: could not link session history at $destination/$name"
+    [ "$project/$name" -ef "$destination/$name" ] ||
+      die "cannot resume: destination history does not reach $project/$name"
+  done
+}
+
 # --- remote control ----------------------------------------------------------
 
 # The directory Claude Code keeps its per-pid session records in, for a session
 # running under profile $1. An empty profile is the ambient default profile,
-# whose records live under $HOME/.claude; a seat profile symlinks that same body
-# in, so both spellings reach one registry and reading the profile's own path
-# stays correct for a seat that does not.
+# whose records live under $HOME/.claude. Read the profile's own path whether
+# its registry is shared or private to that seat.
 rc_records_dir() {  # <profile>
   if [ -n "$1" ]; then
     printf '%s/sessions\n' "$1"
@@ -516,6 +555,7 @@ preflight() {  # <launch-command-override>
   if [ "$LEAD_HARNESS:$TO_PROVIDER" = claude:codex ] && [ ! -e "$CONFIG/supervision-host" ] && [ ! -e "$CONFIG/supervision-host-off" ]; then
     KEEP_HOST=1
   fi
+  [ "$SESSION_MODE" != resume ] || establish_resumable_history
   SUCCESSOR_PROMPT=$(establish_session_start_prompt) || exit 1
   SUCCESSOR_CMD=$(printf '%s\n' "$LAUNCH_ARGV" | compose_successor_command "$TO_PROFILE" "$SUCCESSOR_SESSION" "$ambient" "$follow" "$SUCCESSOR_PROMPT") || die 'could not compose the successor command'
 
