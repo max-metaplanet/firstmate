@@ -239,9 +239,13 @@
 #   writes ad_hoc_slot=1 into that task's own record, and edits no capacity
 #   declaration. Every live holder of such a grant raises both effective caps by
 #   one, so an ordinary spawn still sees the declared number of places and the
-#   grant admits only the task it was given to. The grant ends when that task's
-#   record is cleaned up; it is never inherited, and a relaunch of a different
-#   task does not carry it. Heavy-slot limits still apply to an ad hoc task.
+#   grant admits only the task it was given to. Only a launch or a parked resume
+#   can take it, because those are the spawns admission runs for; a live relaunch
+#   already holds an ordinary place, so --ad-hoc-slot is refused there rather
+#   than silently raising the caps for everyone else. The grant ends when that
+#   task's record is cleaned up; it is never inherited, and a relaunch of a
+#   different task does not carry it. Heavy-slot limits still apply to an ad hoc
+#   task.
 #   Heavy slots: every ship or scout launch publishes config/heavy-slots into the
 #   machine's heavy-command pool record (bin/fm-heavy-slots-lib.sh owns the
 #   declaration and publication; bin/fm-build-lock.py owns the pool), and an
@@ -4122,6 +4126,15 @@ if [ "$RELAUNCH" -eq 1 ] && fm_worker_park_load "$STATE/$ID.meta"; then
     echo "deferred: request a parked-worker wake through fm-worker-park.sh first" >&2
     exit "$FM_PROJECT_CAPACITY_DEFER_EXIT"
   fi
+fi
+# A live relaunch replaces a worker that already holds an ordinary place, so it
+# runs no admission below. Recording the grant there would raise both effective
+# caps for a task that was never admitted over them, letting the next ordinary
+# queued task in instead. Only a launch or a parked resume can earn it.
+if [ "$AD_HOC_SLOT_SET" -eq 1 ] && [ "$RELAUNCH" -eq 1 ] &&
+  [ "$SPAWN_PARK_RESUME" -eq 0 ] && [ -z "$PARK_RESUME_MARKER" ]; then
+  echo "error: --ad-hoc-slot applies to a launch or a parked resume, and task $ID is relaunching while it already holds an ordinary place; relaunch it without the flag" >&2
+  exit 1
 fi
 SPAWN_PROJECT_CAPACITY=
 SPAWN_PROJECT_CAPACITY_ANY=

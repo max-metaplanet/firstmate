@@ -274,10 +274,22 @@ try:
     # and a size that is not a positive integer is an error, not a guess.
     subprocess.run([str(wrapper), 'node-option'], env=dict(env, FM_HEAVY_SLOTS='2'),
                    check=True, capture_output=True, timeout=5)
-    recorded = subprocess.run([str(wrapper), 'pool'], env=env, check=True,
-                              capture_output=True, text=True, timeout=5).stdout.splitlines()
-    assert recorded[0] == '2' and len(recorded) == 3, recorded
-    assert recorded[1] == str(scratch / 'pool.lock') and recorded[2].endswith('pool.lock.2'), recorded
+    recorded = [launch(f'rec{i}') for i in range(2)]
+    for i in range(2):
+        assert wait_file(scratch / f'rec{i}'), f'rec{i} never started under the recorded pool of two'
+    third = launch('rec-queued')
+    for _ in range(300):
+        if '2 on this machine' in (scratch / 'rec-queued.err').read_text():
+            break
+        time.sleep(.03)
+    assert '2 on this machine' in (scratch / 'rec-queued.err').read_text(), \
+        (scratch / 'rec-queued.err').read_text()
+    assert not (scratch / 'rec-queued').exists(), \
+        'a third heavy command ran under a recorded pool of two'
+    for name in ('rec0', 'rec1', 'rec-queued'):
+        (scratch / (name + '.release')).touch()
+    for child in (*recorded, third):
+        assert child.wait(10) == 0
     bad = subprocess.run([str(wrapper), '--', 'true'], env=dict(env, FM_HEAVY_SLOTS='two'),
                          capture_output=True, timeout=5)
     assert bad.returncode == 75 and b'positive integer' in bad.stderr, bad.stderr

@@ -13,7 +13,6 @@ preload owns which command is heavy. Package managers and Turbo remain
 unlocked; the heavy commands they start claim slots themselves.
 
   fm-build-lock.py -- COMMAND [ARGS...]   run another heavy command in a slot
-  fm-build-lock.py pool                   print the pool size and slot paths
   fm-build-lock.py node-option            print the NODE_OPTIONS entry
   fm-build-lock.py node-env-file OUT
       write OUT as one export statement adding the entry to the inherited
@@ -250,12 +249,6 @@ def acquire():
 
 def main():
     args = sys.argv[1:]
-    if args == ["pool"]:
-        paths = slot_paths()
-        print(len(paths))
-        for path in paths:
-            print(path)
-        return 0
     if args == ["node-option"]:
         print(node_option())
         return 0

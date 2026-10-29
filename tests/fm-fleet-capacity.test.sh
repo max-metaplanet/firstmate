@@ -888,6 +888,39 @@ test_ad_hoc_slot_admits_one_task_over_the_cap() {
   pass "an ad hoc slot admits exactly its own task over the cap and changes no declaration"
 }
 
+# A live relaunch replaces a worker that already holds a place, so it runs no
+# admission. Taking the grant there would raise both caps for a task that was
+# never admitted over them, admitting the next ordinary queued task instead.
+test_ad_hoc_slot_is_refused_on_a_live_relaunch() {
+  local case_dir home pane out rc=0 before worktrees
+  case_dir=$(make_case adhoc-relaunch task-d)
+  home="$case_dir/home"
+  declare_fleet "$home" 3
+  pane=$(new_worktree "$case_dir" live-a)
+  write_brief "$home" live-a legacy
+  write_running "$case_dir" "$home" live-a "$case_dir/project"
+  sed "s|^worktree=.*|worktree=$pane|" "$home/state/live-a.meta" > "$home/state/live-a.meta.next"
+  mv "$home/state/live-a.meta.next" "$home/state/live-a.meta"
+  write_running "$case_dir" "$home" live-b "$case_dir/project"
+  write_running "$case_dir" "$home" live-c "$case_dir/project"
+
+  out=$(FM_FAKE_AGENT_COMMAND=bash run_spawn "$case_dir" "$home" "$pane" \
+    live-a --relaunch --harness codex --ad-hoc-slot) || rc=$?
+  expect_code 1 "$rc" "a live relaunch took an ad hoc grant: $out"
+  assert_contains "$out" 'already holds an ordinary place' 'the refusal did not say why'
+  assert_not_contains "$(cat "$home/state/live-a.meta")" "ad_hoc_slot=1" \
+    'a refused relaunch still recorded the grant'
+
+  rc=0
+  pane=$(new_worktree "$case_dir" task-d)
+  before=$(call_count "$case_dir")
+  worktrees=$(worktree_list "$case_dir")
+  out=$(spawn_ship "$case_dir" task-d "$pane") || rc=$?
+  expect_code "$DEFER_EXIT" "$rc" "the refused grant still admitted another task: $out"
+  assert_nothing_created "$case_dir" "$home" task-d "$before" "$worktrees"
+  pass "a live relaunch cannot take an ad hoc grant and admits no other task"
+}
+
 # The grant lives in the task's own record, so the fleet view and snapshot can
 # say how many of the held places are ad hoc.
 test_ad_hoc_occupancy_is_visible() {
@@ -919,6 +952,7 @@ test_ad_hoc_occupancy_is_visible() {
 test_undeclared_fleet_stays_uncapped
 test_full_fleet_defers_without_leaving_anything_behind
 test_ad_hoc_slot_admits_one_task_over_the_cap
+test_ad_hoc_slot_is_refused_on_a_live_relaunch
 test_ad_hoc_occupancy_is_visible
 test_dead_agents_free_their_place
 test_fresh_spawn_waits_for_a_briefly_busy_fleet_lock

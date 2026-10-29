@@ -700,6 +700,26 @@ test_commandcode_relaunch_off_tmux_and_herdr_refuses_before_stopping() {
   pass "fm-control relaunch: commandcode off tmux and herdr is refused before the running agent is stopped"
 }
 
+# A running task already holds an ordinary place, so bin/fm-spawn.sh refuses the
+# one-time grant there. That refusal lands after a relaunch has stopped the old
+# agent, so fm-control must refuse first and leave the agent running.
+test_ad_hoc_slot_on_a_live_relaunch_refuses_before_stopping() {
+  local dir out rc meta_before
+  dir=$(new_case ad-hoc-live)
+  add_task "$dir" t1 claude ship tmux "firstmate:fm-t1"
+  alive_as "$dir" claude
+  meta_before=$(cat "$dir/home/state/t1.meta")
+  out=$(run_control "$dir" t1 relaunch --ad-hoc-slot --note x); rc=$?
+  expect_code 1 "$rc" "a live relaunch should refuse --ad-hoc-slot"$'\n'"$out"
+  assert_contains "$out" "already holds an ordinary place" "the refusal should say why"
+  [ -z "$(literals "$dir")" ] && [ -z "$(keys_sent "$dir")" ] \
+    || fail "a refused ad hoc relaunch must send the running agent nothing"
+  [ "$(cat "$dir/fake/command")" = claude ] || fail "the running agent must still be running"
+  [ "$(cat "$dir/home/state/t1.meta")" = "$meta_before" ] \
+    || fail "a refused ad hoc relaunch must leave the task record unchanged"
+  pass "fm-control relaunch: --ad-hoc-slot on a running task is refused before it is stopped"
+}
+
 test_state_verified_backends_are_exactly_tmux_and_herdr() {
   fm_control_backend_state_verified tmux || fail "tmux has a recovery-grade classifier"
   fm_control_backend_state_verified herdr || fail "herdr has a recovery-grade classifier"
@@ -1399,6 +1419,7 @@ test_harness_kind_capability
 test_orca_refuses_an_escape_harness_interrupt
 test_unverified_state_backends_refuse_stop_verbs
 test_commandcode_relaunch_off_tmux_and_herdr_refuses_before_stopping
+test_ad_hoc_slot_on_a_live_relaunch_refuses_before_stopping
 test_state_verified_backends_are_exactly_tmux_and_herdr
 test_window_label_is_refused_with_the_exact_id
 test_explicit_endpoint_is_refused

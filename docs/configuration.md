@@ -1577,12 +1577,14 @@ Unknown endpoint state continues to hold a place, and an unreadable fleet invent
 ## Ad hoc slots (`--ad-hoc-slot`)
 
 An ad hoc slot is a one-time extra worker place, granted to one named task so it can start now without changing how many workers this machine runs from then on.
-It is a flag, not a setting: `bin/fm-spawn.sh <task-id> ... --ad-hoc-slot` on a fresh launch, and `bin/fm-control.sh <task-id> relaunch --ad-hoc-slot` on a replacement.
+It is a flag, not a setting: `bin/fm-spawn.sh <task-id> ... --ad-hoc-slot` on a fresh launch, and `bin/fm-control.sh <task-id> relaunch --ad-hoc-slot` on the resume of a parked task.
+Only those two spawns are admitted against a cap, so only they can take the grant.
+A running task already holds an ordinary place, so relaunching it with the flag is refused rather than raising both caps and letting the next ordinary queued task in.
 Neither `config/project-capacity` nor `config/fleet-capacity` is read or written differently because of it, so the declared numbers are exactly what they were when the task is cleaned up.
 
 The grant is recorded as `ad_hoc_slot=1` in that task's own `state/<id>.meta`.
 It counts for that task alone: it is never inherited by another task, a relaunch of a different task does not carry it, and it ends when the task's record is removed at cleanup.
-A relaunch of the granted task keeps it without repeating the flag.
+A relaunch of the granted task keeps it from its own record without repeating the flag.
 
 While such a task holds a place, both caps it is admitted under rise by one, so an ordinary spawn still finds the declared number of places and only the granted task gets the extra one.
 Two granted tasks therefore add two places rather than sharing one.
@@ -1613,7 +1615,7 @@ Run those through `bin/fm-build-lock.py -- <command>`, which worker instructions
 A `tsc` given a source file type-checks that file and is not treated as heavy.
 
 The command that claims a slot runs in a worker shell or the daemon, neither of which can read this home's configuration, so every ship or scout launch publishes this declaration into the machine's installed preload record and every heavy command reads that record when it starts.
-A change therefore applies at the next launch, or immediately with `FM_HEAVY_SLOTS=<n> bin/fm-build-lock.py node-option`; `bin/fm-build-lock.py pool` prints the size in force and its slot files.
+A change therefore applies at the next launch, or immediately with `FM_HEAVY_SLOTS=<n> bin/fm-build-lock.py node-option`.
 Lowering the number never stops a running command, so occupancy can exceed the new size until those commands exit.
 An unreadable or malformed declaration refuses the launch rather than guessing the limit.
 [`bin/fm-heavy-slots-lib.sh`](../bin/fm-heavy-slots-lib.sh) owns the file format and the publication, and [`bin/fm-build-lock.py`](../bin/fm-build-lock.py) owns the pool itself.

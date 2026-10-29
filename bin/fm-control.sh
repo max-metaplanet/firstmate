@@ -11,8 +11,10 @@
 #
 #   --ad-hoc-slot passes the one-time capacity grant through to the launch
 #   owner for THIS task only (bin/fm-spawn.sh owns the grant, its arithmetic,
-#   and its lifetime). A task that already holds the grant keeps it without the
-#   flag, and no other task can take it.
+#   and its lifetime). Only a parked resume may take it here, because a running
+#   task already holds an ordinary place; the flag is refused on a live relaunch
+#   before anything is stopped. A task that already holds the grant keeps it
+#   without the flag, and no other task can take it.
 #
 # Why this exists, and how it differs from fm-send.sh. bin/fm-send.sh is the
 # DATA plane: conversational text for the agent to read, always routing-marked
@@ -213,6 +215,8 @@ DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
 . "$SCRIPT_DIR/fm-wake-lib.sh"
 # shellcheck source=bin/fm-worker-account-lib.sh
 . "$SCRIPT_DIR/fm-worker-account-lib.sh"
+# shellcheck source=bin/fm-worker-park-lib.sh
+. "$SCRIPT_DIR/fm-worker-park-lib.sh"
 CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
 # shellcheck source=bin/fm-timeout-lib.sh
 . "$SCRIPT_DIR/fm-timeout-lib.sh"
@@ -1354,6 +1358,15 @@ do_relaunch() {
       die "task $ID records kind '$KIND', which has no defined relaunch shape"
       ;;
   esac
+
+  # bin/fm-spawn.sh owns the grant and refuses it on a live relaunch. Read that
+  # same condition here, BEFORE the agent is stopped, so a refused flag never
+  # leaves the task exited with nothing relaunched in its place.
+  if [ "$AD_HOC_SLOT_SET" = 1 ] &&
+    ! { [ -e "$STATE/.secondmate-park-$ID" ] || [ -L "$STATE/.secondmate-park-$ID" ]; } &&
+    ! { fm_worker_park_load "$META" && [ "$FM_WORKER_PARK_PHASE" = queued ]; }; then
+    die "--ad-hoc-slot applies to a launch or a parked resume, and task $ID is running and already holds an ordinary place; relaunch it without the flag"
+  fi
 
   if [ -n "$NOTE" ]; then
     note_line="note_file=$NOTE_FILE"
