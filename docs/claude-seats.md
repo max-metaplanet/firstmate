@@ -430,7 +430,7 @@ A whole-run abort-and-revalidate is only a manual step with the captain's approv
 Enable the optional [spare-leader setting](configuration.md) for Claude or Codex to drain the primary firstmate's account more slowly.
 Automatic worker destination selection ranks its seat last among eligible seats, and falls back to it when no other candidate qualifies.
 When the active worker seat is the leader's seat, new dispatch chooses an eligible alternative immediately and an armed watch switches future workers there without waiting for the quota trigger.
-This departure can choose a seat with less weekly spare than the leader; destination minimum, session-room checks when a trigger is set, resting, login, depletion, and manual exclusions still apply.
+This departure can choose a seat with less weekly spare than the leader; destination minimum, resting, login, depletion, and manual exclusions still apply, and with a trigger set a candidate also needs five-hour room and must not itself read at or below the trigger, so the departure never lands on a seat the rotation would have to leave.
 After leaving, ordinary weekly-headroom comparison and the watch's remembered destination prevent repeated rotation.
 When the active worker seat's plan quota is used up and no `allow <usd>` extra-usage policy still covers it, new dispatch and the watch move off it even with no trigger set, to any eligible worker seat whatever its weekly spare, reaching the leader's seat only when no other seat qualifies; a used-up seat is never a destination, so the move does not flap back.
 No running worker moves, and `lead-restart` and `leader-destination` retain their existing behavior.
