@@ -1,7 +1,7 @@
 use strict;
 use warnings;
 use Cwd qw(getcwd);
-use Fcntl qw(O_CREAT O_EXCL O_NOFOLLOW O_RDONLY O_RDWR O_WRONLY);
+use Fcntl qw(F_DUPFD O_CREAT O_EXCL O_NOFOLLOW O_RDONLY O_RDWR O_WRONLY);
 use JSON::PP qw(encode_json);
 use POSIX qw(dup2);
 
@@ -60,7 +60,6 @@ if (@ARGV && $ARGV[0] eq 'handoff') {
   chdir($reservation) or die "cannot enter reservation root\n";
   my @reservation_stat = lstat('.');
   die "unsafe reservation root\n" unless @reservation_stat && -d _ && !-l _ && $reservation_stat[4] == $< && ($reservation_stat[2] & 07777) == 0700;
-  dup2(fileno($reservation), 7) >= 0 or die "cannot reserve capability descriptor\n";
   my $capability_name = ".extension-capture-capability-$claim_token.$reservation_token";
   sysopen(my $capability, $capability_name, O_CREAT | O_EXCL | O_NOFOLLOW | O_RDWR, 0600) or die "cannot create capability\n";
   my $record = encode_json({
@@ -79,11 +78,19 @@ if (@ARGV && $ARGV[0] eq 'handoff') {
   }
   seek($capability, 0, 0) or die "cannot rewind capability\n";
   unlink($capability_name) or die "cannot unlink capability\n";
-  dup2(fileno($claim), 6) >= 0 or die "cannot install claim descriptor\n";
-  dup2(fileno($capability), 7) >= 0 or die "cannot install capability descriptor\n";
-  dup2(fileno($inbox), 8) >= 0 or die "cannot install inbox descriptor\n";
-  dup2(fileno($result), 9) >= 0 or die "cannot install result descriptor\n";
+  # Keep every source above the destination range before replacing any fd.
+  # Inherited descriptors can otherwise put the claim at 7, for example.
+  my @handoff;
+  for my $handle ($claim, $capability, $inbox, $result) {
+    my $pinned = fcntl($handle, F_DUPFD, 10);
+    defined $pinned or die "cannot pin handoff descriptor\n";
+    push(@handoff, $pinned);
+  }
   chdir($inbox) or die "cannot restore inbox\n";
+  for my $index (0 .. $#handoff) {
+    dup2($handoff[$index], 6 + $index) >= 0 or die "cannot install handoff descriptor\n";
+    POSIX::close($handoff[$index]) == 0 or die "cannot close handoff descriptor\n";
+  }
   delete @ENV{grep { /^FM_PROCEVENT_INTERNAL_CAPTURE_/ } keys %ENV};
   exec {$host} $host, @command;
   die "cannot execute host\n";

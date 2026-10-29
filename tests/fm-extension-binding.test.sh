@@ -1163,6 +1163,28 @@ order_owner=$(sed -n 's/^owner-token: //p' "$TMP_ROOT/lock-order-register.out")
 FM_HOME="$H_ORDER" "$PROCEVENT" retire order-source --if-owner "$order_owner" >/dev/null
 FM_HOME="$H_ORDER" "$PROCEVENT" handled order-source 1 >/dev/null
 pass "register-extension and reconcile of an unhandled extension result take their locks in one order"
+
+# Terminal and silent verdicts must survive inherited fd layouts. The public
+# start command must retire terminal sources while retaining unhandled evidence.
+H_HANDOFF="$HOMES/handoff"; new_home "$H_HANDOFF"
+bind_package "$H_HANDOFF" "$P_ORDER" ext-lock-order >/dev/null
+for handoff_layout in closed occupied; do
+  handoff_source="handoff-$handoff_layout"
+  FM_HOME="$H_HANDOFF" "$PROCEVENT" register-extension ext-lock-order "$handoff_source" --config-ref good >/dev/null
+  (
+    exec 3<&- 4<&- 5<&-
+    if [ "$handoff_layout" = occupied ]; then
+      exec 3</dev/null 4</dev/null 5</dev/null
+    fi
+    FM_HOME="$H_HANDOFF" "$PROCEVENT" start "$handoff_source"
+  ) > "$TMP_ROOT/$handoff_source.out" 2>&1 || fail "inherited-fd capture failed: $handoff_layout"
+  assert_contains "$(cat "$TMP_ROOT/$handoff_source.out")" "retired: $handoff_source" "terminal handoff failed: $handoff_layout"
+  assert_absent "$H_HANDOFF/state/procevent/$handoff_source.source" "terminal handoff retained registration: $handoff_layout"
+  assert_present "$H_HANDOFF/state/procevent-inbox/$handoff_source.1.result" "handoff discarded captured evidence: $handoff_layout"
+  assert_absent "$H_HANDOFF/state/procevent-inbox/$handoff_source.1.handled" "handoff acknowledged evidence: $handoff_layout"
+  FM_HOME="$H_HANDOFF" "$PROCEVENT" handled "$handoff_source" 1 >/dev/null
+done
+pass "terminal capture preserves authority across inherited descriptor layouts"
 fi
 
 # --- registration and retirement serialization plus lock recovery -------------
