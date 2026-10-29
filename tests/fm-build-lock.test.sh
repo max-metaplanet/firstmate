@@ -205,6 +205,7 @@ POOL_ROOT=$(mktemp -d "$FM_TEST_SCRATCH_ROOT/fm-heavy-pool.XXXXXX")
 python3 - "$ROOT" "$POOL_ROOT" <<'PY'
 import os
 from pathlib import Path
+import pty
 import shutil
 import subprocess
 import sys
@@ -332,12 +333,14 @@ function run(fs) {
             cli.chmod(0o755)
         preload = {'NODE_OPTIONS': option, 'FM_HEAVY_SLOTS': '1'}
         # Off a TTY a bare vitest runs the suite once, as a package test script does.
+        # The last case runs on a TTY, where only the run subcommand marks it heavy.
         heavy = [
-            ('vitest', ['run']),
-            ('vitest', []),
-            ('vitest', ['--run', '--reporter=dot']),
-            ('playwright', ['test']),
-            ('tsc', ['--noEmit', '-p', 'tsconfig.json']),
+            ('vitest', ['run'], False),
+            ('vitest', [], False),
+            ('vitest', ['--run', '--reporter=dot'], False),
+            ('vitest', ['--config', 'x', 'run'], True),
+            ('playwright', ['test'], False),
+            ('tsc', ['--noEmit', '-p', 'tsconfig.json'], False),
         ]
         light = [
             ('vitest', ['--version']),
@@ -345,18 +348,23 @@ function run(fs) {
             ('vitest', ['--watch']),
             ('playwright', ['install']),
             ('tsc', ['one-file.ts', '--noEmit']),
+            ('tsc', ['--watch', '-p', 'tsconfig.json']),
+            ('tsc', ['-w']),
         ]
-        for case, (name, args) in enumerate(heavy):
+        for case, (name, args, tty) in enumerate(heavy):
             tag = f'{name}-{case}'
             blocker = launch('block-' + tag, slots='1')
             assert wait_file(scratch / ('block-' + tag)), f'the blocker before {name} never started'
             (scratch / (tag + '.release')).touch()
             log = open(scratch / (tag + '.err'), 'w')
+            leader, follower = pty.openpty() if tty else (None, subprocess.DEVNULL)
             child = subprocess.Popen(['node', str(scratch / entries[name][0]), *args],
                                      env=dict(env, MARKER=str(scratch / tag),
                                               RELEASE=str(scratch / (tag + '.release')), **preload),
-                                     stdin=subprocess.DEVNULL, stderr=log)
+                                     stdin=follower, stderr=log)
             log.close()
+            if tty:
+                os.close(follower)
             children.append(child)
             for _ in range(300):
                 if 'waiting for a heavy slot' in (scratch / (tag + '.err')).read_text():
@@ -368,13 +376,21 @@ function run(fs) {
             (scratch / ('block-' + tag + '.release')).touch()
             assert blocker.wait(10) == 0
             assert child.wait(30) == 0, (scratch / (tag + '.err')).read_text()
+            if tty:
+                os.close(leader)
             assert (scratch / tag).exists(), f'{name} never ran after its slot freed'
+        # The only slot stays held, so a light command that wrongly claims one
+        # waits and times out instead of passing.
+        blocker = launch('block-light', slots='1')
+        assert wait_file(scratch / 'block-light'), 'the blocker before the light cases never started'
         for name, args in light:
             result = subprocess.run(['node', str(scratch / entries[name][0]), *args],
                                     env=dict(env, **preload), stdin=subprocess.DEVNULL,
                                     capture_output=True, timeout=30)
             assert result.returncode == 0 and result.stdout.startswith(b'ran:'), result.stderr
             assert b'waiting' not in result.stderr, f'{name} {" ".join(args)} took a heavy slot'
+        (scratch / 'block-light.release').touch()
+        assert blocker.wait(10) == 0
         print('ok - the preload locks Vitest, Playwright and whole-project tsc and passes the rest through')
     else:
         print('skip - heavy CLI interception needs node installed')

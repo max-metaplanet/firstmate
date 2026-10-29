@@ -1612,7 +1612,7 @@ A heavy command started inside another one reuses its holder's slot instead of t
 Covered automatically: any Node process whose `NODE_OPTIONS` carries the preload, which ship and scout launches, the managed no-mistakes Claude wrapper, and the daemon drop-in all add.
 Not covered: a runtime other than Node, a build tool that is not one of the four commands above, a script that replaces `NODE_OPTIONS` instead of appending to it (`NODE_OPTIONS=--max-old-space-size=4096 tsc --noEmit` is a real example from a project's own `type-check` script), and a launcher that clears the variable.
 Run those through `bin/fm-build-lock.py -- <command>`, which worker instructions name; `bin/fm-test-run.sh` claims a slot the same way for its own concurrent runs.
-A `tsc` given a source file type-checks that file and is not treated as heavy.
+A `tsc` given a source file type-checks that file and is not treated as heavy, and neither is `tsc --watch`, which never exits and would hold its slot for good.
 
 The command that claims a slot runs in a worker shell or the daemon, neither of which can read this home's configuration, so every ship or scout launch publishes this declaration into the machine's installed preload record and every heavy command reads that record when it starts.
 A change therefore applies at the next launch, or immediately with `FM_HEAVY_SLOTS=<n> bin/fm-build-lock.py node-option`.
