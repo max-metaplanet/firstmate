@@ -2046,6 +2046,8 @@ remote_direct fm-procevent.sh reconcile >/dev/null
 wait_for_file "$remote_active_marker" || fail "remote active runner never reached its addressed-home poll"
 expect_failure "prior runner remains active" remote_direct fm-procevent.sh register-extension ext-remote remote-active-source --config-ref replacement
 expect_failure "prior runner remains active" remote_direct fm-procevent.sh register lavish remote-active-source -- /bin/echo remote-built-in
+kill -0 "$(cat "$remote_active_marker")" 2>/dev/null \
+  || fail "remote registration replacement waited for the active poll to exit"
 touch "$remote_active_release"
 remote_active_release=
 for _ in $(seq 1 400); do
