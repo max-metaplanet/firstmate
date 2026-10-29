@@ -1409,9 +1409,9 @@ These controls apply on fresh launches and relaunches, with or without an allowl
 Projects must read the controls for them to take effect; project task-environment filtering still applies.
 Core's pipeline reads a separate control before passing its explicit Vitest worker flag.
 
-Ship and scout launches also add the heavy-build lock preload to `NODE_OPTIONS`, as does the managed no-mistakes Claude wrapper; each names the copy they install under `~/.local/share/firstmate-build-lock`, never a checkout.
+Ship and scout launches also add the heavy-slot preload to `NODE_OPTIONS`, as does the managed no-mistakes Claude wrapper; each names the copy they install under `~/.local/share/firstmate-build-lock`, never a checkout.
 `bin/fm-build-lock.py install-daemon-env` gives the no-mistakes daemon's configured commands the same preload through a systemd user drop-in; it takes effect at the daemon's next reload and restart and never restarts it.
-[`fm-build-lock.py`](../bin/fm-build-lock.py) owns the supported entrypoints, machine lock scope, Linux/macOS behavior, single-command bypass, and coverage limits.
+[`fm-build-lock.py`](../bin/fm-build-lock.py) owns the supported entrypoints, machine pool scope, Linux/macOS behavior, single-command bypass, and coverage limits, and "Heavy slots" below is the operator reference.
 
 Other ambient names must be listed explicitly, including custom credential-store locations, proxy settings, and certificate overrides when required by the selected tools.
 The command shell and worker may still create their own variables.
@@ -1502,6 +1502,7 @@ A project name may begin with `#` when that `#` is written immediately against t
 A name that is `#`, or that begins with `#` and a space, cannot be declared, because that line is a comment.
 A place is held by every ship or scout on that project in the root home or any local secondmate home registered under it, including one working in a separate clone of the same origin, until its ready PR is recorded or it is cleaned up; a local-only ship or a scout holds its place until cleanup or verified parking.
 A resumed parked worker holds its project place again while active.
+A worker launched with `bin/fm-spawn.sh --ad-hoc-slot` holds a place like any other and raises the project's effective capacity by one while it does, so the places every other spawn sees are unchanged; "Ad hoc slots" below owns that grant.
 The declaration is matched by the spawning clone's directory name, so clones of the same origin share the cap only when they use that same directory name.
 A clone of that origin under a different directory name finds no declaration and is not capped, though its workers are still counted as holders for a same-origin clone that is capped.
 When every place is held, `bin/fm-spawn.sh` launches nothing, leaves the backlog item queued, prints one `deferred:` line naming the holders, and exits 75.
@@ -1521,6 +1522,7 @@ It lives in the machine's root Firstmate home and holds one positive integer; bl
 ```
 
 Every running ship, scout, and secondmate in the root home or any local secondmate home holds a place, including one waiting on a recorded PR; the supervising lead does not.
+A place held under an ad hoc grant also raises the effective fleet cap by one while it is held; "Ad hoc slots" below owns that grant.
 A task record whose agent is no longer running holds no place, and one whose agent cannot be checked does.
 Verified worker parking and resume priority are owned by [`bin/fm-worker-park.sh`](../bin/fm-worker-park.sh).
 At the cap, `bin/fm-spawn.sh` defers a fresh ship, scout, or local secondmate exactly as project capacity does: nothing is launched, the backlog item stays queued, and it exits 75.
@@ -1571,6 +1573,50 @@ The fleet snapshot and published home summary expose the same observation as `ca
 Unknown endpoint state continues to hold a place, and an unreadable fleet inventory appears as an explicit occupancy error.
 [`bin/fm-fleet-capacity-lib.sh`](../bin/fm-fleet-capacity-lib.sh) owns policy/state format and interfaces; its `fm-fleet-load.py` helper owns sampling thresholds and hysteresis.
 [`tests/fm-fleet-capacity.test.sh`](../tests/fm-fleet-capacity.test.sh) verifies these admission guarantees with isolated telemetry and clocks, without a live concurrency or pressure ramp.
+
+## Ad hoc slots (`--ad-hoc-slot`)
+
+An ad hoc slot is a one-time extra worker place, granted to one named task so it can start now without changing how many workers this machine runs from then on.
+It is a flag, not a setting: `bin/fm-spawn.sh <task-id> ... --ad-hoc-slot` on a fresh launch, and `bin/fm-control.sh <task-id> relaunch --ad-hoc-slot` on a replacement.
+Neither `config/project-capacity` nor `config/fleet-capacity` is read or written differently because of it, so the declared numbers are exactly what they were when the task is cleaned up.
+
+The grant is recorded as `ad_hoc_slot=1` in that task's own `state/<id>.meta`.
+It counts for that task alone: it is never inherited by another task, a relaunch of a different task does not carry it, and it ends when the task's record is removed at cleanup.
+A relaunch of the granted task keeps it without repeating the flag.
+
+While such a task holds a place, both caps it is admitted under rise by one, so an ordinary spawn still finds the declared number of places and only the granted task gets the extra one.
+Two granted tasks therefore add two places rather than sharing one.
+A capacity refusal names how many of the held places are ad hoc, `bin/fm-fleet-view.sh` marks those tasks and prints the ad hoc share of the places held, and the fleet snapshot carries the same `ad_hoc` count and a per-task `ad_hoc_slot` field.
+Heavy-slot limits are unaffected: an ad hoc worker waits for a heavy slot exactly like every other worker.
+
+## Heavy slots (config/heavy-slots)
+
+A heavy slot is a place to run one memory-heavy command: a Next production build, a Vitest run, a Playwright browser run, or a whole-project `tsc`.
+It is claimed when such a command starts and released when it exits, rather than reserved when a worker spawns, so a worker that never runs one never holds a slot and a worker that runs several holds one at a time.
+The pool is machine-wide for one OS user, so every Firstmate home, every worker, and the no-mistakes daemon share it.
+
+The optional local, gitignored `config/heavy-slots` in the machine's root Firstmate home holds one positive integer; blank lines and `#` lines are ignored, and an absent file declares one slot.
+
+```text
+# this VM has 12 GB, so one heavy command at a time
+1
+```
+
+A worker that finds every slot taken waits for one and says so on stderr; waiting is the intended behavior, not a failure.
+Waiting is polled rather than queued, so slots are not handed out first-come-first-served.
+A heavy command started inside another one reuses its holder's slot instead of taking a second, and a slot is released on any exit, including `SIGKILL`.
+`FM_BUILD_LOCK_BYPASS=1 <command>` runs one command without a slot.
+
+Covered automatically: any Node process whose `NODE_OPTIONS` carries the preload, which ship and scout launches, the managed no-mistakes Claude wrapper, and the daemon drop-in all add.
+Not covered: a runtime other than Node, a build tool that is not one of the four commands above, a script that replaces `NODE_OPTIONS` instead of appending to it (`NODE_OPTIONS=--max-old-space-size=4096 tsc --noEmit` is a real example from a project's own `type-check` script), and a launcher that clears the variable.
+Run those through `bin/fm-build-lock.py -- <command>`, which worker instructions name; `bin/fm-test-run.sh` claims a slot the same way for its own concurrent runs.
+A `tsc` given a source file type-checks that file and is not treated as heavy.
+
+The command that claims a slot runs in a worker shell or the daemon, neither of which can read this home's configuration, so every ship or scout launch publishes this declaration into the machine's installed preload record and every heavy command reads that record when it starts.
+A change therefore applies at the next launch, or immediately with `FM_HEAVY_SLOTS=<n> bin/fm-build-lock.py node-option`; `bin/fm-build-lock.py pool` prints the size in force and its slot files.
+Lowering the number never stops a running command, so occupancy can exceed the new size until those commands exit.
+An unreadable or malformed declaration refuses the launch rather than guessing the limit.
+[`bin/fm-heavy-slots-lib.sh`](../bin/fm-heavy-slots-lib.sh) owns the file format and the publication, and [`bin/fm-build-lock.py`](../bin/fm-build-lock.py) owns the pool itself.
 
 ## Crew dispatch profiles (config/crew-dispatch.json)
 

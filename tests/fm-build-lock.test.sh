@@ -53,7 +53,7 @@ try:
     two = launch(explicit, 'two')
     wait_file(scratch / 'two.err')
     for _ in range(300):
-        if 'waiting for build lock' in (scratch / 'two.err').read_text():
+        if 'waiting for a heavy slot' in (scratch / 'two.err').read_text():
             break
         time.sleep(.03)
     assert f'held by pid {one.pid}' in (scratch / 'two.err').read_text()
@@ -67,7 +67,7 @@ try:
     wait_file(scratch / 'two')
     (scratch / 'two.release').touch()
     assert two.wait(10) == 0
-    print('ok - concurrent builds wait visibly, bypass works, SIGKILL releases lock')
+    print('ok - concurrent builds wait visibly, bypass works, SIGKILL releases the slot')
 
     real_node = shutil.which('node')
     if real_node:
@@ -99,10 +99,10 @@ const timer = setInterval(() => { if (fs.existsSync(process.env.RELEASE)) clearI
         wait_file(scratch / 'package')
         second = launch(['node', str(cli), 'build'], 'direct', preload)
         for _ in range(300):
-            if 'waiting for build lock' in (scratch / 'direct.err').read_text():
+            if 'waiting for a heavy slot' in (scratch / 'direct.err').read_text():
                 break
             time.sleep(.03)
-        assert 'waiting for build lock' in (scratch / 'direct.err').read_text()
+        assert 'waiting for a heavy slot' in (scratch / 'direct.err').read_text()
         assert not (scratch / 'direct').exists()
         for command in (['dev'], ['lint'], ['build', '--help']):
             result = subprocess.run(['node', str(cli), *command], env=dict(env, **preload),
@@ -139,10 +139,10 @@ const timer = setInterval(() => { if (fs.existsSync(process.env.RELEASE)) clearI
         wait_file(scratch / 'daemon-holder')
         daemon = launch(['node', str(cli), 'build'], 'daemon', {'NODE_OPTIONS': value})
         for _ in range(300):
-            if 'waiting for build lock' in (scratch / 'daemon.err').read_text():
+            if 'waiting for a heavy slot' in (scratch / 'daemon.err').read_text():
                 break
             time.sleep(.03)
-        assert 'waiting for build lock' in (scratch / 'daemon.err').read_text()
+        assert 'waiting for a heavy slot' in (scratch / 'daemon.err').read_text()
         (scratch / 'daemon-holder.release').touch()
         assert holder_run.wait(10) == 0
         wait_file(scratch / 'daemon')
@@ -191,6 +191,174 @@ const timer = setInterval(() => { if (fs.existsSync(process.env.RELEASE)) clearI
                             env=dict(env, FM_BUILD_LOCK_FILE='relative'), capture_output=True, timeout=5)
     assert result.returncode == 75 and b'must be absolute' in result.stderr
     print('ok - invalid lock configuration fails closed')
+finally:
+    for child in children:
+        if child.poll() is None:
+            child.kill()
+        child.wait()
+PY
+
+# The counted pool: N slots admit N heavy commands at once and queue the next,
+# a killed holder frees its slot, and the preload covers the heavy commands
+# workers actually run.
+POOL_ROOT=$(mktemp -d "$FM_TEST_SCRATCH_ROOT/fm-heavy-pool.XXXXXX")
+python3 - "$ROOT" "$POOL_ROOT" <<'PY'
+import os
+from pathlib import Path
+import shutil
+import subprocess
+import sys
+import time
+
+root, scratch = map(Path, sys.argv[1:])
+wrapper = root / 'bin/fm-build-lock.py'
+env = dict(os.environ, FM_BUILD_LOCK_FILE=str(scratch / 'pool.lock'),
+           FM_BUILD_LOCK_INSTALL_DIR=str(scratch / 'install'))
+for name in ('FM_BUILD_LOCK_BYPASS', 'FM_BUILD_LOCK_HELD', 'NODE_OPTIONS', 'FM_HEAVY_SLOTS'):
+    env.pop(name, None)
+children = []
+
+
+def wait_file(path, limit=300):
+    for _ in range(limit):
+        if path.exists():
+            return True
+        time.sleep(.03)
+    return False
+
+
+def launch(name, slots=None, extra=None):
+    selected = dict(env, MARKER=str(scratch / name), RELEASE=str(scratch / (name + '.release')))
+    if slots is not None:
+        selected['FM_HEAVY_SLOTS'] = slots
+    selected.update(extra or {})
+    log = open(scratch / (name + '.err'), 'w')
+    child = subprocess.Popen([str(wrapper), '--', sys.executable, str(holder)],
+                             env=selected, stderr=log)
+    log.close()
+    children.append(child)
+    return child
+
+
+holder = scratch / 'hold.py'
+holder.write_text('''import os, pathlib, time
+pathlib.Path(os.environ['MARKER']).write_text(str(os.getpid()))
+while not pathlib.Path(os.environ['RELEASE']).exists(): time.sleep(.03)
+''')
+try:
+    # The declared size is what the pool offers: three run at once, the fourth waits.
+    running = [launch(f'slot{i}', slots='3') for i in range(3)]
+    for i in range(3):
+        assert wait_file(scratch / f'slot{i}'), f'slot{i} never started under a pool of three'
+    queued = launch('queued', slots='3')
+    for _ in range(300):
+        if 'waiting for a heavy slot' in (scratch / 'queued.err').read_text():
+            break
+        time.sleep(.03)
+    assert 'waiting for a heavy slot' in (scratch / 'queued.err').read_text(), \
+        (scratch / 'queued.err').read_text()
+    assert not (scratch / 'queued').exists(), 'a fourth heavy command ran in a pool of three'
+    assert '3 on this machine' in (scratch / 'queued.err').read_text()
+
+    # SIGKILL frees the slot it held, with no file removed and no cleanup run.
+    running[1].kill()
+    running[1].wait(10)
+    assert wait_file(scratch / 'queued'), 'a killed holder did not free its slot'
+    for name in ('slot0', 'slot2', 'queued'):
+        (scratch / (name + '.release')).touch()
+    for child in (running[0], running[2], queued):
+        assert child.wait(10) == 0
+    print('ok - a pool of N admits N heavy commands, queues the next, and SIGKILL frees a slot')
+
+    # The size comes from the installed record when the environment names none,
+    # and a size that is not a positive integer is an error, not a guess.
+    subprocess.run([str(wrapper), 'node-option'], env=dict(env, FM_HEAVY_SLOTS='2'),
+                   check=True, capture_output=True, timeout=5)
+    recorded = subprocess.run([str(wrapper), 'pool'], env=env, check=True,
+                              capture_output=True, text=True, timeout=5).stdout.splitlines()
+    assert recorded[0] == '2' and len(recorded) == 3, recorded
+    assert recorded[1] == str(scratch / 'pool.lock') and recorded[2].endswith('pool.lock.2'), recorded
+    bad = subprocess.run([str(wrapper), '--', 'true'], env=dict(env, FM_HEAVY_SLOTS='two'),
+                         capture_output=True, timeout=5)
+    assert bad.returncode == 75 and b'positive integer' in bad.stderr, bad.stderr
+    print('ok - the pool size comes from the installed record and refuses a malformed value')
+
+    real_node = shutil.which('node')
+    if real_node:
+        # The CLI entry points pnpm resolves for these packages, so the preload
+        # recognizes the commands workers actually run.
+        option = subprocess.run([str(wrapper), 'node-option'], env=env, check=True,
+                                capture_output=True, text=True, timeout=5).stdout.strip()
+        # The fake CLI exits as soon as its RELEASE file exists, so a run that
+        # wins a slot finishes on its own. vitest's entry is ESM, the others CJS.
+        cjs = """#!/usr/bin/env node
+const fs = require('fs');
+run(fs);
+"""
+        esm = """#!/usr/bin/env node
+import fs from 'node:fs';
+run(fs);
+"""
+        shared = """
+function run(fs) {
+  if (!process.env.MARKER) { console.log('ran:' + process.argv.slice(2).join('|')); return; }
+  fs.writeFileSync(process.env.MARKER, String(process.pid));
+  const timer = setInterval(() => {
+    if (fs.existsSync(process.env.RELEASE)) { clearInterval(timer); }
+  }, 30);
+}
+"""
+        entries = {
+            'vitest': ('node_modules/vitest/vitest.mjs', esm),
+            'playwright': ('node_modules/@playwright/test/cli.js', cjs),
+            'tsc': ('node_modules/typescript/bin/tsc', cjs),
+        }
+        for name, (rel, head) in entries.items():
+            cli = scratch / rel
+            cli.parent.mkdir(parents=True, exist_ok=True)
+            cli.write_text(head + shared)
+            cli.chmod(0o755)
+        preload = {'NODE_OPTIONS': option, 'FM_HEAVY_SLOTS': '1'}
+        heavy = {
+            'vitest': ['run'],
+            'playwright': ['test'],
+            'tsc': ['--noEmit', '-p', 'tsconfig.json'],
+        }
+        light = {
+            'vitest': ['--version'],
+            'playwright': ['install'],
+            'tsc': ['one-file.ts', '--noEmit'],
+        }
+        for name, args in heavy.items():
+            blocker = launch('block-' + name, slots='1')
+            assert wait_file(scratch / ('block-' + name)), f'the blocker before {name} never started'
+            (scratch / (name + '.release')).touch()
+            log = open(scratch / (name + '.err'), 'w')
+            child = subprocess.Popen(['node', str(scratch / entries[name][0]), *args],
+                                     env=dict(env, MARKER=str(scratch / name),
+                                              RELEASE=str(scratch / (name + '.release')), **preload),
+                                     stderr=log)
+            log.close()
+            children.append(child)
+            for _ in range(300):
+                if 'waiting for a heavy slot' in (scratch / (name + '.err')).read_text():
+                    break
+                time.sleep(.03)
+            assert 'waiting for a heavy slot' in (scratch / (name + '.err')).read_text(), \
+                f'{name} {" ".join(args)} did not claim a heavy slot: ' + (scratch / (name + '.err')).read_text()
+            assert not (scratch / name).exists(), f'{name} ran while the only slot was held'
+            (scratch / ('block-' + name + '.release')).touch()
+            assert blocker.wait(10) == 0
+            assert child.wait(30) == 0, (scratch / (name + '.err')).read_text()
+            assert (scratch / name).exists(), f'{name} never ran after its slot freed'
+        for name, args in light.items():
+            result = subprocess.run(['node', str(scratch / entries[name][0]), *args],
+                                    env=dict(env, **preload), capture_output=True, timeout=30)
+            assert result.returncode == 0 and result.stdout.startswith(b'ran:'), result.stderr
+            assert b'waiting' not in result.stderr, f'{name} {" ".join(args)} took a heavy slot'
+        print('ok - the preload locks Vitest, Playwright and whole-project tsc and passes the rest through')
+    else:
+        print('skip - heavy CLI interception needs node installed')
 finally:
     for child in children:
         if child.poll() is None:

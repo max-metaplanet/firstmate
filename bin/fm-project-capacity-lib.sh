@@ -47,7 +47,14 @@
 #     worker's PR is ready, after which the worker waits on review or merge and
 #     no longer uses local resources.
 # A place therefore frees when a PR-based ship records its ready PR, or when any
-# task is cleaned up and its record removed. A local-only ship and a scout have
+# task is cleaned up and its record removed.
+# A holder whose record carries ad_hoc_slot=1 was admitted on a one-time grant
+# above the declaration (bin/fm-spawn.sh --ad-hoc-slot). It holds a place like
+# any other worker AND raises the project's effective capacity by one for as
+# long as it holds it, so the places an ordinary spawn sees are unchanged and
+# the grant admits only the task it was given to. Its count is reported
+# separately so a refusal can say how many places are ad hoc.
+# A local-only ship and a scout have
 # no recorded handoff and hold their place until cleanup or verified parking
 # (fm-worker-park-lib.sh). A resumed parked worker holds a place again until
 # its next park or cleanup, including one with a PR.
@@ -91,6 +98,13 @@ fm_project_capacity_config_dir() {  # <spawning-home> <spawning-config-dir>
   else
     printf '%s/config\n' "$root"
   fi
+}
+
+# Print 1 when the task record <meta> carries a one-time ad hoc slot grant and
+# 0 otherwise, so both capacity checks read the grant the same way.
+# bin/fm-spawn.sh --ad-hoc-slot owns when the grant is written.
+fm_ad_hoc_slot_granted() {  # <meta>
+  if [ "$(fm_meta_get "$1" ad_hoc_slot)" = 1 ]; then printf '1\n'; else printf '0\n'; fi
 }
 
 # Read the declared capacity for one project.
@@ -176,9 +190,11 @@ fm_project_capacity_lookup() {  # <config-dir> <project-name>
 # fm_local_firstmate_state_dirs <first-state>. <own-id> is the task being
 # admitted; its own record in <first-state> is the one this spawn replaces, so
 # it is not counted.
-# Sets FM_PROJECT_CAPACITY_OCCUPANTS to the count and
+# Sets FM_PROJECT_CAPACITY_OCCUPANTS to the count,
 # FM_PROJECT_CAPACITY_OCCUPANT_IDS to a comma-separated list of the holders,
-# each outside <first-state> qualified with its home. Returns 1 with
+# each outside <first-state> qualified with its home, and
+# FM_PROJECT_CAPACITY_ADHOC to how many of those holders hold an ad hoc grant.
+# Returns 1 with
 # FM_PROJECT_CAPACITY_ERROR when the local homes cannot be enumerated, or when
 # a state directory or task record in them cannot be read, since skipping it
 # could undercount the holders. Queued parked resumes for the project hold no
@@ -192,6 +208,7 @@ fm_project_capacity_occupants() {  # <project-lock> <project-dir> <first-state> 
   local -a cache_dirs cache_locks
   FM_PROJECT_CAPACITY_RESUME_ROWS=
   FM_PROJECT_CAPACITY_OCCUPANTS=0
+  FM_PROJECT_CAPACITY_ADHOC=0
   FM_PROJECT_CAPACITY_OCCUPANT_IDS=
   FM_PROJECT_CAPACITY_ERROR=
   fm_local_firstmate_state_dirs "$first" || {
@@ -247,6 +264,10 @@ fm_project_capacity_occupants() {  # <project-lock> <project-dir> <first-state> 
       label=$id
       [ "$state" = "$first" ] || label="$id in $(dirname "$state")"
       FM_PROJECT_CAPACITY_OCCUPANTS=$((FM_PROJECT_CAPACITY_OCCUPANTS + 1))
+      if [ "$(fm_ad_hoc_slot_granted "$meta")" = 1 ]; then
+        FM_PROJECT_CAPACITY_ADHOC=$((FM_PROJECT_CAPACITY_ADHOC + 1))
+        label="$label (ad hoc)"
+      fi
       FM_PROJECT_CAPACITY_OCCUPANT_IDS="${FM_PROJECT_CAPACITY_OCCUPANT_IDS:+$FM_PROJECT_CAPACITY_OCCUPANT_IDS, }$label"
     done
   done
@@ -277,5 +298,6 @@ fm_project_capacity_admits_resume() {  # <config-dir> <first-state> <meta>
   lock=$(fm_treehouse_project_lock_path "$project" 2>/dev/null) || return 0
   fm_project_capacity_occupants "$lock" "$project" "$2" "$(basename "$3" .meta)" || return 0
   ahead=$(fm_project_capacity_resumes_ahead "$3")
-  [ $((FM_PROJECT_CAPACITY_OCCUPANTS + ahead)) -lt "$FM_PROJECT_CAPACITY" ]
+  [ $((FM_PROJECT_CAPACITY_OCCUPANTS + ahead)) -lt \
+    $((FM_PROJECT_CAPACITY + FM_PROJECT_CAPACITY_ADHOC + $(fm_ad_hoc_slot_granted "$3"))) ]
 }

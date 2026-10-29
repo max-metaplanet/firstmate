@@ -202,6 +202,7 @@ Record the resulting mode, `yolo` merge posture, and the one-line reason for any
 
 Treat file or subsystem overlap as a risk signal rather than an automatic reason to wait, and dispatch isolated work immediately with no concurrency cap when each change can be independently implemented and validated and the selected delivery path can reconcile ordinary rebases or conflicts.
 A project's declared machine capacity (`config/project-capacity`) and the machine's fleet capacity (`config/fleet-capacity`) still bound that dispatch: a spawn beyond either exits 75 without launching, and its item stays queued rather than blocked; [`bin/fm-worker-park.sh`](bin/fm-worker-park.sh) owns external-wait parking and priority resumption.
+To start one named task above both caps without changing either declaration, pass `--ad-hoc-slot` to that spawn or relaunch; the grant lives in that task's own record and ends at its cleanup ([`docs/configuration.md`](docs/configuration.md) "Ad hoc slots").
 Serialize only for a true semantic dependency, shared mutable external state, incompatible concurrent migration, or another concrete condition that makes independent progress or reconciliation unsafe; same-file editing alone is insufficient, and genuine blockers remain durable.
 Write the task-specific brief under section 11 before spawning.
 Fill the task subsections according to section 11.

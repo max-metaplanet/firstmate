@@ -30,6 +30,12 @@
 # handoff alone does not free a place. fm-worker-park-lib.sh owns verified
 # parked records; those release their place, while incomplete exits and launch
 # reservations retain it.
+# A holder whose record carries ad_hoc_slot=1 was admitted on a one-time grant
+# above the declaration (bin/fm-spawn.sh --ad-hoc-slot). It holds a place like
+# any other agent AND raises the effective fleet cap by one while it does, so
+# the places an ordinary spawn sees are unchanged and the grant admits only the
+# task it was given to. Its count is reported separately so a refusal and the
+# fleet view can say how many places are ad hoc.
 # The supervising lead of the root home has no task record and is not counted.
 # Remote homes are never walked, because their agents run on another machine.
 #
@@ -97,8 +103,9 @@ fm_fleet_capacity_lookup() {  # <config-dir>
 # Count the live agents holding a place in the fleet.
 # <own-id> in <first-state> is the task being admitted and is not counted.
 # Sets FM_FLEET_CAPACITY_OCCUPANTS and FM_FLEET_CAPACITY_OCCUPANT_IDS, each
-# holder outside <first-state> qualified with its home, and the array
-# FM_FLEET_CAPACITY_OCCUPANT_METAS with those exact holders' metadata paths.
+# holder outside <first-state> qualified with its home, the array
+# FM_FLEET_CAPACITY_OCCUPANT_METAS with those exact holders' metadata paths, and
+# FM_FLEET_CAPACITY_ADHOC with how many of them hold an ad hoc grant.
 # An empty <own-id> counts every record (read-only display callers).
 # Returns 1 with
 # FM_FLEET_CAPACITY_ERROR when the local homes or a task record cannot be read.
@@ -107,6 +114,7 @@ fm_fleet_capacity_occupants() {  # <first-state> <own-id>
   local first=$1 self=$2 state meta kind backend target label i n=0 gone=,
   local -a metas=() states=() backends=() targets=()
   FM_FLEET_CAPACITY_OCCUPANTS=0
+  FM_FLEET_CAPACITY_ADHOC=0
   FM_FLEET_CAPACITY_OCCUPANT_IDS=
   FM_FLEET_CAPACITY_OCCUPANT_METAS=()
   FM_FLEET_CAPACITY_PARKED_METAS=()
@@ -177,6 +185,10 @@ fm_fleet_capacity_occupants() {  # <first-state> <own-id>
     [ "${states[i]}" = "$first" ] || label="$label in ${states[i]%/*}"
     FM_FLEET_CAPACITY_OCCUPANTS=$((FM_FLEET_CAPACITY_OCCUPANTS + 1))
     FM_FLEET_CAPACITY_OCCUPANT_METAS+=("$meta")
+    if [ "$(fm_ad_hoc_slot_granted "$meta")" = 1 ]; then
+      FM_FLEET_CAPACITY_ADHOC=$((FM_FLEET_CAPACITY_ADHOC + 1))
+      label="$label (ad hoc)"
+    fi
     FM_FLEET_CAPACITY_OCCUPANT_IDS="${FM_FLEET_CAPACITY_OCCUPANT_IDS:+$FM_FLEET_CAPACITY_OCCUPANT_IDS, }$label"
     i=$((i + 1))
   done
@@ -276,5 +288,6 @@ fm_fleet_capacity_observation() { # <home> <config-dir> <state-dir>
   fi
   printf '%s\n' "$policy" | jq --arg error "$occupancy_error" --arg ids "$FM_FLEET_CAPACITY_OCCUPANT_IDS" \
     --argjson occupied "$FM_FLEET_CAPACITY_OCCUPANTS" --argjson queued "$queued" \
-    '. + {occupancy:(if $error == "" then $occupied else null end),occupancy_error:$error,holders:$ids,queued_resumes:$queued}'
+    --argjson adhoc "$FM_FLEET_CAPACITY_ADHOC" \
+    '. + {occupancy:(if $error == "" then $occupied else null end),occupancy_error:$error,holders:$ids,ad_hoc:(if $error == "" then $adhoc else null end),queued_resumes:$queued}'
 }

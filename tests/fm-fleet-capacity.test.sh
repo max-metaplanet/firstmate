@@ -848,8 +848,78 @@ test_adaptive_concurrent_homes
 test_parked_relaunch_respects_both_caps
 test_parked_capacity_and_priority
 test_parked_resume_has_project_priority
+# An ad hoc grant lets ONE named task start above the declared cap without
+# changing the declaration, and every other spawn still sees the declared
+# number of places.
+test_ad_hoc_slot_admits_one_task_over_the_cap() {
+  local case_dir home declared out rc=0 before worktrees pane
+  case_dir=$(make_case adhoc task-c task-d task-e)
+  home="$case_dir/home"
+  declare_fleet "$home" "# whole machine" "2"
+  declared=$(cat "$home/config/fleet-capacity")
+  write_running "$case_dir" "$home" live-a "$case_dir/project"
+  write_running "$case_dir" "$home" live-b "$case_dir/project"
+
+  pane=$(new_worktree "$case_dir" task-c)
+  before=$(call_count "$case_dir")
+  worktrees=$(worktree_list "$case_dir")
+  out=$(spawn_ship "$case_dir" task-c "$pane") || rc=$?
+  expect_code "$DEFER_EXIT" "$rc" "a full fleet admitted an ordinary spawn: $out"
+  assert_nothing_created "$case_dir" "$home" task-c "$before" "$worktrees"
+
+  rc=0
+  out=$(run_spawn "$case_dir" "$home" "$(new_worktree "$case_dir" task-d)" \
+    task-d "$case_dir/project" --mode no-mistakes --ticket no-ticket \
+    --commit-type chore --yolo off --ad-hoc-slot) || rc=$?
+  expect_code 0 "$rc" "an ad hoc slot did not admit its task over the cap: $out"
+  assert_contains "$(cat "$home/state/task-d.meta")" "ad_hoc_slot=1" \
+    "the ad hoc grant was not recorded in the task's own record"
+  assert_equals "$declared" "$(cat "$home/config/fleet-capacity")" \
+    "an ad hoc slot edited the capacity declaration"
+  rc=0
+  pane=$(new_worktree "$case_dir" task-e)
+  before=$(call_count "$case_dir")
+  worktrees=$(worktree_list "$case_dir")
+  out=$(spawn_ship "$case_dir" task-e "$pane") || rc=$?
+  expect_code "$DEFER_EXIT" "$rc" "the ad hoc grant leaked to another task: $out"
+  assert_contains "$out" "plus 1 ad hoc" "the deferral did not name the ad hoc occupancy"
+  assert_contains "$out" "task-d (ad hoc)" "the deferral did not mark the ad hoc holder"
+  assert_nothing_created "$case_dir" "$home" task-e "$before" "$worktrees"
+  pass "an ad hoc slot admits exactly its own task over the cap and changes no declaration"
+}
+
+# The grant lives in the task's own record, so the fleet view and snapshot can
+# say how many of the held places are ad hoc.
+test_ad_hoc_occupancy_is_visible() {
+  local case_dir home snapshot view
+  case_dir=$(make_case adhoc-view)
+  home="$case_dir/home"
+  declare_fleet "$home" "3"
+  write_running "$case_dir" "$home" live-a "$case_dir/project"
+  write_running "$case_dir" "$home" extra-b "$case_dir/project" "ad_hoc_slot=1"
+  snapshot=$(FM_HOME="$home" FM_ROOT_OVERRIDE='' FM_STATE_OVERRIDE='' FM_CONFIG_OVERRIDE='' \
+    FM_DATA_OVERRIDE='' FM_PROJECTS_OVERRIDE='' FM_FAKE_CALL_LOG="$case_dir/calls.log" \
+    FM_BACKEND=tmux PATH="$case_dir/fakebin:$TEST_PATH" bash "$ROOT/bin/fm-fleet-snapshot.sh" --json) ||
+    fail 'fleet snapshot failed'
+  assert_equals 1 "$(printf '%s' "$snapshot" | jq -r '.capacity.ad_hoc')" \
+    'the snapshot did not count the ad hoc place'
+  assert_equals true "$(printf '%s' "$snapshot" | jq -r '.tasks[] | select(.id == "extra-b") | .ad_hoc_slot')" \
+    'the snapshot did not mark the ad hoc task'
+  assert_equals false "$(printf '%s' "$snapshot" | jq -r '.tasks[] | select(.id == "live-a") | .ad_hoc_slot')" \
+    'the snapshot marked an ordinary task as ad hoc'
+  view=$(FM_HOME="$home" FM_ROOT_OVERRIDE='' FM_STATE_OVERRIDE='' FM_CONFIG_OVERRIDE='' \
+    FM_DATA_OVERRIDE='' FM_PROJECTS_OVERRIDE='' FM_FAKE_CALL_LOG="$case_dir/calls.log" \
+    FM_BACKEND=tmux PATH="$case_dir/fakebin:$TEST_PATH" bash "$ROOT/bin/fm-fleet-view.sh") ||
+    fail 'fleet view failed'
+  assert_contains "$view" "1 of them ad hoc" 'the fleet view did not report ad hoc occupancy'
+  assert_contains "$view" "ship (ad hoc)" 'the fleet view did not mark the ad hoc task'
+  pass "the fleet view and snapshot report ad hoc occupancy"
+}
+
 test_undeclared_fleet_stays_uncapped
 test_full_fleet_defers_without_leaving_anything_behind
+test_ad_hoc_slot_admits_one_task_over_the_cap
+test_ad_hoc_occupancy_is_visible
 test_dead_agents_free_their_place
 test_fresh_spawn_waits_for_a_briefly_busy_fleet_lock
 test_fleet_is_shared_by_every_local_home

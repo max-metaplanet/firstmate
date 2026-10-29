@@ -11,7 +11,9 @@
 #
 # Top-level fields:
 #   schema: stable schema id.
-#   capacity: read-only fleet capacity observation from fm-fleet-capacity-lib.sh.
+#   capacity: read-only fleet capacity observation from fm-fleet-capacity-lib.sh,
+#     whose ad_hoc count says how many of the occupied places are one-time ad hoc
+#     grants. Each task carries its own ad_hoc_slot boolean.
 #   generated: UTC observation time for this fresh command execution.
 #   fm_home: resolved operational home.
 #   roots: resolved root/config/data/state/projects directories.
@@ -727,7 +729,7 @@ prefetch_task_current_states() {
 }
 
 task_json_lines() {
-  local meta original_meta id kind harness mode yolo project worktree home projects spawn_gen backend target branch status_log report_path
+  local meta original_meta id kind harness mode yolo project worktree home projects spawn_gen backend target branch status_log report_path ad_hoc_slot
   local remote_host remote_root current_file endpoint_file observation_line index=0
   local pr pr_head pr_source current_json endpoint_exists agent_alive pr_from_status meta_line meta_key
   local open_decisions_tsv
@@ -744,11 +746,11 @@ task_json_lines() {
     # Read each row once and reset absent fields so they cannot leak from the
     # preceding task. Only literal field names may become variable names.
     kind='' harness='' mode='' yolo='' project='' worktree='' home='' projects=''
-    spawn_gen='' branch='' remote_host='' remote_root='' pr='' pr_head=''
+    spawn_gen='' branch='' remote_host='' remote_root='' pr='' pr_head='' ad_hoc_slot=''
     while IFS= read -r meta_line || [ -n "$meta_line" ]; do
       case "$meta_line" in
         kind=*|harness=*|mode=*|yolo=*|project=*|worktree=*|home=*|projects=*|\
-        spawn_gen=*|branch=*|remote_host=*|remote_root=*|pr=*|pr_head=*)
+        spawn_gen=*|branch=*|remote_host=*|remote_root=*|pr=*|pr_head=*|ad_hoc_slot=*)
           meta_key=${meta_line%%=*}
           printf -v "$meta_key" '%s' "${meta_line#*=}"
           ;;
@@ -848,6 +850,7 @@ task_json_lines() {
       --arg harness "$harness" \
       --arg mode "$mode" \
       --arg yolo "$yolo" \
+      --argjson ad_hoc_slot "$([ "$ad_hoc_slot" = 1 ] && echo true || echo false)" \
       --arg branch "$branch" \
       --arg project "$project" \
       --arg worktree_path "$worktree" \
@@ -890,6 +893,7 @@ task_json_lines() {
           harness:($harness // ""),
           mode:($mode // ""),
           yolo:($yolo // ""),
+          ad_hoc_slot:$ad_hoc_slot,
           branch:($branch | if . == "" then null else . end),
           project:($project // ""),
           spawn_gen:($spawn_gen | if . == "" then null else . end),
