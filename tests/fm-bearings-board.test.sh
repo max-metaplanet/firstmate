@@ -11,6 +11,10 @@ set -u
 BOARD="$ROOT/bin/fm-bearings-board.sh"
 TMP_ROOT=$(fm_test_tmproot fm-bearings-board)
 
+# This suite checks listener readiness, not the production startup deadline.
+# Loaded test hosts can take longer than the default three seconds to claim.
+export FM_PROCEVENT_LAUNCH_CONFIRM_SECONDS=30
+
 command -v jq >/dev/null 2>&1 || { echo "skip: jq not found"; exit 0; }
 
 # A lavish-axi stub that reproduces the shapes verified against the real
@@ -696,7 +700,9 @@ test_build_fails_when_reconcile_cannot_establish_a_listener() {
   home=$(make_home no-listener)
   data="$home/payload.json"
   write_valid_payload "$data"
-  run_board "$home" build "$data" >/dev/null || fail "could not establish the listener fixture"
+  # Keep the owner alive through repeated uncertain reads on loaded hosts.
+  FM_TEST_STUB_MAX_BLOCK_SECONDS=600 run_board "$home" build "$data" >/dev/null \
+    || fail "could not establish the listener fixture"
   sid=$(run_lavish_source_id "$home" "$home/.lavish/bearings-board.html")
   cat > "$home/fakebin/ps" <<'SH'
 #!/usr/bin/env bash
