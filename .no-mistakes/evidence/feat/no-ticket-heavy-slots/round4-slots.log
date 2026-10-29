@@ -1,0 +1,34 @@
+extra grant present
+$ bin/fm-slots.sh --home <isolated lab>
+slots 4/3 plus 1 ad hoc (source: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M64N0N0G8XM8MK440VZDFA4P/.test-phase-round4/slots-home/config/fleet-capacity)
+SLOTS (local records; * still holds a slot)
+  ~/.no-mistakes/worktrees/c0c4fcacb05a/01M64N0N0G8XM8MK440VZDFA4P/.test-phase-round4/slots-home | A | demo | ship | unknown | codex
+  ~/.no-mistakes/worktrees/c0c4fcacb05a/01M64N0N0G8XM8MK440VZDFA4P/.test-phase-round4/slots-home | B | demo | ship | unknown | codex
+  ~/.no-mistakes/worktrees/c0c4fcacb05a/01M64N0N0G8XM8MK440VZDFA4P/.test-phase-round4/slots-home | C | demo | ship | unknown | codex
+  ~/.no-mistakes/worktrees/c0c4fcacb05a/01M64N0N0G8XM8MK440VZDFA4P/.test-phase-round4/slots-home | extra | demo | ship | unknown | codex
+PARKED/WAITING (no active slot)
+QUEUE (~/.no-mistakes/worktrees/c0c4fcacb05a/01M64N0N0G8XM8MK440VZDFA4P/.test-phase-round4/slots-home)
+A. ready for a slot (priority, then oldest)
+  (empty)
+B. waiting on captain
+  (empty)
+C. other queued
+  (empty)
+Exit: 0
+extra task record cleaned up
+$ bin/fm-slots.sh --home <isolated lab>
+slots 3/3 (source: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M64N0N0G8XM8MK440VZDFA4P/.test-phase-round4/slots-home/config/fleet-capacity)
+SLOTS (local records; * still holds a slot)
+  ~/.no-mistakes/worktrees/c0c4fcacb05a/01M64N0N0G8XM8MK440VZDFA4P/.test-phase-round4/slots-home | A | demo | ship | unknown | codex
+  ~/.no-mistakes/worktrees/c0c4fcacb05a/01M64N0N0G8XM8MK440VZDFA4P/.test-phase-round4/slots-home | B | demo | ship | unknown | codex
+  ~/.no-mistakes/worktrees/c0c4fcacb05a/01M64N0N0G8XM8MK440VZDFA4P/.test-phase-round4/slots-home | C | demo | ship | unknown | codex
+PARKED/WAITING (no active slot)
+QUEUE (~/.no-mistakes/worktrees/c0c4fcacb05a/01M64N0N0G8XM8MK440VZDFA4P/.test-phase-round4/slots-home)
+A. ready for a slot (priority, then oldest)
+  (empty)
+B. waiting on captain
+  (empty)
+C. other queued
+  (empty)
+Exit: 0
+The fleet-capacity declaration remained 3 after cleanup.

@@ -1,0 +1,5 @@
+error[path-unsafe]: package source must not be inside a Git project or task copy
+error[binding-failed]: error[json-invalid]: package transfer is empty
+not ok - remote transport did not publish the binding (missing: 'bound: org.example.remote@1.2.3')
+--- output ---
+

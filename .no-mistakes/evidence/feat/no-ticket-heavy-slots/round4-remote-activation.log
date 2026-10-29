@@ -1,0 +1,40 @@
+$ bin/fm-extension.sh receive-transfer-bind --adapter ext-remote --trust-same-user-code
+bound: org.example.remote@1.2.3
+binding: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M64N0N0G8XM8MK440VZDFA4P/.test-phase-round4/home/config/extensions.d/org.example.remote.json
+binding-digest: sha256:40ea4d079783373e3a4fa4d1a9a1863709503a0a15c84ba1955571813ae0f635
+package: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M64N0N0G8XM8MK440VZDFA4P/.test-phase-round4/home/data/extensions/packages/org.example.remote/1.2.3/0c574d0d9d1f286cd8dc9591bc5e3bef9c568c9b3169c8dad30efa0c42f2bf95
+package-digest: sha256:0c574d0d9d1f286cd8dc9591bc5e3bef9c568c9b3169c8dad30efa0c42f2bf95
+verified: process-event-adapter/1 (ext-remote)
+transfer-digest: sha256:1acd8f757d522d047650cb8c5866933b6744580fe4b7b609af1f1a6968ba49f1
+staged-package: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M64N0N0G8XM8MK440VZDFA4P/.test-phase-round4/home/data/extensions/staging/org.example.remote/1.2.3/1acd8f757d522d047650cb8c5866933b6744580fe4b7b609af1f1a6968ba49f1/package
+exit=0; elapsed=0.812s
+$ bin/fm-procevent.sh register-extension ext-remote remote-active-source --config-ref active-block|~/.no-mistakes/worktrees/c0c4fcacb05a/01M64N0N0G8XM8MK440VZDFA4P/.test-phase-round4/active|~/.no-mistakes/worktrees/c0c4fcacb05a/01M64N0N0G8XM8MK440VZDFA4P/.test-phase-round4/release
+registered: remote-active-source (ext-remote from org.example.remote@1.2.3)
+owner-token: sha256:2bb9c0d299d1395271bfa2b7c2c022edb5d60dcc13e8359433ebf3c1a0378bb6
+retire: bin/fm-procevent.sh retire remote-active-source --if-owner sha256:2bb9c0d299d1395271bfa2b7c2c022edb5d60dcc13e8359433ebf3c1a0378bb6
+exit=0; elapsed=0.764s
+$ bin/fm-procevent.sh register-extension ext-remote remote-active-source --config-ref replacement
+error: cannot replace extension registration while its prior runner remains active: remote-active-source
+exit=1; elapsed=0.611s
+$ bin/fm-procevent.sh register lavish remote-active-source -- /bin/echo replacement
+error: cannot replace extension registration while its prior runner remains active: remote-active-source
+exit=1; elapsed=0.544s
+Both replacements refused while the original extension poll was still alive.
+$ bin/fm-procevent.sh handled remote-active-source 1
+handled: remote-active-source 1
+exit=0; elapsed=0.107s
+$ bin/fm-procevent.sh register lavish remote-active-source -- /bin/echo replacement
+registered: remote-active-source (lavish)
+exit=0; elapsed=0.177s
+$ bin/fm-procevent.sh retire remote-active-source --if-matches lavish -- /bin/echo replacement
+retired: remote-active-source
+exit=0; elapsed=0.238s
+$ bin/fm-procevent.sh register-extension ext-remote remote-active-source --config-ref replacement
+registered: remote-active-source (ext-remote from org.example.remote@1.2.3)
+owner-token: sha256:0372074405ee964de886df39ca0822b74008d5b7ef1fe09a03c1b8c3e7811fb5
+retire: bin/fm-procevent.sh retire remote-active-source --if-owner sha256:0372074405ee964de886df39ca0822b74008d5b7ef1fe09a03c1b8c3e7811fb5
+exit=0; elapsed=0.987s
+$ bin/fm-procevent.sh retire remote-active-source --if-owner sha256:0372074405ee964de886df39ca0822b74008d5b7ef1fe09a03c1b8c3e7811fb5
+retired: remote-active-source
+exit=0; elapsed=0.660s
+After the original poll exited 0, both built-in and extension replacement succeeded; registrations retired.

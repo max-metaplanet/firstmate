@@ -1,0 +1,1 @@
+deferred: this machine runs at most 3 agent(s) at once (~/firstmate/data/heavy-slots/live-1793312234/config/fleet-capacity) and 3 are running (hs3312234-s8-e, hs3312234-s8-p, hs3312234-s8-u); task hs3312234-s8-l was not launched and its backlog item stays queued - the worker-park tick replays a recorded launch once one of them is cleaned up or stops

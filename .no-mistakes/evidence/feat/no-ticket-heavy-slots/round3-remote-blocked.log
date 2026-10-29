@@ -1,0 +1,6 @@
+    PID    PPID     ELAPSED COMMAND
+2190593 2190592       02:45 bash ~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-extension-binding.lObHsT/remote-root/bin/fm-procevent.sh register-extension ext-remote remote-active-source --config-ref replacement
+
+Observed: replacement remained blocked for 165 seconds while the adapter poll waited for the test release marker. Expected: refusal containing "prior runner remains active" before releasing the poll.
+The blocked replacement was terminated with SIGTERM to bound this check. The suite then exited 1 with its missing-diagnostic assertion. This assertion after termination is not an organically emitted product diagnostic.
+The suite cleanup ran. Subsequent process checks found no processes naming this disposable fixture.

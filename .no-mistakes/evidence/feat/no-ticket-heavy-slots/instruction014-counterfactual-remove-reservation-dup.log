@@ -1,0 +1,5 @@
+ok - register-extension and reconcile of an unhandled extension result take their locks in one order
+not ok - terminal handoff failed: closed (missing: 'retired: handoff-closed')
+--- output ---
+not-autohandled: handoff-closed (left for the handler; still unacknowledged)
+captured: ./handoff-closed.1.result

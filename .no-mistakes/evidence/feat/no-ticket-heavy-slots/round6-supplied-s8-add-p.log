@@ -1,0 +1,22 @@
+ok: added hs3312234-s8-p (ship, repo tiny) -> Queued
+task:
+  id: hs3312234-s8-p
+  title: Live scenario8 p
+  state: queued
+  blocked: no
+  blocked_by: none
+  held: no
+  hold_reason: "-"
+  hold_kind: "-"
+  hold_until: "-"
+  kind: ship
+  repo: tiny
+  priority: "-"
+  created: 2026-10-29
+  closed: "-"
+  deps: none
+  links: none
+  body: ""
+help[2]:
+  - Run `tasks-axi start hs3312234-s8-p` to move it to in flight
+  - Run `tasks-axi block hs3312234-s8-p --by <other>` to record a dependency

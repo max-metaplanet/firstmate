@@ -1,0 +1,22 @@
+{
+  "source": "b3809439d09733d9f9534db9c451c7e45bbfb6d4",
+  "lab": "~/firstmate/data/heavy-slots/live-1793312234",
+  "unused_flag": "pass",
+  "fleet_only": "pass",
+  "project_only": "pass",
+  "legacy_record": "pass",
+  "cleanup": "pass",
+  "remaining_meta": 0,
+  "capacity": {
+    "mode": "off",
+    "configured": 1,
+    "effective": 1,
+    "hold": "",
+    "reason": "static capacity; adaptation off",
+    "occupancy": 0,
+    "occupancy_error": "",
+    "holders": "",
+    "ad_hoc": 0,
+    "queued_resumes": 0
+  }
+}

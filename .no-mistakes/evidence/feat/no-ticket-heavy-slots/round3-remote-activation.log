@@ -1,0 +1,3 @@
+not ok - failure did not report the expected diagnostic (missing: 'prior runner remains active')
+--- output ---
+

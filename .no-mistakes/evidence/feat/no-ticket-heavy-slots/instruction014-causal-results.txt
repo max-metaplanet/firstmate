@@ -1,0 +1,28 @@
+Scoped root-cause fix: extension terminal capture descriptor collisions
+
+Reproduction and bounded isolation:
+- Ran FM_EXTENSION_BINDING_SEGMENT=lifecycle-order python3 bin/fm-build-lock.py -- bash tests/fm-extension-binding.test.sh first, without modifications: exit 1, lock-order terminal source stayed registered.
+- This single lane reproduces without earlier configured suites, quota-choose, test-fixtures, or the aggregate's companion lanes. No broader suite bisection was necessary once the leaf reproduced.
+- Temporary diagnostic instrumentation exposed terminal classification's error[path-unsafe]: capture handoff descriptors are unsafe. Start output and durable source/result/reservation/invocation/claim state were archived before cleanup in instruction014-lock-order-state.tar.gz. All instrumentation was removed.
+- At handoff: claim=7, capability=9, inbox=4, result=5, reservation=6. The preliminary dup2(reservation,7) overwrote the live claim. Node received a directory on fd 6 instead of the claim file and correctly refused classification; start retained registration by contract. This is descriptor allocation, not an assertion-wait or suite concurrency race.
+
+History and baseline:
+- Main e2f8f938344ee5ba6801772abd62f6b040dec2fd has the identical handoff implementation. Read its source through git archive into a disposable in-worktree directory; did not touch another clone or the gate repository directly.
+- Ran main's aggregate extension test serially through the heavy-slot wrapper: exit 1, same lock-order terminal registration failure, no missing-Node error.
+- Main harness-only changes: copy fm-task-inbox-lib.sh and fm-backend.sh into the disposable remote fixture and symlink command -v node into remote-root/bin, matching target dbf4ff9f. No main production changes.
+- Baseline scratch was explicitly located under this run's authorized evidence root, outside Git, to satisfy package safety. An earlier baseline attempt used nested scratch and hit package-safety refusal; discarded as invalid comparison. Its disposable remote worker group was stopped before continuing.
+- b3809439 changes registration replacement ordering, not the defective descriptor helper. Both main and target fail the same terminal cleanup assertion; the observed defect predates that change.
+
+Counterfactuals and minimal fix:
+- With original helper restored and new tests present, lifecycle-order again exited 1 at the original assertion (instruction014-counterfactual-original.log).
+- Removing only preliminary dup2(reservation,7) made the original lock-order path pass but the added closed-fd case fail (instruction014-counterfactual-remove-reservation-dup.log, exit 1). Descriptor remapping also needs to avoid source/destination overlap and self-dup retaining close-on-exec.
+- Fix removes the preliminary overwrite, duplicates all four sources above fd 9 with F_DUPFD, restores inbox cwd before replacing handles, maps pinned sources to 6..9, and closes temporary duplicates. Existing identity/safety checks remain intact.
+- Added public start-command regression for low descriptors closed and occupied: terminal registration disappears, captured result remains unhandled, and retired output is reported. The oracle is the fixture adapter's explicit terminal=true response and the existing terminal retirement contract, not source matching.
+
+Verification (all awaited and actual exit codes read):
+- Fixed lifecycle-order: exit 0, existing lock-order and new descriptor-layout checks pass.
+- Fixed aggregate: python3 bin/fm-build-lock.py -- bash tests/fm-extension-binding.test.sh, exit 0. Includes concurrent lifecycle-flow, lifecycle-order, remote-lifecycle and example lanes plus coordinator checks.
+- Additional lifecycle-state check: exit 1 at an unchanged diagnostic expectation for control-byte state paths: expected "cannot acquire source ownership", actual "cannot claim source: control-tab-state-source". Earlier capture-authority and reservation checks passed. This refusal occurs in cmd_start's claim acquisition before the edited capture helper executes. Left outside this single root-cause scope; do not claim a complete lifecycle-state pass.
+- Final lifecycle-order after all counterfactual restorations: exit 0 (instruction014-final-order.log).
+- No linters, formatters, static analysis, full repository test suite, pipeline control, push, PR or CI phases executed. Configured Test rerun remains owned by the outer executor. Previously accepted eight live scenarios were not repeated.
+- No disposable browser/server children remain from these probes. Temporary archives, instrumented sources, and scratch under .diagnostics were removed; only intentional helper and regression-test edits remain in Git status.

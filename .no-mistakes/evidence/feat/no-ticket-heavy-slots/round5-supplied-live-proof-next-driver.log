@@ -1,0 +1,872 @@
+live-snapshot-ab exit=0 {
+  "schema": "fm-fleet-snapshot.v1",
+  "capacity": {
+    "mode": "off",
+    "configured": 1,
+    "effective": 1,
+    "hold": "",
+    "reason": "static capacity; adaptation off",
+    "occupancy": 2,
+    "occupancy_error": "",
+    "holders": "hs3312234-a, hs3312234-b (ad hoc)",
+    "ad_hoc": 1,
+    "queued_resumes": 0
+  },
+  "generated": "2026-10-29T22:24:30Z",
+  "fm_home": "~/firstmate/data/heavy-slots/live-1793312234",
+  "roots": {
+    "fm_root": "~/.treehouse/firstmate-b5d79f/2/.fm-test-scratch/compare-1793311611/branch",
+    "state": "~/firstmate/data/heavy-slots/live-1793312234/state",
+    "data": "~/firstmate/data/heavy-slots/live-1793312234/data",
+    "config": "~/firstmate/data/heavy-slots/live-1793312234/config",
+    "projects": "~/firstmate/data/heavy-slots/live-1793312234/projects"
+  },
+  "backlog": {
+    "path": "~/firstmate/data/heavy-slots/live-1793312234/data/backlog.md",
+    "records": [
+      {
+        "pr_url": null,
+        "current_role": "worker",
+        "links": [],
+        "hold_bucket": null,
+        "report_path": null,
+        "id": "hs3312234-b",
+        "hold_age_days": 0,
+        "blocked_by": null,
+        "hold_kind": null,
+        "requires_child_metadata": true,
+        "captain_actionable": false,
+        "title": "Live admission fixture b",
+        "since": "2026-10-29",
+        "body_lines": [],
+        "raw": "- [ ] hs3312234-b - Live admission fixture b (repo: tiny) (kind: ship) (since 2026-10-29)",
+        "body_excerpt": null,
+        "state": "in_flight",
+        "done": null,
+        "structured": true,
+        "local_note": null,
+        "repo": "tiny",
+        "merged": null,
+        "hold_until": null,
+        "reported": null,
+        "order": 1,
+        "hold_reason": null,
+        "blocked_reason": null,
+        "hold_set": null,
+        "completion": {
+          "date": null,
+          "verb": null
+        },
+        "unresolved_blocker_ids": [],
+        "priority": null,
+        "kind": "ship",
+        "checked": false,
+        "blocked_by_ids": []
+      },
+      {
+        "since": "2026-10-29",
+        "body_lines": [],
+        "done": null,
+        "state": "in_flight",
+        "body_excerpt": null,
+        "raw": "- [ ] hs3312234-a - Live admission fixture A (repo: tiny) (kind: ship) (since 2026-10-29)",
+        "captain_actionable": false,
+        "title": "Live admission fixture A",
+        "hold_age_days": 0,
+        "blocked_by": null,
+        "id": "hs3312234-a",
+        "hold_kind": null,
+        "requires_child_metadata": true,
+        "current_role": "worker",
+        "links": [],
+        "pr_url": null,
+        "report_path": null,
+        "hold_bucket": null,
+        "kind": "ship",
+        "priority": null,
+        "blocked_by_ids": [],
+        "checked": false,
+        "completion": {
+          "verb": null,
+          "date": null
+        },
+        "hold_set": null,
+        "unresolved_blocker_ids": [],
+        "order": 2,
+        "hold_reason": null,
+        "reported": null,
+        "hold_until": null,
+        "merged": null,
+        "blocked_reason": null,
+        "structured": true,
+        "local_note": null,
+        "repo": "tiny"
+      },
+      {
+        "order": 3,
+        "hold_reason": null,
+        "reported": null,
+        "merged": null,
+        "hold_until": null,
+        "blocked_reason": null,
+        "local_note": null,
+        "structured": true,
+        "repo": "tiny",
+        "kind": "ship",
+        "priority": null,
+        "blocked_by_ids": [],
+        "checked": false,
+        "completion": {
+          "date": null,
+          "verb": null
+        },
+        "hold_set": null,
+        "unresolved_blocker_ids": [],
+        "hold_kind": null,
+        "blocked_by": null,
+        "hold_age_days": 0,
+        "id": "hs3312234-c",
+        "requires_child_metadata": false,
+        "links": [],
+        "current_role": "queued",
+        "pr_url": null,
+        "report_path": null,
+        "hold_bucket": null,
+        "body_lines": [],
+        "since": "2026-10-29",
+        "done": null,
+        "state": "queued",
+        "body_excerpt": null,
+        "raw": "- [ ] hs3312234-c - Live admission fixture c (repo: tiny) (kind: ship) (since 2026-10-29)",
+        "captain_actionable": false,
+        "title": "Live admission fixture c"
+      },
+      {
+        "requires_child_metadata": false,
+        "blocked_by": null,
+        "hold_age_days": 0,
+        "id": "hs3312234-r",
+        "hold_kind": null,
+        "hold_bucket": null,
+        "report_path": null,
+        "pr_url": null,
+        "current_role": "queued",
+        "links": [],
+        "body_excerpt": null,
+        "raw": "- [ ] hs3312234-r - Live admission fixture r (repo: tiny) (kind: ship) (since 2026-10-29)",
+        "state": "queued",
+        "done": null,
+        "since": "2026-10-29",
+        "body_lines": [],
+        "title": "Live admission fixture r",
+        "captain_actionable": false,
+        "blocked_reason": null,
+        "reported": null,
+        "merged": null,
+        "hold_until": null,
+        "hold_reason": null,
+        "order": 4,
+        "repo": "tiny",
+        "structured": true,
+        "local_note": null,
+        "checked": false,
+        "blocked_by_ids": [],
+        "priority": null,
+        "kind": "ship",
+        "unresolved_blocker_ids": [],
+        "completion": {
+          "verb": null,
+          "date": null
+        },
+        "hold_set": null
+      }
+    ],
+    "present": true
+  },
+  "tasks": [
+    {
+      "id": "hs3312234-a",
+      "kind": "ship",
+      "harness": "codex",
+      "mode": "local-only",
+      "yolo": "off",
+      "ad_hoc_slot": false,
+      "ad_hoc_fleet_slot": false,
+      "ad_hoc_project_slot": false,
+      "branch": "chore/no-ticket-hs3312234-a",
+      "project": "~/firstmate/data/heavy-slots/live-1793312234/projects/tiny",
+      "spawn_gen": "s1793312304.3910760.23782",
+      "backend": "tmux",
+      "remote": null,
+      "paths": {
+        "meta": {
+          "path": "~/firstmate/data/heavy-slots/live-1793312234/state/hs3312234-a.meta",
+          "present": true
+        },
+        "status_log": {
+          "path": "~/firstmate/data/heavy-slots/live-1793312234/state/hs3312234-a.status",
+          "present": false,
+          "kind": "event_history",
+          "last_event": {
+            "state": "",
+            "note": "",
+            "raw": "",
+            "age_seconds": null
+          }
+        },
+        "worktree": {
+          "path": "~/firstmate/data/heavy-slots/live-1793312234/pool/.treehouse/tiny-354191/1/tiny",
+          "present": true
+        },
+        "home": {
+          "path": null,
+          "present": false
+        },
+        "report": {
+          "path": "~/firstmate/data/heavy-slots/live-1793312234/data/hs3312234-a/report.md",
+          "present": false
+        }
+      },
+      "secondmate_projects": [],
+      "current_state": {
+        "state": "unknown",
+        "source": "pane",
+        "detail": "harness state unavailable (unknown codex-unverified)",
+        "raw": "state: unknown · source: pane · harness state unavailable (unknown codex-unverified)",
+        "observed_at": "2026-10-29T22:24:30Z",
+        "freshness": "fresh"
+      },
+      "endpoint": {
+        "target": "live:fm-hs3312234-a",
+        "exists": true,
+        "agent_alive": "not_checked",
+        "status": "unknown",
+        "observed_at": "2026-10-29T22:24:30Z",
+        "freshness": "fresh"
+      },
+      "pr": {
+        "url": null,
+        "source": "absent",
+        "head": null
+      },
+      "hints": {
+        "pending_decision": false,
+        "blocked_event": false,
+        "open_decisions": [],
+        "scout_report_present": false,
+        "last_event_text": ""
+      },
+      "actions": {
+        "watch": "bin/fm-peek.sh fm-hs3312234-a",
+        "steer": "bin/fm-send.sh fm-hs3312234-a '<instruction>'",
+        "return_channel_note": null
+      },
+      "backlog": {
+        "since": "2026-10-29",
+        "body_lines": [],
+        "done": null,
+        "state": "in_flight",
+        "body_excerpt": null,
+        "raw": "- [ ] hs3312234-a - Live admission fixture A (repo: tiny) (kind: ship) (since 2026-10-29)",
+        "captain_actionable": false,
+        "title": "Live admission fixture A",
+        "hold_age_days": 0,
+        "blocked_by": null,
+        "id": "hs3312234-a",
+        "hold_kind": null,
+        "requires_child_metadata": true,
+        "current_role": "worker",
+        "links": [],
+        "pr_url": null,
+        "report_path": null,
+        "hold_bucket": null,
+        "kind": "ship",
+        "priority": null,
+        "blocked_by_ids": [],
+        "checked": false,
+        "completion": {
+          "verb": null,
+          "date": null
+        },
+        "hold_set": null,
+        "unresolved_blocker_ids": [],
+        "order": 2,
+        "hold_reason": null,
+        "reported": null,
+        "hold_until": null,
+        "merged": null,
+        "blocked_reason": null,
+        "structured": true,
+        "local_note": null,
+        "repo": "tiny"
+      }
+    },
+    {
+      "id": "hs3312234-b",
+      "kind": "ship",
+      "harness": "codex",
+      "mode": "local-only",
+      "yolo": "off",
+      "ad_hoc_slot": true,
+      "ad_hoc_fleet_slot": true,
+      "ad_hoc_project_slot": true,
+      "branch": "chore/no-ticket-hs3312234-b",
+      "project": "~/firstmate/data/heavy-slots/live-1793312234/projects/tiny",
+      "spawn_gen": "s1793312566.4035083.5783",
+      "backend": "tmux",
+      "remote": null,
+      "paths": {
+        "meta": {
+          "path": "~/firstmate/data/heavy-slots/live-1793312234/state/hs3312234-b.meta",
+          "present": true
+        },
+        "status_log": {
+          "path": "~/firstmate/data/heavy-slots/live-1793312234/state/hs3312234-b.status",
+          "present": false,
+          "kind": "event_history",
+          "last_event": {
+            "state": "",
+            "note": "",
+            "raw": "",
+            "age_seconds": null
+          }
+        },
+        "worktree": {
+          "path": "~/firstmate/data/heavy-slots/live-1793312234/pool/.treehouse/tiny-354191/2/tiny",
+          "present": true
+        },
+        "home": {
+          "path": null,
+          "present": false
+        },
+        "report": {
+          "path": "~/firstmate/data/heavy-slots/live-1793312234/data/hs3312234-b/report.md",
+          "present": false
+        }
+      },
+      "secondmate_projects": [],
+      "current_state": {
+        "state": "unknown",
+        "source": "pane",
+        "detail": "harness state unavailable (unknown codex-unverified)",
+        "raw": "state: unknown · source: pane · harness state unavailable (unknown codex-unverified)",
+        "observed_at": "2026-10-29T22:24:30Z",
+        "freshness": "fresh"
+      },
+      "endpoint": {
+        "target": "live:fm-hs3312234-b",
+        "exists": true,
+        "agent_alive": "not_checked",
+        "status": "unknown",
+        "observed_at": "2026-10-29T22:24:30Z",
+        "freshness": "fresh"
+      },
+      "pr": {
+        "url": null,
+        "source": "absent",
+        "head": null
+      },
+      "hints": {
+        "pending_decision": false,
+        "blocked_event": false,
+        "open_decisions": [],
+        "scout_report_present": false,
+        "last_event_text": ""
+      },
+      "actions": {
+        "watch": "bin/fm-peek.sh fm-hs3312234-b",
+        "steer": "bin/fm-send.sh fm-hs3312234-b '<instruction>'",
+        "return_channel_note": null
+      },
+      "backlog": {
+        "pr_url": null,
+        "current_role": "worker",
+        "links": [],
+        "hold_bucket": null,
+        "report_path": null,
+        "id": "hs3312234-b",
+        "hold_age_days": 0,
+        "blocked_by": null,
+        "hold_kind": null,
+        "requires_child_metadata": true,
+        "captain_actionable": false,
+        "title": "Live admission fixture b",
+        "since": "2026-10-29",
+        "body_lines": [],
+        "raw": "- [ ] hs3312234-b - Live admission fixture b (repo: tiny) (kind: ship) (since 2026-10-29)",
+        "body_excerpt": null,
+        "state": "in_flight",
+        "done": null,
+        "structured": true,
+        "local_note": null,
+        "repo": "tiny",
+        "merged": null,
+        "hold_until": null,
+        "reported": null,
+        "order": 1,
+        "hold_reason": null,
+        "blocked_reason": null,
+        "hold_set": null,
+        "completion": {
+          "date": null,
+          "verb": null
+        },
+        "unresolved_blocker_ids": [],
+        "priority": null,
+        "kind": "ship",
+        "checked": false,
+        "blocked_by_ids": []
+      }
+    }
+  ],
+  "main_inventory": {
+    "valid": true,
+    "reason": null,
+    "orphan_in_flight": [],
+    "unstructured_current_count": 0
+  },
+  "contributions": {
+    "known": 0,
+    "checked": 0,
+    "counts": {
+      "captain": 0,
+      "fleet": 0,
+      "maintainer": 0,
+      "nobody": 0
+    },
+    "unmeasured": 0,
+    "complete": true,
+    "proven_clear": true,
+    "stale_verdicts": 0,
+    "missing_verdicts": 0,
+    "unreadable_records": 0,
+    "valid_until": 900,
+    "captain": [],
+    "captain_omitted": 0
+  },
+  "scout_reports": [],
+  "secondmate_current": {
+    "registry": {
+      "present": false,
+      "available": true,
+      "complete": true,
+      "reason": null,
+      "provenance": "registered-table",
+      "path": "~/firstmate/data/heavy-slots/live-1793312234/data/secondmates.md",
+      "freshness": {
+        "status": "fresh",
+        "observed_at": "2026-10-29T22:24:30Z"
+      },
+      "records": [],
+      "input_truncated": false,
+      "records_truncated": false,
+      "reasons": [],
+      "lines_in_window": 0,
+      "records_in_window": 0
+    },
+    "records": [],
+    "total_registered": 0,
+    "total": 0,
+    "shown": 0,
+    "truncated": 0
+  },
+  "secondmate_landed": {
+    "records": [],
+    "truncated": [],
+    "unreadable": [],
+    "partial": []
+  },
+  "secondmate_guidance": {
+    "note": "For kind=secondmate, bearings selects validated structured state from that registered home; parent events and bounded terminal evidence are fallback-only supplements and never current-state authority."
+  }
+}
+ 
+live-ordinary-c-grant-not-transferable exit=75  deferred: project tiny admits 1 worker(s) at once on this machine (~/firstmate/data/heavy-slots/live-1793312234/config/project-capacity) plus 1 ad hoc and 2 already hold a place (hs3312234-a, hs3312234-b (ad hoc)); task hs3312234-c was not launched and its backlog item stays queued - the worker-park tick replays a recorded launch once one of them records its ready PR or is cleaned up
+
+live-exit-b exit=0 stopped hs3312234-b harness=codex backend=tmux endpoint=live:fm-hs3312234-b worktree=~/firstmate/data/heavy-slots/live-1793312234/pool/.treehouse/tiny-354191/2/tiny
+ 
+live-teardown-b exit=0 A new version of treehouse is available: v3.1.3 → v3.1.7
+Run "treehouse update" to update
+
+🌳 Worktree returned to pool.
+teardown hs3312234-b complete (window live:fm-hs3312234-b, worktree ~/firstmate/data/heavy-slots/live-1793312234/pool/.treehouse/tiny-354191/2/tiny)
+Backlog: hs3312234-b is closed in ~/firstmate/data/heavy-slots/live-1793312234/data/backlog.md. Run bin/fm-tasks-axi.sh ready for dependency-cleared candidates, check date gates, and dispatch only work whose blockers are gone and date is due.
+ ●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  2 task(s) in flight, but no watcher has a fresh beacon (last beat: 455s ago, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+teardown: reaping leaked worktree process(es) for hs3312234-b: 4040161
+teardown: force-killing leaked worktree process(es) for hs3312234-b: 4040161
+
+live-snapshot-a-after-cleanup exit=0 {
+  "schema": "fm-fleet-snapshot.v1",
+  "capacity": {
+    "mode": "off",
+    "configured": 1,
+    "effective": 1,
+    "hold": "",
+    "reason": "static capacity; adaptation off",
+    "occupancy": 1,
+    "occupancy_error": "",
+    "holders": "hs3312234-a",
+    "ad_hoc": 0,
+    "queued_resumes": 0
+  },
+  "generated": "2026-10-29T22:25:10Z",
+  "fm_home": "~/firstmate/data/heavy-slots/live-1793312234",
+  "roots": {
+    "fm_root": "~/.treehouse/firstmate-b5d79f/2/.fm-test-scratch/compare-1793311611/branch",
+    "state": "~/firstmate/data/heavy-slots/live-1793312234/state",
+    "data": "~/firstmate/data/heavy-slots/live-1793312234/data",
+    "config": "~/firstmate/data/heavy-slots/live-1793312234/config",
+    "projects": "~/firstmate/data/heavy-slots/live-1793312234/projects"
+  },
+  "backlog": {
+    "present": true,
+    "records": [
+      {
+        "current_role": "worker",
+        "raw": "- [ ] hs3312234-a - Live admission fixture A (repo: tiny) (kind: ship) (since 2026-10-29)",
+        "state": "in_flight",
+        "unresolved_blocker_ids": [],
+        "hold_reason": null,
+        "checked": false,
+        "report_path": null,
+        "hold_age_days": 0,
+        "merged": null,
+        "order": 1,
+        "repo": "tiny",
+        "title": "Live admission fixture A",
+        "structured": true,
+        "hold_bucket": null,
+        "id": "hs3312234-a",
+        "blocked_by_ids": [],
+        "requires_child_metadata": true,
+        "hold_set": null,
+        "priority": null,
+        "since": "2026-10-29",
+        "blocked_by": null,
+        "hold_until": null,
+        "done": null,
+        "completion": {
+          "verb": null,
+          "date": null
+        },
+        "captain_actionable": false,
+        "kind": "ship",
+        "blocked_reason": null,
+        "hold_kind": null,
+        "body_excerpt": null,
+        "pr_url": null,
+        "links": [],
+        "body_lines": [],
+        "reported": null,
+        "local_note": null
+      },
+      {
+        "raw": "- [ ] hs3312234-c - Live admission fixture c (repo: tiny) (kind: ship) (since 2026-10-29)",
+        "current_role": "queued",
+        "hold_reason": null,
+        "unresolved_blocker_ids": [],
+        "state": "queued",
+        "hold_age_days": 0,
+        "report_path": null,
+        "checked": false,
+        "title": "Live admission fixture c",
+        "repo": "tiny",
+        "merged": null,
+        "order": 2,
+        "structured": true,
+        "hold_bucket": null,
+        "blocked_by_ids": [],
+        "id": "hs3312234-c",
+        "requires_child_metadata": false,
+        "blocked_by": null,
+        "since": "2026-10-29",
+        "hold_set": null,
+        "priority": null,
+        "hold_until": null,
+        "done": null,
+        "completion": {
+          "date": null,
+          "verb": null
+        },
+        "kind": "ship",
+        "captain_actionable": false,
+        "blocked_reason": null,
+        "body_excerpt": null,
+        "hold_kind": null,
+        "pr_url": null,
+        "local_note": null,
+        "reported": null,
+        "body_lines": [],
+        "links": []
+      },
+      {
+        "hold_age_days": 0,
+        "report_path": null,
+        "checked": false,
+        "title": "Live admission fixture r",
+        "repo": "tiny",
+        "order": 3,
+        "merged": null,
+        "raw": "- [ ] hs3312234-r - Live admission fixture r (repo: tiny) (kind: ship) (since 2026-10-29)",
+        "current_role": "queued",
+        "unresolved_blocker_ids": [],
+        "hold_reason": null,
+        "state": "queued",
+        "requires_child_metadata": false,
+        "blocked_by": null,
+        "since": "2026-10-29",
+        "priority": null,
+        "hold_set": null,
+        "hold_bucket": null,
+        "structured": true,
+        "blocked_by_ids": [],
+        "id": "hs3312234-r",
+        "kind": "ship",
+        "captain_actionable": false,
+        "blocked_reason": null,
+        "done": null,
+        "hold_until": null,
+        "completion": {
+          "date": null,
+          "verb": null
+        },
+        "local_note": null,
+        "reported": null,
+        "body_lines": [],
+        "links": [],
+        "body_excerpt": null,
+        "hold_kind": null,
+        "pr_url": null
+      },
+      {
+        "hold_bucket": null,
+        "structured": true,
+        "id": "hs3312234-b",
+        "blocked_by_ids": [],
+        "requires_child_metadata": false,
+        "blocked_by": null,
+        "hold_set": null,
+        "priority": null,
+        "since": null,
+        "raw": "- [x] hs3312234-b - Live admission fixture b (repo: tiny) (kind: ship) (done 2026-10-29)",
+        "current_role": "done",
+        "state": "done",
+        "unresolved_blocker_ids": [],
+        "hold_reason": null,
+        "report_path": null,
+        "hold_age_days": null,
+        "checked": true,
+        "title": "Live admission fixture b",
+        "merged": null,
+        "order": 4,
+        "repo": "tiny",
+        "body_excerpt": "local main",
+        "hold_kind": null,
+        "pr_url": null,
+        "reported": null,
+        "local_note": "local main",
+        "links": [],
+        "body_lines": [
+          "local main"
+        ],
+        "done": "2026-10-29",
+        "hold_until": null,
+        "completion": {
+          "date": "2026-10-29",
+          "verb": "done"
+        },
+        "kind": "ship",
+        "captain_actionable": false,
+        "blocked_reason": null
+      }
+    ],
+    "path": "~/firstmate/data/heavy-slots/live-1793312234/data/backlog.md"
+  },
+  "tasks": [
+    {
+      "id": "hs3312234-a",
+      "kind": "ship",
+      "harness": "codex",
+      "mode": "local-only",
+      "yolo": "off",
+      "ad_hoc_slot": false,
+      "ad_hoc_fleet_slot": false,
+      "ad_hoc_project_slot": false,
+      "branch": "chore/no-ticket-hs3312234-a",
+      "project": "~/firstmate/data/heavy-slots/live-1793312234/projects/tiny",
+      "spawn_gen": "s1793312304.3910760.23782",
+      "backend": "tmux",
+      "remote": null,
+      "paths": {
+        "meta": {
+          "path": "~/firstmate/data/heavy-slots/live-1793312234/state/hs3312234-a.meta",
+          "present": true
+        },
+        "status_log": {
+          "path": "~/firstmate/data/heavy-slots/live-1793312234/state/hs3312234-a.status",
+          "present": false,
+          "kind": "event_history",
+          "last_event": {
+            "state": "",
+            "note": "",
+            "raw": "",
+            "age_seconds": null
+          }
+        },
+        "worktree": {
+          "path": "~/firstmate/data/heavy-slots/live-1793312234/pool/.treehouse/tiny-354191/1/tiny",
+          "present": true
+        },
+        "home": {
+          "path": null,
+          "present": false
+        },
+        "report": {
+          "path": "~/firstmate/data/heavy-slots/live-1793312234/data/hs3312234-a/report.md",
+          "present": false
+        }
+      },
+      "secondmate_projects": [],
+      "current_state": {
+        "state": "unknown",
+        "source": "pane",
+        "detail": "harness state unavailable (unknown codex-unverified)",
+        "raw": "state: unknown · source: pane · harness state unavailable (unknown codex-unverified)",
+        "observed_at": "2026-10-29T22:25:10Z",
+        "freshness": "fresh"
+      },
+      "endpoint": {
+        "target": "live:fm-hs3312234-a",
+        "exists": true,
+        "agent_alive": "not_checked",
+        "status": "unknown",
+        "observed_at": "2026-10-29T22:25:10Z",
+        "freshness": "fresh"
+      },
+      "pr": {
+        "url": null,
+        "source": "absent",
+        "head": null
+      },
+      "hints": {
+        "pending_decision": false,
+        "blocked_event": false,
+        "open_decisions": [],
+        "scout_report_present": false,
+        "last_event_text": ""
+      },
+      "actions": {
+        "watch": "bin/fm-peek.sh fm-hs3312234-a",
+        "steer": "bin/fm-send.sh fm-hs3312234-a '<instruction>'",
+        "return_channel_note": null
+      },
+      "backlog": {
+        "current_role": "worker",
+        "raw": "- [ ] hs3312234-a - Live admission fixture A (repo: tiny) (kind: ship) (since 2026-10-29)",
+        "state": "in_flight",
+        "unresolved_blocker_ids": [],
+        "hold_reason": null,
+        "checked": false,
+        "report_path": null,
+        "hold_age_days": 0,
+        "merged": null,
+        "order": 1,
+        "repo": "tiny",
+        "title": "Live admission fixture A",
+        "structured": true,
+        "hold_bucket": null,
+        "id": "hs3312234-a",
+        "blocked_by_ids": [],
+        "requires_child_metadata": true,
+        "hold_set": null,
+        "priority": null,
+        "since": "2026-10-29",
+        "blocked_by": null,
+        "hold_until": null,
+        "done": null,
+        "completion": {
+          "verb": null,
+          "date": null
+        },
+        "captain_actionable": false,
+        "kind": "ship",
+        "blocked_reason": null,
+        "hold_kind": null,
+        "body_excerpt": null,
+        "pr_url": null,
+        "links": [],
+        "body_lines": [],
+        "reported": null,
+        "local_note": null
+      }
+    }
+  ],
+  "main_inventory": {
+    "valid": true,
+    "reason": null,
+    "orphan_in_flight": [],
+    "unstructured_current_count": 0
+  },
+  "contributions": {
+    "known": 0,
+    "checked": 0,
+    "counts": {
+      "captain": 0,
+      "fleet": 0,
+      "maintainer": 0,
+      "nobody": 0
+    },
+    "unmeasured": 0,
+    "complete": true,
+    "proven_clear": true,
+    "stale_verdicts": 0,
+    "missing_verdicts": 0,
+    "unreadable_records": 0,
+    "valid_until": 900,
+    "captain": [],
+    "captain_omitted": 0
+  },
+  "scout_reports": [],
+  "secondmate_current": {
+    "registry": {
+      "present": false,
+      "available": true,
+      "complete": true,
+      "reason": null,
+      "provenance": "registered-table",
+      "path": "~/firstmate/data/heavy-slots/live-1793312234/data/secondmates.md",
+      "freshness": {
+        "status": "fresh",
+        "observed_at": "2026-10-29T22:25:10Z"
+      },
+      "records": [],
+      "input_truncated": false,
+      "records_truncated": false,
+      "reasons": [],
+      "lines_in_window": 0,
+      "records_in_window": 0
+    },
+    "records": [],
+    "total_registered": 0,
+    "total": 0,
+    "shown": 0,
+    "truncated": 0
+  },
+  "secondmate_landed": {
+    "records": [],
+    "truncated": [],
+    "unreadable": [],
+    "partial": []
+  },
+  "secondmate_guidance": {
+    "note": "For kind=secondmate, bearings selects validated structured state from that registered home; parent events and bounded terminal evidence are fallback-only supplements and never current-state authority."
+  }
+}
+ 
+LIVE admission, non-transfer, cleanup PASSED

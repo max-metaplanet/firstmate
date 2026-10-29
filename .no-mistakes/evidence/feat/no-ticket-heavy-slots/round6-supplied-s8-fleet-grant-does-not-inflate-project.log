@@ -1,0 +1,1 @@
+deferred: project tiny admits 2 worker(s) at once on this machine (~/firstmate/data/heavy-slots/live-1793312234/config/project-capacity) and 2 already hold a place (hs3312234-s8-f, hs3312234-s8-u); task hs3312234-s8-p was not launched and its backlog item stays queued - the worker-park tick replays a recorded launch once one of them records its ready PR or is cleaned up

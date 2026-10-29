@@ -1,0 +1,3 @@
+not-autohandled: remote-active-source (left for the handler; still unacknowledged)
+retired: remote-active-source (adapter classified the captured result terminal)
+captured: ./remote-active-source.1.result

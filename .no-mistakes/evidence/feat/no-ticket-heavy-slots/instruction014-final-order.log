@@ -1,0 +1,4 @@
+ok - register-extension and reconcile of an unhandled extension result take their locks in one order
+ok - terminal capture preserves authority across inherited descriptor layouts
+
+all extension-binding tests passed

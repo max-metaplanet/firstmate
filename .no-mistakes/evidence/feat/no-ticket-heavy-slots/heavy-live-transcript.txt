@@ -1,0 +1,30 @@
+vitest: waiting for a heavy slot (1 on this machine, held by pid 3954300)
+vitest: holder SIGKILL released slot; real command exited 0
+
+ RUN  v5.0.5 ~/.no-mistakes/worktrees/c0c4fcacb05a/01M64N0N0G8XM8MK440VZDFA4P/.test-live-heavy
+
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  19:48:48
+   Duration  71ms (transform 51%, import 31%, worker 10%, tests 8%)
+
+
+playwright: waiting for a heavy slot (1 on this machine, held by pid 3954706)
+playwright: holder SIGKILL released slot; real command exited 0
+
+Running 1 test using 1 worker
+
+  ✓  1 browser.spec.cjs:1:50 › real runner without browser fixture (3ms)
+
+  1 passed (339ms)
+
+tsc: waiting for a heavy slot (1 on this machine, held by pid 3955749)
+tsc --version while occupied: Version 7.0.2
+tsc: holder SIGKILL released slot; real command exited 0
+
+Published size=2: two holders running; third: waiting for a heavy slot (2 on this machine, held by pid 3956047, 3956048)
+third command admitted
+recursive command used one slot
+Invalid zero pool refused (exit 75): build lock: FM_HEAVY_SLOTS must be a positive integer of at most six digits, not '0'
+All owned children exited; real package entrypoint and counted-pool scenarios passed.

@@ -1,0 +1,10 @@
+ok - concurrent builds wait visibly, bypass works, SIGKILL releases the slot
+ok - preload locks .bin and direct Next builds, passes others through, keeps exit status and recursion
+ok - daemon drop-in environment serializes configured Next builds
+ok - daemon drop-in refuses a directory without a daemon unit
+ok - env file appends the installed preload once and Node survives checkout removal
+ok - invalid lock configuration fails closed
+ok - a pool of N admits N heavy commands, queues the next, and SIGKILL frees a slot
+ok - the pool size comes from the installed record and refuses a malformed value
+ok - waiting commands observe growth and shrinkage, draining holders and retired-slot recursion
+ok - the preload locks Vitest, Playwright and whole-project tsc and passes the rest through

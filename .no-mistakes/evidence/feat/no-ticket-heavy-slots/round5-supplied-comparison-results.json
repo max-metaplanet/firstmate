@@ -1,0 +1,30 @@
+[
+  {
+    "test": "fm-remote-job-orphan-reap",
+    "ref": "branch",
+    "sha": "b3809439d09733d9f9534db9c451c7e45bbfb6d4",
+    "exit": 0,
+    "log": "~/firstmate/data/heavy-slots/compare-branch-fm-remote-job-orphan-reap.log"
+  },
+  {
+    "test": "fm-remote-job-orphan-reap",
+    "ref": "main",
+    "sha": "e2f8f938344ee5ba6801772abd62f6b040dec2fd",
+    "exit": 0,
+    "log": "~/firstmate/data/heavy-slots/compare-main-fm-remote-job-orphan-reap.log"
+  },
+  {
+    "test": "fm-extension-binding",
+    "ref": "branch",
+    "sha": "b3809439d09733d9f9534db9c451c7e45bbfb6d4",
+    "exit": 1,
+    "log": "~/firstmate/data/heavy-slots/compare-branch-fm-extension-binding.log"
+  },
+  {
+    "test": "fm-extension-binding",
+    "ref": "main",
+    "sha": "e2f8f938344ee5ba6801772abd62f6b040dec2fd",
+    "exit": 1,
+    "log": "~/firstmate/data/heavy-slots/compare-main-fm-extension-binding.log"
+  }
+]

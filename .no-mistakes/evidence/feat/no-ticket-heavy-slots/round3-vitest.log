@@ -1,0 +1,16 @@
+Command: node_modules/.bin/vitest run simple.test.js
+Lightweight --version while slot held: vitest/3.2.4 linux-arm64 node-v24.22.1
+
+waiting for a heavy slot (1 on this machine, held by pid 2131816)
+Observed: real suite queued behind the only slot. Releasing holder.
+
+ RUN  v3.2.4 ~/.no-mistakes/worktrees/c0c4fcacb05a/01M64N0N0G8XM8MK440VZDFA4P/.test-phase/packages
+
+ ✓ simple.test.js (1 test) 5ms
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  17:21:03
+   Duration  1.43s (transform 65ms, setup 0ms, collect 31ms, tests 5ms, environment 0ms, prepare 229ms)
+
+Final suite exit: 0

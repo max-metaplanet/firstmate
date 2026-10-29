@@ -1,0 +1,107 @@
+$ tasks-axi add replay-task Replay ad hoc grant --kind ship --file ~/.no-mistakes/worktrees/c0c4fcacb05a/01M64N0N0G8XM8MK440VZDFA4P/.l/data/backlog.md
+exit=0
+ok: added replay-task (ship) -> Queued
+task:
+  id: replay-task
+  title: Replay ad hoc grant
+  state: queued
+  blocked: no
+  blocked_by: none
+  held: no
+  hold_reason: "-"
+  hold_kind: "-"
+  hold_until: "-"
+  kind: ship
+  repo: "-"
+  priority: "-"
+  created: 2026-10-29
+  closed: "-"
+  deps: none
+  links: none
+  body: ""
+help[2]:
+  - Run `tasks-axi start replay-task --file=~/.no-mistakes/worktrees/c0c4fcacb05a/01M64N0N0G8XM8MK440VZDFA4P/.l/data/backlog.md` to move it to in flight
+  - Run `tasks-axi block replay-task --by <other> --file=~/.no-mistakes/worktrees/c0c4fcacb05a/01M64N0N0G8XM8MK440VZDFA4P/.l/data/backlog.md` to record a dependency
+
+$ ~/.no-mistakes/worktrees/c0c4fcacb05a/01M64N0N0G8XM8MK440VZDFA4P/bin/fm-spawn.sh replay-task ~/.no-mistakes/worktrees/c0c4fcacb05a/01M64N0N0G8XM8MK440VZDFA4P/.l/projects/sample --mode local-only --ticket no-ticket --commit-type chore --yolo off --ad-hoc-slot
+exit=75
+fm-gate-refuse: gate agent lifecycle permitted only against lab home ~/.no-mistakes/worktrees/c0c4fcacb05a/01M64N0N0G8XM8MK440VZDFA4P/.l
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+deferred: project sample admits 1 worker(s) at once on this machine (~/.no-mistakes/worktrees/c0c4fcacb05a/01M64N0N0G8XM8MK440VZDFA4P/.l/config/project-capacity) plus this task's own ad hoc slot and 2 already hold a place (project-a, project-b); task replay-task was not launched and its backlog item stays queued - the worker-park tick replays a recorded launch once one of them records its ready PR or is cleaned up
+
+Persisted deferred request:
+{
+  "project": "~/.no-mistakes/worktrees/c0c4fcacb05a/01M64N0N0G8XM8MK440VZDFA4P/.l/projects/sample",
+  "mode": "local-only",
+  "yolo": "off",
+  "ticket": "no-ticket",
+  "commit_type": "chore",
+  "branch_prefix": "fm/",
+  "base_branch": "",
+  "harness": "codex",
+  "model": "",
+  "effort": "",
+  "backend": "tmux",
+  "upstream_consent": "",
+  "ticket_scope": "partial",
+  "ignore_seat_hold": "0",
+  "herdr_resume_lock_wait": "0",
+  "ad_hoc_slot": "1",
+  "version": 1,
+  "task": "replay-task",
+  "queued_at": 1793317982.9248662,
+  "brief_sha256": "900090f91ffe79000a722ffa3eafebfc90efa2c93a73c3cf08bec35044dc9e35"
+}
+
+$ tmux -L fm-lab kill-window -t primary:fm-project-b
+exit=0
+
+$ python3 ~/.no-mistakes/worktrees/c0c4fcacb05a/01M64N0N0G8XM8MK440VZDFA4P/bin/fm-worker-admit.py tick
+exit=0
+
+Admission event log:
+{"at": 1793317937.8893397, "task": "task-d", "result": "deferred", "reason": "capacity; recorded resolved launch"}
+{"at": 1793317945.7595918, "task": "task-e", "result": "deferred", "reason": "capacity; recorded resolved launch"}
+{"at": 1793317959.5091274, "task": "project-c", "result": "deferred", "reason": "capacity; recorded resolved launch"}
+{"at": 1793317969.2947333, "task": "project-d", "result": "deferred", "reason": "capacity; recorded resolved launch"}
+{"at": 1793317982.9268749, "task": "replay-task", "result": "deferred", "reason": "capacity; recorded resolved launch"}
+{"at": 1793317994.88912, "task": "project-d", "result": "skipped", "reason": "backlog item is no longer a queued ship; record discarded"}
+{"at": 1793317994.8896117, "task": "task-e", "result": "skipped", "reason": "backlog item is no longer a queued ship; record discarded"}
+{"at": 1793317995.0486445, "task": "replay-task", "result": "refused", "reason": "error: no-mistakes gate agent must not drive the fleet (NO_MISTAKES_GATE set)"}
+
+
+Retried via native lab session (normal non-gate environment).
+Tick exit: 0
+
+
+{"at": 1793317937.8893397, "task": "task-d", "result": "deferred", "reason": "capacity; recorded resolved launch"}
+{"at": 1793317945.7595918, "task": "task-e", "result": "deferred", "reason": "capacity; recorded resolved launch"}
+{"at": 1793317959.5091274, "task": "project-c", "result": "deferred", "reason": "capacity; recorded resolved launch"}
+{"at": 1793317969.2947333, "task": "project-d", "result": "deferred", "reason": "capacity; recorded resolved launch"}
+{"at": 1793317982.9268749, "task": "replay-task", "result": "deferred", "reason": "capacity; recorded resolved launch"}
+{"at": 1793317994.88912, "task": "project-d", "result": "skipped", "reason": "backlog item is no longer a queued ship; record discarded"}
+{"at": 1793317994.8896117, "task": "task-e", "result": "skipped", "reason": "backlog item is no longer a queued ship; record discarded"}
+{"at": 1793317995.0486445, "task": "replay-task", "result": "refused", "reason": "error: no-mistakes gate agent must not drive the fleet (NO_MISTAKES_GATE set)"}
+{"at": 1793318039.0909595, "task": "replay-task", "result": "admitted", "reason": "WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.\nnotice: replay-task ships mode=local-only while the standing posture for sample is no-mistakes - less rigor than the captain's standing posture; proceed only on a current explicit captain instruction or an intake judgment you can state\nA new version of treehouse is available: v3.1.3 \u2192 v3.1.7\nRun \"treehouse update\" to update\n\nA new version of treehouse is available: v3.1.3 \u2192 v3.1.7\nRun \"treehouse update\" to update\n\n\ud83c\udf33 Leased worktree 8 at ~/.no-mistakes/worktrees/c0c4fcacb05a/01M64N0N0G8XM8MK440VZDFA4P/.l/pool/.treehouse/sample-1e61cc/8/sample. Run 'treehouse return ~/.no-mistakes/worktrees/c0c4fcacb05a/01M64N0N0G8XM8MK440VZDFA4P/.l/pool/.treehouse/sample-1e61cc/8/sample' to release it.\nspawned replay-task harness=codex kind=ship mode=local-only yolo=off window=primary:fm-replay-task worktree=~/.no-mistakes/worktrees/c0c4fcacb05a/01M64N0N0G8XM8MK440VZDFA4P/.l/pool/.treehouse/sample-1e61cc/8/sample"}
+
+Published replay metadata:
+window=primary:fm-replay-task
+endpoint_task_id=replay-task
+worktree=~/.no-mistakes/worktrees/c0c4fcacb05a/01M64N0N0G8XM8MK440VZDFA4P/.l/pool/.treehouse/sample-1e61cc/8/sample
+project=~/.no-mistakes/worktrees/c0c4fcacb05a/01M64N0N0G8XM8MK440VZDFA4P/.l/projects/sample
+harness=codex
+kind=ship
+mode=local-only
+yolo=off
+branch=chore/no-ticket-replay-task
+tasktmp=/tmp/fm-replay-task
+ticket=no-ticket
+commit_type=chore
+dispatched_at=1793318037
+ad_hoc_project_slot=1
+model=default
+effort=default
+codex_seat=~/.codex-seats/codex-max
+spawn_gen=s1793318037.13710.30073
+
+Deferred record consumed; project-only grant preserved.

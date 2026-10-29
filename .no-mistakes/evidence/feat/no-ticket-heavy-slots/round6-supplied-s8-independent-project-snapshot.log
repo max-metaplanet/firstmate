@@ -1,0 +1,804 @@
+{
+  "schema": "fm-fleet-snapshot.v1",
+  "capacity": {
+    "mode": "off",
+    "configured": 3,
+    "effective": 3,
+    "hold": "",
+    "reason": "static capacity; adaptation off",
+    "occupancy": 3,
+    "occupancy_error": "",
+    "holders": "hs3312234-s8-e, hs3312234-s8-p, hs3312234-s8-u",
+    "ad_hoc": 0,
+    "queued_resumes": 0
+  },
+  "generated": "2026-10-29T23:06:53Z",
+  "fm_home": "~/firstmate/data/heavy-slots/live-1793312234",
+  "roots": {
+    "fm_root": "~/.treehouse/firstmate-b5d79f/2/.fm-test-scratch/compare-1793311611/branch",
+    "state": "~/firstmate/data/heavy-slots/live-1793312234/state",
+    "data": "~/firstmate/data/heavy-slots/live-1793312234/data",
+    "config": "~/firstmate/data/heavy-slots/live-1793312234/config",
+    "projects": "~/firstmate/data/heavy-slots/live-1793312234/projects"
+  },
+  "backlog": {
+    "path": "~/firstmate/data/heavy-slots/live-1793312234/data/backlog.md",
+    "present": true,
+    "records": [
+      {
+        "body_excerpt": null,
+        "captain_actionable": false,
+        "links": [],
+        "state": "in_flight",
+        "order": 1,
+        "checked": false,
+        "raw": "- [ ] hs3312234-s8-e - Live scenario8 e (repo: tiny2) (kind: ship) (since 2026-10-29)",
+        "local_note": null,
+        "hold_reason": null,
+        "title": "Live scenario8 e",
+        "merged": null,
+        "since": "2026-10-29",
+        "current_role": "worker",
+        "done": null,
+        "blocked_by": null,
+        "hold_bucket": null,
+        "blocked_reason": null,
+        "priority": null,
+        "pr_url": null,
+        "hold_set": null,
+        "repo": "tiny2",
+        "reported": null,
+        "requires_child_metadata": true,
+        "kind": "ship",
+        "blocked_by_ids": [],
+        "body_lines": [],
+        "id": "hs3312234-s8-e",
+        "structured": true,
+        "hold_kind": null,
+        "unresolved_blocker_ids": [],
+        "report_path": null,
+        "hold_until": null,
+        "completion": {
+          "date": null,
+          "verb": null
+        },
+        "hold_age_days": 0
+      },
+      {
+        "id": "hs3312234-s8-p",
+        "body_lines": [],
+        "structured": true,
+        "kind": "ship",
+        "blocked_by_ids": [],
+        "repo": "tiny",
+        "reported": null,
+        "requires_child_metadata": true,
+        "hold_age_days": 0,
+        "completion": {
+          "verb": null,
+          "date": null
+        },
+        "hold_until": null,
+        "report_path": null,
+        "unresolved_blocker_ids": [],
+        "hold_kind": null,
+        "local_note": null,
+        "raw": "- [ ] hs3312234-s8-p - Live scenario8 p (repo: tiny) (kind: ship) (since 2026-10-29)",
+        "hold_reason": null,
+        "state": "in_flight",
+        "checked": false,
+        "order": 2,
+        "body_excerpt": null,
+        "captain_actionable": false,
+        "links": [],
+        "hold_set": null,
+        "priority": null,
+        "blocked_reason": null,
+        "pr_url": null,
+        "blocked_by": null,
+        "done": null,
+        "hold_bucket": null,
+        "merged": null,
+        "title": "Live scenario8 p",
+        "current_role": "worker",
+        "since": "2026-10-29"
+      },
+      {
+        "hold_set": null,
+        "pr_url": null,
+        "priority": null,
+        "blocked_reason": null,
+        "hold_bucket": null,
+        "done": null,
+        "blocked_by": null,
+        "since": "2026-10-29",
+        "current_role": "worker",
+        "title": "Live scenario8 u",
+        "merged": null,
+        "hold_reason": null,
+        "raw": "- [ ] hs3312234-s8-u - Live scenario8 u (repo: tiny) (kind: ship) (since 2026-10-29)",
+        "local_note": null,
+        "order": 3,
+        "checked": false,
+        "state": "in_flight",
+        "links": [],
+        "captain_actionable": false,
+        "body_excerpt": null,
+        "completion": {
+          "date": null,
+          "verb": null
+        },
+        "hold_until": null,
+        "hold_age_days": 0,
+        "report_path": null,
+        "unresolved_blocker_ids": [],
+        "hold_kind": null,
+        "structured": true,
+        "id": "hs3312234-s8-u",
+        "body_lines": [],
+        "kind": "ship",
+        "blocked_by_ids": [],
+        "requires_child_metadata": true,
+        "repo": "tiny",
+        "reported": null
+      },
+      {
+        "title": "Live scenario8 l",
+        "merged": null,
+        "since": "2026-10-29",
+        "current_role": "queued",
+        "done": null,
+        "blocked_by": null,
+        "hold_bucket": null,
+        "blocked_reason": null,
+        "priority": null,
+        "pr_url": null,
+        "hold_set": null,
+        "links": [],
+        "captain_actionable": false,
+        "body_excerpt": null,
+        "state": "queued",
+        "order": 4,
+        "checked": false,
+        "raw": "- [ ] hs3312234-s8-l - Live scenario8 l (repo: tiny2) (kind: ship) (since 2026-10-29)",
+        "local_note": null,
+        "hold_reason": null,
+        "unresolved_blocker_ids": [],
+        "hold_kind": null,
+        "report_path": null,
+        "hold_until": null,
+        "completion": {
+          "date": null,
+          "verb": null
+        },
+        "hold_age_days": 0,
+        "repo": "tiny2",
+        "reported": null,
+        "requires_child_metadata": false,
+        "kind": "ship",
+        "blocked_by_ids": [],
+        "id": "hs3312234-s8-l",
+        "body_lines": [],
+        "structured": true
+      },
+      {
+        "kind": "ship",
+        "blocked_by_ids": [],
+        "reported": null,
+        "repo": "tiny",
+        "requires_child_metadata": false,
+        "body_lines": [
+          "local main"
+        ],
+        "id": "hs3312234-s8-f",
+        "structured": true,
+        "report_path": null,
+        "hold_kind": null,
+        "unresolved_blocker_ids": [],
+        "hold_until": null,
+        "completion": {
+          "date": "2026-10-29",
+          "verb": "done"
+        },
+        "hold_age_days": null,
+        "state": "done",
+        "order": 5,
+        "checked": true,
+        "links": [],
+        "captain_actionable": false,
+        "body_excerpt": "local main",
+        "raw": "- [x] hs3312234-s8-f - Live scenario8 f (repo: tiny) (kind: ship) (done 2026-10-29)",
+        "local_note": "local main",
+        "hold_reason": null,
+        "done": "2026-10-29",
+        "blocked_by": null,
+        "hold_bucket": null,
+        "title": "Live scenario8 f",
+        "merged": null,
+        "since": null,
+        "current_role": "done",
+        "hold_set": null,
+        "priority": null,
+        "blocked_reason": null,
+        "pr_url": null
+      },
+      {
+        "title": "Live admission fixture r",
+        "merged": null,
+        "since": null,
+        "current_role": "done",
+        "done": "2026-10-29",
+        "blocked_by": null,
+        "hold_bucket": null,
+        "priority": null,
+        "blocked_reason": null,
+        "pr_url": null,
+        "hold_set": null,
+        "captain_actionable": false,
+        "links": [],
+        "body_excerpt": "local main",
+        "state": "done",
+        "order": 6,
+        "checked": true,
+        "raw": "- [x] hs3312234-r - Live admission fixture r (repo: tiny) (kind: ship) (done 2026-10-29)",
+        "local_note": "local main",
+        "hold_reason": null,
+        "unresolved_blocker_ids": [],
+        "hold_kind": null,
+        "report_path": null,
+        "hold_until": null,
+        "completion": {
+          "verb": "done",
+          "date": "2026-10-29"
+        },
+        "hold_age_days": null,
+        "reported": null,
+        "repo": "tiny",
+        "requires_child_metadata": false,
+        "blocked_by_ids": [],
+        "kind": "ship",
+        "id": "hs3312234-r",
+        "body_lines": [
+          "local main"
+        ],
+        "structured": true
+      },
+      {
+        "hold_bucket": null,
+        "done": "2026-10-29",
+        "blocked_by": null,
+        "since": null,
+        "current_role": "done",
+        "title": "Live admission fixture A",
+        "merged": null,
+        "hold_set": null,
+        "pr_url": null,
+        "blocked_reason": null,
+        "priority": null,
+        "order": 7,
+        "checked": true,
+        "state": "done",
+        "captain_actionable": false,
+        "body_excerpt": "local main",
+        "links": [],
+        "hold_reason": null,
+        "raw": "- [x] hs3312234-a - Live admission fixture A (repo: tiny) (kind: ship) (done 2026-10-29)",
+        "local_note": "local main",
+        "report_path": null,
+        "hold_kind": null,
+        "unresolved_blocker_ids": [],
+        "completion": {
+          "date": "2026-10-29",
+          "verb": "done"
+        },
+        "hold_until": null,
+        "hold_age_days": null,
+        "blocked_by_ids": [],
+        "kind": "ship",
+        "requires_child_metadata": false,
+        "repo": "tiny",
+        "reported": null,
+        "structured": true,
+        "body_lines": [
+          "local main"
+        ],
+        "id": "hs3312234-a"
+      },
+      {
+        "checked": true,
+        "order": 8,
+        "state": "done",
+        "body_excerpt": "local main",
+        "captain_actionable": false,
+        "links": [],
+        "hold_reason": null,
+        "local_note": "local main",
+        "raw": "- [x] hs3312234-c - Live admission fixture c (repo: tiny) (kind: ship) (done 2026-10-29)",
+        "hold_bucket": null,
+        "blocked_by": null,
+        "done": "2026-10-29",
+        "current_role": "done",
+        "since": null,
+        "merged": null,
+        "title": "Live admission fixture c",
+        "hold_set": null,
+        "pr_url": null,
+        "blocked_reason": null,
+        "priority": null,
+        "blocked_by_ids": [],
+        "kind": "ship",
+        "requires_child_metadata": false,
+        "repo": "tiny",
+        "reported": null,
+        "structured": true,
+        "body_lines": [
+          "local main"
+        ],
+        "id": "hs3312234-c",
+        "report_path": null,
+        "unresolved_blocker_ids": [],
+        "hold_kind": null,
+        "hold_age_days": null,
+        "hold_until": null,
+        "completion": {
+          "verb": "done",
+          "date": "2026-10-29"
+        }
+      },
+      {
+        "hold_reason": null,
+        "raw": "- [x] hs3312234-b - Live admission fixture b (repo: tiny) (kind: ship) (done 2026-10-29)",
+        "local_note": "local main",
+        "order": 9,
+        "checked": true,
+        "state": "done",
+        "links": [],
+        "captain_actionable": false,
+        "body_excerpt": "local main",
+        "hold_set": null,
+        "pr_url": null,
+        "priority": null,
+        "blocked_reason": null,
+        "hold_bucket": null,
+        "done": "2026-10-29",
+        "blocked_by": null,
+        "since": null,
+        "current_role": "done",
+        "title": "Live admission fixture b",
+        "merged": null,
+        "structured": true,
+        "id": "hs3312234-b",
+        "body_lines": [
+          "local main"
+        ],
+        "blocked_by_ids": [],
+        "kind": "ship",
+        "requires_child_metadata": false,
+        "reported": null,
+        "repo": "tiny",
+        "hold_until": null,
+        "completion": {
+          "date": "2026-10-29",
+          "verb": "done"
+        },
+        "hold_age_days": null,
+        "report_path": null,
+        "unresolved_blocker_ids": [],
+        "hold_kind": null
+      }
+    ]
+  },
+  "tasks": [
+    {
+      "id": "hs3312234-s8-e",
+      "kind": "ship",
+      "harness": "codex",
+      "mode": "local-only",
+      "yolo": "off",
+      "ad_hoc_slot": false,
+      "ad_hoc_fleet_slot": false,
+      "ad_hoc_project_slot": false,
+      "branch": "chore/no-ticket-hs3312234-s8-e",
+      "project": "~/firstmate/data/heavy-slots/live-1793312234/projects/tiny2",
+      "spawn_gen": "s1793315172.1378270.29572",
+      "backend": "tmux",
+      "remote": null,
+      "paths": {
+        "meta": {
+          "path": "~/firstmate/data/heavy-slots/live-1793312234/state/hs3312234-s8-e.meta",
+          "present": true
+        },
+        "status_log": {
+          "path": "~/firstmate/data/heavy-slots/live-1793312234/state/hs3312234-s8-e.status",
+          "present": false,
+          "kind": "event_history",
+          "last_event": {
+            "state": "",
+            "note": "",
+            "raw": "",
+            "age_seconds": null
+          }
+        },
+        "worktree": {
+          "path": "~/firstmate/data/heavy-slots/live-1793312234/pool/.treehouse/tiny2-13e272/1/tiny2",
+          "present": true
+        },
+        "home": {
+          "path": null,
+          "present": false
+        },
+        "report": {
+          "path": "~/firstmate/data/heavy-slots/live-1793312234/data/hs3312234-s8-e/report.md",
+          "present": false
+        }
+      },
+      "secondmate_projects": [],
+      "current_state": {
+        "state": "unknown",
+        "source": "pane",
+        "detail": "harness state unavailable (unknown codex-unverified)",
+        "raw": "state: unknown · source: pane · harness state unavailable (unknown codex-unverified)",
+        "observed_at": "2026-10-29T23:06:53Z",
+        "freshness": "fresh"
+      },
+      "endpoint": {
+        "target": "live:fm-hs3312234-s8-e",
+        "exists": true,
+        "agent_alive": "not_checked",
+        "status": "unknown",
+        "observed_at": "2026-10-29T23:06:53Z",
+        "freshness": "fresh"
+      },
+      "pr": {
+        "url": null,
+        "source": "absent",
+        "head": null
+      },
+      "hints": {
+        "pending_decision": false,
+        "blocked_event": false,
+        "open_decisions": [],
+        "scout_report_present": false,
+        "last_event_text": ""
+      },
+      "actions": {
+        "watch": "bin/fm-peek.sh fm-hs3312234-s8-e",
+        "steer": "bin/fm-send.sh fm-hs3312234-s8-e '<instruction>'",
+        "return_channel_note": null
+      },
+      "backlog": {
+        "body_excerpt": null,
+        "captain_actionable": false,
+        "links": [],
+        "state": "in_flight",
+        "order": 1,
+        "checked": false,
+        "raw": "- [ ] hs3312234-s8-e - Live scenario8 e (repo: tiny2) (kind: ship) (since 2026-10-29)",
+        "local_note": null,
+        "hold_reason": null,
+        "title": "Live scenario8 e",
+        "merged": null,
+        "since": "2026-10-29",
+        "current_role": "worker",
+        "done": null,
+        "blocked_by": null,
+        "hold_bucket": null,
+        "blocked_reason": null,
+        "priority": null,
+        "pr_url": null,
+        "hold_set": null,
+        "repo": "tiny2",
+        "reported": null,
+        "requires_child_metadata": true,
+        "kind": "ship",
+        "blocked_by_ids": [],
+        "body_lines": [],
+        "id": "hs3312234-s8-e",
+        "structured": true,
+        "hold_kind": null,
+        "unresolved_blocker_ids": [],
+        "report_path": null,
+        "hold_until": null,
+        "completion": {
+          "date": null,
+          "verb": null
+        },
+        "hold_age_days": 0
+      }
+    },
+    {
+      "id": "hs3312234-s8-p",
+      "kind": "ship",
+      "harness": "codex",
+      "mode": "local-only",
+      "yolo": "off",
+      "ad_hoc_slot": true,
+      "ad_hoc_fleet_slot": false,
+      "ad_hoc_project_slot": true,
+      "branch": "chore/no-ticket-hs3312234-s8-p",
+      "project": "~/firstmate/data/heavy-slots/live-1793312234/projects/tiny",
+      "spawn_gen": "s1793315135.1361738.11395",
+      "backend": "tmux",
+      "remote": null,
+      "paths": {
+        "meta": {
+          "path": "~/firstmate/data/heavy-slots/live-1793312234/state/hs3312234-s8-p.meta",
+          "present": true
+        },
+        "status_log": {
+          "path": "~/firstmate/data/heavy-slots/live-1793312234/state/hs3312234-s8-p.status",
+          "present": false,
+          "kind": "event_history",
+          "last_event": {
+            "state": "",
+            "note": "",
+            "raw": "",
+            "age_seconds": null
+          }
+        },
+        "worktree": {
+          "path": "~/firstmate/data/heavy-slots/live-1793312234/pool/.treehouse/tiny-354191/2/tiny",
+          "present": true
+        },
+        "home": {
+          "path": null,
+          "present": false
+        },
+        "report": {
+          "path": "~/firstmate/data/heavy-slots/live-1793312234/data/hs3312234-s8-p/report.md",
+          "present": false
+        }
+      },
+      "secondmate_projects": [],
+      "current_state": {
+        "state": "unknown",
+        "source": "pane",
+        "detail": "harness state unavailable (unknown codex-unverified)",
+        "raw": "state: unknown · source: pane · harness state unavailable (unknown codex-unverified)",
+        "observed_at": "2026-10-29T23:06:53Z",
+        "freshness": "fresh"
+      },
+      "endpoint": {
+        "target": "live:fm-hs3312234-s8-p",
+        "exists": true,
+        "agent_alive": "not_checked",
+        "status": "unknown",
+        "observed_at": "2026-10-29T23:06:53Z",
+        "freshness": "fresh"
+      },
+      "pr": {
+        "url": null,
+        "source": "absent",
+        "head": null
+      },
+      "hints": {
+        "pending_decision": false,
+        "blocked_event": false,
+        "open_decisions": [],
+        "scout_report_present": false,
+        "last_event_text": ""
+      },
+      "actions": {
+        "watch": "bin/fm-peek.sh fm-hs3312234-s8-p",
+        "steer": "bin/fm-send.sh fm-hs3312234-s8-p '<instruction>'",
+        "return_channel_note": null
+      },
+      "backlog": {
+        "id": "hs3312234-s8-p",
+        "body_lines": [],
+        "structured": true,
+        "kind": "ship",
+        "blocked_by_ids": [],
+        "repo": "tiny",
+        "reported": null,
+        "requires_child_metadata": true,
+        "hold_age_days": 0,
+        "completion": {
+          "verb": null,
+          "date": null
+        },
+        "hold_until": null,
+        "report_path": null,
+        "unresolved_blocker_ids": [],
+        "hold_kind": null,
+        "local_note": null,
+        "raw": "- [ ] hs3312234-s8-p - Live scenario8 p (repo: tiny) (kind: ship) (since 2026-10-29)",
+        "hold_reason": null,
+        "state": "in_flight",
+        "checked": false,
+        "order": 2,
+        "body_excerpt": null,
+        "captain_actionable": false,
+        "links": [],
+        "hold_set": null,
+        "priority": null,
+        "blocked_reason": null,
+        "pr_url": null,
+        "blocked_by": null,
+        "done": null,
+        "hold_bucket": null,
+        "merged": null,
+        "title": "Live scenario8 p",
+        "current_role": "worker",
+        "since": "2026-10-29"
+      }
+    },
+    {
+      "id": "hs3312234-s8-u",
+      "kind": "ship",
+      "harness": "codex",
+      "mode": "local-only",
+      "yolo": "off",
+      "ad_hoc_slot": false,
+      "ad_hoc_fleet_slot": false,
+      "ad_hoc_project_slot": false,
+      "branch": "chore/no-ticket-hs3312234-s8-u",
+      "project": "~/firstmate/data/heavy-slots/live-1793312234/projects/tiny",
+      "spawn_gen": "s1793314913.1240195.26480",
+      "backend": "tmux",
+      "remote": null,
+      "paths": {
+        "meta": {
+          "path": "~/firstmate/data/heavy-slots/live-1793312234/state/hs3312234-s8-u.meta",
+          "present": true
+        },
+        "status_log": {
+          "path": "~/firstmate/data/heavy-slots/live-1793312234/state/hs3312234-s8-u.status",
+          "present": false,
+          "kind": "event_history",
+          "last_event": {
+            "state": "",
+            "note": "",
+            "raw": "",
+            "age_seconds": null
+          }
+        },
+        "worktree": {
+          "path": "~/firstmate/data/heavy-slots/live-1793312234/pool/.treehouse/tiny-354191/1/tiny",
+          "present": true
+        },
+        "home": {
+          "path": null,
+          "present": false
+        },
+        "report": {
+          "path": "~/firstmate/data/heavy-slots/live-1793312234/data/hs3312234-s8-u/report.md",
+          "present": false
+        }
+      },
+      "secondmate_projects": [],
+      "current_state": {
+        "state": "unknown",
+        "source": "pane",
+        "detail": "harness state unavailable (unknown codex-unverified)",
+        "raw": "state: unknown · source: pane · harness state unavailable (unknown codex-unverified)",
+        "observed_at": "2026-10-29T23:06:53Z",
+        "freshness": "fresh"
+      },
+      "endpoint": {
+        "target": "live:fm-hs3312234-s8-u",
+        "exists": true,
+        "agent_alive": "not_checked",
+        "status": "unknown",
+        "observed_at": "2026-10-29T23:06:53Z",
+        "freshness": "fresh"
+      },
+      "pr": {
+        "url": null,
+        "source": "absent",
+        "head": null
+      },
+      "hints": {
+        "pending_decision": false,
+        "blocked_event": false,
+        "open_decisions": [],
+        "scout_report_present": false,
+        "last_event_text": ""
+      },
+      "actions": {
+        "watch": "bin/fm-peek.sh fm-hs3312234-s8-u",
+        "steer": "bin/fm-send.sh fm-hs3312234-s8-u '<instruction>'",
+        "return_channel_note": null
+      },
+      "backlog": {
+        "hold_set": null,
+        "pr_url": null,
+        "priority": null,
+        "blocked_reason": null,
+        "hold_bucket": null,
+        "done": null,
+        "blocked_by": null,
+        "since": "2026-10-29",
+        "current_role": "worker",
+        "title": "Live scenario8 u",
+        "merged": null,
+        "hold_reason": null,
+        "raw": "- [ ] hs3312234-s8-u - Live scenario8 u (repo: tiny) (kind: ship) (since 2026-10-29)",
+        "local_note": null,
+        "order": 3,
+        "checked": false,
+        "state": "in_flight",
+        "links": [],
+        "captain_actionable": false,
+        "body_excerpt": null,
+        "completion": {
+          "date": null,
+          "verb": null
+        },
+        "hold_until": null,
+        "hold_age_days": 0,
+        "report_path": null,
+        "unresolved_blocker_ids": [],
+        "hold_kind": null,
+        "structured": true,
+        "id": "hs3312234-s8-u",
+        "body_lines": [],
+        "kind": "ship",
+        "blocked_by_ids": [],
+        "requires_child_metadata": true,
+        "repo": "tiny",
+        "reported": null
+      }
+    }
+  ],
+  "main_inventory": {
+    "valid": true,
+    "reason": null,
+    "orphan_in_flight": [],
+    "unstructured_current_count": 0
+  },
+  "contributions": {
+    "known": 0,
+    "checked": 0,
+    "counts": {
+      "captain": 0,
+      "fleet": 0,
+      "maintainer": 0,
+      "nobody": 0
+    },
+    "unmeasured": 0,
+    "complete": true,
+    "proven_clear": true,
+    "stale_verdicts": 0,
+    "missing_verdicts": 0,
+    "unreadable_records": 0,
+    "valid_until": 900,
+    "captain": [],
+    "captain_omitted": 0
+  },
+  "scout_reports": [],
+  "secondmate_current": {
+    "registry": {
+      "present": false,
+      "available": true,
+      "complete": true,
+      "reason": null,
+      "provenance": "registered-table",
+      "path": "~/firstmate/data/heavy-slots/live-1793312234/data/secondmates.md",
+      "freshness": {
+        "status": "fresh",
+        "observed_at": "2026-10-29T23:06:53Z"
+      },
+      "records": [],
+      "input_truncated": false,
+      "records_truncated": false,
+      "reasons": [],
+      "lines_in_window": 0,
+      "records_in_window": 0
+    },
+    "records": [],
+    "total_registered": 0,
+    "total": 0,
+    "shown": 0,
+    "truncated": 0
+  },
+  "secondmate_landed": {
+    "records": [],
+    "truncated": [],
+    "unreadable": [],
+    "partial": []
+  },
+  "secondmate_guidance": {
+    "note": "For kind=secondmate, bearings selects validated structured state from that registered home; parent events and bounded terminal evidence are fallback-only supplements and never current-state authority."
+  }
+}

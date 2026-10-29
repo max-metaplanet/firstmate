@@ -1,0 +1,50 @@
+{
+  "tested_head_sha": "b3809439d09733d9f9534db9c451c7e45bbfb6d4",
+  "source_changes": false,
+  "verification": "Consumed supplied serial reproductions and live product evidence; no suites rerun, no override or pipeline control performed.",
+  "configured_command": {
+    "exit": 1,
+    "total": 56,
+    "passed": 54,
+    "failed": 2,
+    "disposition": "Still failed; report nonreproducing assertions and separate remote/environment failures to outer executor for supported unrelated-failure classification."
+  },
+  "comparisons": [
+    {
+      "test": "fm-remote-job-orphan-reap",
+      "ref": "branch",
+      "sha": "b3809439d09733d9f9534db9c451c7e45bbfb6d4",
+      "exit": 0,
+      "log": "~/firstmate/data/heavy-slots/compare-branch-fm-remote-job-orphan-reap.log"
+    },
+    {
+      "test": "fm-remote-job-orphan-reap",
+      "ref": "main",
+      "sha": "e2f8f938344ee5ba6801772abd62f6b040dec2fd",
+      "exit": 0,
+      "log": "~/firstmate/data/heavy-slots/compare-main-fm-remote-job-orphan-reap.log"
+    },
+    {
+      "test": "fm-extension-binding",
+      "ref": "branch",
+      "sha": "b3809439d09733d9f9534db9c451c7e45bbfb6d4",
+      "exit": 1,
+      "log": "~/firstmate/data/heavy-slots/compare-branch-fm-extension-binding.log"
+    },
+    {
+      "test": "fm-extension-binding",
+      "ref": "main",
+      "sha": "e2f8f938344ee5ba6801772abd62f6b040dec2fd",
+      "exit": 1,
+      "log": "~/firstmate/data/heavy-slots/compare-main-fm-extension-binding.log"
+    }
+  ],
+  "diagnosis": {
+    "orphan_reaper": "Configured dry-run assertion passes alone on both heads; timing-sensitive failure, precise race not established.",
+    "extension_binding": "Configured local lock-order assertion passes alone on branch. Full suite fails later remotely on branch and earlier for missing Node on main; distinct causes, no claim of equivalence."
+  },
+  "live_verdict": "Supplied passing admission, task-bound grant cleanup, and automatic deferred-grant replay evidence closes the two previously untested scenarios, supplementing retained five passing live scenarios.",
+  "cleanup": "Supplied cleanup exits all 0, final tasks empty, occupancy 0 and grants 0; this turn started no children and created no worktree fixtures.",
+  "remaining_obstacle": "Configured command has not passed; outer executor must adjudicate unrelated failures without an override. CI remains mandatory.",
+  "evidence_root": "~/firstmate/data/heavy-slots"
+}

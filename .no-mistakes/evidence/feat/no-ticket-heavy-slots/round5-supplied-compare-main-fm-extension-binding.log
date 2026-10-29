@@ -1,0 +1,9 @@
+ok - unknown extension conformance section selectors fail before setup
+ok - the section coordinator propagates ordered failures and bounded cleanup
+env: 'node': No such file or directory
+env: use -[v]S to pass options in shebang lines
+not ok - remote transport did not publish the binding (missing: 'bound: org.example.remote@1.2.3')
+--- output ---
+
+not ok - an isolated extension conformance section failed
+not-autohandled: flow-source (left for the handler; still unacknowledged)

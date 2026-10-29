@@ -1,0 +1,3 @@
+waiting for a heavy slot (1 on this machine, held by pid 715056)
+fm-test-run: wrote timing artifact: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M64N0N0G8XM8MK440VZDFA4P/.test-phase/fm-test-run-slot-budget.Ml7OQL/timing.json
+fm-test-run: wall-clock budget exceeded: 5962ms > 2000ms for scripts;jobs=2

@@ -1,0 +1,617 @@
+{
+  "tested_head_sha": "b3809439d09733d9f9534db9c451c7e45bbfb6d4",
+  "source_changes": false,
+  "tests_repeated": false,
+  "configured_command": {
+    "exit": 1,
+    "total": 56,
+    "passed": 54,
+    "failed": 2,
+    "disposition": "nonreproducing-in-supplied-serial-target-reruns",
+    "clean_pass": false,
+    "override": false,
+    "skip": false
+  },
+  "comparisons": [
+    {
+      "test": "fm-remote-job-orphan-reap",
+      "ref": "branch",
+      "sha": "b3809439d09733d9f9534db9c451c7e45bbfb6d4",
+      "exit": 0,
+      "log": "~/firstmate/data/heavy-slots/round6-compare-branch-fm-remote-job-orphan-reap.log"
+    },
+    {
+      "test": "fm-remote-job-orphan-reap",
+      "ref": "main",
+      "sha": "e2f8f938344ee5ba6801772abd62f6b040dec2fd",
+      "exit": 0,
+      "log": "~/firstmate/data/heavy-slots/round6-compare-main-fm-remote-job-orphan-reap.log"
+    },
+    {
+      "test": "fm-extension-binding",
+      "ref": "branch",
+      "sha": "b3809439d09733d9f9534db9c451c7e45bbfb6d4",
+      "exit": 0,
+      "log": "~/firstmate/data/heavy-slots/round6-compare-branch-fm-extension-binding.log"
+    },
+    {
+      "test": "fm-extension-binding",
+      "ref": "main",
+      "sha": "e2f8f938344ee5ba6801772abd62f6b040dec2fd",
+      "exit": 1,
+      "log": "~/firstmate/data/heavy-slots/round6-compare-main-fm-extension-binding.log"
+    }
+  ],
+  "root_cause": "Unestablished for configured-command failures; serial target reruns disconfirm a deterministic failure. Main extension failure is a separate missing-Node environment failure, not an identical-root-cause finding.",
+  "scenario8": {
+    "result": "pass",
+    "live": true,
+    "source": "supplied exact-target public lifecycle execution with native Codex workers",
+    "unused_flag": "pass",
+    "fleet_only_relaunch": "pass",
+    "project_only_relaunch": "pass",
+    "legacy_replay": "pass",
+    "cleanup": "pass",
+    "remaining_occupancy": 0,
+    "remaining_grants": 0
+  },
+  "test_3_disposition": "Resolved by supplied live scenario8 evidence, extending seven previously accepted live scenarios to eight; supplementary fixtures remain separate.",
+  "outer_executor_action": "Apply supported unrelated/nonreproducing disposition if available; otherwise retain configured Test blocking gate for firstmate. No exception, override, skip, publication, or pipeline mutation authorized or performed.",
+  "artifacts": [
+    {
+      "source": "~/firstmate/data/heavy-slots/round6-comparison-report.md",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-round6-comparison-report.md",
+      "sha256": "805e18732caf6a848b84eb07216dabca3d8f1e8ce006028d86a20e2844142534"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/round6-comparison-results.json",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-round6-comparison-results.json",
+      "sha256": "1b564b11479780c136dfeb52491b83bc722e08939851c0edcb73f1d0956f0a3d"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/round6-compare-branch-fm-extension-binding.log",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-round6-compare-branch-fm-extension-binding.log",
+      "sha256": "1eef09c120f770ca36c8ee483dfce2e5c97513789661043892c39f13e9a09446"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/round6-compare-branch-fm-remote-job-orphan-reap.log",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-round6-compare-branch-fm-remote-job-orphan-reap.log",
+      "sha256": "a4fdc6f4c7bda8168a5d2f0e31573463c97f06e81d3391f17b9a036091ed2056"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/round6-compare-main-fm-extension-binding.log",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-round6-compare-main-fm-extension-binding.log",
+      "sha256": "2e1bf3afe1a6b8473aa5549af35a75cc47035a4ba0fc6dd451532e54ba596f17"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/round6-compare-main-fm-remote-job-orphan-reap.log",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-round6-compare-main-fm-remote-job-orphan-reap.log",
+      "sha256": "a4fdc6f4c7bda8168a5d2f0e31573463c97f06e81d3391f17b9a036091ed2056"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/live-scenario8-common.py",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-live-scenario8-common.py",
+      "sha256": "d127e7ae9f624b94be7ded288ff949ba9232295c0fea3051dd3de50d2e8aedcf"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/live-scenario8-complete.json",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-live-scenario8-complete.json",
+      "sha256": "2faa893c8ae3b6e19444aa2215663eea4f48eba2f36b0be75fecb4c93a01ce8e"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/live-scenario8-driver.log",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-live-scenario8-driver.log",
+      "sha256": "b112809244d15b429f5b9c69c56ffd0076757df979ee2a6b749025dd6a13b8c8"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/live-scenario8-report.md",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-live-scenario8-report.md",
+      "sha256": "161169f94981fbfd4c03c7aee18ecd9966c6dd950ffe8d87d96797090f3930ab"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/live-scenario8-resume-driver.log",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-live-scenario8-resume-driver.log",
+      "sha256": "5e4527ee1737583b6397d39a1124e86bd776dbf77bed9df1f7950a76817a456c"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/live-scenario8-resume.py",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-live-scenario8-resume.py",
+      "sha256": "367d5c97013aadd6995f222f0f1ad3e2e83c354a4b167de1ca10fdc8e3402326"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/live-scenario8-settings.json",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-live-scenario8-settings.json",
+      "sha256": "bac0a38cdbe286f73b98ee03bcd769dd8dc21894ebe61320eaef13b0c4648c48"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/live-scenario8.py",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-live-scenario8.py",
+      "sha256": "b76767a01897c99898135a553a2298d992e653ee0d181feedfdd8cbee58e1ab6"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/s8-add-e.exit",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-s8-add-e.exit",
+      "sha256": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/s8-add-e.log",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-s8-add-e.log",
+      "sha256": "a23d1519767c0c5ce752b4d596001c2a668a7bc39e16eecd2211b9d449c66212"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/s8-add-f.exit",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-s8-add-f.exit",
+      "sha256": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/s8-add-f.log",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-s8-add-f.log",
+      "sha256": "0ef7544aa03ce4ebbb454cb72fc58cf584d7a7b6302c27c98e09d312400e72fb"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/s8-add-l.exit",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-s8-add-l.exit",
+      "sha256": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/s8-add-l.log",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-s8-add-l.log",
+      "sha256": "07d8de97b444b3b832fac4e13bc0a04bab49ec6ca905d859fc560b5b6388a2fe"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/s8-add-p.exit",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-s8-add-p.exit",
+      "sha256": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/s8-add-p.log",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-s8-add-p.log",
+      "sha256": "712d69ce7dac2f8967edfc812fd446a89bdf75752dc25b67ed8638521d6d9efd"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/s8-add-project2.exit",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-s8-add-project2.exit",
+      "sha256": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/s8-add-project2.log",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-s8-add-project2.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/s8-add-u.exit",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-s8-add-u.exit",
+      "sha256": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/s8-add-u.log",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-s8-add-u.log",
+      "sha256": "5c13bde851b280aa2fd9a288b8c5e2991b4d55ac32b638a20661763458d3dcfa"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/s8-cleaned-snapshot.exit",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-s8-cleaned-snapshot.exit",
+      "sha256": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/s8-cleaned-snapshot.log",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-s8-cleaned-snapshot.log",
+      "sha256": "af5a2d399888c1762c0e3485515d5b771c1f4e41a71d8c9504ddc4e97086140c"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/s8-clone-project2.exit",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-s8-clone-project2.exit",
+      "sha256": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/s8-clone-project2.log",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-s8-clone-project2.log",
+      "sha256": "805ccd41489876fa149b180bec5c415de7c3d5f134171db9843925918db4e8f5"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/s8-commit-project2.exit",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-s8-commit-project2.exit",
+      "sha256": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/s8-commit-project2.log",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-s8-commit-project2.log",
+      "sha256": "63b76e00180d8e4cb932ce4a928444ab30f601849b465c12eec8ac810177c6b1"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/s8-exit-e.exit",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-s8-exit-e.exit",
+      "sha256": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/s8-exit-e.log",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-s8-exit-e.log",
+      "sha256": "8094d279cd3294947e8a72b7a0469e3bef372e7680ba864f504e276c4bed35e9"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/s8-exit-f.exit",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-s8-exit-f.exit",
+      "sha256": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/s8-exit-f.log",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-s8-exit-f.log",
+      "sha256": "808114b39b8fcc63fa43af989eb7e2fda02d6f743859ee2e245d1b5939a81b14"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/s8-exit-l.exit",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-s8-exit-l.exit",
+      "sha256": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/s8-exit-l.log",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-s8-exit-l.log",
+      "sha256": "7aa45e330a937e6441c71f14661127370d450b1baebf9ebd0b953e794f3cb09c"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/s8-exit-p.exit",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-s8-exit-p.exit",
+      "sha256": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/s8-exit-p.log",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-s8-exit-p.log",
+      "sha256": "77b1f715045e55b923e077d0c341cf446d340718ac321af32c009e0ed0a08ebb"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/s8-exit-u.exit",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-s8-exit-u.exit",
+      "sha256": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/s8-exit-u.log",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-s8-exit-u.log",
+      "sha256": "4b7fead028e76a07f7a39e36f7884b45c3dea6f2ae6862bceff33b0463fff982"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/s8-fleet-grant-does-not-inflate-project.exit",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-s8-fleet-grant-does-not-inflate-project.exit",
+      "sha256": "f369cb89fc627e668987007d121ed1eacdc01db9e28f8bb26f358b7d8c4f08ac"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/s8-fleet-grant-does-not-inflate-project.log",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-s8-fleet-grant-does-not-inflate-project.log",
+      "sha256": "e49eccb8fc871d5ab2759b39973ed7783237776b0ac5e89b318e14fdf5b7ba74"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/s8-independent-project-snapshot.exit",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-s8-independent-project-snapshot.exit",
+      "sha256": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/s8-independent-project-snapshot.log",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-s8-independent-project-snapshot.log",
+      "sha256": "f1d5f9cb295e0ca5586ac32f05c88c85fef3e642dfe714b693d018d1c9f0c7ca"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/s8-init-origin2.exit",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-s8-init-origin2.exit",
+      "sha256": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/s8-init-origin2.log",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-s8-init-origin2.log",
+      "sha256": "9eeb00485b482c9145a0550801212a372fc199ed4f8057923adbf9b341366a82"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/s8-legacy-admit-tick.exit",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-s8-legacy-admit-tick.exit",
+      "sha256": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/s8-legacy-admit-tick.log",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-s8-legacy-admit-tick.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/s8-legacy-full-tick.exit",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-s8-legacy-full-tick.exit",
+      "sha256": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/s8-legacy-full-tick.log",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-s8-legacy-full-tick.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/s8-legacy-input.json",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-s8-legacy-input.json",
+      "sha256": "530d37ea6d6bbd91c58bff715e324f0147a4891669399d19a07c77753509b686"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/s8-meta-e.txt",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-s8-meta-e.txt",
+      "sha256": "ee06487e1495aa7b6fea1354402d408c3f7b90cf4a729e95b224308cf9e69765"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/s8-meta-f.txt",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-s8-meta-f.txt",
+      "sha256": "73db2f69ad3a0d371d79559eff24c48d06ec5f64b19c2f10a44e2a0ded56488a"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/s8-meta-l.txt",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-s8-meta-l.txt",
+      "sha256": "878dfc9b70a3d10232d72603b9e26522332da0d6a68466d61d9874fa279eaa8a"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/s8-meta-p.txt",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-s8-meta-p.txt",
+      "sha256": "2f586b07571aa2b1265e8d54b84e364f879cdb4edc9f9907e766fd508ce5892b"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/s8-meta-u.txt",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-s8-meta-u.txt",
+      "sha256": "14a88e216762250fe29f514e0cc1614d96977cbe9303f1fe2879c502522f234c"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/s8-pane-e.exit",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-s8-pane-e.exit",
+      "sha256": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/s8-pane-e.log",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-s8-pane-e.log",
+      "sha256": "b720f747d836f4414607144127c6a60753e9d7c7bf584dca13e10ddabda3b590"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/s8-pane-f.exit",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-s8-pane-f.exit",
+      "sha256": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/s8-pane-f.log",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-s8-pane-f.log",
+      "sha256": "73dd82fc54dfa05d7c5a28c563494601581a82137b5f212f21072e74086b2ce0"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/s8-pane-l.exit",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-s8-pane-l.exit",
+      "sha256": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/s8-pane-l.log",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-s8-pane-l.log",
+      "sha256": "368b66b90c48b9218b4482828f343dbf49e05faf2baa3b3421ba85695cc94c85"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/s8-pane-p.exit",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-s8-pane-p.exit",
+      "sha256": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/s8-pane-p.log",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-s8-pane-p.log",
+      "sha256": "048cbf899637283ba81c26bb01af859b7c3edcf2a9e328c5c3c98c1310553753"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/s8-pane-u.exit",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-s8-pane-u.exit",
+      "sha256": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/s8-pane-u.log",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-s8-pane-u.log",
+      "sha256": "22b2e1095c39cd2b19c65c6187e54666416f2468ed627f44992ed49dcb48e709"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/s8-private-tmux-close.exit",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-s8-private-tmux-close.exit",
+      "sha256": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/s8-private-tmux-close.log",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-s8-private-tmux-close.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/s8-project-grant-does-not-inflate-fleet.exit",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-s8-project-grant-does-not-inflate-fleet.exit",
+      "sha256": "f369cb89fc627e668987007d121ed1eacdc01db9e28f8bb26f358b7d8c4f08ac"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/s8-project-grant-does-not-inflate-fleet.log",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-s8-project-grant-does-not-inflate-fleet.log",
+      "sha256": "9992fcffc51ce73ba2dae83ba12715f42bf9a07a9e6b8ee662d4345be73d9bd2"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/s8-push-local-origin2.exit",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-s8-push-local-origin2.exit",
+      "sha256": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/s8-push-local-origin2.log",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-s8-push-local-origin2.log",
+      "sha256": "935ba5f549aa8267c2108d2cc23b6ca1adbff2ec7e887d63d13979cf2804525b"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/s8-relaunch-f.exit",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-s8-relaunch-f.exit",
+      "sha256": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/s8-relaunch-f.log",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-s8-relaunch-f.log",
+      "sha256": "9eca3730a09cb16554ebf06e15880d3d3be17b11e49bf0ba4ad8b4c2534bc034"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/s8-relaunch-p.exit",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-s8-relaunch-p.exit",
+      "sha256": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/s8-relaunch-p.log",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-s8-relaunch-p.log",
+      "sha256": "bd113ca664805a0a6b64ff1939a7d0d3b23b4626b0f8b52b0250d6ae1dfd6c19"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/s8-spawn-e.exit",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-s8-spawn-e.exit",
+      "sha256": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/s8-spawn-e.log",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-s8-spawn-e.log",
+      "sha256": "20f40b5d35173301f14ab13fef4eca88dee5be1cf5cc44875413c3ed735277a5"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/s8-spawn-f.exit",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-s8-spawn-f.exit",
+      "sha256": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/s8-spawn-f.log",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-s8-spawn-f.log",
+      "sha256": "d738c49a1c984973c10ed4c3b8fa58dad5c062f51568e6edd0ae54b88cee4a6c"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/s8-spawn-p.exit",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-s8-spawn-p.exit",
+      "sha256": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/s8-spawn-p.log",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-s8-spawn-p.log",
+      "sha256": "4a41e039901912395be45ffc7081c0360cfd64e696252653d4cee2bbef40d2e2"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/s8-spawn-u.exit",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-s8-spawn-u.exit",
+      "sha256": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/s8-spawn-u.log",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-s8-spawn-u.log",
+      "sha256": "35a0a126152eb44b29fde47be0a5f7253ae55574df813f8fc66459e8c2d4a7d4"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/s8-start-private-tmux.exit",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-s8-start-private-tmux.exit",
+      "sha256": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/s8-start-private-tmux.log",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-s8-start-private-tmux.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/s8-teardown-e.exit",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-s8-teardown-e.exit",
+      "sha256": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/s8-teardown-e.log",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-s8-teardown-e.log",
+      "sha256": "76f418b70b6a1f04a4df18a88ffbd295acfbc4920482be3b02a0d8152d5d73b4"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/s8-teardown-f.exit",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-s8-teardown-f.exit",
+      "sha256": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/s8-teardown-f.log",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-s8-teardown-f.log",
+      "sha256": "f5b3807f4c3a9d719975222f097785cc9f8c85d0b7691840ff79ebdcc7c26ce9"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/s8-teardown-l.exit",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-s8-teardown-l.exit",
+      "sha256": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/s8-teardown-l.log",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-s8-teardown-l.log",
+      "sha256": "16ff5abf74c6b3b9249a64ba2c070c51eb188fdba8ca3429afa3202d695b7d1d"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/s8-teardown-p.exit",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-s8-teardown-p.exit",
+      "sha256": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/s8-teardown-p.log",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-s8-teardown-p.log",
+      "sha256": "da1f1a661cdc5fb411da33762b95df88474fb440bfd3648a550a3af0ca966e94"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/s8-teardown-u.exit",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-s8-teardown-u.exit",
+      "sha256": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/s8-teardown-u.log",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-s8-teardown-u.log",
+      "sha256": "d2fc379d84efbb8e4dc7fb71de4337fd03c1e799f4831b3cd3d1030553a4ef20"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/s8-tmux-command.exit",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-s8-tmux-command.exit",
+      "sha256": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/s8-tmux-command.log",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-s8-tmux-command.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/s8-tmux-identity.exit",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-s8-tmux-identity.exit",
+      "sha256": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/s8-tmux-identity.log",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-s8-tmux-identity.log",
+      "sha256": "6b6bfe21e7e6e4ed4176a2728c2e934bb8f4a9e0b2c4bbd3f7a3ba608670ad79"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/s8-tmux-shell.exit",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-s8-tmux-shell.exit",
+      "sha256": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/s8-tmux-shell.log",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-s8-tmux-shell.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/s8-trust-e-observed.txt",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-s8-trust-e-observed.txt",
+      "sha256": "81b55a75911fe07dcdcbf7b052e68f77ab39448bef1d5ab982c97dd7dda23b24"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/s8-unused-flag-no-extra-capacity.exit",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-s8-unused-flag-no-extra-capacity.exit",
+      "sha256": "f369cb89fc627e668987007d121ed1eacdc01db9e28f8bb26f358b7d8c4f08ac"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/s8-unused-flag-no-extra-capacity.log",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-s8-unused-flag-no-extra-capacity.log",
+      "sha256": "8adf988876446bd41984ddcd7d4b8ce75fa6476cceb9585d6589db5aea526fec"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/s8-unused-snapshot.exit",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-s8-unused-snapshot.exit",
+      "sha256": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/s8-unused-snapshot.log",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-s8-unused-snapshot.log",
+      "sha256": "4b1fd243a7c2345118ff17af3ffbd7cb958d039498d25ca3b9b8ef795e3f7376"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/s8-verify-legacy.exit",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-s8-verify-legacy.exit",
+      "sha256": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9"
+    },
+    {
+      "source": "~/firstmate/data/heavy-slots/s8-verify-legacy.log",
+      "copy": "~/.no-mistakes/evidence/01M64N0N0G8XM8MK440VZDFA4P/round6-supplied-s8-verify-legacy.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ]
+}

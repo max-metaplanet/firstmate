@@ -1,0 +1,13 @@
+queued.err
+waiting for a heavy slot (3 on this machine, held by pid 681346, 681348, 681349)
+rec-queued.err
+waiting for a heavy slot (2 on this machine, held by pid 684151, 684158)
+grow-waiter.err
+waiting for a heavy slot (1 on this machine, held by pid 685600)
+shrink-active-waiter.err
+waiting for a heavy slot (2 on this machine, held by pid 689076, 689111)
+Executed isolated payload slot0; recorded pid: 681346
+Executed isolated payload slot1; recorded pid: 681348
+Executed isolated payload slot2; recorded pid: 681349
+Executed isolated payload queued; recorded pid: 681767
+Complete pool scenario driver: tests/fm-build-lock.test.sh, exit 0.

@@ -1,0 +1,6 @@
+ok - owner-matched retirement refuses a stale generation and accepts the current one
+ok - caller environment, descriptors, and lifecycle entry cannot forge capture authority
+ok - extension capture reservations are bounded to their runner lifecycle
+not ok - failure did not report the expected diagnostic (missing: 'cannot acquire source ownership')
+--- output ---
+error: cannot claim source: control-tab-state-source

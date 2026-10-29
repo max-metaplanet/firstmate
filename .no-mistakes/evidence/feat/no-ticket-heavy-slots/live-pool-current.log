@@ -1,0 +1,7 @@
+Pool size 1: A entered; B stayed queued while A owned the slot.
+SIGKILL of A released its slot; queued B entered.
+Pool size 2: C and D entered concurrently; E stayed queued.
+Releasing C admitted E while D remained running.
+waiting for a heavy slot (1 on this machine, held by pid 1465637)
+waiting for a heavy slot (2 on this machine, held by pid 1465942, 1465941)
+All child exit statuses collected; isolated slot holders stopped.

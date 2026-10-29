@@ -1,0 +1,21 @@
+{
+  "project": "~/firstmate/data/heavy-slots/live-1793312234/projects/tiny2",
+  "mode": "local-only",
+  "yolo": "off",
+  "ticket": "no-ticket",
+  "commit_type": "chore",
+  "branch_prefix": "fm/",
+  "base_branch": "",
+  "harness": "codex",
+  "model": "",
+  "effort": "low",
+  "backend": "tmux",
+  "upstream_consent": "",
+  "ticket_scope": "partial",
+  "ignore_seat_hold": "0",
+  "herdr_resume_lock_wait": "0",
+  "version": 1,
+  "task": "hs3312234-s8-l",
+  "queued_at": 1793315213.28118,
+  "brief_sha256": "7a2d3d01f3ae54baefac516f53935c947ef953a0e6a383151f394b3f577839f8"
+}

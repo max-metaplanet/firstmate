@@ -1,0 +1,168 @@
+Initial task-c --ad-hoc-slot admitted with free ordinary place; persisted no grant.
+{}
+$ fm-spawn task-a
+exit=0
+spawned task-a harness=codex kind=ship mode=local-only yolo=off window=primary:fm-task-a worktree=~/.no-mistakes/worktrees/c0c4fcacb05a/01M64N0N0G8XM8MK440VZDFA4P/.l/pool/.treehouse/sample-1e61cc/2/sample
+fm-gate-refuse: gate agent lifecycle permitted only against lab home ~/.no-mistakes/worktrees/c0c4fcacb05a/01M64N0N0G8XM8MK440VZDFA4P/.l
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision with a foreground checkpoint: bin/fm-watch-checkpoint.sh --seconds 180.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+notice: task-a ships mode=local-only while the standing posture for sample is no-mistakes - less rigor than the captain's standing posture; proceed only on a current explicit captain instruction or an intake judgment you can state
+A new version of treehouse is available: v3.1.3 → v3.1.7
+Run "treehouse update" to update
+
+A new version of treehouse is available: v3.1.3 → v3.1.7
+Run "treehouse update" to update
+
+🌳 Leased worktree 2 at ~/.no-mistakes/worktrees/c0c4fcacb05a/01M64N0N0G8XM8MK440VZDFA4P/.l/pool/.treehouse/sample-1e61cc/2/sample. Run 'treehouse return ~/.no-mistakes/worktrees/c0c4fcacb05a/01M64N0N0G8XM8MK440VZDFA4P/.l/pool/.treehouse/sample-1e61cc/2/sample' to release it.
+
+Published grants: {}
+$ fm-spawn task-b
+exit=0
+spawned task-b harness=codex kind=ship mode=local-only yolo=off window=primary:fm-task-b worktree=~/.no-mistakes/worktrees/c0c4fcacb05a/01M64N0N0G8XM8MK440VZDFA4P/.l/pool/.treehouse/sample-1e61cc/3/sample
+fm-gate-refuse: gate agent lifecycle permitted only against lab home ~/.no-mistakes/worktrees/c0c4fcacb05a/01M64N0N0G8XM8MK440VZDFA4P/.l
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+notice: task-b ships mode=local-only while the standing posture for sample is no-mistakes - less rigor than the captain's standing posture; proceed only on a current explicit captain instruction or an intake judgment you can state
+A new version of treehouse is available: v3.1.3 → v3.1.7
+Run "treehouse update" to update
+
+A new version of treehouse is available: v3.1.3 → v3.1.7
+Run "treehouse update" to update
+
+🌳 Leased worktree 3 at ~/.no-mistakes/worktrees/c0c4fcacb05a/01M64N0N0G8XM8MK440VZDFA4P/.l/pool/.treehouse/sample-1e61cc/3/sample. Run 'treehouse return ~/.no-mistakes/worktrees/c0c4fcacb05a/01M64N0N0G8XM8MK440VZDFA4P/.l/pool/.treehouse/sample-1e61cc/3/sample' to release it.
+
+Published grants: {}
+$ fm-spawn task-d
+exit=75
+fm-gate-refuse: gate agent lifecycle permitted only against lab home ~/.no-mistakes/worktrees/c0c4fcacb05a/01M64N0N0G8XM8MK440VZDFA4P/.l
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+deferred: this machine runs at most 3 agent(s) at once (~/.no-mistakes/worktrees/c0c4fcacb05a/01M64N0N0G8XM8MK440VZDFA4P/.l/config/fleet-capacity) and 3 are running (task-a, task-b, task-c); task task-d was not launched and its backlog item stays queued - the worker-park tick replays a recorded launch once one of them is cleaned up or stops
+
+$ fm-spawn task-d --ad-hoc-slot
+exit=0
+spawned task-d harness=codex kind=ship mode=local-only yolo=off window=primary:fm-task-d worktree=~/.no-mistakes/worktrees/c0c4fcacb05a/01M64N0N0G8XM8MK440VZDFA4P/.l/pool/.treehouse/sample-1e61cc/4/sample
+fm-gate-refuse: gate agent lifecycle permitted only against lab home ~/.no-mistakes/worktrees/c0c4fcacb05a/01M64N0N0G8XM8MK440VZDFA4P/.l
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+notice: task-d ships mode=local-only while the standing posture for sample is no-mistakes - less rigor than the captain's standing posture; proceed only on a current explicit captain instruction or an intake judgment you can state
+A new version of treehouse is available: v3.1.3 → v3.1.7
+Run "treehouse update" to update
+
+A new version of treehouse is available: v3.1.3 → v3.1.7
+Run "treehouse update" to update
+
+🌳 Leased worktree 4 at ~/.no-mistakes/worktrees/c0c4fcacb05a/01M64N0N0G8XM8MK440VZDFA4P/.l/pool/.treehouse/sample-1e61cc/4/sample. Run 'treehouse return ~/.no-mistakes/worktrees/c0c4fcacb05a/01M64N0N0G8XM8MK440VZDFA4P/.l/pool/.treehouse/sample-1e61cc/4/sample' to release it.
+
+Published grants: {"ad_hoc_fleet_slot": "1"}
+$ fm-spawn task-e
+exit=75
+fm-gate-refuse: gate agent lifecycle permitted only against lab home ~/.no-mistakes/worktrees/c0c4fcacb05a/01M64N0N0G8XM8MK440VZDFA4P/.l
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+deferred: this machine runs at most 3 agent(s) at once (~/.no-mistakes/worktrees/c0c4fcacb05a/01M64N0N0G8XM8MK440VZDFA4P/.l/config/fleet-capacity) plus 1 ad hoc and 4 are running (task-a, task-b, task-c, task-d (ad hoc)); task task-e was not launched and its backlog item stays queued - the worker-park tick replays a recorded launch once one of them is cleaned up or stops
+
+slots 4/3 plus 1 ad hoc (source: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M64N0N0G8XM8MK440VZDFA4P/.l/config/fleet-capacity)
+SLOTS (local records; * still holds a slot)
+  ~/.no-mistakes/worktrees/c0c4fcacb05a/01M64N0N0G8XM8MK440VZDFA4P/.l | task-a | sample | ship | unknown | codex seat=~/.codex-seats/codex-max
+  ~/.no-mistakes/worktrees/c0c4fcacb05a/01M64N0N0G8XM8MK440VZDFA4P/.l | task-b | sample | ship | unknown | codex seat=~/.codex-seats/codex-max
+  ~/.no-mistakes/worktrees/c0c4fcacb05a/01M64N0N0G8XM8MK440VZDFA4P/.l | task-c | sample | ship | unknown | codex seat=~/.codex-seats/codex-max
+  ~/.no-mistakes/worktrees/c0c4fcacb05a/01M64N0N0G8XM8MK440VZDFA4P/.l | task-d | sample | ship | unknown | codex seat=~/.codex-seats/codex-max
+PARKED/WAITING (no active slot)
+QUEUE (~/.no-mistakes/worktrees/c0c4fcacb05a/01M64N0N0G8XM8MK440VZDFA4P/.l)
+A. ready for a slot (priority, then oldest)
+  (empty)
+B. waiting on captain
+  (empty)
+C. other queued
+  (empty)
+
+Removed disposable task-d endpoint and fixture task record (simulates task-record cleanup).
+slots 3/3 (source: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M64N0N0G8XM8MK440VZDFA4P/.l/config/fleet-capacity)
+SLOTS (local records; * still holds a slot)
+  ~/.no-mistakes/worktrees/c0c4fcacb05a/01M64N0N0G8XM8MK440VZDFA4P/.l | task-a | sample | ship | unknown | codex seat=~/.codex-seats/codex-max
+  ~/.no-mistakes/worktrees/c0c4fcacb05a/01M64N0N0G8XM8MK440VZDFA4P/.l | task-b | sample | ship | unknown | codex seat=~/.codex-seats/codex-max
+  ~/.no-mistakes/worktrees/c0c4fcacb05a/01M64N0N0G8XM8MK440VZDFA4P/.l | task-c | sample | ship | unknown | codex seat=~/.codex-seats/codex-max
+PARKED/WAITING (no active slot)
+QUEUE (~/.no-mistakes/worktrees/c0c4fcacb05a/01M64N0N0G8XM8MK440VZDFA4P/.l)
+A. ready for a slot (priority, then oldest)
+  (empty)
+B. waiting on captain
+  (empty)
+C. other queued
+  (empty)
+
+Removed disposable task-a endpoint and fixture task record (simulates task-record cleanup).
+Removed disposable task-b endpoint and fixture task record (simulates task-record cleanup).
+Removed disposable task-c endpoint and fixture task record (simulates task-record cleanup).
+$ fm-spawn project-a
+exit=0
+spawned project-a harness=codex kind=ship mode=local-only yolo=off window=primary:fm-project-a worktree=~/.no-mistakes/worktrees/c0c4fcacb05a/01M64N0N0G8XM8MK440VZDFA4P/.l/pool/.treehouse/sample-1e61cc/5/sample
+fm-gate-refuse: gate agent lifecycle permitted only against lab home ~/.no-mistakes/worktrees/c0c4fcacb05a/01M64N0N0G8XM8MK440VZDFA4P/.l
+notice: project-a ships mode=local-only while the standing posture for sample is no-mistakes - less rigor than the captain's standing posture; proceed only on a current explicit captain instruction or an intake judgment you can state
+A new version of treehouse is available: v3.1.3 → v3.1.7
+Run "treehouse update" to update
+
+A new version of treehouse is available: v3.1.3 → v3.1.7
+Run "treehouse update" to update
+
+🌳 Leased worktree 5 at ~/.no-mistakes/worktrees/c0c4fcacb05a/01M64N0N0G8XM8MK440VZDFA4P/.l/pool/.treehouse/sample-1e61cc/5/sample. Run 'treehouse return ~/.no-mistakes/worktrees/c0c4fcacb05a/01M64N0N0G8XM8MK440VZDFA4P/.l/pool/.treehouse/sample-1e61cc/5/sample' to release it.
+
+Published grants: {}
+$ fm-spawn project-b --ad-hoc-slot
+exit=0
+spawned project-b harness=codex kind=ship mode=local-only yolo=off window=primary:fm-project-b worktree=~/.no-mistakes/worktrees/c0c4fcacb05a/01M64N0N0G8XM8MK440VZDFA4P/.l/pool/.treehouse/sample-1e61cc/6/sample
+fm-gate-refuse: gate agent lifecycle permitted only against lab home ~/.no-mistakes/worktrees/c0c4fcacb05a/01M64N0N0G8XM8MK440VZDFA4P/.l
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision with a foreground checkpoint: bin/fm-watch-checkpoint.sh --seconds 180.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+notice: project-b ships mode=local-only while the standing posture for sample is no-mistakes - less rigor than the captain's standing posture; proceed only on a current explicit captain instruction or an intake judgment you can state
+A new version of treehouse is available: v3.1.3 → v3.1.7
+Run "treehouse update" to update
+
+A new version of treehouse is available: v3.1.3 → v3.1.7
+Run "treehouse update" to update
+
+🌳 Leased worktree 6 at ~/.no-mistakes/worktrees/c0c4fcacb05a/01M64N0N0G8XM8MK440VZDFA4P/.l/pool/.treehouse/sample-1e61cc/6/sample. Run 'treehouse return ~/.no-mistakes/worktrees/c0c4fcacb05a/01M64N0N0G8XM8MK440VZDFA4P/.l/pool/.treehouse/sample-1e61cc/6/sample' to release it.
+
+Published grants: {}
+$ fm-spawn project-c
+exit=75
+fm-gate-refuse: gate agent lifecycle permitted only against lab home ~/.no-mistakes/worktrees/c0c4fcacb05a/01M64N0N0G8XM8MK440VZDFA4P/.l
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+deferred: project sample admits 2 worker(s) at once on this machine (~/.no-mistakes/worktrees/c0c4fcacb05a/01M64N0N0G8XM8MK440VZDFA4P/.l/config/project-capacity) and 2 already hold a place (project-a, project-b); task project-c was not launched and its backlog item stays queued - the worker-park tick replays a recorded launch once one of them records its ready PR or is cleaned up
+
+$ fm-spawn project-c --ad-hoc-slot
+exit=0
+spawned project-c harness=codex kind=ship mode=local-only yolo=off window=primary:fm-project-c worktree=~/.no-mistakes/worktrees/c0c4fcacb05a/01M64N0N0G8XM8MK440VZDFA4P/.l/pool/.treehouse/sample-1e61cc/7/sample
+fm-gate-refuse: gate agent lifecycle permitted only against lab home ~/.no-mistakes/worktrees/c0c4fcacb05a/01M64N0N0G8XM8MK440VZDFA4P/.l
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+notice: project-c ships mode=local-only while the standing posture for sample is no-mistakes - less rigor than the captain's standing posture; proceed only on a current explicit captain instruction or an intake judgment you can state
+A new version of treehouse is available: v3.1.3 → v3.1.7
+Run "treehouse update" to update
+
+A new version of treehouse is available: v3.1.3 → v3.1.7
+Run "treehouse update" to update
+
+🌳 Leased worktree 7 at ~/.no-mistakes/worktrees/c0c4fcacb05a/01M64N0N0G8XM8MK440VZDFA4P/.l/pool/.treehouse/sample-1e61cc/7/sample. Run 'treehouse return ~/.no-mistakes/worktrees/c0c4fcacb05a/01M64N0N0G8XM8MK440VZDFA4P/.l/pool/.treehouse/sample-1e61cc/7/sample' to release it.
+
+Published grants: {"ad_hoc_project_slot": "1"}
+$ fm-spawn project-d
+exit=75
+fm-gate-refuse: gate agent lifecycle permitted only against lab home ~/.no-mistakes/worktrees/c0c4fcacb05a/01M64N0N0G8XM8MK440VZDFA4P/.l
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+deferred: project sample admits 2 worker(s) at once on this machine (~/.no-mistakes/worktrees/c0c4fcacb05a/01M64N0N0G8XM8MK440VZDFA4P/.l/config/project-capacity) plus 1 ad hoc and 3 already hold a place (project-a, project-b, project-c (ad hoc)); task project-d was not launched and its backlog item stays queued - the worker-park tick replays a recorded launch once one of them records its ready PR or is cleaned up
+
+Removed disposable project-c endpoint and fixture task record (simulates task-record cleanup).
+$ fm-spawn project-d
+exit=75
+fm-gate-refuse: gate agent lifecycle permitted only against lab home ~/.no-mistakes/worktrees/c0c4fcacb05a/01M64N0N0G8XM8MK440VZDFA4P/.l
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+deferred: project sample admits 2 worker(s) at once on this machine (~/.no-mistakes/worktrees/c0c4fcacb05a/01M64N0N0G8XM8MK440VZDFA4P/.l/config/project-capacity) and 2 already hold a place (project-a, project-b); task project-d was not launched and its backlog item stays queued - the worker-park tick replays a recorded launch once one of them records its ready PR or is cleaned up
+
+Fleet and project admission scenarios passed; declarations unchanged after fixture record cleanup.

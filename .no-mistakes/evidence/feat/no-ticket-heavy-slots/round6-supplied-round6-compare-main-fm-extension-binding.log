@@ -1,0 +1,13 @@
+ok - unknown extension conformance section selectors fail before setup
+not-autohandled: example-file (left for the handler; still unacknowledged)
+not-autohandled: flow-source (left for the handler; still unacknowledged)
+ok - the shipped file-signal package is a runnable end-to-end external adapter
+env: 'node': No such file or directory
+env: use -[v]S to pass options in shebang lines
+ok - one external adapter registers, invokes, captures unhandled evidence, classifies, and terminally retires end to end
+not ok - remote transport did not publish the binding (missing: 'bound: org.example.remote@1.2.3')
+--- output ---
+
+error: extension registration owner is unreadable: example-symlinked
+ok - the section coordinator propagates ordered failures and bounded cleanup
+not ok - an isolated extension conformance section failed

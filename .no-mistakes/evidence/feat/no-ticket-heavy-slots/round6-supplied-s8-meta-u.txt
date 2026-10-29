@@ -1,0 +1,17 @@
+window=live:fm-hs3312234-s8-u
+endpoint_task_id=hs3312234-s8-u
+worktree=~/firstmate/data/heavy-slots/live-1793312234/pool/.treehouse/tiny-354191/1/tiny
+project=~/firstmate/data/heavy-slots/live-1793312234/projects/tiny
+harness=codex
+kind=ship
+mode=local-only
+yolo=off
+branch=chore/no-ticket-hs3312234-s8-u
+tasktmp=/tmp/fm-hs3312234-s8-u
+ticket=no-ticket
+commit_type=chore
+dispatched_at=1793314913
+model=default
+effort=low
+codex_seat=~/.codex-seats/codex-max
+spawn_gen=s1793314913.1240195.26480

@@ -1,0 +1,22 @@
+{
+  "project": "~/.no-mistakes/worktrees/c0c4fcacb05a/01M64N0N0G8XM8MK440VZDFA4P/.test-phase-current/replay-home/projects/demo",
+  "mode": "no-mistakes",
+  "yolo": "off",
+  "ticket": "no-ticket",
+  "commit_type": "chore",
+  "branch_prefix": "",
+  "base_branch": "",
+  "harness": "codex",
+  "model": "",
+  "effort": "",
+  "backend": "tmux",
+  "upstream_consent": "",
+  "ticket_scope": "complete",
+  "ignore_seat_hold": "0",
+  "herdr_resume_lock_wait": "0",
+  "ad_hoc_slot": "1",
+  "version": 1,
+  "task": "replay",
+  "queued_at": 1793309010.1155658,
+  "brief_sha256": "8f2097a40efb66edd9a9d06623fbfbeb1e2685bcad93203a16731f420d1358d6"
+}

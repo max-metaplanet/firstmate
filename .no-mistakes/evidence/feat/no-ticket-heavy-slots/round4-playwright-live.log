@@ -1,0 +1,19 @@
+Command: node_modules/.bin/playwright test simple.spec.js --workers=1 --reporter=line
+Lightweight --version while slot held: Version 1.56.1
+
+waiting for a heavy slot (1 on this machine, held by pid 3222493)
+Observed: real suite queued behind the only slot. Releasing holder.
+
+Running 1 test using 1 worker
+
+[1A[2K(node:3223015) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+
+[1A[2K(node:3223015) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+
+[1A[2K[1/1] simple.spec.js:1:50 › isolated live check
+[1A[2K  1 passed (1.2s)
+Final suite exit: 0

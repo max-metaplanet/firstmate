@@ -1,0 +1,8 @@
+Serial comparison requested by steering message 010
+
+Compared unpublished pipeline head b3809439d09733d9f9534db9c451c7e45bbfb6d4 with fetched origin/main e2f8f938344ee5ba6801772abd62f6b040dec2fd. Each test ran alone, serially, from a read-only Git archive fixture, not a managed worktree. Exact result rows: comparison-results.json; exact commands and outputs: comparisons.log plus compare-<ref>-<test>.log.
+
+- fm-remote-job-orphan-reap: exit 0 on both branch and main. The configured parallel run's dry-run-stopped-worker failure did not reproduce alone. Per instruction 010 no changes to this test or production reaper.
+- fm-extension-binding: exit 1 on both branch and main, for distinct observed reasons. On the branch all local scenarios including lifecycle lock ordering pass, with “all extension-binding tests passed”; only the remote section later exits 1 after not-autohandled remote-source, without a terminal-source assertion. On main the fixture instead fails at missing Node before binding publishes. These are not asserted to be identical root causes. The configured parallel run's lock-order terminal-source failure did not recur alone on the branch. Per instruction 010 do not alter this test or broaden the fix to remote conformance failures here.
+
+Original configured failure output is available in configured-test-full.log (complete no-mistakes Test log) and configured-test-failure-excerpts.txt. It was never absent from the executor; prior agents lacked it in their handoff. The latest command ran 56 suites: 54 passed and 2 failed. This is evidence for classifying the existing failures, not an assertion the configured command passed. No gate override is authorized.
