@@ -43,7 +43,7 @@
 #
 # THE FIVE THINGS THAT MUST BE ESTABLISHED, never guessed. Any one of them
 # missing is a refusal, and a refusal at this stage leaves the old lead running
-# and in charge, because nothing has been touched yet:
+# and in charge, because the handover has not been armed:
 #   1. This home's lock is held by a live Claude or embedded Codex session.
 #      A shared Codex app-server is never terminated as a leader.
 #   2. The lead's OWN profile, from state/.lock-runtime (bin/fm-lock.sh writes
@@ -80,7 +80,7 @@
 # envelope is published as a record in this home's operational inbox and only
 # its printable doorbell rides the command line, because Claude Code strips the
 # typed marker from a launch prompt. A record that cannot be published is a
-# refusal, before anything is touched.
+# refusal, before the handover is armed.
 #
 # REMOTE CONTROL FOLLOWS THE LEAD, by default. Remote Control is a property of
 # the PROCESS, so a replacement starts without it even though it resumes the
@@ -110,8 +110,9 @@
 # proven gone, and never a moment the home is open to a third session, because
 # the reservation covers exactly that gap.
 #
-# WHAT A FAILURE LEAVES. Every check above runs before anything is touched, so a
-# refusal leaves the old lead running and in charge with the reason reported.
+# WHAT A FAILURE LEAVES. A preflight refusal leaves the old lead running and in
+# charge with the reason reported, but may leave prepared history directories
+# and links in place if a later check fails.
 # After the detached stage has ended the old process there is no going back to
 # it, and the stage says so plainly: it records the outcome in
 # state/.lead-restart.result, drops the reservation so the home is not held
