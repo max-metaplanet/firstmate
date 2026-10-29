@@ -1,0 +1,149 @@
+$ git -C [isolated]/source init -q
+exit=0
+
+$ git -C [isolated]/source add hello.txt
+exit=0
+
+$ git -C [isolated]/source -c user.name=Test -c user.email=test@example.invalid commit -qm isolated source
+exit=0
+
+Boat executable on PATH: None
+$ bash ~/.no-mistakes/worktrees/c0c4fcacb05a/01M64DZPNDGM5GZ6GYRYEYBGT1/bin/fm-boat-run.sh run --worktree [isolated]/source --output [isolated]/unavailable -- sh -c echo REMOTE_COMMAND_EXECUTED
+exit=69
+boat-offload: Boat key unavailable
+
+{
+  "kind": "unavailable",
+  "remote_exit": null,
+  "cleanup": "deleted",
+  "swap_gib": 0,
+  "source_head": "9c0c54d7f2fa811f4d16ecddeee99f087f8c997d",
+  "source_sha256": "47090e1af7e5979d1685a3cbd871b9c9d1f2ac158211519dab929820360d9395",
+  "execution_error": "Boat key unavailable",
+  "error": "Boat key unavailable",
+  "adapter_exit": 69
+}
+$ python3 ~/.no-mistakes/worktrees/c0c4fcacb05a/01M64DZPNDGM5GZ6GYRYEYBGT1/bin/fm-build-lock.py -- sh -c echo LOCAL_FALLBACK_EXECUTED
+exit=0
+LOCAL_FALLBACK_EXECUTED
+
+$ bash ~/.no-mistakes/worktrees/c0c4fcacb05a/01M64DZPNDGM5GZ6GYRYEYBGT1/bin/fm-boat-run.sh run --worktree [isolated]/source --output [isolated]/secret-input --input .env -- sh -c echo REMOTE_COMMAND_EXECUTED
+exit=2
+boat-offload: extra input is a credential/cache path: .env
+
+{
+  "kind": "invalid",
+  "remote_exit": null,
+  "cleanup": "not-created",
+  "swap_gib": 0,
+  "error": "extra input is a credential/cache path: .env",
+  "adapter_exit": 2
+}
+$ bash ~/.no-mistakes/worktrees/c0c4fcacb05a/01M64DZPNDGM5GZ6GYRYEYBGT1/bin/fm-boat-run.sh run --worktree [isolated]/source --output [isolated]/traversal-input --input ../escape -- sh -c echo REMOTE_COMMAND_EXECUTED
+exit=2
+boat-offload: paths must be normalized relative paths
+
+{
+  "kind": "invalid",
+  "remote_exit": null,
+  "cleanup": "not-created",
+  "swap_gib": 0,
+  "error": "paths must be normalized relative paths",
+  "adapter_exit": 2
+}
+$ bash ~/.no-mistakes/worktrees/c0c4fcacb05a/01M64DZPNDGM5GZ6GYRYEYBGT1/bin/fm-boat-run.sh run --worktree [isolated]/source --output [isolated]/traversal-artifact --artifact ../escape -- sh -c echo REMOTE_COMMAND_EXECUTED
+exit=2
+boat-offload: paths must be normalized relative paths
+
+{
+  "kind": "invalid",
+  "remote_exit": null,
+  "cleanup": "not-created",
+  "swap_gib": 0,
+  "error": "paths must be normalized relative paths",
+  "adapter_exit": 2
+}
+$ bash ~/.no-mistakes/worktrees/c0c4fcacb05a/01M64DZPNDGM5GZ6GYRYEYBGT1/bin/fm-boat-run.sh run --worktree [isolated]/source --output [isolated]/credential-artifact --artifact .env -- sh -c echo REMOTE_COMMAND_EXECUTED
+exit=2
+boat-offload: credential/cache artifact refused
+
+{
+  "kind": "invalid",
+  "remote_exit": null,
+  "cleanup": "not-created",
+  "swap_gib": 0,
+  "error": "credential/cache artifact refused",
+  "adapter_exit": 2
+}
+$ bash ~/.no-mistakes/worktrees/c0c4fcacb05a/01M64DZPNDGM5GZ6GYRYEYBGT1/bin/fm-boat-run.sh run --worktree [isolated]/source --output [isolated]/source-symlink -- sh -c echo REMOTE_COMMAND_EXECUTED
+exit=2
+boat-offload: source symlink refused: hello.txt
+
+{
+  "kind": "invalid",
+  "remote_exit": null,
+  "cleanup": "not-created",
+  "swap_gib": 0,
+  "error": "source symlink refused: hello.txt",
+  "adapter_exit": 2
+}
+$ bash ~/.no-mistakes/worktrees/c0c4fcacb05a/01M64DZPNDGM5GZ6GYRYEYBGT1/bin/fm-boat-run.sh run --worktree [isolated]/source --output [isolated]/two-reservations -- sh -c echo REMOTE_COMMAND_EXECUTED
+exit=75
+boat-offload: two Boat jobs already reserved
+
+{
+  "kind": "unavailable",
+  "remote_exit": null,
+  "cleanup": "deleted",
+  "swap_gib": 0,
+  "source_head": "9c0c54d7f2fa811f4d16ecddeee99f087f8c997d",
+  "source_sha256": "6a1b2ae69ac4059ffb36e2e79717d5bd11ab052db2e392e6225d4fbe5764ad41",
+  "execution_error": "two Boat jobs already reserved",
+  "error": "two Boat jobs already reserved",
+  "adapter_exit": 75
+}
+$ bash ~/.no-mistakes/worktrees/c0c4fcacb05a/01M64DZPNDGM5GZ6GYRYEYBGT1/bin/fm-boat-run.sh reap
+exit=0
+
+$ bash ~/.no-mistakes/worktrees/c0c4fcacb05a/01M64DZPNDGM5GZ6GYRYEYBGT1/bin/fm-boat-run.sh reap
+exit=0
+
+After repeat reap: [
+  {
+    "name": "fm-offload-564a78accf3e40ceb8c2da5b3cb4ee08",
+    "vm_id": null,
+    "cleanup": "deleted",
+    "ttl": 2700,
+    "expires": 1793303343.0186465,
+    "create_started": false
+  },
+  {
+    "name": "fm-offload-eed8cf22e7ac4e68b8fe80ea0fa044e7",
+    "vm_id": null,
+    "cleanup": "deleted",
+    "ttl": 2700,
+    "expires": 1793303346.8021796,
+    "create_started": false
+  },
+  {
+    "name": "fm-offload-disposable-1",
+    "cleanup": "deleted",
+    "create_started": false
+  },
+  {
+    "name": "fm-offload-disposable-0",
+    "cleanup": "deleted",
+    "create_started": false
+  }
+]
+$ bash ~/.no-mistakes/worktrees/c0c4fcacb05a/01M64DZPNDGM5GZ6GYRYEYBGT1/bin/fm-brief.sh boat-validation core --mode local-only
+exit=0
+scaffolded: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M64DZPNDGM5GZ6GYRYEYBGT1/.boat-live-ha_384qv/home/data/boat-validation/brief.md (ship, mode=local-only; replace {TASK} and {FIRSTMATE_SPEC})
+
+Generated worker instructions:
+On core-like projects, prefer `~/.no-mistakes/worktrees/c0c4fcacb05a/01M64DZPNDGM5GZ6GYRYEYBGT1/bin/fm-boat-run.sh` for a secret-free heavy build or test when Boat is available; its `--help` owns source inputs, result files, cleanup and fallback mechanics.
+Call it directly, outside the local heavy-slot wrapper.
+If its result explicitly says `kind: unavailable`, fall back locally through `~/.no-mistakes/worktrees/c0c4fcacb05a/01M64DZPNDGM5GZ6GYRYEYBGT1/bin/fm-build-lock.py -- <command>`; a remote command failure or unknown outcome needs diagnosis before retrying.
+Keep authenticated checks and no-mistakes pipeline steps on their existing path.
+
+All disposable local product checks passed; temporary setup removed on exit.

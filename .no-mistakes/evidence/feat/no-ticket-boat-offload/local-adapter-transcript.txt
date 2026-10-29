@@ -1,0 +1,74 @@
+$ fm-boat-run.sh run [isolated source/home] no-credential
+exit=69
+
+boat-offload: Boat key unavailable
+
+{
+  "kind": "unavailable",
+  "remote_exit": null,
+  "cleanup": "deleted",
+  "swap_gib": 0,
+  "source_head": "a5982f525c9a8505182f384dfeb33110f468372b",
+  "source_sha256": "5d9e69e4e492f5c1debc26b61240e904c08b06e0452f40776a95c0f2cdc4d5ba",
+  "execution_error": "Boat key unavailable",
+  "error": "Boat key unavailable",
+  "adapter_exit": 69
+}
+$ fm-build-lock.py -- bash -c "echo LOCAL_FALLBACK_EXECUTED"
+exit=0
+LOCAL_FALLBACK_EXECUTED
+
+
+$ fm-boat-run.sh run [isolated source/home] refuse-secret
+exit=2
+
+boat-offload: extra input is a credential/cache path: .env
+
+{
+  "kind": "invalid",
+  "remote_exit": null,
+  "cleanup": "not-created",
+  "swap_gib": 0,
+  "error": "extra input is a credential/cache path: .env",
+  "adapter_exit": 2
+}
+$ fm-boat-run.sh run [isolated source/home] refuse-source-symlink
+exit=2
+
+boat-offload: source symlink refused: hello.txt
+
+{
+  "kind": "invalid",
+  "remote_exit": null,
+  "cleanup": "not-created",
+  "swap_gib": 0,
+  "error": "source symlink refused: hello.txt",
+  "adapter_exit": 2
+}
+$ fm-boat-run.sh run [isolated source/home] refuse-artifact-traversal
+exit=2
+
+boat-offload: paths must be normalized relative paths
+
+{
+  "kind": "invalid",
+  "remote_exit": null,
+  "cleanup": "not-created",
+  "swap_gib": 0,
+  "error": "paths must be normalized relative paths",
+  "adapter_exit": 2
+}
+$ fm-boat-run.sh reap [isolated home]
+exit=0
+
+
+Persisted jobs: [
+  {
+    "name": "fm-offload-aa7d5a0f978249f0bc46ab55abee3674",
+    "vm_id": null,
+    "cleanup": "deleted",
+    "ttl": 2700,
+    "expires": 1793301518.9614308,
+    "create_started": false
+  }
+]

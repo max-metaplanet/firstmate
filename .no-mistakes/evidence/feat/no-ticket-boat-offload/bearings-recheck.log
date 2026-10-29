@@ -1,0 +1,5 @@
+ok - path prints the stable home-scoped board location
+ok - build refuses malformed payloads before touching the board
+error: listener is not running: lavish-9257d003fca96331
+fm-bearings-board: cannot arm the board as a process-event source
+not ok - an omitted, queued, and warning charted kind was refused
