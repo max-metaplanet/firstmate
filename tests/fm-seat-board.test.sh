@@ -766,4 +766,18 @@ test_serve_answers_a_loopback_host_and_refuses_a_rebinding_one
 test_serve_serves_the_board_only_under_the_path_token_it_printed
 test_stopping_serve_leaves_nothing_listening_on_its_port
 
+test_board_explains_spare_leader() {
+  local out
+  read_board_case "$(make_board_case spare-leader)"
+  mkdir -p "$SEATS_DIR/leader"
+  printf '%s\n' "$SEATS_DIR/leader" > "$SPEC_DIR/oauth"
+  printf 'on\n' > "$HOME_DIR/config/claude-seat-spare-leader"
+  printf '%s\n' "$$" > "$HOME_DIR/state/.lock"
+  printf 'pid=%s\nharness=claude\nprofile=%s\n' "$$" "$SEATS_DIR/leader" > "$HOME_DIR/state/.lock-runtime"
+  out=$(run_board "$HOME_DIR" "$FAKEBIN" "$CASE_DIR/cache")
+  expect_grep 'spare leader: on - sparing leader (claude); last eligible choice' "$out" 'board must explain its soft preference'
+  pass 'board names the spared leader seat'
+}
+test_board_explains_spare_leader
+
 echo "# all fm-seat-board tests passed"

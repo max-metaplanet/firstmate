@@ -16,7 +16,7 @@
 #   fm-seat.sh probe [<name|default>]
 #   fm-seat.sh name-of <profile-dir>
 #   fm-seat.sh worker-destination --from <name|default> [--skip <name>]...
-#   fm-seat.sh launch-destination
+#   fm-seat.sh launch-destination [--spare-only]
 #   fm-seat.sh add <name>
 #   fm-seat.sh threshold [<percent-left>|off]
 #   fm-seat.sh destination-min [<percent-left>|off]
@@ -98,7 +98,10 @@
 #            writes and launches nothing - bin/fm-quota-wall-lib.sh owns the
 #            mid-task move and bin/fm-control.sh performs it.
 # launch-destination
-#            The seat a NEW Claude worker launches on. The active seat, unless
+#            The seat a NEW worker launches on. Spare-leader mode first prefers
+#            an eligible alternative to the leader. --spare-only returns the
+#            active seat if none exists (used by Codex dispatch). Otherwise,
+#            the active seat, unless
 #            a switch trigger is set and the active seat's five-hour window is
 #            proven at or below it; then a seat with five-hour room and more
 #            weekly spare, through the same gate as the rotation. Prints one
@@ -463,10 +466,15 @@ cmd_status() {
   else
     printf 'firstmate itself is running on: (not recorded for this session)\n'
   fi
+  fm_seat_spare_leader_status
   if threshold=$(fm_seat_threshold); then
     printf 'auto-switch trigger: at or below %s%% left on the active seat\n' "$threshold"
   else
-    printf 'auto-switch trigger: (unset - no automatic switching)\n'
+    if fm_seat_spare_leader_enabled; then
+      printf 'auto-switch trigger: (unset - only spare-leader departures)\n'
+    else
+      printf 'auto-switch trigger: (unset - no automatic switching)\n'
+    fi
   fi
   if minimum=$(fm_seat_destination_min); then
     printf 'destination minimum: only switch to a seat above %s%% left\n' "$minimum"
@@ -627,7 +635,11 @@ session_room_reason() {
 }
 
 # cmd_launch_destination
-# The seat a NEW Claude worker launches on, by name. With no switch trigger set,
+# The seat a NEW native worker launches on, by name. An enabled spare-leader
+# preference first tries an eligible non-leader destination, or moves off a
+# used-up worker seat, falling back to the leader last. --spare-only then
+# retains the active seat, preserving Codex dispatch's existing session policy.
+# Otherwise: With no switch trigger set,
 # or when the active seat has five-hour room or no five-hour reading, that is
 # the active seat, unchanged. When the active seat is proven to have no
 # five-hour room, it is the seat next_seat chooses with --session-room: one with
@@ -641,11 +653,20 @@ session_room_reason() {
 # it answers the active seat, because the spawn's depletion and extra-usage
 # gates own an empty seat's refusal, and its paid overflow, in their own words.
 cmd_launch_destination() {
-  local active trigger name soonest seat at
+  local active trigger name soonest seat at spare_only=0
   local -a waiting=()
+  if [ "${1-}" = --spare-only ]; then spare_only=1; shift; fi
   [ "$#" -eq 0 ] || usage
   seat_command_memo
   active=$(fm_seat_active)
+  if name=$(spare_leader_destination "$active" 2>/dev/null); then
+    printf '%s\n' "$name"
+    return 0
+  fi
+  if [ "$spare_only" -eq 1 ]; then
+    printf '%s\n' "$active"
+    return 0
+  fi
   trigger=$(fm_seat_threshold) || { printf '%s\n' "$active"; return 0; }
   if session_room_reason "$active" "$trigger" >/dev/null; then :; else
     printf '%s\n' "$active"
@@ -961,9 +982,14 @@ seat_rank_key() {
 # `switch --next` typed at the prompt is the operator's own rotation, not a
 # choice this makes on headroom.
 #
+# `--spare-leader` asks the same absolute question for a move that spares the
+# leader: the leader's seat is never a candidate, and with a trigger set no seat
+# at or below it is either. `--spare-fallback` is the same move with the leader
+# kept as the last fallback, for leaving a worker seat that has nothing left.
+#
 # `--session-room` adds one more rule for a NEW worker's launch: a candidate
 # must also show five-hour room above the switch trigger (session_room_reason
-# below). launch-destination is its only caller. When it refuses, it prints on
+# below). Used for launch routing and proactive spare-leader departures. When it refuses, it prints on
 # stdout every candidate that passed every other rule and lacked only that
 # room, because those seats' five-hour resets are the ones that can end a hold.
 #
@@ -977,7 +1003,16 @@ seat_rank_key() {
 next_seat() {
   local active seats n i idx name minimum='' reason state resting skip rc
   local anchor_basis='' anchor_spare='' any=0 key session='' room
+  local spared='' fallback='' spare_move=0 skip_spared=0 left phrase
   local -a ranked=() waiting=()
+  case "${1-}" in
+    --spare-leader|--spare-fallback)
+      [ "$1" = --spare-fallback ] || skip_spared=1
+      spare_move=1
+      any=1
+      shift
+      ;;
+  esac
   if [ "${1-}" = --any ]; then
     any=1
     shift
@@ -985,6 +1020,9 @@ next_seat() {
   if [ "${1-}" = --session-room ]; then
     session=$(fm_seat_threshold) || return 1
     shift
+  fi
+  if [ "$any" -eq 0 ] || [ "$spare_move" -eq 1 ]; then
+    spared=$(fm_seat_spared_leader) || spared=''
   fi
   active=${1:-$(fm_seat_active)}
   [ "$#" -eq 0 ] || shift
@@ -1030,6 +1068,9 @@ next_seat() {
         "$name" "$resting" "$name" "$name" >&2
       continue
     fi
+    if [ "$skip_spared" -eq 1 ] && fm_seat_matches_spared "$name" "$spared"; then
+      continue
+    fi
     state=$(login_state "$name")
     if ! seat_usable "$state"; then
       # Each unusable state gets its own reason. Only a seat proven to hold no
@@ -1045,6 +1086,12 @@ next_seat() {
       esac
       continue
     fi
+    if [ "$spare_move" -eq 1 ] && [ -n "$session" ] &&
+      IFS=$'\t' read -r _ left phrase < <(seat_crossing "$name") && [ -n "$left" ] &&
+      jq -en --arg l "$left" --arg t "$session" '($l | tonumber) <= ($t | tonumber)' >/dev/null 2>&1; then
+      printf 'seat %s: skipped, at %s it is not above the %s%% switch trigger\n' "$name" "$phrase" "$session" >&2
+      continue
+    fi
     reason=$(destination_quota_check "$name" "$anchor_basis" "$anchor_spare")
     rc=$?
     if [ "$rc" -ne 0 ] && [ -n "$session" ]; then
@@ -1058,6 +1105,10 @@ next_seat() {
     fi
     case "$rc" in
       1)
+        if fm_seat_matches_spared "$name" "$spared"; then
+          fallback=$name
+          continue
+        fi
         if [ "$anchor_basis" != week-spare ] || ! key=$(seat_rank_key "$name" "$i"); then
           printf '%s\n' "$name"
           return 0
@@ -1075,6 +1126,10 @@ next_seat() {
     # quota was read; with one set the comparison has no number to make and the
     # seat is skipped for that reason rather than for its login state.
     if [ -z "$minimum" ]; then
+      if fm_seat_matches_spared "$name" "$spared"; then
+        fallback=$name
+        continue
+      fi
       if [ "$anchor_basis" != week-spare ]; then
         printf '%s\n' "$name"
         return 0
@@ -1096,12 +1151,37 @@ next_seat() {
     fi
   done
   if [ "${#ranked[@]}" -eq 0 ]; then
+    if [ -n "$fallback" ]; then
+      printf '%s\n' "$fallback"
+      return 0
+    fi
     [ "${#waiting[@]}" -eq 0 ] || printf '%s\n' "${waiting[@]}"
     return 1
   fi
   LC_ALL=C printf '%s\n' "${ranked[@]}" |
     LC_ALL=C sort -t"$(printf '\t')" -k1,1n -k2,2n -k3,3nr -k4,4n |
     head -1 | cut -f5
+}
+
+# A spared leader ranks behind any eligible worker seat even when it has more
+# weekly spare. Session room, the switch trigger and absolute destination gates
+# still apply, so a departure never lands on a seat the rotation must leave. Once
+# off the leader, ordinary anchor comparison and fired-state hysteresis resume.
+# A worker seat with nothing left to start work on, its plan quota used up and
+# no paid extra-usage policy covering it, leaves through the same rules with the
+# leader kept only as the last fallback, with or without a switch trigger; the
+# empty seat is never a destination back.
+spare_leader_destination() {
+  local active=$1 spared
+  local -a room=()
+  spared=$(fm_seat_spared_leader) || return 1
+  if fm_seat_threshold >/dev/null; then room=(--session-room); fi
+  if fm_seat_matches_spared "$active" "$spared"; then
+    next_seat --spare-leader ${room[@]+"${room[@]}"} "$active"
+    return
+  fi
+  fm_seat_dry "$(fm_seat_config_dir "$active")" || return 1
+  next_seat --spare-fallback ${room[@]+"${room[@]}"} "$active"
 }
 
 # write_active <name>
@@ -1721,6 +1801,8 @@ cmd_threshold_reached() {
 # about, and drops entries once they return to rotation.
 # `pipeline=<seat:since ...>` records resting entries with live pipeline agents
 # already warned about, preserving the worker-warning record independently.
+# Optional spare_blocked records a failed proactive departure independently of
+# threshold crossings, so a healthy active seat cannot re-announce it each poll.
 AUTO_RECORD="$STATE/.${FM_SEAT_PROVIDER}-seat-auto"
 
 auto_record_get() {
@@ -1732,13 +1814,14 @@ auto_record_get() {
 # Replace one field, preserving the others. The record is small and rewritten
 # whole, so a partial write can never leave a half-updated record behind.
 auto_record_set() {
-  local key=$1 value=$2 fired blocked extra lead resting_workers pipeline tmp
+  local key=$1 value=$2 fired blocked extra lead resting_workers pipeline tmp spare_blocked
   fired=$(auto_record_get fired) || fired=''
   blocked=$(auto_record_get blocked) || blocked=''
   extra=$(auto_record_get extra) || extra=''
   lead=$(auto_record_get lead) || lead=''
   resting_workers=$(auto_record_get resting_workers) || resting_workers=''
   pipeline=$(auto_record_get pipeline) || pipeline=''
+  spare_blocked=$(auto_record_get spare_blocked) || spare_blocked=''
   case "$key" in
     fired) fired=$value ;;
     blocked) blocked=$value ;;
@@ -1746,10 +1829,12 @@ auto_record_set() {
     lead) lead=$value ;;
     resting_workers) resting_workers=$value ;;
     pipeline) pipeline=$value ;;
+    spare_blocked) spare_blocked=$value ;;
   esac
   mkdir -p "$STATE" 2>/dev/null || return 1
   tmp=$(umask 077; mktemp "$STATE/.fm-seat-auto.XXXXXX" 2>/dev/null) || return 1
-  { printf 'fired=%s\n' "$fired"; printf 'blocked=%s\n' "$blocked"; printf 'extra=%s\n' "$extra"; printf 'lead=%s\n' "$lead"; printf 'resting_workers=%s\n' "$resting_workers"; printf 'pipeline=%s\n' "$pipeline"; } > "$tmp" ||
+  { printf 'fired=%s\n' "$fired"; printf 'blocked=%s\n' "$blocked"; printf 'extra=%s\n' "$extra"; printf 'lead=%s\n' "$lead"; printf 'resting_workers=%s\n' "$resting_workers"; printf 'pipeline=%s\n' "$pipeline";
+    if [ -n "$spare_blocked" ]; then printf 'spare_blocked=%s\n' "$spare_blocked"; fi; } > "$tmp" ||
     { rm -f -- "$tmp"; return 1; }
   mv -f -- "$tmp" "$AUTO_RECORD" || { rm -f -- "$tmp"; return 1; }
 }
@@ -1983,7 +2068,7 @@ cmd_auto() {
   threshold=$(fm_seat_threshold) || threshold=''
   floor=$(fm_seat_floor) || floor=''
   # A home that configured neither pays nothing: no quota is read at all.
-  [ -n "$threshold" ] || [ -n "$floor" ] || return 0
+  [ -n "$threshold" ] || [ -n "$floor" ] || fm_seat_spare_leader_enabled || return 0
   check_timeout=${FM_CHECK_TIMEOUT:-30}
   case "$check_timeout" in
     ''|*[!0-9]*|0) check_timeout=30 ;;
@@ -2009,6 +2094,7 @@ cmd_auto() {
   # this pass just rested.
   auto_floor
   [ "$FM_SEAT_PROVIDER" != claude ] || warn_pipeline_resting_entry
+  auto_spare_leader
   if [ -n "$threshold" ]; then
     auto_trigger "$threshold" "$policy"
     [ "$FM_SEAT_PROVIDER" != claude ] || auto_lead_trigger "$threshold"
@@ -2085,6 +2171,38 @@ auto_lead_trigger() {  # <threshold>
   printf '%s\n' "${selection%$'\n'*}"
   printf '%s-seat: firstmate itself is on %s at %s and moves to %s now, on this wake, without asking the captain (load the claude-seat-lead-restart skill). Replacing this session drops its conversation and keeps every durable record, so FIRST %s THEN run exactly: %s/bin/fm-seat.sh lead-restart --provider %s --to %s --persisted\n' "$FM_SEAT_PROVIDER" \
     "$seat" "$phrase" "$provider:$target" "$FM_PERSIST_OPEN_RECORDS_CONTRACT" "$FM_ROOT" "$provider" "$target"
+}
+
+# Proactively spare the leader without touching running workers or leader
+# replacement, and leave a used-up worker seat even with no trigger set. Record
+# the destination before publishing, as auto_trigger does.
+auto_spare_leader() {
+  local active target fired out blocked spared why='to spare the leader'
+  active=$(fm_seat_active)
+  target=$(spare_leader_destination "$active" 2>/dev/null) || return 0
+  spared=$(fm_seat_spared_leader) || spared=''
+  if fm_seat_matches_spared "$target" "$spared"; then
+    why='because its quota is used up and no other seat can take new workers'
+  elif ! fm_seat_matches_spared "$active" "$spared"; then
+    why='because its quota is used up'
+  fi
+  fired=$(auto_record_get fired) || fired=''
+  auto_record_set fired "$target"
+  if out=$(FM_HOME="$FM_HOME" FM_ROOT_OVERRIDE="$FM_ROOT" FM_STATE_OVERRIDE="$STATE" \
+    FM_CONFIG_OVERRIDE="$CONFIG" FM_DATA_OVERRIDE="$DATA" \
+    "$SCRIPT_DIR/fm-seat.sh" switch "$target" 2>&1); then
+    auto_record_set blocked ''
+    auto_record_set spare_blocked ''
+    printf '%s-seat: switched from %s to %s %s; new workers launch there\n' \
+      "$FM_SEAT_PROVIDER" "$active" "$target" "$why"
+  else
+    auto_record_set fired "$fired"
+    blocked=$(auto_record_get spare_blocked) || blocked=''
+    [ "$blocked" != "spare:$active:failed:$target" ] || return 0
+    auto_record_set spare_blocked "spare:$active:failed:$target"
+    printf '%s-seat: could not switch from %s to %s under the spare-leader preference: %s\n' \
+      "$FM_SEAT_PROVIDER" "$active" "$target" "$(printf '%s' "$out" | tail -1)"
+  fi
 }
 
 # auto_trigger <threshold> <policy>
@@ -2620,7 +2738,7 @@ cmd_arm() {
   fi
   threshold=$(fm_seat_threshold) || threshold=''
   floor=$(fm_seat_floor) || floor=''
-  [ -n "$threshold" ] || [ -n "$floor" ] ||
+  [ -n "$threshold" ] || [ -n "$floor" ] || fm_seat_spare_leader_enabled ||
     die "no auto-switch threshold or quota floor configured; set one with 'fm-seat.sh threshold <percent-left>' or 'fm-seat.sh floor <percent-left>' first"
   # stdout only is discarded: each candidate's own skip reason belongs on
   # stderr beside the refusal, the same way every other rotation refusal reads,
@@ -2649,6 +2767,8 @@ cmd_arm() {
   if [ -n "$threshold" ]; then
     printf 'armed: automatic switch at %s%% left on the active seat\n' "$threshold"
     printf 'keeps watching after each switch; one crossing fires at most once per seat\n'
+  elif fm_seat_spare_leader_enabled; then
+    printf 'armed: spare the leader when another eligible worker seat exists\n'
   else
     printf 'armed: the quota floor only - no auto-switch threshold is set, so nothing switches on its own\n'
   fi

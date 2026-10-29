@@ -425,6 +425,21 @@ The running agent finishes untouched; no wrapper or seat command cancels, aborts
 Moving an individual running agent needs no-mistakes support that is not currently available.
 A whole-run abort-and-revalidate is only a manual step with the captain's approval because it discards in-flight work, and must preserve every prior pipeline commit.
 
+## Sparing the leader's seat
+
+Enable the optional [spare-leader setting](configuration.md) for Claude or Codex to drain the primary firstmate's account more slowly.
+Automatic worker destination selection ranks its seat last among eligible seats, and falls back to it when no other candidate qualifies.
+When the active worker seat is the leader's seat, new dispatch chooses an eligible alternative immediately and an armed watch switches future workers there without waiting for the quota trigger.
+This departure can choose a seat with less weekly spare than the leader; destination minimum, resting, login, depletion, and manual exclusions still apply, and with a trigger set a candidate also needs five-hour room and must not itself read at or below the trigger, so the departure never lands on a seat the rotation would have to leave.
+After leaving, ordinary weekly-headroom comparison and the watch's remembered destination prevent repeated rotation.
+When the active worker seat's plan quota is used up and no `allow <usd>` extra-usage policy still covers it, new dispatch and the watch move off it even with no trigger set, to any eligible worker seat whatever its weekly spare, reaching the leader's seat only when no other seat qualifies; a used-up seat is never a destination, so the move does not flap back.
+No running worker moves, and `lead-restart` and `leader-destination` retain their existing behavior.
+
+The preference reads the primary's current profile from the pid-bound runtime record beside its session lock, not from the caller's environment or the active worker seat.
+A local secondmate follows its recorded parent binding to that primary; a home declining seat inheritance or using a remote parent uses its own leader record.
+If the record cannot establish a seat for this provider, selection behaves as if the preference were off, and `status` and the seat board report that it is inactive.
+The option inherits to local secondmates with the neighboring seat settings, respects each provider's `seat-local` opt-out, and never propagates to a remote machine.
+
 ## Moving firstmate itself
 
 Seat switches above govern new workers and pipeline agents.
@@ -543,7 +558,7 @@ The [runtime verification record](verification/runtime-backends.md#seat-renewal-
 
 ## Secondmate homes
 
-All eleven seat settings are inherited into this machine's local secondmate homes through the primary-authoritative configuration contract, so a secondmate's own Claude crewmates launch on the same seat as the primary's and no local home automatically rotates onto a seat the primary held out or the floor is resting.
+The seat settings defined in [configuration.md](configuration.md) are inherited into this machine's local secondmate homes through the primary-authoritative configuration contract, so a secondmate's own Claude crewmates launch on the same seat as the primary's and no local home automatically rotates onto a seat the primary held out or the floor is resting.
 The resting record is one of them, and is config rather than state for exactly that reason: a secondmate's own rotation has to skip a seat the primary's watch rested, and inherited configuration is the only thing that crosses homes.
 Only the home running the watch writes it, and only that home measures the session share, whose samples stay in its own state and are never inherited.
 Every switch, manual or automatic, runs `bin/fm-config-push.sh --local-only` right after it changes the primary's seat, so running local secondmates pick up the new seat without being stopped, and the switch prints which homes were updated and which were not.

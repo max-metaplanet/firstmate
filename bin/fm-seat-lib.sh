@@ -296,6 +296,73 @@ fm_seat_name_of_profile() {
   printf '%s\n' "$profile"
 }
 
+# config/<provider>-seat-spare-leader is opt-in: exactly "on" enables it.
+# Absent, off, or an unreadable value leaves selection unchanged.
+fm_seat_spare_leader_enabled() {
+  [ "$(cat "$CONFIG/${FM_SEAT_PROVIDER:-claude}-seat-spare-leader" 2>/dev/null)" = on ]
+}
+
+# Resolve the live primary's recorded profile, never the caller's environment.
+# Local secondmates follow their durable parent binding; remote homes and homes
+# declining seat inheritance use their own record. No record means no preference.
+# Callers need fm-session-lock-lib.sh; this reads only its pid-bound runtime data.
+fm_seat_spared_leader() (
+  fm_seat_spare_leader_enabled || return 1
+  local state=${STATE:-${FM_HOME:-}/state} home provider profile name identity candidate depth=0
+  home=${state%/state}
+  # shellcheck source=bin/fm-secondmate-parent-lib.sh
+  . "${BASH_SOURCE[0]%/*}/fm-secondmate-parent-lib.sh"
+  while [ -e "$home/.fm-secondmate-home" ] &&
+    [ ! -e "$home/config/${FM_SEAT_PROVIDER:-claude}-seat-local" ] &&
+    [ ! -L "$home/config/${FM_SEAT_PROVIDER:-claude}-seat-local" ]; do
+    fm_secondmate_parent_record_parse "$home/.fm-secondmate-parent" || return 1
+    [ "$FM_SECONDMATE_PARENT_ROUTE" = local ] || break
+    home=$FM_SECONDMATE_PARENT_HOME
+    state=$home/state
+    depth=$((depth + 1))
+    [ "$depth" -lt 16 ] || return 1
+  done
+  provider=$(fm_session_lock_runtime_field "$state" harness) || provider=claude
+  [ "$provider" = "${FM_SEAT_PROVIDER:-claude}" ] || return 1
+  profile=$(fm_session_lock_runtime_field "$state" profile) || return 1
+  if [ "$provider" = codex ]; then
+    identity=$(fm_seat_credential_identity "$profile") || return 1
+    while IFS= read -r name; do
+      candidate=$(fm_seat_config_dir "$name") || continue
+      [ "$(fm_seat_credential_identity "$candidate")" = "$identity" ] || continue
+      printf '%s\n' "$name"
+      return 0
+    done < <(fm_seat_list)
+  fi
+  name=$(fm_seat_name_of_profile "$profile")
+  fm_seat_name_valid "$name" || return 1
+  printf '%s\n' "$name"
+)
+
+# Compare resolved profiles too: Codex aliases and a default worker profile may
+# name the leader's credential store without using its first listed seat name.
+fm_seat_matches_spared() {
+  local name=$1 spared=$2 profile leader identity
+  [ -n "$spared" ] || return 1
+  [ "$name" != "$spared" ] || return 0
+  profile=$(fm_seat_config_dir "$name") || return 1
+  leader=$(fm_seat_config_dir "$spared") || return 1
+  identity=$(fm_seat_credential_identity "$profile") || return 1
+  [ "$identity" = "$(fm_seat_credential_identity "$leader")" ]
+}
+
+# Shared display owner for status and the seat board.
+fm_seat_spare_leader_status() {
+  local name
+  if ! fm_seat_spare_leader_enabled; then
+    printf 'spare leader: off\n'
+  elif name=$(fm_seat_spared_leader); then
+    printf 'spare leader: on - sparing %s (%s); last eligible choice\n' "$name" "${FM_SEAT_PROVIDER:-claude}"
+  else
+    printf 'spare leader: on - leader seat undetermined for %s; preference inactive\n' "${FM_SEAT_PROVIDER:-claude}"
+  fi
+}
+
 # fm_seat_spawn_config_dir
 # The CLAUDE_CONFIG_DIR a NEW claude worker should launch with: the active
 # seat's, resolved by fm_seat_config_dir. A fresh spawn or resolver uses this;

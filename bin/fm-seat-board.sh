@@ -24,8 +24,8 @@
 #                         liveAgents: [{ seat, profile, override, pid, started }] },
 #             floor: null | { removeAt, readdAt, dwellSeconds,
 #                             sessionShare: { percent, source, samples } },
-#             providers: { claude: { activeSeat, liveSeat, floor },
-#                          codex: { activeSeat, liveSeat, floor } },
+#             providers: { claude: { activeSeat, liveSeat, floor, spareLeader },
+#                          codex: { activeSeat, liveSeat, floor, spareLeader } },
 #             seats: [ { provider, name, configDir, active, autoExcluded, cacheFile,
 #                        hasData, ageSeconds, account, attention, renewal,
 #                        exclusion: { manual, resting: null | {
@@ -443,8 +443,9 @@ provider_metadata_json() (
   [ "$FM_SEAT_PROVIDER" = claude ] || fm_seat_provider_in_use || { printf 'null\n'; return 0; }
   [ "$FM_SEAT_PROVIDER" != codex ] || ambient=${CODEX_HOME:-}
   jq -cn --arg active "$(fm_seat_active)" \
-    --arg live "$(fm_seat_name_of_profile "$ambient")" --argjson floor "$(floor_json)" \
-    '{ activeSeat: $active, liveSeat: $live, floor: $floor }'
+    --arg live "$(fm_seat_name_of_profile "$ambient")" \
+    --arg spareLeader "$(fm_seat_spare_leader_status)" --argjson floor "$(floor_json)" \
+    '{ activeSeat: $active, liveSeat: $live, floor: $floor, spareLeader: $spareLeader }'
 )
 
 # render_json <cached-only>
@@ -491,6 +492,7 @@ render_page() {
     [ "$FM_SEAT_PROVIDER" = claude ] || fm_seat_provider_in_use || continue
     active=$(fm_seat_active)
     printf '<h2>%s</h2>\n' "$FM_SEAT_PROVIDER"
+    printf '<p class="rotation">%s</p>\n' "$(html_escape "$(fm_seat_spare_leader_status)")"
     seat_section_html "$FM_SEAT_DEFAULT_NAME" "$active"
     while IFS= read -r name; do
       [ -n "$name" ] || continue
