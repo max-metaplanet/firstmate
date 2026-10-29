@@ -1,0 +1,244 @@
+#!/usr/bin/env bash
+# Boat offload lifecycle, clean source transfer, failure/fallback boundaries,
+# explicit artifacts, provider budgets, interrupts, lost responses and reaping.
+set -euo pipefail
+# shellcheck source=tests/lib.sh
+. "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+CASE_ROOT=$(fm_test_tmproot fm-boat-run)
+export CASE_ROOT
+python3 - "$ROOT" <<'PY'
+import datetime
+import json
+import os
+from pathlib import Path
+import signal
+import shlex
+import subprocess
+import sys
+import time
+
+repo = Path(sys.argv[1])
+base = Path(os.environ['CASE_ROOT'])
+fixture = repo / 'tests/fixtures/boat-cli.py'
+
+def git(root, *args):
+    return subprocess.run(['git', '-C', str(root), *args], check=True,
+                          capture_output=True)
+
+def case(name, settings=None):
+    p = base / name
+    p.mkdir()
+    work = p / 'work'
+    work.mkdir()
+    git(work, 'init', '-q')
+    git(work, 'config', 'user.name', 'Fixture')
+    git(work, 'config', 'user.email', 'fixture@example.invalid')
+    (work / 'tracked.txt').write_text('committed\n')
+    (work / 'deleted.txt').write_text('delete me\n')
+    (work / '.env').write_text('never upload\n')
+    (work / '.npmrc').write_text('token=never upload\n')
+    git(work, 'add', '.')
+    git(work, 'commit', '-qm', 'fixture')
+    (work / 'tracked.txt').write_text('working edit\n')
+    (work / 'deleted.txt').unlink()
+    (work / 'input.txt').write_text('extra\n')
+    (work / 'unselected.txt').write_text('not requested\n')
+    state = p / 'home/state/boat-offload'
+    (state / 'jobs').mkdir(parents=True)
+    (state / 'fixture.json').write_text(json.dumps(settings or {}))
+    wrapper = p / 'boat'
+    wrapper.write_text('#!/bin/sh\nexec python3 ' + shlex.quote(str(fixture)) + ' ' +
+                       shlex.quote(str(state)) + ' "$@"\n')
+    wrapper.chmod(0o755)
+    user = p / 'user'
+    (user / '.config/boat').mkdir(parents=True)
+    (user / '.config/boat/api-key').write_text('boat_fixture_secret')
+    env = dict(os.environ, HOME=str(user), FM_HOME=str(p / 'home'),
+               FM_BOAT_BIN=str(wrapper), DEV_SECRET='host-only',
+               NODE_OPTIONS='--require=/should/not/travel.js')
+    return p, state, env
+
+def launch(p, env, command='exit 0', options=(), wait=True):
+    argv = ['bash', str(repo / 'bin/fm-boat-run.sh'), 'run',
+            '--worktree', str(p / 'work'), '--output', str(p / 'output'),
+            *options, '--', 'bash', '-c', command]
+    if wait:
+        return subprocess.run(argv, env=env, capture_output=True, timeout=30)
+    return subprocess.Popen(argv, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+def result(p):
+    return json.loads((p / 'output/result.json').read_text())
+
+def empty(state):
+    assert json.loads((state / 'fake-vms.json').read_text()) == []
+    assert all(json.loads(p.read_text())['cleanup'] == 'deleted' for p in (state / 'jobs').glob('*.json'))
+
+def reap(env):
+    return subprocess.run(['bash', str(repo / 'bin/fm-boat-run.sh'), 'reap'],
+                          env=env, capture_output=True, timeout=20)
+
+p, state, env = case('success')
+r = launch(p, env, 'cat tracked.txt input.txt; test -z "$DEV_SECRET$BOAT_API_KEY$NODE_OPTIONS"; mkdir -p report; echo proof > report/file',
+           ('--input', 'input.txt', '--artifact', 'report'))
+assert r.returncode == 0, r.stderr
+assert (p / 'output/artifacts/report/file').read_text() == 'proof\n'
+assert b'working edit\nextra\n' in r.stdout
+assert result(p)['remote_exit'] == 0
+names = json.loads((state / 'uploaded.json').read_text())
+assert names == ['input.txt', 'tracked.txt'], names
+assert b'boat_fixture_secret' not in r.stdout + r.stderr
+for home in map(json.loads, (state / 'cli-homes.jsonl').read_text().splitlines()):
+    assert not Path(home).exists(), home
+empty(state)
+print('ok - source edits/deletions, explicit inputs, artifacts, credential isolation and short CLI HOME cleanup')
+assert not (state / 'swap.json').exists()
+p, state, env = case('swap')
+assert launch(p, env, options=('--swap-gib', '4')).returncode == 0
+assert json.loads((state / 'swap.json').read_text()) == 4
+assert result(p)['swap_gib'] == 4
+empty(state)
+print('ok - remote swap is explicit and disabled by default')
+
+p, state, env = case('local-slot-held')
+env['FM_BUILD_LOCK_FILE'] = str(p / 'heavy.lock')
+env.pop('FM_BUILD_LOCK_BYPASS', None)
+holder_script = '''import pathlib,sys,time
+p=pathlib.Path(sys.argv[1]); (p/'held').write_text('ready')
+while not (p/'release').exists(): time.sleep(.05)
+'''
+holder = subprocess.Popen(['python3', str(repo / 'bin/fm-build-lock.py'), '--',
+                           'python3', '-c', holder_script, str(p)], env=env,
+                          stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+try:
+    for _ in range(200):
+        if (p / 'held').exists():
+            break
+        time.sleep(.05)
+    else:
+        raise AssertionError('local heavy slot never acquired')
+    assert launch(p, env).returncode == 0
+finally:
+    (p / 'release').touch()
+    out, err = holder.communicate(timeout=10)
+assert holder.returncode == 0, err
+empty(state)
+print('ok - offload completes while the local heavy slot is occupied')
+
+for name, command, code, options in [
+    ('remote-failure', 'mkdir report; echo failure > report/log; exit 7', 7, ('--artifact', 'report')),
+    ('timeout', 'sleep 10', 124, ('--timeout', '1')),
+    ('missing-artifact', 'exit 0', 74, ('--artifact', 'missing')),
+    ('link-artifact', 'ln -s /etc/passwd report', 74, ('--artifact', 'report')),
+    ('nested-secret-artifact', 'mkdir report; echo secret > report/.env', 74, ('--artifact', 'report')),
+]:
+    p, state, env = case(name)
+    r = launch(p, env, command, options)
+    assert r.returncode == code, (name, r.returncode, r.stderr)
+    if name == 'remote-failure':
+        assert (p / 'output/artifacts/report/log').read_text() == 'failure\n'
+    empty(state)
+print('ok - remote failure, timeout, missing and symlink artifacts all delete the VM')
+
+p, state, env = case('stderr')
+r = launch(p, env, 'echo failure >&2; exit 9')
+assert r.returncode == 9, r.stderr
+assert b'failure' in (p / 'output/command.log').read_bytes()
+empty(state)
+print('ok - command log includes stderr on nonzero remote exit')
+
+p, state, env = case('unsafe-return', {'unsafe_artifact': True})
+r = launch(p, env, 'mkdir report; echo proof > report/log', ('--artifact', 'report'))
+assert r.returncode == 2, r.stderr
+assert not (p / 'escape').exists()
+empty(state)
+p, state, env = case('missing-terminal', {'missing_terminal': True})
+assert launch(p, env, 'echo partial').returncode == 74
+assert (p / 'output/command.log').read_text() == 'partial\n'
+assert result(p)['kind'] == 'execution-unknown'
+empty(state)
+print('ok - unsafe returned archive and incomplete JSONL result fail closed')
+
+for name, settings, code in [('rate', {'remaining': 0}, 75),
+                             ('unreachable', {'unreachable': True}, 69),
+                             ('pagination', {'hasMore': True}, 69)]:
+    p, state, env = case(name, settings)
+    r = launch(p, env)
+    assert r.returncode == code, (name, r.stderr)
+    assert result(p)['kind'] == 'unavailable'
+    assert 'new' not in [a[0] for a in map(json.loads, (state / 'calls.jsonl').read_text().splitlines())]
+print('ok - unavailable, rate limits and incomplete listing preserve explicit fallback')
+
+p, state, env = case('capacity')
+(state / 'fake-vms.json').write_text(json.dumps([{'id':'bx_foreign1'}, {'id':'bx_foreign2'}]))
+assert launch(p, env).returncode == 75
+assert len(json.loads((state / 'fake-vms.json').read_text())) == 2
+p, state, env = case('daily')
+(state / 'daily.json').write_text(json.dumps({'date': datetime.datetime.now(datetime.timezone.utc).date().isoformat(), 'attempts':75}))
+assert launch(p, env).returncode == 75
+print('ok - two-account-VM and local daily cap never create or delete foreign work')
+
+p, state, env = case('concurrent')
+workers = [launch(p, env, 'sleep 3', ('--output', str(p / ('output-' + str(i)))), wait=False)
+           for i in range(2)]
+for _ in range(200):
+    calls = (state / 'calls.jsonl').read_text() if (state / 'calls.jsonl').exists() else ''
+    if calls.count('--stream') == 2:
+        break
+    time.sleep(.05)
+else:
+    raise AssertionError('two jobs never started')
+assert launch(p, env).returncode == 75
+for worker in workers:
+    out, err = worker.communicate(timeout=20)
+    assert worker.returncode == 0, err
+empty(state)
+print('ok - concurrent admission runs two jobs and rejects a third')
+
+for name, settings in [('push-failure', {'push_failed': True}),
+                       ('transport', {'transport_failed': True})]:
+    p, state, env = case(name, settings)
+    r = launch(p, env)
+    assert r.returncode == 74, r.stderr
+    assert result(p)['kind'] != 'unavailable'
+    empty(state)
+p, state, env = case('lost-create', {'lost_create': True})
+assert launch(p, env).returncode == 69
+empty(state)
+print('ok - failed upload/transport and lost create response clean up by recorded id/name')
+
+p, state, env = case('delete-failed', {'delete_failed': True})
+assert launch(p, env).returncode == 70
+assert result(p)['cleanup'] == 'pending'
+(state / 'fixture.json').write_text('{}')
+assert reap(env).returncode == 0
+assert reap(env).returncode == 0
+empty(state)
+print('ok - failed deletion is durable and reap is repeatable')
+
+for sig in (signal.SIGTERM, signal.SIGINT):
+    p, state, env = case('signal-' + str(sig))
+    proc = launch(p, env, 'echo started; sleep 30', wait=False)
+    for _ in range(200):
+        if (state / 'calls.jsonl').exists() and '--stream' in (state / 'calls.jsonl').read_text():
+            break
+        time.sleep(.05)
+    else:
+        raise AssertionError('command never started')
+    assert reap(env).returncode == 0  # must skip the live job
+    assert len(json.loads((state / 'fake-vms.json').read_text())) == 1
+    proc.send_signal(sig)
+    out, err = proc.communicate(timeout=15)
+    assert proc.returncode == 128 + sig, (sig, proc.returncode, err)
+    empty(state)
+print('ok - live reap skips active jobs; INT and TERM run cleanup')
+
+p, state, env = case('unsafe-input')
+assert launch(p, env, options=('--input', '.env')).returncode == 2
+assert not (state / 'calls.jsonl').exists()
+p, state, env = case('source-symlink')
+(p / 'work/tracked.txt').unlink()
+(p / 'work/tracked.txt').symlink_to('/etc/passwd')
+assert launch(p, env).returncode == 2
+assert not (state / 'calls.jsonl').exists()
+print('ok - unsafe input and tracked symlink are rejected before Boat')
+PY

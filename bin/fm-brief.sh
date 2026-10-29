@@ -859,6 +859,12 @@ $SHARED_INFRA_RULE
 
 $WAIT_BLOCK$INBOX_SECTION
 
+# Heavy builds and tests
+On core-like projects, prefer \`$FM_ROOT/bin/fm-boat-run.sh\` for a secret-free heavy build or test when Boat is available; its \`--help\` owns source inputs, result files, cleanup and fallback mechanics.
+Call it directly, outside the local heavy-slot wrapper.
+If its result explicitly says \`kind: unavailable\`, fall back locally through \`$FM_ROOT/bin/fm-build-lock.py -- <command>\`; a remote command failure or unknown outcome needs diagnosis before retrying.
+Keep authenticated checks and no-mistakes pipeline steps on their existing path.
+
 # Project memory
 A project's \`AGENTS.md\` or \`CLAUDE.md\` is loaded into every agent session in that project, so edit it only to correct information that is factually wrong - including information your own change made wrong - and never to add knowledge because it is missing.
 A correction edits only the wrong text: do not run \`$FM_ROOT/bin/fm-ensure-agents-md.sh\`, create either file, or add sections, headings, or pointers alongside it.

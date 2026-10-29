@@ -337,7 +337,7 @@ cpu_count() {
 family_for_basename() {
   case "$1" in
     fm-arm-pretool-check.test.sh|fm-ask-user-authority.test.sh|\
-    fm-bearings-board.test.sh|fm-build-lock.test.sh|\
+    fm-bearings-board.test.sh|fm-build-lock.test.sh|fm-boat-run.test.sh|\
     fm-brief.test.sh|fm-dod-lib.test.sh|fm-vendor-auth-probe.test.sh|fm-seat-renew.test.sh|fm-seat-lock.test.sh|fm-seat-vendor-renew.test.sh|\
     fm-calm-pi-extension.test.sh|fm-cd-pretool-check.test.sh|\
     fm-classify-decision-key.test.sh|\
@@ -748,6 +748,7 @@ list_portable_serial() {
 # the version-specific host and native-Windows exceptions documented there, and
 # with the split supervision-host and watch-triage scripts carrying their
 # pre-split measurement apportioned by case share until CI measures them.
+# The new Boat adapter hint starts from its targeted local run until CI refreshes it.
 # These are balance hints only: the shard partition stays complete and disjoint
 # whatever they say, so a stale hint costs balance rather than coverage. That doc owns the refresh procedure.
 portable_serial_weight_hints() {
@@ -773,6 +774,7 @@ tests/fm-bearings-board-lavish-live-e2e.test.sh 64
 tests/fm-bearings-board-render.test.sh 15930
 tests/fm-bearings-board.test.sh 41480
 tests/fm-bearings-snapshot.test.sh 191377
+tests/fm-boat-run.test.sh 41646
 tests/fm-bootstrap-network-parallel.test.sh 30424
 tests/fm-bootstrap.test.sh 60398
 tests/fm-branch-supervision.test.sh 24384
@@ -1717,6 +1719,9 @@ families_for_changed_path() {
       ;;
     bin/fm-procevent-quota.sh)
       printf '%s\n' "__script__:fm-procevent-quota.test.sh"
+      ;;
+    bin/fm-boat-run.sh|bin/fm-boat-run.py|tests/fixtures/boat-cli.py)
+      printf '%s\n' '__script__:fm-boat-run.test.sh'
       ;;
     bin/fm-build-lock.py|bin/fm-build-lock.js)
       printf '%s\n' "__script__:fm-build-lock.test.sh"

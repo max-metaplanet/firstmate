@@ -1366,6 +1366,12 @@ The text is static and never executed or expanded; secondmate charters never tak
 
 `bin/fm-brief.sh`'s header owns the placement rule and its safety argument.
 
+## Boat build and test offload
+
+Ship workers can run secret-free heavy commands on ephemeral Boat VMs through [`bin/fm-boat-run.sh`](../bin/fm-boat-run.sh).
+The adapter's header and `--help` own prerequisites, source selection, result and artifact paths, trial limits, cleanup records, reaping, and explicit local fallback.
+It runs outside local heavy slots; authenticated checks and no-mistakes steps keep their existing execution path.
+
 ## Worker launch environment (config/launch-env-allowlist)
 
 The optional local, gitignored `config/launch-env-allowlist` limits the ambient environment passed to newly launched workers, scouts, and secondmates, including relaunches.
