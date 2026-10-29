@@ -828,14 +828,13 @@ Follow the CI-round policy below before authorizing further CI repairs.
 After three CI rounds on one PR, stop speculative publication: a fourth or later round requires a locally reproduced failure and a locally verified fix.
 Count distinct published PR heads that started CI, including the initial publication, across pipeline runs, retries, rebases, and worker replacements; never reset the count by restarting validation.
 Multiple workflows on one head, draft-to-ready events, and reruns on that same head do not create another head round; worker-triggered reruns remain forbidden.
-Before starting or rerunning the pipeline, inspect the PR's head history and the installed version's effective CI repair limits, including repository overrides; reserve a round for any new publication and do not allow automatic repairs to publish beyond the third round.
-For a new PR, \`auto_fix.ci: 2\` allows the initial publication and at most two automatic repair attempts in that run; it is not a lifetime PR counter, and an existing PR has less remaining budget.
-If the history or effective limit cannot be established, or the pipeline can publish beyond that budget without a decision gate, append a blocked event naming the version, observed rounds, and required configuration or upstream change, then stop before starting that run; never edit shared daemon configuration yourself.
-At the third failed round and before authorizing any further CI repair, read all failing logs after the head's executing checks settle and give the complete actionable failure set to the pipeline in one gate response.
+For a new PR, \`auto_fix.ci: 2\` allows the initial publication and at most two automatic repair attempts in that run; it is not a lifetime PR counter, so recount the PR's published heads after each CI outcome.
+Once the PR has three published heads and its CI is still red, stop pushing and stop accepting automatic repair rounds: at the next gate, respond instead of approving another fix round.
+Before responding, read all failing logs after the head's executing checks settle and give the complete actionable failure set to the pipeline in that one gate response.
 Require in that response's \`--instructions\` that the pipeline reproduce each actionable failing check locally before editing, run heavy reproduction and verification inside the project's heavy-slot wrapper, apply the root-cause fix, and verify the same command passes on the candidate head before publishing once.
 Require recorded evidence of the failing command and result before the fix, the passing command and result after it, and the candidate head; relevant passing tests alone are not proof that the CI failure was reproduced.
 If local reproduction or verification is unavailable or fails, require the pipeline to hold publication and report the blocker to firstmate; do not authorize a speculative push, an empty commit, a restart to reset the budget, or a worker fix outside the pipeline.
-If the installed pipeline cannot hold publication for that evidence, report its version and the needed upstream enforcement before proceeding; a brief instruction is not a deterministic guard on the daemon.
+If the pipeline publishes a further round without a gate, report its version, the observed rounds, and the needed configuration or upstream enforcement to firstmate without editing shared daemon configuration yourself; a brief instruction is not a deterministic guard on the daemon.
 
 As soon as the pipeline opens its PR, read it by its full URL.
 If it is a draft, confirm the pipeline's local review, test and lint steps passed and the work is ready, then mark it ready using the forge command below BEFORE waiting for CI green.
