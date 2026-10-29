@@ -124,9 +124,11 @@ stop_case() { kill "$LEAD_PID" 2>/dev/null || true; wait "$LEAD_PID" 2>/dev/null
 run_home() {  # <bin> [args...]
   local bin=$1
   shift
+  # These cases test move decisions, not the production watcher's time budget.
+  # Leave headroom for process and quota-fixture startup on a loaded test host.
   FM_HOME="$HOME_DIR" FM_ROOT_OVERRIDE="$ROOT" FM_STATE_OVERRIDE="$HOME_DIR/state" \
     FM_CONFIG_OVERRIDE="$HOME_DIR/config" FM_DATA_OVERRIDE="$HOME_DIR/data" \
-    CLAUDE_CONFIG_DIR='' PATH="$FAKEBIN:$PATH" "$bin" "$@" 2>&1
+    FM_CHECK_TIMEOUT=120 CLAUDE_CONFIG_DIR='' PATH="$FAKEBIN:$PATH" "$bin" "$@" 2>&1
 }
 
 # Run a command AS the session that holds this home: a claude-named process
