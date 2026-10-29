@@ -23,7 +23,11 @@ printf '%s\n' "$*" >> "$REFRESH_FIXTURE/log"
 [ ! -f "$REFRESH_FIXTURE/change-ignored" ] || exit 0
 case "$1 $2 $3" in
   'api POST /graphql')
-    [[ "$*" == *'convertPullRequestToDraft'* ]] && [[ "$*" == *'id=PR_fixture'* ]] || exit 92
+    [ "$#" = 5 ] && [ "$4 $5" = '--input -' ] || exit 92
+    body=$(cat)
+    printf '%s\n' "$body" >> "$REFRESH_FIXTURE/log"
+    printf '%s' "$body" | jq -e --arg id "${PR_NODE_ID:-PR_fixture}" \
+      '(.query | contains("convertPullRequestToDraft")) and .variables.id == $id' >/dev/null || exit 92
     echo true > "$REFRESH_FIXTURE/draft" ;;
   'pr ready 9')
     [ "$4 $5" = '--repo example/repo' ] || exit 92
@@ -36,7 +40,7 @@ cat > "$FAKEBIN/gh" <<'SH'
 printf '%s\n' "$*" >> "$REFRESH_FIXTURE/log"
 case "$*" in
   'pr view '*state,isDraft,id)
-    jq -nc --arg state "$(cat "$REFRESH_FIXTURE/state")" --argjson draft "$(cat "$REFRESH_FIXTURE/draft")" '{state:$state,isDraft:$draft,id:"PR_fixture"}' ;;
+    jq -nc --arg state "$(cat "$REFRESH_FIXTURE/state")" --argjson draft "$(cat "$REFRESH_FIXTURE/draft")" --arg id "${PR_NODE_ID:-PR_fixture}" '{state:$state,isDraft:$draft,id:$id}' ;;
   'pr view '*)
     cat "$REFRESH_FIXTURE/checks.json"
     if [ -f "$REFRESH_FIXTURE/next-checks.json" ]; then
@@ -91,6 +95,11 @@ if "$ROOT/bin/fm-pr-check.sh" task "$URL" > "$TASK_TMP/out" 2>&1; then
   fail 'merge monitoring armed while a refresh hold exists'
 fi
 pass 'draft is confirmed before publication and its hold blocks done and merge registration'
+
+echo false > "$TASK_TMP/draft"
+PR_NODE_ID=$'PR_"quoted"\\node\nline' refresh prepare task "$URL" -- publish
+[ "$(cat "$TASK_TMP/draft")" = true ] || fail 'JSON request did not preserve the PR node id'
+pass 'draft conversion sends variables.id in JSON and preserves quoting'
 
 before=$(grep -c 'convertPullRequestToDraft' "$TASK_TMP/log")
 refresh prepare task "$URL"

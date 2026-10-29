@@ -72,9 +72,10 @@ read_pr
 if [ "$ACTION" = prepare ]; then
   if [ "$DRAFT" = false ]; then
     # shellcheck disable=SC2016 # GraphQL expands its own $id variable.
-    gh-axi api POST /graphql \
-      --raw-field 'query=mutation($id: ID!) { convertPullRequestToDraft(input: {pullRequestId: $id}) { pullRequest { isDraft } } }' \
-      --raw-field "id=$NODE_ID" || die 'could not convert PR to draft; nothing published'
+    jq -nc --arg id "$NODE_ID" \
+      --arg query 'mutation($id: ID!) { convertPullRequestToDraft(input: {pullRequestId: $id}) { pullRequest { isDraft } } }' \
+      '{query:$query,variables:{id:$id}}' | gh-axi api POST /graphql --input - \
+      || die 'could not convert PR to draft; nothing published'
   fi
   read_pr
   [ "$DRAFT" = true ] || die 'draft conversion was not confirmed; nothing published'
