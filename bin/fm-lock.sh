@@ -72,6 +72,14 @@ LOCK="$STATE/.lock"
 LOCK_SESSION="$STATE/.lock-session"
 LOCK_HANDOVER="$STATE/.lock-handover"
 LOCK_RUNTIME="$STATE/.lock-runtime"
+# shellcheck source=bin/fm-session-lock-lib.sh
+. "$SCRIPT_DIR/fm-session-lock-lib.sh"
+# shellcheck source=bin/fm-t3-access-lib.sh
+. "$SCRIPT_DIR/fm-t3-access-lib.sh"
+if [ "${1:-}" != status ] && fm_t3_read_only "$FM_HOME" "$STATE"; then
+  echo 'error: T3 view-only session cannot acquire or mutate the fleet lock; operate read-only' >&2
+  exit 1
+fi
 mkdir -p "$STATE" 2>/dev/null || {
   echo "error: cannot create session-lock state directory $STATE; operate read-only until resolved" >&2
   exit 1

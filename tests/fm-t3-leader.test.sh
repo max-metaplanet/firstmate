@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Attended T3 leader handover through the public CLI, using real lock processes.
+# Automatic and attended T3 leader handover through the public CLI, using real lock processes.
 set -euo pipefail
 # shellcheck source=tests/lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
@@ -29,8 +29,27 @@ cat > "$work/driver.sh" <<'DRIVER'
 #!/usr/bin/env bash
 set -euo pipefail
 export CLAUDE_PID=$$ CLAUDE_CODE_SESSION_ID="fixture-$$" CLAUDECODE=1
+if [ "$1" = auto-successor ]; then
+  export FM_T3_VIEW_ONLY=1
+  FM_T3_LEADER_HANDOVER=$(jq -r .nonce "$TEST_HOME/state/.t3-leader-handover.json")
+  export FM_T3_LEADER_HANDOVER
+fi
+if [ "$1" = recovery ]; then
+  CLAUDE_CODE_SESSION_ID=$(jq -r .outgoingSession "$TEST_HOME/state/.t3-leader-handover.json")
+  export CLAUDE_CODE_SESSION_ID
+fi
 bash "$TEST_ROOT/bin/fm-lock.sh" > "$TEST_WORK/lock-$1"
 case "$1" in
+  automatic)
+    printf 'pid=%s\nharness=claude\nprofile=\nbackend=tmux\ntarget=%%fixture\n' "$$" > "$TEST_HOME/state/.lock-runtime"
+    bash "$TEST_HELPER" switch --to t3 --model fixture-model --persisted > "$TEST_WORK/auto-scheduled"
+    ;;
+  recovery)
+    touch "$TEST_WORK/recovery-ready"
+    ;;
+  auto-successor)
+    bash "$TEST_HELPER" confirm "$FM_T3_LEADER_HANDOVER"
+    ;;
   outgoing)
     bash "$TEST_HELPER" prepare --to t3 --model fixture-model --dry-run > "$TEST_WORK/dry-prepare"
     [ ! -e "$TEST_HOME/state/.t3-leader-handover.json" ]
@@ -58,9 +77,21 @@ work = Path(os.environ['TEST_WORK'])
 with (work / 't3-calls').open('a') as file:
     file.write(json.dumps(sys.argv[1:]) + '\n')
 if sys.argv[1:3] == ['project', 'add']:
+    if (work / 'existing-project').exists():
+        print("ProjectAlreadyExistsError: An active project already exists for '" + sys.argv[3] + "'", file=sys.stderr)
+        sys.exit(1)
+    if (work / 'project-failure').exists():
+        print('permission denied', file=sys.stderr)
+        sys.exit(1)
     print('Added fixture project')
 elif sys.argv[1:3] == ['thread', 'start']:
     (work / 'launch-prompt').write_text(sys.stdin.read())
+    if (work / 'auto-confirm').exists():
+        import subprocess
+        child = subprocess.Popen([str(work / 'tools/claude'), str(work / 'driver.sh'), 'auto-successor'],
+                                 stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                 env={k:v for k,v in os.environ.items() if k not in ('CLAUDE_PID','CLAUDE_CODE_SESSION_ID')})
+        (work / 'auto-successor-pid').write_text(str(child.pid))
     print(json.dumps({'threadId':'fixture-thread','projectId':'fixture-project','runId':'fixture-run'}))
 else:
     sys.exit(4)
@@ -230,3 +261,110 @@ wait "$competitor" 2>/dev/null || true
 assert_contains "$(cat "$work/failure")" 'home is not free' 'unknown live lock owner must refuse activation'
 [ "$(wc -l < "$work/t3-calls")" -eq 2 ] || fail 'competing owner contacted T3'
 pass 'a third live process holding the lock is never replaced or treated as stale'
+
+# No live T3 or tmux operations: the fake rejects duplicate registration but
+# accepts a thread start in the same workspace, just as the CLI does.
+printf '999999999\n' > "$work/home/state/.lock"
+export PATH="$work/tools:$PATH"
+cat > "$work/tools/tmux" <<'TMUX'
+#!/usr/bin/env bash
+set -euo pipefail
+case "$1" in
+  display-message) printf '%%fixture\n' ;;
+  respawn-pane)
+    printf '%s\n' "$@" > "$TEST_WORK/tmux-recovery-args"
+    bash -c "$5" </dev/null > "$TEST_WORK/recovery-log" 2>&1 &
+    echo "$!" > "$TEST_WORK/recovery-pid"
+    ;;
+  *) exit 4 ;;
+esac
+TMUX
+cat > "$work/tools/recovery-claude" <<'RECOVERY'
+#!/usr/bin/env bash
+exec "$TEST_WORK/tools/claude" "$TEST_WORK/driver.sh" recovery
+RECOVERY
+chmod +x "$work/tools/tmux" "$work/tools/recovery-claude"
+export FM_T3_LEADER_CLAUDE_BIN="$work/tools/recovery-claude"
+export FM_T3_LEADER_DELAY=1 FM_T3_LEADER_EXIT_TIMEOUT=10 FM_T3_LEADER_CONFIRM_TIMEOUT=3
+
+for scenario in existing-project project-failure unconfirmed; do
+  rm -f "$work/home/state/.t3-leader-handover.json" "$work/auto-scheduled" "$work/automatic-ready" "$work/recovery-ready" "$work/t3-calls"
+  touch "$work/$scenario"
+  env -u CLAUDE_PID -u CLAUDE_CODE_SESSION_ID "$work/tools/claude" "$work/driver.sh" automatic > "$work/automatic-log" 2>&1 &
+  old_pid=$!
+  await_file "$work/auto-scheduled"
+  if [ "$scenario" = existing-project ]; then
+    # This is the counterfactual for the duplicate-registration incident: the
+    # thread launches successfully, then an unconfirmed successor times out.
+    await_file "$work/launch-prompt"
+  fi
+  wait "$old_pid" 2>/dev/null || true
+  old_pid=''
+  await_file "$work/recovery-ready"
+  successor_pid=$(cat "$work/recovery-pid")
+  [ "$(cat "$work/home/state/.lock")" = "$successor_pid" ] || fail 'recovery did not restore the terminal lock owner'
+  assert_contains "$(cat "$work/tmux-recovery-args")" '%fixture' 'recovery targets the original tmux pane'
+  assert_contains "$(cat "$work/tmux-recovery-args")" '--resume fixture-' 'recovery resumes the recorded Claude session'
+  if [ "$scenario" = existing-project ]; then
+    assert_contains "$(cat "$work/t3-calls")" 'thread' 'existing project reuse reaches thread launch'
+  fi
+  # Wait for the detached completion to verify the recovered session and
+  # release its lock before stopping this fixture or starting the next case.
+  for ((attempt=0; attempt<200; attempt++)); do
+    [ ! -d "$work/home/state/.t3-leader-completion.lock" ] && break
+    sleep 0.1
+  done
+  jq -e '.phase == "restored"' "$work/home/state/.t3-leader-handover.json" >/dev/null || fail 'recovery was not confirmed'
+  kill "$successor_pid"
+  successor_pid=''
+  rm -f "$work/$scenario"
+  pass "automatic $scenario failure restores the original terminal leader"
+done
+
+# The success path claims through the exact nonce, confirms and retains the T3
+# successor rather than running recovery.
+rm -f "$work/home/state/.t3-leader-handover.json" "$work/auto-scheduled" "$work/tmux-recovery-args"
+touch "$work/auto-confirm" "$work/existing-project"
+env -u CLAUDE_PID -u CLAUDE_CODE_SESSION_ID "$work/tools/claude" "$work/driver.sh" automatic > "$work/automatic-log" 2>&1 &
+old_pid=$!
+await_file "$work/auto-scheduled"
+wait "$old_pid" 2>/dev/null || true
+old_pid=''
+await_file "$work/auto-successor-ready"
+successor_pid=$(cat "$work/auto-successor-pid")
+jq -e '.phase == "confirmed"' "$work/home/state/.t3-leader-handover.json" >/dev/null || fail 'automatic handover never confirmed'
+[ ! -e "$work/tmux-recovery-args" ] || fail 'confirmed handover ran recovery'
+pass 'one-command handover reuses the project and confirms the T3 successor without recovery'
+kill "$successor_pid"
+successor_pid=''
+
+# A view-only thread cannot take even a vacant lock, run bootstrap, or create
+# the runtime-bound startup marker directory. Test both entry points directly.
+readonly_home="$work/view-only"
+mkdir -p "$readonly_home"
+expect_failure env FM_HOME="$readonly_home" FM_T3_VIEW_ONLY=1 bash "$ROOT/bin/fm-lock.sh"
+assert_contains "$(cat "$work/failure")" 'view-only' 'view-only lock refusal is explicit'
+env FM_HOME="$readonly_home" FM_T3_VIEW_ONLY=1 bash "$ROOT/bin/fm-session-start.sh" > "$work/view-only-start"
+assert_contains "$(cat "$work/view-only-start")" 'T3 VIEW-ONLY' 'view-only startup is read-only'
+[ ! -e "$readonly_home/state" ] || fail 'view-only startup mutated state'
+env FM_HOME="$readonly_home" FM_T3_VIEW_ONLY=1 bash "$ROOT/bin/fm-sessionstart-run.sh" --source startup > "$work/view-only-hook"
+assert_contains "$(cat "$work/view-only-hook")" 'T3 VIEW-ONLY' 'view-only native hook is read-only'
+[ ! -e "$readonly_home/state" ] || fail 'view-only native hook mutated state'
+# Also prove automatic detection with a T3-shaped ancestor and no env marker.
+cp "$work/tools/t3" "$work/t3-fake-saved"
+rm "$work/tools/t3"
+ln -s /bin/bash "$work/tools/t3"
+# shellcheck disable=SC2016 # Expanded by the fixture shell.
+env -u FM_T3_VIEW_ONLY FM_HOME="$readonly_home" "$work/tools/t3" -c 'bash "$TEST_ROOT/bin/fm-lock.sh"; exit "$?"' > "$work/view-only-ancestry" 2>&1 && fail 'T3 ancestor acquired the lock'
+[ ! -e "$readonly_home/state" ] || fail 'T3 ancestor created lock state'
+pass 'view-only marker and T3 process ancestry refuse the lock before any startup mutation'
+
+mkdir -p "$readonly_home/bin"
+printf 'seeded-secondmate\n' > "$readonly_home/.fm-secondmate-home"
+# shellcheck disable=SC2016 # Expanded by the fixture shell.
+env -u CLAUDE_PID -u CLAUDE_CODE_SESSION_ID FM_HOME="$readonly_home" FM_T3_VIEW_ONLY=1 "$work/tools/claude" -c '
+  export CLAUDE_PID=$$ CLAUDE_CODE_SESSION_ID=fixture-secondmate CLAUDECODE=1
+  bash "$TEST_ROOT/bin/fm-lock.sh"
+' > "$work/secondmate-lock"
+assert_contains "$(cat "$work/secondmate-lock")" 'lock acquired' 'seeded secondmate keeps its startup contract'
+pass 'seeded secondmates retain their parent-owned startup path'

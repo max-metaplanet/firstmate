@@ -5,7 +5,8 @@ The T3 project must point at the independent Firstmate home, where the native Cl
 Use a separate ordinary T3 project for work that does not need Firstmate.
 No global T3 customization is needed.
 
-This workflow is opt-in and attended.
+This workflow is opt-in.
+The forward switch completes automatically from the current Claude leader in tmux; keep operation attended within the limits below.
 The worker backend and the leader's location are independent choices, so moving the leader does not move existing workers or secondmates.
 The handover tool accepts the primary home only; a secondmate's thread placement remains owned by its parent's normal spawn path.
 Only Claude is supported as the T3 leader; the installed Codex app-server path does not establish an independent Firstmate lock identity or the required native hook behavior.
@@ -13,18 +14,24 @@ Only Claude is supported as the T3 leader; the installed Codex app-server path d
 ## The handover
 
 [`bin/fm-t3-leader.sh --help`](../bin/fm-t3-leader.sh) owns the commands, required environment, durable record, and refusal behavior for both directions.
-Begin with its prepare dry-run from the current leader so the tool can prove that session owns the home's lock.
-Persist any open work that exists only in the conversation before preparing the actual handover.
-The tool records the chosen destination and explicit Claude model, then prints the activation command for a separate shell.
+Persist any open work that exists only in the conversation, then run the tool's `switch --to t3 --model MODEL --persisted` command inside the current leader.
+The command records recovery information and schedules detached completion before returning, so the current leader can end its turn.
+No separate activation terminal or typed exit is required.
+Use the switch dry-run to check ownership, the original tmux pane, recovery prerequisites, and native home binding without scheduling anything.
 
-Exit the outgoing leader normally before activating its replacement.
-For a T3 leader, use the host's normal process controls from a separate terminal to stop only the outgoing Claude PID recorded by prepare, then verify it has exited; a completed model turn alone does not end that session.
-The handover tool preserves the T3 project and conversation history.
-The tool never terminates a process or removes a lock to make the transition work.
-Activation refuses while the outgoing process still exists or another live or uncertain process owns the lock.
-If another leader takes the home during the attended gap, leave it alone and reconcile the handover.
+Completion stops only the recorded outgoing Claude PID, waits for it to exit, launches its replacement, and waits for verified lock ownership and confirmation.
+If activation fails or confirmation times out, it resumes the outgoing Claude conversation in its original tmux pane when the lock is free or stale.
+The durable handover record and completion log retain the exact recovery command if the pane is unavailable or another live or unknown process owns the lock.
+No lock is deleted and no competing owner is displaced.
+An uncertain T3 launch is never retried automatically.
+
+The lower-level prepare and activate commands remain available for attended reverse handover.
+Exit the outgoing T3 leader through the host's normal process controls before reverse activation; a completed model turn alone does not end that session.
+The tool preserves the T3 project and conversation history.
 
 Forward activation opens a Claude leader thread in the Firstmate T3 project.
+If the home is already registered, including as “firstmate (view only)”, activation reuses that exact workspace project.
+Other registration errors remain fatal.
 Before launching it, Firstmate binds Claude's local project environment to that exact home so native hooks cannot inherit a different home's routing from the T3 provider process.
 The merge preserves existing permissions, hooks, and unrelated environment settings; conflicting routes, malformed settings, and symlinked settings are refused for inspection.
 The activation dry-run checks that binding without writing it.
@@ -33,9 +40,18 @@ The replacement starts fresh from durable records rather than resuming the other
 In either direction, it must acquire the normal session lock and confirm that ownership before the persistent handover status reports completion.
 Read the tool's status after activation and require the confirmed phase.
 
-An attempted launch that has not confirmed is an uncertain outcome, not a request to retry.
-Inspect the saved launch evidence and the exact thread before taking another action; a repeated activation is deliberately refused.
+An attempted launch that has not confirmed requires inspection of the saved evidence and exact thread before another T3 activation.
 The previous leader's records, workers, and worktrees remain available for recovery.
+
+## View-only threads
+
+Primary-home T3 threads default to read-only, including threads in a project whose title says view-only.
+The shared access guard recognizes the native `t3` executable in the process ancestry; `FM_T3_VIEW_ONLY=1` is the explicit provider environment marker for installations that launch providers through a separate service without that ancestry.
+Both session startup and direct lock acquisition enforce the guard before creating state or running fleet startup mutations.
+Project titles are display labels and do not grant leadership.
+The intended Claude successor receives a private handover nonce in its launch prompt and explicitly runs startup with that nonce after the initial read-only hook.
+Only a matching starting handover or the already-owning successor session passes the guard.
+This restriction applies to primary leaders; seeded secondmates retain their parent-owned startup contract.
 
 ## Operating limits and verification
 
@@ -49,5 +65,5 @@ That evidence does not establish idle retention beyond T3's expiry, provider res
 Keep operation attended until those paths have their own live proof.
 The existing watcher scope guard refuses disposable `.treehouse` paths, including nested scratch homes; do not bypass it for a live acceptance run.
 
-[`tests/fm-t3-leader.test.sh`](../tests/fm-t3-leader.test.sh) checks both transitions, dry-runs, exclusive lock ownership, and duplicate-launch refusal through the public interface.
+[`tests/fm-t3-leader.test.sh`](../tests/fm-t3-leader.test.sh) checks automatic success, existing-project reuse, registration failure and confirmation-timeout recovery, view-only refusal, both attended transitions, dry-runs, exclusive lock ownership, and duplicate-launch refusal through the public interface.
 The [runtime backend verification record](verification/runtime-backends.md) owns dated live evidence and current verification entry points.

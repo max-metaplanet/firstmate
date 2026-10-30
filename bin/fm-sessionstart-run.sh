@@ -59,6 +59,12 @@ COMPLETION_FILE="$STATE/.session-start-complete"
 . "$SCRIPT_DIR/fm-primary-scope-lib.sh"
 # shellcheck source=bin/fm-session-lock-lib.sh
 . "$SCRIPT_DIR/fm-session-lock-lib.sh"
+# shellcheck source=bin/fm-t3-access-lib.sh
+. "$SCRIPT_DIR/fm-t3-access-lib.sh"
+if fm_t3_read_only "$FM_HOME" "$STATE"; then
+  printf 'T3 VIEW-ONLY: read-only session; fleet startup and lock acquisition skipped.\n'
+  exit 0
+fi
 # shellcheck source=bin/fm-hook-host-lib.sh
 . "$SCRIPT_DIR/fm-hook-host-lib.sh"
 

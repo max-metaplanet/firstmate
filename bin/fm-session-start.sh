@@ -251,6 +251,15 @@ DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
 CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
 COMPLETION_FILE="$STATE/.session-start-complete"
 AGENTS_BASELINE_FILE="$STATE/.session-start-agents-baseline"
+# Refuse before the runtime-bound wrapper or any library can create state.
+# shellcheck source=bin/fm-session-lock-lib.sh
+. "$SCRIPT_DIR/fm-session-lock-lib.sh"
+# shellcheck source=bin/fm-t3-access-lib.sh
+. "$SCRIPT_DIR/fm-t3-access-lib.sh"
+if fm_t3_read_only "$FM_HOME" "$STATE"; then
+  printf 'T3 VIEW-ONLY: read-only session; fleet startup and lock acquisition skipped.\n'
+  exit 0
+fi
 
 REEMIT=0
 SESSION_SOURCE=
