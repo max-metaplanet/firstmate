@@ -15,6 +15,13 @@ TEST_CMD=$(ruby -ryaml -e 'print YAML.load_file(ARGV[0]).fetch("commands").fetch
   || fail "failed to parse .no-mistakes.yaml"
 [ -n "$TEST_CMD" ] || fail "commands.test must be configured"
 
+# Parse the configuration as typed data: two repair attempts plus the initial
+# publication reach the third CI head in one run. Cross-run counting belongs to
+# the generated worker contract; this default must not promise a lifetime cap.
+ruby -ryaml -e 'limit = YAML.load_file(ARGV[0]).fetch("auto_fix").fetch("ci"); abort "auto_fix.ci must be the integer 2" unless limit.is_a?(Integer) && limit == 2' "$NM" \
+  || fail "automatic CI repairs must stop before a fourth publication in one run"
+pass "configured automatic CI repair budget reserves the initial publication"
+
 FIX="$TMP_ROOT/repo"
 mkdir -p "$FIX/bin"
 cp "$ROOT/bin/fm-timeout-lib.sh" "$FIX/bin/"

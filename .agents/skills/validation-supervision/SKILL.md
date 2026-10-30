@@ -35,8 +35,11 @@ Keep a CI gate's full actionable failure set together rather than approving sepa
 Cancelled checks, checks held for approval, and unreadable results need their own resolution; never create an empty push to retry them.
 The installed no-mistakes version's CI monitor and publication path own this behavior.
 If its own auto-fix loop publishes per failure or repairs before the head's checks finish, report its version and round evidence plus the needed configuration or upstream fix; do not fork it or have the worker take over its pushes.
-The existing `auto_fix.ci`, `ci.revalidate_repairs`, and `ci.rerun_transient` settings control retry limits, revalidation, and cancelled-check reruns respectively, not push batching.
-`bin/fm-dod-lib.sh` owns the equivalent worker-controlled CI repair contract for direct-PR tasks.
+[`bin/fm-dod-lib.sh`](../../../bin/fm-dod-lib.sh)'s generated `CI-round policy` is the single owner of the three-round threshold, lifetime PR counting, local reproduction evidence, heavy-slot use, and the worker's stop rule after the third published head; apply that contract when supervising a CI gate.
+The existing `auto_fix.ci`, `ci.revalidate_repairs`, and `ci.rerun_transient` settings control per-run repair attempts, revalidation, and cancelled-check reruns respectively, not lifetime PR rounds or push batching.
+Firstmate's status integration observes pipeline runs and does not intercept daemon publication, so never claim that the generated contract mechanically caps the installed pipeline.
+If a pipeline publishes a further repair without a gate, report its version, round evidence, and the required configuration or upstream publication guard; never approve another speculative round.
+The same library retains the stricter single worker push and return-to-firstmate rule for direct-PR tasks.
 
 For pipeline-created GitHub PRs, enable `providers.github.draft_pull_requests: true` in the target repository's `.no-mistakes.yaml` when its workflows skip heavy suites on drafts and run them on `ready_for_review`; leave it off where CI does not skip drafts.
 The setting changes PR creation only and does not mark a PR ready automatically.
