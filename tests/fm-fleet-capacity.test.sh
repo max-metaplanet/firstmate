@@ -714,6 +714,7 @@ test_adaptive_concurrent_homes() (  # [command-to-run-after-first-admission]
   local case_dir home mate hold wt i first='' second='' first_rc=0 second_rc=0 owner
   # shellcheck source=bin/fm-timeout-lib.sh
   . "$ROOT/bin/fm-timeout-lib.sh"
+  # shellcheck disable=SC2329 # Invoked by the case subshell's EXIT trap.
   cleanup_concurrent_spawns() {
     local pid
     for pid in "$first" "$second"; do
@@ -1082,6 +1083,12 @@ def group_members(pgid):
             if int(group) == pgid and not state.startswith('Z')]
 
 
+def reset_child_sigint():
+    # CI's asynchronous shell runner can pass SIG_IGN through Python to Bash,
+    # which cannot install its INT trap for a signal ignored at startup.
+    signal.signal(signal.SIGINT, signal.SIG_DFL)
+
+
 for mode in ('pass', 'fail', 'TERM', 'INT', 'HUP', 'KILL', 'outer-TERM', 'timeout'):
     marker = Path(root) / ('cleanup-' + mode)
     command = ['bash', '-c', script, '_', suite, str(marker), mode]
@@ -1091,7 +1098,8 @@ for mode in ('pass', 'fail', 'TERM', 'INT', 'HUP', 'KILL', 'outer-TERM', 'timeou
                    '_', str(Path(suite).parent.parent / 'bin/fm-timeout-lib.sh'),
                    *command]
     process = subprocess.Popen(command,
-                               start_new_session=True, stdout=subprocess.PIPE,
+                               start_new_session=True, preexec_fn=reset_child_sigint,
+                               stdout=subprocess.PIPE,
                                stderr=subprocess.PIPE, text=True)
     groups = set()
     try:
