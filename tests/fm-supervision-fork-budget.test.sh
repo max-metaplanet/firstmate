@@ -29,9 +29,8 @@ SUBJECT_ROOT=${FM_FORK_BUDGET_ROOT:-$ROOT}
 # differs by: a Linux /proc identity read costs more programs than the portable
 # ps fallback. It is still tight enough that one library going back to a
 # cd-and-pwd subshell, worth two shell children and a program start, shows up.
-# The detached parking tick also runs before the first boundary. Allow its one
-# uname and eight shell children here: scheduling can put them on either side
-# of that boundary, so startup must accommodate the whole tick.
+# The detached parking tick also runs before the first boundary. Count its one
+# uname and eight shell children in startup, just as in each warmed poll.
 FORK_BUDGET_WATCH_START_PROGRAMS=${FORK_BUDGET_WATCH_START_PROGRAMS:-23}
 FORK_BUDGET_WATCH_START_SHELLS=${FORK_BUDGET_WATCH_START_SHELLS:-30}
 mkdir -p "$TMP_ROOT/shims"
@@ -69,6 +68,13 @@ budget_debug() {
   [ "$BASHPID" = "${BUDGET_OWNER:-}" ] || return 0
   case "$BUDGET_LOOP:$caller:$command" in
     watch:main:event_wait_or_sleep|attach:attach_and_wait:healthy_watcher|host:await_close:boundary_reached|autoarm:start_handling_successor:'sleep 0.2'|autoarm:start_handling_successor:'fm_poll_wait 0.2')
+      # Finish observing this poll's detached tick before closing its sample.
+      # Otherwise a delayed tick can log beside the next poll's tick and make
+      # two polls' work look like one budget violation. The outer timeout
+      # bounds this wait too; production scheduling stays unchanged.
+      if [ "$BUDGET_LOOP" = watch ] && [ -n "${WORKER_PARK_PID:-}" ]; then
+        wait "$WORKER_PARK_PID" 2>/dev/null || true
+      fi
       budget_cycle=$((${budget_cycle:-0} + 1))
       printf 'cycle %s\n' "$budget_cycle" >> "$EVENTS"
       if [ "$budget_cycle" -eq 5 ]; then
