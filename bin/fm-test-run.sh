@@ -972,6 +972,7 @@ tests/fm-supervision-host-engine.test.sh 284000
 tests/fm-supervision-host-park.test.sh 300000
 tests/fm-supervision-host-stop-hook.test.sh 334000
 tests/fm-supervision-host.test.sh 434000
+tests/fm-t3.test.sh 303
 tests/fm-tangle-guard.test.sh 8501
 tests/fm-task-delivery.test.sh 38389
 tests/fm-task-inbox.test.sh 75594
@@ -1739,6 +1740,9 @@ families_for_changed_path() {
       ;;
     bin/fm-procevent-quota.sh)
       printf '%s\n' "__script__:fm-procevent-quota.test.sh"
+      ;;
+    bin/fm-t3.sh)
+      printf '%s\n' '__script__:fm-t3.test.sh'
       ;;
     bin/fm-boat-run.sh|bin/fm-boat-run.py|tests/fixtures/boat-cli.py)
       printf '%s\n' '__script__:fm-boat-run.test.sh'
