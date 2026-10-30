@@ -151,11 +151,18 @@ EOF
 }
 
 exercise_round_trip() { # <expected-native-home>
-  local expected_home=$1 record="$HOME_DIR/state/$TASK.t3" state ring file before after
+  local expected_home=$1 record="$HOME_DIR/state/$TASK.t3" state ring file before after native_home
   wait_for_file "$CASE/proof/ready"
   if [ "$expected_home" != none ]; then
-    [ "$(head -n 1 "$CASE/proof/environment")" = "$expected_home" ] \
-      || fail "Claude native settings did not bind FM_HOME to $expected_home"
+    native_home=$(head -n 1 "$CASE/proof/environment")
+    [ -z "$native_home" ] || [ "$native_home" = "$expected_home" ] \
+      || fail "Claude native thread inherited a foreign home: $native_home"
+    if [ -f "$expected_home/.claude/settings.local.json" ]; then
+      jq -e '(.env // {}) | has("FM_HOME") or has("FM_ROOT") or has("FM_ROOT_OVERRIDE") or
+        has("FM_STATE_OVERRIDE") or has("FM_DATA_OVERRIDE") or has("FM_CONFIG_OVERRIDE") or
+        has("FM_PROJECTS_OVERRIDE") | not' "$expected_home/.claude/settings.local.json" >/dev/null \
+        || fail 'native launch persisted home routing in local settings'
+    fi
   fi
   state=$(home_command fm-crew-state.sh "$TASK")
   printf '%s\n' "$state" > "$CASE/proof/busy-state"

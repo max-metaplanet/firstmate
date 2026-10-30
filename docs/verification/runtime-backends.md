@@ -10,7 +10,7 @@ Exact task chronology, branch names, temporary homes, local paths, process ids, 
 
 Verified on 2026-10-30 with host-local T3 v0.1.5 on Linux arm64.
 The [T3 backend guide](../t3-backend.md) owns setup and supported limits; [`bin/fm-t3.sh`](../../bin/fm-t3.sh) owns the durable thread record.
-The native Claude probe accepted project-local home environment settings before running tools, and a managed scout reported `state: working · source: pane · harness busy (t3-native)` through `fm-crew-state.sh`.
+A managed scout reported `state: working · source: pane · harness busy (t3-native)` through `fm-crew-state.sh`.
 Managed Claude and Codex scouts and a Claude secondmate accepted normal inbox steers with native `delivery: queued` behind deliberately held turns, then performed the requested action and moved the durable message into `handled/`.
 The secondmate's native SessionStart acquired its own home lock rather than the parent home's lock, and its exact Claude PID exited after committed project deletion.
 Committed project deletion used only the recorded project after an exact ordinary-thread inventory check.
@@ -50,6 +50,36 @@ FM_T3_LEADER_LIVE_E2E=1 FM_T3_BIN=/path/to/t3 FM_T3_BASE_DIR=/path/to/t3-data \
 FM_T3_LEADER_LIVE_MODEL=claude-sonnet-5-5 \
   bash bin/fm-test-run.sh tests/fm-t3-leader-live-e2e.test.sh
 ```
+
+### Claude home-routing migration
+
+Verified on 2026-10-30 with Claude Code 2.1.314 on Linux arm64.
+The portable leader suite now checks routing removal, preservation of unrelated settings, read-only dry-runs, and a T3 successor that resolves its primary checkout with routing environment variables unset.
+A fresh headless Claude session also exercised the real native SessionStart hook in an independent scratch Git checkout after migration.
+The fixture's hook ran `bash "$CLAUDE_PROJECT_DIR/bin/fm-lock.sh" status > "$CLAUDE_PROJECT_DIR/hook-proof"`, and its unrelated `BINDING_PROBE=preserved` local setting remained available to the Bash tool.
+With that fixture as the working directory, the command was:
+
+```sh
+env -u FM_HOME -u FM_ROOT -u FM_ROOT_OVERRIDE -u FM_STATE_OVERRIDE \
+  -u FM_DATA_OVERRIDE -u FM_CONFIG_OVERRIDE -u FM_PROJECTS_OVERRIDE \
+  -u FM_TASK_ID -u CLAUDECODE -u CLAUDE_PID -u CLAUDE_CODE_SESSION_ID \
+  claude --print --no-session-persistence --setting-sources project,local \
+  --dangerously-skip-permissions --tools Bash --model sonnet \
+  'Run exactly one Bash tool command: printf "%s\n%s\n" "${FM_HOME-unset}" "$BINDING_PROBE" > probe-env; bash bin/fm-lock.sh status. Then reply PROBE_DONE. Do nothing else.'
+cat probe-env hook-proof
+```
+
+The session exited zero, printed `PROBE_DONE`, and the proof files contained:
+
+```text
+unset
+preserved
+lock: free
+```
+
+The hook created `state/` only in that scratch checkout.
+This refresh checks native Claude home resolution; it does not refresh the live T3 service handover or linked-worktree settings precedence.
+Use the existing T3 live guards above to refresh native service behavior.
 
 ## Treehouse task lease recovery
 

@@ -52,7 +52,9 @@ The native T3 provider owns credentials, permissions, environment, and attributi
 Firstmate refuses explicit account/seat pins, effort, environment filters, tool exclusions, trace injection, and other launch controls its T3 CLI cannot carry.
 It does not apply the terminal launcher's Git-hook environment or heavy-build preload to a native thread.
 Worker briefs still carry their build/test instructions.
-Claude project-local settings bind native hooks to the exact checkout before startup, preserve unrelated settings, and reject conflicting home routing.
+Native Claude hooks use their checkout's script root as the default home when routing environment variables are unset.
+Before launch, Firstmate removes legacy T3 routing variables from Claude's local settings while preserving unrelated keys.
+The [handover guide](t3-leader-handover.md) explains why these variables cannot be stored in project-local settings.
 
 The CLI has no interrupt, session-stop, or resume operation.
 `fm-control.sh` refuses interrupt, exit, and relaunch for T3 tasks, and raw terminal keys and harness-native slash/skill invocations are also refused.
