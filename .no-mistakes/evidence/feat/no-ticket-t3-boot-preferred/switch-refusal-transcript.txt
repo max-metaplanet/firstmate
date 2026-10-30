@@ -1,0 +1,14 @@
+$ bash bin/fm-lock.sh
+lock acquired: harness pid 816720
+exit=0
+
+$ bash bin/fm-t3-leader.sh boot
+fm-t3-leader: automatic switch supports Claude only
+preferred leader fallback: T3 switch failed; terminal leader continues recovery
+exit=0
+
+Real service was active; real switch refused the Codex caller because automatic switch supports Claude only. Terminal continuation returned 0 and created no handover record. Deferred-network stage not requested.
+
+T3 executable availability: None
+
+Disposable home removed.

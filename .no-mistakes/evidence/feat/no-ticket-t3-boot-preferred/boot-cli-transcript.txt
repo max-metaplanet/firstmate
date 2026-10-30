@@ -1,0 +1,39 @@
+CASE: Create isolated marked home
+$ bash bin/fm-lab-home.sh create ~/.no-mistakes/worktrees/c0c4fcacb05a/01M67CD6SC4WGSRD1DBBFR4EP7/fm-lab-1wwgp_gy
+~/.no-mistakes/worktrees/c0c4fcacb05a/01M67CD6SC4WGSRD1DBBFR4EP7/fm-lab-1wwgp_gy
+exit=0
+
+CASE: Initialize independent disposable home
+$ git -C ~/.no-mistakes/worktrees/c0c4fcacb05a/01M67CD6SC4WGSRD1DBBFR4EP7/fm-lab-1wwgp_gy init -q
+exit=0
+
+CASE: Boot refuses without a session owner
+$ bash bin/fm-t3-leader.sh boot
+fm-t3-leader: boot must run in the current lock-owning leader
+exit=1
+
+CASE: Acquire real session lock in disposable home
+$ bash bin/fm-lock.sh
+lock acquired: harness pid 816720
+exit=0
+
+CASE: No preference retains terminal leadership
+$ bash bin/fm-t3-leader.sh boot
+no preferred T3 leader; terminal leader continues recovery
+exit=0
+
+CASE: Malformed preference retains terminal leadership
+$ bash bin/fm-t3-leader.sh boot
+preferred leader fallback: invalid config/leader-preference.json; terminal leader continues recovery
+exit=0
+
+CASE: Symlink preference is rejected
+$ bash bin/fm-t3-leader.sh boot
+preferred leader fallback: invalid config/leader-preference.json; terminal leader continues recovery
+exit=0
+
+Real service prerequisite probe: exit=0
+
+Persisted result: no handover record created. FM_T3_LEADER_BOOT unset: leader selection and diagnostics covered; deferred-network recovery not covered. No product dependencies mocked.
+
+Disposable home removed.
