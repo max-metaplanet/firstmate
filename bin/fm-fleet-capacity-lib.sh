@@ -30,6 +30,13 @@
 # handoff alone does not free a place. fm-worker-park-lib.sh owns verified
 # parked records; those release their place, while incomplete exits and launch
 # reservations retain it.
+# A secondmate endpoint with a readable home holds no place when that home's
+# structured backlog has no in-flight rows and its state has no worker metadata.
+# Missing, unsafe or unreadable inventory keeps the secondmate's place.
+# Child secondmate records are supervisors, not in-flight work; their own
+# workers are counted independently by the local-home walk as usual.
+# Admitting a ship or scout counts its home's secondmate even before the new
+# worker record exists, so activation cannot exceed the cap.
 # A holder whose record carries ad_hoc_fleet_slot=1 was admitted on a one-time grant
 # above the declaration (bin/fm-spawn.sh --ad-hoc-slot). It holds a place like
 # any other agent AND raises the effective fleet cap by one while it does, so
@@ -100,8 +107,40 @@ fm_fleet_capacity_lookup() {  # <config-dir>
   return 0
 }
 
+# Prove a secondmate has no in-flight work, without interpreting its terminal.
+# Use the same addressed backlog reader as lifecycle transitions, bounded so a
+# stalled adapter keeps the place rather than wedging admission. Source in a
+# subshell so probing another home cannot reset the caller's backlog state.
+fm_fleet_capacity_secondmate_idle() ( # <meta> [activating-state]
+  local home child kind inventory_backend listing
+  [ -z "$(fm_meta_get "$1" remote_host)" ] || return 1
+  fm_meta_get_to home "$1" worktree
+  [ "$home/state" != "${2:-}" ] || return 1
+  case "$home" in /*) ;; *) return 1 ;; esac
+  for child in "$home" "$home/state" "$home/data"; do
+    [ -d "$child" ] && [ ! -L "$child" ] && [ -r "$child" ] && [ -x "$child" ] || return 1
+  done
+  for child in "$home/state"/*.meta; do
+    [ -e "$child" ] || [ -L "$child" ] || continue
+    [ -f "$child" ] && [ ! -L "$child" ] && [ -r "$child" ] || return 1
+    fm_meta_get_to kind "$child" kind
+    [ "$kind" = secondmate ] || return 1
+  done
+  # shellcheck source=bin/fm-tasks-axi-lib.sh
+  . "${BASH_SOURCE[0]%/*}/fm-tasks-axi-lib.sh"
+  # shellcheck source=bin/fm-backlog-transition-lib.sh
+  . "${BASH_SOURCE[0]%/*}/fm-backlog-transition-lib.sh"
+  inventory_backend=$(fm_tasks_axi_backend "$home") || return 1
+  if [ "$inventory_backend" = markdown ]; then
+    [ -f "$home/data/backlog.md" ] && [ ! -L "$home/data/backlog.md" ] && [ -r "$home/data/backlog.md" ] || return 1
+  fi
+  listing=$(FM_TASKS_AXI_TIMEOUT=5 fm_backlog_row_list "$home/data" --state in_flight) || return 1
+  printf '%s\n' "$listing" | grep -qx 'count: 0'
+)
+
 # Count the live agents holding a place in the fleet.
 # <own-id> in <first-state> is the task being admitted and is not counted.
+# An optional ship/scout <kind> activates that home's secondmate place.
 # Sets FM_FLEET_CAPACITY_OCCUPANTS and FM_FLEET_CAPACITY_OCCUPANT_IDS, each
 # holder outside <first-state> qualified with its home, the array
 # FM_FLEET_CAPACITY_OCCUPANT_METAS with those exact holders' metadata paths, and
@@ -110,9 +149,10 @@ fm_fleet_capacity_lookup() {  # <config-dir>
 # Returns 1 with
 # FM_FLEET_CAPACITY_ERROR when the local homes or a task record cannot be read.
 # shellcheck disable=SC2034 # the FM_FLEET_CAPACITY_* results are read by bin/fm-spawn.sh.
-fm_fleet_capacity_occupants() {  # <first-state> <own-id>
-  local first=$1 self=$2 state meta kind backend target label i n=0 gone=,
+fm_fleet_capacity_occupants() {  # <first-state> <own-id> [kind]
+  local first=$1 self=$2 state meta kind='' backend='' target='' label i n=0 gone=, activating_state=
   local -a metas=() states=() backends=() targets=()
+  case "${3:-}" in ship | scout) activating_state=$first ;; esac
   FM_FLEET_CAPACITY_OCCUPANTS=0
   FM_FLEET_CAPACITY_ADHOC=0
   FM_FLEET_CAPACITY_OCCUPANT_IDS=
@@ -153,6 +193,10 @@ fm_fleet_capacity_occupants() {  # <first-state> <own-id>
       if [ -f "$state/.spawn-$label.lock/pid" ] && kill -0 "$(cat "$state/.spawn-$label.lock/pid")" 2>/dev/null; then target=; fi
       if [ -f "${meta%.meta}.park" ] && [ -f "$state/.control-$label.lock/pid" ] &&
         kill -0 "$(cat "$state/.control-$label.lock/pid")" 2>/dev/null; then target=; fi
+      if [ "$kind" = secondmate ] && [ -n "$target" ] &&
+        fm_fleet_capacity_secondmate_idle "$meta" "$activating_state" 2>/dev/null; then
+        continue
+      fi
       metas[n]=$meta
       states[n]=$state
       backends[n]=$backend

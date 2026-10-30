@@ -4100,7 +4100,7 @@ if [ "$KIND" = secondmate ]; then
   if [ -n "$PARK_RESUME_MARKER" ] &&
     sm_fleet_config=$(fm_project_capacity_config_dir "$FM_HOME" "$CONFIG") &&
     fm_fleet_capacity_lookup "$sm_fleet_config" && [ -n "$FM_FLEET_CAPACITY" ] &&
-    fm_fleet_capacity_occupants "$STATE" "$ID" &&
+    fm_fleet_capacity_occupants "$STATE" "$ID" "$KIND" &&
     [ "$FM_FLEET_CAPACITY_OCCUPANTS" -ge $((FM_FLEET_CAPACITY + FM_FLEET_CAPACITY_ADHOC + AD_HOC_FLEET_REQUEST)) ]; then
     echo "deferred: this machine runs at most $FM_FLEET_CAPACITY agent(s) at once ($FM_FLEET_CAPACITY_FILE) and $FM_FLEET_CAPACITY_OCCUPANTS are running ($FM_FLEET_CAPACITY_OCCUPANT_IDS); secondmate $ID stays parked with its inbox preserved - the worker-park tick retries it" >&2
     exit "$FM_PROJECT_CAPACITY_DEFER_EXIT"
@@ -4313,7 +4313,7 @@ if [ "$RELAUNCH" -eq 0 ] || [ "$SPAWN_PARK_RESUME" = 1 ] || [ -n "$PARK_RESUME_M
       echo "fleet capacity: $FM_FLEET_LOAD_JSON" >&2
     fi
     if [ -n "$FM_FLEET_EFFECTIVE_CAPACITY" ]; then
-      if ! fm_fleet_capacity_occupants "$STATE" "$ID"; then
+      if ! fm_fleet_capacity_occupants "$STATE" "$ID" "$KIND"; then
         echo "error: spawn refused: this machine declares a fleet capacity of $FM_FLEET_CAPACITY, but its task records cannot all be read to count it ($FM_FLEET_CAPACITY_ERROR)" >&2
         exit 1
       fi

@@ -316,6 +316,120 @@ test_dead_agents_free_their_place() {
   pass "a task record whose agent is no longer running holds no fleet place"
 }
 
+# A persistent supervisor releases only its own place when its durable home
+# inventory is idle; workers in that home retain their ordinary places.
+test_secondmate_idle_busy_and_unknown() {
+  [ "$HAVE_TASKS_AXI" = 1 ] || { skip 'secondmate idle inventory requires tasks-axi'; return; }
+  local case_dir home mate out rc variant
+  for variant in idle busy child missing-state unreadable-backlog missing-home; do
+    case_dir=$(make_case "mate-$variant" task-c)
+    home="$case_dir/home"
+    mate="$case_dir/mate"
+    make_home "$mate"
+    fm_write_meta "$home/state/mate.meta" "window=firstmate:fm-mate" \
+      "worktree=$mate" "project=$mate" "kind=secondmate"
+    printf '%s\n' fm-mate >> "$case_dir/calls.log.window"
+    declare_fleet "$home" 1
+    case "$variant" in
+      busy)
+        # An orphan in-flight backlog row is still work, without an endpoint.
+        add_item "$mate" orphan
+        tasks-axi start orphan --file "$mate/data/backlog.md" >/dev/null
+        ;;
+      child)
+        printf '%s\n' schema=fm-secondmate-parent.v1 route=local "parent_home=$home" > "$mate/.fm-secondmate-parent"
+        printf -- '- mate - local (home: %s; scope: work; projects: project; added 2026-09-01)\n' "$mate" > "$home/data/secondmates.md"
+        write_running "$case_dir" "$mate" live-child "$case_dir/project"
+        # Even if the backlog loses the row, child metadata keeps the mate busy.
+        tasks-axi 'done' live-child --file "$mate/data/backlog.md" >/dev/null
+        declare_fleet "$home" 2
+        ;;
+      missing-state) rm "$mate/state/.last-watcher-beat"; rmdir "$mate/state" ;;
+      unreadable-backlog) rm "$mate/data/backlog.md"; mkdir "$mate/data/backlog.md" ;;
+      missing-home) rm -r "$mate" ;;
+    esac
+    rc=0
+    out=$(spawn_ship "$case_dir" task-c) || rc=$?
+    if [ "$variant" = idle ]; then
+      expect_code 0 "$rc" "an idle secondmate kept its fleet place: $out"
+      assert_present "$home/state/task-c.meta" 'idle mate did not free admission'
+    else
+      expect_code "$DEFER_EXIT" "$rc" "a $variant secondmate released its place: $out"
+      assert_contains "$out" mate 'the retained secondmate is absent from holders'
+      if [ "$variant" = child ]; then
+        assert_contains "$out" '2 are running' 'the mate and its own crew did not both count'
+        assert_contains "$out" live-child 'the secondmate child lost its fleet place'
+      fi
+    fi
+  done
+  pass 'idle secondmate frees a place; busy, child-owning and unreadable homes keep it'
+}
+
+test_first_worker_activates_secondmate_place() {
+  [ "$HAVE_TASKS_AXI" = 1 ] || { skip 'secondmate idle inventory requires tasks-axi'; return; }
+  local case_dir home mate pane out rc kind before worktrees
+  local -a args
+  for kind in ship scout; do
+    case_dir=$(make_case "mate-first-$kind")
+    home="$case_dir/home"
+    mate="$case_dir/mate"
+    make_home "$mate" task-c
+    printf '%s\n' schema=fm-secondmate-parent.v1 route=local "parent_home=$home" > "$mate/.fm-secondmate-parent"
+    printf -- '- mate - local (home: %s; scope: work; projects: project; added 2026-09-01)\n' "$mate" > "$home/data/secondmates.md"
+    fm_write_meta "$home/state/mate.meta" "window=firstmate:fm-mate" \
+      "worktree=$mate" "project=$mate" "kind=secondmate"
+    printf '%s\n' fm-mate >> "$case_dir/calls.log.window"
+    pane=$(new_worktree "$case_dir" task-c)
+    args=(task-c "$case_dir/project")
+    if [ "$kind" = scout ]; then
+      args+=(--scout)
+    else
+      args+=(--mode no-mistakes --ticket no-ticket --commit-type chore --yolo off)
+    fi
+    declare_fleet "$home" 1
+    before=$(call_count "$case_dir")
+    worktrees=$(worktree_list "$case_dir")
+    rc=0
+    out=$(run_spawn "$case_dir" "$mate" "$pane" "${args[@]}") || rc=$?
+    expect_code "$DEFER_EXIT" "$rc" "first $kind exceeded the cap by activating its secondmate: $out"
+    assert_nothing_created "$case_dir" "$mate" task-c "$before" "$worktrees"
+    declare_fleet "$home" 2
+    rc=0
+    out=$(run_spawn "$case_dir" "$mate" "$pane" "${args[@]}") || rc=$?
+    expect_code 0 "$rc" "first $kind did not fit alongside its secondmate: $out"
+    assert_present "$mate/state/task-c.meta" "admitted $kind did not publish its record"
+    assert_equals in_flight "$(row_state "$mate" task-c)" "admitted $kind did not start its backlog item"
+  done
+  pass 'first ship and scout reserve both worker and secondmate places'
+}
+
+test_idle_secondmate_preserves_worker_and_project_caps() {
+  [ "$HAVE_TASKS_AXI" = 1 ] || { skip 'secondmate idle inventory requires tasks-axi'; return; }
+  local case_dir home mate out pane rc=0
+  case_dir=$(make_case mate-project-cap task-c)
+  home="$case_dir/home"
+  mate="$case_dir/mate"
+  make_home "$mate"
+  fm_write_meta "$home/state/mate.meta" "window=firstmate:fm-mate" \
+    "worktree=$mate" "project=$mate" "kind=secondmate"
+  printf '%s\n' fm-mate >> "$case_dir/calls.log.window"
+  write_running "$case_dir" "$home" live-ship "$case_dir/project"
+  write_running "$case_dir" "$home" live-scout "$case_dir/other-project" kind=scout
+  declare_fleet "$home" 2
+  pane=$(new_worktree "$case_dir" task-c)
+  out=$(spawn_ship "$case_dir" task-c "$pane") || rc=$?
+  expect_code "$DEFER_EXIT" "$rc" "idle exemption changed ship/scout occupancy: $out"
+  assert_contains "$out" 'live-scout, live-ship' 'ships and scouts did not retain their fleet places'
+  assert_not_contains "$out" 'live-ship, mate' 'the idle mate still holds a fleet place'
+  declare_fleet "$home" 3
+  declare_capacity "$home" 'project 1'
+  rc=0
+  out=$(spawn_ship "$case_dir" task-c "$pane") || rc=$?
+  expect_code "$DEFER_EXIT" "$rc" "idle exemption bypassed the project cap: $out"
+  assert_contains "$out" 'project project admits 1 worker(s)' 'the project cap changed'
+  pass 'idle secondmate exemption preserves ship/scout fleet places and the project cap'
+}
+
 # The cap belongs to the machine: a local secondmate home's running workers
 # count against the root home's declaration, and the secondmate's own spawn is
 # capped by it too.
@@ -1023,6 +1137,9 @@ test_ad_hoc_occupancy_is_visible() {
 
 test_undeclared_fleet_stays_uncapped
 test_full_fleet_defers_without_leaving_anything_behind
+test_secondmate_idle_busy_and_unknown
+test_first_worker_activates_secondmate_place
+test_idle_secondmate_preserves_worker_and_project_caps
 test_ad_hoc_slot_admits_one_task_over_the_cap
 test_ad_hoc_slot_is_refused_on_a_live_relaunch
 test_ad_hoc_occupancy_is_visible
