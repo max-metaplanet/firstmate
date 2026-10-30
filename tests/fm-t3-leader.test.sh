@@ -361,10 +361,13 @@ pass 'view-only marker and T3 process ancestry refuse the lock before any startu
 
 mkdir -p "$readonly_home/bin"
 printf 'seeded-secondmate\n' > "$readonly_home/.fm-secondmate-home"
+# Keep the fixture shell alive across lock acquisition: a final external
+# command in bash -c may replace it and lose the fake Claude ancestor.
 # shellcheck disable=SC2016 # Expanded by the fixture shell.
 env -u CLAUDE_PID -u CLAUDE_CODE_SESSION_ID FM_HOME="$readonly_home" FM_T3_VIEW_ONLY=1 "$work/tools/claude" -c '
   export CLAUDE_PID=$$ CLAUDE_CODE_SESSION_ID=fixture-secondmate CLAUDECODE=1
-  bash "$TEST_ROOT/bin/fm-lock.sh"
+  bash "$TEST_ROOT/bin/fm-lock.sh" || exit "$?"
+  [ "$(cat "$FM_HOME/state/.lock")" = "$$" ]
 ' > "$work/secondmate-lock"
 assert_contains "$(cat "$work/secondmate-lock")" 'lock acquired' 'seeded secondmate keeps its startup contract'
 pass 'seeded secondmates retain their parent-owned startup path'
