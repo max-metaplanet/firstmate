@@ -1,0 +1,46 @@
+$ fm-boat-test-wrapper.sh "bash scripts/pipeline-test.sh" [local Test exit=0; isolated HOME without Boat credentials]
+CORE TEST: local heavy slot held; cwd and environment preserved
+boat-test-wrapper: result.json: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M66PEH5GKJ2FBYD18XKXSHQH/.boat-live-lr7wh71z/.fm-test-scratch/fm-boat-test.Fqh3hX/boat/result.json
+boat-offload: Boat key unavailable
+boat-test-wrapper: Boat unavailable (exit 69); running locally through heavy build lock; result.json: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M66PEH5GKJ2FBYD18XKXSHQH/.boat-live-lr7wh71z/.fm-test-scratch/fm-boat-test.Fqh3hX/boat/result.json
+WRAPPER EXIT: 0
+$ fm-boat-test-wrapper.sh "bash scripts/pipeline-test.sh" [local Test exit=23; isolated HOME without Boat credentials]
+CORE TEST: local heavy slot held; cwd and environment preserved
+boat-test-wrapper: result.json: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M66PEH5GKJ2FBYD18XKXSHQH/.boat-live-lr7wh71z/.fm-test-scratch/fm-boat-test.2z3nWH/boat/result.json
+boat-offload: Boat key unavailable
+boat-test-wrapper: Boat unavailable (exit 69); running locally through heavy build lock; result.json: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M66PEH5GKJ2FBYD18XKXSHQH/.boat-live-lr7wh71z/.fm-test-scratch/fm-boat-test.2z3nWH/boat/result.json
+WRAPPER EXIT: 23
+$ fm-boat-test-wrapper.sh "bash scripts/pipeline-test.sh" [local Test exit=69; isolated HOME without Boat credentials]
+CORE TEST: local heavy slot held; cwd and environment preserved
+boat-test-wrapper: result.json: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M66PEH5GKJ2FBYD18XKXSHQH/.boat-live-lr7wh71z/.fm-test-scratch/fm-boat-test.zB3CEX/boat/result.json
+boat-offload: Boat key unavailable
+boat-test-wrapper: Boat unavailable (exit 69); running locally through heavy build lock; result.json: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M66PEH5GKJ2FBYD18XKXSHQH/.boat-live-lr7wh71z/.fm-test-scratch/fm-boat-test.zB3CEX/boat/result.json
+WRAPPER EXIT: 69
+$ fm-boat-test-wrapper.sh "bash scripts/pipeline-test.sh" [local Test exit=75; isolated HOME without Boat credentials]
+CORE TEST: local heavy slot held; cwd and environment preserved
+boat-test-wrapper: result.json: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M66PEH5GKJ2FBYD18XKXSHQH/.boat-live-lr7wh71z/.fm-test-scratch/fm-boat-test.FjmmPI/boat/result.json
+boat-offload: Boat key unavailable
+boat-test-wrapper: Boat unavailable (exit 69); running locally through heavy build lock; result.json: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M66PEH5GKJ2FBYD18XKXSHQH/.boat-live-lr7wh71z/.fm-test-scratch/fm-boat-test.FjmmPI/boat/result.json
+WRAPPER EXIT: 75
+ADAPTER RESULT: {"adapter_exit": 69, "cleanup": "deleted", "error": "Boat key unavailable", "execution_error": "Boat key unavailable", "kind": "unavailable", "remote_exit": null, "source_head": "faa439992d26a7d83417c33804101b6679709d38", "source_sha256": "321c38c1f04a4629d4f11a58f13050b37e7203175b38981d057d7b45855813b7", "swap_gib": 0}
+ADAPTER RESULT: {"adapter_exit": 69, "cleanup": "deleted", "error": "Boat key unavailable", "execution_error": "Boat key unavailable", "kind": "unavailable", "remote_exit": null, "source_head": "faa439992d26a7d83417c33804101b6679709d38", "source_sha256": "321c38c1f04a4629d4f11a58f13050b37e7203175b38981d057d7b45855813b7", "swap_gib": 0}
+ADAPTER RESULT: {"adapter_exit": 69, "cleanup": "deleted", "error": "Boat key unavailable", "execution_error": "Boat key unavailable", "kind": "unavailable", "remote_exit": null, "source_head": "faa439992d26a7d83417c33804101b6679709d38", "source_sha256": "321c38c1f04a4629d4f11a58f13050b37e7203175b38981d057d7b45855813b7", "swap_gib": 0}
+ADAPTER RESULT: {"adapter_exit": 69, "cleanup": "deleted", "error": "Boat key unavailable", "execution_error": "Boat key unavailable", "kind": "unavailable", "remote_exit": null, "source_head": "faa439992d26a7d83417c33804101b6679709d38", "source_sha256": "321c38c1f04a4629d4f11a58f13050b37e7203175b38981d057d7b45855813b7", "swap_gib": 0}
+$ wrapper with invalid relative FM_HOME
+boat-test-wrapper: result.json: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M66PEH5GKJ2FBYD18XKXSHQH/.boat-live-lr7wh71z/.fm-test-scratch/fm-boat-test.EjT3UZ/boat/result.json
+boat-offload: FM_HOME must be explicit and absolute
+boat-test-wrapper: adapter failure (exit 2, invalid-result); Test failed; result.json: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M66PEH5GKJ2FBYD18XKXSHQH/.boat-live-lr7wh71z/.fm-test-scratch/fm-boat-test.EjT3UZ/boat/result.json
+WRAPPER EXIT: 2
+$ wrapper arguments=[]
+boat-test-wrapper: expected exactly one nonempty Test command string
+WRAPPER EXIT: 2
+$ wrapper arguments=['']
+boat-test-wrapper: expected exactly one nonempty Test command string
+WRAPPER EXIT: 2
+$ wrapper arguments=['   ']
+boat-test-wrapper: expected exactly one nonempty Test command string
+WRAPPER EXIT: 2
+$ wrapper arguments=['one', 'two']
+boat-test-wrapper: expected exactly one nonempty Test command string
+WRAPPER EXIT: 2
+Observed four local executions for four unavailable-Boat calls; none for invalid setup or invalid arguments. No Boat CLI or provider request was used.

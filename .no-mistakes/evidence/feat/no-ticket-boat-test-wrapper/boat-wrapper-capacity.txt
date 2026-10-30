@@ -1,0 +1,8 @@
+$ fm-boat-test-wrapper.sh <single command> [two disposable pending reservations; no provider call]
+CAPACITY FALLBACK: local command executed
+boat-test-wrapper: result.json: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M66PEH5GKJ2FBYD18XKXSHQH/.boat-capacity-xg8erlhl/.fm-test-scratch/fm-boat-test.2mBN7r/boat/result.json
+boat-offload: two Boat jobs already reserved
+boat-test-wrapper: Boat unavailable (exit 75); running locally through heavy build lock; result.json: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M66PEH5GKJ2FBYD18XKXSHQH/.boat-capacity-xg8erlhl/.fm-test-scratch/fm-boat-test.2mBN7r/boat/result.json
+WRAPPER EXIT: 17
+ADAPTER RESULT: {"adapter_exit": 75, "cleanup": "deleted", "error": "two Boat jobs already reserved", "execution_error": "two Boat jobs already reserved", "kind": "unavailable", "remote_exit": null, "source_head": "6be07e0399978f254957abbb4e45fa55ad7c2ac4", "source_sha256": "2c027f0a4be42fbdbf773cc711bae04e6478e6e159ecfe2f0e50b0269537833c", "swap_gib": 0}
+Existing disposable reservations preserved. Local command ran once; exit 17 propagated. No Boat request or VM creation.
