@@ -1064,7 +1064,7 @@ test_adaptive_concurrent_homes checkpoint
 
 def spawn_groups(owner, parent_group):
     rows = [list(map(int, row.split())) for row in subprocess.check_output(
-        ['ps', '-axo', 'pid=,ppid=,pgid='], text=True).splitlines()]
+        ['ps', '-axo', 'pid=,ppid=,pgid='], text=True, timeout=3).splitlines()]
     descendants = {owner}
     while True:
         found = {pid for pid, parent, _ in rows if parent in descendants}
@@ -1077,14 +1077,20 @@ def spawn_groups(owner, parent_group):
 
 def group_members(pgid):
     rows = subprocess.check_output(
-        ['ps', '-axo', 'pid=,pgid=,stat='], text=True)
+        ['ps', '-axo', 'pid=,pgid=,stat='], text=True, timeout=3)
     return [int(pid) for pid, group, state in map(str.split, rows.splitlines())
             if int(group) == pgid and not state.startswith('Z')]
 
 
-for mode in ('pass', 'fail', 'TERM', 'INT', 'HUP', 'timeout', 'KILL'):
+for mode in ('pass', 'fail', 'TERM', 'INT', 'HUP', 'KILL', 'outer-TERM', 'timeout'):
     marker = Path(root) / ('cleanup-' + mode)
-    process = subprocess.Popen(['bash', '-c', script, '_', suite, str(marker), mode],
+    command = ['bash', '-c', script, '_', suite, str(marker), mode]
+    if mode == 'timeout':
+        # Exercise the runner's real deadline while the checkpoint stays held.
+        command = ['bash', '-c', '. "$1"; shift; fm_exec_timed 45 2 "$@"',
+                   '_', str(Path(suite).parent.parent / 'bin/fm-timeout-lib.sh'),
+                   *command]
+    process = subprocess.Popen(command,
                                start_new_session=True, stdout=subprocess.PIPE,
                                stderr=subprocess.PIPE, text=True)
     groups = set()
@@ -1095,39 +1101,52 @@ for mode in ('pass', 'fail', 'TERM', 'INT', 'HUP', 'timeout', 'KILL'):
                 raise AssertionError(f'{mode}: admission did not reach checkpoint')
             time.sleep(0.05)
         case_pid, case_dir = marker.read_text().splitlines()
+        suite_group = os.getpgid(int(case_pid))
         deadline = time.monotonic() + 10
         while len(groups) < 2 and time.monotonic() < deadline:
-            groups |= spawn_groups(int(case_pid), process.pid)
+            groups |= spawn_groups(int(case_pid), suite_group)
             time.sleep(0.05)
         assert len(groups) == 2, f'{mode}: did not observe both spawn groups: {groups}'
         assert all(group_members(group) for group in groups), f'{mode}: spawn already exited'
         if mode in ('pass', 'fail'):
             Path(str(marker) + '.release').touch()
+        elif mode == 'outer-TERM':
+            os.killpg(process.pid, signal.SIGTERM)
+        elif mode == 'timeout':
+            pass  # No release or signal: only the runner's deadline can end it.
         else:
-            # A timeout interrupts the case exactly as the test runner does.
-            sig = signal.SIGTERM if mode == 'timeout' else getattr(signal, 'SIG' + mode)
+            sig = getattr(signal, 'SIG' + mode)
             os.kill(int(case_pid), sig)
-        out, err = process.communicate(timeout=10)
-        expected = 0 if mode == 'pass' else 42 if mode == 'fail' else 128 + sig
-        assert process.returncode == expected, (mode, process.returncode, out, err)
+        # Normal admission runs the real spawn path; interruption only reaps it.
+        out, err = process.communicate(timeout=60 if mode in ('pass', 'timeout') else 10)
+        expected = {'pass': (0,), 'fail': (42,), 'outer-TERM': (-signal.SIGTERM, 143),
+                    'timeout': (124,)}.get(mode, (128 + getattr(signal, 'SIG' + mode, 0),))
+        assert process.returncode in expected, (mode, process.returncode, out, err)
         deadline = time.monotonic() + 5
         while any(group_members(group) for group in groups) and time.monotonic() < deadline:
             time.sleep(0.05)
         assert not any(group_members(group) for group in groups), f'{mode}: live spawn descendants survived cleanup'
+        print(f'ok - {mode}: observed both spawn groups {sorted(groups)}; no running descendants', flush=True)
     finally:
         # Even a regressed fixture cannot leak from its own regression check.
+        groups |= spawn_groups(process.pid, process.pid)
         for group in groups:
             try:
                 os.killpg(group, signal.SIGKILL)
             except ProcessLookupError:
                 pass
-        if process.poll() is None:
+        try:
             os.killpg(process.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+        try:
+            process.communicate(timeout=5)
+        except subprocess.TimeoutExpired:
             try:
-                process.communicate(timeout=5)
-            except subprocess.TimeoutExpired:
                 os.killpg(process.pid, signal.SIGKILL)
-        process.communicate()
+            except ProcessLookupError:
+                pass
+            process.communicate(timeout=5)
 print('ok - adaptive admission reaps spawn groups on pass, failure, timeout and signals')
 PY
 }
