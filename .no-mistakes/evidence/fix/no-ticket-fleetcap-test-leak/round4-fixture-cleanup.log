@@ -1,0 +1,10 @@
+ok - lock wait exits when its parent directory disappears
+ok - pass: observed both spawn groups [3472394, 3475127]; no running descendants
+ok - fail: observed both spawn groups [3481184, 3484036]; no running descendants
+ok - TERM: observed both spawn groups [3484990, 3486582]; no running descendants
+ok - INT: observed both spawn groups [3487297, 3488284]; no running descendants
+ok - HUP: observed both spawn groups [3488756, 3489382]; no running descendants
+ok - KILL: observed both spawn groups [3489793, 3490409]; no running descendants
+ok - outer-TERM: observed both spawn groups [3490767, 3491429]; no running descendants
+ok - timeout: observed both spawn groups [3491780, 3492462]; no running descendants
+ok - adaptive admission reaps spawn groups on pass, failure, timeout and signals

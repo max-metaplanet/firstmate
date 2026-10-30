@@ -1,0 +1,15 @@
+watch: programs=6/3 shell-children=27/3 startup-programs=20 startup-shell-children=23
+attach: programs=0/3 shell-children=0/3 startup-programs=5 startup-shell-children=10
+host: programs=0/3 shell-children=0/3 startup-programs=55 startup-shell-children=74
+autoarm: programs=0/3 shell-children=0/3 startup-programs=35 startup-shell-children=46
+ok - warmed supervision loops stay within their program and shell-child budgets
+ok - identity cache invalidates on replacement; old and new beacon freshness remain compatible
+ok - unsupported FIFO setup falls back once without adding per-poll setup forks
+contributions snapshot: programs=7 at 2 records, 7 at 20
+procevent reconcile: programs=7
+ok - one-shot supervision commands pay a fixed program budget, not a per-record one
+harness ancestry: process-reads=8 basename=0
+ok - the harness ancestry walk reads each ancestor with one program and no basename
+wake drain forks (idle, empty queue file present): 21
+wake drain forks (one queued signal row): 55
+ok - wake drain stays within its idle and single-row fork budgets

@@ -1,0 +1,4 @@
+8d477888 no-mistakes(test): Stabilize fork-budget sampling across detached parking ticks
+a53bf01b no-mistakes(test): Fix fleet fixture cleanup coverage and completion wait
+6efc2fc8 no-mistakes(test): Account for parking ticks in supervision fork budgets
+f2858e4d fix/no-ticket(tests): reap concurrent fleet-capacity spawns

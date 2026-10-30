@@ -1,0 +1,2 @@
+ok - lock wait exits when its parent directory disappears
+ok - adaptive admission reaps spawn groups on pass, failure, timeout and signals
