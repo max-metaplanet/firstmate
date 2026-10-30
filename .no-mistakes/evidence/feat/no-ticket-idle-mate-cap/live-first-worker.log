@@ -1,0 +1,44 @@
+
+First ship with capacity 1: exit=75
+fm-gate-refuse: gate agent lifecycle permitted only against lab home ~/.no-mistakes/worktrees/c0c4fcacb05a/01M66VA76PDAEG7HPEVF42VXN1/.cap-lab/mate
+deferred: this machine runs at most 1 agent(s) at once (~/.no-mistakes/worktrees/c0c4fcacb05a/01M66VA76PDAEG7HPEVF42VXN1/.cap-lab/root/config/fleet-capacity) and 1 are running (mate in ~/.no-mistakes/worktrees/c0c4fcacb05a/01M66VA76PDAEG7HPEVF42VXN1/.cap-lab/root); task first-worker was not launched and its backlog item stays queued - the worker-park tick replays a recorded launch once one of them is cleaned up or stops
+task:
+  id: first-worker
+  title: first worker
+  state: queued
+  blocked: no
+  blocked_by: none
+  held: no
+  hold_reason: "-"
+  hold_kind: "-"
+  hold_until: "-"
+  kind: ship
+  repo: "-"
+  priority: "-"
+  created: 2026-10-30
+  closed: "-"
+  deps: none
+  links: none
+  body: ""
+
+First scout with capacity 1: exit=75
+fm-gate-refuse: gate agent lifecycle permitted only against lab home ~/.no-mistakes/worktrees/c0c4fcacb05a/01M66VA76PDAEG7HPEVF42VXN1/.cap-lab/mate
+deferred: this machine runs at most 1 agent(s) at once (~/.no-mistakes/worktrees/c0c4fcacb05a/01M66VA76PDAEG7HPEVF42VXN1/.cap-lab/root/config/fleet-capacity) and 1 are running (mate in ~/.no-mistakes/worktrees/c0c4fcacb05a/01M66VA76PDAEG7HPEVF42VXN1/.cap-lab/root); task first-worker was not launched and its backlog item stays queued - the worker-park tick replays a recorded launch once one of them is cleaned up or stops
+task:
+  id: first-worker
+  title: first worker
+  state: queued
+  blocked: no
+  blocked_by: none
+  held: no
+  hold_reason: "-"
+  hold_kind: "-"
+  hold_until: "-"
+  kind: ship
+  repo: "-"
+  priority: "-"
+  created: 2026-10-30
+  closed: "-"
+  deps: none
+  links: none
+  body: ""

@@ -1,0 +1,90 @@
+
+SCENARIO: live endpoint with empty secondmate home releases its slot
+slots 0/2 (source: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M66VA76PDAEG7HPEVF42VXN1/.cap-lab/root/config/fleet-capacity)
+SLOTS (local records; * still holds a slot)
+PARKED/WAITING (no active slot)
+QUEUE (~/.no-mistakes/worktrees/c0c4fcacb05a/01M66VA76PDAEG7HPEVF42VXN1/.cap-lab/root)
+A. ready for a slot (priority, then oldest)
+  (empty)
+B. waiting on captain
+  (empty)
+C. other queued
+  (empty)
+
+SCENARIO: in-flight backlog alone retains secondmate slot
+slots 1/2 (source: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M66VA76PDAEG7HPEVF42VXN1/.cap-lab/root/config/fleet-capacity)
+SLOTS (local records; * still holds a slot)
+  ~/.no-mistakes/worktrees/c0c4fcacb05a/01M66VA76PDAEG7HPEVF42VXN1/.cap-lab/root | mate | mate | secondmate | unknown | unknown
+PARKED/WAITING (no active slot)
+QUEUE (~/.no-mistakes/worktrees/c0c4fcacb05a/01M66VA76PDAEG7HPEVF42VXN1/.cap-lab/root)
+A. ready for a slot (priority, then oldest)
+  (empty)
+B. waiting on captain
+  (empty)
+C. other queued
+  (empty)
+
+SCENARIO: worker metadata retains supervisor and worker slots even with no in-flight row
+slots 2/2 (source: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M66VA76PDAEG7HPEVF42VXN1/.cap-lab/root/config/fleet-capacity)
+SLOTS (local records; * still holds a slot)
+  ~/.no-mistakes/worktrees/c0c4fcacb05a/01M66VA76PDAEG7HPEVF42VXN1/.cap-lab/root | mate | mate | secondmate | unknown | unknown
+  ~/.no-mistakes/worktrees/c0c4fcacb05a/01M66VA76PDAEG7HPEVF42VXN1/.cap-lab/mate | child | mate | ship | unknown | unknown
+PARKED/WAITING (no active slot)
+QUEUE (~/.no-mistakes/worktrees/c0c4fcacb05a/01M66VA76PDAEG7HPEVF42VXN1/.cap-lab/root)
+A. ready for a slot (priority, then oldest)
+  (empty)
+B. waiting on captain
+  (empty)
+C. other queued
+  (empty)
+
+SCENARIO: clearing work releases secondmate again
+slots 0/2 (source: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M66VA76PDAEG7HPEVF42VXN1/.cap-lab/root/config/fleet-capacity)
+SLOTS (local records; * still holds a slot)
+PARKED/WAITING (no active slot)
+QUEUE (~/.no-mistakes/worktrees/c0c4fcacb05a/01M66VA76PDAEG7HPEVF42VXN1/.cap-lab/root)
+A. ready for a slot (priority, then oldest)
+  (empty)
+B. waiting on captain
+  (empty)
+C. other queued
+  (empty)
+
+SCENARIO: unreadable backlog retains secondmate slot
+slots 1/2 (source: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M66VA76PDAEG7HPEVF42VXN1/.cap-lab/root/config/fleet-capacity)
+SLOTS (local records; * still holds a slot)
+  ~/.no-mistakes/worktrees/c0c4fcacb05a/01M66VA76PDAEG7HPEVF42VXN1/.cap-lab/root | mate | mate | secondmate | unknown | unknown
+PARKED/WAITING (no active slot)
+QUEUE (~/.no-mistakes/worktrees/c0c4fcacb05a/01M66VA76PDAEG7HPEVF42VXN1/.cap-lab/root)
+A. ready for a slot (priority, then oldest)
+  (empty)
+B. waiting on captain
+  (empty)
+C. other queued
+  (empty)
+
+SCENARIO: active launch reservation retains idle secondmate slot
+slots 1/2 (source: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M66VA76PDAEG7HPEVF42VXN1/.cap-lab/root/config/fleet-capacity)
+SLOTS (local records; * still holds a slot)
+  ~/.no-mistakes/worktrees/c0c4fcacb05a/01M66VA76PDAEG7HPEVF42VXN1/.cap-lab/root | mate | mate | secondmate | unknown | unknown
+PARKED/WAITING (no active slot)
+QUEUE (~/.no-mistakes/worktrees/c0c4fcacb05a/01M66VA76PDAEG7HPEVF42VXN1/.cap-lab/root)
+A. ready for a slot (priority, then oldest)
+  (empty)
+B. waiting on captain
+  (empty)
+C. other queued
+  (empty)
+
+SCENARIO: ordinary scout still holds its own slot while secondmate is idle
+slots 1/2 (source: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M66VA76PDAEG7HPEVF42VXN1/.cap-lab/root/config/fleet-capacity)
+SLOTS (local records; * still holds a slot)
+  ~/.no-mistakes/worktrees/c0c4fcacb05a/01M66VA76PDAEG7HPEVF42VXN1/.cap-lab/root | scout | root | scout | unknown | unknown
+PARKED/WAITING (no active slot)
+QUEUE (~/.no-mistakes/worktrees/c0c4fcacb05a/01M66VA76PDAEG7HPEVF42VXN1/.cap-lab/root)
+A. ready for a slot (priority, then oldest)
+  (empty)
+B. waiting on captain
+  (empty)
+C. other queued
+  (empty)
