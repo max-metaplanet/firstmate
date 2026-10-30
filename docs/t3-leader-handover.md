@@ -17,7 +17,7 @@ Only Claude is supported as the T3 leader; the installed Codex app-server path d
 Persist any open work that exists only in the conversation, then run the tool's `switch --to t3 --model MODEL --persisted` command inside the current leader.
 The command records recovery information and schedules detached completion before returning, so the current leader can end its turn.
 No separate activation terminal or typed exit is required.
-Use the switch dry-run to check ownership, the original tmux pane, recovery prerequisites, and native home binding without scheduling anything.
+Use the switch dry-run to check ownership, the original tmux pane, recovery prerequisites, and legacy routing migration without scheduling anything.
 
 Completion stops only the recorded outgoing Claude PID, waits for it to exit, launches its replacement, and waits for verified lock ownership and confirmation.
 If activation fails or confirmation times out, it resumes the outgoing Claude conversation in its original tmux pane when the lock is free or stale.
