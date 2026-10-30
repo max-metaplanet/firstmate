@@ -409,6 +409,9 @@ fi
 
 fm_backend_validate_task_endpoint "$META" "$ID" || exit 1
 BACKEND=$FM_BACKEND_VALIDATED_BACKEND
+if [ "$BACKEND" = t3 ]; then
+  die "T3 does not expose interrupt, exit or relaunch through its CLI; use the exact thread controls in T3; task state is preserved"
+fi
 T=$FM_BACKEND_VALIDATED_TARGET
 LABEL="fm-$ID"
 RECORDED_HARNESS=$(fm_meta_get "$META" harness)

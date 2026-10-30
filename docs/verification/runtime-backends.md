@@ -6,6 +6,51 @@ This record contains reusable version-scoped evidence for active runtime guarant
 The backend guides own current setup, safety boundaries, and limitations.
 Exact task chronology, branch names, temporary homes, local paths, process ids, thread ids, and delivery transcripts remain in private reports or PR evidence.
 
+## T3 native threads
+
+Verified on 2026-10-30 with host-local T3 v0.1.5 on Linux arm64.
+The [T3 backend guide](../t3-backend.md) owns setup and supported limits; [`bin/fm-t3.sh`](../../bin/fm-t3.sh) owns the durable thread record.
+The native Claude probe accepted project-local home environment settings before running tools, and a managed scout reported `state: working · source: pane · harness busy (t3-native)` through `fm-crew-state.sh`.
+Managed Claude and Codex scouts and a Claude secondmate accepted normal inbox steers with native `delivery: queued` behind deliberately held turns, then performed the requested action and moved the durable message into `handled/`.
+The secondmate's native SessionStart acquired its own home lock rather than the parent home's lock, and its exact Claude PID exited after committed project deletion.
+Committed project deletion used only the recorded project after an exact ordinary-thread inventory check.
+
+Refresh the portable contracts with:
+
+```sh
+bash bin/fm-test-run.sh tests/fm-t3.test.sh tests/fm-backend-t3.test.sh tests/fm-spawn-t3.test.sh tests/fm-t3-leader.test.sh
+```
+
+These suites exercise native identity routing, duplicate and uncertain-launch refusal, unsupported lifecycle controls, preserved home settings, and both attended handover directions using independent fixture processes.
+The token-spending live guard is opt-in and refreshes native worker and secondmate behavior against the running T3 service:
+
+```sh
+FM_T3_LIVE_E2E=1 FM_T3_BIN=/path/to/t3 FM_T3_BASE_DIR=/path/to/t3-data \
+FM_T3_LIVE_CLAUDE_MODEL=claude-sonnet-5-5 FM_T3_LIVE_CODEX_MODEL=gpt-6.1-sol \
+  bash bin/fm-test-run.sh tests/fm-t3-live-e2e.test.sh
+```
+
+The guard uses independent fixture Git repositories and a fake allocator with real T3 threads, never the shared worktree pool.
+Its header owns the bounded-case rerun and durable-evidence options.
+Model slugs must be advertised by the selected environment.
+Native Claude leader hooks separately demonstrated a startup digest, a per-session lock, and an automatic idle status-event wake with the optional supervision host explicitly disabled.
+That earlier bounded proof does not establish long idle retention, provider restart recovery, or the default supervision-host path.
+The production watcher guard continues to refuse disposable `.treehouse` paths, so this fixture does not claim an unattended leader cycle there.
+
+The terminal-to-T3-to-terminal handover also passed with real Claude Code 2.1.314 and T3 v0.1.5 using a separate independent scratch primary home.
+The terminal test wrapper added print mode, no session persistence, and project/local settings so each terminal probe could exit without changing global trust or settings.
+Both native successors acquired the normal lock and confirmed the handover, both dry-run phases preserved their records, and activation refused while the outgoing T3 Claude process still existed.
+The fixture removed only its recorded throwaway T3 project to stop that outgoing process, then verified its PID exited before reverse activation.
+Production handover does not delete projects or conversation history.
+
+Refresh that bounded native proof with:
+
+```sh
+FM_T3_LEADER_LIVE_E2E=1 FM_T3_BIN=/path/to/t3 FM_T3_BASE_DIR=/path/to/t3-data \
+FM_T3_LEADER_LIVE_MODEL=claude-sonnet-5-5 \
+  bash bin/fm-test-run.sh tests/fm-t3-leader-live-e2e.test.sh
+```
+
 ## Treehouse task lease recovery
 
 Verified on 2026-10-28 on Linux arm64 with Bash 5.3.9 and Node 24.22.1 using real fixture Git repositories and a stateful Treehouse stand-in.

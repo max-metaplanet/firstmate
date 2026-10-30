@@ -131,7 +131,12 @@
 #   docs/cmux-backend.md),
 #   then tmux.
 #   Spawn-capable backends are the reference tmux adapter, verified herdr
-#   adapter, and experimental zellij, orca, and cmux adapters. Orca owns both
+#   adapter, and experimental zellij, orca, cmux, and opt-in t3 adapters. T3
+#   launches native Claude/Codex threads rather than terminal commands; its
+#   provider owns environment, permissions, and attribution defaults. Unsupported
+#   explicit launch controls fail before allocation (bin/backends/t3.sh).
+#   T3 uses Treehouse durable leases, supports Claude secondmates only, and
+#   refuses interrupt, exit, and relaunch. See docs/t3-backend.md. Orca owns both
 #   the task worktree and terminal, so ship/scout Orca spawns do not run
 #   treehouse get; cmux is a session provider only, exactly like herdr/zellij,
 #   so it does. Auto-detected herdr stays silent like tmux; auto-detected cmux
@@ -1577,6 +1582,8 @@ SPAWN_LAUNCH_SENT=0
 SPAWN_ENDPOINT_CLOSED=0
 SPAWN_STAGED_LAUNCH_FILE=
 SPAWN_TREEHOUSE_ACQUIRE=
+T3_WORKTREE_ALLOCATED=0
+T3_LAUNCH_ATTEMPTED=0
 
 # Freeze parents before discovering their children, so cancellation cannot leave
 # a late fork preparing another copy after the acquisition lock is released.
@@ -1762,6 +1769,25 @@ spawn_abort_cleanup() {
   if [ "$SPAWN_TASK_LOCK_HELD" = 1 ]; then
     SPAWN_TASK_LOCK_HELD=0
     fm_lock_release "$SPAWN_TASK_LOCK" || true
+  fi
+  # A native launch has no idempotency key: once submitted, keep its exact
+  # record even when T3 failed to return a confirmation. Never make a retry look
+  # fresh while the first thread may already be running.
+  if [ "$BACKEND" = t3 ] && [ "$T3_LAUNCH_ATTEMPTED" = 1 ]; then
+    SPAWN_FRESH_COMMIT_PENDING=0
+  fi
+  if [ "$BACKEND" = t3 ] && [ "$T3_WORKTREE_ALLOCATED" = 1 ] &&
+    [ ! -e "$STATE/$ID.meta" ] && [ -n "${WT:-}" ]; then
+    SPAWN_META_TMP="$STATE/.$ID.meta.t3-recovery.${BASHPID:-$$}"
+    {
+      printf 'window=%s\nendpoint_task_id=%s\n' "$T" "$ID"
+      printf 'worktree=%s\nproject=%s\n' "$WT" "$PROJ_ABS"
+      printf 'harness=%s\nkind=%s\nbackend=t3\n' "$HARNESS" "$KIND"
+      printf 'cleanup_recovery=t3\n'
+      [ -z "${MODE:-}" ] || printf 'mode=%s\nyolo=%s\n' "$MODE" "$YOLO"
+    } > "$SPAWN_META_TMP"
+    fm_backlog_atomic_transition publish "$SPAWN_META_TMP" "$STATE/$ID.meta" "task record" "$STATE" || true
+    echo "error: T3 allocation retained at $WT with recovery record $STATE/$ID.meta; reconcile before retrying" >&2
   fi
   if [ "$SPAWN_FRESH_COMMIT_PENDING" = 1 ]; then
     if ! spawn_fresh_commit_rollback; then
@@ -2366,6 +2392,10 @@ if [ "$RELAUNCH" -eq 1 ]; then
   }
   fm_backend_validate_task_endpoint "$RELAUNCH_META" "$ID" || exit 1
   BACKEND=$FM_BACKEND_VALIDATED_BACKEND
+  if [ "$BACKEND" = t3 ]; then
+    echo "error: T3 relaunch is unsupported; reconcile the recorded thread in T3 without launching a duplicate" >&2
+    exit 1
+  fi
   RELAUNCH_TARGET=$FM_BACKEND_VALIDATED_TARGET
   fm_backend_validate_spawn "$BACKEND" || exit 1
   fm_backend_source "$BACKEND" || exit 1
@@ -3161,6 +3191,26 @@ if [ "$KIND" = secondmate ] && [ -z "$ARG3" ]; then
     fi
   fi
 fi
+if [ "$BACKEND" = t3 ]; then
+  [ "$RAW_LAUNCH" = 0 ] || {
+    echo "error: backend=t3 accepts a verified native harness, not a terminal launch command" >&2
+    exit 1
+  }
+  fm_backend_t3_preflight "$HARNESS" "$MODEL" "$EFFORT" "$KIND" "$CONFIG" || exit 1
+  if [ "$TRACEPARENT_SET" = 1 ] || [ "$(fm_trace_context_session_effective "$STATE/.trace-context-effective")" = on ]; then
+    echo "error: backend=t3 cannot inject trace context into its provider environment" >&2
+    exit 1
+  fi
+  if [ "$KIND" = secondmate ]; then
+    T3_ACCOUNT_CONFIG=$(fm_worker_account_config "$HARNESS" "$CONFIG" "$ID") || exit 1
+    fm_backend_t3_preflight "$HARNESS" "$MODEL" "$EFFORT" "$KIND" "$T3_ACCOUNT_CONFIG" || exit 1
+  fi
+  [ ! -e "$STATE/$ID.t3" ] && [ ! -L "$STATE/$ID.t3" ] &&
+    [ ! -e "$STATE/$ID.t3-worktree" ] && [ ! -L "$STATE/$ID.t3-worktree" ] || {
+    echo "error: T3 task $ID already has launch/allocation evidence; reconcile it before retrying" >&2
+    exit 1
+  }
+fi
 fm_dispatch_predict_log "$DATA" "$ID" "$DISPATCH_PILOT_JSON" "$DISPATCH_PILOT_STATUS" "$DISPATCH_PILOT_APPLIED" \
   "${HARNESS:-}" "${MODEL:-}" "${EFFORT:-}"
 # Ultra is an explicit native capability, never a Pi thinking-level alias.
@@ -3191,6 +3241,7 @@ fi
 # A secondmate's gate runs once its home is resolved, against the config whose
 # seat that launch uses (spawn_seat_config).
 spawn_seat_dispatch_gate() {
+  [ "$BACKEND" != t3 ] || return 0
   [ "$HARNESS" = claude ] && [ "$RELAUNCH" -eq 0 ] && [ "$IGNORE_SEAT_HOLD" -eq 0 ] || return 0
   local seat_config
   seat_config=$(spawn_seat_config)
@@ -3257,6 +3308,7 @@ spawn_seat_dry() {
 # Only a FRESH spawn is gated, for the same reason the extra-usage gate gates
 # only fresh spawns, and --ignore-seat-hold is the same deliberate override.
 spawn_provider_depletion_gate() {
+  [ "$BACKEND" != t3 ] || return 0
   { [ "$HARNESS" = claude ] || [ "$HARNESS" = codex ]; } &&
     [ "$RELAUNCH" -eq 0 ] && [ "$IGNORE_SEAT_HOLD" -eq 0 ] || return 0
   local seat_config summary alt label notice where here here_seat here_pct
@@ -3328,6 +3380,7 @@ spawn_provider_depletion_gate() {
 # quota here. Spare-leader mode also routes fresh Codex launches through the
 # shared selector. --ignore-seat-hold deliberately overrides both preferences.
 spawn_seat_session_gate() {
+  [ "$BACKEND" != t3 ] || return 0
   { [ "$HARNESS" = claude ] || [ "$HARNESS" = codex ]; } && [ "$RELAUNCH" -eq 0 ] && [ "$IGNORE_SEAT_HOLD" -eq 0 ] || return 0
   local seat_config dest active err spare=0 label=Claude
   local -a launch_options=()
@@ -3368,7 +3421,7 @@ spawn_seat_session_gate() {
 
 # Refuse a missing selected seat before quota routing can mask it or choose a
 # different profile. Resolve again at launch so a removed directory still fails.
-if [ "$KIND" != secondmate ] && [ "$RELAUNCH" -eq 0 ] && { [ "$HARNESS" = claude ] || [ "$HARNESS" = codex ]; }; then
+if [ "$BACKEND" != t3 ] && [ "$KIND" != secondmate ] && [ "$RELAUNCH" -eq 0 ] && { [ "$HARNESS" = claude ] || [ "$HARNESS" = codex ]; }; then
   SEAT_CONFIG=$(spawn_seat_config)
   SEAT_NAME=$(FM_SEAT_PROVIDER=$HARNESS CONFIG=$SEAT_CONFIG fm_seat_active)
   if [ "$SEAT_NAME" != "$FM_SEAT_DEFAULT_NAME" ]; then
@@ -3419,7 +3472,10 @@ fi
 # trust registration below writes the store the worker will actually read.
 RAW_COMMAND=
 [ "$RAW_LAUNCH" = 0 ] || RAW_COMMAND=$ARG3
-WORKER_ACCOUNT=$(fm_worker_account_select "$HARNESS" "$CONFIG" "$MODEL" "${PI_BIN:-$HARNESS}" "$RAW_COMMAND" "$WORKER_ACCOUNT_MATE") || exit 1
+WORKER_ACCOUNT=
+if [ "$BACKEND" != t3 ]; then
+  WORKER_ACCOUNT=$(fm_worker_account_select "$HARNESS" "$CONFIG" "$MODEL" "${PI_BIN:-$HARNESS}" "$RAW_COMMAND" "$WORKER_ACCOUNT_MATE") || exit 1
+fi
 WORKER_ACCOUNT_DECLARED=${WORKER_ACCOUNT%%$'\t'*}
 WORKER_ACCOUNT_ROOT=${WORKER_ACCOUNT#*$'\t'}
 WORKER_ACCOUNT_PROVIDER=${WORKER_ACCOUNT_ROOT#*$'\t'}
@@ -4022,6 +4078,13 @@ if [ "$KIND" = secondmate ]; then
     exit 1
   }
   PROJ_ABS=$(validate_firstmate_home_for_spawn "$ID" "$FIRSTMATE_HOME")
+  if [ "$BACKEND" = t3 ]; then
+    fm_backend_t3_preflight "$HARNESS" "$MODEL" "$EFFORT" "$KIND" "$PROJ_ABS/config" || exit 1
+    [ -e "$PROJ_ABS/config/supervision-host-off" ] || {
+      echo "error: T3 secondmates require explicit config/supervision-host-off until the supervision-host path is verified" >&2
+      exit 1
+    }
+  fi
   spawn_seat_session_gate
   spawn_seat_dispatch_gate
   spawn_provider_depletion_gate
@@ -4979,6 +5042,10 @@ if [ -e "$STATE/$ID.backlog-close" ] || [ -L "$STATE/$ID.backlog-close" ]; then
   exit 1
 fi
 
+if [ "$BACKEND" = t3 ] && [ "$EXTERNAL_REVIEW" = 1 ]; then
+  echo "error: backend=t3 cannot install the external-review Git push environment guard; select a terminal backend" >&2
+  exit 1
+fi
 W="fm-$ID"
 if [ "$RELAUNCH" -eq 1 ]; then
   # A secondmate's home already resolved WT above through the same validation a
@@ -5069,6 +5136,9 @@ EOF
   fi
 else
   case "$BACKEND" in
+  t3)
+    T="$(cd "$STATE" && pwd -P)/$ID.t3"
+    ;;
   tmux)
     SES=$(fm_backend_tmux_container_ensure)
     T="$SES:$W"
@@ -5381,6 +5451,7 @@ spawn_send_key() { # <target> <key>
 # launch boundary and makes a dropped or ignored cwd change a refusal.
 spawn_enter_recorded_worktree() {
   [ "$KIND" = secondmate ] && return 0
+  [ "$BACKEND" != t3 ] || return 0
   spawn_send_text_line "$WT_TARGET" "cd -- $(shell_quote "$WT")" || {
     echo "error: task $ID's endpoint could not be moved into its recorded worktree '$WT'; refusing to launch outside the copy holding its work" >&2
     exit 1
@@ -5393,7 +5464,7 @@ spawn_enter_recorded_worktree() {
 spawn_assert_agent_worktree() {
   local expected seen i
   [ "$KIND" = secondmate ] && return 0
-  [ "$BACKEND" = orca ] && return 0
+  { [ "$BACKEND" = orca ] || [ "$BACKEND" = t3 ]; } && return 0
   expected=$(real_path_or_raw "$WT")
   for i in $(seq 1 20); do
     seen=$(spawn_current_path "$WT_TARGET" || true)
@@ -5830,6 +5901,26 @@ elif [ "$RELAUNCH" -eq 1 ]; then
     fi
   fi
   [ "$KIND" = secondmate ] || validate_spawn_worktree "relaunch" "$T"
+elif [ "$KIND" != secondmate ] && [ "$BACKEND" = t3 ]; then
+  # T3 has no terminal shell to hold an interactive Treehouse lease. Reserve
+  # durably and retain the allocation result so a failed later step cannot
+  # silently orphan the copy or reallocate on retry.
+  if ! (cd "$PROJ_ABS" && treehouse get --lease --lease-holder "firstmate:$FM_HOME:$ID") > "$STATE/$ID.t3-worktree"; then
+    echo "error: T3 worktree allocation failed or is uncertain; inspect $STATE/$ID.t3-worktree before retrying" >&2
+    exit 1
+  fi
+  WT=$(cat "$STATE/$ID.t3-worktree")
+  validate_spawn_worktree "treehouse get --lease" "$T"
+  validate_spawn_worktree_gitdir
+  validate_spawn_worktree_unclaimed "$T"
+  T3_WORKTREE_ALLOCATED=1
+  if fm_treehouse_pool_slot "$PROJ_ABS" "$WT"; then
+    fm_treehouse_slot_owner_claim "$WT" "$ID" "$FM_HOME" || {
+      echo "error: could not claim T3 task $ID's durable Treehouse lease at $WT" >&2
+      exit 1
+    }
+    SPAWN_SLOT_CLAIMED=1
+  fi
 elif [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ]; then
   treehouse_timeout=${FM_TREEHOUSE_GET_TIMEOUT:-600}
   case "$treehouse_timeout" in ''|*[!0-9]*|0*) treehouse_timeout=600 ;; esac
@@ -5951,7 +6042,7 @@ spawn_assert_agent_worktree
 # Resolve each supported vendor's profile once and record it on the task.
 # Relaunches retain that task's store instead of following later home switches.
 # Explicit --seat moves use the same provider's validated destination.
-if [ "$HARNESS" = claude ] || [ "$HARNESS" = codex ]; then
+if [ "$BACKEND" != t3 ] && { [ "$HARNESS" = claude ] || [ "$HARNESS" = codex ]; }; then
   if [ "$RELAUNCH" -eq 1 ] && [ "$RELAUNCH_PRIOR_HARNESS" = "$HARNESS" ]; then
     SEAT_RECORD=$RELAUNCH_SEAT
     if [ "$SEAT_OVERRIDE_SET" = 1 ]; then
@@ -6010,8 +6101,9 @@ fi
 # it has done so. agy is crewmate/scout only (refused above for secondmate), so
 # only the worktree shape applies.
 AGY_TRUST_PREREGISTERED=0
-case "$HARNESS" in
-claude*)
+case "$HARNESS:$BACKEND" in
+claude*:t3) ;; # T3 owns its provider trust/configuration; do not mutate CLI stores.
+claude*:*)
   if [ "$KIND" = secondmate ]; then
     spawn_trust_args=(--secondmate-home "$PROJ_ABS" "$ID")
   else
@@ -6026,7 +6118,7 @@ claude*)
     exit 1
   fi
   ;;
-agy)
+agy:*)
   if [ "$KIND" != secondmate ]; then
     if "$FM_ROOT/bin/fm-agy-trust.sh" "$WT" "$PROJ_ABS" >/dev/null; then
       AGY_TRUST_PREREGISTERED=1
@@ -6048,6 +6140,7 @@ esac
 # can plant or swap a file in it. The staged launch command lives in a sibling
 # directory namespaced by home identity, not in this shared per-id root.
 TASK_TMP="/tmp/fm-$ID"
+[ "$BACKEND" != t3 ] || TASK_TMP="$STATE/$ID.tasktmp"
 if (umask 077 && mkdir "$TASK_TMP") 2>/dev/null; then
   [ "$HARNESS" != polytoken ] || SPAWN_TASK_TMP_CREATED=1
 else
@@ -6121,6 +6214,9 @@ fi
 # command does not carry, so the record would never be updated.
 busy_notify_turnend=true
 WIRING_HARNESS=$HARNESS
+if [ "$BACKEND" = t3 ] && [ "$KIND" = secondmate ]; then
+  WIRING_HARNESS=
+fi
 if [ "$KIND" = secondmate ]; then
   busy_notify_turnend=false
   if [ "$RAW_LAUNCH" -ne 0 ]; then
@@ -6635,7 +6731,7 @@ if [ "$EXTERNAL_REVIEW" = 1 ]; then
     exit 1
   }
   GIT_HOOKS_INSTALLED=1
-elif [ "$KEEP_AI_TRAILERS" = 0 ]; then
+elif [ "$KEEP_AI_TRAILERS" = 0 ] && [ "$BACKEND" != t3 ]; then
   "$FM_ROOT/bin/fm-git-strip-ai-trailers.sh" install "$GIT_HOOKS_DIR" "$WT" || {
     echo "error: could not install the AI-trailer strip hooks for $ID" >&2
     exit 1
@@ -6687,6 +6783,10 @@ else
   fi
 fi
 
+if [ "$BACKEND" = t3 ] && [ "$SPAWN_TRACE_EFFECTIVE" = on ]; then
+  echo "error: backend=t3 cannot inject trace context into its provider environment" >&2
+  exit 1
+fi
 META_WINDOW=$T
 [ "$BACKEND" = orca ] && META_WINDOW=$W
 SPAWN_GEN="s$(date +%s).${BASHPID:-$$}.$RANDOM"
@@ -6888,6 +6988,21 @@ fi
 "$SCRIPT_DIR/fm-home-summary-refresh.sh" --best-effort || true
 [ "$BACKEND" = orca ] && ORCA_ABORT_CLEANUP=0
 
+if [ "$BACKEND" = t3 ]; then
+  mkdir -p "$DATA/$ID"
+  T3_PROMPT="$DATA/$ID/t3-launch-prompt.md"
+  "$SCRIPT_DIR/fm-operational-input.sh" encode launch-brief < "$BRIEF" > "$T3_PROMPT" || exit 1
+  T3_LAUNCH_ATTEMPTED=1
+  SPAWN_LAUNCH_SENT=1
+  if ! fm_backend_t3_launch "$T" "$WT" "$T3_PROMPT" "$W" "$HARNESS" "$MODEL" "$KIND"; then
+    # Preserve metadata and move the item to In flight if possible: an accepted
+    # but unconfirmed start can already have a live worker. Never retry it.
+    SPAWN_FRESH_COMMIT_PENDING=0
+    spawn_commit_backlog_transition || true
+    echo "error: T3 launch failed or is uncertain; preserved $STATE/$ID.meta and $T; reconcile the exact thread before any retry" >&2
+    exit 1
+  fi
+else
 sq_brief=$(shell_quote "$BRIEF")
 sq_turnend=$(shell_quote "$TURNEND")
 sq_piext=$(shell_quote "$STATE/$ID.pi-ext.ts")
@@ -7475,6 +7590,8 @@ if [ "$HARNESS" = polytoken ] && [ "$RAW_LAUNCH" -eq 0 ]; then
   fi
 fi
 
+fi # terminal launch path; T3 submitted its brief through the native CLI above
+
 if [ "$KIND" = secondmate ] && [ "${FM_SKIP_SECONDMATE_INHERIT:-0}" != 1 ]; then
   if ! fm_config_reread_discard_pending "$PROJ_ABS" "$ID" "$FM_HOME"; then
     if fm_config_reread_quarantine_pending "$PROJ_ABS" "$ID" "$FM_HOME"; then
@@ -7518,7 +7635,10 @@ else
   fi
 fi
 if [ "$SPAWN_BACKLOG_COMMIT_STATUS" -ne 0 ]; then
-  if [ "$RELAUNCH" -eq 0 ]; then
+  if [ "$BACKEND" = t3 ]; then
+    SPAWN_FRESH_COMMIT_PENDING=0
+    echo "error: T3 task $ID was submitted but its backlog transition failed ($FM_BACKLOG_TRANSITION_ERROR); preserved $STATE/$ID.meta and $T for reconciliation; do not relaunch" >&2
+  elif [ "$RELAUNCH" -eq 0 ]; then
     if spawn_fresh_commit_rollback; then
       echo "error: task $ID's backlog item could not be moved to In flight ($FM_BACKLOG_TRANSITION_ERROR); its record was removed so no worker is left that the backlog does not own - close out endpoint $T and local copy $WT by hand, then re-run the spawn" >&2
     else

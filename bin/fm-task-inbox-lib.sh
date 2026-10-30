@@ -324,8 +324,9 @@ fm_task_inbox_body() {  # <record-path>
 # bare shell) runs nothing; see the dead-pane note in the header. A
 # non-printable inbox name fails without output so terminal controls never
 # reach the pane's line discipline.
-fm_task_inbox_doorbell_line() {  # <record-path>
-  local dir=${1%/*} abs name quoted LC_ALL=C
+fm_task_inbox_doorbell_line() {  # <record-path> [--literal-path]
+  # shellcheck disable=SC2016 # The normal worker resolves this literal variable.
+  local dir=${1%/*} abs name quoted target='"$FM_TASK_INBOX"' LC_ALL=C
   abs=$(cd "$dir" 2>/dev/null && pwd) || abs=$dir
   abs=${abs%/handled}
   name=${abs##*/}
@@ -333,8 +334,12 @@ fm_task_inbox_doorbell_line() {  # <record-path>
     ''|*[![:print:]]*) return 1 ;;
   esac
   quoted=$(printf '%s' "$name" | sed "s/'/'\\\\''/g")
-  printf ": Firstmate instruction waiting: list \"\$FM_TASK_INBOX\"/*.msg in your '%s' steering inbox, read and act on each in numeric order, then mv each into its handled/." \
-    "$quoted"
+  if [ "${2:-}" = --literal-path ]; then
+    case "$abs" in *[![:print:]]*) return 1 ;; esac
+    target="'$(printf '%s' "$abs" | sed "s/'/'\\\\''/g")'"
+  fi
+  printf ": Firstmate instruction waiting: list %s/*.msg in your '%s' steering inbox, read and act on each in numeric order, then mv each into its handled/." \
+    "$target" "$quoted"
 }
 
 # Ring the doorbell, best-effort: one endpoint-liveness pre-check, one advisory
@@ -370,6 +375,12 @@ fm_task_inbox_ring() {  # <backend> <target> <record-path> [expected-label]
   esac
   if ! line=$(fm_task_inbox_doorbell_line "$rec"); then
     return 2
+  fi
+  if [ "$backend" = t3 ]; then
+    fm_backend_source t3 || return 2
+    line=$(fm_task_inbox_doorbell_line "$rec" --literal-path) || return 2
+    fm_backend_t3_ring "$target" "$rec" "$line"
+    return
   fi
   cstate=$(fm_backend_composer_state "$backend" "$target" "$label" 2>/dev/null) || cstate=unknown
   case "$cstate" in

@@ -1027,6 +1027,15 @@ fm_busy_launch_prompt_parked() {  # <harness>
 fm_busy_classify() {  # <backend> <target> <harness> <id> <state-dir> [tail40]
   local backend=$1 target=$2 harness=$3 id=$4 state=$5 tail40=${6-}
   local out rc r_state r_source native log
+  # T3's native per-thread run state applies to both providers, including
+  # Codex whose terminal adapter has no semantic hooks. Never consult stale
+  # terminal hook records for a provider-managed native thread.
+  if [ "$backend" = t3 ]; then
+    native=$(fm_backend_busy_state "$backend" "$target" 2>/dev/null) || native=unknown
+    case "$native" in busy|idle|unknown) ;; *) native=unknown ;; esac
+    printf '%s t3-native' "$native"
+    return 0
+  fi
   case "$harness" in
     kimi*)
       if ! fm_busy_kimi_verified; then

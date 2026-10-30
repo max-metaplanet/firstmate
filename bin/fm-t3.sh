@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# fm-t3.sh - opt-in T3 companion-thread experiment, not a runtime backend.
+# fm-t3.sh - durable, opt-in T3 thread identity for the T3 runtime backend.
 #
 # Usage:
 #   fm-t3.sh launch RECORD_DIR WORKTREE BRIEF TITLE PROVIDER MODEL
+#   fm-t3.sh launch-secondmate RECORD_DIR HOME BRIEF TITLE PROVIDER MODEL ID
 #   fm-t3.sh read RECORD_DIR
 #   fm-t3.sh send RECORD_DIR MESSAGE_FILE
 #   fm-t3.sh interrupt RECORD_DIR  # unsupported; fails without contacting T3
@@ -23,11 +24,10 @@
 # Read/send use the saved binary and base directory, ignoring ambient overrides.
 # Only a successful launch writes thread.json. An incomplete record refuses
 # read/send rather than guessing a thread. Do not edit or reuse the record.
-# Cleanup is manual in T3: stop/delete the exact experimental thread and remove
-# its dedicated project entry. Do not delete other threads or shared projects.
-# Firstmate alone returns the allocated worktree through its existing guards.
-# Interrupt, exit/relaunch, process liveness, automatic cleanup, dispatch pins,
-# generated hooks and fleet supervision are deliberately unsupported.
+# launch-secondmate accepts only a seeded home whose marker matches ID.
+# bin/backends/t3.sh owns managed cleanup and backend capabilities; this helper
+# never returns a worktree or changes the running service/provider settings.
+# Interrupt and exit/relaunch are unsupported by the installed T3 CLI.
 set -euo pipefail
 
 usage() { sed -n '2,/^set -/p' "${BASH_SOURCE[0]}" | sed '$d; s/^# \{0,1\}//'; }
@@ -38,13 +38,21 @@ shift
 case "$command" in
   -h|--help|help) usage; exit 0 ;;
   interrupt) die 'interrupt is unsupported by the T3 CLI; use the exact thread Stop control in T3' ;;
-  launch|read|send) ;;
+  launch|launch-secondmate|read|send) ;;
   *) die "unknown command: $command" ;;
 esac
 command -v jq >/dev/null || die 'jq is required'
+# shellcheck source=bin/fm-t3-home-lib.sh
+. "$(dirname "${BASH_SOURCE[0]}")/fm-t3-home-lib.sh"
 
-if [ "$command" = launch ]; then
-  [ "$#" -eq 6 ] || die 'launch requires RECORD_DIR WORKTREE BRIEF TITLE PROVIDER MODEL'
+if [ "$command" = launch ] || [ "$command" = launch-secondmate ]; then
+  if [ "$command" = launch-secondmate ]; then
+    [ "$#" -eq 7 ] || die 'launch-secondmate requires RECORD_DIR HOME BRIEF TITLE PROVIDER MODEL ID'
+    [ -f "$2/.fm-secondmate-home" ] && [ ! -L "$2/.fm-secondmate-home" ] \
+      && [ "$(cat "$2/.fm-secondmate-home")" = "$7" ] || die 'secondmate home marker must match the exact task id'
+  else
+    [ "$#" -eq 6 ] || die 'launch requires RECORD_DIR WORKTREE BRIEF TITLE PROVIDER MODEL'
+  fi
   record=$1
   worktree=$(cd "$2" && pwd -P) || die 'worktree is unavailable'
   brief=$3 title=$4 provider=$5 model=$6
@@ -58,12 +66,17 @@ if [ "$command" = launch ]; then
   binary=$(cd "$(dirname "$binary")" && printf '%s/%s' "$(pwd -P)" "$(basename "$binary")")
   top=$(git -C "$worktree" rev-parse --show-toplevel) || die 'worktree is not a git checkout'
   [ "$(cd "$top" && pwd -P)" = "$worktree" ] || die 'worktree must be the checkout root'
+  if [ "$command" = launch ]; then
   [ -f "$worktree/.git" ] || die 'refusing primary checkout; supply an allocated linked worktree'
   git_dir=$(git -C "$worktree" rev-parse --git-dir) || die 'invalid linked worktree'
   common_dir=$(git -C "$worktree" rev-parse --git-common-dir) || die 'missing common git directory'
   git_dir=$(cd "$worktree" && cd "$git_dir" && pwd -P) || die 'invalid git directory'
   common_dir=$(cd "$worktree" && cd "$common_dir" && pwd -P) || die 'invalid common git directory'
   [ "$git_dir" != "$common_dir" ] || die 'refusing primary checkout with a separate git directory'
+  fi
+  if [ "$provider" = claudeAgent ]; then
+    fm_t3_bind_claude_home "$worktree" || die 'could not bind Claude native hooks to the exact checkout'
+  fi
   umask 077
   mkdir "$record" || die 'record directory already exists or its parent is unavailable; reconcile before retrying'
   jq -n --arg binary "$binary" --arg base "$base" --arg worktree "$worktree" \

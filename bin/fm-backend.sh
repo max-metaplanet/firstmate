@@ -34,7 +34,7 @@
 # treats that as `tmux` (fm_backend_of_meta), and fm-spawn.sh does not write
 # `backend=tmux` for a default-backend task, so existing and newly spawned
 # default-path metas stay byte-identical. Only a task spawned on a non-tmux
-# spawn-capable backend, currently herdr, zellij, orca, or cmux, carries an
+# spawn-capable backend, currently herdr, zellij, orca, cmux, or t3, carries an
 # explicit `backend=` line.
 #
 # Event-source framing (herdr-addendum "Events as the core abstraction"): a
@@ -69,9 +69,10 @@ FM_BACKEND_CONFIG_DIR="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
 # spawn-capable; unlike tmux/herdr/zellij it is also the worktree provider.
 # cmux is EXPERIMENTAL and spawn-capable, session-provider-only like
 # herdr/zellij - verified against the real 0.64.17 binary (docs/cmux-backend.md).
+# T3 is opt-in only, with native-thread capabilities in docs/t3-backend.md.
 # codex-app remains deliberately absent; see docs/codex-app-backend.md.
-FM_BACKEND_KNOWN="tmux herdr zellij orca cmux"
-FM_BACKEND_SPAWN="tmux herdr zellij orca cmux"
+FM_BACKEND_KNOWN="tmux herdr zellij orca cmux t3"
+FM_BACKEND_SPAWN="tmux herdr zellij orca cmux t3"
 
 # fm_backend_list_contains: whitespace-delimited membership without relying on
 # shell word splitting. fm-backend.sh is normally sourced by bash scripts, but
@@ -315,6 +316,7 @@ fm_backend_required_tools() {  # <backend>
     zellij) printf '%s' 'zellij jq treehouse' ;;
     cmux)   printf '%s' 'cmux jq treehouse' ;;
     orca)   printf '%s' 'orca' ;;
+    t3)     printf '%s' 't3 jq treehouse' ;;
     *) return 1 ;;
   esac
 }
@@ -324,6 +326,7 @@ fm_backend_required_tool_available() {  # <backend> <tool>
   required=$(fm_backend_required_tools "$backend") || return 1
   fm_backend_list_contains "$required" "$tool" || return 1
   case "$backend:$tool" in
+    t3:t3) command -v "${FM_T3_BIN:-t3}" >/dev/null 2>&1 ;;
     cmux:cmux)
       fm_backend_source cmux >/dev/null 2>&1 || return 1
       fm_backend_cmux_bin >/dev/null 2>&1
@@ -488,6 +491,21 @@ fm_backend_validate_task_endpoint() {  # <meta-file> <task-id>
   fi
 
   case "$backend" in
+    t3)
+      [ "$binding" = "$id" ] && [ "$window" = "${meta%.meta}.t3" ] || {
+        echo "REFUSED: T3 task $id lacks its exact task-owned thread record binding; preserving task state." >&2
+        return 1
+      }
+      if [ -f "$window/thread.json" ]; then
+        jq -e --arg wt "$worktree" '.worktree == $wt' "$window/thread.json" >/dev/null || {
+          echo "REFUSED: T3 record does not match task $id worktree; preserving task state." >&2
+          return 1
+        }
+      else
+        echo "REFUSED: T3 launch for $id is incomplete; reconcile its preserved launch record before cleanup." >&2
+        return 1
+      fi
+      ;;
     tmux)
       session=${window%%:*}
       pane=${window#*:}
@@ -653,6 +671,7 @@ fm_backend_source() {  # <name>
   # The sibling list rides in the positional parameters: zsh does not
   # word-split an unquoted expansion, so a space-separated string is one path.
   case "$name" in
+    t3) set -- fm-t3.sh fm-t3-home-lib.sh ;;
     tmux)
       set -- fm-tmux-lib.sh fm-composer-lib.sh fm-cursor-lib.sh fm-session-lock-lib.sh fm-agent-process-lib.sh fm-gemini-lib.sh
       ;;
@@ -678,6 +697,13 @@ fm_backend_source() {  # <name>
     fm_backend_source_readable "$sibling" || return 1
   done
   case "$name" in
+    t3)
+      if [ -z "${_FM_BACKEND_T3_SOURCED:-}" ]; then
+        # shellcheck source=/dev/null
+        . "$adapter" || return 1
+        _FM_BACKEND_T3_SOURCED=1
+      fi
+      ;;
     tmux)
       if [ -z "${_FM_BACKEND_TMUX_SOURCED:-}" ]; then
         # shellcheck source=/dev/null
@@ -784,6 +810,7 @@ fm_backend_capture() {  # <backend> <target> <lines> [expected-label]
     zellij) fm_backend_zellij_capture "$@" ;;
     orca) fm_backend_orca_capture "$@" ;;
     cmux) fm_backend_cmux_capture "$@" ;;
+    t3) fm_backend_t3_capture "$@" ;;
     *) echo "error: no capture implementation for backend '$backend'" >&2; return 1 ;;
   esac
 }
@@ -829,6 +856,7 @@ fm_backend_send_key() {  # <backend> <target> <key> [expected-label]
     zellij) fm_backend_zellij_send_key "$@" ;;
     orca) fm_backend_orca_send_key "$@" ;;
     cmux) fm_backend_cmux_send_key "$@" ;;
+    t3) fm_backend_t3_unsupported ;;
     *) echo "error: no send-key implementation for backend '$backend'" >&2; return 1 ;;
   esac
 }
@@ -848,6 +876,7 @@ fm_backend_send_literal() {  # <backend> <target> <text> [expected-label]
     zellij) fm_backend_zellij_send_literal "$@" ;;
     orca) fm_backend_orca_send_literal "$@" ;;
     cmux) fm_backend_cmux_send_literal "$@" ;;
+    t3) fm_backend_t3_unsupported ;;
     *) echo "error: no send-literal implementation for backend '$backend'" >&2; return 1 ;;
   esac
 }
@@ -863,6 +892,12 @@ fm_backend_send_text_submit() {  # <backend> <target> <text> <retries> <enter-sl
   target=$1
   label=${6:-}
   fm_backend_source "$backend" || return 1
+  # Native thread messages are atomic protocol requests, with no terminal
+  # composer or Enter retry. The adapter retains every submission attempt.
+  if [ "$backend" = t3 ]; then
+    fm_backend_t3_send_text_submit "$@"
+    return
+  fi
   # Every Enter loop below reads the dialog sink, so it must exist before
   # any adapter types: a sink that fails here leaves the composer untouched.
   fm_composer_dialog_sink_prepare || {
@@ -917,6 +952,7 @@ fm_backend_kill() {  # <backend> <target>
     zellij) fm_backend_zellij_kill "$@" ;;
     orca) fm_backend_orca_kill "$@" ;;
     cmux) fm_backend_cmux_kill "$@" ;;
+    t3) fm_backend_t3_kill "$@" ;;
     *) echo "error: no kill implementation for backend '$backend'" >&2; return 1 ;;
   esac
 }
@@ -985,6 +1021,7 @@ fm_backend_busy_state() {  # <backend> <target>
   fm_backend_source "$backend" || { printf 'unknown'; return 0; }
   case "$backend" in
     herdr) fm_backend_herdr_busy_state "$@" ;;
+    t3) fm_backend_t3_busy_state "$@" ;;
     *) printf 'unknown' ;;
   esac
 }
@@ -1033,6 +1070,10 @@ fm_backend_composer_state() {  # <backend> <target> [expected-label] -> empty|pe
 fm_backend_target_exists() {  # <backend> <target> [expected-label]
   local backend=$1 target=$2 expected_label=${3:-} session pane
   case "$backend" in
+    t3)
+      fm_backend_source t3 || return 1
+      fm_backend_t3_read "$target" >/dev/null 2>&1
+      ;;
     tmux)
       fm_backend_source tmux || return 1
       fm_backend_tmux_target_exists "$target"

@@ -19,6 +19,7 @@ The inherited dispatch file applies the same best-fit profiles there.
 
 `../../../bin/fm-spawn.sh` owns launch, autonomy, concrete flags, task-kind compatibility, and worker turn-end wiring.
 Natural-language rules stay with firstmate, while scripts receive concrete axes.
+The opt-in [T3 backend](../../../../../docs/t3-backend.md) owns its native-provider launch limits instead of terminal launch flags.
 
 `../../../bin/fm-busy-lib.sh` owns semantic busy trust.
 Composer shapes, glyphs, placeholders, popups, rendered delivery signals, and the `empty` / `pending` / `pending-unproven` / `unknown` decision belong only to `../../../bin/fm-composer-lib.sh`.
