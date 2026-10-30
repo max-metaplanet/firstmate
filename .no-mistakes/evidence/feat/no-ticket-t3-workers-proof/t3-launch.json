@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "binary": "~/.local/share/t3-lima/bin/t3",
+  "base": "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6541J3CZP2WWTNS7YN7NVAH/.t3-validation/base",
+  "worktree": "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6541J3CZP2WWTNS7YN7NVAH/.t3-validation/worker",
+  "title": "Isolated validation worker",
+  "provider": "codex",
+  "model": "gpt-6.1-sol",
+  "threadId": "mcp:59b7785c-d851-4a79-b92f-c62cf1850e10",
+  "projectId": "07f647e9-19e4-49c6-a061-4b296c050c1e",
+  "runId": "run:thread:mcp%3A59b7785c-d851-4a79-b92f-c62cf1850e10:ordinal:1"
+}

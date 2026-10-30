@@ -1,0 +1,30 @@
+[
+  {
+    "scenario": "duplicate launch",
+    "exit": 1,
+    "stdout": "",
+    "stderr": "mkdir: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6541J3CZP2WWTNS7YN7NVAH/.t3-validation/record: File exists\nfm-t3: record directory already exists or its parent is unavailable; reconcile before retrying\n",
+    "pass": true
+  },
+  {
+    "scenario": "primary checkout",
+    "exit": 1,
+    "stdout": "",
+    "stderr": "fm-t3: refusing primary checkout; supply an allocated linked worktree\n",
+    "pass": true
+  },
+  {
+    "scenario": "incomplete record read",
+    "exit": 1,
+    "stdout": "",
+    "stderr": "fm-t3: no completed launch record; reconcile the recorded intent in T3\n",
+    "pass": true
+  },
+  {
+    "scenario": "unsupported interrupt",
+    "exit": 1,
+    "stdout": "",
+    "stderr": "fm-t3: interrupt is unsupported by the T3 CLI; use the exact thread Stop control in T3\n",
+    "pass": true
+  }
+]
