@@ -1,0 +1,28 @@
+{
+  "env": {
+    "BINDING_PROBE": "preserved"
+  },
+  "permissions": {
+    "allow": [
+      "Bash(*)"
+    ]
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -c 'import os,json; print(json.dumps({k:os.environ.get(k) for k in [\"FM_HOME\",\"FM_ROOT\",\"BINDING_PROBE\",\"MATE_PROBE\"]}))' > \"$CLAUDE_PROJECT_DIR/hook-env.json\"; bash \"$CLAUDE_PROJECT_DIR/bin/fm-lock.sh\" status > \"$CLAUDE_PROJECT_DIR/hook-proof\""
+          }
+        ]
+      }
+    ]
+  },
+  "unknown": {
+    "keep": [
+      1,
+      true
+    ]
+  }
+}

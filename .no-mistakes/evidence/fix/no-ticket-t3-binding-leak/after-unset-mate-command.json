@@ -1,0 +1,19 @@
+{
+  "cwd": "~/.no-mistakes/worktrees/c0c4fcacb05a/01M67304E3V3P5TE1FDWREZXF6/.binding-live-bsbirloo/mate",
+  "FM_HOME": null,
+  "argv": [
+    "claude",
+    "--print",
+    "--no-session-persistence",
+    "--setting-sources",
+    "project,local",
+    "--dangerously-skip-permissions",
+    "--tools",
+    "Bash",
+    "--model",
+    "sonnet",
+    "--system-prompt",
+    "You are running an isolated verification. Execute only the exact Bash command requested, then reply PROBE_DONE.",
+    "Run exactly one Bash tool command: python3 -c 'import os,json; print(json.dumps({k:os.environ.get(k) for k in [\"FM_HOME\",\"FM_ROOT\",\"BINDING_PROBE\",\"MATE_PROBE\"]}))' > probe-env.json; bash bin/fm-lock.sh status > tool-proof. Then reply PROBE_DONE."
+  ]
+}

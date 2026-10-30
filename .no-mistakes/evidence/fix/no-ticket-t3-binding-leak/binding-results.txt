@@ -1,0 +1,12 @@
+before-explicit-mate: Claude unavailable: Not logged in · Please run /login
+before-explicit-mate: REAL SessionStart env={"FM_HOME": "~/.no-mistakes/worktrees/c0c4fcacb05a/01M67304E3V3P5TE1FDWREZXF6/.binding-live-bsbirloo/main", "FM_ROOT": "~/.no-mistakes/worktrees/c0c4fcacb05a/01M67304E3V3P5TE1FDWREZXF6/.binding-live-bsbirloo/main", "BINDING_PROBE": "preserved", "MATE_PROBE": "visible"}; lock: free
+COUNTERFACTUAL reproduced: main settings override explicit mate home and mate local settings
+MIGRATION: seven routing keys removed; unrelated env, hooks, permissions and unknown data preserved; dry-run unchanged; repeat identical
+after-explicit-mate: Claude unavailable: Not logged in · Please run /login
+after-explicit-mate: REAL SessionStart env={"FM_HOME": "~/.no-mistakes/worktrees/c0c4fcacb05a/01M67304E3V3P5TE1FDWREZXF6/.binding-live-bsbirloo/mate", "FM_ROOT": null, "BINDING_PROBE": "preserved", "MATE_PROBE": "visible"}; lock: free
+after-unset-mate: Claude unavailable: Not logged in · Please run /login
+after-unset-mate: REAL SessionStart env={"FM_HOME": null, "FM_ROOT": null, "BINDING_PROBE": "preserved", "MATE_PROBE": "visible"}; lock: free
+OWN-HOME: direct checkout-local fm-lock.sh status with all seven routing keys unset reports lock: free, creates mate state only; Claude model-driven Bash execution remains untested; real SessionStart routing captured separately
+ABSENT: binding does not create settings
+GUARDS: malformed JSON and symlinked settings refuse without altering original or target
+CLEANUP: disposable repository and linked copy removed

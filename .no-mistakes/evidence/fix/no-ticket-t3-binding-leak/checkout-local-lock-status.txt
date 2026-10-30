@@ -1,0 +1,2 @@
+lock: free
+mate state exists; main state absent
