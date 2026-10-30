@@ -365,6 +365,44 @@ test_secondmate_idle_busy_and_unknown() {
   pass 'idle secondmate frees a place; busy, child-owning and unreadable homes keep it'
 }
 
+test_first_worker_activates_secondmate_place() {
+  [ "$HAVE_TASKS_AXI" = 1 ] || { skip 'secondmate idle inventory requires tasks-axi'; return; }
+  local case_dir home mate pane out rc kind before worktrees
+  local -a args
+  for kind in ship scout; do
+    case_dir=$(make_case "mate-first-$kind")
+    home="$case_dir/home"
+    mate="$case_dir/mate"
+    make_home "$mate" task-c
+    printf '%s\n' schema=fm-secondmate-parent.v1 route=local "parent_home=$home" > "$mate/.fm-secondmate-parent"
+    printf -- '- mate - local (home: %s; scope: work; projects: project; added 2026-09-01)\n' "$mate" > "$home/data/secondmates.md"
+    fm_write_meta "$home/state/mate.meta" "window=firstmate:fm-mate" \
+      "worktree=$mate" "project=$mate" "kind=secondmate"
+    printf '%s\n' fm-mate >> "$case_dir/calls.log.window"
+    pane=$(new_worktree "$case_dir" task-c)
+    args=(task-c "$case_dir/project")
+    if [ "$kind" = scout ]; then
+      args+=(--scout)
+    else
+      args+=(--mode no-mistakes --ticket no-ticket --commit-type chore --yolo off)
+    fi
+    declare_fleet "$home" 1
+    before=$(call_count "$case_dir")
+    worktrees=$(worktree_list "$case_dir")
+    rc=0
+    out=$(run_spawn "$case_dir" "$mate" "$pane" "${args[@]}") || rc=$?
+    expect_code "$DEFER_EXIT" "$rc" "first $kind exceeded the cap by activating its secondmate: $out"
+    assert_nothing_created "$case_dir" "$mate" task-c "$before" "$worktrees"
+    declare_fleet "$home" 2
+    rc=0
+    out=$(run_spawn "$case_dir" "$mate" "$pane" "${args[@]}") || rc=$?
+    expect_code 0 "$rc" "first $kind did not fit alongside its secondmate: $out"
+    assert_present "$mate/state/task-c.meta" "admitted $kind did not publish its record"
+    assert_equals in_flight "$(row_state "$mate" task-c)" "admitted $kind did not start its backlog item"
+  done
+  pass 'first ship and scout reserve both worker and secondmate places'
+}
+
 test_idle_secondmate_preserves_worker_and_project_caps() {
   [ "$HAVE_TASKS_AXI" = 1 ] || { skip 'secondmate idle inventory requires tasks-axi'; return; }
   local case_dir home mate out pane rc=0
@@ -1100,6 +1138,7 @@ test_ad_hoc_occupancy_is_visible() {
 test_undeclared_fleet_stays_uncapped
 test_full_fleet_defers_without_leaving_anything_behind
 test_secondmate_idle_busy_and_unknown
+test_first_worker_activates_secondmate_place
 test_idle_secondmate_preserves_worker_and_project_caps
 test_ad_hoc_slot_admits_one_task_over_the_cap
 test_ad_hoc_slot_is_refused_on_a_live_relaunch

@@ -113,6 +113,7 @@ fm_fleet_capacity_secondmate_idle() ( # <meta>
   local home child kind inventory_backend listing
   [ -z "$(fm_meta_get "$1" remote_host)" ] || return 1
   fm_meta_get_to home "$1" worktree
+  [ "$home/state" != "${2:-}" ] || return 1
   case "$home" in /*) ;; *) return 1 ;; esac
   for child in "$home" "$home/state" "$home/data"; do
     [ -d "$child" ] && [ ! -L "$child" ] && [ -r "$child" ] && [ -x "$child" ] || return 1
@@ -146,8 +147,9 @@ fm_fleet_capacity_secondmate_idle() ( # <meta>
 # FM_FLEET_CAPACITY_ERROR when the local homes or a task record cannot be read.
 # shellcheck disable=SC2034 # the FM_FLEET_CAPACITY_* results are read by bin/fm-spawn.sh.
 fm_fleet_capacity_occupants() {  # <first-state> <own-id>
-  local first=$1 self=$2 state meta kind backend target label i n=0 gone=,
+  local first=$1 self=$2 state meta kind backend target label i n=0 gone=, activating_state=
   local -a metas=() states=() backends=() targets=()
+  case "${3:-}" in ship | scout) activating_state=$first ;; esac
   FM_FLEET_CAPACITY_OCCUPANTS=0
   FM_FLEET_CAPACITY_ADHOC=0
   FM_FLEET_CAPACITY_OCCUPANT_IDS=
@@ -189,7 +191,7 @@ fm_fleet_capacity_occupants() {  # <first-state> <own-id>
       if [ -f "${meta%.meta}.park" ] && [ -f "$state/.control-$label.lock/pid" ] &&
         kill -0 "$(cat "$state/.control-$label.lock/pid")" 2>/dev/null; then target=; fi
       if [ "$kind" = secondmate ] && [ -n "$target" ] &&
-        fm_fleet_capacity_secondmate_idle "$meta" 2>/dev/null; then
+        fm_fleet_capacity_secondmate_idle "$meta" "$activating_state" 2>/dev/null; then
         continue
       fi
       metas[n]=$meta
