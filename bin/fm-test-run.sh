@@ -357,7 +357,7 @@ cpu_count() {
 family_for_basename() {
   case "$1" in
     fm-arm-pretool-check.test.sh|fm-ask-user-authority.test.sh|\
-    fm-bearings-board.test.sh|fm-build-lock.test.sh|fm-boat-run.test.sh|\
+    fm-bearings-board.test.sh|fm-build-lock.test.sh|fm-boat-run.test.sh|fm-boat-test-wrapper.test.sh|\
     fm-brief.test.sh|fm-dod-lib.test.sh|fm-vendor-auth-probe.test.sh|fm-seat-renew.test.sh|fm-seat-lock.test.sh|fm-seat-vendor-renew.test.sh|\
     fm-calm-pi-extension.test.sh|fm-cd-pretool-check.test.sh|\
     fm-classify-decision-key.test.sh|\
@@ -1757,9 +1757,14 @@ families_for_changed_path() {
       ;;
     bin/fm-boat-run.sh|bin/fm-boat-run.py|tests/fixtures/boat-cli.py)
       printf '%s\n' '__script__:fm-boat-run.test.sh'
+      printf '%s\n' '__script__:fm-boat-test-wrapper.test.sh'
+      ;;
+    bin/fm-boat-test-wrapper.sh)
+      printf '%s\n' '__script__:fm-boat-test-wrapper.test.sh'
       ;;
     bin/fm-build-lock.py|bin/fm-build-lock.js)
       printf '%s\n' "__script__:fm-build-lock.test.sh"
+      printf '%s\n' '__script__:fm-boat-test-wrapper.test.sh'
       printf '%s\n' "__script__:fm-spawn-compact-adviser-disable.test.sh"
       printf '%s\n' "__script__:fm-seat.test.sh"
       ;;
