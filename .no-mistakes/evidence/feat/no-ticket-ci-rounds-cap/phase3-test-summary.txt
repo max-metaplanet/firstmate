@@ -1,0 +1,8 @@
+Head: 97c985b47842e6c1116229210ac658265e86524d
+Configured Test: supplied outer-executor result exit 124; no passing replacement established.
+Approved rerun threshold: one-minute load below 12. Observed 61.71 then 48.43; configured command not repeated.
+Fresh selector: exit 0, full=true, herdr=true, local_budget_ms=300000. local_scripts selection respected; deferred suites including fm-brief.test.sh left to required CI.
+Fresh real CLI: five isolated fm-brief.sh invocations exit 0. GitHub/Forgejo output includes conditional target configuration, lifetime PR heads, stop-after-three, fail-then-pass reproduction and pipeline push ownership. Gerrit/direct-PR/local-only omit pipeline CI-round policy.
+Typed YAML parse: auto_fix.ci is Integer 2; does not demonstrate daemon enforcement.
+Prior retained passing evidence reviewed; no passing suite repeated. No lifecycle or UI change; no lab or screenshots needed. Disposable homes removed, source unchanged.
+Final load observation: 22:11:41 up  9:52,  1 user,  load average: 54.20, 75.79, 63.64

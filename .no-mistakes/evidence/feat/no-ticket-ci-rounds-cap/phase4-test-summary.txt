@@ -1,0 +1,8 @@
+Configured Test: supplied executor result exit 124; no passing replacement established.
+Approved rerun requires one-minute host load below 12. Observed 59.73 initially and 47.48 after selector completion; no repeat attempted.
+Selector exit 0: full=true, herdr=true, local_budget_ms=300000; respected local_scripts and local_deferred, including deferred fm-brief.test.sh. No suite-family expansion.
+Five fresh isolated real fm-brief.sh invocations exited 0. GitHub/Forgejo emitted the conditional configuration explanation, lifetime head counting, stop-after-three, reproduction/verification evidence, and pipeline custody. Gerrit/direct-PR/local-only omitted pipeline CI-round policy. Generated briefs and transcript retained.
+Ruby 3.3.8 typed YAML parse passed: auto_fix.ci is Integer 2. This does not prove daemon enforcement.
+Prior retained phase summaries reviewed; no previously passing suites repeated. No lifecycle or UI behavior change, so no lab or screenshot needed. Disposable homes removed; no source changes.
+The outer executor must obtain a genuinely passing configured Test through supported pipeline execution when load is below 12. This phase cannot control or reattest the pipeline. Required CI remains mandatory before merge.
+Final host load: 44.46 46.45 48.34 43/2514 2548057

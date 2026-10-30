@@ -1,0 +1,37 @@
+[
+  {
+    "command": "bash bin/fm-brief.sh ci-round-probe probe --mode no-mistakes --forge none",
+    "exit": 0,
+    "policy_present": true,
+    "stdout": "scaffolded: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M64D505JZFRN2NDXR7X0T0VZ/.test-phase-ci-rounds/no-mistakes-none/data/ci-round-probe/brief.md (ship, mode=no-mistakes; replace {TASK} and {FIRSTMATE_SPEC})\n",
+    "stderr": ""
+  },
+  {
+    "command": "bash bin/fm-brief.sh ci-round-probe probe --mode no-mistakes --forge forgejo",
+    "exit": 0,
+    "policy_present": true,
+    "stdout": "scaffolded: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M64D505JZFRN2NDXR7X0T0VZ/.test-phase-ci-rounds/no-mistakes-forgejo/data/ci-round-probe/brief.md (ship, mode=no-mistakes forge=forgejo; replace {TASK} and {FIRSTMATE_SPEC})\n",
+    "stderr": ""
+  },
+  {
+    "command": "bash bin/fm-brief.sh ci-round-probe probe --mode no-mistakes --forge gerrit",
+    "exit": 0,
+    "policy_present": false,
+    "stdout": "scaffolded: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M64D505JZFRN2NDXR7X0T0VZ/.test-phase-ci-rounds/no-mistakes-gerrit/data/ci-round-probe/brief.md (ship, mode=no-mistakes forge=gerrit shape=squash; replace {TASK} and {FIRSTMATE_SPEC})\n",
+    "stderr": ""
+  },
+  {
+    "command": "bash bin/fm-brief.sh ci-round-probe probe --mode direct-PR --forge none",
+    "exit": 0,
+    "policy_present": false,
+    "stdout": "scaffolded: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M64D505JZFRN2NDXR7X0T0VZ/.test-phase-ci-rounds/direct-PR-none/data/ci-round-probe/brief.md (ship, mode=direct-PR; replace {TASK} and {FIRSTMATE_SPEC})\n",
+    "stderr": ""
+  },
+  {
+    "command": "bash bin/fm-brief.sh ci-round-probe probe --mode local-only --forge none",
+    "exit": 0,
+    "policy_present": false,
+    "stdout": "scaffolded: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M64D505JZFRN2NDXR7X0T0VZ/.test-phase-ci-rounds/local-only-none/data/ci-round-probe/brief.md (ship, mode=local-only; replace {TASK} and {FIRSTMATE_SPEC})\n",
+    "stderr": ""
+  }
+]

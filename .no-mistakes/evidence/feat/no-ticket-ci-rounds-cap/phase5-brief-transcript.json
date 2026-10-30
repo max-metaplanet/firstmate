@@ -1,0 +1,42 @@
+[
+  {
+    "command": "bash bin/fm-brief.sh policy-probe probe --mode no-mistakes --forge none",
+    "exit": 0,
+    "stdout": "scaffolded: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M64D505JZFRN2NDXR7X0T0VZ/.test-policy-m2xjbuxt/no-mistakes-none/data/policy-probe/brief.md (ship, mode=no-mistakes; replace {TASK} and {FIRSTMATE_SPEC})\n",
+    "stderr": "",
+    "artifact": "phase5-no-mistakes-none-brief.md",
+    "contract_result": "pass"
+  },
+  {
+    "command": "bash bin/fm-brief.sh policy-probe probe --mode no-mistakes --forge forgejo",
+    "exit": 0,
+    "stdout": "scaffolded: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M64D505JZFRN2NDXR7X0T0VZ/.test-policy-m2xjbuxt/no-mistakes-forgejo/data/policy-probe/brief.md (ship, mode=no-mistakes forge=forgejo; replace {TASK} and {FIRSTMATE_SPEC})\n",
+    "stderr": "",
+    "artifact": "phase5-no-mistakes-forgejo-brief.md",
+    "contract_result": "pass"
+  },
+  {
+    "command": "bash bin/fm-brief.sh policy-probe probe --mode no-mistakes --forge gerrit",
+    "exit": 0,
+    "stdout": "scaffolded: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M64D505JZFRN2NDXR7X0T0VZ/.test-policy-m2xjbuxt/no-mistakes-gerrit/data/policy-probe/brief.md (ship, mode=no-mistakes forge=gerrit shape=squash; replace {TASK} and {FIRSTMATE_SPEC})\n",
+    "stderr": "",
+    "artifact": "phase5-no-mistakes-gerrit-brief.md",
+    "contract_result": "pass"
+  },
+  {
+    "command": "bash bin/fm-brief.sh policy-probe probe --mode direct-PR --forge none",
+    "exit": 0,
+    "stdout": "scaffolded: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M64D505JZFRN2NDXR7X0T0VZ/.test-policy-m2xjbuxt/direct-PR-none/data/policy-probe/brief.md (ship, mode=direct-PR; replace {TASK} and {FIRSTMATE_SPEC})\n",
+    "stderr": "",
+    "artifact": "phase5-direct-PR-none-brief.md",
+    "contract_result": "pass"
+  },
+  {
+    "command": "bash bin/fm-brief.sh policy-probe probe --mode local-only --forge none",
+    "exit": 0,
+    "stdout": "scaffolded: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M64D505JZFRN2NDXR7X0T0VZ/.test-policy-m2xjbuxt/local-only-none/data/policy-probe/brief.md (ship, mode=local-only; replace {TASK} and {FIRSTMATE_SPEC})\n",
+    "stderr": "",
+    "artifact": "phase5-local-only-none-brief.md",
+    "contract_result": "pass"
+  }
+]

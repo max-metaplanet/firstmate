@@ -1,0 +1,9 @@
+Configured Test: outer executor reported exit 1; not rerun in this phase.
+Recorded authorization permits one supported rerun only below one-minute load 12.
+Observed load: 32.23 initially, 30.07 after selector completion.
+Read-only no-mistakes axi logs --step test --full failed: repo not initialized. No initialization attempted.
+Selector completed exit 0: full=true, herdr=true, local_budget_ms=300000; bounded local_scripts and local_deferred returned. No full/herdr suite expansion performed. fm-brief.test.sh is deferred to CI; fast manual public-CLI probes used instead.
+Five isolated fm-brief.sh public-CLI probes passed; generated GitHub and Forgejo briefs retained.
+Ruby 3.3.8 typed YAML check: auto_fix.ci is integer 2.
+No lifecycle behavior changed, so no Herdr lab required. No UI surface changed.
+CI and the supported configured Test rerun remain required before merge.
