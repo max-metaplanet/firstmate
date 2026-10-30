@@ -4,16 +4,20 @@
 # Receives exactly ONE command string, with cwd at the pipeline worktree root.
 # Runs that string with bash -c; source transfer, environment isolation, timeout,
 # capacity, trial guard and cleanup belong to fm-boat-run.sh (see its --help).
+# FM_BOAT_TEST_TIMEOUT optionally forwards --timeout SECONDS to that adapter;
+# its validation and default still apply. Use 1500 or less on the trial account.
 # The command must install its dependencies and have its runtime tools on Boat.
 # Never pass secrets in the command or use this wrapper for authenticated tests.
 #
 # Remote Git is deliberately synthetic: an empty origin/main commit followed
 # by a snapshot of ALL adapter-filtered source files. Nothing from local .git
 # travels, including history, config, remotes, hooks or credentials. Real Git
-# queries from pipeline-test.sh, Turbo and Vitest see every uploaded file as
-# changed against that empty base, so scope conservatively expands to all
-# source. No claim of local change-scoping parity is made. Bootstrap failure
-# fails the remote command before tests, never producing a falsely empty diff.
+# queries from Turbo and Vitest see every uploaded file as changed against
+# that empty origin/main. The empty commit is NOT a valid contract baseline:
+# PIPELINE_TEST_BASE_REF names a deliberately absent ref so core's Test script
+# takes its documented full bounded suite fallback, rather than treating old
+# contract violations as newly introduced. No local change-scoping parity is
+# claimed. Bootstrap failure fails before tests, never yielding an empty diff.
 #
 # Evidence is retained in a fresh ../.fm-test-scratch/fm-boat-test.*/boat outside
 # the worktree; the adapter prints command output and owns command.log/result.json.
@@ -70,15 +74,20 @@ head=$(printf 'Adapter-filtered test source\n' | git commit-tree "$tree" -p "$ba
 git update-ref refs/heads/fm-boat-test "$head"
 git symbolic-ref HEAD refs/heads/fm-boat-test
 git update-ref refs/remotes/origin/main "$base"
+export PIPELINE_TEST_BASE_REF=refs/fm-boat/no-local-history
 unset GIT_AUTHOR_NAME GIT_COMMITTER_NAME GIT_AUTHOR_EMAIL GIT_COMMITTER_EMAIL
 unset GIT_AUTHOR_DATE GIT_COMMITTER_DATE
-echo 'boat-test-wrapper: synthetic empty Git base; testing all transferred source' >&2
+echo 'boat-test-wrapper: synthetic empty Git base; real base unavailable, using core full-suite fallback' >&2
 exec bash -c "$1"
 REMOTE
 )
 
 rc=0
-"$bin/fm-boat-run.sh" run --worktree "$worktree" --output "$output" -- \
+adapter_args=(run --worktree "$worktree" --output "$output")
+if [[ -n ${FM_BOAT_TEST_TIMEOUT:-} ]]; then
+  adapter_args+=(--timeout "$FM_BOAT_TEST_TIMEOUT")
+fi
+"$bin/fm-boat-run.sh" "${adapter_args[@]}" -- \
   bash -c "$remote" boat-test "$1" || rc=$?
 
 # Validate the result before distinguishing remote exits from adapter exits.

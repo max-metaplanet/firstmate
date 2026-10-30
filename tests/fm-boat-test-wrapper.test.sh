@@ -136,6 +136,15 @@ for args in ([], [''], ['   '], ['one', 'two']):
     assert r.returncode == 2 and b'exactly one' in r.stderr
 print('ok - command must be one nonempty argument')
 
+p, work, env = case('timeout-override')
+settings(env, 0, 'completed', remote_exit=0, cleanup='deleted')
+env['FM_BOAT_TEST_TIMEOUT'] = '1500'
+r = launch(work, env, 'exit 0')
+assert r.returncode == 0, r.stderr
+args = json.loads((p / 'calls.json').read_text())
+assert args[args.index('--timeout') + 1] == '1500'
+print('ok - explicit timeout reaches the adapter without changing the command interface')
+
 # Real adapter + fake Boat: independently prove no local Git history/config or
 # secrets arrive, and real Git consumers see ALL source changed, including
 # unchanged and ignored tracked files. No provider request or VM is started.
@@ -171,6 +180,10 @@ check = '''import os,pathlib,subprocess
 def git(*args): return subprocess.check_output(['git',*args]).decode().strip()
 assert git('rev-parse','--show-toplevel') == str(pathlib.Path.cwd())
 base=git('merge-base','HEAD','origin/main')
+missing_ref=os.environ.get('PIPELINE_TEST_BASE_REF')
+assert missing_ref, 'core was not told that real base history is unavailable'
+missing=subprocess.run(['git','merge-base','HEAD',missing_ref],capture_output=True)
+assert missing.returncode != 0 and not missing.stdout, 'synthetic history incorrectly advertised as a real contract base'
 assert set(git('diff','--name-only',base,'--').splitlines()) == {'.gitignore','changed.txt','ignored.txt','unchanged.txt'}
 assert git('ls-tree',base) == ''
 assert git('remote') == ''
