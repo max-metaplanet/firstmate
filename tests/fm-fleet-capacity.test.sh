@@ -710,8 +710,27 @@ test_adaptive_queue_priority() {
   pass 'effective capacity preserves queued-resume priority'
 }
 
-test_adaptive_concurrent_homes() {
-  local case_dir home mate hold wt i first second first_rc=0 second_rc=0
+test_adaptive_concurrent_homes() (  # [command-to-run-after-first-admission]
+  local case_dir home mate hold wt i first='' second='' first_rc=0 second_rc=0 owner
+  # shellcheck source=bin/fm-timeout-lib.sh
+  . "$ROOT/bin/fm-timeout-lib.sh"
+  cleanup_concurrent_spawns() {
+    local pid
+    for pid in "$first" "$second"; do
+      [ -z "$pid" ] || kill -TERM "$pid" 2>/dev/null || true
+    done
+    for pid in "$first" "$second"; do
+      [ -z "$pid" ] || wait "$pid" 2>/dev/null || true
+    done
+  }
+  trap cleanup_concurrent_spawns EXIT
+  trap 'exit 129' HUP
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+  export -f run_spawn
+  export SPAWN
+  owner=$(exec sh -c 'printf "%s\n" "$PPID"')
+  export FM_EXEC_TIMED_OWNER_PID="$owner"
   case_dir=$(make_case adaptive-concurrent task-a)
   home="$case_dir/home"; mate="$case_dir/mate"
   make_home "$mate" task-b
@@ -721,7 +740,9 @@ test_adaptive_concurrent_homes() {
   load_policy "$home" enforce 1 1 1
   load_fixture "$case_dir" 1000 normal 40 40
   hold="$case_dir/hold"; wt=$(new_worktree "$case_dir" task-a)
-  FM_FAKE_HOLD="$hold" spawn_ship "$case_dir" task-a "$wt" > "$case_dir/first.out" 2>&1 &
+  ( FM_FAKE_HOLD="$hold" fm_exec_timed 120 2 bash -c 'run_spawn "$@"' _ \
+    "$case_dir" "$home" "$wt" task-a "$case_dir/project" \
+    --mode no-mistakes --ticket no-ticket --commit-type chore --yolo off ) > "$case_dir/first.out" 2>&1 &
   # shellcheck disable=SC2031 # The background PID is captured immediately in this shell.
   first=$!
   i=0
@@ -729,19 +750,24 @@ test_adaptive_concurrent_homes() {
     i=$((i + 1)); [ "$i" -lt 400 ] || fail "first admission never reached launch: $(cat "$case_dir/first.out")"
     sleep 0.05
   done
-  run_spawn "$case_dir" "$mate" "$case_dir/unused" task-b "$case_dir/other-project" --mode no-mistakes --ticket no-ticket --commit-type chore --yolo off > "$case_dir/second.out" 2>&1 &
+  ( fm_exec_timed 120 2 bash -c 'run_spawn "$@"' _ \
+    "$case_dir" "$mate" "$case_dir/unused" task-b "$case_dir/other-project" \
+    --mode no-mistakes --ticket no-ticket --commit-type chore --yolo off ) > "$case_dir/second.out" 2>&1 &
   # shellcheck disable=SC2031 # The background PID is captured immediately in this shell.
   second=$!
+  "${1:-:}"
   : > "$hold.release"
   wait "$first" || first_rc=$?
+  first=
   wait "$second" || second_rc=$?
+  second=
   expect_code 0 "$first_rc" "first admission failed: $(cat "$case_dir/first.out")"
   expect_code 75 "$second_rc" "concurrent local-home admission exceeded effective target: $(cat "$case_dir/second.out")"
   assert_absent "$mate/state/task-b.meta" 'concurrent root/local-home spawn exceeded effective cap'
   load_expect "$case_dir" "$home" '.effective == 1 and .occupancy == 1' 'shared effective target bounds both homes'
   unset FM_FLEET_LOAD_CLOCK FM_FLEET_LOAD_TELEMETRY
   pass 'concurrent root/local-home admissions cannot both take the effective last place'
-}
+)
 
 test_adaptive_memory_paging_and_history() {
   local case_dir home at state
@@ -907,19 +933,6 @@ test_ad_hoc_grants_are_independent_per_cap() {
   pass 'grants and live relaunches raise only their own cap'
 }
 
-test_unused_ad_hoc_flag_does_not_raise_the_cap
-test_ad_hoc_grants_are_independent_per_cap
-test_adaptive_memory_paging_and_history
-test_adaptive_native_sensor_and_projection
-test_adaptive_off_and_observe
-test_json_off_without_fleet_cap_stays_uncapped
-test_adaptive_drop_recover_and_static_clamp
-test_adaptive_critical_stale_and_invalid
-test_adaptive_queue_priority
-test_adaptive_concurrent_homes
-test_parked_relaunch_respects_both_caps
-test_parked_capacity_and_priority
-test_parked_resume_has_project_priority
 # An ad hoc grant lets ONE named task start above the declared cap without
 # changing the declaration, and every other spawn still sees the declared
 # number of places.
@@ -1021,6 +1034,156 @@ test_ad_hoc_occupancy_is_visible() {
   pass "the fleet view and snapshot report ad hoc occupancy"
 }
 
+test_adaptive_spawn_cleanup() {
+  python3 - "$ROOT/tests/fm-fleet-capacity.test.sh" "$TMP_ROOT" <<'PY' || fail 'adaptive spawn cleanup regression'
+import os
+from pathlib import Path
+import signal
+import subprocess
+import sys
+import time
+
+suite, root = sys.argv[1:]
+script = r'''
+. "$1"
+marker=$2
+mode=$3
+checkpoint() {
+  case_pid=$(exec sh -c 'printf "%s" "$PPID"')
+  printf '%s\n%s\n' "$case_pid" "$case_dir" > "$marker"
+  while [ ! -e "$marker.release" ]; do sleep 0.05; done
+  case "$mode" in
+    pass) return ;;
+    fail) exit 42 ;;
+    *) while :; do sleep 0.1; done ;;
+  esac
+}
+test_adaptive_concurrent_homes checkpoint
+'''
+
+
+def spawn_groups(owner, parent_group):
+    rows = [list(map(int, row.split())) for row in subprocess.check_output(
+        ['ps', '-axo', 'pid=,ppid=,pgid='], text=True).splitlines()]
+    descendants = {owner}
+    while True:
+        found = {pid for pid, parent, _ in rows if parent in descendants}
+        if found <= descendants:
+            break
+        descendants |= found
+    return {group for pid, _, group in rows
+            if pid in descendants and group != parent_group}
+
+
+def group_members(pgid):
+    rows = subprocess.check_output(
+        ['ps', '-axo', 'pid=,pgid=,stat='], text=True)
+    return [int(pid) for pid, group, state in map(str.split, rows.splitlines())
+            if int(group) == pgid and not state.startswith('Z')]
+
+
+for mode in ('pass', 'fail', 'TERM', 'INT', 'HUP', 'timeout', 'KILL'):
+    marker = Path(root) / ('cleanup-' + mode)
+    process = subprocess.Popen(['bash', '-c', script, '_', suite, str(marker), mode],
+                               start_new_session=True, stdout=subprocess.PIPE,
+                               stderr=subprocess.PIPE, text=True)
+    groups = set()
+    try:
+        deadline = time.monotonic() + 30
+        while not marker.exists() or len(marker.read_text().splitlines()) < 2:
+            if process.poll() is not None or time.monotonic() >= deadline:
+                raise AssertionError(f'{mode}: admission did not reach checkpoint')
+            time.sleep(0.05)
+        case_pid, case_dir = marker.read_text().splitlines()
+        deadline = time.monotonic() + 10
+        while len(groups) < 2 and time.monotonic() < deadline:
+            groups |= spawn_groups(int(case_pid), process.pid)
+            time.sleep(0.05)
+        assert len(groups) == 2, f'{mode}: did not observe both spawn groups: {groups}'
+        assert all(group_members(group) for group in groups), f'{mode}: spawn already exited'
+        if mode in ('pass', 'fail'):
+            Path(str(marker) + '.release').touch()
+        else:
+            # A timeout interrupts the case exactly as the test runner does.
+            sig = signal.SIGTERM if mode == 'timeout' else getattr(signal, 'SIG' + mode)
+            os.kill(int(case_pid), sig)
+        out, err = process.communicate(timeout=10)
+        expected = 0 if mode == 'pass' else 42 if mode == 'fail' else 128 + sig
+        assert process.returncode == expected, (mode, process.returncode, out, err)
+        deadline = time.monotonic() + 5
+        while any(group_members(group) for group in groups) and time.monotonic() < deadline:
+            time.sleep(0.05)
+        assert not any(group_members(group) for group in groups), f'{mode}: live spawn descendants survived cleanup'
+    finally:
+        # Even a regressed fixture cannot leak from its own regression check.
+        for group in groups:
+            try:
+                os.killpg(group, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        if process.poll() is None:
+            os.killpg(process.pid, signal.SIGTERM)
+            try:
+                process.communicate(timeout=5)
+            except subprocess.TimeoutExpired:
+                os.killpg(process.pid, signal.SIGKILL)
+        process.communicate()
+print('ok - adaptive admission reaps spawn groups on pass, failure, timeout and signals')
+PY
+}
+
+test_lock_wait_stops_when_parent_is_gone() {
+  python3 - "$ROOT/bin/fm-wake-lib.sh" "$TMP_ROOT" <<'PY' || fail 'lock wait survived a missing parent'
+import os
+from pathlib import Path
+import signal
+import subprocess
+import sys
+import time
+
+lib, root = sys.argv[1:]
+for function in ('fm_lock_acquire_wait', 'fm_lock_acquire_wait_max'):
+    parent = Path(root) / ('removed-lock-parent-' + function)
+    parent.mkdir()
+    lock = parent / 'lock'
+    lock.mkdir()
+    (lock / 'pid').write_text(str(os.getpid()) + '\n')
+    process = subprocess.Popen(['bash', '-c', '. "$1"; "$2" "$3" 120',
+                                '_', lib, function, str(lock)], start_new_session=True,
+                               stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    try:
+        time.sleep(0.3)
+        assert process.poll() is None, 'live lock did not hold the waiter'
+        (lock / 'pid').unlink()
+        lock.rmdir()
+        parent.rmdir()
+        out, err = process.communicate(timeout=3)
+        assert process.returncode == 1, (process.returncode, out, err)
+    finally:
+        if process.poll() is None:
+            os.killpg(process.pid, signal.SIGKILL)
+        process.communicate()
+print('ok - lock wait exits when its parent directory disappears')
+PY
+}
+
+if [ "${BASH_SOURCE[0]}" != "$0" ]; then return 0; fi
+
+test_lock_wait_stops_when_parent_is_gone
+test_adaptive_spawn_cleanup
+test_unused_ad_hoc_flag_does_not_raise_the_cap
+test_ad_hoc_grants_are_independent_per_cap
+test_adaptive_memory_paging_and_history
+test_adaptive_native_sensor_and_projection
+test_adaptive_off_and_observe
+test_json_off_without_fleet_cap_stays_uncapped
+test_adaptive_drop_recover_and_static_clamp
+test_adaptive_critical_stale_and_invalid
+test_adaptive_queue_priority
+test_adaptive_concurrent_homes
+test_parked_relaunch_respects_both_caps
+test_parked_capacity_and_priority
+test_parked_resume_has_project_priority
 test_undeclared_fleet_stays_uncapped
 test_full_fleet_defers_without_leaving_anything_behind
 test_ad_hoc_slot_admits_one_task_over_the_cap
