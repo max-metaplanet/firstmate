@@ -17,7 +17,7 @@ Only Claude is supported as the T3 leader; the installed Codex app-server path d
 Persist any open work that exists only in the conversation, then run the tool's `switch --to t3 --model MODEL --persisted` command inside the current leader.
 The command records recovery information and schedules detached completion before returning, so the current leader can end its turn.
 No separate activation terminal or typed exit is required.
-Use the switch dry-run to check ownership, the original tmux pane, recovery prerequisites, and native home binding without scheduling anything.
+Use the switch dry-run to check ownership, the original tmux pane, recovery prerequisites, and legacy routing migration without scheduling anything.
 
 Completion stops only the recorded outgoing Claude PID, waits for it to exit, launches its replacement, and waits for verified lock ownership and confirmation.
 If activation fails or confirmation times out, it resumes the outgoing Claude conversation in its original tmux pane when the lock is free or stale.
@@ -32,9 +32,13 @@ The tool preserves the T3 project and conversation history.
 Forward activation opens a Claude leader thread in the Firstmate T3 project.
 If the home is already registered, including as “firstmate (view only)”, activation reuses that exact workspace project.
 Other registration errors remain fatal.
-Before launching it, Firstmate binds Claude's local project environment to that exact home so native hooks cannot inherit a different home's routing from the T3 provider process.
-The merge preserves existing permissions, hooks, and unrelated environment settings; conflicting routes, malformed settings, and symlinked settings are refused for inspection.
-The activation dry-run checks that binding without writing it.
+Before launching it, Firstmate removes legacy `FM_HOME`, `FM_ROOT`, and the Firstmate path override variables from `.claude/settings.local.json`.
+Claude also loads the primary checkout's local settings in linked worktrees, where primary values win conflicts, so those settings cannot safely bind one home.
+With routing variables unset, native hooks default to the home containing their scripts; the successor prompt also scopes startup and confirmation commands explicitly to the handover home.
+Keep the T3 provider process free of Firstmate home-routing variables so it does not pass another home's environment into native threads.
+Migration preserves permissions, hooks, and unrelated settings, including unrelated environment variables.
+Malformed or symlinked settings still refuse for inspection.
+The activation dry-run validates migration without changing the file.
 Reverse activation starts Claude in the terminal where the activation command runs.
 The replacement starts fresh from durable records rather than resuming the other interface's conversation.
 In either direction, it must acquire the normal session lock and confirm that ownership before the persistent handover status reports completion.

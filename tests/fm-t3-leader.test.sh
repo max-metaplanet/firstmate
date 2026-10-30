@@ -9,6 +9,7 @@ work=$(fm_test_tmproot fm-t3-leader)
 helper="$ROOT/bin/fm-t3-leader.sh"
 mkdir -p "$work/home/state" "$work/home/bin" "$work/home/config" "$work/tools" "$work/base"
 git -C "$work/home" init -q
+for script in "$ROOT"/bin/*.sh; do ln -s "$script" "$work/home/bin/$(basename "$script")"; done
 printf 'fixture instructions\n' > "$work/home/AGENTS.md"
 ln -s /bin/bash "$work/tools/claude"
 export FM_T3_BIN="$work/tools/t3" FM_T3_BASE_DIR="$work/base"
@@ -38,7 +39,7 @@ if [ "$1" = recovery ]; then
   CLAUDE_CODE_SESSION_ID=$(jq -r .outgoingSession "$TEST_HOME/state/.t3-leader-handover.json")
   export CLAUDE_CODE_SESSION_ID
 fi
-bash "$TEST_ROOT/bin/fm-lock.sh" > "$TEST_WORK/lock-$1"
+bash "$TEST_HOME/bin/fm-lock.sh" > "$TEST_WORK/lock-$1"
 case "$1" in
   automatic)
     printf 'pid=%s\nharness=claude\nprofile=\nbackend=tmux\ntarget=%%fixture\n' "$$" > "$TEST_HOME/state/.lock-runtime"
@@ -48,7 +49,7 @@ case "$1" in
     touch "$TEST_WORK/recovery-ready"
     ;;
   auto-successor)
-    bash "$TEST_HELPER" confirm "$FM_T3_LEADER_HANDOVER"
+    FM_HOME="$TEST_HOME" bash "$TEST_HELPER" confirm "$FM_T3_LEADER_HANDOVER"
     ;;
   outgoing)
     bash "$TEST_HELPER" prepare --to t3 --model fixture-model --dry-run > "$TEST_WORK/dry-prepare"
@@ -90,7 +91,10 @@ elif sys.argv[1:3] == ['thread', 'start']:
         import subprocess
         child = subprocess.Popen([str(work / 'tools/claude'), str(work / 'driver.sh'), 'auto-successor'],
                                  stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                                 env={k:v for k,v in os.environ.items() if k not in ('CLAUDE_PID','CLAUDE_CODE_SESSION_ID')})
+                                 env={k:v for k,v in os.environ.items() if k not in (
+                                     'CLAUDE_PID','CLAUDE_CODE_SESSION_ID','FM_HOME','FM_ROOT',
+                                     'FM_ROOT_OVERRIDE','FM_STATE_OVERRIDE','FM_DATA_OVERRIDE',
+                                     'FM_CONFIG_OVERRIDE','FM_PROJECTS_OVERRIDE')})
         (work / 'auto-successor-pid').write_text(str(child.pid))
     print(json.dumps({'threadId':'fixture-thread','projectId':'fixture-project','runId':'fixture-run'}))
 else:
@@ -111,8 +115,11 @@ await_file() {
 
 binding_home="$work/binding-home"
 mkdir -p "$binding_home"
+git -C "$binding_home" init -q
 fm_t3_bind_claude_home "$binding_home" --dry-run
 [ ! -e "$binding_home/.claude" ] || fail 'home-binding dry-run created settings directory'
+fm_t3_bind_claude_home "$binding_home"
+[ ! -e "$binding_home/.claude" ] || fail 'native binding created unnecessary local settings'
 mkdir "$binding_home/.claude"
 settings="$binding_home/.claude/settings.local.json"
 cat > "$settings" <<'SETTINGS'
@@ -122,34 +129,39 @@ cp "$settings" "$work/settings-original"
 fm_t3_bind_claude_home "$binding_home" --dry-run
 cmp "$settings" "$work/settings-original" || fail 'home-binding dry-run changed existing settings'
 fm_t3_bind_claude_home "$binding_home"
-jq -e --arg home "$binding_home" --slurpfile original "$work/settings-original" '
-  .permissions == $original[0].permissions and .hooks == $original[0].hooks and
-  .unknown == $original[0].unknown and .env.CUSTOM_FIXTURE == "keep-me" and
-  .env.FM_HOME == $home and .env.FM_ROOT == $home and
-  .env.FM_ROOT_OVERRIDE == "" and .env.FM_STATE_OVERRIDE == "" and
-  .env.FM_DATA_OVERRIDE == "" and .env.FM_CONFIG_OVERRIDE == "" and
-  .env.FM_PROJECTS_OVERRIDE == ""
-' "$settings" >/dev/null || fail 'native home binding changed unrelated settings or left routing inherited'
+jq -e --slurpfile original "$work/settings-original" '. == $original[0]' "$settings" >/dev/null \
+  || fail 'native binding added routing keys or changed unrelated settings'
 cp "$settings" "$work/settings-bound"
 fm_t3_bind_claude_home "$binding_home"
 cmp "$settings" "$work/settings-bound" || fail 'repeated native home binding did not converge'
-pass 'native home binding preserves permissions, hooks, unknown keys and env; dry-run is read-only and repeat converges'
+pass 'primary checkout binding leaves no routing env for linked worktrees to inherit'
 
 for route in FM_HOME FM_ROOT FM_ROOT_OVERRIDE FM_STATE_OVERRIDE FM_DATA_OVERRIDE FM_CONFIG_OVERRIDE FM_PROJECTS_OVERRIDE; do
-  jq -n --arg route "$route" '{env:{($route):"conflicting-home"},permissions:{allow:["fixture"]}}' > "$settings"
-  cp "$settings" "$work/settings-conflict"
-  expect_failure fm_t3_bind_claude_home "$binding_home" --dry-run
-  cmp "$settings" "$work/settings-conflict" || fail "dry-run replaced conflicting route $route"
-  expect_failure fm_t3_bind_claude_home "$binding_home"
-  cmp "$settings" "$work/settings-conflict" || fail "binding replaced conflicting route $route"
+  jq --arg route "$route" '.env[$route] = "previous-home"' "$work/settings-original" > "$settings"
+  cp "$settings" "$work/settings-legacy"
+  fm_t3_bind_claude_home "$binding_home" --dry-run
+  cmp "$settings" "$work/settings-legacy" || fail "dry-run changed legacy route $route"
+  fm_t3_bind_claude_home "$binding_home"
+  jq -e --slurpfile original "$work/settings-original" '. == $original[0]' "$settings" >/dev/null \
+    || fail "migration retained route $route or changed unrelated settings"
 done
+pass 'legacy native routing migrates without changing permissions, hooks, unknown keys or unrelated env'
+
+mkdir -p "$binding_home/bin"
+for script in "$ROOT"/bin/*.sh; do ln -s "$script" "$binding_home/bin/$(basename "$script")"; done
+env -u FM_HOME -u FM_ROOT -u FM_ROOT_OVERRIDE -u FM_STATE_OVERRIDE -u FM_DATA_OVERRIDE \
+  -u FM_CONFIG_OVERRIDE -u FM_PROJECTS_OVERRIDE bash "$binding_home/bin/fm-lock.sh" status > "$work/default-home-status"
+[ -d "$binding_home/state" ] || fail 'native leader without routing env did not resolve its checkout home'
+assert_contains "$(cat "$work/default-home-status")" 'lock: free' 'checkout default must inspect its own lock'
+pass 'native primary checkout scripts resolve their own home without settings env'
+
 for invalid in '' '{"env":' 'null' '[]' '{"env":[]}' '{"env":"bad"}'; do
   printf '%s\n' "$invalid" > "$settings"
   cp "$settings" "$work/settings-invalid"
   expect_failure fm_t3_bind_claude_home "$binding_home"
   cmp "$settings" "$work/settings-invalid" || fail 'binding replaced malformed settings'
 done
-pass 'conflicting home routes and malformed settings refuse without replacing the original file'
+pass 'malformed settings refuse without replacing the original file'
 
 mkdir -p "$work/binding-target" "$work/symlink-directory-home" "$work/symlink-file-home/.claude"
 printf '{"env":{"CUSTOM_FIXTURE":"untouched"}}\n' > "$work/binding-target/settings.local.json"
@@ -190,18 +202,16 @@ expect_failure bash "$helper" activate --dry-run
 assert_contains "$(cat "$work/failure")" 'supervision-host-off' 'unverified default supervision host must refuse forward activation'
 touch "$work/home/config/supervision-host-off"
 mkdir "$work/home/.claude"
-printf '{"env":{"FM_HOME":"conflicting-home"}}\n' > "$work/home/.claude/settings.local.json"
-cp "$work/home/.claude/settings.local.json" "$work/activation-conflict"
-expect_failure bash "$helper" activate --dry-run
-assert_contains "$(cat "$work/failure")" 'home binding is unsafe' 'activation dry-run must reject conflicting native home routing'
-cmp "$work/home/.claude/settings.local.json" "$work/activation-conflict" || fail 'activation dry-run replaced conflicting native settings'
-cp "$work/settings-original" "$work/home/.claude/settings.local.json"
+jq '.env += {FM_HOME:"previous-home", FM_ROOT:"previous-home", FM_ROOT_OVERRIDE:"previous-code", FM_STATE_OVERRIDE:"previous-state", FM_DATA_OVERRIDE:"previous-data", FM_CONFIG_OVERRIDE:"previous-config", FM_PROJECTS_OVERRIDE:"previous-projects"}' \
+  "$work/settings-original" > "$work/home/.claude/settings.local.json"
+cp "$work/home/.claude/settings.local.json" "$work/activation-legacy"
 bash "$helper" activate --dry-run > "$work/dry-activate"
-cmp "$work/home/.claude/settings.local.json" "$work/settings-original" || fail 'activation dry-run changed native home routing'
+cmp "$work/home/.claude/settings.local.json" "$work/activation-legacy" || fail 'activation dry-run changed legacy native settings'
 [ ! -e "$work/t3-calls" ] || fail 'activation dry-run contacted T3'
 [ "$(jq -r .phase "$work/home/state/.t3-leader-handover.json")" = prepared ] || fail 'activation dry-run changed phase'
 bash "$helper" activate > "$work/activated"
-jq -e --arg home "$work/home" '.env.FM_HOME == $home and .env.FM_ROOT == $home and .env.FM_STATE_OVERRIDE == "" and .env.CUSTOM_FIXTURE == "keep-me" and .permissions.allow == ["Bash(git status:*)"]' "$work/home/.claude/settings.local.json" >/dev/null || fail 'activation did not bind the exact native home while preserving settings'
+jq -e --slurpfile original "$work/settings-original" '. == $original[0]' "$work/home/.claude/settings.local.json" >/dev/null \
+  || fail 'activation did not remove legacy routing while preserving unrelated settings'
 jq -e '.phase == "starting" and .threadId == "fixture-thread" and .projectId == "fixture-project"' "$work/home/state/.t3-leader-handover.json" >/dev/null
 expect_failure bash "$helper" activate
 [ "$(wc -l < "$work/t3-calls")" -eq 2 ] || fail 'repeat activation launched another thread'
@@ -334,7 +344,7 @@ await_file "$work/auto-successor-ready"
 successor_pid=$(cat "$work/auto-successor-pid")
 jq -e '.phase == "confirmed"' "$work/home/state/.t3-leader-handover.json" >/dev/null || fail 'automatic handover never confirmed'
 [ ! -e "$work/tmux-recovery-args" ] || fail 'confirmed handover ran recovery'
-pass 'one-command handover reuses the project and confirms the T3 successor without recovery'
+pass 'T3 successor without routing env resolves the primary home and confirms without recovery'
 kill "$successor_pid"
 successor_pid=''
 
