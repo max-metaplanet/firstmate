@@ -1,0 +1,11 @@
+{
+  "kind": "unavailable",
+  "remote_exit": null,
+  "cleanup": "deleted",
+  "swap_gib": 0,
+  "source_head": "12baf3d55bda10c7087f3ab73c03041b1c476a1e",
+  "source_sha256": "f125f4b633ea0525d5b68929a448f06494bf8caafc78ad046e8feaa7f8d48c87",
+  "execution_error": "two Boat jobs already reserved",
+  "error": "two Boat jobs already reserved",
+  "adapter_exit": 75
+}

@@ -1,0 +1,69 @@
+CASE unavailable
+command arguments: ['bash scripts/pipeline-test.sh']
+exit: 23
+stdout:
+configured Test: cwd, environment, heavy slot verified
+stderr:
+boat-test-wrapper: result.json: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M66X6H8T0DDZ43VRBXXBV0Z9/.boat-test-live-mr1jltje/.fm-test-scratch/fm-boat-test.Vgm5gd/boat/result.json
+boat-offload: Boat key unavailable
+boat-test-wrapper: Boat unavailable (exit 69); running locally through heavy build lock; result.json: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M66X6H8T0DDZ43VRBXXBV0Z9/.boat-test-live-mr1jltje/.fm-test-scratch/fm-boat-test.Vgm5gd/boat/result.json
+
+
+result.json: {"adapter_exit": 69, "cleanup": "deleted", "error": "Boat key unavailable", "execution_error": "Boat key unavailable", "kind": "unavailable", "remote_exit": null, "source_head": "12baf3d55bda10c7087f3ab73c03041b1c476a1e", "source_sha256": "f125f4b633ea0525d5b68929a448f06494bf8caafc78ad046e8feaa7f8d48c87", "swap_gib": 0}
+
+CASE capacity
+command arguments: ['bash scripts/pipeline-test.sh']
+exit: 23
+stdout:
+configured Test: cwd, environment, heavy slot verified
+stderr:
+boat-test-wrapper: result.json: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M66X6H8T0DDZ43VRBXXBV0Z9/.boat-test-live-mr1jltje/.fm-test-scratch/fm-boat-test.B5pSgs/boat/result.json
+boat-offload: two Boat jobs already reserved
+boat-test-wrapper: Boat unavailable (exit 75); running locally through heavy build lock; result.json: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M66X6H8T0DDZ43VRBXXBV0Z9/.boat-test-live-mr1jltje/.fm-test-scratch/fm-boat-test.B5pSgs/boat/result.json
+
+
+result.json: {"adapter_exit": 75, "cleanup": "deleted", "error": "two Boat jobs already reserved", "execution_error": "two Boat jobs already reserved", "kind": "unavailable", "remote_exit": null, "source_head": "12baf3d55bda10c7087f3ab73c03041b1c476a1e", "source_sha256": "f125f4b633ea0525d5b68929a448f06494bf8caafc78ad046e8feaa7f8d48c87", "swap_gib": 0}
+
+CASE bad-timeout
+command arguments: ['touch ran']
+exit: 2
+stdout:
+stderr:
+boat-test-wrapper: result.json: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M66X6H8T0DDZ43VRBXXBV0Z9/.boat-test-live-mr1jltje/.fm-test-scratch/fm-boat-test.BMAyuj/boat/result.json
+boat-offload: command required; timeout must be 1..2700 seconds
+boat-test-wrapper: adapter failure (exit 2, invalid-result); Test failed; result.json: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M66X6H8T0DDZ43VRBXXBV0Z9/.boat-test-live-mr1jltje/.fm-test-scratch/fm-boat-test.BMAyuj/boat/result.json
+
+
+CASE non-root
+command arguments: ['touch ran']
+exit: 2
+stdout:
+stderr:
+boat-test-wrapper: result.json: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M66X6H8T0DDZ43VRBXXBV0Z9/.boat-test-live-mr1jltje/core/.fm-test-scratch/fm-boat-test.ep03SF/boat/result.json
+boat-offload: --worktree must name the git root
+boat-test-wrapper: adapter failure (exit 2, invalid-result); Test failed; result.json: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M66X6H8T0DDZ43VRBXXBV0Z9/.boat-test-live-mr1jltje/core/.fm-test-scratch/fm-boat-test.ep03SF/boat/result.json
+
+
+CASE no-command
+command arguments: []
+exit: 2
+stdout:
+stderr:
+boat-test-wrapper: expected exactly one nonempty Test command string
+
+
+CASE blank-command
+command arguments: ['   ']
+exit: 2
+stdout:
+stderr:
+boat-test-wrapper: expected exactly one nonempty Test command string
+
+
+CASE split-command
+command arguments: ['bash', 'scripts/pipeline-test.sh']
+exit: 2
+stdout:
+stderr:
+boat-test-wrapper: expected exactly one nonempty Test command string
+
