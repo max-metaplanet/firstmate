@@ -29,8 +29,11 @@ SUBJECT_ROOT=${FM_FORK_BUDGET_ROOT:-$ROOT}
 # differs by: a Linux /proc identity read costs more programs than the portable
 # ps fallback. It is still tight enough that one library going back to a
 # cd-and-pwd subshell, worth two shell children and a program start, shows up.
-FORK_BUDGET_WATCH_START_PROGRAMS=${FORK_BUDGET_WATCH_START_PROGRAMS:-22}
-FORK_BUDGET_WATCH_START_SHELLS=${FORK_BUDGET_WATCH_START_SHELLS:-22}
+# The detached parking tick also runs before the first boundary. Allow its one
+# uname and eight shell children here: scheduling can put them on either side
+# of that boundary, so startup must accommodate the whole tick.
+FORK_BUDGET_WATCH_START_PROGRAMS=${FORK_BUDGET_WATCH_START_PROGRAMS:-23}
+FORK_BUDGET_WATCH_START_SHELLS=${FORK_BUDGET_WATCH_START_SHELLS:-30}
 mkdir -p "$TMP_ROOT/shims"
 EVENTS="$TMP_ROOT/events"
 export EVENTS
@@ -142,12 +145,13 @@ measure() { # <loop> <home> <target> [args...]
     }
     END { for(i=2;i<=4;i++) if(!waits[i])bad=1; exit bad }
   ' "$EVENTS" || fail "$loop skipped its full timed wait or changed its interval"
-  # A warmed idle watcher poll starts ONE program: the single read that ages
-  # every cadence marker this cycle consults. Every other read it still makes is
-  # answered by a shell builtin. The other loops start none.
-  case "$loop" in watch) limit=1 ;; *) limit=0 ;; esac
-  [ "$max_programs" -le "$limit" ] || fail "$loop exceeded $limit programs per cycle"
+  # A warmed idle watcher poll reads cadence mtimes once and starts the
+  # detached parking/admission tick, whose library initialization calls uname.
+  # Count that required child work too; the other loops start no programs.
   case "$loop" in watch) limit=2 ;; *) limit=0 ;; esac
+  [ "$max_programs" -le "$limit" ] || fail "$loop exceeded $limit programs per cycle"
+  # Two cadence-reader shells plus eight parking-tick shells per idle poll.
+  case "$loop" in watch) limit=10 ;; *) limit=0 ;; esac
   [ "$max_shells" -le "$limit" ] || fail "$loop exceeded $limit shell children per cycle"
   # Reaching the first poll is the fleet's most repeated cost: a watcher is
   # started again on every wake it delivers. Library directories resolve by
