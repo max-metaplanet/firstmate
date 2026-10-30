@@ -1375,7 +1375,8 @@ The text is static and never executed or expanded; secondmate charters never tak
 
 Ship workers can run secret-free heavy commands on ephemeral Boat VMs through [`bin/fm-boat-run.sh`](../bin/fm-boat-run.sh).
 The adapter's header and `--help` own prerequisites, source selection, result and artifact paths, trial limits, cleanup records, reaping, and explicit local fallback.
-It runs outside local heavy slots; authenticated checks and no-mistakes steps keep their existing execution path.
+It runs outside local heavy slots; authenticated checks keep their existing execution path.
+The optional no-mistakes Test integration is owned by [`bin/fm-boat-test-wrapper.sh`](../bin/fm-boat-test-wrapper.sh)'s header and `--help`, including enablement prerequisites, secret-free scope, conservative Git scoping, and local fallback.
 
 ## Worker launch environment (config/launch-env-allowlist)
 
