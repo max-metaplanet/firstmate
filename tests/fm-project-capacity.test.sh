@@ -402,6 +402,35 @@ test_exhausted_capacity_defers_without_leaving_anything_behind() {
   pass "a spawn beyond capacity is deferred before any record, brief, endpoint, worktree, or backlog move exists"
 }
 
+# A one-time ad hoc grant admits its own task past the project's declaration
+# and leaves the declaration, and every other task's admission, alone.
+test_ad_hoc_slot_admits_one_task_over_the_project_cap() {
+  local case_dir home declared out rc=0 before worktrees
+  case_dir=$(make_case project-adhoc task-c task-d)
+  home="$case_dir/home"
+  declare_capacity "$home" "project 2"
+  declared=$(cat "$home/config/project-capacity")
+  write_live "$home" live-a "$case_dir/project"
+  write_live "$home" live-b "$case_dir/project"
+  out=$(run_spawn "$case_dir" "$home" "$(new_worktree "$case_dir" task-c)" \
+    task-c "$case_dir/project" --mode no-mistakes --ticket no-ticket \
+    --commit-type chore --yolo off --ad-hoc-slot) || rc=$?
+  expect_code 0 "$rc" "an ad hoc slot did not admit its task over the project cap: $out"
+  assert_contains "$(cat "$home/state/task-c.meta")" "ad_hoc_project_slot=1" \
+    "the ad hoc grant was not recorded in the task's own record"
+  assert_equals "$declared" "$(cat "$home/config/project-capacity")" \
+    "an ad hoc slot edited the capacity declaration"
+
+  rc=0
+  before=$(call_count "$case_dir")
+  worktrees=$(worktree_list "$case_dir")
+  out=$(spawn_ship "$case_dir" task-d "$case_dir/unused") || rc=$?
+  expect_code "$DEFER_EXIT" "$rc" "the ad hoc grant leaked to another task: $out"
+  assert_contains "$out" "plus 1 ad hoc" "the deferral did not name the ad hoc occupancy"
+  assert_nothing_created "$case_dir" "$home" task-d "$before" "$worktrees"
+  pass "an ad hoc slot admits exactly its own task over the project cap"
+}
+
 # The capacity is the last field, so a project whose clone directory name holds
 # spaces can be declared. An indented '#' line is still a comment.
 test_spaced_project_name_is_declared() {
@@ -849,6 +878,41 @@ CHECK
   pass 'imported work stays queued under capacity and source holds, then emits one start at the ordinary launch commit'
 }
 
+test_unused_project_grant_and_deferred_replay() {
+  local case_dir home out rc=0 record
+  case_dir=$(make_case unused-project task-b task-c)
+  home="$case_dir/home"
+  declare_capacity "$home" 'project 2'
+  write_live "$home" live-a "$case_dir/project"
+  out=$(run_spawn "$case_dir" "$home" "$(new_worktree "$case_dir" task-b)" \
+    task-b "$case_dir/project" --mode no-mistakes --ticket no-ticket \
+    --commit-type chore --yolo off --ad-hoc-slot) || rc=$?
+  expect_code 0 "$rc" "unused project flag prevented ordinary admission: $out"
+  assert_not_contains "$(cat "$home/state/task-b.meta")" ad_hoc_ 'unused project flag recorded a grant'
+  rc=0
+  out=$(spawn_ship "$case_dir" task-c "$case_dir/unused") || rc=$?
+  expect_code 75 "$rc" "unused project grant admitted a third worker: $out"
+
+  case_dir=$(make_case flagged-replay task-c)
+  home="$case_dir/home"
+  declare_capacity "$home" 'project 1'
+  write_live "$home" live-a "$case_dir/project"
+  write_live "$home" live-b "$case_dir/project"
+  rc=0
+  out=$(run_spawn "$case_dir" "$home" "$case_dir/unused" task-c "$case_dir/project" \
+    --mode no-mistakes --ticket no-ticket --commit-type chore --yolo off --ad-hoc-slot) || rc=$?
+  expect_code 75 "$rc" "one grant admitted a task two places beyond capacity: $out"
+  record="$home/state/task-c.deferred-spawn.json"
+  jq -e '.ad_hoc_slot == "1"' "$record" >/dev/null || fail 'deferred replay dropped the requested flag'
+  rm "$home/state/live-b.meta"
+  admission_tick "$case_dir" "$(new_worktree "$case_dir" admitted)"
+  assert_present "$home/state/task-c.meta" 'replay lost the grant required to enter the full project'
+  assert_contains "$(cat "$home/state/task-c.meta")" ad_hoc_project_slot=1 'replay omitted the project grant'
+  assert_not_contains "$(cat "$home/state/task-c.meta")" ad_hoc_fleet_slot 'replay granted an undeclared fleet cap'
+  pass 'unused project flags grant nothing and deferred replay retains its requested grant'
+}
+
+test_unused_project_grant_and_deferred_replay
 test_freed_slot_automatically_admits_one_recorded_ship
 test_replay_refuses_a_ticket_owned_elsewhere_from_row_evidence
 test_away_spend_cap_defers_replay_until_a_worker_finishes
@@ -858,6 +922,7 @@ test_imported_work_uses_capacity_refresh_and_launch_commit
 test_undeclared_capacity_keeps_dispatch_uncapped
 test_available_capacity_admits_the_worker
 test_exhausted_capacity_defers_without_leaving_anything_behind
+test_ad_hoc_slot_admits_one_task_over_the_project_cap
 test_spaced_project_name_is_declared
 test_hash_prefixed_project_name_is_declared
 test_symlinked_home_counts_each_worker_once

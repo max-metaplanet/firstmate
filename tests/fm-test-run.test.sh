@@ -1744,6 +1744,70 @@ SH
   pass "--max-wall-ms fails an over-budget run and refuses a malformed budget"
 }
 
+test_heavy_slot_wait_counts_toward_wall_budget() {
+  local tmp repo
+  tmp=$(mktemp -d "$FM_TEST_SCRATCH_ROOT/fm-test-run-slot-budget.XXXXXX")
+  repo="$tmp/repo"
+  mkdir -p "$repo/bin" "$repo/tests"
+  cp "$RUNNER" "$ROOT/bin/fm-build-lock.py" "$ROOT/bin/fm-build-lock.js" "$repo/bin/"
+  cp "$ROOT/tests/git-config-helpers.sh" "$repo/tests/"
+  printf 'echo "ok - brief fixture"\n' > "$repo/tests/fm-brief.test.sh"
+  printf 'echo "ok - composer fixture"\n' > "$repo/tests/fm-composer-lib.test.sh"
+  python3 - "$repo" "$tmp" <<'PY'
+import json
+import os
+from pathlib import Path
+import re
+import subprocess
+import sys
+import time
+
+repo, scratch = map(Path, sys.argv[1:])
+env = dict(os.environ, FM_BUILD_LOCK_FILE=str(scratch / 'pool.lock'),
+           FM_BUILD_LOCK_INSTALL_DIR=str(scratch / 'installed'), FM_HEAVY_SLOTS='1')
+for name in ('FM_BUILD_LOCK_BYPASS', 'FM_BUILD_LOCK_HELD', 'NODE_OPTIONS'):
+    env.pop(name, None)
+ready, release = scratch / 'ready', scratch / 'release'
+holder = subprocess.Popen([str(repo / 'bin/fm-build-lock.py'), '--', sys.executable, '-c',
+    'import pathlib,sys,time; pathlib.Path(sys.argv[1]).touch(); '
+    '\nwhile not pathlib.Path(sys.argv[2]).exists(): time.sleep(.03)', str(ready), str(release)], env=env)
+runner = None
+try:
+    deadline = time.monotonic() + 10
+    while not ready.exists():
+        assert time.monotonic() < deadline, 'slot holder did not start'
+        time.sleep(.03)
+    with (scratch / 'out').open('w') as out, (scratch / 'err').open('w') as err:
+        runner = subprocess.Popen(['bash', str(repo / 'bin/fm-test-run.sh'), '--jobs', '2',
+            '--max-wall-ms', '2000', '--json', str(scratch / 'timing.json'),
+            'tests/fm-brief.test.sh', 'tests/fm-composer-lib.test.sh'], env=env, stdout=out, stderr=err)
+    deadline = time.monotonic() + 20
+    while 'waiting for a heavy slot' not in (scratch / 'err').read_text():
+        assert runner.poll() is None, (scratch / 'out').read_text() + (scratch / 'err').read_text()
+        assert time.monotonic() < deadline, 'runner never waited on the occupied slot'
+        time.sleep(.03)
+    time.sleep(3)
+    release.touch()
+    assert holder.wait(10) == 0
+    assert runner.wait(30) == 1, 'slot wait disappeared from the wall-clock budget'
+    output = (scratch / 'out').read_text()
+    summary = re.search(r'^FM_TEST_SUMMARY total=2 failed=0 skipped_gate=0 duration_ms=(\d+)$', output, re.M)
+    budget = re.search(r'^FM_TEST_BUDGET max_wall_ms=2000 duration_ms=(\d+)$', output, re.M)
+    assert summary and budget, output + (scratch / 'err').read_text()
+    duration = int(summary[1])
+    assert duration >= 3000 and duration == int(budget[1]), output
+    artifact = json.loads((scratch / 'timing.json').read_text())
+    assert artifact['summary']['duration_ms'] == duration, artifact
+finally:
+    release.touch()
+    for process in (runner, holder):
+        if process is not None and process.poll() is None:
+            process.kill()
+            process.wait()
+PY
+  pass 'slot wait remains in the runner summary, JSON artifact and wall-clock verdict'
+}
+
 test_jobs_parallel_scheduler_and_failure_propagation() {
   local tmp repo runner evidence fake_bin a b c d rc begin_n end_n
   tmp=$(mktemp -d "${TMPDIR:-/tmp}/fm-test-run-jobs-sched.XXXXXX")
@@ -2146,6 +2210,7 @@ test_concurrent_runs_are_ordered_longest_first
 test_per_script_timeout_bounds_a_hang
 test_changed_bound_gives_slow_watcher_suites_headroom
 test_max_wall_ms_is_a_result_not_advice
+test_heavy_slot_wait_counts_toward_wall_budget
 test_jobs_parallel_scheduler_and_failure_propagation
 test_herdr_ci_family_run_has_a_step_timeout
 test_aggregate_json

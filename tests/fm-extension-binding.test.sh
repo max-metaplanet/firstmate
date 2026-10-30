@@ -1163,6 +1163,28 @@ order_owner=$(sed -n 's/^owner-token: //p' "$TMP_ROOT/lock-order-register.out")
 FM_HOME="$H_ORDER" "$PROCEVENT" retire order-source --if-owner "$order_owner" >/dev/null
 FM_HOME="$H_ORDER" "$PROCEVENT" handled order-source 1 >/dev/null
 pass "register-extension and reconcile of an unhandled extension result take their locks in one order"
+
+# Terminal and silent verdicts must survive inherited fd layouts. The public
+# start command must retire terminal sources while retaining unhandled evidence.
+H_HANDOFF="$HOMES/handoff"; new_home "$H_HANDOFF"
+bind_package "$H_HANDOFF" "$P_ORDER" ext-lock-order >/dev/null
+for handoff_layout in closed occupied; do
+  handoff_source="handoff-$handoff_layout"
+  FM_HOME="$H_HANDOFF" "$PROCEVENT" register-extension ext-lock-order "$handoff_source" --config-ref good >/dev/null
+  (
+    exec 3<&- 4<&- 5<&-
+    if [ "$handoff_layout" = occupied ]; then
+      exec 3</dev/null 4</dev/null 5</dev/null
+    fi
+    FM_HOME="$H_HANDOFF" "$PROCEVENT" start "$handoff_source"
+  ) > "$TMP_ROOT/$handoff_source.out" 2>&1 || fail "inherited-fd capture failed: $handoff_layout"
+  assert_contains "$(cat "$TMP_ROOT/$handoff_source.out")" "retired: $handoff_source" "terminal handoff failed: $handoff_layout"
+  assert_absent "$H_HANDOFF/state/procevent/$handoff_source.source" "terminal handoff retained registration: $handoff_layout"
+  assert_present "$H_HANDOFF/state/procevent-inbox/$handoff_source.1.result" "handoff discarded captured evidence: $handoff_layout"
+  assert_absent "$H_HANDOFF/state/procevent-inbox/$handoff_source.1.handled" "handoff acknowledged evidence: $handoff_layout"
+  FM_HOME="$H_HANDOFF" "$PROCEVENT" handled "$handoff_source" 1 >/dev/null
+done
+pass "terminal capture preserves authority across inherited descriptor layouts"
 fi
 
 # --- registration and retirement serialization plus lock recovery -------------
@@ -1886,11 +1908,14 @@ mkdir -p "$H_REMOTE_CONTROL/data" "$H_REMOTE" "$REMOTE_ROOT/bin"
 printf 'fixture\n' > "$REMOTE_ROOT/AGENTS.md"
 for remote_file in \
   fm-extension.mjs fm-extension-launch-barrier.mjs fm-extension.sh fm-procevent.sh fm-procevent-lib.sh fm-procevent-extension-capture.pl fm-procevent-lavish.sh \
-  fm-pr-lib.sh fm-wake-lib.sh fm-path-lib.sh fm-remote-entrypoint.sh fm-remote-job-lib.sh \
+  fm-pr-lib.sh fm-wake-lib.sh fm-path-lib.sh fm-task-inbox-lib.sh fm-backend.sh fm-remote-entrypoint.sh fm-remote-job-lib.sh \
   fm-remote-job-worker.sh; do
   cp "$ROOT/bin/$remote_file" "$REMOTE_ROOT/bin/$remote_file"
 done
 chmod +x "$REMOTE_ROOT/bin"/fm-*.sh "$REMOTE_ROOT/bin/fm-extension.mjs" "$REMOTE_ROOT/bin/fm-extension-launch-barrier.mjs"
+# The remote worker rebuilds PATH without the invoking shell's Node manager.
+# Supply the real runtime in the disposable checkout, as on a provisioned host.
+ln -s "$(command -v node)" "$REMOTE_ROOT/bin/node"
 git -C "$REMOTE_ROOT" init -q -b main
 git -C "$REMOTE_ROOT" config user.email test@example.com
 git -C "$REMOTE_ROOT" config user.name Test
@@ -2043,6 +2068,8 @@ remote_direct fm-procevent.sh reconcile >/dev/null
 wait_for_file "$remote_active_marker" || fail "remote active runner never reached its addressed-home poll"
 expect_failure "prior runner remains active" remote_direct fm-procevent.sh register-extension ext-remote remote-active-source --config-ref replacement
 expect_failure "prior runner remains active" remote_direct fm-procevent.sh register lavish remote-active-source -- /bin/echo remote-built-in
+kill -0 "$(cat "$remote_active_marker")" 2>/dev/null \
+  || fail "remote registration replacement waited for the active poll to exit"
 touch "$remote_active_release"
 remote_active_release=
 for _ in $(seq 1 400); do

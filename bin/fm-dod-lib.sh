@@ -675,6 +675,12 @@ A Gerrit `gerrit-axi publish` patch set or an external-review re-upload made to 
 PR CI is the full regression gate for PR delivery; keep CI spend down and never trigger extra CI reruns yourself, including failed-job reruns or manual workflow dispatches.
 These worker limits leave no-mistakes' configured test step, repair loop, and `ci.rerun_transient` behavior unchanged.
 EOF
+  # The heavy-slot rule names an absolute helper, so it is appended rather than
+  # written into the quoted block above.
+  local_scope+="This machine runs only a few memory-heavy commands at once, and an ordinary Node build or test run claims one of those places by itself.
+Run a heavy command that cannot see Firstmate's Node preload - one whose script replaces \`NODE_OPTIONS\` instead of appending to it, or that runs outside Node - through \`$_FM_DOD_LIB_DIR/fm-build-lock.py -- <command>\`, so it waits for a place instead of exhausting the machine.
+Waiting for a place is expected, not a failure.
+"
   ci_cost="When a required check is red, read its failure log.
 Never push an empty, no-op, or \"retrigger\" commit to rerun CI."
   if [ -n "$base" ]; then

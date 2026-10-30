@@ -837,6 +837,78 @@ SENSOR
   pass 'native collector and common read-only status/snapshot/home-summary projection'
 }
 
+test_unused_ad_hoc_flag_does_not_raise_the_cap() {
+  local case_dir home out rc=0
+  case_dir=$(make_case adhoc-unused task-c task-d)
+  home="$case_dir/home"
+  declare_fleet "$home" 3
+  write_running "$case_dir" "$home" live-a "$case_dir/project"
+  write_running "$case_dir" "$home" live-b "$case_dir/project"
+  out=$(run_spawn "$case_dir" "$home" "$(new_worktree "$case_dir" task-c)" \
+    task-c "$case_dir/project" --mode no-mistakes --ticket no-ticket \
+    --commit-type chore --yolo off --ad-hoc-slot) || rc=$?
+  expect_code 0 "$rc" "C could not use the free ordinary place: $out"
+  assert_not_contains "$(cat "$home/state/task-c.meta")" 'ad_hoc_' \
+    'C recorded a grant despite using an ordinary place'
+  rc=0
+  out=$(spawn_ship "$case_dir" task-d "$case_dir/unused") || rc=$?
+  expect_code 75 "$rc" "the unused flag on C admitted ordinary D: $out"
+  pass 'a flagged C uses the third ordinary place and cannot admit D'
+}
+
+test_ad_hoc_grants_are_independent_per_cap() {
+  local axis case_dir home out rc pane
+  for axis in fleet project; do
+    case_dir=$(make_case "adhoc-only-$axis" task-b task-c task-d)
+    home="$case_dir/home"
+    if [ "$axis" = fleet ]; then
+      declare_fleet "$home" 1
+      printf 'project 2\n' > "$home/config/project-capacity"
+      write_running "$case_dir" "$home" live-a "$case_dir/other-project"
+    else
+      declare_fleet "$home" 3
+      printf 'project 1\n' > "$home/config/project-capacity"
+      write_running "$case_dir" "$home" live-a "$case_dir/project"
+    fi
+    pane=$(new_worktree "$case_dir" task-b)
+    rc=0
+    out=$(run_spawn "$case_dir" "$home" "$pane" task-b "$case_dir/project" \
+      --mode no-mistakes --ticket no-ticket --commit-type chore --yolo off --ad-hoc-slot) || rc=$?
+    expect_code 0 "$rc" "$axis-only grant was refused: $out"
+    assert_contains "$(cat "$home/state/task-b.meta")" "ad_hoc_${axis}_slot=1" 'missing cap-specific grant'
+    if [ "$axis" = fleet ]; then
+      assert_not_contains "$(cat "$home/state/task-b.meta")" ad_hoc_project_slot 'fleet grant raised project capacity'
+    else
+      assert_not_contains "$(cat "$home/state/task-b.meta")" ad_hoc_fleet_slot 'project grant raised fleet capacity'
+    fi
+    rc=0
+    out=$(FM_FAKE_AGENT_COMMAND=bash run_spawn "$case_dir" "$home" "$pane" \
+      task-b --relaunch --harness codex) || rc=$?
+    expect_code 0 "$rc" "live relaunch lost its $axis grant: $out"
+    assert_contains "$(cat "$home/state/task-b.meta")" "ad_hoc_${axis}_slot=1" 'relaunch dropped its own grant'
+    if [ "$axis" = fleet ]; then
+      write_running "$case_dir" "$home" live-c "$case_dir/project"
+      rc=0
+      out=$(spawn_ship "$case_dir" task-c "$case_dir/unused") || rc=$?
+      expect_code 75 "$rc" "fleet grant admitted beyond project capacity: $out"
+      assert_contains "$out" 'deferred: project' 'the wrong cap deferred the task'
+    else
+      rc=0
+      out=$(run_spawn "$case_dir" "$home" "$(new_worktree "$case_dir" task-c)" \
+        task-c "$case_dir/other-project" --mode no-mistakes --ticket no-ticket --commit-type chore --yolo off) || rc=$?
+      expect_code 0 "$rc" "ordinary task could not use the third fleet place: $out"
+      rc=0
+      out=$(run_spawn "$case_dir" "$home" "$case_dir/unused" task-d "$case_dir/other-project" \
+        --mode no-mistakes --ticket no-ticket --commit-type chore --yolo off) || rc=$?
+      expect_code 75 "$rc" "project grant raised fleet capacity: $out"
+      assert_contains "$out" 'deferred: this machine' 'the wrong cap deferred the task'
+    fi
+  done
+  pass 'grants and live relaunches raise only their own cap'
+}
+
+test_unused_ad_hoc_flag_does_not_raise_the_cap
+test_ad_hoc_grants_are_independent_per_cap
 test_adaptive_memory_paging_and_history
 test_adaptive_native_sensor_and_projection
 test_adaptive_off_and_observe
@@ -848,8 +920,112 @@ test_adaptive_concurrent_homes
 test_parked_relaunch_respects_both_caps
 test_parked_capacity_and_priority
 test_parked_resume_has_project_priority
+# An ad hoc grant lets ONE named task start above the declared cap without
+# changing the declaration, and every other spawn still sees the declared
+# number of places.
+test_ad_hoc_slot_admits_one_task_over_the_cap() {
+  local case_dir home declared out rc=0 before worktrees pane
+  case_dir=$(make_case adhoc task-c task-d task-e)
+  home="$case_dir/home"
+  declare_fleet "$home" "# whole machine" "2"
+  declared=$(cat "$home/config/fleet-capacity")
+  write_running "$case_dir" "$home" live-a "$case_dir/project"
+  write_running "$case_dir" "$home" live-b "$case_dir/project"
+
+  pane=$(new_worktree "$case_dir" task-c)
+  before=$(call_count "$case_dir")
+  worktrees=$(worktree_list "$case_dir")
+  out=$(spawn_ship "$case_dir" task-c "$pane") || rc=$?
+  expect_code "$DEFER_EXIT" "$rc" "a full fleet admitted an ordinary spawn: $out"
+  assert_nothing_created "$case_dir" "$home" task-c "$before" "$worktrees"
+
+  rc=0
+  out=$(run_spawn "$case_dir" "$home" "$(new_worktree "$case_dir" task-d)" \
+    task-d "$case_dir/project" --mode no-mistakes --ticket no-ticket \
+    --commit-type chore --yolo off --ad-hoc-slot) || rc=$?
+  expect_code 0 "$rc" "an ad hoc slot did not admit its task over the cap: $out"
+  assert_contains "$(cat "$home/state/task-d.meta")" "ad_hoc_fleet_slot=1" \
+    "the ad hoc grant was not recorded in the task's own record"
+  assert_equals "$declared" "$(cat "$home/config/fleet-capacity")" \
+    "an ad hoc slot edited the capacity declaration"
+  rc=0
+  pane=$(new_worktree "$case_dir" task-e)
+  before=$(call_count "$case_dir")
+  worktrees=$(worktree_list "$case_dir")
+  out=$(spawn_ship "$case_dir" task-e "$pane") || rc=$?
+  expect_code "$DEFER_EXIT" "$rc" "the ad hoc grant leaked to another task: $out"
+  assert_contains "$out" "plus 1 ad hoc" "the deferral did not name the ad hoc occupancy"
+  assert_contains "$out" "task-d (ad hoc)" "the deferral did not mark the ad hoc holder"
+  assert_nothing_created "$case_dir" "$home" task-e "$before" "$worktrees"
+  pass "an ad hoc slot admits exactly its own task over the cap and changes no declaration"
+}
+
+# A live relaunch replaces a worker that already holds a place, so it runs no
+# admission. Taking the grant there would raise both caps for a task that was
+# never admitted over them, admitting the next ordinary queued task instead.
+test_ad_hoc_slot_is_refused_on_a_live_relaunch() {
+  local case_dir home pane out rc=0 before worktrees
+  case_dir=$(make_case adhoc-relaunch task-d)
+  home="$case_dir/home"
+  declare_fleet "$home" 3
+  pane=$(new_worktree "$case_dir" live-a)
+  write_brief "$home" live-a legacy
+  write_running "$case_dir" "$home" live-a "$case_dir/project"
+  sed "s|^worktree=.*|worktree=$pane|" "$home/state/live-a.meta" > "$home/state/live-a.meta.next"
+  mv "$home/state/live-a.meta.next" "$home/state/live-a.meta"
+  write_running "$case_dir" "$home" live-b "$case_dir/project"
+  write_running "$case_dir" "$home" live-c "$case_dir/project"
+
+  out=$(FM_FAKE_AGENT_COMMAND=bash run_spawn "$case_dir" "$home" "$pane" \
+    live-a --relaunch --harness codex --ad-hoc-slot) || rc=$?
+  expect_code 1 "$rc" "a live relaunch took an ad hoc grant: $out"
+  assert_contains "$out" 'already holds an ordinary place' 'the refusal did not say why'
+  assert_not_contains "$(cat "$home/state/live-a.meta")" "ad_hoc_" \
+    'a refused relaunch still recorded the grant'
+
+  rc=0
+  pane=$(new_worktree "$case_dir" task-d)
+  before=$(call_count "$case_dir")
+  worktrees=$(worktree_list "$case_dir")
+  out=$(spawn_ship "$case_dir" task-d "$pane") || rc=$?
+  expect_code "$DEFER_EXIT" "$rc" "the refused grant still admitted another task: $out"
+  assert_nothing_created "$case_dir" "$home" task-d "$before" "$worktrees"
+  pass "a live relaunch cannot take an ad hoc grant and admits no other task"
+}
+
+# The grant lives in the task's own record, so the fleet view and snapshot can
+# say how many of the held places are ad hoc.
+test_ad_hoc_occupancy_is_visible() {
+  local case_dir home snapshot view
+  case_dir=$(make_case adhoc-view)
+  home="$case_dir/home"
+  declare_fleet "$home" "3"
+  write_running "$case_dir" "$home" live-a "$case_dir/project"
+  write_running "$case_dir" "$home" extra-b "$case_dir/project" "ad_hoc_fleet_slot=1"
+  snapshot=$(FM_HOME="$home" FM_ROOT_OVERRIDE='' FM_STATE_OVERRIDE='' FM_CONFIG_OVERRIDE='' \
+    FM_DATA_OVERRIDE='' FM_PROJECTS_OVERRIDE='' FM_FAKE_CALL_LOG="$case_dir/calls.log" \
+    FM_BACKEND=tmux PATH="$case_dir/fakebin:$TEST_PATH" bash "$ROOT/bin/fm-fleet-snapshot.sh" --json) ||
+    fail 'fleet snapshot failed'
+  assert_equals 1 "$(printf '%s' "$snapshot" | jq -r '.capacity.ad_hoc')" \
+    'the snapshot did not count the ad hoc place'
+  assert_equals true "$(printf '%s' "$snapshot" | jq -r '.tasks[] | select(.id == "extra-b") | .ad_hoc_slot')" \
+    'the snapshot did not mark the ad hoc task'
+  assert_equals false "$(printf '%s' "$snapshot" | jq -r '.tasks[] | select(.id == "live-a") | .ad_hoc_slot')" \
+    'the snapshot marked an ordinary task as ad hoc'
+  view=$(FM_HOME="$home" FM_ROOT_OVERRIDE='' FM_STATE_OVERRIDE='' FM_CONFIG_OVERRIDE='' \
+    FM_DATA_OVERRIDE='' FM_PROJECTS_OVERRIDE='' FM_FAKE_CALL_LOG="$case_dir/calls.log" \
+    FM_BACKEND=tmux PATH="$case_dir/fakebin:$TEST_PATH" bash "$ROOT/bin/fm-fleet-view.sh") ||
+    fail 'fleet view failed'
+  assert_contains "$view" "1 of them ad hoc" 'the fleet view did not report ad hoc occupancy'
+  assert_contains "$view" "ship (ad hoc)" 'the fleet view did not mark the ad hoc task'
+  pass "the fleet view and snapshot report ad hoc occupancy"
+}
+
 test_undeclared_fleet_stays_uncapped
 test_full_fleet_defers_without_leaving_anything_behind
+test_ad_hoc_slot_admits_one_task_over_the_cap
+test_ad_hoc_slot_is_refused_on_a_live_relaunch
+test_ad_hoc_occupancy_is_visible
 test_dead_agents_free_their_place
 test_fresh_spawn_waits_for_a_briefly_busy_fleet_lock
 test_fleet_is_shared_by_every_local_home

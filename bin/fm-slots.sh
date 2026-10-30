@@ -66,7 +66,9 @@ if ! fm_fleet_capacity_occupants "$STATE" ''; then
   printf 'slots unknown/%s (source: %s)\n' "${FM_FLEET_CAPACITY:-unlimited}" "$FM_FLEET_CAPACITY_FILE"
   fail "$FM_FLEET_CAPACITY_ERROR"
 fi
-printf 'slots %s/%s (source: %s)\n' "$FM_FLEET_CAPACITY_OCCUPANTS" "${FM_FLEET_CAPACITY:-unlimited}" "$FM_FLEET_CAPACITY_FILE"
+ad_hoc_note=
+[ "$FM_FLEET_CAPACITY_ADHOC" -eq 0 ] || ad_hoc_note=" plus $FM_FLEET_CAPACITY_ADHOC ad hoc"
+printf 'slots %s/%s%s (source: %s)\n' "$FM_FLEET_CAPACITY_OCCUPANTS" "${FM_FLEET_CAPACITY:-unlimited}" "$ad_hoc_note" "$FM_FLEET_CAPACITY_FILE"
 printf 'SLOTS (local records; * still holds a slot)\n'
 
 holder_state() { # <meta> <id> <harness> <pr>
@@ -151,8 +153,9 @@ if [ -n "$FM_PROJECT_CAPACITY_ANY" ]; then
       reason='project capacity unknown (project unavailable)'
     elif ! fm_project_capacity_occupants "$lock" "$project" "$STATE" ''; then
       reason="project capacity unknown ($FM_PROJECT_CAPACITY_ERROR)"
-    elif [ "$FM_PROJECT_CAPACITY_OCCUPANTS" -ge "$cap" ]; then
+    elif [ "$FM_PROJECT_CAPACITY_OCCUPANTS" -ge $((cap + FM_PROJECT_CAPACITY_ADHOC)) ]; then
       reason="project capacity $FM_PROJECT_CAPACITY_OCCUPANTS/$cap"
+      [ "$FM_PROJECT_CAPACITY_ADHOC" -eq 0 ] || reason+=" plus $FM_PROJECT_CAPACITY_ADHOC ad hoc"
     fi
     [ -z "$reason" ] || capacity_rows+="$name"$'\t'"$reason"$'\n'
   done

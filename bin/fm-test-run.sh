@@ -3,6 +3,12 @@
 # composition for portable CI shards, local --jobs for proven-concurrent work,
 # timing markers, and the complete-regression coverage guard.
 #
+# A run that schedules more than one worker claims one of this machine's heavy
+# slots first and waits when none is free, so a concurrent suite cannot pile its
+# memory on top of another lane's build or test run. Serial runs and inspection
+# modes claim nothing. bin/fm-build-lock.py owns the pool, recursion, release
+# and the FM_BUILD_LOCK_BYPASS=1 escape.
+#
 # Selection modes (exactly one of: --all, --family, --changed, --lane,
 # --proven-isolated, or script paths):
 #   fm-test-run.sh --all
@@ -91,8 +97,9 @@
 #                   External interruption cleanup is outside this runner's
 #                   guarantee; configured per-script bounds remain authoritative.
 #   --max-wall-ms N fail the run when its measured invocation wall clock exceeds
-#                   N milliseconds, including an empty selection. It is
-#                   evaluated after selection and suite execution and cannot
+#                   N milliseconds, including heavy-slot wait time and empty
+#                   selections. It is evaluated after selection and suite
+#                   execution and cannot
 #                   interrupt a running script; per-script hangs are
 #                   bounded by --per-script-timeout-secs. Pathological output
 #                   sinks that block finalization are explicitly out of scope.
@@ -175,8 +182,21 @@ now_ms() {
   fi
 }
 
-RUN_STARTED_ISO=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-RUN_STARTED_MS=$(now_ms)
+# Kept verbatim for the heavy-slot re-exec below, which happens after parsing
+# has consumed "$@" but before any suite runs.
+INVOCATION_ARGV=("$@")
+
+# Only the lock-held replacement can inherit the original invocation clock.
+if [ "${FM_BUILD_LOCK_HELD:-}" = "$$" ] &&
+  [[ ${FM_TEST_RUN_STARTED_MS:-} =~ ^[0-9]+$ ]] &&
+  [ -n "${FM_TEST_RUN_STARTED_ISO:-}" ]; then
+  RUN_STARTED_ISO=$FM_TEST_RUN_STARTED_ISO
+  RUN_STARTED_MS=$FM_TEST_RUN_STARTED_MS
+else
+  RUN_STARTED_ISO=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  RUN_STARTED_MS=$(now_ms)
+fi
+unset FM_TEST_RUN_STARTED_MS FM_TEST_RUN_STARTED_ISO
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT" || exit 1
@@ -1922,6 +1942,9 @@ families_for_changed_path() {
     bin/fm-fleet-load.py)
       printf '%s\n' __script__:fm-fleet-capacity.test.sh
       ;;
+    bin/fm-heavy-slots-lib.sh)
+      printf '%s\n' __script__:fm-build-lock.test.sh __script__:fm-fleet-capacity.test.sh
+      ;;
     bin/fm-load-lib.sh)
       printf '%s\n' __script__:fm-fleet-capacity.test.sh __script__:fm-watch-arm.test.sh
       ;;
@@ -2685,6 +2708,22 @@ if [ "$JOBS" -gt 1 ] && [ "$AUTO_CONCURRENCY" -eq 0 ]; then
         || die "--jobs $JOBS refused: family $family is proven only up to $family_jobs_max concurrent workers"
     fi
   done
+fi
+
+# A concurrent run of this suite is one of the heaviest things on a developer
+# machine, so it takes one of the machine's heavy slots (bin/fm-build-lock.py
+# owns the pool) before scheduling anything. A serial run is cheap and stays
+# unlocked, and a nested run reuses its holder's slot rather than taking a
+# second. Re-executing is what makes the slot outlive this process's own
+# scheduling: the wrapper holds it for the replacement and releases it when the
+# last descendant exits. FM_BUILD_LOCK_HELD naming this pid means the wrapper
+# already ran, which is also what stops a second re-exec.
+if [ "$JOBS" -gt 1 ] && [ "${FM_BUILD_LOCK_BYPASS:-}" != 1 ] &&
+  [ "${FM_BUILD_LOCK_HELD:-}" != "$$" ] && [ -x "$ROOT/bin/fm-build-lock.py" ] &&
+  [ -f "$ROOT/bin/fm-test-run.sh" ]; then
+  FM_TEST_RUN_STARTED_ISO=$RUN_STARTED_ISO FM_TEST_RUN_STARTED_MS=$RUN_STARTED_MS \
+    exec "$ROOT/bin/fm-build-lock.py" -- bash "$ROOT/bin/fm-test-run.sh" \
+    ${INVOCATION_ARGV[@]+"${INVOCATION_ARGV[@]}"}
 fi
 
 # Split the run into proven concurrent phases and an unproven remainder.
