@@ -150,7 +150,7 @@ fm_fleet_capacity_secondmate_idle() ( # <meta> [activating-state]
 # FM_FLEET_CAPACITY_ERROR when the local homes or a task record cannot be read.
 # shellcheck disable=SC2034 # the FM_FLEET_CAPACITY_* results are read by bin/fm-spawn.sh.
 fm_fleet_capacity_occupants() {  # <first-state> <own-id> [kind]
-  local first=$1 self=$2 state meta kind backend target label i n=0 gone=, activating_state=
+  local first=$1 self=$2 state meta kind='' backend='' target='' label i n=0 gone=, activating_state=
   local -a metas=() states=() backends=() targets=()
   case "${3:-}" in ship | scout) activating_state=$first ;; esac
   FM_FLEET_CAPACITY_OCCUPANTS=0

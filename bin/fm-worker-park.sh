@@ -166,7 +166,7 @@ park() {
 }
 
 auto() {
-  local line verb pr yolo until=0 now minutes=10 lowered phase recorded_line reason
+  local line verb='' pr yolo until=0 now minutes=10 lowered phase recorded_line reason
   fm_worker_park_load "$META" && return 0
   line=$(status_current_line "$STATE/$ID.status" '')
   fm_meta_get_to phase "$RECORD" phase
