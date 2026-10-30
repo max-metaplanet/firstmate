@@ -6,10 +6,16 @@ set -euo pipefail
 # shellcheck source=bin/fm-t3-home-lib.sh
 . "$ROOT/bin/fm-t3-home-lib.sh"
 work=$(fm_test_tmproot fm-t3-leader)
-helper="$ROOT/bin/fm-t3-leader.sh"
+helper="$work/home/bin/fm-t3-leader.sh"
 mkdir -p "$work/home/state" "$work/home/bin" "$work/home/config" "$work/tools" "$work/base"
 git -C "$work/home" init -q
 for script in "$ROOT"/bin/*.sh; do ln -s "$script" "$work/home/bin/$(basename "$script")"; done
+rm "$work/home/bin/fm-startup-network.sh"
+cat > "$work/home/bin/fm-startup-network.sh" <<'NETWORK'
+#!/usr/bin/env bash
+printf 'network-recovery\n' >> "$TEST_WORK/boot-order"
+NETWORK
+chmod +x "$work/home/bin/fm-startup-network.sh"
 printf 'fixture instructions\n' > "$work/home/AGENTS.md"
 ln -s /bin/bash "$work/tools/claude"
 export FM_T3_BIN="$work/tools/t3" FM_T3_BASE_DIR="$work/base"
@@ -41,11 +47,24 @@ if [ "$1" = recovery ]; then
 fi
 bash "$TEST_HOME/bin/fm-lock.sh" > "$TEST_WORK/lock-$1"
 case "$1" in
-  automatic)
+  automatic|boot)
     printf 'pid=%s\nharness=claude\nprofile=\nbackend=tmux\ntarget=%%fixture\n' "$$" > "$TEST_HOME/state/.lock-runtime"
-    bash "$TEST_HELPER" switch --to t3 --model fixture-model --persisted > "$TEST_WORK/auto-scheduled"
+    if [ "$1" = boot ]; then
+      export FM_T3_LEADER_BOOT=1
+      result=0
+      bash "$TEST_HELPER" boot > "$TEST_WORK/auto-scheduled" 2>&1 || result=$?
+      case "$result" in
+        0) printf 'terminal-recovery\n' >> "$TEST_WORK/boot-order" ;;
+        10) touch "$TEST_WORK/boot-handover" ;;
+        *) exit "$result" ;;
+      esac
+    else
+      bash "$TEST_HELPER" switch --to t3 --model fixture-model --persisted > "$TEST_WORK/auto-scheduled"
+    fi
     ;;
   recovery)
+    [ "${FM_T3_LEADER_BOOT:-0}" != 1 ] || exit 9
+    printf 'restored-terminal-recovery\n' >> "$TEST_WORK/boot-order"
     touch "$TEST_WORK/recovery-ready"
     ;;
   auto-successor)
@@ -65,6 +84,7 @@ case "$1" in
     bash "$TEST_HELPER" confirm "$nonce" > "$TEST_WORK/confirmed"
     bash "$TEST_HELPER" prepare --to terminal --model fixture-model --dry-run > "$TEST_WORK/dry-reverse"
     bash "$TEST_HELPER" prepare --to terminal --model fixture-model --persisted > "$TEST_WORK/reverse-prepared"
+    jq -e '.version == 1 and .location == "t3" and .model == "fixture-model"' "$TEST_HOME/config/leader-preference.json" >/dev/null
     ;;
 esac
 touch "$TEST_WORK/$1-ready"
@@ -186,6 +206,7 @@ pass 'handover requires explicit home and current lock ownership'
 env -u CLAUDE_PID -u CLAUDE_CODE_SESSION_ID "$work/tools/claude" "$work/driver.sh" outgoing > "$work/outgoing-log" 2>&1 &
 old_pid=$!
 await_file "$work/outgoing-ready"
+[ ! -e "$work/home/config/leader-preference.json" ] || fail 'prepare wrote a preference before completed handover'
 assert_contains "$(cat "$work/dry-prepare")" dry-run 'prepare dry-run is explicit'
 assert_contains "$(cat "$work/missing-persisted")" 'before handover' 'conversation persistence must be acknowledged'
 assert_contains "$(cat "$work/duplicate-prepare")" 'unfinished handover' 'pending handover cannot be replaced'
@@ -257,6 +278,7 @@ jq -e '.phase == "confirmed" and .destination == "terminal" and .successorPid !=
 assert_contains "$(cat "$work/terminal-args")" "$work/home" 'terminal launch starts in the Firstmate home'
 bash "$helper" status > "$work/status"
 if jq -e 'has("nonce")' "$work/status" >/dev/null; then fail 'status exposes private handover nonce'; fi
+[ ! -e "$work/home/config/leader-preference.json" ] || fail 'completed reverse handover retained T3 preference'
 pass 'reverse handover waits for T3 leader exit and confirms a new terminal Claude lock owner'
 
 printf '999999999\n' > "$work/home/state/.lock"
@@ -297,10 +319,50 @@ chmod +x "$work/tools/tmux" "$work/tools/recovery-claude"
 export FM_T3_LEADER_CLAUDE_BIN="$work/tools/recovery-claude"
 export FM_T3_LEADER_DELAY=1 FM_T3_LEADER_EXIT_TIMEOUT=10 FM_T3_LEADER_CONFIRM_TIMEOUT=3
 
+cat > "$work/tools/systemctl" <<'SYSTEMCTL'
+#!/usr/bin/env bash
+[ "$*" = '--user is-active --quiet t3-lima.service' ] || exit 9
+printf 'service-check\n' >> "$TEST_WORK/boot-order"
+[ ! -e "$TEST_WORK/service-down" ]
+SYSTEMCTL
+chmod +x "$work/tools/systemctl"
+
+for scenario in absent service-down switch-failure malformed; do
+  rm -f "$work/home/state/.t3-leader-handover.json" "$work/boot-order" "$work/boot-ready" "$work/auto-scheduled" "$work/boot-handover"
+  if [ "$scenario" != absent ]; then
+    printf '{"version":1,"location":"t3","model":"fixture-model"}\n' > "$work/home/config/leader-preference.json"
+  fi
+  case "$scenario" in
+    service-down) touch "$work/service-down" ;;
+    switch-failure) rm "$work/home/config/supervision-host-off" ;;
+    malformed) printf 'invalid\n' > "$work/home/config/leader-preference.json" ;;
+  esac
+  env -u CLAUDE_PID -u CLAUDE_CODE_SESSION_ID "$work/tools/claude" "$work/driver.sh" boot > "$work/boot-log" 2>&1 &
+  old_pid=$!
+  await_file "$work/boot-ready"
+  [ ! -e "$work/boot-handover" ] || fail 'fallback scheduled a handover'
+  [ ! -e "$work/home/state/.t3-leader-handover.json" ] || fail 'fallback prepared a handover'
+  assert_contains "$(cat "$work/boot-order")" 'network-recovery' 'fallback resumes deferred startup recovery'
+  assert_contains "$(cat "$work/boot-order")" 'terminal-recovery' 'fallback continues terminal recovery'
+  if [ "$scenario" = absent ]; then
+    assert_not_contains "$(cat "$work/boot-order")" 'service-check' 'no preference must not query systemd'
+  else
+    assert_contains "$(cat "$work/auto-scheduled")" 'preferred leader fallback' 'fallback explains the failure'
+  fi
+  kill "$old_pid"
+  wait "$old_pid" 2>/dev/null || true
+  old_pid=''
+  rm -f "$work/service-down" "$work/home/config/leader-preference.json"
+  touch "$work/home/config/supervision-host-off"
+  pass "boot $scenario continues terminal recovery"
+done
+
 for scenario in existing-project project-failure unconfirmed; do
   rm -f "$work/home/state/.t3-leader-handover.json" "$work/auto-scheduled" "$work/automatic-ready" "$work/recovery-ready" "$work/t3-calls"
   touch "$work/$scenario"
-  env -u CLAUDE_PID -u CLAUDE_CODE_SESSION_ID "$work/tools/claude" "$work/driver.sh" automatic > "$work/automatic-log" 2>&1 &
+  printf '{"version":1,"location":"t3","model":"fixture-model"}\n' > "$work/home/config/leader-preference.json"
+  rm -f "$work/boot-order" "$work/boot-handover" "$work/boot-ready"
+  env -u CLAUDE_PID -u CLAUDE_CODE_SESSION_ID "$work/tools/claude" "$work/driver.sh" boot > "$work/automatic-log" 2>&1 &
   old_pid=$!
   await_file "$work/auto-scheduled"
   if [ "$scenario" = existing-project ]; then
@@ -311,6 +373,9 @@ for scenario in existing-project project-failure unconfirmed; do
   wait "$old_pid" 2>/dev/null || true
   old_pid=''
   await_file "$work/recovery-ready"
+  assert_not_contains "$(cat "$work/boot-order")" 'network-recovery' 'boot must defer secondmate recovery until successor selection'
+  assert_not_contains "$(cat "$work/boot-order")" $'\nterminal-recovery' 'boot must not recover while handover is scheduled'
+  assert_contains "$(cat "$work/boot-order")" 'restored-terminal-recovery' 'failed switch restores terminal recovery'
   successor_pid=$(cat "$work/recovery-pid")
   [ "$(cat "$work/home/state/.lock")" = "$successor_pid" ] || fail 'recovery did not restore the terminal lock owner'
   assert_contains "$(cat "$work/tmux-recovery-args")" '%fixture' 'recovery targets the original tmux pane'
@@ -335,7 +400,9 @@ done
 # successor rather than running recovery.
 rm -f "$work/home/state/.t3-leader-handover.json" "$work/auto-scheduled" "$work/tmux-recovery-args"
 touch "$work/auto-confirm" "$work/existing-project"
-env -u CLAUDE_PID -u CLAUDE_CODE_SESSION_ID "$work/tools/claude" "$work/driver.sh" automatic > "$work/automatic-log" 2>&1 &
+printf '{"version":1,"location":"t3","model":"fixture-model"}\n' > "$work/home/config/leader-preference.json"
+rm -f "$work/boot-order" "$work/boot-handover" "$work/boot-ready"
+env -u CLAUDE_PID -u CLAUDE_CODE_SESSION_ID "$work/tools/claude" "$work/driver.sh" boot > "$work/automatic-log" 2>&1 &
 old_pid=$!
 await_file "$work/auto-scheduled"
 wait "$old_pid" 2>/dev/null || true
@@ -344,6 +411,8 @@ await_file "$work/auto-successor-ready"
 successor_pid=$(cat "$work/auto-successor-pid")
 jq -e '.phase == "confirmed"' "$work/home/state/.t3-leader-handover.json" >/dev/null || fail 'automatic handover never confirmed'
 [ ! -e "$work/tmux-recovery-args" ] || fail 'confirmed handover ran recovery'
+[ "$(cat "$work/boot-order")" = service-check ] || fail 'boot recovered workers before T3 selection'
+jq -e '.model == "fixture-model" and .location == "t3"' "$work/home/config/leader-preference.json" >/dev/null
 pass 'T3 successor without routing env resolves the primary home and confirms without recovery'
 kill "$successor_pid"
 successor_pid=''

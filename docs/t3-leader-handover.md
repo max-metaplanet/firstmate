@@ -47,6 +47,21 @@ Read the tool's status after activation and require the confirmed phase.
 An attempted launch that has not confirmed requires inspection of the saved evidence and exact thread before another T3 activation.
 The previous leader's records, workers, and worktrees remain available for recovery.
 
+## Restore the preferred leader after boot
+
+A completed handover records the [preferred leader location](configuration.md#preferred-leader-location-configleader-preferencejson).
+For a terminal boot leader, export the boot flag documented by [`bin/fm-t3-leader.sh --help`](../bin/fm-t3-leader.sh) before starting Claude so native startup hooks defer secondmate recovery until leader selection.
+After the session-start digest and verified lock ownership, invoke the tool's boot command before recovering workers or secondmates.
+Follow its exit status: a scheduled handover ends the terminal turn, while terminal fallback resumes the existing deferred startup stage and permits recovery.
+The T3 successor confirms ownership and recovers the fleet from durable records.
+
+The boot command requires `t3-lima.service` to be active before requesting a switch.
+It never starts or restarts the service.
+An inactive service or a refused switch leaves the terminal leader in charge and reports the reason.
+A later launch or confirmation failure uses the existing terminal restoration path, which resumes without the boot flag to avoid another automatic attempt.
+The boot process also needs the handover tool's normal T3 environment and supervision-host opt-out.
+This boot mode does not change the live-verification limits below.
+
 ## View-only threads
 
 Primary-home T3 threads default to read-only, including threads in a project whose title says view-only.
