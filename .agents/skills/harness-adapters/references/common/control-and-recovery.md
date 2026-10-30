@@ -9,6 +9,7 @@ Conversation and harness-native skill invocation use `../../../bin/fm-send.sh`.
 `../../../docs/agent-control.md` owns the data-plane split, and `../../../bin/fm-control-lib.sh` owns executable capabilities.
 Tool-reference exit and interrupt values are empirical records, not keys to improvise; a new adapter remains uncontrollable until they land in that owner.
 Let the control plane verify postconditions.
+For a recorded T3 endpoint, consult the [native T3 limits](../../../../../docs/t3-backend.md#supported-limits) before selecting lifecycle or harness-parser operations.
 
 ## Trust and skill submission
 

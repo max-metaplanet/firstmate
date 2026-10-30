@@ -1482,12 +1482,13 @@ if ! pane_readable "$BACKEND_TARGET"; then
   esac
 fi
 
-# Secondmates idle on their own watcher (idle pane = healthy), so the busy
-# state is not meaningful for them; read their state from the status log only.
+# Terminal secondmates idle on their own watcher (idle pane = healthy), so
+# their state comes from the status log. T3 has a native per-thread run state,
+# which answers current activity without claiming recovery-grade process life.
 # Only an exact busy verdict reports working here, and only an exact idle
 # verdict permits the status-log fallback below. Missing, malformed, stale, or
 # unverified semantic state remains unknown.
-if [ "$KIND" != secondmate ]; then
+if [ "$KIND" != secondmate ] || [ "$TASK_BACKEND" = t3 ]; then
   CREW_PANE_TAIL=$(crew_pane_tail "$BACKEND_TARGET")
   BUSY_VERDICT=$(crew_busy_verdict "$BACKEND_TARGET" "$CREW_PANE_TAIL")
   # An exact busy verdict is read first and answers on its own: a pane that is

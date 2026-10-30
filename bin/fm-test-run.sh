@@ -427,7 +427,7 @@ family_for_basename() {
       ;;
     fm-afk-pi-herdr-return-e2e.test.sh|\
     fm-bearings-board-lavish-live-e2e.test.sh|\
-    fm-claude-stop-autoarm-live-e2e.test.sh|\
+    fm-claude-stop-autoarm-live-e2e.test.sh|fm-t3-live-e2e.test.sh|fm-t3-leader-live-e2e.test.sh|\
     fm-cmux-claude-composer-live-e2e.test.sh|\
     fm-composer-matrix-live-e2e.test.sh|\
     fm-composer-codex-idle-live-e2e.test.sh|\
@@ -462,6 +462,7 @@ family_for_basename() {
       printf '%s\n' live-harness-optin
       ;;
     fm-backend-herdr.test.sh|fm-backend-tmux-smoke.test.sh|fm-backend.test.sh|\
+    fm-t3.test.sh|fm-backend-t3.test.sh|fm-spawn-t3.test.sh|fm-t3-leader.test.sh|\
     fm-tmux-agent-liveness.test.sh|\
     fm-control.test.sh|fm-control-relaunch.test.sh|\
     fm-herdr-session-cleanup.test.sh|fm-send-resolve-key.test.sh|fm-send-strict.test.sh|\
@@ -973,6 +974,11 @@ tests/fm-supervision-host-park.test.sh 300000
 tests/fm-supervision-host-stop-hook.test.sh 334000
 tests/fm-supervision-host.test.sh 434000
 tests/fm-t3.test.sh 303
+tests/fm-backend-t3.test.sh 20000
+tests/fm-spawn-t3.test.sh 120000
+tests/fm-t3-leader.test.sh 90000
+tests/fm-t3-live-e2e.test.sh 120
+tests/fm-t3-leader-live-e2e.test.sh 120
 tests/fm-tangle-guard.test.sh 8501
 tests/fm-task-delivery.test.sh 38389
 tests/fm-task-inbox.test.sh 75594
@@ -1741,8 +1747,13 @@ families_for_changed_path() {
     bin/fm-procevent-quota.sh)
       printf '%s\n' "__script__:fm-procevent-quota.test.sh"
       ;;
-    bin/fm-t3.sh)
-      printf '%s\n' '__script__:fm-t3.test.sh'
+    bin/fm-t3.sh|bin/backends/t3.sh|bin/fm-t3-home-lib.sh)
+      printf '%s\n' '__script__:fm-t3.test.sh' '__script__:fm-backend-t3.test.sh' '__script__:fm-spawn-t3.test.sh'
+      printf '%s\n' '__script__:fm-t3-live-e2e.test.sh'
+      printf '%s\n' '__script__:fm-t3-leader.test.sh' '__script__:fm-t3-leader-live-e2e.test.sh'
+      ;;
+    bin/fm-t3-leader.sh)
+      printf '%s\n' '__script__:fm-t3-leader.test.sh' '__script__:fm-t3-leader-live-e2e.test.sh'
       ;;
     bin/fm-boat-run.sh|bin/fm-boat-run.py|tests/fixtures/boat-cli.py)
       printf '%s\n' '__script__:fm-boat-run.test.sh'
