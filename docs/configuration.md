@@ -1526,7 +1526,9 @@ It lives in the machine's root Firstmate home and holds one positive integer; bl
 6
 ```
 
-Every running ship, scout, and secondmate in the root home or any local secondmate home holds a place, including one waiting on a recorded PR; the supervising lead does not.
+Every running ship and scout in the root home or any local secondmate home holds a place, including one waiting on a recorded PR; the supervising lead does not.
+A running secondmate holds a place only while its home has in-flight work; a readable home with no in-flight backlog rows and no worker metadata releases that supervisor's place, while its own crew still counts normally.
+Missing or unreadable secondmate inventory keeps its place, as do incomplete exits and launch reservations.
 A place held under a fleet grant raises the effective fleet cap by one while it is held; "Ad hoc slots" below owns that grant.
 A task record whose agent is no longer running holds no place, and one whose agent cannot be checked does.
 Verified worker parking and resume priority are owned by [`bin/fm-worker-park.sh`](../bin/fm-worker-park.sh).
