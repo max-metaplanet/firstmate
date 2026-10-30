@@ -477,6 +477,18 @@ This requires Treehouse 3.1.3 or newer; older versions retain their copies and r
 The cap applies to the Treehouse provider used by tmux, Herdr, zellij, and cmux, independently of the worker harness.
 Orca manages its own worktrees and does not use this pool cap.
 
+## Preferred leader location (config/leader-preference.json)
+
+The optional primary-home `config/leader-preference.json` records the preferred leader location across VM restarts.
+A confirmed handover to T3 atomically writes `{"version":1,"location":"t3","model":"MODEL"}` with the confirmed Claude model.
+A confirmed reverse handover removes it; absence means the terminal boot leader keeps the lead.
+Prepare, dry-run, failed activation, and terminal restoration do not change the preference.
+T3 reachability alone never establishes a preference.
+Malformed or symlinked preferences preserve terminal leadership and report a boot fallback.
+
+[`bin/fm-t3-leader.sh`](../bin/fm-t3-leader.sh) owns the boot decision, command outcomes, and startup environment flag.
+The [leader handover guide](t3-leader-handover.md) describes boot integration and its current operating limits.
+
 ## Runtime backend (config/backend / FM_BACKEND)
 
 For spawn-capable adapters, the runtime session-provider backend controls where task windows/endpoints are created, captured, sent to, watched, and killed.

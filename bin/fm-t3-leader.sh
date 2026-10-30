@@ -8,6 +8,16 @@
 #   fm-t3-leader.sh activate [--dry-run]
 #   fm-t3-leader.sh confirm NONCE
 #   fm-t3-leader.sh status
+#   fm-t3-leader.sh boot
+#
+# Boot runs after session start in the lock-owning terminal boot leader, before
+# recovery. With config/leader-preference.json it checks t3-lima.service and
+# schedules the recorded T3 model. Exit 10 means end the turn without recovery;
+# exit 0 means continue terminal recovery (diagnostics explain any fallback).
+# Other failures refuse recovery until ownership is reconciled. Set
+# FM_T3_LEADER_BOOT=1 on the boot Claude process to defer startup network recovery
+# until this decision. Fallback starts that existing stage; restored sessions
+# and successors start normally without the flag. Boot never starts services.
 #
 # Switch runs inside the current Claude terminal leader in tmux. Persist open
 # records, then switch --to t3 --model MODEL --persisted: it returns immediately
@@ -61,6 +71,7 @@ if [ -e "$home/.fm-secondmate-home" ] || [ -L "$home/.fm-secondmate-home" ]; the
 fi
 state="$home/state"
 record="$state/.t3-leader-handover.json"
+preference="$home/config/leader-preference.json"
 fm_primary_scope_matches "$home" "$state" || die 'leader handover requires an independent Firstmate home, not a task worktree'
 # The home and its existing state directory are verified before importing the
 # wake library, whose normal source-time initialization may create state.
@@ -86,7 +97,7 @@ while [ "$#" -gt 0 ]; do
 done
 case "$verb" in
   prepare|switch) ;;
-  activate|status|confirm|complete)
+  activate|status|confirm|complete|boot)
     [ -z "$destination$model" ] && [ "$persisted" -eq 0 ] || die 'destination/model/persisted apply only to prepare'
     ;;
   *) die "unknown command: $verb" ;;
@@ -125,6 +136,28 @@ check_departed() {
 }
 
 case "$verb" in
+  boot)
+    [ "$dry" -eq 0 ] || die 'boot has no dry-run mode'
+    fm_session_lock_owned_by_self "$state" || die 'boot must run in the current lock-owning leader'
+    if [ -e "$preference" ] || [ -L "$preference" ]; then
+      if [ -L "$home/config" ] || [ -L "$preference" ] || [ ! -f "$preference" ] \
+        || ! model=$(jq -er 'select(.version == 1 and .location == "t3") | .model | select(type == "string" and length > 0)' "$preference"); then
+        printf 'preferred leader fallback: invalid config/leader-preference.json; terminal leader continues recovery\n' >&2
+      elif ! systemctl --user is-active --quiet t3-lima.service; then
+        printf 'preferred leader fallback: t3-lima.service is not active; terminal leader continues recovery\n' >&2
+      elif bash "$SCRIPT_DIR/fm-t3-leader.sh" switch --to t3 --model "$model" --persisted; then
+        printf 'preferred leader handover scheduled; end this turn before worker or secondmate recovery\n'
+        exit 10
+      else
+        printf 'preferred leader fallback: T3 switch failed; terminal leader continues recovery\n' >&2
+      fi
+    else
+      printf 'no preferred T3 leader; terminal leader continues recovery\n'
+    fi
+    if [ "${FM_T3_LEADER_BOOT:-0}" = 1 ]; then
+      "$SCRIPT_DIR/fm-startup-network.sh" start --locked 1 --harvest-pid $$
+    fi
+    ;;
   status)
     read_record
     jq 'del(.nonce)' "$record"
@@ -155,7 +188,7 @@ case "$verb" in
     bash "$SCRIPT_DIR/fm-t3-leader.sh" prepare --to t3 --model "$model" --persisted
     claim_record
     read_record
-    printf -v resume 'cd %q && exec env -u CLAUDECODE -u CLAUDE_PID -u CLAUDE_CODE_SESSION_ID FM_HOME=%q CLAUDE_CONFIG_DIR=%q %q --resume %q %q' \
+    printf -v resume 'cd %q && exec env -u FM_T3_LEADER_BOOT -u CLAUDECODE -u CLAUDE_PID -u CLAUDE_CODE_SESSION_ID FM_HOME=%q CLAUDE_CONFIG_DIR=%q %q --resume %q %q' \
       "$home" "$home" "${CLAUDE_CONFIG_DIR:-}" "$claude" "$session" 'The automatic T3 handover failed. Resume Firstmate from durable records; verify normal session lock ownership and report the handover record before supervising.'
     replace_record --arg pane "$pane" --arg session "$session" --arg resume "$resume" '. + {automatic:true,pane:$pane,outgoingSession:$session,resumeCommand:$resume}'
     nonce=$(jq -r .nonce "$record")
@@ -296,7 +329,7 @@ case "$verb" in
     check_departed
     nonce=$(jq -r '.nonce' "$record")
     printf -v confirm_command 'FM_HOME=%q bash %q confirm %q' "$home" "$SCRIPT_DIR/fm-t3-leader.sh" "$nonce"
-    printf -v startup_command 'FM_HOME=%q FM_T3_LEADER_HANDOVER=%q bash bin/fm-session-start.sh' "$home" "$nonce"
+    printf -v startup_command 'env -u FM_T3_LEADER_BOOT FM_HOME=%q FM_T3_LEADER_HANDOVER=%q bash bin/fm-session-start.sh' "$home" "$nonce"
     prompt="Continue as Firstmate in $home using its durable records. Your native SessionStart hooks must acquire this home's normal session lock before you do any work. Verify that the startup digest names exactly $home as its Firstmate home; if it names another home, remain read-only and report the mismatch without touching either fleet. If startup reports a foreign lock, remain read-only and report it. If the startup digest is absent or reports T3 VIEW-ONLY, run $startup_command exactly once and read it. This nonce authorizes only this deliberate Claude leader transition. After verified ownership in that exact home, run $confirm_command to confirm this deliberate handover, then resume the emitted supervision protocol."
     if [ "$destination" = t3 ]; then
       [ -n "${FM_T3_BASE_DIR:-}" ] || die 'FM_T3_BASE_DIR must name the running T3 data directory'
@@ -331,7 +364,7 @@ case "$verb" in
       cleanup
       locked=0
       cd "$home"
-      exec env -u CLAUDECODE -u CLAUDE_PID -u CLAUDE_CODE_SESSION_ID -u FM_TASK_ID -u FM_ROOT_OVERRIDE -u FM_STATE_OVERRIDE -u FM_DATA_OVERRIDE -u FM_CONFIG_OVERRIDE FM_HOME="$home" "$binary" --model "$model" "$prompt"
+      exec env -u FM_T3_LEADER_BOOT -u CLAUDECODE -u CLAUDE_PID -u CLAUDE_CODE_SESSION_ID -u FM_TASK_ID -u FM_ROOT_OVERRIDE -u FM_STATE_OVERRIDE -u FM_DATA_OVERRIDE -u FM_CONFIG_OVERRIDE FM_HOME="$home" "$binary" --model "$model" "$prompt"
     fi
     ;;
   confirm)
@@ -347,6 +380,18 @@ case "$verb" in
     ! kill -0 "$check_outgoing" 2>/dev/null || die 'outgoing leader still exists'
     harness=$(FM_HOME="$home" "$SCRIPT_DIR/fm-harness.sh") || die 'cannot identify successor harness'
     [ "$harness" = claude ] || die 'only a Claude successor may confirm handover'
+    [ ! -L "$home/config" ] && [ ! -L "$preference" ] || die 'leader preference must not be a symlink'
+    if [ "$(jq -r .destination "$record")" = t3 ]; then
+      mkdir -p "$home/config"
+      temporary=$(mktemp "$home/config/.leader-preference.XXXXXX")
+      if ! jq '{version:1,location:"t3",model:.model}' "$record" > "$temporary" \
+        || ! mv -f "$temporary" "$preference"; then
+        rm -f "$temporary"
+        die 'cannot save leader preference'
+      fi
+    else
+      rm -f "$preference"
+    fi
     replace_record --argjson successor "$successor" --arg session "$(fm_session_lock_recorded_session_id "$state" || true)" '. + {phase:"confirmed",successorPid:$successor,successorSession:$session}'
     printf 'handover confirmed: Claude successor pid %s owns %s\n' "$successor" "$home"
     ;;

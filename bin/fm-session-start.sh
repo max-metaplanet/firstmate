@@ -40,6 +40,8 @@
 #                       handoff retry, X-mode artifact writes, fleet sync) also run only when
 #                       locked; the four network sweeps run in the deferred
 #                       stage rather than this synchronous bootstrap section.
+#                       FM_T3_LEADER_BOOT=1 with a leader preference defers that
+#                       stage until fm-t3-leader.sh boot selects the leader.
 #   3. wake-drain     - presents durable wakes and advances recovery handling
 #                       state, so it only runs when locked. The local bounded
 #                       inactive-outcome startup scan runs in the deferred worker.
@@ -762,8 +764,14 @@ if [ "$READ_ONLY" -eq 0 ]; then
   # steer, or merge anyway, so it has no action left for an auth verdict to gate.
   NETWORK_STAGE_LOCKED=1
   [ "$REEMIT" -eq 0 ] || NETWORK_STAGE_LOCKED=0
-  "$SCRIPT_DIR/fm-startup-network.sh" start \
-    --locked "$NETWORK_STAGE_LOCKED" --harvest-pid $$ >/dev/null 2>&1 || true
+  T3_BOOT_DEFERRED=0
+  if [ "${FM_T3_LEADER_BOOT:-0}" = 1 ] \
+    && { [ -e "$CONFIG/leader-preference.json" ] || [ -L "$CONFIG/leader-preference.json" ]; }; then
+    T3_BOOT_DEFERRED=1
+  else
+    "$SCRIPT_DIR/fm-startup-network.sh" start \
+      --locked "$NETWORK_STAGE_LOCKED" --harvest-pid $$ >/dev/null 2>&1 || true
+  fi
 fi
 
 # --- 2. bootstrap --------------------------------------------------------
@@ -1049,6 +1057,8 @@ if [ "$READ_ONLY" -eq 1 ]; then
   printf 'secondmate liveness and convergence, and pending handoff delivery were not run.\n'
   printf 'They need the fleet lock, and this session must not spawn, steer, or merge, so it\n'
   printf 'has no action they would gate. The session holding the lock runs them.\n'
+elif [ "${T3_BOOT_DEFERRED:-0}" = 1 ]; then
+  printf 'deferred for preferred leader selection; run fm-t3-leader.sh boot before any recovery.\n'
 else
   "$SCRIPT_DIR/fm-startup-network.sh" harvest --pid $$ 2>&1 || true
 fi

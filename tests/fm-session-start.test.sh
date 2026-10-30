@@ -3066,6 +3066,26 @@ EOF
   pass "session start rejects Pi loaded markers from previous sessions"
 }
 
+test_t3_boot_defers_recovery_until_leader_selection() {
+  local rec root home fakebin out
+  rec=$(new_world t3-boot-defer)
+  IFS='|' read -r root home fakebin <<EOF
+$rec
+EOF
+  make_fake_toolchain "$fakebin"
+  make_fake_ps_claude "$fakebin"
+  printf '{"version":1,"location":"t3","model":"fixture-model"}\n' > "$home/config/leader-preference.json"
+  out=$(FM_T3_LEADER_BOOT=1 FM_FAKE_HARNESS_PID=$$ run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
+  assert_contains "$out" 'deferred for preferred leader selection' 'boot did not report deferred recovery'
+  assert_absent "$home/state/.startup-network.status" 'boot started secondmate recovery before leader selection'
+  rm "$home/config/leader-preference.json"
+  out=$(FM_T3_LEADER_BOOT=1 FM_FAKE_HARNESS_PID=$$ run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
+  assert_not_contains "$out" 'deferred for preferred leader selection' 'absent preference changed normal startup'
+  [ -f "$home/state/.startup-network.status" ] || fail "absent preference did not start normal recovery: $out"
+  wait_for_network_stage "$home" "$root" 60 || fail 'normal startup recovery did not finish'
+  pass 'session start defers preferred T3 boot recovery and preserves the absent-preference path'
+}
+
 test_startup_restores_task_lease_only_when_locked() {
   local rec root home fakebin slot pool out holder_pid
   rec=$(new_world treehouse-reboot)
@@ -3099,6 +3119,7 @@ EOF
   pass "startup restores a parked task's durable lease only after acquiring the session lock"
 }
 
+test_t3_boot_defers_recovery_until_leader_selection
 test_startup_restores_task_lease_only_when_locked
 test_context_digest_absent_empty_present
 test_lock_refusal_read_only_path
