@@ -1,0 +1,67 @@
+[
+  {
+    "case": "third-party-fallback",
+    "result": "pass",
+    "generated_contract": "~/.no-mistakes/evidence/01M69MFQ8X8XAHRAZ9PNXNTDR2/third-party-fallback.md"
+  },
+  {
+    "case": "third-party-explicit",
+    "result": "pass",
+    "generated_contract": "~/.no-mistakes/evidence/01M69MFQ8X8XAHRAZ9PNXNTDR2/third-party-explicit.md"
+  },
+  {
+    "case": "third-party-real-ticket",
+    "result": "pass",
+    "generated_contract": "~/.no-mistakes/evidence/01M69MFQ8X8XAHRAZ9PNXNTDR2/third-party-real-ticket.md"
+  },
+  {
+    "case": "owned",
+    "result": "pass",
+    "generated_contract": "~/.no-mistakes/evidence/01M69MFQ8X8XAHRAZ9PNXNTDR2/owned.md"
+  },
+  {
+    "case": "owner-prefix-adversary",
+    "result": "pass",
+    "generated_contract": "~/.no-mistakes/evidence/01M69MFQ8X8XAHRAZ9PNXNTDR2/owner-prefix-adversary.md"
+  },
+  {
+    "case": "fork-to-third-party",
+    "result": "pass",
+    "generated_contract": "~/.no-mistakes/evidence/01M69MFQ8X8XAHRAZ9PNXNTDR2/fork-to-third-party.md"
+  },
+  {
+    "case": "outside-origin-owned-upstream",
+    "result": "pass",
+    "generated_contract": "~/.no-mistakes/evidence/01M69MFQ8X8XAHRAZ9PNXNTDR2/outside-origin-owned-upstream.md"
+  },
+  {
+    "case": "missing-declaration",
+    "result": "pass",
+    "generated_contract": "~/.no-mistakes/evidence/01M69MFQ8X8XAHRAZ9PNXNTDR2/missing-declaration.md"
+  },
+  {
+    "case": "malformed-declaration",
+    "result": "pass",
+    "generated_contract": "~/.no-mistakes/evidence/01M69MFQ8X8XAHRAZ9PNXNTDR2/malformed-declaration.md"
+  },
+  {
+    "case": "missing-remote",
+    "result": "pass",
+    "generated_contract": "~/.no-mistakes/evidence/01M69MFQ8X8XAHRAZ9PNXNTDR2/missing-remote.md"
+  },
+  {
+    "case": "promote-third-party",
+    "result": "pass",
+    "generated_contract": "~/.no-mistakes/evidence/01M69MFQ8X8XAHRAZ9PNXNTDR2/promote-third-party.md"
+  },
+  {
+    "case": "promote-owned",
+    "result": "pass",
+    "generated_contract": "~/.no-mistakes/evidence/01M69MFQ8X8XAHRAZ9PNXNTDR2/promote-owned.md"
+  },
+  {
+    "case": "promote-real-ticket",
+    "result": "pass",
+    "generated_contract": "~/.no-mistakes/evidence/01M69MFQ8X8XAHRAZ9PNXNTDR2/promote-real-ticket.md"
+  }
+]

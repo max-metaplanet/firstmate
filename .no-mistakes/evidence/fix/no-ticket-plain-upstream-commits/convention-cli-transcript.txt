@@ -1,0 +1,152 @@
+CASE third-party-fallback
+origin=https://github.com/vendor/upstream.git
+upstream=None
+declaration='github.com/our-org\n'
+command=~/.no-mistakes/worktrees/c0c4fcacb05a/01M69MFQ8X8XAHRAZ9PNXNTDR2/bin/fm-brief.sh scenario-third-party-fallback sample --mode no-mistakes --ticket no-ticket --commit-type fix
+exit=0
+Ship branch: fix/no-ticket-scenario-third-party-fallback
+Ticket: no-ticket
+Every commit subject on this branch and the pull request title must read `fix(<scope>): <message>`, where `<scope>` names the area changed and `<message>` is a short imperative description.
+The pipeline's PR step drafts a conventional title like `fix(<scope>): <message>`, which is already the format this project requires: never add a ticket segment to it.
+Read the title the moment the run has a PR URL - from `no-mistakes axi status` as soon as the PR step has opened the PR, before the CI wait - and edit it ONCE only if it carries a ticket segment or a pipeline-internal `no-mistakes(<step>): ...` subject, so it reads `fix(<scope>): <message>`.
+The pull request title is therefore the one subject you control on this upstream, and it is what a squash merge lands; leave the published branch's pipeline commits alone, and never rewrite an already-published branch.
+
+CASE third-party-explicit
+origin=https://github.com/vendor/upstream.git
+upstream=None
+declaration='github.com/our-org\n'
+command=~/.no-mistakes/worktrees/c0c4fcacb05a/01M69MFQ8X8XAHRAZ9PNXNTDR2/bin/fm-brief.sh scenario-third-party-explicit sample --mode no-mistakes --ticket no-ticket --commit-type fix --project <disposable>/third-party-explicit/projects/sample
+exit=0
+Ship branch: fix/no-ticket-scenario-third-party-explicit
+Ticket: no-ticket
+Every commit subject on this branch and the pull request title must read `fix(<scope>): <message>`, where `<scope>` names the area changed and `<message>` is a short imperative description.
+The pipeline's PR step drafts a conventional title like `fix(<scope>): <message>`, which is already the format this project requires: never add a ticket segment to it.
+Read the title the moment the run has a PR URL - from `no-mistakes axi status` as soon as the PR step has opened the PR, before the CI wait - and edit it ONCE only if it carries a ticket segment or a pipeline-internal `no-mistakes(<step>): ...` subject, so it reads `fix(<scope>): <message>`.
+The pull request title is therefore the one subject you control on this upstream, and it is what a squash merge lands; leave the published branch's pipeline commits alone, and never rewrite an already-published branch.
+
+CASE third-party-real-ticket
+origin=https://github.com/vendor/upstream.git
+upstream=None
+declaration='github.com/our-org\n'
+command=~/.no-mistakes/worktrees/c0c4fcacb05a/01M69MFQ8X8XAHRAZ9PNXNTDR2/bin/fm-brief.sh scenario-third-party-real-ticket sample --mode no-mistakes --ticket ENG-42 --commit-type fix
+exit=0
+Ship branch: fix/ENG-42-scenario-third-party-real-ticket
+Ticket: ENG-42
+Before you start the work, read ticket ENG-42 in full: its description, every comment, its subtasks, its linked tasks, and its attachments.
+Every commit subject on this branch and the pull request title must read `fix(<scope>): <message>`, where `<scope>` names the area changed and `<message>` is a short imperative description.
+The pipeline's PR step drafts a conventional title like `fix(<scope>): <message>`, which is already the format this project requires: never add a ticket segment to it.
+Read the title the moment the run has a PR URL - from `no-mistakes axi status` as soon as the PR step has opened the PR, before the CI wait - and edit it ONCE only if it carries a ticket segment or a pipeline-internal `no-mistakes(<step>): ...` subject, so it reads `fix(<scope>): <message>`.
+The pull request title is therefore the one subject you control on this upstream, and it is what a squash merge lands; leave the published branch's pipeline commits alone, and never rewrite an already-published branch.
+
+CASE owned
+origin=git@github.com:OUR-ORG/ours.git
+upstream=None
+declaration='github.com/our-org\n'
+command=~/.no-mistakes/worktrees/c0c4fcacb05a/01M69MFQ8X8XAHRAZ9PNXNTDR2/bin/fm-brief.sh scenario-owned sample --mode no-mistakes --ticket no-ticket --commit-type fix
+exit=0
+Ship branch: fix/no-ticket-scenario-owned
+Ticket: no-ticket
+Every commit subject on this branch and the pull request title must read `fix/no-ticket(<scope>): <message>`, where `<scope>` names the area changed and `<message>` is a short imperative description.
+
+CASE owner-prefix-adversary
+origin=https://github.com/our-org-extra/upstream.git
+upstream=None
+declaration='github.com/our-org\n'
+command=~/.no-mistakes/worktrees/c0c4fcacb05a/01M69MFQ8X8XAHRAZ9PNXNTDR2/bin/fm-brief.sh scenario-owner-prefix-adversary sample --mode no-mistakes --ticket no-ticket --commit-type fix
+exit=0
+Ship branch: fix/no-ticket-scenario-owner-prefix-adversary
+Ticket: no-ticket
+Every commit subject on this branch and the pull request title must read `fix(<scope>): <message>`, where `<scope>` names the area changed and `<message>` is a short imperative description.
+The pipeline's PR step drafts a conventional title like `fix(<scope>): <message>`, which is already the format this project requires: never add a ticket segment to it.
+Read the title the moment the run has a PR URL - from `no-mistakes axi status` as soon as the PR step has opened the PR, before the CI wait - and edit it ONCE only if it carries a ticket segment or a pipeline-internal `no-mistakes(<step>): ...` subject, so it reads `fix(<scope>): <message>`.
+The pull request title is therefore the one subject you control on this upstream, and it is what a squash merge lands; leave the published branch's pipeline commits alone, and never rewrite an already-published branch.
+
+CASE fork-to-third-party
+origin=https://github.com/our-org/fork.git
+upstream=git@github.com:vendor/upstream.git
+declaration='github.com/our-org\n'
+command=~/.no-mistakes/worktrees/c0c4fcacb05a/01M69MFQ8X8XAHRAZ9PNXNTDR2/bin/fm-brief.sh scenario-fork-to-third-party sample --mode no-mistakes --ticket no-ticket --commit-type fix
+exit=0
+Ship branch: fix/no-ticket-scenario-fork-to-third-party
+Ticket: no-ticket
+Every commit subject on this branch and the pull request title must read `fix(<scope>): <message>`, where `<scope>` names the area changed and `<message>` is a short imperative description.
+The pipeline's PR step drafts a conventional title like `fix(<scope>): <message>`, which is already the format this project requires: never add a ticket segment to it.
+Read the title the moment the run has a PR URL - from `no-mistakes axi status` as soon as the PR step has opened the PR, before the CI wait - and edit it ONCE only if it carries a ticket segment or a pipeline-internal `no-mistakes(<step>): ...` subject, so it reads `fix(<scope>): <message>`.
+The pull request title is therefore the one subject you control on this upstream, and it is what a squash merge lands; leave the published branch's pipeline commits alone, and never rewrite an already-published branch.
+
+CASE outside-origin-owned-upstream
+origin=https://github.com/vendor/upstream.git
+upstream=https://github.com/our-org/upstream.git
+declaration='github.com/our-org\n'
+command=~/.no-mistakes/worktrees/c0c4fcacb05a/01M69MFQ8X8XAHRAZ9PNXNTDR2/bin/fm-brief.sh scenario-outside-origin-owned-upstream sample --mode no-mistakes --ticket no-ticket --commit-type fix
+exit=0
+Ship branch: fix/no-ticket-scenario-outside-origin-owned-upstream
+Ticket: no-ticket
+Every commit subject on this branch and the pull request title must read `fix/no-ticket(<scope>): <message>`, where `<scope>` names the area changed and `<message>` is a short imperative description.
+
+CASE missing-declaration
+origin=https://github.com/vendor/upstream.git
+upstream=None
+declaration=None
+command=~/.no-mistakes/worktrees/c0c4fcacb05a/01M69MFQ8X8XAHRAZ9PNXNTDR2/bin/fm-brief.sh scenario-missing-declaration sample --mode no-mistakes --ticket no-ticket --commit-type fix
+exit=0
+Ship branch: fix/no-ticket-scenario-missing-declaration
+Ticket: no-ticket
+Every commit subject on this branch and the pull request title must read `fix/no-ticket(<scope>): <message>`, where `<scope>` names the area changed and `<message>` is a short imperative description.
+
+CASE malformed-declaration
+origin=https://github.com/vendor/upstream.git
+upstream=None
+declaration='github.com/our-org\nnot-a-path\n'
+command=~/.no-mistakes/worktrees/c0c4fcacb05a/01M69MFQ8X8XAHRAZ9PNXNTDR2/bin/fm-brief.sh scenario-malformed-declaration sample --mode no-mistakes --ticket no-ticket --commit-type fix
+exit=0
+Ship branch: fix/no-ticket-scenario-malformed-declaration
+Ticket: no-ticket
+Every commit subject on this branch and the pull request title must read `fix/no-ticket(<scope>): <message>`, where `<scope>` names the area changed and `<message>` is a short imperative description.
+
+CASE missing-remote
+origin=None
+upstream=None
+declaration='github.com/our-org\n'
+command=~/.no-mistakes/worktrees/c0c4fcacb05a/01M69MFQ8X8XAHRAZ9PNXNTDR2/bin/fm-brief.sh scenario-missing-remote sample --mode no-mistakes --ticket no-ticket --commit-type fix
+exit=0
+Ship branch: fix/no-ticket-scenario-missing-remote
+Ticket: no-ticket
+Every commit subject on this branch and the pull request title must read `fix/no-ticket(<scope>): <message>`, where `<scope>` names the area changed and `<message>` is a short imperative description.
+
+CASE promote-third-party
+origin=https://github.com/vendor/upstream.git
+upstream=None
+declaration='github.com/our-org\n'
+command=~/.no-mistakes/worktrees/c0c4fcacb05a/01M69MFQ8X8XAHRAZ9PNXNTDR2/bin/fm-promote.sh scenario-promote-third-party --mode no-mistakes --ticket no-ticket --commit-type fix --yolo off
+exit=0
+Ship branch: fix/no-ticket-scenario-promote-third-party
+Ticket: no-ticket
+Every commit subject on this branch and the pull request title must read `fix(<scope>): <message>`, where `<scope>` names the area changed and `<message>` is a short imperative description.
+The pipeline's PR step drafts a conventional title like `fix(<scope>): <message>`, which is already the format this project requires: never add a ticket segment to it.
+Read the title the moment the run has a PR URL - from `no-mistakes axi status` as soon as the PR step has opened the PR, before the CI wait - and edit it ONCE only if it carries a ticket segment or a pipeline-internal `no-mistakes(<step>): ...` subject, so it reads `fix(<scope>): <message>`.
+The pull request title is therefore the one subject you control on this upstream, and it is what a squash merge lands; leave the published branch's pipeline commits alone, and never rewrite an already-published branch.
+
+CASE promote-owned
+origin=https://github.com/our-org/ours.git
+upstream=None
+declaration='github.com/our-org\n'
+command=~/.no-mistakes/worktrees/c0c4fcacb05a/01M69MFQ8X8XAHRAZ9PNXNTDR2/bin/fm-promote.sh scenario-promote-owned --mode no-mistakes --ticket no-ticket --commit-type fix --yolo off
+exit=0
+Ship branch: fix/no-ticket-scenario-promote-owned
+Ticket: no-ticket
+Every commit subject on this branch and the pull request title must read `fix/no-ticket(<scope>): <message>`, where `<scope>` names the area changed and `<message>` is a short imperative description.
+
+CASE promote-real-ticket
+origin=https://github.com/vendor/upstream.git
+upstream=None
+declaration='github.com/our-org\n'
+command=~/.no-mistakes/worktrees/c0c4fcacb05a/01M69MFQ8X8XAHRAZ9PNXNTDR2/bin/fm-promote.sh scenario-promote-real-ticket --mode no-mistakes --ticket ENG-42 --commit-type fix --yolo off
+exit=0
+Ship branch: fix/ENG-42-scenario-promote-real-ticket
+Ticket: ENG-42
+Before you start the work, read ticket ENG-42 in full: its description, every comment, its subtasks, its linked tasks, and its attachments.
+Every commit subject on this branch and the pull request title must read `fix(<scope>): <message>`, where `<scope>` names the area changed and `<message>` is a short imperative description.
+The pipeline's PR step drafts a conventional title like `fix(<scope>): <message>`, which is already the format this project requires: never add a ticket segment to it.
+Read the title the moment the run has a PR URL - from `no-mistakes axi status` as soon as the PR step has opened the PR, before the CI wait - and edit it ONCE only if it carries a ticket segment or a pipeline-internal `no-mistakes(<step>): ...` subject, so it reads `fix(<scope>): <message>`.
+The pull request title is therefore the one subject you control on this upstream, and it is what a squash merge lands; leave the published branch's pipeline commits alone, and never rewrite an already-published branch.
