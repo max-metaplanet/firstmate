@@ -22,6 +22,12 @@
 # captain-approved <host>/<owner>/<repo> publication scope for this one task,
 # rendered as an `upstream-consent=<scope>` suffix token on the Delivery
 # contract line so brief, spawn record, and worker instructions agree.
+# The optional ninth argument is the task's project name, the basename of its
+# clone directory. When that project declares the pre-ready heavy-test check,
+# both pull-request-publishing blocks gain a paragraph that runs it before the
+# ready transition; bin/fm-boat-prepush-lib.sh owns the declaration and
+# bin/fm-boat-prepush.sh owns the check. A caller that names no project, and a
+# project with no declaration, render exactly as they did before.
 # Callers of the gate are bin/fm-crew-state.sh (current-state done),
 # bin/fm-pr-check.sh (PR registration), and bin/fm-inactive-reconcile.sh
 # (secondmate ledger-first publish of a child done). A ship `done:` is not
@@ -179,6 +185,8 @@ case $_FM_DOD_LIB_DIR in /*) ;; .) _FM_DOD_LIB_DIR=$PWD ;; *) _FM_DOD_LIB_DIR=$P
 . "$_FM_DOD_LIB_DIR/fm-ready-hold-lib.sh"
 # shellcheck source=bin/fm-queue-only-lib.sh
 . "$_FM_DOD_LIB_DIR/fm-queue-only-lib.sh"
+# shellcheck source=bin/fm-boat-prepush-lib.sh
+. "$_FM_DOD_LIB_DIR/fm-boat-prepush-lib.sh"
 
 # The bound on the one live `git ls-remote origin` the named-head gate makes.
 # Overridable so a test can prove a stalled remote refuses rather than hangs.
@@ -709,9 +717,9 @@ A named check missing from the head is expected, so never rerun CI, push again, 
 EOF
 }
 
-fm_dod_block() {  # <mode> <task-id> [branch] [<forge>] [<base>] [<consent>] [<ticket-header>] [<ticket-nm-retitle>]
-  local mode=$1 id=$2 forge=${4:-none} base=${5:-} consent=${6:-} ticket_header=${7:-} ticket_retitle=${8:-}
-  local branch=${3:-fm/$id} pr_base='' nm_base='' draft_create='--draft' base_q contract_forge='' contract_consent='' forge_cli=gh-axi draft_check origin_steps retitle_cmd adapter ci_wait='' ready_wait='' refresh='' refresh_home_q ci_cost='' local_scope=''
+fm_dod_block() {  # <mode> <task-id> [branch] [<forge>] [<base>] [<consent>] [<ticket-header>] [<ticket-nm-retitle>] [<project-name>]
+  local mode=$1 id=$2 forge=${4:-none} base=${5:-} consent=${6:-} ticket_header=${7:-} ticket_retitle=${8:-} project=${9:-}
+  local branch=${3:-fm/$id} pr_base='' nm_base='' draft_create='--draft' base_q contract_forge='' contract_consent='' forge_cli=gh-axi draft_check origin_steps retitle_cmd adapter ci_wait='' ready_wait='' refresh='' refresh_home_q ci_cost='' local_scope='' prepush='' prepush_home_q prepush_cmd
   fm_forge_valid_for_mode "$forge" "$mode" fm_dod_block || return 1
   fm_base_branch_valid "$base" "$mode" "$forge" fm_dod_block || return 1
   if [ -n "$consent" ]; then
@@ -720,6 +728,22 @@ fm_dod_block() {  # <mode> <task-id> [branch] [<forge>] [<base>] [<consent>] [<t
       return 1
     fi
     contract_consent=" upstream-consent=$consent"
+  fi
+  if [ -n "$project" ] && ! fm_boat_prepush_lookup "$(fm_boat_prepush_config_dir)" "$project"; then
+    echo "error: fm_dod_block: $FM_BOAT_PREPUSH_ERROR" >&2
+    return 1
+  fi
+  if [ -n "$project" ] && [ -n "$FM_BOAT_PREPUSH_DECLARED" ]; then
+    printf -v prepush_home_q '%q' "${FM_HOME:-<task-home>}"
+    prepush_cmd="FM_HOME=$prepush_home_q $_FM_DOD_LIB_DIR/fm-boat-prepush.sh --type $FM_BOAT_PREPUSH_TYPE --timeout $FM_BOAT_PREPUSH_TIMEOUT"
+    [ -z "$FM_BOAT_PREPUSH_HISTORY_DEPTH" ] ||
+      prepush_cmd="$prepush_cmd --history-depth $FM_BOAT_PREPUSH_HISTORY_DEPTH"
+    prepush="
+Before marking the pull request ready, run the pre-ready heavy-test check on this change with \`$prepush_cmd\`.
+It runs this change's planner-selected heavy test lanes one at a time on one disposable machine and prints a per-lane verdict.
+A nonzero exit stops the ready transition.
+Append \`blocked [at=<epoch>]: pre-ready check red - {the failing lanes}\` to the status file and stop, rather than marking the pull request ready.
+This check is a pre-ready gate, not a replacement for the forge's required checks."
   fi
   draft_check="(\`gh-axi pr view <PR URL>\` must print \`draft: no\`, naming the PR by its full URL so the read can never resolve against another repository); if it is a draft, mark it ready with \`gh-axi pr ready <PR URL>\`."
   retitle_cmd="
@@ -869,7 +893,7 @@ When it is committed, publish your branch to \`origin\` and open a draft PR with
 Finish local implementation and focused validation before opening the draft.
 $ci_cost
 If the log shows no cause in your own change, append \`blocked [at=<epoch>]: unrelated CI failure - job {job name}, run {run URL}\` to the status file and stop; report the evidence to firstmate without rerunning CI.
-If CI requires a code change, report the failing job and run to firstmate as a blocked event; do not start another worker-driven push round.
+If CI requires a code change, report the failing job and run to firstmate as a blocked event; do not start another worker-driven push round.$prepush
 Once local validation has passed and the work is ready for review, mark the PR ready before the final CI wait so suites skipped on drafts can run.$ready_wait
 The ready transition must not require another commit or push.
 $origin_steps
@@ -923,7 +947,7 @@ Require recorded evidence of the failing command and result before the fix, the 
 If local reproduction or verification is unavailable or fails, require the pipeline to hold publication and report the blocker to firstmate; do not authorize a speculative push, an empty commit, a restart to reset the budget, or a worker fix outside the pipeline.
 If the pipeline publishes a further round without a gate, report its version, the observed rounds, and the needed configuration or upstream enforcement to firstmate without editing shared daemon configuration yourself; a brief instruction is not a deterministic guard on the daemon.
 
-As soon as the pipeline opens its PR, read it by its full URL.
+As soon as the pipeline opens its PR, read it by its full URL.$prepush
 If it is a draft, confirm the pipeline's local review, test and lint steps passed and the work is ready, then mark it ready using the forge command below BEFORE waiting for CI green.
 A draft-skipping workflow needs that ready transition to run its full suites; skipped draft checks alone never prove the ready PR green.
 If this head's checks were skipped while it was draft, require fresh results from the workflows the ready transition triggers on this head before treating CI as green; otherwise completed, non-skipped results on this same head count.$ready_wait
