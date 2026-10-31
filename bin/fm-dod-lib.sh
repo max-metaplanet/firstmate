@@ -175,6 +175,8 @@ case $_FM_DOD_LIB_DIR in /*) ;; .) _FM_DOD_LIB_DIR=$PWD ;; *) _FM_DOD_LIB_DIR=$P
 . "$_FM_DOD_LIB_DIR/fm-brief-heading-lib.sh"
 # shellcheck source=bin/fm-external-review-lib.sh
 . "$_FM_DOD_LIB_DIR/fm-external-review-lib.sh"
+# shellcheck source=bin/fm-ready-hold-lib.sh
+. "$_FM_DOD_LIB_DIR/fm-ready-hold-lib.sh"
 
 # The bound on the one live `git ls-remote origin` the named-head gate makes.
 # Overridable so a test can prove a stalled remote refuses rather than hangs.
@@ -625,6 +627,34 @@ Then append \`done [at=<epoch>]: PR {change url} published for review\` to the s
 That \`done:\` is accepted only when the change's current patch set on the server carries this copy's HEAD tree, so commit nothing after publishing; if you must change the work, commit it and publish again before reporting done.
 A \`done:\` whose URL is not the canonical \`https://<host>/c/<project>/+/<number>\` change URL is refused.
 There is no pull request, no \`gh-axi\` call, and no forge CI result to report: a human reviewer approves and submits the change on the server, and firstmate relays that outcome.
+EOF
+}
+
+# Spawn supplies this overlay once the task's project and yolo are known.
+# Promotion uses the same renderer; scaffold-time briefs intentionally have no
+# yolo input. Empty output preserves every unconfigured or yolo-on contract.
+fm_dod_ready_hold_block() {  # <config-dir> <project-dir> <yolo> <forge> <mode>
+  local label label_q pipeline=''
+  [ "$3" = off ] || return 0
+  case "$4:$5" in none:no-mistakes|github:no-mistakes|none:direct-PR|github:direct-PR) ;; *) return 0 ;; esac
+  label=$(fm_ready_hold_label "$1" "$(basename "$2")") || return 1
+  [ -n "$label" ] || return 0
+  printf -v label_q '%q' "$label"
+  if [ "$5" = no-mistakes ]; then
+    pipeline='Require no-mistakes to create the PR as a draft and keep it draft until this label has been applied and verified; if its configured PR step cannot guarantee that ordering, report the blocker to firstmate before starting it.'
+  fi
+  cat <<EOF
+
+# Ready-hold safety contract
+This section supersedes every earlier instruction that marks a PR ready without first applying its ready-hold label.
+This task requires the configured GitHub ready-hold label \`$label_q\` while it waits for merge approval.
+In the same step as marking the PR ready, first run \`gh-axi pr edit <PR URL> --add-label $label_q\` and verify the label is present with \`gh pr view <PR URL> --json labels\`.
+Only after that verification may you run \`gh-axi pr ready <PR URL>\`.
+Apply and verify the label before any ready transition performed on your behalf, including by no-mistakes or \`fm-pr-refresh.sh\`.
+$pipeline
+Before reporting done, read the PR labels again and confirm the configured label is still present.
+If applying or verifying the label fails, keep the PR draft and report the failure to firstmate.
+Never remove the ready-hold label yourself; firstmate's approved merge path releases it to the project's merge bot.
 EOF
 }
 

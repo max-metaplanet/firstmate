@@ -1514,6 +1514,31 @@ The installer always wraps the git-lfs hook names `pre-push`, `post-checkout`, `
 The flag is a home-wide attribution choice, so it is inherited into secondmate homes under the [`secondmate-provisioning`](../.agents/skills/secondmate-provisioning/SKILL.md) inherited-local-material contract and a secondmate's own workers keep AI trailers too.
 Per-machine Cursor `cli-config.json` attribution-off is not this contract: it does not travel with Firstmate, defaults back to on when unset, and only feeds the CLI's request to the server, so it suppresses the trailer rather than preventing it.
 
+## Ready-hold labels (config/project-ready-hold-label)
+
+The optional, gitignored `config/project-ready-hold-label` maps projects in the active Firstmate home to GitHub labels that prevent their merge bots from merging ready pull requests.
+Each entry has the clone directory basename, one literal tab, and the exact label name:
+
+```text
+my-project	hold
+another-project	awaiting approval
+```
+
+Project names and labels may contain spaces but cannot contain tabs or control characters.
+Blank lines and lines beginning with `#` followed by whitespace are comments.
+An absent file, an omitted project, or an empty label after the tab leaves behavior unchanged.
+Duplicate projects, malformed entries, and an unreadable file fail the lookup rather than silently dropping a hold.
+The label must already exist in the GitHub repository, and the project's merge bot must already treat it as a merge hold that still allows full CI.
+Firstmate neither creates the label nor configures the bot.
+
+For yolo-off GitHub ships, the generated launch and promotion instructions require applying and verifying the label before marking a PR ready, including transitions performed by no-mistakes or the conflict-refresh helper.
+The worker verifies it again before reporting done.
+After merge approval, `bin/fm-pr-merge.sh` keeps its existing pre-merge guards and removes the configured label if present, handing landing to the project's bot instead of merging directly.
+It reports the handoff separately from a confirmed merge, leaving the merge poll armed until landing is observed.
+Release is attended-only because the bot may land the PR asynchronously.
+Yolo-on tasks, other forges, and a PR without the configured label retain their existing merge behavior.
+[`bin/fm-ready-hold-lib.sh`](../bin/fm-ready-hold-lib.sh) owns lookup and label verification; [`bin/fm-dod-lib.sh`](../bin/fm-dod-lib.sh) owns the generated worker contract.
+
 ## Project capacity (config/project-capacity)
 
 The optional local, gitignored `config/project-capacity` tells Firstmate how many workers a project can run at once on this machine, for a project whose machine-local resource - a heavy test suite, a local editor stack, a device - only serves a few workers at a time.

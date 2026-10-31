@@ -207,6 +207,12 @@
 #
 # Usage: fm-pr-merge.sh <task-id> <pr-url> [--attended-override] [--allow-red <check-name>] [--allow-missing <check-name>] [--allow-no-pipeline] [-- <extra forge merge args>]
 #
+# On a yolo-off GitHub task with a configured ready-hold label present on the
+# PR, the same pre-merge guards precede removing that label instead of merging.
+# This attended-only handoff lets the project's merge bot land the PR later.
+# Accepted authority and the existing merge poll remain recorded, but only a
+# live merged outcome records landed work. docs/configuration.md owns the setting.
+#
 # On GitLab, this script confirms the MR is actually merged before reporting it;
 # an auto-merge-queued or unconfirmed request leaves the poll armed and records
 # no landed outcome. bin/fm-merge-outcome-lib.sh owns a confirmed merge's
@@ -232,6 +238,8 @@ STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 . "$SCRIPT_DIR/fm-merge-authority-lib.sh"
 # shellcheck source=bin/fm-afk-contract.sh
 . "$SCRIPT_DIR/fm-afk-contract.sh"
+# shellcheck source=bin/fm-ready-hold-lib.sh
+. "$SCRIPT_DIR/fm-ready-hold-lib.sh"
 
 if [ "$#" -lt 2 ]; then
   echo "error: invalid PR merge request" >&2
@@ -1767,10 +1775,35 @@ case "$PROVIDER" in
     require_current_away_authority || away_status=$?
     [ "$away_status" -eq 0 ] || exit "$away_status"
     refuse_github_queue_while_away || exit 2
+    ready_hold_label=
+    ready_hold_present=false
+    if [ "$(sed -n 's/^yolo=//p' "$META" | tail -n 1)" != on ]; then
+      ready_hold_project=$(sed -n 's/^project=//p' "$META" | tail -n 1)
+      ready_hold_label=$(fm_ready_hold_label "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}" "$(basename "$ready_hold_project")") || exit 1
+    fi
+    if [ -n "$ready_hold_label" ]; then
+      ready_hold_json=$(gh pr view "$URL" --json labels,headRefOid) || exit 1
+      if ! printf '%s' "$ready_hold_json" | jq -e --arg head "$FM_PR_MERGE_HEAD" \
+        '.headRefOid == $head and (.labels | type == "array")' >/dev/null; then
+        echo 'error: ready-hold labels or verified head could not be confirmed; nothing released' >&2
+        exit 1
+      fi
+      if printf '%s' "$ready_hold_json" | jq -e --arg label "$ready_hold_label" '.labels | any(.name == $label)' >/dev/null; then
+        ready_hold_present=true
+      fi
+    fi
     merge_status=0
-    merge_output=$(gh pr merge "$PR_NUMBER" --repo "$PR_OWNER/$PR_REPO" \
-      --match-head-commit "$FM_PR_MERGE_HEAD" \
-      "${merge_args[@]+"${merge_args[@]}"}" "$@" 2>&1) || merge_status=$?
+    if [ "$ready_hold_present" = true ]; then
+      if [ "$FM_PR_AWAY_POSTURE" = true ]; then
+        echo 'error: ready-hold release is attended-only because the merge bot can land it asynchronously; nothing released' >&2
+        exit 2
+      fi
+      merge_output=$(gh-axi pr edit "$URL" --remove-label "$ready_hold_label" 2>&1) || merge_status=$?
+    else
+      merge_output=$(gh pr merge "$PR_NUMBER" --repo "$PR_OWNER/$PR_REPO" \
+        --match-head-commit "$FM_PR_MERGE_HEAD" \
+        "${merge_args[@]+"${merge_args[@]}"}" "$@" 2>&1) || merge_status=$?
+    fi
     if [ "$merge_status" -eq 0 ]; then
       FM_PR_GITHUB_MERGE_ACCEPTED=true
       persist_accepted_merge_authority || exit 1
@@ -1792,9 +1825,27 @@ case "$PROVIDER" in
       fi
       exit "$merge_status"
     fi
+    if [ "$ready_hold_present" = true ]; then
+      ready_hold_json=$(gh pr view "$URL" --json labels) || {
+        echo 'actionable: ready-hold release was accepted but label removal could not be verified; merge poll remains armed' >&2
+        exit 1
+      }
+      if ! printf '%s' "$ready_hold_json" | jq -e --arg label "$ready_hold_label" \
+        '(.labels | type == "array") and (.labels | all(.name != $label))' >/dev/null; then
+        echo 'error: ready-hold label removal was not confirmed; merge poll remains armed' >&2
+        exit 1
+      fi
+      printf 'handed off: removed ready-hold label %s from %s; project merge bot owns landing\n' "$ready_hold_label" "$URL"
+    fi
     if ! github_read_outcome; then
       github_report_forge_output "$merge_output"
       exit 1
+    fi
+    if [ "$ready_hold_present" = true ]; then
+      if [ "$FM_PR_GITHUB_MERGED" != true ]; then
+        printf 'pending: %s is not confirmed merged; merge poll remains armed\n' "$URL"
+        exit 0
+      fi
     fi
     if [ "$FM_PR_GITHUB_MERGED" = true ]; then
       printf 'verified: %s is merged (state=%s, merged=%s, isInMergeQueue=%s)\n' \

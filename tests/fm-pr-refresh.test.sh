@@ -29,7 +29,15 @@ case "$1 $2 $3" in
     printf '%s' "$body" | jq -e --arg id "${PR_NODE_ID:-PR_fixture}" \
       '(.query | contains("convertPullRequestToDraft")) and .variables.id == $id' >/dev/null || exit 92
     echo true > "$REFRESH_FIXTURE/draft" ;;
+  'pr edit https://github.com/example/repo/pull/9')
+    [ "$4" = --add-label ] && [ "$5" = 'hold for approval' ] || exit 92
+    [ ! -f "$REFRESH_FIXTURE/label-add-fails" ] || exit 1
+    [ -f "$REFRESH_FIXTURE/label-add-ignored" ] || echo '{"labels":[{"name":"hold for approval"}]}' > "$REFRESH_FIXTURE/labels.json"
+    ;;
   'pr ready 9')
+    if [ -f "$FM_HOME/config/project-ready-hold-label" ] && ! grep -qx 'yolo=on' "$FM_HOME/state/task.meta"; then
+      jq -e '.labels | any(.name == "hold for approval")' "$REFRESH_FIXTURE/labels.json" >/dev/null || exit 93
+    fi
     [ "$4 $5" = '--repo example/repo' ] || exit 92
     echo false > "$REFRESH_FIXTURE/draft" ;;
   *) exit 92 ;;
@@ -39,6 +47,7 @@ cat > "$FAKEBIN/gh" <<'SH'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$REFRESH_FIXTURE/log"
 case "$*" in
+  'pr view '*--json\ labels) cat "$REFRESH_FIXTURE/labels.json" ;;
   'pr view '*state,isDraft,id)
     jq -nc --arg state "$(cat "$REFRESH_FIXTURE/state")" --argjson draft "$(cat "$REFRESH_FIXTURE/draft")" --arg id "${PR_NODE_ID:-PR_fixture}" '{state:$state,isDraft:$draft,id:$id}' ;;
   'pr view '*)
@@ -146,3 +155,29 @@ rm "$TASK_TMP/timeline-fails"
 [ "$(cat "$TASK_TMP/draft")" = false ] || fail 'unchanged policy left draft'
 [ ! -e "$FM_HOME/state/task.pr-refresh" ] || fail 'a legitimate lone skip without a ready rerun kept the hold'
 pass 'unchanged policy accepts a legitimate lone skip without waiting for a ready-triggered rerun'
+
+mkdir -p "$FM_HOME/config"
+printf 'repo\thold for approval\n' > "$FM_HOME/config/project-ready-hold-label"
+printf 'project=/projects/repo\nyolo=off\n' >> "$FM_HOME/state/task.meta"
+for failure in label-add-fails label-add-ignored; do
+  cp "$TASK_TMP/hold" "$FM_HOME/state/task.pr-refresh"
+  echo true > "$TASK_TMP/draft"
+  echo '{"labels":[]}' > "$TASK_TMP/labels.json"
+  touch "$TASK_TMP/$failure"
+  expect_refusal ready task "$URL" --ready-ci unchanged
+  [ "$(cat "$TASK_TMP/draft")" = true ] || fail 'failed label application allowed ready'
+  [ -f "$FM_HOME/state/task.pr-refresh" ] || fail 'failed label application cleared refresh hold'
+  rm "$TASK_TMP/$failure"
+done
+refresh ready task "$URL" --ready-ci unchanged > "$TASK_TMP/ready-out"
+jq -e '.labels | any(.name == "hold for approval")' "$TASK_TMP/labels.json" >/dev/null || fail 'ready PR lost label'
+[ ! -e "$FM_HOME/state/task.pr-refresh" ] || fail 'ready-hold label prevented completing refresh'
+pass 'refresh verifies configured label before ready and preserves draft on label failure'
+
+printf 'yolo=on\n' >> "$FM_HOME/state/task.meta"
+cp "$TASK_TMP/hold" "$FM_HOME/state/task.pr-refresh"
+echo true > "$TASK_TMP/draft"
+echo '{"labels":[]}' > "$TASK_TMP/labels.json"
+refresh ready task "$URL" --ready-ci unchanged > "$TASK_TMP/ready-out"
+jq -e '.labels | length == 0' "$TASK_TMP/labels.json" >/dev/null || fail 'yolo-on refresh added a hold'
+pass 'yolo-on refresh keeps its current ready behavior'
