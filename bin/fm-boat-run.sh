@@ -43,16 +43,19 @@
 # Source is HEAD's tracked file set with current tracked edits/deletions applied,
 # plus individually named --input files (including ignored files if safe).
 # No history is sent by default; fm-boat-test-wrapper.sh builds synthetic history.
-# --history-depth N (1..1000) opts into real ancestry up to N generations from
-# each of HEAD and refs/remotes/origin/main, which must both exist locally.
+# --history-depth N (1..1000) opts into real ancestry at Git fetch depth N from
+# each of HEAD and refs/remotes/origin/main, counting each tip as depth one.
+# Both tips must exist locally.
 # Only those two tips, their bounded commits/trees/blobs, shallow boundaries,
 # and fresh Git metadata travel. No other refs, stash, reflogs, hooks, local
 # remotes or local Git config travel. Current tracked edits/deletions still apply.
 # Every historical tree entry must pass the source path filter (including the
-# screened exceptions), and every historical blob must pass the same UTF-8
-# credential scanner. Excluded paths, configured key paths, symlinks, submodules,
-# binary or credential-looking blobs refuse the entire run before any Boat call.
-# Refusal logs name the path and reason without printing blob content.
+# screened exceptions), and every historical blob and commit (including headers
+# and messages) must pass the same UTF-8 credential scanner. Excluded paths,
+# configured key paths, symlinks, submodules, binary or credential-looking blobs
+# or commits refuse the entire run before any Boat call.
+# Refusal logs name the reason and, for tree entries, the path without printing
+# blob or commit content.
 # Submodules and symlinks are refused rather than silently changing the source.
 # Run from the worktree root remotely at /home/user/fm-job/source. Install remote
 # dependencies explicitly in COMMAND; native local node_modules never travel.
