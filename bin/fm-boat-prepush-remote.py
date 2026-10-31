@@ -299,12 +299,7 @@ def select_lanes(plan: dict) -> list:
 
     for index, shard in enumerate(plan.get('node', {}).get('matrix') or []):
         filters = shard.get('filters') or []
-        # The shard stated as EXCLUSIONS fans out across every remaining
-        # workspace, which is the one that exhausted the default machine
-        # uncapped. Capping it by that structural property rather than by its
-        # name keeps the rule true when the project renames or resplits shards.
-        wide = any(str(f).startswith('!') for f in filters)
-        if wide:
+        if shard.get('name') == 'other-packages':
             argv = (['pnpm', 'test:ci', '--concurrency=%d' % WIDE_SHARD_CONCURRENCY]
                     + ['--filter=%s' % f for f in filters]
                     + ['--'] + list(shard.get('passthrough') or []))

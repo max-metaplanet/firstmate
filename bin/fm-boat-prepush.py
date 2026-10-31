@@ -167,7 +167,7 @@ def verdict(run: dict) -> tuple:
     """(ok, failing lane names, oom_only). A run that produced no summary is a
     failure of the check itself, never a pass."""
     summary = run.get('summary')
-    if summary is None:
+    if summary is None or run.get('adapter_exit') != 0:
         return False, [], False
     failed = list(summary.get('failed') or [])
     return (not failed), failed, bool(summary.get('oom'))

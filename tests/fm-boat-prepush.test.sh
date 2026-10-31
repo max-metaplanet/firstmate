@@ -37,7 +37,7 @@ def plan(**over):
         'node': {'run_count': 2, 'total': 5, 'matrix': [
             {'name': 'admin-center jsdom', 'filters': ['@core/admin-center'],
              'passthrough': ['--project=jsdom']},
-            {'name': 'other packages',
+            {'name': 'other-packages',
              'filters': ['!@core/db', '!@core/admin-center'],
              'passthrough': ['--passWithNoTests']},
         ]},
@@ -71,11 +71,18 @@ assert by_name['node-0']['env']['SHARD_NAME'] == 'admin-center jsdom'
 assert json.loads(by_name['node-0']['env']['SHARD_FILTERS']) == ['@core/admin-center']
 assert 'concurrency' not in ' '.join(by_name['node-0']['argv'])
 
-# The shard stated as exclusions fans out across every remaining workspace and
-# is the one capped, by that structural property rather than by its name.
 wide = by_name['node-1']['argv']
 assert wide[:3] == ['pnpm', 'test:ci', '--concurrency=2'], wide
 assert "--filter=!@core/db" in wide and '--passWithNoTests' in wide
+for filters in (['!@core/db', '!@core/admin-center'],
+                ['@core/mail', '@core/ui', '@core/bmj-site', '@core/planetgear']):
+    selected = remote.select_lanes(plan(node={'matrix': [{
+        'name': 'other-packages', 'filters': filters,
+        'passthrough': ['--passWithNoTests'],
+    }]}))
+    shard = next(lane for lane in selected if lane['group'] == 'node')
+    assert shard['argv'] == ['pnpm', 'test:ci', '--concurrency=2'] + [
+        '--filter=' + f for f in filters] + ['--', '--passWithNoTests']
 print('ok - lane order, shard runner, affected packages and the two memory caps')
 
 # ── planner predicates gate the optional lanes ──────────────────────────────
@@ -123,7 +130,7 @@ print('ok - lane environment drops inherited setup and keeps the workflows own c
 
 # ── proven memory exhaustion, and nothing else, buys a larger machine ───────
 def run(size, failed, oom):
-    return {'size': size, 'summary': {'failed': failed, 'oom': oom}}
+    return {'size': size, 'adapter_exit': 0, 'summary': {'failed': failed, 'oom': oom}}
 
 
 assert not local.should_retry_large(run('default', [], False))
@@ -132,6 +139,11 @@ assert not local.should_retry_large(run('default', ['node-1'], False))
 assert not local.should_retry_large(run('large', ['node-1'], True))
 # A run that produced no verdict is a failure of the check, not memory evidence.
 assert not local.should_retry_large({'size': 'default', 'summary': None})
+assert local.verdict(run('default', [], False))[0]
+for failed, oom in (([], False), (['node-1'], True)):
+    broken = {**run('default', failed, oom), 'adapter_exit': 70}
+    assert local.verdict(broken) == (False, [], False)
+    assert not local.should_retry_large(broken)
 print('ok - the larger machine is bought only for a proven memory failure on default')
 
 # ── an out-of-memory lane needs kernel, exit-code or V8 proof ───────────────
@@ -179,13 +191,61 @@ assert str(remote.REMOTE_SOURCE) == '/home/user/fm-job/source'
 print('ok - the runner refuses to execute outside the disposable machine')
 
 # ── the remote runner never lands inside the uploaded source ────────────────
-command = local.command_string(['apps/admin-center/page.tsx'])
-assert '"$(dirname "$PWD")/prepush"' in command
-assert 'FM_PREPUSH_RUNNER_EOF' in command
-assert "'[\"apps/admin-center/page.tsx\"]'" in command
-assert 'fm-boat-prepush-remote' not in command.split('\n')[0]
-for line in command.splitlines():
-    assert not line.startswith('cd '), 'the command must not leave the uploaded source root'
+files = ['apps/admin-center/page.tsx', "spaces and 'quotes'; $(touch escaped)"]
+source = base / 'upload/source'
+source.mkdir(parents=True)
+probe = base / 'runner-probe.py'
+probe.write_text(
+    'import json, os, sys\n'
+    'from pathlib import Path\n'
+    'Path(os.environ["PROBE_RESULT"]).write_text(json.dumps({'
+    '"cwd": os.getcwd(), "runner": str(Path(__file__).resolve()), '
+    '"prepush": os.environ["FM_PREPUSH_DIR"], '
+    '"files": json.loads(os.environ["FM_PREPUSH_FILES"])}))\n'
+    'sys.exit(23)\n')
+local.RUNNER = probe
+result_path = base / 'placement.json'
+executed = subprocess.run(['bash', '-c', local.command_string(files)], cwd=source,
+                          env={**os.environ, 'PROBE_RESULT': str(result_path)},
+                          capture_output=True, text=True)
+assert executed.returncode == 23, executed
+observed = json.loads(result_path.read_text())
+assert observed == {'cwd': str(source), 'runner': str(source.parent / 'prepush/runner.py'),
+                    'prepush': str(source.parent / 'prepush'), 'files': files}, observed
+assert list(source.iterdir()) == [], list(source.iterdir())
 print('ok - the runner is written beside the uploaded source, never into it')
+
+config = base / 'config'
+config.mkdir()
+(config / 'boat-prepush').write_text('core\n')
+mock_bin = base / 'mock-bin'
+mock_bin.mkdir()
+python_probe = mock_bin / 'python3'
+python_probe.write_text('#!' + sys.executable + '\nimport json, sys\n'
+                        'print(json.dumps(sys.argv[1:]))\n')
+python_probe.chmod(0o755)
+for mode in ('no-mistakes', 'direct-PR'):
+    for target in ('', 'release/stable', "release/$candidate'quote"):
+        rendered = subprocess.run(
+            ['bash', '-c',
+             'source "$1/bin/fm-dod-lib.sh"; '
+             'fm_dod_block "$2" task fm/task none "$3" "" "" "" core',
+             'dod-test', str(repo), mode, target],
+            env={**os.environ, 'CONFIG': str(config), 'FM_HOME': str(base)},
+            capture_output=True, text=True, check=True).stdout
+        commands = [part for part in rendered.split('`') if 'fm-boat-prepush.sh --type' in part]
+        assert len(commands) == 1, commands
+        received = subprocess.run(
+            ['bash', '-c', commands[0]], cwd=source,
+            env={**os.environ, 'PATH': str(mock_bin) + os.pathsep + os.environ['PATH']},
+            capture_output=True, text=True, check=True)
+        args = json.loads(received.stdout)
+        expected = [str(repo / 'bin/fm-boat-prepush.py'),
+                    '--type', 'default', '--timeout', '2700']
+        if target:
+            expected += ['--base', target]
+        assert args == expected, (mode, target, args)
+print('ok - both publishing commands forward the explicit base with shell quoting')
+
 PY
 pass "fm-boat-prepush"
