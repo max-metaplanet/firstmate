@@ -735,7 +735,7 @@ fm_dod_block() {  # <mode> <task-id> [branch] [<forge>] [<base>] [<consent>] [<t
   fi
   if [ -n "$project" ] && [ -n "$FM_BOAT_PREPUSH_DECLARED" ]; then
     printf -v prepush_home_q '%q' "${FM_HOME:-<task-home>}"
-    prepush_cmd="FM_HOME=$prepush_home_q $_FM_DOD_LIB_DIR/fm-boat-prepush.sh --type $FM_BOAT_PREPUSH_TYPE --timeout $FM_BOAT_PREPUSH_TIMEOUT"
+    prepush_cmd="FM_HOME=$prepush_home_q $_FM_DOD_LIB_DIR/fm-boat-prepush.sh --timeout $FM_BOAT_PREPUSH_TIMEOUT"
     if [ -n "$base" ]; then
       printf -v base_q '%q' "$base"
       prepush_cmd="$prepush_cmd --base $base_q"

@@ -22,11 +22,11 @@ declare_config() {  # <name> [line...]
   printf '%s\n' "$dir"
 }
 
-# The four published fields of one lookup, as a single comparable row.
+# The published fields of one lookup, as a single comparable row.
 lookup_row() {  # <config-dir> <project>
   fm_boat_prepush_lookup "$1" "$2" || return 1
-  printf 'declared=%s type=%s timeout=%s history-depth=%s\n' \
-    "${FM_BOAT_PREPUSH_DECLARED:-no}" "$FM_BOAT_PREPUSH_TYPE" \
+  printf 'declared=%s timeout=%s history-depth=%s\n' \
+    "${FM_BOAT_PREPUSH_DECLARED:-no}" \
     "$FM_BOAT_PREPUSH_TIMEOUT" "${FM_BOAT_PREPUSH_HISTORY_DEPTH:-none}"
 }
 
@@ -49,7 +49,7 @@ test_absent_declaration_declares_nothing() {
   local dir
   dir=$(declare_config absent)
   fm_boat_prepush_lookup "$dir" core || fail "an absent declaration was reported as an error"
-  assert_equals "declared=no type= timeout= history-depth=none" "$(lookup_row "$dir" core)" \
+  assert_equals "declared=no timeout= history-depth=none" "$(lookup_row "$dir" core)" \
     "an absent declaration did not leave the project undeclared"
   assert_equals "$dir/boat-prepush" "$FM_BOAT_PREPUSH_FILE" \
     "an absent declaration did not report the path it looked for"
@@ -59,15 +59,15 @@ test_absent_declaration_declares_nothing() {
 test_bare_name_takes_the_documented_defaults() {
   local dir
   dir=$(declare_config bare core)
-  assert_equals "declared=1 type=default timeout=2700 history-depth=none" "$(lookup_row "$dir" core)" \
+  assert_equals "declared=1 timeout=2700 history-depth=none" "$(lookup_row "$dir" core)" \
     "a bare project line did not take the documented defaults"
   pass "a bare project line declares the check on a default machine, a 2700s timeout, and no history"
 }
 
 test_undeclared_project_in_a_valid_file_is_not_declared() {
   local dir
-  dir=$(declare_config other core 'satellite type=large')
-  assert_equals "declared=no type= timeout= history-depth=none" "$(lookup_row "$dir" unlisted)" \
+  dir=$(declare_config other core 'satellite')
+  assert_equals "declared=no timeout= history-depth=none" "$(lookup_row "$dir" unlisted)" \
     "a project absent from a valid declaration was reported as declared"
   pass "a project absent from a valid declaration stays undeclared"
 }
@@ -75,16 +75,16 @@ test_undeclared_project_in_a_valid_file_is_not_declared() {
 test_every_field_parses_in_any_order() {
   local dir
   dir=$(declare_config fields \
-    'core history-depth=50 type=large timeout=1' \
+    'core history-depth=50 timeout=1' \
     'satellite timeout=2700 history-depth=1000' \
-    'tiny type=default')
-  assert_equals "declared=1 type=large timeout=1 history-depth=50" "$(lookup_row "$dir" core)" \
+    'tiny')
+  assert_equals "declared=1 timeout=1 history-depth=50" "$(lookup_row "$dir" core)" \
     "mixed-order fields did not parse"
-  assert_equals "declared=1 type=default timeout=2700 history-depth=1000" "$(lookup_row "$dir" satellite)" \
+  assert_equals "declared=1 timeout=2700 history-depth=1000" "$(lookup_row "$dir" satellite)" \
     "the range bounds did not parse"
-  assert_equals "declared=1 type=default timeout=2700 history-depth=none" "$(lookup_row "$dir" tiny)" \
-    "an explicit default type did not parse"
-  pass "type, timeout, and history depth parse in any order, at their bounds, alongside other projects"
+  assert_equals "declared=1 timeout=2700 history-depth=none" "$(lookup_row "$dir" tiny)" \
+    "a bare project did not parse"
+  pass "timeout and history depth parse in any order, at their bounds, alongside other projects"
 }
 
 test_comments_and_blank_lines_are_ignored() {
@@ -94,16 +94,14 @@ test_comments_and_blank_lines_are_ignored() {
     '# the core suite is the only heavy one' \
     '' \
     '   ' \
-    '  core type=large  ' \
+    '  core  ' \
     '')
-  assert_equals "declared=1 type=large timeout=2700 history-depth=none" "$(lookup_row "$dir" core)" \
+  assert_equals "declared=1 timeout=2700 history-depth=none" "$(lookup_row "$dir" core)" \
     "a declaration among comments and blank lines did not parse"
   pass "blank lines, a bare # and a '# ' comment are ignored"
 }
 
 test_malformed_declarations_refuse_the_whole_file() {
-  assert_refuses xlarge 'type=xlarge' 'core type=xlarge'
-  assert_refuses badtype 'an unknown machine type' 'core type=huge'
   assert_refuses zerotimeout 'timeout=0' 'core timeout=0'
   assert_refuses hightimeout 'a timeout above 2700' 'core timeout=2701'
   assert_refuses wordtimeout 'a non-numeric timeout' 'core timeout=soon'
@@ -112,9 +110,9 @@ test_malformed_declarations_refuse_the_whole_file() {
   assert_refuses highdepth 'a history depth above 1000' 'core history-depth=1001'
   assert_refuses unknownkey 'an unknown key' 'core swap-gib=2'
   assert_refuses bareword 'a field that is not <key>=<value>' 'core large'
-  assert_refuses dupkey 'the same key twice on one line' 'core type=large type=default'
-  assert_refuses dupproject 'a project named twice' 'core type=large' 'core timeout=60'
-  pass "a bad type, bound, key, shape, repeated key, or repeated project refuses the whole declaration"
+  assert_refuses dupkey 'the same key twice on one line' 'core timeout=1 timeout=2'
+  assert_refuses dupproject 'a project named twice' 'core' 'core timeout=60'
+  pass "a bad bound, key, shape, repeated key, or repeated project refuses the whole declaration"
 }
 
 test_an_unreadable_declaration_refuses() {

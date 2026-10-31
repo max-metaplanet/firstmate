@@ -1097,7 +1097,7 @@ prepush_declare() {  # <line>...
 }
 
 prepush_dod() {  # <mode> <project-name>
-  CONFIG=$PREPUSH_CFG fm_dod_block "$1" dod-prepush fm/dod-prepush none '' '' '' '' "$2"
+  CONFIG=$PREPUSH_CFG fm_dod_block "$1" dod-prepush fm/dod-prepush none "${3:-}" '' '' '' "$2"
 }
 
 # The line number of the first line containing <needle>, or empty.
@@ -1107,7 +1107,7 @@ line_of() {  # <text> <needle>
 
 test_an_undeclared_project_renders_the_block_unchanged() {
   local mode before after
-  prepush_declare 'satellite type=large'
+  prepush_declare 'satellite'
   for mode in no-mistakes direct-PR; do
     before=$(CONFIG=$PREPUSH_CFG fm_dod_block "$mode" dod-prepush fm/dod-prepush) \
       || fail "$mode: the control block did not render"
@@ -1121,9 +1121,9 @@ test_an_undeclared_project_renders_the_block_unchanged() {
 
 test_a_declared_project_gates_the_ready_transition() {
   local dod cmd_line ready_line
-  prepush_declare 'core type=large timeout=1200 history-depth=50'
+  prepush_declare 'core timeout=1200 history-depth=50'
   dod=$(prepush_dod no-mistakes core) || fail "the declared no-mistakes block did not render"
-  assert_contains "$dod" "fm-boat-prepush.sh --type large --timeout 1200 --history-depth 50" \
+  assert_contains "$dod" "fm-boat-prepush.sh --timeout 1200 --history-depth 50" \
     "the no-mistakes block did not carry the declared command"
   assert_contains "$dod" "Before marking the pull request ready, run the pre-ready heavy-test check on this change" \
     "the no-mistakes block did not say when to run the check"
@@ -1131,19 +1131,19 @@ test_a_declared_project_gates_the_ready_transition() {
     "the no-mistakes block did not give the red-check report grammar"
   assert_contains "$dod" "not a replacement for the forge's required checks" \
     "the no-mistakes block did not keep the check subordinate to the forge checks"
-  cmd_line=$(line_of "$dod" 'fm-boat-prepush.sh --type')
+  cmd_line=$(line_of "$dod" 'fm-boat-prepush.sh --timeout')
   ready_line=$(line_of "$dod" 'then mark it ready using the forge command below')
   [ -n "$cmd_line" ] && [ -n "$ready_line" ] && [ "$cmd_line" -lt "$ready_line" ] \
     || fail "the no-mistakes check is not placed before the ready transition (check $cmd_line, ready $ready_line)"
 
   dod=$(prepush_dod direct-PR core) || fail "the declared direct-PR block did not render"
-  assert_contains "$dod" "fm-boat-prepush.sh --type large --timeout 1200 --history-depth 50" \
+  assert_contains "$dod" "fm-boat-prepush.sh --timeout 1200 --history-depth 50" \
     "the direct-PR block did not carry the declared command"
-  cmd_line=$(line_of "$dod" 'fm-boat-prepush.sh --type')
+  cmd_line=$(line_of "$dod" 'fm-boat-prepush.sh --timeout')
   ready_line=$(line_of "$dod" 'mark the PR ready before the final CI wait')
   [ -n "$cmd_line" ] && [ -n "$ready_line" ] && [ "$cmd_line" -lt "$ready_line" ] \
     || fail "the direct-PR check is not placed before the ready transition (check $cmd_line, ready $ready_line)"
-  pass "a declared project gates both PR-publishing ready transitions with its own machine type and timeout"
+  pass "a declared project gates both PR-publishing ready transitions with its own timeout"
 }
 
 test_a_declaration_without_a_history_depth_passes_none() {
@@ -1151,7 +1151,7 @@ test_a_declaration_without_a_history_depth_passes_none() {
   prepush_declare core
   for mode in no-mistakes direct-PR; do
     dod=$(prepush_dod "$mode" core) || fail "$mode: the default declaration did not render"
-    assert_contains "$dod" "fm-boat-prepush.sh --type default --timeout 2700" \
+    assert_contains "$dod" "fm-boat-prepush.sh --timeout 2700" \
       "$mode: the default declaration did not render its defaults"
     assert_not_contains "$dod" '--history-depth' \
       "$mode: a declaration with no history depth still asked for one"
@@ -1161,7 +1161,7 @@ test_a_declaration_without_a_history_depth_passes_none() {
 
 test_a_malformed_declaration_refuses_to_render() {
   local mode out
-  prepush_declare 'core type=xlarge'
+  prepush_declare 'core timeout=0'
   for mode in no-mistakes direct-PR local-only; do
     out=$(prepush_dod "$mode" core 2>&1) \
       && fail "$mode: a malformed declaration still rendered a block"
@@ -1176,6 +1176,20 @@ test_a_malformed_declaration_refuses_to_render() {
   pass "a malformed declaration refuses every block that names a project and spares one that does not"
 }
 
+test_a_named_base_reaches_both_publishing_commands() {
+  local mode dod
+  prepush_declare core
+  for mode in no-mistakes direct-PR; do
+    dod=$(prepush_dod "$mode" core release/stable) || fail "named base did not render"
+    assert_contains "$dod" 'fm-boat-prepush.sh --timeout 2700 --base release/stable' \
+      "the delivered prompt lost the named base"
+    dod=$(prepush_dod "$mode" core) || fail "default base did not render"
+    assert_not_contains "$(printf '%s\n' "$dod" | grep 'Before marking the pull request ready, run')" '--base' "the delivered prompt invented an explicit base"
+  done
+  pass "both delivered publishing prompts preserve an explicit base and omit an absent one"
+}
+
+test_a_named_base_reaches_both_publishing_commands
 test_an_undeclared_project_renders_the_block_unchanged
 test_a_declared_project_gates_the_ready_transition
 test_a_declaration_without_a_history_depth_passes_none

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # fm-boat-prepush-lib.sh - which projects run the pre-ready heavy-test check,
-# and on what machine, timeout and Git history.
+# and with what timeout and Git history.
 #
 # A core-like project's heavy test lanes are too slow and too hungry to run in
 # a worker's own copy, so they go to one disposable Boat machine before the
@@ -16,14 +16,11 @@
 #
 # Declaration: <config-dir>/boat-prepush in the active home's config directory.
 # One line per project:
-#   <project-name> [type=default|large] [timeout=SECONDS] [history-depth=N]
+#   <project-name> [timeout=SECONDS] [history-depth=N]
 # <project-name> is the project's registered name, which is the basename of its
 # clone directory, and it is the FIRST whitespace-separated field, so a name
 # containing spaces cannot be declared here. Every later field is an optional
 # <key>=<value> token and the keys may appear in any order.
-#   type           default (4 CPU/8 GB) or large (8 CPU/16 GB), default
-#                  `default`. xlarge is refused: a pre-ready gate does not
-#                  spend the largest machine Boat offers.
 #   timeout        whole seconds, 1..2700, default 2700, the bound
 #                  bin/fm-boat-run.sh --timeout documents.
 #   history-depth  whole Git fetch depth, 1..1000, omitted by default. Omitted
@@ -60,7 +57,6 @@ _fm_boat_prepush_bounded() {  # <value> <max>
 _fm_boat_prepush_refuse() {  # <lineno> <message>
   FM_BOAT_PREPUSH_ERROR="$FM_BOAT_PREPUSH_FILE line $1 $2"
   FM_BOAT_PREPUSH_DECLARED=
-  FM_BOAT_PREPUSH_TYPE=
   FM_BOAT_PREPUSH_TIMEOUT=
   FM_BOAT_PREPUSH_HISTORY_DEPTH=
 }
@@ -68,19 +64,18 @@ _fm_boat_prepush_refuse() {  # <lineno> <message>
 # Read one project's declaration.
 # Sets FM_BOAT_PREPUSH_FILE to the declaration path, FM_BOAT_PREPUSH_DECLARED
 # to 1 when <project-name> is declared and to empty when it is not, and
-# FM_BOAT_PREPUSH_TYPE, FM_BOAT_PREPUSH_TIMEOUT and
+# FM_BOAT_PREPUSH_TIMEOUT and
 # FM_BOAT_PREPUSH_HISTORY_DEPTH to that project's fields, the last empty when
 # the declaration omits it.
 # Returns 1 with FM_BOAT_PREPUSH_ERROR when the declaration is unreadable.
-# shellcheck disable=SC2034 # The five FM_BOAT_PREPUSH_* fields below are this
+# shellcheck disable=SC2034 # The published FM_BOAT_PREPUSH_* fields below are this
 # function's return values, read by bin/fm-dod-lib.sh after sourcing.
 fm_boat_prepush_lookup() {  # <config-dir> <project-name>
   local want=$2 line lineno=0 name key value i seen='|' line_keys
-  local ptype ptimeout pdepth
+  local ptimeout pdepth
   local -a fields
   FM_BOAT_PREPUSH_FILE="$1/boat-prepush"
   FM_BOAT_PREPUSH_DECLARED=
-  FM_BOAT_PREPUSH_TYPE=
   FM_BOAT_PREPUSH_TIMEOUT=
   FM_BOAT_PREPUSH_HISTORY_DEPTH=
   FM_BOAT_PREPUSH_ERROR=
@@ -101,7 +96,6 @@ fm_boat_prepush_lookup() {  # <config-dir> <project-name>
     # declaration holding `*` names a project rather than this directory.
     read -r -a fields <<< "$line"
     name=${fields[0]}
-    ptype=default
     ptimeout=2700
     pdepth=
     line_keys='|'
@@ -121,13 +115,6 @@ fm_boat_prepush_lookup() {  # <config-dir> <project-name>
       esac
       line_keys="$line_keys$key|"
       case "$key" in
-        type)
-          case "$value" in
-            default | large) ptype=$value ;;
-            *)
-              _fm_boat_prepush_refuse "$lineno" "gives $name type=$value; this check runs only on default or large"
-              return 1 ;;
-          esac ;;
         timeout)
           _fm_boat_prepush_bounded "$value" 2700 || {
             _fm_boat_prepush_refuse "$lineno" "gives $name a timeout that is not a whole number of seconds from 1 to 2700"
@@ -153,7 +140,6 @@ fm_boat_prepush_lookup() {  # <config-dir> <project-name>
     seen="$seen$name|"
     if [ "$name" = "$want" ]; then
       FM_BOAT_PREPUSH_DECLARED=1
-      FM_BOAT_PREPUSH_TYPE=$ptype
       FM_BOAT_PREPUSH_TIMEOUT=$ptimeout
       FM_BOAT_PREPUSH_HISTORY_DEPTH=$pdepth
     fi

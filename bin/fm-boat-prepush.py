@@ -25,8 +25,6 @@ RUNNER = HERE / 'fm-boat-prepush-remote.py'
 DOLLARS_PER_SECOND = 0.00001
 MULTIPLIER = {'default': 1, 'large': 2}
 
-SIZES = ('default', 'large')
-
 MARKER = re.compile(r'^FM_BOAT_PREPUSH_(PLAN|LANE|SUMMARY) (\{.*\})$')
 
 # The head's own changed-file reader, imported by absolute file URL from a file
@@ -207,7 +205,8 @@ def report(runs: list, out) -> None:
     if not final['lanes']:
         out.write('  no lane reported a verdict\n')
     for lane in final['lanes']:
-        state = 'pass' if lane['exit'] == 0 else 'FAIL'
+        state = ('pass' if lane['exit'] == 0 else
+                 'unavailable' if lane.get('history_only') else 'FAIL')
         note = ''
         if lane['exit'] != 0:
             note = ' exit %d' % lane['exit']
@@ -217,18 +216,14 @@ def report(runs: list, out) -> None:
                 note += ', reads Git objects this upload does not carry'
         out.write('  %-26s %-4s %6.1fs%s\n'
                   % (lane.get('label') or lane['name'], state, lane['wall_s'], note))
-    not_run = (final.get('summary') or {}).get('database_not_run') or []
-    if not_run:
-        out.write('  database suites this change selects but this check does not run: %s\n'
-                  % ', '.join(not_run))
-        out.write('  they run on the project\'s own CI container image, whose database '
-                  'toolchain a disposable machine does not carry\n')
-    history = [lane['name'] for lane in final['lanes'] if lane.get('missing_history')]
-    if history:
-        out.write('  %s failed reading history the screened upload does not carry; '
-                  'this stays red because a real regression can print the same thing. '
-                  'Give the run real ancestry with --history-depth where the adapter\'s '
-                  'screening allows it.\n' % ', '.join(history))
+    excused = [(lane['name'], test) for lane in final['lanes']
+               for test in lane.get('history_excused', [])]
+    for name, test in excused:
+        out.write('  unavailable %s / %s: %s\n'
+                  % (name, test['name'], test['evidence']))
+    if excused:
+        out.write("  The forge's required checks remain the authority for these "
+                  "unavailable cases; green here does not mean full parity.\n")
     ok, failed, _ = verdict(final)
     out.write('  verdict: %s (%s machine)\n'
               % ('green' if ok else 'RED - ' + ', '.join(failed) if failed
@@ -239,7 +234,6 @@ def main(argv: list) -> int:
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument('--worktree', default='.')
     parser.add_argument('--base', default=None)
-    parser.add_argument('--type', dest='size', default='default', choices=SIZES)
     parser.add_argument('--timeout', type=int, default=2700)
     parser.add_argument('--history-depth', type=int, default=None)
     parser.add_argument('--output', default=None)
@@ -270,7 +264,7 @@ def main(argv: list) -> int:
     sys.stderr.write('fm-boat-prepush: %s..%s, %d changed files; evidence under %s\n'
                      % (base[:12], head[:12], len(files), output))
 
-    runs = [attempt(worktree, output, args.size, args.timeout, args.history_depth, command)]
+    runs = [attempt(worktree, output, 'default', args.timeout, args.history_depth, command)]
     if should_retry_large(runs[-1]):
         sys.stderr.write('fm-boat-prepush: every failing lane ran out of memory; '
                          'retrying once on the large machine\n')

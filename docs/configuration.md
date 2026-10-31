@@ -1437,19 +1437,18 @@ The file lives in the active home's config directory and holds one line per proj
 
 ```text
 # the core suite's heavy lanes
-core type=large timeout=2400 history-depth=50
+core timeout=2400 history-depth=50
 ```
 
 The first whitespace-separated field is the project's registered name, which is its clone directory name; a name containing spaces cannot be declared here.
 Every later field is an optional `<key>=<value>` token and the keys may appear in any order.
-`type` is `default` (4 CPU/8 GB) or `large` (8 CPU/16 GB) and defaults to `default`; `xlarge` is refused, because a pre-ready gate does not spend the largest machine Boat offers.
 `timeout` is a whole number of seconds from 1 to 2700, the bound [`bin/fm-boat-run.sh`](../bin/fm-boat-run.sh) `--timeout` documents, and defaults to 2700.
 `history-depth` is a whole Git fetch depth from 1 to 1000 and is omitted by default, which means the synthetic two-commit history [`bin/fm-boat-test-wrapper.sh`](../bin/fm-boat-test-wrapper.sh) builds.
 Blank lines are ignored, and a line is a comment when it is `#` or when it starts with `#` followed by whitespace, so write every note as `# note` rather than gluing it to the `#`.
 An absent file is not an error and means no project declares the check.
 A malformed line, an unknown key, a key given twice on one line, a project named twice, or an unreadable file makes the whole declaration unreadable, and every definition of done that names a project then refuses to render rather than guessing which projects were meant to be gated.
 
-When a project is declared, the two pull-request-publishing blocks of a ship worker's definition of done gain a paragraph immediately before the ready transition: run the check on this change with the declared machine type, timeout, and history depth, read its per-lane verdict, and on a nonzero exit report the failing lanes as a blocked event instead of marking the pull request ready.
+When a project is declared, the two pull-request-publishing blocks of a ship worker's definition of done gain a paragraph immediately before the ready transition: run the check on this change with the declared timeout and history depth, read its per-lane verdict, and on a nonzero exit report the failing lanes as a blocked event instead of marking the pull request ready.
 The check is a pre-ready gate rather than a replacement for the forge's required checks, which still decide whether the pull request is green.
 A project with no declaration, and a definition of done that names no project, render exactly as they did before this file existed.
 

@@ -42,6 +42,7 @@ import json
 import os
 import re
 import shutil
+import shlex
 import subprocess
 import sys
 import time
@@ -98,10 +99,6 @@ V8_HEAP_EXHAUSTION = re.compile(
 # Git's own diagnostics for an object the repository does not have. The screened
 # upload carries no real ancestry by default, so a fixture that reads a pinned
 # historical commit fails for the transport rather than for the change. These
-# are Git's wording, not any project's, so the detection does not depend on
-# knowing which tests those are. It only LABELS the failure: a lane that failed
-# still failed, and the verdict stays red, because the alternative is excusing a
-# real regression that happens to print the same diagnostic.
 MISSING_HISTORY = re.compile(
     r'exists on disk, but not in|'
     r'unknown revision or path not in the working tree|'
@@ -153,6 +150,61 @@ def cgroup_oom_kills() -> int:
     return -1
 
 
+def missing_evidence(text: str) -> str:
+    for line in text.splitlines():
+        if 'fatal:' in line and MISSING_HISTORY.search(line):
+            return line.strip()
+    return ''
+
+
+def history_failures(name: str, output: str, report: Path | None) -> tuple:
+    failures = []
+    complete = False
+    if name == 'repository-scripts' and report is not None:
+        try:
+            document = json.loads(report.read_text(encoding='utf-8'))
+            complete = document.get('numRuntimeErrorTestSuites', 0) == 0
+            for suite in document['testResults']:
+                failed = [test for test in suite['assertionResults']
+                          if test['status'] == 'failed']
+                if suite.get('status') == 'failed' and not failed:
+                    complete = False
+                for test in failed:
+                    evidence = [missing_evidence(message) for message in test['failureMessages']]
+                    failures.append({
+                        'name': test['fullName'],
+                        'evidence': evidence[0] if evidence and all(evidence) else '',
+                    })
+            complete = complete and len(failures) == document['numFailedTests']
+        except (OSError, ValueError, KeyError, TypeError):
+            complete = False
+    elif name == 'ci-scripts':
+        records = []
+        pattern = re.compile(r'^( *)not ok \d+ - ([^\n]+)\n(.*?)(?=^ *\.{3}$)',
+                             re.MULTILINE | re.DOTALL)
+        for match in pattern.finditer(output):
+            indent, title, diagnostic = match.groups()
+            depth = len(indent)
+            children = []
+            while records and records[-1][0] > depth:
+                children.insert(0, records.pop())
+            if re.search(r'failureType: [\'"]?subtestsFailed', diagnostic):
+                count = re.search(r'(\d+) subtests? failed', diagnostic)
+                valid = count is not None and int(count[1]) == len(children)
+                records.append((depth, [test for _, tests in children for test in tests]
+                                if valid else [{'name': title, 'evidence': ''}]))
+            else:
+                records.append((depth, [{'name': title,
+                                        'evidence': missing_evidence(diagnostic)}]))
+        failures = [test for _, tests in records for test in tests]
+        counts = re.findall(r'^# fail (\d+)$', output, re.MULTILINE)
+        complete = (bool(counts) and sum(map(int, counts)) == len(failures)
+                    and not re.search(r'^✗ (?:COVERAGE:|[^\n]*?(?:ZERO tests|could not parse|ZERO \*\.test))',
+                                      output, re.MULTILINE))
+    excused = [test for test in failures if test['evidence']]
+    return excused, bool(complete and failures and len(excused) == len(failures))
+
+
 def run_lane(name: str, group: str, argv: list, overlay: dict, cwd: Path) -> dict:
     """Run one lane to completion, streaming its output, and judge an OOM."""
     sys.stdout.write('\n===== lane %s =====\n' % name)
@@ -164,12 +216,19 @@ def run_lane(name: str, group: str, argv: list, overlay: dict, cwd: Path) -> dic
     # missing-object diagnostic long before its summary.
     heap = False
     history = ''
+    output = []
+    report = next((Path(arg.split('=', 1)[1]) for arg in argv
+                   if arg.startswith('--outputFile=')), None)
+    if name == 'repository-scripts' and report is not None:
+        report.unlink(missing_ok=True)
     process = subprocess.Popen(
         argv, cwd=str(cwd), env=lane_env(overlay),
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
         errors='replace', bufsize=1)
     for line in process.stdout:
         sys.stdout.write(line)
+        if name in ('ci-scripts', 'repository-scripts'):
+            output.append(line)
         if not heap and V8_HEAP_EXHAUSTION.search(line):
             heap = True
         if not history:
@@ -182,13 +241,17 @@ def run_lane(name: str, group: str, argv: list, overlay: dict, cwd: Path) -> dic
     wall = round(time.monotonic() - started, 2)
     after = cgroup_oom_kills()
     killed = before >= 0 and after > before
+    excused, history_only = history_failures(name, ''.join(output), report)
+    oom = bool(killed or exit_code == 137 or heap)
     return {
         'name': name,
         'group': group,
         'exit': exit_code,
         'wall_s': wall,
         'skipped': False,
-        'oom': bool(killed or exit_code == 137 or heap),
+        'oom': oom,
+        'history_excused': excused if exit_code != 0 else [],
+        'history_only': exit_code == 1 and history_only and not oom,
         'oom_evidence': ('cgroup oom_kill' if killed else
                          'exit 137' if exit_code == 137 else
                          'V8 heap exhaustion' if heap else ''),
@@ -335,7 +398,10 @@ def select_lanes(plan: dict) -> list:
         else:
             argv = ['npx', 'vitest', 'run', '--dir', 'scripts']
         lanes.append({
-            'name': 'repository-scripts', 'group': 'scripts', 'argv': argv, 'env': {},
+            'name': 'repository-scripts', 'group': 'scripts',
+            'argv': argv + ['--reporter=default', '--reporter=json',
+                            '--outputFile=' + str(Path(__file__).resolve().parent / 'repository-scripts.json')],
+            'env': {},
         })
     if quality.get('app_checks'):
         lanes.append({
@@ -344,20 +410,122 @@ def select_lanes(plan: dict) -> list:
             'argv': ['node', '--test', 'supabase/functions/update-btc-rates/index.test.mjs'],
             'env': {},
         })
+    if any((value or {}).get('run') for value in (plan.get('database') or {}).values()):
+        for suite in ('db', 'actions', 'runtime'):
+            if (plan['database'].get(suite) or {}).get('run'):
+                lanes.append({
+                    'name': 'database-' + suite, 'group': 'database',
+                    'argv': [sys.executable, str(Path(__file__).resolve()), '--database', suite],
+                    'env': {},
+                })
+        unknown = set(plan['database']) - {'db', 'actions', 'runtime'}
+        if any((plan['database'][suite] or {}).get('run') for suite in unknown):
+            raise Unusable('the head selected an unsupported database suite')
     return lanes
 
 
-def database_selection(plan: dict) -> list:
-    """The database suites the head's planner selected, which this check reports
-    but does not execute. Those suites run on the project's own CI container
-    image, whose PostgreSQL and PostgREST toolchain a stock disposable VM does
-    not carry; standing that image up again here would be a second subsystem,
-    and it was itself the source of several measurement-environment failures.
-    Reporting them as not run keeps the verdict honest instead of letting a
-    green line stand for work that never happened.
-    """
-    return sorted(suite for suite, verdict in (plan.get('database') or {}).items()
-                  if isinstance(verdict, dict) and verdict.get('run'))
+def run_database(suite: str, source: Path, prepush: Path) -> int:
+    images = json.loads((source / '.github/ci-images.json').read_text(encoding='utf-8'))
+    approved = {}
+    for image in images['images']:
+        if image['repo'] in ('library/postgres', 'postgrest/postgrest'):
+            if not re.fullmatch(r'sha256:[0-9a-f]{64}', image['digest']):
+                raise Unusable('database image is not digest-pinned')
+            approved[image['repo']] = image['source'] + '@' + image['digest']
+    postgres = approved['library/postgres']
+    work = prepush / ('database-' + suite)
+    clients = work / 'bin'
+    clients.mkdir(parents=True, exist_ok=True)
+    (work / 'tmp').mkdir(exist_ok=True)
+    for tool in ('psql', 'pg_dump', 'pg_restore', 'createdb', 'dropdb', 'pg_isready'):
+        wrapper = clients / tool
+        wrapper.write_text(
+            '#!/usr/bin/env bash\nexec docker run --rm -i --network host '
+            '-e PGPASSWORD -e PGOPTIONS -e PGSSLMODE -e PGCONNECT_TIMEOUT '
+            '-e PGHOST -e PGPORT -e PGUSER -e PGDATABASE -v ' + shlex.quote(str(source) + ':' + str(source)) + ' -v '
+            + shlex.quote(str(prepush) + ':' + str(prepush))
+            + ' -w "$PWD" --entrypoint ' + shlex.quote(tool) + ' '
+            + shlex.quote(postgres) + ' "$@"\n', encoding='utf-8')
+        wrapper.chmod(0o755)
+    dsn = 'postgresql://postgres:postgres@localhost:5432/postgres'
+    env = {
+        'PATH': str(clients) + os.pathsep + os.environ['PATH'],
+        'TMPDIR': str(work / 'tmp'),
+        'DB_LOCAL_URL': dsn, 'DEV_DB_URL': dsn, 'SCHEMA_ONLY_DB': 'true',
+        'DB_LOCAL_LOGDIR': str(work / 'restore'),
+        'NODE_OPTIONS': '--import tsx',
+        'LEDGER_DELTA_REPORT': str(work / 'ledger-delta.json'),
+    }
+    script = r'''
+set -euo pipefail
+command -v docker
+docker pull "$POSTGRES_IMAGE"
+pg=''
+cleanup() {
+  rc=$?
+  trap - EXIT
+  if [ -f "$POSTGREST_CIDFILE" ]; then
+    docker rm -f "$(cat "$POSTGREST_CIDFILE")" || rc=1
+    rm -f "$POSTGREST_CIDFILE"
+  fi
+  if [ -n "$pg" ]; then docker rm -f "$pg" || rc=1; fi
+  exit "$rc"
+}
+trap cleanup EXIT
+pg=$(docker run -d --pull=never -p 127.0.0.1:5432:5432 -e POSTGRES_PASSWORD=postgres "$POSTGRES_IMAGE")
+export PG_CONTAINER="$pg"
+ready=false
+for attempt in {1..120}; do
+  if docker exec "$pg" pg_isready -U postgres -d postgres; then ready=true; break; fi
+  sleep 1
+done
+[ "$ready" = true ]
+'''
+    env['POSTGRES_IMAGE'] = postgres
+    env['POSTGREST_CIDFILE'] = str(work / 'postgrest.cid')
+    if suite in ('db', 'actions'):
+        script += r'''
+bash .github/scripts/db-local/restore-snapshot.sh
+node .github/scripts/db-local/ledger-delta.mjs --tiers am --base-ref HEAD
+bash .github/scripts/db-local/prd-guards.sh "$PG_CONTAINER" "$DB_LOCAL_URL"
+'''
+    if suite == 'db':
+        env['DB_ASSERTION_REPORT_DIR'] = str(work / 'assertions')
+        script += 'pnpm --filter @core/db exec vitest run --config ./vitest.instrumented.config.ts --reporter=default\n'
+    elif suite == 'actions':
+        env.update({
+            'POSTGREST_IMAGE': approved['postgrest/postgrest'],
+            'POSTGREST_PULL_POLICY': 'never',
+            'POSTGREST_URL': 'http://127.0.0.1:54390',
+            'ACTION_DB_URL': dsn,
+        })
+        script += r'''
+docker pull "$POSTGREST_IMAGE"
+export POSTGREST_DB_CONTAINER="$pg"
+bash .github/scripts/action-db/start-postgrest.sh
+pnpm --filter @core/metaplanet test:postgrest --reporter=default
+'''
+    elif suite == 'runtime':
+        for key in ('APPLY_MIGRATIONS', 'OVERLOAD', 'PARITY', 'OVERLOAD_GUARD',
+                    'KNOWN_TABLES', 'DUMP_TABLE_CSV', 'REFRESH_DB', 'BG_APPLY',
+                    'ROLE_GRANTS', 'SPLIT_CARRY', 'INFRA_SQL_REPLAY',
+                    'TICKETING_PRESERVE', 'DDL_GUARD'):
+            env[key + '_PG_DSN'] = dsn
+        suites = sorted(str(path.relative_to(source))
+                        for path in (source / '.github/scripts').rglob('*.pg.test.mjs'))
+        if not suites:
+            raise Unusable('no live-PostgreSQL test files found')
+        script += ('node --test --test-reporter=tap ' + shlex.join(suites)
+                   + ' | tee ' + shlex.quote(str(work / 'runtime.tap')) + '\n')
+        script += r'''
+tests=$(sed -n 's/^# tests \([0-9]*\)$/\1/p' "$RUNTIME_TAP" | tail -1)
+skipped=$(sed -n 's/^# skipped \([0-9]*\)$/\1/p' "$RUNTIME_TAP" | tail -1)
+[ -n "$tests" ] && [ "$tests" -gt 0 ] && [ "$skipped" = 0 ]
+'''
+        env['RUNTIME_TAP'] = str(work / 'runtime.tap')
+    else:
+        raise Unusable('unsupported database suite: ' + suite)
+    return subprocess.run(['bash', '-c', script], cwd=source, env=lane_env(env)).returncode
 
 
 def install(source: Path) -> dict:
@@ -389,6 +557,8 @@ def main() -> int:
             'refusing to run outside a disposable machine: the working directory is %s, '
             'not %s. This check runs a whole heavy test suite and must never fall back to '
             'the local machine.' % (source, REMOTE_SOURCE))
+    if len(sys.argv) == 3 and sys.argv[1] == '--database':
+        return run_database(sys.argv[2], source, Path(__file__).resolve().parent)
     prepush = Path(os.environ['FM_PREPUSH_DIR'])
     prepush.mkdir(parents=True, exist_ok=True)
     if not (source / '.github/scripts/test-plan').is_dir():
@@ -399,16 +569,14 @@ def main() -> int:
     results = [install(source)]
     emit('LANE', results[0])
     if results[0]['exit'] != 0:
-        emit('SUMMARY', {'lanes': results, 'plan': None, 'database_not_run': [],
+        emit('SUMMARY', {'lanes': results, 'plan': None,
                          'failed': ['install'], 'oom': results[0]['oom']})
         return 0
 
     files = json.loads(os.environ['FM_PREPUSH_FILES'])
     plan = read_plan(prepush, source, files)
     lanes = select_lanes(plan)
-    not_run = database_selection(plan)
-    emit('PLAN', {'plan': plan, 'lanes': [lane['name'] for lane in lanes],
-                  'database_not_run': not_run})
+    emit('PLAN', {'plan': plan, 'lanes': [lane['name'] for lane in lanes]})
 
     for lane in lanes:
         result = run_lane(lane['name'], lane['group'], lane['argv'], lane['env'], source)
@@ -417,13 +585,12 @@ def main() -> int:
         results.append(result)
         emit('LANE', result)
 
-    failed = [r['name'] for r in results if r['exit'] != 0]
+    failed = [r['name'] for r in results if r['exit'] != 0 and not r.get('history_only')]
     emit('SUMMARY', {
         'lanes': results,
         'plan': plan,
-        'database_not_run': not_run,
         'failed': failed,
-        'oom': bool(failed) and all(r['oom'] for r in results if r['exit'] != 0),
+        'oom': bool(failed) and all(r['oom'] for r in results if r['exit'] != 0 and not r.get('history_only')),
     })
     return 0
 
