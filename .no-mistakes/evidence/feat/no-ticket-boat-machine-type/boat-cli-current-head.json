@@ -1,0 +1,209 @@
+{
+  "head": "3d8ffb9e75a11eb9f44bb2bc87dd9998aa459942",
+  "cases": [
+    {
+      "name": "legacy-denies-large",
+      "command": [
+        "~/.no-mistakes/worktrees/c0c4fcacb05a/01M67Z5HP9PYSC4KEVENHMTEBD/bin/fm-boat-run.sh",
+        "run",
+        "--worktree",
+        "~/.no-mistakes/worktrees/c0c4fcacb05a/01M67Z5HP9PYSC4KEVENHMTEBD/.boat-phase-pbuijp68/source",
+        "--output",
+        "~/.no-mistakes/worktrees/c0c4fcacb05a/01M67Z5HP9PYSC4KEVENHMTEBD/.boat-phase-pbuijp68/legacy-denies-large/output",
+        "--type",
+        "large",
+        "--",
+        "printf",
+        "should-never-execute"
+      ],
+      "exit": 2,
+      "stdout": "",
+      "stderr": "boat-offload: no Boat account permits machine type large; configure types= in config/boat-keys\n",
+      "result": {
+        "kind": "invalid",
+        "remote_exit": null,
+        "cleanup": "not-created",
+        "swap_gib": 0,
+        "error": "no Boat account permits machine type large; configure types= in config/boat-keys",
+        "adapter_exit": 2
+      }
+    },
+    {
+      "name": "default-only-denies-xlarge",
+      "command": [
+        "~/.no-mistakes/worktrees/c0c4fcacb05a/01M67Z5HP9PYSC4KEVENHMTEBD/bin/fm-boat-run.sh",
+        "run",
+        "--worktree",
+        "~/.no-mistakes/worktrees/c0c4fcacb05a/01M67Z5HP9PYSC4KEVENHMTEBD/.boat-phase-pbuijp68/source",
+        "--output",
+        "~/.no-mistakes/worktrees/c0c4fcacb05a/01M67Z5HP9PYSC4KEVENHMTEBD/.boat-phase-pbuijp68/default-only-denies-xlarge/output",
+        "--type",
+        "xlarge",
+        "--",
+        "printf",
+        "should-never-execute"
+      ],
+      "exit": 2,
+      "stdout": "",
+      "stderr": "boat-offload: no Boat account permits machine type xlarge; configure types= in config/boat-keys\n",
+      "result": {
+        "kind": "invalid",
+        "remote_exit": null,
+        "cleanup": "not-created",
+        "swap_gib": 0,
+        "error": "no Boat account permits machine type xlarge; configure types= in config/boat-keys",
+        "adapter_exit": 2
+      }
+    },
+    {
+      "name": "reject-cli-small",
+      "command": [
+        "~/.no-mistakes/worktrees/c0c4fcacb05a/01M67Z5HP9PYSC4KEVENHMTEBD/bin/fm-boat-run.sh",
+        "run",
+        "--worktree",
+        "~/.no-mistakes/worktrees/c0c4fcacb05a/01M67Z5HP9PYSC4KEVENHMTEBD/.boat-phase-pbuijp68/source",
+        "--output",
+        "~/.no-mistakes/worktrees/c0c4fcacb05a/01M67Z5HP9PYSC4KEVENHMTEBD/.boat-phase-pbuijp68/reject-cli-small/output",
+        "--type",
+        "small",
+        "--",
+        "printf",
+        "should-never-execute"
+      ],
+      "exit": 2,
+      "stdout": "",
+      "stderr": "usage: fm-boat-run.py run [-h] --worktree WORKTREE --output OUTPUT\n                          [--input INPUT] [--artifact ARTIFACT]\n                          [--timeout TIMEOUT] [--type {default,large,xlarge}]\n                          [--swap-gib {0,1,2,3,4}]\n                          [--history-depth HISTORY_DEPTH]\n                          ...\nfm-boat-run.py run: error: argument --type: invalid choice: 'small' (choose from default, large, xlarge)\n"
+    },
+    {
+      "name": "reject-cli-huge",
+      "command": [
+        "~/.no-mistakes/worktrees/c0c4fcacb05a/01M67Z5HP9PYSC4KEVENHMTEBD/bin/fm-boat-run.sh",
+        "run",
+        "--worktree",
+        "~/.no-mistakes/worktrees/c0c4fcacb05a/01M67Z5HP9PYSC4KEVENHMTEBD/.boat-phase-pbuijp68/source",
+        "--output",
+        "~/.no-mistakes/worktrees/c0c4fcacb05a/01M67Z5HP9PYSC4KEVENHMTEBD/.boat-phase-pbuijp68/reject-cli-huge/output",
+        "--type",
+        "huge",
+        "--",
+        "printf",
+        "should-never-execute"
+      ],
+      "exit": 2,
+      "stdout": "",
+      "stderr": "usage: fm-boat-run.py run [-h] --worktree WORKTREE --output OUTPUT\n                          [--input INPUT] [--artifact ARTIFACT]\n                          [--timeout TIMEOUT] [--type {default,large,xlarge}]\n                          [--swap-gib {0,1,2,3,4}]\n                          [--history-depth HISTORY_DEPTH]\n                          ...\nfm-boat-run.py run: error: argument --type: invalid choice: 'huge' (choose from default, large, xlarge)\n"
+    },
+    {
+      "name": "reject-config-0",
+      "command": [
+        "~/.no-mistakes/worktrees/c0c4fcacb05a/01M67Z5HP9PYSC4KEVENHMTEBD/bin/fm-boat-run.sh",
+        "run",
+        "--worktree",
+        "~/.no-mistakes/worktrees/c0c4fcacb05a/01M67Z5HP9PYSC4KEVENHMTEBD/.boat-phase-pbuijp68/source",
+        "--output",
+        "~/.no-mistakes/worktrees/c0c4fcacb05a/01M67Z5HP9PYSC4KEVENHMTEBD/.boat-phase-pbuijp68/reject-config-0/output",
+        "--type",
+        "default",
+        "--",
+        "printf",
+        "should-never-execute"
+      ],
+      "exit": 2,
+      "stdout": "",
+      "stderr": "boat-offload: invalid Boat account configuration\n"
+    },
+    {
+      "name": "reject-config-1",
+      "command": [
+        "~/.no-mistakes/worktrees/c0c4fcacb05a/01M67Z5HP9PYSC4KEVENHMTEBD/bin/fm-boat-run.sh",
+        "run",
+        "--worktree",
+        "~/.no-mistakes/worktrees/c0c4fcacb05a/01M67Z5HP9PYSC4KEVENHMTEBD/.boat-phase-pbuijp68/source",
+        "--output",
+        "~/.no-mistakes/worktrees/c0c4fcacb05a/01M67Z5HP9PYSC4KEVENHMTEBD/.boat-phase-pbuijp68/reject-config-1/output",
+        "--type",
+        "default",
+        "--",
+        "printf",
+        "should-never-execute"
+      ],
+      "exit": 2,
+      "stdout": "",
+      "stderr": "boat-offload: invalid Boat account configuration\n"
+    },
+    {
+      "name": "reject-config-2",
+      "command": [
+        "~/.no-mistakes/worktrees/c0c4fcacb05a/01M67Z5HP9PYSC4KEVENHMTEBD/bin/fm-boat-run.sh",
+        "run",
+        "--worktree",
+        "~/.no-mistakes/worktrees/c0c4fcacb05a/01M67Z5HP9PYSC4KEVENHMTEBD/.boat-phase-pbuijp68/source",
+        "--output",
+        "~/.no-mistakes/worktrees/c0c4fcacb05a/01M67Z5HP9PYSC4KEVENHMTEBD/.boat-phase-pbuijp68/reject-config-2/output",
+        "--type",
+        "default",
+        "--",
+        "printf",
+        "should-never-execute"
+      ],
+      "exit": 2,
+      "stdout": "",
+      "stderr": "boat-offload: invalid Boat account configuration\n"
+    },
+    {
+      "name": "reject-config-3",
+      "command": [
+        "~/.no-mistakes/worktrees/c0c4fcacb05a/01M67Z5HP9PYSC4KEVENHMTEBD/bin/fm-boat-run.sh",
+        "run",
+        "--worktree",
+        "~/.no-mistakes/worktrees/c0c4fcacb05a/01M67Z5HP9PYSC4KEVENHMTEBD/.boat-phase-pbuijp68/source",
+        "--output",
+        "~/.no-mistakes/worktrees/c0c4fcacb05a/01M67Z5HP9PYSC4KEVENHMTEBD/.boat-phase-pbuijp68/reject-config-3/output",
+        "--type",
+        "default",
+        "--",
+        "printf",
+        "should-never-execute"
+      ],
+      "exit": 2,
+      "stdout": "",
+      "stderr": "boat-offload: invalid Boat account configuration\n"
+    },
+    {
+      "name": "wrapper-denies-large",
+      "command": [
+        "~/.no-mistakes/worktrees/c0c4fcacb05a/01M67Z5HP9PYSC4KEVENHMTEBD/bin/fm-boat-test-wrapper.sh",
+        "printf should-never-execute"
+      ],
+      "exit": 2,
+      "stdout": "",
+      "stderr": "boat-test-wrapper: result.json: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M67Z5HP9PYSC4KEVENHMTEBD/.boat-phase-pbuijp68/.fm-test-scratch/fm-boat-test.WvMk1P/boat/result.json\nboat-offload: no Boat account permits machine type large; configure types= in config/boat-keys\nboat-test-wrapper: adapter failure (exit 2, adapter-failure); Test failed; result.json: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M67Z5HP9PYSC4KEVENHMTEBD/.boat-phase-pbuijp68/.fm-test-scratch/fm-boat-test.WvMk1P/boat/result.json\n",
+      "result": {
+        "kind": "invalid",
+        "remote_exit": null,
+        "cleanup": "not-created",
+        "swap_gib": 0,
+        "error": "no Boat account permits machine type large; configure types= in config/boat-keys",
+        "adapter_exit": 2
+      }
+    },
+    {
+      "name": "wrapper-denies-xlarge",
+      "command": [
+        "~/.no-mistakes/worktrees/c0c4fcacb05a/01M67Z5HP9PYSC4KEVENHMTEBD/bin/fm-boat-test-wrapper.sh",
+        "printf should-never-execute"
+      ],
+      "exit": 2,
+      "stdout": "",
+      "stderr": "boat-test-wrapper: result.json: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M67Z5HP9PYSC4KEVENHMTEBD/.boat-phase-pbuijp68/.fm-test-scratch/fm-boat-test.J3uRUV/boat/result.json\nboat-offload: no Boat account permits machine type xlarge; configure types= in config/boat-keys\nboat-test-wrapper: adapter failure (exit 2, adapter-failure); Test failed; result.json: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M67Z5HP9PYSC4KEVENHMTEBD/.boat-phase-pbuijp68/.fm-test-scratch/fm-boat-test.J3uRUV/boat/result.json\n",
+      "result": {
+        "kind": "invalid",
+        "remote_exit": null,
+        "cleanup": "not-created",
+        "swap_gib": 0,
+        "error": "no Boat account permits machine type xlarge; configure types= in config/boat-keys",
+        "adapter_exit": 2
+      }
+    }
+  ]
+}
