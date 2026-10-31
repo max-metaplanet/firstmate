@@ -1,0 +1,3 @@
+ok - a declared queue-only required check absent from the head passes the wait while an undeclared one still blocks
+ok - a declared queue-only check still counts when it reports red or is running, and other required checks are unaffected
+ok - the watch is bounded by --timeout, reports the outstanding checks, and rejects a bound without watch or a malformed option

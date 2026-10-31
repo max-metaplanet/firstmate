@@ -1,0 +1,6 @@
+held: https://github.com/example/repo/pull/9 awaits firstmate ready call (publication exit=0)
+REQUIRED CHECK: CI gate (missing)
+QUEUE-ONLY CHECK: queue-verdict (runs in the merge queue)
+QUEUE-ONLY CHECK: queue-verdict (runs in the merge queue)
+ready: https://github.com/example/repo/pull/9 checks green (ready CI reruns)
+Observable state: refresh hold cleared; merge hold label retained

@@ -1,0 +1,9 @@
+held: https://github.com/example/repo/pull/9 awaits firstmate ready call (publication exit=0)
+ok - the ready wait passes a project declared merge-queue-only check that never reports on the head
+ok - an undeclared check that never reports ends the ready wait with an actionable message and keeps the hold
+ok - a malformed queue-only declaration refuses the ready call and keeps the hold
+REQUIRED CHECK: queue-verdict (missing)
+REQUIRED CHECK: queue-verdict (missing)
+fm-pr-checks: gave up after 1s waiting for queue-verdict (missing) on https://github.com/example/repo/pull/9
+fm-pr-checks: a check that only runs in this project's merge queue belongs in --queue-only; otherwise find out why it has not reported, or raise --timeout for a legitimately long CI run
+fm-pr-refresh: ready CI wait did not pass; hold retained; raise FM_PR_READY_TIMEOUT for a legitimately long CI run

@@ -1,0 +1,1 @@
+ok - a queue-only declaration relaxes the unreported-check guard only on the ready-hold release actually taken, never on a direct merge or a red check

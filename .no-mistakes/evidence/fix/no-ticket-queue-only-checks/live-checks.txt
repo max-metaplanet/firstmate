@@ -1,0 +1,12 @@
+$ bash bin/fm-pr-checks.sh https://github.com/metaplanet-jp/core/pull/2744
+REQUIRED CHECK: db/gate-verdict (red)
+REQUIRED CHECK: tests-verdict (red)
+exit=1
+$ bash bin/fm-pr-checks.sh --watch --timeout 1 https://github.com/metaplanet-jp/core/pull/2744
+REQUIRED CHECK: db/gate-verdict (red)
+REQUIRED CHECK: tests-verdict (red)
+exit=1
+$ bash bin/fm-pr-checks.sh --watch --timeout 1 --queue-only tests-verdict --queue-only db/gate-verdict https://github.com/metaplanet-jp/core/pull/2744
+REQUIRED CHECK: db/gate-verdict (red)
+REQUIRED CHECK: tests-verdict (red)
+exit=1
