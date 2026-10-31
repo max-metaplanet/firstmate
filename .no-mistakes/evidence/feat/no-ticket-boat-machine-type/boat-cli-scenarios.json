@@ -1,0 +1,313 @@
+[
+  {
+    "name": "legacy-denies-large",
+    "command": [
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M67Z5HP9PYSC4KEVENHMTEBD/bin/fm-boat-run.sh",
+      "run",
+      "--worktree",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M67Z5HP9PYSC4KEVENHMTEBD/.boat-validation-my5h8u86/source",
+      "--output",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M67Z5HP9PYSC4KEVENHMTEBD/.boat-validation-my5h8u86/legacy-denies-large",
+      "--type",
+      "large",
+      "--",
+      "printf",
+      "remote-command-must-not-run"
+    ],
+    "exit": 2,
+    "stdout": "",
+    "stderr": "boat-offload: no Boat account permits machine type large; configure types= in config/boat-keys\n",
+    "result": {
+      "kind": "invalid",
+      "remote_exit": null,
+      "cleanup": "not-created",
+      "swap_gib": 0,
+      "error": "no Boat account permits machine type large; configure types= in config/boat-keys",
+      "adapter_exit": 2
+    }
+  },
+  {
+    "name": "default-only-denies-xlarge",
+    "command": [
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M67Z5HP9PYSC4KEVENHMTEBD/bin/fm-boat-run.sh",
+      "run",
+      "--worktree",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M67Z5HP9PYSC4KEVENHMTEBD/.boat-validation-my5h8u86/source",
+      "--output",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M67Z5HP9PYSC4KEVENHMTEBD/.boat-validation-my5h8u86/default-only-denies-xlarge",
+      "--type",
+      "xlarge",
+      "--",
+      "printf",
+      "remote-command-must-not-run"
+    ],
+    "exit": 2,
+    "stdout": "",
+    "stderr": "boat-offload: no Boat account permits machine type xlarge; configure types= in config/boat-keys\n",
+    "result": {
+      "kind": "invalid",
+      "remote_exit": null,
+      "cleanup": "not-created",
+      "swap_gib": 0,
+      "error": "no Boat account permits machine type xlarge; configure types= in config/boat-keys",
+      "adapter_exit": 2
+    }
+  },
+  {
+    "name": "removed-small-cli",
+    "command": [
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M67Z5HP9PYSC4KEVENHMTEBD/bin/fm-boat-run.sh",
+      "run",
+      "--worktree",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M67Z5HP9PYSC4KEVENHMTEBD/.boat-validation-my5h8u86/source",
+      "--output",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M67Z5HP9PYSC4KEVENHMTEBD/.boat-validation-my5h8u86/removed-small-cli",
+      "--type",
+      "small",
+      "--",
+      "printf",
+      "remote-command-must-not-run"
+    ],
+    "exit": 2,
+    "stdout": "",
+    "stderr": "usage: fm-boat-run.py run [-h] --worktree WORKTREE --output OUTPUT\n                          [--input INPUT] [--artifact ARTIFACT]\n                          [--timeout TIMEOUT] [--type {default,large,xlarge}]\n                          [--swap-gib {0,1,2,3,4}]\n                          ...\nfm-boat-run.py run: error: argument --type: invalid choice: 'small' (choose from default, large, xlarge)\n"
+  },
+  {
+    "name": "unknown-cli",
+    "command": [
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M67Z5HP9PYSC4KEVENHMTEBD/bin/fm-boat-run.sh",
+      "run",
+      "--worktree",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M67Z5HP9PYSC4KEVENHMTEBD/.boat-validation-my5h8u86/source",
+      "--output",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M67Z5HP9PYSC4KEVENHMTEBD/.boat-validation-my5h8u86/unknown-cli",
+      "--type",
+      "huge",
+      "--",
+      "printf",
+      "remote-command-must-not-run"
+    ],
+    "exit": 2,
+    "stdout": "",
+    "stderr": "usage: fm-boat-run.py run [-h] --worktree WORKTREE --output OUTPUT\n                          [--input INPUT] [--artifact ARTIFACT]\n                          [--timeout TIMEOUT] [--type {default,large,xlarge}]\n                          [--swap-gib {0,1,2,3,4}]\n                          ...\nfm-boat-run.py run: error: argument --type: invalid choice: 'huge' (choose from default, large, xlarge)\n"
+  },
+  {
+    "name": "invalid-config-0",
+    "command": [
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M67Z5HP9PYSC4KEVENHMTEBD/bin/fm-boat-run.sh",
+      "run",
+      "--worktree",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M67Z5HP9PYSC4KEVENHMTEBD/.boat-validation-my5h8u86/source",
+      "--output",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M67Z5HP9PYSC4KEVENHMTEBD/.boat-validation-my5h8u86/invalid-config-0",
+      "--type",
+      "default",
+      "--",
+      "printf",
+      "remote-command-must-not-run"
+    ],
+    "exit": 2,
+    "stdout": "",
+    "stderr": "boat-offload: invalid Boat account configuration\n"
+  },
+  {
+    "name": "invalid-config-1",
+    "command": [
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M67Z5HP9PYSC4KEVENHMTEBD/bin/fm-boat-run.sh",
+      "run",
+      "--worktree",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M67Z5HP9PYSC4KEVENHMTEBD/.boat-validation-my5h8u86/source",
+      "--output",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M67Z5HP9PYSC4KEVENHMTEBD/.boat-validation-my5h8u86/invalid-config-1",
+      "--type",
+      "default",
+      "--",
+      "printf",
+      "remote-command-must-not-run"
+    ],
+    "exit": 2,
+    "stdout": "",
+    "stderr": "boat-offload: invalid Boat account configuration\n"
+  },
+  {
+    "name": "invalid-config-2",
+    "command": [
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M67Z5HP9PYSC4KEVENHMTEBD/bin/fm-boat-run.sh",
+      "run",
+      "--worktree",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M67Z5HP9PYSC4KEVENHMTEBD/.boat-validation-my5h8u86/source",
+      "--output",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M67Z5HP9PYSC4KEVENHMTEBD/.boat-validation-my5h8u86/invalid-config-2",
+      "--type",
+      "default",
+      "--",
+      "printf",
+      "remote-command-must-not-run"
+    ],
+    "exit": 2,
+    "stdout": "",
+    "stderr": "boat-offload: invalid Boat account configuration\n"
+  },
+  {
+    "name": "invalid-config-3",
+    "command": [
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M67Z5HP9PYSC4KEVENHMTEBD/bin/fm-boat-run.sh",
+      "run",
+      "--worktree",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M67Z5HP9PYSC4KEVENHMTEBD/.boat-validation-my5h8u86/source",
+      "--output",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M67Z5HP9PYSC4KEVENHMTEBD/.boat-validation-my5h8u86/invalid-config-3",
+      "--type",
+      "default",
+      "--",
+      "printf",
+      "remote-command-must-not-run"
+    ],
+    "exit": 2,
+    "stdout": "",
+    "stderr": "boat-offload: invalid Boat account configuration\n"
+  },
+  {
+    "name": "invalid-config-4",
+    "command": [
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M67Z5HP9PYSC4KEVENHMTEBD/bin/fm-boat-run.sh",
+      "run",
+      "--worktree",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M67Z5HP9PYSC4KEVENHMTEBD/.boat-validation-my5h8u86/source",
+      "--output",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M67Z5HP9PYSC4KEVENHMTEBD/.boat-validation-my5h8u86/invalid-config-4",
+      "--type",
+      "default",
+      "--",
+      "printf",
+      "remote-command-must-not-run"
+    ],
+    "exit": 2,
+    "stdout": "",
+    "stderr": "boat-offload: invalid Boat account configuration\n"
+  },
+  {
+    "name": "wrapper-denies-large",
+    "command": [
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M67Z5HP9PYSC4KEVENHMTEBD/bin/fm-boat-test-wrapper.sh",
+      "printf local-fallback-must-not-run"
+    ],
+    "exit": 2,
+    "stdout": "",
+    "stderr": "boat-test-wrapper: result.json: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M67Z5HP9PYSC4KEVENHMTEBD/.boat-validation-my5h8u86/.fm-test-scratch/fm-boat-test.57gTpM/boat/result.json\nboat-offload: no Boat account permits machine type large; configure types= in config/boat-keys\nboat-test-wrapper: adapter failure (exit 2, adapter-failure); Test failed; result.json: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M67Z5HP9PYSC4KEVENHMTEBD/.boat-validation-my5h8u86/.fm-test-scratch/fm-boat-test.57gTpM/boat/result.json\n",
+    "result": {
+      "kind": "invalid",
+      "remote_exit": null,
+      "cleanup": "not-created",
+      "swap_gib": 0,
+      "error": "no Boat account permits machine type large; configure types= in config/boat-keys",
+      "adapter_exit": 2
+    }
+  },
+  {
+    "name": "wrapper-denies-xlarge",
+    "command": [
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M67Z5HP9PYSC4KEVENHMTEBD/bin/fm-boat-test-wrapper.sh",
+      "printf local-fallback-must-not-run"
+    ],
+    "exit": 2,
+    "stdout": "",
+    "stderr": "boat-test-wrapper: result.json: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M67Z5HP9PYSC4KEVENHMTEBD/.boat-validation-my5h8u86/.fm-test-scratch/fm-boat-test.IJJHtu/boat/result.json\nboat-offload: no Boat account permits machine type xlarge; configure types= in config/boat-keys\nboat-test-wrapper: adapter failure (exit 2, adapter-failure); Test failed; result.json: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M67Z5HP9PYSC4KEVENHMTEBD/.boat-validation-my5h8u86/.fm-test-scratch/fm-boat-test.IJJHtu/boat/result.json\n",
+    "result": {
+      "kind": "invalid",
+      "remote_exit": null,
+      "cleanup": "not-created",
+      "swap_gib": 0,
+      "error": "no Boat account permits machine type large; configure types= in config/boat-keys",
+      "adapter_exit": 2
+    }
+  },
+  {
+    "name": "default-without-key",
+    "command": [
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M67Z5HP9PYSC4KEVENHMTEBD/bin/fm-boat-run.sh",
+      "run",
+      "--worktree",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M67Z5HP9PYSC4KEVENHMTEBD/.boat-validation-my5h8u86/source",
+      "--output",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M67Z5HP9PYSC4KEVENHMTEBD/.boat-validation-my5h8u86/default-without-key",
+      "--",
+      "printf",
+      "remote-command-must-not-run"
+    ],
+    "exit": 69,
+    "stdout": "",
+    "stderr": "boat-offload: Boat key unavailable\n",
+    "result": {
+      "kind": "unavailable",
+      "remote_exit": null,
+      "cleanup": "deleted",
+      "swap_gib": 0,
+      "source_head": "70d8a5dd2bb7400104707dafc18cc5238a131fa1",
+      "source_sha256": "1c18538b45f1874d3e6035db8d84a96bef37214ec47b9bf48637a33d991eac13",
+      "execution_error": "Boat key unavailable",
+      "error": "Boat key unavailable",
+      "adapter_exit": 69
+    }
+  },
+  {
+    "name": "permitted-large-without-key",
+    "command": [
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M67Z5HP9PYSC4KEVENHMTEBD/bin/fm-boat-run.sh",
+      "run",
+      "--worktree",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M67Z5HP9PYSC4KEVENHMTEBD/.boat-validation-my5h8u86/source",
+      "--output",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M67Z5HP9PYSC4KEVENHMTEBD/.boat-validation-my5h8u86/permitted-large-without-key",
+      "--type",
+      "large",
+      "--",
+      "printf",
+      "remote-command-must-not-run"
+    ],
+    "exit": 69,
+    "stdout": "",
+    "stderr": "boat-offload: Boat key unavailable\n",
+    "result": {
+      "kind": "unavailable",
+      "remote_exit": null,
+      "cleanup": "deleted",
+      "swap_gib": 0,
+      "source_head": "70d8a5dd2bb7400104707dafc18cc5238a131fa1",
+      "source_sha256": "1c18538b45f1874d3e6035db8d84a96bef37214ec47b9bf48637a33d991eac13",
+      "execution_error": "Boat key unavailable",
+      "error": "Boat key unavailable",
+      "adapter_exit": 69
+    }
+  },
+  {
+    "name": "permitted-xlarge-without-key",
+    "command": [
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M67Z5HP9PYSC4KEVENHMTEBD/bin/fm-boat-run.sh",
+      "run",
+      "--worktree",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M67Z5HP9PYSC4KEVENHMTEBD/.boat-validation-my5h8u86/source",
+      "--output",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M67Z5HP9PYSC4KEVENHMTEBD/.boat-validation-my5h8u86/permitted-xlarge-without-key",
+      "--type",
+      "xlarge",
+      "--",
+      "printf",
+      "remote-command-must-not-run"
+    ],
+    "exit": 69,
+    "stdout": "",
+    "stderr": "boat-offload: Boat key unavailable\n",
+    "result": {
+      "kind": "unavailable",
+      "remote_exit": null,
+      "cleanup": "deleted",
+      "swap_gib": 0,
+      "source_head": "70d8a5dd2bb7400104707dafc18cc5238a131fa1",
+      "source_sha256": "1c18538b45f1874d3e6035db8d84a96bef37214ec47b9bf48637a33d991eac13",
+      "execution_error": "Boat key unavailable",
+      "error": "Boat key unavailable",
+      "adapter_exit": 69
+    }
+  }
+]
