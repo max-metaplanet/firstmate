@@ -4,7 +4,7 @@
 #   FM_HOME=/absolute/home fm-boat-run.sh run --worktree DIR --output DIR
 #       [--input RELATIVE_FILE]... [--artifact RELATIVE_PATH]...
 #       [--timeout SECONDS] [--swap-gib 0..4] [--history-depth N]
-#       [--type small|default|large|xlarge] -- COMMAND [ARGS...]
+#       [--type default|large|xlarge] -- COMMAND [ARGS...]
 #   FM_HOME=/absolute/home fm-boat-run.sh reap
 # Requires python3 and Boat CLI 1.0.85+ on PATH (FM_BOAT_BIN may name a binary).
 # Accounts: optional FM_HOME/config/boat-keys, one key-file path per line,
@@ -14,8 +14,8 @@
 #   ~/.config/boat/api-key
 #   /absolute/second-key live_cap=6 pending_cap=6 daily_cap=170 environment=temp-max-dev cleanup_confirmation=list types=default,large,xlarge
 # Caps are positive integers, defaulting to 2 live, 2 pending, 75 starts/UTC day.
-# types is a comma-separated list of permitted Boat machine types: small (2 CPU/
-# 4 GB), default (4 CPU/8 GB), large (8 CPU/16 GB), xlarge (16 CPU/32 GB).
+# types is a comma-separated list of permitted Boat machine types:
+# default (4 CPU/8 GB), large (8 CPU/16 GB), xlarge (16 CPU/32 GB).
 # Empty, unknown and duplicate types are refused. Absent types means only default.
 # environment is an optional nonempty Boat environment name passed to new;
 # --no-env remains mandatory. The default leaves environment selection to Boat.

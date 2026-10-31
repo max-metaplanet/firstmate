@@ -279,7 +279,7 @@ assert 'new' in calls(state) and not calls(other)
 assert 'deletion' in calls(state)
 print('ok - configured accounts preserve first-account priority')
 
-for machine_type in ('small', 'default', 'large', 'xlarge'):
+for machine_type in ('default', 'large', 'xlarge'):
     p, state, other, env, key1, key2, config = multi(
         'type-' + machine_type, caps='types=' + machine_type)
     config.write_text(shlex.quote(str(key1)) + ' types=large\n' +

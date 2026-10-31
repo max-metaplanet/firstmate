@@ -35,7 +35,7 @@ class _Terminated(BaseException):
 
 
 ACTIVE_CHILD = None
-MACHINE_TYPES = ('small', 'default', 'large', 'xlarge')
+MACHINE_TYPES = ('default', 'large', 'xlarge')
 
 
 def terminate(number, _frame):
