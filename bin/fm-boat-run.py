@@ -6,6 +6,7 @@ import contextlib
 import datetime
 import fcntl
 import hashlib
+import io
 import json
 import os
 import re
@@ -89,6 +90,27 @@ def excluded(name, artifact=False):
                part.lower().endswith(('.pem', '.key', '.p12', '.pfx')) for part in parts)
 
 
+SOURCE_ALLOWLIST = {'.npmrc', '.claude/settings.json', '.claude/settings.local.json',
+                    '.claude/settings.example.json'}
+CREDENTIAL_CONTENT = re.compile(
+    r"[\w.-]*(?:auth|token|password|passwd|secret|credential|api[_-]?key|"
+    r"access[_-]?key|private[_-]?key)[\w.-]*[\"']?\s*[:=]|"
+    r"\bbearer\s+\S+|-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY-----|"
+    r"https?://[^/\s:@]+:[^/\s@]+@|"
+    r"\b(?:sk-[A-Za-z0-9_-]{12,}|gh[pousr]_[A-Za-z0-9]{20,}|"
+    r"github_pat_[A-Za-z0-9_]{20,}|AKIA[0-9A-Z]{16})",
+    re.IGNORECASE)
+
+
+def safe_allowlisted(name, data):
+    try:
+        text = data.decode('utf-8')
+    except UnicodeDecodeError:
+        return False
+    return not ('\x00' in text or CREDENTIAL_CONTENT.search(text) or
+                (name == '.npmrc' and re.search(r'auth|token', text, re.IGNORECASE)))
+
+
 def git(root, *args):
     # No user Git aliases, hooks or inherited repository selection.
     env = {k: v for k, v in os.environ.items() if not k.startswith('GIT_')}
@@ -104,14 +126,14 @@ def source(root, inputs, archive, key_files):
     for entry in filter(None, entries):
         meta, name = entry.split(b'\t', 1)
         name = os.fsdecode(name)
-        if excluded(name) or (root / name).resolve() in key_files:
+        if (excluded(name) and name not in SOURCE_ALLOWLIST) or (root / name).resolve() in key_files:
             continue
         if meta.split()[0] not in (b'100644', b'100755'):
             raise Failure('source contains unsupported symlink or submodule: ' + name, 2)
         names.append(name)
     for name in inputs:
         relative(name)
-        if excluded(name) or (root / name).resolve() in key_files:
+        if (excluded(name) and name not in SOURCE_ALLOWLIST) or (root / name).resolve() in key_files:
             raise Failure('extra input is a credential/cache path: ' + name, 2)
         if not (root / name).exists():
             raise Failure('extra input missing: ' + name, 2)
@@ -130,7 +152,17 @@ def source(root, inputs, archive, key_files):
                 continue
             if not path.is_file():
                 raise Failure('source input must be a regular file: ' + name, 2)
-            output.add(path, arcname=name, recursive=False)
+            if name in SOURCE_ALLOWLIST:
+                data = path.read_bytes()
+                if not safe_allowlisted(name, data):
+                    print('boat-offload: excluded allowlisted file with credential-looking content: ' +
+                          name, file=sys.stderr)
+                    continue
+                info = output.gettarinfo(path, arcname=name)
+                info.size = len(data)
+                output.addfile(info, io.BytesIO(data))
+            else:
+                output.add(path, arcname=name, recursive=False)
     return head, hashlib.sha256(archive.read_bytes()).hexdigest()
 
 
@@ -144,6 +176,8 @@ class Account:
     live_cap: int = 2
     pending_cap: int = 2
     daily_cap: int = 75
+    environment: str = ''
+    cleanup_confirmation: str = 'deletion'
 
     def daily_path(self, state):
         if self.key_file == default_key_file():
@@ -167,15 +201,20 @@ def accounts(home):
             key_file = Path(fields[0]).expanduser()
             if not key_file.is_absolute():
                 raise ValueError('relative key path')
-            caps = {}
+            options = {}
             for field in fields[1:]:
                 name, value = field.split('=', 1)
-                if name not in ('live_cap', 'pending_cap', 'daily_cap') or name in caps:
+                if name not in ('live_cap', 'pending_cap', 'daily_cap',
+                                'environment', 'cleanup_confirmation') or name in options:
                     raise ValueError('invalid cap field')
-                caps[name] = int(value)
-                if caps[name] < 1:
-                    raise ValueError('invalid cap')
-            account = Account(key_file.resolve(), **caps)
+                if name.endswith('_cap'):
+                    value = int(value)
+                    if value < 1:
+                        raise ValueError('invalid cap')
+                elif not value or (name == 'cleanup_confirmation' and value not in ('deletion', 'list')):
+                    raise ValueError('invalid account option')
+                options[name] = value
+            account = Account(key_file.resolve(), **options)
             if any(a.key_file == account.key_file for a in parsed):
                 raise ValueError('duplicate key path')
             parsed.append(account)
@@ -274,6 +313,9 @@ class Boat:
             job['cleanup'] = 'deleted'
             save(record, job)
             return
+        confirmation = job.get('cleanup_confirmation', 'deletion')
+        if confirmation not in ('deletion', 'list'):
+            raise Failure('invalid recorded cleanup confirmation', 70)
         matches = [vm for vm in self.listing() if vm.get('name') == job['name']]
         if not job.get('vm_id') and len(matches) == 1:
             job['vm_id'] = matches[0]['id']
@@ -290,7 +332,7 @@ class Boat:
             operation = deleted.get('operation', deleted)
             job['deletion_id'] = operation.get('id') or deleted.get('operationId')
             save(record, job)
-        if job.get('deletion_id'):
+        if job.get('deletion_id') and confirmation == 'deletion':
             deadline = time.monotonic() + 120
             while True:
                 data = self.call('deletion', 'status', job['deletion_id'], '--json')
@@ -300,8 +342,11 @@ class Boat:
                 if time.monotonic() >= deadline:
                     raise Failure('deletion not completed; retained for reap', 70)
                 time.sleep(2)
-        if vm_id and any(vm.get('id') == vm_id for vm in self.listing()):
-            raise Failure('VM still listed; retained for reap', 70)
+        deadline = time.monotonic() + 120
+        while vm_id and any(vm.get('id') == vm_id for vm in self.listing()):
+            if confirmation != 'list' or time.monotonic() >= deadline:
+                raise Failure('VM still listed; retained for reap', 70)
+            time.sleep(2)
         # A create that lost its response can appear after the first list. Keep
         # its reservation until the TTL elapses, even if presently absent.
         if not vm_id and job.get('create_started') and time.time() < job['expires']:
@@ -347,12 +392,15 @@ def admit(boats, job, record):
                 failures.append(Failure(str(exc), 69 if exc.code != 75 else 75))
                 continue
             save(daily_path, {'date': today, 'attempts': used + 1})
-            job.update(create_started=True, account_key_file=str(account.key_file))
+            job.update(create_started=True, account_key_file=str(account.key_file),
+                       cleanup_confirmation=account.cleanup_confirmation)
             save(record, job)
             try:
-                created = boat.call('new', '--type', 'default', '--ttl', str(job['ttl']),
-                                    '--no-env', '--no-snapshots', '--name', job['name'],
-                                    '--json', timeout=180)
+                create_args = ['new', '--type', 'default', '--ttl', str(job['ttl']),
+                               '--no-env', '--no-snapshots', '--name', job['name'], '--json']
+                if account.environment:
+                    create_args.extend(['--environment', account.environment])
+                created = boat.call(*create_args, timeout=180)
                 vm = created.get('sandbox', created)
                 vm_id = vm.get('id') or created.get('sandboxId')
                 if not isinstance(vm_id, str) or not re.fullmatch(r'bx_[a-zA-Z0-9]+', vm_id):

@@ -271,6 +271,7 @@ def reserved(state, key, count):
 p, state, other, env, key1, key2, config = multi('ordered')
 assert launch(p, env).returncode == 0
 assert 'new' in calls(state) and not calls(other)
+assert 'deletion' in calls(state)
 print('ok - configured accounts preserve first-account priority')
 
 for name, first in [('day', {'day_remaining': 0}), ('hour', {'hour_remaining': 0}),
@@ -342,6 +343,27 @@ for name, settings in [('owned-reap', {'delete_failed': True}),
     assert 'delete' not in calls(state)
 print('ok - lost-create cleanup and reap after removing config use the owning account only')
 
+p, state, other, env, key1, key2, config = multi(
+    'environment-list-cleanup', {'remaining': 0},
+    {'required_environment': 'temp-max-dev', 'deletion_forbidden': True, 'delete_failed': True},
+    caps='live_cap=6 pending_cap=6 daily_cap=170 environment=temp-max-dev cleanup_confirmation=list')
+assert launch(p, env).returncode == 70
+job = next(json.loads(f.read_text()) for f in (state / 'jobs').glob('*.json'))
+assert job['cleanup_confirmation'] == 'list'
+config.unlink()
+(other / 'fixture.json').write_text(json.dumps({'deletion_forbidden': True}))
+assert reap(env).returncode == 0
+assert 'delete' in calls(other) and 'deletion' not in calls(other)
+empty(other)
+print('ok - environment-scoped create retains --no-env and list cleanup survives config removal')
+
+p, state, other, env, key1, key2, config = multi(
+    'list-cleanup', {'remaining': 0}, {'deletion_forbidden': True}, caps='cleanup_confirmation=list')
+assert launch(p, env).returncode == 0
+assert 'delete' in calls(other) and 'deletion' not in calls(other)
+empty(other)
+print('ok - list-based cleanup completes without the restricted deletion endpoint')
+
 p, state, other, env, key1, key2, config = multi('legacy-reservations')
 for i in range(2):
     (state / 'jobs' / ('legacy-' + str(i) + '.json')).write_text(json.dumps({'cleanup': 'pending'}))
@@ -352,6 +374,8 @@ print('ok - legacy pending records count against the default account only')
 
 for index, text in enumerate(['', 'relative/path', '~/.config/boat/api-key live_cap=0',
                               '~/.config/boat/api-key live_cap=x', '~/.config/boat/api-key wrong=3',
+                              '~/.config/boat/api-key cleanup_confirmation=invalid',
+                              '~/.config/boat/api-key environment=',
                               '~/.config/boat/api-key live_cap=3 live_cap=4',
                               '~/.config/boat/api-key\n~/.config/boat/api-key', '"unterminated']):
     p, state, other, env, key1, key2, config = multi('invalid-config-' + str(index))
@@ -374,6 +398,41 @@ p, state, other, env, key1, key2, config = multi('both-full', {'remaining': 0}, 
 assert launch(p, env).returncode == 75
 assert 'new' not in calls(state) + calls(other)
 print('ok - exhausted accounts return capacity unavailable without a create')
+
+for name, contents, included in [
+    ('npmrc-safe', 'registry=https://registry.npmjs.org/\n', True),
+    ('npmrc-credential', '//registry.npmjs.org/:_authToken=fixture-only\n', False),
+    ('settings-safe', '{"permissions":{"allow":["Bash(npm test)"]}}', True),
+    ('settings-secret', '{"env":{"API_SECRET":"fixture-only"}}', False),
+    ('settings-bearer', '{"header":"Bearer fixture-only"}', False),
+    ('settings-private-key', '-----BEGIN PRIVATE KEY-----\nfixture-only', False),
+]:
+    p, state, env = case(name)
+    selected = '.npmrc' if name.startswith('npmrc') else '.claude/settings.json'
+    target = p / 'work' / selected
+    target.parent.mkdir(exist_ok=True)
+    target.write_text(contents)
+    for secret_path in ('.ssh/file', '.aws/file', '.config/file', '.claude/unlisted.json'):
+        secret = p / 'work' / secret_path
+        secret.parent.mkdir(exist_ok=True)
+        secret.write_text('excluded even without credentials')
+    vendor = p / 'work/vendor/lib.js'
+    vendor.parent.mkdir()
+    vendor.write_text('module.exports = {}')
+    git(p / 'work', 'add', '--force', '.')
+    git(p / 'work', 'commit', '-qm', 'allowlist fixture')
+    r = launch(p, env)
+    assert r.returncode == 0, (name, r.stderr)
+    uploaded = json.loads((state / 'uploaded.json').read_text())
+    assert (selected in uploaded) == included, (name, uploaded)
+    assert 'vendor/lib.js' in uploaded
+    assert not any(x.startswith(('.ssh/', '.aws/', '.config/')) or x == '.claude/unlisted.json'
+                   for x in uploaded)
+    if not included:
+        assert b'excluded allowlisted file' in r.stderr
+        assert b'fixture-only' not in r.stdout + r.stderr
+    empty(state)
+print('ok - narrow clean settings upload, credential-bearing exceptions warn without content, secret paths stay excluded')
 
 p, state, other, env, key1, key2, config = multi('multi-concurrent')
 workers = [launch(p, env, 'sleep 8', ('--output', str(p / ('output-' + str(i)))), wait=False)

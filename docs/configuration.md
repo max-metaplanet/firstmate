@@ -1387,8 +1387,9 @@ The text is static and never executed or expanded; secondmate charters never tak
 
 Ship workers can run secret-free heavy commands on ephemeral Boat VMs through [`bin/fm-boat-run.sh`](../bin/fm-boat-run.sh).
 The adapter's header and `--help` own prerequisites, source selection, result and artifact paths, ordered account selection, per-account caps, cleanup records, reaping, and explicit local fallback.
-The optional `config/boat-keys` lists key-file paths and per-account `live_cap`, `pending_cap`, and `daily_cap` fields in the format owned by that help.
+The optional `config/boat-keys` lists key-file paths and per-account `live_cap`, `pending_cap`, `daily_cap`, optional `environment`, and `cleanup_confirmation` fields in the format owned by that help.
 Without it, the adapter retains the single trial account and its existing caps.
+The help also lists narrow source-file exceptions and their credential-content screening; all other upload exclusions remain.
 It runs outside local heavy slots; authenticated checks keep their existing execution path.
 The optional no-mistakes Test integration is owned by [`bin/fm-boat-test-wrapper.sh`](../bin/fm-boat-test-wrapper.sh)'s header and `--help`, including enablement prerequisites, secret-free scope, conservative Git scoping, and local fallback.
 

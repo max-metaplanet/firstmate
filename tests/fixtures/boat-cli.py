@@ -43,6 +43,8 @@ with (root / 'fake.lock').open('a') as handle:
         print(json.dumps({'sandboxes': state, 'pageInfo': {'hasMore': fixture.get('hasMore', False)}}))
     elif command == 'new':
         assert '--no-env' in args and '--no-snapshots' in args
+        if fixture.get('required_environment'):
+            assert args[args.index('--environment') + 1] == fixture['required_environment']
         name = args[args.index('--name') + 1]
         state.append({'id': 'bx_fixture' + str(len(state)), 'name': name})
         state_path.write_text(json.dumps(state))
@@ -62,6 +64,8 @@ with (root / 'fake.lock').open('a') as handle:
         state_path.write_text(json.dumps(state))
         print(json.dumps({'id': 'bdop_fixture', 'status': 'completed'}))
     elif command == 'deletion':
+        if fixture.get('deletion_forbidden'):
+            sys.exit(1)
         print(json.dumps({'id': args[2], 'status': 'completed'}))
     elif command == 'push':
         if fixture.get('push_failed'):
