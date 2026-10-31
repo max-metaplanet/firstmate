@@ -14,7 +14,12 @@
 # paused status even if publication fails, leaving the draft held for firstmate.
 # ready is called only on firstmate's explicit instruction. It marks ready and
 # waits through fm-pr-checks.sh --watch before removing the hold; a failed wait
-# preserves the hold for retry. --ready-ci states the repository's CI policy:
+# preserves the hold for retry. The project's declared merge-queue-only
+# required checks are passed to that wait, so a check that never reports on a
+# pull-request head does not hold the refresh (docs/configuration.md
+# "Queue-only required checks"). The wait is bounded by FM_PR_READY_TIMEOUT
+# seconds, 3600 by default, and a spent bound retains the hold.
+# --ready-ci states the repository's CI policy:
 # reruns when ready_for_review re-runs draft-skipped checks (the wait adds
 # --after the ready_for_review timeline time, so draft-era skips never count),
 # unchanged when it does not (same-head skips, such as path filters, stand).
@@ -28,6 +33,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$SCRIPT_DIR/fm-pr-lib.sh"
 # shellcheck source=bin/fm-ready-hold-lib.sh
 . "$SCRIPT_DIR/fm-ready-hold-lib.sh"
+# shellcheck source=bin/fm-queue-only-lib.sh
+. "$SCRIPT_DIR/fm-queue-only-lib.sh"
 
 die() { printf 'fm-pr-refresh: %s\n' "$*" >&2; exit 1; }
 if [ "${1:-}" = --help ]; then
@@ -93,12 +100,27 @@ if [ "$ACTION" = prepare ]; then
 fi
 
 [ -f "$HOLD" ] || die 'no conflict-refresh hold exists for this task'
+CONFIG=${FM_CONFIG_OVERRIDE:-$FM_HOME/config}
+project=$(sed -n 's/^project=//p' "$META" | tail -n 1)
 READY_HOLD_LABEL=
 if [ "$(sed -n 's/^yolo=//p' "$META" | tail -n 1)" != on ]; then
-  project=$(sed -n 's/^project=//p' "$META" | tail -n 1)
-  READY_HOLD_LABEL=$(fm_ready_hold_label "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}" "$(basename "$project")") \
+  READY_HOLD_LABEL=$(fm_ready_hold_label "$CONFIG" "$(basename "$project")") \
     || die 'ready-hold declaration is unreadable; hold retained'
 fi
+QUEUE_ONLY_LIST=$(fm_queue_only_checks "$CONFIG" "$(basename "$project")") \
+  || die 'queue-only check declaration is unreadable; hold retained'
+QUEUE_ONLY_ARGS=()
+while IFS= read -r queue_only_check; do
+  [ -n "$queue_only_check" ] || continue
+  QUEUE_ONLY_ARGS+=(--queue-only "$queue_only_check")
+done <<QUEUE_ONLY
+$QUEUE_ONLY_LIST
+QUEUE_ONLY
+READY_TIMEOUT=${FM_PR_READY_TIMEOUT:-3600}
+case "$READY_TIMEOUT" in
+  ''|*[!0-9]*) READY_TIMEOUT=3600 ;;
+  *) [ "${#READY_TIMEOUT}" -le 6 ] || READY_TIMEOUT=3600 ;;
+esac
 if [ -n "$READY_HOLD_LABEL" ]; then
   fm_ready_hold_apply "$URL" "$READY_HOLD_LABEL" || die 'could not apply ready-hold label; hold retained'
 fi
@@ -111,9 +133,13 @@ if [ "$READY_CI" = reruns ]; then
   READY_AT=$(gh api --paginate "repos/$FM_PR_PATH/issues/$FM_PR_NUMBER/timeline" \
     --jq '.[] | select(.event == "ready_for_review") | .created_at' | tail -n 1) || die 'could not read ready timeline; hold retained'
   [[ "$READY_AT" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]] || die 'ready timeline time unavailable; hold retained'
-  "$SCRIPT_DIR/fm-pr-checks.sh" --watch --after "$READY_AT" "$URL"
+  "$SCRIPT_DIR/fm-pr-checks.sh" --watch --timeout "$READY_TIMEOUT" --after "$READY_AT" \
+    ${QUEUE_ONLY_ARGS[@]+"${QUEUE_ONLY_ARGS[@]}"} "$URL" \
+    || die 'ready CI wait did not pass; hold retained'
 else
-  "$SCRIPT_DIR/fm-pr-checks.sh" --watch "$URL"
+  "$SCRIPT_DIR/fm-pr-checks.sh" --watch --timeout "$READY_TIMEOUT" \
+    ${QUEUE_ONLY_ARGS[@]+"${QUEUE_ONLY_ARGS[@]}"} "$URL" \
+    || die 'ready CI wait did not pass; hold retained'
 fi
 if [ -n "$READY_HOLD_LABEL" ]; then
   fm_ready_hold_verify "$URL" "$READY_HOLD_LABEL" || die 'ready-hold label missing after CI; hold retained'
