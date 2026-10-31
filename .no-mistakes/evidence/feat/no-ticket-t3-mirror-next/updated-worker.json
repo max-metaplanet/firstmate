@@ -1,0 +1,56 @@
+{
+  "thread": {
+    "threadId": "mcp:42550640-3b5e-4701-97f1-83dce1ab91b5",
+    "projectId": "42279ed1-2c80-4f6a-92cf-1f830f0e475b",
+    "title": "Worker \u00b7 worker \u00b7 ready-home \u00b7 4ac336ae",
+    "link": "http://127.0.0.1:14683/dc779a49-2a10-4956-80f4-5b7651c72bb0/mcp%3A42550640-3b5e-4701-97f1-83dce1ab91b5",
+    "createdBy": "agent",
+    "creationSource": "mcp",
+    "status": "completed",
+    "latestRunId": "run:thread:mcp%3A42550640-3b5e-4701-97f1-83dce1ab91b5:ordinal:2",
+    "activeRunId": null,
+    "providerInstanceId": "acpRegistry_firstmate_mirror",
+    "model": "mirror",
+    "runtimeMode": "full-access",
+    "interactionMode": "default",
+    "linkedPullRequest": null,
+    "pullRequests": [],
+    "titleRegeneration": null,
+    "branch": null,
+    "worktreePath": null,
+    "parentThreadId": null,
+    "relationshipToParent": null,
+    "runCount": 2,
+    "itemCount": 7,
+    "pendingRequestCount": 0,
+    "archived": false,
+    "settled": false,
+    "settledAt": null,
+    "snoozed": false,
+    "snoozedUntil": null,
+    "createdAt": "2026-10-31T08:07:29.952Z",
+    "updatedAt": "2026-10-31T08:08:14.554Z"
+  },
+  "messages": [
+    {
+      "role": "user",
+      "runId": "run:thread:mcp%3A42550640-3b5e-4701-97f1-83dce1ab91b5:ordinal:1",
+      "text": "{\"schema\": \"fm-t3-mirror.v1\", \"task\": \"worker\", \"kind\": \"worker\", \"state\": \"unknown\", \"phase\": null, \"event\": null, \"pr\": null, \"observed_at\": \"2026-10-31T08:07:26Z\"}"
+    },
+    {
+      "role": "assistant",
+      "runId": "run:thread:mcp%3A42550640-3b5e-4701-97f1-83dce1ab91b5:ordinal:1",
+      "text": "Current state is unknown. (unknown)\n\nWorker \u00b7 worker\n\nNext: Firstmate will reconcile the durable records.\n\nObserved: 2026-10-31T08:07:26Z\n"
+    },
+    {
+      "role": "user",
+      "runId": "run:thread:mcp%3A42550640-3b5e-4701-97f1-83dce1ab91b5:ordinal:2",
+      "text": "{\"schema\": \"fm-t3-mirror.v1\", \"task\": \"worker\", \"kind\": \"worker\", \"state\": \"parked\", \"phase\": null, \"event\": \"paused\", \"pr\": \"https://github.com/example/project/pull/42\", \"observed_at\": \"2026-10-31T08:08:12Z\"}"
+    },
+    {
+      "role": "assistant",
+      "runId": "run:thread:mcp%3A42550640-3b5e-4701-97f1-83dce1ab91b5:ordinal:2",
+      "text": "Waiting for a decision or review. (parked)\n\nWorker \u00b7 worker\n\nLast recorded event: paused (historical).\n\nNext: Firstmate will handle the pending gate.\n\nhttps://github.com/example/project/pull/42\n\nObserved: 2026-10-31T08:08:12Z\n"
+    }
+  ]
+}

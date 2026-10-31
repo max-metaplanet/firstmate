@@ -1,0 +1,4 @@
+Real isolated T3 stopped intentionally after successful scenarios.
+Publisher sync returned 0; elapsed 0.98s.
+Existing mapping preserved: True
+2026-10-31T08:09:21.219031+00:00 worker relay-receipt-unavailable

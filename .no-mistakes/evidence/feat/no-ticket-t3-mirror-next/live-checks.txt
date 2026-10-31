@@ -1,0 +1,7 @@
+Initial worker and secondmate: distinct threads, one project, deterministic replies, no active run.
+Settled threads receive later parked updates, canonical PR URL retained, private reason omitted.
+Repeated unchanged sync and changed ambient connection: no additional run or redirected thread.
+Same task name in another home: separate thread, same neutral project.
+Real T3 command prompt: presentation-only reply, no marker created, turn settled.
+Publisher and direct mirror prompts left every endpoint metadata byte unchanged.
+Disabled sync creates nothing; retire refuses active mapping, removes retired mapping with publication off, preserves T3 history.

@@ -1,0 +1,6 @@
+Initial setup with provider not configured retained uncertain creation journals.
+After provider setup, syncing those original journals created no additional threads.
+2026-10-31T08:07:06.748983+00:00 mate uncertain-creation-inspect-t3
+2026-10-31T08:07:08.404947+00:00 worker uncertain-creation-inspect-t3
+2026-10-31T08:09:00.573237+00:00 mate uncertain-creation-inspect-t3
+2026-10-31T08:09:00.600833+00:00 worker uncertain-creation-inspect-t3

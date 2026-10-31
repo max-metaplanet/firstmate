@@ -1,0 +1,56 @@
+{
+  "thread": {
+    "threadId": "mcp:bfb0ffe9-40ae-4bfd-b2fc-26938807dd77",
+    "projectId": "42279ed1-2c80-4f6a-92cf-1f830f0e475b",
+    "title": "Secondmate \u00b7 mate \u00b7 ready-home \u00b7 941d4650",
+    "link": "http://127.0.0.1:14683/dc779a49-2a10-4956-80f4-5b7651c72bb0/mcp%3Abfb0ffe9-40ae-4bfd-b2fc-26938807dd77",
+    "createdBy": "agent",
+    "creationSource": "mcp",
+    "status": "completed",
+    "latestRunId": "run:thread:mcp%3Abfb0ffe9-40ae-4bfd-b2fc-26938807dd77:ordinal:2",
+    "activeRunId": null,
+    "providerInstanceId": "acpRegistry_firstmate_mirror",
+    "model": "mirror",
+    "runtimeMode": "full-access",
+    "interactionMode": "default",
+    "linkedPullRequest": null,
+    "pullRequests": [],
+    "titleRegeneration": null,
+    "branch": null,
+    "worktreePath": null,
+    "parentThreadId": null,
+    "relationshipToParent": null,
+    "runCount": 2,
+    "itemCount": 7,
+    "pendingRequestCount": 0,
+    "archived": false,
+    "settled": false,
+    "settledAt": null,
+    "snoozed": false,
+    "snoozedUntil": null,
+    "createdAt": "2026-10-31T08:07:25.079Z",
+    "updatedAt": "2026-10-31T08:08:11.259Z"
+  },
+  "messages": [
+    {
+      "role": "user",
+      "runId": "run:thread:mcp%3Abfb0ffe9-40ae-4bfd-b2fc-26938807dd77:ordinal:1",
+      "text": "{\"schema\": \"fm-t3-mirror.v1\", \"task\": \"mate\", \"kind\": \"secondmate\", \"state\": \"unknown\", \"phase\": null, \"event\": null, \"pr\": null, \"observed_at\": \"2026-10-31T08:07:22Z\"}"
+    },
+    {
+      "role": "assistant",
+      "runId": "run:thread:mcp%3Abfb0ffe9-40ae-4bfd-b2fc-26938807dd77:ordinal:1",
+      "text": "Current state is unknown. (unknown)\n\nSecondmate \u00b7 mate\n\nNext: Firstmate will reconcile the durable records.\n\nObserved: 2026-10-31T08:07:22Z\n"
+    },
+    {
+      "role": "user",
+      "runId": "run:thread:mcp%3Abfb0ffe9-40ae-4bfd-b2fc-26938807dd77:ordinal:2",
+      "text": "{\"schema\": \"fm-t3-mirror.v1\", \"task\": \"mate\", \"kind\": \"secondmate\", \"state\": \"parked\", \"phase\": null, \"event\": null, \"pr\": null, \"observed_at\": \"2026-10-31T08:08:09Z\"}"
+    },
+    {
+      "role": "assistant",
+      "runId": "run:thread:mcp%3Abfb0ffe9-40ae-4bfd-b2fc-26938807dd77:ordinal:2",
+      "text": "Waiting for a decision or review. (parked)\n\nSecondmate \u00b7 mate\n\nNext: Firstmate will handle the pending gate.\n\nObserved: 2026-10-31T08:08:09Z\n"
+    }
+  ]
+}

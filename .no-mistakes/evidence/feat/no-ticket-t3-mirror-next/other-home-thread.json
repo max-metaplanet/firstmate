@@ -1,0 +1,46 @@
+{
+  "thread": {
+    "threadId": "mcp:b767e782-8dcf-4508-9003-cdfd43f45a09",
+    "projectId": "42279ed1-2c80-4f6a-92cf-1f830f0e475b",
+    "title": "Worker \u00b7 worker \u00b7 other-home \u00b7 70909152",
+    "link": "http://127.0.0.1:14683/dc779a49-2a10-4956-80f4-5b7651c72bb0/mcp%3Ab767e782-8dcf-4508-9003-cdfd43f45a09",
+    "createdBy": "agent",
+    "creationSource": "mcp",
+    "status": "completed",
+    "latestRunId": "run:thread:mcp%3Ab767e782-8dcf-4508-9003-cdfd43f45a09:ordinal:1",
+    "activeRunId": null,
+    "providerInstanceId": "acpRegistry_firstmate_mirror",
+    "model": "mirror",
+    "runtimeMode": "full-access",
+    "interactionMode": "default",
+    "linkedPullRequest": null,
+    "pullRequests": [],
+    "titleRegeneration": null,
+    "branch": null,
+    "worktreePath": null,
+    "parentThreadId": null,
+    "relationshipToParent": null,
+    "runCount": 1,
+    "itemCount": 4,
+    "pendingRequestCount": 0,
+    "archived": false,
+    "settled": false,
+    "settledAt": null,
+    "snoozed": false,
+    "snoozedUntil": null,
+    "createdAt": "2026-10-31T08:08:20.582Z",
+    "updatedAt": "2026-10-31T08:08:21.045Z"
+  },
+  "messages": [
+    {
+      "role": "user",
+      "runId": "run:thread:mcp%3Ab767e782-8dcf-4508-9003-cdfd43f45a09:ordinal:1",
+      "text": "{\"schema\": \"fm-t3-mirror.v1\", \"task\": \"worker\", \"kind\": \"worker\", \"state\": \"unknown\", \"phase\": null, \"event\": null, \"pr\": null, \"observed_at\": \"2026-10-31T08:08:19Z\"}"
+    },
+    {
+      "role": "assistant",
+      "runId": "run:thread:mcp%3Ab767e782-8dcf-4508-9003-cdfd43f45a09:ordinal:1",
+      "text": "Current state is unknown. (unknown)\n\nWorker \u00b7 worker\n\nNext: Firstmate will reconcile the durable records.\n\nObserved: 2026-10-31T08:08:19Z\n"
+    }
+  ]
+}
