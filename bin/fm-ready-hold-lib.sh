@@ -31,8 +31,7 @@ fm_ready_hold_verify() {  # <pr-url> <label>
 }
 
 fm_ready_hold_apply() (  # <pr-url> <label>
-  # shellcheck source=bin/fm-pr-lib.sh
-  . "${BASH_SOURCE[0]%/*}/fm-pr-lib.sh"
+  # Callers source fm-pr-lib.sh; the subshell isolates parsed PR fields.
   if ! fm_pr_url_parse "$1" || [ "$FM_PR_PROVIDER" != github ]; then
     printf 'error: ready-hold requires a canonical GitHub PR URL\n' >&2
     return 1
