@@ -87,7 +87,7 @@ def changed_files(worktree: Path, scratch: Path, base: str, head: str) -> list:
     return files
 
 
-def command_string(files: list) -> str:
+def command_string(files: list, base: str) -> str:
     """The one command string the Boat test wrapper takes.
 
     The runner is written beside the uploaded source rather than into it, so the
@@ -104,6 +104,7 @@ def command_string(files: list) -> str:
         + runner +
         '\nFM_PREPUSH_RUNNER_EOF\n'
         'export FM_PREPUSH_DIR\n'
+        'export FM_PREPUSH_BASE=' + shlex.quote(base) + '\n'
         'export FM_PREPUSH_FILES=' + shlex.quote(json.dumps(files)) + '\n'
         'exec python3 "$FM_PREPUSH_DIR/runner.py"\n'
     )
@@ -216,6 +217,10 @@ def report(runs: list, out) -> None:
                 note += ', reads Git objects this upload does not carry'
         out.write('  %-26s %-4s %6.1fs%s\n'
                   % (lane.get('label') or lane['name'], state, lane['wall_s'], note))
+    not_run = (final.get('summary') or {}).get('database_not_run') or []
+    if not_run:
+        out.write('  not run on Boat (neither pass nor fail): %s; '
+                  'forge CI remains the authority for these suites.\n' % ', '.join(not_run))
     excused = [(lane['name'], test) for lane in final['lanes']
                for test in lane.get('history_excused', [])]
     for name, test in excused:
@@ -259,7 +264,7 @@ def main(argv: list) -> int:
     head = git(worktree, 'rev-parse', 'HEAD^{commit}')
     base = resolve_base(worktree, args.base)
     files = changed_files(worktree, output, base, head)
-    command = command_string(files)
+    command = command_string(files, base)
 
     sys.stderr.write('fm-boat-prepush: %s..%s, %d changed files; evidence under %s\n'
                      % (base[:12], head[:12], len(files), output))

@@ -90,6 +90,7 @@ ADMIN_BUILD_HEAP_MB = 3072
 # remaining workspace. Uncapped, that shard peaked above 8 GiB and was killed on
 # the default machine; capped it passed every sampled change at 2.6-3.2 GiB.
 WIDE_SHARD_CONCURRENCY = 2
+MEASURED_DATABASE_SUITES = ('db', 'actions', 'runtime')
 
 V8_HEAP_EXHAUSTION = re.compile(
     r'Ineffective mark-compacts near heap limit|'
@@ -104,6 +105,7 @@ MISSING_HISTORY = re.compile(
     r'unknown revision or path not in the working tree|'
     r'fatal: bad object|'
     r'fatal: not a valid object name|'
+    r'fatal: invalid object name|'
     r'fatal: Invalid revision range')
 
 
@@ -295,12 +297,13 @@ const root = process.cwd();
 const load = (p) => import(pathToFileURL(path.join(root, p)).href);
 
 const files = JSON.parse(process.env.FM_PREPUSH_FILES);
-const [{ nodePlan }, { planQuality }, { readWorkspaces }, { databaseScope, DATABASE_SUITES }] =
+const [{ nodePlan }, { planQuality }, { readWorkspaces }, { databaseScope, DATABASE_SUITES }, { SHARDS }] =
   await Promise.all([
     load('.depot/scripts/node-plan.mjs'),
     load('.github/scripts/depot-ci/plan-quality.mjs'),
     load('.github/scripts/test-plan/shard-scope.mjs'),
     load('.github/scripts/test-plan/db-scope.mjs'),
+    load('.github/scripts/test-plan/shards.mjs'),
   ]);
 
 const workspaces = await readWorkspaces(root);
@@ -312,6 +315,8 @@ const database = Object.fromEntries(
 process.stdout.write(
   JSON.stringify({
     changed_files: files.length,
+    wide_shards: SHARDS.filter((shard) => shard.filters.some((filter) => filter.startsWith('!')))
+      .map((shard) => shard.name),
     node: {
       run_count: node.run_count,
       total: node.total,
@@ -362,7 +367,7 @@ def select_lanes(plan: dict) -> list:
 
     for index, shard in enumerate(plan.get('node', {}).get('matrix') or []):
         filters = shard.get('filters') or []
-        if shard.get('name') == 'other-packages':
+        if shard.get('name') in plan['wide_shards']:
             argv = (['pnpm', 'test:ci', '--concurrency=%d' % WIDE_SHARD_CONCURRENCY]
                     + ['--filter=%s' % f for f in filters]
                     + ['--'] + list(shard.get('passthrough') or []))
@@ -410,21 +415,25 @@ def select_lanes(plan: dict) -> list:
             'argv': ['node', '--test', 'supabase/functions/update-btc-rates/index.test.mjs'],
             'env': {},
         })
-    if any((value or {}).get('run') for value in (plan.get('database') or {}).values()):
-        for suite in ('db', 'actions', 'runtime'):
-            if (plan['database'].get(suite) or {}).get('run'):
-                lanes.append({
-                    'name': 'database-' + suite, 'group': 'database',
-                    'argv': [sys.executable, str(Path(__file__).resolve()), '--database', suite],
-                    'env': {},
-                })
-        unknown = set(plan['database']) - {'db', 'actions', 'runtime'}
-        if any((plan['database'][suite] or {}).get('run') for suite in unknown):
-            raise Unusable('the head selected an unsupported database suite')
+    for suite in MEASURED_DATABASE_SUITES:
+        if ((plan.get('database') or {}).get(suite) or {}).get('run'):
+            lanes.append({
+                'name': 'database-' + suite, 'group': 'database',
+                'argv': [sys.executable, str(Path(__file__).resolve()), '--database', suite],
+                'env': {},
+            })
     return lanes
 
 
 def run_database(suite: str, source: Path, prepush: Path) -> int:
+    base_ref = os.environ['FM_PREPUSH_BASE']
+    if suite in ('db', 'actions'):
+        for args in (['rev-parse', '--verify', base_ref + '^{commit}'],
+                     ['merge-base', base_ref, 'HEAD']):
+            result = subprocess.run(['git', *args], cwd=source, stdout=subprocess.DEVNULL)
+            if result.returncode != 0:
+                sys.stderr.write('database setup cannot resolve the PR base and its ancestry: %s\n' % base_ref)
+                return result.returncode
     images = json.loads((source / '.github/ci-images.json').read_text(encoding='utf-8'))
     approved = {}
     for image in images['images']:
@@ -455,6 +464,7 @@ def run_database(suite: str, source: Path, prepush: Path) -> int:
         'DB_LOCAL_LOGDIR': str(work / 'restore'),
         'NODE_OPTIONS': '--import tsx',
         'LEDGER_DELTA_REPORT': str(work / 'ledger-delta.json'),
+        'FM_PREPUSH_BASE': base_ref,
     }
     script = r'''
 set -euo pipefail
@@ -476,7 +486,7 @@ pg=$(docker run -d --pull=never -p 127.0.0.1:5432:5432 -e POSTGRES_PASSWORD=post
 export PG_CONTAINER="$pg"
 ready=false
 for attempt in {1..120}; do
-  if docker exec "$pg" pg_isready -U postgres -d postgres; then ready=true; break; fi
+  if docker exec "$pg" pg_isready -h 127.0.0.1 -p 5432 -U postgres -d postgres; then ready=true; break; fi
   sleep 1
 done
 [ "$ready" = true ]
@@ -486,7 +496,7 @@ done
     if suite in ('db', 'actions'):
         script += r'''
 bash .github/scripts/db-local/restore-snapshot.sh
-node .github/scripts/db-local/ledger-delta.mjs --tiers am --base-ref HEAD
+node .github/scripts/db-local/ledger-delta.mjs --tiers am --base-ref "$FM_PREPUSH_BASE"
 bash .github/scripts/db-local/prd-guards.sh "$PG_CONTAINER" "$DB_LOCAL_URL"
 '''
     if suite == 'db':
@@ -569,17 +579,23 @@ def main() -> int:
     results = [install(source)]
     emit('LANE', results[0])
     if results[0]['exit'] != 0:
-        emit('SUMMARY', {'lanes': results, 'plan': None,
+        emit('SUMMARY', {'lanes': results, 'plan': None, 'database_not_run': [],
                          'failed': ['install'], 'oom': results[0]['oom']})
         return 0
 
     files = json.loads(os.environ['FM_PREPUSH_FILES'])
     plan = read_plan(prepush, source, files)
     lanes = select_lanes(plan)
-    emit('PLAN', {'plan': plan, 'lanes': [lane['name'] for lane in lanes]})
+    not_run = sorted(suite for suite, scope in (plan.get('database') or {}).items()
+                     if (scope or {}).get('run') and suite not in MEASURED_DATABASE_SUITES)
+    emit('PLAN', {'plan': plan, 'lanes': [lane['name'] for lane in lanes],
+                  'database_not_run': not_run})
 
     for lane in lanes:
-        result = run_lane(lane['name'], lane['group'], lane['argv'], lane['env'], source)
+        overlay = dict(lane['env'])
+        if lane['group'] == 'database':
+            overlay['FM_PREPUSH_BASE'] = os.environ['FM_PREPUSH_BASE']
+        result = run_lane(lane['name'], lane['group'], lane['argv'], overlay, source)
         result['label'] = lane.get('label') or lane['name']
         result['command'] = ' '.join(lane['argv'])
         results.append(result)
@@ -589,6 +605,7 @@ def main() -> int:
     emit('SUMMARY', {
         'lanes': results,
         'plan': plan,
+        'database_not_run': not_run,
         'failed': failed,
         'oom': bool(failed) and all(r['oom'] for r in results if r['exit'] != 0 and not r.get('history_only')),
     })

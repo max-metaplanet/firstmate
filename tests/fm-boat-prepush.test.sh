@@ -34,10 +34,11 @@ remote = load('fm-boat-prepush-remote')
 def plan(**over):
     document = {
         'changed_files': 4,
+        'wide_shards': ['other packages'],
         'node': {'run_count': 2, 'total': 5, 'matrix': [
             {'name': 'admin-center jsdom', 'filters': ['@core/admin-center'],
              'passthrough': ['--project=jsdom']},
-            {'name': 'other-packages',
+            {'name': 'other packages',
              'filters': ['!@core/db', '!@core/admin-center'],
              'passthrough': ['--passWithNoTests']},
         ]},
@@ -74,15 +75,19 @@ assert 'concurrency' not in ' '.join(by_name['node-0']['argv'])
 wide = by_name['node-1']['argv']
 assert wide[:3] == ['pnpm', 'test:ci', '--concurrency=2'], wide
 assert "--filter=!@core/db" in wide and '--passWithNoTests' in wide
-for filters in (['!@core/db', '!@core/admin-center'],
-                ['@core/mail', '@core/ui', '@core/bmj-site', '@core/planetgear']):
-    selected = remote.select_lanes(plan(node={'matrix': [{
-        'name': 'other-packages', 'filters': filters,
-        'passthrough': ['--passWithNoTests'],
-    }]}))
-    shard = next(lane for lane in selected if lane['group'] == 'node')
-    assert shard['argv'] == ['pnpm', 'test:ci', '--concurrency=2'] + [
-        '--filter=' + f for f in filters] + ['--', '--passWithNoTests']
+for wide_name in ('other packages', 'renamed remaining workspaces'):
+    for filters in (['!@core/db', '!@core/admin-center'],
+                    ['@core/mail', '@core/ui', '@core/bmj-site', '@core/planetgear']):
+        selected = remote.select_lanes(plan(wide_shards=[wide_name], node={'matrix': [{
+            'name': wide_name, 'filters': filters,
+            'passthrough': ['--passWithNoTests'],
+        }]}))
+        shard = next(lane for lane in selected if lane['group'] == 'node')
+        assert shard['argv'] == ['pnpm', 'test:ci', '--concurrency=2'] + [
+            '--filter=' + f for f in filters] + ['--', '--passWithNoTests']
+uncapped = remote.select_lanes(plan(wide_shards=[]))
+assert next(lane for lane in uncapped if lane['name'] == 'node-1')['argv'] == [
+    'node', '.depot/scripts/run-node-shard.mjs']
 print('ok - lane order, shard runner, affected packages and the two memory caps')
 
 # ── planner predicates gate the optional lanes ──────────────────────────────
@@ -174,23 +179,62 @@ print('ok - a failure reading absent history is labelled and still counted as a 
 import io
 import subprocess
 
+planner_source = base / 'planner-source'
+planner_evidence = base / 'planner-evidence'
+planner_evidence.mkdir()
+for name in ('other packages', 'new canonical shard name'):
+    definitions = [
+        {'name': 'single workspace', 'filters': ['@core/admin-center'], 'passthrough': []},
+        {'name': name, 'filters': ['!@core/db', '!@core/admin-center'],
+         'passthrough': ['--passWithNoTests']},
+    ]
+    matrix = [dict(definitions[0]), {**definitions[1], 'filters': [
+        '@core/mail', '@core/ui', '@core/bmj-site', '@core/planetgear']}]
+    modules = {
+        '.github/scripts/test-plan/shards.mjs': 'export const SHARDS = ' + json.dumps(definitions) + ';',
+        '.depot/scripts/node-plan.mjs': 'export function nodePlan() { return ' + json.dumps({
+            'run_count': 2, 'total': 2, 'matrix': matrix}) + '; }',
+        '.github/scripts/depot-ci/plan-quality.mjs': 'export function planQuality() { return {}; }',
+        '.github/scripts/test-plan/shard-scope.mjs': 'export function readWorkspaces() { return []; }',
+        '.github/scripts/test-plan/db-scope.mjs':
+            'export const DATABASE_SUITES = {db: {}, actions: {}, runtime: {}, gates: {}}; '
+            'export function databaseScope() { return {run: true}; }',
+    }
+    for filename, content in modules.items():
+        target = planner_source / filename
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(content)
+    resolved = remote.read_plan(planner_evidence, planner_source, ['app/page.tsx'])
+    assert resolved['wide_shards'] == [name], resolved
+    lanes = remote.select_lanes(resolved)
+    shards = [lane for lane in lanes if lane['group'] == 'node']
+    assert shards[0]['argv'] == ['node', '.depot/scripts/run-node-shard.mjs'], shards
+    assert shards[1]['argv'][:3] == ['pnpm', 'test:ci', '--concurrency=2'], shards
+    assert shards[1]['argv'][3:7] == ['--filter=@core/mail', '--filter=@core/ui',
+                                    '--filter=@core/bmj-site', '--filter=@core/planetgear'], shards
+print('ok - the head canonical definitions determine the cap through narrowing and renames')
+
 assert not any(lane['group'] == 'database' for lane in remote.select_lanes(plan()))
 selected_db = remote.select_lanes(plan(database={key: {'run': True}
-                                               for key in ('db', 'actions', 'runtime')}))
+                                               for key in ('db', 'actions', 'runtime', 'gates')}))
 assert [lane['name'] for lane in selected_db if lane['group'] == 'database'] == [
     'database-db', 'database-actions', 'database-runtime']
 
 subprocess.run(['git', 'init', '--quiet', str(base)], check=True)
+(base / 'missing.ts').write_text('historical fixture path')
+subprocess.run(['git', '-C', str(base), 'add', 'missing.ts'], check=True)
+subprocess.run(['git', '-C', str(base), '-c', 'user.name=Test', '-c',
+                'user.email=test@example.invalid', 'commit', '--quiet', '-m', 'fixture'], check=True)
 original_counter = remote.cgroup_oom_kills
 remote.cgroup_oom_kills = lambda: 0
-for ordinary in (False, True):
+for ordinary, suffix in ((False, ''), (True, ''), (False, ':missing.ts'), (True, ':missing.ts')):
     tap_file = base / ('tap-mixed.test.mjs' if ordinary else 'tap-history.test.mjs')
     tap_file.write_text(
         "import { describe, test } from 'node:test';\n"
         "import { execFileSync } from 'node:child_process';\n"
         "describe('a renamed suite', () => {\n"
         "test('renamed historical test', () => { execFileSync('git', "
-        "['show', '1234567890123456789012345678901234567890']); });\n"
+        "['show', " + repr(('ee343d6a' if suffix else '1234567890123456789012345678901234567890') + suffix) + "]); });\n"
         + ("test('ordinary failure', () => { throw new Error('assertion failed'); });\n"
            if ordinary else '') + '});\n')
     result = remote.run_lane('ci-scripts', 'scripts',
@@ -199,8 +243,13 @@ for ordinary in (False, True):
     assert len(result['history_excused']) == 1, result
     assert result['history_excused'][0]['name'] == 'renamed historical test', result
     assert 'fatal:' in result['history_excused'][0]['evidence'], result
+    if suffix:
+        assert result['missing_history'] == 'fatal: invalid object name', result
+        assert 'fatal: invalid object name' in result['history_excused'][0]['evidence'], result
 
 for messages, count in ((['fatal: bad object deadbeef'], 1),
+                        (["fatal: invalid object name 'ee343d6a'."], 1),
+                        (["fatal: invalid object name 'ee343d6a'.", 'ordinary assertion failure'], 2),
                         (['ordinary assertion failure'], 1),
                         (['fatal: bad object deadbeef', 'ordinary assertion failure'], 2),
                         ([], 1)):
@@ -214,14 +263,14 @@ for messages, count in ((['fatal: bad object deadbeef'], 1),
     result = remote.run_lane('repository-scripts', 'scripts',
                             [sys.executable, '-c', script, str(report_path),
                              '--outputFile=' + str(report_path)], {}, base)
-    assert result['history_only'] is (messages == ['fatal: bad object deadbeef']), result
+    assert result['history_only'] is (len(messages) == 1 and messages[0].startswith('fatal:')), result
     assert len(result['history_excused']) == sum('fatal:' in m for m in messages), result
     if result['history_only']:
         rendered = io.StringIO()
         local.report([{'size': 'default', 'wall_s': 1, 'dollars_estimate': 0,
                        'adapter_exit': 0, 'log': 'probe.log', 'lanes': [result],
                        'summary': {'failed': [], 'oom': False}}], rendered)
-        assert 'unavailable repository-scripts / case 0: fatal: bad object deadbeef' in rendered.getvalue()
+        assert 'unavailable repository-scripts / case 0: ' + messages[0] in rendered.getvalue()
         assert 'green' in rendered.getvalue() and 'does not mean full parity' in rendered.getvalue()
 
 document = {'numFailedTests': 1, 'numRuntimeErrorTestSuites': 0,
@@ -269,6 +318,17 @@ for command in ('docker', 'node', 'pnpm'):
 for script in ('db-local/restore-snapshot.sh', 'db-local/prd-guards.sh', 'action-db/start-postgrest.sh'):
     (service_source / '.github/scripts' / script).write_text(
         '#!/usr/bin/env bash\nexec node ' + script + '\n')
+subprocess.run(['git', 'init', '--quiet', str(service_source)], check=True)
+def commit_service(message):
+    subprocess.run(['git', '-C', str(service_source), '-c', 'user.name=Test',
+                    '-c', 'user.email=test@example.invalid', 'commit', '--quiet',
+                    '--allow-empty', '-m', message], check=True)
+commit_service('base')
+pr_base = subprocess.check_output(['git', '-C', str(service_source), 'rev-parse', 'HEAD'], text=True).strip()
+(service_source / 'candidate.sql').write_text('candidate migration')
+subprocess.run(['git', '-C', str(service_source), 'add', 'candidate.sql'], check=True)
+commit_service('head')
+os.environ['FM_PREPUSH_BASE'] = pr_base
 previous_path = os.environ['PATH']
 os.environ['PATH'] = str(service_bin) + os.pathsep + previous_path
 try:
@@ -278,12 +338,14 @@ try:
         calls = [json.loads(line) for line in service_log.read_text().splitlines()]
         assert calls[0] == ['docker', 'pull', 'docker.io/library/postgres@sha256:' + '1' * 64], calls
         assert calls[-1][:3] == ['docker', 'rm', '-f'], calls
+        assert ['docker', 'exec', 'a' * 64, 'pg_isready', '-h', '127.0.0.1',
+                '-p', '5432', '-U', 'postgres', '-d', 'postgres'] in calls, calls
         if suite == 'runtime':
             assert any(call[:3] == ['node', '--test', '--test-reporter=tap'] for call in calls)
         else:
             assert any(call == ['node', 'db-local/restore-snapshot.sh'] for call in calls)
             assert any(call == ['node', '.github/scripts/db-local/ledger-delta.mjs',
-                                '--tiers', 'am', '--base-ref', 'HEAD'] for call in calls)
+                                '--tiers', 'am', '--base-ref', pr_base] for call in calls)
             expected = ['pnpm', '--filter', '@core/db', 'exec', 'vitest', 'run',
                         '--config', './vitest.instrumented.config.ts', '--reporter=default'] if suite == 'db' else [
                         'pnpm', '--filter', '@core/metaplanet', 'test:postgrest', '--reporter=default']
@@ -292,14 +354,20 @@ try:
             failure_file.write_text(broken)
             assert remote.run_database(suite, service_source, base / 'service-evidence') != 0
             failure_file.unlink()
+    for suite in ('db', 'actions'):
+        service_log.write_text('')
+        os.environ['FM_PREPUSH_BASE'] = 'f' * 40
+        assert remote.run_database(suite, service_source, base / 'service-evidence') != 0
+        assert service_log.read_text() == '', 'setup ran before resolving its base'
+    os.environ['FM_PREPUSH_BASE'] = pr_base
 finally:
     os.environ['PATH'] = previous_path
 print('ok - database suites execute their selected commands, clean up, and reject setup or test failure')
 
 saved = (remote.REMOTE_SOURCE, remote.read_plan, remote.install, remote.run_lane, remote.emit)
 remote.REMOTE_SOURCE = service_source
-remote.read_plan = lambda *args: plan(database={key: {'run': True} for key in ('db', 'actions', 'runtime')})
-remote.install = lambda *args: {'name': 'install', 'exit': 0, 'oom': False}
+remote.read_plan = lambda *args: plan(database={key: {'run': True} for key in ('db', 'actions', 'runtime', 'gates')})
+remote.install = lambda *args: {'name': 'install', 'exit': 0, 'oom': False, 'wall_s': 0}
 original_cwd = Path.cwd()
 original_argv = sys.argv
 os.environ['FM_PREPUSH_FILES'] = '["change"]'
@@ -312,12 +380,23 @@ try:
         ran = []
         def execute(name, group, argv, overlay, cwd):
             ran.append(name)
-            return {'name': name, 'exit': int(name == broken), 'oom': False}
+            if group == 'database':
+                assert overlay['FM_PREPUSH_BASE'] == pr_base, overlay
+            return {'name': name, 'exit': int(name == broken), 'oom': False, 'wall_s': 0}
         remote.run_lane = execute
         remote.emit = lambda kind, doc: events.append((kind, doc))
         assert remote.main() == 0
         summary = events[-1][1]
         assert ran[-3:] == ['database-db', 'database-actions', 'database-runtime'], ran
+        assert summary['database_not_run'] == ['gates'], summary
+        rendered = io.StringIO()
+        local.report([{'size': 'default', 'wall_s': 1, 'dollars_estimate': 0,
+                       'adapter_exit': 0, 'log': 'probe.log', 'lanes': summary['lanes'],
+                       'summary': summary}], rendered)
+        assert 'not run on Boat (neither pass nor fail): gates' in rendered.getvalue()
+        assert 'forge CI remains the authority' in rendered.getvalue()
+        if not broken:
+            assert 'verdict: green' in rendered.getvalue()
         assert local.verdict({'adapter_exit': 0, 'summary': summary})[0] is (broken == '')
 finally:
     os.chdir(original_cwd)
@@ -350,17 +429,18 @@ probe.write_text(
     'Path(os.environ["PROBE_RESULT"]).write_text(json.dumps({'
     '"cwd": os.getcwd(), "runner": str(Path(__file__).resolve()), '
     '"prepush": os.environ["FM_PREPUSH_DIR"], '
-    '"files": json.loads(os.environ["FM_PREPUSH_FILES"])}))\n'
+    '"files": json.loads(os.environ["FM_PREPUSH_FILES"]), '
+    '"base": os.environ["FM_PREPUSH_BASE"]}))\n'
     'sys.exit(23)\n')
 local.RUNNER = probe
 result_path = base / 'placement.json'
-executed = subprocess.run(['bash', '-c', local.command_string(files)], cwd=source,
+executed = subprocess.run(['bash', '-c', local.command_string(files, pr_base)], cwd=source,
                           env={**os.environ, 'PROBE_RESULT': str(result_path)},
                           capture_output=True, text=True)
 assert executed.returncode == 23, executed
 observed = json.loads(result_path.read_text())
 assert observed == {'cwd': str(source), 'runner': str(source.parent / 'prepush/runner.py'),
-                    'prepush': str(source.parent / 'prepush'), 'files': files}, observed
+                    'prepush': str(source.parent / 'prepush'), 'files': files, 'base': pr_base}, observed
 assert list(source.iterdir()) == [], list(source.iterdir())
 print('ok - the runner is written beside the uploaded source, never into it')
 
