@@ -4184,6 +4184,10 @@ fi
 rm -f "$STATE/$ID.park"
 fm_lock_release "$META_LOCK"
 META_LOCK_HELD=0
+if [ -d "$STATE/t3-mirrors" ]; then
+  FM_HOME=$FM_HOME FM_STATE_OVERRIDE=$STATE FM_CONFIG_OVERRIDE=$CONFIG \
+    bash "$SCRIPT_DIR/fm-t3-mirrors.sh" retire "$ID" >/dev/null 2>&1 || true
+fi
 if [ "$TREEHOUSE_PROJECT_LOCK_HELD" = 1 ] && [ "${wt_pool_slot:-0}" = 1 ] &&
    [ "$TEARDOWN_POOL_SLOT_LOST" = 0 ]; then
   # shellcheck source=bin/fm-pool-prune-lib.sh
