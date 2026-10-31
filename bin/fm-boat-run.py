@@ -91,7 +91,9 @@ def excluded(name, artifact=False):
 
 
 SOURCE_ALLOWLIST = {'.npmrc', '.claude/settings.json', '.claude/settings.local.json',
-                    '.claude/settings.example.json'}
+                    '.claude/settings.example.json',
+                    '.github/tools/jev/vendor/.claude/agents/security-compliance.md',
+                    '.github/tools/jev/vendor/.claude/agents/release-engineer.md'}
 CREDENTIAL_CONTENT = re.compile(
     r"[\w.-]*(?:auth|token|password|passwd|secret|credential|api[_-]?key|"
     r"access[_-]?key|private[_-]?key)[\w.-]*[\"']?\s*[:=]|"
@@ -111,15 +113,68 @@ def safe_allowlisted(name, data):
                 (name == '.npmrc' and re.search(r'auth|token', text, re.IGNORECASE)))
 
 
-def git(root, *args):
+def git(root, *args, input=None):
     # No user Git aliases, hooks or inherited repository selection.
     env = {k: v for k, v in os.environ.items() if not k.startswith('GIT_')}
-    result = subprocess.run(['git', '-C', str(root), *args], env=env,
+    result = subprocess.run(['git', '-C', str(root), *args], env=env, input=input,
                             capture_output=True, check=True)
     return result.stdout
 
 
-def source(root, inputs, archive, key_files):
+def history(root, head, depth, destination, key_files):
+    try:
+        base = git(root, 'rev-parse', '--verify', 'refs/remotes/origin/main^{commit}').decode().strip()
+    except subprocess.CalledProcessError as exc:
+        raise Failure('history refused: origin/main commit is unavailable', 2) from exc
+    fetched = destination / 'fetched'
+    exported = destination / 'exported'
+    fetched.mkdir()
+    exported.mkdir()
+    object_format = git(root, 'rev-parse', '--show-object-format').decode().strip()
+    for repo in (fetched, exported):
+        git(repo, 'init', '--quiet', '--template=', '--object-format=' + object_format)
+    # A file transport negotiates shallow boundaries without copying local
+    # config, refs, reflogs, stashes, alternates or unrelated object storage.
+    git(fetched, '-c', 'protocol.file.allow=always', 'fetch', '--quiet', '--no-tags',
+        '--no-write-fetch-head', '--depth=' + str(depth), root.as_uri(), head, base)
+    git(fetched, 'update-ref', 'refs/heads/fm-boat-test', head)
+    git(fetched, 'symbolic-ref', 'HEAD', 'refs/heads/fm-boat-test')
+    git(fetched, 'update-ref', 'refs/remotes/origin/main', base)
+    scanned = set()
+    for commit in git(fetched, 'rev-list', '--all').splitlines():
+        entries = git(fetched, 'ls-tree', '-rz', '--full-tree', commit.decode()).split(b'\0')
+        for entry in filter(None, entries):
+            meta, name = entry.split(b'\t', 1)
+            name = os.fsdecode(name)
+            relative(name)
+            mode, kind, oid = meta.split()
+            if ((excluded(name) and name not in SOURCE_ALLOWLIST) or
+                    (root / name).resolve() in key_files):
+                raise Failure('history refused: excluded path: ' + name, 2)
+            if kind != b'blob' or mode not in (b'100644', b'100755'):
+                raise Failure('history refused: unsupported symlink or submodule: ' + name, 2)
+            # .npmrc has an additional content rule, even for a reused blob.
+            scan_key = (oid, name == '.npmrc')
+            if scan_key not in scanned:
+                if not safe_allowlisted(name, git(fetched, 'cat-file', 'blob', oid.decode())):
+                    raise Failure('history refused: credential-looking or binary blob: ' + name, 2)
+                scanned.add(scan_key)
+    objects = set(git(fetched, 'rev-list', '--objects', '--no-object-names', '--all').splitlines())
+    # Explicit object IDs avoid exporting any extra objects the transport may
+    # have sent. pack-objects without --revs never follows shallow parents.
+    git(fetched, 'pack-objects', str(exported / '.git/objects/pack/screened'),
+        input=b'\n'.join(sorted(objects)) + b'\n')
+    if (fetched / '.git/shallow').exists():
+        shutil.copyfile(fetched / '.git/shallow', exported / '.git/shallow')
+    git(exported, 'update-ref', 'refs/heads/fm-boat-test', head)
+    git(exported, 'symbolic-ref', 'HEAD', 'refs/heads/fm-boat-test')
+    git(exported, 'update-ref', 'refs/remotes/origin/main', base)
+    git(exported, 'read-tree', head)
+    shutil.rmtree(exported / '.git/logs', ignore_errors=True)
+    return exported / '.git'
+
+
+def source(root, inputs, archive, key_files, history_depth=None):
     head = git(root, 'rev-parse', 'HEAD').decode().strip()
     entries = git(root, 'ls-tree', '-rz', '--full-tree', 'HEAD').split(b'\0')
     names = []
@@ -138,7 +193,14 @@ def source(root, inputs, archive, key_files):
         if not (root / name).exists():
             raise Failure('extra input missing: ' + name, 2)
         names.append(name)
-    with tarfile.open(archive, 'w:gz', dereference=True) as output:
+    with contextlib.ExitStack() as stack:
+        history_git = None
+        if history_depth is not None:
+            scratch = stack.enter_context(tempfile.TemporaryDirectory(dir=archive.parent, prefix='history-'))
+            history_git = history(root, head, history_depth, Path(scratch), key_files)
+        output = stack.enter_context(tarfile.open(archive, 'w:gz', dereference=True))
+        if history_git is not None:
+            output.add(history_git, arcname='.git')
         for name in sorted(set(names)):
             relative(name)
             path = root / name
@@ -484,7 +546,7 @@ def run(args, boats):
         upload = output / 'upload'
         upload.mkdir()
         head, digest = source(root, args.input, upload / 'source.tar.gz',
-                              {b.account.key_file for b in boats})
+                              {b.account.key_file for b in boats}, args.history_depth)
         # Boat push honors enclosing gitignore rules. OUTPUT commonly lives in
         # ignored data/; a private index makes this one archive an explicit input
         # without changing the source repository or transferring its .git.
@@ -582,6 +644,7 @@ def main():
     runner.add_argument('--artifact', action='append', default=[])
     runner.add_argument('--timeout', type=int, default=1800)
     runner.add_argument('--swap-gib', type=int, choices=range(5), default=0)
+    runner.add_argument('--history-depth', type=int, default=None)
     runner.add_argument('command', nargs=argparse.REMAINDER)
     args = parser.parse_args()
     home = Path(os.environ.get('FM_HOME', ''))
@@ -594,6 +657,8 @@ def main():
         args.command.pop(0)
     if args.action == 'run' and (not args.command or not 1 <= args.timeout <= 2700):
         raise Failure('command required; timeout must be 1..2700 seconds', 2)
+    if args.action == 'run' and args.history_depth is not None and not 1 <= args.history_depth <= 1000:
+        raise Failure('history depth must be 1..1000', 2)
     for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
         signal.signal(sig, terminate)
     # Boat derives SSH ControlPath from HOME. A long operational-home path

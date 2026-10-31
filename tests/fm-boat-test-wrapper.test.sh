@@ -202,4 +202,36 @@ assert json.loads((state / 'fake-vms.json').read_text()) == []
 assert git('log', '-1', '--format=%B').stdout.strip() == b'local-history-secret'
 assert git('config', 'remote.origin.url').stdout.strip() == b'https://local-token@example.invalid/core'
 print('ok - real adapter filters secrets; synthetic history makes all source changed without local metadata')
+# Reuse the real adapter fixture with a clean shallow range. Older unsafe
+# history remains outside depth one and must not travel.
+git('rm', '--', '.env', '.npmrc')
+git('add', 'changed.txt')
+git('commit', '-qm', 'clean shallow base')
+git('update-ref', 'refs/remotes/origin/main', 'HEAD')
+base_tip = git('rev-parse', 'HEAD').stdout.decode().strip()
+(work / 'changed.txt').write_text('real tip\n')
+git('add', 'changed.txt')
+git('commit', '-qm', 'real shallow head')
+head_tip = git('rev-parse', 'HEAD').stdout.decode().strip()
+(work / 'changed.txt').write_text('dirty real tip\n')
+env['FM_BOAT_TEST_HISTORY_DEPTH'] = '1'
+check = """import os,pathlib,subprocess
+def git(*args): return subprocess.check_output(['git',*args]).decode().strip()
+assert git('rev-parse','HEAD') == head_tip
+assert git('rev-parse','origin/main') == base_tip
+assert git('rev-list','--count','--all') == '2'
+assert os.environ['PIPELINE_TEST_BASE_REF'] == 'refs/remotes/origin/main'
+assert git('remote') == ''
+assert pathlib.Path('changed.txt').read_text() == 'dirty real tip\\n'
+assert 'local-history-secret' not in git('log','--all','--format=%B')
+print('screened real history wrapper proof')
+"""
+check = f"head_tip={head_tip!r}; base_tip={base_tip!r}\n" + check
+r = launch(work, env, 'python3 -c ' + shlex.quote(check), repo / 'bin/fm-boat-test-wrapper.sh')
+assert r.returncode == 0, (r.stdout, r.stderr)
+assert b'screened real history wrapper proof' in r.stdout
+assert b'screened shallow Git history' in r.stdout + r.stderr
+assert b'synthetic empty Git base' not in r.stdout + r.stderr
+print('ok - wrapper opt-in preserves real Git tips and sets the real contract base')
+
 PY

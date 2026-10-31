@@ -6,10 +6,12 @@
 # capacity, trial guard and cleanup belong to fm-boat-run.sh (see its --help).
 # FM_BOAT_TEST_TIMEOUT optionally forwards --timeout SECONDS to that adapter;
 # its validation and default still apply. Use 1500 or less on the trial account.
+# FM_BOAT_TEST_HISTORY_DEPTH optionally forwards --history-depth N (1..1000).
+# The adapter owns history screening and refusal; see fm-boat-run.sh --help.
 # The command must install its dependencies and have its runtime tools on Boat.
 # Never pass secrets in the command or use this wrapper for authenticated tests.
 #
-# Remote Git is deliberately synthetic: an empty origin/main commit followed
+# By default remote Git is synthetic: an empty origin/main commit followed
 # by a snapshot of ALL adapter-filtered source files. Nothing from local .git
 # travels, including history, config, remotes, hooks or credentials. Real Git
 # queries from Turbo and Vitest see every uploaded file as changed against
@@ -18,6 +20,8 @@
 # takes its documented full bounded suite fallback, rather than treating old
 # contract violations as newly introduced. No local change-scoping parity is
 # claimed. Bootstrap failure fails before tests, never yielding an empty diff.
+# With FM_BOAT_TEST_HISTORY_DEPTH, the adapter supplies screened real Git history
+# instead; PIPELINE_TEST_BASE_REF then names refs/remotes/origin/main.
 #
 # Evidence is retained in a fresh ../.fm-test-scratch/fm-boat-test.*/boat outside
 # the worktree; the adapter prints command output and owns command.log/result.json.
@@ -62,6 +66,11 @@ printf 'boat-test-wrapper: result.json: %s\n' "$result" >&2
 remote=$(cat <<'REMOTE'
 set -euo pipefail
 export GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null
+if [ -d .git ]; then
+  export PIPELINE_TEST_BASE_REF=refs/remotes/origin/main
+  echo 'boat-test-wrapper: screened shallow Git history; using origin/main base' >&2
+  exec bash -c "$1"
+fi
 export GIT_AUTHOR_NAME=Boat-test GIT_COMMITTER_NAME=Boat-test
 export GIT_AUTHOR_EMAIL=boat-test@example.invalid GIT_COMMITTER_EMAIL=boat-test@example.invalid
 export GIT_AUTHOR_DATE=2000-01-01T00:00:00Z GIT_COMMITTER_DATE=2000-01-01T00:00:00Z
@@ -86,6 +95,9 @@ rc=0
 adapter_args=(run --worktree "$worktree" --output "$output")
 if [[ -n ${FM_BOAT_TEST_TIMEOUT:-} ]]; then
   adapter_args+=(--timeout "$FM_BOAT_TEST_TIMEOUT")
+fi
+if [[ -n ${FM_BOAT_TEST_HISTORY_DEPTH:-} ]]; then
+  adapter_args+=(--history-depth "$FM_BOAT_TEST_HISTORY_DEPTH")
 fi
 "$bin/fm-boat-run.sh" "${adapter_args[@]}" -- \
   bash -c "$remote" boat-test "$1" || rc=$?

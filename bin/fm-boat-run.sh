@@ -3,7 +3,7 @@
 # Usage:
 #   FM_HOME=/absolute/home fm-boat-run.sh run --worktree DIR --output DIR
 #       [--input RELATIVE_FILE]... [--artifact RELATIVE_PATH]...
-#       [--timeout SECONDS] [--swap-gib 0..4] -- COMMAND [ARGS...]
+#       [--timeout SECONDS] [--swap-gib 0..4] [--history-depth N] -- COMMAND [ARGS...]
 #   FM_HOME=/absolute/home fm-boat-run.sh reap
 # Requires python3 and Boat CLI 1.0.85+ on PATH (FM_BOAT_BIN may name a binary).
 # Accounts: optional FM_HOME/config/boat-keys, one key-file path per line,
@@ -27,11 +27,13 @@
 # 75 when all accounts lack capacity/budget, 69 if an unavailable account remains.
 # Reads the selected key file afresh ONLY into each Boat child's environment.
 # Does not forward the invoking environment, account environments, credentials,
-# git history, .git, dependency caches, symlinks, or conventional secret files.
+# local .git metadata, dependency caches, symlinks, or conventional secret files.
 # Callers must supply secret-free source, extra inputs, command and artifacts;
 # the general path filter is not a secret scanner. No secrets-in-VM support exists.
 # Narrow source exceptions: .npmrc, .claude/settings.json,
-# .claude/settings.local.json and .claude/settings.example.json. Each exception
+# .claude/settings.local.json, .claude/settings.example.json, and exactly
+# .github/tools/jev/vendor/.claude/agents/security-compliance.md and
+# .github/tools/jev/vendor/.claude/agents/release-engineer.md. Each exception
 # is scanned as UTF-8 before upload; credential-looking auth/token/password/
 # secret keys, bearer strings, private-key headers, credential URLs, common key
 # prefixes and binary content keep the file excluded with a content-free warning.
@@ -40,6 +42,17 @@
 # were already eligible and remain subject to the same secret-path filter.
 # Source is HEAD's tracked file set with current tracked edits/deletions applied,
 # plus individually named --input files (including ignored files if safe).
+# No history is sent by default; fm-boat-test-wrapper.sh builds synthetic history.
+# --history-depth N (1..1000) opts into real ancestry up to N generations from
+# each of HEAD and refs/remotes/origin/main, which must both exist locally.
+# Only those two tips, their bounded commits/trees/blobs, shallow boundaries,
+# and fresh Git metadata travel. No other refs, stash, reflogs, hooks, local
+# remotes or local Git config travel. Current tracked edits/deletions still apply.
+# Every historical tree entry must pass the source path filter (including the
+# screened exceptions), and every historical blob must pass the same UTF-8
+# credential scanner. Excluded paths, configured key paths, symlinks, submodules,
+# binary or credential-looking blobs refuse the entire run before any Boat call.
+# Refusal logs name the path and reason without printing blob content.
 # Submodules and symlinks are refused rather than silently changing the source.
 # Run from the worktree root remotely at /home/user/fm-job/source. Install remote
 # dependencies explicitly in COMMAND; native local node_modules never travel.

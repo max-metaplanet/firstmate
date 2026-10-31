@@ -25,7 +25,7 @@ def git(root, *args):
     return subprocess.run(['git', '-C', str(root), *args], check=True,
                           capture_output=True)
 
-def case(name, settings=None):
+def case(name, settings=None, clean_history=False):
     p = base / name
     p.mkdir()
     work = p / 'work'
@@ -35,8 +35,9 @@ def case(name, settings=None):
     git(work, 'config', 'user.email', 'fixture@example.invalid')
     (work / 'tracked.txt').write_text('committed\n')
     (work / 'deleted.txt').write_text('delete me\n')
-    (work / '.env').write_text('never upload\n')
-    (work / '.npmrc').write_text('token=never upload\n')
+    if not clean_history:
+        (work / '.env').write_text('never upload\n')
+        (work / '.npmrc').write_text('token=never upload\n')
     git(work, 'add', '.')
     git(work, 'commit', '-qm', 'fixture')
     (work / 'tracked.txt').write_text('working edit\n')
@@ -402,6 +403,9 @@ print('ok - exhausted accounts return capacity unavailable without a create')
 for name, contents, included in [
     ('npmrc-safe', 'registry=https://registry.npmjs.org/\n', True),
     ('npmrc-credential', '//registry.npmjs.org/:_authToken=fixture-only\n', False),
+    ('role-security-safe', '# Security compliance\nReview changes.\n', True),
+    ('role-release-safe', '# Release engineer\nReview release readiness.\n', True),
+    ('role-secret', 'API_SECRET=fixture-only\n', False),
     ('settings-safe', '{"permissions":{"allow":["Bash(npm test)"]}}', True),
     ('settings-secret', '{"env":{"API_SECRET":"fixture-only"}}', False),
     ('settings-bearer', '{"header":"Bearer fixture-only"}', False),
@@ -412,12 +416,16 @@ for name, contents, included in [
     selected = '.npmrc' if name.startswith('npmrc') else '.claude/settings.json'
     if name == 'settings-postgresql':
         selected = '.claude/settings.local.json'
+    if name.startswith('role-'):
+        role = 'release-engineer' if name == 'role-release-safe' else 'security-compliance'
+        selected = '.github/tools/jev/vendor/.claude/agents/' + role + '.md'
     target = p / 'work' / selected
-    target.parent.mkdir(exist_ok=True)
+    target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(contents)
-    for secret_path in ('.ssh/file', '.aws/file', '.config/file', '.claude/unlisted.json'):
+    for secret_path in ('.ssh/file', '.aws/file', '.config/file', '.claude/unlisted.json',
+                        '.github/tools/jev/vendor/.claude/agents/unlisted.md'):
         secret = p / 'work' / secret_path
-        secret.parent.mkdir(exist_ok=True)
+        secret.parent.mkdir(parents=True, exist_ok=True)
         secret.write_text('excluded even without credentials')
     vendor = p / 'work/vendor/lib.js'
     vendor.parent.mkdir()
@@ -431,12 +439,91 @@ for name, contents, included in [
     assert 'vendor/lib.js' in uploaded
     assert not any(x.startswith(('.ssh/', '.aws/', '.config/')) or x == '.claude/unlisted.json'
                    for x in uploaded)
+    assert '.github/tools/jev/vendor/.claude/agents/unlisted.md' not in uploaded
     if not included:
         assert b'excluded allowlisted file' in r.stderr
         assert b'fixture-only' not in r.stdout + r.stderr
         assert b'dbpass' not in r.stdout + r.stderr
     empty(state)
 print('ok - narrow clean settings upload, credential-bearing exceptions warn without content, secret paths stay excluded')
+
+p, state, env = case('bounded-history', clean_history=True)
+work = p / 'work'
+for i in range(5):
+    (work / 'tracked.txt').write_text('version ' + str(i) + '\n')
+    git(work, 'add', 'tracked.txt')
+    git(work, 'commit', '-qm', 'history ' + str(i))
+git(work, 'update-ref', 'refs/remotes/origin/main', 'HEAD')
+base_tip = git(work, 'rev-parse', 'HEAD').stdout.decode().strip()
+old = git(work, 'rev-parse', 'HEAD~2').stdout.decode().strip()
+git(work, 'checkout', '-qb', 'feature', 'HEAD~1')
+(work / 'feature.txt').write_text('feature\n')
+git(work, 'add', 'feature.txt')
+git(work, 'commit', '-qm', 'feature tip')
+head = git(work, 'rev-parse', 'HEAD').stdout.decode().strip()
+git(work, 'config', 'remote.origin.url', 'https://user:fixture-only@example.invalid/repo')
+git(work, 'update-ref', 'refs/heads/private-unrelated', old)
+git(work, 'update-ref', 'refs/tags/private-tag', old)
+git(work, 'update-ref', 'refs/stash', old)
+(work / 'tracked.txt').write_text('dirty edit\n')
+(work / 'deleted.txt').unlink(missing_ok=True)
+check = """import pathlib,subprocess
+def git(*args): return subprocess.check_output(['git',*args]).decode().strip()
+assert git('rev-parse','HEAD') == head_tip
+assert git('rev-parse','origin/main') == base_tip
+assert git('rev-list','--count','--all') == '3'
+assert subprocess.run(['git','cat-file','-e',old],capture_output=True).returncode != 0
+assert set(git('for-each-ref','--format=%(refname)').splitlines()) == {'refs/heads/fm-boat-test','refs/remotes/origin/main'}
+assert git('remote') == ''
+assert not pathlib.Path('.git/logs').exists()
+assert not pathlib.Path('.git/objects/info/alternates').exists()
+assert pathlib.Path('tracked.txt').read_text() == 'dirty edit\\n'
+assert not pathlib.Path('deleted.txt').exists()
+assert git('status','--porcelain')
+assert git('fsck','--no-reflogs') == ''
+"""
+check = f"head_tip={head!r}; base_tip={base_tip!r}; old={old!r}\n" + check
+r = launch(p, env, 'python3 -c ' + shlex.quote(check), ('--history-depth', '2'))
+assert r.returncode == 0, (r.stdout, r.stderr, result(p))
+empty(state)
+print('ok - real Git preserves both tips, bounded ancestry and tracked edits without unrelated refs/config/reflogs')
+
+for name, unsafe_path, unsafe_content in [
+    ('history-excluded', '.env', 'historical-value-never-print'),
+    ('history-credential', 'ordinary.txt', 'API_SECRET=historical-value-never-print'),
+    ('history-role-credential', '.github/tools/jev/vendor/.claude/agents/security-compliance.md',
+     'password=historical-value-never-print'),
+    ('history-binary', 'binary.dat', '\x00historical-value-never-print'),
+]:
+    p, state, env = case(name, clean_history=True)
+    work = p / 'work'
+    target = work / unsafe_path
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(unsafe_content)
+    git(work, 'add', '--force', '.')
+    git(work, 'commit', '-qm', 'unsafe older blob')
+    target.unlink()
+    git(work, 'add', '--all')
+    git(work, 'commit', '-qm', 'clean current tree')
+    git(work, 'update-ref', 'refs/remotes/origin/main', 'HEAD')
+    r = launch(p, env, options=('--history-depth', '2'))
+    assert r.returncode == 2, (name, r.stderr)
+    assert b'history refused:' in r.stderr
+    assert b'historical-value-never-print' not in r.stdout + r.stderr
+    assert result(p)['kind'] == 'invalid'
+    assert not (state / 'calls.jsonl').exists()
+    assert not (p / 'output/upload/source.tar.gz').exists()
+print('ok - excluded, credential-bearing and binary historical blobs refuse before Boat, without content')
+
+p, state, env = case('history-missing-base', clean_history=True)
+r = launch(p, env, options=('--history-depth', '2'))
+assert r.returncode == 2 and b'origin/main' in r.stderr
+assert not (state / 'calls.jsonl').exists()
+for depth in ('0', '-1', '1001', 'not-a-number'):
+    p, state, env = case('history-depth-' + depth)
+    assert launch(p, env, options=('--history-depth', depth)).returncode == 2
+    assert not (state / 'calls.jsonl').exists()
+print('ok - history depth and required base fail closed')
 
 p, state, other, env, key1, key2, config = multi('multi-concurrent')
 workers = [launch(p, env, 'sleep 8', ('--output', str(p / ('output-' + str(i)))), wait=False)
