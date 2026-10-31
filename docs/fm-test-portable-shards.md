@@ -42,6 +42,7 @@ The native-Windows-only `tests/fm-pi-windows-shell-invocation.test.sh` retains i
 The 2026-10-07 polytoken adapter tests carry provisional local measurements instead - 21090 ms for `tests/fm-polytoken-harness.test.sh` and the 103 ms live-guard skip for `tests/fm-polytoken-signals-live-e2e.test.sh`, both measured on the adapter-verification macOS host - until the next CI refresh replaces them with Ubuntu measurements, because they postdate the 2026-09-30 baseline.
 `tests/fm-pool-prune.test.sh` carries its 11591 ms measurement from the selected-shard run [40561596394](https://github.com/max-metaplanet/firstmate/actions/runs/40561596394), the first CI run to include it, until the next serial refresh measures it.
 `tests/fm-treehouse-lease.test.sh` carries a provisional 2128 ms local Linux measurement from 2026-10-28, because its first CI run selected no serial lane; the next serial refresh replaces it with an Ubuntu measurement.
+`tests/fm-orgs-lib.test.sh` carries a provisional 6680 ms local Linux measurement from 2026-10-31, the slowest of three consecutive local runs taken when the script was added, because no CI run has measured it yet; the next serial refresh replaces it with an Ubuntu measurement.
 The session-start hint retains its pre-optimization maximum until CI measures the shorter fixture-only home-summary bound; do not discount a local speedup from CI packing weights.
 
 ## Parallel lanes

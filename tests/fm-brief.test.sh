@@ -1861,6 +1861,57 @@ test_ticket_renders_the_convention_and_branch() {
   pass "fm-brief.sh: --ticket renders the convention and branch in every ship mode"
 }
 
+# A contribution to a repository outside the organizations this home declares
+# as ours must not carry the captain's internal ticket convention: the
+# `<type>/<ticket>(<scope>)` format names a ClickUp workflow that project does
+# not have. bin/fm-orgs-lib.sh owns the declaration; this covers the brief's own
+# wiring, including the projects/<repo> fallback that spares the caller from
+# having to remember --project.
+make_convention_project() {  # <dir> <origin-url>
+  git init -q "$1"
+  git -C "$1" remote add origin "$2"
+}
+
+test_third_party_project_drops_the_ticket_segment() {
+  local home brief
+  home="$TMP_ROOT/convention-home"
+  mkdir -p "$home/data" "$home/config" "$home/projects"
+  printf '%s\n' github.com/our-org > "$home/config/our-organizations"
+  make_convention_project "$home/projects/upstream-proj" https://github.com/third-party/upstream.git
+  make_convention_project "$home/projects/ours-proj" https://github.com/our-org/ours.git
+
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" conv-outside upstream-proj --mode no-mistakes \
+    --ticket no-ticket --commit-type fix >/dev/null 2>&1 \
+    || fail "a brief for a third-party project should scaffold"
+  brief="$home/data/conv-outside/brief.md"
+  # shellcheck disable=SC2016 # Literal backticks in the rendered contract.
+  assert_grep 'must read `fix(<scope>): <message>`' "$brief" \
+    'a third-party project must take plain conventional commit subjects'
+  # shellcheck disable=SC2016 # Literal backticks in the rendered contract.
+  assert_no_grep 'must read `fix/no-ticket(<scope>)' "$brief" \
+    'the internal ticket convention reached a third-party project'
+  assert_grep 'Ship branch: fix/no-ticket-conv-outside' "$brief" \
+    'the convention must not change the ship branch the spawn checks'
+  assert_grep 'never updates a remote' "$brief" \
+    "the brief must state why the pipeline's own commits cannot be reworded first"
+
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" conv-ours ours-proj --mode no-mistakes \
+    --ticket no-ticket --commit-type fix >/dev/null 2>&1 \
+    || fail "a brief for one of our projects should scaffold"
+  # shellcheck disable=SC2016 # Literal backticks in the rendered contract.
+  assert_grep 'must read `fix/no-ticket(<scope>): <message>`' "$home/data/conv-ours/brief.md" \
+    'a declared project must keep the ticket convention'
+
+  rm -f "$home/config/our-organizations"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" conv-undeclared upstream-proj --mode no-mistakes \
+    --ticket no-ticket --commit-type fix >/dev/null 2>&1 \
+    || fail "a brief with no declaration should scaffold"
+  # shellcheck disable=SC2016 # Literal backticks in the rendered contract.
+  assert_grep 'must read `fix/no-ticket(<scope>): <message>`' "$home/data/conv-undeclared/brief.md" \
+    'with nothing declared the ticket convention must be unchanged'
+  pass "fm-brief.sh: a project outside the declared organizations drops the ticket segment"
+}
+
 test_hotfix_uses_fix_branch_and_title() {
   local home ticket mode id brief
   home="$TMP_ROOT/hotfix-home"
@@ -2141,6 +2192,7 @@ test_branch_prefix_value_is_validated
 test_branch_prefix_command_is_shell_safe
 test_ticket_renders_the_convention_and_branch
 test_hotfix_uses_fix_branch_and_title
+test_third_party_project_drops_the_ticket_segment
 test_no_ticket_marker_still_follows_the_convention
 test_unticketed_brief_carries_no_convention
 test_ticketed_no_mistakes_retitles_the_pipeline_pr
