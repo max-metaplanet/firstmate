@@ -50,6 +50,7 @@ def case(name):
                LOCAL_ONLY='inherited locally')
     env.pop('FM_BUILD_LOCK_BYPASS', None)
     env.pop('FM_BUILD_LOCK_HELD', None)
+    env.pop('FM_BOAT_TYPE', None)
     return p, work, env
 
 def launch(work, env, command, wrapper=tools / 'fm-boat-test-wrapper.sh'):
@@ -72,6 +73,7 @@ for code in (0, 7, 69, 75, 70, 74, 143):
     args = json.loads((p / 'calls.json').read_text())
     assert args[:3] == ['run', '--worktree', str(work)]
     assert args[-1] == command, args
+    assert '--type' not in args
     output = Path(args[args.index('--output') + 1]).resolve()
     assert work not in output.parents and output != work
     assert str(output / 'result.json').encode() in r.stderr
@@ -144,6 +146,17 @@ assert r.returncode == 0, r.stderr
 args = json.loads((p / 'calls.json').read_text())
 assert args[args.index('--timeout') + 1] == '1500'
 print('ok - explicit timeout reaches the adapter without changing the command interface')
+
+for machine_type in ('default', 'large', 'xlarge', 'invalid; literal'):
+    p, work, env = case('type-' + machine_type.split(';')[0])
+    settings(env, 0, 'completed', remote_exit=0, cleanup='deleted')
+    env['FM_BOAT_TYPE'] = machine_type
+    r = launch(work, env, 'exit 0')
+    assert r.returncode == 0, r.stderr
+    args = json.loads((p / 'calls.json').read_text())
+    assert args[args.index('--type') + 1] == machine_type, args
+    assert args[-1] == 'exit 0'
+print('ok - FM_BOAT_TYPE forwards one exact argument for adapter validation')
 
 # Real adapter + fake Boat: independently prove no local Git history/config or
 # secrets arrive, and real Git consumers see ALL source changed, including

@@ -35,6 +35,7 @@ class _Terminated(BaseException):
 
 
 ACTIVE_CHILD = None
+MACHINE_TYPES = ('small', 'default', 'large', 'xlarge')
 
 
 def terminate(number, _frame):
@@ -242,6 +243,7 @@ class Account:
     daily_cap: int = 75
     environment: str = ''
     cleanup_confirmation: str = 'deletion'
+    types: tuple[str, ...] = ('default',)
 
     def daily_path(self, state):
         if self.key_file == default_key_file():
@@ -269,12 +271,16 @@ def accounts(home):
             for field in fields[1:]:
                 name, value = field.split('=', 1)
                 if name not in ('live_cap', 'pending_cap', 'daily_cap',
-                                'environment', 'cleanup_confirmation') or name in options:
+                                'environment', 'cleanup_confirmation', 'types') or name in options:
                     raise ValueError('invalid cap field')
                 if name.endswith('_cap'):
                     value = int(value)
                     if value < 1:
                         raise ValueError('invalid cap')
+                elif name == 'types':
+                    value = tuple(value.split(','))
+                    if len(set(value)) != len(value) or any(t not in MACHINE_TYPES for t in value):
+                        raise ValueError('invalid machine types')
                 elif not value or (name == 'cleanup_confirmation' and value not in ('deletion', 'list')):
                     raise ValueError('invalid account option')
                 options[name] = value
@@ -460,7 +466,7 @@ def admit(boats, job, record):
                        cleanup_confirmation=account.cleanup_confirmation)
             save(record, job)
             try:
-                create_args = ['new', '--type', 'default', '--ttl', str(job['ttl']),
+                create_args = ['new', '--type', job['type'], '--ttl', str(job['ttl']),
                                '--no-env', '--no-snapshots', '--name', job['name'], '--json']
                 if account.environment:
                     create_args.extend(['--environment', account.environment])
@@ -541,6 +547,10 @@ def run(args, boats):
     job = None
     code = 2
     try:
+        eligible = [b for b in boats if args.type in b.account.types]
+        if not eligible:
+            raise Failure('no Boat account permits machine type ' + args.type +
+                          '; configure types= in config/boat-keys', 2)
         for name in args.artifact:
             relative(name)
             if excluded(name, artifact=True):
@@ -559,12 +569,12 @@ def run(args, boats):
         record = boat.state / 'jobs' / (job_id + '.json')
         job = {'name': 'fm-offload-' + job_id, 'vm_id': None, 'cleanup': 'pending',
                'ttl': args.timeout + 900, 'expires': time.time() + args.timeout + 1080,
-               'create_started': False}
+               'create_started': False, 'type': args.type}
         with lock(boat.state / (job_id + '.lock')):
             try:
                 result['kind'] = 'unavailable'
                 try:
-                    boat = admit(boats, job, record)
+                    boat = admit(eligible, job, record)
                 finally:
                     if job.get('account_key_file'):
                         boat = next(b for b in boats if str(b.account.key_file) == job['account_key_file'])
@@ -645,6 +655,7 @@ def main():
     runner.add_argument('--input', action='append', default=[])
     runner.add_argument('--artifact', action='append', default=[])
     runner.add_argument('--timeout', type=int, default=1800)
+    runner.add_argument('--type', choices=MACHINE_TYPES, default='default')
     runner.add_argument('--swap-gib', type=int, choices=range(5), default=0)
     runner.add_argument('--history-depth', type=int, default=None)
     runner.add_argument('command', nargs=argparse.REMAINDER)

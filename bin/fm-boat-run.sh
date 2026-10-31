@@ -3,16 +3,20 @@
 # Usage:
 #   FM_HOME=/absolute/home fm-boat-run.sh run --worktree DIR --output DIR
 #       [--input RELATIVE_FILE]... [--artifact RELATIVE_PATH]...
-#       [--timeout SECONDS] [--swap-gib 0..4] [--history-depth N] -- COMMAND [ARGS...]
+#       [--timeout SECONDS] [--swap-gib 0..4] [--history-depth N]
+#       [--type small|default|large|xlarge] -- COMMAND [ARGS...]
 #   FM_HOME=/absolute/home fm-boat-run.sh reap
 # Requires python3 and Boat CLI 1.0.85+ on PATH (FM_BOAT_BIN may name a binary).
 # Accounts: optional FM_HOME/config/boat-keys, one key-file path per line,
 # followed by optional live_cap=N pending_cap=N daily_cap=N environment=NAME
-# and cleanup_confirmation=deletion|list fields.
+# cleanup_confirmation=deletion|list and types=TYPE[,TYPE...] fields.
 # Example (paths only, never key values):
 #   ~/.config/boat/api-key
-#   /absolute/second-key live_cap=6 pending_cap=6 daily_cap=170 environment=temp-max-dev cleanup_confirmation=list
+#   /absolute/second-key live_cap=6 pending_cap=6 daily_cap=170 environment=temp-max-dev cleanup_confirmation=list types=default,large,xlarge
 # Caps are positive integers, defaulting to 2 live, 2 pending, 75 starts/UTC day.
+# types is a comma-separated list of permitted Boat machine types: small (2 CPU/
+# 4 GB), default (4 CPU/8 GB), large (8 CPU/16 GB), xlarge (16 CPU/32 GB).
+# Empty, unknown and duplicate types are refused. Absent types means only default.
 # environment is an optional nonempty Boat environment name passed to new;
 # --no-env remains mandatory. The default leaves environment selection to Boat.
 # cleanup_confirmation defaults to deletion (poll the deletion operation).
@@ -60,6 +64,10 @@
 # Run from the worktree root remotely at /home/user/fm-job/source. Install remote
 # dependencies explicitly in COMMAND; native local node_modules never travel.
 # --timeout defaults to 1800, range 1..2700; VM TTL is timeout+900 (<=3600).
+# --type defaults to default and passes Boat's machine type names unchanged.
+# Only accounts permitting that type are considered; no permitting account is
+# invalid input (exit 2), with no create or silent downgrade.
+# fm-boat-test-wrapper.sh forwards FM_BOAT_TYPE as this flag when set.
 # --swap-gib defaults to 0; an explicit 1..4 adds that much remote swap using
 # passwordless sudo on the disposable VM. It never changes the local host.
 # Remote GNU timeout and a host deadline bound execution; output is captured
@@ -74,7 +82,7 @@
 # when result.json kind is unavailable; remote commands can also exit 69/75.
 # Never wrap this adapter in fm-build-lock.py: remote work consumes no local
 # heavy slot. Only a deliberate local fallback goes through that wrapper.
-# Budget guard: default 4 CPU/8 GB VMs only, no snapshots. Pending reservations
+# Budget guard: only explicitly permitted machine types, no snapshots. Pending reservations
 # and local daily attempts are counted per account in this home; live VM count,
 # included-cost eligibility and minute/hour/day starts use that account's key.
 # Provider limits enforce account-wide races from other homes/clients.
