@@ -214,7 +214,9 @@ printf '%s\n' "$*" >> "$FM_TEST_GH_AXI_LOG"
 case "${1:-} ${2:-}" in
   "pr edit")
     case_dir=$(dirname "$FM_TEST_GH_AXI_LOG")
-    [ "${4:-}" = --remove-label ] || exit 2
+    case "${3:-}" in ''|*[!0-9]*) echo 'error: Missing PR number' >&2; exit 2 ;; esac
+    [ "$#" -eq 7 ] && [ "${4:-}" = --repo ] && [ "${5:-}" = example/repo ] \
+      && [ "${6:-}" = --remove-label ] || exit 2
     [ ! -f "$case_dir/label-remove-fails" ] || exit 1
     if [ ! -f "$case_dir/label-remove-ignored" ]; then
       echo '{"labels":[]}' > "$case_dir/labels.json"
@@ -922,7 +924,7 @@ test_ready_hold_release_uses_bot_and_preserves_landing_proof() {
     fi
     run_pr_merge "$case_dir" task-x1 "$url" > "$case_dir/stdout" 2> "$case_dir/stderr" \
       || fail "ready-hold $outcome failed: $(cat "$case_dir/stderr")"
-    assert_grep "pr edit $url --remove-label hold for approval" "$case_dir/gh-axi.log" 'hold was not released'
+    assert_grep "pr edit 9 --repo example/repo --remove-label hold for approval" "$case_dir/gh-axi.log" 'hold was not released'
     assert_no_grep 'pr merge ' "$case_dir/gh.log" 'held PR was directly merged'
     assert_grep 'handed off:' "$case_dir/stdout" 'handoff was not reported'
     assert_grep 'pr_head=deadbeefcafefeed0000000000000000deadbeef' "$case_dir/state/task-x1.meta" 'head proof lost'

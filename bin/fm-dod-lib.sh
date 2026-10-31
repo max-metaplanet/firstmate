@@ -648,8 +648,9 @@ fm_dod_ready_hold_block() {  # <config-dir> <project-dir> <yolo> <forge> <mode>
 # Ready-hold safety contract
 This section supersedes every earlier instruction that marks a PR ready without first applying its ready-hold label.
 This task requires the configured GitHub ready-hold label \`$label_q\` while it waits for merge approval.
-In the same step as marking the PR ready, first run \`gh-axi pr edit <PR URL> --add-label $label_q\` and verify the label is present with \`gh pr view <PR URL> --json labels\`.
-Only after that verification may you run \`gh-axi pr ready <PR URL>\`.
+In the same step as marking the PR ready, derive <number> and <owner>/<repo> from the canonical PR URL; never let the current directory choose the repository.
+First run \`gh-axi pr edit <number> --repo <owner>/<repo> --add-label $label_q\` and verify the label is present with \`gh pr view <PR URL> --json labels\`.
+Only after that verification may you run \`gh-axi pr ready <number> --repo <owner>/<repo>\`.
 Apply and verify the label before any ready transition performed on your behalf, including by no-mistakes or \`fm-pr-refresh.sh\`.
 $pipeline
 Before reporting done, read the PR labels again and confirm the configured label is still present.

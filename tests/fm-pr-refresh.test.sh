@@ -29,8 +29,9 @@ case "$1 $2 $3" in
     printf '%s' "$body" | jq -e --arg id "${PR_NODE_ID:-PR_fixture}" \
       '(.query | contains("convertPullRequestToDraft")) and .variables.id == $id' >/dev/null || exit 92
     echo true > "$REFRESH_FIXTURE/draft" ;;
-  'pr edit https://github.com/example/repo/pull/9')
-    [ "$4" = --add-label ] && [ "$5" = 'hold for approval' ] || exit 92
+  'pr edit 9')
+    [ "$#" = 7 ] && [ "$4 $5" = '--repo example/repo' ] \
+      && [ "$6" = --add-label ] && [ "$7" = 'hold for approval' ] || exit 92
     [ ! -f "$REFRESH_FIXTURE/label-add-fails" ] || exit 1
     [ -f "$REFRESH_FIXTURE/label-add-ignored" ] || echo '{"labels":[{"name":"hold for approval"}]}' > "$REFRESH_FIXTURE/labels.json"
     ;;

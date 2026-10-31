@@ -1798,7 +1798,7 @@ case "$PROVIDER" in
         echo 'error: ready-hold release is attended-only because the merge bot can land it asynchronously; nothing released' >&2
         exit 2
       fi
-      merge_output=$(gh-axi pr edit "$URL" --remove-label "$ready_hold_label" 2>&1) || merge_status=$?
+      merge_output=$(gh-axi pr edit "$PR_NUMBER" --repo "$PR_PATH" --remove-label "$ready_hold_label" 2>&1) || merge_status=$?
     else
       merge_output=$(gh pr merge "$PR_NUMBER" --repo "$PR_OWNER/$PR_REPO" \
         --match-head-commit "$FM_PR_MERGE_HEAD" \

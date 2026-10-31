@@ -447,6 +447,8 @@ test_ready_hold_instructions_follow_task_posture() {
       out=$(fm_dod_ready_hold_block "$config" /projects/widget "$yolo" none "$mode") || fail 'configured render failed'
       if [ "$yolo" = off ]; then
         assert_contains "$out" '--add-label hold\ for\ approval' 'label not shell quoted'
+        assert_contains "$out" 'gh-axi pr edit <number> --repo <owner>/<repo>' 'edit must use numeric PR and explicit repository'
+        assert_contains "$out" 'gh-axi pr ready <number> --repo <owner>/<repo>' 'ready must use numeric PR and explicit repository'
         assert_contains "$out" 'Only after that verification' 'ready must follow verified label'
         # shellcheck disable=SC2016 # The generated instruction contains literal command markup.
         assert_contains "$out" 'including by no-mistakes or `fm-pr-refresh.sh`' 'delegated readiness not covered'

@@ -30,10 +30,16 @@ fm_ready_hold_verify() {  # <pr-url> <label>
     '.labels | any(.name == $label)' >/dev/null
 }
 
-fm_ready_hold_apply() {  # <pr-url> <label>
-  gh-axi pr edit "$1" --add-label "$2" || return 1
+fm_ready_hold_apply() (  # <pr-url> <label>
+  # shellcheck source=bin/fm-pr-lib.sh
+  . "${BASH_SOURCE[0]%/*}/fm-pr-lib.sh"
+  if ! fm_pr_url_parse "$1" || [ "$FM_PR_PROVIDER" != github ]; then
+    printf 'error: ready-hold requires a canonical GitHub PR URL\n' >&2
+    return 1
+  fi
+  gh-axi pr edit "$FM_PR_NUMBER" --repo "$FM_PR_PATH" --add-label "$2" || return 1
   fm_ready_hold_verify "$1" "$2" || {
     printf 'error: ready-hold label was not confirmed on %s; do not mark ready\n' "$1" >&2
     return 1
   }
-}
+)
