@@ -241,4 +241,223 @@ p, state, env = case('source-symlink')
 assert launch(p, env).returncode == 2
 assert not (state / 'calls.jsonl').exists()
 print('ok - unsafe input and tracked symlink are rejected before Boat')
+
+def multi(name, first=None, second=None, caps='live_cap=6 pending_cap=6 daily_cap=170'):
+    p, state, env = case(name, first)
+    other = state / 'account-2'
+    other.mkdir()
+    (other / 'fixture.json').write_text(json.dumps(second or {}))
+    key1 = Path(env['HOME']) / '.config/boat/api-key'
+    key2 = Path(env['HOME']) / 'second-account'
+    key2.write_text('boat_fixture_second')
+    config = p / 'home/config/boat-keys'
+    config.parent.mkdir()
+    config.write_text('# Ordered accounts\n~/.config/boat/api-key\n' +
+                      shlex.quote(str(key2)) + ' ' + caps + '\n')
+    return p, state, other, env, key1, key2, config
+
+
+def calls(state):
+    path = state / 'calls.jsonl'
+    return [json.loads(line)[0] for line in path.read_text().splitlines()] if path.exists() else []
+
+
+def reserved(state, key, count):
+    for i in range(count):
+        (state / 'jobs' / ('reserved-' + str(i) + '.json')).write_text(json.dumps({
+            'account_key_file': str(key), 'cleanup': 'pending', 'create_started': False}))
+
+
+p, state, other, env, key1, key2, config = multi('ordered')
+assert launch(p, env).returncode == 0
+assert 'new' in calls(state) and not calls(other)
+assert 'deletion' in calls(state)
+print('ok - configured accounts preserve first-account priority')
+
+for name, first in [('day', {'day_remaining': 0}), ('hour', {'hour_remaining': 0}),
+                    ('minute', {'minute_remaining': 0}), ('disabled', {'canStart': False}),
+                    ('paid', {'nextStartDollars': 1}), ('offline', {'unreachable': True}),
+                    ('incomplete', {'hasMore': True})]:
+    p, state, other, env, key1, key2, config = multi('skip-' + name, first)
+    r = launch(p, env, 'test -z "$BOAT_API_KEY$DEV_SECRET"; echo second-account')
+    assert r.returncode == 0, (name, r.stderr)
+    assert 'new' not in calls(state) and 'new' in calls(other)
+    assert b'second-account' in r.stdout
+    assert b'boat_fixture' not in r.stdout + r.stderr
+    job = next(json.loads(f.read_text()) for f in (state / 'jobs').glob('*.json'))
+    assert job['account_key_file'] == str(key2) and job['cleanup'] == 'deleted'
+    empty(other)
+print('ok - account-specific provider budgets, costs and availability skip to the next key')
+
+p, state, other, env, key1, key2, config = multi('missing-first-key')
+key1.unlink()
+assert launch(p, env).returncode == 0
+empty(other)
+
+for name, count, cap, expected in [('live-below', 5, 'live_cap=6', 0),
+                                    ('live-full', 6, 'live_cap=6', 75),
+                                    ('pending-below', 5, 'pending_cap=6', 0),
+                                    ('pending-full', 6, 'pending_cap=6', 75)]:
+    p, state, other, env, key1, key2, config = multi(name, {'remaining': 0}, caps=cap)
+    if name.startswith('live'):
+        (other / 'fake-vms.json').write_text(json.dumps([{'id': 'bx_foreign' + str(i)} for i in range(count)]))
+    else:
+        reserved(state, key2, count)
+    r = launch(p, env)
+    assert r.returncode == expected, (name, r.stderr)
+    assert ('new' in calls(other)) == (expected == 0)
+    if name.startswith('live'):
+        assert len(json.loads((other / 'fake-vms.json').read_text())) == count
+    else:
+        assert all(json.loads(f.read_text())['cleanup'] == 'pending'
+                   for f in (state / 'jobs').glob('reserved-*.json'))
+print('ok - each configured live and pending cap allows its last slot and rejects overflow')
+
+p, state, other, env, key1, key2, config = multi('per-account-daily')
+today = datetime.datetime.now(datetime.timezone.utc).date().isoformat()
+(state / 'daily.json').write_text(json.dumps({'date': today, 'attempts': 75}))
+assert launch(p, env).returncode == 0
+assert json.loads((state / 'daily.json').read_text())['attempts'] == 75
+second_daily, = state.glob('daily-*.json')
+assert json.loads(second_daily.read_text())['attempts'] == 1
+second_daily.write_text(json.dumps({'date': today, 'attempts': 169}))
+assert launch(p, env, options=('--output', str(p / 'last-slot'))).returncode == 0
+assert json.loads(second_daily.read_text())['attempts'] == 170
+assert launch(p, env, options=('--output', str(p / 'no-slot'))).returncode == 75
+print('ok - default daily counter is preserved and second account has its own configured daily cap')
+
+for name, settings in [('owned-reap', {'delete_failed': True}),
+                        ('owned-lost-create', {'lost_create': True})]:
+    p, state, other, env, key1, key2, config = multi(name, {'remaining': 0}, settings)
+    (state / 'fake-vms.json').write_text(json.dumps([{'id': 'bx_fixture0'}]))
+    r = launch(p, env)
+    assert r.returncode == (70 if name == 'owned-reap' else 69), r.stderr
+    assert len(json.loads((state / 'fake-vms.json').read_text())) == 1
+    if name == 'owned-reap':
+        config.unlink()
+        (other / 'fixture.json').write_text('{}')
+        assert reap(env).returncode == 0
+        assert reap(env).returncode == 0
+    empty(other)
+    assert len(json.loads((state / 'fake-vms.json').read_text())) == 1
+    assert 'delete' not in calls(state)
+print('ok - lost-create cleanup and reap after removing config use the owning account only')
+
+p, state, other, env, key1, key2, config = multi(
+    'environment-list-cleanup', {'remaining': 0},
+    {'required_environment': 'temp-max-dev', 'deletion_forbidden': True, 'delete_failed': True},
+    caps='live_cap=6 pending_cap=6 daily_cap=170 environment=temp-max-dev cleanup_confirmation=list')
+assert launch(p, env).returncode == 70
+job = next(json.loads(f.read_text()) for f in (state / 'jobs').glob('*.json'))
+assert job['cleanup_confirmation'] == 'list'
+config.unlink()
+(other / 'fixture.json').write_text(json.dumps({'deletion_forbidden': True}))
+assert reap(env).returncode == 0
+assert 'delete' in calls(other) and 'deletion' not in calls(other)
+empty(other)
+print('ok - environment-scoped create retains --no-env and list cleanup survives config removal')
+
+p, state, other, env, key1, key2, config = multi(
+    'list-cleanup', {'remaining': 0}, {'deletion_forbidden': True}, caps='cleanup_confirmation=list')
+assert launch(p, env).returncode == 0
+assert 'delete' in calls(other) and 'deletion' not in calls(other)
+empty(other)
+print('ok - list-based cleanup completes without the restricted deletion endpoint')
+
+p, state, other, env, key1, key2, config = multi('legacy-reservations')
+for i in range(2):
+    (state / 'jobs' / ('legacy-' + str(i) + '.json')).write_text(json.dumps({'cleanup': 'pending'}))
+assert launch(p, env).returncode == 0
+assert 'new' not in calls(state)
+empty(other)
+print('ok - legacy pending records count against the default account only')
+
+for index, text in enumerate(['', 'relative/path', '~/.config/boat/api-key live_cap=0',
+                              '~/.config/boat/api-key live_cap=x', '~/.config/boat/api-key wrong=3',
+                              '~/.config/boat/api-key cleanup_confirmation=invalid',
+                              '~/.config/boat/api-key environment=',
+                              '~/.config/boat/api-key live_cap=3 live_cap=4',
+                              '~/.config/boat/api-key\n~/.config/boat/api-key', '"unterminated']):
+    p, state, other, env, key1, key2, config = multi('invalid-config-' + str(index))
+    config.write_text(text)
+    assert launch(p, env).returncode == 2
+    assert not calls(state) and not calls(other)
+print('ok - invalid configuration fails before contacting any account')
+
+p, state, other, env, key1, key2, config = multi('tracked-key-file', {'remaining': 0})
+tracked_key = p / 'work/tracked.txt'
+tracked_key.write_text(key2.read_text())
+config.write_text(str(key1) + '\n' + str(tracked_key) + '\n')
+assert launch(p, env, 'test ! -e tracked.txt').returncode == 0
+assert json.loads((other / 'uploaded.json').read_text()) == []
+assert launch(p, env, options=('--output', str(p / 'extra-key'), '--input', 'tracked.txt')).returncode == 2
+empty(other)
+print('ok - configured key files are excluded from tracked source and refused as extra inputs')
+
+p, state, other, env, key1, key2, config = multi('both-full', {'remaining': 0}, {'remaining': 0})
+assert launch(p, env).returncode == 75
+assert 'new' not in calls(state) + calls(other)
+print('ok - exhausted accounts return capacity unavailable without a create')
+
+for name, contents, included in [
+    ('npmrc-safe', 'registry=https://registry.npmjs.org/\n', True),
+    ('npmrc-credential', '//registry.npmjs.org/:_authToken=fixture-only\n', False),
+    ('settings-safe', '{"permissions":{"allow":["Bash(npm test)"]}}', True),
+    ('settings-secret', '{"env":{"API_SECRET":"fixture-only"}}', False),
+    ('settings-bearer', '{"header":"Bearer fixture-only"}', False),
+    ('settings-private-key', '-----BEGIN PRIVATE KEY-----\nfixture-only', False),
+    ('settings-postgresql', '{"env":{"DATABASE_URL":"postgresql://app:dbpass@db.internal/app"}}', False),
+]:
+    p, state, env = case(name)
+    selected = '.npmrc' if name.startswith('npmrc') else '.claude/settings.json'
+    if name == 'settings-postgresql':
+        selected = '.claude/settings.local.json'
+    target = p / 'work' / selected
+    target.parent.mkdir(exist_ok=True)
+    target.write_text(contents)
+    for secret_path in ('.ssh/file', '.aws/file', '.config/file', '.claude/unlisted.json'):
+        secret = p / 'work' / secret_path
+        secret.parent.mkdir(exist_ok=True)
+        secret.write_text('excluded even without credentials')
+    vendor = p / 'work/vendor/lib.js'
+    vendor.parent.mkdir()
+    vendor.write_text('module.exports = {}')
+    git(p / 'work', 'add', '--force', '.')
+    git(p / 'work', 'commit', '-qm', 'allowlist fixture')
+    r = launch(p, env)
+    assert r.returncode == 0, (name, r.stderr)
+    uploaded = json.loads((state / 'uploaded.json').read_text())
+    assert (selected in uploaded) == included, (name, uploaded)
+    assert 'vendor/lib.js' in uploaded
+    assert not any(x.startswith(('.ssh/', '.aws/', '.config/')) or x == '.claude/unlisted.json'
+                   for x in uploaded)
+    if not included:
+        assert b'excluded allowlisted file' in r.stderr
+        assert b'fixture-only' not in r.stdout + r.stderr
+        assert b'dbpass' not in r.stdout + r.stderr
+    empty(state)
+print('ok - narrow clean settings upload, credential-bearing exceptions warn without content, secret paths stay excluded')
+
+p, state, other, env, key1, key2, config = multi('multi-concurrent')
+workers = [launch(p, env, 'sleep 8', ('--output', str(p / ('output-' + str(i)))), wait=False)
+           for i in range(8)]
+try:
+    for _ in range(240):
+        stream_count = sum((q / 'calls.jsonl').read_text().count('--stream')
+                           if (q / 'calls.jsonl').exists() else 0 for q in (state, other))
+        if stream_count == 8:
+            break
+        time.sleep(.05)
+    else:
+        raise AssertionError('eight jobs never started')
+    assert launch(p, env).returncode == 75
+    assert calls(state).count('new') == 2 and calls(other).count('new') == 6
+finally:
+    for worker in workers:
+        out, err = worker.communicate(timeout=20)
+        assert worker.returncode == 0, err
+empty(state)
+empty(other)
+print('ok - concurrent admission fills 2+6 account slots without oversubscription')
+
 PY

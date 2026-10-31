@@ -6,11 +6,38 @@
 #       [--timeout SECONDS] [--swap-gib 0..4] -- COMMAND [ARGS...]
 #   FM_HOME=/absolute/home fm-boat-run.sh reap
 # Requires python3 and Boat CLI 1.0.85+ on PATH (FM_BOAT_BIN may name a binary).
-# Reads ~/.config/boat/api-key afresh ONLY into each Boat child's environment.
+# Accounts: optional FM_HOME/config/boat-keys, one key-file path per line,
+# followed by optional live_cap=N pending_cap=N daily_cap=N environment=NAME
+# and cleanup_confirmation=deletion|list fields.
+# Example (paths only, never key values):
+#   ~/.config/boat/api-key
+#   /absolute/second-key live_cap=6 pending_cap=6 daily_cap=170 environment=temp-max-dev cleanup_confirmation=list
+# Caps are positive integers, defaulting to 2 live, 2 pending, 75 starts/UTC day.
+# environment is an optional nonempty Boat environment name passed to new;
+# --no-env remains mandatory. The default leaves environment selection to Boat.
+# cleanup_confirmation defaults to deletion (poll the deletion operation).
+# Use list for keys that cannot read deletion status: poll a complete VM list
+# until the recorded VM disappears, with a 120-second deadline.
+# Paths must be absolute or start with ~; shell quoting, blank lines and # comments
+# are supported. Relative/duplicate paths, unknown/duplicate fields, invalid caps
+# and an empty or unreadable file are refused. No shell expansion is performed
+# except leading ~. Without this file, only ~/.config/boat/api-key is used with
+# the original 2 live, 2 pending and 75 daily local start caps.
+# Tries accounts in order, skipping full/exhausted/unavailable accounts; returns
+# 75 when all accounts lack capacity/budget, 69 if an unavailable account remains.
+# Reads the selected key file afresh ONLY into each Boat child's environment.
 # Does not forward the invoking environment, account environments, credentials,
 # git history, .git, dependency caches, symlinks, or conventional secret files.
 # Callers must supply secret-free source, extra inputs, command and artifacts;
-# this path filter is not a secret scanner. No secrets-in-VM support exists.
+# the general path filter is not a secret scanner. No secrets-in-VM support exists.
+# Narrow source exceptions: .npmrc, .claude/settings.json,
+# .claude/settings.local.json and .claude/settings.example.json. Each exception
+# is scanned as UTF-8 before upload; credential-looking auth/token/password/
+# secret keys, bearer strings, private-key headers, credential URLs, common key
+# prefixes and binary content keep the file excluded with a content-free warning.
+# .npmrc must also contain no auth/token text. The scanned bytes are the bytes
+# archived. All other path exclusions remain; ordinary tracked vendor/ trees
+# were already eligible and remain subject to the same secret-path filter.
 # Source is HEAD's tracked file set with current tracked edits/deletions applied,
 # plus individually named --input files (including ignored files if safe).
 # Submodules and symlinks are refused rather than silently changing the source.
@@ -31,12 +58,17 @@
 # when result.json kind is unavailable; remote commands can also exit 69/75.
 # Never wrap this adapter in fm-build-lock.py: remote work consumes no local
 # heavy slot. Only a deliberate local fallback goes through that wrapper.
-# Trial guard: default 4 CPU/8 GB VMs only, no snapshots, at most two pending/
-# live records per home AND account capacity checked before create. Provider
-# limits enforce account-wide races from other homes/clients. Check minute,
-# hour and daily remaining starts; reserve at most 75 local attempts/UTC day.
+# Budget guard: default 4 CPU/8 GB VMs only, no snapshots. Pending reservations
+# and local daily attempts are counted per account in this home; live VM count,
+# included-cost eligibility and minute/hour/day starts use that account's key.
+# Provider limits enforce account-wide races from other homes/clients.
 # The home lock serializes admission/create; uncertain creates are never retried.
-# State owner: FM_HOME/state/boat-offload/{jobs/<uuid>.json,daily.json,*.lock}.
+# State owner: FM_HOME/state/boat-offload/{jobs/<uuid>.json,daily*.json,*.lock}.
+# The default key retains daily.json; other counters use a hash of the key path.
+# Each job stores its account key-file path and cleanup confirmation mode,
+# never its key value. Cleanup/reap
+# uses that path even after config changes; legacy records use the default key.
+# Keep key files available and do not repoint them until their jobs are deleted.
 # Each job is recorded BEFORE create under a unique VM name. IDs and deletion
 # operation IDs are persisted as learned. SIGINT/SIGTERM/SIGHUP run cleanup;
 # SIGKILL/host loss leave records for reap, and TTL bounds running VM lifetime.
@@ -44,6 +76,7 @@
 # recorded VMs, skips jobs whose process holds the job lock, and retains failed
 # or ambiguous cleanup records. A lost create response is recovered by name
 # from a complete --all listing; pagination/incomplete listing fails closed.
+# Configured key files are also excluded from source and refused as extra inputs.
 # Re-run reap after transient failures; never infer deletion from a stopped VM.
 # CLI requests use a mode-700 /tmp/fmb.* HOME, removed in finally, so Boat's
 # derived SSH socket path fits the Unix socket limit even in long home paths.

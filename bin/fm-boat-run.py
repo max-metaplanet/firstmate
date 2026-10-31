@@ -6,9 +6,9 @@ import contextlib
 import datetime
 import fcntl
 import hashlib
+import io
 import json
 import os
-from pathlib import Path, PurePosixPath
 import re
 import shlex
 import shutil
@@ -19,6 +19,8 @@ import tarfile
 import tempfile
 import time
 import uuid
+from dataclasses import dataclass
+from pathlib import Path, PurePosixPath
 
 
 class Failure(Exception):
@@ -88,6 +90,27 @@ def excluded(name, artifact=False):
                part.lower().endswith(('.pem', '.key', '.p12', '.pfx')) for part in parts)
 
 
+SOURCE_ALLOWLIST = {'.npmrc', '.claude/settings.json', '.claude/settings.local.json',
+                    '.claude/settings.example.json'}
+CREDENTIAL_CONTENT = re.compile(
+    r"[\w.-]*(?:auth|token|password|passwd|secret|credential|api[_-]?key|"
+    r"access[_-]?key|private[_-]?key)[\w.-]*[\"']?\s*[:=]|"
+    r"\bbearer\s+\S+|-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY-----|"
+    r"[a-z][a-z0-9+.-]*://[^/\s:@]+:[^/\s@]+@|"
+    r"\b(?:sk-[A-Za-z0-9_-]{12,}|gh[pousr]_[A-Za-z0-9]{20,}|"
+    r"github_pat_[A-Za-z0-9_]{20,}|AKIA[0-9A-Z]{16})",
+    re.IGNORECASE)
+
+
+def safe_allowlisted(name, data):
+    try:
+        text = data.decode('utf-8')
+    except UnicodeDecodeError:
+        return False
+    return not ('\x00' in text or CREDENTIAL_CONTENT.search(text) or
+                (name == '.npmrc' and re.search(r'auth|token', text, re.IGNORECASE)))
+
+
 def git(root, *args):
     # No user Git aliases, hooks or inherited repository selection.
     env = {k: v for k, v in os.environ.items() if not k.startswith('GIT_')}
@@ -96,21 +119,21 @@ def git(root, *args):
     return result.stdout
 
 
-def source(root, inputs, archive):
+def source(root, inputs, archive, key_files):
     head = git(root, 'rev-parse', 'HEAD').decode().strip()
     entries = git(root, 'ls-tree', '-rz', '--full-tree', 'HEAD').split(b'\0')
     names = []
     for entry in filter(None, entries):
         meta, name = entry.split(b'\t', 1)
         name = os.fsdecode(name)
-        if excluded(name):
+        if (excluded(name) and name not in SOURCE_ALLOWLIST) or (root / name).resolve() in key_files:
             continue
         if meta.split()[0] not in (b'100644', b'100755'):
             raise Failure('source contains unsupported symlink or submodule: ' + name, 2)
         names.append(name)
     for name in inputs:
         relative(name)
-        if excluded(name):
+        if (excluded(name) and name not in SOURCE_ALLOWLIST) or (root / name).resolve() in key_files:
             raise Failure('extra input is a credential/cache path: ' + name, 2)
         if not (root / name).exists():
             raise Failure('extra input missing: ' + name, 2)
@@ -129,12 +152,82 @@ def source(root, inputs, archive):
                 continue
             if not path.is_file():
                 raise Failure('source input must be a regular file: ' + name, 2)
-            output.add(path, arcname=name, recursive=False)
+            if name in SOURCE_ALLOWLIST:
+                data = path.read_bytes()
+                if not safe_allowlisted(name, data):
+                    print('boat-offload: excluded allowlisted file with credential-looking content: ' +
+                          name, file=sys.stderr)
+                    continue
+                info = output.gettarinfo(path, arcname=name)
+                info.size = len(data)
+                output.addfile(info, io.BytesIO(data))
+            else:
+                output.add(path, arcname=name, recursive=False)
     return head, hashlib.sha256(archive.read_bytes()).hexdigest()
 
 
+def default_key_file():
+    return (Path.home() / '.config/boat/api-key').resolve()
+
+
+@dataclass(frozen=True)
+class Account:
+    key_file: Path
+    live_cap: int = 2
+    pending_cap: int = 2
+    daily_cap: int = 75
+    environment: str = ''
+    cleanup_confirmation: str = 'deletion'
+
+    def daily_path(self, state):
+        if self.key_file == default_key_file():
+            return state / 'daily.json'
+        identity = hashlib.sha256(os.fsencode(self.key_file)).hexdigest()
+        return state / ('daily-' + identity + '.json')
+
+
+def accounts(home):
+    config = home / 'config/boat-keys'
+    if not config.exists():
+        if config.is_symlink():
+            raise Failure('Boat account configuration unavailable', 2)
+        return [Account(default_key_file())]
+    parsed = []
+    try:
+        for line in config.read_text().splitlines():
+            fields = shlex.split(line, comments=True)
+            if not fields:
+                continue
+            key_file = Path(fields[0]).expanduser()
+            if not key_file.is_absolute():
+                raise ValueError('relative key path')
+            options = {}
+            for field in fields[1:]:
+                name, value = field.split('=', 1)
+                if name not in ('live_cap', 'pending_cap', 'daily_cap',
+                                'environment', 'cleanup_confirmation') or name in options:
+                    raise ValueError('invalid cap field')
+                if name.endswith('_cap'):
+                    value = int(value)
+                    if value < 1:
+                        raise ValueError('invalid cap')
+                elif not value or (name == 'cleanup_confirmation' and value not in ('deletion', 'list')):
+                    raise ValueError('invalid account option')
+                options[name] = value
+            account = Account(key_file.resolve(), **options)
+            if any(a.key_file == account.key_file for a in parsed):
+                raise ValueError('duplicate key path')
+            parsed.append(account)
+        if not parsed:
+            raise ValueError('empty account list')
+    except (OSError, ValueError) as exc:
+        raise Failure('invalid Boat account configuration', 2) from exc
+    return parsed
+
+
 class Boat:
-    def __init__(self, state, cli_home):
+    def __init__(self, state, cli_home, account):
+        self.account = account
         self.state = state
         self.cli_home = cli_home
         self.binary = os.environ.get('FM_BOAT_BIN', 'boat')
@@ -142,7 +235,7 @@ class Boat:
     def call(self, *args, timeout=90, raw=False, capture_path=None):
         global ACTIVE_CHILD
         try:
-            key = (Path.home() / '.config/boat/api-key').read_text().strip()
+            key = self.account.key_file.read_text().strip()
             if not key:
                 raise ValueError('empty key')
         except (OSError, ValueError) as exc:
@@ -220,6 +313,9 @@ class Boat:
             job['cleanup'] = 'deleted'
             save(record, job)
             return
+        confirmation = job.get('cleanup_confirmation', 'deletion')
+        if confirmation not in ('deletion', 'list'):
+            raise Failure('invalid recorded cleanup confirmation', 70)
         matches = [vm for vm in self.listing() if vm.get('name') == job['name']]
         if not job.get('vm_id') and len(matches) == 1:
             job['vm_id'] = matches[0]['id']
@@ -229,14 +325,14 @@ class Boat:
         vm_id = job.get('vm_id')
         if vm_id and not re.fullmatch(r'bx_[a-zA-Z0-9]+', vm_id):
             raise Failure('invalid recorded VM id', 70)
-        if vm_id and not job.get('deletion_id'):
-            if any(vm.get('id') == vm_id for vm in self.listing()):
-                deleted = self.call('delete', vm_id, '--yes', '--json', timeout=180)
-                # CLI emits a deletion operation object (confirmed by live proof).
-                operation = deleted.get('operation', deleted)
-                job['deletion_id'] = operation.get('id') or deleted.get('operationId')
-                save(record, job)
-        if job.get('deletion_id'):
+        if (vm_id and not job.get('deletion_id') and
+                any(vm.get('id') == vm_id for vm in self.listing())):
+            deleted = self.call('delete', vm_id, '--yes', '--json', timeout=180)
+            # CLI emits a deletion operation object (confirmed by live proof).
+            operation = deleted.get('operation', deleted)
+            job['deletion_id'] = operation.get('id') or deleted.get('operationId')
+            save(record, job)
+        if job.get('deletion_id') and confirmation == 'deletion':
             deadline = time.monotonic() + 120
             while True:
                 data = self.call('deletion', 'status', job['deletion_id'], '--json')
@@ -246,8 +342,11 @@ class Boat:
                 if time.monotonic() >= deadline:
                     raise Failure('deletion not completed; retained for reap', 70)
                 time.sleep(2)
-        if vm_id and any(vm.get('id') == vm_id for vm in self.listing()):
-            raise Failure('VM still listed; retained for reap', 70)
+        deadline = time.monotonic() + 120
+        while vm_id and any(vm.get('id') == vm_id for vm in self.listing()):
+            if confirmation != 'list' or time.monotonic() >= deadline:
+                raise Failure('VM still listed; retained for reap', 70)
+            time.sleep(2)
         # A create that lost its response can appear after the first list. Keep
         # its reservation until the TTL elapses, even if presently absent.
         if not vm_id and job.get('create_started') and time.time() < job['expires']:
@@ -256,48 +355,65 @@ class Boat:
         save(record, job)
 
 
-def admit(boat, job, record):
-    with lock(boat.state / 'admission.lock'):
-        pending = [json.loads(p.read_text()) for p in (boat.state / 'jobs').glob('*.json')]
-        if sum(p.get('cleanup') != 'deleted' for p in pending) >= 2:
-            raise Failure('two Boat jobs already reserved', 75)
-        try:
-            limits = boat.call('limits', '--json')
-            live = boat.listing()
-        except Failure as exc:
-            raise Failure(str(exc), 69) from exc
-        if len(live) >= 2:
-            raise Failure('Boat account has two VMs already', 75)
-        if limits.get('canStart') is False or limits.get('nextStartDollars', 0) != 0:
-            raise Failure('Boat cannot start within the included trial budget', 75)
-        starts = limits.get('starts', {})
-        for window in ('minute', 'hour', 'day'):
-            remaining = starts.get(window, {}).get('remaining')
-            if not isinstance(remaining, int):
-                raise Failure('Boat start budget unavailable', 69)
-            if remaining < 1:
-                raise Failure('Boat ' + window + ' start cap reached', 75)
-        daily_path = boat.state / 'daily.json'
-        today = datetime.datetime.now(datetime.timezone.utc).date().isoformat()
-        daily = json.loads(daily_path.read_text()) if daily_path.exists() else {}
-        used = daily.get('attempts', 0) if daily.get('date') == today else 0
-        if used >= 75:
-            raise Failure('local daily trial start cap reached', 75)
-        save(daily_path, {'date': today, 'attempts': used + 1})
-        job['create_started'] = True
-        save(record, job)
-        try:
-            created = boat.call('new', '--type', 'default', '--ttl', str(job['ttl']),
-                                '--no-env', '--no-snapshots', '--name', job['name'],
-                                '--json', timeout=180)
-            vm = created.get('sandbox', created)
-            vm_id = vm.get('id') or created.get('sandboxId')
-            if not isinstance(vm_id, str) or not re.fullmatch(r'bx_[a-zA-Z0-9]+', vm_id):
-                raise Failure('Boat create returned no valid VM id')
-            job['vm_id'] = vm_id
+def admit(boats, job, record):
+    state = boats[0].state
+    with lock(state / 'admission.lock'):
+        pending = [json.loads(p.read_text()) for p in (state / 'jobs').glob('*.json')]
+        failures = []
+        for boat in boats:
+            account = boat.account
+            reserved = sum(p.get('cleanup') != 'deleted' and
+                           p.get('account_key_file', str(default_key_file())) == str(account.key_file)
+                           for p in pending)
+            if reserved >= account.pending_cap:
+                failures.append(Failure('Boat pending cap reached', 75))
+                continue
+            try:
+                limits = boat.call('limits', '--json')
+                live = boat.listing()
+                if len(live) >= account.live_cap:
+                    raise Failure('Boat live cap reached', 75)
+                if limits.get('canStart') is False or limits.get('nextStartDollars', 0) != 0:
+                    raise Failure('Boat cannot start within the included budget', 75)
+                starts = limits.get('starts', {})
+                for window in ('minute', 'hour', 'day'):
+                    remaining = starts.get(window, {}).get('remaining')
+                    if not isinstance(remaining, int):
+                        raise Failure('Boat start budget unavailable', 69)
+                    if remaining < 1:
+                        raise Failure('Boat ' + window + ' start cap reached', 75)
+                daily_path = account.daily_path(state)
+                today = datetime.datetime.now(datetime.timezone.utc).date().isoformat()
+                daily = json.loads(daily_path.read_text()) if daily_path.exists() else {}
+                used = daily.get('attempts', 0) if daily.get('date') == today else 0
+                if used >= account.daily_cap:
+                    raise Failure('local daily start cap reached', 75)
+            except Failure as exc:
+                failures.append(Failure(str(exc), 69 if exc.code != 75 else 75))
+                continue
+            save(daily_path, {'date': today, 'attempts': used + 1})
+            job.update(create_started=True, account_key_file=str(account.key_file),
+                       cleanup_confirmation=account.cleanup_confirmation)
             save(record, job)
-        except Failure as exc:
-            raise Failure(str(exc), 69) from exc
+            try:
+                create_args = ['new', '--type', 'default', '--ttl', str(job['ttl']),
+                               '--no-env', '--no-snapshots', '--name', job['name'], '--json']
+                if account.environment:
+                    create_args.extend(['--environment', account.environment])
+                created = boat.call(*create_args, timeout=180)
+                vm = created.get('sandbox', created)
+                vm_id = vm.get('id') or created.get('sandboxId')
+                if not isinstance(vm_id, str) or not re.fullmatch(r'bx_[a-zA-Z0-9]+', vm_id):
+                    raise Failure('Boat create returned no valid VM id')
+                job['vm_id'] = vm_id
+                save(record, job)
+            except Failure as exc:
+                raise Failure(str(exc), 69) from exc
+            return boat
+        if len(boats) == 1:
+            raise failures[0]
+        raise Failure('no Boat account available',
+                      69 if any(f.code == 69 for f in failures) else 75)
 
 
 def artifacts(boat, vm, names, output):
@@ -340,7 +456,8 @@ with tarfile.open('/home/user/fm-job/artifacts.tar.gz',mode='w:gz') as t:
                     shutil.copyfileobj(src, dest)
 
 
-def run(args, boat):
+def run(args, boats):
+    boat = boats[0]
     try:
         root = Path(args.worktree).resolve(strict=True)
         top = Path(os.fsdecode(git(root, 'rev-parse', '--show-toplevel')).strip()).resolve()
@@ -366,7 +483,8 @@ def run(args, boat):
                 raise Failure('credential/cache artifact refused', 2)
         upload = output / 'upload'
         upload.mkdir()
-        head, digest = source(root, args.input, upload / 'source.tar.gz')
+        head, digest = source(root, args.input, upload / 'source.tar.gz',
+                              {b.account.key_file for b in boats})
         # Boat push honors enclosing gitignore rules. OUTPUT commonly lives in
         # ignored data/; a private index makes this one archive an explicit input
         # without changing the source repository or transferring its .git.
@@ -381,7 +499,11 @@ def run(args, boat):
         with lock(boat.state / (job_id + '.lock')):
             try:
                 result['kind'] = 'unavailable'
-                admit(boat, job, record)
+                try:
+                    boat = admit(boats, job, record)
+                finally:
+                    if job.get('account_key_file'):
+                        boat = next(b for b in boats if str(b.account.key_file) == job['account_key_file'])
                 vm = job['vm_id']
                 result.update(vm_id=vm, kind='adapter-error')
                 boat.call('push', vm, str(upload), '--to', '/home/user/fm-job', timeout=300, raw=True)
@@ -478,7 +600,6 @@ def main():
     # exceeds Unix socket limits even though all ordinary files fit there.
     with tempfile.TemporaryDirectory(prefix='fmb.', dir='/tmp') as cli_home:
         os.chmod(cli_home, 0o700)
-        boat = Boat(state, Path(cli_home))
         if args.action == 'reap':
             failed = False
             for record in sorted((state / 'jobs').glob('*.json')):
@@ -486,12 +607,16 @@ def main():
                     if not acquired:
                         continue
                     try:
-                        boat.cleanup(json.loads(record.read_text()), record)
+                        job = json.loads(record.read_text())
+                        key_file = Path(job.get('account_key_file', str(default_key_file())))
+                        if not key_file.is_absolute():
+                            raise Failure('invalid recorded account key path', 70)
+                        Boat(state, Path(cli_home), Account(key_file)).cleanup(job, record)
                     except Failure as exc:
                         print('boat-offload: ' + str(exc), file=sys.stderr)
                         failed = True
             return 70 if failed else 0
-        return run(args, boat)
+        return run(args, [Boat(state, Path(cli_home), a) for a in accounts(home)])
 
 
 if __name__ == '__main__':

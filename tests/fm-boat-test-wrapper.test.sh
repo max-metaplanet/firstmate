@@ -157,7 +157,7 @@ git('config', 'user.email', 'fixture@example.invalid')
 git('config', 'remote.origin.url', 'https://local-token@example.invalid/core')
 files = {'unchanged.txt': 'same\n', 'changed.txt': 'before\n',
          'ignored.txt': 'tracked despite ignore\n', '.gitignore': 'ignored.txt\n',
-         '.env': 'never upload\n', '.npmrc': 'never upload\n'}
+         '.env': 'never upload\n', '.npmrc': '_authToken=never upload\n'}
 for name, contents in files.items():
     (work / name).write_text(contents)
 git('add', '--force', '.')

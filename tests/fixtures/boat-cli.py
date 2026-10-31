@@ -4,15 +4,18 @@ import fcntl
 import json
 import os
 import re
-from pathlib import Path
 import shutil
 import signal
 import subprocess
 import sys
 import tarfile
+from pathlib import Path
 
 # Test wrapper supplies its own record root outside the isolated CLI HOME.
 root = Path(sys.argv[1])
+account = {'boat_fixture_secret': '', 'boat_fixture_second': 'account-2'}[os.environ['BOAT_API_KEY']]
+if account:
+    root = root / account
 fixture = json.loads((root / 'fixture.json').read_text())
 state_path = root / 'fake-vms.json'
 args = sys.argv[2:]
@@ -27,18 +30,21 @@ with (root / 'fake.lock').open('a') as handle:
     state = json.loads(state_path.read_text()) if state_path.exists() else []
     with (root / 'calls.jsonl').open('a') as log:
         log.write(json.dumps(args) + '\n')
-    assert os.environ['BOAT_API_KEY'] == 'boat_fixture_secret'
     assert 'DEV_SECRET' not in os.environ
     assert 'NODE_OPTIONS' not in os.environ
     if fixture.get('unreachable') and command == 'limits':
         sys.exit(1)
     if command == 'limits':
-        print(json.dumps({'starts': {w: {'remaining': fixture.get('remaining', 10)}
-                                    for w in ('minute', 'hour', 'day')}}))
+        print(json.dumps({'starts': {w: {'remaining': fixture.get(w + '_remaining', fixture.get('remaining', 10))}
+                                    for w in ('minute', 'hour', 'day')},
+                          'canStart': fixture.get('canStart', True),
+                          'nextStartDollars': fixture.get('nextStartDollars', 0)}))
     elif command == 'list':
         print(json.dumps({'sandboxes': state, 'pageInfo': {'hasMore': fixture.get('hasMore', False)}}))
     elif command == 'new':
         assert '--no-env' in args and '--no-snapshots' in args
+        if fixture.get('required_environment'):
+            assert args[args.index('--environment') + 1] == fixture['required_environment']
         name = args[args.index('--name') + 1]
         state.append({'id': 'bx_fixture' + str(len(state)), 'name': name})
         state_path.write_text(json.dumps(state))
@@ -58,6 +64,8 @@ with (root / 'fake.lock').open('a') as handle:
         state_path.write_text(json.dumps(state))
         print(json.dumps({'id': 'bdop_fixture', 'status': 'completed'}))
     elif command == 'deletion':
+        if fixture.get('deletion_forbidden'):
+            sys.exit(1)
         print(json.dumps({'id': args[2], 'status': 'completed'}))
     elif command == 'push':
         if fixture.get('push_failed'):
