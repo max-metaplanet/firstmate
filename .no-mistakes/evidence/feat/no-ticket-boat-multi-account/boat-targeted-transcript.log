@@ -1,0 +1,95 @@
+
+SCENARIO: No config uses default account; credentials absent from execution; cleanup completes
+adapter exit: 0
+adapter stdout: default-account
+adapter stderr: boat-offload: excluded allowlisted file with credential-looking content: .npmrc
+provider calls: ["limits", "--json"]
+["list", "--all", "--json"]
+["new", "--type", "default", "--ttl", "2700", "--no-env", "--no-snapshots", "--name", "fm-offload-43d877d775b54c9e934f800dfd4df167", "--json"]
+["push", "bx_fixture0", "~/.no-mistakes/worktrees/c0c4fcacb05a/01M67TG7Z8M2F1BVZ5Z7HT26X0/.boat-validation/default/output/upload", "--to", "~/fm-job"]
+["exec", "bx_fixture0", "--timeout", "60", "--", "bash", "-c", "echo dae2e28d6883fc1273752a09470c4f230cd51ee77bc4397941e952e541d2d5be ~/fm-job/source.tar.gz | sha256sum -c - && mkdir -p ~/fm-job/source && tar xzf ~/fm-job/source.tar.gz -C ~/fm-job/source"]
+["exec", "bx_fixture0", "--timeout", "1830", "--stream", "--", "bash", "-c", "cd ~/fm-job/source || exit 125; env -i PATH=\"$PATH\" HOME=~ CI=1 NEXT_TELEMETRY_DISABLED=1 timeout -k 15 1800 bash -c 'echo default-account; test -z \"$BOAT_API_KEY$DEV_SECRET$NODE_OPTIONS\"'; rc=$?; printf \"%s\" \"$rc\" > ~/fm-job/exit"]
+["exec", "bx_fixture0", "--timeout", "30", "--", "cat", "~/fm-job/exit"]
+["list", "--all", "--json"]
+["list", "--all", "--json"]
+["delete", "bx_fixture0", "--yes", "--json"]
+["deletion", "status", "bdop_fixture", "--json"]
+["list", "--all", "--json"]
+
+uploaded archive manifest: ["tracked.txt"]
+
+SCENARIO: Exhausted first account selects scoped second account and confirms cleanup through list
+adapter exit: 0
+adapter stdout: account-two
+adapter stderr: boat-offload: excluded allowlisted file with credential-looking content: .npmrc
+provider calls: ["limits", "--json"]
+["list", "--all", "--json"]
+["new", "--type", "default", "--ttl", "2700", "--no-env", "--no-snapshots", "--name", "fm-offload-3c438156585a4a66926fb16d25c2ebeb", "--json", "--environment", "temp-max-dev"]
+["push", "bx_fixture0", "~/.no-mistakes/worktrees/c0c4fcacb05a/01M67TG7Z8M2F1BVZ5Z7HT26X0/.boat-validation/scoped/output/upload", "--to", "~/fm-job"]
+["exec", "bx_fixture0", "--timeout", "60", "--", "bash", "-c", "echo e9b214c71f7c0c49815197d3cdc0afa0b6ad404993651806dbeb7fce626fe175 ~/fm-job/source.tar.gz | sha256sum -c - && mkdir -p ~/fm-job/source && tar xzf ~/fm-job/source.tar.gz -C ~/fm-job/source"]
+["exec", "bx_fixture0", "--timeout", "1830", "--stream", "--", "bash", "-c", "cd ~/fm-job/source || exit 125; env -i PATH=\"$PATH\" HOME=~ CI=1 NEXT_TELEMETRY_DISABLED=1 timeout -k 15 1800 bash -c 'echo account-two; test -z \"$BOAT_API_KEY$DEV_SECRET\"'; rc=$?; printf \"%s\" \"$rc\" > ~/fm-job/exit"]
+["exec", "bx_fixture0", "--timeout", "30", "--", "cat", "~/fm-job/exit"]
+["list", "--all", "--json"]
+["list", "--all", "--json"]
+["delete", "bx_fixture0", "--yes", "--json"]
+["list", "--all", "--json"]
+
+uploaded archive manifest: ["tracked.txt"]
+REFUSED tracked .claude/settings.json postgresql with content-free warning; executed command observed file absent
+REFUSED tracked .claude/settings.json mysql with content-free warning; executed command observed file absent
+REFUSED tracked .claude/settings.json redis with content-free warning; executed command observed file absent
+REFUSED tracked .claude/settings.json amqp with content-free warning; executed command observed file absent
+REFUSED tracked .claude/settings.json mongodb+srv with content-free warning; executed command observed file absent
+REFUSED tracked .claude/settings.json https with content-free warning; executed command observed file absent
+REFUSED input .claude/settings.json postgresql with content-free warning; executed command observed file absent
+REFUSED input .claude/settings.json mysql with content-free warning; executed command observed file absent
+REFUSED input .claude/settings.json redis with content-free warning; executed command observed file absent
+REFUSED input .claude/settings.json amqp with content-free warning; executed command observed file absent
+REFUSED input .claude/settings.json mongodb+srv with content-free warning; executed command observed file absent
+REFUSED input .claude/settings.json https with content-free warning; executed command observed file absent
+REFUSED tracked .claude/settings.local.json postgresql with content-free warning; executed command observed file absent
+REFUSED tracked .claude/settings.local.json mysql with content-free warning; executed command observed file absent
+REFUSED tracked .claude/settings.local.json redis with content-free warning; executed command observed file absent
+REFUSED tracked .claude/settings.local.json amqp with content-free warning; executed command observed file absent
+REFUSED tracked .claude/settings.local.json mongodb+srv with content-free warning; executed command observed file absent
+REFUSED tracked .claude/settings.local.json https with content-free warning; executed command observed file absent
+REFUSED input .claude/settings.local.json postgresql with content-free warning; executed command observed file absent
+REFUSED input .claude/settings.local.json mysql with content-free warning; executed command observed file absent
+REFUSED input .claude/settings.local.json redis with content-free warning; executed command observed file absent
+REFUSED input .claude/settings.local.json amqp with content-free warning; executed command observed file absent
+REFUSED input .claude/settings.local.json mongodb+srv with content-free warning; executed command observed file absent
+REFUSED input .claude/settings.local.json https with content-free warning; executed command observed file absent
+REFUSED tracked .claude/settings.example.json postgresql with content-free warning; executed command observed file absent
+REFUSED tracked .claude/settings.example.json mysql with content-free warning; executed command observed file absent
+REFUSED tracked .claude/settings.example.json redis with content-free warning; executed command observed file absent
+REFUSED tracked .claude/settings.example.json amqp with content-free warning; executed command observed file absent
+REFUSED tracked .claude/settings.example.json mongodb+srv with content-free warning; executed command observed file absent
+REFUSED tracked .claude/settings.example.json https with content-free warning; executed command observed file absent
+REFUSED input .claude/settings.example.json postgresql with content-free warning; executed command observed file absent
+REFUSED input .claude/settings.example.json mysql with content-free warning; executed command observed file absent
+REFUSED input .claude/settings.example.json redis with content-free warning; executed command observed file absent
+REFUSED input .claude/settings.example.json amqp with content-free warning; executed command observed file absent
+REFUSED input .claude/settings.example.json mongodb+srv with content-free warning; executed command observed file absent
+REFUSED input .claude/settings.example.json https with content-free warning; executed command observed file absent
+
+SCENARIO: Clean allowlisted settings and vendor source arrive; other secret paths remain absent
+adapter exit: 0
+adapter stdout: registry=https://registry.npmjs.org/
+{"permissions":{"allow":[]}}module.exports = {}
+adapter stderr: 
+provider calls: ["limits", "--json"]
+["list", "--all", "--json"]
+["new", "--type", "default", "--ttl", "2700", "--no-env", "--no-snapshots", "--name", "fm-offload-00f912a64a2f484f89884d57021a2cc4", "--json"]
+["push", "bx_fixture0", "~/.no-mistakes/worktrees/c0c4fcacb05a/01M67TG7Z8M2F1BVZ5Z7HT26X0/.boat-validation/clean-allowlist/output/upload", "--to", "~/fm-job"]
+["exec", "bx_fixture0", "--timeout", "60", "--", "bash", "-c", "echo 12e4b71d4b0e379e0b11bd0ee25005053a254156425a540457b2d2ef4f9417c5 ~/fm-job/source.tar.gz | sha256sum -c - && mkdir -p ~/fm-job/source && tar xzf ~/fm-job/source.tar.gz -C ~/fm-job/source"]
+["exec", "bx_fixture0", "--timeout", "1830", "--stream", "--", "bash", "-c", "cd ~/fm-job/source || exit 125; env -i PATH=\"$PATH\" HOME=~ CI=1 NEXT_TELEMETRY_DISABLED=1 timeout -k 15 1800 bash -c 'cat .npmrc .claude/settings.local.json vendor/lib.js; test ! -e .ssh/key; test ! -e .aws/config; test ! -e .config/file'; rc=$?; printf \"%s\" \"$rc\" > ~/fm-job/exit"]
+["exec", "bx_fixture0", "--timeout", "30", "--", "cat", "~/fm-job/exit"]
+["list", "--all", "--json"]
+["list", "--all", "--json"]
+["delete", "bx_fixture0", "--yes", "--json"]
+["deletion", "status", "bdop_fixture", "--json"]
+["list", "--all", "--json"]
+
+uploaded archive manifest: [".claude/settings.local.json", ".npmrc", "input.txt", "tracked.txt", "unselected.txt", "vendor/lib.js"]
+
+All focused adapter checks passed. Provider executable was the repository fake; no real Boat access attempted.
