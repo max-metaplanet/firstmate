@@ -1,0 +1,14 @@
+Configured project: sample widget; configured exact label: hold for approval
+yolo=on: no ready-hold overlay emitted
+yolo=off: ready-hold overlay emitted
+gitlab: no overlay emitted
+forgejo: no overlay emitted
+external: no overlay emitted
+Unconfigured project: no overlay emitted
+Explicit empty label: lookup returns no hold
+error: invalid or duplicate ready-hold entry at ~/.no-mistakes/worktrees/c0c4fcacb05a/01M69PB273Q428N9RKZRTWNQAW/.test-ready-hold/config/project-ready-hold-label:2
+Duplicate configuration: refused (no overlay emitted)
+error: invalid or duplicate ready-hold entry at ~/.no-mistakes/worktrees/c0c4fcacb05a/01M69PB273Q428N9RKZRTWNQAW/.test-ready-hold/config/project-ready-hold-label:1
+Malformed configuration: refused (no overlay emitted)
+error: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M69PB273Q428N9RKZRTWNQAW/.test-ready-hold/config/project-ready-hold-label is not a readable regular file
+Dangling configuration: refused (no overlay emitted)
