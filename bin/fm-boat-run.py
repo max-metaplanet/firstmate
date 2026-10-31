@@ -96,7 +96,7 @@ CREDENTIAL_CONTENT = re.compile(
     r"[\w.-]*(?:auth|token|password|passwd|secret|credential|api[_-]?key|"
     r"access[_-]?key|private[_-]?key)[\w.-]*[\"']?\s*[:=]|"
     r"\bbearer\s+\S+|-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY-----|"
-    r"https?://[^/\s:@]+:[^/\s@]+@|"
+    r"[a-z][a-z0-9+.-]*://[^/\s:@]+:[^/\s@]+@|"
     r"\b(?:sk-[A-Za-z0-9_-]{12,}|gh[pousr]_[A-Za-z0-9]{20,}|"
     r"github_pat_[A-Za-z0-9_]{20,}|AKIA[0-9A-Z]{16})",
     re.IGNORECASE)

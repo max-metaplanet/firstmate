@@ -406,9 +406,12 @@ for name, contents, included in [
     ('settings-secret', '{"env":{"API_SECRET":"fixture-only"}}', False),
     ('settings-bearer', '{"header":"Bearer fixture-only"}', False),
     ('settings-private-key', '-----BEGIN PRIVATE KEY-----\nfixture-only', False),
+    ('settings-postgresql', '{"env":{"DATABASE_URL":"postgresql://app:dbpass@db.internal/app"}}', False),
 ]:
     p, state, env = case(name)
     selected = '.npmrc' if name.startswith('npmrc') else '.claude/settings.json'
+    if name == 'settings-postgresql':
+        selected = '.claude/settings.local.json'
     target = p / 'work' / selected
     target.parent.mkdir(exist_ok=True)
     target.write_text(contents)
@@ -431,6 +434,7 @@ for name, contents, included in [
     if not included:
         assert b'excluded allowlisted file' in r.stderr
         assert b'fixture-only' not in r.stdout + r.stderr
+        assert b'dbpass' not in r.stdout + r.stderr
     empty(state)
 print('ok - narrow clean settings upload, credential-bearing exceptions warn without content, secret paths stay excluded')
 
