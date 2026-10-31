@@ -335,13 +335,16 @@ cursor_screen() {  # <composer-text> <ghost 0|1>
     "$open" "$text" "$close" "$LAB/wt"
 }
 
+# Rendering precedes exec: wait for both the screen and the intended process.
 open_composer_pane() {  # <window> <binary> <composer-text> <ghost 0|1>
   local window=$1 binary=$2 text=$3 ghost=$4
   new_window "$window" bash -c "$(declare -f cursor_screen); LAB='$LAB'; cursor_screen '$text' '$ghost'; exec '$binary' 900"
   local i=0
   while [ "$i" -lt 100 ]; do
     case "$("$REAL_TMUX" -L "$SOCKET" capture-pane -p -t "$SESSION:$window" 2>/dev/null)" in
-      *"$text"*) return 0 ;;
+      *"$text"*)
+        fm_backend_tmux_foreground_argv0s "$SESSION:$window" | grep -Fxq -- "$binary" && return 0
+        ;;
     esac
     sleep 0.1
     i=$((i + 1))
@@ -418,7 +421,9 @@ open_commandcode_pane() {  # <window> <binary> <idle|typed>
   new_window "$window" bash -c "$(declare -f commandcode_screen); commandcode_screen '$kind'; exec '$binary' 900"
   while [ "$i" -lt 100 ]; do
     case "$("$REAL_TMUX" -L "$SOCKET" capture-pane -p -t "$SESSION:$window" 2>/dev/null)" in
-      *'? for shortcuts'*) return 0 ;;
+      *'? for shortcuts'*)
+        fm_backend_tmux_foreground_argv0s "$SESSION:$window" | grep -Fxq -- "$binary" && return 0
+        ;;
     esac
     sleep 0.1
     i=$((i + 1))
