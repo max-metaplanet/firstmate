@@ -32,6 +32,12 @@ TASK_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}\Z")
 PR_URL = re.compile(r"https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/pull/[0-9]+\Z")
 
 
+def update_prompt(update):
+    """Keep structured transport data in an unused Markdown reference title."""
+    return (f"Update · {update['state']} · {update['task']}\n\n"
+            f"[fm-t3-mirror]: # '{json.dumps(update)}'")
+
+
 def render(prompt):
     """Render only the bounded status vocabulary, never free-form instructions."""
     try:
@@ -42,16 +48,21 @@ def render(prompt):
             if block.get("type") != "text":
                 continue
             text = block.get("text", "")
+            if not isinstance(text, str):
+                continue
             if text.startswith("<t3_code_instructions>") and text.endswith("\n</user_request>"):
                 _, separator, text = text.rpartition("\n<user_request>\n")
                 if not separator:
                     continue
                 text = text[:-len("\n</user_request>")]
+            heading, separator, payload = text.partition("\n\n[fm-t3-mirror]: # '")
             try:
-                value = json.loads(text)
+                value = json.loads(payload[:-1] if separator and payload.endswith("'") else text)
             except ValueError:
                 continue
             if isinstance(value, dict) and value.get("schema") == "fm-t3-mirror.v1":
+                if separator and heading != f"Update · {value.get('state')} · {value.get('task')}":
+                    continue
                 candidates.append(value)
         if len(candidates) != 1:
             return NOTICE

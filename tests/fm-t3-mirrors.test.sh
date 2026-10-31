@@ -33,7 +33,8 @@ with open(os.environ['MIRROR_CALLS'], 'a') as f:
     f.write(json.dumps({'args': args, 'text': text}) + '\\n')
 base = Path(args[args.index('--base-dir') + 1])
 def turn(text):
-    update = json.loads(text)
+    payload = text.split("[fm-t3-mirror]: # '", 1)[1][:-1]
+    update = json.loads(payload)
     outcomes = {
         'working': ('Work is in progress.', 'Firstmate will post the next meaningful change.'),
         'paused': ('Waiting for an external condition.', 'Firstmate will check when the wait clears.'),
@@ -143,6 +144,7 @@ maps = state / 't3-mirrors' / 'tasks'
 alpha = json.loads((maps / 'alpha.json').read_text())
 platform = json.loads((maps / 'platform.json').read_text())
 assert alpha['threadId'] != platform['threadId'] and alpha['projectId'] == platform['projectId']
+assert alpha['title'].startswith('Mirror · Worker · alpha')
 assert any('Secondmate · platform' in item['args'][item['args'].index('--title') + 1]
            for item in calls(['thread', 'start']))
 command('sync')
@@ -150,13 +152,27 @@ assert len(calls(['thread', 'start'])) == 2 and not calls(['thread', 'send'])
 assert before == {p.name: p.read_bytes() for p in state.glob('*.meta')}
 print('ok - one mapping per task and secondmate, with unchanged endpoint metadata')
 
+turns_path = base / f"turns-{alpha['threadId']}.json"
+turns = json.loads(turns_path.read_text())
+legacy_update = json.loads(turns[0]['text'].split("[fm-t3-mirror]: # '", 1)[1][:-1])
+turns[0]['text'] = json.dumps(legacy_update)
+turns_path.write_text(json.dumps(turns))
+legacy_record = dict(alpha, pending=alpha['fingerprint'], pending_update=legacy_update)
+legacy_record.pop('pending_prompt', None)
+(maps / 'alpha.json').write_text(json.dumps(legacy_record))
+command('sync')
+assert not calls(['thread', 'send'])
+assert not json.loads((maps / 'alpha.json').read_text())['pending']
+print('ok - a legacy pending JSON prompt is confirmed without replaying delivery')
+
 (state / 'alpha.current').write_text('state: done · source: run-step · checks green secret-value\n')
 (state / 'alpha.status').write_text('done [at=456]: PR https://github.com/example/project/pull/7 secret-value\n')
 command('sync')
 assert len(calls(['thread', 'send'])) == 1
 sent = calls(['thread', 'send'])[0]
 assert sent['args'][2] == alpha['threadId']
-update = json.loads(sent['text'])
+assert sent['text'].splitlines()[0] == 'Update · done · alpha'
+update = json.loads(sent['text'].split("[fm-t3-mirror]: # '", 1)[1][:-1])
 assert update['state'] == 'done' and update['pr'] == 'https://github.com/example/project/pull/7'
 assert 'secret-value' not in calls_path.read_text() and 'DO_NOT_FORWARD' not in calls_path.read_text()
 assert 'private-secret' not in calls_path.read_text()
@@ -288,6 +304,11 @@ reply = messages[0]['params']['update']['content']['text']
 assert reply.startswith('The recorded work is ready. (done)') and 'Next:' in reply and 'Observed:' in reply
 assert update['pr'] in reply and messages[-1]['result']['stopReason'] == 'end_turn'
 assert len(messages) == 2
+messages = rpc(10, 'session/prompt', {'sessionId': session, 'prompt': [{'type': 'text', 'text': sent['text']}]})
+assert messages[0]['params']['update']['content']['text'] == reply
+messages = rpc(11, 'session/prompt', {'sessionId': session, 'prompt': [{'type': 'text', 'text': sent['text'].replace('Update · done', 'Update · working')}]})
+assert messages[0]['params']['update']['content']['text'].startswith('Presentation only.')
+print('ok - short Markdown prompts preserve the exact status and reject mismatched headings')
 wrapped = '<t3_code_instructions>Host context</t3_code_instructions>\n\n<user_request>\n' + json.dumps(update) + '\n</user_request>'
 messages = rpc(9, 'session/prompt', {'sessionId': session, 'prompt': [
     {'type': 'text', 'text': wrapped}, {'type': 'text', 'text': '<runtime_info>Host metadata</runtime_info>'}]})

@@ -106,12 +106,16 @@ Each home durably saves its own connection and task-to-thread mappings.
 Later environment changes cannot redirect an existing binding.
 
 When a pass observes a change in the projected status, it sends a short update prompt followed by the deterministic relay's readable reply.
+The visible prompt is a single line such as `Update · parked · survey-slug-edit`; its structured payload lives in an unused Markdown reference definition that the rendered bubble omits.
 Intermediate changes between passes may not appear in the mirror.
 The reply leads with the outcome or blocker, gives the next action, and ends with its observation time.
 Only known current-state values, known validation steps, historical event names, and canonical GitHub PR links are projected.
 Raw status prose, pane captures, credentials, and tool logs are never forwarded.
 Detailed blockers remain available through Firstmate.
 T3's native Working or Done badge describes the brief relay turn; the message body describes the worker.
+Stock T3 displays the green **Done** badge after the relay replies, including when the worker is working, parked, or blocked.
+New thread titles start with **Mirror** to identify the presentation layer; existing mapped titles remain stable.
+The relay settles promptly and does not hold a fake active turn to change that badge.
 An old observation time means the displayed state may be stale.
 
 Delivery failures are recorded locally and never fail supervision, dispatch, steering, or teardown.

@@ -86,6 +86,9 @@ Use the existing T3 live guards above to refresh native service behavior.
 Verified on 2026-10-31 with T3 v0.1.5 on Linux arm64 in an isolated desktop-mode instance.
 One synthetic worker and one synthetic secondmate shared one presentation project with distinct thread ids.
 The desktop web frontend displayed the worker's initial and subsequent completed updates and the secondmate's paused update.
+The compact-prompt follow-up rendered `Update · working · synthetic-worker` even after expanding the user message.
+The browser DOM check returned `shortPrompt: true` and `rawPayloadVisible: false` for the structured schema marker `fm-t3-mirror.v1`.
+New sidebar titles began with `Mirror`; the paused secondmate still displayed T3's native Done badge, as documented in the guide.
 Both relay turns settled with `activeRunId: null`; repeated unchanged syncs retained the two mappings without another worker run.
 An explicit shell-command prompt returned `Presentation only. Send instructions through Firstmate. Nothing typed here is executed.` and created no file.
 This checks the real desktop frontend through Chrome, not the installed native shell or a live fleet.

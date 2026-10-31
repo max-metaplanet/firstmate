@@ -178,13 +178,14 @@ class Publisher:
             raise MirrorError("uncertain-send-inspect-t3")
         result = self.thread(record)
         expected = RELAY.render([{"type": "text", "text": json.dumps(update)}])
+        prompt = record.get("pending_prompt", json.dumps(update))
         matching_prompt = False
         for message in result.get("messages", []):
             if message.get("role") == "user":
-                matching_prompt = message.get("text") == json.dumps(update)
+                matching_prompt = message.get("text") == prompt
             elif matching_prompt and message.get("role") == "assistant" and message.get("text") == expected:
                 record.update(fingerprint=record["pending"], pending=None,
-                              pending_update=None, observed_at=update["observed_at"])
+                              pending_update=None, pending_prompt=None, observed_at=update["observed_at"])
                 self.save_task(path, record)
                 return
         raise MirrorError("relay-reply-unconfirmed")
@@ -207,15 +208,15 @@ class Publisher:
             if record.get("fingerprint") == fingerprint:
                 return
         update["observed_at"] = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-        prompt = json.dumps(update)
+        prompt = RELAY.update_prompt(update)
         if record is None:
             self.project()
             nonce = str(uuid.uuid4())
             kind = "Secondmate" if update["kind"] == "secondmate" else "Worker"
-            title = f"{kind} · {task} · {Path(self.home).name} · {nonce[:8]}"
+            title = f"Mirror · {kind} · {task} · {Path(self.home).name} · {nonce[:8]}"
             record = {"version": 1, "home": self.home, "task": task, "connection": self.connection,
                       "nonce": nonce, "title": title, "phase": "creating", "pending": fingerprint,
-                      "pending_update": update}
+                      "pending_update": update, "pending_prompt": prompt}
             self.save_task(path, record)
             if not path.exists():
                 return
@@ -235,6 +236,7 @@ class Publisher:
             self.thread(record)
             record["pending"] = fingerprint
             record["pending_update"] = update
+            record["pending_prompt"] = prompt
             self.save_task(path, record)
             if not path.exists():
                 return
