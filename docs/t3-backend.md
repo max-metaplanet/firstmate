@@ -3,7 +3,7 @@
 The opt-in `t3` backend makes Firstmate workers visible as ordinary T3 threads while keeping the usual task metadata, steering inbox, status records, and isolated checkouts.
 The leader can stay in its terminal or move to a Claude thread through the [attended leader handover](t3-leader-handover.md).
 Ordinary T3 projects keep their existing behavior.
-There is no global T3 customization, service restart, or provider configuration change.
+The native backend does not customize global T3 settings, restart the service, or change provider configuration.
 
 ## Setup
 
@@ -105,7 +105,8 @@ All enabled homes on the same T3 base reuse one neutral presentation workspace, 
 Each home durably saves its own connection and task-to-thread mappings.
 Later environment changes cannot redirect an existing binding.
 
-Each meaningful change produces a short update prompt followed by the deterministic relay's readable reply.
+When a pass observes a change in the projected status, it sends a short update prompt followed by the deterministic relay's readable reply.
+Intermediate changes between passes may not appear in the mirror.
 The reply leads with the outcome or blocker, gives the next action, and ends with its observation time.
 Only known current-state values, known validation steps, historical event names, and canonical GitHub PR links are projected.
 Raw status prose, pane captures, credentials, and tool logs are never forwarded.
