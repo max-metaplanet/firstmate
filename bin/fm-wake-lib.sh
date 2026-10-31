@@ -1574,9 +1574,12 @@ fm_lock_try_acquire() {
 }
 
 fm_lock_acquire_wait() {
-  local lockdir=$1
+  local lockdir=$1 parent
+  fm_dirname_to parent "$lockdir"
   while ! fm_lock_try_acquire "$lockdir"; do
-    sleep 0.1
+    # A deleted home cannot host this lock again without a new operation.
+    [ -d "$parent" ] || return 1
+    sleep 0.1 || return 1
   done
 }
 
@@ -1585,11 +1588,13 @@ fm_lock_acquire_wait() {
 # its trap, so the wait gives up after <seconds> and leaves the ordinary
 # stale-owner evidence for the next acquirer to reclaim.
 fm_lock_acquire_wait_max() {  # <lockdir> <max-seconds>
-  local lockdir=$1 seconds=$2 deadline
+  local lockdir=$1 seconds=$2 deadline parent
+  fm_dirname_to parent "$lockdir"
   deadline=$((SECONDS + seconds))
   while ! fm_lock_try_acquire "$lockdir"; do
+    [ -d "$parent" ] || return 1
     [ "$SECONDS" -lt "$deadline" ] || return 1
-    sleep 0.1
+    sleep 0.1 || return 1
   done
 }
 
