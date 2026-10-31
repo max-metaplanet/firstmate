@@ -1,0 +1,82 @@
+default-package: exit=69
+boat-offload: Boat key unavailable
+
+Default package members: [".github/tools/jev/vendor/.claude/agents/release-engineer.md", ".github/tools/jev/vendor/.claude/agents/security-compliance.md", "file.txt"]
+screened-package: exit=69
+boat-offload: excluded allowlisted file with credential-looking content: .github/tools/jev/vendor/.claude/agents/security-compliance.md
+boat-offload: Boat key unavailable
+
+Credential-bearing role omitted; other safe role retained.
+bounded-package: exit=69
+boat-offload: Boat key unavailable
+
+Restored shallow Git: 7e7a964 feature
+dba3405 version 4
+b64a6fb version 3
+Restored refs: refs/heads/fm-boat-test 7e7a964bdf25419906cce64aadd73bf96b401777
+refs/remotes/origin/main dba3405a216554c4f57418023beb938406d807e4
+Restored working changes: D feature.txt
+ M file.txt
+Old out-of-depth commit unavailable; no local remote, stash, tags, unrelated refs or reflogs; git fsck clean.
+refused: exit=2
+boat-offload: history refused: excluded path: .env
+
+excluded: entire historical export refused before account access, with no canary disclosure.
+depth-one: exit=69
+boat-offload: Boat key unavailable
+
+refused: exit=2
+boat-offload: history refused: credential-looking or binary blob: ordinary.txt
+
+credential: entire historical export refused before account access, with no canary disclosure.
+depth-one: exit=69
+boat-offload: Boat key unavailable
+
+refused: exit=2
+boat-offload: history refused: credential-looking or binary blob: blob.dat
+
+binary: entire historical export refused before account access, with no canary disclosure.
+depth-one: exit=69
+boat-offload: Boat key unavailable
+
+refused: exit=2
+boat-offload: history refused: credential-looking or binary commit
+
+commit: entire historical export refused before account access, with no canary disclosure.
+depth-one: exit=69
+boat-offload: Boat key unavailable
+
+refused: exit=2
+boat-offload: history refused: credential-looking or binary blob: .github/tools/jev/vendor/.claude/agents/security-compliance.md
+
+role: entire historical export refused before account access, with no canary disclosure.
+depth-one: exit=69
+boat-offload: Boat key unavailable
+
+missing-base: exit=2
+boat-offload: history refused: origin/main commit is unavailable
+
+invalid-0: exit=2
+boat-offload: history depth must be 1..1000
+
+invalid--1: exit=2
+boat-offload: history depth must be 1..1000
+
+invalid-1001: exit=2
+boat-offload: history depth must be 1..1000
+
+invalid-bad: exit=2
+usage: fm-boat-run.py run [-h] --worktree WORKTREE --output OUTPUT
+                          [--input INPUT] [--artifact ARTIFACT]
+                          [--timeout TIMEOUT] [--swap-gib {0,1,2,3,4}]
+                          [--history-depth HISTORY_DEPTH]
+                          ...
+fm-boat-run.py run: error: argument --history-depth: invalid int value: 'bad'
+
+wrapper-missing-base: exit=2
+boat-test-wrapper: result.json: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M67XVE7Y1BJFVJ5HDK2V7883/.boat-validation-8929ei2t/invalid-options/.fm-test-scratch/fm-boat-test.6hp2he/boat/result.json
+boat-offload: history refused: origin/main commit is unavailable
+boat-test-wrapper: adapter failure (exit 2, adapter-failure); Test failed; result.json: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M67XVE7Y1BJFVJ5HDK2V7883/.boat-validation-8929ei2t/invalid-options/.fm-test-scratch/fm-boat-test.6hp2he/boat/result.json
+
+Wrapper forwards opt-in to real adapter; missing real base fails without local fallback.
+Remote Boat execution not attempted: isolated account has no key, and operator credentials are outside the permitted data boundary.
