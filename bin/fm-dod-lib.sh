@@ -286,8 +286,8 @@ fm_brief_ticket_header() {  # <brief>
   ' "$1"
 }
 
-# A task's optional ClickUp ticket binds its commit subjects, pull request
-# title, and ship branch to the captain's ticket convention. bin/fm-brief.sh
+# A task's optional ClickUp ticket binds its ship branch; bin/fm-orgs-lib.sh
+# selects the commit-subject and pull request title convention. bin/fm-brief.sh
 # records it as the "Ticket: <id>" and "Commit type: <type>" lines of the
 # Definition of done's machine-readable header, bin/fm-spawn.sh takes it as
 # --ticket/--commit-type, refuses a brief whose header disagrees, and records
