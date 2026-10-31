@@ -122,7 +122,10 @@ class Publisher:
     def observe(self, task, metadata):
         env = dict(os.environ, FM_HOME=self.home, FM_STATE_OVERRIDE=str(self.state),
                    FM_CONFIG_OVERRIDE=str(self.config), FM_CREW_STATE_NO_FORGE="1")
-        code, out, _ = run(["bash", str(Path(__file__).with_name("fm-crew-state.sh")), task], env=env)
+        try:
+            code, out, _ = run(["bash", str(Path(__file__).with_name("fm-crew-state.sh")), task], env=env)
+        except MirrorError:
+            code, out = 1, ""
         raw = out.splitlines()[0] if out.splitlines() and not code else ""
         match = re.fullmatch(r"state: ([a-z-]+) · source: [^\n]+? · (.*)", raw)
         state = match[1] if match and match[1] in RELAY.STATES else "unreadable"

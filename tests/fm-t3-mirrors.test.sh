@@ -22,6 +22,9 @@ for name in ('fm-t3-mirrors.sh', 'fm-t3-mirrors.py', 'fm-t3-mirror-relay.py'):
 crew = scripts / 'fm-crew-state.sh'
 crew.write_text('''#!/usr/bin/env bash
 cat "$FM_STATE_OVERRIDE/$1.current"
+if [ -f "$FM_STATE_OVERRIDE/$1.slow" ]; then
+    sleep 8
+fi
 ''')
 fake = scripts / 't3'
 fake.write_text('''#!/usr/bin/env python3
@@ -41,6 +44,7 @@ def turn(text):
         'done': ('The recorded work is ready.', 'Firstmate will handle delivery and landing.'),
         'blocked': ('Work is blocked.', 'Firstmate will inspect the blocker.'),
         'failed': ('The recorded work failed.', 'Firstmate will inspect the failure.'),
+        'unreadable': ('Current state could not be established.', 'Firstmate will reconcile the durable records.'),
     }
     outcome, action = outcomes[update['state']]
     kind = 'Secondmate' if update['kind'] == 'secondmate' else 'Worker'
@@ -284,6 +288,43 @@ while not error_log.exists() and time.monotonic() < deadline:
 assert error_log.exists() and 'project-unavailable' in error_log.read_text()
 (base / 'unreachable').unlink()
 print('ok - real wake drain succeeds while detached T3 publication fails')
+
+timeout_home = work / 'timeout-home'
+timeout_state = timeout_home / 'state'
+timeout_config = timeout_home / 'config'
+timeout_state.mkdir(parents=True)
+timeout_config.mkdir()
+(timeout_config / 't3-mirrors').write_text('1\n')
+timeout_env = dict(env, FM_HOME=str(timeout_home))
+(timeout_state / 'existing.meta').write_text('kind=ship\n')
+(timeout_state / 'existing.current').write_text('state: working · source: run-step · step review\n')
+command('sync', environment=timeout_env)
+timeout_maps = timeout_state / 't3-mirrors' / 'tasks'
+existing = json.loads((timeout_maps / 'existing.json').read_text())
+(timeout_state / 'new.meta').write_text('kind=secondmate\n')
+for name in ('existing', 'new'):
+    (timeout_state / f'{name}.current').write_text('state: working · source: run-step · step review\n')
+    (timeout_state / f'{name}.slow').touch()
+command('sync', environment=timeout_env)
+for name in ('existing', 'new'):
+    record = json.loads((timeout_maps / f'{name}.json').read_text())
+    assert not record['pending']
+    if name == 'existing':
+        assert record['threadId'] == existing['threadId']
+    turns = json.loads((base / f"turns-{record['threadId']}.json").read_text())
+    assert turns[-2]['text'].splitlines()[0] == f'Update · unreadable · {name}'
+    assert turns[-1]['text'].startswith('Current state could not be established. (unreadable)')
+    assert 'Validation step:' not in turns[-1]['text']
+    assert ('Secondmate' if name == 'new' else 'Worker') + f' · {name}' in turns[-1]['text']
+    (timeout_state / f'{name}.slow').unlink()
+command('sync', environment=timeout_env)
+for name in ('existing', 'new'):
+    record = json.loads((timeout_maps / f'{name}.json').read_text())
+    turns = json.loads((base / f"turns-{record['threadId']}.json").read_text())
+    assert turns[-2]['text'].splitlines()[0] == f'Update · working · {name}'
+    assert turns[-1]['text'].startswith('Work is in progress. (working)')
+    assert not record['pending']
+print('ok - probe timeouts publish unreadable for existing workers and new secondmates, then recover')
 
 relay = subprocess.Popen([sys.executable, str(scripts / 'fm-t3-mirror-relay.py')],
                          stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
