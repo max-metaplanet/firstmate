@@ -1,0 +1,7 @@
+Real ACP executable, direct JSON-RPC transport.
+Worker: working reply settled; next prompt in same session immediately returned parked reply and settled.
+Secondmate: separate session returned paused status.
+Shell text, command substitution, model instruction, mismatched status heading: presentation-only notice.
+Tools and non-mirror model selection: rejected. No command marker created.
+Relay process exited 0.
+Desktop rendering and publisher-to-T3 integration were not exercised: t3 absent from PATH and no repository-local T3 executable supplied.
