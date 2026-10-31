@@ -658,6 +658,13 @@ See [`trace-context.md`](trace-context.md) for carrier semantics, supported rout
 
 See [`fleet-ledger.md`](fleet-ledger.md) for the opt-in setup, record contract, and limits.
 
+## T3 presentation mirrors (config/t3-mirrors)
+
+The optional `config/t3-mirrors` file enables presentation-only desktop threads when its contents are exactly `1`.
+Absent, empty, and other values disable publication without requiring T3 or Python.
+`config/t3-mirror-provider` optionally selects the registered local ACP instance before the first connection is saved.
+The [T3 guide](t3-backend.md#presentation-mirrors) owns setup, privacy, and operating limits; [`fm-t3-mirrors.sh`](../bin/fm-t3-mirrors.sh) owns commands and durable records.
+
 ## Task-event hook (config/task-event-hook)
 
 The optional local, gitignored `config/task-event-hook` names one executable that receives lifecycle events from the supervising home's transition owners.

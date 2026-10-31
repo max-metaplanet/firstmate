@@ -285,6 +285,10 @@ esac
 # Never let a guard hiccup change the drain's exit status.
 assert_watcher_liveness() {
   "$SCRIPT_DIR/fm-guard.sh" || true
+  if [ -f "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}/t3-mirrors" ]; then
+    FM_HOME=$FM_HOME FM_STATE_OVERRIDE=$STATE \
+      bash "$SCRIPT_DIR/fm-t3-mirrors.sh" kick >/dev/null 2>&1 || true
+  fi
 }
 
 # Mark presentation-stage inactive terminal outcomes only after the handling

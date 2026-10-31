@@ -69,3 +69,59 @@ Keep user conversations in separate projects so they never fall inside a task's 
 
 Long idle retention, provider restart recovery, and the default supervision-host path require further live proof before unattended use.
 The [handover guide](t3-leader-handover.md) describes the leader-specific limits.
+
+## Presentation mirrors
+
+Presentation mirrors give each existing worker and secondmate a readable thread in the desktop's `Firstmate · Mirrors` project.
+They are independent of the native `t3` backend above.
+Workers keep their existing endpoints, models, accounts, and dispatch settings.
+The mirror relay runs Python 3 locally, makes no model calls, and exposes no tools.
+Messages typed in a mirror receive a presentation-only notice and never steer or execute anything.
+Steering from T3 is a later slice.
+
+In T3's provider settings, add a **Local ACP command** pointing to the absolute executable path of [`bin/fm-t3-mirror-relay.py`](../bin/fm-t3-mirror-relay.py), with no arguments.
+Keep that checkout available for the lifetime of the provider.
+Select its advertised `mirror` model, shown as **Firstmate status (no AI)**.
+The publisher defaults to the instance id `acpRegistry_firstmate_mirror`; if T3 assigned another id, save that exact id in `config/t3-mirror-provider` before the first sync.
+For example, the provider instance's configuration is:
+
+```json
+{
+  "driver": "acpRegistry",
+  "displayName": "Firstmate mirror",
+  "enabled": true,
+  "config": {
+    "source": "local",
+    "commandPath": "/absolute/path/to/firstmate/bin/fm-t3-mirror-relay.py",
+    "commandArgs": []
+  }
+}
+```
+
+Use the same `FM_T3_BIN` and `FM_T3_BASE_DIR` environment as the native helpers, then enable [config/t3-mirrors](configuration.md#t3-presentation-mirrors-configt3-mirrors) in each owning home that should publish.
+Run [`fm-t3-mirrors.sh sync`](../bin/fm-t3-mirrors.sh) with that explicit `FM_HOME` for the first update.
+Subsequent wake drains schedule detached, bounded passes without waiting for T3.
+All enabled homes on the same T3 base reuse one neutral presentation workspace, separate from leader and task projects.
+Each home durably saves its own connection and task-to-thread mappings.
+Later environment changes cannot redirect an existing binding.
+
+Each meaningful change produces a short update prompt followed by the deterministic relay's readable reply.
+The reply leads with the outcome or blocker, gives the next action, and ends with its observation time.
+Only known current-state values, known validation steps, historical event names, and canonical GitHub PR links are projected.
+Raw status prose, pane captures, credentials, and tool logs are never forwarded.
+Detailed blockers remain available through Firstmate.
+T3's native Working or Done badge describes the brief relay turn; the message body describes the worker.
+An old observation time means the displayed state may be stale.
+
+Delivery failures are recorded locally and never fail supervision, dispatch, steering, or teardown.
+Creation is journaled before launch, and delivery requires the matching prompt and formatted reply in T3.
+Pending sends to known threads are read again on later passes; uncertain operations without a matching receipt are held for inspection instead of blindly retried.
+The publisher also checks the saved thread identity, provider, and model before sending, so a renamed or repurposed thread stops receiving updates.
+Use the exact saved connection and nonce-bearing thread title to inspect T3 before any manual journal reconciliation.
+These holds can leave a mirror stale while the real worker continues normally.
+Disabling publication leaves existing threads and history intact.
+Successful task teardown retires its local mapping, including when publication is disabled; a concurrent pass also prunes mappings whose task metadata is gone.
+Historical mirror threads remain in T3 because its CLI has no individual-thread delete operation.
+The publisher never deletes the shared project, a leader thread, or another conversation.
+
+[`tests/fm-t3-mirrors.test.sh`](../tests/fm-t3-mirrors.test.sh) exercises the real ACP executable and fake T3 transport, including disabled operation, home identity, retry safety, privacy, and unreachable delivery.

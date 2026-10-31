@@ -462,7 +462,7 @@ family_for_basename() {
       printf '%s\n' live-harness-optin
       ;;
     fm-backend-herdr.test.sh|fm-backend-tmux-smoke.test.sh|fm-backend.test.sh|\
-    fm-t3.test.sh|fm-backend-t3.test.sh|fm-spawn-t3.test.sh|fm-t3-leader.test.sh|\
+    fm-t3.test.sh|fm-t3-mirrors.test.sh|fm-backend-t3.test.sh|fm-spawn-t3.test.sh|fm-t3-leader.test.sh|\
     fm-tmux-agent-liveness.test.sh|\
     fm-control.test.sh|fm-control-relaunch.test.sh|\
     fm-herdr-session-cleanup.test.sh|fm-send-resolve-key.test.sh|fm-send-strict.test.sh|\
@@ -974,6 +974,7 @@ tests/fm-supervision-host-park.test.sh 300000
 tests/fm-supervision-host-stop-hook.test.sh 334000
 tests/fm-supervision-host.test.sh 434000
 tests/fm-t3.test.sh 303
+tests/fm-t3-mirrors.test.sh 3000
 tests/fm-backend-t3.test.sh 20000
 tests/fm-spawn-t3.test.sh 120000
 tests/fm-t3-leader.test.sh 90000
@@ -1754,6 +1755,9 @@ families_for_changed_path() {
       ;;
     bin/fm-t3-leader.sh)
       printf '%s\n' '__script__:fm-t3-leader.test.sh' '__script__:fm-t3-leader-live-e2e.test.sh'
+      ;;
+    bin/fm-t3-mirrors.sh|bin/fm-t3-mirrors.py|bin/fm-t3-mirror-relay.py)
+      printf '%s\n' '__script__:fm-t3-mirrors.test.sh'
       ;;
     bin/fm-boat-run.sh|bin/fm-boat-run.py|tests/fixtures/boat-cli.py)
       printf '%s\n' '__script__:fm-boat-run.test.sh'

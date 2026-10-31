@@ -81,6 +81,25 @@ The hook created `state/` only in that scratch checkout.
 This refresh checks native Claude home resolution; it does not refresh the live T3 service handover or linked-worktree settings precedence.
 Use the existing T3 live guards above to refresh native service behavior.
 
+### Deterministic presentation mirrors
+
+Verified on 2026-10-31 with T3 v0.1.5 on Linux arm64 in an isolated desktop-mode instance.
+One synthetic worker and one synthetic secondmate shared one presentation project with distinct thread ids.
+The desktop web frontend displayed the worker's initial and subsequent completed updates and the secondmate's paused update.
+Both relay turns settled with `activeRunId: null`; repeated unchanged syncs retained the two mappings without another worker run.
+An explicit shell-command prompt returned `Presentation only. Send instructions through Firstmate. Nothing typed here is executed.` and created no file.
+This checks the real desktop frontend through Chrome, not the installed native shell or a live fleet.
+The [T3 guide](../t3-backend.md#presentation-mirrors) owns setup and operating limits.
+
+Refresh the portable relay, mapping, and wake-drain contracts with:
+
+```sh
+bash bin/fm-test-run.sh tests/fm-t3-mirrors.test.sh
+```
+
+Observed output included `ok - real wake drain succeeds while detached T3 publication fails` and `ok - real ACP relay formats statuses, settles each prompt, reloads sessions, and refuses commands/tools/models`.
+The publisher uses the shared wake-drain and crew-state interfaces across primary harnesses and runtime backends; it does not add a harness adapter or endpoint.
+
 ## Treehouse task lease recovery
 
 Verified on 2026-10-28 on Linux arm64 with Bash 5.3.9 and Node 24.22.1 using real fixture Git repositories and a stateful Treehouse stand-in.
