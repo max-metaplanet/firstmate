@@ -113,6 +113,9 @@
 # does not authorize, before the contract exists. Pass it on every ship
 # scaffold so detection does not depend on the caller recognizing the repo;
 # bin/fm-spawn.sh repeats the check at launch regardless.
+# --project also selects the repository whose publication target decides the
+# task's commit convention (bin/fm-orgs-lib.sh); without it a ship brief falls
+# back to this home's clone at projects/<repo> for that decision only.
 # The generated ship brief records the chosen mode as a fixed machine-readable
 # "Delivery contract: mode=<mode>" line, followed by " forge=gerrit shape=squash"
 # on Gerrit, " forge=forgejo" on Forgejo, or " forge=external" on an external
@@ -194,6 +197,8 @@ esac
 . "$SCRIPT_DIR/fm-dod-lib.sh"
 # shellcheck source=bin/fm-role-lib.sh
 . "$SCRIPT_DIR/fm-role-lib.sh"
+# shellcheck source=bin/fm-orgs-lib.sh
+. "$SCRIPT_DIR/fm-orgs-lib.sh"
 PAUSED_VERB=${FM_CLASSIFY_PAUSED_VERB:-$FM_CLASSIFY_PAUSED_VERB_DEFAULT}
 IFS= read -r -d '' CREWMATE_PAUSE_INSTRUCTIONS <<EOF || true
    Use \`$PAUSED_VERB: {why}\` - distinct from \`blocked:\` - when deliberately waiting for work or an external condition expected to clear on its own, including your own validation round.
@@ -427,7 +432,27 @@ ID=${POS[0]}
 # fm-dod-lib.sh owns the ticket grammar and the branch each case resolves, so
 # the brief, the spawn, and a scout promotion cannot name different branches.
 fm_ticket_scope_valid "$TICKET" "$TICKET_SCOPE" "$TICKET_SCOPE_SET" "fm-brief.sh" || exit 1
-fm_ticket_resolve "$TICKET" "$COMMIT_TYPE" "$ID" "$BRANCH_PREFIX" "$BRANCH_PREFIX_SET" "fm-brief.sh" "$TICKET_SCOPE" || exit 1
+# A project that publishes outside the organizations this home declares as ours
+# takes plain conventional commit subjects with no ticket segment
+# (bin/fm-orgs-lib.sh). The decision needs the project directory: --project when
+# the caller passed it, otherwise this home's clone of the named project, so an
+# ordinary scaffold does not depend on the caller remembering the flag. A name
+# that is not a plain directory entry is not resolved. With nothing declared, no
+# clone, or no resolvable publication target the unchanged convention stands.
+TICKET_PLAIN=0
+if [ "$KIND" = ship ]; then
+  CONVENTION_PROJECT=$PROJECT_DIR
+  if [ -z "$CONVENTION_PROJECT" ]; then
+    case "${POS[1]:-}" in
+      '' | .* | */*) ;;
+      *) CONVENTION_PROJECT="${FM_PROJECTS_OVERRIDE:-$FM_HOME/projects}/${POS[1]}" ;;
+    esac
+  fi
+  if [ -n "$CONVENTION_PROJECT" ] && fm_orgs_plain_convention "$CONFIG" "$CONVENTION_PROJECT"; then
+    TICKET_PLAIN=1
+  fi
+fi
+fm_ticket_resolve "$TICKET" "$COMMIT_TYPE" "$ID" "$BRANCH_PREFIX" "$BRANCH_PREFIX_SET" "fm-brief.sh" "$TICKET_SCOPE" "$TICKET_PLAIN" || exit 1
 COMMIT_TYPE=$FM_TICKET_COMMIT_TYPE
 BRANCH=$FM_TICKET_BRANCH
 TICKET_HEADER=$FM_TICKET_HEADER

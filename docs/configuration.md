@@ -776,6 +776,34 @@ Secondmate homes inherit the primary's resolved role, never its raw file: a prim
 In a secondmate home the file is honored only while the inheritance receipt `config/.fm-inherit-firstmate-role.generation` proves the exact bytes the primary last published (`bin/fm-config-inherit-lib.sh`); a role file with no matching receipt or a stale grant authorizes nothing.
 The receipt prevents accidental publication through supported paths; it proves consistency, not provenance, and is not a security boundary against a process that deliberately forges local records.
 
+## Our organizations (config/our-organizations)
+
+The optional local, gitignored `config/our-organizations` declares which repository owners this home treats as ours.
+It exists for one decision: the captain's ticket convention renders `<type>/<ticket>(<scope>): <subject>` on every commit subject and pull request title, and that format names an internal ClickUp workflow.
+On a contribution to a third-party upstream it advertises a ticket system that project does not have, so a repository outside the declared organizations takes plain conventional commits, `<type>(<scope>): <subject>`, with no ticket segment and no ticket id.
+With the file absent, empty, or malformed, every project keeps the unchanged ticket convention; nothing is inferred from a remote name, a host, or a repository owner.
+
+The file holds one entry per line, with blank lines and `#` comment lines ignored:
+
+```
+github.com/metaplanet-jp
+gitlab.example.com/our-group/our-subgroup
+```
+
+Each entry is a `<host>/<owner>` path, matched case-insensitively against the repository a default publication would reach.
+An entry covers that path and everything under it, so `github.com/metaplanet-jp` declares every repository that organization owns; a full `<host>/<owner>/<repo>` entry declares one repository.
+A single malformed entry makes the whole file unusable rather than partially applied, because one typo must not quietly reclassify our own repositories as third-party and strip their ticket segment.
+
+The repository compared against the declaration is the project's publication target, resolved offline from the first configured remote in the order `upstream`, `github`, `origin`, exactly as the [Firstmate role](#firstmate-role-configfirstmate-role) gate resolves it.
+A project with no such remote, or one whose remote is a local path, is undetermined and keeps the unchanged convention; unknown never flips a project onto the plain format.
+`bin/fm-brief.sh` decides from its `--project` directory when given and otherwise from this home's clone at `projects/<repo>`, and `bin/fm-promote.sh` decides from the task's recorded project.
+The task's ship branch is unaffected either way, so a brief and its spawn always name the same branch.
+
+On such a project the no-mistakes pipeline still writes its own repair commits with `no-mistakes(<step>): ...` subjects and publishes them itself.
+The worker cannot reword them first: the pipeline owns its push, custody returns to the worker copy only after the run passes, and `no-mistakes sync` never updates a remote, so rewording before publication would mean taking the push from the pipeline.
+The generated instructions therefore make the pull request title the clean conventional subject - it is what a squash merge lands on these upstreams - and leave the published branch's pipeline commits alone.
+`bin/fm-orgs-lib.sh` owns the declaration format and the decision; `bin/fm-dod-lib.sh`'s `fm_ticket_resolve` owns the two renderings.
+
 ## Waiting worker spends no turns (config/wait-no-turns)
 
 The optional local, gitignored `config/wait-no-turns` presence flag opts this home into keeping a waiting worker from spending turns until it is answered.

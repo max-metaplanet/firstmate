@@ -72,6 +72,8 @@ CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
 . "$SCRIPT_DIR/fm-dod-lib.sh"
 # shellcheck source=bin/fm-role-lib.sh
 . "$SCRIPT_DIR/fm-role-lib.sh"
+# shellcheck source=bin/fm-orgs-lib.sh
+. "$SCRIPT_DIR/fm-orgs-lib.sh"
 # shellcheck source=bin/fm-pr-lib.sh
 . "$SCRIPT_DIR/fm-pr-lib.sh"
 # shellcheck source=bin/fm-wake-lib.sh
@@ -288,6 +290,16 @@ if [ "$MODE" != local-only ] && [ -n "$PROMOTE_PROJECT" ]; then
     exit 1
     ;;
   esac
+fi
+# A project that publishes outside the organizations this home declares as ours
+# takes plain conventional commit subjects and pull request title with no ticket
+# segment (bin/fm-orgs-lib.sh). The task's recorded project is known only after
+# the task record is read, so the convention sentences are rendered again here;
+# the ticket, commit type, and branch the call above validated do not change.
+if [ -n "$PROMOTE_PROJECT" ] && fm_orgs_plain_convention "$CONFIG" "$PROMOTE_PROJECT"; then
+  fm_ticket_resolve "$TICKET" "$COMMIT_TYPE" "$ID" "$BRANCH_PREFIX" "$BRANCH_PREFIX_SET" "fm-promote.sh" "$TICKET_SCOPE" 1 || exit 1
+  TICKET_HEADER=$FM_TICKET_HEADER
+  TICKET_NM_RETITLE=$FM_TICKET_NM_RETITLE
 fi
 PROMOTE_BASE_WORDS='default-branch base'
 [ -z "$BASE_BRANCH" ] || PROMOTE_BASE_WORDS="copy of the base branch \`$BASE_BRANCH\`"

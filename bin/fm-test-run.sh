@@ -883,6 +883,7 @@ tests/fm-on.test.sh 17923
 tests/fm-opencode-primary-live-e2e.test.sh 52
 tests/fm-operational-input.test.sh 2629
 tests/fm-operational-marker-live-e2e.test.sh 125
+tests/fm-orgs-lib.test.sh 6680
 tests/fm-parent-channel-scan-exclusion.test.sh 3521
 tests/fm-peek-remote.test.sh 1120
 tests/fm-pending-reply.test.sh 42826

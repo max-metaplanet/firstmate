@@ -286,8 +286,8 @@ fm_brief_ticket_header() {  # <brief>
   ' "$1"
 }
 
-# A task's optional ClickUp ticket binds its commit subjects, pull request
-# title, and ship branch to the captain's ticket convention. bin/fm-brief.sh
+# A task's optional ClickUp ticket binds its ship branch; bin/fm-orgs-lib.sh
+# selects the commit-subject and pull request title convention. bin/fm-brief.sh
 # records it as the "Ticket: <id>" and "Commit type: <type>" lines of the
 # Definition of done's machine-readable header, bin/fm-spawn.sh takes it as
 # --ticket/--commit-type, refuses a brief whose header disagrees, and records
@@ -347,8 +347,19 @@ fm_ticket_scope_valid() {  # <ticket> <scope> <explicitly-set> <caller>
   case "$1" in ''|no-ticket) echo "error: $4: --ticket-scope requires a real --ticket" >&2; return 1 ;; esac
 }
 
-fm_ticket_resolve() {  # <ticket> <commit-type> <task-id> <branch-prefix> <branch-prefix-set> <caller> [ticket-scope]
-  local ticket=$1 commit_type=$2 id=$3 prefix=$4 prefix_set=$5 caller=$6
+# The optional eighth argument is 1 when the task publishes outside the
+# organizations this home declares as ours (bin/fm-orgs-lib.sh owns that
+# decision and its declaration file). Such a project takes plain conventional
+# "<type>(<scope>): <subject>" commit subjects and pull request title with no
+# ticket segment, because the captain's "<type>/<ticket>(<scope>)" format names
+# an internal workflow a third-party upstream does not have; its PR-retitle step
+# confirms the pipeline's already-conventional title instead of inserting the
+# ticket, and states why the pipeline's own "no-mistakes(<step>): ..." commits
+# cannot be reworded before the pipeline publishes them. The branch is
+# unaffected either way: bin/fm-spawn.sh compares a brief's "Ship branch:" line
+# against the branch it selects, and only this function's rendered text differs.
+fm_ticket_resolve() {  # <ticket> <commit-type> <task-id> <branch-prefix> <branch-prefix-set> <caller> [ticket-scope] [plain-convention]
+  local ticket=$1 commit_type=$2 id=$3 prefix=$4 prefix_set=$5 caller=$6 plain=${8:-0}
   # shellcheck disable=SC2034 # Output global, read by the sourcing caller.
   FM_TICKET_COMMIT_TYPE=$commit_type
   FM_TICKET_BRANCH="$prefix$id"
@@ -390,16 +401,29 @@ Before reporting the PR ready, check your change against the ticket's acceptance
 Plan and perform synthetic verification of every acceptance criterion before reporting the PR ready, using whatever means a worker can (tests, a probe PR, or a scripted dev/QA run), and record the evidence (test names, probe PR, or scripted run) in the PR body.
 Declare complete only when this PR delivers every acceptance criterion and you have verified each one yourself by those means; only post-merge live checks remain.
 Otherwise declare partial."
+  local convention retitle
+  if [ "$plain" = 1 ]; then
+    convention="Every commit subject on this branch and the pull request title must read \`$commit_type(<scope>): <message>\`, where \`<scope>\` names the area changed and \`<message>\` is a short imperative description.
+This project publishes outside the organizations this home declares as ours, so its subjects carry no ticket segment: never write \`$commit_type/$ticket(<scope>)\`, the ticket id, or any other internal marker into a commit subject or the pull request title."
+    retitle="
+The pipeline's PR step drafts a conventional title like \`$commit_type(<scope>): <message>\`, which is already the format this project requires: never add a ticket segment to it.
+Read the title the moment the run has a PR URL - from \`no-mistakes axi status\` as soon as the PR step has opened the PR, before the CI wait - and edit it ONCE only if it carries a ticket segment or a pipeline-internal \`no-mistakes(<step>): ...\` subject, so it reads \`$commit_type(<scope>): <message>\`.
+The pipeline owns its push and publishes its own repair commits, whose subjects read \`no-mistakes(<step>): ...\`, before custody returns to this copy, and \`no-mistakes sync\` never updates a remote; rewording them before publication would mean taking the push from the pipeline, which you never do.
+The pull request title is therefore the one subject you control on this upstream, and it is what a squash merge lands; leave the published branch's pipeline commits alone, and never rewrite an already-published branch."
+  else
+    convention="Every commit subject on this branch and the pull request title must read \`$commit_type/$ticket(<scope>): <message>\`, where \`<scope>\` names the area changed and \`<message>\` is a short imperative description."
+    retitle="
+The pipeline's PR step drafts a conventional title like \`$commit_type(<scope>): <message>\`, which carries no ticket and so fails this project's title check.
+Do not wait for that check to go red: the moment the run has a PR URL - read it from \`no-mistakes axi status\` as soon as the PR step has opened the PR, before the CI wait - edit the title ONCE to insert \`/$ticket\` after the type, keeping the pipeline's own scope and message, so \`$commit_type(ci): x\` becomes \`$commit_type/$ticket(ci): x\`."
+  fi
   # shellcheck disable=SC2034 # Output global, read by the sourcing caller.
   FM_TICKET_HEADER="
 Ticket: $ticket
 Commit type: $commit_type$scope_header$read_ticket
-Every commit subject on this branch and the pull request title must read \`$commit_type/$ticket(<scope>): <message>\`, where \`<scope>\` names the area changed and \`<message>\` is a short imperative description.
+$convention
 The branch is exactly \`$FM_TICKET_BRANCH\`; do not rename it."
   # shellcheck disable=SC2034 # Output global, read by the sourcing caller.
-  FM_TICKET_NM_RETITLE="
-The pipeline's PR step drafts a conventional title like \`$commit_type(<scope>): <message>\`, which carries no ticket and so fails this project's title check.
-Do not wait for that check to go red: the moment the run has a PR URL - read it from \`no-mistakes axi status\` as soon as the PR step has opened the PR, before the CI wait - edit the title ONCE to insert \`/$ticket\` after the type, keeping the pipeline's own scope and message, so \`$commit_type(ci): x\` becomes \`$commit_type/$ticket(ci): x\`."
+  FM_TICKET_NM_RETITLE=$retitle
   return 0
 }
 
