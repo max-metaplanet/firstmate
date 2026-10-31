@@ -203,6 +203,58 @@ gate_runs '[["SKIPPED","2026-10-20T10:00:00Z"]]' > "$TASK_TMP/view.json"
 expect_result 0
 pass 'unfinished replacements are pending beside old skips or failures, passing replacements and lone path skips stay green'
 
+printf '[{"type":"required_status_checks","parameters":{"required_status_checks":[{"context":"CI gate"},{"context":"queue-verdict"}]}}]\n' > "$TASK_TMP/rules.json"
+# "queue-verdict" stands for a required check a project runs only in its merge
+# queue, so it never reports on an ordinary pull-request head.
+queue_head() {  # <CI gate conclusion> [queue-verdict status] [queue-verdict conclusion]
+  jq -nc --arg head "$HEAD" --arg gate "$1" --arg status "${2:-}" --arg conclusion "${3:-}" \
+    '{headRefOid:$head,baseRefName:"main",statusCheckRollup:([
+      {__typename:"CheckRun",name:"CI gate",status:"COMPLETED",conclusion:$gate,startedAt:"2026-10-20T11:00:00Z"}]
+      + (if $status == "" then [] else
+          [{__typename:"CheckRun",name:"queue-verdict",status:$status,conclusion:$conclusion,startedAt:"2026-10-20T11:00:00Z"}]
+        end))}'
+}
+
+queue_head SUCCESS > "$TASK_TMP/view.json"
+expect_result 8
+assert_grep 'queue-verdict (missing)' "$TASK_TMP/out" 'an undeclared unreported required check stopped blocking'
+expect_result 0 --queue-only queue-verdict
+assert_grep 'QUEUE-ONLY CHECK: queue-verdict (runs in the merge queue)' "$TASK_TMP/out" 'the deferred check was not reported'
+assert_no_grep 'queue-verdict (missing)' "$TASK_TMP/out" 'a declared queue-only check still blocked as missing'
+: > "$TASK_TMP/reads"
+FM_PR_CHECKS_POLL=0 expect_result 0 --watch --queue-only queue-verdict
+[ "$(wc -l < "$TASK_TMP/reads" | tr -d ' ')" = 1 ] || fail 'the wait polled again for a declared queue-only check'
+pass 'a declared queue-only required check absent from the head passes the wait while an undeclared one still blocks'
+
+queue_head SUCCESS COMPLETED FAILURE > "$TASK_TMP/view.json"
+expect_result 1 --queue-only queue-verdict
+assert_grep 'queue-verdict (red)' "$TASK_TMP/out" 'a declared check that reported red on the head was ignored'
+queue_head SUCCESS IN_PROGRESS > "$TASK_TMP/view.json"
+expect_result 8 --queue-only queue-verdict
+assert_grep 'queue-verdict (pending)' "$TASK_TMP/out" 'a declared check still running on the head was ignored'
+queue_head FAILURE > "$TASK_TMP/view.json"
+expect_result 1 --queue-only queue-verdict
+assert_grep 'CI gate (red)' "$TASK_TMP/out" 'a queue-only declaration hid another required check'
+pass 'a declared queue-only check still counts when it reports red or is running, and other required checks are unaffected'
+
+queue_head SUCCESS > "$TASK_TMP/view.json"
+: > "$TASK_TMP/reads"
+FM_PR_CHECKS_POLL=1 expect_result 8 --watch --timeout 1
+[ "$(wc -l < "$TASK_TMP/reads" | tr -d ' ')" = 2 ] || fail 'the bounded wait did not re-read before giving up'
+assert_grep 'gave up after 1s' "$TASK_TMP/err" 'the bounded wait did not report giving up'
+assert_grep 'queue-verdict (missing)' "$TASK_TMP/err" 'the bounded wait did not name the outstanding check'
+assert_grep '--queue-only' "$TASK_TMP/err" 'the bounded wait did not say what to do about it'
+assert_grep "$URL" "$TASK_TMP/err" 'the bounded wait did not name the pull request'
+: > "$TASK_TMP/reads"
+FM_PR_CHECKS_POLL=1 expect_result 0 --watch --timeout 1 --queue-only queue-verdict
+[ "$(wc -l < "$TASK_TMP/reads" | tr -d ' ')" = 1 ] || fail 'a declared queue-only check still consumed the bound'
+expect_result 2 --timeout 1
+expect_result 2 --watch --timeout notanumber
+expect_result 2 --watch --queue-only
+pass 'the watch is bounded by --timeout, reports the outstanding checks, and rejects a bound without watch or a malformed option'
+
+printf '[{"type":"required_status_checks","parameters":{"required_status_checks":[{"context":"CI gate"}]}}]\n' > "$TASK_TMP/rules.json"
+
 # Each payload exceeds Linux's per-argument limit (128 KiB), including the
 # producer and requirement arrays independently of the full rollup.
 jq -nc --arg head "$HEAD" '{headRefOid:$head,baseRefName:"main",statusCheckRollup:[
