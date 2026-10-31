@@ -358,6 +358,7 @@ family_for_basename() {
   case "$1" in
     fm-arm-pretool-check.test.sh|fm-ask-user-authority.test.sh|\
     fm-bearings-board.test.sh|fm-build-lock.test.sh|fm-boat-run.test.sh|fm-boat-test-wrapper.test.sh|\
+    fm-boat-prepush.test.sh|\
     fm-brief.test.sh|fm-dod-lib.test.sh|fm-vendor-auth-probe.test.sh|fm-seat-renew.test.sh|fm-seat-lock.test.sh|fm-seat-vendor-renew.test.sh|\
     fm-calm-pi-extension.test.sh|fm-cd-pretool-check.test.sh|\
     fm-classify-decision-key.test.sh|\
@@ -795,6 +796,7 @@ tests/fm-bearings-board-lavish-live-e2e.test.sh 64
 tests/fm-bearings-board-render.test.sh 15930
 tests/fm-bearings-board.test.sh 41480
 tests/fm-bearings-snapshot.test.sh 191377
+tests/fm-boat-prepush.test.sh 620
 tests/fm-boat-run.test.sh 41646
 tests/fm-bootstrap-network-parallel.test.sh 30424
 tests/fm-bootstrap.test.sh 60398
@@ -1766,6 +1768,10 @@ families_for_changed_path() {
       ;;
     bin/fm-boat-test-wrapper.sh)
       printf '%s\n' '__script__:fm-boat-test-wrapper.test.sh'
+      printf '%s\n' '__script__:fm-boat-prepush.test.sh'
+      ;;
+    bin/fm-boat-prepush.sh|bin/fm-boat-prepush.py|bin/fm-boat-prepush-remote.py)
+      printf '%s\n' '__script__:fm-boat-prepush.test.sh'
       ;;
     bin/fm-build-lock.py|bin/fm-build-lock.js)
       printf '%s\n' "__script__:fm-build-lock.test.sh"
