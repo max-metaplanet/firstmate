@@ -120,6 +120,7 @@ def attempt(worktree: Path, output: Path, size: str, timeout: int,
         env['FM_BOAT_TEST_HISTORY_DEPTH'] = str(history_depth)
     started = time.monotonic()
     plan, lanes, summary, unavailable = None, [], None, False
+    command_log = None
     with log.open('w', encoding='utf-8') as sink:
         process = subprocess.Popen(
             ['bash', str(WRAPPER), command], cwd=str(worktree), env=env,
@@ -128,6 +129,8 @@ def attempt(worktree: Path, output: Path, size: str, timeout: int,
         for line in process.stdout:
             sink.write(line)
             sys.stderr.write(line)
+            if line.startswith('boat-test-wrapper: result.json: '):
+                command_log = Path(line.split(': ', 2)[2].strip()).with_name('command.log')
             if 'Boat unavailable' in line:
                 unavailable = True
             match = MARKER.match(line.rstrip('\n'))
@@ -142,6 +145,34 @@ def attempt(worktree: Path, output: Path, size: str, timeout: int,
                 summary = document
         process.stdout.close()
         adapter_exit = process.wait()
+    # On adapter failure stdout may never have been decoded or forwarded.
+    # The wrapper announces the persisted command.log before provisioning.
+    if summary is None and command_log is not None and command_log.is_file():
+        payload = command_log.read_text(encoding='utf-8', errors='replace')
+        decoded = []
+        for line in payload.splitlines(keepends=True):
+            try:
+                frame = json.loads(line)
+            except ValueError:
+                decoded.append(line)
+                continue
+            if isinstance(frame, dict):
+                if frame.get('type') in ('stdout', 'stderr'):
+                    decoded.append(frame.get('data', ''))
+                else:
+                    decoded.extend([frame.get('stdout', ''), frame.get('stderr', '')])
+        for line in ''.join(decoded).splitlines():
+            match = MARKER.match(line)
+            if not match:
+                continue
+            kind, document = match.group(1), json.loads(match.group(2))
+            if kind == 'PLAN':
+                plan = document
+            elif kind == 'LANE':
+                if not any(lane['name'] == document['name'] for lane in lanes):
+                    lanes.append(document)
+            else:
+                summary = document
     sys.stderr.flush()
     wall = round(time.monotonic() - started, 2)
     return {
@@ -204,8 +235,13 @@ def report(runs: list, out) -> None:
                   'whole heavy suite on the local machine\n')
     if not final['lanes']:
         out.write('  no lane reported a verdict\n')
+    reported = {lane['name'] for lane in final['lanes']}
+    for name in (final.get('plan') or {}).get('lanes', []):
+        if name not in reported:
+            out.write('  %s: unreported (run ended before its verdict)\n' % name)
     for lane in final['lanes']:
         state = ('pass' if lane['exit'] == 0 else
+                 'timeout' if lane.get('timeout') else
                  'unavailable' if lane.get('history_only') else 'FAIL')
         note = ''
         if lane['exit'] != 0:
@@ -216,6 +252,8 @@ def report(runs: list, out) -> None:
                 note += ', reads Git objects this upload does not carry'
         out.write('  %-26s %-4s %6.1fs%s\n'
                   % (lane.get('label') or lane['name'], state, lane['wall_s'], note))
+        if lane.get('timeout') and lane.get('output_tail'):
+            out.write('    output tail:\n' + lane['output_tail'] + '\n')
     not_run = (final.get('summary') or {}).get('database_not_run') or []
     if not_run:
         out.write('  not run on Boat (neither pass nor fail): %s; '

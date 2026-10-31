@@ -164,6 +164,59 @@ assert killed['oom'] is True and killed['oom_evidence'] == 'cgroup oom_kill'
 assert lane(1, 'worker gone\n', kills=(-1, -1))['oom'] is False
 print('ok - out of memory is proven by the kernel, exit 137 or V8, never guessed')
 
+# Regression oracle: a silent hung lane must finish red within its own budget,
+# retaining its last output; the next lane must still be executable.
+import io
+import subprocess
+import time
+remote.cgroup_oom_kills = lambda: 0
+start = time.monotonic()
+try:
+    hung = remote.run_lane('hung', 'test', [sys.executable, '-c',
+        "import time; print('last diagnostic', flush=True); time.sleep(0.5)"],
+        {}, base, timeout=0.1)
+except TypeError:
+    raise AssertionError('lane execution has no per-lane timeout')
+assert hung['timeout'] and hung['exit'] == 124 and not hung['oom'], hung
+assert 'last diagnostic' in hung['output_tail'], hung
+assert time.monotonic() - start < 2
+assert lane(0, 'following lane completed\n')['exit'] == 0
+print('ok - a timed-out lane retains diagnostics, stays red, and releases following lanes')
+
+# The adapter may preserve only raw stream frames when transport fails. Split
+# a marker across frames to reject parsing each frame as a complete line.
+partial_wrapper = base / 'partial-wrapper.sh'
+partial_output = base / 'partial-output'
+partial_output.mkdir()
+raw_log = partial_output / 'command.log'
+plan_marker = 'FM_BOAT_PREPUSH_PLAN ' + json.dumps({'lanes': ['done', 'missing']}) + '\n'
+lane_marker = 'FM_BOAT_PREPUSH_LANE ' + json.dumps({
+    'name': 'done', 'exit': 1, 'wall_s': 1, 'oom': False}) + '\n'
+original_wrapper = local.WRAPPER
+local.WRAPPER = partial_wrapper
+try:
+    for payload in (plan_marker + lane_marker, 'ordinary output\n'):
+        raw_log.write_text('\n'.join(json.dumps({'type': 'stdout', 'data': chunk})
+            for chunk in (payload[:17], payload[17:])) + '\n')
+        partial_wrapper.write_text('#!/usr/bin/env bash\nprintf "%s\\n" ' +
+            repr('boat-test-wrapper: result.json: ' + str(partial_output / 'result.json')) +
+            '\nexit 70\n')
+        attempt = local.attempt(base, partial_output, 'default', 30, None, 'unused')
+        rendered = io.StringIO()
+        local.report([attempt], rendered)
+        text = rendered.getvalue()
+        assert local.verdict(attempt)[0] is False
+        assert not local.should_retry_large(attempt)
+        if payload.startswith('FM_'):
+            assert [entry['name'] for entry in attempt['lanes']] == ['done'], attempt
+            assert 'missing' in text and 'unreported' in text, text
+            assert 'no lane reported' not in text, text
+        else:
+            assert 'no lane reported' in text, text
+finally:
+    local.WRAPPER = original_wrapper
+print('ok - partial stream-framed logs preserve lane verdicts and name unreported lanes')
+
 # ── a failure that reads absent history says so, and still fails ────────────
 # The screened upload carries no real ancestry, so a fixture reading a pinned
 # commit fails for the transport. Labelling it is useful; excusing it would
@@ -307,11 +360,15 @@ failure_file = base / 'service-failure'
 for command in ('docker', 'node', 'pnpm'):
     boundary = service_bin / command
     boundary.write_text('#!' + sys.executable + '\n' +
-        'import json, sys\nfrom pathlib import Path\n' +
+        'import json, sys, subprocess\nfrom pathlib import Path\n' +
         'name = ' + repr(command) + '\n' +
         'with Path(' + repr(str(service_log)) + ').open("a") as f: f.write(json.dumps([name, *sys.argv[1:]]) + "\\n")\n' +
         'failure = Path(' + repr(str(failure_file)) + ')\n' +
         'if failure.exists() and failure.read_text() in " ".join([name, *sys.argv[1:]]): sys.exit(9)\n' +
+        'if name == "node" and "ledger-delta.mjs" in sys.argv[1]:\n' +
+        '    diff = subprocess.check_output(["git", "diff", "--name-status", "refs/remotes/origin/main...HEAD"], text=True)\n' +
+        '    Path(' + repr(str(base / 'migration-diff')) + ').write_text(diff)\n' +
+        '    if "A\\t" in diff and "candidate.sql" in diff: sys.exit(8)\n' +
         'if name == "docker" and sys.argv[1] == "run": print("a" * 64)\n' +
         'if name == "node" and "--test" in sys.argv: print("# tests 2\\n# skipped 0")\n')
     boundary.chmod(0o755)
@@ -355,9 +412,13 @@ assert 'candidate.sql' in subprocess.check_output([
 previous_path = os.environ['PATH']
 os.environ['PATH'] = str(service_bin) + os.pathsep + previous_path
 try:
+    (base / 'service-evidence').mkdir()
+    (base / 'service-evidence/changed-files.json').write_text('["app/page.tsx"]')
     for suite in ('db', 'actions', 'runtime'):
         service_log.write_text('')
-        assert remote.run_database(suite, service_source, base / 'service-evidence') == 0
+        assert remote.run_database(suite, service_source, base / 'service-evidence') == 0, suite
+        if suite != 'runtime':
+            assert (base / 'migration-diff').read_text() == '', 'unchanged migration reached ledger replay'
         calls = [json.loads(line) for line in service_log.read_text().splitlines()]
         assert calls[0] == ['docker', 'pull', 'docker.io/library/postgres@sha256:' + '1' * 64], calls
         assert calls[-1][:3] == ['docker', 'rm', '-f'], calls
@@ -377,18 +438,18 @@ try:
             failure_file.write_text(broken)
             assert remote.run_database(suite, service_source, base / 'service-evidence') != 0
             failure_file.unlink()
-    subprocess.run(['git', '-C', str(service_source), 'update-ref', '-d',
-                    'refs/remotes/origin/main'], check=True)
+    # Ledger contract: an unfingerprinted candidate added by this PR is fatal.
+    # The boundary simulates that SQL failure only after observing a real added
+    # path from Git; an empty or modified tier would incorrectly pass it.
+    (base / 'service-evidence/changed-files.json').write_text('["candidate.sql"]')
     for suite in ('db', 'actions'):
-        service_log.write_text('')
-        assert remote.run_database(suite, service_source, base / 'service-evidence') != 0
-        assert service_log.read_text() == '', 'setup ran before resolving its base'
-    subprocess.run(['git', '-C', str(service_source), 'update-ref',
-                    'refs/remotes/origin/main', synthetic_base], check=True)
+        assert remote.run_database(suite, service_source, base / 'service-evidence') == 8
+        assert (base / 'migration-diff').read_text() == 'A\tcandidate.sql\n'
 finally:
     os.environ['PATH'] = previous_path
 print('ok - database suites execute their selected commands, clean up, and reject setup or test failure')
 
+remote.cgroup_oom_kills = lambda: 0
 saved = (remote.REMOTE_SOURCE, remote.read_plan, remote.install, remote.run_lane, remote.emit)
 remote.REMOTE_SOURCE = service_source
 remote.read_plan = lambda *args: plan(database={key: {'run': True} for key in ('db', 'actions', 'runtime', 'gates')})
@@ -405,7 +466,11 @@ try:
         ran = []
         def execute(name, group, argv, overlay, cwd):
             ran.append(name)
-            return {'name': name, 'exit': int(name == broken), 'oom': False, 'wall_s': 0}
+            if name == broken:
+                return saved[3](name, group, [sys.executable, '-c',
+                    "import time; print('lane diagnostic', flush=True); time.sleep(1)"],
+                    {}, cwd, timeout=0.1)
+            return {'name': name, 'exit': 0, 'oom': False, 'wall_s': 0}
         remote.run_lane = execute
         remote.emit = lambda kind, doc: events.append((kind, doc))
         assert remote.main() == 0
@@ -420,6 +485,10 @@ try:
         assert 'forge CI remains the authority' in rendered.getvalue()
         if not broken:
             assert 'verdict: green' in rendered.getvalue()
+        else:
+            assert 'timeout' in rendered.getvalue() and 'lane diagnostic' in rendered.getvalue()
+            assert summary['failed'] == ['database-actions']
+            assert summary['oom'] is False
         assert local.verdict({'adapter_exit': 0, 'summary': summary})[0] is (broken == '')
 finally:
     os.chdir(original_cwd)

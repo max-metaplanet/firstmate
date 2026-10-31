@@ -51,12 +51,12 @@
 # find them. The changed-file list is therefore computed from real local Git and
 # handed to the remote planner as data, so the SELECTION never depends on
 # remote history even when the fixtures do.
-# Database migration setup uses refs/remotes/origin/main in both transports.
-# On default transport that ref is an EMPTY TREE, so the migration diff treats
-# every uploaded file as added. Snapshot fingerprints skip applied migrations;
-# remaining migrations enter fatal tier A rather than nonfatal tier M.
-# This conservative over-inclusion keeps candidate SQL failures fatal.
-# With --history-depth the same ref carries the real base and the diff is exact.
+# Database migration setup gives the ledger an isolated Git view derived from
+# that same local changed-file list. Only changed paths appear as additions, so
+# unchanged migrations are not replayed and unfingerprinted PR migrations stay
+# in fatal tier A. The ledger view does not alter other lanes' Git history.
+# Each lane has a ten-minute limit; a timeout is red and retains its output tail
+# while the remaining lanes continue within the whole-machine time budget.
 # --history-depth is available only where the project's own history passes the
 # adapter's credential screening, which scans every historical blob and commit
 # and refuses the whole run locally before any Boat call. A repository whose

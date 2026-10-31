@@ -42,6 +42,9 @@ import json
 import os
 import re
 import shutil
+import signal
+import threading
+from collections import deque
 import shlex
 import subprocess
 import sys
@@ -207,7 +210,8 @@ def history_failures(name: str, output: str, report: Path | None) -> tuple:
     return excused, bool(complete and failures and len(excused) == len(failures))
 
 
-def run_lane(name: str, group: str, argv: list, overlay: dict, cwd: Path) -> dict:
+def run_lane(name: str, group: str, argv: list, overlay: dict, cwd: Path,
+             timeout: float = 600) -> dict:
     """Run one lane to completion, streaming its output, and judge an OOM."""
     sys.stdout.write('\n===== lane %s =====\n' % name)
     sys.stdout.flush()
@@ -219,6 +223,8 @@ def run_lane(name: str, group: str, argv: list, overlay: dict, cwd: Path) -> dic
     heap = False
     history = ''
     output = []
+    tail = deque(maxlen=40)
+    timed_out = threading.Event()
     report = next((Path(arg.split('=', 1)[1]) for arg in argv
                    if arg.startswith('--outputFile=')), None)
     if name == 'repository-scripts' and report is not None:
@@ -226,9 +232,26 @@ def run_lane(name: str, group: str, argv: list, overlay: dict, cwd: Path) -> dic
     process = subprocess.Popen(
         argv, cwd=str(cwd), env=lane_env(overlay),
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
-        errors='replace', bufsize=1)
+        errors='replace', bufsize=1, start_new_session=True)
+
+    def stop(sig):
+        try:
+            os.killpg(process.pid, sig)
+        except ProcessLookupError:
+            pass
+
+    killer = threading.Timer(timeout + 5, stop, args=(signal.SIGKILL,))
+
+    def expire():
+        timed_out.set()
+        stop(signal.SIGTERM)
+
+    deadline = threading.Timer(timeout, expire)
+    killer.start()
+    deadline.start()
     for line in process.stdout:
         sys.stdout.write(line)
+        tail.append(line)
         if name in ('ci-scripts', 'repository-scripts'):
             output.append(line)
         if not heap and V8_HEAP_EXHAUSTION.search(line):
@@ -239,21 +262,30 @@ def run_lane(name: str, group: str, argv: list, overlay: dict, cwd: Path) -> dic
                 history = found.group(0)
     process.stdout.close()
     exit_code = process.wait()
+    deadline.cancel()
+    if timed_out.is_set():
+        stop(signal.SIGKILL)
+        exit_code = 124
+    killer.cancel()
+    deadline.join()
+    killer.join()
     sys.stdout.flush()
     wall = round(time.monotonic() - started, 2)
     after = cgroup_oom_kills()
     killed = before >= 0 and after > before
     excused, history_only = history_failures(name, ''.join(output), report)
-    oom = bool(killed or exit_code == 137 or heap)
+    oom = not timed_out.is_set() and bool(killed or exit_code == 137 or heap)
     return {
         'name': name,
         'group': group,
         'exit': exit_code,
         'wall_s': wall,
         'skipped': False,
+        'timeout': timed_out.is_set(),
+        'output_tail': ''.join(tail)[-8000:],
         'oom': oom,
         'history_excused': excused if exit_code != 0 else [],
-        'history_only': exit_code == 1 and history_only and not oom,
+        'history_only': exit_code == 1 and history_only and not oom and not timed_out.is_set(),
         'oom_evidence': ('cgroup oom_kill' if killed else
                          'exit 137' if exit_code == 137 else
                          'V8 heap exhaustion' if heap else ''),
@@ -426,22 +458,14 @@ def select_lanes(plan: dict) -> list:
 
 
 def run_database(suite: str, source: Path, prepush: Path) -> int:
-    """Use the wrapper's origin/main in both screened-history modes.
+    """Run database suites with only the PR's changed files in the ledger diff.
 
-    The synthetic empty-tree base marks every uploaded migration as added.
-    Snapshot fingerprints still skip applied names or content hashes; remaining
-    migrations enter fatal tier A instead of nonfatal tier M, conservatively
-    keeping candidate SQL failures fatal. Screened real ancestry gives the
-    actual base-branch diff through the same ref.
+    The ledger consumes Git rather than a changed-file list. Give that subprocess
+    an isolated two-commit view whose base is the uploaded tree minus the changed
+    paths. Unchanged migrations disappear from its diff; changed migrations are
+    additions, keeping unfingerprinted SQL in fatal tier A. Other lanes retain
+    the wrapper's history, including its explicit missing-history boundary.
     """
-    base_ref = CI_ENV['DIFF_BASE']
-    if suite in ('db', 'actions'):
-        for args in (['rev-parse', '--verify', base_ref + '^{commit}'],
-                     ['merge-base', base_ref, 'HEAD']):
-            result = subprocess.run(['git', *args], cwd=source, stdout=subprocess.DEVNULL)
-            if result.returncode != 0:
-                sys.stderr.write('database setup cannot resolve the wrapper base and its ancestry: %s\n' % base_ref)
-                return result.returncode
     images = json.loads((source / '.github/ci-images.json').read_text(encoding='utf-8'))
     approved = {}
     for image in images['images']:
@@ -464,6 +488,33 @@ def run_database(suite: str, source: Path, prepush: Path) -> int:
             + ' -w "$PWD" --entrypoint ' + shlex.quote(tool) + ' '
             + shlex.quote(postgres) + ' "$@"\n', encoding='utf-8')
         wrapper.chmod(0o755)
+    ledger_git = work / 'ledger.git'
+    if suite in ('db', 'actions'):
+        files = json.loads((prepush / 'changed-files.json').read_text(encoding='utf-8'))
+        subprocess.run(['git', 'init', '--bare', '--quiet', str(ledger_git)], check=True)
+        objects = subprocess.check_output(
+            ['git', 'rev-parse', '--git-path', 'objects'], cwd=source, text=True).strip()
+        (ledger_git / 'objects/info/alternates').write_text(
+            str((source / objects).resolve()) + '\n', encoding='utf-8')
+        git_env = dict(os.environ, GIT_DIR=str(ledger_git), GIT_WORK_TREE=str(source),
+                       GIT_AUTHOR_NAME='Boat-test', GIT_COMMITTER_NAME='Boat-test',
+                       GIT_AUTHOR_EMAIL='boat-test@example.invalid',
+                       GIT_COMMITTER_EMAIL='boat-test@example.invalid')
+
+        def git(*args, data=None):
+            return subprocess.check_output(['git', *args], cwd=source,
+                                           env=git_env, input=data).decode().strip()
+
+        tree = subprocess.check_output(['git', 'rev-parse', 'HEAD^{tree}'],
+                                       cwd=source, text=True).strip()
+        git('read-tree', tree)
+        if files:
+            git('update-index', '--force-remove', '-z', '--stdin',
+                data=('\0'.join(files) + '\0').encode())
+        base = git('commit-tree', git('write-tree'), data=b'Unchanged uploaded content\n')
+        head = git('commit-tree', tree, '-p', base, data=b'PR changed files\n')
+        git('update-ref', 'refs/remotes/origin/main', base)
+        git('update-ref', 'HEAD', head)
     dsn = 'postgresql://postgres:postgres@localhost:5432/postgres'
     env = {
         'PATH': str(clients) + os.pathsep + os.environ['PATH'],
@@ -472,6 +523,7 @@ def run_database(suite: str, source: Path, prepush: Path) -> int:
         'DB_LOCAL_LOGDIR': str(work / 'restore'),
         'NODE_OPTIONS': '--import tsx',
         'LEDGER_DELTA_REPORT': str(work / 'ledger-delta.json'),
+        'LEDGER_GIT_DIR': str(ledger_git),
     }
     script = r'''
 set -euo pipefail
@@ -503,7 +555,7 @@ done
     if suite in ('db', 'actions'):
         script += r'''
 bash .github/scripts/db-local/restore-snapshot.sh
-node .github/scripts/db-local/ledger-delta.mjs --tiers am --base-ref "$DIFF_BASE"
+GIT_DIR="$LEDGER_GIT_DIR" GIT_WORK_TREE="$PWD" node .github/scripts/db-local/ledger-delta.mjs --tiers am --base-ref "$DIFF_BASE"
 bash .github/scripts/db-local/prd-guards.sh "$PG_CONTAINER" "$DB_LOCAL_URL"
 '''
     if suite == 'db':
@@ -591,6 +643,7 @@ def main() -> int:
         return 0
 
     files = json.loads(os.environ['FM_PREPUSH_FILES'])
+    (prepush / 'changed-files.json').write_text(json.dumps(files), encoding='utf-8')
     plan = read_plan(prepush, source, files)
     lanes = select_lanes(plan)
     not_run = sorted(suite for suite, scope in (plan.get('database') or {}).items()
