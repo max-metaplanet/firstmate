@@ -515,6 +515,37 @@ for name, unsafe_path, unsafe_content in [
     assert not (p / 'output/upload/source.tar.gz').exists()
 print('ok - excluded, credential-bearing and binary historical blobs refuse before Boat, without content')
 
+for root_ref in ('HEAD', 'refs/remotes/origin/main'):
+    for ancestor in (False, True):
+        for field in ('message', 'author', 'committer', 'extra-header'):
+            name = 'history-commit-' + root_ref.replace('/', '-') + '-' + str(ancestor) + '-' + field
+            p, state, env = case(name, clean_history=True)
+            work = p / 'work'
+            git(work, 'update-ref', 'refs/remotes/origin/main', 'HEAD')
+            raw = git(work, 'cat-file', 'commit', 'HEAD').stdout
+            credential = b'API_SECRET=historical-commit-never-print'
+            if field == 'message':
+                raw = raw.split(b'\n\n', 1)[0] + b'\n\n' + credential + b'\n'
+            elif field == 'extra-header':
+                raw = raw.replace(b'\n\n', b'\nx-fixture ' + credential + b'\n\n', 1)
+            else:
+                raw = raw.replace(field.encode() + b' Fixture ', field.encode() + b' ' + credential + b' ', 1)
+            unsafe = subprocess.run(['git', '-C', str(work), 'hash-object', '-t', 'commit', '-w', '--stdin'],
+                                    input=raw, capture_output=True, check=True).stdout.decode().strip()
+            tip = unsafe
+            if ancestor:
+                tree = git(work, 'rev-parse', 'HEAD^{tree}').stdout.decode().strip()
+                tip = git(work, 'commit-tree', tree, '-p', unsafe, '-m', 'clean descendant').stdout.decode().strip()
+            git(work, 'update-ref', root_ref, tip)
+            r = launch(p, env, options=('--history-depth', '2'))
+            assert r.returncode == 2, (name, r.stderr)
+            assert b'history refused:' in r.stderr
+            assert b'historical-commit-never-print' not in r.stdout + r.stderr
+            assert result(p)['kind'] == 'invalid'
+            assert not (state / 'calls.jsonl').exists()
+            assert not (p / 'output/upload/source.tar.gz').exists()
+print('ok - both history roots screen tip and ancestor commit messages and headers before Boat, without content')
+
 p, state, env = case('history-missing-base', clean_history=True)
 r = launch(p, env, options=('--history-depth', '2'))
 assert r.returncode == 2 and b'origin/main' in r.stderr

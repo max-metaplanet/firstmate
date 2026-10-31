@@ -142,6 +142,8 @@ def history(root, head, depth, destination, key_files):
     git(fetched, 'update-ref', 'refs/remotes/origin/main', base)
     scanned = set()
     for commit in git(fetched, 'rev-list', '--all').splitlines():
+        if not safe_allowlisted('', git(fetched, 'cat-file', 'commit', commit.decode())):
+            raise Failure('history refused: credential-looking or binary commit', 2)
         entries = git(fetched, 'ls-tree', '-rz', '--full-tree', commit.decode()).split(b'\0')
         for entry in filter(None, entries):
             meta, name = entry.split(b'\t', 1)
