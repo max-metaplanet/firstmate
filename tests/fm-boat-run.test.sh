@@ -93,6 +93,10 @@ for home in map(json.loads, (state / 'cli-homes.jsonl').read_text().splitlines()
 empty(state)
 print('ok - source edits/deletions, explicit inputs, artifacts, credential isolation and short CLI HOME cleanup')
 assert not (state / 'swap.json').exists()
+created = next(json.loads(line) for line in (state / 'calls.jsonl').read_text().splitlines()
+               if json.loads(line)[0] == 'new')
+assert created[created.index('--type') + 1] == 'default'
+print('ok - omitted machine type preserves default on the legacy single account')
 p, state, env = case('swap')
 assert launch(p, env, options=('--swap-gib', '4')).returncode == 0
 assert json.loads((state / 'swap.json').read_text()) == 4
@@ -275,6 +279,62 @@ assert 'new' in calls(state) and not calls(other)
 assert 'deletion' in calls(state)
 print('ok - configured accounts preserve first-account priority')
 
+for machine_type in ('default', 'large', 'xlarge'):
+    p, state, other, env, key1, key2, config = multi(
+        'type-' + machine_type, caps='types=' + machine_type)
+    config.write_text(shlex.quote(str(key1)) + ' types=large\n' +
+                      shlex.quote(str(key2)) + ' types=' + machine_type + '\n')
+    r = launch(p, env, options=('--type', machine_type))
+    assert r.returncode == 0, r.stderr
+    selected = state if machine_type == 'large' else other
+    skipped = other if selected == state else state
+    assert not calls(skipped), calls(skipped)
+    created = next(json.loads(line) for line in (selected / 'calls.jsonl').read_text().splitlines()
+                   if json.loads(line)[0] == 'new')
+    assert created[created.index('--type') + 1] == machine_type, created
+    assert '--no-env' in created and '--no-snapshots' in created
+    job = next(json.loads(f.read_text()) for f in (state / 'jobs').glob('*.json'))
+    assert job['type'] == machine_type
+    empty(selected)
+print('ok - exact Boat machine type reaches the first permitting account without probing disallowed accounts')
+
+p, state, other, env, key1, key2, config = multi('type-no-downgrade',
+    second={'remaining': 0}, caps='types=default,large,xlarge')
+r = launch(p, env, options=('--type', 'xlarge'))
+assert r.returncode == 75, r.stderr
+assert not calls(state) and 'new' not in calls(other)
+print('ok - exhausted permitted account never downgrades to an available default account')
+
+for configured in (False, True):
+    p, state, env = case('type-refused-' + str(configured))
+    if configured:
+        config = p / 'home/config/boat-keys'
+        config.parent.mkdir()
+        config.write_text('~/.config/boat/api-key\n')
+    r = launch(p, env, options=('--type', 'large'))
+    assert r.returncode == 2, r.stderr
+    assert b'no Boat account permits machine type large' in r.stderr
+    assert result(p)['kind'] == 'invalid'
+    assert not calls(state) and not list((state / 'jobs').glob('*.json'))
+print('ok - legacy and configured accounts require explicit permission for non-default sizes')
+
+p, state, other, env, key1, key2, config = multi('type-filter-key-screening')
+tracked_key = p / 'work/tracked.txt'
+tracked_key.write_text(key1.read_text())
+config.write_text(str(tracked_key) + ' types=default\n' +
+                  str(key2) + ' types=large\n')
+r = launch(p, env, 'test ! -e tracked.txt', options=('--type', 'large'))
+assert r.returncode == 0, r.stderr
+assert json.loads((other / 'uploaded.json').read_text()) == []
+assert not calls(state)
+empty(other)
+print('ok - disallowed accounts still contribute their key paths to upload screening')
+
+p, state, env = case('unknown-type')
+assert launch(p, env, options=('--type', 'huge')).returncode == 2
+assert not calls(state)
+print('ok - unknown machine type fails before contacting Boat')
+
 for name, first in [('day', {'day_remaining': 0}), ('hour', {'hour_remaining': 0}),
                     ('minute', {'minute_remaining': 0}), ('disabled', {'canStart': False}),
                     ('paid', {'nextStartDollars': 1}), ('offline', {'unreachable': True}),
@@ -377,6 +437,11 @@ for index, text in enumerate(['', 'relative/path', '~/.config/boat/api-key live_
                               '~/.config/boat/api-key live_cap=x', '~/.config/boat/api-key wrong=3',
                               '~/.config/boat/api-key cleanup_confirmation=invalid',
                               '~/.config/boat/api-key environment=',
+                              '~/.config/boat/api-key types=',
+                              '~/.config/boat/api-key types=huge',
+                              '~/.config/boat/api-key types=default,',
+                              '~/.config/boat/api-key types=default,default',
+                              '~/.config/boat/api-key types=default types=large',
                               '~/.config/boat/api-key live_cap=3 live_cap=4',
                               '~/.config/boat/api-key\n~/.config/boat/api-key', '"unterminated']):
     p, state, other, env, key1, key2, config = multi('invalid-config-' + str(index))

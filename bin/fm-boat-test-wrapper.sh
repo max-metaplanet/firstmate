@@ -8,6 +8,8 @@
 # its validation and default still apply. Use 1500 or less on the trial account.
 # FM_BOAT_TEST_HISTORY_DEPTH optionally forwards --history-depth N (1..1000).
 # The adapter owns history screening and refusal; see fm-boat-run.sh --help.
+# FM_BOAT_TYPE optionally forwards --type to the adapter; its default is default.
+# The selected account must permit that type in config/boat-keys.
 # The command must install its dependencies and have its runtime tools on Boat.
 # Never pass secrets in the command or use this wrapper for authenticated tests.
 #
@@ -28,7 +30,6 @@
 # Only exit 69/75 WITH result kind=unavailable permits local execution, through
 # fm-build-lock.py. Completed remote exits (even 69/75) propagate unchanged.
 # Every other adapter failure fails loudly with the result.json path; no retry.
-# No VM size is selected here; future adapter sizing remains independent.
 #
 # Enable ONLY after the no-mistakes fork supports commands.test.wrapper and
 # the account upgrade/spending authorization is confirmed. In the machine-local
@@ -98,6 +99,9 @@ if [[ -n ${FM_BOAT_TEST_TIMEOUT:-} ]]; then
 fi
 if [[ -n ${FM_BOAT_TEST_HISTORY_DEPTH:-} ]]; then
   adapter_args+=(--history-depth "$FM_BOAT_TEST_HISTORY_DEPTH")
+fi
+if [[ -n ${FM_BOAT_TYPE:-} ]]; then
+  adapter_args+=(--type "$FM_BOAT_TYPE")
 fi
 "$bin/fm-boat-run.sh" "${adapter_args[@]}" -- \
   bash -c "$remote" boat-test "$1" || rc=$?
