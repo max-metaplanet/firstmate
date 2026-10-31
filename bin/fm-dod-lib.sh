@@ -742,11 +742,17 @@ fm_dod_block() {  # <mode> <task-id> [branch] [<forge>] [<base>] [<consent>] [<t
     fi
     [ -z "$FM_BOAT_PREPUSH_HISTORY_DEPTH" ] ||
       prepush_cmd="$prepush_cmd --history-depth $FM_BOAT_PREPUSH_HISTORY_DEPTH"
+    prepush_cmd="$prepush_cmd --expected-head '<PR head SHA>'"
     prepush="
-Before marking the pull request ready, run the pre-ready heavy-test check on this change with \`$prepush_cmd\`.
+Before marking the pull request ready, read its current head commit from the forge with \`gh-axi api repos/<owner>/<repo>/pulls/<number> --jq .head.sha\` and record the full commit ID as \`<PR head SHA>\`.
+Run the pre-ready heavy-test check from a project checkout whose HEAD matches that commit with \`$prepush_cmd\`, substituting the recorded commit ID for \`<PR head SHA>\`.
+The command refuses a mismatched checkout; bring the project checkout to that PR head before running it.
 It runs this change's planner-selected heavy test lanes one at a time on one disposable machine and prints a per-lane verdict.
 A nonzero exit stops the ready transition.
 Append \`blocked [at=<epoch>]: pre-ready check red - {the failing lanes}\` to the status file and stop, rather than marking the pull request ready.
+After the check succeeds and before marking the pull request ready, read the pull request head again with \`gh-axi api repos/<owner>/<repo>/pulls/<number> --jq .head.sha\` and confirm it still equals the \`head\` in \`verdict.json\` under the check's printed output directory.
+If the pull request head moved, the verdict is stale: check out the new head and repeat the check and head comparison before marking ready.
+A verdict from a different commit is not evidence about this one.
 This check is a pre-ready gate, not a replacement for the forge's required checks."
   fi
   draft_check="(\`gh-axi pr view <PR URL>\` must print \`draft: no\`, naming the PR by its full URL so the read can never resolve against another repository); if it is a draft, mark it ready with \`gh-axi pr ready <PR URL>\`."

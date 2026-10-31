@@ -1125,7 +1125,7 @@ test_a_declared_project_gates_the_ready_transition() {
   dod=$(prepush_dod no-mistakes core) || fail "the declared no-mistakes block did not render"
   assert_contains "$dod" "fm-boat-prepush.sh --timeout 1200 --history-depth 50" \
     "the no-mistakes block did not carry the declared command"
-  assert_contains "$dod" "Before marking the pull request ready, run the pre-ready heavy-test check on this change" \
+  assert_contains "$dod" "Before marking the pull request ready, read its current head commit from the forge" \
     "the no-mistakes block did not say when to run the check"
   assert_contains "$dod" "blocked [at=<epoch>]: pre-ready check red - {the failing lanes}" \
     "the no-mistakes block did not give the red-check report grammar"
@@ -1184,11 +1184,36 @@ test_a_named_base_reaches_both_publishing_commands() {
     assert_contains "$dod" 'fm-boat-prepush.sh --timeout 2700 --base release/stable' \
       "the delivered prompt lost the named base"
     dod=$(prepush_dod "$mode" core) || fail "default base did not render"
-    assert_not_contains "$(printf '%s\n' "$dod" | grep 'Before marking the pull request ready, run')" '--base' "the delivered prompt invented an explicit base"
+    assert_not_contains "$(printf '%s\n' "$dod" | grep 'Run the pre-ready heavy-test check from')" '--base' "the delivered prompt invented an explicit base"
   done
   pass "both delivered publishing prompts preserve an explicit base and omit an absent one"
 }
 
+test_prepush_binds_the_verdict_to_the_current_pr_head() {
+  local mode dod check_line recheck_line ready_line
+  prepush_declare core
+  for mode in no-mistakes direct-PR; do
+    dod=$(prepush_dod "$mode" core) || fail "$mode: declared project did not render"
+    assert_contains "$dod" "--expected-head '<PR head SHA>'" "the delivered check omitted its expected head"
+    assert_contains "$dod" 'read its current head commit from the forge' "the delivered procedure omitted the initial forge read"
+    assert_contains "$dod" 'confirm it still equals the `head` in `verdict.json`' "the delivered procedure omitted the verdict head comparison"
+    assert_contains "$dod" 'check out the new head and repeat the check and head comparison' "the delivered procedure allowed a stale verdict"
+    assert_contains "$dod" 'A verdict from a different commit is not evidence about this one.' "the delivered procedure did not bind its evidence"
+    check_line=$(line_of "$dod" 'fm-boat-prepush.sh --timeout')
+    recheck_line=$(line_of "$dod" 'After the check succeeds and before marking the pull request ready')
+    if [ "$mode" = no-mistakes ]; then
+      ready_line=$(line_of "$dod" 'then mark it ready using the forge command below')
+    else
+      ready_line=$(line_of "$dod" 'mark the PR ready before the final CI wait')
+    fi
+    [ -n "$check_line" ] && [ -n "$recheck_line" ] && [ -n "$ready_line" ] \
+      && [ "$check_line" -lt "$recheck_line" ] && [ "$recheck_line" -lt "$ready_line" ] \
+      || fail "$mode: the delivered procedure does not compare heads between checking and readiness"
+  done
+  pass "both publishing procedures require the current PR head and reject stale verdicts before readiness"
+}
+
+test_prepush_binds_the_verdict_to_the_current_pr_head
 test_a_named_base_reaches_both_publishing_commands
 test_an_undeclared_project_renders_the_block_unchanged
 test_a_declared_project_gates_the_ready_transition

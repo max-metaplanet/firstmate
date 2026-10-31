@@ -3,7 +3,7 @@
 # Boat machine before the pull request is marked ready for review.
 # Usage:
 #   FM_HOME=/absolute/home fm-boat-prepush.sh [--worktree DIR] [--base REF]
-#       [--timeout SECONDS] [--history-depth N]
+#       [--expected-head SHA] [--timeout SECONDS] [--history-depth N]
 #       [--output DIR]
 # Exit: 0 every selected lane passed, 1 a lane failed or no verdict was
 # produced, 2 invalid input, and the adapter's own codes for a Boat failure.
@@ -16,6 +16,8 @@
 # exhausted a 16 GB machine and was killed by the kernel, while one at a time
 # completed with headroom. Each lane reports pass or fail separately, and any
 # real failure returns nonzero.
+# --expected-head refuses with exit 2 when the checkout HEAD differs from that
+# full commit ID, before starting a machine. verdict.json records the checked head.
 #
 # MACHINE SIZE
 # The default 4 CPU / 8 GB machine is tried first, with the two memory caps the

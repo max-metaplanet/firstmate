@@ -238,6 +238,7 @@ def main(argv: list) -> int:
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument('--worktree', default='.')
     parser.add_argument('--base', default=None)
+    parser.add_argument('--expected-head', default=None)
     parser.add_argument('--timeout', type=int, default=2700)
     parser.add_argument('--history-depth', type=int, default=None)
     parser.add_argument('--output', default=None)
@@ -255,11 +256,15 @@ def main(argv: list) -> int:
     if top != worktree:
         raise Refusal('--worktree must be a repository root; %s is inside %s' % (worktree, top))
 
+    head = git(worktree, 'rev-parse', 'HEAD^{commit}')
+    if args.expected_head is not None and args.expected_head != head:
+        raise Refusal('checkout HEAD %s does not match expected PR head %s'
+                      % (head, args.expected_head))
+
     output = Path(args.output).resolve() if args.output else Path(
         tempfile.mkdtemp(prefix='fm-boat-prepush.', dir=str(worktree.parent)))
     output.mkdir(parents=True, exist_ok=True)
 
-    head = git(worktree, 'rev-parse', 'HEAD^{commit}')
     base = resolve_base(worktree, args.base)
     files = changed_files(worktree, output, base, head)
     command = command_string(files)

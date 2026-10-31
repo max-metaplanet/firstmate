@@ -487,7 +487,7 @@ for mode in ('no-mistakes', 'direct-PR'):
         commands = [part for part in rendered.split('`') if 'fm-boat-prepush.sh --timeout' in part]
         assert len(commands) == 1, commands
         received = subprocess.run(
-            ['bash', '-c', commands[0]], cwd=source,
+            ['bash', '-c', commands[0].replace('<PR head SHA>', 'a' * 40)], cwd=source,
             env={**os.environ, 'PATH': str(mock_bin) + os.pathsep + os.environ['PATH']},
             capture_output=True, text=True, check=True)
         args = json.loads(received.stdout)
@@ -495,6 +495,7 @@ for mode in ('no-mistakes', 'direct-PR'):
                     '--timeout', '2700']
         if target:
             expected += ['--base', target]
+        expected += ['--expected-head', 'a' * 40]
         assert args == expected, (mode, target, args)
 print('ok - both publishing commands forward the explicit base with shell quoting')
 
@@ -510,20 +511,40 @@ subprocess.run(['git', '-C', str(base), '-c', 'user.name=Test', '-c',
 wrapper_boundary = base / 'verdict-wrapper.sh'
 local.WRAPPER = wrapper_boundary
 os.environ['FM_HOME'] = str(base)
-for code in (0, 1):
-    wrapper_boundary.write_text("#!/usr/bin/env bash\nprintf '%s\\n' " +
+actual_head = subprocess.check_output(['git', '-C', str(base), 'rev-parse', 'HEAD'], text=True).strip()
+old_head = subprocess.check_output(['git', '-C', str(base), 'rev-parse', 'HEAD^'], text=True).strip()
+provisioned = base / 'machine-started'
+for code, named in ((0, False), (1, False), (0, True), (1, True)):
+    wrapper_boundary.write_text("#!/usr/bin/env bash\ntouch " + shlex.quote(str(provisioned)) + "\nprintf '%s\\n' " +
         shlex.quote('FM_BOAT_PREPUSH_LANE ' + json.dumps({
             'name': 'probe', 'exit': code, 'wall_s': 0, 'oom': False})) + '\n' +
         "printf '%s\\n' " + shlex.quote('FM_BOAT_PREPUSH_SUMMARY ' + json.dumps({
             'failed': ['probe'] if code else [], 'oom': False})) + '\n')
-    destination = base / ('verdict-' + str(code))
-    assert local.main(['--worktree', str(base), '--base', 'HEAD^', '--output', str(destination)]) == code
+    destination = base / ('verdict-' + str(code) + ('-named' if named else '-manual'))
+    arguments = ['--worktree', str(base), '--base', 'HEAD^', '--output', str(destination)]
+    if named:
+        arguments += ['--expected-head', actual_head]
+    assert local.main(arguments) == code
+    assert provisioned.exists(), 'matching or omitted head did not reach the machine boundary'
+    provisioned.unlink()
     record = json.loads((destination / 'verdict.json').read_text())
+    assert record['head'] == actual_head, record
     assert record['green'] is (code == 0), record
     assert record['failed'] == (['probe'] if code else []), record
     assert record['changed_files'] == 1, record
     assert record['attempts'][0]['adapter_exit'] == 0, record
+refused_output = base / 'refused-verdict'
+try:
+    local.main(['--worktree', str(base), '--expected-head', old_head, '--output', str(refused_output)])
+except local.Refusal as error:
+    assert error.code == 2, error.code
+    assert actual_head in str(error) and old_head in str(error), str(error)
+else:
+    raise AssertionError('mismatched expected head was accepted')
+assert not provisioned.exists(), 'a mismatched head reached machine provisioning'
+assert not refused_output.exists(), 'a mismatched head created check evidence'
 print('ok - successful and failing verdicts persist under the output directory')
+print('ok - expected head matches or refuses before provisioning; manual use remains unchanged')
 
 
 PY
