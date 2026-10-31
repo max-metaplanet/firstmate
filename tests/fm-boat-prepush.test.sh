@@ -514,16 +514,44 @@ os.environ['FM_HOME'] = str(base)
 actual_head = subprocess.check_output(['git', '-C', str(base), 'rev-parse', 'HEAD'], text=True).strip()
 old_head = subprocess.check_output(['git', '-C', str(base), 'rev-parse', 'HEAD^'], text=True).strip()
 provisioned = base / 'machine-started'
-for code, named in ((0, False), (1, False), (0, True), (1, True)):
+tracked = base / 'missing.ts'
+tracked_content = tracked.read_bytes()
+for code, named, content_state in (
+        (0, False, 'clean'), (1, False, 'clean'),
+        (0, True, 'clean'), (1, True, 'clean'),
+        (0, True, 'staged'), (0, True, 'unstaged'),
+        (0, True, 'deleted'), (0, True, 'staged-deleted'),
+        (0, True, 'untracked'), (0, False, 'unstaged')):
+    if content_state in ('staged', 'unstaged'):
+        tracked.write_bytes(tracked_content + b'\nlocal edit')
+    elif content_state in ('deleted', 'staged-deleted'):
+        tracked.unlink()
+    elif content_state == 'untracked':
+        (base / 'untracked-content').write_text('does not travel')
+    if content_state in ('staged', 'staged-deleted'):
+        subprocess.run(['git', '-C', str(base), 'add', 'missing.ts'], check=True)
     wrapper_boundary.write_text("#!/usr/bin/env bash\ntouch " + shlex.quote(str(provisioned)) + "\nprintf '%s\\n' " +
         shlex.quote('FM_BOAT_PREPUSH_LANE ' + json.dumps({
             'name': 'probe', 'exit': code, 'wall_s': 0, 'oom': False})) + '\n' +
         "printf '%s\\n' " + shlex.quote('FM_BOAT_PREPUSH_SUMMARY ' + json.dumps({
             'failed': ['probe'] if code else [], 'oom': False})) + '\n')
-    destination = base / ('verdict-' + str(code) + ('-named' if named else '-manual'))
+    destination = base / ('verdict-' + str(code) + ('-named-' if named else '-manual-') + content_state)
     arguments = ['--worktree', str(base), '--base', 'HEAD^', '--output', str(destination)]
     if named:
         arguments += ['--expected-head', actual_head]
+    if named and content_state in ('staged', 'unstaged', 'deleted', 'staged-deleted'):
+        try:
+            local.main(arguments)
+        except local.Refusal as error:
+            assert error.code == 2, error.code
+            assert 'tracked checkout content' in str(error), str(error)
+        else:
+            raise AssertionError('dirty tracked content certified: ' + content_state)
+        assert not provisioned.exists(), 'dirty tracked content reached provisioning'
+        assert not destination.exists(), 'dirty tracked content reached planning/evidence creation'
+        subprocess.run(['git', '-C', str(base), 'restore', '--source=HEAD', '--staged',
+                        '--worktree', '--', 'missing.ts'], check=True)
+        continue
     assert local.main(arguments) == code
     assert provisioned.exists(), 'matching or omitted head did not reach the machine boundary'
     provisioned.unlink()
@@ -533,6 +561,7 @@ for code, named in ((0, False), (1, False), (0, True), (1, True)):
     assert record['failed'] == (['probe'] if code else []), record
     assert record['changed_files'] == 1, record
     assert record['attempts'][0]['adapter_exit'] == 0, record
+    tracked.write_bytes(tracked_content)
 refused_output = base / 'refused-verdict'
 try:
     local.main(['--worktree', str(base), '--expected-head', old_head, '--output', str(refused_output)])
@@ -544,7 +573,7 @@ else:
 assert not provisioned.exists(), 'a mismatched head reached machine provisioning'
 assert not refused_output.exists(), 'a mismatched head created check evidence'
 print('ok - successful and failing verdicts persist under the output directory')
-print('ok - expected head matches or refuses before provisioning; manual use remains unchanged')
+print('ok - expected head requires clean tracked content before provisioning; untracked and manual edits remain allowed')
 
 
 PY

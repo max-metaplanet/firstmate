@@ -17,7 +17,9 @@
 # completed with headroom. Each lane reports pass or fail separately, and any
 # real failure returns nonzero.
 # --expected-head refuses with exit 2 when the checkout HEAD differs from that
-# full commit ID, before starting a machine. verdict.json records the checked head.
+# full commit ID or tracked files have staged or unstaged changes, before planning
+# or starting a machine. Untracked files are allowed. Without --expected-head,
+# local edits remain allowed. verdict.json records the checked head.
 #
 # MACHINE SIZE
 # The default 4 CPU / 8 GB machine is tried first, with the two memory caps the

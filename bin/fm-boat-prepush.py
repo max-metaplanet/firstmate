@@ -257,9 +257,13 @@ def main(argv: list) -> int:
         raise Refusal('--worktree must be a repository root; %s is inside %s' % (worktree, top))
 
     head = git(worktree, 'rev-parse', 'HEAD^{commit}')
-    if args.expected_head is not None and args.expected_head != head:
-        raise Refusal('checkout HEAD %s does not match expected PR head %s'
-                      % (head, args.expected_head))
+    if args.expected_head is not None:
+        if args.expected_head != head:
+            raise Refusal('checkout HEAD %s does not match expected PR head %s'
+                          % (head, args.expected_head))
+        if git(worktree, 'status', '--porcelain', '--untracked-files=no', '--ignore-submodules=none'):
+            raise Refusal('tracked checkout content differs from expected PR head %s; '
+                          'staged or unstaged changes cannot certify that commit' % head)
 
     output = Path(args.output).resolve() if args.output else Path(
         tempfile.mkdtemp(prefix='fm-boat-prepush.', dir=str(worktree.parent)))
