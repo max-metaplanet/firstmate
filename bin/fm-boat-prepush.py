@@ -87,7 +87,7 @@ def changed_files(worktree: Path, scratch: Path, base: str, head: str) -> list:
     return files
 
 
-def command_string(files: list, base: str) -> str:
+def command_string(files: list) -> str:
     """The one command string the Boat test wrapper takes.
 
     The runner is written beside the uploaded source rather than into it, so the
@@ -104,7 +104,6 @@ def command_string(files: list, base: str) -> str:
         + runner +
         '\nFM_PREPUSH_RUNNER_EOF\n'
         'export FM_PREPUSH_DIR\n'
-        'export FM_PREPUSH_BASE=' + shlex.quote(base) + '\n'
         'export FM_PREPUSH_FILES=' + shlex.quote(json.dumps(files)) + '\n'
         'exec python3 "$FM_PREPUSH_DIR/runner.py"\n'
     )
@@ -242,7 +241,6 @@ def main(argv: list) -> int:
     parser.add_argument('--timeout', type=int, default=2700)
     parser.add_argument('--history-depth', type=int, default=None)
     parser.add_argument('--output', default=None)
-    parser.add_argument('--json', dest='json_path', default=None)
     args = parser.parse_args(argv)
 
     if not 1 <= args.timeout <= 2700:
@@ -264,7 +262,7 @@ def main(argv: list) -> int:
     head = git(worktree, 'rev-parse', 'HEAD^{commit}')
     base = resolve_base(worktree, args.base)
     files = changed_files(worktree, output, base, head)
-    command = command_string(files, base)
+    command = command_string(files)
 
     sys.stderr.write('fm-boat-prepush: %s..%s, %d changed files; evidence under %s\n'
                      % (base[:12], head[:12], len(files), output))
@@ -281,8 +279,6 @@ def main(argv: list) -> int:
     record = {'base': base, 'head': head, 'changed_files': len(files),
               'green': ok, 'failed': failed, 'attempts': runs}
     (output / 'verdict.json').write_text(json.dumps(record, indent=2), encoding='utf-8')
-    if args.json_path:
-        Path(args.json_path).write_text(json.dumps(record, indent=2), encoding='utf-8')
     return 0 if ok else 1
 
 

@@ -318,17 +318,40 @@ for command in ('docker', 'node', 'pnpm'):
 for script in ('db-local/restore-snapshot.sh', 'db-local/prd-guards.sh', 'action-db/start-postgrest.sh'):
     (service_source / '.github/scripts' / script).write_text(
         '#!/usr/bin/env bash\nexec node ' + script + '\n')
-subprocess.run(['git', 'init', '--quiet', str(service_source)], check=True)
-def commit_service(message):
-    subprocess.run(['git', '-C', str(service_source), '-c', 'user.name=Test',
-                    '-c', 'user.email=test@example.invalid', 'commit', '--quiet',
-                    '--allow-empty', '-m', message], check=True)
-commit_service('base')
-pr_base = subprocess.check_output(['git', '-C', str(service_source), 'rev-parse', 'HEAD'], text=True).strip()
+import shutil
+import shlex
+wrapper_tools = base / 'wrapper-tools'
+wrapper_tools.mkdir()
+shutil.copy2(repo / 'bin/fm-boat-test-wrapper.sh', wrapper_tools / 'fm-boat-test-wrapper.sh')
+adapter = wrapper_tools / 'fm-boat-run.sh'
+adapter.write_text('#!' + sys.executable + '\n' + """
+import json, subprocess, sys
+from pathlib import Path
+args = sys.argv[1:]
+output = Path(args[args.index('--output') + 1])
+output.mkdir(parents=True)
+result = subprocess.run(args[args.index('--') + 1:])
+(output / 'result.json').write_text(json.dumps({
+    'kind': 'completed', 'adapter_exit': result.returncode,
+    'remote_exit': result.returncode, 'cleanup': 'deleted',
+}))
+sys.exit(result.returncode)
+""")
+adapter.chmod(0o755)
 (service_source / 'candidate.sql').write_text('candidate migration')
-subprocess.run(['git', '-C', str(service_source), 'add', 'candidate.sql'], check=True)
-commit_service('head')
-os.environ['FM_PREPUSH_BASE'] = pr_base
+subprocess.run(['bash', str(wrapper_tools / 'fm-boat-test-wrapper.sh'), 'true'],
+               cwd=service_source, env={key: value for key, value in os.environ.items()
+                                       if key != 'FM_BOAT_TEST_HISTORY_DEPTH'},
+               capture_output=True, text=True, check=True)
+synthetic_base = subprocess.check_output(['git', '-C', str(service_source), 'rev-parse',
+                                         'refs/remotes/origin/main'], text=True).strip()
+assert subprocess.check_output(['git', '-C', str(service_source), 'ls-tree',
+                                synthetic_base], text=True) == ''
+assert subprocess.check_output(['git', '-C', str(service_source), 'rev-parse',
+                                'HEAD^'], text=True).strip() == synthetic_base
+assert 'candidate.sql' in subprocess.check_output([
+    'git', '-C', str(service_source), 'diff', '--name-only',
+    'refs/remotes/origin/main...HEAD'], text=True).splitlines()
 previous_path = os.environ['PATH']
 os.environ['PATH'] = str(service_bin) + os.pathsep + previous_path
 try:
@@ -345,7 +368,7 @@ try:
         else:
             assert any(call == ['node', 'db-local/restore-snapshot.sh'] for call in calls)
             assert any(call == ['node', '.github/scripts/db-local/ledger-delta.mjs',
-                                '--tiers', 'am', '--base-ref', pr_base] for call in calls)
+                                '--tiers', 'am', '--base-ref', 'refs/remotes/origin/main'] for call in calls)
             expected = ['pnpm', '--filter', '@core/db', 'exec', 'vitest', 'run',
                         '--config', './vitest.instrumented.config.ts', '--reporter=default'] if suite == 'db' else [
                         'pnpm', '--filter', '@core/metaplanet', 'test:postgrest', '--reporter=default']
@@ -354,12 +377,14 @@ try:
             failure_file.write_text(broken)
             assert remote.run_database(suite, service_source, base / 'service-evidence') != 0
             failure_file.unlink()
+    subprocess.run(['git', '-C', str(service_source), 'update-ref', '-d',
+                    'refs/remotes/origin/main'], check=True)
     for suite in ('db', 'actions'):
         service_log.write_text('')
-        os.environ['FM_PREPUSH_BASE'] = 'f' * 40
         assert remote.run_database(suite, service_source, base / 'service-evidence') != 0
         assert service_log.read_text() == '', 'setup ran before resolving its base'
-    os.environ['FM_PREPUSH_BASE'] = pr_base
+    subprocess.run(['git', '-C', str(service_source), 'update-ref',
+                    'refs/remotes/origin/main', synthetic_base], check=True)
 finally:
     os.environ['PATH'] = previous_path
 print('ok - database suites execute their selected commands, clean up, and reject setup or test failure')
@@ -380,8 +405,6 @@ try:
         ran = []
         def execute(name, group, argv, overlay, cwd):
             ran.append(name)
-            if group == 'database':
-                assert overlay['FM_PREPUSH_BASE'] == pr_base, overlay
             return {'name': name, 'exit': int(name == broken), 'oom': False, 'wall_s': 0}
         remote.run_lane = execute
         remote.emit = lambda kind, doc: events.append((kind, doc))
@@ -429,18 +452,17 @@ probe.write_text(
     'Path(os.environ["PROBE_RESULT"]).write_text(json.dumps({'
     '"cwd": os.getcwd(), "runner": str(Path(__file__).resolve()), '
     '"prepush": os.environ["FM_PREPUSH_DIR"], '
-    '"files": json.loads(os.environ["FM_PREPUSH_FILES"]), '
-    '"base": os.environ["FM_PREPUSH_BASE"]}))\n'
+    '"files": json.loads(os.environ["FM_PREPUSH_FILES"])}))\n'
     'sys.exit(23)\n')
 local.RUNNER = probe
 result_path = base / 'placement.json'
-executed = subprocess.run(['bash', '-c', local.command_string(files, pr_base)], cwd=source,
+executed = subprocess.run(['bash', '-c', local.command_string(files)], cwd=source,
                           env={**os.environ, 'PROBE_RESULT': str(result_path)},
                           capture_output=True, text=True)
 assert executed.returncode == 23, executed
 observed = json.loads(result_path.read_text())
 assert observed == {'cwd': str(source), 'runner': str(source.parent / 'prepush/runner.py'),
-                    'prepush': str(source.parent / 'prepush'), 'files': files, 'base': pr_base}, observed
+                    'prepush': str(source.parent / 'prepush'), 'files': files}, observed
 assert list(source.iterdir()) == [], list(source.iterdir())
 print('ok - the runner is written beside the uploaded source, never into it')
 
@@ -475,6 +497,34 @@ for mode in ('no-mistakes', 'direct-PR'):
             expected += ['--base', target]
         assert args == expected, (mode, target, args)
 print('ok - both publishing commands forward the explicit base with shell quoting')
+
+reader = base / '.github/scripts/test-plan/shard-scope.mjs'
+reader.parent.mkdir(parents=True, exist_ok=True)
+reader.write_text("import { execFileSync } from 'node:child_process';\n"
+                  "export function readChangedFiles(root, base, head) {\n"
+                  "  return execFileSync('git', ['diff', '--name-only', base, head],\n"
+                  "    {cwd: root, encoding: 'utf8'}).trim().split('\\n');\n}\n")
+subprocess.run(['git', '-C', str(base), 'add', '.github/scripts/test-plan/shard-scope.mjs'], check=True)
+subprocess.run(['git', '-C', str(base), '-c', 'user.name=Test', '-c',
+                'user.email=test@example.invalid', 'commit', '--quiet', '-m', 'reader'], check=True)
+wrapper_boundary = base / 'verdict-wrapper.sh'
+local.WRAPPER = wrapper_boundary
+os.environ['FM_HOME'] = str(base)
+for code in (0, 1):
+    wrapper_boundary.write_text("#!/usr/bin/env bash\nprintf '%s\\n' " +
+        shlex.quote('FM_BOAT_PREPUSH_LANE ' + json.dumps({
+            'name': 'probe', 'exit': code, 'wall_s': 0, 'oom': False})) + '\n' +
+        "printf '%s\\n' " + shlex.quote('FM_BOAT_PREPUSH_SUMMARY ' + json.dumps({
+            'failed': ['probe'] if code else [], 'oom': False})) + '\n')
+    destination = base / ('verdict-' + str(code))
+    assert local.main(['--worktree', str(base), '--base', 'HEAD^', '--output', str(destination)]) == code
+    record = json.loads((destination / 'verdict.json').read_text())
+    assert record['green'] is (code == 0), record
+    assert record['failed'] == (['probe'] if code else []), record
+    assert record['changed_files'] == 1, record
+    assert record['attempts'][0]['adapter_exit'] == 0, record
+print('ok - successful and failing verdicts persist under the output directory')
+
 
 PY
 pass "fm-boat-prepush"

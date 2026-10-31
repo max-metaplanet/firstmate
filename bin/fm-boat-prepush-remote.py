@@ -426,13 +426,21 @@ def select_lanes(plan: dict) -> list:
 
 
 def run_database(suite: str, source: Path, prepush: Path) -> int:
-    base_ref = os.environ['FM_PREPUSH_BASE']
+    """Use the wrapper's origin/main in both screened-history modes.
+
+    The synthetic empty-tree base marks every uploaded migration as added.
+    Snapshot fingerprints still skip applied names or content hashes; remaining
+    migrations enter fatal tier A instead of nonfatal tier M, conservatively
+    keeping candidate SQL failures fatal. Screened real ancestry gives the
+    actual base-branch diff through the same ref.
+    """
+    base_ref = CI_ENV['DIFF_BASE']
     if suite in ('db', 'actions'):
         for args in (['rev-parse', '--verify', base_ref + '^{commit}'],
                      ['merge-base', base_ref, 'HEAD']):
             result = subprocess.run(['git', *args], cwd=source, stdout=subprocess.DEVNULL)
             if result.returncode != 0:
-                sys.stderr.write('database setup cannot resolve the PR base and its ancestry: %s\n' % base_ref)
+                sys.stderr.write('database setup cannot resolve the wrapper base and its ancestry: %s\n' % base_ref)
                 return result.returncode
     images = json.loads((source / '.github/ci-images.json').read_text(encoding='utf-8'))
     approved = {}
@@ -464,7 +472,6 @@ def run_database(suite: str, source: Path, prepush: Path) -> int:
         'DB_LOCAL_LOGDIR': str(work / 'restore'),
         'NODE_OPTIONS': '--import tsx',
         'LEDGER_DELTA_REPORT': str(work / 'ledger-delta.json'),
-        'FM_PREPUSH_BASE': base_ref,
     }
     script = r'''
 set -euo pipefail
@@ -496,7 +503,7 @@ done
     if suite in ('db', 'actions'):
         script += r'''
 bash .github/scripts/db-local/restore-snapshot.sh
-node .github/scripts/db-local/ledger-delta.mjs --tiers am --base-ref "$FM_PREPUSH_BASE"
+node .github/scripts/db-local/ledger-delta.mjs --tiers am --base-ref "$DIFF_BASE"
 bash .github/scripts/db-local/prd-guards.sh "$PG_CONTAINER" "$DB_LOCAL_URL"
 '''
     if suite == 'db':
@@ -592,10 +599,7 @@ def main() -> int:
                   'database_not_run': not_run})
 
     for lane in lanes:
-        overlay = dict(lane['env'])
-        if lane['group'] == 'database':
-            overlay['FM_PREPUSH_BASE'] = os.environ['FM_PREPUSH_BASE']
-        result = run_lane(lane['name'], lane['group'], lane['argv'], overlay, source)
+        result = run_lane(lane['name'], lane['group'], lane['argv'], lane['env'], source)
         result['label'] = lane.get('label') or lane['name']
         result['command'] = ' '.join(lane['argv'])
         results.append(result)

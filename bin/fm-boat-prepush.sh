@@ -4,7 +4,7 @@
 # Usage:
 #   FM_HOME=/absolute/home fm-boat-prepush.sh [--worktree DIR] [--base REF]
 #       [--timeout SECONDS] [--history-depth N]
-#       [--output DIR] [--json FILE]
+#       [--output DIR]
 # Exit: 0 every selected lane passed, 1 a lane failed or no verdict was
 # produced, 2 invalid input, and the adapter's own codes for a Boat failure.
 #
@@ -47,6 +47,12 @@
 # find them. The changed-file list is therefore computed from real local Git and
 # handed to the remote planner as data, so the SELECTION never depends on
 # remote history even when the fixtures do.
+# Database migration setup uses refs/remotes/origin/main in both transports.
+# On default transport that ref is an EMPTY TREE, so the migration diff treats
+# every uploaded file as added. Snapshot fingerprints skip applied migrations;
+# remaining migrations enter fatal tier A rather than nonfatal tier M.
+# This conservative over-inclusion keeps candidate SQL failures fatal.
+# With --history-depth the same ref carries the real base and the diff is exact.
 # --history-depth is available only where the project's own history passes the
 # adapter's credential screening, which scans every historical blob and commit
 # and refuses the whole run locally before any Boat call. A repository whose
