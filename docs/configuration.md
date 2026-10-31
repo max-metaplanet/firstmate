@@ -1582,7 +1582,7 @@ another-project	merge-queue
 Project names and check names may contain spaces but cannot contain tabs or control characters.
 Blank lines and lines beginning with `#` followed by whitespace are comments.
 An absent file or an omitted project leaves behavior unchanged.
-Repeated project lines declare several checks; a repeated project-and-check pair, a malformed entry, and an unreadable file fail the lookup rather than silently dropping a declaration.
+Repeated project lines declare several checks; a repeated project-and-check pair, an empty check name, any other malformed entry, and an unreadable file fail the lookup rather than silently dropping a declaration.
 Firstmate neither reads the project's queue configuration nor confirms the declaration against the forge, so a name that stops being queue-only has to be removed here by hand.
 
 A declared check that has not reported on the head is treated as running in the merge queue instead of as missing, and is printed as `QUEUE-ONLY CHECK`.

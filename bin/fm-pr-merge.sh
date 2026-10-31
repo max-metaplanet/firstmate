@@ -907,8 +907,13 @@ forgejo_default_merge_style() {
 # printing it during that wait, and FM_PR_VERIFY_REFUSAL_REPORT keeps it so a
 # spent bound can report what never became ready without another live read.
 # The required checks this run lets the project's merge queue report instead of
-# the head, empty unless the ready-hold release path below sets it.
+# the head, empty unless the ready-hold release path below sets it, and whether
+# the verification actually waived one. The waiver is decided from a label read
+# taken before the merge lock, while the release decision is taken inside it, so
+# a label removed in between would otherwise turn a waived verification into an
+# unwaived direct merge. The flag is what lets that case refuse.
 FM_PR_QUEUE_ONLY_CHECKS=
+FM_PR_QUEUE_ONLY_WAIVED=false
 FM_PR_VERIFY_QUIET=false
 FM_PR_VERIFY_REFUSAL_REPORT=
 FM_PR_GITHUB_VERIFY_HEAD=
@@ -1050,6 +1055,7 @@ EOF
     github_defer_queue_only "$missing" "$FM_PR_QUEUE_ONLY_CHECKS"
     missing=$FM_PR_QUEUE_ONLY_BLOCKING
     deferred=$FM_PR_QUEUE_ONLY_DEFERRED
+    [ -z "$deferred" ] || FM_PR_QUEUE_ONLY_WAIVED=true
     while IFS= read -r name; do
       [ -n "$name" ] || continue
       [ "${#ALLOW_MISSING[@]}" -gt 0 ] && [ "${ALLOW_MISSING[0]}" = "$name" ] && continue
@@ -1836,6 +1842,10 @@ case "$PROVIDER" in
       if printf '%s' "$ready_hold_json" | jq -e --arg label "$ready_hold_label" '.labels | any(.name == $label)' >/dev/null; then
         ready_hold_present=true
       fi
+    fi
+    if [ "$FM_PR_QUEUE_ONLY_WAIVED" = true ] && [ "$ready_hold_present" != true ]; then
+      echo 'error: required checks were left to the project merge queue, but this pull request no longer carries its ready-hold label, so landing it here would be a direct merge those checks never ran for; nothing merged' >&2
+      exit 1
     fi
     merge_status=0
     if [ "$ready_hold_present" = true ]; then

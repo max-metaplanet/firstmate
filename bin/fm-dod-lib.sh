@@ -700,7 +700,7 @@ QUEUE_ONLY
   cat <<EOF
 
 # Merge-queue required checks
-This section supersedes every earlier CI-wait instruction that treats an unreported required check as a reason to keep waiting.
+This section supersedes every earlier CI-wait instruction for the checks it names below, and for no others.
 This project runs some of its required checks only in its merge queue, so they never report on a pull-request head.
 Name them on every CI wait you run:
 \`$_FM_DOD_LIB_DIR/fm-pr-checks.sh --watch$flags <pr-url>\`.
