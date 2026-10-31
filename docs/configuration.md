@@ -1567,6 +1567,32 @@ Release is attended-only because the bot may land the PR asynchronously.
 Yolo-on tasks, other forges, and a PR without the configured label retain their existing merge behavior.
 [`bin/fm-ready-hold-lib.sh`](../bin/fm-ready-hold-lib.sh) owns lookup and label verification; [`bin/fm-dod-lib.sh`](../bin/fm-dod-lib.sh) owns the generated worker contract.
 
+## Queue-only required checks (config/project-queue-only-checks)
+
+The optional, gitignored `config/project-queue-only-checks` names the required checks a project runs only in its merge queue, which therefore never report on an ordinary pull-request head.
+Without it, such a check reads as a required check that has not reported, and a ready or CI wait polls for it forever.
+Each entry has the clone directory basename, one literal tab, and the exact check name, with one line per check:
+
+```text
+my-project	tests-verdict
+my-project	db/gate-verdict
+another-project	merge-queue
+```
+
+Project names and check names may contain spaces but cannot contain tabs or control characters.
+Blank lines and lines beginning with `#` followed by whitespace are comments.
+An absent file or an omitted project leaves behavior unchanged.
+Repeated project lines declare several checks; a repeated project-and-check pair, a malformed entry, and an unreadable file fail the lookup rather than silently dropping a declaration.
+Firstmate neither reads the project's queue configuration nor confirms the declaration against the forge, so a name that stops being queue-only has to be removed here by hand.
+
+A declared check that has not reported on the head is treated as running in the merge queue instead of as missing, and is printed as `QUEUE-ONLY CHECK`.
+Every other required check must still be green, and a declared check that reports red or is still running on the head still blocks.
+[`bin/fm-pr-checks.sh`](../bin/fm-pr-checks.sh) takes the names as `--queue-only <name>`, [`bin/fm-pr-refresh.sh`](../bin/fm-pr-refresh.sh) passes the project's declaration to its ready wait, and the generated launch and promotion instructions name them in the worker's CI wait.
+
+`bin/fm-pr-merge.sh` applies the declaration only on the ready-hold release path, where it removes the hold label and the project's merge bot runs those checks in its queue before landing; landing is still recorded only once the merge is observed.
+A direct merge keeps demanding every required check at the head, because no queue would run the missing ones and this declaration is local text the forge never confirms.
+[`bin/fm-queue-only-lib.sh`](../bin/fm-queue-only-lib.sh) owns the lookup and [`bin/fm-pr-checks-lib.sh`](../bin/fm-pr-checks-lib.sh) owns what a declared name does to a check verdict.
+
 ## Project capacity (config/project-capacity)
 
 The optional local, gitignored `config/project-capacity` tells Firstmate how many workers a project can run at once on this machine, for a project whose machine-local resource - a heavy test suite, a local editor stack, a device - only serves a few workers at a time.

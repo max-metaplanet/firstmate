@@ -177,6 +177,8 @@ case $_FM_DOD_LIB_DIR in /*) ;; .) _FM_DOD_LIB_DIR=$PWD ;; *) _FM_DOD_LIB_DIR=$P
 . "$_FM_DOD_LIB_DIR/fm-external-review-lib.sh"
 # shellcheck source=bin/fm-ready-hold-lib.sh
 . "$_FM_DOD_LIB_DIR/fm-ready-hold-lib.sh"
+# shellcheck source=bin/fm-queue-only-lib.sh
+. "$_FM_DOD_LIB_DIR/fm-queue-only-lib.sh"
 
 # The bound on the one live `git ls-remote origin` the named-head gate makes.
 # Overridable so a test can prove a stalled remote refuses rather than hangs.
@@ -680,6 +682,30 @@ $pipeline
 Before reporting done, read the PR labels again and confirm the configured label is still present.
 If applying or verifying the label fails, keep the PR draft and report the failure to firstmate.
 Never remove the ready-hold label yourself; firstmate's approved merge path releases it to the project's merge bot.
+EOF
+}
+
+fm_dod_queue_only_block() {  # <config-dir> <project-dir> <forge> <mode>
+  local names name flags=''
+  case "$3:$4" in none:no-mistakes|github:no-mistakes|none:direct-PR|github:direct-PR) ;; *) return 0 ;; esac
+  names=$(fm_queue_only_checks "$1" "$(basename "$2")") || return 1
+  [ -n "$names" ] || return 0
+  while IFS= read -r name; do
+    [ -n "$name" ] || continue
+    printf -v name '%q' "$name"
+    flags="$flags --queue-only $name"
+  done <<QUEUE_ONLY
+$names
+QUEUE_ONLY
+  cat <<EOF
+
+# Merge-queue required checks
+This section supersedes every earlier CI-wait instruction that treats an unreported required check as a reason to keep waiting.
+This project runs some of its required checks only in its merge queue, so they never report on a pull-request head.
+Name them on every CI wait you run:
+\`$_FM_DOD_LIB_DIR/fm-pr-checks.sh --watch$flags <pr-url>\`.
+The wait then reports each one as QUEUE-ONLY CHECK and stops blocking on it, while every other required check must still be green and a named check that reports red on the head still fails.
+A named check missing from the head is expected, so never rerun CI, push again, or report a blocker over it.
 EOF
 }
 

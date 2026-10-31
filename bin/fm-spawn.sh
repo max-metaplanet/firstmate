@@ -4419,7 +4419,8 @@ if [ "$KIND" = ship ] || [ "$KIND" = scout ]; then
       printf '\n' &&
       cat "$SOURCE_BRIEF" &&
       if [ "$KIND" = ship ]; then
-        fm_dod_ready_hold_block "$CONFIG" "$PROJ_ABS" "$YOLO" "${READY_HOLD_FORGE:-none}" "$MODE"
+        fm_dod_ready_hold_block "$CONFIG" "$PROJ_ABS" "$YOLO" "${READY_HOLD_FORGE:-none}" "$MODE" &&
+          fm_dod_queue_only_block "$CONFIG" "$PROJ_ABS" "${READY_HOLD_FORGE:-none}" "$MODE"
       fi &&
       if [ "$KIND" = ship ] && [ "$MODE" = no-mistakes ]; then
         fm_brief_intent_overlay "$CAPTAIN_INTENT"

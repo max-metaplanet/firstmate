@@ -434,6 +434,44 @@ EOF
   pass "fenced and indented Captain lines are not authorized intent"
 }
 
+test_queue_only_instructions_name_every_declared_check() {
+  local config="$TMP_ROOT/queue-only-config" mode forge out
+  mkdir -p "$config"
+  for mode in no-mistakes direct-PR; do
+    out=$(fm_dod_queue_only_block "$config" /projects/widget none "$mode") || fail 'absent declaration failed'
+    [ -z "$out" ] || fail 'absent declaration changed instructions'
+    printf 'widget\ttests verdict\nwidget\tdb/gate-verdict\nother\tnoise\n' \
+      > "$config/project-queue-only-checks"
+    out=$(fm_dod_queue_only_block "$config" /projects/widget none "$mode") || fail 'configured render failed'
+    assert_contains "$out" '--queue-only tests\ verdict' 'check name not shell quoted'
+    assert_contains "$out" '--queue-only db/gate-verdict' 'second declared check omitted'
+    case "$out" in *noise*) fail 'another project leaked into the instructions' ;; esac
+    assert_contains "$out" 'fm-pr-checks.sh --watch' 'the wait command was not named'
+    assert_contains "$out" 'still fails' 'a red declared check was not kept blocking'
+    assert_contains "$out" 'never rerun CI' 'the instruction allowed a rerun over an expected absence'
+    out=$(fm_dod_queue_only_block "$config" /projects/unconfigured none "$mode") || fail 'unconfigured render failed'
+    [ -z "$out" ] || fail 'another project inherited a declaration'
+    rm "$config/project-queue-only-checks"
+  done
+  printf 'widget\ttests-verdict\n' > "$config/project-queue-only-checks"
+  for forge in gitlab forgejo gerrit external; do
+    out=$(fm_dod_queue_only_block "$config" /projects/widget "$forge" no-mistakes) || fail 'other forge render failed'
+    [ -z "$out" ] || fail "queue-only changed $forge instructions"
+  done
+  out=$(fm_dod_queue_only_block "$config" /projects/widget none local-only) || fail 'local-only render failed'
+  [ -z "$out" ] || fail 'local-only instructions changed'
+  printf 'widget\ttests-verdict\nwidget\ttests-verdict\n' > "$config/project-queue-only-checks"
+  if fm_dod_queue_only_block "$config" /projects/widget none no-mistakes > /dev/null 2>&1; then
+    fail 'a duplicate declaration was silently accepted'
+  fi
+  printf 'widget\n' > "$config/project-queue-only-checks"
+  if fm_dod_queue_only_block "$config" /projects/widget none no-mistakes > /dev/null 2>&1; then
+    fail 'a malformed declaration was silently accepted'
+  fi
+  rm "$config/project-queue-only-checks"
+  pass 'queue-only instructions name every declared check for GitHub PR delivery only'
+}
+
 # The draft check the DoD hands a worker must be the gh-axi path that rule 3 of
 # every ship brief requires for GitHub operations, never raw gh (issue 5325).
 test_ready_hold_instructions_follow_task_posture() {
@@ -865,6 +903,7 @@ test_standalone_local_only_needs_project_ref
 test_non_done_lines_are_not_gated
 test_fenced_and_indented_captain_lines_are_not_intent
 test_ready_hold_instructions_follow_task_posture
+test_queue_only_instructions_name_every_declared_check
 test_pr_based_dod_draft_check_uses_gh_axi
 test_promotion_keeps_the_recorded_base_branch
 
