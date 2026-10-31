@@ -1570,7 +1570,7 @@ Yolo-on tasks, other forges, and a PR without the configured label retain their 
 ## Queue-only required checks (config/project-queue-only-checks)
 
 The optional, gitignored `config/project-queue-only-checks` names the required checks a project runs only in its merge queue, which therefore never report on an ordinary pull-request head.
-Without it, such a check reads as a required check that has not reported, and a ready or CI wait polls for it forever.
+Without it, such a check reads as a required check that has not reported, and the wait polls until its timeout, or forever if unbounded.
 Each entry has the clone directory basename, one literal tab, and the exact check name, with one line per check:
 
 ```text

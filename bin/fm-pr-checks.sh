@@ -14,7 +14,8 @@
 # and every other required check must still be green.
 # --timeout <seconds> bounds --watch: when the wait is still pending or missing
 # at that bound it reports the outstanding checks and exits 8 rather than
-# polling forever. 0, the default, keeps the wait unbounded.
+# polling forever. 0, the default, keeps the wait unbounded. Raise --timeout
+# for a legitimately long CI run.
 # --settled requires --watch and waits for every reported check on the head
 # to finish, including advisory checks, before returning a red/green verdict.
 # It batches CI repair rounds without changing which failures block readiness.
@@ -22,7 +23,6 @@
 # bound was SKIPPED, so it is missing until a run at or after the bound reports;
 # completed non-skipped earlier results still count. Pass the PR's
 # ready_for_review time when its checks were skipped while it was a draft.
-# Apply a caller-owned timeout when a bounded foreground wait is needed.
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -154,7 +154,7 @@ EOF
       printf 'fm-pr-checks: gave up after %ss waiting for %s on %s\n' \
         "$TIMEOUT" "${BLOCKERS:-the required checks}" "$URL" >&2
       printf '%s\n' \
-        "fm-pr-checks: a check that only runs in this project's merge queue belongs in --queue-only; otherwise find out why it has not reported" >&2
+        "fm-pr-checks: a check that only runs in this project's merge queue belongs in --queue-only; otherwise find out why it has not reported, or raise --timeout for a legitimately long CI run" >&2
       exit 8
     fi
   fi

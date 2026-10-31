@@ -240,7 +240,7 @@ pass 'a declared queue-only check still counts when it reports red or is running
 queue_head SUCCESS > "$TASK_TMP/view.json"
 : > "$TASK_TMP/reads"
 FM_PR_CHECKS_POLL=1 expect_result 8 --watch --timeout 1
-[ "$(wc -l < "$TASK_TMP/reads" | tr -d ' ')" = 2 ] || fail 'the bounded wait did not re-read before giving up'
+assert_grep '--timeout' "$TASK_TMP/err" 'the bounded wait did not explain how to allow longer CI runs'
 assert_grep 'gave up after 1s' "$TASK_TMP/err" 'the bounded wait did not report giving up'
 assert_grep 'queue-verdict (missing)' "$TASK_TMP/err" 'the bounded wait did not name the outstanding check'
 assert_grep '--queue-only' "$TASK_TMP/err" 'the bounded wait did not say what to do about it'

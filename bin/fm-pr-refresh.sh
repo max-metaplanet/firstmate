@@ -19,6 +19,7 @@
 # pull-request head does not hold the refresh (docs/configuration.md
 # "Queue-only required checks"). The wait is bounded by FM_PR_READY_TIMEOUT
 # seconds, 3600 by default, and a spent bound retains the hold.
+# Raise FM_PR_READY_TIMEOUT for a legitimately long CI run.
 # --ready-ci states the repository's CI policy:
 # reruns when ready_for_review re-runs draft-skipped checks (the wait adds
 # --after the ready_for_review timeline time, so draft-era skips never count),
@@ -135,11 +136,11 @@ if [ "$READY_CI" = reruns ]; then
   [[ "$READY_AT" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]] || die 'ready timeline time unavailable; hold retained'
   "$SCRIPT_DIR/fm-pr-checks.sh" --watch --timeout "$READY_TIMEOUT" --after "$READY_AT" \
     ${QUEUE_ONLY_ARGS[@]+"${QUEUE_ONLY_ARGS[@]}"} "$URL" \
-    || die 'ready CI wait did not pass; hold retained'
+    || die 'ready CI wait did not pass; hold retained; raise FM_PR_READY_TIMEOUT for a legitimately long CI run'
 else
   "$SCRIPT_DIR/fm-pr-checks.sh" --watch --timeout "$READY_TIMEOUT" \
     ${QUEUE_ONLY_ARGS[@]+"${QUEUE_ONLY_ARGS[@]}"} "$URL" \
-    || die 'ready CI wait did not pass; hold retained'
+    || die 'ready CI wait did not pass; hold retained; raise FM_PR_READY_TIMEOUT for a legitimately long CI run'
 fi
 if [ -n "$READY_HOLD_LABEL" ]; then
   fm_ready_hold_verify "$URL" "$READY_HOLD_LABEL" || die 'ready-hold label missing after CI; hold retained'
