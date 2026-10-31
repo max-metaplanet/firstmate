@@ -4,15 +4,18 @@ import fcntl
 import json
 import os
 import re
-from pathlib import Path
 import shutil
 import signal
 import subprocess
 import sys
 import tarfile
+from pathlib import Path
 
 # Test wrapper supplies its own record root outside the isolated CLI HOME.
 root = Path(sys.argv[1])
+account = {'boat_fixture_secret': '', 'boat_fixture_second': 'account-2'}[os.environ['BOAT_API_KEY']]
+if account:
+    root = root / account
 fixture = json.loads((root / 'fixture.json').read_text())
 state_path = root / 'fake-vms.json'
 args = sys.argv[2:]
@@ -27,14 +30,15 @@ with (root / 'fake.lock').open('a') as handle:
     state = json.loads(state_path.read_text()) if state_path.exists() else []
     with (root / 'calls.jsonl').open('a') as log:
         log.write(json.dumps(args) + '\n')
-    assert os.environ['BOAT_API_KEY'] == 'boat_fixture_secret'
     assert 'DEV_SECRET' not in os.environ
     assert 'NODE_OPTIONS' not in os.environ
     if fixture.get('unreachable') and command == 'limits':
         sys.exit(1)
     if command == 'limits':
-        print(json.dumps({'starts': {w: {'remaining': fixture.get('remaining', 10)}
-                                    for w in ('minute', 'hour', 'day')}}))
+        print(json.dumps({'starts': {w: {'remaining': fixture.get(w + '_remaining', fixture.get('remaining', 10))}
+                                    for w in ('minute', 'hour', 'day')},
+                          'canStart': fixture.get('canStart', True),
+                          'nextStartDollars': fixture.get('nextStartDollars', 0)}))
     elif command == 'list':
         print(json.dumps({'sandboxes': state, 'pageInfo': {'hasMore': fixture.get('hasMore', False)}}))
     elif command == 'new':

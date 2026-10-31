@@ -6,7 +6,20 @@
 #       [--timeout SECONDS] [--swap-gib 0..4] -- COMMAND [ARGS...]
 #   FM_HOME=/absolute/home fm-boat-run.sh reap
 # Requires python3 and Boat CLI 1.0.85+ on PATH (FM_BOAT_BIN may name a binary).
-# Reads ~/.config/boat/api-key afresh ONLY into each Boat child's environment.
+# Accounts: optional FM_HOME/config/boat-keys, one key-file path per line,
+# followed by optional live_cap=N pending_cap=N daily_cap=N fields.
+# Example (paths only, never key values):
+#   ~/.config/boat/api-key
+#   /absolute/second-account-key live_cap=6 pending_cap=6 daily_cap=170
+# Caps are positive integers, defaulting to 2 live, 2 pending, 75 starts/UTC day.
+# Paths must be absolute or start with ~; shell quoting, blank lines and # comments
+# are supported. Relative/duplicate paths, unknown/duplicate fields, invalid caps
+# and an empty or unreadable file are refused. No shell expansion is performed
+# except leading ~. Without this file, only ~/.config/boat/api-key is used with
+# the original 2 live, 2 pending and 75 daily local start caps.
+# Tries accounts in order, skipping full/exhausted/unavailable accounts; returns
+# 75 when all accounts lack capacity/budget, 69 if an unavailable account remains.
+# Reads the selected key file afresh ONLY into each Boat child's environment.
 # Does not forward the invoking environment, account environments, credentials,
 # git history, .git, dependency caches, symlinks, or conventional secret files.
 # Callers must supply secret-free source, extra inputs, command and artifacts;
@@ -31,12 +44,16 @@
 # when result.json kind is unavailable; remote commands can also exit 69/75.
 # Never wrap this adapter in fm-build-lock.py: remote work consumes no local
 # heavy slot. Only a deliberate local fallback goes through that wrapper.
-# Trial guard: default 4 CPU/8 GB VMs only, no snapshots, at most two pending/
-# live records per home AND account capacity checked before create. Provider
-# limits enforce account-wide races from other homes/clients. Check minute,
-# hour and daily remaining starts; reserve at most 75 local attempts/UTC day.
+# Budget guard: default 4 CPU/8 GB VMs only, no snapshots. Pending reservations
+# and local daily attempts are counted per account in this home; live VM count,
+# included-cost eligibility and minute/hour/day starts use that account's key.
+# Provider limits enforce account-wide races from other homes/clients.
 # The home lock serializes admission/create; uncertain creates are never retried.
-# State owner: FM_HOME/state/boat-offload/{jobs/<uuid>.json,daily.json,*.lock}.
+# State owner: FM_HOME/state/boat-offload/{jobs/<uuid>.json,daily*.json,*.lock}.
+# The default key retains daily.json; other counters use a hash of the key path.
+# Each job stores its account key-file path, never its key value. Cleanup/reap
+# uses that path even after config changes; legacy records use the default key.
+# Keep key files available and do not repoint them until their jobs are deleted.
 # Each job is recorded BEFORE create under a unique VM name. IDs and deletion
 # operation IDs are persisted as learned. SIGINT/SIGTERM/SIGHUP run cleanup;
 # SIGKILL/host loss leave records for reap, and TTL bounds running VM lifetime.
