@@ -597,7 +597,7 @@ skipped=$(sed -n 's/^# skipped \([0-9]*\)$/\1/p' "$RUNTIME_TAP" | tail -1)
     return subprocess.run(['bash', '-c', script], cwd=source, env=lane_env(env)).returncode
 
 
-def install(source: Path) -> dict:
+def install(source: Path, timeout: float = 600) -> dict:
     """Install the change's own frozen dependencies.
 
     Corepack is enabled first so the package manager is the exact version the
@@ -608,7 +608,7 @@ def install(source: Path) -> dict:
     return run_lane('install', 'setup', [
         'bash', '-c',
         'corepack enable pnpm >/dev/null 2>&1 || true\nexec pnpm install --frozen-lockfile',
-    ], {}, source)
+    ], {}, source, timeout=timeout)
 
 
 # The only working directory a disposable Boat machine runs the command in
@@ -628,6 +628,8 @@ def main() -> int:
             'the local machine.' % (source, REMOTE_SOURCE))
     if len(sys.argv) == 3 and sys.argv[1] == '--database':
         return run_database(sys.argv[2], source, Path(__file__).resolve().parent)
+    # Leave room for run_lane's five-second kill grace and summary transport.
+    deadline = time.monotonic() + float(os.environ['FM_PREPUSH_TIMEOUT']) - 10
     prepush = Path(os.environ['FM_PREPUSH_DIR'])
     prepush.mkdir(parents=True, exist_ok=True)
     if not (source / '.github/scripts/test-plan').is_dir():
@@ -635,7 +637,7 @@ def main() -> int:
     if shutil.which('node') is None:
         raise Unusable('node is not on PATH on this machine')
 
-    results = [install(source)]
+    results = [install(source, max(0, min(600, deadline - time.monotonic())))]
     emit('LANE', results[0])
     if results[0]['exit'] != 0:
         emit('SUMMARY', {'lanes': results, 'plan': None, 'database_not_run': [],
@@ -651,8 +653,14 @@ def main() -> int:
     emit('PLAN', {'plan': plan, 'lanes': [lane['name'] for lane in lanes],
                   'database_not_run': not_run})
 
-    for lane in lanes:
-        result = run_lane(lane['name'], lane['group'], lane['argv'], lane['env'], source)
+    unreported = []
+    for index, lane in enumerate(lanes):
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            unreported = [pending['name'] for pending in lanes[index:]]
+            break
+        result = run_lane(lane['name'], lane['group'], lane['argv'], lane['env'], source,
+                          timeout=min(600, remaining))
         result['label'] = lane.get('label') or lane['name']
         result['command'] = ' '.join(lane['argv'])
         results.append(result)
@@ -663,8 +671,9 @@ def main() -> int:
         'lanes': results,
         'plan': plan,
         'database_not_run': not_run,
-        'failed': failed,
-        'oom': bool(failed) and all(r['oom'] for r in results if r['exit'] != 0 and not r.get('history_only')),
+        'unreported': unreported,
+        'failed': failed + unreported,
+        'oom': not unreported and bool(failed) and all(r['oom'] for r in results if r['exit'] != 0 and not r.get('history_only')),
     })
     return 0
 

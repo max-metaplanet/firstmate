@@ -457,6 +457,7 @@ remote.install = lambda *args: {'name': 'install', 'exit': 0, 'oom': False, 'wal
 original_cwd = Path.cwd()
 original_argv = sys.argv
 os.environ['FM_PREPUSH_FILES'] = '["change"]'
+os.environ['FM_PREPUSH_TIMEOUT'] = '2700'
 os.environ['FM_PREPUSH_DIR'] = str(base / 'main-evidence')
 try:
     os.chdir(service_source)
@@ -464,7 +465,7 @@ try:
     for broken in ('', 'database-actions'):
         events = []
         ran = []
-        def execute(name, group, argv, overlay, cwd):
+        def execute(name, group, argv, overlay, cwd, timeout=600):
             ran.append(name)
             if name == broken:
                 return saved[3](name, group, [sys.executable, '-c',
@@ -490,7 +491,42 @@ try:
             assert summary['failed'] == ['database-actions']
             assert summary['oom'] is False
         assert local.verdict({'adapter_exit': 0, 'summary': summary})[0] is (broken == '')
+    # Run-budget contract: the adapter must receive a summary before its
+    # deadline, with an active timeout and every never-started lane named.
+    # A 600-second lane limit would leave this real subprocess running for 2s
+    # and incorrectly report green instead of respecting the 1s lane budget.
+    os.environ['FM_PREPUSH_TIMEOUT'] = '11'
+    events, limits, ran = [], [], []
+    remote.read_plan = lambda *args: plan(node={'matrix': [
+        {'name': 'first', 'filters': [], 'passthrough': []},
+        {'name': 'second', 'filters': [], 'passthrough': []},
+    ]}, quality={})
+    def budget_execute(name, group, argv, overlay, cwd, timeout=600):
+        ran.append(name)
+        limits.append(timeout)
+        return saved[3](name, group, [sys.executable, '-c',
+            "import time; print('budget diagnostic', flush=True); time.sleep(2)"],
+            {}, cwd, timeout=timeout)
+    remote.run_lane = budget_execute
+    remote.emit = lambda kind, doc: events.append((kind, doc))
+    started = remote.time.monotonic()
+    assert remote.main() == 0
+    elapsed = remote.time.monotonic() - started
+    assert events[-1][0] == 'SUMMARY', events
+    summary = events[-1][1]
+    assert len(ran) == 1 and 0 < limits[0] <= 1, (ran, limits)
+    assert elapsed < 6, elapsed
+    active = summary['lanes'][-1]
+    assert active['timeout'] and active['exit'] == 124 and not active['oom'], active
+    assert 'budget diagnostic' in active['output_tail'], active
+    planned = next(doc['lanes'] for kind, doc in events if kind == 'PLAN')
+    assert summary['unreported'] == planned[1:] and summary['unreported'], summary
+    assert set(summary['failed']) == set(planned), summary
+    assert not local.should_retry_large({'size': 'default', 'adapter_exit': 0,
+                                         'summary': summary})
+    print('ok - remaining run budget clamps lanes and preserves the summary')
 finally:
+    os.environ.pop('FM_PREPUSH_TIMEOUT', None)
     os.chdir(original_cwd)
     sys.argv = original_argv
     remote.REMOTE_SOURCE, remote.read_plan, remote.install, remote.run_lane, remote.emit = saved
@@ -521,17 +557,19 @@ probe.write_text(
     'Path(os.environ["PROBE_RESULT"]).write_text(json.dumps({'
     '"cwd": os.getcwd(), "runner": str(Path(__file__).resolve()), '
     '"prepush": os.environ["FM_PREPUSH_DIR"], '
+    '"timeout": os.environ["FM_PREPUSH_TIMEOUT"], '
     '"files": json.loads(os.environ["FM_PREPUSH_FILES"])}))\n'
     'sys.exit(23)\n')
 local.RUNNER = probe
 result_path = base / 'placement.json'
-executed = subprocess.run(['bash', '-c', local.command_string(files)], cwd=source,
+executed = subprocess.run(['bash', '-c', local.command_string(files, 123)], cwd=source,
                           env={**os.environ, 'PROBE_RESULT': str(result_path)},
                           capture_output=True, text=True)
 assert executed.returncode == 23, executed
 observed = json.loads(result_path.read_text())
 assert observed == {'cwd': str(source), 'runner': str(source.parent / 'prepush/runner.py'),
-                    'prepush': str(source.parent / 'prepush'), 'files': files}, observed
+                    'prepush': str(source.parent / 'prepush'), 'timeout': '123',
+                    'files': files}, observed
 assert list(source.iterdir()) == [], list(source.iterdir())
 print('ok - the runner is written beside the uploaded source, never into it')
 
