@@ -26,6 +26,8 @@ set -o pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=bin/fm-pr-lib.sh
 . "$SCRIPT_DIR/fm-pr-lib.sh"
+# shellcheck source=bin/fm-ready-hold-lib.sh
+. "$SCRIPT_DIR/fm-ready-hold-lib.sh"
 
 die() { printf 'fm-pr-refresh: %s\n' "$*" >&2; exit 1; }
 if [ "${1:-}" = --help ]; then
@@ -91,6 +93,15 @@ if [ "$ACTION" = prepare ]; then
 fi
 
 [ -f "$HOLD" ] || die 'no conflict-refresh hold exists for this task'
+READY_HOLD_LABEL=
+if [ "$(sed -n 's/^yolo=//p' "$META" | tail -n 1)" != on ]; then
+  project=$(sed -n 's/^project=//p' "$META" | tail -n 1)
+  READY_HOLD_LABEL=$(fm_ready_hold_label "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}" "$(basename "$project")") \
+    || die 'ready-hold declaration is unreadable; hold retained'
+fi
+if [ -n "$READY_HOLD_LABEL" ]; then
+  fm_ready_hold_apply "$URL" "$READY_HOLD_LABEL" || die 'could not apply ready-hold label; hold retained'
+fi
 if [ "$DRAFT" = true ]; then
   gh-axi pr ready "$FM_PR_NUMBER" --repo "$FM_PR_PATH" || die 'could not mark PR ready'
 fi
@@ -103,6 +114,9 @@ if [ "$READY_CI" = reruns ]; then
   "$SCRIPT_DIR/fm-pr-checks.sh" --watch --after "$READY_AT" "$URL"
 else
   "$SCRIPT_DIR/fm-pr-checks.sh" --watch "$URL"
+fi
+if [ -n "$READY_HOLD_LABEL" ]; then
+  fm_ready_hold_verify "$URL" "$READY_HOLD_LABEL" || die 'ready-hold label missing after CI; hold retained'
 fi
 rm "$HOLD"
 printf 'resolved [at=%s]: conflict-refresh hold cleared for %s after ready CI passed\n' "$(date +%s)" "$URL" >> "$STATE/$ID.status"

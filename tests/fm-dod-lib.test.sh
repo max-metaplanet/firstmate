@@ -436,6 +436,53 @@ EOF
 
 # The draft check the DoD hands a worker must be the gh-axi path that rule 3 of
 # every ship brief requires for GitHub operations, never raw gh (issue 5325).
+test_ready_hold_instructions_follow_task_posture() {
+  local config="$TMP_ROOT/ready-hold-config" mode yolo forge out
+  mkdir -p "$config"
+  for mode in no-mistakes direct-PR; do
+    out=$(fm_dod_ready_hold_block "$config" /projects/widget off none "$mode") || fail 'absent declaration failed'
+    [ -z "$out" ] || fail 'absent declaration changed instructions'
+    printf 'widget\thold for approval\nother\tstop\n' > "$config/project-ready-hold-label"
+    for yolo in on off; do
+      out=$(fm_dod_ready_hold_block "$config" /projects/widget "$yolo" none "$mode") || fail 'configured render failed'
+      if [ "$yolo" = off ]; then
+        assert_contains "$out" '--add-label hold\ for\ approval' 'label not shell quoted'
+        assert_contains "$out" 'gh-axi pr edit <number> --repo <owner>/<repo>' 'edit must use numeric PR and explicit repository'
+        assert_contains "$out" 'gh-axi pr ready <number> --repo <owner>/<repo>' 'ready must use numeric PR and explicit repository'
+        assert_contains "$out" 'Only after that verification' 'ready must follow verified label'
+        # shellcheck disable=SC2016 # The generated instruction contains literal command markup.
+        assert_contains "$out" 'including by no-mistakes or `fm-pr-refresh.sh`' 'delegated readiness not covered'
+        assert_contains "$out" 'Before reporting done' 'done must verify hold'
+        if [ "$mode" = direct-PR ]; then
+          case "$out" in *'Require no-mistakes'*) fail 'direct-PR gained a pipeline requirement' ;; esac
+        else
+          assert_contains "$out" 'Require no-mistakes' 'pipeline readiness ordering omitted'
+        fi
+      else
+        [ -z "$out" ] || fail 'yolo-on instructions changed'
+      fi
+    done
+    out=$(fm_dod_ready_hold_block "$config" /projects/unconfigured off none "$mode") || fail 'unconfigured render failed'
+    [ -z "$out" ] || fail 'another project inherited a label'
+    rm "$config/project-ready-hold-label"
+  done
+  printf 'widget\thold\n' > "$config/project-ready-hold-label"
+  for forge in gitlab forgejo gerrit external; do
+    out=$(fm_dod_ready_hold_block "$config" /projects/widget off "$forge" no-mistakes) || fail 'other forge render failed'
+    [ -z "$out" ] || fail "ready-hold changed $forge instructions"
+  done
+  out=$(fm_dod_ready_hold_block "$config" /projects/widget off none local-only) || fail 'local-only render failed'
+  [ -z "$out" ] || fail 'local-only instructions changed'
+  printf 'widget\t\n' > "$config/project-ready-hold-label"
+  out=$(fm_dod_ready_hold_block "$config" /projects/widget off none no-mistakes) || fail 'empty label failed'
+  [ -z "$out" ] || fail 'empty label changed instructions'
+  printf 'widget\thold\nwidget\tstop\n' > "$config/project-ready-hold-label"
+  if fm_dod_ready_hold_block "$config" /projects/widget off none no-mistakes > /dev/null 2>&1; then
+    fail 'duplicate declaration was silently accepted'
+  fi
+  pass 'ready-hold instructions require configured GitHub yolo-off PR delivery'
+}
+
 test_pr_based_dod_draft_check_uses_gh_axi() {
   local mode out
   for mode in direct-PR no-mistakes; do
@@ -817,6 +864,7 @@ test_local_only_detached_head_is_refused
 test_standalone_local_only_needs_project_ref
 test_non_done_lines_are_not_gated
 test_fenced_and_indented_captain_lines_are_not_intent
+test_ready_hold_instructions_follow_task_posture
 test_pr_based_dod_draft_check_uses_gh_axi
 test_promotion_keeps_the_recorded_base_branch
 

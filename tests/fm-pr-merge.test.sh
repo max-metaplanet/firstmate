@@ -212,6 +212,17 @@ add_gh_mocks() {
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$FM_TEST_GH_AXI_LOG"
 case "${1:-} ${2:-}" in
+  "pr edit")
+    case_dir=$(dirname "$FM_TEST_GH_AXI_LOG")
+    case "${3:-}" in ''|*[!0-9]*) echo 'error: Missing PR number' >&2; exit 2 ;; esac
+    [ "$#" -eq 7 ] && [ "${4:-}" = --repo ] && [ "${5:-}" = example/repo ] \
+      && [ "${6:-}" = --remove-label ] || exit 2
+    [ ! -f "$case_dir/label-remove-fails" ] || exit 1
+    if [ ! -f "$case_dir/label-remove-ignored" ]; then
+      echo '{"labels":[]}' > "$case_dir/labels.json"
+    fi
+    exit 0
+    ;;
   "pr view")
     [ "$#" -eq 5 ] && [ "${4:-}" = --repo ] || exit 2
     printf 'pull_request:\n  number: %s\n  state: %s\n' "$3" "${FM_TEST_GH_MERGE_STATE:-merged}"
@@ -230,6 +241,12 @@ printf '%s\n' "$*" >> "$FM_TEST_GH_LOG"
 case "${1:-} ${2:-}" in
   "pr view")
     case " $* " in
+      *--json\ labels*)
+        case_dir=$(dirname "$FM_TEST_GH_LOG")
+        [ ! -f "$case_dir/labels-read-fails" ] || exit 1
+        jq --arg head "$(cat "$FM_TEST_GH_HEAD")" '. + {headRefOid:$head}' "$case_dir/labels.json"
+        exit $?
+        ;;
       *statusCheckRollup*)
         # One staged live view per pre-merge read, so a case can walk the
         # states a branch update moves through; the last one answers every
@@ -891,6 +908,90 @@ test_remote_only_updated_head_preserves_recorded_work() {
       || fail 'merge proof changed a project working file'
   done
   pass 'remote-only updated direct-PR head proves ancestry with or without a worker, refuses unrelated or unpushed work, and leaves no-mistakes unchanged'
+}
+
+test_ready_hold_release_uses_bot_and_preserves_landing_proof() {
+  local case_dir outcome url=https://github.com/example/repo/pull/9
+  for outcome in pending merged; do
+    case_dir=$(make_case "ready-hold-$outcome")
+    add_gh_mocks "$case_dir" deadbeefcafefeed0000000000000000deadbeef
+    : > "$case_dir/gh-axi.log"
+    printf 'project\thold for approval\n' > "$case_dir/home/config/project-ready-hold-label"
+    printf 'yolo=off\n' >> "$case_dir/state/task-x1.meta"
+    echo '{"labels":[{"name":"hold for approval"}]}' > "$case_dir/labels.json"
+    if [ "$outcome" = pending ]; then
+      write_github_outcome "$case_dir" OPEN false false main
+    fi
+    run_pr_merge "$case_dir" task-x1 "$url" > "$case_dir/stdout" 2> "$case_dir/stderr" \
+      || fail "ready-hold $outcome failed: $(cat "$case_dir/stderr")"
+    assert_grep "pr edit 9 --repo example/repo --remove-label hold for approval" "$case_dir/gh-axi.log" 'hold was not released'
+    assert_no_grep 'pr merge ' "$case_dir/gh.log" 'held PR was directly merged'
+    assert_grep 'handed off:' "$case_dir/stdout" 'handoff was not reported'
+    assert_grep 'pr_head=deadbeefcafefeed0000000000000000deadbeef' "$case_dir/state/task-x1.meta" 'head proof lost'
+    [ -f "$case_dir/state/task-x1.merge-authority" ] || fail 'accepted merge authority lost'
+    if [ "$outcome" = pending ]; then
+      assert_grep 'not confirmed merged' "$case_dir/stdout" 'pending merge misreported'
+      assert_absent "$case_dir/state/task-x1.pr-poll-merge-notified" 'handoff recorded as landed'
+      [ -f "$case_dir/state/task-x1.check.sh" ] || fail 'pending bot merge lost its poll'
+    else
+      [ -f "$case_dir/state/task-x1.pr-poll-merge-notified" ] || fail 'observed bot merge not recorded'
+    fi
+  done
+  pass 'ready-hold release hands landing to bot and records only observed merges'
+}
+
+test_ready_hold_release_keeps_guards_and_fails_closed() {
+  local case_dir failure rc url=https://github.com/example/repo/pull/9
+  for failure in red away held remove-fails remove-ignored labels-unreadable; do
+    case_dir=$(make_case "ready-hold-$failure")
+    add_gh_mocks "$case_dir" deadbeefcafefeed0000000000000000deadbeef
+    : > "$case_dir/gh-axi.log"
+    printf 'project\thold\n' > "$case_dir/home/config/project-ready-hold-label"
+    printf 'yolo=off\n' >> "$case_dir/state/task-x1.meta"
+    echo '{"labels":[{"name":"hold"}]}' > "$case_dir/labels.json"
+    case "$failure" in
+      red) write_github_red_json "$case_dir" deadbeefcafefeed0000000000000000deadbeef ci ;;
+      away) write_away_record "$case_dir" ;;
+      held)
+        FM_HOME="$case_dir/home" FM_STATE_OVERRIDE="$case_dir/state" \
+          "$ROOT/bin/fm-captain-hold.sh" hold task-x1 --title 'Merge task' --reason 'checked: fixture PR requires approval' >/dev/null || fail 'hold setup failed'
+        ;;
+      remove-fails) touch "$case_dir/label-remove-fails" ;;
+      remove-ignored) touch "$case_dir/label-remove-ignored" ;;
+      labels-unreadable) touch "$case_dir/labels-read-fails" ;;
+    esac
+    rc=0
+    run_pr_merge "$case_dir" task-x1 "$url" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+    [ "$rc" -ne 0 ] || fail "ready-hold $failure was accepted"
+    assert_no_grep 'pr merge ' "$case_dir/gh.log" 'refused release merged directly'
+    assert_absent "$case_dir/state/task-x1.pr-poll-merge-notified" 'failed release recorded landing'
+    case "$failure" in
+      red|away|held|labels-unreadable)
+        assert_no_grep '--remove-label' "$case_dir/gh-axi.log" 'guard failure removed hold' ;;
+    esac
+  done
+  pass 'ready-hold release preserves guards and refuses unconfirmed removal'
+}
+
+test_ready_hold_absent_or_yolo_on_keeps_direct_merge() {
+  local case_dir posture url=https://github.com/example/repo/pull/9
+  for posture in absent yolo-on; do
+    case_dir=$(make_case "ready-hold-direct-$posture")
+    add_gh_mocks "$case_dir" deadbeefcafefeed0000000000000000deadbeef
+    : > "$case_dir/gh-axi.log"
+    printf 'project\thold\n' > "$case_dir/home/config/project-ready-hold-label"
+    if [ "$posture" = yolo-on ]; then
+      printf 'yolo=on\n' >> "$case_dir/state/task-x1.meta"
+      echo '{"labels":[{"name":"hold"}]}' > "$case_dir/labels.json"
+    else
+      echo '{"labels":[]}' > "$case_dir/labels.json"
+    fi
+    run_pr_merge "$case_dir" task-x1 "$url" > "$case_dir/stdout" 2> "$case_dir/stderr" \
+      || fail "ready-hold $posture changed direct merge: $(cat "$case_dir/stderr")"
+    assert_logged_gh_merge "$case_dir" 9 example/repo --squash
+    assert_no_grep '--remove-label' "$case_dir/gh-axi.log" 'unheld or yolo-on PR lost label'
+  done
+  pass 'absent hold and yolo-on tasks keep direct merge behavior'
 }
 
 test_verified_merge_records_pr_and_head() {
@@ -3547,6 +3648,9 @@ test_secondmate_without_parent_binding_is_loud() {
 }
 
 if [ "$#" -eq 0 ]; then
+test_ready_hold_release_uses_bot_and_preserves_landing_proof
+test_ready_hold_release_keeps_guards_and_fails_closed
+test_ready_hold_absent_or_yolo_on_keeps_direct_merge
 test_github_zero_exit_queue_required_refuses_with_exact_retry
 test_github_closed_unqueued_outcome_omits_retry_flags
 test_github_agreeing_queue_rules_keep_retry_guidance

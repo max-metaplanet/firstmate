@@ -212,6 +212,26 @@ SH
   pass "fresh Claude crew and scout launches persist transcripts"
 }
 
+test_ready_hold_launch_overlay_follows_yolo() {
+  local rec id out yolo
+  for yolo in off on; do
+    id="ready-hold-launch-$yolo"
+    rec=$(make_spawn_case "$id" codex "$id")
+    read_case_record "$rec"
+    printf 'project\thold\n' > "$HOME_DIR/config/project-ready-hold-label"
+    out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" \
+      --mode no-mistakes --ticket no-ticket --commit-type chore --yolo "$yolo") \
+      || fail "ready-hold $yolo launch failed: $out"
+    if [ "$yolo" = off ]; then
+      assert_grep 'Ready-hold safety contract' "$HOME_DIR/data/$id/launch-brief.md" 'launch omitted ready-hold contract'
+      assert_grep '--add-label hold' "$HOME_DIR/data/$id/launch-brief.md" 'launch omitted configured label'
+    else
+      assert_no_grep 'Ready-hold safety contract' "$HOME_DIR/data/$id/launch-brief.md" 'yolo-on launch gained a hold contract'
+    fi
+  done
+  pass 'spawn delivers ready-hold instructions only for configured yolo-off ships'
+}
+
 # Claude Code strips U+2063 from the launch-prompt argument, so a claude launch
 # publishes the launch-brief envelope as a record in the receiving home's
 # operational inbox and passes only a printable doorbell naming it. Parsing the
@@ -2349,6 +2369,11 @@ SH
   done
 }
 
+if [ "${1:-}" = test_ready_hold_launch_overlay_follows_yolo ]; then
+  test_ready_hold_launch_overlay_follows_yolo
+  exit 0
+fi
+
 test_launch_environment_allowlist
 test_launch_environment_invalid_config_refuses
 test_launch_environment_inaccessible_config_refuses
@@ -2692,6 +2717,7 @@ test_claude_permission_mode_bypass_matches_absent_launch
 test_claude_permission_mode_auto_swaps_only_the_permission_flag
 test_claude_permission_mode_auto_reaches_scout_launch
 test_claude_worker_launch_covers_task_channel_dirs
+test_ready_hold_launch_overlay_follows_yolo
 test_claude_permission_mode_invalid_refuses_before_endpoint_or_metadata
 test_non_claude_harness_ignores_claude_permission_mode
 test_non_claude_harness_ignores_config_dir
