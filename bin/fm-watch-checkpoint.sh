@@ -137,6 +137,9 @@ run_bounded() {  # <seconds> <signal> <kill-after-seconds> <command...>
   "$runner" --signal="$signal" --kill-after="${kill_after}s" "$seconds" bash -c '
     status_file=$1
     shift
+    # Stay with the command until its TERM cleanup finishes. Ignoring TERM
+    # instead would pass that ignored disposition into the command itself.
+    trap : TERM
     "$@"
     command_rc=$?
     printf "%s\n" "$command_rc" > "$status_file"
@@ -195,8 +198,10 @@ if fm_supervision_host_enabled "$CONFIG" codex; then
 fi
 
 set +e
-# Interrupt the checkpoint's active check group so the watcher's native EXIT cleanup can release its lock; ordinary watcher shutdown still uses TERM.
-run_bounded "$SECONDS_ARG" INT 5 "$SCRIPT_DIR/fm-watch.sh" >"$OUT" 2>"$ERR"
+# Use the watcher's ordinary shutdown signal. Its INT trap body can be dropped
+# by bash 5.2 (watcher_stop_signals in fm-watch.sh), and a background caller
+# can start the watcher with INT ignored, which bash cannot trap again.
+run_bounded "$SECONDS_ARG" TERM 5 "$SCRIPT_DIR/fm-watch.sh" >"$OUT" 2>"$ERR"
 RC=$?
 set -e
 

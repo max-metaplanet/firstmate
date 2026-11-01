@@ -28,17 +28,46 @@ wait_for_checkpoint_lock() {
   return 1
 }
 
+# A PATH with every tool except timeout and gtimeout, so the checkpoint uses
+# its Perl runner around the real watcher.
+perl_runner_path() {  # <dir>
+  local dir=$1 path_dir entry name
+  mkdir -p "$dir"
+  local IFS=:
+  for path_dir in $PATH; do
+    [ -d "$path_dir" ] || continue
+    for entry in "$path_dir"/*; do
+      name=${entry##*/}
+      case "$name" in timeout|gtimeout) continue ;; esac
+      [ -x "$entry" ] && [ ! -e "$dir/$name" ] && ln -s "$entry" "$dir/$name"
+    done
+  done
+  return 0
+}
+
 test_quiet_checkpoint_exits_124_cleanly() {
-  local home out err status
-  home=$(make_home quiet)
-  out="$home/out.txt"
-  err="$home/err.txt"
-  status=0
-  FM_HOME="$home" FM_POLL=1 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 "$CHECKPOINT" --seconds 1 >"$out" 2>"$err" || status=$?
-  expect_code 124 "$status" "quiet checkpoint exit"
-  assert_contains "$(cat "$out")" "checkpoint: no actionable wake within 1s" "quiet checkpoint line missing"
-  assert_absent "$home/state/.watch.lock/pid" "watch lock pid survived quiet checkpoint timeout"
-  pass "quiet checkpoint exits 124 with a clean checkpoint line and no live lock"
+  local runner home out err status runner_path
+  for runner in native perl; do
+    home=$(make_home "quiet-$runner")
+    out="$home/out.txt"
+    err="$home/err.txt"
+    runner_path=$PATH
+    if [ "$runner" = perl ]; then
+      perl_runner_path "$home/perl-runner-bin"
+      runner_path="$home/perl-runner-bin"
+    fi
+    status=0
+    # A background caller starts the checkpoint with INT ignored, and the Perl
+    # runner passes that disposition on to the watcher. The deadline must still
+    # run the watcher's cleanup rather than escalate to KILL past its lock.
+    ( trap '' INT
+      PATH="$runner_path" FM_HOME="$home" FM_POLL=1 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 "$CHECKPOINT" --seconds 1
+    ) >"$out" 2>"$err" || status=$?
+    expect_code 124 "$status" "$runner quiet checkpoint exit"
+    assert_contains "$(cat "$out")" "checkpoint: no actionable wake within 1s" "$runner quiet checkpoint line missing"
+    assert_absent "$home/state/.watch.lock/pid" "$runner watch lock pid survived quiet checkpoint timeout"
+  done
+  pass "quiet checkpoint exits 124 with a clean checkpoint line and no live lock under each runner"
 }
 
 test_perl_timeout_fallback_honors_cleanup_bound_before_escalating() {
@@ -56,7 +85,7 @@ test_perl_timeout_fallback_honors_cleanup_bound_before_escalating() {
 #!/usr/bin/env perl
 use strict;
 use warnings;
-$SIG{INT} = 'IGNORE';
+$SIG{TERM} = 'IGNORE';
 open my $pid_file, '>', "$ENV{FM_HOME}/watcher.pid" or die "open pid file: $!";
 printf {$pid_file} "%s\n", $$;
 close $pid_file;
@@ -81,13 +110,13 @@ PL
   assert_contains "$(cat "$home/out.txt")" "checkpoint: no actionable wake within 1s" \
     "Perl fallback did not return a quiet checkpoint"
   [ -e "$home/cleanup-reached" ] || fail "the Perl fallback killed the watcher before its 8-second cleanup bound"
-  [ ! -e "$home/natural-exit" ] || fail "the INT-ignoring watcher exited naturally instead of being killed"
-  [ -s "$home/watcher.pid" ] || fail "the INT-ignoring watcher did not start"
+  [ ! -e "$home/natural-exit" ] || fail "the TERM-ignoring watcher exited naturally instead of being killed"
+  [ -s "$home/watcher.pid" ] || fail "the TERM-ignoring watcher did not start"
   watcher_pid=$(cat "$home/watcher.pid")
   if kill -0 "$watcher_pid" 2>/dev/null; then
-    fail "the INT-ignoring watcher survived the Perl fallback escalation"
+    fail "the TERM-ignoring watcher survived the Perl fallback escalation"
   fi
-  pass "Perl fallback honors the cleanup bound before escalating an INT-ignoring direct watcher"
+  pass "Perl fallback honors the cleanup bound before escalating a TERM-ignoring direct watcher"
 }
 
 test_runner_deadlines_and_command_failures_are_distinct() {
@@ -114,7 +143,7 @@ test_runner_deadlines_and_command_failures_are_distinct() {
 printf 'watcher fixture started\n'
 printf 'watcher fixture diagnostic\n' >&2
 case "$FIXTURE_KIND" in
-  deadline) trap '' INT; exec sleep 30 ;;
+  deadline) trap '' TERM; exec sleep 30 ;;
   killed) kill -KILL "$$" ;;
   *) exit "$FIXTURE_KIND" ;;
 esac
