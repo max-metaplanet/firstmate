@@ -396,7 +396,10 @@ make_spawn_fakebin() {
 
 # fm_test_run_spawn <home> <pane-path> <fakebin> [fm-spawn args...]
 # Common spawn env. Extra variables in the caller (GROK_HOME, FM_FAKE_LAUNCH_LOG,
-# CLAUDE_CONFIG_DIR, ...) are inherited. Does not add --mode/--yolo; ship tests
+# ...) are inherited, except HOME, CODEX_HOME, CLAUDE_CONFIG_DIR and
+# FM_AMBIENT_CLAUDE_CONFIG_DIR, which the seal replaces; set them through
+# FM_TEST_CODEX_HOME, FM_TEST_CLAUDE_CONFIG_DIR and
+# FM_TEST_AMBIENT_CLAUDE_CONFIG_DIR. Does not add --mode/--yolo; ship tests
 # that need a delivery contract pass those flags themselves.
 fm_test_run_spawn() {
   local home=$1 pane=$2 fakebin=$3
