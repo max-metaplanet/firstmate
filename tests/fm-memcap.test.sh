@@ -108,6 +108,38 @@ test_a_capped_command_keeps_its_own_streams_and_status() {
   pass "a capped command keeps its stdin, stdout, stderr, and exit status"
 }
 
+test_uncapped_warnings_name_the_bounded_route() {
+  local tmp fakebin mode expected out rc
+  tmp=$(fm_test_tmproot fm-memcap-warnings)
+  fakebin=$(fm_fakebin "$tmp")
+  printf '#!/bin/sh\nexit 1\n' > "$fakebin/systemd-run"
+  chmod +x "$fakebin/systemd-run"
+  for mode in none refused; do
+    if [ "$mode" = none ]; then
+      printf 'ulimit() { return 1; }\n' > "$tmp/env"
+      expected='fm-memcap: this host offers no memory-cap mechanism (no usable systemd user scope, no address-space limit); running sh uncapped; use bin/fm-boat-run.sh to run it bounded'
+    else
+      cat > "$tmp/env" <<'SH'
+ulimit() {
+  case "$*" in
+    '-Hv') printf 'unlimited\n' ;;
+    '-v 1048576') return 0 ;;
+    *) return 1 ;;
+  esac
+}
+SH
+      expected='fm-memcap: this host refused a 67108864-byte address-space limit; running sh uncapped; use bin/fm-boat-run.sh to run it bounded'
+    fi
+    rc=0
+    out=$(BASH_ENV="$tmp/env" PATH="$fakebin:$PATH" "$MEMCAP" --bytes 67108864 -- \
+      /bin/sh -c 'printf command-ran; exit 7' 2>"$tmp/stderr") || rc=$?
+    [ "$rc" -eq 7 ] || fail "$mode compatibility changed the command status: $rc"
+    assert_equals command-ran "$out" "$mode compatibility must execute the command"
+    assert_equals "$expected" "$(cat "$tmp/stderr")" "$mode warning must name the bounded Boat route"
+  done
+  pass "uncapped compatibility preserves execution and points to the bounded Boat route"
+}
+
 test_a_runaway_dies_at_its_cap_and_is_named() {
   local mech out rc
   mech=$("$MEMCAP" --mechanism)
@@ -139,4 +171,5 @@ test_budget_is_a_positive_byte_count_split_across_shares
 test_linux_budget_uses_the_readable_memory_total
 test_malformed_input_is_refused_rather_than_guessed
 test_a_capped_command_keeps_its_own_streams_and_status
+test_uncapped_warnings_name_the_bounded_route
 test_a_runaway_dies_at_its_cap_and_is_named
