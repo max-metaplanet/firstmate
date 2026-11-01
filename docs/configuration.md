@@ -731,10 +731,14 @@ Only that local publication takes a foreground lock, with a one-second bound; th
 A detached drainer invokes one consumer at a time per home, in sequence order, with each attempt bounded by `FM_TASK_EVENT_TIMEOUT` (default 60 seconds).
 Merge completeness is captured at publication, so delayed delivery cannot turn an earlier partial merge into a final one.
 Consumer failure never fails the lifecycle operation or prevents later entries from being attempted; errors append locally to `state/task-events.log`, naming the task, event and exit code (124 for timeout, 125 for local publication failure, 126 for invalid executable configuration).
+A call that reached the hook also records `attempts=<n>` and, when the hook wrote anything to standard error, `reason="<excerpt>"`: the hook's own last non-empty error line, reduced to one line with control bytes and quotes replaced, truncated, and stripped of any run of 24 or more credential-shaped characters, because an exit code alone cannot say why a consumer refused.
 A failed, timed-out or unrunnable consumer call also appends `actionable: task event hook failed event=<event> exit=<code>; see state/task-events.log` to the task's status while the task is live, at most once per task per hour, so supervision surfaces it.
-Delivery is best effort: a consumer failure is logged without retry, while a drainer crash before removing an entry can replay it on the next emission.
+A failing hook is retried in place, up to `FM_TASK_EVENT_ATTEMPTS` bounded calls (default 3) with a doubling pause, so a consumer refusing a transient condition such as a busy writer lock is redelivered instead of losing the lifecycle fact.
+Retries hold the delivery lock, so queue order is preserved and a permanently failing hook costs at most that many bounded calls before the queue advances.
+A delivery that only succeeded after a retry appends `exit=0` with its `attempts` and the refusal that forced it, and surfaces nothing on the task.
+Delivery is otherwise best effort: an exhausted consumer failure is logged and the entry is dropped, while a drainer crash before removing an entry can replay it on the next emission.
 No idle retry daemon runs.
-Transition owners suppress routine poll and replay duplicates, but consumers should deduplicate `home` and `sequence` across crash recovery.
+Transition owners suppress routine poll and replay duplicates, but consumers should deduplicate `home` and `sequence` across retries and crash recovery.
 No worker-facing instruction should ask a worker to update a tracker directly.
 
 ### Existing milestone-hook adapter

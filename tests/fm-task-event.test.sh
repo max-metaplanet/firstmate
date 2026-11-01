@@ -19,7 +19,16 @@ SH
   printf '%s\n' "$home/hook" > "$home/config/task-event-hook"
   printf '%s' "$home"
 }
+# Redelivery is on by default, so every case that is not about redelivery pins
+# one attempt and keeps asserting the single-call behavior it was written for.
+ATTEMPTS=1
 emit() {
+  local home=$1; shift
+  FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" FM_CONFIG_OVERRIDE="$home/config" \
+    FM_TASK_EVENT_ATTEMPTS="$ATTEMPTS" "$EMIT" "$@"
+}
+# The shipped attempt count, with nothing supplied by the caller.
+emit_default_attempts() {
   local home=$1; shift
   FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" FM_CONFIG_OVERRIDE="$home/config" "$EMIT" "$@"
 }
@@ -247,6 +256,97 @@ emit "$home" task resumed
 wait_lines "$home/events" 1
 jq -e '.event == "resumed"' "$home/events" >/dev/null || fail 'dead drainer lock blocked delivery'
 pass 'the existing lock recovery permits delivery after a drainer dies'
+
+home=$(make_home excerpt)
+cat > "$home/hook" <<'SH'
+#!/usr/bin/env bash
+printf 'reading configuration\n' >&2
+printf 'error: ticket is in invalid ticket rules; repair it\tmanually\n' >&2
+exit 1
+SH
+emit "$home" task started
+wait_lines "$home/state/task-events.log" 1
+assert_grep 'task_id=task event=started exit=1 attempts=1 reason="error: ticket is in invalid ticket rules; repair it manually"' \
+  "$home/state/task-events.log" 'the consumer error was not recorded beside its exit code'
+[ "$(wc -l < "$home/state/task-events.log")" = 1 ] || fail 'the consumer error spilled across several log lines'
+pass 'a failing consumer records its own last error line next to the exit code'
+
+home=$(make_home excerpt-safety)
+cat > "$home/hook" <<'SH'
+#!/usr/bin/env bash
+printf 'error: rejected Bearer pk_12345678901234567890123456789012 for "task" at https://api.example.org/v2/task\n' >&2
+exit 1
+SH
+emit "$home" task started
+wait_lines "$home/state/task-events.log" 1
+assert_grep 'reason="error: rejected Bearer [redacted] for task at https://api.example.org/v2/task"' \
+  "$home/state/task-events.log" 'a credential or a quote survived into the log field'
+cat > "$home/hook" <<'SH'
+#!/usr/bin/env bash
+printf 'error: ' >&2
+awk 'BEGIN { while (n++ < 120) printf "refused again " }' >&2
+printf '\n' >&2
+exit 1
+SH
+emit "$home" task blocked
+wait_lines "$home/state/task-events.log" 2
+recorded=$(sed -n '2s/.*reason="\(.*\)"$/\1/p' "$home/state/task-events.log")
+[ -n "$recorded" ] && [ "${#recorded}" -le 200 ] \
+  || fail "an unbounded consumer error reached the log: ${#recorded} characters"
+cat > "$home/hook" <<'SH'
+#!/usr/bin/env bash
+printf 'error: \xe3\x83\x81\xe3\x82\xb1\xe3\x83\x83\xe3\x83\x88 rejected pk_12345678901234567890123456789012\n' >&2
+exit 1
+SH
+emit "$home" task resumed
+wait_lines "$home/state/task-events.log" 3
+assert_grep 'reason="error: チケット rejected [redacted]"' "$home/state/task-events.log" \
+  'a tracker error outside ASCII was mangled or its credential kept'
+pass 'a recorded consumer error is bounded, unquoted, readable outside ASCII, and carries no credential-shaped run'
+
+home=$(make_home redelivery)
+printf 'working [at=100]: ready\n' > "$home/state/task.status"
+cat > "$home/hook" <<'SH'
+#!/usr/bin/env bash
+calls=$(cat "$FM_HOME/calls" 2>/dev/null || printf 0)
+calls=$((calls + 1))
+printf '%s' "$calls" > "$FM_HOME/calls"
+if [ "$calls" -lt 3 ]; then
+  printf 'error: another writer is active; retry this event\n' >&2
+  exit 1
+fi
+printf '%s\n' "$1" >> "$FM_HOME/events"
+SH
+emit_default_attempts "$home" task pr-opened --pr https://example.org/pull/1
+wait_lines "$home/events" 1
+wait_lines "$home/state/task-events.log" 1
+[ "$(cat "$home/calls")" = 3 ] || fail "consumer was not retried to the shipped bound: $(cat "$home/calls")"
+jq -se 'length == 1 and .[0].event == "pr-opened"' "$home/events" >/dev/null \
+  || fail "redelivery duplicated the delivered event: $(cat "$home/events")"
+assert_grep 'task_id=task event=pr-opened exit=0 attempts=3 reason="error: another writer is active; retry this event"' \
+  "$home/state/task-events.log" 'the refusal that forced redelivery was not recorded'
+assert_not_contains "$(cat "$home/state/task.status")" 'task event hook failed' \
+  'a recovered delivery was surfaced on the task as a failure'
+pass 'a consumer refusing a transient condition is redelivered, delivers once, and is never reported as failed'
+
+home=$(make_home redelivery-bound)
+cat > "$home/hook" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' refused >> "$FM_HOME/calls"
+printf 'error: still refusing\n' >&2
+exit 9
+SH
+ATTEMPTS=2 emit "$home" task started
+wait_lines "$home/state/task-events.log" 1
+assert_grep 'task_id=task event=started exit=9 attempts=2 reason="error: still refusing"' \
+  "$home/state/task-events.log" 'the exhausted attempt count was not recorded with the failure'
+[ "$(wc -l < "$home/calls")" = 2 ] || fail "redelivery ran past its bound: $(wc -l < "$home/calls")"
+assert_grep 'task event hook failed event=started exit=9' "$home/state/task.status" \
+  'an exhausted consumer failure was not surfaced on the task'
+ATTEMPTS=2 emit "$home" task resumed
+wait_lines "$home/state/task-events.log" 2
+[ "$(wc -l < "$home/calls")" = 4 ] || fail "a permanently failing consumer held the queue: $(wc -l < "$home/calls")"
+pass 'redelivery stops at its bound, reports the failure, and releases the queue for the next event'
 
 for scope in complete partial invalid ''; do
   home=$(make_home "scope-${scope:-empty}")

@@ -19,7 +19,18 @@
 # Failures append to state/task-events.log and never fail a lifecycle producer;
 # a consumer failure also appends one actionable line to a live task's status,
 # at most once per task per hour.
+# A failing hook is retried in place before the entry is dropped, so a consumer
+# refusing a transient condition - a busy writer lock, a slow tracker - is
+# redelivered instead of losing the lifecycle fact. Retries hold the delivery
+# lock so queue order is preserved; a permanently failing hook therefore costs
+# at most FM_TASK_EVENT_ATTEMPTS bounded calls before the queue advances.
+# Each retry repeats the identical payload, which the duplicate-delivery note
+# above already requires consumers to tolerate.
+# Any outcome the hook refused at least once records its own last stderr line
+# next to the exit code, bounded and secret-safe, because the exit code alone
+# cannot say why.
 # FM_TASK_EVENT_TIMEOUT sets the hook bound in seconds (default 60).
+# FM_TASK_EVENT_ATTEMPTS bounds delivery attempts per entry (default 3).
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -36,8 +47,32 @@ DELIVERY_LOCK="$STATE/.task-event-delivery.lock"
 # shellcheck source=bin/fm-wake-lib.sh
 . "$SCRIPT_DIR/fm-wake-lib.sh"
 
-report_failure() {
-  printf '%s task_id=%s event=%s exit=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$ID" "$EVENT" "$1" >> "$STATE/task-events.log" 2>/dev/null || true
+# One log line per delivery outcome, including a success that needed retries.
+report_outcome() {  # <exit-code> [detail]
+  printf '%s task_id=%s event=%s exit=%s%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$ID" "$EVENT" "$1" "${2:+ $2}" >> "$STATE/task-events.log" 2>/dev/null || true
+}
+
+# One bounded, single-line, secret-safe field built from a hook's own stderr.
+# The last non-empty line is the proximate failure, so earlier progress chatter
+# never displaces the error. Control bytes, quotes and backslashes become spaces
+# to keep the field unambiguous while leaving non-ASCII tracker text readable,
+# and every run of 24 or more characters from the credential alphabet is
+# replaced, so an opaque token printed by the hook cannot reach the log whatever
+# labels surround it.
+HOOK_EXCERPT_LIMIT=200
+hook_excerpt() {  # <stderr-file>
+  local line
+  line=$(LC_ALL=C sed -e 's/[[:cntrl:]]/ /g' -e 's/["\\]/ /g' "$1" 2>/dev/null \
+    | LC_ALL=C sed -E -e 's@[A-Za-z0-9+/=_-]{24,}@[redacted]@g' \
+      -e 's/[[:space:]]+/ /g' -e 's/^ //' -e 's/ $//' \
+    | LC_ALL=C grep -v '^$' | tail -n 1) || return 0
+  printf '%s' "${line:0:$HOOK_EXCERPT_LIMIT}"
+}
+
+delivery_detail() {  # <attempts> <excerpt>
+  local detail="attempts=$1"
+  [ -z "$2" ] || detail="$detail reason=\"$2\""
+  printf '%s' "$detail"
 }
 
 surface_failure() {  # <exit-code>
@@ -54,14 +89,16 @@ surface_failure() {  # <exit-code>
     >> "$status" 2>/dev/null || true
 }
 
-fail_delivery() {  # <exit-code>
-  report_failure "$1"
+fail_delivery() {  # <exit-code> [detail]
+  report_outcome "$1" "${2:-}"
   surface_failure "$1"
 }
 
 deliver() {
   local hook='' count=0 line bound=${FM_TASK_EVENT_TIMEOUT:-60} rc=0
+  local attempts=${FM_TASK_EVENT_ATTEMPTS:-3} attempt=1 backoff=2 errors='' excerpt=''
   case "$bound" in ''|*[!0-9]*|0) bound=60 ;; esac
+  case "$attempts" in ''|*[!0-9]*|0) attempts=3 ;; esac
   if [ -e "$CONFIG/task-event-hook" ]; then
     [ -f "$CONFIG/task-event-hook" ] || { fail_delivery 126; return; }
     while IFS= read -r line || [ -n "$line" ]; do
@@ -83,8 +120,32 @@ deliver() {
   fi
   # shellcheck source=bin/fm-timeout-lib.sh
   . "$SCRIPT_DIR/fm-timeout-lib.sh"
-  fm_run_timed "$bound" "$hook" "$PAYLOAD" >/dev/null 2>&1 || rc=$?
-  [ "$rc" -eq 0 ] || fail_delivery "$rc"
+  errors=$(mktemp "${TMPDIR:-/tmp}/fm-task-event-stderr.XXXXXX" 2>/dev/null) || errors=''
+  while :; do
+    rc=0
+    if [ -n "$errors" ]; then
+      : > "$errors" 2>/dev/null || true
+      fm_run_timed "$bound" "$hook" "$PAYLOAD" >/dev/null 2>"$errors" || rc=$?
+    else
+      fm_run_timed "$bound" "$hook" "$PAYLOAD" >/dev/null 2>&1 || rc=$?
+    fi
+    [ "$rc" -ne 0 ] || break
+    # Keep the refusal that caused the retry: a later successful attempt
+    # writes nothing, and that reason is the only account of what happened.
+    [ -z "$errors" ] || excerpt=$(hook_excerpt "$errors")
+    [ "$attempt" -lt "$attempts" ] || break
+    attempt=$((attempt + 1))
+    sleep "$backoff"
+    backoff=$((backoff * 2))
+  done
+  [ -z "$errors" ] || rm -f "$errors" 2>/dev/null || true
+  if [ "$rc" -ne 0 ]; then
+    fail_delivery "$rc" "$(delivery_detail "$attempt" "$excerpt")"
+  elif [ "$attempt" -gt 1 ]; then
+    # Redelivery succeeded. Record why the earlier attempts refused, because
+    # nothing else proves a transient consumer condition ever happened.
+    report_outcome 0 "$(delivery_detail "$attempt" "$excerpt")"
+  fi
 }
 
 first_queued() {
@@ -101,7 +162,7 @@ drain() {
   ID=queue EVENT=delivery
   if ! fm_lock_acquire_wait_bounded "$DELIVERY_LOCK" 1; then
     # An active drainer owns every published entry, including the final recheck.
-    fm_pid_alive "${FM_LOCK_HELD_PID:-}" || report_failure 125
+    fm_pid_alive "${FM_LOCK_HELD_PID:-}" || report_outcome 125
     return 0
   fi
   trap 'fm_lock_release "$ENQUEUE_LOCK"; fm_lock_release "$DELIVERY_LOCK"' EXIT
@@ -109,7 +170,7 @@ drain() {
   while :; do
     first_queued
     if [ -z "$NEXT" ]; then
-      fm_lock_acquire_wait_bounded "$ENQUEUE_LOCK" 1 || { report_failure 125; return; }
+      fm_lock_acquire_wait_bounded "$ENQUEUE_LOCK" 1 || { report_outcome 125; return; }
       first_queued
       if [ -z "$NEXT" ]; then
         fm_lock_release "$DELIVERY_LOCK"
@@ -118,11 +179,11 @@ drain() {
       fi
       fm_lock_release "$ENQUEUE_LOCK"
     fi
-    PAYLOAD=$(cat "$NEXT") || { report_failure 125; return; }
+    PAYLOAD=$(cat "$NEXT") || { report_outcome 125; return; }
     ID=$(printf '%s' "$PAYLOAD" | jq -r '.task_id')
     EVENT=$(printf '%s' "$PAYLOAD" | jq -r '.event')
     deliver
-    rm -f "$NEXT" || { report_failure 125; return; }
+    rm -f "$NEXT" || { report_outcome 125; return; }
   done
 }
 
@@ -177,19 +238,19 @@ if [ "$SUMMARY_SET" -eq 0 ]; then
   SUMMARY=$(status_line_note "$(last_worker_status_line "$STATE/$ID.status")")
 fi
 
-fm_lock_acquire_wait_bounded "$ENQUEUE_LOCK" 1 || { report_failure 125; exit 0; }
+fm_lock_acquire_wait_bounded "$ENQUEUE_LOCK" 1 || { report_outcome 125; exit 0; }
 trap 'fm_lock_release "$ENQUEUE_LOCK"' EXIT
 trap 'exit 143' TERM INT HUP
-mkdir -p "$QUEUE" || { report_failure 125; exit 0; }
+mkdir -p "$QUEUE" || { report_outcome 125; exit 0; }
 SEQUENCE=0
 if [ -f "$QUEUE/.sequence" ]; then
-  IFS= read -r SEQUENCE < "$QUEUE/.sequence" || { report_failure 125; exit 0; }
+  IFS= read -r SEQUENCE < "$QUEUE/.sequence" || { report_outcome 125; exit 0; }
 fi
-case "$SEQUENCE" in ''|*[!0-9]*) report_failure 125; exit 0 ;; esac
+case "$SEQUENCE" in ''|*[!0-9]*) report_outcome 125; exit 0 ;; esac
 SEQUENCE=$((SEQUENCE + 1))
 if ! printf '%s\n' "$SEQUENCE" > "$QUEUE/.sequence.next" \
   || ! mv "$QUEUE/.sequence.next" "$QUEUE/.sequence"; then
-  report_failure 125; exit 0
+  report_outcome 125; exit 0
 fi
 PAYLOAD=$(jq -cn --arg event "$EVENT" --arg id "$ID" --arg ticket "$TICKET" \
   --arg ticket_scope "$TICKET_SCOPE" \
@@ -214,7 +275,7 @@ PAYLOAD=$(jq -cn --arg event "$EVENT" --arg id "$ID" --arg ticket "$TICKET" \
     elif $event == "decision-answered" then
       {progress:{version:1,decisions:["The requested decision has been answered."]}}
     else {} end)' 2>/dev/null) \
-  || { report_failure 125; exit 0; }
+  || { report_outcome 125; exit 0; }
 
 # One append per confirmed PR fact, independent of consumer delivery. Preserve
 # these across task teardown so another task for the same ticket sees all PRs.
@@ -225,7 +286,7 @@ PAYLOAD=$(jq -cn --arg event "$EVENT" --arg id "$ID" --arg ticket "$TICKET" \
 case "$EVENT" in
   pr-opened|pr-merged|cancelled)
     printf '%s\n' "$PAYLOAD" >> "$STATE/task-event-prs.jsonl" 2>/dev/null \
-      || { report_failure 125; exit 0; }
+      || { report_outcome 125; exit 0; }
     ;;
 esac
 
@@ -243,13 +304,13 @@ if [ "$EVENT" = pr-merged ] || [ "$EVENT" = cancelled ]; then
       end) |
     $event + {merge: (if length == 0 then null elif all(.[]; .merged) then "final" else "partial" end)}
       + (if $event.event == "cancelled" and ($own_merged | not) then {ticket_scope: "partial"} else {} end)
-  ' "$STATE/task-event-prs.jsonl" 2>/dev/null) || { report_failure 125; exit 0; }
+  ' "$STATE/task-event-prs.jsonl" 2>/dev/null) || { report_outcome 125; exit 0; }
 fi
 
 printf -v ENTRY '%020d' "$SEQUENCE"
 if ! printf '%s\n' "$PAYLOAD" > "$QUEUE/$ENTRY.pending" \
   || ! mv "$QUEUE/$ENTRY.pending" "$QUEUE/$ENTRY.json"; then
-  report_failure 125; exit 0
+  report_outcome 125; exit 0
 fi
 # Start before releasing enqueue ownership. The drainer's final check uses the
 # same lock, so it cannot exit between publication and this wake being issued.
