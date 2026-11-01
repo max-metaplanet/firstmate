@@ -1,0 +1,51 @@
+# Definition of done
+Delivery contract: mode=direct-PR
+Ship branch: fm/test
+Run locally only the tests for what you changed, plus affected lint and formatting checks.
+Never run or wait on full-suite local hooks (including Husky pre-commit/pre-push suites) or a full monorepo test run.
+If such a hook would run, bypass it for that command only with `git -c core.hooksPath=/dev/null commit ...` or an authorized `git -c core.hooksPath=/dev/null push ...`; never disable hooks globally or bypass the no-mistakes gate.
+Where this delivery path authorizes you to push a branch that forge CI runs on, finish local iteration and push ONCE per task when ready; no-mistakes owns its push, and local-only never pushes.
+A Gerrit `gerrit-axi publish` patch set or an external-review re-upload made to correct the work before reporting done is not a second push and is not reported as blocked, because no forge CI runs on it.
+PR CI is the full regression gate for PR delivery; keep CI spend down and never trigger extra CI reruns yourself, including failed-job reruns or manual workflow dispatches.
+The pipeline still owns its configured test step, repair loop, and `ci.rerun_transient`.
+This machine runs only a few memory-heavy commands at once, and an ordinary Node build or test run claims one of those places by itself.
+Run a heavy command that cannot see Firstmate's Node preload - one whose script replaces `NODE_OPTIONS` instead of appending to it, or that runs outside Node - through `~/.no-mistakes/worktrees/c0c4fcacb05a/01M6CMQYVESQYCNMD3GZBJJMSZ/bin/fm-build-lock.py -- <command>`, so it waits for a place instead of exhausting the machine.
+Waiting for a place is expected, not a failure.
+
+This task ships **direct-PR**: you raise the PR yourself, without the no-mistakes pipeline.
+The task is complete only when committed on your branch.
+
+For a conflict-only rebase or conflict resolution of an already-open PR, use `FM_HOME=~/.no-mistakes/worktrees/c0c4fcacb05a/01M6CMQYVESQYCNMD3GZBJJMSZ/.prepush-live-qo9qnak2/home ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6CMQYVESQYCNMD3GZBJJMSZ/bin/fm-pr-refresh.sh prepare test <pr-url>` before any push or pipeline refresh; its header owns classification, publication wrapping, and the firstmate-controlled ready call.
+In direct-PR mode, pass the publication command after `--` to that helper; in no-mistakes mode, prepare first and let the pipeline publish.
+This hold overrides the ordinary ready/done instructions below: keep the draft and declared wait until firstmate explicitly asks for the helper's `ready` call.
+Do not report done or mark it ready while `state/test.pr-refresh` exists.
+For a separate GitHub CI wait, use `~/.no-mistakes/worktrees/c0c4fcacb05a/01M6CMQYVESQYCNMD3GZBJJMSZ/bin/fm-pr-checks.sh --watch <pr-url>` (policy: `fm-pr-checks-lib.sh`); advisory checks do not block.
+When it is committed, publish your branch to `origin` and open a draft PR with `gh-axi` using `--draft`, against the base branch `release/x` (`--base release/x`), not the repository default.
+Finish local implementation and focused validation before opening the draft.
+When a required check is red, read its failure log.
+Never push an empty, no-op, or "retrigger" commit to rerun CI.
+If the log shows no cause in your own change, append `blocked [at=<epoch>]: unrelated CI failure - job {job name}, run {run URL}` to the status file and stop; report the evidence to firstmate without rerunning CI.
+If CI requires a code change, report the failing job and run to firstmate as a blocked event; do not start another worker-driven push round.
+Before marking the pull request ready, read its current head commit from the forge with `gh-axi api repos/<owner>/<repo>/pulls/<number> --jq .head.sha` and record the full commit ID as `<PR head SHA>`.
+Run the pre-ready heavy-test check from a project checkout whose HEAD matches that commit with `FM_HOME=~/.no-mistakes/worktrees/c0c4fcacb05a/01M6CMQYVESQYCNMD3GZBJJMSZ/.prepush-live-qo9qnak2/home ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6CMQYVESQYCNMD3GZBJJMSZ/bin/fm-boat-prepush.sh --timeout 1200 --base release/x --history-depth 50 --expected-head '<PR head SHA>'`, substituting the recorded commit ID for `<PR head SHA>`.
+The command refuses a mismatched checkout; bring the project checkout to that PR head before running it.
+It runs this change's planner-selected heavy test lanes one at a time on one disposable machine and prints a per-lane verdict.
+A nonzero exit stops the ready transition.
+Append `blocked [at=<epoch>]: pre-ready check red - {the failing lanes}` to the status file and stop, rather than marking the pull request ready.
+After the check succeeds and before marking the pull request ready, read the pull request head again with `gh-axi api repos/<owner>/<repo>/pulls/<number> --jq .head.sha` and confirm it still equals the `head` in `verdict.json` under the check's printed output directory.
+If the pull request head moved, the verdict is stale: check out the new head and repeat the check and head comparison before marking ready.
+A verdict from a different commit is not evidence about this one.
+This check is a pre-ready gate, not a replacement for the forge's required checks.
+Once local validation has passed and the work is ready for review, mark the PR ready before the final CI wait so suites skipped on drafts can run. When checks were skipped while draft, read the ready time with `gh api --paginate repos/<owner>/<repo>/issues/<number>/timeline --jq '.[] | select(.event == "ready_for_review") | .created_at' | tail -n 1` and wait with `~/.no-mistakes/worktrees/c0c4fcacb05a/01M6CMQYVESQYCNMD3GZBJJMSZ/bin/fm-pr-checks.sh --watch --after <ready time> <pr-url>`, so no check skipped before the ready transition counts.
+The ready transition must not require another commit or push.
+Resolve the PR target from `origin` first and name it on the create - never leave the repository for `gh` to pick, because `gh pr create` with no `-R` defaults to a FORK's parent repository, and on a fork clone that opens the PR on a repository nobody authorized:
+1. `git remote get-url origin` - the `<owner>/<repo>` it names is your PR target, and `origin` is the only remote you push to.
+2. `git symbolic-ref --quiet --short refs/remotes/origin/HEAD` - drop the leading `origin/` for your base branch; when it prints nothing, read the `HEAD branch:` line of `git remote show origin`. When the Delivery contract above names a base branch, use that branch instead of the default.
+3. `git push -u origin fm/test`, then `gh-axi pr create -R <owner>/<repo> --base <base branch> --head fm/test --draft --title ... --body ...`.
+Before you report done, read the PR back from the forge and confirm it is not a draft (`gh-axi pr view <PR URL>` must print `draft: no`, naming the PR by its full URL so the read can never resolve against another repository); if it is a draft, mark it ready with `gh-axi pr ready <PR URL>`.
+A draft cannot be merged, so a done report on one leaves the merge unasked.
+Then append `done [at=<epoch>]: PR {url}` to the status file and stop.
+That `done:` is accepted only when the PR is on the repository `origin` names and this copy's HEAD - your latest commit - is pushed to your PR branch; the check tests that commit, not merely that a branch moved.
+A PR raised on any other repository is refused rather than recorded, so if the target you resolved is not the one you expected, append `blocked [at=<epoch>]: {what origin names}` instead of opening it.
+If you deliberately keep the PR a draft, append `paused [at=<epoch>]: {why the draft is held}` instead of done.
+Do NOT run /no-mistakes. The configured merge authority decides whether to merge the PR; firstmate relays the outcome.

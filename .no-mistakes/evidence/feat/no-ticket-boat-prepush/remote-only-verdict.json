@@ -1,0 +1,20 @@
+{
+  "base": "db1923b1a66e97452cc167c183a40ba8fa528de4",
+  "head": "204b7ce1147acc1cb6b28f005d9dfd4201a49d54",
+  "changed_files": 1,
+  "green": false,
+  "failed": [],
+  "attempts": [
+    {
+      "size": "default",
+      "adapter_exit": 70,
+      "wall_s": 39.68,
+      "dollars_estimate": 0.0004,
+      "log": "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6CMQYVESQYCNMD3GZBJJMSZ/.prepush-live-4urdr4a6/out/attempt-default.log",
+      "plan": null,
+      "lanes": [],
+      "summary": null,
+      "boat_unavailable": true
+    }
+  ]
+}

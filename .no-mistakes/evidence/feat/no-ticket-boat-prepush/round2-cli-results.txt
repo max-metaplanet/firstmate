@@ -1,0 +1,72 @@
+exit=0
+exit=0
+exit=0
+exit=0
+exit=0
+exit=0
+exit=0
+exit=0
+exit=0
+exit=0
+exit=0
+exit=0
+$ bash ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6CMQYVESQYCNMD3GZBJJMSZ/bin/fm-boat-prepush.sh --worktree ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6CMQYVESQYCNMD3GZBJJMSZ/.prepush-live-qo9qnak2/project --output ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6CMQYVESQYCNMD3GZBJJMSZ/.prepush-live-qo9qnak2/out --expected-head 0000000000000000000000000000000000000000
+fm-boat-prepush: checkout HEAD 02240ddeca964fff10fe7898bcf0a8883000fff1 does not match expected PR head 0000000000000000000000000000000000000000
+exit=2
+$ bash ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6CMQYVESQYCNMD3GZBJJMSZ/bin/fm-boat-prepush.sh --worktree ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6CMQYVESQYCNMD3GZBJJMSZ/.prepush-live-qo9qnak2/project --output ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6CMQYVESQYCNMD3GZBJJMSZ/.prepush-live-qo9qnak2/out --expected-head 02240ddeca964fff10fe7898bcf0a8883000fff1
+fm-boat-prepush: tracked checkout content differs from expected PR head 02240ddeca964fff10fe7898bcf0a8883000fff1; staged or unstaged changes cannot certify that commit
+exit=2
+exit=0
+$ bash ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6CMQYVESQYCNMD3GZBJJMSZ/bin/fm-boat-prepush.sh --worktree ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6CMQYVESQYCNMD3GZBJJMSZ/.prepush-live-qo9qnak2/project --output ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6CMQYVESQYCNMD3GZBJJMSZ/.prepush-live-qo9qnak2/out --expected-head 02240ddeca964fff10fe7898bcf0a8883000fff1
+fm-boat-prepush: tracked checkout content differs from expected PR head 02240ddeca964fff10fe7898bcf0a8883000fff1; staged or unstaged changes cannot certify that commit
+exit=2
+exit=0
+exit=0
+$ bash ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6CMQYVESQYCNMD3GZBJJMSZ/bin/fm-boat-prepush.sh --worktree ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6CMQYVESQYCNMD3GZBJJMSZ/.prepush-live-qo9qnak2/project --output ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6CMQYVESQYCNMD3GZBJJMSZ/.prepush-live-qo9qnak2/out --base release/x --expected-head 02240ddeca964fff10fe7898bcf0a8883000fff1
+fm-boat-prepush: 0edee818a58b..02240ddeca96, 1 changed files; evidence under ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6CMQYVESQYCNMD3GZBJJMSZ/.prepush-live-qo9qnak2/out
+boat-test-wrapper: result.json: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6CMQYVESQYCNMD3GZBJJMSZ/.prepush-live-qo9qnak2/.fm-test-scratch/fm-boat-test.d3BzRO/boat/result.json
+boat-offload: Boat key unavailable
+boat-test-wrapper: Boat unavailable (exit 69); running locally through heavy build lock; result.json: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6CMQYVESQYCNMD3GZBJJMSZ/.prepush-live-qo9qnak2/.fm-test-scratch/fm-boat-test.d3BzRO/boat/result.json
+fm-boat-prepush-remote: refusing to run outside a disposable machine: the working directory is ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6CMQYVESQYCNMD3GZBJJMSZ/.prepush-live-qo9qnak2/project, not ~/fm-job/source. This check runs a whole heavy test suite and must never fall back to the local machine.
+  attempt on the default machine: 0.0 min, about $0.00001 (estimate), adapter exit 70
+  no disposable machine was available, and this check refuses to run a whole heavy suite on the local machine
+  no lane reported a verdict
+  verdict: RED - the check produced no verdict (default machine)
+exit=1
+$ bash ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6CMQYVESQYCNMD3GZBJJMSZ/bin/fm-boat-prepush.sh --worktree ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6CMQYVESQYCNMD3GZBJJMSZ/.prepush-live-qo9qnak2/project --output ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6CMQYVESQYCNMD3GZBJJMSZ/.prepush-live-qo9qnak2/out --expected-head 02240ddeca964fff10fe7898bcf0a8883000fff1
+fm-boat-prepush: 0edee818a58b..02240ddeca96, 1 changed files; evidence under ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6CMQYVESQYCNMD3GZBJJMSZ/.prepush-live-qo9qnak2/out
+boat-test-wrapper: result.json: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6CMQYVESQYCNMD3GZBJJMSZ/.prepush-live-qo9qnak2/.fm-test-scratch/fm-boat-test.e1xFcc/boat/result.json
+boat-offload: Boat key unavailable
+boat-test-wrapper: Boat unavailable (exit 69); running locally through heavy build lock; result.json: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6CMQYVESQYCNMD3GZBJJMSZ/.prepush-live-qo9qnak2/.fm-test-scratch/fm-boat-test.e1xFcc/boat/result.json
+fm-boat-prepush-remote: refusing to run outside a disposable machine: the working directory is ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6CMQYVESQYCNMD3GZBJJMSZ/.prepush-live-qo9qnak2/project, not ~/fm-job/source. This check runs a whole heavy test suite and must never fall back to the local machine.
+  attempt on the default machine: 0.0 min, about $0.00001 (estimate), adapter exit 70
+  no disposable machine was available, and this check refuses to run a whole heavy suite on the local machine
+  no lane reported a verdict
+  verdict: RED - the check produced no verdict (default machine)
+exit=1
+exit=0
+$ bash ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6CMQYVESQYCNMD3GZBJJMSZ/bin/fm-boat-prepush.sh --worktree ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6CMQYVESQYCNMD3GZBJJMSZ/.prepush-live-qo9qnak2/project --output ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6CMQYVESQYCNMD3GZBJJMSZ/.prepush-live-qo9qnak2/out --base release/x --expected-head 02240ddeca964fff10fe7898bcf0a8883000fff1
+fm-boat-prepush: 0edee818a58b..02240ddeca96, 1 changed files; evidence under ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6CMQYVESQYCNMD3GZBJJMSZ/.prepush-live-qo9qnak2/out
+boat-test-wrapper: result.json: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6CMQYVESQYCNMD3GZBJJMSZ/.prepush-live-qo9qnak2/.fm-test-scratch/fm-boat-test.yICT5n/boat/result.json
+boat-offload: Boat key unavailable
+boat-test-wrapper: Boat unavailable (exit 69); running locally through heavy build lock; result.json: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6CMQYVESQYCNMD3GZBJJMSZ/.prepush-live-qo9qnak2/.fm-test-scratch/fm-boat-test.yICT5n/boat/result.json
+fm-boat-prepush-remote: refusing to run outside a disposable machine: the working directory is ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6CMQYVESQYCNMD3GZBJJMSZ/.prepush-live-qo9qnak2/project, not ~/fm-job/source. This check runs a whole heavy test suite and must never fall back to the local machine.
+  attempt on the default machine: 0.0 min, about $0.00002 (estimate), adapter exit 70
+  no disposable machine was available, and this check refuses to run a whole heavy suite on the local machine
+  no lane reported a verdict
+  verdict: RED - the check produced no verdict (default machine)
+exit=1
+$ python3 ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6CMQYVESQYCNMD3GZBJJMSZ/bin/fm-boat-prepush-remote.py
+fm-boat-prepush-remote: refusing to run outside a disposable machine: the working directory is ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6CMQYVESQYCNMD3GZBJJMSZ/.prepush-live-qo9qnak2/project, not ~/fm-job/source. This check runs a whole heavy test suite and must never fall back to the local machine.
+exit=70
+$ bash -c source bin/fm-dod-lib.sh
+exit=0
+$ bash -c source bin/fm-dod-lib.sh
+exit=0
+$ bash -c source bin/fm-dod-lib.sh
+exit=0
+$ bash -c source bin/fm-dod-lib.sh
+exit=0
+$ bash -c source bin/fm-dod-lib.sh
+error: fm_dod_block: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6CMQYVESQYCNMD3GZBJJMSZ/.prepush-live-qo9qnak2/home/config/boat-prepush line 2 names satellite a second time
+exit=1
