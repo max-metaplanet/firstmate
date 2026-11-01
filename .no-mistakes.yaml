@@ -59,8 +59,13 @@ document:
 # full-suite fallbacks when a safe narrow selection is unknown.
 # Strict dual-SDK compilation belongs to this compiler-owning phase, not Test.
 # The existing type-regression owner also runs in the required portable CI lane.
+#
+# Both heavy steps claim a slot from the machine-wide pool `bin/fm-build-lock.py`
+# owns, so a gate run here cannot spike memory alongside another home's build.
+# Boat (`bin/fm-boat-run.sh`) is deliberately not used for them: it needs FM_HOME,
+# a Boat API key, and network, none of which a gate command has.
 commands:
-  lint: 'bin/fm-lint.sh && bash tests/fm-pi-primary-types.test.sh'
+  lint: "bin/fm-build-lock.py -- bash -c 'bin/fm-lint.sh && bash tests/fm-pi-primary-types.test.sh'"
   test: |
     bash <<'NM_TEST'
     set -euf
@@ -81,7 +86,9 @@ commands:
     set -- $selected
     . bin/fm-timeout-lib.sh
     # CI duration hints bound coverage; allow loaded local execution more time.
-    fm_exec_timed "$((budget * 3 / 1000))" 5 bash bin/fm-test-run.sh --per-script-timeout-secs 1500 "$@"
+    # The slot wait stays inside the deadline, and bin/fm-test-run.sh suppresses
+    # its own re-exec here, so a serial selection claims exactly one slot.
+    fm_exec_timed "$((budget * 3 / 1000))" 5 bin/fm-build-lock.py -- bash bin/fm-test-run.sh --per-script-timeout-secs 1500 "$@"
     NM_TEST
 
 # Trusted Test-step policy. The scope paragraph keeps local validation targeted so
