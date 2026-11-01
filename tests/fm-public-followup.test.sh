@@ -3784,6 +3784,10 @@ test_rejection_is_retried_until_its_wake_is_recorded() {
 # The poll's stdout IS the wake, so a poll that could not write its line has
 # woken nobody. The queued wake is this home's only remaining copy of the
 # refusal and must survive that cycle.
+# Stdout is a read-only descriptor rather than a closed one: /usr/bin/env
+# reopens a closed standard descriptor on /dev/null before it execs the
+# interpreter on some platforms, which would hand the poll a writable stdout and
+# silently test nothing.
 test_rejection_wake_survives_a_poll_that_cannot_write() {
   local home event_id out
   home=$(make_home reject-wake-write)
@@ -3797,7 +3801,7 @@ test_rejection_wake_survives_a_poll_that_cannot_write() {
     "a refusal must queue a wake"
 
   PATH="$home/fakebin:$PATH" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" \
-    FM_STATE_OVERRIDE="$home/state" "$POLL" >&- 2>/dev/null || true
+    FM_STATE_OVERRIDE="$home/state" "$POLL" 0</dev/null 1>&0 2>/dev/null || true
   assert_present "$home/state/public-followup/rejection-wakes/$event_id" \
     "a wake whose line could not be written must stay queued"
   assert_contains "$(run_poll "$home")" "public-followup rejected $event_id" \
