@@ -5,8 +5,9 @@
 #   FM_HOME=/absolute/home fm-boat-prepush.sh [--worktree DIR] [--base REF]
 #       [--expected-head SHA] [--timeout SECONDS] [--history-depth N]
 #       [--output DIR]
-# Exit: 0 every selected lane passed, 1 a lane failed or no verdict was
-# produced, 2 invalid input, and the adapter's own codes for a Boat failure.
+# Exit: 0 every selected lane passed or had only proven missing-history
+# failures, 1 a lane failed, the verdict was incomplete, or Boat failed,
+# and 2 invalid input.
 #
 # WHAT IT CHECKS
 # The project's repository planner decides which heavy lanes a change selects.
@@ -20,6 +21,10 @@
 # full commit ID or tracked files have staged or unstaged changes, before planning
 # or starting a machine. Untracked files are allowed. Without --expected-head,
 # local edits remain allowed. verdict.json records the checked head.
+# --base prefers origin's remote-tracking ref for a named branch over a local
+# branch of that name; revision expressions resolve locally. Without --base,
+# it tries origin/HEAD, then origin/main. --output selects the evidence directory;
+# by default a fresh fm-boat-prepush.* directory is created beside the worktree.
 #
 # MACHINE SIZE
 # The default 4 CPU / 8 GB machine is tried first, with the two memory caps the
@@ -68,6 +73,11 @@
 # green with unavailable tests does not mean full parity.
 # Selected database suites run sequentially with digest-pinned services from
 # the head's .github/ci-images.json; setup failures also make the check red.
+# Native PostgreSQL clients must match the approved server image's major version;
+# missing clients are installed from PGDG once on the disposable machine and
+# reused across suites. If they cannot be obtained, the lane fails. Client calls
+# do not start containers. Runtime test files run with --test-concurrency=1
+# because they share one database and can race while creating roles.
 # This is a pre-ready gate, not a replacement for the forge's required checks.
 #
 # WIRING

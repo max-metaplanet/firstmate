@@ -116,6 +116,9 @@
 # --project also selects the repository whose publication target decides the
 # task's commit convention (bin/fm-orgs-lib.sh); without it a ship brief falls
 # back to this home's clone at projects/<repo> for that decision only.
+# Its directory basename also selects any declared pre-ready Boat check;
+# bin/fm-boat-prepush-lib.sh owns that declaration. Without --project, the brief
+# omits that check even when projects/<repo> exists.
 # The generated ship brief records the chosen mode as a fixed machine-readable
 # "Delivery contract: mode=<mode>" line, followed by " forge=gerrit shape=squash"
 # on Gerrit, " forge=forgejo" on Forgejo, or " forge=external" on an external
