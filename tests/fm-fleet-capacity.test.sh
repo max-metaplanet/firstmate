@@ -208,6 +208,11 @@ new_worktree() {  # <case-dir> <name>
 run_spawn() {  # <case-dir> <home> <pane-path> <args...>
   local case_dir=$1 home=$2 pane=$3
   shift 3
+  # A spawn whose bounding watchdog dies with the suite (an outer group-kill)
+  # ends only at its own treehouse-path deadline; the fake pane answers at
+  # once (or after the hold's 20s cap), so keep that deadline near it rather
+  # than the 600s default.
+  FM_TREEHOUSE_GET_TIMEOUT=30 \
   FM_ROOT_OVERRIDE='' FM_HOME="$home" \
     FM_STATE_OVERRIDE='' FM_DATA_OVERRIDE='' FM_PROJECTS_OVERRIDE='' FM_CONFIG_OVERRIDE='' \
     FM_SPAWN_NO_GUARD=1 TMUX="fake,1,0" FM_BACKEND=tmux \
