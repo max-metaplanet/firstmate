@@ -1196,6 +1196,7 @@ test_prepush_binds_the_verdict_to_the_current_pr_head() {
     dod=$(prepush_dod "$mode" core) || fail "$mode: declared project did not render"
     assert_contains "$dod" "--expected-head '<PR head SHA>'" "the delivered check omitted its expected head"
     assert_contains "$dod" 'read its current head commit from the forge' "the delivered procedure omitted the initial forge read"
+    # shellcheck disable=SC2016  # the backticked verdict fields must stay literal
     assert_contains "$dod" 'confirm it still equals the `head` in `verdict.json`' "the delivered procedure omitted the verdict head comparison"
     assert_contains "$dod" 'check out the new head and repeat the check and head comparison' "the delivered procedure allowed a stale verdict"
     assert_contains "$dod" 'A verdict from a different commit is not evidence about this one.' "the delivered procedure did not bind its evidence"
