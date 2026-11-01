@@ -108,6 +108,45 @@ test_a_capped_command_keeps_its_own_streams_and_status() {
   pass "a capped command keeps its stdin, stdout, stderr, and exit status"
 }
 
+# shellcheck disable=SC2016
+test_command_arguments_are_preserved() {
+  local mode out expected
+  local -a options
+  expected=$(printf '<%s>\n' '' 'two words' '${FM_MEMCAP_ARGV_UNSET}' '$HOME' '*' 'a"b')
+  for mode in reporting exec; do
+    options=()
+    [ "$mode" != exec ] || options=(--exec)
+    out=$(unset FM_MEMCAP_ARGV_UNSET; "$MEMCAP" "${options[@]}" -- \
+      /bin/sh -c 'printf "<%s>\n" "$@"' argv '' 'two words' '${FM_MEMCAP_ARGV_UNSET}' '$HOME' '*' 'a"b') \
+      || fail "$mode argument-preservation command failed"
+    assert_equals "$expected" "$out" "$mode must preserve literal arguments and their boundaries"
+    out=$(unset v; "$MEMCAP" "${options[@]}" -- /bin/sh -c 'v=inner; printf "%s" "${v}"') \
+      || fail "$mode shell-program command failed"
+    assert_equals inner "$out" "$mode must leave variable expansion to the command"
+  done
+  pass "reporting and exec modes preserve literal arguments and shell programs"
+}
+
+test_unsupported_expansion_flag_disables_cgroup() {
+  local tmp fakebin out
+  tmp=$(fm_test_tmproot fm-memcap-old-systemd)
+  fakebin=$(fm_fakebin "$tmp")
+  cat > "$fakebin/systemd-run" <<'SH'
+#!/bin/sh
+for arg do
+  case "$arg" in --expand-environment=*) exit 1 ;; esac
+done
+exit 0
+SH
+  chmod +x "$fakebin/systemd-run"
+  out=$(PATH="$fakebin:$PATH" "$MEMCAP" --mechanism) || fail "old-systemd mechanism probe failed"
+  [ "$out" != cgroup ] || fail "systemd without expansion control was selected"
+  out=$(PATH="$fakebin:$PATH" "$MEMCAP" -- /bin/sh -c 'printf fallback') \
+    || fail "old-systemd fallback command failed"
+  assert_equals fallback "$out" "an unsupported cgroup launcher must not consume the command"
+  pass "systemd without expansion control is unavailable and fallback still executes"
+}
+
 test_uncapped_warnings_name_the_bounded_route() {
   local tmp fakebin mode expected out rc
   tmp=$(fm_test_tmproot fm-memcap-warnings)
@@ -171,5 +210,7 @@ test_budget_is_a_positive_byte_count_split_across_shares
 test_linux_budget_uses_the_readable_memory_total
 test_malformed_input_is_refused_rather_than_guessed
 test_a_capped_command_keeps_its_own_streams_and_status
+test_command_arguments_are_preserved
+test_unsupported_expansion_flag_disables_cgroup
 test_uncapped_warnings_name_the_bounded_route
 test_a_runaway_dies_at_its_cap_and_is_named
