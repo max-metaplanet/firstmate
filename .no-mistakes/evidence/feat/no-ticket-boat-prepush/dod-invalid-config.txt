@@ -1,0 +1,1 @@
+error: fm_dod_block: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M69MH831RGQM6KVY4NK4309X/.boat-live-test/home/config/boat-prepush line 1 gives sample a timeout that is not a whole number of seconds from 1 to 2700

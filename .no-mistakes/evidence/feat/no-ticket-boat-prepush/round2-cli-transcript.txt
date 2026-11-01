@@ -1,0 +1,64 @@
+SCENARIO mismatch
+exit=2
+fm-boat-prepush: checkout HEAD 7489036089ce1be3c4dc9e90449ca601b2a25b2a does not match expected PR head e7446bc4115b00d7820b9c86e8581ecf62b8d7b6
+
+SCENARIO unstaged
+exit=2
+fm-boat-prepush: tracked checkout content differs from expected PR head 7489036089ce1be3c4dc9e90449ca601b2a25b2a; staged or unstaged changes cannot certify that commit
+
+SCENARIO staged
+exit=2
+fm-boat-prepush: tracked checkout content differs from expected PR head 7489036089ce1be3c4dc9e90449ca601b2a25b2a; staged or unstaged changes cannot certify that commit
+
+SCENARIO deleted
+exit=2
+fm-boat-prepush: tracked checkout content differs from expected PR head 7489036089ce1be3c4dc9e90449ca601b2a25b2a; staged or unstaged changes cannot certify that commit
+
+SCENARIO staged-deleted
+exit=2
+fm-boat-prepush: tracked checkout content differs from expected PR head 7489036089ce1be3c4dc9e90449ca601b2a25b2a; staged or unstaged changes cannot certify that commit
+
+SCENARIO clean
+exit=1
+
+pre-ready heavy-test check
+  attempt on the default machine: 0.0 min, about $0.00001 (estimate), adapter exit 70
+  full output: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M69MH831RGQM6KVY4NK4309X/.boat-live-test/out-clean/attempt-default.log
+  no disposable machine was available, and this check refuses to run a whole heavy suite on the local machine
+  no lane reported a verdict
+  verdict: RED - the check produced no verdict (default machine)
+fm-boat-prepush: e7446bc4115b..7489036089ce, 2 changed files; evidence under ~/.no-mistakes/worktrees/c0c4fcacb05a/01M69MH831RGQM6KVY4NK4309X/.boat-live-test/out-clean
+boat-test-wrapper: result.json: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M69MH831RGQM6KVY4NK4309X/.boat-live-test/.fm-test-scratch/fm-boat-test.KqTibY/boat/result.json
+boat-offload: Boat key unavailable
+boat-test-wrapper: Boat unavailable (exit 69); running locally through heavy build lock; result.json: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M69MH831RGQM6KVY4NK4309X/.boat-live-test/.fm-test-scratch/fm-boat-test.KqTibY/boat/result.json
+fm-boat-prepush-remote: refusing to run outside a disposable machine: the working directory is ~/.no-mistakes/worktrees/c0c4fcacb05a/01M69MH831RGQM6KVY4NK4309X/.boat-live-test/project, not ~/fm-job/source. This check runs a whole heavy test suite and must never fall back to the local machine.
+
+SCENARIO untracked
+exit=1
+
+pre-ready heavy-test check
+  attempt on the default machine: 0.0 min, about $0.00001 (estimate), adapter exit 70
+  full output: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M69MH831RGQM6KVY4NK4309X/.boat-live-test/out-untracked/attempt-default.log
+  no disposable machine was available, and this check refuses to run a whole heavy suite on the local machine
+  no lane reported a verdict
+  verdict: RED - the check produced no verdict (default machine)
+fm-boat-prepush: e7446bc4115b..7489036089ce, 2 changed files; evidence under ~/.no-mistakes/worktrees/c0c4fcacb05a/01M69MH831RGQM6KVY4NK4309X/.boat-live-test/out-untracked
+boat-test-wrapper: result.json: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M69MH831RGQM6KVY4NK4309X/.boat-live-test/.fm-test-scratch/fm-boat-test.EWA8Hb/boat/result.json
+boat-offload: Boat key unavailable
+boat-test-wrapper: Boat unavailable (exit 69); running locally through heavy build lock; result.json: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M69MH831RGQM6KVY4NK4309X/.boat-live-test/.fm-test-scratch/fm-boat-test.EWA8Hb/boat/result.json
+fm-boat-prepush-remote: refusing to run outside a disposable machine: the working directory is ~/.no-mistakes/worktrees/c0c4fcacb05a/01M69MH831RGQM6KVY4NK4309X/.boat-live-test/project, not ~/fm-job/source. This check runs a whole heavy test suite and must never fall back to the local machine.
+
+SCENARIO manual-dirty
+exit=1
+
+pre-ready heavy-test check
+  attempt on the default machine: 0.0 min, about $0.00001 (estimate), adapter exit 70
+  full output: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M69MH831RGQM6KVY4NK4309X/.boat-live-test/out-manual-dirty/attempt-default.log
+  no disposable machine was available, and this check refuses to run a whole heavy suite on the local machine
+  no lane reported a verdict
+  verdict: RED - the check produced no verdict (default machine)
+fm-boat-prepush: e7446bc4115b..7489036089ce, 2 changed files; evidence under ~/.no-mistakes/worktrees/c0c4fcacb05a/01M69MH831RGQM6KVY4NK4309X/.boat-live-test/out-manual-dirty
+boat-test-wrapper: result.json: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M69MH831RGQM6KVY4NK4309X/.boat-live-test/.fm-test-scratch/fm-boat-test.NlMvLM/boat/result.json
+boat-offload: Boat key unavailable
+boat-test-wrapper: Boat unavailable (exit 69); running locally through heavy build lock; result.json: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M69MH831RGQM6KVY4NK4309X/.boat-live-test/.fm-test-scratch/fm-boat-test.NlMvLM/boat/result.json
+fm-boat-prepush-remote: refusing to run outside a disposable machine: the working directory is ~/.no-mistakes/worktrees/c0c4fcacb05a/01M69MH831RGQM6KVY4NK4309X/.boat-live-test/project, not ~/fm-job/source. This check runs a whole heavy test suite and must never fall back to the local machine.

@@ -1,0 +1,30 @@
+[
+  {
+    "name": "diagnostic-timeout",
+    "group": "scripts",
+    "exit": 124,
+    "wall_s": 5.21,
+    "skipped": false,
+    "timeout": true,
+    "output_tail": "last diagnostic before stall\n",
+    "oom": false,
+    "history_excused": [],
+    "history_only": false,
+    "oom_evidence": "",
+    "missing_history": ""
+  },
+  {
+    "name": "following-lane",
+    "group": "scripts",
+    "exit": 0,
+    "wall_s": 0.01,
+    "skipped": false,
+    "timeout": false,
+    "output_tail": "following lane completed\n",
+    "oom": false,
+    "history_excused": [],
+    "history_only": false,
+    "oom_evidence": "",
+    "missing_history": ""
+  }
+]

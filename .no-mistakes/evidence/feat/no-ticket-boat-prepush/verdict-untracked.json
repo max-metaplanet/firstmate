@@ -1,0 +1,20 @@
+{
+  "base": "98e5cbfb0f71f223244a1ee0674e04ecce388907",
+  "head": "e11e01f3c52bc8b2780787c69bd34cb1d21f46bd",
+  "changed_files": 2,
+  "green": false,
+  "failed": [],
+  "attempts": [
+    {
+      "size": "default",
+      "adapter_exit": 70,
+      "wall_s": 0.55,
+      "dollars_estimate": 1e-05,
+      "log": "~/.no-mistakes/worktrees/c0c4fcacb05a/01M69MH831RGQM6KVY4NK4309X/.boat-live-test/out-untracked/attempt-default.log",
+      "plan": null,
+      "lanes": [],
+      "summary": null,
+      "boat_unavailable": true
+    }
+  ]
+}

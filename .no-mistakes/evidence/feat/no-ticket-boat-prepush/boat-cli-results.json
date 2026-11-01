@@ -1,0 +1,50 @@
+[
+  {
+    "case": "mismatch",
+    "expected_refusal": true,
+    "exit": 2,
+    "checked_head": "e11e01f3c52bc8b2780787c69bd34cb1d21f46bd"
+  },
+  {
+    "case": "unstaged",
+    "expected_refusal": true,
+    "exit": 2,
+    "checked_head": "e11e01f3c52bc8b2780787c69bd34cb1d21f46bd"
+  },
+  {
+    "case": "staged",
+    "expected_refusal": true,
+    "exit": 2,
+    "checked_head": "e11e01f3c52bc8b2780787c69bd34cb1d21f46bd"
+  },
+  {
+    "case": "deleted",
+    "expected_refusal": true,
+    "exit": 2,
+    "checked_head": "e11e01f3c52bc8b2780787c69bd34cb1d21f46bd"
+  },
+  {
+    "case": "staged-deleted",
+    "expected_refusal": true,
+    "exit": 2,
+    "checked_head": "e11e01f3c52bc8b2780787c69bd34cb1d21f46bd"
+  },
+  {
+    "case": "clean",
+    "expected_refusal": false,
+    "exit": 1,
+    "checked_head": "e11e01f3c52bc8b2780787c69bd34cb1d21f46bd"
+  },
+  {
+    "case": "untracked",
+    "expected_refusal": false,
+    "exit": 1,
+    "checked_head": "e11e01f3c52bc8b2780787c69bd34cb1d21f46bd"
+  },
+  {
+    "case": "manual-dirty",
+    "expected_refusal": false,
+    "exit": 1,
+    "checked_head": "e11e01f3c52bc8b2780787c69bd34cb1d21f46bd"
+  }
+]

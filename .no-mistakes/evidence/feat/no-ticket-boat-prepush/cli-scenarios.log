@@ -1,0 +1,78 @@
+SCENARIO wrong-head
+$ bash ~/.no-mistakes/worktrees/c0c4fcacb05a/01M69MH831RGQM6KVY4NK4309X/bin/fm-boat-prepush.sh --worktree ~/.no-mistakes/worktrees/c0c4fcacb05a/01M69MH831RGQM6KVY4NK4309X/.boat-validation-as31q68j/source --base dd86951b5861d7b2365224f9a1c6ec5f3aedc1a7 --timeout 15 --output ~/.no-mistakes/worktrees/c0c4fcacb05a/01M69MH831RGQM6KVY4NK4309X/.boat-validation-as31q68j/result-wrong-head --expected-head dd86951b5861d7b2365224f9a1c6ec5f3aedc1a7
+fm-boat-prepush: checkout HEAD 6f0972bfcc08774f758ac47c5bd5f3af58659301 does not match expected PR head dd86951b5861d7b2365224f9a1c6ec5f3aedc1a7
+exit=2
+
+SCENARIO staged
+$ bash ~/.no-mistakes/worktrees/c0c4fcacb05a/01M69MH831RGQM6KVY4NK4309X/bin/fm-boat-prepush.sh --worktree ~/.no-mistakes/worktrees/c0c4fcacb05a/01M69MH831RGQM6KVY4NK4309X/.boat-validation-as31q68j/source --base dd86951b5861d7b2365224f9a1c6ec5f3aedc1a7 --timeout 15 --output ~/.no-mistakes/worktrees/c0c4fcacb05a/01M69MH831RGQM6KVY4NK4309X/.boat-validation-as31q68j/result-staged --expected-head 6f0972bfcc08774f758ac47c5bd5f3af58659301
+fm-boat-prepush: tracked checkout content differs from expected PR head 6f0972bfcc08774f758ac47c5bd5f3af58659301; staged or unstaged changes cannot certify that commit
+exit=2
+
+SCENARIO unstaged
+$ bash ~/.no-mistakes/worktrees/c0c4fcacb05a/01M69MH831RGQM6KVY4NK4309X/bin/fm-boat-prepush.sh --worktree ~/.no-mistakes/worktrees/c0c4fcacb05a/01M69MH831RGQM6KVY4NK4309X/.boat-validation-as31q68j/source --base dd86951b5861d7b2365224f9a1c6ec5f3aedc1a7 --timeout 15 --output ~/.no-mistakes/worktrees/c0c4fcacb05a/01M69MH831RGQM6KVY4NK4309X/.boat-validation-as31q68j/result-unstaged --expected-head 6f0972bfcc08774f758ac47c5bd5f3af58659301
+fm-boat-prepush: tracked checkout content differs from expected PR head 6f0972bfcc08774f758ac47c5bd5f3af58659301; staged or unstaged changes cannot certify that commit
+exit=2
+
+SCENARIO deleted
+$ bash ~/.no-mistakes/worktrees/c0c4fcacb05a/01M69MH831RGQM6KVY4NK4309X/bin/fm-boat-prepush.sh --worktree ~/.no-mistakes/worktrees/c0c4fcacb05a/01M69MH831RGQM6KVY4NK4309X/.boat-validation-as31q68j/source --base dd86951b5861d7b2365224f9a1c6ec5f3aedc1a7 --timeout 15 --output ~/.no-mistakes/worktrees/c0c4fcacb05a/01M69MH831RGQM6KVY4NK4309X/.boat-validation-as31q68j/result-deleted --expected-head 6f0972bfcc08774f758ac47c5bd5f3af58659301
+fm-boat-prepush: tracked checkout content differs from expected PR head 6f0972bfcc08774f758ac47c5bd5f3af58659301; staged or unstaged changes cannot certify that commit
+exit=2
+
+SCENARIO staged-deleted
+$ bash ~/.no-mistakes/worktrees/c0c4fcacb05a/01M69MH831RGQM6KVY4NK4309X/bin/fm-boat-prepush.sh --worktree ~/.no-mistakes/worktrees/c0c4fcacb05a/01M69MH831RGQM6KVY4NK4309X/.boat-validation-as31q68j/source --base dd86951b5861d7b2365224f9a1c6ec5f3aedc1a7 --timeout 15 --output ~/.no-mistakes/worktrees/c0c4fcacb05a/01M69MH831RGQM6KVY4NK4309X/.boat-validation-as31q68j/result-staged-deleted --expected-head 6f0972bfcc08774f758ac47c5bd5f3af58659301
+fm-boat-prepush: tracked checkout content differs from expected PR head 6f0972bfcc08774f758ac47c5bd5f3af58659301; staged or unstaged changes cannot certify that commit
+exit=2
+
+SCENARIO clean
+$ bash ~/.no-mistakes/worktrees/c0c4fcacb05a/01M69MH831RGQM6KVY4NK4309X/bin/fm-boat-prepush.sh --worktree ~/.no-mistakes/worktrees/c0c4fcacb05a/01M69MH831RGQM6KVY4NK4309X/.boat-validation-as31q68j/source --base dd86951b5861d7b2365224f9a1c6ec5f3aedc1a7 --timeout 15 --output ~/.no-mistakes/worktrees/c0c4fcacb05a/01M69MH831RGQM6KVY4NK4309X/.boat-validation-as31q68j/result-clean --expected-head 6f0972bfcc08774f758ac47c5bd5f3af58659301
+fm-boat-prepush: dd86951b5861..6f0972bfcc08, 1 changed files; evidence under ~/.no-mistakes/worktrees/c0c4fcacb05a/01M69MH831RGQM6KVY4NK4309X/.boat-validation-as31q68j/result-clean
+boat-test-wrapper: result.json: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M69MH831RGQM6KVY4NK4309X/.boat-validation-as31q68j/.fm-test-scratch/fm-boat-test.2UKeC0/boat/result.json
+boat-offload: Boat key unavailable
+boat-test-wrapper: Boat unavailable (exit 69); running locally through heavy build lock; result.json: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M69MH831RGQM6KVY4NK4309X/.boat-validation-as31q68j/.fm-test-scratch/fm-boat-test.2UKeC0/boat/result.json
+fm-boat-prepush-remote: refusing to run outside a disposable machine: the working directory is ~/.no-mistakes/worktrees/c0c4fcacb05a/01M69MH831RGQM6KVY4NK4309X/.boat-validation-as31q68j/source, not ~/fm-job/source. This check runs a whole heavy test suite and must never fall back to the local machine.
+
+pre-ready heavy-test check
+  attempt on the default machine: 0.0 min, about $0.00001 (estimate), adapter exit 70
+  full output: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M69MH831RGQM6KVY4NK4309X/.boat-validation-as31q68j/result-clean/attempt-default.log
+  no disposable machine was available, and this check refuses to run a whole heavy suite on the local machine
+  no lane reported a verdict
+  verdict: RED - the check produced no verdict (default machine)
+exit=1
+
+verdict.json: {"head": "6f0972bfcc08774f758ac47c5bd5f3af58659301", "green": false, "failed": [], "attempt_sizes": ["default"]}
+
+SCENARIO untracked
+$ bash ~/.no-mistakes/worktrees/c0c4fcacb05a/01M69MH831RGQM6KVY4NK4309X/bin/fm-boat-prepush.sh --worktree ~/.no-mistakes/worktrees/c0c4fcacb05a/01M69MH831RGQM6KVY4NK4309X/.boat-validation-as31q68j/source --base dd86951b5861d7b2365224f9a1c6ec5f3aedc1a7 --timeout 15 --output ~/.no-mistakes/worktrees/c0c4fcacb05a/01M69MH831RGQM6KVY4NK4309X/.boat-validation-as31q68j/result-untracked --expected-head 6f0972bfcc08774f758ac47c5bd5f3af58659301
+fm-boat-prepush: dd86951b5861..6f0972bfcc08, 1 changed files; evidence under ~/.no-mistakes/worktrees/c0c4fcacb05a/01M69MH831RGQM6KVY4NK4309X/.boat-validation-as31q68j/result-untracked
+boat-test-wrapper: result.json: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M69MH831RGQM6KVY4NK4309X/.boat-validation-as31q68j/.fm-test-scratch/fm-boat-test.UuHSj5/boat/result.json
+boat-offload: Boat key unavailable
+boat-test-wrapper: Boat unavailable (exit 69); running locally through heavy build lock; result.json: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M69MH831RGQM6KVY4NK4309X/.boat-validation-as31q68j/.fm-test-scratch/fm-boat-test.UuHSj5/boat/result.json
+fm-boat-prepush-remote: refusing to run outside a disposable machine: the working directory is ~/.no-mistakes/worktrees/c0c4fcacb05a/01M69MH831RGQM6KVY4NK4309X/.boat-validation-as31q68j/source, not ~/fm-job/source. This check runs a whole heavy test suite and must never fall back to the local machine.
+
+pre-ready heavy-test check
+  attempt on the default machine: 0.0 min, about $0.00001 (estimate), adapter exit 70
+  full output: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M69MH831RGQM6KVY4NK4309X/.boat-validation-as31q68j/result-untracked/attempt-default.log
+  no disposable machine was available, and this check refuses to run a whole heavy suite on the local machine
+  no lane reported a verdict
+  verdict: RED - the check produced no verdict (default machine)
+exit=1
+
+verdict.json: {"head": "6f0972bfcc08774f758ac47c5bd5f3af58659301", "green": false, "failed": [], "attempt_sizes": ["default"]}
+
+SCENARIO manual-dirty
+$ bash ~/.no-mistakes/worktrees/c0c4fcacb05a/01M69MH831RGQM6KVY4NK4309X/bin/fm-boat-prepush.sh --worktree ~/.no-mistakes/worktrees/c0c4fcacb05a/01M69MH831RGQM6KVY4NK4309X/.boat-validation-as31q68j/source --base dd86951b5861d7b2365224f9a1c6ec5f3aedc1a7 --timeout 15 --output ~/.no-mistakes/worktrees/c0c4fcacb05a/01M69MH831RGQM6KVY4NK4309X/.boat-validation-as31q68j/result-manual-dirty
+fm-boat-prepush: dd86951b5861..6f0972bfcc08, 1 changed files; evidence under ~/.no-mistakes/worktrees/c0c4fcacb05a/01M69MH831RGQM6KVY4NK4309X/.boat-validation-as31q68j/result-manual-dirty
+boat-test-wrapper: result.json: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M69MH831RGQM6KVY4NK4309X/.boat-validation-as31q68j/.fm-test-scratch/fm-boat-test.7uOoul/boat/result.json
+boat-offload: Boat key unavailable
+boat-test-wrapper: Boat unavailable (exit 69); running locally through heavy build lock; result.json: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M69MH831RGQM6KVY4NK4309X/.boat-validation-as31q68j/.fm-test-scratch/fm-boat-test.7uOoul/boat/result.json
+fm-boat-prepush-remote: refusing to run outside a disposable machine: the working directory is ~/.no-mistakes/worktrees/c0c4fcacb05a/01M69MH831RGQM6KVY4NK4309X/.boat-validation-as31q68j/source, not ~/fm-job/source. This check runs a whole heavy test suite and must never fall back to the local machine.
+
+pre-ready heavy-test check
+  attempt on the default machine: 0.0 min, about $0.00001 (estimate), adapter exit 70
+  full output: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M69MH831RGQM6KVY4NK4309X/.boat-validation-as31q68j/result-manual-dirty/attempt-default.log
+  no disposable machine was available, and this check refuses to run a whole heavy suite on the local machine
+  no lane reported a verdict
+  verdict: RED - the check produced no verdict (default machine)
+exit=1
+
+verdict.json: {"head": "6f0972bfcc08774f758ac47c5bd5f3af58659301", "green": false, "failed": [], "attempt_sizes": ["default"]}

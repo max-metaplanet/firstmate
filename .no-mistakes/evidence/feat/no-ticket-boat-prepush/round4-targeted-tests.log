@@ -1,0 +1,382 @@
+ok - lane order, shard runner, affected packages and the two memory caps
+ok - application, script-test, tooling-only and harness predicates select lanes
+ok - lane environment drops inherited setup and keeps the workflows own cache control
+ok - the larger machine is bought only for a proven memory failure on default
+
+===== lane probe =====
+one assertion failed
+
+===== lane probe =====
+
+===== lane probe =====
+FATAL ERROR: Ineffective mark-compacts near heap limit Allocation failed
+
+===== lane probe =====
+worker gone
+
+===== lane probe =====
+worker gone
+ok - out of memory is proven by the kernel, exit 137 or V8, never guessed
+
+===== lane hung =====
+last diagnostic
+
+===== lane probe =====
+following lane completed
+boat-test-wrapper: result.json: ~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-boat-prepush.RjyIN0/partial-output/result.json
+boat-test-wrapper: result.json: ~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-boat-prepush.RjyIN0/partial-output/result.json
+ok - a timed-out lane retains diagnostics, stays red, and releases following lanes
+ok - partial stream-framed logs preserve lane verdicts and name unreported lanes
+
+===== lane probe =====
+fatal: path 'a/b.tsx' exists on disk, but not in 'ee343d6a'
+
+===== lane probe =====
+ordinary assertion failure
+
+===== lane probe =====
+fatal: bad object deadbeef
+ok - a failure reading absent history is labelled and still counted as a failure
+ok - the head canonical definitions determine the cap through narrowing and renames
+
+===== lane ci-scripts =====
+TAP version 13
+# fatal: bad object 1234567890123456789012345678901234567890
+# Subtest: a renamed suite
+    # Subtest: renamed historical test
+    not ok 1 - renamed historical test
+      ---
+      duration_ms: 7.172074
+      type: 'test'
+      location: '~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-boat-prepush.RjyIN0/tap-history.test.mjs:4:1'
+      failureType: 'testCodeFailure'
+      error: |-
+        Command failed: git show 1234567890123456789012345678901234567890
+        fatal: bad object 1234567890123456789012345678901234567890
+        
+      code: 'ERR_TEST_FAILURE'
+      stack: |-
+        genericNodeError (node:internal/errors:986:15)
+        wrappedFn (node:internal/errors:540:14)
+        checkExecSyncError (node:child_process:943:11)
+        execFileSync (node:child_process:979:15)
+        TestContext.<anonymous> (file://~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-boat-prepush.RjyIN0/tap-history.test.mjs:4:41)
+        Test.runInAsyncScope (node:async_hooks:227:14)
+        Test.run (node:internal/test_runner/test:1402:25)
+        Test.start (node:internal/test_runner/test:1262:17)
+        node:internal/test_runner/test:1903:71
+        node:internal/per_context/primordials:504:82
+      ...
+    1..1
+not ok 1 - a renamed suite
+  ---
+  duration_ms: 9.676196
+  type: 'suite'
+  location: '~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-boat-prepush.RjyIN0/tap-history.test.mjs:3:1'
+  failureType: 'subtestsFailed'
+  error: '1 subtest failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+1..1
+# tests 1
+# suites 1
+# pass 0
+# fail 1
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 74.435404
+
+===== lane ci-scripts =====
+TAP version 13
+# fatal: bad object 1234567890123456789012345678901234567890
+# Subtest: a renamed suite
+    # Subtest: renamed historical test
+    not ok 1 - renamed historical test
+      ---
+      duration_ms: 2.940746
+      type: 'test'
+      location: '~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-boat-prepush.RjyIN0/tap-mixed.test.mjs:4:1'
+      failureType: 'testCodeFailure'
+      error: |-
+        Command failed: git show 1234567890123456789012345678901234567890
+        fatal: bad object 1234567890123456789012345678901234567890
+        
+      code: 'ERR_TEST_FAILURE'
+      stack: |-
+        genericNodeError (node:internal/errors:986:15)
+        wrappedFn (node:internal/errors:540:14)
+        checkExecSyncError (node:child_process:943:11)
+        execFileSync (node:child_process:979:15)
+        TestContext.<anonymous> (file://~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-boat-prepush.RjyIN0/tap-mixed.test.mjs:4:41)
+        Test.runInAsyncScope (node:async_hooks:227:14)
+        Test.run (node:internal/test_runner/test:1402:25)
+        Test.start (node:internal/test_runner/test:1262:17)
+        node:internal/test_runner/test:1903:71
+        node:internal/per_context/primordials:504:82
+      ...
+    # Subtest: ordinary failure
+    not ok 2 - ordinary failure
+      ---
+      duration_ms: 0.080583
+      type: 'test'
+      location: '~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-boat-prepush.RjyIN0/tap-mixed.test.mjs:5:1'
+      failureType: 'testCodeFailure'
+      error: 'assertion failed'
+      code: 'ERR_TEST_FAILURE'
+      stack: |-
+        TestContext.<anonymous> (file://~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-boat-prepush.RjyIN0/tap-mixed.test.mjs:5:40)
+        Test.runInAsyncScope (node:async_hooks:227:14)
+        Test.run (node:internal/test_runner/test:1402:25)
+        Suite.processPendingSubtests (node:internal/test_runner/test:974:18)
+        Test.postRun (node:internal/test_runner/test:1542:19)
+        Test.run (node:internal/test_runner/test:1467:12)
+        async Promise.all (index 0)
+        async Suite.run (node:internal/test_runner/test:1905:7)
+        async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3)
+      ...
+    1..2
+not ok 1 - a renamed suite
+  ---
+  duration_ms: 3.761828
+  type: 'suite'
+  location: '~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-boat-prepush.RjyIN0/tap-mixed.test.mjs:3:1'
+  failureType: 'subtestsFailed'
+  error: '2 subtests failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+1..1
+# tests 2
+# suites 1
+# pass 0
+# fail 2
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 55.091596
+
+===== lane ci-scripts =====
+TAP version 13
+# fatal: invalid object name 'ee343d6a'.
+# Subtest: a renamed suite
+    # Subtest: renamed historical test
+    not ok 1 - renamed historical test
+      ---
+      duration_ms: 5.347951
+      type: 'test'
+      location: '~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-boat-prepush.RjyIN0/tap-history.test.mjs:4:1'
+      failureType: 'testCodeFailure'
+      error: |-
+        Command failed: git show ee343d6a:missing.ts
+        fatal: invalid object name 'ee343d6a'.
+        
+      code: 'ERR_TEST_FAILURE'
+      stack: |-
+        genericNodeError (node:internal/errors:986:15)
+        wrappedFn (node:internal/errors:540:14)
+        checkExecSyncError (node:child_process:943:11)
+        execFileSync (node:child_process:979:15)
+        TestContext.<anonymous> (file://~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-boat-prepush.RjyIN0/tap-history.test.mjs:4:41)
+        Test.runInAsyncScope (node:async_hooks:227:14)
+        Test.run (node:internal/test_runner/test:1402:25)
+        Test.start (node:internal/test_runner/test:1262:17)
+        node:internal/test_runner/test:1903:71
+        node:internal/per_context/primordials:504:82
+      ...
+    1..1
+not ok 1 - a renamed suite
+  ---
+  duration_ms: 6.117992
+  type: 'suite'
+  location: '~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-boat-prepush.RjyIN0/tap-history.test.mjs:3:1'
+  failureType: 'subtestsFailed'
+  error: '1 subtest failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+1..1
+# tests 1
+# suites 1
+# pass 0
+# fail 1
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 56.488886
+
+===== lane ci-scripts =====
+TAP version 13
+# fatal: invalid object name 'ee343d6a'.
+# Subtest: a renamed suite
+    # Subtest: renamed historical test
+    not ok 1 - renamed historical test
+      ---
+      duration_ms: 4.593119
+      type: 'test'
+      location: '~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-boat-prepush.RjyIN0/tap-mixed.test.mjs:4:1'
+      failureType: 'testCodeFailure'
+      error: |-
+        Command failed: git show ee343d6a:missing.ts
+        fatal: invalid object name 'ee343d6a'.
+        
+      code: 'ERR_TEST_FAILURE'
+      stack: |-
+        genericNodeError (node:internal/errors:986:15)
+        wrappedFn (node:internal/errors:540:14)
+        checkExecSyncError (node:child_process:943:11)
+        execFileSync (node:child_process:979:15)
+        TestContext.<anonymous> (file://~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-boat-prepush.RjyIN0/tap-mixed.test.mjs:4:41)
+        Test.runInAsyncScope (node:async_hooks:227:14)
+        Test.run (node:internal/test_runner/test:1402:25)
+        Test.start (node:internal/test_runner/test:1262:17)
+        node:internal/test_runner/test:1903:71
+        node:internal/per_context/primordials:504:82
+      ...
+    # Subtest: ordinary failure
+    not ok 2 - ordinary failure
+      ---
+      duration_ms: 0.281374
+      type: 'test'
+      location: '~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-boat-prepush.RjyIN0/tap-mixed.test.mjs:5:1'
+      failureType: 'testCodeFailure'
+      error: 'assertion failed'
+      code: 'ERR_TEST_FAILURE'
+      stack: |-
+        TestContext.<anonymous> (file://~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-boat-prepush.RjyIN0/tap-mixed.test.mjs:5:40)
+        Test.runInAsyncScope (node:async_hooks:227:14)
+        Test.run (node:internal/test_runner/test:1402:25)
+        Suite.processPendingSubtests (node:internal/test_runner/test:974:18)
+        Test.postRun (node:internal/test_runner/test:1542:19)
+        Test.run (node:internal/test_runner/test:1467:12)
+        async Promise.all (index 0)
+        async Suite.run (node:internal/test_runner/test:1905:7)
+        async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3)
+      ...
+    1..2
+not ok 1 - a renamed suite
+  ---
+  duration_ms: 7.295491
+  type: 'suite'
+  location: '~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-boat-prepush.RjyIN0/tap-mixed.test.mjs:3:1'
+  failureType: 'subtestsFailed'
+  error: '2 subtests failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+1..1
+# tests 2
+# suites 1
+# pass 0
+# fail 2
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 62.070087
+
+===== lane repository-scripts =====
+
+===== lane repository-scripts =====
+
+===== lane repository-scripts =====
+
+===== lane repository-scripts =====
+
+===== lane repository-scripts =====
+
+===== lane repository-scripts =====
+
+===== lane repository-scripts =====
+
+===== lane repository-scripts =====
+~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-boat-prepush.RjyIN0/service-bin/docker
+psql (PostgreSQL) 99.11
+psql (PostgreSQL) 99.11
+~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-boat-prepush.RjyIN0/service-bin/docker
+~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-boat-prepush.RjyIN0/service-bin/docker
+~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-boat-prepush.RjyIN0/service-bin/docker
+psql (PostgreSQL) 99.11
+psql (PostgreSQL) 99.11
+~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-boat-prepush.RjyIN0/service-bin/docker
+~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-boat-prepush.RjyIN0/service-bin/docker
+~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-boat-prepush.RjyIN0/service-bin/docker
+# tests 2
+# skipped 0
+~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-boat-prepush.RjyIN0/service-bin/docker
+~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-boat-prepush.RjyIN0/service-bin/docker
+Cannot obtain native PostgreSQL 99 clients from PGDG; database lane refused
+~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-boat-prepush.RjyIN0/service-bin/docker
+psql (PostgreSQL) 99.11
+psql (PostgreSQL) 99.11
+~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-boat-prepush.RjyIN0/service-bin/docker
+psql (PostgreSQL) 99.11
+psql (PostgreSQL) 99.11
+~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-boat-prepush.RjyIN0/service-bin/docker
+~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-boat-prepush.RjyIN0/service-bin/docker
+ok - TAP and Vitest attribute individual history failures and keep mixed or unknown failures red
+ok - database suites execute their selected commands, clean up, and reject setup or test failure
+
+===== lane database-actions =====
+lane diagnostic
+
+===== lane node-0 =====
+budget diagnostic
+fm-boat-prepush: e18f3eaaf7b6..621b9d3c1e47, 1 changed files; evidence under ~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-boat-prepush.RjyIN0/verdict-0-manual-clean
+FM_BOAT_PREPUSH_LANE {"name": "probe", "exit": 0, "wall_s": 0, "oom": false}
+FM_BOAT_PREPUSH_SUMMARY {"failed": [], "oom": false}
+fm-boat-prepush: e18f3eaaf7b6..621b9d3c1e47, 1 changed files; evidence under ~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-boat-prepush.RjyIN0/verdict-1-manual-clean
+FM_BOAT_PREPUSH_LANE {"name": "probe", "exit": 1, "wall_s": 0, "oom": false}
+FM_BOAT_PREPUSH_SUMMARY {"failed": ["probe"], "oom": false}
+fm-boat-prepush: e18f3eaaf7b6..621b9d3c1e47, 1 changed files; evidence under ~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-boat-prepush.RjyIN0/verdict-0-named-clean
+FM_BOAT_PREPUSH_LANE {"name": "probe", "exit": 0, "wall_s": 0, "oom": false}
+FM_BOAT_PREPUSH_SUMMARY {"failed": [], "oom": false}
+fm-boat-prepush: e18f3eaaf7b6..621b9d3c1e47, 1 changed files; evidence under ~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-boat-prepush.RjyIN0/verdict-1-named-clean
+FM_BOAT_PREPUSH_LANE {"name": "probe", "exit": 1, "wall_s": 0, "oom": false}
+FM_BOAT_PREPUSH_SUMMARY {"failed": ["probe"], "oom": false}
+fm-boat-prepush: e18f3eaaf7b6..621b9d3c1e47, 1 changed files; evidence under ~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-boat-prepush.RjyIN0/verdict-0-named-untracked
+FM_BOAT_PREPUSH_LANE {"name": "probe", "exit": 0, "wall_s": 0, "oom": false}
+FM_BOAT_PREPUSH_SUMMARY {"failed": [], "oom": false}
+fm-boat-prepush: e18f3eaaf7b6..621b9d3c1e47, 1 changed files; evidence under ~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-boat-prepush.RjyIN0/verdict-0-manual-unstaged
+FM_BOAT_PREPUSH_LANE {"name": "probe", "exit": 0, "wall_s": 0, "oom": false}
+FM_BOAT_PREPUSH_SUMMARY {"failed": [], "oom": false}
+ok - remaining run budget clamps lanes and preserves the summary
+ok - remote orchestration runs database lanes sequentially and propagates their red verdict
+ok - the runner refuses to execute outside the disposable machine
+ok - the runner is written beside the uploaded source, never into it
+ok - both publishing commands forward the explicit base with shell quoting
+
+pre-ready heavy-test check
+  attempt on the default machine: 0.0 min, about $0.00000 (estimate), adapter exit 0
+  full output: ~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-boat-prepush.RjyIN0/verdict-0-manual-clean/attempt-default.log
+  probe                      pass    0.0s
+  verdict: green (default machine)
+
+pre-ready heavy-test check
+  attempt on the default machine: 0.0 min, about $0.00000 (estimate), adapter exit 0
+  full output: ~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-boat-prepush.RjyIN0/verdict-1-manual-clean/attempt-default.log
+  probe                      FAIL    0.0s exit 1
+  verdict: RED - probe (default machine)
+
+pre-ready heavy-test check
+  attempt on the default machine: 0.0 min, about $0.00000 (estimate), adapter exit 0
+  full output: ~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-boat-prepush.RjyIN0/verdict-0-named-clean/attempt-default.log
+  probe                      pass    0.0s
+  verdict: green (default machine)
+
+pre-ready heavy-test check
+  attempt on the default machine: 0.0 min, about $0.00000 (estimate), adapter exit 0
+  full output: ~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-boat-prepush.RjyIN0/verdict-1-named-clean/attempt-default.log
+  probe                      FAIL    0.0s exit 1
+  verdict: RED - probe (default machine)
+
+pre-ready heavy-test check
+  attempt on the default machine: 0.0 min, about $0.00000 (estimate), adapter exit 0
+  full output: ~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-boat-prepush.RjyIN0/verdict-0-named-untracked/attempt-default.log
+  probe                      pass    0.0s
+  verdict: green (default machine)
+
+pre-ready heavy-test check
+  attempt on the default machine: 0.0 min, about $0.00000 (estimate), adapter exit 0
+  full output: ~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-boat-prepush.RjyIN0/verdict-0-manual-unstaged/attempt-default.log
+  probe                      pass    0.0s
+  verdict: green (default machine)
+ok - successful and failing verdicts persist under the output directory
+ok - expected head requires clean tracked content before provisioning; untracked and manual edits remain allowed
+ok - fm-boat-prepush

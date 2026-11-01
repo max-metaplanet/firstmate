@@ -1,0 +1,10 @@
+ok - an absent declaration leaves every project undeclared and succeeds
+ok - a bare project line declares the check on a default machine, a 2700s timeout, and no history
+ok - a project absent from a valid declaration stays undeclared
+ok - timeout and history depth parse in any order, at their bounds, alongside other projects
+ok - blank lines, a bare # and a '# ' comment are ignored
+ok - a bad bound, key, shape, repeated key, or repeated project refuses the whole declaration
+ok - an unreadable declaration refuses instead of declaring nothing
+ok - a directory in place of the declaration refuses
+ok - the config directory resolves through CONFIG, FM_CONFIG_OVERRIDE, then FM_HOME
+all fm-boat-prepush-lib tests passed

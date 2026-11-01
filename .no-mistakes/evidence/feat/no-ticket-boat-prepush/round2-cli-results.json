@@ -1,0 +1,50 @@
+[
+  {
+    "case": "mismatch",
+    "expected_refusal": true,
+    "exit": 2,
+    "checked_head": "7489036089ce1be3c4dc9e90449ca601b2a25b2a"
+  },
+  {
+    "case": "unstaged",
+    "expected_refusal": true,
+    "exit": 2,
+    "checked_head": "7489036089ce1be3c4dc9e90449ca601b2a25b2a"
+  },
+  {
+    "case": "staged",
+    "expected_refusal": true,
+    "exit": 2,
+    "checked_head": "7489036089ce1be3c4dc9e90449ca601b2a25b2a"
+  },
+  {
+    "case": "deleted",
+    "expected_refusal": true,
+    "exit": 2,
+    "checked_head": "7489036089ce1be3c4dc9e90449ca601b2a25b2a"
+  },
+  {
+    "case": "staged-deleted",
+    "expected_refusal": true,
+    "exit": 2,
+    "checked_head": "7489036089ce1be3c4dc9e90449ca601b2a25b2a"
+  },
+  {
+    "case": "clean",
+    "expected_refusal": false,
+    "exit": 1,
+    "checked_head": "7489036089ce1be3c4dc9e90449ca601b2a25b2a"
+  },
+  {
+    "case": "untracked",
+    "expected_refusal": false,
+    "exit": 1,
+    "checked_head": "7489036089ce1be3c4dc9e90449ca601b2a25b2a"
+  },
+  {
+    "case": "manual-dirty",
+    "expected_refusal": false,
+    "exit": 1,
+    "checked_head": "7489036089ce1be3c4dc9e90449ca601b2a25b2a"
+  }
+]

@@ -1,0 +1,50 @@
+[
+  {
+    "case": "mismatch",
+    "expected_refusal": true,
+    "exit": 2,
+    "checked_head": "21575562edbaf98200018486dc87ceb40defbcbf"
+  },
+  {
+    "case": "unstaged",
+    "expected_refusal": true,
+    "exit": 2,
+    "checked_head": "21575562edbaf98200018486dc87ceb40defbcbf"
+  },
+  {
+    "case": "staged",
+    "expected_refusal": true,
+    "exit": 2,
+    "checked_head": "21575562edbaf98200018486dc87ceb40defbcbf"
+  },
+  {
+    "case": "deleted",
+    "expected_refusal": true,
+    "exit": 2,
+    "checked_head": "21575562edbaf98200018486dc87ceb40defbcbf"
+  },
+  {
+    "case": "staged-deleted",
+    "expected_refusal": true,
+    "exit": 2,
+    "checked_head": "21575562edbaf98200018486dc87ceb40defbcbf"
+  },
+  {
+    "case": "clean",
+    "expected_refusal": false,
+    "exit": 1,
+    "checked_head": "21575562edbaf98200018486dc87ceb40defbcbf"
+  },
+  {
+    "case": "untracked",
+    "expected_refusal": false,
+    "exit": 1,
+    "checked_head": "21575562edbaf98200018486dc87ceb40defbcbf"
+  },
+  {
+    "case": "manual-dirty",
+    "expected_refusal": false,
+    "exit": 1,
+    "checked_head": "21575562edbaf98200018486dc87ceb40defbcbf"
+  }
+]

@@ -1,0 +1,16 @@
+
+===== lane diagnostic-timeout =====
+last diagnostic before stall
+
+===== lane following-lane =====
+following lane completed
+
+pre-ready heavy-test check
+  attempt on the default machine: 0.1 min, about $0.00000 (estimate), adapter exit 0
+  full output: round2-timeout.txt
+  diagnostic-timeout         timeout    5.2s exit 124
+    output tail:
+last diagnostic before stall
+
+  following-lane             pass    0.0s
+  verdict: RED - diagnostic-timeout (default machine)
