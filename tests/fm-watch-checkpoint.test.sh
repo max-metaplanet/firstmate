@@ -188,6 +188,8 @@ test_quiet_deadline_spares_the_watchers_detached_helpers() {
     for script in "$ROOT"/bin/*; do ln -s "$script" "$root/bin/${script##*/}"; done
     for helper in fm-home-summary-refresh.sh fm-worker-park.sh fm-secondmate-reconcile.sh; do
       rm -f "$root/bin/$helper"
+      # $FM_HOME is meant to expand when the generated helper runs, not here.
+      # shellcheck disable=SC2016
       printf '#!/usr/bin/env bash\nsleep 3\nprintf done > "$FM_HOME/%s.finished"\n' "$helper" > "$root/bin/$helper"
       chmod +x "$root/bin/$helper"
     done
