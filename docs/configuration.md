@@ -1429,6 +1429,26 @@ Without it, the adapter retains the single trial account and its existing caps.
 The help also owns the screened source-file exceptions and optional shallow-history transfer; all other upload exclusions remain.
 It runs outside local heavy slots; authenticated checks keep their existing execution path.
 The optional no-mistakes Test integration is owned by [`bin/fm-boat-test-wrapper.sh`](../bin/fm-boat-test-wrapper.sh)'s header and `--help`, including enablement prerequisites, secret-free scope, conservative Git scoping, its `FM_BOAT_TEST_HISTORY_DEPTH` opt-in, and local fallback.
+"Pre-ready Boat check" below turns the same offload into a gate a named project's ship workers run before they mark a pull request ready.
+
+## Pre-ready Boat check (config/boat-prepush)
+
+The optional local, gitignored `config/boat-prepush` names the projects whose ship workers run the pre-ready heavy-test check, for a core-like project whose heavy test lanes are too slow and too hungry to run in a worker's own copy.
+The file lives in the active home's config directory and holds one line per project:
+
+```text
+# the core suite's heavy lanes
+core timeout=2400 history-depth=50
+```
+
+[`bin/fm-boat-prepush-lib.sh`](../bin/fm-boat-prepush-lib.sh)'s header owns the declaration syntax, defaults, bounds, comment rules, and refusal behavior.
+Pass the project directory as `--project` when scaffolding a ship brief so its declaration can be selected; [`bin/fm-brief.sh`](../bin/fm-brief.sh)'s help owns project selection.
+
+When a project is declared, the two pull-request-publishing blocks of a ship worker's definition of done gain a paragraph immediately before the ready transition: run the check on this change with the declared timeout and history depth, read its per-lane verdict, and on a nonzero exit report the failing lanes as a blocked event instead of marking the pull request ready.
+The check is a pre-ready gate rather than a replacement for the forge's required checks, which still decide whether the pull request is green.
+A project with no declaration, and a definition of done that names no project, render exactly as they did before this file existed.
+
+[`bin/fm-boat-prepush-lib.sh`](../bin/fm-boat-prepush-lib.sh) owns the declaration format and the lookup, [`bin/fm-boat-prepush.sh`](../bin/fm-boat-prepush.sh) owns the check itself, and [`bin/fm-dod-lib.sh`](../bin/fm-dod-lib.sh) owns the rendered paragraph.
 
 ## Worker launch environment (config/launch-env-allowlist)
 

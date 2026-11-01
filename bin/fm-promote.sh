@@ -374,7 +374,7 @@ EOF
     printf '%s\n' "$PROMOTION_ASK_USER_BLOCK"
   fi
   printf '\n'
-  fm_dod_block "$MODE" "$ID" "$BRANCH" "$FORGE" "$BASE_BRANCH" "$UPSTREAM_CONSENT" "$TICKET_HEADER" "$TICKET_NM_RETITLE" || return 1
+  fm_dod_block "$MODE" "$ID" "$BRANCH" "$FORGE" "$BASE_BRANCH" "$UPSTREAM_CONSENT" "$TICKET_HEADER" "$TICKET_NM_RETITLE" "${PROMOTE_PROJECT_NAME:-}" || return 1
   fm_dod_ready_hold_block "$CONFIG" "$PROMOTE_PROJECT" "$YOLO" "$FORGE" "$MODE" || return 1
   fm_dod_queue_only_block "$CONFIG" "$PROMOTE_PROJECT" "$FORGE" "$MODE"
 }
