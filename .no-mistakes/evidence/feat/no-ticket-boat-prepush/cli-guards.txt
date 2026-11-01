@@ -1,0 +1,30 @@
+# checkout HEAD = 41190fb6ae52b9f843cf73c44822e606e7c3cfb7
+
+## expected-head mismatch
+$ fm-boat-prepush.sh --expected-head 0000000000000000000000000000000000000000
+fm-boat-prepush: checkout HEAD 41190fb6ae52b9f843cf73c44822e606e7c3cfb7 does not match expected PR head 0000000000000000000000000000000000000000
+exit=2
+evidence dir created: no
+
+## tracked file modified (unstaged) with matching expected-head
+$ fm-boat-prepush.sh --expected-head 41190fb6ae52b9f843cf73c44822e606e7c3cfb7
+fm-boat-prepush: tracked checkout content differs from expected PR head 41190fb6ae52b9f843cf73c44822e606e7c3cfb7; staged or unstaged changes cannot certify that commit
+exit=2
+
+## tracked file staged with matching expected-head
+fm-boat-prepush: tracked checkout content differs from expected PR head 41190fb6ae52b9f843cf73c44822e606e7c3cfb7; staged or unstaged changes cannot certify that commit
+exit=2
+
+## invalid inputs
+$ fm-boat-prepush.sh --timeout 2701
+fm-boat-prepush: --timeout must be 1..2700 seconds
+exit=2
+$ fm-boat-prepush.sh --history-depth 0
+fm-boat-prepush: --history-depth must be 1..1000
+exit=2
+$ (FM_HOME unset) fm-boat-prepush.sh
+fm-boat-prepush: FM_HOME must name the home whose config/boat-keys this run may use
+exit=2
+$ fm-boat-prepush.sh --worktree <repo>/.github  (not a repository root)
+fm-boat-prepush: --worktree must be a repository root; /tmp/fm-lab.a8jgeE/projects/core/.github is inside /tmp/fm-lab.a8jgeE/projects/core
+exit=2

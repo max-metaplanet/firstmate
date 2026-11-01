@@ -1,0 +1,29 @@
+# origin/release/x=80638e59af96338ad71ec8528ee567ea4d2cde6b  stale local release/x=371cc6476ec218e7b5f4b10aa0280e368c083f9d
+$ FM_HOME=$LAB FM_BOAT_BIN=$LAB/no-such-boat fm-boat-prepush.sh --worktree $R --base release/x --expected-head 41190fb6ae52b9f843cf73c44822e606e7c3cfb7 --timeout 120 --output $LAB/out-unavail
+fm-boat-prepush: 80638e59af96..41190fb6ae52, 2 changed files; evidence under /tmp/fm-lab.a8jgeE/out-unavail
+boat-test-wrapper: result.json: /tmp/fm-lab.a8jgeE/projects/.fm-test-scratch/fm-boat-test.wRYzo3/boat/result.json
+boat-offload: Boat request unavailable: limits
+boat-test-wrapper: Boat unavailable (exit 69); running locally through heavy build lock; result.json: /tmp/fm-lab.a8jgeE/projects/.fm-test-scratch/fm-boat-test.wRYzo3/boat/result.json
+waiting for a heavy slot (1 on this machine, held by pid 1999631)
+fm-boat-prepush-remote: refusing to run outside a disposable machine: the working directory is /tmp/fm-lab.a8jgeE/projects/core, not ~/fm-job/source. This check runs a whole heavy test suite and must never fall back to the local machine.
+
+pre-ready heavy-test check
+  attempt on the default machine: 0.3 min, about $0.00018 (estimate), adapter exit 70
+  full output: /tmp/fm-lab.a8jgeE/out-unavail/attempt-default.log
+  no disposable machine was available, and this check refuses to run a whole heavy suite on the local machine
+  no lane reported a verdict
+  verdict: RED - the check produced no verdict (default machine)
+exit=1
+
+--- out-unavail/changed-files (head planner input) and verdict.json ---
+attempt-default.log
+changed-files.mjs
+verdict.json
+{
+ "base": "80638e59af96338ad71ec8528ee567ea4d2cde6b",
+ "head": "41190fb6ae52b9f843cf73c44822e606e7c3cfb7",
+ "changed_files": 2,
+ "green": false,
+ "failed": []
+}
+attempt sizes: ['default'] adapter exits: [70] boat_unavailable: [True]

@@ -1,0 +1,34 @@
+$ cat $FM_HOME/config/boat-prepush
+# heavy core lanes
+core timeout=2400 history-depth=50
+
+$ fm-brief.sh t-core core --mode no-mistakes --project $FM_HOME/projects/core
+scaffolded: /tmp/fm-lab.a8jgeE/data/t-core/brief.md (ship, mode=no-mistakes; replace {TASK} and {FIRSTMATE_SPEC})
+rc=0
+--- data/t-core/brief.md: pre-ready paragraph and its position relative to the ready transition ---
+144:Run the pre-ready heavy-test check from a project checkout whose HEAD matches that commit with `FM_HOME=/tmp/fm-lab.a8jgeE ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6AHRQ1GYDYRSKBW83YT2V6A/bin/fm-boat-prepush.sh --timeout 2400 --history-depth 50 --expected-head '<PR head SHA>'`, substituting the recorded commit ID for `<PR head SHA>`.
+148:Append `blocked [at=<epoch>]: pre-ready check red - {the failing lanes}` to the status file and stop, rather than marking the pull request ready.
+149:After the check succeeds and before marking the pull request ready, read the pull request head again with `gh-axi api repos/<owner>/<repo>/pulls/<number> --jq .head.sha` and confirm it still equals the `head` in `verdict.json` under the check's printed output directory.
+152:This check is a pre-ready gate, not a replacement for the forge's required checks.
+153:If it is a draft, confirm the pipeline's local review, test and lint steps passed and the work is ready, then mark it ready using the forge command below BEFORE waiting for CI green.
+
+$ fm-brief.sh t-core-pr core --mode direct-PR --base-branch release/x --project $FM_HOME/projects/core
+scaffolded: /tmp/fm-lab.a8jgeE/data/t-core-pr/brief.md (ship, mode=direct-PR; replace {TASK} and {FIRSTMATE_SPEC})
+rc=0
+129:Run the pre-ready heavy-test check from a project checkout whose HEAD matches that commit with `FM_HOME=/tmp/fm-lab.a8jgeE ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6AHRQ1GYDYRSKBW83YT2V6A/bin/fm-boat-prepush.sh --timeout 2400 --base release/x --history-depth 50 --expected-head '<PR head SHA>'`, substituting the recorded commit ID for `<PR head SHA>`.
+138:Once local validation has passed and the work is ready for review, mark the PR ready before the final CI wait so suites skipped on drafts can run. When checks were skipped while draft, read the ready time with `gh api --paginate repos/<owner>/<repo>/issues/<number>/timeline --jq '.[] | select(.event == "ready_for_review") | .created_at' | tail -n 1` and wait with `~/.no-mistakes/worktrees/c0c4fcacb05a/01M6AHRQ1GYDYRSKBW83YT2V6A/bin/fm-pr-checks.sh --watch --after <ready time> <pr-url>`, so no check skipped before the ready transition counts.
+
+$ fm-brief.sh t-core-local core --mode local-only --project ...  (no PR, expect no paragraph)
+scaffolded: /tmp/fm-lab.a8jgeE/data/t-core-local/brief.md (ship, mode=local-only; replace {TASK} and {FIRSTMATE_SPEC})
+rc=0
+fm-boat-prepush mentions: 0
+
+$ fm-brief.sh t-other other --mode direct-PR --project $FM_HOME/projects/other  (undeclared project)
+scaffolded: /tmp/fm-lab.a8jgeE/data/t-other/brief.md (ship, mode=direct-PR; replace {TASK} and {FIRSTMATE_SPEC})
+rc=0
+fm-boat-prepush mentions: 0
+
+$ echo "core bogus=1" > config/boat-prepush; fm-brief.sh t-bad core --mode direct-PR --project ...  (malformed declaration)
+error: fm_dod_block: /tmp/fm-lab.a8jgeE/config/boat-prepush line 1 gives core the unknown field bogus
+rc=1
+brief written: no
