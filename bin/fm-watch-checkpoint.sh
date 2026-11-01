@@ -104,7 +104,7 @@ run_with_perl_timeout() {  # <seconds> <signal> <kill-after-seconds> <command...
       my $waited = waitpid $pid, WNOHANG;
       if ($waited == $pid) {
         alarm 0;
-        exit($timed_out ? 124 : ($? >> 8));
+        exit($timed_out ? 124 : (($? & 127) ? 128 + ($? & 127) : $? >> 8));
       }
       select undef, undef, undef, 0.05;
     }
@@ -112,7 +112,7 @@ run_with_perl_timeout() {  # <seconds> <signal> <kill-after-seconds> <command...
 }
 
 run_bounded() {  # <seconds> <signal> <kill-after-seconds> <command...>
-  local seconds=$1 signal=$2 kill_after=$3 cleanup_lock_bound
+  local seconds=$1 signal=$2 kill_after=$3 cleanup_lock_bound runner status_file runner_rc command_rc
   shift 3
   if [ "$kill_after" -gt 0 ]; then
     cleanup_lock_bound=${FM_WATCHER_CLEANUP_LOCK_BOUND:-2}
@@ -125,20 +125,30 @@ run_bounded() {  # <seconds> <signal> <kill-after-seconds> <command...>
     kill_after=$cleanup_lock_bound
   fi
   if command -v timeout >/dev/null 2>&1; then
-    if [ "$kill_after" -gt 0 ]; then
-      timeout --signal="$signal" --kill-after="${kill_after}s" "$seconds" "$@"
-    else
-      timeout --signal="$signal" "$seconds" "$@"
-    fi
+    runner=timeout
   elif command -v gtimeout >/dev/null 2>&1; then
-    if [ "$kill_after" -gt 0 ]; then
-      gtimeout --signal="$signal" --kill-after="${kill_after}s" "$seconds" "$@"
-    else
-      gtimeout --signal="$signal" "$seconds" "$@"
-    fi
+    runner=gtimeout
   else
     run_with_perl_timeout "$seconds" "$signal" "$kill_after" "$@"
+    return $?
   fi
+  status_file=$(mktemp "${TMPDIR:-/tmp}/fm-watch-checkpoint.status.XXXXXX") || return 1
+  # shellcheck disable=SC2016
+  "$runner" --signal="$signal" --kill-after="${kill_after}s" "$seconds" bash -c '
+    status_file=$1
+    shift
+    "$@"
+    command_rc=$?
+    printf "%s\n" "$command_rc" > "$status_file"
+    exit "$command_rc"
+  ' _ "$status_file" "$@"
+  runner_rc=$?
+  command_rc=$(cat "$status_file")
+  rm -f "$status_file"
+  if [ "$runner_rc" -eq 137 ] && [ -z "$command_rc" ]; then
+    return 124
+  fi
+  return "$runner_rc"
 }
 
 positive_or() {  # <value> <default>
@@ -203,12 +213,8 @@ if grep -E '^watcher: already running' "$OUT" "$ERR" >/dev/null 2>&1; then
   exit 1
 fi
 
-# bin/fm-timeout-lib.sh, the single owner of bounded execution, defines
-# timeout's 137 with no status recorded by the bounded command as the bound
-# firing rather than the command choosing to die. This duplicated runner must
-# agree, or a cleanup that outlives the kill-after grace reports a silent
-# failure where the bound was simply quiet.
-if [ "$RC" -eq 124 ] || { [ "$RC" -eq 137 ] && [ ! -s "$OUT" ] && [ ! -s "$ERR" ]; }; then
+if [ "$RC" -eq 124 ]; then
+  [ ! -s "$ERR" ] || cat "$ERR" >&2
   printf 'checkpoint: no actionable wake within %ss\n' "$SECONDS_ARG"
   exit 124
 fi

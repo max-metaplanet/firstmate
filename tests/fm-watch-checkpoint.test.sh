@@ -90,6 +90,62 @@ PL
   pass "Perl fallback honors the cleanup bound before escalating an INT-ignoring direct watcher"
 }
 
+test_runner_deadlines_and_command_failures_are_distinct() {
+  local native_runner mechanism home fallback_bin tool tool_path kind expected status
+  native_runner=$(command -v timeout || command -v gtimeout || true)
+  for mechanism in timeout gtimeout perl; do
+    if [ "$mechanism" != perl ] && [ -z "$native_runner" ]; then
+      continue
+    fi
+    home=$(make_home "runner-$mechanism")
+    fallback_bin="$home/fallback-bin"
+    mkdir -p "$home/root/bin" "$fallback_bin"
+    cp "$CHECKPOINT" "$home/root/bin/fm-watch-checkpoint.sh"
+    cp "$ROOT/bin/fm-supervision-engine-lib.sh" "$home/root/bin/fm-supervision-engine-lib.sh"
+    for tool in bash dirname mktemp rm perl grep cat sleep; do
+      tool_path=$(command -v "$tool") || fail "could not locate $tool for runner fixture"
+      ln -s "$tool_path" "$fallback_bin/$tool"
+    done
+    if [ "$mechanism" != perl ]; then
+      ln -s "$native_runner" "$fallback_bin/$mechanism"
+    fi
+    cat > "$home/root/bin/fm-watch.sh" <<'SH'
+#!/usr/bin/env bash
+printf 'watcher fixture started\n'
+printf 'watcher fixture diagnostic\n' >&2
+case "$FIXTURE_KIND" in
+  deadline) trap '' INT; exec sleep 30 ;;
+  killed) kill -KILL "$$" ;;
+  *) exit "$FIXTURE_KIND" ;;
+esac
+SH
+    chmod +x "$home/root/bin/fm-watch-checkpoint.sh" "$home/root/bin/fm-watch.sh"
+    for kind in deadline 0 42 137 killed; do
+      case "$kind" in
+        deadline) expected=124 ;;
+        killed) expected=137 ;;
+        *) expected=$kind ;;
+      esac
+      status=0
+      PATH="$fallback_bin" FM_HOME="$home" FIXTURE_KIND="$kind" \
+        "$home/root/bin/fm-watch-checkpoint.sh" --seconds 1 >"$home/out.txt" 2>"$home/err.txt" || status=$?
+      expect_code "$expected" "$status" "$mechanism $kind checkpoint exit"
+      assert_contains "$(cat "$home/err.txt")" 'watcher fixture diagnostic' \
+        "$mechanism $kind discarded the watcher diagnostic"
+      if [ "$kind" = deadline ]; then
+        assert_contains "$(cat "$home/out.txt")" 'checkpoint: no actionable wake within 1s' \
+          "$mechanism escalation did not report the quiet deadline"
+      else
+        assert_contains "$(cat "$home/out.txt")" 'watcher fixture started' \
+          "$mechanism $kind discarded command output"
+        assert_not_contains "$(cat "$home/out.txt")" 'checkpoint: no actionable wake' \
+          "$mechanism $kind was misclassified as a deadline"
+      fi
+    done
+  done
+  pass "checkpoint runners distinguish deadlines from command failures and retain diagnostics"
+}
+
 test_announced_recovery_is_not_reannounced_by_next_checkpoint() {
   local home out err status marker
   home=$(make_home announced-recovery)
@@ -390,6 +446,7 @@ test_real_host_checkpoint_ends_quietly_at_its_bound() {
 
 test_quiet_checkpoint_exits_124_cleanly
 test_perl_timeout_fallback_honors_cleanup_bound_before_escalating
+test_runner_deadlines_and_command_failures_are_distinct
 test_announced_recovery_is_not_reannounced_by_next_checkpoint
 test_never_announced_recovery_is_announced_once
 test_empty_queue_recovery_stays_silent_and_pending
