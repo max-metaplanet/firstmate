@@ -7,6 +7,7 @@ set -eu
 TMP_ROOT=$(mktemp -d "$FM_TEST_SCRATCH_ROOT/fm-build-lock.XXXXXX")
 python3 - "$ROOT" "$TMP_ROOT" <<'PY'
 import configparser
+import json
 import os
 import signal
 import resource
@@ -81,6 +82,14 @@ print(limit)
                                        'import os; assert os.environ["FM_BUILD_LOCK_HELD"] == str(os.getpid())'],
                                       env=selected, capture_output=True, text=True, timeout=10)
             assert identity.returncode == 0, identity.stderr
+            arguments = ['', '${FM_BUILD_ARGV_UNSET}', 'two words', '$HOME', '*', 'a"b']
+            argv_env = dict(selected)
+            argv_env.pop('FM_BUILD_ARGV_UNSET', None)
+            forwarded = subprocess.run([str(wrapper), '--', sys.executable, '-c',
+                                        'import json, sys; print(json.dumps(sys.argv[1:]))', *arguments],
+                                       env=argv_env, capture_output=True, text=True, timeout=10)
+            assert forwarded.returncode == 0, forwarded.stderr
+            assert json.loads(forwarded.stdout) == arguments, forwarded.stdout
         print('ok - commands observe a finite kernel memory bound shared across heavy slots')
     else:
         print('skip - no memory mechanism for the heavy-slot kernel-bound check')

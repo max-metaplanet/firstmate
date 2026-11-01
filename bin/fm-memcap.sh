@@ -131,7 +131,7 @@ fm_memcap_rlimit_kib() {
 
 fm_memcap_mechanism() {
   if command -v systemd-run >/dev/null 2>&1 \
-    && systemd-run --user --scope --quiet --collect -p MemoryMax=64M -- true >/dev/null 2>&1; then
+    && systemd-run --user --scope --quiet --collect --expand-environment=no -p MemoryMax=64M -- true >/dev/null 2>&1; then
     printf 'cgroup\n'
     return 0
   fi
@@ -153,7 +153,7 @@ fm_memcap_run_cgroup() {  # <bytes> <command...>
   # fd 3 carries the inner shell's counter and the scope's exit status back here
   # while fd 4, bound to this script's real stdout before the capture opens,
   # keeps the command's own output going to the caller.
-  { report=$( { systemd-run --user --scope --quiet --collect \
+  { report=$( { systemd-run --user --scope --quiet --collect --expand-environment=no \
         -p "MemoryMax=$bytes" -p MemorySwapMax=0 \
         -- /bin/sh -c "$INNER_SHELL" fm-memcap "$@" 3>&1 1>&4
       printf 'status=%s\n' "$?"; } ); } 4>&1
@@ -240,7 +240,7 @@ fi
 case "$MECHANISM" in
   cgroup)
     if [ "$MODE" = exec ]; then
-      exec systemd-run --user --scope --quiet --collect \
+      exec systemd-run --user --scope --quiet --collect --expand-environment=no \
         -p "MemoryMax=$BYTES" -p MemorySwapMax=0 -- "$@"
     fi
     fm_memcap_run_cgroup "$BYTES" "$@"
