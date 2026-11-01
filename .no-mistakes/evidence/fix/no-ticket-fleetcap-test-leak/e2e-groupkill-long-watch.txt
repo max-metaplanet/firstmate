@@ -1,0 +1,59 @@
+before kill, perl watchdogs and spawn groups:
+   2088027 2087741 2087126 S     0.5 perl -MPOSIX=WNOHANG,setpgid -MTime::HiRes=time -e        my ($bound, $grace, $owner, $shell_parent) = (shift, shift, shift, shift);    
+   2088051 2088049 2088049 S     5.3 bash ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6C3V9F99P307ZNH567QH2CF/bin/fm-spawn.sh task-a ~/.no-mistakes/
+   2089959 2088051 2088049 S     0.0 bash ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6C3V9F99P307ZNH567QH2CF/bin/fm-spawn.sh task-a ~/.no-mistakes/
+   2089973 2087741 2087126 S     0.8 perl -MPOSIX=WNOHANG,setpgid -MTime::HiRes=time -e        my ($bound, $grace, $owner, $shell_parent) = (shift, shift, shift, shift);    
+   2089990 2089985 2089985 S    12.5 bash ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6C3V9F99P307ZNH567QH2CF/bin/fm-spawn.sh task-b ~/.no-mistakes/
+   2090258 2089990 2089985 S     0.0 bash ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6C3V9F99P307ZNH567QH2CF/bin/fm-spawn.sh task-b ~/.no-mistakes/
+   2090259 2090258 2089985 S     0.0 bash ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6C3V9F99P307ZNH567QH2CF/bin/fm-spawn.sh task-b ~/.no-mistakes/
+SIGKILL suite process group 2087126 and rm -rf scratch
+t+15s: 5 live processes in leaked spawn groups [2088049]
+    2088049    1148 2088049 S     0.0 bash -c run_spawn "$@" _ ~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-fleet-capacity.fUFmw3/adaptive-concurre
+    2088051 2088049 2088049 S     1.4 bash ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6C3V9F99P307ZNH567QH2CF/bin/fm-spawn.sh task-a ~/.no-mistakes/
+    2089959 2088051 2088049 S     0.0 bash ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6C3V9F99P307ZNH567QH2CF/bin/fm-spawn.sh task-a ~/.no-mistakes/
+    2089960 2089959 2088049 S     0.6 bash ~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-fleet-capacity.fUFmw3/adaptive-concurrent/fakebin/tmux disp
+    2098720 2089960 2088049 S     0.0 sleep 0.05
+t+30s: 3 live processes in leaked spawn groups [2088049]
+    2088049    1148 2088049 S     0.0 bash -c run_spawn "$@" _ ~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-fleet-capacity.fUFmw3/adaptive-concurre
+    2088051 2088049 2088049 S     0.8 bash ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6C3V9F99P307ZNH567QH2CF/bin/fm-spawn.sh task-a ~/.no-mistakes/
+    2104337 2088051 2088049 S     0.0 sleep 1
+t+45s: 3 live processes in leaked spawn groups [2088049]
+    2088049    1148 2088049 S     0.0 bash -c run_spawn "$@" _ ~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-fleet-capacity.fUFmw3/adaptive-concurre
+    2088051 2088049 2088049 S     0.6 bash ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6C3V9F99P307ZNH567QH2CF/bin/fm-spawn.sh task-a ~/.no-mistakes/
+    2108549 2088051 2088049 S     0.0 sleep 1
+t+60s: 3 live processes in leaked spawn groups [2088049]
+    2088049    1148 2088049 S     0.0 bash -c run_spawn "$@" _ ~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-fleet-capacity.fUFmw3/adaptive-concurre
+    2088051 2088049 2088049 S     0.5 bash ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6C3V9F99P307ZNH567QH2CF/bin/fm-spawn.sh task-a ~/.no-mistakes/
+    2117508 2088051 2088049 S     0.0 sleep 1
+t+75s: 3 live processes in leaked spawn groups [2088049]
+    2088049    1148 2088049 S     0.0 bash -c run_spawn "$@" _ ~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-fleet-capacity.fUFmw3/adaptive-concurre
+    2088051 2088049 2088049 S     0.4 bash ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6C3V9F99P307ZNH567QH2CF/bin/fm-spawn.sh task-a ~/.no-mistakes/
+    2131934 2088051 2088049 S     0.0 sleep 1
+t+90s: 3 live processes in leaked spawn groups [2088049]
+    2088049    1148 2088049 S     0.0 bash -c run_spawn "$@" _ ~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-fleet-capacity.fUFmw3/adaptive-concurre
+    2088051 2088049 2088049 S     0.4 bash ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6C3V9F99P307ZNH567QH2CF/bin/fm-spawn.sh task-a ~/.no-mistakes/
+    2138780 2088051 2088049 S     0.0 sleep 1
+t+105s: 3 live processes in leaked spawn groups [2088049]
+    2088049    1148 2088049 S     0.0 bash -c run_spawn "$@" _ ~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-fleet-capacity.fUFmw3/adaptive-concurre
+    2088051 2088049 2088049 S     0.3 bash ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6C3V9F99P307ZNH567QH2CF/bin/fm-spawn.sh task-a ~/.no-mistakes/
+    2148554 2088051 2088049 S     0.0 sleep 1
+t+120s: 3 live processes in leaked spawn groups [2088049]
+    2088049    1148 2088049 S     0.0 bash -c run_spawn "$@" _ ~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-fleet-capacity.fUFmw3/adaptive-concurre
+    2088051 2088049 2088049 S     0.3 bash ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6C3V9F99P307ZNH567QH2CF/bin/fm-spawn.sh task-a ~/.no-mistakes/
+    2156528 2088051 2088049 S     0.0 sleep 1
+t+135s: 3 live processes in leaked spawn groups [2088049]
+    2088049    1148 2088049 S     0.0 bash -c run_spawn "$@" _ ~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-fleet-capacity.fUFmw3/adaptive-concurre
+    2088051 2088049 2088049 S     0.3 bash ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6C3V9F99P307ZNH567QH2CF/bin/fm-spawn.sh task-a ~/.no-mistakes/
+    2169174 2088051 2088049 S     0.0 sleep 1
+t+150s: 3 live processes in leaked spawn groups [2088049]
+    2088049    1148 2088049 S     0.0 bash -c run_spawn "$@" _ ~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-fleet-capacity.fUFmw3/adaptive-concurre
+    2088051 2088049 2088049 S     0.2 bash ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6C3V9F99P307ZNH567QH2CF/bin/fm-spawn.sh task-a ~/.no-mistakes/
+    2180007 2088051 2088049 S     0.0 sleep 1
+t+165s: 3 live processes in leaked spawn groups [2088049]
+    2088049    1148 2088049 S     0.0 bash -c run_spawn "$@" _ ~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-fleet-capacity.fUFmw3/adaptive-concurre
+    2088051 2088049 2088049 S     0.2 bash ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6C3V9F99P307ZNH567QH2CF/bin/fm-spawn.sh task-a ~/.no-mistakes/
+    2189329 2088051 2088049 S     0.0 sleep 1
+t+180s: 3 live processes in leaked spawn groups [2088049]
+    2088049    1148 2088049 S     0.0 bash -c run_spawn "$@" _ ~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-fleet-capacity.fUFmw3/adaptive-concurre
+    2088051 2088049 2088049 S     0.2 bash ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6C3V9F99P307ZNH567QH2CF/bin/fm-spawn.sh task-a ~/.no-mistakes/
+    2200556 2088051 2088049 S     0.0 sleep 1

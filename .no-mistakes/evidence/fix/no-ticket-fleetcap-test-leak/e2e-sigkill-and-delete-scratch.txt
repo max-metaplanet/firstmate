@@ -1,0 +1,9 @@
+scratch root: ~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-fleet-capacity.NRf763
+live processes referencing scratch while both admissions are in flight: 8
+   2066699 2066698 2066698 S     5.8 bash ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6C3V9F99P307ZNH567QH2CF/bin/fm-spawn.sh task-a ~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-tes
+   2067914 2066699 2066698 S     0.0 bash ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6C3V9F99P307ZNH567QH2CF/bin/fm-spawn.sh task-a ~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-tes
+   2067983 2067980 2067980 S    11.2 bash ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6C3V9F99P307ZNH567QH2CF/bin/fm-spawn.sh task-b ~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-tes
+SIGKILL suite process group 2065771 (uncatchable; no EXIT trap runs) and rm -rf scratch root
+LEAK: survivors after 30s:
+   2066698    1148 2066698 S     0.0 bash -c run_spawn "$@" _ ~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-fleet-capacity.NRf763/adaptive-concurrent ~/.no-mistake
+   2066699 2066698 2066698 S     0.4 bash ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6C3V9F99P307ZNH567QH2CF/bin/fm-spawn.sh task-a ~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-tes

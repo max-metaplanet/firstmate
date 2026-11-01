@@ -1,0 +1,10 @@
+faa77d93ee38d66d9dacce416e7bf668c86e005b
+2026-11-01T18:32:45Z
+checkpoint reached; case_dir=~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-fleet-capacity.42GJH5/adaptive-concurrent
+fm-spawn.sh processes before kill: 3
+   3615178 3615177 3615177 S     3.6       4 bash ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6C3V9F99P307ZNH567QH2CF/bin/fm-spawn.sh task-a ~/.no-mistakes/worktrees/c0c4fcacb05a
+   3616642 3615178 3615177 S     0.0       1 bash ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6C3V9F99P307ZNH567QH2CF/bin/fm-spawn.sh task-a ~/.no-mistakes/worktrees/c0c4fcacb05a
+   3616713 3616710 3616710 S    11.1       1 bash ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6C3V9F99P307ZNH567QH2CF/bin/fm-spawn.sh task-b ~/.no-mistakes/worktrees/c0c4fcacb05a
+SIGKILLed suite pgid 3614620; deleted scratch root ~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-fleet-capacity.42GJH5
+PASS: all fixture fm-spawn.sh processes gone 28.1s after group-kill
+driver_exit=0

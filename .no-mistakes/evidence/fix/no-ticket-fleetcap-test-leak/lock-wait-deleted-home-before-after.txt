@@ -1,0 +1,15 @@
+== base bfbca186 ==
+[base fm_lock_acquire_wait] waiter held by live lock (pid 2048536)
+[base fm_lock_acquire_wait] home deleted
+[base fm_lock_acquire_wait] STILL RUNNING 5s after home deletion: 2048536  2.8 S          00:06
+[base fm_lock_acquire_wait_max] waiter held by live lock (pid 2051843)
+[base fm_lock_acquire_wait_max] home deleted
+[base fm_lock_acquire_wait_max] STILL RUNNING 5s after home deletion: 2055778  0.0 S          00:00
+2051843  2.3 S          00:06
+== head 114ad8d1 ==
+[head fm_lock_acquire_wait] waiter held by live lock (pid 2055953)
+[head fm_lock_acquire_wait] home deleted
+[head fm_lock_acquire_wait] exited 0.12s after deletion; rc=1
+[head fm_lock_acquire_wait_max] waiter held by live lock (pid 2056255)
+[head fm_lock_acquire_wait_max] home deleted
+[head fm_lock_acquire_wait_max] exited 0.12s after deletion; rc=1

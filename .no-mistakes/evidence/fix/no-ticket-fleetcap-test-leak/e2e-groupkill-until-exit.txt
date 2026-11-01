@@ -1,0 +1,3 @@
+spawn groups before kill: [2225995, 2226580]
+suite group SIGKILLed and scratch deleted
+stopped early by phase deadline; leaked groups SIGKILLed manually
