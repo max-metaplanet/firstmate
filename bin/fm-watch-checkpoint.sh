@@ -203,7 +203,12 @@ if grep -E '^watcher: already running' "$OUT" "$ERR" >/dev/null 2>&1; then
   exit 1
 fi
 
-if [ "$RC" -eq 124 ]; then
+# bin/fm-timeout-lib.sh, the single owner of bounded execution, defines
+# timeout's 137 with no status recorded by the bounded command as the bound
+# firing rather than the command choosing to die. This duplicated runner must
+# agree, or a cleanup that outlives the kill-after grace reports a silent
+# failure where the bound was simply quiet.
+if [ "$RC" -eq 124 ] || { [ "$RC" -eq 137 ] && [ ! -s "$OUT" ] && [ ! -s "$ERR" ]; }; then
   printf 'checkpoint: no actionable wake within %ss\n' "$SECONDS_ARG"
   exit 124
 fi
