@@ -50,6 +50,14 @@ make_home() {  # <home> [task-id...]
   mkdir -p "$home/state" "$home/config" "$home/data" "$home/projects"
   touch "$home/state/.last-watcher-beat"
   printf '%s\n' codex > "$home/config/crew-harness"
+  # fm_seat_root falls back to $HOME/.<provider>-seats when a home declares no
+  # seats root, so an undeclared fixture home reads the operator's real seats
+  # and bin/fm-spawn.sh refuses admission whenever that account is out of quota.
+  # Give every fixture home its own empty root instead, for both providers a
+  # fixture could name, so these cases test capacity rather than the machine.
+  mkdir -p "$home/seats-root"
+  printf '%s\n' "$home/seats-root" > "$home/config/codex-seats-root"
+  printf '%s\n' "$home/seats-root" > "$home/config/claude-seats-root"
   if [ "$HAVE_TASKS_AXI" = 1 ]; then
     printf '%s\n' '# Backlog' '' '## In flight' '' '## Queued' '' '## Done' \
       > "$home/data/backlog.md"
