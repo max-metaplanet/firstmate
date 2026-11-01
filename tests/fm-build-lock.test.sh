@@ -77,6 +77,10 @@ print(limit)
             if mechanism == 'rlimit' and inherited != resource.RLIM_INFINITY:
                 expected = min(expected, inherited // 1024 * 1024)
             assert int(bound.stdout) == expected, (bound.stdout, expected)
+            identity = subprocess.run([str(wrapper), '--', sys.executable, '-c',
+                                       'import os; assert os.environ["FM_BUILD_LOCK_HELD"] == str(os.getpid())'],
+                                      env=selected, capture_output=True, text=True, timeout=10)
+            assert identity.returncode == 0, identity.stderr
         print('ok - commands observe a finite kernel memory bound shared across heavy slots')
     else:
         print('skip - no memory mechanism for the heavy-slot kernel-bound check')

@@ -36,8 +36,8 @@
 #   fm-memcap: <command> was killed by its <bytes>-byte memory cap
 # on stderr and the exit status is 137. Callers classify that exact line, so
 # keep its wording stable. Any other outcome passes the command's own exit
-# status through unchanged. --exec replaces this process with the capped command
-# instead, preserving its PID and signal handling without the kill sentinel.
+# status through unchanged. --exec uses the host launcher directly, without
+# the kill sentinel.
 # Invalid input exits 2.
 #
 # The kill verdict comes from the scope's own memory.events oom_kill counter,

@@ -293,7 +293,8 @@ def main():
                     raise ValueError("FM_LINT_JOBS must be 1 or 2")
                 default = int(subprocess.check_output([cap, "--budget-bytes", *cap_args], text=True))
                 cap_args = ["--bytes", str(max(default, int(root_kib) * int(jobs) * 1024))]
-            command_line = [cap, "--exec", *cap_args, "--", *command_line]
+            command_line = [cap, "--exec", *cap_args, "--", sys.executable,
+                            str(SOURCE / "fm-build-lock.py"), "--", *command_line]
     # The preload in the exec'd Node process recognizes itself by this pid.
     os.environ["FM_BUILD_LOCK_HELD"] = str(os.getpid())
     os.execvp(command_line[0], command_line)
