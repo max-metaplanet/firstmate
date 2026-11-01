@@ -44,20 +44,6 @@ test_budget_is_a_positive_byte_count_split_across_shares() {
   pass "--budget-bytes reports a positive cap that --share divides"
 }
 
-test_explicit_total_overrides_the_machine_budget() {
-  local out
-  out=$(FM_MEMCAP_BYTES=4294967296 "$MEMCAP" --budget-bytes) \
-    || fail "FM_MEMCAP_BYTES did not produce a budget"
-  [ "$out" = 4294967296 ] || fail "FM_MEMCAP_BYTES did not override the machine budget: $out"
-  out=$(FM_MEMCAP_BYTES=4294967296 "$MEMCAP" --budget-bytes --share 4) \
-    || fail "FM_MEMCAP_BYTES with a share did not produce a budget"
-  [ "$out" = 1073741824 ] || fail "FM_MEMCAP_BYTES was not divided by the share: $out"
-  out=$(FM_MEMCAP_BYTES=1000 "$MEMCAP" --budget-bytes) \
-    || fail "a tiny FM_MEMCAP_BYTES did not produce a budget"
-  [ "$out" = 268435456 ] || fail "the budget fell below its 256 MiB floor: $out"
-  pass "FM_MEMCAP_BYTES replaces the machine budget, still divides, and stays above the floor"
-}
-
 test_linux_budget_uses_the_readable_memory_total() {
   local key value _unit total= expected out share
   if [ ! -r /proc/meminfo ]; then
@@ -74,7 +60,7 @@ test_linux_budget_uses_the_readable_memory_total() {
   for share in 1 2; do
     expected=$((total * 45 / 100 / share))
     [ "$expected" -ge 268435456 ] || expected=268435456
-    out=$(unset FM_MEMCAP_BYTES FM_MEMCAP_PERCENT; "$MEMCAP" --budget-bytes --share "$share") \
+    out=$("$MEMCAP" --budget-bytes --share "$share") \
       || fail "Linux memory budget failed for share $share"
     [ "$out" = "$expected" ] \
       || fail "Linux budget for share $share was $out, expected $expected from MemTotal"
@@ -147,7 +133,6 @@ test_a_runaway_dies_at_its_cap_and_is_named() {
 test_mechanism_names_one_supported_bound
 test_budget_is_a_positive_byte_count_split_across_shares
 test_linux_budget_uses_the_readable_memory_total
-test_explicit_total_overrides_the_machine_budget
 test_malformed_input_is_refused_rather_than_guessed
 test_a_capped_command_keeps_its_own_streams_and_status
 test_a_runaway_dies_at_its_cap_and_is_named

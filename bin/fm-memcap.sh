@@ -23,9 +23,7 @@
 #           warning on stderr, because refusing would turn every such host's
 #           lint into a hard failure.
 #
-# Budget: floor(MemTotal * FM_MEMCAP_PERCENT / 100 / share), with
-# FM_MEMCAP_PERCENT defaulting to 45 and share defaulting to 1. FM_MEMCAP_BYTES
-# replaces the MemTotal-derived figure and is still divided by share. MemTotal
+# Budget: floor(MemTotal * 45 / 100 / share), with share defaulting to 1. MemTotal
 # comes from /proc/meminfo on Linux and `sysctl -n hw.memsize` on Darwin; when
 # neither is readable the budget falls back to 2 GiB and says so on stderr. A
 # computed budget is never below 256 MiB. --share divides concurrent workers'
@@ -34,11 +32,13 @@
 # division nor the floor applies to it, and it cannot be combined with
 # --budget-bytes.
 #
-# When the cgroup cap fires, the command's basename and the cap are named as
+# In default reporting mode, when the cgroup cap fires, the command's basename and the cap are named as
 #   fm-memcap: <command> was killed by its <bytes>-byte memory cap
 # on stderr and the exit status is 137. Callers classify that exact line, so
 # keep its wording stable. Any other outcome passes the command's own exit
-# status through unchanged. Invalid input exits 2.
+# status through unchanged. --exec replaces this process with the capped command
+# instead, preserving its PID and signal handling without the kill sentinel.
+# Invalid input exits 2.
 #
 # The kill verdict comes from the scope's own memory.events oom_kill counter,
 # read by a small inner shell after the command exits and reported on a private
@@ -52,7 +52,7 @@
 # Usage:
 #   fm-memcap.sh --mechanism                 print cgroup, rlimit, or none
 #   fm-memcap.sh --budget-bytes [--share N]  print the per-process cap in bytes
-#   fm-memcap.sh [--bytes N] [--share N] -- COMMAND [ARGS...]
+#   fm-memcap.sh [--exec] [--bytes N] [--share N] -- COMMAND [ARGS...]
 #   fm-memcap.sh --help                      print this usage
 set -u
 
@@ -110,18 +110,9 @@ fm_memcap_mem_total() {
 }
 
 fm_memcap_budget_bytes() {  # <share>
-  local share=$1 percent total bytes
-  percent=${FM_MEMCAP_PERCENT:-$DEFAULT_PERCENT}
-  fm_memcap_positive "$percent" \
-    || fm_memcap_die "FM_MEMCAP_PERCENT must be a positive integer, got $percent"
-  if [ -n "${FM_MEMCAP_BYTES:-}" ]; then
-    fm_memcap_positive "$FM_MEMCAP_BYTES" \
-      || fm_memcap_die "FM_MEMCAP_BYTES must be a positive integer, got $FM_MEMCAP_BYTES"
-    bytes=$((FM_MEMCAP_BYTES / share))
-  else
-    total=$(fm_memcap_mem_total)
-    bytes=$((total * percent / 100 / share))
-  fi
+  local share=$1 total bytes
+  total=$(fm_memcap_mem_total)
+  bytes=$((total * DEFAULT_PERCENT / 100 / share))
   [ "$bytes" -ge "$FLOOR_BYTES" ] || bytes=$FLOOR_BYTES
   printf '%s\n' "$bytes"
 }
@@ -174,6 +165,7 @@ while [ "$#" -gt 0 ]; do
       fm_memcap_usage
       exit 0
       ;;
+    --exec) MODE=exec; shift ;;
     --mechanism) MODE=mechanism; shift ;;
     --budget-bytes) MODE=budget; shift ;;
     --bytes)
@@ -222,6 +214,10 @@ esac
 
 case "$(fm_memcap_mechanism)" in
   cgroup)
+    if [ "$MODE" = exec ]; then
+      exec systemd-run --user --scope --quiet --collect \
+        -p "MemoryMax=$BYTES" -p MemorySwapMax=0 -- "$@"
+    fi
     fm_memcap_run_cgroup "$BYTES" "$@"
     ;;
   rlimit)

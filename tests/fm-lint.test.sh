@@ -863,6 +863,7 @@ test_changed_mode_hides_cross_file_codes_that_ci_still_sees() {
   mkdir -p "$test_root/bin/backends" "$test_root/tests" "$test_root/.github/workflows"
   lint="$test_root/bin/fm-lint.sh"
   cp "$LINT" "$lint"
+  cp "$ROOT/bin/fm-build-lock.py" "$ROOT/bin/fm-memcap.sh" "$test_root/bin/"
   cp "$ROOT/bin/fm-lint-workflows.sh" "$test_root/bin/"
   cp "$ROOT"/.github/workflows/* "$test_root/.github/workflows/"
   printf '#!/usr/bin/env bash\nexit 0\n' > "$test_root/bin/backends/noop.sh"
@@ -1219,6 +1220,7 @@ test_rejects_direct_beads_cli_invocations() {
   mkdir -p "$tmp/repo/bin/backends" "$tmp/repo/tests"
   lint_copy="$tmp/repo/bin/fm-lint.sh"
   cp "$LINT" "$lint_copy"
+  cp "$ROOT/bin/fm-build-lock.py" "$ROOT/bin/fm-memcap.sh" "$tmp/repo/bin/"
   cat > "$tmp/repo/bin/fm-lint-workflows.sh" <<'SH'
 #!/usr/bin/env bash
 exit 0
@@ -1271,6 +1273,7 @@ test_rejects_direct_beads_cli_in_explicit_core_path() {
   lint_copy="$tmp/repo/bin/fm-lint.sh"
   target="$tmp/repo/bin/direct-beads.sh"
   cp "$LINT" "$lint_copy"
+  cp "$ROOT/bin/fm-build-lock.py" "$ROOT/bin/fm-memcap.sh" "$tmp/repo/bin/"
   printf '#!/usr/bin/env bash\nbd close fm-example\n' > "$target"
   chmod +x "$lint_copy"
   fm_lint_stub_shellcheck "$fakebin" "$log"
@@ -1903,6 +1906,7 @@ test_require_bounds_refuses_when_enforcement_is_missing() {
   lone_dir="$tmp/lone"
   mkdir -p "$lone_dir"
   cp "$LINT" "$lone_dir/fm-lint.sh"
+  cp "$ROOT/bin/fm-build-lock.py" "$ROOT/bin/fm-memcap.sh" "$lone_dir/"
   chmod +x "$lone_dir/fm-lint.sh"
   rc=0
   out=$(PATH="$fakebin:$PATH" FM_LINT_REQUIRE_BOUNDS=1 \
@@ -1918,9 +1922,9 @@ test_require_bounds_refuses_when_enforcement_is_missing() {
   # and must lint on with one warning without them.
   capless_dir="$tmp/capless"
   mkdir -p "$capless_dir"
-  cp "$LINT" "$ROOT/bin/fm-timeout-lib.sh" "$ROOT/bin/fm-lint-workflows.sh" "$capless_dir/"
+  cp "$LINT" "$ROOT/bin/fm-timeout-lib.sh" "$ROOT/bin/fm-lint-workflows.sh" "$ROOT/bin/fm-build-lock.py" "$capless_dir/"
   # shellcheck disable=SC2016 # The stub expands its own argument, not this one.
-  printf '#!/usr/bin/env bash\ncase "${1:-}" in --mechanism) printf "none\\n"; exit 0 ;; esac\nexit 2\n' \
+  printf '#!/usr/bin/env bash\ncase "${1:-}" in --mechanism) printf "none\\n"; exit 0 ;; esac\nwhile [ "$1" != -- ]; do shift; done\nshift\nexec "$@"\n' \
     > "$capless_dir/fm-memcap.sh"
   chmod +x "$capless_dir/fm-lint.sh" "$capless_dir/fm-memcap.sh"
   : > "$stub_log"
@@ -2012,6 +2016,7 @@ test_sidecar_result_exit_reflects_final_status() {
   roots_log="$tmp/lint.roots.tsv"
   mkdir -p "$tmp/repo/bin/backends" "$tmp/repo/tests" "$tmp/repo/.github/workflows"
   cp "$LINT" "$tmp/repo/bin/fm-lint.sh"
+  cp "$ROOT/bin/fm-build-lock.py" "$ROOT/bin/fm-memcap.sh" "$tmp/repo/bin/"
   cp "$ROOT/bin/fm-timeout-lib.sh" "$tmp/repo/bin/fm-timeout-lib.sh"
   cat > "$tmp/repo/bin/fm-lint-workflows.sh" <<'SH'
 #!/usr/bin/env bash
