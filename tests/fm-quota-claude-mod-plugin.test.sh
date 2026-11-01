@@ -99,7 +99,11 @@ test_seat_reader_answers_the_mod() {
   cat > "$TMP_ROOT/cache/default.json" <<'JSON'
 {"generatedAt":"2026-10-06T00:00:00Z","schemaVersion":5,"providers":[{"provider":"claude","label":"Claude","source":"oauth","account":{"email":"guard@example.test"},"windows":[{"id":"five_hour","label":"session","percentRemaining":64,"resetsAt":"2026-10-06T02:00:00Z"}]}]}
 JSON
-  reading=$(FM_SEAT_BOARD_CACHE_DIR="$TMP_ROOT/cache" CLAUDE_CONFIG_DIR="" "$ROOT/bin/fm-seat-board.sh" json --cached-only 2>&1) ||
+  # Only the reader is sealed off the operator's seats, not the whole suite: the
+  # checks above run the real installed `claude`, which needs its own home.
+  reading=$(fm_test_seat_sealed "$TMP_ROOT/seat-home" \
+    env FM_SEAT_BOARD_CACHE_DIR="$TMP_ROOT/cache" CLAUDE_CONFIG_DIR="" \
+    "$ROOT/bin/fm-seat-board.sh" json --cached-only 2>&1) ||
     fail "the seat reader the Quota mod calls failed: $reading"
   printf '%s' "$reading" | jq -e '[.seats[] | select(.hasData == true)] | length >= 1' >/dev/null ||
     fail "the seat reader did not report the seeded cached report at all: $reading"

@@ -17,6 +17,7 @@ set -u
 
 # shellcheck source=tests/fixtures.sh
 . "$(dirname "${BASH_SOURCE[0]}")/fixtures.sh"
+fm_test_seal_seats
 
 SEAT="$ROOT/bin/fm-seat.sh"
 TMP_ROOT=$(fm_test_tmproot fm-seat)
@@ -1693,7 +1694,7 @@ test_a_restarted_lead_spawns_the_default_seat_on_its_original_ambient() {
   # CLAUDE_CONFIG_DIR and carries the ambient it started from.
   : > "$LAUNCH_LOG"
   out=$(FM_TEST_CLAUDE_CONFIG_DIR="$SEATS_DIR/beta" \
-    FM_AMBIENT_CLAUDE_CONFIG_DIR="$CASE_DIR/ambient-profile" \
+    FM_TEST_AMBIENT_CLAUDE_CONFIG_DIR="$CASE_DIR/ambient-profile" \
     FM_FAKE_LAUNCH_LOG="$LAUNCH_LOG" \
     fm_test_run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN" "$id" "$PROJ_DIR" --mode no-mistakes --ticket no-ticket --commit-type chore --yolo off 2>&1)
   expect_code 0 "$?" "a default-seat spawn from a restarted lead should succeed: $out"
@@ -4248,6 +4249,44 @@ test_a_spawn_is_refused_on_an_empty_seat_and_the_routing_line_is_recorded_once()
   pass "a spawn is refused on an empty seat, records the routing line once, and resumes on its own"
 }
 
+# The other half of that refusal: only the ACTIVE seat is empty while a sibling
+# of the same vendor still has quota. The vendor-wide case above asks the
+# depletion summary a question it answers with exit status 0, so it survived a
+# spawn that read that status too late; this one gets a non-zero answer, which
+# under `set -e` used to kill the spawn on the assignment itself. The whole
+# refusal went unsaid and the operator got exit 1 and an empty terminal, so this
+# asserts the sentence reaches stderr and the spawn still refuses.
+test_a_spawn_refused_on_an_empty_active_seat_says_so_and_names_the_sibling() {
+  local rec id out spec wake
+  id=seat-active-dry-1
+  rec=$(spawn_case spawn-seat-active-dry "$id")
+  read_spawn_case "$rec"
+  spec="$CASE_DIR/quota-spec"
+  make_quota_fake "$FAKEBIN" "$spec"
+  mkdir -p "$SEATS_DIR/alpha" "$SEATS_DIR/beta"
+  printf '%s\n%s\n' "$SEATS_DIR/alpha" "$SEATS_DIR/beta" > "$spec/oauth"
+  printf 'alpha\n' > "$HOME_DIR/config/claude-seat"
+  printf '%s\t0\t2026-10-20T09:00:00Z\t0\t2026-10-20T09:00:00Z\n' \
+    "$SEATS_DIR/alpha" > "$spec/windows_map"
+  printf '%s\t80\t2026-10-21T09:00:00Z\t80\t2026-10-21T09:00:00Z\n' \
+    "$SEATS_DIR/beta" >> "$spec/windows_map"
+
+  out=$(run_spawn_here "$HOME_DIR" "$WT_DIR" "$FAKEBIN" "$LAUNCH_LOG" "$id" "$PROJ_DIR" 2>&1)
+  expect_code 1 "$?" "a fresh spawn must not start on an empty active seat"
+  [ -n "$out" ] || fail "the refusal said nothing at all - the spawn died before it could speak"
+  assert_contains "$out" "the active Claude seat is out of quota" \
+    "the refusal must say which seat is empty"
+  assert_contains "$out" "switch beta" \
+    "the refusal must name the sibling seat that still has quota"
+  assert_contains "$out" "80% left" "the routing must carry the headroom it found"
+  assert_contains "$out" "re-run with --ignore-seat-hold" "the refusal must name the override"
+  assert_absent "$HOME_DIR/state/$id.meta" "a refused spawn must create no task record"
+  [ ! -s "$LAUNCH_LOG" ] || fail "a refused spawn must launch nothing: $(cat "$LAUNCH_LOG")"
+  wake=$(grep -c 'seat-depleted:claude' "$HOME_DIR/state/.wake-queue" 2>/dev/null || true)
+  assert_equals 1 "${wake:-0}" "the routing line must reach the supervisor record once"
+  pass "a spawn refused on an empty active seat names the sibling that still has quota"
+}
+
 test_absent_setting_is_the_default_seat
 test_switch_to_logged_in_seat_updates_only_the_setting
 test_switch_to_seat_that_is_not_logged_in_is_refused
@@ -4277,6 +4316,7 @@ test_an_empty_seat_returns_to_rotation_on_its_own_once_a_read_shows_headroom
 test_the_watch_refuses_to_flip_between_empty_seats_and_says_where_work_goes_once
 test_the_watch_reports_a_vendor_draining_empty_after_its_shortfall_was_reported
 test_a_spawn_is_refused_on_an_empty_seat_and_the_routing_line_is_recorded_once
+test_a_spawn_refused_on_an_empty_active_seat_says_so_and_names_the_sibling
 test_a_paid_overflow_seat_still_takes_work_while_a_stop_policy_refuses_it
 test_an_armed_watch_and_a_spawn_report_one_dry_vendor_once_between_them
 test_a_codex_dispatch_is_refused_on_an_exhausted_provider_in_any_home

@@ -36,6 +36,7 @@ set -u
 
 # shellcheck source=tests/fixtures.sh
 . "$(dirname "${BASH_SOURCE[0]}")/fixtures.sh"
+fm_test_seal_seats
 
 GATE_LIB="$ROOT/bin/fm-gate-refuse-lib.sh"
 LABHOME="$ROOT/bin/fm-lab-home.sh"
