@@ -600,7 +600,7 @@ pnpm --filter @core/metaplanet test:postgrest --reporter=default
                         for path in (source / '.github/scripts').rglob('*.pg.test.mjs'))
         if not suites:
             raise Unusable('no live-PostgreSQL test files found')
-        script += ('node --test --test-reporter=tap ' + shlex.join(suites)
+        script += ('node --test --test-concurrency=1 --test-reporter=tap ' + shlex.join(suites)
                    + ' | tee ' + shlex.quote(str(work / 'runtime.tap')) + '\n')
         script += r'''
 tests=$(sed -n 's/^# tests \([0-9]*\)$/\1/p' "$RUNTIME_TAP" | tail -1)

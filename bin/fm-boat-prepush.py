@@ -60,10 +60,15 @@ def resolve_base(worktree: Path, base: str | None) -> str:
     """The revision the change is measured against, as a full object name.
 
     Default is the tracked default branch, read from origin's own HEAD, because
-    that is what the project's own planner diffs a pull request against.
+    that is what the project's own planner diffs a pull request against. A named
+    base prefers its remote-tracking ref over any local branch of that name.
     """
     if base:
-        return git(worktree, 'rev-parse', '--verify', base + '^{commit}')
+        try:
+            return git(worktree, 'rev-parse', '--verify',
+                       'refs/remotes/origin/' + base + '^{commit}')
+        except Refusal:
+            return git(worktree, 'rev-parse', '--verify', base + '^{commit}')
     for candidate in ('refs/remotes/origin/HEAD', 'refs/remotes/origin/main'):
         try:
             return git(worktree, 'rev-parse', '--verify', candidate + '^{commit}')

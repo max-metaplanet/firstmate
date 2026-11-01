@@ -55,6 +55,7 @@ def plan(**over):
 # ── lane selection follows the head's plan, in a stable order ───────────────
 lanes = remote.select_lanes(plan())
 names = [lane['name'] for lane in lanes]
+assert not any(arg.startswith('--test-concurrency') for lane in lanes for arg in lane['argv']), lanes
 assert names == ['quality-lint', 'quality-typecheck-admin', 'quality-typecheck-other',
                  'quality-test-typecheck', 'node-0', 'node-1', 'ci-scripts',
                  'repository-scripts', 'edge-function'], names
@@ -447,9 +448,15 @@ try:
         assert not any(call[0] == 'sudo' for call in calls), calls
         assert ['docker', 'exec', 'a' * 64, 'pg_isready', '-h', '127.0.0.1',
                 '-p', '5432', '-U', 'postgres', '-d', 'postgres'] in calls, calls
+        # core's runtime suites share one database; at the default machine's
+        # CPU count, concurrent files race on CREATE ROLE, so only this lane
+        # runs them one at a time.
+        bounded = [call for call in calls if '--test-concurrency=1' in call]
         if suite == 'runtime':
-            assert any(call[:3] == ['node', '--test', '--test-reporter=tap'] for call in calls)
+            assert bounded and all(call[:4] == ['node', '--test', '--test-concurrency=1',
+                                                '--test-reporter=tap'] for call in bounded), calls
         else:
+            assert not bounded, calls
             assert any(call == ['node', 'db-local/restore-snapshot.sh'] for call in calls)
             assert any(call == ['node', '.github/scripts/db-local/ledger-delta.mjs',
                                 '--tiers', 'am', '--base-ref', 'refs/remotes/origin/main'] for call in calls)
@@ -720,8 +727,28 @@ else:
     raise AssertionError('mismatched expected head was accepted')
 assert not provisioned.exists(), 'a mismatched head reached machine provisioning'
 assert not refused_output.exists(), 'a mismatched head created check evidence'
+remote_tracked = 'release/prepush-base'
+subprocess.run(['git', '-C', str(base), 'update-ref', 'refs/remotes/origin/' + remote_tracked,
+                actual_head], check=True)
+assert local.resolve_base(base, remote_tracked) == actual_head
+subprocess.run(['git', '-C', str(base), 'branch', remote_tracked, old_head], check=True)
+assert local.resolve_base(base, remote_tracked) == actual_head, 'stale local branch preferred'
+assert local.resolve_base(base, old_head) == old_head
+subprocess.run(['git', '-C', str(base), 'update-ref', 'refs/remotes/origin/HEAD', old_head], check=True)
+assert local.resolve_base(base, None) == old_head
+subprocess.run(['git', '-C', str(base), 'update-ref', '-d', 'refs/remotes/origin/HEAD'], check=True)
+subprocess.run(['git', '-C', str(base), 'branch', '-D', '--quiet', remote_tracked], check=True)
+subprocess.run(['git', '-C', str(base), 'update-ref', '-d', 'refs/remotes/origin/' + remote_tracked],
+               check=True)
+try:
+    local.resolve_base(base, remote_tracked)
+except local.Refusal:
+    pass
+else:
+    raise AssertionError('an unknown base resolved')
 print('ok - successful and failing verdicts persist under the output directory')
 print('ok - expected head requires clean tracked content before provisioning; untracked and manual edits remain allowed')
+print('ok - a named base resolves through its remote-tracking ref before any stale local branch')
 
 
 PY
