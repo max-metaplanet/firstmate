@@ -1,0 +1,15 @@
+Contention: four CLI emissions returned 0; hook received each event once using firstmate.task-event v1 with ticket=null; one actionable status notification.
+2026-11-01T22:59:28Z task_id=task event=started exit=1 reason="error: another clickup-axi writer is active; retry this event"
+2026-11-01T22:59:28Z task_id=task event=resumed exit=1 reason="error: another clickup-axi writer is active; retry this event"
+2026-11-01T22:59:28Z task_id=task event=pr-opened exit=1 reason="error: another clickup-axi writer is active; retry this event"
+2026-11-01T22:59:29Z task_id=task event=pr-merged exit=1 reason="error: another clickup-axi writer is active; retry this event"
+Safety: last nonempty error retained; synthetic credential redacted; quotes, backslashes, control bytes removed; Japanese error preserved.
+2026-11-01T22:59:29Z task_id=task event=started exit=7 reason="error: チケット rejected Bearer [redacted] for task at C: path manual repair [31m"
+Length bound: long error produced a reason field of exactly 200 characters.
+2026-11-01T22:59:29Z task_id=task event=resumed exit=1 reason="error: refused again refused again refused again refused again refused again refused again refused again refused again refused again refused again refused again refused again refused again refused aga"
+Silent failure: 2026-11-01T22:59:30Z task_id=task event=started exit=9
+Recovery: subsequent successful event delivered once; stdout/stderr suppressed and no success failure record appended.
+Timeout: one bounded attempt ended exit=124 and preserved pre-timeout error; CLI producer returned 0.
+2026-11-01T22:59:31Z task_id=task event=started exit=124 reason="tracker unavailable"
+Timeout recovery: next queued event delivered successfully; drainer completed.
+All targeted live CLI scenarios passed; all drainers completed and temporary captures were removed.
