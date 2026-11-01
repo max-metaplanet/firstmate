@@ -19,6 +19,9 @@
 # Failures append to state/task-events.log and never fail a lifecycle producer;
 # a consumer failure also appends one actionable line to a live task's status,
 # at most once per task per hour.
+# A failure the hook explained on stderr records its own last stderr line next
+# to the exit code, bounded and secret-safe, because the exit code alone cannot
+# say why.
 # FM_TASK_EVENT_TIMEOUT sets the hook bound in seconds (default 60).
 set -u
 
@@ -36,8 +39,25 @@ DELIVERY_LOCK="$STATE/.task-event-delivery.lock"
 # shellcheck source=bin/fm-wake-lib.sh
 . "$SCRIPT_DIR/fm-wake-lib.sh"
 
-report_failure() {
-  printf '%s task_id=%s event=%s exit=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$ID" "$EVENT" "$1" >> "$STATE/task-events.log" 2>/dev/null || true
+report_failure() {  # <exit-code> [detail]
+  printf '%s task_id=%s event=%s exit=%s%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$ID" "$EVENT" "$1" "${2:+ $2}" >> "$STATE/task-events.log" 2>/dev/null || true
+}
+
+# One bounded, single-line, secret-safe field built from a hook's own stderr.
+# The last non-empty line is the proximate failure, so earlier progress chatter
+# never displaces the error. Control bytes, quotes and backslashes become spaces
+# to keep the field unambiguous while leaving non-ASCII tracker text readable,
+# and every run of 24 or more characters from the credential alphabet is
+# replaced, so an opaque token printed by the hook cannot reach the log whatever
+# labels surround it.
+HOOK_EXCERPT_LIMIT=200
+hook_excerpt() {  # <stderr-file>
+  local line
+  line=$(LC_ALL=C sed -e 's/[[:cntrl:]]/ /g' -e 's/["\\]/ /g' "$1" 2>/dev/null \
+    | LC_ALL=C sed -E -e 's@[A-Za-z0-9+/=_-]{24,}@[redacted]@g' \
+      -e 's/[[:space:]]+/ /g' -e 's/^ //' -e 's/ $//' \
+    | LC_ALL=C grep -v '^$' | tail -n 1) || return 0
+  printf '%s' "${line:0:$HOOK_EXCERPT_LIMIT}"
 }
 
 surface_failure() {  # <exit-code>
@@ -54,13 +74,14 @@ surface_failure() {  # <exit-code>
     >> "$status" 2>/dev/null || true
 }
 
-fail_delivery() {  # <exit-code>
-  report_failure "$1"
+fail_delivery() {  # <exit-code> [detail]
+  report_failure "$1" "${2:-}"
   surface_failure "$1"
 }
 
 deliver() {
   local hook='' count=0 line bound=${FM_TASK_EVENT_TIMEOUT:-60} rc=0
+  local errors='' excerpt=''
   case "$bound" in ''|*[!0-9]*|0) bound=60 ;; esac
   if [ -e "$CONFIG/task-event-hook" ]; then
     [ -f "$CONFIG/task-event-hook" ] || { fail_delivery 126; return; }
@@ -83,8 +104,15 @@ deliver() {
   fi
   # shellcheck source=bin/fm-timeout-lib.sh
   . "$SCRIPT_DIR/fm-timeout-lib.sh"
-  fm_run_timed "$bound" "$hook" "$PAYLOAD" >/dev/null 2>&1 || rc=$?
-  [ "$rc" -eq 0 ] || fail_delivery "$rc"
+  errors=$(mktemp "${TMPDIR:-/tmp}/fm-task-event-stderr.XXXXXX" 2>/dev/null) || errors=''
+  if [ -n "$errors" ]; then
+    fm_run_timed "$bound" "$hook" "$PAYLOAD" >/dev/null 2>"$errors" || rc=$?
+    [ "$rc" -eq 0 ] || excerpt=$(hook_excerpt "$errors")
+    rm -f "$errors" 2>/dev/null || true
+  else
+    fm_run_timed "$bound" "$hook" "$PAYLOAD" >/dev/null 2>&1 || rc=$?
+  fi
+  [ "$rc" -eq 0 ] || fail_delivery "$rc" "${excerpt:+reason=\"$excerpt\"}"
 }
 
 first_queued() {

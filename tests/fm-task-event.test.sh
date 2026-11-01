@@ -248,6 +248,53 @@ wait_lines "$home/events" 1
 jq -e '.event == "resumed"' "$home/events" >/dev/null || fail 'dead drainer lock blocked delivery'
 pass 'the existing lock recovery permits delivery after a drainer dies'
 
+home=$(make_home excerpt)
+cat > "$home/hook" <<'SH'
+#!/usr/bin/env bash
+printf 'reading configuration\n' >&2
+printf 'error: ticket is in invalid ticket rules; repair it\tmanually\n' >&2
+exit 1
+SH
+emit "$home" task started
+wait_lines "$home/state/task-events.log" 1
+assert_grep 'task_id=task event=started exit=1 reason="error: ticket is in invalid ticket rules; repair it manually"' \
+  "$home/state/task-events.log" 'the consumer error was not recorded beside its exit code'
+[ "$(wc -l < "$home/state/task-events.log")" = 1 ] || fail 'the consumer error spilled across several log lines'
+pass 'a failing consumer records its own last error line next to the exit code'
+
+home=$(make_home excerpt-safety)
+cat > "$home/hook" <<'SH'
+#!/usr/bin/env bash
+printf 'error: rejected Bearer pk_12345678901234567890123456789012 for "task" at https://api.example.org/v2/task\n' >&2
+exit 1
+SH
+emit "$home" task started
+wait_lines "$home/state/task-events.log" 1
+assert_grep 'reason="error: rejected Bearer [redacted] for task at https://api.example.org/v2/task"' \
+  "$home/state/task-events.log" 'a credential or a quote survived into the log field'
+cat > "$home/hook" <<'SH'
+#!/usr/bin/env bash
+printf 'error: ' >&2
+awk 'BEGIN { while (n++ < 120) printf "refused again " }' >&2
+printf '\n' >&2
+exit 1
+SH
+emit "$home" task blocked
+wait_lines "$home/state/task-events.log" 2
+recorded=$(sed -n '2s/.*reason="\(.*\)"$/\1/p' "$home/state/task-events.log")
+[ -n "$recorded" ] && [ "${#recorded}" -le 200 ] \
+  || fail "an unbounded consumer error reached the log: ${#recorded} characters"
+cat > "$home/hook" <<'SH'
+#!/usr/bin/env bash
+printf 'error: \xe3\x83\x81\xe3\x82\xb1\xe3\x83\x83\xe3\x83\x88 rejected pk_12345678901234567890123456789012\n' >&2
+exit 1
+SH
+emit "$home" task resumed
+wait_lines "$home/state/task-events.log" 3
+assert_grep 'reason="error: チケット rejected [redacted]"' "$home/state/task-events.log" \
+  'a tracker error outside ASCII was mangled or its credential kept'
+pass 'a recorded consumer error is bounded, unquoted, readable outside ASCII, and carries no credential-shaped run'
+
 for scope in complete partial invalid ''; do
   home=$(make_home "scope-${scope:-empty}")
   printf 'ticket_scope=%s\n' "$scope" >> "$home/state/task.meta"
