@@ -1,0 +1,49 @@
+# head + PR #190 bin/fm-wake-lib.sh
+== rev=head-pr190 runner=native scenario=quiet
+exit=124 elapsed=1.3s
+stdout: checkpoint: no actionable wake within 1s
+stderr lines printed by checkpoint: 0
+watch lock: released
+
+== rev=head-pr190 runner=perl scenario=quiet
+exit=124 elapsed=1.2s
+stdout: checkpoint: no actionable wake within 1s
+stderr lines printed by checkpoint: 0
+watch lock: released
+
+== rev=head-pr190 runner=native scenario=fgsleep
+exit=124 elapsed=2.3s
+stdout: checkpoint: no actionable wake within 2s
+stderr lines printed by checkpoint: 0
+watch lock: released
+
+== rev=head-pr190 runner=perl scenario=fgsleep
+exit=124 elapsed=2.1s
+stdout: checkpoint: no actionable wake within 2s
+stderr lines printed by checkpoint: 0
+watch lock: released
+
+== rev=head-pr190 runner=native scenario=helpers
+exit=124 elapsed=2.4s
+stdout: checkpoint: no actionable wake within 2s
+stderr lines printed by checkpoint: 0
+watch lock: released
+fm-home-summary-refresh.sh: started[3387361 pgid=3387361] finished=yes
+fm-worker-park.sh: started[3387356 pgid=3387356] finished=yes
+fm-secondmate-reconcile.sh: started[3387363 pgid=3387363] finished=yes
+
+== rev=head-pr190 runner=perl scenario=helpers
+exit=124 elapsed=2.3s
+stdout: checkpoint: no actionable wake within 2s
+stderr lines printed by checkpoint: 0
+watch lock: released
+fm-home-summary-refresh.sh: started[3393381 pgid=3393381] finished=yes
+fm-worker-park.sh: started[3393373 pgid=3393373] finished=yes
+fm-secondmate-reconcile.sh: started[3393382 pgid=3393382] finished=yes
+
+# base 48ef02d0 + PR #190 bin/fm-wake-lib.sh (perl, INT ignored)
+== rev=48ef02d0-pr190 runner=perl scenario=quiet
+exit=124 elapsed=6.0s
+stdout: checkpoint: no actionable wake within 1s
+stderr lines printed by checkpoint: 0
+watch lock: LEFT BEHIND (pid 3395539)

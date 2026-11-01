@@ -1,0 +1,42 @@
+== rev=head runner=native scenario=quiet
+exit=124 elapsed=1.7s
+stdout: checkpoint: no actionable wake within 1s
+stderr lines printed by checkpoint: 0
+watch lock: released
+
+== rev=head runner=perl scenario=quiet
+exit=124 elapsed=2.0s
+stdout: checkpoint: no actionable wake within 1s
+stderr lines printed by checkpoint: 0
+watch lock: released
+
+== rev=head runner=native scenario=fgsleep
+exit=124 elapsed=2.2s
+stdout: checkpoint: no actionable wake within 2s
+stderr lines printed by checkpoint: 0
+watch lock: released
+
+== rev=head runner=perl scenario=fgsleep
+exit=124 elapsed=2.2s
+stdout: checkpoint: no actionable wake within 2s
+stderr lines printed by checkpoint: 0
+watch lock: released
+
+== rev=head runner=native scenario=helpers
+exit=124 elapsed=2.7s
+stdout: checkpoint: no actionable wake within 2s
+stderr lines printed by checkpoint: 0
+watch lock: released
+fm-home-summary-refresh.sh: started[3344287 pgid=3344287] finished=yes
+fm-worker-park.sh: started[3344284 pgid=3344284] finished=yes
+fm-secondmate-reconcile.sh: started[3344288 pgid=3344288] finished=yes
+
+== rev=head runner=perl scenario=helpers
+exit=124 elapsed=2.3s
+stdout: checkpoint: no actionable wake within 2s
+stderr lines printed by checkpoint: 0
+watch lock: released
+fm-home-summary-refresh.sh: started[3349884 pgid=3349884] finished=yes
+fm-worker-park.sh: started[3349879 pgid=3349879] finished=yes
+fm-secondmate-reconcile.sh: started[3349886 pgid=3349886] finished=yes
+

@@ -1,0 +1,44 @@
+# c19f5a39 = round-1 fix (signal only the watcher, --foreground)
+== rev=c19f5a39 runner=native scenario=fgsleep
+exit=124 elapsed=7.1s
+stdout: checkpoint: no actionable wake within 2s
+stderr lines printed by checkpoint: 1
+watch lock: LEFT BEHIND (pid 3360959)
+
+== rev=c19f5a39 runner=perl scenario=fgsleep
+exit=124 elapsed=7.0s
+stdout: checkpoint: no actionable wake within 2s
+stderr lines printed by checkpoint: 0
+watch lock: LEFT BEHIND (pid 3364878)
+
+# 82480fae = TERM to whole group, helpers NOT in own group
+== rev=82480fae runner=native scenario=helpers
+exit=124 elapsed=2.4s
+stdout: checkpoint: no actionable wake within 2s
+stderr lines printed by checkpoint: 0
+watch lock: released
+fm-home-summary-refresh.sh: started[3370998 pgid=3370964] finished=NO-killed
+fm-worker-park.sh: started[3370990 pgid=3370964] finished=NO-killed
+fm-secondmate-reconcile.sh: started[3370999 pgid=3370964] finished=NO-killed
+
+== rev=82480fae runner=perl scenario=helpers
+exit=124 elapsed=2.3s
+stdout: checkpoint: no actionable wake within 2s
+stderr lines printed by checkpoint: 0
+watch lock: released
+fm-home-summary-refresh.sh: started[3374458 pgid=3374417] finished=NO-killed
+fm-worker-park.sh: started[3374452 pgid=3374417] finished=NO-killed
+fm-secondmate-reconcile.sh: started[3374459 pgid=3374417] finished=NO-killed
+
+# 48ef02d0 = base (INT bound), perl runner with INT ignored by caller
+== rev=48ef02d0 runner=perl scenario=quiet
+exit=124 elapsed=6.0s
+stdout: checkpoint: no actionable wake within 1s
+stderr lines printed by checkpoint: 0
+watch lock: LEFT BEHIND (pid 3376044)
+
+== rev=48ef02d0 runner=native scenario=quiet
+exit=124 elapsed=1.3s
+stdout: checkpoint: no actionable wake within 1s
+stderr lines printed by checkpoint: 0
+watch lock: released
