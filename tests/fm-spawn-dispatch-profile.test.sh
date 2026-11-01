@@ -219,6 +219,7 @@ test_ready_hold_launch_overlay_follows_yolo() {
     rec=$(make_spawn_case "$id" codex "$id")
     read_case_record "$rec"
     printf 'project\thold\n' > "$HOME_DIR/config/project-ready-hold-label"
+    printf 'project\ttests-verdict\n' > "$HOME_DIR/config/project-queue-only-checks"
     out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" \
       --mode no-mistakes --ticket no-ticket --commit-type chore --yolo "$yolo") \
       || fail "ready-hold $yolo launch failed: $out"
@@ -228,8 +229,12 @@ test_ready_hold_launch_overlay_follows_yolo() {
     else
       assert_no_grep 'Ready-hold safety contract' "$HOME_DIR/data/$id/launch-brief.md" 'yolo-on launch gained a hold contract'
     fi
+    assert_grep 'Merge-queue required checks' "$HOME_DIR/data/$id/launch-brief.md" \
+      "launch omitted the queue-only contract for yolo $yolo"
+    assert_grep '--queue-only tests-verdict' "$HOME_DIR/data/$id/launch-brief.md" \
+      "launch omitted the declared queue-only check for yolo $yolo"
   done
-  pass 'spawn delivers ready-hold instructions only for configured yolo-off ships'
+  pass 'spawn delivers ready-hold instructions only for configured yolo-off ships and queue-only instructions for both'
 }
 
 # Claude Code strips U+2063 from the launch-prompt argument, so a claude launch

@@ -12,6 +12,9 @@
 # so rollups, requirements, and producer evidence never consume exec argv space.
 # Read errors fail closed.
 # The forge's required CI gate is treated like any other required context.
+# github_defer_queue_only removes the required checks a project declares as
+# running only in its merge queue from the unreported set; a declared check
+# that did report is judged like any other required context.
 
 github_urlencode_path_segment() {
   local LC_ALL=C input=$1 encoded='' char octet hex
@@ -308,4 +311,36 @@ github_read_required_producers() {
       return 1
     fi
   fi
+}
+
+# Splits a newline-separated list of required check names that have not
+# reported into the ones that still block and the ones a project declares as
+# running only in its merge queue, which never report on an ordinary
+# pull-request head. The results are FM_PR_QUEUE_ONLY_BLOCKING and
+# FM_PR_QUEUE_ONLY_DEFERRED, set rather than printed so a caller does not lose
+# the second list to a command substitution.
+#
+# Only an absent report is deferred. A declared check that DID report is left
+# to github_checks_not_green like any other required context, so a queue-only
+# check that is red or still running on the head still blocks.
+FM_PR_QUEUE_ONLY_BLOCKING=
+FM_PR_QUEUE_ONLY_DEFERRED=
+# Both results are read by fm-pr-checks.sh and fm-pr-merge.sh.
+# shellcheck disable=SC2034
+github_defer_queue_only() {  # <unreported-names> <queue-only-names>
+  local line
+  FM_PR_QUEUE_ONLY_BLOCKING=$1
+  FM_PR_QUEUE_ONLY_DEFERRED=
+  [ -n "$2" ] && [ -n "$1" ] || return 0
+  FM_PR_QUEUE_ONLY_BLOCKING=
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    if printf '%s\n' "$2" | grep -qxF -- "$line"; then
+      FM_PR_QUEUE_ONLY_DEFERRED=$FM_PR_QUEUE_ONLY_DEFERRED$line$'\n'
+    else
+      FM_PR_QUEUE_ONLY_BLOCKING=$FM_PR_QUEUE_ONLY_BLOCKING$line$'\n'
+    fi
+  done <<NAMES
+$1
+NAMES
 }

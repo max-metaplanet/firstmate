@@ -375,7 +375,8 @@ EOF
   fi
   printf '\n'
   fm_dod_block "$MODE" "$ID" "$BRANCH" "$FORGE" "$BASE_BRANCH" "$UPSTREAM_CONSENT" "$TICKET_HEADER" "$TICKET_NM_RETITLE" || return 1
-  fm_dod_ready_hold_block "$CONFIG" "$PROMOTE_PROJECT" "$YOLO" "$FORGE" "$MODE"
+  fm_dod_ready_hold_block "$CONFIG" "$PROMOTE_PROJECT" "$YOLO" "$FORGE" "$MODE" || return 1
+  fm_dod_queue_only_block "$CONFIG" "$PROMOTE_PROJECT" "$FORGE" "$MODE"
 }
 mkdir -p "$DATA/$ID"
 [ ! -d "$INSTRUCTIONS" ] || { echo "error: ship instructions path is a directory: $INSTRUCTIONS" >&2; exit 1; }

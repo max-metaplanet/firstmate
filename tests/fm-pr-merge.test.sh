@@ -245,7 +245,12 @@ case "${1:-} ${2:-}" in
         case_dir=$(dirname "$FM_TEST_GH_LOG")
         [ ! -f "$case_dir/labels-read-fails" ] || exit 1
         jq --arg head "$(cat "$FM_TEST_GH_HEAD")" '. + {headRefOid:$head}' "$case_dir/labels.json"
-        exit $?
+        label_rc=$?
+        # Drops every label after this read, so a case can put a label change
+        # between the pre-lock read and the one inside the merge lock.
+        [ ! -f "$case_dir/labels-drop-after-read" ] \
+          || echo '{"labels":[]}' > "$case_dir/labels.json"
+        exit "$label_rc"
         ;;
       *statusCheckRollup*)
         # One staged live view per pre-merge read, so a case can walk the
@@ -971,6 +976,54 @@ test_ready_hold_release_keeps_guards_and_fails_closed() {
     esac
   done
   pass 'ready-hold release preserves guards and refuses unconfirmed removal'
+}
+
+# "queue-verdict" stands for a required check the project runs only in its merge
+# queue, so it never reports on the pull-request head this guard reads.
+test_queue_only_checks_relax_only_the_ready_hold_release() {
+  local case_dir posture rc url=https://github.com/example/repo/pull/9
+  for posture in handoff undeclared direct red unlabelled-after-read; do
+    case_dir=$(make_case "queue-only-$posture")
+    add_gh_mocks "$case_dir" deadbeefcafefeed0000000000000000deadbeef
+    write_github_required "$case_dir" classic:ci classic:queue-verdict
+    : > "$case_dir/gh-axi.log"
+    printf 'yolo=off\n' >> "$case_dir/state/task-x1.meta"
+    echo '{"labels":[{"name":"hold"}]}' > "$case_dir/labels.json"
+    [ "$posture" = undeclared ] \
+      || printf 'project\tqueue-verdict\n' > "$case_dir/home/config/project-queue-only-checks"
+    if [ "$posture" = direct ]; then
+      echo '{"labels":[]}' > "$case_dir/labels.json"
+    else
+      printf 'project\thold\n' > "$case_dir/home/config/project-ready-hold-label"
+    fi
+    [ "$posture" != unlabelled-after-read ] || touch "$case_dir/labels-drop-after-read"
+    if [ "$posture" = red ]; then
+      jq -c '.statusCheckRollup += [{__typename:"CheckRun",name:"queue-verdict",status:"COMPLETED",conclusion:"FAILURE"}]' \
+        "$case_dir/github-view.json" > "$case_dir/github-view.json.red"
+      mv "$case_dir/github-view.json.red" "$case_dir/github-view.json"
+    fi
+    rc=0
+    run_pr_merge "$case_dir" task-x1 "$url" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+    if [ "$posture" = handoff ]; then
+      [ "$rc" -eq 0 ] || fail "declared queue-only handoff failed: $(cat "$case_dir/stderr")"
+      assert_grep 'left to the project merge queue' "$case_dir/stderr" 'the deferral was not reported'
+      assert_grep "pr edit 9 --repo example/repo --remove-label hold" "$case_dir/gh-axi.log" 'hold was not released'
+      assert_no_grep 'pr merge ' "$case_dir/gh.log" 'the held PR was merged directly'
+      continue
+    fi
+    [ "$rc" -ne 0 ] || fail "queue-only $posture was merged"
+    assert_no_grep 'pr merge ' "$case_dir/gh.log" "queue-only $posture merged anyway"
+    assert_no_grep '--remove-label' "$case_dir/gh-axi.log" "queue-only $posture released the hold"
+    assert_absent "$case_dir/state/task-x1.pr-poll-merge-notified" "queue-only $posture recorded landing"
+    case "$posture" in
+      red) assert_grep "check 'queue-verdict' is not green" "$case_dir/stderr" 'a declared check red on the head was ignored' ;;
+      unlabelled-after-read)
+        assert_grep 'no longer carries its ready-hold label' "$case_dir/stderr" \
+          'a label removed under the merge lock still merged on the queue waiver' ;;
+      *) assert_grep "required check 'queue-verdict' has not reported" "$case_dir/stderr" 'the unreported required check was waived' ;;
+    esac
+  done
+  pass 'a queue-only declaration relaxes the unreported-check guard only on the ready-hold release actually taken, never on a direct merge or a red check'
 }
 
 test_ready_hold_absent_or_yolo_on_keeps_direct_merge() {
@@ -3651,6 +3704,7 @@ if [ "$#" -eq 0 ]; then
 test_ready_hold_release_uses_bot_and_preserves_landing_proof
 test_ready_hold_release_keeps_guards_and_fails_closed
 test_ready_hold_absent_or_yolo_on_keeps_direct_merge
+test_queue_only_checks_relax_only_the_ready_hold_release
 test_github_zero_exit_queue_required_refuses_with_exact_retry
 test_github_closed_unqueued_outcome_omits_retry_flags
 test_github_agreeing_queue_rules_keep_retry_guidance

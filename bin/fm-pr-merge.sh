@@ -66,6 +66,12 @@
 # bin/fm-pr-checks-lib.sh owns required-context discovery, producer identity,
 # check supersession, and advisory exclusion, shared with worker CI waits.
 # Every failing condition is reported, not just the first.
+# A project's declared merge-queue-only required checks (docs/configuration.md
+# "Queue-only required checks") relax the unreported-check refusal only on the
+# ready-hold release path, where this run removes the hold label and the
+# project's merge bot runs those checks in its queue before landing. A direct
+# merge keeps demanding every required check at the head, because nothing else
+# would ever run them and the declaration is local text no forge confirms.
 # The verified head is then passed to gh as
 # --match-head-commit, so a push that lands between that read and the merge
 # fails the merge instead of landing commits nothing verified. Reading that
@@ -240,6 +246,8 @@ STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 . "$SCRIPT_DIR/fm-afk-contract.sh"
 # shellcheck source=bin/fm-ready-hold-lib.sh
 . "$SCRIPT_DIR/fm-ready-hold-lib.sh"
+# shellcheck source=bin/fm-queue-only-lib.sh
+. "$SCRIPT_DIR/fm-queue-only-lib.sh"
 
 if [ "$#" -lt 2 ]; then
   echo "error: invalid PR merge request" >&2
@@ -898,6 +906,14 @@ forgejo_default_merge_style() {
 # Statuses 1 and 5 compose the same refusal; FM_PR_VERIFY_QUIET suppresses
 # printing it during that wait, and FM_PR_VERIFY_REFUSAL_REPORT keeps it so a
 # spent bound can report what never became ready without another live read.
+# The required checks this run lets the project's merge queue report instead of
+# the head, empty unless the ready-hold release path below sets it, and whether
+# the verification actually waived one. The waiver is decided from a label read
+# taken before the merge lock, while the release decision is taken inside it, so
+# a label removed in between would otherwise turn a waived verification into an
+# unwaived direct merge. The flag is what lets that case refuse.
+FM_PR_QUEUE_ONLY_CHECKS=
+FM_PR_QUEUE_ONLY_WAIVED=false
 FM_PR_VERIFY_QUIET=false
 FM_PR_VERIFY_REFUSAL_REPORT=
 FM_PR_GITHUB_VERIFY_HEAD=
@@ -906,7 +922,7 @@ FM_PR_GITHUB_CROSS_REPO=
 FM_PR_GITHUB_MAINTAINER_CAN_MODIFY=
 github_verify_mergeable() {
   local json fields line red name check_state covered missing unreported producers
-  local total=0 named=0 refusals='' mergeable_refusal=''
+  local total=0 named=0 refusals='' mergeable_refusal='' deferred=''
   local state='' draft='' mergeable='' merge_state='' live_head='' base=''
   local cross='' maintainer='' behind=false hard_condition=false
 
@@ -1036,6 +1052,10 @@ EOF
 "
     hard_condition=true
   else
+    github_defer_queue_only "$missing" "$FM_PR_QUEUE_ONLY_CHECKS"
+    missing=$FM_PR_QUEUE_ONLY_BLOCKING
+    deferred=$FM_PR_QUEUE_ONLY_DEFERRED
+    [ -z "$deferred" ] || FM_PR_QUEUE_ONLY_WAIVED=true
     while IFS= read -r name; do
       [ -n "$name" ] || continue
       [ "${#ALLOW_MISSING[@]}" -gt 0 ] && [ "${ALLOW_MISSING[0]}" = "$name" ] && continue
@@ -1077,6 +1097,10 @@ EOF
   if [ "$behind" = true ]; then
     FM_PR_VERIFY_REFUSAL_REPORT=
     return 4
+  fi
+  if [ -n "$deferred" ]; then
+    printf 'note: these required checks are left to the project merge queue, which runs them before its bot lands %s: %s\n' \
+      "$URL" "$(printf '%s' "$deferred" | tr '\n' ' ')" >&2
   fi
   printf 'verified: %s is open and mergeable, with every unwaived required check reported and every unwaived required check green at head %s\n' \
     "$URL" "$live_head" >&2
@@ -1692,6 +1716,33 @@ case "$PROVIDER" in
       ''|*[!0-9]*) FM_PR_FRESHNESS_POLL=20 ;;
       *) [ "${#FM_PR_FRESHNESS_POLL}" -le 4 ] || FM_PR_FRESHNESS_POLL=20 ;;
     esac
+    # Resolved before the verification loop because the guard it relaxes runs
+    # inside that loop. Only the ready-hold release path qualifies: this run
+    # removes the hold label and the project's bot then runs the declared
+    # checks in its merge queue. A direct merge keeps the full guard, so the
+    # label read happens only when both declarations exist.
+    queue_only_project=$(basename "$(sed -n 's/^project=//p' "$META" | tail -n 1)")
+    queue_only_declared=$(fm_queue_only_checks "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}" "$queue_only_project") \
+      || exit 1
+    if [ -n "$queue_only_declared" ] \
+      && [ "$(sed -n 's/^yolo=//p' "$META" | tail -n 1)" != on ]; then
+      queue_only_label=$(fm_ready_hold_label "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}" "$queue_only_project") \
+        || exit 1
+      if [ -n "$queue_only_label" ]; then
+        queue_only_json=$(gh pr view "$URL" --json labels) || {
+          echo 'error: could not read the pull request labels before verifying its checks' >&2
+          exit 1
+        }
+        if ! printf '%s' "$queue_only_json" | jq -e '.labels | type == "array"' >/dev/null; then
+          echo 'error: the pull request labels are unreadable; nothing merged' >&2
+          exit 1
+        fi
+        if printf '%s' "$queue_only_json" | jq -e --arg label "$queue_only_label" \
+          '.labels | any(.name == $label)' >/dev/null; then
+          FM_PR_QUEUE_ONLY_CHECKS=$queue_only_declared
+        fi
+      fi
+    fi
     freshness_rounds=0
     freshness_waiting=false
     freshness_stale_head=
@@ -1791,6 +1842,10 @@ case "$PROVIDER" in
       if printf '%s' "$ready_hold_json" | jq -e --arg label "$ready_hold_label" '.labels | any(.name == $label)' >/dev/null; then
         ready_hold_present=true
       fi
+    fi
+    if [ "$FM_PR_QUEUE_ONLY_WAIVED" = true ] && [ "$ready_hold_present" != true ]; then
+      echo 'error: required checks were left to the project merge queue, but this pull request no longer carries its ready-hold label, so landing it here would be a direct merge those checks never ran for; nothing merged' >&2
+      exit 1
     fi
     merge_status=0
     if [ "$ready_hold_present" = true ]; then

@@ -61,7 +61,11 @@ case "$*" in
     [ ! -f "$REFRESH_FIXTURE/timeline-fails" ] || exit 1
     echo 2026-10-20T11:00:00Z ;;
   *'/rules/branches/main')
-    echo '[{"type":"required_status_checks","parameters":{"required_status_checks":[{"context":"CI gate"}]}}]' ;;
+    if [ -f "$REFRESH_FIXTURE/rules.json" ]; then
+      cat "$REFRESH_FIXTURE/rules.json"
+    else
+      echo '[{"type":"required_status_checks","parameters":{"required_status_checks":[{"context":"CI gate"}]}}]'
+    fi ;;
   *'/branches/main') echo '{"protected":false}' ;;
   *'/check-runs') echo '{"check_runs":[]}' ;;
   *) echo "unexpected gh call $*" >&2; exit 91 ;;
@@ -182,3 +186,36 @@ echo '{"labels":[]}' > "$TASK_TMP/labels.json"
 refresh ready task "$URL" --ready-ci unchanged > "$TASK_TMP/ready-out"
 jq -e '.labels | length == 0' "$TASK_TMP/labels.json" >/dev/null || fail 'yolo-on refresh added a hold'
 pass 'yolo-on refresh keeps its current ready behavior'
+
+# "queue-verdict" stands for a required check this project runs only in its
+# merge queue, so it never reports on the pull-request head the ready wait reads.
+printf '[{"type":"required_status_checks","parameters":{"required_status_checks":[{"context":"CI gate"},{"context":"queue-verdict"}]}}]\n' > "$TASK_TMP/rules.json"
+printf 'repo\tqueue-verdict\n' > "$FM_HOME/config/project-queue-only-checks"
+cp "$TASK_TMP/hold" "$FM_HOME/state/task.pr-refresh"
+echo true > "$TASK_TMP/draft"
+checks SUCCESS 2026-10-20T11:00:04Z > "$TASK_TMP/checks.json"
+refresh ready task "$URL" --ready-ci unchanged > "$TASK_TMP/ready-out"
+assert_grep 'QUEUE-ONLY CHECK: queue-verdict' "$TASK_TMP/ready-out" 'the ready wait did not report the deferred check'
+[ ! -e "$FM_HOME/state/task.pr-refresh" ] || fail 'a declared merge-queue-only check held the refresh'
+pass 'the ready wait passes a project declared merge-queue-only check that never reports on the head'
+
+rm "$FM_HOME/config/project-queue-only-checks"
+cp "$TASK_TMP/hold" "$FM_HOME/state/task.pr-refresh"
+echo true > "$TASK_TMP/draft"
+checks SUCCESS 2026-10-20T11:00:04Z > "$TASK_TMP/checks.json"
+rc=0
+FM_PR_READY_TIMEOUT=1 FM_PR_CHECKS_POLL=1 refresh ready task "$URL" --ready-ci unchanged \
+  > "$TASK_TMP/ready-out" 2>&1 || rc=$?
+[ "$rc" -ne 0 ] || fail 'the ready wait accepted an undeclared check that never reported'
+assert_grep 'gave up after 1s' "$TASK_TMP/ready-out" 'the ready wait did not report its spent bound'
+assert_grep 'queue-verdict (missing)' "$TASK_TMP/ready-out" 'the spent bound did not name the outstanding check'
+assert_grep 'hold retained' "$TASK_TMP/ready-out" 'the spent bound did not say the hold was kept'
+[ -f "$FM_HOME/state/task.pr-refresh" ] || fail 'a spent ready bound cleared the hold'
+pass 'an undeclared check that never reports ends the ready wait with an actionable message and keeps the hold'
+
+printf 'repo\n' > "$FM_HOME/config/project-queue-only-checks"
+echo true > "$TASK_TMP/draft"
+expect_refusal ready task "$URL" --ready-ci unchanged
+assert_grep 'queue-only check declaration is unreadable' "$TASK_TMP/out" 'a malformed declaration did not refuse'
+[ -f "$FM_HOME/state/task.pr-refresh" ] || fail 'a malformed declaration cleared the hold'
+pass 'a malformed queue-only declaration refuses the ready call and keeps the hold'
