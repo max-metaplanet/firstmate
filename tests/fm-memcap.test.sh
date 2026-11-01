@@ -90,12 +90,16 @@ test_malformed_input_is_refused_rather_than_guessed() {
 }
 
 test_a_capped_command_keeps_its_own_streams_and_status() {
-  local out rc
+  local out rc diagnostics expected
   out=$("$MEMCAP" -- /bin/sh -c 'printf to-stdout' 2>/dev/null) \
     || fail "a clean capped command did not exit 0"
   [ "$out" = to-stdout ] || fail "the capped command's stdout did not reach the caller: $out"
-  out=$("$MEMCAP" -- /bin/sh -c 'printf to-stderr >&2' 2>&1 >/dev/null)
-  [ "$out" = to-stderr ] || fail "the capped command's stderr did not reach the caller: $out"
+  diagnostics=$("$MEMCAP" -- /bin/sh -c ':' 2>&1 >/dev/null) \
+    || fail "a silent command did not exit 0"
+  expected="${diagnostics}${diagnostics:+$'\n'}to-stderr"
+  out=$("$MEMCAP" -- /bin/sh -c 'printf to-stderr >&2' 2>&1 >/dev/null) \
+    || fail "the stderr-writing command did not exit 0"
+  [ "$out" = "$expected" ] || fail "the command's stderr changed after wrapper diagnostics: $out"
   out=$(printf 'piped\n' | "$MEMCAP" -- cat) || fail "a capped command lost the caller's stdin"
   [ "$out" = piped ] || fail "the capped command's stdin did not reach it: $out"
   rc=0
