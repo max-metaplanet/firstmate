@@ -52,6 +52,8 @@
 # Usage:
 #   fm-memcap.sh --mechanism                 print cgroup, rlimit, or none
 #   fm-memcap.sh --budget-bytes [--share N]  print the per-process cap in bytes
+#   fm-memcap.sh --effective-bytes [--bytes N] [--share N]
+#       print the cap after clipping to an inherited rlimit hard ceiling
 #   fm-memcap.sh [--exec] [--bytes N] [--share N] -- COMMAND [ARGS...]
 #   fm-memcap.sh --help                      print this usage
 set -u
@@ -117,13 +119,23 @@ fm_memcap_budget_bytes() {  # <share>
   printf '%s\n' "$bytes"
 }
 
+fm_memcap_rlimit_kib() {
+  local requested=$(($1 / 1024)) hard
+  hard=$(ulimit -Hv 2>/dev/null) || hard=unlimited
+  case "$hard" in
+    ''|*[!0-9]*) ;;
+    *) [ "$requested" -le "$hard" ] || requested=$hard ;;
+  esac
+  printf '%s\n' "$requested"
+}
+
 fm_memcap_mechanism() {
   if command -v systemd-run >/dev/null 2>&1 \
     && systemd-run --user --scope --quiet --collect -p MemoryMax=64M -- true >/dev/null 2>&1; then
     printf 'cgroup\n'
     return 0
   fi
-  if ( ulimit -v "$PROBE_LIMIT_KIB" ) 2>/dev/null; then
+  if ( ulimit -v "$(fm_memcap_rlimit_kib "$((PROBE_LIMIT_KIB * 1024))")" ) 2>/dev/null; then
     printf 'rlimit\n'
     return 0
   fi
@@ -166,6 +178,7 @@ while [ "$#" -gt 0 ]; do
       exit 0
       ;;
     --exec) MODE=exec; shift ;;
+    --effective-bytes) MODE=effective; shift ;;
     --mechanism) MODE=mechanism; shift ;;
     --budget-bytes) MODE=budget; shift ;;
     --bytes)
@@ -209,10 +222,22 @@ case "$MODE" in
     ;;
 esac
 
-[ "$#" -gt 0 ] || fm_memcap_die 'no command to run; pass it after --'
+if [ "$MODE" = effective ]; then
+  [ "$#" -eq 0 ] || fm_memcap_die '--effective-bytes takes no command'
+else
+  [ "$#" -gt 0 ] || fm_memcap_die 'no command to run; pass it after --'
+fi
 [ -n "$BYTES" ] || BYTES=$(fm_memcap_budget_bytes "$SHARE")
+MECHANISM=$(fm_memcap_mechanism)
+if [ "$MECHANISM" = rlimit ]; then
+  BYTES=$(($(fm_memcap_rlimit_kib "$BYTES") * 1024))
+fi
+if [ "$MODE" = effective ]; then
+  printf '%s\n' "$BYTES"
+  exit 0
+fi
 
-case "$(fm_memcap_mechanism)" in
+case "$MECHANISM" in
   cgroup)
     if [ "$MODE" = exec ]; then
       exec systemd-run --user --scope --quiet --collect \

@@ -965,7 +965,7 @@ if ! command -v shellcheck >/dev/null 2>&1; then
   exit 1
 fi
 if [ "${FM_BUILD_LOCK_BYPASS:-}" != 1 ] && [ "${FM_BUILD_LOCK_HELD:-}" != "$$" ]; then
-  exec "$SELF_DIR/fm-build-lock.py" -- bash "$SELF" "${INVOCATION_ARGV[@]}"
+  FM_LINT_JOBS=$JOBS exec "$SELF_DIR/fm-build-lock.py" -- bash "$SELF" "${INVOCATION_ARGV[@]}"
 fi
 
 unset SHELLCHECK_OPTS
@@ -1050,6 +1050,11 @@ for bound_pair in \
       ;;
   esac
 done
+
+if [ "$MEM_MECH" = rlimit ]; then
+  effective_bytes=$("$SELF_DIR/fm-memcap.sh" --effective-bytes --bytes "$((ROOT_MEMORY_KIB * 1024))") || exit 2
+  ROOT_MEMORY_KIB=$((effective_bytes / 1024))
+fi
 
 # perl is mandatory above, so fm_exec_timed always takes its perl watchdog and
 # the ordinary local lint gets the same per-root deadline CI uses.

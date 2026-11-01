@@ -9,6 +9,7 @@ python3 - "$ROOT" "$TMP_ROOT" <<'PY'
 import configparser
 import os
 import signal
+import resource
 from pathlib import Path
 import shutil
 import subprocess
@@ -49,10 +50,10 @@ while not pathlib.Path(os.environ['RELEASE']).exists(): time.sleep(.03)
 ''')
 explicit = [str(wrapper), '--', sys.executable, str(holder)]
 try:
+    probe = scratch / 'memory-bound.py'
     mechanism = subprocess.run([str(root / 'bin/fm-memcap.sh'), '--mechanism'],
                                capture_output=True, text=True, check=True).stdout.strip()
     if mechanism != 'none':
-        probe = scratch / 'memory-bound.py'
         probe.write_text('''import pathlib, resource, sys
 limit = resource.getrlimit(resource.RLIMIT_AS)[0]
 if sys.argv[1] == 'cgroup':
@@ -72,6 +73,9 @@ print(limit)
             assert bound.returncode == 0, bound.stderr
             quantum = os.sysconf("SC_PAGE_SIZE") if mechanism == "cgroup" else 1024
             expected = budget // quantum * quantum
+            inherited = resource.getrlimit(resource.RLIMIT_AS)[1]
+            if mechanism == 'rlimit' and inherited != resource.RLIM_INFINITY:
+                expected = min(expected, inherited // 1024 * 1024)
             assert int(bound.stdout) == expected, (bound.stdout, expected)
         print('ok - commands observe a finite kernel memory bound shared across heavy slots')
     else:
@@ -148,8 +152,51 @@ fi
                                      '--share', '4'], capture_output=True, text=True, check=True).stdout)
         budget = budget // 1024 * 1024
         quantum = os.sysconf('SC_PAGE_SIZE') if mechanism == 'cgroup' else 1024
-        assert bounds_log.read_text().strip() == str(budget // quantum * quantum)
+        expected = budget // quantum * quantum
+        inherited = resource.getrlimit(resource.RLIMIT_AS)[1]
+        if mechanism == 'rlimit' and inherited != resource.RLIM_INFINITY:
+            expected = min(expected, inherited // 1024 * 1024)
+        assert bounds_log.read_text().strip() == str(expected)
     print('ok - direct lint queues for a slot, nested lint reuses it, and help stays available')
+
+    if subprocess.run(['bash', '-c', 'ulimit -v 98304'], capture_output=True).returncode == 0:
+        rlimit_bin = scratch / 'rlimit-bin'
+        rlimit_bin.mkdir()
+        no_systemd = rlimit_bin / 'systemd-run'
+        no_systemd.write_text('#!/bin/sh\nexit 1\n')
+        no_systemd.chmod(0o755)
+        if not probe.exists():
+            probe.write_text('import resource; print(resource.getrlimit(resource.RLIMIT_AS)[0])\n')
+        default = int(subprocess.run([str(root / 'bin/fm-memcap.sh'), '--budget-bytes'],
+                                     capture_output=True, text=True, check=True).stdout)
+        roomy_kib = default // 1024 + 65536
+        for label, requested_kib, ceiling in (('override', roomy_kib, roomy_kib * 2048),
+                                               ('inherited', 131072, 98304 * 1024 + 511)):
+            inherited = resource.getrlimit(resource.RLIMIT_AS)[1]
+            if inherited != resource.RLIM_INFINITY:
+                ceiling = min(ceiling, inherited)
+            def set_ceiling():
+                resource.setrlimit(resource.RLIMIT_AS, (ceiling, ceiling))
+            for wrapped in (False, True):
+                tag = f'{label}-{wrapped}'
+                observed = scratch / (tag + '.bound')
+                telemetry = scratch / (tag + '.tsv')
+                command = ['bash', str(root / 'bin/fm-lint.sh'), '--jobs', '1',
+                           '--telemetry', str(telemetry), str(fixture)]
+                if wrapped:
+                    command = [str(wrapper), '--', *command]
+                result = subprocess.run(command, preexec_fn=set_ceiling, timeout=30,
+                                        env=dict(lint_env, PATH=str(rlimit_bin) + os.pathsep + lint_env['PATH'],
+                                                 FM_LINT_ROOT_MEMORY_KIB=str(requested_kib), FM_LINT_JOBS='1',
+                                                 CHECK_PROBE=str(probe), CHECK_MECHANISM='rlimit',
+                                                 CHECK_BOUNDS=str(observed)), capture_output=True, text=True)
+                assert result.returncode == 0, result.stderr
+                expected = min(requested_kib * 1024, ceiling // 1024 * 1024)
+                assert int(observed.read_text()) == expected, (tag, observed.read_text(), expected)
+                records = [line.split('\t') for line in telemetry.with_suffix('.roots.tsv').read_text().splitlines()]
+                reported = next(row[2] for row in records if row[:2] == ['meta', 'root_memory_limit_kib'])
+                assert int(reported) * 1024 == expected, (tag, reported, expected)
+        print('ok - direct and wrapped lint honor explicit budgets and report inherited rlimit ceilings')
 
     real_node = shutil.which('node')
     if real_node:

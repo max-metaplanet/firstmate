@@ -283,7 +283,17 @@ def main():
         os.environ["FM_HEAVY_SLOTS"] = str(slots)
         if not nested:
             cap = str(SOURCE / "fm-memcap.sh")
-            command_line = [cap, "--exec", "--share", str(slots), "--", *command_line]
+            cap_args = ["--share", str(slots)]
+            root_kib = os.environ.get("FM_LINT_ROOT_MEMORY_KIB")
+            if root_kib:
+                if not root_kib.isascii() or not root_kib.isdigit() or root_kib.startswith("0"):
+                    raise ValueError("FM_LINT_ROOT_MEMORY_KIB must be a positive integer")
+                jobs = os.environ.get("FM_LINT_JOBS") or "2"
+                if jobs not in ("1", "2"):
+                    raise ValueError("FM_LINT_JOBS must be 1 or 2")
+                default = int(subprocess.check_output([cap, "--budget-bytes", *cap_args], text=True))
+                cap_args = ["--bytes", str(max(default, int(root_kib) * int(jobs) * 1024))]
+            command_line = [cap, "--exec", *cap_args, "--", *command_line]
     # The preload in the exec'd Node process recognizes itself by this pid.
     os.environ["FM_BUILD_LOCK_HELD"] = str(os.getpid())
     os.execvp(command_line[0], command_line)
