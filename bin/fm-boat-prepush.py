@@ -64,11 +64,13 @@ def resolve_base(worktree: Path, base: str | None) -> str:
     base prefers its remote-tracking ref over any local branch of that name.
     """
     if base:
+        tracking = 'refs/remotes/origin/' + base
         try:
-            return git(worktree, 'rev-parse', '--verify',
-                       'refs/remotes/origin/' + base + '^{commit}')
+            git(worktree, 'check-ref-format', '--branch', base)
+            git(worktree, 'show-ref', '--verify', '--quiet', tracking)
         except Refusal:
             return git(worktree, 'rev-parse', '--verify', base + '^{commit}')
+        return git(worktree, 'rev-parse', '--verify', tracking + '^{commit}')
     for candidate in ('refs/remotes/origin/HEAD', 'refs/remotes/origin/main'):
         try:
             return git(worktree, 'rev-parse', '--verify', candidate + '^{commit}')

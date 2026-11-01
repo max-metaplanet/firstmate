@@ -736,6 +736,11 @@ assert local.resolve_base(base, remote_tracked) == actual_head, 'stale local bra
 assert local.resolve_base(base, old_head) == old_head
 subprocess.run(['git', '-C', str(base), 'update-ref', 'refs/remotes/origin/HEAD', old_head], check=True)
 assert local.resolve_base(base, None) == old_head
+assert local.resolve_base(base, 'HEAD') == actual_head, 'HEAD resolved through origin/HEAD'
+side = subprocess.check_output(['git', '-C', str(base), 'commit-tree', 'HEAD^{tree}', '-p', actual_head,
+                                '-m', 'side'], text=True).strip()
+subprocess.run(['git', '-C', str(base), 'update-ref', 'refs/remotes/origin/HEAD', side], check=True)
+assert local.resolve_base(base, 'HEAD^') == old_head, 'HEAD^ resolved through origin/HEAD'
 subprocess.run(['git', '-C', str(base), 'update-ref', '-d', 'refs/remotes/origin/HEAD'], check=True)
 subprocess.run(['git', '-C', str(base), 'branch', '-D', '--quiet', remote_tracked], check=True)
 subprocess.run(['git', '-C', str(base), 'update-ref', '-d', 'refs/remotes/origin/' + remote_tracked],
@@ -749,6 +754,7 @@ else:
 print('ok - successful and failing verdicts persist under the output directory')
 print('ok - expected head requires clean tracked content before provisioning; untracked and manual edits remain allowed')
 print('ok - a named base resolves through its remote-tracking ref before any stale local branch')
+print('ok - a revision expression base resolves locally even when origin/HEAD exists')
 
 
 PY
