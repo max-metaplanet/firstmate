@@ -150,11 +150,13 @@ run_bounded() {  # <seconds> <signal> <kill-after-seconds> <command...>
     shift 3
     "$@" &
     command_pid=$!
+    killer_pid=
     bound_fired() {
       printf "bound\n" > "$bound_file"
       kill -s "$signal" "$command_pid" 2>/dev/null
       [ "$grace" -gt 0 ] || return 0
       { sleep "$grace"; kill -KILL "$command_pid" 2>/dev/null; } &
+      killer_pid=$!
     }
     trap bound_fired "$signal"
     wait "$command_pid"
@@ -163,6 +165,7 @@ run_bounded() {  # <seconds> <signal> <kill-after-seconds> <command...>
       wait "$command_pid"
       command_rc=$?
     done
+    [ -z "$killer_pid" ] || kill "$killer_pid" 2>/dev/null
     exit "$command_rc"
   ' _ "$bound_file" "$signal" "$kill_after" "$@"
   runner_rc=$?
