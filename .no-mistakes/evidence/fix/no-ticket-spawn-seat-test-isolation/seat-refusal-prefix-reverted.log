@@ -1,0 +1,13 @@
+PASS: simultaneous readers refresh once; homes share evidence; credential selectors stay isolated; private permissions
+PASS: fresh TTL and 900-second last-good boundary, unreadable JSON fallback
+PASS: a failed live read falls back at the configured launch boundary and refuses at or below it
+PASS: all bounding windows, projected runway, unknown facts, floors, paid/auth guards, and schema 6 account binding
+PASS: explicit auth failures retire evidence; existing renewable-login policy remains intact
+PASS: authoritative ISO retry-after suppresses live reads for safe and unsafe/missing fallback
+PASS: concurrent failures share one attempt; lock-deadline readers use only safe published last-good evidence
+PASS: corrupt, public, and symlinked cache records fail closed without a live read
+PASS: paid cap requires live spend; environment bearer overrides cannot share profile quota
+PASS: managed pipeline launches and raw readers share cache/backoff, preserve JSON, and retain exclusions
+PASS: a blind launcher reads quota through the recorded quota tool path, names the record when none holds the tool, and never rewrites it
+not ok - the refusal said nothing at all - the spawn died before it could speak
+exit=1

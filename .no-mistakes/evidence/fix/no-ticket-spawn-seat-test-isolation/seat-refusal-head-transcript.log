@@ -1,0 +1,7 @@
+--- bin/fm-spawn.sh output (exit 1) ---
+error: this task is not started on a Claude seat with no quota left:
+  the active Claude seat is out of quota; move new workers with 'bin/fm-seat.sh --provider claude switch beta', which has 80% left
+  re-run with --ignore-seat-hold to start this task on an empty seat anyway
+--- end ---
+ok - a spawn refused on an empty active seat names the sibling that still has quota
+exit=0

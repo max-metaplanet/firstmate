@@ -1,0 +1,32 @@
+PASS: simultaneous readers refresh once; homes share evidence; credential selectors stay isolated; private permissions
+PASS: fresh TTL and 900-second last-good boundary, unreadable JSON fallback
+PASS: a failed live read falls back at the configured launch boundary and refuses at or below it
+PASS: all bounding windows, projected runway, unknown facts, floors, paid/auth guards, and schema 6 account binding
+PASS: explicit auth failures retire evidence; existing renewable-login policy remains intact
+PASS: authoritative ISO retry-after suppresses live reads for safe and unsafe/missing fallback
+PASS: concurrent failures share one attempt; lock-deadline readers use only safe published last-good evidence
+PASS: corrupt, public, and symlinked cache records fail closed without a live read
+PASS: paid cap requires live spend; environment bearer overrides cannot share profile quota
+PASS: managed pipeline launches and raw readers share cache/backoff, preserve JSON, and retain exclusions
+PASS: a blind launcher reads quota through the recorded quota tool path, names the record when none holds the tool, and never rewrites it
+ok - pipeline scratch install/check preserves argv, stdin, and native exit status
+ok - pipeline launches follow each switch and guard managed overrides and missing profiles
+ok - a default-seat pipeline agent uses the lead's recorded worker profile, else the installed default, for launch, display, rest and extra usage
+ok - pipeline launch guards apply to active and override seats and honor provisional recovery
+ok - pipeline policy reads the selected profile and shares stop, cap, unreadable, and renewable verdicts
+ok - pipeline watch warns once per rest, move affects subsequent launches only, and live PID stamps stay honest
+ok - pipeline-move rotates only a resting, excluded or missing seat and reports any other hold
+ok - Codex file aliases resolve one authoritative login and configuration home without credential writes
+ok - Codex inheritance follows only its own optout and never crosses machines
+ok - Codex registration aliases one credential store and keeps provider settings isolated
+ok - Codex rotation honors auth aliases, native account quota, and alias exclusions
+ok - invalid Codex logins and missing or malformed selected homes fail closed
+ok - Codex automatic switching and registered watch preserve provider scope
+ok - a spawn refused on an empty active seat names the sibling that still has quota
+ok - a spawn is refused on an empty seat, records the routing line once, and resumes on its own
+# focused seat cases passed
+
+real	1m20.090s
+user	0m23.555s
+sys	0m19.353s
+exit=0

@@ -1,0 +1,17 @@
+env: HOME=~ CODEX_HOME=~/.codex-seats/codex-max CLAUDE_CONFIG_DIR=~/.claude-seats/seat-max; real seats: codex-max codex-max2 
+ok - an acquisition past the old 60-poll limit succeeds
+ok - a copied gitdir is refused without moving HEAD or deleting the copy
+ok - timeout stops get and its pending copy subprocess before a late copy can appear
+ok - a queued get cannot start after timeout
+ok - a canonical slot is refused when another physical pool slot aliases its gitdir
+ok - a single transient stale pane_current_path read is not accepted as the worktree
+ok - an already-settled pane confirms on the next read, not a whole extra cycle
+ok - a transient primary-checkout pane read is not accepted as the worktree
+ok - a pane stuck on the primary checkout fails loudly at the deadline
+ok - a project with an unborn HEAD is refused at once with its cause named
+# all fm-spawn-worktree-settle tests passed
+
+real	0m34.443s
+user	0m4.548s
+sys	0m6.632s
+exit=0
