@@ -1,0 +1,62 @@
+[
+  {
+    "scenario": "quiet",
+    "exit": 124,
+    "expected": 124,
+    "stdout": "checkpoint: no actionable wake within 1s\n",
+    "stderr": ""
+  },
+  {
+    "scenario": "signal",
+    "exit": 0,
+    "expected": 0,
+    "stdout": "signal: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6A6TW1AS883DH4468K9EYW4/.checkpoint-live-3b1hyhps/signal/state/demo.status\n",
+    "stderr": "",
+    "persisted_queue": "1793492020\t1\tsignal\tdemo.status\tsignal: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6A6TW1AS883DH4468K9EYW4/.checkpoint-live-3b1hyhps/signal/state/demo.status\n1793492020\t2\tsignal\tdemo.status\tsignal: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6A6TW1AS883DH4468K9EYW4/.checkpoint-live-3b1hyhps/signal/state/demo.status\n"
+  },
+  {
+    "scenario": "base-forced-deadline",
+    "exit": 137,
+    "expected": 137,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "scenario": "head-forced-deadline",
+    "exit": 124,
+    "expected": 124,
+    "stdout": "checkpoint: no actionable wake within 4s\n",
+    "stderr": ""
+  },
+  {
+    "scenario": "head-real-kill",
+    "exit": 137,
+    "expected": 137,
+    "stdout": "",
+    "stderr": "_: line 4: 881450 Killed                     \"$@\"\n"
+  },
+  {
+    "scenario": "configured-policy-still-ticks",
+    "exit": 124,
+    "expected": 124,
+    "stdout": "checkpoint: no actionable wake within 1s\n",
+    "stderr": "",
+    "fleet_load_state": {
+      "attempt_boot": "unsupported",
+      "attempt_monotonic": 60583.077743989,
+      "boot": "unsupported",
+      "cpu_streak": 0,
+      "healthy": 0,
+      "identity": "{\"ceiling\": 2, \"floor\": 1, \"start\": 1}",
+      "memory_streak": 0,
+      "normal_streak": 0,
+      "sample_epoch": 0,
+      "sample_monotonic": 0,
+      "sample_valid": false,
+      "sensor_error": "required telemetry unreadable: unsupported platform: policy requires macOS",
+      "swap_streak": 0,
+      "target": 1,
+      "version": 1
+    }
+  }
+]
