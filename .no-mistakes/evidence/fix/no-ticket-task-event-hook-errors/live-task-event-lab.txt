@@ -1,0 +1,40 @@
+=== S1: real clickup-axi (isolated: empty config, HOME and state dir in lab, --dry-run) as the hook
+producer_exit=0
+--- [real-clickup-axi] state/task-events.log:
+2026-11-01T09:39:57Z task_id=lab-task event=pr-opened exit=1 reason="error: config requires CLICKUP_API_TOKEN, numeric CLICKUP_TEAM_ID and [redacted]"
+
+=== S2: hook reporting writer contention (same text clickup-axi prints) after progress chatter
+producer_exit=0
+--- [contention] state/task-events.log:
+2026-11-01T09:39:58Z task_id=lab-task event=started exit=1 reason="error: another clickup-axi writer is active; retry this event"
+
+=== S3: hook leaking a credential-shaped token, quotes, backslash and control bytes; and a 300-char line
+producer_exit=0
+--- [secret] state/task-events.log:
+2026-11-01T09:40:00Z task_id=lab-task event=resumed exit=1 reason="auth failed [redacted] q x"
+
+producer_exit=0
+--- [long] state/task-events.log:
+2026-11-01T09:40:01Z task_id=lab-task event=blocked exit=3 reason="aaaaaaaaaaaaaaaaaaa aaaaaaaaaaaaaaaaaaa aaaaaaaaaaaaaaaaaaa aaaaaaaaaaaaaaaaaaa aaaaaaaaaaaaaaaaaaa aaaaaaaaaaaaaaaaaaa aaaaaaaaaaaaaaaaaaa aaaaaaaaaaaaaaaaaaa aaaaaaaaaaaaaaaaaaa aaaaaaaaaaaaaaaaaaa "
+
+=== S4: silent failing hook (no stderr) keeps the old exit-only line
+producer_exit=0
+--- [silent] state/task-events.log:
+2026-11-01T09:40:02Z task_id=lab-task event=waiting exit=7
+
+=== S5: successful hook that writes to stderr logs nothing
+producer_exit=0
+--- [success] state/task-events.log:
+
+=== S6: hanging hook times out (bound=2s)
+producer_exit=0
+--- [timeout] state/task-events.log:
+2026-11-01T09:40:07Z task_id=lab-task event=started exit=124 reason="connecting..."
+
+=== S7: payload delivered to hook (does it carry source?)
+producer_exit=0
+--- [payload] state/task-events.log:
+
+{"schema":"firstmate.task-event","version":1,"event":"pr-opened","task_id":"lab-task","ticket":"ENG-3016","ticket_scope":"partial","pr_url":"https://github.com/x/y/pull/1","merge":null,"timestamp":"2026-11-01T09:40:11Z","summary":"","key":null,"home":"/tmp/fm-lab.I4zqvf","sequence":8,"progress":{"version":1,"outcome":"A pull request is available for review.","next_actions":["Review the pull request."],"evidence":[{"summary":"Pull request registered for review.","url":"https://github.com/x/y/pull/1","observed_at":"2026-11-01T09:40:11Z","limits":"Records registration only; checks and live behavior are unverified."}]}}
+=== leftover stderr temp files:
+none

@@ -1,0 +1,23 @@
+ok - all event types preserve opaque ticket, worker summary, key, home and PR
+ok - typed lifecycle facts supply progress and dated evidence without inventing checks or live verification
+ok - raw status and steer bodies remain in history without entering progress
+ok - unticketed and removed tasks retain lifecycle events
+ok - absent config is a no-op
+ok - all recorded PRs for the ticket determine partial versus final across tasks and cleanup
+ok - a replaced PR and a cancelled task PR no longer hold the ticket partial
+ok - cancelling the last open PR reports a final merge, and a PR-less cancel reports none
+ok - failing or invalid consumers never fail the producer and surface once per task
+ok - a surfaced consumer failure never replaces the worker status summary
+ok - a home with only the legacy hook keeps syncing through the adapter and says so once
+ok - hanging consumer is detached, bounded, and holds no caller stream
+ok - delayed and failed consumers preserve event order and publication-time merge outcomes
+ok - a timed-out consumer releases the queue for the next event
+ok - the existing lock recovery permits delivery after a drainer dies
+ok - a failing consumer records its own last error line next to the exit code
+ok - a recorded consumer error is bounded, unquoted, readable outside ASCII, and carries no credential-shaped run
+ok - every event snapshots recorded scope, defaulting invalid and empty records to partial
+ok - a cancelled task publishes complete scope only when its own PR is recorded as merged
+
+real	0m18.812s
+user	0m1.992s
+sys	0m2.179s
