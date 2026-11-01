@@ -96,7 +96,7 @@ run_with_perl_timeout() {  # <seconds> <signal> <kill-after-seconds> <command...
         exit 124;
       }
       $timed_out = 1;
-      kill $signal, -$pid;
+      kill $signal, $pid;
       alarm($kill_after) if $kill_after;
     };
     alarm $seconds;
@@ -133,17 +133,18 @@ run_bounded() {  # <seconds> <signal> <kill-after-seconds> <command...>
     return $?
   fi
   bound_file=$(mktemp "${TMPDIR:-/tmp}/fm-watch-checkpoint.bound.XXXXXX") || return 1
-  # A runner signals its direct child, so the wrapper has to hand the signal on
-  # to the command rather than absorb it, or the command runs untouched to the
-  # kill and its cleanup never happens. The wrapper also escalates to KILL
-  # itself, because a runner that signals only its direct child never reaches
-  # a command that ignores the first signal.
+  # The runner signals only its direct child, so the command's detached helpers
+  # finish their work instead of dying with it. The wrapper therefore hands the
+  # signal on to the command rather than absorb it, or the command runs
+  # untouched to the kill and its cleanup never happens, and it escalates to
+  # KILL itself, because the runner's KILL never reaches a command that ignores
+  # the first signal.
   #
   # The wrapper receiving that signal IS the bound firing, and recording it is
   # the only thing that tells a bound apart from a command that chose to die on
   # its own: both write diagnostics, so output cannot say which happened.
   # shellcheck disable=SC2016
-  "$runner" --signal="$signal" --kill-after="${kill_after}s" "$seconds" bash -c '
+  "$runner" --foreground --signal="$signal" --kill-after="${kill_after}s" "$seconds" bash -c '
     bound_file=$1
     signal=$2
     grace=$3
