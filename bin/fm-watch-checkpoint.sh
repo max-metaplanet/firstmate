@@ -104,7 +104,7 @@ run_with_perl_timeout() {  # <seconds> <signal> <kill-after-seconds> <command...
       my $waited = waitpid $pid, WNOHANG;
       if ($waited == $pid) {
         alarm 0;
-        exit($timed_out ? 124 : ($? >> 8));
+        exit($timed_out ? 124 : (($? & 127) ? 128 + ($? & 127) : $? >> 8));
       }
       select undef, undef, undef, 0.05;
     }
@@ -112,7 +112,7 @@ run_with_perl_timeout() {  # <seconds> <signal> <kill-after-seconds> <command...
 }
 
 run_bounded() {  # <seconds> <signal> <kill-after-seconds> <command...>
-  local seconds=$1 signal=$2 kill_after=$3 cleanup_lock_bound
+  local seconds=$1 signal=$2 kill_after=$3 cleanup_lock_bound runner bound_file runner_rc bound
   shift 3
   if [ "$kill_after" -gt 0 ]; then
     cleanup_lock_bound=${FM_WATCHER_CLEANUP_LOCK_BOUND:-2}
@@ -125,20 +125,53 @@ run_bounded() {  # <seconds> <signal> <kill-after-seconds> <command...>
     kill_after=$cleanup_lock_bound
   fi
   if command -v timeout >/dev/null 2>&1; then
-    if [ "$kill_after" -gt 0 ]; then
-      timeout --signal="$signal" --kill-after="${kill_after}s" "$seconds" "$@"
-    else
-      timeout --signal="$signal" "$seconds" "$@"
-    fi
+    runner=timeout
   elif command -v gtimeout >/dev/null 2>&1; then
-    if [ "$kill_after" -gt 0 ]; then
-      gtimeout --signal="$signal" --kill-after="${kill_after}s" "$seconds" "$@"
-    else
-      gtimeout --signal="$signal" "$seconds" "$@"
-    fi
+    runner=gtimeout
   else
     run_with_perl_timeout "$seconds" "$signal" "$kill_after" "$@"
+    return $?
   fi
+  bound_file=$(mktemp "${TMPDIR:-/tmp}/fm-watch-checkpoint.bound.XXXXXX") || return 1
+  # The runner signals its whole process group, so the command's foreground
+  # children die with the bound and its trap runs, while the helpers it detaches
+  # into their own groups finish their work. The wrapper hands the signal on to
+  # the command as well and escalates to KILL itself if the command ignores it.
+  #
+  # The wrapper receiving that signal IS the bound firing, and recording it is
+  # the only thing that tells a bound apart from a command that chose to die on
+  # its own: both write diagnostics, so output cannot say which happened.
+  # shellcheck disable=SC2016
+  "$runner" --signal="$signal" --kill-after="${kill_after}s" "$seconds" bash -c '
+    bound_file=$1
+    signal=$2
+    grace=$3
+    shift 3
+    "$@" &
+    command_pid=$!
+    killer_pid=
+    bound_fired() {
+      printf "bound\n" > "$bound_file"
+      kill -s "$signal" "$command_pid" 2>/dev/null
+      [ "$grace" -gt 0 ] || return 0
+      { sleep "$grace"; kill -KILL "$command_pid" 2>/dev/null; } &
+      killer_pid=$!
+    }
+    trap bound_fired "$signal"
+    wait "$command_pid"
+    command_rc=$?
+    while [ "$command_rc" -gt 128 ] && kill -0 "$command_pid" 2>/dev/null; do
+      wait "$command_pid"
+      command_rc=$?
+    done
+    [ -z "$killer_pid" ] || kill "$killer_pid" 2>/dev/null
+    exit "$command_rc"
+  ' _ "$bound_file" "$signal" "$kill_after" "$@"
+  runner_rc=$?
+  bound=$(cat "$bound_file" 2>/dev/null)
+  rm -f "$bound_file"
+  [ "$bound" != bound ] || return 124
+  return "$runner_rc"
 }
 
 positive_or() {  # <value> <default>
@@ -185,8 +218,10 @@ if fm_supervision_host_enabled "$CONFIG" codex; then
 fi
 
 set +e
-# Interrupt the checkpoint's active check group so the watcher's native EXIT cleanup can release its lock; ordinary watcher shutdown still uses TERM.
-run_bounded "$SECONDS_ARG" INT 5 "$SCRIPT_DIR/fm-watch.sh" >"$OUT" 2>"$ERR"
+# Use the watcher's ordinary shutdown signal. Its INT trap body can be dropped
+# by bash 5.2 (watcher_stop_signals in fm-watch.sh), and a background caller
+# can start the watcher with INT ignored, which bash cannot trap again.
+run_bounded "$SECONDS_ARG" TERM 5 "$SCRIPT_DIR/fm-watch.sh" >"$OUT" 2>"$ERR"
 RC=$?
 set -e
 

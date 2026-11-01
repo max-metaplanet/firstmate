@@ -48,7 +48,7 @@ cleanup() {
     . "$ROOT/bin/fm-remote-job-lib.sh"
     fm_remote_job_stop_worker_tree "$worker_pid" || true
   fi
-  rm -rf -- "$TMP_ROOT"
+  fm_test_remove_tree "$TMP_ROOT"
 }
 trap cleanup EXIT
 
@@ -991,10 +991,20 @@ FM_FAKE_SSH_MODE=inherit-block remote_env "$ROOT/bin/fm-spawn.sh" ios --secondma
   > "$TMP_ROOT/spawn-concurrent.out" 2>&1 &
 spawn_concurrent=$!
 spawn_inherit_wait=0
-# Earlier inherited files traverse the worker before captain-shared.md, so give
-# a loaded portable runner 30 seconds to reach this deliberately blocked write.
+# Earlier inherited files traverse the worker before captain-shared.md, and how
+# long that takes is a property of the runner, not of the behavior under test:
+# two runs of this file on one commit reached this write after 19s and after
+# 37s. Watch for a stall rather than a deadline, so a wedged spawn still fails
+# fast while a slow one is only slow. Every remote call bumps the fake
+# transport's counter, so 30 seconds with no new call is the failure.
+spawn_inherit_calls=$(cat "$SSH_COUNT" 2>/dev/null || printf '0')
 while [ ! -f "$TMP_ROOT/inherit.entered" ]; do
   kill -0 "$spawn_concurrent" 2>/dev/null || fail "remote spawn exited before its blocked inheritance write"
+  spawn_inherit_now=$(cat "$SSH_COUNT" 2>/dev/null || printf '0')
+  if [ "$spawn_inherit_now" != "$spawn_inherit_calls" ]; then
+    spawn_inherit_calls=$spawn_inherit_now
+    spawn_inherit_wait=0
+  fi
   spawn_inherit_wait=$((spawn_inherit_wait + 1))
   [ "$spawn_inherit_wait" -le 1500 ] || fail "remote spawn never reached its blocked inheritance write"
   sleep 0.02
@@ -1102,11 +1112,16 @@ FM_FAKE_SSH_MODE=inherit-block remote_env "$ROOT/bin/fm-config-push.sh" \
   > "$TMP_ROOT/config-concurrent-first.out" 2>&1 &
 config_first=$!
 inherit_wait=0
+inherit_calls=$(cat "$SSH_COUNT" 2>/dev/null || printf '0')
 while [ ! -f "$TMP_ROOT/inherit.entered" ]; do
   kill -0 "$config_first" 2>/dev/null || fail "first inheritance transaction exited before its blocked write"
+  # Match the earlier spawn/inheritance wait: stall detection, not a deadline.
+  inherit_now=$(cat "$SSH_COUNT" 2>/dev/null || printf '0')
+  if [ "$inherit_now" != "$inherit_calls" ]; then
+    inherit_calls=$inherit_now
+    inherit_wait=0
+  fi
   inherit_wait=$((inherit_wait + 1))
-  # Match the earlier spawn/inheritance wait: a loaded portable runner can
-  # spend several seconds in the remote entrypoint before reaching this write.
   [ "$inherit_wait" -le 1500 ] || fail "first inheritance transaction never reached its blocked write"
   sleep 0.02
 done
@@ -1310,7 +1325,9 @@ FM_STATE_OVERRIDE="$WATCH_STATE" FM_SECONDMATE_LIVENESS_SECS=1 FM_POLL=1 \
   > "$TMP_ROOT/watch-liveness.out" 2> "$TMP_ROOT/watch-liveness.err" &
 watch_pid=$!
 watch_wait=0
-while kill -0 "$watch_pid" 2>/dev/null && [ "$watch_wait" -lt 1500 ]; do
+# The relaunch alone has a 120-second production bound; allow that operation
+# plus 30 seconds for the initial probe and watcher startup on a loaded runner.
+while kill -0 "$watch_pid" 2>/dev/null && [ "$watch_wait" -lt 7500 ]; do
   sleep 0.02
   watch_wait=$((watch_wait + 1))
 done
@@ -1579,10 +1596,16 @@ FM_FAKE_SSH_MODE=launch-block remote_env "$ROOT/bin/fm-spawn.sh" ios --secondmat
   > "$TMP_ROOT/spawn-retirement.out" 2>&1 &
 spawn_retirement_pid=$!
 launch_wait=0
-# The respawn performs readiness and inheritance jobs before launch, so allow
-# the same 30-second loaded-runner bound as the earlier blocked worker path.
+# The respawn performs readiness and inheritance jobs before launch. Match the
+# earlier spawn/inheritance wait: stall detection, not a deadline.
+launch_calls=$(cat "$SSH_COUNT" 2>/dev/null || printf '0')
 while [ ! -f "$TMP_ROOT/launch.entered" ]; do
   kill -0 "$spawn_retirement_pid" 2>/dev/null || fail "remote respawn exited before its blocked launch"
+  launch_now=$(cat "$SSH_COUNT" 2>/dev/null || printf '0')
+  if [ "$launch_now" != "$launch_calls" ]; then
+    launch_calls=$launch_now
+    launch_wait=0
+  fi
   launch_wait=$((launch_wait + 1))
   [ "$launch_wait" -le 1500 ] || fail "remote respawn never reached its blocked launch"
   sleep 0.02

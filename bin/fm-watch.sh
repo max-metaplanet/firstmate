@@ -3098,15 +3098,33 @@ home_summary_refresh_detached() {
     wait "$HOME_SUMMARY_PID" 2>/dev/null || true
     HOME_SUMMARY_PID=
   fi
-  FM_HOME_SUMMARY_IF_IDLE=1 \
-    "$SCRIPT_DIR/fm-home-summary-refresh.sh" --best-effort </dev/null >/dev/null 2>&1 &
+  set -m
+  { FM_HOME_SUMMARY_IF_IDLE=1 \
+    "$SCRIPT_DIR/fm-home-summary-refresh.sh" --best-effort </dev/null >/dev/null 2>&1 & } 2>/dev/null
   HOME_SUMMARY_PID=$!
+  set +m
 }
 
 # Worker park and resume can each wait on a lifecycle transition, so they run
 # beside the poll exactly like publication; per-task park locks keep an
 # overlapping tick from acting on the same worker twice.
 WORKER_PARK_PID=
+# Every input the tick reads is a path, so an idle home can answer "nothing to
+# do" with file tests instead of the child shell and interpreter it takes to
+# ask: task records drive park and resume, deferred-spawn records drive
+# admission replay, and the load policy drives sampling. That policy lives in
+# the local root home's config, which is this home's own unless a parent
+# binding makes resolving it a fork in its own right; with one present, tick as
+# before.
+worker_park_tick_pending() {
+  local path
+  for path in "$STATE"/*.meta "$STATE"/*.deferred-spawn.json \
+    "$CONFIG/fleet-load-policy" "$FM_HOME/.fm-secondmate-parent"; do
+    [ ! -e "$path" ] && [ ! -L "$path" ] || return 0
+  done
+  return 1
+}
+
 worker_park_tick_detached() {
   if [ -n "$WORKER_PARK_PID" ]; then
     if kill -0 "$WORKER_PARK_PID" 2>/dev/null; then
@@ -3115,8 +3133,11 @@ worker_park_tick_detached() {
     wait "$WORKER_PARK_PID" 2>/dev/null || true
     WORKER_PARK_PID=
   fi
-  "$SCRIPT_DIR/fm-worker-park.sh" tick </dev/null >/dev/null 2>&1 &
+  worker_park_tick_pending || return 0
+  set -m
+  { "$SCRIPT_DIR/fm-worker-park.sh" tick </dev/null >/dev/null 2>&1 & } 2>/dev/null
   WORKER_PARK_PID=$!
+  set +m
 }
 
 RECONCILE_REQUEST_PID=
@@ -3141,9 +3162,11 @@ reconcile_requests_detached() {
     fi
     RECONCILE_REQUEST_PID=
   fi
-  FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" \
-    "$SCRIPT_DIR/fm-secondmate-reconcile.sh" process-requests </dev/null >/dev/null 2>&1 &
+  set -m
+  { FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" \
+    "$SCRIPT_DIR/fm-secondmate-reconcile.sh" process-requests </dev/null >/dev/null 2>&1 & } 2>/dev/null
   RECONCILE_REQUEST_PID=$!
+  set +m
 }
 
 PR_POLL_CONTROL_LOCK=

@@ -13,7 +13,7 @@ ID="codex-park-$$"
 FAKEBIN=$(fm_test_make_spawn_fakebin "$TMP_ROOT/fake" codex)
 LAUNCH_LOG="$TMP_ROOT/launch.log"
 fm_test_spawn_home "$HOME_DIR" codex
-fm_test_spawn_ship_brief "$HOME_DIR" "$ID"
+fm_test_spawn_ship_brief "$HOME_DIR" "$ID" "brief for $ID" direct-PR
 fm_git_worktree "$PROJECT" "$WORKTREE" task
 FM_FAKE_LAUNCH_LOG="$LAUNCH_LOG" \
   fm_test_run_spawn "$HOME_DIR" "$WORKTREE" "$FAKEBIN" "$ID" "$PROJECT" --mode direct-PR --ticket no-ticket --commit-type chore --yolo off \

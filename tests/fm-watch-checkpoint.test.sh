@@ -28,17 +28,46 @@ wait_for_checkpoint_lock() {
   return 1
 }
 
+# A PATH with every tool except timeout and gtimeout, so the checkpoint uses
+# its Perl runner around the real watcher.
+perl_runner_path() {  # <dir>
+  local dir=$1 path_dir entry name
+  mkdir -p "$dir"
+  local IFS=:
+  for path_dir in $PATH; do
+    [ -d "$path_dir" ] || continue
+    for entry in "$path_dir"/*; do
+      name=${entry##*/}
+      case "$name" in timeout|gtimeout) continue ;; esac
+      [ -x "$entry" ] && [ ! -e "$dir/$name" ] && ln -s "$entry" "$dir/$name"
+    done
+  done
+  return 0
+}
+
 test_quiet_checkpoint_exits_124_cleanly() {
-  local home out err status
-  home=$(make_home quiet)
-  out="$home/out.txt"
-  err="$home/err.txt"
-  status=0
-  FM_HOME="$home" FM_POLL=1 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 "$CHECKPOINT" --seconds 1 >"$out" 2>"$err" || status=$?
-  expect_code 124 "$status" "quiet checkpoint exit"
-  assert_contains "$(cat "$out")" "checkpoint: no actionable wake within 1s" "quiet checkpoint line missing"
-  assert_absent "$home/state/.watch.lock/pid" "watch lock pid survived quiet checkpoint timeout"
-  pass "quiet checkpoint exits 124 with a clean checkpoint line and no live lock"
+  local runner home out err status runner_path
+  for runner in native perl; do
+    home=$(make_home "quiet-$runner")
+    out="$home/out.txt"
+    err="$home/err.txt"
+    runner_path=$PATH
+    if [ "$runner" = perl ]; then
+      perl_runner_path "$home/perl-runner-bin"
+      runner_path="$home/perl-runner-bin"
+    fi
+    status=0
+    # A background caller starts the checkpoint with INT ignored, and the Perl
+    # runner passes that disposition on to the watcher. The deadline must still
+    # run the watcher's cleanup rather than escalate to KILL past its lock.
+    ( trap '' INT
+      PATH="$runner_path" FM_HOME="$home" FM_POLL=1 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 "$CHECKPOINT" --seconds 1
+    ) >"$out" 2>"$err" || status=$?
+    expect_code 124 "$status" "$runner quiet checkpoint exit"
+    assert_contains "$(cat "$out")" "checkpoint: no actionable wake within 1s" "$runner quiet checkpoint line missing"
+    assert_absent "$home/state/.watch.lock/pid" "$runner watch lock pid survived quiet checkpoint timeout"
+  done
+  pass "quiet checkpoint exits 124 with a clean checkpoint line and no live lock under each runner"
 }
 
 test_perl_timeout_fallback_honors_cleanup_bound_before_escalating() {
@@ -56,7 +85,7 @@ test_perl_timeout_fallback_honors_cleanup_bound_before_escalating() {
 #!/usr/bin/env perl
 use strict;
 use warnings;
-$SIG{INT} = 'IGNORE';
+$SIG{TERM} = 'IGNORE';
 open my $pid_file, '>', "$ENV{FM_HOME}/watcher.pid" or die "open pid file: $!";
 printf {$pid_file} "%s\n", $$;
 close $pid_file;
@@ -81,13 +110,136 @@ PL
   assert_contains "$(cat "$home/out.txt")" "checkpoint: no actionable wake within 1s" \
     "Perl fallback did not return a quiet checkpoint"
   [ -e "$home/cleanup-reached" ] || fail "the Perl fallback killed the watcher before its 8-second cleanup bound"
-  [ ! -e "$home/natural-exit" ] || fail "the INT-ignoring watcher exited naturally instead of being killed"
-  [ -s "$home/watcher.pid" ] || fail "the INT-ignoring watcher did not start"
+  [ ! -e "$home/natural-exit" ] || fail "the TERM-ignoring watcher exited naturally instead of being killed"
+  [ -s "$home/watcher.pid" ] || fail "the TERM-ignoring watcher did not start"
   watcher_pid=$(cat "$home/watcher.pid")
   if kill -0 "$watcher_pid" 2>/dev/null; then
-    fail "the INT-ignoring watcher survived the Perl fallback escalation"
+    fail "the TERM-ignoring watcher survived the Perl fallback escalation"
   fi
-  pass "Perl fallback honors the cleanup bound before escalating an INT-ignoring direct watcher"
+  pass "Perl fallback honors the cleanup bound before escalating a TERM-ignoring direct watcher"
+}
+
+test_runner_deadlines_and_command_failures_are_distinct() {
+  local native_runner mechanism home fallback_bin tool tool_path kind expected status
+  native_runner=$(command -v timeout || command -v gtimeout || true)
+  for mechanism in timeout gtimeout perl; do
+    if [ "$mechanism" != perl ] && [ -z "$native_runner" ]; then
+      continue
+    fi
+    home=$(make_home "runner-$mechanism")
+    fallback_bin="$home/fallback-bin"
+    mkdir -p "$home/root/bin" "$fallback_bin"
+    cp "$CHECKPOINT" "$home/root/bin/fm-watch-checkpoint.sh"
+    cp "$ROOT/bin/fm-supervision-engine-lib.sh" "$home/root/bin/fm-supervision-engine-lib.sh"
+    for tool in bash dirname mktemp rm perl grep cat sleep; do
+      tool_path=$(command -v "$tool") || fail "could not locate $tool for runner fixture"
+      ln -s "$tool_path" "$fallback_bin/$tool"
+    done
+    if [ "$mechanism" != perl ]; then
+      # Exec the runner under its own name: a multicall coreutils (uutils)
+      # picks the utility from argv[0] and rejects an unknown "gtimeout".
+      printf '#!/bin/sh\nexec %q "$@"\n' "$native_runner" > "$fallback_bin/$mechanism"
+      chmod +x "$fallback_bin/$mechanism"
+    fi
+    cat > "$home/root/bin/fm-watch.sh" <<'SH'
+#!/usr/bin/env bash
+printf 'watcher fixture started\n'
+printf 'watcher fixture diagnostic\n' >&2
+case "$FIXTURE_KIND" in
+  deadline) trap '' TERM; exec sleep 30 ;;
+  killed) kill -KILL "$$" ;;
+  *) exit "$FIXTURE_KIND" ;;
+esac
+SH
+    chmod +x "$home/root/bin/fm-watch-checkpoint.sh" "$home/root/bin/fm-watch.sh"
+    for kind in deadline 0 42 137 killed; do
+      case "$kind" in
+        deadline) expected=124 ;;
+        killed) expected=137 ;;
+        *) expected=$kind ;;
+      esac
+      status=0
+      PATH="$fallback_bin" FM_HOME="$home" FIXTURE_KIND="$kind" \
+        "$home/root/bin/fm-watch-checkpoint.sh" --seconds 1 >"$home/out.txt" 2>"$home/err.txt" || status=$?
+      expect_code "$expected" "$status" "$mechanism $kind checkpoint exit"
+      if [ "$kind" = deadline ]; then
+        assert_contains "$(cat "$home/out.txt")" 'checkpoint: no actionable wake within 1s' \
+          "$mechanism escalation did not report the quiet deadline"
+      else
+        assert_contains "$(cat "$home/err.txt")" 'watcher fixture diagnostic' \
+          "$mechanism $kind discarded the watcher diagnostic"
+        assert_contains "$(cat "$home/out.txt")" 'watcher fixture started' \
+          "$mechanism $kind discarded command output"
+        assert_not_contains "$(cat "$home/out.txt")" 'checkpoint: no actionable wake' \
+          "$mechanism $kind was misclassified as a deadline"
+      fi
+    done
+  done
+  pass "checkpoint runners distinguish deadlines from command failures and retain failure diagnostics"
+}
+
+# The real watcher, run from a fixture root whose side-band helpers are stubs
+# that take longer than the checkpoint, and fed the inputs that start each one.
+# A quiet deadline stops the watcher; the helpers must still finish their work,
+# or a park tick dies mid-relaunch and leaves its park record unwritten.
+test_quiet_deadline_spares_the_watchers_detached_helpers() {
+  local runner home root script helper status i runner_path
+  for runner in native perl; do
+    home=$(make_home "detached-$runner")
+    root="$home/root"
+    mkdir -p "$root/bin" "$home/state/reconcile-notify"
+    for script in "$ROOT"/bin/*; do ln -s "$script" "$root/bin/${script##*/}"; done
+    for helper in fm-home-summary-refresh.sh fm-worker-park.sh fm-secondmate-reconcile.sh; do
+      rm -f "$root/bin/$helper"
+      # $FM_HOME is meant to expand when the generated helper runs, not here.
+      # shellcheck disable=SC2016
+      printf '#!/usr/bin/env bash\nsleep 3\nprintf done > "$FM_HOME/%s.finished"\n' "$helper" > "$root/bin/$helper"
+      chmod +x "$root/bin/$helper"
+    done
+    : > "$home/config/fleet-load-policy"
+    printf '{}\n' > "$home/state/reconcile-notify/request-1.json"
+    runner_path=$PATH
+    if [ "$runner" = perl ]; then
+      perl_runner_path "$home/perl-runner-bin"
+      runner_path="$home/perl-runner-bin"
+    fi
+    status=0
+    PATH="$runner_path" FM_HOME="$home" FM_POLL=1 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 \
+      "$root/bin/fm-watch-checkpoint.sh" --seconds 2 >"$home/out.txt" 2>"$home/err.txt" || status=$?
+    expect_code 124 "$status" "$runner detached helper checkpoint exit"
+    for helper in fm-home-summary-refresh.sh fm-worker-park.sh fm-secondmate-reconcile.sh; do
+      i=0
+      while [ ! -e "$home/$helper.finished" ] && [ "$i" -lt 120 ]; do
+        sleep 0.05
+        i=$((i + 1))
+      done
+      [ -e "$home/$helper.finished" ] \
+        || fail "$runner quiet deadline killed the watcher's detached $helper mid-work"
+    done
+  done
+  pass "a quiet checkpoint deadline stops the watcher without killing its detached helpers"
+}
+
+# Stock macOS bash 3.2 polls with a foreground sleep, and bash runs the stop
+# trap only once that sleep exits. A poll longer than the 5-second kill grace
+# must still let the watcher clean up and release its lock at the deadline.
+test_quiet_deadline_during_foreground_poll_sleep_releases_the_lock() {
+  local runner home status runner_path
+  for runner in native perl; do
+    home=$(make_home "foreground-sleep-$runner")
+    runner_path=$PATH
+    if [ "$runner" = perl ]; then
+      perl_runner_path "$home/perl-runner-bin"
+      runner_path="$home/perl-runner-bin"
+    fi
+    status=0
+    PATH="$runner_path" FM_HOME="$home" FM_POLL=15 _FM_POLL_WAIT_DISABLED=1 FM_SIGNAL_GRACE=1 \
+      FM_CHECK_INTERVAL=999999 "$CHECKPOINT" --seconds 2 >"$home/out.txt" 2>"$home/err.txt" || status=$?
+    expect_code 124 "$status" "$runner foreground poll sleep checkpoint exit"
+    assert_absent "$home/state/.watch.lock/pid" \
+      "$runner watch lock pid survived a deadline during a foreground poll sleep"
+  done
+  pass "a quiet checkpoint deadline during a foreground poll sleep still releases the watch lock"
 }
 
 test_announced_recovery_is_not_reannounced_by_next_checkpoint() {
@@ -390,6 +542,9 @@ test_real_host_checkpoint_ends_quietly_at_its_bound() {
 
 test_quiet_checkpoint_exits_124_cleanly
 test_perl_timeout_fallback_honors_cleanup_bound_before_escalating
+test_runner_deadlines_and_command_failures_are_distinct
+test_quiet_deadline_spares_the_watchers_detached_helpers
+test_quiet_deadline_during_foreground_poll_sleep_releases_the_lock
 test_announced_recovery_is_not_reannounced_by_next_checkpoint
 test_never_announced_recovery_is_announced_once
 test_empty_queue_recovery_stays_silent_and_pending
