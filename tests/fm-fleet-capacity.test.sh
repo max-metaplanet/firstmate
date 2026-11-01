@@ -1285,6 +1285,7 @@ test_lock_wait_stops_when_parent_is_gone() {
   python3 - "$ROOT/bin/fm-wake-lib.sh" "$TMP_ROOT" <<'PY' || fail 'lock wait survived a missing parent'
 import os
 from pathlib import Path
+import shutil
 import signal
 import subprocess
 import sys
@@ -1303,9 +1304,9 @@ for function in ('fm_lock_acquire_wait', 'fm_lock_acquire_wait_max'):
     try:
         time.sleep(0.3)
         assert process.poll() is None, 'live lock did not hold the waiter'
-        (lock / 'pid').unlink()
-        lock.rmdir()
-        parent.rmdir()
+        gone = parent.with_name(parent.name + '.gone')
+        os.rename(parent, gone)
+        shutil.rmtree(gone)
         out, err = process.communicate(timeout=3)
         assert process.returncode == 1, (process.returncode, out, err)
     finally:
