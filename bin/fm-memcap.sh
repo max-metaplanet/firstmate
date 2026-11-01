@@ -97,7 +97,7 @@ fm_memcap_positive() {  # <value>
 fm_memcap_mem_total() {
   local total=
   if [ -r /proc/meminfo ]; then
-    total=$(awk '$1 == "MemTotal:" { print $2 * 1024; exit }' /proc/meminfo 2>/dev/null)
+    total=$(awk '$1 == "MemTotal:" { printf "%.0f\n", $2 * 1024; exit }' /proc/meminfo 2>/dev/null)
   elif [ "$(uname -s 2>/dev/null)" = Darwin ]; then
     total=$(sysctl -n hw.memsize 2>/dev/null)
   fi

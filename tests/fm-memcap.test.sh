@@ -58,6 +58,30 @@ test_explicit_total_overrides_the_machine_budget() {
   pass "FM_MEMCAP_BYTES replaces the machine budget, still divides, and stays above the floor"
 }
 
+test_linux_budget_uses_the_readable_memory_total() {
+  local key value _unit total= expected out share
+  if [ ! -r /proc/meminfo ]; then
+    pass "SKIP (/proc/meminfo is unavailable): Linux memory budget check"
+    return
+  fi
+  while read -r key value _unit; do
+    if [ "$key" = MemTotal: ]; then
+      total=$((value * 1024))
+      break
+    fi
+  done < /proc/meminfo
+  [ -n "$total" ] || fail "readable /proc/meminfo has no MemTotal"
+  for share in 1 2; do
+    expected=$((total * 45 / 100 / share))
+    [ "$expected" -ge 268435456 ] || expected=268435456
+    out=$(unset FM_MEMCAP_BYTES FM_MEMCAP_PERCENT; "$MEMCAP" --budget-bytes --share "$share") \
+      || fail "Linux memory budget failed for share $share"
+    [ "$out" = "$expected" ] \
+      || fail "Linux budget for share $share was $out, expected $expected from MemTotal"
+  done
+  pass "Linux budgets use 45 percent of readable MemTotal divided across shares"
+}
+
 test_malformed_input_is_refused_rather_than_guessed() {
   local out rc
   for bad in 0 -1 two 1.5 ''; do
@@ -109,14 +133,20 @@ test_a_runaway_dies_at_its_cap_and_is_named() {
   # shellcheck disable=SC2016 # perl expands $ARGV[0], not the shell.
   out=$("$MEMCAP" --bytes "$KILL_CAP_BYTES" -- \
     perl -e 'my @held; for (1 .. $ARGV[0]) { push @held, "x" x 1048576 }' "$HOG_CEILING_MIB" 2>&1) || rc=$?
-  [ "$rc" -eq 137 ] || fail "a runaway under a ${KILL_CAP_BYTES}-byte cap exited $rc, expected 137"$'\n'"$out"
-  assert_contains "$out" "fm-memcap: perl was killed by its $KILL_CAP_BYTES-byte memory cap" \
-    "the cap kill did not print the sentinel bin/fm-lint.sh classifies"
-  pass "a runaway dies at its cap and names itself on stderr with status 137"
+  if [ "$mech" = cgroup ]; then
+    [ "$rc" -eq 137 ] || fail "a runaway under a ${KILL_CAP_BYTES}-byte cap exited $rc, expected 137"$'\n'"$out"
+    assert_contains "$out" "fm-memcap: perl was killed by its $KILL_CAP_BYTES-byte memory cap" \
+      "the cap kill did not print the sentinel bin/fm-lint.sh classifies"
+    pass "a runaway dies at its cap and names itself on stderr with status 137"
+  else
+    [ "$rc" -ne 0 ] || fail "a runaway completed allocation despite its address-space cap"
+    pass "a runaway cannot complete allocation under its address-space cap"
+  fi
 }
 
 test_mechanism_names_one_supported_bound
 test_budget_is_a_positive_byte_count_split_across_shares
+test_linux_budget_uses_the_readable_memory_total
 test_explicit_total_overrides_the_machine_budget
 test_malformed_input_is_refused_rather_than_guessed
 test_a_capped_command_keeps_its_own_streams_and_status
