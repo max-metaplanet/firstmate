@@ -67,7 +67,7 @@
 # supply: a wall deadline (FM_LINT_ROOT_SECONDS, default 1200), a
 # terminate-then-kill cleanup grace (FM_LINT_ROOT_GRACE, default 5), and a
 # per-process memory cap applied through bin/fm-memcap.sh, which owns the
-# mechanism, the machine-relative budget, and its environment overrides.
+# mechanism and the machine-relative budget.
 # FM_LINT_ROOT_MEMORY_KIB replaces that budget with an exact KiB figure. The
 # watchdog uses the shared bin/fm-timeout-lib.sh group-kill pattern, so a
 # deadline or an interrupt removes the owned process group. Both bounds are on
@@ -736,6 +736,7 @@ fm_lint_run_backend_purity() {
   }
 }
 
+INVOCATION_ARGV=("$@")
 JOBS=${FM_LINT_JOBS:-2}
 TELEMETRY=${FM_LINT_TELEMETRY:-}
 FAST=0
@@ -963,6 +964,10 @@ if ! command -v shellcheck >/dev/null 2>&1; then
     "$REQUIRED_SHELLCHECK" >&2
   exit 1
 fi
+if [ "${FM_BUILD_LOCK_BYPASS:-}" != 1 ] && [ "${FM_BUILD_LOCK_HELD:-}" != "$$" ]; then
+  exec "$SELF_DIR/fm-build-lock.py" -- bash "$SELF" "${INVOCATION_ARGV[@]}"
+fi
+
 unset SHELLCHECK_OPTS
 SHELLCHECK_BIN=$(command -v shellcheck)
 if ! PERL_BIN=$(command -v perl); then
@@ -1011,19 +1016,22 @@ case "$MEM_MECH" in
   cgroup|rlimit) : ;;
   *) MEM_MECH=none ;;
 esac
-# Dividing the budget by JOBS is what makes the AGGREGATE, not the per-root
-# figure, the machine's bound: two local workers together stay inside the
-# envelope one worker would use. bin/fm-memcap.sh owns the budget formula and
-# its overrides; FM_LINT_ROOT_MEMORY_KIB still names an exact figure instead.
+# Dividing the budget across workers and heavy slots makes the AGGREGATE,
+# not the per-root figure, the machine's bound. bin/fm-memcap.sh owns the budget formula;
+# FM_LINT_ROOT_MEMORY_KIB still names an exact figure instead.
 # A root that exceeds its cap fails by name. Never disable, narrow, or redirect
 # source-following to fit a root under the cap: the memory fallback above is the
 # one sanctioned narrowing. The roots sidecar records each root's peak RSS;
 # roots peaking above about 3 GiB resident are reduction candidates,
 # bin/fm-pending-reply-lib.sh first (its separate dedup fix is PR 5753).
+MEMORY_SHARES=$JOBS
+if [ "${FM_BUILD_LOCK_BYPASS:-}" != 1 ] && [ "${FM_BUILD_LOCK_HELD:-}" = "$$" ]; then
+  MEMORY_SHARES=$((JOBS * ${FM_HEAVY_SLOTS:-1}))
+fi
 if [ -n "${FM_LINT_ROOT_MEMORY_KIB:-}" ]; then
   ROOT_MEMORY_KIB=$FM_LINT_ROOT_MEMORY_KIB
 elif [ "$MEM_MECH" != none ] \
-  && memcap_budget=$("$SELF_DIR/fm-memcap.sh" --budget-bytes --share "$JOBS"); then
+  && memcap_budget=$("$SELF_DIR/fm-memcap.sh" --budget-bytes --share "$MEMORY_SHARES"); then
   ROOT_MEMORY_KIB=$((memcap_budget / 1024))
 else
   # Nothing will apply it on this host; keep a positive figure so the shared

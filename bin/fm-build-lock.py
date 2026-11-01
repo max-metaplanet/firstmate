@@ -48,6 +48,10 @@ including runners that close extra fds or scrub the environment, so a heavy
 command nested inside another never takes a second slot. Waiting for a slot
 polls the pool and is not first-come-first-served; a waiter just waits.
 
+Every outer slot invocation runs through the sibling fm-memcap.sh, which owns
+the memory mechanism and budget; concurrent slots divide that budget. Nested
+commands reuse the enclosing slot and memory boundary.
+
 Coverage is NODE_OPTIONS-based: runtimes other than Node, other build tools, a
 script that overwrites NODE_OPTIONS instead of appending to it, or a launcher
 that clears it need the explicit `-- COMMAND` wrapper. The daemon drop-in is
@@ -64,7 +68,8 @@ import sys
 import time
 
 SOURCE = Path(__file__).resolve().parent
-FILES = {"fm-build-lock.py": 0o755, "fm-build-lock.js": 0o644}
+FILES = {"fm-build-lock.py": 0o755, "fm-build-lock.js": 0o644,
+         "fm-memcap.sh": 0o755}
 DROP_IN = "fm-build-lock.conf"
 SLOTS_RECORD = "heavy-slots"
 POLL_SECONDS = 0.25
@@ -243,7 +248,7 @@ def acquire():
         if any(isinstance(pid, int) and ancestor(pid) for pid in busy):
             if free is not None:
                 os.close(free)
-            return
+            return True
         if free is not None:
             break
         if not waiting:
@@ -256,6 +261,7 @@ def acquire():
     os.ftruncate(free, 0)
     os.write(free, json.dumps({"pid": os.getpid()}).encode())
     os.set_inheritable(free, True)
+    return False
 
 
 def main():
@@ -270,12 +276,18 @@ def main():
     if len(args) < 2 or args[0] != "--":
         print(__doc__, file=sys.stderr)
         return 2
-    command, args = args[1], args[2:]
+    command_line = args[1:]
     if os.environ.get("FM_BUILD_LOCK_BYPASS") != "1":
-        acquire()
+        nested = acquire()
+        slots = pool_size()
+        os.environ["FM_HEAVY_SLOTS"] = str(slots)
+        if not nested:
+            cap = str(SOURCE / "fm-memcap.sh")
+            command_line = [cap, "--exec", "--share", str(slots), "--", *command_line]
     # The preload in the exec'd Node process recognizes itself by this pid.
     os.environ["FM_BUILD_LOCK_HELD"] = str(os.getpid())
-    os.execvp(command, [command, *args])
+    os.execvp(command_line[0], command_line)
+
 
 
 if __name__ == "__main__":
