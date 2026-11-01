@@ -136,7 +136,10 @@ test_runner_deadlines_and_command_failures_are_distinct() {
       ln -s "$tool_path" "$fallback_bin/$tool"
     done
     if [ "$mechanism" != perl ]; then
-      ln -s "$native_runner" "$fallback_bin/$mechanism"
+      # Exec the runner under its own name: a multicall coreutils (uutils)
+      # picks the utility from argv[0] and rejects an unknown "gtimeout".
+      printf '#!/bin/sh\nexec %q "$@"\n' "$native_runner" > "$fallback_bin/$mechanism"
+      chmod +x "$fallback_bin/$mechanism"
     fi
     cat > "$home/root/bin/fm-watch.sh" <<'SH'
 #!/usr/bin/env bash
