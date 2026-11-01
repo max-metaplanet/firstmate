@@ -357,7 +357,13 @@ service_bin = base / 'service-bin'
 service_bin.mkdir()
 service_log = base / 'services.jsonl'
 failure_file = base / 'service-failure'
-for command in ('docker', 'node', 'pnpm'):
+# A synthetic server major keeps installed host clients out of this fixture
+# and rejects implementations that hardcode the measured PostgreSQL 17.
+client_version = base / 'client-version'
+client_version.write_text('99.11')
+allow_install = base / 'allow-client-install'
+client_tools = ('psql', 'pg_dump', 'pg_restore', 'createdb', 'dropdb', 'pg_isready')
+for command in ('docker', 'node', 'pnpm', 'sudo', 'curl', *client_tools):
     boundary = service_bin / command
     boundary.write_text('#!' + sys.executable + '\n' +
         'import json, sys, subprocess\nfrom pathlib import Path\n' +
@@ -365,6 +371,16 @@ for command in ('docker', 'node', 'pnpm'):
         'with Path(' + repr(str(service_log)) + ').open("a") as f: f.write(json.dumps([name, *sys.argv[1:]]) + "\\n")\n' +
         'failure = Path(' + repr(str(failure_file)) + ')\n' +
         'if failure.exists() and failure.read_text() in " ".join([name, *sys.argv[1:]]): sys.exit(9)\n' +
+        'if name == "docker" and sys.argv[1:3] == ["image", "inspect"]: print("PG_MAJOR=99")\n' +
+        'if name == "psql" and sys.argv[1:] == ["--version"]: print("psql (PostgreSQL) " + Path(' + repr(str(client_version)) + ').read_text())\n' +
+        'if name == "sudo":\n' +
+        '    if not Path(' + repr(str(allow_install)) + ').exists(): sys.exit(9)\n' +
+        '    if "install" in sys.argv: Path(' + repr(str(client_version)) + ').write_text("99.11")\n' +
+        '    if "tee" in sys.argv: sys.stdin.read()\n' +
+        '    sys.exit(0)\n' +
+        'if name == "pnpm":\n' +
+        '    for tool in ' + repr(client_tools) + ':\n' +
+        '        for _ in range(2): subprocess.run([tool, "--version"], check=True)\n' +
         'if name == "node" and "ledger-delta.mjs" in sys.argv[1]:\n' +
         '    diff = subprocess.check_output(["git", "diff", "--name-status", "refs/remotes/origin/main...HEAD"], text=True)\n' +
         '    Path(' + repr(str(base / 'migration-diff')) + ').write_text(diff)\n' +
@@ -422,6 +438,13 @@ try:
         calls = [json.loads(line) for line in service_log.read_text().splitlines()]
         assert calls[0] == ['docker', 'pull', 'docker.io/library/postgres@sha256:' + '1' * 64], calls
         assert calls[-1][:3] == ['docker', 'rm', '-f'], calls
+        # Public lane PATH contract: repeated client calls reach native tools,
+        # while Docker starts only the server. Container-per-call fails here.
+        if suite != 'runtime':
+            for tool in client_tools:
+                assert calls.count([tool, '--version']) >= 2, (tool, calls)
+        assert len([call for call in calls if call[:2] == ['docker', 'run']]) == 1, calls
+        assert not any(call[0] == 'sudo' for call in calls), calls
         assert ['docker', 'exec', 'a' * 64, 'pg_isready', '-h', '127.0.0.1',
                 '-p', '5432', '-U', 'postgres', '-d', 'postgres'] in calls, calls
         if suite == 'runtime':
@@ -438,6 +461,24 @@ try:
             failure_file.write_text(broken)
             assert remote.run_database(suite, service_source, base / 'service-evidence') != 0
             failure_file.unlink()
+    # A client version that disagrees with the approved server must be obtained
+    # from PGDG; an unavailable installer must fail before starting a server.
+    client_version.write_text('16.15')
+    service_log.write_text('')
+    assert remote.run_database('runtime', service_source, base / 'service-evidence') != 0
+    calls = [json.loads(line) for line in service_log.read_text().splitlines()]
+    assert any(call[0] == 'sudo' for call in calls), calls
+    assert not any(call[:2] == ['docker', 'run'] for call in calls), calls
+    # The package boundary materializes the requested version once; a later
+    # suite reuses it. Its package name must follow the approved image major.
+    allow_install.touch()
+    service_log.write_text('')
+    for suite in ('db', 'actions'):
+        assert remote.run_database(suite, service_source, base / 'service-evidence') == 0
+    calls = [json.loads(line) for line in service_log.read_text().splitlines()]
+    installs = [call for call in calls if call[0] == 'sudo' and 'install' in call]
+    assert len(installs) == 1 and installs[0][-1] == 'postgresql-client-99', installs
+    allow_install.unlink()
     # Ledger contract: an unfingerprinted candidate added by this PR is fatal.
     # The boundary simulates that SQL failure only after observing a real added
     # path from Git; an empty or modified tier would incorrectly pass it.

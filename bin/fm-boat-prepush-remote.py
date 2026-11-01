@@ -475,19 +475,8 @@ def run_database(suite: str, source: Path, prepush: Path) -> int:
             approved[image['repo']] = image['source'] + '@' + image['digest']
     postgres = approved['library/postgres']
     work = prepush / ('database-' + suite)
-    clients = work / 'bin'
-    clients.mkdir(parents=True, exist_ok=True)
+    work.mkdir(parents=True, exist_ok=True)
     (work / 'tmp').mkdir(exist_ok=True)
-    for tool in ('psql', 'pg_dump', 'pg_restore', 'createdb', 'dropdb', 'pg_isready'):
-        wrapper = clients / tool
-        wrapper.write_text(
-            '#!/usr/bin/env bash\nexec docker run --rm -i --network host '
-            '-e PGPASSWORD -e PGOPTIONS -e PGSSLMODE -e PGCONNECT_TIMEOUT '
-            '-e PGHOST -e PGPORT -e PGUSER -e PGDATABASE -v ' + shlex.quote(str(source) + ':' + str(source)) + ' -v '
-            + shlex.quote(str(prepush) + ':' + str(prepush))
-            + ' -w "$PWD" --entrypoint ' + shlex.quote(tool) + ' '
-            + shlex.quote(postgres) + ' "$@"\n', encoding='utf-8')
-        wrapper.chmod(0o755)
     ledger_git = work / 'ledger.git'
     if suite in ('db', 'actions'):
         files = json.loads((prepush / 'changed-files.json').read_text(encoding='utf-8'))
@@ -517,7 +506,6 @@ def run_database(suite: str, source: Path, prepush: Path) -> int:
         git('update-ref', 'HEAD', head)
     dsn = 'postgresql://postgres:postgres@localhost:5432/postgres'
     env = {
-        'PATH': str(clients) + os.pathsep + os.environ['PATH'],
         'TMPDIR': str(work / 'tmp'),
         'DB_LOCAL_URL': dsn, 'DEV_DB_URL': dsn, 'SCHEMA_ONLY_DB': 'true',
         'DB_LOCAL_LOGDIR': str(work / 'restore'),
@@ -529,6 +517,34 @@ def run_database(suite: str, source: Path, prepush: Path) -> int:
 set -euo pipefail
 command -v docker
 docker pull "$POSTGRES_IMAGE"
+# The approved digest, rather than the distribution default, owns the version.
+major=$(docker image inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$POSTGRES_IMAGE" | sed -n 's/^PG_MAJOR=//p')
+if [[ ! "$major" =~ ^[1-9][0-9]*$ ]]; then
+  echo 'Cannot resolve PostgreSQL client major from the approved server image' >&2
+  exit 1
+fi
+export PATH="/usr/lib/postgresql/$major/bin:$PATH"
+native_clients_ready() {
+  for tool in psql pg_dump pg_restore createdb dropdb pg_isready; do
+    command -v "$tool" >/dev/null || return 1
+  done
+  psql --version | grep -Eq "\(PostgreSQL\) $major\."
+}
+install_native_clients() {
+  # These changes run only on the disposable VM. Subsequent lanes reuse them.
+  . /etc/os-release
+  [ -n "${VERSION_CODENAME:-}" ] || return 1
+  curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo -n tee /usr/share/keyrings/fm-pgdg.asc >/dev/null || return 1
+  printf 'deb [signed-by=/usr/share/keyrings/fm-pgdg.asc] https://apt.postgresql.org/pub/repos/apt %s-pgdg main\n' "$VERSION_CODENAME" | sudo -n tee /etc/apt/sources.list.d/fm-pgdg.list >/dev/null || return 1
+  sudo -n apt-get update || return 1
+  sudo -n env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "postgresql-client-$major" || return 1
+}
+if ! native_clients_ready; then
+  if ! install_native_clients || ! native_clients_ready; then
+    echo "Cannot obtain native PostgreSQL $major clients from PGDG; database lane refused" >&2
+    exit 1
+  fi
+fi
 pg=''
 cleanup() {
   rc=$?
