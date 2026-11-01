@@ -3328,9 +3328,14 @@ spawn_provider_depletion_gate() {
     return 0
   fi
   label=Claude; [ "$HARNESS" != codex ] || label=Codex
+  # The summary answers in its exit status, and non-zero is an ordinary answer
+  # meaning only the active seat is empty. Reading it with a bare `rc=$?` on the
+  # next line reads it too late, because `set -e` aborts on the failing
+  # assignment first. That made the else branch below unreachable and left a
+  # refused spawn exiting 1 without printing its refusal at all.
+  rc=0
   summary=$(FM_SEAT_PROVIDER=$HARNESS CONFIG=$seat_config FM_SEAT_READ_MEMO_DIR=$memo \
-    fm_seat_provider_depletion_summary)
-  rc=$?
+    fm_seat_provider_depletion_summary) || rc=$?
   if [ "$rc" -eq 0 ]; then
     # Every seat of this vendor is empty, so the work belongs on another one.
     # The sentence comes from the same builder the watch uses, so the fleet

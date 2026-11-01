@@ -21,6 +21,7 @@ set -u
 
 # shellcheck source=tests/fixtures.sh
 . "$(dirname "${BASH_SOURCE[0]}")/fixtures.sh"
+fm_test_seal_seats
 # shellcheck source=/dev/null
 . "$ROOT/bin/fm-role-lib.sh"
 # shellcheck source=/dev/null

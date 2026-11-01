@@ -95,8 +95,68 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 . "$(dirname "${BASH_SOURCE[0]}")/scratch-root.sh"
 fm_test_scratch_root_init "$ROOT" || return 1
 # Launches and pipeline wrappers install the build-lock preload; keep that copy
-# in scratch rather than the developer's installed one.
+# in scratch rather than the developer's installed one. Clearing NODE_OPTIONS is
+# the other half of that: a firstmate worker session already carries a --require
+# for the INSTALLED preload, every launch under test appends the scratch copy
+# after it, and an assertion on the launch's own preload then reads the
+# developer's path first. CI exports nothing, so only an operator saw it. A case
+# that drives an inherited value sets NODE_OPTIONS itself.
 export FM_BUILD_LOCK_INSTALL_DIR="${FM_TEST_SCRATCH_ROOT:-${TMPDIR:-/tmp}}/fm-build-lock-install"
+unset NODE_OPTIONS
+
+# fm_test_seal_seats [<sandbox-home>]
+# Point every route to the operator's real seats at a disposable sandbox, for
+# the rest of this suite. A suite that drives bin/fm-spawn.sh, bin/fm-seat.sh,
+# bin/fm-seat-board.sh or anything else that resolves a seat calls this once,
+# right after it sources this library, because two routes leak independently and
+# neither shows up in CI:
+#
+#   - bin/fm-seat-lib.sh's fm_seat_root falls back to $HOME/.<provider>-seats
+#     whenever the fixture home configures no seats root. The run then lists the
+#     operator's real seats, and bin/fm-spawn.sh's depletion gate holds or
+#     releases the fixture's spawn on whether a human account has quota today.
+#   - fm_seat_config_dir resolves the ambient profile from CODEX_HOME,
+#     CLAUDE_CONFIG_DIR or FM_AMBIENT_CLAUDE_CONFIG_DIR, each of which a
+#     firstmate worker session exports at a real seat, and that value reaches
+#     the launch command a spawn case asserts on.
+#
+# A CI runner has no seats directory and exports none of those variables, so a
+# leaking suite passes there and fails only on the machine that owns the seats.
+#
+# The sandbox becomes HOME and gets both seat roots, created empty so the
+# fallback still resolves a root and finds no seat there. It also keeps a claude
+# spawn's workspace-trust registration (bin/fm-claude-trust.sh) out of the
+# operator's own ~/.claude.json. A case that needs one of the profile variables
+# SET opts in through its matching FM_TEST_* variable.
+#
+# FM_AMBIENT_CLAUDE_CONFIG_DIR is unset rather than emptied. fm_seat_config_dir
+# reads it as ${FM_AMBIENT_CLAUDE_CONFIG_DIR-${CLAUDE_CONFIG_DIR:-}}, so an
+# empty value is still a value and would shadow the CLAUDE_CONFIG_DIR a case
+# deliberately sets, blanking the profile it then asserts the launch forwards.
+fm_test_seal_seats() {
+  local sandbox=${1:-$FM_TEST_TMPDIR/fm-seat-sealed.$$}
+  mkdir -p "$sandbox/.claude-seats" "$sandbox/.codex-seats" || return 1
+  # Only the default sandbox is registered; a caller that named one put it in a
+  # fixture tree that its own cleanup already reaps.
+  [ -n "${1:-}" ] || printf '%s\n' "$sandbox" >> "$FM_TEST_CLEANUP_REGISTRY"
+  export HOME="$sandbox"
+  export CODEX_HOME="${FM_TEST_CODEX_HOME:-}"
+  export CLAUDE_CONFIG_DIR="${FM_TEST_CLAUDE_CONFIG_DIR:-}"
+  if [ -n "${FM_TEST_AMBIENT_CLAUDE_CONFIG_DIR+set}" ]; then
+    export FM_AMBIENT_CLAUDE_CONFIG_DIR="$FM_TEST_AMBIENT_CLAUDE_CONFIG_DIR"
+  else
+    unset FM_AMBIENT_CLAUDE_CONFIG_DIR
+  fi
+}
+
+# fm_test_seat_sealed <sandbox-home> <command> [args...]
+# The one-command form of fm_test_seal_seats, for a shared fixture that runs a
+# spawn on behalf of a suite it must not seal wholesale.
+fm_test_seat_sealed() {
+  local sandbox=$1
+  shift
+  ( fm_test_seal_seats "$sandbox" && "$@" )
+}
 
 # --- reporters --------------------------------------------------------------
 

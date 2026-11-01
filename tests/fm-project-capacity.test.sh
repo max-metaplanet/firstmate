@@ -14,6 +14,7 @@ set -u
 
 # shellcheck source=tests/lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+fm_test_seal_seats
 
 unset TASKS_AXI_BACKEND || :
 

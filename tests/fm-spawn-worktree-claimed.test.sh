@@ -23,6 +23,7 @@ set -u
 
 # shellcheck source=tests/fixtures.sh
 . "$(dirname "${BASH_SOURCE[0]}")/fixtures.sh"
+fm_test_seal_seats
 
 TMP_ROOT=$(fm_test_tmproot fm-spawn-worktree-claimed)
 
