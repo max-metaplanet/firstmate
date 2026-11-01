@@ -399,6 +399,18 @@ fm_lint_bounds_supported() {
   return 0
 }
 
+fm_lint_expected_memory_kib() {
+  local expected=$1 hard
+  if [ "$("$ROOT/bin/fm-memcap.sh" --mechanism)" = rlimit ]; then
+    hard=$(ulimit -Hv)
+    case "$hard" in
+      ''|*[!0-9]*) ;;
+      *) [ "$expected" -le "$hard" ] || expected=$hard ;;
+    esac
+  fi
+  printf '%s\n' "$expected"
+}
+
 # fm_lint_watchdog_supported: the deadline and the memory cap are both applied
 # inside the watchdog's per-root payload, so this alone decides whether a run
 # records enforced bounds and a per-root RSS figure. Which memory mechanism is
@@ -1551,7 +1563,7 @@ test_root_memory_limit_reports_a_named_death() {
     pass "SKIP (host cannot enforce the bounded envelope): memory-limit death check"
     return
   fi
-  local tmp fakebin stub_log telemetry roots_log out rc hoarder ok
+  local tmp fakebin stub_log telemetry roots_log out rc hoarder ok expected_kib recorded_kib
   local sentinel_pid
   tmp=$(fm_test_tmproot fm-lint-bound-memory)
   fakebin=$(fm_fakebin "$tmp")
@@ -1572,8 +1584,9 @@ test_root_memory_limit_reports_a_named_death() {
     FM_TEST_STUB_LOG="$stub_log" \
     "$LINT" --telemetry "$tmp/control.tsv" "$ok" "$hoarder" 2>&1) || rc=$?
   [ "$rc" -eq 0 ] || fail "the allocator failed under a cap far above its demand"$'\n'"$out"
-  grep -q $'^meta\troot_memory_limit_kib\t2097152$' "$tmp/control.roots.tsv" \
-    || fail "the control run did not apply the roomy cap"
+  expected_kib=$(fm_lint_expected_memory_kib 2097152)
+  recorded_kib=$(sed -n $'s/^meta\troot_memory_limit_kib\t//p' "$tmp/control.roots.tsv")
+  assert_equals "$expected_kib" "$recorded_kib" "the control run must report its effective cap"
   awk -F '\t' '$1 == "end" && $3 ~ /hoarder\.sh$/ && $10 == "ok" { found=1 } END { exit !found }' \
     "$tmp/control.roots.tsv" || fail "the roomily capped allocator root did not complete ok"
 
@@ -1864,7 +1877,7 @@ test_the_default_memory_cap_is_divided_across_workers() {
     pass "SKIP (host cannot apply a per-root memory cap): worker share check"
     return
   fi
-  local tmp fakebin fixture out rc one two ratio
+  local tmp fakebin fixture out rc jobs budget expected recorded
   tmp=$(fm_test_tmproot fm-lint-cap-share)
   fakebin=$(fm_fakebin "$tmp")
   fm_lint_stub_shellcheck "$fakebin" "$tmp/stub.log"
@@ -1873,22 +1886,16 @@ test_the_default_memory_cap_is_divided_across_workers() {
 
   for jobs in 1 2; do
     rc=0
-    out=$(PATH="$fakebin:$PATH" "$LINT" --jobs "$jobs" \
+    out=$(PATH="$fakebin:$PATH" FM_HEAVY_SLOTS=1 FM_LINT_ROOT_MEMORY_KIB= "$LINT" --jobs "$jobs" \
       --telemetry "$tmp/jobs$jobs.tsv" "$fixture" 2>&1) || rc=$?
     [ "$rc" -eq 0 ] || fail "a clean run at --jobs $jobs failed"$'\n'"$out"
   done
-  one=$(sed -n $'s/^meta\troot_memory_limit_kib\t//p' "$tmp/jobs1.roots.tsv")
-  two=$(sed -n $'s/^meta\troot_memory_limit_kib\t//p' "$tmp/jobs2.roots.tsv")
-  case "$one$two" in ''|*[!0-9]*) fail "a default run recorded no numeric cap: $one and $two" ;; esac
-  # Two workers must each get about half, so the machine sees one envelope
-  # rather than two. A floor-clamped host reports the same figure for both.
-  if [ "$one" -eq "$two" ]; then
-    pass "SKIP (this host's budget sits on its floor): worker share check"
-    return
-  fi
-  ratio=$((two * 1000 / one))
-  [ "$ratio" -ge 495 ] && [ "$ratio" -le 505 ] \
-    || fail "two workers did not each get about half the cap: $two vs $one"
+  for jobs in 1 2; do
+    budget=$("$ROOT/bin/fm-memcap.sh" --budget-bytes --share "$jobs")
+    expected=$(fm_lint_expected_memory_kib "$((budget / 1024))")
+    recorded=$(sed -n $'s/^meta\troot_memory_limit_kib\t//p' "$tmp/jobs$jobs.roots.tsv")
+    assert_equals "$expected" "$recorded" "--jobs $jobs must report its effective worker cap"
+  done
   pass "the default per-root memory cap is divided across the workers that run at once"
 }
 
@@ -1943,6 +1950,8 @@ test_require_bounds_refuses_when_enforcement_is_missing() {
   [ "$rc" -eq 0 ] || fail "a capless host without required bounds was refused"$'\n'"$out"
   assert_contains "$out" "no enforceable per-root memory cap" \
     "the capless run did not warn about the missing cap"
+  assert_contains "$out" "linting without one; use bin/fm-boat-run.sh to run it bounded." \
+    "the capless run did not point to the bounded Boat route"
   [ -s "$stub_log" ] || fail "a capless run without required bounds never invoked ShellCheck"
 
   # This host enforces both, so a required-bounds run proceeds and lints.

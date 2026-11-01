@@ -249,12 +249,12 @@ case "$MECHANISM" in
     if ulimit -v "$((BYTES / 1024))" 2>/dev/null; then
       exec "$@"
     fi
-    printf 'fm-memcap: this host refused a %s-byte address-space limit; running %s uncapped\n' \
+    printf 'fm-memcap: this host refused a %s-byte address-space limit; running %s uncapped; use bin/fm-boat-run.sh to run it bounded\n' \
       "$BYTES" "${1##*/}" >&2
     exec "$@"
     ;;
   *)
-    printf 'fm-memcap: this host offers no memory-cap mechanism (no usable systemd user scope, no address-space limit); running %s uncapped\n' \
+    printf 'fm-memcap: this host offers no memory-cap mechanism (no usable systemd user scope, no address-space limit); running %s uncapped; use bin/fm-boat-run.sh to run it bounded\n' \
       "${1##*/}" >&2
     exec "$@"
     ;;

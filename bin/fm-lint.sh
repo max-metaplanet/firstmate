@@ -1097,7 +1097,7 @@ if [ "${FM_LINT_REQUIRE_BOUNDS:-0}" = 1 ]; then
     exit 2
   fi
 elif [ "$MEM_MECH" = none ]; then
-  printf 'fm-lint.sh: bin/fm-memcap.sh reports no enforceable per-root memory cap on this host; linting without one.\n' >&2
+  printf 'fm-lint.sh: bin/fm-memcap.sh reports no enforceable per-root memory cap on this host; linting without one; use bin/fm-boat-run.sh to run it bounded.\n' >&2
 fi
 
 PROGRESS=0
