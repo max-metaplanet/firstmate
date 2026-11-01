@@ -468,6 +468,8 @@ test_fm_lint_default_path_catches_broken_ci_yml() {
   mkdir -p "$tmp/bin" "$tmp/.github/workflows"
   cp "$LINT" "$tmp/bin/fm-lint.sh"
   cp "$LINT_WF" "$tmp/bin/fm-lint-workflows.sh"
+  cp "$ROOT/bin/fm-build-lock.py" "$ROOT/bin/fm-memcap.sh" \
+    "$ROOT/bin/fm-timeout-lib.sh" "$tmp/bin/"
   chmod +x "$tmp/bin/fm-lint.sh" "$tmp/bin/fm-lint-workflows.sh"
   write_col0_heredoc_workflow "$tmp/.github/workflows/ci.yml"
 
