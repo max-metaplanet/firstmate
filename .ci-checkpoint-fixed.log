@@ -1,2 +1,0 @@
-ok - quiet checkpoint exits 124 with a clean checkpoint line and no live lock
-ok - Perl fallback honors the cleanup bound before escalating a TERM-ignoring direct watcher

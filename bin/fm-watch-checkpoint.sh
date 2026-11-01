@@ -112,7 +112,7 @@ run_with_perl_timeout() {  # <seconds> <signal> <kill-after-seconds> <command...
 }
 
 run_bounded() {  # <seconds> <signal> <kill-after-seconds> <command...>
-  local seconds=$1 signal=$2 kill_after=$3 cleanup_lock_bound runner status_file runner_rc command_rc
+  local seconds=$1 signal=$2 kill_after=$3 cleanup_lock_bound runner bound_file runner_rc bound
   shift 3
   if [ "$kill_after" -gt 0 ]; then
     cleanup_lock_bound=${FM_WATCHER_CLEANUP_LOCK_BOUND:-2}
@@ -132,25 +132,43 @@ run_bounded() {  # <seconds> <signal> <kill-after-seconds> <command...>
     run_with_perl_timeout "$seconds" "$signal" "$kill_after" "$@"
     return $?
   fi
-  status_file=$(mktemp "${TMPDIR:-/tmp}/fm-watch-checkpoint.status.XXXXXX") || return 1
+  bound_file=$(mktemp "${TMPDIR:-/tmp}/fm-watch-checkpoint.bound.XXXXXX") || return 1
+  # A runner signals its direct child, so the wrapper has to hand the signal on
+  # to the command rather than absorb it, or the command runs untouched to the
+  # kill and its cleanup never happens. The wrapper also escalates to KILL
+  # itself, because a runner that signals only its direct child never reaches
+  # a command that ignores the first signal.
+  #
+  # The wrapper receiving that signal IS the bound firing, and recording it is
+  # the only thing that tells a bound apart from a command that chose to die on
+  # its own: both write diagnostics, so output cannot say which happened.
   # shellcheck disable=SC2016
   "$runner" --signal="$signal" --kill-after="${kill_after}s" "$seconds" bash -c '
-    status_file=$1
-    shift
-    # Stay with the command until its TERM cleanup finishes. Ignoring TERM
-    # instead would pass that ignored disposition into the command itself.
-    trap : TERM
-    "$@"
+    bound_file=$1
+    signal=$2
+    grace=$3
+    shift 3
+    "$@" &
+    command_pid=$!
+    bound_fired() {
+      printf "bound\n" > "$bound_file"
+      kill -s "$signal" "$command_pid" 2>/dev/null
+      [ "$grace" -gt 0 ] || return 0
+      { sleep "$grace"; kill -KILL "$command_pid" 2>/dev/null; } &
+    }
+    trap bound_fired "$signal"
+    wait "$command_pid"
     command_rc=$?
-    printf "%s\n" "$command_rc" > "$status_file"
+    while [ "$command_rc" -gt 128 ] && kill -0 "$command_pid" 2>/dev/null; do
+      wait "$command_pid"
+      command_rc=$?
+    done
     exit "$command_rc"
-  ' _ "$status_file" "$@"
+  ' _ "$bound_file" "$signal" "$kill_after" "$@"
   runner_rc=$?
-  command_rc=$(cat "$status_file")
-  rm -f "$status_file"
-  if [ "$runner_rc" -eq 137 ] && [ -z "$command_rc" ]; then
-    return 124
-  fi
+  bound=$(cat "$bound_file" 2>/dev/null)
+  rm -f "$bound_file"
+  [ "$bound" != bound ] || return 124
   return "$runner_rc"
 }
 
