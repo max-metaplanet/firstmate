@@ -271,13 +271,25 @@ def source(root, inputs, archive, key_files, history_depth=None):
         if not (root / name).exists():
             raise Failure('extra input missing: ' + name, 2)
         names.append(name)
-    object_format = git(root, 'rev-parse', '--show-object-format').decode().strip()
+    object_format = (None if history_depth is None else
+                     git(root, 'rev-parse', '--show-object-format').decode().strip())
     try:
         archive_source(root, names, archive, history_depth, key_files, head, object_format)
     except BaseException:
         archive.unlink(missing_ok=True)
         raise
     return head, hashlib.sha256(archive.read_bytes()).hexdigest()
+
+
+class _Hashing:
+    def __init__(self, handle, digest):
+        self.handle = handle
+        self.digest = digest
+
+    def read(self, size=-1):
+        chunk = self.handle.read(size)
+        self.digest.update(chunk)
+        return chunk
 
 
 def archive_source(root, names, archive, history_depth, key_files, head, object_format):
@@ -297,16 +309,27 @@ def archive_source(root, names, archive, history_depth, key_files, head, object_
                 continue
             if not path.is_file():
                 raise Failure('source input must be a regular file: ' + name, 2)
-            data = path.read_bytes()
-            if name in SOURCE_ALLOWLIST and not safe_allowlisted(name, data):
-                print('boat-offload: excluded allowlisted file with credential-looking content: ' +
-                      name, file=sys.stderr)
-                continue
-            info = output.gettarinfo(path, arcname=name)
-            info.size = len(data)
-            output.addfile(info, io.BytesIO(data))
-            uploaded.add(hashlib.new(object_format, b'blob %d\0' % len(data) + data)
-                         .hexdigest().encode())
+            if name in SOURCE_ALLOWLIST:
+                data = path.read_bytes()
+                if not safe_allowlisted(name, data):
+                    print('boat-offload: excluded allowlisted file with credential-looking content: ' +
+                          name, file=sys.stderr)
+                    continue
+                info = output.gettarinfo(path, arcname=name)
+                info.size = len(data)
+                output.addfile(info, io.BytesIO(data))
+                if history_depth is not None:
+                    digest = hashlib.new(object_format, b'blob %d\0' % info.size)
+                    digest.update(data)
+                    uploaded.add(digest.hexdigest().encode())
+            elif history_depth is None:
+                output.add(path, arcname=name, recursive=False)
+            else:
+                info = output.gettarinfo(path, arcname=name)
+                digest = hashlib.new(object_format, b'blob %d\0' % info.size)
+                with path.open('rb') as handle:
+                    output.addfile(info, _Hashing(handle, digest))
+                uploaded.add(digest.hexdigest().encode())
         if history_depth is not None:
             scratch = stack.enter_context(tempfile.TemporaryDirectory(dir=archive.parent, prefix='history-'))
             output.add(history(root, head, history_depth, Path(scratch), key_files, uploaded),
