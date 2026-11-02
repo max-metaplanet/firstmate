@@ -678,6 +678,9 @@ A Claude composer that already holds text, or cannot be read, before the send is
 Before that Enter, the adapter continues only when the selected composer shows the typed payload, or only Claude paste placeholders with no literal remainder.
 Every herdr adapter composer read (`fm_backend_herdr_composer_state`, `fm_backend_herdr_composer_content`) captures the full visible viewport, never a bounded tail, while the shared inbox pending-line confirmation read (bin/fm-task-inbox-lib.sh) stays a bounded tail on every backend: an overlay Claude renders between the composer and the pane bottom - the slash-command popup is the verified shape - pushes the composer outside a tail window, and the composer is by definition inside the viewport.
 Dated measurement: docs/verification/runtime-backends.md "Claude exit behind the slash-command popup".
+The composer selection skips the rows of Claude's slash-command completion list, whose selected row carries the composer's own prompt glyph, wherever that list is drawn.
+`pane send-text` returns before Claude paints, so the proof re-reads within a bounded window (`FM_BACKEND_HERDR_PROOF_POLLS`, `FM_BACKEND_HERDR_PROOF_POLL_INTERVAL`) while a read fails, is empty, or shows only a head of the payload; other content refuses at once.
+Dated measurement: docs/verification/runtime-backends.md "Claude exit refused by a completion list below the composer, and by a slow paint".
 
 That comparison ignores whitespace and U+2063, the invisible mark that starts operational inputs and ends the from-firstmate label.
 It ignores U+2063 because Claude's Herdr read-back never shows it.
