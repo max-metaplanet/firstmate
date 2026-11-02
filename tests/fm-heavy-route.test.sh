@@ -337,13 +337,56 @@ print('ok - tsc trace and CPU profile options stay local without configuration p
 p, work, config, state, env = case('vitest-snapshot', declaration=DECLARED)
 assert publish(config, env).returncode == 0
 snapshot = ('if [ -n "${CI:-}" ]; then echo "Snapshot \\`adds 1\\` mismatched"; exit 1; fi; ' +
-            REPORT)
+            'test -n "${FM_BUILD_LOCK_HELD:-}" && printf "local retry\\n"')
 r = run(work, env, command=('bash', '-c', snapshot))
 assert r.returncode == 0, (r.returncode, r.stderr)
 assert called(state)
-assert not r.stdout.endswith('held=\n'), r.stdout
+assert r.stdout == 'local retry\n', r.stdout
 assert 'snapshot it may not write under CI' in r.stderr, r.stderr
 print('ok - a remote vitest snapshot failure under CI is no verdict and reruns locally')
+
+p, work, config, state, env = case('vitest-snapshot-json', declaration=DECLARED)
+assert publish(config, env).returncode == 0
+snapshot = ('if [ -n "${CI:-}" ]; then ' +
+            shlex.join(['printf', '%s', '{"attempt":"remote"}']) +
+            '; echo "Snapshot missing" >&2; exit 1; fi; '
+            'test -n "${FM_BUILD_LOCK_HELD:-}" && ' +
+            shlex.join(['printf', '%s', '{"attempt":"local"}']))
+r = run(work, env, command=('bash', '-c', snapshot))
+assert r.returncode == 0 and called(state), (r.returncode, r.stderr)
+assert r.stdout == '{"attempt":"local"}', r.stdout
+assert json.loads(r.stdout) == {'attempt': 'local'}, r.stdout
+assert 'Snapshot missing' in r.stderr and 'discarded remote stdout' in r.stderr, r.stderr
+print('ok - snapshot fallback discards the remote JSON report and returns one local document')
+
+for name, result_kind, remote_exit in (('result', 'execution-unknown', None),
+                                       ('dispatch', 'completed', 0)):
+    p, work, config, state, env = case('unconfirmed-' + name, declaration=DECLARED)
+    assert publish(config, env).returncode == 0
+    adapter_bin = p / 'adapter-bin'
+    adapter_bin.mkdir()
+    adapter = adapter_bin / 'fm-boat-run.sh'
+    adapter.write_text('#!/usr/bin/env python3\n'
+        'import json, sys\nfrom pathlib import Path\n'
+        'output = Path(sys.argv[sys.argv.index("--output") + 1])\n'
+        'output.mkdir(parents=True)\n'
+        '(output / "result.json").write_text(json.dumps(%r))\n'
+        '(output / "command.log").write_text(\'unconfirmed attempt\\n\')\n'
+        'sys.stdout.write(\'{"attempt":"remote"}\')\n' % {
+            'kind': result_kind, 'remote_exit': remote_exit, 'cleanup': 'deleted'})
+    adapter.chmod(0o755)
+    routing_record = Path(env['FM_BUILD_LOCK_INSTALL_DIR']) / 'boat-route'
+    loaded = json.loads(routing_record.read_text())
+    loaded['bin'] = str(adapter_bin)
+    routing_record.write_text(json.dumps(loaded))
+    r = run(work, env, command=('bash', '-c',
+        'test -n "${FM_BUILD_LOCK_HELD:-}" && ' +
+        shlex.join(['printf', '%s', '{"attempt":"local"}'])))
+    assert r.returncode == 0, (name, r.stderr)
+    assert r.stdout == '{"attempt":"local"}', (name, r.stdout)
+    assert json.loads(r.stdout) == {'attempt': 'local'}, (name, r.stdout)
+    assert 'discarded remote stdout' in r.stderr, (name, r.stderr)
+print('ok - unconfirmed result and dispatch both discard remote stdout before local retry')
 
 ORCHESTRATOR = '#!/usr/bin/env bash\nwhile [ "$1" != -- ]; do shift; done\nshift\n"$@"\nexit $?\n'
 for name, tool, flags, routed in (

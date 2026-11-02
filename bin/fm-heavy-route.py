@@ -390,8 +390,6 @@ def boat(settings, command, kind, home, bin_dir, root, inputs):
           % (kind, output / "result.json"), file=sys.stderr, flush=True)
     finished = subprocess.run(adapter, env=dict(os.environ, FM_HOME=str(home)), check=False,
                               capture_output=True)
-    sys.stdout.buffer.write(finished.stdout)
-    sys.stdout.buffer.flush()
     sys.stderr.buffer.write(finished.stderr.replace(
         ("\n" + dispatched + "\n").encode(), b"", 1))
     sys.stderr.buffer.flush()
@@ -400,7 +398,7 @@ def boat(settings, command, kind, home, bin_dir, root, inputs):
     except (OSError, ValueError):
         result = {}
     if result.get("kind") != "completed" or not isinstance(result.get("remote_exit"), int):
-        return local("Boat did not run it (%s, exit %d); evidence %s"
+        return local("Boat did not run it (%s, exit %d); discarded remote stdout; evidence %s"
                      % (result.get("kind") or "no result", finished.returncode,
                         output / "result.json"), command)
     if result.get("cleanup") != "deleted":
@@ -412,11 +410,15 @@ def boat(settings, command, kind, home, bin_dir, root, inputs):
     except OSError:
         log = b""
     if dispatched.encode() not in log.splitlines():
-        return local("Boat setup did not dispatch the heavy command; evidence %s"
+        return local("Boat setup did not dispatch the heavy command; "
+                     "discarded remote stdout; evidence %s"
                      % (output / "result.json"), command)
     if kind == "vitest" and result["remote_exit"] != 0:
         if SNAPSHOT_UNWRITTEN.search(log):
-            return local("Boat's vitest failed on a snapshot it may not write under CI", command)
+            return local("Boat's vitest failed on a snapshot it may not write under CI; "
+                         "discarded remote stdout", command)
+    sys.stdout.buffer.write(finished.stdout)
+    sys.stdout.buffer.flush()
     return result["remote_exit"]
 
 
