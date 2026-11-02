@@ -101,7 +101,8 @@ commands:
       . bin/fm-timeout-lib.sh
       deadline=$1
       shift
-      fm_exec_timed "$deadline" 5 bash bin/fm-test-run.sh --per-script-timeout-secs 1500 "$@"
+      # Per-script watchdogs create process groups outside this deadline.
+      fm_exec_timed "$deadline" 5 bash bin/fm-test-run.sh "$@"
     ' nm-test "$((budget * 6 / 1000))" "$@"
     NM_TEST
 

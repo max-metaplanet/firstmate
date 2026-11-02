@@ -53,23 +53,23 @@ run_cmd() {
 
 run_cmd $'behavior=true\nfull=false\nherdr=false\nlocal_budget_ms=300000\nlocal_scripts=tests/a.test.sh tests/b.test.sh tests/c.test.sh\nlocal_deferred='
 expect_code 0 "$RC" "ordinary narrow selection"
-assert_equals "--per-script-timeout-secs 1500 tests/a.test.sh tests/b.test.sh tests/c.test.sh" "$ARGV" "narrow scripts reach the runner unchanged"
+assert_equals "tests/a.test.sh tests/b.test.sh tests/c.test.sh" "$ARGV" "narrow scripts reach the runner unchanged"
 pass "ordinary narrow selection runs unchanged"
 
 run_cmd $'behavior=false\nlocal_budget_ms=300000\nlocal_scripts=tests/fm-documentation-audiences.test.sh\nlocal_deferred='
 expect_code 0 "$RC" "behavior-inert change"
-assert_equals "--per-script-timeout-secs 1500 tests/fm-documentation-audiences.test.sh" "$ARGV" "prose runs the documentation suite"
+assert_equals "tests/fm-documentation-audiences.test.sh" "$ARGV" "prose runs the documentation suite"
 pass "behavior-inert changes run the documentation-audience suite"
 
 run_cmd $'behavior=true\nfull=true\nherdr=true\nlocal_budget_ms=300000\nlocal_scripts=tests/fast.test.sh\nlocal_deferred=tests/slow.test.sh tests/herdr.test.sh'
 expect_code 0 "$RC" "full scope"
-assert_equals "--per-script-timeout-secs 1500 tests/fast.test.sh" "$ARGV" "full scope runs only its local selection"
+assert_equals "tests/fast.test.sh" "$ARGV" "full scope runs only its local selection"
 assert_contains "$OUT" "Left to CI's required lanes (CI gate): tests/slow.test.sh tests/herdr.test.sh" "deferrals are explicit on one line"
 pass "full scope does not expand to --all or a Herdr family"
 
 run_cmd $'behavior=true\nfull=false\nherdr=true\nlocal_budget_ms=300000\nlocal_scripts=tests/fast.test.sh\nlocal_deferred=tests/herdr.test.sh'
 expect_code 0 "$RC" "Herdr selection"
-assert_equals "--per-script-timeout-secs 1500 tests/fast.test.sh" "$ARGV" "Herdr coverage stays with CI"
+assert_equals "tests/fast.test.sh" "$ARGV" "Herdr coverage stays with CI"
 pass "Herdr selection runs only fast local coverage"
 
 run_cmd $'local_budget_ms=300000\nlocal_scripts='
@@ -85,7 +85,7 @@ run_cmd $'local_budget_ms=300000\nlocal_scripts=tests/a.test.sh' 0 1
 expect_code 1 "$RC" "failing selected test"
 RUN_SLEEP=2 run_cmd $'local_budget_ms=1000\nlocal_scripts=tests/a.test.sh'
 expect_code 0 "$RC" "loaded execution may exceed modeled work"
-assert_equals "--per-script-timeout-secs 1500 tests/a.test.sh" "$ARGV" "load allowance preserves selected coverage and per-script bounds"
+assert_equals "tests/a.test.sh" "$ARGV" "load allowance preserves selected coverage"
 # A run that outlives the bound is killed rather than waited out. The stub
 # sleeps far past any plausible bound, so this holds whatever load allowance
 # the configuration grants and never pins the factor behind it.
@@ -109,10 +109,45 @@ FM_BUILD_LOCK_FILE="$hold_lock" run_cmd $'local_budget_ms=1000\nlocal_scripts=te
 kill "$hold_pid" 2>/dev/null || true
 wait "$hold_pid" 2>/dev/null || true
 expect_code 0 "$RC" "a slot wait longer than the deadline still runs the selection"
-assert_equals "--per-script-timeout-secs 1500 tests/a.test.sh" "$ARGV" "the queued run reaches its selection unchanged"
+assert_equals "tests/a.test.sh" "$ARGV" "the queued run reaches its selection unchanged"
 [ "$((SECONDS - queue_started))" -ge 6 ] \
   || fail "the command never waited for the held slot, so this proves nothing"
 pass "the heavy-slot wait is outside the execution deadline"
+
+# Exercise the configured deadline with the real runner: a sleeping selected
+# test must stop, close captured output, and release the inherited heavy slot.
+# The oracle is the execution bound, not the runner's timeout implementation.
+cp "$ROOT/bin/fm-test-run.sh" "$FIX/bin/fm-test-run.sh"
+mkdir -p "$FIX/tests"
+cp "$ROOT/tests/git-config-helpers.sh" "$FIX/tests/"
+TEST_CMD="$TEST_CMD" FIX="$FIX" TMP_ROOT="$TMP_ROOT" python3 - <<'PY'
+import os
+import pathlib
+import subprocess
+import time
+
+scratch = pathlib.Path(os.environ["TMP_ROOT"])
+probe = scratch / "deadline.test.sh"
+probe.write_text('printf "deadline probe started\\n"\nsleep 12\nprintf "survived deadline\\n"\n')
+env = os.environ.copy()
+env.update(SCOPE_OUT=f"local_budget_ms=1000\nlocal_scripts={probe}\n",
+           FM_BUILD_LOCK_FILE=str(scratch / "deadline.lock"), FM_HEAVY_SLOTS="1")
+for key in ("FM_BUILD_LOCK_BYPASS", "FM_BUILD_LOCK_HELD", "NODE_OPTIONS"):
+    env.pop(key, None)
+started = time.monotonic()
+result = subprocess.run(["sh", "-c", env["TEST_CMD"]], cwd=env["FIX"],
+                        env=env, capture_output=True, text=True, timeout=20)
+elapsed = time.monotonic() - started
+assert result.returncode == 124, (result.returncode, result.stdout, result.stderr)
+assert "deadline probe started" in result.stdout, result.stdout
+assert "survived deadline" not in result.stdout, result.stdout
+assert elapsed < 10, f"captured output stayed open for {elapsed:.2f}s"
+result = subprocess.run(["bin/fm-build-lock.py", "--", "bash", "-c", "echo acquired"],
+                        cwd=env["FIX"], env=env, capture_output=True, text=True, timeout=3)
+assert result.returncode == 0 and "acquired" in result.stdout, result
+PY
+[ "$?" -eq 0 ] || fail "the deadline must stop the real test and release its slot"
+pass "the execution deadline terminates selected tests and releases their heavy slot"
 
 # Execute real classification and selection without running any selected suite.
 cp "$ROOT/bin/fm-ci-change-scope.sh" "$FIX/bin/fm-ci-change-scope.sh"
@@ -128,7 +163,7 @@ for path in .github/workflows/ci.yml .github/actions/example/action.yml .no-mist
   printf '%s\n' "$path" bin/fm-quota-choose.sh > "$TMP_ROOT/changed-paths"
   REAL_RUNNER="$ROOT/bin/fm-test-run.sh" FM_CI_CHANGED_PATHS_FILE="$TMP_ROOT/changed-paths" run_cmd ''
   expect_code 0 "$RC" "real local classifier for $path"
-  scripts=$(printf '%s\n' "$ARGV" | tr ' ' '\n' | tail -n +3 | LC_ALL=C sort)
+  scripts=$(printf '%s\n' "$ARGV" | tr ' ' '\n' | LC_ALL=C sort)
   printf '%s\n' "$scripts" | grep -Fxq tests/fm-quota-choose.test.sh \
     || fail "$path: the changed code's own suite must run locally"
   # Which configuration contracts fit the local budget depends on their current
