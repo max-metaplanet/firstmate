@@ -1,0 +1,14 @@
+$ fm-control.sh vimexit exit
+stopped vimexit harness=claude backend=herdr endpoint=fm-lab-ctlexit-vim-1653260-24174:w1:p2 worktree=~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-ctlexit.lO2PGt/wt
+(rc=0)
+ok - A: fm-control exit parked a vim-INSERT Claude with a running background shell (agent=dead, pane kept)
+$ fm-control.sh vimexit exit
+error: herdr submit: the composer read back text that is not the typed payload, so nothing was submitted; it held: t
+stopped vimexit harness=claude backend=herdr endpoint=fm-lab-ctlexit-vim-1653260-24174:w1:p2 worktree=~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-ctlexit.lO2PGt/wt
+(rc=0)
+ok - B: fm-control exit parked a vim command-mode Claude (agent=dead)
+$ fm-control.sh vimexit exit
+already-stopped vimexit harness=claude backend=herdr endpoint=fm-lab-ctlexit-vim-1653260-24174:w1:p2 worktree=~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-ctlexit.lO2PGt/wt
+(rc=0)
+ok - C: a repeat exit on the parked worker is an idempotent already-stopped
+exit=0

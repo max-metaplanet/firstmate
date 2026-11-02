@@ -1,0 +1,4 @@
+$ fm-control.sh vimexit exit
+error: herdr submit: the composer read back text that is not the typed payload, so nothing was submitted; it held: t
+stopped vimexit harness=claude backend=herdr endpoint=fm-lab-ctlexit-vim-1653260-24174:w1:p2 worktree=~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-ctlexit.lO2PGt/wt
+(rc=0)

@@ -1,0 +1,3 @@
+$ fm-control.sh vimexit exit
+stopped vimexit harness=claude backend=herdr endpoint=fm-lab-ctlexit-vim-1653260-24174:w1:p2 worktree=~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-ctlexit.lO2PGt/wt
+(rc=0)
