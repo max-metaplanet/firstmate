@@ -492,7 +492,7 @@ family_for_basename() {
       printf '%s\n' afk
       ;;
     fm-bearings-board-render.test.sh|fm-bearings-snapshot.test.sh|fm-contributions.test.sh|\
-    fm-fleet-snapshot-view.test.sh|fm-home-summary-refresh.test.sh)
+    fm-fleet-snapshot-view.test.sh|fm-home-summary-refresh.test.sh|fm-mq-drop.test.sh)
       printf '%s\n' snapshot-bearings
       ;;
     fm-backend-cmux.test.sh|fm-backend-cmux-smoke.test.sh)
@@ -770,7 +770,8 @@ list_portable_serial() {
 # the version-specific host and native-Windows exceptions documented there, and
 # with the split supervision-host and watch-triage scripts carrying their
 # pre-split measurement apportioned by case share until CI measures them.
-# The new Boat adapter hint starts from its targeted local run until CI refreshes it.
+# The new Boat adapter and merge-queue drop hints start from their targeted
+# local runs until CI refreshes them.
 # These are balance hints only: the shard partition stays complete and disjoint
 # whatever they say, so a stale hint costs balance rather than coverage. That doc owns the refresh procedure.
 portable_serial_weight_hints() {
@@ -876,6 +877,7 @@ tests/fm-live-lab-up-mate.test.sh 17505
 tests/fm-live-lab.test.sh 80027
 tests/fm-mail-check.test.sh 7810
 tests/fm-mail.test.sh 10149
+tests/fm-mq-drop.test.sh 46465
 tests/fm-muse-harness.test.sh 48417
 tests/fm-muse-signals-live-e2e.test.sh 53
 tests/fm-nm-test-contract.test.sh 992
@@ -1996,6 +1998,11 @@ families_for_changed_path() {
       printf '%s\n' backend-dispatch
       printf '%s\n' watcher-wake-lock
       printf '%s\n' live-harness-optin
+      ;;
+    bin/fm-mq-drop.sh)
+      # The merge-queue drop handler is driven by the contribution observer, so
+      # its coverage rides that family without the snapshot consumers.
+      printf '%s\n' snapshot-bearings
       ;;
     bin/fm-bearings-snapshot.sh|bin/fm-fleet-snapshot.sh|bin/fm-fleet-view.sh|bin/fm-contributions.sh|bin/fm-contributions.jq|\
     bin/fm-home-summary-refresh.sh)
