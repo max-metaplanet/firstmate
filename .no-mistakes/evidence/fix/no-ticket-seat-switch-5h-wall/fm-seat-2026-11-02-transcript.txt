@@ -1,0 +1,58 @@
+===================== base: /tmp/nm-base.sct9t7/bin/fm-seat.sh
+--- Claude: seat-max 5h=0% wk=10% (active), seat-max2 5h=56% wk=14%? (intent: wk 10 vs 14), trigger 20, dest-min 10
+$ fm-seat.sh launch-destination
+seat seat-max2: skipped, its weekly spare of 4 is not more than the 6 the seat this would leave has
+seat-max
+  [exit=0 active=seat-max]
+$ fm-seat.sh worker-destination --from seat-max
+seat seat-max: resets at 2026-11-02T04:00:00Z
+seat default: reset unknown: its quota could not be read
+seat seat-max2: resets at 2026-11-07T06:00:00Z
+error: no seat under the seats root qualifies to take over work running on 'seat-max' (each skipped seat and its reason is printed above); add and log into another seat, put an excluded seat back with 'fm-seat.sh auto-include <name>', or lower 'fm-seat.sh destination-min' (docs/claude-seats.md)
+  [exit=0 active=seat-max]
+$ fm-seat.sh auto
+claude-seat: seat-max is at week 10% left (resets 2026-11-07 06:00Z), 5-hour 0% left (resets 2026-11-02 04:00Z) and no seat has enough headroom to switch to; no extra-usage policy is set, so nothing is held.
+  [exit=0 active=seat-max]
+--- Claude tie-break: both seats with 5h room (seat-max 5h=40 wk=14, seat-max2 5h=56 wk=10)
+$ fm-seat.sh launch-destination
+seat-max
+$ fm-seat.sh auto
+claude-seat: seat-max is at week 14% left (resets 2026-11-07 06:00Z), 5-hour 40% left (resets 2026-11-02 04:00Z) and no seat has enough headroom to switch to; no extra-usage policy is set, so nothing is held.
+  [active=seat-max]
+--- Adversarial floor: walled seat-max, seat-max2 has 5h room but weekly 5% < dest-min 10
+$ fm-seat.sh worker-destination --from seat-max
+seat seat-max: resets at 2026-11-02T04:00:00Z
+seat default: reset unknown: its quota could not be read
+seat seat-max2: resets at 2026-11-07T06:00:00Z
+error: no seat under the seats root qualifies to take over work running on 'seat-max' (each skipped seat and its reason is printed above); add and log into another seat, put an excluded seat back with 'fm-seat.sh auto-include <name>', or lower 'fm-seat.sh destination-min' (docs/claude-seats.md)
+  [exit=1]
+$ fm-seat.sh auto
+claude-seat: seat-max is at week 10% left (resets 2026-11-07 06:00Z), 5-hour 0% left (resets 2026-11-02 04:00Z) and no seat has enough headroom to switch to; no extra-usage policy is set, so nothing is held.
+  [active=seat-max]
+===================== head: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6D7TS2YGZ87F0RYARPGQNNK/bin/fm-seat.sh
+--- Claude: seat-max 5h=0% wk=10% (active), seat-max2 5h=56% wk=14%? (intent: wk 10 vs 14), trigger 20, dest-min 10
+$ fm-seat.sh launch-destination
+seat-max2
+  [exit=0 active=seat-max]
+$ fm-seat.sh worker-destination --from seat-max
+seat-max2
+  [exit=0 active=seat-max]
+$ fm-seat.sh auto
+claude-seat: switched from seat-max at week 10% left (resets 2026-11-07 06:00Z), 5-hour 0% left (resets 2026-11-02 04:00Z) to seat-max2; new workers launch there
+  [exit=0 active=seat-max2]
+--- Claude tie-break: both seats with 5h room (seat-max 5h=40 wk=14, seat-max2 5h=56 wk=10)
+$ fm-seat.sh launch-destination
+seat-max
+$ fm-seat.sh auto
+claude-seat: seat-max is at week 14% left (resets 2026-11-07 06:00Z), 5-hour 40% left (resets 2026-11-02 04:00Z) and no seat has enough headroom to switch to; no extra-usage policy is set, so nothing is held.
+  [active=seat-max]
+--- Adversarial floor: walled seat-max, seat-max2 has 5h room but weekly 5% < dest-min 10
+$ fm-seat.sh worker-destination --from seat-max
+seat seat-max: resets at 2026-11-02T04:00:00Z
+seat default: reset unknown: its quota could not be read
+seat seat-max2: resets at 2026-11-07T06:00:00Z
+error: no seat under the seats root qualifies to take over work running on 'seat-max' (each skipped seat and its reason is printed above); add and log into another seat, put an excluded seat back with 'fm-seat.sh auto-include <name>', or lower 'fm-seat.sh destination-min' (docs/claude-seats.md)
+  [exit=1]
+$ fm-seat.sh auto
+claude-seat: seat-max is at week 10% left (resets 2026-11-07 06:00Z), 5-hour 0% left (resets 2026-11-02 04:00Z) and no seat has enough headroom to switch to; no extra-usage policy is set, so nothing is held.
+  [active=seat-max]

@@ -1,0 +1,30 @@
+PASS: simultaneous readers refresh once; homes share evidence; credential selectors stay isolated; private permissions
+PASS: fresh TTL and 900-second last-good boundary, unreadable JSON fallback
+PASS: a failed live read falls back at the configured launch boundary and refuses at or below it
+PASS: all bounding windows, projected runway, unknown facts, floors, paid/auth guards, and schema 6 account binding
+PASS: explicit auth failures retire evidence; existing renewable-login policy remains intact
+PASS: authoritative ISO retry-after suppresses live reads for safe and unsafe/missing fallback
+PASS: concurrent failures share one attempt; lock-deadline readers use only safe published last-good evidence
+PASS: corrupt, public, and symlinked cache records fail closed without a live read
+PASS: paid cap requires live spend; environment bearer overrides cannot share profile quota
+PASS: managed pipeline launches and raw readers share cache/backoff, preserve JSON, and retain exclusions
+PASS: a blind launcher reads quota through the recorded quota tool path, names the record when none holds the tool, and never rewrites it
+ok - a new worker launches on a seat with five-hour room without rotating the active seat
+ok - a new Codex worker launches off a walled Codex seat without rotating it
+ok - a new worker is held, naming the soonest five-hour reset, when no seat has five-hour room
+ok - a crossing with no seat better than the one it is on stays put and says so once
+ok - a crossing still moves when another seat genuinely has more weekly spare
+ok - the destination minimum still refuses a candidate the anchor rule alone would accept
+ok - a seat whose five-hour window is spent yields to one that can run work now
+ok - weekly spare still decides between two seats that can both run work
+ok - the five-hour wall never sends work below the existing destination floor
+ok - the five-hour wall and the weekly comparison behave the same on Codex seats
+ok - an anchor whose own headroom cannot be read falls back to the absolute rules alone
+ok - a walled worker is never moved onto an equally spent seat, and still moves off an empty one
+ok - a five-hour dip alone moves nothing, and a weekly crossing names every window it reports
+ok - the 2026-10-16 readings route work by weekly spare, wait out a five-hour dip, and never bounce
+# all fm-seat tests passed
+
+real	4m35.209s
+user	0m47.404s
+sys	1m10.890s
