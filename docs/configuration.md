@@ -1746,10 +1746,16 @@ A command that claims a slot through `bin/fm-build-lock.py -- <command>` also ru
 `FM_BUILD_LOCK_BYPASS=1 <command>` runs one command without a slot.
 
 Covered automatically: any Node process whose `NODE_OPTIONS` carries the preload, which ship and scout launches, the managed no-mistakes Claude wrapper, and the daemon drop-in all add.
-A project's own scripts drop that variable in two ways, and both stay covered.
-A script that replaces `NODE_OPTIONS` instead of appending to it (`NODE_OPTIONS=--max-old-space-size=6144 npx tsc --noEmit -p apps/admin-center/tsconfig.json` is a real example from a project's type-check ratchet) has the preload put back into the child's value, so the child still claims a slot.
-A step whose whole environment is rebuilt from a name allowlist keeps no `NODE_OPTIONS` to repair, so it is covered instead by the heavy package script enclosing it: a cgroup is inherited through `exec` whatever the environment says, which bounds the step's memory even where nothing can claim a slot for it.
-Not covered: a runtime other than Node, a build tool that is not one of the commands above, and a launcher that clears the variable outside such a script.
+A Node script that spawns a child with an `env` option assigning `NODE_OPTIONS`, instead of appending to it, has the preload put back into that child's value, so a heavy child still claims a slot.
+A shell command that assigns `NODE_OPTIONS` before running `tsc`, `vitest`, `eslint` or `next` is covered when that name resolves through `PATH` to the shims ship and scout launches put first on `PATH`: each shim puts the preload back and runs the real command found later on `PATH`, and the preload alone decides whether that run is heavy.
+A step whose whole environment is rebuilt from a name allowlist keeps no `NODE_OPTIONS` to repair; it inherits `PATH` as the worker shell had it, so the shims still apply to a name it resolves through them, and the heavy package script enclosing it bounds it either way, because a cgroup is inherited through `exec` whatever the environment says.
+A heavy package script's parallel heavy steps share that one slot's budget instead of queuing for separate slots, so a highly parallel script can be killed inside its own scope where separate steps would have queued.
+Each slot's budget is the machine-relative budget [`bin/fm-memcap.sh`](../bin/fm-memcap.sh) computes, divided by the declared slot count, so lowering `config/heavy-slots` raises each slot's budget and raising it lowers each slot's budget.
+Not covered:
+- A heavy command resolved from a project's `node_modules/.bin`, which `npx`, `pnpm exec` and package scripts all search before the shims (npm and pnpm put that directory first on a script's `PATH`), when its `NODE_OPTIONS` was assigned in a shell command; `NODE_OPTIONS=--max-old-space-size=6144 npx tsc --noEmit -p apps/admin-center/tsconfig.json` in a command string is such a case, bounded only by an enclosing heavy package script's cgroup.
+- `node`, `npx` and `pnpm` themselves, which are not shimmed: on this machine fnm's shell hook puts a fresh directory holding them first on `PATH` in every worker tool shell, ahead of the shims.
+- A runtime other than Node, a build tool that is not one of the commands above, and a launcher that clears `NODE_OPTIONS` outside a heavy package script without reaching a shimmed name through `PATH`.
+
 Run those through `bin/fm-build-lock.py -- <command>`, which worker instructions name; `bin/fm-test-run.sh` claims a slot the same way for its own concurrent runs.
 A `tsc` or `eslint` given a source file checks that one file and is not treated as heavy, and neither is `tsc --watch`, which never exits and would hold its slot for good.
 `FM_HEAVY_SCRIPTS=<name>,<name>` names the heavy package scripts for one command, and an empty value names none; [`bin/fm-build-lock.js`](../bin/fm-build-lock.js) owns the default list and the rest of the heaviness definition.

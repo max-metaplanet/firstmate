@@ -319,14 +319,17 @@ const timer = setInterval(() => { if (fs.existsSync(process.env.RELEASE)) clearI
     installed = scratch / 'installed'
     install_env = dict(env, FM_BUILD_LOCK_INSTALL_DIR=str(installed), NODE_OPTIONS='--max-old-space-size=512')
     env_file = scratch / 'node-options.sh'
+    inherited_path = install_env['PATH']
     for _ in range(2):
         subprocess.run([str(checkout / 'fm-build-lock.py'), 'node-env-file', str(env_file)],
                        env=install_env, check=True, timeout=5)
-        install_env['NODE_OPTIONS'] = subprocess.run(
-            ['sh', '-c', '. "$1" && printf %s "$NODE_OPTIONS"', '_', str(env_file)],
-            env=install_env, capture_output=True, text=True, check=True).stdout
+        install_env['NODE_OPTIONS'], install_env['PATH'] = subprocess.run(
+            ['sh', '-c', '. "$1" && printf "%s\\n%s" "$NODE_OPTIONS" "$PATH"', '_', str(env_file)],
+            env=install_env, capture_output=True, text=True, check=True).stdout.split('\n')
     assert install_env['NODE_OPTIONS'] == f'--max-old-space-size=512 --require={installed}/fm-build-lock.js', \
         install_env['NODE_OPTIONS']
+    # The shim directory leads PATH once, ahead of everything the worker inherited.
+    assert install_env['PATH'] == f'{installed}/shims:{inherited_path}', install_env['PATH']
     if shutil.which('fish'):
         result = subprocess.run(['fish', '-c', f"source '{env_file}'; and printf %s $NODE_OPTIONS"],
                                 env=install_env, capture_output=True, text=True, check=True)
@@ -659,6 +662,55 @@ function run(fs) {
         assert blocker.wait(10) == 0
         print('ok - the preload locks Vitest, Playwright, ESLint, next build and '
               'whole-project tsc and passes the rest through')
+
+        # A shell that ASSIGNS NODE_OPTIONS drops the preload; the PATH shim the
+        # worker launch puts first restores it before the real tsc starts.
+        shims = Path(option.split('=', 1)[1]).parent / 'shims'
+        realbin = scratch / 'realbin'
+        realbin.mkdir()
+        (realbin / 'tsc').symlink_to(scratch / entries['tsc'][0])
+        (realbin / 'vitest').write_text('#!/bin/sh\nprintf %s "$NODE_OPTIONS"\n')
+        (realbin / 'vitest').chmod(0o755)
+        shim_path = f'{shims}:{realbin}:{env["PATH"]}'
+        blocker = launch('block-shim', slots='1')
+        assert wait_file(scratch / 'block-shim'), 'the blocker before the shim case never started'
+        (scratch / 'shim-tsc.release').touch()
+        log = open(scratch / 'shim-tsc.err', 'w')
+        child = subprocess.Popen(
+            ['sh', '-c', 'NODE_OPTIONS=--max-old-space-size=512 tsc --noEmit -p tsconfig.json'],
+            env=dict(env, PATH=shim_path, FM_HEAVY_SLOTS='1', MARKER=str(scratch / 'shim-tsc'),
+                     RELEASE=str(scratch / 'shim-tsc.release')),
+            stdin=subprocess.DEVNULL, stderr=log)
+        log.close()
+        children.append(child)
+        for _ in range(300):
+            if 'waiting for a heavy slot' in (scratch / 'shim-tsc.err').read_text():
+                break
+            time.sleep(.03)
+        assert 'waiting for a heavy slot' in (scratch / 'shim-tsc.err').read_text(), \
+            'a shell-assigned NODE_OPTIONS tsc found through the shim took no slot: ' + \
+            (scratch / 'shim-tsc.err').read_text()
+        assert not (scratch / 'shim-tsc').exists(), 'tsc ran while the only slot was held'
+        (scratch / 'block-shim.release').touch()
+        assert blocker.wait(10) == 0
+        assert child.wait(30) == 0, (scratch / 'shim-tsc.err').read_text()
+        assert (scratch / 'shim-tsc').exists(), 'the shimmed tsc never ran after its slot freed'
+        # The preload is added once, and a bypass leaves the environment as it was.
+        for extra, expected in (({'NODE_OPTIONS': '--max-old-space-size=512'},
+                                 f'--max-old-space-size=512 {option}'),
+                                ({'NODE_OPTIONS': option}, option),
+                                ({'NODE_OPTIONS': '--max-old-space-size=512', 'FM_BUILD_LOCK_BYPASS': '1'},
+                                 '--max-old-space-size=512')):
+            result = subprocess.run(['vitest'], env=dict(env, PATH=shim_path, **extra),
+                                    capture_output=True, text=True, timeout=10)
+            assert result.returncode == 0 and result.stdout == expected, (extra, result)
+        # With no real command after its own directory the shim reports it
+        # missing instead of running itself again.
+        result = subprocess.run([str(shims / 'eslint'), '.'], env=dict(env, PATH=str(shims)),
+                                capture_output=True, text=True, timeout=10)
+        assert result.returncode == 127 and 'eslint: command not found' in result.stderr, result
+        print('ok - the PATH shim restores the preload a shell assignment dropped, once, '
+              'and never runs itself')
     else:
         print('skip - heavy CLI interception needs node installed')
 finally:

@@ -19,14 +19,17 @@
 // the slot's memory cgroup. Only the outermost process claims, because inside a
 // slot FM_BUILD_LOCK_HELD is already set.
 //
-// Two things strip this preload back out of a child in practice. A script that
-// ASSIGNS NODE_OPTIONS instead of appending to it drops the --require; every
-// spawn made from a process carrying this preload gets that --require put back,
-// which is what keeps a child heavy command locked and capped. A launcher that
-// rebuilds the child environment from a name allowlist leaves no NODE_OPTIONS
-// to repair; there the enclosing heavy package script's cgroup is the cover,
-// because a cgroup is inherited through exec no matter what the environment
-// says.
+// A project's own scripts strip this preload from a child in three ways. A Node
+// spawn whose env option ASSIGNS NODE_OPTIONS drops the --require; every spawn
+// made from a process carrying this preload gets it put back. A shell command
+// that assigns NODE_OPTIONS drops it too; fm-build-lock.py installs PATH shims
+// for tsc, vitest, eslint and next that worker launches put first on PATH, and
+// a shim puts the preload back before running the real command, but only for a
+// name resolved through those shims: npx, pnpm exec and package scripts resolve
+// node_modules/.bin first and bypass them. A launcher that rebuilds the child
+// environment from a name allowlist leaves no NODE_OPTIONS to repair; there the
+// enclosing heavy package script's cgroup is the cover, because a cgroup is
+// inherited through exec no matter what the environment says.
 const argv = process.argv;
 const ENTRIES = new Set(['next', 'vitest', 'vitest.mjs', 'playwright', 'cli.js', 'tsc', 'tsc.js',
   'eslint', 'eslint.js']);
