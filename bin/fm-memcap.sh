@@ -23,9 +23,12 @@
 #           roots it was measured for. Every other command is capped by cgroup
 #           or not at all.
 #   none    neither works, for example a macOS home or a container with no
-#           session bus. The command then runs uncapped after exactly one
+#           session bus, or no cgroup scope works for a command that did not
+#           opt in to rlimit. The command then runs uncapped after exactly one
 #           warning on stderr, because refusing would turn every such host's
-#           lint into a hard failure.
+#           lint into a hard failure. That warning says which case it is: no
+#           mechanism at all, or a host whose address-space limit was left
+#           unapplied because it is opt-in.
 #
 # Budget: floor(MemTotal * 45 / 100 / share), with share defaulting to 1. MemTotal
 # comes from /proc/meminfo on Linux and `sysctl -n hw.memsize` on Darwin; when
@@ -253,7 +256,7 @@ fi
 MECHANISM=$USE_MECHANISM
 if [ -z "$MECHANISM" ]; then
   MECHANISM=$(fm_memcap_mechanism)
-  [ "$MECHANISM" = cgroup ] || MECHANISM=none
+  [ "$MECHANISM" != rlimit ] || MECHANISM=opt-in
 fi
 if [ "$MECHANISM" = rlimit ]; then
   BYTES=$(($(fm_memcap_rlimit_kib "$BYTES") * 1024))
@@ -277,6 +280,11 @@ case "$MECHANISM" in
     fi
     printf 'fm-memcap: this host refused a %s-byte address-space limit; running %s uncapped; use bin/fm-boat-run.sh to run it bounded\n' \
       "$BYTES" "${1##*/}" >&2
+    exec "$@"
+    ;;
+  opt-in)
+    printf 'fm-memcap: no usable systemd user scope; address-space limits are opt-in; running %s uncapped; use bin/fm-boat-run.sh to run it bounded\n' \
+      "${1##*/}" >&2
     exec "$@"
     ;;
   *)

@@ -216,7 +216,10 @@ fi
                                  capture_output=True, text=True, timeout=10)
         assert generic.returncode == 0, generic.stderr
         assert int(generic.stdout) == resource.getrlimit(resource.RLIMIT_AS)[0], generic.stdout
-        assert 'uncapped; use bin/fm-boat-run.sh to run it bounded' in generic.stderr, generic.stderr
+        opt_in = ('fm-memcap: no usable systemd user scope; address-space limits are opt-in; '
+                  f'running {os.path.basename(sys.executable)} uncapped; '
+                  'use bin/fm-boat-run.sh to run it bounded')
+        assert opt_in in generic.stderr.splitlines(), generic.stderr
         print('ok - a generic wrapped command on a forced-rlimit host runs with no address-space limit')
 
     real_node = shutil.which('node')

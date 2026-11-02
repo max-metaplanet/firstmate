@@ -201,8 +201,8 @@ test_rlimit_applies_only_when_the_caller_names_it() {
     || fail "a generic command on a forced-rlimit host failed"
   err=$(cat "$tmp/err")
   assert_equals "$inherited" "$out" "a generic command must run with no address-space limit applied"
-  assert_contains "$err" "running sh uncapped; use bin/fm-boat-run.sh to run it bounded" \
-    "a generic uncapped command must name the bounded Boat route"
+  assert_equals 'fm-memcap: no usable systemd user scope; address-space limits are opt-in; running sh uncapped; use bin/fm-boat-run.sh to run it bounded' \
+    "$err" "a generic command on an rlimit host must say the limit is opt-in and name the bounded Boat route"
   out=$(PATH="$fakebin:$PATH" "$MEMCAP" --use-mechanism rlimit --bytes 268435456 -- \
     /bin/sh -c 'ulimit -v') || fail "an opted-in rlimit command failed"
   assert_equals 262144 "$out" "--use-mechanism rlimit must apply the named address-space cap"
