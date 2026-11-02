@@ -205,7 +205,7 @@ What it does change is where a **new** Claude worker starts: with a trigger set,
 That routes one launch only: `config/claude-seat` is not rewritten, firstmate itself is not moved, and running workers stay where they are.
 With no seat qualifying, the spawn is held and the refusal names the soonest five-hour reset to wait for; `--ignore-seat-hold` starts it on the active seat anyway, and a relaunch is never held.
 A session window that is *spent* is the one exception and it comes first: no worker launched on that seat can run at all, so the crossing fires on the account figure whatever the week says, and work goes to a seat that has session room without the weekly comparison being asked of it.
-That covers all three ways work reaches a seat: a new worker at launch, a running worker through the mid-task move, and the active seat itself, which the watch rotates so the managed pipeline agent - which has no seat policy of its own and simply launches on the active seat - stops launching onto the spent one.
+That covers all three ways work reaches a seat: a new worker at launch (a Codex one too when a Codex switch trigger is set), a running worker through the mid-task move, and the active seat itself, which the watch rotates so the managed pipeline agent - which has no seat policy of its own and simply launches on the active seat - stops launching onto the spent one.
 Waiting out a dip and never starting work on a seat that cannot take it are the two halves of the same rule.
 
 Reading one collapsed percentage for both is what moved firstmate back and forth between two seats on 2026-10-15/16: a seat holding 65% of its week read as "18%" because its five-hour window was down, and the rotation treated that as a spent account.
