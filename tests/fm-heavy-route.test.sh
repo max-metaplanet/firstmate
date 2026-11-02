@@ -71,9 +71,33 @@ def publish(config, env, home=None):
 REPORT = 'printf "ran cwd=%s held=%s\\n" "$(pwd)" "${FM_BUILD_LOCK_HELD:-}"'
 
 
-def run(work, env, kind='vitest', command=('bash', '-c', REPORT), cwd=None, timeout=90):
+fixture_index = 0
+
+
+def executable_command(work, command):
+    global fixture_index
+    if len(command) < 3 or command[1] != '-c' or command[0] not in ('bash', sys.executable):
+        return command
+    root = Path(subprocess.run(['git', '-C', str(work), 'rev-parse', '--show-toplevel'],
+                check=True, capture_output=True, text=True).stdout.strip())
+    fixture_index += 1
+    script = root / ('routing-fixture-%d' % fixture_index)
+    interpreter = 'bash' if command[0] == 'bash' else 'python3'
+    script.write_text('#!/usr/bin/env ' + interpreter + '\n' + command[2] + '\n')
+    script.chmod(0o755)
+    subprocess.run(['git', '-C', str(root), 'add', script.name], check=True, capture_output=True)
+    subprocess.run(['git', '-C', str(root), 'commit', '--only', '-qm', 'executable fixture',
+                    '--', script.name], check=True, capture_output=True)
+    args = command[4:] if interpreter == 'bash' else command[3:]
+    return (str(script), *args)
+
+
+def run(work, env, kind='vitest', command=('bash', '-c', REPORT), cwd=None, timeout=90,
+        input=None):
+    command = executable_command(work, command)
     return subprocess.run([route, '--kind', kind, '--', *command], env=env,
-                          cwd=str(cwd or work), capture_output=True, text=True, timeout=timeout)
+                          cwd=str(cwd or work), capture_output=True, text=True, timeout=timeout,
+                          input=input)
 
 
 def commit_cli(work, body):
@@ -229,6 +253,7 @@ for name, kind, args in (
     ('eslint-prune-value', 'eslint', ('.', '--prune-suppressions', 'true')),
     ('eslint-suppressions-location', 'eslint', ('.', '--suppressions-location', 's.json')),
     ('eslint-suppressions-location-equals', 'eslint', ('.', '--suppressions-location=s.json')),
+    ('eslint-stdin-filename', 'eslint', ('.', '--stdin-filename', 'file.js')),
 ):
     p, work, config, state, env = case('writes-' + name, declaration=DECLARED)
     assert publish(config, env).returncode == 0
@@ -245,13 +270,59 @@ for index, args in enumerate((('--fix=false',), ('--fix', 'false'),
                               ('--cache', 'false'), ('--no-cache',),
                               ('--suppress-all=false',), ('--suppress-all', 'false'),
                               ('--prune-suppressions=false',),
-                              ('--prune-suppressions', 'false'))):
+                              ('--prune-suppressions', 'false'),
+                              ('--stdin=false',), ('--stdin', 'false'),
+                              ('--no-stdin',), ('--no-stdin=true',))):
     p, work, config, state, env = case('eslint-readonly-' + str(index), declaration=DECLARED)
     assert publish(config, env).returncode == 0
     r = run(work, env, kind='eslint', command=('bash', '-c', REPORT, 'eslint', '.', *args))
     assert r.returncode == 0 and called(state), (args, r.stdout, r.stderr)
     assert r.stdout.endswith('held=\n'), (args, r.stdout)
 print('ok - explicitly disabled ESLint fixes still permit a remote verdict')
+
+for index, args in enumerate((('--stdin',), ('--stdin=true',), ('--stdin', 'true'),
+                              ('--no-stdin=false',), ('--no-stdin', 'false'))):
+    p, work, config, state, env = case('eslint-stdin-' + str(index), declaration=DECLARED)
+    assert publish(config, env).returncode == 0
+    reader = ('import json, os, sys; source = sys.stdin.read(); '
+              'print(json.dumps({"source": source, "held": bool(os.environ.get('
+              '"FM_BUILD_LOCK_HELD"))})); sys.exit(2 if source else 0)')
+    r = run(work, env, kind='eslint', command=(sys.executable, '-c', reader, *args),
+            input='let =\n')
+    assert r.returncode == 2, (args, r.stdout, r.stderr)
+    assert json.loads(r.stdout) == {'source': 'let =\n', 'held': True}, r.stdout
+    assert not called(state), args
+print('ok - enabled stdin options preserve piped source and its local failure verdict')
+
+for kind in ('eslint', 'tsc', 'vitest', 'playwright', 'queue-preflight'):
+    for index, args in enumerate((('--unrecognized-routing-option',),
+                                  ('--unrecognized-routing-option=true',),
+                                  ('--fix=perhaps',), ('--format',), ('--format=',),
+                                  ('-',), ('--', '--stdin'))):
+        p, work, config, state, env = case('unknown-' + kind + '-' + str(index),
+            declaration="smokeproj bootstrap=true local-only=\n")
+        assert publish(config, env).returncode == 0
+        r = run(work, env, kind=kind, command=('bash', '-c', REPORT, 'tool', *args))
+        assert r.returncode == 0 and not called(state), (kind, args, r.stderr)
+        assert not r.stdout.endswith('held=\n'), (kind, args, r.stdout)
+print('ok - unknown, malformed and ambiguous options stay local for every routed kind')
+
+for index, args in enumerate((('init',), ('watch',), ('--reporter', 'html'),
+                              ('--reporter', './custom-reporter.js'))):
+    p, work, config, state, env = case('vitest-ambiguous-' + str(index), declaration=DECLARED)
+    assert publish(config, env).returncode == 0
+    r = run(work, env, command=('bash', '-c', REPORT, 'vitest', *args))
+    assert r.returncode == 0 and not called(state), (args, r.stderr)
+    assert not r.stdout.endswith('held=\n'), (args, r.stdout)
+print('ok - ambiguous Vitest subcommands and file-writing or custom reporters stay local')
+
+p, work, config, state, env = case('opaque-shell', declaration=DECLARED)
+assert publish(config, env).returncode == 0
+r = subprocess.run([route, '--kind', 'vitest', '--', 'bash', '-c', REPORT],
+                   env=env, cwd=str(work), capture_output=True, text=True, timeout=60)
+assert r.returncode == 0 and not called(state), r.stderr
+assert not r.stdout.endswith('held=\n'), r.stdout
+print('ok - an opaque shell command stays local rather than hiding options from the allowlist')
 
 # A stand-in tsc: --showConfig prints the resolved configuration tsc would, with
 # noEmit taken from NOEMIT; any other run reports where it ran.
@@ -401,8 +472,9 @@ for name, tool, flags, routed in (
     fake.parent.mkdir()
     fake.write_text(ORCHESTRATOR)
     fake.chmod(0o755)
-    r = subprocess.run([str(fake), *flags, '--', route, '--kind', 'vitest', '--', 'bash', '-c',
-                        REPORT], env=env, cwd=str(work), capture_output=True, text=True,
+    heavy_command = executable_command(work, ('bash', '-c', REPORT))
+    r = subprocess.run([str(fake), *flags, '--', route, '--kind', 'vitest', '--',
+                        *heavy_command], env=env, cwd=str(work), capture_output=True, text=True,
                        timeout=90)
     assert r.returncode == 0, (name, r.stderr)
     assert called(state) == routed, (name, r.stderr)
@@ -421,14 +493,13 @@ p, work, config, state, env = case('remote-argv', declaration=DECLARED)
 assert publish(config, env).returncode == 0
 preload = Path(env['FM_BUILD_LOCK_INSTALL_DIR']) / 'fm-build-lock.js'
 r = run(work, env, command=(
-    sys.executable, '--require=' + str(preload), '--keep-me',
-    str(work / 'node_modules/tool/bin/cli.js'), '-p', str(work / 'tsconfig.json'),
-    '--outDir=' + str(work / 'out'), 'tracked.txt'))
+    'echo', '--require=' + str(preload), '--root=' + str(work),
+    '--dir=' + str(work / 'deep'), 'tracked.txt'))
 script = remote_script(state)
-assert '\nexec ' + Path(sys.executable).name + ' --keep-me ' in script, script
+assert '\nexec echo ' in script, script
 assert 'fm-build-lock.js' not in script, script
-assert '/home/user/fm-job/source/node_modules/tool/bin/cli.js' in script, script
-assert '--outDir=/home/user/fm-job/source/out' in script, script
+assert '--root=/home/user/fm-job/source' in script, script
+assert '--dir=/home/user/fm-job/source/deep' in script, script
 assert ' tracked.txt' in script, script
 assert str(work) not in script, script
 assert 'echo bootstrapped' in script, script
@@ -447,7 +518,7 @@ for flag in ('--root', '--dir'):
                      'value = sys.argv[-1].split("=", 1)[-1]; '
                      'assert Path(value) == Path.cwd() / sys.argv[1]; '
                      'assert (Path(value) / sys.argv[2]).is_file(); print("checked remote path")')
-            r = run(work, env, command=(sys.executable, '-c', check, subdir,
+            r = run(work, env, command=(sys.executable, '-c', check, './' + subdir,
                     'nested.txt' if subdir else 'tracked.txt', *args))
             assert r.returncode == 0 and called(state), (args, r.stdout, r.stderr)
             assert 'checked remote path' in r.stdout, r.stdout

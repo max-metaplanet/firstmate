@@ -77,6 +77,9 @@ eslint fixing files or writing reports, caches or suppressions. A vitest configu
 writes coverage or a reporter's output file is invisible here, so such a project
 declares vitest local-only. Remote output is captured and printed when the
 command finishes rather than streamed.
+Only options recognized by normalized_options for that kind may route;
+unknown, malformed or ambiguous arguments stay local. Enabled stdin input
+also stays local because the remote command receives no stdin.
 
 Only result kind `completed` with confirmed command dispatch is a verdict:
 that remote exit is the command's exit, and an unconfirmed cleanup is reported
@@ -296,42 +299,112 @@ def proves_no_outputs(command):
             not options.get("composite"))
 
 
-def normalized_options(command):
+OPTION_TYPES = {
+    "eslint": {
+        **dict.fromkeys(("--fix", "--cache", "--suppress-all", "--prune-suppressions",
+                         "--stdin"), ("bool", "disabled")),
+        **dict.fromkeys(("--quiet", "--color"), ("bool", "safe")),
+        **dict.fromkeys(("-o", "--output-file", "--cache-file", "--cache-location",
+                         "--suppress-rule", "--suppressions-location", "--stdin-filename"),
+                       ("value", "never")),
+        **dict.fromkeys(("-f", "--format", "--max-warnings"), ("value", "safe")),
+    },
+    "tsc": {
+        **dict.fromkeys(("--noEmit", "--incremental", "--composite"), ("bool", "resolved")),
+        "--pretty": ("bool", "safe"),
+        **dict.fromkeys(("-b", "--build"), ("bool", "never")),
+        **dict.fromkeys(("-p", "--project"), ("value", "safe")),
+        **dict.fromkeys(("--generateTrace", "--generateCpuProfile", "--tsBuildInfoFile"),
+                       ("value", "never")),
+    },
+    "vitest": {
+        "--run": ("bool", "enabled"),
+        **dict.fromkeys(("-u", "--update", "--coverage", "--coverage.enabled"),
+                       ("bool", "never")),
+        **dict.fromkeys(("--silent", "--color", "--passWithNoTests"), ("bool", "safe")),
+        **dict.fromkeys(("--root", "--dir", "--reporter", "--testNamePattern", "-t"),
+                       ("value", "safe")),
+        **dict.fromkeys(("--outputFile", "--outputFile.json", "--coverage.reporter"),
+                       ("value", "never")),
+    },
+}
+
+
+def normalized_options(kind, command):
     options = []
-    args = [value.lower() for value in command[1:]]
-    for index, arg in enumerate(args):
+    schema = OPTION_TYPES.get(kind)
+    if schema is None:
+        return None
+    args = command[1:]
+    index = 0
+    while index < len(args):
+        arg = args[index]
+        index += 1
+        if not arg or arg in ("-", "--"):
+            return None
         if not arg.startswith("-"):
+            if kind == "vitest" and arg not in ("run", ".", "..") and \
+                    "/" not in arg and not Path(arg).suffix:
+                return None
             continue
         name, sep, value = arg.partition("=")
-        if not sep:
-            value = args[index + 1] if index + 1 < len(args) else ""
-            if value.startswith("-"):
-                value = ""
-        if name.startswith("--no-"):
+        if name == "--require":
+            required = value if sep else (args[index] if index < len(args) else "")
+            if Path(required).name != "fm-build-lock.js":
+                return None
+            if not sep:
+                index += 1
+            continue
+        negated = name.startswith("--no-")
+        if negated:
             name = "--" + name[5:]
-            value = "true" if value == "false" else "false"
-        options.append((name, value))
+        value_type, policy = schema.get(name, (None, None))
+        if value_type is None or (negated and value_type != "bool"):
+            return None
+        if value_type == "bool":
+            if not sep:
+                value = "true"
+                if index < len(args) and args[index].lower() in ("true", "false"):
+                    value = args[index].lower()
+                    index += 1
+            if value.lower() not in ("true", "false"):
+                return None
+            value = value.lower()
+            if negated:
+                value = "true" if value == "false" else "false"
+        else:
+            if not sep:
+                if index == len(args):
+                    return None
+                value = args[index]
+                index += 1
+            if not value or value.startswith("-"):
+                return None
+            if kind == "eslint" and name in ("-f", "--format") and value not in (
+                    "stylish", "json", "json-with-metadata"):
+                return None
+            if kind == "vitest" and name == "--reporter" and value not in (
+                    "default", "basic", "verbose", "dot", "json", "junit", "tap", "tap-flat"):
+                return None
+        options.append((value, policy))
     return options
 
 
-def writes_worktree(kind, command):
-    """Whether the command's job includes files Boat would leave on its machine."""
-    options = normalized_options(command)
+def unsafe_to_route(kind, command):
+    """Reject unknown arguments and commands whose input or output cannot travel."""
     if kind == "next-build":
         return True
+    options = normalized_options(kind, command)
+    if options is None:
+        return True
+    if any(policy == "never" or (policy == "disabled" and value != "false") or
+           (policy == "enabled" and value != "true") for value, policy in options):
+        return True
     if kind == "tsc":
-        return any(name in ("-b", "--build", "--generatetrace", "--generatecpuprofile")
-                   for name, _ in options) or not proves_no_outputs(command)
-    if kind == "vitest":
-        return any(name in ("-u", "--update") or name.startswith(
-            ("--coverage", "--outputfile")) for name, _ in options)
-    if kind == "eslint":
-        return any((name in ("--fix", "--cache", "--suppress-all", "--prune-suppressions")
-                    and value != "false") or name in (
-                        "-o", "--cache-file", "--cache-location", "--suppress-rule",
-                        "--suppressions-location") or
-                   name.startswith("--output-file") for name, value in options)
-    return False
+        return not proves_no_outputs(command)
+    if kind in ("eslint", "vitest"):
+        return False
+    return True
 
 
 def orchestrated():
@@ -447,8 +520,9 @@ def route(kind, command):
         return local("the worktree's uncommitted files could not be listed", command)
     if tree[1]:
         return local("untracked file %s would not travel to Boat" % tree[1], command)
-    if writes_worktree(kind, command):
-        return local("%s writes files Boat would not bring back" % kind, command)
+    if unsafe_to_route(kind, command):
+        return local("%s has unknown or ambiguous options, reads input Boat cannot receive, "
+                     "or writes files Boat would not bring back" % kind, command)
     home, bin_dir = loaded.get("home"), loaded.get("bin")
     if not (isinstance(home, str) and isinstance(bin_dir, str)
             and Path(bin_dir, "fm-boat-run.sh").is_file()):
