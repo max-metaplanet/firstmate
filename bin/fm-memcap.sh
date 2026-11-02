@@ -1,0 +1,295 @@
+#!/usr/bin/env bash
+# fm-memcap.sh - the single owner of running one command under a hard memory cap.
+#
+# ShellCheck's extended dataflow analysis sizes its heap to the memory it can
+# see rather than to a fixed per-root cost, so an analysis that fits a CI runner
+# can exhaust a developer desktop and take the whole session down with it. This
+# script is the one place that knows how to bound such a command on this host,
+# what budget to give it, and how to report that the bound fired. Callers name
+# the command and the share; they never restate the mechanism or the formula.
+#
+# Mechanisms, in preference order:
+#   cgroup  a transient systemd user scope with MemoryMax and MemorySwapMax=0.
+#           A resident ceiling: the kernel OOM-kills inside the scope instead of
+#           letting a runaway swap the machine to a halt, which is what makes a
+#           desktop freeze rather than fail. Selected only when a probe scope
+#           actually starts, never merely because systemd-run is on PATH.
+#   rlimit  ulimit -v. This caps ADDRESS SPACE, not resident memory, so a
+#           runtime that reserves lazily still overshoots the figure and a
+#           runaway can swap, while one that reserves far more than it uses
+#           (Chromium, V8, WebAssembly guard regions) fails at launch. It is
+#           therefore opt-in: it applies only when the caller names it with
+#           --use-mechanism rlimit, which bin/fm-lint.sh does for the ShellCheck
+#           roots it was measured for. Every other command is capped by cgroup
+#           or not at all.
+#   none    neither works, for example a macOS home or a container with no
+#           session bus, or no cgroup scope works for a command that did not
+#           opt in to rlimit. The command then runs uncapped after exactly one
+#           warning on stderr, because refusing would turn every such host's
+#           lint into a hard failure. That warning says which case it is: no
+#           mechanism at all, or a host whose address-space limit was left
+#           unapplied because it is opt-in.
+#
+# Budget: floor(MemTotal * 45 / 100 / share), with share defaulting to 1. MemTotal
+# comes from /proc/meminfo on Linux and `sysctl -n hw.memsize` on Darwin; when
+# neither is readable the budget falls back to 2 GiB and says so on stderr. A
+# computed budget is never below 256 MiB. --share divides concurrent workers'
+# caps so the AGGREGATE, not the per-process figure, is what bounds the machine.
+# --bytes names one cap exactly; it is not a budget, so neither the share
+# division nor the floor applies to it, and it cannot be combined with
+# --budget-bytes.
+#
+# In default reporting mode, when the cgroup cap fires, the command's basename and the cap are named as
+#   fm-memcap: <command> was killed by its <bytes>-byte memory cap
+# on stderr and the exit status is 137. Callers classify that exact line, so
+# keep its wording stable. Any other outcome passes the command's own exit
+# status through unchanged. --exec uses the host launcher directly, without
+# the kill sentinel.
+# Invalid input exits 2.
+#
+# The kill verdict comes from the scope's own memory.events oom_kill counter,
+# read by a small inner shell after the command exits and reported on a private
+# file descriptor so the command's own stdout and stderr stay untouched. That
+# shell traps TERM: once the kernel OOM-kills the hog, systemd tears the rest of
+# the scope down, and an untrapped shell loses that race about half the time and
+# reports a bare SIGTERM with no counter. If the inner shell is killed anyway
+# the status alone carries the verdict, which is why a status of 137 with no
+# counter still reports the cap.
+#
+# --mechanism reports what the host offers, including rlimit. A caller that has
+# already resolved it passes --use-mechanism cgroup|rlimit|none to the run and
+# --effective-bytes modes, which then trust that value instead of probing again,
+# so the mechanism a caller checked is the one applied. Without it those modes
+# probe for cgroup only.
+#
+# Usage:
+#   fm-memcap.sh --mechanism                 print cgroup, rlimit, or none
+#   fm-memcap.sh --budget-bytes [--share N]  print the per-process cap in bytes
+#   fm-memcap.sh --effective-bytes [--use-mechanism M] [--bytes N] [--share N]
+#       print the cap after clipping to an inherited rlimit hard ceiling
+#   fm-memcap.sh [--exec] [--use-mechanism M] [--bytes N] [--share N] -- COMMAND [ARGS...]
+#   fm-memcap.sh --help                      print this usage
+set -u
+
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+SELF="$SELF_DIR/fm-memcap.sh"
+
+DEFAULT_PERCENT=45
+FLOOR_BYTES=$((256 * 1024 * 1024))
+FALLBACK_TOTAL_BYTES=$((2 * 1024 * 1024 * 1024))
+PROBE_LIMIT_KIB=1048576
+
+# Runs the command, then reports the scope's oom_kill count on fd 3. Kept small
+# so the kernel's cgroup OOM killer picks the hog rather than this shell.
+# shellcheck disable=SC2016 # The inner shell expands these, not this one.
+INNER_SHELL='trap : TERM
+status=0
+"$@" 3>&- || status=$?
+cgroup=$(sed -n "s/^0:://p" /proc/self/cgroup 2>/dev/null | head -n 1)
+[ -z "$cgroup" ] || sed -n "s/^oom_kill /oom_kill=/p" "/sys/fs/cgroup$cgroup/memory.events" >&3 2>/dev/null
+exit "$status"'
+
+fm_memcap_usage() {
+  awk '
+    NR == 1 { next }
+    /^#/ { sub(/^# ?/, ""); print; next }
+    { exit }
+  ' "$SELF"
+}
+
+fm_memcap_die() {  # <message>
+  printf 'fm-memcap: %s\n' "$1" >&2
+  exit 2
+}
+
+fm_memcap_positive() {  # <value>
+  case "${1:-}" in
+    ''|0*|*[!0-9]*) return 1 ;;
+  esac
+  return 0
+}
+
+fm_memcap_mem_total() {
+  local total=
+  if [ -r /proc/meminfo ]; then
+    total=$(awk '$1 == "MemTotal:" { printf "%.0f\n", $2 * 1024; exit }' /proc/meminfo 2>/dev/null)
+  elif [ "$(uname -s 2>/dev/null)" = Darwin ]; then
+    total=$(sysctl -n hw.memsize 2>/dev/null)
+  fi
+  if ! fm_memcap_positive "$total"; then
+    printf 'fm-memcap: total memory is not readable on this host; budgeting against %s bytes\n' \
+      "$FALLBACK_TOTAL_BYTES" >&2
+    total=$FALLBACK_TOTAL_BYTES
+  fi
+  printf '%s\n' "$total"
+}
+
+fm_memcap_budget_bytes() {  # <share>
+  local share=$1 total bytes
+  total=$(fm_memcap_mem_total)
+  bytes=$((total * DEFAULT_PERCENT / 100 / share))
+  [ "$bytes" -ge "$FLOOR_BYTES" ] || bytes=$FLOOR_BYTES
+  printf '%s\n' "$bytes"
+}
+
+fm_memcap_rlimit_kib() {
+  local requested=$(($1 / 1024)) hard
+  hard=$(ulimit -Hv 2>/dev/null) || hard=unlimited
+  case "$hard" in
+    ''|*[!0-9]*) ;;
+    *) [ "$requested" -le "$hard" ] || requested=$hard ;;
+  esac
+  printf '%s\n' "$requested"
+}
+
+fm_memcap_mechanism() {
+  if command -v systemd-run >/dev/null 2>&1 \
+    && systemd-run --user --scope --quiet --collect --expand-environment=no -p MemoryMax=64M -- true >/dev/null 2>&1; then
+    printf 'cgroup\n'
+    return 0
+  fi
+  if ( ulimit -v "$(fm_memcap_rlimit_kib "$((PROBE_LIMIT_KIB * 1024))")" ) 2>/dev/null; then
+    printf 'rlimit\n'
+    return 0
+  fi
+  printf 'none\n'
+}
+
+fm_memcap_report_kill() {  # <command-basename> <bytes>
+  printf 'fm-memcap: %s was killed by its %s-byte memory cap\n' "$1" "$2" >&2
+}
+
+fm_memcap_run_cgroup() {  # <bytes> <command...>
+  local bytes=$1 name report status oom_count
+  shift
+  name=${1##*/}
+  # fd 3 carries the inner shell's counter and the scope's exit status back here
+  # while fd 4, bound to this script's real stdout before the capture opens,
+  # keeps the command's own output going to the caller.
+  { report=$( { systemd-run --user --scope --quiet --collect --expand-environment=no \
+        -p "MemoryMax=$bytes" -p MemorySwapMax=0 \
+        -- /bin/sh -c "$INNER_SHELL" fm-memcap "$@" 3>&1 1>&4
+      printf 'status=%s\n' "$?"; } ); } 4>&1
+  status=$(printf '%s\n' "$report" | sed -n 's/^status=//p' | tail -n 1)
+  oom_count=$(printf '%s\n' "$report" | sed -n 's/^oom_kill=//p' | tail -n 1)
+  case "$status" in ''|*[!0-9]*) status=0 ;; esac
+  if fm_memcap_positive "$oom_count" \
+    || { [ -z "$oom_count" ] && [ "$status" -eq 137 ]; }; then
+    fm_memcap_report_kill "$name" "$bytes"
+    exit 137
+  fi
+  exit "$status"
+}
+
+MODE=run
+BYTES=
+SHARE=1
+USE_MECHANISM=
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --help|-h)
+      fm_memcap_usage
+      exit 0
+      ;;
+    --exec) MODE='exec'; shift ;;
+    --effective-bytes) MODE=effective; shift ;;
+    --mechanism) MODE=mechanism; shift ;;
+    --budget-bytes) MODE=budget; shift ;;
+    --bytes)
+      [ "$#" -ge 2 ] || fm_memcap_die '--bytes needs a byte count'
+      BYTES=$2
+      shift 2
+      ;;
+    --bytes=*) BYTES=${1#--bytes=}; shift ;;
+    --share)
+      [ "$#" -ge 2 ] || fm_memcap_die '--share needs a worker count'
+      SHARE=$2
+      shift 2
+      ;;
+    --share=*) SHARE=${1#--share=}; shift ;;
+    --use-mechanism)
+      [ "$#" -ge 2 ] || fm_memcap_die '--use-mechanism needs cgroup, rlimit, or none'
+      USE_MECHANISM=$2
+      shift 2
+      ;;
+    --use-mechanism=*) USE_MECHANISM=${1#--use-mechanism=}; shift ;;
+    --)
+      shift
+      break
+      ;;
+    *) fm_memcap_die "unknown argument: $1" ;;
+  esac
+done
+
+fm_memcap_positive "$SHARE" \
+  || fm_memcap_die "--share must be a positive integer, got $SHARE"
+case "$USE_MECHANISM" in
+  ''|cgroup|rlimit|none) : ;;
+  *) fm_memcap_die "--use-mechanism must be cgroup, rlimit, or none, got $USE_MECHANISM" ;;
+esac
+if [ -n "$BYTES" ]; then
+  fm_memcap_positive "$BYTES" \
+    || fm_memcap_die "--bytes must be a positive integer, got $BYTES"
+fi
+
+case "$MODE" in
+  mechanism)
+    [ "$#" -eq 0 ] || fm_memcap_die '--mechanism takes no command'
+    [ -z "$USE_MECHANISM" ] || fm_memcap_die '--mechanism probes the host, so it cannot be combined with --use-mechanism'
+    fm_memcap_mechanism
+    exit 0
+    ;;
+  budget)
+    [ "$#" -eq 0 ] || fm_memcap_die '--budget-bytes takes no command'
+    [ -z "$BYTES" ] || fm_memcap_die '--bytes names a cap directly, so it cannot be combined with --budget-bytes'
+    fm_memcap_budget_bytes "$SHARE"
+    exit 0
+    ;;
+esac
+
+if [ "$MODE" = effective ]; then
+  [ "$#" -eq 0 ] || fm_memcap_die '--effective-bytes takes no command'
+else
+  [ "$#" -gt 0 ] || fm_memcap_die 'no command to run; pass it after --'
+fi
+[ -n "$BYTES" ] || BYTES=$(fm_memcap_budget_bytes "$SHARE")
+MECHANISM=$USE_MECHANISM
+if [ -z "$MECHANISM" ]; then
+  MECHANISM=$(fm_memcap_mechanism)
+  [ "$MECHANISM" != rlimit ] || MECHANISM=opt-in
+fi
+if [ "$MECHANISM" = rlimit ]; then
+  BYTES=$(($(fm_memcap_rlimit_kib "$BYTES") * 1024))
+fi
+if [ "$MODE" = effective ]; then
+  printf '%s\n' "$BYTES"
+  exit 0
+fi
+
+case "$MECHANISM" in
+  cgroup)
+    if [ "$MODE" = exec ]; then
+      exec systemd-run --user --scope --quiet --collect --expand-environment=no \
+        -p "MemoryMax=$BYTES" -p MemorySwapMax=0 -- "$@"
+    fi
+    fm_memcap_run_cgroup "$BYTES" "$@"
+    ;;
+  rlimit)
+    if ulimit -v "$((BYTES / 1024))" 2>/dev/null; then
+      exec "$@"
+    fi
+    printf 'fm-memcap: this host refused a %s-byte address-space limit; running %s uncapped; use bin/fm-boat-run.sh to run it bounded\n' \
+      "$BYTES" "${1##*/}" >&2
+    exec "$@"
+    ;;
+  opt-in)
+    printf 'fm-memcap: no usable systemd user scope; address-space limits are opt-in; running %s uncapped; use bin/fm-boat-run.sh to run it bounded\n' \
+      "${1##*/}" >&2
+    exec "$@"
+    ;;
+  *)
+    printf 'fm-memcap: this host offers no memory-cap mechanism (no usable systemd user scope, no address-space limit); running %s uncapped; use bin/fm-boat-run.sh to run it bounded\n' \
+      "${1##*/}" >&2
+    exec "$@"
+    ;;
+esac

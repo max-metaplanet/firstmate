@@ -103,6 +103,8 @@ fm_test_scratch_root_init "$ROOT" || return 1
 # that drives an inherited value sets NODE_OPTIONS itself.
 export FM_BUILD_LOCK_INSTALL_DIR="${FM_TEST_SCRATCH_ROOT:-${TMPDIR:-/tmp}}/fm-build-lock-install"
 unset NODE_OPTIONS
+# Nested heavy commands use a scratch-local pool rather than machine slots.
+export FM_BUILD_LOCK_FILE="${FM_TEST_SCRATCH_ROOT:-${TMPDIR:-/tmp}}/fm-build-lock.lock"
 
 # fm_test_seal_seats [<sandbox-home>]
 # Point every route to the operator's real seats at a disposable sandbox, for

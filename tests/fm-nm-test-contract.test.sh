@@ -24,7 +24,7 @@ pass "configured automatic CI repair budget reserves the initial publication"
 
 FIX="$TMP_ROOT/repo"
 mkdir -p "$FIX/bin"
-cp "$ROOT/bin/fm-timeout-lib.sh" "$FIX/bin/"
+cp "$ROOT/bin/fm-timeout-lib.sh" "$ROOT/bin/fm-build-lock.py" "$ROOT/bin/fm-memcap.sh" "$FIX/bin/"
 cat > "$FIX/bin/fm-ci-change-scope.sh" <<'SH'
 [ "$#" -eq 1 ] && [ "$1" = --local ] || exit 2
 printf '%s\n' "$SCOPE_OUT"

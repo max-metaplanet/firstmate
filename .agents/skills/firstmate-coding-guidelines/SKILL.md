@@ -130,7 +130,8 @@ That is command timing, not the full Test step: no-mistakes still runs its evide
 - Never wrap multiple sentences onto one physical line.
 - Plain dash `-`, never an em dash.
 - Never add an agent name as a commit co-author.
-- `bin/*.sh` and `bin/backends/*.sh` must pass `shellcheck`.
+- `bin/*.sh` and `bin/backends/*.sh` must pass `shellcheck`, which you check by running `bin/fm-lint.sh`, never by invoking `shellcheck` yourself.
+- A bare `shellcheck -x`, or one `shellcheck` run covering several files, has exhausted a developer machine's memory outright; run that or any other ad-hoc heavy command through `bin/fm-memcap.sh`, whose header owns the cap.
 - Run Firstmate production-library tests and commands that source `bin/` scripts under `bash` explicitly, never through the tool shell's default interpreter.
 - Run `bin/fm-lint.sh` before treating a script change as done; it is the single owner of the lint definition that CI and the no-mistakes pre-push gate both invoke, its own header owns what that definition covers, and it refuses to run under any other version of either linter.
 - When a task names a specific tool, implement the work with that tool, or explicitly flag the substitution and its new dependency footprint for review before shipping.

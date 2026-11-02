@@ -7,7 +7,10 @@ set -eu
 TMP_ROOT=$(mktemp -d "$FM_TEST_SCRATCH_ROOT/fm-build-lock.XXXXXX")
 python3 - "$ROOT" "$TMP_ROOT" <<'PY'
 import configparser
+import json
 import os
+import signal
+import resource
 from pathlib import Path
 import shutil
 import subprocess
@@ -48,6 +51,48 @@ while not pathlib.Path(os.environ['RELEASE']).exists(): time.sleep(.03)
 ''')
 explicit = [str(wrapper), '--', sys.executable, str(holder)]
 try:
+    probe = scratch / 'memory-bound.py'
+    mechanism = subprocess.run([str(root / 'bin/fm-memcap.sh'), '--mechanism'],
+                               capture_output=True, text=True, check=True).stdout.strip()
+    if mechanism != 'none':
+        probe.write_text('''import pathlib, resource, sys
+limit = resource.getrlimit(resource.RLIMIT_AS)[0]
+if sys.argv[1] == 'cgroup':
+    for line in pathlib.Path('/proc/self/cgroup').read_text().splitlines():
+        if line.startswith('0::'):
+            path = pathlib.Path('/sys/fs/cgroup') / line[3:].lstrip('/') / 'memory.max'
+            limit = int(path.read_text())
+print(limit)
+''')
+        for slots in (1, 2):
+            selected = dict(env, FM_HEAVY_SLOTS=str(slots))
+            budget = int(subprocess.run([str(root / 'bin/fm-memcap.sh'), '--budget-bytes',
+                                         '--share', str(slots)], env=selected,
+                                        capture_output=True, text=True, check=True).stdout)
+            bound = subprocess.run([str(wrapper), '--', sys.executable, str(probe), mechanism],
+                                   env=selected, capture_output=True, text=True, timeout=10)
+            assert bound.returncode == 0, bound.stderr
+            if mechanism == 'cgroup':
+                expected = budget // os.sysconf('SC_PAGE_SIZE') * os.sysconf('SC_PAGE_SIZE')
+            else:
+                expected = resource.getrlimit(resource.RLIMIT_AS)[0]
+            assert int(bound.stdout) == expected, (bound.stdout, expected)
+            identity = subprocess.run([str(wrapper), '--', sys.executable, '-c',
+                                       'import os; assert os.environ["FM_BUILD_LOCK_HELD"] == str(os.getpid())'],
+                                      env=selected, capture_output=True, text=True, timeout=10)
+            assert identity.returncode == 0, identity.stderr
+            arguments = ['', '${FM_BUILD_ARGV_UNSET}', 'two words', '$HOME', '*', 'a"b']
+            argv_env = dict(selected)
+            argv_env.pop('FM_BUILD_ARGV_UNSET', None)
+            forwarded = subprocess.run([str(wrapper), '--', sys.executable, '-c',
+                                        'import json, sys; print(json.dumps(sys.argv[1:]))', *arguments],
+                                       env=argv_env, capture_output=True, text=True, timeout=10)
+            assert forwarded.returncode == 0, forwarded.stderr
+            assert json.loads(forwarded.stdout) == arguments, forwarded.stdout
+        print('ok - commands observe the cgroup bound shared across heavy slots, never an address-space one')
+    else:
+        print('skip - no memory mechanism for the heavy-slot kernel-bound check')
+
     one = launch(explicit, 'one')
     wait_file(scratch / 'one')
     two = launch(explicit, 'two')
@@ -62,12 +107,120 @@ try:
     wait_file(scratch / 'bypass')
     (scratch / 'bypass.release').touch()
     assert bypass.wait(10) == 0
-    one.kill()
+    os.kill(int((scratch / 'one').read_text()), signal.SIGKILL)
     one.wait(10)
     wait_file(scratch / 'two')
     (scratch / 'two.release').touch()
     assert two.wait(10) == 0
     print('ok - concurrent builds wait visibly, bypass works, SIGKILL releases the slot')
+
+    fakebin = scratch / 'fakebin'
+    fakebin.mkdir()
+    checker = fakebin / 'shellcheck'
+    checker.write_text('''#!/bin/sh
+if [ "$1" = --version ]; then printf 'version: 0.11.0\n'; exit; fi
+printf 'checked\n' >> "$CHECK_LOG"
+if [ -n "${CHECK_PROBE:-}" ]; then
+  python3 "$CHECK_PROBE" "$CHECK_MECHANISM" >> "$CHECK_BOUNDS"
+fi
+''')
+    checker.chmod(0o755)
+    fixture = scratch / 'clean.sh'
+    fixture.write_text('#!/bin/sh\nexit 0\n')
+    lint_env = dict(env, PATH=str(fakebin) + os.pathsep + env['PATH'],
+                    CHECK_LOG=str(scratch / 'lint-checks'))
+    blocker = launch(explicit, 'lint-blocker')
+    wait_file(scratch / 'lint-blocker')
+    lint_log = open(scratch / 'lint.err', 'w')
+    lint = subprocess.Popen(['bash', str(root / 'bin/fm-lint.sh'), str(fixture)],
+                            env=lint_env, stdout=subprocess.DEVNULL, stderr=lint_log)
+    lint_log.close()
+    children.append(lint)
+    for _ in range(300):
+        if 'waiting for a heavy slot' in (scratch / 'lint.err').read_text():
+            break
+        time.sleep(.03)
+    assert 'waiting for a heavy slot' in (scratch / 'lint.err').read_text()
+    assert not (scratch / 'lint-checks').exists(), 'direct lint bypassed an occupied slot'
+    help_result = subprocess.run(['bash', str(root / 'bin/fm-lint.sh'), '--help'],
+                                 env=lint_env, capture_output=True, timeout=5)
+    assert help_result.returncode == 0, help_result.stderr
+    (scratch / 'lint-blocker.release').touch()
+    assert blocker.wait(10) == 0
+    assert lint.wait(30) == 0, (scratch / 'lint.err').read_text()
+    assert (scratch / 'lint-checks').exists(), 'direct lint did not resume after slot release'
+    nested_lint = subprocess.run([str(wrapper), '--', 'bash', str(root / 'bin/fm-lint.sh'),
+                                  str(fixture)], env=lint_env, capture_output=True, timeout=30)
+    assert nested_lint.returncode == 0, nested_lint.stderr
+    if mechanism != 'none':
+        bounds_log = scratch / 'lint-bounds'
+        shared_lint = subprocess.run([str(wrapper), '--', 'bash', str(root / 'bin/fm-lint.sh'),
+                                     '--jobs', '2', str(fixture)],
+                                    env=dict(lint_env, FM_HEAVY_SLOTS='2', CHECK_PROBE=str(probe),
+                                             CHECK_MECHANISM=mechanism, CHECK_BOUNDS=str(bounds_log)),
+                                    capture_output=True, timeout=30)
+        assert shared_lint.returncode == 0, shared_lint.stderr
+        budget = int(subprocess.run([str(root / 'bin/fm-memcap.sh'), '--budget-bytes',
+                                     '--share', '4'], capture_output=True, text=True, check=True).stdout)
+        budget = budget // 1024 * 1024
+        quantum = os.sysconf('SC_PAGE_SIZE') if mechanism == 'cgroup' else 1024
+        expected = budget // quantum * quantum
+        inherited = resource.getrlimit(resource.RLIMIT_AS)[1]
+        if mechanism == 'rlimit' and inherited != resource.RLIM_INFINITY:
+            expected = min(expected, inherited // 1024 * 1024)
+        assert bounds_log.read_text().strip() == str(expected)
+    print('ok - direct lint queues for a slot, nested lint reuses it, and help stays available')
+
+    if subprocess.run(['bash', '-c', 'ulimit -v 98304'], capture_output=True).returncode == 0:
+        rlimit_bin = scratch / 'rlimit-bin'
+        rlimit_bin.mkdir()
+        no_systemd = rlimit_bin / 'systemd-run'
+        no_systemd.write_text('#!/bin/sh\nexit 1\n')
+        no_systemd.chmod(0o755)
+        if not probe.exists():
+            probe.write_text('import resource; print(resource.getrlimit(resource.RLIMIT_AS)[0])\n')
+        default = int(subprocess.run([str(root / 'bin/fm-memcap.sh'), '--budget-bytes'],
+                                     capture_output=True, text=True, check=True).stdout)
+        roomy_kib = default // 1024 + 65536
+        for label, requested_kib, ceiling in (('override', roomy_kib, roomy_kib * 2048),
+                                               ('inherited', 131072, 98304 * 1024 + 511)):
+            inherited = resource.getrlimit(resource.RLIMIT_AS)[1]
+            if inherited != resource.RLIM_INFINITY:
+                ceiling = min(ceiling, inherited)
+            def set_ceiling():
+                resource.setrlimit(resource.RLIMIT_AS, (ceiling, ceiling))
+            for wrapped in (False, True):
+                tag = f'{label}-{wrapped}'
+                observed = scratch / (tag + '.bound')
+                telemetry = scratch / (tag + '.tsv')
+                command = ['bash', str(root / 'bin/fm-lint.sh'), '--jobs', '1',
+                           '--telemetry', str(telemetry), str(fixture)]
+                if wrapped:
+                    command = [str(wrapper), '--', *command]
+                result = subprocess.run(command, preexec_fn=set_ceiling, timeout=30,
+                                        env=dict(lint_env, PATH=str(rlimit_bin) + os.pathsep + lint_env['PATH'],
+                                                 FM_LINT_ROOT_MEMORY_KIB=str(requested_kib), FM_LINT_JOBS='1',
+                                                 CHECK_PROBE=str(probe), CHECK_MECHANISM='rlimit',
+                                                 CHECK_BOUNDS=str(observed)), capture_output=True, text=True)
+                assert result.returncode == 0, result.stderr
+                expected = min(requested_kib * 1024, ceiling // 1024 * 1024)
+                assert int(observed.read_text()) == expected, (tag, observed.read_text(), expected)
+                records = [line.split('\t') for line in telemetry.with_suffix('.roots.tsv').read_text().splitlines()]
+                reported = next(row[2] for row in records if row[:2] == ['meta', 'root_memory_limit_kib'])
+                assert int(reported) * 1024 == expected, (tag, reported, expected)
+        print('ok - direct and wrapped lint honor explicit budgets and report inherited rlimit ceilings')
+
+        generic = subprocess.run([str(wrapper), '--', sys.executable, '-c',
+                                  'import resource; print(resource.getrlimit(resource.RLIMIT_AS)[0])'],
+                                 env=dict(env, PATH=str(rlimit_bin) + os.pathsep + env['PATH']),
+                                 capture_output=True, text=True, timeout=10)
+        assert generic.returncode == 0, generic.stderr
+        assert int(generic.stdout) == resource.getrlimit(resource.RLIMIT_AS)[0], generic.stdout
+        opt_in = ('fm-memcap: no usable systemd user scope; address-space limits are opt-in; '
+                  f'running {os.path.basename(sys.executable)} uncapped; '
+                  'use bin/fm-boat-run.sh to run it bounded')
+        assert opt_in in generic.stderr.splitlines(), generic.stderr
+        print('ok - a generic wrapped command on a forced-rlimit host runs with no address-space limit')
 
     real_node = shutil.which('node')
     if real_node:
@@ -161,7 +314,7 @@ const timer = setInterval(() => { if (fs.existsSync(process.env.RELEASE)) clearI
     # installed it leaves every Node process able to start.
     checkout = scratch / 'checkout/bin'
     checkout.mkdir(parents=True)
-    for name in ('fm-build-lock.py', 'fm-build-lock.js'):
+    for name in ('fm-build-lock.py', 'fm-build-lock.js', 'fm-memcap.sh'):
         shutil.copy2(root / 'bin' / name, checkout / name)
     installed = scratch / 'installed'
     install_env = dict(env, FM_BUILD_LOCK_INSTALL_DIR=str(installed), NODE_OPTIONS='--max-old-space-size=512')
@@ -204,6 +357,7 @@ PY
 POOL_ROOT=$(mktemp -d "$FM_TEST_SCRATCH_ROOT/fm-heavy-pool.XXXXXX")
 python3 - "$ROOT" "$POOL_ROOT" <<'PY'
 import os
+import signal
 from pathlib import Path
 import pty
 import shutil
@@ -262,7 +416,7 @@ try:
     assert '3 on this machine' in (scratch / 'queued.err').read_text()
 
     # SIGKILL frees the slot it held, with no file removed and no cleanup run.
-    running[1].kill()
+    os.kill(int((scratch / 'slot1').read_text()), signal.SIGKILL)
     running[1].wait(10)
     assert wait_file(scratch / 'queued'), 'a killed holder did not free its slot'
     for name in ('slot0', 'slot2', 'queued'):

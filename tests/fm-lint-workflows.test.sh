@@ -464,11 +464,18 @@ test_installer_rejects_unsupported_platform() {
 # workflow root is the fixture, not this worktree.
 test_fm_lint_default_path_catches_broken_ci_yml() {
   local tmp fakebin log diff_file out rc
+  local wrapper_mode=${1:-present}
   tmp=$(fm_test_tmproot fm-lint-wf-default)
   mkdir -p "$tmp/bin" "$tmp/.github/workflows"
   cp "$LINT" "$tmp/bin/fm-lint.sh"
   cp "$LINT_WF" "$tmp/bin/fm-lint-workflows.sh"
+  cp "$ROOT/bin/fm-build-lock.py" "$ROOT/bin/fm-memcap.sh" \
+    "$ROOT/bin/fm-timeout-lib.sh" "$tmp/bin/"
   chmod +x "$tmp/bin/fm-lint.sh" "$tmp/bin/fm-lint-workflows.sh"
+  case "$wrapper_mode" in
+    missing) rm "$tmp/bin/fm-build-lock.py" ;;
+    nonexecutable) chmod -x "$tmp/bin/fm-build-lock.py" ;;
+  esac
   write_col0_heredoc_workflow "$tmp/.github/workflows/ci.yml"
 
   fakebin=$(fm_fakebin "$tmp")
@@ -504,14 +511,17 @@ SH
   : > "$diff_file"
 
   rc=0
+  # The suite-wide scratch pool is shared with concurrently running suites, so
+  # the nested lint claims a slot in a pool private to this fixture.
   out=$(PATH="$fakebin:$PATH" GITHUB_ACTIONS='' CI='' FM_LINT_JOBS=1 \
+    FM_BUILD_LOCK_FILE="$tmp/fm-build-lock.lock" \
     FM_TEST_GIT_DIFF_FILE="$diff_file" "$tmp/bin/fm-lint.sh" 2>&1) || rc=$?
   [ "$rc" -ne 0 ] || fail "fm-lint.sh default path missed a broken ci.yml"$'\n'"$out"
   assert_contains "$out" "could not parse as YAML" \
     "fm-lint.sh default path did not surface the workflow YAML error"
   assert_contains "$out" "ci.yml" \
     "fm-lint.sh default path did not name the broken workflow"
-  pass "fm-lint.sh default path catches a self-broken ci.yml"
+  pass "fm-lint.sh default path catches a self-broken ci.yml ($wrapper_mode wrapper)"
 }
 
 test_pins_an_explicit_version
@@ -530,3 +540,5 @@ test_installer_falls_back_to_shasum
 test_installer_prefers_sha256sum_over_shasum
 test_installer_rejects_unsupported_platform
 test_fm_lint_default_path_catches_broken_ci_yml
+test_fm_lint_default_path_catches_broken_ci_yml missing
+test_fm_lint_default_path_catches_broken_ci_yml nonexecutable

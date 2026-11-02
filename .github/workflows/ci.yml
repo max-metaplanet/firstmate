@@ -127,10 +127,16 @@ jobs:
       # fails locally before merge.
       - name: Lint canonical partition
         env:
-          # Fail closed rather than lint uncapped when a configured per-root
-          # bound (wall deadline or memory rlimit) cannot be enforced here.
+          # Refuse rather than lint uncapped when a configured per-root
+          # bound (wall deadline or memory cap) cannot be enforced here.
           FM_LINT_REQUIRE_BOUNDS: '1'
           FM_LINT_JOBS: '1'
+          # bin/fm-memcap.sh budgets a share of total memory, which suits a
+          # shared desktop but would cut this runner's roots below their
+          # measured demand and push the heaviest into the memory fallback.
+          # A partition runs one root at a time on a 16 GiB runner, so keep
+          # 12 GiB; bin/fm-lint.sh's header holds the sizing measurement.
+          FM_LINT_ROOT_MEMORY_KIB: '12582912'
         run: |
           set -eu
           mkdir -p "$RUNNER_TEMP/fm-lint"

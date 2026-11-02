@@ -1749,7 +1749,7 @@ test_heavy_slot_wait_counts_toward_wall_budget() {
   tmp=$(mktemp -d "$FM_TEST_SCRATCH_ROOT/fm-test-run-slot-budget.XXXXXX")
   repo="$tmp/repo"
   mkdir -p "$repo/bin" "$repo/tests"
-  cp "$RUNNER" "$ROOT/bin/fm-build-lock.py" "$ROOT/bin/fm-build-lock.js" "$repo/bin/"
+  cp "$RUNNER" "$ROOT/bin/fm-build-lock.py" "$ROOT/bin/fm-build-lock.js" "$ROOT/bin/fm-memcap.sh" "$repo/bin/"
   cp "$ROOT/tests/git-config-helpers.sh" "$repo/tests/"
   printf 'echo "ok - brief fixture"\n' > "$repo/tests/fm-brief.test.sh"
   printf 'echo "ok - composer fixture"\n' > "$repo/tests/fm-composer-lib.test.sh"
