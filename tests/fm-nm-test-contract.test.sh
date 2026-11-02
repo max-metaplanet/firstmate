@@ -120,7 +120,7 @@ pass "the heavy-slot wait is outside the execution deadline"
 cp "$ROOT/bin/fm-test-run.sh" "$FIX/bin/fm-test-run.sh"
 mkdir -p "$FIX/tests"
 cp "$ROOT/tests/git-config-helpers.sh" "$FIX/tests/"
-TEST_CMD="$TEST_CMD" FIX="$FIX" TMP_ROOT="$TMP_ROOT" python3 - <<'PY'
+if ! TEST_CMD="$TEST_CMD" FIX="$FIX" TMP_ROOT="$TMP_ROOT" python3 - <<'PY'
 import os
 import pathlib
 import subprocess
@@ -146,7 +146,9 @@ result = subprocess.run(["bin/fm-build-lock.py", "--", "bash", "-c", "echo acqui
                         cwd=env["FIX"], env=env, capture_output=True, text=True, timeout=3)
 assert result.returncode == 0 and "acquired" in result.stdout, result
 PY
-[ "$?" -eq 0 ] || fail "the deadline must stop the real test and release its slot"
+then
+  fail "the deadline must stop the real test and release its slot"
+fi
 pass "the execution deadline terminates selected tests and releases their heavy slot"
 
 # Execute real classification and selection without running any selected suite.
