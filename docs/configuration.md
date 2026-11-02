@@ -1760,7 +1760,7 @@ Not covered:
 
 Run those through `bin/fm-build-lock.py -- <command>`, which worker instructions name; `bin/fm-test-run.sh` claims a slot the same way for its own concurrent runs.
 A `tsc` or `eslint` whose only operand is one existing source file checks that one file and is not treated as heavy, and neither is `tsc --watch`, which never exits and would hold its slot for good.
-A `tsc -b` or `tsc --build` builds whole projects and is heavy whatever its operands, except in watch mode.
+A `tsc -b` or `tsc --build` builds whole projects and is heavy whatever its operands, except in watch mode or with `--version`; under a build, `-v` means `--verbose` and stays heavy.
 [`bin/fm-build-lock.js`](../bin/fm-build-lock.js) owns the rest of the heaviness definition.
 
 The command that claims a slot runs in a worker shell or the daemon, neither of which can read this home's configuration, so every ship or scout launch publishes this declaration into the machine's installed preload record and every heavy command reads that record when it starts.
