@@ -787,16 +787,19 @@ fm_seat_no_session_window() {
 # The rewrite that applies the declaration to one seat's report. `drop_session`
 # takes a provider ROW and returns it with no five-hour window and with every
 # account-level figure restamped from the week. fm_seat_drop_session_report below
-# is the one caller, and only the evidence cache's live read calls it, so the
-# quota read, the dispatch gate and the cache's own success and fallback tests
-# cannot drift apart about which windows bound a declared seat.
+# is the one caller, and the evidence cache's live read and leader selection's
+# reads are its only callers, so the quota read, the dispatch gate, the cache's
+# own success and fallback tests and the leader cannot drift apart about which
+# windows bound a declared seat.
 #
 # Nothing is invented. The substituted percentage is the weekly window's own
 # reported `percentRemaining`, and when the report carries no weekly percentage
 # there is nothing to substitute, so the figures are left exactly as they came
 # and the seat reads as it did before. An `exhausted_now` runway is cleared only
 # while the week itself reports room, because a declared seat's week is the only
-# window that can exhaust it.
+# window that can exhaust it. So is a runway whose own `limitingWindowId` names a
+# dropped window, together with the seconds and instant projected from that
+# window; a runway that names the week, or names no window, is left as it came.
 # shellcheck disable=SC2016  # jq program text, not shell expansion
 FM_SEAT_NO_SESSION_JQ='
   def session_window: .id == "five_hour" or .id == "session" or .windowSeconds == 18000;
@@ -817,9 +820,14 @@ FM_SEAT_NO_SESSION_JQ='
                 | (if (.boundedBy | type) == "array" then
                      .boundedBy = ((.boundedBy - $dropped) | if length == 0 then [$week.id] else . end)
                    else . end)
-                | (if (.runway.status // "") == "exhausted_now" and $left > 0
-                   then .runway.status = (if .status == "known" then "through_reset" else "unknown" end)
-                   else . end)
+                | ((.runway.limitingWindowId // null) as $limit
+                   | ($limit != null and ($dropped | index([$limit])) != null) as $session_runway
+                   | if (((.runway.status // "") == "exhausted_now") or $session_runway) and $left > 0
+                     then .runway.status = (if .status == "known" then "through_reset" else "unknown" end)
+                       | (if $session_runway
+                          then .runway |= del(.usableRunwaySeconds, .projectedExhaustedAt, .limitingWindowId)
+                          else . end)
+                     else . end)
               else . end))
       else . end;
 '

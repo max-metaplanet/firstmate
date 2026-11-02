@@ -209,6 +209,18 @@ c.age(200)
 c.set(failure())
 c.expect(True, "source=last-good-fallback")
 assert c.count() == 2, c.calls.read_text()
+c = declared_case(True)
+burning = quota(70)
+burning["providers"][0]["windows"][0]["percentRemaining"] = 2
+burning["providers"][0]["quotaSemantics"]["effectiveAvailability"][0].update(
+    effectivePercentRemaining=2, limitingWindowIds=["five_hour"],
+    runway={"status": "projected_exhaustion", "usableRunwaySeconds": 60,
+            "projectedExhaustedAt": iso(-60), "limitingWindowId": "five_hour"})
+c.set(burning)
+c.expect(True, "source=live")
+c.age(200)
+c.set(failure())
+c.expect(True, "source=last-good-fallback")
 c = declared_case(False)
 c.expect(False, "no plan quota left")
 c.set(failure())

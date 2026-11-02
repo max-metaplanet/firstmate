@@ -4,7 +4,9 @@
 `evidence PROVIDER MODEL HORIZON MINIMUM` reads one default TOON (or its one
 permitted JSON fallback) from stdin and emits normalized evidence. `select`
 reads candidate JSON lines, prints every candidate's evidence on stderr, then
-prints PROVIDER SEAT for the unique highest known spendPriority. Exit 1 means
+prints PROVIDER SEAT for the unique best feasible candidate: a candidate whose
+`plan` is no-session-window ranks first, then the highest known spendPriority
+within that class. Exit 1 means
 uncertainty, no feasible destination, or a tie. No worker policy lives here.
 """
 import csv
@@ -146,6 +148,7 @@ def select(candidates):
               f"model={candidate['model']} class=strongest-native "
               f"catalog={candidate['catalog']} surface={candidate['profile']} "
               f"auth={evidence.get('auth', 'unknown')} spendPriority={priority if priority is not None else 'unknown'} "
+              f"plan={candidate.get('plan', 'standard')} "
               f"runway={evidence.get('runway', 'unknown')} "
               f"{candidate.get('reason') or evidence.get('reason', 'no quota read')}", file=sys.stderr)
         if not candidate.get("reason") and evidence.get("feasible") and priority is not None:
@@ -159,8 +162,10 @@ def select(candidates):
     if not eligible:
         print("leader selection held: no candidate with provable runway and known spendPriority", file=sys.stderr)
         return 1
-    best = max(c["evidence"]["spendPriority"] for c in eligible)
-    winners = [c for c in eligible if c["evidence"]["spendPriority"] == best]
+    def rank(c):
+        return (c.get("plan") == "no-session-window", c["evidence"]["spendPriority"])
+    best = max(rank(c) for c in eligible)
+    winners = [c for c in eligible if rank(c) == best]
     if len(winners) != 1:
         print("leader selection held: tied spendPriority; " + ", ".join(
             c["provider"] + ":" + c["seat"] for c in winners), file=sys.stderr)

@@ -347,6 +347,7 @@ A spent five-hour window no longer holds a launch, routes a new worker elsewhere
 
 **It is preferred, not exempt.**
 A declared seat with weekly room is the rotation's preferred destination, ahead of a seat with more weekly spare, because work placed there can always start.
+It is preferred in leader selection for firstmate itself too, ahead of a seat with a better `spendPriority`, which only orders seats of the same kind.
 Its week is still the whole of its quota: a declared seat with no weekly room is used up exactly like any other, is refused as a destination, and holds dispatch when it is the active seat.
 The quota floor still rests it when its week drops to the floor, and brings it back when its week alone clears the re-add level.
 
@@ -508,6 +509,7 @@ The [restart preflight](../bin/fm-lead-restart.sh), including `--check`, prepare
 Without an explicit destination, `bin/fm-seat.sh leader-destination` evaluates configured Claude and Codex seats against their native catalogs, authentication evidence, quota, and startup runway, and ranks eligible candidates by quota-axi's `spendPriority`.
 It reports withheld candidates and uncertainty and refuses an unresolved tie rather than preferring a provider or array position.
 A seat declared to be on [a plan with no five-hour window](#a-plan-with-no-five-hour-window) is read as quota JSON with that window removed, so a spent five-hour window never withholds it, while every other gate here, including a week with no room, still applies to it.
+Among feasible candidates such a seat ranks ahead of every other, and `spendPriority` orders seats only within each of those two groups, so two declared seats on equal `spendPriority` are still a tie that refuses.
 Automatic Codex destinations require the opt-in defined by [configuration.md](configuration.md#automatic-codex-leader-destinations-configlead-codex-auto); an explicit Codex destination remains available manually.
 Naming the seat firstmate is already on is refused unless `--refresh` is given; a refresh restarts firstmate in place on that seat to pick up a corrected launch environment, through the same persist gate and handover, and changes no seat record or rotation.
 

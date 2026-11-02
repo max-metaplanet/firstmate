@@ -1576,6 +1576,9 @@ leader_quota_snapshot() {
 # excludes it. Both use the strongest native class (opus / gpt-6.1-sol).
 # The 180s default horizon is expected successor startup, not an estimate of
 # an indefinitely supervised session. Unknown runway never proves that floor.
+# A feasible seat declared to have no five-hour window ranks ahead of every
+# other feasible seat, and spendPriority orders seats within each of those two
+# classes, as seat_rank_key prefers it for workers.
 # Prints "provider seat", all candidate evidence on stderr. Ties refuse to pick.
 # Codex destinations obey the single lead-codex-auto rollout switch above.
 cmd_leader_destination() {
@@ -1606,6 +1609,7 @@ cmd_leader_destination() {
     while IFS= read -r seat; do
       profile=$(fm_seat_config_dir "$seat") || return 1
       reason='' catalog='unknown' evidence='{}' used_json=false
+      plan=$(fm_seat_profile_plan "$profile")
       model=opus; [ "$provider" != codex ] || model=gpt-6.1-sol
       identity=$(fm_seat_credential_identity "$profile") || return 1
       case "$seen" in
@@ -1643,7 +1647,6 @@ cmd_leader_destination() {
       if [ -z "$reason" ]; then
         quota_args=(--provider "$provider" --no-credential-refresh)
         [ "$provider" != codex ] || quota_args+=(--profile-only)
-        plan=$(fm_seat_profile_plan "$profile")
         if [ "$plan" = no-session-window ]; then
           quota_args+=(--json)
           used_json=true
@@ -1670,15 +1673,16 @@ cmd_leader_destination() {
       fi
       candidates+=$(jq -cn --arg provider "$provider" --arg seat "$seat" --arg profile "$profile" \
         --arg model "$model" --arg catalog "$catalog" --arg reason "$reason" --argjson evidence "$evidence" --argjson used_json "$used_json" \
-        '{provider:$provider,seat:$seat,profile:$profile,model:$model,catalog:$catalog,reason:$reason,evidence:$evidence,used_json:$used_json}')$'\n'
+        --arg plan "$plan" \
+        '{provider:$provider,seat:$seat,profile:$profile,model:$model,catalog:$catalog,reason:$reason,evidence:$evidence,used_json:$used_json,plan:$plan}')$'\n'
     done < <(fm_seat_list)
   done
   # A genuine TOON tie permits the same single JSON fallback as unknown quota.
   # Never take another snapshot for a candidate that already used that fallback.
   tied=$(printf '%s' "$candidates" | jq -cs '
     map(select(.reason == "" and .evidence.feasible and (.evidence.spendPriority | type) == "number")) |
-    if length == 0 then [] else (map(.evidence.spendPriority) | max) as $best |
-      map(select(.evidence.spendPriority == $best)) | if length > 1 then . else [] end end |
+    if length == 0 then [] else (map([.plan == "no-session-window", .evidence.spendPriority]) | max) as $best |
+      map(select([.plan == "no-session-window", .evidence.spendPriority] == $best)) | if length > 1 then . else [] end end |
     .[] | select(.used_json | not)')
   while IFS= read -r candidate; do
     [ -n "$candidate" ] || continue
@@ -1692,7 +1696,7 @@ cmd_leader_destination() {
     bound=$(fm_seat_read_bound) || { echo 'leader selection held: read deadline exhausted during tie fallback' >&2; return 1; }
     snapshot=''
     if [ "$bound" -gt 0 ]; then
-      snapshot=$(leader_quota_snapshot "$profile" "$(fm_seat_profile_plan "$profile")" "$bound" "${quota_args[@]}")
+      snapshot=$(leader_quota_snapshot "$profile" "$(jq -r '.plan' <<< "$candidate")" "$bound" "${quota_args[@]}")
     fi
     evidence=$(printf '%s\n' "$snapshot" | python3 "$SCRIPT_DIR/fm-lead-seat.py" evidence "$provider" "$model" "$horizon" "$minimum" 2>/dev/null) || evidence='{"reason":"quota evidence unreadable"}'
     candidates=$(printf '%s' "$candidates" | jq -c --arg provider "$provider" --arg profile "$profile" --argjson evidence "$evidence" '
