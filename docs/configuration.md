@@ -1824,6 +1824,8 @@ Every reason to stay local - no declaration, a kind the declaration keeps local,
 Only a worker-started heavy command is routed, which leaves the no-mistakes daemon's own steps on their existing path; [`bin/fm-boat-test-wrapper.sh`](../bin/fm-boat-test-wrapper.sh) remains the pipeline's own Boat integration.
 A command that needs credentials stays local, because this adapter deliberately carries none: `local-only` defaults to `playwright,queue-preflight`, a browser run needing browsers and a preflight needing a private remote and repository variables.
 Declare any other such command there rather than letting it reach a machine that cannot authenticate it.
+The upload is the worktree as it stands, including uncommitted edits and untracked or newly staged files that are not ignored.
+Nothing a remote run writes comes back, so a command whose job is to write into the worktree stays local: `next build`, `tsc` without an explicit `--noEmit` or in build mode, and a Vitest or ESLint run that updates snapshots, writes coverage, fixes files, or writes an output file.
 
 Remote output is captured and printed when the command finishes rather than streamed, and only a completed remote run is a verdict: that remote exit is the command's exit.
 [`bin/fm-boat-run.sh`](../bin/fm-boat-run.sh)'s help owns the upload, the per-account budget, the result and artifact files, and the cleanup.

@@ -32,6 +32,7 @@ def case(name, project='smokeproj', declaration=None):
                  ('config', 'user.email', 'fixture@example.invalid')):
         subprocess.run(['git', '-C', str(work), *args], check=True, capture_output=True)
     (work / 'tracked.txt').write_text('committed\n')
+    (work / '.gitignore').write_text('node_modules/\n')
     (work / 'deep').mkdir()
     (work / 'deep/nested.txt').write_text('nested\n')
     subprocess.run(['git', '-C', str(work), 'add', '-A'], check=True, capture_output=True)
@@ -70,7 +71,7 @@ def publish(config, env, home=None):
 REPORT = 'printf "ran cwd=%s held=%s\\n" "$(pwd)" "${FM_BUILD_LOCK_HELD:-}"'
 
 
-def run(work, env, kind='tsc', command=('bash', '-c', REPORT), cwd=None, timeout=90):
+def run(work, env, kind='vitest', command=('bash', '-c', REPORT), cwd=None, timeout=90):
     return subprocess.run([route, '--kind', kind, '--', *command], env=env,
                           cwd=str(cwd or work), capture_output=True, text=True, timeout=timeout)
 
@@ -141,10 +142,48 @@ r = run(work, env)
 assert r.returncode == 0, r.stderr
 assert called(state)
 assert r.stdout.endswith('held=\n'), ('a routed command must not hold a local slot', r.stdout)
-assert 'tsc on Boat' in r.stderr, r.stderr
+assert 'vitest on Boat' in r.stderr, r.stderr
 assert 'bootstrapped' in r.stdout, r.stdout
 assert 'boat_fixture_secret' not in r.stdout + r.stderr
 print('ok - a declared project runs the kind on Boat, outside the local slots')
+
+p, work, config, state, env = case('uncommitted-new', declaration=DECLARED)
+assert publish(config, env).returncode == 0
+(work / 'untracked.txt').write_text('untracked content\n')
+(work / 'deep/staged.txt').write_text('staged content\n')
+subprocess.run(['git', '-C', str(work), 'add', 'deep/staged.txt'], check=True,
+               capture_output=True)
+(work / 'tracked.txt').write_text('edited content\n')
+r = run(work, env, command=('cat', 'untracked.txt', 'deep/staged.txt', 'tracked.txt'))
+assert r.returncode == 0, r.stderr
+assert called(state)
+assert 'untracked content\nstaged content\nedited content\n' in r.stdout, r.stdout
+print('ok - a routed run sees untracked, newly staged and edited files, not only HEAD')
+
+for name, kind, args in (
+    ('next-build', 'next-build', ()),
+    ('tsc-emits', 'tsc', ()),
+    ('tsc-build', 'tsc', ('-b', '--noEmit')),
+    ('tsc-noemit-false', 'tsc', ('--noEmit', 'false')),
+    ('vitest-update', 'vitest', ('run', '-u')),
+    ('vitest-coverage', 'vitest', ('run', '--coverage')),
+    ('eslint-fix', 'eslint', ('.', '--fix')),
+    ('eslint-output', 'eslint', ('.', '--output-file', 'lint.txt')),
+):
+    p, work, config, state, env = case('writes-' + name, declaration=DECLARED)
+    assert publish(config, env).returncode == 0
+    r = run(work, env, kind=kind, command=('bash', '-c', REPORT, 'tool', *args))
+    assert r.returncode == 0, (name, r.stderr)
+    assert not r.stdout.endswith('held=\n'), (name, r.stdout)
+    assert not called(state), name
+    assert 'would not bring back' in r.stderr, (name, r.stderr)
+
+p, work, config, state, env = case('tsc-noemit', declaration=DECLARED)
+assert publish(config, env).returncode == 0
+r = run(work, env, kind='tsc', command=('bash', '-c', REPORT, 'tsc', '--noEmit'))
+assert r.returncode == 0, r.stderr
+assert called(state) and r.stdout.endswith('held=\n'), (r.stdout, r.stderr)
+print('ok - a command whose outputs would stay on Boat runs locally; tsc --noEmit is routed')
 
 p, work, config, state, env = case('remote-shape', declaration=DECLARED)
 assert publish(config, env).returncode == 0

@@ -61,7 +61,14 @@ and the cleanup; this script only builds the command for it. The local node
 interpreter is replaced by `node` from the remote PATH, the preload's own
 --require is dropped, and an argument naming a path inside the worktree becomes
 that path relative to the remote source root. Nothing from the local
-environment travels. Remote output is captured and printed when the command
+environment travels. The source is the worktree as it stands: HEAD's tracked
+files with their uncommitted edits, plus every untracked or newly staged file
+that is not ignored, each through fm-boat-run.sh's own --input screen.
+
+Nothing a remote run writes comes back, so a command whose job includes writing
+into the worktree stays local: next build, tsc without an explicit --noEmit or
+in build mode, vitest updating snapshots or writing coverage or an output file,
+and eslint fixing files or writing an output file. Remote output is captured and printed when the command
 finishes rather than streamed.
 
 Only result kind `completed` is a verdict: that remote exit is the command's
@@ -243,6 +250,39 @@ def remote_command(command, root, preload):
     return remote
 
 
+def uncommitted_new(root):
+    """Files the worktree has that HEAD's tree lacks: untracked or newly staged."""
+    def names(*args):
+        listed = subprocess.run(["git", "-C", str(root), *args], capture_output=True,
+                                check=True, timeout=60).stdout
+        return {os.fsdecode(name) for name in listed.split(b"\0") if name}
+    try:
+        present = names("ls-files", "-z", "--cached", "--others", "--exclude-standard")
+        committed = names("ls-tree", "-rz", "--name-only", "--full-tree", "HEAD")
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return sorted(name for name in present - committed if os.path.lexists(root / name))
+
+
+def writes_worktree(kind, command):
+    """Whether the command's job includes files Boat would leave on its machine."""
+    args = [value.lower() for value in command[1:]]
+    if kind == "next-build":
+        return True
+    if kind == "tsc":
+        if "-b" in args or "--build" in args or "--noemit" not in args:
+            return True
+        at = args.index("--noemit")
+        return at + 1 < len(args) and args[at + 1] == "false"
+    if kind == "vitest":
+        return any(value in ("-u", "--update") or value.startswith(
+            ("--update=", "--coverage", "--outputfile")) for value in args)
+    if kind == "eslint":
+        return any(value in ("--fix", "-o") or value.startswith("--output-file")
+                   for value in args)
+    return False
+
+
 def boat(settings, command, kind, home, bin_dir, root):
     """Run the heavy command on one ephemeral Boat VM. Returns an exit code, or None."""
     scratch = root.parent / SCRATCH
@@ -252,6 +292,9 @@ def boat(settings, command, kind, home, bin_dir, root):
     except OSError as error:
         return local("the Boat evidence directory could not be made (%s)" % error, command)
     output = job / "boat"
+    inputs = uncommitted_new(root)
+    if inputs is None:
+        return local("the worktree's uncommitted files could not be listed", command)
     relative = os.path.relpath(os.getcwd(), str(root))
     script = ["set -euo pipefail", settings["bootstrap"]]
     if relative != ".":
@@ -259,6 +302,8 @@ def boat(settings, command, kind, home, bin_dir, root):
     script.append("exec " + shlex.join(remote_command(command, root, SOURCE / "fm-build-lock.js")))
     adapter = [str(Path(bin_dir) / "fm-boat-run.sh"), "run",
                "--worktree", str(root), "--output", str(output)]
+    for name in inputs:
+        adapter += ["--input", name]
     if settings.get("timeout"):
         adapter += ["--timeout", str(settings["timeout"])]
     if settings.get("type"):
@@ -300,6 +345,8 @@ def route(kind, command):
         return local("", command)
     if kind in (settings.get("local_only") or []):
         return local("%s needs credentials Boat cannot carry" % kind, command)
+    if writes_worktree(kind, command):
+        return local("%s writes files Boat would not bring back" % kind, command)
     home, bin_dir = loaded.get("home"), loaded.get("bin")
     if not (isinstance(home, str) and isinstance(bin_dir, str)
             and Path(bin_dir, "fm-boat-run.sh").is_file()):
