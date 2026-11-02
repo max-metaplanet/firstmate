@@ -964,7 +964,8 @@ if ! command -v shellcheck >/dev/null 2>&1; then
     "$REQUIRED_SHELLCHECK" >&2
   exit 1
 fi
-if [ "${FM_BUILD_LOCK_BYPASS:-}" != 1 ] && [ "${FM_BUILD_LOCK_HELD:-}" != "$$" ]; then
+if [ "${FM_BUILD_LOCK_BYPASS:-}" != 1 ] && [ "${FM_BUILD_LOCK_HELD:-}" != "$$" ] &&
+  [ -x "$SELF_DIR/fm-build-lock.py" ]; then
   FM_LINT_JOBS=$JOBS exec "$SELF_DIR/fm-build-lock.py" -- bash "$SELF" "${INVOCATION_ARGV[@]}"
 fi
 
