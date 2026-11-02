@@ -111,7 +111,11 @@ make_codex_seat_case() {
   local name=$1
   read_seat_case "$(make_seat_case "$name")"
   printf '%s\n' "$SEATS_DIR" > "$HOME_DIR/config/codex-seats-root"
-  cat > "$FAKEBIN/quota-axi" <<'CODEXFAKE'
+  make_codex_quota_fake "$FAKEBIN"
+}
+
+make_codex_quota_fake() {
+  cat > "$1/quota-axi" <<'CODEXFAKE'
 #!/usr/bin/env bash
 set -u
 provider='' readonly_probe=0 profile_only=0
@@ -128,7 +132,7 @@ done
 [ -f "$CODEX_HOME/quota.json" ] || exit 90
 cat "$CODEX_HOME/quota.json"
 CODEXFAKE
-  chmod +x "$FAKEBIN/quota-axi"
+  chmod +x "$1/quota-axi"
 }
 
 # codex_quota_fixture <home> [remaining] [auth] [resetsAt]
@@ -5140,6 +5144,32 @@ test_a_new_worker_launches_off_a_seat_with_no_five_hour_room() {
   pass "a new worker launches on a seat with five-hour room without rotating the active seat"
 }
 
+test_a_new_codex_worker_launches_off_a_walled_codex_seat() {
+  local id out
+  id=codex-wall-spawn-1
+  read_spawn_case "$(spawn_case spawn-codex-wall "$id")"
+  printf '%s\n' "$SEATS_DIR" > "$HOME_DIR/config/codex-seats-root"
+  make_codex_quota_fake "$FAKEBIN"
+  printf 'seat-max\n' > "$HOME_DIR/config/codex-seat"
+  printf '20\n' > "$HOME_DIR/config/codex-seat-threshold"
+  # The 2026-11-02 readings on Codex seats: the active seat's session window is
+  # spent while the other has 56% of its own and slightly less weekly spare.
+  codex_window_fixture "$SEATS_DIR/seat-max" 0 '2026-11-02T04:00:00Z' -40 10 '2026-11-07T06:00:00Z' 6
+  codex_window_fixture "$SEATS_DIR/seat-max2" 56 '2026-11-02T04:00:00Z' 30 14 '2026-11-07T06:00:00Z' 4
+
+  out=$(run_spawn_here "$HOME_DIR" "$WT_DIR" "$FAKEBIN" "$LAUNCH_LOG" "$id" "$PROJ_DIR" --harness codex 2>&1)
+  expect_code 0 "$?" "a Codex spawn with another seat able to run it must start: $out"
+  assert_contains "$(cat "$LAUNCH_LOG")" "$SEATS_DIR/seat-max2" \
+    "the new Codex worker must launch on the seat with session room"
+  assert_not_contains "$(cat "$LAUNCH_LOG")" "$SEATS_DIR/seat-max'" \
+    "the new Codex worker must not launch on the walled seat"
+  assert_contains "$out" "Codex seat: 'seat-max' has no 5-hour room" \
+    "the spawn must say why this launch left the active Codex seat"
+  assert_equals seat-max "$(cat "$HOME_DIR/config/codex-seat")" \
+    "routing one Codex launch must not rotate the active Codex seat"
+  pass "a new Codex worker launches off a walled Codex seat without rotating it"
+}
+
 test_a_new_worker_is_held_when_no_seat_has_five_hour_room() {
   local id out
   id=seat-session-hold-1
@@ -5172,6 +5202,7 @@ test_a_new_worker_is_held_when_no_seat_has_five_hour_room() {
 
 test_a_resting_lead_seat_still_requires_measured_spend_priority
 test_a_new_worker_launches_off_a_seat_with_no_five_hour_room
+test_a_new_codex_worker_launches_off_a_walled_codex_seat
 test_a_new_worker_is_held_when_no_seat_has_five_hour_room
 test_a_crossing_never_moves_onto_a_seat_with_no_more_headroom
 test_a_crossing_still_moves_onto_a_seat_that_is_genuinely_better
