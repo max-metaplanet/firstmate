@@ -77,10 +77,11 @@ writes coverage or a reporter's output file is invisible here, so such a project
 declares vitest local-only. Remote output is captured and printed when the
 command finishes rather than streamed.
 
-Only result kind `completed` is a verdict: that remote exit is the command's
-exit, and an unconfirmed cleanup is reported without changing it. Every other
-outcome means the command never ran, so it runs locally after one notice. A
-failed remote vitest run that reports a snapshot missing, mismatched or not
+Only result kind `completed` with confirmed command dispatch is a verdict:
+that remote exit is the command's exit, and an unconfirmed cleanup is reported
+without changing it. Failed setup or any other unconfirmed outcome falls back
+locally after one notice. A failed remote vitest run that reports a snapshot
+missing, mismatched or not
 written is not a verdict either, because the remote run is under CI, where
 vitest never writes a new snapshot; it too runs locally after one notice.
 """
@@ -237,8 +238,11 @@ def remote_argument(value, root):
         return REMOTE_SOURCE
     if value.startswith(inside):
         return REMOTE_SOURCE + "/" + value[len(inside):]
-    if sep and tail.startswith(inside):
-        return head + "=" + REMOTE_SOURCE + "/" + tail[len(inside):]
+    if sep:
+        if tail == str(root):
+            return head + "=" + REMOTE_SOURCE
+        if tail.startswith(inside):
+            return head + "=" + REMOTE_SOURCE + "/" + tail[len(inside):]
     return value
 
 
@@ -289,19 +293,38 @@ def proves_no_emit(command):
     return shown.returncode == 0 and isinstance(options, dict) and options.get("noEmit") is True
 
 
+def normalized_options(command):
+    options = []
+    args = [value.lower() for value in command[1:]]
+    for index, arg in enumerate(args):
+        if not arg.startswith("-"):
+            continue
+        name, sep, value = arg.partition("=")
+        if not sep:
+            value = args[index + 1] if index + 1 < len(args) else ""
+            if value.startswith("-"):
+                value = ""
+        if name.startswith("--no-"):
+            name = "--" + name[5:]
+            value = "true" if value == "false" else "false"
+        options.append((name, value))
+    return options
+
+
 def writes_worktree(kind, command):
     """Whether the command's job includes files Boat would leave on its machine."""
-    args = [value.lower() for value in command[1:]]
+    options = normalized_options(command)
     if kind == "next-build":
         return True
     if kind == "tsc":
-        return "-b" in args or "--build" in args or not proves_no_emit(command)
+        return any(name in ("-b", "--build", "--generatetrace", "--generatecpuprofile")
+                   for name, _ in options) or not proves_no_emit(command)
     if kind == "vitest":
-        return any(value in ("-u", "--update") or value.startswith(
-            ("--update=", "--coverage", "--outputfile")) for value in args)
+        return any(name in ("-u", "--update") or name.startswith(
+            ("--coverage", "--outputfile")) for name, _ in options)
     if kind == "eslint":
-        return any(value in ("--fix", "-o") or value.startswith("--output-file")
-                   for value in args)
+        return any((name == "--fix" and value != "false") or name == "-o" or
+                   name.startswith("--output-file") for name, value in options)
     return False
 
 
@@ -342,9 +365,11 @@ def boat(settings, command, kind, home, bin_dir, root, inputs):
         return local("the Boat evidence directory could not be made (%s)" % error, command)
     output = job / "boat"
     relative = os.path.relpath(os.getcwd(), str(root))
+    dispatched = "fm-heavy-command-" + os.urandom(16).hex()
     script = ["set -euo pipefail", settings["bootstrap"]]
     if relative != ".":
         script.append("cd " + shlex.quote(relative))
+    script.append("printf '\\n%s\\n' " + shlex.quote(dispatched))
     script.append("exec " + shlex.join(remote_command(command, root, SOURCE / "fm-build-lock.js")))
     adapter = [str(Path(bin_dir) / "fm-boat-run.sh"), "run",
                "--worktree", str(root), "--output", str(output)]
@@ -370,11 +395,14 @@ def boat(settings, command, kind, home, bin_dir, root, inputs):
         print("heavy-route: the Boat machine's cleanup is %s; reap it (evidence %s)"
               % (result.get("cleanup") or "unknown", output / "result.json"),
               file=sys.stderr, flush=True)
+    try:
+        log = (output / "command.log").read_bytes()
+    except OSError:
+        log = b""
+    if dispatched.encode() not in log.splitlines():
+        return local("Boat setup did not dispatch the heavy command; evidence %s"
+                     % (output / "result.json"), command)
     if kind == "vitest" and result["remote_exit"] != 0:
-        try:
-            log = (output / "command.log").read_bytes()
-        except OSError:
-            log = b""
         if SNAPSHOT_UNWRITTEN.search(log):
             return local("Boat's vitest failed on a snapshot it may not write under CI", command)
     return result["remote_exit"]

@@ -173,7 +173,14 @@ for name, kind, args in (
     ('vitest-update', 'vitest', ('run', '-u')),
     ('vitest-coverage', 'vitest', ('run', '--coverage')),
     ('eslint-fix', 'eslint', ('.', '--fix')),
+    ('eslint-fix-equals', 'eslint', ('.', '--fix=true')),
+    ('eslint-fix-value', 'eslint', ('.', '--fix', 'true')),
+    ('eslint-no-fix-equals', 'eslint', ('.', '--no-fix=false')),
+    ('eslint-no-fix-value', 'eslint', ('.', '--no-fix', 'false')),
     ('eslint-output', 'eslint', ('.', '--output-file', 'lint.txt')),
+    ('eslint-output-equals', 'eslint', ('.', '--output-file=lint.txt')),
+    ('eslint-output-short', 'eslint', ('.', '-o', 'lint.txt')),
+    ('eslint-output-short-equals', 'eslint', ('.', '-o=lint.txt')),
 ):
     p, work, config, state, env = case('writes-' + name, declaration=DECLARED)
     assert publish(config, env).returncode == 0
@@ -183,6 +190,16 @@ for name, kind, args in (
     assert not called(state), name
     assert 'would not bring back' in r.stderr, (name, r.stderr)
 print('ok - a command whose outputs would stay on Boat runs locally')
+
+for index, args in enumerate((('--fix=false',), ('--fix', 'false'),
+                              ('--no-fix',), ('--no-fix=true',),
+                              ('--no-fix', 'true'))):
+    p, work, config, state, env = case('eslint-readonly-' + str(index), declaration=DECLARED)
+    assert publish(config, env).returncode == 0
+    r = run(work, env, kind='eslint', command=('bash', '-c', REPORT, 'eslint', '.', *args))
+    assert r.returncode == 0 and called(state), (args, r.stdout, r.stderr)
+    assert r.stdout.endswith('held=\n'), (args, r.stdout)
+print('ok - explicitly disabled ESLint fixes still permit a remote verdict')
 
 # A stand-in tsc: --showConfig prints the resolved configuration tsc would, with
 # noEmit taken from NOEMIT; any other run reports where it ran.
@@ -202,6 +219,21 @@ for name, noemit, args, routed in (
     assert called(state) == routed, (name, r.stderr)
     assert r.stdout.endswith('held=\n') == routed, (name, r.stdout)
 print('ok - tsc goes to Boat only when its resolved configuration proves noEmit')
+
+for flag in ('--generateTrace', '--generateCpuProfile'):
+    for spelling in ('separate', 'equals'):
+        p, work, config, state, env = case(flag[2:] + '-' + spelling, declaration=DECLARED)
+        assert publish(config, env).returncode == 0
+        probe = p / 'probe'
+        diagnostic = ('if [ "${@: -1}" = --showConfig ]; then touch "$PROBE"; '
+                      'echo \'{"compilerOptions":{"noEmit":true}}\'; exit 0; fi; ' + REPORT)
+        args = (flag, 'diagnostic') if spelling == 'separate' else (flag + '=diagnostic',)
+        r = run(work, dict(env, PROBE=str(probe)), kind='tsc',
+                command=('bash', '-c', diagnostic, 'tsc', '--noEmit', *args))
+        assert r.returncode == 0 and not called(state), (flag, spelling, r.stderr)
+        assert not r.stdout.endswith('held=\n'), r.stdout
+        assert not probe.exists(), 'diagnostic outputs must be detected before probing tsc'
+print('ok - tsc trace and CPU profile options stay local without configuration probes')
 
 p, work, config, state, env = case('vitest-snapshot', declaration=DECLARED)
 assert publish(config, env).returncode == 0
@@ -260,6 +292,36 @@ assert str(work) not in script, script
 assert 'echo bootstrapped' in script, script
 print('ok - the remote command keeps the cwd and the real flags, drops the preload, '
       'and rewrites worktree paths')
+
+for flag in ('--root', '--dir'):
+    for spelling in ('separate', 'equals'):
+        for subdir in ('', 'deep'):
+            p, work, config, state, env = case(
+                flag[2:] + '-' + spelling + '-' + (subdir or 'root'), declaration=DECLARED)
+            assert publish(config, env).returncode == 0
+            target = str(work / subdir)
+            args = (flag, target) if spelling == 'separate' else (flag + '=' + target,)
+            check = ('from pathlib import Path; import sys; '
+                     'value = sys.argv[-1].split("=", 1)[-1]; '
+                     'assert Path(value) == Path.cwd() / sys.argv[1]; '
+                     'assert (Path(value) / sys.argv[2]).is_file(); print("checked remote path")')
+            r = run(work, env, command=(sys.executable, '-c', check, subdir,
+                    'nested.txt' if subdir else 'tracked.txt', *args))
+            assert r.returncode == 0 and called(state), (args, r.stdout, r.stderr)
+            assert 'checked remote path' in r.stdout, r.stdout
+            assert 'running locally' not in r.stderr, r.stderr
+print('ok - root and descendant paths resolve remotely with either option spelling')
+
+for name, bootstrap in (('failed', 'false'), ('exited', 'exit 0'),
+                         ('bad-directory', 'rm -rf deep')):
+    p, work, config, state, env = case('setup-' + name,
+        declaration="smokeproj bootstrap=" + shlex.quote(bootstrap) + "\n")
+    assert publish(config, env).returncode == 0
+    r = run(work, env, cwd=work / 'deep')
+    assert r.returncode == 0 and called(state), (name, r.returncode, r.stderr)
+    assert not r.stdout.endswith('held=\n'), (name, r.stdout)
+    assert 'setup did not dispatch' in r.stderr, (name, r.stderr)
+print('ok - failed bootstrap, early exit and missing command cwd fall back locally')
 
 p, work, config, state, env = case('remote-exit', declaration=DECLARED)
 assert publish(config, env).returncode == 0
