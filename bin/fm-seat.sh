@@ -674,7 +674,7 @@ session_room_reason() {
 # it answers the active seat, because the spawn's depletion and extra-usage
 # gates own an empty seat's refusal, and its paid overflow, in their own words.
 cmd_launch_destination() {
-  local active trigger name soonest seat at spare_only=0 required
+  local active trigger name soonest seat at spare_only=0
   local -a waiting=()
   if [ "${1-}" = --spare-only ]; then spare_only=1; shift; fi
   [ "$#" -eq 0 ] || usage
@@ -702,15 +702,11 @@ cmd_launch_destination() {
     return 0
   fi
   [ -z "$name" ] || mapfile -t waiting <<< "$name"
-  # Weekly spare was never asked of a candidate the active seat is walled
-  # against, so a refusal must not report it as the requirement that failed.
-  required="5-hour room for a new worker and more weekly spare than '$active'"
-  ! seat_walled "$active" || required='5-hour room for a new worker'
   if soonest=$(session_soonest_reset "$trigger" "$active" ${waiting[@]+"${waiting[@]}"}); then
     IFS=$'\t' read -r seat at <<< "$soonest"
-    die "no seat has $required (each skipped seat and its reason is printed above); the soonest 5-hour reset is $seat at $(fm_seat_reset_phrase "$at")"
+    die "no seat has 5-hour room for a new worker and more weekly spare than '$active' (each skipped seat and its reason is printed above); the soonest 5-hour reset is $seat at $(fm_seat_reset_phrase "$at")"
   fi
-  die "no seat has $required (each skipped seat and its reason is printed above), and no seat's report names when its 5-hour window resets"
+  die "no seat has 5-hour room for a new worker and more weekly spare than '$active' (each skipped seat and its reason is printed above), and no seat's report names when its 5-hour window resets"
 }
 
 # session_soonest_reset <trigger> <seat>...
