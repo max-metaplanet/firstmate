@@ -7309,6 +7309,10 @@ if [ "$KIND" = ship ] || [ "$KIND" = scout ]; then
     echo "error: could not resolve the root Firstmate home that declares heavy slots" >&2
     exit 1
   }
+  case "$SPAWN_HEAVY_CONFIG" in
+    /*) ;;
+    *) SPAWN_HEAVY_CONFIG="$PWD/$SPAWN_HEAVY_CONFIG" ;;
+  esac
   if ! fm_heavy_slots_publish "$SPAWN_HEAVY_CONFIG" "$FM_ROOT/bin"; then
     echo "error: spawn refused: $FM_HEAVY_SLOTS_ERROR; fix it so the captain's heavy-command limit is known (docs/configuration.md \"Heavy slots\")" >&2
     exit 1
