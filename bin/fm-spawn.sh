@@ -3382,8 +3382,9 @@ spawn_provider_depletion_gate() {
 # seat file and touching no running worker. It runs first, so the extra-usage
 # and depletion gates below judge the seat the launch actually uses. A home with
 # no named seat, or neither a switch trigger nor spare-leader mode, reads no
-# quota here. Spare-leader mode also routes fresh Codex launches through the
-# shared selector. --ignore-seat-hold deliberately overrides both preferences.
+# quota here. Spare-leader mode, or a Codex switch trigger with the active
+# Codex seat walled, also routes fresh Codex launches through the shared
+# selector. --ignore-seat-hold deliberately overrides both preferences.
 spawn_seat_session_gate() {
   [ "$BACKEND" != t3 ] || return 0
   { [ "$HARNESS" = claude ] || [ "$HARNESS" = codex ]; } && [ "$RELAUNCH" -eq 0 ] && [ "$IGNORE_SEAT_HOLD" -eq 0 ] || return 0
@@ -3396,7 +3397,6 @@ spawn_seat_session_gate() {
   seat_config=$(spawn_seat_config)
   FM_SEAT_PROVIDER=$HARNESS CONFIG=$seat_config fm_seat_spare_leader_enabled && spare=1
   if [ "$spare" -eq 0 ]; then
-    [ "$HARNESS" = claude ] || return 0
     FM_SEAT_PROVIDER=$HARNESS CONFIG=$seat_config fm_seat_threshold >/dev/null || return 0
   fi
   [ -n "$(FM_SEAT_PROVIDER=$HARNESS CONFIG=$seat_config fm_seat_list)" ] || return 0
@@ -3419,8 +3419,8 @@ spawn_seat_session_gate() {
     printf "%s seat: this worker launches on '%s' under the spare-leader and session-room policy; active seat '%s' is unchanged\n" \
       "$HARNESS" "$dest" "$active" >&2
   else
-    printf "Claude seat: '%s' has no 5-hour room, so this worker launches on '%s'; the active seat is unchanged\n" \
-      "$active" "$dest" >&2
+    printf "%s seat: '%s' has no 5-hour room, so this worker launches on '%s'; the active seat is unchanged\n" \
+      "$label" "$active" "$dest" >&2
   fi
 }
 

@@ -102,7 +102,9 @@
 # launch-destination
 #            The seat a NEW worker launches on. Spare-leader mode first prefers
 #            an eligible alternative to the leader. --spare-only returns the
-#            active seat if none exists (used by Codex dispatch). Otherwise,
+#            active seat if none exists (used by Codex dispatch), unless its
+#            five-hour window is spent and a seat with five-hour room clears
+#            the same gate, for that one launch only. Otherwise,
 #            the active seat, unless
 #            a switch trigger is set and the active seat's five-hour window is
 #            proven at or below it; then a seat with five-hour room and more
@@ -659,7 +661,9 @@ session_room_reason() {
 # The seat a NEW native worker launches on, by name. An enabled spare-leader
 # preference first tries an eligible non-leader destination, or moves off a
 # used-up worker seat, falling back to the leader last. --spare-only then
-# retains the active seat, preserving Codex dispatch's existing session policy.
+# retains the active seat, preserving Codex dispatch's existing session policy,
+# unless the active seat's five-hour window is spent and next_seat --session-room
+# finds a seat that can run the work now under the five-hour wall rule.
 # Otherwise: With no switch trigger set,
 # or when the active seat has five-hour room or no five-hour reading, that is
 # the active seat, unchanged. When the active seat is proven to have no
@@ -687,6 +691,10 @@ cmd_launch_destination() {
     return 0
   fi
   if [ "$spare_only" -eq 1 ]; then
+    if seat_walled "$active" && name=$(next_seat --session-room "$active" 2>/dev/null); then
+      printf '%s\n' "$name"
+      return 0
+    fi
     printf '%s\n' "$active"
     return 0
   fi

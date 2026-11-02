@@ -4862,15 +4862,20 @@ test_the_five_hour_wall_moves_codex_work_too() {
   printf 'seat-max\n' > "$HOME_DIR/config/codex-seat"
   printf '20\n' > "$HOME_DIR/config/codex-seat-threshold"
 
-  out=$(run_seat "$HOME_DIR" "$FAKEBIN" --provider codex launch-destination)
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" --provider codex launch-destination --spare-only)
   assert_equals seat-max2 "$(printf '%s\n' "$out" | tail -1)" \
-    "a Codex launch must leave a seat whose session window is spent"
+    "a Codex spawn must leave a seat whose session window is spent"
+  assert_equals seat-max "$(cat "$HOME_DIR/config/codex-seat")" \
+    "routing one Codex spawn off a walled seat must not rotate the active seat"
   out=$(run_seat "$HOME_DIR" "$FAKEBIN" --provider codex worker-destination --from seat-max)
   assert_equals seat-max2 "$(printf '%s\n' "$out" | tail -1)" \
     "a walled Codex worker must move under the same rule"
 
   # Codex seats keep the weekly comparison wherever both can still run work.
   codex_window_fixture "$SEATS_DIR/seat-max" 15 '2026-11-02T04:00:00Z' -40 10 '2026-11-07T06:00:00Z' 6
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" --provider codex launch-destination --spare-only)
+  assert_equals seat-max "$out" \
+    "a Codex spawn must keep the active seat while it can still run work"
   out=$(run_seat "$HOME_DIR" "$FAKEBIN" --provider codex worker-destination --from seat-max)
   expect_code 1 "$?" "an unwalled Codex seat must still refuse a candidate with less weekly spare: $out"
   assert_contains "$out" "its weekly spare of 4 is not more than the 6" \
