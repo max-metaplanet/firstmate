@@ -4727,6 +4727,83 @@ test_the_destination_minimum_still_applies_on_top_of_the_anchor_rule() {
   pass "the destination minimum still refuses a candidate the anchor rule alone would accept"
 }
 
+# wall_case <name>
+# The 2026-11-02 readings: the active seat's five-hour window spent to nothing
+# while the other seat has over half of its own left, and the walled seat holds
+# slightly MORE weekly spare than the seat that can actually run work now.
+wall_case() {
+  read_seat_case "$(make_seat_case "$1")"
+  mkdir -p "$SEATS_DIR/seat-max" "$SEATS_DIR/seat-max2"
+  seat_logged_in "$SPEC_DIR" "$SEATS_DIR/seat-max" "$SEATS_DIR/seat-max2"
+  printf 'seat-max\n' > "$HOME_DIR/config/claude-seat"
+  printf '20\n' > "$HOME_DIR/config/claude-seat-threshold"
+  printf '10\n' > "$HOME_DIR/config/claude-seat-destination-min"
+  seat_windows "$SPEC_DIR" "$SEATS_DIR/seat-max" 0 '2026-11-02T04:00:00Z' 10 '2026-11-07T06:00:00Z' -40 6
+  seat_windows "$SPEC_DIR" "$SEATS_DIR/seat-max2" 56 '2026-11-02T04:00:00Z' 14 '2026-11-07T06:00:00Z' 30 4
+}
+
+test_a_five_hour_wall_yields_to_a_seat_that_can_run_now() {
+  local out
+  wall_case policy-five-hour-wall
+
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" launch-destination)
+  expect_code 0 "$?" "a new worker must leave a seat that cannot run it at all: $out"
+  assert_equals seat-max2 "$(printf '%s\n' "$out" | tail -1)" \
+    "a seat with five-hour room must beat a walled seat holding more weekly spare"
+
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" worker-destination --from seat-max)
+  expect_code 0 "$?" "a worker stuck at a five-hour wall must have somewhere to go: $out"
+  assert_equals seat-max2 "$(printf '%s\n' "$out" | tail -1)" \
+    "the mid-task move must follow the same rule as a new launch"
+
+  assert_equals seat-max "$(cat "$HOME_DIR/config/claude-seat")" \
+    "answering where work goes must not rotate the active seat"
+  pass "a seat whose five-hour window is spent yields to one that can run work now"
+}
+
+test_the_weekly_comparison_still_decides_when_both_seats_can_run() {
+  local out
+  wall_case policy-five-hour-tiebreak
+  # The active seat is under the switch trigger but NOT walled, so both seats
+  # can still run work and weekly spare is the whole question again.
+  seat_windows_clear "$SPEC_DIR"
+  seat_windows "$SPEC_DIR" "$SEATS_DIR/seat-max" 15 '2026-11-02T04:00:00Z' 10 '2026-11-07T06:00:00Z' -40 6
+  seat_windows "$SPEC_DIR" "$SEATS_DIR/seat-max2" 56 '2026-11-02T04:00:00Z' 14 '2026-11-07T06:00:00Z' 30 4
+
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" launch-destination)
+  expect_code 1 "$?" "a seat with less weekly spare must not take work off a seat that can still run: $out"
+  assert_contains "$out" "its weekly spare of 4 is not more than the 6" \
+    "the refusal must still name the weekly comparison that decided it"
+
+  # Two walled seats are the move worse than staying, so the weekly comparison
+  # is the whole answer there too: neither seat can run work now.
+  seat_windows_clear "$SPEC_DIR"
+  seat_windows "$SPEC_DIR" "$SEATS_DIR/seat-max" 0 '2026-11-02T04:00:00Z' 10 '2026-11-07T06:00:00Z' -40 6
+  seat_windows "$SPEC_DIR" "$SEATS_DIR/seat-max2" 0 '2026-11-02T04:00:00Z' 14 '2026-11-07T06:00:00Z' -40 4
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" worker-destination --from seat-max)
+  expect_code 1 "$?" "a walled worker must not move onto a second walled seat: $out"
+  assert_contains "$out" "its weekly spare of 4 is not more than the 6" \
+    "a candidate that cannot run work either must be refused on weekly spare"
+  pass "weekly spare still decides between two seats that can both run work"
+}
+
+test_the_five_hour_wall_never_crosses_the_destination_floor() {
+  local out
+  wall_case policy-five-hour-floor
+  printf '20\n' > "$HOME_DIR/config/claude-seat-destination-min"
+
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" launch-destination)
+  expect_code 1 "$?" "a walled seat must not push work below the destination floor: $out"
+  assert_contains "$out" "14% left across its account windows is not above the 20% destination minimum" \
+    "the refusal must name the floor, not the five-hour wall it would otherwise cross"
+
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" worker-destination --from seat-max)
+  expect_code 1 "$?" "the mid-task move must honour the same floor: $out"
+  assert_contains "$out" "14% left across its account windows is not above the 20% destination minimum" \
+    "the mid-task refusal must name the floor too"
+  pass "the five-hour wall never sends work below the existing destination floor"
+}
+
 test_the_lead_move_requires_measured_spend_priority() {
   local rec out
   rec=$(make_seat_case policy-lead-anchor)
@@ -5020,6 +5097,9 @@ test_a_new_worker_is_held_when_no_seat_has_five_hour_room
 test_a_crossing_never_moves_onto_a_seat_with_no_more_headroom
 test_a_crossing_still_moves_onto_a_seat_that_is_genuinely_better
 test_the_destination_minimum_still_applies_on_top_of_the_anchor_rule
+test_a_five_hour_wall_yields_to_a_seat_that_can_run_now
+test_the_weekly_comparison_still_decides_when_both_seats_can_run
+test_the_five_hour_wall_never_crosses_the_destination_floor
 test_the_lead_move_requires_measured_spend_priority
 test_an_unreadable_anchor_leaves_the_absolute_rules_in_charge
 test_a_walled_worker_moves_off_an_empty_seat_but_not_onto_an_equal_one
