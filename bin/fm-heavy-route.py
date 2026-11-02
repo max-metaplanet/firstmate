@@ -71,7 +71,8 @@ one exists the command stays local and the notice names it.
 Nothing a remote run writes comes back, so a command whose job includes writing
 into the worktree stays local: next build, a tsc build or a tsc whose resolved
 configuration (`tsc --showConfig`, run outside the preload) does not prove
-noEmit, vitest updating snapshots or writing coverage or an output file, and
+noEmit with incremental and composite disabled, a tsc writing traces or CPU
+profiles, vitest updating snapshots or writing coverage or an output file, and
 eslint fixing files or writing an output file. A vitest configuration file that
 writes coverage or a reporter's output file is invisible here, so such a project
 declares vitest local-only. Remote output is captured and printed when the
@@ -282,15 +283,17 @@ def staged_or_untracked(root):
     return added, (untracked[0] if untracked else None)
 
 
-def proves_no_emit(command):
-    """Whether tsc's resolved configuration sets noEmit; False when undecidable."""
+def proves_no_outputs(command):
+    """Whether tsc's resolved configuration prevents file output."""
     try:
         shown = subprocess.run([*command, "--showConfig"], capture_output=True, text=True,
                                timeout=60, env=dict(os.environ, FM_BUILD_LOCK_BYPASS="1"))
         options = json.loads(shown.stdout).get("compilerOptions")
     except (OSError, subprocess.SubprocessError, ValueError, AttributeError):
         return False
-    return shown.returncode == 0 and isinstance(options, dict) and options.get("noEmit") is True
+    return (shown.returncode == 0 and isinstance(options, dict) and
+            options.get("noEmit") is True and not options.get("incremental") and
+            not options.get("composite"))
 
 
 def normalized_options(command):
@@ -318,7 +321,7 @@ def writes_worktree(kind, command):
         return True
     if kind == "tsc":
         return any(name in ("-b", "--build", "--generatetrace", "--generatecpuprofile")
-                   for name, _ in options) or not proves_no_emit(command)
+                   for name, _ in options) or not proves_no_outputs(command)
     if kind == "vitest":
         return any(name in ("-u", "--update") or name.startswith(
             ("--coverage", "--outputfile")) for name, _ in options)
@@ -382,7 +385,11 @@ def boat(settings, command, kind, home, bin_dir, root, inputs):
     adapter += ["--", "bash", "-c", "\n".join(script)]
     print("heavy-route: %s on Boat; output is printed when it finishes; evidence %s"
           % (kind, output / "result.json"), file=sys.stderr, flush=True)
-    finished = subprocess.run(adapter, env=dict(os.environ, FM_HOME=str(home)), check=False)
+    finished = subprocess.run(adapter, env=dict(os.environ, FM_HOME=str(home)), check=False,
+                              stdout=subprocess.PIPE)
+    sys.stdout.buffer.write(finished.stdout.replace(
+        ("\n" + dispatched + "\n").encode(), b"", 1))
+    sys.stdout.buffer.flush()
     try:
         result = json.loads((output / "result.json").read_text())
     except (OSError, ValueError):

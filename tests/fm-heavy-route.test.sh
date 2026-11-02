@@ -146,6 +146,27 @@ assert 'bootstrapped' in r.stdout, r.stdout
 assert 'boat_fixture_secret' not in r.stdout + r.stderr
 print('ok - a declared project runs the kind on Boat, outside the local slots')
 
+for name, payload, exit_code in (('json', '[{"filePath":"tracked.txt","messages":[]}]', 0),
+                                 ('failed', '[{"filePath":"tracked.txt","errorCount":1}]', 1),
+                                 ('empty', '', 0), ('bytes', 'a\n\nb\tend', 0)):
+    p, work, config, state, env = case('stdout-' + name,
+                                      declaration="smokeproj bootstrap=true\n")
+    (work / 'eslint.py').write_text(
+        'import sys\nassert sys.argv[1:] == [".", "--format", "json"]\n'
+        'sys.stdout.write(%r)\nsys.exit(%d)\n' % (payload, exit_code))
+    subprocess.run(['git', '-C', str(work), 'add', 'eslint.py'], check=True, capture_output=True)
+    subprocess.run(['git', '-C', str(work), 'commit', '-qm', 'eslint fixture'],
+                   check=True, capture_output=True)
+    assert publish(config, env).returncode == 0
+    r = run(work, env, kind='eslint',
+            command=(sys.executable, str(work / 'eslint.py'), '.', '--format', 'json'))
+    assert called(state) and r.returncode == exit_code, (name, r.stderr)
+    assert r.stdout == payload, (name, r.stdout)
+    assert 'fm-heavy-command-' not in r.stdout + r.stderr, (r.stdout, r.stderr)
+    if name in ('json', 'failed'):
+        assert json.loads(r.stdout)[0]['filePath'] == 'tracked.txt', r.stdout
+print('ok - routed ESLint JSON and other output retain their exact bytes without protocol markers')
+
 p, work, config, state, env = case('staged-new', declaration=DECLARED)
 assert publish(config, env).returncode == 0
 (work / 'deep/staged.txt').write_text('staged content\n')
@@ -219,6 +240,53 @@ for name, noemit, args, routed in (
     assert called(state) == routed, (name, r.stderr)
     assert r.stdout.endswith('held=\n') == routed, (name, r.stdout)
 print('ok - tsc goes to Boat only when its resolved configuration proves noEmit')
+
+TSC_OUTPUTS = '''import json, os, sys
+from pathlib import Path
+options = json.loads(Path('tsconfig.json').read_text())['compilerOptions']
+args = sys.argv[1:]
+for name in ('noEmit', 'incremental', 'composite'):
+    flag = '--' + name
+    if flag in args:
+        index = args.index(flag) + 1
+        value = args[index] if index < len(args) else 'true'
+        options[name] = value != 'false'
+if '--showConfig' in args:
+    print(json.dumps({'compilerOptions': options}))
+else:
+    if options.get('incremental') or options.get('composite'):
+        Path(options['tsBuildInfoFile']).write_text('build info\\n')
+    print('ran held=' + os.environ.get('FM_BUILD_LOCK_HELD', ''))
+'''
+for name, settings, args, routed in (
+    ('incremental-config', {'incremental': True}, (), False),
+    ('composite-config', {'composite': True}, (), False),
+    ('composite-without-incremental', {'composite': True, 'incremental': False}, (), False),
+    ('incremental-cli', {}, ('--incremental',), False),
+    ('incremental-cli-value', {}, ('--incremental', 'true'), False),
+    ('composite-cli', {}, ('--composite', 'true'), False),
+    ('incremental-disabled', {'incremental': True}, ('--incremental', 'false'), True),
+    ('composite-disabled', {'composite': True}, ('--composite', 'false'), True),
+    ('both-disabled', {'incremental': False, 'composite': False}, (), True),
+):
+    p, work, config, state, env = case('tsc-output-' + name, declaration=DECLARED)
+    (work / 'tsc.py').write_text(TSC_OUTPUTS)
+    (work / 'tsconfig.json').write_text(json.dumps({'compilerOptions': {
+        'noEmit': True, 'tsBuildInfoFile': 'cache.tsbuildinfo', **settings}}))
+    subprocess.run(['git', '-C', str(work), 'add', 'tsc.py', 'tsconfig.json'],
+                   check=True, capture_output=True)
+    subprocess.run(['git', '-C', str(work), 'commit', '-qm', 'tsc fixture'],
+                   check=True, capture_output=True)
+    assert publish(config, env).returncode == 0
+    r = run(work, env, kind='tsc', command=(sys.executable, str(work / 'tsc.py'), *args))
+    assert r.returncode == 0 and called(state) == routed, (name, r.stdout, r.stderr)
+    if routed:
+        assert not (work / 'cache.tsbuildinfo').exists(), name
+        assert r.stdout.endswith('held=\n'), (name, r.stdout)
+    else:
+        assert (work / 'cache.tsbuildinfo').read_text() == 'build info\n', name
+        assert not r.stdout.endswith('held=\n'), (name, r.stdout)
+print('ok - incremental and composite build info stays local, honoring resolved CLI overrides')
 
 for flag in ('--generateTrace', '--generateCpuProfile'):
     for spelling in ('separate', 'equals'):
