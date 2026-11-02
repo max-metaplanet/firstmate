@@ -143,7 +143,8 @@ A deadline that covered the queue measured the queue, and on 2026-11-02 one such
 Modeled serial work is also not that run's wall clock, which is the measurement the budget is sized from, because the runner schedules a plain script list into concurrent phases plus a serial tail of every script whose family carries no concurrency proof.
 
 The measurement below was taken on 2026-11-02 on a six-CPU Linux host at load average 3, using the change set of [pull request 205](https://github.com/max-metaplanet/firstmate/pull/205) (`bin/fm-seat-lib.sh`, `bin/fm-seat.sh`, `bin/fm-spawn.sh`, `docs/claude-seats.md`, `tests/fm-seat.test.sh`), which maps to 94 candidate suites and is representative of a large change.
-Each figure is one `bin/fm-build-lock.py -- bash bin/fm-test-run.sh --per-script-timeout-secs 1500 <selection>` run, the same command `commands.test` issues.
+Each figure is one `bin/fm-build-lock.py -- bash bin/fm-test-run.sh --per-script-timeout-secs 1500 <selection>` measurement run.
+The current `commands.test` instead uses a single execution deadline inside the heavy slot and omits per-script watchdogs, whose separate process groups escape that deadline.
 
 | Budget | Selected | Modeled | Measured wall | Concurrent phase | Serial tail |
 |---|---|---|---|---|---|
@@ -151,11 +152,11 @@ Each figure is one `bin/fm-build-lock.py -- bash bin/fm-test-run.sh --per-script
 | 150000 ms | 34 of 94 | 137958 ms | 124.4 s | 60.7 s over 26 scripts | 61.4 s over 8 scripts |
 
 At 300000 ms the gate left only 4.34x headroom under its 900 s bound, which a loaded machine can spend by itself.
-At 150000 ms the bound stays 900 s, which is 7.2x the measured wall, a factor in the same range as the 1.6x slow-host allowance `PORTABLE_SERIAL_MAX_WEIGHT_MS` is already derived from.
+At 150000 ms the bound stays 900 s, which is 7.2x the measured wall and exceeds the 1.6x slow-host allowance used to derive `PORTABLE_SERIAL_MAX_WEIGHT_MS`.
 The serial tail was 77% of the wall at 300000 ms and is 50% of it at 150000 ms, because the 2026-11-02 hint refresh moved the heavy `backend-dispatch` members out of a cheapest-first selection that had been admitting them on understated hints.
 Running the configured `commands.test` body end to end against that path set, with both changes in place, selected those 34 suites, named 60 as deferred, and exited 0 in 90 s.
 That bound is a hang tripwire under the policy in [Timeouts](#timeouts), not a packing estimate, so a selection that reaches it needs a smaller budget rather than a longer bound.
-Remeasure both numbers together, with the command above, after any serial hint refresh or any change to the runner's local scheduling.
+Remeasure the modeled budget and execution headroom together using the current configured `commands.test` body after any serial hint refresh or any change to the runner's local scheduling.
 
 ## Coverage guard
 
