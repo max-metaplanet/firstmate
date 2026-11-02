@@ -176,6 +176,55 @@ assert_grep 'duplicate credential profiles' "$TEST_ROOT/evidence" 'duplicate pro
 rm "$TEST_ROOT/codex/duplicate"
 pass 'malformed configuration and duplicate profiles fail closed'
 
+# A seat whose plan has no five-hour window is chosen on its week alone. The
+# producer reports alternate's five-hour window spent or burning beside a week
+# with 70% left, in TOON and in JSON alike, with the negative spendPriority it
+# derives from that five-hour window (the live-e2e fixture's -0.8333), while
+# work has a clearly better one. Only reading the week makes alternate feasible,
+# and only the declared-first preference lets it outrank work.
+declared_alternate() {
+  local week=$1 five=${2:-0} runway=${3:-exhausted_now} seconds=${4:-0} profile="$TEST_ROOT/claude/alternate"
+  cat > "$profile/quota.toon" <<TOON
+quota[1]{provider,accountKey,scope,effectivePercentRemaining,spendPriority,runway,confidence,limitedBy,resetsAt}:
+  claude,default,all_models,$five,-0.8333,$runway,high,five_hour,2030-01-01T00:00:00Z
+exhaustion[1]{provider,accountKey,scope,usableRunwaySeconds,projectedExhaustedAt,limitingWindowId}:
+  claude,default,all_models,$seconds,2030-01-01T00:02:00Z,five_hour
+attention[0]:
+TOON
+  jq -cn --argjson week "$week" --argjson five "$five" --arg runway "$runway" --argjson seconds "$seconds" '{schemaVersion:5,providers:[{provider:"claude",source:"oauth",
+    windows:[{id:"five_hour",kind:"session",percentRemaining:$five},{id:"seven_day",kind:"weekly",percentRemaining:$week}],
+    quotaSemantics:{effectiveAvailability:[{scope:"all_models",status:"known",effectivePercentRemaining:$five,
+      boundedBy:["five_hour"],limitingWindowIds:["five_hour"],selection:{status:"known",spendPriority:-0.8333},
+      runway:{status:$runway,usableRunwaySeconds:$seconds,projectedExhaustedAt:"2030-01-01T00:02:00Z",limitingWindowId:"five_hour"}}]}}]}' > "$profile/quota.json"
+}
+quota codex work 0.5
+declared_alternate 70
+out=$(choose)
+[ "$out" = 'codex work' ] || fail "an undeclared seat with a spent five-hour window must not lead: $out"
+assert_grep 'exhausted quota' "$TEST_ROOT/evidence" 'the undeclared seat must be refused on its five-hour reading'
+printf 'alternate\n' > "$TEST_ROOT/home/config/claude-seat-no-session-window"
+out=$(choose)
+[ "$out" = 'claude alternate' ] || fail "a declared seat with weekly room must be chosen to lead: $out"
+declared_alternate 70 2 projected_exhaustion 120
+out=$(choose)
+[ "$out" = 'claude alternate' ] || fail "a declared seat must not be withheld on a five-hour runway: $out"
+rm "$TEST_ROOT/home/config/claude-seat-no-session-window"
+out=$(choose)
+[ "$out" = 'codex work' ] || fail "undeclared, the five-hour runway must withhold the same seat: $out"
+assert_grep 'below 180s' "$TEST_ROOT/evidence" 'the undeclared seat must be withheld on its five-hour runway'
+quota claude alternate -0.8333
+out=$(choose)
+[ "$out" = 'codex work' ] || fail "undeclared, the better spendPriority must win: $out"
+printf 'alternate\n' > "$TEST_ROOT/home/config/claude-seat-no-session-window"
+out=$(choose)
+[ "$out" = 'claude alternate' ] || fail "a declared seat with weekly room must outrank a better spendPriority: $out"
+declared_alternate 0
+out=$(choose)
+[ "$out" = 'codex work' ] || fail "a declared seat with no weekly room must still be refused: $out"
+rm "$TEST_ROOT/home/config/claude-seat-no-session-window"
+quota claude alternate 0.2
+pass 'leader selection reads a seat with no five-hour window on its week alone'
+
 # Exercise the real auto controller with a Codex incumbent. Only the transaction
 # preflight is stubbed; this test must never replace an agent or touch a backend.
 mkdir -p "$TEST_ROOT/code/bin" "$TEST_ROOT/codex/worker"

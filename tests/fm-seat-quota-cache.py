@@ -171,6 +171,62 @@ for value, floor, allowed in [(18, None, True), (18, "20", False), (10, None, Fa
     assert c.count() == 2
 print("PASS: a failed live read falls back at the configured launch boundary and refuses at or below it")
 
+
+# A seat declared to have no five-hour window is judged on its week by the cache
+# itself, not only by the decision afterwards. Its producer reports a spent
+# five-hour window (account figure 0, runway exhausted_now) beside a week with
+# 70 percent left: that is a usable reading for this plan, so it is cached like
+# any good read and still carries a launch through a transient failure, exactly
+# as an ordinary seat with 70 percent would. An undeclared seat with the same
+# report is still refused, so the verdict can only come from the declaration.
+def spent_session():
+    report = quota(70)
+    provider = report["providers"][0]
+    provider["windows"][0]["percentRemaining"] = 0
+    provider["quotaSemantics"]["effectiveAvailability"][0].update(
+        effectivePercentRemaining=0, limitingWindowIds=["five_hour"],
+        runway={"status": "exhausted_now"})
+    return report
+
+
+def declared_case(declared):
+    case = Case()
+    seats = case.base / "seats"
+    case.profile = seats / "weekly"
+    case.profile.mkdir(parents=True)
+    (case.config / "claude-seats-root").write_text(str(seats) + "\n")
+    if declared:
+        (case.config / "claude-seat-no-session-window").write_text("weekly\n")
+    case.set(spent_session())
+    return case
+
+
+c = declared_case(True)
+c.expect(True, "source=live")
+c.expect(True, "source=fresh-cache")
+assert c.count() == 1, c.calls.read_text()
+c.age(200)
+c.set(failure())
+c.expect(True, "source=last-good-fallback")
+assert c.count() == 2, c.calls.read_text()
+c = declared_case(True)
+burning = quota(70)
+burning["providers"][0]["windows"][0]["percentRemaining"] = 2
+burning["providers"][0]["quotaSemantics"]["effectiveAvailability"][0].update(
+    effectivePercentRemaining=2, limitingWindowIds=["five_hour"],
+    runway={"status": "projected_exhaustion", "usableRunwaySeconds": 60,
+            "projectedExhaustedAt": iso(-60), "limitingWindowId": "five_hour"})
+c.set(burning)
+c.expect(True, "source=live")
+c.age(200)
+c.set(failure())
+c.expect(True, "source=last-good-fallback")
+c = declared_case(False)
+c.expect(False, "no plan quota left")
+c.set(failure())
+c.expect(False, "fallback=unsafe-or-missing")
+print("PASS: a seat with no five-hour window is cached and falls back on its week alone")
+
 mutations = [
     lambda r: r["windows"][0].update(percentRemaining=10),
     lambda r: r["windows"][1].update(percentRemaining=10),
