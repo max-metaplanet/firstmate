@@ -1,0 +1,12 @@
+ok - the 2026-10-16 readings route work by weekly spare, wait out a five-hour dip, and never bounce
+ok - a declared seat with weekly room is neither held nor rotated away from on a five-hour reading
+ok - a declared seat never holds a launch for five-hour room it does not have
+ok - a declared seat with weekly room is the preferred destination on both selection paths
+ok - a declared seat with no weekly room is treated as exhausted
+ok - the quota floor rests and wakes a declared seat on its week alone
+ok - status and list report which seats have no five-hour window
+# all fm-seat tests passed
+
+real	0m15.681s
+user	0m5.769s
+sys	0m5.447s

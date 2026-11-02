@@ -1,0 +1,91 @@
+########## A. NOT declared (control) — seat-max-gmail 5h=0%, week=70%
+$ fm-seat.sh launch-destination
+seat-other
+[exit 0]
+
+$ fm-seat.sh status
+active seat for NEW workers: seat-max-gmail
+active profile: ~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-live-noses.e2nypB/case/seats/seat-max-gmail
+login state: logged-in
+headroom: week 70% left (resets 2099-01-07 00:00Z), 5-hour 0% left (resets 2099-01-01 00:00Z)
+pipeline seat for next managed launch: seat-max-gmail (follows active seat)
+firstmate itself is running on: (not recorded for this session)
+spare leader: off
+auto-switch trigger: at or below 20% left on the active seat
+destination minimum: (unset - any logged-in seat is a valid destination)
+extra-usage policy: (unset - nothing holds Claude dispatch)
+held out of automatic rotation by hand: (none - every seat under the root is a rotation candidate)
+no 5-hour window on their plan: (none declared - every seat is bounded by its 5-hour window as well as its week)
+quota floor: (unset - no seat is ever rested out of automatic rotation)
+resting below the quota floor:
+  (none - no quota floor is configured, so no seat is ever rested)
+auto-switch watch: not armed
+new Claude dispatch: allowed
+  no extra-usage policy is configured, so no quota is read and nothing holds
+
+live workers keep the seat they launched with:
+  (no task records)
+
+local secondmate homes declining inherited seats:
+  (none - every local home takes this seat)
+[exit 0]
+
+########## B. config/claude-seat-no-session-window = seat-max-gmail
+$ fm-seat.sh launch-destination
+seat-max-gmail
+[exit 0]
+
+$ fm-seat.sh auto
+[exit 0]
+
+active seat now: seat-max-gmail
+
+$ fm-seat.sh status
+active seat for NEW workers: seat-max-gmail
+active profile: ~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-live-noses.e2nypB/case/seats/seat-max-gmail
+login state: logged-in
+headroom: week 70% left (resets 2099-01-07 00:00Z)
+pipeline seat for next managed launch: seat-max-gmail (follows active seat)
+firstmate itself is running on: (not recorded for this session)
+spare leader: off
+auto-switch trigger: at or below 20% left on the active seat
+destination minimum: (unset - any logged-in seat is a valid destination)
+extra-usage policy: stop - hold new Claude dispatch rather than start work on paid extra usage
+held out of automatic rotation by hand: (none - every seat under the root is a rotation candidate)
+no 5-hour window on their plan: seat-max-gmail (every 5-hour reading is ignored for them, their week alone decides, and they are the preferred destination while it has room)
+quota floor: (unset - no seat is ever rested out of automatic rotation)
+resting below the quota floor:
+  (none - no quota floor is configured, so no seat is ever rested)
+auto-switch watch: not armed
+new Claude dispatch: allowed
+  the active Claude seat still has 70% of its plan quota left
+  quota evidence: source=live-or-hold fallback=unsafe-or-missing age=unknowns backoff=0s failure=live
+
+live workers keep the seat they launched with:
+  (no task records)
+
+local secondmate homes declining inherited seats:
+  (none - every local home takes this seat)
+[exit 0]
+
+$ fm-seat.sh list
+seats root: ~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-live-noses.e2nypB/case/seats
+  default	unknown	-	(ambient default login)
+* seat-max-gmail	logged-in	seat--home-max-guest--no-mistakes-worktrees-c0c4fcacb05a--fm-test-scratch-fm-live-noses-e2nypB-case-seats-seat-max-gmail@example.test	~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-live-noses.e2nypB/case/seats/seat-max-gmail	no 5-hour window on its plan: only its weekly limit counts
+  seat-other	logged-in	seat--home-max-guest--no-mistakes-worktrees-c0c4fcacb05a--fm-test-scratch-fm-live-noses-e2nypB-case-seats-seat-other@example.test	~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-live-noses.e2nypB/case/seats/seat-other
+[exit 0]
+
+########## C. adversarial: declared but WEEK spent (5h 90%, week 0%)
+$ fm-seat.sh worker-destination --from seat-other
+seat seat-max-gmail: skipped, its quota is used up; the seat comes back at 2099-01-07T00:00:00Z
+seat seat-other: resets at 2099-01-07T00:00:00Z
+seat default: reset unknown: its quota could not be read
+seat seat-max-gmail: resets at 2099-01-07T00:00:00Z
+error: no seat under the seats root qualifies to take over work running on 'seat-other' (each skipped seat and its reason is printed above); add and log into another seat, put an excluded seat back with 'fm-seat.sh auto-include <name>', or lower 'fm-seat.sh destination-min' (docs/claude-seats.md)
+[exit 1]
+
+########## D. adversarial: declaration names a different seat only (stale/typo entry)
+$ fm-seat.sh launch-destination
+seat-other
+[exit 0]
+

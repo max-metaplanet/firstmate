@@ -1,0 +1,17 @@
+ok - leader ranks both native providers by spendPriority with TOON only
+ok - leader selection has no provider preference
+ok - leader ties require a decision
+ok - runway feasibility gates spendPriority
+ok - unknown evidence falls back once and stays unknown
+ok - exclusion, explicit floor, and native model availability are hard gates
+ok - Codex runtime identity selects across providers without a Claude fallback rule
+ok - selection matches native account and exact model constraints
+ok - multi-scope ranking compares spendPriority independently of percentage headroom
+ok - credential uncertainty and renewable expiry stay distinct
+ok - malformed configuration and duplicate profiles fail closed
+ok - leader selection reads a seat with no five-hour window on its week alone
+ok - one Claude watch drives Codex incumbent rotation and deduplicates the crossing
+
+real	0m21.407s
+user	0m7.245s
+sys	0m3.590s
