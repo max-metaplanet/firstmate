@@ -1,0 +1,8 @@
+waiting for a heavy slot (1 on this machine, held by pid 3030573)
+FM_TEST_BEGIN 2026-11-02T20:00:22Z ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6EWD6SAHZXB5H9JHBR6RVEN/.nm-queue-proof-xb7vnmhn/success.test.sh family=unclassified expected_gate_skip=none
+queued test executed successfully
+FM_TEST_END 2026-11-02T20:00:23Z ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6EWD6SAHZXB5H9JHBR6RVEN/.nm-queue-proof-xb7vnmhn/success.test.sh exit=0 duration_ms=213 gate_skip=false
+FM_TEST_SUMMARY total=1 failed=0 skipped_gate=0 duration_ms=253
+FM_TEST_SUMMARY_FAMILY family=unclassified count=1 duration_ms=213 failed=0
+FM_TEST_SLOWEST rank=1 script=~/.no-mistakes/worktrees/c0c4fcacb05a/01M6EWD6SAHZXB5H9JHBR6RVEN/.nm-queue-proof-xb7vnmhn/success.test.sh duration_ms=213
+Queued longer than the 2s execution deadline: elapsed=5.487s, exit=0.

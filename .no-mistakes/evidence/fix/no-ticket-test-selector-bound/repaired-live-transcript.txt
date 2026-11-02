@@ -1,0 +1,217 @@
+Typed YAML: test.allow_approve_over_failure is not enabled.
+
+### Reported PR 205 path set
+argv=["bash", "bin/fm-ci-change-scope.sh", "--local"]
+behavior=true
+macos=true
+full=true
+parallel=true
+herdr=true
+selected_matrix=
+local_scripts=tests/fm-harness-adapter-references.test.sh tests/fm-boat-prepush-lib.test.sh tests/fm-forge-detect.test.sh tests/fm-ask-user-authority.test.sh tests/fm-quota-claude-mod.test.sh tests/fm-trace-context-lib.test.sh tests/fm-project-mode.test.sh tests/fm-t3.test.sh tests/fm-fleet-mod.test.sh tests/fm-backend-tmux-smoke.test.sh tests/fm-seat-vendor-renew.test.sh tests/fm-lint-workflows.test.sh tests/fm-documentation-audiences.test.sh tests/fm-backend-t3.test.sh tests/fm-subagent-pretool-check.test.sh tests/fm-quota-wall.test.sh tests/fm-operational-input.test.sh tests/fm-boat-test-wrapper.test.sh tests/fm-git-strip-ai-trailers.test.sh tests/fm-calm-claude-mod.test.sh tests/fm-devin-harness.test.sh tests/fm-classify-decision-key.test.sh tests/fm-harness-precedence.test.sh tests/fm-tmux-agent-liveness.test.sh tests/fm-test-isolation-proof.test.sh tests/fm-seat-lock.test.sh tests/fm-nm-recover.test.sh tests/fm-seat-renew.test.sh tests/fm-boat-prepush.test.sh tests/fm-spawn-t3.test.sh tests/fm-dod-lib.test.sh tests/fm-herdr-session-cleanup.test.sh tests/fm-commandcode-harness.test.sh tests/fm-worker-park.test.sh
+local_budget_ms=150000
+local_deferred=tests/fm-claude-trust.test.sh tests/fm-timeout-lib.test.sh tests/fm-fork-free-helpers.test.sh tests/fm-t3-mirrors.test.sh tests/fm-lead-seat.test.sh tests/fm-nm-run-lib.test.sh tests/fm-rovo-harness.test.sh tests/fm-slots.test.sh tests/fm-worker-admit.test.sh tests/fm-seat-board.test.sh tests/fm-build-lock.test.sh tests/fm-backend.test.sh tests/fm-polytoken-harness.test.sh tests/fm-spawn-worktree-settle.test.sh tests/fm-t3-leader.test.sh tests/fm-bearings-board.test.sh tests/fm-task-delivery.test.sh tests/fm-vendor-auth-probe.test.sh tests/fm-arm-pretool-check.test.sh tests/fm-backend-herdr.test.sh tests/fm-brief.test.sh tests/fm-captain-hold-lifecycle.test.sh tests/fm-cd-pretool-check.test.sh tests/fm-composer-ghost.test.sh tests/fm-composer-lib.test.sh tests/fm-crew-state.test.sh tests/fm-ensure-agents-md.test.sh tests/fm-grok-harness.test.sh tests/fm-herdr-lab.test.sh tests/fm-lint.test.sh tests/fm-pi-primary-types.test.sh tests/fm-send-popup-settle.test.sh tests/fm-send-settle.test.sh tests/fm-send-strict.test.sh tests/fm-spawn-batch.test.sh tests/fm-supervision-instructions.test.sh tests/fm-test-run.test.sh tests/fm-tmux-submit-busy.test.sh tests/fm-transition-lib.test.sh tests/fm-send-inbox.test.sh tests/fm-teardown-endpoint-safety.test.sh tests/fm-boat-run.test.sh tests/fm-muse-harness.test.sh tests/fm-send-resolve-key.test.sh tests/fm-agy-harness.test.sh tests/fm-calm-pi-extension.test.sh tests/fm-spawn-compact-adviser-disable.test.sh tests/fm-trace-context-spawn.test.sh tests/fm-omp-harness.test.sh tests/fm-kimi-harness.test.sh tests/fm-control.test.sh tests/fm-worker-account.test.sh tests/fm-spawn-compact-adviser-disable-remote.test.sh tests/fm-project-capacity.test.sh tests/fm-lead-restart.test.sh tests/fm-work-intake.test.sh tests/fm-fleet-capacity.test.sh tests/fm-control-relaunch.test.sh tests/fm-seat.test.sh tests/fm-spawn-dispatch-profile.test.sh
+
+exit=0; elapsed_s=3.501
+
+### Real runner timing hints for selected paths
+argv=["bash", "bin/fm-test-run.sh", "--list-weighted", "tests/fm-harness-adapter-references.test.sh", "tests/fm-boat-prepush-lib.test.sh", "tests/fm-forge-detect.test.sh", "tests/fm-ask-user-authority.test.sh", "tests/fm-quota-claude-mod.test.sh", "tests/fm-trace-context-lib.test.sh", "tests/fm-project-mode.test.sh", "tests/fm-t3.test.sh", "tests/fm-fleet-mod.test.sh", "tests/fm-backend-tmux-smoke.test.sh", "tests/fm-seat-vendor-renew.test.sh", "tests/fm-lint-workflows.test.sh", "tests/fm-documentation-audiences.test.sh", "tests/fm-backend-t3.test.sh", "tests/fm-subagent-pretool-check.test.sh", "tests/fm-quota-wall.test.sh", "tests/fm-operational-input.test.sh", "tests/fm-boat-test-wrapper.test.sh", "tests/fm-git-strip-ai-trailers.test.sh", "tests/fm-calm-claude-mod.test.sh", "tests/fm-devin-harness.test.sh", "tests/fm-classify-decision-key.test.sh", "tests/fm-harness-precedence.test.sh", "tests/fm-tmux-agent-liveness.test.sh", "tests/fm-test-isolation-proof.test.sh", "tests/fm-seat-lock.test.sh", "tests/fm-nm-recover.test.sh", "tests/fm-seat-renew.test.sh", "tests/fm-boat-prepush.test.sh", "tests/fm-spawn-t3.test.sh", "tests/fm-dod-lib.test.sh", "tests/fm-herdr-session-cleanup.test.sh", "tests/fm-commandcode-harness.test.sh", "tests/fm-worker-park.test.sh"]
+13526	tests/fm-worker-park.test.sh
+12649	tests/fm-commandcode-harness.test.sh
+10365	tests/fm-herdr-session-cleanup.test.sh
+9677	tests/fm-dod-lib.test.sh
+8974	tests/fm-spawn-t3.test.sh
+8570	tests/fm-boat-prepush.test.sh
+7526	tests/fm-seat-renew.test.sh
+6204	tests/fm-nm-recover.test.sh
+5624	tests/fm-seat-lock.test.sh
+5546	tests/fm-test-isolation-proof.test.sh
+4875	tests/fm-tmux-agent-liveness.test.sh
+4841	tests/fm-harness-precedence.test.sh
+4362	tests/fm-classify-decision-key.test.sh
+4181	tests/fm-devin-harness.test.sh
+3863	tests/fm-calm-claude-mod.test.sh
+3805	tests/fm-git-strip-ai-trailers.test.sh
+3795	tests/fm-boat-test-wrapper.test.sh
+3192	tests/fm-operational-input.test.sh
+2872	tests/fm-quota-wall.test.sh
+2038	tests/fm-subagent-pretool-check.test.sh
+1970	tests/fm-backend-t3.test.sh
+1956	tests/fm-documentation-audiences.test.sh
+1583	tests/fm-lint-workflows.test.sh
+1031	tests/fm-seat-vendor-renew.test.sh
+1007	tests/fm-backend-tmux-smoke.test.sh
+900	tests/fm-fleet-mod.test.sh
+665	tests/fm-t3.test.sh
+476	tests/fm-project-mode.test.sh
+459	tests/fm-trace-context-lib.test.sh
+441	tests/fm-quota-claude-mod.test.sh
+312	tests/fm-ask-user-authority.test.sh
+265	tests/fm-forge-detect.test.sh
+263	tests/fm-boat-prepush-lib.test.sh
+145	tests/fm-harness-adapter-references.test.sh
+
+exit=0; elapsed_s=0.176
+PR205 selected=34; deferred=60; modeled_ms=137958; execution_bound_s=900
+
+### Adversarial mixed cheap, expensive, and live paths
+argv=["bash", "bin/fm-ci-change-scope.sh", "--local"]
+behavior=true
+macos=true
+full=false
+parallel=false
+herdr=true
+selected_matrix={"include":[{"shard":"1","scripts":"tests/fm-seat.test.sh tests/fm-quota-choose.test.sh"}]}
+local_scripts=tests/fm-quota-choose.test.sh
+local_budget_ms=150000
+local_deferred=tests/fm-backend-herdr-smoke.test.sh tests/fm-seat.test.sh
+
+exit=0; elapsed_s=1.928
+
+### Shared scaffolding retains full scope but bounded local coverage
+argv=["bash", "bin/fm-ci-change-scope.sh", "--local"]
+behavior=true
+macos=true
+full=true
+parallel=true
+herdr=true
+selected_matrix=
+local_scripts=tests/fm-backend-zellij-smoke.test.sh tests/fm-backend-cmux-smoke.test.sh tests/fm-gitignore-config.test.sh tests/fm-opencode-abs-cwd-rail-live-e2e.test.sh tests/fm-harness-adapter-references.test.sh tests/fm-remote-entrypoint.test.sh tests/fm-stat-shadowing.test.sh tests/fm-project-origin.test.sh tests/fm-boat-prepush-lib.test.sh tests/fm-forge-detect.test.sh tests/fm-ask-user-authority.test.sh tests/fm-pr-reviewers.test.sh tests/fm-remote-job-claim-retention.test.sh tests/fm-quota-claude-mod.test.sh tests/fm-jev-mem-guard.test.sh tests/fm-secondmate-resume.test.sh tests/fm-trace-context-lib.test.sh tests/fm-project-mode.test.sh tests/fm-dispatch-predict-lib.test.sh tests/fm-t3.test.sh tests/fm-pr-ci-validated.test.sh tests/fm-memcap.test.sh tests/fm-task-timing.test.sh tests/fm-fleet-mod.test.sh tests/fm-check-unregister.test.sh tests/fm-backend-tmux-smoke.test.sh tests/fm-seat-vendor-renew.test.sh tests/fm-peek-remote.test.sh tests/fm-gemini-harness.test.sh tests/fm-git-push-guard.test.sh tests/fm-remote-secondmate-relaunch.test.sh tests/fm-slot-release.test.sh tests/fm-lint-workflows.test.sh tests/fm-review-check.test.sh tests/fm-spawn-bare-project-name.test.sh tests/fm-watch-busy-window-fork-budget.test.sh tests/fm-orgs-lib.test.sh tests/fm-gotmp.test.sh tests/fm-pr-state.test.sh tests/fm-documentation-audiences.test.sh tests/fm-backend-t3.test.sh tests/fm-subagent-pretool-check.test.sh tests/fm-treehouse-lease.test.sh tests/fm-test-fixture-cleanup.test.sh tests/fm-pipeline-spend.test.sh tests/fm-tasks-axi.test.sh tests/fm-quota-wall.test.sh tests/fm-ticket-sync.test.sh tests/fm-operational-input.test.sh tests/fm-remote-job-orphan-reap.test.sh tests/fm-spawn-worktree-claimed.test.sh tests/fm-quota-choose.test.sh tests/fm-pr-refresh.test.sh tests/fm-no-mistakes-required.test.sh tests/fm-parent-channel-scan-exclusion.test.sh tests/fm-remote-herdr-guard.test.sh tests/fm-boat-test-wrapper.test.sh tests/fm-git-strip-ai-trailers.test.sh tests/fm-remote-job-claim-reap.test.sh tests/fm-calm-claude-mod.test.sh tests/fm-devin-harness.test.sh tests/fm-classify-decision-key.test.sh tests/fm-stow-cascade.test.sh tests/fm-supervision-events.test.sh tests/fm-backend-cmux.test.sh tests/fm-send-agy-confirm.test.sh tests/fm-busy-state.test.sh tests/fm-harness-precedence.test.sh tests/fm-tmux-agent-liveness.test.sh tests/fm-codex-park-idle.test.sh tests/fm-pi-windows-shell-invocation.test.sh
+local_budget_ms=150000
+local_deferred=tests/fm-seat-renew-live-e2e.test.sh tests/fm-quota-array-dispatch-live-e2e.test.sh tests/fm-codex-continuity-live-e2e.test.sh tests/fm-omp-primary-live-e2e.test.sh tests/fm-quota-wall-banners-live-e2e.test.sh tests/fm-operational-marker-live-e2e.test.sh tests/fm-rovo-signals-live-e2e.test.sh tests/fm-composer-codex-idle-live-e2e.test.sh tests/fm-muse-signals-live-e2e.test.sh tests/fm-calm-claude-mod-live-e2e.test.sh tests/fm-grok-continuity-live-e2e.test.sh tests/fm-opencode-primary-live-e2e.test.sh tests/fm-t3-live-e2e.test.sh tests/fm-grok-stop-live-e2e.test.sh tests/fm-host-mirror-live-e2e.test.sh tests/fm-harness-adapter-instructions-live-e2e.test.sh tests/fm-herdr-version-floor-live-e2e.test.sh tests/fm-lead-restart-successor-live-e2e.test.sh tests/fm-calm-claude-mod-plugin.test.sh tests/fm-send-inbox-doorbell-live-e2e.test.sh tests/fm-pr-state-live-e2e.test.sh tests/fm-herdr-pi-stale-registration-live-e2e.test.sh tests/fm-supervision-host-live-e2e.test.sh tests/fm-t3-leader-live-e2e.test.sh tests/fm-bearings-board-lavish-live-e2e.test.sh tests/fm-claude-stop-autoarm-live-e2e.test.sh tests/fm-fleet-mod-plugin.test.sh tests/fm-herdr-submit-confirm-live-e2e.test.sh tests/fm-cursor-primary-live-e2e.test.sh tests/fm-quota-claude-mod-plugin.test.sh tests/fm-send-secondmate-marker-herdr-e2e.test.sh tests/fm-polytoken-signals-live-e2e.test.sh tests/fm-agy-signals-live-e2e.test.sh tests/fm-codex-hook-layer-live-e2e.test.sh tests/fm-afk-pi-herdr-return-e2e.test.sh tests/fm-sessionstart-instruction-refresh-live-e2e.test.sh tests/fm-pi-branch-live-e2e.test.sh tests/fm-commandcode-signals-live-e2e.test.sh tests/fm-composer-matrix-live-e2e.test.sh tests/fm-pi-codex-native.test.sh tests/fm-launch-prompt-signals-live-e2e.test.sh tests/fm-cmux-claude-composer-live-e2e.test.sh tests/fm-devin-signals-live-e2e.test.sh tests/fm-pi-primary-live-e2e.test.sh tests/fm-sessionstart-hook-live-e2e.test.sh tests/fm-supervision-host-attended-live-e2e.test.sh tests/fm-harness-liveness-drift-live-e2e.test.sh tests/fm-calm-pi-queue-retention-live-e2e.test.sh tests/fm-pi-seeded-home-trust-live-e2e.test.sh tests/fm-worker-account-live-e2e.test.sh tests/fm-herdr-groups.test.sh tests/fm-test-isolation-proof.test.sh tests/fm-seat-lock.test.sh tests/fm-nm-recover.test.sh tests/fm-remote-delta-read.test.sh tests/fm-spawn-external-review.test.sh tests/fm-pr-checks.test.sh tests/fm-inbox.test.sh tests/fm-turnend-foreign-owner-arm-fix.test.sh tests/fm-watch-worker-park.test.sh tests/fm-self-repo-role.test.sh tests/fm-seat-renew.test.sh tests/fm-send-secondmate-marker.test.sh tests/fm-task-event-status.test.sh tests/fm-wake-daemon-lifecycle-e2e.test.sh tests/fm-boat-prepush.test.sh tests/fm-spawn-t3.test.sh tests/fm-mail-check.test.sh tests/fm-startup-growth-check.test.sh tests/fm-startup-memory-budget.test.sh tests/fm-wake-drain-open-decisions.test.sh tests/fm-dod-lib.test.sh tests/fm-mail.test.sh tests/fm-herdr-session-cleanup.test.sh tests/fm-gate-refuse.test.sh tests/fm-shared-captain-inheritance.test.sh tests/fm-backend-zellij.test.sh tests/fm-secondmate-lifecycle-e2e.test.sh tests/fm-host-mirror.test.sh tests/fm-commandcode-harness.test.sh tests/fm-live-gate.test.sh tests/fm-pi-branch-responsiveness-live-e2e.test.sh tests/fm-worker-park.test.sh tests/fm-claude-trust.test.sh tests/fm-timeout-lib.test.sh tests/fm-test-fixtures.test.sh tests/fm-update.test.sh tests/fm-ci-workflow.test.sh tests/fm-afk-contract.test.sh tests/fm-fork-free-helpers.test.sh tests/fm-t3-mirrors.test.sh tests/fm-extension-binding.test.sh tests/fm-pool-prune.test.sh tests/fm-teardown-before-merge.test.sh tests/fm-lead-seat.test.sh tests/fm-guard-stale-banner.test.sh tests/fm-bearings-board-render.test.sh tests/fm-tangle-guard.test.sh tests/fm-task-event.test.sh tests/fm-live-lab-up-mate.test.sh tests/fm-nm-run-lib.test.sh tests/fm-rovo-harness.test.sh tests/fm-watch-interval-defaults.test.sh tests/fm-slots.test.sh tests/fm-worker-admit.test.sh tests/fm-procevent-quota.test.sh tests/fm-seat-board.test.sh tests/fm-build-lock.test.sh tests/fm-remote-doctor.test.sh tests/fm-wake-drain-shared-cursor.test.sh tests/fm-fleet-ledger.test.sh tests/fm-fleet-snapshot-view.test.sh tests/fm-backlog-read-bound.test.sh tests/fm-backend.test.sh tests/fm-wake-drain-unread-status.test.sh tests/fm-branch-supervision.test.sh tests/fm-polytoken-harness.test.sh tests/fm-classify-corr-token.test.sh tests/fm-session-lock-ancestry.test.sh tests/fm-procevent-when.test.sh tests/fm-tool-update-check.test.sh tests/fm-voice-relay.test.sh tests/fm-cursor-harness.test.sh tests/fm-on.test.sh tests/fm-spawn-worktree-settle.test.sh tests/fm-turnend-guard.test.sh tests/fm-t3-leader.test.sh tests/fm-send-remote-delivery.test.sh tests/fm-backend-orca.test.sh tests/fm-usage-warner.test.sh tests/fm-fleet-sync.test.sh tests/fm-home-summary-refresh.test.sh tests/fm-bearings-board.test.sh tests/fm-task-delivery.test.sh tests/fm-afk-inject-e2e.test.sh tests/fm-vendor-auth-probe.test.sh tests/fm-afk-inject-herdr-e2e.test.sh tests/fm-afk-launch.test.sh tests/fm-arm-pretool-check.test.sh tests/fm-backend-autodetect-smoke.test.sh tests/fm-backend-herdr-agent-exit-shell-e2e.test.sh tests/fm-backend-herdr-eventwait-smoke.test.sh tests/fm-backend-herdr-focus-flash-e2e.test.sh tests/fm-backend-herdr-launcher-workspace-e2e.test.sh tests/fm-backend-herdr-presentation-e2e.test.sh tests/fm-backend-herdr-prune-safety-e2e.test.sh tests/fm-backend-herdr-respawn-idem-e2e.test.sh tests/fm-backend-herdr-smoke.test.sh tests/fm-backend-herdr-stale-active-tab-e2e.test.sh tests/fm-backend-herdr-workspace-per-home-e2e.test.sh tests/fm-backend-herdr.test.sh tests/fm-brief.test.sh tests/fm-captain-hold-lifecycle.test.sh tests/fm-cd-pretool-check.test.sh tests/fm-composer-ghost.test.sh tests/fm-composer-lib.test.sh tests/fm-control-herdr-smoke.test.sh tests/fm-crew-state.test.sh tests/fm-ensure-agents-md.test.sh tests/fm-grok-harness.test.sh tests/fm-herdr-attached-viewer-live-e2e.test.sh tests/fm-herdr-lab.test.sh tests/fm-herdr-session-cleanup-e2e.test.sh tests/fm-lint.test.sh tests/fm-pi-primary-types.test.sh tests/fm-pr-merge.test.sh tests/fm-review-diff.test.sh tests/fm-send-popup-settle.test.sh tests/fm-send-settle.test.sh tests/fm-send-strict.test.sh tests/fm-spawn-batch.test.sh tests/fm-supervision-instructions.test.sh tests/fm-test-run.test.sh tests/fm-tmux-submit-busy.test.sh tests/fm-transition-lib.test.sh tests/fm-x-mode.test.sh tests/fm-mq-drop.test.sh tests/fm-send-inbox.test.sh tests/fm-teardown-endpoint-safety.test.sh tests/fm-nm-test-contract.test.sh tests/fm-wake-drain-open-decisions-cursor.test.sh tests/fm-wake-drain-outcome-backstop.test.sh tests/fm-pending-reply.test.sh tests/fm-boat-run.test.sh tests/fm-daemon.test.sh tests/fm-secondmate-liveness.test.sh tests/fm-muse-harness.test.sh tests/fm-send-resolve-key.test.sh tests/fm-agy-harness.test.sh tests/fm-dispatch-resolve.test.sh tests/fm-calm-pi-extension.test.sh tests/fm-spawn-compact-adviser-disable.test.sh tests/fm-spawn-orca-worktree.test.sh tests/fm-watch-recovery-loop.test.sh tests/fm-secondmate-sync.test.sh tests/fm-afk-return.test.sh tests/fm-claude-stop-autoarm.test.sh tests/fm-remote-job-launchagent.test.sh tests/fm-trace-context-spawn.test.sh tests/fm-omp-harness.test.sh tests/fm-backlog-handoff.test.sh tests/fm-inactive-reconcile.test.sh tests/fm-pi-watch-extension.test.sh tests/fm-kimi-harness.test.sh tests/fm-supervision-fork-budget.test.sh tests/fm-control.test.sh tests/fm-worker-account.test.sh tests/fm-watch-checkpoint.test.sh tests/fm-task-inbox.test.sh tests/fm-bootstrap-network-parallel.test.sh tests/fm-secondmate-safety.test.sh tests/fm-busy-adapter-wiring.test.sh tests/fm-remote-transport-lanes.test.sh tests/fm-cursor-primary.test.sh tests/fm-spawn-compact-adviser-disable-remote.test.sh tests/fm-supervision-host.test.sh tests/fm-live-lab.test.sh tests/fm-sessionstart-nudge.test.sh tests/fm-secondmate-busy-contract-live-e2e.test.sh tests/fm-remote-secondmate-parent-binding.test.sh tests/fm-bootstrap.test.sh tests/fm-pi-branch-extension.test.sh tests/fm-jev-prod-check.test.sh tests/fm-secondmate-reconcile.test.sh tests/fm-project-capacity.test.sh tests/fm-startup-network.test.sh tests/fm-spawn-pool-base-freshen.test.sh tests/fm-watcher-lock.test.sh tests/fm-supervision-host-engine.test.sh tests/fm-lead-restart.test.sh tests/fm-remote-backlog-handoff.test.sh tests/fm-remote-job.test.sh tests/fm-secondmate-restart.test.sh tests/fm-work-intake.test.sh tests/fm-supervision-host-park.test.sh tests/fm-watch-triage.test.sh tests/fm-remote-secondmate-trace-context.test.sh tests/fm-watch-arm.test.sh tests/fm-wake-queue.test.sh tests/fm-watch-triage-delivery.test.sh tests/fm-bearings-snapshot.test.sh tests/fm-contributions.test.sh tests/fm-secondmate-harness.test.sh tests/fm-fleet-capacity.test.sh tests/fm-control-relaunch.test.sh tests/fm-remote-reply.test.sh tests/fm-backlog-atomicity.test.sh tests/fm-supervision-host-stop-hook.test.sh tests/fm-procevent.test.sh tests/fm-teardown.test.sh tests/fm-session-start.test.sh tests/fm-pr-check-security.test.sh tests/fm-ci-change-scope.test.sh tests/fm-seat.test.sh tests/fm-spawn-dispatch-profile.test.sh tests/fm-public-followup.test.sh tests/fm-watch-triage-stale.test.sh tests/fm-remote-secondmate-lifecycle-e2e.test.sh
+
+exit=0; elapsed_s=15.281
+
+### Real runner timing hints for selected paths
+argv=["bash", "bin/fm-test-run.sh", "--list-weighted", "tests/fm-backend-zellij-smoke.test.sh", "tests/fm-backend-cmux-smoke.test.sh", "tests/fm-gitignore-config.test.sh", "tests/fm-opencode-abs-cwd-rail-live-e2e.test.sh", "tests/fm-harness-adapter-references.test.sh", "tests/fm-remote-entrypoint.test.sh", "tests/fm-stat-shadowing.test.sh", "tests/fm-project-origin.test.sh", "tests/fm-boat-prepush-lib.test.sh", "tests/fm-forge-detect.test.sh", "tests/fm-ask-user-authority.test.sh", "tests/fm-pr-reviewers.test.sh", "tests/fm-remote-job-claim-retention.test.sh", "tests/fm-quota-claude-mod.test.sh", "tests/fm-jev-mem-guard.test.sh", "tests/fm-secondmate-resume.test.sh", "tests/fm-trace-context-lib.test.sh", "tests/fm-project-mode.test.sh", "tests/fm-dispatch-predict-lib.test.sh", "tests/fm-t3.test.sh", "tests/fm-pr-ci-validated.test.sh", "tests/fm-memcap.test.sh", "tests/fm-task-timing.test.sh", "tests/fm-fleet-mod.test.sh", "tests/fm-check-unregister.test.sh", "tests/fm-backend-tmux-smoke.test.sh", "tests/fm-seat-vendor-renew.test.sh", "tests/fm-peek-remote.test.sh", "tests/fm-gemini-harness.test.sh", "tests/fm-git-push-guard.test.sh", "tests/fm-remote-secondmate-relaunch.test.sh", "tests/fm-slot-release.test.sh", "tests/fm-lint-workflows.test.sh", "tests/fm-review-check.test.sh", "tests/fm-spawn-bare-project-name.test.sh", "tests/fm-watch-busy-window-fork-budget.test.sh", "tests/fm-orgs-lib.test.sh", "tests/fm-gotmp.test.sh", "tests/fm-pr-state.test.sh", "tests/fm-documentation-audiences.test.sh", "tests/fm-backend-t3.test.sh", "tests/fm-subagent-pretool-check.test.sh", "tests/fm-treehouse-lease.test.sh", "tests/fm-test-fixture-cleanup.test.sh", "tests/fm-pipeline-spend.test.sh", "tests/fm-tasks-axi.test.sh", "tests/fm-quota-wall.test.sh", "tests/fm-ticket-sync.test.sh", "tests/fm-operational-input.test.sh", "tests/fm-remote-job-orphan-reap.test.sh", "tests/fm-spawn-worktree-claimed.test.sh", "tests/fm-quota-choose.test.sh", "tests/fm-pr-refresh.test.sh", "tests/fm-no-mistakes-required.test.sh", "tests/fm-parent-channel-scan-exclusion.test.sh", "tests/fm-remote-herdr-guard.test.sh", "tests/fm-boat-test-wrapper.test.sh", "tests/fm-git-strip-ai-trailers.test.sh", "tests/fm-remote-job-claim-reap.test.sh", "tests/fm-calm-claude-mod.test.sh", "tests/fm-devin-harness.test.sh", "tests/fm-classify-decision-key.test.sh", "tests/fm-stow-cascade.test.sh", "tests/fm-supervision-events.test.sh", "tests/fm-backend-cmux.test.sh", "tests/fm-send-agy-confirm.test.sh", "tests/fm-busy-state.test.sh", "tests/fm-harness-precedence.test.sh", "tests/fm-tmux-agent-liveness.test.sh", "tests/fm-codex-park-idle.test.sh", "tests/fm-pi-windows-shell-invocation.test.sh"]
+5121	tests/fm-pi-windows-shell-invocation.test.sh
+5070	tests/fm-codex-park-idle.test.sh
+4875	tests/fm-tmux-agent-liveness.test.sh
+4841	tests/fm-harness-precedence.test.sh
+4787	tests/fm-busy-state.test.sh
+4764	tests/fm-send-agy-confirm.test.sh
+4719	tests/fm-backend-cmux.test.sh
+4703	tests/fm-supervision-events.test.sh
+4445	tests/fm-stow-cascade.test.sh
+4362	tests/fm-classify-decision-key.test.sh
+4181	tests/fm-devin-harness.test.sh
+3863	tests/fm-calm-claude-mod.test.sh
+3842	tests/fm-remote-job-claim-reap.test.sh
+3805	tests/fm-git-strip-ai-trailers.test.sh
+3795	tests/fm-boat-test-wrapper.test.sh
+3734	tests/fm-remote-herdr-guard.test.sh
+3703	tests/fm-parent-channel-scan-exclusion.test.sh
+3550	tests/fm-no-mistakes-required.test.sh
+3534	tests/fm-pr-refresh.test.sh
+3513	tests/fm-quota-choose.test.sh
+3391	tests/fm-spawn-worktree-claimed.test.sh
+3270	tests/fm-remote-job-orphan-reap.test.sh
+3192	tests/fm-operational-input.test.sh
+2962	tests/fm-ticket-sync.test.sh
+2872	tests/fm-quota-wall.test.sh
+2637	tests/fm-tasks-axi.test.sh
+2555	tests/fm-pipeline-spend.test.sh
+2341	tests/fm-test-fixture-cleanup.test.sh
+2144	tests/fm-treehouse-lease.test.sh
+2038	tests/fm-subagent-pretool-check.test.sh
+1970	tests/fm-backend-t3.test.sh
+1956	tests/fm-documentation-audiences.test.sh
+1883	tests/fm-pr-state.test.sh
+1854	tests/fm-gotmp.test.sh
+1851	tests/fm-orgs-lib.test.sh
+1696	tests/fm-watch-busy-window-fork-budget.test.sh
+1664	tests/fm-spawn-bare-project-name.test.sh
+1621	tests/fm-review-check.test.sh
+1583	tests/fm-lint-workflows.test.sh
+1531	tests/fm-slot-release.test.sh
+1369	tests/fm-remote-secondmate-relaunch.test.sh
+1315	tests/fm-git-push-guard.test.sh
+1157	tests/fm-gemini-harness.test.sh
+1120	tests/fm-peek-remote.test.sh
+1031	tests/fm-seat-vendor-renew.test.sh
+1007	tests/fm-backend-tmux-smoke.test.sh
+905	tests/fm-check-unregister.test.sh
+900	tests/fm-fleet-mod.test.sh
+862	tests/fm-task-timing.test.sh
+703	tests/fm-memcap.test.sh
+677	tests/fm-pr-ci-validated.test.sh
+665	tests/fm-t3.test.sh
+603	tests/fm-dispatch-predict-lib.test.sh
+476	tests/fm-project-mode.test.sh
+459	tests/fm-trace-context-lib.test.sh
+457	tests/fm-secondmate-resume.test.sh
+452	tests/fm-jev-mem-guard.test.sh
+441	tests/fm-quota-claude-mod.test.sh
+365	tests/fm-remote-job-claim-retention.test.sh
+348	tests/fm-pr-reviewers.test.sh
+312	tests/fm-ask-user-authority.test.sh
+265	tests/fm-forge-detect.test.sh
+263	tests/fm-boat-prepush-lib.test.sh
+231	tests/fm-project-origin.test.sh
+179	tests/fm-stat-shadowing.test.sh
+174	tests/fm-remote-entrypoint.test.sh
+145	tests/fm-harness-adapter-references.test.sh
+99	tests/fm-opencode-abs-cwd-rail-live-e2e.test.sh
+73	tests/fm-gitignore-config.test.sh
+34	tests/fm-backend-cmux-smoke.test.sh
+23	tests/fm-backend-zellij-smoke.test.sh
+
+exit=0; elapsed_s=0.399
+
+### Unmodified configured Test command queues then executes the real selector and runner
+argv=["bash", "-c", "bash <<'NM_TEST'\nset -euf\nscope=$(FM_CI_EVENT=pull_request FM_CI_BASE_SHA=origin/main bash bin/fm-ci-change-scope.sh --local)\nprintf '%s\\n' \"$scope\"\nselected=$(printf '%s\\n' \"$scope\" | sed -n 's/^local_scripts=//p')\nbudget=$(printf '%s\\n' \"$scope\" | sed -n 's/^local_budget_ms=//p')\ndeferred=$(printf '%s\\n' \"$scope\" | sed -n 's/^local_deferred=//p')\nif [ -n \"$deferred\" ]; then\n  printf \"Left to CI's required lanes (CI gate): %s\\n\" \"$deferred\"\nfi\n[ -n \"$selected\" ] || { printf '%s\\n' 'selector returned no tests' >&2; exit 1; }\ncase \"$budget\" in ''|*[!0-9]*) printf '%s\\n' 'selector returned invalid budget' >&2; exit 1 ;; esac\n[ \"$budget\" -ge 1000 ] || exit 1\n# The selector emits repository-owned test paths without whitespace.\n# Globbing is disabled above; split only its space/newline-delimited path list.\n# shellcheck disable=SC2086\nset -- $selected\n# Claim the heavy slot BEFORE the deadline starts. The pool is machine-wide\n# across every home, worker and the no-mistakes daemon, and one sibling lane\n# can hold the only slot for tens of minutes, so a deadline covering the\n# queue measures the queue rather than the work it was sized for and kills a\n# run that never started a test. Waiting for a place is expected, and\n# commands.lint waits the same way; no-mistakes owns the step's own limit.\n# Six times the modeled budget then bounds execution alone, as a hang\n# tripwire rather than a packing estimate: the classifier sizes that budget\n# so the selection's measured wall clock leaves this bound several times\n# over. The factor and the budget are one decision, so change them together\n# and remeasure. A nested heavy command reuses this slot instead of taking a\n# second, so the selection still occupies exactly one.\nbin/fm-build-lock.py -- bash -c '\n  set -euf\n  . bin/fm-timeout-lib.sh\n  deadline=$1\n  shift\n  # Per-script watchdogs create process groups outside this deadline.\n  fm_exec_timed \"$deadline\" 5 bash bin/fm-test-run.sh \"$@\"\n' nm-test \"$((budget * 6 / 1000))\" \"$@\"\nNM_TEST\n"]
+behavior=true
+macos=true
+full=false
+parallel=false
+herdr=false
+selected_matrix={"include":[{"shard":"1","scripts":"tests/fm-nm-disposable-budget-probe.test.sh"}]}
+local_scripts=tests/fm-nm-disposable-budget-probe.test.sh
+local_budget_ms=150000
+local_deferred=
+waiting for a heavy slot (1 on this machine, held by pid 3019933)
+FM_TEST_BEGIN 2026-11-02T20:00:00Z tests/fm-nm-disposable-budget-probe.test.sh family=unclassified expected_gate_skip=none
+probe execution started
+probe execution finished
+FM_TEST_END 2026-11-02T20:00:01Z tests/fm-nm-disposable-budget-probe.test.sh exit=0 duration_ms=1015 gate_skip=false
+FM_TEST_SUMMARY total=1 failed=0 skipped_gate=0 duration_ms=1057
+FM_TEST_SUMMARY_FAMILY family=unclassified count=1 duration_ms=1015 failed=0
+FM_TEST_SLOWEST rank=1 script=tests/fm-nm-disposable-budget-probe.test.sh duration_ms=1015
+
+exit=0; elapsed_s=8.249
+
+### Unmodified configured command propagates a failing real test
+argv=["bash", "-c", "bash <<'NM_TEST'\nset -euf\nscope=$(FM_CI_EVENT=pull_request FM_CI_BASE_SHA=origin/main bash bin/fm-ci-change-scope.sh --local)\nprintf '%s\\n' \"$scope\"\nselected=$(printf '%s\\n' \"$scope\" | sed -n 's/^local_scripts=//p')\nbudget=$(printf '%s\\n' \"$scope\" | sed -n 's/^local_budget_ms=//p')\ndeferred=$(printf '%s\\n' \"$scope\" | sed -n 's/^local_deferred=//p')\nif [ -n \"$deferred\" ]; then\n  printf \"Left to CI's required lanes (CI gate): %s\\n\" \"$deferred\"\nfi\n[ -n \"$selected\" ] || { printf '%s\\n' 'selector returned no tests' >&2; exit 1; }\ncase \"$budget\" in ''|*[!0-9]*) printf '%s\\n' 'selector returned invalid budget' >&2; exit 1 ;; esac\n[ \"$budget\" -ge 1000 ] || exit 1\n# The selector emits repository-owned test paths without whitespace.\n# Globbing is disabled above; split only its space/newline-delimited path list.\n# shellcheck disable=SC2086\nset -- $selected\n# Claim the heavy slot BEFORE the deadline starts. The pool is machine-wide\n# across every home, worker and the no-mistakes daemon, and one sibling lane\n# can hold the only slot for tens of minutes, so a deadline covering the\n# queue measures the queue rather than the work it was sized for and kills a\n# run that never started a test. Waiting for a place is expected, and\n# commands.lint waits the same way; no-mistakes owns the step's own limit.\n# Six times the modeled budget then bounds execution alone, as a hang\n# tripwire rather than a packing estimate: the classifier sizes that budget\n# so the selection's measured wall clock leaves this bound several times\n# over. The factor and the budget are one decision, so change them together\n# and remeasure. A nested heavy command reuses this slot instead of taking a\n# second, so the selection still occupies exactly one.\nbin/fm-build-lock.py -- bash -c '\n  set -euf\n  . bin/fm-timeout-lib.sh\n  deadline=$1\n  shift\n  # Per-script watchdogs create process groups outside this deadline.\n  fm_exec_timed \"$deadline\" 5 bash bin/fm-test-run.sh \"$@\"\n' nm-test \"$((budget * 6 / 1000))\" \"$@\"\nNM_TEST\n"]
+behavior=true
+macos=true
+full=false
+parallel=false
+herdr=false
+selected_matrix={"include":[{"shard":"1","scripts":"tests/fm-nm-disposable-budget-probe.test.sh"}]}
+local_scripts=tests/fm-nm-disposable-budget-probe.test.sh
+local_budget_ms=150000
+local_deferred=
+FM_TEST_BEGIN 2026-11-02T20:00:03Z tests/fm-nm-disposable-budget-probe.test.sh family=unclassified expected_gate_skip=none
+probe execution started
+probe execution finished
+FM_TEST_END 2026-11-02T20:00:03Z tests/fm-nm-disposable-budget-probe.test.sh exit=7 duration_ms=9 gate_skip=false
+FM_TEST_SUMMARY total=1 failed=1 skipped_gate=0 duration_ms=44
+FM_TEST_SUMMARY_FAMILY family=unclassified count=1 duration_ms=9 failed=1
+FM_TEST_SLOWEST rank=1 script=tests/fm-nm-disposable-budget-probe.test.sh duration_ms=9
+
+exit=1; elapsed_s=1.811
+
+### Real bounded runner terminates a hung test and releases its slot
+argv=["bin/fm-build-lock.py", "--", "bash", "-c", ". bin/fm-timeout-lib.sh; fm_exec_timed 2 1 bash bin/fm-test-run.sh \"$1\"", "timeout-probe", "tests/fm-nm-disposable-budget-probe.test.sh"]
+FM_TEST_BEGIN 2026-11-02T20:00:03Z tests/fm-nm-disposable-budget-probe.test.sh family=unclassified expected_gate_skip=none
+probe execution started
+
+exit=124; elapsed_s=2.119
+
+### Slot is reusable after deadline termination
+argv=["bin/fm-build-lock.py", "--", "bash", "-c", "printf \"slot reacquired after timeout\\n\""]
+slot reacquired after timeout
+
+exit=0; elapsed_s=0.065
+
+All targeted live checks completed successfully. No deferred suite executed.

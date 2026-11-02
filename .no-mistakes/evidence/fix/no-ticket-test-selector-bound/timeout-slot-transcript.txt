@@ -1,0 +1,14 @@
+FM_TEST_BEGIN 2026-11-02T19:46:15Z ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6EWD6SAHZXB5H9JHBR6RVEN/.nm-timeout-proof-43eifudu/hang.test.sh family=unclassified expected_gate_skip=none
+test started
+Outer runner exited 124 after 2.223s (deadline 2s).
+waiting for a heavy slot (1 on this machine, held by pid 2678392)
+test survived outer deadline
+next command acquired slot
+Next command exit=0; slot wait=6.122s after the timeout had returned.
+Confirmed: a test survives the outer deadline and retains the heavy slot until its own exit.
+
+Counterfactual: disable only the nested per-script watchdog.
+FM_TEST_BEGIN 2026-11-02T19:46:24Z ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6EWD6SAHZXB5H9JHBR6RVEN/.nm-timeout-proof-43eifudu/hang.test.sh family=unclassified expected_gate_skip=none
+test started
+counterfactual slot reacquired
+Counterfactual outer timeout plus slot reacquisition elapsed=2.256s; exit=0.
