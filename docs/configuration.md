@@ -1729,7 +1729,9 @@ Heavy-slot limits are unaffected: an ad hoc worker waits for a heavy slot exactl
 
 A heavy slot is a place to run one memory-heavy command: a Next production build, a Vitest run, a Playwright browser run, an ESLint run, or a whole-project `tsc`.
 It is claimed when such a command starts, rather than reserved when a worker spawns, so a worker that never runs one never holds a slot.
-A package script that runs many of those in sequence, such as a project's `preflight` or `queue-preflight`, claims one slot for its whole run instead of one per step, and its heavy steps reuse that slot.
+A project's `queue-preflight` package script, which runs many of those in sequence, is heavy as a whole: the script's first Node process that sees that lifecycle event claims one slot, and every heavy step that process starts reuses it instead of taking another.
+A script with a single Node entry point, as `queue-preflight` is, is covered whole.
+A script made of several top-level commands claims and releases a slot once per top-level Node command, and a non-Node step between them runs outside the memory cap.
 The pool is machine-wide for one OS user, so every Firstmate home, every worker, and the no-mistakes daemon share it.
 
 The optional local, gitignored `config/heavy-slots` in the machine's root Firstmate home holds one positive integer; blank lines and `#` lines are ignored, and an absent file declares one slot.
@@ -1758,7 +1760,7 @@ Not covered:
 
 Run those through `bin/fm-build-lock.py -- <command>`, which worker instructions name; `bin/fm-test-run.sh` claims a slot the same way for its own concurrent runs.
 A `tsc` or `eslint` given a source file checks that one file and is not treated as heavy, and neither is `tsc --watch`, which never exits and would hold its slot for good.
-`FM_HEAVY_SCRIPTS=<name>,<name>` names the heavy package scripts for one command, and an empty value names none; [`bin/fm-build-lock.js`](../bin/fm-build-lock.js) owns the default list and the rest of the heaviness definition.
+[`bin/fm-build-lock.js`](../bin/fm-build-lock.js) owns the rest of the heaviness definition.
 
 The command that claims a slot runs in a worker shell or the daemon, neither of which can read this home's configuration, so every ship or scout launch publishes this declaration into the machine's installed preload record and every heavy command reads that record when it starts.
 A change therefore applies at the next launch, or immediately with `FM_HEAVY_SLOTS=<n> bin/fm-build-lock.py node-option`.

@@ -11,13 +11,14 @@
 // unlocked, as does a tsc in watch mode, which never exits and would hold its
 // slot forever.
 //
-// A package script named by FM_HEAVY_SCRIPTS (comma-separated, default
-// `preflight,queue-preflight`, and empty to name none) is heavy as a whole
-// rather than per command: it runs many heavy commands in sequence, so the
-// script's own process claims one slot for the entire run, its heavy children
-// reuse that slot instead of taking another, and everything it starts is inside
-// the slot's memory cgroup. Only the outermost process claims, because inside a
-// slot FM_BUILD_LOCK_HELD is already set.
+// The package script `queue-preflight` is heavy as a whole rather than per
+// command: the first Node process of the script that sees that lifecycle event
+// claims one slot, its heavy children reuse that slot instead of taking another,
+// and everything that process starts is inside the slot's memory cgroup. Only
+// that process claims, because inside a slot FM_BUILD_LOCK_HELD is already set.
+// A script with a single Node entry point is therefore covered whole; a script
+// made of several top-level commands claims and releases a slot once per
+// top-level Node command, and a non-Node step between them runs uncapped.
 //
 // A project's own scripts strip this preload from a child in three ways. A Node
 // spawn whose env option ASSIGNS NODE_OPTIONS drops the --require; every spawn
@@ -46,8 +47,7 @@ const TSC_VALUES = new Set(['-p', '--project', '--outfile', '--out', '--outdir',
   '--generatetrace', '--generatecpuprofile']);
 const namesSourceFile = (args, valueOptions) => args.some((a, i) => !a.startsWith('-') &&
   !(i > 0 && valueOptions.has(args[i - 1].toLowerCase())) && SOURCE_FILE.test(a));
-const SCRIPTS = new Set((process.env.FM_HEAVY_SCRIPTS ?? 'preflight,queue-preflight')
-  .split(',').map((name) => name.trim()).filter(Boolean));
+const HEAVY_SCRIPT = 'queue-preflight';
 const OPTION = `--require=${__filename}`;
 // NODE_OPTIONS is split on whitespace and embedded in shells, so a path that is
 // not safe there is left alone rather than corrupting every child's options.
@@ -151,7 +151,7 @@ if (process.env.FM_BUILD_LOCK_BYPASS !== '1') {
       try { script = require('fs').realpathSync(argv[1]); } catch {}
       if (heavy(script, argv.slice(2))) relaunch();
     }
-    if (!process.env.FM_BUILD_LOCK_HELD && SCRIPTS.has(process.env.npm_lifecycle_event || '')) {
+    if (!process.env.FM_BUILD_LOCK_HELD && process.env.npm_lifecycle_event === HEAVY_SCRIPT) {
       relaunch();
     }
   }

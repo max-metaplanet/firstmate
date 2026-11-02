@@ -59,10 +59,12 @@ in sibling cgroup scopes rather than inside the enclosing one; their aggregate
 bound comes from bin/fm-lint.sh dividing the budget across its roots.
 
 Coverage is NODE_OPTIONS-based. The preload re-appends itself to a child
-NODE_OPTIONS a Node spawn's env option assigned rather than appended to, and a
-package script it treats as heavy as a whole claims one slot for its entire run,
-so a step whose environment is rebuilt from a name allowlist still runs inside
-that slot's cgroup. Every command that installs the preload also writes PATH
+NODE_OPTIONS a Node spawn's env option assigned rather than appended to, and the
+first Node process of a `queue-preflight` package script claims one slot that
+covers everything that process starts, so a step whose environment is rebuilt
+from a name allowlist still runs inside that slot's cgroup. A script made of
+several top-level commands claims and releases a slot once per top-level Node
+command, and a non-Node step between them runs outside the memory cap. Every command that installs the preload also writes PATH
 shims for tsc, vitest, eslint and next into the shims directory beside it, and
 node-env-file's export puts that directory first on PATH; a shim only puts the
 preload back into NODE_OPTIONS and execs the real command found on PATH after

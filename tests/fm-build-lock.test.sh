@@ -741,8 +741,7 @@ if not shutil.which('node'):
 
 env = dict(os.environ, FM_BUILD_LOCK_FILE=str(scratch / 'pool.lock'),
            FM_BUILD_LOCK_INSTALL_DIR=str(scratch / 'install'), FM_HEAVY_SLOTS='1')
-for name in ('FM_BUILD_LOCK_BYPASS', 'FM_BUILD_LOCK_HELD', 'NODE_OPTIONS', 'FM_HEAVY_SCRIPTS',
-             'npm_lifecycle_event'):
+for name in ('FM_BUILD_LOCK_BYPASS', 'FM_BUILD_LOCK_HELD', 'NODE_OPTIONS', 'npm_lifecycle_event'):
     env.pop(name, None)
 option = subprocess.run([str(wrapper), 'node-option'], env=env, check=True,
                         capture_output=True, text=True, timeout=10).stdout.strip()
@@ -888,20 +887,22 @@ try:
     print('ok - a heavy package script holds one slot its steps share, '
           'capped even where their environment dropped the preload')
 
-    # Only the named scripts are heavy as a whole.
+    # Only queue-preflight is heavy as a whole; any other lifecycle event,
+    # including a plain preflight, runs without a slot.
     (scratch / 'tsc.json').unlink()
     blocker = hold_the_slot('other-blocker')
-    parent = run_parent(report(scratch / 'other.json'), 'other',
-                        extra={'npm_lifecycle_event': 'postinstall'})
-    assert wait_file(scratch / 'other.json'), 'an unnamed package script claimed a heavy slot'
-    assert parent.wait(30) == 0, (scratch / 'other.err').read_text()
-    assert json.loads((scratch / 'other.json').read_text())['held'] == ''
+    for event in ('postinstall', 'preflight'):
+        parent = run_parent(report(scratch / f'{event}.json'), event,
+                            extra={'npm_lifecycle_event': event})
+        assert wait_file(scratch / f'{event}.json'), f'a {event} package script claimed a heavy slot'
+        assert parent.wait(30) == 0, (scratch / f'{event}.err').read_text()
+        assert json.loads((scratch / f'{event}.json').read_text())['held'] == ''
     parent = run_parent(report(scratch / 'named.json'), 'named',
-                        extra={'npm_lifecycle_event': 'ci-gate', 'FM_HEAVY_SCRIPTS': 'ci-gate'})
-    wait_for(scratch / 'named.err', 'waiting for a heavy slot', 'a script named by FM_HEAVY_SCRIPTS')
+                        extra={'npm_lifecycle_event': 'queue-preflight'})
+    wait_for(scratch / 'named.err', 'waiting for a heavy slot', 'a queue-preflight package script')
     release(blocker, 'other-blocker')
     assert parent.wait(30) == 0, (scratch / 'named.err').read_text()
-    print('ok - FM_HEAVY_SCRIPTS names which package scripts are heavy as a whole')
+    print('ok - only a queue-preflight package script is heavy as a whole')
 
     # The wrapped spawn keeps the promise form callers reach for.
     promised = subprocess.run(
