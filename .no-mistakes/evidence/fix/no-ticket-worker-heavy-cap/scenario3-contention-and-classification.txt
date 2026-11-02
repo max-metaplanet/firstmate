@@ -1,0 +1,18 @@
+## Scenario 3: the only heavy slot (FM_HEAVY_SLOTS=1) is held by another process; each command gets 6s - 2026-11-02T08:29:50Z
+Expected: heavy -> WAITS (killed by timeout, exit 124); light -> completes immediately
+ok      expect=WAITED got=WAITED rc=124  6.1s  $ npx tsc --noEmit -p apps/admin-center/tsconfig.json
+ok      expect=WAITED got=WAITED rc=124  6.1s  $ npx tsc -b -v tsconfig.json
+ok      expect=WAITED got=WAITED rc=124  6.1s  $ npx tsc --build tsconfig.json
+ok      expect=WAITED got=WAITED rc=124  6.1s  $ npx eslint .
+ok      expect=WAITED got=WAITED rc=124  6.1s  $ npx vitest run
+ok      expect=WAITED got=WAITED rc=124  6.1s  $ pnpm queue-preflight
+ok      expect=RAN    got=RAN    rc=2    1.6s  $ npx tsc --noEmit app/[locale]/page.tsx
+ok      expect=RAN    got=RAN    rc=0    0.4s  $ npx tsc -v
+ok      expect=RAN    got=RAN    rc=1    0.5s  $ npx tsc --build --version
+ok      expect=RAN    got=RAN    rc=0    0.8s  $ npx eslint scripts/queue-preflight/run.mjs
+ok      expect=WAITED got=WAITED rc=124  6.1s  $ npx eslint scripts/queue-preflight
+ok      expect=WAITED got=WAITED rc=124  6.1s  $ npx tsc --noEmit apps/admin-center/src/*.ts
+ok      expect=RAN(watching) got=watch banner printed, rc=124 (killed by timeout while watching)  $ npx tsc -b -w tsconfig.json
+--- release: queue a heavy tsc, free the slot after 3s, confirm the waiter then runs to completion
+slot released at +3s
+waiter exit=0 after 14s

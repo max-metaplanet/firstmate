@@ -1,0 +1,59 @@
+## Scenario 1: worker runs core 'pnpm queue-preflight' (incident chain) - 2026-11-02T08:27:43Z
+Chain: run.mjs -> run-affected.mjs test-typecheck (spawn env ASSIGNS NODE_OPTIONS=--max-old-space-size=6144) -> run-test-typecheck-ratchet.mjs -> execSync('npx tsc --noEmit -p apps/admin-center/tsconfig.json')
+$ bin/fm-build-lock.py node-env-file $LAB/worker-env.sh   # what fm-spawn.sh does for a ship/scout launch
+export NODE_OPTIONS='--require=$LAB/install/fm-build-lock.js' PATH='$LAB/install/shims:/run/user/501/fnm_multishells/1597_1793431461414/bin:~/.loc
+  ...
+$ pnpm queue-preflight
+
+> core-lab@ queue-preflight /tmp/fm-heavy-lab.PUlvUh/core
+> node scripts/queue-preflight/run.mjs
+
+exit=0 elapsed=18s
+--- observed: the queue-preflight script process
+pid=339112 cmd=sh -c node scripts/queue-preflight/run.mjs
+  cgroup=0::/user.slice/user-501.slice/user@501.service/app.slice/no-mistakes-daemon-4a7ceb70.service
+  memory.max=max memory.swap.max=max
+  FM_BUILD_LOCK_HELD=None NODE_OPTIONS=--require=$LAB/install/fm-build-lock.js
+  slot=FREE
+pid=339116 cmd=node scripts/queue-preflight/run.mjs
+  cgroup=0::/user.slice/user-501.slice/user@501.service/app.slice/no-mistakes-daemon-4a7ceb70.service
+  memory.max=max memory.swap.max=max
+  FM_BUILD_LOCK_HELD=None NODE_OPTIONS=--require=$LAB/install/fm-build-lock.js
+  slot=FREE
+pid=339171 cmd=/usr/bin/env python3 $LAB/install/fm-build-lock.py -- ~/.local/share/fnm/nod
+  cgroup=0::/user.slice/user-501.slice/user@501.service/app.slice/no-mistakes-daemon-4a7ceb70.service
+  memory.max=max memory.swap.max=max
+  FM_BUILD_LOCK_HELD=None NODE_OPTIONS=--require=$LAB/install/fm-build-lock.js
+  slot=FREE
+--- observed: every process running the tsc type-check
+pid=339391 cmd=/bin/sh -c npx tsc --noEmit -p apps/admin-center/tsconfig.json
+  cgroup=0::/user.slice/user-501.slice/user@501.service/app.slice/run-p339171-i71628951.scope
+  memory.max=5627392000 memory.swap.max=0
+  FM_BUILD_LOCK_HELD=339171 NODE_OPTIONS=--max-old-space-size=6144 --require=$LAB/install/fm-build-lock.js
+  slot=TAKEN (flock EWOULDBLOCK)
+pid=339392 cmd=node /run/user/501/fnm_multishells/1597_1793431461414/bin/npx tsc --noEmit -p apps/admin-center/tsconfig.json
+  cgroup=0::/user.slice/user-501.slice/user@501.service/app.slice/run-p339171-i71628951.scope
+  memory.max=5627392000 memory.swap.max=0
+  FM_BUILD_LOCK_HELD=339171 NODE_OPTIONS=--max-old-space-size=6144 --require=$LAB/install/fm-build-lock.js
+  slot=TAKEN (flock EWOULDBLOCK)
+pid=339507 cmd=sh -c 'tsc' --noEmit -p apps/admin-center/tsconfig.json
+  cgroup=0::/user.slice/user-501.slice/user@501.service/app.slice/run-p339171-i71628951.scope
+  memory.max=5627392000 memory.swap.max=0
+  FM_BUILD_LOCK_HELD=339171 NODE_OPTIONS=--max-old-space-size=6144 --require=$LAB/install/fm-build-lock.js
+  slot=TAKEN (flock EWOULDBLOCK)
+pid=339508 cmd=node $LAB/core/node_modules/.bin/tsc --noEmit -p apps/admin-center/tsconfig.json
+  cgroup=0::/user.slice/user-501.slice/user@501.service/app.slice/run-p339171-i71628951.scope
+  memory.max=5627392000 memory.swap.max=0
+  FM_BUILD_LOCK_HELD=339171 NODE_OPTIONS=--max-old-space-size=6144 --require=$LAB/install/fm-build-lock.js
+  slot=TAKEN (flock EWOULDBLOCK)
+pid=339517 cmd=python3 $LAB/install/fm-build-lock.py -- ~/.local/share/fnm/node-versions/v2
+  cgroup=0::/user.slice/user-501.slice/user@501.service/app.slice/run-p339171-i71628951.scope
+  memory.max=5627392000 memory.swap.max=0
+  FM_BUILD_LOCK_HELD=339171 NODE_OPTIONS=--max-old-space-size=6144 --require=$LAB/install/fm-build-lock.js
+  slot=TAKEN (flock EWOULDBLOCK)
+pid=339519 cmd=python3 $LAB/install/fm-build-lock.py -- ~/.local/share/fnm/node-versions/v2
+  cgroup=0::/user.slice/user-501.slice/user@501.service/app.slice/run-p339171-i71628951.scope
+  memory.max=5627392000 memory.swap.max=0
+  FM_BUILD_LOCK_HELD=339171 NODE_OPTIONS=--max-old-space-size=6144 --require=$LAB/install/fm-build-lock.js
+  slot=TAKEN (flock EWOULDBLOCK)
+--- slot after the run: FREE (released)

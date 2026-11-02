@@ -1,0 +1,24 @@
+## Scenario 2b: shimmed tsc with shell-assigned NODE_OPTIONS (observer re-records each cgroup move) - 2026-11-02T08:29:25Z
+$ command -v tsc -> $LAB/install/shims/tsc
+$ NODE_OPTIONS=--max-old-space-size=4096 tsc --noEmit -p apps/admin-center/tsconfig.json
+exit=0
+pid=365479 cmd=node $LAB/core/node_modules/.bin/tsc --noEmit -p apps/admin-center/tsconfig.json
+  cgroup=0::/user.slice/user-501.slice/user@501.service/app.slice/no-mistakes-daemon-4a7ceb70.service
+  memory.max=max memory.swap.max=max
+  FM_BUILD_LOCK_HELD=None NODE_OPTIONS=--max-old-space-size=4096 --require=$LAB/install/fm-build-lock.js
+  slot=FREE
+pid=365531 cmd=python3 $LAB/install/fm-build-lock.py -- ~/.local/share/fnm/node-versions/v2
+  cgroup=0::/user.slice/user-501.slice/user@501.service/app.slice/no-mistakes-daemon-4a7ceb70.service
+  memory.max=max memory.swap.max=max
+  FM_BUILD_LOCK_HELD=None NODE_OPTIONS=--max-old-space-size=4096 --require=$LAB/install/fm-build-lock.js
+  slot=FREE
+pid=365531 cmd=systemd-run --user --scope --quiet --collect --expand-environment=no -p MemoryMax=5627392819 -p MemorySwapMax=
+  cgroup=0::/user.slice/user-501.slice/user@501.service/app.slice/run-p365531-i71654100.scope
+  memory.max=5627392000 memory.swap.max=0
+  FM_BUILD_LOCK_HELD=365531 NODE_OPTIONS=--max-old-space-size=4096 --require=$LAB/install/fm-build-lock.js
+  slot=TAKEN (flock EWOULDBLOCK)
+pid=365531 cmd=~/.local/share/fnm/node-versions/v24.22.1/installation/bin/node $LAB/core/no
+  cgroup=0::/user.slice/user-501.slice/user@501.service/app.slice/run-p365531-i71654100.scope
+  memory.max=5627392000 memory.swap.max=0
+  FM_BUILD_LOCK_HELD=365531 NODE_OPTIONS=--max-old-space-size=4096 --require=$LAB/install/fm-build-lock.js
+  slot=TAKEN (flock EWOULDBLOCK)

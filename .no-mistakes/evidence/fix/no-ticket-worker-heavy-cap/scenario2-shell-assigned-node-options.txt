@@ -1,0 +1,22 @@
+## Scenario 2: worker shell commands that ASSIGN NODE_OPTIONS (preload dropped) resolve through the shims - 2026-11-02T08:28:25Z
+$ command -v tsc eslint vitest
+$LAB/install/shims/tsc
+$LAB/install/shims/eslint
+$LAB/install/shims/vitest
+$ NODE_OPTIONS=--max-old-space-size=4096 tsc --noEmit -p apps/admin-center/tsconfig.json
+exit=0
+pid=349372 cmd=node $LAB/core/node_modules/.bin/tsc --noEmit -p apps/admin-center/tsconfig.json
+  cgroup=0::/user.slice/user-501.slice/user@501.service/app.slice/no-mistakes-daemon-4a7ceb70.service
+  memory.max=max memory.swap.max=max
+  FM_BUILD_LOCK_HELD=None NODE_OPTIONS=--max-old-space-size=4096 --require=$LAB/install/fm-build-lock.js
+  slot=FREE
+
+$ NODE_OPTIONS=--max-old-space-size=4096 eslint .
+[probe eslint] pid=352975 cgroup=0::/user.slice/user-501.slice/user@501.service/app.slice/run-p352975-i71652152.scope memory.max=5627392000 FM_BUILD_LOCK_HELD=352975 NODE_OPTIONS=--max-old-space-size=4096 --require=$LAB/install/fm-build-lock.js
+exit=0
+
+$ NODE_OPTIONS=--max-old-space-size=4096 vitest run
+[probe vitest] pid=353520 cgroup=0::/user.slice/user-501.slice/user@501.service/app.slice/run-p353520-i71633574.scope memory.max=5627392000 FM_BUILD_LOCK_HELD=353520 NODE_OPTIONS=--max-old-space-size=4096 --require=$LAB/install/fm-build-lock.js
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+exit=0
