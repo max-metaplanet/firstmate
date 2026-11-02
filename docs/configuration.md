@@ -1792,7 +1792,7 @@ Not covered:
 - A runtime other than Node, a build tool that is not one of the commands above, and a launcher that clears `NODE_OPTIONS` outside a heavy package script without reaching a shimmed name through `PATH`.
 
 Run those through `bin/fm-build-lock.py -- <command>`, which worker instructions name; `bin/fm-test-run.sh` claims a slot the same way for its own concurrent runs.
-Where "Boat-first heavy routing" below declares a project, a worker-started heavy command tries one ephemeral Boat VM before claiming a slot here, and a slot here is what it falls back to.
+"Boat-first heavy routing" below owns the conditions under which a worker-started heavy command runs remotely instead of claiming a local slot.
 A `tsc` or `eslint` whose only operand is one existing source file checks that one file and is not treated as heavy, and neither is `tsc --watch`, which never exits and would hold its slot for good.
 A `tsc -b` or `tsc --build` builds whole projects and is heavy whatever its operands, except in watch mode or with `--version`; under a build, `-v` means `--verbose` and stays heavy.
 [`bin/fm-build-lock.js`](../bin/fm-build-lock.js) owns the rest of the heaviness definition.
@@ -1819,7 +1819,8 @@ The project name is the basename of the worktree the heavy command runs in, whic
 Routing is declared, never guessed.
 Boat-first by default means Boat-first for every declared project, because a Boat run needs the project-specific bootstrap that only a declaration supplies.
 Without a declaration naming the project, a heavy command behaves exactly as it did before this file existed.
-Every reason to stay local - no declaration, a kind the declaration keeps local, a Boat account with no capacity or budget left, a transfer failure, a missing Firstmate copy - prints one line and runs the command in a heavy slot here, so routing can only ever cost the Boat attempt.
+A project without a declaration uses a local heavy slot without a routing notice.
+For a declared project's worker-started heavy command, a reason to stay local prints one line before the command runs in a local heavy slot.
 `FM_BUILD_LOCK_BYPASS=1 <command>` still skips the slot and the routing together, and a kind named in `local-only` stays local for the whole project.
 
 Only a worker-started heavy command is routed, which leaves the no-mistakes daemon's own steps on their existing path; [`bin/fm-boat-test-wrapper.sh`](../bin/fm-boat-test-wrapper.sh) remains the pipeline's own Boat integration.

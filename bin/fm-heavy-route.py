@@ -15,9 +15,9 @@ Kinds: next-build, vitest, playwright, eslint, tsc, queue-preflight.
 FM_BUILD_LOCK_BYPASS=1 skips the preload, and so this script, entirely.
 
 Routing is declared, never guessed: without a declaration naming the project,
-nothing about a heavy command changes. Every reason to stay local prints one
-line to stderr and runs the command through fm-build-lock.py exactly as an
-undeclared project does, so a routing failure can only cost the Boat attempt.
+nothing about a heavy command changes, and no routing notice is printed.
+For a declared project's worker-started command, a reason to stay local prints
+one line to stderr and runs the command through fm-build-lock.py.
 
 Declaration: <config-dir>/boat-heavy in the machine's root Firstmate home,
 resolved like config/heavy-slots (fm_project_capacity_config_dir). One line per
