@@ -418,13 +418,17 @@ EOF
 
 select_tests
 
-# Five minutes of modeled serial work, using fm-test-run.sh --list-weighted's
-# CI duration hints (docs/fm-test-portable-shards.md). This admits the 156781ms
-# runner contract while excluding the 334000-434000ms supervision-host suites;
-# cheapest-first admission also bounds a large family of individually fast tests.
-# This bounds selection only; commands.test allows execution headroom because
-# CI timing hints can understate a loaded developer machine.
-LOCAL_BUDGET_MS=300000
+# Modeled serial work admitted locally, using fm-test-run.sh --list-weighted's
+# CI duration hints. Cheapest-first admission keeps a large family of
+# individually fast tests inside it and leaves the heavy suites to CI.
+# Modeled serial work is not this gate's wall clock: the runner schedules a
+# plain script list into concurrent phases plus a serial tail, and a loaded
+# developer machine is slower than the CI runner the hints were measured on.
+# The value is therefore sized from measured local wall clock rather than
+# chosen; docs/fm-test-portable-shards.md "Local change-scoped budget" owns
+# that measurement and the headroom it leaves against the bound.
+# This bounds selection only; commands.test owns the execution bound.
+LOCAL_BUDGET_MS=150000
 local_scripts=
 local_deferred=
 select_local_tests() {

@@ -22,7 +22,10 @@ In particular, run 36664663190's serial 5 finished in 22m15s with an assertion f
 Collect successful per-script measurements for every member before calculating a split.
 
 The serial hints were refreshed again on 2026-10-10 from seven green runs of this repository's own CI: 38068758436, 38065011500, 38044860890, 38031183126, 38004058787, 37998134189, and 37997299201.
-Those runs measure the serial members this fork's own CI had then; the upstream merge added serial scripts those runs never saw, so `serial_unhinted` is no longer zero and those members pack on `PORTABLE_SERIAL_DEFAULT_WEIGHT_MS` until a green run measures them.
+Those runs measured the serial members this fork's own CI had then, and the upstream merge later added serial scripts they never saw.
+The serial table was refreshed again on 2026-11-02 from three green `ci.yml` runs on main: [41406925170](https://github.com/max-metaplanet/firstmate/actions/runs/41406925170), [41362483537](https://github.com/max-metaplanet/firstmate/actions/runs/41362483537), and [41339353445](https://github.com/max-metaplanet/firstmate/actions/runs/41339353445).
+Each uploaded all sixteen serial shard artifacts, so that refresh measured every one of the 289 serial members and brought `serial_unhinted` to zero; 43 of them had been packing on `PORTABLE_SERIAL_DEFAULT_WEIGHT_MS`.
+It raised 188 hints, left the native-Windows exception below alone, and lowered 11, each one a derived or provisional value this section had already recorded as waiting for a CI measurement.
 Read the current count from `bin/fm-test-run.sh --check-coverage` rather than from a number copied here.
 Read timing artifacts from the repository the shards actually run in: `gh-axi` resolves to the `upstream` remote when one is configured, and a sibling repository's shard membership and script set are not interchangeable with this one's.
 
@@ -30,20 +33,13 @@ A hint is a high-water mark across the recorded baselines rather than only the n
 Refresh it upward whenever a newer run measures a script slower, and lower it only with a stated reason, as the superseded host-runtime-fix entry below did.
 A hint that is too low costs a cancelled shard, while one that is too high costs only a slightly under-packed runner, so the asymmetry is deliberate.
 
-`tests/fm-supervision-host.test.sh` now uses 1353420 ms, its slowest successful sample in the 2026-10-10 baseline.
-This supersedes the earlier 789123 ms entry taken after the merged [host runtime fix](https://github.com/kunchenguid/firstmate/pull/6179); that single-sample value proved far below the script's real range and is what let serial 2 pack 21 further scripts beside a script that fills a shard by itself.
-Its seven green samples run 1013746 ms to 1353420 ms, and three cancelled serial-2 jobs ([38070726877](https://github.com/max-metaplanet/firstmate/actions/runs/38070726877), [38063704674](https://github.com/max-metaplanet/firstmate/actions/runs/38063704674), and [38006018884](https://github.com/max-metaplanet/firstmate/actions/runs/38006018884)) each spent their entire 30-minute cap inside this one script, reaching 43 to 45 of its 51 cases while still printing passing assertions.
-Extrapolating from that progress puts a slow-runner run at roughly 34 to 35.5 minutes, so the script is long rather than wedged; the hint keeps the slowest *completed* sample, because an unfinished script has no completed measurement.
-That suite and `tests/fm-watch-triage.test.sh` were split on 2026-10-13 into colocated scripts that share a helper library, so the lane's hints now cover pieces rather than those two whole scripts.
-CI has not measured the pieces yet, so each piece's hint apportions its pre-split measurement by the share of that script's cases it carries: 1353420 ms over the host suite's 81 cases, and 1074843 ms over the triage suite's 141.
-Apportioning keeps the lane's modeled total unchanged while removing the single-script floor, and the refresh below replaces every derived value with a measured one.
+`tests/fm-supervision-host.test.sh` and `tests/fm-watch-triage.test.sh` were split on 2026-10-13 into colocated scripts that share a helper library, and their pieces carried their pre-split measurement apportioned by case share until CI measured them.
+The 2026-11-02 refresh replaced every one of those derived values with a measured one, which is why it lowered them.
+A single low sample on the pre-split host suite is what let serial 2 pack 21 further scripts beside a script that fills a shard by itself; [Portable serial CI shards](#portable-serial-ci-shards) owns that lesson and what the coverage guard does and does not catch.
+A cancelled job's unfinished script has no completed sample, so the hint keeps the slowest *completed* one.
 
-The native-Windows-only `tests/fm-pi-windows-shell-invocation.test.sh` retains its separate 5121 ms measurement from 2026-09-06T21:02Z instead of a portable capability skip.
-The 2026-10-07 polytoken adapter tests carry provisional local measurements instead - 21090 ms for `tests/fm-polytoken-harness.test.sh` and the 103 ms live-guard skip for `tests/fm-polytoken-signals-live-e2e.test.sh`, both measured on the adapter-verification macOS host - until the next CI refresh replaces them with Ubuntu measurements, because they postdate the 2026-09-30 baseline.
-`tests/fm-pool-prune.test.sh` carries its 11591 ms measurement from the selected-shard run [40561596394](https://github.com/max-metaplanet/firstmate/actions/runs/40561596394), the first CI run to include it, until the next serial refresh measures it.
-`tests/fm-treehouse-lease.test.sh` carries a provisional 2128 ms local Linux measurement from 2026-10-28, because its first CI run selected no serial lane; the next serial refresh replaces it with an Ubuntu measurement.
-`tests/fm-orgs-lib.test.sh` carries a provisional 6680 ms local Linux measurement from 2026-10-31, the slowest of three consecutive local runs taken when the script was added, because no CI run has measured it yet; the next serial refresh replaces it with an Ubuntu measurement.
-The session-start hint retains its pre-optimization maximum until CI measures the shorter fixture-only home-summary bound; do not discount a local speedup from CI packing weights.
+The native-Windows-only `tests/fm-pi-windows-shell-invocation.test.sh` retains its separate 5121 ms measurement from 2026-09-06T21:02Z instead of a portable capability skip, because the portable shards skip it.
+It is the only remaining exception: the 2026-11-02 refresh replaced the provisional local and macOS-host measurements the polytoken adapter, pool-prune, treehouse-lease, orgs-lib and session-start entries had been carrying with Ubuntu CI measurements.
 
 ## Parallel lanes
 
@@ -89,8 +85,9 @@ Refresh the hints whenever a serial member grows materially or the lane gains sc
 Its header and `--help` own the modeled-budget check and output fields; read the current estimates from `--check-coverage` instead of retaining copied lane sums here.
 [`tests/fm-test-run.test.sh`](../tests/fm-test-run.test.sh), in `test_portable_serial_packing_budget_boundary`, verifies acceptance exactly at the budget and refusal one millisecond above it through the executable runner.
 No single script is the indivisible floor for this layout any more.
-The two suites that were, the supervision host and the watch triage, are split across colocated scripts, so the heaviest remaining member is `tests/fm-watch-triage.test.sh` at a derived 488000 ms and the modeled maximum shard tracks the lane's total work divided by the shard count instead of one script's duration.
-That is what makes the shard count a speed control: `--check-coverage` reports a modeled maximum of 692596 ms at sixteen shards and 615641 ms at eighteen, against the 1353420 ms single-script floor at any count before the split.
+The two suites that were, the supervision host and the watch triage, are split across colocated scripts, so no remaining member fills a shard by itself and the modeled maximum shard tracks the lane's total work divided by the shard count instead of one script's duration.
+That is what makes the shard count a speed control, against the 1353420 ms single-script floor it had at any count before the split.
+Read the modeled maximum for the current count from `--check-coverage`, and compare counts by reading it again after changing `PORTABLE_SERIAL_SHARDS`, rather than from a figure copied here that a hint refresh moves.
 A shard holding one script still cannot be rebalanced, so when the modeled-budget check names a single-script shard the answer is a runtime fix or a further split for that script, not a different packing.
 The estimates use per-file maxima from different runs, not measured rebalanced jobs or an end-to-end latency guarantee.
 The pre-split watch-triage samples range from 944375 to 1074843 ms, while each observed completed portable job adds at most 30 seconds beyond its summed scripts in these runs.
@@ -135,6 +132,32 @@ On push to main and on the nightly schedule it runs as `ci.yml`'s `macos-stock-b
 On a pull request it runs from [macos-advisory.yml](../.github/workflows/macos-advisory.yml) instead: a separate workflow reporting its own check, visible and red when stock Bash 3.2 breaks, that the pull request's verdict neither waits for nor fails with.
 [`bin/fm-macos-stock-bash-check.sh`](../bin/fm-macos-stock-bash-check.sh) owns what the check is, so the two halves cannot drift apart, and it is runnable locally under `/bin/bash`.
 
+### Local change-scoped budget
+
+`bin/fm-ci-change-scope.sh --local` admits the cheapest suites by timing hint until `LOCAL_BUDGET_MS` of modeled serial work is spent, names the rest as deferred to CI, and [`.no-mistakes.yaml`](../.no-mistakes.yaml)'s `commands.test` bounds the resulting run at six times that budget.
+That bound covers execution only, because the command claims its heavy slot before starting the clock.
+It has to: the slot pool is machine-wide across every home, worker and the no-mistakes daemon, it is one slot on an ordinary developer machine, and a sibling lane's heavy command holds it for tens of minutes.
+A deadline that covered the queue measured the queue, and on 2026-11-02 one such run spent all 998 s of a 900 s bound waiting and was killed having started no test at all, which is the shape of the exit 124 that made a trusted Test step need an approval over failure.
+`tests/fm-nm-test-contract.test.sh` holds that boundary by making the command queue behind a private held slot for longer than its own deadline and requiring it to still reach its selection.
+
+Modeled serial work is also not that run's wall clock, which is the measurement the budget is sized from, because the runner schedules a plain script list into concurrent phases plus a serial tail of every script whose family carries no concurrency proof.
+
+The measurement below was taken on 2026-11-02 on a six-CPU Linux host at load average 3, using the change set of [pull request 205](https://github.com/max-metaplanet/firstmate/pull/205) (`bin/fm-seat-lib.sh`, `bin/fm-seat.sh`, `bin/fm-spawn.sh`, `docs/claude-seats.md`, `tests/fm-seat.test.sh`), which maps to 94 candidate suites and is representative of a large change.
+Each figure is one `bin/fm-build-lock.py -- bash bin/fm-test-run.sh --per-script-timeout-secs 1500 <selection>` measurement run.
+The current `commands.test` instead uses a single execution deadline inside the heavy slot and omits per-script watchdogs, whose separate process groups escape that deadline.
+
+| Budget | Selected | Modeled | Measured wall | Concurrent phase | Serial tail |
+|---|---|---|---|---|---|
+| 300000 ms | 37 of 94 | 291914 ms | 207.5 s | 45.6 s over 25 scripts | 153.0 s over 12 scripts |
+| 150000 ms | 34 of 94 | 137958 ms | 124.4 s | 60.7 s over 26 scripts | 61.4 s over 8 scripts |
+
+At 300000 ms the gate left only 4.34x headroom under its 900 s bound, which a loaded machine can spend by itself.
+At 150000 ms the bound stays 900 s, which is 7.2x the measured wall and exceeds the 1.6x slow-host allowance used to derive `PORTABLE_SERIAL_MAX_WEIGHT_MS`.
+The serial tail was 77% of the wall at 300000 ms and is 50% of it at 150000 ms, because the 2026-11-02 hint refresh moved the heavy `backend-dispatch` members out of a cheapest-first selection that had been admitting them on understated hints.
+Running the configured `commands.test` body end to end against that path set, with both changes in place, selected those 34 suites, named 60 as deferred, and exited 0 in 90 s.
+That bound is a hang tripwire under the policy in [Timeouts](#timeouts), not a packing estimate, so a selection that reaches it needs a smaller budget rather than a longer bound.
+Remeasure the modeled budget and execution headroom together using the current configured `commands.test` body after any serial hint refresh or any change to the runner's local scheduling.
+
 ## Coverage guard
 
 `bin/fm-test-run.sh --check-coverage` verifies that both parallel lanes partition the proven-isolated set.
@@ -160,14 +183,14 @@ The gates are job-level `if:` conditions fed by one always-run detection job, ne
 The always-run `ci-gate` job reports the whole round's result, so a gated-off job never reads as a missing check; require that check rather than the gated jobs if this repository ever configures required checks.
 
 The longer-term performance objective remains a complete green run under fifteen minutes including start delay; the supervision-host floor that alone exceeded that objective is gone.
-The immediate packing target is the runner's modeled script budget, and with no script left above a derived 488000 ms, more shards now lower that model until it reaches the lane's total work divided by the shard count.
+The immediate packing target is the runner's modeled script budget, and with no script left filling a shard by itself, more shards now lower that model until it reaches the lane's total work divided by the shard count.
 The layout uses twenty-two long-lived Linux jobs (sixteen serial, two parallel, Herdr, three lint) on push to main and the nightly schedule, plus short checks and macOS; insufficient shared account capacity can erase the packing gain.
 A change-scoped pull request round uses at most six packed jobs plus the three lint partitions instead, and its bounded fallback three lanes plus those partitions, with the macOS check running advisory beside it rather than inside its verdict.
 This fork holds about twenty concurrent runners, which is what sets the lint count: at fourteen partitions a pull request's lint matrix alone approached that cap, so partitions and behavior jobs queued behind each other and the round's wall clock became queue wait rather than work.
 Replaying the per-root ShellCheck durations measured in run 38635813357 (2240.2 seconds of analysis over 516 roots) through `bin/fm-lint.sh`'s own byte-weight packing projects a slowest partition of 1172.5 seconds at two partitions, 833.0 seconds at three, and 698.9 seconds at four.
 Two partitions alone exceed the whole 19.0-minute round they were meant to shorten, so three is the count this layout uses; reproduce the projection by downloading the `fm-lint-telemetry-*` artifacts from a green run and summing each `end` record's duration per `bin/fm-lint.sh --partition <n>of<total> --list-files` membership.
 Sixteen serial shards was chosen as the knee of the packing from the aggregate of run 38453818522, when `tests/fm-supervision-host.test.sh` at about 22.6 minutes and `tests/fm-watch-triage.test.sh` at about 17.9 minutes were indivisible scripts that set the lane's floor.
-Both suites are now split across colocated scripts, so no single script sets the floor and the modeled maximum shard is the lane's total work divided by the shard count: `bin/fm-test-run.sh --check-coverage` reports `serial_max_ms=692596` at sixteen shards and 615641 at eighteen.
+Both suites are now split across colocated scripts, so no single script sets the floor and the modeled maximum shard is the lane's total work divided by the shard count, which `bin/fm-test-run.sh --check-coverage` reports as `serial_max_ms` for the configured count.
 Raising the count therefore buys wall time again, at the cost of each extra runner's start delay.
 Compare complete before/after runs, preserve cancelled and partial-run evidence, and measure a representative normal-run sample before claiming a P95 improvement.
 The workflow retains per-PR supersession without cancelling main pushes or changing the compliance workflow's event semantics.
@@ -187,7 +210,7 @@ A lane that reaches its tier bound needs investigation and a distribution or run
 |---|---|---|---|
 | Fast | change scope, coverage guard, repo invariants, timing aggregate, documentation audience guard, CI gate | 5 minutes | Seconds-long local work, so the tripwire only catches a hung runner. |
 | Normal | lint partitions, portable parallel shards, change-scoped packed jobs, macOS stock Bash | 30 minutes, one value shared by every job in the tier | One shared hang tripwire keeps these ordinary lanes on the same policy instead of allowing per-lane packing estimates or one-off caps to set the bound. |
-| Serial | portable serial shards | shard-run step 40 minutes under a 45-minute job bound | This bound predates the split of the two suites that set the lane's floor: the pre-split `tests/fm-supervision-host.test.sh` measured 16.9-22.6 minutes on healthy runners and about 35 minutes on slow ones, so no partition of the lane fit the normal tier. With no single script above a derived 488000 ms, a modeled shard now tracks the lane's total work divided by the shard count, and returning this lane to the normal tier is a workflow change owned by [`.github/workflows/ci.yml`](../.github/workflows/ci.yml). The step tripwire bounds a wedged shard below the job cap and fails the step with its captured log output rather than cancelling the job; the timing JSON is written only after every script finishes, so a timed-out shard uploads no timing artifact. |
+| Serial | portable serial shards | shard-run step 40 minutes under a 45-minute job bound | This bound predates the split of the two suites that set the lane's floor: the pre-split `tests/fm-supervision-host.test.sh` measured 16.9-22.6 minutes on healthy runners and about 35 minutes on slow ones, so no partition of the lane fit the normal tier. With no single script filling a shard by itself, a modeled shard now tracks the lane's total work divided by the shard count, and returning this lane to the normal tier is a workflow change owned by [`.github/workflows/ci.yml`](../.github/workflows/ci.yml). The step tripwire bounds a wedged shard below the job cap and fails the step with its captured log output rather than cancelling the job; the timing JSON is written only after every script finishes, so a timed-out shard uploads no timing artifact. |
 | Heavy | Herdr | family-run step 20 minutes under a 75-minute job-level last-resort backstop | Healthy runs finish in about 7-10 minutes, so the step tripwire fails a wedged suite while the `always()` cleanup and timing upload still run, and the job cap only catches a hang outside that step. |
 
 [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) holds the executable values and names each job's tier beside its `timeout-minutes`.

@@ -84,11 +84,26 @@ commands:
     # Globbing is disabled above; split only its space/newline-delimited path list.
     # shellcheck disable=SC2086
     set -- $selected
-    . bin/fm-timeout-lib.sh
-    # CI duration hints bound coverage; allow loaded local execution more time.
-    # The slot wait stays inside the deadline, and bin/fm-test-run.sh suppresses
-    # its own re-exec here, so a serial selection claims exactly one slot.
-    fm_exec_timed "$((budget * 3 / 1000))" 5 bin/fm-build-lock.py -- bash bin/fm-test-run.sh --per-script-timeout-secs 1500 "$@"
+    # Claim the heavy slot BEFORE the deadline starts. The pool is machine-wide
+    # across every home, worker and the no-mistakes daemon, and one sibling lane
+    # can hold the only slot for tens of minutes, so a deadline covering the
+    # queue measures the queue rather than the work it was sized for and kills a
+    # run that never started a test. Waiting for a place is expected, and
+    # commands.lint waits the same way; no-mistakes owns the step's own limit.
+    # Six times the modeled budget then bounds execution alone, as a hang
+    # tripwire rather than a packing estimate: the classifier sizes that budget
+    # so the selection's measured wall clock leaves this bound several times
+    # over. The factor and the budget are one decision, so change them together
+    # and remeasure. A nested heavy command reuses this slot instead of taking a
+    # second, so the selection still occupies exactly one.
+    bin/fm-build-lock.py -- bash -c '
+      set -euf
+      . bin/fm-timeout-lib.sh
+      deadline=$1
+      shift
+      # Per-script watchdogs create process groups outside this deadline.
+      fm_exec_timed "$deadline" 5 bash bin/fm-test-run.sh "$@"
+    ' nm-test "$((budget * 6 / 1000))" "$@"
     NM_TEST
 
 # Trusted Test-step policy. The scope paragraph keeps local validation targeted so
