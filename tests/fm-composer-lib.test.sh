@@ -1378,6 +1378,39 @@ fm_test_picker_state() {
   fm_composer_classify_screen 'styled=1' "$FM_TEST_PICKER_SCREEN" 1
 }
 
+# The picker is the only screen that names the background work its Exit and
+# stop tasks row destroys, so what fm-control reports about that loss is read
+# from here. The real 2.1.316 layout lists the tasks under the dialog's own
+# "The following will stop when you exit:" line and above its option rows.
+test_background_exit_picker_names_the_work_it_stops() {
+  local out rc
+  out=$(fm_composer_background_work_items "$(exit_picker_screen)"); rc=$?
+  [ "$rc" -eq 0 ] || fail "the recorded picker names one task, so the items read should succeed"
+  [ "$out" = 'shell · sleep 300' ] || fail "the listed task should be read verbatim, got '$out'"
+  out=$(fm_composer_background_work_items "$(printf '%s\n' \
+    'Background work is running' \
+    'The following will stop when you exit:' \
+    '' \
+    'shell · sleep 900' \
+    'shell · npm test' \
+    '' \
+    '❯ 1. Exit and stop tasks' \
+    '  2. Move to background and exit' \
+    '  3. Stay' \
+    'Enter to confirm · Esc to cancel')"); rc=$?
+  [ "$rc" -eq 0 ] || fail "a picker listing two tasks should read both"
+  [ "$out" = 'shell · sleep 900; shell · npm test' ] \
+    || fail "every listed task should be reported, blank rows skipped, got '$out'"
+  # An empty read must never be mistaken for "nothing is running": a screen
+  # that is not this picker, and a picker with no list, both report nothing.
+  out=$(fm_composer_background_work_items 'Background work is running'); rc=$?
+  [ "$rc" -eq 1 ] || fail "a heading with no list must not report an empty list as success"
+  [ -z "$out" ] || fail "a miss must print nothing, got '$out'"
+  out=$(fm_composer_background_work_items "$(printf '%s\n' '  ❯ hello' 'shell · sleep 900')"); rc=$?
+  [ "$rc" -eq 1 ] || fail "a composer row that merely looks like a task must not be read as the picker's list"
+  pass "fm_composer_background_work_items: reads the tasks the exit picker says it will stop, and reports nothing for any other screen"
+}
+
 test_background_exit_picker_stays_pending_and_blocks_retry() {
   local screen out rc sink enters
   screen=$(exit_picker_screen)
@@ -1508,6 +1541,7 @@ test_quoted_exit_picker_text_is_not_a_dialog() {
 }
 
 test_background_exit_picker_stays_pending_and_blocks_retry
+test_background_exit_picker_names_the_work_it_stops
 test_dialog_heading_and_footer_must_be_the_recorded_lines
 test_dialog_note_skips_the_match_when_no_sink_is_set
 test_quoted_exit_picker_text_is_not_a_dialog
@@ -1602,3 +1636,84 @@ test_modal_entry_facts_refuse_an_unverified_harness
 test_modal_entry_shown_needs_the_indicator_on_the_screen
 test_modal_entry_shown_reads_only_the_composer_footer
 test_modal_entry_shown_never_matches_an_empty_signal
+
+# --- Claude's slash-command completion list is not a composer ----------------
+#
+# Claude marks the selected row of that list with the same agent prompt glyph
+# its composer uses, and draws the list on either side of the composer. A pane
+# that drew it BELOW the composer's closing rule put a second, lower
+# agent-glyph row on the screen, and the bottom-most-candidate rule selected
+# the list: the composer read returned the list's rows, the typed /exit was
+# judged unsent, and the exit command was cleared instead of submitted.
+# tests/captures/claude-v2.1.316/README.md owns the provenance of both frames.
+
+popup_capture() {  # <name>
+  cat "$ROOT/tests/captures/claude-v2.1.316/$1.pane"
+}
+
+popup_composer_content() {  # <name>
+  FM_COMPOSER_GHOST_LUMA_MAX=0 fm_composer_extract_selected_content \
+    "$(printf 'styled=0\ncursor=0\nidentity=0')" "$(popup_capture "$1")"
+}
+
+test_completion_list_below_the_composer_is_not_read_as_the_composer() {
+  local out
+  out=$(popup_composer_content slash-popup-below-composer) \
+    || fail "the composer read failed on a screen whose completion list sits below the composer"
+  [ "$out" = '/exit' ] \
+    || fail "a completion list below the composer must not be read as composer content, got '$out'"
+  pass "fm_composer_extract_selected_content: a slash-completion list below the composer reads back the composer's own typed command"
+}
+
+test_completion_list_above_the_composer_still_reads_the_composer() {
+  local out
+  out=$(popup_composer_content slash-popup-above-composer) \
+    || fail "the composer read failed on a screen whose completion list sits above the composer"
+  [ "$out" = '/exit' ] \
+    || fail "a completion list above the composer must keep reading the composer, got '$out'"
+  pass "fm_composer_extract_selected_content: a slash-completion list above the composer keeps reading the composer"
+}
+
+# The verdict for the same frame, read as the adapter reads it: the styled
+# capture can prove the row is typed text rather than ghost text, so it is
+# pending; an unstyled read keeps the existing ghost-safety `unknown`. Neither
+# may be answered from the completion list below the composer.
+test_completion_list_below_the_composer_classifies_the_composer() {
+  local out
+  out=$(fm_composer_classify_screen "$(printf 'styled=1\ncursor=0\nidentity=0')" \
+    "$(popup_capture slash-popup-below-composer)")
+  [ "$out" = pending ] \
+    || fail "a composer holding a typed command under its own completion list must classify pending, got '$out'"
+  out=$(fm_composer_classify_screen "$(printf 'styled=0\ncursor=0\nidentity=0')" \
+    "$(popup_capture slash-popup-below-composer)")
+  [ "$out" = unknown ] \
+    || fail "an unstyled read of that frame must keep the ghost-safety unknown, got '$out'"
+  pass "fm_composer_classify_screen: a typed command with the completion list below it is read from the composer, not the list"
+}
+
+# The composer holds a slash command alone; a completion row carries the
+# command AND a description behind a gap. A command the operator typed with
+# arguments is the one collision, and it reads as furniture, which can only
+# refuse a send - never misdirect one.
+test_completion_row_predicate_needs_the_two_column_shape() {
+  _fm_composer_row_is_completion_popup '❯ /exit                   Exit the CLI' \
+    || fail "a selected completion row must be recognized"
+  _fm_composer_row_is_completion_popup '/context                  Visualize current context usage' \
+    || fail "an unselected completion row must be recognized"
+  _fm_composer_row_is_completion_popup '/vercel:next-cache-components   (vercel) Next.js 16 guidance' \
+    || fail "a plugin command's completion row must be recognized"
+  _fm_composer_row_is_completion_popup '/exit' \
+    && fail "a composer holding only the slash command must not read as a completion row"
+  _fm_composer_row_is_completion_popup '❯ /exit' \
+    && fail "a composer row with its prompt glyph must not read as a completion row"
+  _fm_composer_row_is_completion_popup '/exit now' \
+    && fail "a single space is not the completion list's column gap"
+  _fm_composer_row_is_completion_popup 'Exit the CLI   twice' \
+    && fail "a row that does not start with a slash command must not read as a completion row"
+  pass "_fm_composer_row_is_completion_popup: only the list's two-column /name + gap + description shape matches"
+}
+
+test_completion_list_below_the_composer_is_not_read_as_the_composer
+test_completion_list_above_the_composer_still_reads_the_composer
+test_completion_list_below_the_composer_classifies_the_composer
+test_completion_row_predicate_needs_the_two_column_shape

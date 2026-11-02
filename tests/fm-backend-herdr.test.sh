@@ -5729,7 +5729,7 @@ test_send_text_submit_modal_recovery_types_the_entry_key_when_needed() {
   printf '{"result":{"agent":{"agent_status":"idle"}}}\n' > "$resp/13.out"
   printf '{"result":{"agent":{"agent_status":"working"}}}\n' > "$resp/15.out"
   fb=$(make_herdr_fakebin "$dir")
-  out=$( PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" FM_BACKEND_HERDR_SUBMIT_POLLS=1 \
+  out=$( PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" FM_BACKEND_HERDR_SUBMIT_POLLS=1 FM_BACKEND_HERDR_PROOF_POLLS=1 \
     bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_send_text_submit default:w1:p2 "$1" 3 0.01 0.01' "$ROOT" "$text" )
   [ "$out" = empty ] || fail "a payload a command-mode composer swallowed whole should be recovered and submitted, got '$out'"
   [ "$(grep -c $'\x1f''pane'$'\x1f''send-text'$'\x1f''w1:p2'$'\x1f''i'$'\x1f' "$log")" -eq 1 ] \
@@ -5757,7 +5757,7 @@ test_send_text_submit_modal_recovery_ignores_an_indicator_in_the_transcript() {
   printf '{"result":{"agent":{"agent_status":"idle"}}}\n' > "$resp/13.out"
   printf '{"result":{"agent":{"agent_status":"working"}}}\n' > "$resp/15.out"
   fb=$(make_herdr_fakebin "$dir")
-  out=$( PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" FM_BACKEND_HERDR_SUBMIT_POLLS=1 \
+  out=$( PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" FM_BACKEND_HERDR_SUBMIT_POLLS=1 FM_BACKEND_HERDR_PROOF_POLLS=1 \
     bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_send_text_submit default:w1:p2 "$1" 3 0.01 0.01' "$ROOT" "$text" )
   [ "$out" = empty ] || fail "a command-mode composer under a transcript quoting the indicator should be recovered and submitted, got '$out'"
   [ "$(grep -c $'\x1f''pane'$'\x1f''send-text'$'\x1f''w1:p2'$'\x1f''i'$'\x1f' "$log")" -eq 1 ] \
@@ -5848,6 +5848,146 @@ test_send_text_submit_claude_slash_completion_list_below_composer_submits() {
   [ "$enter_count" -eq 1 ] || fail "the exit command should be submitted once, sent $enter_count Enter(s)"
   [ "$(herdr_ctrl_u_count "$log")" -eq 0 ] || fail "a proven exit command must not be cleared"
   pass "fm_backend_herdr_send_text_submit: a slash command shown above a completion list taller than the tail read is still proven and submitted"
+}
+
+# --- the payload proof reads an ASYNCHRONOUS render -------------------------
+#
+# `pane send-text` returns before the harness has painted the text, so one read
+# after a fixed settle is a guess about a race. A live worker pane on Claude
+# Code 2.1.316 still read its composer EMPTY 1.2s after the exit command was
+# typed and only showed it by 3.0s: the single read judged the command unsent,
+# cleared it with Ctrl+U and reported send-failed, which is what broke
+# `fm-control exit`. The proof now samples within a bounded budget. A composer
+# that reads back something OTHER than the payload is still a refusal on the
+# first read, so the vim command-mode recovery below keeps its timing.
+
+test_send_text_submit_waits_for_a_late_composer_render() {
+  local dir log resp fb out
+  dir="$TMP_ROOT/submit-late-render"; mkdir -p "$dir/responses"; log="$dir/log"; resp="$dir/responses"; : > "$log"
+  printf '{"result":{"agent":{"agent":"claude","agent_status":"idle"}}}\n' > "$resp/1.out"
+  printf '  \xe2\x9d\xaf\n' > "$resp/2.out"
+  printf '  \xe2\x9d\xaf\n' > "$resp/4.out"
+  printf '  \xe2\x9d\xaf\n' > "$resp/5.out"
+  printf '  \xe2\x9d\xaf /exit\n' > "$resp/6.out"
+  printf '{"result":{"agent":{"agent_status":"idle"}}}\n' > "$resp/7.out"
+  printf '{"result":{"agent":{"agent_status":"working"}}}\n' > "$resp/9.out"
+  fb=$(make_herdr_fakebin "$dir")
+  out=$( PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" FM_BACKEND_HERDR_SUBMIT_POLLS=1 \
+    FM_BACKEND_HERDR_PROOF_POLLS=3 FM_BACKEND_HERDR_PROOF_POLL_INTERVAL=0 \
+    bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_send_text_submit default:w1:p2 "/exit" 3 0.01 0.01' "$ROOT" )
+  [ "$out" = empty ] || fail "a payload the composer painted a read late should still be proven and submitted, got '$out'"
+  [ "$(herdr_ctrl_u_count "$log")" -eq 0 ] || fail "a payload that was only painted late must not be cleared, sent $(herdr_ctrl_u_count "$log") Ctrl+U"
+  [ "$(grep -cF $'\x1f''pane'$'\x1f''send-text'$'\x1f''w1:p2'$'\x1f''/exit' "$log")" -eq 1 ] \
+    || fail "the payload must be typed exactly once while the proof waits for the paint"
+  [ "$(grep -c $'\x1f''pane'$'\x1f''send-keys'$'\x1f''w1:p2'$'\x1f''enter' "$log")" -eq 1 ] \
+    || fail "the proven payload should be submitted once"
+  pass "fm_backend_herdr_send_text_submit: a composer that paints the typed payload a read late is proven, not cleared"
+}
+
+# The composer read already falls back from the styled capture to the plain
+# one, so a genuinely unreadable viewport is BOTH of those failing. That is one
+# unlucky moment, not evidence about what the composer holds, and the payload
+# is still sitting in it - so the window takes another read rather than
+# clearing the payload and spending the one modal recovery on a transport
+# hiccup.
+test_send_text_submit_retries_an_unreadable_composer_during_the_proof() {
+  local dir log resp fb out
+  dir="$TMP_ROOT/submit-proof-read-retry"; mkdir -p "$dir/responses"; log="$dir/log"; resp="$dir/responses"; : > "$log"
+  printf '{"result":{"agent":{"agent":"claude","agent_status":"idle"}}}\n' > "$resp/1.out"
+  printf '  \xe2\x9d\xaf\n' > "$resp/2.out"
+  printf '1\n' > "$resp/4.exit"
+  printf '1\n' > "$resp/5.exit"
+  printf '  \xe2\x9d\xaf /exit\n' > "$resp/6.out"
+  printf '{"result":{"agent":{"agent_status":"idle"}}}\n' > "$resp/7.out"
+  printf '{"result":{"agent":{"agent_status":"working"}}}\n' > "$resp/9.out"
+  fb=$(make_herdr_fakebin "$dir")
+  out=$( PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" FM_BACKEND_HERDR_SUBMIT_POLLS=1 \
+    FM_BACKEND_HERDR_PROOF_POLLS=3 FM_BACKEND_HERDR_PROOF_POLL_INTERVAL=0 \
+    bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_send_text_submit default:w1:p2 "/exit" 3 0.01 0.01' "$ROOT" )
+  [ "$out" = empty ] || fail "an unreadable viewport during the proof must not condemn the typed payload, got '$out'"
+  [ "$(herdr_ctrl_u_count "$log")" -eq 0 ] || fail "a payload whose first proof read failed must not be cleared, sent $(herdr_ctrl_u_count "$log") Ctrl+U"
+  [ "$(grep -cF $'\x1f''pane'$'\x1f''send-text'$'\x1f''w1:p2'$'\x1f''/exit' "$log")" -eq 1 ] \
+    || fail "the payload must be typed exactly once across the retried read"
+  [ "$(grep -c $'\x1f''pane'$'\x1f''send-keys'$'\x1f''w1:p2'$'\x1f''enter' "$log")" -eq 1 ] \
+    || fail "the payload proven by the retried read should be submitted once"
+  pass "fm_backend_herdr_send_text_submit: a viewport that cannot be read during the proof is read again, not treated as an unsent payload"
+}
+
+test_send_text_submit_still_refuses_a_composer_that_never_renders() {
+  local dir log resp fb out
+  dir="$TMP_ROOT/submit-never-renders"; mkdir -p "$dir/responses"; log="$dir/log"; resp="$dir/responses"; : > "$log"
+  printf '{"result":{"agent":{"agent":"claude","agent_status":"idle"}}}\n' > "$resp/1.out"
+  printf '  \xe2\x9d\xaf\n' > "$resp/2.out"
+  printf '  \xe2\x9d\xaf\n' > "$resp/4.out"
+  printf '  \xe2\x9d\xaf\n' > "$resp/5.out"
+  printf '  \xe2\x9d\xaf\n' > "$resp/7.out"
+  herdr_submit_modal_probe_refused "$resp" 7
+  fb=$(make_herdr_fakebin "$dir")
+  out=$( PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" FM_BACKEND_HERDR_SUBMIT_POLLS=1 \
+    FM_BACKEND_HERDR_PROOF_POLLS=2 FM_BACKEND_HERDR_PROOF_POLL_INTERVAL=0 \
+    bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_send_text_submit default:w1:p2 "/exit" 3 0.01 0.01' "$ROOT" 2>/dev/null )
+  [ "$out" = send-failed ] || fail "a composer that never paints the payload must still end in a refusal, got '$out'"
+  [ "$(grep -c $'\x1f''pane'$'\x1f''send-keys'$'\x1f''w1:p2'$'\x1f''enter' "$log")" -eq 0 ] \
+    || fail "nothing may be submitted when the payload was never proven"
+  pass "fm_backend_herdr_send_text_submit: the bounded proof budget still ends in the existing refusal when the payload never appears"
+}
+
+test_send_text_submit_proof_refusal_names_the_reason() {
+  local dir log resp fb err
+  dir="$TMP_ROOT/submit-proof-note"; mkdir -p "$dir/responses"; log="$dir/log"; resp="$dir/responses"; err="$dir/err"; : > "$log"
+  printf '{"result":{"agent":{"agent":"claude","agent_status":"idle"}}}\n' > "$resp/1.out"
+  printf '  \xe2\x9d\xaf\n' > "$resp/2.out"
+  printf '  \xe2\x9d\xaf\n' > "$resp/4.out"
+  printf '  \xe2\x9d\xaf\n' > "$resp/6.out"
+  herdr_submit_modal_probe_refused "$resp" 6
+  fb=$(make_herdr_fakebin "$dir")
+  PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" FM_BACKEND_HERDR_SUBMIT_POLLS=1 \
+    FM_BACKEND_HERDR_PROOF_POLLS=1 FM_BACKEND_HERDR_PROOF_POLL_INTERVAL=0 \
+    bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_send_text_submit default:w1:p2 "/exit" 3 0.01 0.01' "$ROOT" >/dev/null 2>"$err"
+  assert_contains "$(cat "$err")" 'never rendered' "a refused proof must say the composer never rendered the payload"
+  pass "fm_backend_herdr_send_text_submit: a refused payload proof reports which read condemned it"
+}
+
+# The other half of that diagnostic: when the composer held something that is
+# not the payload, the text it held is the fact a supervisor acts on, so the
+# note must carry it. The polling that found it must therefore run in this
+# shell rather than a command substitution that would discard the read.
+test_send_text_submit_proof_refusal_quotes_what_the_composer_held() {
+  local dir log resp fb err
+  dir="$TMP_ROOT/submit-proof-note-held"; mkdir -p "$dir/responses"; log="$dir/log"; resp="$dir/responses"; err="$dir/err"; : > "$log"
+  printf '{"result":{"agent":{"agent":"claude","agent_status":"idle"}}}\n' > "$resp/1.out"
+  printf '  \xe2\x9d\xaf\n' > "$resp/2.out"
+  printf '  \xe2\x9d\xaf xit\n' > "$resp/4.out"
+  printf '  \xe2\x9d\xaf\n' > "$resp/6.out"
+  herdr_submit_modal_probe_refused "$resp" 6
+  fb=$(make_herdr_fakebin "$dir")
+  PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" FM_BACKEND_HERDR_SUBMIT_POLLS=1 \
+    FM_BACKEND_HERDR_PROOF_POLLS=2 FM_BACKEND_HERDR_PROOF_POLL_INTERVAL=0 \
+    bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_send_text_submit default:w1:p2 "/exit" 3 0.01 0.01' "$ROOT" >/dev/null 2>"$err"
+  assert_contains "$(cat "$err")" 'xit' "a proof refused by other content must quote the text the composer held"
+  pass "fm_backend_herdr_send_text_submit: a proof refused by other content names the text the composer held"
+}
+
+# The live refusal end to end: Claude drew its completion list BELOW the
+# composer, so the lower agent-glyph row was the list's selected row. The
+# adapter must read the composer, prove /exit and submit it.
+# tests/captures/claude-v2.1.316/README.md owns the frame's provenance.
+test_send_text_submit_submits_behind_a_completion_list_below_the_composer() {
+  local dir log resp fb out
+  dir="$TMP_ROOT/submit-list-below"; mkdir -p "$dir/responses"; log="$dir/log"; resp="$dir/responses"; : > "$log"
+  printf '{"result":{"agent":{"agent":"claude","agent_status":"idle"}}}\n' > "$resp/1.out"
+  printf '  \xe2\x9d\xaf\n' > "$resp/2.out"
+  cat "$ROOT/tests/captures/claude-v2.1.316/slash-popup-below-composer.pane" > "$resp/4.out"
+  printf '{"result":{"agent":{"agent_status":"idle"}}}\n' > "$resp/5.out"
+  printf '{"result":{"agent":{"agent_status":"working"}}}\n' > "$resp/7.out"
+  fb=$(make_herdr_fakebin "$dir")
+  out=$( PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" FM_BACKEND_HERDR_SUBMIT_POLLS=1 \
+    bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_send_text_submit default:w1:p2 "/exit" 3 0.01 0.01' "$ROOT" )
+  [ "$out" = empty ] || fail "an exit command whose completion list renders BELOW the composer must be proven and submitted, got '$out'"
+  [ "$(herdr_ctrl_u_count "$log")" -eq 0 ] || fail "a proven exit command must not be cleared, sent $(herdr_ctrl_u_count "$log") Ctrl+U"
+  [ "$(grep -c $'\x1f''pane'$'\x1f''send-keys'$'\x1f''w1:p2'$'\x1f''enter' "$log")" -eq 1 ] \
+    || fail "the exit command should be submitted once"
+  pass "fm_backend_herdr_send_text_submit: a typed /exit is proven and submitted when Claude draws its completion list below the composer"
 }
 
 # --- fm-backend.sh dispatch wiring -------------------------------------------
@@ -6690,6 +6830,12 @@ test_send_text_submit_modal_recovery_ignores_an_indicator_in_the_transcript
 test_send_text_submit_modal_probe_that_will_not_clear_is_unaccounted
 test_send_text_submit_modal_recovery_is_attempted_once
 test_send_text_submit_claude_slash_completion_list_below_composer_submits
+test_send_text_submit_waits_for_a_late_composer_render
+test_send_text_submit_retries_an_unreadable_composer_during_the_proof
+test_send_text_submit_still_refuses_a_composer_that_never_renders
+test_send_text_submit_proof_refusal_names_the_reason
+test_send_text_submit_proof_refusal_quotes_what_the_composer_held
+test_send_text_submit_submits_behind_a_completion_list_below_the_composer
 test_dispatch_routes_herdr_send_literal
 test_dispatch_routes_herdr_backend
 test_dispatch_busy_state_unknown_for_tmux

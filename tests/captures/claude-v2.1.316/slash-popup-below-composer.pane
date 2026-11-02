@@ -1,0 +1,12 @@
+
+● The work is pushed and the checks are green.
+
+✻ Baked for 25s · done 3:17 AM · 1 shell still running
+
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ /exit
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ❯ /exit                             Exit the CLI
+    /context                          Visualize current context usage as a colored grid
+    /usage-credits                    Configure usage credits or request them from your admin when you hit a limit
+
