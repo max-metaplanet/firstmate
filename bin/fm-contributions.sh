@@ -108,6 +108,9 @@
 # All mutations serialize on this home's .contributions.lock. Writes refuse
 # symlinks and publish by rename. No forge writes are performed.
 #
+# bin/fm-mq-drop.sh owns merge-queue drop detection, its evidence and its steer;
+# poll hands it each fresh pull observation and the comments it already read.
+#
 # arm registers the existing authenticated custom-check path. Startup and PR
 # registration call it; when filing a linked upstream issue, call arm as well.
 # jq_lib receives literal jq programs, not shell expressions.
@@ -118,6 +121,7 @@ FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 FM_HOME="${FM_HOME:-$FM_ROOT}"
 STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
+CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
 export FM_HOME FM_STATE_OVERRIDE="$STATE"
 # shellcheck source=bin/fm-pr-lib.sh
 . "$SCRIPT_DIR/fm-pr-lib.sh"
@@ -557,7 +561,7 @@ settle_final() { # canonical-url task... : copy the URL's final observation to e
       [$saved[0][] | select(.task == $task) | .records[] | select(.url == $url)] | first' > "$TMP/old.json"
     if jq -e '. == null' "$TMP/old.json" >/dev/null; then
       jq -n --slurpfile final "$TMP/final.json" '
-        $final[0] + {error:null,pending:[],notified:[]} | del(.retired,.worker_resume)' > "$TMP/row.json"
+        $final[0] + {error:null,pending:[],notified:[]} | del(.retired,.worker_resume,.mq_drop)' > "$TMP/row.json"
       write_record "$task" "$TMP/row.json"
     elif jq -e '(.observation.state | IN("merged","closed") | not) or .error != null' "$TMP/old.json" >/dev/null; then
       jq -n --slurpfile final "$TMP/final.json" --slurpfile old "$TMP/old.json" '
@@ -649,6 +653,12 @@ poll() {
       else
         error="forge observation unavailable: $why"
         jq --arg now "$NOW" --arg error "$error" '.checked_at=$now | .error=$error' "$old" > "$TMP/row.json"
+      fi
+      # A drop-handling failure must never abort the poll, but must be seen.
+      if [ "$observed" -eq 0 ] && [ "$kind" = pr ] \
+        && [ -e "$CONFIG/project-merge-queue" ] && [ -f "$STATE/$task.meta" ]; then
+        "$SCRIPT_DIR/fm-mq-drop.sh" handle "$task" "$TMP/row.json" "$TMP/comments.json" \
+          || printf 'contributions: merge-queue drop handling failed for %s\n' "$task"
       fi
       write_record "$task" "$TMP/row.json"
       publish_pending "$task" "$url" "$TMP/row.json"
