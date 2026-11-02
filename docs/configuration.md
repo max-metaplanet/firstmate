@@ -1435,6 +1435,7 @@ That help also owns per-run `--type` machine selection and its `FM_BOAT_TYPE` fo
 Without it, the adapter retains the single trial account and its existing caps.
 The help also owns the screened source-file exceptions and optional shallow-history transfer; all other upload exclusions remain.
 It runs outside local heavy slots; authenticated checks keep their existing execution path.
+"Boat-first heavy routing" below turns the same offload into where a declared project's worker-started heavy commands run by default.
 The optional no-mistakes Test integration is owned by [`bin/fm-boat-test-wrapper.sh`](../bin/fm-boat-test-wrapper.sh)'s header and `--help`, including enablement prerequisites, secret-free scope, conservative Git scoping, its `FM_BOAT_TEST_HISTORY_DEPTH` opt-in, and local fallback.
 "Pre-ready Boat check" below turns the same offload into a gate a named project's ship workers run before they mark a pull request ready.
 
@@ -1791,6 +1792,7 @@ Not covered:
 - A runtime other than Node, a build tool that is not one of the commands above, and a launcher that clears `NODE_OPTIONS` outside a heavy package script without reaching a shimmed name through `PATH`.
 
 Run those through `bin/fm-build-lock.py -- <command>`, which worker instructions name; `bin/fm-test-run.sh` claims a slot the same way for its own concurrent runs.
+Where "Boat-first heavy routing" below declares a project, a worker-started heavy command tries one ephemeral Boat VM before claiming a slot here, and a slot here is what it falls back to.
 A `tsc` or `eslint` whose only operand is one existing source file checks that one file and is not treated as heavy, and neither is `tsc --watch`, which never exits and would hold its slot for good.
 A `tsc -b` or `tsc --build` builds whole projects and is heavy whatever its operands, except in watch mode or with `--version`; under a build, `-v` means `--verbose` and stays heavy.
 [`bin/fm-build-lock.js`](../bin/fm-build-lock.js) owns the rest of the heaviness definition.
@@ -1800,6 +1802,34 @@ A change therefore applies at the next launch, or immediately with `FM_HEAVY_SLO
 Lowering the number never stops a running command, so occupancy can exceed the new size until those commands exit.
 An unreadable or malformed declaration refuses the launch rather than guessing the limit.
 [`bin/fm-heavy-slots-lib.sh`](../bin/fm-heavy-slots-lib.sh) owns the file format and the publication, and [`bin/fm-build-lock.py`](../bin/fm-build-lock.py) owns the pool itself.
+
+## Boat-first heavy routing (config/boat-heavy)
+
+A heavy command run here costs this machine one of its few heavy places; the same command run on an ephemeral Boat VM costs it none.
+The optional local, gitignored `config/boat-heavy` in the machine's root Firstmate home names the projects whose worker-started heavy commands go to Boat first, and keeps the heavy slot above as the fallback.
+
+```text
+# core installs its own frozen dependencies remotely; node_modules never travel
+core bootstrap='corepack enable pnpm; pnpm install --frozen-lockfile' type=large
+```
+
+[`bin/fm-heavy-route.py`](../bin/fm-heavy-route.py)'s header and `--help` own the declaration syntax, the heavy kind names, the defaults, and the exact remote command it builds.
+The project name is the basename of the worktree the heavy command runs in, which for a task worktree is the project's own name.
+
+Routing is declared, never guessed.
+Without a declaration naming the project, a heavy command behaves exactly as it did before this file existed.
+Every reason to stay local - no declaration, a kind the declaration keeps local, a Boat account with no capacity or budget left, a transfer failure, a missing Firstmate copy - prints one line and runs the command in a heavy slot here, so routing can only ever cost the Boat attempt.
+`FM_HEAVY_ROUTE=local <command>` forces the local path for one command, and `FM_BUILD_LOCK_BYPASS=1 <command>` still skips the slot and the routing together.
+
+Only a worker-started heavy command is routed, which leaves the no-mistakes daemon's own steps on their existing path; [`bin/fm-boat-test-wrapper.sh`](../bin/fm-boat-test-wrapper.sh) remains the pipeline's own Boat integration.
+A command that needs credentials stays local, because this adapter deliberately carries none: `local-only` defaults to `playwright,queue-preflight`, a browser run needing browsers and a preflight needing a private remote and repository variables.
+Declare any other such command there rather than letting it reach a machine that cannot authenticate it.
+
+Remote output is captured and printed when the command finishes rather than streamed, and only a completed remote run is a verdict: that remote exit is the command's exit.
+[`bin/fm-boat-run.sh`](../bin/fm-boat-run.sh)'s help owns the upload, the per-account budget, the result and artifact files, and the cleanup.
+
+Like the heavy-slot count, the record a heavy command reads is machine-wide and written by every ship or scout launch, so a change applies at the next launch and the last launch on the machine wins.
+An unreadable or malformed declaration refuses the launch rather than guessing which projects the captain meant to route.
 
 ## Crew dispatch profiles (config/crew-dispatch.json)
 

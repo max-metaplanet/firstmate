@@ -1,8 +1,10 @@
 'use strict';
-// NODE_OPTIONS preload for the machine-wide heavy slot pool. fm-build-lock.py
-// owns the slots, their scope, and the documented limits. Ordinary Node
+// NODE_OPTIONS preload that recognizes a heavy command. Ordinary Node
 // processes return after the entry-name check; a heavy command re-runs itself
-// in a slot and exits with that run's status.
+// through fm-heavy-route.py and exits with that run's status. This file is the
+// single owner of which command is heavy and of the kind name it carries;
+// fm-heavy-route.py owns where a kind runs, and fm-build-lock.py owns the local
+// heavy slots, their scope, and the documented limits.
 //
 // Heavy means a command whose peak memory can exhaust a small machine: a Next
 // production build, a Vitest run (a bare vitest runs once off a TTY or in CI,
@@ -66,38 +68,42 @@ const OPTION = `--require=${__filename}`;
 const SAFE_OPTION = /^--require=[A-Za-z0-9/._\-=+]+$/.test(OPTION);
 const PROMISIFY = Symbol.for('nodejs.util.promisify.custom');
 const entry = typeof argv[1] === 'string' ? argv[1].slice(argv[1].lastIndexOf('/') + 1) : '';
+// The heavy kind this run is, or null when the run is not heavy.
 const heavy = (script, args) => {
   const command = args.find((a) => !a.startsWith('-'));
-  if (script.endsWith('/next/dist/bin/next')) return command === 'build';
+  if (script.endsWith('/next/dist/bin/next')) return command === 'build' ? 'next-build' : null;
   if (script.endsWith('/vitest/vitest.mjs')) {
-    if (args.includes('--version') || args.includes('-v')) return false;
-    if (args.includes('run') || args.includes('--run')) return true;
+    if (args.includes('--version') || args.includes('-v')) return null;
+    if (args.includes('run') || args.includes('--run')) return 'vitest';
     if (command === 'watch' || command === 'dev' || args.includes('--watch') ||
-        args.includes('-w')) return false;
-    return !process.stdin.isTTY || Boolean(process.env.CI);
+        args.includes('-w')) return null;
+    return !process.stdin.isTTY || Boolean(process.env.CI) ? 'vitest' : null;
   }
   if (script.endsWith('/@playwright/test/cli.js') ||
-      script.endsWith('/playwright/cli.js')) return command === 'test';
+      script.endsWith('/playwright/cli.js')) return command === 'test' ? 'playwright' : null;
   if (script.endsWith('/eslint/bin/eslint.js')) {
     return !args.some((a) => a === '--version' || a === '-v' || a === '--init' ||
-      a === '--print-config') && !namesSourceFile(args, ESLINT_VALUES);
+      a === '--print-config') && !namesSourceFile(args, ESLINT_VALUES) ? 'eslint' : null;
   }
   if (script.endsWith('/typescript/bin/tsc') || script.endsWith('/typescript/lib/tsc.js')) {
     const build = args.some((a) => a === '-b' || a.toLowerCase() === '--build');
     if (args.some((a) => a === '--version' || a === '--watch' || a === '-w' ||
-      (!build && (a === '-v' || a === '--init')))) return false;
-    if (build) return true;
-    return !namesSourceFile(args, TSC_VALUES);
+      (!build && (a === '-v' || a === '--init')))) return null;
+    if (build) return 'tsc';
+    return namesSourceFile(args, TSC_VALUES) ? null : 'tsc';
   }
-  return false;
+  return null;
 };
-// Re-runs this process in a slot and exits with that run's status.
-const relaunch = () => {
-  const lock = require('path').join(__dirname, 'fm-build-lock.py');
+// Re-runs this process through the router and exits with that run's status.
+// fm-heavy-route.py sends it to Boat where a project declares that, and to a
+// local heavy slot otherwise; it never does less than the slot.
+const relaunch = (kind) => {
+  const lock = require('path').join(__dirname, 'fm-heavy-route.py');
   const result = require('child_process').spawnSync(lock,
-    ['--', process.execPath, ...process.execArgv, ...argv.slice(1)], { stdio: 'inherit' });
+    ['--kind', kind, '--', process.execPath, ...process.execArgv, ...argv.slice(1)],
+    { stdio: 'inherit' });
   if (result.error) {
-    console.error(`build lock: ${result.error.message}`);
+    console.error(`heavy route: ${result.error.message}`);
     process.exit(75);
   }
   if (result.signal) {
@@ -166,10 +172,11 @@ if (process.env.FM_BUILD_LOCK_BYPASS !== '1') {
     if (ENTRIES.has(entry)) {
       let script = '';
       try { script = require('fs').realpathSync(argv[1]); } catch {}
-      if (heavy(script, argv.slice(2))) relaunch();
+      const kind = heavy(script, argv.slice(2));
+      if (kind) relaunch(kind);
     }
     if (!process.env.FM_BUILD_LOCK_HELD && process.env.npm_lifecycle_event === HEAVY_SCRIPT) {
-      relaunch();
+      relaunch(HEAVY_SCRIPT);
     }
   }
   if (SAFE_OPTION) {

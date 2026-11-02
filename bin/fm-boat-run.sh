@@ -55,21 +55,36 @@
 # each of HEAD and refs/remotes/origin/main, counting each tip as depth one.
 # Both tips must exist locally.
 # Only those two tips, their bounded commits/trees/blobs, shallow boundaries,
-# and fresh Git metadata travel. No other refs, stash, reflogs, hooks, local
-# remotes or local Git config travel. Current tracked edits/deletions still apply.
-# History permits only the .claude/skills symlink as an exception to source path
-# and symlink rejection: its target text must pass the UTF-8 credential scanner
-# and resolve lexically within the repository from .claude/.
-# Its screened target blob remains in the Git pack, never dereferenced or
-# materialized as a working-tree symlink.
-# Every other historical tree entry must pass the source path filter (including the
-# screened exceptions), and every historical blob and commit (including headers
-# and messages) must pass the same UTF-8 credential scanner. Excluded paths,
-# configured key paths, other symlinks, submodules, binary or credential-looking blobs
-# or commits refuse the entire run before any Boat call.
-# Refusal logs name the reason and, for tree entries, the path without printing
-# blob or commit content.
-# Working-tree submodules and symlinks outside excluded paths are refused rather than silently changing the source.
+# and fresh Git metadata travel. No other refs, stash, reflogs, hooks or local
+# Git config travel, and the only remote declared is the promisor marker below.
+# Current tracked edits/deletions still apply.
+# A commit's bytes are its identity, so it cannot be withheld and its scan is
+# the one that cannot afford a false positive: a commit, with its headers and
+# message, refuses the entire run before any Boat call when it is not UTF-8,
+# contains binary content, a credential-key assignment using =, a screened
+# bearer token, or an issued credential (private-key block or provider key).
+# Command names such as secrets:scan and quoted example URLs remain prose.
+# Blob content keeps the source upload's own boundary rather than a stricter
+# one: a blob either tip tree still references travels unscanned, exactly as it
+# travels with no history at all, while a blob only an older commit references
+# is new exposure, is screened with the full credential scanner, and on a hit
+# is withheld. Allowlisted source exceptions remain content-screened at
+# every depth, including tip blobs, with the additional .npmrc rule.
+# An object at an excluded or configured-key path, and a historical symlink or
+# submodule entry, are withheld the same way. The sole exception is the
+# .claude/skills symlink: its UTF-8 target is credential-screened and must
+# resolve lexically within the repository; unsafe targets refuse the run.
+# Its screened blob travels in Git, never as a working-tree symlink.
+# A symlink or submodule in the
+# uploaded source is still refused rather than silently changing the source.
+# A withheld object keeps its tree entry, so every commit, tree, ancestry, name
+# and date stays what the project's own tooling reads and `git fsck` stays
+# clean: the pack is marked promisor, as `git clone --filter=blob:none` marks
+# its own, and the promisor remote fm-boat-withheld carries no URL, so reading
+# a withheld object's content fails loudly rather than silently. That marking
+# needs a remote Git supporting the partial-clone extension; an older one
+# refuses the repository outright instead of reading it wrong.
+# Logs name the withheld count and one path, never blob or commit content.
 # Run from the worktree root remotely at /home/user/fm-job/source. Install remote
 # dependencies explicitly in COMMAND; native local node_modules never travel.
 # --timeout defaults to 1800, range 1..2700; VM TTL is timeout+900 (<=3600).

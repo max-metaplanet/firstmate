@@ -610,16 +610,20 @@ for name, selected, contents, symlink, accepted in [
         git(work, 'add', '--all')
         git(work, 'commit', '-qm', 'clean current tree')
     git(work, 'update-ref', 'refs/remotes/origin/main', 'HEAD')
+    refused = symlink and selected == '.claude/skills' and not accepted
+    oid = git(work, 'rev-parse', 'HEAD~1:' + selected).stdout.decode().strip() if not accepted else None
     check = 'exit 0'
+    if not accepted and not refused:
+        check = 'git fsck --no-reflogs && ! git cat-file blob ' + oid + ' >/dev/null 2>&1'
     if symlink and accepted:
         check = "test ! -e .claude/skills && test ! -L .claude/skills && " + \
                 "test \"$(git cat-file blob HEAD:.claude/skills)\" = ../.agents/skills && git fsck --no-reflogs"
     r = launch(p, env, check, ('--history-depth', '2'))
-    assert r.returncode == (0 if accepted else 2), (name, r.stdout, r.stderr)
+    assert r.returncode == (2 if refused else 0), (name, r.stdout, r.stderr)
     assert b'historical-value-never-print' not in r.stdout + r.stderr
-    if accepted:
+    if not refused:
         uploaded = json.loads((state / 'uploaded.json').read_text())
-        assert (selected in uploaded) == (not symlink), (name, uploaded)
+        assert (selected in uploaded) == (accepted and not symlink), (name, uploaded)
         empty(state)
     else:
         assert b'history refused:' in r.stderr
@@ -649,32 +653,63 @@ for name, unsafe_path, unsafe_content in [
     ('history-github', 'ordinary.txt', 'ghp_0123456789abcdefghij'),
     ('history-github-pat', 'ordinary.txt', 'github_pat_0123456789abcdefghij'),
     ('history-aws', 'ordinary.txt', 'AKIA0123456789ABCDEF'),
+    ('history-symlink', 'pointer.txt', None),
 ]:
     p, state, env = case(name, clean_history=True)
     work = p / 'work'
     target = work / unsafe_path
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(unsafe_content)
+    if unsafe_content is None:
+        target.symlink_to('tracked.txt')
+    else:
+        target.write_text(unsafe_content)
     git(work, 'add', '--force', '.')
     git(work, 'commit', '-qm', 'unsafe older blob')
+    oid = git(work, 'rev-parse', 'HEAD:' + unsafe_path).stdout.decode().strip()
     target.unlink()
     git(work, 'add', '--all')
     git(work, 'commit', '-qm', 'clean current tree')
     git(work, 'update-ref', 'refs/remotes/origin/main', 'HEAD')
-    r = launch(p, env, options=('--history-depth', '2'))
-    assert r.returncode == 2, (name, r.stderr)
-    assert b'history refused:' in r.stderr
-    assert b'historical-value-never-print' not in r.stdout + r.stderr
-    assert b'a9F2k7Q4m8X' not in r.stdout + r.stderr
-    assert result(p)['kind'] == 'invalid'
-    assert not (state / 'calls.jsonl').exists()
-    assert not (p / 'output/upload/source.tar.gz').exists()
-print('ok - excluded, credential-bearing and binary historical blobs refuse before Boat, without content')
+    head = git(work, 'rev-parse', 'HEAD').stdout.decode().strip()
+    older = git(work, 'rev-parse', 'HEAD~1').stdout.decode().strip()
+    check = f'''import pathlib, subprocess
+def git(*args): return subprocess.run(['git', *args], capture_output=True, text=True)
+assert git('rev-parse', 'HEAD').stdout.strip() == {head!r}
+assert git('cat-file', '-e', {older!r}).returncode == 0, 'the older commit must still be here'
+assert git('fsck', '--no-reflogs').stdout.strip() == ''
+assert git('fsck', '--no-reflogs').returncode == 0
+read = git('cat-file', 'blob', {oid!r})
+assert read.returncode != 0, 'a withheld object must not be readable'
+assert 'never-print' not in read.stdout
+assert not pathlib.Path({unsafe_path!r}).exists()
+'''
+    r = launch(p, env, 'python3 -c ' + shlex.quote(check), ('--history-depth', '2'))
+    assert r.returncode == 0, (name, r.stdout, r.stderr, result(p))
+    assert b'history withheld' in r.stderr, (name, r.stderr)
+    assert b'never-print' not in r.stdout + r.stderr, name
+    assert result(p)['kind'] == 'completed'
+    empty(state)
+print('ok - an excluded, credential-bearing, binary or symlinked historical object is withheld '
+      'without content, leaving real commits a clean fsck reads')
+
+p, state, env = case('history-current-blob', clean_history=True)
+work = p / 'work'
+(work / 'current.txt').write_text('API_SECRET=current-tree-value\n')
+git(work, 'add', '--all')
+git(work, 'commit', '-qm', 'credential-looking current blob')
+git(work, 'update-ref', 'refs/remotes/origin/main', 'HEAD')
+r = launch(p, env, 'grep -q current-tree-value current.txt && git cat-file -p HEAD:current.txt >/dev/null',
+           ('--history-depth', '2'))
+assert r.returncode == 0, (r.stdout, r.stderr, result(p))
+assert b'history withheld' not in r.stderr, r.stderr
+empty(state)
+print('ok - a blob a tip still carries travels under history exactly as it travels without it')
 
 for root_ref in ('HEAD', 'refs/remotes/origin/main'):
     for ancestor in (False, True):
         for field in ('message', 'author', 'committer', 'extra-header'):
-            for credential in (b'API_SECRET=historical-commit-never-print', b'Bearer a9F2k7Q4m8X'):
+            for credential in (b'API_SECRET=historical-commit-never-print', b'Bearer a9F2k7Q4m8X',
+                               b'ghp_historicalcommitneverprint0123'):
                 name = 'history-commit-' + root_ref.replace('/', '-') + '-' + str(ancestor) + '-' + field + '-' + str(len(credential))
                 p, state, env = case(name, clean_history=True)
                 work = p / 'work'
@@ -701,6 +736,16 @@ for root_ref in ('HEAD', 'refs/remotes/origin/main'):
                 assert not (state / 'calls.jsonl').exists()
                 assert not (p / 'output/upload/source.tar.gz').exists()
 print('ok - both history roots screen tip and ancestor commit messages and headers before Boat, without content')
+
+p, state, env = case('history-commit-prose', clean_history=True)
+work = p / 'work'
+git(work, 'commit', '-q', '--allow-empty', '-m',
+    "secrets:scan read the literal URL 'https://user:secret@example.com/path' as real, and "
+    'Bearer decisions stay prose')
+git(work, 'update-ref', 'refs/remotes/origin/main', 'HEAD')
+assert launch(p, env, options=('--history-depth', '2')).returncode == 0
+empty(state)
+print('ok - a commit message that writes about credentials is prose, not a credential')
 
 p, state, env = case('history-missing-base', clean_history=True)
 r = launch(p, env, options=('--history-depth', '2'))

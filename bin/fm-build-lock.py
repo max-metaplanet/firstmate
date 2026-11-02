@@ -7,10 +7,12 @@ every worker, and the no-mistakes daemon all draw from it.
 
 fm-build-lock.js is a Node preload carried in NODE_OPTIONS, so it survives
 shells that rebuild PATH (rc files, version managers, agent shell snapshots).
-Only Node executing a heavy CLI re-runs itself through this script; every other
-Node process returns from the preload without starting another interpreter. The
-preload owns which command is heavy. Package managers and Turbo remain
-unlocked; the heavy commands they start claim slots themselves.
+Only Node executing a heavy CLI re-runs itself, through the sibling
+fm-heavy-route.py; every other Node process returns from the preload without
+starting another interpreter. The preload owns which command is heavy, the
+router owns whether that command goes to Boat or to a slot here, and a slot here
+is what it does unless a project declares otherwise. Package managers and Turbo
+remain unlocked; the heavy commands they start claim slots themselves.
 
   fm-build-lock.py -- COMMAND [ARGS...]   run another heavy command in a slot
   fm-build-lock.py node-option            print the NODE_OPTIONS entry
@@ -90,7 +92,7 @@ import time
 
 SOURCE = Path(__file__).resolve().parent
 FILES = {"fm-build-lock.py": 0o755, "fm-build-lock.js": 0o644,
-         "fm-memcap.sh": 0o755}
+         "fm-heavy-route.py": 0o755, "fm-memcap.sh": 0o755}
 DROP_IN = "fm-build-lock.conf"
 SHIMS = "shims"
 SHIMMED = ("tsc", "vitest", "eslint", "next")

@@ -38,6 +38,10 @@ The 2026-11-02 refresh replaced every one of those derived values with a measure
 A single low sample on the pre-split host suite is what let serial 2 pack 21 further scripts beside a script that fills a shard by itself; [Portable serial CI shards](#portable-serial-ci-shards) owns that lesson and what the coverage guard does and does not catch.
 A cancelled job's unfinished script has no completed sample, so the hint keeps the slowest *completed* one.
 
+`tests/fm-heavy-route.test.sh` arrived after the last refresh, so its 12000 ms hint has no CI sample behind it.
+It derives from one local run of 4.55 s scaled against its closest sibling, `tests/fm-boat-run.test.sh`, which runs 54.59 s on the same machine against a 41646 ms measured hint, and then rounded well upward because this table's asymmetry prefers an over-packed hint to a cancelled shard.
+Replace it with the slowest measured `duration_ms` at the next refresh.
+
 The native-Windows-only `tests/fm-pi-windows-shell-invocation.test.sh` retains its separate 5121 ms measurement from 2026-09-06T21:02Z instead of a portable capability skip, because the portable shards skip it.
 It is the only remaining exception: the 2026-11-02 refresh replaced the provisional local and macOS-host measurements the polytoken adapter, pool-prune, treehouse-lease, orgs-lib and session-start entries had been carrying with Ubuntu CI measurements.
 
