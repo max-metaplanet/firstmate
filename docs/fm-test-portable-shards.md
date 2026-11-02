@@ -151,7 +151,7 @@ Portable shards, each portable serial shard, each packed change-scoped job, and 
 ## Lint partitions and end-to-end latency
 
 `bin/fm-lint.sh` owns the canonical CI partitions, each running the same full source-aware ShellCheck analysis with one ShellCheck at a time, pinned versions, workflow validation, and backend-purity checks; the `.github/workflows/ci.yml` lint matrix sets the partition count, and `docs/verification/lint-runner-memory.md` records why a partition does not run concurrent workers.
-CI requires its per-root bounds, so an unenforceable deadline or address-space limit refuses lint rather than running uncapped; the script header owns the envelope, per-root execution contract, and memory fallback.
+CI requires its per-root bounds, so an unenforceable deadline or memory cap refuses lint rather than running uncapped; the script header owns the envelope, per-root execution contract, and memory fallback.
 Its `--list-files` interface exposes partition membership; `tests/fm-lint.test.sh` verifies complete/disjoint executed roots, initial analysis flags, and fallback reporting.
 The workflow uploads each partition's quiet telemetry plus its per-root lifecycle sidecar to distinguish analysis cost, memory use, and host contention.
 No fast mode, reduced checks, or paid runner provisioning is part of this layout.

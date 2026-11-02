@@ -1720,6 +1720,7 @@ The optional local, gitignored `config/heavy-slots` in the machine's root Firstm
 A worker that finds every slot taken waits for one and says so on stderr; waiting is the intended behavior, not a failure.
 Waiting is polled rather than queued, so slots are not handed out first-come-first-served.
 A heavy command started inside another one reuses its holder's slot instead of taking a second; the slot is released when the last process holding its inherited file descriptor exits, including through `SIGKILL`.
+A command that claims a slot through `bin/fm-build-lock.py -- <command>` also runs under a hard memory cap whose budget the pool's slots divide; [`bin/fm-memcap.sh`](../bin/fm-memcap.sh) owns the mechanism and the budget.
 `FM_BUILD_LOCK_BYPASS=1 <command>` runs one command without a slot.
 
 Covered automatically: any Node process whose `NODE_OPTIONS` carries the preload, which ship and scout launches, the managed no-mistakes Claude wrapper, and the daemon drop-in all add.
