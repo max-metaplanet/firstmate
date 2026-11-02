@@ -5,6 +5,12 @@
 # without copying authentication. Pipeline, quota floor, session
 # share, and paid extra-usage policy commands currently support Claude only.
 #
+# config/<provider>-seat-no-session-window is written by hand rather than by any
+# command here: it names the seats whose PLAN carries no five-hour window, and
+# every 5-hour reading is then ignored for them (bin/fm-seat-lib.sh
+# fm_seat_no_session_window; docs/configuration.md "Claude seats" owns the
+# file). `status` and `list` report which seats it names.
+#
 # Usage:
 #   fm-seat.sh status
 #   fm-seat.sh pipeline-install --claude <absolute-native-path> [--destination <path>]
@@ -159,7 +165,8 @@
 #            operator's own standing choice and is never lifted automatically.
 # floor-readd
 #            The percent LEFT BOTH windows must regain before a resting seat
-#            comes back. Absent, it is derived from the floor as
+#            comes back, or its WEEK alone for a seat declared to have no
+#            five-hour window. Absent, it is derived from the floor as
 #            min(100, max(3 x floor, floor + 10)).
 # floor-dwell
 #            Seconds a seat must have rested before any reading may wake it. 0
@@ -168,7 +175,8 @@
 #            The assumed percent of a WEEK one whole session window costs, used
 #            until it has been measured on that account. It is the one setting
 #            here that is not a percent left. With no argument it also prints
-#            the share in force per account and whether it was measured.
+#            the share in force per account and whether it was measured. A seat
+#            declared to have no five-hour window reserves no such share.
 # resting    Print which seats the floor is resting and why, or, with
 #            `wake <name>`, put one back by hand. A hand wake is temporary by
 #            construction: the next pass reads that seat again and rests it
@@ -371,7 +379,7 @@ all_seats() {
 }
 
 cmd_list() {
-  local name state account dir active note resting
+  local name state account dir active note resting plan
   active=$(fm_seat_active)
   printf 'seats root: %s\n' "$(fm_seat_root)"
   while IFS= read -r name; do
@@ -398,9 +406,15 @@ cmd_list() {
         note=$'\t'"back in automatic rotation provisionally after resting below the quota floor: $resting"
       fi
     fi
-    printf '%s%s\t%s\t%s\t%s%s\n' \
+    # The plan note is a separate fact from a seat being withheld, so it is
+    # appended beside whichever of those is holding the seat back rather than
+    # replacing it.
+    plan=''
+    ! fm_seat_no_session_window "$name" ||
+      plan=$'\t'"no 5-hour window on its plan: only its weekly limit counts"
+    printf '%s%s\t%s\t%s\t%s%s%s\n' \
       "$([ "$name" = "$active" ] && printf '* ' || printf '  ')" \
-      "$name" "$state" "${account:--}" "${dir:-(ambient default login)}" "$note"
+      "$name" "$state" "${account:--}" "${dir:-(ambient default login)}" "$note" "$plan"
   done < <(all_seats)
 }
 
@@ -441,7 +455,7 @@ declining_secondmate_homes() {
 
 cmd_status() {
   local active profile threshold minimum policy reason rows excluded floor pipeline label
-  local headroom lead_provider
+  local headroom lead_provider no_session
   label=Claude; [ "$FM_SEAT_PROVIDER" != codex ] || label=Codex
   active=$(fm_seat_active)
   printf 'active seat for NEW workers: %s\n' "$active"
@@ -504,6 +518,13 @@ cmd_status() {
     printf 'held out of automatic rotation by hand: %s (switch <name> still reaches them)\n' "$excluded"
   else
     printf 'held out of automatic rotation by hand: (none - every seat under the root is a rotation candidate)\n'
+  fi
+  no_session=$(fm_seat_no_session_window_list | tr '\n' ' ')
+  no_session=${no_session% }
+  if [ -n "$no_session" ]; then
+    printf 'no 5-hour window on their plan: %s (every 5-hour reading is ignored for them, their week alone decides, and they are the preferred destination while it has room)\n' "$no_session"
+  else
+    printf 'no 5-hour window on their plan: (none declared - every seat is bounded by its 5-hour window as well as its week)\n'
   fi
   if floor=$(fm_seat_floor); then
     printf 'quota floor: rest a seat at or below %s%% left, back only above %s%% on BOTH windows after %ss and with room for a whole session\n' \
@@ -645,6 +666,12 @@ seat_walled() {
 # that dip is acted on, and only for work not yet started.
 session_room_reason() {
   local name=$1 trigger=$2 left reset
+  # A seat whose plan carries no five-hour window can never be short of
+  # five-hour room: there is no such window to dip, nothing to wait for, and no
+  # reset that could end a hold. Its week is the whole of its headroom, and the
+  # absolute destination gates already judge that
+  # (bin/fm-seat-lib.sh fm_seat_no_session_window).
+  fm_seat_no_session_window "$name" && return 1
   IFS=$'\t' read -r left reset < <(session_window "$name") || {
     printf 'its 5-hour window could not be read, so it cannot be shown to have room for a new worker\n'
     return 2
@@ -936,30 +963,40 @@ anchor_headroom() {
 
 # seat_rank_key <name> <rotation-index>
 # One qualifying candidate's place in the use-it-or-lose-it order, as sortable
-# fields: `<has-spare><TAB><weekly reset><TAB><weekly spare><TAB><rotation
-# index><TAB><name>`, sorted by the first four with the name carried along.
+# fields: `<no-five-hour-window><TAB><has-spare><TAB><weekly reset><TAB><weekly
+# spare><TAB><rotation index><TAB><name>`, sorted by the first five with the
+# name carried along.
 #
-# Spare that expires soonest is spent first, because it is the spare that would
-# otherwise be lost: among seats that still have weekly spare, the one whose
-# week resets first wins, then the one with the most spare, then rotation order
-# so the answer is the same every time. A seat with no spare left sorts behind
-# every seat that has some, which is what keeps the thinnest seat in reserve.
+# A seat whose plan carries no five-hour window comes first, ahead of the spare
+# comparison entirely. It is the one seat a five-hour dip can never hold back,
+# so work placed there is work that can always start; every candidate reaching
+# this point has already been proven to have headroom, which for such a seat is
+# weekly headroom, because its five-hour window is not read at all
+# (bin/fm-seat-lib.sh fm_seat_no_session_window).
+#
+# Spare that expires soonest is then spent first, because it is the spare that
+# would otherwise be lost: among seats that still have weekly spare, the one
+# whose week resets first wins, then the one with the most spare, then rotation
+# order so the answer is the same every time. A seat with no spare left sorts
+# behind every seat that has some, which is what keeps the thinnest seat in
+# reserve.
 #
 # A seat whose weekly reset is not reported cannot be shown to be the soonest
 # to expire, so it sorts after every seat whose reset is known rather than
 # ahead of them on a figure nothing supplied.
 seat_rank_key() {
-  local name=$1 index=$2 dir out row spare reset group=1 at=0
+  local name=$1 index=$2 dir out row spare reset plan=1 group=1 at=0
   dir=$(fm_seat_config_dir "$name") || return 1
   out=$(fm_seat_quota_json "$dir") || return 1
   row=$(fm_seat_headroom_from "$out") || return 1
   spare=$(fm_seat_headroom_field "$row" 2) || return 1
+  ! fm_seat_no_session_window "$name" || plan=0
   if jq -en --arg s "$spare" '($s | tonumber) > 0' >/dev/null 2>&1; then
     group=0
     reset=$(fm_seat_headroom_field "$row" 3) || reset=''
     at=$(fm_seat_iso_to_epoch "$reset") || at=99999999999
   fi
-  printf '%s\t%s\t%s\t%s\t%s\n' "$group" "$at" "$spare" "$index" "$name"
+  printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$plan" "$group" "$at" "$spare" "$index" "$name"
 }
 
 # next_seat [--any] [<anchor-seat> [<skip-seat>...]]
@@ -1026,6 +1063,14 @@ seat_rank_key() {
 # a plainer figure that carries no reset to rank by, and the first qualifying
 # seat in rotation order is taken, exactly as it always was.
 #
+# A SEAT WITH NO FIVE-HOUR WINDOW is preferred over every other qualifying
+# candidate, on both of those paths: it is the one seat a five-hour dip can
+# never hold back. seat_rank_key carries the preference on the ranked path, and
+# on the plainer one an ordinary candidate is held until the rotation has looked
+# at every seat, so a declared seat later in rotation order still wins. A home
+# that declares none takes the same answer on the same number of quota calls as
+# it did before the declaration existed.
+#
 # `--any` asks the absolute question instead - is there a seat a worker could
 # be launched on at all - with no improvement required. Two callers need it.
 # Arming the watch must succeed on a fleet whose ACTIVE seat is simply the best
@@ -1055,7 +1100,9 @@ next_seat() {
   local active seats n i idx name minimum='' reason state resting skip rc
   local anchor_basis='' anchor_spare='' anchor_walled='' any=0 key session='' room
   local spared='' fallback='' spare_move=0 skip_spared=0 left phrase
+  local declared=0 held=''
   local -a ranked=() waiting=()
+  ! fm_seat_no_session_window_any || declared=1
   case "${1-}" in
     --spare-leader|--spare-fallback)
       [ "$1" = --spare-fallback ] || skip_spared=1
@@ -1163,6 +1210,16 @@ next_seat() {
           continue
         fi
         if [ "$anchor_basis" != week-spare ] || ! key=$(seat_rank_key "$name" "$i"); then
+          # With a no-five-hour-window seat declared, an ordinary candidate is
+          # HELD rather than answered here, so a declared seat further round the
+          # rotation can still be preferred; the held candidate is the answer
+          # when none qualifies. A declared seat is answered at once, because
+          # nothing later can outrank it. With nothing declared this reads
+          # exactly as it did, first qualifying seat and no further quota call.
+          if [ "$declared" -eq 1 ] && ! fm_seat_no_session_window "$name"; then
+            held=${held:-$name}
+            continue
+          fi
           printf '%s\n' "$name"
           return 0
         fi
@@ -1184,13 +1241,18 @@ next_seat() {
         continue
       fi
       if [ "$anchor_basis" != week-spare ]; then
+        if [ "$declared" -eq 1 ]; then
+          held=${held:-$name}
+          continue
+        fi
         printf '%s\n' "$name"
         return 0
       fi
       # Ranked last of all: it is still a destination, but a seat whose
       # headroom was actually measured is always the better answer, and this
-      # one has no figure to be placed by.
-      ranked+=("$(printf '2\t0\t0\t%s\t%s' "$i" "$name")")
+      # one has no figure to be placed by. Its plan field is the unpreferred
+      # one however the seat is declared, because no reading proved its week.
+      ranked+=("$(printf '1\t2\t0\t0\t%s\t%s' "$i" "$name")")
       continue
     fi
     # A renewable seat lands here by construction: nothing can read its quota
@@ -1204,6 +1266,10 @@ next_seat() {
     fi
   done
   if [ "${#ranked[@]}" -eq 0 ]; then
+    if [ -n "$held" ]; then
+      printf '%s\n' "$held"
+      return 0
+    fi
     if [ -n "$fallback" ]; then
       printf '%s\n' "$fallback"
       return 0
@@ -1212,8 +1278,8 @@ next_seat() {
     return 1
   fi
   LC_ALL=C printf '%s\n' "${ranked[@]}" |
-    LC_ALL=C sort -t"$(printf '\t')" -k1,1n -k2,2n -k3,3nr -k4,4n |
-    head -1 | cut -f5
+    LC_ALL=C sort -t"$(printf '\t')" -k1,1n -k2,2n -k3,3n -k4,4nr -k5,5n |
+    head -1 | cut -f6
 }
 
 # A spared leader ranks behind any eligible worker seat even when it has more
@@ -1467,13 +1533,15 @@ leader_selection_config() {
       echo "error: invalid $FM_SEAT_PROVIDER resting record" >&2; return 1;
     }
   fi
-  if [ -e "$CONFIG/$FM_SEAT_PROVIDER-seat-auto-exclude" ]; then
-    while IFS= read -r name || [ -n "$name" ]; do
-      [ -z "$name" ] || fm_seat_name_valid "$name" || {
-        echo "error: invalid $FM_SEAT_PROVIDER excluded seat name" >&2; return 1;
-      }
-    done < "$CONFIG/$FM_SEAT_PROVIDER-seat-auto-exclude"
-  fi
+  for setting in auto-exclude no-session-window; do
+    [ ! -e "$CONFIG/$FM_SEAT_PROVIDER-seat-$setting" ] || {
+      while IFS= read -r name || [ -n "$name" ]; do
+        [ -z "$name" ] || fm_seat_name_valid "$name" || {
+          echo "error: invalid $FM_SEAT_PROVIDER seat name in $setting" >&2; return 1;
+        }
+      done < "$CONFIG/$FM_SEAT_PROVIDER-seat-$setting"
+    }
+  done
   for entry in "$root"/*; do
     [ -d "$entry" ] || continue
     fm_seat_name_valid "${entry##*/}" || {
@@ -2612,7 +2680,7 @@ floor_wake_due() {
 auto_floor() {
   local floor readd dwell now record before name dir entry resting out remaining
   local rows session week session_reset week_reset account share expected limiting
-  local new_entry provisional changed=0
+  local new_entry provisional changed=0 phrase reserve
   floor=$(fm_seat_floor) || return 0
   readd=$(fm_seat_floor_readd) || return 0
   dwell=$(fm_seat_floor_dwell)
@@ -2681,11 +2749,12 @@ auto_floor() {
     fi
     # A seat back provisionally faces the same wake test on its first readable
     # reading: passing clears its entry, failing rests it again on real figures.
-    if floor_may_wake "$entry" "$session" "$week" "$readd" "$share" "$dwell" "$now"; then
+    if floor_may_wake "$name" "$entry" "$session" "$week" "$readd" "$share" "$dwell" "$now"; then
       record=$(printf '%s\n' "$record" | jq -c --arg n "$name" 'del(.seats[$n])')
       changed=1
-      printf '%s-seat: %s comes back into automatic rotation - %s%% left on its session and %s%% on its week, both above the %s%% re-add level, with room for a whole session\n' "$FM_SEAT_PROVIDER" \
-        "$name" "$session" "$week" "$readd"
+      IFS=$'\t' read -r phrase reserve < <(floor_window_phrase "$name" "$session" "$week")
+      printf '%s-seat: %s comes back into automatic rotation - %s, above the %s%% re-add level%s\n' "$FM_SEAT_PROVIDER" \
+        "$name" "$phrase" "$readd" "$reserve"
       continue
     fi
     limiting=$(fm_seat_limiting_window_from "$out") || limiting=''
@@ -2696,8 +2765,9 @@ auto_floor() {
       if (.seats[$n] | del(.lastRead)) == ($e | del(.lastRead)) then . else .seats[$n] = $e end')
     [ "$provisional" -eq 1 ] || continue
     changed=1
-    printf '%s-seat: %s is resting again - read again after coming back provisionally, it has %s%% left on its session and %s%% on its week, short of the %s%% re-add level with room for a whole session (expected back %s)\n' "$FM_SEAT_PROVIDER" \
-      "$name" "$session" "$week" "$readd" "$expected"
+    IFS=$'\t' read -r phrase reserve < <(floor_window_phrase "$name" "$session" "$week")
+    printf '%s-seat: %s is resting again - read again after coming back provisionally, it has %s, short of the %s%% re-add level%s (expected back %s)\n' "$FM_SEAT_PROVIDER" \
+      "$name" "$phrase" "$readd" "$reserve" "$expected"
   done < <(fm_seat_list)
   # A record that did not move is not rewritten and nothing is pushed, so a
   # steady fleet costs one quota read per seat and no config churn at all.
@@ -2753,17 +2823,41 @@ floor_mark_unreadable() {
     else .seats[$n].unreadableSince = $now end'
 }
 
-# floor_may_wake <entry> <session-left> <week-left> <readd> <share> <dwell> <now>
+# floor_window_phrase <name> <session-left> <week-left>
+# What a floor message says one seat's reading was, and the reserve clause that
+# goes with it, as `<figures><TAB><reserve>`. A seat whose plan carries no
+# five-hour window has only its week to report and no session whose share of a
+# week has to be held back, so neither is claimed of it.
+floor_window_phrase() {
+  if fm_seat_no_session_window "${1-}"; then
+    printf '%s%% left on its week, the only window its plan carries\t\n' "${3-}"
+    return 0
+  fi
+  printf '%s%% left on its session and %s%% on its week\t, with room for a whole session\n' "${2-}" "${3-}"
+}
+
+# floor_may_wake <name> <entry> <session-left> <week-left> <readd> <share> <dwell> <now>
 # The whole wake test, on a fresh reading: both windows back above the re-add
 # level, the week able to absorb one more whole session on top of it, and the
 # minimum rest elapsed. The middle condition is the one that stops a session
 # reset from returning a seat whose remaining week a full session would overrun.
+#
+# A seat whose plan carries no five-hour window has neither half of that: no
+# session figure to clear, and no session whose share of a week has to be held
+# back. Its week alone has to clear the re-add level, which is the same test the
+# floor rested it on (bin/fm-seat-lib.sh fm_seat_no_session_window).
 floor_may_wake() {
-  local entry=$1 session=$2 week=$3 readd=$4 share=$5 dwell=$6 now=$7 since
-  [ -n "$session" ] && [ -n "$week" ] || return 1
+  local name=$1 entry=$2 session=$3 week=$4 readd=$5 share=$6 dwell=$7 now=$8 since
   since=$(printf '%s\n' "$entry" | jq -r '.since // 0')
   case "$since" in ''|*[!0-9]*) since=0 ;; esac
   [ $((now - since)) -ge "$dwell" ] || return 1
+  if fm_seat_no_session_window "$name"; then
+    [ -n "$week" ] || return 1
+    jq -en --arg w "$week" --arg r "$readd" \
+      '($w | tonumber) >= ($r | tonumber)' >/dev/null 2>&1
+    return
+  fi
+  [ -n "$session" ] && [ -n "$week" ] || return 1
   jq -en --arg s "$session" --arg w "$week" --arg r "$readd" --arg h "$share" '
     ($s | tonumber) >= ($r | tonumber)
     and ($w | tonumber) >= ($r | tonumber)

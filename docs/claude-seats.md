@@ -207,6 +207,7 @@ With no seat qualifying, the spawn is held and the refusal names the soonest fiv
 A session window that is *spent* is the one exception and it comes first: no worker launched on that seat can run at all, so the crossing fires on the account figure whatever the week says, and work goes to a seat that has session room without the weekly comparison being asked of it.
 That covers all three ways work reaches a seat: a new worker at launch (a Codex one too when a Codex switch trigger is set), a running worker through the mid-task move, and the active seat itself, which the watch rotates so the managed pipeline agent - which has no seat policy of its own and simply launches on the active seat - stops launching onto the spent one.
 Waiting out a dip and never starting work on a seat that cannot take it are the two halves of the same rule.
+None of this applies to a seat on a plan that has no five-hour window at all; [a plan with no five-hour window](#a-plan-with-no-five-hour-window) owns that case.
 
 Reading one collapsed percentage for both is what moved firstmate back and forth between two seats on 2026-10-15/16: a seat holding 65% of its week read as "18%" because its five-hour window was down, and the rotation treated that as a spent account.
 
@@ -277,6 +278,7 @@ Each pass keeps every quota read inside the watcher's per-check timeout (`FM_CHE
 Only the account-level windows (`all_models` and `all_products`) are read at all, the same scopes the dispatch chooser applies to a worker with no specific model; a model- or product-only window such as an Opus weekly limit does not trip a switch on its own.
 Of those, the trigger is measured against the **week**, with a seat that has nothing left at all as the one exception; [which seat carries work](#which-seat-carries-work) owns that split.
 The quota floor reads the same two account-level windows by name (`five_hour` and `seven_day`) and ignores every model- and product-scoped window and `extra_usage` for the same reason: extra-usage credits are not plan quota, and a model limit does not bound a worker that is not on that model.
+A seat declared to be on [a plan with no five-hour window](#a-plan-with-no-five-hour-window) is read on its week alone, in every one of those places.
 For the `default` seat the condition reads the same profile a new worker on it gets, which is firstmate's own `CLAUDE_CONFIG_DIR` when that is set.
 
 An unreadable or ambiguous quota is never guessed at, in either direction:
@@ -325,6 +327,36 @@ Excluding the `default` login is refused outright, because it is never an automa
 
 If you exclude every candidate, nothing new happens: rotation falls through to the ordinary refusal that it has nowhere to go, naming each withheld seat, and `arm` refuses for the same reason rather than arming a watch that could never fire.
 
+## A plan with no five-hour window
+
+Some plans are bounded by a weekly limit alone, with no five-hour window behind it.
+A seat on such a plan is the one seat a session dip can never hold back, and every rule above that reads a five-hour figure reads the wrong thing about it.
+
+```
+# config/claude-seat-no-session-window, one seat name per line
+weekly-only
+```
+
+The file is written by hand and there is no command for it, because no reading can establish what shape an account's plan has.
+No seat name is built into firstmate either: the declaration is the whole of how firstmate learns the fact.
+
+**What it changes.**
+For a seat the file names, the five-hour window is taken out of that seat's quota report before any decision reads it, and the account-level percentage is restamped from the weekly window's own reported figure.
+So the switch trigger, the destination gate, the launch hold, the dispatch hold, the quota floor and its re-add test, the rotation's preference order, and every line that prints headroom all read a seat that simply has no five-hour window.
+A spent five-hour window no longer holds a launch, routes a new worker elsewhere, rotates the lead away, or holds dispatch, and `status` and `list` stop printing a five-hour figure for it.
+
+**It is preferred, not exempt.**
+A declared seat with weekly room is the rotation's preferred destination, ahead of a seat with more weekly spare, because work placed there can always start.
+Its week is still the whole of its quota: a declared seat with no weekly room is used up exactly like any other, is refused as a destination, and holds dispatch when it is the active seat.
+The quota floor still rests it when its week drops to the floor, and brings it back when its week alone clears the re-add level.
+
+**Nothing is invented.**
+The substituted percentage is the weekly window's own reported figure.
+A report that carries no weekly percentage has nothing to substitute, so such a seat reads exactly as it did.
+A home that declares no seat behaves and reads exactly as it did before the file existed, on the same number of quota reads.
+
+`bin/fm-seat.sh status` names every declared seat, and `bin/fm-seat.sh list` marks each one on its own row.
+
 ## Resting a seat below a quota floor
 
 An exclusion is a standing choice about *whose account* a seat is.
@@ -351,6 +383,8 @@ A resting seat returns only when a fresh reading shows all of:
 - both windows at or above the **re-add level**, which is `floor-readd` when set and otherwise `min(100, max(3 x floor, floor + 10))` - 15 for a floor of 5; `floor-readd` refuses a level at or below the floor, and one the floor was later raised past is ignored for the derived level,
 - the week at or above that level **plus one whole session's share of a week**, so a seat whose remaining week a full session would overrun stays down even when its session has just refreshed, and
 - at least `floor-dwell` seconds of rest, 600 by default; `0` means no minimum.
+
+A seat on [a plan with no five-hour window](#a-plan-with-no-five-hour-window) comes back on its week alone at or above the re-add level: it has no session figure to clear and no session whose share of a week has to be held back.
 
 The second condition is the one worth stating plainly: a session window refreshes every few hours, and without it a seat with 2% of its week left would be returned to rotation several times a day.
 A seat rested for its **week** therefore stays down until the week itself recovers, because no session reset can satisfy that condition.
@@ -596,7 +630,7 @@ Only that home is left alone - every other local home still takes each switch, a
 The decline is visible from the primary, because a setting that silently does nothing is the failure worth avoiding here.
 `bin/fm-seat.sh status` lists every local secondmate home that declined, with the seat that home is actually on, and each switch names the seat items it skipped for that home and why.
 Put the flag only in the home it belongs to: it is never inherited, so one home's billing choice is never decided for it elsewhere.
-[Configuration](configuration.md#claude-seats-configclaude-seat-configclaude-seats-root-configclaude-seat-threshold-configclaude-seat-destination-min-configclaude-seat-extra-usage-configclaude-seat-auto-exclude-configclaude-seat-floor-configclaude-seat-floor-readd-configclaude-seat-floor-dwell-configclaude-seat-session-share-configclaude-seat-resting-configclaude-seat-local) owns the flag's schema.
+[Configuration](configuration.md#claude-seats-configclaude-seat-configclaude-seats-root-configclaude-seat-threshold-configclaude-seat-destination-min-configclaude-seat-extra-usage-configclaude-seat-auto-exclude-configclaude-seat-no-session-window-configclaude-seat-floor-configclaude-seat-floor-readd-configclaude-seat-floor-dwell-configclaude-seat-session-share-configclaude-seat-resting-configclaude-seat-local) owns the flag's schema.
 
 ## Glancing at every seat at once
 

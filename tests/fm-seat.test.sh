@@ -5607,6 +5607,173 @@ test_spare_leader_handles_default_profile_and_codex_aliases() {
   pass 'default worker profiles and Codex aliases cannot hide the leader seat'
 }
 
+# --- plans with no five-hour window ------------------------------------------
+# config/claude-seat-no-session-window names the seats whose plan carries no
+# five-hour window. Every case here drives the fake quota report's two
+# account-level windows apart deliberately, so the verdict can only come from
+# which window the policy read.
+
+# no_session_case <name>
+# Two logged-in seats whose windows disagree. `spare` has a spent five-hour
+# window and a healthy week; `plain` has the ordinary shape of a seat with both,
+# and more weekly spare, so an undeclared `spare` really is left for it.
+no_session_case() {
+  local rec
+  rec=$(make_seat_case "$1")
+  read_seat_case "$rec"
+  mkdir -p "$SEATS_DIR/spare" "$SEATS_DIR/plain"
+  seat_logged_in "$SPEC_DIR" "$SEATS_DIR/spare" "$SEATS_DIR/plain"
+  seat_windows "$SPEC_DIR" "$SEATS_DIR/spare" 0 '2099-01-01T00:00:00Z' 70 '2099-01-07T00:00:00Z' 0 70
+  seat_windows "$SPEC_DIR" "$SEATS_DIR/plain" 80 '2099-01-01T00:00:00Z' 90 '2099-01-07T00:00:00Z' 80 90
+  printf 'spare\n' > "$HOME_DIR/config/claude-seat"
+  printf '20\n' > "$HOME_DIR/config/claude-seat-threshold"
+}
+
+test_declared_seat_is_never_held_or_left_on_a_five_hour_reading() {
+  local out
+  no_session_case no-session-active
+  # The control first: undeclared, a spent five-hour window routes new work off
+  # the active seat and the watch moves the lead away from it.
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" launch-destination)
+  assert_equals plain "$(printf '%s\n' "$out" | tail -1)" 'an undeclared seat must still be left on a spent five-hour window'
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" auto)
+  assert_contains "$out" 'switched from spare' 'an undeclared seat must still be switched away from'
+  printf 'spare\n' > "$HOME_DIR/config/claude-seat"
+  printf 'spare\n' > "$HOME_DIR/config/claude-seat-no-session-window"
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" launch-destination)
+  assert_equals spare "$out" 'a declared seat with weekly room must keep taking new workers'
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" auto)
+  assert_not_contains "$out" 'switched' 'a declared seat must not be switched away from on a five-hour reading'
+  assert_equals spare "$(cat "$HOME_DIR/config/claude-seat")" 'the declared seat must remain the active seat'
+  # The dispatch hold reads the same collapsed figure, so it must read the week
+  # too: a declared seat is not out of quota because its five-hour window is.
+  printf 'stop\n' > "$HOME_DIR/config/claude-seat-extra-usage"
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" status)
+  assert_contains "$out" 'new Claude dispatch: allowed' 'a declared seat with weekly room must not hold dispatch'
+  pass 'a declared seat with weekly room is neither held nor rotated away from on a five-hour reading'
+}
+
+test_declared_seat_is_the_only_destination_a_five_hour_dip_cannot_hold() {
+  local out rc
+  no_session_case no-session-only
+  rm -rf "$SEATS_DIR/plain"
+  seat_windows_clear "$SPEC_DIR"
+  seat_windows "$SPEC_DIR" "$SEATS_DIR/spare" 10 '2099-01-01T00:00:00Z' 70 '2099-01-07T00:00:00Z' 10 70
+  rc=0
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" launch-destination) || rc=$?
+  expect_code 1 "$rc" "an undeclared sole seat with no five-hour room must hold the launch: $out"
+  assert_contains "$out" 'no seat has 5-hour room' 'the hold must say which window stopped it'
+  printf 'spare\n' > "$HOME_DIR/config/claude-seat-no-session-window"
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" launch-destination)
+  expect_code 0 "$?" "a declared sole seat must not hold the launch: $out"
+  assert_equals spare "$out" 'the declared seat must be the launch destination'
+  # A five-hour window at zero collapses the account figure the depletion gate
+  # reads as well, so the declared seat must survive both halves of that.
+  seat_windows_clear "$SPEC_DIR"
+  seat_windows "$SPEC_DIR" "$SEATS_DIR/spare" 0 '2099-01-01T00:00:00Z' 70 '2099-01-07T00:00:00Z' 0 70
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" launch-destination)
+  expect_code 0 "$?" "a spent five-hour window must not hold a declared sole seat: $out"
+  assert_equals spare "$out" 'a declared seat at 0% on five hours must still take the launch'
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" status)
+  assert_contains "$out" 'new Claude dispatch: allowed' 'a spent five-hour window must not read as a used-up declared seat'
+  : > "$HOME_DIR/config/claude-seat-no-session-window"
+  rc=0
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" launch-destination) || rc=$?
+  assert_contains "$out" 'spare' 'undeclared, the same seat falls back to itself for the depletion gate to refuse'
+  pass 'a declared seat never holds a launch for five-hour room it does not have'
+}
+
+test_declared_seat_outranks_more_weekly_spare() {
+  local out
+  no_session_case no-session-rank
+  mkdir -p "$SEATS_DIR/rich"
+  seat_logged_in "$SPEC_DIR" "$SEATS_DIR/spare" "$SEATS_DIR/plain" "$SEATS_DIR/rich"
+  printf 'plain\n' > "$HOME_DIR/config/claude-seat"
+  # The seat the work leaves has the least weekly spare, so both candidates
+  # clear the anchor rule and only the ranking decides between them. Their weeks
+  # reset together, which leaves weekly spare as the whole of that ranking.
+  seat_windows_clear "$SPEC_DIR"
+  seat_windows "$SPEC_DIR" "$SEATS_DIR/plain" 80 '2099-01-01T00:00:00Z' 20 '2099-01-07T00:00:00Z' 80 10
+  seat_windows "$SPEC_DIR" "$SEATS_DIR/spare" 0 '2099-01-01T00:00:00Z' 70 '2099-01-07T00:00:00Z' 0 50
+  seat_windows "$SPEC_DIR" "$SEATS_DIR/rich" 90 '2099-01-01T00:00:00Z' 95 '2099-01-07T00:00:00Z' 90 95
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" worker-destination --from plain)
+  assert_equals rich "$(printf '%s\n' "$out" | tail -1)" 'the most weekly spare must win while nothing is declared'
+  printf 'spare\n' > "$HOME_DIR/config/claude-seat-no-session-window"
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" worker-destination --from plain)
+  assert_equals spare "$(printf '%s\n' "$out" | tail -1)" 'a declared seat must outrank more weekly spare'
+  # The preference still holds where the report carries no weekly pace at all
+  # and the rotation takes the first qualifying seat in its own order.
+  seat_windows_clear "$SPEC_DIR"
+  seat_windows "$SPEC_DIR" "$SEATS_DIR/plain" 80 '2099-01-01T00:00:00Z' 20 '2099-01-07T00:00:00Z'
+  seat_windows "$SPEC_DIR" "$SEATS_DIR/rich" 90 '2099-01-01T00:00:00Z' 95 '2099-01-07T00:00:00Z'
+  seat_windows "$SPEC_DIR" "$SEATS_DIR/spare" 0 '2099-01-01T00:00:00Z' 70 '2099-01-07T00:00:00Z'
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" worker-destination --from plain)
+  assert_equals spare "$(printf '%s\n' "$out" | tail -1)" 'a declared seat must be preferred on a report with no weekly pace'
+  : > "$HOME_DIR/config/claude-seat-no-session-window"
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" worker-destination --from plain)
+  assert_equals rich "$(printf '%s\n' "$out" | tail -1)" 'with nothing declared the first qualifying seat in rotation order must still win'
+  pass 'a declared seat with weekly room is the preferred destination on both selection paths'
+}
+
+test_declared_seat_with_no_weekly_room_is_exhausted() {
+  local out
+  no_session_case no-session-empty
+  seat_windows_clear "$SPEC_DIR"
+  seat_windows "$SPEC_DIR" "$SEATS_DIR/spare" 90 '2099-01-01T00:00:00Z' 0 '2099-01-07T00:00:00Z' 90 0
+  seat_windows "$SPEC_DIR" "$SEATS_DIR/plain" 80 '2099-01-01T00:00:00Z' 40 '2099-01-07T00:00:00Z' 80 20
+  printf 'spare\n' > "$HOME_DIR/config/claude-seat-no-session-window"
+  printf 'plain\n' > "$HOME_DIR/config/claude-seat"
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" worker-destination --from plain 2>&1)
+  expect_code 1 "$?" "a declared seat with no weekly room must not be a destination: $out"
+  assert_contains "$out" 'seat spare: skipped, its quota is used up' 'an empty week must read as used up for a declared seat too'
+  printf 'spare\n' > "$HOME_DIR/config/claude-seat"
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" status)
+  assert_contains "$out" 'headroom: week 0% left' 'a declared seat reports its week as the whole of its headroom'
+  assert_not_contains "$out" '5-hour 90%' 'a declared seat must never report a five-hour figure'
+  pass 'a declared seat with no weekly room is treated as exhausted'
+}
+
+test_declared_seat_wakes_from_the_floor_on_its_week_alone() {
+  local out
+  no_session_case no-session-floor
+  printf 'plain\n' > "$HOME_DIR/config/claude-seat"
+  run_seat "$HOME_DIR" "$FAKEBIN" floor 5 >/dev/null
+  run_seat "$HOME_DIR" "$FAKEBIN" floor-dwell 0 >/dev/null
+  printf 'spare\n' > "$HOME_DIR/config/claude-seat-no-session-window"
+  seat_windows_clear "$SPEC_DIR"
+  seat_windows "$SPEC_DIR" "$SEATS_DIR/plain" 80 '2099-01-01T00:00:00Z' 40 '2099-01-07T00:00:00Z'
+  seat_windows "$SPEC_DIR" "$SEATS_DIR/spare" 1 '2099-01-01T00:00:00Z' 2 '2099-01-07T00:00:00Z'
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" auto)
+  assert_contains "$out" 'spare is resting' 'a declared seat whose week is spent must still rest'
+  assert_contains "$out" 'on its week window' 'the week must be named as the window that rested a declared seat'
+  # The week recovers while the five-hour window stays spent. Only the week can
+  # decide for a declared seat, so that is enough to bring it back.
+  seat_windows_clear "$SPEC_DIR"
+  seat_windows "$SPEC_DIR" "$SEATS_DIR/plain" 80 '2099-01-01T00:00:00Z' 40 '2099-01-07T00:00:00Z'
+  seat_windows "$SPEC_DIR" "$SEATS_DIR/spare" 1 '2099-01-01T00:00:00Z' 60 '2099-01-07T00:00:00Z'
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" auto)
+  assert_contains "$out" 'spare comes back into automatic rotation' 'a recovered week alone must wake a declared seat'
+  assert_contains "$out" 'the only window its plan carries' 'the wake must not claim a session figure it never read'
+  assert_not_contains "$out" 'room for a whole session' 'no session share is reserved for a plan with no session'
+  pass 'the quota floor rests and wakes a declared seat on its week alone'
+}
+
+test_declared_seats_are_reported_by_status_and_list() {
+  local out
+  no_session_case no-session-report
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" status)
+  assert_contains "$out" 'no 5-hour window on their plan: (none declared' 'status must say when nothing is declared'
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" list)
+  assert_not_contains "$out" 'no 5-hour window on its plan' 'list must not mark a seat nothing declared'
+  printf 'spare\n' > "$HOME_DIR/config/claude-seat-no-session-window"
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" status)
+  assert_contains "$out" 'no 5-hour window on their plan: spare' 'status must name every declared seat'
+  assert_contains "$out" 'headroom: week 70% left' 'the active declared seat reports its week alone'
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" list)
+  assert_contains "$out" 'no 5-hour window on its plan: only its weekly limit counts' 'list must mark the declared seat on its own row'
+  pass 'status and list report which seats have no five-hour window'
+}
+
 test_spare_leader_ranks_last_and_falls_back
 test_spare_leader_dispatch_and_watch_depart_early
 test_spare_leader_departure_respects_the_switch_trigger
@@ -5618,5 +5785,11 @@ test_spare_leader_handles_default_profile_and_codex_aliases
 test_spare_leader_missing_record_and_parent_binding
 test_codex_spare_leader_parity
 test_spawn_spares_a_healthy_leader
+test_declared_seat_is_never_held_or_left_on_a_five_hour_reading
+test_declared_seat_is_the_only_destination_a_five_hour_dip_cannot_hold
+test_declared_seat_outranks_more_weekly_spare
+test_declared_seat_with_no_weekly_room_is_exhausted
+test_declared_seat_wakes_from_the_floor_on_its_week_alone
+test_declared_seats_are_reported_by_status_and_list
 
 echo "# all fm-seat tests passed"
