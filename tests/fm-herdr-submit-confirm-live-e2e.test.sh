@@ -20,14 +20,11 @@
 # doorbell is delivered through the real fm_task_inbox_ring in text-entry mode,
 # in command mode after an Escape, and on a composer with no modal editor.
 #
-# It also covers the two live facts the payload proof's bounded window rests
-# on, neither of which a stub can measure. First, how fast THIS Claude paints
-# typed text: `pane send-text` returns before the paint, and a worker pane on
-# 2.1.316 was measured still reading empty 1.2s after the send, so the proof
-# polls within a bounded window and this guard requires the real paint to land
-# inside it. Second, that Claude's background-task exit picker still names the
-# work it will stop, because fm-control reports that work from the picker's own
-# list and the strings it reads are the vendor's.
+# It also covers the live fact the payload proof's bounded window rests on,
+# which no stub can measure: how fast THIS Claude paints typed text.
+# `pane send-text` returns before the paint, and a worker pane on 2.1.316 was
+# measured still reading empty 1.2s after the send, so the proof polls within a
+# bounded window and this guard requires the real paint to land inside it.
 #
 # Run explicitly with FM_HERDR_SUBMIT_CONFIRM_LIVE=1 after a Herdr or Claude
 # upgrade, and before trusting a refreshed docs/verification/runtime-backends.md
@@ -324,11 +321,11 @@ pass "live Herdr doorbell: Claude Code ($VERSION) on $HERDR_VER recovers and sub
 ring_a_doorbell "$TARGET" "$PANE" non-modal "non-modal"
 pass "live Herdr doorbell: Claude Code ($VERSION) on $HERDR_VER submits the doorbell to a Claude composer with no modal editor"
 
-# The background-task exit picker. Confirming its Exit and stop tasks row
-# destroys whatever the worker had running in the background, and the picker is
-# the only screen that names that work, so fm-control reports it from the
-# picker's own list. Those are the vendor's strings on the vendor's layout:
-# only a real Claude with a real background shell can prove they still read.
+# The background-task exit picker. A typed /exit on a worker with a background
+# shell running opens it, and fm-control confirms its Exit and stop tasks row.
+# Those are the vendor's strings on the vendor's layout: only a real Claude with
+# a real background shell can prove the picker is still recognized and that
+# confirming it ends the agent.
 # This runs on the vim pane, whose Claude is still live, and ends it.
 SHELL_PROMPT='Use your Bash tool with run_in_background set to true to start the command sleep 900, then reply with exactly BGUP and do nothing else.'
 verdict=$(fm_backend_herdr_send_text_submit "$VIM_TARGET" "$SHELL_PROMPT" 3 0.4 0.4) \
@@ -362,12 +359,10 @@ verdict=$(fm_backend_herdr_send_text_submit "$VIM_TARGET" '/exit' 3 0.4 1.2) \
 [ "$verdict" != send-failed ] \
   || fail "Claude Code ($VERSION) on $HERDR_VER: a typed /exit on a pane with a background shell was judged unsent instead of submitted"
 picker=''
-items=''
 i=0
 while [ "$i" -lt 30 ]; do
   screen=$(lab pane read "$VIM_PANE" --source visible 2>/dev/null || true)
   if picker=$(fm_composer_blocking_dialog "$screen"); then
-    items=$(fm_composer_background_work_items "$screen" || true)
     break
   fi
   i=$((i + 1))
@@ -375,12 +370,6 @@ while [ "$i" -lt 30 ]; do
 done
 [ "$picker" = 'Claude background-task exit picker' ] \
   || fail "Claude Code ($VERSION) on $HERDR_VER: /exit with a background shell running did not render the recognized exit picker, so fm-control would type Enter into an unrecognized dialog"
-[ -n "$items" ] \
-  || fail "Claude Code ($VERSION) on $HERDR_VER: the exit picker no longer names the work it will stop, so fm-control would confirm it without reporting what is destroyed"
-case "$items" in
-  *'sleep 900'*) ;;
-  *) fail "Claude Code ($VERSION) on $HERDR_VER: the exit picker named '$items' rather than the background shell that is running, so the reported work would be wrong" ;;
-esac
 lab pane send-keys "$VIM_PANE" enter >/dev/null \
   || fail "could not confirm the exit picker in the background-shell pane"
 exited=0
@@ -392,7 +381,7 @@ while [ "$i" -lt 120 ]; do
 done
 [ "$exited" = 1 ] \
   || fail "Claude Code ($VERSION) on $HERDR_VER: the exit picker was confirmed but the agent never exited, so the recognized picker is not the one that answers /exit"
-pass "live Herdr exit picker: Claude Code ($VERSION) on $HERDR_VER names the background work its exit picker stops ($items)"
+pass "live Herdr exit picker: Claude Code ($VERSION) on $HERDR_VER confirms the background-task exit picker and the agent exits"
 
 # The fm-control exit regression: a typed slash command (/exit) makes Claude
 # Code 2.1.283 render its command popup between the composer and the pane

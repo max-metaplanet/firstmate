@@ -5859,7 +5859,7 @@ test_send_text_submit_claude_slash_completion_list_below_composer_submits() {
 # cleared it with Ctrl+U and reported send-failed, which is what broke
 # `fm-control exit`. The proof now samples within a bounded budget. A composer
 # that reads back something OTHER than the payload is still a refusal on the
-# first read, so the vim command-mode recovery below keeps its timing. A read
+# first read, so the recovery for a tail left behind keeps its timing. A read
 # that shows only the payload's head is a paint still in flight, not that
 # refusal: head truncation leaves the tail.
 

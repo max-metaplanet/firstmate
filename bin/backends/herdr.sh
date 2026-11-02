@@ -3672,8 +3672,10 @@ fm_backend_herdr_proof_poll_interval() {
 # payload is a paint this window waits out. A read that comes back with OTHER
 # content is a decided refusal and returns at once, because that is the
 # head-truncation shape the proof exists to catch (claude's vim command mode
-# leaves the payload's tail). A command-mode composer that swallowed the whole
-# payload reads empty, so its recovery waits out the full window first.
+# leaves the payload's tail), so that shape's recovery keeps its timing. A
+# composer that swallowed the payload whole reads empty and now waits out the
+# bounded window before the modal recovery starts, an accepted bounded-latency
+# tradeoff.
 # Sets FM_BACKEND_HERDR_PROOF_VERDICT to `shown`, `other` or `absent`, and
 # FM_BACKEND_HERDR_PROOF_LAST_READ to the last content read, for the caller's
 # diagnostic. Both are globals rather than stdout because a command

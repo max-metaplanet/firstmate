@@ -1973,42 +1973,6 @@ fm_composer_blocking_dialog() {  # <screen> -> dialog name
   return 1
 }
 
-# fm_composer_background_work_items: what the background-task exit picker says
-# it will stop. The dialog states it itself, under its own "The following will
-# stop when you exit:" line and above its first option row, so the list comes
-# from the harness rather than from a guess about what the worker was running.
-# Recorded 2026-11-02 on Claude Code 2.1.316, which lists one row per task in
-# the form `shell · sleep 900`.
-# Prints the rows joined by `; ` and returns 0 only when the screen is that
-# picker and names at least one task. Anything else returns 1 and prints
-# nothing, because an empty list must never read as "nothing will be lost".
-fm_composer_background_work_items() {  # <screen> -> items
-  local screen=${1-} items
-  [ -n "$screen" ] || return 1
-  items=$(printf '%s\n' "$screen" | fm_composer_strip_ansi | LC_ALL=C awk '
-    /^[ \t]*Background work is running[ \t\r]*$/ { heading = 1; next }
-    heading && /^[ \t]*The following will stop when you exit:[ \t\r]*$/ { listing = 1; next }
-    listing && /[^ \t\r]/ {
-      row = $0
-      sub(/^[ \t]+/, "", row)
-      sub(/[ \t\r]+$/, "", row)
-      # The option rows end the list. A leading selection glyph is stripped by
-      # byte class rather than matched as a character, because this awk is not
-      # required to understand multibyte regex escapes. A listed task whose own
-      # text began `<n>.` would truncate the list here, which under-reports but
-      # never reports an empty list as nothing to lose: the caller treats no
-      # items as unnamed, not as none.
-      probe = row
-      sub(/^[^0-9A-Za-z]+/, "", probe)
-      if (probe ~ /^[0-9]+\./) { listing = 0; next }
-      out = out (out == "" ? "" : "; ") row
-    }
-    END { printf "%s", out }
-  ') || return 1
-  [ -n "$items" ] || return 1
-  printf '%s' "$items"
-}
-
 # A command substitution drops a shell variable, and every composer read runs
 # inside one. The name is therefore written to FM_COMPOSER_DIALOG_SINK when
 # that path is set. The classifier verdict is unchanged. When the sink is

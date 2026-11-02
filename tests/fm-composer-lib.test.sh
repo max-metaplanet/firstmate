@@ -1378,39 +1378,6 @@ fm_test_picker_state() {
   fm_composer_classify_screen 'styled=1' "$FM_TEST_PICKER_SCREEN" 1
 }
 
-# The picker is the only screen that names the background work its Exit and
-# stop tasks row destroys, so what fm-control reports about that loss is read
-# from here. The real 2.1.316 layout lists the tasks under the dialog's own
-# "The following will stop when you exit:" line and above its option rows.
-test_background_exit_picker_names_the_work_it_stops() {
-  local out rc
-  out=$(fm_composer_background_work_items "$(exit_picker_screen)"); rc=$?
-  [ "$rc" -eq 0 ] || fail "the recorded picker names one task, so the items read should succeed"
-  [ "$out" = 'shell · sleep 300' ] || fail "the listed task should be read verbatim, got '$out'"
-  out=$(fm_composer_background_work_items "$(printf '%s\n' \
-    'Background work is running' \
-    'The following will stop when you exit:' \
-    '' \
-    'shell · sleep 900' \
-    'shell · npm test' \
-    '' \
-    '❯ 1. Exit and stop tasks' \
-    '  2. Move to background and exit' \
-    '  3. Stay' \
-    'Enter to confirm · Esc to cancel')"); rc=$?
-  [ "$rc" -eq 0 ] || fail "a picker listing two tasks should read both"
-  [ "$out" = 'shell · sleep 900; shell · npm test' ] \
-    || fail "every listed task should be reported, blank rows skipped, got '$out'"
-  # An empty read must never be mistaken for "nothing is running": a screen
-  # that is not this picker, and a picker with no list, both report nothing.
-  out=$(fm_composer_background_work_items 'Background work is running'); rc=$?
-  [ "$rc" -eq 1 ] || fail "a heading with no list must not report an empty list as success"
-  [ -z "$out" ] || fail "a miss must print nothing, got '$out'"
-  out=$(fm_composer_background_work_items "$(printf '%s\n' '  ❯ hello' 'shell · sleep 900')"); rc=$?
-  [ "$rc" -eq 1 ] || fail "a composer row that merely looks like a task must not be read as the picker's list"
-  pass "fm_composer_background_work_items: reads the tasks the exit picker says it will stop, and reports nothing for any other screen"
-}
-
 test_background_exit_picker_stays_pending_and_blocks_retry() {
   local screen out rc sink enters
   screen=$(exit_picker_screen)
@@ -1541,7 +1508,6 @@ test_quoted_exit_picker_text_is_not_a_dialog() {
 }
 
 test_background_exit_picker_stays_pending_and_blocks_retry
-test_background_exit_picker_names_the_work_it_stops
 test_dialog_heading_and_footer_must_be_the_recorded_lines
 test_dialog_note_skips_the_match_when_no_sink_is_set
 test_quoted_exit_picker_text_is_not_a_dialog

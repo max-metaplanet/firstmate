@@ -1001,38 +1001,6 @@ test_exit_confirms_an_open_background_picker() {
   pass "fm-control exit: an already-open recognized background picker is confirmed without typing"
 }
 
-# Confirming the picker's Exit and stop tasks row destroys whatever the worker
-# had running in the background, and the harness does not bring it back. The
-# verb already means stop, so the confirmation stands - but the loss is
-# reported, because the picker is the only screen that names it and the
-# confirming Enter is what removes that screen.
-test_exit_names_the_background_work_it_stops() {
-  local dir out rc
-  dir=$(new_case picker-names-work)
-  add_task "$dir" t1 claude
-  alive_as "$dir" claude
-  exit_picker_screen > "$dir/fake/pane"
-  out=$(FM_FAKE_PICKER_EXITS=1 run_control "$dir" t1 exit); rc=$?
-  expect_code 0 "$rc" "an open exit picker should still be confirmed: $out"
-  assert_contains "$out" 'shell · sleep 300' "the work the confirmation stops must be named, not dropped in silence"
-  assert_contains "$out" 'does not resume' "the report must say the work will not come back"
-  pass "fm-control exit: confirming the background picker reports the background work it stops"
-}
-
-# The same loss, with the picker's own list unreadable: a quiet exit would read
-# as nothing having been running, so the report says it could not be named.
-test_exit_reports_unnamed_background_work() {
-  local dir out rc
-  dir=$(new_case picker-unnamed-work)
-  add_task "$dir" t1 claude
-  alive_as "$dir" claude
-  exit_picker_screen | grep -v 'The following will stop' > "$dir/fake/pane"
-  out=$(FM_FAKE_PICKER_EXITS=1 run_control "$dir" t1 exit); rc=$?
-  expect_code 0 "$rc" "a picker whose list cannot be read should still be confirmed: $out"
-  assert_contains "$out" 'did not name it' "an unreadable list must be reported as unnamed, never as silence"
-  pass "fm-control exit: a background picker that does not name its work still reports the loss"
-}
-
 test_exit_confirms_the_background_picker() {
   local dir out rc enters
   dir=$(new_case confirm-picker)
@@ -1471,8 +1439,6 @@ test_idle_agent_is_not_interrupted
 test_exit_drops_meta_busy_gen_with_the_sidecar
 test_exit_confirms_an_open_background_picker
 test_exit_confirms_the_background_picker
-test_exit_names_the_background_work_it_stops
-test_exit_reports_unnamed_background_work
 test_exit_confirms_a_picker_that_renders_after_the_submit
 test_interrupt_without_acknowledgement_preserves_busy_state
 test_muse_interrupt_confirms_adapter_acknowledgement
