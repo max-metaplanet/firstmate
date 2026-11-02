@@ -45,7 +45,7 @@ test_budget_is_a_positive_byte_count_split_across_shares() {
 }
 
 test_linux_budget_uses_the_readable_memory_total() {
-  local key value _unit total= expected out share
+  local key value _unit total='' expected out share
   if [ ! -r /proc/meminfo ]; then
     pass "SKIP (/proc/meminfo is unavailable): Linux memory budget check"
     return

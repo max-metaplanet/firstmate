@@ -1886,7 +1886,7 @@ test_the_default_memory_cap_is_divided_across_workers() {
 
   for jobs in 1 2; do
     rc=0
-    out=$(PATH="$fakebin:$PATH" FM_HEAVY_SLOTS=1 FM_LINT_ROOT_MEMORY_KIB= "$LINT" --jobs "$jobs" \
+    out=$(PATH="$fakebin:$PATH" FM_HEAVY_SLOTS=1 FM_LINT_ROOT_MEMORY_KIB='' "$LINT" --jobs "$jobs" \
       --telemetry "$tmp/jobs$jobs.tsv" "$fixture" 2>&1) || rc=$?
     [ "$rc" -eq 0 ] || fail "a clean run at --jobs $jobs failed"$'\n'"$out"
   done
