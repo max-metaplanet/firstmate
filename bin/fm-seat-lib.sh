@@ -748,9 +748,10 @@ fm_seat_auto_excluded() {
 # Such a plan is bounded by its weekly window alone, so a five-hour figure in
 # that seat's report is not a bound on it. Rather than teaching every gate,
 # trigger, ranking and report to skip that figure for some seats, the
-# declaration is applied once where a seat's report is read
-# (fm_seat_quota_json): the five-hour window is removed and the account-level
-# percentage is restamped from the WEEK's own reported figure. Every policy
+# declaration is applied once where a seat's report is read: the evidence
+# cache's live read (bin/fm-seat-quota-cache.py) removes the five-hour window
+# and restamps the account-level percentage from the WEEK's own reported figure
+# before anything judges, caches or falls back on that report. Every policy
 # downstream then reads a report in which that seat simply has no five-hour
 # window, which is what its plan says.
 
@@ -785,10 +786,10 @@ fm_seat_no_session_window() {
 
 # The rewrite that applies the declaration to one seat's report. `drop_session`
 # takes a provider ROW and returns it with no five-hour window and with every
-# account-level figure restamped from the week. fm_seat_plan_report below is the
-# one caller, so the quota read and the dispatch gate - which takes its report
-# from the evidence cache rather than from that read - cannot drift apart about
-# which windows bound a declared seat.
+# account-level figure restamped from the week. fm_seat_drop_session_report below
+# is the one caller, and only the evidence cache's live read calls it, so the
+# quota read, the dispatch gate and the cache's own success and fallback tests
+# cannot drift apart about which windows bound a declared seat.
 #
 # Nothing is invented. The substituted percentage is the weekly window's own
 # reported `percentRemaining`, and when the report carries no weekly percentage
@@ -796,12 +797,13 @@ fm_seat_no_session_window() {
 # and the seat reads as it did before. An `exhausted_now` runway is cleared only
 # while the week itself reports room, because a declared seat's week is the only
 # window that can exhaust it.
-# shellcheck disable=SC2016,SC2034  # jq program text, not shell expansion; read by fm_seat_quota_json
+# shellcheck disable=SC2016  # jq program text, not shell expansion
 FM_SEAT_NO_SESSION_JQ='
   def session_window: .id == "five_hour" or .id == "session" or .windowSeconds == 18000;
   def weekly_window: .id == "seven_day" or .id == "weekly" or .windowSeconds == 604800;
   def drop_session:
     ((.windows // []) | map(select(weekly_window)) | first) as $week
+    | ((.windows // []) | map(select(session_window) | .id)) as $dropped
     | .windows = ((.windows // []) | map(select(session_window | not)))
     | if ($week.percentRemaining | type) == "number" and ($week.id | type) == "string" then
         ($week.percentRemaining) as $left
@@ -812,6 +814,9 @@ FM_SEAT_NO_SESSION_JQ='
                    .effectivePercentRemaining = $left
                    | .limitingWindowIds = [$week.id]
                  else . end)
+                | (if (.boundedBy | type) == "array" then
+                     .boundedBy = ((.boundedBy - $dropped) | if length == 0 then [$week.id] else . end)
+                   else . end)
                 | (if (.runway.status // "") == "exhausted_now" and $left > 0
                    then .runway.status = (if .status == "known" then "through_reset" else "unknown" end)
                    else . end)
@@ -819,25 +824,28 @@ FM_SEAT_NO_SESSION_JQ='
       else . end;
 '
 
-# fm_seat_plan_report <profile-dir> <quota-json>
-# One seat's report as its PLAN bounds it: unchanged for an ordinary seat, and
-# with no five-hour window for a declared one. Returns 1 only when the rewrite
-# itself fails, which a caller treats as no verdict rather than as a figure.
-#
-# Every reader of a seat's windows or percentages goes through here, whether its
-# report came from fm_seat_quota_json's own read or from the dispatch gate's
-# evidence cache, so there is one place the declaration is applied and one
-# answer about what bounds a seat.
-fm_seat_plan_report() {
-  local dir=${1-} out=${2-} lane=''
-  [ -n "$out" ] || return 1
-  if ! fm_seat_no_session_window_any ||
-    ! fm_seat_no_session_window "$(fm_seat_name_of_profile "$dir")"; then
-    printf '%s\n' "$out"
-    return 0
+# fm_seat_profile_plan <profile-dir>
+# The plan the declaration gives the seat this profile belongs to:
+# `no-session-window` for a declared seat and `standard` for every other one.
+# The evidence cache is told this with every read, because it keys, rewrites
+# and judges a report by it and cannot read this home's config itself.
+fm_seat_profile_plan() {
+  if fm_seat_no_session_window_any &&
+    fm_seat_no_session_window "$(fm_seat_name_of_profile "${1-}")"; then
+    printf 'no-session-window\n'
+  else
+    printf 'standard\n'
   fi
+}
+
+# fm_seat_drop_session_report <quota-json>
+# The report with the active provider's row rewritten as a plan with no
+# five-hour window. Returns 1 when the report does not parse, which the cache
+# treats exactly like a live read that did not parse.
+fm_seat_drop_session_report() {
+  local lane=''
   [ "${FM_SEAT_PROVIDER:-claude}" != codex ] || lane=codex-home
-  printf '%s\n' "$out" | jq -c --arg provider "${FM_SEAT_PROVIDER:-claude}" \
+  printf '%s\n' "${1-}" | jq -c --arg provider "${FM_SEAT_PROVIDER:-claude}" \
     --arg lane "$lane" "$FM_QUOTA_ROW_JQ$FM_SEAT_NO_SESSION_JQ"'
     quota_row(.; $provider; $lane) as $row
     | if ($row // null) == null then . else
@@ -845,7 +853,7 @@ fm_seat_plan_report() {
           if .provider == $provider and ((.accountKey // "") == ($row.accountKey // ""))
           then drop_session else . end))
       end
-  ' || return 1
+  '
 }
 
 # THE RECORDED QUOTA TOOL DIRECTORY, state/.quota-tool-dir.
@@ -988,7 +996,8 @@ fm_seat_quota_read() {
     fi
   fi
   bound=$(fm_seat_read_bound) || return 1
-  out=$(python3 "${BASH_SOURCE[0]%/*}/fm-seat-quota-cache.py" "$dir" "$bound" 0 raw "$provider") || return 1
+  out=$(python3 "${BASH_SOURCE[0]%/*}/fm-seat-quota-cache.py" "$dir" "$bound" 0 raw "$provider" \
+    "$(fm_seat_profile_plan "$dir")") || return 1
   out=$(printf '%s\n' "$out" | jq -ce '.report // empty') || {
     [ -z "$memo" ] || : > "$memo.fail" 2>/dev/null || true
     return 1
@@ -1022,20 +1031,16 @@ fm_seat_quota_live() {
 # One fm_seat_quota_read of a seat's own profile, in the producer's own schema.
 # Returns 1 when the read could not be made, ran out of time, or did not parse,
 # which every caller must treat as "no verdict" rather than as any particular
-# number.
-#
-# This is where a seat declared to have no five-hour window gets that window
-# taken out of its report, so every policy built on this read ignores a
-# five-hour figure for that seat without asking. A seat that is not declared is
-# returned byte for byte as the producer wrote it and costs no extra work at
-# all; the declaration section above owns the rewrite and why it is honest.
+# number. A seat declared to have no five-hour window comes back without that
+# window (fm_seat_drop_session_report); every other seat comes back byte for
+# byte as the producer wrote it.
 fm_seat_quota_json() {
   local dir=${1-} out
   command -v jq >/dev/null 2>&1 || return 1
   out=$(fm_seat_quota_read "$dir") || return 1
   [ -n "$out" ] || return 1
   printf '%s\n' "$out" | jq -e . >/dev/null 2>&1 || return 1
-  fm_seat_plan_report "$dir" "$out"
+  printf '%s\n' "$out"
 }
 
 # fm_seat_remaining_from <quota-json>
@@ -2070,7 +2075,7 @@ fm_seat_session_share_observe() {
 # are owned by bin/fm-seat-quota-cache.py; public quota JSON remains untouched.
 # The optional ` | ...` suffix carries provenance without changing reason tokens.
 fm_seat_dispatch_decision() {
-  local policy profile evidence note decision bound floor provider report
+  local policy profile evidence note decision bound floor provider
   profile=${1-$(fm_seat_spawn_config_dir)}
   # FM_SEAT_PROVIDER reaches this shell as a plain or local assignment on several
   # call paths, so it does not survive into a child process. Pass the resolved
@@ -2083,20 +2088,13 @@ fm_seat_dispatch_decision() {
   fm_seat_quota_tool_record
   bound=$(fm_seat_read_bound) || { printf 'hold quota-unreadable\n'; return 0; }
   floor=$(fm_seat_floor) || floor=0
-  evidence=$(python3 "${BASH_SOURCE[0]%/*}/fm-seat-quota-cache.py" "$profile" "$bound" "$floor" "$policy" "$provider") || {
+  evidence=$(python3 "${BASH_SOURCE[0]%/*}/fm-seat-quota-cache.py" "$profile" "$bound" "$floor" "$policy" "$provider" \
+    "$(fm_seat_profile_plan "$profile")") || {
     printf 'hold quota-unreadable | source=hold cache-helper-unavailable\n'
     return 0
   }
   note=$(printf '%s\n' "$evidence" | jq -r '.note')
-  # The cache hands back the producer's report directly, so the plan rewrite has
-  # to be applied here too: without it a seat with no five-hour window would be
-  # held for a window its plan does not have, however the rest of the policy
-  # reads it (fm_seat_plan_report).
-  report=$(fm_seat_plan_report "$profile" "$(printf '%s\n' "$evidence" | jq -c '.report')") || {
-    printf 'hold quota-unreadable | %s\n' "$note"
-    return 0
-  }
-  decision=$(fm_seat_dispatch_from "$report" "$policy")
+  decision=$(fm_seat_dispatch_from "$(printf '%s\n' "$evidence" | jq -c '.report')" "$policy")
   printf '%s | %s\n' "$decision" "$note"
 }
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Private seat quota evidence cache; fm-seat-lib.sh remains the launch-policy owner.
 
-Usage: fm-seat-quota-cache.py PROFILE READ_BOUND FLOOR POLICY [PROVIDER]
+Usage: fm-seat-quota-cache.py PROFILE READ_BOUND FLOOR POLICY [PROVIDER [PLAN]]
 The existing bounded, non-renewing quota-axi transport runs under a
 per-profile kernel lock. Its public JSON stays unchanged; this helper returns a
 private envelope {report, note}. The public shell producer unwraps the report
@@ -15,6 +15,13 @@ a record, so claude and codex never share one. PROVIDER defaults to claude and
 is passed explicitly because FM_SEAT_PROVIDER reaches callers as a plain or
 local shell assignment that no child process inherits; the bounded transport is
 told the same provider this record is keyed to.
+PLAN is `standard` (the default) or `no-session-window`, the caller's reading of
+config/<provider>-seat-no-session-window for this profile. A no-session-window
+live read is rewritten by fm_seat_drop_session_report before it is judged,
+cached or returned, so a five-hour figure that plan does not have can neither
+spoil its success nor deny it a fallback; such a plan needs only its weekly
+window to fall back, and keeps a record apart from a standard read of the same
+profile.
 Environment bearer overrides never store or reuse successful evidence; only their
 backoff is shared conservatively within the profile, without hashing any secret.
 An ambient selector differs from explicitly naming ~/.claude, and aliases with
@@ -138,7 +145,7 @@ def transient(report):
     return state.get("status") in ("rate_limited", "unavailable", "error", "stale") or not r
 
 
-def comfortable(report, floor, policy, now, age):
+def comfortable(report, floor, policy, now, age, plan="standard"):
     boundary = floor + 10
     if not healthy_availability(applicable(report), boundary):
         return False
@@ -158,7 +165,8 @@ def comfortable(report, floor, policy, now, age):
         return False
     bounded = [w for w in windows if w.get("kind") in ("session", "weekly", "monthly")
                or w.get("id") in declared]
-    if not {"session", "weekly"}.issubset({w.get("kind") for w in bounded}):
+    required = {"weekly"} if plan == "no-session-window" else {"session", "weekly"}
+    if not required.issubset({w.get("kind") for w in bounded}):
         return False
     if not all(number(w.get("percentRemaining")) and boundary < w["percentRemaining"] <= 100
                for w in bounded):
@@ -193,10 +201,13 @@ def publish(path, record):
             os.unlink(name)
 
 
-def live(profile, bound, lock_fd, provider):
+def live(profile, bound, lock_fd, provider, plan):
     # Keep the existing producer, timeout, argument list, and JSON schema owner.
     script = Path(__file__).resolve().parent
-    command = '. "$1/fm-timeout-lib.sh"; . "$1/fm-seat-lib.sh"; fm_seat_quota_live "$2"'
+    command = ('. "$1/fm-timeout-lib.sh"; . "$1/fm-quota-axi-lib.sh"; . "$1/fm-seat-lib.sh"; '
+               'out=$(fm_seat_quota_live "$2") || exit 1; '
+               'if [ "$3" = no-session-window ]; then fm_seat_drop_session_report "$out"; '
+               'else printf "%s\\n" "$out"; fi')
     read_deadline = int(time.time()) + bound
     if os.environ.get("FM_SEAT_READ_DEADLINE"):
         read_deadline = min(read_deadline, int(os.environ["FM_SEAT_READ_DEADLINE"]))
@@ -208,7 +219,7 @@ def live(profile, bound, lock_fd, provider):
     env.pop("FM_SEAT_READ_MEMO_DIR", None)
     # The bounded transport inherits the lock: killing this coordinator cannot
     # permit another refresh while its already-started request is still running.
-    result = subprocess.run(["bash", "-c", command, "seat-quota", str(script), profile],
+    result = subprocess.run(["bash", "-c", command, "seat-quota", str(script), profile, plan],
                             env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                             stderr=subprocess.DEVNULL, text=True, check=False, pass_fds=(lock_fd,))
     try:
@@ -217,9 +228,11 @@ def live(profile, bound, lock_fd, provider):
         return None
 
 
-def evidence(profile, bound, floor, policy, provider="claude"):
+def evidence(profile, bound, floor, policy, provider="claude", plan="standard"):
     if provider not in ("claude", "codex"):
         raise ValueError("unsupported seat provider")
+    if plan not in ("standard", "no-session-window"):
+        raise ValueError("unsupported seat plan")
     canonical = Path(profile or Path.home() / ("." + provider)).resolve()
     if policy != "raw" and profile and not canonical.is_dir():
         return {"report": None, "note": "source=hold profile-missing"}
@@ -237,6 +250,8 @@ def evidence(profile, bound, floor, policy, provider="claude"):
     token_selected = claude and bool(os.environ.get("CLAUDE_CODE_OAUTH_TOKEN", "").strip())
     identity = [provider, unicodedata.normalize("NFC", str(canonical)),
                 unicodedata.normalize("NFC", storage) if storage else None, token_selected]
+    if plan != "standard":
+        identity.append(plan)
     key = hashlib.sha256(json.dumps(identity).encode()).hexdigest()
     path = root / (key + ".json")
     lock = root / (key + ".lock")
@@ -284,7 +299,7 @@ def evidence(profile, bound, floor, policy, provider="claude"):
             report, failure = None, "cache-lock-timeout"
         else:
             report = live(profile, max(1, math.ceil(deadline - time.monotonic())),
-                          stream.fileno(), provider)
+                          stream.fileno(), provider, plan)
             failure = "live"
             now = time.time()
             retry = instant(row(report).get("state", {}).get("retryAfter"))
@@ -310,7 +325,7 @@ def evidence(profile, bound, floor, policy, provider="claude"):
         if policy == "raw":
             return {"report": report, "note": "source=producer " + note}
         if (good is not None and age is not None and 0 <= age <= 900
-                and success(good, observed) and transient(report) and comfortable(good, floor, policy, now, age)):
+                and success(good, observed) and transient(report) and comfortable(good, floor, policy, now, age, plan)):
             return {"report": good, "note": "source=last-good-fallback " + note}
         # Never let the producer's own (up to seven day) stale cache bypass this
         # gate's bounded fallback, or use any report as live during backoff.
@@ -326,7 +341,8 @@ def evidence(profile, bound, floor, policy, provider="claude"):
 def main():
     try:
         answer = evidence(sys.argv[1], int(sys.argv[2]), float(sys.argv[3]), sys.argv[4],
-                          sys.argv[5] if len(sys.argv) > 5 else "claude")
+                          sys.argv[5] if len(sys.argv) > 5 else "claude",
+                          sys.argv[6] if len(sys.argv) > 6 else "standard")
     except (OSError, ValueError, TypeError, KeyError, AttributeError, OverflowError):
         answer = {"report": None, "note": "source=hold cache-unreadable"}
     print(json.dumps(answer, allow_nan=False))
