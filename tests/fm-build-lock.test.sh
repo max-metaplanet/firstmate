@@ -589,6 +589,12 @@ function run(fs) {
             # A bare extension is a flag value, not the one source file that
             # would exempt the run.
             ('eslint', ['--ext', '.ts', 'src'], False),
+            # A config, formatter, or extension list naming a script file is an
+            # option value, not the one source file that would exempt the run.
+            ('eslint', ['-c', 'eslint.config.mjs', '.'], False),
+            ('eslint', ['-f', './formatter.js', 'src'], False),
+            ('eslint', ['--ext=.ts,.tsx', 'src'], False),
+            ('tsc', ['-p', 'tsconfig.json', '--outFile', 'dist/out.js'], False),
             ('next', ['build'], False),
         ]
         light = [
@@ -599,10 +605,12 @@ function run(fs) {
             ('playwright-package', ['install']),
             ('playwright-package', ['test', '--help']),
             ('tsc', ['one-file.ts', '--noEmit']),
+            ('tsc', ['--noEmit', 'src/one.js']),
             ('tsc', ['--watch', '-p', 'tsconfig.json']),
             ('tsc', ['-w']),
             ('eslint', ['--version']),
             ('eslint', ['src/one.tsx']),
+            ('eslint', ['-c', 'eslint.config.mjs', 'src/one.ts']),
             ('next', ['dev']),
             ('next', ['start']),
         ]

@@ -30,10 +30,19 @@
 const argv = process.argv;
 const ENTRIES = new Set(['next', 'vitest', 'vitest.mjs', 'playwright', 'cli.js', 'tsc', 'tsc.js',
   'eslint', 'eslint.js']);
-// One named source file, so a per-file check stays unlocked. A bare extension
-// such as the `.ts` of `--ext .ts` is a flag value, not a file, and must not
-// exempt the run.
+// One named source file, so a per-file check stays unlocked. Only an operand
+// names it: an option, an `--option=value`, or the value of an option that
+// takes one (a config, formatter, output file, or extension list) is not a
+// file to check and must not exempt the run.
 const SOURCE_FILE = /[^/\\]\.[cm]?[jt]sx?$/i;
+const ESLINT_VALUES = new Set(['-c', '--config', '-f', '--format', '-o', '--output-file',
+  '--rulesdir', '--resolve-plugins-relative-to', '--ignore-path', '--ignore-pattern', '--ext',
+  '--parser', '--plugin', '--cache-location']);
+const TSC_VALUES = new Set(['-p', '--project', '--outfile', '--out', '--outdir', '--rootdir',
+  '--declarationdir', '--tsbuildinfofile', '--baseurl', '--maproot', '--sourceroot',
+  '--generatetrace', '--generatecpuprofile']);
+const namesSourceFile = (args, valueOptions) => args.some((a, i) => !a.startsWith('-') &&
+  !(i > 0 && valueOptions.has(args[i - 1].toLowerCase())) && SOURCE_FILE.test(a));
 const SCRIPTS = new Set((process.env.FM_HEAVY_SCRIPTS ?? 'preflight,queue-preflight')
   .split(',').map((name) => name.trim()).filter(Boolean));
 const OPTION = `--require=${__filename}`;
@@ -56,12 +65,11 @@ const heavy = (script, args) => {
       script.endsWith('/playwright/cli.js')) return command === 'test';
   if (script.endsWith('/eslint/bin/eslint.js')) {
     return !args.some((a) => a === '--version' || a === '-v' || a === '--init' ||
-      a === '--print-config' || SOURCE_FILE.test(a));
+      a === '--print-config') && !namesSourceFile(args, ESLINT_VALUES);
   }
   if (script.endsWith('/typescript/bin/tsc') || script.endsWith('/typescript/lib/tsc.js')) {
     return !args.some((a) => a === '--version' || a === '-v' || a === '--init' ||
-      a === '--watch' || a === '-w' ||
-      SOURCE_FILE.test(a));
+      a === '--watch' || a === '-w') && !namesSourceFile(args, TSC_VALUES);
   }
   return false;
 };
