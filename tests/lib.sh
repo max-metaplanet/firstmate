@@ -97,6 +97,8 @@ fm_test_scratch_root_init "$ROOT" || return 1
 # Launches and pipeline wrappers install the build-lock preload; keep that copy
 # in scratch rather than the developer's installed one.
 export FM_BUILD_LOCK_INSTALL_DIR="${FM_TEST_SCRATCH_ROOT:-${TMPDIR:-/tmp}}/fm-build-lock-install"
+# Nested heavy commands use a scratch-local pool rather than machine slots.
+export FM_BUILD_LOCK_FILE="${FM_TEST_SCRATCH_ROOT:-${TMPDIR:-/tmp}}/fm-build-lock.lock"
 
 # --- reporters --------------------------------------------------------------
 
