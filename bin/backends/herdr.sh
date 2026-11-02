@@ -3544,14 +3544,19 @@ fm_backend_herdr_composer_content() {  # <target>
 # is the same proof for one fast burst: Claude collapses that burst into the
 # placeholder and expands it on submit. A shorter literal suffix, or a placeholder followed by a literal
 # remainder, is the head-truncation shape and is not proof.
+fm_backend_herdr_proof_squash_var() {  # <varname>
+  local __fmps_name=$1 __fmps_text
+  fm_composer_normalize_spaces_var "$__fmps_name"
+  __fmps_text=${!__fmps_name}
+  __fmps_text=${__fmps_text//[$' \t\r\n\v\f']/}
+  __fmps_text=${__fmps_text//$'\xE2\x81\xA3'/}
+  printf -v "$__fmps_name" '%s' "$__fmps_text"
+}
+
 fm_backend_herdr_composer_payload_shown() {  # <text> <after>
   local text=$1 after=$2 literal
-  fm_composer_normalize_spaces_var text
-  fm_composer_normalize_spaces_var after
-  text=${text//[$' \t\r\n\v\f']/}
-  text=${text//$'\xE2\x81\xA3'/}
-  after=${after//[$' \t\r\n\v\f']/}
-  after=${after//$'\xE2\x81\xA3'/}
+  fm_backend_herdr_proof_squash_var text
+  fm_backend_herdr_proof_squash_var after
   [ -n "$text" ] && [ -n "$after" ] || return 1
   [ "$after" = "$text" ] && return 0
   literal=$after
@@ -3559,6 +3564,16 @@ fm_backend_herdr_composer_payload_shown() {  # <text> <after>
     literal=${literal/"${BASH_REMATCH[0]}"/}
   done
   [ -z "$literal" ]
+}
+
+# fm_backend_herdr_composer_payload_painting: 0 when <after> is a strict head
+# of <text> under the same comparison - a paint still in flight. Head
+# truncation leaves the payload's tail, so a head is never that refusal.
+fm_backend_herdr_composer_payload_painting() {  # <text> <after>
+  local text=$1 after=$2
+  fm_backend_herdr_proof_squash_var text
+  fm_backend_herdr_proof_squash_var after
+  [ -n "$after" ] && [ "${#after}" -lt "${#text}" ] && [ "${text:0:${#after}}" = "$after" ]
 }
 
 # fm_backend_herdr_composer_clear: after a refused proof, press Ctrl+U until
@@ -3615,6 +3630,100 @@ fm_backend_herdr_modal_entry_ensure() {  # <target> <harness> <settle>
   return 0
 }
 
+# FM_BACKEND_HERDR_PROOF_POLLS (default 10) and
+# FM_BACKEND_HERDR_PROOF_POLL_INTERVAL (default 0.4s): the bounded window
+# fm_backend_herdr_composer_payload_settle samples the composer in before it
+# calls a typed payload unrendered. The window is deliberately the same for
+# every caller rather than a multiple of the caller's own settle: the settle
+# has already elapsed when the first read is taken, so what remains to size is
+# how long a paint is worth waiting for, which is a property of the harness.
+# Ten reads 0.4s apart, each read itself costing about 0.3s live, is roughly
+# eight seconds - comfortably past the 3.0s worst paint measured on a loaded
+# worker pane, and still bounded.
+# A value of 1 poll reproduces the old single-read timing exactly, which is
+# what the tests with byte-for-byte call-count assertions ask for.
+FM_BACKEND_HERDR_PROOF_POLLS=${FM_BACKEND_HERDR_PROOF_POLLS:-10}
+FM_BACKEND_HERDR_PROOF_POLL_INTERVAL=${FM_BACKEND_HERDR_PROOF_POLL_INTERVAL:-0.4}
+
+fm_backend_herdr_proof_polls() {
+  local n=$FM_BACKEND_HERDR_PROOF_POLLS
+  case "$n" in ''|*[!0-9]*|0) n=10 ;; esac
+  printf '%s' "$n"
+}
+
+fm_backend_herdr_proof_poll_interval() {
+  awk -v i="$FM_BACKEND_HERDR_PROOF_POLL_INTERVAL" 'BEGIN {
+    i += 0
+    if (i < 0) i = 0
+    printf "%.4f", i
+  }' 2>/dev/null || printf '%s' 0.4
+}
+
+# fm_backend_herdr_composer_payload_settle: wait for the composer to read back
+# <text>, sampling within the bounded proof window instead of deciding from one
+# read. `pane send-text` returns before the harness has painted the text, so a
+# single read after a fixed settle decides a race, and losing it CLEARS the
+# caller's typed payload and reports it unsent.
+# Measured live (Claude Code 2.1.316 on Herdr 0.9.1, 2026-11-02): a lab pane
+# painted the payload 0.10-0.60s after the send, while a loaded worker pane
+# still read EMPTY at 1.2s and only showed the typed /exit by 3.0s - the
+# fm-control exit failure.
+# A read that FAILS, comes back EMPTY, or shows only a strict head of the
+# payload is a paint this window waits out. A read that comes back with OTHER
+# content is a decided refusal and returns at once, because that is the
+# head-truncation shape the proof exists to catch (claude's vim command mode
+# leaves the payload's tail), so that shape's recovery keeps its timing. A
+# composer that swallowed the payload whole reads empty and now waits out the
+# bounded window before the modal recovery starts, an accepted bounded-latency
+# tradeoff.
+# Sets FM_BACKEND_HERDR_PROOF_VERDICT to `shown`, `other` or `absent`, and
+# FM_BACKEND_HERDR_PROOF_LAST_READ to the last content read, for the caller's
+# diagnostic. Both are globals rather than stdout because a command
+# substitution would run the polling in a subshell and lose the read it is
+# there to report, exactly as fm_backend_herdr_parse_target returns its target.
+FM_BACKEND_HERDR_PROOF_VERDICT=
+FM_BACKEND_HERDR_PROOF_LAST_READ=
+fm_backend_herdr_composer_payload_settle() {  # <target> <text> <interval>
+  local target=$1 text=$2 interval=$3 polls content i=0
+  polls=$(fm_backend_herdr_proof_polls)
+  FM_BACKEND_HERDR_PROOF_VERDICT=absent
+  FM_BACKEND_HERDR_PROOF_LAST_READ=
+  while :; do
+    if content=$(fm_backend_herdr_composer_content "$target"); then
+      FM_BACKEND_HERDR_PROOF_LAST_READ=$content
+      FM_BACKEND_HERDR_PROOF_VERDICT=absent
+      if fm_backend_herdr_composer_payload_shown "$text" "$content"; then
+        FM_BACKEND_HERDR_PROOF_VERDICT=shown
+        return 0
+      fi
+      if [ -n "${content//[$' \t\r\n\v\f']/}" ]; then
+        FM_BACKEND_HERDR_PROOF_VERDICT=other
+        fm_backend_herdr_composer_payload_painting "$text" "$content" || return 0
+      fi
+    fi
+    i=$((i + 1))
+    [ "$i" -lt "$polls" ] || break
+    sleep "$interval"
+  done
+}
+
+# fm_backend_herdr_proof_refusal_note: say which read condemned the payload, on
+# stderr, before the caller clears it. The verdict alone (`send-failed`) sent
+# the 2026-11-02 fm-control exit failure to a supervisor with nothing to act
+# on; the refusing step is the one fact that makes the next one diagnosable.
+fm_backend_herdr_proof_refusal_note() {  # <proof-verdict>
+  local held=${FM_BACKEND_HERDR_PROOF_LAST_READ:-}
+  [ "${#held}" -le 160 ] || held="${held:0:160}…"
+  case "$1" in
+    absent)
+      echo "error: herdr submit: the composer never rendered the typed payload within $(fm_backend_herdr_proof_polls) reads; nothing was submitted" >&2
+      ;;
+    other)
+      echo "error: herdr submit: the composer read back text that is not the typed payload, so nothing was submitted; it held: $held" >&2
+      ;;
+  esac
+}
+
 fm_backend_herdr_send_text_submit() {  # <target> <text> <retries> <enter-sleep> <settle>
   local target=$1 text=$2 retries=$3 sleep_s=$4 settle=$5 i=0 verdict baseline confirm_sleep
   local raw_status footer_baseline='' allow_rendered=0 enter_sent=0 identity harness proof=0 content busy_harness=''
@@ -3650,10 +3759,10 @@ fm_backend_herdr_send_text_submit() {  # <target> <text> <retries> <enter-sleep>
     fm_backend_herdr_send_literal "$target" "$text" || { printf 'send-failed'; return 0; }
     sleep "$settle"
     [ "$proof" = 1 ] || break
-    if content=$(fm_backend_herdr_composer_content "$target") \
-      && fm_backend_herdr_composer_payload_shown "$text" "$content"; then
-      break
-    fi
+    fm_backend_herdr_composer_payload_settle "$target" "$text" \
+      "$(fm_backend_herdr_proof_poll_interval)"
+    [ "$FM_BACKEND_HERDR_PROOF_VERDICT" != shown ] || break
+    fm_backend_herdr_proof_refusal_note "$FM_BACKEND_HERDR_PROOF_VERDICT"
     fm_backend_herdr_composer_clear "$target" "$text" || { printf 'unaccounted'; return 0; }
     [ "$recovered" = 0 ] || { printf 'send-failed'; return 0; }
     recovered=1

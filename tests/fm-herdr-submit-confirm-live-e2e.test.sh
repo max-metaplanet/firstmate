@@ -20,6 +20,12 @@
 # doorbell is delivered through the real fm_task_inbox_ring in text-entry mode,
 # in command mode after an Escape, and on a composer with no modal editor.
 #
+# It also covers the live fact the payload proof's bounded window rests on,
+# which no stub can measure: how fast THIS Claude paints typed text.
+# `pane send-text` returns before the paint, and a worker pane on 2.1.316 was
+# measured still reading empty 1.2s after the send, so the proof polls within a
+# bounded window and this guard requires the real paint to land inside it.
+#
 # Run explicitly with FM_HERDR_SUBMIT_CONFIRM_LIVE=1 after a Herdr or Claude
 # upgrade, and before trusting a refreshed docs/verification/runtime-backends.md
 # "Herdr submit confirmation" entry.
@@ -156,6 +162,33 @@ done
   || fail "Claude Code ($VERSION) on $HERDR_VER: submit reported '$verdict' but the expected reply never rendered"
 pass "live Herdr submit confirm: Claude Code ($VERSION) on $HERDR_VER reports empty and renders the requested reply in isolated session $SESSION"
 
+# The paint window. `pane send-text` returns before Claude has painted the
+# text, so the payload proof samples the composer within a bounded window
+# rather than judging from one read - and that window is sized for a real
+# harness on a loaded machine, which only a real harness can check. This runs
+# the production settle against real Claude and requires the paint to land
+# inside the window; it types and clears, submitting nothing, so it costs no
+# turn. A window Claude has outgrown fails here instead of silently turning
+# every typed command into "could not be sent".
+PROOF_POLLS=$(fm_backend_herdr_proof_polls)
+PROOF_INTERVAL=$(fm_backend_herdr_proof_poll_interval)
+PAINT_PROBE="FMPAINTPROBE$$_$RANDOM"
+held=$(fm_backend_herdr_composer_content "$TARGET" 2>/dev/null || true)
+[ -z "${held//[$' \t\r\n\v\f']/}" ] \
+  || fail "Claude Code ($VERSION) on $HERDR_VER: the paint measurement needs an empty composer to start from, and it held: $held"
+fm_backend_herdr_send_literal "$TARGET" "$PAINT_PROBE" \
+  || fail "could not type the paint probe into Claude Code ($VERSION) on $HERDR_VER"
+PAINT_START=$(date +%s.%N)
+sleep 0.4
+fm_backend_herdr_composer_payload_settle "$TARGET" "$PAINT_PROBE" "$PROOF_INTERVAL"
+PAINT_VERDICT=$FM_BACKEND_HERDR_PROOF_VERDICT
+PAINT_ELAPSED=$(awk -v s="$PAINT_START" -v e="$(date +%s.%N)" 'BEGIN { printf "%.2f", e - s }')
+fm_backend_herdr_composer_clear "$TARGET" "$PAINT_PROBE" \
+  || fail "Claude Code ($VERSION) on $HERDR_VER: the paint probe could not be cleared from the composer; inspect pane $PANE in session $SESSION"
+[ "$PAINT_VERDICT" = shown ] \
+  || fail "Claude Code ($VERSION) on $HERDR_VER: typed text was still not readable back after ${PROOF_POLLS} reads ${PROOF_INTERVAL}s apart (${PAINT_ELAPSED}s, verdict '$PAINT_VERDICT'), so every typed command will be judged unsent; raise FM_BACKEND_HERDR_PROOF_POLLS"
+pass "live Herdr paint window: Claude Code ($VERSION) on $HERDR_VER painted typed text inside the payload proof's ${PROOF_POLLS}-read window (${PAINT_ELAPSED}s)"
+
 # Away-mode digests start with U+2063, which Claude's composer read-back drops.
 # The pre-Enter proof must still accept the rest of the payload.
 # shellcheck source=bin/fm-operational-input.sh
@@ -287,6 +320,68 @@ pass "live Herdr doorbell: Claude Code ($VERSION) on $HERDR_VER recovers and sub
 
 ring_a_doorbell "$TARGET" "$PANE" non-modal "non-modal"
 pass "live Herdr doorbell: Claude Code ($VERSION) on $HERDR_VER submits the doorbell to a Claude composer with no modal editor"
+
+# The background-task exit picker. A typed /exit on a worker with a background
+# shell running opens it, and fm-control confirms its Exit and stop tasks row.
+# Those are the vendor's strings on the vendor's layout: only a real Claude with
+# a real background shell can prove the picker is still recognized and that
+# confirming it ends the agent.
+# This runs on the vim pane, whose Claude is still live, and ends it.
+SHELL_PROMPT='Use your Bash tool with run_in_background set to true to start the command sleep 900, then reply with exactly BGUP and do nothing else.'
+verdict=$(fm_backend_herdr_send_text_submit "$VIM_TARGET" "$SHELL_PROMPT" 3 0.4 0.4) \
+  || fail "send_text_submit failed to ask Claude Code ($VERSION) on $HERDR_VER for a background shell"
+[ "$verdict" != send-failed ] \
+  || fail "Claude Code ($VERSION) on $HERDR_VER: the background-shell request was judged unsent, so the exit picker cannot be reached"
+# The rendered shell count is what proves a background task is actually
+# running. Without it the /exit below would open no picker at all and this
+# case would pass having checked nothing.
+shell_up=0
+i=0
+while [ "$i" -lt 90 ]; do
+  case "$(lab pane read "$VIM_PANE" --source visible 2>/dev/null || true)" in
+    *' shell'*) shell_up=1; break ;;
+  esac
+  i=$((i + 1))
+  sleep 1
+done
+[ "$shell_up" = 1 ] \
+  || fail "Claude Code ($VERSION) on $HERDR_VER never rendered a background shell count, so the exit picker could not be reached and this case would prove nothing"
+i=0
+while [ "$i" -lt 60 ]; do
+  case "$(lab agent get "$VIM_PANE" 2>/dev/null | jq -r '.result.agent.agent_status // empty')" in
+    idle|done) break ;;
+  esac
+  i=$((i + 1))
+  sleep 1
+done
+verdict=$(fm_backend_herdr_send_text_submit "$VIM_TARGET" '/exit' 3 0.4 1.2) \
+  || fail "send_text_submit failed to run the /exit submission against the background-shell pane"
+[ "$verdict" != send-failed ] \
+  || fail "Claude Code ($VERSION) on $HERDR_VER: a typed /exit on a pane with a background shell was judged unsent instead of submitted"
+picker=''
+i=0
+while [ "$i" -lt 30 ]; do
+  screen=$(lab pane read "$VIM_PANE" --source visible 2>/dev/null || true)
+  if picker=$(fm_composer_blocking_dialog "$screen"); then
+    break
+  fi
+  i=$((i + 1))
+  sleep 1
+done
+[ "$picker" = 'Claude background-task exit picker' ] \
+  || fail "Claude Code ($VERSION) on $HERDR_VER: /exit with a background shell running did not render the recognized exit picker, so fm-control would type Enter into an unrecognized dialog"
+lab pane send-keys "$VIM_PANE" enter >/dev/null \
+  || fail "could not confirm the exit picker in the background-shell pane"
+exited=0
+i=0
+while [ "$i" -lt 120 ]; do
+  if ! lab agent get "$VIM_PANE" >/dev/null 2>&1; then exited=1; break; fi
+  i=$((i + 1))
+  sleep 1
+done
+[ "$exited" = 1 ] \
+  || fail "Claude Code ($VERSION) on $HERDR_VER: the exit picker was confirmed but the agent never exited, so the recognized picker is not the one that answers /exit"
+pass "live Herdr exit picker: Claude Code ($VERSION) on $HERDR_VER confirms the background-task exit picker and the agent exits"
 
 # The fm-control exit regression: a typed slash command (/exit) makes Claude
 # Code 2.1.283 render its command popup between the composer and the pane
