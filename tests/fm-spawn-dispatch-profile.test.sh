@@ -2198,7 +2198,8 @@ SH
         enabled) expected=$(printf '%s\n' unset "$value" '' unset) ;;
         empty) expected=$(printf '%s\n' unset unset unset unset) ;;
       esac
-      expected="$expected"$'\n'"$HOME_DIR/user-home"$'\n'"$pane_path"$'\nxterm\nsynthetic-pane\n/synthetic/gotmp'
+      # The build-lock heavy-command shims lead the worker PATH.
+      expected="$expected"$'\n'"$HOME_DIR/user-home"$'\n'"$HOME_DIR/user-home/.local/share/firstmate-build-lock/shims:$pane_path"$'\nxterm\nsynthetic-pane\n/synthetic/gotmp'
       # The strip-hook entry must also survive the env -i boundary.
       expected="$expected"$'\n'"hooksPath=$(cd "$HOME_DIR/state" && pwd -P)/$id.git-hooks"
       [ "$result" = "$expected" ] || fail "allowlist=$setting worker environment mismatch: $result"

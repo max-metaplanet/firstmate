@@ -7297,9 +7297,10 @@ if [ "$KIND" = ship ] || [ "$KIND" = scout ]; then
   # The build-lock preload rides NODE_OPTIONS, which agent shells keep even
   # when their rc or snapshot rebuilds PATH. Like the Git configuration prefix,
   # the helper appends to the NODE_OPTIONS the worker inherits (after any launch
-  # environment filtering) and writes one plain export statement that the pane
-  # shell, fish included, sources. fm-build-lock.py owns the installed preload,
-  # selection, and lock lifetime.
+  # environment filtering), puts its heavy-command PATH shims first on PATH, and
+  # writes one plain export statement that the pane shell, fish included,
+  # sources. fm-build-lock.py owns the installed preload, the shims, selection,
+  # and lock lifetime.
   # The pool size belongs to the machine, not to the pane: a heavy command runs
   # in a worker shell or the no-mistakes daemon, neither of which can read this
   # home's configuration, so the launch publishes config/heavy-slots into the

@@ -319,14 +319,17 @@ const timer = setInterval(() => { if (fs.existsSync(process.env.RELEASE)) clearI
     installed = scratch / 'installed'
     install_env = dict(env, FM_BUILD_LOCK_INSTALL_DIR=str(installed), NODE_OPTIONS='--max-old-space-size=512')
     env_file = scratch / 'node-options.sh'
+    inherited_path = install_env['PATH']
     for _ in range(2):
         subprocess.run([str(checkout / 'fm-build-lock.py'), 'node-env-file', str(env_file)],
                        env=install_env, check=True, timeout=5)
-        install_env['NODE_OPTIONS'] = subprocess.run(
-            ['sh', '-c', '. "$1" && printf %s "$NODE_OPTIONS"', '_', str(env_file)],
-            env=install_env, capture_output=True, text=True, check=True).stdout
+        install_env['NODE_OPTIONS'], install_env['PATH'] = subprocess.run(
+            ['sh', '-c', '. "$1" && printf "%s\\n%s" "$NODE_OPTIONS" "$PATH"', '_', str(env_file)],
+            env=install_env, capture_output=True, text=True, check=True).stdout.split('\n')
     assert install_env['NODE_OPTIONS'] == f'--max-old-space-size=512 --require={installed}/fm-build-lock.js', \
         install_env['NODE_OPTIONS']
+    # The shim directory leads PATH once, ahead of everything the worker inherited.
+    assert install_env['PATH'] == f'{installed}/shims:{inherited_path}', install_env['PATH']
     if shutil.which('fish'):
         result = subprocess.run(['fish', '-c', f"source '{env_file}'; and printf %s $NODE_OPTIONS"],
                                 env=install_env, capture_output=True, text=True, check=True)
@@ -554,6 +557,8 @@ function run(fs) {
             'playwright': ('node_modules/@playwright/test/cli.js', cjs),
             'playwright-package': ('node_modules/playwright/cli.js', cjs),
             'tsc': ('node_modules/typescript/bin/tsc', cjs),
+            'eslint': ('node_modules/eslint/bin/eslint.js', cjs),
+            'next': ('node_modules/next/dist/bin/next', cjs),
         }
         for name, (rel, head) in entries.items():
             cli = scratch / rel
@@ -562,12 +567,19 @@ function run(fs) {
             cli.chmod(0o755)
         localbin = scratch / 'node_modules/.bin'
         localbin.mkdir(exist_ok=True)
-        for name in ('vitest', 'playwright', 'playwright-package'):
+        for name in ('vitest', 'playwright', 'playwright-package', 'eslint', 'tsc'):
             link = localbin / name if name != 'playwright-package' else localbin / 'package' / 'playwright'
             link.parent.mkdir(exist_ok=True)
             link.symlink_to(scratch / entries[name][0])
             entries[name + '-bin'] = (str(link.relative_to(scratch)), None)
         preload = {'NODE_OPTIONS': option, 'FM_HEAVY_SLOTS': '1'}
+        # The one-file exemption needs the named file to exist where the
+        # command resolves it, so every case runs in the scratch tree.
+        for rel in ('one-file.ts', 'src/one.js', 'src/one.tsx', 'src/one.ts', 'src/a.ts',
+                    'src/b.ts', 'app/[locale]/page.tsx', 'tsconfig.json',
+                    'apps/admin-center/tsconfig.json'):
+            (scratch / rel).parent.mkdir(parents=True, exist_ok=True)
+            (scratch / rel).write_text('export {};\n')
         # Off a TTY a bare vitest runs the suite once, as a package test script does.
         # The last case runs on a TTY, where only the run subcommand marks it heavy.
         heavy = [
@@ -581,6 +593,37 @@ function run(fs) {
             ('playwright-bin', ['test'], False),
             ('playwright-package-bin', ['test'], False),
             ('tsc', ['--noEmit', '-p', 'tsconfig.json'], False),
+            ('eslint', [], False),
+            ('eslint', ['.'], False),
+            ('eslint-bin', ['src'], False),
+            # A bare extension is a flag value, not the one source file that
+            # would exempt the run.
+            ('eslint', ['--ext', '.ts', 'src'], False),
+            # A config, formatter, or extension list naming a script file is an
+            # option value, not the one source file that would exempt the run.
+            ('eslint', ['-c', 'eslint.config.mjs', '.'], False),
+            ('eslint', ['-f', './formatter.js', 'src'], False),
+            ('eslint', ['--ext=.ts,.tsx', 'src'], False),
+            ('tsc', ['-p', 'tsconfig.json', '--outFile', 'dist/out.js'], False),
+            # Two named source files are more than the one file the exemption covers.
+            ('eslint', ['src/a.ts', 'src/b.ts'], False),
+            ('tsc', ['--noEmit', 'src/a.ts', 'src/b.ts'], False),
+            # A quoted glob the tool expands itself, or a directory beside one
+            # file, stands for many files.
+            ('eslint', ['src/**/*.ts'], False),
+            ('eslint', ['src', 'src/a.ts'], False),
+            ('eslint', ['src'], False),
+            ('tsc', ['--noEmit', 'src/**/*.ts'], False),
+            ('tsc', ['--noEmit', 'src'], False),
+            # A real config file is not a source file, and a build builds whole
+            # projects, including through the .bin link npx resolves.
+            ('tsc', ['--noEmit', 'tsconfig.json'], False),
+            ('tsc', ['-b', 'tsconfig.json'], False),
+            ('tsc', ['--build', 'apps/admin-center/tsconfig.json'], False),
+            ('tsc-bin', ['-b', 'tsconfig.json'], False),
+            # Under a build, -v is --verbose rather than --version.
+            ('tsc', ['-b', '-v', 'tsconfig.json'], False),
+            ('next', ['build'], False),
         ]
         light = [
             ('vitest', ['--version']),
@@ -590,8 +633,24 @@ function run(fs) {
             ('playwright-package', ['install']),
             ('playwright-package', ['test', '--help']),
             ('tsc', ['one-file.ts', '--noEmit']),
+            ('tsc', ['--noEmit', 'src/one.js']),
             ('tsc', ['--watch', '-p', 'tsconfig.json']),
             ('tsc', ['-w']),
+            # A watch build never exits, so watch wins over the build rule.
+            ('tsc', ['-v']),
+            ('tsc', ['-b', '--watch']),
+            ('tsc', ['-b', '-w']),
+            ('tsc', ['--build', '--version']),
+            ('eslint', ['--version']),
+            ('eslint', ['src/one.tsx']),
+            ('eslint', ['-c', 'eslint.config.mjs', 'src/one.ts']),
+            ('eslint', ['--max-warnings', '0', 'src/one.ts']),
+            ('tsc', ['--target', 'es2020', 'one-file.ts']),
+            # App Router paths carry literal brackets; one real such file is light.
+            ('eslint', ['app/[locale]/page.tsx']),
+            ('tsc', ['--noEmit', 'app/[locale]/page.tsx']),
+            ('next', ['dev']),
+            ('next', ['start']),
         ]
         for case, (name, args, tty) in enumerate(heavy):
             tag = f'{name}-{case}'
@@ -603,7 +662,7 @@ function run(fs) {
             command = [str(scratch / entries[name][0]), *args]
             if not name.endswith('-bin'):
                 command.insert(0, 'node')
-            child = subprocess.Popen(command,
+            child = subprocess.Popen(command, cwd=scratch,
                                      env=dict(env, MARKER=str(scratch / tag),
                                               RELEASE=str(scratch / (tag + '.release')), **preload),
                                      stdin=follower, stderr=log)
@@ -629,16 +688,272 @@ function run(fs) {
         blocker = launch('block-light', slots='1')
         assert wait_file(scratch / 'block-light'), 'the blocker before the light cases never started'
         for name, args in light:
-            result = subprocess.run(['node', str(scratch / entries[name][0]), *args],
+            result = subprocess.run(['node', str(scratch / entries[name][0]), *args], cwd=scratch,
                                     env=dict(env, **preload), stdin=subprocess.DEVNULL,
                                     capture_output=True, timeout=30)
             assert result.returncode == 0 and result.stdout.startswith(b'ran:'), result.stderr
             assert b'waiting' not in result.stderr, f'{name} {" ".join(args)} took a heavy slot'
         (scratch / 'block-light.release').touch()
         assert blocker.wait(10) == 0
-        print('ok - the preload locks Vitest, Playwright and whole-project tsc and passes the rest through')
+        print('ok - the preload locks Vitest, Playwright, ESLint, next build and '
+              'whole-project tsc and passes the rest through')
+
+        # A shell that ASSIGNS NODE_OPTIONS drops the preload; the PATH shim the
+        # worker launch puts first restores it before the real tsc starts.
+        shims = Path(option.split('=', 1)[1]).parent / 'shims'
+        realbin = scratch / 'realbin'
+        realbin.mkdir()
+        (realbin / 'tsc').symlink_to(scratch / entries['tsc'][0])
+        (realbin / 'vitest').write_text('#!/bin/sh\nprintf %s "$NODE_OPTIONS"\n')
+        (realbin / 'vitest').chmod(0o755)
+        shim_path = f'{shims}:{realbin}:{env["PATH"]}'
+        blocker = launch('block-shim', slots='1')
+        assert wait_file(scratch / 'block-shim'), 'the blocker before the shim case never started'
+        (scratch / 'shim-tsc.release').touch()
+        log = open(scratch / 'shim-tsc.err', 'w')
+        child = subprocess.Popen(
+            ['sh', '-c', 'NODE_OPTIONS=--max-old-space-size=512 tsc --noEmit -p tsconfig.json'],
+            env=dict(env, PATH=shim_path, FM_HEAVY_SLOTS='1', MARKER=str(scratch / 'shim-tsc'),
+                     RELEASE=str(scratch / 'shim-tsc.release')),
+            stdin=subprocess.DEVNULL, stderr=log)
+        log.close()
+        children.append(child)
+        for _ in range(300):
+            if 'waiting for a heavy slot' in (scratch / 'shim-tsc.err').read_text():
+                break
+            time.sleep(.03)
+        assert 'waiting for a heavy slot' in (scratch / 'shim-tsc.err').read_text(), \
+            'a shell-assigned NODE_OPTIONS tsc found through the shim took no slot: ' + \
+            (scratch / 'shim-tsc.err').read_text()
+        assert not (scratch / 'shim-tsc').exists(), 'tsc ran while the only slot was held'
+        (scratch / 'block-shim.release').touch()
+        assert blocker.wait(10) == 0
+        assert child.wait(30) == 0, (scratch / 'shim-tsc.err').read_text()
+        assert (scratch / 'shim-tsc').exists(), 'the shimmed tsc never ran after its slot freed'
+        # The preload is added once, and a bypass leaves the environment as it was.
+        for extra, expected in (({'NODE_OPTIONS': '--max-old-space-size=512'},
+                                 f'--max-old-space-size=512 {option}'),
+                                ({'NODE_OPTIONS': option}, option),
+                                ({'NODE_OPTIONS': '--max-old-space-size=512', 'FM_BUILD_LOCK_BYPASS': '1'},
+                                 '--max-old-space-size=512')):
+            result = subprocess.run(['vitest'], env=dict(env, PATH=shim_path, **extra),
+                                    capture_output=True, text=True, timeout=10)
+            assert result.returncode == 0 and result.stdout == expected, (extra, result)
+        # With no real command after its own directory the shim reports it
+        # missing instead of running itself again.
+        result = subprocess.run([str(shims / 'eslint'), '.'], env=dict(env, PATH=str(shims)),
+                                capture_output=True, text=True, timeout=10)
+        assert result.returncode == 127 and 'eslint: command not found' in result.stderr, result
+        print('ok - the PATH shim restores the preload a shell assignment dropped, once, '
+              'and never runs itself')
     else:
         print('skip - heavy CLI interception needs node installed')
+finally:
+    for child in children:
+        if child.poll() is None:
+            child.kill()
+        child.wait()
+PY
+
+# Coverage across a project's own environment handling: a child whose
+# NODE_OPTIONS the parent assigned, a step whose whole environment was rebuilt
+# from an allowlist, and a package script that is heavy as a whole.
+ENV_ROOT=$(mktemp -d "$FM_TEST_SCRATCH_ROOT/fm-heavy-env.XXXXXX")
+python3 - "$ROOT" "$ENV_ROOT" <<'PY'
+import json
+import os
+from pathlib import Path
+import shutil
+import subprocess
+import sys
+import time
+
+root, scratch = map(Path, sys.argv[1:])
+wrapper = root / 'bin/fm-build-lock.py'
+if not shutil.which('node'):
+    print('skip - project environment coverage needs node installed')
+    sys.exit(0)
+
+env = dict(os.environ, FM_BUILD_LOCK_FILE=str(scratch / 'pool.lock'),
+           FM_BUILD_LOCK_INSTALL_DIR=str(scratch / 'install'), FM_HEAVY_SLOTS='1')
+for name in ('FM_BUILD_LOCK_BYPASS', 'FM_BUILD_LOCK_HELD', 'NODE_OPTIONS', 'npm_lifecycle_event'):
+    env.pop(name, None)
+option = subprocess.run([str(wrapper), 'node-option'], env=env, check=True,
+                        capture_output=True, text=True, timeout=10).stdout.strip()
+mechanism = subprocess.run([str(root / 'bin/fm-memcap.sh'), '--mechanism'],
+                           capture_output=True, text=True, check=True).stdout.strip()
+children = []
+
+
+def report(path):
+    """The subject writes one JSON line naming its slot, cgroup and options."""
+    return f'''const fs = require('fs');
+let cgroup = '';
+try {{ cgroup = fs.readFileSync('/proc/self/cgroup', 'utf8').trim(); }} catch {{}}
+fs.writeFileSync({json.dumps(str(path))}, JSON.stringify({{
+  pid: process.pid, cgroup,
+  options: process.env.NODE_OPTIONS || '',
+  held: process.env.FM_BUILD_LOCK_HELD || '',
+}}));
+'''
+
+
+# A fake whole-project tsc: heavy by the preload's definition, and quick.
+tsc = scratch / 'node_modules/typescript/bin/tsc'
+tsc.parent.mkdir(parents=True, exist_ok=True)
+tsc.write_text('#!/usr/bin/env node\n' + report(scratch / 'tsc.json'))
+tsc.chmod(0o755)
+heavy_child = [str(tsc), '--noEmit', '-p', 'tsconfig.json']
+
+holder = scratch / 'hold.py'
+holder.write_text('''import os, pathlib, time
+pathlib.Path(os.environ['MARKER']).write_text(str(os.getpid()))
+while not pathlib.Path(os.environ['RELEASE']).exists(): time.sleep(.03)
+''')
+
+
+def wait_file(path, limit=300):
+    for _ in range(limit):
+        if path.exists():
+            return True
+        time.sleep(.03)
+    return False
+
+
+def hold_the_slot(name):
+    """Occupy the only slot, so anything that claims one has to wait for it."""
+    selected = dict(env, MARKER=str(scratch / name), RELEASE=str(scratch / (name + '.release')))
+    child = subprocess.Popen([str(wrapper), '--', sys.executable, str(holder)], env=selected)
+    children.append(child)
+    assert wait_file(scratch / name), f'the blocker {name} never took the only slot'
+    return child
+
+
+def release(child, name):
+    (scratch / (name + '.release')).touch()
+    assert child.wait(10) == 0
+
+
+def wait_for(stream, text, name):
+    for _ in range(300):
+        if text in stream.read_text():
+            return
+        time.sleep(.03)
+    raise AssertionError(f'{name} never printed {text!r}: {stream.read_text()}')
+
+
+def run_parent(body, name, extra=None, scrub=None):
+    script = scratch / (name + '.js')
+    script.write_text(body)
+    selected = dict(env, NODE_OPTIONS=option)
+    selected.update(extra or {})
+    log = open(scratch / (name + '.err'), 'w')
+    child = subprocess.Popen(['node', str(script)], env=selected, stderr=log,
+                             stdout=subprocess.DEVNULL)
+    log.close()
+    children.append(child)
+    return child
+
+
+def spawn_call(env_literal):
+    return f'''require('child_process').execFileSync({json.dumps(heavy_child[0])},
+  {json.dumps(heavy_child[1:])}, {{ env: {env_literal}, stdio: 'inherit' }});
+'''
+
+
+# An allowlist that keeps this test's own pool and install directory, as a real
+# allowlist keeps PATH, so the subject resolves the same pool its parent did.
+ALLOWLIST = '''const passed = Object.fromEntries(Object.entries(process.env)
+  .filter(([key]) => /^(?:PATH|HOME|FM_BUILD_LOCK_FILE|FM_BUILD_LOCK_INSTALL_DIR|FM_HEAVY_SLOTS)$/
+    .test(key)));
+'''
+
+try:
+    # A parent that ASSIGNS NODE_OPTIONS still produces a locked child.
+    blocker = hold_the_slot('assign-blocker')
+    parent = run_parent(spawn_call("{ ...process.env, NODE_OPTIONS: '--max-old-space-size=6144' }"),
+                        'assign')
+    wait_for(scratch / 'assign.err', 'waiting for a heavy slot', 'the assigned-options child')
+    assert not (scratch / 'tsc.json').exists(), 'the child ran while the only slot was held'
+    release(blocker, 'assign-blocker')
+    assert parent.wait(30) == 0, (scratch / 'assign.err').read_text()
+    recorded = json.loads((scratch / 'tsc.json').read_text())
+    assert option in recorded['options'], recorded
+    assert '--max-old-space-size=6144' in recorded['options'], recorded
+    print('ok - a child whose NODE_OPTIONS the parent assigned still claims a slot')
+
+    # An environment the parent built without NODE_OPTIONS is left alone.
+    (scratch / 'tsc.json').unlink()
+    blocker = hold_the_slot('scrub-blocker')
+    parent = run_parent(ALLOWLIST + spawn_call('passed'), 'scrub')
+    assert wait_file(scratch / 'tsc.json'), 'a child with no NODE_OPTIONS was made to wait'
+    assert parent.wait(30) == 0, (scratch / 'scrub.err').read_text()
+    assert 'waiting' not in (scratch / 'scrub.err').read_text()
+    recorded = json.loads((scratch / 'tsc.json').read_text())
+    assert recorded['options'] == '', recorded
+    release(blocker, 'scrub-blocker')
+    print('ok - an environment built without NODE_OPTIONS keeps none')
+
+    # A heavy package script claims one slot for its whole run; a step whose
+    # environment was rebuilt from an allowlist takes no slot of its own and is
+    # covered by the script's cgroup, and a step that kept NODE_OPTIONS reclaims
+    # the same slot instead of deadlocking on the only one.
+    (scratch / 'tsc.json').unlink()
+    blocker = hold_the_slot('script-blocker')
+    body = (report(scratch / 'script.json') + ALLOWLIST + spawn_call('passed') +
+            f'''require('fs').copyFileSync({json.dumps(str(scratch / 'tsc.json'))},
+  {json.dumps(str(scratch / 'tsc-scrubbed.json'))});
+''' + spawn_call("{ ...process.env, NODE_OPTIONS: '--max-old-space-size=6144' }"))
+    parent = run_parent(body, 'script', extra={'npm_lifecycle_event': 'queue-preflight'})
+    wait_for(scratch / 'script.err', 'waiting for a heavy slot', 'the heavy package script')
+    assert not (scratch / 'script.json').exists(), 'the script ran while the only slot was held'
+    release(blocker, 'script-blocker')
+    assert parent.wait(60) == 0, (scratch / 'script.err').read_text()
+    script_run = json.loads((scratch / 'script.json').read_text())
+    scrubbed = json.loads((scratch / 'tsc-scrubbed.json').read_text())
+    reclaimed = json.loads((scratch / 'tsc.json').read_text())
+    assert script_run['held'] == str(script_run['pid']), script_run
+    assert scrubbed['options'] == '' and scrubbed['held'] == '', scrubbed
+    assert option in reclaimed['options'], reclaimed
+    if mechanism == 'cgroup':
+        assert script_run['cgroup'].endswith('.scope'), script_run
+        assert scrubbed['cgroup'] == script_run['cgroup'], (scrubbed, script_run)
+        assert reclaimed['cgroup'] == script_run['cgroup'], (reclaimed, script_run)
+    print('ok - a heavy package script holds one slot its steps share, '
+          'capped even where their environment dropped the preload')
+
+    # Only queue-preflight is heavy as a whole; any other lifecycle event,
+    # including a plain preflight, runs without a slot.
+    (scratch / 'tsc.json').unlink()
+    blocker = hold_the_slot('other-blocker')
+    for event in ('postinstall', 'preflight'):
+        parent = run_parent(report(scratch / f'{event}.json'), event,
+                            extra={'npm_lifecycle_event': event})
+        assert wait_file(scratch / f'{event}.json'), f'a {event} package script claimed a heavy slot'
+        assert parent.wait(30) == 0, (scratch / f'{event}.err').read_text()
+        assert json.loads((scratch / f'{event}.json').read_text())['held'] == ''
+    parent = run_parent(report(scratch / 'named.json'), 'named',
+                        extra={'npm_lifecycle_event': 'queue-preflight'})
+    wait_for(scratch / 'named.err', 'waiting for a heavy slot', 'a queue-preflight package script')
+    release(blocker, 'other-blocker')
+    assert parent.wait(30) == 0, (scratch / 'named.err').read_text()
+    print('ok - only a queue-preflight package script is heavy as a whole')
+
+    # The promise forms callers reach for get the same repair: each child
+    # reports the NODE_OPTIONS it actually received.
+    promised = subprocess.run(
+        ['node', '-e', '''const util = require('util');
+const cp = require('child_process');
+const env = { ...process.env, NODE_OPTIONS: '--max-old-space-size=512' };
+Promise.all([
+  util.promisify(cp.exec)('printf %s "$NODE_OPTIONS"', { env }),
+  util.promisify(cp.execFile)('sh', ['-c', 'printf %s "$NODE_OPTIONS"'], { env }),
+]).then((results) => console.log(JSON.stringify(results.map(({ stdout }) => stdout))));
+'''], env=dict(env, NODE_OPTIONS=option), capture_output=True, text=True, timeout=30)
+    assert promised.returncode == 0, promised
+    for form, received in zip(('exec', 'execFile'), json.loads(promised.stdout)):
+        assert received.split() == ['--max-old-space-size=512', option], (form, received)
+    print('ok - promisified exec and execFile children get the preload put back')
 finally:
     for child in children:
         if child.poll() is None:
