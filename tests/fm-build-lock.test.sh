@@ -621,6 +621,8 @@ function run(fs) {
             ('tsc', ['-b', 'tsconfig.json'], False),
             ('tsc', ['--build', 'apps/admin-center/tsconfig.json'], False),
             ('tsc-bin', ['-b', 'tsconfig.json'], False),
+            # Under a build, -v is --verbose rather than --version.
+            ('tsc', ['-b', '-v', 'tsconfig.json'], False),
             ('next', ['build'], False),
         ]
         light = [
@@ -635,6 +637,7 @@ function run(fs) {
             ('tsc', ['--watch', '-p', 'tsconfig.json']),
             ('tsc', ['-w']),
             # A watch build never exits, so watch wins over the build rule.
+            ('tsc', ['-v']),
             ('tsc', ['-b', '--watch']),
             ('tsc', ['-b', '-w']),
             ('tsc', ['--build', '--version']),

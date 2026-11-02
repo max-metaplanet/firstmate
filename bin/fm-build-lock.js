@@ -42,7 +42,8 @@ const ENTRIES = new Set(['next', 'vitest', 'vitest.mjs', 'playwright', 'cli.js',
 // existing regular file: a directory or a quoted glob the tool expands itself
 // stands for many files, and a config such as a tsconfig is not a source file.
 // A tsc build (-b or --build) builds whole projects and is heavy whatever its
-// operands, unless it watches.
+// operands, unless it watches or asks for --version; under a build, -v means
+// --verbose, not --version.
 const SOURCE_FILE = /[^/\\]\.[cm]?[jt]sx?$/i;
 const ESLINT_VALUES = new Set(['-c', '--config', '-f', '--format', '-o', '--output-file',
   '--rulesdir', '--resolve-plugins-relative-to', '--ignore-path', '--ignore-pattern', '--ext',
@@ -82,9 +83,10 @@ const heavy = (script, args) => {
       a === '--print-config') && !namesSourceFile(args, ESLINT_VALUES);
   }
   if (script.endsWith('/typescript/bin/tsc') || script.endsWith('/typescript/lib/tsc.js')) {
-    if (args.some((a) => a === '--version' || a === '-v' || a === '--init' ||
-      a === '--watch' || a === '-w')) return false;
-    if (args.some((a) => a === '-b' || a.toLowerCase() === '--build')) return true;
+    const build = args.some((a) => a === '-b' || a.toLowerCase() === '--build');
+    if (args.some((a) => a === '--version' || a === '--watch' || a === '-w' ||
+      (!build && (a === '-v' || a === '--init')))) return false;
+    if (build) return true;
     return !namesSourceFile(args, TSC_VALUES);
   }
   return false;
