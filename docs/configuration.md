@@ -1614,6 +1614,31 @@ Every other required check must still be green, and a declared check that report
 A direct merge keeps demanding every required check at the head, because no queue would run the missing ones and this declaration is local text the forge never confirms.
 [`bin/fm-queue-only-lib.sh`](../bin/fm-queue-only-lib.sh) owns the lookup and [`bin/fm-pr-checks-lib.sh`](../bin/fm-pr-checks-lib.sh) owns what a declared name does to a check verdict.
 
+## Merge-queue drop handling (config/project-merge-queue)
+
+The optional, gitignored `config/project-merge-queue` tells Firstmate how a project's merge queue announces that it removed a pull request instead of landing it.
+Without it, that removal is silent, because the pull request stays open with no new failing check of its own.
+The worker then waits for a merge that will never come, until someone reads the queue bot's comment by hand and relays the failing check.
+Each entry has the clone directory basename, one literal tab, the queue bot's exact login, another literal tab, and the literal text its drop comment carries:
+
+```text
+my-project	mergify[bot]	has been removed from the queue
+another-project	queue-bot	dequeued this pull request
+```
+
+The marker is matched as a case-sensitive substring of the comment body, so it needs only enough of the bot's wording to be unambiguous.
+Names, logins and markers may contain spaces but cannot contain tabs or control characters.
+Blank lines and lines beginning with `#` followed by whitespace are comments.
+An absent file or an omitted project leaves behavior unchanged and costs that project nothing.
+A project may declare its queue once only, because a project has one queue signal; a repeated project, a missing or empty field, any other malformed entry, and an unreadable file fail the lookup rather than silently dropping a declaration.
+Firstmate never reads the project's queue configuration and never confirms the declaration against the forge, so a bot login or marker that changes has to be corrected here by hand.
+Detection is comment-based, so a project whose queue signals a drop only by toggling a label is not covered.
+
+A declared drop reaches the worker as one steer naming the queue report, the failing checks, and an excerpt of the failing check's own log.
+A new drop comment steers, and so does an edit of the drop comment after the pull request's head moved, because a queue bot that keeps one status comment re-drops by editing it; an edit on the same head and a push alone, such as the worker's fix or a merge bot's rebase, never steer again.
+Evidence reads stay inside the observer's poll budget, and a read with no budget left falls back to the drop comment itself.
+[`bin/fm-mq-drop.sh`](../bin/fm-mq-drop.sh) owns detection, the evidence it gathers and the steer it sends, and [`bin/fm-contributions.sh`](../bin/fm-contributions.sh) is the observer that drives it from the pull-request observation it already made.
+
 ## Project capacity (config/project-capacity)
 
 The optional local, gitignored `config/project-capacity` tells Firstmate how many workers a project can run at once on this machine, for a project whose machine-local resource - a heavy test suite, a local editor stack, a device - only serves a few workers at a time.
