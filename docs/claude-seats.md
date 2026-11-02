@@ -625,7 +625,7 @@ touch <that home>/config/claude-seat-local
 ```
 
 The file's presence is the whole setting; nothing reads its content.
-From then on that home keeps its own `claude-seat`, `claude-seats-root`, `claude-seat-threshold`, `claude-seat-destination-min`, `claude-seat-extra-usage`, `claude-seat-auto-exclude`, `claude-seat-floor`, `claude-seat-floor-readd`, `claude-seat-floor-dwell`, `claude-seat-session-share`, and `claude-seat-resting` untouched, including when it has none, and no local convergence overwrites them: not a switch's push, not the session-start secondmate sweep, and not that home's own launch or relaunch.
+From then on that home keeps its own seat settings, every file the configuration section linked below lists, untouched, including when it has none, and no local convergence overwrites them: not a switch's push, not the session-start secondmate sweep, and not that home's own launch or relaunch.
 When the primary launches or relaunches that home's own firstmate, the launch uses that home's active seat, and the extra-usage dispatch gate reads that home's seat and policy rather than the primary's.
 The declining home still runs `bin/fm-seat.sh switch`, `threshold`, `destination-min`, `extra-usage`, `auto-exclude`, `floor`, and `arm` normally; those act on itself alone.
 Only that home is left alone - every other local home still takes each switch, and a machine with no such file anywhere behaves exactly as it did before the flag existed.
