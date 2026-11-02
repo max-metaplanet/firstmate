@@ -176,6 +176,38 @@ assert_grep 'duplicate credential profiles' "$TEST_ROOT/evidence" 'duplicate pro
 rm "$TEST_ROOT/codex/duplicate"
 pass 'malformed configuration and duplicate profiles fail closed'
 
+# A seat whose plan has no five-hour window is chosen on its week alone. The
+# producer reports alternate's five-hour window spent (account figure 0, runway
+# exhausted_now) beside a week with 70% left, in TOON and in JSON alike, so only
+# reading the week can make it feasible; its spendPriority outranks work's.
+declared_alternate() {
+  local week=$1 profile="$TEST_ROOT/claude/alternate"
+  cat > "$profile/quota.toon" <<TOON
+quota[1]{provider,accountKey,scope,effectivePercentRemaining,spendPriority,runway,confidence,limitedBy,resetsAt}:
+  claude,default,all_models,0,0.8,exhausted_now,high,five_hour,2030-01-01T00:00:00Z
+exhaustion[0]:
+attention[0]:
+TOON
+  jq -cn --argjson week "$week" '{schemaVersion:5,providers:[{provider:"claude",source:"oauth",
+    windows:[{id:"five_hour",kind:"session",percentRemaining:0},{id:"seven_day",kind:"weekly",percentRemaining:$week}],
+    quotaSemantics:{effectiveAvailability:[{scope:"all_models",status:"known",effectivePercentRemaining:0,
+      limitingWindowIds:["five_hour"],selection:{spendPriority:0.8},runway:{status:"exhausted_now"}}]}}]}' > "$profile/quota.json"
+}
+quota codex work 0.5
+declared_alternate 70
+out=$(choose)
+[ "$out" = 'codex work' ] || fail "an undeclared seat with a spent five-hour window must not lead: $out"
+assert_grep 'exhausted quota' "$TEST_ROOT/evidence" 'the undeclared seat must be refused on its five-hour reading'
+printf 'alternate\n' > "$TEST_ROOT/home/config/claude-seat-no-session-window"
+out=$(choose)
+[ "$out" = 'claude alternate' ] || fail "a declared seat with weekly room must be chosen to lead: $out"
+declared_alternate 0
+out=$(choose)
+[ "$out" = 'codex work' ] || fail "a declared seat with no weekly room must still be refused: $out"
+rm "$TEST_ROOT/home/config/claude-seat-no-session-window"
+quota claude alternate 0.2
+pass 'leader selection reads a seat with no five-hour window on its week alone'
+
 # Exercise the real auto controller with a Codex incumbent. Only the transaction
 # preflight is stubbed; this test must never replace an agent or touch a backend.
 mkdir -p "$TEST_ROOT/code/bin" "$TEST_ROOT/codex/worker"

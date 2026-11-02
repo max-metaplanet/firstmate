@@ -342,7 +342,7 @@ No seat name is built into firstmate either: the declaration is the whole of how
 
 **What it changes.**
 For a seat the file names, the five-hour window is taken out of that seat's quota report before any decision reads it, and the account-level percentage is restamped from the weekly window's own reported figure.
-So the switch trigger, the destination gate, the launch hold, the dispatch hold, the quota floor and its re-add test, the rotation's preference order, and every line that prints headroom all read a seat that simply has no five-hour window.
+So the switch trigger, the destination gate, the launch hold, the dispatch hold, the quota floor and its re-add test, the rotation's preference order, leader selection for firstmate itself, and every line that prints headroom all read a seat that simply has no five-hour window.
 A spent five-hour window no longer holds a launch, routes a new worker elsewhere, rotates the lead away, or holds dispatch, and `status` and `list` stop printing a five-hour figure for it.
 
 **It is preferred, not exempt.**
@@ -476,7 +476,7 @@ When the active worker seat is the leader's seat, new dispatch chooses an eligib
 This departure can choose a seat with less weekly spare than the leader; destination minimum, resting, login, depletion, and manual exclusions still apply, and with a trigger set a candidate also needs five-hour room and must not itself read at or below the trigger, so the departure never lands on a seat the rotation would have to leave.
 After leaving, ordinary weekly-headroom comparison and the watch's remembered destination prevent repeated rotation.
 When the active worker seat's plan quota is used up and no `allow <usd>` extra-usage policy still covers it, new dispatch and the watch move off it even with no trigger set, to any eligible worker seat whatever its weekly spare, reaching the leader's seat only when no other seat qualifies; a used-up seat is never a destination, so the move does not flap back.
-No running worker moves, and `lead-restart` and `leader-destination` retain their existing behavior.
+No running worker moves, and the setting does not change how `lead-restart` and `leader-destination` choose firstmate's own seat.
 
 The preference reads the primary's current profile from the pid-bound runtime record beside its session lock, not from the caller's environment or the active worker seat.
 A local secondmate follows its recorded parent binding to that primary; a home declining seat inheritance or using a remote parent uses its own leader record.
@@ -507,6 +507,7 @@ Claude seats can share their history or keep separate `projects/` directories.
 The [restart preflight](../bin/fm-lead-restart.sh), including `--check`, prepares the current session's history for the destination before ending the old process and refuses a move it cannot make resumable.
 Without an explicit destination, `bin/fm-seat.sh leader-destination` evaluates configured Claude and Codex seats against their native catalogs, authentication evidence, quota, and startup runway, and ranks eligible candidates by quota-axi's `spendPriority`.
 It reports withheld candidates and uncertainty and refuses an unresolved tie rather than preferring a provider or array position.
+A seat declared to be on [a plan with no five-hour window](#a-plan-with-no-five-hour-window) is read as quota JSON with that window removed, so a spent five-hour window never withholds it, while every other gate here, including a week with no room, still applies to it.
 Automatic Codex destinations require the opt-in defined by [configuration.md](configuration.md#automatic-codex-leader-destinations-configlead-codex-auto); an explicit Codex destination remains available manually.
 Naming the seat firstmate is already on is refused unless `--refresh` is given; a refresh restarts firstmate in place on that seat to pick up a corrected launch environment, through the same persist gate and handover, and changes no seat record or rotation.
 

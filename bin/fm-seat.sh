@@ -1550,9 +1550,27 @@ leader_selection_config() {
   done
 }
 
+# leader_quota_snapshot <profile> <plan> <bound> <quota-axi-arg>...
+# One bounded quota-axi read of a leader candidate's profile. A seat whose plan
+# has no five-hour window (fm_seat_profile_plan) is always read as JSON by its
+# caller and comes back through fm_seat_drop_session_report, the same rewrite
+# every other policy reads, so the leader never sees a window that plan lacks.
+leader_quota_snapshot() {
+  local profile=$1 plan=$2 bound=$3 out
+  shift 3
+  out=$(fm_run_timed "$bound" env -u CLAUDE_SECURESTORAGE_CONFIG_DIR "$(fm_seat_env_name)=$profile" quota-axi "$@" 2>/dev/null </dev/null) || :
+  if [ "$plan" = no-session-window ]; then
+    fm_seat_drop_session_report "$out" 2>/dev/null || :
+  else
+    printf '%s\n' "$out"
+  fi
+}
+
 # leader-destination ranks named seats of BOTH native providers for the leader.
 # It reads each credential profile's default TOON once; only ambiguous evidence
-# permits one JSON fallback. The separate Claude dispatch policy gate is retained.
+# permits one JSON fallback. A seat declared to have no five-hour window is read
+# as JSON from the start, since TOON cannot be rewritten to drop that window,
+# and so takes no fallback. The separate Claude dispatch policy gate is retained.
 # Catalogs: Claude's --help native opus alias, Codex's profile models_cache.json.
 # Missing discovery stays explicit uncertainty; a catalog omitting the model
 # excludes it. Both use the strongest native class (opus / gpt-6.1-sol).
@@ -1562,7 +1580,7 @@ leader_selection_config() {
 # Codex destinations obey the single lead-codex-auto rollout switch above.
 cmd_leader_destination() {
   local horizon=180 current_provider current_profile provider seat profile model catalog reason
-  local snapshot evidence bound minimum decision candidates='' identity current_identity seen='' tied candidate used_json codex_auto
+  local snapshot evidence bound minimum decision candidates='' identity current_identity seen='' tied candidate used_json codex_auto plan
   local -a quota_args=()
   if [ "${1-}" = --horizon ]; then
     [ "$#" -eq 2 ] || usage
@@ -1625,20 +1643,27 @@ cmd_leader_destination() {
       if [ -z "$reason" ]; then
         quota_args=(--provider "$provider" --no-credential-refresh)
         [ "$provider" != codex ] || quota_args+=(--profile-only)
+        plan=$(fm_seat_profile_plan "$profile")
+        if [ "$plan" = no-session-window ]; then
+          quota_args+=(--json)
+          used_json=true
+        fi
         bound=$(fm_seat_read_bound) || bound=0
         snapshot=''
         [ "$bound" -gt 0 ] || reason='selection read deadline exhausted'
         if [ "$bound" -gt 0 ]; then
-          snapshot=$(fm_run_timed "$bound" env -u CLAUDE_SECURESTORAGE_CONFIG_DIR "$(fm_seat_env_name)=$profile" quota-axi "${quota_args[@]}" 2>/dev/null </dev/null) || :
+          snapshot=$(leader_quota_snapshot "$profile" "$plan" "$bound" "${quota_args[@]}")
         fi
-        evidence=$(printf '%s\n' "$snapshot" | python3 "$SCRIPT_DIR/fm-lead-seat.py" evidence "$provider" "$model" "$horizon" "$minimum" 2>/dev/null) || evidence='{"fallback":true}'
-        if [ "$(jq -r '.fallback' <<< "$evidence")" = true ]; then
+        evidence=$(printf '%s\n' "$snapshot" | python3 "$SCRIPT_DIR/fm-lead-seat.py" evidence "$provider" "$model" "$horizon" "$minimum" 2>/dev/null) || {
+          if [ "$used_json" = true ]; then evidence='{"reason":"quota evidence unreadable"}'; else evidence='{"fallback":true}'; fi
+        }
+        if [ "$used_json" = false ] && [ "$(jq -r '.fallback' <<< "$evidence")" = true ]; then
           used_json=true
           bound=$(fm_seat_read_bound) || bound=0
           snapshot=''
           [ "$bound" -gt 0 ] || reason='selection read deadline exhausted'
           if [ "$bound" -gt 0 ]; then
-            snapshot=$(fm_run_timed "$bound" env -u CLAUDE_SECURESTORAGE_CONFIG_DIR "$(fm_seat_env_name)=$profile" quota-axi "${quota_args[@]}" --json 2>/dev/null </dev/null) || :
+            snapshot=$(leader_quota_snapshot "$profile" "$plan" "$bound" "${quota_args[@]}" --json)
           fi
           evidence=$(printf '%s\n' "$snapshot" | python3 "$SCRIPT_DIR/fm-lead-seat.py" evidence "$provider" "$model" "$horizon" "$minimum" 2>/dev/null) || evidence='{"reason":"quota evidence unreadable"}'
         fi
@@ -1667,7 +1692,7 @@ cmd_leader_destination() {
     bound=$(fm_seat_read_bound) || { echo 'leader selection held: read deadline exhausted during tie fallback' >&2; return 1; }
     snapshot=''
     if [ "$bound" -gt 0 ]; then
-      snapshot=$(fm_run_timed "$bound" env -u CLAUDE_SECURESTORAGE_CONFIG_DIR "$(fm_seat_env_name)=$profile" quota-axi "${quota_args[@]}" 2>/dev/null </dev/null) || :
+      snapshot=$(leader_quota_snapshot "$profile" "$(fm_seat_profile_plan "$profile")" "$bound" "${quota_args[@]}")
     fi
     evidence=$(printf '%s\n' "$snapshot" | python3 "$SCRIPT_DIR/fm-lead-seat.py" evidence "$provider" "$model" "$horizon" "$minimum" 2>/dev/null) || evidence='{"reason":"quota evidence unreadable"}'
     candidates=$(printf '%s' "$candidates" | jq -c --arg provider "$provider" --arg profile "$profile" --argjson evidence "$evidence" '
