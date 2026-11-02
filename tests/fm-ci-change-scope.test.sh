@@ -435,8 +435,16 @@ test_local_mode_preserves_the_full_scope_signal() {
 }
 
 test_local_budget_covers_fast_tests_and_defers_long_or_live_work() {
-  local selected deferred weighted sum budget
+  local selected deferred weighted sum budget long long_ms
+  # A suite this case needs to be heavier than the whole local budget. State
+  # that precondition, so a timing-hint refresh that makes it cheap fails here
+  # with its reason instead of as a confusing selection mismatch.
+  long=tests/fm-seat.test.sh
+  long_ms=$(bash "$ROOT/bin/fm-test-run.sh" --list-weighted "$long" | cut -f1)
   SCOPE_MODE=--local classify bin/fm-quota-choose.sh
+  budget=$(scope_value local_budget_ms)
+  [ "$long_ms" -gt "$budget" ] \
+    || fail "$long no longer exceeds the local budget ($long_ms <= $budget): pick a heavier suite"
   assert_equals 'tests/fm-quota-choose.test.sh' "$(scope_value local_scripts)" "ordinary narrow coverage is unchanged"
   assert_equals '' "$(scope_value local_deferred)" "ordinary narrow coverage defers nothing"
 
@@ -448,10 +456,10 @@ test_local_budget_covers_fast_tests_and_defers_long_or_live_work() {
 
   SCOPE_MODE=--local classify tests/fm-backend-herdr-smoke.test.sh
   assert_equals 'tests/fm-nm-test-contract.test.sh' "$(scope_value local_scripts)" "all-live changes exercise the local Test contract"
-  SCOPE_MODE=--local classify tests/fm-supervision-host.test.sh tests/fm-quota-choose.test.sh
+  SCOPE_MODE=--local classify "$long" tests/fm-quota-choose.test.sh
   assert_equals false "$(scope_value full)" "a long narrow selection stays narrow"
   assert_equals 'tests/fm-quota-choose.test.sh' "$(scope_value local_scripts)" "a long narrow selection retains its fast portion"
-  assert_equals 'tests/fm-supervision-host.test.sh' "$(scope_value local_deferred)" "long serial work is deferred"
+  assert_equals "$long" "$(scope_value local_deferred)" "long serial work is deferred"
 
   SCOPE_MODE=--local classify tests/lib.sh
   selected=$(scope_value local_scripts)
@@ -459,7 +467,7 @@ test_local_budget_covers_fast_tests_and_defers_long_or_live_work() {
   budget=$(scope_value local_budget_ms)
   assert_contains "$SCOPE_OUT" 'full=true' "full scope remains conservative"
   [ -n "$selected" ] || fail "full scope cannot pass with zero fast tests"
-  assert_contains "$deferred" 'tests/fm-supervision-host.test.sh' "full scope defers long serial work"
+  assert_contains "$deferred" "$long" "full scope defers long serial work"
   assert_contains "$deferred" 'tests/fm-backend-herdr-smoke.test.sh' "full scope defers Herdr"
   assert_contains "$deferred" 'tests/fm-supervision-host-live-e2e.test.sh' "full scope defers live harnesses"
   # Repository-owned paths contain no whitespace. Ask the runner for weights
@@ -472,7 +480,7 @@ test_local_budget_covers_fast_tests_and_defers_long_or_live_work() {
 }
 
 test_local_budget_bounds_aggregate_work() {
-  local repo="$TMP_ROOT/local-budget" output
+  local repo="$TMP_ROOT/local-budget" output budget half
   mkdir -p "$repo/bin"
   cp "$SCOPE" "$repo/bin/fm-ci-change-scope.sh"
   cat > "$repo/bin/fm-test-run.sh" <<'SH'
@@ -488,17 +496,31 @@ esac
 SH
   chmod +x "$repo/bin/fm-test-run.sh"
   printf '%s\n' tests/a.test.sh > "$repo/paths"
-  output=$(TEST_WEIGHTS=$'100001\ttests/c.test.sh\n100000\ttests/b.test.sh\n100000\ttests/a.test.sh\n1\ttests/herdr.test.sh' \
+  # Derive the fixture weights from the budget the classifier reports, so
+  # resizing that budget cannot make this boundary test fail for the wrong
+  # reason.
+  output=$(TEST_WEIGHTS=$'1\ttests/a.test.sh' \
+    FM_CI_CHANGED_PATHS_FILE="$repo/paths" bash "$repo/bin/fm-ci-change-scope.sh" --local) \
+    || fail "budget probe classification failed"
+  budget=$(printf '%s\n' "$output" | sed -n 's/^local_budget_ms=//p')
+  case "$budget" in ''|*[!0-9]*) fail "classifier reported no numeric local budget" ;; esac
+  half=$((budget / 2))
+  output=$(TEST_WEIGHTS="$((half + 1))	tests/c.test.sh
+$half	tests/b.test.sh
+$half	tests/a.test.sh
+1	tests/herdr.test.sh" \
     FM_CI_CHANGED_PATHS_FILE="$repo/paths" bash "$repo/bin/fm-ci-change-scope.sh" --local) \
     || fail "aggregate budget classification failed"
   assert_contains "$output" 'local_scripts=tests/a.test.sh tests/b.test.sh' "the cheapest scripts run in deterministic order"
   assert_contains "$output" 'local_deferred=tests/herdr.test.sh tests/c.test.sh' "aggregate overflow and Herdr go to CI"
-  output=$(TEST_WEIGHTS=$'300000\ttests/exact.test.sh\n300001\ttests/over.test.sh' \
+  output=$(TEST_WEIGHTS="$budget	tests/exact.test.sh
+$((budget + 1))	tests/over.test.sh" \
     FM_CI_CHANGED_PATHS_FILE="$repo/paths" bash "$repo/bin/fm-ci-change-scope.sh" --local) \
     || fail "boundary classification failed"
   assert_contains "$output" 'local_scripts=tests/exact.test.sh' "a script at the budget is admitted"
   assert_contains "$output" 'local_deferred=tests/over.test.sh' "a script beyond the budget is deferred"
-  output=$(TEST_WEIGHTS=$'1000\ttests/relevant.test.sh\n3600001\ttests/long.test.sh' REFUSE_ALL=1 \
+  output=$(TEST_WEIGHTS="1000	tests/relevant.test.sh
+$((budget * 12 + 1))	tests/long.test.sh" REFUSE_ALL=1 \
     FM_CI_CHANGED_PATHS_FILE="$repo/paths" bash "$repo/bin/fm-ci-change-scope.sh" --local) \
     || fail "oversized mapped selection must not widen to the full inventory"
   assert_contains "$output" 'full=true' "oversized mapped work retains full scope information"

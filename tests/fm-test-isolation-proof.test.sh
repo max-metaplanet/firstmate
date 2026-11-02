@@ -238,7 +238,7 @@ test_list_exclusions_documents_reasons() {
 }
 
 test_family_map_labels_this_contract() {
-  local fam safe safe_max scheduled_first
+  local fam safe safe_max scheduled by_weight
   fam=$("$RUNNER" --list --family pure-contract-unit)
   printf '%s\n' "$fam" | grep -Fq 'tests/fm-test-isolation-proof.test.sh' \
     || fail "fm-test-isolation-proof.test.sh must map to pure-contract-unit"
@@ -251,9 +251,11 @@ test_family_map_labels_this_contract() {
   [ "$safe_max" -eq 4 ] || fail "runner exposed the wrong watcher family worker cap: $safe_max"
   safe_max=$("$RUNNER" --concurrent-safe-family-jobs-max pure-contract-unit)
   [ "$safe_max" -eq 4 ] || fail "runner exposed the wrong contract-unit family worker cap: $safe_max"
-  scheduled_first=$("$RUNNER" --list-scheduled --family watcher-wake-lock | head -n 1)
-  [ "$scheduled_first" = tests/fm-watch-triage.test.sh ] \
-    || fail "runner scheduled the watcher family out of longest-hint order: $scheduled_first"
+  scheduled=$("$RUNNER" --list-scheduled --family watcher-wake-lock)
+  by_weight=$("$RUNNER" --list-weighted --family watcher-wake-lock | cut -f2-)
+  [ -n "$scheduled" ] || fail "runner scheduled no watcher family members"
+  [ "$scheduled" = "$by_weight" ] \
+    || fail "runner scheduled the watcher family out of longest-hint order"
   pass "isolation-proof contract test is family-mapped"
 }
 
