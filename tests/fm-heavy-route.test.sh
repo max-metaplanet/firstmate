@@ -142,17 +142,23 @@ assert r.returncode == 0, r.stderr
 assert called(state)
 assert r.stdout.endswith('held=\n'), ('a routed command must not hold a local slot', r.stdout)
 assert 'vitest on Boat' in r.stderr, r.stderr
-assert 'bootstrapped' in r.stdout, r.stdout
+assert 'bootstrapped' not in r.stdout, r.stdout
+assert 'bootstrapped' in r.stderr, r.stderr
 assert 'boat_fixture_secret' not in r.stdout + r.stderr
 print('ok - a declared project runs the kind on Boat, outside the local slots')
 
-for name, payload, exit_code in (('json', '[{"filePath":"tracked.txt","messages":[]}]', 0),
-                                 ('failed', '[{"filePath":"tracked.txt","errorCount":1}]', 1),
-                                 ('empty', '', 0), ('bytes', 'a\n\nb\tend', 0)):
+for name, payload, exit_code, bootstrap in (
+    ('json', '[{"filePath":"tracked.txt","messages":[]}]', 0, 'true'),
+    ('failed', '[{"filePath":"tracked.txt","errorCount":1}]', 1, 'true'),
+    ('empty', '', 0, 'true'), ('bytes', 'a\n\nb\tend', 0, 'true'),
+    ('fallback-json', '[{"filePath":"tracked.txt","messages":[]}]', 0, 'false'),
+):
     p, work, config, state, env = case('stdout-' + name,
-                                      declaration="smokeproj bootstrap=true\n")
+        declaration='smokeproj bootstrap=' + shlex.quote(
+            'echo installation progress; echo setup diagnostic >&2; ' + bootstrap) + '\n')
     (work / 'eslint.py').write_text(
         'import sys\nassert sys.argv[1:] == [".", "--format", "json"]\n'
+        'sys.stderr.write("command diagnostic\\n")\n'
         'sys.stdout.write(%r)\nsys.exit(%d)\n' % (payload, exit_code))
     subprocess.run(['git', '-C', str(work), 'add', 'eslint.py'], check=True, capture_output=True)
     subprocess.run(['git', '-C', str(work), 'commit', '-qm', 'eslint fixture'],
@@ -162,8 +168,11 @@ for name, payload, exit_code in (('json', '[{"filePath":"tracked.txt","messages"
             command=(sys.executable, str(work / 'eslint.py'), '.', '--format', 'json'))
     assert called(state) and r.returncode == exit_code, (name, r.stderr)
     assert r.stdout == payload, (name, r.stdout)
+    assert 'installation progress' in r.stderr and 'setup diagnostic' in r.stderr, r.stderr
+    assert 'command diagnostic' in r.stderr, r.stderr
     assert 'fm-heavy-command-' not in r.stdout + r.stderr, (r.stdout, r.stderr)
-    if name in ('json', 'failed'):
+    assert ('running locally' in r.stderr) == (bootstrap == 'false'), r.stderr
+    if 'json' in name or name == 'failed':
         assert json.loads(r.stdout)[0]['filePath'] == 'tracked.txt', r.stdout
 print('ok - routed ESLint JSON and other output retain their exact bytes without protocol markers')
 
@@ -202,6 +211,24 @@ for name, kind, args in (
     ('eslint-output-equals', 'eslint', ('.', '--output-file=lint.txt')),
     ('eslint-output-short', 'eslint', ('.', '-o', 'lint.txt')),
     ('eslint-output-short-equals', 'eslint', ('.', '-o=lint.txt')),
+    ('eslint-cache', 'eslint', ('.', '--cache')),
+    ('eslint-cache-equals', 'eslint', ('.', '--cache=true')),
+    ('eslint-cache-value', 'eslint', ('.', '--cache', 'true')),
+    ('eslint-cache-negated', 'eslint', ('.', '--no-cache=false')),
+    ('eslint-cache-file', 'eslint', ('.', '--cache', '--cache-file', 'lint.cache')),
+    ('eslint-cache-file-equals', 'eslint', ('.', '--cache', '--cache-file=lint.cache')),
+    ('eslint-cache-location', 'eslint', ('.', '--cache', '--cache-location', 'cache')),
+    ('eslint-cache-location-equals', 'eslint', ('.', '--cache', '--cache-location=cache')),
+    ('eslint-suppress-all', 'eslint', ('.', '--suppress-all')),
+    ('eslint-suppress-all-equals', 'eslint', ('.', '--suppress-all=true')),
+    ('eslint-suppress-all-value', 'eslint', ('.', '--suppress-all', 'true')),
+    ('eslint-suppress-rule', 'eslint', ('.', '--suppress-rule', 'no-unused-vars')),
+    ('eslint-suppress-rule-equals', 'eslint', ('.', '--suppress-rule=no-unused-vars')),
+    ('eslint-prune', 'eslint', ('.', '--prune-suppressions')),
+    ('eslint-prune-equals', 'eslint', ('.', '--prune-suppressions=true')),
+    ('eslint-prune-value', 'eslint', ('.', '--prune-suppressions', 'true')),
+    ('eslint-suppressions-location', 'eslint', ('.', '--suppressions-location', 's.json')),
+    ('eslint-suppressions-location-equals', 'eslint', ('.', '--suppressions-location=s.json')),
 ):
     p, work, config, state, env = case('writes-' + name, declaration=DECLARED)
     assert publish(config, env).returncode == 0
@@ -214,7 +241,11 @@ print('ok - a command whose outputs would stay on Boat runs locally')
 
 for index, args in enumerate((('--fix=false',), ('--fix', 'false'),
                               ('--no-fix',), ('--no-fix=true',),
-                              ('--no-fix', 'true'))):
+                              ('--no-fix', 'true'), ('--cache=false',),
+                              ('--cache', 'false'), ('--no-cache',),
+                              ('--suppress-all=false',), ('--suppress-all', 'false'),
+                              ('--prune-suppressions=false',),
+                              ('--prune-suppressions', 'false'))):
     p, work, config, state, env = case('eslint-readonly-' + str(index), declaration=DECLARED)
     assert publish(config, env).returncode == 0
     r = run(work, env, kind='eslint', command=('bash', '-c', REPORT, 'eslint', '.', *args))

@@ -73,7 +73,7 @@ into the worktree stays local: next build, a tsc build or a tsc whose resolved
 configuration (`tsc --showConfig`, run outside the preload) does not prove
 noEmit with incremental and composite disabled, a tsc writing traces or CPU
 profiles, vitest updating snapshots or writing coverage or an output file, and
-eslint fixing files or writing an output file. A vitest configuration file that
+eslint fixing files or writing reports, caches or suppressions. A vitest configuration file that
 writes coverage or a reporter's output file is invisible here, so such a project
 declares vitest local-only. Remote output is captured and printed when the
 command finishes rather than streamed.
@@ -326,7 +326,10 @@ def writes_worktree(kind, command):
         return any(name in ("-u", "--update") or name.startswith(
             ("--coverage", "--outputfile")) for name, _ in options)
     if kind == "eslint":
-        return any((name == "--fix" and value != "false") or name == "-o" or
+        return any((name in ("--fix", "--cache", "--suppress-all", "--prune-suppressions")
+                    and value != "false") or name in (
+                        "-o", "--cache-file", "--cache-location", "--suppress-rule",
+                        "--suppressions-location") or
                    name.startswith("--output-file") for name, value in options)
     return False
 
@@ -369,10 +372,10 @@ def boat(settings, command, kind, home, bin_dir, root, inputs):
     output = job / "boat"
     relative = os.path.relpath(os.getcwd(), str(root))
     dispatched = "fm-heavy-command-" + os.urandom(16).hex()
-    script = ["set -euo pipefail", settings["bootstrap"]]
+    script = ["set -euo pipefail", "{", settings["bootstrap"], "} >&2"]
     if relative != ".":
         script.append("cd " + shlex.quote(relative))
-    script.append("printf '\\n%s\\n' " + shlex.quote(dispatched))
+    script.append("printf '\\n%s\\n' " + shlex.quote(dispatched) + " >&2")
     script.append("exec " + shlex.join(remote_command(command, root, SOURCE / "fm-build-lock.js")))
     adapter = [str(Path(bin_dir) / "fm-boat-run.sh"), "run",
                "--worktree", str(root), "--output", str(output)]
@@ -386,10 +389,12 @@ def boat(settings, command, kind, home, bin_dir, root, inputs):
     print("heavy-route: %s on Boat; output is printed when it finishes; evidence %s"
           % (kind, output / "result.json"), file=sys.stderr, flush=True)
     finished = subprocess.run(adapter, env=dict(os.environ, FM_HOME=str(home)), check=False,
-                              stdout=subprocess.PIPE)
-    sys.stdout.buffer.write(finished.stdout.replace(
-        ("\n" + dispatched + "\n").encode(), b"", 1))
+                              capture_output=True)
+    sys.stdout.buffer.write(finished.stdout)
     sys.stdout.buffer.flush()
+    sys.stderr.buffer.write(finished.stderr.replace(
+        ("\n" + dispatched + "\n").encode(), b"", 1))
+    sys.stderr.buffer.flush()
     try:
         result = json.loads((output / "result.json").read_text())
     except (OSError, ValueError):

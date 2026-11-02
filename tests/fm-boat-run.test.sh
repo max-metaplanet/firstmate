@@ -147,9 +147,23 @@ print('ok - remote failure, timeout, missing and symlink artifacts all delete th
 p, state, env = case('stderr')
 r = launch(p, env, 'echo failure >&2; exit 9')
 assert r.returncode == 9, r.stderr
+assert r.stdout == b'', r.stdout
+assert b'failure\n' in r.stderr, r.stderr
 assert b'failure' in (p / 'output/command.log').read_bytes()
 empty(state)
 print('ok - command log includes stderr on nonzero remote exit')
+
+for mode in ('streaming', 'blocking'):
+    p, state, env = case('streams-' + mode, {'blocking_exec': mode == 'blocking'})
+    r = launch(p, env, 'printf \'{"ok":true}\'; printf diagnostic >&2')
+    assert r.returncode == 0, (mode, r.stderr)
+    assert r.stdout == b'{"ok":true}', (mode, r.stdout)
+    assert r.stderr.endswith(b'diagnostic'), (mode, r.stderr)
+    assert b'{"ok":true}' not in r.stderr, (mode, r.stderr)
+    log = (p / 'output/command.log').read_bytes()
+    assert b'{"ok":true}' in log and b'diagnostic' in log, log
+    empty(state)
+print('ok - streaming and blocking Boat responses keep stdout and stderr separate')
 
 p, state, env = case('unsafe-return', {'unsafe_artifact': True})
 r = launch(p, env, 'mkdir report; echo proof > report/log', ('--artifact', 'report'))

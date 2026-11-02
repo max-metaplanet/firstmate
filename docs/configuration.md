@@ -1835,11 +1835,12 @@ These heavy work items stay local even in a declared project:
 Declare any other command that needs credentials in `local-only` rather than letting it reach a machine that cannot authenticate it.
 The upload is HEAD's tracked files with their uncommitted edits plus every newly staged addition.
 An untracked file that is not ignored never travels, so while one exists the command stays local and the one-line notice names the first such file.
-Nothing a remote run writes comes back, so a command whose job is to write into the worktree stays local: a `tsc` build, a `tsc` whose resolved configuration does not prove `noEmit` with `incremental` and `composite` disabled, a `tsc` requesting `--generateTrace` or `--generateCpuProfile`, and a Vitest or ESLint run that updates snapshots, writes coverage, fixes files, or writes an output file.
+Nothing a remote run writes comes back, so a command whose job is to write into the worktree stays local: a `tsc` build, a `tsc` whose resolved configuration does not prove `noEmit` with `incremental` and `composite` disabled, a `tsc` requesting `--generateTrace` or `--generateCpuProfile`, and a Vitest or ESLint run that updates snapshots, writes coverage, fixes files, or writes reports, caches, or suppressions.
 A Vitest configuration file that enables coverage or sets a reporter `outputFile` is invisible to argument parsing, so a project with one declares `vitest` in `local-only`.
 A remote Vitest failure that reports a snapshot missing, mismatched, or not written is not a verdict, because the remote run is under CI where Vitest never writes a new snapshot; the command runs locally after one notice.
 
 Remote output is captured and printed when the command finishes rather than streamed, and only a completed remote run with confirmed command dispatch after successful setup is a verdict: that remote exit is the command's exit.
+Command stdout is forwarded unchanged; bootstrap diagnostics and command stderr are forwarded on stderr.
 [`bin/fm-boat-run.sh`](../bin/fm-boat-run.sh)'s help owns the upload, the per-account budget, the result and artifact files, and the cleanup.
 
 Like the heavy-slot count, the record a heavy command reads is machine-wide and written by every ship or scout launch, so a change applies at the next launch and the last launch on the machine wins.

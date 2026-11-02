@@ -465,21 +465,28 @@ class Boat:
                             capture_path=capture_path)
         frames = [json.loads(line) for line in payload.splitlines() if line.strip()]
         output = bytearray()
+        streams = {'stdout': bytearray(), 'stderr': bytearray()}
         terminal = None
         for frame in frames:
             if frame.get('type') in ('stdout', 'stderr'):
-                output.extend(frame['data'].encode())
+                data = frame['data'].encode()
+                streams[frame['type']].extend(data)
+                output.extend(data)
             elif 'exitCode' in frame:
                 terminal = frame
-                output.extend(frame.get('stdout', '').encode())
-                output.extend(frame.get('stderr', '').encode())
+                for name in streams:
+                    data = frame.get(name, '').encode()
+                    streams[name].extend(data)
+                    output.extend(data)
         if capture_path is not None:
             capture_path.write_bytes(output)
+        sys.stderr.buffer.write(streams['stderr'])
+        sys.stderr.buffer.flush()
         if terminal is None or terminal.get('exitCode') != 0 or any(
                 terminal.get(field) for field in ('stdoutTruncated', 'stderrTruncated',
                                                   'timedOut', 'launcherFailed', 'oomKilled')):
             raise Failure('Boat command result missing, failed or truncated')
-        return bytes(output)
+        return bytes(streams['stdout'])
 
     def cleanup(self, job, record):
         if job['cleanup'] == 'deleted':
