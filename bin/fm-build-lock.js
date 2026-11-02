@@ -38,8 +38,12 @@ const ENTRIES = new Set(['next', 'vitest', 'vitest.mjs', 'playwright', 'cli.js',
 // names it: an option, an `--option=value`, or the value of an option that
 // takes one (a config, formatter, output file, or extension list) is not a
 // file to check and must not exempt the run. The run is a one-file check only
-// when that operand is its only one and names an existing regular file: a
-// directory or a quoted glob the tool expands itself stands for many files.
+// when that operand is its only one, has a source extension, and names an
+// existing regular file: a directory or a quoted glob the tool expands itself
+// stands for many files, and a config such as a tsconfig is not a source file.
+// A tsc build (-b or --build) builds whole projects and is heavy whatever its
+// operands, unless it watches.
+const SOURCE_FILE = /[^/\\]\.[cm]?[jt]sx?$/i;
 const ESLINT_VALUES = new Set(['-c', '--config', '-f', '--format', '-o', '--output-file',
   '--rulesdir', '--resolve-plugins-relative-to', '--ignore-path', '--ignore-pattern', '--ext',
   '--parser', '--parser-options', '--plugin', '--rule', '--global', '--env', '--max-warnings',
@@ -51,7 +55,7 @@ const TSC_VALUES = new Set(['-p', '--project', '--outfile', '--out', '--outdir',
 const namesSourceFile = (args, valueOptions) => {
   const operands = args.filter((a, i) => !a.startsWith('-') &&
     !(i > 0 && valueOptions.has(args[i - 1].toLowerCase())));
-  if (operands.length !== 1) return false;
+  if (operands.length !== 1 || !SOURCE_FILE.test(operands[0])) return false;
   try { return require('fs').statSync(operands[0]).isFile(); } catch { return false; }
 };
 const HEAVY_SCRIPT = 'queue-preflight';
@@ -78,8 +82,10 @@ const heavy = (script, args) => {
       a === '--print-config') && !namesSourceFile(args, ESLINT_VALUES);
   }
   if (script.endsWith('/typescript/bin/tsc') || script.endsWith('/typescript/lib/tsc.js')) {
-    return !args.some((a) => a === '--version' || a === '-v' || a === '--init' ||
-      a === '--watch' || a === '-w') && !namesSourceFile(args, TSC_VALUES);
+    if (args.some((a) => a === '--version' || a === '-v' || a === '--init' ||
+      a === '--watch' || a === '-w')) return false;
+    if (args.some((a) => a === '-b' || a.toLowerCase() === '--build')) return true;
+    return !namesSourceFile(args, TSC_VALUES);
   }
   return false;
 };

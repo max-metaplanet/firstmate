@@ -567,7 +567,7 @@ function run(fs) {
             cli.chmod(0o755)
         localbin = scratch / 'node_modules/.bin'
         localbin.mkdir(exist_ok=True)
-        for name in ('vitest', 'playwright', 'playwright-package', 'eslint'):
+        for name in ('vitest', 'playwright', 'playwright-package', 'eslint', 'tsc'):
             link = localbin / name if name != 'playwright-package' else localbin / 'package' / 'playwright'
             link.parent.mkdir(exist_ok=True)
             link.symlink_to(scratch / entries[name][0])
@@ -576,7 +576,8 @@ function run(fs) {
         # The one-file exemption needs the named file to exist where the
         # command resolves it, so every case runs in the scratch tree.
         for rel in ('one-file.ts', 'src/one.js', 'src/one.tsx', 'src/one.ts', 'src/a.ts',
-                    'src/b.ts', 'app/[locale]/page.tsx'):
+                    'src/b.ts', 'app/[locale]/page.tsx', 'tsconfig.json',
+                    'apps/admin-center/tsconfig.json'):
             (scratch / rel).parent.mkdir(parents=True, exist_ok=True)
             (scratch / rel).write_text('export {};\n')
         # Off a TTY a bare vitest runs the suite once, as a package test script does.
@@ -614,6 +615,12 @@ function run(fs) {
             ('eslint', ['src'], False),
             ('tsc', ['--noEmit', 'src/**/*.ts'], False),
             ('tsc', ['--noEmit', 'src'], False),
+            # A real config file is not a source file, and a build builds whole
+            # projects, including through the .bin link npx resolves.
+            ('tsc', ['--noEmit', 'tsconfig.json'], False),
+            ('tsc', ['-b', 'tsconfig.json'], False),
+            ('tsc', ['--build', 'apps/admin-center/tsconfig.json'], False),
+            ('tsc-bin', ['-b', 'tsconfig.json'], False),
             ('next', ['build'], False),
         ]
         light = [
@@ -627,6 +634,10 @@ function run(fs) {
             ('tsc', ['--noEmit', 'src/one.js']),
             ('tsc', ['--watch', '-p', 'tsconfig.json']),
             ('tsc', ['-w']),
+            # A watch build never exits, so watch wins over the build rule.
+            ('tsc', ['-b', '--watch']),
+            ('tsc', ['-b', '-w']),
+            ('tsc', ['--build', '--version']),
             ('eslint', ['--version']),
             ('eslint', ['src/one.tsx']),
             ('eslint', ['-c', 'eslint.config.mjs', 'src/one.ts']),
