@@ -30,4 +30,6 @@ The transcript rows above the composer are composed, and the PR number in the fo
 | The above-list shape keeps reading correctly | A lab pane of the same build | Same |
 
 Passing replay assertions establish behavior for these explicit inputs.
-The timing half of the same failure - the composer still reading empty 1.2s after the text was typed - is not representable in a static frame and is pinned by the stubbed call sequences in [`../../fm-backend-herdr.test.sh`](../../fm-backend-herdr.test.sh) instead.
+No frame can establish that this is still the shape Claude renders, and no frame can carry timing.
+Both of those are the live guard's job: `FM_HERDR_SUBMIT_CONFIRM_LIVE=1 tests/fm-herdr-submit-confirm-live-e2e.test.sh` submits a real `/exit` to a real Claude behind its real completion list, and separately requires the real composer to paint typed text inside the payload proof's bounded window.
+The timing half of the same failure - the composer still reading empty 1.2s after the text was typed - is pinned portably by the stubbed call sequences in [`../../fm-backend-herdr.test.sh`](../../fm-backend-herdr.test.sh).

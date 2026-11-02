@@ -1978,7 +1978,7 @@ fm_composer_blocking_dialog() {  # <screen> -> dialog name
 # stop when you exit:" line and above its first option row, so the list comes
 # from the harness rather than from a guess about what the worker was running.
 # Recorded 2026-11-02 on Claude Code 2.1.316, which lists one row per task in
-# the form `shell Â· sleep 900`.
+# the form `shell · sleep 900`.
 # Prints the rows joined by `; ` and returns 0 only when the screen is that
 # picker and names at least one task. Anything else returns 1 and prints
 # nothing, because an empty list must never read as "nothing will be lost".

@@ -1665,6 +1665,55 @@ FM_HERDR_SUBMIT_CONFIRM_LIVE=1 tests/fm-herdr-submit-confirm-live-e2e.test.sh
 ok - live Herdr submit confirm: Claude Code (2.1.283 (Claude Code)) on herdr 0.9.0 proves and submits a typed /exit behind its command popup
 ```
 
+### Claude exit refused by a completion list below the composer, and by a slow paint
+
+Measured 2026-11-02 against Herdr 0.9.1 and Claude Code 2.1.316: a live worker pane whose exit command had just been refused, plus ten isolated `fm-lab-` shapes that did not reproduce it.
+
+`bin/fm-control.sh exit` reported that the exit command could not be sent, for Claude workers whose panes were idle and whose composers read empty before the send.
+The capture taken while `/exit` was in the composer shows two independent causes in the same pre-Enter payload proof.
+
+The first is the completion list.
+Claude marks the selected row of its slash-command list with the same agent prompt glyph its composer uses, and draws that list on either side of the composer.
+The section above records the shape that draws it above; this pane drew it BELOW the composer's closing rule, so the bottom-most agent-glyph row on the screen was the list's own selected row and the composer read returned `/exit Exit the CLI /context Visualize current context usage ...` instead of the composer.
+Capturing the full visible viewport does not help, because the list is inside the viewport too.
+`_fm_composer_row_is_completion_popup` therefore excludes the list's two-column `/name` + gap + description rows from the composer scan, so the composer is selected wherever the list is drawn; a line an operator typed as `/cmd   argument` reads as that shape too, which can only refuse a send, never misdirect one.
+
+The second is timing.
+`pane send-text` returns before the harness has painted the text, and the `idle`, `typed-0.3s` and `typed-1.2s` captures of this pane are byte-identical: 1.2s after the send nothing had painted, and the typed command first appeared at 3.0s.
+A lab pane of the same build painted in 0.10-0.60s with a 0.32s cost per read, so one read after a fixed settle decides a race, and losing it clears the caller's payload and reports it unsent.
+`fm_backend_herdr_composer_payload_settle` samples the composer within a bounded window instead (`FM_BACKEND_HERDR_PROOF_POLLS`, default 10, and `FM_BACKEND_HERDR_PROOF_POLL_INTERVAL`, default 0.4s).
+A read that fails or comes back empty is a paint in flight and is taken again; a read that comes back with other content is the head-truncation shape the proof exists to catch and returns at once, so the vim command-mode recovery keeps its timing.
+The window is the same for every caller: the caller's settle has already elapsed when the first read is taken, and what remains to size is how long a paint is worth waiting for.
+A refused proof now names the read that condemned the payload and quotes what the composer held, because the verdict alone left a supervisor nothing to act on.
+
+Neither cause requires vim mode or a background shell: the refusing pane was in `editorMode: normal` and had a background shell, and the lab reproduced the failure with neither.
+
+Portable regressions, which fail against the single read and the unguarded scan and pass against both fixes:
+
+```sh
+tests/fm-composer-lib.test.sh
+tests/fm-backend-herdr.test.sh
+```
+
+```text
+ok - fm_composer_background_work_items: reads the tasks the exit picker says it will stop, and reports nothing for any other screen
+ok - fm_backend_herdr_send_text_submit: a typed /exit is proven and submitted when Claude draws its completion list below the composer
+ok - fm_backend_herdr_send_text_submit: a composer that paints the typed payload a read late is proven, not cleared
+ok - fm_backend_herdr_send_text_submit: a viewport that cannot be read during the proof is read again, not treated as an unsent payload
+ok - fm_backend_herdr_send_text_submit: the bounded proof budget still ends in the existing refusal when the payload never appears
+```
+
+The replay frames and their provenance are in [`../../tests/captures/claude-v2.1.316/README.md`](../../tests/captures/claude-v2.1.316/README.md).
+A static frame cannot establish that this is still the shape Claude renders, and cannot carry timing, so the live guard requires the real composer to paint typed text inside the window and fails naming the harness and version when it does not:
+
+```sh
+FM_HERDR_SUBMIT_CONFIRM_LIVE=1 tests/fm-herdr-submit-confirm-live-e2e.test.sh
+```
+
+```text
+ok - live Herdr paint window: Claude Code (2.1.316 (Claude Code)) on herdr 0.9.1 painted typed text inside the payload proof's 10-read window (0.46s)
+```
+
 ### Claude background-task exit picker
 
 The picker structure was measured 2026-10-05 against Claude Code 2.1.289 in an isolated tmux session.
@@ -1675,7 +1724,23 @@ The same strings quoted above a normal composer, as a diff, this note, or a test
 Ordinary text submit still stops after the Enter that opened the picker and never confirms it; it types nothing when the picker was already open.
 Lifecycle exit now confirms that recognised selection once after rechecking the live viewport, including a picker that was already open or rendered after submit, and still requires the runtime's agent-death proof.
 The portable regressions in `tests/fm-control.test.sh` pin those three timing cases, the no-repeat rule for a stuck picker, and refusal of other selections.
-A valid isolated live-harness proof of that lifecycle confirmation remains pending; the earlier observation establishes the picker structure, not the new lifecycle action.
+
+Confirming that selected row stops the background work the picker lists, and the harness does not resume it.
+The picker is the only screen that names that work, under its own "The following will stop when you exit:" line and above its first option row, so `fm_composer_background_work_items` reads the list from there and `bin/fm-control.sh` reports it before the confirming Enter removes that screen.
+The verb already means stop, so the confirmation itself is unchanged; a picker whose list cannot be read is reported as unnamed rather than silently, because silence reads as nothing having been running.
+
+Measured live 2026-11-02 against Claude Code 2.1.316 on Herdr 0.9.1 in an isolated `fm-lab-` session, which also supplies the lifecycle-confirmation proof the earlier structural observation could not:
+
+```sh
+FM_HERDR_SUBMIT_CONFIRM_LIVE=1 tests/fm-herdr-submit-confirm-live-e2e.test.sh
+```
+
+```text
+ok - live Herdr exit picker: Claude Code (2.1.316 (Claude Code)) on herdr 0.9.1 names the background work its exit picker stops (shell · sleep 900)
+```
+
+A real Claude was asked to start `sleep 900` as a background shell, and the rendered shell count was required before `/exit` was typed, so the case cannot pass without a background task actually running.
+The picker then classified as the recognised dialog, its list read back as the running shell, and the confirming Enter ended the agent.
 A stopped agent whose pane still shows the picker text needs no confirmation.
 The watcher reads the picker with the same matcher on the stale-path capture it already takes for a worker.
 A worker pane parked on it keeps the ordinary stale triage and schedule, and its plain stale reason and its final wedge escalation reason name the picker after `blocked-on-prompt:`; the deferral, dead-record, and declared-wait recheck reasons do not.
