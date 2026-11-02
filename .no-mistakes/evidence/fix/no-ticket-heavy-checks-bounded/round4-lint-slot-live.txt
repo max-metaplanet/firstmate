@@ -1,0 +1,14 @@
+## S5 lint of bin/fm-spawn.sh (full extended analysis, source following) runs in a heavy slot under a per-root memory cap
+$ FM_BUILD_LOCK_FILE=<private pool, 1 slot> /usr/bin/time -v bin/fm-lint.sh bin/fm-spawn.sh
+fm-lint: bin/fm-spawn.sh hit the memory ceiling with --external-sources (reason=memory rc=137); retried without it and without extended analysis; fallback passed with cross-file codes excluded (SC1091,SC2034,SC2153,SC2329)
+fm-lint.sh: ShellCheck 0.11.0 (pinned 0.11.0)
+fm-lint.sh: full ShellCheck extended analysis enabled
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:53.09
+	Maximum resident set size (kbytes): 162248
+exit=0 wall=53s
+
+## S6 a second lint waits while another heavy command holds the only slot
+waiting for a heavy slot (1 on this machine, held by pid 481984)
+fm-lint.sh: ShellCheck 0.11.0 (pinned 0.11.0)
+fm-lint.sh: fast local mode; ShellCheck extended analysis disabled
+second lint finished after 13s (holder slept 12s)

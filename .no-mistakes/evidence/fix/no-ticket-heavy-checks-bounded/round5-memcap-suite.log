@@ -1,0 +1,14 @@
+FM_TEST_BEGIN 2026-11-02T01:36:49Z tests/fm-memcap.test.sh family=unclassified expected_gate_skip=none
+ok - --mechanism names exactly one of cgroup, rlimit, or none
+ok - --budget-bytes reports a positive cap that --share divides
+ok - Linux budgets use 45 percent of readable MemTotal divided across shares
+ok - a non-positive share, a zero cap, and a missing command each exit 2 by name
+ok - a capped command keeps its stdin, stdout, stderr, and exit status
+ok - reporting and exec modes preserve literal arguments and shell programs
+ok - systemd without expansion control is unavailable and fallback still executes
+ok - uncapped compatibility preserves execution and points to the bounded Boat route
+ok - a runaway dies at its cap and names itself on stderr with status 137
+FM_TEST_END 2026-11-02T01:36:57Z tests/fm-memcap.test.sh exit=0 duration_ms=7354 gate_skip=false
+FM_TEST_SUMMARY total=1 failed=0 skipped_gate=0 duration_ms=7658
+FM_TEST_SUMMARY_FAMILY family=unclassified count=1 duration_ms=7354 failed=0
+FM_TEST_SLOWEST rank=1 script=tests/fm-memcap.test.sh duration_ms=7354

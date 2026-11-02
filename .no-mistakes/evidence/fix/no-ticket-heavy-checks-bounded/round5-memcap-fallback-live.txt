@@ -1,0 +1,9 @@
+## S7a systemd too old for --expand-environment=no: probe refuses cgroup
+rlimit
+## S7b same host: 2 GiB allocation is still bounded by the rlimit fallback
+MemoryError
+exit=1
+## S7c no session bus: rlimit selected, literal argv preserved
+rlimit
+lit-${UNSET_XYZ}
+exit=0

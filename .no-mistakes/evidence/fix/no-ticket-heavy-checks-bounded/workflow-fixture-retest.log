@@ -1,0 +1,11 @@
+PRODUCT EXIT=1
+fm-lint.sh: ShellCheck 0.11.0 (pinned 0.11.0)
+fm-lint.sh: local changed-file mode; ShellCheck source following disabled
+fm-lint.sh: no changed lint targets
+awk: cmd. line:194: fatal: cannot open file `bin/backends/*.sh' for reading: No such file or directory
+fm-lint-workflows.sh: actionlint 1.7.12 (pinned 1.7.12)
+.github/workflows/ci.yml:12:0: could not parse as YAML: found character that cannot start any token [syntax-check]
+   |
+12 | @AGENTS.md
+   | 
+ok - fm-lint.sh default path catches a self-broken ci.yml

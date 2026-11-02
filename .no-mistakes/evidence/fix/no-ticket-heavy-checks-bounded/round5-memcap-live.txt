@@ -1,0 +1,20 @@
+# head bda04f106fd0ae2beaf89a1ca2d7e4425a3882f9
+## mechanism / budget
+cgroup
+5627392819
+## S1 runaway allocator (2 GiB) under 256 MiB cap
+Killed
+fm-memcap: python3 was killed by its 268435456-byte memory cap
+exit=137
+## S1b control: 64 MiB under 4 GiB cap
+64MiB fine
+exit=0
+## S2 literal ${UNSET} argv (reporting, --exec)
+inner|lit-${UNSET_XYZ}
+exit=0
+inner|lit-${UNSET_XYZ}
+exit=0
+## S3 exit status passthrough
+exit=7
+## S4 heavy-slot wrapper runs a runaway under the shared cap (private 1-slot pool)
+exit=137

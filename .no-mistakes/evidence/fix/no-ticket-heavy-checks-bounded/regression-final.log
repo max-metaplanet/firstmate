@@ -1,0 +1,7 @@
+Automated boundary check: real lint orchestration; injected ShellCheck and workflow analyzer responses. No actual linter executed. Does not prove YAML parsing.
+ok - fm-lint.sh default path catches a self-broken ci.yml (present wrapper)
+ok - fm-lint.sh default path catches a self-broken ci.yml (missing wrapper)
+ok - fm-lint.sh default path catches a self-broken ci.yml (nonexecutable wrapper)
+
+
+exit 0

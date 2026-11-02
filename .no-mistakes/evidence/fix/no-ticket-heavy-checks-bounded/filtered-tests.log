@@ -1,0 +1,12 @@
+FILTERED CASE fm-memcap test_unsupported_expansion_flag_disables_cgroup
+ok - systemd without expansion control is unavailable and fallback still executes
+FILTERED CASE fm-memcap test_uncapped_warnings_name_the_bounded_route
+ok - uncapped compatibility preserves execution and points to the bounded Boat route
+FILTERED CASE fm-lint test_memory_failure_retries_without_external_sources
+ok - memory failures retry without source following, exclude cross-file codes, and preserve a real fallback finding
+FILTERED CASE fm-lint test_memory_fallback_spends_only_the_remaining_root_deadline
+ok - a memory fallback runs only within the time left in its root's original deadline
+FILTERED CASE fm-lint test_the_default_memory_cap_is_divided_across_workers
+ok - the default per-root memory cap is divided across the workers that run at once
+FILTERED CASE fm-lint test_require_bounds_refuses_when_enforcement_is_missing
+ok - FM_LINT_REQUIRE_BOUNDS refuses missing enforcement, warns without it, and proceeds when enforceable

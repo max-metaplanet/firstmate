@@ -1,0 +1,13 @@
+## S4a old systemd that rejects --expand-environment=no: probe must not pick cgroup
+$ PATH=<old-systemd-shim>:$PATH bin/fm-memcap.sh --mechanism
+rlimit
+$ ... bin/fm-memcap.sh --bytes 268435456 -- python3 <allocate 2 GiB>  (rlimit fallback still bounds it)
+                                 ~~~~~~~~~^^^^^^^^^^^^^^
+MemoryError
+exit=1
+
+## S4b capless host (no user scope, address-space limit refused): warn once, name Boat, still run
+none
+fm-memcap: this host offers no memory-cap mechanism (no usable systemd user scope, no address-space limit); running sh uncapped; use bin/fm-boat-run.sh to run it bounded
+command-ran
+exit=0

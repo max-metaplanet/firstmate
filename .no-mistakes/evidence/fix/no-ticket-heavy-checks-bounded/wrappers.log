@@ -1,0 +1,30 @@
+COMMAND ['~/.no-mistakes/worktrees/c0c4fcacb05a/01M6CKMJTR75XFWT49Q5D3ZW0F/bin/fm-memcap.sh', '--mechanism']
+EXIT 0 STDOUT cgroup STDERR 
+COMMAND ['~/.no-mistakes/worktrees/c0c4fcacb05a/01M6CKMJTR75XFWT49Q5D3ZW0F/bin/fm-memcap.sh', '--bytes', '134217728', '--', '/usr/bin/python3', '-c', 'import sys,json; print(json.dumps(sys.argv[1:]))', '', 'two words', '${FM_MEMCAP_ARGV_UNSET}', '$HOME', '*', 'a"b']
+EXIT 0 STDOUT ["", "two words", "${FM_MEMCAP_ARGV_UNSET}", "$HOME", "*", "a\"b"] STDERR 
+COMMAND ['~/.no-mistakes/worktrees/c0c4fcacb05a/01M6CKMJTR75XFWT49Q5D3ZW0F/bin/fm-memcap.sh', '--bytes', '134217728', '--', '/bin/sh', '-c', 'v=inner; printf "%s" "${v}"']
+EXIT 0 STDOUT inner STDERR 
+COMMAND ['~/.no-mistakes/worktrees/c0c4fcacb05a/01M6CKMJTR75XFWT49Q5D3ZW0F/bin/fm-memcap.sh', '--exec', '--bytes', '134217728', '--', '/usr/bin/python3', '-c', 'import sys,json; print(json.dumps(sys.argv[1:]))', '', 'two words', '${FM_MEMCAP_ARGV_UNSET}', '$HOME', '*', 'a"b']
+EXIT 0 STDOUT ["", "two words", "${FM_MEMCAP_ARGV_UNSET}", "$HOME", "*", "a\"b"] STDERR 
+COMMAND ['~/.no-mistakes/worktrees/c0c4fcacb05a/01M6CKMJTR75XFWT49Q5D3ZW0F/bin/fm-memcap.sh', '--exec', '--bytes', '134217728', '--', '/bin/sh', '-c', 'v=inner; printf "%s" "${v}"']
+EXIT 0 STDOUT inner STDERR 
+COMMAND ['~/.no-mistakes/worktrees/c0c4fcacb05a/01M6CKMJTR75XFWT49Q5D3ZW0F/bin/fm-build-lock.py', '--', '/usr/bin/python3', '-c', 'import sys,json; print(json.dumps(sys.argv[1:]))', '', 'two words', '${FM_MEMCAP_ARGV_UNSET}', '$HOME', '*', 'a"b']
+EXIT 0 STDOUT ["", "two words", "${FM_MEMCAP_ARGV_UNSET}", "$HOME", "*", "a\"b"] STDERR 
+COMMAND ['~/.no-mistakes/worktrees/c0c4fcacb05a/01M6CKMJTR75XFWT49Q5D3ZW0F/bin/fm-build-lock.py', '--', '/bin/sh', '-c', 'v=inner; printf "%s" "${v}"']
+EXIT 0 STDOUT inner STDERR 
+COMMAND ['~/.no-mistakes/worktrees/c0c4fcacb05a/01M6CKMJTR75XFWT49Q5D3ZW0F/bin/fm-memcap.sh', '--bytes', '67108864', '--', '/usr/bin/python3', '-c', 'a=bytearray(128*1024*1024); print("UNBOUNDED")']
+EXIT 137 STDOUT  STDERR Killed
+Terminated
+fm-memcap: python3 was killed by its 67108864-byte memory cap
+SCENARIO runaway cannot allocate 128 MiB under 64 MiB cap: PASS
+COMMAND ['~/.no-mistakes/worktrees/c0c4fcacb05a/01M6CKMJTR75XFWT49Q5D3ZW0F/bin/fm-memcap.sh', '--effective-bytes', '--share', '1']
+EXIT 0 STDOUT 5627392819 STDERR 
+COMMAND ['~/.no-mistakes/worktrees/c0c4fcacb05a/01M6CKMJTR75XFWT49Q5D3ZW0F/bin/fm-memcap.sh', '--effective-bytes', '--share', '2']
+EXIT 0 STDOUT 2813696409 STDERR 
+SCENARIO nested wrapper retains identity and finite bound; inherited ceiling respected: PASS
+COMMAND ['~/.no-mistakes/worktrees/c0c4fcacb05a/01M6CKMJTR75XFWT49Q5D3ZW0F/bin/fm-build-lock.py', '--', '/bin/sh', '-c', 'printf acquired; exit 7']
+EXIT 7 STDOUT acquired STDERR waiting for a heavy slot (1 on this machine, held by pid 2175554)
+COMMAND ['~/.no-mistakes/worktrees/c0c4fcacb05a/01M6CKMJTR75XFWT49Q5D3ZW0F/bin/fm-build-lock.py', '--', '/bin/sh', '-c', 'printf released']
+EXIT 0 STDOUT released STDERR 
+SCENARIO contention waits visibly, status 7 propagates, exited holder releases slot: PASS
+ALL LIVE WRAPPER SCENARIOS PASSED

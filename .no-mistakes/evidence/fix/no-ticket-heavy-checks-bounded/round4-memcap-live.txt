@@ -1,0 +1,23 @@
+$ bin/fm-memcap.sh --mechanism
+cgroup
+$ bin/fm-memcap.sh --budget-bytes
+5627392819
+
+## S1 runaway allocator under a 256 MiB cap
+$ bin/fm-memcap.sh --bytes 268435456 -- python3 -c "<allocate 2 GiB>"
+Killed
+fm-memcap: python3 was killed by its 268435456-byte memory cap
+exit=137
+
+## S1b same command under a 4 GiB cap (control)
+64MiB fine
+exit=0
+
+## S2 argv with unset ${v} passes through literally (reporting and --exec modes)
+inner|lit-${UNSET_XYZ}
+exit=0
+inner|lit-${UNSET_XYZ}
+exit=0
+
+## S3 exit status passthrough
+exit=7

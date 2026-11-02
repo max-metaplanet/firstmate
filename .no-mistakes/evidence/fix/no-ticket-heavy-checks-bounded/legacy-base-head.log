@@ -1,0 +1,10 @@
+base dc83ac6cc08d7e5e82092def37d50e4f94989462 exit=0
+ok - fm-spawn/fm-promote: authorized intent preserves exact words and refuses operator-address lines
+ok - fm-spawn: every legacy worker receives scoped role instructions without changing project or primary instructions
+ok - fm-spawn: every legacy worker receives scoped role instructions without changing project or primary instructions
+
+head HEAD exit=0
+ok - fm-spawn/fm-promote: authorized intent preserves exact words and refuses operator-address lines
+ok - fm-spawn: every legacy worker receives scoped role instructions without changing project or primary instructions
+ok - fm-spawn: every legacy worker receives scoped role instructions without changing project or primary instructions
+
