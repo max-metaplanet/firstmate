@@ -1,0 +1,38 @@
+=== S1/S2/S3/S4: declared Mergify drop -> steer; repeat; bare push; real re-drop
+after drop poll: inbox=1 mq_drop={"token":"mq-drop:101:2026-11-02T08:01:00Z","head":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","at":"2026-11-02T06:50:54Z"}
+--- steer body delivered to worker inbox (001) ---
+Merge-queue drop on https://github.com/o/r/pull/8.
+The project's merge queue removed this pull request instead of landing it; it did not merge.
+Queue report: https://github.com/o/r/pull/8#issuecomment-101
+Failing checks: queue-draft-tests
+Evidence source: https://github.com/o/r/pull/20
+
+--- queue-draft-tests ---
+Run tests
+  FAIL: test_merge_queue_draft (expected 2, got 3)
+Error: Process completed with exit code 1.
+--- end ---
+
+Fix the cause on this branch in one round, then requeue the pull request once its checks are green.
+Do not requeue without a fix, and never push an empty or retrigger commit to re-run the queue.
+If the cause is not in this branch, append a blocked: status line quoting the evidence above instead of requeuing.--- worker tmux pane received (doorbell) ---
+: Firstmate instruction waiting: list "$FM_TASK_INBOX"/*.msg in your 'delivery.inbox' steering inbox, read and act on each in numeric order, then mv each into its handled/.
+after repeat poll (same comment, same head): inbox=1
+after bare push to HEAD_B x2 polls (comment unchanged): inbox=1 mq_drop={"token":"mq-drop:101:2026-11-02T08:01:00Z","head":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","at":"2026-11-02T06:50:54Z"}
+after bot re-drops by editing comment on HEAD_B: inbox=2 mq_drop={"token":"mq-drop:101:2026-11-02T09:00:00Z","head":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","at":"2026-11-02T06:51:08Z"}
+after same-head in-place edit: inbox=2
+after new drop comment 102 on new head: inbox=3 mq_drop={"token":"mq-drop:102:2026-11-02T08:01:00Z","head":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","at":"2026-11-02T06:51:14Z"}
+--- poll stdout ---
+mq-drop-steer: delivery https://github.com/o/r/pull/8 queue-draft-tests
+mq-drop-steer: delivery https://github.com/o/r/pull/8 queue-draft-tests
+mq-drop-steer: delivery https://github.com/o/r/pull/8 queue-draft-tests
+stderr: WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+stderr: WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+stderr: WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+=== S5: merged PR with drop-marker comment
+merged: inbox=0 mq_drop=none state=merged
+=== S6: undeclared project
+undeclared: inbox=0 mq_drop=none state=open
+=== S7: hung queue-PR read under 3s poll budget
+slow: elapsed=4s inbox=1
+Evidence source: the queue report comment
