@@ -45,8 +45,8 @@ const ESLINT_VALUES = new Set(['-c', '--config', '-f', '--format', '-o', '--outp
 const TSC_VALUES = new Set(['-p', '--project', '--outfile', '--out', '--outdir', '--rootdir',
   '--declarationdir', '--tsbuildinfofile', '--baseurl', '--maproot', '--sourceroot',
   '--generatetrace', '--generatecpuprofile']);
-const namesSourceFile = (args, valueOptions) => args.some((a, i) => !a.startsWith('-') &&
-  !(i > 0 && valueOptions.has(args[i - 1].toLowerCase())) && SOURCE_FILE.test(a));
+const namesSourceFile = (args, valueOptions) => args.filter((a, i) => !a.startsWith('-') &&
+  !(i > 0 && valueOptions.has(args[i - 1].toLowerCase())) && SOURCE_FILE.test(a)).length === 1;
 const HEAVY_SCRIPT = 'queue-preflight';
 const OPTION = `--require=${__filename}`;
 // NODE_OPTIONS is split on whitespace and embedded in shells, so a path that is
@@ -122,18 +122,20 @@ const repairChildEnvironments = () => {
   const wrap = (original) => {
     const wrapped = wrapCall(original);
     // exec and execFile carry a promisify hook and other own properties that
-    // callers reach for; keep them, with the hook wrapped the same way.
-    for (const key of Reflect.ownKeys(original)) {
-      if (key === 'length' || key === 'prototype') continue;
-      try {
-        Object.defineProperty(wrapped, key, Object.getOwnPropertyDescriptor(original, key));
-      } catch { /* a non-configurable property stays as the wrapper has it */ }
-    }
+    // callers reach for; keep them, with the hook wrapped the same way. Node
+    // makes the original hook non-configurable, so the wrapped hook goes on
+    // first and the copy never replaces it.
     if (typeof original[PROMISIFY] === 'function') {
       try {
         Object.defineProperty(wrapped, PROMISIFY,
           { value: wrapCall(original[PROMISIFY]), configurable: true });
-      } catch { /* leave the original hook in place */ }
+      } catch { /* leave the wrapper without a hook rather than stop the spawn */ }
+    }
+    for (const key of Reflect.ownKeys(original)) {
+      if (key === 'length' || key === 'prototype' || key === PROMISIFY) continue;
+      try {
+        Object.defineProperty(wrapped, key, Object.getOwnPropertyDescriptor(original, key));
+      } catch { /* a non-configurable property stays as the wrapper has it */ }
     }
     return wrapped;
   };

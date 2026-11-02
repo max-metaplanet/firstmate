@@ -598,6 +598,9 @@ function run(fs) {
             ('eslint', ['-f', './formatter.js', 'src'], False),
             ('eslint', ['--ext=.ts,.tsx', 'src'], False),
             ('tsc', ['-p', 'tsconfig.json', '--outFile', 'dist/out.js'], False),
+            # Two named source files are more than the one file the exemption covers.
+            ('eslint', ['src/a.ts', 'src/b.ts'], False),
+            ('tsc', ['--noEmit', 'src/a.ts', 'src/b.ts'], False),
             ('next', ['build'], False),
         ]
         light = [
@@ -904,15 +907,21 @@ try:
     assert parent.wait(30) == 0, (scratch / 'named.err').read_text()
     print('ok - only a queue-preflight package script is heavy as a whole')
 
-    # The wrapped spawn keeps the promise form callers reach for.
+    # The promise forms callers reach for get the same repair: each child
+    # reports the NODE_OPTIONS it actually received.
     promised = subprocess.run(
         ['node', '-e', '''const util = require('util');
-const exec = util.promisify(require('child_process').exec);
-exec('printf ok', { env: { ...process.env, NODE_OPTIONS: '--max-old-space-size=512' } })
-  .then(({ stdout }) => { if (stdout !== 'ok') throw new Error(stdout); console.log('promised'); });
+const cp = require('child_process');
+const env = { ...process.env, NODE_OPTIONS: '--max-old-space-size=512' };
+Promise.all([
+  util.promisify(cp.exec)('printf %s "$NODE_OPTIONS"', { env }),
+  util.promisify(cp.execFile)('sh', ['-c', 'printf %s "$NODE_OPTIONS"'], { env }),
+]).then((results) => console.log(JSON.stringify(results.map(({ stdout }) => stdout))));
 '''], env=dict(env, NODE_OPTIONS=option), capture_output=True, text=True, timeout=30)
-    assert promised.returncode == 0 and promised.stdout.strip() == 'promised', promised
-    print('ok - promisified exec survives the child-environment repair')
+    assert promised.returncode == 0, promised
+    for form, received in zip(('exec', 'execFile'), json.loads(promised.stdout)):
+        assert received.split() == ['--max-old-space-size=512', option], (form, received)
+    print('ok - promisified exec and execFile children get the preload put back')
 finally:
     for child in children:
         if child.poll() is None:
