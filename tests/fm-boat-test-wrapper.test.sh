@@ -19,7 +19,7 @@ repo = Path(sys.argv[1])
 root = Path(os.environ['CASE_ROOT'])
 tools = root / 'bin'
 tools.mkdir()
-for name in ('fm-boat-test-wrapper.sh', 'fm-build-lock.py'):
+for name in ('fm-boat-test-wrapper.sh', 'fm-build-lock.py', 'fm-memcap.sh'):
     shutil.copy2(repo / 'bin' / name, tools / name)
 
 # Boundary stub records exact adapter inputs, never calls Boat, and optionally
