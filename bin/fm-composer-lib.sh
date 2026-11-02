@@ -964,10 +964,14 @@ _fm_composer_scan_screen() {  # <plain-screen> <cursor-or-empty> [extract-wrap]
     # shell glyphs are deliberately not candidates (dead-shell rule). Keep
     # lower shell prompts as staleness evidence for cursorless selection.
     # Pi's cost footer can open with `$0.000`; that is furniture, not a prompt.
+    # A slash-command completion row carries the composer's own glyph on its
+    # selected row (_fm_composer_row_is_completion_popup), and a list drawn
+    # below the composer would otherwise outrank it as the lower candidate.
     if [ "$top" -lt 0 ] && fm_composer_leading_shell_glyph_var glyph "$trimmed" \
        && ! _fm_composer_row_is_pi_status "$trimmed"; then
       FM_COMPOSER_SCAN_SHELL_ROW=$row
-    elif fm_composer_leading_agent_glyph_var glyph "$trimmed"; then
+    elif fm_composer_leading_agent_glyph_var glyph "$trimmed" \
+       && ! _fm_composer_row_is_completion_popup "$trimmed"; then
       FM_COMPOSER_SCAN_BARE_ROW=$row
     fi
     # Cursor safety: a cursor sitting on a structural edge row is never an
@@ -1291,6 +1295,43 @@ _fm_composer_row_is_braille_furniture() {  # <row>
   rest=$(printf '%s\n' "$row" | fm_composer_strip_braille)
   fm_composer_normalize_trim_var rest
   [ -z "$rest" ]
+}
+
+# _fm_composer_row_is_completion_popup: 0 when <trimmed-row> is one row of a
+# harness's slash-command completion list rather than a composer row.
+#
+# Claude renders that list as two columns - a `/name` and its description,
+# separated by a run of spaces - and marks the selected row with the SAME agent
+# prompt glyph the composer uses. Verified live on Claude Code 2.1.316 through
+# Herdr 0.9.1 (2026-11-02): with `/exit` typed, a worker pane drew the list
+# BELOW the composer's closing rule, so the bottom-most agent-glyph row on the
+# screen was the list's selected row; the composer read returned
+# `/exit Exit the CLI /context Visualize current context usage ...`, the typed
+# command was judged unsent, and bin/fm-control.sh cleared it and reported that
+# the exit command could not be sent. A lab pane of the same build drew the
+# same list ABOVE its composer, so position cannot be the test - the two-column
+# shape is, and it is read wherever the list appears.
+#
+# A composer holding a slash command holds the command alone, so the column gap
+# plus a description is what separates the two. A line an operator genuinely
+# typed as `/cmd   argument` is the one collision; it reads as furniture here,
+# which can only ever refuse a send, never misdirect one.
+_fm_composer_row_is_completion_popup() {  # <trimmed-row>
+  local row=${1-} glyph name rest
+  [ -n "$row" ] || return 1
+  if fm_composer_leading_agent_glyph_var glyph "$row"; then
+    row=${row#*"$glyph"}
+    fm_composer_normalize_trim_var row
+  fi
+  case "$row" in /?*) ;; *) return 1 ;; esac
+  name=${row%%[[:space:]]*}
+  case "${name#/}" in
+    ''|*[!A-Za-z0-9:_.-]*) return 1 ;;
+  esac
+  rest=${row#"$name"}
+  case "$rest" in '  '*) ;; *) return 1 ;; esac
+  rest="${rest#"${rest%%[![:space:]]*}"}"
+  [ -n "$rest" ]
 }
 
 # _fm_composer_bare_row_strip_furniture_var: on a bare agent-glyph row, reduce
@@ -1930,6 +1971,42 @@ fm_composer_blocking_dialog() {  # <screen> -> dialog name
     return 0
   fi
   return 1
+}
+
+# fm_composer_background_work_items: what the background-task exit picker says
+# it will stop. The dialog states it itself, under its own "The following will
+# stop when you exit:" line and above its first option row, so the list comes
+# from the harness rather than from a guess about what the worker was running.
+# Recorded 2026-11-02 on Claude Code 2.1.316, which lists one row per task in
+# the form `shell Â· sleep 900`.
+# Prints the rows joined by `; ` and returns 0 only when the screen is that
+# picker and names at least one task. Anything else returns 1 and prints
+# nothing, because an empty list must never read as "nothing will be lost".
+fm_composer_background_work_items() {  # <screen> -> items
+  local screen=${1-} items
+  [ -n "$screen" ] || return 1
+  items=$(printf '%s\n' "$screen" | fm_composer_strip_ansi | LC_ALL=C awk '
+    /^[ \t]*Background work is running[ \t\r]*$/ { heading = 1; next }
+    heading && /^[ \t]*The following will stop when you exit:[ \t\r]*$/ { listing = 1; next }
+    listing && /[^ \t\r]/ {
+      row = $0
+      sub(/^[ \t]+/, "", row)
+      sub(/[ \t\r]+$/, "", row)
+      # The option rows end the list. A leading selection glyph is stripped by
+      # byte class rather than matched as a character, because this awk is not
+      # required to understand multibyte regex escapes. A listed task whose own
+      # text began `<n>.` would truncate the list here, which under-reports but
+      # never reports an empty list as nothing to lose: the caller treats no
+      # items as unnamed, not as none.
+      probe = row
+      sub(/^[^0-9A-Za-z]+/, "", probe)
+      if (probe ~ /^[0-9]+\./) { listing = 0; next }
+      out = out (out == "" ? "" : "; ") row
+    }
+    END { printf "%s", out }
+  ') || return 1
+  [ -n "$items" ] || return 1
+  printf '%s' "$items"
 }
 
 # A command substitution drops a shell variable, and every composer read runs

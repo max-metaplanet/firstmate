@@ -56,7 +56,11 @@
 #              the backend's recovery-grade classifier reports the agent gone.
 #              The recognized Claude background-task exit picker is confirmed
 #              once on its selected Exit and stop tasks row; other dialogs
-#              remain refused, and agent death is still required.
+#              remain refused, and agent death is still required. That row
+#              stops background work the harness does not resume, so the tasks
+#              the picker lists are reported on stderr before the confirming
+#              Enter destroys the only screen that names them, and a refusal
+#              taken with that picker up names them too.
 #              Already-stopped is success (idempotent). An endpoint that reads
 #              `missing` is put through the control plane's per-backend absence
 #              proof (fm_control_endpoint_absence_verdict) before anything is
@@ -464,8 +468,14 @@ require_state_verified_backend() {  # <verb>
 
 # refuse_blocking_prompt: the screen is a dialog a confirming Enter would
 # answer. Name it and stop. Do not type Escape or an option: both dismiss
-# or choose.
-refuse_blocking_prompt() {  # <dialog-name>
+# or choose. When the caller holds the screen, the refusal also names the work
+# that Enter would have destroyed, so the operator deciding what to do next
+# knows what is at stake rather than only which dialog is up.
+refuse_blocking_prompt() {  # <dialog-name> [screen]
+  local stopping
+  if [ -n "${2:-}" ] && stopping=$(fm_composer_background_work_items "$2"); then
+    die "task $ID is blocked on a prompt: $1, whose confirming Enter would stop background work Claude does not resume: $stopping. Refusing to type Enter into it."
+  fi
   die "task $ID is blocked on a prompt: $1. Refusing to type Enter into it."
 }
 
@@ -474,7 +484,7 @@ refuse_blocking_prompt() {  # <dialog-name>
 # written by an earlier composer read, and confirm at most once per action.
 EXIT_PICKER_CONFIRMED=0
 confirm_exit_prompt() {  # <dialog-name>
-  local screen dialog
+  local screen dialog stopping
   [ "$HARNESS" = claude ] && [ "$1" = 'Claude background-task exit picker' ] \
     || refuse_blocking_prompt "$1"
   [ "$EXIT_PICKER_CONFIRMED" = 0 ] || return 0
@@ -483,7 +493,17 @@ confirm_exit_prompt() {  # <dialog-name>
     || refuse_blocking_prompt "$1"
   dialog=$(fm_composer_blocking_dialog "$screen") \
     || refuse_blocking_prompt "$1"
-  [ "$dialog" = "$1" ] || refuse_blocking_prompt "$1"
+  [ "$dialog" = "$1" ] || refuse_blocking_prompt "$1" "$screen"
+  # Only exit and relaunch reach this confirmation, and both verbs already mean
+  # stop, so the picker's Exit and stop tasks row is answered rather than
+  # refused. What that row kills is still a loss the operator did not ask for
+  # by name, and the picker is the only place it is named, so it is reported
+  # here - before the Enter that destroys the screen it is read from. A picker
+  # whose list cannot be read says so instead of going quiet, because silence
+  # would read as nothing having been running.
+  stopping=$(fm_composer_background_work_items "$screen") \
+    || stopping='<the picker did not name it; read the pane before relying on that work>'
+  echo "warning: task $ID's '$VERB' confirms Claude's background-task exit picker, which stops background work Claude does not resume: $stopping" >&2
   fm_backend_send_key "$BACKEND" "$T" Enter "$LABEL" \
     || die "could not confirm task $ID's $dialog"
   EXIT_PICKER_CONFIRMED=1
