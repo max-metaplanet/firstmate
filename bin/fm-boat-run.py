@@ -171,17 +171,16 @@ def history(root, head, depth, destination, key_files):
     git(fetched, 'update-ref', 'refs/heads/fm-boat-test', head)
     git(fetched, 'symbolic-ref', 'HEAD', 'refs/heads/fm-boat-test')
     git(fetched, 'update-ref', 'refs/remotes/origin/main', base)
-    # The two tips carry the repository as it stands, which is exactly the
-    # content the default no-history upload already sends, so the path filter
-    # and its named exceptions remain the whole boundary for them. Only a blob
-    # that no tip still references is new exposure, and that one is screened.
+    # HEAD's tree is the content the default no-history upload already sends,
+    # so the path filter is the whole boundary for its ordinary files. A
+    # screened exception is sent only when its content passes, so it is
+    # screened here too, and every other blob is new exposure and screened.
     current = set()
-    for tip in (head, base):
-        for entry in filter(None, git(fetched, 'ls-tree', '-rz', '--full-tree', tip).split(b'\0')):
-            meta, _ = entry.split(b'\t', 1)
-            mode, kind, oid = meta.split()
-            if kind == b'blob' and mode in (b'100644', b'100755'):
-                current.add(oid)
+    for entry in filter(None, git(fetched, 'ls-tree', '-rz', '--full-tree', head).split(b'\0')):
+        meta, _ = entry.split(b'\t', 1)
+        mode, kind, oid = meta.split()
+        if kind == b'blob' and mode in (b'100644', b'100755'):
+            current.add(oid)
     scanned = {}
     kept = set()
     withheld = set()

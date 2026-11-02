@@ -705,6 +705,56 @@ assert b'history withheld' not in r.stderr, r.stderr
 empty(state)
 print('ok - a blob a tip still carries travels under history exactly as it travels without it')
 
+for name, path, content in (
+    ('history-current-npmrc', '.npmrc', '//registry.npmjs.org/:_authToken=never-print-npm\n'),
+    ('history-current-settings', '.claude/settings.local.json',
+     '{"apiKey": "sk-never-print-current-key"}\n'),
+):
+    p, state, env = case(name, clean_history=True)
+    work = p / 'work'
+    (work / path).parent.mkdir(parents=True, exist_ok=True)
+    (work / path).write_text(content)
+    git(work, 'add', '--force', '--all')
+    git(work, 'commit', '-qm', 'credential-looking screened exception in HEAD')
+    git(work, 'update-ref', 'refs/remotes/origin/main', 'HEAD')
+    oid = git(work, 'rev-parse', 'HEAD:' + path).stdout.decode().strip()
+    check = f'''import pathlib, subprocess
+read = subprocess.run(['git', 'cat-file', 'blob', {oid!r}], capture_output=True, text=True)
+assert read.returncode != 0, 'a screened exception that fails its screen must not travel in history'
+assert 'never-print' not in read.stdout
+assert not pathlib.Path({path!r}).exists()
+'''
+    r = launch(p, env, 'python3 -c ' + shlex.quote(check), ('--history-depth', '2'))
+    assert r.returncode == 0, (name, r.stdout, r.stderr, result(p))
+    assert b'history withheld' in r.stderr, (name, r.stderr)
+    assert b'never-print' not in r.stdout + r.stderr, name
+    assert b'never-print' not in (p / 'output/result.json').read_bytes(), name
+    empty(state)
+print('ok - a screened exception HEAD carries is withheld from history when its content fails the screen')
+
+p, state, env = case('history-base-only-blob', clean_history=True)
+work = p / 'work'
+start = git(work, 'rev-parse', 'HEAD').stdout.decode().strip()
+(work / 'ordinary.txt').write_text('API_SECRET=never-print-base-only\n')
+git(work, 'add', '--all')
+git(work, 'commit', '-qm', 'credential only origin/main carries')
+oid = git(work, 'rev-parse', 'HEAD:ordinary.txt').stdout.decode().strip()
+git(work, 'update-ref', 'refs/remotes/origin/main', 'HEAD')
+git(work, 'reset', '-q', '--hard', start)
+(work / 'other.txt').write_text('head side\n')
+git(work, 'add', '--all')
+git(work, 'commit', '-qm', 'head side')
+check = f'''import subprocess
+read = subprocess.run(['git', 'cat-file', 'blob', {oid!r}], capture_output=True, text=True)
+assert read.returncode != 0, 'a blob only origin/main carries is screened like history'
+'''
+r = launch(p, env, 'python3 -c ' + shlex.quote(check), ('--history-depth', '2'))
+assert r.returncode == 0, (r.stdout, r.stderr, result(p))
+assert b'history withheld' in r.stderr, r.stderr
+assert b'never-print' not in r.stdout + r.stderr
+empty(state)
+print('ok - a credential-looking blob only origin/main carries is withheld')
+
 for root_ref in ('HEAD', 'refs/remotes/origin/main'):
     for ancestor in (False, True):
         for field in ('message', 'author', 'committer', 'extra-header'):

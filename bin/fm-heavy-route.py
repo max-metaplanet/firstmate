@@ -395,7 +395,7 @@ def route(kind, command):
     if not isinstance(settings, dict) or not settings.get("bootstrap"):
         return local("", command)
     if kind in (settings.get("local_only") or []):
-        return local("%s needs credentials Boat cannot carry" % kind, command)
+        return local("%s is declared local-only for this project" % kind, command)
     ancestor = orchestrated()
     if ancestor:
         return local("%s runs under %s, so only that top-level command could go to Boat"

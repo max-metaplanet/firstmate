@@ -65,11 +65,12 @@
 # bearer token, or an issued credential (private-key block or provider key).
 # Command names such as secrets:scan and quoted example URLs remain prose.
 # Blob content keeps the source upload's own boundary rather than a stricter
-# one: a blob either tip tree still references travels unscanned, exactly as it
-# travels with no history at all, while a blob only an older commit references
-# is new exposure, is screened with the full credential scanner, and on a hit
-# is withheld. Allowlisted source exceptions remain content-screened at
-# every depth, including tip blobs, with the additional .npmrc rule.
+# one. A blob HEAD's tree references at an ordinary path is exempt from the
+# general content scan only, because it travels unscanned with no history at
+# all. A blob at a screened exception path such as .npmrc is always put through
+# that exception's own content screen and .npmrc rule, even in HEAD's tree. Every
+# other blob, including one only origin/main's tree references, is new exposure,
+# is screened with the full credential scanner, and on a hit is withheld.
 # An object at an excluded or configured-key path, and a historical symlink or
 # submodule entry, are withheld the same way. The sole exception is the
 # .claude/skills symlink: its UTF-8 target is credential-screened and must
