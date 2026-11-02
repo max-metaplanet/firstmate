@@ -573,6 +573,12 @@ function run(fs) {
             link.symlink_to(scratch / entries[name][0])
             entries[name + '-bin'] = (str(link.relative_to(scratch)), None)
         preload = {'NODE_OPTIONS': option, 'FM_HEAVY_SLOTS': '1'}
+        # The one-file exemption needs the named file to exist where the
+        # command resolves it, so every case runs in the scratch tree.
+        for rel in ('one-file.ts', 'src/one.js', 'src/one.tsx', 'src/one.ts', 'src/a.ts',
+                    'src/b.ts', 'app/[locale]/page.tsx'):
+            (scratch / rel).parent.mkdir(parents=True, exist_ok=True)
+            (scratch / rel).write_text('export {};\n')
         # Off a TTY a bare vitest runs the suite once, as a package test script does.
         # The last case runs on a TTY, where only the run subcommand marks it heavy.
         heavy = [
@@ -605,7 +611,9 @@ function run(fs) {
             # file, stands for many files.
             ('eslint', ['src/**/*.ts'], False),
             ('eslint', ['src', 'src/a.ts'], False),
+            ('eslint', ['src'], False),
             ('tsc', ['--noEmit', 'src/**/*.ts'], False),
+            ('tsc', ['--noEmit', 'src'], False),
             ('next', ['build'], False),
         ]
         light = [
@@ -624,6 +632,9 @@ function run(fs) {
             ('eslint', ['-c', 'eslint.config.mjs', 'src/one.ts']),
             ('eslint', ['--max-warnings', '0', 'src/one.ts']),
             ('tsc', ['--target', 'es2020', 'one-file.ts']),
+            # App Router paths carry literal brackets; one real such file is light.
+            ('eslint', ['app/[locale]/page.tsx']),
+            ('tsc', ['--noEmit', 'app/[locale]/page.tsx']),
             ('next', ['dev']),
             ('next', ['start']),
         ]
@@ -637,7 +648,7 @@ function run(fs) {
             command = [str(scratch / entries[name][0]), *args]
             if not name.endswith('-bin'):
                 command.insert(0, 'node')
-            child = subprocess.Popen(command,
+            child = subprocess.Popen(command, cwd=scratch,
                                      env=dict(env, MARKER=str(scratch / tag),
                                               RELEASE=str(scratch / (tag + '.release')), **preload),
                                      stdin=follower, stderr=log)
@@ -663,7 +674,7 @@ function run(fs) {
         blocker = launch('block-light', slots='1')
         assert wait_file(scratch / 'block-light'), 'the blocker before the light cases never started'
         for name, args in light:
-            result = subprocess.run(['node', str(scratch / entries[name][0]), *args],
+            result = subprocess.run(['node', str(scratch / entries[name][0]), *args], cwd=scratch,
                                     env=dict(env, **preload), stdin=subprocess.DEVNULL,
                                     capture_output=True, timeout=30)
             assert result.returncode == 0 and result.stdout.startswith(b'ran:'), result.stderr
