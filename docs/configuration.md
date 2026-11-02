@@ -1635,6 +1635,8 @@ Firstmate never reads the project's queue configuration and never confirms the d
 Detection is comment-based, so a project whose queue signals a drop only by toggling a label is not covered.
 
 A declared drop reaches the worker as one steer naming the queue report, the failing checks, and an excerpt of the failing check's own log.
+A new drop comment steers, and so does an edit of the drop comment after the pull request's head moved, because a queue bot that keeps one status comment re-drops by editing it; an edit on the same head and a push alone, such as the worker's fix or a merge bot's rebase, never steer again.
+Evidence reads stay inside the observer's poll budget, and a read with no budget left falls back to the drop comment itself.
 [`bin/fm-mq-drop.sh`](../bin/fm-mq-drop.sh) owns detection, the evidence it gathers and the steer it sends, and [`bin/fm-contributions.sh`](../bin/fm-contributions.sh) is the observer that drives it from the pull-request observation it already made.
 
 ## Project capacity (config/project-capacity)

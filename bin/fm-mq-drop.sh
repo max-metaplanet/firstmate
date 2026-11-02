@@ -3,14 +3,15 @@
 # steer carrying the failing check's own evidence.
 #
 # Usage:
-#   fm-mq-drop.sh handle <task-id> <row-json-file> <comments-json-file>
+#   fm-mq-drop.sh handle <task-id> <row-json-file> <comments-json-file> <deadline-epoch>
 #
 # <row-json-file> is one contribution record row as bin/fm-contributions.sh
 # writes it, mutated in place when a drop is handled. <comments-json-file> is
 # that pull request's slurped paginated issue-comments payload: an array of
 # pages, each page an array of comments. bin/fm-contributions.sh owns both and
 # is the only caller; it already holds them from the observation it just made,
-# so an ordinary poll spends no extra forge read.
+# so an ordinary poll spends no extra forge read. <deadline-epoch> is the
+# caller's poll deadline in epoch seconds; no evidence read runs past it.
 #
 # docs/configuration.md "Merge-queue drop handling" owns the declaration file
 # and its format. A declaration names one project's queue bot login and the
@@ -19,14 +20,16 @@
 # A DROP EVENT is the highest-id comment by that exact login whose body
 # contains that marker, on a pull request whose observation is still open.
 #
-#   token = "mq-drop:<comment-id>:<observed-head>"
+#   token = "mq-drop:<comment-id>:<comment-updated_at>"
 #
-# The token is the idempotency key, recorded on the row as .mq_drop={token,at}.
-# One steer per token, forever. The observed head is in the token rather than
-# the comment's updated_at because a queue bot keeps ONE status comment and
-# edits it in place: an edit on the same head must not steer again, while a
-# re-drop after the worker pushes a fix must. A requeue that drops again on
-# the same head is silent too, because the worker already holds that evidence.
+# The token names one state of the drop comment and is recorded on the row as
+# .mq_drop={token,head,at}, where head is the observed head when it was last
+# steered. A token already recorded never steers. A new token steers when its
+# comment is a new comment, or when it is the recorded comment edited after the
+# head moved, because a queue bot that keeps ONE status comment re-drops by
+# editing it. An edit of the recorded comment on the recorded head is not a
+# re-drop and is recorded silently. A push alone never steers: a fix push or a
+# merge-bot rebase leaves the old comment unchanged, so its token is recorded.
 #
 # Each of these exits 0 and leaves the row untouched: a row that is not a pull
 # request, carries an error, or has no observation; an observation that is
@@ -37,8 +40,9 @@
 # A failed steer records no token, so the next poll retries it.
 #
 # EVIDENCE is walked only for a fresh event and never blocks the steer. Each
-# forge read goes through gh under a ten-second bound, and a failed or
-# timed-out read drops to the next rung.
+# forge read goes through gh under a ten-second bound cut to the time left
+# before the deadline, a read with no time left is skipped, and a failed,
+# skipped or timed-out read drops to the next rung.
 #   1. A https://github.com/<owner>/<repo>/pull/<n> link in the drop comment,
 #      in this pull request's own repository and not this pull request, is the
 #      queue's own pull request. Its head's check runs supply the failing
@@ -107,9 +111,12 @@ mq_declaration() { # <project-name> -> "<bot-login>\t<drop-marker>"
 }
 
 forge_read() { # <output-file> <gh-args...>
-  local out=$1
+  local out=$1 bound
   shift
-  fm_run_timed 10 env GH_PROMPT_DISABLED=1 GH_NO_UPDATE_NOTIFIER=1 gh "$@" > "$out" 2>/dev/null
+  bound=$((DEADLINE - $(date +%s)))
+  [ "$bound" -le 10 ] || bound=10
+  [ "$bound" -gt 0 ] || return 1
+  fm_run_timed "$bound" env GH_PROMPT_DISABLED=1 GH_NO_UPDATE_NOTIFIER=1 gh "$@" > "$out" 2>/dev/null
 }
 
 cap_tail() { # <max-bytes> ; stdin -> stdout
@@ -216,7 +223,7 @@ steer_text() { # <pr-url> <report-url>
 }
 
 handle() { # <task-id> <row-json-file> <comments-json-file>
-  local task=$1 row=$2 comments=$3 project decl bot marker head url token report staged
+  local task=$1 row=$2 comments=$3 project decl bot marker head url token report staged steer
   [ -f "$row" ] && [ -r "$row" ] || fail "contribution row $row is unreadable"
   [ -f "$comments" ] && [ -r "$comments" ] || fail "comment payload $comments is unreadable"
   jq -e '.kind == "pr" and .error == null and .observation != null
@@ -234,32 +241,42 @@ handle() { # <task-id> <row-json-file> <comments-json-file>
   [ -n "$head" ] || return 0
   fm_pr_url_parse "$url" || return 0
   [ "$FM_PR_PROVIDER" = github ] || return 0
-  jq -n --slurpfile pages "$comments" --arg bot "$bot" --arg marker "$marker" --arg head "$head" '
-    [ ($pages[0] // [])[] | .[]?
+  jq --slurpfile pages "$comments" --arg bot "$bot" --arg marker "$marker" --arg head "$head" '
+    .mq_drop as $seen
+    | [ ($pages[0] // [])[] | .[]?
       | select(((.user.login // "") == $bot) and ((.body // "") | contains($marker))) ]
     | sort_by(.id) | last
     | if . == null then {}
-      else {token:("mq-drop:" + (.id | tostring) + ":" + $head),
-            report:(.html_url // ""),body:(.body // "")} end' > "$TMP/event.json" \
+      else ("mq-drop:" + (.id | tostring) + ":") as $prefix
+        | {token:($prefix + (.updated_at // .created_at // "")),
+           steer:($seen == null or ($seen.token | startswith($prefix) | not) or $seen.head != $head),
+           report:(.html_url // ""),body:(.body // "")} end' "$row" > "$TMP/event.json" \
     || fail 'the comment payload could not be read'
   token=$(jq -r '.token // ""' "$TMP/event.json")
   [ -n "$token" ] || return 0
   [ "$token" != "$(jq -r '.mq_drop.token // ""' "$row")" ] || return 0
-  report=$(jq -r '.report' "$TMP/event.json")
-  evidence "$row" "$TMP/event.json"
-  "$SCRIPT_DIR/fm-send.sh" "$task" "$(steer_text "$url" "$report")" >/dev/null \
-    || fail "steer for $task could not be delivered"
+  steer=$(jq -r '.steer' "$TMP/event.json")
+  if [ "$steer" = true ]; then
+    report=$(jq -r '.report' "$TMP/event.json")
+    evidence "$row" "$TMP/event.json"
+    "$SCRIPT_DIR/fm-send.sh" "$task" "$(steer_text "$url" "$report")" >/dev/null \
+      || fail "steer for $task could not be delivered"
+  fi
   staged=$(mktemp "$row.XXXXXX")
-  jq --arg token "$token" --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-    '.mq_drop={token:$token,at:$at}' "$row" > "$staged" \
+  jq --arg token "$token" --arg head "$head" --arg steer "$steer" --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    '.mq_drop=(if $steer == "true" then {token:$token,head:$head,at:$at} else .mq_drop + {token:$token} end)' \
+    "$row" > "$staged" \
     || { rm -f -- "$staged"; fail "the drop token for $task could not be recorded"; }
   mv -f -- "$staged" "$row"
+  [ "$steer" = true ] || return 0
   printf 'mq-drop-steer: %s %s %s\n' "$task" "$url" "${CHOSEN_NAME:-(no failing check named)}"
 }
 
 case "${1:-}" in
   handle)
-    [ "$#" -eq 4 ] || fail 'handle needs a task id, a contribution row and a comment payload'
+    [ "$#" -eq 5 ] || fail 'handle needs a task id, a contribution row, a comment payload and a deadline'
+    case "$5" in '' | *[!0-9]*) fail 'the deadline must be epoch seconds' ;; esac
+    DEADLINE=$5
     handle "$2" "$3" "$4"
     ;;
   *) usage >&2; exit 2 ;;

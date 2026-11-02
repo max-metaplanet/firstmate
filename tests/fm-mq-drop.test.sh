@@ -95,7 +95,9 @@ case "$*" in
       {state:(if $state == "open" then "open" else "closed" end),user:{login:"author"},
        head:{sha:$head},draft:false,mergeable:($state == "open"),
        merged_at:(if $state == "merged" then "2026-09-16T07:00:00Z" else null end)}' ;;
-  'api repos/o/r/pulls/20') cat "$FORGE/queue-pull.json" ;;
+  'api repos/o/r/pulls/20')
+    [ ! -e "$FORGE/slow-queue-pull" ] || exec command -p sleep 30
+    cat "$FORGE/queue-pull.json" ;;
   'api repos/o/r/actions/jobs/7001/logs')
     [ -s "$FORGE/job.log" ] || exit 1
     cat "$FORGE/job.log" ;;
@@ -144,11 +146,11 @@ declare_queue() { # <home> <line...>
   printf '%s\n' "$@" > "$home/config/project-merge-queue"
 }
 
-drop_comment() { # <home> <id> <body>
-  jq -n --argjson id "$2" --arg body "$3" '[{id:$id,user:{login:"mergify[bot]"},
-    author_association:"NONE",body:$body,
+drop_comment() { # <home> <id> <body> [updated-at]
+  jq -n --argjson id "$2" --arg body "$3" --arg updated "${4:-2026-09-16T08:01:00Z}" '[{id:$id,
+    user:{login:"mergify[bot]"},author_association:"NONE",body:$body,
     html_url:("https://github.com/o/r/pull/8#issuecomment-" + ($id | tostring)),
-    updated_at:"2026-09-16T08:01:00Z"}]' > "$1/forge/comments.json"
+    created_at:"2026-09-16T08:01:00Z",updated_at:$updated}]' > "$1/forge/comments.json"
 }
 
 armed_home() { # <name> -> a home whose delivery PR is registered and observable
@@ -197,8 +199,8 @@ test_dequeue_with_failing_queue_check_steers_once() {
     'the steer should name the queue pull request as its evidence source'
   assert_contains "$body" 'Fix the cause on this branch in one round' \
     'the steer should instruct one fix round before requeuing'
-  assert_equals "mq-drop:101:$HEAD_A" "$(drop_token "$home")" \
-    'the handled drop should be recorded against the observed head'
+  assert_equals 'mq-drop:101:2026-09-16T08:01:00Z' "$(drop_token "$home")" \
+    'the handled drop should be recorded as that state of the drop comment'
   pass 'a merge-queue dequeue steers once with the failing queue run evidence'
 }
 
@@ -223,7 +225,7 @@ test_repeated_poll_produces_no_second_steer() {
   assert_equals 1 "$(inbox_count "$home")" 'the first poll should steer once'
   registered_checks "$home" >/dev/null
   assert_equals 1 "$(inbox_count "$home")" 'a repeated poll must not steer again'
-  assert_equals "mq-drop:101:$HEAD_A" "$(drop_token "$home")" 'the recorded token must be unchanged'
+  assert_equals 'mq-drop:101:2026-09-16T08:01:00Z' "$(drop_token "$home")" 'the recorded token must be unchanged'
   pass 'a repeated poll over the same drop produces no second steer'
 }
 
@@ -234,11 +236,30 @@ test_edited_comment_on_the_same_head_produces_no_second_steer() {
   drop_comment "$home" 101 "Pull request #8 $MARKER: https://github.com/o/r/pull/20"
   registered_checks "$home" >/dev/null
   drop_comment "$home" 101 \
-    "Pull request #8 $MARKER, position refreshed: https://github.com/o/r/pull/20"
+    "Pull request #8 $MARKER, position refreshed: https://github.com/o/r/pull/20" 2026-09-16T08:05:00Z
   registered_checks "$home" >/dev/null
   assert_equals 1 "$(inbox_count "$home")" \
     'an in-place edit of the queue bot comment on the same head must not steer again'
+  printf '%s\n' "$HEAD_B" > "$home/forge/head"
+  registered_checks "$home" >/dev/null
+  assert_equals 1 "$(inbox_count "$home")" \
+    'a push after a silent same-head edit must not replay that edit as a re-drop'
   pass 'an edited drop comment on the same head produces no second steer'
+}
+
+test_push_alone_produces_no_second_steer() {
+  local home
+  home=$(armed_home pushed)
+  declare_queue "$home" "sample	mergify[bot]	$MARKER"
+  drop_comment "$home" 101 "Pull request #8 $MARKER: https://github.com/o/r/pull/20"
+  registered_checks "$home" >/dev/null
+  assert_equals 1 "$(inbox_count "$home")" 'the first drop should steer once'
+  printf '%s\n' "$HEAD_B" > "$home/forge/head"
+  registered_checks "$home" >/dev/null
+  registered_checks "$home" >/dev/null
+  assert_equals 1 "$(inbox_count "$home")" \
+    'a fix push or merge-bot rebase under the unchanged drop comment must not replay the stale steer'
+  pass 'a push alone under an unchanged drop comment produces no second steer'
 }
 
 test_redrop_on_a_new_head_steers_again() {
@@ -250,10 +271,42 @@ test_redrop_on_a_new_head_steers_again() {
   assert_equals 1 "$(inbox_count "$home")" 'the first drop should steer once'
   printf '%s\n' "$HEAD_B" > "$home/forge/head"
   registered_checks "$home" >/dev/null
-  assert_equals 2 "$(inbox_count "$home")" 'a drop after the worker pushed a fix should steer again'
-  assert_equals "mq-drop:101:$HEAD_B" "$(drop_token "$home")" \
-    'the second steer should be recorded against the new head'
-  pass 'a re-drop on a new head steers again from the same queue bot comment'
+  drop_comment "$home" 101 "Pull request #8 $MARKER again: https://github.com/o/r/pull/20" \
+    2026-09-16T09:00:00Z
+  registered_checks "$home" >/dev/null
+  assert_equals 2 "$(inbox_count "$home")" \
+    'the queue bot re-dropping the fixed head by editing its comment should steer again'
+  pass 'a re-drop on a new head steers again from the edited queue bot comment'
+}
+
+test_new_drop_comment_steers_again() {
+  local home
+  home=$(armed_home newcomment)
+  declare_queue "$home" "sample	mergify[bot]	$MARKER"
+  drop_comment "$home" 101 "Pull request #8 $MARKER: https://github.com/o/r/pull/20"
+  registered_checks "$home" >/dev/null
+  printf '%s\n' "$HEAD_B" > "$home/forge/head"
+  drop_comment "$home" 102 "Pull request #8 $MARKER: https://github.com/o/r/pull/20"
+  registered_checks "$home" >/dev/null
+  assert_equals 2 "$(inbox_count "$home")" 'a queue bot posting a new drop comment should steer again'
+  pass 'a new drop comment steers again'
+}
+
+test_slow_evidence_read_stays_inside_the_poll_budget() {
+  local home body start elapsed
+  home=$(armed_home slow)
+  declare_queue "$home" "sample	mergify[bot]	$MARKER"
+  drop_comment "$home" 101 "Pull request #8 $MARKER: https://github.com/o/r/pull/20"
+  printf '1\n' > "$home/forge/slow-queue-pull"
+  start=$(date +%s)
+  FM_CONTRIBUTIONS_BUDGET=3 registered_checks "$home" >/dev/null
+  elapsed=$(( $(date +%s) - start ))
+  [ "$elapsed" -lt 9 ] || fail "a hung evidence read held the poll for ${elapsed}s past its budget"
+  assert_equals 1 "$(inbox_count "$home")" 'a drop must still steer when its evidence read runs out of budget'
+  body=$(inbox_body "$home" 001)
+  assert_contains "$body" 'Evidence source: the queue report comment' \
+    'an evidence read cut by the budget should fall back to the drop comment'
+  pass 'a hung evidence read is cut to the poll budget and the steer still lands'
 }
 
 test_drop_wakes_a_parked_worker() {
@@ -339,7 +392,10 @@ for test_name in test_dequeue_with_failing_queue_check_steers_once \
   test_merged_pull_request_produces_no_steer \
   test_repeated_poll_produces_no_second_steer \
   test_edited_comment_on_the_same_head_produces_no_second_steer \
+  test_push_alone_produces_no_second_steer \
   test_redrop_on_a_new_head_steers_again \
+  test_new_drop_comment_steers_again \
+  test_slow_evidence_read_stays_inside_the_poll_budget \
   test_drop_wakes_a_parked_worker \
   test_absent_declaration_handles_nothing \
   test_malformed_declaration_fails_loudly \

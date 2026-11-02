@@ -657,7 +657,7 @@ poll() {
       # A drop-handling failure must never abort the poll, but must be seen.
       if [ "$observed" -eq 0 ] && [ "$kind" = pr ] \
         && [ -e "$CONFIG/project-merge-queue" ] && [ -f "$STATE/$task.meta" ]; then
-        "$SCRIPT_DIR/fm-mq-drop.sh" handle "$task" "$TMP/row.json" "$TMP/comments.json" \
+        "$SCRIPT_DIR/fm-mq-drop.sh" handle "$task" "$TMP/row.json" "$TMP/comments.json" "$DEADLINE" \
           || printf 'contributions: merge-queue drop handling failed for %s\n' "$task"
       fi
       write_record "$task" "$TMP/row.json"

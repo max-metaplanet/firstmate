@@ -22,7 +22,7 @@ def valid_record:
       and (.reason | type == "string" and length > 0) and (.at | fromdateiso8601 | type == "number")))
     and (.verdict == null or (.verdict | (.head | sha) and (.source | type == "string")
       and (.actor | IN("captain","fleet","maintainer","nobody")) and (.summary | type == "string")))
-    and (.mq_drop == null or (.mq_drop | (.token | type == "string" and length > 0) and (.at | type == "string")))
+    and (.mq_drop == null or (.mq_drop | (.token | type == "string" and length > 0) and (.head | sha) and (.at | type == "string")))
     and (.observation == null or (.kind as $kind | .observation |
       (.state | IN("open","closed","merged")) and (.checks | type == "array")
       and (.reviews | type == "array") and (.events | type == "array")
