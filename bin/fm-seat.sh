@@ -91,7 +91,9 @@
 #            and same quota gate as the automatic rotation, anchored on the seat
 #            the WORKER is on rather than the active seat, so the walled seat is
 #            never the answer, and neither is any --skip seat (one this worker
-#            already walled out on). Prints one seat name; exit 1 with each
+#            already walled out on). A worker stuck at a spent five-hour window
+#            moves under the same five-hour wall rule a new launch gets.
+#            Prints one seat name; exit 1 with each
 #            skipped seat and its reason, then every seat (the walled one and
 #            the default profile included) and when it resets, on stderr when
 #            none qualifies. It switches,
@@ -100,11 +102,18 @@
 # launch-destination
 #            The seat a NEW worker launches on. Spare-leader mode first prefers
 #            an eligible alternative to the leader. --spare-only returns the
-#            active seat if none exists (used by Codex dispatch). Otherwise,
+#            active seat if none exists (used by Codex dispatch), unless its
+#            five-hour window is spent and a seat with five-hour room clears
+#            the same gate, for that one launch only. Otherwise,
 #            the active seat, unless
 #            a switch trigger is set and the active seat's five-hour window is
 #            proven at or below it; then a seat with five-hour room and more
-#            weekly spare, through the same gate as the rotation. Prints one
+#            weekly spare, through the same gate as the rotation - or, when the
+#            active seat's five-hour window is spent outright, any seat with
+#            five-hour room that clears the absolute gates, because weekly
+#            balance cannot settle a seat that can run work against one that
+#            cannot.
+#            Prints one
 #            seat name; exit 1 naming the soonest five-hour reset when none
 #            qualifies. It switches, writes and launches nothing -
 #            bin/fm-spawn.sh points that one launch at the answer.
@@ -614,6 +623,20 @@ session_window() {
   printf '%s\t%s\n' "$left" "$reset"
 }
 
+# seat_walled <name>
+# Exit 0 when this seat's five-hour window is PROVEN spent, so no worker on it
+# can run until that window resets. An unreadable report, or one naming no
+# five-hour window, is not a wall: only a figure that was actually read says a
+# seat cannot take work now. fm_seat_session_room owns the reading.
+seat_walled() {
+  local dir out row rc=0
+  dir=$(fm_seat_config_dir "${1-}") || return 1
+  out=$(fm_seat_quota_json "$dir") || return 1
+  row=$(fm_seat_headroom_from "$out") || return 1
+  fm_seat_session_room "$row" || rc=$?
+  [ "$rc" -eq 1 ]
+}
+
 # session_room_reason <name> <trigger>
 # WHEN, for a new worker's launch: whether the seat's five-hour window has room
 # above the switch trigger. Returns 1 when it does, 0 when it is proven not to,
@@ -638,12 +661,16 @@ session_room_reason() {
 # The seat a NEW native worker launches on, by name. An enabled spare-leader
 # preference first tries an eligible non-leader destination, or moves off a
 # used-up worker seat, falling back to the leader last. --spare-only then
-# retains the active seat, preserving Codex dispatch's existing session policy.
+# retains the active seat, preserving Codex dispatch's existing session policy,
+# unless the active seat's five-hour window is spent and next_seat --session-room
+# finds a seat that can run the work now under the five-hour wall rule.
 # Otherwise: With no switch trigger set,
 # or when the active seat has five-hour room or no five-hour reading, that is
 # the active seat, unchanged. When the active seat is proven to have no
 # five-hour room, it is the seat next_seat chooses with --session-room: one with
-# room AND more weekly spare than the active seat. Read-only: it writes no seat
+# room AND more weekly spare than the active seat, or, when the active seat's
+# five-hour window is spent outright, any seat with five-hour room that clears
+# the depletion and destination-minimum gates. Read-only: it writes no seat
 # file and moves neither the lead nor a running worker; bin/fm-spawn.sh points
 # that one launch at the answer.
 #
@@ -664,6 +691,10 @@ cmd_launch_destination() {
     return 0
   fi
   if [ "$spare_only" -eq 1 ]; then
+    if seat_walled "$active" && name=$(next_seat --session-room "$active" 2>/dev/null); then
+      printf '%s\n' "$name"
+      return 0
+    fi
     printf '%s\n' "$active"
     return 0
   fi
@@ -735,7 +766,7 @@ seat_resets() {
   done
 }
 
-# destination_quota_check <name> [<anchor-basis> <anchor-spare>]
+# destination_quota_check <name> [<anchor-basis> <anchor-spare> [<anchor-walled>]]
 # The quota half of destination eligibility, applied by EVERY switch - the
 # automatic rotation below and an explicit `switch <name>` alike - so a seat a
 # rotation would refuse can never be reached by a deliberate switch either.
@@ -753,11 +784,21 @@ seat_resets() {
 #     percent is refused as well. Absent, nothing further is asked.
 #   - THE ANCHOR RULE. With the anchor seat's own weekly spare supplied, a
 #     candidate must also have strictly MORE of it than the seat the work would
-#     leave. Without it, two seats both under the trigger and both above the
+#     leave, UNLESS the anchor is walled and the candidate is not.
+#     Without it, two seats both under the trigger and both above the
 #     absolute minimum are each a valid destination for the other, which is
 #     what moved the lead back and forth between two spent seats on
 #     2026-10-15/16. The rule is additive: a candidate below the absolute
 #     minimum is still refused for that reason first.
+#   - THE FIVE-HOUR WALL. A `walled` anchor - one whose five-hour window is
+#     proven spent - cannot run work at all until that window resets, so weekly
+#     spare has nothing to decide between it and a seat that can run now, and
+#     the anchor rule is not applied to a candidate with five-hour room of its
+#     own. Both halves must be proven, so an unread window never crosses it.
+#     This is an exception to the anchor comparison only: the depletion refusal
+#     and the destination minimum above are the floor it can never push below,
+#     and a candidate that is walled too is still judged on weekly spare,
+#     because moving between two walled seats is the move worse than staying.
 #
 # Only an automatic `next_seat` supplies an anchor, so a switch asked for by
 # hand - `switch <name>` and `switch --next` alike - stays absolute-only: a
@@ -773,7 +814,7 @@ seat_resets() {
 # No verdict is never read as empty: a seat whose access token has merely lapsed
 # is signed in, and its headroom is unknown rather than zero.
 destination_quota_check() {
-  local name=$1 anchor_basis=${2-} anchor_spare=${3-}
+  local name=$1 anchor_basis=${2-} anchor_spare=${3-} anchor_walled=${4-}
   local dir out remaining minimum reset row basis spare
   dir=$(fm_seat_config_dir "$name") || {
     printf 'its profile could not be resolved\n'
@@ -824,6 +865,11 @@ destination_quota_check() {
     printf 'its quota could not be read, so its headroom is unknown and this makes no guess\n'
     return 2
   }
+  # The five-hour wall, above: a seat that can run the work now beats one that
+  # cannot, whatever the weekly comparison would have said between them.
+  if [ "$anchor_walled" = walled ] && fm_seat_session_room "$row"; then
+    return 1
+  fi
   IFS=$'\t' read -r basis spare <<< "$(fm_seat_choice_spare "$row")"
   # A candidate measured on another basis cannot be compared with the anchor at
   # all, so the absolute rules above are the whole answer for it, exactly as
@@ -872,7 +918,9 @@ seat_crossing() {
 # is proven empty. The second is what keeps the mid-task move off a walled seat
 # working: a seat whose week is spent is one the work cannot remain on, and
 # every seat with real headroom qualifies as it always did. A spent five-hour
-# window alone is not that case, because the week behind it is still there.
+# window alone is not that case, because the week behind it is still there; the
+# gate's five-hour wall handles it per candidate instead, so the comparison is
+# dropped only against a seat that can actually run the work now.
 anchor_headroom() {
   local name=${1-} dir out row week
   [ -n "$name" ] || return 1
@@ -963,7 +1011,10 @@ seat_rank_key() {
 #
 # THE ANCHOR RULE rides on the same gate and is read ONCE here, for the anchor,
 # rather than per candidate: a destination must have strictly more weekly spare
-# than the seat the work would leave. Every automatic path reaches it through
+# than the seat the work would leave, unless the anchor's own five-hour window
+# is spent and the candidate's is not, which the gate owns as the five-hour
+# wall. Whether the anchor is walled is read here, once, for the same reason.
+# Every automatic path reaches it through
 # this one call, so the rotation, the lead move and the mid-task move cannot
 # drift apart on what counts as somewhere better. anchor_headroom above owns
 # when the rule is asked at all.
@@ -1002,7 +1053,7 @@ seat_rank_key() {
 # to switch always says which seats were considered and why none qualified.
 next_seat() {
   local active seats n i idx name minimum='' reason state resting skip rc
-  local anchor_basis='' anchor_spare='' any=0 key session='' room
+  local anchor_basis='' anchor_spare='' anchor_walled='' any=0 key session='' room
   local spared='' fallback='' spare_move=0 skip_spared=0 left phrase
   local -a ranked=() waiting=()
   case "${1-}" in
@@ -1027,8 +1078,10 @@ next_seat() {
   active=${1:-$(fm_seat_active)}
   [ "$#" -eq 0 ] || shift
   minimum=$(fm_seat_destination_min) || minimum=''
-  [ "$any" -eq 1 ] ||
+  if [ "$any" -eq 0 ]; then
     IFS=$'\t' read -r anchor_basis anchor_spare < <(anchor_headroom "$active")
+    ! seat_walled "$active" || anchor_walled=walled
+  fi
   mapfile -t seats < <(fm_seat_list)
   n=${#seats[@]}
   [ "$n" -gt 0 ] || return 1
@@ -1092,7 +1145,7 @@ next_seat() {
       printf 'seat %s: skipped, at %s it is not above the %s%% switch trigger\n' "$name" "$phrase" "$session" >&2
       continue
     fi
-    reason=$(destination_quota_check "$name" "$anchor_basis" "$anchor_spare")
+    reason=$(destination_quota_check "$name" "$anchor_basis" "$anchor_spare" "$anchor_walled")
     rc=$?
     if [ "$rc" -ne 0 ] && [ -n "$session" ]; then
       reason=$(session_room_reason "$name" "$session")

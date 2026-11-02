@@ -160,6 +160,7 @@ Without this setting no absolute headroom level is asked of a candidate, which i
 
 That floor is not on its own enough to decide where work goes, because it never asks whether a candidate is better than the seat being left.
 [Which seat carries work](#which-seat-carries-work) below owns the comparison that does, and both apply: a candidate must clear the absolute floor **and** have more weekly spare than the seat it would take the work from.
+The one exception is a seat that cannot run work at all right now, described under [which seat carries work](#which-seat-carries-work) as the five-hour wall: the weekly comparison is dropped there, while this absolute floor still holds.
 
 A seat with **nothing left at all** is refused with no setting configured, because a worker launched there cannot run.
 Every switch applies it - automatic rotation, `bin/fm-seat.sh switch <name>` by hand, Claude seats and Codex homes alike - and the refusal names the seat and the time its quota comes back; `--force` is the override.
@@ -203,7 +204,8 @@ A session dip is a short wait, not a spent account, and it never fires a rotatio
 What it does change is where a **new** Claude worker starts: with a trigger set, a fresh spawn whose active seat's five-hour window is at or below the trigger launches on another seat that has five-hour room above it **and** more weekly spare than the active seat, chosen through the same gate as the rotation (`bin/fm-seat.sh launch-destination`).
 That routes one launch only: `config/claude-seat` is not rewritten, firstmate itself is not moved, and running workers stay where they are.
 With no seat qualifying, the spawn is held and the refusal names the soonest five-hour reset to wait for; `--ignore-seat-hold` starts it on the active seat anyway, and a relaunch is never held.
-A session window that is *spent* is the one exception and it comes first: no worker launched on that seat can run at all, so the crossing fires on the account figure whatever the week says; the rotation still needs a seat with more weekly spare, and a new worker goes to a seat that has session room at launch, as described above.
+A session window that is *spent* is the one exception and it comes first: no worker launched on that seat can run at all, so the crossing fires on the account figure whatever the week says, and work goes to a seat that has session room without the weekly comparison being asked of it.
+That covers all three ways work reaches a seat: a new worker at launch (a Codex one too when a Codex switch trigger is set), a running worker through the mid-task move, and the active seat itself, which the watch rotates so the managed pipeline agent - which has no seat policy of its own and simply launches on the active seat - stops launching onto the spent one.
 Waiting out a dip and never starting work on a seat that cannot take it are the two halves of the same rule.
 
 Reading one collapsed percentage for both is what moved firstmate back and forth between two seats on 2026-10-15/16: a seat holding 65% of its week read as "18%" because its five-hour window was down, and the rotation treated that as a spent account.
@@ -212,11 +214,17 @@ Reading one collapsed percentage for both is what moved firstmate back and forth
 That figure is quota-axi's own `pace.reservePercentPoints` for the seven-day window, read from its report rather than recomputed here, so there is no second burn model to drift from the vendor's.
 A report with a weekly window but no pace falls back to that window's plain percent left, and one with no weekly window at all falls back to the collapsed account figure; two seats are only ever compared on the same basis, because spare and percent left are different quantities.
 
-Three rules follow from that ranking:
+Four rules follow from that ranking:
 
 - **Never move to a seat with no more spare.**
   A candidate must have strictly more weekly spare than the seat the work would leave.
   With every seat under the trigger, nothing moves and the stay-put notice says so once, which is the correct outcome: moving between two spent seats is worse than staying on one.
+- **The five-hour wall beats the comparison.**
+  Weekly spare answers which of two seats should carry work, which is a question only worth asking of seats that can carry it.
+  So when the seat the work is on has a **spent** five-hour window and a candidate's own five-hour window has something left, the candidate takes the work whatever its weekly spare is.
+  On 2026-11-02 a seat at 0% of its five-hour window held slightly more weekly spare than a seat with 56% of its own left, and the comparison stranded a running worker and every new spawn behind a seat that could not run them.
+  Both halves must be read figures, so an unreported five-hour window never crosses it, and two walled seats are still judged on weekly spare, because moving between them is the move worse than staying.
+  The absolute floors are untouched: a candidate still has to clear the destination minimum and must not read empty, which is what stops a wall pushing work onto a seat with nothing behind it.
 - **Prefer the spare that expires soonest.**
   Between two seats that both have spare, the one whose week resets first is the one to spend, because its spare is the spare that will otherwise be lost.
 - **Keep the thinnest seat in reserve.**
@@ -226,7 +234,8 @@ Ranking needs a weekly reset and a spare figure to rank by, so it applies on a r
 Where that projection is absent the comparison degrades to a plainer figure with no reset beside it, and the first qualifying seat in rotation order is taken, exactly as it always was.
 
 The comparison is skipped, leaving the absolute rules alone, exactly when it cannot be made or does not apply: the anchor's own headroom cannot be read, the two sides are measured on different bases, or the anchor's **week** is proven empty.
-A seat that is resting below the floor or held out of rotation by hand still has a known week, so the comparison still applies to work leaving it, and so does a seat whose five-hour window alone is spent.
+A seat that is resting below the floor or held out of rotation by hand still has a known week, so the comparison still applies to work leaving it.
+A seat whose five-hour window alone is spent keeps its known week too, and the five-hour wall above is what drops the comparison for it - per candidate, and only against a candidate that can run the work now.
 The empty-week case is what keeps a [mid-task move off a walled seat](#when-a-running-worker-hits-the-wall) working: a seat whose week is spent is one the work cannot stay on, so any seat with real headroom takes the work.
 
 The comparison belongs to the automatic paths.

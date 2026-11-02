@@ -1319,6 +1319,23 @@ fm_seat_trigger_left() {
   printf 'account\t%s\n' "$account"
 }
 
+# fm_seat_session_room <headroom-row>
+# CAN THIS SEAT RUN WORK RIGHT NOW, from the five-hour window alone. Exit 0 when
+# that window is reported with something left, 1 when it is reported and proven
+# spent, and 2 when the report names no five-hour window or no figure for it.
+#
+# The three answers are kept apart because they are acted on differently: a
+# spent window is a wall no worker on that seat can cross until it resets, while
+# an unreported one is simply unknown. No verdict is never read as empty here
+# either, so only a figure actually read ever says a seat cannot take work.
+fm_seat_session_room() {
+  local v
+  v=$(fm_seat_headroom_field "${1-}" 4) || return 2
+  jq -en --arg s "$v" '($s | tonumber) > 0' >/dev/null 2>&1 && return 0
+  jq -en --arg s "$v" '($s | tonumber) <= 0' >/dev/null 2>&1 && return 1
+  return 2
+}
+
 # fm_seat_basis_label <basis>
 # The words a message uses for a basis, so no caller invents its own.
 fm_seat_basis_label() {
