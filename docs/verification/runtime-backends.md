@@ -1682,7 +1682,7 @@ The second is timing.
 `pane send-text` returns before the harness has painted the text, and the `idle`, `typed-0.3s` and `typed-1.2s` captures of this pane are byte-identical: 1.2s after the send nothing had painted, and the typed command first appeared at 3.0s.
 A lab pane of the same build painted in 0.10-0.60s with a 0.32s cost per read, so one read after a fixed settle decides a race, and losing it clears the caller's payload and reports it unsent.
 `fm_backend_herdr_composer_payload_settle` samples the composer within a bounded window instead (`FM_BACKEND_HERDR_PROOF_POLLS`, default 10, and `FM_BACKEND_HERDR_PROOF_POLL_INTERVAL`, default 0.4s).
-A read that fails or comes back empty is a paint in flight and is taken again; a read that comes back with other content is the head-truncation shape the proof exists to catch and returns at once, so the vim command-mode recovery keeps its timing.
+A read that fails, comes back empty, or shows only a strict head of the payload is a paint in flight and is taken again; a read that comes back with other content is the head-truncation shape the proof exists to catch and returns at once, so the vim command-mode recovery for a tail left behind keeps its timing, while a payload command mode swallowed whole reads empty and waits out the window first.
 The window is the same for every caller: the caller's settle has already elapsed when the first read is taken, and what remains to size is how long a paint is worth waiting for.
 A refused proof now names the read that condemned the payload and quotes what the composer held, because the verdict alone left a supervisor nothing to act on.
 

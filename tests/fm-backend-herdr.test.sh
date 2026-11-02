@@ -5859,7 +5859,9 @@ test_send_text_submit_claude_slash_completion_list_below_composer_submits() {
 # cleared it with Ctrl+U and reported send-failed, which is what broke
 # `fm-control exit`. The proof now samples within a bounded budget. A composer
 # that reads back something OTHER than the payload is still a refusal on the
-# first read, so the vim command-mode recovery below keeps its timing.
+# first read, so the vim command-mode recovery below keeps its timing. A read
+# that shows only the payload's head is a paint still in flight, not that
+# refusal: head truncation leaves the tail.
 
 test_send_text_submit_waits_for_a_late_composer_render() {
   local dir log resp fb out
@@ -5882,6 +5884,26 @@ test_send_text_submit_waits_for_a_late_composer_render() {
   [ "$(grep -c $'\x1f''pane'$'\x1f''send-keys'$'\x1f''w1:p2'$'\x1f''enter' "$log")" -eq 1 ] \
     || fail "the proven payload should be submitted once"
   pass "fm_backend_herdr_send_text_submit: a composer that paints the typed payload a read late is proven, not cleared"
+}
+
+test_send_text_submit_waits_out_a_half_painted_payload() {
+  local dir log resp fb out
+  dir="$TMP_ROOT/submit-half-painted"; mkdir -p "$dir/responses"; log="$dir/log"; resp="$dir/responses"; : > "$log"
+  printf '{"result":{"agent":{"agent":"claude","agent_status":"idle"}}}\n' > "$resp/1.out"
+  printf '  \xe2\x9d\xaf\n' > "$resp/2.out"
+  printf '  \xe2\x9d\xaf please review the\n' > "$resp/4.out"
+  printf '  \xe2\x9d\xaf please review the open PR\n' > "$resp/5.out"
+  printf '{"result":{"agent":{"agent_status":"idle"}}}\n' > "$resp/6.out"
+  printf '{"result":{"agent":{"agent_status":"working"}}}\n' > "$resp/8.out"
+  fb=$(make_herdr_fakebin "$dir")
+  out=$( PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" FM_BACKEND_HERDR_SUBMIT_POLLS=1 \
+    FM_BACKEND_HERDR_PROOF_POLLS=3 FM_BACKEND_HERDR_PROOF_POLL_INTERVAL=0 \
+    bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_send_text_submit default:w1:p2 "please review the open PR" 3 0.01 0.01' "$ROOT" )
+  [ "$out" = empty ] || fail "a payload caught with only its head painted should be read again and submitted, got '$out'"
+  [ "$(herdr_ctrl_u_count "$log")" -eq 0 ] || fail "a half-painted payload must not be cleared, sent $(herdr_ctrl_u_count "$log") Ctrl+U"
+  [ "$(grep -c $'\x1f''pane'$'\x1f''send-keys'$'\x1f''w1:p2'$'\x1f''enter' "$log")" -eq 1 ] \
+    || fail "the payload proven once fully painted should be submitted once"
+  pass "fm_backend_herdr_send_text_submit: a composer caught with only the payload's head painted is read again, not refused"
 }
 
 # The composer read already falls back from the styled capture to the plain
@@ -6831,6 +6853,7 @@ test_send_text_submit_modal_probe_that_will_not_clear_is_unaccounted
 test_send_text_submit_modal_recovery_is_attempted_once
 test_send_text_submit_claude_slash_completion_list_below_composer_submits
 test_send_text_submit_waits_for_a_late_composer_render
+test_send_text_submit_waits_out_a_half_painted_payload
 test_send_text_submit_retries_an_unreadable_composer_during_the_proof
 test_send_text_submit_still_refuses_a_composer_that_never_renders
 test_send_text_submit_proof_refusal_names_the_reason
