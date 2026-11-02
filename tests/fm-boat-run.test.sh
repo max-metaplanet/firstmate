@@ -732,6 +732,36 @@ assert not pathlib.Path({path!r}).exists()
     empty(state)
 print('ok - a screened exception HEAD carries is withheld from history when its content fails the screen')
 
+for name, path, change in (
+    ('history-head-edited', 'ordinary.txt', 'edit'),
+    ('history-head-deleted', 'ordinary.txt', 'delete'),
+    ('history-head-excluded', 'secrets/app.txt', None),
+):
+    p, state, env = case(name, clean_history=True)
+    work = p / 'work'
+    (work / path).parent.mkdir(parents=True, exist_ok=True)
+    (work / path).write_text('API_SECRET=never-print-head-copy\n')
+    git(work, 'add', '--force', '--all')
+    git(work, 'commit', '-qm', 'credential-looking blob in HEAD')
+    git(work, 'update-ref', 'refs/remotes/origin/main', 'HEAD')
+    oid = git(work, 'rev-parse', 'HEAD:' + path).stdout.decode().strip()
+    if change == 'edit':
+        (work / path).write_text('cleaned in the working tree\n')
+    elif change == 'delete':
+        (work / path).unlink()
+    check = f'''import subprocess
+read = subprocess.run(['git', 'cat-file', 'blob', {oid!r}], capture_output=True, text=True)
+assert read.returncode != 0, 'HEAD bytes the source archive does not carry must be screened'
+assert 'never-print' not in read.stdout
+'''
+    r = launch(p, env, 'python3 -c ' + shlex.quote(check), ('--history-depth', '2'))
+    assert r.returncode == 0, (name, r.stdout, r.stderr, result(p))
+    assert b'history withheld' in r.stderr, (name, r.stderr)
+    assert b'never-print' not in r.stdout + r.stderr, name
+    assert b'never-print' not in (p / 'output/result.json').read_bytes(), name
+    empty(state)
+print('ok - a HEAD blob the working tree edits, deletes or excludes is screened and withheld')
+
 p, state, env = case('history-base-only-blob', clean_history=True)
 work = p / 'work'
 start = git(work, 'rev-parse', 'HEAD').stdout.decode().strip()

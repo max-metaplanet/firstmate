@@ -152,7 +152,7 @@ def git(root, *args, input=None):
     return result.stdout
 
 
-def history(root, head, depth, destination, key_files):
+def history(root, head, depth, destination, key_files, uploaded):
     try:
         base = git(root, 'rev-parse', '--verify', 'refs/remotes/origin/main^{commit}').decode().strip()
     except subprocess.CalledProcessError as exc:
@@ -171,16 +171,6 @@ def history(root, head, depth, destination, key_files):
     git(fetched, 'update-ref', 'refs/heads/fm-boat-test', head)
     git(fetched, 'symbolic-ref', 'HEAD', 'refs/heads/fm-boat-test')
     git(fetched, 'update-ref', 'refs/remotes/origin/main', base)
-    # HEAD's tree is the content the default no-history upload already sends,
-    # so the path filter is the whole boundary for its ordinary files. A
-    # screened exception is sent only when its content passes, so it is
-    # screened here too, and every other blob is new exposure and screened.
-    current = set()
-    for entry in filter(None, git(fetched, 'ls-tree', '-rz', '--full-tree', head).split(b'\0')):
-        meta, _ = entry.split(b'\t', 1)
-        mode, kind, oid = meta.split()
-        if kind == b'blob' and mode in (b'100644', b'100755'):
-            current.add(oid)
     scanned = {}
     kept = set()
     withheld = set()
@@ -213,7 +203,8 @@ def history(root, head, depth, destination, key_files):
                     kind != b'blob' or mode not in (b'100644', b'100755')):
                 withheld.add(oid)
                 continue
-            if oid in current and name not in SOURCE_ALLOWLIST:
+            # Bytes the source archive already carries leave this machine anyway.
+            if oid in uploaded:
                 kept.add(oid)
                 continue
             # .npmrc has an additional content rule, even for a reused blob.
@@ -280,14 +271,19 @@ def source(root, inputs, archive, key_files, history_depth=None):
         if not (root / name).exists():
             raise Failure('extra input missing: ' + name, 2)
         names.append(name)
+    object_format = git(root, 'rev-parse', '--show-object-format').decode().strip()
+    try:
+        archive_source(root, names, archive, history_depth, key_files, head, object_format)
+    except BaseException:
+        archive.unlink(missing_ok=True)
+        raise
+    return head, hashlib.sha256(archive.read_bytes()).hexdigest()
+
+
+def archive_source(root, names, archive, history_depth, key_files, head, object_format):
+    uploaded = set()
     with contextlib.ExitStack() as stack:
-        history_git = None
-        if history_depth is not None:
-            scratch = stack.enter_context(tempfile.TemporaryDirectory(dir=archive.parent, prefix='history-'))
-            history_git = history(root, head, history_depth, Path(scratch), key_files)
         output = stack.enter_context(tarfile.open(archive, 'w:gz', dereference=True))
-        if history_git is not None:
-            output.add(history_git, arcname='.git')
         for name in sorted(set(names)):
             relative(name)
             path = root / name
@@ -301,18 +297,20 @@ def source(root, inputs, archive, key_files, history_depth=None):
                 continue
             if not path.is_file():
                 raise Failure('source input must be a regular file: ' + name, 2)
-            if name in SOURCE_ALLOWLIST:
-                data = path.read_bytes()
-                if not safe_allowlisted(name, data):
-                    print('boat-offload: excluded allowlisted file with credential-looking content: ' +
-                          name, file=sys.stderr)
-                    continue
-                info = output.gettarinfo(path, arcname=name)
-                info.size = len(data)
-                output.addfile(info, io.BytesIO(data))
-            else:
-                output.add(path, arcname=name, recursive=False)
-    return head, hashlib.sha256(archive.read_bytes()).hexdigest()
+            data = path.read_bytes()
+            if name in SOURCE_ALLOWLIST and not safe_allowlisted(name, data):
+                print('boat-offload: excluded allowlisted file with credential-looking content: ' +
+                      name, file=sys.stderr)
+                continue
+            info = output.gettarinfo(path, arcname=name)
+            info.size = len(data)
+            output.addfile(info, io.BytesIO(data))
+            uploaded.add(hashlib.new(object_format, b'blob %d\0' % len(data) + data)
+                         .hexdigest().encode())
+        if history_depth is not None:
+            scratch = stack.enter_context(tempfile.TemporaryDirectory(dir=archive.parent, prefix='history-'))
+            output.add(history(root, head, history_depth, Path(scratch), key_files, uploaded),
+                       arcname='.git')
 
 
 def default_key_file():
