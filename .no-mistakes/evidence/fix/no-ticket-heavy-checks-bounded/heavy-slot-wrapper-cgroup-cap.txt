@@ -1,0 +1,30 @@
+### S1: generic heavy command through the heavy-slot wrapper (FM_HEAVY_SLOTS=1)
+$ FM_HEAVY_SLOTS=1 bin/fm-build-lock.py -- bash -c '<print own cgroup + limits>'
+cgroup=/user.slice/user-501.slice/user@501.service/app.slice/run-p4136401-i62850041.scope
+memory.max=5627392000
+memory.swap.max=0
+ulimit -v=unlimited
+exit=0
+expected memory.max = fm-memcap --budget-bytes --share 1 = 5627392819
+
+### S1b: two-slot pool divides the cap
+cgroup=/user.slice/user-501.slice/user@501.service/app.slice/run-p4136466-i62850065.scope
+memory.max=2813693952
+memory.swap.max=0
+ulimit -v=unlimited
+exit=0
+expected memory.max = 2813696409
+
+### S2 (adversarial, round-1 fix): lint-only vars in env no longer crash or enlarge the generic wrapper
+$ FM_LINT_ROOT_MEMORY_KIB=12582912 FM_LINT_JOBS=7 FM_HEAVY_SLOTS=1 bin/fm-build-lock.py -- bash -c '<probe>'
+cgroup=/user.slice/user-501.slice/user@501.service/app.slice/run-p4136488-i62853494.scope
+memory.max=5627392000
+memory.swap.max=0
+ulimit -v=unlimited
+exit=0
+$ FM_LINT_ROOT_MEMORY_KIB=12582912 FM_LINT_JOBS=2 (would have enlarged to 24 GiB before the fix)
+cgroup=/user.slice/user-501.slice/user@501.service/app.slice/run-p4136511-i62853497.scope
+memory.max=5627392000
+memory.swap.max=0
+ulimit -v=unlimited
+exit=0

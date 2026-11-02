@@ -1,0 +1,28 @@
+### S3: a runaway inside the cap kills itself, not the machine
+$ bin/fm-memcap.sh --bytes 268435456 -- python3 -c '<allocate 4 GiB>'
+Killed
+fm-memcap: python3 was killed by its 268435456-byte memory cap
+exit=137
+
+$ FM_HEAVY_SLOTS=8 bin/fm-build-lock.py -- python3 -c '<allocate 4 GiB>'   (cap = 45% RAM / 8 slots ~ 703 MB)
+/bin/bash: line 26: 4142485 Killed                     FM_HEAVY_SLOTS=8 bin/fm-build-lock.py -- python3 -c "$HOG" 2>&1
+exit=137
+free -m after:
+               total        used        free      shared  buff/cache   available
+Mem:           11926        9553         791          69        1920        2372
+Swap:          10239        5952        4287
+
+### S4: host with no usable systemd user scope (session bus removed) -> generic wrapper runs UNCAPPED with distinct warning
+$ env -u DBUS_SESSION_BUS_ADDRESS XDG_RUNTIME_DIR=/tmp/tmp.5EeerNuJam/no-runtime bin/fm-memcap.sh --mechanism
+rlimit
+$ env -u DBUS_SESSION_BUS_ADDRESS XDG_RUNTIME_DIR=/tmp/tmp.5EeerNuJam/no-runtime FM_HEAVY_SLOTS=1 bin/fm-build-lock.py -- bash -c 'ulimit -v; cat /proc/self/cgroup'
+fm-memcap: no usable systemd user scope; address-space limits are opt-in; running python3 uncapped; use bin/fm-boat-run.sh to run it bounded
+ulimit -v=unlimited
+0::/user.slice/user-501.slice/user@501.service/app.slice/no-mistakes-daemon-4a7ceb70.service
+exit=0
+
+### S5: same host, lint's opt-in rlimit still caps ShellCheck roots
+$ env -u DBUS_SESSION_BUS_ADDRESS XDG_RUNTIME_DIR=/tmp/tmp.5EeerNuJam/no-runtime bin/fm-memcap.sh --use-mechanism rlimit --share 2 -- bash -c 'ulimit -v'
+ulimit -v=2747750 KiB
+exit=0
+$ (no session bus, a host where neither works is simulated by refusing rlimit is not possible here; genuine-none text covered by tests/fm-memcap.test.sh)

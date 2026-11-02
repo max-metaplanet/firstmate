@@ -1,0 +1,12 @@
+### S6b: same lint at the DEFAULT machine-relative budget (no override, FM_HEAVY_SLOTS=1, 2 lint jobs)
+$ FM_HEAVY_SLOTS=1 bin/fm-build-lock.py -- bash -c 'bin/fm-lint.sh bin/fm-spawn.sh'
+fm-lint.sh: ShellCheck 0.11.0 (pinned 0.11.0)
+fm-lint.sh: full ShellCheck extended analysis enabled
+fm-lint: bin/fm-spawn.sh hit the memory ceiling with --external-sources (reason=memory rc=137); retried without it and without extended analysis; fallback passed with cross-file codes excluded (SC1091,SC2034,SC2153,SC2329)
+exit=0 wall=67s
+--- per-scope memory samples (max = MemoryMax, peak = cgroup memory.peak), last per scope:
+22:36:23 run-p4168399-i62875173.scope max= peak=
+free -m after:
+               total        used        free      shared  buff/cache   available
+Mem:           11926        7356        1798          36        3027        4569
+Swap:          10239        5996        4243

@@ -1,0 +1,10 @@
+### S6: shellcheck -x on bin/fm-spawn.sh through the lint gate path is bounded by a per-root cap (forced small: 512 MiB)
+$ FM_HEAVY_SLOTS=1 FM_LINT_JOBS=1 FM_LINT_ROOT_MEMORY_KIB=524288 bin/fm-build-lock.py -- bash -c 'bin/fm-lint.sh bin/fm-spawn.sh'
+fm-lint.sh: ShellCheck 0.11.0 (pinned 0.11.0)
+fm-lint.sh: full ShellCheck extended analysis enabled
+fm-lint: bin/fm-spawn.sh hit the memory ceiling with --external-sources (reason=memory rc=137); retried without it and without extended analysis; fallback passed with cross-file codes excluded (SC1091,SC2034,SC2153,SC2329)
+exit=0 wall=36s
+free -m after:
+               total        used        free      shared  buff/cache   available
+Mem:           11926        7325        1822          74        3072        4600
+Swap:          10239        5237        5002
