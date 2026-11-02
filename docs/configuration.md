@@ -1727,8 +1727,9 @@ Heavy-slot limits are unaffected: an ad hoc worker waits for a heavy slot exactl
 
 ## Heavy slots (config/heavy-slots)
 
-A heavy slot is a place to run one memory-heavy command: a Next production build, a Vitest run, a Playwright browser run, or a whole-project `tsc`.
+A heavy slot is a place to run one memory-heavy command: a Next production build, a Vitest run, a Playwright browser run, an ESLint run, or a whole-project `tsc`.
 It is claimed when such a command starts, rather than reserved when a worker spawns, so a worker that never runs one never holds a slot.
+A package script that runs many of those in sequence, such as a project's `preflight` or `queue-preflight`, claims one slot for its whole run instead of one per step, and its heavy steps reuse that slot.
 The pool is machine-wide for one OS user, so every Firstmate home, every worker, and the no-mistakes daemon share it.
 
 The optional local, gitignored `config/heavy-slots` in the machine's root Firstmate home holds one positive integer; blank lines and `#` lines are ignored, and an absent file declares one slot.
@@ -1745,9 +1746,13 @@ A command that claims a slot through `bin/fm-build-lock.py -- <command>` also ru
 `FM_BUILD_LOCK_BYPASS=1 <command>` runs one command without a slot.
 
 Covered automatically: any Node process whose `NODE_OPTIONS` carries the preload, which ship and scout launches, the managed no-mistakes Claude wrapper, and the daemon drop-in all add.
-Not covered: a runtime other than Node, a build tool that is not one of the four commands above, a script that replaces `NODE_OPTIONS` instead of appending to it (`NODE_OPTIONS=--max-old-space-size=4096 tsc --noEmit` is a real example from a project's own `type-check` script), and a launcher that clears the variable.
+A project's own scripts drop that variable in two ways, and both stay covered.
+A script that replaces `NODE_OPTIONS` instead of appending to it (`NODE_OPTIONS=--max-old-space-size=6144 npx tsc --noEmit -p apps/admin-center/tsconfig.json` is a real example from a project's type-check ratchet) has the preload put back into the child's value, so the child still claims a slot.
+A step whose whole environment is rebuilt from a name allowlist keeps no `NODE_OPTIONS` to repair, so it is covered instead by the heavy package script enclosing it: a cgroup is inherited through `exec` whatever the environment says, which bounds the step's memory even where nothing can claim a slot for it.
+Not covered: a runtime other than Node, a build tool that is not one of the commands above, and a launcher that clears the variable outside such a script.
 Run those through `bin/fm-build-lock.py -- <command>`, which worker instructions name; `bin/fm-test-run.sh` claims a slot the same way for its own concurrent runs.
-A `tsc` given a source file type-checks that file and is not treated as heavy, and neither is `tsc --watch`, which never exits and would hold its slot for good.
+A `tsc` or `eslint` given a source file checks that one file and is not treated as heavy, and neither is `tsc --watch`, which never exits and would hold its slot for good.
+`FM_HEAVY_SCRIPTS=<name>,<name>` names the heavy package scripts for one command, and an empty value names none; [`bin/fm-build-lock.js`](../bin/fm-build-lock.js) owns the default list and the rest of the heaviness definition.
 
 The command that claims a slot runs in a worker shell or the daemon, neither of which can read this home's configuration, so every ship or scout launch publishes this declaration into the machine's installed preload record and every heavy command reads that record when it starts.
 A change therefore applies at the next launch, or immediately with `FM_HEAVY_SLOTS=<n> bin/fm-build-lock.py node-option`.

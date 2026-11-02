@@ -57,10 +57,14 @@ slot. Nested fm-memcap.sh callers, such as bin/fm-lint.sh's per-root caps, land
 in sibling cgroup scopes rather than inside the enclosing one; their aggregate
 bound comes from bin/fm-lint.sh dividing the budget across its roots.
 
-Coverage is NODE_OPTIONS-based: runtimes other than Node, other build tools, a
-script that overwrites NODE_OPTIONS instead of appending to it, or a launcher
-that clears it need the explicit `-- COMMAND` wrapper. The daemon drop-in is
-systemd-only; a launchd-managed daemon is not covered.
+Coverage is NODE_OPTIONS-based, and the preload keeps it across the two ways a
+project's own scripts drop it: it re-appends itself to a child NODE_OPTIONS the
+spawning script assigned rather than appended to, and a package script it treats
+as heavy as a whole claims one slot for its entire run, so a step whose
+environment is rebuilt from a name allowlist still runs inside that slot's
+cgroup. Runtimes other than Node, other build tools, and a launcher that clears
+the variable outside such a script need the explicit `-- COMMAND` wrapper. The
+daemon drop-in is systemd-only; a launchd-managed daemon is not covered.
 """
 
 import fcntl
