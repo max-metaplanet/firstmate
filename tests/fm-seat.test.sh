@@ -153,6 +153,36 @@ codex_quota_fixture() {
   ]}' > "$home/quota.json"
 }
 
+# codex_window_fixture <home> <session-left> <session-resets> <session-pace>
+#                      <week-left> <week-resets> <week-pace>
+# The Codex counterpart of seat_windows: a native account reporting both windows
+# in Codex's own `session`/`weekly` vocabulary, which bin/fm-seat-lib.sh is what
+# normalises to the ids the seat policy reads. Its account-level figure is the
+# tighter of the two, so the windows and the collapsed percentage agree.
+codex_window_fixture() {
+  local home=$1 fl=$2 fr=$3 fp=$4 wl=$5 wr=$6 wp=$7 tighter=$5
+  mkdir -p "$home"
+  : > "$home/auth.json"
+  [ "$fl" -ge "$wl" ] || tighter=$fl
+  jq -n --argjson fl "$fl" --arg fr "$fr" --argjson fp "$fp" \
+    --argjson wl "$wl" --arg wr "$wr" --argjson wp "$wp" --argjson t "$tighter" \
+    '{schemaVersion:6,providers:[
+      {provider:"codex",accountKey:"codex-home",source:"oauth",
+       account:{email:"native@example.test"},state:{authStatus:"valid"},
+       attempts:[{source:"oauth",status:"skipped",error:"valid"}],
+       windows:[
+         {id:"session",kind:"session",label:"session",percentUsed:(100 - $fl),
+          percentRemaining:$fl,resetsAt:$fr,windowSeconds:18000,
+          pace:{status:"on_pace",reservePercentPoints:$fp}},
+         {id:"weekly",kind:"weekly",label:"week",percentUsed:(100 - $wl),
+          percentRemaining:$wl,resetsAt:$wr,windowSeconds:604800,
+          pace:{status:"on_pace",reservePercentPoints:$wp}}],
+       quotaSemantics:{effectiveAvailability:[
+         {scope:"all_models",status:"known",effectivePercentRemaining:$t,
+          runway:{status:"through_reset"}}]}}
+    ]}' > "$home/quota.json"
+}
+
 test_codex_registration_keeps_one_auth_store_and_quotes_login() {
   local out source_home identity_a identity_b
   make_codex_seat_case codex-register
@@ -4021,15 +4051,21 @@ test_an_exhausted_session_window_is_no_headroom_however_full_the_week_is() {
     "the hold must name paid extra usage as what it is preventing"
   run_seat "$HOME_DIR" "$FAKEBIN" extra-usage off >/dev/null
 
-  # The automatic switch must not rotate the active seat onto beta, whose WEEK
-  # is thinner than alpha's: a spent session window is not a spent week, so the
-  # anchor rule still applies. A new worker reaches the seat with session room
-  # at launch instead (bin/fm-spawn.sh, covered by the spawn cases below).
+  # The automatic switch must rotate the active seat onto beta even though
+  # beta's WEEK is thinner. alpha cannot run a worker at all until its five-hour
+  # window resets, and weekly balance has nothing to settle between a seat that
+  # can take work and one that cannot. The pipeline agent launches on whichever
+  # seat is active, so this rotation is also what keeps it off the spent seat.
   out=$(run_seat "$HOME_DIR" "$FAKEBIN" auto)
   expect_code 0 "$?" "the pass must act rather than fail: $out"
-  assert_contains "$out" "no seat has enough headroom to switch to" \
-    "a spent session window on a full week must not rotate onto a thinner week"
-  assert_grep alpha "$HOME_DIR/config/claude-seat" "the active seat must stay on the fuller week"
+  assert_contains "$out" "switched from alpha" \
+    "a spent session window must hand work to the seat that can run it"
+  assert_grep beta "$HOME_DIR/config/claude-seat" "the seat that can run work must become the active one"
+
+  # And it stops there: beta's own week is far above the trigger, so no later
+  # pass walks the work back onto the seat that still cannot run it.
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" auto)
+  [ -z "$out" ] || fail "the seat just switched to fired a move of its own: $out"
 
   # A deliberate switch back onto the spent seat is refused for the same reason,
   # with --force still the explicit override.
@@ -4758,6 +4794,14 @@ test_a_five_hour_wall_yields_to_a_seat_that_can_run_now() {
 
   assert_equals seat-max "$(cat "$HOME_DIR/config/claude-seat")" \
     "answering where work goes must not rotate the active seat"
+
+  # The pipeline agent has no seat policy of its own: it launches on whichever
+  # seat is active. So the watch leaving the walled seat is what un-strands it.
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" auto)
+  assert_contains "$out" "switched from seat-max" \
+    "the watch must leave a seat no worker launched on it can run"
+  assert_equals seat-max2 "$(cat "$HOME_DIR/config/claude-seat")" \
+    "the active seat must move, because the pipeline agent follows it"
   pass "a seat whose five-hour window is spent yields to one that can run work now"
 }
 
@@ -4776,10 +4820,15 @@ test_the_weekly_comparison_still_decides_when_both_seats_can_run() {
     "the refusal must still name the weekly comparison that decided it"
 
   # Two walled seats are the move worse than staying, so the weekly comparison
-  # is the whole answer there too: neither seat can run work now.
+  # is the whole answer there too: neither seat can run work now. A paid
+  # extra-usage policy is what keeps such a candidate past the used-up refusal
+  # and in front of the comparison at all, so that is the shape this drives.
   seat_windows_clear "$SPEC_DIR"
   seat_windows "$SPEC_DIR" "$SEATS_DIR/seat-max" 0 '2026-11-02T04:00:00Z' 10 '2026-11-07T06:00:00Z' -40 6
   seat_windows "$SPEC_DIR" "$SEATS_DIR/seat-max2" 0 '2026-11-02T04:00:00Z' 14 '2026-11-07T06:00:00Z' -40 4
+  seat_extra_spend "$SPEC_DIR" "$SEATS_DIR/seat-max2" 10
+  printf 'allow 50\n' > "$HOME_DIR/config/claude-seat-extra-usage"
+  rm -f "$HOME_DIR/config/claude-seat-destination-min"
   out=$(run_seat "$HOME_DIR" "$FAKEBIN" worker-destination --from seat-max)
   expect_code 1 "$?" "a walled worker must not move onto a second walled seat: $out"
   assert_contains "$out" "its weekly spare of 4 is not more than the 6" \
@@ -4793,15 +4842,40 @@ test_the_five_hour_wall_never_crosses_the_destination_floor() {
   printf '20\n' > "$HOME_DIR/config/claude-seat-destination-min"
 
   out=$(run_seat "$HOME_DIR" "$FAKEBIN" launch-destination)
-  expect_code 1 "$?" "a walled seat must not push work below the destination floor: $out"
   assert_contains "$out" "14% left across its account windows is not above the 20% destination minimum" \
-    "the refusal must name the floor, not the five-hour wall it would otherwise cross"
+    "the skip must name the floor, not the five-hour wall it would otherwise cross"
+  assert_equals seat-max "$(printf '%s\n' "$out" | tail -1)" \
+    "a walled seat must not push work below the destination floor"
 
   out=$(run_seat "$HOME_DIR" "$FAKEBIN" worker-destination --from seat-max)
   expect_code 1 "$?" "the mid-task move must honour the same floor: $out"
   assert_contains "$out" "14% left across its account windows is not above the 20% destination minimum" \
     "the mid-task refusal must name the floor too"
   pass "the five-hour wall never sends work below the existing destination floor"
+}
+
+test_the_five_hour_wall_moves_codex_work_too() {
+  local out
+  make_codex_seat_case codex-five-hour-wall
+  codex_window_fixture "$SEATS_DIR/seat-max" 0 '2026-11-02T04:00:00Z' -40 10 '2026-11-07T06:00:00Z' 6
+  codex_window_fixture "$SEATS_DIR/seat-max2" 56 '2026-11-02T04:00:00Z' 30 14 '2026-11-07T06:00:00Z' 4
+  printf 'seat-max\n' > "$HOME_DIR/config/codex-seat"
+  printf '20\n' > "$HOME_DIR/config/codex-seat-threshold"
+
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" --provider codex launch-destination)
+  assert_equals seat-max2 "$(printf '%s\n' "$out" | tail -1)" \
+    "a Codex launch must leave a seat whose session window is spent"
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" --provider codex worker-destination --from seat-max)
+  assert_equals seat-max2 "$(printf '%s\n' "$out" | tail -1)" \
+    "a walled Codex worker must move under the same rule"
+
+  # Codex seats keep the weekly comparison wherever both can still run work.
+  codex_window_fixture "$SEATS_DIR/seat-max" 15 '2026-11-02T04:00:00Z' -40 10 '2026-11-07T06:00:00Z' 6
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" --provider codex worker-destination --from seat-max)
+  expect_code 1 "$?" "an unwalled Codex seat must still refuse a candidate with less weekly spare: $out"
+  assert_contains "$out" "its weekly spare of 4 is not more than the 6" \
+    "the Codex refusal must name the weekly comparison"
+  pass "the five-hour wall and the weekly comparison behave the same on Codex seats"
 }
 
 test_the_lead_move_requires_measured_spend_priority() {
@@ -5100,6 +5174,7 @@ test_the_destination_minimum_still_applies_on_top_of_the_anchor_rule
 test_a_five_hour_wall_yields_to_a_seat_that_can_run_now
 test_the_weekly_comparison_still_decides_when_both_seats_can_run
 test_the_five_hour_wall_never_crosses_the_destination_floor
+test_the_five_hour_wall_moves_codex_work_too
 test_the_lead_move_requires_measured_spend_priority
 test_an_unreadable_anchor_leaves_the_absolute_rules_in_charge
 test_a_walled_worker_moves_off_an_empty_seat_but_not_onto_an_equal_one
