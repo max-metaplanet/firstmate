@@ -1,0 +1,19 @@
+ok - an undeclared project keeps the local heavy slot and says nothing new
+ok - no worker marker and a credential-needing kind stay in a slot
+ok - a declared project runs the kind on Boat, outside the local slots
+ok - a routed run sees newly staged and edited files, not only HEAD
+ok - an untracked file keeps the run local and the notice names it
+ok - a command whose outputs would stay on Boat runs locally
+ok - tsc goes to Boat only when its resolved configuration proves noEmit
+ok - a remote vitest snapshot failure under CI is no verdict and reruns locally
+ok - a heavy command under turbo or a fanned-out pnpm keeps a local slot
+ok - the remote command keeps the cwd and the real flags, drops the preload, and rewrites worktree paths
+ok - a completed remote run is the verdict and its exit is the exit
+ok - a Boat account with nothing left falls back to a local heavy slot, and says so
+ok - a routing record naming a Firstmate copy that is gone runs the command locally
+ok - an unknown kind and a malformed invocation refuse instead of running anything
+ok - no declaration publishes an empty record rather than refusing
+ok - comments, quoted values, an explicit empty local-only and a bare value all read
+ok - every malformed declaration refuses publication and writes no record
+ok - publication needs both absolute directories
+ok - the preload routes a real heavy Node command to Boat, and the bypass skips both

@@ -1,0 +1,5 @@
+Default CLI runtime I/O probe: exit 69
+boat-offload: excluded allowlisted file with credential-looking content: .claude/settings.local.json
+boat-offload: excluded allowlisted file with credential-looking content: .npmrc
+boat-offload: Boat key unavailable
+Default upload finished without whole-file ordinary-source reads or Git object-id hashing; stopped at missing disposable Boat key as expected.
