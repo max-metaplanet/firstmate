@@ -664,7 +664,9 @@ session_room_reason() {
 # or when the active seat has five-hour room or no five-hour reading, that is
 # the active seat, unchanged. When the active seat is proven to have no
 # five-hour room, it is the seat next_seat chooses with --session-room: one with
-# room AND more weekly spare than the active seat. Read-only: it writes no seat
+# room AND more weekly spare than the active seat, or, when the active seat's
+# five-hour window is spent outright, any seat with five-hour room that clears
+# the depletion and destination-minimum gates. Read-only: it writes no seat
 # file and moves neither the lead nor a running worker; bin/fm-spawn.sh points
 # that one launch at the answer.
 #
