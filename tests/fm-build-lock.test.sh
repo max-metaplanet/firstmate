@@ -601,6 +601,11 @@ function run(fs) {
             # Two named source files are more than the one file the exemption covers.
             ('eslint', ['src/a.ts', 'src/b.ts'], False),
             ('tsc', ['--noEmit', 'src/a.ts', 'src/b.ts'], False),
+            # A quoted glob the tool expands itself, or a directory beside one
+            # file, stands for many files.
+            ('eslint', ['src/**/*.ts'], False),
+            ('eslint', ['src', 'src/a.ts'], False),
+            ('tsc', ['--noEmit', 'src/**/*.ts'], False),
             ('next', ['build'], False),
         ]
         light = [
@@ -617,6 +622,8 @@ function run(fs) {
             ('eslint', ['--version']),
             ('eslint', ['src/one.tsx']),
             ('eslint', ['-c', 'eslint.config.mjs', 'src/one.ts']),
+            ('eslint', ['--max-warnings', '0', 'src/one.ts']),
+            ('tsc', ['--target', 'es2020', 'one-file.ts']),
             ('next', ['dev']),
             ('next', ['start']),
         ]
