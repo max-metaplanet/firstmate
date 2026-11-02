@@ -1817,15 +1817,26 @@ core bootstrap='corepack enable pnpm; pnpm install --frozen-lockfile' type=large
 The project name is the basename of the worktree the heavy command runs in, which for a task worktree is the project's own name.
 
 Routing is declared, never guessed.
+Boat-first by default means Boat-first for every declared project, because a Boat run needs the project-specific bootstrap that only a declaration supplies.
 Without a declaration naming the project, a heavy command behaves exactly as it did before this file existed.
 Every reason to stay local - no declaration, a kind the declaration keeps local, a Boat account with no capacity or budget left, a transfer failure, a missing Firstmate copy - prints one line and runs the command in a heavy slot here, so routing can only ever cost the Boat attempt.
-`FM_HEAVY_ROUTE=local <command>` forces the local path for one command, and `FM_BUILD_LOCK_BYPASS=1 <command>` still skips the slot and the routing together.
+`FM_BUILD_LOCK_BYPASS=1 <command>` still skips the slot and the routing together, and a kind named in `local-only` stays local for the whole project.
 
 Only a worker-started heavy command is routed, which leaves the no-mistakes daemon's own steps on their existing path; [`bin/fm-boat-test-wrapper.sh`](../bin/fm-boat-test-wrapper.sh) remains the pipeline's own Boat integration.
-A command that needs credentials stays local, because this adapter deliberately carries none: `local-only` defaults to `playwright,queue-preflight`, a browser run needing browsers and a preflight needing a private remote and repository variables.
-Declare any other such command there rather than letting it reach a machine that cannot authenticate it.
-The upload is the worktree as it stands, including uncommitted edits and untracked or newly staged files that are not ignored.
-Nothing a remote run writes comes back, so a command whose job is to write into the worktree stays local: `next build`, `tsc` without an explicit `--noEmit` or in build mode, and a Vitest or ESLint run that updates snapshots, writes coverage, fixes files, or writes an output file.
+Only a top-level heavy command is routed: one started under turbo, nx, lerna, or a recursive or filtered pnpm (`-r`, `--recursive`, `--filter`) takes a local heavy slot exactly as before, so an orchestrator fanning out many heavy children never starts a machine for each.
+
+These heavy work items stay local even in a declared project:
+- `playwright`, by default in `local-only`, because a browser run needs browsers.
+- `queue-preflight`, by default in `local-only`, because it needs a read-only GitHub token gated behind a separate credential design that is not approved; this adapter carries no credential.
+- `next build`, because its `.next` output would stay on the Boat machine.
+- `db-local replay`, because it needs secrets and a local database; the preload never classifies it as heavy, so it never reaches routing and runs locally exactly as before.
+
+Declare any other command that needs credentials in `local-only` rather than letting it reach a machine that cannot authenticate it.
+The upload is HEAD's tracked files with their uncommitted edits plus every newly staged addition.
+An untracked file that is not ignored never travels, so while one exists the command stays local and the one-line notice names the first such file.
+Nothing a remote run writes comes back, so a command whose job is to write into the worktree stays local: a `tsc` build, a `tsc` whose resolved configuration does not prove `noEmit`, and a Vitest or ESLint run that updates snapshots, writes coverage, fixes files, or writes an output file.
+A Vitest configuration file that enables coverage or sets a reporter `outputFile` is invisible to argument parsing, so a project with one declares `vitest` in `local-only`.
+A remote Vitest failure that reports a snapshot missing, mismatched, or not written is not a verdict, because the remote run is under CI where Vitest never writes a new snapshot; the command runs locally after one notice.
 
 Remote output is captured and printed when the command finishes rather than streamed, and only a completed remote run is a verdict: that remote exit is the command's exit.
 [`bin/fm-boat-run.sh`](../bin/fm-boat-run.sh)'s help owns the upload, the per-account budget, the result and artifact files, and the cleanup.

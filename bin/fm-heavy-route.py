@@ -12,8 +12,7 @@ first, and the local heavy slot plus memory cap is the fallback.
   fm-heavy-route.py publish --home DIR --config DIR
       validate DIR/boat-heavy and write the machine's routing record
 Kinds: next-build, vitest, playwright, eslint, tsc, queue-preflight.
-Force the local path for one command: FM_HEAVY_ROUTE=local <command>.
-FM_BUILD_LOCK_BYPASS=1 still skips the preload, and so this script, entirely.
+FM_BUILD_LOCK_BYPASS=1 skips the preload, and so this script, entirely.
 
 Routing is declared, never guessed: without a declaration naming the project,
 nothing about a heavy command changes. Every reason to stay local prints one
@@ -34,8 +33,8 @@ later word is <key>=<value>:
                travel, so a project that needs them installs them here.
   local-only   heavy kinds that always stay local, comma separated. Defaults
                to playwright,queue-preflight: a browser run needs browsers, and
-               a preflight reads a private remote and repository variables, so
-               both need credentials this adapter deliberately cannot carry.
+               a preflight needs a read-only GitHub token that waits on a
+               separate credential design this adapter deliberately lacks.
                An empty value declares that no kind stays local.
   type         Boat machine type, passed to fm-boat-run.sh --type unchanged.
   timeout      whole seconds, passed to fm-boat-run.sh --timeout unchanged,
@@ -55,30 +54,41 @@ exactly as the heavy-slot count does.
 Only a worker-started command is routed. A command with no FM_TASK_ID in its
 environment keeps its existing path, which leaves the no-mistakes daemon's own
 steps and their Boat integration (bin/fm-boat-test-wrapper.sh) untouched.
+Only a top-level heavy command is routed: one with turbo, nx, lerna, or a
+recursive or filtered pnpm among its ancestor processes takes a local heavy slot,
+so an orchestrator fanning out N heavy children never starts N machines.
 
 Remote shape: fm-boat-run.sh owns the upload, the account budget, the result
 and the cleanup; this script only builds the command for it. The local node
 interpreter is replaced by `node` from the remote PATH, the preload's own
 --require is dropped, and an argument naming a path inside the worktree becomes
 that path relative to the remote source root. Nothing from the local
-environment travels. The source is the worktree as it stands: HEAD's tracked
-files with their uncommitted edits, plus every untracked or newly staged file
-that is not ignored, each through fm-boat-run.sh's own --input screen.
+environment travels. The source is HEAD's tracked files with their uncommitted
+edits plus every newly staged addition, each through fm-boat-run.sh's own
+--input screen. An untracked file that is not ignored never travels, so while
+one exists the command stays local and the notice names it.
 
 Nothing a remote run writes comes back, so a command whose job includes writing
-into the worktree stays local: next build, tsc without an explicit --noEmit or
-in build mode, vitest updating snapshots or writing coverage or an output file,
-and eslint fixing files or writing an output file. Remote output is captured and printed when the command
-finishes rather than streamed.
+into the worktree stays local: next build, a tsc build or a tsc whose resolved
+configuration (`tsc --showConfig`, run outside the preload) does not prove
+noEmit, vitest updating snapshots or writing coverage or an output file, and
+eslint fixing files or writing an output file. A vitest configuration file that
+writes coverage or a reporter's output file is invisible here, so such a project
+declares vitest local-only. Remote output is captured and printed when the
+command finishes rather than streamed.
 
 Only result kind `completed` is a verdict: that remote exit is the command's
 exit, and an unconfirmed cleanup is reported without changing it. Every other
-outcome means the command never ran, so it runs locally after one notice.
+outcome means the command never ran, so it runs locally after one notice. A
+failed remote vitest run that reports a snapshot missing, mismatched or not
+written is not a verdict either, because the remote run is under CI, where
+vitest never writes a new snapshot; it too runs locally after one notice.
 """
 
 import json
 import os
 from pathlib import Path
+import re
 import shlex
 import subprocess
 import sys
@@ -92,6 +102,9 @@ KEYS = ("bootstrap", "local-only", "type", "timeout")
 # fm-boat-run.sh's header owns this path; the remote command is built against it.
 REMOTE_SOURCE = "/home/user/fm-job/source"
 SCRATCH = ".fm-test-scratch"
+ORCHESTRATORS = ("turbo", "nx", "lerna")
+SNAPSHOT_UNWRITTEN = re.compile(
+    rb"Snapshot .{0,200}(?:mismatched|missing)|snapshots? (?:was |were )?not written", re.I)
 
 
 class Unreadable(Exception):
@@ -250,18 +263,30 @@ def remote_command(command, root, preload):
     return remote
 
 
-def uncommitted_new(root):
-    """Files the worktree has that HEAD's tree lacks: untracked or newly staged."""
+def staged_or_untracked(root):
+    """(newly staged additions, first untracked unignored path or None), or None."""
     def names(*args):
         listed = subprocess.run(["git", "-C", str(root), *args], capture_output=True,
                                 check=True, timeout=60).stdout
-        return {os.fsdecode(name) for name in listed.split(b"\0") if name}
+        return [os.fsdecode(name) for name in listed.split(b"\0") if name]
     try:
-        present = names("ls-files", "-z", "--cached", "--others", "--exclude-standard")
-        committed = names("ls-tree", "-rz", "--name-only", "--full-tree", "HEAD")
+        untracked = names("ls-files", "-z", "--others", "--exclude-standard")
+        added = names("diff", "--cached", "--no-renames", "--name-only", "--diff-filter=A",
+                      "-z")
     except (OSError, subprocess.SubprocessError):
         return None
-    return sorted(name for name in present - committed if os.path.lexists(root / name))
+    return added, (untracked[0] if untracked else None)
+
+
+def proves_no_emit(command):
+    """Whether tsc's resolved configuration sets noEmit; False when undecidable."""
+    try:
+        shown = subprocess.run([*command, "--showConfig"], capture_output=True, text=True,
+                               timeout=60, env=dict(os.environ, FM_BUILD_LOCK_BYPASS="1"))
+        options = json.loads(shown.stdout).get("compilerOptions")
+    except (OSError, subprocess.SubprocessError, ValueError, AttributeError):
+        return False
+    return shown.returncode == 0 and isinstance(options, dict) and options.get("noEmit") is True
 
 
 def writes_worktree(kind, command):
@@ -270,10 +295,7 @@ def writes_worktree(kind, command):
     if kind == "next-build":
         return True
     if kind == "tsc":
-        if "-b" in args or "--build" in args or "--noemit" not in args:
-            return True
-        at = args.index("--noemit")
-        return at + 1 < len(args) and args[at + 1] == "false"
+        return "-b" in args or "--build" in args or not proves_no_emit(command)
     if kind == "vitest":
         return any(value in ("-u", "--update") or value.startswith(
             ("--update=", "--coverage", "--outputfile")) for value in args)
@@ -283,7 +305,34 @@ def writes_worktree(kind, command):
     return False
 
 
-def boat(settings, command, kind, home, bin_dir, root):
+def orchestrated():
+    """The first orchestrator among this process's ancestors, or None."""
+    pid = os.getppid()
+    while pid > 1:
+        try:
+            argv = [os.fsdecode(word) for word in
+                    Path("/proc/%d/cmdline" % pid).read_bytes().split(b"\0") if word]
+            stat = Path("/proc/%d/stat" % pid).read_text()
+            pid = int(stat[stat.rindex(")") + 2:].split()[1])
+        except (OSError, ValueError, IndexError):
+            return None
+        names = set()
+        for word in argv[:2]:
+            parts = word.split("/")
+            names.add(parts[-1].split(".")[0])
+            names.update(parts[at + 1] for at, part in enumerate(parts[:-1])
+                         if part == "node_modules")
+        found = names.intersection(ORCHESTRATORS)
+        if found:
+            return found.pop()
+        fanout = [word for word in argv[1:]
+                  if word in ("-r", "--recursive", "-F") or word.startswith("--filter")]
+        if "pnpm" in names and fanout:
+            return "pnpm " + fanout[0]
+    return None
+
+
+def boat(settings, command, kind, home, bin_dir, root, inputs):
     """Run the heavy command on one ephemeral Boat VM. Returns an exit code, or None."""
     scratch = root.parent / SCRATCH
     try:
@@ -292,9 +341,6 @@ def boat(settings, command, kind, home, bin_dir, root):
     except OSError as error:
         return local("the Boat evidence directory could not be made (%s)" % error, command)
     output = job / "boat"
-    inputs = uncommitted_new(root)
-    if inputs is None:
-        return local("the worktree's uncommitted files could not be listed", command)
     relative = os.path.relpath(os.getcwd(), str(root))
     script = ["set -euo pipefail", settings["bootstrap"]]
     if relative != ".":
@@ -324,14 +370,19 @@ def boat(settings, command, kind, home, bin_dir, root):
         print("heavy-route: the Boat machine's cleanup is %s; reap it (evidence %s)"
               % (result.get("cleanup") or "unknown", output / "result.json"),
               file=sys.stderr, flush=True)
+    if kind == "vitest" and result["remote_exit"] != 0:
+        try:
+            log = (output / "command.log").read_bytes()
+        except OSError:
+            log = b""
+        if SNAPSHOT_UNWRITTEN.search(log):
+            return local("Boat's vitest failed on a snapshot it may not write under CI", command)
     return result["remote_exit"]
 
 
 def route(kind, command):
     if kind not in KINDS:
         raise Unreadable("unknown heavy kind %r; known: %s" % (kind, ", ".join(KINDS)))
-    if os.environ.get("FM_HEAVY_ROUTE") == "local":
-        return local("", command)
     if not os.environ.get("FM_TASK_ID"):
         return local("", command)
     loaded = record()
@@ -345,13 +396,22 @@ def route(kind, command):
         return local("", command)
     if kind in (settings.get("local_only") or []):
         return local("%s needs credentials Boat cannot carry" % kind, command)
+    ancestor = orchestrated()
+    if ancestor:
+        return local("%s runs under %s, so only that top-level command could go to Boat"
+                     % (kind, ancestor), command)
+    tree = staged_or_untracked(root)
+    if tree is None:
+        return local("the worktree's uncommitted files could not be listed", command)
+    if tree[1]:
+        return local("untracked file %s would not travel to Boat" % tree[1], command)
     if writes_worktree(kind, command):
         return local("%s writes files Boat would not bring back" % kind, command)
     home, bin_dir = loaded.get("home"), loaded.get("bin")
     if not (isinstance(home, str) and isinstance(bin_dir, str)
             and Path(bin_dir, "fm-boat-run.sh").is_file()):
         return local("the recorded Firstmate copy is gone", command)
-    return boat(settings, command, kind, home, bin_dir, root)
+    return boat(settings, command, kind, home, bin_dir, root, tree[0])
 
 
 def main():

@@ -56,7 +56,7 @@ def case(name, project='smokeproj', declaration=None):
                FM_BUILD_LOCK_INSTALL_DIR=str(p / 'install'),
                FM_BUILD_LOCK_FILE=str(p / 'heavy.lock'), FM_HEAVY_SLOTS='1',
                FM_TASK_ID='fixture-task', DEV_SECRET='host-only')
-    for name in ('FM_BUILD_LOCK_BYPASS', 'FM_BUILD_LOCK_HELD', 'FM_HEAVY_ROUTE', 'NODE_OPTIONS'):
+    for name in ('FM_BUILD_LOCK_BYPASS', 'FM_BUILD_LOCK_HELD', 'NODE_OPTIONS', 'CI'):
         env.pop(name, None)
     return p, work, config, state, env
 
@@ -119,7 +119,6 @@ print('ok - an undeclared project keeps the local heavy slot and says nothing ne
 
 for name, overrides, kind in (
     ('no-task-marker', {'FM_TASK_ID': None}, 'tsc'),
-    ('forced-local', {'FM_HEAVY_ROUTE': 'local'}, 'tsc'),
     ('local-only-kind', {}, 'queue-preflight'),
     ('local-only-browser', {}, 'playwright'),
 ):
@@ -134,7 +133,7 @@ for name, overrides, kind in (
     assert r.returncode == 0, (name, r.stderr)
     assert not r.stdout.endswith('held=\n'), (name, r.stdout)
     assert not called(state), name
-print('ok - no worker marker, a forced local run, and a credential-needing kind stay in a slot')
+print('ok - no worker marker and a credential-needing kind stay in a slot')
 
 p, work, config, state, env = case('routed', declaration=DECLARED)
 assert publish(config, env).returncode == 0
@@ -147,24 +146,30 @@ assert 'bootstrapped' in r.stdout, r.stdout
 assert 'boat_fixture_secret' not in r.stdout + r.stderr
 print('ok - a declared project runs the kind on Boat, outside the local slots')
 
-p, work, config, state, env = case('uncommitted-new', declaration=DECLARED)
+p, work, config, state, env = case('staged-new', declaration=DECLARED)
 assert publish(config, env).returncode == 0
-(work / 'untracked.txt').write_text('untracked content\n')
 (work / 'deep/staged.txt').write_text('staged content\n')
 subprocess.run(['git', '-C', str(work), 'add', 'deep/staged.txt'], check=True,
                capture_output=True)
 (work / 'tracked.txt').write_text('edited content\n')
-r = run(work, env, command=('cat', 'untracked.txt', 'deep/staged.txt', 'tracked.txt'))
+r = run(work, env, command=('cat', 'deep/staged.txt', 'tracked.txt'))
 assert r.returncode == 0, r.stderr
 assert called(state)
-assert 'untracked content\nstaged content\nedited content\n' in r.stdout, r.stdout
-print('ok - a routed run sees untracked, newly staged and edited files, not only HEAD')
+assert 'staged content\nedited content\n' in r.stdout, r.stdout
+print('ok - a routed run sees newly staged and edited files, not only HEAD')
+
+p, work, config, state, env = case('untracked-new', declaration=DECLARED)
+assert publish(config, env).returncode == 0
+(work / 'deep/scratch.csv').write_text('not for upload\n')
+r = run(work, env)
+assert r.returncode == 0, r.stderr
+assert not called(state)
+assert not r.stdout.endswith('held=\n'), r.stdout
+assert 'untracked file deep/scratch.csv' in r.stderr, r.stderr
+print('ok - an untracked file keeps the run local and the notice names it')
 
 for name, kind, args in (
     ('next-build', 'next-build', ()),
-    ('tsc-emits', 'tsc', ()),
-    ('tsc-build', 'tsc', ('-b', '--noEmit')),
-    ('tsc-noemit-false', 'tsc', ('--noEmit', 'false')),
     ('vitest-update', 'vitest', ('run', '-u')),
     ('vitest-coverage', 'vitest', ('run', '--coverage')),
     ('eslint-fix', 'eslint', ('.', '--fix')),
@@ -177,13 +182,60 @@ for name, kind, args in (
     assert not r.stdout.endswith('held=\n'), (name, r.stdout)
     assert not called(state), name
     assert 'would not bring back' in r.stderr, (name, r.stderr)
+print('ok - a command whose outputs would stay on Boat runs locally')
 
-p, work, config, state, env = case('tsc-noemit', declaration=DECLARED)
+# A stand-in tsc: --showConfig prints the resolved configuration tsc would, with
+# noEmit taken from NOEMIT; any other run reports where it ran.
+FAKE_TSC = ('if [ "${@: -1}" = --showConfig ]; then '
+            'printf "{\\"compilerOptions\\":{\\"noEmit\\":%s}}" "$NOEMIT"; exit 0; fi; ' + REPORT)
+for name, noemit, args, routed in (
+    ('config-noemit', 'true', (), True),
+    ('config-emits', 'false', (), False),
+    ('build', 'true', ('-b',), False),
+    ('unparsable-config', 'broken', (), False),
+):
+    p, work, config, state, env = case('tsc-' + name, declaration=DECLARED)
+    assert publish(config, env).returncode == 0
+    r = run(work, dict(env, NOEMIT=noemit), kind='tsc',
+            command=('bash', '-c', FAKE_TSC, 'tsc', *args))
+    assert r.returncode == 0, (name, r.stderr)
+    assert called(state) == routed, (name, r.stderr)
+    assert r.stdout.endswith('held=\n') == routed, (name, r.stdout)
+print('ok - tsc goes to Boat only when its resolved configuration proves noEmit')
+
+p, work, config, state, env = case('vitest-snapshot', declaration=DECLARED)
 assert publish(config, env).returncode == 0
-r = run(work, env, kind='tsc', command=('bash', '-c', REPORT, 'tsc', '--noEmit'))
-assert r.returncode == 0, r.stderr
-assert called(state) and r.stdout.endswith('held=\n'), (r.stdout, r.stderr)
-print('ok - a command whose outputs would stay on Boat runs locally; tsc --noEmit is routed')
+snapshot = ('if [ -n "${CI:-}" ]; then echo "Snapshot \\`adds 1\\` mismatched"; exit 1; fi; ' +
+            REPORT)
+r = run(work, env, command=('bash', '-c', snapshot))
+assert r.returncode == 0, (r.returncode, r.stderr)
+assert called(state)
+assert not r.stdout.endswith('held=\n'), r.stdout
+assert 'snapshot it may not write under CI' in r.stderr, r.stderr
+print('ok - a remote vitest snapshot failure under CI is no verdict and reruns locally')
+
+ORCHESTRATOR = '#!/usr/bin/env bash\nwhile [ "$1" != -- ]; do shift; done\nshift\n"$@"\nexit $?\n'
+for name, tool, flags, routed in (
+    ('turbo', 'turbo', ('run', 'type-check'), False),
+    ('pnpm-filter', 'pnpm', ('--filter', 'app', 'exec'), False),
+    ('pnpm-recursive', 'pnpm', ('-r', 'exec'), False),
+    ('pnpm-single', 'pnpm', ('exec',), True),
+):
+    p, work, config, state, env = case('orchestrated-' + name, declaration=DECLARED)
+    assert publish(config, env).returncode == 0
+    fake = p / 'tools' / tool
+    fake.parent.mkdir()
+    fake.write_text(ORCHESTRATOR)
+    fake.chmod(0o755)
+    r = subprocess.run([str(fake), *flags, '--', route, '--kind', 'vitest', '--', 'bash', '-c',
+                        REPORT], env=env, cwd=str(work), capture_output=True, text=True,
+                       timeout=90)
+    assert r.returncode == 0, (name, r.stderr)
+    assert called(state) == routed, (name, r.stderr)
+    assert r.stdout.endswith('held=\n') == routed, (name, r.stdout)
+    if not routed:
+        assert 'runs under ' + tool in r.stderr, (name, r.stderr)
+print('ok - a heavy command under turbo or a fanned-out pnpm keeps a local slot')
 
 p, work, config, state, env = case('remote-shape', declaration=DECLARED)
 assert publish(config, env).returncode == 0
@@ -302,18 +354,23 @@ if not node:
     print('skip - the preload integration case needs node installed')
 else:
     p, work, config, state, env = case('preload', declaration=INSTALLS)
-    cli = commit_cli(work, "console.log('ran tsc held=' + "
-                     "(process.env.FM_BUILD_LOCK_HELD || ''));\n")
+    probes = p / 'probes.log'
+    cli = commit_cli(work, "if (process.argv.includes('--showConfig')) {"
+                     " require('fs').appendFileSync(%r, (process.env.FM_BUILD_LOCK_BYPASS || '')"
+                     " + '\\n'); console.log(JSON.stringify({compilerOptions: {noEmit: true}}));"
+                     " } else console.log('ran tsc held=' + "
+                     "(process.env.FM_BUILD_LOCK_HELD || ''));\n" % str(probes))
     option = subprocess.run([str(repo / 'bin/fm-build-lock.py'), 'node-option'], env=env,
                             capture_output=True, text=True, check=True).stdout.strip()
     assert publish(config, env).returncode == 0
     routed = dict(env, NODE_OPTIONS=option)
-    r = subprocess.run([node, str(cli), '--noEmit'], env=routed, cwd=str(work),
+    r = subprocess.run([node, str(cli)], env=routed, cwd=str(work),
                        capture_output=True, text=True, timeout=120)
     assert r.returncode == 0, (r.stdout, r.stderr)
     assert called(state), r.stderr
     assert 'ran tsc held=\n' in r.stdout, r.stdout
-    assert 'tsc on Boat' in r.stderr, r.stderr
+    assert r.stderr.count('tsc on Boat') == 1, r.stderr
+    assert probes.read_text() == '1\n', 'the noEmit probe must run once, outside the preload'
     p, work, config, state, env = case('preload-bypass', declaration=DECLARED)
     cli = commit_cli(work, "console.log('ran tsc');\n")
     assert publish(config, env).returncode == 0
