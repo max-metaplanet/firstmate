@@ -511,7 +511,10 @@ SH
   : > "$diff_file"
 
   rc=0
+  # The suite-wide scratch pool is shared with concurrently running suites, so
+  # the nested lint claims a slot in a pool private to this fixture.
   out=$(PATH="$fakebin:$PATH" GITHUB_ACTIONS='' CI='' FM_LINT_JOBS=1 \
+    FM_BUILD_LOCK_FILE="$tmp/fm-build-lock.lock" \
     FM_TEST_GIT_DIFF_FILE="$diff_file" "$tmp/bin/fm-lint.sh" 2>&1) || rc=$?
   [ "$rc" -ne 0 ] || fail "fm-lint.sh default path missed a broken ci.yml"$'\n'"$out"
   assert_contains "$out" "could not parse as YAML" \
