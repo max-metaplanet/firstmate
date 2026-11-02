@@ -177,7 +177,7 @@ while [ "$#" -gt 0 ]; do
       fm_memcap_usage
       exit 0
       ;;
-    --exec) MODE=exec; shift ;;
+    --exec) MODE='exec'; shift ;;
     --effective-bytes) MODE=effective; shift ;;
     --mechanism) MODE=mechanism; shift ;;
     --budget-bytes) MODE=budget; shift ;;
