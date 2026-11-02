@@ -49,8 +49,11 @@ command nested inside another never takes a second slot. Waiting for a slot
 polls the pool and is not first-come-first-served; a waiter just waits.
 
 Every outer slot invocation runs through the sibling fm-memcap.sh, which owns
-the memory mechanism and budget; concurrent slots divide that budget. Nested
-commands reuse the enclosing slot and memory boundary.
+the memory budget; concurrent slots divide that budget. The cap is a cgroup
+scope only: where none is usable the command runs uncapped after fm-memcap.sh's
+warning naming bin/fm-boat-run.sh, never under an address-space limit that
+Chromium or V8 would fail to launch inside. Nested commands reuse the enclosing
+slot and memory boundary.
 
 Coverage is NODE_OPTIONS-based: runtimes other than Node, other build tools, a
 script that overwrites NODE_OPTIONS instead of appending to it, or a launcher

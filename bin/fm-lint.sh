@@ -69,7 +69,20 @@
 # per-process memory cap applied through bin/fm-memcap.sh, which owns the
 # mechanism and the machine-relative budget.
 # FM_LINT_ROOT_MEMORY_KIB replaces that budget with an exact KiB figure. The
-# watchdog uses the shared bin/fm-timeout-lib.sh group-kill pattern, so a
+# mechanism is resolved once per run and every root and the --effective-bytes
+# clip are handed that value, so no root re-probes or can land on another one.
+# The address-space mechanism (rlimit) is applied only here, to these roots.
+#
+# Sizing for the one-root-at-a-time CI runner, which pins
+# FM_LINT_ROOT_MEMORY_KIB=12582912 (12 GiB) in .github/workflows/ci.yml: on an
+# address-space cap ShellCheck's GHC runtime reserves about a third of the
+# space, leaving ~8 GiB usable heap per root. Measured x86_64 demand for the
+# heaviest roots is near 5.5-6 GiB; an 8 GiB address-space cap's ~5.33 GiB
+# wall caught bin/fm-spawn.sh, bin/fm-teardown.sh, and similar roots, so 12 GiB
+# keeps them under the cap with headroom on a 16 GiB runner. A shared desktop
+# instead takes bin/fm-memcap.sh's machine-relative budget.
+#
+# The watchdog uses the shared bin/fm-timeout-lib.sh group-kill pattern, so a
 # deadline or an interrupt removes the owned process group. Both bounds are on
 # by default, including the ordinary local lint the no-mistakes gate runs.
 #
@@ -460,8 +473,8 @@ if [ "${1:-}" = "--internal-root" ]; then
     fi
   fi
   if [ "${FM_LINT_INTERNAL_MEM_MECH:-none}" != none ]; then
-    exec "$SELF_DIR/fm-memcap.sh" --bytes "$((internal_memory_kib * 1024))" \
-      -- "${internal_payload[@]}"
+    exec "$SELF_DIR/fm-memcap.sh" --use-mechanism "$FM_LINT_INTERNAL_MEM_MECH" \
+      --bytes "$((internal_memory_kib * 1024))" -- "${internal_payload[@]}"
   fi
   exec "${internal_payload[@]}"
 fi
@@ -1053,7 +1066,8 @@ for bound_pair in \
 done
 
 if [ "$MEM_MECH" = rlimit ]; then
-  effective_bytes=$("$SELF_DIR/fm-memcap.sh" --effective-bytes --bytes "$((ROOT_MEMORY_KIB * 1024))") || exit 2
+  effective_bytes=$("$SELF_DIR/fm-memcap.sh" --effective-bytes --use-mechanism "$MEM_MECH" \
+    --bytes "$((ROOT_MEMORY_KIB * 1024))") || exit 2
   ROOT_MEMORY_KIB=$((effective_bytes / 1024))
 fi
 

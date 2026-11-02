@@ -149,12 +149,15 @@ SH
 
 test_uncapped_warnings_name_the_bounded_route() {
   local tmp fakebin mode expected out rc
+  local -a options
   tmp=$(fm_test_tmproot fm-memcap-warnings)
   fakebin=$(fm_fakebin "$tmp")
   printf '#!/bin/sh\nexit 1\n' > "$fakebin/systemd-run"
   chmod +x "$fakebin/systemd-run"
   for mode in none refused; do
+    options=(--use-mechanism rlimit)
     if [ "$mode" = none ]; then
+      options=()
       printf 'ulimit() { return 1; }\n' > "$tmp/env"
       expected='fm-memcap: this host offers no memory-cap mechanism (no usable systemd user scope, no address-space limit); running sh uncapped; use bin/fm-boat-run.sh to run it bounded'
     else
@@ -170,13 +173,61 @@ SH
       expected='fm-memcap: this host refused a 67108864-byte address-space limit; running sh uncapped; use bin/fm-boat-run.sh to run it bounded'
     fi
     rc=0
-    out=$(BASH_ENV="$tmp/env" PATH="$fakebin:$PATH" "$MEMCAP" --bytes 67108864 -- \
+    out=$(BASH_ENV="$tmp/env" PATH="$fakebin:$PATH" "$MEMCAP" "${options[@]}" --bytes 67108864 -- \
       /bin/sh -c 'printf command-ran; exit 7' 2>"$tmp/stderr") || rc=$?
     [ "$rc" -eq 7 ] || fail "$mode compatibility changed the command status: $rc"
     assert_equals command-ran "$out" "$mode compatibility must execute the command"
     assert_equals "$expected" "$(cat "$tmp/stderr")" "$mode warning must name the bounded Boat route"
   done
   pass "uncapped compatibility preserves execution and points to the bounded Boat route"
+}
+
+# The oracle is the caller's own soft address-space limit: a command that was
+# not opted into rlimit must observe exactly that, never a budget-sized cap.
+test_rlimit_applies_only_when_the_caller_names_it() {
+  local tmp fakebin inherited out err
+  if ! ( ulimit -v 1048576 ) 2>/dev/null; then
+    pass "SKIP (this host refuses address-space limits): rlimit opt-in check"
+    return
+  fi
+  tmp=$(fm_test_tmproot fm-memcap-rlimit-optin)
+  fakebin=$(fm_fakebin "$tmp")
+  printf '#!/bin/sh\nexit 1\n' > "$fakebin/systemd-run"
+  chmod +x "$fakebin/systemd-run"
+  out=$(PATH="$fakebin:$PATH" "$MEMCAP" --mechanism) || fail "forced-rlimit mechanism probe failed"
+  assert_equals rlimit "$out" "a host without systemd scopes must still report rlimit"
+  inherited=$(ulimit -v)
+  out=$(PATH="$fakebin:$PATH" "$MEMCAP" --bytes 268435456 -- /bin/sh -c 'ulimit -v' 2>"$tmp/err") \
+    || fail "a generic command on a forced-rlimit host failed"
+  err=$(cat "$tmp/err")
+  assert_equals "$inherited" "$out" "a generic command must run with no address-space limit applied"
+  assert_contains "$err" "running sh uncapped; use bin/fm-boat-run.sh to run it bounded" \
+    "a generic uncapped command must name the bounded Boat route"
+  out=$(PATH="$fakebin:$PATH" "$MEMCAP" --use-mechanism rlimit --bytes 268435456 -- \
+    /bin/sh -c 'ulimit -v') || fail "an opted-in rlimit command failed"
+  assert_equals 262144 "$out" "--use-mechanism rlimit must apply the named address-space cap"
+  pass "the address-space limit applies only to a caller that names rlimit"
+}
+
+test_a_resolved_mechanism_is_trusted_without_probing() {
+  local tmp fakebin out rc
+  tmp=$(fm_test_tmproot fm-memcap-resolved)
+  fakebin=$(fm_fakebin "$tmp")
+  printf '#!/bin/sh\nprintf probed >> "%s/probes"\nexit 1\n' "$tmp" > "$fakebin/systemd-run"
+  chmod +x "$fakebin/systemd-run"
+  out=$(PATH="$fakebin:$PATH" "$MEMCAP" --use-mechanism none -- /bin/sh -c 'printf ran' 2>/dev/null) \
+    || fail "a resolved-none command failed"
+  assert_equals ran "$out" "a resolved mechanism must still run the command"
+  out=$(PATH="$fakebin:$PATH" "$MEMCAP" --effective-bytes --use-mechanism none --bytes 4096) \
+    || fail "--effective-bytes with a resolved mechanism failed"
+  assert_equals 4096 "$out" "an unclipped resolved mechanism must keep the named cap"
+  [ ! -e "$tmp/probes" ] || fail "a resolved mechanism still probed systemd-run"
+  rc=0
+  out=$("$MEMCAP" --use-mechanism swap -- true 2>&1) || rc=$?
+  [ "$rc" -eq 2 ] || fail "an unknown resolved mechanism exited $rc, expected 2"
+  assert_contains "$out" "--use-mechanism must be cgroup, rlimit, or none" \
+    "an unknown resolved mechanism was refused without naming the choices"
+  pass "a caller-resolved mechanism is trusted without re-probing and validated by name"
 }
 
 test_a_runaway_dies_at_its_cap_and_is_named() {
@@ -192,7 +243,7 @@ test_a_runaway_dies_at_its_cap_and_is_named() {
   fi
   rc=0
   # shellcheck disable=SC2016 # perl expands $ARGV[0], not the shell.
-  out=$("$MEMCAP" --bytes "$KILL_CAP_BYTES" -- \
+  out=$("$MEMCAP" --use-mechanism "$mech" --bytes "$KILL_CAP_BYTES" -- \
     perl -e 'my @held; for (1 .. $ARGV[0]) { push @held, "x" x 1048576 }' "$HOG_CEILING_MIB" 2>&1) || rc=$?
   if [ "$mech" = cgroup ]; then
     [ "$rc" -eq 137 ] || fail "a runaway under a ${KILL_CAP_BYTES}-byte cap exited $rc, expected 137"$'\n'"$out"
@@ -213,4 +264,6 @@ test_a_capped_command_keeps_its_own_streams_and_status
 test_command_arguments_are_preserved
 test_unsupported_expansion_flag_disables_cgroup
 test_uncapped_warnings_name_the_bounded_route
+test_rlimit_applies_only_when_the_caller_names_it
+test_a_resolved_mechanism_is_trusted_without_probing
 test_a_runaway_dies_at_its_cap_and_is_named

@@ -135,7 +135,7 @@ jobs:
           # shared desktop but would cut this runner's roots below their
           # measured demand and push the heaviest into the memory fallback.
           # A partition runs one root at a time on a 16 GiB runner, so keep
-          # the figure bin/fm-lint.sh's header measured for that case.
+          # 12 GiB; bin/fm-lint.sh's header holds the sizing measurement.
           FM_LINT_ROOT_MEMORY_KIB: '12582912'
         run: |
           set -eu

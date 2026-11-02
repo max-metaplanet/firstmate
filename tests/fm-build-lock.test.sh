@@ -72,11 +72,10 @@ print(limit)
             bound = subprocess.run([str(wrapper), '--', sys.executable, str(probe), mechanism],
                                    env=selected, capture_output=True, text=True, timeout=10)
             assert bound.returncode == 0, bound.stderr
-            quantum = os.sysconf("SC_PAGE_SIZE") if mechanism == "cgroup" else 1024
-            expected = budget // quantum * quantum
-            inherited = resource.getrlimit(resource.RLIMIT_AS)[1]
-            if mechanism == 'rlimit' and inherited != resource.RLIM_INFINITY:
-                expected = min(expected, inherited // 1024 * 1024)
+            if mechanism == 'cgroup':
+                expected = budget // os.sysconf('SC_PAGE_SIZE') * os.sysconf('SC_PAGE_SIZE')
+            else:
+                expected = resource.getrlimit(resource.RLIMIT_AS)[0]
             assert int(bound.stdout) == expected, (bound.stdout, expected)
             identity = subprocess.run([str(wrapper), '--', sys.executable, '-c',
                                        'import os; assert os.environ["FM_BUILD_LOCK_HELD"] == str(os.getpid())'],
@@ -90,7 +89,7 @@ print(limit)
                                        env=argv_env, capture_output=True, text=True, timeout=10)
             assert forwarded.returncode == 0, forwarded.stderr
             assert json.loads(forwarded.stdout) == arguments, forwarded.stdout
-        print('ok - commands observe a finite kernel memory bound shared across heavy slots')
+        print('ok - commands observe the cgroup bound shared across heavy slots, never an address-space one')
     else:
         print('skip - no memory mechanism for the heavy-slot kernel-bound check')
 
@@ -210,6 +209,15 @@ fi
                 reported = next(row[2] for row in records if row[:2] == ['meta', 'root_memory_limit_kib'])
                 assert int(reported) * 1024 == expected, (tag, reported, expected)
         print('ok - direct and wrapped lint honor explicit budgets and report inherited rlimit ceilings')
+
+        generic = subprocess.run([str(wrapper), '--', sys.executable, '-c',
+                                  'import resource; print(resource.getrlimit(resource.RLIMIT_AS)[0])'],
+                                 env=dict(env, PATH=str(rlimit_bin) + os.pathsep + env['PATH']),
+                                 capture_output=True, text=True, timeout=10)
+        assert generic.returncode == 0, generic.stderr
+        assert int(generic.stdout) == resource.getrlimit(resource.RLIMIT_AS)[0], generic.stdout
+        assert 'uncapped; use bin/fm-boat-run.sh to run it bounded' in generic.stderr, generic.stderr
+        print('ok - a generic wrapped command on a forced-rlimit host runs with no address-space limit')
 
     real_node = shutil.which('node')
     if real_node:

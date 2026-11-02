@@ -16,8 +16,12 @@
 #           actually starts, never merely because systemd-run is on PATH.
 #   rlimit  ulimit -v. This caps ADDRESS SPACE, not resident memory, so a
 #           runtime that reserves lazily still overshoots the figure and a
-#           runaway can swap. It is the weaker mechanism and is used only where
-#           no systemd user scope is available.
+#           runaway can swap, while one that reserves far more than it uses
+#           (Chromium, V8, WebAssembly guard regions) fails at launch. It is
+#           therefore opt-in: it applies only when the caller names it with
+#           --use-mechanism rlimit, which bin/fm-lint.sh does for the ShellCheck
+#           roots it was measured for. Every other command is capped by cgroup
+#           or not at all.
 #   none    neither works, for example a macOS home or a container with no
 #           session bus. The command then runs uncapped after exactly one
 #           warning on stderr, because refusing would turn every such host's
@@ -49,12 +53,18 @@
 # the status alone carries the verdict, which is why a status of 137 with no
 # counter still reports the cap.
 #
+# --mechanism reports what the host offers, including rlimit. A caller that has
+# already resolved it passes --use-mechanism cgroup|rlimit|none to the run and
+# --effective-bytes modes, which then trust that value instead of probing again,
+# so the mechanism a caller checked is the one applied. Without it those modes
+# probe for cgroup only.
+#
 # Usage:
 #   fm-memcap.sh --mechanism                 print cgroup, rlimit, or none
 #   fm-memcap.sh --budget-bytes [--share N]  print the per-process cap in bytes
-#   fm-memcap.sh --effective-bytes [--bytes N] [--share N]
+#   fm-memcap.sh --effective-bytes [--use-mechanism M] [--bytes N] [--share N]
 #       print the cap after clipping to an inherited rlimit hard ceiling
-#   fm-memcap.sh [--exec] [--bytes N] [--share N] -- COMMAND [ARGS...]
+#   fm-memcap.sh [--exec] [--use-mechanism M] [--bytes N] [--share N] -- COMMAND [ARGS...]
 #   fm-memcap.sh --help                      print this usage
 set -u
 
@@ -171,6 +181,7 @@ fm_memcap_run_cgroup() {  # <bytes> <command...>
 MODE=run
 BYTES=
 SHARE=1
+USE_MECHANISM=
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --help|-h)
@@ -193,6 +204,12 @@ while [ "$#" -gt 0 ]; do
       shift 2
       ;;
     --share=*) SHARE=${1#--share=}; shift ;;
+    --use-mechanism)
+      [ "$#" -ge 2 ] || fm_memcap_die '--use-mechanism needs cgroup, rlimit, or none'
+      USE_MECHANISM=$2
+      shift 2
+      ;;
+    --use-mechanism=*) USE_MECHANISM=${1#--use-mechanism=}; shift ;;
     --)
       shift
       break
@@ -203,6 +220,10 @@ done
 
 fm_memcap_positive "$SHARE" \
   || fm_memcap_die "--share must be a positive integer, got $SHARE"
+case "$USE_MECHANISM" in
+  ''|cgroup|rlimit|none) : ;;
+  *) fm_memcap_die "--use-mechanism must be cgroup, rlimit, or none, got $USE_MECHANISM" ;;
+esac
 if [ -n "$BYTES" ]; then
   fm_memcap_positive "$BYTES" \
     || fm_memcap_die "--bytes must be a positive integer, got $BYTES"
@@ -211,6 +232,7 @@ fi
 case "$MODE" in
   mechanism)
     [ "$#" -eq 0 ] || fm_memcap_die '--mechanism takes no command'
+    [ -z "$USE_MECHANISM" ] || fm_memcap_die '--mechanism probes the host, so it cannot be combined with --use-mechanism'
     fm_memcap_mechanism
     exit 0
     ;;
@@ -228,7 +250,11 @@ else
   [ "$#" -gt 0 ] || fm_memcap_die 'no command to run; pass it after --'
 fi
 [ -n "$BYTES" ] || BYTES=$(fm_memcap_budget_bytes "$SHARE")
-MECHANISM=$(fm_memcap_mechanism)
+MECHANISM=$USE_MECHANISM
+if [ -z "$MECHANISM" ]; then
+  MECHANISM=$(fm_memcap_mechanism)
+  [ "$MECHANISM" = cgroup ] || MECHANISM=none
+fi
 if [ "$MECHANISM" = rlimit ]; then
   BYTES=$(($(fm_memcap_rlimit_kib "$BYTES") * 1024))
 fi
