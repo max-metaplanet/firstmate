@@ -1,0 +1,234 @@
+[
+  {
+    "case": "core-paths",
+    "version": "target",
+    "exit": 69,
+    "result": {
+      "kind": "unavailable",
+      "remote_exit": null,
+      "cleanup": "deleted",
+      "swap_gib": 0,
+      "source_head": "edbb2dd4bf959f1511aa5465bfd70459cecbb205",
+      "source_sha256": "dc24be612c87e02149a7443bdd893ed7598fdd9dec6e4f56acfae922b403ef42",
+      "execution_error": "Boat key unavailable",
+      "error": "Boat key unavailable",
+      "adapter_exit": 69
+    },
+    "stderr": "boat-offload: Boat key unavailable",
+    "archive_verified": {
+      "reimage_in_source": true,
+      "skills_in_source": false,
+      "git_fsck": "clean",
+      "skills_blob_preserved": true
+    }
+  },
+  {
+    "case": "reimage-only",
+    "version": "target",
+    "exit": 69,
+    "result": {
+      "kind": "unavailable",
+      "remote_exit": null,
+      "cleanup": "deleted",
+      "swap_gib": 0,
+      "source_head": "0c55e45f57572e9dbc697ef4dc7fea66cbb0520d",
+      "source_sha256": "b7acbe449751f67f34114fdc650d8ab5d7663494f3faf66512d4f60706fc41de",
+      "execution_error": "Boat key unavailable",
+      "error": "Boat key unavailable",
+      "adapter_exit": 69
+    },
+    "stderr": "boat-offload: Boat key unavailable",
+    "archive_verified": {
+      "reimage_in_source": true,
+      "skills_in_source": false,
+      "git_fsck": "clean",
+      "skills_blob_preserved": false
+    }
+  },
+  {
+    "case": "reimage-only",
+    "version": "before",
+    "exit": 2,
+    "result": {
+      "kind": "invalid",
+      "remote_exit": null,
+      "cleanup": "not-created",
+      "swap_gib": 0,
+      "error": "history refused: excluded path: .claude/commands/reimage-dev.md",
+      "adapter_exit": 2
+    },
+    "stderr": "boat-offload: history refused: excluded path: .claude/commands/reimage-dev.md"
+  },
+  {
+    "case": "skills-only",
+    "version": "target",
+    "exit": 69,
+    "result": {
+      "kind": "unavailable",
+      "remote_exit": null,
+      "cleanup": "deleted",
+      "swap_gib": 0,
+      "source_head": "fa761368a8c863d175d1bc967ce62ab527c70c7c",
+      "source_sha256": "8cc760f750fbebadac55c9028b9c48baa85a582df6c2c66db3fe39da9090f014",
+      "execution_error": "Boat key unavailable",
+      "error": "Boat key unavailable",
+      "adapter_exit": 69
+    },
+    "stderr": "boat-offload: Boat key unavailable",
+    "archive_verified": {
+      "reimage_in_source": false,
+      "skills_in_source": false,
+      "git_fsck": "clean",
+      "skills_blob_preserved": true
+    }
+  },
+  {
+    "case": "skills-only",
+    "version": "before",
+    "exit": 2,
+    "result": {
+      "kind": "invalid",
+      "remote_exit": null,
+      "cleanup": "not-created",
+      "swap_gib": 0,
+      "error": "history refused: excluded path: .claude/skills",
+      "adapter_exit": 2
+    },
+    "stderr": "boat-offload: history refused: excluded path: .claude/skills"
+  },
+  {
+    "case": "current-secret",
+    "version": "target",
+    "exit": 69,
+    "result": {
+      "kind": "unavailable",
+      "remote_exit": null,
+      "cleanup": "deleted",
+      "swap_gib": 0,
+      "source_head": "de8bdc45238ba8db9722f1938d41f3bd47792543",
+      "source_sha256": "3485e20a2383c4f9a8bf438b6883b44a621548b6a433eb9cee6d2912a7c56eb8",
+      "execution_error": "Boat key unavailable",
+      "error": "Boat key unavailable",
+      "adapter_exit": 69
+    },
+    "stderr": "boat-offload: excluded allowlisted file with credential-looking content: .claude/commands/reimage-dev.md\nboat-offload: Boat key unavailable",
+    "archive_verified": {
+      "reimage_in_source": false,
+      "skills_in_source": false,
+      "git_fsck": "clean",
+      "skills_blob_preserved": false
+    }
+  },
+  {
+    "case": "historical-secret",
+    "version": "target",
+    "exit": 2,
+    "result": {
+      "kind": "invalid",
+      "remote_exit": null,
+      "cleanup": "not-created",
+      "swap_gib": 0,
+      "error": "history refused: credential-looking or binary blob: .claude/commands/reimage-dev.md",
+      "adapter_exit": 2
+    },
+    "stderr": "boat-offload: history refused: credential-looking or binary blob: .claude/commands/reimage-dev.md"
+  },
+  {
+    "case": "historical-binary",
+    "version": "target",
+    "exit": 2,
+    "result": {
+      "kind": "invalid",
+      "remote_exit": null,
+      "cleanup": "not-created",
+      "swap_gib": 0,
+      "error": "history refused: credential-looking or binary blob: .claude/commands/reimage-dev.md",
+      "adapter_exit": 2
+    },
+    "stderr": "boat-offload: history refused: credential-looking or binary blob: .claude/commands/reimage-dev.md"
+  },
+  {
+    "case": "escaping-link",
+    "version": "target",
+    "exit": 2,
+    "result": {
+      "kind": "invalid",
+      "remote_exit": null,
+      "cleanup": "not-created",
+      "swap_gib": 0,
+      "error": "history refused: unsafe symlink target: .claude/skills",
+      "adapter_exit": 2
+    },
+    "stderr": "boat-offload: history refused: unsafe symlink target: .claude/skills"
+  },
+  {
+    "case": "absolute-link",
+    "version": "target",
+    "exit": 2,
+    "result": {
+      "kind": "invalid",
+      "remote_exit": null,
+      "cleanup": "not-created",
+      "swap_gib": 0,
+      "error": "history refused: unsafe symlink target: .claude/skills",
+      "adapter_exit": 2
+    },
+    "stderr": "boat-offload: history refused: unsafe symlink target: .claude/skills"
+  },
+  {
+    "case": "credential-link",
+    "version": "target",
+    "exit": 2,
+    "result": {
+      "kind": "invalid",
+      "remote_exit": null,
+      "cleanup": "not-created",
+      "swap_gib": 0,
+      "error": "history refused: credential-looking or binary blob: .claude/skills",
+      "adapter_exit": 2
+    },
+    "stderr": "boat-offload: history refused: credential-looking or binary blob: .claude/skills"
+  },
+  {
+    "case": "ordinary-skills-file",
+    "version": "target",
+    "exit": 2,
+    "result": {
+      "kind": "invalid",
+      "remote_exit": null,
+      "cleanup": "not-created",
+      "swap_gib": 0,
+      "error": "history refused: excluded path: .claude/skills",
+      "adapter_exit": 2
+    },
+    "stderr": "boat-offload: history refused: excluded path: .claude/skills"
+  },
+  {
+    "case": "unlisted-claude-file",
+    "version": "target",
+    "exit": 2,
+    "result": {
+      "kind": "invalid",
+      "remote_exit": null,
+      "cleanup": "not-created",
+      "swap_gib": 0,
+      "error": "history refused: excluded path: .claude/unlisted.md",
+      "adapter_exit": 2
+    },
+    "stderr": "boat-offload: history refused: excluded path: .claude/unlisted.md"
+  },
+  {
+    "case": "other-symlink",
+    "version": "target",
+    "exit": 2,
+    "result": {
+      "kind": "invalid",
+      "remote_exit": null,
+      "cleanup": "not-created",
+      "swap_gib": 0,
+      "error": "history refused: unsupported symlink or submodule: other-link",
+      "adapter_exit": 2
+    },
+    "stderr": "boat-offload: history refused: unsupported symlink or submodule: other-link"
+  }
+]
