@@ -68,18 +68,13 @@ edits plus every newly staged addition, each through fm-boat-run.sh's own
 --input screen. An untracked file that is not ignored never travels, so while
 one exists the command stays local and the notice names it.
 
-Nothing a remote run writes comes back, so a command whose job includes writing
-into the worktree stays local: next build, a tsc build or a tsc whose resolved
-configuration (`tsc --showConfig`, run outside the preload) does not prove
-noEmit with incremental and composite disabled, a tsc writing traces or CPU
-profiles, vitest updating snapshots or writing coverage or an output file, and
-eslint fixing files or writing reports, caches or suppressions. A vitest configuration file that
-writes coverage or a reporter's output file is invisible here, so such a project
-declares vitest local-only. Remote output is captured and printed when the
-command finishes rather than streamed.
-Only options recognized by normalized_options for that kind may route;
-unknown, malformed or ambiguous arguments stay local. Enabled stdin input
-also stays local because the remote command receives no stdin.
+docs/configuration.md "Boat-first heavy routing" owns command input/output
+eligibility, including the implicit incremental-cache exception and the
+configuration-based Vitest local-only requirement. normalized_options owns
+the recognized-safe option boundary; proves_no_outputs resolves tsc's
+configuration with `tsc --showConfig` outside the preload.
+Remote output is captured and printed when the command finishes rather than
+streamed.
 
 Only result kind `completed` with confirmed command dispatch is a verdict:
 that remote exit is the command's exit, and an unconfirmed cleanup is reported
