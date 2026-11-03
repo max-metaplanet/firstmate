@@ -642,6 +642,11 @@ def safe_orchestration(plan, root, settings):
                         return False
                 elif target.get("executor") not in (None, "nx:run-script"):
                     return False
+                dependencies = target.get("dependsOn", [])
+                if any(not isinstance(dep, str) or dep.lstrip("^") not in TASK_KINDS
+                       for dep in dependencies):
+                    return False
+                pending += [dep.lstrip("^") for dep in dependencies]
                 if not script:
                     continue
                 if tool != "pnpm" and (target.get("cache") is not False and
@@ -652,11 +657,6 @@ def safe_orchestration(plan, root, settings):
                         target.get("continuous") or target.get("options") and \
                         target.get("executor") != "nx:run-commands":
                     return False
-                dependencies = target.get("dependsOn", [])
-                if any(not isinstance(dep, str) or dep.lstrip("^") not in TASK_KINDS
-                       for dep in dependencies):
-                    return False
-                pending += [dep.lstrip("^") for dep in dependencies]
                 if scripts.get("pre" + name) or scripts.get("post" + name) or \
                         not safe_script(script, script_directory, settings, root):
                     return False

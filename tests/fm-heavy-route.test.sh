@@ -725,6 +725,56 @@ process.exit(result.status);
         assert r.stdout.count('child marker=local held=') == 2, (r.stdout, r.stderr)
 print('ok - Nx and Lerna use root executor cwd and binaries, and retain inherited option safety')
 
+for tool in ('nx', 'lerna'):
+    args = ['run-many', '-t', 'lint'] if tool == 'nx' else ['run', 'lint']
+    for representation in ('defaults', 'package', 'project'):
+        for safe in (False, True):
+            p, work, config, state, env, cli = orchestrator_case(
+                'noop-dependency-' + tool + '-' + representation + '-' + str(safe), tool)
+            defaults = {'lint': {'cache': False}, 'build': {'cache': False}}
+            dependency = {'dependsOn': ['build']}
+            if representation == 'defaults':
+                defaults['lint'].update(dependency)
+            (work / 'nx.json').write_text(json.dumps({'targetDefaults': defaults}))
+            for name in ('a', 'b'):
+                directory = work / 'packages' / name
+                package = json.loads((directory / 'package.json').read_text())
+                package['scripts'] = {'build': 'tsc --noEmit' if safe or name == 'a' else 'node generate.js'}
+                if name == 'a':
+                    package['scripts']['lint'] = 'tsc --noEmit'
+                    if representation == 'defaults':
+                        package['nx'] = {'targets': {'lint': {'dependsOn': []}}}
+                elif representation == 'package':
+                    package['nx'] = {'targets': {'lint': dependency}}
+                elif representation == 'project':
+                    (directory / 'project.json').write_text(json.dumps({'targets': {'lint': dependency}}))
+                (directory / 'package.json').write_text(json.dumps(package))
+            (work / 'packages/b/generate.js').write_text(
+                "require('fs').writeFileSync('generated.txt', 'build output');\n")
+            parent = r"""#!/usr/bin/env node
+const cp = require('child_process');
+const fs = require('fs');
+const path = require('path');
+const env = {...process.env, PATH: path.resolve('node_modules/.bin') + path.delimiter + process.env.PATH};
+for (const [directory, task] of [['packages/a', 'lint'], ['packages/b', 'build']]) {
+  const script = JSON.parse(fs.readFileSync(directory + '/package.json')).scripts[task];
+  const result = cp.spawnSync('sh', ['-c', script], {cwd: directory, env, stdio: 'inherit'});
+  if (result.status !== 0) process.exit(result.status || 1);
+}
+console.log('dependency marker=' + process.env.FM_HEAVY_ORCHESTRATOR);
+"""
+            (work / 'tools/orchestrator.cjs').write_text(parent)
+            cli.write_text(parent)
+            subprocess.run(['git', '-C', str(work), 'add', '-A'], check=True, capture_output=True)
+            subprocess.run(['git', '-C', str(work), 'commit', '-qm', 'Dependency-only target fixture'],
+                           check=True, capture_output=True)
+            r = orchestration_run(work, env, cli, args)
+            assert r.returncode == 0 and starts(state) == int(safe), (tool, representation, safe, r.stdout, r.stderr)
+            marker = 'remote' if safe else 'local'
+            assert 'dependency marker=' + marker in r.stdout, (r.stdout, r.stderr)
+            assert (work / 'packages/b/generated.txt').exists() == (not safe)
+print('ok - Nx and Lerna screen dependency-only targets from defaults, package and project metadata')
+
 for name in ('untracked', 'local-only', 'unavailable', 'no-task', 'undeclared', 'outputs',
              'hooks', 'dependency', 'no-proof', 'remote-exit'):
     p, work, config, state, env, cli = orchestrator_case('whole-' + name)
