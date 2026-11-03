@@ -25,10 +25,19 @@
 # With FM_BOAT_TEST_HISTORY_DEPTH, the adapter supplies screened real Git history
 # instead; PIPELINE_TEST_BASE_REF then names refs/remotes/origin/main.
 #
-# Evidence is retained in a fresh ../.fm-test-scratch/fm-boat-test.*/boat outside
+# Evidence is retained in a fresh ../.fm-test-scratch/fm-boat-test.*/boat* outside
 # the worktree; the adapter prints command output and owns command.log/result.json.
 # Only exit 69/75 WITH result kind=unavailable permits local execution, through
-# fm-build-lock.py. Completed remote exits (even 69/75) propagate unchanged.
+# fm-build-lock.py, unless FM_BOAT_TEST_LOCAL_FALLBACK=0 selects Boat-only mode.
+# Unset or any other value preserves local fallback on unavailability.
+# Boat-only retries unavailable results with fresh evidence for each attempt.
+# FM_BOAT_TEST_UNAVAILABLE_WAIT_SECS bounds elapsed time allowed for retries
+# (default 1800, nonnegative integer); an in-flight adapter may exceed the bound.
+# FM_BOAT_TEST_UNAVAILABLE_RETRY_SECS sets the backoff (default 60, positive
+# integer), capped to the remaining wait. These settings apply only in Boat-only
+# mode. Exhaustion fails with the last unavailable exit, attempts and result path.
+# FM_BOAT_TEST_TIMEOUT still applies per attempt, including the trial limit above.
+# Completed remote exits (even 69/75) propagate unchanged and are never retried.
 # Every other adapter failure fails loudly with the result.json path; no retry.
 #
 # Enable ONLY after the no-mistakes fork supports commands.test.wrapper and
@@ -58,9 +67,17 @@ scratch="$worktree/../.fm-test-scratch"
 mkdir -p "$scratch"
 scratch=$(cd "$scratch" && pwd -P)
 job=$(mktemp -d "$scratch/fm-boat-test.XXXXXX")
-output="$job/boat"
-result="$output/result.json"
-printf 'boat-test-wrapper: result.json: %s\n' "$result" >&2
+unavailable_wait=1800
+retry_secs=60
+if [[ ${FM_BOAT_TEST_LOCAL_FALLBACK:-} == 0 ]]; then
+  unavailable_wait=${FM_BOAT_TEST_UNAVAILABLE_WAIT_SECS:-1800}
+  retry_secs=${FM_BOAT_TEST_UNAVAILABLE_RETRY_SECS:-60}
+  if [[ ! $unavailable_wait =~ ^(0|[1-9][0-9]*)$ ||
+        ! $retry_secs =~ ^[1-9][0-9]*$ ]]; then
+    echo 'boat-test-wrapper: unavailable wait must be a nonnegative integer and retry interval a positive integer' >&2
+    exit 2
+  fi
+fi
 
 # Use real, disposable Git history so downstream tools may issue their own Git
 # queries without a pretend-git shim. The adapter has already excluded secrets.
@@ -92,8 +109,7 @@ exec bash -c "$1"
 REMOTE
 )
 
-rc=0
-adapter_args=(run --worktree "$worktree" --output "$output")
+adapter_args=(run --worktree "$worktree")
 if [[ -n ${FM_BOAT_TEST_TIMEOUT:-} ]]; then
   adapter_args+=(--timeout "$FM_BOAT_TEST_TIMEOUT")
 fi
@@ -103,13 +119,21 @@ fi
 if [[ -n ${FM_BOAT_TYPE:-} ]]; then
   adapter_args+=(--type "$FM_BOAT_TYPE")
 fi
-"$bin/fm-boat-run.sh" "${adapter_args[@]}" -- \
-  bash -c "$remote" boat-test "$1" || rc=$?
+attempts=0
+deadline=$((SECONDS + unavailable_wait))
+while :; do
+  attempts=$((attempts + 1))
+  output="$job/boat-$attempts"
+  result="$output/result.json"
+  printf 'boat-test-wrapper: result.json: %s\n' "$result" >&2
+  rc=0
+  "$bin/fm-boat-run.sh" "${adapter_args[@]}" --output "$output" -- \
+    bash -c "$remote" boat-test "$1" || rc=$?
 
-# Validate the result before distinguishing remote exits from adapter exits.
-# A cleanup/transport failure may still have kind=completed and remote_exit,
-# so matching both exit fields and confirmed cleanup is required for success.
-kind=$(python3 - "$result" "$rc" <<'PY'
+  # Validate the result before distinguishing remote exits from adapter exits.
+  # A cleanup/transport failure may still have kind=completed and remote_exit,
+  # so matching both exit fields and confirmed cleanup is required for success.
+  kind=$(python3 - "$result" "$rc" <<'PY'
 import json
 import sys
 
@@ -132,18 +156,33 @@ try:
 except (OSError, ValueError, TypeError, AttributeError):
     print('invalid-result')
 PY
-)
+  )
 
-case "$kind" in
-  completed) exit "$rc" ;;
-  unavailable)
-    printf 'boat-test-wrapper: Boat unavailable (exit %s); running locally through heavy build lock; result.json: %s\n' "$rc" "$result" >&2
-    exec python3 "$bin/fm-build-lock.py" -- bash -c "$1"
-    ;;
-  *)
-    printf 'boat-test-wrapper: adapter failure (exit %s, %s); Test failed; result.json: %s\n' "$rc" "$kind" "$result" >&2
-    # Missing/inconsistent success evidence must never become a passing Test.
-    if [[ $rc == 0 ]]; then rc=74; fi
-    exit "$rc"
-    ;;
-esac
+  case "$kind" in
+    completed) exit "$rc" ;;
+    unavailable)
+      if [[ ${FM_BOAT_TEST_LOCAL_FALLBACK:-} == 0 ]]; then
+        remaining=$((deadline - SECONDS))
+        if (( remaining > 0 )); then
+          delay=$retry_secs
+          if (( delay > remaining )); then delay=$remaining; fi
+          sleep "$delay"
+          remaining=$((deadline - SECONDS))
+        fi
+        if (( remaining <= 0 )); then
+          printf 'boat-test-wrapper: Boat unavailable after %s attempts; Test failed; result.json: %s\n' "$attempts" "$result" >&2
+          exit "$rc"
+        fi
+        continue
+      fi
+      printf 'boat-test-wrapper: Boat unavailable (exit %s); running locally through heavy build lock; result.json: %s\n' "$rc" "$result" >&2
+      exec python3 "$bin/fm-build-lock.py" -- bash -c "$1"
+      ;;
+    *)
+      printf 'boat-test-wrapper: adapter failure (exit %s, %s); Test failed; result.json: %s\n' "$rc" "$kind" "$result" >&2
+      # Missing/inconsistent success evidence must never become a passing Test.
+      if [[ $rc == 0 ]]; then rc=74; fi
+      exit "$rc"
+      ;;
+  esac
+done

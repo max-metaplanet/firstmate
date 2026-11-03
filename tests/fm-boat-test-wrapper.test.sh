@@ -30,6 +30,12 @@ import json,os,pathlib,sys
 args=sys.argv[1:]
 settings=json.loads(os.environ['SETTINGS'])
 pathlib.Path(os.environ['CALLS']).write_text(json.dumps(args))
+history=pathlib.Path(os.environ['CALLS']+'.history')
+calls=json.loads(history.read_text()) if history.exists() else []
+calls.append(args)
+history.write_text(json.dumps(calls))
+if isinstance(settings,list):
+    settings=settings[min(len(calls)-1,len(settings)-1)]
 output=pathlib.Path(args[args.index('--output')+1])
 assert not output.exists()
 output.mkdir()
@@ -51,6 +57,9 @@ def case(name):
     env.pop('FM_BUILD_LOCK_BYPASS', None)
     env.pop('FM_BUILD_LOCK_HELD', None)
     env.pop('FM_BOAT_TYPE', None)
+    for name in ('FM_BOAT_TEST_LOCAL_FALLBACK', 'FM_BOAT_TEST_UNAVAILABLE_WAIT_SECS',
+                 'FM_BOAT_TEST_UNAVAILABLE_RETRY_SECS'):
+        env.pop(name, None)
     return p, work, env
 
 def launch(work, env, command, wrapper=tools / 'fm-boat-test-wrapper.sh'):
@@ -101,6 +110,77 @@ raise SystemExit(23)
     assert b'local fallback output' in r.stdout
     assert b'running locally through heavy build lock' in r.stderr
 print('ok - only 69/75 unavailable falls back, preserving cwd, environment, exit and heavy lock')
+
+for code in (69, 75):
+    p, work, env = case('boat-only-retry-' + str(code))
+    env.update(FM_BOAT_TEST_LOCAL_FALLBACK='0',
+               FM_BOAT_TEST_UNAVAILABLE_WAIT_SECS='5',
+               FM_BOAT_TEST_UNAVAILABLE_RETRY_SECS='1')
+    env['SETTINGS'] = json.dumps([
+        {'exit': code, 'result': {'kind': 'unavailable', 'adapter_exit': code}},
+        {'exit': 0, 'result': {'kind': 'completed', 'adapter_exit': 0,
+                               'remote_exit': 0, 'cleanup': 'deleted'}}])
+    r = launch(work, env, 'touch local-ran')
+    assert r.returncode == 0, r.stderr
+    calls = json.loads((p / 'calls.json.history').read_text())
+    assert len(calls) == 2, calls
+    outputs = [args[args.index('--output') + 1] for args in calls]
+    assert len(set(outputs)) == 2, outputs
+    assert not (work / 'local-ran').exists()
+    assert not (p / 'heavy.lock').exists()
+print('ok - Boat-only retries unavailable 69/75 with fresh evidence and never runs locally')
+
+p, work, env = case('boat-only-exhausted')
+env.update(FM_BOAT_TEST_LOCAL_FALLBACK='0',
+           FM_BOAT_TEST_UNAVAILABLE_WAIT_SECS='2',
+           FM_BOAT_TEST_UNAVAILABLE_RETRY_SECS='1')
+settings(env, 75, 'unavailable')
+r = launch(work, env, 'touch local-ran')
+assert r.returncode == 75, r.stderr
+assert not (work / 'local-ran').exists()
+assert not (p / 'heavy.lock').exists()
+calls = json.loads((p / 'calls.json.history').read_text())
+assert len(calls) >= 2, calls
+outputs = [args[args.index('--output') + 1] for args in calls]
+assert len(set(outputs)) == len(calls), outputs
+assert b'Boat unavailable' in r.stderr
+assert f'after {len(calls)} attempts'.encode() in r.stderr
+assert str(Path(outputs[-1]) / 'result.json').encode() in r.stderr
+print('ok - Boat-only fails after the unavailable bound without local side effects')
+
+p, work, env = case('boat-only-completed-75')
+env.update(FM_BOAT_TEST_LOCAL_FALLBACK='0',
+           FM_BOAT_TEST_UNAVAILABLE_WAIT_SECS='2',
+           FM_BOAT_TEST_UNAVAILABLE_RETRY_SECS='1')
+settings(env, 75, 'completed', remote_exit=75, cleanup='deleted')
+r = launch(work, env, 'touch local-ran')
+assert r.returncode == 75, r.stderr
+assert len(json.loads((p / 'calls.json.history').read_text())) == 1
+assert not (work / 'local-ran').exists()
+print('ok - Boat-only completed remote 75 propagates without retry')
+
+p, work, env = case('boat-only-missing-retry-result')
+env.update(FM_BOAT_TEST_LOCAL_FALLBACK='0',
+           FM_BOAT_TEST_UNAVAILABLE_WAIT_SECS='5',
+           FM_BOAT_TEST_UNAVAILABLE_RETRY_SECS='1')
+env['SETTINGS'] = json.dumps([
+    {'exit': 75, 'result': {'kind': 'unavailable', 'adapter_exit': 75}},
+    {'exit': 75, 'result': 'missing'}])
+r = launch(work, env, 'touch local-ran')
+assert r.returncode == 75 and b'adapter failure' in r.stderr, r.stderr
+assert len(json.loads((p / 'calls.json.history').read_text())) == 2
+assert not (work / 'local-ran').exists()
+print('ok - retry cannot reuse stale unavailable evidence or retry adapter failures')
+
+p, work, env = case('nonzero-fallback-setting')
+env.update(FM_BOAT_TEST_LOCAL_FALLBACK='other',
+           FM_BOAT_TEST_UNAVAILABLE_WAIT_SECS='invalid',
+           FM_BOAT_TEST_UNAVAILABLE_RETRY_SECS='invalid')
+settings(env, 75, 'unavailable')
+r = launch(work, env, 'touch local-ran')
+assert r.returncode == 0 and (work / 'local-ran').exists(), r.stderr
+assert len(json.loads((p / 'calls.json.history').read_text())) == 1
+print('ok - any fallback setting except 0 preserves local execution and ignores retry settings')
 
 for code, kind in ((2, 'invalid'), (74, 'adapter-error'), (70, 'completed'),
                    (143, 'interrupted'), (69, 'execution-unknown'),
