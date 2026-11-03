@@ -39,8 +39,11 @@
 # .github/tools/jev/vendor/.claude/agents/security-compliance.md and
 # .github/tools/jev/vendor/.claude/agents/release-engineer.md. Each exception
 # is scanned as UTF-8 before upload; credential-looking auth/token/password/
-# secret keys, bearer strings, private-key headers, credential URLs, common key
+# secret keys, credential-like bearer strings, private-key headers, credential URLs, common key
 # prefixes and binary content keep the file excluded with a content-free warning.
+# The bearer check permits case-insensitive prose "bearer decisions" and
+# "bearer shares" when the noun is followed by whitespace or end of text,
+# optionally preceded by one period, comma, semicolon or colon.
 # .npmrc must also contain no auth/token text. The scanned bytes are the bytes
 # archived. All other path exclusions remain; ordinary tracked vendor/ trees
 # were already eligible and remain subject to the same secret-path filter.

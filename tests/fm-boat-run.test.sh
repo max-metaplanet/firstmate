@@ -474,6 +474,10 @@ for name, contents, included in [
     ('settings-safe', '{"permissions":{"allow":["Bash(npm test)"]}}', True),
     ('settings-secret', '{"env":{"API_SECRET":"fixture-only"}}', False),
     ('settings-bearer', '{"header":"Bearer fixture-only"}', False),
+    ('settings-bearer-short', '{"header":"Bearer a9F2k7Q4m8X"}', False),
+    ('settings-bearer-single', '{"header":"Bearer x"}', False),
+    ('settings-bearer-prose-prefix', '{"header":"Bearer shares-private"}', False),
+    ('settings-bearer-quoted-noun', '{"header":"Bearer decisions"}', False),
     ('settings-private-key', '-----BEGIN PRIVATE KEY-----\nfixture-only', False),
     ('settings-postgresql', '{"env":{"DATABASE_URL":"postgresql://app:dbpass@db.internal/app"}}', False),
 ]:
@@ -509,6 +513,7 @@ for name, contents, included in [
         assert b'excluded allowlisted file' in r.stderr
         assert b'fixture-only' not in r.stdout + r.stderr
         assert b'dbpass' not in r.stdout + r.stderr
+        assert b'a9F2k7Q4m8X' not in r.stdout + r.stderr
     empty(state)
 print('ok - narrow clean settings upload, credential-bearing exceptions warn without content, secret paths stay excluded')
 
@@ -553,12 +558,47 @@ assert r.returncode == 0, (r.stdout, r.stderr, result(p))
 empty(state)
 print('ok - real Git preserves both tips, bounded ancestry and tracked edits without unrelated refs/config/reflogs')
 
+for name, contents in [
+    ('blocked-decisions', '| State | Notes |\n|' + '-' * 680 + '|---|\n'
+     '| blocked | blocked bearer decisions, pending review |\n'),
+    ('shares', 'The bearer shares are transferable.\n'),
+]:
+    p, state, env = case('history-bearer-prose-' + name, clean_history=True)
+    work = p / 'work'
+    target = work / '.agents/skills/verify-app/features.md'
+    target.parent.mkdir(parents=True)
+    target.write_text(contents)
+    git(work, 'add', '.')
+    git(work, 'commit', '-qm', 'document transfer rules')
+    git(work, 'update-ref', 'refs/remotes/origin/main', 'HEAD')
+    r = launch(p, env, 'test -f .agents/skills/verify-app/features.md',
+               ('--history-depth', '2'))
+    assert r.returncode == 0, (name, r.stderr)
+    assert '.agents/skills/verify-app/features.md' in json.loads((state / 'uploaded.json').read_text())
+    empty(state)
+print('ok - history accepts bearer prose and long Markdown table separators')
+
 for name, unsafe_path, unsafe_content in [
     ('history-excluded', '.env', 'historical-value-never-print'),
     ('history-credential', 'ordinary.txt', 'API_SECRET=historical-value-never-print'),
     ('history-role-credential', '.github/tools/jev/vendor/.claude/agents/security-compliance.md',
      'password=historical-value-never-print'),
     ('history-binary', 'binary.dat', '\x00historical-value-never-print'),
+    ('history-bearer-header', 'ordinary.txt',
+     'Authorization: Bearer historical-value-never-print'),
+    ('history-bearer-jwt', 'ordinary.txt',
+     'bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJmaXh0dXJlIn0.historical-value-never-print'),
+    ('history-bearer-opaque', 'ordinary.txt', 'bearer aB09_~+/.historical-value-never-print=='),
+    ('history-bearer-minimum', 'ordinary.txt', 'bEaReR\tAb09_~+/.-12=='),
+    ('history-bearer-short', 'ordinary.txt', 'Bearer a9F2k7Q4m8X'),
+    ('history-bearer-single', 'ordinary.txt', 'Bearer x'),
+    ('history-bearer-prose-prefix', 'ordinary.txt', 'Bearer decisions-private'),
+    ('history-private-key', 'ordinary.txt', '-----BEGIN RSA PRIVATE KEY-----'),
+    ('history-url', 'ordinary.txt', 'https://user:historical-value-never-print@example.invalid'),
+    ('history-openai', 'ordinary.txt', 'sk-historical-value-never-print'),
+    ('history-github', 'ordinary.txt', 'ghp_0123456789abcdefghij'),
+    ('history-github-pat', 'ordinary.txt', 'github_pat_0123456789abcdefghij'),
+    ('history-aws', 'ordinary.txt', 'AKIA0123456789ABCDEF'),
 ]:
     p, state, env = case(name, clean_history=True)
     work = p / 'work'
@@ -575,6 +615,7 @@ for name, unsafe_path, unsafe_content in [
     assert r.returncode == 2, (name, r.stderr)
     assert b'history refused:' in r.stderr
     assert b'historical-value-never-print' not in r.stdout + r.stderr
+    assert b'a9F2k7Q4m8X' not in r.stdout + r.stderr
     assert result(p)['kind'] == 'invalid'
     assert not (state / 'calls.jsonl').exists()
     assert not (p / 'output/upload/source.tar.gz').exists()
@@ -583,32 +624,32 @@ print('ok - excluded, credential-bearing and binary historical blobs refuse befo
 for root_ref in ('HEAD', 'refs/remotes/origin/main'):
     for ancestor in (False, True):
         for field in ('message', 'author', 'committer', 'extra-header'):
-            name = 'history-commit-' + root_ref.replace('/', '-') + '-' + str(ancestor) + '-' + field
-            p, state, env = case(name, clean_history=True)
-            work = p / 'work'
-            git(work, 'update-ref', 'refs/remotes/origin/main', 'HEAD')
-            raw = git(work, 'cat-file', 'commit', 'HEAD').stdout
-            credential = b'API_SECRET=historical-commit-never-print'
-            if field == 'message':
-                raw = raw.split(b'\n\n', 1)[0] + b'\n\n' + credential + b'\n'
-            elif field == 'extra-header':
-                raw = raw.replace(b'\n\n', b'\nx-fixture ' + credential + b'\n\n', 1)
-            else:
-                raw = raw.replace(field.encode() + b' Fixture ', field.encode() + b' ' + credential + b' ', 1)
-            unsafe = subprocess.run(['git', '-C', str(work), 'hash-object', '-t', 'commit', '-w', '--stdin'],
-                                    input=raw, capture_output=True, check=True).stdout.decode().strip()
-            tip = unsafe
-            if ancestor:
-                tree = git(work, 'rev-parse', 'HEAD^{tree}').stdout.decode().strip()
-                tip = git(work, 'commit-tree', tree, '-p', unsafe, '-m', 'clean descendant').stdout.decode().strip()
-            git(work, 'update-ref', root_ref, tip)
-            r = launch(p, env, options=('--history-depth', '2'))
-            assert r.returncode == 2, (name, r.stderr)
-            assert b'history refused:' in r.stderr
-            assert b'historical-commit-never-print' not in r.stdout + r.stderr
-            assert result(p)['kind'] == 'invalid'
-            assert not (state / 'calls.jsonl').exists()
-            assert not (p / 'output/upload/source.tar.gz').exists()
+            for credential in (b'API_SECRET=historical-commit-never-print', b'Bearer a9F2k7Q4m8X'):
+                name = 'history-commit-' + root_ref.replace('/', '-') + '-' + str(ancestor) + '-' + field + '-' + str(len(credential))
+                p, state, env = case(name, clean_history=True)
+                work = p / 'work'
+                git(work, 'update-ref', 'refs/remotes/origin/main', 'HEAD')
+                raw = git(work, 'cat-file', 'commit', 'HEAD').stdout
+                if field == 'message':
+                    raw = raw.split(b'\n\n', 1)[0] + b'\n\n' + credential + b'\n'
+                elif field == 'extra-header':
+                    raw = raw.replace(b'\n\n', b'\nx-fixture ' + credential + b'\n\n', 1)
+                else:
+                    raw = raw.replace(field.encode() + b' Fixture ', field.encode() + b' ' + credential + b' ', 1)
+                unsafe = subprocess.run(['git', '-C', str(work), 'hash-object', '-t', 'commit', '-w', '--stdin'],
+                                        input=raw, capture_output=True, check=True).stdout.decode().strip()
+                tip = unsafe
+                if ancestor:
+                    tree = git(work, 'rev-parse', 'HEAD^{tree}').stdout.decode().strip()
+                    tip = git(work, 'commit-tree', tree, '-p', unsafe, '-m', 'clean descendant').stdout.decode().strip()
+                git(work, 'update-ref', root_ref, tip)
+                r = launch(p, env, options=('--history-depth', '2'))
+                assert r.returncode == 2, (name, r.stderr)
+                assert b'history refused:' in r.stderr
+                assert credential not in r.stdout + r.stderr
+                assert result(p)['kind'] == 'invalid'
+                assert not (state / 'calls.jsonl').exists()
+                assert not (p / 'output/upload/source.tar.gz').exists()
 print('ok - both history roots screen tip and ancestor commit messages and headers before Boat, without content')
 
 p, state, env = case('history-missing-base', clean_history=True)
