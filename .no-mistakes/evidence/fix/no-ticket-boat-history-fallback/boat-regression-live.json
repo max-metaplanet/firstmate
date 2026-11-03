@@ -1,0 +1,15 @@
+{
+  "before": {
+    "error": "history refused: credential-looking or binary commit",
+    "code": 2,
+    "archive_exists": false
+  },
+  "after": {
+    "history_result": {
+      "history": "fallback-synthetic",
+      "history_reason": "history refused: credential-looking or binary commit: e1d029c57796d9147682285633f1f12e31cf5178"
+    },
+    "archive_exists": true,
+    "notice": "boat-offload: falling back to synthetic snapshot; history refused: credential-looking or binary commit: e1d029c57796d9147682285633f1f12e31cf5178\n"
+  }
+}

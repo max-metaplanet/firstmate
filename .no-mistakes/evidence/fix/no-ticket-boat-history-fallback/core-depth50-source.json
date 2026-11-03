@@ -1,0 +1,16 @@
+{
+  "source": "~/firstmate/projects/core",
+  "depth": 50,
+  "source_head": "e4db7285a56e891460030f830a90e569ce37d6e7",
+  "source_sha256": "5b8d5274bfe0f0be900780809586d82dacd1c9104bc2ae7dc029ed36ac0b5ba5",
+  "history_result": {
+    "history": "fallback-synthetic",
+    "history_reason": "history refused: credential-looking or binary commit: 66500d8ffd772553fe4225b96bfea4f1c0bd61c6"
+  },
+  "notice": "boat-offload: skipped in-repo symlink: .claude/skills\nboat-offload: falling back to synthetic snapshot; history refused: credential-looking or binary commit: 66500d8ffd772553fe4225b96bfea4f1c0bd61c6\n",
+  "archive_bytes": 68256125,
+  "archive_member_count": 13879,
+  "git_included": false,
+  "boat_vm_used": false,
+  "source_writes": false
+}

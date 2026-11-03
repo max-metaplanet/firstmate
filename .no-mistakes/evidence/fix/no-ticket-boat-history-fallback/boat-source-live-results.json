@@ -1,0 +1,70 @@
+[
+  {
+    "scenario": "credential-commit",
+    "history": {
+      "history": "fallback-synthetic",
+      "history_reason": "history refused: credential-looking or binary commit: 40653d91d6a1951c459420d81bd4e73ceabd2f72"
+    },
+    "notice": "boat-offload: falling back to synthetic snapshot; history refused: credential-looking or binary commit: 40653d91d6a1951c459420d81bd4e73ceabd2f72\n",
+    "archive_members": [
+      "app.txt"
+    ],
+    "bootstrap_output": "base_ref=refs/fm-boat/no-local-history\nhistory_commits=2\nsource=dirty current source\nbase_tree=",
+    "bootstrap_notice": "boat-test-wrapper: synthetic empty Git base; real base unavailable, using core full-suite fallback\n"
+  },
+  {
+    "scenario": "binary-commit",
+    "history": {
+      "history": "fallback-synthetic",
+      "history_reason": "history refused: credential-looking or binary commit: 3a8da5fd387f859b853c622611ad0b04aaa28554"
+    },
+    "notice": "boat-offload: falling back to synthetic snapshot; history refused: credential-looking or binary commit: 3a8da5fd387f859b853c622611ad0b04aaa28554\n",
+    "archive_members": [
+      "app.txt"
+    ],
+    "bootstrap_output": "base_ref=refs/fm-boat/no-local-history\nhistory_commits=2\nsource=dirty current source\nbase_tree=",
+    "bootstrap_notice": "boat-test-wrapper: synthetic empty Git base; real base unavailable, using core full-suite fallback\n"
+  },
+  {
+    "scenario": "historical-unsafe-link",
+    "history": {
+      "history": "fallback-synthetic",
+      "history_reason": "history refused: unsafe symlink target: old-link"
+    },
+    "notice": "boat-offload: falling back to synthetic snapshot; history refused: unsafe symlink target: old-link\n",
+    "archive_members": [
+      "app.txt"
+    ]
+  },
+  {
+    "scenario": "screened-historical-blob",
+    "history": {
+      "history": "screened"
+    },
+    "notice": "boat-offload: history withheld 1 object(s) from the upload, 1 of them screened historical blobs; first fixture.sh\n",
+    "withheld_blob_read_exit": 128,
+    "preserved_head": "cf0ea38db12b845e30ea63e6e2942398daaa04ca"
+  },
+  {
+    "scenario": "safe-prose-and-Claude-history",
+    "history": {
+      "history": "screened"
+    },
+    "notice": "boat-offload: skipped in-repo symlink: .claude/skills\n",
+    "bootstrap_output": "base_ref=refs/remotes/origin/main\nhistory_commits=3\nsource=committed current source\nbase_tree=040000 tree 3d305d35744ca42b18107df5f7d4678727bb3385\t.agents\n040000 tree 7104fc8649e4233bef466db20c589a0ea61b8db8\t.claude\n100644 blob 9025825b465e7fbf812434cd2e95cee3d79acb40\tapp.txt\n",
+    "bootstrap_notice": "boat-test-wrapper: screened shallow Git history; using origin/main base\n",
+    "safe_historical_link": "../.agents/skills"
+  },
+  {
+    "scenario": "missing-base",
+    "refused": "history refused: origin/main commit is unavailable",
+    "code": 2,
+    "archive_exists": false
+  },
+  {
+    "scenario": "unsafe-current-link",
+    "refused": "source refused: unsafe symlink target: current-link",
+    "code": 2,
+    "archive_exists": false
+  }
+]
