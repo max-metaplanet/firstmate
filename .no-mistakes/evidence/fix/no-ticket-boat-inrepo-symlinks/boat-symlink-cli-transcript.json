@@ -1,0 +1,260 @@
+[
+  {
+    "mode": "source",
+    "case": "connect public CLI",
+    "exit": 75,
+    "stderr": "boat-offload: skipped in-repo symlink: .agents/skills/verify-connect\nboat-offload: Boat pending cap reached\n",
+    "result": {
+      "kind": "unavailable",
+      "remote_exit": null,
+      "cleanup": "deleted",
+      "swap_gib": 0,
+      "source_head": "b1fcdb2ceee1906a05e5deeb9aa6539623901598",
+      "source_sha256": "66c0bcca3e78383dfd2fb1ea55ba8a1164bb7684a842b26b519b32d3d032a344",
+      "execution_error": "Boat pending cap reached",
+      "error": "Boat pending cap reached",
+      "adapter_exit": 75
+    }
+  },
+  {
+    "mode": "current source",
+    "case": "connect",
+    "outcome": "accepted; symlink omitted; ordinary file bytes and executable mode preserved",
+    "notice": "boat-offload: skipped in-repo symlink: .agents/skills/verify-connect"
+  },
+  {
+    "mode": "source",
+    "case": "escape public CLI",
+    "exit": 2,
+    "stderr": "boat-offload: source refused: unsafe symlink target: .agents/skills/verify-connect\n",
+    "result": {
+      "kind": "invalid",
+      "remote_exit": null,
+      "cleanup": "not-created",
+      "swap_gib": 0,
+      "error": "source refused: unsafe symlink target: .agents/skills/verify-connect",
+      "adapter_exit": 2
+    }
+  },
+  {
+    "mode": "current source",
+    "case": "escape",
+    "outcome": "refused: source refused: unsafe symlink target: .agents/skills/verify-connect",
+    "notice": ""
+  },
+  {
+    "mode": "source",
+    "case": "absolute public CLI",
+    "exit": 2,
+    "stderr": "boat-offload: source refused: unsafe symlink target: .agents/skills/verify-connect\n",
+    "result": {
+      "kind": "invalid",
+      "remote_exit": null,
+      "cleanup": "not-created",
+      "swap_gib": 0,
+      "error": "source refused: unsafe symlink target: .agents/skills/verify-connect",
+      "adapter_exit": 2
+    }
+  },
+  {
+    "mode": "current source",
+    "case": "absolute",
+    "outcome": "refused: source refused: unsafe symlink target: .agents/skills/verify-connect",
+    "notice": ""
+  },
+  {
+    "mode": "source",
+    "case": "escape-reenter public CLI",
+    "exit": 2,
+    "stderr": "boat-offload: source refused: unsafe symlink target: .agents/skills/verify-connect\n",
+    "result": {
+      "kind": "invalid",
+      "remote_exit": null,
+      "cleanup": "not-created",
+      "swap_gib": 0,
+      "error": "source refused: unsafe symlink target: .agents/skills/verify-connect",
+      "adapter_exit": 2
+    }
+  },
+  {
+    "mode": "current source",
+    "case": "escape-reenter",
+    "outcome": "refused: source refused: unsafe symlink target: .agents/skills/verify-connect",
+    "notice": ""
+  },
+  {
+    "mode": "source",
+    "case": "credential public CLI",
+    "exit": 2,
+    "stderr": "boat-offload: source refused: credential-looking or binary symlink target: .agents/skills/verify-connect\n",
+    "result": {
+      "kind": "invalid",
+      "remote_exit": null,
+      "cleanup": "not-created",
+      "swap_gib": 0,
+      "error": "source refused: credential-looking or binary symlink target: .agents/skills/verify-connect",
+      "adapter_exit": 2
+    }
+  },
+  {
+    "mode": "current source",
+    "case": "credential",
+    "outcome": "refused: source refused: credential-looking or binary symlink target: .agents/skills/verify-connect",
+    "notice": ""
+  },
+  {
+    "mode": "source",
+    "case": "binary public CLI",
+    "exit": 2,
+    "stderr": "boat-offload: source refused: credential-looking or binary symlink target: .agents/skills/verify-connect\n",
+    "result": {
+      "kind": "invalid",
+      "remote_exit": null,
+      "cleanup": "not-created",
+      "swap_gib": 0,
+      "error": "source refused: credential-looking or binary symlink target: .agents/skills/verify-connect",
+      "adapter_exit": 2
+    }
+  },
+  {
+    "mode": "current source",
+    "case": "binary",
+    "outcome": "refused: source refused: credential-looking or binary symlink target: .agents/skills/verify-connect",
+    "notice": ""
+  },
+  {
+    "mode": "history",
+    "case": "connect public CLI",
+    "exit": 75,
+    "stderr": "boat-offload: skipped in-repo symlink: .agents/skills/verify-connect\nboat-offload: Boat pending cap reached\n",
+    "result": {
+      "kind": "unavailable",
+      "remote_exit": null,
+      "cleanup": "deleted",
+      "swap_gib": 0,
+      "source_head": "9f15c595ec745c292f0eaebe162b0822142f153b",
+      "source_sha256": "650956e4da95485165be639b7e27f7f4087e13f7a905dfaeea815752a900f18c",
+      "execution_error": "Boat pending cap reached",
+      "error": "Boat pending cap reached",
+      "adapter_exit": 75
+    }
+  },
+  {
+    "mode": "history-only link",
+    "case": "connect",
+    "outcome": "accepted; symlink omitted; ordinary file bytes and executable mode preserved; historical target blob retained and git fsck passed",
+    "notice": "boat-offload: skipped in-repo symlink: .agents/skills/verify-connect"
+  },
+  {
+    "mode": "history",
+    "case": "escape public CLI",
+    "exit": 2,
+    "stderr": "boat-offload: history refused: unsafe symlink target: .agents/skills/verify-connect\n",
+    "result": {
+      "kind": "invalid",
+      "remote_exit": null,
+      "cleanup": "not-created",
+      "swap_gib": 0,
+      "error": "history refused: unsafe symlink target: .agents/skills/verify-connect",
+      "adapter_exit": 2
+    }
+  },
+  {
+    "mode": "history-only link",
+    "case": "escape",
+    "outcome": "refused: history refused: unsafe symlink target: .agents/skills/verify-connect",
+    "notice": ""
+  },
+  {
+    "mode": "history",
+    "case": "absolute public CLI",
+    "exit": 2,
+    "stderr": "boat-offload: history refused: unsafe symlink target: .agents/skills/verify-connect\n",
+    "result": {
+      "kind": "invalid",
+      "remote_exit": null,
+      "cleanup": "not-created",
+      "swap_gib": 0,
+      "error": "history refused: unsafe symlink target: .agents/skills/verify-connect",
+      "adapter_exit": 2
+    }
+  },
+  {
+    "mode": "history-only link",
+    "case": "absolute",
+    "outcome": "refused: history refused: unsafe symlink target: .agents/skills/verify-connect",
+    "notice": ""
+  },
+  {
+    "mode": "history",
+    "case": "escape-reenter public CLI",
+    "exit": 2,
+    "stderr": "boat-offload: history refused: unsafe symlink target: .agents/skills/verify-connect\n",
+    "result": {
+      "kind": "invalid",
+      "remote_exit": null,
+      "cleanup": "not-created",
+      "swap_gib": 0,
+      "error": "history refused: unsafe symlink target: .agents/skills/verify-connect",
+      "adapter_exit": 2
+    }
+  },
+  {
+    "mode": "history-only link",
+    "case": "escape-reenter",
+    "outcome": "refused: history refused: unsafe symlink target: .agents/skills/verify-connect",
+    "notice": ""
+  },
+  {
+    "mode": "history",
+    "case": "credential public CLI",
+    "exit": 2,
+    "stderr": "boat-offload: history refused: credential-looking or binary symlink target: .agents/skills/verify-connect\n",
+    "result": {
+      "kind": "invalid",
+      "remote_exit": null,
+      "cleanup": "not-created",
+      "swap_gib": 0,
+      "error": "history refused: credential-looking or binary symlink target: .agents/skills/verify-connect",
+      "adapter_exit": 2
+    }
+  },
+  {
+    "mode": "history-only link",
+    "case": "credential",
+    "outcome": "refused: history refused: credential-looking or binary symlink target: .agents/skills/verify-connect",
+    "notice": ""
+  },
+  {
+    "mode": "history",
+    "case": "binary public CLI",
+    "exit": 2,
+    "stderr": "boat-offload: history refused: credential-looking or binary symlink target: .agents/skills/verify-connect\n",
+    "result": {
+      "kind": "invalid",
+      "remote_exit": null,
+      "cleanup": "not-created",
+      "swap_gib": 0,
+      "error": "history refused: credential-looking or binary symlink target: .agents/skills/verify-connect",
+      "adapter_exit": 2
+    }
+  },
+  {
+    "mode": "history-only link",
+    "case": "binary",
+    "outcome": "refused: history refused: credential-looking or binary symlink target: .agents/skills/verify-connect",
+    "notice": ""
+  },
+  {
+    "case": "parent",
+    "outcome": "refused: source symlink refused: dir/link"
+  },
+  {
+    "case": "submodule",
+    "outcome": "refused: source contains unsupported symlink or submodule: module"
+  },
+  {
+    "case": "baseline connect reproduction",
+    "outcome": "source contains unsupported symlink or submodule: .agents/skills/verify-connect"
+  }
+]
