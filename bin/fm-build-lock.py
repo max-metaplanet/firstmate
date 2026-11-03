@@ -11,8 +11,9 @@ Only Node executing a heavy CLI re-runs itself, through the sibling
 fm-heavy-route.py; every other Node process returns from the preload without
 starting another interpreter. The preload owns which command is heavy, the
 router owns whether that command goes to Boat or to a slot here, and a slot here
-is what it does unless a project declares otherwise. Package managers and Turbo
-remain unlocked; the heavy commands they start claim slots themselves.
+is what it does unless a project declares otherwise. Orchestrator eligibility
+is owned by docs/configuration.md "Boat-first heavy routing"; other package
+manager commands remain unlocked and their heavy children claim slots themselves.
 
   fm-build-lock.py -- COMMAND [ARGS...]   run another heavy command in a slot
   fm-build-lock.py node-option            print the NODE_OPTIONS entry

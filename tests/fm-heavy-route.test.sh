@@ -496,6 +496,180 @@ for name, tool, flags, routed in (
         assert 'runs under ' + tool in r.stderr, (name, r.stderr)
 print('ok - a heavy command under turbo or a fanned-out pnpm keeps a local slot')
 
+
+def orchestrator_case(name, tool='turbo', declaration=None, cache=False, script='tsc --noEmit'):
+    install = ('mkdir -p node_modules/{turbo/bin,nx/bin,lerna/dist,pnpm/bin,typescript/bin,.bin}; '
+               'cp tools/orchestrator.cjs node_modules/turbo/bin/turbo; '
+               'cp tools/orchestrator.cjs node_modules/nx/bin/nx.js; '
+               'cp tools/orchestrator.cjs node_modules/lerna/dist/cli.js; '
+               'cp tools/orchestrator.cjs node_modules/pnpm/bin/pnpm.cjs; '
+               'cp tools/tsc node_modules/typescript/bin/tsc; '
+               'ln -s ../typescript/bin/tsc node_modules/.bin/tsc; '
+               'ln -s ../pnpm/bin/pnpm.cjs node_modules/.bin/pnpm; '
+               'ln -s ../turbo/bin/turbo node_modules/.bin/turbo')
+    declared = 'smokeproj bootstrap=' + shlex.quote(install) + '\n'
+    p, work, config, state, env = case(name, declaration=declaration or declared)
+    (work / 'tools').mkdir()
+    child = r"""#!/usr/bin/env node
+const fs = require('fs');
+if (process.argv.includes('--showConfig')) {
+  console.log(fs.readFileSync('tsconfig.json', 'utf8')); process.exit(0);
+}
+console.log('child marker=' + (process.env.FM_HEAVY_ORCHESTRATOR || '') +
+  ' held=' + (process.env.FM_BUILD_LOCK_HELD || ''));
+"""
+    parent = r"""#!/usr/bin/env node
+const fs = require('fs');
+const path = require('path');
+const cp = require('child_process');
+const dirs = ['packages/a', 'packages/b'];
+if (process.argv.includes('--dry=json')) {
+  const definition = JSON.parse(fs.readFileSync('turbo.json', 'utf8')).tasks['type-check'];
+  const tasks = dirs.map((directory) => ({directory, task: 'type-check',
+    command: JSON.parse(fs.readFileSync(directory + '/package.json')).scripts['type-check'],
+    resolvedTaskDefinition: definition}));
+  if (definition.dependsOn.includes('^build')) {
+    for (const directory of dirs) tasks.push({directory, task: 'build', command: 'tsc -b',
+      resolvedTaskDefinition: {cache: false, outputs: []}});
+  }
+  console.log(JSON.stringify({tasks}));
+} else if (process.argv.includes('list')) {
+  console.log(JSON.stringify(dirs.map((dir) => ({path: path.resolve(dir)}))));
+} else {
+  console.log('parent held=' + (process.env.FM_BUILD_LOCK_HELD || ''));
+  let code = 0;
+  for (const dir of dirs) {
+    const result = cp.spawnSync(process.execPath,
+      [path.resolve('node_modules/typescript/bin/tsc'), '--noEmit'],
+      {cwd: dir, env: process.env, stdio: 'inherit'});
+    code = code || result.status;
+  }
+  process.exit(code);
+}
+"""
+    (work / 'tools/orchestrator.cjs').write_text(parent)
+    (work / 'tools/tsc').write_text(child)
+    (work / 'tools/tsc').chmod(0o755)
+    (work / 'package.json').write_text(json.dumps({'name': 'smokeproj', 'private': True}))
+    (work / 'pnpm-workspace.yaml').write_text('packages:\n  - packages/*\n')
+    (work / 'turbo.json').write_text(json.dumps({'tasks': {'type-check': {
+        'cache': cache, 'outputs': [], 'dependsOn': []}}}))
+    (work / 'nx.json').write_text(json.dumps({'targetDefaults': {'type-check': {
+        'cache': cache, 'outputs': [], 'dependsOn': []}}}))
+    (work / 'lerna.json').write_text(json.dumps({'version': '0.0.0'}))
+    for directory in ('packages/a', 'packages/b'):
+        d = work / directory
+        d.mkdir(parents=True)
+        (d / 'package.json').write_text(json.dumps({'name': directory, 'scripts': {'type-check': script, 'build': 'tsc -b'}}))
+        (d / 'tsconfig.json').write_text('{"compilerOptions":{"noEmit":true}}')
+    subprocess.run(['git', '-C', str(work), 'add', '-A'], check=True, capture_output=True)
+    subprocess.run(['git', '-C', str(work), 'commit', '-qm', 'orchestrator fixture'],
+                   check=True, capture_output=True)
+    subprocess.run(['bash', '-c', install], cwd=work, check=True, capture_output=True)
+    option = subprocess.run([str(repo / 'bin/fm-build-lock.py'), 'node-option'], env=env,
+                            capture_output=True, text=True, check=True).stdout.strip()
+    env['NODE_OPTIONS'] = option
+    assert publish(config, env).returncode == 0
+    entry = {'turbo': '.bin/turbo', 'nx': 'nx/bin/nx.js',
+             'lerna': 'lerna/dist/cli.js', 'pnpm': '.bin/pnpm'}[tool]
+    return p, work, config, state, env, work / 'node_modules' / entry
+
+
+def orchestration_run(work, env, cli, args):
+    return subprocess.run(['node', str(cli), *args], env=env, cwd=work,
+                          capture_output=True, text=True, timeout=120)
+
+
+def starts(state):
+    if not called(state):
+        return 0
+    return sum(json.loads(line)[0] == 'new' for line in (state / 'calls.jsonl').read_text().splitlines())
+
+
+for tool, args in (('turbo', ['type-check']), ('nx', ['run-many', '-t', 'type-check']),
+                   ('nx', ['run', 'a:type-check']), ('lerna', ['run', 'type-check']),
+                   ('pnpm', ['-r', 'type-check']), ('pnpm', ['--recursive', 'run', 'type-check']),
+                   ('pnpm', ['-F', 'a', 'type-check']), ('pnpm', ['-Fa', 'type-check']),
+                   ('pnpm', ['--filter=a', 'run', 'type-check'])):
+    p, work, config, state, env, cli = orchestrator_case('whole-' + tool + '-' + str(fixture_index), tool)
+    fixture_index += 1
+    r = orchestration_run(work, env, cli, args)
+    assert r.returncode == 0, (tool, args, r.stdout, r.stderr)
+    assert starts(state) == 1, (tool, args, r.stderr)
+    assert r.stdout.count('child marker=remote held=\n') == 2, (tool, r.stdout, r.stderr)
+    assert 'parent held=\n' in r.stdout, r.stdout
+    assert r.stderr.count('orchestrator on Boat') == 1, r.stderr
+    assert 'running locally' not in r.stderr, r.stderr
+print('ok - turbo, nx, lerna and recursive/filtered pnpm route one whole run; two children start no jobs')
+
+for name, tool, args, script, cache in (
+    ('unknown-options', 'turbo', ['type-check', '--mystery'], 'tsc --noEmit', False),
+    ('passthrough-fix', 'pnpm', ['-r', 'type-check', '--', '--fix'], 'tsc --noEmit', False),
+    ('shell-script', 'turbo', ['type-check'], 'tsc --noEmit && touch output', False),
+    ('unknown-script', 'pnpm', ['-r', 'type-check'], 'node custom-typecheck.js', False),
+    ('write-output', 'turbo', ['type-check'], 'tsc --generateTrace trace --noEmit', False),
+    ('turbo-cache', 'turbo', ['type-check'], 'tsc --noEmit', True),
+    ('nx-cache', 'nx', ['run-many', '-t', 'type-check'], 'tsc --noEmit', True),
+):
+    p, work, config, state, env, cli = orchestrator_case('reject-' + name, tool, cache=cache, script=script)
+    r = orchestration_run(work, env, cli, args)
+    assert r.returncode == 0 and starts(state) == 0, (name, r.stdout, r.stderr)
+    assert r.stderr.count('running locally in a heavy slot') == 1, (name, r.stderr)
+    assert r.stdout.count('child marker=local held=') == 2, (name, r.stdout, r.stderr)
+    assert 'parent held=\n' not in r.stdout, (name, r.stdout)
+print('ok - unknown options, shell/custom tasks, diagnostic outputs and orchestrator caches stay local with one notice')
+
+for name in ('untracked', 'local-only', 'unavailable', 'no-task', 'undeclared', 'outputs',
+             'hooks', 'dependency', 'no-proof', 'remote-exit'):
+    p, work, config, state, env, cli = orchestrator_case('whole-' + name)
+    if name == 'untracked':
+        (work / 'forgotten.ts').write_text('untracked input')
+    elif name == 'local-only':
+        record_path = Path(env['FM_BUILD_LOCK_INSTALL_DIR']) / 'boat-route'
+        loaded = json.loads(record_path.read_text())
+        loaded['projects']['smokeproj']['local_only'] = ['tsc']
+        record_path.write_text(json.dumps(loaded))
+    elif name == 'unavailable':
+        (state / 'fixture.json').write_text('{"remaining":0}')
+    elif name == 'no-task':
+        env.pop('FM_TASK_ID')
+    elif name == 'undeclared':
+        record_path = Path(env['FM_BUILD_LOCK_INSTALL_DIR']) / 'boat-route'
+        loaded = json.loads(record_path.read_text()); loaded['projects'] = {}
+        record_path.write_text(json.dumps(loaded))
+    elif name in ('outputs', 'dependency'):
+        graph = json.loads((work / 'turbo.json').read_text())
+        if name == 'outputs':
+            graph['tasks']['type-check']['outputs'] = ['dist/**']
+        else:
+            graph['tasks']['type-check']['dependsOn'] = ['^build']
+        (work / 'turbo.json').write_text(json.dumps(graph))
+    elif name == 'hooks':
+        target = work / 'packages/a/package.json'
+        data = json.loads(target.read_text()); data['scripts']['pretype-check'] = 'touch hook-output'
+        target.write_text(json.dumps(data))
+    elif name == 'no-proof':
+        (work / 'packages/a/tsconfig.json').write_text('{"compilerOptions":{}}')
+    elif name == 'remote-exit':
+        child = work / 'tools/tsc'
+        child.write_text(child.read_text() + "\nif (process.env.FM_HEAVY_ORCHESTRATOR === 'remote') process.exit(3);\n")
+    r = orchestration_run(work, env, cli, ['type-check'])
+    if name == 'remote-exit':
+        assert r.returncode == 3 and starts(state) == 1, (name, r.stdout, r.stderr)
+        assert 'running locally' not in r.stderr, r.stderr
+        continue
+    assert r.returncode == 0 and starts(state) == 0, (name, r.stdout, r.stderr)
+    if name == 'unavailable':
+        calls = [json.loads(line) for line in (state / 'calls.jsonl').read_text().splitlines()]
+        assert sum(call[0] == 'limits' for call in calls) == 1, calls
+    if name not in ('no-task', 'undeclared'):
+        assert r.stderr.count('running locally in a heavy slot') == 1, (name, r.stderr)
+        assert r.stdout.count('child marker=local held=') == 2, (name, r.stdout)
+    else:
+        assert 'orchestrator on Boat' not in r.stderr, (name, r.stderr)
+        assert 'parent held=\n' in r.stdout, (name, r.stdout)
+print('ok - source/local-only/output/hook/config guards and unavailable fallback apply to the whole run; non-workers stay untouched')
+
 p, work, config, state, env = case('remote-shape', declaration=DECLARED)
 assert publish(config, env).returncode == 0
 r = run(work / 'deep', env, command=('bash', '-c', 'true'))
@@ -539,7 +713,7 @@ for flag in ('--root', '--dir'):
 print('ok - root and descendant paths resolve remotely with either option spelling')
 
 for name, bootstrap in (('failed', 'false'), ('exited', 'exit 0'),
-                         ('bad-directory', 'rm -rf deep')):
+                         ('bad-directory', 'mv deep elsewhere')):
     p, work, config, state, env = case('setup-' + name,
         declaration="smokeproj bootstrap=" + shlex.quote(bootstrap) + "\n")
     assert publish(config, env).returncode == 0
