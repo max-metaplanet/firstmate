@@ -1839,9 +1839,11 @@ Their proof conservatively checks all package tasks that could match, so an unsa
 Each executable task must be a single `tsc`, `eslint`, or `vitest run` command that passes the same argument, resolved TypeScript configuration, and project `local-only` checks as a top-level heavy command.
 Unknown scripts, shell programs, forwarded arguments, graph shapes, or orchestration options keep the whole invocation local with one notice.
 Only package-selection, concurrency, and console-output options named by the router's option allowlist are accepted.
+Git-history filters stay local because Git history is not uploaded.
 Probes run with the preload bypassed and do not execute the task scripts.
 
 Orchestrator caches and task outputs are not returned.
+pnpm invocations with effective `report-summary` enabled stay local so their requested summary is retained.
 Turbo tasks therefore require `cache: false` or the invocation's explicit `--no-cache`, and no declared outputs.
 Nx and Lerna tasks require `cache: false` or an explicit cache bypass, and no declared outputs.
 A dependency that builds files, a task that writes reports, or an invocation that would populate an orchestrator cache stays local.

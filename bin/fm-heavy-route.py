@@ -459,7 +459,7 @@ def orchestration(command):
     while args:
         word, args = args[0], args[1:]
         if word.startswith("-F") and word != "-F" and not word.startswith("--"):
-            word = "--filter=" + word[2:]
+            word = "--filter=" + (word[3:] if word.startswith("-F=") else word[2:])
         if word.startswith("-"):
             name, sep, value = word.partition("=")
             shape = ORCHESTRATOR_OPTIONS[tool].get(name)
@@ -476,6 +476,8 @@ def orchestration(command):
                 if sep and value != "true":
                     return None
                 value = "true"
+            if name in ("--filter", "-F") and any(char in value for char in "[]"):
+                return None
             options.setdefault(name, []).append(value)
             if name in ("--target", "--targets", "-t"):
                 tasks += value.split(",")
@@ -548,6 +550,7 @@ def safe_orchestration(plan, root, settings):
         if tool == "pnpm":
             for setting, allowed in (
                     ("include-workspace-root", ("false", "undefined")),
+                    ("report-summary", ("false", "undefined")),
                     ("filter", ("undefined",)),
                     ("filter-prod", ("undefined",)),
                     ("workspace-packages", ("undefined",)),

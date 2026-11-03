@@ -533,6 +533,11 @@ function setting(key) {
       if (at >= 0 && line.slice(0, at).trim() === key) value = line.slice(at + 1).trim();
     }
   }
+  if (key === 'report-summary' && fs.existsSync('pnpm-workspace.yaml')) {
+    for (const line of fs.readFileSync('pnpm-workspace.yaml', 'utf8').split('\n')) {
+      if (line.startsWith('reportSummary:')) value = line.slice('reportSummary:'.length).trim();
+    }
+  }
   const envKey = 'npm_config_' + key.replaceAll('-', '_');
   for (const [name, configured] of Object.entries(process.env)) {
     if (name.toLowerCase() === envKey) value = configured;
@@ -579,6 +584,9 @@ if (process.argv[2] === 'config') {
       [path.resolve('node_modules/typescript/bin/tsc'), '--noEmit'],
       {cwd: dir, env: process.env, stdio: 'inherit'});
     code = code || result.status;
+  }
+  if (fs.realpathSync(process.argv[1]).includes('/pnpm/') && setting('report-summary') === 'true') {
+    fs.writeFileSync('pnpm-exec-summary.json', JSON.stringify({marker: process.env.FM_HEAVY_ORCHESTRATOR}));
   }
   process.exit(code);
 }
@@ -700,6 +708,70 @@ for key, value in (('filter', 'packages/a'), ('filter-prod', 'packages/a'),
     r = orchestration_run(work, env, cli, ['-r', 'type-check'])
     assert r.returncode == 0 and starts(state) == 0, (key, r.stdout, r.stderr)
 print('ok - pnpm proves effective root exclusion and refuses hidden selection overrides or ambiguous config probes')
+
+for tool in ('turbo', 'pnpm'):
+    for form in ('long', 'long-equals', 'short', 'attached', 'short-equals'):
+        for selector in ('[HEAD^]', 'a...[main]', 'a'):
+            p, work, config, state, env, cli = orchestrator_case(
+                'filter-history-' + tool + '-' + form + '-' + str(fixture_index), tool)
+            fixture_index += 1
+            flags = {'long': ['--filter', selector], 'long-equals': ['--filter=' + selector],
+                     'short': ['-F', selector], 'attached': ['-F' + selector],
+                     'short-equals': ['-F=' + selector]}[form]
+            args = [*flags, 'type-check'] if tool == 'pnpm' else ['type-check', *flags]
+            r = orchestration_run(work, env, cli, args)
+            history = selector != 'a'
+            assert r.returncode == 0 and starts(state) == (0 if history else 1), (tool, form, selector, r.stdout, r.stderr)
+            if history:
+                assert not called(state), (tool, form, selector)
+                assert r.stderr.count('running locally in a heavy slot') == 1, r.stderr
+                assert r.stdout.count('child marker=local held=') == 2, (r.stdout, r.stderr)
+            else:
+                assert r.stdout.count('child marker=remote held=\n') == 2, (r.stdout, r.stderr)
+print('ok - Turbo and pnpm history selectors stay local across filter aliases while ordinary filters route once')
+
+for source in ('workspace', 'repository', 'user', 'global', 'environment'):
+    for enabled in (False, True):
+        p, work, config, state, env, cli = orchestrator_case(
+            'pnpm-report-' + source + '-' + str(enabled), 'pnpm')
+        value = 'true' if enabled else 'false'
+        if source == 'workspace':
+            path = work / 'pnpm-workspace.yaml'
+            path.write_text(path.read_text() + 'reportSummary: ' + value + '\n')
+        elif source == 'environment':
+            env['NPM_CONFIG_REPORT_SUMMARY'] = value
+        else:
+            path = {'repository': work / '.npmrc', 'user': Path(env['HOME']) / '.npmrc',
+                    'global': p / 'global.npmrc'}[source]
+            path.write_text('report-summary=' + value + '\n')
+            if source == 'global':
+                env['npm_config_globalconfig'] = str(path)
+        subprocess.run(['git', '-C', str(work), 'add', '-A'], check=True, capture_output=True)
+        subprocess.run(['git', '-C', str(work), 'commit', '--allow-empty', '-qm', 'Summary configuration fixture'],
+                       check=True, capture_output=True)
+        r = orchestration_run(work, env, cli, ['-r', 'type-check'])
+        assert r.returncode == 0 and starts(state) == (0 if enabled else 1), (source, enabled, r.stdout, r.stderr)
+        summary = work / 'pnpm-exec-summary.json'
+        if enabled:
+            assert not called(state), (source, r.stderr)
+            assert r.stderr.count('running locally in a heavy slot') == 1, r.stderr
+            assert json.loads(summary.read_text()) == {'marker': 'local'}, (source, r.stdout, r.stderr)
+        else:
+            assert not summary.exists(), (source, r.stdout, r.stderr)
+
+for name, stdout, exit_code in (('ambiguous', 'false\ntrue\n', 0), ('empty', '', 0),
+                                 ('unknown', 'null\n', 0), ('unavailable', '', 42)):
+    p, work, config, state, env, cli = orchestrator_case('pnpm-summary-probe-' + name, 'pnpm')
+    (work / 'tools/config-probe.json').write_text(json.dumps({
+        'report-summary': {'stdout': stdout, 'exit': exit_code}}))
+    subprocess.run(['git', '-C', str(work), 'add', '-A'], check=True, capture_output=True)
+    subprocess.run(['git', '-C', str(work), 'commit', '-qm', 'Ambiguous summary fixture'],
+                   check=True, capture_output=True)
+    r = orchestration_run(work, env, cli, ['-r', 'type-check'])
+    assert r.returncode == 0 and not called(state), (name, r.stdout, r.stderr)
+    assert r.stderr.count('running locally in a heavy slot') == 1, r.stderr
+    assert not (work / 'pnpm-exec-summary.json').exists(), (name, r.stdout, r.stderr)
+print('ok - effective pnpm summaries are retained locally and ambiguous summary probes cannot route')
 
 for name, tool, args, script, cache in (
     ('unknown-options', 'turbo', ['type-check', '--mystery'], 'tsc --noEmit', False),
