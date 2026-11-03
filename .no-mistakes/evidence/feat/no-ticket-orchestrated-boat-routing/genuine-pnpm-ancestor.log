@@ -1,0 +1,8 @@
+$ node ./node_modules/.bin/pnpm -r exec tsc --noEmit
+exit=0
+STDOUT
+
+STDERR
+heavy-route: tsc runs under pnpm -r, so only that top-level command could go to Boat; running locally in a heavy slot
+heavy-route: tsc runs under pnpm -r, so only that top-level command could go to Boat; running locally in a heavy slot
+waiting for a heavy slot (1 on this machine, held by pid 2829170)

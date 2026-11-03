@@ -1,0 +1,12 @@
+$ node ./node_modules/.bin/pnpm --filter=a type-check
+exit=0
+STDOUT
+
+> a@1.0.0 type-check ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FPT0Q83JFMAH69XRKGBNXD/.test-orchestrated-boat/project/packages/a
+> tsc --noEmit
+
+
+STDERR
+heavy-route: orchestrator on Boat; output is printed when it finishes; evidence ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FPT0Q83JFMAH69XRKGBNXD/.test-orchestrated-boat/.fm-test-scratch/fm-heavy-route.orchestrator.dzt2tfx9/boat/result.json
+boat-offload: Boat key unavailable
+heavy-route: Boat did not run it (unavailable, exit 69); discarded remote stdout; evidence ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FPT0Q83JFMAH69XRKGBNXD/.test-orchestrated-boat/.fm-test-scratch/fm-heavy-route.orchestrator.dzt2tfx9/boat/result.json; running locally in a heavy slot

@@ -1,0 +1,32 @@
+[
+  {
+    "name": "pnpm-relative-unavailable",
+    "exit": 0,
+    "boat_attempts": 1
+  },
+  {
+    "name": "pnpm-filtered-unavailable",
+    "exit": 0,
+    "boat_attempts": 1
+  },
+  {
+    "name": "turbo-relative-unavailable",
+    "exit": 0,
+    "boat_attempts": 1
+  },
+  {
+    "name": "untracked-input-refusal",
+    "exit": 0,
+    "boat_attempts": 0
+  },
+  {
+    "name": "cache-writing-stays-local",
+    "exit": 0,
+    "boat_attempts": 0
+  },
+  {
+    "name": "local-failure-verdict",
+    "exit": 2,
+    "boat_attempts": 1
+  }
+]

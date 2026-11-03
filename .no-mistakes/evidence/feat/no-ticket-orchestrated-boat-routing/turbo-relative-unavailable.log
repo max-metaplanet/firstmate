@@ -1,0 +1,37 @@
+$ node ./node_modules/.bin/turbo type-check
+exit=0
+STDOUT
+• Packages in scope: a, b
+• Running type-check in 2 packages
+• Remote caching disabled
+b:type-check: cache bypass, force executing 2b8c267cc25453b8
+a:type-check: cache bypass, force executing ba0dbd965e1c58cb
+b:type-check: 
+b:type-check: > b@1.0.0 type-check ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FPT0Q83JFMAH69XRKGBNXD/.test-orchestrated-boat/project/packages/b
+b:type-check: > tsc --noEmit
+b:type-check: 
+a:type-check: 
+a:type-check: > a@1.0.0 type-check ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FPT0Q83JFMAH69XRKGBNXD/.test-orchestrated-boat/project/packages/a
+a:type-check: > tsc --noEmit
+a:type-check: 
+a:type-check: fm-memcap: no usable systemd user scope; address-space limits are opt-in; running python3 uncapped; use bin/fm-boat-run.sh to run it bounded
+b:type-check: waiting for a heavy slot (1 on this machine, held by pid 2818973)
+b:type-check: fm-memcap: no usable systemd user scope; address-space limits are opt-in; running python3 uncapped; use bin/fm-boat-run.sh to run it bounded
+
+ Tasks:    2 successful, 2 total
+Cached:    0 cached, 2 total
+  Time:    1.514s 
+
+
+STDERR
+heavy-route: orchestrator on Boat; output is printed when it finishes; evidence ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FPT0Q83JFMAH69XRKGBNXD/.test-orchestrated-boat/.fm-test-scratch/fm-heavy-route.orchestrator.owiwcwic/boat/result.json
+boat-offload: Boat key unavailable
+heavy-route: Boat did not run it (unavailable, exit 69); discarded remote stdout; evidence ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FPT0Q83JFMAH69XRKGBNXD/.test-orchestrated-boat/.fm-test-scratch/fm-heavy-route.orchestrator.owiwcwic/boat/result.json; running locally in a heavy slot
+turbo 2.5.8
+
+ WARNING  An issue occurred while attempting to parse ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FPT0Q83JFMAH69XRKGBNXD/.test-orchestrated-boat/project/pnpm-lock.yaml. Turborepo will still function, but some features may not be available:
+   x Could not resolve workspaces.
+  `-> Lockfile not found at ~/.no-mistakes/worktrees/
+      c0c4fcacb05a/01M6FPT0Q83JFMAH69XRKGBNXD/.test-orchestrated-boat/project/
+      pnpm-lock.yaml
+

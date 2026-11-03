@@ -1,0 +1,13 @@
+$ node ./node_modules/.bin/pnpm -r type-check
+exit=0
+STDOUT
+Scope: 2 of 3 workspace projects
+packages/a type-check$ tsc --noEmit
+packages/b type-check$ tsc --noEmit
+packages/b type-check: Done
+packages/a type-check: Done
+
+STDERR
+heavy-route: orchestrator on Boat; output is printed when it finishes; evidence ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FPT0Q83JFMAH69XRKGBNXD/.test-orchestrated-boat/.fm-test-scratch/fm-heavy-route.orchestrator.nud31pso/boat/result.json
+boat-offload: Boat key unavailable
+heavy-route: Boat did not run it (unavailable, exit 69); discarded remote stdout; evidence ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FPT0Q83JFMAH69XRKGBNXD/.test-orchestrated-boat/.fm-test-scratch/fm-heavy-route.orchestrator.nud31pso/boat/result.json; running locally in a heavy slot

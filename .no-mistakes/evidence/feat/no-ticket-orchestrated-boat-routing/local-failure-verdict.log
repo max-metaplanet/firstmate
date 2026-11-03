@@ -1,0 +1,18 @@
+$ node ./node_modules/.bin/pnpm -r type-check
+exit=2
+STDOUT
+Scope: 2 of 3 workspace projects
+packages/a type-check$ tsc --noEmit
+packages/b type-check$ tsc --noEmit
+packages/b type-check: Done
+packages/a type-check: index.ts(1,7): error TS2322: Type 'string' is not assignable to type 'number'.
+packages/a type-check: Failed
+~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FPT0Q83JFMAH69XRKGBNXD/.test-orchestrated-boat/project/packages/a:
+ ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL  a@1.0.0 type-check: `tsc --noEmit`
+Exit status 2
+ WARN   Local package.json exists, but node_modules missing, did you mean to install?
+
+STDERR
+heavy-route: orchestrator on Boat; output is printed when it finishes; evidence ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FPT0Q83JFMAH69XRKGBNXD/.test-orchestrated-boat/.fm-test-scratch/fm-heavy-route.orchestrator.gpxpckof/boat/result.json
+boat-offload: Boat key unavailable
+heavy-route: Boat did not run it (unavailable, exit 69); discarded remote stdout; evidence ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FPT0Q83JFMAH69XRKGBNXD/.test-orchestrated-boat/.fm-test-scratch/fm-heavy-route.orchestrator.gpxpckof/boat/result.json; running locally in a heavy slot

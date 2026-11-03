@@ -1,0 +1,11 @@
+$ node ./node_modules/.bin/pnpm -r type-check
+exit=0
+STDOUT
+Scope: 2 of 3 workspace projects
+packages/a type-check$ tsc --noEmit
+packages/b type-check$ tsc --noEmit
+packages/a type-check: Done
+packages/b type-check: Done
+
+STDERR
+heavy-route: untracked file untracked.txt would not travel to Boat; running locally in a heavy slot

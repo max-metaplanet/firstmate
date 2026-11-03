@@ -1,0 +1,25 @@
+$ node ./node_modules/.bin/pnpm -r type-check
+exit=0
+STDOUT
+Scope: 2 of 3 workspace projects
+packages/a type-check$ tsc --noEmit
+packages/b type-check$ tsc --noEmit
+packages/b type-check: Done
+packages/a type-check: Done
+
+STDERR
+heavy-route: orchestrator has unknown or ambiguous options, reads input Boat cannot receive, or writes files Boat would not bring back; running locally in a heavy slot
+
+REPORT
+{
+	"executionStatus": {
+		"~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FPT0Q83JFMAH69XRKGBNXD/.test-orchestrated-boat/project/packages/a": {
+			"status": "passed",
+			"duration": 669.099143
+		},
+		"~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FPT0Q83JFMAH69XRKGBNXD/.test-orchestrated-boat/project/packages/b": {
+			"status": "passed",
+			"duration": 658.292616
+		}
+	}
+}
