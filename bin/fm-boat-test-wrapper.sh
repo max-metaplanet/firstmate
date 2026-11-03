@@ -7,7 +7,7 @@
 # FM_BOAT_TEST_TIMEOUT optionally forwards --timeout SECONDS to that adapter;
 # its validation and default still apply. Use 1500 or less on the trial account.
 # FM_BOAT_TEST_HISTORY_DEPTH optionally forwards --history-depth N (1..1000).
-# The adapter owns history screening and refusal; see fm-boat-run.sh --help.
+# The adapter owns history screening and synthetic fallback; see fm-boat-run.sh --help.
 # FM_BOAT_TYPE optionally forwards --type to the adapter; its default is default.
 # The selected account must permit that type in config/boat-keys.
 # The command must install its dependencies and have its runtime tools on Boat.
@@ -23,7 +23,9 @@
 # contract violations as newly introduced. No local change-scoping parity is
 # claimed. Bootstrap failure fails before tests, never yielding an empty diff.
 # With FM_BOAT_TEST_HISTORY_DEPTH, the adapter supplies screened real Git history
-# instead; PIPELINE_TEST_BASE_REF then names refs/remotes/origin/main.
+# when it passes screening; PIPELINE_TEST_BASE_REF then names refs/remotes/origin/main.
+# After a history-screen fallback, the archive has no .git and the synthetic
+# bootstrap below selects the absent base ref regardless of requested depth.
 #
 # Evidence is retained in a fresh ../.fm-test-scratch/fm-boat-test.*/boat* outside
 # the worktree; the adapter prints command output and owns command.log/result.json.

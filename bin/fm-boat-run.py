@@ -29,6 +29,10 @@ class Failure(Exception):
         self.code = code
 
 
+class HistoryScreenRefusal(Failure):
+    pass
+
+
 class _Terminated(BaseException):
     def __init__(self, code):
         self.code = code
@@ -196,7 +200,8 @@ def history(root, head, depth, destination, key_files, uploaded, skipped):
     screened = []
     for commit in git(fetched, 'rev-list', '--all').splitlines():
         if not safe_text(git(fetched, 'cat-file', 'commit', commit.decode()), CREDENTIAL_COMMIT):
-            raise Failure('history refused: credential-looking or binary commit', 2)
+            raise HistoryScreenRefusal('history refused: credential-looking or binary commit: ' +
+                                       commit.decode(), 2)
         entries = git(fetched, 'ls-tree', '-rz', '--full-tree', commit.decode()).split(b'\0')
         for entry in filter(None, entries):
             meta, name = entry.split(b'\t', 1)
@@ -204,8 +209,11 @@ def history(root, head, depth, destination, key_files, uploaded, skipped):
             relative(name)
             mode, kind, oid = meta.split()
             if mode == b'120000' and kind == b'blob':
-                skip_symlink(name, git(fetched, 'cat-file', 'blob', oid.decode()),
-                             skipped, 'history refused: ')
+                try:
+                    skip_symlink(name, git(fetched, 'cat-file', 'blob', oid.decode()),
+                                 skipped, 'history refused: ')
+                except Failure as exc:
+                    raise HistoryScreenRefusal(str(exc), exc.code) from exc
                 # The pack retains screened target text, never dereferenced content.
                 kept.add(oid)
                 continue
@@ -302,11 +310,12 @@ def source(root, inputs, archive, key_files, history_depth=None):
     object_format = (None if history_depth is None else
                      git(root, 'rev-parse', '--show-object-format').decode().strip())
     try:
-        archive_source(root, names, archive, history_depth, key_files, head, object_format, skipped)
+        history_result = archive_source(
+            root, names, archive, history_depth, key_files, head, object_format, skipped)
     except BaseException:
         archive.unlink(missing_ok=True)
         raise
-    return head, hashlib.sha256(archive.read_bytes()).hexdigest()
+    return head, hashlib.sha256(archive.read_bytes()).hexdigest(), history_result
 
 
 class _Hashing:
@@ -322,6 +331,7 @@ class _Hashing:
 
 def archive_source(root, names, archive, history_depth, key_files, head, object_format, skipped):
     uploaded = set()
+    history_result = {'history': 'synthetic'}
     with contextlib.ExitStack() as stack:
         output = stack.enter_context(tarfile.open(archive, 'w:gz', dereference=True))
         for name in sorted(set(names)):
@@ -360,8 +370,15 @@ def archive_source(root, names, archive, history_depth, key_files, head, object_
                 uploaded.add(digest.hexdigest().encode())
         if history_depth is not None:
             scratch = stack.enter_context(tempfile.TemporaryDirectory(dir=archive.parent, prefix='history-'))
-            output.add(history(root, head, history_depth, Path(scratch), key_files, uploaded, skipped),
-                       arcname='.git')
+            try:
+                history_git = history(root, head, history_depth, Path(scratch), key_files, uploaded, skipped)
+            except HistoryScreenRefusal as exc:
+                history_result.update(history='fallback-synthetic', history_reason=str(exc))
+                print('boat-offload: falling back to synthetic snapshot; ' + str(exc), file=sys.stderr)
+            else:
+                output.add(history_git, arcname='.git')
+                history_result['history'] = 'screened'
+    return history_result
 
 
 def default_key_file():
@@ -697,8 +714,10 @@ def run(args, boats):
                 raise Failure('credential/cache artifact refused', 2)
         upload = output / 'upload'
         upload.mkdir()
-        head, digest = source(root, args.input, upload / 'source.tar.gz',
-                              {b.account.key_file for b in boats}, args.history_depth)
+        head, digest, history_result = source(
+            root, args.input, upload / 'source.tar.gz',
+            {b.account.key_file for b in boats}, args.history_depth)
+        result.update(history_result)
         # Boat push honors enclosing gitignore rules. OUTPUT commonly lives in
         # ignored data/; a private index makes this one archive an explicit input
         # without changing the source repository or transferring its .git.

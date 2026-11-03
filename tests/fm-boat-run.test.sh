@@ -15,6 +15,7 @@ import signal
 import shlex
 import subprocess
 import sys
+import tarfile
 import time
 
 repo = Path(sys.argv[1])
@@ -288,7 +289,7 @@ for history_mode in (False, True):
         options = ('--history-depth', '2') if history_mode else ()
         check = 'test ! -L ' + shlex.quote(selected) + ' && test -f tracked.txt'
         r = launch(p, env, check, options)
-        assert r.returncode == (0 if accepted else 2), (history_mode, label, r.stdout, r.stderr)
+        assert r.returncode == (0 if accepted or history_mode else 2), (history_mode, label, r.stdout, r.stderr)
         assert b'symlink-never-print' not in r.stdout + r.stderr
         if accepted:
             uploaded = json.loads((state / 'uploaded.json').read_text())
@@ -296,6 +297,12 @@ for history_mode in (False, True):
             assert 'tracked.txt' in uploaded
             notice = ('boat-offload: skipped in-repo symlink: ' + selected + '\n').encode()
             assert r.stderr.count(notice) == 1, r.stderr
+            empty(state)
+        elif history_mode:
+            assert result(p)['history'] == 'fallback-synthetic'
+            assert selected in result(p)['history_reason']
+            with tarfile.open(p / 'output/upload/source.tar.gz') as archive:
+                assert not any(n == '.git' or n.startswith('.git/') for n in archive.getnames())
             empty(state)
         else:
             assert not (state / 'calls.jsonl').exists()
@@ -326,7 +333,7 @@ for history_mode in (False, True):
         else:
             assert r.returncode == 2, (history_mode, label, r.stderr)
             assert not (state / 'calls.jsonl').exists()
-print('ok - source and history skip screened in-repo symlinks once and refuse unsafe links; history withholds submodules')
+print('ok - screened in-repo links are skipped; unsafe source links refuse, unsafe history links fall back, and submodules are withheld')
 
 def multi(name, first=None, second=None, caps='live_cap=6 pending_cap=6 daily_cap=170'):
     p, state, env = case(name, first)
@@ -640,6 +647,9 @@ assert git('fsck','--no-reflogs') == ''
 check = f"head_tip={head!r}; base_tip={base_tip!r}; old={old!r}\n" + check
 r = launch(p, env, 'python3 -c ' + shlex.quote(check), ('--history-depth', '2'))
 assert r.returncode == 0, (r.stdout, r.stderr, result(p))
+assert result(p)['history'] == 'screened'
+with tarfile.open(p / 'output/upload/source.tar.gz') as archive:
+    assert any(n.startswith('.git/objects/pack/') for n in archive.getnames())
 empty(state)
 print('ok - real Git preserves both tips, bounded ancestry and tracked edits without unrelated refs/config/reflogs')
 
@@ -693,24 +703,26 @@ for name, selected, contents, symlink, accepted in [
     git(work, 'update-ref', 'refs/remotes/origin/main', 'HEAD')
     refused = symlink and selected == '.claude/skills' and not accepted
     oid = git(work, 'rev-parse', 'HEAD~1:' + selected).stdout.decode().strip() if not accepted else None
-    check = 'exit 0'
+    check = 'test ! -e .git' if refused else 'exit 0'
     if not accepted and not refused:
         check = 'git fsck --no-reflogs && ! git cat-file blob ' + oid + ' >/dev/null 2>&1'
     if symlink and accepted:
         check = 'test ! -L ' + shlex.quote(selected) + ' && test "$(git cat-file blob HEAD:' + \
                 selected + ')" = ' + shlex.quote(contents) + ' && git fsck --no-reflogs'
     r = launch(p, env, check, ('--history-depth', '2'))
-    assert r.returncode == (2 if refused else 0), (name, r.stdout, r.stderr)
+    assert r.returncode == 0, (name, r.stdout, r.stderr)
     assert b'historical-value-never-print' not in r.stdout + r.stderr
-    if not refused:
-        uploaded = json.loads((state / 'uploaded.json').read_text())
-        assert (selected in uploaded) == (accepted and not symlink), (name, uploaded)
-        empty(state)
+    uploaded = json.loads((state / 'uploaded.json').read_text())
+    assert (selected in uploaded) == (accepted and not symlink), (name, uploaded)
+    if refused:
+        assert r.stderr.count(b'falling back to synthetic snapshot; history refused:') == 1
+        assert result(p)['history'] == 'fallback-synthetic'
+        assert selected in result(p)['history_reason']
+        with tarfile.open(p / 'output/upload/source.tar.gz') as archive:
+            assert not any(n == '.git' or n.startswith('.git/') for n in archive.getnames())
     else:
-        assert b'history refused:' in r.stderr
-        assert result(p)['kind'] == 'invalid'
-        assert not (state / 'calls.jsonl').exists()
-        assert not (p / 'output/upload/source.tar.gz').exists()
+        assert result(p)['history'] == 'screened'
+    empty(state)
 print('ok - Claude history screens reimage content and permits screened in-repo symlink blobs')
 
 for name, unsafe_path, unsafe_content in [
@@ -885,14 +897,16 @@ for root_ref in ('HEAD', 'refs/remotes/origin/main'):
                     tree = git(work, 'rev-parse', 'HEAD^{tree}').stdout.decode().strip()
                     tip = git(work, 'commit-tree', tree, '-p', unsafe, '-m', 'clean descendant').stdout.decode().strip()
                 git(work, 'update-ref', root_ref, tip)
-                r = launch(p, env, options=('--history-depth', '2'))
-                assert r.returncode == 2, (name, r.stderr)
-                assert b'history refused:' in r.stderr
+                r = launch(p, env, 'test ! -e .git', options=('--history-depth', '2'))
+                assert r.returncode == 0, (name, r.stderr)
+                assert r.stderr.count(b'falling back to synthetic snapshot; history refused:') == 1
                 assert credential not in r.stdout + r.stderr
-                assert result(p)['kind'] == 'invalid'
-                assert not (state / 'calls.jsonl').exists()
-                assert not (p / 'output/upload/source.tar.gz').exists()
-print('ok - both history roots screen tip and ancestor commit messages and headers before Boat, without content')
+                assert result(p)['history'] == 'fallback-synthetic'
+                assert unsafe in result(p)['history_reason']
+                with tarfile.open(p / 'output/upload/source.tar.gz') as archive:
+                    assert not any(n == '.git' or n.startswith('.git/') for n in archive.getnames())
+                empty(state)
+print('ok - both history roots screen tip and ancestor commit messages and headers, then fall back without content')
 
 p, state, env = case('history-commit-prose', clean_history=True)
 work = p / 'work'

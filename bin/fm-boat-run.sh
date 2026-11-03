@@ -60,7 +60,7 @@
 # Current tracked edits/deletions still apply.
 # A commit's bytes are its identity, so it cannot be withheld and its scan is
 # the one that cannot afford a false positive: a commit, with its headers and
-# message, refuses the entire run before any Boat call when it is not UTF-8,
+# message, discards the history attempt when it is not UTF-8,
 # contains binary content, a credential-key assignment using =, a screened
 # bearer token, or an issued credential (private-key block or provider key).
 # Command names such as secrets:scan and quoted example URLs remain prose.
@@ -84,6 +84,10 @@
 # a withheld object's content fails loudly rather than silently. That marking
 # needs a remote Git supporting the partial-clone extension; an older one
 # refuses the repository outright instead of reading it wrong.
+# A history screen refusal falls back to the screened current-source snapshot
+# with no historical objects. A notice and result evidence name the reason
+# and path or commit ID, never content. Missing origin/main and other Git errors
+# still fail the run. Current-source screening and refusal behavior is unchanged.
 # Logs name the withheld count and one path, never blob or commit content.
 # Run from the worktree root remotely at /home/user/fm-job/source. Install remote
 # dependencies explicitly in COMMAND; native local node_modules never travel.
@@ -98,7 +102,8 @@
 # in OUTPUT/command.log and printed on completion. Artifacts are copied under
 # OUTPUT/artifacts even after command failure. Missing/unsafe artifacts fail.
 # OUTPUT must be a new directory outside the source tree. result.json records
-# kind, remote_exit, source_head, source_sha256, vm_id and cleanup state.
+# kind, remote_exit, source_head, source_sha256, vm_id and cleanup state, plus
+# history=synthetic|screened|fallback-synthetic and history_reason on fallback.
 # A remote exit code is returned unchanged; 124 is the remote command timeout.
 # Adapter failures: 2 invalid input, 69 Boat unavailable before execution,
 # 75 capacity/start budget exhausted, 74 transfer/transport/result failure,
