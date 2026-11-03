@@ -1839,6 +1839,8 @@ Their proof conservatively checks all package tasks that could match, so an unsa
 Each executable task must be a single `tsc`, `eslint`, or `vitest run` command that passes the same argument, resolved TypeScript configuration, and project `local-only` checks as a top-level heavy command.
 Unknown scripts, shell programs, forwarded arguments, graph shapes, or orchestration options keep the whole invocation local with one notice.
 Only package-selection, concurrency, and console-output options named by the router's option allowlist are accepted.
+Tool-specific environment overrides (`TURBO_*`, `NX_*`, and `LERNA_*` for their respective orchestrators) keep the invocation local before graph probes.
+Turbo, Nx, and Lerna require a launcher that resolves inside the project; external launchers without that proof stay local even when a same-name project tool exists.
 Git-history filters stay local because Git history is not uploaded.
 Probes run with the preload bypassed and do not execute the task scripts.
 
@@ -1848,6 +1850,7 @@ Turbo tasks therefore require `cache: false` or the invocation's explicit `--no-
 Nx and Lerna tasks require `cache: false` or an explicit cache bypass, and no declared outputs.
 A dependency that builds files, a task that writes reports, or an invocation that would populate an orchestrator cache stays local.
 An unavailable or unconfirmed Boat attempt retries the whole invocation locally once; its children reuse that decision and slot.
+Remote executable and orchestrator-entry availability checks run after bootstrap and before dispatch confirmation, so missing launchers trigger that fallback.
 
 These heavy work items stay local even in a declared project:
 - `playwright`, by default in `local-only`, because a browser run needs browsers.

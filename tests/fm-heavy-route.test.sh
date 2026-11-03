@@ -58,6 +58,9 @@ def case(name, project='smokeproj', declaration=None):
                FM_TASK_ID='fixture-task', DEV_SECRET='host-only')
     for name in ('FM_BUILD_LOCK_BYPASS', 'FM_BUILD_LOCK_HELD', 'NODE_OPTIONS', 'CI'):
         env.pop(name, None)
+    for name in tuple(env):
+        if name.startswith(('TURBO_', 'NX_', 'LERNA_')):
+            env.pop(name)
     return p, work, config, state, env
 
 
@@ -523,6 +526,10 @@ const fs = require('fs');
 const path = require('path');
 const cp = require('child_process');
 const dirs = ['packages/a', 'packages/b'];
+if (process.env.FM_ORCHESTRATOR_PROBE_LOG &&
+    (process.argv.includes('--dry=json') || process.argv.includes('list') || process.argv[2] === 'config')) {
+  fs.appendFileSync(process.env.FM_ORCHESTRATOR_PROBE_LOG, 'probed\n');
+}
 function setting(key) {
   let value = 'undefined';
   for (const file of [process.env.npm_config_globalconfig,
@@ -556,7 +563,7 @@ if (process.argv[2] === 'config') {
   }
   console.log(setting(key));
 } else if (process.argv.includes('--dry=json')) {
-  const definition = JSON.parse(fs.readFileSync('turbo.json', 'utf8')).tasks['type-check'];
+  const definition = JSON.parse(fs.readFileSync(process.env.TURBO_ROOT_TURBO_JSON || 'turbo.json', 'utf8')).tasks['type-check'];
   const tasks = dirs.map((directory) => ({directory, task: 'type-check',
     command: JSON.parse(fs.readFileSync(directory + '/package.json')).scripts['type-check'],
     resolvedTaskDefinition: definition}));
@@ -587,6 +594,19 @@ if (process.argv[2] === 'config') {
   }
   if (fs.realpathSync(process.argv[1]).includes('/pnpm/') && setting('report-summary') === 'true') {
     fs.writeFileSync('pnpm-exec-summary.json', JSON.stringify({marker: process.env.FM_HEAVY_ORCHESTRATOR}));
+  }
+  const entry = fs.realpathSync(process.argv[1]);
+  if (entry.includes('/turbo/')) {
+    const graph = process.env.TURBO_ROOT_TURBO_JSON || 'turbo.json';
+    console.log('graph=' + graph);
+    if (JSON.parse(fs.readFileSync(graph)).tasks['type-check'].dependsOn.includes('^build')) {
+      fs.writeFileSync('built-output.txt', 'generated');
+    }
+    if (process.env.TURBO_RUN_SUMMARY) fs.writeFileSync('turbo-summary.json', '{}');
+    if (process.env.TURBO_LOG_FILE) fs.writeFileSync(process.env.TURBO_LOG_FILE, 'log');
+  }
+  if ((entry.includes('/nx/') || entry.includes('/lerna/')) && process.env.NX_PROFILE) {
+    fs.writeFileSync(process.env.NX_PROFILE, '{}');
   }
   process.exit(code);
 }
@@ -772,6 +792,83 @@ for name, stdout, exit_code in (('ambiguous', 'false\ntrue\n', 0), ('empty', '',
     assert r.stderr.count('running locally in a heavy slot') == 1, r.stderr
     assert not (work / 'pnpm-exec-summary.json').exists(), (name, r.stdout, r.stderr)
 print('ok - effective pnpm summaries are retained locally and ambiguous summary probes cannot route')
+
+for tool, key, value, artifact in (
+    ('turbo', 'TURBO_ROOT_TURBO_JSON', 'turbo-alt.json', None),
+    ('turbo', 'TURBO_RUN_SUMMARY', 'true', 'turbo-summary.json'),
+    ('turbo', 'TURBO_LOG_FILE', 'turbo.log', 'turbo.log'),
+    ('turbo', 'TURBO_BINARY_PATH', 'alternate-turbo', None),
+    ('turbo', 'TURBO_CACHE_DIR', 'alternate-cache', None),
+    ('turbo', 'TURBO_SCM_BASE', 'main', None),
+    ('nx', 'NX_PROFILE', 'profile.json', 'profile.json'),
+    ('lerna', 'NX_PROFILE', 'profile.json', 'profile.json'),
+    ('nx', 'NX_TASKS_RUNNER', 'custom', None),
+    ('lerna', 'NX_DEFAULT_PROJECT', 'b', None),
+    ('nx', 'NX_FORCE_REUSE_CACHED_GRAPH', 'true', None),
+    ('lerna', 'NX_WORKSPACE_DATA_DIRECTORY', 'custom-data', None),
+    ('lerna', 'NX_BATCH_MODE', 'true', None),
+):
+    p, work, config, state, env, cli = orchestrator_case('environment-' + tool + '-' + key, tool)
+    env[key] = value
+    probe_log = p / 'probes.log'
+    env['FM_ORCHESTRATOR_PROBE_LOG'] = str(probe_log)
+    if key == 'TURBO_ROOT_TURBO_JSON':
+        (work / 'turbo-alt.json').write_text((work / 'turbo.json').read_text())
+        graph = json.loads((work / 'turbo.json').read_text())
+        graph['tasks']['type-check']['dependsOn'] = ['^build']
+        (work / 'turbo.json').write_text(json.dumps(graph))
+        subprocess.run(['git', '-C', str(work), 'add', '-A'], check=True, capture_output=True)
+        subprocess.run(['git', '-C', str(work), 'commit', '-qm', 'Alternate graph fixture'],
+                       check=True, capture_output=True)
+    args = ['run-many', '-t', 'type-check'] if tool == 'nx' else (
+        ['run', 'type-check'] if tool == 'lerna' else ['type-check'])
+    r = orchestration_run(work, env, cli, args)
+    assert r.returncode == 0 and not called(state), (tool, key, r.stdout, r.stderr)
+    assert not probe_log.exists(), (tool, key)
+    assert r.stderr.count('running locally in a heavy slot') == 1, r.stderr
+    assert r.stdout.count('child marker=local held=') == 2, (r.stdout, r.stderr)
+    if artifact:
+        assert (work / artifact).is_file(), (key, r.stdout, r.stderr)
+    if key == 'TURBO_ROOT_TURBO_JSON':
+        assert 'graph=turbo-alt.json' in r.stdout and not (work / 'built-output.txt').exists(), r.stdout
+print('ok - graph and file-output environment overrides stay local before orchestrator probes')
+
+for tool in ('turbo', 'nx', 'lerna'):
+    for mode in ('copy-with-local', 'copy-without-local', 'alias-local', 'remote-missing'):
+        p, work, config, state, env, cli = orchestrator_case('launcher-' + tool + '-' + mode, tool)
+        local_entry = cli.resolve()
+        if mode != 'remote-missing':
+            suffix = {'turbo': 'turbo/bin/turbo', 'nx': 'nx/bin/nx.js', 'lerna': 'lerna/dist/cli.js'}[tool]
+            external = p / 'global' / suffix
+            external.parent.mkdir(parents=True)
+            if mode == 'alias-local':
+                external.symlink_to(local_entry)
+            else:
+                external.write_bytes(local_entry.read_bytes())
+                external.chmod(0o755)
+                if mode == 'copy-without-local':
+                    local_entry.rename(local_entry.with_name('unused-entry'))
+            cli = external
+        else:
+            record_path = Path(env['FM_BUILD_LOCK_INSTALL_DIR']) / 'boat-route'
+            record = json.loads(record_path.read_text())
+            record['projects']['smokeproj']['bootstrap'] += '; mv ' + shlex.quote(
+                str(local_entry.relative_to(work))) + ' node_modules/unavailable-entry'
+            record_path.write_text(json.dumps(record))
+        args = ['run-many', '-t', 'type-check'] if tool == 'nx' else (
+            ['run', 'type-check'] if tool == 'lerna' else ['type-check'])
+        r = orchestration_run(work, env, cli, args)
+        assert r.returncode == 0, (tool, mode, r.stdout, r.stderr)
+        if mode == 'alias-local':
+            assert starts(state) == 1 and r.stdout.count('child marker=remote held=\n') == 2, (tool, mode, r.stdout, r.stderr)
+        else:
+            assert starts(state) == (1 if mode == 'remote-missing' else 0), (tool, mode, r.stdout, r.stderr)
+            assert r.stderr.count('running locally in a heavy slot') == 1, (tool, mode, r.stderr)
+            assert r.stdout.count('child marker=local held=') == 2, (tool, mode, r.stdout, r.stderr)
+            assert r.stdout.count('parent held=') == 1, (tool, mode, r.stdout, r.stderr)
+            if mode == 'remote-missing':
+                assert 'setup did not dispatch' in r.stderr, r.stderr
+print('ok - external launchers require a proven project entry and missing remote entries fall back once')
 
 for name, tool, args, script, cache in (
     ('unknown-options', 'turbo', ['type-check', '--mystery'], 'tsc --noEmit', False),

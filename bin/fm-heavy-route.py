@@ -253,7 +253,11 @@ def remote_command(command, root, preload):
     """The local heavy command as the disposable machine must run it."""
     plan = orchestration(command)
     if plan and not plan[1][-1].startswith(str(root) + "/"):
-        command = [plan[0], *command[len(plan[1]):]]
+        entry = str(Path(plan[1][-1]).resolve())
+        if entry.startswith(str(root) + "/"):
+            command = [*plan[1][:-1], entry, *command[len(plan[1]):]]
+        elif plan[0] == "pnpm":
+            command = [plan[0], *command[len(plan[1]):]]
     remote = []
     skip = False
     for index, value in enumerate(command):
@@ -531,6 +535,11 @@ def safe_script(script, directory, settings, root):
 def safe_orchestration(plan, root, settings):
     """Prove a conservative superset of tasks, including dependencies and hooks."""
     tool, launcher, tasks, options = plan
+    prefixes = {"turbo": ("TURBO_",), "nx": ("NX_",), "lerna": ("NX_", "LERNA_")}
+    if any(name.startswith(prefixes.get(tool, ())) for name in os.environ):
+        return False
+    if tool != "pnpm" and not str(Path(launcher[-1]).resolve()).startswith(str(root) + "/"):
+        return False
     if any(TASK_KINDS[task] in settings.get("local_only", []) for task in tasks):
         return False
     if Path.cwd() != root:
@@ -741,8 +750,12 @@ def boat(settings, command, kind, home, bin_dir, root, inputs):
         script.append("export FM_HEAVY_ORCHESTRATOR=remote FM_BUILD_LOCK_BYPASS=1 NX_DAEMON=false")
     if relative != ".":
         script.append("cd " + shlex.quote(relative))
+    remote = remote_command(command, root, SOURCE / "fm-build-lock.js")
+    script.append("command -v -- " + shlex.quote(remote[0]) + " >/dev/null")
+    if kind == "orchestrator" and remote[0] != "pnpm":
+        script.append("test -r " + shlex.quote(remote[1]))
     script.append("printf '\\n%s\\n' " + shlex.quote(dispatched) + " >&2")
-    script.append("exec " + shlex.join(remote_command(command, root, SOURCE / "fm-build-lock.js")))
+    script.append("exec " + shlex.join(remote))
     adapter = [str(Path(bin_dir) / "fm-boat-run.sh"), "run",
                "--worktree", str(root), "--output", str(output)]
     for name in inputs:
