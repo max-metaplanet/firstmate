@@ -1,0 +1,213 @@
+[
+  {
+    "scenario": "blob",
+    "exit": 69,
+    "stderr": "boat-offload: falling back to synthetic snapshot; history refused: credential-looking or binary blob: db-services.sh\nboat-offload: Boat key unavailable\n",
+    "result": {
+      "kind": "unavailable",
+      "remote_exit": null,
+      "cleanup": "deleted",
+      "swap_gib": 0,
+      "history": "fallback-synthetic",
+      "history_reason": "history refused: credential-looking or binary blob: db-services.sh",
+      "source_head": "bee14331f577cb270cdaea79520d828cd82edcae",
+      "source_sha256": "aa78cf710e198cad422478b963ea7812509fafd8cec0eda784b3af39870118b9",
+      "execution_error": "Boat key unavailable",
+      "error": "Boat key unavailable",
+      "adapter_exit": 69
+    },
+    "archive_members": [
+      "tracked.txt"
+    ]
+  },
+  {
+    "scenario": "excluded",
+    "exit": 69,
+    "stderr": "boat-offload: falling back to synthetic snapshot; history refused: excluded path: .env\nboat-offload: Boat key unavailable\n",
+    "result": {
+      "kind": "unavailable",
+      "remote_exit": null,
+      "cleanup": "deleted",
+      "swap_gib": 0,
+      "history": "fallback-synthetic",
+      "history_reason": "history refused: excluded path: .env",
+      "source_head": "2456b144d5ec21d278ab72e6a2817157265efaaf",
+      "source_sha256": "4f65f76559bfd5a72c46de459f95066da9a12f9f9ef7ff44a697bcf0e3ef6c09",
+      "execution_error": "Boat key unavailable",
+      "error": "Boat key unavailable",
+      "adapter_exit": 69
+    },
+    "archive_members": [
+      "tracked.txt"
+    ]
+  },
+  {
+    "scenario": "binary",
+    "exit": 69,
+    "stderr": "boat-offload: falling back to synthetic snapshot; history refused: credential-looking or binary blob: binary.dat\nboat-offload: Boat key unavailable\n",
+    "result": {
+      "kind": "unavailable",
+      "remote_exit": null,
+      "cleanup": "deleted",
+      "swap_gib": 0,
+      "history": "fallback-synthetic",
+      "history_reason": "history refused: credential-looking or binary blob: binary.dat",
+      "source_head": "70358247df534f3f2f54f8ea57fce9b18e38e068",
+      "source_sha256": "777f887933b4ebbfd27613625a3d82f6751667c5735b8634d53745e420ecbd32",
+      "execution_error": "Boat key unavailable",
+      "error": "Boat key unavailable",
+      "adapter_exit": 69
+    },
+    "archive_members": [
+      "tracked.txt"
+    ]
+  },
+  {
+    "scenario": "symlink",
+    "exit": 69,
+    "stderr": "boat-offload: falling back to synthetic snapshot; history refused: unsupported symlink or submodule: old-link\nboat-offload: Boat key unavailable\n",
+    "result": {
+      "kind": "unavailable",
+      "remote_exit": null,
+      "cleanup": "deleted",
+      "swap_gib": 0,
+      "history": "fallback-synthetic",
+      "history_reason": "history refused: unsupported symlink or submodule: old-link",
+      "source_head": "32ec3f1860d95437bd726fddbfc0d30da9abd011",
+      "source_sha256": "298496d9c5c0ecca95f07da788975d390b85da66a0a65dc085518de1e2204266",
+      "execution_error": "Boat key unavailable",
+      "error": "Boat key unavailable",
+      "adapter_exit": 69
+    },
+    "archive_members": [
+      "tracked.txt"
+    ]
+  },
+  {
+    "scenario": "commit",
+    "exit": 69,
+    "stderr": "boat-offload: falling back to synthetic snapshot; history refused: credential-looking or binary commit: 848e3c87fce028b03552aaf677498196ce086a14\nboat-offload: Boat key unavailable\n",
+    "result": {
+      "kind": "unavailable",
+      "remote_exit": null,
+      "cleanup": "deleted",
+      "swap_gib": 0,
+      "history": "fallback-synthetic",
+      "history_reason": "history refused: credential-looking or binary commit: 848e3c87fce028b03552aaf677498196ce086a14",
+      "source_head": "d0d780d0c272ae5c63c1ed8248353f3de25ea943",
+      "source_sha256": "41212afaf27f2af60833f442180ddc9fcbfd448ed46e08b96bade6e75ee8d0d1",
+      "execution_error": "Boat key unavailable",
+      "error": "Boat key unavailable",
+      "adapter_exit": 69
+    },
+    "archive_members": [
+      "tracked.txt"
+    ]
+  },
+  {
+    "scenario": "safe",
+    "exit": 69,
+    "stderr": "boat-offload: Boat key unavailable\n",
+    "result": {
+      "kind": "unavailable",
+      "remote_exit": null,
+      "cleanup": "deleted",
+      "swap_gib": 0,
+      "history": "screened",
+      "source_head": "29d4a3a1aa94c358afcb14f879b82e98ab9da24f",
+      "source_sha256": "673fef4204055a97b3352c92986c8671473826d42a847fe4cde2ca58098fa622",
+      "execution_error": "Boat key unavailable",
+      "error": "Boat key unavailable",
+      "adapter_exit": 69
+    },
+    "archive_members": [
+      ".git",
+      ".git/HEAD",
+      ".git/config",
+      ".git/index",
+      ".git/objects",
+      ".git/objects/info",
+      ".git/objects/pack",
+      ".git/objects/pack/screened-605cb7d2cb0b2687bceb300a99109d5b03b72da9.idx",
+      ".git/objects/pack/screened-605cb7d2cb0b2687bceb300a99109d5b03b72da9.pack",
+      ".git/objects/pack/screened-605cb7d2cb0b2687bceb300a99109d5b03b72da9.rev",
+      ".git/refs",
+      ".git/refs/heads",
+      ".git/refs/heads/fm-boat-test",
+      ".git/refs/remotes",
+      ".git/refs/remotes/origin",
+      ".git/refs/remotes/origin/main",
+      ".git/refs/tags",
+      "tracked.txt"
+    ]
+  },
+  {
+    "scenario": "synthetic",
+    "exit": 69,
+    "stderr": "boat-offload: Boat key unavailable\n",
+    "result": {
+      "kind": "unavailable",
+      "remote_exit": null,
+      "cleanup": "deleted",
+      "swap_gib": 0,
+      "history": "synthetic",
+      "source_head": "29d4a3a1aa94c358afcb14f879b82e98ab9da24f",
+      "source_sha256": "f284ba9fdd1fd465c5d8b75a29631010ad8143077c0149f80c26ac25c6fa0729",
+      "execution_error": "Boat key unavailable",
+      "error": "Boat key unavailable",
+      "adapter_exit": 69
+    },
+    "archive_members": [
+      "tracked.txt"
+    ]
+  },
+  {
+    "scenario": "missing-base",
+    "exit": 2,
+    "stderr": "boat-offload: history refused: origin/main commit is unavailable\n",
+    "result": {
+      "kind": "invalid",
+      "remote_exit": null,
+      "cleanup": "not-created",
+      "swap_gib": 0,
+      "error": "history refused: origin/main commit is unavailable",
+      "adapter_exit": 2
+    },
+    "archive_members": []
+  },
+  {
+    "scenario": "current-link",
+    "exit": 2,
+    "stderr": "boat-offload: source contains unsupported symlink or submodule: current-link\n",
+    "result": {
+      "kind": "invalid",
+      "remote_exit": null,
+      "cleanup": "not-created",
+      "swap_gib": 0,
+      "error": "source contains unsupported symlink or submodule: current-link",
+      "adapter_exit": 2
+    },
+    "archive_members": []
+  },
+  {
+    "scenario": "current-settings",
+    "exit": 69,
+    "stderr": "boat-offload: falling back to synthetic snapshot; history refused: credential-looking or binary blob: .claude/settings.json\nboat-offload: excluded allowlisted file with credential-looking content: .claude/settings.json\nboat-offload: Boat key unavailable\n",
+    "result": {
+      "kind": "unavailable",
+      "remote_exit": null,
+      "cleanup": "deleted",
+      "swap_gib": 0,
+      "history": "fallback-synthetic",
+      "history_reason": "history refused: credential-looking or binary blob: .claude/settings.json",
+      "source_head": "63287b58ecd00b449c543d1eda61180903e7b88e",
+      "source_sha256": "0a292ee38168aa296afb48597bb4ee540329fe0b51c5ae25eafd8e9206e61555",
+      "execution_error": "Boat key unavailable",
+      "error": "Boat key unavailable",
+      "adapter_exit": 69
+    },
+    "archive_members": [
+      "tracked.txt"
+    ]
+  }
+]
