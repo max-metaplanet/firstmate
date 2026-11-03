@@ -46,6 +46,15 @@ sys.exit(settings['exit'])
 ''')
 adapter.chmod(0o755)
 
+# Bash's elapsed clock and sleep form the time boundary for retry fixtures.
+# Unsetting SECONDS removes its automatic ticking; each backoff advances it
+# explicitly so adapter startup and CI scheduling cannot consume the budget.
+clock = root / 'clock.bash'
+clock.write_text('''unset SECONDS
+SECONDS=0
+sleep() { SECONDS=$((SECONDS + $1)); }
+''')
+
 def case(name):
     p = root / name
     p.mkdir()
@@ -115,7 +124,7 @@ for code in (69, 75):
     p, work, env = case('boat-only-retry-' + str(code))
     env.update(FM_BOAT_TEST_LOCAL_FALLBACK='0',
                FM_BOAT_TEST_UNAVAILABLE_WAIT_SECS='5',
-               FM_BOAT_TEST_UNAVAILABLE_RETRY_SECS='1')
+               FM_BOAT_TEST_UNAVAILABLE_RETRY_SECS='1', BASH_ENV=str(clock))
     env['SETTINGS'] = json.dumps([
         {'exit': code, 'result': {'kind': 'unavailable', 'adapter_exit': code}},
         {'exit': 0, 'result': {'kind': 'completed', 'adapter_exit': 0,
@@ -133,14 +142,15 @@ print('ok - Boat-only retries unavailable 69/75 with fresh evidence and never ru
 p, work, env = case('boat-only-exhausted')
 env.update(FM_BOAT_TEST_LOCAL_FALLBACK='0',
            FM_BOAT_TEST_UNAVAILABLE_WAIT_SECS='2',
-           FM_BOAT_TEST_UNAVAILABLE_RETRY_SECS='1')
+           FM_BOAT_TEST_UNAVAILABLE_RETRY_SECS='1', BASH_ENV=str(clock))
 settings(env, 75, 'unavailable')
 r = launch(work, env, 'touch local-ran')
 assert r.returncode == 75, r.stderr
 assert not (work / 'local-ran').exists()
 assert not (p / 'heavy.lock').exists()
 calls = json.loads((p / 'calls.json.history').read_text())
-assert len(calls) >= 2, calls
+# A two-second budget permits attempts at t=0 and t=1, never at t=2.
+assert len(calls) == 2, calls
 outputs = [args[args.index('--output') + 1] for args in calls]
 assert len(set(outputs)) == len(calls), outputs
 assert b'Boat unavailable' in r.stderr
@@ -151,7 +161,7 @@ print('ok - Boat-only fails after the unavailable bound without local side effec
 p, work, env = case('boat-only-completed-75')
 env.update(FM_BOAT_TEST_LOCAL_FALLBACK='0',
            FM_BOAT_TEST_UNAVAILABLE_WAIT_SECS='2',
-           FM_BOAT_TEST_UNAVAILABLE_RETRY_SECS='1')
+           FM_BOAT_TEST_UNAVAILABLE_RETRY_SECS='1', BASH_ENV=str(clock))
 settings(env, 75, 'completed', remote_exit=75, cleanup='deleted')
 r = launch(work, env, 'touch local-ran')
 assert r.returncode == 75, r.stderr
@@ -162,7 +172,7 @@ print('ok - Boat-only completed remote 75 propagates without retry')
 p, work, env = case('boat-only-missing-retry-result')
 env.update(FM_BOAT_TEST_LOCAL_FALLBACK='0',
            FM_BOAT_TEST_UNAVAILABLE_WAIT_SECS='5',
-           FM_BOAT_TEST_UNAVAILABLE_RETRY_SECS='1')
+           FM_BOAT_TEST_UNAVAILABLE_RETRY_SECS='1', BASH_ENV=str(clock))
 env['SETTINGS'] = json.dumps([
     {'exit': 75, 'result': {'kind': 'unavailable', 'adapter_exit': 75}},
     {'exit': 75, 'result': 'missing'}])
