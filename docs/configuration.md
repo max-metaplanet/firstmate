@@ -1435,6 +1435,7 @@ That help also owns per-run `--type` machine selection and its `FM_BOAT_TYPE` fo
 Without it, the adapter retains the single trial account and its existing caps.
 The help also owns the screened source-file exceptions and optional shallow-history transfer; all other upload exclusions remain.
 It runs outside local heavy slots; authenticated checks keep their existing execution path.
+"Boat-first heavy routing" below turns the same offload into where a declared project's worker-started heavy commands run by default.
 The optional no-mistakes Test integration is owned by [`bin/fm-boat-test-wrapper.sh`](../bin/fm-boat-test-wrapper.sh)'s header and `--help`, including enablement prerequisites, secret-free scope, conservative Git scoping, its `FM_BOAT_TEST_HISTORY_DEPTH` opt-in, and local fallback.
 "Pre-ready Boat check" below turns the same offload into a gate a named project's ship workers run before they mark a pull request ready.
 
@@ -1755,12 +1756,12 @@ An automatic deferred-launch replay retains the requested flag and decides which
 While such a task holds a place, only each granted cap rises by one, so an ordinary spawn still finds the declared number of places and a grant under one cap never raises the other.
 Two granted tasks therefore add two places rather than sharing one.
 A capacity refusal names the grants for that cap, `bin/fm-fleet-view.sh` names each task's granted caps and the fleet grant share, and the fleet snapshot carries the same `ad_hoc` count plus per-task `ad_hoc_fleet_slot`, `ad_hoc_project_slot`, and their `ad_hoc_slot` union.
-Heavy-slot limits are unaffected: an ad hoc worker waits for a heavy slot exactly like every other worker.
+Heavy-slot limits are unaffected: an ad hoc worker running a heavy command locally waits for a heavy slot exactly like every other worker.
 
 ## Heavy slots (config/heavy-slots)
 
 A heavy slot is a place to run one memory-heavy command: a Next production build, a Vitest run, a Playwright browser run, an ESLint run, or a whole-project `tsc`.
-It is claimed when such a command starts, rather than reserved when a worker spawns, so a worker that never runs one never holds a slot.
+It is claimed when such a command runs locally, rather than reserved when a worker spawns, so a worker that never runs one locally never holds a slot.
 A project's `queue-preflight` package script, which runs many of those in sequence, is heavy as a whole: the script's first Node process that sees that lifecycle event claims one slot, and every heavy step that process starts reuses it instead of taking another.
 A script with a single Node entry point, as `queue-preflight` is, is covered whole.
 A script made of several top-level commands claims and releases a slot once per top-level Node command, and a non-Node step between them runs outside the memory cap.
@@ -1791,6 +1792,7 @@ Not covered:
 - A runtime other than Node, a build tool that is not one of the commands above, and a launcher that clears `NODE_OPTIONS` outside a heavy package script without reaching a shimmed name through `PATH`.
 
 Run those through `bin/fm-build-lock.py -- <command>`, which worker instructions name; `bin/fm-test-run.sh` claims a slot the same way for its own concurrent runs.
+"Boat-first heavy routing" below owns the conditions under which a worker-started heavy command runs remotely instead of claiming a local slot.
 A `tsc` or `eslint` whose only operand is one existing source file checks that one file and is not treated as heavy, and neither is `tsc --watch`, which never exits and would hold its slot for good.
 A `tsc -b` or `tsc --build` builds whole projects and is heavy whatever its operands, except in watch mode or with `--version`; under a build, `-v` means `--verbose` and stays heavy.
 [`bin/fm-build-lock.js`](../bin/fm-build-lock.js) owns the rest of the heaviness definition.
@@ -1800,6 +1802,53 @@ A change therefore applies at the next launch, or immediately with `FM_HEAVY_SLO
 Lowering the number never stops a running command, so occupancy can exceed the new size until those commands exit.
 An unreadable or malformed declaration refuses the launch rather than guessing the limit.
 [`bin/fm-heavy-slots-lib.sh`](../bin/fm-heavy-slots-lib.sh) owns the file format and the publication, and [`bin/fm-build-lock.py`](../bin/fm-build-lock.py) owns the pool itself.
+
+## Boat-first heavy routing (config/boat-heavy)
+
+A heavy command run here costs this machine one of its few heavy places; the same command run on an ephemeral Boat VM costs it none.
+The optional local, gitignored `config/boat-heavy` in the machine's root Firstmate home names the projects whose worker-started heavy commands go to Boat first, and keeps the heavy slot above as the fallback.
+
+```text
+# core installs its own frozen dependencies remotely; node_modules never travel
+core bootstrap='corepack enable pnpm; pnpm install --frozen-lockfile' type=large
+```
+
+[`bin/fm-heavy-route.py`](../bin/fm-heavy-route.py)'s header and `--help` own the declaration syntax, the heavy kind names, the defaults, and the exact remote command it builds.
+The project name is the basename of the worktree the heavy command runs in, which for a task worktree is the project's own name.
+
+Routing is declared, never guessed.
+Boat-first by default means Boat-first for every declared project, because a Boat run needs the project-specific bootstrap that only a declaration supplies.
+Without a declaration naming the project, a heavy command behaves exactly as it did before this file existed.
+A project without a declaration uses a local heavy slot without a routing notice.
+For a declared project's worker-started heavy command, a reason to stay local prints one line before the command runs in a local heavy slot.
+`FM_BUILD_LOCK_BYPASS=1 <command>` still skips the slot and the routing together, and a kind named in `local-only` stays local for the whole project.
+
+Only a worker-started heavy command is routed, which leaves the no-mistakes daemon's own steps on their existing path; [`bin/fm-boat-test-wrapper.sh`](../bin/fm-boat-test-wrapper.sh) remains the pipeline's own Boat integration.
+Only a top-level heavy command is routed: one started under turbo, nx, lerna, or a recursive or filtered pnpm (`-r`, `--recursive`, `--filter`) takes a local heavy slot exactly as before, so an orchestrator fanning out many heavy children never starts a machine for each.
+
+These heavy work items stay local even in a declared project:
+- `playwright`, by default in `local-only`, because a browser run needs browsers.
+- `queue-preflight`, by default in `local-only`, because it needs a read-only GitHub token gated behind a separate credential design that is not approved; this adapter carries no credential.
+- `next build`, because its `.next` output would stay on the Boat machine.
+- `db-local replay`, because it needs secrets and a local database; the preload never classifies it as heavy, so it never reaches routing and runs locally exactly as before.
+
+Declare any other command that needs credentials in `local-only` rather than letting it reach a machine that cannot authenticate it.
+The upload is HEAD's tracked files with their uncommitted edits plus every newly staged addition.
+An untracked file that is not ignored never travels, so while one exists the command stays local and the one-line notice names the first such file.
+Nothing a remote run writes comes back, so a command whose job is to write into the worktree stays local: a `tsc` build, a `tsc` whose resolved configuration does not prove `noEmit` with `composite` disabled, a `tsc` with an explicit `--incremental` request or a named `tsBuildInfoFile` destination, a `tsc` requesting `--generateTrace` or `--generateCpuProfile`, and a Vitest or ESLint run that updates snapshots, writes coverage, fixes files, or writes reports, caches, or suppressions.
+A `tsc` with `noEmit` may route with an implicit incremental cache when no build-info destination is named; one stderr notice states that the incremental cache is not preserved for that run.
+Routing requires every option to be recognized and safe for remote input and output; unknown, malformed, or ambiguous arguments stay local.
+ESLint commands with stdin enabled stay local because Boat does not receive their piped source input.
+A Vitest configuration file that enables coverage or sets a reporter `outputFile` is invisible to argument parsing, so a project with one declares `vitest` in `local-only`.
+A remote Vitest failure that reports a snapshot missing, mismatched, or not written is not a verdict, because the remote run is under CI where Vitest never writes a new snapshot; the command runs locally after one notice.
+
+Remote output is captured and printed when the command finishes rather than streamed, and only a completed remote run with confirmed command dispatch after successful setup is a verdict: that remote exit is the command's exit.
+Command stdout is forwarded unchanged; bootstrap diagnostics and command stderr are forwarded on stderr.
+When a remote attempt is discarded, its stdout is discarded too, so only the local retry supplies stdout.
+[`bin/fm-boat-run.sh`](../bin/fm-boat-run.sh)'s help owns the upload, the per-account budget, the result and artifact files, and the cleanup.
+
+Like the heavy-slot count, the record a heavy command reads is machine-wide and written by every ship or scout launch, so a change applies at the next launch and the last launch on the machine wins.
+An unreadable or malformed declaration refuses the launch rather than guessing which projects the captain meant to route.
 
 ## Crew dispatch profiles (config/crew-dispatch.json)
 

@@ -343,6 +343,7 @@ test_relative_home_overrides_launch_with_absolute_cross_process_paths() {
   read_case_record "$rec"
   home_real=$(cd "$HOME_DIR" && pwd -P)
   mkdir -p "$CASE_DIR/cdpath/home/state" "$CASE_DIR/cdpath/home/data"
+  printf '%s\n' 'fixture bootstrap=true' > "$HOME_DIR/config/boat-heavy"
   : > "$LAUNCH_LOG"
 
   out=$(
@@ -357,6 +358,12 @@ test_relative_home_overrides_launch_with_absolute_cross_process_paths() {
   )
   status=$?
   expect_code 0 "$status" "spawn with relative home overrides should succeed"
+  # The published routing record is the worker's public configuration contract.
+  # The fixture declaration must survive path normalization and CDPATH decoys.
+  jq -e --arg home "$home_real" \
+    '.home == $home and .projects.fixture.bootstrap == "true"' \
+    "$FM_BUILD_LOCK_INSTALL_DIR/boat-route" >/dev/null ||
+    fail "relative config override did not publish the selected Boat declaration"
   launch=$(cat "$LAUNCH_LOG")
   assert_contains "$launch" "-e '$home_real/state/$id.pi-ext.ts'" \
     "relative FM_STATE_OVERRIDE leaked into Pi's cross-process extension path"

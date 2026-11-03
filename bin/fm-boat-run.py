@@ -91,29 +91,57 @@ def excluded(name, artifact=False):
                part.lower().endswith(('.pem', '.key', '.p12', '.pfx')) for part in parts)
 
 
+PROMISOR = 'fm-boat-withheld'
 SOURCE_ALLOWLIST = {'.npmrc', '.claude/settings.json', '.claude/settings.local.json',
                     '.claude/settings.example.json',
                     '.claude/commands/reimage-dev.md',
                     '.github/tools/jev/vendor/.claude/agents/security-compliance.md',
                     '.github/tools/jev/vendor/.claude/agents/release-engineer.md'}
-CREDENTIAL_CONTENT = re.compile(
-    r"[\w.-]*(?:auth|token|password|passwd|secret|credential|api[_-]?key|"
-    r"access[_-]?key|private[_-]?key)[\w.-]*[\"']?\s*[:=]|"
-    r"\bbearer\s+(?!(?:decisions|shares)[.,;:]?(?:\s|$))\S+|"
+# A credential nobody writes by accident: a private-key block, or a key in the
+# issued form its provider prints. These say credential whatever surrounds them.
+_CREDENTIAL_ISSUED = (
     r"-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY-----|"
-    r"[a-z][a-z0-9+.-]*://[^/\s:@]+:[^/\s@]+@|"
     r"\b(?:sk-[A-Za-z0-9_-]{12,}|gh[pousr]_[A-Za-z0-9]{20,}|"
-    r"github_pat_[A-Za-z0-9_]{20,}|AKIA[0-9A-Z]{16})",
-    re.IGNORECASE)
+    r"github_pat_[A-Za-z0-9_]{20,}|AKIA[0-9A-Z]{16})")
+# A credential by its written shape, which a sentence about credentials can
+# wear too. Only the established prose phrases "bearer decisions" and
+# "bearer shares" are exempt; short tokens and quoted nouns remain screened.
+_CREDENTIAL_SHAPED = (
+    r"\bbearer\s+(?!(?:decisions|shares)[.,;:]?(?:\s|$))\S+|"
+    r"[a-z][a-z0-9+.-]*://[^/\s:@]+:[^/\s@]+@|" + _CREDENTIAL_ISSUED)
+# A credential-looking key being assigned, which is a file's shape rather than
+# a credential's. The match starts at the key's own first character, which lets
+# one exact exception stand: Git's `Co-authored-by:` trailer is a name, not a
+# key, and a file carrying commit messages carries it on nearly every merge.
+_CREDENTIAL_KEY = (
+    r"(?<![\w.-])(?!co-authored-by[\s:=])"
+    r"[\w.-]*(?:auth|token|password|passwd|secret|credential|api[_-]?key|"
+    r"access[_-]?key|private[_-]?key)[\w.-]*[\"']?\s*[:=]")
+# File content: both, because a file is where a key is set.
+CREDENTIAL_CONTENT = re.compile(_CREDENTIAL_KEY + "|" + _CREDENTIAL_SHAPED, re.IGNORECASE)
+# Commit prose can name commands such as secrets:scan or quote example URLs.
+# Explicit credential assignments and bearer tokens still refuse the upload,
+# as do issued credentials, because commits cannot be withheld independently.
+CREDENTIAL_COMMIT = re.compile(
+    _CREDENTIAL_KEY.replace(r"\s*[:=]", r"\s*=") + "|" +
+    r"\bbearer\s+(?!(?:decisions|shares)[.,;:]?(?:\s|$))\S+|" +
+    _CREDENTIAL_ISSUED, re.IGNORECASE)
 
 
-def safe_allowlisted(name, data):
+def safe_text(data, pattern):
+    """True when <data> is UTF-8 text that <pattern> finds no credential in."""
     try:
         text = data.decode('utf-8')
     except UnicodeDecodeError:
         return False
-    return not ('\x00' in text or CREDENTIAL_CONTENT.search(text) or
-                (name == '.npmrc' and re.search(r'auth|token', text, re.IGNORECASE)))
+    return not ('\x00' in text or pattern.search(text))
+
+
+def safe_allowlisted(name, data):
+    if not safe_text(data, CREDENTIAL_CONTENT):
+        return False
+    return not (name == '.npmrc' and
+                re.search(r'auth|token', data.decode('utf-8'), re.IGNORECASE))
 
 
 def git(root, *args, input=None):
@@ -124,7 +152,7 @@ def git(root, *args, input=None):
     return result.stdout
 
 
-def history(root, head, depth, destination, key_files):
+def history(root, head, depth, destination, key_files, uploaded):
     try:
         base = git(root, 'rev-parse', '--verify', 'refs/remotes/origin/main^{commit}').decode().strip()
     except subprocess.CalledProcessError as exc:
@@ -143,9 +171,12 @@ def history(root, head, depth, destination, key_files):
     git(fetched, 'update-ref', 'refs/heads/fm-boat-test', head)
     git(fetched, 'symbolic-ref', 'HEAD', 'refs/heads/fm-boat-test')
     git(fetched, 'update-ref', 'refs/remotes/origin/main', base)
-    scanned = set()
+    scanned = {}
+    kept = set()
+    withheld = set()
+    screened = []
     for commit in git(fetched, 'rev-list', '--all').splitlines():
-        if not safe_allowlisted('', git(fetched, 'cat-file', 'commit', commit.decode())):
+        if not safe_text(git(fetched, 'cat-file', 'commit', commit.decode()), CREDENTIAL_COMMIT):
             raise Failure('history refused: credential-looking or binary commit', 2)
         entries = git(fetched, 'ls-tree', '-rz', '--full-tree', commit.decode()).split(b'\0')
         for entry in filter(None, entries):
@@ -162,23 +193,55 @@ def history(root, head, depth, destination, key_files):
                 if not target or resolved.is_absolute() or '..' in resolved.parts:
                     raise Failure('history refused: unsafe symlink target: ' + name, 2)
                 # The pack retains this screened target text, never dereferenced content.
+                kept.add(oid)
                 continue
+            # A withheld object keeps its tree entry, so every commit keeps the
+            # identity the project's own tooling reads, while its content stays
+            # out of the upload.
             if ((excluded(name) and name not in SOURCE_ALLOWLIST) or
-                    (root / name).resolve() in key_files):
-                raise Failure('history refused: excluded path: ' + name, 2)
-            if kind != b'blob' or mode not in (b'100644', b'100755'):
-                raise Failure('history refused: unsupported symlink or submodule: ' + name, 2)
+                    (root / name).resolve() in key_files or
+                    kind != b'blob' or mode not in (b'100644', b'100755')):
+                withheld.add(oid)
+                continue
+            # Bytes the source archive already carries leave this machine anyway.
+            if oid in uploaded:
+                kept.add(oid)
+                continue
             # .npmrc has an additional content rule, even for a reused blob.
             scan_key = (oid, name == '.npmrc')
             if scan_key not in scanned:
-                if not safe_allowlisted(name, git(fetched, 'cat-file', 'blob', oid.decode())):
-                    raise Failure('history refused: credential-looking or binary blob: ' + name, 2)
-                scanned.add(scan_key)
+                scanned[scan_key] = safe_allowlisted(
+                    name, git(fetched, 'cat-file', 'blob', oid.decode()))
+                if not scanned[scan_key]:
+                    screened.append(name)
+            if scanned[scan_key]:
+                kept.add(oid)
+            else:
+                withheld.add(oid)
+    # Content a withheld path shares with an uploaded one is already eligible.
+    withheld -= kept
+    if withheld:
+        print('boat-offload: history withheld %d object(s) from the upload, %d of them '
+              'screened historical blobs%s' %
+              (len(withheld), len(screened),
+               '; first ' + screened[0] if screened else ''), file=sys.stderr)
     objects = set(git(fetched, 'rev-list', '--objects', '--no-object-names', '--all').splitlines())
     # Explicit object IDs avoid exporting any extra objects the transport may
     # have sent. pack-objects without --revs never follows shallow parents.
-    git(fetched, 'pack-objects', str(exported / '.git/objects/pack/screened'),
-        input=b'\n'.join(sorted(objects)) + b'\n')
+    pack = git(fetched, 'pack-objects', str(exported / '.git/objects/pack/screened'),
+               input=b'\n'.join(sorted(objects - withheld)) + b'\n').decode().strip()
+    if withheld:
+        # Git's own partial-clone marking, as `clone --filter=blob:none` writes
+        # it: the pack declares the absent objects promised, so every ordinary
+        # ref, ancestry, name and date query works and `fsck` stays clean,
+        # while a read of a withheld object's content fails loudly against a
+        # promisor remote that carries no URL to reach. The promisor remote is
+        # named for what it is rather than `origin`, so nothing can mistake it
+        # for the project's own remote.
+        (exported / '.git/objects/pack' / ('screened-' + pack + '.promisor')).write_bytes(b'')
+        git(exported, 'config', 'core.repositoryformatversion', '1')
+        git(exported, 'config', 'extensions.partialclone', PROMISOR)
+        git(exported, 'config', 'remote.' + PROMISOR + '.promisor', 'true')
     if (fetched / '.git/shallow').exists():
         shutil.copyfile(fetched / '.git/shallow', exported / '.git/shallow')
     git(exported, 'update-ref', 'refs/heads/fm-boat-test', head)
@@ -208,14 +271,31 @@ def source(root, inputs, archive, key_files, history_depth=None):
         if not (root / name).exists():
             raise Failure('extra input missing: ' + name, 2)
         names.append(name)
+    object_format = (None if history_depth is None else
+                     git(root, 'rev-parse', '--show-object-format').decode().strip())
+    try:
+        archive_source(root, names, archive, history_depth, key_files, head, object_format)
+    except BaseException:
+        archive.unlink(missing_ok=True)
+        raise
+    return head, hashlib.sha256(archive.read_bytes()).hexdigest()
+
+
+class _Hashing:
+    def __init__(self, handle, digest):
+        self.handle = handle
+        self.digest = digest
+
+    def read(self, size=-1):
+        chunk = self.handle.read(size)
+        self.digest.update(chunk)
+        return chunk
+
+
+def archive_source(root, names, archive, history_depth, key_files, head, object_format):
+    uploaded = set()
     with contextlib.ExitStack() as stack:
-        history_git = None
-        if history_depth is not None:
-            scratch = stack.enter_context(tempfile.TemporaryDirectory(dir=archive.parent, prefix='history-'))
-            history_git = history(root, head, history_depth, Path(scratch), key_files)
         output = stack.enter_context(tarfile.open(archive, 'w:gz', dereference=True))
-        if history_git is not None:
-            output.add(history_git, arcname='.git')
         for name in sorted(set(names)):
             relative(name)
             path = root / name
@@ -238,9 +318,22 @@ def source(root, inputs, archive, key_files, history_depth=None):
                 info = output.gettarinfo(path, arcname=name)
                 info.size = len(data)
                 output.addfile(info, io.BytesIO(data))
-            else:
+                if history_depth is not None:
+                    digest = hashlib.new(object_format, b'blob %d\0' % info.size)
+                    digest.update(data)
+                    uploaded.add(digest.hexdigest().encode())
+            elif history_depth is None:
                 output.add(path, arcname=name, recursive=False)
-    return head, hashlib.sha256(archive.read_bytes()).hexdigest()
+            else:
+                info = output.gettarinfo(path, arcname=name)
+                digest = hashlib.new(object_format, b'blob %d\0' % info.size)
+                with path.open('rb') as handle:
+                    output.addfile(info, _Hashing(handle, digest))
+                uploaded.add(digest.hexdigest().encode())
+        if history_depth is not None:
+            scratch = stack.enter_context(tempfile.TemporaryDirectory(dir=archive.parent, prefix='history-'))
+            output.add(history(root, head, history_depth, Path(scratch), key_files, uploaded),
+                       arcname='.git')
 
 
 def default_key_file():
@@ -372,21 +465,28 @@ class Boat:
                             capture_path=capture_path)
         frames = [json.loads(line) for line in payload.splitlines() if line.strip()]
         output = bytearray()
+        streams = {'stdout': bytearray(), 'stderr': bytearray()}
         terminal = None
         for frame in frames:
             if frame.get('type') in ('stdout', 'stderr'):
-                output.extend(frame['data'].encode())
+                data = frame['data'].encode()
+                streams[frame['type']].extend(data)
+                output.extend(data)
             elif 'exitCode' in frame:
                 terminal = frame
-                output.extend(frame.get('stdout', '').encode())
-                output.extend(frame.get('stderr', '').encode())
+                for name in streams:
+                    data = frame.get(name, '').encode()
+                    streams[name].extend(data)
+                    output.extend(data)
         if capture_path is not None:
             capture_path.write_bytes(output)
+        sys.stderr.buffer.write(streams['stderr'])
+        sys.stderr.buffer.flush()
         if terminal is None or terminal.get('exitCode') != 0 or any(
                 terminal.get(field) for field in ('stdoutTruncated', 'stderrTruncated',
                                                   'timedOut', 'launcherFailed', 'oomKilled')):
             raise Failure('Boat command result missing, failed or truncated')
-        return bytes(output)
+        return bytes(streams['stdout'])
 
     def cleanup(self, job, record):
         if job['cleanup'] == 'deleted':

@@ -21,7 +21,7 @@ root, scratch = map(Path, sys.argv[1:])
 wrapper = root / 'bin/fm-build-lock.py'
 option = subprocess.run([str(wrapper), 'node-option'], capture_output=True, text=True, check=True).stdout.strip()
 env = dict(os.environ, FM_BUILD_LOCK_FILE=str(scratch / 'build.lock'))
-for name in ('FM_BUILD_LOCK_BYPASS', 'FM_BUILD_LOCK_HELD', 'NODE_OPTIONS'):
+for name in ('FM_BUILD_LOCK_BYPASS', 'FM_BUILD_LOCK_HELD', 'NODE_OPTIONS', 'FM_TASK_ID'):
     env.pop(name, None)
 children = []
 
@@ -314,7 +314,7 @@ const timer = setInterval(() => { if (fs.existsSync(process.env.RELEASE)) clearI
     # installed it leaves every Node process able to start.
     checkout = scratch / 'checkout/bin'
     checkout.mkdir(parents=True)
-    for name in ('fm-build-lock.py', 'fm-build-lock.js', 'fm-memcap.sh'):
+    for name in ('fm-build-lock.py', 'fm-build-lock.js', 'fm-heavy-route.py', 'fm-memcap.sh'):
         shutil.copy2(root / 'bin' / name, checkout / name)
     installed = scratch / 'installed'
     install_env = dict(env, FM_BUILD_LOCK_INSTALL_DIR=str(installed), NODE_OPTIONS='--max-old-space-size=512')
@@ -372,7 +372,8 @@ root, scratch = map(Path, sys.argv[1:])
 wrapper = root / 'bin/fm-build-lock.py'
 env = dict(os.environ, FM_BUILD_LOCK_FILE=str(scratch / 'pool.lock'),
            FM_BUILD_LOCK_INSTALL_DIR=str(scratch / 'install'))
-for name in ('FM_BUILD_LOCK_BYPASS', 'FM_BUILD_LOCK_HELD', 'NODE_OPTIONS', 'FM_HEAVY_SLOTS'):
+for name in ('FM_BUILD_LOCK_BYPASS', 'FM_BUILD_LOCK_HELD', 'NODE_OPTIONS', 'FM_HEAVY_SLOTS',
+             'FM_TASK_ID'):
     env.pop(name, None)
 children = []
 
@@ -776,7 +777,8 @@ if not shutil.which('node'):
 
 env = dict(os.environ, FM_BUILD_LOCK_FILE=str(scratch / 'pool.lock'),
            FM_BUILD_LOCK_INSTALL_DIR=str(scratch / 'install'), FM_HEAVY_SLOTS='1')
-for name in ('FM_BUILD_LOCK_BYPASS', 'FM_BUILD_LOCK_HELD', 'NODE_OPTIONS', 'npm_lifecycle_event'):
+for name in ('FM_BUILD_LOCK_BYPASS', 'FM_BUILD_LOCK_HELD', 'NODE_OPTIONS', 'npm_lifecycle_event',
+             'FM_TASK_ID'):
     env.pop(name, None)
 option = subprocess.run([str(wrapper), 'node-option'], env=env, check=True,
                         capture_output=True, text=True, timeout=10).stdout.strip()

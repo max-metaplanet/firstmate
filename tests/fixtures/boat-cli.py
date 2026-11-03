@@ -113,7 +113,7 @@ if command == 'exec':
     out, err = proc.communicate()
     terminal = {'exitCode': proc.returncode, 'stdoutTruncated': False,
                 'stderrTruncated': False, 'success': proc.returncode == 0}
-    if '--stream' in args:
+    if '--stream' in args and not fixture.get('blocking_exec'):
         print(json.dumps({'type': 'started', 'commandId': 'cmd_fixture'}))
         print(json.dumps({'type': 'stdout', 'data': out.decode()}))
         print(json.dumps({'type': 'stderr', 'data': err.decode()}))

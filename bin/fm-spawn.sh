@@ -7309,8 +7309,22 @@ if [ "$KIND" = ship ] || [ "$KIND" = scout ]; then
     echo "error: could not resolve the root Firstmate home that declares heavy slots" >&2
     exit 1
   }
+  case "$SPAWN_HEAVY_CONFIG" in
+    /*) ;;
+    *) SPAWN_HEAVY_CONFIG="$PWD/$SPAWN_HEAVY_CONFIG" ;;
+  esac
   if ! fm_heavy_slots_publish "$SPAWN_HEAVY_CONFIG" "$FM_ROOT/bin"; then
     echo "error: spawn refused: $FM_HEAVY_SLOTS_ERROR; fix it so the captain's heavy-command limit is known (docs/configuration.md \"Heavy slots\")" >&2
+    exit 1
+  fi
+  # Which projects send a heavy command to Boat before claiming a slot here
+  # reaches that command the same way: through the machine's installed record,
+  # because the worker shell that starts it cannot read any home's
+  # configuration. bin/fm-heavy-route.py owns the declaration and the record.
+  if ! SPAWN_HEAVY_ROOT=$(fm_firstmate_root_home "$FM_HOME") ||
+    ! SPAWN_ROUTE_ERROR=$("$FM_ROOT/bin/fm-heavy-route.py" publish \
+      --home "$SPAWN_HEAVY_ROOT" --config "$SPAWN_HEAVY_CONFIG" 2>&1); then
+    echo "error: spawn refused: ${SPAWN_ROUTE_ERROR:-the root Firstmate home that declares Boat-first heavy routing could not be resolved}; fix it so heavy commands route where the captain declared (docs/configuration.md \"Boat-first heavy routing\")" >&2
     exit 1
   fi
   BUILD_LOCK_ENV_FILE=$(shell_quote "$LAUNCH_DIR/build-lock.$SPAWN_GEN.sh")

@@ -62,10 +62,8 @@
 # in fatal tier A. The ledger view does not alter other lanes' Git history.
 # Each lane has a ten-minute limit; a timeout is red and retains its output tail
 # while the remaining lanes continue within the whole-machine time budget.
-# --history-depth is available only where the project's own history passes the
-# adapter's credential screening, which scans every historical blob and commit
-# and refuses the whole run locally before any Boat call. A repository whose
-# ordinary source text trips that scanner cannot opt in.
+# fm-boat-run.sh --help owns --history-depth screening, withheld objects and
+# whole-run refusal conditions.
 # Each failing TAP or Vitest test is attributed individually. A failure proven
 # to require missing history is reported by name and diagnostic as unavailable.
 # Other failures, mixed lanes and unattributable failures remain red.
