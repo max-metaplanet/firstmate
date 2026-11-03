@@ -486,8 +486,15 @@ class Boat:
                 frames = [json.loads(line) for line in out.splitlines() if line.strip()]
                 return next(frame for frame in reversed(frames) if frame.get('event') == 'ready')
             return json.loads(out)
-        except (OSError, subprocess.TimeoutExpired, ValueError, StopIteration) as exc:
-            raise Failure('Boat request unavailable: ' + args[0]) from exc
+        except subprocess.TimeoutExpired as exc:
+            raise Failure('Boat request unavailable: ' + args[0] +
+                          f' (timeout; {type(exc).__name__}; limit={timeout}s)') from exc
+        except OSError as exc:
+            raise Failure('Boat request unavailable: ' + args[0] +
+                          f' (OS error; {type(exc).__name__}; errno={exc.errno})') from exc
+        except (ValueError, StopIteration) as exc:
+            raise Failure('Boat request unavailable: ' + args[0] +
+                          f' (bad response; {type(exc).__name__})') from exc
         finally:
             if process is not None and process.poll() is None:
                 with contextlib.suppress(ProcessLookupError):
@@ -723,7 +730,11 @@ def run(args, boats):
         # without changing the source repository or transferring its .git.
         git(upload, 'init', '--quiet')
         git(upload, 'add', '--force', '--', 'source.tar.gz')
-        result.update(source_head=head, source_sha256=digest)
+        upload_bytes = (upload / 'source.tar.gz').stat().st_size
+        # Allow 90s setup plus 128 KiB/s, within the existing TTL's transfer margin.
+        push_timeout = min(600, max(300, 90 + (upload_bytes + 131071) // 131072))
+        result.update(source_head=head, source_sha256=digest,
+                      upload_bytes=upload_bytes, push_timeout_seconds=push_timeout)
         job_id = uuid.uuid4().hex
         record = boat.state / 'jobs' / (job_id + '.json')
         job = {'name': 'fm-offload-' + job_id, 'vm_id': None, 'cleanup': 'pending',
@@ -739,7 +750,8 @@ def run(args, boats):
                         boat = next(b for b in boats if str(b.account.key_file) == job['account_key_file'])
                 vm = job['vm_id']
                 result.update(vm_id=vm, kind='adapter-error')
-                boat.call('push', vm, str(upload), '--to', '/home/user/fm-job', timeout=300, raw=True)
+                boat.call('push', vm, str(upload), '--to', '/home/user/fm-job',
+                          timeout=push_timeout, raw=True)
                 boat.command(vm, '--timeout', '60', '--', 'bash', '-c',
                           f'echo {digest} /home/user/fm-job/source.tar.gz | sha256sum -c - && '
                           'mkdir -p /home/user/fm-job/source && tar xzf /home/user/fm-job/source.tar.gz -C /home/user/fm-job/source',
