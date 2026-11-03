@@ -214,6 +214,55 @@ for worker in workers:
 empty(state)
 print('ok - concurrent admission runs two jobs and rejects a third')
 
+def launch_transfer(p, env):
+    driver = p / 'transfer-clock.py'
+    driver.write_text('''import importlib.util, subprocess, sys
+spec = importlib.util.spec_from_file_location('adapter', sys.argv.pop(1))
+adapter = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = adapter
+spec.loader.exec_module(adapter)
+real_popen = subprocess.Popen
+class TransferClock(real_popen):
+    def communicate(self, *args, timeout=None, **kwargs):
+        if self.args[1] == 'push' and timeout is not None and timeout < 400:
+            raise subprocess.TimeoutExpired(self.args, timeout, output=b'boat_fixture_secret')
+        return super().communicate(*args, timeout=timeout, **kwargs)
+subprocess.Popen = TransferClock
+sys.exit(adapter.main())
+''')
+    return subprocess.run([sys.executable, str(driver), str(repo / 'bin/fm-boat-run.py'),
+                           'run', '--worktree', str(p / 'work'),
+                           '--output', str(p / 'output'), '--', 'true'],
+                          env=env, capture_output=True, timeout=30)
+
+p, state, env = case('large-transfer')
+# An incompressible tracked input models the pipeline's already-compressed upload.
+(p / 'work/payload').write_bytes(os.urandom(40 * 1024 * 1024))
+git(p / 'work', 'add', 'payload')
+r = launch_transfer(p, env)
+assert r.returncode == 0, r.stderr
+assert result(p)['kind'] == 'completed'
+assert result(p)['upload_bytes'] >= 40 * 1024 * 1024
+assert 400 <= result(p)['push_timeout_seconds'] <= 600
+empty(state)
+print('ok - a slow large upload gets a bounded size-aware deadline and completes')
+
+p, state, env = case('transfer-timeout')
+r = launch_transfer(p, env)
+assert r.returncode == 74, r.stderr
+assert 'timeout' in result(p)['error'] and 'TimeoutExpired' in result(p)['error']
+assert b'boat_fixture_secret' not in r.stdout + r.stderr
+assert 'boat_fixture_secret' not in (p / 'output/result.json').read_text()
+empty(state)
+print('ok - an expired upload reports its cause without leaking exception output')
+
+p, state, env = case('cli-os-error')
+env['FM_BOAT_BIN'] = str(p / 'missing-boat')
+r = launch(p, env)
+assert r.returncode == 69, r.stderr
+assert 'OS error' in result(p)['error'] and 'FileNotFoundError' in result(p)['error']
+print('ok - an unavailable executable reports the OS error class')
+
 for name, settings in [('push-failure', {'push_failed': True}),
                        ('transport', {'transport_failed': True})]:
     p, state, env = case(name, settings)
