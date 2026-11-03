@@ -55,7 +55,9 @@ Only a worker-started command is routed. A command with no FM_TASK_ID in its
 environment keeps its existing path, which leaves the no-mistakes daemon's own
 steps and their Boat integration (bin/fm-boat-test-wrapper.sh) untouched.
 The preload intercepts a top-level turbo, nx, lerna, or recursive/filtered pnpm
-invocation before it launches children. A provably safe task graph goes to Boat
+invocation before it launches children.
+Orchestrated pnpm routing recognizes only the directly installed `pnpm/bin/pnpm.cjs` entry; Corepack-launched pnpm stays local.
+A provably safe task graph goes to Boat
 as one job. Unknown options, scripts, dependencies, caches or outputs keep the
 whole run local. An inherited FM_HEAVY_ORCHESTRATOR marker and an ancestor check
 prevent children from submitting jobs, including after local fallback.

@@ -1825,6 +1825,7 @@ For a declared project's worker-started heavy command, a reason to stay local pr
 
 Only a worker-started heavy command is routed, which leaves the no-mistakes daemon's own steps on their existing path; [`bin/fm-boat-test-wrapper.sh`](../bin/fm-boat-test-wrapper.sh) remains the pipeline's own Boat integration.
 The preload intercepts a top-level turbo, nx, lerna, or recursive or filtered pnpm invocation (`-r`, `--recursive`, `-F`, `--filter`) before it starts its heavy children.
+Orchestrated pnpm routing recognizes only the directly installed `pnpm/bin/pnpm.cjs` entry; Corepack-launched pnpm stays local.
 An eligible invocation runs entirely on one Boat machine, with one local heavy slot for the whole invocation as its fallback.
 An inherited routing marker prevents its children from starting their own Boat jobs after either decision; the ancestor check also keeps independently intercepted children local.
 Commands without `FM_TASK_ID` retain their existing behavior.
