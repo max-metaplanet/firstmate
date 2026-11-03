@@ -147,7 +147,11 @@ class Publisher:
         record["retired"] = True
         write_json(path, record)
         IDENTITY.verify(path, record, live_task=False)
-        code, _, _ = self.t3("project", "remove", record["projectId"], "--force")
+        if record["phase"] == "setup":
+            self.project(record)
+            code, _, _ = self.t3("project", "remove", record["workspace"])
+        else:
+            code, _, _ = self.t3("project", "remove", record["projectId"], "--force")
         if code:
             raise MirrorError("cleanup-removal-unconfirmed")
         path.unlink()
@@ -184,7 +188,7 @@ class Publisher:
         while len(RELAY.update_prompt(update).encode()) > 8000 and update["tail"]:
             update["tail"].pop(0)
         fingerprint = hashlib.sha256(json.dumps(update, sort_keys=True).encode()).hexdigest()
-        if record:
+        if record and record.get("phase") != "setup":
             self.thread(record)
             if record.get("pending"):
                 self.confirm(path, record)
@@ -197,14 +201,18 @@ class Publisher:
             workspace = self.root / "workspaces" / task / nonce
             record = {"version": 2, "home": self.home, "state": str(self.state), "config": str(self.config),
                       "task": task, "incarnation": incarnation, "connection": self.connection,
-                      "nonce": nonce, "workspace": str(workspace), "phase": "creating",
+                      "nonce": nonce, "workspace": str(workspace), "phase": "setup",
                       "providerInstanceId": self.connection["provider"], "model": "mirror",
                       "pending": fingerprint, "pending_update": update, "pending_prompt": prompt}
             record["title"] = IDENTITY.title(record)
+            self.save_task(path, record)
+        if record["phase"] == "setup":
+            IDENTITY.verify(path, record, live_task=False)
             self.project(record)
             IDENTITY.current_task(record)
+            record.update(phase="creating", pending=fingerprint, pending_update=update, pending_prompt=prompt)
             self.save_task(path, record)
-            code, out, _ = self.t3("thread", "start", str(workspace), "-", "--title", record["title"],
+            code, out, _ = self.t3("thread", "start", record["workspace"], "-", "--title", record["title"],
                                    "--provider", self.connection["provider"], "--model", "mirror", "--json", text=prompt)
             if code:
                 raise MirrorError("uncertain-creation-inspect-t3")

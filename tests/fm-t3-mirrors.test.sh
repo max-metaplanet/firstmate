@@ -39,7 +39,7 @@ SEND
 ''')
 fake = scripts / 't3'
 fake.write_text('''#!/usr/bin/env python3
-import json, os, subprocess, sys
+import hashlib, json, os, subprocess, sys, time
 from pathlib import Path
 args = sys.argv[1:]
 base = Path(args[args.index('--base-dir') + 1])
@@ -69,11 +69,21 @@ def turn(cwd):
 if args[:2] == ['project', 'add']:
     if (base / 'project-failure').exists():
         sys.exit(4)
+    project_path = base / ('project-' + hashlib.sha256(args[2].encode()).hexdigest() + '.json')
+    if project_path.exists():
+        print(f"ProjectAlreadyExistsError: An active project already exists for '{args[2]}'", file=sys.stderr)
+        sys.exit(4)
+    save(project_path, {'id': 'project-' + Path(args[2]).name, 'workspace': args[2]})
+    if (base / 'teardown-in-project').exists():
+        (Path(os.environ['FM_HOME']) / 'state' / (Path(args[2]).parent.name + '.meta')).unlink()
+    if (base / 'project-timeout').exists():
+        (base / 'project-timeout').unlink()
+        time.sleep(7)
     print('added')
 elif args[:2] == ['thread', 'start']:
     n = len(list(base.glob('identity-*.json'))) + 1
     thread = f'thread-{n}'
-    project = f'project-{n}'
+    project = get(base / ('project-' + hashlib.sha256(args[2].encode()).hexdigest() + '.json'))['id']
     save(base / f'identity-{thread}.json', {'threadId': thread, 'projectId': project,
          'title': args[args.index('--title') + 1], 'providerInstanceId': args[args.index('--provider') + 1],
          'model': args[args.index('--model') + 1], 'workspace': args[2]})
@@ -99,7 +109,13 @@ elif args[:2] == ['thread', 'list']:
 elif args[:2] == ['project', 'remove']:
     if (base / 'remove-failure').exists():
         sys.exit(4)
-    (base / ('removed-' + args[2])).touch()
+    projects = [(path, get(path)) for path in base.glob('project-*.json')]
+    path, project = next((path, value) for path, value in projects
+                         if args[2] in (value['id'], value['workspace']))
+    if '--force' not in args and any(get(path)['projectId'] == project['id'] for path in base.glob('identity-*.json')):
+        sys.exit(4)
+    (base / ('removed-' + project['id'])).touch()
+    path.unlink()
     print('removed')
 else:
     sys.exit(9)
@@ -169,17 +185,55 @@ task('retry')
 (base / 'project-failure').touch()
 command('sync')
 assert calls(['project', 'add']) and not calls(['thread', 'start'])
-assert not (maps / 'retry.json').exists()
+setup = get(maps / 'retry.json')
+assert setup['phase'] == 'setup'
+unready = Relay(setup, load=True)
+assert 'refused' in unready.prompt('do not steer before thread creation') and not sent()
+unready.close()
 (base / 'project-failure').unlink()
 command('sync')
 retried = get(maps / 'retry.json')
 assert retried['phase'] == 'ready' and not retried['pending']
+assert retried['nonce'] == setup['nonce']
 assert len(calls(['thread', 'start'])) == 1
 (state / 'retry.meta').unlink()
 command('retire', 'retry')
 assert not (maps / 'retry.json').exists()
 assert (base / ('removed-' + retried['projectId'])).exists()
 print('ok - project setup failure retries publication and the recovered mirror retires normally')
+task('setup-race')
+(base / 'teardown-in-project').touch()
+before = len(calls(['thread', 'start']))
+command('sync')
+(base / 'teardown-in-project').unlink()
+raced = get(maps / 'setup-race.json')
+assert raced['phase'] == 'setup' and not (state / 'setup-race.meta').exists()
+assert len(calls(['thread', 'start'])) == before
+intruder = base / 'identity-intruder.json'
+intruder.write_text(json.dumps({'projectId': 'project-' + raced['nonce']}))
+command('retire', 'setup-race')
+assert (maps / 'setup-race.json').exists()
+assert not (base / ('removed-project-' + raced['nonce'])).exists()
+intruder.unlink()
+command('retire', 'setup-race')
+assert not (maps / 'setup-race.json').exists()
+assert (base / ('removed-project-' + raced['nonce'])).exists()
+assert '--force' not in calls(['project', 'remove'])[-1]['args']
+task('ambiguous-setup')
+(base / 'project-timeout').touch()
+command('sync')
+ambiguous = get(maps / 'ambiguous-setup.json')
+assert ambiguous['phase'] == 'setup' and len(calls(['thread', 'start'])) == before
+command('sync')
+recovered = get(maps / 'ambiguous-setup.json')
+assert recovered['phase'] == 'ready' and not recovered['pending']
+assert recovered['nonce'] == ambiguous['nonce']
+assert recovered['projectId'] == 'project-' + ambiguous['nonce']
+assert len(calls(['thread', 'start'])) == before + 1
+(state / 'ambiguous-setup.meta').unlink()
+command('retire', 'ambiguous-setup')
+assert not (maps / 'ambiguous-setup.json').exists()
+print('ok - teardown during project setup retires the empty project; timed-out project add retries the same workspace')
 task('alpha'); task('platform', True)
 command('sync')
 alpha, platform = get(maps / 'alpha.json'), get(maps / 'platform.json')

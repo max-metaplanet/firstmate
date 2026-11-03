@@ -100,7 +100,8 @@ def record_for_workspace(workspace):
 def verify(path, expected, live_task=True):
     """One identity check, used in both directions. No identity comes from text."""
     record = read_json(path)
-    if (record.get("version") != 2 or record.get("phase") != "ready"
+    setup = record.get("phase") == "setup" and not live_task
+    if (record.get("version") != 2 or (record.get("phase") != "ready" and not setup)
             or any(record.get(key) != expected.get(key) for key in BINDING_KEYS)
             or (live_task and record.get("retired"))):
         raise MirrorError("invalid-task-mapping")
@@ -115,12 +116,15 @@ def verify(path, expected, live_task=True):
     workspace = root / "workspaces" / task / record["nonce"]
     if (path != root / "tasks" / f"{task}.json" or workspace != Path(record["workspace"])
             or record["title"] != title(record)
-            or not all(isinstance(record.get(key), str) and record[key] for key in THREAD_KEYS)):
+            or not all(isinstance(record.get(key), str) and record[key]
+                       for key in (THREAD_KEYS[2:] if setup else THREAD_KEYS))):
         raise MirrorError("invalid-task-mapping")
     connection = read_json(root / "connection.json")
     if (connection != record["connection"] or connection.get("home") != record["home"]
             or record["providerInstanceId"] != connection.get("provider") or record["model"] != "mirror"):
         raise MirrorError("connection-identity-mismatch")
+    if setup:
+        return {}
     if live_task:
         current_task(record)
     code, out, _ = run([connection["binary"], "thread", "show", record["threadId"],

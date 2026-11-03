@@ -87,7 +87,7 @@ Portable contracts verified on 2026-11-03 with Python 3.14.4 and Bash 5.3.9 on L
 The tests run the real ACP relay as a subprocess against a stateful fake T3 transport and an `fm-send.sh` boundary fixture.
 They exercise per-task projects, redacted captures, inbound and outbound identity mismatches, generation changes, markerless remote secondmates, project cleanup proofs, and uncertain-delivery journals.
 Restart recovery uses a new relay process, an existing session id, and the original workspace, without a publisher update.
-The current T3 source passes `cwd: options.cwd` to both `session/new` and `session/load` in `packages/provider-acp/src/server/AcpSessionRuntime.ts`; the portable test drives those request shapes.
+The portable requests supply `cwd`; the isolated real-T3 observation below independently checks that transport assumption.
 The [T3 guide](../t3-backend.md#presentation-mirrors) owns setup and operating limits.
 
 Refresh the contracts with:
@@ -108,6 +108,40 @@ ok - control bytes, terminal titles, short private key bodies and env dumps are 
 These contracts do not prove the live desktop frontend or a live worker's delivery.
 The earlier T3 v0.1.5 desktop verification covered status-only shared-project mirrors; it does not cover conversation tails or inbound steering.
 The publisher uses shared crew-state and backend-neutral capture interfaces rather than a harness-specific adapter.
+
+### Isolated real-T3 mirror recovery
+
+Verified on 2026-11-03 using the supplied T3 v0.1.5 executable in web mode, with a fresh base directory under the review worktree.
+No live T3 data, existing sessions, home mirror settings, or external provider credentials were used.
+A disposable local ACP provider executed a tracing wrapper around the real `bin/fm-t3-mirror-relay.py`; the wrapper recorded incoming method, process id, `cwd`, and session id before forwarding each request unchanged.
+The publisher created a dedicated project and thread for a scratch task with `spawn_gen=isolated-proof`.
+Only the deterministic mirror provider handled turns; no AI inference was requested.
+
+The executable invocations used the following worktree-local paths:
+
+```sh
+T3=/home/max.guest/.local/share/t3-lima/bin/t3
+LAB="$PWD/.review-t3-isolated"
+"$T3" --mode web --host 127.0.0.1 --port 47931 --base-dir "$LAB/base" --no-browser
+FM_HOME="$LAB/home" FM_T3_BIN="$T3" FM_T3_BASE_DIR="$LAB/base" bash bin/fm-t3-mirrors.sh sync
+"$T3" thread send mcp:b285059a-1339-4aee-8aa0-ee1a5f4e7789 'Update · isolated proof' --wait --json --base-dir "$LAB/base"
+```
+
+The scratch provider `acpRegistry_mirror_proof` was registered through `server.updateSettings` using an access token issued only by the isolated instance.
+Between publication and the send, the owned server process received SIGTERM and was relaunched with the same isolated invocation.
+The trace observed `session/new` in relay PID 3112057 and `session/load` in replacement relay PID 3120242.
+Both requests carried exactly the persisted mapping's workspace, ending in `home/state/t3-mirrors/workspaces/proof/cbed8a96-c019-408d-92f3-e301ee3ea889`.
+The loaded ACP session id `555090c5-967d-44f7-a58c-cd5b98bfb094` matched the original prompt's session id.
+An executable assertion comparing the received requests with the persisted mapping reported:
+
+```text
+ok - real T3 0.1.5 restarted relay preserved mapping workspace and ACP session id
+```
+
+The post-restart turn completed and returned the relay's unconfirmed-delivery notice because the scratch task had no worker endpoint.
+This proves real transport recovery context and relay execution, not delivery to a live worker or desktop frontend behavior.
+The dedicated project was retired through the publisher's identity proof before stopping the owned instance and removing its scratch directory.
+Portable lifecycle coverage additionally checks failed project setup, teardown during project setup, refusal to delete a nonempty setup project, and retry after a successful project add whose response times out.
 
 ## Treehouse task lease recovery
 
