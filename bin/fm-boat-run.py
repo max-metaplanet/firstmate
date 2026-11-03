@@ -93,6 +93,7 @@ def excluded(name, artifact=False):
 
 SOURCE_ALLOWLIST = {'.npmrc', '.claude/settings.json', '.claude/settings.local.json',
                     '.claude/settings.example.json',
+                    '.claude/commands/reimage-dev.md',
                     '.github/tools/jev/vendor/.claude/agents/security-compliance.md',
                     '.github/tools/jev/vendor/.claude/agents/release-engineer.md'}
 CREDENTIAL_CONTENT = re.compile(
@@ -152,6 +153,16 @@ def history(root, head, depth, destination, key_files):
             name = os.fsdecode(name)
             relative(name)
             mode, kind, oid = meta.split()
+            if name == '.claude/skills' and mode == b'120000' and kind == b'blob':
+                data = git(fetched, 'cat-file', 'blob', oid.decode())
+                if not safe_allowlisted(name, data):
+                    raise Failure('history refused: credential-looking or binary blob: ' + name, 2)
+                target = data.decode('utf-8')
+                resolved = PurePosixPath(os.path.normpath(str(PurePosixPath(name).parent / target)))
+                if not target or resolved.is_absolute() or '..' in resolved.parts:
+                    raise Failure('history refused: unsafe symlink target: ' + name, 2)
+                # The pack retains this screened target text, never dereferenced content.
+                continue
             if ((excluded(name) and name not in SOURCE_ALLOWLIST) or
                     (root / name).resolve() in key_files):
                 raise Failure('history refused: excluded path: ' + name, 2)

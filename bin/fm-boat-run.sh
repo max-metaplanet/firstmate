@@ -31,11 +31,12 @@
 # 75 when all accounts lack capacity/budget, 69 if an unavailable account remains.
 # Reads the selected key file afresh ONLY into each Boat child's environment.
 # Does not forward the invoking environment, account environments, credentials,
-# local .git metadata, dependency caches, symlinks, or conventional secret files.
+# local .git metadata, dependency caches, working-tree symlinks, or conventional secret files.
 # Callers must supply secret-free source, extra inputs, command and artifacts;
 # the general path filter is not a secret scanner. No secrets-in-VM support exists.
 # Narrow source exceptions: .npmrc, .claude/settings.json,
-# .claude/settings.local.json, .claude/settings.example.json, and exactly
+# .claude/settings.local.json, .claude/settings.example.json,
+# .claude/commands/reimage-dev.md, and exactly
 # .github/tools/jev/vendor/.claude/agents/security-compliance.md and
 # .github/tools/jev/vendor/.claude/agents/release-engineer.md. Each exception
 # is scanned as UTF-8 before upload; credential-looking auth/token/password/
@@ -56,14 +57,19 @@
 # Only those two tips, their bounded commits/trees/blobs, shallow boundaries,
 # and fresh Git metadata travel. No other refs, stash, reflogs, hooks, local
 # remotes or local Git config travel. Current tracked edits/deletions still apply.
-# Every historical tree entry must pass the source path filter (including the
+# History permits only the .claude/skills symlink as an exception to source path
+# and symlink rejection: its target text must pass the UTF-8 credential scanner
+# and resolve lexically within the repository from .claude/.
+# Its screened target blob remains in the Git pack, never dereferenced or
+# materialized as a working-tree symlink.
+# Every other historical tree entry must pass the source path filter (including the
 # screened exceptions), and every historical blob and commit (including headers
 # and messages) must pass the same UTF-8 credential scanner. Excluded paths,
-# configured key paths, symlinks, submodules, binary or credential-looking blobs
+# configured key paths, other symlinks, submodules, binary or credential-looking blobs
 # or commits refuse the entire run before any Boat call.
 # Refusal logs name the reason and, for tree entries, the path without printing
 # blob or commit content.
-# Submodules and symlinks are refused rather than silently changing the source.
+# Working-tree submodules and symlinks outside excluded paths are refused rather than silently changing the source.
 # Run from the worktree root remotely at /home/user/fm-job/source. Install remote
 # dependencies explicitly in COMMAND; native local node_modules never travel.
 # --timeout defaults to 1800, range 1..2700; VM TTL is timeout+900 (<=3600).

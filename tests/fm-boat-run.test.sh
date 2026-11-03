@@ -471,6 +471,8 @@ for name, contents, included in [
     ('role-security-safe', '# Security compliance\nReview changes.\n', True),
     ('role-release-safe', '# Release engineer\nReview release readiness.\n', True),
     ('role-secret', 'API_SECRET=fixture-only\n', False),
+    ('reimage-safe', '# Reimage development\nRebuild the development image.\n', True),
+    ('reimage-secret', 'API_SECRET=fixture-only\n', False),
     ('settings-safe', '{"permissions":{"allow":["Bash(npm test)"]}}', True),
     ('settings-secret', '{"env":{"API_SECRET":"fixture-only"}}', False),
     ('settings-bearer', '{"header":"Bearer fixture-only"}', False),
@@ -483,6 +485,8 @@ for name, contents, included in [
 ]:
     p, state, env = case(name)
     selected = '.npmrc' if name.startswith('npmrc') else '.claude/settings.json'
+    if name.startswith('reimage-'):
+        selected = '.claude/commands/reimage-dev.md'
     if name == 'settings-postgresql':
         selected = '.claude/settings.local.json'
     if name.startswith('role-'):
@@ -577,6 +581,52 @@ for name, contents in [
     assert '.agents/skills/verify-app/features.md' in json.loads((state / 'uploaded.json').read_text())
     empty(state)
 print('ok - history accepts bearer prose and long Markdown table separators')
+
+for name, selected, contents, symlink, accepted in [
+    ('history-reimage-clean', '.claude/commands/reimage-dev.md', '# Reimage development\n', False, True),
+    ('history-reimage-secret', '.claude/commands/reimage-dev.md', 'API_SECRET=historical-value-never-print', False, False),
+    ('history-skills-link', '.claude/skills', '../.agents/skills', True, True),
+    ('history-other-link', 'other-link', 'tracked.txt', True, False),
+    ('history-claude-other-link', '.claude/other', '../tracked.txt', True, False),
+    ('history-skills-escape', '.claude/skills', '../../outside', True, False),
+    ('history-skills-absolute', '.claude/skills', '/outside', True, False),
+    ('history-skills-secret', '.claude/skills', '../API_SECRET=historical-value-never-print', True, False),
+    ('history-skills-file', '.claude/skills', 'ordinary file', False, False),
+    ('history-local-settings-secret', '.claude/settings.local.json', 'API_SECRET=historical-value-never-print', False, False),
+    ('history-claude-unlisted', '.claude/unlisted.md', 'ordinary file', False, False),
+]:
+    p, state, env = case(name, clean_history=True)
+    work = p / 'work'
+    target = work / selected
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if symlink:
+        target.symlink_to(contents)
+    else:
+        target.write_text(contents)
+    git(work, 'add', '--force', '.')
+    git(work, 'commit', '-qm', 'Claude history fixture')
+    if not accepted:
+        target.unlink()
+        git(work, 'add', '--all')
+        git(work, 'commit', '-qm', 'clean current tree')
+    git(work, 'update-ref', 'refs/remotes/origin/main', 'HEAD')
+    check = 'exit 0'
+    if symlink and accepted:
+        check = "test ! -e .claude/skills && test ! -L .claude/skills && " + \
+                "test \"$(git cat-file blob HEAD:.claude/skills)\" = ../.agents/skills && git fsck --no-reflogs"
+    r = launch(p, env, check, ('--history-depth', '2'))
+    assert r.returncode == (0 if accepted else 2), (name, r.stdout, r.stderr)
+    assert b'historical-value-never-print' not in r.stdout + r.stderr
+    if accepted:
+        uploaded = json.loads((state / 'uploaded.json').read_text())
+        assert (selected in uploaded) == (not symlink), (name, uploaded)
+        empty(state)
+    else:
+        assert b'history refused:' in r.stderr
+        assert result(p)['kind'] == 'invalid'
+        assert not (state / 'calls.jsonl').exists()
+        assert not (p / 'output/upload/source.tar.gz').exists()
+print('ok - Claude history screens reimage content and only permits a screened in-repo skills symlink blob')
 
 for name, unsafe_path, unsafe_content in [
     ('history-excluded', '.env', 'historical-value-never-print'),
