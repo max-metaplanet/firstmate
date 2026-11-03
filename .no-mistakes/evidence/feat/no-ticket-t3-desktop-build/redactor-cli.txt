@@ -1,0 +1,7 @@
+Input classes: ordinary output, env token, authorization header, short private key. Requested final five lines.
+Actual output:
+Authorization: [redacted]
+[redacted]
+[redacted]
+[redacted]
+Cleanup proof ready

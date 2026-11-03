@@ -1,0 +1,3 @@
+Task metadata removed. Publisher retirement removed its mapping.
+Real T3 thread show exit 1
+Thread mcp:358998dd-05b5-42f5-934a-5505d2d9f332 is no longer available.

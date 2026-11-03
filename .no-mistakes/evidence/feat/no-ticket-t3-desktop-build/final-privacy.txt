@@ -1,0 +1,19 @@
+Real 110-column tmux output wraps the token suffix onto a second row.
+Real T3 assistant output retains both surrounding lines and [redacted], with no token prefix or suffix.
+
+Current state is unknown. (unknown)
+
+Worker · proof
+
+Last recorded event: working (historical).
+
+Next: Firstmate will reconcile the durable records.
+
+Recent output (redacted):
+```
+Before privacy probe
+[redacted]
+After privacy probe
+```
+
+Observed: 2026-11-03T23:46:07Z

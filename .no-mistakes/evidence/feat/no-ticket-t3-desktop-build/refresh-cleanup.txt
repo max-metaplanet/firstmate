@@ -1,0 +1,3 @@
+Publisher retire removed the persisted mapping.
+Real t3 thread show exited 1:
+Thread mcp:df3ede37-3e37-497f-a48c-93d18c04c6a6 is no longer available.

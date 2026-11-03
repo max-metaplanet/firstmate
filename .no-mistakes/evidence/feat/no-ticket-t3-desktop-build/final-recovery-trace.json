@@ -1,0 +1,26 @@
+[
+  {
+    "pid": 117571,
+    "method": "session/new",
+    "cwd": "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6HKYQ3N1CFZCKHBHF53DV6Q",
+    "sessionId": null
+  },
+  {
+    "pid": 119104,
+    "method": "session/new",
+    "cwd": "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6HKYQ3N1CFZCKHBHF53DV6Q/.test-t3-final/home/state/t3-mirrors/workspaces/proof/5a4e7ce6-484f-4d3f-bb55-e602c87ea724",
+    "sessionId": null
+  },
+  {
+    "pid": 151862,
+    "method": "session/new",
+    "cwd": "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6HKYQ3N1CFZCKHBHF53DV6Q",
+    "sessionId": null
+  },
+  {
+    "pid": 155853,
+    "method": "session/load",
+    "cwd": "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6HKYQ3N1CFZCKHBHF53DV6Q/.test-t3-final/home/state/t3-mirrors/workspaces/proof/5a4e7ce6-484f-4d3f-bb55-e602c87ea724",
+    "sessionId": "28fd0667-a30a-4824-862e-f524babc1bf3"
+  }
+]

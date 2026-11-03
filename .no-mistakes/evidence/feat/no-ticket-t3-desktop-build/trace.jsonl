@@ -1,0 +1,21 @@
+{"pid": 3388287, "method": "initialize", "cwd": null, "sessionId": null}
+{"pid": 3388287, "method": "session/new", "cwd": "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6HKYQ3N1CFZCKHBHF53DV6Q", "sessionId": null}
+{"pid": 3388284, "method": "initialize", "cwd": null, "sessionId": null}
+{"pid": 3390339, "method": "initialize", "cwd": null, "sessionId": null}
+{"pid": 3390339, "method": "session/new", "cwd": "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6HKYQ3N1CFZCKHBHF53DV6Q/.test-t3-live/home/state/t3-mirrors/workspaces/proof/312c56f6-2d87-4b12-8a89-560a72662386", "sessionId": null}
+{"pid": 3390339, "method": "session/prompt", "cwd": null, "sessionId": "8b673e16-660d-4ab3-9924-07f9fad4d359"}
+{"pid": 3408746, "method": "initialize", "cwd": null, "sessionId": null}
+{"pid": 3408724, "method": "initialize", "cwd": null, "sessionId": null}
+{"pid": 3408746, "method": "session/new", "cwd": "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6HKYQ3N1CFZCKHBHF53DV6Q", "sessionId": null}
+{"pid": 3410311, "method": "initialize", "cwd": null, "sessionId": null}
+{"pid": 3410311, "method": "session/load", "cwd": "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6HKYQ3N1CFZCKHBHF53DV6Q/.test-t3-live/home/state/t3-mirrors/workspaces/proof/312c56f6-2d87-4b12-8a89-560a72662386", "sessionId": "8b673e16-660d-4ab3-9924-07f9fad4d359"}
+{"pid": 3410311, "method": "session/prompt", "cwd": null, "sessionId": "8b673e16-660d-4ab3-9924-07f9fad4d359"}
+{"pid": 3410311, "method": "session/prompt", "cwd": null, "sessionId": "8b673e16-660d-4ab3-9924-07f9fad4d359"}
+{"pid": 3429380, "method": "initialize", "cwd": null, "sessionId": null}
+{"pid": 3429362, "method": "initialize", "cwd": null, "sessionId": null}
+{"pid": 3429380, "method": "session/new", "cwd": "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6HKYQ3N1CFZCKHBHF53DV6Q", "sessionId": null}
+{"pid": 3433185, "method": "initialize", "cwd": null, "sessionId": null}
+{"pid": 3433185, "method": "session/load", "cwd": "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6HKYQ3N1CFZCKHBHF53DV6Q/.test-t3-live/home/state/t3-mirrors/workspaces/proof/312c56f6-2d87-4b12-8a89-560a72662386", "sessionId": "8b673e16-660d-4ab3-9924-07f9fad4d359"}
+{"pid": 3433185, "method": "session/prompt", "cwd": null, "sessionId": "8b673e16-660d-4ab3-9924-07f9fad4d359"}
+{"command": ["thread", "show"], "exception": "command-timeout", "seconds": 6.94}
+{"pid": 3433185, "method": "session/prompt", "cwd": null, "sessionId": "8b673e16-660d-4ab3-9924-07f9fad4d359"}

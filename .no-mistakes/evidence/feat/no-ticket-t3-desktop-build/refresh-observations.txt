@@ -1,0 +1,7 @@
+Real T3 v0.1.5, isolated base directory, deterministic local ACP provider, no model turns.
+Restart: original relay PID 3919223; loaded relay PID 3925069; original workspace and ACP session id preserved.
+Real T3 composer returned: Instruction recorded for proof through fm-send.
+Inbox contained the exact UI instruction; changed spawn_gen refused the replacement probe without adding an inbox record.
+Publisher retirement removed mapping; thread show returned unavailable.
+Privacy failure: actual terminal output API_TOKEN=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAASENSITIVE_SUFFIX_12345 wraps at 110 columns. The redacted T3 output contains [redacted] followed by SENSITIVE_SUFFIX_12345. Joining the soft-wrapped rows before filtering eliminates that suffix.
+Setup limitation corrected: initial unmarked scratch home refused fm-send; replaced with a helper-minted lab home before successful UI check. One subsequent CLI steer was refused transiently; direct identity verification then completed in 5.99 seconds and the UI steer succeeded.

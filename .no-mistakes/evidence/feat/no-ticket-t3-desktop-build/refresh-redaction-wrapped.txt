@@ -1,0 +1,3 @@
+[redacted]
+SENSITIVE_SUFFIX_12345
+bash-5.3$

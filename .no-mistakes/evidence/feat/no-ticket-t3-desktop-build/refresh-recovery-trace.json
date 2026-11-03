@@ -1,0 +1,62 @@
+[
+  {
+    "pid": 3911383,
+    "method": "session/new",
+    "cwd": "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6HKYQ3N1CFZCKHBHF53DV6Q",
+    "sessionId": null
+  },
+  {
+    "pid": 3919223,
+    "method": "session/new",
+    "cwd": "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6HKYQ3N1CFZCKHBHF53DV6Q/.test-t3-runtime/home/state/t3-mirrors/workspaces/proof/4ef684cb-be82-49ba-8b08-f81de8a42dbb",
+    "sessionId": null
+  },
+  {
+    "pid": 3919223,
+    "method": "session/prompt",
+    "cwd": null,
+    "sessionId": "2d5d9dd8-3554-468c-9f10-57388ca6f7f7"
+  },
+  {
+    "pid": 3924727,
+    "method": "session/new",
+    "cwd": "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6HKYQ3N1CFZCKHBHF53DV6Q",
+    "sessionId": null
+  },
+  {
+    "pid": 3925069,
+    "method": "session/load",
+    "cwd": "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6HKYQ3N1CFZCKHBHF53DV6Q/.test-t3-runtime/home/state/t3-mirrors/workspaces/proof/4ef684cb-be82-49ba-8b08-f81de8a42dbb",
+    "sessionId": "2d5d9dd8-3554-468c-9f10-57388ca6f7f7"
+  },
+  {
+    "pid": 3925069,
+    "method": "session/prompt",
+    "cwd": null,
+    "sessionId": "2d5d9dd8-3554-468c-9f10-57388ca6f7f7"
+  },
+  {
+    "pid": 3925069,
+    "method": "session/prompt",
+    "cwd": null,
+    "sessionId": "2d5d9dd8-3554-468c-9f10-57388ca6f7f7"
+  },
+  {
+    "pid": 3925069,
+    "method": "session/prompt",
+    "cwd": null,
+    "sessionId": "2d5d9dd8-3554-468c-9f10-57388ca6f7f7"
+  },
+  {
+    "pid": 3925069,
+    "method": "session/prompt",
+    "cwd": null,
+    "sessionId": "2d5d9dd8-3554-468c-9f10-57388ca6f7f7"
+  },
+  {
+    "pid": 3925069,
+    "method": "session/prompt",
+    "cwd": null,
+    "sessionId": "2d5d9dd8-3554-468c-9f10-57388ca6f7f7"
+  }
+]

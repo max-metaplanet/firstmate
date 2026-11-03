@@ -1,0 +1,8 @@
+schema=fm-task-inbox.v1
+at=2026-11-03T23:28:55Z
+--
+Direct inbox control.
+schema=fm-task-inbox.v1
+at=2026-11-03T23:30:35Z
+--
+Please record the UI steering proof.

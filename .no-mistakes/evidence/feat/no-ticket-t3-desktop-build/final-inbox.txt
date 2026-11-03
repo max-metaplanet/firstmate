@@ -1,0 +1,8 @@
+schema=fm-task-inbox.v1
+at=2026-11-03T23:47:40Z
+--
+Please verify final privacy behavior.
+schema=fm-task-inbox.v1
+at=2026-11-03T23:47:58Z
+--
+Please retain both ordinary privacy probe lines.
