@@ -72,7 +72,8 @@ A relaunch does take one session reference when the endpoint's own runtime recor
 
 ## Transactional relaunch
 
-`relaunch` is the only verb that changes durable records, so it runs as a transaction with a journal at `state/<id>.control-relaunch`, the prior record preserved beside it, and a ship or scout's prior instructions preserved when a progress note is appended.
+`relaunch` replaces durable task records, so it runs as a transaction with a journal at `state/<id>.control-relaunch`, the prior record preserved beside it, and a ship or scout's prior instructions preserved when a progress note is appended.
+The [`fm-control.sh` header](../bin/fm-control.sh) owns interrupt diagnostic logging and its limits across control verbs.
 
 1. **Resolve the profile.**
    An explicit `--harness`, `--model`, or `--effort` wins.
