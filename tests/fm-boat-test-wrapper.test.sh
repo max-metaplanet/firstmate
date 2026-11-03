@@ -295,6 +295,8 @@ assert json.loads((state / 'fake-vms.json').read_text()) == []
 assert git('log', '-1', '--format=%B').stdout.strip() == b'local-history-secret'
 assert git('config', 'remote.origin.url').stdout.strip() == b'https://local-token@example.invalid/core'
 print('ok - real adapter filters secrets; synthetic history makes all source changed without local metadata')
+git('commit', '--allow-empty', '-qm', 'historical fixture POSTGRES_PASSWORD=postgres')
+refused_tip = git('rev-parse', 'HEAD').stdout.decode().strip()
 # Reuse the real adapter fixture with a clean shallow range. Older unsafe
 # history remains outside depth one and must not travel.
 git('rm', '--', '.env', '.npmrc')
@@ -343,7 +345,8 @@ print('fallback synthetic base proof')
 '''
 r = launch(work, env, 'python3 -c ' + shlex.quote(check), repo / 'bin/fm-boat-test-wrapper.sh')
 assert r.returncode == 0, (r.stdout, r.stderr)
-assert b'falling back to synthetic snapshot; history refused: excluded path: .env' in r.stderr
+reason = 'history refused: credential-looking or binary commit: ' + refused_tip
+assert ('falling back to synthetic snapshot; ' + reason).encode() in r.stderr
 assert b'fallback synthetic base proof' in r.stdout
 assert b'synthetic empty Git base' in r.stdout + r.stderr
 assert b'screened shallow Git history' not in r.stdout + r.stderr
@@ -351,7 +354,7 @@ result_path = next(line.split(': ', 2)[2] for line in r.stderr.decode().splitlin
                    if line.startswith('boat-test-wrapper: result.json: '))
 result = json.loads(Path(result_path).read_text())
 assert result['history'] == 'fallback-synthetic'
-assert '.env' in result['history_reason']
+assert result['history_reason'] == reason
 print('ok - refused history uses the synthetic contract base and full-suite fallback')
 
 PY
