@@ -332,6 +332,7 @@ for name, noemit, args, routed in (
     ('config-noemit', 'true', (), True),
     ('config-emits', 'false', (), False),
     ('build', 'true', ('-b',), False),
+    ('build-long', 'true', ('--build',), False),
     ('unparsable-config', 'broken', (), False),
 ):
     p, work, config, state, env = case('tsc-' + name, declaration=DECLARED)
@@ -357,11 +358,17 @@ if '--showConfig' in args:
     print(json.dumps({'compilerOptions': options}))
 else:
     if options.get('incremental') or options.get('composite'):
-        Path(options['tsBuildInfoFile']).write_text('build info\\n')
+        Path(options.get('tsBuildInfoFile', 'cache.tsbuildinfo')).write_text('build info\\n')
     print('ran held=' + os.environ.get('FM_BUILD_LOCK_HELD', ''))
 '''
 for name, settings, args, routed in (
-    ('incremental-config', {'incremental': True}, (), False),
+    ('incremental-config', {'incremental': True}, (), True),
+    ('named-config', {'incremental': True, 'tsBuildInfoFile': 'cache.tsbuildinfo'}, (), False),
+    ('named-without-incremental', {'tsBuildInfoFile': 'cache.tsbuildinfo'}, (), False),
+    ('named-cli', {'incremental': True}, ('--tsBuildInfoFile', 'cache.tsbuildinfo'), False),
+    ('named-cli-equals', {'incremental': True}, ('--tsBuildInfoFile=cache.tsbuildinfo',), False),
+    ('emit-enabled', {'noEmit': False}, (), False),
+    ('emit-unspecified', {'noEmit': None}, (), False),
     ('composite-config', {'composite': True}, (), False),
     ('composite-without-incremental', {'composite': True, 'incremental': False}, (), False),
     ('incremental-cli', {}, ('--incremental',), False),
@@ -373,8 +380,9 @@ for name, settings, args, routed in (
 ):
     p, work, config, state, env = case('tsc-output-' + name, declaration=DECLARED)
     (work / 'tsc.py').write_text(TSC_OUTPUTS)
-    (work / 'tsconfig.json').write_text(json.dumps({'compilerOptions': {
-        'noEmit': True, 'tsBuildInfoFile': 'cache.tsbuildinfo', **settings}}))
+    compiler_options = {key: value for key, value in {'noEmit': True, **settings}.items()
+                        if value is not None}
+    (work / 'tsconfig.json').write_text(json.dumps({'compilerOptions': compiler_options}))
     subprocess.run(['git', '-C', str(work), 'add', 'tsc.py', 'tsconfig.json'],
                    check=True, capture_output=True)
     subprocess.run(['git', '-C', str(work), 'commit', '-qm', 'tsc fixture'],
@@ -384,13 +392,18 @@ for name, settings, args, routed in (
     assert r.returncode == 0 and called(state) == routed, (name, r.stdout, r.stderr)
     if routed:
         assert not (work / 'cache.tsbuildinfo').exists(), name
-        assert r.stdout.endswith('held=\n'), (name, r.stdout)
+        assert r.stdout == 'ran held=\n', (name, r.stdout)
     else:
-        assert (work / 'cache.tsbuildinfo').read_text() == 'build info\n', name
+        if settings.get('incremental') or settings.get('composite') or '--incremental' in args:
+            if 'false' not in args:
+                assert (work / 'cache.tsbuildinfo').read_text() == 'build info\n', name
         assert not r.stdout.endswith('held=\n'), (name, r.stdout)
-print('ok - incremental and composite build info stays local, honoring resolved CLI overrides')
+    notice = 'heavy-route: the incremental cache is not preserved for this run\n'
+    assert r.stderr.count(notice) == int(name == 'incremental-config'), (name, r.stderr)
+    assert 'incremental cache' not in r.stdout, (name, r.stdout)
+print('ok - tsc routes implicit incremental caches but preserves named outputs locally')
 
-for flag in ('--generateTrace', '--generateCpuProfile'):
+for flag in ('--generateTrace', '--generateCpuProfile', '--tsBuildInfoFile'):
     for spelling in ('separate', 'equals'):
         p, work, config, state, env = case(flag[2:] + '-' + spelling, declaration=DECLARED)
         assert publish(config, env).returncode == 0
@@ -403,7 +416,7 @@ for flag in ('--generateTrace', '--generateCpuProfile'):
         assert r.returncode == 0 and not called(state), (flag, spelling, r.stderr)
         assert not r.stdout.endswith('held=\n'), r.stdout
         assert not probe.exists(), 'diagnostic outputs must be detected before probing tsc'
-print('ok - tsc trace and CPU profile options stay local without configuration probes')
+print('ok - tsc trace, CPU profile and named build-info options stay local without probes')
 
 p, work, config, state, env = case('vitest-snapshot', declaration=DECLARED)
 assert publish(config, env).returncode == 0

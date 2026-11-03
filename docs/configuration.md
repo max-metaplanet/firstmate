@@ -1835,7 +1835,8 @@ These heavy work items stay local even in a declared project:
 Declare any other command that needs credentials in `local-only` rather than letting it reach a machine that cannot authenticate it.
 The upload is HEAD's tracked files with their uncommitted edits plus every newly staged addition.
 An untracked file that is not ignored never travels, so while one exists the command stays local and the one-line notice names the first such file.
-Nothing a remote run writes comes back, so a command whose job is to write into the worktree stays local: a `tsc` build, a `tsc` whose resolved configuration does not prove `noEmit` with `incremental` and `composite` disabled, a `tsc` requesting `--generateTrace` or `--generateCpuProfile`, and a Vitest or ESLint run that updates snapshots, writes coverage, fixes files, or writes reports, caches, or suppressions.
+Nothing a remote run writes comes back, so a command whose job is to write into the worktree stays local: a `tsc` build, a `tsc` whose resolved configuration does not prove `noEmit` with `composite` disabled, a `tsc` with an explicit `--incremental` request or a named `tsBuildInfoFile` destination, a `tsc` requesting `--generateTrace` or `--generateCpuProfile`, and a Vitest or ESLint run that updates snapshots, writes coverage, fixes files, or writes reports, caches, or suppressions.
+A `tsc` with `noEmit` may route with an implicit incremental cache when no build-info destination is named; one stderr notice states that the incremental cache is not preserved for that run.
 Routing requires every option to be recognized and safe for remote input and output; unknown, malformed, or ambiguous arguments stay local.
 ESLint commands with stdin enabled stay local because Boat does not receive their piped source input.
 A Vitest configuration file that enables coverage or sets a reporter `outputFile` is invisible to argument parsing, so a project with one declares `vitest` in `local-only`.

@@ -287,16 +287,21 @@ def staged_or_untracked(root):
 
 
 def proves_no_outputs(command):
-    """Whether tsc's resolved configuration prevents file output."""
+    """Whether tsc emits nothing except an unnamed incremental cache."""
     try:
         shown = subprocess.run([*command, "--showConfig"], capture_output=True, text=True,
                                timeout=60, env=dict(os.environ, FM_BUILD_LOCK_BYPASS="1"))
         options = json.loads(shown.stdout).get("compilerOptions")
     except (OSError, subprocess.SubprocessError, ValueError, AttributeError):
         return False
-    return (shown.returncode == 0 and isinstance(options, dict) and
-            options.get("noEmit") is True and not options.get("incremental") and
-            not options.get("composite"))
+    if not (shown.returncode == 0 and isinstance(options, dict) and
+            options.get("noEmit") is True and not options.get("composite") and
+            "tsBuildInfoFile" not in options):
+        return False
+    if options.get("incremental"):
+        print("heavy-route: the incremental cache is not preserved for this run",
+              file=sys.stderr, flush=True)
+    return True
 
 
 OPTION_TYPES = {
@@ -310,7 +315,8 @@ OPTION_TYPES = {
         **dict.fromkeys(("-f", "--format", "--max-warnings"), ("value", "safe")),
     },
     "tsc": {
-        **dict.fromkeys(("--noEmit", "--incremental", "--composite"), ("bool", "resolved")),
+        **dict.fromkeys(("--noEmit", "--composite"), ("bool", "resolved")),
+        "--incremental": ("bool", "disabled"),
         "--pretty": ("bool", "safe"),
         **dict.fromkeys(("-b", "--build"), ("bool", "never")),
         **dict.fromkeys(("-p", "--project"), ("value", "safe")),
