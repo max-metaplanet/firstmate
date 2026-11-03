@@ -67,6 +67,8 @@ def turn(cwd):
     reply = json.loads(out.splitlines()[0])['params']['update']['content']['text']
     return [{'role': 'user', 'text': text}, {'role': 'assistant', 'text': reply}]
 if args[:2] == ['project', 'add']:
+    if (base / 'project-failure').exists():
+        sys.exit(4)
     print('added')
 elif args[:2] == ['thread', 'start']:
     n = len(list(base.glob('identity-*.json'))) + 1
@@ -163,6 +165,21 @@ def sent():
 command('sync'); command('kick')
 assert not (state / 't3-mirrors').exists() and not calls(['project', 'add'])
 (config / 't3-mirrors').write_text('1\n')
+task('retry')
+(base / 'project-failure').touch()
+command('sync')
+assert calls(['project', 'add']) and not calls(['thread', 'start'])
+assert not (maps / 'retry.json').exists()
+(base / 'project-failure').unlink()
+command('sync')
+retried = get(maps / 'retry.json')
+assert retried['phase'] == 'ready' and not retried['pending']
+assert len(calls(['thread', 'start'])) == 1
+(state / 'retry.meta').unlink()
+command('retire', 'retry')
+assert not (maps / 'retry.json').exists()
+assert (base / ('removed-' + retried['projectId'])).exists()
+print('ok - project setup failure retries publication and the recovered mirror retires normally')
 task('alpha'); task('platform', True)
 command('sync')
 alpha, platform = get(maps / 'alpha.json'), get(maps / 'platform.json')

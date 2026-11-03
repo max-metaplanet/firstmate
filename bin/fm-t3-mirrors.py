@@ -201,9 +201,9 @@ class Publisher:
                       "providerInstanceId": self.connection["provider"], "model": "mirror",
                       "pending": fingerprint, "pending_update": update, "pending_prompt": prompt}
             record["title"] = IDENTITY.title(record)
-            self.save_task(path, record)
             self.project(record)
             IDENTITY.current_task(record)
+            self.save_task(path, record)
             code, out, _ = self.t3("thread", "start", str(workspace), "-", "--title", record["title"],
                                    "--provider", self.connection["provider"], "--model", "mirror", "--json", text=prompt)
             if code:
