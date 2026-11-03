@@ -6,8 +6,12 @@ set -euo pipefail
 work=$(fm_test_tmproot fm-t3-redact)
 python3 - "$ROOT" "$work" <<'PY'
 from pathlib import Path
+import os
+import shlex
+import shutil
 import subprocess
 import sys
+import time
 
 root, work = map(Path, sys.argv[1:])
 filter_path = root / 'bin' / 'fm-t3-redact.py'
@@ -111,4 +115,49 @@ assert 'single-name-secret' not in redact('X=single-name-secret\n')
 assert 'inline-value' not in redact('"ENV_VALUE": "inline-value"\n')
 assert 'half quoted' not in redact('ENV_VALUE="half quoted\n')
 print('ok - control bytes, terminal titles, short private key bodies and env dumps are dropped')
+
+# Privacy oracle: a single logical API_TOKEN assignment must lose its entire
+# value, even when a real 110-column terminal wraps the short suffix onto a
+# second row. Ordinary conversation on either side must remain readable.
+socket = root / f'.t3-redact-{os.getpid()}.sock'
+tmux = [shutil.which('tmux'), '-S', str(socket)]
+secret = 'A' * 100 + 'SENSITIVE_SUFFIX_12345'
+program = (
+    "import time; print('before secret'); "
+    f"print({'API_TOKEN=' + secret!r}); "
+    "print('after secret', flush=True); time.sleep(30)"
+)
+try:
+    subprocess.run([*tmux, '-f', '/dev/null', 'new-session', '-d', '-x', '110',
+                    '-y', '20', '-s', 'privacy',
+                    shlex.join([sys.executable, '-c', program])],
+                   check=True, capture_output=True, timeout=10)
+    deadline = time.monotonic() + 10
+    while True:
+        raw = subprocess.run([*tmux, 'capture-pane', '-p', '-t', 'privacy'],
+                             check=True, capture_output=True, text=True, timeout=10).stdout
+        if 'after secret' in raw:
+            break
+        assert time.monotonic() < deadline, raw
+        time.sleep(0.05)
+    assert 'SENSITIVE_SUFFIX_12345' in raw.splitlines(), raw
+    assert 'API_TOKEN=' + secret not in raw, raw
+    # Address only our owned server while exercising the real capture dispatcher.
+    shim = work / 'tmux'
+    shim.write_text('#!/usr/bin/env bash\nexec ' + shlex.join(tmux) + ' "$@"\n')
+    shim.chmod(0o755)
+    env = dict(os.environ, PATH=str(work) + os.pathsep + os.environ['PATH'])
+    capture = subprocess.run(
+        ['bash', '-c', '. "$1/bin/fm-backend.sh"; fm_backend_capture tmux privacy 80',
+         'privacy-test', str(root)], env=env,
+        check=True, capture_output=True, text=True, timeout=10).stdout
+    filtered = redact(capture)
+    assert 'SENSITIVE_SUFFIX_12345' not in filtered, filtered
+    assert 'AAAA' not in filtered, filtered
+    assert 'before secret' in filtered and 'after secret' in filtered, filtered
+    assert '[redacted]' in filtered, filtered
+finally:
+    subprocess.run([*tmux, 'kill-server'], check=True, capture_output=True, timeout=10)
+    socket.unlink(missing_ok=True)
+print('ok - real wrapped terminal secrets lose their entire value before publication')
 PY
