@@ -1,0 +1,118 @@
+[
+  {
+    "scenario": "prose archive",
+    "depth": 1,
+    "screening": "accepted",
+    "archive_file_bytes": 811,
+    "exported_commits": 2,
+    "cli_exit": 69,
+    "remote_boundary": "Boat key unavailable (intentionally isolated)"
+  },
+  {
+    "scenario": "prose archive",
+    "depth": 2,
+    "screening": "accepted",
+    "archive_file_bytes": 811,
+    "exported_commits": 2,
+    "cli_exit": 69,
+    "remote_boundary": "Boat key unavailable (intentionally isolated)"
+  },
+  {
+    "scenario": "prose archive",
+    "depth": 8,
+    "screening": "accepted",
+    "archive_file_bytes": 811,
+    "exported_commits": 2,
+    "cli_exit": 69,
+    "remote_boundary": "Boat key unavailable (intentionally isolated)"
+  },
+  {
+    "scenario": "before-fix reproduction",
+    "screening": "refused",
+    "message": "history refused: credential-looking or binary blob: .agents/skills/verify-app/features.md"
+  },
+  {
+    "scenario": "short-bearer",
+    "cli_exit": 2,
+    "screening": "refused before archive/remote",
+    "message": "boat-offload: history refused: credential-looking or binary blob: .agents/skills/verify-app/features.md"
+  },
+  {
+    "scenario": "single-bearer",
+    "cli_exit": 2,
+    "screening": "refused before archive/remote",
+    "message": "boat-offload: history refused: credential-looking or binary blob: .agents/skills/verify-app/features.md"
+  },
+  {
+    "scenario": "decision-prefix",
+    "cli_exit": 2,
+    "screening": "refused before archive/remote",
+    "message": "boat-offload: history refused: credential-looking or binary blob: .agents/skills/verify-app/features.md"
+  },
+  {
+    "scenario": "shares-prefix",
+    "cli_exit": 2,
+    "screening": "refused before archive/remote",
+    "message": "boat-offload: history refused: credential-looking or binary blob: .agents/skills/verify-app/features.md"
+  },
+  {
+    "scenario": "quoted-decision",
+    "cli_exit": 2,
+    "screening": "refused before archive/remote",
+    "message": "boat-offload: history refused: credential-looking or binary blob: .agents/skills/verify-app/features.md"
+  },
+  {
+    "scenario": "jwt",
+    "cli_exit": 2,
+    "screening": "refused before archive/remote",
+    "message": "boat-offload: history refused: credential-looking or binary blob: .agents/skills/verify-app/features.md"
+  },
+  {
+    "scenario": "private-key",
+    "cli_exit": 2,
+    "screening": "refused before archive/remote",
+    "message": "boat-offload: history refused: credential-looking or binary blob: .agents/skills/verify-app/features.md"
+  },
+  {
+    "scenario": "secret-assignment",
+    "cli_exit": 2,
+    "screening": "refused before archive/remote",
+    "message": "boat-offload: history refused: credential-looking or binary blob: .agents/skills/verify-app/features.md"
+  },
+  {
+    "scenario": "binary",
+    "cli_exit": 2,
+    "screening": "refused before archive/remote",
+    "message": "boat-offload: history refused: credential-looking or binary blob: .agents/skills/verify-app/features.md"
+  },
+  {
+    "scenario": "commit credential",
+    "cli_exit": 2,
+    "screening": "refused",
+    "message": "boat-offload: history refused: credential-looking or binary commit"
+  },
+  {
+    "scenario": "settings-clean",
+    "archive_includes_settings": true,
+    "cli_exit": 69,
+    "remote_boundary": "isolated missing key"
+  },
+  {
+    "scenario": "settings-short",
+    "archive_includes_settings": false,
+    "cli_exit": 69,
+    "remote_boundary": "isolated missing key"
+  },
+  {
+    "scenario": "settings-quoted",
+    "archive_includes_settings": false,
+    "cli_exit": 69,
+    "remote_boundary": "isolated missing key"
+  },
+  {
+    "scenario": "settings-prefix",
+    "archive_includes_settings": false,
+    "cli_exit": 69,
+    "remote_boundary": "isolated missing key"
+  }
+]
