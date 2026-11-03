@@ -1,0 +1,869 @@
+[
+  {
+    "case": "source-connect",
+    "argv": [
+      "bash",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FH13KMKW3GP6AGY47PMGK1/bin/fm-boat-run.sh",
+      "run",
+      "--worktree",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FH13KMKW3GP6AGY47PMGK1/.boat-live-6ngrifz5/source-connect/repo",
+      "--output",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FH13KMKW3GP6AGY47PMGK1/.boat-live-6ngrifz5/source-connect/output",
+      "--",
+      "true"
+    ],
+    "exit": 75,
+    "stdout": "",
+    "stderr": "boat-offload: skipped in-repo symlink: .agents/skills/verify-connect\nboat-offload: Boat pending cap reached\n",
+    "result": {
+      "kind": "unavailable",
+      "remote_exit": null,
+      "cleanup": "deleted",
+      "swap_gib": 0,
+      "source_head": "8b0c120be5db2c3d862dab751e4746a978f2ab0b",
+      "source_sha256": "e07e82986dedb05b2613afaad3d423c0d514ac7dc5e17f3314ca5e9116549e7e",
+      "execution_error": "Boat pending cap reached",
+      "error": "Boat pending cap reached",
+      "adapter_exit": 75
+    },
+    "archive_members": [
+      "run.sh",
+      "tracked.txt"
+    ],
+    "saved_archive": "~/.no-mistakes/evidence/01M6FH13KMKW3GP6AGY47PMGK1/current-source-connect.tar.gz",
+    "baseline_exit": 2,
+    "baseline_stderr": "boat-offload: source contains unsupported symlink or submodule: .agents/skills/verify-connect\n"
+  },
+  {
+    "case": "source-claude",
+    "argv": [
+      "bash",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FH13KMKW3GP6AGY47PMGK1/bin/fm-boat-run.sh",
+      "run",
+      "--worktree",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FH13KMKW3GP6AGY47PMGK1/.boat-live-6ngrifz5/source-claude/repo",
+      "--output",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FH13KMKW3GP6AGY47PMGK1/.boat-live-6ngrifz5/source-claude/output",
+      "--",
+      "true"
+    ],
+    "exit": 75,
+    "stdout": "",
+    "stderr": "boat-offload: skipped in-repo symlink: .claude/skills\nboat-offload: Boat pending cap reached\n",
+    "result": {
+      "kind": "unavailable",
+      "remote_exit": null,
+      "cleanup": "deleted",
+      "swap_gib": 0,
+      "source_head": "164aa5ed50db74ccbcd5a71280f2e0b7ed3696f2",
+      "source_sha256": "d5e89e73a5935d72b63731380d25391472d10a56468c217ce9ad675cd4234c13",
+      "execution_error": "Boat pending cap reached",
+      "error": "Boat pending cap reached",
+      "adapter_exit": 75
+    },
+    "archive_members": [
+      "run.sh",
+      "tracked.txt"
+    ]
+  },
+  {
+    "case": "source-arbitrary",
+    "argv": [
+      "bash",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FH13KMKW3GP6AGY47PMGK1/bin/fm-boat-run.sh",
+      "run",
+      "--worktree",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FH13KMKW3GP6AGY47PMGK1/.boat-live-6ngrifz5/source-arbitrary/repo",
+      "--output",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FH13KMKW3GP6AGY47PMGK1/.boat-live-6ngrifz5/source-arbitrary/output",
+      "--",
+      "true"
+    ],
+    "exit": 75,
+    "stdout": "",
+    "stderr": "boat-offload: skipped in-repo symlink: link\nboat-offload: Boat pending cap reached\n",
+    "result": {
+      "kind": "unavailable",
+      "remote_exit": null,
+      "cleanup": "deleted",
+      "swap_gib": 0,
+      "source_head": "221a8426efd00c52ba1699c2554168d522dbe6d7",
+      "source_sha256": "2b9f45ed68bf95404d44f0adc049677a5f5b267fba1b3b2016b7613caa80746d",
+      "execution_error": "Boat pending cap reached",
+      "error": "Boat pending cap reached",
+      "adapter_exit": 75
+    },
+    "archive_members": [
+      "run.sh",
+      "tracked.txt"
+    ]
+  },
+  {
+    "case": "source-directory",
+    "argv": [
+      "bash",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FH13KMKW3GP6AGY47PMGK1/bin/fm-boat-run.sh",
+      "run",
+      "--worktree",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FH13KMKW3GP6AGY47PMGK1/.boat-live-6ngrifz5/source-directory/repo",
+      "--output",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FH13KMKW3GP6AGY47PMGK1/.boat-live-6ngrifz5/source-directory/output",
+      "--",
+      "true"
+    ],
+    "exit": 75,
+    "stdout": "",
+    "stderr": "boat-offload: skipped in-repo symlink: link\nboat-offload: Boat pending cap reached\n",
+    "result": {
+      "kind": "unavailable",
+      "remote_exit": null,
+      "cleanup": "deleted",
+      "swap_gib": 0,
+      "source_head": "b5f69402d3bdc1b93355513a883532e028eeffa4",
+      "source_sha256": "683ca83c20d5b70de77aac0574828bcc3fa543ed11047dbfa724a41d206129bb",
+      "execution_error": "Boat pending cap reached",
+      "error": "Boat pending cap reached",
+      "adapter_exit": 75
+    },
+    "archive_members": [
+      "run.sh",
+      "tracked.txt"
+    ]
+  },
+  {
+    "case": "source-escape",
+    "argv": [
+      "bash",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FH13KMKW3GP6AGY47PMGK1/bin/fm-boat-run.sh",
+      "run",
+      "--worktree",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FH13KMKW3GP6AGY47PMGK1/.boat-live-6ngrifz5/source-escape/repo",
+      "--output",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FH13KMKW3GP6AGY47PMGK1/.boat-live-6ngrifz5/source-escape/output",
+      "--",
+      "true"
+    ],
+    "exit": 2,
+    "stdout": "",
+    "stderr": "boat-offload: source refused: unsafe symlink target: dir/link\n",
+    "result": {
+      "kind": "invalid",
+      "remote_exit": null,
+      "cleanup": "not-created",
+      "swap_gib": 0,
+      "error": "source refused: unsafe symlink target: dir/link",
+      "adapter_exit": 2
+    }
+  },
+  {
+    "case": "source-escape-reenter",
+    "argv": [
+      "bash",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FH13KMKW3GP6AGY47PMGK1/bin/fm-boat-run.sh",
+      "run",
+      "--worktree",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FH13KMKW3GP6AGY47PMGK1/.boat-live-6ngrifz5/source-escape-reenter/repo",
+      "--output",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FH13KMKW3GP6AGY47PMGK1/.boat-live-6ngrifz5/source-escape-reenter/output",
+      "--",
+      "true"
+    ],
+    "exit": 2,
+    "stdout": "",
+    "stderr": "boat-offload: source refused: unsafe symlink target: dir/link\n",
+    "result": {
+      "kind": "invalid",
+      "remote_exit": null,
+      "cleanup": "not-created",
+      "swap_gib": 0,
+      "error": "source refused: unsafe symlink target: dir/link",
+      "adapter_exit": 2
+    }
+  },
+  {
+    "case": "source-absolute",
+    "argv": [
+      "bash",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FH13KMKW3GP6AGY47PMGK1/bin/fm-boat-run.sh",
+      "run",
+      "--worktree",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FH13KMKW3GP6AGY47PMGK1/.boat-live-6ngrifz5/source-absolute/repo",
+      "--output",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FH13KMKW3GP6AGY47PMGK1/.boat-live-6ngrifz5/source-absolute/output",
+      "--",
+      "true"
+    ],
+    "exit": 2,
+    "stdout": "",
+    "stderr": "boat-offload: source refused: unsafe symlink target: dir/link\n",
+    "result": {
+      "kind": "invalid",
+      "remote_exit": null,
+      "cleanup": "not-created",
+      "swap_gib": 0,
+      "error": "source refused: unsafe symlink target: dir/link",
+      "adapter_exit": 2
+    }
+  },
+  {
+    "case": "source-credential",
+    "argv": [
+      "bash",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FH13KMKW3GP6AGY47PMGK1/bin/fm-boat-run.sh",
+      "run",
+      "--worktree",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FH13KMKW3GP6AGY47PMGK1/.boat-live-6ngrifz5/source-credential/repo",
+      "--output",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FH13KMKW3GP6AGY47PMGK1/.boat-live-6ngrifz5/source-credential/output",
+      "--",
+      "true"
+    ],
+    "exit": 2,
+    "stdout": "",
+    "stderr": "boat-offload: source refused: credential-looking or binary symlink target: dir/link\n",
+    "result": {
+      "kind": "invalid",
+      "remote_exit": null,
+      "cleanup": "not-created",
+      "swap_gib": 0,
+      "error": "source refused: credential-looking or binary symlink target: dir/link",
+      "adapter_exit": 2
+    }
+  },
+  {
+    "case": "source-binary",
+    "argv": [
+      "bash",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FH13KMKW3GP6AGY47PMGK1/bin/fm-boat-run.sh",
+      "run",
+      "--worktree",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FH13KMKW3GP6AGY47PMGK1/.boat-live-6ngrifz5/source-binary/repo",
+      "--output",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FH13KMKW3GP6AGY47PMGK1/.boat-live-6ngrifz5/source-binary/output",
+      "--",
+      "true"
+    ],
+    "exit": 2,
+    "stdout": "",
+    "stderr": "boat-offload: source refused: credential-looking or binary symlink target: dir/link\n",
+    "result": {
+      "kind": "invalid",
+      "remote_exit": null,
+      "cleanup": "not-created",
+      "swap_gib": 0,
+      "error": "source refused: credential-looking or binary symlink target: dir/link",
+      "adapter_exit": 2
+    }
+  },
+  {
+    "case": "source-parent",
+    "argv": [
+      "bash",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FH13KMKW3GP6AGY47PMGK1/bin/fm-boat-run.sh",
+      "run",
+      "--worktree",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FH13KMKW3GP6AGY47PMGK1/.boat-live-6ngrifz5/source-parent/repo",
+      "--output",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FH13KMKW3GP6AGY47PMGK1/.boat-live-6ngrifz5/source-parent/output",
+      "--",
+      "true"
+    ],
+    "exit": 2,
+    "stdout": "",
+    "stderr": "boat-offload: source symlink refused: dir/link\n",
+    "result": {
+      "kind": "invalid",
+      "remote_exit": null,
+      "cleanup": "not-created",
+      "swap_gib": 0,
+      "error": "source symlink refused: dir/link",
+      "adapter_exit": 2
+    }
+  },
+  {
+    "case": "source-submodule",
+    "argv": [
+      "bash",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FH13KMKW3GP6AGY47PMGK1/bin/fm-boat-run.sh",
+      "run",
+      "--worktree",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FH13KMKW3GP6AGY47PMGK1/.boat-live-6ngrifz5/source-submodule/repo",
+      "--output",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FH13KMKW3GP6AGY47PMGK1/.boat-live-6ngrifz5/source-submodule/output",
+      "--",
+      "true"
+    ],
+    "exit": 2,
+    "stdout": "",
+    "stderr": "boat-offload: source contains unsupported symlink or submodule: module\n",
+    "result": {
+      "kind": "invalid",
+      "remote_exit": null,
+      "cleanup": "not-created",
+      "swap_gib": 0,
+      "error": "source contains unsupported symlink or submodule: module",
+      "adapter_exit": 2
+    }
+  },
+  {
+    "case": "history-connect",
+    "argv": [
+      "bash",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FH13KMKW3GP6AGY47PMGK1/bin/fm-boat-run.sh",
+      "run",
+      "--worktree",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FH13KMKW3GP6AGY47PMGK1/.boat-live-6ngrifz5/history-connect/repo",
+      "--output",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FH13KMKW3GP6AGY47PMGK1/.boat-live-6ngrifz5/history-connect/output",
+      "--history-depth",
+      "3",
+      "--",
+      "true"
+    ],
+    "exit": 75,
+    "stdout": "",
+    "stderr": "boat-offload: skipped in-repo symlink: .agents/skills/verify-connect\nboat-offload: history withheld 1 object(s) from the upload, 0 of them screened historical blobs\nboat-offload: Boat pending cap reached\n",
+    "result": {
+      "kind": "unavailable",
+      "remote_exit": null,
+      "cleanup": "deleted",
+      "swap_gib": 0,
+      "source_head": "4a546f79c72a5a3d085c65912c1f98a7c74d3e8c",
+      "source_sha256": "b4e76d5faf9f368127ecab791f7c9bbb9e318bb50a7118ba1bf5c99af69f2fde",
+      "execution_error": "Boat pending cap reached",
+      "error": "Boat pending cap reached",
+      "adapter_exit": 75
+    },
+    "archive_members": [
+      "run.sh",
+      "tracked.txt",
+      ".git",
+      ".git/HEAD",
+      ".git/config",
+      ".git/index",
+      ".git/objects",
+      ".git/objects/info",
+      ".git/objects/pack",
+      ".git/objects/pack/screened-01ed755079bd5cd1c1f17f1ac5941ae7178a8e86.idx",
+      ".git/objects/pack/screened-01ed755079bd5cd1c1f17f1ac5941ae7178a8e86.pack",
+      ".git/objects/pack/screened-01ed755079bd5cd1c1f17f1ac5941ae7178a8e86.promisor",
+      ".git/objects/pack/screened-01ed755079bd5cd1c1f17f1ac5941ae7178a8e86.rev",
+      ".git/refs",
+      ".git/refs/heads",
+      ".git/refs/heads/fm-boat-test",
+      ".git/refs/remotes",
+      ".git/refs/remotes/origin",
+      ".git/refs/remotes/origin/main",
+      ".git/refs/tags"
+    ],
+    "historical_target": "../../tracked.txt",
+    "fsck_exit": 0,
+    "fsck_stdout": "",
+    "fsck_stderr": "",
+    "saved_archive": "~/.no-mistakes/evidence/01M6FH13KMKW3GP6AGY47PMGK1/current-history-connect.tar.gz",
+    "baseline_exit": 2,
+    "baseline_stderr": "boat-offload: source contains unsupported symlink or submodule: .agents/skills/verify-connect\n"
+  },
+  {
+    "case": "history-claude",
+    "argv": [
+      "bash",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FH13KMKW3GP6AGY47PMGK1/bin/fm-boat-run.sh",
+      "run",
+      "--worktree",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FH13KMKW3GP6AGY47PMGK1/.boat-live-6ngrifz5/history-claude/repo",
+      "--output",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FH13KMKW3GP6AGY47PMGK1/.boat-live-6ngrifz5/history-claude/output",
+      "--history-depth",
+      "3",
+      "--",
+      "true"
+    ],
+    "exit": 75,
+    "stdout": "",
+    "stderr": "boat-offload: skipped in-repo symlink: .claude/skills\nboat-offload: history withheld 1 object(s) from the upload, 0 of them screened historical blobs\nboat-offload: Boat pending cap reached\n",
+    "result": {
+      "kind": "unavailable",
+      "remote_exit": null,
+      "cleanup": "deleted",
+      "swap_gib": 0,
+      "source_head": "1a2fc8a624d5557f52e8b414db6cfe2926c5f88a",
+      "source_sha256": "5989529c02c7f3f1544a7ec756a740a0bf8f2ad254c936898f59c8e4e6408419",
+      "execution_error": "Boat pending cap reached",
+      "error": "Boat pending cap reached",
+      "adapter_exit": 75
+    },
+    "archive_members": [
+      "run.sh",
+      "tracked.txt",
+      ".git",
+      ".git/HEAD",
+      ".git/config",
+      ".git/index",
+      ".git/objects",
+      ".git/objects/info",
+      ".git/objects/pack",
+      ".git/objects/pack/screened-be13060a033b46c73cc9403515ef0a920b115e3c.idx",
+      ".git/objects/pack/screened-be13060a033b46c73cc9403515ef0a920b115e3c.pack",
+      ".git/objects/pack/screened-be13060a033b46c73cc9403515ef0a920b115e3c.promisor",
+      ".git/objects/pack/screened-be13060a033b46c73cc9403515ef0a920b115e3c.rev",
+      ".git/refs",
+      ".git/refs/heads",
+      ".git/refs/heads/fm-boat-test",
+      ".git/refs/remotes",
+      ".git/refs/remotes/origin",
+      ".git/refs/remotes/origin/main",
+      ".git/refs/tags"
+    ],
+    "historical_target": "../.agents/skills",
+    "fsck_exit": 0,
+    "fsck_stdout": "",
+    "fsck_stderr": ""
+  },
+  {
+    "case": "history-arbitrary",
+    "argv": [
+      "bash",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FH13KMKW3GP6AGY47PMGK1/bin/fm-boat-run.sh",
+      "run",
+      "--worktree",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FH13KMKW3GP6AGY47PMGK1/.boat-live-6ngrifz5/history-arbitrary/repo",
+      "--output",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FH13KMKW3GP6AGY47PMGK1/.boat-live-6ngrifz5/history-arbitrary/output",
+      "--history-depth",
+      "3",
+      "--",
+      "true"
+    ],
+    "exit": 75,
+    "stdout": "",
+    "stderr": "boat-offload: skipped in-repo symlink: link\nboat-offload: history withheld 1 object(s) from the upload, 0 of them screened historical blobs\nboat-offload: Boat pending cap reached\n",
+    "result": {
+      "kind": "unavailable",
+      "remote_exit": null,
+      "cleanup": "deleted",
+      "swap_gib": 0,
+      "source_head": "4c4bd6bfb8a12883825b853052b9b8f318e1e864",
+      "source_sha256": "e793e4936b7e729cff932df54f078333fcc12b9f6557eb99c2ffb6d278414be8",
+      "execution_error": "Boat pending cap reached",
+      "error": "Boat pending cap reached",
+      "adapter_exit": 75
+    },
+    "archive_members": [
+      "run.sh",
+      "tracked.txt",
+      ".git",
+      ".git/HEAD",
+      ".git/config",
+      ".git/index",
+      ".git/objects",
+      ".git/objects/info",
+      ".git/objects/pack",
+      ".git/objects/pack/screened-8f84d34f26fb33cfe7bbf1e3471f3ec546514044.idx",
+      ".git/objects/pack/screened-8f84d34f26fb33cfe7bbf1e3471f3ec546514044.pack",
+      ".git/objects/pack/screened-8f84d34f26fb33cfe7bbf1e3471f3ec546514044.promisor",
+      ".git/objects/pack/screened-8f84d34f26fb33cfe7bbf1e3471f3ec546514044.rev",
+      ".git/refs",
+      ".git/refs/heads",
+      ".git/refs/heads/fm-boat-test",
+      ".git/refs/remotes",
+      ".git/refs/remotes/origin",
+      ".git/refs/remotes/origin/main",
+      ".git/refs/tags"
+    ],
+    "historical_target": "tracked.txt",
+    "fsck_exit": 0,
+    "fsck_stdout": "",
+    "fsck_stderr": ""
+  },
+  {
+    "case": "history-directory",
+    "argv": [
+      "bash",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FH13KMKW3GP6AGY47PMGK1/bin/fm-boat-run.sh",
+      "run",
+      "--worktree",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FH13KMKW3GP6AGY47PMGK1/.boat-live-6ngrifz5/history-directory/repo",
+      "--output",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FH13KMKW3GP6AGY47PMGK1/.boat-live-6ngrifz5/history-directory/output",
+      "--history-depth",
+      "3",
+      "--",
+      "true"
+    ],
+    "exit": 75,
+    "stdout": "",
+    "stderr": "boat-offload: skipped in-repo symlink: link\nboat-offload: history withheld 1 object(s) from the upload, 0 of them screened historical blobs\nboat-offload: Boat pending cap reached\n",
+    "result": {
+      "kind": "unavailable",
+      "remote_exit": null,
+      "cleanup": "deleted",
+      "swap_gib": 0,
+      "source_head": "bf5826b6d399255ff18f4c080868f157155f6b26",
+      "source_sha256": "8fe157cccfad0d90e1a14dacf95f10e5731e791a3ae6fe800570d62f4d850a2b",
+      "execution_error": "Boat pending cap reached",
+      "error": "Boat pending cap reached",
+      "adapter_exit": 75
+    },
+    "archive_members": [
+      "run.sh",
+      "tracked.txt",
+      ".git",
+      ".git/HEAD",
+      ".git/config",
+      ".git/index",
+      ".git/objects",
+      ".git/objects/info",
+      ".git/objects/pack",
+      ".git/objects/pack/screened-ab5040afc04522d96d5f42d8ca4fb8ea91134dda.idx",
+      ".git/objects/pack/screened-ab5040afc04522d96d5f42d8ca4fb8ea91134dda.pack",
+      ".git/objects/pack/screened-ab5040afc04522d96d5f42d8ca4fb8ea91134dda.promisor",
+      ".git/objects/pack/screened-ab5040afc04522d96d5f42d8ca4fb8ea91134dda.rev",
+      ".git/refs",
+      ".git/refs/heads",
+      ".git/refs/heads/fm-boat-test",
+      ".git/refs/remotes",
+      ".git/refs/remotes/origin",
+      ".git/refs/remotes/origin/main",
+      ".git/refs/tags"
+    ],
+    "historical_target": ".",
+    "fsck_exit": 0,
+    "fsck_stdout": "",
+    "fsck_stderr": ""
+  },
+  {
+    "case": "history-escape",
+    "argv": [
+      "bash",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FH13KMKW3GP6AGY47PMGK1/bin/fm-boat-run.sh",
+      "run",
+      "--worktree",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FH13KMKW3GP6AGY47PMGK1/.boat-live-6ngrifz5/history-escape/repo",
+      "--output",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FH13KMKW3GP6AGY47PMGK1/.boat-live-6ngrifz5/history-escape/output",
+      "--history-depth",
+      "3",
+      "--",
+      "true"
+    ],
+    "exit": 2,
+    "stdout": "",
+    "stderr": "boat-offload: history refused: unsafe symlink target: dir/link\n",
+    "result": {
+      "kind": "invalid",
+      "remote_exit": null,
+      "cleanup": "not-created",
+      "swap_gib": 0,
+      "error": "history refused: unsafe symlink target: dir/link",
+      "adapter_exit": 2
+    }
+  },
+  {
+    "case": "history-escape-reenter",
+    "argv": [
+      "bash",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FH13KMKW3GP6AGY47PMGK1/bin/fm-boat-run.sh",
+      "run",
+      "--worktree",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FH13KMKW3GP6AGY47PMGK1/.boat-live-6ngrifz5/history-escape-reenter/repo",
+      "--output",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FH13KMKW3GP6AGY47PMGK1/.boat-live-6ngrifz5/history-escape-reenter/output",
+      "--history-depth",
+      "3",
+      "--",
+      "true"
+    ],
+    "exit": 2,
+    "stdout": "",
+    "stderr": "boat-offload: history refused: unsafe symlink target: dir/link\n",
+    "result": {
+      "kind": "invalid",
+      "remote_exit": null,
+      "cleanup": "not-created",
+      "swap_gib": 0,
+      "error": "history refused: unsafe symlink target: dir/link",
+      "adapter_exit": 2
+    }
+  },
+  {
+    "case": "history-absolute",
+    "argv": [
+      "bash",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FH13KMKW3GP6AGY47PMGK1/bin/fm-boat-run.sh",
+      "run",
+      "--worktree",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FH13KMKW3GP6AGY47PMGK1/.boat-live-6ngrifz5/history-absolute/repo",
+      "--output",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FH13KMKW3GP6AGY47PMGK1/.boat-live-6ngrifz5/history-absolute/output",
+      "--history-depth",
+      "3",
+      "--",
+      "true"
+    ],
+    "exit": 2,
+    "stdout": "",
+    "stderr": "boat-offload: history refused: unsafe symlink target: dir/link\n",
+    "result": {
+      "kind": "invalid",
+      "remote_exit": null,
+      "cleanup": "not-created",
+      "swap_gib": 0,
+      "error": "history refused: unsafe symlink target: dir/link",
+      "adapter_exit": 2
+    }
+  },
+  {
+    "case": "history-credential",
+    "argv": [
+      "bash",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FH13KMKW3GP6AGY47PMGK1/bin/fm-boat-run.sh",
+      "run",
+      "--worktree",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FH13KMKW3GP6AGY47PMGK1/.boat-live-6ngrifz5/history-credential/repo",
+      "--output",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FH13KMKW3GP6AGY47PMGK1/.boat-live-6ngrifz5/history-credential/output",
+      "--history-depth",
+      "3",
+      "--",
+      "true"
+    ],
+    "exit": 2,
+    "stdout": "",
+    "stderr": "boat-offload: history refused: credential-looking or binary symlink target: dir/link\n",
+    "result": {
+      "kind": "invalid",
+      "remote_exit": null,
+      "cleanup": "not-created",
+      "swap_gib": 0,
+      "error": "history refused: credential-looking or binary symlink target: dir/link",
+      "adapter_exit": 2
+    }
+  },
+  {
+    "case": "history-binary",
+    "argv": [
+      "bash",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FH13KMKW3GP6AGY47PMGK1/bin/fm-boat-run.sh",
+      "run",
+      "--worktree",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FH13KMKW3GP6AGY47PMGK1/.boat-live-6ngrifz5/history-binary/repo",
+      "--output",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FH13KMKW3GP6AGY47PMGK1/.boat-live-6ngrifz5/history-binary/output",
+      "--history-depth",
+      "3",
+      "--",
+      "true"
+    ],
+    "exit": 2,
+    "stdout": "",
+    "stderr": "boat-offload: history refused: credential-looking or binary symlink target: dir/link\n",
+    "result": {
+      "kind": "invalid",
+      "remote_exit": null,
+      "cleanup": "not-created",
+      "swap_gib": 0,
+      "error": "history refused: credential-looking or binary symlink target: dir/link",
+      "adapter_exit": 2
+    }
+  },
+  {
+    "case": "history-parent",
+    "argv": [
+      "bash",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FH13KMKW3GP6AGY47PMGK1/bin/fm-boat-run.sh",
+      "run",
+      "--worktree",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FH13KMKW3GP6AGY47PMGK1/.boat-live-6ngrifz5/history-parent/repo",
+      "--output",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FH13KMKW3GP6AGY47PMGK1/.boat-live-6ngrifz5/history-parent/output",
+      "--history-depth",
+      "3",
+      "--",
+      "true"
+    ],
+    "exit": 2,
+    "stdout": "",
+    "stderr": "boat-offload: source symlink refused: dir/link\n",
+    "result": {
+      "kind": "invalid",
+      "remote_exit": null,
+      "cleanup": "not-created",
+      "swap_gib": 0,
+      "error": "source symlink refused: dir/link",
+      "adapter_exit": 2
+    }
+  },
+  {
+    "case": "history-submodule",
+    "argv": [
+      "bash",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FH13KMKW3GP6AGY47PMGK1/bin/fm-boat-run.sh",
+      "run",
+      "--worktree",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FH13KMKW3GP6AGY47PMGK1/.boat-live-6ngrifz5/history-submodule/repo",
+      "--output",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FH13KMKW3GP6AGY47PMGK1/.boat-live-6ngrifz5/history-submodule/output",
+      "--history-depth",
+      "3",
+      "--",
+      "true"
+    ],
+    "exit": 2,
+    "stdout": "",
+    "stderr": "boat-offload: source contains unsupported symlink or submodule: module\n",
+    "result": {
+      "kind": "invalid",
+      "remote_exit": null,
+      "cleanup": "not-created",
+      "swap_gib": 0,
+      "error": "source contains unsupported symlink or submodule: module",
+      "adapter_exit": 2
+    }
+  },
+  {
+    "case": "history-only-connect",
+    "argv": [
+      "bash",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FH13KMKW3GP6AGY47PMGK1/bin/fm-boat-run.sh",
+      "run",
+      "--worktree",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FH13KMKW3GP6AGY47PMGK1/.boat-live-6ngrifz5/history-only-connect/repo",
+      "--output",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FH13KMKW3GP6AGY47PMGK1/.boat-live-6ngrifz5/history-only-connect/output",
+      "--history-depth",
+      "3",
+      "--",
+      "true"
+    ],
+    "exit": 75,
+    "stdout": "",
+    "stderr": "boat-offload: skipped in-repo symlink: .agents/skills/verify-connect\nboat-offload: history withheld 1 object(s) from the upload, 0 of them screened historical blobs\nboat-offload: Boat pending cap reached\n",
+    "result": {
+      "kind": "unavailable",
+      "remote_exit": null,
+      "cleanup": "deleted",
+      "swap_gib": 0,
+      "source_head": "4fe23ffd87175b9727191e05846718425462e171",
+      "source_sha256": "c74b66412a94d11639211aa5bcc568a5e39ee593f5b96f787d91783ce1730c3b",
+      "execution_error": "Boat pending cap reached",
+      "error": "Boat pending cap reached",
+      "adapter_exit": 75
+    },
+    "archive_members": [
+      "run.sh",
+      "tracked.txt",
+      ".git",
+      ".git/HEAD",
+      ".git/config",
+      ".git/index",
+      ".git/objects",
+      ".git/objects/info",
+      ".git/objects/pack",
+      ".git/objects/pack/screened-d9a81c6076d40dd1c6a446680826403321317bfe.idx",
+      ".git/objects/pack/screened-d9a81c6076d40dd1c6a446680826403321317bfe.pack",
+      ".git/objects/pack/screened-d9a81c6076d40dd1c6a446680826403321317bfe.promisor",
+      ".git/objects/pack/screened-d9a81c6076d40dd1c6a446680826403321317bfe.rev",
+      ".git/refs",
+      ".git/refs/heads",
+      ".git/refs/heads/fm-boat-test",
+      ".git/refs/remotes",
+      ".git/refs/remotes/origin",
+      ".git/refs/remotes/origin/main",
+      ".git/refs/tags"
+    ],
+    "historical_target": "../../tracked.txt",
+    "fsck_exit": 0,
+    "fsck_stdout": "",
+    "fsck_stderr": ""
+  },
+  {
+    "case": "edited-escape",
+    "argv": [
+      "bash",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FH13KMKW3GP6AGY47PMGK1/bin/fm-boat-run.sh",
+      "run",
+      "--worktree",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FH13KMKW3GP6AGY47PMGK1/.boat-live-6ngrifz5/edited-escape/repo",
+      "--output",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FH13KMKW3GP6AGY47PMGK1/.boat-live-6ngrifz5/edited-escape/output",
+      "--",
+      "true"
+    ],
+    "exit": 2,
+    "stdout": "",
+    "stderr": "boat-offload: source refused: unsafe symlink target: .agents/skills/verify-connect\n",
+    "result": {
+      "kind": "invalid",
+      "remote_exit": null,
+      "cleanup": "not-created",
+      "swap_gib": 0,
+      "error": "source refused: unsafe symlink target: .agents/skills/verify-connect",
+      "adapter_exit": 2
+    }
+  },
+  {
+    "case": "removed-current-link",
+    "argv": [
+      "bash",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FH13KMKW3GP6AGY47PMGK1/bin/fm-boat-run.sh",
+      "run",
+      "--worktree",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FH13KMKW3GP6AGY47PMGK1/.boat-live-6ngrifz5/removed-current-link/repo",
+      "--output",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FH13KMKW3GP6AGY47PMGK1/.boat-live-6ngrifz5/removed-current-link/output",
+      "--",
+      "true"
+    ],
+    "exit": 75,
+    "stdout": "",
+    "stderr": "boat-offload: Boat pending cap reached\n",
+    "result": {
+      "kind": "unavailable",
+      "remote_exit": null,
+      "cleanup": "deleted",
+      "swap_gib": 0,
+      "source_head": "4fe23ffd87175b9727191e05846718425462e171",
+      "source_sha256": "ebf9ddf2f03e52e3ff6a47232a8382dc376ef6e7f042422b940859a5e5d74d87",
+      "execution_error": "Boat pending cap reached",
+      "error": "Boat pending cap reached",
+      "adapter_exit": 75
+    },
+    "archive_members": [
+      "run.sh",
+      "tracked.txt"
+    ]
+  },
+  {
+    "case": "regular-replacement",
+    "argv": [
+      "bash",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FH13KMKW3GP6AGY47PMGK1/bin/fm-boat-run.sh",
+      "run",
+      "--worktree",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FH13KMKW3GP6AGY47PMGK1/.boat-live-6ngrifz5/regular-replacement/repo",
+      "--output",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FH13KMKW3GP6AGY47PMGK1/.boat-live-6ngrifz5/regular-replacement/output",
+      "--",
+      "true"
+    ],
+    "exit": 75,
+    "stdout": "",
+    "stderr": "boat-offload: skipped in-repo symlink: .agents/skills/verify-connect\nboat-offload: Boat pending cap reached\n",
+    "result": {
+      "kind": "unavailable",
+      "remote_exit": null,
+      "cleanup": "deleted",
+      "swap_gib": 0,
+      "source_head": "531fecc43f8fdec7142c482039825de5f12ebbfb",
+      "source_sha256": "56803804ffa3cb523bb66464b8e560306b56cc36b9578252f2355776a5591f77",
+      "execution_error": "Boat pending cap reached",
+      "error": "Boat pending cap reached",
+      "adapter_exit": 75
+    },
+    "archive_members": [
+      "run.sh",
+      "tracked.txt"
+    ]
+  }
+]
