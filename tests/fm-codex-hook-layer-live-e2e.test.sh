@@ -91,7 +91,19 @@ test_installed_codex_still_reports_the_hook_feature() {
   printf 'ok - codex %s still publishes the hook feature flag firstmate disables\n' "$CODEX_VERSION"
 }
 
+test_installed_codex_rejects_remote_with_embedded_launch() {
+  local launch flags out rc
+  launch=$(capture_codex_launch embedded --mode no-mistakes --ticket no-ticket --commit-type chore --yolo off)
+  flags=$(codex_global_flags "$launch")
+  out=$(eval "codex $flags --remote unix://$TMP_ROOT/never-connect.sock" 2>&1); rc=$?
+  [ "$rc" -ne 0 ] || fail "codex $CODEX_VERSION accepted remote attachment for an embedded launch"
+  assert_contains "$out" '--no-daemon cannot be used with --remote' \
+    "codex $CODEX_VERSION did not enforce embedded-server launch selection"
+  printf 'ok - codex %s rejects remote attachment for the captured --no-daemon launch without starting a session\n' "$CODEX_VERSION"
+}
+
 test_installed_codex_still_reports_the_hook_feature
 test_installed_codex_disables_hooks_for_the_captured_crewmate_launch
+test_installed_codex_rejects_remote_with_embedded_launch
 
 echo "# all fm-codex-hook-layer-live-e2e tests passed"

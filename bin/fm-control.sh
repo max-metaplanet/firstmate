@@ -151,6 +151,16 @@
 #   - A composer that visibly holds pending text refuses before an exit command
 #     is typed, so existing text is preserved instead of being concatenated.
 #
+# Interrupt diagnostics append to state/<id>.control-interrupt.jsonl under the
+# existing task control lock. Records identify this invocation, its parent PID,
+# verb, recorded harness/seat, backend endpoint and busy generation. Each key
+# or REST cancellation has an attempt and a transport result; a separate
+# observation records the adapter's cancellation claim. Delivery is not proof
+# of cancellation. No prompt, note, credential or arbitrary payload is logged.
+# Logging is best-effort with a stderr warning on failure, never a wake/status
+# event and never a reason to skip recovery keys. This covers fm-control only;
+# absence cannot rule out manual keys, fm-send --key, vendor or external input.
+#
 # Environment knobs (all bounded waits, seconds):
 #   FM_CONTROL_POLL              poll interval for postcondition waits (0.5)
 #   FM_CONTROL_SETTLE_WAIT       adapter acknowledgement wait after interrupt (5)
@@ -428,6 +438,58 @@ fm_backend_validate "$BACKEND" || exit 1
 
 # --- shared helpers ---------------------------------------------------------
 
+CONTROL_INVOCATION="$(date -u +%Y%m%dT%H%M%SZ).$$"
+
+interrupt_audit() {  # <action> <phase> <detail>
+  if ! python3 - "$STATE/$ID.control-interrupt.jsonl" "$CONTROL_INVOCATION" \
+      "$$" "$PPID" "$ID" "$VERB" "$RECORDED_HARNESS" "$BACKEND" "$T" \
+      "$(fm_meta_get "$META" codex_seat)" "$(fm_meta_get "$META" claude_seat)" \
+      "$(fm_busy_current_gen "$STATE" "$ID" 2>/dev/null || true)" "$@" <<'PY_AUDIT'
+import datetime
+import json
+import os
+import sys
+import time
+
+path, invocation, pid, ppid, task, verb, harness, backend, endpoint, codex_seat, claude_seat, generation, action, phase, detail = sys.argv[1:]
+record = dict(schema="fm-control-interrupt.v1", timestamp=datetime.datetime.now(datetime.timezone.utc).isoformat(),
+              epoch_ns=time.time_ns(), invocation=invocation, pid=int(pid), ppid=int(ppid),
+              task=task, verb=verb, harness=harness, backend=backend, endpoint=endpoint,
+              codex_seat=codex_seat, claude_seat=claude_seat, generation=generation,
+              action=action, phase=phase, detail=detail)
+fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+with os.fdopen(fd, "a") as log:
+    log.write(json.dumps(record, separators=(",", ":")) + "\n")
+PY_AUDIT
+  then
+    echo "warning: interrupt diagnostics could not append for task $ID; lifecycle safety checks still apply" >&2
+  fi
+}
+
+send_interrupt_key() {  # <key>
+  local rc
+  interrupt_audit key attempt "$1"
+  if fm_backend_send_key "$BACKEND" "$T" "$1" "$LABEL"; then
+    interrupt_audit key delivered "$1"
+  else
+    rc=$?
+    interrupt_audit key failed "$1"
+    return "$rc"
+  fi
+}
+
+send_interrupt_rest() {
+  local rc
+  interrupt_audit rest attempt turn-cancel
+  if fm_polytoken_rest "$@"; then
+    interrupt_audit rest delivered turn-cancel
+  else
+    rc=$?
+    interrupt_audit rest failed turn-cancel
+    return "$rc"
+  fi
+}
+
 agent_state() {
   fm_backend_agent_state "$BACKEND" "$T"
 }
@@ -536,7 +598,7 @@ dismiss_interrupt_hazard() {  # <key> <ere>
   gap=$(fm_control_interrupt_press_gap "$HARNESS")
   sleep "$gap"
   rendered_matches "$hazard" || return 0
-  fm_backend_send_key "$BACKEND" "$T" "$key" "$LABEL" \
+  send_interrupt_key "$key" \
     || die "task $ID shows the $HARNESS revert picker after its interrupt, and the $key that closes it was not delivered; nothing else was typed. Close it with $key, never Enter, before any other action"
   sleep "$gap"
   ! rendered_matches "$hazard" \
@@ -631,7 +693,7 @@ send_interrupt_keys() {
     entry_before=yes
   fi
   while [ "$i" -lt "$repeat" ]; do
-    fm_backend_send_key "$BACKEND" "$T" "$key" "$LABEL" \
+    send_interrupt_key "$key" \
       || die "interrupt key $key was not delivered to task $ID on $BACKEND"
     i=$((i + 1))
     [ "$i" -lt "$repeat" ] || break
@@ -707,8 +769,9 @@ deliver_interrupt() {
     # hooks would have written lands with the cancel: the settled turn is the
     # typed proof this incarnation is no longer busy, unless a queued prompt
     # has reopened it (fm_polytoken_interrupt_task).
-    cancel=$(fm_polytoken_interrupt_task "$SCRIPT_DIR" "$STATE" "$ID" "$port" "$token" "$SETTLE_WAIT") \
+    cancel=$(fm_polytoken_interrupt_task "$SCRIPT_DIR" "$STATE" "$ID" "$port" "$token" "$SETTLE_WAIT" send_interrupt_rest) \
       || die "task $ID's polytoken turn cancel was not acknowledged on port $port within ${SETTLE_WAIT}s; the interrupt status is unknown, so no further control action is safe here"
+    interrupt_audit cancellation observed "$cancel"
     INTERRUPT_ARMED=yes
     INTERRUPT_HAZARD=none
     printf '%s' "$cancel"
@@ -731,6 +794,7 @@ deliver_interrupt() {
     fi
   fi
   [ "$INTERRUPT_HAZARD" = none ] || cancel="$cancel revert-picker=$INTERRUPT_HAZARD"
+  interrupt_audit cancellation observed "$cancel"
   printf '%s' "$cancel"
 }
 
