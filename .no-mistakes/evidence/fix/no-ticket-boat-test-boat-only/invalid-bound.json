@@ -1,0 +1,10 @@
+{
+  "scenario": "invalid-bound",
+  "exit": 2,
+  "elapsed_seconds": 0.006,
+  "local_command_executed": false,
+  "heavy_lock_created": false,
+  "adapter_results": [],
+  "stdout": "",
+  "stderr": "boat-test-wrapper: unavailable wait must be a nonnegative integer and retry interval a positive integer\n"
+}

@@ -1,0 +1,22 @@
+{
+  "scenario": "default-fallback",
+  "exit": 0,
+  "elapsed_seconds": 0.147,
+  "local_command_executed": true,
+  "heavy_lock_created": true,
+  "adapter_results": [
+    {
+      "kind": "unavailable",
+      "remote_exit": null,
+      "cleanup": "deleted",
+      "swap_gib": 0,
+      "source_head": "e2dab1b6779ed320e01c68b00bc3764284c431b0",
+      "source_sha256": "9a25029e7d6e39ee63bc5c381c53bb9acb1743977b96aa8f37f42f68d1b812b6",
+      "execution_error": "Boat key unavailable",
+      "error": "Boat key unavailable",
+      "adapter_exit": 69
+    }
+  ],
+  "stdout": "LOCAL EXECUTION\n",
+  "stderr": "boat-test-wrapper: result.json: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FF2VKA9VJAAGBZQDZC90Y0/.boat-live-jik8386n/default-fallback/.fm-test-scratch/fm-boat-test.WCnQIa/boat-1/result.json\nboat-offload: Boat key unavailable\nboat-test-wrapper: Boat unavailable (exit 69); running locally through heavy build lock; result.json: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FF2VKA9VJAAGBZQDZC90Y0/.boat-live-jik8386n/default-fallback/.fm-test-scratch/fm-boat-test.WCnQIa/boat-1/result.json\n"
+}

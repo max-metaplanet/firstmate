@@ -1,0 +1,22 @@
+{
+  "scenario": "capped-backoff",
+  "exit": 69,
+  "elapsed_seconds": 1.074,
+  "local_command_executed": false,
+  "heavy_lock_created": false,
+  "adapter_results": [
+    {
+      "kind": "unavailable",
+      "remote_exit": null,
+      "cleanup": "deleted",
+      "swap_gib": 0,
+      "source_head": "88d68609303f01b08eabf2615334d0c8e5c54534",
+      "source_sha256": "916b2521629ca8f5e9e6f4149799aba7a4655e46fb667b9512d9d3010a5bb7ee",
+      "execution_error": "Boat key unavailable",
+      "error": "Boat key unavailable",
+      "adapter_exit": 69
+    }
+  ],
+  "stdout": "",
+  "stderr": "boat-test-wrapper: result.json: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FF2VKA9VJAAGBZQDZC90Y0/.boat-live-jik8386n/capped-backoff/.fm-test-scratch/fm-boat-test.8JCI63/boat-1/result.json\nboat-offload: Boat key unavailable\nboat-test-wrapper: Boat unavailable after 1 attempts; Test failed; result.json: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FF2VKA9VJAAGBZQDZC90Y0/.boat-live-jik8386n/capped-backoff/.fm-test-scratch/fm-boat-test.8JCI63/boat-1/result.json\n"
+}

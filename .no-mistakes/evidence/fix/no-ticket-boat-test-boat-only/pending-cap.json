@@ -1,0 +1,44 @@
+{
+  "scenario": "pending-cap",
+  "exit": 75,
+  "elapsed_seconds": 3.259,
+  "local_command_executed": false,
+  "heavy_lock_created": false,
+  "adapter_results": [
+    {
+      "kind": "unavailable",
+      "remote_exit": null,
+      "cleanup": "deleted",
+      "swap_gib": 0,
+      "source_head": "1c53537fa60a032d4c2da1a6879b7a864f78d292",
+      "source_sha256": "252009dc000aad2fda31e59ef0910219145c056c795954e697682ea723561307",
+      "execution_error": "Boat pending cap reached",
+      "error": "Boat pending cap reached",
+      "adapter_exit": 75
+    },
+    {
+      "kind": "unavailable",
+      "remote_exit": null,
+      "cleanup": "deleted",
+      "swap_gib": 0,
+      "source_head": "1c53537fa60a032d4c2da1a6879b7a864f78d292",
+      "source_sha256": "2690e6847af07e68499d2424dee1c72cb6710734045a3d1bcb3ed3447c549c73",
+      "execution_error": "Boat pending cap reached",
+      "error": "Boat pending cap reached",
+      "adapter_exit": 75
+    },
+    {
+      "kind": "unavailable",
+      "remote_exit": null,
+      "cleanup": "deleted",
+      "swap_gib": 0,
+      "source_head": "1c53537fa60a032d4c2da1a6879b7a864f78d292",
+      "source_sha256": "8e584ce307025da1d0982eeff8a8903e1e7f2f24a2d6f1f3dc9fbe45433f5eb6",
+      "execution_error": "Boat pending cap reached",
+      "error": "Boat pending cap reached",
+      "adapter_exit": 75
+    }
+  ],
+  "stdout": "",
+  "stderr": "boat-test-wrapper: result.json: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FF2VKA9VJAAGBZQDZC90Y0/.boat-live-jik8386n/pending-cap/.fm-test-scratch/fm-boat-test.OU2q4u/boat-1/result.json\nboat-offload: Boat pending cap reached\nboat-test-wrapper: result.json: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FF2VKA9VJAAGBZQDZC90Y0/.boat-live-jik8386n/pending-cap/.fm-test-scratch/fm-boat-test.OU2q4u/boat-2/result.json\nboat-offload: Boat pending cap reached\nboat-test-wrapper: result.json: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FF2VKA9VJAAGBZQDZC90Y0/.boat-live-jik8386n/pending-cap/.fm-test-scratch/fm-boat-test.OU2q4u/boat-3/result.json\nboat-offload: Boat pending cap reached\nboat-test-wrapper: Boat unavailable after 3 attempts; Test failed; result.json: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FF2VKA9VJAAGBZQDZC90Y0/.boat-live-jik8386n/pending-cap/.fm-test-scratch/fm-boat-test.OU2q4u/boat-3/result.json\n"
+}
