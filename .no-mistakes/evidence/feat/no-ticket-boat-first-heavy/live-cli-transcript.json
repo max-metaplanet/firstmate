@@ -1,0 +1,121 @@
+[
+  {
+    "case": "source-evidence",
+    "exit": 69,
+    "stdout": "",
+    "stderr": "boat-offload: excluded allowlisted file with credential-looking content: .claude/commands/reimage-dev.md\nboat-offload: Boat key unavailable\n",
+    "result": {
+      "kind": "unavailable",
+      "remote_exit": null,
+      "cleanup": "deleted",
+      "swap_gib": 0,
+      "source_head": "0e427a310206cc0a9e2328950cd9dc4f3422ccd0",
+      "source_sha256": "baa6e388a94b385cb7555ceadf3da7f24688e6da5264385e8a2faa400eee6beb",
+      "execution_error": "Boat key unavailable",
+      "error": "Boat key unavailable",
+      "adapter_exit": 69
+    }
+  },
+  {
+    "case": "history-evidence",
+    "exit": 69,
+    "stdout": "",
+    "stderr": "boat-offload: history withheld 1 object(s) from the upload, 1 of them screened historical blobs; first old.txt\nboat-offload: Boat key unavailable\n",
+    "result": {
+      "kind": "unavailable",
+      "remote_exit": null,
+      "cleanup": "deleted",
+      "swap_gib": 0,
+      "source_head": "cd4df2dabc06d2f0c46560fda04eb03968316bc5",
+      "source_sha256": "723a373405bf8fc16d3b8933e62e266681067eec6fd6ae8bce5b846b141dc1ae",
+      "execution_error": "Boat key unavailable",
+      "error": "Boat key unavailable",
+      "adapter_exit": 69
+    }
+  },
+  {
+    "case": "unsafe-history",
+    "exit": 2,
+    "stdout": "",
+    "stderr": "boat-offload: history refused: credential-looking or binary commit\n",
+    "result": {
+      "kind": "invalid",
+      "remote_exit": null,
+      "cleanup": "not-created",
+      "swap_gib": 0,
+      "error": "history refused: credential-looking or binary commit",
+      "adapter_exit": 2
+    }
+  },
+  {
+    "case": "eligible-implicit-incremental",
+    "argv": [
+      "node",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FFQ4GGRBJDZCB7MQ06AZ1W/.fm-test-scratch/boat-live-validation/compiler-project/node_modules/typescript/bin/tsc"
+    ],
+    "exit": 0,
+    "stdout": "",
+    "stderr": "heavy-route: the incremental cache is not preserved for this run\nheavy-route: tsc on Boat; output is printed when it finishes; evidence ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FFQ4GGRBJDZCB7MQ06AZ1W/.fm-test-scratch/boat-live-validation/.fm-test-scratch/fm-heavy-route.tsc.797vgj4f/boat/result.json\nboat-offload: Boat key unavailable\nheavy-route: Boat did not run it (unavailable, exit 69); discarded remote stdout; evidence ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FFQ4GGRBJDZCB7MQ06AZ1W/.fm-test-scratch/boat-live-validation/.fm-test-scratch/fm-heavy-route.tsc.797vgj4f/boat/result.json; running locally in a heavy slot\n"
+  },
+  {
+    "case": "compiler-error-survives-fallback",
+    "argv": [
+      "node",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FFQ4GGRBJDZCB7MQ06AZ1W/.fm-test-scratch/boat-live-validation/compiler-project/node_modules/typescript/bin/tsc"
+    ],
+    "exit": 2,
+    "stdout": "index.ts(1,7): error TS2322: Type 'string' is not assignable to type 'number'.\n",
+    "stderr": "heavy-route: the incremental cache is not preserved for this run\nheavy-route: tsc on Boat; output is printed when it finishes; evidence ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FFQ4GGRBJDZCB7MQ06AZ1W/.fm-test-scratch/boat-live-validation/.fm-test-scratch/fm-heavy-route.tsc.d948a0yc/boat/result.json\nboat-offload: Boat key unavailable\nheavy-route: Boat did not run it (unavailable, exit 69); discarded remote stdout; evidence ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FFQ4GGRBJDZCB7MQ06AZ1W/.fm-test-scratch/boat-live-validation/.fm-test-scratch/fm-heavy-route.tsc.d948a0yc/boat/result.json; running locally in a heavy slot\n"
+  },
+  {
+    "case": "named-build-info-stays-local",
+    "argv": [
+      "node",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FFQ4GGRBJDZCB7MQ06AZ1W/.fm-test-scratch/boat-live-validation/compiler-project/node_modules/typescript/bin/tsc",
+      "--tsBuildInfoFile",
+      "named.tsbuildinfo"
+    ],
+    "exit": 0,
+    "stdout": "",
+    "stderr": "heavy-route: tsc has unknown or ambiguous options, reads input Boat cannot receive, or writes files Boat would not bring back; running locally in a heavy slot\n"
+  },
+  {
+    "case": "unknown-option-stays-local",
+    "argv": [
+      "node",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FFQ4GGRBJDZCB7MQ06AZ1W/.fm-test-scratch/boat-live-validation/compiler-project/node_modules/typescript/bin/tsc",
+      "--invented-option"
+    ],
+    "exit": 1,
+    "stdout": "error TS5023: Unknown compiler option '--invented-option'.\n",
+    "stderr": "heavy-route: tsc has unknown or ambiguous options, reads input Boat cannot receive, or writes files Boat would not bring back; running locally in a heavy slot\n"
+  },
+  {
+    "case": "untracked-source-stays-local",
+    "argv": [
+      "node",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6FFQ4GGRBJDZCB7MQ06AZ1W/.fm-test-scratch/boat-live-validation/compiler-project/node_modules/typescript/bin/tsc"
+    ],
+    "exit": 0,
+    "stdout": "",
+    "stderr": "heavy-route: untracked file untracked.ts would not travel to Boat; running locally in a heavy slot\n"
+  },
+  {
+    "case": "queue-preflight-stays-local",
+    "exit": 0,
+    "stdout": "local heavy slot claimed\n",
+    "stderr": "heavy-route: queue-preflight is declared local-only for this project; running locally in a heavy slot\n"
+  },
+  {
+    "case": "next-build-stays-local",
+    "exit": 0,
+    "stdout": "local heavy slot claimed\n",
+    "stderr": "heavy-route: next-build has unknown or ambiguous options, reads input Boat cannot receive, or writes files Boat would not bring back; running locally in a heavy slot\n"
+  },
+  {
+    "case": "playwright-stays-local",
+    "exit": 0,
+    "stdout": "local heavy slot claimed\n",
+    "stderr": "heavy-route: playwright is declared local-only for this project; running locally in a heavy slot\n"
+  }
+]

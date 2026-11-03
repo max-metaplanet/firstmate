@@ -1,0 +1,10 @@
+{
+  "original_head": "cd4df2dabc06d2f0c46560fda04eb03968316bc5",
+  "exported_head": "cd4df2dabc06d2f0c46560fda04eb03968316bc5",
+  "original_main": "71467661fde1c3ddb22010c2c59f8e9c69eaad3f",
+  "exported_main": "71467661fde1c3ddb22010c2c59f8e9c69eaad3f",
+  "subjects": "head history\nbase history",
+  "fsck_exit": 0,
+  "historical_credential_blob_read_exit": 128,
+  "skills_target_git_only": "../skills"
+}

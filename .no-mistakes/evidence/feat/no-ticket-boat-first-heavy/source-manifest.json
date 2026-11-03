@@ -1,0 +1,16 @@
+{
+  "members": [
+    ".claude/settings.example.json",
+    ".claude/settings.json",
+    ".claude/settings.local.json",
+    ".github/tools/jev/vendor/.claude/agents/release-engineer.md",
+    ".github/tools/jev/vendor/.claude/agents/security-compliance.md",
+    ".gitignore",
+    ".npmrc",
+    "added.txt",
+    "skills/readme",
+    "vendor/runtime.js"
+  ],
+  "edited_vendor": "edited\n",
+  "assertions": "safe allowlist preserved; bearer-token file excluded; skills symlink skipped; tracked edits/deletions and staged input applied"
+}
