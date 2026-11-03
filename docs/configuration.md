@@ -1824,7 +1824,34 @@ For a declared project's worker-started heavy command, a reason to stay local pr
 `FM_BUILD_LOCK_BYPASS=1 <command>` still skips the slot and the routing together, and a kind named in `local-only` stays local for the whole project.
 
 Only a worker-started heavy command is routed, which leaves the no-mistakes daemon's own steps on their existing path; [`bin/fm-boat-test-wrapper.sh`](../bin/fm-boat-test-wrapper.sh) remains the pipeline's own Boat integration.
-Only a top-level heavy command is routed: one started under turbo, nx, lerna, or a recursive or filtered pnpm (`-r`, `--recursive`, `--filter`) takes a local heavy slot exactly as before, so an orchestrator fanning out many heavy children never starts a machine for each.
+The preload intercepts a top-level turbo, nx, lerna, or recursive or filtered pnpm invocation (`-r`, `--recursive`, `-F`, `--filter`) before it starts its heavy children.
+Orchestrated pnpm routing recognizes only the directly installed `pnpm/bin/pnpm.cjs` entry; Corepack-launched pnpm stays local.
+An eligible invocation runs entirely on one Boat machine, with one local heavy slot for the whole invocation as its fallback.
+An inherited routing marker prevents its children from starting their own Boat jobs after either decision; the ancestor check also keeps independently intercepted children local.
+Commands without `FM_TASK_ID` retain their existing behavior.
+
+Orchestrated routing requires a recognized heavy task name and a proof of every possible task, including dependencies and lifecycle hooks.
+The recognized names are `type-check`, `typecheck`, `check-types`, `lint`, `test`, `test:run`, `test:ci`, and `build`.
+Turbo's JSON dry run supplies its resolved task graph; pnpm's recursive package listing supplies its selected packages.
+pnpm routing requires effective root inclusion to be disabled and other package-selection settings to retain supported defaults; user, global, or environment overrides that change selection keep the invocation local.
+An effective pnpm `tasks` configuration keeps the invocation local because package listing does not prove its task dependencies.
+Nx and Lerna support explicit package tasks with plain `nx:run-script` or single-command `nx:run-commands` targets, without inferred plugins, custom runners, configuration variants, sync generators, custom task inputs, or named inputs.
+Their proof conservatively checks all package tasks that could match, so an unsafe task outside a filter can keep the invocation local.
+Each executable task must be a single `tsc`, `eslint`, or `vitest run` command that passes the same argument, resolved TypeScript configuration, and project `local-only` checks as a top-level heavy command.
+Unknown scripts, shell programs, forwarded arguments, graph shapes, or orchestration options keep the whole invocation local with one notice.
+Only package-selection, concurrency, and console-output options named by the router's option allowlist are accepted.
+Tool-specific environment overrides (`TURBO_*`, `NX_*`, and `LERNA_*` for their respective orchestrators) keep the invocation local before graph probes.
+Turbo, Nx, and Lerna require a launcher that resolves inside the project; external launchers without that proof stay local even when a same-name project tool exists.
+Git-history filters stay local because Git history is not uploaded.
+Probes run with the preload bypassed and do not execute the task scripts.
+
+Orchestrator caches and task outputs are not returned.
+pnpm invocations with effective `report-summary` enabled stay local so their requested summary is retained.
+Turbo tasks therefore require `cache: false` or the invocation's explicit `--no-cache`, and no declared outputs.
+Nx and Lerna tasks require `cache: false` or an explicit cache bypass, and no declared outputs.
+A dependency that builds files, a task that writes reports, or an invocation that would populate an orchestrator cache stays local.
+An unavailable or unconfirmed Boat attempt retries the whole invocation locally once; its children reuse that decision and slot.
+Remote executable and orchestrator-entry availability checks run after bootstrap and before dispatch confirmation, so missing launchers trigger that fallback.
 
 These heavy work items stay local even in a declared project:
 - `playwright`, by default in `local-only`, because a browser run needs browsers.

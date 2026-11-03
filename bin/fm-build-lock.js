@@ -36,6 +36,7 @@
 const argv = process.argv;
 const ENTRIES = new Set(['next', 'vitest', 'vitest.mjs', 'playwright', 'cli.js', 'tsc', 'tsc.js',
   'eslint', 'eslint.js']);
+const ORCHESTRATOR_ENTRIES = new Set(['turbo', 'nx', 'nx.js', 'lerna', 'cli.js', 'pnpm', 'pnpm.cjs']);
 // One named source file, so a per-file check stays unlocked. Only an operand
 // names it: an option, an `--option=value`, or the value of an option that
 // takes one (a config, formatter, output file, or extension list) is not a
@@ -93,6 +94,18 @@ const heavy = (script, args) => {
     return namesSourceFile(args, TSC_VALUES) ? null : 'tsc';
   }
   return null;
+};
+const orchestrator = (script, args) => {
+  const tasks = new Set(['type-check', 'typecheck', 'check-types', 'lint', 'test', 'test:run',
+    'test:ci', 'build']);
+  if (!args.some((a) => a.split(/[=,]/).some((word) => tasks.has(word) ||
+      tasks.has(word.split(':')[1])))) return false;
+  if (/\/(?:turbo\/bin\/turbo|nx\/bin\/nx\.js|lerna\/(?:dist\/cli|cli)\.js)$/.test(script)) {
+    return true;
+  }
+  return script.endsWith('/pnpm/bin/pnpm.cjs') && args.some((a) =>
+    ['-r', '--recursive', '-F', '--filter'].includes(a) || a.startsWith('--filter=') ||
+    (a.startsWith('-F') && a.length > 2));
 };
 // Re-runs this process through the router and exits with that run's status.
 // fm-heavy-route.py sends it to Boat where a project declares that, and to a
@@ -167,6 +180,13 @@ const repairChildEnvironments = () => {
   }
 };
 if (process.env.FM_BUILD_LOCK_BYPASS !== '1') {
+  if (process.env.FM_TASK_ID && !process.env.FM_HEAVY_ORCHESTRATOR &&
+      !process.env.FM_BUILD_LOCK_HELD && ORCHESTRATOR_ENTRIES.has(entry) &&
+      !argv.includes('--help') && !argv.includes('-h') && !argv.includes('--version')) {
+    let script = '';
+    try { script = require('fs').realpathSync(argv[1]); } catch {}
+    if (orchestrator(script, argv.slice(2))) relaunch('orchestrator');
+  }
   if (process.env.FM_BUILD_LOCK_HELD !== String(process.pid) &&
       !argv.includes('--help') && !argv.includes('-h')) {
     if (ENTRIES.has(entry)) {
