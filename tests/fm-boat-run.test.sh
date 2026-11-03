@@ -553,12 +553,44 @@ assert r.returncode == 0, (r.stdout, r.stderr, result(p))
 empty(state)
 print('ok - real Git preserves both tips, bounded ancestry and tracked edits without unrelated refs/config/reflogs')
 
+for name, contents in [
+    ('blocked-decisions', '| State | Notes |\n|' + '-' * 680 + '|---|\n'
+     '| blocked | blocked bearer decisions, pending review |\n'),
+    ('shares', 'The bearer shares are transferable.\n'),
+]:
+    p, state, env = case('history-bearer-prose-' + name, clean_history=True)
+    work = p / 'work'
+    target = work / '.agents/skills/verify-app/features.md'
+    target.parent.mkdir(parents=True)
+    target.write_text(contents)
+    git(work, 'add', '.')
+    git(work, 'commit', '-qm', 'document transfer rules')
+    git(work, 'update-ref', 'refs/remotes/origin/main', 'HEAD')
+    r = launch(p, env, 'test -f .agents/skills/verify-app/features.md',
+               ('--history-depth', '2'))
+    assert r.returncode == 0, (name, r.stderr)
+    assert '.agents/skills/verify-app/features.md' in json.loads((state / 'uploaded.json').read_text())
+    empty(state)
+print('ok - history accepts bearer prose and long Markdown table separators')
+
 for name, unsafe_path, unsafe_content in [
     ('history-excluded', '.env', 'historical-value-never-print'),
     ('history-credential', 'ordinary.txt', 'API_SECRET=historical-value-never-print'),
     ('history-role-credential', '.github/tools/jev/vendor/.claude/agents/security-compliance.md',
      'password=historical-value-never-print'),
     ('history-binary', 'binary.dat', '\x00historical-value-never-print'),
+    ('history-bearer-header', 'ordinary.txt',
+     'Authorization: Bearer historical-value-never-print'),
+    ('history-bearer-jwt', 'ordinary.txt',
+     'bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJmaXh0dXJlIn0.historical-value-never-print'),
+    ('history-bearer-opaque', 'ordinary.txt', 'bearer aB09_~+/.historical-value-never-print=='),
+    ('history-bearer-minimum', 'ordinary.txt', 'bEaReR\tAb09_~+/.-12=='),
+    ('history-private-key', 'ordinary.txt', '-----BEGIN RSA PRIVATE KEY-----'),
+    ('history-url', 'ordinary.txt', 'https://user:historical-value-never-print@example.invalid'),
+    ('history-openai', 'ordinary.txt', 'sk-historical-value-never-print'),
+    ('history-github', 'ordinary.txt', 'ghp_0123456789abcdefghij'),
+    ('history-github-pat', 'ordinary.txt', 'github_pat_0123456789abcdefghij'),
+    ('history-aws', 'ordinary.txt', 'AKIA0123456789ABCDEF'),
 ]:
     p, state, env = case(name, clean_history=True)
     work = p / 'work'
