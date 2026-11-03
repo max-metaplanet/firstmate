@@ -460,12 +460,12 @@ fm_polytoken_turn_settled() {  # <port> <credential-token>
 # `cancelled` or `not-running`; returns nonzero when the cancel could not be
 # delivered or the turn never settled.
 fm_polytoken_interrupt() {  # <port> <credential-token> [wait-secs]
-  local port=$1 token=$2 wait=${3:-10} elapsed=0 step=0.5
+  local port=$1 token=$2 wait=${3:-10} transport=${4:-fm_polytoken_rest} elapsed=0 step=0.5
   if fm_polytoken_turn_settled "$port" "$token"; then
     printf 'not-running'
     return 0
   fi
-  fm_polytoken_rest POST "$port" "$token" /turn/cancel '{}' || return 1
+  "$transport" POST "$port" "$token" /turn/cancel '{}' || return 1
   while :; do
     if fm_polytoken_turn_settled "$port" "$token"; then
       printf 'cancelled'
@@ -486,10 +486,10 @@ fm_polytoken_interrupt() {  # <port> <credential-token> [wait-secs]
 # is re-read right before the write, and a running turn skips the close.
 # Prints the fm_polytoken_interrupt outcome; returns nonzero as it does.
 fm_polytoken_interrupt_task() {  # <bin-dir> <state-dir> <id> <port> <credential-token> [wait-secs]
-  local bin=$1 state=$2 id=$3 port=$4 token=$5 wait=${6:-10}
+  local bin=$1 state=$2 id=$3 port=$4 token=$5 wait=${6:-10} transport=${7:-fm_polytoken_rest}
   local before now cancel gen before_seq now_event now_seq _s _src
   before=$(fm_busy_record_read "$state" "$id" 2>/dev/null) || before=
-  cancel=$(fm_polytoken_interrupt "$port" "$token" "$wait") || return 1
+  cancel=$(fm_polytoken_interrupt "$port" "$token" "$wait" "$transport") || return 1
   printf '%s' "$cancel"
   gen=$(fm_busy_current_gen "$state" "$id" 2>/dev/null) || return 0
   read -r _s _src _s before_seq <<<"$before"

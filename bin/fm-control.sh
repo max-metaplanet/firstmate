@@ -478,6 +478,18 @@ send_interrupt_key() {  # <key>
   fi
 }
 
+send_interrupt_rest() {
+  local rc
+  interrupt_audit rest attempt turn-cancel
+  if fm_polytoken_rest "$@"; then
+    interrupt_audit rest delivered turn-cancel
+  else
+    rc=$?
+    interrupt_audit rest failed turn-cancel
+    return "$rc"
+  fi
+}
+
 agent_state() {
   fm_backend_agent_state "$BACKEND" "$T"
 }
@@ -757,13 +769,8 @@ deliver_interrupt() {
     # hooks would have written lands with the cancel: the settled turn is the
     # typed proof this incarnation is no longer busy, unless a queued prompt
     # has reopened it (fm_polytoken_interrupt_task).
-    interrupt_audit rest attempt turn-cancel
-    cancel=$(fm_polytoken_interrupt_task "$SCRIPT_DIR" "$STATE" "$ID" "$port" "$token" "$SETTLE_WAIT") \
-      || {
-        interrupt_audit rest failed turn-cancel
-        die "task $ID's polytoken turn cancel was not acknowledged on port $port within ${SETTLE_WAIT}s; the interrupt status is unknown, so no further control action is safe here"
-      }
-    interrupt_audit rest delivered turn-cancel
+    cancel=$(fm_polytoken_interrupt_task "$SCRIPT_DIR" "$STATE" "$ID" "$port" "$token" "$SETTLE_WAIT" send_interrupt_rest) \
+      || die "task $ID's polytoken turn cancel was not acknowledged on port $port within ${SETTLE_WAIT}s; the interrupt status is unknown, so no further control action is safe here"
     interrupt_audit cancellation observed "$cancel"
     INTERRUPT_ARMED=yes
     INTERRUPT_HAZARD=none

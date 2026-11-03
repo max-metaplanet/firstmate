@@ -1482,6 +1482,69 @@ test_interrupt_audit_failure_preserves_recovery() {
   pass 'fm-control interrupt: unavailable diagnostics warn and preserve lifecycle behavior'
 }
 
+test_rest_interrupt_audit_tracks_transport() {
+  local mode dir out rc
+  for mode in idle settled timeout refused; do
+    dir=$(new_case "rest-audit-$mode")
+    add_task "$dir" t1 polytoken
+    alive_as "$dir" polytoken
+    printf '{"token":"private-rest-token"}\n' > "$dir/home/state/credential.json"
+    printf 'polytoken_port=49999\npolytoken_credential=%s/home/state/credential.json\n' "$dir" >> "$dir/home/state/t1.meta"
+    printf '%s' "$mode" > "$dir/fake/rest-mode"
+    cat > "$dir/fakebin/curl" <<'SH'
+#!/usr/bin/env bash
+mode=$(cat "$FM_FAKE_DIR/rest-mode")
+case "${!#}" in
+  */sync)
+    if [ "$mode" = idle ] || { [ "$mode" = settled ] && [ -f "$FM_FAKE_DIR/posted" ]; }; then
+      printf '{"turn":null}'
+    else
+      printf '{"turn":{"generation":1}}'
+    fi
+    ;;
+  */turn/cancel)
+    cp "$FM_HOME/state/t1.control-interrupt.jsonl" "$FM_FAKE_DIR/audit-before-post"
+    touch "$FM_FAKE_DIR/posted"
+    if [ "$mode" = refused ]; then printf 500; else printf 200; fi
+    ;;
+  *) exit 1 ;;
+esac
+SH
+    chmod +x "$dir/fakebin/curl"
+    rc=0
+    out=$(run_control "$dir" t1 interrupt) || rc=$?
+    case "$mode" in
+      idle|settled) expect_code 0 "$rc" "$out" ;;
+      *) expect_code 1 "$rc" "$out" ;;
+    esac
+    python3 - "$dir" "$mode" <<'PY_REST' || fail "REST audit contract failed for $mode"
+import json
+import pathlib
+import sys
+root = pathlib.Path(sys.argv[1])
+mode = sys.argv[2]
+path = root / "home/state/t1.control-interrupt.jsonl"
+records = [json.loads(line) for line in path.read_text().splitlines()]
+events = [(r["action"], r["phase"], r["detail"]) for r in records]
+if mode == "idle":
+    assert events == [("cancellation", "observed", "not-running")], events
+    assert not (root / "fake/posted").exists()
+else:
+    result = "failed" if mode == "refused" else "delivered"
+    expected = [("rest", "attempt", "turn-cancel"), ("rest", result, "turn-cancel")]
+    if mode == "settled":
+        expected.append(("cancellation", "observed", "cancelled"))
+    assert events == expected, events
+    before = [json.loads(line) for line in (root / "fake/audit-before-post").read_text().splitlines()]
+    assert before == records[:1]
+assert "private-rest-token" not in path.read_text()
+PY_REST
+  done
+  pass 'fm-control REST audit distinguishes idle, delivery, timeout, and refusal'
+}
+
+test_rest_interrupt_audit_tracks_transport
+
 test_interrupt_audit_records_delivery_without_claiming_cancellation
 test_interrupt_audit_records_transport_failure
 test_interrupt_audit_failure_preserves_recovery
