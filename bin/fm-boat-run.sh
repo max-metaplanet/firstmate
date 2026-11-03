@@ -69,13 +69,14 @@
 # above has decided what that archive carries. Every other blob, including
 # HEAD's copy of a file the working tree edits, deletes, excludes or screens
 # out, is screened with the full credential scanner and on a hit is withheld.
-# An object at an excluded or configured-key path, and a historical symlink or
-# submodule entry, are withheld the same way. The sole exception is the
-# .claude/skills symlink: its UTF-8 target is credential-screened and must
-# resolve lexically within the repository; unsafe targets refuse the run.
-# Its screened blob travels in Git, never as a working-tree symlink.
-# A symlink or submodule in the
-# uploaded source is still refused rather than silently changing the source.
+# An object at an excluded or configured-key path, and a historical submodule
+# entry, are withheld the same way.
+# Source and history skip tracked relative symlinks that stay lexically inside
+# the repository, with one stderr notice per path. Target text must pass the
+# UTF-8 credential scanner. History retains that screened blob in its Git pack,
+# but no working-tree symlink is uploaded; tests reading through it cannot use it.
+# Submodules in uploaded source, absolute or escaping symlink targets, and
+# symlink parent components are refused.
 # A withheld object keeps its tree entry, so every commit, tree, ancestry, name
 # and date stays what the project's own tooling reads and `git fsck` stays
 # clean: the pack is marked promisor, as `git clone --filter=blob:none` marks

@@ -152,7 +152,26 @@ def git(root, *args, input=None):
     return result.stdout
 
 
-def history(root, head, depth, destination, key_files, uploaded):
+def skip_symlink(name, data, skipped, context):
+    if not safe_allowlisted(name, data):
+        raise Failure(context + 'credential-looking or binary symlink target: ' + name, 2)
+    target = data.decode('utf-8')
+    depth = len(PurePosixPath(name).parent.parts)
+    if not target or target.startswith('/'):
+        raise Failure(context + 'unsafe symlink target: ' + name, 2)
+    for part in target.split('/'):
+        if part == '..':
+            if depth == 0:
+                raise Failure(context + 'unsafe symlink target: ' + name, 2)
+            depth -= 1
+        elif part not in ('', '.'):
+            depth += 1
+    if name not in skipped:
+        print('boat-offload: skipped in-repo symlink: ' + name, file=sys.stderr)
+        skipped.add(name)
+
+
+def history(root, head, depth, destination, key_files, uploaded, skipped):
     try:
         base = git(root, 'rev-parse', '--verify', 'refs/remotes/origin/main^{commit}').decode().strip()
     except subprocess.CalledProcessError as exc:
@@ -184,15 +203,10 @@ def history(root, head, depth, destination, key_files, uploaded):
             name = os.fsdecode(name)
             relative(name)
             mode, kind, oid = meta.split()
-            if name == '.claude/skills' and mode == b'120000' and kind == b'blob':
-                data = git(fetched, 'cat-file', 'blob', oid.decode())
-                if not safe_allowlisted(name, data):
-                    raise Failure('history refused: credential-looking or binary blob: ' + name, 2)
-                target = data.decode('utf-8')
-                resolved = PurePosixPath(os.path.normpath(str(PurePosixPath(name).parent / target)))
-                if not target or resolved.is_absolute() or '..' in resolved.parts:
-                    raise Failure('history refused: unsafe symlink target: ' + name, 2)
-                # The pack retains this screened target text, never dereferenced content.
+            if mode == b'120000' and kind == b'blob':
+                skip_symlink(name, git(fetched, 'cat-file', 'blob', oid.decode()),
+                             skipped, 'history refused: ')
+                # The pack retains screened target text, never dereferenced content.
                 kept.add(oid)
                 continue
             # A withheld object keeps its tree entry, so every commit keeps the
@@ -256,9 +270,23 @@ def source(root, inputs, archive, key_files, history_depth=None):
     head = git(root, 'rev-parse', 'HEAD').decode().strip()
     entries = git(root, 'ls-tree', '-rz', '--full-tree', 'HEAD').split(b'\0')
     names = []
+    skipped = set()
     for entry in filter(None, entries):
         meta, name = entry.split(b'\t', 1)
         name = os.fsdecode(name)
+        mode, kind, oid = meta.split()
+        if mode == b'120000' and kind == b'blob':
+            relative(name)
+            path = root / name
+            for parent in path.parents:
+                if parent == root:
+                    break
+                if parent.is_symlink():
+                    raise Failure('source symlink refused: ' + name, 2)
+            data = (os.fsencode(os.readlink(path)) if path.is_symlink() else
+                    git(root, 'cat-file', 'blob', oid.decode()))
+            skip_symlink(name, data, skipped, 'source refused: ')
+            continue
         if (excluded(name) and name not in SOURCE_ALLOWLIST) or (root / name).resolve() in key_files:
             continue
         if meta.split()[0] not in (b'100644', b'100755'):
@@ -274,7 +302,7 @@ def source(root, inputs, archive, key_files, history_depth=None):
     object_format = (None if history_depth is None else
                      git(root, 'rev-parse', '--show-object-format').decode().strip())
     try:
-        archive_source(root, names, archive, history_depth, key_files, head, object_format)
+        archive_source(root, names, archive, history_depth, key_files, head, object_format, skipped)
     except BaseException:
         archive.unlink(missing_ok=True)
         raise
@@ -292,7 +320,7 @@ class _Hashing:
         return chunk
 
 
-def archive_source(root, names, archive, history_depth, key_files, head, object_format):
+def archive_source(root, names, archive, history_depth, key_files, head, object_format, skipped):
     uploaded = set()
     with contextlib.ExitStack() as stack:
         output = stack.enter_context(tarfile.open(archive, 'w:gz', dereference=True))
@@ -332,7 +360,7 @@ def archive_source(root, names, archive, history_depth, key_files, head, object_
                 uploaded.add(digest.hexdigest().encode())
         if history_depth is not None:
             scratch = stack.enter_context(tempfile.TemporaryDirectory(dir=archive.parent, prefix='history-'))
-            output.add(history(root, head, history_depth, Path(scratch), key_files, uploaded),
+            output.add(history(root, head, history_depth, Path(scratch), key_files, uploaded, skipped),
                        arcname='.git')
 
 
