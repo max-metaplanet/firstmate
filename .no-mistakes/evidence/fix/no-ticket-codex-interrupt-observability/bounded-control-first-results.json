@@ -1,0 +1,117 @@
+{
+  "transport": "real curl to loopback HTTP fixture; real terminal process; simulated vendor semantics",
+  "results": [
+    {
+      "scenario": "settled",
+      "exit": 0,
+      "output": "interrupt-delivered t1 harness=polytoken backend=tmux verified=agent-alive cancel=cancelled\nfm-gate-refuse: gate agent lifecycle permitted only against lab home ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6HNT9VC54KNM8R211Y06PPT/.fm-test-scratch/bounded-evidence/lab\n",
+      "events": [
+        [
+          "rest",
+          "attempt",
+          "turn-cancel"
+        ],
+        [
+          "rest",
+          "delivered",
+          "turn-cancel"
+        ],
+        [
+          "cancellation",
+          "observed",
+          "cancelled"
+        ]
+      ],
+      "before_post": [
+        [
+          [
+            "rest",
+            "attempt"
+          ]
+        ]
+      ]
+    },
+    {
+      "scenario": "refused",
+      "exit": 1,
+      "output": "fm-gate-refuse: gate agent lifecycle permitted only against lab home ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6HNT9VC54KNM8R211Y06PPT/.fm-test-scratch/bounded-evidence/lab\nerror: task t1's polytoken turn cancel was not acknowledged on port 33735 within 0.1s; the interrupt status is unknown, so no further control action is safe here\n",
+      "events": [
+        [
+          "rest",
+          "attempt",
+          "turn-cancel"
+        ],
+        [
+          "rest",
+          "failed",
+          "turn-cancel"
+        ]
+      ],
+      "before_post": [
+        [
+          [
+            "rest",
+            "attempt"
+          ]
+        ]
+      ]
+    },
+    {
+      "scenario": "timeout",
+      "exit": 1,
+      "output": "fm-gate-refuse: gate agent lifecycle permitted only against lab home ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6HNT9VC54KNM8R211Y06PPT/.fm-test-scratch/bounded-evidence/lab\nerror: task t1's polytoken turn cancel was not acknowledged on port 33735 within 0.1s; the interrupt status is unknown, so no further control action is safe here\n",
+      "events": [
+        [
+          "rest",
+          "attempt",
+          "turn-cancel"
+        ],
+        [
+          "rest",
+          "delivered",
+          "turn-cancel"
+        ]
+      ],
+      "before_post": [
+        [
+          [
+            "rest",
+            "attempt"
+          ]
+        ]
+      ]
+    },
+    {
+      "scenario": "logging-failure",
+      "exit": 0,
+      "output": "interrupt-delivered t1 harness=polytoken backend=tmux verified=agent-alive cancel=cancelled\nfm-gate-refuse: gate agent lifecycle permitted only against lab home ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6HNT9VC54KNM8R211Y06PPT/.fm-test-scratch/bounded-evidence/lab\nTraceback (most recent call last):\n  File \"<stdin>\", line 13, in <module>\nIsADirectoryError: [Errno 21] Is a directory: '~/.no-mistakes/worktrees/c0c4fcacb05a/01M6HNT9VC54KNM8R211Y06PPT/.fm-test-scratch/bounded-evidence/lab/state/t1.control-interrupt.jsonl'\nwarning: interrupt diagnostics could not append for task t1; lifecycle safety checks still apply\nTraceback (most recent call last):\n  File \"<stdin>\", line 13, in <module>\nIsADirectoryError: [Errno 21] Is a directory: '~/.no-mistakes/worktrees/c0c4fcacb05a/01M6HNT9VC54KNM8R211Y06PPT/.fm-test-scratch/bounded-evidence/lab/state/t1.control-interrupt.jsonl'\nwarning: interrupt diagnostics could not append for task t1; lifecycle safety checks still apply\nTraceback (most recent call last):\n  File \"<stdin>\", line 13, in <module>\nIsADirectoryError: [Errno 21] Is a directory: '~/.no-mistakes/worktrees/c0c4fcacb05a/01M6HNT9VC54KNM8R211Y06PPT/.fm-test-scratch/bounded-evidence/lab/state/t1.control-interrupt.jsonl'\nwarning: interrupt diagnostics could not append for task t1; lifecycle safety checks still apply\n",
+      "events": [],
+      "before_post": [
+        []
+      ]
+    },
+    {
+      "scenario": "exit-initiated-interrupt",
+      "exit": 1,
+      "output": "fm-gate-refuse: gate agent lifecycle permitted only against lab home ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6HNT9VC54KNM8R211Y06PPT/.fm-test-scratch/bounded-evidence/lab\nerror: task t1's composer state is 'unknown', not proven empty; refusing to type the /quit exit command because it could concatenate onto existing text. Clear the composer, then retry 'exit'\n",
+      "events": [
+        [
+          "rest",
+          "attempt",
+          "turn-cancel"
+        ],
+        [
+          "rest",
+          "delivered",
+          "turn-cancel"
+        ],
+        [
+          "cancellation",
+          "observed",
+          "cancelled"
+        ]
+      ]
+    }
+  ],
+  "tmux_cleanup_exit": 0
+}

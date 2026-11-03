@@ -1,0 +1,77 @@
+{
+  "cli": "codex-cli 0.164.0",
+  "grid": "35 rows x 120 columns, master PTYs drained",
+  "same_fresh_CODEX_HOME": true,
+  "startup": "staggered, second TUI started after initial database setup",
+  "no_authentication_or_model_prompt": true,
+  "cli_checks": [
+    {
+      "check": "effective hooks",
+      "exit": 0,
+      "output": "hooks                                    stable             false"
+    },
+    {
+      "check": "remote conflict",
+      "exit": 1,
+      "output": "ERROR: --no-daemon cannot be used with --remote."
+    }
+  ],
+  "sessions": [
+    {
+      "marker": "session-a",
+      "signin_screen_observed": true,
+      "processes": [
+        {
+          "pid": 2633737,
+          "executable": "node",
+          "correct_FM_HOME": true,
+          "socket_handles": []
+        },
+        {
+          "pid": 2633755,
+          "executable": "codex",
+          "correct_FM_HOME": true,
+          "socket_handles": [
+            "socket:[277838676]",
+            "socket:[277838677]",
+            "socket:[277838676]",
+            "socket:[277838692]",
+            "socket:[277838693]"
+          ]
+        }
+      ],
+      "cleanup_exit": 0,
+      "observed_screen_text": "Choose how you want to use Codex",
+      "owned_processes_gone": true
+    },
+    {
+      "marker": "session-b",
+      "signin_screen_observed": true,
+      "processes": [
+        {
+          "pid": 2635216,
+          "executable": "node",
+          "correct_FM_HOME": true,
+          "socket_handles": []
+        },
+        {
+          "pid": 2635267,
+          "executable": "codex",
+          "correct_FM_HOME": true,
+          "socket_handles": [
+            "socket:[277844920]",
+            "socket:[277844921]",
+            "socket:[277844920]",
+            "socket:[277848446]",
+            "socket:[277848447]"
+          ]
+        }
+      ],
+      "cleanup_exit": 0,
+      "observed_screen_text": "Choose how you want to use Codex",
+      "owned_processes_gone": true
+    }
+  ],
+  "disjoint_socket_handles": true,
+  "limit": "No daemon or code-mode-host descendant was observed pre-authentication. This does not prove authenticated tool execution or environment isolation."
+}

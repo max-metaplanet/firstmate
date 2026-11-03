@@ -1,0 +1,9 @@
+{
+  "private_tmux_no_server": true,
+  "private_tmux_probe_exit": 1,
+  "loopback_server_shutdown_and_joined": true,
+  "codex_owned_processes_gone": true,
+  "own_scratch_removed": true,
+  "source_changes": false,
+  "no_enospc_observed": true
+}

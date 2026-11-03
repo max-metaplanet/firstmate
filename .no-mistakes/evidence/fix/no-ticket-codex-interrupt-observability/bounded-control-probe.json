@@ -1,0 +1,28 @@
+{
+  "transport": "real curl to loopback HTTP fixture; real terminal process; simulated vendor semantics",
+  "results": [
+    {
+      "scenario": "exit-initiated-interrupt",
+      "exit": 1,
+      "output": "fm-gate-refuse: gate agent lifecycle permitted only against lab home ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6HNT9VC54KNM8R211Y06PPT/.fm-test-scratch/bounded-evidence/lab\nerror: task t1's composer state is 'unknown', not proven empty; refusing to type the /quit exit command because it could concatenate onto existing text. Clear the composer, then retry 'exit'\n",
+      "events": [
+        [
+          "rest",
+          "attempt",
+          "turn-cancel"
+        ],
+        [
+          "rest",
+          "delivered",
+          "turn-cancel"
+        ],
+        [
+          "cancellation",
+          "observed",
+          "cancelled"
+        ]
+      ]
+    }
+  ],
+  "tmux_cleanup_exit": 0
+}

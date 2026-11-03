@@ -1,0 +1,40 @@
+{
+  "verdict": "inconclusive",
+  "source_changes": false,
+  "product_failure_reproduced": false,
+  "checks": [
+    {
+      "scenario": "Two real installed Codex TUIs, --no-daemon, same fresh empty CODEX_HOME, distinct FM_HOME, disabled hooks",
+      "result": "pre-authentication evidence passed",
+      "observed": "Staggered startup reached both sign-in prompts; independent native processes retained correct FM_HOME with disjoint socket handles. No daemon or code-mode-host descendant observed; no login or model prompt. Parent cleanup exits both zero."
+    },
+    {
+      "scenario": "Concurrent initialization of same fresh CODEX_HOME",
+      "result": "vendor setup failure",
+      "observed": "One process failed goals SQLite migration with table thread_goals already exists; staggered initialization avoided this. Not a demonstrated source regression; no vendor fix attempted."
+    },
+    {
+      "scenario": "Interrupt diagnostics through fm-control.sh",
+      "result": "pass",
+      "observed": "Real curl against isolated loopback fixture and real tmux terminal. Attempt present before POST; settled response produced delivered then cancellation observed, exit 0; HTTP 500 produced failed, exit 1; HTTP 200 without settlement produced delivered without cancellation, exit 1; unavailable log warned while recovery delivered and returned 0. Audit omitted fixture token."
+    },
+    {
+      "scenario": "Exit-initiated interrupt",
+      "result": "diagnostic contract passed; exit safely refused",
+      "observed": "Busy fixture recorded attempt, delivered, cancellation observed with verb exit and armed generation. Then exit 1 correctly refused typing /quit into an unrecognized fixture composer. Focused verification expected this refusal and exited zero."
+    }
+  ],
+  "limitations": [
+    "Authenticated ship/scout/secondmate tool-environment isolation remains unproved: no code-mode-host created pre-authentication.",
+    "Loopback responses simulate vendor semantics; this is not evidence of live Polytoken cancellation."
+  ],
+  "outer_executor_action": "Retain inconclusive isolation finding for existing review decision. No source fix justified by bounded evidence. Do not treat sign-in prompt success as authenticated execution.",
+  "cleanup": {
+    "captured_codex_pids_gone": true,
+    "private_tmux_has_session_exit": 1,
+    "private_tmux_status": "no server running on /proc/self/cwd/.fm-test-scratch/bounded-evidence/tmux.sock",
+    "loopback_server_shutdown_and_joined": true,
+    "scratch_removed": true
+  },
+  "boundaries": "No broad suite, linter, formatter, static analysis, pipeline control, authentication, provider prompt, live worker/daemon changes, credential copies or global config changes. Existing passing evidence retained."
+}
