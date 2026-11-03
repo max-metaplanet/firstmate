@@ -35,6 +35,9 @@ with (root / 'fake.lock').open('a') as handle:
     if fixture.get('unreachable') and command == 'limits':
         sys.exit(1)
     if command == 'limits':
+        if fixture.get('malformed_limits'):
+            print('unparseable provider response')
+            sys.exit(0)
         print(json.dumps({'starts': {w: {'remaining': fixture.get(w + '_remaining', fixture.get('remaining', 10))}
                                     for w in ('minute', 'hour', 'day')},
                           'canStart': fixture.get('canStart', True),

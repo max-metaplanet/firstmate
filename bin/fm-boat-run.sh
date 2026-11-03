@@ -101,9 +101,15 @@
 # Remote GNU timeout and a host deadline bound execution; output is captured
 # in OUTPUT/command.log and printed on completion. Artifacts are copied under
 # OUTPUT/artifacts even after command failure. Missing/unsafe artifacts fail.
+# Push allows 90 seconds plus the archive size at 128 KiB/s, with a 300-second
+# minimum and a 600-second maximum within the existing VM TTL margin.
+# This deadline is independent of --timeout, which bounds the remote command.
 # OUTPUT must be a new directory outside the source tree. result.json records
 # kind, remote_exit, source_head, source_sha256, vm_id and cleanup state, plus
 # history=synthetic|screened|fallback-synthetic and history_reason on fallback.
+# upload_bytes and push_timeout_seconds record the transfer budget. Unavailable
+# request errors name timeout, OS error or bad response and the exception class,
+# without exception messages or output that could contain credentials.
 # A remote exit code is returned unchanged; 124 is the remote command timeout.
 # Adapter failures: 2 invalid input, 69 Boat unavailable before execution,
 # 75 capacity/start budget exhausted, 74 transfer/transport/result failure,

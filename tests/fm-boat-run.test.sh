@@ -239,6 +239,7 @@ p, state, env = case('large-transfer')
 # An incompressible tracked input models the pipeline's already-compressed upload.
 (p / 'work/payload').write_bytes(os.urandom(40 * 1024 * 1024))
 git(p / 'work', 'add', 'payload')
+git(p / 'work', '-c', 'core.hooksPath=/dev/null', 'commit', '-qm', 'Large source fixture')
 r = launch_transfer(p, env)
 assert r.returncode == 0, r.stderr
 assert result(p)['kind'] == 'completed'
@@ -262,6 +263,13 @@ r = launch(p, env)
 assert r.returncode == 69, r.stderr
 assert 'OS error' in result(p)['error'] and 'FileNotFoundError' in result(p)['error']
 print('ok - an unavailable executable reports the OS error class')
+
+p, state, env = case('cli-bad-response', {'malformed_limits': True})
+r = launch(p, env)
+assert r.returncode == 69, r.stderr
+assert 'bad response' in result(p)['error'] and 'JSONDecodeError' in result(p)['error']
+assert 'unparseable provider response' not in result(p)['error']
+print('ok - an unparseable response reports its class without copying response content')
 
 for name, settings in [('push-failure', {'push_failed': True}),
                        ('transport', {'transport_failed': True})]:
