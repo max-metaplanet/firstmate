@@ -620,15 +620,21 @@ def safe_orchestration(plan, root, settings):
                 scripts = package.get("scripts", {})
                 target = {}
                 if tool != "pnpm":
-                    target = {**default, **package.get("nx", {}).get("targets", {}).get(name, {})}
+                    layers = [default, package.get("nx", {}).get("targets", {}).get(name, {})]
                     project = directory / "project.json"
                     if project.exists():
-                        target.update(read_json(project).get("targets", {}).get(name, {}))
+                        layers.append(read_json(project).get("targets", {}).get(name, {}))
+                    for layer in layers:
+                        if "options" in target and "options" in layer:
+                            return False
+                        target.update(layer)
                 if set(target) - {"executor", "options", "outputs", "cache", "dependsOn",
                                   "inputs", "metadata", "parallelism"}:
                     return False
                 script = scripts.get(name)
+                script_directory = directory
                 if target.get("executor") == "nx:run-commands":
+                    script_directory = root
                     script = target.get("options", {}).get("command")
                     if set(target.get("options", {})) != {"command"}:
                         return False
@@ -650,7 +656,7 @@ def safe_orchestration(plan, root, settings):
                     return False
                 pending += [dep.lstrip("^") for dep in dependencies]
                 if scripts.get("pre" + name) or scripts.get("post" + name) or \
-                        not safe_script(script, directory, settings, root):
+                        not safe_script(script, script_directory, settings, root):
                     return False
                 count += 1
         return count > 0

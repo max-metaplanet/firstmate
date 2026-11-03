@@ -648,6 +648,83 @@ for representation in ('package', 'project'):
         assert r.stdout.count('child marker=' + marker + ' held=') == 2, (r.stdout, r.stderr)
 print('ok - pnpm screens package scripts independently of both Nx target representations')
 
+def write_nx_target(directory, representation, target):
+    if representation == 'package':
+        path = directory / 'package.json'
+        package = json.loads(path.read_text())
+        package['nx'] = {'targets': {'type-check': target}}
+        path.write_text(json.dumps(package))
+    else:
+        (directory / 'project.json').write_text(json.dumps({'targets': {'type-check': target}}))
+
+
+for tool in ('nx', 'lerna'):
+    args = ['run-many', '-t', 'type-check'] if tool == 'nx' else ['run', 'type-check']
+    for representation in ('package', 'project'):
+        for no_emit in (False, True):
+            p, work, config, state, env, cli = orchestrator_case(
+                'executor-cwd-' + tool + '-' + representation + '-' + str(no_emit), tool)
+            (work / 'tsconfig.json').write_text(json.dumps({'compilerOptions': {'noEmit': no_emit}}))
+            child = r"""#!/usr/bin/env node
+const fs = require('fs');
+const config = JSON.parse(fs.readFileSync('tsconfig.json', 'utf8'));
+if (process.argv.includes('--showConfig')) {
+  console.log(JSON.stringify(config));
+} else {
+  if (!config.compilerOptions.noEmit) fs.writeFileSync('typecheck-output.txt', 'emitted');
+  console.log('root task marker=' + process.env.FM_HEAVY_ORCHESTRATOR);
+}
+"""
+            parent = r"""#!/usr/bin/env node
+const cp = require('child_process');
+const path = require('path');
+const result = cp.spawnSync(process.execPath,
+  [path.resolve('node_modules/typescript/bin/tsc')], {stdio: 'inherit', env: process.env});
+process.exit(result.status);
+"""
+            (work / 'tools/tsc').write_text(child)
+            (work / 'node_modules/typescript/bin/tsc').write_text(child)
+            (work / 'tools/orchestrator.cjs').write_text(parent)
+            cli.write_text(parent)
+            for directory in (work / 'packages/a', work / 'packages/b'):
+                (directory / 'tsconfig.json').write_text(json.dumps(
+                    {'compilerOptions': {'noEmit': not no_emit}}))
+                write_nx_target(directory, representation,
+                                {'executor': 'nx:run-commands', 'options': {'command': 'tsc'}})
+                executable = directory / 'node_modules/.bin/tsc'
+                executable.parent.mkdir(parents=True)
+                executable.write_text('#!/usr/bin/env node\nconsole.log(' + json.dumps(json.dumps(
+                    {'compilerOptions': {'noEmit': not no_emit}})) + ');\n')
+                executable.chmod(0o755)
+            subprocess.run(['git', '-C', str(work), 'add', '-A'], check=True, capture_output=True)
+            subprocess.run(['git', '-C', str(work), 'commit', '-qm', 'Executor cwd fixture'],
+                           check=True, capture_output=True)
+            r = orchestration_run(work, env, cli, args)
+            assert r.returncode == 0 and starts(state) == int(no_emit), (tool, representation, no_emit, r.stdout, r.stderr)
+            marker = 'remote' if no_emit else 'local'
+            assert 'root task marker=' + marker in r.stdout, (r.stdout, r.stderr)
+            assert (work / 'typecheck-output.txt').exists() == (not no_emit)
+    for layers in ('defaults-package', 'defaults-project', 'package-project'):
+        p, work, config, state, env, cli = orchestrator_case('executor-options-' + tool + '-' + layers, tool)
+        (work / 'package.json').rename(work / 'workspace-package.json')
+        (work / 'tsconfig.json').write_text('{"compilerOptions":{"noEmit":true}}')
+        inherited = {'executor': 'nx:run-commands', 'cache': False,
+                     'options': {'args': '--generateTrace trace'}}
+        if layers.startswith('defaults'):
+            (work / 'nx.json').write_text(json.dumps({'targetDefaults': {'type-check': inherited}}))
+        for directory in (work / 'packages/a', work / 'packages/b'):
+            if layers == 'package-project':
+                write_nx_target(directory, 'package', inherited)
+            write_nx_target(directory, 'package' if layers == 'defaults-package' else 'project',
+                            {'options': {'command': 'tsc --noEmit'}})
+        subprocess.run(['git', '-C', str(work), 'add', '-A'], check=True, capture_output=True)
+        subprocess.run(['git', '-C', str(work), 'commit', '-qm', 'Inherited executor options'],
+                       check=True, capture_output=True)
+        r = orchestration_run(work, env, cli, args)
+        assert r.returncode == 0 and starts(state) == 0, (tool, layers, r.stdout, r.stderr)
+        assert r.stdout.count('child marker=local held=') == 2, (r.stdout, r.stderr)
+print('ok - Nx and Lerna use root executor cwd and binaries, and retain inherited option safety')
+
 for name in ('untracked', 'local-only', 'unavailable', 'no-task', 'undeclared', 'outputs',
              'hooks', 'dependency', 'no-proof', 'remote-exit'):
     p, work, config, state, env, cli = orchestrator_case('whole-' + name)
