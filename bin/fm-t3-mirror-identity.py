@@ -11,6 +11,8 @@ import subprocess
 TASK_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}\Z")
 THREAD_KEYS = ("threadId", "projectId", "title", "providerInstanceId", "model")
 BINDING_KEYS = (*THREAD_KEYS, "home", "state", "config", "task", "nonce", "workspace", "incarnation", "connection")
+# T3 CLI startup under contention can consume the mutation watchdog alone.
+IDENTITY_READ_TIMEOUT = 15
 
 
 class MirrorError(Exception):
@@ -128,7 +130,8 @@ def verify(path, expected, live_task=True):
     if live_task:
         current_task(record)
     code, out, _ = run([connection["binary"], "thread", "show", record["threadId"],
-                        "--messages", "10", "--json", "--base-dir", connection["base"]])
+                        "--messages", "10", "--json", "--base-dir", connection["base"]],
+                       timeout=IDENTITY_READ_TIMEOUT)
     if code:
         raise MirrorError("mirror-thread-unavailable")
     result = json.loads(out)
@@ -136,7 +139,7 @@ def verify(path, expected, live_task=True):
     if not isinstance(thread, dict) or any(thread.get(key) != record[key] for key in THREAD_KEYS):
         raise MirrorError("mirror-thread-identity-mismatch")
     code, out, _ = run([connection["binary"], "thread", "list", "--project", record["projectId"],
-                        "--json", "--base-dir", connection["base"]])
+                        "--json", "--base-dir", connection["base"]], timeout=IDENTITY_READ_TIMEOUT)
     if code:
         raise MirrorError("mirror-inventory-unavailable")
     inventory = json.loads(out)

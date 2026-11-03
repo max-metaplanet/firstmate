@@ -143,6 +143,16 @@ This proves real transport recovery context and relay execution, not delivery to
 The dedicated project was retired through the publisher's identity proof before stopping the owned instance and removing its scratch directory.
 Portable lifecycle coverage additionally checks failed project setup, teardown during project setup, refusal to delete a nonempty setup project, and retry after a successful project add whose response times out.
 
+An isolated T3 v0.1.5 refresh on 2026-11-03 checked identity-read startup contention with a seven-second delay before the real CLI's `thread show` or `thread list` invocation.
+Undelayed identity reads completed in 1.97 and 1.40 seconds on this host.
+With the delay, the six-second watchdog refused steering at 6.02 seconds without recording an inbox instruction.
+After increasing only the identity-read allowance to 15 seconds and restarting the owned T3 instance, the same delayed `thread show` completed in 9.18 seconds and real `fm-send.sh` recorded exactly one instruction.
+The replacement relay received the original workspace and ACP session id without a publisher update.
+A changed `spawn_gen` refused another instruction, leaving the inbox count at one.
+Retirement with delayed `thread list` removed the mapping, and real `t3 thread show` then exited 1 with `is no longer available`.
+This refresh models startup contention explicitly; it does not establish the cause of the earlier host-load spike.
+The focused mirror command above passed, including `ok - slow identity reads permit recovered steering and proven project retirement`; the existing project-add timeout regression still passed with its six-second mutation bound.
+
 ## Treehouse task lease recovery
 
 Verified on 2026-10-28 on Linux arm64 with Bash 5.3.9 and Node 24.22.1 using real fixture Git repositories and a stateful Treehouse stand-in.

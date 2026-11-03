@@ -92,6 +92,8 @@ elif args[:2] == ['thread', 'start']:
         sys.exit(4)
     print(json.dumps({'threadId': thread, 'projectId': project}))
 elif args[:2] == ['thread', 'show']:
+    if (base / 'slow-show').exists():
+        time.sleep(7)
     print(json.dumps({'thread': get(base / f'identity-{args[2]}.json'),
                       'messages': get(base / f'turns-{args[2]}.json')}))
 elif args[:2] == ['thread', 'send']:
@@ -101,6 +103,8 @@ elif args[:2] == ['thread', 'send']:
     save(path, get(path) + turn(get(base / f'identity-{args[2]}.json')['workspace']))
     print('{}')
 elif args[:2] == ['thread', 'list']:
+    if (base / 'slow-list').exists():
+        time.sleep(7)
     project = args[args.index('--project') + 1]
     rows = [get(path) for path in base.glob('identity-*.json') if get(path)['projectId'] == project]
     if (base / 'extra-thread').exists():
@@ -289,6 +293,24 @@ assert 'Instruction recorded for platform' in remote.prompt('check remote work',
 assert json.loads(sent()[-1])['host'] == 'host-a'
 remote.close()
 print('ok - actual ACP restart loads the existing mapping without an update; typed turns use fm-send for local and markerless remote tasks')
+
+task('slow')
+command('sync')
+slow_record = get(maps / 'slow.json')
+slow = Relay(slow_record, load=True)
+(base / 'slow-show').touch()
+delivered = len(sent())
+assert 'Instruction recorded for slow' in slow.prompt('inspect after a slow identity read')
+assert len(sent()) == delivered + 1 and json.loads(sent()[-1])['task'] == 'slow'
+(base / 'slow-show').unlink()
+slow.close()
+(base / 'slow-list').touch()
+(state / 'slow.meta').unlink()
+command('retire', 'slow')
+assert not (maps / 'slow.json').exists()
+assert (base / ('removed-' + slow_record['projectId'])).exists()
+(base / 'slow-list').unlink()
+print('ok - slow identity reads permit recovered steering and proven project retirement')
 
 # The same live identity mutations must stop publication AND inbound delivery.
 identity_path = base / f"identity-{alpha['threadId']}.json"
