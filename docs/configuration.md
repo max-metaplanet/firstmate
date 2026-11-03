@@ -1833,7 +1833,7 @@ Commands without `FM_TASK_ID` retain their existing behavior.
 Orchestrated routing requires a recognized heavy task name and a proof of every possible task, including dependencies and lifecycle hooks.
 The recognized names are `type-check`, `typecheck`, `check-types`, `lint`, `test`, `test:run`, `test:ci`, and `build`.
 Turbo's JSON dry run supplies its resolved task graph; pnpm's recursive package listing supplies its selected packages.
-Nx and Lerna support explicit package tasks with plain `nx:run-script` or single-command `nx:run-commands` targets, without inferred plugins, custom runners, configuration variants, or sync generators.
+Nx and Lerna support explicit package tasks with plain `nx:run-script` or single-command `nx:run-commands` targets, without inferred plugins, custom runners, configuration variants, sync generators, custom task inputs, or named inputs.
 Their proof conservatively checks all package tasks that could match, so an unsafe task outside a filter can keep the invocation local.
 Each executable task must be a single `tsc`, `eslint`, or `vitest run` command that passes the same argument, resolved TypeScript configuration, and project `local-only` checks as a top-level heavy command.
 Unknown scripts, shell programs, forwarded arguments, graph shapes, or orchestration options keep the whole invocation local with one notice.

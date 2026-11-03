@@ -591,7 +591,8 @@ def safe_orchestration(plan, root, settings):
             return count > 0
         else:
             nx = read_json(root / "nx.json") if (root / "nx.json").exists() else {}
-            if any(nx.get(key) for key in ("plugins", "tasksRunnerOptions", "sync", "extends")):
+            if any(nx.get(key) for key in ("plugins", "tasksRunnerOptions", "sync", "extends",
+                                           "namedInputs")):
                 return False
             if tool == "lerna":
                 lerna = read_json(root / "lerna.json")
@@ -622,11 +623,19 @@ def safe_orchestration(plan, root, settings):
                 scripts = package.get("scripts", {})
                 target = {}
                 if tool != "pnpm":
-                    layers = [default, package.get("nx", {}).get("targets", {}).get(name, {})]
+                    package_nx = package.get("nx", {})
+                    if package_nx.get("namedInputs"):
+                        return False
+                    layers = [default, package_nx.get("targets", {}).get(name, {})]
                     project = directory / "project.json"
                     if project.exists():
-                        layers.append(read_json(project).get("targets", {}).get(name, {}))
+                        project_config = read_json(project)
+                        if project_config.get("namedInputs"):
+                            return False
+                        layers.append(project_config.get("targets", {}).get(name, {}))
                     for layer in layers:
+                        if layer.get("inputs"):
+                            return False
                         if "options" in target and "options" in layer:
                             return False
                         target.update(layer)
@@ -647,9 +656,7 @@ def safe_orchestration(plan, root, settings):
                        for dep in dependencies):
                     return False
                 pending += [dep.lstrip("^") for dep in dependencies]
-                if not script:
-                    continue
-                if tool != "pnpm" and (target.get("cache") is not False and
+                if tool != "pnpm" and (script or target) and (target.get("cache") is not False and
                         "--skipNxCache" not in options and "--skip-nx-cache" not in options):
                     return False
                 if target.get("outputs") or target.get("configurations") or \
@@ -657,6 +664,8 @@ def safe_orchestration(plan, root, settings):
                         target.get("continuous") or target.get("options") and \
                         target.get("executor") != "nx:run-commands":
                     return False
+                if not script:
+                    continue
                 if scripts.get("pre" + name) or scripts.get("post" + name) or \
                         not safe_script(script, script_directory, settings, root):
                     return False

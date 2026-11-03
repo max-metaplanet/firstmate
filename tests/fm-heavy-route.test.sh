@@ -775,6 +775,93 @@ console.log('dependency marker=' + process.env.FM_HEAVY_ORCHESTRATOR);
             assert (work / 'packages/b/generated.txt').exists() == (not safe)
 print('ok - Nx and Lerna screen dependency-only targets from defaults, package and project metadata')
 
+def run_target_side_effect(work, env, cli, args, state, output):
+    parent = r"""#!/usr/bin/env node
+const cp = require('child_process');
+const path = require('path');
+cp.execFileSync(process.execPath, ['tools/side-effect.cjs'], {stdio: 'inherit'});
+const result = cp.spawnSync(process.execPath,
+  [path.resolve('node_modules/typescript/bin/tsc'), '--noEmit'],
+  {cwd: 'packages/a', env: process.env, stdio: 'inherit'});
+console.log('side-effect marker=' + process.env.FM_HEAVY_ORCHESTRATOR);
+process.exit(result.status);
+"""
+    (work / 'tools/orchestrator.cjs').write_text(parent)
+    cli.write_text(parent)
+    (work / 'tools/side-effect.cjs').write_text(
+        "require('fs').writeFileSync(" + json.dumps(output) + ", 'retained locally');\n")
+    subprocess.run(['git', '-C', str(work), 'add', '-A'], check=True, capture_output=True)
+    subprocess.run(['git', '-C', str(work), 'commit', '-qm', 'Target side effect fixture'],
+                   check=True, capture_output=True)
+    r = orchestration_run(work, env, cli, args)
+    assert r.returncode == 0 and starts(state) == 0, (args, output, r.stdout, r.stderr)
+    assert 'side-effect marker=local' in r.stdout, (r.stdout, r.stderr)
+    assert (work / output).read_text() == 'retained locally'
+
+
+for tool in ('nx', 'lerna'):
+    args = ['run-many', '-t', 'type-check'] if tool == 'nx' else ['run', 'type-check']
+    for owner in ('defaults', 'package', 'project'):
+        for named in (False, True):
+            p, work, config, state, env, cli = orchestrator_case(
+                'runtime-input-' + tool + '-' + owner + '-' + str(named), tool)
+            runtime = {'runtime': 'node tools/side-effect.cjs'}
+            target = {'cache': False}
+            if not named:
+                target['inputs'] = [runtime]
+            metadata = {'targets': {'type-check': target}}
+            if named:
+                metadata['namedInputs'] = {'default': ['hashSource'], 'hashSource': ['version'],
+                                          'version': [runtime]}
+                path = work / 'packages/b/package.json'
+                package = json.loads(path.read_text())
+                package['scripts'].pop('type-check')
+                path.write_text(json.dumps(package))
+            if owner == 'defaults':
+                (work / 'nx.json').write_text(json.dumps({
+                    'targetDefaults': metadata['targets'],
+                    **({'namedInputs': metadata['namedInputs']} if named else {})}))
+            elif owner == 'package':
+                path = work / 'packages/b/package.json'
+                package = json.loads(path.read_text())
+                package['nx'] = metadata
+                path.write_text(json.dumps(package))
+            else:
+                (work / 'packages/b/project.json').write_text(json.dumps(metadata))
+            run_target_side_effect(work, env, cli, args, state, 'version.json')
+        for policy in ('cache', 'outputs', 'options'):
+            if owner == 'defaults' and policy == 'options':
+                continue
+            p, work, config, state, env, cli = orchestrator_case(
+                'noop-policy-' + tool + '-' + owner + '-' + policy, tool)
+            path = work / 'packages/b/package.json'
+            package = json.loads(path.read_text())
+            package['scripts'].pop('type-check')
+            target = {'cache': False, 'dependsOn': ['typecheck'],
+                      policy: {'cache': True, 'outputs': ['noop-output.txt'],
+                               'options': {'cwd': 'packages/b'}}[policy]}
+            for directory in (work / 'packages/a', work / 'packages/b'):
+                package_path = directory / 'package.json'
+                current = package if directory.name == 'b' else json.loads(package_path.read_text())
+                current['scripts']['typecheck'] = 'tsc --noEmit'
+                if owner == 'package' and directory.name == 'b':
+                    current['nx'] = {'targets': {'type-check': target}}
+                package_path.write_text(json.dumps(current))
+            nx = json.loads((work / 'nx.json').read_text())
+            nx['targetDefaults']['typecheck'] = {'cache': False}
+            if owner == 'defaults':
+                nx['targetDefaults']['type-check'] = target
+                path = work / 'packages/a/package.json'
+                package_a = json.loads(path.read_text())
+                package_a['nx'] = {'targets': {'type-check': {'cache': False, 'outputs': [],
+                                                            'options': {}, 'dependsOn': []}}}
+                path.write_text(json.dumps(package_a))
+            elif owner == 'project':
+                (work / 'packages/b/project.json').write_text(json.dumps({'targets': {'type-check': target}}))
+            (work / 'nx.json').write_text(json.dumps(nx))
+            run_target_side_effect(work, env, cli, args, state, 'noop-output.txt')
+print('ok - Nx and Lerna keep hashing inputs and scriptless cache/output/option side effects local for every metadata owner')
+
 for name in ('untracked', 'local-only', 'unavailable', 'no-task', 'undeclared', 'outputs',
              'hooks', 'dependency', 'no-proof', 'remote-exit'):
     p, work, config, state, env, cli = orchestrator_case('whole-' + name)
