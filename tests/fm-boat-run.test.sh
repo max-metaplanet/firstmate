@@ -261,6 +261,73 @@ assert launch(p, env).returncode == 2
 assert not (state / 'calls.jsonl').exists()
 print('ok - unsafe input and tracked symlink are rejected before Boat')
 
+for history_mode in (False, True):
+    for label, selected, target, accepted in [
+        ('relative', '.agents/skills/verify-connect', '../../tracked.txt', True),
+        ('claude-skills', '.claude/skills', '../.agents/skills', True),
+        ('root-link', 'link', 'tracked.txt', True),
+        ('root-directory', 'link', '.', True),
+        ('escape', 'dir/link', '../../outside', False),
+        ('escape-reenter', 'dir/link', '../../work/tracked.txt', False),
+        ('absolute', 'dir/link', '/outside', False),
+        ('secret', 'dir/link', '../API_SECRET=symlink-never-print', False),
+        ('binary', 'dir/link', b'../bad-\xff', False),
+    ]:
+        p, state, env = case('symlink-' + str(history_mode) + '-' + label, clean_history=True)
+        work = p / 'work'
+        link = work / selected
+        link.parent.mkdir(parents=True, exist_ok=True)
+        os.symlink(target, link)
+        git(work, 'add', '--force', '.')
+        git(work, 'commit', '-qm', 'symlink fixture')
+        if history_mode and not accepted:
+            link.unlink()
+            git(work, 'add', '--all')
+            git(work, 'commit', '-qm', 'remove unsafe link')
+        git(work, 'update-ref', 'refs/remotes/origin/main', 'HEAD')
+        options = ('--history-depth', '2') if history_mode else ()
+        check = 'test ! -L ' + shlex.quote(selected) + ' && test -f tracked.txt'
+        r = launch(p, env, check, options)
+        assert r.returncode == (0 if accepted else 2), (history_mode, label, r.stdout, r.stderr)
+        assert b'symlink-never-print' not in r.stdout + r.stderr
+        if accepted:
+            uploaded = json.loads((state / 'uploaded.json').read_text())
+            assert selected not in uploaded, (selected, uploaded)
+            assert 'tracked.txt' in uploaded
+            notice = ('boat-offload: skipped in-repo symlink: ' + selected + '\n').encode()
+            assert r.stderr.count(notice) == 1, r.stderr
+            empty(state)
+        else:
+            assert not (state / 'calls.jsonl').exists()
+    for label in ('submodule', 'parent-component'):
+        p, state, env = case('unsafe-entry-' + str(history_mode) + '-' + label, clean_history=True)
+        work = p / 'work'
+        if label == 'submodule':
+            oid = git(work, 'rev-parse', 'HEAD').stdout.decode().strip()
+            git(work, 'update-index', '--add', '--cacheinfo', '160000,' + oid + ',module')
+            git(work, 'commit', '-qm', 'gitlink fixture')
+            if history_mode:
+                git(work, 'update-index', '--force-remove', 'module')
+                git(work, 'commit', '-qm', 'remove gitlink')
+        else:
+            (work / 'dir').mkdir()
+            (work / 'dir/file').write_text('tracked child\n')
+            (work / 'dir/link').symlink_to('../tracked.txt')
+            git(work, 'add', '.')
+            git(work, 'commit', '-qm', 'tracked directory')
+            (work / 'dir').rename(work / 'real-dir')
+            (work / 'dir').symlink_to('real-dir')
+        git(work, 'update-ref', 'refs/remotes/origin/main', 'HEAD')
+        r = launch(p, env, options=('--history-depth', '2') if history_mode else ())
+        if history_mode and label == 'submodule':
+            assert r.returncode == 0, r.stderr
+            assert b'history withheld' in r.stderr
+            empty(state)
+        else:
+            assert r.returncode == 2, (history_mode, label, r.stderr)
+            assert not (state / 'calls.jsonl').exists()
+print('ok - source and history skip screened in-repo symlinks once and refuse unsafe links; history withholds submodules')
+
 def multi(name, first=None, second=None, caps='live_cap=6 pending_cap=6 daily_cap=170'):
     p, state, env = case(name, first)
     other = state / 'account-2'
@@ -600,8 +667,8 @@ for name, selected, contents, symlink, accepted in [
     ('history-reimage-clean', '.claude/commands/reimage-dev.md', '# Reimage development\n', False, True),
     ('history-reimage-secret', '.claude/commands/reimage-dev.md', 'API_SECRET=historical-value-never-print', False, False),
     ('history-skills-link', '.claude/skills', '../.agents/skills', True, True),
-    ('history-other-link', 'other-link', 'tracked.txt', True, False),
-    ('history-claude-other-link', '.claude/other', '../tracked.txt', True, False),
+    ('history-other-link', 'other-link', 'tracked.txt', True, True),
+    ('history-claude-other-link', '.claude/other', '../tracked.txt', True, True),
     ('history-skills-escape', '.claude/skills', '../../outside', True, False),
     ('history-skills-absolute', '.claude/skills', '/outside', True, False),
     ('history-skills-secret', '.claude/skills', '../API_SECRET=historical-value-never-print', True, False),
@@ -630,8 +697,8 @@ for name, selected, contents, symlink, accepted in [
     if not accepted and not refused:
         check = 'git fsck --no-reflogs && ! git cat-file blob ' + oid + ' >/dev/null 2>&1'
     if symlink and accepted:
-        check = "test ! -e .claude/skills && test ! -L .claude/skills && " + \
-                "test \"$(git cat-file blob HEAD:.claude/skills)\" = ../.agents/skills && git fsck --no-reflogs"
+        check = 'test ! -L ' + shlex.quote(selected) + ' && test "$(git cat-file blob HEAD:' + \
+                selected + ')" = ' + shlex.quote(contents) + ' && git fsck --no-reflogs'
     r = launch(p, env, check, ('--history-depth', '2'))
     assert r.returncode == (2 if refused else 0), (name, r.stdout, r.stderr)
     assert b'historical-value-never-print' not in r.stdout + r.stderr
@@ -644,7 +711,7 @@ for name, selected, contents, symlink, accepted in [
         assert result(p)['kind'] == 'invalid'
         assert not (state / 'calls.jsonl').exists()
         assert not (p / 'output/upload/source.tar.gz').exists()
-print('ok - Claude history screens reimage content and only permits a screened in-repo skills symlink blob')
+print('ok - Claude history screens reimage content and permits screened in-repo symlink blobs')
 
 for name, unsafe_path, unsafe_content in [
     ('history-excluded', '.env', 'historical-value-never-print'),
@@ -667,16 +734,12 @@ for name, unsafe_path, unsafe_content in [
     ('history-github', 'ordinary.txt', 'ghp_0123456789abcdefghij'),
     ('history-github-pat', 'ordinary.txt', 'github_pat_0123456789abcdefghij'),
     ('history-aws', 'ordinary.txt', 'AKIA0123456789ABCDEF'),
-    ('history-symlink', 'pointer.txt', None),
 ]:
     p, state, env = case(name, clean_history=True)
     work = p / 'work'
     target = work / unsafe_path
     target.parent.mkdir(parents=True, exist_ok=True)
-    if unsafe_content is None:
-        target.symlink_to('tracked.txt')
-    else:
-        target.write_text(unsafe_content)
+    target.write_text(unsafe_content)
     git(work, 'add', '--force', '.')
     git(work, 'commit', '-qm', 'unsafe older blob')
     oid = git(work, 'rev-parse', 'HEAD:' + unsafe_path).stdout.decode().strip()
@@ -703,7 +766,7 @@ assert not pathlib.Path({unsafe_path!r}).exists()
     assert b'never-print' not in r.stdout + r.stderr, name
     assert result(p)['kind'] == 'completed'
     empty(state)
-print('ok - an excluded, credential-bearing, binary or symlinked historical object is withheld '
+print('ok - an excluded, credential-bearing or binary historical object is withheld '
       'without content, leaving real commits a clean fsck reads')
 
 p, state, env = case('history-current-blob', clean_history=True)
