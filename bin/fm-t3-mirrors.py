@@ -9,8 +9,6 @@ import os
 from pathlib import Path
 import re
 import shutil
-import signal
-import subprocess
 import sys
 import time
 import uuid
@@ -24,49 +22,22 @@ RELAY = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(RELAY)
 
 
-class MirrorError(Exception):
-    pass
-
-
-def read_json(path):
-    if path.is_symlink():
-        raise MirrorError("symlinked-record")
-    value = json.loads(path.read_text())
-    if not isinstance(value, dict):
-        raise MirrorError("invalid-record")
-    return value
-
-
-def write_json(path, value):
-    if path.is_symlink():
-        raise MirrorError("symlinked-record")
-    temporary = path.with_name(path.name + ".new")
-    fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o600)
-    with os.fdopen(fd, "w") as stream:
-        json.dump(value, stream)
-        stream.flush()
-        os.fsync(stream.fileno())
-    temporary.replace(path)
-
-
-def run(args, text=None, env=None):
-    process = subprocess.Popen(args, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                               stderr=subprocess.PIPE, text=True, env=env, start_new_session=True)
-    try:
-        stdout, stderr = process.communicate(text, timeout=6)
-    except subprocess.TimeoutExpired:
-        os.killpg(process.pid, signal.SIGKILL)
-        process.communicate()
-        raise MirrorError("command-timeout") from None
-    return process.returncode, stdout, stderr
+IDENTITY = RELAY.IDENTITY
+MirrorError = IDENTITY.MirrorError
+read_json = IDENTITY.read_json
+write_json = IDENTITY.write_json
+run = IDENTITY.run
+SPEC = importlib.util.spec_from_file_location("mirror_redact", Path(__file__).with_name("fm-t3-redact.py"))
+REDACT = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(REDACT)
 
 
 class Publisher:
     def __init__(self, home, state, config):
         self.home = str(home.resolve())
-        self.state = state
-        self.config = config
-        self.root = state / "t3-mirrors"
+        self.state = state.resolve()
+        self.config = config.resolve()
+        self.root = self.state / "t3-mirrors"
         if self.root.is_symlink():
             raise MirrorError("symlinked-mirror-directory")
         self.root.mkdir(mode=0o700, exist_ok=True)
@@ -105,23 +76,23 @@ class Publisher:
                 or not re.fullmatch(r"acpRegistry_[A-Za-z0-9_-]+", connection["provider"])):
             raise MirrorError("invalid-connection")
         self.connection = connection
-        self.workspace = Path(connection["base"]) / "userdata" / "firstmate-mirrors"
 
     def t3(self, *args, text=None):
         return run([self.connection["binary"], *args, "--base-dir", self.connection["base"]], text)
 
-    def project(self):
-        if self.workspace.is_symlink() or self.workspace.parent.is_symlink():
+    def project(self, record):
+        workspace = Path(record["workspace"])
+        workspace.mkdir(mode=0o700, parents=True, exist_ok=True)
+        if workspace.resolve() != workspace:
             raise MirrorError("symlinked-presentation-workspace")
-        self.workspace.mkdir(mode=0o700, parents=True, exist_ok=True)
-        code, out, err = self.t3("project", "add", str(self.workspace), "--title", "Firstmate · Mirrors")
+        code, out, err = self.t3("project", "add", str(workspace), "--title", record["title"])
         if code and not ("ProjectAlreadyExistsError" in out + err
-                         and f"An active project already exists for '{self.workspace}'" in out + err):
+                         and f"An active project already exists for '{workspace}'" in out + err):
             raise MirrorError("project-unavailable")
 
     def observe(self, task, metadata):
         env = dict(os.environ, FM_HOME=self.home, FM_STATE_OVERRIDE=str(self.state),
-                   FM_CONFIG_OVERRIDE=str(self.config), FM_CREW_STATE_NO_FORGE="1")
+                   FM_CONFIG_OVERRIDE=str(self.config), FM_CREW_STATE_NO_FORGE="1", FM_PEEK_NO_GUARD="1")
         try:
             code, out, _ = run(["bash", str(Path(__file__).with_name("fm-crew-state.sh")), task], env=env)
         except MirrorError:
@@ -153,35 +124,41 @@ class Publisher:
                 if event and url:
                     break
         values = dict(line.split("=", 1) for line in metadata.splitlines() if "=" in line)
-        return {"schema": "fm-t3-mirror.v1", "task": task,
+        try:
+            code, capture, _ = run(["bash", str(Path(__file__).with_name("fm-peek.sh")), task, "80"], env=env)
+            tail = REDACT.redact_lines(capture) if code == 0 else []
+        except (OSError, MirrorError):
+            tail = []
+        return {"schema": "fm-t3-mirror.v2", "task": task, "tail": tail,
                 "kind": "secondmate" if values.get("kind") == "secondmate" else "worker",
                 "state": state, "phase": phase, "event": event, "pr": url}
 
     def save_task(self, path, record):
-        if (self.state / f"{record['task']}.meta").is_file():
-            write_json(path, record)
-        else:
-            path.unlink(missing_ok=True)
+        write_json(path, record)
 
     def thread(self, record):
-        code, out, _ = self.t3("thread", "show", record["threadId"], "--messages", "10", "--json")
+        return IDENTITY.verify(self.records / f"{record['task']}.json", record)
+
+    def retire(self, path):
+        record = read_json(path)
+        if record.get("version") != 2:
+            raise MirrorError("legacy-shared-project-preserved")
+        # Revocation is durable before any fallible T3 operation.
+        record["retired"] = True
+        write_json(path, record)
+        IDENTITY.verify(path, record, live_task=False)
+        code, _, _ = self.t3("project", "remove", record["projectId"], "--force")
         if code:
-            raise MirrorError("relay-receipt-unavailable")
-        result = json.loads(out)
-        thread = result.get("thread", {})
-        if (any(thread.get(key) != record.get(key) for key in ("threadId", "projectId", "title"))
-                or thread.get("providerInstanceId") != self.connection["provider"]
-                or thread.get("model") != "mirror"):
-            raise MirrorError("mirror-thread-identity-mismatch")
-        return result
+            raise MirrorError("cleanup-removal-unconfirmed")
+        path.unlink()
 
     def confirm(self, path, record):
         update = record.get("pending_update")
         if not isinstance(update, dict):
             raise MirrorError("uncertain-send-inspect-t3")
         result = self.thread(record)
-        expected = RELAY.render([{"type": "text", "text": json.dumps(update)}])
-        prompt = record.get("pending_prompt", json.dumps(update))
+        prompt = record["pending_prompt"]
+        expected = RELAY.render([{"type": "text", "text": prompt}])
         matching_prompt = False
         for message in result.get("messages", []):
             if message.get("role") == "user":
@@ -195,17 +172,20 @@ class Publisher:
 
     def publish(self, task, metadata):
         path = self.records / f"{task}.json"
+        incarnation = IDENTITY.task_identity(metadata)
+        record = read_json(path) if path.exists() else None
+        if record and (record.get("retired") or record.get("incarnation") != incarnation):
+            self.retire(path)
+            record = None
         update = self.observe(task, metadata)
         if (self.state / f"{task}.meta").read_text() != metadata:
             return
+        # Leave room for JSON-RPC/T3 wrappers inside the ACP request bound.
+        while len(RELAY.update_prompt(update).encode()) > 8000 and update["tail"]:
+            update["tail"].pop(0)
         fingerprint = hashlib.sha256(json.dumps(update, sort_keys=True).encode()).hexdigest()
-        record = read_json(path) if path.exists() else None
         if record:
-            if (record.get("version") != 1 or record.get("home") != self.home or record.get("task") != task
-                    or record.get("connection") != self.connection):
-                raise MirrorError("invalid-task-mapping")
-            if record.get("phase") != "ready":
-                raise MirrorError("uncertain-creation-inspect-t3")
+            self.thread(record)
             if record.get("pending"):
                 self.confirm(path, record)
             if record.get("fingerprint") == fingerprint:
@@ -213,36 +193,32 @@ class Publisher:
         update["observed_at"] = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         prompt = RELAY.update_prompt(update)
         if record is None:
-            self.project()
             nonce = str(uuid.uuid4())
-            kind = "Secondmate" if update["kind"] == "secondmate" else "Worker"
-            title = f"Mirror · {kind} · {task} · {Path(self.home).name} · {nonce[:8]}"
-            record = {"version": 1, "home": self.home, "task": task, "connection": self.connection,
-                      "nonce": nonce, "title": title, "phase": "creating", "pending": fingerprint,
-                      "pending_update": update, "pending_prompt": prompt}
+            workspace = self.root / "workspaces" / task / nonce
+            record = {"version": 2, "home": self.home, "state": str(self.state), "config": str(self.config),
+                      "task": task, "incarnation": incarnation, "connection": self.connection,
+                      "nonce": nonce, "workspace": str(workspace), "phase": "creating",
+                      "providerInstanceId": self.connection["provider"], "model": "mirror",
+                      "pending": fingerprint, "pending_update": update, "pending_prompt": prompt}
+            record["title"] = IDENTITY.title(record)
             self.save_task(path, record)
-            if not path.exists():
-                return
-            code, out, _ = self.t3("thread", "start", str(self.workspace), "-", "--title", title,
+            self.project(record)
+            IDENTITY.current_task(record)
+            code, out, _ = self.t3("thread", "start", str(workspace), "-", "--title", record["title"],
                                    "--provider", self.connection["provider"], "--model", "mirror", "--json", text=prompt)
             if code:
                 raise MirrorError("uncertain-creation-inspect-t3")
             result = json.loads(out)
-            if not all(isinstance(result.get(key), str) and result[key] for key in ("threadId", "projectId")):
+            if not isinstance(result, dict) or not all(
+                    isinstance(result.get(key), str) and result[key] for key in ("threadId", "projectId")):
                 raise MirrorError("uncertain-creation-inspect-t3")
             record.update(threadId=result["threadId"], projectId=result["projectId"], phase="ready")
             self.save_task(path, record)
             self.confirm(path, record)
         else:
-            if not all(isinstance(record.get(key), str) and record[key] for key in ("threadId", "projectId")):
-                raise MirrorError("invalid-task-mapping")
-            self.thread(record)
-            record["pending"] = fingerprint
-            record["pending_update"] = update
-            record["pending_prompt"] = prompt
+            record.update(pending=fingerprint, pending_update=update, pending_prompt=prompt)
             self.save_task(path, record)
-            if not path.exists():
-                return
+            self.thread(record)
             code, _, _ = self.t3("thread", "send", record["threadId"], "-", "--wait", "--json", text=prompt)
             if code:
                 raise MirrorError("uncertain-send-inspect-t3")
@@ -253,8 +229,14 @@ class Publisher:
         self.bind()
         deadline = time.monotonic() + 45
         for path in sorted(self.records.glob("*.json")):
+            if time.monotonic() > deadline:
+                self.log("pass-budget-exhausted")
+                break
             if not (self.state / f"{path.stem}.meta").exists():
-                path.unlink()
+                try:
+                    self.retire(path)
+                except (MirrorError, OSError, ValueError, TypeError, KeyError) as error:
+                    self.log(str(error) if isinstance(error, MirrorError) else "cleanup-unavailable", path.stem)
         metas = sorted(self.state.glob("*.meta"))
         cursor = self.root / "cursor.json"
         last = read_json(cursor).get("task", "") if cursor.exists() else ""
@@ -270,7 +252,7 @@ class Publisher:
                 self.publish(task, meta.read_text())
             except MirrorError as error:
                 self.log(str(error), task)
-            except (OSError, ValueError, TypeError):
+            except (OSError, ValueError, TypeError, KeyError):
                 self.log("invalid-or-unavailable-task-record", task)
             write_json(cursor, {"task": task})
 
@@ -289,7 +271,13 @@ def main():
         if command == "retire":
             task = sys.argv[5]
             if RELAY.TASK_ID.fullmatch(task) and not (publisher.state / f"{task}.meta").exists():
-                (publisher.records / f"{task}.json").unlink(missing_ok=True)
+                path = publisher.records / f"{task}.json"
+                if path.exists():
+                    try:
+                        publisher.bind()
+                        publisher.retire(path)
+                    except MirrorError as error:
+                        publisher.log(str(error), task)
             return
         try:
             publisher.sync()

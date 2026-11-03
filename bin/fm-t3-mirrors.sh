@@ -1,31 +1,37 @@
 #!/usr/bin/env bash
-# fm-t3-mirrors.sh - optional, presentation-only T3 status threads.
+# fm-t3-mirrors.sh - optional T3 conversation mirrors with inbox steering.
 #
 # Usage: fm-t3-mirrors.sh kick|sync
 #        fm-t3-mirrors.sh retire TASK_ID
-# kick starts one detached, bounded sync without waiting for T3.
-# sync runs a bounded best-effort pass; failures are logged and return success.
-# retire TASK_ID drops only that task's local mapping after metadata retirement.
-# Historical T3 conversations remain; the CLI has no individual-thread delete.
-# No command reads panes, steers workers, takes fleet locks, or edits endpoints.
+# kick starts a detached, bounded best-effort pass; sync runs it in the caller.
+# Errors log fixed classes and task ids, never raw output or credentials.
+# Enable with config/t3-mirrors containing exactly 1. Off creates no state.
+# retire also works while off, after task metadata is gone. It revokes steering,
+# proves the dedicated project holds exactly its recorded thread, then removes
+# that project. Failed proofs/removals keep the mapping for inspection/retry.
+# Neither the task endpoint nor its lifecycle changes.
 #
-# Enable with config/t3-mirrors containing exactly 1. Off is a no-op, including
-# no Python/T3 dependency or state creation. Retirement also works when off.
-# Set FM_T3_BIN and FM_T3_BASE_DIR as for fm-t3.sh; first sync binds the absolute
-# CLI and base in state/t3-mirrors/connection.json. Later env overrides are ignored.
-# Register fm-t3-mirror-relay.py in T3 as local provider acpRegistry_firstmate_mirror
-# with model mirror before enabling. Setup never edits T3 provider settings.
-# If T3 assigned another local instance id, put it in config/t3-mirror-provider
-# before the first sync; only acpRegistry_ ids are accepted and the id is bound.
-# All homes share the neutral BASE/userdata/firstmate-mirrors workspace/project.
-# Maps and creation/send journals belong only to HOME/state/t3-mirrors.
-# Before sending, the saved thread/project/title/provider/model must still match.
-# Delivery is confirmed by a matching prompt and formatted assistant reply from
-# thread show. A pending known-thread send is read again on the next pass.
-# An uncertain creation with no thread id, or a send with no matching receipt,
-# is held for inspection, never blindly replayed. Inspect the saved task journal
-# and exact nonce-bearing title in T3 before manual reconciliation.
-# Logs contain fixed error classes and task ids, never CLI output or credentials.
+# Set FM_T3_BIN and FM_T3_BASE_DIR as for fm-t3.sh. First sync binds the absolute
+# CLI/base/home/provider in STATE/t3-mirrors/connection.json; later overrides
+# are ignored. Register fm-t3-mirror-relay.py as a local ACP provider with model
+# mirror, default id acpRegistry_firstmate_mirror; config/t3-mirror-provider may
+# select another acpRegistry_ id before the first sync. Setup edits no providers.
+#
+# Each mapping in STATE/t3-mirrors/tasks/TASK.json is version 2 and records its
+# home/state/config, task incarnation, nonce, workspace, thread/project/title,
+# provider/model, connection, and send journal. Workspace/project paths are
+# STATE/t3-mirrors/workspaces/TASK/NONCE. ACP cwd locates that same mapping on
+# new/load without another registry. No identity is accepted from prompt text.
+# One shared verifier checks publication and inbound steering. Local tasks bind
+# spawn_gen; markerless remote secondmates bind remote_host as fm-send does.
+# The relay calls only fm-send.sh for ordinary typed instructions, with its
+# final locked generation/remote-host guard; command/key prefixes are refused.
+# Backend-neutral fm-peek captures are bounded and redacted before publication.
+#
+# Matching prompt/reply receipts confirm sends. Unknown creation and unconfirmed
+# sends are held for inspection, never replayed. Legacy version-1 shared-project
+# mappings are preserved for manual reconciliation, never deleted automatically.
+# Maps/journals remain private to the selected home; no fleet locks are taken.
 set -u
 
 usage() { sed -n '2,/^set -/p' "${BASH_SOURCE[0]}" | sed '$d; s/^# \{0,1\}//'; }

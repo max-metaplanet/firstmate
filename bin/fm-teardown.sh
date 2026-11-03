@@ -4184,6 +4184,7 @@ fi
 rm -f "$STATE/$ID.park"
 fm_lock_release "$META_LOCK"
 META_LOCK_HELD=0
+# Metadata retirement revokes mirror steering before dedicated-project cleanup.
 if [ -d "$STATE/t3-mirrors" ]; then
   FM_HOME=$FM_HOME FM_STATE_OVERRIDE=$STATE FM_CONFIG_OVERRIDE=$CONFIG \
     bash "$SCRIPT_DIR/fm-t3-mirrors.sh" retire "$ID" >/dev/null 2>&1 || true

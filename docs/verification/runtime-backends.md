@@ -83,25 +83,31 @@ Use the existing T3 live guards above to refresh native service behavior.
 
 ### Deterministic presentation mirrors
 
-Verified on 2026-10-31 with T3 v0.1.5 on Linux arm64 in an isolated desktop-mode instance.
-One synthetic worker and one synthetic secondmate shared one presentation project with distinct thread ids.
-The desktop web frontend displayed the worker's initial and subsequent completed updates and the secondmate's paused update.
-The compact-prompt follow-up rendered `Update · working · synthetic-worker` even after expanding the user message.
-The browser DOM check returned `shortPrompt: true` and `rawPayloadVisible: false` for the structured schema marker `fm-t3-mirror.v1`.
-New sidebar titles began with `Mirror`; the paused secondmate still displayed T3's native Done badge, as documented in the guide.
-Both relay turns settled with `activeRunId: null`; repeated unchanged syncs retained the two mappings without another worker run.
-An explicit shell-command prompt returned `Presentation only. Send instructions through Firstmate. Nothing typed here is executed.` and created no file.
-This checks the real desktop frontend through Chrome, not the installed native shell or a live fleet.
+Portable contracts verified on 2026-11-03 with Python 3.14.4 and Bash 5.3.9 on Linux arm64.
+The tests run the real ACP relay as a subprocess against a stateful fake T3 transport and an `fm-send.sh` boundary fixture.
+They exercise per-task projects, redacted captures, inbound and outbound identity mismatches, generation changes, markerless remote secondmates, project cleanup proofs, and uncertain-delivery journals.
+Restart recovery uses a new relay process, an existing session id, and the original workspace, without a publisher update.
+The current T3 source passes `cwd: options.cwd` to both `session/new` and `session/load` in `packages/provider-acp/src/server/AcpSessionRuntime.ts`; the portable test drives those request shapes.
 The [T3 guide](../t3-backend.md#presentation-mirrors) owns setup and operating limits.
 
-Refresh the portable relay, mapping, and wake-drain contracts with:
+Refresh the contracts with:
 
 ```sh
-bash bin/fm-test-run.sh tests/fm-t3-mirrors.test.sh
+bash bin/fm-test-run.sh tests/fm-t3-mirrors.test.sh tests/fm-t3-redact.test.sh
 ```
 
-Observed output included `ok - real wake drain succeeds while detached T3 publication fails` and `ok - real ACP relay formats statuses, settles each prompt, reloads sessions, and refuses commands/tools/models`.
-The publisher uses the shared wake-drain and crew-state interfaces across primary harnesses and runtime backends; it does not add a harness adapter or endpoint.
+Observed output includes:
+
+```text
+ok - actual ACP restart loads the existing mapping without an update; typed turns use fm-send for local and markerless remote tasks
+ok - thread/project/title/provider/model and mapping mismatches refuse both directions; send failures report uncertain delivery
+ok - cleanup while disabled requires the single-thread match and preserves revoked mappings on failed proof/removal
+ok - control bytes, terminal titles, short private key bodies and env dumps are dropped
+```
+
+These contracts do not prove the live desktop frontend or a live worker's delivery.
+The earlier T3 v0.1.5 desktop verification covered status-only shared-project mirrors; it does not cover conversation tails or inbound steering.
+The publisher uses shared crew-state and backend-neutral capture interfaces rather than a harness-specific adapter.
 
 ## Treehouse task lease recovery
 

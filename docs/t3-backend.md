@@ -72,12 +72,12 @@ The [handover guide](t3-leader-handover.md) describes the leader-specific limits
 
 ## Presentation mirrors
 
-Presentation mirrors give each existing worker and secondmate a readable thread in the desktop's `Firstmate · Mirrors` project.
+Presentation mirrors give each existing worker and secondmate a readable thread in its own T3 project.
 They are independent of the native `t3` backend above.
 Workers keep their existing endpoints, models, accounts, and dispatch settings.
 The mirror relay runs Python 3 locally, makes no model calls, and exposes no tools.
-Messages typed in a mirror receive a presentation-only notice and never steer or execute anything.
-Steering from T3 is a later slice.
+Ordinary text typed in a mirror goes through Firstmate's durable steering inbox using `fm-send.sh`.
+Slash commands, skill invocations, and key options are refused because they can select a different delivery path.
 
 In T3's provider settings, add a **Local ACP command** pointing to the absolute executable path of [`bin/fm-t3-mirror-relay.py`](../bin/fm-t3-mirror-relay.py), with no arguments.
 Keep that checkout available for the lifetime of the provider.
@@ -101,32 +101,46 @@ For example, the provider instance's configuration is:
 Use the same `FM_T3_BIN` and `FM_T3_BASE_DIR` environment as the native helpers, then enable [config/t3-mirrors](configuration.md#t3-presentation-mirrors-configt3-mirrors) in each owning home that should publish.
 Run [`fm-t3-mirrors.sh sync`](../bin/fm-t3-mirrors.sh) with that explicit `FM_HOME` for the first update.
 Subsequent wake drains schedule detached, bounded passes without waiting for T3.
-All enabled homes on the same T3 base reuse one neutral presentation workspace, separate from leader and task projects.
+Each task uses a dedicated empty presentation workspace, separate from its real checkout and endpoint.
 Each home durably saves its own connection and task-to-thread mappings.
 Later environment changes cannot redirect an existing binding.
 
-When a pass observes a change in the projected status, it sends a short update prompt followed by the deterministic relay's readable reply.
+When a pass observes a change in the projected status or recent output, it sends a short update prompt followed by the deterministic relay's readable reply.
 The visible prompt is a single line such as `Update · parked · survey-slug-edit`; its structured payload lives in an unused Markdown reference definition that the rendered bubble omits.
 Intermediate changes between passes may not appear in the mirror.
 The reply leads with the outcome or blocker, gives the next action, and ends with its observation time.
 Only known current-state values, known validation steps, historical event names, and canonical GitHub PR links are projected.
-Raw status prose, pane captures, credentials, and tool logs are never forwarded.
+Raw status prose is never forwarded.
+The reply also contains a bounded tail of backend-neutral `fm-peek.sh` output after [`fm-t3-redact.py`](../bin/fm-t3-redact.py) removes terminal controls, env-looking values, credential patterns, and private key blocks.
+The filter preserves readable conversation and test output, but cannot recognize every secret in arbitrary prose.
+Enable mirrors only in homes whose captured output is appropriate for the selected T3 instance.
 Detailed blockers remain available through Firstmate.
 T3's native Working or Done badge describes the brief relay turn; the message body describes the worker.
 Stock T3 displays the green **Done** badge after the relay replies, including when the worker is working, parked, or blocked.
-New thread titles start with **Mirror** to identify the presentation layer; existing mapped titles remain stable.
+Thread titles begin with **Mirror** and include the task and a nonce.
 The relay settles promptly and does not hold a fake active turn to change that badge.
 An old observation time means the displayed state may be stale.
 
 Delivery failures are recorded locally and never fail supervision, dispatch, steering, or teardown.
 Creation is journaled before launch, and delivery requires the matching prompt and formatted reply in T3.
 Pending sends to known threads are read again on later passes; uncertain operations without a matching receipt are held for inspection instead of blindly retried.
-The publisher also checks the saved thread identity, provider, and model before sending, so a renamed or repurposed thread stops receiving updates.
+Publication and inbound steering use the same [`identity verifier`](../bin/fm-t3-mirror-identity.py).
+It checks the saved home, task, nonce, thread, project, title, provider, and model against the live thread and task metadata.
+Local task mappings bind to the current run generation; remote secondmates use the existing remote-host identity rule.
+`fm-send.sh` checks the expected generation or remote host again under its metadata lock before delivery.
+A renamed, retired, or replaced task cannot accept instructions from its old mirror.
+After a relay restart, ACP supplies the workspace on session load, so steering recovers from the existing mapping without another status update.
+A busy publisher can temporarily refuse steering; the reply asks you to retry after the update settles.
+An unconfirmed send asks you to inspect the inbox through Firstmate before resending.
 Use the exact saved connection and nonce-bearing thread title to inspect T3 before any manual journal reconciliation.
 These holds can leave a mirror stale while the real worker continues normally.
 Disabling publication leaves existing threads and history intact.
-Successful task teardown retires its local mapping, including when publication is disabled; a concurrent pass also prunes mappings whose task metadata is gone.
-Historical mirror threads remain in T3 because its CLI has no individual-thread delete operation.
-The publisher never deletes the shared project, a leader thread, or another conversation.
+Successful task teardown revokes steering and removes the dedicated T3 project only after proving that it contains exactly the recorded thread.
+Retirement also works while publication is disabled.
+Failed identity checks or project removal preserve the revoked mapping for inspection and retry.
+T3's CLI has no individual-thread delete operation, so unrelated conversations prevent project removal.
+Legacy version-1 mappings refer to the former shared project and require manual reconciliation; automatic cleanup preserves that project.
+The command and mapping contracts live in [`fm-t3-mirrors.sh`](../bin/fm-t3-mirrors.sh).
 
-[`tests/fm-t3-mirrors.test.sh`](../tests/fm-t3-mirrors.test.sh) exercises the real ACP executable and fake T3 transport, including disabled operation, home identity, retry safety, privacy, and unreachable delivery.
+[`tests/fm-t3-mirrors.test.sh`](../tests/fm-t3-mirrors.test.sh) exercises the real ACP executable and fake T3 transport, including disabled operation, identity mismatches in both directions, restart recovery, remote secondmates, cleanup proofs, and uncertain delivery.
+[`tests/fm-t3-redact.test.sh`](../tests/fm-t3-redact.test.sh) covers capture privacy separately.
