@@ -705,6 +705,8 @@ def safe_orchestration(plan, root, settings):
 
 def orchestrated(command=None):
     """The first orchestrator among this process's ancestors, or None."""
+    plan = orchestration(command) if command else None
+    launcher_index = len(plan[1]) - 1 if plan else 1
     pid = os.getppid()
     first = True
     while pid > 1:
@@ -715,7 +717,10 @@ def orchestrated(command=None):
             pid = int(stat[stat.rindex(")") + 2:].split()[1])
         except (OSError, ValueError, IndexError):
             return None
-        if first and command and command[1:] == argv[1:]:
+        if first and command and len(command) == len(argv) and len(command) > launcher_index and \
+                command[1:launcher_index] == argv[1:launcher_index] and \
+                command[launcher_index + 1:] == argv[launcher_index + 1:] and \
+                Path(command[launcher_index]).resolve() == Path(argv[launcher_index]).resolve():
             first = False
             continue
         first = False

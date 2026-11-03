@@ -509,6 +509,8 @@ def orchestrator_case(name, tool='turbo', declaration=None, cache=False, script=
                'cp tools/tsc node_modules/typescript/bin/tsc; '
                'ln -s ../typescript/bin/tsc node_modules/.bin/tsc; '
                'ln -s ../pnpm/bin/pnpm.cjs node_modules/.bin/pnpm; '
+               'ln -s ../nx/bin/nx.js node_modules/.bin/nx; '
+               'ln -s ../lerna/dist/cli.js node_modules/.bin/lerna; '
                'ln -s ../turbo/bin/turbo node_modules/.bin/turbo')
     declared = 'smokeproj bootstrap=' + shlex.quote(install) + '\n'
     p, work, config, state, env = case(name, declaration=declaration or declared)
@@ -673,6 +675,46 @@ for tool, args in (('turbo', ['type-check']), ('nx', ['run-many', '-t', 'type-ch
     assert r.stderr.count('orchestrator on Boat') == 1, r.stderr
     assert 'running locally' not in r.stderr, r.stderr
 print('ok - turbo, nx, lerna and recursive/filtered pnpm route one whole run; two children start no jobs')
+
+for index, (tool, args) in enumerate((('turbo', ['type-check']),
+                                     ('nx', ['run-many', '-t', 'type-check']),
+                                     ('lerna', ['run', 'type-check']),
+                                     ('pnpm', ['-r', 'type-check']),
+                                     ('pnpm', ['--filter=a', 'type-check']))):
+    for mode in ('canonical', 'symlink', 'require-pair', 'require-equals', 'local', 'ancestor'):
+        p, work, config, state, env, cli = orchestrator_case(
+            'relative-launcher-' + str(index) + '-' + mode, tool)
+        launcher = cli.resolve().relative_to(work) if mode in ('canonical', 'ancestor') else (
+            Path('node_modules/.bin') / tool)
+        node_flags = []
+        preload = str(Path(env['FM_BUILD_LOCK_INSTALL_DIR']) / 'fm-build-lock.js')
+        if mode == 'require-pair':
+            node_flags = ['--require', preload]
+        elif mode == 'require-equals':
+            node_flags = ['--require=' + preload]
+        command = ['node', *node_flags, './' + str(launcher), *args]
+        if mode == 'local':
+            command.append('--mystery')
+        elif mode == 'ancestor':
+            outer = p / 'outer' / tool
+            outer.parent.mkdir()
+            outer.write_text(ORCHESTRATOR)
+            outer.chmod(0o755)
+            outer_flags = ['-r', 'exec'] if tool == 'pnpm' else ['run', 'type-check']
+            command = [str(outer), *outer_flags, '--', *command]
+        r = subprocess.run(command, env=env, cwd=work, capture_output=True, text=True, timeout=120)
+        assert r.returncode == 0, (tool, mode, r.stdout, r.stderr)
+        if mode in ('local', 'ancestor'):
+            assert not called(state), (tool, mode, r.stdout, r.stderr)
+            assert r.stderr.count('running locally in a heavy slot') == 1, (tool, mode, r.stderr)
+            assert r.stdout.count('child marker=local held=') == 2, (tool, mode, r.stdout, r.stderr)
+            if mode == 'ancestor':
+                assert 'runs under ' + tool in r.stderr, r.stderr
+        else:
+            assert starts(state) == 1, (tool, mode, r.stdout, r.stderr)
+            assert r.stdout.count('child marker=remote held=\n') == 2, (tool, mode, r.stdout, r.stderr)
+            assert 'running locally' not in r.stderr, (tool, mode, r.stderr)
+print('ok - relative and symlink launchers route once, including preload flags, while true ancestors and fallback children stay local')
 
 for source in ('user', 'global', 'environment'):
     for enabled in (False, True):
