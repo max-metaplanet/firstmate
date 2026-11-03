@@ -1,0 +1,119 @@
+[
+  {
+    "scenario": "stdin-enabled",
+    "exit": 0,
+    "stdout": "{\"stdin\": \"let =\\n\", \"args\": [\"--stdin\"], \"held\": true, \"cwd\": \"~/.no-mistakes/worktrees/c0c4fcacb05a/01M6F69E73DAH81GDVY9A8R0JM/.nm-live-lwio0a7k/sampleproject\"}\n",
+    "stderr": "heavy-route: eslint has unknown or ambiguous options, reads input Boat cannot receive, or writes files Boat would not bring back; running locally in a heavy slot\nworkload diagnostic\n"
+  },
+  {
+    "scenario": "stdin-negated-false",
+    "exit": 0,
+    "stdout": "{\"stdin\": \"let =\\n\", \"args\": [\"--no-stdin=false\"], \"held\": true, \"cwd\": \"~/.no-mistakes/worktrees/c0c4fcacb05a/01M6F69E73DAH81GDVY9A8R0JM/.nm-live-lwio0a7k/sampleproject\"}\n",
+    "stderr": "heavy-route: eslint has unknown or ambiguous options, reads input Boat cannot receive, or writes files Boat would not bring back; running locally in a heavy slot\nworkload diagnostic\n"
+  },
+  {
+    "scenario": "stdin-separate-true",
+    "exit": 0,
+    "stdout": "{\"stdin\": \"let =\\n\", \"args\": [\"--stdin\", \"true\"], \"held\": true, \"cwd\": \"~/.no-mistakes/worktrees/c0c4fcacb05a/01M6F69E73DAH81GDVY9A8R0JM/.nm-live-lwio0a7k/sampleproject\"}\n",
+    "stderr": "heavy-route: eslint has unknown or ambiguous options, reads input Boat cannot receive, or writes files Boat would not bring back; running locally in a heavy slot\nworkload diagnostic\n"
+  },
+  {
+    "scenario": "unknown-option",
+    "exit": 0,
+    "stdout": "{\"stdin\": \"payload\\n\", \"args\": [\"--invented-future-output=lost\"], \"held\": true, \"cwd\": \"~/.no-mistakes/worktrees/c0c4fcacb05a/01M6F69E73DAH81GDVY9A8R0JM/.nm-live-lwio0a7k/sampleproject\"}\n",
+    "stderr": "heavy-route: eslint has unknown or ambiguous options, reads input Boat cannot receive, or writes files Boat would not bring back; running locally in a heavy slot\nworkload diagnostic\n"
+  },
+  {
+    "scenario": "ambiguous-option",
+    "exit": 0,
+    "stdout": "{\"stdin\": \"payload\\n\", \"args\": [\"--format\"], \"held\": true, \"cwd\": \"~/.no-mistakes/worktrees/c0c4fcacb05a/01M6F69E73DAH81GDVY9A8R0JM/.nm-live-lwio0a7k/sampleproject\"}\n",
+    "stderr": "heavy-route: eslint has unknown or ambiguous options, reads input Boat cannot receive, or writes files Boat would not bring back; running locally in a heavy slot\nworkload diagnostic\n"
+  },
+  {
+    "scenario": "output-report",
+    "exit": 0,
+    "stdout": "{\"stdin\": \"\", \"args\": [\"--output-file\", \"report.json\"], \"held\": true, \"cwd\": \"~/.no-mistakes/worktrees/c0c4fcacb05a/01M6F69E73DAH81GDVY9A8R0JM/.nm-live-lwio0a7k/sampleproject\"}\n",
+    "stderr": "heavy-route: eslint has unknown or ambiguous options, reads input Boat cannot receive, or writes files Boat would not bring back; running locally in a heavy slot\nworkload diagnostic\n"
+  },
+  {
+    "scenario": "next-build-output",
+    "exit": 0,
+    "stdout": "{\"stdin\": \"\", \"args\": [], \"held\": true, \"cwd\": \"~/.no-mistakes/worktrees/c0c4fcacb05a/01M6F69E73DAH81GDVY9A8R0JM/.nm-live-lwio0a7k/sampleproject\"}\n",
+    "stderr": "heavy-route: next-build has unknown or ambiguous options, reads input Boat cannot receive, or writes files Boat would not bring back; running locally in a heavy slot\nworkload diagnostic\n"
+  },
+  {
+    "scenario": "credential-kind",
+    "exit": 0,
+    "stdout": "{\"stdin\": \"\", \"args\": [], \"held\": true, \"cwd\": \"~/.no-mistakes/worktrees/c0c4fcacb05a/01M6F69E73DAH81GDVY9A8R0JM/.nm-live-lwio0a7k/sampleproject\"}\n",
+    "stderr": "heavy-route: queue-preflight is declared local-only for this project; running locally in a heavy slot\nworkload diagnostic\n"
+  },
+  {
+    "scenario": "eligible-but-Boat-unavailable",
+    "exit": 0,
+    "stdout": "{\"stdin\": \"\", \"args\": [\"--format=json\"], \"held\": true, \"cwd\": \"~/.no-mistakes/worktrees/c0c4fcacb05a/01M6F69E73DAH81GDVY9A8R0JM/.nm-live-lwio0a7k/sampleproject\"}\n",
+    "stderr": "heavy-route: eslint on Boat; output is printed when it finishes; evidence ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6F69E73DAH81GDVY9A8R0JM/.nm-live-lwio0a7k/.fm-test-scratch/fm-heavy-route.eslint.70ahics4/boat/result.json\nboat-offload: Boat key unavailable\nheavy-route: Boat did not run it (unavailable, exit 69); discarded remote stdout; evidence ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6F69E73DAH81GDVY9A8R0JM/.nm-live-lwio0a7k/.fm-test-scratch/fm-heavy-route.eslint.70ahics4/boat/result.json; running locally in a heavy slot\nworkload diagnostic\n"
+  },
+  {
+    "scenario": "archive-depth-None",
+    "exit": 69,
+    "stdout": "",
+    "stderr": "boat-offload: Boat key unavailable\n"
+  },
+  {
+    "archive": "None",
+    "safe_source_files_present": true,
+    "dirty_and_staged_bytes_preserved": true,
+    "secret_path_excluded": true
+  },
+  {
+    "scenario": "archive-depth-20",
+    "exit": 69,
+    "stdout": "",
+    "stderr": "boat-offload: history withheld 1 object(s) from the upload, 0 of them screened historical blobs\nboat-offload: Boat key unavailable\n"
+  },
+  {
+    "archive": "20",
+    "safe_source_files_present": true,
+    "dirty_and_staged_bytes_preserved": true,
+    "secret_path_excluded": true,
+    "head_identity_preserved": true,
+    "ancestry_commits": 20,
+    "fsck_exit": 0,
+    "excluded_history_blob_unreadable": true,
+    "git_head_stdout": "3da7bdb8a3b6118104aab72394e31b84efe190a9\n",
+    "git_count_stdout": "20\n",
+    "git_fsck_stdout": "",
+    "git_fsck_stderr": "",
+    "withheld_read_stderr": "fatal: 'fm-boat-withheld' does not appear to be a git repository\nfatal: Could not read from remote repository.\n\nPlease make sure you have the correct access rights\nand the repository exists.\nfatal: could not fetch d1a89bc2fdf533afcbefd4215b09a5ff97955b7a from promisor remote\n"
+  },
+  {
+    "scenario": "archive-depth-50",
+    "exit": 69,
+    "stdout": "",
+    "stderr": "boat-offload: history withheld 1 object(s) from the upload, 0 of them screened historical blobs\nboat-offload: Boat key unavailable\n"
+  },
+  {
+    "archive": "50",
+    "safe_source_files_present": true,
+    "dirty_and_staged_bytes_preserved": true,
+    "secret_path_excluded": true,
+    "head_identity_preserved": true,
+    "ancestry_commits": 50,
+    "fsck_exit": 0,
+    "excluded_history_blob_unreadable": true,
+    "git_head_stdout": "3da7bdb8a3b6118104aab72394e31b84efe190a9\n",
+    "git_count_stdout": "50\n",
+    "git_fsck_stdout": "",
+    "git_fsck_stderr": "",
+    "withheld_read_stderr": "fatal: 'fm-boat-withheld' does not appear to be a git repository\nfatal: Could not read from remote repository.\n\nPlease make sure you have the correct access rights\nand the repository exists.\nfatal: could not fetch d1a89bc2fdf533afcbefd4215b09a5ff97955b7a from promisor remote\n"
+  },
+  {
+    "scenario": "invalid-declaration",
+    "exit": 2,
+    "stdout": "",
+    "stderr": "heavy-route: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6F69E73DAH81GDVY9A8R0JM/.nm-live-lwio0a7k/home/config/boat-heavy line 1 has no <key>=<value> for one of bootstrap, local-only, type, timeout: 'mysterious=1'\n"
+  },
+  {
+    "result": "all targeted live assertions passed; no remote VM created"
+  }
+]

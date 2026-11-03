@@ -1,0 +1,212 @@
+[
+  {
+    "scenario": "implicit-incremental-valid",
+    "command": [
+      "node",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6F69E73DAH81GDVY9A8R0JM/.nm-tsc-live/core/node_modules/typescript/bin/tsc"
+    ],
+    "exit": 0,
+    "stdout": "",
+    "stderr": "heavy-route: the incremental cache is not preserved for this run\nheavy-route: tsc on Boat; output is printed when it finishes; evidence ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6F69E73DAH81GDVY9A8R0JM/.nm-tsc-live/.fm-test-scratch/fm-heavy-route.tsc.pm9wjkvn/boat/result.json\nboat-offload: Boat key unavailable\nheavy-route: Boat did not run it (unavailable, exit 69); discarded remote stdout; evidence ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6F69E73DAH81GDVY9A8R0JM/.nm-tsc-live/.fm-test-scratch/fm-heavy-route.tsc.pm9wjkvn/boat/result.json; running locally in a heavy slot\n",
+    "direct_exit": 0,
+    "direct_stdout": "",
+    "output_present": false
+  },
+  {
+    "scenario": "implicit-incremental-type-error",
+    "command": [
+      "node",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6F69E73DAH81GDVY9A8R0JM/.nm-tsc-live/core/node_modules/typescript/bin/tsc"
+    ],
+    "exit": 2,
+    "stdout": "index.ts(1,7): error TS2322: Type 'string' is not assignable to type 'number'.\n",
+    "stderr": "heavy-route: the incremental cache is not preserved for this run\nheavy-route: tsc on Boat; output is printed when it finishes; evidence ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6F69E73DAH81GDVY9A8R0JM/.nm-tsc-live/.fm-test-scratch/fm-heavy-route.tsc.snhgp0fd/boat/result.json\nboat-offload: Boat key unavailable\nheavy-route: Boat did not run it (unavailable, exit 69); discarded remote stdout; evidence ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6F69E73DAH81GDVY9A8R0JM/.nm-tsc-live/.fm-test-scratch/fm-heavy-route.tsc.snhgp0fd/boat/result.json; running locally in a heavy slot\n",
+    "direct_exit": 2,
+    "direct_stdout": "index.ts(1,7): error TS2322: Type 'string' is not assignable to type 'number'.\n",
+    "output_present": false
+  },
+  {
+    "scenario": "no-incremental-valid",
+    "command": [
+      "node",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6F69E73DAH81GDVY9A8R0JM/.nm-tsc-live/core/node_modules/typescript/bin/tsc"
+    ],
+    "exit": 0,
+    "stdout": "",
+    "stderr": "heavy-route: tsc on Boat; output is printed when it finishes; evidence ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6F69E73DAH81GDVY9A8R0JM/.nm-tsc-live/.fm-test-scratch/fm-heavy-route.tsc.s8e0zy5d/boat/result.json\nboat-offload: Boat key unavailable\nheavy-route: Boat did not run it (unavailable, exit 69); discarded remote stdout; evidence ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6F69E73DAH81GDVY9A8R0JM/.nm-tsc-live/.fm-test-scratch/fm-heavy-route.tsc.s8e0zy5d/boat/result.json; running locally in a heavy slot\n",
+    "direct_exit": 0,
+    "direct_stdout": "",
+    "output_present": false
+  },
+  {
+    "scenario": "named-config",
+    "command": [
+      "node",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6F69E73DAH81GDVY9A8R0JM/.nm-tsc-live/core/node_modules/typescript/bin/tsc"
+    ],
+    "exit": 0,
+    "stdout": "",
+    "stderr": "heavy-route: tsc has unknown or ambiguous options, reads input Boat cannot receive, or writes files Boat would not bring back; running locally in a heavy slot\n",
+    "direct_exit": 0,
+    "direct_stdout": "",
+    "output_present": true
+  },
+  {
+    "scenario": "named-cli",
+    "command": [
+      "node",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6F69E73DAH81GDVY9A8R0JM/.nm-tsc-live/core/node_modules/typescript/bin/tsc",
+      "--tsBuildInfoFile",
+      "named.tsbuildinfo"
+    ],
+    "exit": 0,
+    "stdout": "",
+    "stderr": "heavy-route: tsc has unknown or ambiguous options, reads input Boat cannot receive, or writes files Boat would not bring back; running locally in a heavy slot\n",
+    "direct_exit": 0,
+    "direct_stdout": "",
+    "output_present": true
+  },
+  {
+    "scenario": "named-cli-equals",
+    "command": [
+      "node",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6F69E73DAH81GDVY9A8R0JM/.nm-tsc-live/core/node_modules/typescript/bin/tsc",
+      "--tsBuildInfoFile=named.tsbuildinfo"
+    ],
+    "exit": 1,
+    "stdout": "error TS5023: Unknown compiler option '--tsBuildInfoFile=named.tsbuildinfo'.\n",
+    "stderr": "heavy-route: tsc has unknown or ambiguous options, reads input Boat cannot receive, or writes files Boat would not bring back; running locally in a heavy slot\n",
+    "direct_exit": 1,
+    "direct_stdout": "error TS5023: Unknown compiler option '--tsBuildInfoFile=named.tsbuildinfo'.\n",
+    "output_present": false
+  },
+  {
+    "scenario": "composite-config",
+    "command": [
+      "node",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6F69E73DAH81GDVY9A8R0JM/.nm-tsc-live/core/node_modules/typescript/bin/tsc"
+    ],
+    "exit": 0,
+    "stdout": "",
+    "stderr": "heavy-route: tsc has unknown or ambiguous options, reads input Boat cannot receive, or writes files Boat would not bring back; running locally in a heavy slot\n",
+    "direct_exit": 0,
+    "direct_stdout": "",
+    "output_present": true
+  },
+  {
+    "scenario": "composite-cli",
+    "command": [
+      "node",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6F69E73DAH81GDVY9A8R0JM/.nm-tsc-live/core/node_modules/typescript/bin/tsc",
+      "--composite"
+    ],
+    "exit": 1,
+    "stdout": "error TS6230: Option 'composite' can only be specified in 'tsconfig.json' file or set to 'false' or 'null' on command line.\n",
+    "stderr": "heavy-route: tsc has unknown or ambiguous options, reads input Boat cannot receive, or writes files Boat would not bring back; running locally in a heavy slot\n",
+    "direct_exit": 1,
+    "direct_stdout": "error TS6230: Option 'composite' can only be specified in 'tsconfig.json' file or set to 'false' or 'null' on command line.\n",
+    "output_present": false
+  },
+  {
+    "scenario": "build-long",
+    "command": [
+      "node",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6F69E73DAH81GDVY9A8R0JM/.nm-tsc-live/core/node_modules/typescript/bin/tsc",
+      "--build"
+    ],
+    "exit": 0,
+    "stdout": "",
+    "stderr": "heavy-route: tsc has unknown or ambiguous options, reads input Boat cannot receive, or writes files Boat would not bring back; running locally in a heavy slot\n",
+    "direct_exit": 0,
+    "direct_stdout": "",
+    "output_present": false
+  },
+  {
+    "scenario": "build-short",
+    "command": [
+      "node",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6F69E73DAH81GDVY9A8R0JM/.nm-tsc-live/core/node_modules/typescript/bin/tsc",
+      "-b"
+    ],
+    "exit": 0,
+    "stdout": "",
+    "stderr": "heavy-route: tsc has unknown or ambiguous options, reads input Boat cannot receive, or writes files Boat would not bring back; running locally in a heavy slot\n",
+    "direct_exit": 0,
+    "direct_stdout": "",
+    "output_present": false
+  },
+  {
+    "scenario": "emit-enabled",
+    "command": [
+      "node",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6F69E73DAH81GDVY9A8R0JM/.nm-tsc-live/core/node_modules/typescript/bin/tsc"
+    ],
+    "exit": 0,
+    "stdout": "",
+    "stderr": "heavy-route: tsc has unknown or ambiguous options, reads input Boat cannot receive, or writes files Boat would not bring back; running locally in a heavy slot\n",
+    "direct_exit": 0,
+    "direct_stdout": "",
+    "output_present": true
+  },
+  {
+    "scenario": "trace",
+    "command": [
+      "node",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6F69E73DAH81GDVY9A8R0JM/.nm-tsc-live/core/node_modules/typescript/bin/tsc",
+      "--generateTrace",
+      "trace"
+    ],
+    "exit": 0,
+    "stdout": "",
+    "stderr": "heavy-route: tsc has unknown or ambiguous options, reads input Boat cannot receive, or writes files Boat would not bring back; running locally in a heavy slot\n",
+    "direct_exit": 0,
+    "direct_stdout": "",
+    "output_present": true
+  },
+  {
+    "scenario": "cpu-profile",
+    "command": [
+      "node",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6F69E73DAH81GDVY9A8R0JM/.nm-tsc-live/core/node_modules/typescript/bin/tsc",
+      "--generateCpuProfile",
+      "profile.cpuprofile"
+    ],
+    "exit": 0,
+    "stdout": "",
+    "stderr": "heavy-route: tsc has unknown or ambiguous options, reads input Boat cannot receive, or writes files Boat would not bring back; running locally in a heavy slot\n",
+    "direct_exit": 0,
+    "direct_stdout": "",
+    "output_present": true
+  },
+  {
+    "scenario": "explicit-incremental",
+    "command": [
+      "node",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6F69E73DAH81GDVY9A8R0JM/.nm-tsc-live/core/node_modules/typescript/bin/tsc",
+      "--incremental"
+    ],
+    "exit": 0,
+    "stdout": "",
+    "stderr": "heavy-route: tsc has unknown or ambiguous options, reads input Boat cannot receive, or writes files Boat would not bring back; running locally in a heavy slot\n",
+    "direct_exit": 0,
+    "direct_stdout": "",
+    "output_present": true
+  },
+  {
+    "scenario": "unknown-option",
+    "command": [
+      "node",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6F69E73DAH81GDVY9A8R0JM/.nm-tsc-live/core/node_modules/typescript/bin/tsc",
+      "--invented-future-output=lost"
+    ],
+    "exit": 1,
+    "stdout": "error TS5023: Unknown compiler option '--invented-future-output=lost'.\n",
+    "stderr": "heavy-route: tsc has unknown or ambiguous options, reads input Boat cannot receive, or writes files Boat would not bring back; running locally in a heavy slot\n",
+    "direct_exit": 1,
+    "direct_stdout": "error TS5023: Unknown compiler option '--invented-future-output=lost'.\n",
+    "output_present": false
+  },
+  {
+    "result": "All real TypeScript boundary and output-preservation assertions passed; eligible commands attempted Boat, then fell back because the isolated account has no API key. Authenticated remote execution remains untested."
+  }
+]
