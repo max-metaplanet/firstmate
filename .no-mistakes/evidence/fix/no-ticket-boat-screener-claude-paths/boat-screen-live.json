@@ -1,0 +1,211 @@
+[
+  {
+    "scenario": "combined-core-paths",
+    "exit": 69,
+    "result": {
+      "kind": "unavailable",
+      "remote_exit": null,
+      "cleanup": "deleted",
+      "swap_gib": 0,
+      "source_head": "0b838bcabbe7b97867d3822d6f40cc102ce872c5",
+      "source_sha256": "76f0862329a74e30c14791bc438b1c985e2a53afd8d1adb1f545506e96c827bb",
+      "execution_error": "Boat key unavailable",
+      "error": "Boat key unavailable",
+      "adapter_exit": 69
+    },
+    "stderr": "boat-offload: Boat key unavailable",
+    "archive_paths": [
+      ".git",
+      ".agents/skills/verify.md",
+      ".claude/commands/reimage-dev.md",
+      "readme.md"
+    ],
+    "history_integrity": "git fsck passed",
+    "skills_blob": "../.agents/skills",
+    "working_tree_skills": "absent"
+  },
+  {
+    "scenario": "clean-reimage",
+    "exit": 69,
+    "result": {
+      "kind": "unavailable",
+      "remote_exit": null,
+      "cleanup": "deleted",
+      "swap_gib": 0,
+      "source_head": "7635623e4cf8581a2e2e61ec4029c5ef873f7133",
+      "source_sha256": "b6f2579f823ea6c04d34161794237b936a1ca07e763aa29774b2bd80170b76b4",
+      "execution_error": "Boat key unavailable",
+      "error": "Boat key unavailable",
+      "adapter_exit": 69
+    },
+    "stderr": "boat-offload: Boat key unavailable",
+    "archive_paths": [
+      ".git",
+      ".claude/commands/reimage-dev.md",
+      "readme.md"
+    ],
+    "history_integrity": "git fsck passed"
+  },
+  {
+    "scenario": "historical-reimage-secret",
+    "exit": 2,
+    "result": {
+      "kind": "invalid",
+      "remote_exit": null,
+      "cleanup": "not-created",
+      "swap_gib": 0,
+      "error": "history refused: credential-looking or binary blob: .claude/commands/reimage-dev.md",
+      "adapter_exit": 2
+    },
+    "stderr": "boat-offload: history refused: credential-looking or binary blob: .claude/commands/reimage-dev.md",
+    "archive": "not created"
+  },
+  {
+    "scenario": "historical-reimage-binary",
+    "exit": 2,
+    "result": {
+      "kind": "invalid",
+      "remote_exit": null,
+      "cleanup": "not-created",
+      "swap_gib": 0,
+      "error": "history refused: credential-looking or binary blob: .claude/commands/reimage-dev.md",
+      "adapter_exit": 2
+    },
+    "stderr": "boat-offload: history refused: credential-looking or binary blob: .claude/commands/reimage-dev.md",
+    "archive": "not created"
+  },
+  {
+    "scenario": "skills-escape",
+    "exit": 2,
+    "result": {
+      "kind": "invalid",
+      "remote_exit": null,
+      "cleanup": "not-created",
+      "swap_gib": 0,
+      "error": "history refused: unsafe symlink target: .claude/skills",
+      "adapter_exit": 2
+    },
+    "stderr": "boat-offload: history refused: unsafe symlink target: .claude/skills",
+    "archive": "not created"
+  },
+  {
+    "scenario": "skills-absolute",
+    "exit": 2,
+    "result": {
+      "kind": "invalid",
+      "remote_exit": null,
+      "cleanup": "not-created",
+      "swap_gib": 0,
+      "error": "history refused: unsafe symlink target: .claude/skills",
+      "adapter_exit": 2
+    },
+    "stderr": "boat-offload: history refused: unsafe symlink target: .claude/skills",
+    "archive": "not created"
+  },
+  {
+    "scenario": "skills-secret",
+    "exit": 2,
+    "result": {
+      "kind": "invalid",
+      "remote_exit": null,
+      "cleanup": "not-created",
+      "swap_gib": 0,
+      "error": "history refused: credential-looking or binary blob: .claude/skills",
+      "adapter_exit": 2
+    },
+    "stderr": "boat-offload: history refused: credential-looking or binary blob: .claude/skills",
+    "archive": "not created"
+  },
+  {
+    "scenario": "skills-ordinary-file",
+    "exit": 2,
+    "result": {
+      "kind": "invalid",
+      "remote_exit": null,
+      "cleanup": "not-created",
+      "swap_gib": 0,
+      "error": "history refused: excluded path: .claude/skills",
+      "adapter_exit": 2
+    },
+    "stderr": "boat-offload: history refused: excluded path: .claude/skills",
+    "archive": "not created"
+  },
+  {
+    "scenario": "other-claude-symlink",
+    "exit": 2,
+    "result": {
+      "kind": "invalid",
+      "remote_exit": null,
+      "cleanup": "not-created",
+      "swap_gib": 0,
+      "error": "history refused: excluded path: .claude/other",
+      "adapter_exit": 2
+    },
+    "stderr": "boat-offload: history refused: excluded path: .claude/other",
+    "archive": "not created"
+  },
+  {
+    "scenario": "other-symlink",
+    "exit": 2,
+    "result": {
+      "kind": "invalid",
+      "remote_exit": null,
+      "cleanup": "not-created",
+      "swap_gib": 0,
+      "error": "history refused: unsupported symlink or submodule: other-link",
+      "adapter_exit": 2
+    },
+    "stderr": "boat-offload: history refused: unsupported symlink or submodule: other-link",
+    "archive": "not created"
+  },
+  {
+    "scenario": "unlisted-claude-file",
+    "exit": 2,
+    "result": {
+      "kind": "invalid",
+      "remote_exit": null,
+      "cleanup": "not-created",
+      "swap_gib": 0,
+      "error": "history refused: excluded path: .claude/commands/other.md",
+      "adapter_exit": 2
+    },
+    "stderr": "boat-offload: history refused: excluded path: .claude/commands/other.md",
+    "archive": "not created"
+  },
+  {
+    "scenario": "bearer-prose",
+    "exit": 69,
+    "result": {
+      "kind": "unavailable",
+      "remote_exit": null,
+      "cleanup": "deleted",
+      "swap_gib": 0,
+      "source_head": "cd66b9f8a7f0f1957dd02063b614e0138ebe50e2",
+      "source_sha256": "cbdd661ff5e979d236e084351c8a79fe073f29657fd192b8f62e99d53059ae29",
+      "execution_error": "Boat key unavailable",
+      "error": "Boat key unavailable",
+      "adapter_exit": 69
+    },
+    "stderr": "boat-offload: Boat key unavailable",
+    "archive_paths": [
+      ".git",
+      ".agents/skills/verify-app/features.md",
+      "readme.md"
+    ],
+    "history_integrity": "git fsck passed"
+  },
+  {
+    "scenario": "bearer-credential",
+    "exit": 2,
+    "result": {
+      "kind": "invalid",
+      "remote_exit": null,
+      "cleanup": "not-created",
+      "swap_gib": 0,
+      "error": "history refused: credential-looking or binary blob: .agents/skills/verify-app/features.md",
+      "adapter_exit": 2
+    },
+    "stderr": "boat-offload: history refused: credential-looking or binary blob: .agents/skills/verify-app/features.md",
+    "archive": "not created"
+  }
+]

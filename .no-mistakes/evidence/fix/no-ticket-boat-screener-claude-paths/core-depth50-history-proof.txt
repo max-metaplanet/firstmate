@@ -1,0 +1,26 @@
+core origin/main=36473e4cd3b6a072b989ed4a6dd7d1ed29b31f3f, depth 50
+base: REFUSED code=2: history refused: excluded path: .claude/commands/reimage-dev.md
+target: REFUSED code=2: history refused: credential-looking or binary blob: .depot/scripts/db-services.sh
+REFUSED code=2: history refused: credential-looking or binary blob: .depot/scripts/prove-db-services.mjs
+base REFUSED code=2: history refused: excluded path: .claude/commands/reimage-dev.md
+
+== diagnostic (non-.claude content hits recorded, not refused) ==
+-- base
+REFUSED code=2: history refused: excluded path: .claude/commands/reimage-dev.md
+  out-of-scope non-.claude content hits recorded: []
+-- target
+REFUSED code=2: history refused: excluded path: .env.example
+  out-of-scope non-.claude content hits recorded: ['.depot/scripts/db-services.sh', '.depot/scripts/prove-db-services.mjs', '.depot/workflows/action-db.yml', '.depot/workflows/build-core-ci-image.yml', '.depot/workflows/coverage.yml', '.depot/workflows/db-local.yml', '.depot/workflows/discard-cancel.yml', '.depot/workflows/gates-pgtap.yml', '.depot/workflows/gates-replay.yml', '.depot/workflows/main-cache-seed.yml', '.depot/workflows/node-suites.yml', '.depot/workflows/pr-gates.yml', '.depot/workflows/quality.yml', '.depot/workflows/queue-validation.yml', '.depot/workflows/runtime-local.yml', '.depot/workflows/scripts-suites.yml', '.depot/workflows/unit-nightly.yml']
+
+== diagnostic 2 (non-.claude content AND excluded-path hits recorded, not refused) ==
+-- base
+REFUSED code=2: history refused: excluded path: .claude/commands/reimage-dev.md
+  out-of-scope non-.claude content hits recorded: 0 paths (first 5: []); .claude paths among them: []
+  out-of-scope non-.claude excluded-path hits recorded: 0 paths (first 5: []); .claude paths among them: []
+-- target
+REFUSED code=2: history refused: credential-looking or binary commit
+  out-of-scope non-.claude content hits recorded: 3320 paths (first 5: ['.depot/scripts/db-services.sh', '.depot/scripts/prove-db-services.mjs', '.depot/workflows/action-db.yml', '.depot/workflows/build-core-ci-image.yml', '.depot/workflows/coverage.yml']); .claude paths among them: []
+  out-of-scope non-.claude excluded-path hits recorded: 5 paths (first 5: ['.env.example', '.github/tools/jev/vendor/.claude/agents/release-engineer.md', '.github/tools/jev/vendor/.claude/agents/security-compliance.md', '.npmrc', 'apps/planetgear/.env.example']); .claude paths among them: []
+-- in core HEAD tree?
+.env.example: yes
+.depot/scripts/db-services.sh: yes

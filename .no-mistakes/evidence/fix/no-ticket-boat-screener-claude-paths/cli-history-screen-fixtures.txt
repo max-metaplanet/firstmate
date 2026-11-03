@@ -1,0 +1,21 @@
+== corelike
+boat-offload: Boat live cap reached
+[corelike] exit=75
+[corelike] result kind=unavailable error=Boat live cap reached
+== escape
+boat-offload: history refused: unsafe symlink target: .claude/skills
+[escape] exit=2
+[escape] result kind=invalid error=history refused: unsafe symlink target: .claude/skills
+== secret
+boat-offload: history refused: credential-looking or binary blob: .claude/commands/reimage-dev.md
+[secret] exit=2
+[secret] result kind=invalid error=history refused: credential-looking or binary blob: .claude/commands/reimage-dev.md
+== other
+boat-offload: history refused: excluded path: .claude/other
+[other] exit=2
+[other] result kind=invalid error=history refused: excluded path: .claude/other
+== corelike archive built by source(history_depth=2), head 806f05cea9c9ac6ae00a6ecbe89103c4ac8fe0a9
+  working-tree members: ['.agents/skills/a.md', '.claude/commands/reimage-dev.md', 'tracked.txt']
+  any .claude/skills working-tree member: False
+  git cat-file HEAD:.claude/skills = ../.agents/skills
+  git fsck rc = 0
