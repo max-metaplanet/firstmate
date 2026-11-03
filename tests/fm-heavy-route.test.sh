@@ -605,6 +605,10 @@ print('ok - turbo, nx, lerna and recursive/filtered pnpm route one whole run; tw
 for name, tool, args, script, cache in (
     ('unknown-options', 'turbo', ['type-check', '--mystery'], 'tsc --noEmit', False),
     ('passthrough-fix', 'pnpm', ['-r', 'type-check', '--', '--fix'], 'tsc --noEmit', False),
+    ('forwarded-filter', 'pnpm', ['-r', 'run', 'type-check', '--filter=a'], 'tsc --noEmit', False),
+    ('forwarded-short-filter', 'pnpm', ['-r', 'type-check', '-F', 'a'], 'tsc --noEmit', False),
+    ('forwarded-attached-filter', 'pnpm', ['-r', 'type-check', '-Fa'], 'tsc --noEmit', False),
+    ('forwarded-recursive', 'pnpm', ['--filter=a', 'run', 'type-check', '--recursive'], 'tsc --noEmit', False),
     ('shell-script', 'turbo', ['type-check'], 'tsc --noEmit && touch output', False),
     ('unknown-script', 'pnpm', ['-r', 'type-check'], 'node custom-typecheck.js', False),
     ('write-output', 'turbo', ['type-check'], 'tsc --generateTrace trace --noEmit', False),
@@ -618,6 +622,31 @@ for name, tool, args, script, cache in (
     assert r.stdout.count('child marker=local held=') == 2, (name, r.stdout, r.stderr)
     assert 'parent held=\n' not in r.stdout, (name, r.stdout)
 print('ok - unknown options, shell/custom tasks, diagnostic outputs and orchestrator caches stay local with one notice')
+
+for representation in ('package', 'project'):
+    for safe in (False, True):
+        script = 'tsc --noEmit' if safe else 'node custom-typecheck.js'
+        metadata_script = 'node custom-typecheck.js' if safe else 'tsc --noEmit'
+        p, work, config, state, env, cli = orchestrator_case(
+            'pnpm-nx-' + representation + '-' + str(safe), 'pnpm', script=script)
+        directory = work / 'packages/a'
+        targets = {'type-check': {'executor': 'nx:run-commands',
+                                 'options': {'command': metadata_script}}}
+        if representation == 'package':
+            path = directory / 'package.json'
+            package = json.loads(path.read_text())
+            package['nx'] = {'targets': targets}
+            path.write_text(json.dumps(package))
+        else:
+            (directory / 'project.json').write_text(json.dumps({'targets': targets}))
+        subprocess.run(['git', '-C', str(work), 'add', '-A'], check=True, capture_output=True)
+        subprocess.run(['git', '-C', str(work), 'commit', '-qm', 'Nx metadata'],
+                       check=True, capture_output=True)
+        r = orchestration_run(work, env, cli, ['-r', 'type-check'])
+        assert r.returncode == 0 and starts(state) == int(safe), (representation, safe, r.stdout, r.stderr)
+        marker = 'remote' if safe else 'local'
+        assert r.stdout.count('child marker=' + marker + ' held=') == 2, (r.stdout, r.stderr)
+print('ok - pnpm screens package scripts independently of both Nx target representations')
 
 for name in ('untracked', 'local-only', 'unavailable', 'no-task', 'undeclared', 'outputs',
              'hooks', 'dependency', 'no-proof', 'remote-exit'):

@@ -479,6 +479,10 @@ def orchestration(command):
                 tasks += value.split(",")
         else:
             tasks.append(word)
+            if tool == "pnpm" and word != "run":
+                if args:
+                    return None
+                break
     if tasks[:1] in (["run"], ["run-many"]):
         tasks = tasks[1:]
     if tool == "nx":
@@ -614,10 +618,12 @@ def safe_orchestration(plan, root, settings):
             for directory in directories:
                 package = packages[directory]
                 scripts = package.get("scripts", {})
-                target = {**default, **package.get("nx", {}).get("targets", {}).get(name, {})}
-                project = directory / "project.json"
-                if project.exists():
-                    target.update(read_json(project).get("targets", {}).get(name, {}))
+                target = {}
+                if tool != "pnpm":
+                    target = {**default, **package.get("nx", {}).get("targets", {}).get(name, {})}
+                    project = directory / "project.json"
+                    if project.exists():
+                        target.update(read_json(project).get("targets", {}).get(name, {}))
                 if set(target) - {"executor", "options", "outputs", "cache", "dependsOn",
                                   "inputs", "metadata", "parallelism"}:
                     return False
