@@ -545,6 +545,10 @@ function setting(key) {
       if (line.startsWith('reportSummary:')) value = line.slice('reportSummary:'.length).trim();
     }
   }
+  if (key === 'tasks' && fs.existsSync('pnpm-workspace.yaml') &&
+      fs.readFileSync('pnpm-workspace.yaml', 'utf8').split('\n').some((line) => line.startsWith('tasks:'))) {
+    value = 'configured';
+  }
   const envKey = 'npm_config_' + key.replaceAll('-', '_');
   for (const [name, configured] of Object.entries(process.env)) {
     if (name.toLowerCase() === envKey) value = configured;
@@ -578,6 +582,10 @@ if (process.argv[2] === 'config') {
   console.log(JSON.stringify(selected.map((dir) => ({path: path.resolve(dir)}))));
 } else {
   console.log('parent held=' + (process.env.FM_BUILD_LOCK_HELD || ''));
+  if (fs.realpathSync(process.argv[1]).includes('/pnpm/') && setting('tasks') !== 'undefined' &&
+      fs.existsSync('tools/pnpm-build.cjs')) {
+    cp.execFileSync(process.execPath, ['tools/pnpm-build.cjs'], {stdio: 'inherit'});
+  }
   if (fs.realpathSync(process.argv[1]).includes('/pnpm/') && setting('include-workspace-root') === 'true') {
     const script = JSON.parse(fs.readFileSync('package.json')).scripts?.['type-check'];
     if (script) {
@@ -869,6 +877,91 @@ for tool in ('turbo', 'nx', 'lerna'):
             if mode == 'remote-missing':
                 assert 'setup did not dispatch' in r.stderr, r.stderr
 print('ok - external launchers require a proven project entry and missing remote entries fall back once')
+
+for index, flags in enumerate((['-t', 'fix:lint'], ['--target', 'fix:lint'],
+                               ['--targets', 'fix:lint'], ['-t=fix:lint'],
+                               ['--target=fix:lint'], ['--targets=lint,fix:lint'])):
+    p, work, config, state, env, cli = orchestrator_case('nx-literal-target-' + str(index), 'nx')
+    path = work / 'packages/a/package.json'
+    package = json.loads(path.read_text())
+    package['scripts'].update({'lint': 'tsc --noEmit', 'fix:lint': 'node ../../tools/fix-lint.cjs'})
+    path.write_text(json.dumps(package))
+    (work / 'tools/fix-lint.cjs').write_text(
+        "require('fs').writeFileSync('../../tracked.txt', 'fixed locally');\n"
+        "console.log('colon marker=' + process.env.FM_HEAVY_ORCHESTRATOR);\n")
+    parent = r"""#!/usr/bin/env node
+const cp = require('child_process');
+const fs = require('fs');
+const script = JSON.parse(fs.readFileSync('packages/a/package.json')).scripts['fix:lint'];
+const result = cp.spawnSync('sh', ['-c', script], {cwd: 'packages/a', env: process.env, stdio: 'inherit'});
+process.exit(result.status);
+"""
+    (work / 'tools/orchestrator.cjs').write_text(parent)
+    cli.write_text(parent)
+    subprocess.run(['git', '-C', str(work), 'add', '-A'], check=True, capture_output=True)
+    subprocess.run(['git', '-C', str(work), 'commit', '-qm', 'Literal Nx target fixture'],
+                   check=True, capture_output=True)
+    r = orchestration_run(work, env, cli, ['run-many', *flags, '--skipNxCache'])
+    assert r.returncode == 0 and not called(state), (flags, r.stdout, r.stderr)
+    assert r.stderr.count('running locally in a heavy slot') == 1, r.stderr
+    assert 'colon marker=local' in r.stdout, (r.stdout, r.stderr)
+    assert (work / 'tracked.txt').read_text() == 'fixed locally'
+
+p, work, config, state, env, cli = orchestrator_case('nx-safe-colon-target', 'nx')
+for directory in (work / 'packages/a', work / 'packages/b'):
+    path = directory / 'package.json'
+    package = json.loads(path.read_text())
+    package['scripts']['test:ci'] = 'tsc --noEmit'
+    path.write_text(json.dumps(package))
+subprocess.run(['git', '-C', str(work), 'add', '-A'], check=True, capture_output=True)
+subprocess.run(['git', '-C', str(work), 'commit', '-qm', 'Safe literal target'], check=True, capture_output=True)
+r = orchestration_run(work, env, cli, ['run-many', '--targets=test:ci', '--skipNxCache'])
+assert r.returncode == 0 and starts(state) == 1, (r.stdout, r.stderr)
+assert r.stdout.count('child marker=remote held=\n') == 2, (r.stdout, r.stderr)
+print('ok - Nx option targets retain literal colons while recognized safe literal targets route once')
+
+for source in ('workspace', 'repository', 'user', 'global', 'environment'):
+    p, work, config, state, env, cli = orchestrator_case('pnpm-task-graph-' + source, 'pnpm')
+    tasks = json.dumps({'type-check': {'dependsOn': ['build']}})
+    if source == 'workspace':
+        path = work / 'pnpm-workspace.yaml'
+        path.write_text(path.read_text() + 'tasks:\n  type-check:\n    dependsOn: [build]\n')
+    elif source == 'environment':
+        env['NPM_CONFIG_TASKS'] = tasks
+    else:
+        path = {'repository': work / '.npmrc', 'user': Path(env['HOME']) / '.npmrc',
+                'global': p / 'global.npmrc'}[source]
+        path.write_text('tasks=' + tasks + '\n')
+        if source == 'global':
+            env['npm_config_globalconfig'] = str(path)
+    for directory in (work / 'packages/a', work / 'packages/b'):
+        path = directory / 'package.json'
+        package = json.loads(path.read_text())
+        package['scripts']['build'] = 'node ../../tools/pnpm-build.cjs'
+        path.write_text(json.dumps(package))
+    (work / 'tools/pnpm-build.cjs').write_text(
+        "require('fs').writeFileSync(require('path').join(__dirname, '../pnpm-build-output.txt'), 'built locally');\n"
+        "console.log('build marker=' + process.env.FM_HEAVY_ORCHESTRATOR);\n")
+    subprocess.run(['git', '-C', str(work), 'add', '-A'], check=True, capture_output=True)
+    subprocess.run(['git', '-C', str(work), 'commit', '-qm', 'pnpm task dependency fixture'],
+                   check=True, capture_output=True)
+    r = orchestration_run(work, env, cli, ['-r', 'type-check'])
+    assert r.returncode == 0 and not called(state), (source, r.stdout, r.stderr)
+    assert r.stderr.count('running locally in a heavy slot') == 1, r.stderr
+    assert 'build marker=local' in r.stdout, (source, r.stdout, r.stderr)
+    assert (work / 'pnpm-build-output.txt').read_text() == 'built locally'
+
+for name, stdout, exit_code in (('unknown', 'null\n', 0), ('ambiguous', '{}\nundefined\n', 0),
+                                 ('empty', '', 0), ('unavailable', '', 42)):
+    p, work, config, state, env, cli = orchestrator_case('pnpm-tasks-probe-' + name, 'pnpm')
+    (work / 'tools/config-probe.json').write_text(json.dumps({'tasks': {'stdout': stdout, 'exit': exit_code}}))
+    subprocess.run(['git', '-C', str(work), 'add', '-A'], check=True, capture_output=True)
+    subprocess.run(['git', '-C', str(work), 'commit', '-qm', 'Unproven tasks configuration'],
+                   check=True, capture_output=True)
+    r = orchestration_run(work, env, cli, ['-r', 'type-check'])
+    assert r.returncode == 0 and not called(state), (name, r.stdout, r.stderr)
+    assert r.stderr.count('running locally in a heavy slot') == 1, r.stderr
+print('ok - pnpm task graphs and unproven tasks settings keep dependency outputs local for every configuration owner')
 
 for name, tool, args, script, cache in (
     ('unknown-options', 'turbo', ['type-check', '--mystery'], 'tsc --noEmit', False),

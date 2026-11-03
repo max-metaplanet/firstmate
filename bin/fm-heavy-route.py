@@ -459,7 +459,7 @@ def orchestration(command):
                   Path(flag.partition("=")[2]).name == "fm-build-lock.js"):
             return None
     args = command[index + 1:]
-    tasks, options = [], {}
+    tasks, positionals, options = [], [], {}
     while args:
         word, args = args[0], args[1:]
         if word.startswith("-F") and word != "-F" and not word.startswith("--"):
@@ -486,16 +486,17 @@ def orchestration(command):
             if name in ("--target", "--targets", "-t"):
                 tasks += value.split(",")
         else:
-            tasks.append(word)
+            positionals.append(word)
             if tool == "pnpm" and word != "run":
                 if args:
                     return None
                 break
-    if tasks[:1] in (["run"], ["run-many"]):
-        tasks = tasks[1:]
-    if tool == "nx":
-        tasks = [task.split(":")[1] if ":" in task and len(task.split(":")) == 2
-                 else task for task in tasks]
+    if tool == "nx" and positionals[:1] == ["run"] and len(positionals) == 2 and \
+            positionals[1].count(":") == 1:
+        positionals[1] = positionals[1].split(":")[1]
+    if positionals[:1] in (["run"], ["run-many"]):
+        positionals = positionals[1:]
+    tasks += positionals
     if not tasks or any(task not in TASK_KINDS for task in tasks):
         return None
     if tool == "pnpm" and not any(key in options for key in (
@@ -560,6 +561,7 @@ def safe_orchestration(plan, root, settings):
             for setting, allowed in (
                     ("include-workspace-root", ("false", "undefined")),
                     ("report-summary", ("false", "undefined")),
+                    ("tasks", ("undefined",)),
                     ("filter", ("undefined",)),
                     ("filter-prod", ("undefined",)),
                     ("workspace-packages", ("undefined",)),

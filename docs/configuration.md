@@ -1834,6 +1834,7 @@ Orchestrated routing requires a recognized heavy task name and a proof of every 
 The recognized names are `type-check`, `typecheck`, `check-types`, `lint`, `test`, `test:run`, `test:ci`, and `build`.
 Turbo's JSON dry run supplies its resolved task graph; pnpm's recursive package listing supplies its selected packages.
 pnpm routing requires effective root inclusion to be disabled and other package-selection settings to retain supported defaults; user, global, or environment overrides that change selection keep the invocation local.
+An effective pnpm `tasks` configuration keeps the invocation local because package listing does not prove its task dependencies.
 Nx and Lerna support explicit package tasks with plain `nx:run-script` or single-command `nx:run-commands` targets, without inferred plugins, custom runners, configuration variants, sync generators, custom task inputs, or named inputs.
 Their proof conservatively checks all package tasks that could match, so an unsafe task outside a filter can keep the invocation local.
 Each executable task must be a single `tsc`, `eslint`, or `vitest run` command that passes the same argument, resolved TypeScript configuration, and project `local-only` checks as a top-level heavy command.
