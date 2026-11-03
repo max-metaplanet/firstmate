@@ -7,8 +7,9 @@
 # Errors log fixed classes and task ids, never raw output or credentials.
 # Enable with config/t3-mirrors containing exactly 1. Off creates no state.
 # retire also works while off, after task metadata is gone. It revokes steering,
-# proves the dedicated project holds exactly its recorded thread, then removes
-# that project. Failed proofs/removals keep the mapping for inspection/retry.
+# removes a ready project's thread only after the single-thread identity proof.
+# Setup-only projects use non-forced removal, which refuses a nonempty project.
+# Failed proofs/removals keep the mapping for inspection/retry.
 # Neither the task endpoint nor its lifecycle changes.
 #
 # Set FM_T3_BIN and FM_T3_BASE_DIR as for fm-t3.sh. First sync binds the absolute
@@ -28,8 +29,13 @@
 # final locked generation/remote-host guard; command/key prefixes are refused.
 # Backend-neutral fm-peek captures are bounded and redacted before publication.
 #
-# Matching prompt/reply receipts confirm sends. Unknown creation and unconfirmed
-# sends are held for inspection, never replayed. Legacy version-1 shared-project
+# The setup phase saves the nonce/workspace before project add; failed or timed-out
+# setup retries the same workspace automatically. The creating phase is saved
+# before thread start; an uncertain thread creation is held rather than retried.
+# Returned thread/project ids are saved even if task retirement raced creation,
+# preserving cleanup identity without allowing steering to a retired task.
+# Matching prompt/reply receipts confirm sends. Unconfirmed sends are held for
+# inspection, never replayed. Legacy version-1 shared-project
 # mappings are preserved for manual reconciliation, never deleted automatically.
 # Maps/journals remain private to the selected home; no fleet locks are taken.
 set -u

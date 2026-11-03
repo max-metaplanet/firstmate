@@ -123,7 +123,8 @@ An old observation time means the displayed state may be stale.
 
 Delivery failures are recorded locally and never fail supervision, dispatch, steering, or teardown.
 Creation is journaled before launch, and delivery requires the matching prompt and formatted reply in T3.
-Pending sends to known threads are read again on later passes; uncertain operations without a matching receipt are held for inspection instead of blindly retried.
+Pending sends to known threads are read again on later passes; uncertain thread creation or sends without a matching receipt are held for inspection instead of blindly retried.
+Project setup retries automatically under the [journal contract](../bin/fm-t3-mirrors.sh).
 Publication and inbound steering use the same [`identity verifier`](../bin/fm-t3-mirror-identity.py).
 It checks the saved home, task, nonce, thread, project, title, provider, and model against the live thread and task metadata.
 Local task mappings bind to the current run generation; remote secondmates use the existing remote-host identity rule.
@@ -135,7 +136,8 @@ An unconfirmed send asks you to inspect the inbox through Firstmate before resen
 Use the exact saved connection and nonce-bearing thread title to inspect T3 before any manual journal reconciliation.
 These holds can leave a mirror stale while the real worker continues normally.
 Disabling publication leaves existing threads and history intact.
-Successful task teardown revokes steering and removes the dedicated T3 project only after proving that it contains exactly the recorded thread.
+Successful task teardown revokes steering and removes a ready mirror's dedicated T3 project only after proving that it contains exactly the recorded thread.
+Projects still in setup use the empty-project cleanup rule in the [command contract](../bin/fm-t3-mirrors.sh).
 Retirement also works while publication is disabled.
 Failed identity checks or project removal preserve the revoked mapping for inspection and retry.
 T3's CLI has no individual-thread delete operation, so unrelated conversations prevent project removal.
