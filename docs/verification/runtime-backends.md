@@ -990,6 +990,24 @@ It captures the launch `bin/fm-spawn.sh` actually builds, replays those exact fl
 It spends no model tokens, so it runs by default wherever Codex is installed.
 The portable half, `tests/fm-spawn-dispatch-profile.test.sh`, pins the split the launch template makes: a crewmate launches hook-free while a secondmate, which runs a primary session on this repository's own project hooks, keeps them.
 
+## Codex embedded launch option
+
+On 2026-11-03, the token-free Codex launch guard passed against installed `codex-cli 0.164.0` on Linux arm64.
+The portable cases in `tests/fm-spawn-dispatch-profile.test.sh` check the generated ship, scout, and secondmate launch commands.
+The live guard replays the generated flags against the installed binary and checks its refusal of remote attachment with the embedded launch option.
+This proves option acceptance and the installed CLI's mutually exclusive launch selection, without submitting a prompt or testing shared-daemon recovery.
+The launch option and its rationale are owned by `bin/fm-spawn.sh`.
+
+```sh
+bash bin/fm-test-run.sh tests/fm-codex-hook-layer-live-e2e.test.sh
+```
+
+```text
+ok - codex codex-cli 0.164.0 still publishes the hook feature flag firstmate disables
+ok - codex codex-cli 0.164.0 runs a firstmate crewmate launch with its hook layer disabled
+ok - codex codex-cli 0.164.0 rejects remote attachment for the captured --no-daemon launch without starting a session
+```
+
 ## Composer classification matrix
 
 The shared composer classifier (`bin/fm-composer-lib.sh`, `fm_composer_classify_screen`) owns every composer shape fleet-wide; each backend contributes only a capture and a capability descriptor.

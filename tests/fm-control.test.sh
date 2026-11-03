@@ -176,6 +176,10 @@ case "${1:-}" in
         *'encode launch-brief'* | *'Firstmate operational input waiting: read'*) cat "$D/becomes" > "$D/command" ;;
       esac
     else
+      if [ "$payload" = Escape ] && [ -n "${FM_FAKE_INTERRUPT_AUDIT:-}" ]; then
+        cp "$FM_HOME/state/t1.control-interrupt.jsonl" "$D/audit-before-key"
+        [ -z "${FM_FAKE_INTERRUPT_SEND_FAIL:-}" ] || exit 1
+      fi
       printf '%s\n' "$payload" >> "$D/keys"
       printf '%s %s\n' "$(perl -MTime::HiRes=time -e 'printf "%.3f", time')" "$payload" >> "$D/key-times"
       if [ "$payload" = Enter ] && [ -n "${FM_FAKE_PICKER_EXITS:-}" ]; then
@@ -310,6 +314,8 @@ run_control() {
     FM_FAKE_MUSE_LOG="${FM_FAKE_MUSE_LOG:-}" \
     FM_FAKE_MUSE_DISAPPEAR_BEFORE_ACK="${FM_FAKE_MUSE_DISAPPEAR_BEFORE_ACK:-}" \
     FM_FAKE_INTERRUPT_STOPS_AGENT="${FM_FAKE_INTERRUPT_STOPS_AGENT:-}" \
+    FM_FAKE_INTERRUPT_AUDIT="${FM_FAKE_INTERRUPT_AUDIT:-}" \
+    FM_FAKE_INTERRUPT_SEND_FAIL="${FM_FAKE_INTERRUPT_SEND_FAIL:-}" \
     FM_FAKE_DEVIN_PICKER_STUCK="${FM_FAKE_DEVIN_PICKER_STUCK:-}" \
     FM_FAKE_VIM_REFUSES_SEND="${FM_FAKE_VIM_REFUSES_SEND:-}" \
     FM_FAKE_VIM_STAYS_NORMAL="${FM_FAKE_VIM_STAYS_NORMAL:-}" \
@@ -943,6 +949,7 @@ test_interrupt_refuses_when_no_agent_runs() {
   out=$(run_control "$dir" t1 interrupt); rc=$?
   expect_code 1 "$rc" "interrupting a stopped agent should refuse"
   assert_contains "$out" "nothing to interrupt" "the refusal should say there is no agent"
+  [ ! -e "$dir/home/state/t1.control-interrupt.jsonl" ] || fail 'a refused interrupt must not log a delivery'
   [ -z "$(keys_sent "$dir")" ] || fail "no key should reach a stopped agent"
   pass "fm-control interrupt: refuses when no agent is running rather than keying a shell"
 }
@@ -973,6 +980,14 @@ test_busy_agent_is_interrupted_before_the_exit_command() {
   [ "$(keys_sent "$dir")" = "Escape" ] \
     || fail "a busy agent should be interrupted once before its exit command, got: $(keys_sent "$dir")"
   [ "$(literals "$dir")" = "/exit" ] || fail "the exit command should follow the interrupt"
+  python3 - "$dir/home/state/t1.control-interrupt.jsonl" "$gen" <<'PY_AUDIT_TEST' || fail 'exit interrupt audit lost its caller or incarnation'
+import json
+import sys
+records = [json.loads(line) for line in open(sys.argv[1])]
+assert [(r["action"], r["phase"]) for r in records] == [
+    ("key", "attempt"), ("key", "delivered"), ("cancellation", "observed")]
+assert all(r["verb"] == "exit" and r["generation"] == sys.argv[2] for r in records)
+PY_AUDIT_TEST
   pass "fm-control exit: a busy agent receives interrupt delivery before the exit command"
 }
 
@@ -1402,6 +1417,74 @@ test_exit_reports_a_refusal_the_mode_does_not_explain() {
   pass "fm-control exit: a refusal the composer's mode does not explain is reported with nothing more typed"
 }
 
+test_interrupt_audit_records_delivery_without_claiming_cancellation() {
+  local dir out
+  dir=$(new_case interrupt-audit)
+  add_task "$dir" t1 codex
+  alive_as "$dir" codex
+  printf 'codex_seat=/isolated/seat\nsecret=must-not-log\n' >> "$dir/home/state/t1.meta"
+  out=$(FM_FAKE_INTERRUPT_AUDIT=1 run_control "$dir" t1 interrupt) || fail "$out"
+  assert_not_contains "$out" fm-control-interrupt.v1 'routine diagnostics leaked to control output'
+  python3 - "$dir" <<'PY_AUDIT_TEST' || fail 'interrupt audit contract failed'
+import datetime
+import json
+import pathlib
+import sys
+
+root = pathlib.Path(sys.argv[1])
+path = root / "home/state/t1.control-interrupt.jsonl"
+records = [json.loads(line) for line in path.read_text().splitlines()]
+before = [json.loads(line) for line in (root / "fake/audit-before-key").read_text().splitlines()]
+assert [(r["action"], r["phase"], r["detail"]) for r in records] == [
+    ("key", "attempt", "Escape"), ("key", "delivered", "Escape"),
+    ("cancellation", "observed", "unconfirmed")]
+assert before == records[:1], "the attempt must exist before transport delivery"
+assert len({r["invocation"] for r in records}) == 1
+for r in records:
+    assert r["schema"] == "fm-control-interrupt.v1"
+    assert (r["task"], r["verb"], r["harness"], r["backend"], r["endpoint"]) == (
+        "t1", "interrupt", "codex", "tmux", "fmses:fm-t1")
+    assert r["codex_seat"] == "/isolated/seat"
+    assert r["pid"] > 0 and r["ppid"] > 0 and r["epoch_ns"] > 0
+    assert datetime.datetime.fromisoformat(r["timestamp"]).utcoffset().total_seconds() == 0
+assert "must-not-log" not in path.read_text()
+assert path.stat().st_mode & 0o777 == 0o600
+PY_AUDIT_TEST
+  pass 'fm-control interrupt: private audit precedes delivery and keeps cancellation unconfirmed'
+}
+
+test_interrupt_audit_records_transport_failure() {
+  local dir out rc
+  dir=$(new_case interrupt-audit-failure)
+  add_task "$dir" t1 codex
+  alive_as "$dir" codex
+  out=$(FM_FAKE_INTERRUPT_AUDIT=1 FM_FAKE_INTERRUPT_SEND_FAIL=1 run_control "$dir" t1 interrupt); rc=$?
+  expect_code 1 "$rc" 'transport failure must still refuse the interrupt'
+  python3 - "$dir/home/state/t1.control-interrupt.jsonl" <<'PY_AUDIT_TEST' || fail 'failed-send audit contract failed'
+import json
+import sys
+records = [json.loads(line) for line in open(sys.argv[1])]
+assert [(r["phase"], r["detail"]) for r in records] == [("attempt", "Escape"), ("failed", "Escape")]
+PY_AUDIT_TEST
+  pass 'fm-control interrupt: failed transport is recorded without a cancellation claim'
+}
+
+test_interrupt_audit_failure_preserves_recovery() {
+  local dir out
+  dir=$(new_case interrupt-audit-unwritable)
+  add_task "$dir" t1 codex
+  alive_as "$dir" codex
+  mkdir "$dir/home/state/t1.control-interrupt.jsonl"
+  out=$(run_control "$dir" t1 interrupt) || fail "diagnostic failure blocked recovery: $out"
+  [ "$(keys_sent "$dir")" = Escape ] || fail 'diagnostic failure suppressed recovery key'
+  assert_contains "$out" 'warning: interrupt diagnostics could not append' 'audit failure must be visible'
+  assert_contains "$out" 'cancel=unconfirmed' 'audit failure must not fabricate cancellation'
+  pass 'fm-control interrupt: unavailable diagnostics warn and preserve lifecycle behavior'
+}
+
+test_interrupt_audit_records_delivery_without_claiming_cancellation
+test_interrupt_audit_records_transport_failure
+test_interrupt_audit_failure_preserves_recovery
 test_exit_types_each_harness_verified_command
 test_interrupt_sends_each_harness_verified_key
 test_devin_interrupt_invalidates_busy

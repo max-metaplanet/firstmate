@@ -541,7 +541,7 @@ test_active_dispatch_profile_allows_explicit_harness() {
   assert_contains "$out" "spawned $id harness=codex" "spawn did not report explicit codex harness"
   assert_meta_profile "$HOME_DIR/state/$id.meta" codex gpt-5 high
   launch=$(cat "$LAUNCH_LOG")
-  assert_contains "$launch" "codex --model 'gpt-5' -c 'model_reasoning_effort=\"high\"' --dangerously-bypass-approvals-and-sandbox" \
+  assert_contains "$launch" "codex --no-daemon --model 'gpt-5' -c 'model_reasoning_effort=\"high\"' --dangerously-bypass-approvals-and-sandbox" \
     "explicit harness launch did not thread model and effort"
   pass "active crew-dispatch profile allows an explicit resolved harness"
 }
@@ -988,7 +988,7 @@ test_codex_threads_model_and_effort() {
   expect_code 0 "$status" "codex spawn with profile flags should succeed"
   assert_meta_profile "$HOME_DIR/state/$id.meta" codex gpt-5 high
   launch=$(cat "$LAUNCH_LOG")
-  assert_contains "$launch" "codex --model 'gpt-5' -c 'model_reasoning_effort=\"high\"' --dangerously-bypass-approvals-and-sandbox" \
+  assert_contains "$launch" "codex --no-daemon --model 'gpt-5' -c 'model_reasoning_effort=\"high\"' --dangerously-bypass-approvals-and-sandbox" \
     "codex launch did not thread model and reasoning effort config"
   pass "codex receives --model and model_reasoning_effort profile flags"
 }
@@ -1004,7 +1004,7 @@ test_codex_threads_model_and_max_effort() {
   expect_code 0 "$status" "codex Luna spawn with max effort should succeed"
   assert_meta_profile "$HOME_DIR/state/$id.meta" codex gpt-5.6-luna max
   launch=$(cat "$LAUNCH_LOG")
-  assert_contains "$launch" "codex --model 'gpt-5.6-luna' -c 'model_reasoning_effort=\"max\"' --dangerously-bypass-approvals-and-sandbox" \
+  assert_contains "$launch" "codex --no-daemon --model 'gpt-5.6-luna' -c 'model_reasoning_effort=\"max\"' --dangerously-bypass-approvals-and-sandbox" \
     "codex launch did not thread Luna's max reasoning effort config"
   pass "codex Luna receives --model and model_reasoning_effort max profile flags"
 }
@@ -1020,7 +1020,7 @@ test_codex_omits_max_effort_for_unsupported_model() {
   expect_code 0 "$status" "codex spawn with an unsupported model max effort should omit the effort flag"
   assert_meta_profile "$HOME_DIR/state/$id.meta" codex gpt-5 max
   launch=$(cat "$LAUNCH_LOG")
-  assert_contains "$launch" "codex --model 'gpt-5' --dangerously-bypass-approvals-and-sandbox" \
+  assert_contains "$launch" "codex --no-daemon --model 'gpt-5' --dangerously-bypass-approvals-and-sandbox" \
     "codex launch did not preserve the model flag when max effort was omitted"
   assert_not_contains "$launch" "model_reasoning_effort" "codex launch must omit unsupported model max reasoning effort"
   pass "codex omits max for models without the catalog capability"
@@ -1040,6 +1040,8 @@ test_codex_crewmate_launch_disables_the_hook_layer() {
   status=$?
   expect_code 0 "$status" "codex crewmate spawn should succeed"$'\n'"$out"
   launch=$(cat "$LAUNCH_LOG")
+  assert_contains "$launch" "codex --no-daemon " \
+    "codex ship must keep tools in the invoking home's environment"
   assert_contains "$launch" "--disable hooks" \
     "codex crewmate launch did not disable the hook layer that blocks it on a trust modal"
   # The opposite posture: this flag RUNS the untrusted hooks instead of
@@ -1065,9 +1067,25 @@ test_codex_secondmate_launch_keeps_the_hook_layer() {
   status=$?
   expect_code 0 "$status" "codex secondmate spawn should succeed"$'\n'"$out"
   launch=$(cat "$LAUNCH_LOG")
+  assert_contains "$launch" "codex --no-daemon " \
+    "codex secondmate must keep its tools and hooks in its own home's environment"
   assert_not_contains "$launch" "--disable hooks" \
     "codex secondmate launch disabled the project hooks its own primary supervision depends on"
   pass "a codex secondmate keeps the project hook layer its primary session runs on"
+}
+
+test_codex_scout_launch_uses_its_own_server() {
+  local rec id out launch
+  id=profile-codex-scout-isolation
+  rec=$(make_spawn_case profile-codex-scout-isolation codex "$id")
+  read_case_record "$rec"
+  out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" --scout) \
+    || fail "codex scout spawn failed: $out"
+  launch=$(cat "$LAUNCH_LOG")
+  assert_contains "$launch" 'codex --no-daemon ' 'codex scout must not attach to another home server'
+  assert_contains "$launch" '--disable hooks' 'scout hook policy changed'
+  assert_contains "$launch" 'notify=' 'scout turn-end notification was lost'
+  pass 'codex scouts use an embedded server with their existing hook and notification policy'
 }
 
 test_grok_threads_model_and_reasoning_effort() {
@@ -2692,6 +2710,7 @@ test_codex_threads_model_and_max_effort
 test_codex_omits_max_effort_for_unsupported_model
 test_codex_crewmate_launch_disables_the_hook_layer
 test_codex_secondmate_launch_keeps_the_hook_layer
+test_codex_scout_launch_uses_its_own_server
 test_grok_threads_model_and_reasoning_effort
 test_grok_omits_invalid_max_reasoning_effort
 test_grok_omits_invalid_xhigh_reasoning_effort
