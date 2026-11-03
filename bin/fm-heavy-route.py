@@ -546,6 +546,24 @@ def safe_orchestration(plan, root, settings):
         if not packages:
             return False
         if tool == "pnpm":
+            for setting, allowed in (
+                    ("include-workspace-root", ("false", "undefined")),
+                    ("filter", ("undefined",)),
+                    ("filter-prod", ("undefined",)),
+                    ("workspace-packages", ("undefined",)),
+                    ("ignore-workspace", ("false", "undefined")),
+                    ("legacy-dir-filtering", ("false", "undefined")),
+                    ("test-pattern", ("undefined",)),
+                    ("changed-files-ignore-pattern", ("undefined",)),
+                    ("resume-from", ("undefined",)),
+                    ("link-workspace-packages", ("false", "undefined")),
+                    ("shared-workspace-lockfile", ("true", "undefined"))):
+                effective = subprocess.run(
+                    [*launcher, "config", "get", setting, "--location=project"], cwd=root,
+                    capture_output=True, text=True, check=True, timeout=30,
+                    env=dict(os.environ, FM_BUILD_LOCK_BYPASS="1"))
+                if effective.stdout.strip() not in allowed:
+                    return False
             query = [*launcher, "--recursive"]
             for key in ("--filter", "-F"):
                 for value in options.get(key, []):
@@ -557,10 +575,6 @@ def safe_orchestration(plan, root, settings):
             selected = json.loads(shown.stdout)
             directories = [Path(package["path"]).resolve() for package in selected]
             if not options.get("--filter") and not options.get("-F"):
-                workspace = (root / "pnpm-workspace.yaml").read_text()
-                npmrc = (root / ".npmrc").read_text() if (root / ".npmrc").exists() else ""
-                if "includeWorkspaceRoot" in workspace or "include-workspace-root" in npmrc:
-                    return False
                 directories = [directory for directory in directories if directory != root]
             definitions = {}
         elif tool == "turbo":

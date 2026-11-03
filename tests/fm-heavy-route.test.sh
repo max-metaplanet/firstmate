@@ -523,7 +523,34 @@ const fs = require('fs');
 const path = require('path');
 const cp = require('child_process');
 const dirs = ['packages/a', 'packages/b'];
-if (process.argv.includes('--dry=json')) {
+function setting(key) {
+  let value = 'undefined';
+  for (const file of [process.env.npm_config_globalconfig,
+    path.join(process.env.HOME || '', '.npmrc'), '.npmrc']) {
+    if (!file || !fs.existsSync(file)) continue;
+    for (const line of fs.readFileSync(file, 'utf8').split('\n')) {
+      const at = line.indexOf('=');
+      if (at >= 0 && line.slice(0, at).trim() === key) value = line.slice(at + 1).trim();
+    }
+  }
+  const envKey = 'npm_config_' + key.replaceAll('-', '_');
+  for (const [name, configured] of Object.entries(process.env)) {
+    if (name.toLowerCase() === envKey) value = configured;
+  }
+  return value;
+}
+if (process.argv[2] === 'config') {
+  if (process.argv[3] !== 'get' || !process.argv[4]) process.exit(42);
+  const key = process.argv[4];
+  const probes = fs.existsSync('tools/config-probe.json')
+    ? JSON.parse(fs.readFileSync('tools/config-probe.json')) : {};
+  const probe = probes[key];
+  if (probe) {
+    process.stdout.write(probe.stdout);
+    process.exit(probe.exit || 0);
+  }
+  console.log(setting(key));
+} else if (process.argv.includes('--dry=json')) {
   const definition = JSON.parse(fs.readFileSync('turbo.json', 'utf8')).tasks['type-check'];
   const tasks = dirs.map((directory) => ({directory, task: 'type-check',
     command: JSON.parse(fs.readFileSync(directory + '/package.json')).scripts['type-check'],
@@ -534,9 +561,18 @@ if (process.argv.includes('--dry=json')) {
   }
   console.log(JSON.stringify({tasks}));
 } else if (process.argv.includes('list')) {
-  console.log(JSON.stringify(dirs.map((dir) => ({path: path.resolve(dir)}))));
+  const selected = ['filter', 'filter-prod', 'workspace-packages'].some((key) => setting(key) !== 'undefined')
+    ? dirs.slice(0, 1) : dirs;
+  console.log(JSON.stringify(selected.map((dir) => ({path: path.resolve(dir)}))));
 } else {
   console.log('parent held=' + (process.env.FM_BUILD_LOCK_HELD || ''));
+  if (fs.realpathSync(process.argv[1]).includes('/pnpm/') && setting('include-workspace-root') === 'true') {
+    const script = JSON.parse(fs.readFileSync('package.json')).scripts?.['type-check'];
+    if (script) {
+      const result = cp.spawnSync('sh', ['-c', script], {env: process.env, stdio: 'inherit'});
+      if (result.status !== 0) process.exit(result.status || 1);
+    }
+  }
   let code = 0;
   for (const dir of dirs) {
     const result = cp.spawnSync(process.execPath,
@@ -601,6 +637,69 @@ for tool, args in (('turbo', ['type-check']), ('nx', ['run-many', '-t', 'type-ch
     assert r.stderr.count('orchestrator on Boat') == 1, r.stderr
     assert 'running locally' not in r.stderr, r.stderr
 print('ok - turbo, nx, lerna and recursive/filtered pnpm route one whole run; two children start no jobs')
+
+for source in ('user', 'global', 'environment'):
+    for enabled in (False, True):
+        p, work, config, state, env, cli = orchestrator_case(
+            'pnpm-root-' + source + '-' + str(enabled), 'pnpm')
+        value = 'true' if enabled else 'false'
+        if source == 'environment':
+            env['NPM_CONFIG_INCLUDE_WORKSPACE_ROOT'] = value
+        else:
+            path = Path(env['HOME']) / '.npmrc' if source == 'user' else p / 'global.npmrc'
+            path.write_text('include-workspace-root=' + value + '\n')
+            if source == 'global':
+                env['npm_config_globalconfig'] = str(path)
+        package = json.loads((work / 'package.json').read_text())
+        package['scripts'] = {'type-check': 'node tools/root-failure.cjs'}
+        (work / 'package.json').write_text(json.dumps(package))
+        (work / 'tools/root-failure.cjs').write_text(
+            "console.log('root marker=' + process.env.FM_HEAVY_ORCHESTRATOR); process.exit(9);\n")
+        subprocess.run(['git', '-C', str(work), 'add', '-A'], check=True, capture_output=True)
+        subprocess.run(['git', '-C', str(work), 'commit', '-qm', 'Root inclusion fixture'],
+                       check=True, capture_output=True)
+        r = orchestration_run(work, env, cli, ['-r', 'type-check'])
+        assert r.returncode == (9 if enabled else 0), (source, enabled, r.stdout, r.stderr)
+        assert starts(state) == (0 if enabled else 1), (source, enabled, r.stderr)
+        if enabled:
+            assert 'root marker=local' in r.stdout, (source, r.stdout, r.stderr)
+        else:
+            assert r.stdout.count('child marker=remote held=\n') == 2, (source, r.stdout, r.stderr)
+
+for name, key, stdout, exit_code in (
+    ('unavailable', 'include-workspace-root', '', 42),
+    ('ambiguous', 'include-workspace-root', 'false\ntrue\n', 0),
+    ('empty', 'include-workspace-root', '', 0),
+    ('unknown', 'include-workspace-root', 'null\n', 0),
+    ('later-unavailable', 'filter-prod', '', 42),
+):
+    p, work, config, state, env, cli = orchestrator_case('pnpm-config-' + name, 'pnpm')
+    (work / 'tools/config-probe.json').write_text(json.dumps({key: {'stdout': stdout, 'exit': exit_code}}))
+    subprocess.run(['git', '-C', str(work), 'add', '-A'], check=True, capture_output=True)
+    subprocess.run(['git', '-C', str(work), 'commit', '-qm', 'Unavailable config fixture'],
+                   check=True, capture_output=True)
+    r = orchestration_run(work, env, cli, ['-r', 'type-check'])
+    assert r.returncode == 0 and starts(state) == 0, (name, r.stdout, r.stderr)
+    assert r.stdout.count('child marker=local held=') == 2, (name, r.stdout, r.stderr)
+
+for key, value in (('filter', 'packages/a'), ('filter-prod', 'packages/a'),
+                   ('workspace-packages', 'packages/a'), ('ignore-workspace', 'true'),
+                   ('legacy-dir-filtering', 'true'), ('test-pattern', 'tests/**'),
+                   ('changed-files-ignore-pattern', '**'), ('link-workspace-packages', 'true'),
+                   ('shared-workspace-lockfile', 'false'), ('resume-from', 'packages/b')):
+    p, work, config, state, env, cli = orchestrator_case('pnpm-selection-' + key, 'pnpm')
+    env['npm_config_' + key.replace('-', '_')] = value
+    if key in ('filter', 'filter-prod', 'workspace-packages'):
+        path = work / 'packages/b/package.json'
+        package = json.loads(path.read_text())
+        package['scripts']['type-check'] = 'node custom-typecheck.js'
+        path.write_text(json.dumps(package))
+    subprocess.run(['git', '-C', str(work), 'add', '-A'], check=True, capture_output=True)
+    subprocess.run(['git', '-C', str(work), 'commit', '--allow-empty', '-qm', 'Effective selection fixture'],
+                   check=True, capture_output=True)
+    r = orchestration_run(work, env, cli, ['-r', 'type-check'])
+    assert r.returncode == 0 and starts(state) == 0, (key, r.stdout, r.stderr)
+print('ok - pnpm proves effective root exclusion and refuses hidden selection overrides or ambiguous config probes')
 
 for name, tool, args, script, cache in (
     ('unknown-options', 'turbo', ['type-check', '--mystery'], 'tsc --noEmit', False),
