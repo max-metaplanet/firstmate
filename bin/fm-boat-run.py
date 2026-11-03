@@ -716,7 +716,9 @@ class Upstash:
                     **self.options(timeout=180))
             except Failure as exc:
                 if exc.code in (69, 75):
+                    save(budget_path, dict(month=month, reserved_cpu_seconds=used))
                     job['create_started'] = False
+                    job['reserved_cpu_seconds'] = 0
                     save(record, job)
                 raise
             if (not isinstance(self.box.id, str) or

@@ -1080,6 +1080,7 @@ for name, settings, expected in [
     ('readonly-failure', {'list_error': True}, 69),
     ('create-cap', {'create_rejected': 429}, 75),
     ('create-budget', {'create_rejected': 402}, 75),
+    ('create-unauthenticated', {'create_rejected': 401}, 69),
     ('create-auth', {'create_rejected': 403}, 69),
 ]:
     p, state, env = upstash_case(name, upstash_settings=settings)
@@ -1089,6 +1090,30 @@ for name, settings, expected in [
     assert b'upstash_fixture_secret' not in r.stdout + r.stderr
     assert not any(x['operation'] == 'exec' for x in upstash_calls(state))
 print('ok - account environment, read-only failure and explicit create rejection remain unavailable')
+
+for status, expected in ((401, 69), (403, 69), (402, 75), (429, 75)):
+    p, state, env = upstash_case('reservation-refund-' + str(status))
+    assert launch(p, env).returncode == 0
+    budget = next(state.glob('upstash-monthly-*.json'))
+    prior = json.loads(budget.read_text())
+    assert prior['reserved_cpu_seconds'] == 5760
+    (state / 'upstash.json').write_text(json.dumps({'create_rejected': status}))
+    for attempt in range(3):
+        (p / 'output').rename(p / ('output-' + str(attempt)))
+        r = launch(p, env)
+        assert r.returncode == expected and result(p)['kind'] == 'unavailable', r.stderr
+        assert json.loads(budget.read_text()) == prior
+        records = [json.loads(path.read_text()) for path in (state / 'jobs').glob('*.json')]
+        rejected = [job for job in records if not job['create_started']]
+        assert len(rejected) == attempt + 1
+        assert all(job['reserved_cpu_seconds'] == 0 and job['cleanup'] == 'deleted'
+                   for job in rejected)
+    (p / 'output').rename(p / 'output-rejected')
+    (state / 'upstash.json').write_text('{}')
+    assert launch(p, env).returncode == 0
+    assert json.loads(budget.read_text())['reserved_cpu_seconds'] == 11520
+    assert [x['operation'] for x in upstash_calls(state)].count('create') == 5
+print('ok - confirmed create rejections refund only their reservation and allow later admission')
 
 for machine_type, swap in [('large', '0'), ('xlarge', '0'), ('default', '1')]:
     p, state, env = upstash_case('resources-' + machine_type + swap)
@@ -1131,6 +1156,8 @@ for name, settings, command, expected_kind in [
     assert [x['operation'] for x in upstash_calls(state)].count('create') == 1
     assert b'upstash_fixture_secret' not in r.stdout + r.stderr
     assert json.loads((state / 'upstash-vms.json').read_text()) == []
+    budget = next(state.glob('upstash-monthly-*.json'))
+    assert json.loads(budget.read_text())['reserved_cpu_seconds'] == 5760
 print('ok - lost create, unknown execution, incomplete markers and credential responses never retry')
 
 for code in (7, 69, 75, 124):
