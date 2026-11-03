@@ -131,7 +131,8 @@ print('ok - lane environment drops inherited setup and keeps the workflows own c
 
 # ── proven memory exhaustion, and nothing else, buys a larger machine ───────
 def run(size, failed, oom):
-    return {'size': size, 'adapter_exit': 0, 'summary': {'failed': failed, 'oom': oom}}
+    return {'size': size, 'adapter_exit': 0, 'summary': {'failed': failed, 'oom': oom},
+            'remote_result': {'kind': 'completed', 'remote_exit': 0, 'cleanup': 'deleted'}}
 
 
 assert not local.should_retry_large(run('default', [], False))
@@ -140,12 +141,27 @@ assert not local.should_retry_large(run('default', ['node-1'], False))
 assert not local.should_retry_large(run('large', ['node-1'], True))
 # A run that produced no verdict is a failure of the check, not memory evidence.
 assert not local.should_retry_large({'size': 'default', 'summary': None})
+for kind in ('execution-unknown', 'adapter-error', 'unavailable'):
+    unknown = {**run('default', ['node-1'], True),
+               'remote_result': {'kind': kind, 'cleanup': 'deleted'}}
+    assert not local.should_retry_large(unknown)
 assert local.verdict(run('default', [], False))[0]
 for failed, oom in (([], False), (['node-1'], True)):
     broken = {**run('default', failed, oom), 'adapter_exit': 70}
     assert local.verdict(broken) == (False, [], False)
     assert not local.should_retry_large(broken)
 print('ok - the larger machine is bought only for a proven memory failure on default')
+
+upstash_run = {**run('default', [], False), 'provider': 'upstash', 'actual_size': 'small',
+               'resources': {'cpu': 2, 'memory_gib': 4, 'disk_gib': 10},
+               'wall_s': 60, 'dollars_estimate': None, 'log': 'upstash.log', 'lanes': []}
+import io
+rendered = io.StringIO()
+local.report([upstash_run], rendered)
+assert 'upstash small machine' in rendered.getvalue()
+assert 'free-plan CPU allowance' in rendered.getvalue()
+assert '$' not in rendered.getvalue()
+print('ok - Upstash small reports its actual provider and omits Boat compute pricing')
 
 # ── an out-of-memory lane needs kernel, exit-code or V8 proof ───────────────
 def lane(exit_code, output, kills=(0, 0)):

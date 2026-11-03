@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# fm-boat-test-wrapper.sh - no-mistakes Test command wrapper for secret-free Boat work.
+# fm-boat-test-wrapper.sh - no-mistakes Test wrapper for secret-free remote work.
 # Usage: FM_HOME=/absolute/home fm-boat-test-wrapper.sh 'bash scripts/pipeline-test.sh'
 # Receives exactly ONE command string, with cwd at the pipeline worktree root.
 # Runs that string with bash -c; source transfer, environment isolation, timeout,
@@ -30,7 +30,9 @@
 # Evidence is retained in a fresh ../.fm-test-scratch/fm-boat-test.*/boat* outside
 # the worktree; the adapter prints command output and owns command.log/result.json.
 # Only exit 69/75 WITH result kind=unavailable permits local execution, through
-# fm-build-lock.py, unless FM_BOAT_TEST_LOCAL_FALLBACK=0 selects Boat-only mode.
+# fm-build-lock.py, unless FM_BOAT_TEST_LOCAL_FALLBACK=0 selects remote-only mode.
+# The adapter tries Boat then optional Upstash before returning unavailable;
+# that remote-only setting allows either provider and still forbids local work.
 # Unset or any other value preserves local fallback on unavailability.
 # Boat-only retries unavailable results with fresh evidence for each attempt.
 # FM_BOAT_TEST_UNAVAILABLE_WAIT_SECS bounds elapsed time allowed for retries

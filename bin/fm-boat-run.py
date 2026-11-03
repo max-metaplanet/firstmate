@@ -2,6 +2,7 @@
 """Boat adapter implementation. Public contract: fm-boat-run.sh --help."""
 
 import argparse
+import base64
 import contextlib
 import datetime
 import fcntl
@@ -13,6 +14,7 @@ import re
 import shlex
 import shutil
 import signal
+import stat
 import subprocess
 import sys
 import tarfile
@@ -40,6 +42,7 @@ class _Terminated(BaseException):
 
 ACTIVE_CHILD = None
 MACHINE_TYPES = ('default', 'large', 'xlarge')
+REMOTE_ROOT = '/home/user/fm-job'
 
 
 def terminate(number, _frame):
@@ -385,6 +388,10 @@ def default_key_file():
     return (Path.home() / '.config/boat/api-key').resolve()
 
 
+def upstash_key_file():
+    return (Path.home() / '.config/upstash/box-api-key').resolve()
+
+
 @dataclass(frozen=True)
 class Account:
     key_file: Path
@@ -510,10 +517,20 @@ class Boat:
             raise Failure('Boat listing incomplete; refusing to infer absence')
         return data['sandboxes']
 
-    def command(self, *args, timeout=90, capture_path=None):
+    def upload(self, vm, upload, timeout):
+        self.call('push', vm, str(upload), '--to', REMOTE_ROOT,
+                  timeout=timeout, raw=True)
+
+    def download(self, vm, remote, destination):
+        self.call('scp', vm + ':' + remote, str(destination), raw=True, timeout=180)
+
+    def command(self, vm, argv, remote_timeout=60, timeout=90, capture_path=None):
         # Boat automatically emits JSON when stdout is captured. Blocking exec
         # returns stdout/stderr fields; streaming exec returns typed JSONL frames.
-        payload = self.call('exec', *args, timeout=timeout, raw=True,
+        args = [vm, '--timeout', str(remote_timeout)]
+        if capture_path is not None:
+            args.append('--stream')
+        payload = self.call('exec', *args, '--', *argv, timeout=timeout, raw=True,
                             capture_path=capture_path)
         frames = [json.loads(line) for line in payload.splitlines() if line.strip()]
         output = bytearray()
@@ -589,6 +606,209 @@ class Boat:
         save(record, job)
 
 
+class Upstash:
+    """Optional official SDK transport for free small ephemeral boxes."""
+
+    base_url = 'https://us-east-1.box.upstash.com'
+
+    def __init__(self, state, key_file):
+        self.state = state
+        self.key_file = key_file
+        self.box = None
+
+    def credentials(self):
+        try:
+            if stat.S_IMODE(self.key_file.stat().st_mode) != 0o600:
+                raise ValueError('key permissions')
+            key = self.key_file.read_text().strip()
+            if not key:
+                raise ValueError('empty key')
+            return key
+        except (OSError, ValueError) as exc:
+            raise Failure('Upstash key unavailable or not mode 0600', 69) from exc
+
+    def sdk(self):
+        try:
+            from upstash_box import Box, EphemeralBox, __version__
+        except ImportError as exc:
+            raise Failure('Upstash unavailable: install optional upstash-box==0.4.0', 69) from exc
+        if __version__ != '0.4.0':
+            raise Failure('Upstash requires the validated optional upstash-box==0.4.0', 69)
+        return Box, EphemeralBox
+
+    def options(self, timeout=90):
+        return dict(api_key=self.credentials(), base_url=self.base_url,
+                    timeout=timeout * 1000, debug=False)
+
+    def request(self, operation, function, *args, **kwargs):
+        try:
+            return function(*args, **kwargs)
+        except Exception as exc:
+            # SDK exceptions may include response bodies or authentication data.
+            status = getattr(exc, 'status_code', None)
+            detail = ' HTTP ' + str(status) if type(status) is int else ''
+            raise Failure('Upstash ' + operation + ' failed' + detail +
+                          ' (' + type(exc).__name__ + ')',
+                          75 if status in (402, 429) else
+                          69 if status in (401, 403) else 74) from exc
+
+    def listing(self):
+        Box, _ = self.sdk()
+        data = self.request('list', Box.list, **self.options())
+        if not isinstance(data, list):
+            raise Failure('Upstash listing incomplete; refusing to infer absence')
+        try:
+            items = [item.model_dump() for item in data]
+        except (AttributeError, TypeError, ValueError) as exc:
+            raise Failure('invalid Upstash listing') from exc
+        if any(not isinstance(item.get('id'), str) for item in items):
+            raise Failure('Upstash listing missing box identity')
+        return [item for item in items if item.get('status') != 'deleted']
+
+    def admit(self, job, record, args, upload_bytes):
+        if args.type != 'default' or args.swap_gib:
+            raise Failure('Upstash free small is incompatible with requested type or swap', 69)
+        if upload_bytes > 100_000_000:
+            raise Failure('Upstash source archive exceeds the 100 MB upload limit', 69)
+        Box, EphemeralBox = self.sdk()
+        with lock(self.state / 'admission.lock'):
+            try:
+                options = self.options()
+                environment = self.request('account environment', Box.list_env, **options)
+                if not isinstance(environment, dict) or environment:
+                    raise Failure('Upstash requires an empty account environment', 69)
+                live = self.listing()
+            except Failure as exc:
+                raise Failure(str(exc), 69) from exc
+            pending = [json.loads(p.read_text()) for p in (self.state / 'jobs').glob('*.json')]
+            live_ids = {item['id'] for item in live}
+            reserved = sum(p.get('provider') == 'upstash' and p.get('cleanup') != 'deleted'
+                           and p.get('account_key_file') == str(self.key_file)
+                           and p.get('vm_id') not in live_ids for p in pending)
+            if len(live) + reserved >= 10:
+                raise Failure('Upstash free concurrent box cap reached', 75)
+            # This is a worst-case local reservation, not observed account usage.
+            # Never refund early deletion: creation, transfers and other clients
+            # make measured command wall time an unsafe quota oracle.
+            job['expires'] = time.time() + job['ttl'] + 180
+            month = datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m')
+            end_month = datetime.datetime.fromtimestamp(
+                job['expires'], datetime.timezone.utc).strftime('%Y-%m')
+            if end_month != month:
+                raise Failure('Upstash local CPU reservation would cross a UTC month', 75)
+            identity = hashlib.sha256(os.fsencode(self.key_file)).hexdigest()
+            budget_path = self.state / ('upstash-monthly-' + identity + '.json')
+            budget = json.loads(budget_path.read_text()) if budget_path.exists() else {}
+            used = budget.get('reserved_cpu_seconds', 0) if budget.get('month') == month else 0
+            reservation = 2 * (job['ttl'] + 180)
+            if type(used) is not int or used < 0:
+                raise Failure('invalid Upstash local monthly reservation', 69)
+            if used + reservation > 5 * 3600:
+                raise Failure('Upstash local free monthly CPU reservation exhausted', 75)
+            save(budget_path, dict(month=month, reserved_cpu_seconds=used + reservation))
+            job.update(provider='upstash', account_key_file=str(self.key_file),
+                       create_started=True, reserved_cpu_seconds=reservation)
+            save(record, job)
+            try:
+                self.box = self.request(
+                    'create', EphemeralBox.create, runtime='node', size='small',
+                    ttl=job['ttl'], name=job['name'], labels=[job['name'][-20:]], env={},
+                    **self.options(timeout=180))
+            except Failure as exc:
+                if exc.code in (69, 75):
+                    job['create_started'] = False
+                    save(record, job)
+                raise
+            if (not isinstance(self.box.id, str) or
+                    not re.fullmatch(r'[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}', self.box.id)):
+                raise Failure('Upstash create returned no valid box id')
+            job['vm_id'] = self.box.id
+            save(record, job)
+
+    def connect(self, vm, timeout=90):
+        Box, _ = self.sdk()
+        return self.request('connect', Box.get, vm, **self.options(timeout))
+
+    def upload(self, vm, upload, timeout):
+        with self.connect(vm, timeout) as box:
+            paths = str(PurePosixPath(REMOTE_ROOT).parent) + ' ' + REMOTE_ROOT
+            prepare = ('if [ "$(id -u)" = 0 ]; then install -d -m 700 ' + paths +
+                       '; else sudo -n install -d -m 700 -o "$(id -u)" -g "$(id -g)" ' +
+                       paths + '; fi')
+            prepared = self.request('prepare canonical source root', box.exec.command, prepare)
+            if prepared.exit_code != 0:
+                raise Failure('Upstash cannot prepare canonical /home/user/fm-job '
+                              '(exit ' + str(prepared.exit_code) + ')')
+            self.request('upload', box.files.upload,
+                         [dict(path=str(upload / 'source.tar.gz'),
+                               destination=REMOTE_ROOT + '/source.tar.gz')])
+
+    def read(self, box, path):
+        encoded = self.request('read', box.files.read, path, encoding='base64')
+        try:
+            data = base64.b64decode(encoded, validate=True)
+        except (ValueError, TypeError) as exc:
+            raise Failure('Upstash returned invalid file encoding') from exc
+        metadata = self.request('stat', box.files.stat, path)
+        if type(metadata.size) is not int or metadata.size != len(data):
+            raise Failure('Upstash file result missing or truncated')
+        if self.credentials().encode() in data:
+            raise Failure('Upstash response contained credential material')
+        return data
+
+    def download(self, vm, remote, destination):
+        with self.connect(vm, 180) as box:
+            destination.write_bytes(self.read(box, remote))
+
+    def command(self, vm, argv, remote_timeout=60, timeout=90, capture_path=None):
+        prefix = REMOTE_ROOT + '/transport-' + uuid.uuid4().hex
+        script = (shlex.join(argv) + ' >' + prefix + '.out 2>' + prefix + '.err; '
+                  'rc=$?; printf "%s" "$rc" >' + prefix + '.exit')
+        with self.connect(vm, timeout) as box:
+            self.request('exec', box.exec.command,
+                         'timeout -k 15 ' + str(remote_timeout) + ' sh -c ' + shlex.quote(script))
+            stdout = self.read(box, prefix + '.out')
+            stderr = self.read(box, prefix + '.err')
+            if capture_path is not None:
+                capture_path.write_bytes(stdout + stderr)
+            status = self.read(box, prefix + '.exit')
+        sys.stderr.buffer.write(stderr)
+        sys.stderr.buffer.flush()
+        if status != b'0':
+            raise Failure('Upstash command result missing, failed or timed out')
+        return stdout
+
+    def cleanup(self, job, record):
+        if job['cleanup'] == 'deleted':
+            return
+        if not job.get('create_started'):
+            job['cleanup'] = 'deleted'
+            save(record, job)
+            return
+        live = self.listing()
+        matches = [item for item in live if item.get('name') == job['name']
+                   and job['name'][-20:] in (item.get('labels') or [])]
+        if len(matches) > 1:
+            raise Failure('ambiguous Upstash box name; retained for reap', 70)
+        if not job.get('vm_id') and matches:
+            job['vm_id'] = matches[0]['id']
+            save(record, job)
+        vm = job.get('vm_id')
+        if vm and not re.fullmatch(r'[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}', vm):
+            raise Failure('invalid recorded Upstash box id', 70)
+        if vm and any(item['id'] == vm for item in live):
+            with self.connect(vm, 180) as box:
+                self.request('delete', box.delete)
+            if any(item['id'] == vm for item in self.listing()):
+                raise Failure('Upstash box still listed; retained for reap', 70)
+        if not vm and time.time() < job['expires']:
+            raise Failure('Upstash create outcome unknown; retain until TTL and reap', 70)
+        if self.box is not None:
+            self.box.close()
+        job['cleanup'] = 'deleted'
+        save(record, job)
+
+
 def admit(boats, job, record):
     state = boats[0].state
     with lock(state / 'admission.lock'):
@@ -656,9 +876,9 @@ def artifacts(boat, vm, names, output):
     # Build archive remotely without following links. Validate each requested
     # member again locally before creating any files under the output directory.
     script = '''import pathlib,tarfile,sys
-root=pathlib.Path('/home/user/fm-job/source')
-with tarfile.open('/home/user/fm-job/artifacts.tar.gz',mode='w:gz') as t:
- for name in sys.argv[1:]:
+root=pathlib.Path(sys.argv[1])/'source'
+with tarfile.open(root.parent/'artifacts.tar.gz',mode='w:gz') as t:
+ for name in sys.argv[2:]:
   p=root/name
   if not p.exists(): raise RuntimeError('missing artifact')
   for f in [p,*p.rglob('*')] if p.is_dir() else [p]:
@@ -666,11 +886,10 @@ with tarfile.open('/home/user/fm-job/artifacts.tar.gz',mode='w:gz') as t:
    if not (f.is_dir() or f.is_file()): raise RuntimeError('special artifact')
    t.add(f,arcname=str(f.relative_to(root)),recursive=False)
 '''
-    boat.command(vm, '--timeout', '120', '--', 'python3', '-c', script,
-                 *names, timeout=180)
+    boat.command(vm, ['python3', '-c', script, REMOTE_ROOT, *names],
+                 remote_timeout=120, timeout=180)
     downloaded = output / 'artifacts.tar.gz'
-    boat.call('scp', vm + ':/home/user/fm-job/artifacts.tar.gz', str(downloaded),
-              raw=True, timeout=180)
+    boat.download(vm, REMOTE_ROOT + '/artifacts.tar.gz', downloaded)
     with tarfile.open(downloaded, mode='r:gz') as archive:
         members = archive.getmembers()
         for member in members:
@@ -707,7 +926,8 @@ def run(args, boats):
     except OSError as exc:
         raise Failure('--output must be a new writable directory', 2) from exc
     result = {'kind': 'invalid', 'remote_exit': None, 'cleanup': 'not-created',
-              'swap_gib': args.swap_gib}
+              'swap_gib': args.swap_gib, 'provider': 'boat',
+              'requested_type': args.type, 'actual_size': args.type}
     job = None
     code = 2
     try:
@@ -723,7 +943,7 @@ def run(args, boats):
         upload.mkdir()
         head, digest, history_result = source(
             root, args.input, upload / 'source.tar.gz',
-            {b.account.key_file for b in boats}, args.history_depth)
+            {upstash_key_file(), *(b.account.key_file for b in boats)}, args.history_depth)
         result.update(history_result)
         # Boat push honors enclosing gitignore rules. OUTPUT commonly lives in
         # ignored data/; a private index makes this one archive an explicit input
@@ -739,50 +959,65 @@ def run(args, boats):
         record = boat.state / 'jobs' / (job_id + '.json')
         job = {'name': 'fm-offload-' + job_id, 'vm_id': None, 'cleanup': 'pending',
                'ttl': args.timeout + 900, 'expires': time.time() + args.timeout + 1080,
-               'create_started': False, 'type': args.type}
+               'create_started': False, 'type': args.type, 'provider': 'boat'}
         with lock(boat.state / (job_id + '.lock')):
             try:
                 result['kind'] = 'unavailable'
                 try:
-                    boat = admit(eligible, job, record)
+                    try:
+                        boat = admit(eligible, job, record)
+                    except Failure as exc:
+                        if job['create_started'] or exc.code not in (69, 75):
+                            raise
+                        result['boat_unavailable'] = str(exc)
+                        # A missing optional key preserves the original Boat
+                        # refusal and exit classification for existing callers.
+                        key_file = upstash_key_file()
+                        if not key_file.exists():
+                            raise
+                        boat = Upstash(boat.state, key_file)
+                        result.update(provider='upstash', actual_size='small',
+                                      resources=dict(cpu=2, memory_gib=4, disk_gib=10))
+                        boat.admit(job, record, args, upload_bytes)
                 finally:
-                    if job.get('account_key_file'):
+                    if job.get('account_key_file') and job.get('provider') != 'upstash':
                         boat = next(b for b in boats if str(b.account.key_file) == job['account_key_file'])
                 vm = job['vm_id']
                 result.update(vm_id=vm, kind='adapter-error')
-                boat.call('push', vm, str(upload), '--to', '/home/user/fm-job',
-                          timeout=push_timeout, raw=True)
-                boat.command(vm, '--timeout', '60', '--', 'bash', '-c',
-                          f'echo {digest} /home/user/fm-job/source.tar.gz | sha256sum -c - && '
-                          'mkdir -p /home/user/fm-job/source && tar xzf /home/user/fm-job/source.tar.gz -C /home/user/fm-job/source',
+                remote_root = REMOTE_ROOT
+                boat.upload(vm, upload, push_timeout)
+                boat.command(vm, ['bash', '-c',
+                          f'echo {digest} {remote_root}/source.tar.gz | sha256sum -c - && '
+                          f'mkdir -p {remote_root}/source && tar xzf {remote_root}/source.tar.gz -C {remote_root}/source'],
                           timeout=90)
                 if args.swap_gib:
-                    boat.command(vm, '--timeout', '60', '--', 'bash', '-c',
+                    boat.command(vm, ['bash', '-c',
                                  f'sudo -n fallocate -l {args.swap_gib}G /swapfile-fm-offload && '
                                  'sudo -n chmod 600 /swapfile-fm-offload && '
                                  'sudo -n mkswap /swapfile-fm-offload && '
-                                 'sudo -n swapon /swapfile-fm-offload')
+                                 'sudo -n swapon /swapfile-fm-offload'])
                 command = shlex.join(args.command)
-                remote = ('cd /home/user/fm-job/source || exit 125; '
-                          'env -i PATH="$PATH" HOME=/home/user CI=1 '
+                remote = (f'cd {remote_root}/source || exit 125; '
+                          f'env -i PATH="$PATH" HOME={str(PurePosixPath(remote_root).parent)} CI=1 '
                           'NEXT_TELEMETRY_DISABLED=1 '
                           f'timeout -k 15 {args.timeout} {command}; '
-                          'rc=$?; printf "%s" "$rc" > /home/user/fm-job/exit')
+                          f'rc=$?; printf "%s" "$rc" > {remote_root}/exit')
                 result['kind'] = 'execution-unknown'
-                data = boat.command(vm, '--timeout', str(args.timeout + 30),
-                                 '--stream', '--', 'bash', '-c', remote,
+                data = boat.command(vm, ['bash', '-c', remote],
+                                 remote_timeout=args.timeout + 30,
                                  timeout=args.timeout + 90,
                                  capture_path=output / 'command.log')
                 sys.stdout.buffer.write(data)
                 sys.stdout.buffer.flush()
-                status = boat.command(vm, '--timeout', '30', '--', 'cat',
-                                      '/home/user/fm-job/exit')
+                status = boat.command(vm, ['cat', remote_root + '/exit'], remote_timeout=30)
                 if not re.fullmatch(rb'[0-9]{1,3}', status.strip()) or int(status) > 255:
                     raise Failure('remote exit marker missing or invalid')
                 code = int(status)
                 result.update(kind='completed', remote_exit=code)
                 artifacts(boat, vm, args.artifact, output)
             except Failure as exc:
+                if result['kind'] == 'unavailable' and job['create_started']:
+                    result['kind'] = 'adapter-error'
                 result['execution_error'] = str(exc)
                 raise
             finally:
@@ -860,7 +1095,13 @@ def main():
                         key_file = Path(job.get('account_key_file', str(default_key_file())))
                         if not key_file.is_absolute():
                             raise Failure('invalid recorded account key path', 70)
-                        Boat(state, Path(cli_home), Account(key_file)).cleanup(job, record)
+                        provider = job.get('provider', 'boat')
+                        if provider == 'upstash':
+                            Upstash(state, key_file).cleanup(job, record)
+                        elif provider == 'boat':
+                            Boat(state, Path(cli_home), Account(key_file)).cleanup(job, record)
+                        else:
+                            raise Failure('invalid recorded provider', 70)
                     except Failure as exc:
                         print('boat-offload: ' + str(exc), file=sys.stderr)
                         failed = True
