@@ -1,0 +1,14 @@
+{
+  "kind": "unavailable",
+  "remote_exit": null,
+  "cleanup": "deleted",
+  "swap_gib": 0,
+  "history": "synthetic",
+  "source_head": "1954f18dd1a16c9f23d1e7da44f5ad35eb0876f1",
+  "source_sha256": "26c69e75300bf3f67fe81b1324da67bbd18f25f8b41c057bb530b92f512888de",
+  "upload_bytes": 205,
+  "push_timeout_seconds": 300,
+  "execution_error": "Boat request unavailable: limits (OS error; FileNotFoundError; errno=2)",
+  "error": "Boat request unavailable: limits (OS error; FileNotFoundError; errno=2)",
+  "adapter_exit": 69
+}
