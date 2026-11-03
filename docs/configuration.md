@@ -1756,12 +1756,12 @@ An automatic deferred-launch replay retains the requested flag and decides which
 While such a task holds a place, only each granted cap rises by one, so an ordinary spawn still finds the declared number of places and a grant under one cap never raises the other.
 Two granted tasks therefore add two places rather than sharing one.
 A capacity refusal names the grants for that cap, `bin/fm-fleet-view.sh` names each task's granted caps and the fleet grant share, and the fleet snapshot carries the same `ad_hoc` count plus per-task `ad_hoc_fleet_slot`, `ad_hoc_project_slot`, and their `ad_hoc_slot` union.
-Heavy-slot limits are unaffected: an ad hoc worker waits for a heavy slot exactly like every other worker.
+Heavy-slot limits are unaffected: an ad hoc worker running a heavy command locally waits for a heavy slot exactly like every other worker.
 
 ## Heavy slots (config/heavy-slots)
 
 A heavy slot is a place to run one memory-heavy command: a Next production build, a Vitest run, a Playwright browser run, an ESLint run, or a whole-project `tsc`.
-It is claimed when such a command starts, rather than reserved when a worker spawns, so a worker that never runs one never holds a slot.
+It is claimed when such a command runs locally, rather than reserved when a worker spawns, so a worker that never runs one locally never holds a slot.
 A project's `queue-preflight` package script, which runs many of those in sequence, is heavy as a whole: the script's first Node process that sees that lifecycle event claims one slot, and every heavy step that process starts reuses it instead of taking another.
 A script with a single Node entry point, as `queue-preflight` is, is covered whole.
 A script made of several top-level commands claims and releases a slot once per top-level Node command, and a non-Node step between them runs outside the memory cap.
@@ -1844,6 +1844,7 @@ A remote Vitest failure that reports a snapshot missing, mismatched, or not writ
 
 Remote output is captured and printed when the command finishes rather than streamed, and only a completed remote run with confirmed command dispatch after successful setup is a verdict: that remote exit is the command's exit.
 Command stdout is forwarded unchanged; bootstrap diagnostics and command stderr are forwarded on stderr.
+When a remote attempt is discarded, its stdout is discarded too, so only the local retry supplies stdout.
 [`bin/fm-boat-run.sh`](../bin/fm-boat-run.sh)'s help owns the upload, the per-account budget, the result and artifact files, and the cleanup.
 
 Like the heavy-slot count, the record a heavy command reads is machine-wide and written by every ship or scout launch, so a change applies at the next launch and the last launch on the machine wins.
