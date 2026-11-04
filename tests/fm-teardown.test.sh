@@ -97,7 +97,7 @@ make_case() {
   local name=$1 case_dir fakebin
   case_dir="$TMP_ROOT/$name"
   fakebin="$case_dir/fakebin"
-  mkdir -p "$case_dir/state" "$case_dir/config" "$case_dir/data" "$fakebin"
+  mkdir -p "$case_dir/state" "$case_dir/config" "$case_dir/data" "$case_dir/home/state" "$fakebin"
 
   # Mocks for the post-check teardown steps. Refuse logic exits before these
   # run; the ALLOW cases need them so the script can complete cleanly.
@@ -653,7 +653,7 @@ run_teardown() {
   # FM_DATA_OVERRIDE is pinned to the case dir because teardown closes this
   # home's backlog item itself; without it $DATA would resolve to the real
   # repo's own home and a test could mutate live records.
-  FM_HOME="${FM_HOME:-$case_dir}" \
+  FM_HOME="${FM_HOME:-$case_dir/home}" \
   FM_ROOT_OVERRIDE="$ROOT" \
   FM_STATE_OVERRIDE="$case_dir/state" \
   FM_DATA_OVERRIDE="$case_dir/data" \
