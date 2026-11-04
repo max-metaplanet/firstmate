@@ -6,7 +6,7 @@
 #       [--expected-head SHA] [--timeout SECONDS] [--history-depth N]
 #       [--output DIR]
 # Exit: 0 every selected lane passed or had only proven missing-history
-# failures, 1 a lane failed, the verdict was incomplete, or Boat failed,
+# failures, 1 a lane failed, the verdict was incomplete, or remote execution failed,
 # and 2 invalid input.
 #
 # WHAT IT CHECKS

@@ -28,7 +28,8 @@
 # exposes no account plan/remaining-CPU endpoint; these are published defaults,
 # not observed account headroom. The provider enforces account-wide limits.
 # Under the existing admission lock, this home reserves 2*(TTL+180) CPU seconds
-# before each Upstash create, up to 5 hours/UTC month, without early refunds.
+# before each Upstash create, up to 5 hours/UTC month. Confirmed create rejection
+# refunds that reservation; early deletion and unknown outcomes do not.
 # A run that could cross a UTC month boundary declines until the new month.
 # That conservative local reservation is not measured provider usage and does
 # not include other homes/clients. It never authorizes paid overage.
@@ -151,7 +152,7 @@
 # request errors name timeout, OS error or bad response and the exception class,
 # without exception messages or output that could contain credentials.
 # A remote exit code is returned unchanged; 124 is the remote command timeout.
-# Adapter failures: 2 invalid input, 69 Boat unavailable before execution,
+# Adapter failures: 2 invalid input, 69 remote unavailable before execution,
 # 75 capacity/start budget exhausted, 74 transfer/transport/result failure,
 # 70 cleanup unconfirmed, 128+signal interruption. Local fallback is safe ONLY
 # when result.json kind is unavailable; remote commands can also exit 69/75.

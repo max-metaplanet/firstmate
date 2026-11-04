@@ -3,7 +3,7 @@
 # and with what timeout and Git history.
 #
 # A core-like project's heavy test lanes are too slow and too hungry to run in
-# a worker's own copy, so they go to one disposable Boat machine before the
+# a worker's own copy, so they go through fm-boat-prepush.sh before the
 # worker marks its pull request ready. Firstmate cannot tell from a project's
 # code whether that check is worth a machine, so the captain declares the
 # projects that run it. Without a declaration nothing changes and a ship

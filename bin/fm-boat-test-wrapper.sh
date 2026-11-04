@@ -10,7 +10,7 @@
 # The adapter owns history screening and synthetic fallback; see fm-boat-run.sh --help.
 # FM_BOAT_TYPE optionally forwards --type to the adapter; its default is default.
 # The selected account must permit that type in config/boat-keys.
-# The command must install its dependencies and have its runtime tools on Boat.
+# The command must install its dependencies and have its runtime tools remotely.
 # Never pass secrets in the command or use this wrapper for authenticated tests.
 #
 # By default remote Git is synthetic: an empty origin/main commit followed
@@ -34,11 +34,11 @@
 # The adapter tries Boat then optional Upstash before returning unavailable;
 # that remote-only setting allows either provider and still forbids local work.
 # Unset or any other value preserves local fallback on unavailability.
-# Boat-only retries unavailable results with fresh evidence for each attempt.
+# Remote-only mode retries unavailable results with fresh evidence per attempt.
 # FM_BOAT_TEST_UNAVAILABLE_WAIT_SECS bounds elapsed time allowed for retries
 # (default 1800, nonnegative integer); an in-flight adapter may exceed the bound.
 # FM_BOAT_TEST_UNAVAILABLE_RETRY_SECS sets the backoff (default 60, positive
-# integer), capped to the remaining wait. These settings apply only in Boat-only
+# integer), capped to the remaining wait. These settings apply only in remote-only
 # mode. Exhaustion fails with the last unavailable exit, attempts and result path.
 # FM_BOAT_TEST_TIMEOUT still applies per attempt, including the trial limit above.
 # Completed remote exits (even 69/75) propagate unchanged and are never retried.

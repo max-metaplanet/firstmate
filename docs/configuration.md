@@ -1428,11 +1428,11 @@ The text is static and never executed or expanded; secondmate charters never tak
 
 ## Boat build and test offload
 
-Ship workers can run secret-free heavy commands on ephemeral Boat VMs through [`bin/fm-boat-run.sh`](../bin/fm-boat-run.sh).
-The adapter's header and `--help` own prerequisites, source selection, result and artifact paths, ordered account selection, per-account caps, cleanup records, reaping, and explicit local fallback.
+Ship workers can run secret-free heavy commands on ephemeral Boat VMs, with optional Upstash Box fallback, through [`bin/fm-boat-run.sh`](../bin/fm-boat-run.sh).
+The adapter's header and `--help` own prerequisites, Upstash SDK and credential setup, provider eligibility and limits, source selection, result and artifact paths, ordered account selection, per-account caps, cleanup records, reaping, and explicit local fallback.
 The optional `config/boat-keys` lists key-file paths and per-account `live_cap`, `pending_cap`, `daily_cap`, optional `environment`, `cleanup_confirmation`, and `types=` fields in the format owned by that help.
 That help also owns per-run `--type` machine selection and its `FM_BOAT_TYPE` forwarding through the Test wrapper; the default remains `default`.
-Without it, the adapter retains the single trial account and its existing caps.
+Without `config/boat-keys`, Boat retains the single trial account and its existing caps.
 The help also owns the screened source-file exceptions and optional shallow-history transfer; all other upload exclusions remain.
 It runs outside local heavy slots; authenticated checks keep their existing execution path.
 "Boat-first heavy routing" below turns the same offload into where a declared project's worker-started heavy commands run by default.
@@ -1823,10 +1823,10 @@ A project without a declaration uses a local heavy slot without a routing notice
 For a declared project's worker-started heavy command, a reason to stay local prints one line before the command runs in a local heavy slot.
 `FM_BUILD_LOCK_BYPASS=1 <command>` still skips the slot and the routing together, and a kind named in `local-only` stays local for the whole project.
 
-Only a worker-started heavy command is routed, which leaves the no-mistakes daemon's own steps on their existing path; [`bin/fm-boat-test-wrapper.sh`](../bin/fm-boat-test-wrapper.sh) remains the pipeline's own Boat integration.
+Only a worker-started heavy command is routed, which leaves the no-mistakes daemon's own steps on their existing path; [`bin/fm-boat-test-wrapper.sh`](../bin/fm-boat-test-wrapper.sh) remains the pipeline's own remote integration.
 The preload intercepts a top-level turbo, nx, lerna, or recursive or filtered pnpm invocation (`-r`, `--recursive`, `-F`, `--filter`) before it starts its heavy children.
 Orchestrated pnpm routing recognizes only the directly installed `pnpm/bin/pnpm.cjs` entry; Corepack-launched pnpm stays local.
-An eligible invocation runs entirely on one Boat machine, with one local heavy slot for the whole invocation as its fallback.
+An eligible invocation runs entirely on one remote machine selected by the adapter, with one local heavy slot for the whole invocation as its fallback.
 An inherited routing marker prevents its children from starting their own Boat jobs after either decision; the ancestor check also keeps independently intercepted children local.
 Commands without `FM_TASK_ID` retain their existing behavior.
 
@@ -1850,7 +1850,7 @@ pnpm invocations with effective `report-summary` enabled stay local so their req
 Turbo tasks therefore require `cache: false` or the invocation's explicit `--no-cache`, and no declared outputs.
 Nx and Lerna tasks require `cache: false` or an explicit cache bypass, and no declared outputs.
 A dependency that builds files, a task that writes reports, or an invocation that would populate an orchestrator cache stays local.
-An unavailable or unconfirmed Boat attempt retries the whole invocation locally once; its children reuse that decision and slot.
+An unavailable or unconfirmed remote attempt retries the whole invocation locally once; its children reuse that decision and slot.
 Remote executable and orchestrator-entry availability checks run after bootstrap and before dispatch confirmation, so missing launchers trigger that fallback.
 
 These heavy work items stay local even in a declared project:
