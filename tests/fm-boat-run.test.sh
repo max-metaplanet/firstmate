@@ -396,7 +396,8 @@ for history_mode in (False, True):
         assert r.returncode == (0 if accepted else 2), (label, r.stderr)
         if accepted:
             with tarfile.open(p / 'output/upload/source.tar.gz') as archive:
-                assert 'link' not in archive.getnames()
+                assert archive.getmember('link').issym()
+                assert archive.getmember('link').linkname == target
             empty(state)
         else:
             assert not (state / 'calls.jsonl').exists()
@@ -914,40 +915,100 @@ assert not (state / 'calls.jsonl').exists()
 print('ok - unsafe input and tracked symlink are rejected before Boat')
 
 for history_mode in (False, True):
-    for label, selected, target, accepted in [
-        ('relative', '.agents/skills/verify-connect', '../../tracked.txt', True),
-        ('claude-skills', '.claude/skills', '../.agents/skills', True),
-        ('root-link', 'link', 'tracked.txt', True),
-        ('root-directory', 'link', '.', True),
-        ('escape', 'dir/link', '../../outside', False),
-        ('escape-reenter', 'dir/link', '../../work/tracked.txt', False),
-        ('absolute', 'dir/link', '/outside', False),
-        ('secret', 'dir/link', '../API_SECRET=symlink-never-print', False),
-        ('binary', 'dir/link', b'../bad-\xff', False),
+    for label, selected, target, accepted, carried in [
+        ('relative', '.agents/skills/verify-connect', '../../tracked.txt', True, True),
+        ('claude-skills', '.claude/skills', '../.agents/skills', True, True),
+        ('root-link', 'link', 'tracked.txt', True, True),
+        ('root-directory', 'link', '.', True, True),
+        ('filtered-path', 'link', '.env.fixture', True, False),
+        ('filtered-content', 'link', '.claude/settings.json', True, False),
+        ('filtered-key', 'link', 'account-material.txt', True, False),
+        ('filtered-directory', 'link', 'filtered-dir', True, False),
+        ('filtered-link-path', '.claude/other', '../tracked.txt', True, False),
+        ('missing-target', 'link', 'missing.txt', True, False),
+        ('unselected-target', 'link', 'untracked-target.txt', True, False),
+        ('explicit-target', 'link', 'untracked-target.txt', True, True),
+        ('deleted-link', 'link', 'tracked.txt', True, False),
+        ('edited-link', 'link', 'tracked.txt', True, True),
+        ('chain', 'link', 'target-link', True, True),
+        ('directory-chain', 'link', 'directory-link/test-plan/SKILL.md', True, True),
+        ('filtered-chain', 'link', 'target-link', True, False),
+        ('cycle', 'link', 'target-link', True, False),
+        ('chain-escape', 'link', 'target-link/../tracked.txt', True, False),
+        ('escape', 'dir/link', '../../outside', False, False),
+        ('escape-reenter', 'dir/link', '../../work/tracked.txt', False, False),
+        ('absolute', 'dir/link', '/outside', False, False),
+        ('secret', 'dir/link', '../API_SECRET=symlink-never-print', False, False),
+        ('binary', 'dir/link', b'../bad-\xff', False, False),
     ]:
         p, state, env = case('symlink-' + str(history_mode) + '-' + label, clean_history=True)
         work = p / 'work'
         link = work / selected
         link.parent.mkdir(parents=True, exist_ok=True)
         os.symlink(target, link)
+        skill = work / '.agents/skills/test-plan/SKILL.md'
+        skill.parent.mkdir(parents=True, exist_ok=True)
+        skill.write_text('representative test plan\n')
+        (work / '.env.fixture').write_text('excluded target\n')
+        settings = work / '.claude/settings.json'
+        settings.parent.mkdir(parents=True, exist_ok=True)
+        settings.write_text('API_SECRET=symlink-never-print\n')
+        filtered = work / 'filtered-dir/.env.fixture'
+        filtered.parent.mkdir()
+        filtered.write_text('excluded child\n')
+        key = work / 'account-material.txt'
+        key.write_text('boat_fixture_secret')
+        (p / 'home/config').mkdir()
+        (p / 'home/config/boat-keys').write_text(str(key) + '\n')
+        if label in ('chain', 'filtered-chain', 'cycle', 'chain-escape'):
+            (work / 'target-link').symlink_to({
+                'chain': 'tracked.txt', 'filtered-chain': '.env.fixture',
+                'cycle': 'link', 'chain-escape': '.',
+            }[label])
+        if label == 'directory-chain':
+            (work / 'directory-link').symlink_to('.agents/skills')
         git(work, 'add', '--force', '.')
         git(work, 'commit', '-qm', 'symlink fixture')
+        (work / 'untracked-target.txt').write_text('host file outside selection\n')
+        if label == 'deleted-link':
+            link.unlink()
+        elif label == 'edited-link':
+            link.unlink()
+            target = 'input.txt'
+            link.symlink_to(target)
         if history_mode and not accepted:
             link.unlink()
             git(work, 'add', '--all')
             git(work, 'commit', '-qm', 'remove unsafe link')
         git(work, 'update-ref', 'refs/remotes/origin/main', 'HEAD')
         options = ('--history-depth', '2') if history_mode else ()
-        check = 'test ! -L ' + shlex.quote(selected) + ' && test -f tracked.txt'
+        if label == 'explicit-target':
+            options += ('--input', 'untracked-target.txt')
+        check = ('test -L ' if carried else 'test ! -L ') + shlex.quote(selected) + ' && test -f tracked.txt'
+        if carried:
+            check += ' && test "$(readlink ' + shlex.quote(selected) + ')" = ' + shlex.quote(target)
+            if label in ('claude-skills', 'root-directory'):
+                skill_path = selected + ('/test-plan/SKILL.md' if label == 'claude-skills' else '/tracked.txt')
+            else:
+                skill_path = selected
+            check += ' && test -f ' + shlex.quote(skill_path)
         r = launch(p, env, check, options)
         assert r.returncode == (0 if accepted or history_mode else 2), (history_mode, label, r.stdout, r.stderr)
         assert b'symlink-never-print' not in r.stdout + r.stderr
         if accepted:
             uploaded = json.loads((state / 'uploaded.json').read_text())
-            assert selected not in uploaded, (selected, uploaded)
+            assert (selected in uploaded) == carried, (selected, uploaded)
             assert 'tracked.txt' in uploaded
             notice = ('boat-offload: skipped in-repo symlink: ' + selected + '\n').encode()
-            assert r.stderr.count(notice) == 1, r.stderr
+            assert r.stderr.count(notice) == (0 if carried else 1), r.stderr
+            with tarfile.open(p / 'output/upload/source.tar.gz') as archive:
+                if carried:
+                    member = archive.getmember(selected)
+                    assert member.issym() and member.linkname == target
+                assert '.env.fixture' not in archive.getnames()
+                assert '.claude/settings.json' not in archive.getnames()
+                assert 'account-material.txt' not in archive.getnames()
+                assert ('untracked-target.txt' in archive.getnames()) == (label == 'explicit-target')
             empty(state)
         elif history_mode:
             assert result(p)['history'] == 'fallback-synthetic'
@@ -984,7 +1045,7 @@ for history_mode in (False, True):
         else:
             assert r.returncode == 2, (history_mode, label, r.stderr)
             assert not (state / 'calls.jsonl').exists()
-print('ok - screened in-repo links are skipped; unsafe source links refuse, unsafe history links fall back, and submodules are withheld')
+print('ok - admitted tracked links survive extraction; filtered targets and cycles stay absent; unsafe source/history links and submodules keep their guards')
 
 def multi(name, first=None, second=None, caps='live_cap=6 pending_cap=6 daily_cap=170'):
     p, state, env = case(name, first)
@@ -1568,13 +1629,13 @@ for name, selected, contents, symlink, accepted in [
     if not accepted and not refused:
         check = 'git fsck --no-reflogs && ! git cat-file blob ' + oid + ' >/dev/null 2>&1'
     if symlink and accepted:
-        check = 'test ! -L ' + shlex.quote(selected) + ' && test "$(git cat-file blob HEAD:' + \
+        check = ('test -L ' if name == 'history-other-link' else 'test ! -L ') + shlex.quote(selected) + ' && test "$(git cat-file blob HEAD:' + \
                 selected + ')" = ' + shlex.quote(contents) + ' && git fsck --no-reflogs'
     r = launch(p, env, check, ('--history-depth', '2'))
     assert r.returncode == 0, (name, r.stdout, r.stderr)
     assert b'historical-value-never-print' not in r.stdout + r.stderr
     uploaded = json.loads((state / 'uploaded.json').read_text())
-    assert (selected in uploaded) == (accepted and not symlink), (name, uploaded)
+    assert (selected in uploaded) == (accepted and (not symlink or name == 'history-other-link')), (name, uploaded)
     if refused:
         assert r.stderr.count(b'falling back to synthetic snapshot; history refused:') == 1
         assert result(p)['history'] == 'fallback-synthetic'

@@ -416,7 +416,7 @@ def git(root, *args, input=None):
     return result.stdout
 
 
-def skip_symlink(name, data, skipped, context):
+def symlink_target(name, data, context):
     if not safe_allowlisted(name, data):
         raise Failure(context + 'credential-looking or binary symlink target: ' + name, 2)
     target = data.decode('utf-8')
@@ -430,9 +430,43 @@ def skip_symlink(name, data, skipped, context):
             depth -= 1
         elif part not in ('', '.'):
             depth += 1
-    if name not in skipped:
+    return target
+
+
+def skip_symlink(name, data, handled_links, context):
+    symlink_target(name, data, context)
+    if name not in handled_links:
         print('boat-offload: skipped in-repo symlink: ' + name, file=sys.stderr)
-        skipped.add(name)
+        handled_links.add(name)
+
+
+def archived_link(name, links, files, directories):
+    """Resolve only through the screened archive namespace, never host paths."""
+    pending = [*PurePosixPath(name).parent.parts, *links[name].split('/')]
+    resolved = []
+    followed = 0
+    while pending:
+        if str(PurePosixPath(*resolved)) not in directories:
+            return False
+        part = pending.pop(0)
+        if part in ('', '.'):
+            continue
+        if part == '..':
+            if not resolved:
+                return False
+            resolved.pop()
+            continue
+        candidate = str(PurePosixPath(*resolved, part))
+        if candidate in links:
+            followed += 1
+            if followed > 40:
+                return False
+            pending = links[candidate].split('/') + pending
+        elif candidate in files or candidate in directories:
+            resolved.append(part)
+        else:
+            return False
+    return True
 
 
 def template_path(name):
@@ -575,7 +609,7 @@ def fetch_history(fetched, root, head, base, depth, inputs):
     return {target: pin['oid'] for target, pin in refs.items()}
 
 
-def history(root, head, depth, destination, key_files, uploaded, skipped, inputs=None):
+def history(root, head, depth, destination, key_files, uploaded, handled_links, inputs=None):
     try:
         base = (inputs.refs['refs/remotes/origin/main']['oid'] if inputs else
                 git(root, 'rev-parse', '--verify', 'refs/remotes/origin/main^{commit}').decode().strip())
@@ -611,7 +645,7 @@ def history(root, head, depth, destination, key_files, uploaded, skipped, inputs
             if mode == b'120000' and kind == b'blob':
                 try:
                     skip_symlink(name, git(fetched, 'cat-file', 'blob', oid.decode()),
-                                 skipped, 'history refused: ')
+                                 handled_links, 'history refused: ')
                 except Failure as exc:
                     raise HistoryScreenRefusal(str(exc), exc.code) from exc
                 # The pack retains screened target text, never dereferenced content.
@@ -696,7 +730,8 @@ def source(root, inputs, archive, key_files, history_depth=None, history_manifes
         if name not in tracked and stage == b'0':
             entries.append(mode + b' blob ' + oid + b'\t' + name)
     names = []
-    skipped = set()
+    links = {}
+    handled_links = set()
     for entry in filter(None, entries):
         meta, name = entry.split(b'\t', 1)
         name = os.fsdecode(name)
@@ -711,7 +746,12 @@ def source(root, inputs, archive, key_files, history_depth=None, history_manifes
                     raise Failure('source symlink refused: ' + name, 2)
             data = (os.fsencode(os.readlink(path)) if path.is_symlink() else
                     git(root, 'cat-file', 'blob', oid.decode()))
-            skip_symlink(name, data, skipped, 'source refused: ')
+            target = symlink_target(name, data, 'source refused: ')
+            if path.is_symlink() and (not excluded(name) or name in SOURCE_ALLOWLIST or
+                                      name == '.claude/skills'):
+                links[name] = target
+            else:
+                skip_symlink(name, data, handled_links, 'source refused: ')
             continue
         if (excluded(name) and name not in SOURCE_ALLOWLIST and name not in templates) or (root / name).resolve() in key_files:
             continue
@@ -729,7 +769,7 @@ def source(root, inputs, archive, key_files, history_depth=None, history_manifes
                      git(root, 'rev-parse', '--show-object-format').decode().strip())
     try:
         history_result = archive_source(
-            root, names, archive, history_depth, key_files, head, object_format, skipped, context)
+            root, names, links, archive, history_depth, key_files, head, object_format, handled_links, context)
     except BaseException:
         archive.unlink(missing_ok=True)
         raise
@@ -747,7 +787,7 @@ class _Hashing:
         return chunk
 
 
-def archive_source(root, names, archive, history_depth, key_files, head, object_format, skipped, context):
+def archive_source(root, names, links, archive, history_depth, key_files, head, object_format, handled_links, context):
     uploaded = set()
     history_result = {'history': 'synthetic'}
     templates = context.templates if context else frozenset()
@@ -794,10 +834,31 @@ def archive_source(root, names, archive, history_depth, key_files, head, object_
                 with path.open('rb') as handle:
                     output.addfile(info, _Hashing(handle, digest))
                 uploaded.add(digest.hexdigest().encode())
+        files = set(output.getnames())
+        admitted = links
+        while True:
+            directories = {str(parent) for name in files | admitted.keys()
+                           for parent in PurePosixPath(name).parents}
+            kept = {name: target for name, target in admitted.items()
+                    if archived_link(name, admitted, files, directories)}
+            if kept == admitted:
+                break
+            admitted = kept
+        for name, target in sorted(links.items()):
+            if name not in admitted:
+                skip_symlink(name, target.encode('utf-8'), handled_links, 'source refused: ')
+                continue
+            info = tarfile.TarInfo(name)
+            info.type = tarfile.SYMTYPE
+            info.mode = 0o777
+            info.linkname = target
+            output.addfile(info)
+            # History may retain this target blob too; it was not skipped here.
+            handled_links.add(name)
         if history_depth is not None:
             scratch = stack.enter_context(tempfile.TemporaryDirectory(dir=archive.parent, prefix='history-'))
             try:
-                history_git = history(root, head, history_depth, Path(scratch), key_files, uploaded, skipped, context)
+                history_git = history(root, head, history_depth, Path(scratch), key_files, uploaded, handled_links, context)
             except HistoryScreenRefusal as exc:
                 if context:
                     raise
