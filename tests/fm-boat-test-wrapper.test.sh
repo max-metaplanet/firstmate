@@ -377,31 +377,30 @@ assert b'synthetic empty Git base' not in r.stdout + r.stderr
 print('ok - wrapper opt-in preserves real Git tips and sets the real contract base')
 
 env['FM_BOAT_TEST_HISTORY_DEPTH'] = '50'
-# The fake reuses VM IDs after deletion; preserve the prior filesystem so this
-# attempt starts empty like a newly provisioned Boat VM.
-(state / 'bx_fixture0').rename(state / 'previous-history-vm')
-check = '''import os,pathlib,subprocess
-def git(*args): return subprocess.check_output(['git',*args]).decode().strip()
-assert os.environ['PIPELINE_TEST_BASE_REF'] == 'refs/fm-boat/no-local-history'
-assert subprocess.run(['git','rev-parse','--verify',os.environ['PIPELINE_TEST_BASE_REF']],capture_output=True).returncode != 0
-assert git('ls-tree','origin/main') == ''
-assert git('rev-list','--count','--all') == '2'
-assert 'local-history-secret' not in git('log','--all','--format=%B')
-assert pathlib.Path('changed.txt').read_text() == 'dirty real tip\\n'
-print('fallback synthetic base proof')
-'''
-r = launch(work, env, 'python3 -c ' + shlex.quote(check), repo / 'bin/fm-boat-test-wrapper.sh')
-assert r.returncode == 0, (r.stdout, r.stderr)
+provider_calls = (state / 'calls.jsonl').read_bytes()
+command = 'echo wrapper-command-ran; touch wrapper-command-ran'
+r = launch(work, env, command, repo / 'bin/fm-boat-test-wrapper.sh')
+assert r.returncode == 2, (r.stdout, r.stderr)
 reason = 'history refused: credential-looking or binary commit: ' + refused_tip
-assert ('falling back to synthetic snapshot; ' + reason).encode() in r.stderr
-assert b'fallback synthetic base proof' in r.stdout
-assert b'synthetic empty Git base' in r.stdout + r.stderr
-assert b'screened shallow Git history' not in r.stdout + r.stderr
+assert reason.encode() in r.stderr
+assert b'wrapper-command-ran' not in r.stdout + r.stderr
+assert not (work / 'wrapper-command-ran').exists()
+assert not (state / 'bx_fixture0/fm-job/source/wrapper-command-ran').exists()
+assert not (p / 'heavy.lock').exists()
+assert (state / 'calls.jsonl').read_bytes() == provider_calls
+assert json.loads((state / 'fake-vms.json').read_text()) == []
 result_path = next(line.split(': ', 2)[2] for line in r.stderr.decode().splitlines()
                    if line.startswith('boat-test-wrapper: result.json: '))
 result = json.loads(Path(result_path).read_text())
-assert result['history'] == 'fallback-synthetic'
-assert result['history_reason'] == reason
-print('ok - refused history uses the synthetic contract base and full-suite fallback')
+assert result['kind'] == 'invalid' and result['adapter_exit'] == 2
+assert result['cleanup'] == 'not-created'
+assert result.get('remote_exit') is None
+assert not (Path(result_path).parent / 'upload/source.tar.gz').exists()
+evidence = json.loads((Path(result_path).parent / 'upload/history-exclusions.json').read_text())
+assert any(item['oid'] == refused_tip and item['commit'] == refused_tip and
+           item['rule'] == 'commit-content' for item in evidence['objects'])
+assert b'POSTGRES_PASSWORD=postgres' not in r.stdout + r.stderr + Path(result_path).read_bytes()
+assert 'POSTGRES_PASSWORD=postgres' not in json.dumps(evidence)
+print('ok - wrapper refuses credential-bearing selected history before command execution or further provider calls without local fallback')
 
 PY
