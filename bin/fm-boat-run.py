@@ -48,6 +48,10 @@ class ResetUnsupported(Failure):
     pass
 
 
+class RemoteCommandFailed(Failure):
+    pass
+
+
 class _Terminated(BaseException):
     def __init__(self, code):
         self.code = code
@@ -256,7 +260,7 @@ def prepare_source(boat, job, args, upload, digest, push_timeout, reused):
     if job.get('owner') and job.get('provider') == 'boat':
         try:
             owned_processes(boat, job, 'prepare')
-        except Failure as exc:
+        except RemoteCommandFailed as exc:
             raise ResetUnsupported(str(exc), exc.code) from exc
     upload_timeout = None
     try:
@@ -1056,6 +1060,10 @@ class Boat:
             capture_path.write_bytes(output)
         sys.stderr.buffer.write(streams['stderr'])
         sys.stderr.buffer.flush()
+        if terminal is not None and type(terminal.get('exitCode')) is int and terminal['exitCode'] != 0 and not any(
+                terminal.get(field) for field in ('stdoutTruncated', 'stderrTruncated',
+                                                  'timedOut', 'launcherFailed', 'oomKilled')):
+            raise RemoteCommandFailed('Boat command failed')
         if terminal is None or terminal.get('exitCode') != 0 or any(
                 terminal.get(field) for field in ('stdoutTruncated', 'stderrTruncated',
                                                   'timedOut', 'launcherFailed', 'oomKilled')):

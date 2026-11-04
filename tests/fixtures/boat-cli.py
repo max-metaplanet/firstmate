@@ -115,7 +115,8 @@ if command == 'exec':
     remote.parent.mkdir(parents=True, exist_ok=True)
     argv = [a.replace('/home/user/fm-job', str(remote)) for a in args[args.index('--') + 1:]]
     if fixture.get('prepare_failed') and 'prepare' in argv:
-        sys.exit(1)
+        print(json.dumps({'exitCode': 1, 'stdout': '', 'stderr': 'reset unavailable'}))
+        sys.exit(0)
     if len(argv) == 3 and argv[:2] == ['bash', '-c'] and argv[2].startswith('sudo -n fallocate'):
         size = re.search(r'fallocate -l ([1-4])G ', argv[2])
         assert size

@@ -285,6 +285,19 @@ class LostResponse(real_popen):
         verify = self.args[1] == 'exec' and 'sha256sum -c' in self.args[-1]
         command = self.args[1] == 'exec' and '--stream' in self.args
         mkdir = self.args[1] == 'exec' and 'mkdir' in self.args
+        prepare = self.args[1] == 'exec' and 'prepare' in self.args
+        if prepare and fault.startswith('reset-'):
+            marker = state / 'reset-transport-failed'
+            if not marker.exists() or fault == 'reset-timeout-persistent':
+                marker.touch()
+                if fault == 'reset-cli':
+                    self.returncode = 1
+                    return b'', b'transport unavailable'
+                if fault == 'reset-missing':
+                    return b'', b''
+                raise subprocess.TimeoutExpired(self.args, timeout)
+        if fault.startswith('reset-'):
+            return value
         if upload and fault != 'mkdir-unknown':
             archive = state / self.args[3].split(':', 1)[0] / 'fm-job/source.tar.gz'
             if fault == 'missing':
@@ -720,6 +733,28 @@ print(json.dumps(value))
     assert result(p)['reuse_fallback'] and result(p)['cleanup'] == 'deleted' and creates(state) == 2
     empty(state)
     print('ok - proven pre-execution reset failure deletes the old lease before one ephemeral fallback')
+
+    for fault in ('reset-timeout', 'reset-cli', 'reset-missing', 'reset-timeout-persistent'):
+        p, state, env = case('reuse-' + fault)
+        env = managed(p, env)
+        assert launch(p, env).returncode == 0
+        original = result(p)['lease']['owner']
+        (p / 'output').rename(p / 'initial-output')
+        r = launch_lost_response(p, state, env, fault)
+        evidence = result(p)
+        assert evidence['reuse_fallback'] and creates(state) == 2, (fault, r.stderr, evidence)
+        if fault == 'reset-timeout-persistent':
+            assert r.returncode == 74 and evidence['remote_exit'] is None, (r.stderr, evidence)
+            calls = [json.loads(line) for line in (state / 'calls.jsonl').read_text().splitlines()]
+            assert sum('--stream' in call for call in calls) == 1, calls
+        else:
+            assert r.returncode == 0 and r.stdout == b'working edit\n', (fault, r.stderr, evidence)
+            assert evidence['cleanup'] == 'retained' and evidence['lease']['owner'] == original, evidence
+            r = next_run(p, env, 'echo after-reset-transport')
+            assert r.returncode == 0 and result(p)['reused'] and creates(state) == 2, r.stderr
+        assert cleanup_task(env).returncode == 0
+        empty(state)
+    print('ok - reset transport replacements retain exact ownership only after successful reset')
 
     p, state, env = case('reuse-transfer-failure')
     env = managed(p, env)
