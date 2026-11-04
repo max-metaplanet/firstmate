@@ -124,8 +124,8 @@
 # .npmrc must also contain no auth/token text. The scanned bytes are the bytes
 # archived. All other path exclusions remain; ordinary tracked vendor/ trees
 # were already eligible and remain subject to the same secret-path filter.
-# Source is HEAD's tracked file set with current tracked edits/deletions applied,
-# plus individually named --input files (including ignored files if safe).
+# Source is HEAD's tracked file set plus staged additions, with current working-tree
+# edits/deletions applied, plus individually named --input files (including ignored files if safe).
 # No history is sent by default; fm-boat-test-wrapper.sh builds synthetic history.
 # --history-depth N (1..1000) opts into real ancestry at Git fetch depth N from
 # each of HEAD and refs/remotes/origin/main, counting each tip as depth one.

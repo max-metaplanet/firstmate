@@ -151,8 +151,7 @@ for history_mode in (False, True):
     (p / 'home/config/boat-keys').write_text(str(key) + '\n')
     git(work, 'add', '--force', '.')
     (work / 'gone.ts').unlink()
-    git(work, 'rm', '--cached', '--', 'renamed.txt')
-    git(work, 'add', '--', 'renamed.txt')
+    (work / 'deleted.txt').write_bytes(b'restored after staged deletion\n')
     head = git(work, 'rev-parse', 'HEAD').stdout.decode().strip()
     git(work, 'update-ref', 'refs/remotes/origin/main', head)
     options = ('--history-depth', '1') if history_mode else ()
@@ -160,7 +159,8 @@ for history_mode in (False, True):
     assert r.returncode == 0, r.stderr
     with tarfile.open(p / 'output/upload/source.tar.gz') as archive:
         names = {name for name in archive.getnames() if name != '.git' and not name.startswith('.git/')}
-        assert names == {'renamed.txt', 'input.txt', 'unselected.txt'}, names
+        assert names == {'renamed.txt', 'deleted.txt', 'input.txt', 'unselected.txt'}, names
+        assert archive.extractfile('deleted.txt').read() == b'restored after staged deletion\n'
         assert archive.extractfile('renamed.txt').read() == b'after staged rename\n'
     assert b'fixture-never-upload' not in r.stdout + r.stderr
     assert result(p)['source_head'] == head
