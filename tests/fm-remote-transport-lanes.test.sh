@@ -120,7 +120,7 @@ export FM_REMOTE_JOB_STAGE_REAP_SECONDS=1
 
 fm_remote_job_prepare_state "$ACCOUNT_HOME" || fail "$FM_REMOTE_JOB_ERROR"
 mkdir "$STATE_ROOT/.seq-claims/1"
-SEQ_MKDIR_BIN=$(fm_fakebin "$TMP_ROOT/seq-mkdir")
+SEQ_MKDIR_BIN=$(fm_fakebin "$TMP_ROOT/mkdir-seam")
 SEQ_REAL_MKDIR=$(type -P mkdir)
 cat > "$SEQ_MKDIR_BIN/mkdir" <<'SH'
 #!/usr/bin/env bash

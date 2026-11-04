@@ -584,7 +584,7 @@ fm_remote_job_advance_seq_hint() { # <value>
 }
 
 fm_remote_job_next_seq() { # [stage-dir destination]
-  local stage=${1:-} destination=${2:-} counter value claim attempt=0 recovered=0 maximum entry
+  local stage=${1:-} destination=${2:-} counter value claim created attempt=0 recovered=0 maximum entry
   [ -n "$FM_REMOTE_JOB_STATE" ] && [ -n "$FM_REMOTE_JOB_SEQ_CLAIMS" ] || return 1
   counter="$FM_REMOTE_JOB_STATE/seq"
   value=$(cat "$counter" 2>/dev/null || true)
@@ -606,7 +606,9 @@ fm_remote_job_next_seq() { # [stage-dir destination]
     attempt=$((attempt + 1))
     value=$((value + 1))
     claim="$FM_REMOTE_JOB_SEQ_CLAIMS/$value"
-    if (umask 077; mkdir "$claim") 2>/dev/null; then
+    # uutils mkdir can return success after losing an EEXIST race, but only
+    # the creator emits a verbose notice. Do not depend on its localized text.
+    if created=$(umask 077; mkdir -v "$claim" 2>/dev/null) && [ -n "$created" ]; then
       chmod 700 "$claim" || return 1
       fm_remote_job_advance_seq_hint "$value" || true
       if [ -n "$stage" ]; then
