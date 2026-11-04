@@ -23,6 +23,7 @@ import time
 import uuid
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
+from urllib.parse import urlsplit
 
 
 class Failure(Exception):
@@ -374,8 +375,11 @@ def safe_allowlisted(name, data):
 def git(root, *args, input=None):
     # No user Git aliases, hooks or inherited repository selection.
     env = {k: v for k, v in os.environ.items() if not k.startswith('GIT_')}
-    result = subprocess.run(['git', '-C', str(root), *args], env=env, input=input,
-                            capture_output=True, check=True)
+    env.update(GIT_NO_LAZY_FETCH='1', GIT_TERMINAL_PROMPT='0')
+    result = subprocess.run(['git', '-c', 'core.hooksPath=/dev/null',
+                             '-c', 'maintenance.auto=false', '-c', 'gc.auto=0',
+                             '-C', str(root), *args], env=env, input=input,
+                            capture_output=True, check=True, timeout=120)
     return result.stdout
 
 
@@ -398,9 +402,150 @@ def skip_symlink(name, data, skipped, context):
         skipped.add(name)
 
 
-def history(root, head, depth, destination, key_files, uploaded, skipped):
+def template_path(name):
+    path = relative(name)
+    return (path.name in ('.env.example', '.env.template') and
+            not excluded(str(path.parent)) and str(path.parent) != '.git')
+
+
+def safe_template(data):
     try:
-        base = git(root, 'rev-parse', '--verify', 'refs/remotes/origin/main^{commit}').decode().strip()
+        lines = data.decode('utf-8').splitlines()
+    except UnicodeDecodeError:
+        return False
+    for line in lines:
+        if not line.strip() or line.lstrip().startswith('#'):
+            if not safe_text(line.encode(), CREDENTIAL_CONTENT):
+                return False
+            continue
+        match = re.fullmatch(r"[ \t]*(?:export[ \t]+)?[A-Za-z_][A-Za-z0-9_]*="
+                             r"[ \t]*(?:''|\"\")?[ \t]*(#.*)?", line)
+        if not match or not safe_text((match[1] or '').encode(), CREDENTIAL_CONTENT):
+            return False
+    return b'\x00' not in data
+
+
+@dataclass(frozen=True)
+class HistoryInput:
+    source: str
+    head_ref: str
+    refs: dict
+    objects: tuple
+    templates: frozenset
+    depth: int
+    sha256: str
+
+
+def history_input(path, root, head):
+    """Parse the pinned host-side input contract before reading any source URL."""
+    try:
+        raw = Path(path).read_bytes()
+        def unique_keys(pairs):
+            result = {}
+            for key, item in pairs:
+                if key in result:
+                    raise ValueError()
+                result[key] = item
+            return result
+        value = json.loads(raw, object_pairs_hook=unique_keys)
+        if not isinstance(value, dict) or set(value) != {'schema', 'source', 'head', 'head_ref', 'refs', 'objects',
+                          'templates', 'depth'} or value['schema'] != 'fm-boat-history.v1':
+            raise ValueError()
+        if value['head'] != head:
+            raise ValueError()
+        source = value['source']
+        if not isinstance(source, str) or not source or any(c.isspace() for c in source) or not safe_text(source.encode(), CREDENTIAL_CONTENT):
+            raise ValueError()
+        if not Path(source).is_absolute():
+            url = urlsplit(source)
+            if (url.scheme != 'https' or not url.hostname or url.username or url.password
+                    or url.query or url.fragment):
+                raise ValueError()
+        elif str(Path(source).resolve(strict=True)) != source:
+            raise ValueError()
+        size = len(head)
+        def oid(item):
+            return isinstance(item, str) and re.fullmatch('[0-9a-f]{%d}' % size, item)
+        def ref(item):
+            return (isinstance(item, str) and item.startswith('refs/heads/') and
+                    git(root, 'check-ref-format', item) == b'')
+        if not ref(value['head_ref']) or not isinstance(value['refs'], dict):
+            raise ValueError()
+        if 'refs/remotes/origin/main' not in value['refs'] or len(value['refs']) > 16:
+            raise ValueError()
+        for target, pin in value['refs'].items():
+            if (not isinstance(pin, dict) or not target.startswith('refs/remotes/origin/') or
+                    git(root, 'check-ref-format', target) != b'' or
+                    set(pin) != {'ref', 'oid'} or not ref(pin['ref']) or not oid(pin['oid'])):
+                raise ValueError()
+        objects = value['objects']
+        if not isinstance(objects, list) or len(objects) > 64:
+            raise ValueError()
+        for item in objects:
+            if (not isinstance(item, dict) or set(item) != {'commit', 'path', 'oid'} or not oid(item['commit']) or
+                    not oid(item['oid'])):
+                raise ValueError()
+            relative(item['path'])
+        templates = value['templates']
+        if (not isinstance(templates, list) or len(templates) > 64 or
+                any(not template_path(name) for name in templates)):
+            raise ValueError()
+        if type(value['depth']) is not int or not 1 <= value['depth'] <= 1000:
+            raise ValueError()
+        return HistoryInput(source, value['head_ref'], value['refs'], tuple(objects),
+                            frozenset(templates), value['depth'], hashlib.sha256(raw).hexdigest())
+    except (OSError, ValueError, TypeError, KeyError, subprocess.SubprocessError) as exc:
+        raise Failure('invalid history input manifest or checkout HEAD mismatch', 2) from exc
+
+
+def fetch_history(fetched, root, head, base, depth, inputs):
+    if inputs is None:
+        git(fetched, '-c', 'protocol.file.allow=always', 'fetch', '--quiet', '--no-tags',
+            '--no-write-fetch-head', '--depth=' + str(depth), root.as_uri(), head, base)
+        return {'refs/heads/fm-boat-test': head, 'refs/remotes/origin/main': base}
+    refs = {'refs/heads/fm-boat-test': {'ref': inputs.head_ref, 'oid': head}, **inputs.refs}
+    try:
+        # Fetch named refs, then compare their received identities to detect a
+        # changed source even when the old pinned objects are still reachable.
+        git(fetched, '-c', 'protocol.file.allow=always', 'fetch', '--quiet', '--no-tags',
+            '--no-write-fetch-head', '--depth=' + str(inputs.depth), inputs.source,
+            *('+' + pin['ref'] + ':' + target for target, pin in refs.items()))
+        for target, pin in refs.items():
+            if git(fetched, 'rev-parse', '--verify', target + '^{commit}').decode().strip() != pin['oid']:
+                raise Failure('history input source ref changed: ' + target, 2)
+        snapshots = {'refs/heads/fm-boat-input-' + item['commit']: item['commit']
+                     for item in inputs.objects}
+        missing = {}
+        for target, oid in snapshots.items():
+            try:
+                git(fetched, 'cat-file', '-e', oid + '^{commit}')
+            except subprocess.CalledProcessError:
+                missing[target] = oid
+        if missing:
+            # Fetching an existing tip at depth one would shorten its ancestry.
+            git(fetched, '-c', 'protocol.file.allow=always', 'fetch', '--quiet', '--no-tags',
+                '--no-write-fetch-head', '--depth=1', inputs.source,
+                *('+' + oid + ':' + target for target, oid in missing.items()))
+        for target, oid in snapshots.items():
+            git(fetched, 'update-ref', target, oid)
+        for item in inputs.objects:
+            if (git(fetched, 'rev-parse', '--verify', item['commit'] + ':' + item['path'])
+                    .decode().strip() != item['oid'] or
+                    git(fetched, 'cat-file', '-t', item['oid']).strip() != b'blob'):
+                raise Failure('history input object identity mismatch: ' + item['path'], 2)
+        refs.update({target: {'oid': oid} for target, oid in snapshots.items()})
+        # Clone advertises branch heads, not the source's remote-tracking refs.
+        refs.update({'refs/heads/fm-boat-ref-' + pin['oid']: {'oid': pin['oid']}
+                     for pin in inputs.refs.values()})
+    except subprocess.SubprocessError as exc:
+        raise Failure('history input source unavailable or incomplete; no lazy hydration or fallback', 2) from exc
+    return {target: pin['oid'] for target, pin in refs.items()}
+
+
+def history(root, head, depth, destination, key_files, uploaded, skipped, inputs=None):
+    try:
+        base = (inputs.refs['refs/remotes/origin/main']['oid'] if inputs else
+                git(root, 'rev-parse', '--verify', 'refs/remotes/origin/main^{commit}').decode().strip())
     except subprocess.CalledProcessError as exc:
         raise Failure('history refused: origin/main commit is unavailable', 2) from exc
     fetched = destination / 'fetched'
@@ -410,16 +555,15 @@ def history(root, head, depth, destination, key_files, uploaded, skipped):
     object_format = git(root, 'rev-parse', '--show-object-format').decode().strip()
     for repo in (fetched, exported):
         git(repo, 'init', '--quiet', '--template=', '--object-format=' + object_format)
-    # A file transport negotiates shallow boundaries without copying local
-    # config, refs, reflogs, stashes, alternates or unrelated object storage.
-    git(fetched, '-c', 'protocol.file.allow=always', 'fetch', '--quiet', '--no-tags',
-        '--no-write-fetch-head', '--depth=' + str(depth), root.as_uri(), head, base)
-    git(fetched, 'update-ref', 'refs/heads/fm-boat-test', head)
+    refs = fetch_history(fetched, root, head, base, depth, inputs)
+    for target, oid in refs.items():
+        git(fetched, 'update-ref', target, oid)
     git(fetched, 'symbolic-ref', 'HEAD', 'refs/heads/fm-boat-test')
-    git(fetched, 'update-ref', 'refs/remotes/origin/main', base)
+    templates = inputs.templates if inputs else frozenset()
     scanned = {}
     kept = set()
     withheld = set()
+    withheld_names = {}
     screened = []
     for commit in git(fetched, 'rev-list', '--all').splitlines():
         if not safe_text(git(fetched, 'cat-file', 'commit', commit.decode()), CREDENTIAL_COMMIT):
@@ -443,28 +587,35 @@ def history(root, head, depth, destination, key_files, uploaded, skipped):
             # A withheld object keeps its tree entry, so every commit keeps the
             # identity the project's own tooling reads, while its content stays
             # out of the upload.
-            if ((excluded(name) and name not in SOURCE_ALLOWLIST) or
+            if ((excluded(name) and name not in SOURCE_ALLOWLIST and name not in templates) or
                     (root / name).resolve() in key_files or
                     kind != b'blob' or mode not in (b'100644', b'100755')):
                 withheld.add(oid)
+                withheld_names[oid] = name
                 continue
             # Bytes the source archive already carries leave this machine anyway.
-            if oid in uploaded:
+            if oid in uploaded and name not in templates:
                 kept.add(oid)
                 continue
             # .npmrc has an additional content rule, even for a reused blob.
-            scan_key = (oid, name == '.npmrc')
+            scan_key = (oid, name == '.npmrc', name in templates)
             if scan_key not in scanned:
-                scanned[scan_key] = safe_allowlisted(
-                    name, git(fetched, 'cat-file', 'blob', oid.decode()))
+                data = git(fetched, 'cat-file', 'blob', oid.decode())
+                scanned[scan_key] = (safe_template(data) if name in templates else
+                                     safe_allowlisted(name, data))
                 if not scanned[scan_key]:
                     screened.append(name)
             if scanned[scan_key]:
                 kept.add(oid)
             else:
                 withheld.add(oid)
+                withheld_names[oid] = name
     # Content a withheld path shares with an uploaded one is already eligible.
     withheld -= kept
+    if withheld and inputs:
+        raise HistoryScreenRefusal('history input refused: selected snapshots contain %d excluded, '
+                                   'credential-looking or unsupported object(s); first path: %s' %
+                                   (len(withheld), withheld_names[sorted(withheld)[0]]), 2)
     if withheld:
         print('boat-offload: history withheld %d object(s) from the upload, %d of them '
               'screened historical blobs%s' %
@@ -489,16 +640,20 @@ def history(root, head, depth, destination, key_files, uploaded, skipped):
         git(exported, 'config', 'remote.' + PROMISOR + '.promisor', 'true')
     if (fetched / '.git/shallow').exists():
         shutil.copyfile(fetched / '.git/shallow', exported / '.git/shallow')
-    git(exported, 'update-ref', 'refs/heads/fm-boat-test', head)
+    for target, oid in refs.items():
+        git(exported, 'update-ref', target, oid)
     git(exported, 'symbolic-ref', 'HEAD', 'refs/heads/fm-boat-test')
-    git(exported, 'update-ref', 'refs/remotes/origin/main', base)
     git(exported, 'read-tree', head)
     shutil.rmtree(exported / '.git/logs', ignore_errors=True)
     return exported / '.git'
 
 
-def source(root, inputs, archive, key_files, history_depth=None):
+def source(root, inputs, archive, key_files, history_depth=None, history_manifest=None):
     head = git(root, 'rev-parse', 'HEAD').decode().strip()
+    context = history_input(history_manifest, root, head) if history_manifest else None
+    templates = context.templates if context else frozenset()
+    if context:
+        history_depth = context.depth
     entries = git(root, 'ls-tree', '-rz', '--full-tree', 'HEAD').split(b'\0')
     tracked = {entry.split(b'\t', 1)[1] for entry in filter(None, entries)}
     # Keep HEAD's working-tree semantics while admitting new index paths.
@@ -525,14 +680,14 @@ def source(root, inputs, archive, key_files, history_depth=None):
                     git(root, 'cat-file', 'blob', oid.decode()))
             skip_symlink(name, data, skipped, 'source refused: ')
             continue
-        if (excluded(name) and name not in SOURCE_ALLOWLIST) or (root / name).resolve() in key_files:
+        if (excluded(name) and name not in SOURCE_ALLOWLIST and name not in templates) or (root / name).resolve() in key_files:
             continue
         if meta.split()[0] not in (b'100644', b'100755'):
             raise Failure('source contains unsupported symlink or submodule: ' + name, 2)
         names.append(name)
     for name in inputs:
         relative(name)
-        if (excluded(name) and name not in SOURCE_ALLOWLIST) or (root / name).resolve() in key_files:
+        if (excluded(name) and name not in SOURCE_ALLOWLIST and name not in templates) or (root / name).resolve() in key_files:
             raise Failure('extra input is a credential/cache path: ' + name, 2)
         if not (root / name).exists():
             raise Failure('extra input missing: ' + name, 2)
@@ -541,7 +696,7 @@ def source(root, inputs, archive, key_files, history_depth=None):
                      git(root, 'rev-parse', '--show-object-format').decode().strip())
     try:
         history_result = archive_source(
-            root, names, archive, history_depth, key_files, head, object_format, skipped)
+            root, names, archive, history_depth, key_files, head, object_format, skipped, context)
     except BaseException:
         archive.unlink(missing_ok=True)
         raise
@@ -559,9 +714,15 @@ class _Hashing:
         return chunk
 
 
-def archive_source(root, names, archive, history_depth, key_files, head, object_format, skipped):
+def archive_source(root, names, archive, history_depth, key_files, head, object_format, skipped, context):
     uploaded = set()
     history_result = {'history': 'synthetic'}
+    templates = context.templates if context else frozenset()
+    if context:
+        history_result['history_input'] = dict(sha256=context.sha256, source=context.source,
+                                               head=head, head_ref=context.head_ref,
+                                               refs=context.refs, objects=context.objects,
+                                               templates=sorted(templates), depth=context.depth)
     with contextlib.ExitStack() as stack:
         output = stack.enter_context(tarfile.open(archive, 'w:gz', dereference=True))
         for name in sorted(set(names)):
@@ -577,9 +738,11 @@ def archive_source(root, names, archive, history_depth, key_files, head, object_
                 continue
             if not path.is_file():
                 raise Failure('source input must be a regular file: ' + name, 2)
-            if name in SOURCE_ALLOWLIST:
+            if name in SOURCE_ALLOWLIST or name in templates:
                 data = path.read_bytes()
-                if not safe_allowlisted(name, data):
+                if name in templates and not safe_template(data):
+                    raise Failure('history input template refused: ' + name, 2)
+                if name not in templates and not safe_allowlisted(name, data):
                     print('boat-offload: excluded allowlisted file with credential-looking content: ' +
                           name, file=sys.stderr)
                     continue
@@ -601,8 +764,10 @@ def archive_source(root, names, archive, history_depth, key_files, head, object_
         if history_depth is not None:
             scratch = stack.enter_context(tempfile.TemporaryDirectory(dir=archive.parent, prefix='history-'))
             try:
-                history_git = history(root, head, history_depth, Path(scratch), key_files, uploaded, skipped)
+                history_git = history(root, head, history_depth, Path(scratch), key_files, uploaded, skipped, context)
             except HistoryScreenRefusal as exc:
+                if context:
+                    raise
                 history_result.update(history='fallback-synthetic', history_reason=str(exc))
                 print('boat-offload: falling back to synthetic snapshot; ' + str(exc), file=sys.stderr)
             else:
@@ -1207,7 +1372,8 @@ def run(args, boats):
         upload.mkdir()
         head, digest, history_result = source(
             root, args.input, upload / 'source.tar.gz',
-            {upstash_key_file(), *(b.account.key_file for b in boats)}, args.history_depth)
+            {upstash_key_file(), *(b.account.key_file for b in boats)}, args.history_depth,
+            args.history_input)
         result.update(history_result)
         upload_bytes = (upload / 'source.tar.gz').stat().st_size
         # Allow 90s setup plus 128 KiB/s, within the existing TTL's transfer margin.
@@ -1369,6 +1535,7 @@ def main():
     runner.add_argument('--type', choices=MACHINE_TYPES, default='default')
     runner.add_argument('--swap-gib', type=int, choices=range(5), default=0)
     runner.add_argument('--history-depth', type=int, default=None)
+    runner.add_argument('--history-input', default=None)
     runner.add_argument('command', nargs=argparse.REMAINDER)
     args = parser.parse_args()
     home = Path(os.environ.get('FM_HOME', ''))
@@ -1384,6 +1551,8 @@ def main():
         raise Failure('command required; timeout must be 1..2700 seconds', 2)
     if args.action == 'run' and args.history_depth is not None and not 1 <= args.history_depth <= 1000:
         raise Failure('history depth must be 1..1000', 2)
+    if args.action == 'run' and args.history_input and args.history_depth is not None:
+        raise Failure('--history-input and --history-depth are mutually exclusive', 2)
     for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
         signal.signal(sig, terminate)
     if args.action == 'expire':

@@ -1071,6 +1071,216 @@ with tarfile.open(p / 'output/upload/source.tar.gz') as archive:
 empty(state)
 print('ok - real Git preserves both tips, bounded ancestry and tracked edits without unrelated refs/config/reflogs')
 
+
+def manifest(p, work, *, depth=2, objects=None, templates=None, source=None):
+    head = git(work, 'rev-parse', 'HEAD').stdout.decode().strip()
+    source_ref = git(work, 'symbolic-ref', 'HEAD').stdout.decode().strip()
+    git(work, 'update-ref', 'refs/heads/input-base', 'HEAD')
+    value = dict(schema='fm-boat-history.v1', source=str(source or work), head=head,
+                 head_ref=source_ref, refs={'refs/remotes/origin/main':
+                 {'ref': 'refs/heads/input-base', 'oid': head}}, depth=depth,
+                 objects=objects or [], templates=templates or [])
+    path = p / 'history.json'
+    path.write_text(json.dumps(value))
+    return path, value
+
+
+p, state, env = case('explicit-old-input', clean_history=True)
+work = p / 'work'
+(work / '.env.example').write_text('# Empty configuration template\nAPI_TOKEN=\nURL=""\n')
+(work / 'historical.txt').write_text('requested historical bytes\n')
+git(work, 'add', '-f', '.env.example', 'historical.txt')
+git(work, 'commit', '-qm', 'old snapshot')
+old = git(work, 'rev-parse', 'HEAD').stdout.decode().strip()
+blob = git(work, 'rev-parse', 'HEAD:historical.txt').stdout.decode().strip()
+(work / 'historical.txt').rename(p / 'historical.saved')
+git(work, 'add', '-u')
+git(work, 'commit', '-qm', 'remove historical file')
+tree = git(work, 'rev-parse', 'HEAD^{tree}').stdout.decode().strip()
+parent = git(work, 'rev-parse', 'HEAD').stdout.decode().strip()
+unsafe = None
+for i in range(1002):
+    message = 'API_SECRET=fixture-never-upload' if i == 500 else 'safe history ' + str(i)
+    parent = git(work, 'commit-tree', tree, '-p', parent, '-m', message).stdout.decode().strip()
+    if i == 500:
+        unsafe = parent
+git(work, 'update-ref', 'HEAD', parent)
+(work / 'tracked.txt').write_text('current working bytes\n')
+(work / 'staged.txt').write_text('staged addition\n')
+git(work, 'add', 'staged.txt')
+path, value = manifest(p, work, depth=1, templates=['.env.example'], objects=[
+    {'commit': old, 'path': 'historical.txt', 'oid': blob}])
+check = f"""import pathlib,subprocess
+def git(*args): return subprocess.check_output(['git',*args]).decode().strip()
+assert git('rev-parse','HEAD') == {parent!r}
+assert git('show',{old + ':historical.txt'!r}) == 'requested historical bytes'
+assert subprocess.run(['git','cat-file','-e',{unsafe!r}],capture_output=True).returncode != 0
+assert pathlib.Path('tracked.txt').read_text() == 'current working bytes\\n'
+assert pathlib.Path('staged.txt').read_text() == 'staged addition\\n'
+assert pathlib.Path('.env.example').read_text() == '# Empty configuration template\\nAPI_TOKEN=\\nURL=\"\"\\n'
+assert git('fsck','--no-reflogs') == ''
+subprocess.run(['git','clone','--quiet','--shared','--no-checkout','.', '../clone'],check=True)
+assert subprocess.check_output(['git','-C','../clone','show',{old + ':historical.txt'!r}]).strip() == b'requested historical bytes'
+assert subprocess.check_output(['git','-C','../clone','show','HEAD:.env.example']).endswith(b'URL=\"\"\\n')
+"""
+r = launch(p, env, 'python3 -c ' + shlex.quote(check), ('--history-input', str(path)))
+assert r.returncode == 0, (r.stdout, r.stderr, result(p))
+proof = result(p)['history_input']
+assert proof['sha256'] == hashlib.sha256(path.read_bytes()).hexdigest()
+assert proof['head'] == parent and proof['objects'] == value['objects']
+assert proof['source'] == str(work) and proof['refs'] == value['refs']
+with tarfile.open(p / 'output/upload/source.tar.gz') as archive:
+    assert archive.extractfile('.env.example').read() == (work / '.env.example').read_bytes()
+    config = archive.extractfile('.git/config').read()
+    assert str(work).encode() not in config and b'url' not in config
+empty(state)
+print('ok - pinned exact snapshot beyond 1000 preserves source bytes and blank template through real shallow clone')
+
+# The same excluded template and deep object remain unavailable without opt-in.
+git(work, 'update-ref', 'refs/remotes/origin/main', parent)
+r = next_run(p, env, options=('--history-depth', '1'))
+assert r.returncode == 0, r.stderr
+with tarfile.open(p / 'output/upload/source.tar.gz') as archive:
+    assert '.env.example' not in archive.getnames()
+
+# The selected old commit must still pass the ordinary commit/content guards.
+value['objects'][0]['commit'] = unsafe
+value['objects'][0]['path'] = 'tracked.txt'
+value['objects'][0]['oid'] = git(work, 'rev-parse', unsafe + ':tracked.txt').stdout.decode().strip()
+path.write_text(json.dumps(value))
+before = creates(state)
+r = next_run(p, env, options=('--history-input', str(path)))
+assert r.returncode == 2 and b'credential-looking or binary commit' in r.stderr, r.stderr
+assert creates(state) == before and not (p / 'output/upload/source.tar.gz').exists()
+print('ok - selecting credential-bearing history refuses before allocation without synthetic fallback')
+
+p, state, env = case('input-old-secret-blob', clean_history=True)
+work = p / 'work'
+(work / 'old.txt').write_text('API_SECRET=fixture-never-upload\n')
+git(work, 'add', 'old.txt')
+git(work, 'commit', '-qm', 'old blob')
+old = git(work, 'rev-parse', 'HEAD').stdout.decode().strip()
+blob = git(work, 'rev-parse', 'HEAD:old.txt').stdout.decode().strip()
+(work / 'old.txt').rename(p / 'old.saved')
+git(work, 'add', '-u')
+git(work, 'commit', '-qm', 'remove old blob')
+path, _ = manifest(p, work, depth=1, objects=[{'commit': old, 'path': 'old.txt', 'oid': blob}])
+r = launch(p, env, options=('--history-input', str(path)))
+assert r.returncode == 2 and b'old.txt' in r.stderr, r.stderr
+assert b'fixture-never-upload' not in r.stderr and not (state / 'calls.jsonl').exists()
+print('ok - required credential-bearing historical blob refuses before provisioning')
+
+p, state, env = case('input-preflight-copy', clean_history=True)
+work = p / 'work'
+(work / '.env.example').write_text('API_TOKEN=\n')
+git(work, 'add', '-f', '.env.example')
+git(work, 'commit', '-qm', 'template baseline')
+common = git(work, 'rev-parse', 'HEAD').stdout.decode().strip()
+git(work, 'checkout', '-qb', 'main-input')
+(work / 'main.txt').write_text('main change\n')
+git(work, 'add', 'main.txt')
+git(work, 'commit', '-qm', 'main change')
+base_tip = git(work, 'rev-parse', 'HEAD').stdout.decode().strip()
+git(work, 'checkout', '-qb', 'feature-input', common)
+(work / 'feature.txt').write_text('feature change\n')
+git(work, 'add', 'feature.txt')
+git(work, 'commit', '-qm', 'feature change')
+head = git(work, 'rev-parse', 'HEAD').stdout.decode().strip()
+path, value = manifest(p, work, depth=2, templates=['.env.example'], objects=[
+    {'commit': head, 'path': '.env.example',
+     'oid': git(work, 'rev-parse', 'HEAD:.env.example').stdout.decode().strip()}])
+git(work, 'update-ref', 'refs/heads/input-base', base_tip)
+value['refs']['refs/remotes/origin/main']['oid'] = base_tip
+path.write_text(json.dumps(value))
+check = f"""import pathlib,subprocess
+def git(*args): return subprocess.check_output(['git',*args]).decode().strip()
+assert git('rev-parse','HEAD') == {head!r}
+assert git('rev-parse','origin/main') == {base_tip!r}
+subprocess.run(['git','clone','--quiet','--shared','--no-checkout','.', '../preflight'],check=True)
+def copy(*args): return subprocess.check_output(['git','-C','../preflight',*args]).decode().strip()
+copy('update-ref','refs/remotes/origin/main',{base_tip!r})
+copy('checkout','--quiet','--detach',{head!r})
+copy('-c','user.name=Fixture','-c','user.email=fixture@example.invalid','merge','--quiet','--no-ff','--no-edit',{base_tip!r})
+assert copy('rev-parse','HEAD^1') == {head!r}
+assert copy('rev-parse','HEAD^2') == {base_tip!r}
+assert pathlib.Path('../preflight/.env.example').read_text() == 'API_TOKEN=\\n'
+assert pathlib.Path('../preflight/main.txt').read_text() == 'main change\\n'
+assert pathlib.Path('../preflight/feature.txt').read_text() == 'feature change\\n'
+assert copy('status','--porcelain') == ''
+assert copy('fsck','--no-reflogs') == ''
+"""
+r = launch(p, env, 'python3 -c ' + shlex.quote(check), ('--history-input', str(path)))
+assert r.returncode == 0, (r.stdout, r.stderr, result(p))
+empty(state)
+print('ok - exact-head preflight clone, checkout and merge retain both parents and template bytes')
+
+for label, contents in [('blank', 'SECRET=\n'), ('secret', 'SECRET=fixture-never-upload\n'),
+                         ('issued', '# ghp_012345678901234567890123\n'),
+                         ('binary', 'SECRET=\n\x00')]:
+    p, state, env = case('input-template-' + label, clean_history=True)
+    work = p / 'work'
+    (work / '.env.example').write_text(contents)
+    git(work, 'add', '-f', '.env.example')
+    git(work, 'commit', '-qm', 'template')
+    path, _ = manifest(p, work, depth=1, templates=['.env.example'])
+    r = launch(p, env, options=('--history-input', str(path)))
+    assert r.returncode == (0 if label == 'blank' else 2), (label, r.stderr)
+    if label != 'blank':
+        assert b'fixture-never-upload' not in r.stderr
+        assert not (state / 'calls.jsonl').exists()
+print('ok - explicit template admission screens exact bytes and never admits populated values or issued keys')
+
+for label in ('changed-ref', 'wrong-object', 'wrong-head', 'unavailable', 'secret-url', 'excluded-template'):
+    p, state, env = case('input-refusal-' + label, clean_history=True)
+    work = p / 'work'
+    git(work, 'commit', '--allow-empty', '-qm', 'next')
+    path, value = manifest(p, work, depth=1)
+    if label == 'changed-ref':
+        value['refs']['refs/remotes/origin/main']['oid'] = git(work, 'rev-parse', 'HEAD~1').stdout.decode().strip()
+    elif label == 'wrong-object':
+        value['objects'] = [{'commit': value['head'], 'path': 'tracked.txt', 'oid': '1' * 40}]
+    elif label == 'wrong-head':
+        value['head'] = '1' * 40
+    elif label == 'unavailable':
+        value['source'] = 'https://127.0.0.1:1/unavailable.git'
+    elif label == 'secret-url':
+        value['source'] = 'https://user:fixture-never-upload@example.invalid/repo'
+    else:
+        value['templates'] = ['.env']
+    path.write_text(json.dumps(value))
+    r = launch(p, env, options=('--history-input', str(path)))
+    assert r.returncode == 2, (label, r.stderr)
+    assert b'fixture-never-upload' not in r.stderr
+    assert not (state / 'calls.jsonl').exists()
+    assert result(p)['kind'] != 'unavailable'
+print('ok - changed/unavailable sources, object identity and unsafe manifests fail without provisioning or fallback')
+
+p, state, env = case('input-promisor', clean_history=True)
+work = p / 'work'
+complete = p / 'complete.git'
+git(p, 'clone', '--quiet', '--bare', str(work), str(complete))
+path, value = manifest(p, work, depth=1, source=complete)
+git(complete, 'update-ref', 'refs/heads/input-base', value['head'])
+blob = git(work, 'rev-parse', 'HEAD:deleted.txt').stdout.decode().strip()
+loose = work / '.git/objects' / blob[:2] / blob[2:]
+loose.rename(p / 'withheld-object')
+git(work, 'config', 'core.repositoryformatversion', '1')
+git(work, 'config', 'extensions.partialclone', 'origin')
+git(work, 'config', 'remote.origin.promisor', 'true')
+git(work, 'config', 'remote.origin.url', str(complete))
+# A complete explicitly pinned source hydrates scratch, never the caller's Git.
+r = launch(p, env, options=('--history-input', str(path)))
+assert r.returncode == 0, r.stderr
+assert not loose.exists()
+# Reusing the incomplete checkout as the transport source must fail closed.
+value['source'] = str(work)
+path.write_text(json.dumps(value))
+before = creates(state)
+r = next_run(p, env, options=('--history-input', str(path)))
+assert r.returncode == 2 and not loose.exists(), r.stderr
+assert creates(state) == before
+print('ok - promisor source objects come from explicit complete input without lazy hydration of the caller')
+
 for name, contents in [
     ('blocked-decisions', '| State | Notes |\n|' + '-' * 680 + '|---|\n'
      '| blocked | blocked bearer decisions, pending review |\n'),

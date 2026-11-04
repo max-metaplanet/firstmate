@@ -7,6 +7,7 @@
 # FM_BOAT_TEST_TIMEOUT optionally forwards --timeout SECONDS to that adapter;
 # its validation and default still apply. Use 1500 or less on the trial account.
 # FM_BOAT_TEST_HISTORY_DEPTH optionally forwards --history-depth N (1..1000).
+# FM_BOAT_TEST_HISTORY_INPUT forwards --history-input FILE instead of depth.
 # The adapter owns history screening and synthetic fallback; see fm-boat-run.sh --help.
 # FM_BOAT_TYPE optionally forwards --type to the adapter; its default is default.
 # The selected account must permit that type in config/boat-keys.
@@ -119,6 +120,9 @@ if [[ -n ${FM_BOAT_TEST_TIMEOUT:-} ]]; then
 fi
 if [[ -n ${FM_BOAT_TEST_HISTORY_DEPTH:-} ]]; then
   adapter_args+=(--history-depth "$FM_BOAT_TEST_HISTORY_DEPTH")
+fi
+if [[ -n ${FM_BOAT_TEST_HISTORY_INPUT:-} ]]; then
+  adapter_args+=(--history-input "$FM_BOAT_TEST_HISTORY_INPUT")
 fi
 if [[ -n ${FM_BOAT_TYPE:-} ]]; then
   adapter_args+=(--type "$FM_BOAT_TYPE")

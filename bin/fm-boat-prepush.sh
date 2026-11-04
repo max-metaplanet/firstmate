@@ -3,7 +3,8 @@
 # Boat or fallback Upstash machine before the pull request is marked ready.
 # Usage:
 #   FM_HOME=/absolute/home fm-boat-prepush.sh [--worktree DIR] [--base REF]
-#       [--expected-head SHA] [--timeout SECONDS] [--history-depth N]
+#       [--expected-head SHA] [--timeout SECONDS]
+#       [--history-depth N | --history-input FILE]
 #       [--output DIR]
 # Exit: 0 every selected lane passed or had only proven missing-history
 # failures, 1 a lane failed, the verdict was incomplete, or remote execution failed,
@@ -55,7 +56,10 @@
 # fm-boat-test-wrapper.sh, whose headers own those mechanics.
 # Local fallback is explicitly disabled for this heavy gate, for both providers.
 # Lanes receive only the public dummy values set by the project's workflows.
-# --timeout and --history-depth forward to that adapter and keep its bounds.
+# --timeout, --history-depth and --history-input forward to that adapter and
+# keep its bounds. The manifest head and origin/main must match this check's
+# resolved head and base. A history input manifest pins complete screened snapshots
+# for history-dependent tests; fm-boat-run.sh --help owns its schema and refusals.
 # Without --history-depth the remote Git history is the wrapper's synthetic
 # two-commit base, so a lane whose fixtures query real historical commits cannot
 # find them. The changed-file list is therefore computed from real local Git and
