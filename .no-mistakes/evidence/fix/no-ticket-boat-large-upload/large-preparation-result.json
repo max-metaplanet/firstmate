@@ -1,0 +1,18 @@
+{
+  "kind": "unavailable",
+  "remote_exit": null,
+  "cleanup": "deleted",
+  "swap_gib": 0,
+  "provider": "boat",
+  "requested_type": "default",
+  "actual_size": "default",
+  "history": "screened",
+  "source_head": "a9605355d6bb8ceaec2673213c2b5ff4ae9ba343",
+  "source_sha256": "7cc8436291c46aad67200c0e48a662d3123286b7c48e3e89c41c51b0e1c3d107",
+  "upload_bytes": 143194693,
+  "push_timeout_seconds": 600,
+  "boat_unavailable": "Boat key unavailable",
+  "execution_error": "Boat key unavailable",
+  "error": "Boat key unavailable",
+  "adapter_exit": 69
+}
