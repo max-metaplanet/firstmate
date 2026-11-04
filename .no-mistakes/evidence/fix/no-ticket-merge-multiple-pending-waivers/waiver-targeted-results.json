@@ -1,0 +1,65 @@
+{
+  "oracle": "Author intent requires exact pending waivers and prohibits already-red merges; legacy caller waiting behavior must remain unchanged. Evaluator inputs are synthetic and do not establish a live GitHub merge.",
+  "checks": [
+    {
+      "scenario": "Real CLI accepts two separate waiver names, including spaces, and refuses absent task state",
+      "exit": 1,
+      "stderr": "error: PR merge refused: state directory is not a real directory at ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6J03TARCWDT9X9456KM9GF5/.test-waiver-home/state",
+      "live": true
+    },
+    {
+      "scenario": "Two pending checks remain individually waivable",
+      "exit": 0,
+      "output": "pending\tBehavior portable parallel1\npending\tLint1",
+      "live": false
+    },
+    {
+      "scenario": "Completed failure stays red",
+      "exit": 0,
+      "output": "red\tLint1",
+      "live": false
+    },
+    {
+      "scenario": "Failure beside pending rerun stays red",
+      "exit": 0,
+      "output": "red\tLint1",
+      "live": false
+    },
+    {
+      "scenario": "Legacy CI waiting still waits for rerun",
+      "exit": 0,
+      "output": "pending\tLint1",
+      "live": false
+    },
+    {
+      "scenario": "Unknown status cannot be waived",
+      "exit": 0,
+      "output": "red\tLint1",
+      "live": false
+    },
+    {
+      "scenario": "Contradictory pending failure cannot be waived",
+      "exit": 0,
+      "output": "red\tLint1",
+      "live": false
+    },
+    {
+      "scenario": "Newer success supersedes older failure",
+      "exit": 0,
+      "output": "pending\tLint1",
+      "live": false
+    },
+    {
+      "scenario": "Failure without timestamp remains red beside newer success",
+      "exit": 0,
+      "output": "red\tLint1",
+      "live": false
+    },
+    {
+      "scenario": "Malformed rollup fails closed",
+      "exit": 1,
+      "output": "",
+      "live": false
+    }
+  ]
+}
