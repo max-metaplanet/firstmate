@@ -32,8 +32,15 @@
 # before reusing it. TTL alone is never evidence of deletion.
 # Successful retained commands report cleanup=retained and lease={owner,state,id,
 # idle_expires,hard_expires}; only state=idle on an exact owned Boat lease is valid.
-# Cleanup=deleted remains actual confirmed deletion. Pending/unknown outcomes
-# never permit duplicate execution. Failed pre-command preparation on a reused
+# Cleanup=deleted remains actual confirmed deletion. Refused process cleanup
+# never permits lease retention. A saved command exit reports kind=completed and
+# remote_exit independently of process_cleanup, whose state is confirmed or
+# refused. Signal refusals include operation, target PID or PGID, effective_uid
+# and errno. A refusal returns adapter exit 74 and requires exact sandbox
+# deletion; unconfirmed deletion returns 70. Missing command-result evidence
+# remains execution-unknown, even if deletion succeeds. Known completion and
+# unknown execution never permit duplicate execution.
+# Failed pre-command preparation on a reused
 # owned lease permits one replacement only after confirmed deletion, using Boat
 # then optional Upstash admission before the caller's permitted local fallback.
 # Cleanup-task refuses active holders,
