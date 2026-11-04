@@ -126,7 +126,7 @@ def remote_script(state):
     """The command string the adapter handed the VM, past its own bootstrap."""
     for line in (state / 'calls.jsonl').read_text().splitlines():
         call = json.loads(line)
-        if call[0] == 'exec' and 'source.tar.gz' not in call[-1]:
+        if call[0] == 'exec' and '--stream' in call:
             return call[-1]
     raise AssertionError('the fake Boat CLI was never asked to run the command')
 
