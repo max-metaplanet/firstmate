@@ -686,6 +686,8 @@ if [ "$TEARDOWN_BACKLOG_APPLIES" = 1 ]; then
     esac
   fi
   [ "$TEARDOWN_LEGACY_PENDING" = 1 ] || TEARDOWN_META_SPAWN_GEN=$FM_BACKLOG_META_SPAWN_GEN
+elif fm_backlog_meta_spawn_gen "$META" "$STATE"; then
+  TEARDOWN_META_SPAWN_GEN=$FM_BACKLOG_META_SPAWN_GEN
 fi
 # Cleanup never closes a captain call (see the header). Asked here, before any
 # destructive step, so "cannot tell" can refuse while everything is intact.
@@ -3841,6 +3843,13 @@ fi
 # closed here instead of after the return: the worker's own processes are then
 # gone before the pre-return scan, and only what is not the task's remains.
 TEARDOWN_ENDPOINT_CLOSED=0
+if [ "$KIND" != secondmate ]; then
+  FM_HOME="$FM_HOME" "$SCRIPT_DIR/fm-boat-run.sh" cleanup-task \
+    --task "$ID" --generation "$TEARDOWN_META_SPAWN_GEN" || {
+    echo "REFUSED: Boat lease cleanup for $ID is busy, uncertain, or unconfirmed; retry teardown after recovery." >&2
+    exit 1
+  }
+fi
 if [ "$KIND" != secondmate ] && teardown_owns_worktree; then
   conclude_task_no_mistakes_run "$WT"
   reap_task_worktree_processes worktree "$WT" "$TASK_TMP"

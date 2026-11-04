@@ -6,6 +6,37 @@
 #       [--timeout SECONDS] [--swap-gib 0..4] [--history-depth N]
 #       [--type default|large|xlarge] -- COMMAND [ARGS...]
 #   FM_HOME=/absolute/home fm-boat-run.sh reap
+#   FM_HOME=/absolute/home fm-boat-run.sh cleanup-task --task ID --generation SPAWN_GEN
+# Exact worker ownership comes from FM_TASK_ID and this home's state/ID.meta,
+# matching endpoint_task_id, ship/scout kind, spawn_gen and canonical worktree.
+# Unattributed or ambiguous calls remain create-per-command. Each home/task
+# serializes one durable Boat job slot across worker generations. Compatible
+# idle leases reuse the same account, environment, type and swap configuration;
+# a changed generation or request requires confirmed deletion before replacement.
+# A repointed key file fails closed. Upstash always creates per command.
+# Reuse checks remaining compute credit independently of new-start quotas.
+# A full minute/hour/day start window does not prevent an owned running lease.
+# Each run removes the entire job workspace, uploads screened fresh source,
+# and uses fresh HOME/TMPDIR directories. Linux child-subreaper adoption, process
+# sessions and an inherited token terminate and reap owned descendants, including
+# detached children that clear their environment. Unsupported reset fails before
+# user execution and cold-replaces the exact lease with an ephemeral sandbox.
+# This is same-task reuse, not a pristine OS. Global packages, files outside the
+# job directory and services that clear their process environment can persist.
+# Leases expire after 1500 idle seconds, starting only after command completion.
+# A per-lease local expiry process uses the same nonblocking lock and confirmed
+# deletion owner as reap; it never deletes a locked active command. Host loss
+# delays idle deletion until reap. A finite 7200-second provider TTL is the
+# absolute lifetime backstop, never extended; calls reserve timeout+1080 seconds
+# before reusing it. TTL alone is never evidence of deletion.
+# Successful retained commands report cleanup=retained and lease={owner,state,id,
+# idle_expires,hard_expires}; only state=idle on an exact owned Boat lease is valid.
+# Cleanup=deleted remains actual confirmed deletion. Pending/unknown outcomes
+# never permit duplicate execution. Failed owned pre-command preparation permits
+# one replacement only after confirmed deletion, using Boat then optional Upstash
+# admission before the caller's permitted local fallback. Cleanup-task refuses active holders,
+# records a generation-closing tombstone, and deletes only that exact lease.
+# Reap preserves valid idle owned leases and recovers expired/abandoned records.
 # Requires python3 and Boat CLI 1.0.85+ on PATH (FM_BOAT_BIN may name a binary).
 # Optional Upstash fallback requires upstash-box==0.4.0 in that Python and
 # ~/.config/upstash/box-api-key, readable only by its owner (mode 0600).
@@ -139,7 +170,8 @@
 # dependencies explicitly in COMMAND; native local node_modules never travel.
 # Upstash prepares writable /home/user and fm-job with root or passwordless
 # sudo -n install. Failure to prepare them is a setup error, never unavailable.
-# --timeout defaults to 1800, range 1..2700; VM TTL is timeout+900 (<=3600).
+# --timeout defaults to 1800, range 1..2700; ephemeral TTL is timeout+900
+# (<=3600). Owned Boat leases use the absolute 7200-second TTL above.
 # --type defaults to default and passes Boat's machine type names unchanged.
 # Only accounts permitting that type are considered; no permitting account is
 # invalid input (exit 2), with no create or silent downgrade.
@@ -170,7 +202,7 @@
 # included-cost eligibility and minute/hour/day starts use that account's key.
 # Provider limits enforce account-wide races from other homes/clients.
 # The home lock serializes admission/create; uncertain creates are never retried.
-# State owner: FM_HOME/state/boat-offload/{jobs/<uuid>.json,daily*.json,*.lock}.
+# State owner: FM_HOME/state/boat-offload/{jobs/<uuid>|task-<hash>.json,daily*.json,*.lock}.
 # The default key retains daily.json; other counters use a hash of the key path.
 # Each job stores its account key-file path and cleanup confirmation mode,
 # never its key value. Cleanup/reap

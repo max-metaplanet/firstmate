@@ -228,8 +228,14 @@ def should_retry_large(run: dict) -> bool:
     """
     ok, failed, oom_only = verdict(run)
     result = run.get('remote_result') or {}
+    lease = result.get('lease') or {}
+    owner = lease.get('owner') or {}
+    cleanup_ok = result.get('cleanup') == 'deleted' or (
+        result.get('cleanup') == 'retained' and result.get('provider') == 'boat'
+        and lease.get('state') == 'idle' and owner.get('task') == os.environ.get('FM_TASK_ID')
+        and owner.get('task') and owner.get('home') == os.path.realpath(os.environ.get('FM_HOME', '')))
     completed = (result.get('kind') == 'completed' and result.get('remote_exit') == 0
-                 and result.get('cleanup') == 'deleted' and not result.get('error'))
+                 and cleanup_ok and not result.get('error'))
     return bool(completed and not ok and failed and oom_only and run['size'] == 'default')
 
 

@@ -47,6 +47,222 @@ class _Terminated(BaseException):
 ACTIVE_CHILD = None
 MACHINE_TYPES = ('default', 'large', 'xlarge')
 REMOTE_ROOT = '/home/user/fm-job'
+LEASE_IDLE = 1500
+LEASE_LIFETIME = 7200
+
+
+def task_owner(home, task, root=None):
+    if not re.fullmatch(r'[a-zA-Z0-9_-][a-zA-Z0-9._-]{0,63}', task or ''):
+        return None
+    try:
+        fields = {}
+        for line in (home / 'state' / (task + '.meta')).read_text().splitlines():
+            key, value = line.split('=', 1)
+            if key in fields:
+                return None
+            fields[key] = value
+        worktree = Path(fields['worktree']).resolve(strict=root is not None)
+        if (fields.get('endpoint_task_id') != task or fields.get('kind') not in ('ship', 'scout')
+                or not fields.get('spawn_gen') or (root is not None and root != worktree)):
+            return None
+        return dict(home=str(home.resolve()), task=task, generation=fields['spawn_gen'],
+                    worktree=str(worktree))
+    except (OSError, KeyError, ValueError):
+        return None
+
+
+def job_path(state, owner):
+    identity = owner['home'] + '\0' + owner['task']
+    return state / 'jobs' / ('task-' + hashlib.sha256(identity.encode()).hexdigest() + '.json')
+
+
+def owner_current(owner):
+    return owner == task_owner(Path(owner['home']), owner['task'], Path(owner['worktree']))
+
+
+def compute_available(boat, seconds, machine):
+    limits = boat.call('limits', '--json')
+    credit = limits.get('creditBalanceSeconds')
+    return (type(credit) in (int, float) and credit >= seconds *
+            {'default': 1, 'large': 2, 'xlarge': 4}[machine]
+            and limits.get('billingStatus') in ('active', 'trialing'))
+
+
+def start_expiry(record):
+    subprocess.Popen([sys.executable, str(Path(__file__).resolve()), 'expire',
+                      '--lease', record.stem], stdin=subprocess.DEVNULL,
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                     start_new_session=True, close_fds=True, cwd=record.parent)
+
+
+# A Linux subreaper adopts double-forked descendants even after setsid/env -i.
+# The token also identifies survivors from an interrupted prior reset.
+REMOTE_PROCESSES = r'''import ctypes,os,pathlib,shutil,signal,subprocess,sys,time
+root=pathlib.Path(sys.argv[1])
+action,token=sys.argv[2:4]
+tag=('FM_BOAT_RUN_TOKEN='+token).encode()
+if not sys.platform.startswith('linux') or ctypes.CDLL(None,use_errno=True).prctl(36,1,0,0,0)!=0:
+ raise RuntimeError('Linux child subreaper unavailable')
+def reset():
+ for attempt in range(30):
+  found=set()
+  parents={}
+  for p in pathlib.Path('/proc').iterdir():
+   if not p.name.isdecimal() or int(p.name)==os.getpid(): continue
+   try:
+    parents[int(p.name)]=int((p/'stat').read_text().rsplit(')',1)[1].split()[1])
+    if tag in (p/'environ').read_bytes().split(b'\0'):
+     found.add(int(p.name))
+   except (FileNotFoundError,ProcessLookupError,PermissionError): pass
+  descendants={os.getpid()}
+  while True:
+   children={pid for pid,parent in parents.items() if parent in descendants}
+   if children<=descendants: break
+   descendants.update(children)
+  found.update(descendants-{os.getpid()})
+  while True:
+   try:
+    pid,status=os.waitpid(-1,os.WNOHANG)
+    if pid==0: break
+    found.discard(pid)
+   except ChildProcessError: break
+  if not found: return
+  for pid in found:
+   try: os.kill(pid,signal.SIGKILL)
+   except ProcessLookupError: pass
+  time.sleep(.1)
+ raise RuntimeError('owned processes survived reset')
+reset()
+if action=='prepare':
+ if root.is_symlink(): root.unlink()
+ elif root.exists(): shutil.rmtree(root)
+ root.mkdir()
+ (root/'home').mkdir()
+ (root/'tmp').mkdir()
+elif action=='run':
+ env={'PATH':os.environ['PATH'],'HOME':str(root/'home'),'TMPDIR':str(root/'tmp'),
+      'CI':'1','NEXT_TELEMETRY_DISABLED':'1','FM_BOAT_RUN_TOKEN':token}
+ child=subprocess.Popen(['timeout','-k','15',sys.argv[4],*sys.argv[5:]],
+                        cwd=root/'source',env=env,start_new_session=True)
+ try: code=child.wait()
+ finally:
+  try: os.killpg(child.pid,signal.SIGKILL)
+  except ProcessLookupError: pass
+  reset()
+ (root/'exit').write_text(str(code if code>=0 else 128-code))
+'''
+
+
+def owned_processes(boat, job, action, args=None, output=None):
+    command = ['python3', '-c', REMOTE_PROCESSES, REMOTE_ROOT, action, job['token']]
+    if args is not None:
+        command.extend([str(args.timeout), *args.command])
+    return boat.command(job['vm_id'], command,
+                        remote_timeout=args.timeout + 30 if args else 60,
+                        timeout=args.timeout + 90 if args else 90,
+                        capture_path=output / 'command.log' if output else None)
+
+
+def prepare_source(boat, job, args, upload, digest, push_timeout, reused):
+    vm = job['vm_id']
+    if job.get('owner') and job.get('provider') == 'boat':
+        owned_processes(boat, job, 'prepare')
+    boat.upload(vm, upload, push_timeout)
+    boat.command(vm, ['bash', '-c',
+                 f'echo {digest} {REMOTE_ROOT}/source.tar.gz | sha256sum -c - && '
+                 f'mkdir -p {REMOTE_ROOT}/source && tar xzf {REMOTE_ROOT}/source.tar.gz -C {REMOTE_ROOT}/source'],
+                 timeout=90)
+    if args.swap_gib and not reused:
+        boat.command(vm, ['bash', '-c',
+                     f'sudo -n fallocate -l {args.swap_gib}G /swapfile-fm-offload && '
+                     'sudo -n chmod 600 /swapfile-fm-offload && '
+                     'sudo -n mkswap /swapfile-fm-offload && '
+                     'sudo -n swapon /swapfile-fm-offload'])
+
+
+def fresh_job(args, owner):
+    job_id = uuid.uuid4().hex
+    ttl = LEASE_LIFETIME if owner else args.timeout + 900
+    return dict(name='fm-offload-' + job_id, vm_id=None, cleanup='pending',
+                ttl=ttl, expires=time.time() + ttl + 180,
+                create_started=False, type=args.type, provider='boat', token=job_id,
+                owner=owner, swap_gib=args.swap_gib, lease_state='busy',
+                hard_expires=time.time() + ttl)
+
+
+@contextlib.contextmanager
+def allocation(args, boats, owner):
+    state = boats[0].state
+    record = job_path(state, owner) if owner else state / 'jobs' / (uuid.uuid4().hex + '.json')
+    with lock(state / (record.stem + '.lock')):
+        if owner and not owner_current(owner):
+            raise Failure('task ownership changed while waiting for Boat lease', 70)
+        old = json.loads(record.read_text()) if record.exists() else None
+        if old and old.get('owner') and (
+                old['owner'].get('home') != owner['home'] or old['owner'].get('task') != owner['task']):
+            raise Failure('lease record ownership mismatch', 70)
+        if old and old.get('closing') == owner and owner is not None:
+            raise Failure('task Boat lease is closing', 70)
+        eligible = [b for b in boats if args.type in b.account.types]
+        compatible = next((b for b in eligible if old and
+                           str(b.account.key_file) == old.get('account_key_file') and
+                           b.account.environment == old.get('environment', '') and
+                           b.account.cleanup_confirmation == old.get('cleanup_confirmation')), None)
+        if old and old.get('cleanup') != 'deleted':
+            ready = (owner and old.get('owner') == owner and compatible and
+                     old.get('lease_state') == 'idle' and old.get('type') == args.type and
+                     old.get('swap_gib') == args.swap_gib and
+                     time.time() < old.get('idle_expires', 0) and
+                     time.time() + args.timeout + 1080 < old['hard_expires'])
+            if ready:
+                try:
+                    ready = (hashlib.sha256(compatible.account.key_file.read_bytes()).hexdigest()
+                             == old.get('key_fingerprint') and
+                             compute_available(compatible, args.timeout + 1080, args.type))
+                    ready = ready and any(vm.get('id') == old['vm_id'] and
+                                          vm.get('name') == old['name']
+                                          for vm in compatible.listing())
+                except Failure:
+                    ready = False
+            if ready:
+                old['lease_state'] = 'busy'
+                save(record, old)
+                yield compatible, old, record, True
+                return
+            uncertain = old.get('lease_state') == 'busy'
+            cleanup_job(state, boats[0].cli_home, old, record)
+            if uncertain:
+                raise Failure('previous lease command outcome unknown; cleaned, refusing retry', 74)
+        yield boats[0], fresh_job(args, owner), record, False
+
+
+def lease_live(job, home):
+    owner = job.get('owner')
+    if owner and owner.get('home') != str(home):
+        raise Failure('lease belongs to another home; refusing cleanup', 70)
+    return (owner and owner_current(owner) and not job.get('closing') and
+            job.get('lease_state') == 'idle' and job.get('cleanup') == 'retained' and
+            time.time() < min(job.get('idle_expires', 0), job.get('hard_expires', 0)))
+
+
+def cleanup_job(state, cli_home, job, record):
+    if job.get('cleanup') == 'deleted':
+        return
+    if job.get('owner') and job['owner'].get('home') != str(state.parent.parent):
+        raise Failure('lease belongs to another home; refusing cleanup', 70)
+    if job.get('owner'):
+        job['lease_state'] = 'closing'
+        save(record, job)
+    key_file = Path(job.get('account_key_file', str(default_key_file())))
+    if not key_file.is_absolute():
+        raise Failure('invalid recorded account key path', 70)
+    provider = job.get('provider', 'boat')
+    if provider == 'upstash':
+        Upstash(state, key_file).cleanup(job, record)
+    elif provider == 'boat':
+        Boat(state, cli_home, Account(key_file)).cleanup(job, record)
+    else:
+        raise Failure('invalid recorded provider', 70)
 
 
 def terminate(number, _frame):
@@ -568,6 +784,13 @@ class Boat:
             job['cleanup'] = 'deleted'
             save(record, job)
             return
+        if job.get('key_fingerprint'):
+            try:
+                matches = hashlib.sha256(self.account.key_file.read_bytes()).hexdigest() == job['key_fingerprint']
+            except OSError:
+                matches = False
+            if not matches:
+                raise Failure('recorded Boat key changed; cleanup cannot identify account', 70)
         confirmation = job.get('cleanup_confirmation', 'deletion')
         if confirmation not in ('deletion', 'list'):
             raise Failure('invalid recorded cleanup confirmation', 70)
@@ -878,7 +1101,9 @@ def admit(boats, job, record):
                 continue
             save(daily_path, {'date': today, 'attempts': used + 1})
             job.update(create_started=True, account_key_file=str(account.key_file),
-                       cleanup_confirmation=account.cleanup_confirmation)
+                       cleanup_confirmation=account.cleanup_confirmation,
+                       environment=account.environment,
+                       key_fingerprint=hashlib.sha256(account.key_file.read_bytes()).hexdigest())
             save(record, job)
             try:
                 create_args = ['new', '--type', job['type'], '--ttl', str(job['ttl']),
@@ -986,47 +1211,56 @@ def run(args, boats):
         push_timeout = min(600, max(300, 90 + (upload_bytes + 131071) // 131072))
         result.update(source_head=head, source_sha256=digest,
                       upload_bytes=upload_bytes, push_timeout_seconds=push_timeout)
-        job_id = uuid.uuid4().hex
-        record = boat.state / 'jobs' / (job_id + '.json')
-        job = {'name': 'fm-offload-' + job_id, 'vm_id': None, 'cleanup': 'pending',
-               'ttl': args.timeout + 900, 'expires': time.time() + args.timeout + 1080,
-               'create_started': False, 'type': args.type, 'provider': 'boat'}
-        with lock(boat.state / (job_id + '.lock')):
+        owner = task_owner(boat.state.parent.parent, os.environ.get('FM_TASK_ID'), root)
+        if owner:
+            result['lease'] = dict(owner=owner, state='busy', id=job_path(boat.state, owner).stem)
+
+        def admit_available():
+            nonlocal boat
+            result['kind'] = 'unavailable'
+            try:
+                try:
+                    boat = admit(eligible, job, record)
+                except Failure as exc:
+                    if job['create_started'] or exc.code not in (69, 75):
+                        raise
+                    result['boat_unavailable'] = str(exc)
+                    key_file = upstash_key_file()
+                    if not key_file.exists():
+                        raise
+                    boat = Upstash(boat.state, key_file)
+                    job.update(owner=None, ttl=args.timeout + 900)
+                    result.pop('lease', None)
+                    result.update(provider='upstash', actual_size='small',
+                                  resources=dict(cpu=2, memory_gib=4, disk_gib=10))
+                    boat.admit(job, record, args, upload_bytes)
+            finally:
+                if job.get('account_key_file') and job.get('provider') != 'upstash':
+                    boat = next(b for b in boats if str(b.account.key_file) == job['account_key_file'])
+
+        with allocation(args, boats, owner) as (boat, job, record, reused):
+            succeeded = False
             try:
                 result['kind'] = 'unavailable'
-                try:
-                    try:
-                        boat = admit(eligible, job, record)
-                    except Failure as exc:
-                        if job['create_started'] or exc.code not in (69, 75):
-                            raise
-                        result['boat_unavailable'] = str(exc)
-                        # A missing optional key preserves the original Boat
-                        # refusal and exit classification for existing callers.
-                        key_file = upstash_key_file()
-                        if not key_file.exists():
-                            raise
-                        boat = Upstash(boat.state, key_file)
-                        result.update(provider='upstash', actual_size='small',
-                                      resources=dict(cpu=2, memory_gib=4, disk_gib=10))
-                        boat.admit(job, record, args, upload_bytes)
-                finally:
-                    if job.get('account_key_file') and job.get('provider') != 'upstash':
-                        boat = next(b for b in boats if str(b.account.key_file) == job['account_key_file'])
+                if not reused:
+                    admit_available()
                 vm = job['vm_id']
-                result.update(vm_id=vm, kind='adapter-error')
+                result.update(vm_id=vm, kind='adapter-error', reused=reused,
+                              creates=0 if reused else 1)
                 remote_root = REMOTE_ROOT
-                boat.upload(vm, upload, push_timeout)
-                boat.command(vm, ['bash', '-c',
-                          f'echo {digest} {remote_root}/source.tar.gz | sha256sum -c - && '
-                          f'mkdir -p {remote_root}/source && tar xzf {remote_root}/source.tar.gz -C {remote_root}/source'],
-                          timeout=90)
-                if args.swap_gib:
-                    boat.command(vm, ['bash', '-c',
-                                 f'sudo -n fallocate -l {args.swap_gib}G /swapfile-fm-offload && '
-                                 'sudo -n chmod 600 /swapfile-fm-offload && '
-                                 'sudo -n mkswap /swapfile-fm-offload && '
-                                 'sudo -n swapon /swapfile-fm-offload'])
+                try:
+                    prepare_source(boat, job, args, upload, digest, push_timeout, reused)
+                except Failure:
+                    if not job.get('owner') or job.get('provider') != 'boat':
+                        raise
+                    boat.cleanup(job, record)
+                    job = fresh_job(args, None)
+                    admit_available()
+                    vm = job['vm_id']
+                    reused = False
+                    result.update(vm_id=vm, kind='adapter-error', reused=False,
+                                  creates=result['creates'] + 1, reuse_fallback=True)
+                    prepare_source(boat, job, args, upload, digest, push_timeout, False)
                 command = shlex.join(args.command)
                 remote = (f'cd {remote_root}/source || exit 125; '
                           f'env -i PATH="$PATH" HOME={str(PurePosixPath(remote_root).parent)} CI=1 '
@@ -1034,7 +1268,13 @@ def run(args, boats):
                           f'timeout -k 15 {args.timeout} {command}; '
                           f'rc=$?; printf "%s" "$rc" > {remote_root}/exit')
                 result['kind'] = 'execution-unknown'
-                data = boat.command(vm, ['bash', '-c', remote],
+                save(output / 'result.json', result)
+                if job.get('owner') and job.get('provider') == 'boat':
+                    job['execution_started'] = True
+                    save(record, job)
+                    data = owned_processes(boat, job, 'run', args, output)
+                else:
+                    data = boat.command(vm, ['bash', '-c', remote],
                                  remote_timeout=args.timeout + 30,
                                  timeout=args.timeout + 90,
                                  capture_path=output / 'command.log')
@@ -1046,6 +1286,7 @@ def run(args, boats):
                 code = int(status)
                 result.update(kind='completed', remote_exit=code)
                 artifacts(boat, vm, args.artifact, output)
+                succeeded = True
             except Failure as exc:
                 if result['kind'] == 'unavailable' and job['create_started']:
                     result['kind'] = 'adapter-error'
@@ -1057,11 +1298,32 @@ def run(args, boats):
                 for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
                     signal.signal(sig, signal.SIG_IGN)
                 try:
-                    boat.cleanup(job, record)
+                    if job.get('account_key_file') and job.get('provider') == 'boat':
+                        boat = next(b for b in boats if str(b.account.key_file) == job['account_key_file'])
+                    retain = (succeeded and job.get('owner') and job.get('provider') == 'boat'
+                              and owner_current(job['owner']) and
+                              time.time() + LEASE_IDLE < job['hard_expires'])
+                    if retain:
+                        owned_processes(boat, job, 'finish')
+                        try:
+                            retain = compute_available(boat, LEASE_IDLE, args.type)
+                        except Failure:
+                            retain = False
+                    if retain:
+                        job.update(cleanup='retained', lease_state='idle',
+                                   idle_expires=time.time() + LEASE_IDLE,
+                                   commands=job.get('commands', 0) + 1)
+                        save(record, job)
+                        start_expiry(record)
+                        result.update(cleanup='retained', lease=dict(
+                            owner=job['owner'], state='idle', id=record.stem,
+                            idle_expires=job['idle_expires'], hard_expires=job['hard_expires']))
+                    else:
+                        boat.cleanup(job, record)
+                        result['cleanup'] = 'deleted'
                 except Failure as exc:
                     result.update(cleanup='pending', cleanup_error=str(exc))
                     raise Failure('cleanup unconfirmed; run reap', 70) from exc
-                result['cleanup'] = 'deleted'
     except Failure as exc:
         result['error'] = str(exc)
         code = exc.code
@@ -1090,6 +1352,11 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest='action', required=True)
     sub.add_parser('reap')
+    expiry = sub.add_parser('expire', help=argparse.SUPPRESS)
+    expiry.add_argument('--lease', required=True)
+    cleanup = sub.add_parser('cleanup-task')
+    cleanup.add_argument('--task', required=True)
+    cleanup.add_argument('--generation', required=True)
     runner = sub.add_parser('run')
     runner.add_argument('--worktree', required=True)
     runner.add_argument('--output', required=True)
@@ -1104,6 +1371,7 @@ def main():
     home = Path(os.environ.get('FM_HOME', ''))
     if not home.is_absolute():
         raise Failure('FM_HOME must be explicit and absolute', 2)
+    home = home.resolve()
     os.umask(0o077)
     state = home / 'state/boat-offload'
     (state / 'jobs').mkdir(parents=True, exist_ok=True)
@@ -1115,28 +1383,69 @@ def main():
         raise Failure('history depth must be 1..1000', 2)
     for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
         signal.signal(sig, terminate)
+    if args.action == 'expire':
+        if not re.fullmatch(r'task-[a-f0-9]{64}', args.lease):
+            raise Failure('invalid lease record', 2)
+        record = state / 'jobs' / (args.lease + '.json')
+        with lock(state / (args.lease + '.expiry.lock'), wait=False) as acquired:
+            if not acquired:
+                return 0
+            while record.exists():
+                with lock(state / (record.stem + '.lock'), wait=False) as held:
+                    if held:
+                        job = json.loads(record.read_text())
+                        if job.get('cleanup') == 'deleted':
+                            return 0
+                        if not lease_live(job, home):
+                            break
+                time.sleep(30)
+            else:
+                return 0
+        # Reap rechecks under the job lock; a new command may have arrived.
+        args.action = 'reap'
+        args.only_lease = record
     # Boat derives SSH ControlPath from HOME. A long operational-home path
     # exceeds Unix socket limits even though all ordinary files fit there.
     with tempfile.TemporaryDirectory(prefix='fmb.', dir='/tmp') as cli_home:
         os.chmod(cli_home, 0o700)
+        if args.action == 'cleanup-task':
+            owner = task_owner(home, args.task)
+            identity = dict(home=str(home), task=args.task)
+            record = job_path(state, identity)
+            if owner is None or owner['generation'] != args.generation:
+                if record.exists():
+                    prior = json.loads(record.read_text())
+                    closed = prior.get('closing') or {}
+                    if (prior.get('cleanup') == 'deleted' and closed.get('home') == str(home)
+                            and closed.get('task') == args.task and closed.get('generation') == args.generation):
+                        return 0
+                    raise Failure('task cleanup ownership cannot be confirmed', 70)
+                return 0
+            with lock(state / (record.stem + '.lock'), wait=False) as acquired:
+                if not acquired:
+                    raise Failure('task Boat command active; retry cleanup after it finishes', 70)
+                if owner != task_owner(home, args.task):
+                    raise Failure('task ownership changed during cleanup', 70)
+                job = json.loads(record.read_text()) if record.exists() else dict(cleanup='deleted')
+                if job.get('owner') and (job['owner'].get('home') != str(home)
+                                          or job['owner'].get('task') != args.task):
+                    raise Failure('task cleanup differs from recorded lease owner', 70)
+                job['closing'] = owner
+                save(record, job)
+                cleanup_job(state, Path(cli_home), job, record)
+            return 0
         if args.action == 'reap':
             failed = False
             for record in sorted((state / 'jobs').glob('*.json')):
+                if getattr(args, 'only_lease', record) != record:
+                    continue
                 with lock(state / (record.stem + '.lock'), wait=False) as acquired:
                     if not acquired:
                         continue
                     try:
                         job = json.loads(record.read_text())
-                        key_file = Path(job.get('account_key_file', str(default_key_file())))
-                        if not key_file.is_absolute():
-                            raise Failure('invalid recorded account key path', 70)
-                        provider = job.get('provider', 'boat')
-                        if provider == 'upstash':
-                            Upstash(state, key_file).cleanup(job, record)
-                        elif provider == 'boat':
-                            Boat(state, Path(cli_home), Account(key_file)).cleanup(job, record)
-                        else:
-                            raise Failure('invalid recorded provider', 70)
+                        if not lease_live(job, home):
+                            cleanup_job(state, Path(cli_home), job, record)
                     except Failure as exc:
                         print('boat-offload: ' + str(exc), file=sys.stderr)
                         failed = True

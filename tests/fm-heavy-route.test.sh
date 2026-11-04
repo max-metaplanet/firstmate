@@ -174,6 +174,61 @@ assert 'bootstrapped' in r.stderr, r.stderr
 assert 'boat_fixture_secret' not in r.stdout + r.stderr
 print('ok - a declared project runs the kind on Boat, outside the local slots')
 
+if sys.platform.startswith('linux'):
+    p, work, config, state, env = case('owned-reuse', declaration=DECLARED)
+    (state.parent / 'fixture-task.meta').write_text('endpoint_task_id=fixture-task\nkind=ship\n'
+        'spawn_gen=generation-1\nworktree=' + str(work) + '\n')
+    assert publish(config, env).returncode == 0
+    for _ in range(2):
+        r = run(work, env)
+        assert r.returncode == 0 and r.stdout.endswith('held=\n'), (r.stdout, r.stderr)
+        assert 'running locally' not in r.stderr
+    calls = [json.loads(line) for line in (state / 'calls.jsonl').read_text().splitlines()]
+    assert sum(call[0] == 'new' for call in calls) == 1
+    r = subprocess.run(['bash', str(repo / 'bin/fm-boat-run.sh'), 'cleanup-task',
+        '--task', 'fixture-task', '--generation', 'generation-1'],
+        env=dict(env, FM_HOME=str(state.parent.parent)), capture_output=True)
+    assert r.returncode == 0, r.stderr
+    print('ok - the ordinary worker routing path reuses a valid owned lease for successive commands')
+
+    for failure in ('bootstrap', 'snapshot'):
+        declaration = "smokeproj bootstrap='false' timeout=900\n" if failure == 'bootstrap' else DECLARED
+        p, work, config, state, env = case('owned-fallback-' + failure, declaration=declaration)
+        (state.parent / 'fixture-task.meta').write_text('endpoint_task_id=fixture-task\nkind=ship\n'
+            'spawn_gen=generation-1\nworktree=' + str(work) + '\n')
+        assert publish(config, env).returncode == 0
+        command = REPORT if failure == 'bootstrap' else (
+            'if [ -n "${CI:-}" ]; then echo "Snapshot missing" >&2; exit 1; fi; ' + REPORT)
+        for _ in range(2):
+            r = run(work, env, command=('bash', '-c', command))
+            assert r.returncode == 0 and not r.stdout.endswith('held=\n'), (r.stdout, r.stderr)
+            assert ('setup did not dispatch' if failure == 'bootstrap' else 'snapshot it may not write') in r.stderr
+        calls = [json.loads(line) for line in (state / 'calls.jsonl').read_text().splitlines()]
+        assert sum(call[0] == 'new' for call in calls) == 1
+        r = subprocess.run(['bash', str(repo / 'bin/fm-boat-run.sh'), 'cleanup-task',
+            '--task', 'fixture-task', '--generation', 'generation-1'],
+            env=dict(env, FM_HOME=str(state.parent.parent)), capture_output=True)
+        assert r.returncode == 0, r.stderr
+    print('ok - completed owned bootstrap and snapshot failures retain established local fallbacks')
+
+    for failure in ('prepare_failed', 'push_failed_once'):
+        p, work, config, state, env = case('owned-unavailable-' + failure, declaration=DECLARED)
+        (state.parent / 'fixture-task.meta').write_text('endpoint_task_id=fixture-task\nkind=ship\n'
+            'spawn_gen=generation-1\nworktree=' + str(work) + '\n')
+        assert publish(config, env).returncode == 0
+        assert run(work, env).returncode == 0
+        (state / 'fixture.json').write_text(json.dumps({failure: True, 'remaining': 0}))
+        r = run(work, env)
+        assert r.returncode == 0 and not r.stdout.endswith('held=\n'), (r.stdout, r.stderr)
+        assert 'Boat did not run it (unavailable' in r.stderr
+        calls = [json.loads(line) for line in (state / 'calls.jsonl').read_text().splitlines()]
+        assert sum(call[0] == 'new' for call in calls) == 1
+        assert json.loads((state / 'fake-vms.json').read_text()) == []
+    print('ok - routing permits local fallback after confirmed pre-execution lease deletion')
+
+else:
+    print('skip - managed worker routing fixture requires Linux remote process semantics')
+
 for name, payload, exit_code, bootstrap in (
     ('json', '[{"filePath":"tracked.txt","messages":[]}]', 0, 'true'),
     ('failed', '[{"filePath":"tracked.txt","errorCount":1}]', 1, 'true'),
@@ -474,6 +529,50 @@ for name, result_kind, remote_exit in (('result', 'execution-unknown', None),
     assert json.loads(r.stdout) == {'attempt': 'local'}, (name, r.stdout)
     assert 'discarded remote stdout' in r.stderr, (name, r.stderr)
 print('ok - unconfirmed result and dispatch both discard remote stdout before local retry')
+
+for evidence in ('missing', 'corrupt'):
+    p, work, config, state, env = case('lost-result-' + evidence, declaration=DECLARED)
+    assert publish(config, env).returncode == 0
+    adapter_bin = p / 'adapter-bin'
+    adapter_bin.mkdir()
+    adapter = adapter_bin / 'fm-boat-run.sh'
+    adapter.write_text('#!/usr/bin/env python3\nimport sys\nfrom pathlib import Path\n'
+        'output=Path(sys.argv[sys.argv.index("--output")+1]); output.mkdir(parents=True)\n' +
+        ('(output/"result.json").write_text("{")\n' if evidence == 'corrupt' else '') +
+        'sys.exit(137)\n')
+    adapter.chmod(0o755)
+    routing_record = Path(env['FM_BUILD_LOCK_INSTALL_DIR']) / 'boat-route'
+    loaded = json.loads(routing_record.read_text())
+    loaded['bin'] = str(adapter_bin)
+    routing_record.write_text(json.dumps(loaded))
+    marker = p / 'local-ran'
+    r = run(work, env, command=('touch', str(marker)))
+    assert r.returncode == 137 and not marker.exists(), (r.returncode, r.stderr)
+    assert 'refusing local retry' in r.stderr
+print('ok - missing and corrupt final results cannot authorize duplicate local execution')
+
+for state_kind, cleanup in (('execution-unknown', 'deleted'), ('completed', 'pending')):
+    p, work, config, state, env = case('owned-uncertain-' + state_kind, declaration=DECLARED)
+    assert publish(config, env).returncode == 0
+    adapter_bin = p / 'adapter-bin'
+    adapter_bin.mkdir()
+    adapter = adapter_bin / 'fm-boat-run.sh'
+    document = dict(kind=state_kind, remote_exit=0, adapter_exit=0, cleanup=cleanup,
+                    provider='boat', lease=dict(state='busy', owner=dict(
+                        home=str(state.parent.parent), task='fixture-task')))
+    adapter.write_text('#!/usr/bin/env python3\nimport json,sys\nfrom pathlib import Path\n'
+        'output=Path(sys.argv[sys.argv.index("--output")+1]); output.mkdir(parents=True)\n'
+        '(output/"result.json").write_text(json.dumps(%r))\n' % document)
+    adapter.chmod(0o755)
+    routing_record = Path(env['FM_BUILD_LOCK_INSTALL_DIR']) / 'boat-route'
+    loaded = json.loads(routing_record.read_text())
+    loaded['bin'] = str(adapter_bin)
+    routing_record.write_text(json.dumps(loaded))
+    marker = p / 'local-ran'
+    r = run(work, env, command=('touch', str(marker)))
+    assert r.returncode == 74 and not marker.exists(), (r.returncode, r.stderr)
+    assert 'refusing local retry' in r.stderr
+print('ok - owned execution uncertainty and pending cleanup refuse duplicate local execution')
 
 ORCHESTRATOR = '#!/usr/bin/env bash\nwhile [ "$1" != -- ]; do shift; done\nshift\n"$@"\nexit $?\n'
 for name, tool, flags, routed in (

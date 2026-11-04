@@ -139,6 +139,20 @@ assert not local.should_retry_large(run('default', [], False))
 assert local.should_retry_large(run('default', ['node-1'], True))
 assert not local.should_retry_large(run('default', ['node-1'], False))
 assert not local.should_retry_large(run('large', ['node-1'], True))
+saved_home, saved_task = os.environ.get('FM_HOME'), os.environ.get('FM_TASK_ID')
+os.environ.update(FM_HOME='/fixture/home', FM_TASK_ID='fixture-task')
+for home, task, expected in (('/fixture/home', 'fixture-task', True),
+                             ('/sibling/home', 'fixture-task', False),
+                             ('/fixture/home', 'other-task', False)):
+    retained = run('default', ['node-1'], True)
+    retained['remote_result'].update(cleanup='retained', provider='boat',
+        lease=dict(state='idle', owner=dict(home=home, task=task)))
+    assert local.should_retry_large(retained) == expected
+for key, previous in (('FM_HOME', saved_home), ('FM_TASK_ID', saved_task)):
+    if previous is None:
+        os.environ.pop(key, None)
+    else:
+        os.environ[key] = previous
 # A run that produced no verdict is a failure of the check, not memory evidence.
 assert not local.should_retry_large({'size': 'default', 'summary': None})
 for kind in ('execution-unknown', 'adapter-error', 'unavailable'):
