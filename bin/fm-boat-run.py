@@ -102,12 +102,21 @@ def start_expiry(record):
 
 # A Linux subreaper adopts double-forked descendants even after setsid/env -i.
 # The token also identifies survivors from an interrupted prior reset.
-REMOTE_PROCESSES = r'''import ctypes,os,pathlib,shutil,signal,subprocess,sys,time
+REMOTE_PROCESSES = r'''import ctypes,json,os,pathlib,shutil,signal,subprocess,sys,time
 root=pathlib.Path(sys.argv[1])
 action,token=sys.argv[2:4]
 tag=('FM_BOAT_RUN_TOKEN='+token).encode()
 if not sys.platform.startswith('linux') or ctypes.CDLL(None,use_errno=True).prctl(36,1,0,0,0)!=0:
  raise RuntimeError('Linux child subreaper unavailable')
+class CleanupRefused(Exception): pass
+def kill_owned(pid,group=False):
+ try:
+  if group: os.killpg(pid,signal.SIGKILL)
+  else: os.kill(pid,signal.SIGKILL)
+ except ProcessLookupError: pass
+ except PermissionError as exc:
+  raise CleanupRefused(dict(operation='killpg' if group else 'kill',target=pid,
+                           effective_uid=os.geteuid(),errno=exc.errno)) from exc
 def reset():
  for attempt in range(30):
   found=set()
@@ -132,11 +141,9 @@ def reset():
     found.discard(pid)
    except ChildProcessError: break
   if not found: return
-  for pid in found:
-   try: os.kill(pid,signal.SIGKILL)
-   except ProcessLookupError: pass
+  for pid in found: kill_owned(pid)
   time.sleep(.1)
- raise RuntimeError('owned processes survived reset')
+ raise CleanupRefused(dict(operation='reset',reason='owned processes survived reset'))
 reset()
 if action=='prepare':
  if root.is_symlink(): root.unlink()
@@ -149,12 +156,18 @@ elif action=='run':
       'CI':'1','NEXT_TELEMETRY_DISABLED':'1','FM_BOAT_RUN_TOKEN':token}
  child=subprocess.Popen(['timeout','-k','15',sys.argv[4],*sys.argv[5:]],
                         cwd=root/'source',env=env,start_new_session=True)
- try: code=child.wait()
+ try:
+  code=child.wait()
+  (root/'exit').write_text(str(code if code>=0 else 128-code))
  finally:
-  try: os.killpg(child.pid,signal.SIGKILL)
-  except ProcessLookupError: pass
-  reset()
- (root/'exit').write_text(str(code if code>=0 else 128-code))
+  try:
+   kill_owned(child.pid,True)
+   reset()
+  except CleanupRefused as exc:
+   cleanup=dict(state='refused',**exc.args[0])
+   print('owned process cleanup refused: '+json.dumps(cleanup),file=sys.stderr)
+  else: cleanup=dict(state='confirmed')
+  (root/'process-cleanup').write_text(json.dumps(cleanup))
 '''
 
 
@@ -1482,6 +1495,19 @@ def run(args, boats):
                     raise Failure('remote exit marker missing or invalid')
                 code = int(status)
                 result.update(kind='completed', remote_exit=code)
+                if job.get('owner') and job.get('provider') == 'boat':
+                    status = boat.command(vm, ['cat', remote_root + '/process-cleanup'],
+                                          remote_timeout=30)
+                    try:
+                        cleanup = json.loads(status)
+                    except ValueError as exc:
+                        raise Failure('remote process cleanup marker invalid') from exc
+                    if (not isinstance(cleanup, dict) or
+                            cleanup.get('state') not in ('confirmed', 'refused')):
+                        raise Failure('remote process cleanup marker invalid')
+                    result['process_cleanup'] = cleanup
+                    if cleanup['state'] != 'confirmed':
+                        raise Failure('owned process cleanup refused; sandbox cannot be retained')
                 artifacts(boat, vm, args.artifact, output)
                 succeeded = True
             except Failure as exc:

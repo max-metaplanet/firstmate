@@ -100,6 +100,107 @@ def cleanup_task(env, task='reuse-task', generation='generation-1'):
 def creates(state):
     return sum(json.loads(line)[0] == 'new' for line in (state / 'calls.jsonl').read_text().splitlines())
 
+def permission_case(name, boundary, settings=None, reused=False):
+    p, state, env = case(name, settings)
+    env = managed(p, env)
+    if reused:
+        assert launch(p, env).returncode == 0
+        (p / 'output').rename(p / 'initial-output')
+    prefix = '''import errno,json,os,signal,subprocess,sys
+original_wait = subprocess.Popen.wait
+def waited(self, *args, **kwargs):
+    code = original_wait(self, *args, **kwargs)
+    if self.args[0] == 'timeout':
+        def denied(target, number):
+            owned = int((root/'source/child.pid').read_text())
+            assert number == signal.SIGKILL
+            assert os.getpgid(owned) == target if BOUNDARY == 'killpg' else target == owned
+            print(json.dumps(dict(injected=BOUNDARY, target=target,
+                effective_uid=os.geteuid(), survivor_uid=os.stat('/proc/'+str(owned)).st_uid)),
+                file=sys.stderr, flush=True)
+            raise PermissionError(errno.EPERM, 'injected signal permission refusal')
+        setattr(os, BOUNDARY, denied)
+    return code
+subprocess.Popen.wait = waited
+'''.replace('BOUNDARY', repr(boundary))
+    shim = p / 'signal-cli.py'
+    shim.write_text('''import runpy,subprocess,sys
+fixture = sys.argv.pop(1)
+original_popen = subprocess.Popen
+def start(argv, *args, **kwargs):
+    if len(argv) > 4 and argv[:2] == ['python3', '-c'] and argv[4] == 'run':
+        argv = list(argv)
+        argv[2] = PREFIX + argv[2]
+    return original_popen(argv, *args, **kwargs)
+subprocess.Popen = start
+runpy.run_path(fixture, run_name='__main__')
+'''.replace('PREFIX', repr(prefix)))
+    (p / 'boat').write_text('#!/bin/sh\nexec python3 ' + shlex.join(
+        [str(shim), str(fixture), str(state)]) + ' "$@"\n')
+    survivor = 'sleep 2' if boundary == 'killpg' else 'setsid env -i PATH="$PATH" sleep 2'
+    r = launch(p, env, 'echo dispatch >> dispatched; echo preserved-output; ' +
+               survivor + ' >/dev/null 2>&1 & echo $! > child.pid; exit 7')
+    remote = state / 'bx_fixture0/fm-job/source'
+    assert (remote / 'dispatched').read_text() == 'dispatch\n'
+    calls = [json.loads(line) for line in (state / 'calls.jsonl').read_text().splitlines()]
+    assert creates(state) == 1
+    assert sum(call[0] == 'exec' and '--stream' in call for call in calls) == (2 if reused else 1)
+    assert all(call[call.index('--ttl') + 1] == '7200' for call in calls if call[0] == 'new')
+    pid = int((remote / 'child.pid').read_text())
+    path = Path('/proc') / str(pid) / 'stat'
+    deadline = time.monotonic() + 4
+    while path.exists() and time.monotonic() < deadline:
+        if path.read_text().rsplit(')', 1)[1].split()[0] == 'Z':
+            break
+        time.sleep(.05)
+    assert not path.exists() or path.read_text().rsplit(')', 1)[1].split()[0] == 'Z', pid
+    return p, state, env, r
+
+if sys.platform.startswith('linux'):
+    sentinel = subprocess.Popen(['sleep', '90'])
+    try:
+        for boundary in ('killpg', 'kill'):
+            for reused in (False, True):
+                p, state, env, r = permission_case('permission-' + boundary + '-' + str(reused),
+                                                  boundary, reused=reused)
+                evidence = result(p)
+                assert r.returncode == 74 and r.stdout == b'preserved-output\n', (r.stderr, evidence)
+                assert evidence['kind'] == 'completed' and evidence['remote_exit'] == 7, evidence
+                assert evidence['reused'] == reused and evidence['cleanup'] == 'deleted', evidence
+                cleanup = evidence['process_cleanup']
+                assert cleanup['state'] == 'refused' and cleanup['operation'] == boundary, cleanup
+                assert cleanup['errno'] == 1 and cleanup['effective_uid'] == os.geteuid(), cleanup
+                assert cleanup['target'] > 0 and evidence['lease']['state'] != 'idle', evidence
+                assert b'injected' in (p / 'output/command.log').read_bytes()
+                assert sentinel.poll() is None
+                calls = [json.loads(line) for line in (state / 'calls.jsonl').read_text().splitlines()]
+                assert [call[1] for call in calls if call[0] == 'delete'] == [evidence['vm_id']]
+                empty(state)
+        print('ok - injected post-wait group and adopted-child signal refusal preserves exit/output, deletes exact leases and never retries', flush=True)
+
+        p, state, env, r = permission_case('permission-no-terminal', 'killpg',
+                                           {'missing_terminal': True})
+        assert r.returncode == 74 and result(p)['kind'] == 'execution-unknown', (r.stderr, result(p))
+        assert result(p)['remote_exit'] is None and result(p)['cleanup'] == 'deleted'
+        assert b'preserved-output' in (p / 'output/command.log').read_bytes()
+        empty(state)
+        print('ok - missing terminal evidence remains unknown after signal refusal and confirmed deletion', flush=True)
+
+        p, state, env, r = permission_case('permission-delete-failed', 'killpg',
+                                           {'delete_failed': True})
+        evidence = result(p)
+        assert r.returncode == 70 and evidence['cleanup'] == 'pending', (r.stderr, evidence)
+        assert evidence['kind'] == 'completed' and evidence['remote_exit'] == 7, evidence
+        job = json.loads(next((state / 'jobs').glob('*.json')).read_text())
+        assert job['lease_state'] != 'idle' and job['ttl'] == 7200, job
+        (state / 'fixture.json').write_text('{}')
+        assert reap(env).returncode == 0 and creates(state) == 1
+        empty(state)
+        print('ok - unconfirmed deletion quarantines the lease and reap deletes it without execution', flush=True)
+    finally:
+        sentinel.terminate()
+        sentinel.wait()
+
 def launch_lost_response(p, state, env, fault):
     driver = p / 'lost-response.py'
     driver.write_text('''import importlib.util, pathlib, subprocess, sys, time
@@ -322,6 +423,7 @@ if sys.platform.startswith('linux'):
     assert r.returncode == 0, r.stderr
     first = result(p)
     assert first['cleanup'] == 'retained' and not first['reused'], first
+    assert first['process_cleanup'] == {'state': 'confirmed'}, first
     pids = [int(line) for line in r.stdout.splitlines()]
     for pid in pids:
         path = Path('/proc') / str(pid) / 'stat'
@@ -331,6 +433,7 @@ if sys.platform.startswith('linux'):
     r = next_run(p, env, 'test ! -e leftover && test ! -e "$HOME/cache" && cat tracked.txt')
     assert r.returncode == 0 and r.stdout == b'fresh second source\n', (r.returncode, r.stderr, r.stdout)
     assert result(p)['reused'] and result(p)['vm_id'] == first['vm_id'], result(p)
+    assert result(p)['process_cleanup'] == {'state': 'confirmed'}, result(p)
     assert creates(state) == 1
     assert reap(env).returncode == 0 and json.loads((state / 'fake-vms.json').read_text())
     assert cleanup_task(env).returncode == 0
@@ -344,6 +447,7 @@ if sys.platform.startswith('linux'):
     env = managed(p, env)
     r = launch(p, env, 'setsid env -i PATH="$PATH" sh -c \'sleep 90 >/dev/null 2>&1 & echo $!\'')
     assert r.returncode == 0, r.stderr
+    assert result(p)['process_cleanup'] == {'state': 'confirmed'}, result(p)
     pid = int(r.stdout.strip())
     path = Path('/proc') / str(pid) / 'stat'
     alive = path.exists() and not path.read_text().split(') ')[1].startswith('Z')
