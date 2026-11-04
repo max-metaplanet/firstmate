@@ -1214,32 +1214,36 @@ def run(args, boats):
         owner = task_owner(boat.state.parent.parent, os.environ.get('FM_TASK_ID'), root)
         if owner:
             result['lease'] = dict(owner=owner, state='busy', id=job_path(boat.state, owner).stem)
+
+        def admit_available():
+            nonlocal boat
+            result['kind'] = 'unavailable'
+            try:
+                try:
+                    boat = admit(eligible, job, record)
+                except Failure as exc:
+                    if job['create_started'] or exc.code not in (69, 75):
+                        raise
+                    result['boat_unavailable'] = str(exc)
+                    key_file = upstash_key_file()
+                    if not key_file.exists():
+                        raise
+                    boat = Upstash(boat.state, key_file)
+                    job.update(owner=None, ttl=args.timeout + 900)
+                    result.pop('lease', None)
+                    result.update(provider='upstash', actual_size='small',
+                                  resources=dict(cpu=2, memory_gib=4, disk_gib=10))
+                    boat.admit(job, record, args, upload_bytes)
+            finally:
+                if job.get('account_key_file') and job.get('provider') != 'upstash':
+                    boat = next(b for b in boats if str(b.account.key_file) == job['account_key_file'])
+
         with allocation(args, boats, owner) as (boat, job, record, reused):
             succeeded = False
             try:
                 result['kind'] = 'unavailable'
-                try:
-                    try:
-                        if not reused:
-                            boat = admit(eligible, job, record)
-                    except Failure as exc:
-                        if job['create_started'] or exc.code not in (69, 75):
-                            raise
-                        result['boat_unavailable'] = str(exc)
-                        # A missing optional key preserves the original Boat
-                        # refusal and exit classification for existing callers.
-                        key_file = upstash_key_file()
-                        if not key_file.exists():
-                            raise
-                        boat = Upstash(boat.state, key_file)
-                        job.update(owner=None, ttl=args.timeout + 900)
-                        result.pop('lease', None)
-                        result.update(provider='upstash', actual_size='small',
-                                      resources=dict(cpu=2, memory_gib=4, disk_gib=10))
-                        boat.admit(job, record, args, upload_bytes)
-                finally:
-                    if job.get('account_key_file') and job.get('provider') != 'upstash':
-                        boat = next(b for b in boats if str(b.account.key_file) == job['account_key_file'])
+                if not reused:
+                    admit_available()
                 vm = job['vm_id']
                 result.update(vm_id=vm, kind='adapter-error', reused=reused,
                               creates=0 if reused else 1)
@@ -1251,11 +1255,11 @@ def run(args, boats):
                         raise
                     boat.cleanup(job, record)
                     job = fresh_job(args, None)
-                    boat = admit(eligible, job, record)
+                    admit_available()
                     vm = job['vm_id']
                     reused = False
-                    result.update(vm_id=vm, reused=False, creates=result['creates'] + 1,
-                                  reuse_fallback=True)
+                    result.update(vm_id=vm, kind='adapter-error', reused=False,
+                                  creates=result['creates'] + 1, reuse_fallback=True)
                     prepare_source(boat, job, args, upload, digest, push_timeout, False)
                 command = shlex.join(args.command)
                 remote = (f'cd {remote_root}/source || exit 125; '

@@ -191,6 +191,41 @@ if sys.platform.startswith('linux'):
     assert r.returncode == 0, r.stderr
     print('ok - the ordinary worker routing path reuses a valid owned lease for successive commands')
 
+    for failure in ('bootstrap', 'snapshot'):
+        declaration = "smokeproj bootstrap='false' timeout=900\n" if failure == 'bootstrap' else DECLARED
+        p, work, config, state, env = case('owned-fallback-' + failure, declaration=declaration)
+        (state.parent / 'fixture-task.meta').write_text('endpoint_task_id=fixture-task\nkind=ship\n'
+            'spawn_gen=generation-1\nworktree=' + str(work) + '\n')
+        assert publish(config, env).returncode == 0
+        command = REPORT if failure == 'bootstrap' else (
+            'if [ -n "${CI:-}" ]; then echo "Snapshot missing" >&2; exit 1; fi; ' + REPORT)
+        for _ in range(2):
+            r = run(work, env, command=('bash', '-c', command))
+            assert r.returncode == 0 and not r.stdout.endswith('held=\n'), (r.stdout, r.stderr)
+            assert ('setup did not dispatch' if failure == 'bootstrap' else 'snapshot it may not write') in r.stderr
+        calls = [json.loads(line) for line in (state / 'calls.jsonl').read_text().splitlines()]
+        assert sum(call[0] == 'new' for call in calls) == 1
+        r = subprocess.run(['bash', str(repo / 'bin/fm-boat-run.sh'), 'cleanup-task',
+            '--task', 'fixture-task', '--generation', 'generation-1'],
+            env=dict(env, FM_HOME=str(state.parent.parent)), capture_output=True)
+        assert r.returncode == 0, r.stderr
+    print('ok - completed owned bootstrap and snapshot failures retain established local fallbacks')
+
+    for failure in ('prepare_failed', 'push_failed_once'):
+        p, work, config, state, env = case('owned-unavailable-' + failure, declaration=DECLARED)
+        (state.parent / 'fixture-task.meta').write_text('endpoint_task_id=fixture-task\nkind=ship\n'
+            'spawn_gen=generation-1\nworktree=' + str(work) + '\n')
+        assert publish(config, env).returncode == 0
+        assert run(work, env).returncode == 0
+        (state / 'fixture.json').write_text(json.dumps({failure: True, 'remaining': 0}))
+        r = run(work, env)
+        assert r.returncode == 0 and not r.stdout.endswith('held=\n'), (r.stdout, r.stderr)
+        assert 'Boat did not run it (unavailable' in r.stderr
+        calls = [json.loads(line) for line in (state / 'calls.jsonl').read_text().splitlines()]
+        assert sum(call[0] == 'new' for call in calls) == 1
+        assert json.loads((state / 'fake-vms.json').read_text()) == []
+    print('ok - routing permits local fallback after confirmed pre-execution lease deletion')
+
 else:
     print('skip - managed worker routing fixture requires Linux remote process semantics')
 

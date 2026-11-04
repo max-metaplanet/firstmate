@@ -815,18 +815,11 @@ def boat(settings, command, kind, home, bin_dir, root, inputs):
     except OSError:
         log = b""
     if dispatched.encode() not in log.splitlines():
-        if managed:
-            print('heavy-route: owned Boat dispatch unconfirmed; refusing local retry; evidence %s'
-                  % (output / 'result.json'), file=sys.stderr)
-            return 74
         return local("Boat setup did not dispatch the heavy command; "
                      "discarded remote stdout; evidence %s"
                      % (output / "result.json"), command)
     if kind in ("vitest", "orchestrator") and result["remote_exit"] != 0:
         if SNAPSHOT_UNWRITTEN.search(log):
-            if managed:
-                sys.stdout.buffer.write(finished.stdout)
-                return result['remote_exit']
             return local("Boat's vitest failed on a snapshot it may not write under CI; "
                          "discarded remote stdout", command)
     sys.stdout.buffer.write(finished.stdout)

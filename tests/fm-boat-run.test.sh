@@ -1276,6 +1276,38 @@ def upstash_calls(state):
     path = state / 'upstash-calls.jsonl'
     return [json.loads(line) for line in path.read_text().splitlines()] if path.exists() else []
 
+if sys.platform.startswith('linux'):
+    for failure in ('prepare_failed', 'push_failed_once'):
+        for fallback in ('upstash', 'local', 'disabled', 'no-key'):
+            p, state, env = upstash_case('reuse-' + failure + '-' + fallback, {'remaining': 20})
+            env = managed(p, env)
+            assert launch(p, env).returncode == 0
+            (state / 'fixture.json').write_text(json.dumps({failure: True, 'remaining': 0}))
+            if fallback == 'no-key':
+                (Path(env['HOME']) / '.config/upstash/box-api-key').unlink()
+                r = next_run(p, env)
+                assert r.returncode == 75 and result(p)['kind'] == 'unavailable', (r.stderr, result(p))
+                assert result(p)['cleanup'] == 'deleted'
+            elif fallback == 'upstash':
+                r = next_run(p, env, 'echo replacement')
+                assert r.returncode == 0 and r.stdout == b'replacement\n', r.stderr
+                assert result(p)['provider'] == 'upstash' and result(p)['cleanup'] == 'deleted'
+                assert [call['operation'] for call in upstash_calls(state)].count('create') == 1
+            else:
+                (state / 'upstash.json').write_text(json.dumps({'create_rejected': 429}))
+                env.update(LOCAL_ONLY='yes', FM_BUILD_LOCK_FILE=str(p / 'heavy.lock'),
+                           FM_BOAT_TEST_UNAVAILABLE_WAIT_SECS='0',
+                           FM_BOAT_TEST_LOCAL_FALLBACK='1' if fallback == 'local' else '0')
+                r = subprocess.run(['bash', str(repo / 'bin/fm-boat-test-wrapper.sh'),
+                    'if [ "${LOCAL_ONLY:-}" = yes ]; then touch local-ran; exit 23; fi; echo remote'],
+                    cwd=p / 'work', env=env, capture_output=True, timeout=30)
+                assert r.returncode == (23 if fallback == 'local' else 75), (r.returncode, r.stderr)
+                assert (p / 'work/local-ran').exists() == (fallback == 'local')
+                assert [call['operation'] for call in upstash_calls(state)].count('create') == 1
+            assert creates(state) == 1
+            empty(state)
+    print('ok - reset and upload failures preserve Boat, Upstash and permitted local admission order')
+
 p, state, env = upstash_case('observed-bundle', upstash_settings={'max_upload_bytes': 8 * 1024 * 1024})
 payload = os.urandom(69_209_507)
 (p / 'work/payload').write_bytes(payload)
