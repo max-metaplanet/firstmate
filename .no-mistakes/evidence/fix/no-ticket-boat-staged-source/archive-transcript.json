@@ -1,0 +1,224 @@
+[
+  {
+    "variant": "staged",
+    "history_depth": null,
+    "version": "before",
+    "exit": 69,
+    "stderr": "boat-offload: Boat key unavailable\n",
+    "archive_files": [
+      "tracked.txt"
+    ],
+    "result": {
+      "kind": "unavailable",
+      "remote_exit": null,
+      "cleanup": "deleted",
+      "swap_gib": 0,
+      "provider": "boat",
+      "requested_type": "default",
+      "actual_size": "default",
+      "history": "synthetic",
+      "source_head": "3674f002a071e90ce0ff4152fb293e3b5fcda96b",
+      "source_sha256": "34f8146330e4329992fcb1b54880519d02286308a2f6efdb62f28fe345d90e32",
+      "upload_bytes": 209,
+      "push_timeout_seconds": 300,
+      "boat_unavailable": "Boat key unavailable",
+      "execution_error": "Boat key unavailable",
+      "error": "Boat key unavailable",
+      "adapter_exit": 69
+    }
+  },
+  {
+    "variant": "staged",
+    "history_depth": null,
+    "version": "after",
+    "exit": 69,
+    "stderr": "boat-offload: Boat key unavailable\n",
+    "archive_files": [
+      "claim-writes.ts",
+      "offer-dates.ts",
+      "space tab\tnewline\n.ts",
+      "tracked.txt"
+    ],
+    "result": {
+      "kind": "unavailable",
+      "remote_exit": null,
+      "cleanup": "deleted",
+      "swap_gib": 0,
+      "provider": "boat",
+      "requested_type": "default",
+      "actual_size": "default",
+      "history": "synthetic",
+      "source_head": "3674f002a071e90ce0ff4152fb293e3b5fcda96b",
+      "source_sha256": "ddc0216600ee4fae0d189fceb330de58885dd4409899ebf2efb332974a6654fa",
+      "upload_bytes": 359,
+      "push_timeout_seconds": 300,
+      "boat_unavailable": "Boat key unavailable",
+      "execution_error": "Boat key unavailable",
+      "error": "Boat key unavailable",
+      "adapter_exit": 69
+    }
+  },
+  {
+    "variant": "boundaries",
+    "history_depth": null,
+    "version": "after",
+    "exit": 69,
+    "stderr": "boat-offload: skipped in-repo symlink: safe-link\nboat-offload: excluded allowlisted file with credential-looking content: .npmrc\nboat-offload: Boat key unavailable\n",
+    "archive_files": [
+      "claim-writes.ts",
+      "deleted.txt",
+      "offer-dates.ts",
+      "renamed.txt",
+      "space tab\tnewline\n.ts",
+      "untracked.ts"
+    ],
+    "result": {
+      "kind": "unavailable",
+      "remote_exit": null,
+      "cleanup": "deleted",
+      "swap_gib": 0,
+      "provider": "boat",
+      "requested_type": "default",
+      "actual_size": "default",
+      "history": "synthetic",
+      "source_head": "f6f258a9218b2b5257d28ca7e361952a66fa25f0",
+      "source_sha256": "45e033c9e276072f1e2d71d5f139c3957ccb79ba22eabed821f95398b8080590",
+      "upload_bytes": 481,
+      "push_timeout_seconds": 300,
+      "boat_unavailable": "Boat key unavailable",
+      "execution_error": "Boat key unavailable",
+      "error": "Boat key unavailable",
+      "adapter_exit": 69
+    }
+  },
+  {
+    "variant": "escape",
+    "history_depth": null,
+    "version": "after",
+    "exit": 2,
+    "stderr": "boat-offload: source refused: unsafe symlink target: escape\n",
+    "archive_files": [],
+    "result": {
+      "kind": "invalid",
+      "remote_exit": null,
+      "cleanup": "not-created",
+      "swap_gib": 0,
+      "provider": "boat",
+      "requested_type": "default",
+      "actual_size": "default",
+      "error": "source refused: unsafe symlink target: escape",
+      "adapter_exit": 2
+    }
+  },
+  {
+    "variant": "staged",
+    "history_depth": 1,
+    "version": "before",
+    "exit": 69,
+    "stderr": "boat-offload: Boat key unavailable\n",
+    "archive_files": [
+      "tracked.txt"
+    ],
+    "result": {
+      "kind": "unavailable",
+      "remote_exit": null,
+      "cleanup": "deleted",
+      "swap_gib": 0,
+      "provider": "boat",
+      "requested_type": "default",
+      "actual_size": "default",
+      "history": "screened",
+      "source_head": "f6f258a9218b2b5257d28ca7e361952a66fa25f0",
+      "source_sha256": "e13dcb144d4493f8c6ecdc8f556654a3136f81d78282fbbc62ce4035a7415398",
+      "upload_bytes": 1618,
+      "push_timeout_seconds": 300,
+      "boat_unavailable": "Boat key unavailable",
+      "execution_error": "Boat key unavailable",
+      "error": "Boat key unavailable",
+      "adapter_exit": 69
+    }
+  },
+  {
+    "variant": "staged",
+    "history_depth": 1,
+    "version": "after",
+    "exit": 69,
+    "stderr": "boat-offload: Boat key unavailable\n",
+    "archive_files": [
+      "claim-writes.ts",
+      "offer-dates.ts",
+      "space tab\tnewline\n.ts",
+      "tracked.txt"
+    ],
+    "result": {
+      "kind": "unavailable",
+      "remote_exit": null,
+      "cleanup": "deleted",
+      "swap_gib": 0,
+      "provider": "boat",
+      "requested_type": "default",
+      "actual_size": "default",
+      "history": "screened",
+      "source_head": "f6f258a9218b2b5257d28ca7e361952a66fa25f0",
+      "source_sha256": "b42904518979f54a0573548df1180bcdb03cd424bd79ac844bb34cb2d310aae9",
+      "upload_bytes": 1745,
+      "push_timeout_seconds": 300,
+      "boat_unavailable": "Boat key unavailable",
+      "execution_error": "Boat key unavailable",
+      "error": "Boat key unavailable",
+      "adapter_exit": 69
+    }
+  },
+  {
+    "variant": "boundaries",
+    "history_depth": 1,
+    "version": "after",
+    "exit": 69,
+    "stderr": "boat-offload: skipped in-repo symlink: safe-link\nboat-offload: excluded allowlisted file with credential-looking content: .npmrc\nboat-offload: Boat key unavailable\n",
+    "archive_files": [
+      "claim-writes.ts",
+      "deleted.txt",
+      "offer-dates.ts",
+      "renamed.txt",
+      "space tab\tnewline\n.ts",
+      "untracked.ts"
+    ],
+    "result": {
+      "kind": "unavailable",
+      "remote_exit": null,
+      "cleanup": "deleted",
+      "swap_gib": 0,
+      "provider": "boat",
+      "requested_type": "default",
+      "actual_size": "default",
+      "history": "screened",
+      "source_head": "f6f258a9218b2b5257d28ca7e361952a66fa25f0",
+      "source_sha256": "502dbeb0ee0da58f05235e1cca958251f90f711da2e8b2ac2074cd947d6d2394",
+      "upload_bytes": 1865,
+      "push_timeout_seconds": 300,
+      "boat_unavailable": "Boat key unavailable",
+      "execution_error": "Boat key unavailable",
+      "error": "Boat key unavailable",
+      "adapter_exit": 69
+    }
+  },
+  {
+    "variant": "escape",
+    "history_depth": 1,
+    "version": "after",
+    "exit": 2,
+    "stderr": "boat-offload: source refused: unsafe symlink target: escape\n",
+    "archive_files": [],
+    "result": {
+      "kind": "invalid",
+      "remote_exit": null,
+      "cleanup": "not-created",
+      "swap_gib": 0,
+      "provider": "boat",
+      "requested_type": "default",
+      "actual_size": "default",
+      "error": "source refused: unsafe symlink target: escape",
+      "adapter_exit": 2
+    }
+  }
+]
