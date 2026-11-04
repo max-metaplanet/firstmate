@@ -57,11 +57,16 @@ class Files:
         self.path(path).mkdir(parents=parents, exist_ok=parents)
 
     def upload(self, files):
-        event('upload')
+        event('upload', sizes=[Path(file['path']).stat().st_size for file in files])
         if settings().get('upload_error'):
-            raise BoxError('upstash_fixture_secret upload failed')
+            raise BoxError('upstash_fixture_secret upload failed', settings().get('upload_status'))
         for file in files:
+            if Path(file['path']).stat().st_size > settings().get('max_upload_bytes', 100_000_000):
+                raise BoxError('File exceeds maximum size of 100 MB', 400)
             shutil.copyfile(file['path'], self.path(file['destination']))
+            if settings().get('corrupt_upload'):
+                with self.path(file['destination']).open('r+b') as output:
+                    output.write(b'corrupt')
 
     def read(self, path, *, encoding=None):
         assert encoding == 'base64'
