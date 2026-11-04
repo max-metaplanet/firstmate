@@ -5,7 +5,8 @@
 #       [--input RELATIVE_FILE]... [--artifact RELATIVE_PATH]...
 #       [--timeout SECONDS] [--swap-gib 0..4]
 #       [--history-depth N | --history-input FILE]
-#       [--type default|large|xlarge] [--reuse-only] -- COMMAND [ARGS...]
+#       [--type default|large|xlarge] [--reuse-only] [--boat-account KEY_FILE]
+#       -- COMMAND [ARGS...]
 #   FM_HOME=/absolute/home fm-boat-run.sh reap
 #   FM_HOME=/absolute/home fm-boat-run.sh cleanup-task --task ID --generation SPAWN_GEN
 #   FM_HOME=/absolute/home fm-boat-run.sh caller-origin --worktree DIR
@@ -33,6 +34,15 @@
 # --reuse-only (also FM_BOAT_REUSE_ONLY=1) requires a current exact owned
 # compatible idle lease; it forbids fresh Boat/Upstash allocation and replacement
 # after reset or transfer failure. Existing ownership, TTL and cleanup guards apply.
+# --boat-account KEY_FILE selects one existing config/boat-keys account by its
+# absolute key-file path (tilde expansion is accepted), or the default key path
+# when config/boat-keys is absent. Relative or unknown paths fail before allocation.
+# Only that account may admit or reuse a VM. There is no other Boat account or
+# Upstash fallback. A lease on a different account/provider refuses until exact
+# cleanup-task confirms deletion. All configured keys still screen source input.
+# Admission refusals retain their exit code with result kind=refused, which
+# check-result classifies as adapter-failure, forbidding local fallback.
+# Without this option, ordered account and provider fallback remain unchanged.
 # A full minute/hour/day start window does not prevent an owned running lease.
 # Each run removes the entire job workspace, uploads screened fresh source,
 # and uses fresh HOME/TMPDIR directories. Linux child-subreaper adoption, process
