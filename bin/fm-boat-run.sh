@@ -33,9 +33,10 @@
 # Successful retained commands report cleanup=retained and lease={owner,state,id,
 # idle_expires,hard_expires}; only state=idle on an exact owned Boat lease is valid.
 # Cleanup=deleted remains actual confirmed deletion. Pending/unknown outcomes
-# never permit duplicate execution. Failed owned pre-command preparation permits
-# one replacement only after confirmed deletion, using Boat then optional Upstash
-# admission before the caller's permitted local fallback. Cleanup-task refuses active holders,
+# never permit duplicate execution. Failed pre-command preparation on a reused
+# owned lease permits one replacement only after confirmed deletion, using Boat
+# then optional Upstash admission before the caller's permitted local fallback.
+# Cleanup-task refuses active holders,
 # records a generation-closing tombstone, and deletes only that exact lease.
 # Reap preserves valid idle owned leases and recovers expired/abandoned records.
 # Requires python3 and Boat CLI 1.0.85+ on PATH (FM_BOAT_BIN may name a binary).
@@ -228,16 +229,21 @@
 # in OUTPUT/command.log and printed on completion. Artifacts are copied under
 # OUTPUT/artifacts even after command failure. Missing/unsafe artifacts fail.
 # Boat copies the prepared source.tar.gz with native single-file scp, without
-# Git directory selection or another tar stream. Exact SHA256 verification still
+# Git directory selection or another tar stream. Exact size and SHA256 verification
 # precedes extraction and execution. Transfer allows 90 seconds plus the archive
 # size at 128 KiB/s, with a 300-second minimum and a 600-second maximum
 # within the existing VM TTL margin.
 # This deadline is independent of --timeout, which bounds the remote command.
+# An scp timeout on a current owned Boat lease can proceed only when the same
+# bounded verification confirms the complete archive before extraction.
+# Fresh lease failures never allocate another sandbox; unknown user-command
+# outcomes never retry. Recovery does not extend the transfer deadline or TTL.
 # OUTPUT must be a new directory outside the source tree. result.json records
 # kind, remote_exit, source_head, source_sha256, vm_id and cleanup state, plus
 # history=synthetic|screened|fallback-synthetic and history_reason on fallback.
-# upload_bytes and push_timeout_seconds record the transfer budget. Unavailable
-# request errors name timeout, OS error or bad response and the exception class,
+# upload_bytes and push_timeout_seconds record the transfer budget.
+# upload_recovered=true records successful archive verification after scp timeout.
+# Unavailable request errors name timeout, OS error or bad response and the exception class,
 # without exception messages or output that could contain credentials.
 # A remote exit code is returned unchanged; 124 is the remote command timeout.
 # Adapter failures: 2 invalid input, 69 remote unavailable before execution,
