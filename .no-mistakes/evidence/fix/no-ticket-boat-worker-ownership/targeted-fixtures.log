@@ -1,0 +1,13 @@
+boat-test-wrapper: result.json: /tmp/boat-phase.gJilET/pipeline-binding/.fm-test-scratch/fm-boat-test.f9DqXH/boat-1/result.json
+boat-offload: excluded allowlisted file with credential-looking content: .npmrc
+boat-test-wrapper: synthetic empty Git base; real base unavailable, using core full-suite fallback
+committed
+FM_BOAT_PREPUSH_SUMMARY {"failed":["probe"],"oom":true}
+ok - task reuse saves a start despite exhausted start windows, refreshes source/HOME and kills owned sessions
+ok - legacy missing generation stays one-shot; partial, stale and ambiguous launch context fails before admission
+ok - wrapper consumes producer primary/auxiliary bindings, rejects foreign/stale/partial evidence and respects cleanup tombstones
+ok - proven pre-execution reset failure deletes the old lease before one ephemeral fallback
+ok - reset transport replacements retain exact ownership only after successful reset
+ok - confirmed transfer replacement retains exact owner for the next command
+ok - unconfirmed reset cleanup never permits fresh allocation
+ok - unknown reused execution never creates a second sandbox

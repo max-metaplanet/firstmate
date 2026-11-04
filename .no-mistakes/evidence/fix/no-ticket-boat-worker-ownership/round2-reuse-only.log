@@ -1,0 +1,5 @@
+waiting for a heavy slot (1 on this machine, held by pid 2871467)
+ok - reuse-only allows exact-owner execution and zero replacement allocations
+ok - prepush and wrapper execute exact-owner reuse without new starts
+
+Actual child exit: 0
