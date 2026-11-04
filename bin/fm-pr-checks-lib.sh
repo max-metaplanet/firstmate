@@ -3,7 +3,8 @@
 # Source this library; callers set PR_OWNER and PR_REPO from a validated URL.
 # github_read_required_contexts <base> reads classic protection and effective
 # rulesets, retaining producer bindings and errors in FM_PR_GITHUB_REQUIRED{,_ERROR}.
-# github_checks_not_green <pr-json> <requirements-json> emits pending/red TAB name
+# github_checks_not_green <pr-json> <requirements-json> [pending-waivers=false]
+# emits pending/red TAB name
 # for required contexts; github_required_checks_missing also requires the
 # current head's producers for app-bound requirements. When no requirements are
 # configured, every reported check counts except a name/context containing the
@@ -79,12 +80,16 @@ github_branch_rules_unavailable_on_plan() {
 # waiting, and in-progress runs, even beside older completed failures or skips.
 # Completed failures are judged only after every run has settled.
 # PENDING and EXPECTED status contexts are pending independently.
+# With pending-waivers=true, only recognized unfinished states with no conclusion
+# are pending, and an unsuperseded completed non-green run makes its name red
+# even beside an unfinished rerun. This keeps a pending waiver from hiding a
+# failure without changing CI waits' treatment of reruns.
 # That distinction is what lets the
 # freshness re-verify wait for the lanes the branch update re-triggered without
 # a second check evaluator, while a red check refuses either way.
 github_checks_not_green() {
-  local json=$1 required=$2
-  printf '[%s,%s]\n' "$required" "$json" | jq -r '
+  local json=$1 required=$2 pending_waivers=${3:-false}
+  printf '[%s,%s]\n' "$required" "$json" | jq -r --argjson pending_waivers "$pending_waivers" '
     def settled_at:
       if type == "string" and test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$")
       then . else null end;
@@ -105,6 +110,9 @@ github_checks_not_green() {
               kind: "check_run",
               name: (.name // ""),
               completed: (.status == "COMPLETED"),
+              pending: ((.name // "") != "" and .conclusion == null
+                and (.status == "QUEUED" or .status == "WAITING" or .status == "IN_PROGRESS"
+                  or .status == "PENDING" or .status == "REQUESTED")),
               ok: (.status == "COMPLETED" and (.conclusion == "SUCCESS" or .conclusion == "NEUTRAL" or .conclusion == "SKIPPED")),
               at: (.startedAt | settled_at)
             }
@@ -114,7 +122,8 @@ github_checks_not_green() {
               kind: "status_context",
               name: (.context // ""),
               ok: (.state == "SUCCESS"),
-              pending: (.state == "PENDING" or .state == "EXPECTED")
+              pending: ((.state == "PENDING" or .state == "EXPECTED")
+                and ($pending_waivers == false or (.__typename == "StatusContext" and (.context // "") != "")))
             }
           end
       ]
@@ -140,7 +149,10 @@ github_checks_not_green() {
                 or ([.reds[] | .at] | max) >= .newest_green
               )
             )
-          | {name, pending: any(.reds[]; .completed | not)}
+          | .newest_green as $green
+          | {name, pending: (if $pending_waivers then
+              all(.reds[]; .pending or (.completed and .at != null and $green != null and .at < $green))
+            else any(.reds[]; .completed | not) end)}
         )
       )
     | (if .pending then "pending" else "red" end)

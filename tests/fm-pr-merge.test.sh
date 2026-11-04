@@ -5186,8 +5186,7 @@ test_allow_missing_waives_only_the_named_unreported_check() {
   assert_no_grep 'pr merge' "$case_dir/gh.log" \
     "allow-missing-other-red: gh pr merge ran with a red check"
 
-  # The waiver covers absence only: a required check that did report red is
-  # not missing, and waiving it takes --allow-red.
+  # A completed red check requires the separate --allow-red waiver.
   case_dir=$(make_case github-allow-missing-names-red)
   add_gh_mocks "$case_dir" "$head"
   write_github_red_json "$case_dir" "$head" lint
@@ -5282,8 +5281,9 @@ test_allow_missing_waives_running_checks_by_exact_name() {
       "$(check_run Lint1 "$state" -)" \
       "$(check_run 'Behavior portable parallel1' IN_PROGRESS -)" \
       "$(status_context external PENDING)"
+    write_github_required "$case_dir" classic:Lint1 'ruleset:Behavior portable parallel1' ruleset:external ruleset:unreported
     run_required_case "$case_dir" 104 --allow-missing Lint1 \
-      --allow-missing 'Behavior portable parallel1' --allow-missing external
+      --allow-missing 'Behavior portable parallel1' --allow-missing external --allow-missing unreported
     expect_code 0 "$RC" "named pending $state should merge: $(cat "$case_dir/stderr")"
     assert_logged_gh_merge "$case_dir" 104 example/repo --squash
   done
@@ -5308,6 +5308,15 @@ test_allow_missing_waives_running_checks_by_exact_name() {
     expect_code 1 "$RC" "pending $state should refuse"
     assert_no_grep 'pr merge' "$case_dir/gh.log" 'unwaived pending check reached the forge'
   done
+  case_dir=$(make_case allow-running-superseded-failure)
+  add_gh_mocks "$case_dir" "$head"
+  write_github_rollup_json "$case_dir" "$head" \
+    "$(check_run Lint1 COMPLETED FAILURE 2026-01-01T00:00:01Z)" \
+    "$(check_run Lint1 COMPLETED SUCCESS 2026-01-01T00:00:02Z)" \
+    "$(check_run Lint1 IN_PROGRESS - 2026-01-01T00:00:03Z)"
+  run_required_case "$case_dir" 104 --allow-missing Lint1
+  expect_code 0 "$RC" "a superseded failure must not invalidate a pending waiver: $(cat "$case_dir/stderr")"
+  assert_logged_gh_merge "$case_dir" 104 example/repo --squash
   pass 'pending waivers accumulate for exact names including spaces, and never persist across calls'
 }
 
@@ -5348,12 +5357,54 @@ test_allow_missing_rechecks_pending_waivers_before_merge() {
   jq '.mergeable = "UNKNOWN"' "$case_dir/github-view.json" > "$case_dir/pending.json"
   jq '.statusCheckRollup[0] |= (.status = "COMPLETED" | .conclusion = "FAILURE")' \
     "$case_dir/github-view.json" > "$case_dir/red.json"
-  stage_github_views "$case_dir" "$case_dir/pending.json" "$case_dir/red.json"
+  queue_github_views "$case_dir" "$case_dir/pending.json" "$case_dir/red.json"
   run_required_case "$case_dir" 106 --allow-missing Lint1 --allow-missing 'Behavior portable parallel1'
   expect_code 1 "$RC" 'a pending check that fails on re-read must refuse'
   assert_grep "check 'Lint1' is not green" "$case_dir/stderr" 'new failure was not reported'
   assert_no_grep 'pr merge' "$case_dir/gh.log" 'merged over a new failure'
   pass 'a pending waiver cannot cover a failure observed on the next live read'
+}
+
+test_allow_missing_preserves_evidence_head_and_authority_guards() {
+  local case_dir guard head=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  for guard in unrelated-red rules producers stale-producer rollup head held away; do
+    case_dir=$(make_case "allow-running-guard-$guard")
+    add_gh_mocks "$case_dir" "$head"
+    write_github_rollup_json "$case_dir" "$head" \
+      "$(check_run Lint1 IN_PROGRESS -)" \
+      "$(check_run 'Behavior portable parallel1' QUEUED -)"
+    case "$guard" in
+      unrelated-red)
+        write_github_rollup_json "$case_dir" "$head" \
+          "$(check_run Lint1 IN_PROGRESS -)" \
+          "$(check_run 'Behavior portable parallel1' QUEUED -)" \
+          "$(check_run other COMPLETED FAILURE)" ;;
+      rules) printf 'unreadable\n' > "$case_dir/github-required-rules-fail" ;;
+      producers|stale-producer)
+        jq '.protection.required_status_checks.checks[0].app_id = 15368' \
+          "$case_dir/github-branch.json" > "$case_dir/branch.json"
+        mv "$case_dir/branch.json" "$case_dir/github-branch.json"
+        if [ "$guard" = producers ]; then
+          printf '{}' > "$case_dir/github-runs.json"
+        else
+          printf '{"check_runs":[{"name":"Lint1","app":{"id":15368},"head_sha":"bbbb"}]}' \
+            > "$case_dir/github-runs.json"
+        fi ;;
+      rollup|head)
+        jq --arg field "$([ "$guard" = head ] && echo headRefOid || echo statusCheckRollup)" \
+          '.[$field] = null' "$case_dir/github-view.json" > "$case_dir/view.json"
+        mv "$case_dir/view.json" "$case_dir/github-view.json" ;;
+      held)
+        FM_HOME="$case_dir/home" FM_STATE_OVERRIDE="$case_dir/state" \
+          "$ROOT/bin/fm-captain-hold.sh" hold task-x1 --title 'Merge task' \
+          --reason 'checked: fixture requires approval' >/dev/null || fail 'hold setup failed' ;;
+      away) write_away_record "$case_dir" ;;
+    esac
+    run_required_case "$case_dir" 107 --allow-missing Lint1 --allow-missing 'Behavior portable parallel1'
+    [ "$RC" -ne 0 ] || fail "pending waiver bypassed $guard"
+    assert_no_grep 'pr merge' "$case_dir/gh.log" "pending waiver bypassed $guard at the forge"
+  done
+  pass 'multiple pending waivers preserve unrelated failures, unreadable evidence, live-head, hold, and away guards'
 }
 
 # --- the per-repository merge line ------------------------------------------
@@ -6055,6 +6106,10 @@ test_red_and_unreported_checks_are_reported_together
 test_unreadable_required_set_refuses
 test_allow_missing_waives_only_the_named_unreported_check
 test_allow_missing_follows_the_allow_red_rules
+test_allow_missing_waives_running_checks_by_exact_name
+test_allow_missing_never_waives_failed_or_unknown_checks
+test_allow_missing_rechecks_pending_waivers_before_merge
+test_allow_missing_preserves_evidence_head_and_authority_guards
 
 test_advisory_checks_never_block_merge
 test_pending_required_check_refuses_merge
