@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# fm-boat-run.sh - run one secret-free heavy command on an ephemeral Boat VM.
+# fm-boat-run.sh - run one secret-free heavy command on Boat, then Upstash Box.
 # Usage:
 #   FM_HOME=/absolute/home fm-boat-run.sh run --worktree DIR --output DIR
 #       [--input RELATIVE_FILE]... [--artifact RELATIVE_PATH]...
@@ -7,6 +7,44 @@
 #       [--type default|large|xlarge] -- COMMAND [ARGS...]
 #   FM_HOME=/absolute/home fm-boat-run.sh reap
 # Requires python3 and Boat CLI 1.0.85+ on PATH (FM_BOAT_BIN may name a binary).
+# Optional Upstash fallback requires upstash-box==0.4.0 in that Python and
+# ~/.config/upstash/box-api-key, readable only by its owner (mode 0600).
+# Reproducible instance-local SDK setup (no global interpreter changes):
+#   python3 -m venv "$FM_HOME/state/boat-offload/upstash-sdk-0.4.0"
+#   "$FM_HOME/state/boat-offload/upstash-sdk-0.4.0/bin/python3" -m pip install \
+#       --index-url https://pypi.org/simple upstash-box==0.4.0
+# This entry point automatically uses that interpreter when installed, so
+# existing worker commands need no changes. Otherwise it uses python3 on PATH.
+# The key file's presence enables fallback after all eligible Boat accounts
+# decline before create. Missing key preserves the original Boat refusal.
+# Uses the declared free account only: small ephemeral boxes (2 CPU, 4 GB RAM,
+# 10 GB disk), no agent, snapshots, keep-alive, paid sizes or plan changes.
+# This is reduced capacity versus Boat default. Explicit large/xlarge or swap
+# requests cannot fall back to Upstash small. Source archives over 100 MB
+# also cannot use Upstash. The official per-file upload limit is 100 MB.
+# Account list and environment reads consume no sandbox compute. Nonempty
+# account environments fail closed, never get cleared or logged. Published
+# free limits are 10 concurrent boxes and 5 CPU core-hours/month. The SDK
+# exposes no account plan/remaining-CPU endpoint; these are published defaults,
+# not observed account headroom. The provider enforces account-wide limits.
+# Under the existing admission lock, this home reserves 2*(TTL+180) CPU seconds
+# before each Upstash create, up to 5 hours/UTC month. Confirmed create rejection
+# refunds that reservation; early deletion and unknown outcomes do not.
+# A run that could cross a UTC month boundary declines until the new month.
+# That conservative local reservation is not measured provider usage and does
+# not include other homes/clients. It never authorizes paid overage.
+# Upstash creates once with TTL=timeout+900, records provider/key-path/name/id,
+# and confirms deletion by a complete list; reap recovers only recorded names
+# and labels. Unknown creates/execution never trigger another provider/local
+# command, even after successful cleanup. Provider rejection HTTP 402/429
+# means budget/capacity unavailable; 401/403 means credential unavailable.
+# Other create failures are unknown allocations, retained for cleanup/reap.
+# Local fallback remains entirely the caller's policy after both remotes
+# report unavailable. Result fields are unchanged, with additive provider,
+# requested_type, actual_size and Upstash resources evidence.
+# SDK reference: https://github.com/upstash/box/tree/main/packages/python-sdk
+# Limits: https://upstash.com/pricing/box
+# Ephemeral TTL maximum is 259200 seconds; this adapter uses at most 3600.
 # Accounts: optional FM_HOME/config/boat-keys, one key-file path per line,
 # followed by optional live_cap=N pending_cap=N daily_cap=N environment=NAME
 # cleanup_confirmation=deletion|list and types=TYPE[,TYPE...] fields.
@@ -89,8 +127,11 @@
 # and path or commit ID, never content. Missing origin/main and other Git errors
 # still fail the run. Current-source screening and refusal behavior is unchanged.
 # Logs name the withheld count and one path, never blob or commit content.
-# Run from the worktree root remotely at /home/user/fm-job/source. Install remote
+# Run from the worktree root remotely at /home/user/fm-job/source on either
+# provider, preserving existing absolute command paths. Install remote
 # dependencies explicitly in COMMAND; native local node_modules never travel.
+# Upstash prepares writable /home/user and fm-job with root or passwordless
+# sudo -n install. Failure to prepare them is a setup error, never unavailable.
 # --timeout defaults to 1800, range 1..2700; VM TTL is timeout+900 (<=3600).
 # --type defaults to default and passes Boat's machine type names unchanged.
 # Only accounts permitting that type are considered; no permitting account is
@@ -111,7 +152,7 @@
 # request errors name timeout, OS error or bad response and the exception class,
 # without exception messages or output that could contain credentials.
 # A remote exit code is returned unchanged; 124 is the remote command timeout.
-# Adapter failures: 2 invalid input, 69 Boat unavailable before execution,
+# Adapter failures: 2 invalid input, 69 remote unavailable before execution,
 # 75 capacity/start budget exhausted, 74 transfer/transport/result failure,
 # 70 cleanup unconfirmed, 128+signal interruption. Local fallback is safe ONLY
 # when result.json kind is unavailable; remote commands can also exit 69/75.
@@ -142,4 +183,8 @@
 # No login,
 # org selection, payment, account configuration or app credentials are changed.
 set -euo pipefail
-exec python3 "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/fm-boat-run.py" "$@"
+python=python3
+if [[ ${FM_HOME:-} == /* && -x "$FM_HOME/state/boat-offload/upstash-sdk-0.4.0/bin/python3" ]]; then
+  python="$FM_HOME/state/boat-offload/upstash-sdk-0.4.0/bin/python3"
+fi
+exec "$python" "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/fm-boat-run.py" "$@"

@@ -2,7 +2,7 @@
 """Remote half of the pre-ready heavy-test check (bin/fm-boat-prepush.sh).
 
 This file never runs on the operator's machine. bin/fm-boat-prepush.py ships it
-to a disposable Boat VM inside the one command string the Boat test wrapper
+to a disposable remote machine inside the one command string the Test wrapper
 takes, writes it NEXT TO the uploaded source rather than inside it, and runs it
 with the source tree as the working directory. Keeping it outside the source
 tree is deliberate: a helper written into the tree becomes an unreferenced file
@@ -627,11 +627,9 @@ def install(source: Path, timeout: float = 600) -> dict:
     ], {}, source, timeout=timeout)
 
 
-# The only working directory a disposable Boat machine runs the command in
-# (bin/fm-boat-run.sh's header owns it). Asserting it is what stops this runner
-# executing a whole heavy test suite on the operator's own machine: the Boat
-# test wrapper falls back to local execution when Boat is unavailable, and that
-# fallback is safe for a single pipeline test command but never for this one.
+# bin/fm-boat-run.sh's header owns the remote working directory on both providers.
+# This guard also refuses local execution if invoked without the remote-only
+# wrapper setting enforced by bin/fm-boat-prepush.sh's local implementation.
 REMOTE_SOURCE = Path('/home/user/fm-job/source')
 
 

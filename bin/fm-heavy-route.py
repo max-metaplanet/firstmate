@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Send a worker's heavy command to Boat first, or to the local heavy slot.
+"""Send a worker's heavy command through the remote adapter or local heavy slot.
 
 A heavy command is one whose peak memory can exhaust a small machine, and
 fm-build-lock.js owns which command that is. Running it locally costs this
 machine one of its few heavy places; running it on an ephemeral Boat VM costs
 it nothing. So a declared project's worker-started heavy command goes to Boat
 first, and the local heavy slot plus memory cap is the fallback.
+fm-boat-run.sh owns optional Upstash fallback before the local routing decision.
 
   fm-heavy-route.py --kind KIND -- COMMAND [ARGS...]
       route one heavy command, already classified by the preload
@@ -742,7 +743,7 @@ def orchestrated(command=None):
 
 
 def boat(settings, command, kind, home, bin_dir, root, inputs):
-    """Run the heavy command on one ephemeral Boat VM. Returns an exit code, or None."""
+    """Run the heavy command through the remote adapter. Return an exit code or None."""
     scratch = root.parent / SCRATCH
     try:
         scratch.mkdir(exist_ok=True)

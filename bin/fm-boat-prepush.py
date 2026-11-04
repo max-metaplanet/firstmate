@@ -124,10 +124,11 @@ def attempt(worktree: Path, output: Path, size: str, timeout: int,
     env = dict(os.environ)
     env['FM_BOAT_TYPE'] = size
     env['FM_BOAT_TEST_TIMEOUT'] = str(timeout)
+    env['FM_BOAT_TEST_LOCAL_FALLBACK'] = '0'
     if history_depth is not None:
         env['FM_BOAT_TEST_HISTORY_DEPTH'] = str(history_depth)
     started = time.monotonic()
-    plan, lanes, summary, unavailable = None, [], None, False
+    plan, lanes, summary = None, [], None
     command_log = None
     with log.open('w', encoding='utf-8') as sink:
         process = subprocess.Popen(
@@ -139,8 +140,6 @@ def attempt(worktree: Path, output: Path, size: str, timeout: int,
             sys.stderr.write(line)
             if line.startswith('boat-test-wrapper: result.json: '):
                 command_log = Path(line.split(': ', 2)[2].strip()).with_name('command.log')
-            if 'Boat unavailable' in line:
-                unavailable = True
             match = MARKER.match(line.rstrip('\n'))
             if not match:
                 continue
@@ -183,20 +182,28 @@ def attempt(worktree: Path, output: Path, size: str, timeout: int,
                 summary = document
     sys.stderr.flush()
     wall = round(time.monotonic() - started, 2)
+    remote_result = {}
+    if command_log is not None:
+        try:
+            remote_result = json.loads(command_log.with_name('result.json').read_text())
+        except (OSError, ValueError):
+            pass
+    provider = remote_result.get('provider', 'unknown')
     return {
         'size': size,
+        'provider': provider,
+        'actual_size': remote_result.get('actual_size', size),
+        'resources': remote_result.get('resources'),
+        'remote_result': remote_result,
         'adapter_exit': adapter_exit,
         'wall_s': wall,
-        'dollars_estimate': round(wall * DOLLARS_PER_SECOND * MULTIPLIER[size], 5),
+        'dollars_estimate': (round(wall * DOLLARS_PER_SECOND * MULTIPLIER[size], 5)
+                             if provider == 'boat' else None),
         'log': str(log),
         'plan': plan,
         'lanes': lanes,
         'summary': summary,
-        # The wrapper falls back to the local machine when Boat is unavailable.
-        # That is right for a single pipeline test command and wrong for a whole
-        # heavy suite, so the remote runner refuses it and this records why the
-        # attempt produced no verdict.
-        'boat_unavailable': unavailable,
+        'boat_unavailable': remote_result.get('kind') == 'unavailable',
     }
 
 
@@ -220,17 +227,26 @@ def should_retry_large(run: dict) -> bool:
     rather than evidence about memory, so it never buys one either.
     """
     ok, failed, oom_only = verdict(run)
-    return bool(not ok and failed and oom_only and run['size'] == 'default')
+    result = run.get('remote_result') or {}
+    completed = (result.get('kind') == 'completed' and result.get('remote_exit') == 0
+                 and result.get('cleanup') == 'deleted' and not result.get('error'))
+    return bool(completed and not ok and failed and oom_only and run['size'] == 'default')
+
+
+def machine(run):
+    return '%s %s' % (run.get('provider', 'boat'), run.get('actual_size', run['size']))
 
 
 def report(runs: list, out) -> None:
     final = runs[-1]
     out.write('\npre-ready heavy-test check\n')
     for run in runs:
-        out.write('  attempt on the %s machine: %.1f min, about $%.5f (estimate), '
-                  'adapter exit %d\n'
-                  % (run['size'], run['wall_s'] / 60, run['dollars_estimate'],
-                     run['adapter_exit']))
+        estimate = run['dollars_estimate']
+        cost = ('about $%.5f (estimate)' % estimate if estimate is not None else
+                'free-plan CPU allowance; provider usage not measured'
+                if run.get('provider') == 'upstash' else 'provider compute usage unavailable')
+        out.write('  attempt on the %s machine: %.1f min, %s, adapter exit %d\n'
+                  % (machine(run), run['wall_s'] / 60, cost, run['adapter_exit']))
         out.write('  full output: %s\n' % run['log'])
     plan = (final.get('plan') or {}).get('plan') or {}
     if plan:
@@ -277,7 +293,7 @@ def report(runs: list, out) -> None:
     ok, failed, _ = verdict(final)
     out.write('  verdict: %s (%s machine)\n'
               % ('green' if ok else 'RED - ' + ', '.join(failed) if failed
-                 else 'RED - the check produced no verdict', final['size']))
+                 else 'RED - the check produced no verdict', machine(final)))
 
 
 def main(argv: list) -> int:

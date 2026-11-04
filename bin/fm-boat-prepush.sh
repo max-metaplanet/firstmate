@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # fm-boat-prepush.sh - run a pull request's heavy test lanes on one disposable
-# Boat machine before the pull request is marked ready for review.
+# Boat or fallback Upstash machine before the pull request is marked ready.
 # Usage:
 #   FM_HOME=/absolute/home fm-boat-prepush.sh [--worktree DIR] [--base REF]
 #       [--expected-head SHA] [--timeout SECONDS] [--history-depth N]
 #       [--output DIR]
 # Exit: 0 every selected lane passed or had only proven missing-history
-# failures, 1 a lane failed, the verdict was incomplete, or Boat failed,
+# failures, 1 a lane failed, the verdict was incomplete, or remote execution failed,
 # and 2 invalid input.
 #
 # WHAT IT CHECKS
@@ -36,6 +36,10 @@
 # exhaustion - a kernel cgroup kill, exit 137, or V8's own heap diagnostic - and
 # never for an ordinary assertion failure, a setup failure, or a mixed result.
 # The printed verdict always names the machine the verdict came from.
+# The adapter may use a free Upstash small box when Boat default is unavailable;
+# fm-boat-run.sh owns its lower resources, eligibility and limits. Large retries
+# remain Boat-only. Completed remote evidence and confirmed cleanup are required
+# before an OOM retry; unknown execution never buys another attempt.
 #
 # WHAT IT COSTS
 # One default-machine run of a sampled application change took roughly 18 to 26
@@ -43,13 +47,14 @@
 # heaviest sample took about 16 minutes. The per-run compute estimate was around
 # two cents. Those are single observations, and the printed dollar figure is an
 # estimate from elapsed time and Boat's published rate, never an invoice.
+# Upstash results omit the Boat dollar estimate and name the free CPU allowance.
 #
 # TRANSPORT
 # Source transfer, environment isolation, timeout, capacity, account selection
 # and cleanup all belong to fm-boat-run.sh, reached through
-# fm-boat-test-wrapper.sh, whose headers own those mechanics. Nothing here adds
-# a second transport, and no credential is sent: the lanes run with the public
-# dummy values the project's own workflows set.
+# fm-boat-test-wrapper.sh, whose headers own those mechanics.
+# Local fallback is explicitly disabled for this heavy gate, for both providers.
+# Lanes receive only the public dummy values set by the project's workflows.
 # --timeout and --history-depth forward to that adapter and keep its bounds.
 # Without --history-depth the remote Git history is the wrapper's synthetic
 # two-commit base, so a lane whose fixtures query real historical commits cannot
