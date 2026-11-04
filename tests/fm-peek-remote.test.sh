@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# fm-peek remote-secondmate capture routing.
+# fm-peek remote-secondmate capture routing, and its advisory-guard opt-out.
 #
 # A remote secondmate's pane lives on its own host. The old path resolved the
 # meta's "remote:<id>" window through the local backend adapters and handed it
@@ -11,6 +11,9 @@
 #      prints the remote pane tail; the local adapters are never consulted.
 #   2. An unreachable host fails loudly naming the host, without claiming the
 #      mate is dead.
+#   3. FM_PEEK_NO_GUARD does not run the advisory supervision guard at all, so
+#      a repeating background reader cannot claim its once-per-home
+#      announcement away from the real supervision session.
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -104,7 +107,44 @@ test_remote_peek_unreachable_fails_loudly_without_death_claim() {
   pass "fm-peek remote: an unreachable host fails loudly without a false death claim"
 }
 
+# A repeating background reader must not run the guard: its watcher-down
+# announcement is claimed once per home, so a reader that consumed it would
+# leave the real supervision session only the one-line reminder.
+test_peek_no_guard_does_not_run_the_guard() {
+  local dir fb home touched out marker
+  dir="$TMP_ROOT/peek-guard"; mkdir -p "$dir"
+  fb=$(make_stubs "$dir")
+  home=$(setup_remote_home peek-guard)
+  touched="$dir/tmux-touched"; : > "$touched"
+  marker="$home/state/.guard-watcher-stale-banner"
+
+  run_peek() {  # <stderr-file> [extra env assignments...]
+    local errors=$1; shift
+    env PATH="$fb:$PATH" \
+      FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" \
+      FM_SSH_BIN="$fb/fake-ssh" FM_FAKE_SSH_RC=0 \
+      FM_FAKE_REMOTE_CAPTURE='● the remote mate is mid-refactor' \
+      FM_FAKE_TMUX_TOUCHED="$touched" "$@" \
+      "$PEEK" rsm 20 2>"$errors"
+  }
+
+  # The opt-out runs first, so claiming the announcement would be visible.
+  out=$(run_peek "$dir/quiet.err" FM_PEEK_NO_GUARD=1)
+  assert_contains "$out" "the remote mate is mid-refactor" \
+    "the opt-out must still print the pane tail"
+  assert_not_contains "$(cat "$dir/quiet.err")" "SUPERVISION IS OFF" \
+    "FM_PEEK_NO_GUARD must not run the advisory guard"
+  [ ! -e "$marker" ] || fail "the opt-out claimed the guard's once-per-home announcement"
+
+  run_peek "$dir/guarded.err" >/dev/null
+  assert_contains "$(cat "$dir/guarded.err")" "SUPERVISION IS OFF" \
+    "the default reader still raises the alarm, so the opt-out assertion is not vacuous"
+  [ -e "$marker" ] || fail "the default reader should have claimed the announcement"
+  pass "fm-peek: FM_PEEK_NO_GUARD skips the advisory guard while the default raises and claims it"
+}
+
 test_remote_peek_reads_remote_pane
 test_remote_peek_unreachable_fails_loudly_without_death_claim
+test_peek_no_guard_does_not_run_the_guard
 
 echo "all fm-peek-remote tests passed"

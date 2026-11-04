@@ -8,6 +8,11 @@
 # capture (fm-remote-secondmate-control.sh), clamped to that command's
 # 100-line cap. An unreachable host or unreadable endpoint fails loudly naming
 # the host; the local backend adapters are never asked to read a remote target.
+# FM_PEEK_NO_GUARD=1 skips the advisory supervision guard, for a programmatic
+# reader nobody is watching. The guard announces a watcher-down episode once
+# per home, so a repeating background reader would claim that announcement and
+# leave the real supervision session only the one-line reminder. Interactive
+# diagnosis always wants the guard and is the default.
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -18,7 +23,7 @@ STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 # shellcheck source=bin/fm-backend.sh
 . "$SCRIPT_DIR/fm-backend.sh"
 
-"$SCRIPT_DIR/fm-guard.sh" || true
+[ "${FM_PEEK_NO_GUARD:-0}" = 1 ] || "$SCRIPT_DIR/fm-guard.sh" || true
 
 RAW_TARGET=$1
 N=${2:-40}

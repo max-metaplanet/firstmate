@@ -36,10 +36,10 @@ fm_backend_tmux_resolve_bare_selector() {  # <name>
     || { echo "error: no window named $name" >&2; return 1; }
 }
 
-# fm_backend_tmux_capture: bounded plain-text pane capture. Mirrors
-# fm-peek.sh's and fm-watch.sh's `tmux capture-pane -p -t "$T" -S -"$N"`.
+# fm_backend_tmux_capture: bounded plain-text pane capture. Join soft-wrapped
+# rows so downstream redaction sees complete values, including secret suffixes.
 fm_backend_tmux_capture() {  # <target> <lines>
-  tmux capture-pane -p -t "$1" -S -"$2"
+  tmux capture-pane -p -J -t "$1" -S -"$2"
 }
 
 # fm_backend_tmux_visible_capture: the visible viewport only. `-S -0` starts at
