@@ -8,9 +8,23 @@
 #       [--type default|large|xlarge] -- COMMAND [ARGS...]
 #   FM_HOME=/absolute/home fm-boat-run.sh reap
 #   FM_HOME=/absolute/home fm-boat-run.sh cleanup-task --task ID --generation SPAWN_GEN
-# Exact worker ownership comes from FM_TASK_ID and this home's state/ID.meta,
+#   FM_HOME=/absolute/home fm-boat-run.sh caller-origin --worktree DIR
+#   FM_HOME=/absolute/home fm-boat-run.sh check-result --worktree DIR --result FILE --exit CODE
+# Caller-origin emits the four-field JSON for no-mistakes --caller-origin-file.
+# It requires the spawn producer's frozen FM_TASK_GENERATION. Capture before a
+# new run; reattachments omit that flag. Check-result prints completed,
+# unavailable or adapter-failure using this same ownership validator.
+# Exact worker ownership comes from FM_TASK_ID, frozen FM_TASK_GENERATION,
+# and this home's state/ID.meta,
 # matching endpoint_task_id, ship/scout kind, spawn_gen and canonical worktree.
-# Unattributed or ambiguous calls remain create-per-command. Each home/task
+# Missing frozen launch context remains create-per-command for legacy callers.
+# Explicit stale/foreign context fails closed. Pipeline children use the supported
+# no-mistakes axi execution-origin lookup from NO_MISTAKES_EXECUTION_REF and
+# NO_MISTAKES_EXECUTION_SOCKET. Protocol 1 must bind a running run's exact
+# recorded execution checkout to namespace firstmate and the originating home's
+# current task/source/generation. Ambient worker IDs cannot override that binding.
+# Revalidate after locking; retained evidence uses this same validator.
+# Each home/task
 # serializes one durable Boat job slot across worker generations. Compatible
 # idle leases reuse the same account, environment, type and swap configuration;
 # a changed generation or request requires confirmed deletion before replacement.
@@ -41,9 +55,10 @@
 # remains execution-unknown, even if deletion succeeds. Known completion and
 # unknown execution never permit duplicate execution.
 # Failed pre-command preparation on a reused
-# owned lease permits one replacement only after confirmed deletion, using Boat
-# then optional Upstash admission before the caller's permitted local fallback.
-# Cleanup-task refuses active holders,
+# owned lease permits one replacement only after confirmed deletion, preserving
+# exact origin for transfer failures. Unsupported reset forces an ephemeral
+# replacement. Boat then optional Upstash admission precedes the caller's
+# permitted local fallback. Cleanup-task refuses active holders,
 # records a generation-closing tombstone, and deletes only that exact lease.
 # Reap preserves valid idle owned leases and recovers expired/abandoned records.
 # Requires python3 and Boat CLI 1.0.85+ on PATH (FM_BOAT_BIN may name a binary).

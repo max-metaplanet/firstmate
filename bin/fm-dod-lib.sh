@@ -618,6 +618,9 @@ ${pr_return_line}Whenever a drive call returns without a gate or an outcome - it
   cat <<EOF
 You drive no-mistakes by responding to its gates, not by implementing fixes.
 Follow the guidance no-mistakes itself provides for the mechanics: it loads when you invoke /no-mistakes, and \`no-mistakes axi run --help\` plus the \`help\` lines in each \`axi\` response are authoritative and version-matched to the installed binary.
+Before starting a new run, capture the frozen launch origin with \`$_FM_DOD_LIB_DIR/fm-boat-run.sh caller-origin --worktree "\$PWD" > "\$GOTMPDIR/../caller-origin.json"\` and pass \`--caller-origin-file "\$GOTMPDIR/../caller-origin.json"\` to that new \`no-mistakes axi run\`.
+A failed capture is an ownership blocker; never reconstruct a generation from current metadata or submit an unattributed worker run.
+Ordinary reattachment omits the origin flag.
 When starting no-mistakes, pass \`--intent\` as only this brief's \`## Captain's intent\` subsection body, not its heading, plus any later words the captain actually said.
 Preserve the actual words without adding speaker labels or direct address; the subsection heading supplies provenance outside the pipeline input.
 For a legacy brief with no such subsection, include only words on lines marked \`[captain] \`, excluding that metadata prefix; never copy its mixed \`# Task\` wholesale.

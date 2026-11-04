@@ -26,8 +26,10 @@ for name in ('fm-boat-test-wrapper.sh', 'fm-build-lock.py', 'fm-memcap.sh'):
 # returns broken evidence independently of the wrapper's result classifier.
 adapter = tools / 'fm-boat-run.sh'
 adapter.write_text('''#!/usr/bin/env python3
-import json,os,pathlib,sys
+import json,os,pathlib,subprocess,sys
 args=sys.argv[1:]
+if args[:1]==["check-result"]:
+    sys.exit(subprocess.call([sys.executable,ADAPTER_IMPLEMENTATION,*args]))
 settings=json.loads(os.environ['SETTINGS'])
 pathlib.Path(os.environ['CALLS']).write_text(json.dumps(args))
 history=pathlib.Path(os.environ['CALLS']+'.history')
@@ -43,7 +45,7 @@ if settings.get('result') != 'missing':
     (output/'result.json').write_text(settings['result'] if isinstance(settings['result'],str) else json.dumps(settings['result']))
 print('adapter output',flush=True)
 sys.exit(settings['exit'])
-''')
+'''.replace('ADAPTER_IMPLEMENTATION', repr(str(repo / 'bin/fm-boat-run.py'))))
 adapter.chmod(0o755)
 
 # Bash's elapsed clock and sleep form the time boundary for retry fixtures.
@@ -79,7 +81,7 @@ def settings(env, code, kind, **extra):
     result = dict(kind=kind, adapter_exit=code, **extra)
     env['SETTINGS'] = json.dumps({'exit': code, 'result': result})
 
-for owner_home, owner_task, ok in (('/fixture/home', 'fixture-task', True),
+for owner_home, owner_task, ok in (('/fixture/home', 'fixture-task', False),
                                   ('/other/home', 'fixture-task', False),
                                   ('/fixture/home', 'other-task', False)):
     p, work, env = case('retained-' + owner_home.replace('/', '-') + '-' + owner_task)
@@ -89,7 +91,7 @@ for owner_home, owner_task, ok in (('/fixture/home', 'fixture-task', True),
     r = launch(work, env, 'touch local-ran')
     assert (r.returncode == 0) == ok, (ok, r.stderr)
     assert not (work / 'local-ran').exists()
-print('ok - retained commands require an idle Boat lease owned by the exact calling home/task')
+print('ok - ambient home/task without frozen launch evidence cannot validate retained results')
 
 for code in (0, 7, 69, 75, 70, 74, 143):
     p, work, env = case('completed-' + str(code))

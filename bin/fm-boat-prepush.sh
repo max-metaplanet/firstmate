@@ -22,6 +22,8 @@
 # full commit ID or tracked files have staged or unstaged changes, before planning
 # or starting a machine. Untracked files are allowed. Without --expected-head,
 # local edits remain allowed. verdict.json records the checked head.
+# Worker/pipeline ownership and retained-result validation follow fm-boat-run.sh
+# --help. Expected-head certifies source content and never grants a task lease.
 # --base prefers origin's remote-tracking ref for a named branch over a local
 # branch of that name; revision expressions resolve locally. Without --base,
 # it tries origin/HEAD, then origin/main. --output selects the evidence directory;

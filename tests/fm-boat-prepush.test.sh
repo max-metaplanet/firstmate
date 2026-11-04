@@ -141,7 +141,7 @@ assert not local.should_retry_large(run('default', ['node-1'], False))
 assert not local.should_retry_large(run('large', ['node-1'], True))
 saved_home, saved_task = os.environ.get('FM_HOME'), os.environ.get('FM_TASK_ID')
 os.environ.update(FM_HOME='/fixture/home', FM_TASK_ID='fixture-task')
-for home, task, expected in (('/fixture/home', 'fixture-task', True),
+for home, task, expected in (('/fixture/home', 'fixture-task', False),
                              ('/sibling/home', 'fixture-task', False),
                              ('/fixture/home', 'other-task', False)):
     retained = run('default', ['node-1'], True)
@@ -432,6 +432,8 @@ adapter.write_text('#!' + sys.executable + '\n' + """
 import json, subprocess, sys
 from pathlib import Path
 args = sys.argv[1:]
+if args[:1] == ["check-result"]:
+    sys.exit(subprocess.call([sys.executable, ADAPTER_IMPLEMENTATION, *args]))
 output = Path(args[args.index('--output') + 1])
 output.mkdir(parents=True)
 result = subprocess.run(args[args.index('--') + 1:])
@@ -440,7 +442,7 @@ result = subprocess.run(args[args.index('--') + 1:])
     'remote_exit': result.returncode, 'cleanup': 'deleted',
 }))
 sys.exit(result.returncode)
-""")
+""".replace('ADAPTER_IMPLEMENTATION', repr(str(repo / 'bin/fm-boat-run.py'))))
 adapter.chmod(0o755)
 (service_source / 'candidate.sql').write_text('candidate migration')
 subprocess.run(['bash', str(wrapper_tools / 'fm-boat-test-wrapper.sh'), 'true'],

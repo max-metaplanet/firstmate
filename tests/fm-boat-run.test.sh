@@ -11,6 +11,7 @@ import datetime
 import hashlib
 import json
 import os
+import runpy
 from pathlib import Path
 import signal
 import shlex
@@ -84,7 +85,7 @@ def managed(p, env, task='reuse-task', generation='generation-1'):
     (p / 'home/state' / (task + '.meta')).write_text(
         'endpoint_task_id=' + task + '\nkind=ship\nspawn_gen=' + generation +
         '\nworktree=' + str(p / 'work') + '\n')
-    return dict(env, FM_TASK_ID=task)
+    return dict(env, FM_TASK_ID=task, FM_TASK_GENERATION=generation)
 
 def next_run(p, env, command='exit 0', options=(), wait=True):
     output = p / 'output'
@@ -450,6 +451,116 @@ if sys.platform.startswith('linux'):
     assert r.returncode == 70 and creates(state) == 1, (r.returncode, r.stderr)
     print('ok - task reuse saves a start despite exhausted start windows, refreshes source/HOME and kills owned sessions')
 
+    for mutation in ('missing-generation', 'stale-generation', 'missing-task', 'duplicate-meta'):
+        p, state, env = case('frozen-' + mutation)
+        env = managed(p, env)
+        if mutation == 'missing-generation':
+            env.pop('FM_TASK_GENERATION')
+        elif mutation == 'stale-generation':
+            env['FM_TASK_GENERATION'] = 'older-launch'
+        elif mutation == 'missing-task':
+            env.pop('FM_TASK_ID')
+        else:
+            with (p / 'home/state/reuse-task.meta').open('a') as stream:
+                stream.write('spawn_gen=generation-1\n')
+        r = launch(p, env)
+        if mutation == 'missing-generation':
+            assert r.returncode == 0 and result(p)['cleanup'] == 'deleted' and not result(p).get('lease'), r.stderr
+            empty(state)
+        else:
+            assert r.returncode == 70 and not (state / 'calls.jsonl').exists(), r.stderr
+    print('ok - legacy missing generation stays one-shot; partial, stale and ambiguous launch context fails before admission')
+
+    p, state, env = case('pipeline-binding')
+    env = managed(p, env)
+    r = subprocess.run(['bash', str(repo / 'bin/fm-boat-run.sh'), 'caller-origin',
+                        '--worktree', str(p / 'work')], env=env, capture_output=True)
+    frozen = json.loads(r.stdout)
+    assert frozen == dict(namespace='firstmate', home=str(p / 'home'), task='reuse-task', generation='generation-1')
+    assert launch(p, env).returncode == 0
+    original = result(p)
+    execution = p / 'execution'
+    subprocess.run(['git', 'clone', '-q', str(p / 'work'), str(execution)], check=True)
+    (execution / 'tracked.txt').write_text('pipeline snapshot\n')
+    tools = p / 'tools'
+    tools.mkdir()
+    cli = tools / 'no-mistakes'
+    cli.write_text("""#!/usr/bin/env python3
+import json,pathlib,sys
+args=sys.argv[1:]
+assert args[:2]==['axi','execution-origin'], args
+value=json.loads((pathlib.Path(__file__).parent/'reply.json').read_text())
+assert args[args.index('--checkout')+1]==value['execution']['execution_checkout']
+assert args[args.index('--ref')+1]=='opaque-producer-reference'
+assert args[args.index('--socket')+1]=='/fixture/producer.sock'
+print(json.dumps(value))
+""")
+    cli.chmod(0o755)
+    reply = dict(protocol_version=1, execution=dict(reference='opaque-producer-reference',
+        run_id='fixture-run', source_checkout=str(p / 'work'), source_head=original['source_head'],
+        execution_checkout=str(execution), caller_origin=frozen, run_status='running'))
+    reply_file = tools / 'reply.json'
+    reply_file.write_text(json.dumps(reply))
+    pipeline_env = dict(env, PATH=str(tools) + os.pathsep + env['PATH'],
+        NO_MISTAKES_EXECUTION_REF='opaque-producer-reference',
+        NO_MISTAKES_EXECUTION_SOCKET='/fixture/producer.sock')
+    pipeline_env.pop('FM_TASK_ID')
+    pipeline_env.pop('FM_TASK_GENERATION')
+    r = subprocess.run(['bash', str(repo / 'bin/fm-boat-test-wrapper.sh'), 'cat tracked.txt'],
+        env=pipeline_env, cwd=execution, capture_output=True, timeout=30)
+    assert r.returncode == 0 and r.stdout == b'pipeline snapshot\n', (r.stderr, r.stdout)
+    assert creates(state) == 1
+    # The same producer may explicitly associate an auxiliary Test-base copy.
+    auxiliary = p / 'test-base'
+    subprocess.run(['git', 'clone', '-q', str(p / 'work'), str(auxiliary)], check=True)
+    reply['execution']['execution_checkout'] = str(auxiliary)
+    reply_file.write_text(json.dumps(reply))
+    r = subprocess.run(['bash', str(repo / 'bin/fm-boat-test-wrapper.sh'), 'cat tracked.txt'],
+        env=pipeline_env, cwd=auxiliary, capture_output=True, timeout=30)
+    assert r.returncode == 0 and creates(state) == 1, r.stderr
+    for mutation in ('stale', 'foreign', 'namespace', 'source', 'finished', 'partial', 'wrong-checkout'):
+        bad = json.loads(json.dumps(reply))
+        bad_env = dict(pipeline_env)
+        if mutation == 'stale':
+            bad['execution']['caller_origin']['generation'] = 'old'
+        elif mutation == 'foreign':
+            bad['execution']['caller_origin']['home'] = '/other/home'
+        elif mutation == 'namespace':
+            bad['execution']['caller_origin']['namespace'] = 'another-owner'
+        elif mutation == 'source':
+            bad['execution']['source_checkout'] = str(auxiliary)
+        elif mutation == 'finished':
+            bad['execution']['run_status'] = 'passed'
+        elif mutation == 'partial':
+            bad_env.pop('NO_MISTAKES_EXECUTION_SOCKET')
+        else:
+            bad['execution']['execution_checkout'] = str(execution)
+        reply_file.write_text(json.dumps(bad))
+        r = subprocess.run(['bash', str(repo / 'bin/fm-boat-test-wrapper.sh'), 'echo must-not-run'],
+            env=bad_env, cwd=auxiliary, capture_output=True, timeout=30)
+        assert r.returncode == 70 and creates(state) == 1, (mutation, r.returncode, r.stderr)
+    reply_file.write_text(json.dumps(reply))
+    prepush = runpy.run_path(str(repo / 'bin/fm-boat-prepush.py'))
+    prepush_output = p / 'prepush'
+    prepush_output.mkdir()
+    prior_env = dict(os.environ)
+    try:
+        os.environ.clear()
+        os.environ.update(pipeline_env)
+        prepush_run = prepush['attempt'](auxiliary, prepush_output, 'default', 30, None,
+            "cat tracked.txt; printf '%s\\n' 'FM_BOAT_PREPUSH_SUMMARY {\"failed\":[\"probe\"],\"oom\":true}'")
+        assert prepush_run['adapter_exit'] == 0 and prepush['should_retry_large'](prepush_run), prepush_run
+        assert prepush_run['remote_result']['vm_id'] == original['vm_id'] and creates(state) == 1
+    finally:
+        os.environ.clear()
+        os.environ.update(prior_env)
+    assert cleanup_task(env).returncode == 0
+    r = subprocess.run(['bash', str(repo / 'bin/fm-boat-test-wrapper.sh'), 'echo tombstone-must-hold'],
+        env=pipeline_env, cwd=auxiliary, capture_output=True, timeout=30)
+    assert r.returncode == 70 and creates(state) == 1, r.stderr
+    empty(state)
+    print('ok - wrapper consumes producer primary/auxiliary bindings, rejects foreign/stale/partial evidence and respects cleanup tombstones')
+
     p, state, env = case('reuse-cleared-descendant')
     env = managed(p, env)
     r = launch(p, env, 'setsid env -i PATH="$PATH" sh -c \'sleep 90 >/dev/null 2>&1 & echo $!\'')
@@ -559,9 +670,12 @@ if sys.platform.startswith('linux'):
     r = next_run(p, env, 'echo fresh-transfer-fallback')
     assert r.returncode == 0 and r.stdout == b'fresh-transfer-fallback\n', r.stderr
     assert result(p)['reuse_fallback'] and creates(state) == 2
-    assert result(p)['cleanup'] == 'deleted'
+    assert result(p)['cleanup'] == 'retained'
+    r = next_run(p, env, 'echo after-transfer')
+    assert r.returncode == 0 and result(p)['reused'] and creates(state) == 2, r.stderr
+    assert cleanup_task(env).returncode == 0
     empty(state)
-    print('ok - pre-execution transfer failure cold-replaces only the exact owned lease')
+    print('ok - confirmed transfer replacement retains exact owner for the next command')
 
     p, state, env = case('reuse-reset-unconfirmed')
     env = managed(p, env)
@@ -645,7 +759,10 @@ if sys.platform.startswith('linux'):
                                                   ' types=default,large\n')
             other = env
         r = next_run(p, other, options=('--type', 'large') if mismatch == 'type' else ())
-        assert r.returncode == 0 and not result(p)['reused'] and creates(state) == 2, r.stderr
+        if mismatch == 'worktree':
+            assert r.returncode == 70 and creates(state) == 1, r.stderr
+        else:
+            assert r.returncode == 0 and not result(p)['reused'] and creates(state) == 2, r.stderr
         assert reap(other).returncode == 0
         if mismatch == 'home':
             assert cleanup_task(other).returncode == 0

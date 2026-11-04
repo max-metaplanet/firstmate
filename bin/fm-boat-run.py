@@ -44,6 +44,10 @@ class UploadTimedOut(Failure):
     pass
 
 
+class ResetUnsupported(Failure):
+    pass
+
+
 class _Terminated(BaseException):
     def __init__(self, code):
         self.code = code
@@ -83,6 +87,72 @@ def job_path(state, owner):
 
 def owner_current(owner):
     return owner == task_owner(Path(owner['home']), owner['task'], Path(owner['worktree']))
+
+
+@dataclass(frozen=True)
+class ExecutionOwner:
+    owner: dict
+    checkout: Path
+    reference: str = ''
+    socket: str = ''
+
+    def current(self):
+        if not owner_current(self.owner):
+            return False
+        if not self.reference:
+            return self.checkout == Path(self.owner['worktree'])
+        try:
+            return execution_owner(Path(self.owner['home']), self.checkout,
+                                   self.reference, self.socket) == self
+        except Failure:
+            return False
+
+
+def execution_owner(home, root, reference=None, socket=None):
+    """Interpret producer evidence here, never in individual heavy callers."""
+    reference = os.environ.get('NO_MISTAKES_EXECUTION_REF', '') if reference is None else reference
+    socket = os.environ.get('NO_MISTAKES_EXECUTION_SOCKET', '') if socket is None else socket
+    if reference or socket:
+        try:
+            reply = subprocess.run(
+                ['no-mistakes', 'axi', 'execution-origin', '--checkout', str(root),
+                 '--ref', reference, '--socket', socket], cwd=root,
+                env=dict(os.environ, NO_MISTAKES_NO_UPDATE_CHECK='1'),
+                capture_output=True, timeout=20, check=True)
+            document = json.loads(reply.stdout)
+            execution = document['execution']
+            origin = execution['caller_origin']
+            owner = task_owner(home, origin['task'], Path(execution['source_checkout']).resolve(strict=True))
+            if (document['protocol_version'] != 1 or not reference or not socket
+                    or execution['reference'] != reference or execution['run_status'] != 'running'
+                    or execution['execution_checkout'] != str(root)
+                    or origin['namespace'] != 'firstmate' or origin['home'] != str(home)
+                    or not owner or origin['generation'] != owner['generation']):
+                raise ValueError('invalid execution origin')
+            return ExecutionOwner(owner, root, reference, socket)
+        except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as exc:
+            raise Failure('no-mistakes execution ownership cannot be confirmed', 70) from exc
+    task = os.environ.get('FM_TASK_ID')
+    generation = os.environ.get('FM_TASK_GENERATION')
+    if not generation:
+        return None
+    owner = task_owner(home, task, root)
+    if not owner or owner['generation'] != generation:
+        raise Failure('worker launch ownership cannot be confirmed', 70)
+    return ExecutionOwner(owner, root)
+
+
+def retained_result(result, home, root):
+    if result.get('cleanup') == 'deleted':
+        return True
+    lease = result.get('lease') or {}
+    if (result.get('cleanup') != 'retained' or result.get('provider') != 'boat'
+            or lease.get('state') != 'idle'):
+        return False
+    if home is None:
+        return False
+    binding = execution_owner(home, root)
+    return bool(binding and lease.get('owner') == binding.owner and binding.current())
 
 
 def compute_available(boat, seconds, machine):
@@ -184,7 +254,10 @@ def owned_processes(boat, job, action, args=None, output=None):
 def prepare_source(boat, job, args, upload, digest, push_timeout, reused):
     vm = job['vm_id']
     if job.get('owner') and job.get('provider') == 'boat':
-        owned_processes(boat, job, 'prepare')
+        try:
+            owned_processes(boat, job, 'prepare')
+        except Failure as exc:
+            raise ResetUnsupported(str(exc), exc.code) from exc
     upload_timeout = None
     try:
         boat.upload(vm, upload, push_timeout)
@@ -225,11 +298,12 @@ def fresh_job(args, owner):
 
 
 @contextlib.contextmanager
-def allocation(args, boats, owner):
+def allocation(args, boats, binding):
+    owner = binding.owner if binding else None
     state = boats[0].state
     record = job_path(state, owner) if owner else state / 'jobs' / (uuid.uuid4().hex + '.json')
     with lock(state / (record.stem + '.lock')):
-        if owner and not owner_current(owner):
+        if binding and not binding.current():
             raise Failure('task ownership changed while waiting for Boat lease', 70)
         old = json.loads(record.read_text()) if record.exists() else None
         if old and old.get('owner') and (
@@ -1418,7 +1492,10 @@ def run(args, boats):
         push_timeout = min(600, max(300, 90 + (upload_bytes + 131071) // 131072))
         result.update(source_head=head, source_sha256=digest,
                       upload_bytes=upload_bytes, push_timeout_seconds=push_timeout)
-        owner = task_owner(boat.state.parent.parent, os.environ.get('FM_TASK_ID'), root)
+        binding = execution_owner(boat.state.parent.parent, root)
+        owner = binding.owner if binding else None
+        if binding and binding.reference:
+            result['execution_origin'] = dict(reference=binding.reference, checkout=str(root))
         if owner:
             result['lease'] = dict(owner=owner, state='busy', id=job_path(boat.state, owner).stem)
 
@@ -1445,7 +1522,7 @@ def run(args, boats):
                 if job.get('account_key_file') and job.get('provider') != 'upstash':
                     boat = next(b for b in boats if str(b.account.key_file) == job['account_key_file'])
 
-        with allocation(args, boats, owner) as (boat, job, record, reused):
+        with allocation(args, boats, binding) as (boat, job, record, reused):
             succeeded = False
             try:
                 result['kind'] = 'unavailable'
@@ -1458,12 +1535,15 @@ def run(args, boats):
                 try:
                     result['upload_recovered'] = prepare_source(
                         boat, job, args, upload, digest, push_timeout, reused)
-                except Failure:
+                except Failure as exc:
                     if (not reused or not job.get('owner') or job.get('provider') != 'boat'
-                            or not owner_current(job['owner'])):
+                            or not binding.current()):
                         raise
                     boat.cleanup(job, record)
-                    job = fresh_job(args, None)
+                    if not binding.current():
+                        raise Failure('task ownership changed before Boat replacement', 70)
+                    replacement_owner = None if isinstance(exc, ResetUnsupported) else owner
+                    job = fresh_job(args, replacement_owner)
                     admit_available()
                     vm = job['vm_id']
                     reused = False
@@ -1524,7 +1604,7 @@ def run(args, boats):
                     if job.get('account_key_file') and job.get('provider') == 'boat':
                         boat = next(b for b in boats if str(b.account.key_file) == job['account_key_file'])
                     retain = (succeeded and job.get('owner') and job.get('provider') == 'boat'
-                              and owner_current(job['owner']) and
+                              and binding.current() and
                               time.time() + LEASE_IDLE < job['hard_expires'])
                     if retain:
                         owned_processes(boat, job, 'finish')
@@ -1575,6 +1655,12 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest='action', required=True)
     sub.add_parser('reap')
+    origin = sub.add_parser('caller-origin')
+    origin.add_argument('--worktree', required=True)
+    check = sub.add_parser('check-result')
+    check.add_argument('--worktree', required=True)
+    check.add_argument('--result', required=True)
+    check.add_argument('--exit', type=int, required=True)
     expiry = sub.add_parser('expire', help=argparse.SUPPRESS)
     expiry.add_argument('--lease', required=True)
     cleanup = sub.add_parser('cleanup-task')
@@ -1593,9 +1679,29 @@ def main():
     runner.add_argument('command', nargs=argparse.REMAINDER)
     args = parser.parse_args()
     home = Path(os.environ.get('FM_HOME', ''))
-    if not home.is_absolute():
+    if not home.is_absolute() and args.action != 'check-result':
         raise Failure('FM_HOME must be explicit and absolute', 2)
-    home = home.resolve()
+    home = home.resolve() if home.is_absolute() else None
+    if args.action in ('caller-origin', 'check-result'):
+        root = Path(args.worktree).resolve(strict=True)
+        if args.action == 'caller-origin':
+            binding = execution_owner(home, root, '', '')
+            if binding is None:
+                raise Failure('frozen worker launch ownership required', 70)
+            print(json.dumps(dict(namespace='firstmate', home=str(home),
+                                  task=binding.owner['task'], generation=binding.owner['generation'])))
+        else:
+            result = json.loads(Path(args.result).read_text())
+            if (result.get('kind') == 'unavailable' and args.exit in (69, 75)
+                    and result.get('adapter_exit') == args.exit):
+                print('unavailable')
+            elif (result.get('kind') == 'completed' and type(result.get('remote_exit')) is int
+                  and result['remote_exit'] == args.exit and result.get('adapter_exit') == args.exit
+                  and not result.get('error') and retained_result(result, home, root)):
+                print('completed')
+            else:
+                print('adapter-failure')
+        return 0
     os.umask(0o077)
     state = home / 'state/boat-offload'
     (state / 'jobs').mkdir(parents=True, exist_ok=True)

@@ -197,10 +197,12 @@ def attempt(worktree: Path, output: Path, size: str, timeout: int,
     provider = remote_result.get('provider', 'unknown')
     return {
         'size': size,
+        'worktree': str(worktree),
         'provider': provider,
         'actual_size': remote_result.get('actual_size', size),
         'resources': remote_result.get('resources'),
         'remote_result': remote_result,
+        'result_path': str(command_log.with_name('result.json')) if command_log else '',
         'adapter_exit': adapter_exit,
         'wall_s': wall,
         'dollars_estimate': (round(wall * DOLLARS_PER_SECOND * MULTIPLIER[size], 5)
@@ -234,12 +236,14 @@ def should_retry_large(run: dict) -> bool:
     """
     ok, failed, oom_only = verdict(run)
     result = run.get('remote_result') or {}
-    lease = result.get('lease') or {}
-    owner = lease.get('owner') or {}
-    cleanup_ok = result.get('cleanup') == 'deleted' or (
-        result.get('cleanup') == 'retained' and result.get('provider') == 'boat'
-        and lease.get('state') == 'idle' and owner.get('task') == os.environ.get('FM_TASK_ID')
-        and owner.get('task') and owner.get('home') == os.path.realpath(os.environ.get('FM_HOME', '')))
+    cleanup_ok = result.get('cleanup') == 'deleted'
+    if result.get('cleanup') == 'retained' and run.get('worktree'):
+        check = subprocess.run(
+            ['bash', str(HERE / 'fm-boat-run.sh'), 'check-result',
+             '--worktree', run['worktree'], '--result',
+             run['result_path'], '--exit', '0'],
+            capture_output=True, text=True)
+        cleanup_ok = check.returncode == 0 and check.stdout.strip() == 'completed'
     completed = (result.get('kind') == 'completed' and result.get('remote_exit') == 0
                  and cleanup_ok and not result.get('error'))
     return bool(completed and not ok and failed and oom_only and run['size'] == 'default')
