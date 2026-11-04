@@ -8,6 +8,7 @@ CASE_ROOT=$(fm_test_tmproot fm-boat-run)
 export CASE_ROOT
 python3 - "$ROOT" <<'PY'
 import datetime
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -1021,6 +1022,22 @@ def upstash_calls(state):
     path = state / 'upstash-calls.jsonl'
     return [json.loads(line) for line in path.read_text().splitlines()] if path.exists() else []
 
+p, state, env = upstash_case('observed-bundle', upstash_settings={'max_upload_bytes': 8 * 1024 * 1024})
+payload = os.urandom(69_209_507)
+(p / 'work/payload').write_bytes(payload)
+digest = hashlib.sha256(payload).hexdigest()
+del payload
+r = launch(p, env, 'sha256sum payload > proof; echo working; cat tracked.txt',
+           ('--input', 'payload', '--artifact', 'proof'))
+assert r.returncode == 0, (r.stderr, result(p))
+assert result(p)['kind'] == 'completed' and result(p)['cleanup'] == 'deleted'
+assert 69_209_507 <= result(p)['upload_bytes'] < 70_000_000
+assert (p / 'output/artifacts/proof').read_text().split()[0] == digest
+assert b'working edit' in r.stdout
+assert [x['operation'] for x in upstash_calls(state)].count('create') == 1
+assert not list((p / 'output/upload').glob('upstash-parts-*'))
+print('ok - observed 69.2 MB screened archive transfers intact under a smaller per-file ceiling')
+
 p, state, env = upstash_case('boat-first', {'remaining': 20})
 assert launch(p, env).returncode == 0
 assert not upstash_calls(state)
@@ -1193,6 +1210,16 @@ for name, settings, local_allowed, expected in [
     ('local', {'create_rejected': 429}, True, 23),
     ('no-local', {'create_rejected': 429}, False, 75),
     ('unknown-no-local', {'unknown_exec': True}, True, 74),
+    ('upload-local', {'upload_error': True, 'upload_status': 400}, True, 23),
+    ('upload-too-large', {'upload_error': True, 'upload_status': 413}, True, 23),
+    ('upload-capacity', {'upload_error': True, 'upload_status': 429}, True, 23),
+    ('upload-no-local', {'upload_error': True, 'upload_status': 400}, False, 69),
+    ('upload-unknown', {'upload_error': True}, True, 74),
+    ('upload-timeout', {'upload_error': True, 'upload_status': 408}, True, 74),
+    ('upload-server-error', {'upload_error': True, 'upload_status': 500}, True, 74),
+    ('upload-corrupt', {'corrupt_upload': True}, True, 74),
+    ('upload-cleanup-pending', {'upload_error': True, 'upload_status': 400,
+                              'delete_error': True}, True, 70),
 ]:
     p, state, env = upstash_case('wrapper-' + name, upstash_settings=settings)
     env.update(LOCAL_ONLY='yes', FM_BUILD_LOCK_FILE=str(p / 'heavy.lock'),
@@ -1202,7 +1229,8 @@ for name, settings, local_allowed, expected in [
     r = subprocess.run(['bash', str(repo / 'bin/fm-boat-test-wrapper.sh'), command],
                        cwd=p / 'work', env=env, capture_output=True, timeout=30)
     assert r.returncode == expected, (name, r.stderr)
-    assert (p / 'work/local-ran').exists() == (name == 'local')
+    assert (p / 'work/local-ran').exists() == (name in (
+        'local', 'upload-local', 'upload-too-large', 'upload-capacity'))
 print('ok - real wrapper orders Boat then Upstash then permitted heavy-slot local fallback')
 
 PY

@@ -35,6 +35,10 @@ class HistoryScreenRefusal(Failure):
     pass
 
 
+class UploadRejected(Failure):
+    pass
+
+
 class _Terminated(BaseException):
     def __init__(self, code):
         self.code = code
@@ -647,8 +651,11 @@ class Upstash:
             # SDK exceptions may include response bodies or authentication data.
             status = getattr(exc, 'status_code', None)
             detail = ' HTTP ' + str(status) if type(status) is int else ''
-            raise Failure('Upstash ' + operation + ' failed' + detail +
-                          ' (' + type(exc).__name__ + ')',
+            message = 'Upstash ' + operation + ' failed' + detail + ' (' + type(exc).__name__ + ')'
+            if (operation == 'upload' and type(status) is int and
+                    status in (400, 401, 402, 403, 404, 413, 415, 422, 429)):
+                raise UploadRejected(message, 75 if status in (402, 429) else 69) from exc
+            raise Failure(message,
                           75 if status in (402, 429) else
                           69 if status in (401, 403) else 74) from exc
 
@@ -669,7 +676,7 @@ class Upstash:
         if args.type != 'default' or args.swap_gib:
             raise Failure('Upstash free small is incompatible with requested type or swap', 69)
         if upload_bytes > 100_000_000:
-            raise Failure('Upstash source archive exceeds the 100 MB upload limit', 69)
+            raise Failure('Upstash source archive exceeds the 100 MB admission limit', 69)
         Box, EphemeralBox = self.sdk()
         with lock(self.state / 'admission.lock'):
             try:
@@ -732,7 +739,15 @@ class Upstash:
         return self.request('connect', Box.get, vm, **self.options(timeout))
 
     def upload(self, vm, upload, timeout):
-        with self.connect(vm, timeout) as box:
+        deadline = time.monotonic() + timeout
+
+        def remaining():
+            seconds = int(deadline - time.monotonic())
+            if seconds < 1:
+                raise Failure('Upstash upload deadline exceeded')
+            return seconds
+
+        with self.connect(vm, remaining()) as box:
             paths = str(PurePosixPath(REMOTE_ROOT).parent) + ' ' + REMOTE_ROOT
             prepare = ('if [ "$(id -u)" = 0 ]; then install -d -m 700 ' + paths +
                        '; else sudo -n install -d -m 700 -o "$(id -u)" -g "$(id -g)" ' +
@@ -741,9 +756,23 @@ class Upstash:
             if prepared.exit_code != 0:
                 raise Failure('Upstash cannot prepare canonical /home/user/fm-job '
                               '(exit ' + str(prepared.exit_code) + ')')
-            self.request('upload', box.files.upload,
-                         [dict(path=str(upload / 'source.tar.gz'),
-                               destination=REMOTE_ROOT + '/source.tar.gz')])
+        paths = []
+        # The service rejected even 16 MiB despite advertising 100 MB per file.
+        # Keep each request below the empirically productive 9.4 MB transfer.
+        with tempfile.TemporaryDirectory(dir=upload, prefix='upstash-parts-') as scratch:
+            part = Path(scratch) / 'source.part'
+            with (upload / 'source.tar.gz').open('rb') as source_file:
+                for index, data in enumerate(iter(lambda: source_file.read(8 * 1024 * 1024), b'')):
+                    part.write_bytes(data)
+                    remote = REMOTE_ROOT + '/source.part-%06d' % index
+                    with self.connect(vm, remaining()) as box:
+                        self.request('upload', box.files.upload,
+                                     [dict(path=str(part), destination=remote)])
+                    paths.append(remote)
+            seconds = remaining()
+            self.command(vm, ['bash', '-c', 'cat -- ' + shlex.join(paths) + ' > ' +
+                              REMOTE_ROOT + '/source.tar.gz && rm -- ' + shlex.join(paths)],
+                         remote_timeout=min(60, seconds), timeout=seconds)
 
     def read(self, box, path):
         encoded = self.request('read', box.files.read, path, encoding='base64')
@@ -1036,6 +1065,10 @@ def run(args, boats):
     except Failure as exc:
         result['error'] = str(exc)
         code = exc.code
+        if (isinstance(exc, UploadRejected) and result['provider'] == 'upstash' and
+                result['kind'] == 'adapter-error' and job and job.get('vm_id') and
+                result['cleanup'] == 'deleted'):
+            result['kind'] = 'unavailable'
     except _Terminated as exc:
         result.update(kind='interrupted', error='interrupted')
         code = exc.code
