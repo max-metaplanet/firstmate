@@ -79,10 +79,12 @@
 # state is recorded. An attended --allow-red <check-name> may be passed once,
 # with the name as a separate argument; it waives only checks with that exact
 # name, still requires every other required check green, and still binds the head. Its
-# twin, an attended --allow-missing <check-name>, follows the same rules for one
-# required check that has not reported: it waives only that exact name, still
-# requires every other required check to have reported and every required check to be
-# green unless separately waived by --allow-red. It matches the required
+# twin, an attended --allow-missing <check-name>, may be repeated to waive exact
+# names of checks that have not reported or are still pending. Every other
+# required check must have reported and be green unless separately waived by
+# --allow-red. A pending waiver never covers a completed non-green result,
+# including one beside an unfinished rerun, unless a later green run superseded
+# that result. It matches the required
 # context name even for an app-bound requirement, and never waives an unreadable
 # required source or producer read. Both are
 # refused while the away-posture record exists, and neither
@@ -211,7 +213,7 @@
 # explicit captain instruction and never skips the live green check, the
 # away-record read, or a captain hold.
 #
-# Usage: fm-pr-merge.sh <task-id> <pr-url> [--attended-override] [--allow-red <check-name>] [--allow-missing <check-name>] [--allow-no-pipeline] [-- <extra forge merge args>]
+# Usage: fm-pr-merge.sh <task-id> <pr-url> [--attended-override] [--allow-red <check-name>] [--allow-missing <check-name>]... [--allow-no-pipeline] [-- <extra forge merge args>]
 #
 # On a yolo-off GitHub task with a configured ready-hold label present on the
 # PR, the same pre-merge guards precede removing that label instead of merging.
@@ -307,7 +309,6 @@ while [ "$#" -gt 0 ]; do
       ;;
     --allow-missing)
       [ -n "${2:-}" ] || { echo "error: --allow-missing requires a check name" >&2; exit 2; }
-      [ "${#ALLOW_MISSING[@]}" -eq 0 ] || { echo "error: --allow-missing may be specified only once" >&2; exit 2; }
       ALLOW_MISSING+=("$2")
       shift 2
       ;;
@@ -924,7 +925,7 @@ github_verify_mergeable() {
   local json fields line red name check_state covered missing unreported producers
   local total=0 named=0 refusals='' mergeable_refusal='' deferred=''
   local state='' draft='' mergeable='' merge_state='' live_head='' base=''
-  local cross='' maintainer='' behind=false hard_condition=false
+  local cross='' maintainer='' behind=false hard_condition=false pending_waivers=false
 
   if ! json=$(gh pr view "$URL" --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,isCrossRepository,maintainerCanModify,statusCheckRollup 2>/dev/null) \
     || [ -z "$json" ]; then
@@ -1022,7 +1023,8 @@ EOF
     hard_condition=true
   fi
   producers=$FM_PR_GITHUB_PRODUCERS
-  if ! red=$(github_checks_not_green "$json" "$FM_PR_GITHUB_REQUIRED"); then
+  [ "${#ALLOW_MISSING[@]}" -eq 0 ] || pending_waivers=true
+  if ! red=$(github_checks_not_green "$json" "$FM_PR_GITHUB_REQUIRED" "$pending_waivers"); then
     echo "error: could not read the GitHub pull request state before merging" >&2
     return 1
   fi
@@ -1034,6 +1036,11 @@ EOF
     covered=0
     if [ "${#ALLOW_RED[@]}" -gt 0 ]; then
       for check in "${ALLOW_RED[@]}"; do
+        [ "$check" = "$name" ] && covered=1
+      done
+    fi
+    if [ "$check_state" = pending ] && [ "${#ALLOW_MISSING[@]}" -gt 0 ]; then
+      for check in "${ALLOW_MISSING[@]}"; do
         [ "$check" = "$name" ] && covered=1
       done
     fi
@@ -1058,7 +1065,13 @@ EOF
     [ -z "$deferred" ] || FM_PR_QUEUE_ONLY_WAIVED=true
     while IFS= read -r name; do
       [ -n "$name" ] || continue
-      [ "${#ALLOW_MISSING[@]}" -gt 0 ] && [ "${ALLOW_MISSING[0]}" = "$name" ] && continue
+      covered=0
+      if [ "${#ALLOW_MISSING[@]}" -gt 0 ]; then
+        for check in "${ALLOW_MISSING[@]}"; do
+          [ "$check" = "$name" ] && covered=1
+        done
+      fi
+      [ "$covered" -eq 1 ] && continue
       refusals="$refusals  - required check '$name' has not reported at head $live_head
 "
       unreported="${unreported:+$unreported, }$name"
