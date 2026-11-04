@@ -100,6 +100,91 @@ def cleanup_task(env, task='reuse-task', generation='generation-1'):
 def creates(state):
     return sum(json.loads(line)[0] == 'new' for line in (state / 'calls.jsonl').read_text().splitlines())
 
+for history_mode in (False, True):
+    for selection in ('untracked', 'committed', 'staged'):
+        p, state, env = case('source-selection-' + selection + '-' + str(history_mode),
+                             clean_history=True)
+        work = p / 'work'
+        files = {'new source.ts': b'current new source\n',
+                 'tab\tand\nnewline.ts': b'pathname proof\x00\xff\n'}
+        for name, data in files.items():
+            (work / name).write_bytes(b'index bytes\n' if selection == 'staged' else data)
+        if selection != 'untracked':
+            git(work, 'add', '--', *files)
+        if selection == 'committed':
+            git(work, 'commit', '-qm', 'new source fixture')
+        if selection == 'staged':
+            for name, data in files.items():
+                (work / name).write_bytes(data)
+        head = git(work, 'rev-parse', 'HEAD').stdout.decode().strip()
+        git(work, 'update-ref', 'refs/remotes/origin/main', head)
+        options = ('--history-depth', '1') if history_mode else ()
+        r = launch(p, env, options=options)
+        assert r.returncode == 0, (selection, history_mode, r.stderr)
+        with tarfile.open(p / 'output/upload/source.tar.gz') as archive:
+            names = set(archive.getnames())
+            expected = {'tracked.txt'} | (set(files) if selection != 'untracked' else set())
+            actual = {name for name in names if name != '.git' and not name.startswith('.git/')}
+            assert actual == expected, (selection, history_mode, actual, expected)
+            assert archive.extractfile('tracked.txt').read() == b'working edit\n'
+            for name, data in files.items():
+                if selection != 'untracked':
+                    assert archive.extractfile(name).read() == data, name
+        assert result(p)['source_head'] == head
+        assert result(p)['history'] == ('screened' if history_mode else 'synthetic')
+        assert hashlib.sha256((p / 'output/upload/source.tar.gz').read_bytes()).hexdigest() == result(p)['source_sha256']
+        empty(state)
+        print('ok - actual archive source selection and bytes for ' + selection +
+              ', history=' + str(history_mode), flush=True)
+
+for history_mode in (False, True):
+    p, state, env = case('index-changes-' + str(history_mode), clean_history=True)
+    work = p / 'work'
+    git(work, 'mv', 'tracked.txt', 'renamed.txt')
+    (work / 'renamed.txt').write_bytes(b'after staged rename\n')
+    (work / 'gone.ts').write_bytes(b'staged then deleted\n')
+    (work / '.env.staged').write_bytes(b'never upload\n')
+    (work / '.npmrc').write_bytes(b'_authToken=fixture-never-upload\n')
+    key = work / 'account-material.txt'
+    key.write_bytes(b'boat_fixture_secret')
+    (p / 'home/config').mkdir()
+    (p / 'home/config/boat-keys').write_text(str(key) + '\n')
+    git(work, 'add', '--force', '.')
+    (work / 'gone.ts').unlink()
+    git(work, 'rm', '--cached', '--', 'renamed.txt')
+    git(work, 'add', '--', 'renamed.txt')
+    head = git(work, 'rev-parse', 'HEAD').stdout.decode().strip()
+    git(work, 'update-ref', 'refs/remotes/origin/main', head)
+    options = ('--history-depth', '1') if history_mode else ()
+    r = launch(p, env, options=options)
+    assert r.returncode == 0, r.stderr
+    with tarfile.open(p / 'output/upload/source.tar.gz') as archive:
+        names = {name for name in archive.getnames() if name != '.git' and not name.startswith('.git/')}
+        assert names == {'renamed.txt', 'input.txt', 'unselected.txt'}, names
+        assert archive.extractfile('renamed.txt').read() == b'after staged rename\n'
+    assert b'fixture-never-upload' not in r.stdout + r.stderr
+    assert result(p)['source_head'] == head
+    assert result(p)['history'] == ('screened' if history_mode else 'synthetic')
+    empty(state)
+
+    for label, target, accepted in [('inside', 'tracked.txt', True),
+                                     ('absolute', '/etc/passwd', False),
+                                     ('escape', '../outside', False)]:
+        p, state, env = case('staged-link-' + label + '-' + str(history_mode), clean_history=True)
+        work = p / 'work'
+        (work / 'link').symlink_to(target)
+        git(work, 'add', '--', 'link')
+        git(work, 'update-ref', 'refs/remotes/origin/main', 'HEAD')
+        r = launch(p, env, options=options)
+        assert r.returncode == (0 if accepted else 2), (label, r.stderr)
+        if accepted:
+            with tarfile.open(p / 'output/upload/source.tar.gz') as archive:
+                assert 'link' not in archive.getnames()
+            empty(state)
+        else:
+            assert not (state / 'calls.jsonl').exists()
+print('ok - staged renames/deletions, secret paths, key files and symlinks keep existing screening')
+
 p, state, env = case('archive-file-copy', {'directory_push_refused': True})
 (p / 'work/payload').write_bytes(os.urandom(8 * 1024 * 1024))
 r = launch(p, env, 'sha256sum payload; cat tracked.txt', ('--input', 'payload'))
