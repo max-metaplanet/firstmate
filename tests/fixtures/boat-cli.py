@@ -72,23 +72,34 @@ with (root / 'fake.lock').open('a') as handle:
         if fixture.get('deletion_forbidden'):
             sys.exit(1)
         print(json.dumps({'id': args[2], 'status': 'completed'}))
-    elif command == 'push':
+    elif command == 'push' or (command == 'scp' and not args[1].startswith('bx_')):
+        if command == 'push' and fixture.get('directory_push_refused'):
+            sys.exit(1)
         if fixture.get('push_failed'):
             sys.exit(1)
         if fixture.get('push_failed_once') and not (root / 'push-failed').exists():
             (root / 'push-failed').touch()
             sys.exit(1)
-        # Boat push uses Git's tracked/nonignored manifest. Exercise the real
-        # consumer here so an archive hidden by an enclosing ignore is rejected.
-        manifest = subprocess.check_output(['git', '-C', args[2], 'ls-files',
-                                            '--cached', '--others', '--exclude-standard'])
-        if b'source.tar.gz' not in manifest.splitlines():
-            sys.exit(1)
-        remote = root / args[1] / 'fm-job'
+        if command == 'push':
+            manifest = subprocess.check_output(['git', '-C', args[2], 'ls-files',
+                                                '--cached', '--others', '--exclude-standard'])
+            if b'source.tar.gz' not in manifest.splitlines():
+                sys.exit(1)
+            source = Path(args[2]) / 'source.tar.gz'
+            vm = args[1]
+        else:
+            source = Path(args[1])
+            vm, destination = args[2].split(':', 1)
+            assert destination == '/home/user/fm-job/source.tar.gz'
+        remote = root / vm / 'fm-job'
         remote.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(Path(args[2]) / 'source.tar.gz', remote / 'source.tar.gz')
-        with tarfile.open(remote / 'source.tar.gz') as archive:
-            (root / 'uploaded.json').write_text(json.dumps(archive.getnames()))
+        shutil.copyfile(source, remote / 'source.tar.gz')
+        if fixture.get('corrupt_upload'):
+            with (remote / 'source.tar.gz').open('r+b') as archive:
+                archive.write(b'corrupt')
+        else:
+            with tarfile.open(remote / 'source.tar.gz') as archive:
+                (root / 'uploaded.json').write_text(json.dumps(archive.getnames()))
     elif command == 'scp':
         vm_id, name = args[1].split(':', 1)
         assert name == '/home/user/fm-job/artifacts.tar.gz'

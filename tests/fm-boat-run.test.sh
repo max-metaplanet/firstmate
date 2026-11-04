@@ -100,6 +100,26 @@ def cleanup_task(env, task='reuse-task', generation='generation-1'):
 def creates(state):
     return sum(json.loads(line)[0] == 'new' for line in (state / 'calls.jsonl').read_text().splitlines())
 
+p, state, env = case('archive-file-copy', {'directory_push_refused': True})
+(p / 'work/payload').write_bytes(os.urandom(8 * 1024 * 1024))
+r = launch(p, env, 'sha256sum payload; cat tracked.txt', ('--input', 'payload'))
+assert r.returncode == 0, r.stderr
+assert hashlib.sha256((p / 'work/payload').read_bytes()).hexdigest().encode() in r.stdout
+assert b'working edit' in r.stdout
+assert result(p)['kind'] == 'completed' and result(p)['remote_exit'] == 0
+assert result(p)['upload_bytes'] >= 8 * 1024 * 1024
+assert hashlib.sha256((p / 'output/upload/source.tar.gz').read_bytes()).hexdigest() == result(p)['source_sha256']
+assert json.loads((state / 'uploaded.json').read_text()) == ['payload', 'tracked.txt']
+empty(state)
+print('ok - prepared source reaches execution when directory synchronization is unavailable')
+
+p, state, env = case('corrupted-archive-copy', {'corrupt_upload': True})
+r = launch(p, env, 'echo user-command-ran')
+assert r.returncode == 74 and result(p)['remote_exit'] is None, (r.stderr, result(p))
+assert b'user-command-ran' not in r.stdout
+empty(state)
+print('ok - exact archive hash verification refuses corrupted transport before user execution')
+
 if sys.platform.startswith('linux'):
     p, state, env = case('task-reuse')
     env = managed(p, env)
