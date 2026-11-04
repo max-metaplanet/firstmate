@@ -1,0 +1,227 @@
+[
+  {
+    "scenario": "missing-optional-key",
+    "exit": 69,
+    "stdout": "",
+    "stderr": "boat-offload: Boat key unavailable\n",
+    "result": {
+      "kind": "unavailable",
+      "remote_exit": null,
+      "cleanup": "deleted",
+      "swap_gib": 0,
+      "provider": "boat",
+      "requested_type": "default",
+      "actual_size": "default",
+      "history": "synthetic",
+      "source_head": "60699729fc620e1207e91fe979f7bdd69228a128",
+      "source_sha256": "82bde7aea7fc2e10509a909bed6941b8e806cc6a93f2bd7765e376ccb3324803",
+      "upload_bytes": 221,
+      "push_timeout_seconds": 300,
+      "boat_unavailable": "Boat key unavailable",
+      "execution_error": "Boat key unavailable",
+      "error": "Boat key unavailable",
+      "adapter_exit": 69
+    },
+    "local_command_executed": false
+  },
+  {
+    "scenario": "unsafe-key-permissions",
+    "exit": 69,
+    "stdout": "",
+    "stderr": "boat-offload: Upstash key unavailable or not mode 0600\n",
+    "result": {
+      "kind": "unavailable",
+      "remote_exit": null,
+      "cleanup": "deleted",
+      "swap_gib": 0,
+      "provider": "upstash",
+      "requested_type": "default",
+      "actual_size": "small",
+      "history": "synthetic",
+      "source_head": "60699729fc620e1207e91fe979f7bdd69228a128",
+      "source_sha256": "d3056262fac152919147c15e4ccda149e5f61b1ae2587a649a4cae27644dc281",
+      "upload_bytes": 224,
+      "push_timeout_seconds": 300,
+      "boat_unavailable": "Boat key unavailable",
+      "resources": {
+        "cpu": 2,
+        "memory_gib": 4,
+        "disk_gib": 10
+      },
+      "execution_error": "Upstash key unavailable or not mode 0600",
+      "error": "Upstash key unavailable or not mode 0600",
+      "adapter_exit": 69
+    },
+    "local_command_executed": false
+  },
+  {
+    "scenario": "large-refused",
+    "exit": 69,
+    "stdout": "",
+    "stderr": "boat-offload: Upstash free small is incompatible with requested type or swap\n",
+    "result": {
+      "kind": "unavailable",
+      "remote_exit": null,
+      "cleanup": "deleted",
+      "swap_gib": 0,
+      "provider": "upstash",
+      "requested_type": "large",
+      "actual_size": "small",
+      "history": "synthetic",
+      "source_head": "b165398453229cb041e433e385d1f33d1eed6e79",
+      "source_sha256": "daed8f679bc5a0a1533420aa1c7305e5cfecd6c3b58106f9cb5ef9a4bd68437b",
+      "upload_bytes": 222,
+      "push_timeout_seconds": 300,
+      "boat_unavailable": "Boat key unavailable",
+      "resources": {
+        "cpu": 2,
+        "memory_gib": 4,
+        "disk_gib": 10
+      },
+      "execution_error": "Upstash free small is incompatible with requested type or swap",
+      "error": "Upstash free small is incompatible with requested type or swap",
+      "adapter_exit": 69
+    },
+    "local_command_executed": false
+  },
+  {
+    "scenario": "xlarge-refused",
+    "exit": 69,
+    "stdout": "",
+    "stderr": "boat-offload: Upstash free small is incompatible with requested type or swap\n",
+    "result": {
+      "kind": "unavailable",
+      "remote_exit": null,
+      "cleanup": "deleted",
+      "swap_gib": 0,
+      "provider": "upstash",
+      "requested_type": "xlarge",
+      "actual_size": "small",
+      "history": "synthetic",
+      "source_head": "b165398453229cb041e433e385d1f33d1eed6e79",
+      "source_sha256": "4e7245970b2d5b67319d7d0ee2a0e78a98d0f3bed7638e97fe79e809fb97f559",
+      "upload_bytes": 218,
+      "push_timeout_seconds": 300,
+      "boat_unavailable": "Boat key unavailable",
+      "resources": {
+        "cpu": 2,
+        "memory_gib": 4,
+        "disk_gib": 10
+      },
+      "execution_error": "Upstash free small is incompatible with requested type or swap",
+      "error": "Upstash free small is incompatible with requested type or swap",
+      "adapter_exit": 69
+    },
+    "local_command_executed": false
+  },
+  {
+    "scenario": "swap-refused",
+    "exit": 69,
+    "stdout": "",
+    "stderr": "boat-offload: Upstash free small is incompatible with requested type or swap\n",
+    "result": {
+      "kind": "unavailable",
+      "remote_exit": null,
+      "cleanup": "deleted",
+      "swap_gib": 1,
+      "provider": "upstash",
+      "requested_type": "default",
+      "actual_size": "small",
+      "history": "synthetic",
+      "source_head": "b165398453229cb041e433e385d1f33d1eed6e79",
+      "source_sha256": "c1c3fd2653d996868a0f8d8237922a9177cea5442f4e04bb7ffaa291ea0c67ae",
+      "upload_bytes": 223,
+      "push_timeout_seconds": 300,
+      "boat_unavailable": "Boat key unavailable",
+      "resources": {
+        "cpu": 2,
+        "memory_gib": 4,
+        "disk_gib": 10
+      },
+      "execution_error": "Upstash free small is incompatible with requested type or swap",
+      "error": "Upstash free small is incompatible with requested type or swap",
+      "adapter_exit": 69
+    },
+    "local_command_executed": false
+  },
+  {
+    "scenario": "local-allowed",
+    "exit": 23,
+    "stdout": "local command executed\n",
+    "stderr": "boat-test-wrapper: result.json: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6HWD5RYP8APCG3CY6YXPHT7/.fm-test-scratch/upstash-validation/live/local-allowed/.fm-test-scratch/fm-boat-test.sOZbIB/boat-1/result.json\nboat-offload: Boat key unavailable\nboat-test-wrapper: Boat unavailable (exit 69); running locally through heavy build lock; result.json: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6HWD5RYP8APCG3CY6YXPHT7/.fm-test-scratch/upstash-validation/live/local-allowed/.fm-test-scratch/fm-boat-test.sOZbIB/boat-1/result.json\n",
+    "result": {
+      "kind": "unavailable",
+      "remote_exit": null,
+      "cleanup": "deleted",
+      "swap_gib": 0,
+      "provider": "boat",
+      "requested_type": "default",
+      "actual_size": "default",
+      "history": "synthetic",
+      "source_head": "b165398453229cb041e433e385d1f33d1eed6e79",
+      "source_sha256": "4f4e45161725c45b8b8b21ece462d7fc08c937906b2c2ff980c3435991fb9d42",
+      "upload_bytes": 222,
+      "push_timeout_seconds": 300,
+      "boat_unavailable": "Boat key unavailable",
+      "execution_error": "Boat key unavailable",
+      "error": "Boat key unavailable",
+      "adapter_exit": 69
+    },
+    "local_command_executed": true
+  },
+  {
+    "scenario": "local-forbidden",
+    "exit": 69,
+    "stdout": "",
+    "stderr": "boat-test-wrapper: result.json: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6HWD5RYP8APCG3CY6YXPHT7/.fm-test-scratch/upstash-validation/live/local-forbidden/.fm-test-scratch/fm-boat-test.uGLVnV/boat-1/result.json\nboat-offload: Boat key unavailable\nboat-test-wrapper: Boat unavailable after 1 attempts; Test failed; result.json: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6HWD5RYP8APCG3CY6YXPHT7/.fm-test-scratch/upstash-validation/live/local-forbidden/.fm-test-scratch/fm-boat-test.uGLVnV/boat-1/result.json\n",
+    "result": {
+      "kind": "unavailable",
+      "remote_exit": null,
+      "cleanup": "deleted",
+      "swap_gib": 0,
+      "provider": "boat",
+      "requested_type": "default",
+      "actual_size": "default",
+      "history": "synthetic",
+      "source_head": "b165398453229cb041e433e385d1f33d1eed6e79",
+      "source_sha256": "a325c8925ea4611200b456433da3d11df1b151239b2ea7847e20a6588d84b71d",
+      "upload_bytes": 223,
+      "push_timeout_seconds": 300,
+      "boat_unavailable": "Boat key unavailable",
+      "execution_error": "Boat key unavailable",
+      "error": "Boat key unavailable",
+      "adapter_exit": 69
+    },
+    "local_command_executed": false
+  },
+  {
+    "scenario": "unsafe-key-local-forbidden",
+    "exit": 69,
+    "stdout": "",
+    "stderr": "boat-test-wrapper: result.json: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6HWD5RYP8APCG3CY6YXPHT7/.fm-test-scratch/upstash-validation/live/unsafe-key-local-forbidden/.fm-test-scratch/fm-boat-test.d9qK2I/boat-1/result.json\nboat-offload: Upstash key unavailable or not mode 0600\nboat-test-wrapper: Boat unavailable after 1 attempts; Test failed; result.json: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6HWD5RYP8APCG3CY6YXPHT7/.fm-test-scratch/upstash-validation/live/unsafe-key-local-forbidden/.fm-test-scratch/fm-boat-test.d9qK2I/boat-1/result.json\n",
+    "result": {
+      "kind": "unavailable",
+      "remote_exit": null,
+      "cleanup": "deleted",
+      "swap_gib": 0,
+      "provider": "upstash",
+      "requested_type": "default",
+      "actual_size": "small",
+      "history": "synthetic",
+      "source_head": "b165398453229cb041e433e385d1f33d1eed6e79",
+      "source_sha256": "d7adde21970588285df3b3de7c8f12e49699f6ba42e53452d06dfaea780fc13d",
+      "upload_bytes": 221,
+      "push_timeout_seconds": 300,
+      "boat_unavailable": "Boat key unavailable",
+      "resources": {
+        "cpu": 2,
+        "memory_gib": 4,
+        "disk_gib": 10
+      },
+      "execution_error": "Upstash key unavailable or not mode 0600",
+      "error": "Upstash key unavailable or not mode 0600",
+      "adapter_exit": 69
+    },
+    "local_command_executed": false
+  }
+]

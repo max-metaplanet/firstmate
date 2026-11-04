@@ -1,0 +1,13 @@
+ok - a successful Boat allocation never touches Upstash
+ok - hour/day exhaustion tries every eligible Boat account before Upstash
+ok - unchanged entry point automatically uses the reproducible instance-local SDK interpreter
+ok - Boat quota falls back to one free small box with screened source, artifacts and cleanup
+ok - account environment, read-only failure and explicit create rejection remain unavailable
+ok - confirmed create rejections refund only their reservation and allow later admission
+ok - explicit large/xlarge and swap never silently downgrade to free small
+ok - read-only box capacity and durable monthly reservation exhaustion prevent compute
+ok - lost create, unknown execution, incomplete markers and credential responses never retry
+ok - Upstash failed remote exits preserve artifacts and never become unavailable
+ok - failed Upstash cleanup retains a provider-owned record and reap converges
+ok - an unknown Boat create cannot run a second provider even when cleanup succeeds
+ok - real wrapper orders Boat then Upstash then permitted heavy-slot local fallback

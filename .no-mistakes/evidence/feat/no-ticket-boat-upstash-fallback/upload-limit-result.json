@@ -1,0 +1,28 @@
+{
+  "exit": 69,
+  "stdout": "",
+  "stderr": "boat-offload: Upstash source archive exceeds the 100 MB upload limit\n",
+  "result": {
+    "kind": "unavailable",
+    "remote_exit": null,
+    "cleanup": "deleted",
+    "swap_gib": 0,
+    "provider": "upstash",
+    "requested_type": "default",
+    "actual_size": "small",
+    "history": "synthetic",
+    "source_head": "272807334d98ea1c6dd63a6457f7e09f8259a7ae",
+    "source_sha256": "bd9f89bfdd1853438cba83884716adb0f370a39e8670b6aa33b4d0a7bd4c3358",
+    "upload_bytes": 101031125,
+    "push_timeout_seconds": 600,
+    "boat_unavailable": "Boat key unavailable",
+    "resources": {
+      "cpu": 2,
+      "memory_gib": 4,
+      "disk_gib": 10
+    },
+    "execution_error": "Upstash source archive exceeds the 100 MB upload limit",
+    "error": "Upstash source archive exceeds the 100 MB upload limit",
+    "adapter_exit": 69
+  }
+}
