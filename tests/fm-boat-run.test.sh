@@ -100,6 +100,52 @@ def cleanup_task(env, task='reuse-task', generation='generation-1'):
 def creates(state):
     return sum(json.loads(line)[0] == 'new' for line in (state / 'calls.jsonl').read_text().splitlines())
 
+def launch_lost_response(p, state, env, fault):
+    driver = p / 'lost-response.py'
+    driver.write_text('''import importlib.util, pathlib, subprocess, sys, time
+spec = importlib.util.spec_from_file_location('adapter', sys.argv.pop(1))
+adapter = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = adapter
+spec.loader.exec_module(adapter)
+state = pathlib.Path(sys.argv.pop(1))
+fault = sys.argv.pop(1)
+real_popen = subprocess.Popen
+class LostResponse(real_popen):
+    def communicate(self, *args, timeout=None, **kwargs):
+        value = super().communicate(*args, timeout=timeout, **kwargs)
+        if timeout is None:
+            return value
+        upload = self.args[1] == 'scp' and not self.args[2].startswith('bx_')
+        verify = self.args[1] == 'exec' and 'sha256sum -c' in self.args[-1]
+        command = self.args[1] == 'exec' and '--stream' in self.args
+        mkdir = self.args[1] == 'exec' and 'mkdir' in self.args
+        if upload and fault != 'mkdir-unknown':
+            archive = state / self.args[3].split(':', 1)[0] / 'fm-job/source.tar.gz'
+            if fault == 'missing':
+                archive.unlink()
+            elif fault == 'partial':
+                archive.write_bytes(archive.read_bytes()[:10])
+            elif fault == 'mismatch':
+                data = archive.read_bytes()
+                archive.write_bytes(bytes([data[0] ^ 1]) + data[1:])
+            elif fault == 'owner-changed':
+                meta = state.parent / 'reuse-task.meta'
+                meta.write_text(meta.read_text().replace('generation-1', 'generation-2'))
+            elif fault == 'expired':
+                now = time.time()
+                time.time = lambda: now + 7200
+        if ((upload and fault != 'mkdir-unknown') or (verify and fault == 'verify-unknown')
+                or (command and fault == 'command-unknown') or (mkdir and fault == 'mkdir-unknown')):
+            raise subprocess.TimeoutExpired(self.args, timeout, output=b'boat_fixture_secret')
+        return value
+subprocess.Popen = LostResponse
+sys.exit(adapter.main())
+''')
+    return subprocess.run([sys.executable, str(driver), str(repo / 'bin/fm-boat-run.py'),
+                           str(state), fault, 'run', '--worktree', str(p / 'work'),
+                           '--output', str(p / 'output'), '--', 'cat', 'tracked.txt'],
+                          env=env, capture_output=True, timeout=30)
+
 if sys.platform.startswith('linux'):
     for failure in ('push_failed_once', 'push_failed', 'prepare_failed', 'corrupt_upload'):
         p, state, env = case('fresh-owned-' + failure, {failure: True})
@@ -115,6 +161,53 @@ if sys.platform.startswith('linux'):
         assert b'must-not-run' not in r.stdout
         empty(state)
     print('ok - fresh owned source failures preserve the first error and delete without another start', flush=True)
+
+    for ownership in ('fresh', 'reused', 'unowned'):
+        p, state, env = case('complete-upload-lost-response-' + ownership)
+        if ownership != 'unowned':
+            env = managed(p, env)
+        if ownership == 'reused':
+            assert launch(p, env).returncode == 0
+            (p / 'output').rename(p / 'initial-output')
+        r = launch_lost_response(p, state, env, 'complete')
+        evidence = result(p)
+        calls = [json.loads(line) for line in (state / 'calls.jsonl').read_text().splitlines()]
+        commands = sum('--stream' in call for call in calls)
+        assert creates(state) == 1 and not evidence.get('reuse_fallback'), evidence
+        assert 'boat_fixture_secret' not in json.dumps(evidence)
+        assert b'boat_fixture_secret' not in r.stdout + r.stderr
+        if ownership == 'unowned':
+            assert r.returncode == 74 and evidence['kind'] == 'adapter-error', (r.stderr, evidence)
+            assert evidence['remote_exit'] is None and commands == 0, evidence
+        else:
+            assert r.returncode == 0 and r.stdout.endswith(b'working edit\n'), (r.stderr, r.stdout, evidence)
+            assert evidence['kind'] == 'completed' and evidence['remote_exit'] == 0, evidence
+            assert evidence['upload_recovered'] and evidence['cleanup'] == 'retained', evidence
+            assert commands == (2 if ownership == 'reused' else 1), calls
+            archive = p / 'output/upload/source.tar.gz'
+            assert archive.stat().st_size == evidence['upload_bytes']
+            assert hashlib.sha256(archive.read_bytes()).hexdigest() == evidence['source_sha256']
+            assert cleanup_task(env).returncode == 0
+        empty(state)
+    print('ok - a complete exact owned archive survives a lost scp response and executes once', flush=True)
+
+    for fault in ('missing', 'partial', 'mismatch', 'verify-unknown', 'command-unknown',
+                  'mkdir-unknown', 'owner-changed', 'expired'):
+        p, state, env = case('lost-response-' + fault)
+        env = managed(p, env)
+        r = launch_lost_response(p, state, env, fault)
+        evidence = result(p)
+        calls = [json.loads(line) for line in (state / 'calls.jsonl').read_text().splitlines()]
+        assert r.returncode == 74 and evidence['remote_exit'] is None, (fault, r.stderr, evidence)
+        assert evidence['kind'] == ('execution-unknown' if fault == 'command-unknown'
+                                    else 'adapter-error'), (fault, evidence)
+        assert sum('--stream' in call for call in calls) == (fault == 'command-unknown'), (fault, calls)
+        assert creates(state) == evidence['creates'] == 1 and not evidence.get('reuse_fallback'), evidence
+        assert 'TimeoutExpired' in evidence['error'], (fault, evidence)
+        assert 'boat_fixture_secret' not in json.dumps(evidence)
+        assert b'boat_fixture_secret' not in r.stdout + r.stderr
+        empty(state)
+    print('ok - incomplete, mismatched, unknown, stale and expired transfers never authorize execution or another start', flush=True)
 
 for history_mode in (False, True):
     for selection in ('untracked', 'committed', 'staged'):
@@ -592,23 +685,27 @@ print('ok - concurrent admission runs two jobs and rejects a third')
 
 def launch_transfer(p, env):
     driver = p / 'transfer-clock.py'
-    driver.write_text('''import importlib.util, subprocess, sys
+    driver.write_text('''import importlib.util, pathlib, subprocess, sys
 spec = importlib.util.spec_from_file_location('adapter', sys.argv.pop(1))
 adapter = importlib.util.module_from_spec(spec)
 sys.modules[spec.name] = adapter
 spec.loader.exec_module(adapter)
+state = pathlib.Path(sys.argv.pop(1))
 real_popen = subprocess.Popen
 class TransferClock(real_popen):
     def communicate(self, *args, timeout=None, **kwargs):
         if (self.args[1] == 'scp' and str(self.args[2]).endswith('/source.tar.gz')
                 and timeout is not None and timeout < 400):
+            super().communicate(*args, timeout=timeout, **kwargs)
+            archive = state / self.args[3].split(':', 1)[0] / 'fm-job/source.tar.gz'
+            archive.unlink()
             raise subprocess.TimeoutExpired(self.args, timeout, output=b'boat_fixture_secret')
         return super().communicate(*args, timeout=timeout, **kwargs)
 subprocess.Popen = TransferClock
 sys.exit(adapter.main())
 ''')
     return subprocess.run([sys.executable, str(driver), str(repo / 'bin/fm-boat-run.py'),
-                           'run', '--worktree', str(p / 'work'),
+                           str(p / 'home/state/boat-offload'), 'run', '--worktree', str(p / 'work'),
                            '--output', str(p / 'output'), '--', 'true'],
                           env=env, capture_output=True, timeout=30)
 

@@ -40,6 +40,10 @@ class UploadRejected(Failure):
     pass
 
 
+class UploadTimedOut(Failure):
+    pass
+
+
 class _Terminated(BaseException):
     def __init__(self, code):
         self.code = code
@@ -168,17 +172,33 @@ def prepare_source(boat, job, args, upload, digest, push_timeout, reused):
     vm = job['vm_id']
     if job.get('owner') and job.get('provider') == 'boat':
         owned_processes(boat, job, 'prepare')
-    boat.upload(vm, upload, push_timeout)
-    boat.command(vm, ['bash', '-c',
-                 f'echo {digest} {REMOTE_ROOT}/source.tar.gz | sha256sum -c - && '
-                 f'mkdir -p {REMOTE_ROOT}/source && tar xzf {REMOTE_ROOT}/source.tar.gz -C {REMOTE_ROOT}/source'],
-                 timeout=90)
+    upload_timeout = None
+    try:
+        boat.upload(vm, upload, push_timeout)
+    except UploadTimedOut as exc:
+        if (not job.get('owner') or job.get('provider') != 'boat'
+                or not owner_current(job['owner']) or job.get('closing')
+                or time.time() + 90 >= job['hard_expires']):
+            raise
+        upload_timeout = exc
+    try:
+        boat.command(vm, ['bash', '-c',
+                     f'test "$(stat -c %s {REMOTE_ROOT}/source.tar.gz)" = '
+                     f'{(upload / "source.tar.gz").stat().st_size} && '
+                     f'echo {digest} {REMOTE_ROOT}/source.tar.gz | sha256sum -c - && '
+                     f'mkdir -p {REMOTE_ROOT}/source && tar xzf {REMOTE_ROOT}/source.tar.gz -C {REMOTE_ROOT}/source'],
+                     timeout=90)
+    except Failure as exc:
+        if upload_timeout is not None:
+            raise upload_timeout from exc
+        raise
     if args.swap_gib and not reused:
         boat.command(vm, ['bash', '-c',
                      f'sudo -n fallocate -l {args.swap_gib}G /swapfile-fm-offload && '
                      'sudo -n chmod 600 /swapfile-fm-offload && '
                      'sudo -n mkswap /swapfile-fm-offload && '
                      'sudo -n swapon /swapfile-fm-offload'])
+    return upload_timeout is not None
 
 
 def fresh_job(args, owner):
@@ -911,8 +931,13 @@ class Boat:
 
     def upload(self, vm, upload, timeout):
         self.command(vm, ['mkdir', '-p', REMOTE_ROOT])
-        self.call('scp', str(upload / 'source.tar.gz'), vm + ':' + REMOTE_ROOT + '/source.tar.gz',
-                  timeout=timeout, raw=True)
+        try:
+            self.call('scp', str(upload / 'source.tar.gz'), vm + ':' + REMOTE_ROOT + '/source.tar.gz',
+                      timeout=timeout, raw=True)
+        except Failure as exc:
+            if isinstance(exc.__cause__, subprocess.TimeoutExpired):
+                raise UploadTimedOut(str(exc), exc.code) from exc
+            raise
 
     def download(self, vm, remote, destination):
         self.call('scp', vm + ':' + remote, str(destination), raw=True, timeout=180)
@@ -1418,9 +1443,11 @@ def run(args, boats):
                               creates=0 if reused else 1)
                 remote_root = REMOTE_ROOT
                 try:
-                    prepare_source(boat, job, args, upload, digest, push_timeout, reused)
+                    result['upload_recovered'] = prepare_source(
+                        boat, job, args, upload, digest, push_timeout, reused)
                 except Failure:
-                    if not job.get('owner') or job.get('provider') != 'boat':
+                    if (not reused or not job.get('owner') or job.get('provider') != 'boat'
+                            or not owner_current(job['owner'])):
                         raise
                     boat.cleanup(job, record)
                     job = fresh_job(args, None)
@@ -1429,7 +1456,8 @@ def run(args, boats):
                     reused = False
                     result.update(vm_id=vm, kind='adapter-error', reused=False,
                                   creates=result['creates'] + 1, reuse_fallback=True)
-                    prepare_source(boat, job, args, upload, digest, push_timeout, False)
+                    result['upload_recovered'] = prepare_source(
+                        boat, job, args, upload, digest, push_timeout, False)
                 command = shlex.join(args.command)
                 remote = (f'cd {remote_root}/source || exit 125; '
                           f'env -i PATH="$PATH" HOME={str(PurePosixPath(remote_root).parent)} CI=1 '
