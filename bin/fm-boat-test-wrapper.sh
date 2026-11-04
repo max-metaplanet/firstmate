@@ -35,7 +35,8 @@
 # fm-build-lock.py, unless FM_BOAT_TEST_LOCAL_FALLBACK=0 selects remote-only mode.
 # The adapter tries Boat then optional Upstash before returning unavailable;
 # that remote-only setting allows either provider and still forbids local work.
-# Unset or any other value preserves local fallback on unavailability.
+# Unset or any other value preserves local fallback on unavailability unless
+# FM_BOAT_REUSE_ONLY=1 applies.
 # Remote-only mode retries unavailable results with fresh evidence per attempt.
 # FM_BOAT_TEST_UNAVAILABLE_WAIT_SECS bounds elapsed time allowed for retries
 # (default 1800, nonnegative integer); an in-flight adapter may exceed the bound.

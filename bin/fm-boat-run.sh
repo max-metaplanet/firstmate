@@ -37,8 +37,7 @@
 # Each run removes the entire job workspace, uploads screened fresh source,
 # and uses fresh HOME/TMPDIR directories. Linux child-subreaper adoption, process
 # sessions and an inherited token terminate and reap owned descendants, including
-# detached children that clear their environment. Unsupported reset fails before
-# user execution and cold-replaces the exact lease with an ephemeral sandbox.
+# detached children that clear their environment.
 # This is same-task reuse, not a pristine OS. Global packages, files outside the
 # job directory and services that clear their process environment can persist.
 # Leases expire after 1500 idle seconds, starting only after command completion.
@@ -57,9 +56,10 @@
 # deletion; unconfirmed deletion returns 70. Missing command-result evidence
 # remains execution-unknown, even if deletion succeeds. Known completion and
 # unknown execution never permit duplicate execution.
-# Failed pre-command preparation on a reused
-# owned lease permits one replacement only after confirmed deletion, preserving
-# exact origin for transfer failures. Unsupported reset forces an ephemeral
+# Outside reuse-only mode, failed pre-command preparation on a reused owned
+# lease permits one replacement only after confirmed deletion, preserving exact
+# origin for transfer failures. Unsupported reset fails before user execution
+# and forces an ephemeral
 # replacement. Boat then optional Upstash admission precedes the caller's
 # permitted local fallback. Cleanup-task refuses active holders,
 # records a generation-closing tombstone, and deletes only that exact lease.

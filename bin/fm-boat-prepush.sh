@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# fm-boat-prepush.sh - run a pull request's heavy test lanes on one disposable
-# Boat or fallback Upstash machine before the pull request is marked ready.
+# fm-boat-prepush.sh - run a pull request's heavy test lanes on one task-reusable
+# Boat or disposable fallback Upstash machine before the pull request is marked ready.
 # Usage:
 #   FM_HOME=/absolute/home fm-boat-prepush.sh [--worktree DIR] [--base REF]
 #       [--reuse-only]
