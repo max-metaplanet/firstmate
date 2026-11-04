@@ -120,6 +120,20 @@ test_pushed_open_pr_refuses() {
 test_same_pushed_head_allows_after_merge() {
   local dir
   dir=$(make_case merged direct-PR)
+  printf 'manual\n' > "$dir/home/config/backlog-backend"
+  python3 - "$dir" <<'PYTEST'
+import hashlib
+import json
+from pathlib import Path
+import sys
+root = Path(sys.argv[1])
+home = str((root / 'home').resolve())
+identity = home + '\0task-x1'
+record = root / 'home/state/boat-offload/jobs' / ('task-' + hashlib.sha256(identity.encode()).hexdigest() + '.json')
+record.parent.mkdir(parents=True)
+record.write_text(json.dumps(dict(cleanup='deleted', owner=dict(
+    home=home, task='task-x1', generation='teardown-regression', worktree=str(root / 'copy')))))
+PYTEST
   run_teardown "$dir" branch MERGED || fail "merged pushed PR refused: $(cat "$dir/output")"
   assert_absent "$dir/home/state/task-x1.meta" 'merged PR teardown retained the task record'
   assert_grep return "$dir/runtime.log" 'merged PR never reached cleanup'

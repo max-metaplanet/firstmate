@@ -686,6 +686,8 @@ if [ "$TEARDOWN_BACKLOG_APPLIES" = 1 ]; then
     esac
   fi
   [ "$TEARDOWN_LEGACY_PENDING" = 1 ] || TEARDOWN_META_SPAWN_GEN=$FM_BACKLOG_META_SPAWN_GEN
+elif fm_backlog_meta_spawn_gen "$META" "$STATE"; then
+  TEARDOWN_META_SPAWN_GEN=$FM_BACKLOG_META_SPAWN_GEN
 fi
 # Cleanup never closes a captain call (see the header). Asked here, before any
 # destructive step, so "cannot tell" can refuse while everything is intact.

@@ -61,7 +61,7 @@ def task_owner(home, task, root=None):
             if key in fields:
                 return None
             fields[key] = value
-        worktree = Path(fields['worktree']).resolve(strict=True)
+        worktree = Path(fields['worktree']).resolve(strict=root is not None)
         if (fields.get('endpoint_task_id') != task or fields.get('kind') not in ('ship', 'scout')
                 or not fields.get('spawn_gen') or (root is not None and root != worktree)):
             return None
@@ -77,7 +77,7 @@ def job_path(state, owner):
 
 
 def owner_current(owner):
-    return owner == task_owner(Path(owner['home']), owner['task'])
+    return owner == task_owner(Path(owner['home']), owner['task'], Path(owner['worktree']))
 
 
 def compute_available(boat, seconds, machine):
@@ -1264,6 +1264,7 @@ def run(args, boats):
                           f'timeout -k 15 {args.timeout} {command}; '
                           f'rc=$?; printf "%s" "$rc" > {remote_root}/exit')
                 result['kind'] = 'execution-unknown'
+                save(output / 'result.json', result)
                 if job.get('owner') and job.get('provider') == 'boat':
                     job['execution_started'] = True
                     save(record, job)
@@ -1419,7 +1420,7 @@ def main():
             with lock(state / (record.stem + '.lock'), wait=False) as acquired:
                 if not acquired:
                     raise Failure('task Boat command active; retry cleanup after it finishes', 70)
-                if not owner_current(owner):
+                if owner != task_owner(home, args.task):
                     raise Failure('task ownership changed during cleanup', 70)
                 job = json.loads(record.read_text()) if record.exists() else dict(cleanup='deleted')
                 if job.get('owner') and (job['owner'].get('home') != str(home)

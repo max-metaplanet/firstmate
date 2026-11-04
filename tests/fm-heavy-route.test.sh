@@ -495,6 +495,27 @@ for name, result_kind, remote_exit in (('result', 'execution-unknown', None),
     assert 'discarded remote stdout' in r.stderr, (name, r.stderr)
 print('ok - unconfirmed result and dispatch both discard remote stdout before local retry')
 
+for evidence in ('missing', 'corrupt'):
+    p, work, config, state, env = case('lost-result-' + evidence, declaration=DECLARED)
+    assert publish(config, env).returncode == 0
+    adapter_bin = p / 'adapter-bin'
+    adapter_bin.mkdir()
+    adapter = adapter_bin / 'fm-boat-run.sh'
+    adapter.write_text('#!/usr/bin/env python3\nimport sys\nfrom pathlib import Path\n'
+        'output=Path(sys.argv[sys.argv.index("--output")+1]); output.mkdir(parents=True)\n' +
+        ('(output/"result.json").write_text("{")\n' if evidence == 'corrupt' else '') +
+        'sys.exit(137)\n')
+    adapter.chmod(0o755)
+    routing_record = Path(env['FM_BUILD_LOCK_INSTALL_DIR']) / 'boat-route'
+    loaded = json.loads(routing_record.read_text())
+    loaded['bin'] = str(adapter_bin)
+    routing_record.write_text(json.dumps(loaded))
+    marker = p / 'local-ran'
+    r = run(work, env, command=('touch', str(marker)))
+    assert r.returncode == 137 and not marker.exists(), (r.returncode, r.stderr)
+    assert 'refusing local retry' in r.stderr
+print('ok - missing and corrupt final results cannot authorize duplicate local execution')
+
 for state_kind, cleanup in (('execution-unknown', 'deleted'), ('completed', 'pending')):
     p, work, config, state, env = case('owned-uncertain-' + state_kind, declaration=DECLARED)
     assert publish(config, env).returncode == 0

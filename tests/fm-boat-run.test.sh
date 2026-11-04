@@ -175,6 +175,48 @@ if sys.platform.startswith('linux'):
         empty(state)
     print('ok - reap expires idle/hard/orphan/crashed leases and exact cleanup refuses repointed credentials')
 
+    for reaped in (False, True):
+        p, state, env = case('cleanup-missing-worktree-' + str(reaped))
+        env = managed(p, env)
+        assert launch(p, env).returncode == 0
+        (p / 'work').rename(p / 'removed-work')
+        assert cleanup_task(env, generation='wrong-generation').returncode == 70
+        if reaped:
+            for _ in range(100):
+                assert reap(env).returncode == 0
+                if all(json.loads(record.read_text())['cleanup'] == 'deleted'
+                       for record in (state / 'jobs').glob('*.json')):
+                    break
+                time.sleep(.1)
+            empty(state)
+        for _ in range(100):
+            cleaned = cleanup_task(env)
+            if cleaned.returncode == 0 or b'active' not in cleaned.stderr:
+                break
+            time.sleep(.1)
+        assert cleaned.returncode == 0, (cleaned.returncode, cleaned.stderr)
+        assert cleanup_task(env).returncode == 0
+        empty(state)
+    print('ok - exact-generation cleanup survives missing source before and after orphan reaping')
+
+    p, state, env = case('killed-owned-dispatch')
+    env = managed(p, env)
+    proc = launch(p, env, 'sleep 3; echo remote-finished', wait=False)
+    for _ in range(200):
+        records = list((state / 'jobs').glob('*.json'))
+        if records and json.loads(records[0].read_text()).get('execution_started'):
+            break
+        time.sleep(.05)
+    else:
+        raise AssertionError('owned command never reached dispatch')
+    proc.kill()
+    proc.communicate(timeout=15)
+    evidence = result(p)
+    assert evidence['kind'] == 'execution-unknown' and evidence['lease']['state'] == 'busy', evidence
+    assert cleanup_task(env).returncode == 0
+    empty(state)
+    print('ok - SIGKILL after dispatch preserves owned unknown-execution evidence')
+
     p, state, env = case('reuse-reset-failure')
     env = managed(p, env)
     assert launch(p, env).returncode == 0

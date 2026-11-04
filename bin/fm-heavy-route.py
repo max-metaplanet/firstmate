@@ -781,7 +781,9 @@ def boat(settings, command, kind, home, bin_dir, root, inputs):
     try:
         result = json.loads((output / "result.json").read_text())
     except (OSError, ValueError):
-        result = {}
+        print('heavy-route: Boat result unavailable; refusing local retry; evidence %s'
+              % (output / 'result.json'), file=sys.stderr)
+        return finished.returncode or 74
     lease = result.get('lease') or {}
     managed = 'lease' in result or result.get('cleanup') == 'retained'
     owner = lease.get('owner') or {}
