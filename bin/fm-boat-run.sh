@@ -32,8 +32,9 @@
 # Successful retained commands report cleanup=retained and lease={owner,state,id,
 # idle_expires,hard_expires}; only state=idle on an exact owned Boat lease is valid.
 # Cleanup=deleted remains actual confirmed deletion. Pending/unknown outcomes
-# never permit duplicate execution. Failed pre-command preparation permits one fresh
-# create only after confirmed deletion. Cleanup-task refuses active holders,
+# never permit duplicate execution. Failed owned pre-command preparation permits
+# one replacement only after confirmed deletion, using Boat then optional Upstash
+# admission before the caller's permitted local fallback. Cleanup-task refuses active holders,
 # records a generation-closing tombstone, and deletes only that exact lease.
 # Reap preserves valid idle owned leases and recovers expired/abandoned records.
 # Requires python3 and Boat CLI 1.0.85+ on PATH (FM_BOAT_BIN may name a binary).

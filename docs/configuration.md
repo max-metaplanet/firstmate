@@ -1428,8 +1428,8 @@ The text is static and never executed or expanded; secondmate charters never tak
 
 ## Boat build and test offload
 
-Ship workers can run secret-free heavy commands on ephemeral Boat VMs, with optional Upstash Box fallback, through [`bin/fm-boat-run.sh`](../bin/fm-boat-run.sh).
-The adapter's header and `--help` own prerequisites, Upstash SDK and credential setup, provider eligibility and limits, source selection, result and artifact paths, ordered account selection, per-account caps, cleanup records, reaping, and explicit local fallback.
+Ship workers can run secret-free heavy commands on task-local reusable Boat VMs, with optional Upstash Box fallback, through [`bin/fm-boat-run.sh`](../bin/fm-boat-run.sh).
+The adapter's header and `--help` own prerequisites, Upstash SDK and credential setup, provider eligibility and limits, source selection, result and artifact paths, ordered account selection, per-account caps, reuse ownership and isolation limits, idle and absolute expiry, cleanup records, reaping, and explicit local fallback.
 The optional `config/boat-keys` lists key-file paths and per-account `live_cap`, `pending_cap`, `daily_cap`, optional `environment`, `cleanup_confirmation`, and `types=` fields in the format owned by that help.
 That help also owns per-run `--type` machine selection and its `FM_BOAT_TYPE` forwarding through the Test wrapper; the default remains `default`.
 Without `config/boat-keys`, Boat retains the single trial account and its existing caps.
@@ -1872,10 +1872,9 @@ A remote Vitest failure that reports a snapshot missing, mismatched, or not writ
 Remote output is captured and printed when the command finishes rather than streamed, and only a completed remote run with confirmed command dispatch after successful setup is a verdict: that remote exit is the command's exit.
 Command stdout is forwarded unchanged; bootstrap diagnostics and command stderr are forwarded on stderr.
 When a remote attempt is discarded, its stdout is discarded too, so only the local retry supplies stdout.
-[`bin/fm-boat-run.sh`](../bin/fm-boat-run.sh)'s help owns the upload, per-account budget, task-local reuse, result and artifact files, idle and absolute expiry, and cleanup.
-Authoritatively identified workers reuse one compatible Boat sandbox per exact home and task; unattributed calls and Upstash remain create-per-command.
-Owned-lease results require confirmed deletion or intentional idle retention, and uncertain owned executions never retry locally.
-Task teardown confirms deletion before retiring its records; reap recovers expired or abandoned leases and skips active commands.
+Completed owned-lease results require confirmed deletion or valid idle retention before routing accepts a verdict or retries locally.
+Uncertain owned execution or cleanup, and missing or corrupt result evidence for any call, refuse local retry.
+The adapter's reuse and cleanup contract is linked under "Boat build and test offload" above.
 
 Like the heavy-slot count, the record a heavy command reads is machine-wide and written by every ship or scout launch, so a change applies at the next launch and the last launch on the machine wins.
 An unreadable or malformed declaration refuses the launch rather than guessing which projects the captain meant to route.

@@ -81,9 +81,12 @@ configuration with `tsc --showConfig` outside the preload.
 Remote output is captured and printed when the command finishes rather than
 streamed.
 
-Owned-lease results require confirmed command dispatch and deletion or valid
-idle retention. Unknown owned execution or cleanup never permits local retry.
-Unleased calls preserve the existing setup, transport and snapshot fallback.
+Completed owned-lease results require deletion or valid idle retention before
+accepting a verdict or retrying locally. Completed bootstrap
+failures before heavy-command dispatch and snapshot failures retain local fallback.
+Unknown owned execution or cleanup never permits local retry. Missing or corrupt
+result evidence refuses local retry for every call. Other unleased setup and
+transport failures preserve local fallback.
 The owned/unleased boundary is recorded by the adapter, not inferred from
 source paths or account names.
 """
