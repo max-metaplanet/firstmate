@@ -3841,6 +3841,13 @@ fi
 # closed here instead of after the return: the worker's own processes are then
 # gone before the pre-return scan, and only what is not the task's remains.
 TEARDOWN_ENDPOINT_CLOSED=0
+if [ "$KIND" != secondmate ]; then
+  FM_HOME="$FM_HOME" "$SCRIPT_DIR/fm-boat-run.sh" cleanup-task \
+    --task "$ID" --generation "$TEARDOWN_META_SPAWN_GEN" || {
+    echo "REFUSED: Boat lease cleanup for $ID is busy, uncertain, or unconfirmed; retry teardown after recovery." >&2
+    exit 1
+  }
+fi
 if [ "$KIND" != secondmate ] && teardown_owns_worktree; then
   conclude_task_no_mistakes_run "$WT"
   reap_task_worktree_processes worktree "$WT" "$TASK_TMP"

@@ -80,6 +80,218 @@ def reap(env):
     return subprocess.run(['bash', str(repo / 'bin/fm-boat-run.sh'), 'reap'],
                           env=env, capture_output=True, timeout=20)
 
+def managed(p, env, task='reuse-task', generation='generation-1'):
+    (p / 'home/state' / (task + '.meta')).write_text(
+        'endpoint_task_id=' + task + '\nkind=ship\nspawn_gen=' + generation +
+        '\nworktree=' + str(p / 'work') + '\n')
+    return dict(env, FM_TASK_ID=task)
+
+def next_run(p, env, command='exit 0', options=(), wait=True):
+    output = p / 'output'
+    if output.exists():
+        output.rename(p / ('output-' + str(len(list(p.glob('output*'))))))
+    return launch(p, env, command, options, wait)
+
+def cleanup_task(env, task='reuse-task', generation='generation-1'):
+    return subprocess.run(['bash', str(repo / 'bin/fm-boat-run.sh'), 'cleanup-task',
+                           '--task', task, '--generation', generation],
+                          env=env, capture_output=True, timeout=20)
+
+def creates(state):
+    return sum(json.loads(line)[0] == 'new' for line in (state / 'calls.jsonl').read_text().splitlines())
+
+if sys.platform.startswith('linux'):
+    p, state, env = case('task-reuse')
+    env = managed(p, env)
+    r = launch(p, env, 'echo dirty > leftover; echo cache > "$HOME/cache"; '
+               'sleep 90 >/dev/null 2>&1 & echo $!; setsid sleep 90 >/dev/null 2>&1 & echo $!')
+    assert r.returncode == 0, r.stderr
+    first = result(p)
+    assert first['cleanup'] == 'retained' and not first['reused'], first
+    pids = [int(line) for line in r.stdout.splitlines()]
+    for pid in pids:
+        path = Path('/proc') / str(pid) / 'stat'
+        assert not path.exists() or path.read_text().split(') ')[1].startswith('Z'), pid
+    (p / 'work/tracked.txt').write_text('fresh second source\n')
+    (state / 'fixture.json').write_text(json.dumps(dict(remaining=0, canStart=False, nextStartDollars=.03)))
+    r = next_run(p, env, 'test ! -e leftover && test ! -e "$HOME/cache" && cat tracked.txt')
+    assert r.returncode == 0 and r.stdout == b'fresh second source\n', (r.returncode, r.stderr, r.stdout)
+    assert result(p)['reused'] and result(p)['vm_id'] == first['vm_id'], result(p)
+    assert creates(state) == 1
+    assert reap(env).returncode == 0 and json.loads((state / 'fake-vms.json').read_text())
+    assert cleanup_task(env).returncode == 0
+    assert cleanup_task(env).returncode == 0
+    empty(state)
+    r = next_run(p, env)
+    assert r.returncode == 70 and creates(state) == 1, (r.returncode, r.stderr)
+    print('ok - task reuse saves a start despite exhausted start windows, refreshes source/HOME and kills owned sessions')
+
+    p, state, env = case('reuse-cleared-descendant')
+    env = managed(p, env)
+    r = launch(p, env, 'setsid env -i PATH="$PATH" sh -c \'sleep 90 >/dev/null 2>&1 & echo $!\'')
+    assert r.returncode == 0, r.stderr
+    pid = int(r.stdout.strip())
+    path = Path('/proc') / str(pid) / 'stat'
+    alive = path.exists() and not path.read_text().split(') ')[1].startswith('Z')
+    if alive:
+        os.kill(pid, signal.SIGKILL)
+    cleaned = cleanup_task(env)
+    assert cleaned.returncode == 0, (cleaned.returncode, cleaned.stderr)
+    assert not alive, 'detached env-cleared descendant survived command completion'
+    print('ok - detached env-cleared descendants are reaped before retention')
+
+    for mutation in ('idle', 'hard', 'orphan', 'unknown', 'key'):
+        p, state, env = case('lease-' + mutation)
+        env = managed(p, env)
+        assert launch(p, env).returncode == 0
+        record = next((state / 'jobs').glob('*.json'))
+        job = json.loads(record.read_text())
+        if mutation == 'idle':
+            job['idle_expires'] = time.time() - 1
+        elif mutation == 'hard':
+            job['hard_expires'] = time.time() - 1
+        elif mutation == 'orphan':
+            (p / 'home/state/reuse-task.meta').unlink()
+        elif mutation == 'unknown':
+            job['lease_state'] = 'busy'
+        else:
+            (Path(env['HOME']) / '.config/boat/api-key').write_text('repointed')
+        record.write_text(json.dumps(job))
+        r = reap(env)
+        if mutation == 'key':
+            assert r.returncode == 0 and json.loads(record.read_text())['cleanup'] == 'retained'
+            r = cleanup_task(env)
+            assert r.returncode == 70 and json.loads((state / 'fake-vms.json').read_text()), (
+                mutation, r.returncode, r.stderr, json.loads(record.read_text()))
+            (Path(env['HOME']) / '.config/boat/api-key').write_text('boat_fixture_secret')
+            cleaned = cleanup_task(env)
+            assert cleaned.returncode == 0, (cleaned.returncode, cleaned.stderr, json.loads(record.read_text()))
+        else:
+            assert r.returncode == 0, r.stderr
+            for _ in range(100):
+                if json.loads(record.read_text())['cleanup'] == 'deleted':
+                    break
+                time.sleep(.1)
+        empty(state)
+    print('ok - reap expires idle/hard/orphan/crashed leases and exact cleanup refuses repointed credentials')
+
+    p, state, env = case('reuse-reset-failure')
+    env = managed(p, env)
+    assert launch(p, env).returncode == 0
+    (state / 'fixture.json').write_text(json.dumps(dict(prepare_failed=True)))
+    r = next_run(p, env, 'echo fresh-fallback')
+    assert r.returncode == 0 and r.stdout == b'fresh-fallback\n', r.stderr
+    assert result(p)['reuse_fallback'] and result(p)['cleanup'] == 'deleted' and creates(state) == 2
+    empty(state)
+    print('ok - proven pre-execution reset failure deletes the old lease before one ephemeral fallback')
+
+    p, state, env = case('reuse-transfer-failure')
+    env = managed(p, env)
+    assert launch(p, env).returncode == 0
+    (state / 'fixture.json').write_text(json.dumps(dict(push_failed_once=True)))
+    r = next_run(p, env, 'echo fresh-transfer-fallback')
+    assert r.returncode == 0 and r.stdout == b'fresh-transfer-fallback\n', r.stderr
+    assert result(p)['reuse_fallback'] and creates(state) == 2
+    assert result(p)['cleanup'] == 'deleted'
+    empty(state)
+    print('ok - pre-execution transfer failure cold-replaces only the exact owned lease')
+
+    p, state, env = case('reuse-reset-unconfirmed')
+    env = managed(p, env)
+    assert launch(p, env).returncode == 0
+    (state / 'fixture.json').write_text(json.dumps(dict(prepare_failed=True, delete_failed=True)))
+    r = next_run(p, env, 'echo must-not-retry')
+    assert r.returncode == 70 and creates(state) == 1, (r.returncode, r.stderr)
+    (state / 'fixture.json').write_text('{}')
+    assert cleanup_task(env).returncode == 0
+    empty(state)
+    print('ok - unconfirmed reset cleanup never permits fresh allocation')
+
+    p, state, env = case('reuse-no-duplicate')
+    env = managed(p, env)
+    assert launch(p, env).returncode == 0
+    (state / 'fixture.json').write_text(json.dumps(dict(transport_failed=True)))
+    r = next_run(p, env, 'echo must-not-retry')
+    assert r.returncode == 74 and result(p)['kind'] == 'execution-unknown' and creates(state) == 1, r.stderr
+    empty(state)
+    print('ok - unknown reused execution never creates a second sandbox')
+
+    p, state, env = case('reuse-serialize')
+    env = managed(p, env)
+    first = launch(p, env, 'sleep 2; echo first', wait=False)
+    for _ in range(100):
+        if (state / 'fake-vms.json').exists():
+            break
+        time.sleep(.1)
+    busy = cleanup_task(env)
+    assert busy.returncode == 70, busy.stderr
+    assert b'active' in busy.stderr and reap(env).returncode == 0
+    active = json.loads(next((state / 'jobs').glob('*.json')).read_text())
+    assert active['lease_state'] == 'busy' and not active.get('closing'), active
+    second = subprocess.Popen(['bash', str(repo / 'bin/fm-boat-run.sh'), 'run', '--worktree', str(p / 'work'),
+        '--output', str(p / 'second-output'), '--', 'bash', '-c', 'test ! -e leftover; echo second'],
+        env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    out1, err1 = first.communicate(timeout=20)
+    out2, err2 = second.communicate(timeout=20)
+    assert first.returncode == second.returncode == 0, (err1, err2)
+    assert out1 == b'first\n' and out2 == b'second\n' and creates(state) == 1
+    assert cleanup_task(env).returncode == 0
+    empty(state)
+    print('ok - concurrent task calls serialize while cleanup refuses an active holder')
+
+    p, state, env = case('lease-idle-watcher')
+    env = managed(p, env)
+    assert launch(p, env).returncode == 0
+    record = next((state / 'jobs').glob('*.json'))
+    job = json.loads(record.read_text())
+    job['idle_expires'] = time.time() - 1
+    staged = record.with_suffix('.fixture')
+    staged.write_text(json.dumps(job))
+    staged.replace(record)
+    for _ in range(600):
+        if json.loads(record.read_text())['cleanup'] == 'deleted':
+            break
+        time.sleep(.1)
+    empty(state)
+    print('ok - the local idle watcher confirms deletion without a reap invocation')
+
+    for mismatch in ('task', 'home', 'generation', 'worktree', 'type'):
+        p, state, env = case('reuse-separate-' + mismatch)
+        env = managed(p, env)
+        assert launch(p, env).returncode == 0
+        if mismatch == 'task':
+            other = managed(p, env, task='other-task')
+        elif mismatch == 'home':
+            other_home = p / 'other-home'
+            (other_home / 'state').mkdir(parents=True)
+            (other_home / 'state/reuse-task.meta').write_text((p / 'home/state/reuse-task.meta').read_text())
+            other = dict(env, FM_HOME=str(other_home))
+        elif mismatch == 'generation':
+            other = managed(p, env, generation='generation-2')
+        elif mismatch == 'worktree':
+            (p / 'home/state/reuse-task.meta').write_text('endpoint_task_id=reuse-task\nkind=ship\n'
+                'spawn_gen=generation-1\nworktree=' + str(repo) + '\n')
+            other = env
+        else:
+            (p / 'home/config').mkdir()
+            (p / 'home/config/boat-keys').write_text(str(Path(env['HOME']) / '.config/boat/api-key') +
+                                                  ' types=default,large\n')
+            other = env
+        r = next_run(p, other, options=('--type', 'large') if mismatch == 'type' else ())
+        assert r.returncode == 0 and not result(p)['reused'] and creates(state) == 2, r.stderr
+        assert reap(other).returncode == 0
+        if mismatch == 'home':
+            assert cleanup_task(other).returncode == 0
+        if mismatch == 'task':
+            assert cleanup_task(other, task='other-task').returncode == 0
+        if mismatch == 'worktree':
+            env = managed(p, env)
+        assert cleanup_task(env, generation='generation-2' if mismatch == 'generation' else 'generation-1').returncode == 0
+    print('ok - tasks, homes, worker generations, worktrees and resource requests cannot consume another lease')
+
+else:
+    print('skip - local managed-VM fixtures require Linux /proc and child subreaper; Boat executes on Linux')
+
 p, state, env = case('success')
 r = launch(p, env, 'cat tracked.txt input.txt; test -z "$DEV_SECRET$BOAT_API_KEY$NODE_OPTIONS"; mkdir -p report; echo proof > report/file',
            ('--input', 'input.txt', '--artifact', 'report'))

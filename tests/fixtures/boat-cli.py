@@ -40,6 +40,8 @@ with (root / 'fake.lock').open('a') as handle:
             sys.exit(0)
         print(json.dumps({'starts': {w: {'remaining': fixture.get(w + '_remaining', fixture.get('remaining', 10))}
                                     for w in ('minute', 'hour', 'day')},
+                          'creditBalanceSeconds': fixture.get('creditBalanceSeconds', 1000000),
+                          'billingStatus': fixture.get('billingStatus', 'active'),
                           'canStart': fixture.get('canStart', True),
                           'nextStartDollars': fixture.get('nextStartDollars', 0)}))
     elif command == 'list':
@@ -73,6 +75,9 @@ with (root / 'fake.lock').open('a') as handle:
     elif command == 'push':
         if fixture.get('push_failed'):
             sys.exit(1)
+        if fixture.get('push_failed_once') and not (root / 'push-failed').exists():
+            (root / 'push-failed').touch()
+            sys.exit(1)
         # Boat push uses Git's tracked/nonignored manifest. Exercise the real
         # consumer here so an archive hidden by an enclosing ignore is rejected.
         manifest = subprocess.check_output(['git', '-C', args[2], 'ls-files',
@@ -96,7 +101,10 @@ with (root / 'fake.lock').open('a') as handle:
 
 if command == 'exec':
     remote = root / args[1] / 'fm-job'
+    remote.parent.mkdir(parents=True, exist_ok=True)
     argv = [a.replace('/home/user/fm-job', str(remote)) for a in args[args.index('--') + 1:]]
+    if fixture.get('prepare_failed') and 'prepare' in argv:
+        sys.exit(1)
     if len(argv) == 3 and argv[:2] == ['bash', '-c'] and argv[2].startswith('sudo -n fallocate'):
         size = re.search(r'fallocate -l ([1-4])G ', argv[2])
         assert size

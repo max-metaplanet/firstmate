@@ -81,13 +81,11 @@ configuration with `tsc --showConfig` outside the preload.
 Remote output is captured and printed when the command finishes rather than
 streamed.
 
-Only result kind `completed` with confirmed command dispatch is a verdict:
-that remote exit is the command's exit, and an unconfirmed cleanup is reported
-without changing it. Failed setup or any other unconfirmed outcome falls back
-locally after one notice. A failed remote vitest run that reports a snapshot
-missing, mismatched or not
-written is not a verdict either, because the remote run is under CI, where
-vitest never writes a new snapshot; it too runs locally after one notice.
+Owned-lease results require confirmed command dispatch and deletion or valid
+idle retention. Unknown owned execution or cleanup never permits local retry.
+Unleased calls preserve the existing setup, transport and snapshot fallback.
+The owned/unleased boundary is recorded by the adapter, not inferred from
+source paths or account names.
 """
 
 import json
@@ -784,11 +782,29 @@ def boat(settings, command, kind, home, bin_dir, root, inputs):
         result = json.loads((output / "result.json").read_text())
     except (OSError, ValueError):
         result = {}
+    lease = result.get('lease') or {}
+    managed = 'lease' in result or result.get('cleanup') == 'retained'
+    owner = lease.get('owner') or {}
+    owned = (owner.get('task') and owner.get('task') == os.environ.get('FM_TASK_ID')
+             and owner.get('home') == str(Path(home).resolve()))
+    cleanup_ok = result.get('cleanup') == 'deleted' or (
+        result.get('cleanup') == 'retained' and result.get('provider') == 'boat'
+        and lease.get('state') == 'idle' and owned)
+    if managed and not (result.get('kind') == 'unavailable' and finished.returncode in (69, 75)
+                        and result.get('adapter_exit') == finished.returncode
+                        and result.get('cleanup') == 'deleted'):
+        if (not owned or result.get('kind') != 'completed' or not cleanup_ok
+                or type(result.get('remote_exit')) is not int
+                or result.get('remote_exit') != finished.returncode
+                or result.get('adapter_exit') != finished.returncode or result.get('error')):
+            print('heavy-route: owned Boat execution or cleanup unconfirmed; refusing local retry; evidence %s'
+                  % (output / 'result.json'), file=sys.stderr)
+            return finished.returncode or 74
     if result.get("kind") != "completed" or not isinstance(result.get("remote_exit"), int):
         return local("Boat did not run it (%s, exit %d); discarded remote stdout; evidence %s"
                      % (result.get("kind") or "no result", finished.returncode,
                         output / "result.json"), command)
-    if result.get("cleanup") != "deleted":
+    if not cleanup_ok:
         print("heavy-route: the Boat machine's cleanup is %s; reap it (evidence %s)"
               % (result.get("cleanup") or "unknown", output / "result.json"),
               file=sys.stderr, flush=True)
@@ -797,11 +813,18 @@ def boat(settings, command, kind, home, bin_dir, root, inputs):
     except OSError:
         log = b""
     if dispatched.encode() not in log.splitlines():
+        if managed:
+            print('heavy-route: owned Boat dispatch unconfirmed; refusing local retry; evidence %s'
+                  % (output / 'result.json'), file=sys.stderr)
+            return 74
         return local("Boat setup did not dispatch the heavy command; "
                      "discarded remote stdout; evidence %s"
                      % (output / "result.json"), command)
     if kind in ("vitest", "orchestrator") and result["remote_exit"] != 0:
         if SNAPSHOT_UNWRITTEN.search(log):
+            if managed:
+                sys.stdout.buffer.write(finished.stdout)
+                return result['remote_exit']
             return local("Boat's vitest failed on a snapshot it may not write under CI; "
                          "discarded remote stdout", command)
     sys.stdout.buffer.write(finished.stdout)

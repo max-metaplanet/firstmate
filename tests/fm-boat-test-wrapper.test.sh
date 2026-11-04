@@ -79,6 +79,18 @@ def settings(env, code, kind, **extra):
     result = dict(kind=kind, adapter_exit=code, **extra)
     env['SETTINGS'] = json.dumps({'exit': code, 'result': result})
 
+for owner_home, owner_task, ok in (('/fixture/home', 'fixture-task', True),
+                                  ('/other/home', 'fixture-task', False),
+                                  ('/fixture/home', 'other-task', False)):
+    p, work, env = case('retained-' + owner_home.replace('/', '-') + '-' + owner_task)
+    env.update(FM_HOME='/fixture/home', FM_TASK_ID='fixture-task')
+    settings(env, 0, 'completed', remote_exit=0, cleanup='retained', provider='boat',
+             lease=dict(state='idle', owner=dict(home=owner_home, task=owner_task)))
+    r = launch(work, env, 'touch local-ran')
+    assert (r.returncode == 0) == ok, (ok, r.stderr)
+    assert not (work / 'local-ran').exists()
+print('ok - retained commands require an idle Boat lease owned by the exact calling home/task')
+
 for code in (0, 7, 69, 75, 70, 74, 143):
     p, work, env = case('completed-' + str(code))
     settings(env, code, 'completed', remote_exit=code, cleanup='deleted')

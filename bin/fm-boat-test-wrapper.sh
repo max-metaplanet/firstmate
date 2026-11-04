@@ -139,12 +139,19 @@ while :; do
   # so matching both exit fields and confirmed cleanup is required for success.
   kind=$(python3 - "$result" "$rc" <<'PY'
 import json
+import os
 import sys
 
 try:
     with open(sys.argv[1]) as stream:
         result = json.load(stream)
     code = int(sys.argv[2])
+    lease = result.get('lease') or {}
+    owner = lease.get('owner') or {}
+    cleanup_ok = result.get('cleanup') == 'deleted' or (
+        result.get('cleanup') == 'retained' and result.get('provider') == 'boat'
+        and lease.get('state') == 'idle' and owner.get('task') == os.environ.get('FM_TASK_ID')
+        and owner.get('task') and owner.get('home') == os.path.realpath(os.environ.get('FM_HOME', '')))
     if (result.get('kind') == 'unavailable' and code in (69, 75)
             and result.get('adapter_exit') == code):
         print('unavailable')
@@ -152,7 +159,7 @@ try:
           and type(result.get('remote_exit')) is int
           and result['remote_exit'] == code
           and result.get('adapter_exit') == code
-          and result.get('cleanup') == 'deleted'
+          and cleanup_ok
           and not result.get('error')):
         print('completed')
     else:

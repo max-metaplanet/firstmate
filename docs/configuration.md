@@ -1872,7 +1872,10 @@ A remote Vitest failure that reports a snapshot missing, mismatched, or not writ
 Remote output is captured and printed when the command finishes rather than streamed, and only a completed remote run with confirmed command dispatch after successful setup is a verdict: that remote exit is the command's exit.
 Command stdout is forwarded unchanged; bootstrap diagnostics and command stderr are forwarded on stderr.
 When a remote attempt is discarded, its stdout is discarded too, so only the local retry supplies stdout.
-[`bin/fm-boat-run.sh`](../bin/fm-boat-run.sh)'s help owns the upload, the per-account budget, the result and artifact files, and the cleanup.
+[`bin/fm-boat-run.sh`](../bin/fm-boat-run.sh)'s help owns the upload, per-account budget, task-local reuse, result and artifact files, idle and absolute expiry, and cleanup.
+Authoritatively identified workers reuse one compatible Boat sandbox per exact home and task; unattributed calls and Upstash remain create-per-command.
+Owned-lease results require confirmed deletion or intentional idle retention, and uncertain owned executions never retry locally.
+Task teardown confirms deletion before retiring its records; reap recovers expired or abandoned leases and skips active commands.
 
 Like the heavy-slot count, the record a heavy command reads is machine-wide and written by every ship or scout launch, so a change applies at the next launch and the last launch on the machine wins.
 An unreadable or malformed declaration refuses the launch rather than guessing which projects the captain meant to route.
