@@ -119,6 +119,28 @@ export FM_REMOTE_JOB_STAGE_REAP_SECONDS=1
 . "$ROOT/bin/fm-remote-job-lib.sh"
 
 fm_remote_job_prepare_state "$ACCOUNT_HOME" || fail "$FM_REMOTE_JOB_ERROR"
+mkdir "$STATE_ROOT/.seq-claims/1"
+SEQ_MKDIR_BIN=$(fm_fakebin "$TMP_ROOT/seq-mkdir")
+SEQ_REAL_MKDIR=$(type -P mkdir)
+cat > "$SEQ_MKDIR_BIN/mkdir" <<'SH'
+#!/usr/bin/env bash
+for arg in "$@"; do
+  if [ "$arg" = "$FM_SEQUENCE_CONTENDED_CLAIM" ]; then
+    exit 0
+  fi
+done
+exec "$FM_SEQUENCE_REAL_MKDIR" "$@"
+SH
+chmod +x "$SEQ_MKDIR_BIN/mkdir"
+SEQ_RECOVERED=$(PATH="$SEQ_MKDIR_BIN:$PATH" \
+  FM_SEQUENCE_REAL_MKDIR="$SEQ_REAL_MKDIR" \
+  FM_SEQUENCE_CONTENDED_CLAIM="$STATE_ROOT/.seq-claims/1" \
+  fm_remote_job_next_seq) || fail "allocation after a false-success mkdir failed"
+[ "$SEQ_RECOVERED" = 2 ] \
+  || fail "a false-success mkdir reused an existing sequence claim: $SEQ_RECOVERED"
+assert_present "$STATE_ROOT/.seq-claims/2" "recovered allocation did not retain its claim"
+rmdir "$STATE_ROOT/.seq-claims/1" "$STATE_ROOT/.seq-claims/2"
+pass "a mkdir success without creation cannot reuse a sequence claim"
 rm -f -- "$STATE_ROOT/seq"
 SEQ_PIDS=()
 for i in $(seq 1 20); do
