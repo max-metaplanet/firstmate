@@ -1456,7 +1456,7 @@ The optional `config/boat-keys` lists key-file paths and per-account `live_cap`,
 That help also owns per-run `--type` machine selection and its `FM_BOAT_TYPE` forwarding through the Test wrapper; the default remains `default`.
 Its `--boat-account` option selects one existing Boat account and refuses account, Upstash, and local fallback; the adapter help owns selection and refusal mechanics.
 Without `config/boat-keys`, Boat retains the single trial account and its existing caps.
-The help also owns the screened source-file exceptions, optional shallow-history transfer, and pinned `--history-input` manifests for complete safe Git snapshots and reviewed or explicitly selected screened env templates.
+The help also owns the screened source-file exceptions, strict screened shallow-history transfer, and pinned `--history-input` manifests for complete safe Git snapshots and reviewed or explicitly selected screened env templates.
 Use that input boundary for secret-free queue preflight or tests needing exact historical objects beyond the ancestry depth limit; unavailable or screened inputs fail before allocation.
 It runs outside local heavy slots; authenticated checks keep their existing execution path.
 "Boat-first heavy routing" below turns the same offload into where a declared project's worker-started heavy commands run by default.

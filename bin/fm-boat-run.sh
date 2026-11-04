@@ -200,10 +200,9 @@
 # History retains screened symlink target blobs in its Git pack.
 # Submodules in uploaded source, absolute or escaping symlink targets, and
 # symlink parent components are refused.
-# A commit or unsafe-symlink history screen refusal falls back to the screened current-source snapshot
-# with no historical objects. A notice and result evidence name the reason
-# and path or commit ID, never content. Missing origin/main, incomplete object
-# closure, insufficient merge ancestry and other Git errors still fail the run.
+# Any selected-history screening refusal, missing origin/main, incomplete object
+# closure, insufficient merge ancestry or other Git error fails locally before
+# provider calls. Requested history never falls back to a synthetic snapshot.
 # --history-input FILE instead selects pinned, complete, screened snapshots.
 # Its JSON object has exactly these fields (schema is literal; SHAs are full
 # lowercase object IDs for this checkout's object format):
@@ -283,7 +282,7 @@
 # outcomes never retry. Recovery does not extend the transfer deadline or TTL.
 # OUTPUT must be a new directory outside the source tree. result.json records
 # kind, remote_exit, source_head, source_sha256, vm_id and cleanup state, plus
-# history=synthetic|screened|fallback-synthetic and history_reason on fallback.
+# history=synthetic|screened. Synthetic mode applies only without selected history.
 # upload_bytes and push_timeout_seconds record the transfer budget.
 # upload_recovered=true records successful archive verification after scp timeout.
 # Unavailable request errors name timeout, OS error or bad response and the exception class,

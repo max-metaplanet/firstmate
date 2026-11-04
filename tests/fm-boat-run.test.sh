@@ -569,6 +569,66 @@ assert git('fsck','--full','--no-reflogs') == ''
     print('ok - concealed merge ancestors refuse before provider calls; sufficient depth preserves merges in both directions and modes')
 
 
+def history_screening_cases():
+    for mode in ('depth', 'input'):
+        for kind in ('commit', 'symlink'):
+            for base_only in (False, True):
+                p, state, env = case('screen-refusal-' + mode + '-' + kind + '-' + str(base_only), clean_history=True)
+                work = p / 'work'
+                start = git(work, 'rev-parse', 'HEAD').stdout.decode().strip()
+                if kind == 'symlink':
+                    (work / 'unsafe-link').symlink_to('../API_SECRET=history-never-print')
+                    git(work, 'add', 'unsafe-link')
+                git(work, 'commit', '-q', '--allow-empty', '-m',
+                    'API_SECRET=history-never-print' if kind == 'commit' else 'unsafe historical link')
+                unsafe = git(work, 'rev-parse', 'HEAD').stdout.decode().strip()
+                if kind == 'symlink':
+                    (work / 'unsafe-link').unlink()
+                    git(work, 'add', '--all')
+                git(work, 'commit', '-q', '--allow-empty', '-m', 'clean descendant')
+                main = git(work, 'rev-parse', 'HEAD').stdout.decode().strip()
+                git(work, 'branch', 'main-input', main)
+                if base_only:
+                    git(work, 'reset', '--hard', start)
+                head = git(work, 'rev-parse', 'HEAD').stdout.decode().strip()
+                git(work, 'branch', 'feature-input', head)
+                git(work, 'update-ref', 'refs/remotes/origin/main', main)
+                path = p / 'history.json'
+                path.write_text(json.dumps(dict(schema='fm-boat-history.v1', source=str(work), head=head,
+                    head_ref='refs/heads/feature-input', refs={'refs/remotes/origin/main':
+                    {'ref': 'refs/heads/main-input', 'oid': main}}, depth=3, objects=[], templates=[])))
+                options = ('--history-depth', '3') if mode == 'depth' else ('--history-input', str(path))
+                refused = launch(p, env, options=options)
+                assert refused.returncode == 2, refused.stderr
+                assert not (state / 'calls.jsonl').exists()
+                assert not (p / 'output/upload/source.tar.gz').exists()
+                evidence = json.loads((p / 'output/upload/history-exclusions.json').read_text())
+                assert any(item['commit'] == unsafe and item['rule'] ==
+                           ('commit-content' if kind == 'commit' else 'symlink-target') for item in evidence['objects'])
+                assert b'history-never-print' not in refused.stdout + refused.stderr + (p / 'output/result.json').read_bytes()
+                assert 'history-never-print' not in json.dumps(evidence)
+    for history_mode in (False, True):
+        p, state, env = case('screen-preserved-link-' + str(history_mode), clean_history=True)
+        work = p / 'work'
+        (work / 'safe-link').symlink_to('tracked.txt')
+        git(work, 'add', 'safe-link')
+        git(work, 'commit', '-qm', 'safe link')
+        git(work, 'update-ref', 'refs/remotes/origin/main', 'HEAD')
+        options = ('--history-depth', '2') if history_mode else ()
+        completed = launch(p, env, 'test -L safe-link && test "$(readlink safe-link)" = tracked.txt && test -f safe-link', options)
+        assert completed.returncode == 0, completed.stderr
+        assert result(p)['history'] == ('screened' if history_mode else 'synthetic')
+        empty(state)
+    print('ok - both history modes refuse unsafe ancestors on either root before provider calls; default synthetic mode and admitted links survive')
+
+
+if '--history-screening' in sys.argv:
+    history_screening_cases()
+    merge_ancestry_cases()
+    sys.exit(0)
+history_screening_cases()
+
+
 merge_ancestry_cases()
 if '--merge-ancestry' in sys.argv:
     sys.exit(0)
@@ -1719,7 +1779,7 @@ for history_mode in (False, True):
                 skill_path = selected
             check += ' && test -f ' + shlex.quote(skill_path)
         r = launch(p, env, check, options)
-        assert r.returncode == (0 if accepted or history_mode else 2), (history_mode, label, r.stdout, r.stderr)
+        assert r.returncode == (0 if accepted else 2), (history_mode, label, r.stdout, r.stderr)
         assert b'symlink-never-print' not in r.stdout + r.stderr
         if accepted:
             uploaded = json.loads((state / 'uploaded.json').read_text())
@@ -1736,14 +1796,9 @@ for history_mode in (False, True):
                 assert 'account-material.txt' not in archive.getnames()
                 assert ('untracked-target.txt' in archive.getnames()) == (label == 'explicit-target')
             empty(state)
-        elif history_mode:
-            assert result(p)['history'] == 'fallback-synthetic'
-            assert selected in result(p)['history_reason']
-            with tarfile.open(p / 'output/upload/source.tar.gz') as archive:
-                assert not any(n == '.git' or n.startswith('.git/') for n in archive.getnames())
-            empty(state)
         else:
             assert not (state / 'calls.jsonl').exists()
+            assert not (p / 'output/upload/source.tar.gz').exists()
     for label in ('submodule', 'parent-component'):
         p, state, env = case('unsafe-entry-' + str(history_mode) + '-' + label, clean_history=True)
         work = p / 'work'
@@ -2323,14 +2378,13 @@ for name, selected, contents, symlink, accepted in [
         git(work, 'add', '--all')
         git(work, 'commit', '-qm', 'clean current tree')
     git(work, 'update-ref', 'refs/remotes/origin/main', 'HEAD')
-    refused = symlink and not accepted
-    check = 'test ! -e .git' if refused else 'exit 0'
+    check = 'exit 0'
     if symlink and accepted:
         check = ('test -L ' if name == 'history-other-link' else 'test ! -L ') + shlex.quote(selected) + ' && test "$(git cat-file blob HEAD:' + \
                 selected + ')" = ' + shlex.quote(contents) + ' && git fsck --no-reflogs'
     r = launch(p, env, check, ('--history-depth', '2'))
     assert b'historical-value-never-print' not in r.stdout + r.stderr
-    if not accepted and not refused:
+    if not accepted:
         assert r.returncode == 2, (name, r.stderr)
         assert not (state / 'calls.jsonl').exists()
         assert not (p / 'output/upload/source.tar.gz').exists()
@@ -2338,14 +2392,7 @@ for name, selected, contents, symlink, accepted in [
     assert r.returncode == 0, (name, r.stdout, r.stderr)
     uploaded = json.loads((state / 'uploaded.json').read_text())
     assert (selected in uploaded) == (accepted and (not symlink or name == 'history-other-link')), (name, uploaded)
-    if refused:
-        assert r.stderr.count(b'falling back to synthetic snapshot; history refused:') == 1
-        assert result(p)['history'] == 'fallback-synthetic'
-        assert selected in result(p)['history_reason']
-        with tarfile.open(p / 'output/upload/source.tar.gz') as archive:
-            assert not any(n == '.git' or n.startswith('.git/') for n in archive.getnames())
-    else:
-        assert result(p)['history'] == 'screened'
+    assert result(p)['history'] == 'screened'
     empty(state)
 print('ok - Claude history screens reimage content and permits screened in-repo symlink blobs')
 
@@ -2499,16 +2546,16 @@ for root_ref in ('HEAD', 'refs/remotes/origin/main'):
                     tree = git(work, 'rev-parse', 'HEAD^{tree}').stdout.decode().strip()
                     tip = git(work, 'commit-tree', tree, '-p', unsafe, '-m', 'clean descendant').stdout.decode().strip()
                 git(work, 'update-ref', root_ref, tip)
-                r = launch(p, env, 'test ! -e .git', options=('--history-depth', '2'))
-                assert r.returncode == 0, (name, r.stderr)
-                assert r.stderr.count(b'falling back to synthetic snapshot; history refused:') == 1
-                assert credential not in r.stdout + r.stderr
-                assert result(p)['history'] == 'fallback-synthetic'
-                assert unsafe in result(p)['history_reason']
-                with tarfile.open(p / 'output/upload/source.tar.gz') as archive:
-                    assert not any(n == '.git' or n.startswith('.git/') for n in archive.getnames())
-                empty(state)
-print('ok - both history roots screen tip and ancestor commit messages and headers, then fall back without content')
+                r = launch(p, env, options=('--history-depth', '2'))
+                assert r.returncode == 2, (name, r.stderr)
+                assert credential not in r.stdout + r.stderr + (p / 'output/result.json').read_bytes()
+                assert not (state / 'calls.jsonl').exists()
+                assert not (p / 'output/upload/source.tar.gz').exists()
+                evidence = json.loads((p / 'output/upload/history-exclusions.json').read_text())
+                assert any(item['oid'] == unsafe and item['commit'] == unsafe and
+                           item['rule'] == 'commit-content' for item in evidence['objects'])
+                assert credential.decode() not in json.dumps(evidence)
+print('ok - both history roots refuse tip and ancestor commit messages and headers before provider calls without content')
 
 p, state, env = case('history-commit-prose', clean_history=True)
 work = p / 'work'

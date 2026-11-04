@@ -32,10 +32,6 @@ class Failure(Exception):
         self.code = code
 
 
-class HistoryScreenRefusal(Failure):
-    pass
-
-
 class UploadRejected(Failure):
     pass
 
@@ -775,7 +771,7 @@ def history(root, head, depth, destination, key_files, uploaded, handled_links, 
         if not safe_text(git(fetched, 'cat-file', 'commit', commit.decode()), CREDENTIAL_COMMIT):
             exclusions.append(dict(oid=commit.decode(), path='', commit=commit.decode(), rule='commit-content'))
             save(manifest, {'schema': 'fm-boat-exclusions.v1', 'objects': exclusions})
-            raise HistoryScreenRefusal('history refused: credential-looking or binary commit: ' +
+            raise Failure('history refused: credential-looking or binary commit: ' +
                                        commit.decode(), 2)
         entries = git(fetched, 'ls-tree', '-rz', '--full-tree', commit.decode()).split(b'\0')
         for entry in filter(None, entries):
@@ -790,7 +786,7 @@ def history(root, head, depth, destination, key_files, uploaded, handled_links, 
                 except Failure as exc:
                     exclusions.append(dict(oid=oid.decode(), path=name, commit=commit.decode(), rule='symlink-target'))
                     save(manifest, {'schema': 'fm-boat-exclusions.v1', 'objects': exclusions})
-                    raise HistoryScreenRefusal(str(exc), exc.code) from exc
+                    raise Failure(str(exc), exc.code) from exc
                 # The pack retains screened target text, never dereferenced content.
                 continue
             # Never rewrite a selected tree to hide a refused object.
@@ -991,16 +987,9 @@ def archive_source(root, names, links, archive, history_depth, key_files, head, 
             handled_links.add(name)
         if history_depth is not None:
             scratch = stack.enter_context(tempfile.TemporaryDirectory(dir=archive.parent, prefix='history-'))
-            try:
-                history_git = history(root, head, history_depth, Path(scratch), key_files, uploaded, handled_links, context)
-            except HistoryScreenRefusal as exc:
-                if context:
-                    raise
-                history_result.update(history='fallback-synthetic', history_reason=str(exc))
-                print('boat-offload: falling back to synthetic snapshot; ' + str(exc), file=sys.stderr)
-            else:
-                output.add(history_git, arcname='.git')
-                history_result['history'] = 'screened'
+            history_git = history(root, head, history_depth, Path(scratch), key_files, uploaded, handled_links, context)
+            output.add(history_git, arcname='.git')
+            history_result['history'] = 'screened'
     return history_result
 
 
