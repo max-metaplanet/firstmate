@@ -1,0 +1,14 @@
+{"name": "host mkdir", "version": "mkdir (uutils coreutils) 0.8.0"}
+{"name": "live simultaneous allocation", "burst": 1, "sequences": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40], "durable_private_claims": true}
+{"name": "live simultaneous allocation", "burst": 2, "sequences": [41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80], "durable_private_claims": true}
+{"name": "live simultaneous allocation", "burst": 3, "sequences": [81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120], "durable_private_claims": true}
+{"name": "live simultaneous allocation", "burst": 4, "sequences": [121, 122, 123, 124, 125, 126, 127, 128, 129, 130, 131, 132, 133, 134, 135, 136, 137, 138, 139, 140, 141, 142, 143, 144, 145, 146, 147, 148, 149, 150, 151, 152, 153, 154, 155, 156, 157, 158, 159, 160], "durable_private_claims": true}
+{"name": "live simultaneous allocation", "burst": 5, "sequences": [161, 162, 163, 164, 165, 166, 167, 168, 169, 170, 171, 172, 173, 174, 175, 176, 177, 178, 179, 180, 181, 182, 183, 184, 185, 186, 187, 188, 189, 190, 191, 192, 193, 194, 195, 196, 197, 198, 199, 200], "durable_private_claims": true}
+{"name": "live occupied-claim recovery", "condition": "missing hint", "sequence": 201}
+{"name": "live occupied-claim recovery", "condition": "invalid hint", "sequence": 202}
+{"name": "live concurrent job publication", "job_sequences": {"job-5hLiiN": 218, "job-Lkrq3L": 208, "job-MGh4AG": 207, "job-bR8OvV": 209, "job-HbeI61": 203, "job-8FVaTu": 221, "job-KTfL89": 204, "job-hdjcgj": 219, "job-5RFpUJ": 222, "job-ssgGZO": 220, "job-gdNelW": 213, "job-MlX9yk": 216, "job-HDjM80": 211, "job-7RDXtK": 215, "job-mybNvV": 210, "job-vuTw3F": 214, "job-87V8nS": 212, "job-zoQ3vE": 205, "job-OpLfcA": 206, "job-dickH0": 217}, "all_queued": true, "abandoned_stages": 0}
+{"name": "live completed staging order", "sequences": [223, 224, 225]}
+{"name": "fault-injected false-success regression", "revision": "base", "sequence": 1, "reused_existing_claim": true, "live": false}
+{"name": "fault-injected false-success regression", "revision": "target", "sequence": 2, "reused_existing_claim": false, "live": false}
+{"name": "live original race reproduction", "burst": 1, "sequences": [2, 1, 3, 7, 11, 6, 5, 39, 12, 21, 9, 8, 4, 23, 36, 32, 26, 15, 10, 19, 17, 16, 37, 13, 25, 28, 22, 24, 30, 31, 29, 35, 14, 18, 33, 20, 38, 24, 34, 27], "unique": 39, "allocated": 40}
+{"name": "cleanup", "disposable_workspace_removed": true}
