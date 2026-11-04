@@ -738,7 +738,8 @@ class Boat:
         return data['sandboxes']
 
     def upload(self, vm, upload, timeout):
-        self.call('push', vm, str(upload), '--to', REMOTE_ROOT,
+        self.command(vm, ['mkdir', '-p', REMOTE_ROOT])
+        self.call('scp', str(upload / 'source.tar.gz'), vm + ':' + REMOTE_ROOT + '/source.tar.gz',
                   timeout=timeout, raw=True)
 
     def download(self, vm, remote, destination):
@@ -1201,11 +1202,6 @@ def run(args, boats):
             root, args.input, upload / 'source.tar.gz',
             {upstash_key_file(), *(b.account.key_file for b in boats)}, args.history_depth)
         result.update(history_result)
-        # Boat push honors enclosing gitignore rules. OUTPUT commonly lives in
-        # ignored data/; a private index makes this one archive an explicit input
-        # without changing the source repository or transferring its .git.
-        git(upload, 'init', '--quiet')
-        git(upload, 'add', '--force', '--', 'source.tar.gz')
         upload_bytes = (upload / 'source.tar.gz').stat().st_size
         # Allow 90s setup plus 128 KiB/s, within the existing TTL's transfer margin.
         push_timeout = min(600, max(300, 90 + (upload_bytes + 131071) // 131072))

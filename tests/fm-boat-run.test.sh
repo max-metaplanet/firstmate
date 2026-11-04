@@ -499,7 +499,8 @@ spec.loader.exec_module(adapter)
 real_popen = subprocess.Popen
 class TransferClock(real_popen):
     def communicate(self, *args, timeout=None, **kwargs):
-        if self.args[1] == 'push' and timeout is not None and timeout < 400:
+        if (self.args[1] == 'scp' and str(self.args[2]).endswith('/source.tar.gz')
+                and timeout is not None and timeout < 400):
             raise subprocess.TimeoutExpired(self.args, timeout, output=b'boat_fixture_secret')
         return super().communicate(*args, timeout=timeout, **kwargs)
 subprocess.Popen = TransferClock

@@ -181,8 +181,11 @@
 # Remote GNU timeout and a host deadline bound execution; output is captured
 # in OUTPUT/command.log and printed on completion. Artifacts are copied under
 # OUTPUT/artifacts even after command failure. Missing/unsafe artifacts fail.
-# Push allows 90 seconds plus the archive size at 128 KiB/s, with a 300-second
-# minimum and a 600-second maximum within the existing VM TTL margin.
+# Boat copies the prepared source.tar.gz with native single-file scp, without
+# Git directory selection or another tar stream. Exact SHA256 verification still
+# precedes extraction and execution. Transfer allows 90 seconds plus the archive
+# size at 128 KiB/s, with a 300-second minimum and a 600-second maximum
+# within the existing VM TTL margin.
 # This deadline is independent of --timeout, which bounds the remote command.
 # OUTPUT must be a new directory outside the source tree. result.json records
 # kind, remote_exit, source_head, source_sha256, vm_id and cleanup state, plus
