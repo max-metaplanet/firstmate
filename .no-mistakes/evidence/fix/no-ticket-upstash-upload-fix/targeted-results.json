@@ -1,0 +1,453 @@
+[
+  {
+    "case": "observed-bundle",
+    "boundary": "fixture SDK; not live Upstash",
+    "result": {
+      "kind": "completed",
+      "remote_exit": 0,
+      "cleanup": "deleted",
+      "swap_gib": 0,
+      "provider": "upstash",
+      "requested_type": "default",
+      "actual_size": "small",
+      "history": "synthetic",
+      "source_head": "a55e67003757bcd8e9caeea5bdfdc24f32865b12",
+      "source_sha256": "f432c48e87627aded86708ca97e3509f7f9e5a84e1b0fe978f80569925767d2b",
+      "upload_bytes": 69231148,
+      "push_timeout_seconds": 600,
+      "boat_unavailable": "Boat minute start cap reached",
+      "resources": {
+        "cpu": 2,
+        "memory_gib": 4,
+        "disk_gib": 10
+      },
+      "vm_id": "small-fm-offload-df75eac373664ee1b64ed1d6c3b5576d",
+      "adapter_exit": 0
+    },
+    "payload_sha256": "c58191404acbaf7add1c1dcdf057dc935824e2ccb54b615b8a579714d0e2e6b1",
+    "request_sizes": [
+      8388608,
+      8388608,
+      8388608,
+      8388608,
+      8388608,
+      8388608,
+      8388608,
+      8388608,
+      2122284
+    ]
+  },
+  {
+    "case": "remote",
+    "boundary": "fixture SDK; not live Upstash",
+    "exit": 0,
+    "local_ran": false,
+    "results": [
+      {
+        "kind": "completed",
+        "remote_exit": 0,
+        "cleanup": "deleted",
+        "swap_gib": 0,
+        "provider": "upstash",
+        "requested_type": "default",
+        "actual_size": "small",
+        "history": "synthetic",
+        "source_head": "5dfb8d1b9c9f05f941e0d4797dfe57e72828b570",
+        "source_sha256": "3580eff1f68640341b96bf218e571a44a9a31709477d4283b31f3549aa365bc5",
+        "upload_bytes": 209,
+        "push_timeout_seconds": 300,
+        "boat_unavailable": "Boat minute start cap reached",
+        "resources": {
+          "cpu": 2,
+          "memory_gib": 4,
+          "disk_gib": 10
+        },
+        "vm_id": "small-fm-offload-3a61167b23ae49f5b613b9f0f073b7d1",
+        "adapter_exit": 0
+      }
+    ]
+  },
+  {
+    "case": "local",
+    "boundary": "fixture SDK; not live Upstash",
+    "exit": 23,
+    "local_ran": true,
+    "results": [
+      {
+        "kind": "unavailable",
+        "remote_exit": null,
+        "cleanup": "deleted",
+        "swap_gib": 0,
+        "provider": "upstash",
+        "requested_type": "default",
+        "actual_size": "small",
+        "history": "synthetic",
+        "source_head": "ffd37a28b54d0456ad3144a20fd87a84e6f0620e",
+        "source_sha256": "1f24e3936a365612594915421b64691ecfdabdbd863f69fe29a0f0d7dcffea4d",
+        "upload_bytes": 208,
+        "push_timeout_seconds": 300,
+        "boat_unavailable": "Boat minute start cap reached",
+        "resources": {
+          "cpu": 2,
+          "memory_gib": 4,
+          "disk_gib": 10
+        },
+        "execution_error": "Upstash create failed HTTP 429 (BoxError)",
+        "error": "Upstash create failed HTTP 429 (BoxError)",
+        "adapter_exit": 75
+      }
+    ]
+  },
+  {
+    "case": "no-local",
+    "boundary": "fixture SDK; not live Upstash",
+    "exit": 75,
+    "local_ran": false,
+    "results": [
+      {
+        "kind": "unavailable",
+        "remote_exit": null,
+        "cleanup": "deleted",
+        "swap_gib": 0,
+        "provider": "upstash",
+        "requested_type": "default",
+        "actual_size": "small",
+        "history": "synthetic",
+        "source_head": "ffd37a28b54d0456ad3144a20fd87a84e6f0620e",
+        "source_sha256": "09c33b3755ce33172c4b86c2f58bce57cbe0c4be90a2d1d851446ed67a32db52",
+        "upload_bytes": 210,
+        "push_timeout_seconds": 300,
+        "boat_unavailable": "Boat minute start cap reached",
+        "resources": {
+          "cpu": 2,
+          "memory_gib": 4,
+          "disk_gib": 10
+        },
+        "execution_error": "Upstash create failed HTTP 429 (BoxError)",
+        "error": "Upstash create failed HTTP 429 (BoxError)",
+        "adapter_exit": 75
+      }
+    ]
+  },
+  {
+    "case": "unknown-no-local",
+    "boundary": "fixture SDK; not live Upstash",
+    "exit": 74,
+    "local_ran": false,
+    "results": [
+      {
+        "kind": "execution-unknown",
+        "remote_exit": null,
+        "cleanup": "deleted",
+        "swap_gib": 0,
+        "provider": "upstash",
+        "requested_type": "default",
+        "actual_size": "small",
+        "history": "synthetic",
+        "source_head": "717d3331a68a8041d4af8e92f63074c9f645c2da",
+        "source_sha256": "0c96d918b9d0a6b6863dc5b3a3e44ba58e764500a3c676bf70d4d6b33d7aa8cf",
+        "upload_bytes": 210,
+        "push_timeout_seconds": 300,
+        "boat_unavailable": "Boat minute start cap reached",
+        "resources": {
+          "cpu": 2,
+          "memory_gib": 4,
+          "disk_gib": 10
+        },
+        "vm_id": "small-fm-offload-355f7f0a74184b728a72f007e9728b9c",
+        "execution_error": "Upstash exec failed (BoxError)",
+        "error": "Upstash exec failed (BoxError)",
+        "adapter_exit": 74
+      }
+    ]
+  },
+  {
+    "case": "upload-local",
+    "boundary": "fixture SDK; not live Upstash",
+    "exit": 23,
+    "local_ran": true,
+    "results": [
+      {
+        "kind": "unavailable",
+        "remote_exit": null,
+        "cleanup": "deleted",
+        "swap_gib": 0,
+        "provider": "upstash",
+        "requested_type": "default",
+        "actual_size": "small",
+        "history": "synthetic",
+        "source_head": "717d3331a68a8041d4af8e92f63074c9f645c2da",
+        "source_sha256": "cca894d3185d5f955804774c436365a0ea9cfedad88fbfae621d002f841c8fdc",
+        "upload_bytes": 208,
+        "push_timeout_seconds": 300,
+        "boat_unavailable": "Boat minute start cap reached",
+        "resources": {
+          "cpu": 2,
+          "memory_gib": 4,
+          "disk_gib": 10
+        },
+        "vm_id": "small-fm-offload-08b2afb7b04c43d09b9636593044ea28",
+        "execution_error": "Upstash upload failed HTTP 400 (BoxError)",
+        "error": "Upstash upload failed HTTP 400 (BoxError)",
+        "adapter_exit": 69
+      }
+    ]
+  },
+  {
+    "case": "upload-too-large",
+    "boundary": "fixture SDK; not live Upstash",
+    "exit": 23,
+    "local_ran": true,
+    "results": [
+      {
+        "kind": "unavailable",
+        "remote_exit": null,
+        "cleanup": "deleted",
+        "swap_gib": 0,
+        "provider": "upstash",
+        "requested_type": "default",
+        "actual_size": "small",
+        "history": "synthetic",
+        "source_head": "717d3331a68a8041d4af8e92f63074c9f645c2da",
+        "source_sha256": "f3602a468e6c0de613286e6593b863536a262140cd2f796bc5b32fef61bb6be3",
+        "upload_bytes": 210,
+        "push_timeout_seconds": 300,
+        "boat_unavailable": "Boat minute start cap reached",
+        "resources": {
+          "cpu": 2,
+          "memory_gib": 4,
+          "disk_gib": 10
+        },
+        "vm_id": "small-fm-offload-c55784a052c34bc59f01749ec9a94212",
+        "execution_error": "Upstash upload failed HTTP 413 (BoxError)",
+        "error": "Upstash upload failed HTTP 413 (BoxError)",
+        "adapter_exit": 69
+      }
+    ]
+  },
+  {
+    "case": "upload-capacity",
+    "boundary": "fixture SDK; not live Upstash",
+    "exit": 23,
+    "local_ran": true,
+    "results": [
+      {
+        "kind": "unavailable",
+        "remote_exit": null,
+        "cleanup": "deleted",
+        "swap_gib": 0,
+        "provider": "upstash",
+        "requested_type": "default",
+        "actual_size": "small",
+        "history": "synthetic",
+        "source_head": "75b38ed563602ca4349834b04c8929b4cc629b06",
+        "source_sha256": "3680451360997b0e304a89cee4f44c59dd484c91bed6b626a257bf1942cf0515",
+        "upload_bytes": 211,
+        "push_timeout_seconds": 300,
+        "boat_unavailable": "Boat minute start cap reached",
+        "resources": {
+          "cpu": 2,
+          "memory_gib": 4,
+          "disk_gib": 10
+        },
+        "vm_id": "small-fm-offload-8af776e1277b45b2bffc2db0647e27ab",
+        "execution_error": "Upstash upload failed HTTP 429 (BoxError)",
+        "error": "Upstash upload failed HTTP 429 (BoxError)",
+        "adapter_exit": 75
+      }
+    ]
+  },
+  {
+    "case": "upload-no-local",
+    "boundary": "fixture SDK; not live Upstash",
+    "exit": 69,
+    "local_ran": false,
+    "results": [
+      {
+        "kind": "unavailable",
+        "remote_exit": null,
+        "cleanup": "deleted",
+        "swap_gib": 0,
+        "provider": "upstash",
+        "requested_type": "default",
+        "actual_size": "small",
+        "history": "synthetic",
+        "source_head": "75b38ed563602ca4349834b04c8929b4cc629b06",
+        "source_sha256": "2e1ea8b1a05dbe74bb53cef23402e3dde678acbbcd0e5899ccd3df660a22908c",
+        "upload_bytes": 208,
+        "push_timeout_seconds": 300,
+        "boat_unavailable": "Boat minute start cap reached",
+        "resources": {
+          "cpu": 2,
+          "memory_gib": 4,
+          "disk_gib": 10
+        },
+        "vm_id": "small-fm-offload-31765d5dae1343cbbe740833fe882a43",
+        "execution_error": "Upstash upload failed HTTP 400 (BoxError)",
+        "error": "Upstash upload failed HTTP 400 (BoxError)",
+        "adapter_exit": 69
+      }
+    ]
+  },
+  {
+    "case": "upload-unknown",
+    "boundary": "fixture SDK; not live Upstash",
+    "exit": 74,
+    "local_ran": false,
+    "results": [
+      {
+        "kind": "adapter-error",
+        "remote_exit": null,
+        "cleanup": "deleted",
+        "swap_gib": 0,
+        "provider": "upstash",
+        "requested_type": "default",
+        "actual_size": "small",
+        "history": "synthetic",
+        "source_head": "75b38ed563602ca4349834b04c8929b4cc629b06",
+        "source_sha256": "157c0b0acc92f6fcaaeda9c565b217e21956d62b9b501c7f3506bfd91731cb7a",
+        "upload_bytes": 207,
+        "push_timeout_seconds": 300,
+        "boat_unavailable": "Boat minute start cap reached",
+        "resources": {
+          "cpu": 2,
+          "memory_gib": 4,
+          "disk_gib": 10
+        },
+        "vm_id": "small-fm-offload-10ae223e9d50425ebf0b3f0bd9c6da17",
+        "execution_error": "Upstash upload failed (BoxError)",
+        "error": "Upstash upload failed (BoxError)",
+        "adapter_exit": 74
+      }
+    ]
+  },
+  {
+    "case": "upload-timeout",
+    "boundary": "fixture SDK; not live Upstash",
+    "exit": 74,
+    "local_ran": false,
+    "results": [
+      {
+        "kind": "adapter-error",
+        "remote_exit": null,
+        "cleanup": "deleted",
+        "swap_gib": 0,
+        "provider": "upstash",
+        "requested_type": "default",
+        "actual_size": "small",
+        "history": "synthetic",
+        "source_head": "75b38ed563602ca4349834b04c8929b4cc629b06",
+        "source_sha256": "038372a5bad00cb9a685d441d411a0a7d40e72cd3fab924192ab873da3847279",
+        "upload_bytes": 207,
+        "push_timeout_seconds": 300,
+        "boat_unavailable": "Boat minute start cap reached",
+        "resources": {
+          "cpu": 2,
+          "memory_gib": 4,
+          "disk_gib": 10
+        },
+        "vm_id": "small-fm-offload-e7478c973dcf420aae60058124259463",
+        "execution_error": "Upstash upload failed HTTP 408 (BoxError)",
+        "error": "Upstash upload failed HTTP 408 (BoxError)",
+        "adapter_exit": 74
+      }
+    ]
+  },
+  {
+    "case": "upload-server-error",
+    "boundary": "fixture SDK; not live Upstash",
+    "exit": 74,
+    "local_ran": false,
+    "results": [
+      {
+        "kind": "adapter-error",
+        "remote_exit": null,
+        "cleanup": "deleted",
+        "swap_gib": 0,
+        "provider": "upstash",
+        "requested_type": "default",
+        "actual_size": "small",
+        "history": "synthetic",
+        "source_head": "75b38ed563602ca4349834b04c8929b4cc629b06",
+        "source_sha256": "b78c343d6254b1570fbf1ded9f0820d58f7ce041382ef8558edc0e5e5b5cf27c",
+        "upload_bytes": 209,
+        "push_timeout_seconds": 300,
+        "boat_unavailable": "Boat minute start cap reached",
+        "resources": {
+          "cpu": 2,
+          "memory_gib": 4,
+          "disk_gib": 10
+        },
+        "vm_id": "small-fm-offload-9a80351d059d44f9ad1ef2db6f31a1e1",
+        "execution_error": "Upstash upload failed HTTP 500 (BoxError)",
+        "error": "Upstash upload failed HTTP 500 (BoxError)",
+        "adapter_exit": 74
+      }
+    ]
+  },
+  {
+    "case": "upload-corrupt",
+    "boundary": "fixture SDK; not live Upstash",
+    "exit": 74,
+    "local_ran": false,
+    "results": [
+      {
+        "kind": "adapter-error",
+        "remote_exit": null,
+        "cleanup": "deleted",
+        "swap_gib": 0,
+        "provider": "upstash",
+        "requested_type": "default",
+        "actual_size": "small",
+        "history": "synthetic",
+        "source_head": "b47cbe47697bd67d77b75b78f0464c7ed4946868",
+        "source_sha256": "d60e85359636211252fb6e2fc0aa4865121296e53435eb1391acf6a72316caed",
+        "upload_bytes": 208,
+        "push_timeout_seconds": 300,
+        "boat_unavailable": "Boat minute start cap reached",
+        "resources": {
+          "cpu": 2,
+          "memory_gib": 4,
+          "disk_gib": 10
+        },
+        "vm_id": "small-fm-offload-5916abb8542947689c87185600c7b977",
+        "execution_error": "Upstash command result missing, failed or timed out",
+        "error": "Upstash command result missing, failed or timed out",
+        "adapter_exit": 74
+      }
+    ]
+  },
+  {
+    "case": "upload-cleanup-pending",
+    "boundary": "fixture SDK; not live Upstash",
+    "exit": 70,
+    "local_ran": false,
+    "results": [
+      {
+        "kind": "adapter-error",
+        "remote_exit": null,
+        "cleanup": "pending",
+        "swap_gib": 0,
+        "provider": "upstash",
+        "requested_type": "default",
+        "actual_size": "small",
+        "history": "synthetic",
+        "source_head": "b47cbe47697bd67d77b75b78f0464c7ed4946868",
+        "source_sha256": "8ebabcf3e78d9abf249b5c8411ccbcf422204833ea03e3b9fb5a99a5adacb6e9",
+        "upload_bytes": 210,
+        "push_timeout_seconds": 300,
+        "boat_unavailable": "Boat minute start cap reached",
+        "resources": {
+          "cpu": 2,
+          "memory_gib": 4,
+          "disk_gib": 10
+        },
+        "vm_id": "small-fm-offload-24a800b3e2d54c8994c7ea6bddcc47ed",
+        "execution_error": "Upstash upload failed HTTP 400 (BoxError)",
+        "cleanup_error": "Upstash delete failed (BoxError)",
+        "error": "cleanup unconfirmed; run reap",
+        "adapter_exit": 70
+      }
+    ]
+  }
+]
