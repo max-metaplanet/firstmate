@@ -110,7 +110,7 @@ github_checks_not_green() {
               kind: "check_run",
               name: (.name // ""),
               completed: (.status == "COMPLETED"),
-              pending: ((.name // "") != "" and .conclusion == null
+              pending: ((.name // "") != "" and (.conclusion == null or .conclusion == "")
                 and (.status == "QUEUED" or .status == "WAITING" or .status == "IN_PROGRESS"
                   or .status == "PENDING" or .status == "REQUESTED")),
               ok: (.status == "COMPLETED" and (.conclusion == "SUCCESS" or .conclusion == "NEUTRAL" or .conclusion == "SKIPPED")),

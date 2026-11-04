@@ -5267,33 +5267,35 @@ test_allow_missing_follows_the_allow_red_rules() {
 }
 
 test_allow_missing_waives_running_checks_by_exact_name() {
-  local case_dir state head=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  local case_dir state conclusion head=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
   case_dir=$(make_case allow-running-single)
   add_gh_mocks "$case_dir" "$head"
-  write_github_rollup_json "$case_dir" "$head" "$(check_run Lint1 IN_PROGRESS -)"
+  write_github_rollup_json "$case_dir" "$head" "$(check_run Lint1 IN_PROGRESS "")"
   run_required_case "$case_dir" 104 --allow-missing Lint1
   expect_code 0 "$RC" "single pending waiver should merge: $(cat "$case_dir/stderr")"
   assert_logged_gh_merge "$case_dir" 104 example/repo --squash
-  for state in QUEUED WAITING IN_PROGRESS PENDING REQUESTED; do
-    case_dir=$(make_case "allow-running-$state")
-    add_gh_mocks "$case_dir" "$head"
-    write_github_rollup_json "$case_dir" "$head" \
-      "$(check_run Lint1 "$state" -)" \
-      "$(check_run 'Behavior portable parallel1' IN_PROGRESS -)" \
-      "$(status_context external PENDING)"
-    write_github_required "$case_dir" classic:Lint1 'ruleset:Behavior portable parallel1' ruleset:external ruleset:unreported
-    run_required_case "$case_dir" 104 --allow-missing Lint1 \
-      --allow-missing 'Behavior portable parallel1' --allow-missing external --allow-missing unreported
-    expect_code 0 "$RC" "named pending $state should merge: $(cat "$case_dir/stderr")"
-    assert_logged_gh_merge "$case_dir" 104 example/repo --squash
+  for conclusion in - ""; do
+    for state in QUEUED WAITING IN_PROGRESS PENDING REQUESTED; do
+      case_dir=$(make_case "allow-running-$state-${conclusion:-empty}")
+      add_gh_mocks "$case_dir" "$head"
+      write_github_rollup_json "$case_dir" "$head" \
+        "$(check_run Lint1 "$state" "$conclusion")" \
+        "$(check_run 'Behavior portable parallel1' IN_PROGRESS "$conclusion")" \
+        "$(status_context external PENDING)"
+      write_github_required "$case_dir" classic:Lint1 'ruleset:Behavior portable parallel1' ruleset:external ruleset:unreported
+      run_required_case "$case_dir" 104 --allow-missing Lint1 \
+        --allow-missing 'Behavior portable parallel1' --allow-missing external --allow-missing unreported
+      expect_code 0 "$RC" "named pending $state should merge: $(cat "$case_dir/stderr")"
+      assert_logged_gh_merge "$case_dir" 104 example/repo --squash
+    done
   done
 
   for state in wrong-name glob absent-list empty-required; do
     case_dir=$(make_case "allow-running-exact-$state")
     add_gh_mocks "$case_dir" "$head"
     write_github_rollup_json "$case_dir" "$head" \
-      "$(check_run Lint1 IN_PROGRESS -)" \
-      "$(check_run 'Behavior portable parallel1' QUEUED -)"
+      "$(check_run Lint1 IN_PROGRESS "")" \
+      "$(check_run 'Behavior portable parallel1' QUEUED "")"
     case "$state" in
       wrong-name) run_required_case "$case_dir" 104 --allow-missing Lint --allow-missing 'Behavior portable parallel1' ;;
       glob) run_required_case "$case_dir" 104 --allow-missing 'Lint*' --allow-missing 'Behavior portable parallel1' ;;
@@ -5313,7 +5315,7 @@ test_allow_missing_waives_running_checks_by_exact_name() {
   write_github_rollup_json "$case_dir" "$head" \
     "$(check_run Lint1 COMPLETED FAILURE 2026-01-01T00:00:01Z)" \
     "$(check_run Lint1 COMPLETED SUCCESS 2026-01-01T00:00:02Z)" \
-    "$(check_run Lint1 IN_PROGRESS - 2026-01-01T00:00:03Z)"
+    "$(check_run Lint1 IN_PROGRESS "" 2026-01-01T00:00:03Z)"
   run_required_case "$case_dir" 104 --allow-missing Lint1
   expect_code 0 "$RC" "a superseded failure must not invalidate a pending waiver: $(cat "$case_dir/stderr")"
   assert_logged_gh_merge "$case_dir" 104 example/repo --squash
@@ -5322,17 +5324,18 @@ test_allow_missing_waives_running_checks_by_exact_name() {
 
 test_allow_missing_never_waives_failed_or_unknown_checks() {
   local case_dir state state_json head=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-  for state in FAILURE CANCELLED TIMED_OUT ACTION_REQUIRED STARTUP_FAILURE STALE null unknown-status rerun status-failure; do
+  for state in FAILURE CANCELLED TIMED_OUT ACTION_REQUIRED STARTUP_FAILURE STALE null empty unknown-status rerun status-failure; do
     case_dir=$(make_case "allow-running-refuse-$state")
     add_gh_mocks "$case_dir" "$head"
     write_github_rollup_json "$case_dir" "$head" \
-      "$(check_run Lint1 IN_PROGRESS -)" \
-      "$(check_run 'Behavior portable parallel1' IN_PROGRESS -)"
+      "$(check_run Lint1 IN_PROGRESS "")" \
+      "$(check_run 'Behavior portable parallel1' IN_PROGRESS "")"
     case "$state" in
-      unknown-status) state_json=$(check_run Lint1 UNKNOWN -) ;;
+      unknown-status) state_json=$(check_run Lint1 UNKNOWN "") ;;
       null) state_json=$(check_run Lint1 COMPLETED -) ;;
+      empty) state_json=$(check_run Lint1 COMPLETED "") ;;
       rerun)
-        state_json="$(check_run Lint1 COMPLETED FAILURE 2026-01-01T00:00:01Z),$(check_run Lint1 IN_PROGRESS - 2026-01-01T00:00:02Z)" ;;
+        state_json="$(check_run Lint1 COMPLETED FAILURE 2026-01-01T00:00:01Z),$(check_run Lint1 IN_PROGRESS "" 2026-01-01T00:00:02Z)" ;;
       status-failure) state_json=$(status_context Lint1 FAILURE) ;;
       *) state_json=$(check_run Lint1 COMPLETED "$state") ;;
     esac
@@ -5352,8 +5355,8 @@ test_allow_missing_rechecks_pending_waivers_before_merge() {
   case_dir=$(make_case allow-running-turns-red)
   add_gh_mocks "$case_dir" "$head"
   write_github_rollup_json "$case_dir" "$head" \
-    "$(check_run Lint1 IN_PROGRESS -)" \
-    "$(check_run 'Behavior portable parallel1' QUEUED -)"
+    "$(check_run Lint1 IN_PROGRESS "")" \
+    "$(check_run 'Behavior portable parallel1' QUEUED "")"
   jq '.mergeable = "UNKNOWN"' "$case_dir/github-view.json" > "$case_dir/pending.json"
   jq '.statusCheckRollup[0] |= (.status = "COMPLETED" | .conclusion = "FAILURE")' \
     "$case_dir/github-view.json" > "$case_dir/red.json"
@@ -5371,13 +5374,13 @@ test_allow_missing_preserves_evidence_head_and_authority_guards() {
     case_dir=$(make_case "allow-running-guard-$guard")
     add_gh_mocks "$case_dir" "$head"
     write_github_rollup_json "$case_dir" "$head" \
-      "$(check_run Lint1 IN_PROGRESS -)" \
-      "$(check_run 'Behavior portable parallel1' QUEUED -)"
+      "$(check_run Lint1 IN_PROGRESS "")" \
+      "$(check_run 'Behavior portable parallel1' QUEUED "")"
     case "$guard" in
       unrelated-red)
         write_github_rollup_json "$case_dir" "$head" \
-          "$(check_run Lint1 IN_PROGRESS -)" \
-          "$(check_run 'Behavior portable parallel1' QUEUED -)" \
+          "$(check_run Lint1 IN_PROGRESS "")" \
+          "$(check_run 'Behavior portable parallel1' QUEUED "")" \
           "$(check_run other COMPLETED FAILURE)" ;;
       rules) printf 'unreadable\n' > "$case_dir/github-required-rules-fail" ;;
       producers|stale-producer)
