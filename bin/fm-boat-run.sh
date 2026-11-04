@@ -21,7 +21,10 @@
 # 10 GB disk), no agent, snapshots, keep-alive, paid sizes or plan changes.
 # This is reduced capacity versus Boat default. Explicit large/xlarge or swap
 # requests cannot fall back to Upstash small. Source archives over 100 MB
-# also cannot use Upstash. The official per-file upload limit is 100 MB.
+# also cannot use Upstash. Smaller archives travel in sequential 8 MiB files
+# through the official SDK, then are reassembled before SHA256 verification.
+# The service has rejected files below its documented 100 MB per-file limit.
+# Each piece and reassembly use the remaining size-aware push budget.
 # Account list and environment reads consume no sandbox compute. Nonempty
 # account environments fail closed, never get cleared or logged. Published
 # free limits are 10 concurrent boxes and 5 CPU core-hours/month. The SDK
@@ -39,6 +42,10 @@
 # command, even after successful cleanup. Provider rejection HTTP 402/429
 # means budget/capacity unavailable; 401/403 means credential unavailable.
 # Other create failures are unknown allocations, retained for cleanup/reap.
+# Explicit upload rejections (HTTP 400/401/402/403/404/413/415/422/429) return
+# unavailable only after a known create and confirmed deletion, before the user
+# command is submitted. Unknown upload responses, secret/screening refusals,
+# unknown create/execution and unconfirmed deletion never gain this permission.
 # Local fallback remains entirely the caller's policy after both remotes
 # report unavailable. Result fields are unchanged, with additive provider,
 # requested_type, actual_size and Upstash resources evidence.
