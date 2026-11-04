@@ -1,0 +1,19 @@
+{"argv": ["caller-origin", "--worktree", "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6K7Z4EZEPSXK6DVYQJACX80"], "exit": 0, "stdout": "{\"namespace\": \"firstmate\", \"home\": \"~/.no-mistakes/worktrees/c0c4fcacb05a/01M6K7Z4EZEPSXK6DVYQJACX80/.round3-live-cli/home\", \"task\": \"proof-task\", \"generation\": \"proof-launch-1\"}", "stderr": ""}
+{"argv": ["caller-origin", "--worktree", "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6K7Z4EZEPSXK6DVYQJACX80"], "exit": 70, "stdout": "", "stderr": "boat-offload: worker launch ownership cannot be confirmed"}
+{"argv": ["caller-origin", "--worktree", "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6K7Z4EZEPSXK6DVYQJACX80"], "exit": 70, "stdout": "", "stderr": "boat-offload: worker launch ownership cannot be confirmed"}
+{"argv": ["caller-origin", "--worktree", "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6K7Z4EZEPSXK6DVYQJACX80"], "exit": 70, "stdout": "", "stderr": "boat-offload: worker launch ownership cannot be confirmed"}
+exact
+{"argv": ["check-result", "--worktree", "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6K7Z4EZEPSXK6DVYQJACX80", "--result", "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6K7Z4EZEPSXK6DVYQJACX80/.round3-live-cli/result.json", "--exit", "0"], "exit": 0, "stdout": "completed", "stderr": ""}
+stale
+{"argv": ["check-result", "--worktree", "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6K7Z4EZEPSXK6DVYQJACX80", "--result", "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6K7Z4EZEPSXK6DVYQJACX80/.round3-live-cli/result.json", "--exit", "0"], "exit": 0, "stdout": "adapter-failure", "stderr": ""}
+foreign-home
+{"argv": ["check-result", "--worktree", "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6K7Z4EZEPSXK6DVYQJACX80", "--result", "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6K7Z4EZEPSXK6DVYQJACX80/.round3-live-cli/result.json", "--exit", "0"], "exit": 0, "stdout": "adapter-failure", "stderr": ""}
+foreign-task
+{"argv": ["check-result", "--worktree", "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6K7Z4EZEPSXK6DVYQJACX80", "--result", "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6K7Z4EZEPSXK6DVYQJACX80/.round3-live-cli/result.json", "--exit", "0"], "exit": 0, "stdout": "adapter-failure", "stderr": ""}
+busy
+{"argv": ["check-result", "--worktree", "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6K7Z4EZEPSXK6DVYQJACX80", "--result", "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6K7Z4EZEPSXK6DVYQJACX80/.round3-live-cli/result.json", "--exit", "0"], "exit": 0, "stdout": "adapter-failure", "stderr": ""}
+cleanup-unknown
+{"argv": ["check-result", "--worktree", "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6K7Z4EZEPSXK6DVYQJACX80", "--result", "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6K7Z4EZEPSXK6DVYQJACX80/.round3-live-cli/result.json", "--exit", "0"], "exit": 0, "stdout": "adapter-failure", "stderr": ""}
+deleted-operator
+{"argv": ["check-result", "--worktree", "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6K7Z4EZEPSXK6DVYQJACX80", "--result", "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6K7Z4EZEPSXK6DVYQJACX80/.round3-live-cli/result.json", "--exit", "0"], "exit": 0, "stdout": "completed", "stderr": ""}
+All public CLI origin and retained-result scenarios passed; no Boat allocation attempted.
