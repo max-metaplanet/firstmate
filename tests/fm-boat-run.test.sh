@@ -6,11 +6,13 @@ set -euo pipefail
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 CASE_ROOT=$(fm_test_tmproot fm-boat-run)
 export CASE_ROOT
-python3 - "$ROOT" <<'PY'
+python3 - "$ROOT" "$@" <<'PY'
 import datetime
+import fcntl
 import hashlib
 import json
 import os
+import runpy
 from pathlib import Path
 import signal
 import shlex
@@ -59,6 +61,7 @@ def case(name, settings=None, clean_history=False):
     env = dict(os.environ, HOME=str(user), FM_HOME=str(p / 'home'),
                FM_BOAT_BIN=str(wrapper), DEV_SECRET='host-only',
                NODE_OPTIONS='--require=/should/not/travel.js')
+    env.pop('FM_BOAT_REUSE_ONLY', None)
     return p, state, env
 
 def launch(p, env, command='exit 0', options=(), wait=True):
@@ -84,7 +87,7 @@ def managed(p, env, task='reuse-task', generation='generation-1'):
     (p / 'home/state' / (task + '.meta')).write_text(
         'endpoint_task_id=' + task + '\nkind=ship\nspawn_gen=' + generation +
         '\nworktree=' + str(p / 'work') + '\n')
-    return dict(env, FM_TASK_ID=task)
+    return dict(env, FM_TASK_ID=task, FM_TASK_GENERATION=generation)
 
 def next_run(p, env, command='exit 0', options=(), wait=True):
     output = p / 'output'
@@ -96,6 +99,62 @@ def cleanup_task(env, task='reuse-task', generation='generation-1'):
     return subprocess.run(['bash', str(repo / 'bin/fm-boat-run.sh'), 'cleanup-task',
                            '--task', task, '--generation', generation],
                           env=env, capture_output=True, timeout=20)
+
+def bookkeeping_holders(record):
+    lockfile = record.parent.parent / (record.stem + '.lock')
+    identity = lockfile.stat()
+    holders = []
+    for line in Path('/proc/locks').read_text().splitlines():
+        fields = line.split()
+        if '->' in fields:
+            continue
+        major, minor, inode = fields[5].split(':')
+        if (int(major, 16), int(minor, 16), int(inode)) != (
+                os.major(identity.st_dev), os.minor(identity.st_dev), identity.st_ino):
+            continue
+        process = Path('/proc') / fields[4]
+        try:
+            command = (process / 'cmdline').read_bytes().split(b'\0')
+        except FileNotFoundError:
+            continue
+        expected = os.fsencode(repo / 'bin/fm-boat-run.py')
+        assert command[1:5] == [expected, b'expire', b'--lease', record.stem.encode()] or (
+            command[1:3] == [expected, b'reap']), ('unexpected fixture lock holder', fields[4], command)
+        matching_fds = []
+        try:
+            descriptors = list((process / 'fd').iterdir())
+        except FileNotFoundError:
+            continue
+        for fd in descriptors:
+            try:
+                target = fd.stat()
+                if (target.st_dev, target.st_ino) == (identity.st_dev, identity.st_ino):
+                    matching_fds.append((process / 'fdinfo' / fd.name).read_text())
+            except FileNotFoundError:
+                pass
+        if not matching_fds:
+            continue
+        holders.append(dict(pid=int(fields[4]), kernel=line, fds=matching_fds))
+    return holders
+
+
+def wait_for_expiry_cleanup(record):
+    lockfile = record.parent.parent / (record.stem + '.lock')
+    seen = []
+    for _ in range(200):
+        seen.extend(bookkeeping_holders(record))
+        with lockfile.open('r') as handle:
+            try:
+                fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                pass
+            else:
+                assert json.loads(record.read_text())['cleanup'] == 'deleted'
+                (record.parent.parent / 'expiry-holder-proof.json').write_text(json.dumps(seen))
+                return
+        time.sleep(.1)
+    raise AssertionError('identified fixture expiry holder did not finish cleanup')
+
 
 def creates(state):
     return sum(json.loads(line)[0] == 'new' for line in (state / 'calls.jsonl').read_text().splitlines())
@@ -227,6 +286,19 @@ class LostResponse(real_popen):
         verify = self.args[1] == 'exec' and 'sha256sum -c' in self.args[-1]
         command = self.args[1] == 'exec' and '--stream' in self.args
         mkdir = self.args[1] == 'exec' and 'mkdir' in self.args
+        prepare = self.args[1] == 'exec' and 'prepare' in self.args
+        if prepare and fault.startswith('reset-'):
+            marker = state / 'reset-transport-failed'
+            if not marker.exists() or fault == 'reset-timeout-persistent':
+                marker.touch()
+                if fault == 'reset-cli':
+                    self.returncode = 1
+                    return b'', b'transport unavailable'
+                if fault == 'reset-missing':
+                    return b'', b''
+                raise subprocess.TimeoutExpired(self.args, timeout)
+        if fault.startswith('reset-'):
+            return value
         if upload and fault != 'mkdir-unknown':
             archive = state / self.args[3].split(':', 1)[0] / 'fm-job/source.tar.gz'
             if fault == 'missing':
@@ -253,6 +325,125 @@ sys.exit(adapter.main())
                            str(state), fault, 'run', '--worktree', str(p / 'work'),
                            '--output', str(p / 'output'), '--', 'cat', 'tracked.txt'],
                           env=env, capture_output=True, timeout=30)
+
+# Acceptance oracle: reuse-only may execute an exact retained lease, but must
+# never issue a new provider allocation, even when preparation cannot recover.
+if sys.platform.startswith('linux'):
+    p, state, env = case('reuse-only-absent', {'remaining': 0})
+    env = managed(p, env)
+    key = Path(env['HOME']) / '.config/upstash/box-api-key'
+    key.parent.mkdir(parents=True)
+    key.write_text('upstash_fixture_secret')
+    key.chmod(0o600)
+    (state / 'upstash.json').write_text('{}')
+    env.update(PYTHONPATH=str(repo / 'tests/fixtures'), FM_UPSTASH_FIXTURE_ROOT=str(state))
+    env['FM_BOAT_REUSE_ONLY'] = '1'
+    try:
+        r = launch(p, env, 'echo forbidden')
+        assert r.returncode != 0 and b'forbidden' not in r.stdout, (r.returncode, r.stdout, r.stderr)
+        assert not (state / 'calls.jsonl').exists() or creates(state) == 0
+        assert not (state / 'upstash-calls.jsonl').exists()
+    finally:
+        assert cleanup_task(env).returncode == 0
+
+    for context in ('unowned', 'stale', 'foreign-checkout'):
+        p, state, env = case('reuse-only-' + context)
+        if context != 'unowned':
+            env = managed(p, env)
+            if context == 'stale':
+                env['FM_TASK_GENERATION'] = 'stale-generation'
+            else:
+                meta = p / 'home/state/reuse-task.meta'
+                meta.write_text(meta.read_text().replace(str(p / 'work'), str(p)))
+        r = launch(p, env, 'echo forbidden', ('--reuse-only',))
+        assert r.returncode != 0 and b'forbidden' not in r.stdout, (context, r.stderr)
+        assert not (state / 'calls.jsonl').exists(), context
+
+    for fault in ('none', 'expired', 'hard-expired', 'generation', 'type', 'closing',
+                  'busy', 'prepare_failed', 'push_failed', 'transport_failed', 'delete_failed',
+                  'reset-timeout', 'reset-cli', 'reset-missing'):
+        p, state, env = case('reuse-only-' + fault)
+        env = managed(p, env)
+        assert launch(p, env).returncode == 0
+        initial = result(p)
+        record = next((state / 'jobs').glob('task-*.json'))
+        old = json.loads(record.read_text())
+        if fault == 'expired':
+            old['idle_expires'] = time.time() - 1
+        elif fault == 'hard-expired':
+            old['hard_expires'] = time.time() + 60
+        elif fault == 'generation':
+            old['owner']['generation'] = 'old-generation'
+        elif fault == 'type':
+            old['type'] = 'large'
+        elif fault == 'closing':
+            old['closing'] = old['owner']
+        elif fault == 'busy':
+            old['lease_state'] = 'busy'
+        record.write_text(json.dumps(old))
+        settings = {} if fault in ('none', 'expired', 'hard-expired', 'generation', 'type', 'closing', 'busy') else {fault: True}
+        if fault == 'delete_failed':
+            settings['prepare_failed'] = True
+        (state / 'fixture.json').write_text(json.dumps(settings))
+        env['FM_BOAT_REUSE_ONLY'] = '1'
+        try:
+            if fault.startswith('reset-'):
+                (p / 'output').rename(p / 'initial-output')
+                r = launch_lost_response(p, state, env, fault)
+            else:
+                r = next_run(p, env, 'echo exact-reuse')
+            evidence = result(p)
+            assert creates(state) == 1, (fault, r.stderr, evidence)
+            if fault == 'none':
+                assert r.returncode == 0 and r.stdout == b'exact-reuse\n', (r.stderr, evidence)
+                assert evidence['reused'] and evidence['vm_id'] == initial['vm_id'], evidence
+            else:
+                assert r.returncode != 0 and evidence['remote_exit'] is None, (fault, evidence)
+                assert not evidence.get('reuse_fallback'), evidence
+        finally:
+            (state / 'fixture.json').write_text('{}')
+            # Restore only fixture corruption so exact-owner cleanup can run.
+            old = json.loads(record.read_text())
+            old['owner'] = initial['lease']['owner']
+            record.write_text(json.dumps(old))
+            assert cleanup_task(env).returncode == 0
+    print('ok - reuse-only allows exact-owner execution and zero replacement allocations')
+
+    # Drive the actual prepush attempt -> wrapper -> adapter seam. The provider
+    # fixture records starts, while the command emits the public lane protocol.
+    p, state, env = case('reuse-only-callers')
+    env = managed(p, env)
+    assert launch(p, env).returncode == 0
+    initial = result(p)
+    driver = p / 'prepush.py'
+    protocol_command = shlex.join(['printf', '%s\n',
+                                  'FM_BOAT_PREPUSH_SUMMARY {"failed": [], "oom": false}'])
+    driver.write_text('command = ' + repr(protocol_command) + '\n' + '''import pathlib, runpy, sys
+api = runpy.run_path(sys.argv[1])
+work, output = map(pathlib.Path, sys.argv[2:4])
+output.mkdir()
+result = api['attempt'](work, output, 'default', 1800, None, command, reuse_only=True)
+assert api['verdict'](result)[0], result
+assert result['remote_result']['reused'], result
+''')
+    try:
+        r = subprocess.run([sys.executable, str(driver), str(repo / 'bin/fm-boat-prepush.py'),
+                            str(p / 'work'), str(p / 'prepush-output')], env=env,
+                           capture_output=True, timeout=30)
+        assert r.returncode == 0, (r.stdout, r.stderr)
+        assert creates(state) == 1
+        assert json.loads(next((state / 'jobs').glob('task-*.json')).read_text())['vm_id'] == initial['vm_id']
+    finally:
+        assert cleanup_task(env).returncode == 0
+    print('ok - prepush and wrapper execute exact-owner reuse without new starts')
+    # Expiry children hold this lock until they observe confirmed cleanup.
+    # Wait for those disposable children before the harness removes their homes.
+    for expiry in base.glob('reuse-only-*/home/state/boat-offload/*.expiry.lock'):
+        with expiry.open('r') as handle:
+            fcntl.flock(handle, fcntl.LOCK_EX)
+
+if sys.argv[2:] == ['--reuse-only']:
+    sys.exit(0)
 
 if sys.platform.startswith('linux'):
     for failure in ('push_failed_once', 'push_failed', 'prepare_failed', 'corrupt_upload'):
@@ -450,6 +641,117 @@ if sys.platform.startswith('linux'):
     assert r.returncode == 70 and creates(state) == 1, (r.returncode, r.stderr)
     print('ok - task reuse saves a start despite exhausted start windows, refreshes source/HOME and kills owned sessions')
 
+    for mutation in ('missing-generation', 'stale-generation', 'missing-task', 'duplicate-meta'):
+        p, state, env = case('frozen-' + mutation)
+        env = managed(p, env)
+        if mutation == 'missing-generation':
+            env.pop('FM_TASK_GENERATION')
+        elif mutation == 'stale-generation':
+            env['FM_TASK_GENERATION'] = 'older-launch'
+        elif mutation == 'missing-task':
+            env.pop('FM_TASK_ID')
+        else:
+            with (p / 'home/state/reuse-task.meta').open('a') as stream:
+                stream.write('spawn_gen=generation-1\n')
+        r = launch(p, env)
+        if mutation == 'missing-generation':
+            assert r.returncode == 0 and result(p)['cleanup'] == 'deleted' and not result(p).get('lease'), r.stderr
+            empty(state)
+        else:
+            assert r.returncode == 70 and not (state / 'calls.jsonl').exists(), r.stderr
+    print('ok - legacy missing generation stays one-shot; partial, stale and ambiguous launch context fails before admission')
+
+    p, state, env = case('pipeline-binding')
+    env = managed(p, env)
+    r = subprocess.run(['bash', str(repo / 'bin/fm-boat-run.sh'), 'caller-origin',
+                        '--worktree', str(p / 'work')], env=env, capture_output=True)
+    frozen = json.loads(r.stdout)
+    assert frozen == dict(namespace='firstmate', home=str(p / 'home'), task='reuse-task', generation='generation-1')
+    assert launch(p, env).returncode == 0
+    original = result(p)
+    execution = p / 'execution'
+    subprocess.run(['git', 'clone', '-q', str(p / 'work'), str(execution)], check=True)
+    (execution / 'tracked.txt').write_text('pipeline snapshot\n')
+    tools = p / 'tools'
+    tools.mkdir()
+    cli = tools / 'no-mistakes'
+    cli.write_text("""#!/usr/bin/env python3
+import json,pathlib,sys
+args=sys.argv[1:]
+assert args[:2]==['axi','execution-origin'], args
+value=json.loads((pathlib.Path(__file__).parent/'reply.json').read_text())
+assert args[args.index('--checkout')+1]==value['execution']['execution_checkout']
+assert args[args.index('--ref')+1]=='opaque-producer-reference'
+assert args[args.index('--socket')+1]=='/fixture/producer.sock'
+print(json.dumps(value))
+""")
+    cli.chmod(0o755)
+    reply = dict(protocol_version=1, execution=dict(reference='opaque-producer-reference',
+        run_id='fixture-run', source_checkout=str(p / 'work'), source_head=original['source_head'],
+        execution_checkout=str(execution), caller_origin=frozen, run_status='running'))
+    reply_file = tools / 'reply.json'
+    reply_file.write_text(json.dumps(reply))
+    pipeline_env = dict(env, PATH=str(tools) + os.pathsep + env['PATH'],
+        NO_MISTAKES_EXECUTION_REF='opaque-producer-reference',
+        NO_MISTAKES_EXECUTION_SOCKET='/fixture/producer.sock')
+    pipeline_env.pop('FM_TASK_ID')
+    pipeline_env.pop('FM_TASK_GENERATION')
+    r = subprocess.run(['bash', str(repo / 'bin/fm-boat-test-wrapper.sh'), 'cat tracked.txt'],
+        env=pipeline_env, cwd=execution, capture_output=True, timeout=30)
+    assert r.returncode == 0 and r.stdout == b'pipeline snapshot\n', (r.stderr, r.stdout)
+    assert creates(state) == 1
+    # The same producer may explicitly associate an auxiliary Test-base copy.
+    auxiliary = p / 'test-base'
+    subprocess.run(['git', 'clone', '-q', str(p / 'work'), str(auxiliary)], check=True)
+    reply['execution']['execution_checkout'] = str(auxiliary)
+    pipeline_env.update(FM_TASK_ID='stale-ambient-task', FM_TASK_GENERATION='stale-ambient-generation')
+    reply_file.write_text(json.dumps(reply))
+    r = subprocess.run(['bash', str(repo / 'bin/fm-boat-test-wrapper.sh'), 'cat tracked.txt'],
+        env=pipeline_env, cwd=auxiliary, capture_output=True, timeout=30)
+    assert r.returncode == 0 and creates(state) == 1, r.stderr
+    for mutation in ('stale', 'foreign', 'namespace', 'source', 'finished', 'partial', 'wrong-checkout'):
+        bad = json.loads(json.dumps(reply))
+        bad_env = dict(pipeline_env)
+        if mutation == 'stale':
+            bad['execution']['caller_origin']['generation'] = 'old'
+        elif mutation == 'foreign':
+            bad['execution']['caller_origin']['home'] = '/other/home'
+        elif mutation == 'namespace':
+            bad['execution']['caller_origin']['namespace'] = 'another-owner'
+        elif mutation == 'source':
+            bad['execution']['source_checkout'] = str(auxiliary)
+        elif mutation == 'finished':
+            bad['execution']['run_status'] = 'passed'
+        elif mutation == 'partial':
+            bad_env.pop('NO_MISTAKES_EXECUTION_SOCKET')
+        else:
+            bad['execution']['execution_checkout'] = str(execution)
+        reply_file.write_text(json.dumps(bad))
+        r = subprocess.run(['bash', str(repo / 'bin/fm-boat-test-wrapper.sh'), 'echo must-not-run'],
+            env=bad_env, cwd=auxiliary, capture_output=True, timeout=30)
+        assert r.returncode == 70 and creates(state) == 1, (mutation, r.returncode, r.stderr)
+    reply_file.write_text(json.dumps(reply))
+    prepush = runpy.run_path(str(repo / 'bin/fm-boat-prepush.py'))
+    prepush_output = p / 'prepush'
+    prepush_output.mkdir()
+    prior_env = dict(os.environ)
+    try:
+        os.environ.clear()
+        os.environ.update(pipeline_env)
+        prepush_run = prepush['attempt'](auxiliary, prepush_output, 'default', 30, None,
+            "cat tracked.txt; printf '%s\\n' 'FM_BOAT_PREPUSH_SUMMARY {\"failed\":[\"probe\"],\"oom\":true}'")
+        assert prepush_run['adapter_exit'] == 0 and prepush['should_retry_large'](prepush_run), prepush_run
+        assert prepush_run['remote_result']['vm_id'] == original['vm_id'] and creates(state) == 1
+    finally:
+        os.environ.clear()
+        os.environ.update(prior_env)
+    assert cleanup_task(env).returncode == 0
+    r = subprocess.run(['bash', str(repo / 'bin/fm-boat-test-wrapper.sh'), 'echo tombstone-must-hold'],
+        env=pipeline_env, cwd=auxiliary, capture_output=True, timeout=30)
+    assert r.returncode == 70 and creates(state) == 1, r.stderr
+    empty(state)
+    print('ok - wrapper consumes producer primary/auxiliary bindings, rejects foreign/stale/partial evidence and respects cleanup tombstones')
+
     p, state, env = case('reuse-cleared-descendant')
     env = managed(p, env)
     r = launch(p, env, 'setsid env -i PATH="$PATH" sh -c \'sleep 90 >/dev/null 2>&1 & echo $!\'')
@@ -552,6 +854,28 @@ if sys.platform.startswith('linux'):
     empty(state)
     print('ok - proven pre-execution reset failure deletes the old lease before one ephemeral fallback')
 
+    for fault in ('reset-timeout', 'reset-cli', 'reset-missing', 'reset-timeout-persistent'):
+        p, state, env = case('reuse-' + fault)
+        env = managed(p, env)
+        assert launch(p, env).returncode == 0
+        original = result(p)['lease']['owner']
+        (p / 'output').rename(p / 'initial-output')
+        r = launch_lost_response(p, state, env, fault)
+        evidence = result(p)
+        assert evidence['reuse_fallback'] and creates(state) == 2, (fault, r.stderr, evidence)
+        if fault == 'reset-timeout-persistent':
+            assert r.returncode == 74 and evidence['remote_exit'] is None, (r.stderr, evidence)
+            calls = [json.loads(line) for line in (state / 'calls.jsonl').read_text().splitlines()]
+            assert sum('--stream' in call for call in calls) == 1, calls
+        else:
+            assert r.returncode == 0 and r.stdout == b'working edit\n', (fault, r.stderr, evidence)
+            assert evidence['cleanup'] == 'retained' and evidence['lease']['owner'] == original, evidence
+            r = next_run(p, env, 'echo after-reset-transport')
+            assert r.returncode == 0 and result(p)['reused'] and creates(state) == 2, r.stderr
+        assert cleanup_task(env).returncode == 0
+        empty(state)
+    print('ok - reset transport replacements retain exact ownership only after successful reset')
+
     p, state, env = case('reuse-transfer-failure')
     env = managed(p, env)
     assert launch(p, env).returncode == 0
@@ -559,9 +883,12 @@ if sys.platform.startswith('linux'):
     r = next_run(p, env, 'echo fresh-transfer-fallback')
     assert r.returncode == 0 and r.stdout == b'fresh-transfer-fallback\n', r.stderr
     assert result(p)['reuse_fallback'] and creates(state) == 2
-    assert result(p)['cleanup'] == 'deleted'
+    assert result(p)['cleanup'] == 'retained'
+    r = next_run(p, env, 'echo after-transfer')
+    assert r.returncode == 0 and result(p)['reused'] and creates(state) == 2, r.stderr
+    assert cleanup_task(env).returncode == 0
     empty(state)
-    print('ok - pre-execution transfer failure cold-replaces only the exact owned lease')
+    print('ok - confirmed transfer replacement retains exact owner for the next command')
 
     p, state, env = case('reuse-reset-unconfirmed')
     env = managed(p, env)
@@ -606,6 +933,45 @@ if sys.platform.startswith('linux'):
     empty(state)
     print('ok - concurrent task calls serialize while cleanup refuses an active holder')
 
+    p, state, env = case('cleanup-bookkeeping-overlap')
+    env = managed(p, env)
+    assert launch(p, env).returncode == 0
+    record = next((state / 'jobs').glob('*.json'))
+    entered, release = p / 'delete-entered', p / 'delete-release'
+    (p / 'boat').write_text('#!' + sys.executable + '\n' +
+        'import os,pathlib,sys,time\n' +
+        'if sys.argv[1] == "delete":\n' +
+        ' pathlib.Path(' + repr(str(entered)) + ').write_text(str(os.getppid()))\n' +
+        ' for _ in range(200):\n' +
+        '  if pathlib.Path(' + repr(str(release)) + ').exists(): break\n' +
+        '  time.sleep(.1)\n' +
+        ' else: sys.exit(1)\n' +
+        'os.execv(sys.executable,[sys.executable,' + repr(str(fixture)) + ',' +
+        repr(str(state)) + ',*sys.argv[1:]])\n')
+    job = json.loads(record.read_text())
+    job['idle_expires'] = time.time() - 1
+    staged = record.with_suffix('.fixture')
+    staged.write_text(json.dumps(job))
+    staged.replace(record)
+    reaper = subprocess.Popen(['bash', str(repo / 'bin/fm-boat-run.sh'), 'reap'],
+        env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    for _ in range(100):
+        if entered.exists():
+            break
+        time.sleep(.1)
+    assert entered.exists(), 'fixture deletion did not reach its explicit release gate'
+    observed = bookkeeping_holders(record)
+    assert any(holder['pid'] == int(entered.read_text()) for holder in observed), observed
+    refused = cleanup_task(env)
+    assert refused.returncode == 70 and b'task Boat command active' in refused.stderr, refused.stderr
+    release.touch()
+    wait_for_expiry_cleanup(record)
+    out, err = reaper.communicate(timeout=10)
+    assert reaper.returncode == 0, err
+    assert cleanup_task(env).returncode == 0
+    empty(state)
+    print('ok - exact kernel PID/FD proves bookkeeping overlap; bounded fixture wait preserves immediate cleanup refusal')
+
     p, state, env = case('lease-idle-watcher')
     env = managed(p, env)
     assert launch(p, env).returncode == 0
@@ -645,13 +1011,17 @@ if sys.platform.startswith('linux'):
                                                   ' types=default,large\n')
             other = env
         r = next_run(p, other, options=('--type', 'large') if mismatch == 'type' else ())
-        assert r.returncode == 0 and not result(p)['reused'] and creates(state) == 2, r.stderr
+        if mismatch == 'worktree':
+            assert r.returncode == 70 and creates(state) == 1, r.stderr
+        else:
+            assert r.returncode == 0 and not result(p)['reused'] and creates(state) == 2, r.stderr
         assert reap(other).returncode == 0
         if mismatch == 'home':
             assert cleanup_task(other).returncode == 0
         if mismatch == 'task':
             assert cleanup_task(other, task='other-task').returncode == 0
         if mismatch == 'worktree':
+            wait_for_expiry_cleanup(next((state / 'jobs').glob('*.json')))
             env = managed(p, env)
         assert cleanup_task(env, generation='generation-2' if mismatch == 'generation' else 'generation-1').returncode == 0
     print('ok - tasks, homes, worker generations, worktrees and resource requests cannot consume another lease')

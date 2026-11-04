@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# fm-boat-prepush.sh - run a pull request's heavy test lanes on one disposable
-# Boat or fallback Upstash machine before the pull request is marked ready.
+# fm-boat-prepush.sh - run a pull request's heavy test lanes on one task-reusable
+# Boat or disposable fallback Upstash machine before the pull request is marked ready.
 # Usage:
 #   FM_HOME=/absolute/home fm-boat-prepush.sh [--worktree DIR] [--base REF]
+#       [--reuse-only]
 #       [--expected-head SHA] [--timeout SECONDS]
 #       [--history-depth N | --history-input FILE]
 #       [--output DIR]
@@ -22,6 +23,9 @@
 # full commit ID or tracked files have staged or unstaged changes, before planning
 # or starting a machine. Untracked files are allowed. Without --expected-head,
 # local edits remain allowed. verdict.json records the checked head.
+# Worker/pipeline ownership and retained-result validation follow fm-boat-run.sh
+# --help. Expected-head certifies source content and never grants a task lease.
+# --reuse-only (also FM_BOAT_REUSE_ONLY=1) forwards the adapter's no-allocation mode.
 # --base prefers origin's remote-tracking ref for a named branch over a local
 # branch of that name; revision expressions resolve locally. Without --base,
 # it tries origin/HEAD, then origin/main. --output selects the evidence directory;

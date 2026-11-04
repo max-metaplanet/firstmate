@@ -116,6 +116,27 @@ $1") || fail "the pane failed to run the $variable probe"
   done
 }
 
+assert_worker_origin_env() {
+  local harness=$1 variable seen expected task launch
+  launch=$(cat "$LAUNCH_LOG")
+  task=$(basename "$(find "$HOME_DIR/state" -maxdepth 1 -name '*.meta' | head -1)" .meta)
+  for variable in FM_TASK_GENERATION FM_HOME FM_TASK_ID; do
+    case $variable in
+      FM_TASK_GENERATION) expected=$(sed -n 's/^spawn_gen=//p' "$HOME_DIR/state/$task.meta") ;;
+      FM_HOME) expected=$HOME_DIR ;;
+      FM_TASK_ID) expected=$task ;;
+    esac
+    install_env_probe "$FAKEBIN_DIR" "$harness" "$variable"
+    seen=$(emitted_launch_env "$FAKEBIN_DIR" "$LAUNCH_LOG" "$PANE_LOG") || fail 'worker origin launch failed'
+    assert_equals "$expected" "$seen" "$variable must match the spawn producer record"
+    seen=$(env -i HOME="$TMP_ROOT/pane-home" PATH="$FAKEBIN_DIR:$PATH" TERM=xterm \
+      FM_HOME=/stale/home FM_TASK_ID=stale-task FM_TASK_GENERATION=stale-generation \
+      NO_MISTAKES_EXECUTION_REF=stale-ref NO_MISTAKES_EXECUTION_SOCKET=/stale/socket \
+      /bin/sh -c "$launch") || fail 'staged worker origin launch failed'
+    assert_equals "$expected" "$seen" "$variable must override stale context without the pane preamble"
+  done
+}
+
 pane_export_lines() { grep -c '^export COMPACT_ADVISER_DISABLE=1$' "$1" || true; }
 
 assert_pane_export_precedes_launch() {  # <pane-log> <label>
@@ -148,6 +169,7 @@ test_ship_allowlist_absent() {
     "a ship worker launched with the ambient environment must start with the compact adviser disabled"
   assert_prepush_env codex 0
   assert_test_worker_env codex 1
+  assert_worker_origin_env codex
   pass "ship launch with no allowlist starts its agent with the compact-adviser switch on"
 }
 
@@ -173,6 +195,7 @@ test_ship_allowlist_enabled() {
     "a ship worker launched under the cleared allowlisted environment must still start with the compact adviser disabled"
   assert_prepush_env codex 0
   assert_test_worker_env codex 1
+  assert_worker_origin_env codex
   pass "ship launch under an enabled allowlist keeps the compact-adviser switch through the cleared environment"
 }
 
@@ -291,6 +314,7 @@ test_scout_prepush_env() {
     expect_code 0 "$status" "scout spawn with allowlist=$setting should succeed: $out"
     assert_prepush_env claude 0
     assert_test_worker_env claude 1
+    assert_worker_origin_env claude
   done
   pass "Claude scout launches receive PREPUSH_TESTS=0 in both allowlist postures"
 }

@@ -10,6 +10,7 @@
 # FM_BOAT_TEST_HISTORY_INPUT forwards --history-input FILE instead of depth.
 # The adapter owns history screening and synthetic fallback; see fm-boat-run.sh --help.
 # FM_BOAT_TYPE optionally forwards --type to the adapter; its default is default.
+# FM_BOAT_REUSE_ONLY=1 forwards --reuse-only and forbids local fallback.
 # The selected account must permit that type in config/boat-keys.
 # The command must install its dependencies and have its runtime tools remotely.
 # Never pass secrets in the command or use this wrapper for authenticated tests.
@@ -34,7 +35,8 @@
 # fm-build-lock.py, unless FM_BOAT_TEST_LOCAL_FALLBACK=0 selects remote-only mode.
 # The adapter tries Boat then optional Upstash before returning unavailable;
 # that remote-only setting allows either provider and still forbids local work.
-# Unset or any other value preserves local fallback on unavailability.
+# Unset or any other value preserves local fallback on unavailability unless
+# FM_BOAT_REUSE_ONLY=1 applies.
 # Remote-only mode retries unavailable results with fresh evidence per attempt.
 # FM_BOAT_TEST_UNAVAILABLE_WAIT_SECS bounds elapsed time allowed for retries
 # (default 1800, nonnegative integer); an in-flight adapter may exceed the bound.
@@ -115,6 +117,9 @@ REMOTE
 )
 
 adapter_args=(run --worktree "$worktree")
+if [[ ${FM_BOAT_REUSE_ONLY:-} == 1 ]]; then
+  adapter_args+=(--reuse-only)
+fi
 if [[ -n ${FM_BOAT_TEST_TIMEOUT:-} ]]; then
   adapter_args+=(--timeout "$FM_BOAT_TEST_TIMEOUT")
 fi
@@ -141,41 +146,16 @@ while :; do
   # Validate the result before distinguishing remote exits from adapter exits.
   # A cleanup/transport failure may still have kind=completed and remote_exit,
   # so matching both exit fields and confirmed cleanup is required for success.
-  kind=$(python3 - "$result" "$rc" <<'PY'
-import json
-import os
-import sys
-
-try:
-    with open(sys.argv[1]) as stream:
-        result = json.load(stream)
-    code = int(sys.argv[2])
-    lease = result.get('lease') or {}
-    owner = lease.get('owner') or {}
-    cleanup_ok = result.get('cleanup') == 'deleted' or (
-        result.get('cleanup') == 'retained' and result.get('provider') == 'boat'
-        and lease.get('state') == 'idle' and owner.get('task') == os.environ.get('FM_TASK_ID')
-        and owner.get('task') and owner.get('home') == os.path.realpath(os.environ.get('FM_HOME', '')))
-    if (result.get('kind') == 'unavailable' and code in (69, 75)
-            and result.get('adapter_exit') == code):
-        print('unavailable')
-    elif (result.get('kind') == 'completed'
-          and type(result.get('remote_exit')) is int
-          and result['remote_exit'] == code
-          and result.get('adapter_exit') == code
-          and cleanup_ok
-          and not result.get('error')):
-        print('completed')
-    else:
-        print('adapter-failure')
-except (OSError, ValueError, TypeError, AttributeError):
-    print('invalid-result')
-PY
-  )
+  kind=$("$bin/fm-boat-run.sh" check-result --worktree "$worktree" \
+    --result "$result" --exit "$rc") || kind=invalid-result
 
   case "$kind" in
     completed) exit "$rc" ;;
     unavailable)
+      if [[ ${FM_BOAT_REUSE_ONLY:-} == 1 ]]; then
+        printf 'boat-test-wrapper: reuse-only forbids local fallback; result.json: %s\n' "$result" >&2
+        exit "$rc"
+      fi
       if [[ ${FM_BOAT_TEST_LOCAL_FALLBACK:-} == 0 ]]; then
         remaining=$((deadline - SECONDS))
         if (( remaining > 0 )); then

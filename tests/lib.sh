@@ -55,8 +55,9 @@ export FM_TEST_SEAM=1
 # Clear the task-worker marker bin/fm-spawn.sh exports into ship and scout
 # panes. This suite builds git-init fixture repositories whose primary checkout
 # it runs a copied bin/fm-test-run.sh in, and that runner refuses the primary
-# under the marker. A case that verifies the refusal sets FM_TASK_ID itself.
-unset FM_TASK_ID
+# under the marker. Clear frozen worker/pipeline origins too so fixtures cannot
+# borrow the invoking worker lease. Origin tests establish their own context.
+unset FM_TASK_ID FM_TASK_GENERATION NO_MISTAKES_EXECUTION_REF NO_MISTAKES_EXECUTION_SOCKET
 
 # Clear the tasks-axi env overrides. An operator shell exports TASKS_AXI_FILE
 # (and may export TASKS_AXI_BACKEND) at its real home's backlog, and tasks-axi

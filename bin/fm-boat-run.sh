@@ -5,23 +5,39 @@
 #       [--input RELATIVE_FILE]... [--artifact RELATIVE_PATH]...
 #       [--timeout SECONDS] [--swap-gib 0..4]
 #       [--history-depth N | --history-input FILE]
-#       [--type default|large|xlarge] -- COMMAND [ARGS...]
+#       [--type default|large|xlarge] [--reuse-only] -- COMMAND [ARGS...]
 #   FM_HOME=/absolute/home fm-boat-run.sh reap
 #   FM_HOME=/absolute/home fm-boat-run.sh cleanup-task --task ID --generation SPAWN_GEN
-# Exact worker ownership comes from FM_TASK_ID and this home's state/ID.meta,
+#   FM_HOME=/absolute/home fm-boat-run.sh caller-origin --worktree DIR
+#   FM_HOME=/absolute/home fm-boat-run.sh check-result --worktree DIR --result FILE --exit CODE
+# Caller-origin emits the four-field JSON for no-mistakes --caller-origin-file.
+# It requires the spawn producer's frozen FM_TASK_GENERATION. Capture before a
+# new run; reattachments omit that flag. Check-result prints completed,
+# unavailable or adapter-failure using this same ownership validator.
+# Exact worker ownership comes from FM_TASK_ID, frozen FM_TASK_GENERATION,
+# and this home's state/ID.meta,
 # matching endpoint_task_id, ship/scout kind, spawn_gen and canonical worktree.
-# Unattributed or ambiguous calls remain create-per-command. Each home/task
+# Missing frozen launch context remains create-per-command for legacy callers.
+# Explicit stale/foreign context fails closed. Pipeline children use the supported
+# no-mistakes axi execution-origin lookup from NO_MISTAKES_EXECUTION_REF and
+# NO_MISTAKES_EXECUTION_SOCKET. Protocol 1 must bind a running run's exact
+# recorded execution checkout to namespace firstmate and the originating home's
+# current task/source/generation. Ambient worker IDs cannot override that binding.
+# Revalidate after locking; retained evidence uses this same validator.
+# Each home/task
 # serializes one durable Boat job slot across worker generations. Compatible
 # idle leases reuse the same account, environment, type and swap configuration;
 # a changed generation or request requires confirmed deletion before replacement.
 # A repointed key file fails closed. Upstash always creates per command.
 # Reuse checks remaining compute credit independently of new-start quotas.
+# --reuse-only (also FM_BOAT_REUSE_ONLY=1) requires a current exact owned
+# compatible idle lease; it forbids fresh Boat/Upstash allocation and replacement
+# after reset or transfer failure. Existing ownership, TTL and cleanup guards apply.
 # A full minute/hour/day start window does not prevent an owned running lease.
 # Each run removes the entire job workspace, uploads screened fresh source,
 # and uses fresh HOME/TMPDIR directories. Linux child-subreaper adoption, process
 # sessions and an inherited token terminate and reap owned descendants, including
-# detached children that clear their environment. Unsupported reset fails before
-# user execution and cold-replaces the exact lease with an ephemeral sandbox.
+# detached children that clear their environment.
 # This is same-task reuse, not a pristine OS. Global packages, files outside the
 # job directory and services that clear their process environment can persist.
 # Leases expire after 1500 idle seconds, starting only after command completion.
@@ -40,10 +56,12 @@
 # deletion; unconfirmed deletion returns 70. Missing command-result evidence
 # remains execution-unknown, even if deletion succeeds. Known completion and
 # unknown execution never permit duplicate execution.
-# Failed pre-command preparation on a reused
-# owned lease permits one replacement only after confirmed deletion, using Boat
-# then optional Upstash admission before the caller's permitted local fallback.
-# Cleanup-task refuses active holders,
+# Outside reuse-only mode, failed pre-command preparation on a reused owned
+# lease permits one replacement only after confirmed deletion, preserving exact
+# origin for transfer failures. Unsupported reset fails before user execution
+# and forces an ephemeral
+# replacement. Boat then optional Upstash admission precedes the caller's
+# permitted local fallback. Cleanup-task refuses active holders,
 # records a generation-closing tombstone, and deletes only that exact lease.
 # Reap preserves valid idle owned leases and recovers expired/abandoned records.
 # Requires python3 and Boat CLI 1.0.85+ on PATH (FM_BOAT_BIN may name a binary).
