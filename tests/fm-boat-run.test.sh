@@ -6,7 +6,7 @@ set -euo pipefail
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 CASE_ROOT=$(fm_test_tmproot fm-boat-run)
 export CASE_ROOT
-python3 - "$ROOT" <<'PY'
+python3 - "$ROOT" "$@" <<'PY'
 import datetime
 import fcntl
 import hashlib
@@ -61,6 +61,7 @@ def case(name, settings=None, clean_history=False):
     env = dict(os.environ, HOME=str(user), FM_HOME=str(p / 'home'),
                FM_BOAT_BIN=str(wrapper), DEV_SECRET='host-only',
                NODE_OPTIONS='--require=/should/not/travel.js')
+    env.pop('FM_BOAT_REUSE_ONLY', None)
     return p, state, env
 
 def launch(p, env, command='exit 0', options=(), wait=True):
@@ -324,6 +325,125 @@ sys.exit(adapter.main())
                            str(state), fault, 'run', '--worktree', str(p / 'work'),
                            '--output', str(p / 'output'), '--', 'cat', 'tracked.txt'],
                           env=env, capture_output=True, timeout=30)
+
+# Acceptance oracle: reuse-only may execute an exact retained lease, but must
+# never issue a new provider allocation, even when preparation cannot recover.
+if sys.platform.startswith('linux'):
+    p, state, env = case('reuse-only-absent', {'remaining': 0})
+    env = managed(p, env)
+    key = Path(env['HOME']) / '.config/upstash/box-api-key'
+    key.parent.mkdir(parents=True)
+    key.write_text('upstash_fixture_secret')
+    key.chmod(0o600)
+    (state / 'upstash.json').write_text('{}')
+    env.update(PYTHONPATH=str(repo / 'tests/fixtures'), FM_UPSTASH_FIXTURE_ROOT=str(state))
+    env['FM_BOAT_REUSE_ONLY'] = '1'
+    try:
+        r = launch(p, env, 'echo forbidden')
+        assert r.returncode != 0 and b'forbidden' not in r.stdout, (r.returncode, r.stdout, r.stderr)
+        assert not (state / 'calls.jsonl').exists() or creates(state) == 0
+        assert not (state / 'upstash-calls.jsonl').exists()
+    finally:
+        assert cleanup_task(env).returncode == 0
+
+    for context in ('unowned', 'stale', 'foreign-checkout'):
+        p, state, env = case('reuse-only-' + context)
+        if context != 'unowned':
+            env = managed(p, env)
+            if context == 'stale':
+                env['FM_TASK_GENERATION'] = 'stale-generation'
+            else:
+                meta = p / 'home/state/reuse-task.meta'
+                meta.write_text(meta.read_text().replace(str(p / 'work'), str(p)))
+        r = launch(p, env, 'echo forbidden', ('--reuse-only',))
+        assert r.returncode != 0 and b'forbidden' not in r.stdout, (context, r.stderr)
+        assert not (state / 'calls.jsonl').exists(), context
+
+    for fault in ('none', 'expired', 'hard-expired', 'generation', 'type', 'closing',
+                  'busy', 'prepare_failed', 'push_failed', 'transport_failed', 'delete_failed',
+                  'reset-timeout', 'reset-cli', 'reset-missing'):
+        p, state, env = case('reuse-only-' + fault)
+        env = managed(p, env)
+        assert launch(p, env).returncode == 0
+        initial = result(p)
+        record = next((state / 'jobs').glob('task-*.json'))
+        old = json.loads(record.read_text())
+        if fault == 'expired':
+            old['idle_expires'] = time.time() - 1
+        elif fault == 'hard-expired':
+            old['hard_expires'] = time.time() + 60
+        elif fault == 'generation':
+            old['owner']['generation'] = 'old-generation'
+        elif fault == 'type':
+            old['type'] = 'large'
+        elif fault == 'closing':
+            old['closing'] = old['owner']
+        elif fault == 'busy':
+            old['lease_state'] = 'busy'
+        record.write_text(json.dumps(old))
+        settings = {} if fault in ('none', 'expired', 'hard-expired', 'generation', 'type', 'closing', 'busy') else {fault: True}
+        if fault == 'delete_failed':
+            settings['prepare_failed'] = True
+        (state / 'fixture.json').write_text(json.dumps(settings))
+        env['FM_BOAT_REUSE_ONLY'] = '1'
+        try:
+            if fault.startswith('reset-'):
+                (p / 'output').rename(p / 'initial-output')
+                r = launch_lost_response(p, state, env, fault)
+            else:
+                r = next_run(p, env, 'echo exact-reuse')
+            evidence = result(p)
+            assert creates(state) == 1, (fault, r.stderr, evidence)
+            if fault == 'none':
+                assert r.returncode == 0 and r.stdout == b'exact-reuse\n', (r.stderr, evidence)
+                assert evidence['reused'] and evidence['vm_id'] == initial['vm_id'], evidence
+            else:
+                assert r.returncode != 0 and evidence['remote_exit'] is None, (fault, evidence)
+                assert not evidence.get('reuse_fallback'), evidence
+        finally:
+            (state / 'fixture.json').write_text('{}')
+            # Restore only fixture corruption so exact-owner cleanup can run.
+            old = json.loads(record.read_text())
+            old['owner'] = initial['lease']['owner']
+            record.write_text(json.dumps(old))
+            assert cleanup_task(env).returncode == 0
+    print('ok - reuse-only allows exact-owner execution and zero replacement allocations')
+
+    # Drive the actual prepush attempt -> wrapper -> adapter seam. The provider
+    # fixture records starts, while the command emits the public lane protocol.
+    p, state, env = case('reuse-only-callers')
+    env = managed(p, env)
+    assert launch(p, env).returncode == 0
+    initial = result(p)
+    driver = p / 'prepush.py'
+    protocol_command = shlex.join(['printf', '%s\n',
+                                  'FM_BOAT_PREPUSH_SUMMARY {"failed": [], "oom": false}'])
+    driver.write_text('command = ' + repr(protocol_command) + '\n' + '''import pathlib, runpy, sys
+api = runpy.run_path(sys.argv[1])
+work, output = map(pathlib.Path, sys.argv[2:4])
+output.mkdir()
+result = api['attempt'](work, output, 'default', 1800, None, command, reuse_only=True)
+assert api['verdict'](result)[0], result
+assert result['remote_result']['reused'], result
+''')
+    try:
+        r = subprocess.run([sys.executable, str(driver), str(repo / 'bin/fm-boat-prepush.py'),
+                            str(p / 'work'), str(p / 'prepush-output')], env=env,
+                           capture_output=True, timeout=30)
+        assert r.returncode == 0, (r.stdout, r.stderr)
+        assert creates(state) == 1
+        assert json.loads(next((state / 'jobs').glob('task-*.json')).read_text())['vm_id'] == initial['vm_id']
+    finally:
+        assert cleanup_task(env).returncode == 0
+    print('ok - prepush and wrapper execute exact-owner reuse without new starts')
+    # Expiry children hold this lock until they observe confirmed cleanup.
+    # Wait for those disposable children before the harness removes their homes.
+    for expiry in base.glob('reuse-only-*/home/state/boat-offload/*.expiry.lock'):
+        with expiry.open('r') as handle:
+            fcntl.flock(handle, fcntl.LOCK_EX)
+
+if sys.argv[2:] == ['--reuse-only']:
+    sys.exit(0)
 
 if sys.platform.startswith('linux'):
     for failure in ('push_failed_once', 'push_failed', 'prepare_failed', 'corrupt_upload'):

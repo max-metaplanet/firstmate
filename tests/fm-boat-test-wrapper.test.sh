@@ -6,7 +6,7 @@ set -euo pipefail
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 CASE_ROOT=$(fm_test_tmproot fm-boat-test-wrapper)
 export CASE_ROOT
-python3 - "$ROOT" <<'PY'
+python3 - "$ROOT" "$@" <<'PY'
 import json
 import os
 from pathlib import Path
@@ -69,7 +69,7 @@ def case(name):
     env.pop('FM_BUILD_LOCK_HELD', None)
     env.pop('FM_BOAT_TYPE', None)
     for name in ('FM_BOAT_TEST_LOCAL_FALLBACK', 'FM_BOAT_TEST_UNAVAILABLE_WAIT_SECS',
-                 'FM_BOAT_TEST_UNAVAILABLE_RETRY_SECS'):
+                 'FM_BOAT_TEST_UNAVAILABLE_RETRY_SECS', 'FM_BOAT_REUSE_ONLY'):
         env.pop(name, None)
     return p, work, env
 
@@ -80,6 +80,19 @@ def launch(work, env, command, wrapper=tools / 'fm-boat-test-wrapper.sh'):
 def settings(env, code, kind, **extra):
     result = dict(kind=kind, adapter_exit=code, **extra)
     env['SETTINGS'] = json.dumps({'exit': code, 'result': result})
+
+for code in (69, 75):
+    p, work, env = case('reuse-only-unavailable-' + str(code))
+    env['FM_BOAT_REUSE_ONLY'] = '1'
+    settings(env, code, 'unavailable')
+    r = launch(work, env, 'touch local-ran')
+    assert r.returncode == code, (r.returncode, r.stderr)
+    assert not (work / 'local-ran').exists() and not (p / 'heavy.lock').exists()
+    assert '--reuse-only' in json.loads((p / 'calls.json').read_text())
+    assert len(json.loads((p / 'calls.json.history').read_text())) == 1
+print('ok - reuse-only forwards admission policy and refuses local fallback without retry')
+if sys.argv[2:] == ['--reuse-only']:
+    sys.exit(0)
 
 for owner_home, owner_task, ok in (('/fixture/home', 'fixture-task', False),
                                   ('/other/home', 'fixture-task', False),

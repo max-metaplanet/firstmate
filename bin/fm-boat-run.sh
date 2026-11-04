@@ -5,7 +5,7 @@
 #       [--input RELATIVE_FILE]... [--artifact RELATIVE_PATH]...
 #       [--timeout SECONDS] [--swap-gib 0..4]
 #       [--history-depth N | --history-input FILE]
-#       [--type default|large|xlarge] -- COMMAND [ARGS...]
+#       [--type default|large|xlarge] [--reuse-only] -- COMMAND [ARGS...]
 #   FM_HOME=/absolute/home fm-boat-run.sh reap
 #   FM_HOME=/absolute/home fm-boat-run.sh cleanup-task --task ID --generation SPAWN_GEN
 #   FM_HOME=/absolute/home fm-boat-run.sh caller-origin --worktree DIR
@@ -30,6 +30,9 @@
 # a changed generation or request requires confirmed deletion before replacement.
 # A repointed key file fails closed. Upstash always creates per command.
 # Reuse checks remaining compute credit independently of new-start quotas.
+# --reuse-only (also FM_BOAT_REUSE_ONLY=1) requires a current exact owned
+# compatible idle lease; it forbids fresh Boat/Upstash allocation and replacement
+# after reset or transfer failure. Existing ownership, TTL and cleanup guards apply.
 # A full minute/hour/day start window does not prevent an owned running lease.
 # Each run removes the entire job workspace, uploads screened fresh source,
 # and uses fresh HOME/TMPDIR directories. Linux child-subreaper adoption, process

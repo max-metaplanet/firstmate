@@ -304,6 +304,8 @@ def fresh_job(args, owner):
 @contextlib.contextmanager
 def allocation(args, boats, binding):
     owner = binding.owner if binding else None
+    if args.reuse_only and not owner:
+        raise Failure('reuse-only requires exact task ownership', 70)
     state = boats[0].state
     record = job_path(state, owner) if owner else state / 'jobs' / (uuid.uuid4().hex + '.json')
     with lock(state / (record.stem + '.lock')):
@@ -341,6 +343,8 @@ def allocation(args, boats, binding):
                 save(record, old)
                 yield compatible, old, record, True
                 return
+            if args.reuse_only:
+                raise Failure('reuse-only requires a current compatible idle lease', 70)
             uncertain = old.get('lease_state') == 'busy'
             cleanup_job(state, boats[0].cli_home, old, record)
             if uncertain:
@@ -1509,6 +1513,8 @@ def run(args, boats):
 
         def admit_available():
             nonlocal boat
+            if args.reuse_only:
+                raise Failure('reuse-only forbids fresh provider allocation', 70)
             result['kind'] = 'unavailable'
             try:
                 try:
@@ -1544,7 +1550,7 @@ def run(args, boats):
                     result['upload_recovered'] = prepare_source(
                         boat, job, args, upload, digest, push_timeout, reused)
                 except Failure as exc:
-                    if (not reused or not job.get('owner') or job.get('provider') != 'boat'
+                    if (args.reuse_only or not reused or not job.get('owner') or job.get('provider') != 'boat'
                             or not binding.current()):
                         raise
                     boat.cleanup(job, record)
@@ -1677,6 +1683,8 @@ def main():
     runner = sub.add_parser('run')
     runner.add_argument('--worktree', required=True)
     runner.add_argument('--output', required=True)
+    runner.add_argument('--reuse-only', action='store_true',
+                        default=os.environ.get('FM_BOAT_REUSE_ONLY') == '1')
     runner.add_argument('--input', action='append', default=[])
     runner.add_argument('--artifact', action='append', default=[])
     runner.add_argument('--timeout', type=int, default=1800)

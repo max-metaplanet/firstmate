@@ -120,10 +120,13 @@ def command_string(files: list, timeout: int = 2700) -> str:
 
 
 def attempt(worktree: Path, output: Path, size: str, timeout: int,
-            history_depth: int | None, command: str, history_input: str | None = None) -> dict:
+            history_depth: int | None, command: str, history_input: str | None = None,
+            reuse_only: bool = False) -> dict:
     """One whole-machine run, start to finish, on one machine size."""
     log = output / ('attempt-%s.log' % size)
     env = dict(os.environ)
+    if reuse_only:
+        env['FM_BOAT_REUSE_ONLY'] = '1'
     env['FM_BOAT_TYPE'] = size
     env['FM_BOAT_TEST_TIMEOUT'] = str(timeout)
     env['FM_BOAT_TEST_LOCAL_FALLBACK'] = '0'
@@ -321,6 +324,8 @@ def main(argv: list) -> int:
     parser.add_argument('--history-depth', type=int, default=None)
     parser.add_argument('--history-input', default=None)
     parser.add_argument('--output', default=None)
+    parser.add_argument('--reuse-only', action='store_true',
+                        default=os.environ.get('FM_BOAT_REUSE_ONLY') == '1')
     args = parser.parse_args(argv)
 
     if not 1 <= args.timeout <= 2700:
@@ -366,12 +371,13 @@ def main(argv: list) -> int:
     sys.stderr.write('fm-boat-prepush: %s..%s, %d changed files; evidence under %s\n'
                      % (base[:12], head[:12], len(files), output))
 
-    runs = [attempt(worktree, output, 'default', args.timeout, args.history_depth, command, args.history_input)]
+    runs = [attempt(worktree, output, 'default', args.timeout, args.history_depth, command,
+                    args.history_input, args.reuse_only)]
     if should_retry_large(runs[-1]):
         sys.stderr.write('fm-boat-prepush: every failing lane ran out of memory; '
                          'retrying once on the large machine\n')
         runs.append(attempt(worktree, output, 'large', args.timeout,
-                            args.history_depth, command, args.history_input))
+                            args.history_depth, command, args.history_input, args.reuse_only))
     ok, failed, _ = verdict(runs[-1])
 
     report(runs, sys.stdout)

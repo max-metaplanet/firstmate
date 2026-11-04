@@ -10,6 +10,7 @@
 # FM_BOAT_TEST_HISTORY_INPUT forwards --history-input FILE instead of depth.
 # The adapter owns history screening and synthetic fallback; see fm-boat-run.sh --help.
 # FM_BOAT_TYPE optionally forwards --type to the adapter; its default is default.
+# FM_BOAT_REUSE_ONLY=1 forwards --reuse-only and forbids local fallback.
 # The selected account must permit that type in config/boat-keys.
 # The command must install its dependencies and have its runtime tools remotely.
 # Never pass secrets in the command or use this wrapper for authenticated tests.
@@ -115,6 +116,9 @@ REMOTE
 )
 
 adapter_args=(run --worktree "$worktree")
+if [[ ${FM_BOAT_REUSE_ONLY:-} == 1 ]]; then
+  adapter_args+=(--reuse-only)
+fi
 if [[ -n ${FM_BOAT_TEST_TIMEOUT:-} ]]; then
   adapter_args+=(--timeout "$FM_BOAT_TEST_TIMEOUT")
 fi
@@ -147,6 +151,10 @@ while :; do
   case "$kind" in
     completed) exit "$rc" ;;
     unavailable)
+      if [[ ${FM_BOAT_REUSE_ONLY:-} == 1 ]]; then
+        printf 'boat-test-wrapper: reuse-only forbids local fallback; result.json: %s\n' "$result" >&2
+        exit "$rc"
+      fi
       if [[ ${FM_BOAT_TEST_LOCAL_FALLBACK:-} == 0 ]]; then
         remaining=$((deadline - SECONDS))
         if (( remaining > 0 )); then
