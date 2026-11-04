@@ -8,6 +8,7 @@ CASE_ROOT=$(fm_test_tmproot fm-boat-run)
 export CASE_ROOT
 python3 - "$ROOT" <<'PY'
 import datetime
+import fcntl
 import hashlib
 import json
 import os
@@ -97,6 +98,62 @@ def cleanup_task(env, task='reuse-task', generation='generation-1'):
     return subprocess.run(['bash', str(repo / 'bin/fm-boat-run.sh'), 'cleanup-task',
                            '--task', task, '--generation', generation],
                           env=env, capture_output=True, timeout=20)
+
+def bookkeeping_holders(record):
+    lockfile = record.parent.parent / (record.stem + '.lock')
+    identity = lockfile.stat()
+    holders = []
+    for line in Path('/proc/locks').read_text().splitlines():
+        fields = line.split()
+        if '->' in fields:
+            continue
+        major, minor, inode = fields[5].split(':')
+        if (int(major, 16), int(minor, 16), int(inode)) != (
+                os.major(identity.st_dev), os.minor(identity.st_dev), identity.st_ino):
+            continue
+        process = Path('/proc') / fields[4]
+        try:
+            command = (process / 'cmdline').read_bytes().split(b'\0')
+        except FileNotFoundError:
+            continue
+        expected = os.fsencode(repo / 'bin/fm-boat-run.py')
+        assert command[1:5] == [expected, b'expire', b'--lease', record.stem.encode()] or (
+            command[1:3] == [expected, b'reap']), ('unexpected fixture lock holder', fields[4], command)
+        matching_fds = []
+        try:
+            descriptors = list((process / 'fd').iterdir())
+        except FileNotFoundError:
+            continue
+        for fd in descriptors:
+            try:
+                target = fd.stat()
+                if (target.st_dev, target.st_ino) == (identity.st_dev, identity.st_ino):
+                    matching_fds.append((process / 'fdinfo' / fd.name).read_text())
+            except FileNotFoundError:
+                pass
+        if not matching_fds:
+            continue
+        holders.append(dict(pid=int(fields[4]), kernel=line, fds=matching_fds))
+    return holders
+
+
+def wait_for_expiry_cleanup(record):
+    lockfile = record.parent.parent / (record.stem + '.lock')
+    seen = []
+    for _ in range(200):
+        seen.extend(bookkeeping_holders(record))
+        with lockfile.open('r') as handle:
+            try:
+                fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                pass
+            else:
+                assert json.loads(record.read_text())['cleanup'] == 'deleted'
+                (record.parent.parent / 'expiry-holder-proof.json').write_text(json.dumps(seen))
+                return
+        time.sleep(.1)
+    raise AssertionError('identified fixture expiry holder did not finish cleanup')
+
 
 def creates(state):
     return sum(json.loads(line)[0] == 'new' for line in (state / 'calls.jsonl').read_text().splitlines())
@@ -514,6 +571,7 @@ print(json.dumps(value))
     auxiliary = p / 'test-base'
     subprocess.run(['git', 'clone', '-q', str(p / 'work'), str(auxiliary)], check=True)
     reply['execution']['execution_checkout'] = str(auxiliary)
+    pipeline_env.update(FM_TASK_ID='stale-ambient-task', FM_TASK_GENERATION='stale-ambient-generation')
     reply_file.write_text(json.dumps(reply))
     r = subprocess.run(['bash', str(repo / 'bin/fm-boat-test-wrapper.sh'), 'cat tracked.txt'],
         env=pipeline_env, cwd=auxiliary, capture_output=True, timeout=30)
@@ -720,6 +778,45 @@ print(json.dumps(value))
     empty(state)
     print('ok - concurrent task calls serialize while cleanup refuses an active holder')
 
+    p, state, env = case('cleanup-bookkeeping-overlap')
+    env = managed(p, env)
+    assert launch(p, env).returncode == 0
+    record = next((state / 'jobs').glob('*.json'))
+    entered, release = p / 'delete-entered', p / 'delete-release'
+    (p / 'boat').write_text('#!' + sys.executable + '\n' +
+        'import os,pathlib,sys,time\n' +
+        'if sys.argv[1] == "delete":\n' +
+        ' pathlib.Path(' + repr(str(entered)) + ').write_text(str(os.getppid()))\n' +
+        ' for _ in range(200):\n' +
+        '  if pathlib.Path(' + repr(str(release)) + ').exists(): break\n' +
+        '  time.sleep(.1)\n' +
+        ' else: sys.exit(1)\n' +
+        'os.execv(sys.executable,[sys.executable,' + repr(str(fixture)) + ',' +
+        repr(str(state)) + ',*sys.argv[1:]])\n')
+    job = json.loads(record.read_text())
+    job['idle_expires'] = time.time() - 1
+    staged = record.with_suffix('.fixture')
+    staged.write_text(json.dumps(job))
+    staged.replace(record)
+    reaper = subprocess.Popen(['bash', str(repo / 'bin/fm-boat-run.sh'), 'reap'],
+        env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    for _ in range(100):
+        if entered.exists():
+            break
+        time.sleep(.1)
+    assert entered.exists(), 'fixture deletion did not reach its explicit release gate'
+    observed = bookkeeping_holders(record)
+    assert any(holder['pid'] == int(entered.read_text()) for holder in observed), observed
+    refused = cleanup_task(env)
+    assert refused.returncode == 70 and b'task Boat command active' in refused.stderr, refused.stderr
+    release.touch()
+    wait_for_expiry_cleanup(record)
+    out, err = reaper.communicate(timeout=10)
+    assert reaper.returncode == 0, err
+    assert cleanup_task(env).returncode == 0
+    empty(state)
+    print('ok - exact kernel PID/FD proves bookkeeping overlap; bounded fixture wait preserves immediate cleanup refusal')
+
     p, state, env = case('lease-idle-watcher')
     env = managed(p, env)
     assert launch(p, env).returncode == 0
@@ -769,6 +866,7 @@ print(json.dumps(value))
         if mismatch == 'task':
             assert cleanup_task(other, task='other-task').returncode == 0
         if mismatch == 'worktree':
+            wait_for_expiry_cleanup(next((state / 'jobs').glob('*.json')))
             env = managed(p, env)
         assert cleanup_task(env, generation='generation-2' if mismatch == 'generation' else 'generation-1').returncode == 0
     print('ok - tasks, homes, worker generations, worktrees and resource requests cannot consume another lease')
