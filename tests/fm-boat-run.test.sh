@@ -516,6 +516,64 @@ assert git('fsck','--full','--no-reflogs') == ''
     print('ok - incomplete selected closure refuses before any provider call with content-free object/path/commit/rule evidence')
 
 
+def merge_ancestry_cases():
+    for mode in ('depth', 'input'):
+        for reverse in (False, True):
+            p, state, env = case('concealed-ancestor-' + mode + '-' + str(reverse), clean_history=True)
+            work = p / 'work'
+            git(work, 'reset', '--hard', 'HEAD')
+            a = git(work, 'rev-parse', 'HEAD').stdout.decode().strip()
+            original_tree = git(work, 'rev-parse', 'HEAD^{tree}').stdout.decode().strip()
+            (work / 'tracked.txt').write_text('ancestor change\n')
+            git(work, 'add', 'tracked.txt')
+            changed_tree = git(work, 'write-tree').stdout.decode().strip()
+            def commit(tree, label, *parents):
+                args = [arg for parent in parents for arg in ('-p', parent)]
+                return git(work, 'commit-tree', tree, *args, '-m', label).stdout.decode().strip()
+            b = commit(changed_tree, 'B', a)
+            y = commit(original_tree, 'Y', b)
+            x = commit(original_tree, 'X', y)
+            m = commit(original_tree, 'M', a, x)
+            h = commit(changed_tree, 'H', b)
+            head, main = (m, h) if reverse else (h, m)
+            assert git(work, 'merge-base', '--all', head, main).stdout.decode().strip() == b
+            git(work, 'checkout', '-qB', 'feature-input', head)
+            git(work, 'update-ref', 'refs/heads/main-input', main)
+            git(work, 'update-ref', 'refs/remotes/origin/main', main)
+            manifest = dict(schema='fm-boat-history.v1', source=str(work), head=head,
+                            head_ref='refs/heads/feature-input', refs={'refs/remotes/origin/main':
+                            {'ref': 'refs/heads/main-input', 'oid': main}}, depth=2, objects=[], templates=[])
+            path = p / 'history.json'
+            path.write_text(json.dumps(manifest))
+            options = ('--history-depth', '2') if mode == 'depth' else ('--history-input', str(path))
+            refused = launch(p, env, options=options)
+            assert refused.returncode == 2 and b'merge ancestry incomplete' in refused.stderr, refused.stderr
+            assert not (state / 'calls.jsonl').exists()
+            assert not (p / 'output/upload/source.tar.gz').exists()
+            manifest['depth'] = 3
+            path.write_text(json.dumps(manifest))
+            options = ('--history-depth', '3') if mode == 'depth' else ('--history-input', str(path))
+            check = f"""import pathlib,subprocess
+subprocess.run(['git','clone','--quiet','--shared','--no-checkout','.', '../copy'],check=True)
+def git(*args): return subprocess.check_output(['git','-C','../copy',*args]).decode().strip()
+assert git('merge-base','--all',{head!r},{main!r}) == {b!r}
+git('checkout','--quiet','--detach',{head!r})
+git('-c','user.name=Fixture','-c','user.email=fixture@example.invalid','merge','--quiet','--no-ff','--no-edit',{main!r})
+assert pathlib.Path('../copy/tracked.txt').read_text() == 'committed\\n'
+assert git('fsck','--full','--no-reflogs') == ''
+"""
+            completed = next_run(p, env, 'python3 -c ' + shlex.quote(check), options)
+            assert completed.returncode == 0, (completed.stdout, completed.stderr, result(p))
+            assert result(p)['history'] == 'screened'
+            empty(state)
+    print('ok - concealed merge ancestors refuse before provider calls; sufficient depth preserves merges in both directions and modes')
+
+
+merge_ancestry_cases()
+if '--merge-ancestry' in sys.argv:
+    sys.exit(0)
+
+
 copy_completeness_cases()
 if '--copy-completeness' in sys.argv:
     sys.exit(0)

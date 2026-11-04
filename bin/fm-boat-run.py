@@ -819,7 +819,11 @@ def history(root, head, depth, destination, key_files, uploaded, handled_links, 
         raise Failure('history closure incomplete: %d excluded object(s); see history-exclusions.json; first path: %s' %
                       (len(withheld), exclusions[0]['path']), 2)
     try:
-        git(fetched, 'merge-base', '--all', head, base)
+        merge_bases = git(fetched, 'merge-base', '--all', head, base).decode().splitlines()
+        if shallow.exists():
+            divergent = set(git(fetched, 'rev-list', head, base, '--not', *merge_bases).splitlines())
+            if divergent.intersection(shallow.read_bytes().splitlines()):
+                raise Failure('history merge ancestry incomplete; increase depth or supply complete source', 2)
     except subprocess.SubprocessError as exc:
         raise Failure('history merge ancestry incomplete; increase depth or supply complete source', 2) from exc
     objects = set(git(fetched, 'rev-list', '--objects', '--no-object-names', '--all').splitlines())
