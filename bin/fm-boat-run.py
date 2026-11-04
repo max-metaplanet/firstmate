@@ -500,6 +500,13 @@ def history(root, head, depth, destination, key_files, uploaded, skipped):
 def source(root, inputs, archive, key_files, history_depth=None):
     head = git(root, 'rev-parse', 'HEAD').decode().strip()
     entries = git(root, 'ls-tree', '-rz', '--full-tree', 'HEAD').split(b'\0')
+    tracked = {entry.split(b'\t', 1)[1] for entry in filter(None, entries)}
+    # Keep HEAD's working-tree semantics while admitting new index paths.
+    for entry in filter(None, git(root, 'ls-files', '--stage', '-z').split(b'\0')):
+        meta, name = entry.split(b'\t', 1)
+        mode, oid, stage = meta.split()
+        if name not in tracked and stage == b'0':
+            entries.append(mode + b' blob ' + oid + b'\t' + name)
     names = []
     skipped = set()
     for entry in filter(None, entries):
