@@ -1,0 +1,223 @@
+[
+  {
+    "args": [
+      "run",
+      "--worktree",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6J76EKE8D0YSJCYCX6XA9S4/.boat-verification-1__y33ne/source",
+      "--output",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6J76EKE8D0YSJCYCX6XA9S4/.boat-verification-1__y33ne/screen-output",
+      "--",
+      "sh",
+      "-c",
+      "echo must-not-execute"
+    ],
+    "exit": 69,
+    "stdout": "",
+    "stderr": "boat-offload: Boat key unavailable\n"
+  },
+  {
+    "scenario": "screened source and missing credentials",
+    "result": {
+      "kind": "unavailable",
+      "remote_exit": null,
+      "cleanup": "deleted",
+      "swap_gib": 0,
+      "provider": "boat",
+      "requested_type": "default",
+      "actual_size": "default",
+      "history": "synthetic",
+      "source_head": "ad5fedad43eccc2441dcbb79a172d735c305c13f",
+      "source_sha256": "d5b50736b3696dcb531ea1641b48a665db51d894b142bde185a217a002804859",
+      "upload_bytes": 209,
+      "push_timeout_seconds": 300,
+      "lease": {
+        "owner": {
+          "home": "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6J76EKE8D0YSJCYCX6XA9S4/.boat-verification-1__y33ne/home",
+          "task": "screen",
+          "generation": "g1",
+          "worktree": "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6J76EKE8D0YSJCYCX6XA9S4/.boat-verification-1__y33ne/source"
+        },
+        "state": "busy",
+        "id": "task-c8798026926dd4373f32f78b104e133f3b7959e5115d000024083a096f1e4f3e"
+      },
+      "boat_unavailable": "Boat key unavailable",
+      "execution_error": "Boat key unavailable",
+      "error": "Boat key unavailable",
+      "adapter_exit": 69
+    },
+    "archive_members": [
+      "visible.txt"
+    ]
+  },
+  {
+    "args": [
+      "run",
+      "--worktree",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6J76EKE8D0YSJCYCX6XA9S4/.boat-verification-1__y33ne/source",
+      "--output",
+      "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6J76EKE8D0YSJCYCX6XA9S4/.boat-verification-1__y33ne/unsafe-output",
+      "--input",
+      ".env",
+      "--",
+      "true"
+    ],
+    "exit": 2,
+    "stdout": "",
+    "stderr": "boat-offload: extra input is a credential/cache path: .env\n"
+  },
+  {
+    "scenario": "explicit excluded input refused",
+    "result": {
+      "kind": "invalid",
+      "remote_exit": null,
+      "cleanup": "not-created",
+      "swap_gib": 0,
+      "provider": "boat",
+      "requested_type": "default",
+      "actual_size": "default",
+      "error": "extra input is a credential/cache path: .env",
+      "adapter_exit": 2
+    }
+  },
+  {
+    "args": [
+      "cleanup-task",
+      "--task",
+      "removed-source",
+      "--generation",
+      "g1"
+    ],
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "args": [
+      "cleanup-task",
+      "--task",
+      "removed-source",
+      "--generation",
+      "g1"
+    ],
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "scenario": "cleanup after removed source is idempotent",
+    "persisted": {
+      "owner": {
+        "home": "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6J76EKE8D0YSJCYCX6XA9S4/.boat-verification-1__y33ne/home",
+        "task": "removed-source",
+        "generation": "g1",
+        "worktree": "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6J76EKE8D0YSJCYCX6XA9S4/.boat-verification-1__y33ne/removed-worker-source"
+      },
+      "cleanup": "deleted",
+      "closing": {
+        "home": "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6J76EKE8D0YSJCYCX6XA9S4/.boat-verification-1__y33ne/home",
+        "task": "removed-source",
+        "generation": "g1",
+        "worktree": "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6J76EKE8D0YSJCYCX6XA9S4/.boat-verification-1__y33ne/removed-worker-source"
+      }
+    }
+  },
+  {
+    "args": [
+      "cleanup-task",
+      "--task",
+      "generation",
+      "--generation",
+      "wrong-generation"
+    ],
+    "exit": 70,
+    "stdout": "",
+    "stderr": "boat-offload: task cleanup ownership cannot be confirmed\n"
+  },
+  {
+    "scenario": "wrong generation cannot clean lease",
+    "persisted": {
+      "owner": {
+        "home": "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6J76EKE8D0YSJCYCX6XA9S4/.boat-verification-1__y33ne/home",
+        "task": "generation",
+        "generation": "g1",
+        "worktree": "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6J76EKE8D0YSJCYCX6XA9S4/.boat-verification-1__y33ne/source"
+      },
+      "cleanup": "retained",
+      "lease_state": "idle"
+    }
+  },
+  {
+    "args": [
+      "cleanup-task",
+      "--task",
+      "active",
+      "--generation",
+      "g1"
+    ],
+    "exit": 70,
+    "stdout": "",
+    "stderr": "boat-offload: task Boat command active; retry cleanup after it finishes\n"
+  },
+  {
+    "scenario": "active command cannot be cleaned concurrently",
+    "persisted": {
+      "owner": {
+        "home": "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6J76EKE8D0YSJCYCX6XA9S4/.boat-verification-1__y33ne/home",
+        "task": "active",
+        "generation": "g1",
+        "worktree": "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6J76EKE8D0YSJCYCX6XA9S4/.boat-verification-1__y33ne/source"
+      },
+      "cleanup": "retained",
+      "lease_state": "busy"
+    }
+  },
+  {
+    "args": [
+      "reap"
+    ],
+    "exit": 70,
+    "stdout": "",
+    "stderr": "boat-offload: lease belongs to another home; refusing cleanup\n"
+  },
+  {
+    "scenario": "reap refuses another home",
+    "persisted": {
+      "owner": {
+        "home": "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6J76EKE8D0YSJCYCX6XA9S4/.boat-verification-1__y33ne/other-home",
+        "task": "foreign",
+        "generation": "g1",
+        "worktree": "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6J76EKE8D0YSJCYCX6XA9S4/.boat-verification-1__y33ne/source"
+      },
+      "cleanup": "retained",
+      "lease_state": "idle"
+    }
+  },
+  {
+    "args": [
+      "reap"
+    ],
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "scenario": "reap accepts confirmed deleted records",
+    "result": "all deleted records preserved"
+  },
+  {
+    "scenario": "wrapper permitted local fallback executes once",
+    "exit": 0,
+    "stdout": "",
+    "stderr": "boat-test-wrapper: result.json: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6J76EKE8D0YSJCYCX6XA9S4/.boat-verification-1__y33ne/.fm-test-scratch/fm-boat-test.l7IITn/boat-1/result.json\nboat-offload: Boat key unavailable\nboat-test-wrapper: Boat unavailable (exit 69); running locally through heavy build lock; result.json: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6J76EKE8D0YSJCYCX6XA9S4/.boat-verification-1__y33ne/.fm-test-scratch/fm-boat-test.l7IITn/boat-1/result.json\n",
+    "command": "echo executed >> ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6J76EKE8D0YSJCYCX6XA9S4/.boat-verification-1__y33ne/local-command-count",
+    "build_lock_bypass": "1 for trivial marker command only"
+  },
+  {
+    "scenario": "wrapper remote-only refuses unavailable",
+    "exit": 69,
+    "stdout": "",
+    "stderr": "boat-test-wrapper: result.json: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6J76EKE8D0YSJCYCX6XA9S4/.boat-verification-1__y33ne/.fm-test-scratch/fm-boat-test.rzABoD/boat-1/result.json\nboat-offload: Boat key unavailable\nboat-test-wrapper: Boat unavailable after 1 attempts; Test failed; result.json: ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6J76EKE8D0YSJCYCX6XA9S4/.boat-verification-1__y33ne/.fm-test-scratch/fm-boat-test.rzABoD/boat-1/result.json\n",
+    "command": "echo executed >> ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6J76EKE8D0YSJCYCX6XA9S4/.boat-verification-1__y33ne/local-command-count",
+    "build_lock_bypass": "1 for trivial marker command only"
+  }
+]
