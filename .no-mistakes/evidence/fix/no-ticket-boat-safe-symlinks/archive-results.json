@@ -1,0 +1,283 @@
+[
+  {
+    "scenario": "safe",
+    "exit": 69,
+    "stderr": "boat-offload: Boat key unavailable",
+    "result": {
+      "kind": "unavailable",
+      "remote_exit": null,
+      "cleanup": "deleted",
+      "swap_gib": 0,
+      "provider": "boat",
+      "requested_type": "default",
+      "actual_size": "default",
+      "history": "synthetic",
+      "source_head": "f1bdddeffeae3956f585cd4e54b94809f76ac671",
+      "source_sha256": "3e40c4b3d4098f980624d7e8c5585bb422dbcc2755a3ea74605b2f5cbf08ac18",
+      "upload_bytes": 364,
+      "push_timeout_seconds": 300,
+      "boat_unavailable": "Boat key unavailable",
+      "execution_error": "Boat key unavailable",
+      "error": "Boat key unavailable",
+      "adapter_exit": 69
+    },
+    "archive_members": [
+      {
+        "name": ".agents/skills/test-plan/SKILL.md",
+        "type": "file",
+        "target": ""
+      },
+      {
+        "name": "tracked.txt",
+        "type": "file",
+        "target": ""
+      },
+      {
+        "name": ".claude/skills",
+        "type": "symlink",
+        "target": "../.agents/skills"
+      },
+      {
+        "name": "chain",
+        "type": "symlink",
+        "target": "file-link"
+      },
+      {
+        "name": "file-link",
+        "type": "symlink",
+        "target": "tracked.txt"
+      }
+    ],
+    "read_through_skill_link": "Test-plan fixture\n",
+    "observable": "Actual CLI archive extracted; link types, target text, admitted bytes and exclusions match intent."
+  },
+  {
+    "scenario": "filtered",
+    "exit": 69,
+    "stderr": "boat-offload: excluded allowlisted file with credential-looking content: .claude/settings.json\nboat-offload: skipped in-repo symlink: content-link\nboat-offload: skipped in-repo symlink: dir-link\nboat-offload: skipped in-repo symlink: env-link\nboat-offload: Boat key unavailable",
+    "result": {
+      "kind": "unavailable",
+      "remote_exit": null,
+      "cleanup": "deleted",
+      "swap_gib": 0,
+      "provider": "boat",
+      "requested_type": "default",
+      "actual_size": "default",
+      "history": "synthetic",
+      "source_head": "17a8159bd2bdc8c3113af74485859a5591c2f068",
+      "source_sha256": "0e1abbac332c53f3f5d765f50445e6d6429d6225f10dc2b6a776a43b0d0e213b",
+      "upload_bytes": 290,
+      "push_timeout_seconds": 300,
+      "boat_unavailable": "Boat key unavailable",
+      "execution_error": "Boat key unavailable",
+      "error": "Boat key unavailable",
+      "adapter_exit": 69
+    },
+    "archive_members": [
+      {
+        "name": ".agents/skills/test-plan/SKILL.md",
+        "type": "file",
+        "target": ""
+      },
+      {
+        "name": "tracked.txt",
+        "type": "file",
+        "target": ""
+      }
+    ],
+    "observable": "Actual CLI archive extracted; link types, target text, admitted bytes and exclusions match intent."
+  },
+  {
+    "scenario": "missing",
+    "exit": 69,
+    "stderr": "boat-offload: skipped in-repo symlink: missing-link\nboat-offload: skipped in-repo symlink: unselected-link\nboat-offload: Boat key unavailable",
+    "result": {
+      "kind": "unavailable",
+      "remote_exit": null,
+      "cleanup": "deleted",
+      "swap_gib": 0,
+      "provider": "boat",
+      "requested_type": "default",
+      "actual_size": "default",
+      "history": "synthetic",
+      "source_head": "64f49226e0bd50665893ccd9b16495c2b3e8165f",
+      "source_sha256": "02d05c1076df6bed1664deef0740cdaa1b4aa9a50e37c603565b661cab96f3c1",
+      "upload_bytes": 298,
+      "push_timeout_seconds": 300,
+      "boat_unavailable": "Boat key unavailable",
+      "execution_error": "Boat key unavailable",
+      "error": "Boat key unavailable",
+      "adapter_exit": 69
+    },
+    "archive_members": [
+      {
+        "name": ".agents/skills/test-plan/SKILL.md",
+        "type": "file",
+        "target": ""
+      },
+      {
+        "name": "tracked.txt",
+        "type": "file",
+        "target": ""
+      }
+    ],
+    "observable": "Actual CLI archive extracted; link types, target text, admitted bytes and exclusions match intent."
+  },
+  {
+    "scenario": "cycle",
+    "exit": 69,
+    "stderr": "boat-offload: skipped in-repo symlink: a\nboat-offload: skipped in-repo symlink: b\nboat-offload: Boat key unavailable",
+    "result": {
+      "kind": "unavailable",
+      "remote_exit": null,
+      "cleanup": "deleted",
+      "swap_gib": 0,
+      "provider": "boat",
+      "requested_type": "default",
+      "actual_size": "default",
+      "history": "synthetic",
+      "source_head": "8d9400fd795f5e76ce0eefef4a096f9cb8738e99",
+      "source_sha256": "dbc860cfb8c2c7aa4b9513e3ba86df0102cf5baeb5997224dfa95920752984a7",
+      "upload_bytes": 298,
+      "push_timeout_seconds": 300,
+      "boat_unavailable": "Boat key unavailable",
+      "execution_error": "Boat key unavailable",
+      "error": "Boat key unavailable",
+      "adapter_exit": 69
+    },
+    "archive_members": [
+      {
+        "name": ".agents/skills/test-plan/SKILL.md",
+        "type": "file",
+        "target": ""
+      },
+      {
+        "name": "tracked.txt",
+        "type": "file",
+        "target": ""
+      }
+    ],
+    "observable": "Actual CLI archive extracted; link types, target text, admitted bytes and exclusions match intent."
+  },
+  {
+    "scenario": "chain-escape",
+    "exit": 69,
+    "stderr": "boat-offload: skipped in-repo symlink: b\nboat-offload: Boat key unavailable",
+    "result": {
+      "kind": "unavailable",
+      "remote_exit": null,
+      "cleanup": "deleted",
+      "swap_gib": 0,
+      "provider": "boat",
+      "requested_type": "default",
+      "actual_size": "default",
+      "history": "synthetic",
+      "source_head": "7fdd22f1262009493e183580c40fc329c9c9a802",
+      "source_sha256": "88e9e835adc31ce5b57bea2cd2bc336dafc15d5d14c0e22620078d045356905b",
+      "upload_bytes": 310,
+      "push_timeout_seconds": 300,
+      "boat_unavailable": "Boat key unavailable",
+      "execution_error": "Boat key unavailable",
+      "error": "Boat key unavailable",
+      "adapter_exit": 69
+    },
+    "archive_members": [
+      {
+        "name": ".agents/skills/test-plan/SKILL.md",
+        "type": "file",
+        "target": ""
+      },
+      {
+        "name": "tracked.txt",
+        "type": "file",
+        "target": ""
+      },
+      {
+        "name": "a",
+        "type": "symlink",
+        "target": "."
+      }
+    ],
+    "observable": "Actual CLI archive extracted; link types, target text, admitted bytes and exclusions match intent."
+  },
+  {
+    "scenario": "escaping",
+    "exit": 2,
+    "stderr": "boat-offload: source refused: unsafe symlink target: link",
+    "result": {
+      "kind": "invalid",
+      "remote_exit": null,
+      "cleanup": "not-created",
+      "swap_gib": 0,
+      "provider": "boat",
+      "requested_type": "default",
+      "actual_size": "default",
+      "error": "source refused: unsafe symlink target: link",
+      "adapter_exit": 2
+    },
+    "observable": "Unsafe target refused before any source archive or provider allocation."
+  },
+  {
+    "scenario": "absolute",
+    "exit": 2,
+    "stderr": "boat-offload: source refused: unsafe symlink target: link",
+    "result": {
+      "kind": "invalid",
+      "remote_exit": null,
+      "cleanup": "not-created",
+      "swap_gib": 0,
+      "provider": "boat",
+      "requested_type": "default",
+      "actual_size": "default",
+      "error": "source refused: unsafe symlink target: link",
+      "adapter_exit": 2
+    },
+    "observable": "Unsafe target refused before any source archive or provider allocation."
+  },
+  {
+    "scenario": "explicit-input",
+    "exit": 69,
+    "stderr": "boat-offload: Boat key unavailable",
+    "result": {
+      "kind": "unavailable",
+      "remote_exit": null,
+      "cleanup": "deleted",
+      "swap_gib": 0,
+      "provider": "boat",
+      "requested_type": "default",
+      "actual_size": "default",
+      "history": "synthetic",
+      "source_head": "2c307ee2aff81250a9673e51292912a67194bdb2",
+      "source_sha256": "5e2dc8341b3062ef12e671cde8b2a6d9488b49776e2b84ba2625f5bcae5cd727",
+      "upload_bytes": 363,
+      "push_timeout_seconds": 300,
+      "boat_unavailable": "Boat key unavailable",
+      "execution_error": "Boat key unavailable",
+      "error": "Boat key unavailable",
+      "adapter_exit": 69
+    },
+    "archive_members": [
+      {
+        "name": ".agents/skills/test-plan/SKILL.md",
+        "type": "file",
+        "target": ""
+      },
+      {
+        "name": "extra.txt",
+        "type": "file",
+        "target": ""
+      },
+      {
+        "name": "tracked.txt",
+        "type": "file",
+        "target": ""
+      },
+      {
+        "name": "input-link",
+        "type": "symlink",
+        "target": "extra.txt"
+      }
+    ],
+    "observable": "Actual CLI archive extracted; link types, target text, admitted bytes and exclusions match intent."
+  }
+]
