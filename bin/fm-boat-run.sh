@@ -134,7 +134,7 @@
 # 75 when all accounts lack capacity/budget, 69 if an unavailable account remains.
 # Reads the selected key file afresh ONLY into each Boat child's environment.
 # Does not forward the invoking environment, account environments, credentials,
-# local .git metadata, dependency caches, working-tree symlinks, or conventional secret files.
+# local .git metadata, dependency caches, or conventional secret files.
 # Callers must supply secret-free source, extra inputs, command and artifacts;
 # the general path filter is not a secret scanner. No secrets-in-VM support exists.
 # Narrow source exceptions: .npmrc, .claude/settings.json,
@@ -174,10 +174,13 @@
 # out, is screened with the full credential scanner and on a hit is withheld.
 # An object at an excluded or configured-key path, and a historical submodule
 # entry, are withheld the same way.
-# Source and history skip tracked relative symlinks that stay lexically inside
-# the repository, with one stderr notice per path. Target text must pass the
-# UTF-8 credential scanner. History retains that screened blob in its Git pack,
-# but no working-tree symlink is uploaded; tests reading through it cannot use it.
+# Source preserves tracked relative symlinks whose targets resolve inside the
+# screened archive, including implied directories and other admitted links.
+# Symlink paths follow the source path filter, with .claude/skills additionally
+# admitted as a link only. Target text must pass the UTF-8 credential scanner.
+# Links to missing, unselected or filtered targets and cycles are skipped with
+# one stderr notice per path. Resolution uses archive members, not host paths.
+# History retains screened symlink target blobs in its Git pack.
 # Submodules in uploaded source, absolute or escaping symlink targets, and
 # symlink parent components are refused.
 # A withheld object keeps its tree entry, so every commit, tree, ancestry, name
