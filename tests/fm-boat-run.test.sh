@@ -115,6 +115,9 @@ def waited(self, *args, **kwargs):
             owned = int((root/'source/child.pid').read_text())
             assert number == signal.SIGKILL
             assert os.getpgid(owned) == target if BOUNDARY == 'killpg' else target == owned
+            if BOUNDARY == 'kill':
+                assert os.getsid(owned) == os.getpgid(owned) == owned
+                assert b'FM_BOAT_RUN_TOKEN=' not in open('/proc/'+str(owned)+'/environ', 'rb').read()
             print(json.dumps(dict(injected=BOUNDARY, target=target,
                 effective_uid=os.geteuid(), survivor_uid=os.stat('/proc/'+str(owned)).st_uid)),
                 file=sys.stderr, flush=True)
@@ -137,9 +140,13 @@ runpy.run_path(fixture, run_name='__main__')
 '''.replace('PREFIX', repr(prefix)))
     (p / 'boat').write_text('#!/bin/sh\nexec python3 ' + shlex.join(
         [str(shim), str(fixture), str(state)]) + ' "$@"\n')
-    survivor = 'sleep 2' if boundary == 'killpg' else 'setsid env -i PATH="$PATH" sleep 2'
+    survivor = 'sleep 2 >/dev/null 2>&1 & echo $! > child.pid'
+    if boundary == 'kill':
+        survivor = ('mkfifo ready; setsid env -i PATH="$PATH" sh -c '
+                    "'echo $$ > ready; exec sleep 2' >/dev/null 2>&1 & "
+                    'read -r pid < ready; echo "$pid" > child.pid')
     r = launch(p, env, 'echo dispatch >> dispatched; echo preserved-output; ' +
-               survivor + ' >/dev/null 2>&1 & echo $! > child.pid; exit 7')
+               survivor + '; exit 7')
     remote = state / 'bx_fixture0/fm-job/source'
     assert (remote / 'dispatched').read_text() == 'dispatch\n'
     calls = [json.loads(line) for line in (state / 'calls.jsonl').read_text().splitlines()]
