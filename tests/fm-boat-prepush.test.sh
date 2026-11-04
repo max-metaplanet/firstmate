@@ -747,6 +747,35 @@ for code, named, content_state in (
     assert record['changed_files'] == 1, record
     assert record['attempts'][0]['adapter_exit'] == 0, record
     tracked.write_bytes(tracked_content)
+history_path = base / 'history manifest.json'
+history_path.write_text(json.dumps({'head': actual_head, 'refs': {
+    'refs/remotes/origin/main': {'oid': old_head}}}))
+received_history = base / 'received-history'
+wrapper_boundary.write_text("#!/usr/bin/env bash\nprintf '%s' \"$FM_BOAT_TEST_HISTORY_INPUT\" > " +
+    shlex.quote(str(received_history)) +
+    "\nprintf '%s\\n' " + shlex.quote('FM_BOAT_PREPUSH_SUMMARY {"failed":[],"oom":false}') +
+    "\ntest -z \"${FM_BOAT_TEST_HISTORY_DEPTH:-}\"\n")
+os.environ['FM_BOAT_TEST_HISTORY_DEPTH'] = '50'
+assert local.main(['--worktree', str(base), '--base', 'HEAD^', '--expected-head', actual_head,
+                   '--history-input', str(history_path), '--output', str(base / 'input-verdict')]) == 0
+assert received_history.read_text() == str(history_path)
+os.environ.pop('FM_BOAT_TEST_HISTORY_DEPTH')
+try:
+    local.main(['--history-input', str(history_path), '--history-depth', '2'])
+except local.Refusal as error:
+    assert 'mutually exclusive' in str(error)
+else:
+    raise AssertionError('ambiguous history input and depth accepted')
+history_path.write_text(json.dumps({'head': actual_head, 'refs': {
+    'refs/remotes/origin/main': {'oid': actual_head}}}))
+try:
+    local.main(['--worktree', str(base), '--base', 'HEAD^', '--history-input', str(history_path),
+                '--output', str(base / 'refused-input-verdict')])
+except local.Refusal as error:
+    assert 'planned head and base' in str(error)
+else:
+    raise AssertionError('manifest base differs from the selection base')
+print('ok - pinned history manifest forwards through prepush without inherited depth ambiguity')
 refused_output = base / 'refused-verdict'
 try:
     local.main(['--worktree', str(base), '--expected-head', old_head, '--output', str(refused_output)])

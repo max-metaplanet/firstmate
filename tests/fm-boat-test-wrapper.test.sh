@@ -249,6 +249,16 @@ args = json.loads((p / 'calls.json').read_text())
 assert args[args.index('--timeout') + 1] == '1500'
 print('ok - explicit timeout reaches the adapter without changing the command interface')
 
+p, work, env = case('history-input-forwarding')
+settings(env, 0, 'completed', remote_exit=0, cleanup='deleted')
+env['FM_BOAT_TEST_HISTORY_INPUT'] = str(p / 'history manifest.json')
+r = launch(work, env, 'exit 0')
+assert r.returncode == 0, r.stderr
+args = json.loads((p / 'calls.json').read_text())
+assert args[args.index('--history-input') + 1] == env['FM_BOAT_TEST_HISTORY_INPUT']
+assert '--history-depth' not in args
+print('ok - explicit history input reaches the adapter as one exact path')
+
 for machine_type in ('default', 'large', 'xlarge', 'invalid; literal'):
     p, work, env = case('type-' + machine_type.split(';')[0])
     settings(env, 0, 'completed', remote_exit=0, cleanup='deleted')

@@ -3,7 +3,8 @@
 # Usage:
 #   FM_HOME=/absolute/home fm-boat-run.sh run --worktree DIR --output DIR
 #       [--input RELATIVE_FILE]... [--artifact RELATIVE_PATH]...
-#       [--timeout SECONDS] [--swap-gib 0..4] [--history-depth N]
+#       [--timeout SECONDS] [--swap-gib 0..4]
+#       [--history-depth N | --history-input FILE]
 #       [--type default|large|xlarge] -- COMMAND [ARGS...]
 #   FM_HOME=/absolute/home fm-boat-run.sh reap
 #   FM_HOME=/absolute/home fm-boat-run.sh cleanup-task --task ID --generation SPAWN_GEN
@@ -164,6 +165,51 @@
 # with no historical objects. A notice and result evidence name the reason
 # and path or commit ID, never content. Missing origin/main and other Git errors
 # still fail the run. Current-source screening and refusal behavior is unchanged.
+# --history-input FILE instead selects pinned, complete, screened snapshots.
+# Its JSON object has exactly these fields (schema is literal; SHAs are full
+# lowercase object IDs for this checkout's object format):
+#   {"schema":"fm-boat-history.v1","source":"/absolute/complete/repository",
+#    "head":"HEAD_SHA","head_ref":"refs/heads/feature",
+#    "refs":{"refs/remotes/origin/main":{"ref":"refs/heads/main","oid":"BASE_SHA"}},
+#    "depth":2,"objects":[{"commit":"OLD_SHA","path":"file.txt","oid":"BLOB_SHA"}],
+#    "templates":[".env.example"]}
+# source is a canonical absolute local repository or HTTPS Git URL without
+# userinfo, query, fragment or whitespace. Host Git may use its existing auth;
+# no credential, URL, manifest or host Git config enters the remote repository.
+# The manifest itself is never implicitly selected as a source file. Keep it
+# outside the worktree when it is not intended as source.
+# head must match this worktree's HEAD. head_ref and each refs entry name a
+# source branch; received identities must match the pins, even if an older
+# pinned commit remains available. refs must include refs/remotes/origin/main;
+# up to 16 origin tracking refs are supported. depth retains the 1..1000 bound.
+# Up to 64 exact commit/path/blob pins select historical snapshots at depth one,
+# independent of their distance from HEAD. Fresh fm-boat-input-<SHA> branches
+# retain these snapshots through a preflight's ordinary shallow clone.
+# fm-boat-ref-<SHA> branches likewise retain the pinned base/ref tips, since a
+# clone does not copy its source's remote-tracking refs. Whole
+# selected trees travel because ordinary Git clones require their full closure;
+# unrelated refs and intervening ancestry do not travel.
+# Every selected commit and non-source blob passes the existing content screen.
+# An excluded, screened, unavailable or unsupported object in ANY selected tree
+# refuses the input before allocation, with no synthetic or local fallback.
+# Select only required safe snapshots. A true secret must stay local.
+# templates explicitly admits up to 64 .env.example or .env.template paths,
+# under otherwise permitted directories. Each working/historical version must
+# contain only blank lines, screened comments and shell-style KEY= assignments
+# with empty values (also '' or ""). Populated values, binary content, credential
+# text in comments, other .env names and configured key paths remain refused.
+# Template bytes and Git identities are preserved, never rewritten or redacted.
+# Host history reads disable Git lazy fetch. A promisor checkout needing objects
+# must name an explicit complete source; fetching hydrates only new output
+# scratch. Each Git call has a 120-second deadline, does not prompt, and disables
+# hooks and automatic maintenance. A changed/unavailable source is an input
+# error, never provider-unavailable evidence and never permission to execute locally.
+# result.json history_input records the manifest SHA256, source identity, pinned
+# head/refs/objects, depth and template paths; source_sha256 binds the archive.
+# This provides Git inputs for secret-free queue-preflight --no-fetch commands;
+# authenticated guards still need their existing local path. It does not certify
+# product guard parity or excuse missing inputs. Use sufficient ancestry for the
+# selected tips' merge base. A shallow boundary cannot prove older ancestry.
 # Logs name the withheld count and one path, never blob or commit content.
 # Run from the worktree root remotely at /home/user/fm-job/source on either
 # provider, preserving existing absolute command paths. Install remote

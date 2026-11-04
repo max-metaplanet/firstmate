@@ -1433,10 +1433,11 @@ The adapter's header and `--help` own prerequisites, Upstash SDK and credential 
 The optional `config/boat-keys` lists key-file paths and per-account `live_cap`, `pending_cap`, `daily_cap`, optional `environment`, `cleanup_confirmation`, and `types=` fields in the format owned by that help.
 That help also owns per-run `--type` machine selection and its `FM_BOAT_TYPE` forwarding through the Test wrapper; the default remains `default`.
 Without `config/boat-keys`, Boat retains the single trial account and its existing caps.
-The help also owns the screened source-file exceptions and optional shallow-history transfer; all other upload exclusions remain.
+The help also owns the screened source-file exceptions, optional shallow-history transfer, and pinned `--history-input` manifests for complete safe Git snapshots and explicitly screened empty-value templates.
+Use that input boundary for secret-free queue preflight or tests needing exact historical objects beyond the ancestry depth limit; unavailable or screened inputs fail before allocation.
 It runs outside local heavy slots; authenticated checks keep their existing execution path.
 "Boat-first heavy routing" below turns the same offload into where a declared project's worker-started heavy commands run by default.
-The optional no-mistakes Test integration is owned by [`bin/fm-boat-test-wrapper.sh`](../bin/fm-boat-test-wrapper.sh)'s header and `--help`, including enablement prerequisites, secret-free scope, conservative Git scoping, its `FM_BOAT_TEST_HISTORY_DEPTH` opt-in, and local fallback.
+The optional no-mistakes Test integration is owned by [`bin/fm-boat-test-wrapper.sh`](../bin/fm-boat-test-wrapper.sh)'s header and `--help`, including enablement prerequisites, secret-free scope, conservative Git scoping, its `FM_BOAT_TEST_HISTORY_DEPTH` and `FM_BOAT_TEST_HISTORY_INPUT` opt-ins, and local fallback.
 "Pre-ready Boat check" below turns the same offload into a gate a named project's ship workers run before they mark a pull request ready.
 
 ## Pre-ready Boat check (config/boat-prepush)

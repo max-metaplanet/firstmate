@@ -49,7 +49,8 @@ class Refusal(Exception):
 
 def git(worktree: Path, *args: str) -> str:
     result = subprocess.run(['git', '-C', str(worktree), *args],
-                            capture_output=True, text=True)
+                            capture_output=True, text=True,
+                            env=dict(os.environ, GIT_NO_LAZY_FETCH='1', GIT_TERMINAL_PROMPT='0'))
     if result.returncode != 0:
         raise Refusal('git %s failed in %s: %s'
                       % (' '.join(args), worktree, result.stderr.strip()))
@@ -84,7 +85,8 @@ def changed_files(worktree: Path, scratch: Path, base: str, head: str) -> list:
     helper = scratch / 'changed-files.mjs'
     helper.write_text(FILES_HELPER, encoding='utf-8')
     result = subprocess.run(['node', str(helper), str(worktree), base, head],
-                            capture_output=True, text=True)
+                            capture_output=True, text=True,
+                            env=dict(os.environ, GIT_NO_LAZY_FETCH='1', GIT_TERMINAL_PROMPT='0'))
     if result.returncode != 0:
         raise Refusal("the head's own changed-file reader refused: %s"
                       % (result.stderr.strip() or 'exit %d' % result.returncode))
@@ -118,14 +120,18 @@ def command_string(files: list, timeout: int = 2700) -> str:
 
 
 def attempt(worktree: Path, output: Path, size: str, timeout: int,
-            history_depth: int | None, command: str) -> dict:
+            history_depth: int | None, command: str, history_input: str | None = None) -> dict:
     """One whole-machine run, start to finish, on one machine size."""
     log = output / ('attempt-%s.log' % size)
     env = dict(os.environ)
     env['FM_BOAT_TYPE'] = size
     env['FM_BOAT_TEST_TIMEOUT'] = str(timeout)
     env['FM_BOAT_TEST_LOCAL_FALLBACK'] = '0'
-    if history_depth is not None:
+    if history_input is not None:
+        env.pop('FM_BOAT_TEST_HISTORY_DEPTH', None)
+        env['FM_BOAT_TEST_HISTORY_INPUT'] = history_input
+    elif history_depth is not None:
+        env.pop('FM_BOAT_TEST_HISTORY_INPUT', None)
         env['FM_BOAT_TEST_HISTORY_DEPTH'] = str(history_depth)
     started = time.monotonic()
     plan, lanes, summary = None, [], None
@@ -309,6 +315,7 @@ def main(argv: list) -> int:
     parser.add_argument('--expected-head', default=None)
     parser.add_argument('--timeout', type=int, default=2700)
     parser.add_argument('--history-depth', type=int, default=None)
+    parser.add_argument('--history-input', default=None)
     parser.add_argument('--output', default=None)
     args = parser.parse_args(argv)
 
@@ -316,6 +323,10 @@ def main(argv: list) -> int:
         raise Refusal('--timeout must be 1..2700 seconds')
     if args.history_depth is not None and not 1 <= args.history_depth <= 1000:
         raise Refusal('--history-depth must be 1..1000')
+    if args.history_input and args.history_depth is not None:
+        raise Refusal('--history-input and --history-depth are mutually exclusive')
+    if args.history_input:
+        args.history_input = str(Path(args.history_input).resolve())
     if not os.environ.get('FM_HOME'):
         raise Refusal('FM_HOME must name the home whose config/boat-keys this run may use')
 
@@ -338,18 +349,25 @@ def main(argv: list) -> int:
     output.mkdir(parents=True, exist_ok=True)
 
     base = resolve_base(worktree, args.base)
+    if args.history_input:
+        try:
+            pins = json.loads(Path(args.history_input).read_bytes())
+            if pins['head'] != head or pins['refs']['refs/remotes/origin/main']['oid'] != base:
+                raise ValueError()
+        except (OSError, ValueError, TypeError, KeyError) as exc:
+            raise Refusal('history input must pin the planned head and base') from exc
     files = changed_files(worktree, output, base, head)
     command = command_string(files, args.timeout)
 
     sys.stderr.write('fm-boat-prepush: %s..%s, %d changed files; evidence under %s\n'
                      % (base[:12], head[:12], len(files), output))
 
-    runs = [attempt(worktree, output, 'default', args.timeout, args.history_depth, command)]
+    runs = [attempt(worktree, output, 'default', args.timeout, args.history_depth, command, args.history_input)]
     if should_retry_large(runs[-1]):
         sys.stderr.write('fm-boat-prepush: every failing lane ran out of memory; '
                          'retrying once on the large machine\n')
         runs.append(attempt(worktree, output, 'large', args.timeout,
-                            args.history_depth, command))
+                            args.history_depth, command, args.history_input))
     ok, failed, _ = verdict(runs[-1])
 
     report(runs, sys.stdout)
