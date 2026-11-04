@@ -814,7 +814,22 @@ make_peek_fakebin() {  # <dir> <capture-output> -> echoes fakebin dir
 set -u
 { printf 'tmux'; for a in "\$@"; do printf '\\x1f%s' "\$a"; done; printf '\\n'; } >> "\${FM_TMUX_LOG:?}"
 case "\${1:-}" in
-  capture-pane) cat "$dir/capture.out" ;;
+  capture-pane)
+    shift
+    print=0 target= start=
+    while [ "\$#" -gt 0 ]; do
+      case "\$1" in
+        -p) print=1 ;;
+        -J) ;;
+        -t) shift; target=\$1 ;;
+        -S) shift; start=\$1 ;;
+        *) exit 1 ;;
+      esac
+      shift
+    done
+    [ "\$print" = 1 ] && [ "\$target" = sess:win ] && [ "\$start" = -25 ] || exit 1
+    cat "$dir/capture.out"
+    ;;
 esac
 exit 0
 SH
@@ -845,8 +860,6 @@ test_peek_conformance_old_vs_new() {
   [ "$out_new" = "$payload" ] || fail "fm-peek did not pass through the fake capture-pane output exactly"
   diff -u "$log_old" "$log_new" > "$TMP_ROOT/peek-diff.txt" 2>&1 \
     || fail "fm-peek: tmux command log differs old vs new"$'\n'"$(cat "$TMP_ROOT/peek-diff.txt")"
-  assert_contains "$(cat "$log_new")" $'\x1f''capture-pane'$'\x1f''-p'$'\x1f''-t'$'\x1f''sess:win'$'\x1f''-S'$'\x1f''-25' \
-    "fm-peek did not call capture-pane -p -t <target> -S -<lines> exactly"
 
   pass "fm-peek.sh: capture-pane invocation and output are byte-identical old vs new"
 }
