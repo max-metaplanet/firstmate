@@ -100,6 +100,22 @@ def cleanup_task(env, task='reuse-task', generation='generation-1'):
 def creates(state):
     return sum(json.loads(line)[0] == 'new' for line in (state / 'calls.jsonl').read_text().splitlines())
 
+if sys.platform.startswith('linux'):
+    for failure in ('push_failed_once', 'push_failed', 'prepare_failed', 'corrupt_upload'):
+        p, state, env = case('fresh-owned-' + failure, {failure: True})
+        env = managed(p, env)
+        r = launch(p, env, 'echo must-not-run')
+        evidence = result(p)
+        assert r.returncode == 74, (failure, r.returncode, r.stdout, r.stderr, evidence)
+        assert evidence['kind'] == 'adapter-error' and evidence['remote_exit'] is None, evidence
+        assert evidence['creates'] == creates(state) == 1, (failure, evidence)
+        assert not evidence.get('reuse_fallback'), evidence
+        calls = [json.loads(line) for line in (state / 'calls.jsonl').read_text().splitlines()]
+        assert not any('--stream' in call for call in calls), (failure, calls)
+        assert b'must-not-run' not in r.stdout
+        empty(state)
+    print('ok - fresh owned source failures preserve the first error and delete without another start', flush=True)
+
 for history_mode in (False, True):
     for selection in ('untracked', 'committed', 'staged'):
         p, state, env = case('source-selection-' + selection + '-' + str(history_mode),
@@ -609,14 +625,23 @@ assert 400 <= result(p)['push_timeout_seconds'] <= 600
 empty(state)
 print('ok - a slow large upload gets a bounded size-aware deadline and completes')
 
-p, state, env = case('transfer-timeout')
-r = launch_transfer(p, env)
-assert r.returncode == 74, r.stderr
-assert 'timeout' in result(p)['error'] and 'TimeoutExpired' in result(p)['error']
-assert b'boat_fixture_secret' not in r.stdout + r.stderr
-assert 'boat_fixture_secret' not in (p / 'output/result.json').read_text()
-empty(state)
-print('ok - an expired upload reports its cause without leaking exception output')
+for owned in (False, True) if sys.platform.startswith('linux') else (False,):
+    p, state, env = case('transfer-timeout-' + str(owned))
+    if owned:
+        env = managed(p, env)
+    r = launch_transfer(p, env)
+    evidence = result(p)
+    assert r.returncode == 74, r.stderr
+    assert evidence['kind'] == 'adapter-error' and evidence['remote_exit'] is None, evidence
+    assert 'timeout' in evidence['error'] and 'TimeoutExpired' in evidence['error']
+    assert creates(state) == 1, evidence
+    assert not evidence.get('reuse_fallback'), evidence
+    calls = [json.loads(line) for line in (state / 'calls.jsonl').read_text().splitlines()]
+    assert not any('--stream' in call for call in calls), calls
+    assert b'boat_fixture_secret' not in r.stdout + r.stderr
+    assert 'boat_fixture_secret' not in (p / 'output/result.json').read_text()
+    empty(state)
+print('ok - an expired fresh upload preserves timeout classification without retry or credential output')
 
 p, state, env = case('cli-os-error')
 env['FM_BOAT_BIN'] = str(p / 'missing-boat')
