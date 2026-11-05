@@ -178,6 +178,7 @@ if sys.platform.startswith('linux'):
     p, work, config, state, env = case('owned-reuse', declaration=DECLARED)
     (state.parent / 'fixture-task.meta').write_text('endpoint_task_id=fixture-task\nkind=ship\n'
         'spawn_gen=generation-1\nworktree=' + str(work) + '\n')
+    env['FM_TASK_GENERATION'] = 'generation-1'
     assert publish(config, env).returncode == 0
     for _ in range(2):
         r = run(work, env)
@@ -196,6 +197,7 @@ if sys.platform.startswith('linux'):
         p, work, config, state, env = case('owned-fallback-' + failure, declaration=declaration)
         (state.parent / 'fixture-task.meta').write_text('endpoint_task_id=fixture-task\nkind=ship\n'
             'spawn_gen=generation-1\nworktree=' + str(work) + '\n')
+        env['FM_TASK_GENERATION'] = 'generation-1'
         assert publish(config, env).returncode == 0
         command = REPORT if failure == 'bootstrap' else (
             'if [ -n "${CI:-}" ]; then echo "Snapshot missing" >&2; exit 1; fi; ' + REPORT)
@@ -215,6 +217,7 @@ if sys.platform.startswith('linux'):
         p, work, config, state, env = case('owned-unavailable-' + failure, declaration=DECLARED)
         (state.parent / 'fixture-task.meta').write_text('endpoint_task_id=fixture-task\nkind=ship\n'
             'spawn_gen=generation-1\nworktree=' + str(work) + '\n')
+        env['FM_TASK_GENERATION'] = 'generation-1'
         assert publish(config, env).returncode == 0
         assert run(work, env).returncode == 0
         (state / 'fixture.json').write_text(json.dumps({failure: True, 'remaining': 0}))
