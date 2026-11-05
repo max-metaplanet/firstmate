@@ -323,6 +323,8 @@ def allocation(args, boats, binding):
                            b.account.environment == old.get('environment', '') and
                            b.account.cleanup_confirmation == old.get('cleanup_confirmation')), None)
         if old and old.get('cleanup') != 'deleted':
+            if args.boat_account and (old.get('provider') != 'boat' or not compatible):
+                raise Failure('selected Boat account differs from existing lease; cleanup-task required', 70)
             ready = (owner and old.get('owner') == owner and compatible and
                      old.get('lease_state') == 'idle' and old.get('type') == args.type and
                      old.get('swap_gib') == args.swap_gib and
@@ -1546,6 +1548,14 @@ def run(args, boats):
     code = 2
     try:
         eligible = [b for b in boats if args.type in b.account.types]
+        if args.boat_account is not None:
+            selected = Path(args.boat_account).expanduser()
+            if not selected.is_absolute():
+                raise Failure('--boat-account requires an absolute configured key-file path', 2)
+            selected = selected.resolve()
+            if not any(b.account.key_file == selected for b in boats):
+                raise Failure('--boat-account must match a configured Boat key-file path', 2)
+            eligible = [b for b in eligible if b.account.key_file == selected]
         if not eligible:
             raise Failure('no Boat account permits machine type ' + args.type +
                           '; configure types= in config/boat-keys', 2)
@@ -1581,7 +1591,7 @@ def run(args, boats):
                 try:
                     boat = admit(eligible, job, record)
                 except Failure as exc:
-                    if job['create_started'] or exc.code not in (69, 75):
+                    if args.boat_account or job['create_started'] or exc.code not in (69, 75):
                         raise
                     result['boat_unavailable'] = str(exc)
                     key_file = upstash_key_file()
@@ -1597,7 +1607,7 @@ def run(args, boats):
                 if job.get('account_key_file') and job.get('provider') != 'upstash':
                     boat = next(b for b in boats if str(b.account.key_file) == job['account_key_file'])
 
-        with allocation(args, boats, binding) as (boat, job, record, reused):
+        with allocation(args, eligible, binding) as (boat, job, record, reused):
             succeeded = False
             try:
                 result['kind'] = 'unavailable'
@@ -1716,6 +1726,8 @@ def run(args, boats):
         result.update(kind='adapter-error', error=type(exc).__name__)
         code = 74
     finally:
+        if args.boat_account and result['kind'] == 'unavailable':
+            result['kind'] = 'refused'
         result['adapter_exit'] = code
         save(output / 'result.json', result)
     if result.get('error'):
@@ -1744,6 +1756,8 @@ def main():
     runner = sub.add_parser('run')
     runner.add_argument('--worktree', required=True)
     runner.add_argument('--output', required=True)
+    runner.add_argument('--boat-account', metavar='KEY_FILE',
+                        help='select one configured Boat key-file path and forbid all fallback')
     runner.add_argument('--reuse-only', action='store_true',
                         default=os.environ.get('FM_BOAT_REUSE_ONLY') == '1')
     runner.add_argument('--input', action='append', default=[])

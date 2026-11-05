@@ -159,6 +159,193 @@ def wait_for_expiry_cleanup(record):
 def creates(state):
     return sum(json.loads(line)[0] == 'new' for line in (state / 'calls.jsonl').read_text().splitlines())
 
+def multi(name, first=None, second=None, caps='live_cap=6 pending_cap=6 daily_cap=170'):
+    p, state, env = case(name, first)
+    other = state / 'account-2'
+    other.mkdir()
+    (other / 'fixture.json').write_text(json.dumps(second or {}))
+    key1 = Path(env['HOME']) / '.config/boat/api-key'
+    key2 = Path(env['HOME']) / 'second-account'
+    key2.write_text('boat_fixture_second')
+    config = p / 'home/config/boat-keys'
+    config.parent.mkdir()
+    config.write_text('# Ordered accounts\n~/.config/boat/api-key\n' +
+                      shlex.quote(str(key2)) + ' ' + caps + '\n')
+    return p, state, other, env, key1, key2, config
+
+
+def calls(state):
+    path = state / 'calls.jsonl'
+    return [json.loads(line)[0] for line in path.read_text().splitlines()] if path.exists() else []
+
+
+def reserved(state, key, count):
+    for i in range(count):
+        (state / 'jobs' / ('reserved-' + str(i) + '.json')).write_text(json.dumps({
+            'account_key_file': str(key), 'cleanup': 'pending', 'create_started': False}))
+
+
+def upstash_case(name, boat_settings=None, upstash_settings=None):
+    p, state, env = case('upstash-' + name, boat_settings or {'remaining': 0})
+    (state / 'upstash.json').write_text(json.dumps(upstash_settings or {}))
+    key = Path(env['HOME']) / '.config/upstash/box-api-key'
+    key.parent.mkdir(parents=True)
+    key.write_text('upstash_fixture_secret')
+    key.chmod(0o600)
+    env.update(PYTHONPATH=str(repo / 'tests/fixtures'), FM_UPSTASH_FIXTURE_ROOT=str(state))
+    return p, state, env
+
+def upstash_calls(state):
+    path = state / 'upstash-calls.jsonl'
+    return [json.loads(line) for line in path.read_text().splitlines()] if path.exists() else []
+
+def selected_account_cases():
+    def enable_upstash(state, env):
+        key = Path(env['HOME']) / '.config/upstash/box-api-key'
+        key.parent.mkdir(parents=True)
+        key.write_text('upstash_fixture_secret')
+        key.chmod(0o600)
+        (state / 'upstash.json').write_text('{}')
+        env.update(PYTHONPATH=str(repo / 'tests/fixtures'), FM_UPSTASH_FIXTURE_ROOT=str(state))
+
+    for name, settings, expected in [
+        ('minute', {'minute_remaining': 0}, 75),
+        ('hour', {'hour_remaining': 0}, 75),
+        ('day', {'day_remaining': 0}, 75),
+        ('paid', {'nextStartDollars': 1}, 75),
+        ('disabled', {'canStart': False}, 75),
+        ('offline', {'unreachable': True}, 69),
+        ('malformed-limits', {'malformed_limits': True}, 69),
+        ('pending', {}, 75),
+        ('live', {}, 75),
+        ('daily', {}, 75),
+        ('missing-key', {}, 69),
+    ]:
+        p, state, other, env, key1, key2, config = multi('selected-refusal-' + name, settings)
+        enable_upstash(state, env)
+        if name == 'pending':
+            reserved(state, key1, 2)
+        elif name == 'live':
+            (state / 'fake-vms.json').write_text(json.dumps([
+                {'id': 'bx_foreign1'}, {'id': 'bx_foreign2'}]))
+        elif name == 'daily':
+            today = datetime.datetime.now(datetime.timezone.utc).date().isoformat()
+            (state / 'daily.json').write_text(json.dumps({'date': today, 'attempts': 75}))
+        elif name == 'missing-key':
+            key1.unlink()
+        r = launch(p, env, 'echo must-not-run', options=('--boat-account', str(key1)))
+        assert r.returncode == expected, (name, r.stderr)
+        assert result(p)['kind'] == 'refused' and result(p)['remote_exit'] is None
+        assert b'must-not-run' not in r.stdout
+        assert 'new' not in calls(state) and not calls(other) and not upstash_calls(state)
+        check = subprocess.run(['bash', str(repo / 'bin/fm-boat-run.sh'), 'check-result',
+                                '--worktree', str(p / 'work'), '--result', str(p / 'output/result.json'),
+                                '--exit', str(r.returncode)], env=env, capture_output=True, timeout=10)
+        assert check.returncode == 0 and check.stdout.strip() == b'adapter-failure', check.stderr
+    print('ok - selected-account budget, capacity and availability refusals never probe another account or Upstash and forbid local fallback')
+
+    for selected in ('', 'relative-key', 'unknown', 'disallowed-type'):
+        p, state, other, env, key1, key2, config = multi('selected-invalid-' + selected)
+        enable_upstash(state, env)
+        value = str(key1) if selected == 'disallowed-type' else (
+            str(p / 'unknown-key') if selected == 'unknown' else selected)
+        options = ('--boat-account', value) + (('--type', 'large') if selected == 'disallowed-type' else ())
+        r = launch(p, env, options=options)
+        assert r.returncode == 2, (selected, r.stderr)
+        assert not calls(state) and not calls(other) and not upstash_calls(state)
+        assert not list((state / 'jobs').glob('*.json'))
+    print('ok - malformed, unknown and type-ineligible selections fail before allocation')
+
+    p, state, other, env, key1, key2, config = multi('selected-second')
+    enable_upstash(state, env)
+    tracked_key = p / 'work/tracked.txt'
+    tracked_key.write_text(key1.read_text())
+    config.write_text(str(tracked_key) + '\n' + str(key2) + '\n')
+    r = launch(p, env, 'test ! -e tracked.txt; echo selected', options=('--boat-account', str(key2)))
+    assert r.returncode == 0, r.stderr
+    assert not calls(state) and creates(other) == 1 and not upstash_calls(state)
+    assert json.loads((other / 'uploaded.json').read_text()) == []
+    empty(other)
+    print('ok - selecting the second configured account skips the first while screening every configured key')
+
+    for selected in (False, True):
+        p, state, other, env, key1, key2, config = multi('selected-control-' + str(selected), {'remaining': 0})
+        enable_upstash(state, env)
+        options = ('--boat-account', str(key1)) if selected else ()
+        r = launch(p, env, options=options)
+        assert r.returncode == (75 if selected else 0), r.stderr
+        assert ('new' in calls(other)) == (not selected)
+        assert not upstash_calls(state)
+        if not selected:
+            empty(other)
+    p, state, env = upstash_case('selected-control')
+    r = launch(p, env)
+    assert r.returncode == 0 and result(p)['provider'] == 'upstash', r.stderr
+    assert [x['operation'] for x in upstash_calls(state)].count('create') == 1
+    print('ok - omitting selection preserves ordered Boat account and Upstash fallback')
+
+    p, state, env = upstash_case('selected-lost-create', {'lost_create': True})
+    key = Path(env['HOME']) / '.config/boat/api-key'
+    r = launch(p, env, options=('--boat-account', str(key)))
+    assert r.returncode != 0 and result(p)['kind'] == 'adapter-error', r.stderr
+    assert creates(state) == 1 and not upstash_calls(state)
+    empty(state)
+    print('ok - selected-account unknown create preserves exact cleanup and never retries another provider')
+
+    if sys.platform.startswith('linux'):
+        p, state, other, env, key1, key2, config = multi('selected-owned')
+        env = managed(p, env)
+        options = ('--boat-account', '~/.config/boat/api-key')
+        try:
+            r = launch(p, env, options=options)
+            assert r.returncode == 0 and result(p)['cleanup'] == 'retained', r.stderr
+            first = result(p)
+            record = next((state / 'jobs').glob('task-*.json'))
+            job = json.loads(record.read_text())
+            assert job['owner']['generation'] == 'generation-1' and job['ttl'] == 7200
+            before = calls(state)
+            r = next_run(p, env, options=('--boat-account', str(key2)))
+            assert r.returncode == 70 and b'differs from existing lease' in r.stderr
+            assert calls(state) == before and not calls(other)
+            assert json.loads(record.read_text()) == job
+            r = next_run(p, env, options=options + ('--reuse-only',))
+            assert r.returncode == 0 and result(p)['reused'], r.stderr
+            assert result(p)['vm_id'] == first['vm_id'] and creates(state) == 1
+            stale = dict(env, FM_TASK_GENERATION='stale')
+            before = calls(state)
+            r = next_run(p, stale, options=options)
+            assert r.returncode == 70 and calls(state) == before and not calls(other)
+        finally:
+            assert cleanup_task(env).returncode == 0
+            empty(state)
+        print('ok - selected-account owned reuse preserves generation, finite TTL and cleanup; a foreign account lease refuses untouched')
+
+    p, state, other, env, key1, key2, config = multi('selected-no-local', {'remaining': 0})
+    enable_upstash(state, env)
+    consumer = p / 'consumer'
+    consumer.mkdir()
+    (consumer / 'fm-boat-test-wrapper.sh').write_bytes((repo / 'bin/fm-boat-test-wrapper.sh').read_bytes())
+    adapter = consumer / 'fm-boat-run.sh'
+    adapter.write_text('#!/bin/bash\nif [[ $1 == run ]]; then shift; exec bash ' +
+                       shlex.quote(str(repo / 'bin/fm-boat-run.sh')) + ' run --boat-account ' +
+                       shlex.quote(str(key1)) + ' "$@"; fi\nexec bash ' +
+                       shlex.quote(str(repo / 'bin/fm-boat-run.sh')) + ' "$@"\n')
+    adapter.chmod(0o755)
+    local = consumer / 'fm-build-lock.py'
+    local.write_text('#!/bin/sh\ntouch ' + shlex.quote(str(p / 'local-fallback')) + '\nexit 99\n')
+    local.chmod(0o755)
+    r = subprocess.run(['bash', str(consumer / 'fm-boat-test-wrapper.sh'), 'echo must-not-run'],
+                       cwd=p / 'work', env=env, capture_output=True, timeout=30)
+    assert r.returncode == 75 and not (p / 'local-fallback').exists(), r.stderr
+    assert not calls(other) and not upstash_calls(state)
+    print('ok - the real Test wrapper refuses selected-account failure without local execution')
+
+
+selected_account_cases()
+if sys.argv[2:] == ['--selected-account']:
+    sys.exit(0)
+
+
 def permission_case(name, boundary, settings=None, reused=False):
     p, state, env = case(name, settings)
     env = managed(p, env)
@@ -1417,32 +1604,6 @@ for history_mode in (False, True):
             assert not (state / 'calls.jsonl').exists()
 print('ok - admitted tracked links survive extraction; filtered targets and cycles stay absent; unsafe source/history links and submodules keep their guards')
 
-def multi(name, first=None, second=None, caps='live_cap=6 pending_cap=6 daily_cap=170'):
-    p, state, env = case(name, first)
-    other = state / 'account-2'
-    other.mkdir()
-    (other / 'fixture.json').write_text(json.dumps(second or {}))
-    key1 = Path(env['HOME']) / '.config/boat/api-key'
-    key2 = Path(env['HOME']) / 'second-account'
-    key2.write_text('boat_fixture_second')
-    config = p / 'home/config/boat-keys'
-    config.parent.mkdir()
-    config.write_text('# Ordered accounts\n~/.config/boat/api-key\n' +
-                      shlex.quote(str(key2)) + ' ' + caps + '\n')
-    return p, state, other, env, key1, key2, config
-
-
-def calls(state):
-    path = state / 'calls.jsonl'
-    return [json.loads(line)[0] for line in path.read_text().splitlines()] if path.exists() else []
-
-
-def reserved(state, key, count):
-    for i in range(count):
-        (state / 'jobs' / ('reserved-' + str(i) + '.json')).write_text(json.dumps({
-            'account_key_file': str(key), 'cleanup': 'pending', 'create_started': False}))
-
-
 p, state, other, env, key1, key2, config = multi('ordered')
 assert launch(p, env).returncode == 0
 assert 'new' in calls(state) and not calls(other)
@@ -2241,20 +2402,6 @@ finally:
 empty(state)
 empty(other)
 print('ok - concurrent admission fills 2+6 account slots without oversubscription')
-
-def upstash_case(name, boat_settings=None, upstash_settings=None):
-    p, state, env = case('upstash-' + name, boat_settings or {'remaining': 0})
-    (state / 'upstash.json').write_text(json.dumps(upstash_settings or {}))
-    key = Path(env['HOME']) / '.config/upstash/box-api-key'
-    key.parent.mkdir(parents=True)
-    key.write_text('upstash_fixture_secret')
-    key.chmod(0o600)
-    env.update(PYTHONPATH=str(repo / 'tests/fixtures'), FM_UPSTASH_FIXTURE_ROOT=str(state))
-    return p, state, env
-
-def upstash_calls(state):
-    path = state / 'upstash-calls.jsonl'
-    return [json.loads(line) for line in path.read_text().splitlines()] if path.exists() else []
 
 if sys.platform.startswith('linux'):
     for failure in ('prepare_failed', 'push_failed_once'):

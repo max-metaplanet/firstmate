@@ -1432,6 +1432,7 @@ Ship workers can run secret-free heavy commands on task-local reusable Boat VMs,
 The adapter's header and `--help` own prerequisites, Upstash SDK and credential setup, provider eligibility and limits, source selection, result and artifact paths, ordered account selection, per-account caps, reuse ownership and isolation limits, idle and absolute expiry, cleanup records, reaping, and explicit local fallback.
 The optional `config/boat-keys` lists key-file paths and per-account `live_cap`, `pending_cap`, `daily_cap`, optional `environment`, `cleanup_confirmation`, and `types=` fields in the format owned by that help.
 That help also owns per-run `--type` machine selection and its `FM_BOAT_TYPE` forwarding through the Test wrapper; the default remains `default`.
+Its `--boat-account` option selects one existing Boat account and refuses account, Upstash, and local fallback; the adapter help owns selection and refusal mechanics.
 Without `config/boat-keys`, Boat retains the single trial account and its existing caps.
 The help also owns the screened source-file exceptions, optional shallow-history transfer, and pinned `--history-input` manifests for complete safe Git snapshots and explicitly screened empty-value templates.
 Use that input boundary for secret-free queue preflight or tests needing exact historical objects beyond the ancestry depth limit; unavailable or screened inputs fail before allocation.
