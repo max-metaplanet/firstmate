@@ -395,10 +395,10 @@ runpy.run_path(fixture, run_name='__main__')
                survivor + '; exit 7')
     remote = state / 'bx_fixture0/fm-job/source'
     assert (remote / 'dispatched').read_text() == 'dispatch\n'
-    calls = [json.loads(line) for line in (state / 'calls.jsonl').read_text().splitlines()]
+    recorded_calls = [json.loads(line) for line in (state / 'calls.jsonl').read_text().splitlines()]
     assert creates(state) == 1
-    assert sum(call[0] == 'exec' and '--stream' in call for call in calls) == (2 if reused else 1)
-    assert all(call[call.index('--ttl') + 1] == '7200' for call in calls if call[0] == 'new')
+    assert sum(call[0] == 'exec' and '--stream' in call for call in recorded_calls) == (2 if reused else 1)
+    assert all(call[call.index('--ttl') + 1] == '7200' for call in recorded_calls if call[0] == 'new')
     pid = int((remote / 'child.pid').read_text())
     path = Path('/proc') / str(pid) / 'stat'
     deadline = time.monotonic() + 4
@@ -426,8 +426,8 @@ if sys.platform.startswith('linux'):
                 assert cleanup['target'] > 0 and evidence['lease']['state'] != 'idle', evidence
                 assert b'injected' in (p / 'output/command.log').read_bytes()
                 assert sentinel.poll() is None
-                calls = [json.loads(line) for line in (state / 'calls.jsonl').read_text().splitlines()]
-                assert [call[1] for call in calls if call[0] == 'delete'] == [evidence['vm_id']]
+                recorded_calls = [json.loads(line) for line in (state / 'calls.jsonl').read_text().splitlines()]
+                assert [call[1] for call in recorded_calls if call[0] == 'delete'] == [evidence['vm_id']]
                 empty(state)
         print('ok - injected post-wait group and adopted-child signal refusal preserves exit/output, deletes exact leases and never retries', flush=True)
 
@@ -642,8 +642,8 @@ if sys.platform.startswith('linux'):
         assert evidence['kind'] == 'adapter-error' and evidence['remote_exit'] is None, evidence
         assert evidence['creates'] == creates(state) == 1, (failure, evidence)
         assert not evidence.get('reuse_fallback'), evidence
-        calls = [json.loads(line) for line in (state / 'calls.jsonl').read_text().splitlines()]
-        assert not any('--stream' in call for call in calls), (failure, calls)
+        recorded_calls = [json.loads(line) for line in (state / 'calls.jsonl').read_text().splitlines()]
+        assert not any('--stream' in call for call in recorded_calls), (failure, recorded_calls)
         assert b'must-not-run' not in r.stdout
         empty(state)
     print('ok - fresh owned source failures preserve the first error and delete without another start', flush=True)
@@ -657,8 +657,8 @@ if sys.platform.startswith('linux'):
             (p / 'output').rename(p / 'initial-output')
         r = launch_lost_response(p, state, env, 'complete')
         evidence = result(p)
-        calls = [json.loads(line) for line in (state / 'calls.jsonl').read_text().splitlines()]
-        commands = sum('--stream' in call for call in calls)
+        recorded_calls = [json.loads(line) for line in (state / 'calls.jsonl').read_text().splitlines()]
+        commands = sum('--stream' in call for call in recorded_calls)
         assert creates(state) == 1 and not evidence.get('reuse_fallback'), evidence
         assert 'boat_fixture_secret' not in json.dumps(evidence)
         assert b'boat_fixture_secret' not in r.stdout + r.stderr
@@ -669,7 +669,7 @@ if sys.platform.startswith('linux'):
             assert r.returncode == 0 and r.stdout.endswith(b'working edit\n'), (r.stderr, r.stdout, evidence)
             assert evidence['kind'] == 'completed' and evidence['remote_exit'] == 0, evidence
             assert evidence['upload_recovered'] and evidence['cleanup'] == 'retained', evidence
-            assert commands == (2 if ownership == 'reused' else 1), calls
+            assert commands == (2 if ownership == 'reused' else 1), recorded_calls
             archive = p / 'output/upload/source.tar.gz'
             assert archive.stat().st_size == evidence['upload_bytes']
             assert hashlib.sha256(archive.read_bytes()).hexdigest() == evidence['source_sha256']
@@ -683,11 +683,11 @@ if sys.platform.startswith('linux'):
         env = managed(p, env)
         r = launch_lost_response(p, state, env, fault)
         evidence = result(p)
-        calls = [json.loads(line) for line in (state / 'calls.jsonl').read_text().splitlines()]
+        recorded_calls = [json.loads(line) for line in (state / 'calls.jsonl').read_text().splitlines()]
         assert r.returncode == 74 and evidence['remote_exit'] is None, (fault, r.stderr, evidence)
         assert evidence['kind'] == ('execution-unknown' if fault == 'command-unknown'
                                     else 'adapter-error'), (fault, evidence)
-        assert sum('--stream' in call for call in calls) == (fault == 'command-unknown'), (fault, calls)
+        assert sum('--stream' in call for call in recorded_calls) == (fault == 'command-unknown'), (fault, recorded_calls)
         assert creates(state) == evidence['creates'] == 1 and not evidence.get('reuse_fallback'), evidence
         assert 'TimeoutExpired' in evidence['error'], (fault, evidence)
         assert 'boat_fixture_secret' not in json.dumps(evidence)
@@ -1053,8 +1053,8 @@ print(json.dumps(value))
         assert evidence['reuse_fallback'] and creates(state) == 2, (fault, r.stderr, evidence)
         if fault == 'reset-timeout-persistent':
             assert r.returncode == 74 and evidence['remote_exit'] is None, (r.stderr, evidence)
-            calls = [json.loads(line) for line in (state / 'calls.jsonl').read_text().splitlines()]
-            assert sum('--stream' in call for call in calls) == 1, calls
+            recorded_calls = [json.loads(line) for line in (state / 'calls.jsonl').read_text().splitlines()]
+            assert sum('--stream' in call for call in recorded_calls) == 1, recorded_calls
         else:
             assert r.returncode == 0 and r.stdout == b'working edit\n', (fault, r.stderr, evidence)
             assert evidence['cleanup'] == 'retained' and evidence['lease']['owner'] == original, evidence
@@ -1339,8 +1339,8 @@ p, state, env = case('concurrent')
 workers = [launch(p, env, 'sleep 3', ('--output', str(p / ('output-' + str(i)))), wait=False)
            for i in range(2)]
 for _ in range(200):
-    calls = (state / 'calls.jsonl').read_text() if (state / 'calls.jsonl').exists() else ''
-    if calls.count('--stream') == 2:
+    recorded_calls = (state / 'calls.jsonl').read_text() if (state / 'calls.jsonl').exists() else ''
+    if recorded_calls.count('--stream') == 2:
         break
     time.sleep(.05)
 else:
@@ -1402,8 +1402,8 @@ for owned in (False, True) if sys.platform.startswith('linux') else (False,):
     assert 'timeout' in evidence['error'] and 'TimeoutExpired' in evidence['error']
     assert creates(state) == 1, evidence
     assert not evidence.get('reuse_fallback'), evidence
-    calls = [json.loads(line) for line in (state / 'calls.jsonl').read_text().splitlines()]
-    assert not any('--stream' in call for call in calls), calls
+    recorded_calls = [json.loads(line) for line in (state / 'calls.jsonl').read_text().splitlines()]
+    assert not any('--stream' in call for call in recorded_calls), recorded_calls
     assert b'boat_fixture_secret' not in r.stdout + r.stderr
     assert 'boat_fixture_secret' not in (p / 'output/result.json').read_text()
     empty(state)
