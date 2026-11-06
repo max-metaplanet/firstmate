@@ -1,0 +1,69 @@
+== 1. build an incident-scale log: ~554 KB of tagged status lines, last line '1793980552 working [at=1793980552]:' 615 bytes
+lines=910 prefix-before-shift-line=554219 size=554834 last-line-bytes=615
+== 2. relay the whole log to the parent with the real reader + real ingest
+deltas=9
+offset=554834
+prefix_sha256=44a91277471a4dc8018520899647d849f3401d21ee5629bc402f3b251cd3a099
+parent mirrored lines=910
+== 3. the shrink: delete the leading '1793980552 ' in place, then a mid-write tail 'It is not me'
+size now=554857 (cursor=554834); first 554219 bytes unchanged: yes
+-- base (pre-fix) reader on the same file:
+status=continuity-broken
+path=state/parent-replies.status
+to_offset=554857
+reason=prefix-changed
+-- fixed reader with the incomplete tail line (expect wait, exit 75, no break):
+exit=75 output-bytes=0 elapsed=.369247496s
+== 4. writer finishes the line and appends more replies
+reader exit=0 elapsed=.072166072s
+schema=fm-remote-delta.v1
+status=delta
+path=state/parent-replies.status
+from_offset=554834
+to_offset=554962
+from_prefix_sha256=44a91277471a4dc8018520899647d849f3401d21ee5629bc402f3b251cd3a099
+to_prefix_sha256=2b738844fdc7137df07db136fba203ecdd48b382aee5ce49fcebf55a8fddefb6
+payload_sha256=1d15f6fcd9567edef15f8013027463ffcd069b0dc2379f76dd513fc419336509
+payload_bytes=139
+reason=
+
+-- payload:
+note [at=1793980600]: It is not me
+done [at=1793980700]: second reply after the shift
+blocked [at=1793980800]: third reply after the shift
+file size=554962 file sha=2b738844fdc7137df07db136fba203ecdd48b382aee5ce49fcebf55a8fddefb6
+ingested: telos64 appended=3 offset=554962
+offset=554962
+prefix_sha256=2b738844fdc7137df07db136fba203ecdd48b382aee5ce49fcebf55a8fddefb6
+== 5. no duplicates on the parent
+parent lines containing [at=1793980552]: 1
+'It is not me' count=1
+'second reply after the shift' count=1
+'third reply after the shift' count=1
+-- re-ingesting the same delta (replay):
+ingested: telos64 appended=0 offset=554962
+'It is not me' count after replay=1
+'second reply after the shift' count after replay=1
+-- next read from the new cursor (expect exit 75, nothing repeated):
+exit=75 output-bytes=0
+exit=0 payload:
+info [at=1793980900]: fourth reply
+ingested: telos64 appended=1 offset=554997
+== 6. adversarial: a real byte replacement before the cursor still stops the relay
+exit=0
+status=continuity-broken
+reason=prefix-changed
+0
+-- adversarial: two leading stamps deleted still breaks
+exit=0
+status=continuity-broken
+reason=truncated
+-- adversarial: tail chop of 11 bytes (no stamp removed) still breaks as truncated
+exit=0
+status=continuity-broken
+reason=truncated
+-- ingest of the replacement break records one blocked decision line on the parent:
+continuity-broken: telos64 (prefix-changed)
+~/.no-mistakes/worktrees/c0c4fcacb05a/01M6RVEH7W2MCK1A4FCEF2R6HZ/bin/fm-procevent-remote-reply.sh: line 1: tmp: unbound variable
+ingest rc=3
+1

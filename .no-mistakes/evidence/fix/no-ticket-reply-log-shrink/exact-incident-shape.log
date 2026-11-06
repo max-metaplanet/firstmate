@@ -1,0 +1,8 @@
+cursor offset=554834
+size after shrink=554823; bytes before the shifted line unchanged: yes
+-- base reader:
+status=continuity-broken
+to_offset=554823
+reason=truncated
+-- fixed reader:
+exit=75 output-bytes=0
