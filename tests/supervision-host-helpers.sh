@@ -7,7 +7,8 @@
 # The loop cases run the real host, arm, watcher, wake grant, drain, outcome
 # store, and lease scripts in a fixture home. The host runs as a child of a fake
 # harness (a bash symlink named "claude") whose pid is the home's session lock,
-# and its engine is a stub named by FM_SUPERVISION_ENGINE_CLAUDE_BIN that does
+# and its engine is a stub named by FM_SUPERVISION_ENGINE_CLAUDE_BIN (and by
+# FM_SUPERVISION_ENGINE_GROK_BIN, the same stub) that does
 # what a branch turn does through the same scripts, so the real argument
 # construction, bounding, and reaping are exercised without a model. A real
 # status append drives each wake through the real watcher.
@@ -81,14 +82,26 @@ STATE=${FM_STATE_OVERRIDE:-$FM_HOME/state}
 mode=$(cat "$FM_HOME/stub-mode" 2>/dev/null || echo handle)
 n=$(( $(ls "$FM_HOME"/engine-call.* 2>/dev/null | wc -l) + 1 ))
 {
-  printf 'mode=%s\nactor=%s\nholder=%s\nprimary=%s\nturn=%s\nprofile=%s\n' "$mode" "${FM_SUPERVISION_ACTOR:-}" \
+  printf 'mode=%s\nactor=%s\nholder=%s\nprimary=%s\nturn=%s\nprofile=%s\ngrok_home=%s\n' "$mode" "${FM_SUPERVISION_ACTOR:-}" \
     "${FM_LEASE_HOLDER_PID:-}" "${FM_SUPERVISION_PRIMARY_HARNESS:-}" "${FM_BRANCH_REPORT_TURN:-}" \
-    "${CLAUDE_CONFIG_DIR:-}"
-  for a in "$@"; do printf 'arg=%s\n' "$a"; done
+    "${CLAUDE_CONFIG_DIR:-}" "${GROK_HOME:-}"
+  grok_turn=0
+  for a in "$@"; do
+    printf 'arg=%s\n' "$a"
+    case "$a" in
+      --prompt-file|--always-approve) grok_turn=1 ;;
+    esac
+  done
 } > "$FM_HOME/engine-call.$n"
 case "$mode" in held|captain-held) printf 'ready\n' > "$FM_HOME/stub-ready" ;; esac
-# Like Claude, the reported cost is the conversation's running total.
+# Claude's reported cost is the conversation's running total. A Grok launch,
+# recognized by its own flags, reports that turn's cost alone.
 result() {
+  if [ "${grok_turn:-0}" = 1 ]; then
+    printf '{"stopReason":"end_turn","sessionId":"stub-grok","num_turns":1,"total_cost_usd":0.25,'
+    printf '"usage":{"input_tokens":5,"cache_read_input_tokens":100,"cache_creation_input_tokens":10,"output_tokens":20}}\n'
+    return
+  fi
   printf '{"type":"result","subtype":"success","is_error":false,"num_turns":3,"total_cost_usd":%s,' "$(awk -v n="$n" 'BEGIN { print n * 0.25 }')"
   printf '"usage":{"input_tokens":5,"cache_read_input_tokens":100,"cache_creation_input_tokens":10,"output_tokens":20},"session_id":"stub"}\n'
 }
@@ -165,6 +178,7 @@ chmod +x "$STUB"
 
 export FM_REPO="$ROOT"
 export FM_SUPERVISION_ENGINE_CLAUDE_BIN="$STUB"
+export FM_SUPERVISION_ENGINE_GROK_BIN="$STUB"
 export FM_SUPERVISION_HOST_PRIMARY=claude
 export FM_POLL=1 FM_SIGNAL_GRACE=0 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999
 # Keep the real engine watchdog/reaping path, but not its production grace in fixtures.

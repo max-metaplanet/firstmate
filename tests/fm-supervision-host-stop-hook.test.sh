@@ -714,6 +714,44 @@ test_attended_latch_keeps_closes_on_main_and_records_recovery_off_main() {
   pass "host: attended, two engine errors latch the session, main keeps every close unchanged in the cooldown, a failed probe doubles it up to its cap, and a routine probe's recovery stays in the ledger, off main"
 }
 
+# The live loop (2026-11-06): the host was on beside a Claude primary, and
+# every turn end took over the cycle the previous pass-through had left.
+# The fresh watcher reopened the recovery that pass-through had just announced,
+# so the close was `check: rearm-resurface` again, attended and main-only, and
+# the hook handed it straight back. Main's turn ended and the next arm did the
+# same, about every 10 seconds. The queued work is still there for a real
+# close to drain; the takeover must not announce it again.
+test_take_over_does_not_hand_the_same_resurface_straight_back() {
+  local home resurfaces
+  home=$(make_primary_home hook-resurface-loop)
+  start_hook_session "$home"
+  FM_HOME="$home" bash -c '
+    . "$1"
+    fm_wake_append check resurface-fixture "check: work stranded before the host parked"
+  ' _ "$ROOT/bin/fm-wake-lib.sh" \
+    || fail "fixture: could not queue the stranded wake"
+  turn_end "$home"
+  wait_until 250 hook_exited "$home" \
+    || fail "resurface loop: the first close never reached the Stop hook: $(cat "$home/state/.supervision-host.log" 2>/dev/null)"
+  assert_re '	pass-through	attended	main-only	check: rearm-resurface' "$home/state/.supervision-host.log" \
+    "fixture: the stranded queue was not handed back once"
+  assert_rewoke_main "$home" "resurface loop (first)"
+  watcher_live "$home" || fail "resurface loop: the first pass-through left no successor"
+  # Main does not drain or acknowledge. That is the turn that used to end and
+  # arm again while the same rows were still queued.
+  turn_end "$home"
+  wait_until 200 grep -q $'\ttake-over\tarm=' "$home/state/.supervision-host.log" \
+    || fail "resurface loop: the next turn end did not take the cycle over: $(cat "$home/state/.supervision-host.log")"
+  sleep 3
+  ! hook_exited "$home" \
+    || fail "resurface loop: the takeover handed a wake straight back: $(cat "$home/hook.err" 2>/dev/null)"$'\n'"$(tail -n 8 "$home/state/.supervision-host.log")"
+  resurfaces=$(grep -c 'check: rearm-resurface' "$home/state/.supervision-host.log" || true)
+  [ "$resurfaces" -eq 1 ] \
+    || fail "resurface loop: the takeover announced recovery again ($resurfaces times): $(cat "$home/state/.supervision-host.log")"
+  watcher_live "$home" || fail "resurface loop: the takeover left no watcher"
+  pass "host+hook: a takeover does not hand the same rearm-resurface straight back"
+}
+
 # FM_TEST_ONLY runs a single named case, the same entry point the sibling
 # suites expose.
 if [ -n "${FM_TEST_ONLY:-}" ]; then
@@ -735,6 +773,7 @@ test_claude_stop_hook_notifies_when_at_turn_downtime_write_fails
 test_successor_close_during_main_turn_is_delivered_at_the_next_turn_end
 test_pass_through_successor_survives_the_hook_process_group_teardown
 test_next_park_takes_over_the_cycle_a_pass_through_left_for_main
+test_take_over_does_not_hand_the_same_resurface_straight_back
 test_a_park_stopped_mid_take_over_leaves_the_take_over_to_the_next_park
 test_unrecorded_successor_is_stopped_rather_than_left_for_main
 test_primary_without_a_verified_mirror_runs_away_only

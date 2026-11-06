@@ -64,7 +64,10 @@
 #     (detach_successor owns the persistence check and failure path). The
 #     session's next park without --restart requests a take-over of its cycle
 #     rather than an ordinary attach; bin/fm-watch-arm.sh's --take-over header owns the
-#     conditions under which that restores a single owner and the fallback;
+#     conditions under which that restores a single owner and the fallback.
+#     That take-over sets FM_WATCH_KEEP_ANNOUNCED so an episode already
+#     announced is not reopened into another main hand-back
+#     (docs/watcher-continuity.md "Generation reuse").
 #   - away (an away record exists): every close goes to the engine.
 # Every turn that starts attended meets that rule again at its start, so a
 # close accepted away whose turn starts attended (the captain returned in
@@ -1137,7 +1140,10 @@ if [ "$FIRST_ARM_RESTART" -eq 1 ]; then
   start_arm "$OWNER_PREDECESSOR" --restart
 elif [ -n "$LEFT_ARM" ]; then
   log_line "take-over	arm=$LEFT_ARM"
-  start_arm "$OWNER_PREDECESSOR" --take-over "$LEFT_ARM"
+  # Keep an already-announced recovery announced. Reopening it minted a fresh
+  # generation for the same queued work, and that generation's resurface is
+  # attended main-only, so every following turn end handed it straight back.
+  FM_WATCH_KEEP_ANNOUNCED=1 start_arm "$OWNER_PREDECESSOR" --take-over "$LEFT_ARM"
 else
   start_arm "$OWNER_PREDECESSOR"
 fi || { echo "watcher: FAILED - the supervision host could not start a watcher cycle"; exit 1; }

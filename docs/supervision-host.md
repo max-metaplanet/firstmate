@@ -112,11 +112,13 @@ On that main-only pass-through the host starts the successor watcher cycle and l
 That successor, like one a turn hands back at its start (see [Away](#away)), runs in a process group of its own, so the harness tearing down the hook's group after the rewake does not stop it.
 The host leaves the watcher's recovery marker reading downtime, confirming no handling handoff, because the re-arm owner delivers a close to main only while that marker reads downtime.
 The session's next park without `--restart` requests a take-over to restore a single host-owned arm; the [host header](../bin/fm-supervision-host.sh) owns successor persistence and cleanup, and the [arm header](../bin/fm-watch-arm.sh) owns take-over eligibility and fallback.
+That take-over keeps an already-announced recovery from being handed straight back to main; [Generation reuse](watcher-continuity.md#generation-reuse) owns the hold.
 OpenCode and omp still launch the host with `--restart`, which takes precedence over recorded take-over and lacks its acknowledgement-preserving handover; changing that first-cycle path remains a follow-up.
 The host-off Claude Stop hook's detached handling successor is also unchanged; see [Claude handling successor](watcher-continuity.md#claude-handling-successor).
 It also passes the close through unchanged, with no added line, when any of these holds (`fm_supervision_host_attended_ready` in `bin/fm-supervision-engine-lib.sh` owns the list):
 
 - The home names no usable engine.
+- The engine is Grok, which is verified for away turns only; no attended live check covers it yet.
 - A tool its turns need is missing: the engine executable, node, jq, or one of perl, timeout, or gtimeout to bound the turn.
 - The primary has no verified dialog mirror.
 - The main session's lock holder cannot be identified.
@@ -326,9 +328,11 @@ A captain message typed during the park waits for the checkpoint to return, at m
 
 ## The engine's seat
 
-The engine spends a Claude account, so which seat it launches on is resolved before every turn and never inherited from the host process.
+The engine spends an account, so which seat it launches on is resolved before every turn and never inherited from the host process.
 The seat is read from the runtime record beside the home's session lock, which is bound to the lock's current owner.
-A Claude primary supplies its own seat; a Codex primary supplies the Claude credentials retained for the engine separately from its Codex seat.
+A Claude engine reads that session's Claude seat, and a Codex primary supplies the Claude credentials retained for that engine separately from its Codex seat.
+A Grok engine reads `grok_profile` when the primary is Grok, and the ambient Grok login when another primary names `grok`.
+Either way it needs a record that names the current lock owner; without one the wake goes to main, as it does for a Claude engine.
 `fm_supervision_engine_seat` in `bin/fm-supervision-engine-lib.sh` owns that distinction and its legacy-record handling.
 `config/claude-seat` is not that record, because it names the seat new workers get and moves without the lead.
 
@@ -336,7 +340,9 @@ This matters because a host process outlives the turn that started it.
 When the lead moves onto another Claude seat ([claude-seats.md](claude-seats.md#moving-firstmate-itself)), the successor session records its own seat beside the lock, and the host picks it up at its next engine launch; no host restart is needed, and a record left by the lead that has already gone names a pid the lock no longer owns, so it is no verdict rather than a stale answer.
 A move to Codex retains the recorded Claude engine account; moving the leader does not move the engine's spending to Codex.
 
-A launch on a seat other than the one the recorded conversation was opened on starts a new conversation, because a conversation lives under the profile directory of the seat it was opened on.
+A launch on a seat other than the one the recorded conversation was opened on starts a new conversation.
+A Claude conversation lives under the profile directory of the seat it was opened on.
+A Grok conversation records that same seat, and the resume itself uses the engine's private home.
 
 The host hands the wake to main, with the reason on its `supervision-host:` line, when that record names no current lock owner, lacks the retained Claude account for a Codex primary, or names a profile directory that is not there.
 No login is probed: a Claude primary demonstrates its own usable login, while retained credentials beside a Codex primary are only an account selection.
@@ -368,9 +374,11 @@ Each engine turn's line carries these fields, and this log is where engine cost 
 ## Engines
 
 A verified engine is a headless mode of a harness whose isolation, actor propagation, promptless permissions, bounding, and caching were measured.
-Today the only verified engine is Claude's print mode, measured on Claude Code 2.1.278 and 2.1.281.
-The engine stays on Claude when the primary moves to Codex because `bin/fm-supervision-engine-lib.sh` implements only Claude's launch and result contracts, including hook isolation, promptless tool permissions, conversation reuse, and usage accounting.
-There is no architectural requirement that the engine use Claude; changing it requires implementing and verifying another engine adapter.
+The verified engines are Claude's print mode, measured on Claude Code 2.1.278 and 2.1.281, and Grok's headless mode, measured on grok 1.0.77.
+Grok is verified for away turns only: an attended close on a home whose engine is Grok reaches main unchanged.
+A Codex primary keeps the Claude engine when `config/supervision-host` names `claude`, using the Claude account that move retains.
+There is no architectural requirement that the engine be one of these two.
+Changing it requires implementing and verifying another engine adapter.
 
 ### Claude print mode behavior
 
@@ -408,8 +416,47 @@ There is no architectural requirement that the engine use Claude; changing it re
   - `total_cost_usd`, `num_turns`, and the four `usage` token counts (input, cache read, cache creation, output) are finite numbers.
 - Any other result fails the turn and hands its wake to main.
 
-**Tool process reaping**
+### Grok headless mode
 
+Measured on grok 1.0.77.
+`bin/fm-supervision-engine-lib.sh` owns the exact argument list.
+The flags below are Grok's own headless contract, not Claude's.
+
+**Isolation**
+
+The turn launches with `GROK_HOME` set to `state/.supervision-host-grok`.
+That directory has no hooks directory.
+Its `config.toml` ignores the usual skill roots and turns off Claude, Cursor, and Codex compat hooks, skills, rules, agents, MCP, and sessions.
+The launch environment clears those same cells.
+The seat's `auth.json` is linked, not copied, because a copied refresh token can be single-use.
+If a turn leaves a regular `auth.json` in that home instead of the link, the next turn refuses to launch rather than relink over a possibly refreshed login.
+The launch does not pass `--trust` and does not set `GROK_FOLDER_TRUST`.
+
+**Permissions**
+
+`--always-approve` with `--tools run_terminal_cmd,read_file` is the unattended mode.
+`--permission-mode dontAsk` is not that mode: a measured turn refused a command and ended `cancelled` while still reporting a cost.
+`--deny MCPTool`, `--disallowed-tools Agent,web_search,web_fetch`, `--no-subagents`, and `--disable-web-search` keep the turn off those tools.
+
+**Conversation and input**
+
+`--prompt-file` is the wake prompt and is not combined with a positional prompt.
+`--system-prompt-override` carries the branch prompt text.
+`--verbatim` sends that wake prompt unchanged.
+A new conversation passes `--session-id` and a later turn passes `--resume`.
+Stdin is `/dev/null`.
+
+**Result and cost**
+
+`--output-format json` carries `stopReason`, `sessionId`, `num_turns`, `total_cost_usd`, and the four usage counts.
+Those cost and turn figures are per run, including on resume, so the engine lib adds the prior conversation cost.
+A missing `total_cost_usd` stays unreported and is never treated as zero.
+The host counts a turn successful only when `stopReason` is `end_turn`, `sessionId` is non-empty, `type` is not `error`, `usage_is_incomplete` and `cost_is_partial` are not true, and the cost, turn count, and four usage counts are finite numbers.
+Any other result, including `cancelled` and `max_tokens`, fails the turn and hands its wake to main.
+
+### Tool process reaping
+
+Every engine turn uses the same reap.
 Tool commands run in process groups of their own, which a bound's group signal cannot reach.
 The engine lib records the engine's descendants while it runs and reaps them by recorded identity after every turn; its [header](../bin/fm-supervision-engine-lib.sh) owns the snapshot cadence.
 The reap is best-effort for what it observed, not a bound.
@@ -418,12 +465,14 @@ Such a process is never recorded and survives the turn, the same residual `bin/f
 
 ### Model and engine selection
 
-The default model is `sonnet`, which handled every measured wake correctly at a fraction of a larger model's cost.
+The default model is `sonnet` for Claude, which handled every measured wake correctly at a fraction of a larger model's cost, and `grok-4.7` for Grok.
 `config/supervision-host` can name another.
 
-The Claude engine runs beside any of the six primaries, but only a Claude primary selects it by default when the host is enabled, even with no file.
-A Cursor, OpenCode, omp, Grok, or Codex home names it (`claude`, optionally with a model) in `config/supervision-host`.
-`/afk` there says so when the file selects no engine.
+Only a Claude primary runs the host when `config/supervision-host` is absent.
+An empty or `default` file selects the primary's own verified engine, so a Grok primary then uses `grok-4.7`.
+A Cursor, OpenCode, omp, or Codex home names `claude` (optionally with a model) until that primary has a verified engine of its own.
+Any home may name `grok` or `claude`; a Grok engine handles away turns only, so on any primary an attended close reaches main unchanged.
+`/afk` says so when the file selects no engine.
 
 ## Verification
 
@@ -441,7 +490,7 @@ Each arm owner's own suite covers its host mode against a stub host.
 | `tests/fm-host-mirror.test.sh` | The dialog mirror's writers through the tracked Claude and Cursor registrations, the home gate, the feed, and the verified-writer list. |
 | `tests/fm-afk-launch.test.sh` | The home gate on each primary, the `/afk` daemon refusal, and `/quiet` on a home that runs the host: the statement, the paused statement, each named missing part, the quiet daemon fallback that carries its recorded mode, a failed quiet start that archives its quiet record, and the refusal under a live away record until the return. |
 | `tests/fm-afk-return.test.sh` | The return's drain-owned read-cursor advance through the away window on a host home, and none on Pi. |
-| `tests/fm-supervision-host-live-e2e.test.sh` | Runs a real engine turn; opt-in because it spends tokens. |
+| `tests/fm-supervision-host-live-e2e.test.sh` | Runs a real Claude turn and a real Grok turn; opt-in because it spends tokens. |
 | `tests/fm-supervision-host-attended-live-e2e.test.sh` | Opt-in credentialed guard for repeated attended main-only hand-backs to an idle Claude primary, the successor's own close, a close that turns main-only at its turn, and a stand-in remote listener; accepts a pre-fix ref for a negative control. |
 | `tests/fm-host-mirror-live-e2e.test.sh` | Proves the Claude and Cursor mirror writers against the real harnesses; opt-in because it spends tokens. |
 

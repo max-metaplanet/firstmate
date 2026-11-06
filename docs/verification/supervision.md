@@ -717,6 +717,33 @@ Claude's `--output-format json` reports `total_cost_usd` as the resumed conversa
 Five consecutive turns of one conversation, a host restart between the second and third, reported totals of 0.2093, 0.3441, 0.4234, 0.4870, and 0.5408 with per-turn `cache_read_input_tokens` of 423687, 359255, 245302, 174613, and 185598.
 Each handled away wake cost between $0.05 and $0.21 on `sonnet`.
 
+The same guard now runs one turn pair per verified engine, and `FM_SUPERVISION_HOST_LIVE_ENGINE` names a single engine.
+On 2026-11-06, on Linux 7.0.0-38-generic aarch64, grok 1.0.77 (`50ca579fa996`) with model `grok-4.7` handled and resumed an away wake:
+
+```text
+$ FM_SUPERVISION_HOST_LIVE_E2E=1 FM_SUPERVISION_HOST_LIVE_ENGINE=grok FM_SUPERVISION_HOST_LIVE_POLLS=9000 tests/fm-supervision-host-live-e2e.test.sh
+# grok first turn: handled	turn=host-160530-1793965695.1	posture=away	rc=0
+# grok second turn: handled	turn=host-160530-1793965695.2	posture=away	rc=0
+ok - supervision host live (grok 1.0.77 (50ca579fa996)): a real grok engine handles and resumes away wakes under the branch contract without waking main
+```
+
+The first handled turn recorded `error=0 cost=0.317848 conversation_cost=0.317848 input=92781 cache_read=172544 cache_write=0 output=7669 turns=11`.
+That cost is the run's own `total_cost_usd`, and the cache read is the turn's own, which is the Grok contract in [supervision-host.md](../supervision-host.md#grok-headless-mode).
+The guard then required the second turn to resume that same conversation and leave the host's turn count at 2.
+
+### OpenCode free provider
+
+OpenCode 2.2.5's free provider is not a verified supervision-host engine.
+`opencode models` listed these `opencode/` models on 2026-11-06: `opencode/beam-free`, `opencode/big-pickle`, `opencode/crouton-alpha-free`, `opencode/deepseek-v4.1-flash-free`, `opencode/flint-40b-free`, `opencode/glm-5.3-flash-free`, `opencode/mimo-v2.6-flash-free`, `opencode/nemotron-3.5-lightning-free`, `opencode/nemotron-3.5-super-vl-free`, and `opencode/pulse-alpha-free`.
+They share one headless process, `opencode run --standalone --format json`, which prints JSONL events rather than one result object.
+One turn of `opencode/glm-5.3-flash-free` finished with `reason=stop`, `cost=0`, and token counts `input=8930`, `output=4`, `reasoning=10`, `cache.read=0`, `cache.write=0`.
+A reported cost of 0 on a turn that did spend tokens is not a cost the host can trust, because the same field would look identical if the provider omitted a price.
+Private `XDG_CONFIG_HOME`, `XDG_DATA_HOME`, `XDG_STATE_HOME`, and `XDG_CACHE_HOME` relocate config, data, state, cache, the database, and the log.
+`opencode debug paths tmp` still prints `/tmp/opencode`.
+The standalone turn also watches `~/.opencode` beside the private config directory, so the user's OpenCode home is part of the turn.
+Without `--standalone`, a config read attaches to the user's managed service and stops because port 49374 is already in use.
+No free-provider model meets the isolation and trusted-cost bar, so this record adds no OpenCode engine.
+
 Before the Claude default-on flip, without `config/supervision-host`, the same live sessions and guards ran on the tree before the host (`ac2ed3b2`) and with it, with identical results:
 
 | Check | Before | After |
@@ -748,6 +775,7 @@ tests/fm-watch-arm.test.sh
 ### Non-Pi primaries
 
 This supports the per-primary routing in [supervision-host.md](../supervision-host.md): with `config/supervision-host`, the Cursor, OpenCode, Grok, and Codex arm owners run the host with the Claude engine, and without it nothing changes.
+A Grok primary can now select that verified Grok engine, which this routing check did not exercise.
 It was measured on 2026-09-24 on macOS 26.6.2 arm64 with Claude Code 2.1.281 as the engine (`sonnet`), codex-cli 0.155.1, cursor-agent 2026.09.23-86fc751, OpenCode 1.18.32, grok 1.0.41, and Claude Code 2.1.281 as primaries, and Pi 0.87.0 workers on `openai-codex/gpt-5.6-sol`, in disposable lab homes on private tmux sockets.
 omp is not installed on the measuring machine, so its routing rests on `tests/fm-omp-harness.test.sh` alone.
 OpenCode's OpenAI login on that machine rejects `gpt-5.6-sol` and has exhausted its `gpt-5.5` usage, so the OpenCode primary ran on OpenCode's free `opencode/big-pickle`.
