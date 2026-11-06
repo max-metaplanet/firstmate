@@ -798,12 +798,12 @@ test_due_check_during_rearm_gap_stays_a_take_over() {
   pass "host+hook: a due check during the re-arm gap does not hand check: rearm-resurface again"
 }
 
-# The same loop when the successor is already dead at the next park, which is
-# the start that logged no take-over. An append during the gap mints a fresh
-# pending generation (what the unread check did); the next park must not hand
-# check: rearm-resurface for that unacked episode.
-test_dead_left_successor_does_not_hand_resurface_again() {
-  local home left_arm watcher starts resurfaces
+# A row queued after main drained and acknowledged a rearm-resurface is new
+# work. When the successor left for main is already gone at the next park,
+# that park has no cycle to take over, and the row must still reach main once.
+# The host log keeps the earlier rearm-resurface line, as a real home does.
+test_row_queued_after_ack_reaches_main_when_the_left_successor_is_gone() {
+  local home left_arm watcher drained
   home=$(make_primary_home hook-rearm-dead-successor)
   : > "$home/hook.own-group"
   start_hook_session "$home"
@@ -816,38 +816,22 @@ test_dead_left_successor_does_not_hand_resurface_again() {
     "fixture: the stranded queue was not handed back once"
   assert_rewoke_main "$home" "dead successor (first)"
   watcher_live "$home" || fail "dead successor: the first pass-through left no successor"
-  # The unread check's append. The successor is then gone, so the next start
-  # cannot take its cycle over.
-  queue_check "$home" lab-seat "check: lab-seat: seats are out of quota" \
-    || fail "fixture: could not append the gap check"
+  main_drain_and_ack "$home"
   left_arm=$(awk -F '\t' 'NR == 1 { print $1 }' "$home/state/.supervision-host-left")
   [ -n "$left_arm" ] || fail "dead successor: the pass-through recorded no arm"
   watcher=$(cat "$home/state/.watch.lock/pid" 2>/dev/null || true)
   kill -TERM "$left_arm" 2>/dev/null || fail "dead successor: could not stop the left arm $left_arm"
   wait_until 50 bash -c 'if [ -n "$1" ] && kill -0 "$1" 2>/dev/null; then exit 1; fi; exit 0' _ "$watcher" \
     || fail "dead successor: the left arm did not stop its watcher"
-  starts=$(grep -c $'\tstart\t' "$home/state/.supervision-host.log" || true)
+  queue_check "$home" lab-seat "check: lab-seat: seats are out of quota" \
+    || fail "fixture: could not append the new check"
   turn_end "$home"
-  wait_until 200 bash -c '[ "$(grep -c $'"'"'\tstart\t'"'"' "$1" 2>/dev/null || true)" -gt "$2" ]' _ \
-    "$home/state/.supervision-host.log" "$starts" \
-    || fail "dead successor: the next park never started: $(cat "$home/state/.supervision-host.log")"
-  sleep 3
-  if grep -q $'\ttake-over\t' "$home/state/.supervision-host.log"; then
-    fail "dead successor: a dead arm was taken over: $(cat "$home/state/.supervision-host.log")"
-  fi
-  resurfaces=$(grep -c 'check: rearm-resurface' "$home/state/.supervision-host.log" || true)
-  [ "$resurfaces" -eq 1 ] \
-    || fail "dead successor: recovery was handed back again ($resurfaces times): $(cat "$home/state/.supervision-host.log")"
-  if hook_exited "$home" && grep -q 'check: rearm-resurface' "$home/hook.err" 2>/dev/null; then
-    fail "dead successor: the next park handed check: rearm-resurface: $(cat "$home/hook.err")"
-  fi
-  grep -q $'\thold\tdead-arm=' "$home/state/.supervision-host.log" \
-    || fail "dead successor: the park did not hold the unacked recovery: $(cat "$home/state/.supervision-host.log")"
-  watcher_live "$home" \
-    || fail "dead successor: the held park left no watcher: $(cat "$home/state/.supervision-host.log")"
-  ! hook_exited "$home" \
-    || fail "dead successor: the held park handed a wake: $(cat "$home/hook.err" 2>/dev/null)"
-  pass "host+hook: a park whose left successor is already dead does not hand check: rearm-resurface again"
+  wait_until 250 hook_exited "$home" \
+    || fail "dead successor: the new row never reached main: $(cat "$home/state/.supervision-host.log"; cat "$home/state/.watcher-down" 2>/dev/null)"
+  assert_rewoke_main "$home" "dead successor (new row)"
+  drained=$(main_drain "$home")
+  assert_contains "$drained" 'seats are out of quota' "the row queued after the acknowledgement must reach main's drain"
+  pass "host+hook: a row queued after main's acknowledgement reaches main once when the left successor is gone"
 }
 
 # FM_TEST_ONLY runs a single named case, the same entry point the sibling
@@ -873,7 +857,7 @@ test_pass_through_successor_survives_the_hook_process_group_teardown
 test_next_park_takes_over_the_cycle_a_pass_through_left_for_main
 test_take_over_does_not_hand_the_same_resurface_straight_back
 test_due_check_during_rearm_gap_stays_a_take_over
-test_dead_left_successor_does_not_hand_resurface_again
+test_row_queued_after_ack_reaches_main_when_the_left_successor_is_gone
 test_a_park_stopped_mid_take_over_leaves_the_take_over_to_the_next_park
 test_unrecorded_successor_is_stopped_rather_than_left_for_main
 test_primary_without_a_verified_mirror_runs_away_only
