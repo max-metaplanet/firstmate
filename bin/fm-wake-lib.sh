@@ -1420,7 +1420,8 @@ fm_recovery_marker_hold_for_handling() {
   fi
   if ! fm_recovery_marker_read "$marker"; then
     fm_lock_release "$lock"
-    return 1
+    fm_recovery_marker_arm_check "$marker"
+    return
   fi
   case "$FM_RECOVERY_MARKER_TOKEN" in
     announced:downtime:*)

@@ -222,5 +222,43 @@ test_handling_successor_does_not_go_blind() {
   pass "a resurfacing handling successor stays alive and supervises instead of going blind"
 }
 
+# T3: a handling successor that finds an unreadable recovery marker quarantines
+# it and starts, exactly as every other watcher arm does, instead of exiting
+# and leaving the handling turn without a watcher.
+test_handling_successor_quarantines_malformed_marker() {
+  local dir home state fakebin child now out quarantined
+  dir=$(make_case recovery-handling-malformed)
+  home="$dir/home"
+  state="$dir/state"
+  fakebin="$dir/fakebin"
+  mkdir -p "$home/data"
+  : > "$state/crew.meta"
+  printf 'not a recovery marker\n' > "$state/.watcher-down"
+  chmod 600 "$state/.watcher-down"
+  out="$dir/watch.out"
+  PATH="$fakebin:$PATH" FM_HOME="$home" FM_STATE_OVERRIDE="$state" \
+    FM_POLL=1 FM_SIGNAL_GRACE=0 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=600 \
+    FM_WATCH_HANDLING_SUCCESSOR=1 "$WATCH" > "$out" 2>&1 &
+  child=$!
+  now=0
+  while [ "$now" -lt 40 ]; do
+    [ "$(cat "$state/.watch.lock/pid" 2>/dev/null || true)" = "$child" ] && break
+    sleep 0.1
+    now=$((now + 1))
+  done
+  [ "$(cat "$state/.watch.lock/pid" 2>/dev/null || true)" = "$child" ] \
+    || { kill -TERM "$child" 2>/dev/null || true; wait "$child" 2>/dev/null || true; fail "handling successor did not start over a malformed marker: $(cat "$out")"; }
+  sleep 0.5
+  kill -0 "$child" 2>/dev/null \
+    || fail "handling successor exited over a malformed marker: $(cat "$out")"
+  quarantined=$(cat "$state"/.watcher-down.invalid.*/marker 2>/dev/null || true)
+  kill -TERM "$child" 2>/dev/null || true
+  wait "$child" 2>/dev/null || true
+  [ "$quarantined" = 'not a recovery marker' ] \
+    || fail "handling successor did not quarantine the malformed marker: $(ls -a "$state")"
+  pass "a handling successor quarantines a malformed recovery marker and keeps supervising"
+}
+
 test_handling_successor_does_not_go_blind
+test_handling_successor_quarantines_malformed_marker
 test_unacknowledged_recovery_is_announced_once_per_generation
