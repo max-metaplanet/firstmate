@@ -2049,9 +2049,10 @@ Without a rule declaring `path_force` this check is inert, whatever paths a brie
 A brief with no `Target paths:` line, no matching path, or a home whose rules declare no `path_force` leaves the Jev request and its output unchanged, so only some briefs carry this fact and the rest route exactly as before.
 After that classification, a declared target path in a sensitive class cannot resolve to a free OpenCode model.
 [`bin/fm-free-model-sensitivity.sh`](../bin/fm-free-model-sensitivity.sh) owns the classes, the free-model mark, the token scrub, and the read block.
-A free OpenCode model is a `-free` or `:free` id, `big-pickle`, or an OpenCode launch that names no model or `default`.
+A free OpenCode model is an id whose last segment is `free`, `big-pickle`, or ends in `-free` or `:free`, or an OpenCode launch that names no model or `default`.
 The read block applies directory and file classes such as auth, migrations, infra, payments, and CI inside the task worktree only, so toolchain files elsewhere stay readable; env and Doppler file names, secrets files, and token stores stay blocked everywhere, including the primary checkout.
 A routine path may still resolve to a free OpenCode model, and a paid OpenCode model or any other harness keeps its environment and its read access.
+The read block is a Linux seccomp notifier on x86_64 or aarch64, so a free OpenCode launch fails on any other host, and a launch refuses when the [Orca environment source](#orca-environment-source-configlaunch-env-tmux-session) would forward one of the scrubbed token names.
 
 **What the model receives**
 
