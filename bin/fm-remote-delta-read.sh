@@ -9,16 +9,16 @@
 # available, returns at most 65536 payload bytes, and never truncates or consumes
 # the source. A shortened or changed prefix returns a structured continuity-break
 # result instead of silently rebasing the cursor.
-# One shortened prefix is not a break. A single leading emission stamp was
-# deleted from a line the cursor already consumed: the stamp is the `<epoch> `
-# taken from that line's one `[at=<epoch>]` tag, and putting those bytes back
-# makes the cursor's prefix hash match. The reader then returns only the
-# complete lines appended after the shifted line, and does not return the
-# consumed line again. Its next offset is a position in the file as it exists
-# now. Until those new lines exist it waits, so the relay stays armed. Any
-# other shortened or changed prefix, including a real replacement of earlier
-# bytes, is still a continuity break. If that proof cannot be run, the reader
-# keeps the break.
+# One shortened prefix is not a break: a single leading emission stamp deleted
+# from a consumed line starting within FM_REMOTE_DELTA_MAX_BYTES of the cursor.
+# The stamp is the `<epoch> ` from that line's one `[at=<epoch>]` tag, and
+# putting it back makes the cursor's prefix hash match. The reader then returns
+# only the complete lines appended after the shifted line, never the consumed
+# line again. Its next offset is a position in the file as it exists now.
+# Until those new lines exist it waits, so the relay stays armed. Any other
+# shortened or changed prefix, including a real replacement of earlier bytes
+# or a stamp on an older line, is still a continuity break. If that proof
+# cannot be run, the reader keeps the break.
 #
 # The log is sampled every FM_REMOTE_DELTA_POLL_SECONDS (default 0.5 seconds).
 # A complete line is visible on the next sample, and the window deadline can
