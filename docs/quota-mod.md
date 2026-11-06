@@ -1,6 +1,6 @@
 # Seat quota in Claude Code
 
-The `firstmate-quota` mod under `.claude/mods/firstmate-quota` shows how much quota is left for this Claude session and every configured Claude and Codex seat.
+The `firstmate-quota` mod under `.claude/mods/firstmate-quota` shows how much quota is left for this Claude session and every configured Claude, Codex and Grok seat.
 It is a Claude Code plugin whose whole behavior lives in one function-hooks module, the same shape as the Calm mod.
 The trusted project auto-loads it through the `.claude/skills/firstmate-quota` entry, a symlink into `.claude/mods`, so no `--plugin-dir` or marketplace install is needed.
 
@@ -60,7 +60,7 @@ A seat the [quota floor](claude-seats.md#resting-a-seat-below-a-quota-floor) is 
 
 Each row also shows the cached authentication verdict, renewal outcome, last attempt and successful renewal times, and the guarded renewal command.
 Invalid credentials include the exact login command; the panel never runs it.
-Codex rows appear only on a home with Codex seats, Codex seat configuration, or a Codex home.
+Codex and Grok rows appear only on a home using that vendor: one with its seats, its seat configuration, or its home.
 [Seat renewal limits](claude-seats.md#renewal-status-and-safe-limits) own the credential safety boundary.
 
 Nothing a mod draws is visible in a `claude -p` run, an SDK session, or the VS Code chat panel, so in a session that cannot draw `/seats` answers with the same content as text instead.
