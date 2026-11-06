@@ -1,0 +1,78 @@
+== tokens in launcher env: GH_TOKEN DOPPLER_TOKEN SUPABASE_SERVICE_ROLE_KEY AWS_SECRET_ACCESS_KEY PATH_OK=1 ==
+$ env | grep -E "GH_TOKEN|DOPPLER|SUPABASE|AWS_|PATH_OK" || true
+PATH_OK=1
+[exit 0]
+$ cat /proc/self/status | grep -E "^Seccomp:|^SigIgn:"
+SigIgn:	0000000000000000
+Seccomp:	2
+[exit 0]
+--- blocked reads ---
+$ cat /tmp/fmfree.pYLGaZ/home/.secrets/api
+cat: /tmp/fmfree.pYLGaZ/home/.secrets/api: Permission denied
+[exit 1]
+$ cat /tmp/fmfree.pYLGaZ/home/.config/gh/hosts.yml
+cat: /tmp/fmfree.pYLGaZ/home/.config/gh/hosts.yml: Permission denied
+[exit 1]
+$ cat /tmp/fmfree.pYLGaZ/primary/.env.local
+cat: /tmp/fmfree.pYLGaZ/primary/.env.local: Permission denied
+[exit 1]
+$ cat ../primary/.env.local
+cat: ../primary/.env.local: Permission denied
+[exit 1]
+$ cat notes.txt
+cat: notes.txt: Permission denied
+[exit 1]
+$ cat auth/login.ts
+cat: auth/login.ts: Permission denied
+[exit 1]
+$ cat .github/workflows/ci.yml
+cat: .github/workflows/ci.yml: Permission denied
+[exit 1]
+$ cat doppler.yaml
+cat: doppler.yaml: Permission denied
+[exit 1]
+$ python3 -c 'open("auth/login.ts").read()'
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+    open("auth/login.ts").read()
+    ~~~~^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 13] Permission denied: 'auth/login.ts'
+[exit 1]
+--- routine work ---
+$ cat src/app.ts && ls src && git status --short && git log --oneline | head -1
+export const ok=1
+app.ts
+warning: could not open directory '.github/workflows/': Permission denied
+warning: could not open directory 'auth/': Permission denied
+?? doppler.yaml
+?? notes.txt
+263bcb4 init
+[exit 0]
+$ cat /tmp/fmfree.pYLGaZ/lib/auth/mod.py
+toolchain auth module
+[exit 0]
+$ python3 -m pip --version
+pip 25.1.1 from /usr/lib/python3/dist-packages/pip (python 3.14)
+[exit 0]
+$ rg -n ok src 2>/dev/null || grep -rn ok src
+src/app.ts:1:export const ok=1
+[exit 0]
+$ node -e 'console.log(require("fs").readFileSync("src/app.ts","utf8").trim())'
+export const ok=1
+[exit 0]
+--- SIGPIPE (round 4 fix) ---
+$ while :; do echo x; done | head -1
+x
+[exit 0]
+$ yes | head -2
+y
+y
+[exit 0]
+--- same pipeline outside confine, for comparison ---
+$ (unconfined) while :; do echo x; done | head -1
+x
+[exit 0]
+--- opencode binary under confine ---
+$ opencode --version
+opencode v2.2.5
+[exit 0]

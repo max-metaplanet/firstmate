@@ -1,0 +1,12 @@
+$ command -v rg (outside confine): rg
+$ grep -rl console src  (rg stand-in)
+src/app.js
+[exit=0]
+$ 20x: env | grep | sort >/dev/null; ls / >/dev/null; cat src/app.js  (regression for cancelled-notification supervisor exit)
+failures=0/20
+$ python O_PATH open (regression for ADDFD crash) then a normal read
+console.log('hi')
+[exit=0]
+$ opencode --version under confine
+opencode v2.2.5
+[exit=0]

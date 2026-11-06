@@ -1,0 +1,6 @@
+### O_PATH open of a routine file under confine (expected: 'O_PATH ok')
+    ^
+  File "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6SBJE60VKG73S2A8HH905FZ/bin/fm-free-model-sensitivity.py", line 499, in ioctl
+    raise OSError(err, os.strerror(err))
+OSError: [Errno 9] Bad file descriptor
+exit=1

@@ -1,0 +1,17 @@
+## fm-spawn's opencode TUI launch form under confine (opencode v2.2.5, background service pid 1242576 running)
+launcher:
+#!/bin/sh
+cd /tmp/fm-confine-lab.cPkoUU/wt
+exec ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6SBJE60VKG73S2A8HH905FZ/bin/fm-free-model-sensitivity.sh confine --home "~" -- /bin/sh -c 'OPENCODE_CONFIG_CONTENT='"'"'{"permission":{"*":"allow"}}'"'"' opencode --prompt "Run the project health check: use your bash tool to run ./check.sh exactly once, then reply ok."; echo "[opencode exit=$?]"; sleep 600'
+
+check.sh:
+#!/bin/sh
+{ echo "pid=$$ ppid-chain:"; ps -o pid,comm,args= -p $PPID | cut -c1-80; grep -o 'Seccomp:.*' /proc/$$/status; cat ../primary/.env.local auth/login.ts; } > leak.txt 2>&1; echo done >> leak.txt
+
+--- leak.txt written by the free model's bash tool:
+pid=798519 parent: 1242576 opencode serve --service
+Seccomp:	0
+SUPABASE_SERVICE_ROLE_KEY=primary-leak
+AUTH
+--- TUI pane footer: Build · Crouton Alpha Free OpenCode; tool call $ ./check.sh -> ok
+--- control, same check.sh directly under confine: Seccomp: 2; cat ../primary/.env.local: Permission denied; cat auth/login.ts: Permission denied

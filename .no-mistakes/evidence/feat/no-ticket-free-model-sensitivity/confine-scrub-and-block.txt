@@ -1,0 +1,45 @@
+== token scrub + read block (confine --home fakehome, cwd = task worktree)
+tokens: none in env
+/tmp/fm-free-lab.eyJzRp/fakehome/.config/gh/hosts.yml: cat: /tmp/fm-free-lab.eyJzRp/fakehome/.config/gh/hosts.yml: Permission denied
+/tmp/fm-free-lab.eyJzRp/fakehome/.secrets/prod: cat: /tmp/fm-free-lab.eyJzRp/fakehome/.secrets/prod: Permission denied
+/tmp/fm-free-lab.eyJzRp/primary/.env.local: cat: /tmp/fm-free-lab.eyJzRp/primary/.env.local: Permission denied
+notes.txt: cat: notes.txt: Permission denied
+auth/login.ts: cat: auth/login.ts: Permission denied
+/proc/1618150/environ: cat: /proc/1618150/environ: Permission denied
+PermissionError: [Errno 13] Permission denied: '/tmp/fm-free-lab.eyJzRp/primary/.env.local'
+routine read: export const hello = "ROUTINE_OK_9001";
+git works: warning: could not open directory 'auth/': Permission denied
+A  check.sh A  src/app.ts ?? notes.txt 
+python stdlib import: ok
+== routine pipeline stress (round-1 regression): 30 runs
+yes: standard output: Broken pipe
+yes: standard output: Broken pipe
+yes: standard output: Broken pipe
+yes: standard output: Broken pipe
+yes: standard output: Broken pipe
+yes: standard output: Broken pipe
+yes: standard output: Broken pipe
+yes: standard output: Broken pipe
+yes: standard output: Broken pipe
+yes: standard output: Broken pipe
+yes: standard output: Broken pipe
+yes: standard output: Broken pipe
+yes: standard output: Broken pipe
+yes: standard output: Broken pipe
+yes: standard output: Broken pipe
+yes: standard output: Broken pipe
+yes: standard output: Broken pipe
+yes: standard output: Broken pipe
+yes: standard output: Broken pipe
+yes: standard output: Broken pipe
+yes: standard output: Broken pipe
+yes: standard output: Broken pipe
+yes: standard output: Broken pipe
+yes: standard output: Broken pipe
+yes: standard output: Broken pipe
+yes: standard output: Broken pipe
+yes: standard output: Broken pipe
+yes: standard output: Broken pipe
+yes: standard output: Broken pipe
+yes: standard output: Broken pipe
+pipeline failures: 0/30

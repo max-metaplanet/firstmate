@@ -1,0 +1,201 @@
+FM_TEST_BEGIN 2026-11-06T22:44:05Z tests/fm-free-model-sensitivity.test.sh family=unclassified expected_gate_skip=none
+free-model sensitivity seed=20261106 count=4
+ok - generated paths keep their sensitive class, and routine bin and docs paths stay eligible
+ok - token names cover Doppler, Supabase, cloud, and GitHub-write, and ordinary names stay
+ok - after classification a sensitive path never resolves to the free OpenCode model
+ok - a free-model process cannot read secrets or sensitive paths, and other launches still can
+ok - an O_PATH open neither ends supervision nor reaches a sensitive path
+ok - routine pipelines keep the confined shell supervised
+ok - documented free OpenCode models and a model-less OpenCode launch are free, and paid ones are not
+# all fm-free-model-sensitivity tests passed
+FM_TEST_END 2026-11-06T22:44:14Z tests/fm-free-model-sensitivity.test.sh exit=0 duration_ms=8918 gate_skip=false
+FM_TEST_BEGIN 2026-11-06T22:44:14Z tests/fm-dispatch-resolve.test.sh family=standalone expected_gate_skip=none
+ok - absent key is off: one stderr line, exit 0, no network call
+ok - provenance records request evidence without changing decisions or claiming model accuracy
+ok - TYPESAFE_API_KEY= in .env activates the tool; environment and config overrides work
+ok - clear: one rule Choice request, key on the fd header only, spendPriority argmax over every candidate
+ok - never-send list withholds the request on a match or a bad list, and never prints the value
+ok - rules snapshots and shell quoting preserve the profile protocol
+ok - no-rule fallback, Agy, Gemini, and documented configurations resolve
+ok - ambiguous: confidence below the fixed floor hands the decision back
+ok - per-rule confidence floors fall to the most probable runner-up that clears its own floor
+ok - only the brief's task sections and scout tag reach the model, with a whole-brief fallback
+ok - escalate: a rule declared approval: captain never yields a profile
+ok - rule floor: known shortfall falls through while unavailable evidence escalates
+ok - declared provider and profile floor evidence are applied in code
+ok - nonnumeric spendPriority evidence is never ranked
+ok - partial and missing quota evidence remain eligible but unranked
+ok - provider-wide and exact quota rows combine into one limiting candidate
+ok - default: no rule matched resolves among the default profiles
+ok - tie: equal spendPriority never breaks by array order
+ok - no rankable candidate: the tool escalates instead of guessing
+ok - native Codex binds to codex-home before default, independently of Pi accounts and row order
+ok - Pi native adapters bind to codex-home with existing fallbacks and schema 5 compatibility
+ok - schema 6: each candidate binds to its account row; schema 5 is unchanged
+ok - quota evidence comes from one quota-axi --json read, and its failure is an error outcome
+ok - API, transport, and response failures are error outcomes with exit 0
+ok - a declared deployment path forces the careful rule in code, with no model call
+ok - path force finds the careful rule by declaration, not by rule index
+ok - every deployment-configuration path class in the fact list forces the careful rule
+ok - near-miss paths fall through to the model unchanged
+ok - only an explicit Target paths line and a declared careful rule force a route
+ok - only the documented line form declares paths, and approval and floor semantics hold on a forced route
+ok - auto_apply surfaces from the matched rule on both a model-decided and a path-forced clear route, and is absent/false otherwise
+ok - auto_apply requires the opted-in rule's own profiles, and applied_rule names the rule they came from
+ok - configuration errors exit 2 before any network call
+ok - seat holds offer only configured alternatives while preserving quota and approval gates
+ok - running-worker Codex offers stay inside the matched rule and preserve all resolver gates
+# all fm-dispatch-resolve tests passed
+ok - dispatch evidence uses the Codex home a new native worker will launch on
+ok - a sensitive target path cannot resolve to a free OpenCode model
+FM_TEST_END 2026-11-06T22:44:41Z tests/fm-dispatch-resolve.test.sh exit=0 duration_ms=27314 gate_skip=false
+FM_TEST_BEGIN 2026-11-06T22:44:41Z tests/fm-spawn-dispatch-profile.test.sh family=backend-dispatch expected_gate_skip=none
+ok - allowlist=absent preserves the operational floor and filters only when opted in
+ok - allowlist=missing-config preserves the operational floor and filters only when opted in
+ok - allowlist=enabled preserves the operational floor and filters only when opted in
+ok - allowlist=empty preserves the operational floor and filters only when opted in
+ok - invalid allowlist names refuse before launch or task publication
+ok - inaccessible config with present allowlist refuses before launch or task publication
+ok - inaccessible config with absent allowlist refuses before launch or task publication
+ok - inaccessible ancestor with present allowlist refuses before launch or task publication
+ok - inaccessible ancestor with absent allowlist refuses before launch or task publication
+ok - secondmate launch inherits the allowlist for subsequent worker launches
+ok - local inheritance preserves the allowlist on source errors and mirrors proven absence
+ok - remote inheritance preserves the allowlist on source errors and mirrors proven absence
+WORKER-RAN
+WORKER-RAN
+WORKER-RAN
+WORKER-RAN
+WORKER-RAN
+WORKER-RAN
+skip: fish not found (fish pane launch); only a static syntax check ran
+ok - launch appends the hooks config while preserving inherited Git credentials in sh, bash and zsh
+ok - fm-spawn: actual ship/scout launch commands deliver the worker role contract
+ok - no --model/--effort records defaults and types the claude launch instructions
+ok - fresh Claude crew and scout launches persist transcripts
+ok - a claude launch publishes the brief as an operational-inbox record and passes only the doorbell
+ok - a secondmate claude launch publishes its brief record into the secondmate's own home
+ok - a claude spawn whose launch-brief record cannot publish stops with a clear error and sends no launch
+ok - non-cursor launches clear inherited Cursor identity markers
+ok - relative home overrides ignore CDPATH and become absolute before spawn launch construction
+ok - FM_HOME defaults resolve relative paths and preserve absolute spellings
+ok - absolute override spellings are preserved in spawn launch paths
+ok - unresolvable relative spawn overrides fail with named diagnostics
+ok - active crew-dispatch profile requires an explicit harness for ship spawns
+ok - active crew-dispatch profile requires an explicit harness for scout spawns
+ok - active crew-dispatch profile allows an explicit resolved harness
+ok - active crew-dispatch profile allows the legacy positional harness form
+ok - active crew-dispatch profile allows the raw launch-command escape hatch
+ok - a clear resolver result on the auto_apply rule applies its profile and logs the prediction
+ok - a clear match on a rule without auto_apply keeps today's explicit-harness requirement
+ok - an ambiguous resolver result never auto-applies and still logs its prediction
+ok - an explicit --harness bypasses the pilot and logs not-run with the profile actually used
+ok - an explicit --model disables auto-apply, so the explicit-harness backstop still applies
+ok - more than one auto_apply rule is a reported config error and auto-applies nothing
+ok - a scout floor fall-through to default never auto-applies and logs why
+ok - a min_confidence fallback onto the auto_apply rule logs the rule whose profiles were used
+ok - a spawn in a home without crew-dispatch.json logs no-config with the profile actually used
+ok - a chained raw launch commits through the AI-trailer strip in every step
+ok - claude receives --model and --effort profile flags
+ok - codex receives --model and model_reasoning_effort profile flags
+ok - codex Luna receives --model and model_reasoning_effort max profile flags
+ok - codex omits max for models without the catalog capability
+ok - a codex crewmate launches with no hook layer and keeps its turn-end signal
+ok - a codex secondmate keeps the project hook layer its primary session runs on
+ok - codex scouts use an embedded server with their existing hook and notification policy
+ok - grok receives --model and --reasoning-effort profile flags
+ok - grok omits unsupported max reasoning effort
+ok - grok omits unsupported xhigh reasoning effort
+ok - cursor receives its model-qualified reasoning class and exact task workspace
+ok - cursor refuses model ids absent from its resolved binary's live catalog
+ok - cursor preserves the requested model when its live catalog is unreachable
+ok - opencode receives --model and the effort as its config's agent variant
+ok - opencode without an effort keeps its launch config unchanged
+ok - opencode emits the variant for an effort the openai family exposes
+ok - opencode omits the variant for an effort outside the model family's list
+ok - native effort validator checks harness and model as separate axes
+ok - Ultra is explicit for native Pi and Pi-signed, including direct-PR, and refuses unsupported profiles before provisioning
+ok - batch dispatch preserves native Ultra in metadata and launch flags
+ok - Pi scout spawn enters the recorded worktree before launch
+ok - pi receives --model and --thinking max profile flags
+ok - Pi launch probing omits --tui-mode on older Pi and preserves it on supporting Pi
+ok - pi-signed shares Pi launch semantics while preserving its configured and recorded identity
+ok - pi-signed refuses safely and actionably when the selected executable is unavailable
+ok - pi-signed is a distinct persistent secondmate runtime with shared Pi supervision semantics
+ok - seeded Pi/pi-signed secondmate launches carry session --approve when advertised
+ok - ordinary Pi worker launches omit --approve
+ok - Pi approve probing omits --approve when help does not advertise it
+ok - Pi and pi-signed ship and scout launches carry the configured tool exclusions
+ok - Pi worker registries report unmatched and unverified exclusions without reporting exact matches
+ok - an absent or empty exclusion list leaves every runtime unaffected
+ok - a runtime that cannot hide tools, or a raw launch, refuses a non-empty exclusion list
+ok - a malformed exclusion entry refuses the spawn before any launch or record
+ok - Pi and pi-signed ship and scout launches refuse when the exclusion file disappears after its checks
+ok - exclusions stay in the home that configured them and skip secondmate agents
+ok - batch dispatch forwards shared --harness, --model, and --effort to every pair
+ok - claude forwards firstmate's CLAUDE_CONFIG_DIR so the crewmate uses the same credential store
+ok - the primary-owned Lavish server address reaches every worker launch
+cat: ~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-spawn-dispatch-profile.mC6Np8/profile-lavish-ambient/pane.log: No such file or directory
+ok - absent Lavish configuration preserves the destination environment
+ok - claude omits the config-dir prefix when firstmate runs with the single-store default
+ok - config/claude-permission-mode=bypass launches exactly as an absent file does
+ok - config/claude-permission-mode=auto replaces --dangerously-skip-permissions with --permission-mode auto
+ok - config/claude-permission-mode=auto reaches scout launches too
+ok - claude worker launches cover the task-channel directories in bypass and auto modes
+ok - spawn delivers ready-hold instructions only for configured yolo-off ships and queue-only instructions for both
+ok - an unrecognized config/claude-permission-mode token refuses before any endpoint or metadata
+ok - config/claude-permission-mode changes claude launches only
+ok - non-claude harnesses do not receive the claude CLAUDE_CONFIG_DIR prefix
+ok - a claude task launch establishes only Firstmate's task control channels through the system prompt
+ok - a persistent claude secondmate keeps its supervisor contract without a task-worker authority overlay
+ok - fm-spawn: a Claude launch longer than 1024 bytes is delivered intact through the staging path
+ok - a claude crewmate launch carries the attribution-off policy in its own settings
+ok - keep-ai-trailers omits Claude attribution settings and the pane strip hooks
+ok - keep-ai-trailers is inherited so a secondmate's crew launch keeps AI trailers
+ok - a claude secondmate launch carries the attribution-off policy too
+ok - active crew-dispatch profile does not block secondmate launches
+ok - only a free OpenCode launch is confined
+ok - a sensitive target path does not launch a free OpenCode model
+# all fm-spawn-dispatch-profile tests passed
+ok - Codex launches and records its selected home
+ok - ticket scope intake defaults partial and spawn persists an explicit scope
+FM_TEST_END 2026-11-06T22:50:55Z tests/fm-spawn-dispatch-profile.test.sh exit=0 duration_ms=373685 gate_skip=false
+FM_TEST_BEGIN 2026-11-06T22:50:55Z tests/fm-spawn-orca-worktree.test.sh family=unclassified expected_gate_skip=none
+ok - a free OpenCode launch refuses an Orca source that forwards a token
+ok - real tmux preserves absent/C locale values and reported raw bytes, rejects missing/phantom names and excludes the automatic SSH agent
+ok - Orca refuses source=absent before allocating resources
+ok - Orca source/allowlist=enabled preserves controlled values, clears ambient credentials and keeps values off terminal input
+ok - Orca source/allowlist=empty preserves controlled values, clears ambient credentials and keeps values off terminal input
+ok - Orca refuses source=unavailable before allocating resources
+ok - Orca refuses source=malformed before allocating resources
+ok - Orca refuses source=nonregular before allocating resources
+ok - Orca refuses source=missing before allocating resources
+ok - Orca removes the credential launch file when the launch cannot be delivered
+ok - Orca warns when allowlisted names would resolve from the Orca terminal, and stays quiet for an empty allowlist
+ok - an Orca spawn waits for a slow pane to consume its launch file before a later failure
+ok - an Orca spawn reclaims a launch file its pane never ran and fails visibly
+ok - an Orca spawn interrupted by TERM during the consume step reclaims its launch file and refuses the worker
+ok - an Orca spawn interrupted by HUP during the consume step reclaims its launch file and refuses the worker
+ok - an Orca spawn interrupted by INT during the consume step reclaims its launch file and refuses the worker
+ok - an Orca spawn interrupted by TERM during the enter step reclaims its launch file and refuses the worker
+ok - an Orca spawn interrupted by HUP during the enter step reclaims its launch file and refuses the worker
+ok - an Orca spawn interrupted by INT during the enter step reclaims its launch file and refuses the worker
+ok - an Orca spawn interrupted by TERM before sending the launch command removes its launch file
+ok - an Orca spawn interrupted by HUP before sending the launch command removes its launch file
+ok - an Orca spawn interrupted by INT before sending the launch command removes its launch file
+ok - an Orca pane that cannot remove its launch file refuses the worker and keeps its terminal
+ok - an Orca spawn treats a launch file the pane unlinked at the deadline as consumed
+ok - the Orca snapshot passes through bytes tmux reports even when they are not valid UTF-8
+ok - an Orca-backed fresh spawn enters the worktree Orca created for it, instead of hard-refusing on the post-launch proof
+ok - a relaunch against an Orca-backed task is refused before the RELAUNCH+orca worktree carve-out could run
+# all fm-spawn-orca-worktree tests passed
+FM_TEST_END 2026-11-06T22:51:50Z tests/fm-spawn-orca-worktree.test.sh exit=0 duration_ms=54670 gate_skip=false
+FM_TEST_SUMMARY total=4 failed=0 skipped_gate=0 duration_ms=464743
+FM_TEST_SUMMARY_FAMILY family=backend-dispatch count=1 duration_ms=373685 failed=0
+FM_TEST_SUMMARY_FAMILY family=standalone count=1 duration_ms=27314 failed=0
+FM_TEST_SUMMARY_FAMILY family=unclassified count=2 duration_ms=63588 failed=0
+FM_TEST_SLOWEST rank=1 script=tests/fm-spawn-dispatch-profile.test.sh duration_ms=373685
+FM_TEST_SLOWEST rank=2 script=tests/fm-spawn-orca-worktree.test.sh duration_ms=54670
+FM_TEST_SLOWEST rank=3 script=tests/fm-dispatch-resolve.test.sh duration_ms=27314
+FM_TEST_SLOWEST rank=4 script=tests/fm-free-model-sensitivity.test.sh duration_ms=8918
+exit=0

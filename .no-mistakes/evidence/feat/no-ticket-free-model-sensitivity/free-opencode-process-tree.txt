@@ -1,0 +1,20 @@
+pane pid 1582921
+    PID    PPID COMMAND
+1582921 1582920 bash -c '~/.no-mistakes/worktrees/c0c4fcacb05a/01M6SBJE60VKG73S2A8HH905FZ/bin/fm-free-model-sensitivity.sh' confine --home '~' -- /bin/sh -c 'OPENCODE_CONFIG_CONTENT='\''{"permission":{"*":"allow"}}'\'' opencode --standalone --prompt '\''Run the shell command ./check.sh exactly once with your bash tool and then print its complete output verbatim. Do nothing else.'\'''; echo EXITED=$?; sleep 600
+1582922 1582921  \_ python3 ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6SBJE60VKG73S2A8HH905FZ/bin/fm-free-model-sensitivity.py confine --home ~ -- /bin/sh -c OPENCODE_CONFIG_CONTENT='{"permission":{"*":"allow"}}' opencode --standalone --prompt 'Run the shell command ./check.sh exactly once with your bash tool and then print its complete output verbatim. Do nothing else.'
+1582936 1582922      \_ /bin/sh -c OPENCODE_CONFIG_CONTENT='{"permission":{"*":"allow"}}' opencode --standalone --prompt 'Run the shell command ./check.sh exactly once with your bash tool and then print its complete output verbatim. Do nothing else.'
+1582937 1582936          \_ opencode --standalone --prompt Run the shell command ./check.sh exactly once with your bash tool and then print its complete output verbatim. Do nothing else.
+
+pid 1582960: ~/.opencode/bin/opencode serve --stdio --port 0  Seccomp:	2
+pid 1586708: /bin/bash -c source ~/.claude-seats/seat-max/shell-snapshots/snaps
+TMUX_TMPDIR="$LAB/tmux" tmux -L fm-lab capture-pane -p -t worker -S -200 | grep 
+P=$(TMUX_TMPDIR="$LAB/tmux" tmux -L fm-lab list-panes -t worker -F '"'"'#{pane_p Seccomp:	0
+pid 1586732: /bin/bash -c source ~/.claude-seats/seat-max/shell-snapshots/snaps
+TMUX_TMPDIR="$LAB/tmux" tmux -L fm-lab capture-pane -p -t worker -S -200 | grep 
+P=$(TMUX_TMPDIR="$LAB/tmux" tmux -L fm-lab list-panes -t worker -F '"'"'#{pane_p Seccomp:	0
+
+private server parent:
+    PID    PPID COMMAND
+1582960 1582937 ~/.opencode/bin/opencode serve --stdio --port 0
+launch fed to confine:
+OPENCODE_CONFIG_CONTENT='{"permission":{"*":"allow"}}' opencode --standalone --prompt 'Run the shell command ./check.sh exactly once with your bash tool and then print its complete output verbatim. Do nothing else.'

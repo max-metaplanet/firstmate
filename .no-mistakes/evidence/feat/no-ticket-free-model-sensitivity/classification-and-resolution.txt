@@ -1,0 +1,39 @@
+### free-model mark (exit 0 = free)
+harness=opencode model=opencode/glm-5.3-flash-free -> FREE
+harness=opencode model=opencode/deepseek-v3-free -> FREE
+harness=opencode model=opencode/big-pickle -> FREE
+harness=opencode model=openrouter/meta-llama/llama-3.3-70b-instruct:free -> FREE
+harness=opencode model=default -> FREE
+harness=opencode model=<none> -> FREE
+harness=opencode model=anthropic/claude-sonnet-4-5 -> paid
+harness=opencode model=openai/gpt-5 -> paid
+harness=claude model=opus-free -> paid
+harness=codex model=gpt-5-free -> paid
+
+### target-path classes (Target paths: line)
+.github/workflows/ci.yml -> ci
+migrations/001_init.sql -> migration
+supabase/migrations/2024.sql -> migration
+infra/main.tf -> infra
+deploy/k8s.yaml -> infra
+Dockerfile -> infra
+.env -> env
+.env.production -> env
+apps/web/.env.local -> env
+doppler.yaml -> doppler
+src/auth/session.ts -> auth
+src/payments/stripe.ts -> payments
+lib/billing.ts -> payments
+.gitlab-ci.yml -> ci
+src/app.ts -> routine
+README.md -> routine
+src/components/Button.tsx -> routine
+docs/guide.md -> routine
+
+### apply-resolution: classifier chose the free OpenCode model (spendPriority 0.95) over paid sonnet (0.1)
+routine brief ->
+{"status":"clear","chosen":{"harness":"opencode","model":"opencode/glm-5.3-flash-free"}}
+sensitive brief ->
+{"status":"clear","chosen":{"harness":"claude","model":"sonnet"},"denied":[{"m":"opencode/glm-5.3-flash-free","reason":"sensitive target path denies a free OpenCode model"}]}
+sensitive brief, only free/no-model candidates ->
+{"status":"escalate","reason":"sensitive target path denies a free OpenCode model and no other rankable candidate remains","chosen":null}

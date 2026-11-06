@@ -1,0 +1,2 @@
+== 20x mixed pipelines + later ls under confine (round-1 ENOENT regression) ==
+failures: 0/20

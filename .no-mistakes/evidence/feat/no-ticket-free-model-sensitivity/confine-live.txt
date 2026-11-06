@@ -1,0 +1,58 @@
+## Confine live transcript (2026-11-06T22:44:35Z), worktree=/tmp/fm-confine-lab.cPkoUU/wt home=/tmp/fm-confine-lab.cPkoUU/home primary=/tmp/fm-confine-lab.cPkoUU/primary
+$ cat src/app.js
+console.log('hi')
+[exit=0]
+$ git log --oneline
+f885713 init
+[exit=0]
+$ rg -l console src
+/bin/sh: 1: rg: not found
+[exit=127]
+$ node src/app.js
+hi
+[exit=0]
+$ python3 -c 'import sys; sys.path.insert(0,"/tmp/fm-confine-lab.cPkoUU/site"); import pip._internal.network.auth, google.auth; print("toolchain auth modules import OK")'
+toolchain auth modules import OK
+[exit=0]
+$ cat .env
+cat: .env: Permission denied
+[exit=1]
+$ cat auth/login.ts
+cat: auth/login.ts: Permission denied
+[exit=1]
+$ cat migrations/001.sql
+cat: migrations/001.sql: Permission denied
+[exit=1]
+$ cat .github/workflows/ci.yml
+cat: .github/workflows/ci.yml: Permission denied
+[exit=1]
+$ cat infra/main.tf
+cat: infra/main.tf: Permission denied
+[exit=1]
+$ cat /tmp/fm-confine-lab.cPkoUU/primary/.env.local
+cat: /tmp/fm-confine-lab.cPkoUU/primary/.env.local: Permission denied
+[exit=1]
+$ cat /tmp/fm-confine-lab.cPkoUU/primary/doppler.yaml
+cat: /tmp/fm-confine-lab.cPkoUU/primary/doppler.yaml: Permission denied
+[exit=1]
+$ cat notes
+cat: notes: Permission denied
+[exit=1]
+$ cat /tmp/fm-confine-lab.cPkoUU/home/.secrets/prod.key
+cat: /tmp/fm-confine-lab.cPkoUU/home/.secrets/prod.key: Permission denied
+[exit=1]
+$ cat /tmp/fm-confine-lab.cPkoUU/home/.config/gh/hosts.yml
+cat: /tmp/fm-confine-lab.cPkoUU/home/.config/gh/hosts.yml: Permission denied
+[exit=1]
+$ cat /tmp/fm-confine-lab.cPkoUU/home/.aws/credentials
+cat: /tmp/fm-confine-lab.cPkoUU/home/.aws/credentials: Permission denied
+[exit=1]
+$ cat /proc/$PPID/environ
+cat: /proc/362468/environ: Permission denied
+[exit=1]
+$ env | grep -E 'GITHUB_TOKEN|GH_TOKEN|SUPABASE|DOPPLER|AWS_' || echo 'no sensitive token in env'
+no sensitive token in env
+[exit=0]
+$ echo PATH_KEPT=${PATH:+yes}
+PATH_KEPT=yes
+[exit=0]

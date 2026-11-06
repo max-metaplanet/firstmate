@@ -1,0 +1,40 @@
+ • Running ./check.sh once       +
+  ┃                                                                                                                                                             Running ./check.sh once
+  ┃  Run the shell command ./check.sh exactly once with your bash tool and then print its complete output verbatim. Do nothing else.
+  ┃                                                                                                                                                             Context
+                                                                                                                                                                5,950 tokens
+     Running ./check.sh now.                                                                                                                                    1% used
+  ┃
+  ┃  $ ./check.sh
+  ┃
+  ┃  (3 earlier lines)
+  ┃  --- routine:
+  ┃  export const hello = "ROUTINE_OK_9001";
+  ┃  --- auth:
+  ┃  cat: auth/login.ts: Permission denied
+  ┃  --- primary env:
+  ┃  cat: /tmp/fm-free-lab.eyJzRp/primary/.env.local: Permission denied
+  ┃  --- GH_TOKEN=unset SUPABASE_ACCESS_TOKEN=unset
+  ┃
+     PID=1584372 PPID=1582960
+     PARENT=~/.opencode/bin/opencode serve --stdio --port 0
+     Seccomp:  2
+     --- routine:
+     export const hello = "ROUTINE_OK_9001";
+     --- auth:
+     cat: auth/login.ts: Permission denied
+     --- primary env:
+     cat: /tmp/fm-free-lab.eyJzRp/primary/.env.local: Permission denied
+     --- GH_TOKEN=unset SUPABASE_ACCESS_TOKEN=unset
+     Build · Crouton Alpha Free · 2.5s · 41.8 tok/s
+                                                                                                                                                                  ⬖ Getting started                ✕
+                                                                                                                                                                    OpenCode includes free models so
+                                                                                                                                                                    you can start immediately.
+                                                                                                                                                                    Connect from 75+ providers to
+                                                                                                                                                                    use other models, including
+  ┃                                                                                                                                                                 Claude, GPT, Gemini etc
+  ┃
+  ┃                                                                                                                                                                 Connect provider        /connect
+  ┃  Build · Crouton Alpha Free OpenCode
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+  /tmp/fm-free-lab.eyJzRp/wt:master                                                                                               6.0K (1%)  ctrl+p commands    /tmp/fm-free-lab.eyJzRp/wt:master

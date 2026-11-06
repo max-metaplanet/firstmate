@@ -1,0 +1,3 @@
+ok - only a free OpenCode launch is confined
+ok - a sensitive target path does not launch a free OpenCode model
+# all fm-spawn-dispatch-profile tests passed

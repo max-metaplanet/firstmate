@@ -1,0 +1,24 @@
+### Supervisor death repro: a 3-stage pipeline inside confine, then an ordinary ls
+### Expected: every run prints ok. FAIL means ls could not exec (ENOSYS) after the supervisor quit.
+run 1: ok
+run 2: ok
+/bin/sh: 1: cannot create /dev/null: Function not implemented
+grep: write error: Broken pipe
+/bin/sh: 1: cannot create /dev/null: Function not implemented
+run 3: FAIL: /bin/sh: 1: cat: Function not implemented
+run 4: ok
+grep: error while loading shared libraries: libpcre2-8.so.0: cannot open shared object file: Error 38
+/bin/sh: 1: cannot create /dev/null: Function not implemented
+/bin/sh: 1: cannot create /dev/null: Function not implemented
+run 5: FAIL: /bin/sh: 1: cat: Function not implemented
+run 6: ok
+grep: error while loading shared libraries: libpcre2-8.so.0: cannot open shared object file: Error 38
+/bin/sh: 1: cannot create /dev/null: Function not implemented
+/bin/sh: 1: cannot create /dev/null: Function not implemented
+run 7: FAIL: /bin/sh: 1: cat: Function not implemented
+run 8: ok
+run 9: ok
+grep: error while loading shared libraries: libpcre2-8.so.0: cannot open shared object file: Error 38
+/bin/sh: 1: cannot create /dev/null: Function not implemented
+/bin/sh: 1: cannot create /dev/null: Function not implemented
+run 10: FAIL: /bin/sh: 1: cat: Function not implemented

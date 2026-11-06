@@ -1,0 +1,41 @@
+## opencode's own model catalog (opencode models) vs free-model classifier
+catalog size: 41
+free-model opencode opencode/beam-free -> exit 0 (0=free)
+free-model opencode opencode/big-pickle -> exit 0 (0=free)
+free-model opencode opencode/crouton-alpha-free -> exit 0 (0=free)
+free-model opencode opencode/deepseek-v4.1-flash-free -> exit 0 (0=free)
+free-model opencode opencode/flint-40b-free -> exit 0 (0=free)
+free-model opencode opencode/glm-5.3-flash-free -> exit 0 (0=free)
+free-model opencode opencode/mimo-v2.6-flash-free -> exit 0 (0=free)
+free-model opencode opencode/nemotron-3.5-lightning-free -> exit 0 (0=free)
+free-model opencode opencode/nemotron-3.5-super-vl-free -> exit 0 (0=free)
+free-model opencode opencode/pulse-alpha-free -> exit 0 (0=free)
+free-model opencode '' -> exit 0
+free-model opencode 'default' -> exit 0
+free-model opencode openrouter/meta-llama/llama-3.3-70b-instruct:free -> exit 0
+-- paid / other harness (expect 1)
+free-model opencode anthropic/claude-fable-5 -> exit 1
+free-model opencode anthropic/claude-fable-5-1 -> exit 1
+free-model opencode anthropic/claude-haiku-4-5 -> exit 1
+free-model opencode anthropic/claude-haiku-4-5-20251001 -> exit 1
+free-model opencode anthropic/claude-haiku-5-5 -> exit 1
+free-model claude glm-5.3-flash-free -> exit 1
+## sensitive class property over intent categories (0=sensitive)
+class .github/workflows/ci.yml -> exit 0 ci
+class .circleci/config.yml -> exit 0 ci
+class supabase/migrations/20240101_init.sql -> exit 0 migration
+class db/migrations/001.sql -> exit 0 migration
+class infra/main.tf -> exit 0 infra
+class deploy/prod.sh -> exit 0 infra
+class k8s/deployment.yaml -> exit 0 infra
+class .env -> exit 0 env
+class .env.production -> exit 0 env
+class apps/web/.env.local -> exit 0 env
+class doppler.yaml -> exit 0 doppler
+class src/auth/session.ts -> exit 0 auth
+class packages/payments/stripe.ts -> exit 0 payments
+class billing/invoice.ts -> exit 0 payments
+class src/app.ts -> exit 1 
+class README.md -> exit 1 
+class docs/guide.md -> exit 1 
+class src/components/Button.tsx -> exit 1 

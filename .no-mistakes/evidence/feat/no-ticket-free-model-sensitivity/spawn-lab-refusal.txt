@@ -1,0 +1,10 @@
+## live fm-spawn in disposable lab home /tmp/fm-lab.oolL1P (private tmux socket /tmp/fm-lab.oolL1P/tmux)
+$ fm-spawn.sh sens-free-a1 <proj> --mode local-only --yolo on --ticket no-ticket --commit-type fix --harness opencode --model opencode/big-pickle   (Target paths: .github/workflows/ci.yml)
+notice: sens-free-a1 ships mode=local-only while the standing posture for proj is no-mistakes - less rigor than the captain's standing posture; proceed only on a current explicit captain instruction or an intake judgment you can state
+error: refusing to launch free OpenCode model 'opencode/big-pickle' because a declared target path is sensitive
+warning: leaving task sens-free-a1's slot claim on ~/.treehouse/proj-055256/1/proj in place; the Treehouse project lock is no longer held, so the next spawn's claim replaces it
+[exit=1]
+$ same task, no --model (opencode default)
+notice: sens-free-a1 ships mode=local-only while the standing posture for proj is no-mistakes - less rigor than the captain's standing posture; proceed only on a current explicit captain instruction or an intake judgment you can state
+error: window firstmate:fm-sens-free-a1 already exists
+[exit=1]

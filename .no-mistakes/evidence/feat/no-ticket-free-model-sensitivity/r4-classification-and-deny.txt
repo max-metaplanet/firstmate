@@ -1,0 +1,28 @@
+== free-model classification (exit 0 = free) ==
+opencode model='opencode/big-pickle' -> exit 0
+opencode model='opencode/glm-5.3-flash-free' -> exit 0
+opencode model='openrouter/meta-llama/llama-3.3-70b-instruct:free' -> exit 0
+opencode model='opencode/deepseek-v3-free' -> exit 0
+opencode model='' -> exit 0
+opencode model='default' -> exit 0
+opencode model='anthropic/claude-sonnet-4-5' -> exit 1
+opencode model='opencode/gpt-5' -> exit 1
+claude model=x-free -> exit 1
+== class of target paths ==
+.github/workflows/ci.yml     ci
+migrations/001.sql           migration
+infra/main.tf                infra
+.env.local                   env
+doppler.yaml                 doppler
+src/auth/login.ts            auth
+payments/stripe.ts           payments
+src/app.ts                   (routine, exit 1)
+README.md                    (routine, exit 1)
+docs/guide.md                (routine, exit 1)
+== apply-resolution: classifier chose free opencode, sensitive brief ==
+sensitive:
+{"status":"clear","chosen":{"harness":"claude","model":"sonnet"},"denied":["sensitive target path denies a free OpenCode model"]}
+routine:
+{"status":"clear","chosen":{"harness":"opencode","model":"opencode/big-pickle"}}
+sensitive, only a model-less opencode candidate:
+{"status":"escalate","reason":"sensitive target path denies a free OpenCode model and no other rankable candidate remains","chosen":null}

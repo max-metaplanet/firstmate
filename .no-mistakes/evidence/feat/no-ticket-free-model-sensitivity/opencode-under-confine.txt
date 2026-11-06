@@ -1,0 +1,28 @@
+### real opencode binary under confine (cwd=lab task worktree, real HOME read-only)
+-- run 1: opencode --version
+  File "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6SBJE60VKG73S2A8HH905FZ/bin/fm-free-model-sensitivity.py", line 499, in ioctl
+    raise OSError(err, os.strerror(err))
+OSError: [Errno 9] Bad file descriptor
+exit=1
+-- run 2: opencode --version
+  File "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6SBJE60VKG73S2A8HH905FZ/bin/fm-free-model-sensitivity.py", line 499, in ioctl
+    raise OSError(err, os.strerror(err))
+OSError: [Errno 9] Bad file descriptor
+exit=1
+-- run 3: opencode --version
+  File "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6SBJE60VKG73S2A8HH905FZ/bin/fm-free-model-sensitivity.py", line 499, in ioctl
+    raise OSError(err, os.strerror(err))
+OSError: [Errno 9] Bad file descriptor
+exit=1
+-- opencode models opencode (lists configured free Zen models)
+        ^^^^^^^^^^
+        struct.pack("QIIII", ident, SECCOMP_ADDFD_FLAG_SEND, allow_fd, 0, remote_flags),
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "~/.no-mistakes/worktrees/c0c4fcacb05a/01M6SBJE60VKG73S2A8HH905FZ/bin/fm-free-model-sensitivity.py", line 499, in ioctl
+    raise OSError(err, os.strerror(err))
+OSError: [Errno 9] Bad file descriptor
+exit=1
+-- control without confine:
+opencode v2.2.5

@@ -1,0 +1,51 @@
+== free-model (exit 0 = free => confined / denied on sensitive targets)
+  harness=opencode model='opencode/big-pickle' -> exit 0
+  harness=opencode model='opencode/deepseek-v3.2-free' -> exit 0
+  harness=opencode model='opencode/glm-4.6-free' -> exit 0
+  harness=opencode model='openrouter/meta-llama/llama-3.3-70b-instruct:free' -> exit 0
+  harness=opencode model='' -> exit 0
+  harness=opencode model='default' -> exit 0
+  harness=opencode model='anthropic/claude-sonnet-4-5' -> exit 1
+  harness=opencode model='openai/gpt-5' -> exit 1
+  harness=claude model='foo-free' -> exit 1
+  harness=codex model='' -> exit 1
+== brief-sensitive (exit 0 = sensitive)
+  .github/workflows/ci.yml -> exit 0
+  supabase/migrations/001_init.sql -> exit 0
+  infra/main.tf -> exit 0
+  deploy/k8s.yaml -> exit 0
+  .env -> exit 0
+  apps/web/.env.local -> exit 0
+  doppler.yaml -> exit 0
+  src/auth/session.ts -> exit 0
+  services/payments/charge.ts -> exit 0
+  billing/invoice.ts -> exit 0
+  src/app.ts -> exit 1
+  README.md -> exit 1
+  docs/guide.md -> exit 1
+== apply-resolution: classifier chose a free OpenCode profile for a sensitive target
+{
+    "candidates": [
+        {
+            "name": "cheap",
+            "eligible": false,
+            "profile": {
+                "harness": "opencode",
+                "model": "opencode/big-pickle"
+            },
+            "reason": "sensitive target path denies a free OpenCode model"
+        },
+        {
+            "name": "paid",
+            "eligible": true,
+            "profile": {
+                "harness": "claude",
+                "model": "opus"
+            }
+        }
+    ],
+    "status": "escalate",
+    "reason": "sensitive target path denies a free OpenCode model and no other rankable candidate remains"
+}
+== apply-resolution: routine target keeps the free choice
+{"chosen":{"name":"cheap","profile":{"harness":"opencode","model":"opencode/big-pickle"}},"candidates":[{"name":"cheap","eligible":true,"profile":{"harness":"opencode","model":"opencode/big-pickle"}}]}

@@ -1,0 +1,6 @@
+$ /bin/sh -c "while :; do echo x; done | head -1"   (outside confine, 10s timeout)
+exit=0 (0 = finished)
+$ same command inside confine (10s timeout)
+exit=124 (124 = hung until timeout)
+$ grep SigIgn inside confine:
+SigIgn:	0000000001001000
