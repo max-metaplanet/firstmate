@@ -752,6 +752,104 @@ test_take_over_does_not_hand_the_same_resurface_straight_back() {
   pass "host+hook: a takeover does not hand the same rearm-resurface straight back"
 }
 
+# Queue one durable check row in <home>.
+queue_check() {  # <home> <key> <payload>
+  FM_HOME="$1" bash -c '
+    . "$1"
+    fm_wake_append check "$2" "$3"
+  ' _ "$ROOT/bin/fm-wake-lib.sh" "$2" "$3"
+}
+
+# The 2026-11-06 loop, once the successor is still alive. The first
+# pass-through is check: rearm-resurface. A check is due on the next poll
+# (the production successor's .last-check was stale, so its first poll ran
+# the sweep and exited). The successor must stay up, the next park must take
+# it over, and that park must not hand check: rearm-resurface again.
+test_due_check_during_rearm_gap_stays_a_take_over() {
+  local home resurfaces saved_interval
+  saved_interval=${FM_CHECK_INTERVAL:-999999}
+  export FM_CHECK_INTERVAL=0
+  home=$(make_primary_home hook-rearm-due-check)
+  : > "$home/hook.own-group"
+  printf '#!/bin/sh\necho seats out of quota\n' > "$home/state/lab-seat.check.sh"
+  chmod 700 "$home/state/lab-seat.check.sh"
+  start_hook_session "$home"
+  queue_check "$home" resurface-fixture "check: work stranded before the host parked" \
+    || fail "fixture: could not queue the stranded wake"
+  turn_end "$home"
+  wait_until 250 hook_exited "$home" \
+    || fail "due check: the first close never reached the Stop hook: $(cat "$home/state/.supervision-host.log" 2>/dev/null)"
+  assert_re '	pass-through	attended	main-only	check: rearm-resurface' "$home/state/.supervision-host.log" \
+    "fixture: the stranded queue was not handed back once"
+  assert_rewoke_main "$home" "due check (first)"
+  # Main's turn is the gap. On the current code the due check exits the
+  # successor before the next park, so that park is not a take-over.
+  turn_end "$home"
+  wait_until 200 grep -q $'\ttake-over\tarm=' "$home/state/.supervision-host.log" \
+    || fail "due check: the next park did not take the cycle over: $(cat "$home/state/.supervision-host.log"; echo '--- deliveries ---'; cat "$home/state/.watch-deliveries.log" 2>/dev/null)"
+  sleep 3
+  resurfaces=$(grep -c 'check: rearm-resurface' "$home/state/.supervision-host.log" || true)
+  [ "$resurfaces" -eq 1 ] \
+    || fail "due check: recovery was handed back again ($resurfaces times): $(cat "$home/state/.supervision-host.log")"
+  if hook_exited "$home" && grep -q 'check: rearm-resurface' "$home/hook.err" 2>/dev/null; then
+    fail "due check: the takeover handed check: rearm-resurface: $(cat "$home/hook.err")"
+  fi
+  export FM_CHECK_INTERVAL=$saved_interval
+  pass "host+hook: a due check during the re-arm gap does not hand check: rearm-resurface again"
+}
+
+# The same loop when the successor is already dead at the next park, which is
+# the start that logged no take-over. An append during the gap mints a fresh
+# pending generation (what the unread check did); the next park must not hand
+# check: rearm-resurface for that unacked episode.
+test_dead_left_successor_does_not_hand_resurface_again() {
+  local home left_arm watcher starts resurfaces
+  home=$(make_primary_home hook-rearm-dead-successor)
+  : > "$home/hook.own-group"
+  start_hook_session "$home"
+  queue_check "$home" resurface-fixture "check: work stranded before the host parked" \
+    || fail "fixture: could not queue the stranded wake"
+  turn_end "$home"
+  wait_until 250 hook_exited "$home" \
+    || fail "dead successor: the first close never reached the Stop hook: $(cat "$home/state/.supervision-host.log" 2>/dev/null)"
+  assert_re '	pass-through	attended	main-only	check: rearm-resurface' "$home/state/.supervision-host.log" \
+    "fixture: the stranded queue was not handed back once"
+  assert_rewoke_main "$home" "dead successor (first)"
+  watcher_live "$home" || fail "dead successor: the first pass-through left no successor"
+  # The unread check's append. The successor is then gone, so the next start
+  # cannot take its cycle over.
+  queue_check "$home" lab-seat "check: lab-seat: seats are out of quota" \
+    || fail "fixture: could not append the gap check"
+  left_arm=$(awk -F '\t' 'NR == 1 { print $1 }' "$home/state/.supervision-host-left")
+  [ -n "$left_arm" ] || fail "dead successor: the pass-through recorded no arm"
+  watcher=$(cat "$home/state/.watch.lock/pid" 2>/dev/null || true)
+  kill -TERM "$left_arm" 2>/dev/null || fail "dead successor: could not stop the left arm $left_arm"
+  wait_until 50 bash -c 'if [ -n "$1" ] && kill -0 "$1" 2>/dev/null; then exit 1; fi; exit 0' _ "$watcher" \
+    || fail "dead successor: the left arm did not stop its watcher"
+  starts=$(grep -c $'\tstart\t' "$home/state/.supervision-host.log" || true)
+  turn_end "$home"
+  wait_until 200 bash -c '[ "$(grep -c $'"'"'\tstart\t'"'"' "$1" 2>/dev/null || true)" -gt "$2" ]' _ \
+    "$home/state/.supervision-host.log" "$starts" \
+    || fail "dead successor: the next park never started: $(cat "$home/state/.supervision-host.log")"
+  sleep 3
+  if grep -q $'\ttake-over\t' "$home/state/.supervision-host.log"; then
+    fail "dead successor: a dead arm was taken over: $(cat "$home/state/.supervision-host.log")"
+  fi
+  resurfaces=$(grep -c 'check: rearm-resurface' "$home/state/.supervision-host.log" || true)
+  [ "$resurfaces" -eq 1 ] \
+    || fail "dead successor: recovery was handed back again ($resurfaces times): $(cat "$home/state/.supervision-host.log")"
+  if hook_exited "$home" && grep -q 'check: rearm-resurface' "$home/hook.err" 2>/dev/null; then
+    fail "dead successor: the next park handed check: rearm-resurface: $(cat "$home/hook.err")"
+  fi
+  grep -q $'\thold\tdead-arm=' "$home/state/.supervision-host.log" \
+    || fail "dead successor: the park did not hold the unacked recovery: $(cat "$home/state/.supervision-host.log")"
+  watcher_live "$home" \
+    || fail "dead successor: the held park left no watcher: $(cat "$home/state/.supervision-host.log")"
+  ! hook_exited "$home" \
+    || fail "dead successor: the held park handed a wake: $(cat "$home/hook.err" 2>/dev/null)"
+  pass "host+hook: a park whose left successor is already dead does not hand check: rearm-resurface again"
+}
+
 # FM_TEST_ONLY runs a single named case, the same entry point the sibling
 # suites expose.
 if [ -n "${FM_TEST_ONLY:-}" ]; then
@@ -774,6 +872,8 @@ test_successor_close_during_main_turn_is_delivered_at_the_next_turn_end
 test_pass_through_successor_survives_the_hook_process_group_teardown
 test_next_park_takes_over_the_cycle_a_pass_through_left_for_main
 test_take_over_does_not_hand_the_same_resurface_straight_back
+test_due_check_during_rearm_gap_stays_a_take_over
+test_dead_left_successor_does_not_hand_resurface_again
 test_a_park_stopped_mid_take_over_leaves_the_take_over_to_the_next_park
 test_unrecorded_successor_is_stopped_rather_than_left_for_main
 test_primary_without_a_verified_mirror_runs_away_only

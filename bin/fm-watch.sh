@@ -3450,7 +3450,12 @@ while :; do
   # keeps producing signals - the slow poll (e.g. merge detection) would then
   # never run until the fleet went quiet. Checks are due only every
   # CHECK_INTERVAL, so most cycles skip this block and fall straight through.
-  if [ "$check_age" -ge "$CHECK_INTERVAL" ]; then
+  # A successor left for main while nobody is reading (bin/fm-supervision-host.sh
+  # leave_successor_for_main) skips this sweep. A due check here exited the
+  # cycle and the append minted a fresh downtime generation; the next park,
+  # finding this arm dead, handed check: rearm-resurface again. Signals below
+  # still close that cycle. docs/watcher-continuity.md "Generation reuse".
+  if [ "${FM_WATCH_GAP_SUCCESSOR:-0}" != 1 ] && [ "$check_age" -ge "$CHECK_INTERVAL" ]; then
     rejected_checks=
     contribution_check_output=
     for c in "$STATE"/*.check.sh; do

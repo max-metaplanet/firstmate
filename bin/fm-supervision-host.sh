@@ -67,7 +67,10 @@
 #     conditions under which that restores a single owner and the fallback.
 #     That take-over sets FM_WATCH_KEEP_ANNOUNCED so an episode already
 #     announced is not reopened into another main hand-back
-#     (docs/watcher-continuity.md "Generation reuse").
+#     (docs/watcher-continuity.md "Generation reuse"). The successor left for
+#     main does not run the check sweep while nobody is reading it. A park
+#     that finds that arm already gone applies the same hold, so the unacked
+#     episode is not handed back as check: rearm-resurface again.
 #   - away (an away record exists): every close goes to the engine.
 # Every turn that starts attended meets that rule again at its start, so a
 # close accepted away whose turn starts attended (the captain returned in
@@ -156,9 +159,10 @@
 # engine turn. It also reads the record of a successor a pass-through left for
 # main: while that arm still runs under its recorded identity, the first cycle
 # without --restart requests a take-over rather than an ordinary attach.
-# Activation removes the
-# record only once that identity is no longer alive, so a later host retries a
-# take-over that left it running.
+# Activation removes the record once that identity is no longer alive. That
+# park applies the same announced-episode hold instead of an ordinary arm
+# (docs/watcher-continuity.md "Generation reuse"). A later host retries a
+# take-over only while the recorded arm is still alive.
 #
 # STATE (all under state/, owned here): .supervision-host (this host's pid and
 # the processes it runs), .supervision-host-engine (the engine conversation:
@@ -293,6 +297,9 @@ ENGINE_RUNNING=0
 # The successor arm a predecessor's pass-through left for main, which the
 # first cycle takes over.
 LEFT_ARM=
+# That arm's pid when the record was present and the arm was already gone.
+# The first cycle then holds an unacked resurface instead of handing it back.
+DEAD_LEFT_ARM=
 # The running turn's result and diagnostics files, removed by the cleanup when
 # the host is stopped mid-turn.
 TURN_RESULT=
@@ -404,19 +411,50 @@ reap_recorded_host() {
     "$STATE"/.supervision-host-errors.* "$STATE"/.supervision-host-readback.* "$TURN_FILE" "$MIRROR_FEED" 2>/dev/null || true
 }
 
+# True when this park continues an unacked main-only resurface whose left
+# successor did not survive to be taken over. An acknowledged episode, or a
+# park with no left arm, is not this hold: the ordinary arm check still
+# announces work that has not been handed back.
+repeat_resurface_hold() {
+  [ -n "$DEAD_LEFT_ARM" ] || return 1
+  grep -q $'pass-through\tattended\tmain-only\tcheck: rearm-resurface' "$HOST_LOG" 2>/dev/null || return 1
+  fm_recovery_marker_snapshot "$STATE/.watcher-down" || return 1
+  case "$FM_RECOVERY_MARKER_TOKEN" in
+    acked:*) return 1 ;;
+  esac
+  return 0
+}
+
+# Announce an unacked downtime episode in place. The replacement cycle's arm
+# check then waits, instead of recovering it into another check: rearm-resurface.
+# docs/watcher-continuity.md "Generation reuse" owns the hold.
+settle_unacked_resurface() {
+  fm_recovery_marker_snapshot "$STATE/.watcher-down" || return 1
+  case "$FM_RECOVERY_MARKER_TOKEN" in
+    announced:*|pending:handling:*|acked:*) return 0 ;;
+  esac
+  fm_recovery_queue_has_work || return 0
+  fm_recovery_marker_arm_check "$STATE/.watcher-down"
+}
+
 activate() {
   local pid identity
   mkdir -p "$STATE" || return 1
   reap_recorded_host || return 1
   # The successor a pass-through left for main: the first cycle takes it over
-  # while it still answers to its recorded identity, and its record goes only
-  # once it does not.
+  # while it still answers to its recorded identity. A record whose arm is
+  # already gone is remembered for the resurface hold, then removed.
+  DEAD_LEFT_ARM=
   if [ -f "$LEFT_RECORD" ]; then
     pid='' identity=''
     IFS="$(printf '\t')" read -r pid identity < "$LEFT_RECORD" || true
     if fm_pid_alive "$pid" && [ -n "$identity" ] && [ "$(identity_of "$pid")" = "$identity" ]; then
       LEFT_ARM=$pid
     else
+      case "$pid" in
+        ''|*[!0-9]*) ;;
+        *) DEAD_LEFT_ARM=$pid ;;
+      esac
       rm -f "$LEFT_RECORD"
     fi
   fi
@@ -752,7 +790,10 @@ detach_successor() {
 # downtime (autoarm_commit in bin/fm-claude-stop-autoarm.sh). A failed start
 # returns 1; the caller still prints the close unchanged.
 leave_successor_for_main() {
-  if ! ARM_OWN_GROUP=1 start_successor "$CLOSED_ARM_PID"; then
+  # FM_WATCH_GAP_SUCCESSOR: this cycle is unread until the next park. It keeps
+  # the beacon and does not run the check sweep (bin/fm-watch.sh). A signal
+  # still closes it, so the next park can deliver that close.
+  if ! FM_WATCH_GAP_SUCCESSOR=1 ARM_OWN_GROUP=1 start_successor "$CLOSED_ARM_PID"; then
     log_line "pass-through	successor-unverified	$(printf '%s\n' "$REASON" | head -n 1)"
     return 1
   fi
@@ -1144,6 +1185,14 @@ elif [ -n "$LEFT_ARM" ]; then
   # generation for the same queued work, and that generation's resurface is
   # attended main-only, so every following turn end handed it straight back.
   FM_WATCH_KEEP_ANNOUNCED=1 start_arm "$OWNER_PREDECESSOR" --take-over "$LEFT_ARM"
+elif repeat_resurface_hold; then
+  log_line "hold	dead-arm=$DEAD_LEFT_ARM"
+  # The left successor is gone and the resurface it followed is still
+  # unacknowledged. Announce that episode in place, then start the replacement
+  # with the same hold a take-over uses, so this park does not hand
+  # check: rearm-resurface back.
+  settle_unacked_resurface || { echo "watcher: FAILED - the supervision host could not keep the unacked recovery announced"; exit 1; }
+  FM_WATCH_KEEP_ANNOUNCED=1 start_arm ""
 else
   start_arm "$OWNER_PREDECESSOR"
 fi || { echo "watcher: FAILED - the supervision host could not start a watcher cycle"; exit 1; }
