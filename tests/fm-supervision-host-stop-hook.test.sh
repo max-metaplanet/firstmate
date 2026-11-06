@@ -900,6 +900,82 @@ test_take_over_attach_fallback_ends_the_gap_check_skip() {
   pass "host+hook: a take-over that falls back to attaching ends the gap successor's check skip"
 }
 
+# Register <id>.check.sh from <body-file> the way a trusted home check is recorded.
+register_lab_check() {  # <home> <id> <body-file>
+  local home=$1 id=$2 src=$3 hash
+  cp "$src" "$home/state/$id.check.sh"
+  chmod 700 "$home/state/$id.check.sh"
+  hash=$(sha256sum "$home/state/$id.check.sh" | awk '{ print $1 }')
+  printf 'fm-custom-check-v1\n%s\n' "$hash" > "$home/state/$id.check-trust"
+  chmod 600 "$home/state/$id.check-trust"
+}
+
+# True once the host has taken a wake, or the Stop hook has already returned.
+handoff_settled() {  # <home>
+  grep -q $'\thandled\t' "$1/state/.supervision-host.log" 2>/dev/null && return 0
+  hook_exited "$1"
+}
+
+# The live loop after PR 238 (2026-11-06): the host was already on, Claude's
+# Stop hook parked again, and a due check appended while the handling
+# successor's recovery generation was announced downtime. That append minted
+# a new generation, so the handoff confirmation failed while the watcher was
+# still alive, and the next Stop handed check: rearm-resurface.
+# The check waits for the confirm window, appends, and stays up, so the
+# failure is that generation mismatch rather than a dead watcher.
+test_due_check_during_handling_handoff_confirms() {
+  local home saved_interval body
+  saved_interval=${FM_CHECK_INTERVAL:-999999}
+  export FM_CHECK_INTERVAL=0
+  export FM_TEST_HANDLING_CONFIRM_DELAY=1
+  home=$(make_primary_home hook-handling-confirm)
+  : > "$home/hook.own-group"
+  ln -s "$ROOT/.agents" "$home/.agents"
+  body="$home/check-body.sh"
+  cat > "$body" <<'SH'
+#!/usr/bin/env bash
+stamp="$FM_HOME/state/.fm-test-handling-confirm-wait"
+if [ "${FM_WATCH_HANDLING_SUCCESSOR:-0}" != 1 ]; then
+  exit 0
+fi
+i=0
+while [ "$i" -lt 80 ]; do
+  [ -f "$stamp" ] && break
+  sleep 0.05
+  i=$((i + 1))
+done
+if [ -f "$stamp" ]; then
+  FM_HOME="$FM_HOME" bash -c '. "$1"; fm_wake_append check lab-seat "check: lab-seat during handoff"' _ \
+    "$FM_HOME/bin/fm-wake-lib.sh" || exit 0
+  sleep 3
+fi
+exit 0
+SH
+  register_lab_check "$home" lab-seat "$body"
+  start_hook_session "$home"
+  turn_end "$home"
+  wait_until 150 watcher_live "$home" \
+    || fail "handling handoff: watcher never started: $(cat "$home/hook.err" 2>/dev/null)"
+  append_status "$home" 'step one'
+  wait_until 250 handoff_settled "$home" \
+    || fail "handling handoff: the signal was neither taken nor handed back: $(cat "$home/state/.supervision-host.log" 2>/dev/null)"
+  # The failed confirm returns the Stop hook, and the next Stop is the park
+  # that hands check: rearm-resurface. A park that stayed up has no next Stop.
+  if hook_exited "$home"; then
+    turn_end "$home"
+    wait_until 200 hook_exited "$home" || true
+  fi
+  assert_no_re 'could not be confirmed' "$home/state/.supervision-host.log" \
+    "handling handoff: the successor handoff was not confirmed"
+  assert_re $'\thandled\t.*signal: ' "$home/state/.supervision-host.log" \
+    "handling handoff: the signal was not taken"
+  assert_no_re 'check: rearm-resurface' "$home/state/.supervision-host.log" \
+    "handling handoff: the next park handed check: rearm-resurface"
+  export FM_CHECK_INTERVAL=$saved_interval
+  unset FM_TEST_HANDLING_CONFIRM_DELAY
+  pass "host+hook: a due check during the handling handoff confirms and does not hand check: rearm-resurface"
+}
+
 # FM_TEST_ONLY runs a single named case, the same entry point the sibling
 # suites expose.
 if [ -n "${FM_TEST_ONLY:-}" ]; then
@@ -923,6 +999,7 @@ test_pass_through_successor_survives_the_hook_process_group_teardown
 test_next_park_takes_over_the_cycle_a_pass_through_left_for_main
 test_take_over_does_not_hand_the_same_resurface_straight_back
 test_due_check_during_rearm_gap_stays_a_take_over
+test_due_check_during_handling_handoff_confirms
 test_row_queued_after_ack_reaches_main_when_the_left_successor_is_gone
 test_host_off_attach_ends_the_gap_check_skip
 test_take_over_attach_fallback_ends_the_gap_check_skip
