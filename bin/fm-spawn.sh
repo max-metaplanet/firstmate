@@ -424,6 +424,8 @@
 #   be POSIX sh compatible under this opt-in; the absent-file path is unchanged.
 #   This is an exec environment boundary, not a sandbox for the pane's startup
 #   shell, credential files, same-user processes, or later shell initialization.
+#   A free OpenCode model is the exception: bin/fm-free-model-sensitivity.sh
+#   owns that launch's token scrub, read block, and sensitive-target refusal.
 #   See docs/configuration.md for provider/Git setup and supported limits.
 #   On backend=orca the destination is an Orca terminal whose environment comes
 #   from the Orca app and shell startup, not this home, so a nonempty allowlist
@@ -7508,6 +7510,58 @@ if [ "$ORCA_LAUNCH_ENV_ENABLED" = 1 ]; then
   # The sourcing shell already holds the open file; unlink the credentials
   # before launching the worker, including on a later command failure.
   LAUNCH="command rm -- $(shell_quote "$LAUNCH_FILE") || { echo 'error: cannot remove private launch file; refusing worker launch' >&2; return 1 2>/dev/null || exit 1; }; $LAUNCH"
+fi
+# Confine only a resolved free OpenCode model. Any other launch, including a
+# paid OpenCode model, keeps the command and environment built above.
+if [ -n "$HARNESS" ]; then
+  fm_free_rc=0
+  "$SCRIPT_DIR/fm-free-model-sensitivity.sh" free-model --harness "$HARNESS" --model "${MODEL:-}" || fm_free_rc=$?
+  case "$fm_free_rc" in
+    0)
+      # Exit 0 means a declared target is sensitive. Start there so a
+      # successful check is not mistaken for the not-sensitive exit.
+      fm_brief_rc=0
+      if [ -n "${BRIEF:-}" ]; then
+        "$SCRIPT_DIR/fm-free-model-sensitivity.sh" brief-sensitive --brief "$BRIEF" || fm_brief_rc=$?
+      else
+        fm_brief_rc=1
+      fi
+      case "$fm_brief_rc" in
+        0)
+          echo "error: refusing to launch free OpenCode model '${MODEL:-default}' because a declared target path is sensitive" >&2
+          exit 1
+          ;;
+        1) ;;
+        *)
+          echo "error: free-model sensitivity check failed; refusing launch" >&2
+          exit 1
+          ;;
+      esac
+      if [ "$ORCA_LAUNCH_ENV_ENABLED" = 1 ]; then
+        while IFS= read -r fm_env_name; do
+          [ -n "$fm_env_name" ] || continue
+          if "$SCRIPT_DIR/fm-free-model-sensitivity.sh" token-name "$fm_env_name"; then
+            echo "error: refusing to launch free OpenCode model '${MODEL:-default}' because config/launch-env-allowlist forwards token $fm_env_name from the Orca source session" >&2
+            exit 1
+          fi
+        done <<<"$LAUNCH_ENV_NAMES"
+      fi
+      # opencode otherwise runs the worker's tools in the shared background
+      # service, outside this confine. A private server keeps them inside it.
+      fm_confined_launch=${LAUNCH/ opencode / opencode --standalone }
+      if [ "$fm_confined_launch" = "$LAUNCH" ]; then
+        echo "error: cannot pin free OpenCode model '${MODEL:-default}' to a private server; refusing launch" >&2
+        exit 1
+      fi
+      LAUNCH=$fm_confined_launch
+      LAUNCH="$(shell_quote "$SCRIPT_DIR/fm-free-model-sensitivity.sh") confine --home $(shell_quote "${HOME:-}") -- /bin/sh -c $(shell_quote "$LAUNCH")"
+      ;;
+    1) ;;
+    *)
+      echo "error: free-model sensitivity check failed; refusing launch" >&2
+      exit 1
+      ;;
+  esac
 fi
 if [ -e "$LAUNCH_FILE" ] || [ -L "$LAUNCH_FILE" ]; then
   echo "error: task launch file $LAUNCH_FILE already exists; refusing to replace it" >&2

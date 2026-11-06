@@ -2764,6 +2764,61 @@ test_keep_ai_trailers_reaches_secondmate_crew_launches
 test_claude_secondmate_launch_carries_the_attribution_policy
 test_active_dispatch_profile_does_not_block_secondmate_launch
 
+test_free_opencode_launch_is_confined() {
+  local rec id status launch paid
+  id=profile-opencode-free-z8
+  rec=$(make_spawn_case profile-opencode-free opencode "$id")
+  read_case_record "$rec"
+  printf '\nTarget paths: src/app.ts\n' >> "$HOME_DIR/data/$id/brief.md"
+  run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" --model opencode/glm-5.3-flash-free >/dev/null
+  status=$?
+  expect_code 0 "$status" "a routine free OpenCode launch should succeed"
+  launch=$(cat "$LAUNCH_LOG")
+  assert_contains "$launch" "fm-free-model-sensitivity.sh" "a free OpenCode launch is confined"
+  assert_contains "$launch" " confine " "a free OpenCode launch runs the confine command"
+  assert_contains "$launch" "opencode/glm-5.3-flash-free" "the confined launch still names the free model"
+  # opencode --help: without --standalone the client hands tool execution to
+  # the shared background service, which runs outside the confine.
+  assert_contains "$launch" " opencode --standalone " "a free OpenCode launch runs its tools in a private server inside the confine"
+  id=profile-opencode-paid-z8b
+  rec=$(make_spawn_case profile-opencode-paid opencode "$id")
+  read_case_record "$rec"
+  run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" --model anthropic/claude-sonnet-4-5 >/dev/null
+  status=$?
+  expect_code 0 "$status" "a paid OpenCode launch should succeed"
+  paid=$(cat "$LAUNCH_LOG")
+  assert_not_contains "$paid" "fm-free-model-sensitivity.sh" "a paid OpenCode launch keeps its environment"
+  assert_not_contains "$paid" "--standalone" "a paid OpenCode launch keeps the shared service"
+  pass "only a free OpenCode launch is confined"
+}
+
+test_free_opencode_sensitive_target_refuses_launch() {
+  local rec id status out
+  id=profile-opencode-secret-z8c
+  rec=$(make_spawn_case profile-opencode-secret opencode "$id")
+  read_case_record "$rec"
+  printf '\nTarget paths: .github/workflows/ci.yml\n' >> "$HOME_DIR/data/$id/brief.md"
+  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" --model opencode/glm-5.3-flash-free 2>&1)
+  status=$?
+  expect_code 1 "$status" "a sensitive target refuses a free OpenCode launch"
+  assert_contains "$out" "refusing to launch free OpenCode model" "the refusal names the free model"
+  [ ! -s "$LAUNCH_LOG" ] || fail "a refused free OpenCode launch must not start"
+  id=profile-opencode-secret-z8d
+  rec=$(make_spawn_case profile-opencode-secret-nomodel opencode "$id")
+  read_case_record "$rec"
+  printf '\nTarget paths: migrations/001.sql\n' >> "$HOME_DIR/data/$id/brief.md"
+  : > "$LAUNCH_LOG"
+  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" 2>&1)
+  status=$?
+  expect_code 1 "$status" "a sensitive target refuses an OpenCode launch that names no model"
+  assert_contains "$out" "refusing to launch free OpenCode model 'default'" "the refusal covers OpenCode's own default"
+  [ ! -s "$LAUNCH_LOG" ] || fail "a refused model-less OpenCode launch must not start"
+  pass "a sensitive target path does not launch a free OpenCode model"
+}
+
+test_free_opencode_launch_is_confined
+test_free_opencode_sensitive_target_refuses_launch
+
 echo "# all fm-spawn-dispatch-profile tests passed"
 
 
