@@ -251,7 +251,7 @@ That skip ends early when any arm attaches to that watcher (the arm writes `stat
 A due check while nobody is reading used to exit that successor, and the queue append minted a fresh pending generation.
 The next park then found no live arm to take over, so its ordinary arm check announced that generation and handed `check: rearm-resurface` back.
 A pending episode with queued work, including a row appended after main acknowledged the last one, still surfaces once through the ordinary arm check.
-Without that hold, the fresh cycle's `check: rearm-resurface` is an attended main-only close, and the next turn end hands it straight back.
+Without the take-over's `FM_WATCH_KEEP_ANNOUNCED` hold, the fresh cycle's `check: rearm-resurface` is an attended main-only close, and the next turn end hands it straight back.
 The taking arm waits within a short bound for that row; a missing row or any other signal leaves downtime for the fresh cycle's ordinary recovery wake, while take-over still proceeds.
 Any other episode is left for the next cycle's arm check.
 
