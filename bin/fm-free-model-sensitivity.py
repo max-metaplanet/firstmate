@@ -204,8 +204,16 @@ def secrets_path(path: str, home: str) -> bool:
     return _under(os.path.normpath(candidate), os.path.join(home, ".secrets"))
 
 
+PROC_PRIVATE = {"environ", "mem"}
+
+
+def proc_private(path: str) -> bool:
+    parts = os.path.normpath(path).split("/")
+    return len(parts) > 3 and parts[1] == "proc" and parts[-1] in PROC_PRIVATE
+
+
 def path_blocked(path: str, home: str) -> bool:
-    return sensitive_class(path) is not None or secrets_path(path, home)
+    return sensitive_class(path) is not None or secrets_path(path, home) or proc_private(path)
 
 
 def is_free_opencode(harness: str | None, model: str | None) -> bool:
@@ -266,9 +274,7 @@ def brief_sensitive(path: str) -> bool:
     return any(sensitive_class(item) is not None for item in target_paths(text))
 
 
-def apply_resolution(brief: str, payload: dict) -> dict:
-    if not brief_sensitive(brief):
-        return payload
+def apply_resolution(payload: dict) -> bool:
     candidates = payload.get("candidates") or []
     denied = False
     for candidate in candidates:
@@ -279,11 +285,11 @@ def apply_resolution(brief: str, payload: dict) -> dict:
             candidate["reason"] = "sensitive target path denies a free OpenCode model"
             denied = True
     if not denied:
-        return payload
+        return False
     chosen = payload.get("chosen") or {}
     chosen_profile = chosen.get("profile") or {}
     if not is_free_opencode(chosen_profile.get("harness"), chosen_profile.get("model")):
-        return payload
+        return True
     eligible = [
         item
         for item in candidates
@@ -293,18 +299,18 @@ def apply_resolution(brief: str, payload: dict) -> dict:
         payload["status"] = "escalate"
         payload["reason"] = "sensitive target path denies a free OpenCode model and no other rankable candidate remains"
         payload.pop("chosen", None)
-        return payload
+        return True
     best = max(item.get("spendPriority") for item in eligible)
     tops = [item for item in eligible if item.get("spendPriority") == best]
     if len(tops) > 1:
         payload["status"] = "escalate"
         payload["reason"] = "genuine spendPriority tie"
         payload.pop("chosen", None)
-        return payload
+        return True
     payload["status"] = "clear"
     payload.pop("reason", None)
     payload["chosen"] = tops[0]
-    return payload
+    return True
 
 
 def arch_tables():
@@ -457,6 +463,17 @@ def resolve_path(pid: int, dirfd: int, path: str) -> tuple[str, str]:
             base = os.readlink(f"/proc/{pid}/fd/{dirfd}")
         lexical = os.path.join(base, path)
     lexical = os.path.normpath(lexical)
+    for alias, target in (
+        ("/proc/self", f"/proc/{pid}"),
+        ("/proc/thread-self", f"/proc/{pid}"),
+        ("/dev/fd", f"/proc/{pid}/fd"),
+        ("/dev/stdin", f"/proc/{pid}/fd/0"),
+        ("/dev/stdout", f"/proc/{pid}/fd/1"),
+        ("/dev/stderr", f"/proc/{pid}/fd/2"),
+    ):
+        if lexical == alias or lexical.startswith(alias + "/"):
+            lexical = target + lexical[len(alias) :]
+            break
     try:
         resolved = os.path.realpath(lexical)
     except OSError:
@@ -531,7 +548,7 @@ def supervise(notify_fd: int, child: int, home: str, names: dict[str, int], noti
                         if flags & O_CREAT:
                             mode = int(args[3 if nr != names.get("open") else 2]) & 0o7777
                         try:
-                            st_mode = os.lstat(resolved).st_mode
+                            st_mode = os.stat(lexical).st_mode
                             special = not (stat.S_ISREG(st_mode) or stat.S_ISDIR(st_mode))
                         except FileNotFoundError:
                             special = False
@@ -697,17 +714,13 @@ def main(argv: list[str]) -> int:
                 sys.stdout.buffer.write(raw)
                 return 0
             payload = json.loads(raw)
-            updated = apply_resolution(brief, payload)
         except (OSError, json.JSONDecodeError) as exc:
             print(f"free-model sensitivity: {exc}", file=sys.stderr)
             return 2
-        if updated is payload and not any(
-            is_free_opencode((item.get("profile") or {}).get("harness"), (item.get("profile") or {}).get("model"))
-            for item in (payload.get("candidates") or [])
-        ):
+        if not apply_resolution(payload):
             sys.stdout.buffer.write(raw)
             return 0
-        json.dump(updated, sys.stdout)
+        json.dump(payload, sys.stdout)
         sys.stdout.write("\n")
         return 0
     if cmd == "confine":

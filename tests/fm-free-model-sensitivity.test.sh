@@ -275,42 +275,51 @@ unconfined=$(python3 -c 'print(open("'"$TREE/work/.env"'", encoding="utf-8").rea
 cat > "$TMP_ROOT/probe.py" <<'PY'
 import os, sys
 for path in sys.argv[1:]:
+    target = path.replace("@ppid", str(os.getppid()))
     try:
-        open(path, "r", encoding="utf-8").read()
+        open(target, "r", encoding="utf-8", errors="replace").read()
         print("read\t" + path)
     except OSError as exc:
         print("deny\t" + path + "\t" + str(exc.errno))
 for name in ("DOPPLER_TOKEN", "SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY", "AWS_SECRET_ACCESS_KEY", "AWS_REGION", "GH_TOKEN", "GITHUB_TOKEN", "PATH", "HOME"):
     print("env\t" + name + "\t" + ("set" if os.environ.get(name) else "unset"))
 PY
+# /proc/@ppid is the supervisor, whose kernel environment block still holds
+# the tokens it unset. /dev/fd/3 is a routine file and /dev/fd/4 a pipe, both
+# opened by the caller as process substitution would.
+denied_paths=(
+  .env .github/workflows/ci.yml migrations/001.sql infra/main.tf doppler.yaml
+  auth/session.ts payments/charge.ts src/link.env
+  "$TREE/home/.secrets/token" "$TREE/home/.aws/credentials" "$TREE/home/.config/gh/hosts.yml"
+  /proc/self/environ /proc/thread-self/environ /proc/@ppid/environ /proc/self/mem
+)
+read_paths=(src/app.ts bin/fm-spawn.sh docs/configuration.md src/secrets/helper.ts /dev/fd/3 /dev/fd/4)
 (
   cd "$TREE/work" || exit 1
   export DOPPLER_TOKEN=d SUPABASE_URL=https://db.example SUPABASE_SERVICE_ROLE_KEY=s \
     AWS_SECRET_ACCESS_KEY=a AWS_REGION=us-east-1 GH_TOKEN=g GITHUB_TOKEN=gt
   "$SENS" confine --home "$TREE/home" -- python3 "$TMP_ROOT/probe.py" \
-    .env .github/workflows/ci.yml migrations/001.sql infra/main.tf doppler.yaml \
-    auth/session.ts payments/charge.ts src/link.env \
-    "$TREE/home/.secrets/token" "$TREE/home/.aws/credentials" "$TREE/home/.config/gh/hosts.yml" \
-    src/app.ts bin/fm-spawn.sh docs/configuration.md src/secrets/helper.ts
+    "${denied_paths[@]}" "${read_paths[@]}" 3<"$TREE/work/src/app.ts" 4< <(printf 'PIPE\n')
 ) > "$TMP_ROOT/probe.out" || fail "confine probe failed"
+probe_line() {
+  awk -F'\t' -v p="$1" '$1 != "env" && $2 == p' "$TMP_ROOT/probe.out"
+}
+for path in "${denied_paths[@]}"; do
+  got=$(probe_line "$path")
+  [ "$got" = "deny"$'\t'"$path"$'\t'13 ] || fail "confined process should get EACCES for $path, got: ${got:-nothing}"
+done
+for path in "${read_paths[@]}"; do
+  got=$(probe_line "$path")
+  [ "$got" = "read"$'\t'"$path" ] || fail "confined process should read routine $path, got: ${got:-nothing}"
+done
+[ "$(grep -vc '^env' "$TMP_ROOT/probe.out")" = $(( ${#denied_paths[@]} + ${#read_paths[@]} )) ] ||
+  fail "confine probe reported unexpected paths: $(cat "$TMP_ROOT/probe.out")"
 while IFS=$'\t' read -r action path extra; do
-  case "$action" in
-    read)
-      case "$path" in
-        src/app.ts|bin/fm-spawn.sh|docs/configuration.md|src/secrets/helper.ts) ;;
-        *) fail "confined process read $path" ;;
-      esac
-      ;;
-    deny)
-      [ "$extra" = 13 ] || fail "confined denial of $path was errno $extra, not EACCES"
-      ;;
-    env)
-      case "$path:$extra" in
-        DOPPLER_TOKEN:unset|SUPABASE_SERVICE_ROLE_KEY:unset|AWS_SECRET_ACCESS_KEY:unset|GH_TOKEN:unset|GITHUB_TOKEN:unset) ;;
-        SUPABASE_URL:set|AWS_REGION:set|PATH:set|HOME:set) ;;
-        *) fail "confined environment $path is $extra" ;;
-      esac
-      ;;
+  [ "$action" = env ] || continue
+  case "$path:$extra" in
+    DOPPLER_TOKEN:unset|SUPABASE_SERVICE_ROLE_KEY:unset|AWS_SECRET_ACCESS_KEY:unset|GH_TOKEN:unset|GITHUB_TOKEN:unset) ;;
+    SUPABASE_URL:set|AWS_REGION:set|PATH:set|HOME:set) ;;
+    *) fail "confined environment $path is $extra" ;;
   esac
 done < "$TMP_ROOT/probe.out"
 pass "a free-model process cannot read secrets or sensitive paths, and other launches still can"

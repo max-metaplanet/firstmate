@@ -7537,6 +7537,15 @@ if [ -n "$MODEL" ] && [ "$MODEL" != default ] && [ -n "$HARNESS" ]; then
           exit 1
           ;;
       esac
+      if [ "$ORCA_LAUNCH_ENV_ENABLED" = 1 ]; then
+        while IFS= read -r fm_env_name; do
+          [ -n "$fm_env_name" ] || continue
+          if "$SCRIPT_DIR/fm-free-model-sensitivity.sh" token-name "$fm_env_name"; then
+            echo "error: refusing to launch free OpenCode model '$MODEL' because config/launch-env-allowlist forwards token $fm_env_name from the Orca source session" >&2
+            exit 1
+          fi
+        done <<<"$LAUNCH_ENV_NAMES"
+      fi
       LAUNCH="$(shell_quote "$SCRIPT_DIR/fm-free-model-sensitivity.sh") confine --home $(shell_quote "${HOME:-}") -- /bin/sh -c $(shell_quote "$LAUNCH")"
       ;;
     1) ;;

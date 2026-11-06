@@ -922,6 +922,56 @@ PY
   pass "real tmux preserves absent/C locale values and reported raw bytes, rejects missing/phantom names and excludes the automatic SSH agent"
 }
 
+# A free OpenCode worker runs after the confine scrub, but an Orca source
+# snapshot puts allowlisted values into the launch text as literals that the
+# scrub never sees. A free launch that would forward a token must not start.
+test_orca_free_opencode_refuses_forwarded_token() {
+  local case_dir home id=orca-free-token fb out status
+  case_dir="$TMP_ROOT/$id"
+  home="$case_dir/home"
+  mkdir -p "$home/data/$id" "$home/state" "$home/config" "$home/projects"
+  touch "$home/state/.last-watcher-beat"
+  printf 'opencode\n' > "$home/config/crew-harness"
+  printf 'manual\n' > "$home/config/backlog-backend"
+  printf 'scoped-source\n' > "$home/config/launch-env-tmux-session"
+  printf 'GH_TOKEN\n' > "$home/config/launch-env-allowlist"
+  fm_git_init_commit "$case_dir/project"
+  cat > "$home/data/$id/brief.md" <<EOF
+# Task
+## Captain's intent
+Exercise a free OpenCode launch whose Orca source forwards a token.
+
+## Firstmate spec
+Confirm the launch is refused before any terminal receives it.
+
+Target paths: src/app.ts
+
+# Definition of done
+Delivery contract: mode=no-mistakes
+Ship branch: chore/no-ticket-$id
+Ticket: no-ticket
+Commit type: chore
+EOF
+  fb=$(make_orca_fakebin "$case_dir")
+  printf '#!/bin/sh\necho "GH_TOKEN=synthetic-token"\n' > "$fb/tmux"
+  chmod +x "$fb/tmux"
+  out=$(FM_ROOT_OVERRIDE='' FM_HOME="$home" HOME="$case_dir/user-home" \
+    FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
+    FM_PROJECTS_OVERRIDE="$home/projects" FM_CONFIG_OVERRIDE="$home/config" \
+    FM_SPAWN_NO_GUARD=1 FM_TEST_ORCA_DIR="$case_dir" \
+    FM_TEST_ORCA_LOG="$case_dir/terminal.log" PATH="$fb:$PATH" \
+    "$SPAWN" "$id" "$case_dir/project" --mode no-mistakes --yolo off --ticket no-ticket --commit-type chore \
+    --backend orca --model opencode/glm-5.3-flash-free 2>&1)
+  status=$?
+  expect_code 1 "$status" "a free OpenCode launch forwarding a token must be refused: $out"
+  assert_contains "$out" "forwards token GH_TOKEN" "the refusal must name the forwarded token"
+  if [ -e "$case_dir/terminal.log" ] && grep -q -e 'synthetic-token' -e '/launch\.[^/]*\.sh' "$case_dir/terminal.log"; then
+    fail "a refused free OpenCode launch reached the Orca terminal: $(cat "$case_dir/terminal.log")"
+  fi
+  pass "a free OpenCode launch refuses an Orca source that forwards a token"
+}
+
+test_orca_free_opencode_refuses_forwarded_token
 test_orca_source_preserves_values_without_utf8_locale
 test_orca_launch_uses_controlled_tmux_environment
 test_orca_allowlist_without_source_warns
