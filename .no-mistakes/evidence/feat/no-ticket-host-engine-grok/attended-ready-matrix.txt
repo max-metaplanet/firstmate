@@ -1,0 +1,6 @@
+engine=grok primary=claude -> unready: the grok engine is verified for away turns only
+engine=grok primary=grok -> unready: the grok engine is verified for away turns only
+engine=grok primary=cursor -> unready: the grok engine is verified for away turns only
+engine=claude primary=claude -> ready
+engine=claude primary=grok -> unready: no verified dialog mirror for grok
+engine=claude primary=cursor -> ready

@@ -1,0 +1,9 @@
+# claude first turn: handled	turn=host-2081058-1793968619.1	posture=away	rc=0
+# claude outcome: {"seq":1,"epoch":1793968627,"task":"demo","wake":"signal: ~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-supervision-host-live-claude.ZLri9O/fm/state/demo.status","verdict":"routine","summary":"The demo task reported its cleanup finished and nothing else is needed; its worktree is already gone and no PR is recorded. No action taken (away: merge nothing, dispatch nothing).","silent":false,"statusEndpoint":72,"statusIdent":"strong:64769:2637516:2026-11-06 07:36:59.644747458 -0500"}
+# claude second turn: handled	turn=host-2081058-1793968619.2	posture=away	rc=0
+ok - supervision host live (2.1.319 (Claude Code)): a real claude engine handles and resumes away wakes under the branch contract without waking main
+
+real	0m27.213s
+user	0m8.469s
+sys	0m7.478s
+rc=0

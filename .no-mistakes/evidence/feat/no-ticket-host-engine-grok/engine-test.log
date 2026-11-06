@@ -1,0 +1,31 @@
+ok - host: an away wake is handled on the engine through the branch contract and never reaches main
+ok - host: an engine turn that records no outcome hands its durable wake to main
+ok - host: a lead seat move moves the next engine launch and opens a new conversation
+ok - host: a Codex lead uses only its retained Claude engine seat and refuses a missing record
+ok - host: a lead on the ambient default login clears the seat the host inherited
+ok - host: an unreadable record of the lead's own seat hands the wake to main instead of guessing a seat
+ok - host: a record left by a departed lead never decides which seat the engine spends
+ok - host: a captain return during an engine turn hands that turn's outcomes to main
+ok - host: silent outcomes are excluded from both captain-return handoff paths
+ok - host: an early visible outcome survives more than 1,000 same-turn receipts
+ok - host: an outcome lookup failure forces a visible main handoff
+ok - host: an outcome recorded after the return reaches main even when its host dies at the turn's end
+ok - host: a killed predecessor's engine is reaped and the next host removes its turn files
+ok - host: a turn that reports but leaves its granted rows queued hands the wake to main
+ok - host: a captain return during a failed engine turn still hands that turn's outcomes to main
+ok - host: an engine turn whose result is incomplete hands its wake to main
+ok - host: an engine turn is bounded, and tool processes outside its process group are reaped
+ok - host: a restarted host stops, by recorded identity, the cycle a killed predecessor left running
+ok - host: a Grok away wake is handled and resumed on Grok's own headless contract
+ok - host: a Grok primary with no recorded seat hands the wake to main
+ok - host: a Grok engine never falls back to the ambient login on a departed owner's record
+ok - host: a Grok engine never takes an attended close
+ok - host: a Grok seat with no login is not launched
+ok - host: a Grok result adds each run's cost and rejects an incomplete one
+ok - host: an empty file on a Grok primary selects grok, and Cursor and Codex stay unverified
+ok - host: a Grok turn refuses a missing login, launches an ambient one, and never relinks over a replaced one
+
+real	1m35.718s
+user	0m48.171s
+sys	0m45.460s
+rc=0

@@ -1,0 +1,9 @@
+# grok first turn: handled	turn=host-2026751-1793968511.1	posture=away	rc=0
+# grok outcome: {"seq":1,"epoch":1793968566,"task":"demo","wake":"signal: ~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-supervision-host-live-grok.3Op1SL/fm/state/demo.status","verdict":"captain","summary":"The demo cleanup finished and nothing else is needed.","silent":false,"statusEndpoint":72,"statusIdent":"strong:64769:2637514:2026-11-06 07:35:12.126593303 -0500"}
+# grok second turn: handled	turn=host-2026751-1793968511.2	posture=away	rc=0
+ok - supervision host live (grok 1.0.77 (50ca579fa996)): a real grok engine handles and resumes away wakes under the branch contract without waking main
+
+real	1m38.820s
+user	0m15.905s
+sys	0m17.811s
+rc=0

@@ -1,0 +1,9 @@
+not ok - resurface loop: the takeover handed a wake straight back: firstmate watcher wake - one supervision event needs a handling turn now.
+check: rearm-resurface
+Run bin/fm-wake-drain.sh first, handle the wake, then run its exact WAKE_ACK_REQUIRED --ack-through command. Until that post-handling acknowledgement, interruption leaves the wake durable for idempotent re-handling. This Stop hook owns watcher continuity: when the handling turn ends, the next needed cycle arms automatically - do NOT run bin/fm-watch-arm.sh after an ordinary wake.
+1793968490	start	gen=host-2016575-1793968490	primary=claude
+1793968491	pass-through	attended	main-only	check: rearm-resurface
+1793968492	start	gen=host-2019196-1793968491	primary=claude
+1793968492	take-over	arm=2018068
+1793968493	pass-through	attended	main-only	check: rearm-resurface
+rc=1
