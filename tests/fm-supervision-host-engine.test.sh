@@ -504,7 +504,18 @@ test_grok_away_wake_is_handled_and_resumed_on_its_own_contract() {
   [ ! -e "$ghome/hooks" ] || fail "the Grok engine home must not have a hooks directory"
   [ "$(readlink "$ghome/auth.json")" = "$seat/auth.json" ] \
     || fail "the Grok engine must link the seat login rather than copy it: $(readlink "$ghome/auth.json" 2>/dev/null)"
-  assert_grep 'hooks = false' "$ghome/config.toml" "the Grok engine home must disable compat hooks"
+  python3 -I - "$ghome/config.toml" <<'PY' || fail "the Grok engine home config.toml must ignore the skill roots and turn off every compat cell"
+import sys, tomllib
+with open(sys.argv[1], "rb") as stream:
+    config = tomllib.load(stream)
+cells = ("hooks", "skills", "rules", "agents", "mcps", "sessions")
+for harness in ("claude", "cursor", "codex"):
+    table = config["compat"][harness]
+    assert all(table[cell] is False for cell in cells), (harness, table)
+ignored = set(config["skills"]["ignore"])
+roots = {"~/.agents", "~/.grok/skills", "~/.claude", "~/.cursor", ".agents", ".grok", ".claude", ".cursor"}
+assert roots <= ignored, sorted(roots - ignored)
+PY
   assert_grep "profile=$seat" "$home/state/.supervision-host-engine" \
     "the conversation must record the Grok seat, not the private home"
   [ ! -s "$home/host.rc" ] || fail "a handled Grok away wake reached main: $(cat "$home/host.out")"
@@ -537,6 +548,25 @@ test_grok_engine_without_a_recorded_seat_hands_the_wake_to_main() {
   [ "$(engine_calls "$home")" -eq 0 ] || fail "the Grok engine launched without a recorded seat"
   assert_grep 'demo.status' "$home/state/.wake-queue" "the unhandled wake must stay durable for main"
   pass "host: a Grok primary with no recorded seat hands the wake to main"
+}
+
+test_grok_engine_on_a_departed_owners_record_hands_the_wake_to_main() {
+  local home seat saved
+  home=$(make_home grok-stale away grok)
+  seat="$home/seats/grok"
+  mkdir -p "$seat"
+  printf '{}\n' > "$seat/auth.json"
+  saved=$FM_SUPERVISION_HOST_PRIMARY
+  FM_SUPERVISION_HOST_PRIMARY=grok start_host "$home"
+  FM_SUPERVISION_HOST_PRIMARY=$saved
+  wait_until 150 watcher_live "$home" || fail "grok stale: the host never started a watcher cycle"
+  printf 'pid=%s\nharness=grok\nprofile=\ngrok_profile=%s\n' 999999 "$seat" > "$home/state/.lock-runtime"
+  append_status "$home" 'needs a seat'
+  wait_until 250 host_exited "$home" || fail "grok stale: the host did not hand the wake to main: $(cat "$home/state/.supervision-host.log")"
+  assert_grep 'does not name the current lock owner' "$home/host.out" "the handback must name the unknown owner as the cause"
+  [ "$(engine_calls "$home")" -eq 0 ] || fail "the Grok engine launched on a record the lock no longer owns"
+  assert_grep 'demo.status' "$home/state/.wake-queue" "the unhandled wake must stay durable for main"
+  pass "host: a Grok engine never falls back to the ambient login on a departed owner's record"
 }
 
 test_grok_engine_without_a_seat_login_does_not_launch() {
@@ -663,7 +693,25 @@ test_grok_turn_refuses_a_missing_login_and_launches_an_ambient_one() {
   [ "$(readlink "$ghome/auth.json")" = "$work/login-home/.grok/auth.json" ] \
     || fail "direct: the private home must link the ambient login: $(readlink "$ghome/auth.json" 2>/dev/null)"
   [ ! -e "$ghome/hooks" ] || fail "direct: the private home grew a hooks directory"
-  pass "host: a Grok turn refuses a missing login and launches an ambient one"
+
+  rm -f "$ghome/auth.json"
+  printf '{"refreshed":true}\n' > "$ghome/auth.json"
+  rc=$(HOME="$work/login-home" FM_HOME="$home" FM_ROOT="$ROOT" STATE="$home/state" \
+    FM_SUPERVISION_ACTOR=branch bash -c '
+      . "$1/bin/fm-wake-lib.sh"
+      . "$1/bin/fm-timeout-lib.sh"
+      . "$1/bin/fm-supervision-engine-lib.sh"
+      fm_supervision_engine_turn grok grok-4.7 "$2" "$3" \
+        11111111-1111-1111-1111-111111111111 resume 30 "$4/out" "$4/err" ""
+      printf "%s\n" "$?"
+    ' _ "$ROOT" "$work/prompt/prompt.txt" "$work/prompt/wake.txt" "$work")
+  [ "$rc" = 127 ] || fail "direct: a replaced login link must not be relinked and launched (rc=$rc)"
+  assert_grep 'instead of the link' "$work/err" "direct: the refusal must name the replaced link"
+  if [ -L "$ghome/auth.json" ] || ! grep -q refreshed "$ghome/auth.json"; then
+    fail "direct: the replaced login must be left in place, not relinked over"
+  fi
+  [ "$(engine_calls "$home")" -eq 1 ] || fail "direct: the engine launched over a replaced login link"
+  pass "host: a Grok turn refuses a missing login, launches an ambient one, and never relinks over a replaced one"
 }
 
 # FM_TEST_ONLY runs a single named case, the same entry point the sibling
@@ -693,6 +741,7 @@ test_engine_turn_is_bounded_and_its_descendants_reaped
 test_restarted_host_stops_what_a_killed_predecessor_left
 test_grok_away_wake_is_handled_and_resumed_on_its_own_contract
 test_grok_engine_without_a_recorded_seat_hands_the_wake_to_main
+test_grok_engine_on_a_departed_owners_record_hands_the_wake_to_main
 test_grok_engine_without_a_seat_login_does_not_launch
 test_grok_result_adds_each_runs_cost_and_rejects_an_incomplete_one
 test_empty_supervision_host_file_on_a_grok_primary_selects_grok

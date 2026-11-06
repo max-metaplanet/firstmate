@@ -19,10 +19,11 @@ set -u
 # shellcheck source=tests/lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
-fm_live_gate opt-in FM_SUPERVISION_HOST_LIVE_E2E claude grok node perl git
+ENGINES=${FM_SUPERVISION_HOST_LIVE_ENGINE:-claude grok}
+read -r -a engine_list <<< "$ENGINES"
+fm_live_gate opt-in FM_SUPERVISION_HOST_LIVE_E2E "${engine_list[@]}" node perl git
 
 HOST_TIMEOUT_POLLS=${FM_SUPERVISION_HOST_LIVE_POLLS:-3000}
-ENGINES=${FM_SUPERVISION_HOST_LIVE_ENGINE:-claude grok}
 
 stop_lab() {
   local pid
@@ -156,7 +157,6 @@ run_live_engine() {  # <engine>
   pass "supervision host live ($version): a real $engine engine handles and resumes away wakes under the branch contract without waking main"
 }
 
-read -r -a engine_list <<< "$ENGINES"
 for engine in "${engine_list[@]}"; do
   run_live_engine "$engine"
 done

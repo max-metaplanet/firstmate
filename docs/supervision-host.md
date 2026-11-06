@@ -331,6 +331,7 @@ The engine spends an account, so which seat it launches on is resolved before ev
 The seat is read from the runtime record beside the home's session lock, which is bound to the lock's current owner.
 A Claude engine reads that session's Claude seat, and a Codex primary supplies the Claude credentials retained for that engine separately from its Codex seat.
 A Grok engine reads `grok_profile` when the primary is Grok, and the ambient Grok login when another primary names `grok`.
+Either way it needs a record that names the current lock owner; without one the wake goes to main, as it does for a Claude engine.
 `fm_supervision_engine_seat` in `bin/fm-supervision-engine-lib.sh` owns that distinction and its legacy-record handling.
 `config/claude-seat` is not that record, because it names the seat new workers get and moves without the lead.
 
@@ -426,6 +427,7 @@ That directory has no hooks directory.
 Its `config.toml` ignores the usual skill roots and turns off Claude, Cursor, and Codex compat hooks, skills, rules, agents, MCP, and sessions.
 The launch environment clears those same cells.
 The seat's `auth.json` is linked, not copied, because a copied refresh token can be single-use.
+If a turn leaves a regular `auth.json` in that home instead of the link, the next turn refuses to launch rather than relink over a possibly refreshed login.
 The launch does not pass `--trust` and does not set `GROK_FOLDER_TRUST`.
 
 **Permissions**

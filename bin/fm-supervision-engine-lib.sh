@@ -344,8 +344,8 @@ _fm_engine_reap() {
 # A Claude engine reads profile, except a Codex primary, which carries its
 # retained Claude credentials separately in claude_profile; profile names its
 # Codex seat and must never reach Claude. A Grok engine reads grok_profile
-# when the primary is Grok, and spends the ambient Grok login when any other
-# primary names grok. An empty grok_profile is that ambient login. A missing
+# when the primary is Grok, and spends the ambient Grok login when the current
+# lock owner's record names any other primary. An empty grok_profile is that ambient login. A missing
 # grok_profile key on a Grok primary is no verdict. The recorded profile is
 # the seat directory, never the private GROK_HOME the turn launches under.
 # Sets FM_SUPERVISION_ENGINE_PROFILE to that profile directory, or to empty
@@ -380,6 +380,10 @@ fm_supervision_engine_seat() {
   FM_SUPERVISION_ENGINE_SEAT_PROBLEM=''
   harness=$(fm_session_lock_runtime_field "$state_dir" harness) || harness=claude
   if [ "${FM_SUPERVISION_ENGINE:-}" = grok ]; then
+    if ! fm_session_lock_runtime_field "$state_dir" pid >/dev/null; then
+      FM_SUPERVISION_ENGINE_SEAT_PROBLEM="the record of the session this host serves does not name the current lock owner, so the Grok seat the engine must spend is unknown"
+      return 1
+    fi
     if [ "$harness" != grok ]; then
       FM_SUPERVISION_ENGINE_PROFILE=''
       return 0
@@ -463,6 +467,10 @@ _fm_supervision_grok_prepare() {
   fi
   if [ ! -f "$auth" ]; then
     printf 'the Grok seat has no auth.json at %s, so the engine was not launched\n' "$auth" > "$errors"
+    return 127
+  fi
+  if [ -e "$ghome/auth.json" ] && [ ! -L "$ghome/auth.json" ]; then
+    printf 'the Grok engine home holds its own auth.json at %s instead of the link to %s, so a refreshed login may be stranded there; the engine was not launched\n' "$ghome/auth.json" "$auth" > "$errors"
     return 127
   fi
   ln -sfn "$auth" "$ghome/auth.json" || {
