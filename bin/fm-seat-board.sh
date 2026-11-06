@@ -455,7 +455,7 @@ provider_metadata_json() (
   local ambient=${CLAUDE_CONFIG_DIR:-}
   [ "$FM_SEAT_PROVIDER" = claude ] || fm_seat_provider_in_use || { printf 'null\n'; return 0; }
   [ "$FM_SEAT_PROVIDER" != codex ] || ambient=${CODEX_HOME:-}
-  [ "$FM_SEAT_PROVIDER" != grok ] || ambient=$(fm_seat_grok_home)
+  [ "$FM_SEAT_PROVIDER" != grok ] || ambient=${GROK_HOME:-}
   jq -cn --arg active "$(fm_seat_active)" \
     --arg live "$(fm_seat_name_of_profile "$ambient")" \
     --arg spareLeader "$(fm_seat_spare_leader_status)" --argjson floor "$(floor_json)" \

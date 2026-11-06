@@ -111,7 +111,7 @@ run_board() {
   shift 3
   [ $# -gt 0 ] || set -- render
   HOME="$home" FM_HOME="$home" FM_CONFIG_OVERRIDE="$home/config" FM_STATE_OVERRIDE="$home/state" \
-    FM_DATA_OVERRIDE="$home/data" CLAUDE_CONFIG_DIR="" CODEX_HOME="" \
+    FM_DATA_OVERRIDE="$home/data" CLAUDE_CONFIG_DIR="" CODEX_HOME="" GROK_HOME="" \
     FM_SEAT_BOARD_CACHE_DIR="$cache" FM_SEAT_BOARD_CACHE_SECONDS=60 \
     PATH="$fakebin:$PATH" "$BOARD" "$@" 2>&1
 }
@@ -333,15 +333,15 @@ test_a_claude_only_home_shows_and_reads_no_codex_until_codex_is_in_use() {
   if grep -F -- '--provider codex' "$SPEC_DIR/calls" >/dev/null; then fail "a Claude-only home must make no Codex quota read"; fi
   if command -v node >/dev/null 2>&1; then
     printf '%s' "$out" > "$CASE_DIR/board.json"
-    cat > "$CASE_DIR/band.mjs" <<JS
+    cat > "$CASE_DIR/band.mjs" <<'JS'
 import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
-const seats = await import(pathToFileURL(${ROOT@Q} + "/.claude/mods/firstmate-quota/lib/fm-quota-seats.ts").href);
-const board = seats.parseSeatBoard(readFileSync(${CASE_DIR@Q} + "/board.json", "utf8"));
+const seats = await import(pathToFileURL(process.env.FM_TEST_ROOT + "/.claude/mods/firstmate-quota/lib/fm-quota-seats.ts").href);
+const board = seats.parseSeatBoard(readFileSync(process.env.FM_TEST_CASE_DIR + "/board.json", "utf8"));
 const rows = seats.seatRows(board, 0, 0);
 if (rows.length !== 1 || seats.seatsBandSegment(rows) !== undefined) throw new Error("Claude-only band drew another seat");
 JS
-    node --input-type=module < "$CASE_DIR/band.mjs" || fail "the quota mod must draw no other-seat clause for a Claude-only home"
+    FM_TEST_ROOT="$ROOT" FM_TEST_CASE_DIR="$CASE_DIR" node --input-type=module < "$CASE_DIR/band.mjs" || fail "the quota mod must draw no other-seat clause for a Claude-only home"
   fi
   mkdir -p "$HOME_DIR/.codex"
   out=$(run_board "$HOME_DIR" "$FAKEBIN" "$CASE_DIR/cache" json)
@@ -805,7 +805,7 @@ test_board_shows_a_grok_seat_with_its_own_account_and_no_renewal_offer() {
     any(.seats[]; .provider == "grok" and .name == "max2" and .active == true
       and .account == "max2@example.test" and .attention == null
       and .renewal.supported == false and .renewal.command == null)
-    and .providers.grok.activeSeat == "max2"
+    and .providers.grok.activeSeat == "max2" and .providers.grok.liveSeat == "default"
   ' >/dev/null || fail "a signed-in Grok seat must read as its own usable account with no renewal offer: $out"
 
   # The quota mod is the board's other consumer. It must name the vendor the
@@ -813,11 +813,11 @@ test_board_shows_a_grok_seat_with_its_own_account_and_no_renewal_offer() {
   # account to the operator.
   if command -v node >/dev/null 2>&1; then
     printf '%s' "$out" > "$CASE_DIR/board.json"
-    cat > "$CASE_DIR/grok-band.mjs" <<JS
+    cat > "$CASE_DIR/grok-band.mjs" <<'JS'
 import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
-const seats = await import(pathToFileURL(${ROOT@Q} + "/.claude/mods/firstmate-quota/lib/fm-quota-seats.ts").href);
-const board = seats.parseSeatBoard(readFileSync(${CASE_DIR@Q} + "/board.json", "utf8"));
+const seats = await import(pathToFileURL(process.env.FM_TEST_ROOT + "/.claude/mods/firstmate-quota/lib/fm-quota-seats.ts").href);
+const board = seats.parseSeatBoard(readFileSync(process.env.FM_TEST_CASE_DIR + "/board.json", "utf8"));
 const rows = seats.seatRows(board, 0, 0);
 // The Grok lane contributes its ambient default seat as well as the named
 // one, exactly as the Claude and Codex lanes do, so assert on the named seat.
@@ -828,7 +828,7 @@ if (rows.some((row) => row.provider !== "grok" && row.account === "max2@example.
   throw new Error("a Grok seat was relabelled as another vendor");
 }
 JS
-    node --input-type=module < "$CASE_DIR/grok-band.mjs" || fail 'the quota mod must name a Grok seat as Grok'
+    FM_TEST_ROOT="$ROOT" FM_TEST_CASE_DIR="$CASE_DIR" node --input-type=module < "$CASE_DIR/grok-band.mjs" || fail 'the quota mod must name a Grok seat as Grok'
   fi
   pass 'the board shows a Grok seat as its own account and the quota mod keeps its vendor'
 }

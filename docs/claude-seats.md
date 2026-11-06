@@ -119,7 +119,7 @@ Confirm two seats really are two accounts by reading each home directly - the ac
 
 ```sh
 GROK_HOME="$HOME/.grok"      quota-axi --provider grok --max-age 0 --full --json
-GROK_HOME="$HOME/.grok-max2" quota-axi --provider grok --max-age 0 --full --json
+GROK_HOME="$HOME/.grok-seats/max2" quota-axi --provider grok --max-age 0 --full --json
 ```
 
 `list`, `status`, `probe`, `name-of`, `threshold`, `destination-min`, `auto-exclude`, `auto-include`, `worker-destination`, `launch-destination`, `auto`, `arm`, and `retire` work with the same provider prefix, and the empty-seat refusal described under [the five controls](#the-five-controls) applies to Grok unchanged.

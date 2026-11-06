@@ -141,7 +141,7 @@ Grok reports **no `oauth` source at all**, so the Claude and Codex positive test
 each read below names that home; a read that omits `GROK_HOME` reports whichever account
 the ambient home holds.
 
-A signed-in home:
+A signed-in home (measured at `~/.grok-max2`, before the second home moved to `~/.grok-seats/max2`):
 
 ```
 $ GROK_HOME=~/.grok-max2 quota-axi --provider grok --no-credential-refresh --full --json
