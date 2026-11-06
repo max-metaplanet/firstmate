@@ -203,10 +203,8 @@ if ($lo > 0) {
   exit 1 if $prev < 0;
   $p = $prev + 1;
 }
-my $base = Digest::SHA->new(256);
-$base->add(substr($data, 0, $p));
-my $hashed = $p;
-my $stamp_len = 0;
+my $window = $p;
+my @candidates;
 START: while ($p < $offset && $p < $captured) {
   my $nl = index($data, "\n", $p);
   last START if $nl < 0;
@@ -230,14 +228,22 @@ START: while ($p < $offset && $p < $captured) {
   next START if ($nl + 1 + $slen) > $offset;
   my $need = $offset - $slen;
   next START if $need > $captured || $line_start > $need;
-  $base->add(substr($data, $hashed, $line_start - $hashed));
-  $hashed = $line_start;
+  push @candidates, [$line_start, $epoch, $need];
+}
+exit 1 unless @candidates;
+
+my $base = Digest::SHA->new(256);
+$base->add(substr($data, 0, $window));
+my $stamp_len = 0;
+for my $candidate (reverse @candidates) {
+  my ($line_start, $epoch, $need) = @$candidate;
   my $try = $base->clone;
+  $try->add(substr($data, $window, $line_start - $window));
   $try->add($epoch . ' ');
   $try->add(substr($data, $line_start, $need - $line_start));
-  next START unless $try->hexdigest eq $want;
-  $stamp_len = $slen;
-  last START;
+  next unless $try->hexdigest eq $want;
+  $stamp_len = length($epoch) + 1;
+  last;
 }
 exit 1 unless $stamp_len;
 
