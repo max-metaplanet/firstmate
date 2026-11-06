@@ -1,0 +1,7 @@
+ok - host+hook: a due check during the re-arm gap does not hand check: rearm-resurface again
+waiting for a heavy slot (1 on this machine, held by pid 621591)
+ok - host+hook: a takeover does not hand the same rearm-resurface straight back
+waiting for a heavy slot (1 on this machine, held by pid 625676)
+ok - host+hook: the next park takes over the cycle a main-only pass-through left, so one arm owns it
+waiting for a heavy slot (1 on this machine, held by pid 634099)
+ok - host+hook: an attach after the host is turned off ends the gap successor's check skip

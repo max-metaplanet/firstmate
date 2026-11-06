@@ -1,0 +1,69 @@
+# 12:28:34 host-on: primary 2.1.319 (Claude Code) model sonnet idle (pid 971895); watcher 979550; host record: host 978677 linux-starttime=55465504 cmdline-hex=62617368002f686f6d652f6d61782e67756573742f2e6e6f2d6d697374616b65732f776f726b74726565732f6330633466636163623035612f2e666d2d746573742d736372617463682f666d2d6c6976652d74332e636a3755416d2f666d2f62696e2f666d2d7375706572766973696f6e2d686f73742e7368007061726b00
+# 12:28:34 config: startup-memory-budget supervision-host 
+# 12:28:34 setup-phase rewakes:
+# 12:28:34 setup-phase check runs:
+#   1793986111.054883621 successor=0 confirm= gap=0 stamp=no marker=none
+#   1793986113.966287643 successor=1 confirm=1 gap=0 stamp=yes marker=pending:handling:978847.1793986111.zMYve6
+#   1793986113.972404879 appended marker-before=pending:handling:978847.1793986111.zMYve6
+# 12:28:34 appended routine status; waiting for the host to take or hand back the signal
+# 12:29:10 forcing a fresh primary turn end so the Stop hook parks again
+# 12:29:42 full host log:
+#   1793986110	start	gen=host-978677-1793986110	primary=claude
+#   1793986119	handled	turn=host-978677-1793986110.1	posture=attended	rc=0	reports=1	error=0 cost=0.018477 conversation_cost=0.018477 input=8 cache_read=70852 cache_write=1904 output=376 turns=4	signal: ~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-live-t3.cj7UAm/fm/state/demo.status
+#   1793986128	handled	turn=host-978677-1793986110.2	posture=attended	rc=0	reports=1	error=0 cost=0.014722 conversation_cost=0.033199 input=10 cache_read=75215 cache_write=755 output=416 turns=4	signal: ~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-live-t3.cj7UAm/fm/state/demo.status
+# 12:29:42 check runs:
+#   1793986111.054883621 successor=0 confirm= gap=0 stamp=no marker=none
+#   1793986113.966287643 successor=1 confirm=1 gap=0 stamp=yes marker=pending:handling:978847.1793986111.zMYve6
+#   1793986113.972404879 appended marker-before=pending:handling:978847.1793986111.zMYve6
+#   1793986122.541585257 successor=1 confirm=1 gap=0 stamp=yes marker=pending:handling:978847.1793986111.zMYve6
+#   1793986123.749316529 successor=1 confirm=1 gap=0 stamp=yes marker=pending:handling:978847.1793986111.zMYve6
+#   1793986124.956599219 successor=1 confirm=1 gap=0 stamp=yes marker=pending:handling:978847.1793986111.zMYve6
+#   1793986126.191364426 successor=1 confirm=1 gap=0 stamp=yes marker=pending:handling:978847.1793986111.zMYve6
+#   1793986127.447872789 successor=1 confirm=1 gap=0 stamp=yes marker=pending:handling:978847.1793986111.zMYve6
+#   1793986128.694210302 successor=1 confirm=1 gap=0 stamp=yes marker=pending:handling:978847.1793986111.zMYve6
+#   1793986129.913335338 successor=1 confirm=1 gap=0 stamp=yes marker=pending:handling:978847.1793986111.zMYve6
+#   1793986131.184997165 successor=1 confirm=1 gap=0 stamp=yes marker=pending:handling:978847.1793986111.zMYve6
+#   1793986132.428857518 successor=1 confirm=1 gap=0 stamp=yes marker=pending:handling:978847.1793986111.zMYve6
+#   1793986133.682549388 successor=1 confirm=1 gap=0 stamp=yes marker=pending:handling:978847.1793986111.zMYve6
+#   1793986135.154495235 successor=1 confirm=1 gap=0 stamp=yes marker=pending:handling:978847.1793986111.zMYve6
+#   1793986136.435684956 successor=1 confirm=1 gap=0 stamp=yes marker=pending:handling:978847.1793986111.zMYve6
+#   1793986137.773929540 successor=1 confirm=1 gap=0 stamp=yes marker=pending:handling:978847.1793986111.zMYve6
+#   1793986139.026566871 successor=1 confirm=1 gap=0 stamp=yes marker=pending:handling:978847.1793986111.zMYve6
+#   1793986140.345468918 successor=1 confirm=1 gap=0 stamp=yes marker=pending:handling:978847.1793986111.zMYve6
+#   1793986141.831317649 successor=1 confirm=1 gap=0 stamp=yes marker=pending:handling:978847.1793986111.zMYve6
+#   1793986143.129253413 successor=1 confirm=1 gap=0 stamp=yes marker=pending:handling:978847.1793986111.zMYve6
+#   1793986144.403989607 successor=1 confirm=1 gap=0 stamp=yes marker=pending:handling:978847.1793986111.zMYve6
+#   1793986145.648141792 successor=1 confirm=1 gap=0 stamp=yes marker=pending:handling:978847.1793986111.zMYve6
+#   1793986146.871851318 successor=1 confirm=1 gap=0 stamp=yes marker=pending:handling:978847.1793986111.zMYve6
+#   1793986148.124822481 successor=1 confirm=1 gap=0 stamp=yes marker=pending:handling:978847.1793986111.zMYve6
+#   1793986149.367437836 successor=1 confirm=1 gap=0 stamp=yes marker=pending:handling:978847.1793986111.zMYve6
+#   1793986150.602825375 successor=1 confirm=1 gap=0 stamp=yes marker=pending:handling:978847.1793986111.zMYve6
+#   1793986151.867637969 successor=1 confirm=1 gap=0 stamp=yes marker=pending:handling:978847.1793986111.zMYve6
+#   1793986153.092668574 successor=1 confirm=1 gap=0 stamp=yes marker=pending:handling:978847.1793986111.zMYve6
+#   1793986154.330971315 successor=1 confirm=1 gap=0 stamp=yes marker=pending:handling:978847.1793986111.zMYve6
+#   1793986155.545927736 successor=1 confirm=1 gap=0 stamp=yes marker=pending:handling:978847.1793986111.zMYve6
+#   1793986156.759276620 successor=1 confirm=1 gap=0 stamp=yes marker=pending:handling:978847.1793986111.zMYve6
+#   1793986158.004349510 successor=1 confirm=1 gap=0 stamp=yes marker=pending:handling:978847.1793986111.zMYve6
+#   1793986159.240742380 successor=1 confirm=1 gap=0 stamp=yes marker=pending:handling:978847.1793986111.zMYve6
+#   1793986160.465381487 successor=1 confirm=1 gap=0 stamp=yes marker=pending:handling:978847.1793986111.zMYve6
+#   1793986161.714057286 successor=1 confirm=1 gap=0 stamp=yes marker=pending:handling:978847.1793986111.zMYve6
+#   1793986162.923332762 successor=1 confirm=1 gap=0 stamp=yes marker=pending:handling:978847.1793986111.zMYve6
+#   1793986164.386273214 successor=1 confirm=1 gap=0 stamp=yes marker=pending:handling:978847.1793986111.zMYve6
+#   1793986165.697076864 successor=1 confirm=1 gap=0 stamp=yes marker=pending:handling:978847.1793986111.zMYve6
+#   1793986166.919489184 successor=1 confirm=1 gap=0 stamp=yes marker=pending:handling:978847.1793986111.zMYve6
+#   1793986168.146138036 successor=1 confirm=1 gap=0 stamp=yes marker=pending:handling:978847.1793986111.zMYve6
+#   1793986169.403853605 successor=1 confirm=1 gap=0 stamp=yes marker=pending:handling:978847.1793986111.zMYve6
+#   1793986170.650271368 successor=1 confirm=1 gap=0 stamp=yes marker=pending:handling:978847.1793986111.zMYve6
+#   1793986171.874892141 successor=1 confirm=1 gap=0 stamp=yes marker=pending:handling:978847.1793986111.zMYve6
+#   1793986173.091509767 successor=1 confirm=1 gap=0 stamp=yes marker=pending:handling:978847.1793986111.zMYve6
+#   1793986174.305533065 successor=1 confirm=1 gap=0 stamp=yes marker=pending:handling:978847.1793986111.zMYve6
+#   1793986175.547301172 successor=1 confirm=1 gap=0 stamp=yes marker=pending:handling:978847.1793986111.zMYve6
+#   1793986176.785962578 successor=1 confirm=1 gap=0 stamp=yes marker=pending:handling:978847.1793986111.zMYve6
+#   1793986178.028112310 successor=1 confirm=1 gap=0 stamp=yes marker=pending:handling:978847.1793986111.zMYve6
+#   1793986179.244641227 successor=1 confirm=1 gap=0 stamp=yes marker=pending:handling:978847.1793986111.zMYve6
+#   1793986180.491948154 successor=1 confirm=1 gap=0 stamp=yes marker=pending:handling:978847.1793986111.zMYve6
+#   1793986181.735079383 successor=1 confirm=1 gap=0 stamp=yes marker=pending:handling:978847.1793986111.zMYve6
+# 12:29:42 rewakes delivered to the primary since t0:
+# 12:29:42 primary tool calls since t0:
+# 12:29:42 marker now: pending:handling:978847.1793986111.zMYve6; watcher live: yes; host live: yes
+ok - host-on live: the host confirmed the handoff, took the signal, and the next park handed main no check: rearm-resurface

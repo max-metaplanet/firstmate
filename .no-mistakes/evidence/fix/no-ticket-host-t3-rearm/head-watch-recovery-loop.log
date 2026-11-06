@@ -1,0 +1,8 @@
+ok - a resurfacing handling successor stays alive and supervises instead of going blind
+ok - a handling successor quarantines a malformed recovery marker and keeps supervising
+ok - a handling successor no host handoff confirms runs its due check sweep at once
+ok - unacknowledged recovery is announced at most once per generation and the successor stays alive
+
+real	0m59.265s
+user	0m1.398s
+sys	0m0.856s

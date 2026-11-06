@@ -1,0 +1,42 @@
+# 12:23:03 host-off: primary 2.1.319 (Claude Code) model sonnet idle (pid 786344); watcher 792788; host record: 
+# 12:23:03 config: startup-memory-budget supervision-host-off 
+# 12:23:03 setup-phase rewakes:
+#   1793985781 <task-notification>
+#   <summary>Stop hook feedback</summary>
+#   </task-notification>
+#   <system-reminder>
+#   Stop hook blocking error from command "Stop": firstmate watcher wake - one supervision event needs a handling turn now.
+#   signal: ~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-liv
+# 12:23:03 setup-phase check runs:
+#   1793985780.828894889 successor=0 confirm= gap=0 stamp=no marker=none
+#   1793985781.717455468 successor=1 confirm= gap=0 stamp=no marker=announced:downtime:791062.1793985781.fW1Uac
+#   1793985782.970318382 successor=1 confirm= gap=0 stamp=no marker=announced:downtime:791062.1793985781.fW1Uac
+# 12:23:03 appended a status signal; waiting for the Stop hook rewake and its handling successor
+# 12:23:26 autoarm ledger: epoch=3 owner_pid=801589 outcome=arming updated_at=1793985796 owner_session_id=3316c010-3cd3-4c77-abd6-96b032d33a2d
+linux-starttime=55434062 cmdline-hex=62617368002f686f6d652f6d61782e67756573742f2e6e6f2d6d697374616b65732f776f726b74726565732f6330633466636163623035612f2e666d2d746573742d736372617463682f666d2d6c6976652d74332e3538767674762f666d2f62696e2f666d2d636c617564652d73746f702d6175746f61726d2e736800
+linux-starttime=55431497 cmdline-hex=636c61756465002d2d6d6f64656c00736f6e6e6574002d2d6566666f7274006c6f77002d2d64616e6765726f75736c792d736b69702d7065726d697373696f6e7300
+# 12:23:26 rewakes delivered since t0:
+#   1793985795 <task-notification>
+#   <summary>Stop hook feedback</summary>
+#   </task-notification>
+#   <system-reminder>
+#   Stop hook blocking error from command "Stop": firstmate watcher wake - one supervision event needs a handling turn now.
+#   signal: ~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-liv
+# 12:23:26 primary tool calls since t0 (expect none: no drain):
+# 12:23:26 check runs:
+#   1793985780.828894889 successor=0 confirm= gap=0 stamp=no marker=none
+#   1793985781.717455468 successor=1 confirm= gap=0 stamp=no marker=announced:downtime:791062.1793985781.fW1Uac
+#   1793985782.970318382 successor=1 confirm= gap=0 stamp=no marker=announced:downtime:791062.1793985781.fW1Uac
+#   1793985784.178685819 successor=1 confirm= gap=0 stamp=no marker=announced:downtime:791062.1793985781.fW1Uac
+#   1793985795.303930404 successor=1 confirm= gap=0 stamp=no marker=announced:downtime:792788.1793985784.KdYlmi
+#   1793985796.525146477 successor=1 confirm= gap=0 stamp=no marker=announced:downtime:792788.1793985784.KdYlmi
+#   1793985797.770927116 successor=1 confirm= gap=0 stamp=no marker=announced:downtime:792788.1793985784.KdYlmi
+#   1793985799.016597297 successor=1 confirm= gap=0 stamp=no marker=announced:downtime:792788.1793985784.KdYlmi
+#   1793985800.223389197 successor=1 confirm= gap=0 stamp=no marker=announced:downtime:792788.1793985784.KdYlmi
+#   1793985801.433022714 successor=1 confirm= gap=0 stamp=no marker=announced:downtime:792788.1793985784.KdYlmi
+#   1793985802.654082954 successor=1 confirm= gap=0 stamp=no marker=announced:downtime:792788.1793985784.KdYlmi
+#   1793985803.906214036 successor=1 confirm= gap=0 stamp=no marker=announced:downtime:792788.1793985784.KdYlmi
+#   1793985805.151448260 successor=1 confirm= gap=0 stamp=no marker=announced:downtime:792788.1793985784.KdYlmi
+#   1793985806.568743905 successor=1 confirm= gap=0 stamp=no marker=announced:downtime:792788.1793985784.KdYlmi
+# 12:23:26 marker now: announced:downtime:792788.1793985784.KdYlmi; watcher 800807 live: yes
+ok - host-off live: the Claude Stop hook's handling successor (no confirm signal) ran its check sweep before any drain (1793985784.178685819 successor=1 confirm= gap=0 stamp=no marker=announced:downtime:791062.1793985781.fW1Uac)

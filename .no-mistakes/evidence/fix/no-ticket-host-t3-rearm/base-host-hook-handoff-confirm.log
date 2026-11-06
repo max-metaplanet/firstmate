@@ -1,0 +1,6 @@
+not ok - handling handoff: the successor handoff was not confirmed
+--- /tmp/.fm-test-scratch/fm-supervision-host.SjOomz/hook-handling-confirm/state/.supervision-host.log ---
+1793985218	start	gen=host-594197-1793985218	primary=claude
+1793985221	to-main	the handling handoff to the successor watcher could not be confirmed; this wake is yours
+1793985222	start	gen=host-597443-1793985222	primary=claude
+1793985223	pass-through	attended	main-only	check: rearm-resurface

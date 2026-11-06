@@ -1,0 +1,81 @@
+cat: ~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-live-t3.0JZzI5/fm/state/.watch.lock/pid: No such file or directory
+# 12:25:31 host-on control@b1706d5469f2052d4cf9eebefec88c1415af4a1b: primary 2.1.319 (Claude Code) model sonnet idle (pid 850135); watcher ; host record: 
+# 12:25:31 config: startup-memory-budget supervision-host 
+# 12:25:31 setup-phase rewakes:
+#   1793985930 <task-notification>
+#   <summary>Stop hook feedback</summary>
+#   </task-notification>
+#   <system-reminder>
+#   Stop hook blocking error from command "Stop": firstmate watcher wake - one supervision event needs a handling turn now.
+#   signal: ~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-liv
+# 12:25:31 setup-phase check runs:
+#   1793985928.577507478 successor=0 confirm= gap=0 stamp=no marker=none
+#   1793985929.294833258 successor=1 confirm= gap=0 stamp=no marker=announced:downtime:855650.1793985928.L0RM3q
+#   1793985929.609242005 appended marker-before=announced:downtime:855650.1793985928.L0RM3q
+# 12:25:31 appended routine status; waiting for the host to take or hand back the signal
+# 12:26:01 forcing a fresh primary turn end so the Stop hook parks again
+# 12:26:33 full host log:
+#   1793985928	start	gen=host-855408-1793985928	primary=claude
+#   1793985930	to-main	the handling handoff to the successor watcher could not be confirmed; this wake is yours
+#   1793985934	start	gen=host-858133-1793985934	primary=claude
+#   1793985945	handled	turn=host-858133-1793985934.1	posture=attended	rc=0	reports=1	error=0 cost=0.021604 conversation_cost=0.021604 input=10 cache_read=89095 cache_write=1996 output=469 turns=5	signal: ~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-live-t3.0JZzI5/fm/state/demo.status
+# 12:26:33 check runs:
+#   1793985928.577507478 successor=0 confirm= gap=0 stamp=no marker=none
+#   1793985929.294833258 successor=1 confirm= gap=0 stamp=no marker=announced:downtime:855650.1793985928.L0RM3q
+#   1793985929.609242005 appended marker-before=announced:downtime:855650.1793985928.L0RM3q
+#   1793985934.442249171 successor=0 confirm= gap=0 stamp=yes marker=acked:handling:856673.1793985929.QVydk6
+#   1793985935.165848979 successor=1 confirm= gap=0 stamp=yes marker=announced:downtime:858280.1793985934.bLdeXM
+#   1793985936.412406699 successor=1 confirm= gap=0 stamp=yes marker=announced:downtime:858280.1793985934.bLdeXM
+#   1793985937.625384167 successor=1 confirm= gap=0 stamp=yes marker=announced:handling:858280.1793985934.bLdeXM
+#   1793985938.861760579 successor=1 confirm= gap=0 stamp=yes marker=announced:handling:858280.1793985934.bLdeXM
+#   1793985940.097961991 successor=1 confirm= gap=0 stamp=yes marker=announced:handling:858280.1793985934.bLdeXM
+#   1793985941.350843905 successor=1 confirm= gap=0 stamp=yes marker=announced:handling:858280.1793985934.bLdeXM
+#   1793985942.598929705 successor=1 confirm= gap=0 stamp=yes marker=announced:handling:858280.1793985934.bLdeXM
+#   1793985943.810810509 successor=1 confirm= gap=0 stamp=yes marker=acked:handling:858280.1793985934.bLdeXM
+#   1793985945.042248182 successor=1 confirm= gap=0 stamp=yes marker=acked:handling:858280.1793985934.bLdeXM
+#   1793985946.266235332 successor=1 confirm= gap=0 stamp=yes marker=acked:handling:858280.1793985934.bLdeXM
+#   1793985947.480298547 successor=1 confirm= gap=0 stamp=yes marker=acked:handling:858280.1793985934.bLdeXM
+#   1793985948.700482623 successor=1 confirm= gap=0 stamp=yes marker=acked:handling:858280.1793985934.bLdeXM
+#   1793985949.927736764 successor=1 confirm= gap=0 stamp=yes marker=acked:handling:858280.1793985934.bLdeXM
+#   1793985951.175942398 successor=1 confirm= gap=0 stamp=yes marker=acked:handling:858280.1793985934.bLdeXM
+#   1793985952.387504577 successor=1 confirm= gap=0 stamp=yes marker=acked:handling:858280.1793985934.bLdeXM
+#   1793985953.588249408 successor=1 confirm= gap=0 stamp=yes marker=acked:handling:858280.1793985934.bLdeXM
+#   1793985954.787990116 successor=1 confirm= gap=0 stamp=yes marker=acked:handling:858280.1793985934.bLdeXM
+#   1793985956.003786868 successor=1 confirm= gap=0 stamp=yes marker=acked:handling:858280.1793985934.bLdeXM
+#   1793985957.240473279 successor=1 confirm= gap=0 stamp=yes marker=acked:handling:858280.1793985934.bLdeXM
+#   1793985958.454467703 successor=1 confirm= gap=0 stamp=yes marker=acked:handling:858280.1793985934.bLdeXM
+#   1793985959.714840182 successor=1 confirm= gap=0 stamp=yes marker=acked:handling:858280.1793985934.bLdeXM
+#   1793985961.115107409 successor=1 confirm= gap=0 stamp=yes marker=acked:handling:858280.1793985934.bLdeXM
+#   1793985962.351926487 successor=1 confirm= gap=0 stamp=yes marker=acked:handling:858280.1793985934.bLdeXM
+#   1793985963.672172239 successor=1 confirm= gap=0 stamp=yes marker=acked:handling:858280.1793985934.bLdeXM
+#   1793985964.923707073 successor=1 confirm= gap=0 stamp=yes marker=acked:handling:858280.1793985934.bLdeXM
+#   1793985966.166021637 successor=1 confirm= gap=0 stamp=yes marker=acked:handling:858280.1793985934.bLdeXM
+#   1793985967.422326292 successor=1 confirm= gap=0 stamp=yes marker=acked:handling:858280.1793985934.bLdeXM
+#   1793985968.658892329 successor=1 confirm= gap=0 stamp=yes marker=acked:handling:858280.1793985934.bLdeXM
+#   1793985970.140862027 successor=1 confirm= gap=0 stamp=yes marker=acked:handling:858280.1793985934.bLdeXM
+#   1793985971.461582736 successor=1 confirm= gap=0 stamp=yes marker=acked:handling:858280.1793985934.bLdeXM
+#   1793985972.737509220 successor=1 confirm= gap=0 stamp=yes marker=acked:handling:858280.1793985934.bLdeXM
+#   1793985973.950858645 successor=1 confirm= gap=0 stamp=yes marker=acked:handling:858280.1793985934.bLdeXM
+#   1793985975.248761742 successor=1 confirm= gap=0 stamp=yes marker=acked:handling:858280.1793985934.bLdeXM
+#   1793985976.472401935 successor=1 confirm= gap=0 stamp=yes marker=acked:handling:858280.1793985934.bLdeXM
+#   1793985977.684562988 successor=1 confirm= gap=0 stamp=yes marker=acked:handling:858280.1793985934.bLdeXM
+#   1793985978.899395993 successor=1 confirm= gap=0 stamp=yes marker=acked:handling:858280.1793985934.bLdeXM
+#   1793985980.110721839 successor=1 confirm= gap=0 stamp=yes marker=acked:handling:858280.1793985934.bLdeXM
+#   1793985981.341866222 successor=1 confirm= gap=0 stamp=yes marker=acked:handling:858280.1793985934.bLdeXM
+#   1793985982.569481946 successor=1 confirm= gap=0 stamp=yes marker=acked:handling:858280.1793985934.bLdeXM
+#   1793985983.805708233 successor=1 confirm= gap=0 stamp=yes marker=acked:handling:858280.1793985934.bLdeXM
+#   1793985985.064947507 successor=1 confirm= gap=0 stamp=yes marker=acked:handling:858280.1793985934.bLdeXM
+#   1793985986.294957059 successor=1 confirm= gap=0 stamp=yes marker=acked:handling:858280.1793985934.bLdeXM
+#   1793985987.539452535 successor=1 confirm= gap=0 stamp=yes marker=acked:handling:858280.1793985934.bLdeXM
+#   1793985988.784463967 successor=1 confirm= gap=0 stamp=yes marker=acked:handling:858280.1793985934.bLdeXM
+#   1793985989.992862529 successor=1 confirm= gap=0 stamp=yes marker=acked:handling:858280.1793985934.bLdeXM
+#   1793985991.216407055 successor=1 confirm= gap=0 stamp=yes marker=acked:handling:858280.1793985934.bLdeXM
+#   1793985992.453399924 successor=1 confirm= gap=0 stamp=yes marker=acked:handling:858280.1793985934.bLdeXM
+#   1793985993.679951109 successor=1 confirm= gap=0 stamp=yes marker=acked:handling:858280.1793985934.bLdeXM
+# 12:26:33 rewakes delivered to the primary since t0:
+# 12:26:33 primary tool calls since t0:
+#   Bash: bin/fm-wake-drain.sh
+#   Bash: bin/fm-wake-drain.sh --ack-through 3 --recovery-generation 856673.1793985929.QVydk6
+# 12:26:33 marker now: acked:handling:858280.1793985934.bLdeXM; watcher live: yes; host live: yes
+# 12:26:33 RESULT: handoff could not be confirmed
+not ok - host-on live control@b1706d5469f2052d4cf9eebefec88c1415af4a1b: the loop reproduced

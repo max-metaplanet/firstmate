@@ -1,0 +1,70 @@
+# 12:23:49 host-on: primary 2.1.319 (Claude Code) model sonnet idle (pid 806559); watcher 812122; host record: host 811270 linux-starttime=55437002 cmdline-hex=62617368002f686f6d652f6d61782e67756573742f2e6e6f2d6d697374616b65732f776f726b74726565732f6330633466636163623035612f2e666d2d746573742d736372617463682f666d2d6c6976652d74332e6657765774462f666d2f62696e2f666d2d7375706572766973696f6e2d686f73742e7368007061726b00
+# 12:23:49 config: startup-memory-budget supervision-host 
+# 12:23:49 setup-phase rewakes:
+# 12:23:49 setup-phase check runs:
+#   1793985826.062974348 successor=0 confirm= gap=0 stamp=no marker=none
+#   1793985829.049320816 successor=1 confirm=1 gap=0 stamp=yes marker=pending:handling:811429.1793985826.s3ovNr
+#   1793985829.054543886 appended marker-before=pending:handling:811429.1793985826.s3ovNr
+# 12:23:49 appended routine status; waiting for the host to take or hand back the signal
+# 12:24:25 forcing a fresh primary turn end so the Stop hook parks again
+# 12:24:59 host log since t0:
+#   1793985835	handled	turn=host-811270-1793985825.1	posture=attended	rc=0	reports=1	error=0 cost=0.08242 conversation_cost=0.08242 input=8 cache_read=54278 cache_write=18509 output=294 turns=4	signal: ~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-live-t3.fWvWtF/fm/state/demo.status
+#   1793985844	handled	turn=host-811270-1793985825.2	posture=attended	rc=0	reports=1	error=0 cost=0.013042 conversation_cost=0.095462 input=10 cache_read=74983 cache_write=651 output=292 turns=4	signal: ~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-live-t3.fWvWtF/fm/state/demo.status
+# 12:24:59 check runs:
+#   1793985826.062974348 successor=0 confirm= gap=0 stamp=no marker=none
+#   1793985829.049320816 successor=1 confirm=1 gap=0 stamp=yes marker=pending:handling:811429.1793985826.s3ovNr
+#   1793985829.054543886 appended marker-before=pending:handling:811429.1793985826.s3ovNr
+#   1793985838.204476789 successor=1 confirm=1 gap=0 stamp=yes marker=pending:handling:811429.1793985826.s3ovNr
+#   1793985839.426308903 successor=1 confirm=1 gap=0 stamp=yes marker=pending:handling:811429.1793985826.s3ovNr
+#   1793985840.663494146 successor=1 confirm=1 gap=0 stamp=yes marker=pending:handling:811429.1793985826.s3ovNr
+#   1793985841.904864587 successor=1 confirm=1 gap=0 stamp=yes marker=pending:handling:811429.1793985826.s3ovNr
+#   1793985843.145005615 successor=1 confirm=1 gap=0 stamp=yes marker=pending:handling:811429.1793985826.s3ovNr
+#   1793985844.363116279 successor=1 confirm=1 gap=0 stamp=yes marker=pending:handling:811429.1793985826.s3ovNr
+#   1793985845.616670524 successor=1 confirm=1 gap=0 stamp=yes marker=pending:handling:811429.1793985826.s3ovNr
+#   1793985846.842030296 successor=1 confirm=1 gap=0 stamp=yes marker=pending:handling:811429.1793985826.s3ovNr
+#   1793985848.084791817 successor=1 confirm=1 gap=0 stamp=yes marker=pending:handling:811429.1793985826.s3ovNr
+#   1793985849.335763735 successor=1 confirm=1 gap=0 stamp=yes marker=pending:handling:811429.1793985826.s3ovNr
+#   1793985850.600501621 successor=1 confirm=1 gap=0 stamp=yes marker=pending:handling:811429.1793985826.s3ovNr
+#   1793985851.841533938 successor=1 confirm=1 gap=0 stamp=yes marker=pending:handling:811429.1793985826.s3ovNr
+#   1793985853.076625436 successor=1 confirm=1 gap=0 stamp=yes marker=pending:handling:811429.1793985826.s3ovNr
+#   1793985854.326840439 successor=1 confirm=1 gap=0 stamp=yes marker=pending:handling:811429.1793985826.s3ovNr
+#   1793985855.576499361 successor=1 confirm=1 gap=0 stamp=yes marker=pending:handling:811429.1793985826.s3ovNr
+#   1793985856.822151417 successor=1 confirm=1 gap=0 stamp=yes marker=pending:handling:811429.1793985826.s3ovNr
+#   1793985858.052967634 successor=1 confirm=1 gap=0 stamp=yes marker=pending:handling:811429.1793985826.s3ovNr
+#   1793985859.284356766 successor=1 confirm=1 gap=0 stamp=yes marker=pending:handling:811429.1793985826.s3ovNr
+#   1793985860.525273792 successor=1 confirm=1 gap=0 stamp=yes marker=pending:handling:811429.1793985826.s3ovNr
+#   1793985861.755046011 successor=1 confirm=1 gap=0 stamp=yes marker=pending:handling:811429.1793985826.s3ovNr
+#   1793985862.980186074 successor=1 confirm=1 gap=0 stamp=yes marker=pending:handling:811429.1793985826.s3ovNr
+#   1793985864.184239647 successor=1 confirm=1 gap=0 stamp=yes marker=pending:handling:811429.1793985826.s3ovNr
+#   1793985865.433120862 successor=1 confirm=1 gap=0 stamp=yes marker=pending:handling:811429.1793985826.s3ovNr
+#   1793985866.669068441 successor=1 confirm=1 gap=0 stamp=yes marker=pending:handling:811429.1793985826.s3ovNr
+#   1793985867.924590349 successor=1 confirm=1 gap=0 stamp=yes marker=pending:handling:811429.1793985826.s3ovNr
+#   1793985869.145561131 successor=1 confirm=1 gap=0 stamp=yes marker=pending:handling:811429.1793985826.s3ovNr
+#   1793985870.358159099 successor=1 confirm=1 gap=0 stamp=yes marker=pending:handling:811429.1793985826.s3ovNr
+#   1793985871.589384232 successor=1 confirm=1 gap=0 stamp=yes marker=pending:handling:811429.1793985826.s3ovNr
+#   1793985872.848109381 successor=1 confirm=1 gap=0 stamp=yes marker=pending:handling:811429.1793985826.s3ovNr
+#   1793985874.096868680 successor=1 confirm=1 gap=0 stamp=yes marker=pending:handling:811429.1793985826.s3ovNr
+#   1793985875.312872766 successor=1 confirm=1 gap=0 stamp=yes marker=pending:handling:811429.1793985826.s3ovNr
+#   1793985876.543292192 successor=1 confirm=1 gap=0 stamp=yes marker=pending:handling:811429.1793985826.s3ovNr
+#   1793985877.772048122 successor=1 confirm=1 gap=0 stamp=yes marker=pending:handling:811429.1793985826.s3ovNr
+#   1793985879.023721038 successor=1 confirm=1 gap=0 stamp=yes marker=pending:handling:811429.1793985826.s3ovNr
+#   1793985880.244119572 successor=1 confirm=1 gap=0 stamp=yes marker=pending:handling:811429.1793985826.s3ovNr
+#   1793985881.473822583 successor=1 confirm=1 gap=0 stamp=yes marker=pending:handling:811429.1793985826.s3ovNr
+#   1793985882.741963043 successor=1 confirm=1 gap=0 stamp=yes marker=pending:handling:811429.1793985826.s3ovNr
+#   1793985883.997018202 successor=1 confirm=1 gap=0 stamp=yes marker=pending:handling:811429.1793985826.s3ovNr
+#   1793985885.226757463 successor=1 confirm=1 gap=0 stamp=yes marker=pending:handling:811429.1793985826.s3ovNr
+#   1793985886.482480453 successor=1 confirm=1 gap=0 stamp=yes marker=pending:handling:811429.1793985826.s3ovNr
+#   1793985887.765439336 successor=1 confirm=1 gap=0 stamp=yes marker=pending:handling:811429.1793985826.s3ovNr
+#   1793985889.022724115 successor=1 confirm=1 gap=0 stamp=yes marker=pending:handling:811429.1793985826.s3ovNr
+#   1793985890.251731502 successor=1 confirm=1 gap=0 stamp=yes marker=pending:handling:811429.1793985826.s3ovNr
+#   1793985891.463466973 successor=1 confirm=1 gap=0 stamp=yes marker=pending:handling:811429.1793985826.s3ovNr
+#   1793985892.682885717 successor=1 confirm=1 gap=0 stamp=yes marker=pending:handling:811429.1793985826.s3ovNr
+#   1793985893.936416421 successor=1 confirm=1 gap=0 stamp=yes marker=pending:handling:811429.1793985826.s3ovNr
+#   1793985895.143647778 successor=1 confirm=1 gap=0 stamp=yes marker=pending:handling:811429.1793985826.s3ovNr
+#   1793985896.375136201 successor=1 confirm=1 gap=0 stamp=yes marker=pending:handling:811429.1793985826.s3ovNr
+#   1793985897.602964383 successor=1 confirm=1 gap=0 stamp=yes marker=pending:handling:811429.1793985826.s3ovNr
+#   1793985898.847670733 successor=1 confirm=1 gap=0 stamp=yes marker=pending:handling:811429.1793985826.s3ovNr
+# 12:24:59 rewakes delivered to the primary since t0:
+# 12:24:59 primary tool calls since t0:
+# 12:24:59 marker now: pending:handling:811429.1793985826.s3ovNr; watcher live: yes; host live: yes
+ok - host-on live: the host confirmed the handoff, took the signal, and the next park handed main no check: rearm-resurface

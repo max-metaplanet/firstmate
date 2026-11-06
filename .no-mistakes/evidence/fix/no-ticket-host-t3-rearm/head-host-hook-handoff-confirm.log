@@ -1,0 +1,5 @@
+ok - host+hook: a due check during the handling handoff confirms and does not hand check: rearm-resurface
+
+real	0m4.684s
+user	0m0.157s
+sys	0m0.229s
