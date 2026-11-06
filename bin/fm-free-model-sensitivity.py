@@ -27,6 +27,7 @@ import json
 import os
 import platform
 import select
+import signal
 import socket
 import stat
 import struct
@@ -642,6 +643,10 @@ def confine(home: str, command: list[str]) -> int:
     if pid == 0:
         try:
             parent.close()
+            # Python ignores SIGPIPE and SIGXFSZ, and exec keeps ignored
+            # signals ignored; restore the defaults so pipelines terminate.
+            signal.signal(signal.SIGPIPE, signal.SIG_DFL)
+            signal.signal(signal.SIGXFSZ, signal.SIG_DFL)
             listener = install_filter(build_filter(audit, set(names.values()), set(deny_names.values())), sys_seccomp, sys_prctl)
             send_fd(child, listener)
             os.close(listener)

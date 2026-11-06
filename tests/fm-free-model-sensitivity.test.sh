@@ -364,6 +364,16 @@ for _ in $(seq 1 10); do
 done
 pass "routine pipelines keep the confined shell supervised"
 
+# POSIX: a writer to a pipe with no reader gets SIGPIPE and dies, so an
+# endless producer feeding `head -1` ends as soon as head exits. If the
+# confine left SIGPIPE ignored, the producer would loop forever on EPIPE.
+sigpipe_rc=0
+sigpipe_out=$(cd "$TREE/work" && timeout 10 "$SENS" confine --home "$TREE/home" -- sh -c \
+  'while :; do echo x; done | head -1' 2>/dev/null) || sigpipe_rc=$?
+[ "$sigpipe_rc" -eq 0 ] && [ "$sigpipe_out" = x ] ||
+  fail "an endless producer piped to head did not end under confine (rc=$sigpipe_rc)"
+pass "pipelines end on SIGPIPE under the confine as they do outside it"
+
 # The captain's documented free list: OpenCode Zen and OpenRouter free ids,
 # big-pickle, and an OpenCode launch that names no model or `default`.
 # Paid OpenCode, Grok, Codex, and Claude are not free OpenCode models.
