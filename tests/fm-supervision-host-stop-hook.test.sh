@@ -852,8 +852,9 @@ leave_gap_successor_with_a_due_check() {  # <home> <label>
   printf '#!/bin/sh\necho seats out of quota\n' > "$home/state/lab-seat.check.sh"
   chmod 700 "$home/state/lab-seat.check.sh"
   sleep 3
-  kill -0 "$GAP_WATCHER" 2>/dev/null && ! gap_watcher_ran_checks "$home" \
-    || fail "$label: the gap successor ran the check sweep while nobody was reading"
+  if ! kill -0 "$GAP_WATCHER" 2>/dev/null || gap_watcher_ran_checks "$home"; then
+    fail "$label: the gap successor ran the check sweep while nobody was reading"
+  fi
 }
 
 # True once the gap successor's own delivery record shows its check sweep ran
