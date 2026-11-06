@@ -12,8 +12,8 @@ their read access. A routine path may still resolve to a free model.
 
 `mech` is the handoff a worker runs for a rename, a format, boilerplate,
 or test scaffolding. It launches only a documented free OpenCode model
-under this same scrub and read block, prints a diff, and leaves the
-worktree as it found it. The worker reviews that diff before applying it.
+under this same scrub and read block in a scratch worktree at HEAD, prints
+a diff against HEAD, and never touches the caller's worktree. The worker reviews that diff before applying it.
 
 The read block is a seccomp user notifier in the parent. Segment classes
 apply inside the task worktree, the directory confine starts in, so toolchain
@@ -39,6 +39,7 @@ import stat
 import struct
 import subprocess
 import sys
+import tempfile
 from ctypes import c_uint16, c_uint32, c_uint64, c_ulong
 
 AT_FDCWD = -100
@@ -693,6 +694,9 @@ class GitError(Exception):
     pass
 
 
+MECH_SECONDS = 900
+
+
 def git_bytes(args: list[str]) -> bytes:
     proc = subprocess.run(["git", "--no-pager", *args], capture_output=True)
     if proc.returncode != 0:
@@ -732,18 +736,11 @@ def mech_command(model: str | None, prompt: str) -> list[str]:
         "Do not commit, push, or merge. Do not read secrets. Stop when the files are edited.\n\n"
         + prompt
     )
-    command = ["opencode", "--standalone"]
+    command = ["timeout", "--kill-after=30", str(MECH_SECONDS), "opencode", "run", "--standalone"]
     if model and model != "default":
         command.extend(["--model", model])
-    command.extend(["--prompt", text])
+    command.append(text)
     return command
-
-
-def stash_if_dirty() -> str | None:
-    if not git_bytes(["status", "--porcelain"]).strip():
-        return None
-    git_bytes(["stash", "push", "--include-untracked", "--quiet", "--message", "fm-mech"])
-    return git_bytes(["rev-parse", "stash"]).decode().strip()
 
 
 def collect_diff(head: str) -> bytes:
@@ -758,20 +755,6 @@ def collect_diff(head: str) -> bytes:
         )
         parts.append(proc.stdout)
     return b"".join(parts)
-
-
-def restore_worktree(head: str, stash_sha: str | None) -> None:
-    git_bytes(["reset", "--hard", head])
-    git_bytes(["clean", "-fd"])
-    if not stash_sha:
-        return
-    git_bytes(["stash", "apply", "--quiet", stash_sha])
-    listed = git_bytes(["stash", "list", "--format=%gd %H"]).decode()
-    for line in listed.splitlines():
-        ref, sha = line.split(" ", 1)
-        if sha == stash_sha:
-            git_bytes(["stash", "drop", "--quiet", ref])
-            break
 
 
 def confine_quiet(home: str, command: list[str], log_path: str) -> int:
@@ -835,19 +818,23 @@ def mech(argv: list[str]) -> int:
         return 2
     try:
         head = git_bytes(["rev-parse", "HEAD"]).decode().strip()
-        git_dir = git_bytes(["rev-parse", "--absolute-git-dir"]).decode().strip()
     except GitError as exc:
         print(f"free-model sensitivity: mech must run inside a git worktree ({exc})", file=sys.stderr)
         return 2
-    try:
-        stash_sha = stash_if_dirty()
-    except GitError as exc:
-        print(f"free-model sensitivity: could not set the worktree aside: {exc}", file=sys.stderr)
-        return 2
-    log_path = os.path.join(git_dir, "fm-mech.log")
+    scratch = tempfile.mkdtemp(prefix="fm-mech-")
+    tree = os.path.join(scratch, "tree")
+    log_path = os.path.join(scratch, "fm-mech.log")
+    caller = os.getcwd()
     code = 1
     diff = b""
     try:
+        git_bytes(["worktree", "add", "--detach", "--quiet", tree, head])
+    except GitError as exc:
+        shutil.rmtree(scratch, ignore_errors=True)
+        print(f"free-model sensitivity: could not create a scratch worktree: {exc}", file=sys.stderr)
+        return 2
+    try:
+        os.chdir(tree)
         os.environ["OPENCODE_CONFIG_CONTENT"] = '{"permission":{"*":"allow"}}'
         code = confine_quiet(home, mech_command(model, prompt), log_path)
         diff = collect_diff(head)
@@ -855,17 +842,16 @@ def mech(argv: list[str]) -> int:
         print(f"free-model sensitivity: {exc}", file=sys.stderr)
         code = 1
     finally:
+        os.chdir(caller)
         try:
-            restore_worktree(head, stash_sha)
+            git_bytes(["worktree", "remove", "--force", tree])
         except GitError as exc:
-            kept = f" (stash {stash_sha} kept)" if stash_sha else ""
-            print(f"free-model sensitivity: could not restore the worktree: {exc}{kept}", file=sys.stderr)
+            print(f"free-model sensitivity: could not remove the scratch worktree: {exc}", file=sys.stderr)
             code = 1
         if code != 0 and os.path.exists(log_path):
             with open(log_path, "rb") as handle:
                 sys.stderr.buffer.write(handle.read(4000))
-        if os.path.exists(log_path):
-            os.remove(log_path)
+        shutil.rmtree(scratch, ignore_errors=True)
     sys.stdout.buffer.write(diff)
     return code
 

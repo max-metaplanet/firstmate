@@ -396,6 +396,13 @@ MECH_REPO="$TMP_ROOT/mech"
 mkdir -p "$MECH_BIN"
 cat > "$MECH_BIN/opencode" <<EOF
 #!/bin/sh
+if [ "\$1" != run ]; then
+  printf 'Unrecognized: interactive launch %s\n' "\$*" >&2
+  exit 1
+fi
+for arg in "\$@"; do
+  [ "\$arg" = --prompt ] && { printf 'Unrecognized flag: --prompt in command opencode run\n' >&2; exit 1; }
+done
 {
   printf 'argv=%s\n' "\$*"
   if [ -n "\$DOPPLER_TOKEN" ]; then printf 'token=set\n'; else printf 'token=unset\n'; fi
@@ -423,7 +430,7 @@ mech_run() {
   MECH_STATUS=0
   MECH_ERR=$TMP_ROOT/mech-err
   MECH_OUT=$(
-    cd "$MECH_REPO" && DOPPLER_TOKEN=secret AWS_REGION=us-east-1 HOME="$TREE/home" PATH="$MECH_BIN:$PATH" \
+    cd "$MECH_REPO/${MECH_CWD:-}" && DOPPLER_TOKEN=secret AWS_REGION=us-east-1 HOME="$TREE/home" PATH="$MECH_BIN:$PATH" \
       "$SENS" "$@" 2>"$MECH_ERR"
   ) || status=$?
   MECH_STATUS=$status
@@ -465,9 +472,12 @@ mech_run mech --model opencode/glm-5.3-flash-free -- "rename the counter"
 pass "mech refuses a sensitive path, a paid OpenCode model, and a Claude id without launching"
 
 printf 'DIRTY-MARKER\n' >> "$MECH_REPO/README.md"
+git -C "$MECH_REPO" add README.md
 rm -f "$MECH_LOG"
-mech_run mech --model opencode/glm-5.3-flash-free --path src/app.ts -- "don't drop the counter"
-[ "$MECH_STATUS" -eq 0 ] || fail "mech failed on a free model: status=$MECH_STATUS out=$MECH_OUT"
+MECH_CWD=src mech_run mech --model opencode/glm-5.3-flash-free --path src/app.ts -- "don't drop the counter"
+[ "$MECH_STATUS" -eq 0 ] || fail "mech failed on a free model: status=$MECH_STATUS out=$MECH_OUT err=$(cat "$MECH_ERR")"
+[ "$(git -C "$MECH_REPO" diff --cached --name-only)" = README.md ] || fail "mech did not keep the caller's staged edit staged"
+[ "$(git -C "$MECH_REPO" worktree list | wc -l)" -eq 1 ] || fail "mech left its scratch worktree registered"
 [ "$(git -C "$MECH_REPO" rev-parse HEAD)" = "$MECH_HEAD" ] || fail "mech left the model's commit in place"
 grep -q DIRTY-MARKER "$MECH_REPO/README.md" || fail "mech dropped the caller's uncommitted edit"
 grep -q edited "$MECH_REPO/src/app.ts" && fail "mech left the model's edit in the worktree"
@@ -475,7 +485,7 @@ grep -q edited "$MECH_REPO/src/app.ts" && fail "mech left the model's edit in th
 assert_contains "$MECH_OUT" "edited" "the printed diff did not contain the model's edit"
 assert_not_contains "$MECH_OUT" "DIRTY-MARKER" "the printed diff included the caller's existing edit"
 log=$(cat "$MECH_LOG")
-assert_contains "$log" "--standalone" "the free launch did not pin a private OpenCode server"
+assert_contains "$log" "argv=run --standalone" "the free launch was not a non-interactive opencode run"
 assert_contains "$log" "--model opencode/glm-5.3-flash-free" "the free launch did not receive its model"
 assert_contains "$log" "don't drop the counter" "the free launch did not receive the edit"
 assert_contains "$log" "Do not commit" "the free launch did not forbid a commit"
