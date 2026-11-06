@@ -1470,3 +1470,60 @@ printf 'selected\n' > "$HOME_DIR/config/codex-seat"
 TYPESAFE_API_KEY=$KEY run code out err "$BRIEF" --codex-alternative --json
 assert_equals "$TMP_ROOT/codex-seats/selected" "$(cat "$LOG/quota-axi.calls.codex-home")" "dispatch quota reads selected Codex home"
 pass "dispatch evidence uses the Codex home a new native worker will launch on"
+
+# A free OpenCode model outranks the paid candidate, then a sensitive target
+# path removes it after classification. A routine path keeps the free model.
+test_sensitive_target_denies_free_opencode() {
+  local sens routine profile
+  sens="$TMP_ROOT/sens-brief.md"
+  routine="$TMP_ROOT/routine-brief.md"
+  cat > "$RULES" <<'JSON'
+{
+  "rules": [
+    {
+      "when": "Any coding task.",
+      "use": [
+        {"harness": "opencode", "model": "opencode/glm-5.3-flash-free", "provider": "codex"},
+        {"harness": "claude", "model": "sonnet", "effort": "high"}
+      ]
+    }
+  ],
+  "default": {"harness": "claude", "model": "opus"}
+}
+JSON
+  write_quota "$QUOTA" 0.1 -0.4
+  jq '.providers |= map(if .provider == "codex" then .quotaSemantics.effectiveAvailability[0].selection.spendPriority = 0.95 else . end)' \
+    "$QUOTA" > "$TMP_ROOT/quota-free.json"
+  cp "$TMP_ROOT/quota-free.json" "$QUOTA"
+  cat > "$RESPONSE" <<'JSON'
+{ "model": "jev-1.13.0",
+  "answers": { "rule": { "type": "choice", "choice": "rule_1", "confidence": 0.91,
+    "probabilities": { "rule_1": 0.99, "default": 0.01 } } },
+  "usage": { "input_tokens": 20, "output_tokens": 5 } }
+JSON
+  cat > "$routine" <<'MD'
+# Task
+Fix the pager.
+MD
+  printf '\nTarget paths: src/app.ts\n' >> "$routine"
+  cat > "$sens" <<'MD'
+# Task
+Fix the pager.
+MD
+  printf '\nTarget paths: .env\n' >> "$sens"
+  reset_log
+  TYPESAFE_API_KEY=$KEY run code out err "$routine" --project pager
+  expect_code 0 "$code" "routine target resolution exits 0"
+  profile=$(printf '%s\n' "$out" | awk '/^  profile:/{print}')
+  assert_contains "$profile" "--model 'opencode/glm-5.3-flash-free'" "a routine path may resolve to a free OpenCode model"
+  reset_log
+  TYPESAFE_API_KEY=$KEY run code out err "$sens" --project pager
+  expect_code 0 "$code" "sensitive target resolution exits 0"
+  profile=$(printf '%s\n' "$out" | awk '/^  profile:/{print}')
+  assert_contains "$profile" "--harness 'claude'" "a sensitive path resolves to the paid candidate"
+  assert_contains "$profile" "--model 'sonnet'" "a sensitive path keeps the paid model"
+  assert_not_contains "$profile" "flash-free" "a sensitive path does not resolve to the free OpenCode model"
+  assert_contains "$out" "not eligible: sensitive target path denies a free OpenCode model" "the free candidate is denied after classification"
+  pass "a sensitive target path cannot resolve to a free OpenCode model"
+}
+test_sensitive_target_denies_free_opencode

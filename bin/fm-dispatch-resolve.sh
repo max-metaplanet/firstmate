@@ -31,6 +31,9 @@
 #   matched path and pattern. Paths come only from that explicit line; prose is
 #   never scanned for path-shaped words. With no such line, no match, or no
 #   rule declaring the field, the Jev path below runs unchanged.
+# Free OpenCode deny, after classification: bin/fm-free-model-sensitivity.sh
+#   owns the sensitive-path classes and drops a free OpenCode candidate when
+#   a declared target path matches one. Paid models and other harnesses stay.
 #
 # What it does when on with at least one rule: one POST to
 #   https://api.typesafe.ai/v1/systemone with the project name and the brief's
@@ -684,6 +687,12 @@ RESULT=$(jq -n --arg floor "$CONFIDENCE_FLOOR" --argjson lat "$LAT_MS" --arg non
       end
     end
   end') || emit_error "resolution failed"
+
+# The classifier has already chosen. A sensitive target path still cannot
+# keep a free OpenCode model, whatever that choice was.
+if ! RESULT=$(printf '%s\n' "$RESULT" | "$SCRIPT_DIR/fm-free-model-sensitivity.sh" apply-resolution --brief "$BRIEF"); then
+  emit_error "free-model sensitivity check failed"
+fi
 
 if [ "$JSON_OUTPUT" = 1 ]; then
   printf '%s\n' "$RESULT"

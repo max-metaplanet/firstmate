@@ -2047,6 +2047,10 @@ A forced result replaces the model, confidence, and probability lines with `deci
 Everything after the rule choice is identical: the rule's `approval` and `floor`, each candidate's `provider` and `floor`, the same `quota-axi` snapshot, and the same `spendPriority` argmax.
 Without a rule declaring `path_force` this check is inert, whatever paths a brief declares.
 A brief with no `Target paths:` line, no matching path, or a home whose rules declare no `path_force` leaves the Jev request and its output unchanged, so only some briefs carry this fact and the rest route exactly as before.
+After that classification, a declared target path in a sensitive class cannot resolve to a free OpenCode model.
+[`bin/fm-free-model-sensitivity.sh`](../bin/fm-free-model-sensitivity.sh) owns the classes, the free-model mark, the token scrub, and the read block.
+A routine path may still resolve to a free OpenCode model, and a paid OpenCode model or any other harness keeps its environment and its read access.
+
 **What the model receives**
 
 When on and at least one rule exists, the tool sends the project name and the brief's task-specific text as state and asks one Choice question whose options are every rule's `when` plus the fixed neutral option for no matching rule; the model never sees quota, catalogs, `why`, `use`, approvals, or confidence floors.
