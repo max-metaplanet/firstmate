@@ -1405,6 +1405,35 @@ fm_recovery_marker_begin_handling() {
   _fm_recovery_marker_begin_handling "$1" "${2:-}"
 }
 
+# A handling successor confirms one generation (bin/fm-watch-arm.sh
+# --handling-delivered). Announced downtime is the state where a queue append
+# mints a new generation, so hold that episode pending on the same generation
+# until the confirm moves it to handling. docs/watcher-continuity.md
+# "Generation reuse".
+fm_recovery_marker_hold_for_handling() {
+  local marker=$1 lock
+  lock="${marker}.lock"
+  fm_lock_acquire_wait "$lock" || return 1
+  if [ ! -e "$marker" ] && [ ! -L "$marker" ]; then
+    fm_lock_release "$lock"
+    return 0
+  fi
+  if ! fm_recovery_marker_read "$marker"; then
+    fm_lock_release "$lock"
+    fm_recovery_marker_arm_check "$marker"
+    return
+  fi
+  case "$FM_RECOVERY_MARKER_TOKEN" in
+    announced:downtime:*)
+      if ! _fm_recovery_marker_write_locked "$marker" downtime "${FM_RECOVERY_MARKER_TOKEN##*:}" pending; then
+        fm_lock_release "$lock"
+        return 1
+      fi
+      ;;
+  esac
+  fm_lock_release "$lock"
+}
+
 fm_recovery_marker_arm_check() {
   fm_recovery_transition "$1" arm-check
 }

@@ -3061,9 +3061,22 @@ if [ "${FM_WATCH_HANDLING_SUCCESSOR:-0}" != 1 ] \
     exit 1
   fi
 fi
-if ! fm_recovery_marker_arm_check "$WATCHER_DOWNTIME_MARKER"; then
-  echo "watcher: recovery state could not be consumed safely; retaining stale lock evidence" >&2
-  exit 1
+if [ "${FM_WATCH_HANDLING_SUCCESSOR:-0}" = 1 ] && [ "${FM_WATCH_HANDOFF_CONFIRM:-0}" = 1 ]; then
+  # FM_WATCH_HANDOFF_CONFIRM is the supervision host's handling handoff: the
+  # arm snapshots this generation for --handling-delivered. Announcing it here
+  # is what lets a queue append mint another generation before that confirm
+  # reads the snapshotted one. No other launcher confirms a handoff
+  # (docs/watcher-continuity.md "Generation reuse").
+  if ! fm_recovery_marker_hold_for_handling "$WATCHER_DOWNTIME_MARKER"; then
+    echo "watcher: recovery state could not be held for the handling handoff; retaining stale lock evidence" >&2
+    exit 1
+  fi
+  FM_RECOVERY_MARKER_ACTION="wait"
+else
+  if ! fm_recovery_marker_arm_check "$WATCHER_DOWNTIME_MARKER"; then
+    echo "watcher: recovery state could not be consumed safely; retaining stale lock evidence" >&2
+    exit 1
+  fi
 fi
 # A recovery the marker arm check approved has already passed the announcement
 # gate once, under the queue lock and over the marker this cycle read. The poll
@@ -3326,6 +3339,12 @@ last_read=0
 # host's left record, after naming this watcher's arm, no longer does.
 watch_gap=${FM_WATCH_GAP_SUCCESSOR:-0}
 watch_gap_recorded=0
+# The host's handoff successor runs no check until --handling-delivered has
+# moved the marker to handling. Every other watcher opens checks immediately.
+handling_checks_open=1
+if [ "${FM_WATCH_HANDLING_SUCCESSOR:-0}" = 1 ] && [ "${FM_WATCH_HANDOFF_CONFIRM:-0}" = 1 ]; then
+  handling_checks_open=0
+fi
 watch_gap_tick() {
   local attached left_arm=''
   [ "$watch_gap" = 1 ] || return 0
@@ -3476,10 +3495,21 @@ while :; do
   # A successor left for main skips this sweep while its gap lasts
   # (watch_gap_tick). A due check here exited the cycle and the append minted a
   # fresh downtime generation; the next park, finding this arm dead, handed
-  # check: rearm-resurface again. Signals below still close that cycle.
-  # docs/watcher-continuity.md "Generation reuse".
+  # check: rearm-resurface again. The host's handoff successor skips it until
+  # the handoff confirms the generation, for the same mint. Signals below still
+  # close that cycle. docs/watcher-continuity.md "Generation reuse".
+  if [ "$handling_checks_open" != 1 ]; then
+    if fm_recovery_marker_read "$WATCHER_DOWNTIME_MARKER"; then
+      case "$FM_RECOVERY_MARKER_TOKEN" in
+        pending:downtime:*|announced:downtime:*) ;;
+        *) handling_checks_open=1 ;;
+      esac
+    else
+      handling_checks_open=1
+    fi
+  fi
   watch_gap_tick
-  if [ "$watch_gap" != 1 ] && [ "$check_age" -ge "$CHECK_INTERVAL" ]; then
+  if [ "$handling_checks_open" = 1 ] && [ "$watch_gap" != 1 ] && [ "$check_age" -ge "$CHECK_INTERVAL" ]; then
     rejected_checks=
     contribution_check_output=
     for c in "$STATE"/*.check.sh; do

@@ -194,7 +194,7 @@ So a finished, hung, or identity-mismatched claim cannot suppress that recovery 
 
 The recovery-episode contract below owns once-per-generation announcement.
 A handling successor does not re-announce.
-It enters its poll loop immediately and keeps scanning signals, stale panes, and checks.
+[Generation reuse](#generation-reuse) owns how the confirmed handoff holds that generation and how the pass-through successor keeps the announced episode.
 
 ### Manual recovery and other harnesses
 
@@ -239,6 +239,8 @@ Its ordinary arm check still announces a never-announced generation that has que
 
 An ordinary watcher close attempts to publish downtime, and every durable queue append publishes it.
 A handling successor closing to resurface recovery preserves the existing marker instead.
+The supervision host starts the successor whose handling handoff it then confirms (`bin/fm-watch-arm.sh --handling-delivered`) with `FM_WATCH_HANDOFF_CONFIRM`; only that successor holds announced downtime as pending on the same generation until the confirm, and does not run its check sweep until the marker reads handling.
+A handling successor from any other launcher (the host-off Claude Stop hook, omp, or OpenCode) runs the ordinary arm check and its check sweep from the start.
 If EXIT cleanup cannot acquire the downtime-marker lock within its bound, it retains the stale singleton for the next arm to publish the missing downtime before clearing that lock (see [Grace, beacon, and stop signals](#grace-beacon-and-stop-signals)).
 A downtime republication of a pending episode reuses its generation.
 A watcher close leaves an announced downtime episode announced, while a successful durable append opens a fresh pending generation so a live watcher can recover the new work.
@@ -248,6 +250,7 @@ A watcher stopped so an arm can take its cycle over (`bin/fm-watch-arm.sh --take
 The supervision host's take-over sets `FM_WATCH_KEEP_ANNOUNCED`, and the fresh cycle then leaves an already-announced episode announced instead of minting another generation for the same queued work.
 The successor that pass-through leaves for main keeps its beacon and still delivers a signal, and it does not run the check sweep until the next park.
 That skip ends early when any arm attaches to that watcher (the arm writes `state/.watch-attached`), or when the host's left record, once it named the successor's arm, no longer does, so checks run again whenever a reader has returned.
+It keeps an announced downtime episode announced, so the next park's take-over does not announce that same work again.
 A due check while nobody is reading used to exit that successor, and the queue append minted a fresh pending generation.
 The next park then found no live arm to take over, so its ordinary arm check announced that generation and handed `check: rearm-resurface` back.
 A pending episode with queued work, including a row appended after main acknowledged the last one, still surfaces once through the ordinary arm check.

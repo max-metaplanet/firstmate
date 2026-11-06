@@ -568,6 +568,20 @@ case "${1:-}" in
 esac
 
 if [ "$mode" = handling-delivered ]; then
+  # The arm has already snapshotted the generation into the argument. Production
+  # spends the next stretch starting this process; a due check can append in
+  # that stretch and mint a new downtime generation. FM_TEST_HANDLING_CONFIRM_DELAY
+  # (seconds) holds that stretch open, and only when FM_TEST_SEAM=1. The stamp
+  # is the fixture check's cue that the snapshot is already fixed.
+  if [ "${FM_TEST_SEAM:-}" = 1 ]; then
+    case "${FM_TEST_HANDLING_CONFIRM_DELAY:-}" in
+      ''|*[!0-9.]*|*.*.*|.*|*.) ;;
+      *)
+        printf 'wait\n' > "$STATE/.fm-test-handling-confirm-wait" 2>/dev/null || true
+        sleep "$FM_TEST_HANDLING_CONFIRM_DELAY"
+        ;;
+    esac
+  fi
   fm_pid_alive "$handling_watcher_pid" \
     && fm_watcher_lock_matches_pid "$STATE" "$WATCH" "$handling_watcher_pid" "$FM_HOME" \
     && fm_recovery_marker_begin_handling "$STATE/.watcher-down" "$handling_generation"
