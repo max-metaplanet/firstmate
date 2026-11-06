@@ -10,9 +10,10 @@ bin/fm-spawn.sh confines only a launch whose resolved model is free.
 A paid OpenCode model and every other harness keep their environment and
 their read access. A routine path may still resolve to a free model.
 
-The read block is a seccomp user notifier in the parent. Path classes apply
-inside the task worktree, the directory confine starts in, so toolchain
-files elsewhere stay readable. Secrets files and token stores apply anywhere. The child cannot
+The read block is a seccomp user notifier in the parent. Segment classes
+apply inside the task worktree, the directory confine starts in, so toolchain
+files elsewhere stay readable. Env and Doppler file names, secrets files,
+and token stores apply anywhere. The child cannot
 complete open, stat, or exec of a blocked path, including by a raw syscall.
 The parent opens an allowed file itself and installs that fd, so a symlink
 swap after the check cannot hand the child a secret inode.
@@ -215,6 +216,8 @@ def proc_private(path: str) -> bool:
 
 
 def path_blocked(path: str, home: str, root: str) -> bool:
+    if sensitive_class(os.path.basename(path)) in ("env", "doppler"):
+        return True
     if _under(path, root) and sensitive_class(os.path.relpath(path, root)) is not None:
         return True
     return secrets_path(path, home) or proc_private(path)

@@ -2050,7 +2050,7 @@ A brief with no `Target paths:` line, no matching path, or a home whose rules de
 After that classification, a declared target path in a sensitive class cannot resolve to a free OpenCode model.
 [`bin/fm-free-model-sensitivity.sh`](../bin/fm-free-model-sensitivity.sh) owns the classes, the free-model mark, the token scrub, and the read block.
 A free OpenCode model is a `-free` or `:free` id, `big-pickle`, or an OpenCode launch that names no model or `default`.
-The read block applies path classes inside the task worktree only, so toolchain files elsewhere stay readable.
+The read block applies directory and file classes such as auth, migrations, infra, payments, and CI inside the task worktree only, so toolchain files elsewhere stay readable; env and Doppler file names, secrets files, and token stores stay blocked everywhere, including the primary checkout.
 A routine path may still resolve to a free OpenCode model, and a paid OpenCode model or any other harness keeps its environment and its read access.
 
 **What the model receives**

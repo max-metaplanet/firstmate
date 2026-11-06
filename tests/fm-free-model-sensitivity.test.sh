@@ -258,6 +258,10 @@ mkdir -p "$TREE/home/.secrets" "$TREE/home/.aws" "$TREE/home/.config/gh" \
   "$TREE/toolchain/site-packages/pip/_internal/network" "$TREE/toolchain/node_modules/pkg/migrations"
 printf 'PIP\n' > "$TREE/toolchain/site-packages/pip/_internal/network/auth.py"
 printf 'NODE\n' > "$TREE/toolchain/node_modules/pkg/migrations/001.js"
+mkdir -p "$TREE/primary"
+printf 'PRIMARY\n' > "$TREE/primary/.env.local"
+printf 'DOP\n' > "$TREE/primary/doppler.yaml"
+ln -s "$TREE/primary/.env.local" "$TREE/work/src/notes.txt"
 printf 'SECRET\n' > "$TREE/home/.secrets/token"
 printf 'AWS\n' > "$TREE/home/.aws/credentials"
 printf 'GH\n' > "$TREE/home/.config/gh/hosts.yml"
@@ -291,11 +295,13 @@ PY
 # the tokens it unset. /dev/fd/3 is a routine file and /dev/fd/4 a pipe, both
 # opened by the caller as process substitution would. Path classes cover the
 # worktree the confine starts in, so toolchain files outside it stay readable.
+# Env and Doppler files in another checkout stay blocked, as do symlinks to them.
 denied_paths=(
   .env .github/workflows/ci.yml migrations/001.sql infra/main.tf doppler.yaml
   auth/session.ts payments/charge.ts src/link.env
   "$TREE/home/.secrets/token" "$TREE/home/.aws/credentials" "$TREE/home/.config/gh/hosts.yml"
   /proc/self/environ /proc/thread-self/environ /proc/@ppid/environ /proc/self/mem
+  "$TREE/primary/.env.local" "$TREE/primary/doppler.yaml" src/notes.txt
 )
 read_paths=(
   src/app.ts bin/fm-spawn.sh docs/configuration.md src/secrets/helper.ts /dev/fd/3 /dev/fd/4
