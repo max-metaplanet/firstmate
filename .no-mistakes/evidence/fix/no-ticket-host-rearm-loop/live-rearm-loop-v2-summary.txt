@@ -1,0 +1,17 @@
+Live T3-style lab, real Claude Code 2.1.319 primary (haiku) with tracked Stop hook re-arming every turn; host on in a lab home only; FM_CHECK_INTERVAL=5; unregistered lab-seat.check.sh rejected every sweep; 180s observed.
+RESULT fix resurfaces=1 rewakes=33 acks=5 takeovers=34
+RESULT control resurfaces=11 rewakes=35 acks=10 takeovers=26
+
+--- control (5d49fe77) first 10 host-log lines
+--- control host log (fields 2-4)
+start	gen=host-1431130-1793977502	primary=claude
+start	gen=host-1434224-1793977504	primary=claude
+pass-through	attended	main-only
+start	gen=host-1437563-1793977509	primary=claude
+pass-through	attended	main-only
+start	gen=host-1440801-1793977514	primary=claude
+pass-through	attended	main-only
+start	gen=host-1445048-1793977518	primary=claude
+pass-through	attended	main-only
+start	gen=host-1449048-1793977523	primary=claude
+take-over	arm=1445900

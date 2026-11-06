@@ -1,0 +1,298 @@
+# 10:01:34 fix: lab ~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-sh-attended-live.2m6EtY/fix code=HEAD(fix) FM_CHECK_INTERVAL=5 (no worker status files)
+# 10:01:45 fix step 1: primary idle (claude pid 1276716, 2.1.319 (Claude Code), model haiku); tracked Stop hook registered; config/supervision-host present; host pid 1283108 parked on watcher 1283294; listener runner 1283438; captain prompts so far: 1
+# 10:01:45 fix transcript: ~/.claude-seats/seat-max/projects/-home-max-guest--no-mistakes-worktrees-c0c4fcacb05a--fm-test-scratch-fm-sh-attended-live-2m6EtY-fix-fm/d9cf1c53-f452-4abc-b4eb-d66bdd34f046.jsonl
+# 10:01:46 fix: stopped host 1283108 and watcher 1283294; queued a stranded row; marker: pending:downtime:1283294.1793977306.rZjsCM
+# 10:01:50 fix: first pass-through: pass-through	attended	main-only	check: rearm-resurface
+# 10:01:50 fix: installed state/lab-seat.check.sh; observing 180s of primary turns
+# 10:04:50 fix: rearm-resurface main-only pass-throughs=1  main rewakes=33  primary acks=5  take-overs=34
+--- fix host log (fields 2-4)
+start	gen=host-1283108-1793977304	primary=claude
+start	gen=host-1284905-1793977306	primary=claude
+pass-through	attended	main-only
+start	gen=host-1289001-1793977312	primary=claude
+take-over	arm=1286089
+pass-through	attended	main-only
+start	gen=host-1293153-1793977318	primary=claude
+take-over	arm=1290019
+pass-through	attended	main-only
+start	gen=host-1300203-1793977324	primary=claude
+take-over	arm=1295541
+pass-through	attended	main-only
+start	gen=host-1305115-1793977329	primary=claude
+take-over	arm=1301093
+pass-through	attended	main-only
+start	gen=host-1309992-1793977336	primary=claude
+take-over	arm=1306280
+pass-through	attended	main-only
+start	gen=host-1314437-1793977342	primary=claude
+take-over	arm=1311232
+pass-through	attended	main-only
+start	gen=host-1318261-1793977347	primary=claude
+take-over	arm=1316494
+pass-through	attended	main-only
+start	gen=host-1320216-1793977352	primary=claude
+take-over	arm=1318994
+pass-through	attended	main-only
+start	gen=host-1325100-1793977357	primary=claude
+take-over	arm=1323388
+pass-through	attended	main-only
+start	gen=host-1327913-1793977362	primary=claude
+take-over	arm=1326820
+pass-through	attended	main-only
+start	gen=host-1331305-1793977367	primary=claude
+take-over	arm=1330305
+pass-through	attended	main-only
+start	gen=host-1333644-1793977372	primary=claude
+take-over	arm=1332729
+pass-through	attended	main-only
+start	gen=host-1338269-1793977377	primary=claude
+take-over	arm=1336859
+pass-through	attended	main-only
+start	gen=host-1345170-1793977383	primary=claude
+take-over	arm=1342103
+pass-through	attended	main-only
+start	gen=host-1348384-1793977388	primary=claude
+take-over	arm=1347371
+pass-through	attended	main-only
+start	gen=host-1350376-1793977394	primary=claude
+take-over	arm=1349509
+pass-through	attended	main-only
+start	gen=host-1354981-1793977399	primary=claude
+take-over	arm=1352806
+pass-through	attended	main-only
+start	gen=host-1358523-1793977404	primary=claude
+take-over	arm=1357056
+pass-through	attended	main-only
+start	gen=host-1361375-1793977409	primary=claude
+take-over	arm=1359915
+pass-through	attended	main-only
+start	gen=host-1363739-1793977414	primary=claude
+take-over	arm=1362807
+pass-through	attended	main-only
+start	gen=host-1367310-1793977420	primary=claude
+take-over	arm=1365685
+pass-through	attended	main-only
+start	gen=host-1372563-1793977425	primary=claude
+take-over	arm=1371049
+pass-through	attended	main-only
+start	gen=host-1377044-1793977429	primary=claude
+take-over	arm=1373581
+pass-through	attended	main-only
+start	gen=host-1380773-1793977435	primary=claude
+take-over	arm=1379615
+pass-through	attended	main-only
+start	gen=host-1384858-1793977440	primary=claude
+take-over	arm=1381999
+pass-through	attended	main-only
+start	gen=host-1392036-1793977444	primary=claude
+take-over	arm=1389595
+pass-through	attended	main-only
+start	gen=host-1395139-1793977450	primary=claude
+take-over	arm=1394057
+pass-through	attended	main-only
+start	gen=host-1397737-1793977455	primary=claude
+take-over	arm=1396309
+pass-through	attended	main-only
+start	gen=host-1400300-1793977460	primary=claude
+take-over	arm=1399311
+pass-through	attended	main-only
+start	gen=host-1404439-1793977466	primary=claude
+take-over	arm=1403495
+pass-through	attended	main-only
+start	gen=host-1407216-1793977471	primary=claude
+take-over	arm=1406247
+pass-through	attended	main-only
+start	gen=host-1409953-1793977477	primary=claude
+take-over	arm=1408478
+pass-through	attended	main-only
+start	gen=host-1413574-1793977482	primary=claude
+take-over	arm=1412220
+pass-through	attended	main-only
+start	gen=host-1415707-1793977487	primary=claude
+take-over	arm=1414748
+--- fix primary bash commands
+bin/fm-wake-drain.sh
+bin/fm-wake-drain.sh --ack-through 1 --recovery-generation 1283294.1793977306.rZjsCM
+bin/fm-wake-drain.sh
+bin/fm-wake-drain.sh --ack-through 2 --recovery-generation 1289560.1793977313.lNkbis
+bin/fm-wake-drain.sh
+bin/fm-wake-drain.sh --ack-through 3 --recovery-generation 1293979.1793977319.70KdJ8
+bin/fm-wake-drain.sh
+bin/fm-wake-drain.sh --ack-through 4 --recovery-generation 1300566.1793977325.ZzN10O
+bin/fm-wake-drain.sh
+bin/fm-wake-drain.sh --ack-through 5 --recovery-generation 1305619.1793977330.dAQxsI
+--- fix screen
+● Thirtieth identical wake, still unacknowledged. I'm holding until you choose.
+  Reply "cycle" to keep draining and acknowledging, or "investigate" to read state/lab-seat.check.sh and the watcher state.
+✻ Brewed for 1s · done 10:04 AM
+● Stop hook feedback
+● Thirty-first identical wake, still unacknowledged. I'm holding until you choose.
+  Reply "cycle" to keep draining and acknowledging, or "investigate" to read state/lab-seat.check.sh and the watcher state.
+✻ Cogitated for 1s · done 10:04 AM
+● Stop hook feedback
+● Thirty-second identical wake, still unacknowledged. I'm holding until you choose.
+  Reply "cycle" to keep draining and acknowledging, or "investigate" to read state/lab-seat.check.sh and the watcher state.
+✻ Sautéed for 1s · done 10:04 AM
+● Stop hook feedback
+● Thirty-third identical wake, still unacknowledged. I'm holding until you choose.
+  Reply "cycle" to keep draining and acknowledging, or "investigate" to read state/lab-seat.check.sh and the watcher state.
+✻ Churned for 1s · done 10:04 AM
+seat-max 5h 96% · 7d 44% (5d 5h)  │  others tightest claude seat-max2 0% (8m old, stale)                                                                                                                                [-]
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ 
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  -- INSERT -- ⏵⏵ bypass permissions on (shift+tab to cycle)
+RESULT fix resurfaces=1 rewakes=33 acks=5 takeovers=34
+# 10:04:52 control: lab ~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-sh-attended-live.2m6EtY/control code=5d49fe77d2d1b80a0f043544d9d51e14f8e7ed96 FM_CHECK_INTERVAL=5 (no worker status files)
+# 10:05:03 control step 1: primary idle (claude pid 1418517, 2.1.319 (Claude Code), model haiku); tracked Stop hook registered; config/supervision-host present; host pid 1431130 parked on watcher 1431648; listener runner 1431938; captain prompts so far: 1
+# 10:05:03 control transcript: ~/.claude-seats/seat-max/projects/-home-max-guest--no-mistakes-worktrees-c0c4fcacb05a--fm-test-scratch-fm-sh-attended-live-2m6EtY-control-fm/a2103aaf-838e-4f36-9f4b-079c49389647.jsonl
+# 10:05:04 control: stopped host 1431130 and watcher 1431648; queued a stranded row; marker: pending:downtime:1431648.1793977504.Y9b2Hb
+# 10:05:08 control: first pass-through: pass-through	attended	main-only	check: rearm-resurface
+# 10:05:08 control: installed state/lab-seat.check.sh; observing 180s of primary turns
+# 10:08:08 control: rearm-resurface main-only pass-throughs=11  main rewakes=35  primary acks=10  take-overs=26
+--- control host log (fields 2-4)
+start	gen=host-1431130-1793977502	primary=claude
+start	gen=host-1434224-1793977504	primary=claude
+pass-through	attended	main-only
+start	gen=host-1437563-1793977509	primary=claude
+pass-through	attended	main-only
+start	gen=host-1440801-1793977514	primary=claude
+pass-through	attended	main-only
+start	gen=host-1445048-1793977518	primary=claude
+pass-through	attended	main-only
+start	gen=host-1449048-1793977523	primary=claude
+take-over	arm=1445900
+pass-through	attended	main-only
+start	gen=host-1452459-1793977528	primary=claude
+take-over	arm=1449808
+pass-through	attended	main-only
+start	gen=host-1455730-1793977534	primary=claude
+take-over	arm=1453349
+pass-through	attended	main-only
+start	gen=host-1460553-1793977540	primary=claude
+pass-through	attended	main-only
+start	gen=host-1464134-1793977545	primary=claude
+pass-through	attended	main-only
+start	gen=host-1471009-1793977551	primary=claude
+pass-through	attended	main-only
+start	gen=host-1474407-1793977557	primary=claude
+pass-through	attended	main-only
+start	gen=host-1482355-1793977563	primary=claude
+pass-through	attended	main-only
+pass-through	successor-unrecorded	check: rearm-resurface
+start	gen=host-1485555-1793977567	primary=claude
+pass-through	attended	main-only
+start	gen=host-1487995-1793977570	primary=claude
+pass-through	attended	main-only
+start	gen=host-1490843-1793977573	primary=claude
+take-over	arm=1488684
+pass-through	attended	main-only
+start	gen=host-1492865-1793977576	primary=claude
+take-over	arm=1491848
+pass-through	attended	main-only
+start	gen=host-1495397-1793977582	primary=claude
+take-over	arm=1494183
+pass-through	attended	main-only
+start	gen=host-1500522-1793977587	primary=claude
+take-over	arm=1499296
+pass-through	attended	main-only
+start	gen=host-1503885-1793977593	primary=claude
+take-over	arm=1502827
+pass-through	attended	main-only
+start	gen=host-1506972-1793977598	primary=claude
+take-over	arm=1506022
+pass-through	attended	main-only
+start	gen=host-1509297-1793977602	primary=claude
+take-over	arm=1508319
+pass-through	attended	main-only
+start	gen=host-1514252-1793977607	primary=claude
+take-over	arm=1511796
+pass-through	attended	main-only
+start	gen=host-1518867-1793977613	primary=claude
+take-over	arm=1516706
+pass-through	attended	main-only
+start	gen=host-1524573-1793977618	primary=claude
+take-over	arm=1522559
+pass-through	attended	main-only
+start	gen=host-1531340-1793977622	primary=claude
+take-over	arm=1527726
+pass-through	attended	main-only
+start	gen=host-1535925-1793977628	primary=claude
+take-over	arm=1534120
+pass-through	attended	main-only
+start	gen=host-1539936-1793977633	primary=claude
+take-over	arm=1538947
+pass-through	attended	main-only
+start	gen=host-1541936-1793977637	primary=claude
+take-over	arm=1540937
+pass-through	attended	main-only
+start	gen=host-1545038-1793977642	primary=claude
+take-over	arm=1543872
+pass-through	attended	main-only
+start	gen=host-1549919-1793977647	primary=claude
+take-over	arm=1547960
+pass-through	attended	main-only
+start	gen=host-1553864-1793977653	primary=claude
+take-over	arm=1552160
+pass-through	attended	main-only
+start	gen=host-1556733-1793977659	primary=claude
+take-over	arm=1555886
+pass-through	attended	main-only
+start	gen=host-1559967-1793977664	primary=claude
+take-over	arm=1558436
+pass-through	attended	main-only
+start	gen=host-1564761-1793977669	primary=claude
+take-over	arm=1562872
+pass-through	attended	main-only
+start	gen=host-1567823-1793977674	primary=claude
+take-over	arm=1566831
+pass-through	attended	main-only
+start	gen=host-1576043-1793977680	primary=claude
+take-over	arm=1572987
+pass-through	attended	main-only
+start	gen=host-1581679-1793977685	primary=claude
+take-over	arm=1579549
+--- control primary bash commands
+bin/fm-wake-drain.sh
+bin/fm-wake-drain.sh --ack-through 1 --recovery-generation 1431648.1793977504.Y9b2Hb
+bin/fm-wake-drain.sh
+bin/fm-wake-drain.sh --ack-through 2 --recovery-generation 1435329.1793977508.6rC5Hi
+bin/fm-wake-drain.sh
+bin/fm-wake-drain.sh --ack-through 3 --recovery-generation 1438391.1793977513.s5D9DC
+bin/fm-wake-drain.sh
+bin/fm-wake-drain.sh --ack-through 4 --recovery-generation 1442010.1793977518.o3drMg
+bin/fm-wake-drain.sh
+bin/fm-wake-drain.sh --ack-through 5 --recovery-generation 1445949.1793977524.st4P9W
+bin/fm-wake-drain.sh
+bin/fm-wake-drain.sh --ack-through 6 --recovery-generation 1452980.1793977529.5igHdc
+bin/fm-wake-drain.sh
+bin/fm-wake-drain.sh --ack-through 7 --recovery-generation 1453379.1793977534.FtwMRQ
+bin/fm-wake-drain.sh
+bin/fm-wake-drain.sh --ack-through 8 --recovery-generation 1456346.1793977539.eKJfgi
+bin/fm-wake-drain.sh
+bin/fm-wake-drain.sh --ack-through 9 --recovery-generation 1461283.1793977544.QBkLTp
+bin/fm-wake-drain.sh
+bin/fm-wake-drain.sh --ack-through 10 --recovery-generation 1461283.1793977544.QBkLTp
+--- control screen
+● Stop hook feedback
+● Captain, the same rejected unauthenticated-state-checks wake fired again on state/lab-seat.check.sh. I'm still holding it. Reply 1, 2, or 3.
+✻ Baked for 1s · done 10:07 AM
+● Stop hook feedback
+● Captain, the same rejected check fired again, on state/lab-seat.check.sh. I'm still holding it. Reply 1, 2, or 3.
+✻ Cooked for 1s · done 10:07 AM
+● Stop hook feedback
+● Captain, the same rejected unauthenticated-state-checks wake came in again on state/lab-seat.check.sh. I'm holding it. Reply 1, 2, or 3.
+✻ Brewed for 1s · done 10:07 AM
+● Stop hook feedback
+● Captain, the same rejected check fired again on state/lab-seat.check.sh. I'm holding it until you reply 1, 2, or 3.
+✻ Sautéed for 1s · done 10:08 AM
+● Stop hook feedback
+● Captain, the same rejected unauthenticated-state-checks wake fired again on state/lab-seat.check.sh, and I'm still holding it. Reply 1, 2, or 3.
+✻ Crunched for 1s · done 10:08 AM
+seat-max 5h 96% · 7d 44% (5d 5h)  │  others tightest claude seat-max2 0% (11m old, stale)                                                                                                                               [-]
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ 
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  -- INSERT -- ⏵⏵ bypass permissions on (shift+tab to cycle)
+RESULT control resurfaces=11 rewakes=35 acks=10 takeovers=26
+exit=0

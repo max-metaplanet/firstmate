@@ -1,0 +1,11 @@
+not ok - due check: the next park did not take the cycle over: 1793975701	start	gen=host-604627-1793975701	primary=claude
+1793975702	pass-through	attended	main-only	check: rearm-resurface
+1793975702	pass-through	successor-unrecorded	check: rearm-resurface
+1793975703	start	gen=host-607246-1793975703	primary=claude
+1793975704	pass-through	attended	main-only	check: rearm-resurface
+1793975704	pass-through	successor-unverified	check: rearm-resurface
+--- deliveries ---
+604918	linux-starttime=54424591 cmdline-hex=62617368002f746d702f2e666d2d746573742d736372617463682f666d2d7375706572766973696f6e2d686f73742e6355536d51302f686f6f6b2d726561726d2d6475652d636865636b2f62696e2f666d2d77617463682e736800	check: rearm-resurface
+605476	linux-starttime=54424669 cmdline-hex=62617368002f746d702f2e666d2d746573742d736372617463682f666d2d7375706572766973696f6e2d686f73742e6355536d51302f686f6f6b2d726561726d2d6475652d636865636b2f62696e2f666d2d77617463682e736800	check: rejected unauthenticated state checks: /tmp/.fm-test-scratch/fm-supervision-host.cUSmQ0/hook-rearm-due-check/state/lab-seat.check.sh
+607572	linux-starttime=54424776 cmdline-hex=62617368002f746d702f2e666d2d746573742d736372617463682f666d2d7375706572766973696f6e2d686f73742e6355536d51302f686f6f6b2d726561726d2d6475652d636865636b2f62696e2f666d2d77617463682e736800	check: rearm-resurface
+608401	linux-starttime=54424846 cmdline-hex=62617368002f746d702f2e666d2d746573742d736372617463682f666d2d7375706572766973696f6e2d686f73742e6355536d51302f686f6f6b2d726561726d2d6475652d636865636b2f62696e2f666d2d77617463682e736800	check: rejected unauthenticated state checks: /tmp/.fm-test-scratch/fm-supervision-host.cUSmQ0/hook-rearm-due-check/state/lab-seat.check.sh

@@ -1,0 +1,98 @@
+# 10:15:34 fix: lab ~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-sh-attended-live.JH5v8A/fix code=HEAD(fix) FM_CHECK_INTERVAL=5 (no worker status files)
+# 10:15:45 fix step 1: primary idle (claude pid 1843834, 2.1.319 (Claude Code), model haiku); tracked Stop hook registered; config/supervision-host present; host pid 1849442 parked on watcher 1849608; listener runner 1849825; captain prompts so far: 1
+# 10:15:45 fix transcript: ~/.claude-seats/seat-max/projects/-home-max-guest--no-mistakes-worktrees-c0c4fcacb05a--fm-test-scratch-fm-sh-attended-live-JH5v8A-fix-fm/d5e32689-0394-4f4b-9bcb-bd5680dc03a2.jsonl
+# 10:15:45 fix: stopped host 1849442 and watcher 1849608; queued a stranded row; marker: pending:downtime:1849608.1793978145.dYC8OT
+# 10:15:49 fix: first pass-through: pass-through	attended	main-only	check: rearm-resurface
+# 10:15:49 fix: installed state/lab-seat.check.sh; observing 90s of primary turns
+# 10:17:19 fix: rearm-resurface main-only pass-throughs=1  main rewakes=15  primary acks=8  take-overs=16
+--- fix host log (fields 2-4)
+start	gen=host-1849442-1793978144	primary=claude
+start	gen=host-1850603-1793978145	primary=claude
+pass-through	attended	main-only	check: rearm-resurface
+start	gen=host-1853714-1793978150	primary=claude
+take-over	arm=1852028
+pass-through	attended	main-only	check: rejected unauthenticated state checks: ~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-sh-attended-live.JH5v8A/fix/fm/state/lab-seat.check.sh
+start	gen=host-1860924-1793978158	primary=claude
+take-over	arm=1856250
+pass-through	attended	main-only	check: rejected unauthenticated state checks: ~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-sh-attended-live.JH5v8A/fix/fm/state/lab-seat.check.sh
+start	gen=host-1867565-1793978164	primary=claude
+take-over	arm=1863775
+pass-through	attended	main-only	check: rejected unauthenticated state checks: ~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-sh-attended-live.JH5v8A/fix/fm/state/lab-seat.check.sh
+start	gen=host-1873363-1793978171	primary=claude
+take-over	arm=1868524
+pass-through	attended	main-only	check: rejected unauthenticated state checks: ~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-sh-attended-live.JH5v8A/fix/fm/state/lab-seat.check.sh
+start	gen=host-1878275-1793978179	primary=claude
+take-over	arm=1874723
+pass-through	attended	main-only	check: rejected unauthenticated state checks: ~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-sh-attended-live.JH5v8A/fix/fm/state/lab-seat.check.sh
+start	gen=host-1881209-1793978185	primary=claude
+take-over	arm=1879326
+pass-through	attended	main-only	check: rejected unauthenticated state checks: ~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-sh-attended-live.JH5v8A/fix/fm/state/lab-seat.check.sh
+start	gen=host-1883409-1793978189	primary=claude
+take-over	arm=1881874
+pass-through	attended	main-only	check: rejected unauthenticated state checks: ~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-sh-attended-live.JH5v8A/fix/fm/state/lab-seat.check.sh
+start	gen=host-1889424-1793978196	primary=claude
+take-over	arm=1885646
+pass-through	attended	main-only	check: rejected unauthenticated state checks: ~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-sh-attended-live.JH5v8A/fix/fm/state/lab-seat.check.sh
+start	gen=host-1892728-1793978202	primary=claude
+take-over	arm=1890596
+pass-through	attended	main-only	check: rejected unauthenticated state checks: ~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-sh-attended-live.JH5v8A/fix/fm/state/lab-seat.check.sh
+start	gen=host-1894625-1793978205	primary=claude
+take-over	arm=1893717
+pass-through	attended	main-only	check: rejected unauthenticated state checks: ~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-sh-attended-live.JH5v8A/fix/fm/state/lab-seat.check.sh
+start	gen=host-1897025-1793978210	primary=claude
+take-over	arm=1896097
+pass-through	attended	main-only	check: rejected unauthenticated state checks: ~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-sh-attended-live.JH5v8A/fix/fm/state/lab-seat.check.sh
+start	gen=host-1902380-1793978215	primary=claude
+take-over	arm=1899701
+pass-through	attended	main-only	check: rejected unauthenticated state checks: ~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-sh-attended-live.JH5v8A/fix/fm/state/lab-seat.check.sh
+start	gen=host-1907273-1793978221	primary=claude
+take-over	arm=1904831
+pass-through	attended	main-only	check: rejected unauthenticated state checks: ~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-sh-attended-live.JH5v8A/fix/fm/state/lab-seat.check.sh
+start	gen=host-1912078-1793978226	primary=claude
+take-over	arm=1910339
+pass-through	attended	main-only	check: rejected unauthenticated state checks: ~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-sh-attended-live.JH5v8A/fix/fm/state/lab-seat.check.sh
+start	gen=host-1914471-1793978231	primary=claude
+take-over	arm=1913325
+pass-through	attended	main-only	check: rejected unauthenticated state checks: ~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-sh-attended-live.JH5v8A/fix/fm/state/lab-seat.check.sh
+start	gen=host-1918555-1793978236	primary=claude
+take-over	arm=1916940
+pass-through	attended	main-only	check: rejected unauthenticated state checks: ~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-sh-attended-live.JH5v8A/fix/fm/state/lab-seat.check.sh
+--- fix primary bash commands
+bin/fm-wake-drain.sh --ack-through 1 --recovery-generation 1849608.1793978145.dYC8OT
+bin/fm-wake-drain.sh
+bin/fm-wake-drain.sh --ack-through 2 --recovery-generation 1855024.1793978151.WbpJ5J
+bin/fm-wake-drain.sh
+bin/fm-wake-drain.sh --ack-through 3 --recovery-generation 1862607.1793978159.H2GvoO
+bin/fm-wake-drain.sh
+bin/fm-wake-drain.sh --ack-through 4 --recovery-generation 1867962.1793978166.h0eom2
+bin/fm-wake-drain.sh
+bin/fm-wake-drain.sh --ack-through 5 --recovery-generation 1873854.1793978172.Wg1ZtF
+bin/fm-wake-drain.sh
+bin/fm-wake-drain.sh --ack-through 6 --recovery-generation 1878837.1793978180.fSjyQ7
+bin/fm-wake-drain.sh
+bin/fm-wake-drain.sh --ack-through 7 --recovery-generation 1881504.1793978185.1L2LUQ
+bin/fm-wake-drain.sh
+bin/fm-wake-drain.sh --ack-through 8 --recovery-generation 1884886.1793978190.MgNZXz
+--- fix screen
+● Stop hook feedback
+● I'm holding the same wake again: unauthenticated-state-checks on state/lab-seat.check.sh. I haven't drained or acknowledged it, because the acknowledgements only produce new copies. I still need your decision: should I
+  investigate what keeps re-raising it, or stop the Stop-hook cycle first?
+✻ Cogitated for 1s · done 10:17 AM
+● Stop hook feedback
+● Still holding the same wake (unauthenticated-state-checks on state/lab-seat.check.sh), not drained or acknowledged. Waiting on your call: investigate the re-raises, or stop the Stop-hook cycle first.
+✻ Baked for 1s · done 10:17 AM
+● Stop hook feedback
+● The same unauthenticated-state-checks wake has returned. I'm not draining or acknowledging it, and I'm not investigating without your go-ahead. Do you want me to look into what keeps re-raising it, or stop the
+  Stop-hook cycle first?
+✻ Crunched for 1s · done 10:17 AM
+● Stop hook feedback
+● The wake is back again (unauthenticated-state-checks on state/lab-seat.check.sh). I'm still holding it undrained and unacknowledged. I need your answer on whether I should investigate what keeps re-raising it or stop
+  the Stop-hook cycle first.
+✻ Churned for 1s · done 10:17 AM
+seat-max 5h 94% · 7d 43% (5d 5h)  │  others tightest claude seat-max2 0% (10m old, stale)                                                                                                                               [-]
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ 
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  -- INSERT -- ⏵⏵ bypass permissions on (shift+tab to cycle)
+RESULT fix resurfaces=1 rewakes=15 acks=8 takeovers=16
+exit=0

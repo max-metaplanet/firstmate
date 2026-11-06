@@ -1,0 +1,102 @@
+# 10:08:39 fix: lab ~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-sh-attended-live.APPyYO/fix code=HEAD(fix) FM_CHECK_INTERVAL=60 (no worker status files)
+# 10:08:50 fix step 1: primary idle (claude pid 1591097, 2.1.319 (Claude Code), model haiku); tracked Stop hook registered; config/supervision-host present; host pid 1597032 parked on watcher 1597240; listener runner 1597433; captain prompts so far: 1
+# 10:08:50 fix transcript: ~/.claude-seats/seat-max/projects/-home-max-guest--no-mistakes-worktrees-c0c4fcacb05a--fm-test-scratch-fm-sh-attended-live-APPyYO-fix-fm/ae9038f7-709d-493a-8c82-da3e6bf0a30f.jsonl
+# 10:08:51 fix: stopped host 1597032 and watcher 1597240; queued a stranded row; marker: pending:downtime:1597240.1793977731.mAvMSC
+# 10:08:55 fix: first pass-through: pass-through	attended	main-only	check: rearm-resurface
+# 10:08:55 fix: installed state/lab-seat.check.sh; observing 180s of primary turns
+# 10:11:55 fix: rearm-resurface main-only pass-throughs=1  main rewakes=3  primary acks=4  take-overs=3
+--- fix host log (fields 2-4)
+start	gen=host-1597032-1793977729	primary=claude
+start	gen=host-1599185-1793977731	primary=claude
+pass-through	attended	main-only	check: rearm-resurface
+start	gen=host-1603501-1793977737	primary=claude
+take-over	arm=1600266
+pass-through	attended	main-only	check: rejected unauthenticated state checks: ~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-sh-attended-live.APPyYO/fix/fm/state/lab-seat.check.sh
+start	gen=host-1635471-1793977796	primary=claude
+take-over	arm=1631773
+pass-through	attended	main-only	check: rejected unauthenticated state checks: ~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-sh-attended-live.APPyYO/fix/fm/state/lab-seat.check.sh
+start	gen=host-1667112-1793977855	primary=claude
+take-over	arm=1665305
+pass-through	attended	main-only	check: rejected unauthenticated state checks: ~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-sh-attended-live.APPyYO/fix/fm/state/lab-seat.check.sh
+--- fix primary bash commands
+bin/fm-wake-drain.sh
+bin/fm-wake-drain.sh --ack-through 1 --recovery-generation 1597240.1793977731.mAvMSC
+bin/fm-wake-drain.sh
+bin/fm-wake-drain.sh --ack-through 2 --recovery-generation 1605041.1793977790.k4ZP3L
+bin/fm-wake-drain.sh
+bin/fm-wake-drain.sh --ack-through 3 --recovery-generation 1635985.1793977850.26DmOP
+bin/fm-wake-drain.sh
+bin/fm-wake-drain.sh --ack-through 4 --recovery-generation 1667752.1793977910.rogASn
+--- fix screen
+● OK
+✻ Churned for 3s · done 10:08 AM
+● Stop hook feedback
+  Ran 2 shell commands
+● ACKED
+✻ Worked for 5s · done 10:09 AM
+● Stop hook feedback
+  Ran 2 shell commands
+● ACKED
+✻ Cogitated for 3s · done 10:10 AM
+● Stop hook feedback
+● Drain the durable wake queue
+  ⎿  $ bin/fm-wake-drain.sh --ack-through 4 --recovery-generation 1667752.1793977910.rogASn
+✢ Thinking… (4s · ↓ 201 tokens)
+  ⎿  Tip: Send messages to Claude while it works to steer Claude in real-time
+seat-max 5h 96% · 7d 44% (5d 5h)  │  others tightest claude seat-max2 0% (5m old, stale)                                                                                                                                [-]
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ 
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  -- INSERT -- ⏵⏵ bypass permissions on (shift+tab to cycle)
+RESULT fix resurfaces=1 rewakes=3 acks=4 takeovers=3
+# 10:11:57 control: lab ~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-sh-attended-live.APPyYO/control code=5d49fe77d2d1b80a0f043544d9d51e14f8e7ed96 FM_CHECK_INTERVAL=60 (no worker status files)
+# 10:12:08 control step 1: primary idle (claude pid 1706245, 2.1.319 (Claude Code), model haiku); tracked Stop hook registered; config/supervision-host present; host pid 1717507 parked on watcher 1717780; listener runner 1717972; captain prompts so far: 1
+# 10:12:08 control transcript: ~/.claude-seats/seat-max/projects/-home-max-guest--no-mistakes-worktrees-c0c4fcacb05a--fm-test-scratch-fm-sh-attended-live-APPyYO-control-fm/787fb2ef-68a7-4831-b6b0-02583bc57338.jsonl
+# 10:12:10 control: stopped host 1717507 and watcher 1717780; queued a stranded row; marker: pending:downtime:1717780.1793977929.TgrpVy
+# 10:12:14 control: first pass-through: pass-through	attended	main-only	check: rearm-resurface
+# 10:12:14 control: installed state/lab-seat.check.sh; observing 180s of primary turns
+# 10:15:14 control: rearm-resurface main-only pass-throughs=1  main rewakes=3  primary acks=4  take-overs=3
+--- control host log (fields 2-4)
+start	gen=host-1717507-1793977928	primary=claude
+start	gen=host-1719738-1793977929	primary=claude
+pass-through	attended	main-only	check: rearm-resurface
+start	gen=host-1723498-1793977935	primary=claude
+take-over	arm=1720381
+pass-through	attended	main-only	check: rejected unauthenticated state checks: ~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-sh-attended-live.APPyYO/control/fm/state/lab-seat.check.sh
+start	gen=host-1764728-1793977993	primary=claude
+take-over	arm=1762564
+pass-through	attended	main-only	check: rejected unauthenticated state checks: ~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-sh-attended-live.APPyYO/control/fm/state/lab-seat.check.sh
+start	gen=host-1802624-1793978052	primary=claude
+take-over	arm=1800049
+pass-through	attended	main-only	check: rejected unauthenticated state checks: ~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-sh-attended-live.APPyYO/control/fm/state/lab-seat.check.sh
+--- control primary bash commands
+bin/fm-wake-drain.sh --ack-through 1 --recovery-generation 1717780.1793977929.TgrpVy
+bin/fm-wake-drain.sh
+bin/fm-wake-drain.sh --ack-through 2 --recovery-generation 1723812.1793977988.ajJJxS
+bin/fm-wake-drain.sh
+bin/fm-wake-drain.sh --ack-through 3 --recovery-generation 1765504.1793978048.VqaYHd
+bin/fm-wake-drain.sh
+bin/fm-wake-drain.sh --ack-through 4 --recovery-generation 1803323.1793978109.eZOU6n
+--- control screen
+● OK
+✻ Cooked for 1s · done 10:12 AM
+● Stop hook feedback
+  Ran 2 shell commands
+● ACKED
+✻ Brewed for 3s · done 10:13 AM
+● Stop hook feedback
+  Ran 2 shell commands
+● ACKED
+✻ Cogitated for 3s · done 10:14 AM
+● Stop hook feedback
+  Ran 2 shell commands
+● ACKED
+· Befuddling… (running Stop hooks… 3/4 · 3s · ↓ 384 tokens · thought for 1s)
+  ⎿  Tip: Use ctrl+v to paste images from your clipboard
+seat-max 5h 94% · 7d 43% (5d 5h)  │  others tightest claude seat-max2 0% (8m old, stale)                                                                                                                                [-]
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ 
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  -- INSERT -- ⏵⏵ bypass permissions on (shift+tab to cycle)
+RESULT control resurfaces=1 rewakes=3 acks=4 takeovers=3
+exit=0

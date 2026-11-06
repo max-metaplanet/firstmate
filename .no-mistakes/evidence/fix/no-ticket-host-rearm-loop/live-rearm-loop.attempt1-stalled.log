@@ -1,0 +1,4 @@
+skip: control: set FM_SUPERVISION_HOST_ATTENDED_LIVE_CONTROL_REF to a pre-fix ref to run the negative control
+# 09:51:13 fix: lab ~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-sh-attended-live.xdRzpO/fix code=HEAD(fix) FM_CHECK_INTERVAL=5
+# 09:51:25 fix step 1: primary idle (claude pid 890363, 2.1.319 (Claude Code), model haiku); tracked Stop hook registered; config/supervision-host present; host pid 898200 parked on watcher 898364; listener runner 898590; captain prompts so far: 1
+# 09:51:25 fix transcript: ~/.claude-seats/seat-max/projects/-home-max-guest--no-mistakes-worktrees-c0c4fcacb05a--fm-test-scratch-fm-sh-attended-live-xdRzpO-fix-fm/94bddb98-fe88-4772-a235-83f2bf614a4b.jsonl

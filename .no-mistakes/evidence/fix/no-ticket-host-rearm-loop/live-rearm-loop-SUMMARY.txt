@@ -1,0 +1,15 @@
+Live T3-style re-arm loop check (lab homes only; real Claude Code 2.1.319 primary, model haiku,
+tracked Stop hook re-arming after every turn; config/supervision-host only in the lab home).
+Fixture: after setup, lab host+watcher stopped, a row queued (pending downtime with work), next turn
+end re-parks -> "start gen=... / pass-through attended main-only check: rearm-resurface" (user's signature).
+Then an unregistered state/lab-seat.check.sh is due during main's turn (the gap).
+
+FM_CHECK_INTERVAL=5, 180s (live-rearm-loop-v2.log):
+  control 5d49fe77: rearm-resurface pass-throughs=11 (consecutive turns)  -> loop reproduced
+  fix 7c7bd5f7:     rearm-resurface pass-throughs=1, take-overs=34        -> loop gone
+FM_CHECK_INTERVAL=5, 90s, fix only, full reasons (live-rearm-loop-v3-interval5-fix-reasons.log):
+  1 rearm-resurface, 16 take-overs, 16 "check: rejected unauthenticated state checks" (one per due sweep)
+FM_CHECK_INTERVAL=60, 180s (live-rearm-loop-v3-interval60.log): both refs 1 rearm-resurface
+  (non-discriminating: no check due during the gap); fix wakes main once per check interval.
+Earlier attempts (fixture flaws, kept for audit): attempt1-stalled, attempt2-v1-fixture-absorbed
+(engine absorbed row with demo status signals), attempt3-sessionstart-drained (SessionStart drain).

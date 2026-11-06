@@ -1,0 +1,8 @@
+ok - host+hook: an attended main-only pass-through rewakes main and keeps its successor watcher
+ok - host+hook: a successor close that lands during main's turn is delivered at the next turn end
+ok - host+hook: the next park takes over the cycle a main-only pass-through left, so one arm owns it
+ok - host+hook: a takeover does not hand the same rearm-resurface straight back
+ok - host+hook: a due check during the re-arm gap does not hand check: rearm-resurface again
+ok - host+hook: a row queued after main's acknowledgement reaches main once when the left successor is gone
+ok - host+hook: an attach after the host is turned off ends the gap successor's check skip
+ok - host+hook: a take-over that falls back to attaching ends the gap successor's check skip

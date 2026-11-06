@@ -1,0 +1,42 @@
+# 09:56:29 fix: lab ~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-sh-attended-live.0kxd2H/fix code=HEAD(fix) FM_CHECK_INTERVAL=5 (no worker status files)
+# 09:56:39 fix step 1: primary idle (claude pid 1096344, 2.1.319 (Claude Code), model haiku); tracked Stop hook registered; config/supervision-host present; host pid 1104406 parked on watcher 1104645; listener runner 1104802; captain prompts so far: 1
+# 09:56:39 fix transcript: ~/.claude-seats/seat-max/projects/-home-max-guest--no-mistakes-worktrees-c0c4fcacb05a--fm-test-scratch-fm-sh-attended-live-0kxd2H-fix-fm/dfd9071b-5e20-4cbe-9681-ac3aaf4fe26c.jsonl
+# 09:59:50 fix: no first rearm-resurface pass-through within 180s
+--- host log
+1793976999	start	gen=host-1104406-1793976999	primary=claude
+--- cycle exits
+
+--- queue
+1793976989	1	check	resurface-fixture	check: work stranded before the host parked
+--- ledger: epoch=1 owner_pid=1103975 outcome=arming updated_at=1793976999 owner_session_id=dfd9071b-5e20-4cbe-9681-ac3aaf4fe26c
+--- marker: pending:handling:1096263.1793976989.SEVQC2
+--- screen
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+seat-max 5h 97% · 7d 44% (5d 6h)  │  others tightest codex default 0% (13m old, stale)                                                                                                                                  [-]
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ 
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+  -- INSERT -- ⏵⏵ bypass permissions on (shift+tab to cycle)
+# 09:59:53 control: lab ~/.no-mistakes/worktrees/c0c4fcacb05a/.fm-test-scratch/fm-sh-attended-live.0kxd2H/control code=5d49fe77d2d1b80a0f043544d9d51e14f8e7ed96 FM_CHECK_INTERVAL=5 (no worker status files)
+# 10:00:03 control step 1: primary idle (claude pid 1217267, 2.1.319 (Claude Code), model haiku); tracked Stop hook registered; config/supervision-host present; host pid 1227044 parked on watcher 1227244; listener runner 1227404; captain prompts so far: 1
+# 10:00:03 control transcript: ~/.claude-seats/seat-max/projects/-home-max-guest--no-mistakes-worktrees-c0c4fcacb05a--fm-test-scratch-fm-sh-attended-live-0kxd2H-control-fm/aff6c948-33f1-4385-92c1-bad62b9e1798.jsonl
+exit=143
