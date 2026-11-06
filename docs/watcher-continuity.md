@@ -239,7 +239,8 @@ Its ordinary arm check still announces a never-announced generation that has que
 
 An ordinary watcher close attempts to publish downtime, and every durable queue append publishes it.
 A handling successor closing to resurface recovery preserves the existing marker instead.
-The successor whose handoff is confirmed holds announced downtime as pending on the same generation until that confirm, and does not run its check sweep until the marker reads handling.
+The supervision host starts the successor whose handling handoff it then confirms (`bin/fm-watch-arm.sh --handling-delivered`) with `FM_WATCH_HANDOFF_CONFIRM`; only that successor holds announced downtime as pending on the same generation until the confirm, and does not run its check sweep until the marker reads handling.
+A handling successor from any other launcher (the host-off Claude Stop hook, omp, or OpenCode) runs the ordinary arm check and its check sweep from the start.
 If EXIT cleanup cannot acquire the downtime-marker lock within its bound, it retains the stale singleton for the next arm to publish the missing downtime before clearing that lock (see [Grace, beacon, and stop signals](#grace-beacon-and-stop-signals)).
 A downtime republication of a pending episode reuses its generation.
 A watcher close leaves an announced downtime episode announced, while a successful durable append opens a fresh pending generation so a live watcher can recover the new work.

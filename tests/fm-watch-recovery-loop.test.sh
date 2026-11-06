@@ -238,7 +238,7 @@ test_handling_successor_quarantines_malformed_marker() {
   out="$dir/watch.out"
   PATH="$fakebin:$PATH" FM_HOME="$home" FM_STATE_OVERRIDE="$state" \
     FM_POLL=1 FM_SIGNAL_GRACE=0 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=600 \
-    FM_WATCH_HANDLING_SUCCESSOR=1 "$WATCH" > "$out" 2>&1 &
+    FM_WATCH_HANDLING_SUCCESSOR=1 FM_WATCH_HANDOFF_CONFIRM=1 "$WATCH" > "$out" 2>&1 &
   child=$!
   now=0
   while [ "$now" -lt 40 ]; do
@@ -259,6 +259,43 @@ test_handling_successor_quarantines_malformed_marker() {
   pass "a handling successor quarantines a malformed recovery marker and keeps supervising"
 }
 
+# T4: a handling successor that no host handoff will confirm (the host-off
+# Claude Stop hook, omp, OpenCode) runs its due check sweep at once and leaves
+# an announced episode announced; only the host's confirmed handoff holds it.
+test_unconfirmed_handling_successor_runs_checks() {
+  local dir home state fakebin child now out hash
+  dir=$(make_case recovery-handling-unconfirmed)
+  home="$dir/home"
+  state="$dir/state"
+  fakebin="$dir/fakebin"
+  mkdir -p "$home/data"
+  : > "$state/crew.meta"
+  printf 'announced:downtime:off.1.aaa\n' > "$state/.watcher-down"
+  chmod 600 "$state/.watcher-down"
+  printf '#!/usr/bin/env bash\necho lab ready\n' > "$state/lab.check.sh"
+  chmod 700 "$state/lab.check.sh"
+  hash=$(sha256sum "$state/lab.check.sh" | awk '{ print $1 }')
+  printf 'fm-custom-check-v1\n%s\n' "$hash" > "$state/lab.check-trust"
+  chmod 600 "$state/lab.check-trust"
+  out="$dir/watch.out"
+  PATH="$fakebin:$PATH" FM_HOME="$home" FM_STATE_OVERRIDE="$state" \
+    FM_POLL=1 FM_SIGNAL_GRACE=0 FM_CHECK_INTERVAL=0 FM_HEARTBEAT=600 \
+    FM_WATCH_HANDLING_SUCCESSOR=1 "$WATCH" > "$out" 2>&1 &
+  child=$!
+  now=0
+  while [ "$now" -lt 40 ]; do
+    grep -q '^check: ' "$out" 2>/dev/null && break
+    sleep 0.25
+    now=$((now + 1))
+  done
+  kill -TERM "$child" 2>/dev/null || true
+  wait "$child" 2>/dev/null || true
+  grep -F 'lab ready' "$out" >/dev/null \
+    || fail "an unconfirmed handling successor held its due check sweep: $(cat "$out")"
+  pass "a handling successor no host handoff confirms runs its due check sweep at once"
+}
+
 test_handling_successor_does_not_go_blind
 test_handling_successor_quarantines_malformed_marker
+test_unconfirmed_handling_successor_runs_checks
 test_unacknowledged_recovery_is_announced_once_per_generation
