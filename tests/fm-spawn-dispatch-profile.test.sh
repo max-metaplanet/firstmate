@@ -2799,6 +2799,16 @@ test_free_opencode_sensitive_target_refuses_launch() {
   expect_code 1 "$status" "a sensitive target refuses a free OpenCode launch"
   assert_contains "$out" "refusing to launch free OpenCode model" "the refusal names the free model"
   [ ! -s "$LAUNCH_LOG" ] || fail "a refused free OpenCode launch must not start"
+  id=profile-opencode-secret-z8d
+  rec=$(make_spawn_case profile-opencode-secret-nomodel opencode "$id")
+  read_case_record "$rec"
+  printf '\nTarget paths: migrations/001.sql\n' >> "$HOME_DIR/data/$id/brief.md"
+  : > "$LAUNCH_LOG"
+  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" 2>&1)
+  status=$?
+  expect_code 1 "$status" "a sensitive target refuses an OpenCode launch that names no model"
+  assert_contains "$out" "refusing to launch free OpenCode model 'default'" "the refusal covers OpenCode's own default"
+  [ ! -s "$LAUNCH_LOG" ] || fail "a refused model-less OpenCode launch must not start"
   pass "a sensitive target path does not launch a free OpenCode model"
 }
 

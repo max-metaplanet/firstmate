@@ -7513,9 +7513,9 @@ if [ "$ORCA_LAUNCH_ENV_ENABLED" = 1 ]; then
 fi
 # Confine only a resolved free OpenCode model. Any other launch, including a
 # paid OpenCode model, keeps the command and environment built above.
-if [ -n "$MODEL" ] && [ "$MODEL" != default ] && [ -n "$HARNESS" ]; then
+if [ -n "$HARNESS" ]; then
   fm_free_rc=0
-  "$SCRIPT_DIR/fm-free-model-sensitivity.sh" free-model --harness "$HARNESS" --model "$MODEL" || fm_free_rc=$?
+  "$SCRIPT_DIR/fm-free-model-sensitivity.sh" free-model --harness "$HARNESS" --model "${MODEL:-}" || fm_free_rc=$?
   case "$fm_free_rc" in
     0)
       # Exit 0 means a declared target is sensitive. Start there so a
@@ -7528,7 +7528,7 @@ if [ -n "$MODEL" ] && [ "$MODEL" != default ] && [ -n "$HARNESS" ]; then
       fi
       case "$fm_brief_rc" in
         0)
-          echo "error: refusing to launch free OpenCode model '$MODEL' because a declared target path is sensitive" >&2
+          echo "error: refusing to launch free OpenCode model '${MODEL:-default}' because a declared target path is sensitive" >&2
           exit 1
           ;;
         1) ;;
@@ -7541,7 +7541,7 @@ if [ -n "$MODEL" ] && [ "$MODEL" != default ] && [ -n "$HARNESS" ]; then
         while IFS= read -r fm_env_name; do
           [ -n "$fm_env_name" ] || continue
           if "$SCRIPT_DIR/fm-free-model-sensitivity.sh" token-name "$fm_env_name"; then
-            echo "error: refusing to launch free OpenCode model '$MODEL' because config/launch-env-allowlist forwards token $fm_env_name from the Orca source session" >&2
+            echo "error: refusing to launch free OpenCode model '${MODEL:-default}' because config/launch-env-allowlist forwards token $fm_env_name from the Orca source session" >&2
             exit 1
           fi
         done <<<"$LAUNCH_ENV_NAMES"

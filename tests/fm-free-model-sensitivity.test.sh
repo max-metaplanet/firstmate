@@ -254,7 +254,10 @@ TREE="$TMP_ROOT/tree"
 mkdir -p "$TREE/home/.secrets" "$TREE/home/.aws" "$TREE/home/.config/gh" \
   "$TREE/work/.github/workflows" "$TREE/work/migrations" "$TREE/work/infra" \
   "$TREE/work/auth" "$TREE/work/payments" "$TREE/work/src/secrets" \
-  "$TREE/work/bin" "$TREE/work/docs"
+  "$TREE/work/bin" "$TREE/work/docs" \
+  "$TREE/toolchain/site-packages/pip/_internal/network" "$TREE/toolchain/node_modules/pkg/migrations"
+printf 'PIP\n' > "$TREE/toolchain/site-packages/pip/_internal/network/auth.py"
+printf 'NODE\n' > "$TREE/toolchain/node_modules/pkg/migrations/001.js"
 printf 'SECRET\n' > "$TREE/home/.secrets/token"
 printf 'AWS\n' > "$TREE/home/.aws/credentials"
 printf 'GH\n' > "$TREE/home/.config/gh/hosts.yml"
@@ -286,14 +289,18 @@ for name in ("DOPPLER_TOKEN", "SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY", "AWS_
 PY
 # /proc/@ppid is the supervisor, whose kernel environment block still holds
 # the tokens it unset. /dev/fd/3 is a routine file and /dev/fd/4 a pipe, both
-# opened by the caller as process substitution would.
+# opened by the caller as process substitution would. Path classes cover the
+# worktree the confine starts in, so toolchain files outside it stay readable.
 denied_paths=(
   .env .github/workflows/ci.yml migrations/001.sql infra/main.tf doppler.yaml
   auth/session.ts payments/charge.ts src/link.env
   "$TREE/home/.secrets/token" "$TREE/home/.aws/credentials" "$TREE/home/.config/gh/hosts.yml"
   /proc/self/environ /proc/thread-self/environ /proc/@ppid/environ /proc/self/mem
 )
-read_paths=(src/app.ts bin/fm-spawn.sh docs/configuration.md src/secrets/helper.ts /dev/fd/3 /dev/fd/4)
+read_paths=(
+  src/app.ts bin/fm-spawn.sh docs/configuration.md src/secrets/helper.ts /dev/fd/3 /dev/fd/4
+  "$TREE/toolchain/site-packages/pip/_internal/network/auth.py" "$TREE/toolchain/node_modules/pkg/migrations/001.js"
+)
 (
   cd "$TREE/work" || exit 1
   export DOPPLER_TOKEN=d SUPABASE_URL=https://db.example SUPABASE_SERVICE_ROLE_KEY=s \
@@ -324,13 +331,17 @@ while IFS=$'\t' read -r action path extra; do
 done < "$TMP_ROOT/probe.out"
 pass "a free-model process cannot read secrets or sensitive paths, and other launches still can"
 
+# The captain's documented free list: OpenCode Zen and OpenRouter free ids,
+# big-pickle, and an OpenCode launch that names no model or `default`.
 # Paid OpenCode, Grok, Codex, and Claude are not free OpenCode models.
-"$SENS" free-model --harness opencode --model opencode/glm-5.3-flash-free
-"$SENS" free-model --harness opencode --model opencode/big-pickle && fail "big-pickle is not marked free"
+for model in opencode/glm-5.3-flash-free opencode/deepseek-v4-free opencode/big-pickle \
+  openrouter/deepseek/deepseek-chat-v3:free openrouter/z-ai/glm-4.5-air:free '' default; do
+  "$SENS" free-model --harness opencode --model "$model" || fail "OpenCode model '${model}' should be free"
+done
 "$SENS" free-model --harness opencode --model anthropic/claude-sonnet-4-5 && fail "a paid OpenCode model was treated as free"
 "$SENS" free-model --harness grok --model grok-4-free && fail "a Grok model was treated as a free OpenCode model"
 "$SENS" free-model --harness codex --model gpt-5 && fail "Codex was treated as a free OpenCode model"
 "$SENS" free-model --harness claude --model claude-sonnet-4-5 && fail "Claude was treated as a free OpenCode model"
-pass "only an OpenCode model id marked free is a free OpenCode model"
+pass "documented free OpenCode models and a model-less OpenCode launch are free, and paid ones are not"
 
 echo "# all fm-free-model-sensitivity tests passed"

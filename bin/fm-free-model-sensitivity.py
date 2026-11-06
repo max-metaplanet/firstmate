@@ -10,7 +10,9 @@ bin/fm-spawn.sh confines only a launch whose resolved model is free.
 A paid OpenCode model and every other harness keep their environment and
 their read access. A routine path may still resolve to a free model.
 
-The read block is a seccomp user notifier in the parent. The child cannot
+The read block is a seccomp user notifier in the parent. Path classes apply
+inside the task worktree, the directory confine starts in, so toolchain
+files elsewhere stay readable. Secrets files and token stores apply anywhere. The child cannot
 complete open, stat, or exec of a blocked path, including by a raw syscall.
 The parent opens an allowed file itself and installs that fd, so a symlink
 swap after the check cannot hand the child a secret inode.
@@ -212,21 +214,26 @@ def proc_private(path: str) -> bool:
     return len(parts) > 3 and parts[1] == "proc" and parts[-1] in PROC_PRIVATE
 
 
-def path_blocked(path: str, home: str) -> bool:
-    return sensitive_class(path) is not None or secrets_path(path, home) or proc_private(path)
+def path_blocked(path: str, home: str, root: str) -> bool:
+    if _under(path, root) and sensitive_class(os.path.relpath(path, root)) is not None:
+        return True
+    return secrets_path(path, home) or proc_private(path)
 
 
 def is_free_opencode(harness: str | None, model: str | None) -> bool:
-    """A free OpenCode model is a configured opencode model whose id marks it free.
+    """A free OpenCode model is an opencode launch on a documented free model.
 
-    The catalog mark is a final segment that is `free` or ends in `-free`,
-    as in `opencode/glm-5.3-flash-free`. `big-pickle` and paid provider ids
-    do not. Another harness stays paid even when its id ends in `-free`.
+    That is an id whose final segment is `free` or ends in `-free` or `:free`
+    (OpenCode Zen and OpenRouter free ids, such as GLM and DeepSeek ones),
+    `big-pickle`, or no model at all, since opencode's own default may be
+    free. Another harness stays paid even when its id ends in `-free`.
     """
-    if harness != "opencode" or not model:
+    if harness != "opencode":
         return False
+    if not model or model == "default":
+        return True
     leaf = model.split("/")[-1].lower()
-    return leaf == "free" or leaf.endswith("-free")
+    return leaf in ("free", "big-pickle") or leaf.endswith(("-free", ":free"))
 
 
 def token_name(name: str) -> bool:
@@ -490,7 +497,18 @@ def ioctl(fd: int, request: int, buffer) -> int:
     return rc
 
 
-def supervise(notify_fd: int, child: int, home: str, names: dict[str, int], notif_size: int) -> None:
+def special_file(*paths: str) -> bool:
+    for path in paths:
+        try:
+            st_mode = os.stat(path).st_mode
+        except FileNotFoundError:
+            continue
+        if not (stat.S_ISREG(st_mode) or stat.S_ISDIR(st_mode)):
+            return True
+    return False
+
+
+def supervise(notify_fd: int, child: int, home: str, root: str, names: dict[str, int], notif_size: int) -> None:
     recv_req = _ioc(3, 0, notif_size)
     send_req = _ioc(3, 1, 24)
     valid_req = _ioc(1, 2, 8)
@@ -540,25 +558,20 @@ def supervise(notify_fd: int, child: int, home: str, names: dict[str, int], noti
                         # parent cannot install an fd for it. Denying the call
                         # keeps that path from skipping the inode check.
                         error = errno.EPERM
-                    elif path_blocked(lexical, home) or path_blocked(resolved, home):
+                    elif path_blocked(lexical, home, root) or path_blocked(resolved, home, root):
                         error = errno.EACCES
                     elif nr in open_numbers:
                         flags = int(as_i64(args[2])) if nr != names.get("open") else int(as_i64(args[1]))
                         mode = 0o666
                         if flags & O_CREAT:
                             mode = int(args[3 if nr != names.get("open") else 2]) & 0o7777
-                        try:
-                            st_mode = os.stat(lexical).st_mode
-                            special = not (stat.S_ISREG(st_mode) or stat.S_ISDIR(st_mode))
-                        except FileNotFoundError:
-                            special = False
-                        if special:
+                        if special_file(resolved, lexical):
                             continue_call = True
                         else:
                             fd = os.open(resolved, flags | O_CLOEXEC, mode)
                             try:
                                 opened = os.path.realpath(f"/proc/self/fd/{fd}")
-                                if path_blocked(opened, home):
+                                if path_blocked(opened, home, root):
                                     error = errno.EACCES
                                 else:
                                     allow_fd = fd
@@ -595,6 +608,7 @@ def supervise(notify_fd: int, child: int, home: str, names: dict[str, int], noti
 
 
 def confine(home: str, command: list[str]) -> int:
+    root = os.path.realpath(os.getcwd())
     tables = arch_tables()
     if tables is None:
         print("free-model sensitivity: this architecture cannot confine a free OpenCode model", file=sys.stderr)
@@ -632,7 +646,7 @@ def confine(home: str, command: list[str]) -> int:
         os.waitpid(pid, 0)
         return 2
     try:
-        supervise(listener, pid, home, names, sizes.seccomp_notif or 80)
+        supervise(listener, pid, home, root, names, sizes.seccomp_notif or 80)
     finally:
         os.close(listener)
     _pid, status = os.waitpid(pid, 0)
