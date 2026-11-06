@@ -799,6 +799,10 @@ test_ship_project_memory_wording() {
     "project-memory contract still invites additions for durable knowledge"
   assert_grep "A correction edits only the wrong text: do not run \`$ROOT/bin/fm-ensure-agents-md.sh\`" "$brief" \
     "project-memory contract no longer forbids the ensure helper on a correction"
+  assert_grep "$ROOT/bin/fm-free-model-sensitivity.sh mech" "$brief" \
+    "ship brief did not name the mechanical helper"
+  assert_grep "review the diff it prints before you apply it" "$brief" \
+    "ship brief did not tell the worker to review the helper's diff"
   pass "fm-brief.sh: ship project-memory wording bounds edits to corrections of wrong information"
 }
 
@@ -1309,6 +1313,8 @@ test_scout_and_secondmate_scaffold() {
   assert_grep "## Captain's intent" "$brief" "scout brief missing Captain's intent subsection"
   assert_grep "## Firstmate spec" "$brief" "scout brief missing Firstmate spec subsection"
   assert_grep "{FIRSTMATE_SPEC}" "$brief" "scout brief missing the spec placeholder"
+  assert_grep "$ROOT/bin/fm-free-model-sensitivity.sh mech" "$brief" \
+    "scout brief did not name the mechanical helper"
 
   FM_SECONDMATE_CHARTER='Supervise the alpha domain.' \
     FM_HOME="$BRIEF_HOME" "$ROOT/bin/fm-brief.sh" brief-sm-q6 --secondmate alpha >/dev/null 2>&1 \

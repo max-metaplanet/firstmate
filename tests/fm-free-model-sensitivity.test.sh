@@ -387,4 +387,123 @@ done
 "$SENS" free-model --harness claude --model claude-sonnet-4-5 && fail "Claude was treated as a free OpenCode model"
 pass "documented free OpenCode models and a model-less OpenCode launch are free, and paid ones are not"
 
+# mech is the worker handoff. A paid id or a sensitive path never launches.
+# A free id launches under the same scrub and read block, prints a diff, and
+# puts the worktree back so the caller can review that diff before applying it.
+MECH_BIN="$TMP_ROOT/mech-bin"
+MECH_LOG="$TMP_ROOT/mech-launch.log"
+MECH_REPO="$TMP_ROOT/mech"
+mkdir -p "$MECH_BIN"
+cat > "$MECH_BIN/opencode" <<EOF
+#!/bin/sh
+{
+  printf 'argv=%s\n' "\$*"
+  if [ -n "\$DOPPLER_TOKEN" ]; then printf 'token=set\n'; else printf 'token=unset\n'; fi
+  if [ -n "\$AWS_REGION" ]; then printf 'region=%s\n' "\$AWS_REGION"; else printf 'region=unset\n'; fi
+  printf 'config=%s\n' "\$OPENCODE_CONFIG_CONTENT"
+  if cat .env >/dev/null 2>&1; then printf 'env=read\n'; else printf 'env=denied\n'; fi
+} >> "$MECH_LOG"
+printf 'edited\n' >> src/app.ts
+printf 'scaffold\n' > src/new-scaffold.ts
+git add src/app.ts
+git -c user.email=t@example.invalid -c user.name=t commit -qm 'model commit' || printf 'commit=fail\n' >> "$MECH_LOG"
+printf 'commit=done\n' >> "$MECH_LOG"
+EOF
+chmod +x "$MECH_BIN/opencode"
+fm_git_init_commit "$MECH_REPO"
+mkdir -p "$MECH_REPO/src"
+printf 'APP\n' > "$MECH_REPO/src/app.ts"
+printf 'ENV\n' > "$MECH_REPO/.env"
+git -C "$MECH_REPO" add -f src/app.ts .env
+git -C "$MECH_REPO" -c user.name='Firstmate Tests' -c user.email='tests@example.invalid' commit -qm seed
+MECH_HEAD=$(git -C "$MECH_REPO" rev-parse HEAD)
+
+mech_run() {
+  local status=0
+  MECH_STATUS=0
+  MECH_ERR=$TMP_ROOT/mech-err
+  MECH_OUT=$(
+    cd "$MECH_REPO" && DOPPLER_TOKEN=secret AWS_REGION=us-east-1 HOME="$TREE/home" PATH="$MECH_BIN:$PATH" \
+      "$SENS" "$@" 2>"$MECH_ERR"
+  ) || status=$?
+  MECH_STATUS=$status
+}
+
+for _ in $(seq 1 "$COUNT"); do
+  SEED=$(( (SEED * 1103515245 + 12345) & 2147483647 ))
+  n=$(( SEED % 1000 ))
+  for kind in ci migration infra env doppler auth payments; do
+    case "$kind" in
+      ci) path="svc${n}/.github/workflows/ci.yml" ;;
+      migration) path="svc${n}/migrations/001.sql" ;;
+      infra) path="svc${n}/infra/main.tf" ;;
+      env) path="svc${n}/.env.local" ;;
+      doppler) path="svc${n}/doppler.yaml" ;;
+      auth) path="svc${n}/auth/session.ts" ;;
+      payments) path="svc${n}/payments/charge.ts" ;;
+    esac
+    rm -f "$MECH_LOG"
+    mech_run mech --model opencode/glm-5.3-flash-free --path "$path" -- "rename the counter"
+    [ "$MECH_STATUS" -eq 1 ] || fail "seed=$SEED mech launched on a $kind path: $path status=$MECH_STATUS err=$(cat "$MECH_ERR")"
+    [ ! -e "$MECH_LOG" ] || fail "seed=$SEED mech launched on a $kind path: $path"
+  done
+  rm -f "$MECH_LOG"
+  mech_run mech --model "opencode/gpt-$n" --path src/app.ts -- "rename the counter"
+  [ "$MECH_STATUS" -eq 1 ] || fail "seed=$SEED mech treated opencode/gpt-$n as free"
+  [ ! -e "$MECH_LOG" ] || fail "seed=$SEED a paid OpenCode model launched"
+  rm -f "$MECH_LOG"
+  mech_run mech --model "anthropic/claude-sonnet-$n" --path src/app.ts -- "rename the counter"
+  [ "$MECH_STATUS" -eq 1 ] || fail "seed=$SEED mech launched Claude id anthropic/claude-sonnet-$n"
+  [ ! -e "$MECH_LOG" ] || fail "seed=$SEED a Claude id launched"
+done
+rm -f "$MECH_LOG"
+mech_run mech --model opencode/big-pickle --path .secrets/token -- "rename the counter"
+[ "$MECH_STATUS" -eq 1 ] || fail "mech launched on a secrets path"
+[ ! -e "$MECH_LOG" ] || fail "mech launched on a secrets path"
+mech_run mech --model opencode/glm-5.3-flash-free -- "rename the counter"
+[ "$MECH_STATUS" -eq 2 ] || fail "mech without a path should be a usage error, got $MECH_STATUS"
+pass "mech refuses a sensitive path, a paid OpenCode model, and a Claude id without launching"
+
+printf 'DIRTY-MARKER\n' >> "$MECH_REPO/README.md"
+rm -f "$MECH_LOG"
+mech_run mech --model opencode/glm-5.3-flash-free --path src/app.ts -- "don't drop the counter"
+[ "$MECH_STATUS" -eq 0 ] || fail "mech failed on a free model: status=$MECH_STATUS out=$MECH_OUT"
+[ "$(git -C "$MECH_REPO" rev-parse HEAD)" = "$MECH_HEAD" ] || fail "mech left the model's commit in place"
+grep -q DIRTY-MARKER "$MECH_REPO/README.md" || fail "mech dropped the caller's uncommitted edit"
+grep -q edited "$MECH_REPO/src/app.ts" && fail "mech left the model's edit in the worktree"
+[ ! -e "$MECH_REPO/src/new-scaffold.ts" ] || fail "mech left the model's new file in the worktree"
+assert_contains "$MECH_OUT" "edited" "the printed diff did not contain the model's edit"
+assert_not_contains "$MECH_OUT" "DIRTY-MARKER" "the printed diff included the caller's existing edit"
+log=$(cat "$MECH_LOG")
+assert_contains "$log" "--standalone" "the free launch did not pin a private OpenCode server"
+assert_contains "$log" "--model opencode/glm-5.3-flash-free" "the free launch did not receive its model"
+assert_contains "$log" "don't drop the counter" "the free launch did not receive the edit"
+assert_contains "$log" "Do not commit" "the free launch did not forbid a commit"
+assert_contains "$log" "token=unset" "the free launch kept DOPPLER_TOKEN"
+assert_contains "$log" "region=us-east-1" "the free launch stripped an ordinary variable"
+assert_contains "$log" "env=denied" "the free launch read .env"
+assert_not_contains "$log" "commit=fail" "the stand-in model could not commit, so the restore did not undo one"
+assert_contains "$log" 'config={"permission":{"*":"allow"}}' "the free launch did not allow edits"
+assert_not_contains "$log" "claude" "the free launch invoked Claude"
+(
+  cd "$MECH_REPO" && printf '%s\n' "$MECH_OUT" | git apply
+) || fail "the caller could not apply the printed diff: $MECH_OUT"
+grep -q edited "$MECH_REPO/src/app.ts" || fail "applying the diff did not produce the model's edit"
+grep -q scaffold "$MECH_REPO/src/new-scaffold.ts" || fail "applying the diff did not produce the new file"
+grep -q DIRTY-MARKER "$MECH_REPO/README.md" || fail "applying the diff disturbed the caller's edit"
+pass "mech returns a reviewable diff and leaves the caller's worktree unchanged"
+
+git -C "$MECH_REPO" reset --hard -q "$MECH_HEAD"
+git -C "$MECH_REPO" clean -fd -q
+rm -f "$MECH_LOG"
+mech_run mech --path src/app.ts -- "scaffold a test"
+[ "$MECH_STATUS" -eq 0 ] || fail "a model-less mech launch failed: status=$MECH_STATUS out=$MECH_OUT"
+log=$(cat "$MECH_LOG")
+assert_contains "$log" "--standalone" "a model-less launch did not pin a private server"
+assert_not_contains "$log" "--model" "a model-less launch pinned a model"
+assert_contains "$MECH_OUT" "edited" "a model-less launch did not return the edit"
+[ "$(git -C "$MECH_REPO" rev-parse HEAD)" = "$MECH_HEAD" ] || fail "a model-less launch left a commit"
+grep -q edited "$MECH_REPO/src/app.ts" && fail "a model-less launch left the edit in the worktree"
+pass "an OpenCode launch that names no model is a mech handoff and still returns only a diff"
+
 echo "# all fm-free-model-sensitivity tests passed"

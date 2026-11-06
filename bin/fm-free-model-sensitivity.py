@@ -10,6 +10,11 @@ bin/fm-spawn.sh confines only a launch whose resolved model is free.
 A paid OpenCode model and every other harness keep their environment and
 their read access. A routine path may still resolve to a free model.
 
+`mech` is the handoff a worker runs for a rename, a format, boilerplate,
+or test scaffolding. It launches only a documented free OpenCode model
+under this same scrub and read block, prints a diff, and leaves the
+worktree as it found it. The worker reviews that diff before applying it.
+
 The read block is a seccomp user notifier in the parent. Segment classes
 apply inside the task worktree, the directory confine starts in, so toolchain
 files elsewhere stay readable. Env and Doppler file names, secrets files,
@@ -27,10 +32,12 @@ import json
 import os
 import platform
 import select
+import shutil
 import signal
 import socket
 import stat
 import struct
+import subprocess
 import sys
 from ctypes import c_uint16, c_uint32, c_uint64, c_ulong
 
@@ -682,6 +689,187 @@ def confine(home: str, command: list[str]) -> int:
     return 1
 
 
+class GitError(Exception):
+    pass
+
+
+def git_bytes(args: list[str]) -> bytes:
+    proc = subprocess.run(["git", "--no-pager", *args], capture_output=True)
+    if proc.returncode != 0:
+        detail = proc.stderr.decode("utf-8", "replace").strip()
+        raise GitError(detail or "git " + " ".join(args) + " failed")
+    return proc.stdout
+
+
+def path_refused(path: str, home: str) -> str | None:
+    kind = sensitive_class(path)
+    if kind:
+        return kind
+    if secrets_path(path, home):
+        return "secrets"
+    return None
+
+
+def mech_refusal(model: str | None, paths: list[str], prompt: str, home: str) -> str | None:
+    """Why this handoff must not launch, or None when it may."""
+    if not is_free_opencode("opencode", model):
+        shown = model if model else ""
+        return f"refusing '{shown}' because it is not a documented free OpenCode model"
+    if not prompt.strip():
+        return "mech needs the edit after --"
+    if not paths:
+        return "mech needs at least one --path"
+    for path in paths:
+        kind = path_refused(path, home)
+        if kind:
+            return f"refusing sensitive path {path} ({kind})"
+    return None
+
+
+def mech_command(model: str | None, prompt: str) -> list[str]:
+    text = (
+        "Mechanical edit only: a rename, a format, boilerplate, or test scaffolding. "
+        "Do not commit, push, or merge. Do not read secrets. Stop when the files are edited.\n\n"
+        + prompt
+    )
+    command = ["opencode", "--standalone"]
+    if model and model != "default":
+        command.extend(["--model", model])
+    command.extend(["--prompt", text])
+    return command
+
+
+def stash_if_dirty() -> str | None:
+    if not git_bytes(["status", "--porcelain"]).strip():
+        return None
+    git_bytes(["stash", "push", "--include-untracked", "--quiet", "--message", "fm-mech"])
+    return git_bytes(["rev-parse", "stash"]).decode().strip()
+
+
+def collect_diff(head: str) -> bytes:
+    # A commit the model made is still a change against the recorded HEAD.
+    parts = [git_bytes(["diff", "--binary", head])]
+    for raw in git_bytes(["ls-files", "--others", "--exclude-standard", "-z"]).split(b"\0"):
+        if not raw:
+            continue
+        proc = subprocess.run(
+            ["git", "--no-pager", "diff", "--no-index", "--binary", "--", "/dev/null", raw],
+            capture_output=True,
+        )
+        parts.append(proc.stdout)
+    return b"".join(parts)
+
+
+def restore_worktree(head: str, stash_sha: str | None) -> None:
+    git_bytes(["reset", "--hard", head])
+    git_bytes(["clean", "-fd"])
+    if not stash_sha:
+        return
+    git_bytes(["stash", "apply", "--quiet", stash_sha])
+    listed = git_bytes(["stash", "list", "--format=%gd %H"]).decode()
+    for line in listed.splitlines():
+        ref, sha = line.split(" ", 1)
+        if sha == stash_sha:
+            git_bytes(["stash", "drop", "--quiet", ref])
+            break
+
+
+def confine_quiet(home: str, command: list[str], log_path: str) -> int:
+    saved_out = os.dup(1)
+    saved_err = os.dup(2)
+    try:
+        fd = os.open(log_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        try:
+            os.dup2(fd, 1)
+            os.dup2(fd, 2)
+        finally:
+            os.close(fd)
+        return confine(home, command)
+    finally:
+        os.dup2(saved_out, 1)
+        os.dup2(saved_err, 2)
+        os.close(saved_out)
+        os.close(saved_err)
+
+
+def parse_mech(argv: list[str]) -> tuple[str | None, list[str], str] | None:
+    if "--" not in argv:
+        return None
+    split = argv.index("--")
+    model = None
+    paths: list[str] = []
+    index = 0
+    flags = argv[:split]
+    while index < len(flags):
+        flag = flags[index]
+        if flag in ("--model", "--path"):
+            if index + 1 >= len(flags):
+                return None
+            value = flags[index + 1]
+            if flag == "--model":
+                model = value
+            else:
+                paths.append(value)
+            index += 2
+            continue
+        return None
+    return model, paths, " ".join(argv[split + 1 :]).strip()
+
+
+def mech(argv: list[str]) -> int:
+    parsed = parse_mech(argv)
+    if parsed is None:
+        usage()
+        return 2
+    model, paths, prompt = parsed
+    home = os.environ.get("HOME", "")
+    reason = mech_refusal(model, paths, prompt, home)
+    if reason:
+        print(f"free-model sensitivity: {reason}", file=sys.stderr)
+        return 1 if reason.startswith("refusing") else 2
+    if not home:
+        print("free-model sensitivity: mech needs HOME", file=sys.stderr)
+        return 2
+    if shutil.which("opencode") is None:
+        print("free-model sensitivity: opencode is not on PATH", file=sys.stderr)
+        return 2
+    try:
+        head = git_bytes(["rev-parse", "HEAD"]).decode().strip()
+        git_dir = git_bytes(["rev-parse", "--absolute-git-dir"]).decode().strip()
+    except GitError as exc:
+        print(f"free-model sensitivity: mech must run inside a git worktree ({exc})", file=sys.stderr)
+        return 2
+    try:
+        stash_sha = stash_if_dirty()
+    except GitError as exc:
+        print(f"free-model sensitivity: could not set the worktree aside: {exc}", file=sys.stderr)
+        return 2
+    log_path = os.path.join(git_dir, "fm-mech.log")
+    code = 1
+    diff = b""
+    try:
+        os.environ["OPENCODE_CONFIG_CONTENT"] = '{"permission":{"*":"allow"}}'
+        code = confine_quiet(home, mech_command(model, prompt), log_path)
+        diff = collect_diff(head)
+    except GitError as exc:
+        print(f"free-model sensitivity: {exc}", file=sys.stderr)
+        code = 1
+    finally:
+        try:
+            restore_worktree(head, stash_sha)
+        except GitError as exc:
+            kept = f" (stash {stash_sha} kept)" if stash_sha else ""
+            print(f"free-model sensitivity: could not restore the worktree: {exc}{kept}", file=sys.stderr)
+            code = 1
+        if code != 0 and os.path.exists(log_path):
+            with open(log_path, "rb") as handle:
+                sys.stderr.buffer.write(handle.read(4000))
+        if os.path.exists(log_path):
+            os.remove(log_path)
+    sys.stdout.buffer.write(diff)
+    return code
+
+
 def usage() -> None:
     print(
         "usage: fm-free-model-sensitivity.sh class <path>\n"
@@ -689,7 +877,8 @@ def usage() -> None:
         "       fm-free-model-sensitivity.sh token-name <NAME>\n"
         "       fm-free-model-sensitivity.sh brief-sensitive --brief <file>\n"
         "       fm-free-model-sensitivity.sh apply-resolution --brief <file>\n"
-        "       fm-free-model-sensitivity.sh confine --home <dir> -- <command>...",
+        "       fm-free-model-sensitivity.sh confine --home <dir> -- <command>...\n"
+        "       fm-free-model-sensitivity.sh mech [--model <id>] --path <path> [--path <path>...] -- <edit>",
         file=sys.stderr,
     )
 
@@ -779,6 +968,8 @@ def main(argv: list[str]) -> int:
             print("free-model sensitivity: confine needs --home", file=sys.stderr)
             return 2
         return confine(home, command)
+    if cmd == "mech":
+        return mech(argv[2:])
     usage()
     return 2
 
