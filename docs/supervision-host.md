@@ -471,7 +471,7 @@ The default model is `sonnet` for Claude, which handled every measured wake corr
 Only a Claude primary runs the host when `config/supervision-host` is absent.
 An empty or `default` file selects the primary's own verified engine, so a Grok primary then uses `grok-4.7`.
 A Cursor, OpenCode, omp, or Codex home names `claude` (optionally with a model) until that primary has a verified engine of its own.
-A Grok home may name `grok` or `claude`.
+Any home may name `grok` or `claude`; a Grok engine handles away turns only, so on any primary an attended close reaches main unchanged.
 `/afk` says so when the file selects no engine.
 
 ## Verification
