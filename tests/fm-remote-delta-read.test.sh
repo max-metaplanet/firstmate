@@ -6,6 +6,9 @@
 #   * the delta schema: offsets, prefix and payload hashes, and payload bytes
 #   * every continuity-break reason: truncated, prefix-changed, missing, and
 #     line-exceeds-bound, plus an unsafe symlink or traversal target
+#   * a deleted leading emission stamp on an already-consumed line, followed
+#     by new lines, delivers those new lines once and does not repeat the
+#     consumed line; a real prefix replacement still breaks
 #   * an incomplete tail line is withheld until a newline completes it
 #   * exit 75 when the wait window closes with nothing appended
 #   * the per-poll executable boundary: an unchanged log costs one stat per
@@ -32,6 +35,15 @@ sha() { printf '%b' "$1" | shasum -a 256 | awk '{print $1}'; }
 run_reader() { # <offset> <prefix> <wait> [rel]
   FM_HOME="$DELTA_HOME" FM_REMOTE_DELTA_POLL_SECONDS=0.05 \
     "$READER" "${4:-$DELTA_LOG_REL}" "$1" "$2" "$3"
+}
+
+file_sha() { shasum -a 256 "$1" | awk '{print $1}'; }
+file_bytes() { wc -c < "$1" | tr -d ' '; }
+payload_of() { awk 'p { print } $0 == "" { p = 1 }' "$1"; }
+
+# Delete the first "<epoch> " in the log, the leading stamp the incident lost.
+drop_leading_stamp() { # <file> <epoch>
+  STAMP="$2 " perl -i -0pe 's/\Q$ENV{STAMP}\E//' "$1"
 }
 
 # A growing log returns the complete appended lines with exact boundaries.
@@ -216,5 +228,109 @@ ln -sfn real.status "$DELTA_HOME/state/link.status"
 run_reader 0 "$EMPTY_SHA" 1 'state/link.status' > /dev/null 2>&1 && \
   fail 'a symlinked log was accepted' || true
 pass 'the reader refuses traversal, symlinks, and oversized tail lines'
+
+# The incident: a line the cursor already consumed lost its leading "<epoch> "
+# stamp, so the file shrank, and later lines were appended after the shift.
+# The consumed line must not be delivered again. The new lines must be
+# delivered once. Until those new lines exist the reader keeps waiting, which
+# is what lets the relay stay armed.
+STAMP_EPOCH=1793980552
+STAMP_KEPT='kept before the shifted line'
+STAMP_BODY="working [at=${STAMP_EPOCH}]: already mirrored"
+STAMP_MIRRORED="${STAMP_EPOCH} ${STAMP_BODY}"
+STAMP_NEW_A="working [at=1793980999]: first new reply"
+STAMP_NEW_B='done [at=1793981000]: second new reply'
+printf '%s\n%s\n' "$STAMP_KEPT" "$STAMP_MIRRORED" > "$DELTA_HOME/$DELTA_LOG_REL"
+STAMP_CURSOR=$(file_bytes "$DELTA_HOME/$DELTA_LOG_REL")
+STAMP_PREFIX=$(file_sha "$DELTA_HOME/$DELTA_LOG_REL")
+drop_leading_stamp "$DELTA_HOME/$DELTA_LOG_REL" "$STAMP_EPOCH"
+run_reader "$STAMP_CURSOR" "$STAMP_PREFIX" 1 > "$TMP_ROOT/stamp-wait.out" && \
+  fail 'a stamp shrink with nothing new appended did not keep waiting' || RC=$?
+[ "${RC:-0}" -eq 75 ] || fail "a stamp shrink with nothing new exited $RC instead of 75"
+assert_not_contains "$(<"$TMP_ROOT/stamp-wait.out")" 'continuity-broken' \
+  'a deleted leading stamp stopped the relay before any new line existed'
+printf '%s' "$STAMP_NEW_A" >> "$DELTA_HOME/$DELTA_LOG_REL"
+run_reader "$STAMP_CURSOR" "$STAMP_PREFIX" 1 > "$TMP_ROOT/stamp-partial.out" && \
+  fail 'an unfinished line after a stamp shrink was not withheld' || RC=$?
+[ "${RC:-0}" -eq 75 ] || fail "an unfinished line after a stamp shrink exited $RC instead of 75"
+assert_not_contains "$(<"$TMP_ROOT/stamp-partial.out")" 'continuity-broken' \
+  'an unfinished line after a stamp shrink stopped the relay'
+assert_not_contains "$(<"$TMP_ROOT/stamp-partial.out")" 'already mirrored' \
+  'an unfinished line after a stamp shrink repeated the consumed line'
+printf '\n%s\n' "$STAMP_NEW_B" >> "$DELTA_HOME/$DELTA_LOG_REL"
+run_reader "$STAMP_CURSOR" "$STAMP_PREFIX" 2 > "$TMP_ROOT/stamp-delta.out" \
+  || fail 'new lines after a deleted leading stamp did not produce a delta'
+OUT=$(<"$TMP_ROOT/stamp-delta.out")
+assert_contains "$OUT" 'status=delta' 'a stamp shrink followed by new lines did not produce a delta'
+assert_contains "$OUT" "from_offset=$STAMP_CURSOR" 'the stamp-shrink delta did not start at the committed cursor'
+assert_contains "$OUT" "from_prefix_sha256=$STAMP_PREFIX" 'the stamp-shrink delta did not keep the committed prefix hash'
+STAMP_TO=$(printf '%s\n' "$OUT" | sed -n 's/^to_offset=//p')
+STAMP_TO_HASH=$(printf '%s\n' "$OUT" | sed -n 's/^to_prefix_sha256=//p')
+[ "$STAMP_TO" = "$(file_bytes "$DELTA_HOME/$DELTA_LOG_REL")" ] \
+  || fail "the stamp-shrink delta did not advance to the repaired file end (got $STAMP_TO)"
+[ "$STAMP_TO_HASH" = "$(file_sha "$DELTA_HOME/$DELTA_LOG_REL")" ] \
+  || fail 'the stamp-shrink cursor hash is not the repaired file'
+PAYLOAD=$(payload_of "$TMP_ROOT/stamp-delta.out")
+[ "$PAYLOAD" = "$(printf '%s\n%s\n' "$STAMP_NEW_A" "$STAMP_NEW_B")" ] \
+  || fail "the stamp-shrink delta did not deliver only the new lines: $PAYLOAD"
+assert_not_contains "$PAYLOAD" 'already mirrored' \
+  'the stamp-shrink delta repeated the already-mirrored line'
+run_reader "$STAMP_TO" "$STAMP_TO_HASH" 1 > "$TMP_ROOT/stamp-again.out" && \
+  fail 'a second read delivered the stamp-shrink lines again' || RC=$?
+[ "${RC:-0}" -eq 75 ] || fail "a second read after the stamp shrink exited $RC instead of 75"
+assert_not_contains "$(<"$TMP_ROOT/stamp-again.out")" 'already mirrored' \
+  'a second read repeated the consumed line'
+assert_not_contains "$(<"$TMP_ROOT/stamp-again.out")" 'first new reply' \
+  'a second read repeated a new line'
+pass 'a deleted leading stamp delivers the new lines once and waits until they exist'
+
+# The deleted stamp can sit on an earlier consumed line. Bytes after it shift
+# left, including a later line the cursor already consumed, and only the lines
+# appended beyond the old cursor are new.
+printf '%s\n%s\n' "$STAMP_MIRRORED" 'note: still mirrored' > "$DELTA_HOME/$DELTA_LOG_REL"
+EARLIER_CURSOR=$(file_bytes "$DELTA_HOME/$DELTA_LOG_REL")
+EARLIER_PREFIX=$(file_sha "$DELTA_HOME/$DELTA_LOG_REL")
+drop_leading_stamp "$DELTA_HOME/$DELTA_LOG_REL" "$STAMP_EPOCH"
+printf '%s\n' 'done [at=1793981000]: after the shift' >> "$DELTA_HOME/$DELTA_LOG_REL"
+run_reader "$EARLIER_CURSOR" "$EARLIER_PREFIX" 2 > "$TMP_ROOT/stamp-earlier.out" \
+  || fail 'a stamp deleted from an earlier line did not produce a delta'
+OUT=$(<"$TMP_ROOT/stamp-earlier.out")
+assert_contains "$OUT" 'status=delta' 'a stamp deleted from an earlier line did not produce a delta'
+PAYLOAD=$(payload_of "$TMP_ROOT/stamp-earlier.out")
+[ "$PAYLOAD" = 'done [at=1793981000]: after the shift' ] \
+  || fail "a stamp deleted from an earlier line delivered more than the new line: $PAYLOAD"
+assert_not_contains "$PAYLOAD" 'still mirrored' \
+  'a stamp deleted from an earlier line repeated a consumed later line'
+pass 'a stamp deleted from an earlier consumed line delivers only the lines after the cursor'
+
+# The same shape with an earlier byte changed is a real replacement. The new
+# line after it must not be delivered, and the relay must stop.
+printf '%s\n%s\n' 'alpha' "$STAMP_MIRRORED" > "$DELTA_HOME/$DELTA_LOG_REL"
+REPLACED_CURSOR=$(file_bytes "$DELTA_HOME/$DELTA_LOG_REL")
+REPLACED_PREFIX=$(file_sha "$DELTA_HOME/$DELTA_LOG_REL")
+printf '%s\n%s\n%s\n' 'beta' "$STAMP_BODY" 'brand new reply' > "$DELTA_HOME/$DELTA_LOG_REL"
+run_reader "$REPLACED_CURSOR" "$REPLACED_PREFIX" 1 > "$TMP_ROOT/replaced.out" \
+  || fail 'a replaced prefix did not exit 0'
+OUT=$(<"$TMP_ROOT/replaced.out")
+assert_contains "$OUT" 'status=continuity-broken' 'a replaced prefix did not stop the relay'
+assert_contains "$OUT" 'reason=prefix-changed' 'a replaced prefix was not named prefix-changed'
+assert_not_contains "$OUT" 'status=delta' 'a replaced prefix was delivered as a delta'
+assert_not_contains "$OUT" 'brand new reply' 'a replaced prefix delivered the lines appended after it'
+pass 'a real prefix replacement still stops the relay'
+
+# Chopping the tail is a shrink, not a deleted leading stamp, even when the
+# remaining line still carries an emission tag.
+printf '%s\n%s\n' "$STAMP_KEPT" "$STAMP_MIRRORED" > "$DELTA_HOME/$DELTA_LOG_REL"
+CHOP_CURSOR=$(file_bytes "$DELTA_HOME/$DELTA_LOG_REL")
+CHOP_PREFIX=$(file_sha "$DELTA_HOME/$DELTA_LOG_REL")
+perl -e 'open my $fh, "+<", $ARGV[0] or die $!; binmode $fh; seek $fh, -11, 2 or die $!; truncate $fh, tell $fh or die $!' \
+  "$DELTA_HOME/$DELTA_LOG_REL"
+run_reader "$CHOP_CURSOR" "$CHOP_PREFIX" 1 > "$TMP_ROOT/chop.out" \
+  || fail 'a chopped tail did not exit 0'
+OUT=$(<"$TMP_ROOT/chop.out")
+assert_contains "$OUT" 'status=continuity-broken' 'a chopped tail did not stop the relay'
+assert_contains "$OUT" 'reason=truncated' 'a chopped tail was not named truncated'
+assert_not_contains "$OUT" 'status=delta' 'a chopped tail was delivered as a delta'
+pass 'chopping the tail still breaks continuity as truncated'
 
 printf 'delta-read contract tests complete\n'
