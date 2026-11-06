@@ -337,6 +337,33 @@ while IFS=$'\t' read -r action path extra; do
 done < "$TMP_ROOT/probe.out"
 pass "a free-model process cannot read secrets or sensitive paths, and other launches still can"
 
+# open(2) with O_PATH succeeds on any reachable file, and runtimes such as
+# opencode's use it at startup. The supervisor must keep serving after one, so
+# a later ordinary read still works, while a sensitive O_PATH open stays denied.
+opath_out=$(cd "$TREE/work" && "$SENS" confine --home "$TREE/home" -- python3 -c '
+import os
+os.close(os.open("src/app.ts", os.O_PATH))
+try:
+    os.open(".env", os.O_PATH)
+    print("env-open")
+except OSError as exc:
+    print("env-deny", exc.errno)
+print(open("src/app.ts").read().strip())
+' 2>&1) || fail "an O_PATH open broke the confined process: $opath_out"
+[ "$opath_out" = "env-deny 13"$'\n'"APP" ] || fail "O_PATH under confine gave: $opath_out"
+pass "an O_PATH open neither ends supervision nor reaches a sensitive path"
+
+# A pipeline whose reader exits early kills its writer with SIGPIPE, which can
+# cancel a pending notification. Supervision must outlive that, so the next
+# command in the same confined shell can still exec and read files.
+for _ in $(seq 1 10); do
+  pipe_out=$(cd "$TREE/work" && "$SENS" confine --home "$TREE/home" -- sh -c \
+    'yes 2>/dev/null | head -n 1 >/dev/null; env | grep -i path | sort >/dev/null; cat src/app.ts' 2>&1) ||
+    fail "a routine pipeline broke the confined shell: $pipe_out"
+  [ "$pipe_out" = APP ] || fail "a routine pipeline broke the confined shell: $pipe_out"
+done
+pass "routine pipelines keep the confined shell supervised"
+
 # The captain's documented free list: OpenCode Zen and OpenRouter free ids,
 # big-pickle, and an OpenCode launch that names no model or `default`.
 # Paid OpenCode, Grok, Codex, and Claude are not free OpenCode models.

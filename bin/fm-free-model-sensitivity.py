@@ -26,6 +26,7 @@ import errno
 import json
 import os
 import platform
+import select
 import socket
 import stat
 import struct
@@ -520,15 +521,25 @@ def supervise(notify_fd: int, child: int, home: str, root: str, names: dict[str,
     # is a struct pointer, so the parent cannot install a checked fd for it.
     open_numbers = {names[name] for name in ("openat", "open") if name in names}
     path_at = {names[name] for name in ("openat", "openat2", "statx", "newfstatat", "faccessat", "faccessat2", "readlinkat", "name_to_handle_at") if name in names}
+    poller = select.poll()
+    poller.register(notify_fd, select.POLLIN)
     while True:
+        # POLLHUP without POLLIN means every task under the filter has exited.
+        # RECV alone cannot tell that apart from one cancelled notification,
+        # which also returns ENOENT when its task is signalled or dies.
+        events = 0
+        for _fd, revents in poller.poll():
+            events |= revents
+        if not events & select.POLLIN:
+            if events & (select.POLLHUP | select.POLLERR | select.POLLNVAL):
+                break
+            continue
         buf = ctypes.create_string_buffer(notif_size)
         try:
             ioctl(notify_fd, recv_req, buf)
         except OSError as exc:
             if exc.errno in (errno.ENOENT, errno.EINTR):
-                if exc.errno == errno.EINTR:
-                    continue
-                break
+                continue
             raise
         ident, pid, _flags = struct.unpack_from("QII", buf.raw, 0)
         nr = struct.unpack_from("I", buf.raw, 16)[0]
@@ -568,7 +579,9 @@ def supervise(notify_fd: int, child: int, home: str, root: str, names: dict[str,
                         mode = 0o666
                         if flags & O_CREAT:
                             mode = int(args[3 if nr != names.get("open") else 2]) & 0o7777
-                        if special_file(resolved, lexical):
+                        # An O_PATH fd reads no data, and ADDFD rejects one
+                        # with EBADF, so the checked call runs in the child.
+                        if flags & os.O_PATH or special_file(resolved, lexical):
                             continue_call = True
                         else:
                             fd = os.open(resolved, flags | O_CLOEXEC, mode)
@@ -596,9 +609,13 @@ def supervise(notify_fd: int, child: int, home: str, root: str, names: dict[str,
                     addfd_req,
                     struct.pack("QIIII", ident, SECCOMP_ADDFD_FLAG_SEND, allow_fd, 0, remote_flags),
                 )
+                continue
+            except OSError as exc:
+                # A failed install must not end supervision: answer the call
+                # with the error so the loop keeps serving the worker.
+                error = exc.errno or errno.EIO
             finally:
                 os.close(allow_fd)
-            continue
         flags_out = SECCOMP_USER_NOTIF_FLAG_CONTINUE if continue_call else 0
         # seccomp_notif_resp.error is 0 or a negative errno. A positive value
         # is rejected, and the target would otherwise observe a live fd.
