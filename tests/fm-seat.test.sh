@@ -4564,6 +4564,44 @@ test_extra_usage_warning_rearms_when_a_seat_leaves_and_returns() {
 # than for fresh work. bin/fm-quota-wall-lib.sh owns the move itself, and
 # tests/fm-quota-wall.test.sh covers its bounds.
 
+# run_seat_without_mapfile <home> <fakebin> [args...]
+# run_seat, but under a Bash whose mapfile and readarray builtins do not exist,
+# as on stock macOS /bin/bash 3.2 - the only Bash on the host that runs Grok.
+# BASH_ENV is read by the non-interactive bin/fm-seat.sh before its first line,
+# so disabling the builtins there removes them for the whole script. On a Bash
+# that never had them, `enable -n` fails and the shell is already that shape.
+run_seat_without_mapfile() {
+  local env_file="$TMP_ROOT/no-mapfile.bash"
+  printf '%s\n' 'enable -n mapfile readarray 2>/dev/null || :' > "$env_file"
+  BASH_ENV="$env_file" run_seat "$@"
+}
+
+test_rotation_helpers_choose_seats_on_a_bash_without_mapfile() {
+  local rec out
+  rec=$(make_seat_case no-mapfile)
+  read_seat_case "$rec"
+  mkdir -p "$SEATS_DIR/alpha" "$SEATS_DIR/beta" "$SEATS_DIR/gamma"
+  # gamma holds no login and alpha's quota is used up, so only beta qualifies.
+  seat_logged_in "$SPEC_DIR" '(default)' "$SEATS_DIR/alpha" "$SEATS_DIR/beta"
+  seat_remaining "$SPEC_DIR" "$SEATS_DIR/alpha" 0
+  seat_remaining "$SPEC_DIR" "$SEATS_DIR/beta" 90
+
+  out=$(run_seat_without_mapfile "$HOME_DIR" "$FAKEBIN" switch --next)
+  expect_code 0 "$?" "switch --next must work on a Bash with no mapfile: $out"
+  assert_contains "$out" "-> beta" "rotation from default must skip empty alpha and land on beta"
+  assert_grep beta "$HOME_DIR/config/claude-seat" "switch --next must record the chosen seat"
+
+  out=$(run_seat_without_mapfile "$HOME_DIR" "$FAKEBIN" worker-destination --from alpha)
+  expect_code 0 "$?" "worker-destination must work on a Bash with no mapfile: $out"
+  assert_equals beta "$out" "a worker walled on alpha must be offered beta, the seat with headroom"
+
+  out=$(run_seat_without_mapfile "$HOME_DIR" "$FAKEBIN" worker-destination --from beta)
+  expect_code 1 "$?" "with only an empty seat left there is nowhere to move: $out"
+  assert_contains "$out" 'quota is used up' "the refusal must still name why alpha was skipped"
+  assert_not_contains "$out" 'command not found' "no seat helper may depend on a missing builtin"
+  pass "switch --next and worker-destination choose the right seat on a Bash without mapfile"
+}
+
 test_name_of_reads_a_recorded_profile_back_as_its_seat() {
   local rec out
   rec=$(make_seat_case name-of)
@@ -5224,6 +5262,7 @@ test_extra_usage_warning_is_once_per_seat_entry
 test_extra_usage_warning_rearms_when_a_seat_leaves_and_returns
 test_name_of_reads_a_recorded_profile_back_as_its_seat
 test_worker_destination_never_answers_the_seat_the_worker_is_on
+test_rotation_helpers_choose_seats_on_a_bash_without_mapfile
 test_worker_destination_honours_the_same_gate_a_new_launch_gets
 test_worker_destination_names_when_an_empty_seat_comes_back
 

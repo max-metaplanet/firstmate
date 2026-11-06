@@ -752,7 +752,9 @@ cmd_launch_destination() {
     printf '%s\n' "$active"
     return 0
   fi
-  [ -z "$name" ] || mapfile -t waiting <<< "$name"
+  if [ -n "$name" ]; then
+    while IFS= read -r seat; do waiting+=("$seat"); done <<< "$name"
+  fi
   if soonest=$(session_soonest_reset "$trigger" "$active" ${waiting[@]+"${waiting[@]}"}); then
     IFS=$'\t' read -r seat at <<< "$soonest"
     die "no seat has 5-hour room for a new worker and more weekly spare than '$active' (each skipped seat and its reason is printed above); the soonest 5-hour reset is $seat at $(fm_seat_reset_phrase "$at")"
@@ -788,7 +790,8 @@ session_soonest_reset() {
 # seat whose reset cannot be read says so and why rather than being left out.
 seat_resets() {
   local from=$1 name dir verdict reset seen=' ' seats
-  mapfile -t seats < <(fm_seat_list)
+  seats=()
+  while IFS= read -r name || [ -n "$name" ]; do seats+=("$name"); done < <(fm_seat_list)
   for name in "$from" "$FM_SEAT_DEFAULT_NAME" ${seats[@]+"${seats[@]}"}; do
     case "$seen" in *" $name "*) continue ;; esac
     seen="$seen$name "
@@ -1143,7 +1146,8 @@ next_seat() {
     IFS=$'\t' read -r anchor_basis anchor_spare < <(anchor_headroom "$active")
     ! seat_walled "$active" || anchor_walled=walled
   fi
-  mapfile -t seats < <(fm_seat_list)
+  seats=()
+  while IFS= read -r name || [ -n "$name" ]; do seats+=("$name"); done < <(fm_seat_list)
   n=${#seats[@]}
   [ "$n" -gt 0 ] || return 1
   idx=-1
