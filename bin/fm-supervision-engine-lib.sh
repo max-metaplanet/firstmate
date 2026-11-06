@@ -148,7 +148,8 @@ EOF
 }
 
 # fm_supervision_host_attended_ready <config-dir> <primary-harness>
-# 0 when the attended host's configured engine, executable, node, jq, turn
+# 0 when the attended host's configured engine, verified for attended turns
+# (Grok is verified for away turns only), its executable, node, jq, turn
 # bound (perl, timeout, or gtimeout), and primary's mirror writer are ready;
 # otherwise 1, with FM_SUPERVISION_HOST_UNREADY naming why. The host's
 # attended acceptor runs it on every attended close; the mirror's contents are
@@ -159,6 +160,8 @@ fm_supervision_host_attended_ready() {
     FM_SUPERVISION_HOST_UNREADY="the home does not run the supervision host"
   elif [ -z "$FM_SUPERVISION_ENGINE" ]; then
     FM_SUPERVISION_HOST_UNREADY="no supervision engine"
+  elif [ "$FM_SUPERVISION_ENGINE" = grok ]; then
+    FM_SUPERVISION_HOST_UNREADY="the grok engine is verified for away turns only"
   elif ! fm_supervision_engine_bin "$FM_SUPERVISION_ENGINE" >/dev/null 2>&1; then
     FM_SUPERVISION_HOST_UNREADY="the $FM_SUPERVISION_ENGINE engine executable is missing"
   elif ! command -v node >/dev/null 2>&1; then

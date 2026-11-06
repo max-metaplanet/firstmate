@@ -569,6 +569,22 @@ test_grok_engine_on_a_departed_owners_record_hands_the_wake_to_main() {
   pass "host: a Grok engine never falls back to the ambient login on a departed owner's record"
 }
 
+test_grok_engine_hands_an_attended_close_to_main() {
+  local home
+  home=$(make_home grok-attended attended grok)
+  start_host "$home"
+  wait_until 150 watcher_live "$home" || fail "grok attended: the host never started a watcher cycle: $(cat "$home/host.out")"
+  append_status "$home" 'while the captain is here'
+  wait_until 250 host_exited "$home" \
+    || fail "grok attended: the attended close did not reach main: $(cat "$home/state/.supervision-host.log")"
+  assert_re '	pass-through	attended	the grok engine is verified for away turns only	' "$home/state/.supervision-host.log" \
+    "the attended pass-through must say Grok is verified for away turns only"
+  assert_re '^signal: .*demo\.status' "$home/host.out" "the attended close must reach main unchanged"
+  assert_no_re '^supervision-host: ' "$home/host.out" "an attended pass-through must add no line to the close"
+  [ "$(engine_calls "$home")" -eq 0 ] || fail "the Grok engine ran an attended turn"
+  pass "host: a Grok engine never takes an attended close"
+}
+
 test_grok_engine_without_a_seat_login_does_not_launch() {
   local home seat saved lock_pid
   home=$(make_home grok-nologin away grok)
@@ -742,6 +758,7 @@ test_restarted_host_stops_what_a_killed_predecessor_left
 test_grok_away_wake_is_handled_and_resumed_on_its_own_contract
 test_grok_engine_without_a_recorded_seat_hands_the_wake_to_main
 test_grok_engine_on_a_departed_owners_record_hands_the_wake_to_main
+test_grok_engine_hands_an_attended_close_to_main
 test_grok_engine_without_a_seat_login_does_not_launch
 test_grok_result_adds_each_runs_cost_and_rejects_an_incomplete_one
 test_empty_supervision_host_file_on_a_grok_primary_selects_grok

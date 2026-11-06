@@ -118,6 +118,7 @@ The host-off Claude Stop hook's detached handling successor is also unchanged; s
 It also passes the close through unchanged, with no added line, when any of these holds (`fm_supervision_host_attended_ready` in `bin/fm-supervision-engine-lib.sh` owns the list):
 
 - The home names no usable engine.
+- The engine is Grok, which is verified for away turns only; no attended live check covers it yet.
 - A tool its turns need is missing: the engine executable, node, jq, or one of perl, timeout, or gtimeout to bound the turn.
 - The primary has no verified dialog mirror.
 - The main session's lock holder cannot be identified.
@@ -374,6 +375,7 @@ Each engine turn's line carries these fields, and this log is where engine cost 
 
 A verified engine is a headless mode of a harness whose isolation, actor propagation, promptless permissions, bounding, and caching were measured.
 The verified engines are Claude's print mode, measured on Claude Code 2.1.278 and 2.1.281, and Grok's headless mode, measured on grok 1.0.77.
+Grok is verified for away turns only: an attended close on a home whose engine is Grok reaches main unchanged.
 A Codex primary keeps the Claude engine when `config/supervision-host` names `claude`, using the Claude account that move retains.
 There is no architectural requirement that the engine be one of these two.
 Changing it requires implementing and verifying another engine adapter.
