@@ -56,20 +56,28 @@ class SeatLockError(RuntimeError):
     """A fail-closed structural or storage error with no sensitive payload."""
 
 
+# Codex and Grok both select an account by vendor home, and both keep that
+# account's credential in <home>/auth.json, so one seat name aliasing another's
+# home has to read as one credential identity for either of them. Claude keeps
+# its path identity because that is what determines its Keychain service.
+HOME_PROVIDERS = ("codex", "grok")
+
+
 def identity(provider, profile):
-    if provider not in ("claude", "codex"):
+    if provider not in ("claude",) + HOME_PROVIDERS:
         raise SeatLockError("unsupported seat provider")
     if provider == "claude" and not profile and sys.platform == "darwin":
         return "ordinary-keychain"
     profile = os.fspath(profile or (Path.home() / ("." + provider)))
     if not os.path.isabs(profile):
         raise SeatLockError("seat profile must be absolute")
-    if provider == "codex":
+    if provider in HOME_PROVIDERS:
+        label = provider.capitalize()
         auth = os.path.realpath(os.path.join(profile, "auth.json"))
         if os.path.basename(auth) != "auth.json":
-            raise SeatLockError("Codex alias does not name an auth.json owner")
+            raise SeatLockError(label + " alias does not name an auth.json owner")
         if os.path.islink(os.path.join(profile, "auth.json")) and not os.path.isfile(auth):
-            raise SeatLockError("Codex authentication alias is unresolved")
+            raise SeatLockError(label + " authentication alias is unresolved")
         return auth
     if sys.platform == "darwin":
         return profile
@@ -561,7 +569,7 @@ def guard(provider, profile, command, blocking=True):
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("operation", choices=("guard", "available", "state", "owners", "identity"))
-    parser.add_argument("--provider", choices=("claude", "codex"), required=True)
+    parser.add_argument("--provider", choices=("claude",) + HOME_PROVIDERS, required=True)
     parser.add_argument("--profile", required=True)
     parser.add_argument("--home", default=os.environ.get("FM_HOME", "."))
     parser.add_argument("--nonblocking", action="store_true")

@@ -1976,7 +1976,8 @@ clear_relaunch_harness_wiring() {
   if [ -n "$token_path" ] && [ -f "$token_path" ]; then
     IFS= read -r token <"$token_path" || [ -n "$token" ] || return 1
   fi
-  auth_path=$(fm_control_harness_turnend_auth_path "$harness" "$token") || return 1
+  auth_path=$(fm_control_harness_turnend_auth_path "$harness" "$token" \
+    "$(fm_control_grok_turnend_home "$state" "$id")") || return 1
   if [ -n "$auth_path" ]; then
     rm -f -- "$auth_path" || return 1
   fi
@@ -2460,7 +2461,7 @@ if [ "$RELAUNCH" -eq 1 ]; then
   esac
   RELAUNCH_PRIOR_HARNESS=$(fm_meta_get "$RELAUNCH_META" harness)
   case "$RELAUNCH_PRIOR_HARNESS" in
-    claude|codex) RELAUNCH_SEAT=$(fm_meta_get "$RELAUNCH_META" "${RELAUNCH_PRIOR_HARNESS}_seat") ;;
+    claude|codex|grok) RELAUNCH_SEAT=$(fm_meta_get "$RELAUNCH_META" "${RELAUNCH_PRIOR_HARNESS}_seat") ;;
   esac
   KIND=$(fm_meta_get "$RELAUNCH_META" kind)
   [ -n "$KIND" ] || KIND=ship
@@ -3314,7 +3315,7 @@ spawn_seat_dry() {
 # only fresh spawns, and --ignore-seat-hold is the same deliberate override.
 spawn_provider_depletion_gate() {
   [ "$BACKEND" != t3 ] || return 0
-  { [ "$HARNESS" = claude ] || [ "$HARNESS" = codex ]; } &&
+  fm_seat_vendor_harness "$HARNESS" &&
     [ "$RELAUNCH" -eq 0 ] && [ "$IGNORE_SEAT_HOLD" -eq 0 ] || return 0
   local seat_config summary alt label notice where here here_seat here_pct
   local memo dry=0 rc
@@ -3332,7 +3333,7 @@ spawn_provider_depletion_gate() {
     fm_seat_dry_clear "$STATE" "$HARNESS"
     return 0
   fi
-  label=Claude; [ "$HARNESS" != codex ] || label=Codex
+  label=$(fm_seat_provider_label "$HARNESS")
   # The summary answers in its exit status, and non-zero is an ordinary answer
   # meaning only the active seat is empty. Reading it with a bare `rc=$?` on the
   # next line reads it too late, because `set -e` aborts on the failing
@@ -3392,11 +3393,14 @@ spawn_provider_depletion_gate() {
 # selector. --ignore-seat-hold deliberately overrides both preferences.
 spawn_seat_session_gate() {
   [ "$BACKEND" != t3 ] || return 0
-  { [ "$HARNESS" = claude ] || [ "$HARNESS" = codex ]; } && [ "$RELAUNCH" -eq 0 ] && [ "$IGNORE_SEAT_HOLD" -eq 0 ] || return 0
-  local seat_config dest active err spare=0 label=Claude
+  fm_seat_vendor_harness "$HARNESS" && [ "$RELAUNCH" -eq 0 ] && [ "$IGNORE_SEAT_HOLD" -eq 0 ] || return 0
+  local seat_config dest active err spare=0 label
   local -a launch_options=()
-  if [ "$HARNESS" = codex ]; then
-    label=Codex
+  label=$(fm_seat_provider_label "$HARNESS")
+  # Only Claude publishes a five-hour window of its own, so every other vendor
+  # asks the shared selector the same --spare-only question Codex asks: keep
+  # the active seat unless an eligible alternative clears the rotation's gate.
+  if [ "$HARNESS" != claude ]; then
     launch_options=(--spare-only)
   fi
   seat_config=$(spawn_seat_config)
@@ -3431,7 +3435,7 @@ spawn_seat_session_gate() {
 
 # Refuse a missing selected seat before quota routing can mask it or choose a
 # different profile. Resolve again at launch so a removed directory still fails.
-if [ "$BACKEND" != t3 ] && [ "$KIND" != secondmate ] && [ "$RELAUNCH" -eq 0 ] && { [ "$HARNESS" = claude ] || [ "$HARNESS" = codex ]; }; then
+if [ "$BACKEND" != t3 ] && [ "$KIND" != secondmate ] && [ "$RELAUNCH" -eq 0 ] && fm_seat_vendor_harness "$HARNESS"; then
   SEAT_CONFIG=$(spawn_seat_config)
   SEAT_NAME=$(FM_SEAT_PROVIDER=$HARNESS CONFIG=$SEAT_CONFIG fm_seat_active)
   if [ "$SEAT_NAME" != "$FM_SEAT_DEFAULT_NAME" ]; then
@@ -6057,7 +6061,7 @@ spawn_assert_agent_worktree
 # Resolve each supported vendor's profile once and record it on the task.
 # Relaunches retain that task's store instead of following later home switches.
 # Explicit --seat moves use the same provider's validated destination.
-if [ "$BACKEND" != t3 ] && { [ "$HARNESS" = claude ] || [ "$HARNESS" = codex ]; }; then
+if [ "$BACKEND" != t3 ] && fm_seat_vendor_harness "$HARNESS"; then
   if [ "$RELAUNCH" -eq 1 ] && [ "$RELAUNCH_PRIOR_HARNESS" = "$HARNESS" ]; then
     SEAT_RECORD=$RELAUNCH_SEAT
     if [ "$SEAT_OVERRIDE_SET" = 1 ]; then
@@ -6085,8 +6089,16 @@ if [ "$BACKEND" != t3 ] && { [ "$HARNESS" = claude ] || [ "$HARNESS" = codex ]; 
       exit 1
     fi
   fi
-  if [ "$HARNESS" = codex ] && [ -n "$SEAT_CONFIG_DIR" ] && [ ! -d "$SEAT_CONFIG_DIR" ]; then
-    echo "error: recorded Codex home is missing: $SEAT_CONFIG_DIR; refusing an ambient fallback" >&2
+  # A home-provider worker selects its account by config home, so a NAMED seat
+  # whose home has gone missing must refuse rather than fall back: launching
+  # without it would silently spend whichever account the ambient home holds,
+  # which is the exact failure a seat exists to prevent. The ambient home is
+  # deliberately exempt - it is not a seat selection, so there is nothing to
+  # fall back FROM, and refusing it would stop every worker on a home that
+  # manages no seat of this vendor at all.
+  if fm_seat_home_provider "$HARNESS" && [ -n "$SEAT_CONFIG_DIR" ] && [ ! -d "$SEAT_CONFIG_DIR" ] &&
+    [ "$SEAT_CONFIG_DIR" != "$(FM_SEAT_PROVIDER=$HARNESS fm_seat_config_dir "$FM_SEAT_DEFAULT_NAME")" ]; then
+    echo "error: recorded $(fm_seat_provider_label "$HARNESS") home is missing: $SEAT_CONFIG_DIR; refusing an ambient fallback" >&2
     exit 1
   fi
 fi
@@ -6581,7 +6593,12 @@ EOF
     # (gitignored, like the other harnesses' worktree hook files).
     # Result: the hook is outside the worktree, needs no trust grant, and never
     # touches grok's managed config - only firstmate-owned files.
-    GROK_HOOKS_DIR="${GROK_HOME:-$HOME/.grok}/hooks"
+    # The hook must live in the home the WORKER will run with, not firstmate's
+    # own: a seated Grok worker launches with GROK_HOME=<seat>, and grok loads
+    # its always-trusted global hooks from that home alone. Installing it under
+    # firstmate's ambient home would leave a seated worker with no turn-end
+    # signal at all, which reads as a worker that never finishes a turn.
+    GROK_HOOKS_DIR="${SEAT_CONFIG_DIR:-${GROK_HOME:-$HOME/.grok}}/hooks"
     GROK_AUTH_DIR="$GROK_HOOKS_DIR/fm-turn-end.d"
     mkdir -p "$GROK_AUTH_DIR"
     old_umask=$(umask)
@@ -7196,6 +7213,19 @@ elif [ "$HARNESS" = codex ]; then
     LAUNCH="env CODEX_HOME=$(shell_quote "$SEAT_CONFIG_DIR") $LAUNCH"
   else
     LAUNCH="env -u CODEX_HOME $LAUNCH"
+  fi
+elif [ "$HARNESS" = grok ]; then
+  # The same forwarding Claude and Codex get, for the one variable that selects
+  # a Grok account. Without it the pane inherits whatever GROK_HOME the
+  # long-lived endpoint daemon was started with - usually none - and the worker
+  # spends the ambient ~/.grok account however carefully its seat was chosen.
+  # fm_seat_config_dir always resolves a Grok seat to a concrete home, so the
+  # empty branch is reached only when this home manages no Grok seat at all;
+  # clearing the variable then restores the ordinary default store.
+  if [ -n "$SEAT_CONFIG_DIR" ]; then
+    LAUNCH="env GROK_HOME=$(shell_quote "$SEAT_CONFIG_DIR") $LAUNCH"
+  else
+    LAUNCH="env -u GROK_HOME $LAUNCH"
   fi
 fi
 if [ "$HARNESS" = claude ]; then

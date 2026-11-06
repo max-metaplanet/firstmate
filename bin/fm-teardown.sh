@@ -1466,7 +1466,8 @@ remove_grok_turnend_auth() {
   if [ -n "$token_path" ] && [ -f "$token_path" ]; then
     IFS= read -r token < "$token_path" || [ -n "$token" ] || return 1
   fi
-  path=$(fm_control_harness_turnend_auth_path grok "$token") || return 1
+  path=$(fm_control_harness_turnend_auth_path grok "$token" \
+    "$(fm_control_grok_turnend_home "$state_dir" "$id")") || return 1
   [ -n "$path" ] || return 0
   rm -f -- "$path"
 }

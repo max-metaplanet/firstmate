@@ -512,12 +512,35 @@ fm_control_harness_turnend_token_path() {  # <harness> <state-dir> <id>
   esac
 }
 
-fm_control_harness_turnend_auth_path() {  # <harness> <token>
-  local harness=${1-} token=${2-}
+# fm_control_harness_turnend_auth_path <harness> <token> [grok-home]
+# Where a harness's firstmate-owned global turn-end registry entry lives, so
+# the spawn path, the control plane and teardown retire the same artifact.
+# A Grok worker on a named seat runs with GROK_HOME=<seat> and loads its global
+# hooks from that home alone, so its entry lives there; callers that know the
+# task's recorded Grok home pass it, and the ambient home answers for a task
+# that has none. fm_control_grok_turnend_home below reads that record.
+fm_control_harness_turnend_auth_path() {  # <harness> <token> [grok-home]
+  local harness=${1-} token=${2-} grok_home=${3-}
   case "$token" in ''|*[!A-Za-z0-9._-]*) return 0 ;; esac
   case "$harness" in
-    grok) printf '%s\n' "${GROK_HOME:-$HOME/.grok}/hooks/fm-turn-end.d/$token" ;;
+    grok) printf '%s\n' "${grok_home:-${GROK_HOME:-$HOME/.grok}}/hooks/fm-turn-end.d/$token" ;;
     kimi) printf '%s\n' "$HOME/.kimi-code/fm-turn-end.d/$token" ;;
     *) return 0 ;;
+  esac
+}
+
+# fm_control_grok_turnend_home <state-dir> <id>
+# The Grok config home a task's global turn-end entry was written under: the
+# seat its own record says it launched on, or empty for a task with no recorded
+# seat, which leaves the caller on the ambient home. Reading the record rather
+# than the current setting is what makes cleanup find the entry after the home
+# has switched seats.
+fm_control_grok_turnend_home() {  # <state-dir> <id>
+  local state=${1-} id=${2-} seat=''
+  [ -n "$state" ] && [ -n "$id" ] || return 0
+  [ -f "$state/$id.meta" ] || return 0
+  seat=$(sed -n 's/^grok_seat=//p' "$state/$id.meta" | tail -1)
+  case "$seat" in
+    /*) printf '%s\n' "$seat" ;;
   esac
 }

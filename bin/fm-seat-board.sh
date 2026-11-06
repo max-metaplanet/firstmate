@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # A very lightweight, read-only local web page showing quota-axi's report for
-# every Claude and Codex seat: bin/fm-seat.sh manages which seat NEW workers launch on,
-# and this script just displays what quota-axi says every seat has left.
+# every Claude, Codex and Grok seat: bin/fm-seat.sh manages which seat NEW
+# workers launch on, and this script just displays what quota-axi says every
+# seat has left.
 #
 # Usage:
 #   fm-seat-board.sh [serve] [--port <n>]
@@ -25,7 +26,8 @@
 #             floor: null | { removeAt, readdAt, dwellSeconds,
 #                             sessionShare: { percent, source, samples } },
 #             providers: { claude: { activeSeat, liveSeat, floor, spareLeader },
-#                          codex: { activeSeat, liveSeat, floor, spareLeader } },
+#                          codex: { activeSeat, liveSeat, floor, spareLeader },
+#                          grok:  { activeSeat, liveSeat, floor, spareLeader } },
 #             seats: [ { provider, name, configDir, active, autoExcluded, cacheFile,
 #                        hasData, ageSeconds, account, attention, renewal,
 #                        exclusion: { manual, resting: null | {
@@ -35,8 +37,10 @@
 #                        extraUsage } ] }
 #         The legacy top-level activeSeat, liveSeat, floor and pipeline describe
 #         Claude; providers and each seat's provider disambiguate matching names.
-#         Codex appears only when fm_seat_provider_in_use; otherwise
-#         providers.codex is null and no Codex quota is read.
+#         Codex and Grok appear only when fm_seat_provider_in_use; otherwise
+#         that provider's entry is null and none of its quota is read.
+#         A Grok seat's renewal projection carries supported:false, because this
+#         fleet has no guarded Grok renewal; only a personal sign-in restores it.
 #         renewal is the read-only fm_seat_renewal_from projection, including history and action
 #         commands for the operator to run; polling never executes these commands.
 #         autoExcluded is true when an automatic switch may not land on that
@@ -248,7 +252,7 @@ CSS
 
 # seat_section_html <seat-name> <active-seat-name>
 seat_section_html() {
-  local name=$1 active=$2 dir json marker email src state_err attention extra spent limit
+  local name=$1 active=$2 dir json marker email src auth state_err attention extra spent limit
   local resting renewal line limiting=''
   dir=$(fm_seat_config_dir "$name")
   json=$(seat_quota_cached "$dir")
@@ -290,7 +294,14 @@ seat_section_html() {
     jq -r --arg provider "${FM_SEAT_PROVIDER:-claude}" '(.providers[]? | select(.provider == $provider) | .source // empty)' 2>/dev/null)
   state_err=$(printf '%s' "$json" |
     jq -r --arg provider "${FM_SEAT_PROVIDER:-claude}" '(.providers[]? | select(.provider == $provider) | .state.error // empty)' 2>/dev/null)
+  auth=$(printf '%s' "$json" |
+    jq -r --arg provider "${FM_SEAT_PROVIDER:-claude}" '(.providers[]? | select(.provider == $provider) | .state.authStatus // empty)' 2>/dev/null)
   [ -z "$email" ] || printf '<p class="account">%s</p>\n' "$(html_escape "$email")"
+  # Grok reports no oauth source at all; bin/fm-seat-lib.sh fm_seat_logged_in
+  # owns why its signed-in verdict reads state.authStatus instead.
+  if [ "${FM_SEAT_PROVIDER:-claude}" = grok ]; then
+    [ "$src" = unavailable ] || [ "$auth" != usable ] || src=oauth
+  fi
   if [ "$src" != oauth ]; then
     attention=$state_err
     [ -n "$attention" ] || attention='not logged in'
@@ -404,6 +415,8 @@ seat_json() {
       attention: (
         if $p == null then "no " + $provider + " row in the quota report"
         elif ($p.source // "") == "oauth" then null
+        elif $provider == "grok" and ($p.source // "") != "unavailable"
+          and (($p.state.authStatus // "") == "usable") then null
         else (($p.state.error // "") | if . == "" then "not logged in" else . end)
         end
       ),
@@ -442,6 +455,7 @@ provider_metadata_json() (
   local ambient=${CLAUDE_CONFIG_DIR:-}
   [ "$FM_SEAT_PROVIDER" = claude ] || fm_seat_provider_in_use || { printf 'null\n'; return 0; }
   [ "$FM_SEAT_PROVIDER" != codex ] || ambient=${CODEX_HOME:-}
+  [ "$FM_SEAT_PROVIDER" != grok ] || ambient=${GROK_HOME:-}
   jq -cn --arg active "$(fm_seat_active)" \
     --arg live "$(fm_seat_name_of_profile "$ambient")" \
     --arg spareLeader "$(fm_seat_spare_leader_status)" --argjson floor "$(floor_json)" \
@@ -455,17 +469,19 @@ render_json() {
   {
     provider_seats_json claude "$cached_only"
     provider_seats_json codex "$cached_only"
+    provider_seats_json grok "$cached_only"
   } | jq -s \
       --arg generated "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
       --argjson claude "$(provider_metadata_json claude)" \
       --argjson codex "$(provider_metadata_json codex)" \
+      --argjson grok "$(provider_metadata_json grok)" \
       --argjson cacheSeconds "$FM_SEAT_BOARD_CACHE_SECONDS" \
       --argjson pipeline "$(FM_SEAT_PROVIDER=claude fm_seat_pipeline_report)" \
       '{
         schemaVersion: 1, generatedAt: $generated, cacheSeconds: $cacheSeconds,
         activeSeat: $claude.activeSeat, liveSeat: $claude.liveSeat,
         floor: $claude.floor, pipeline: $pipeline,
-        providers: { claude: $claude, codex: $codex }, seats: .
+        providers: { claude: $claude, codex: $codex, grok: $grok }, seats: .
       }'
 }
 
@@ -473,11 +489,11 @@ render_page() {
   local active name pipeline line FM_SEAT_PROVIDER=claude
   active=$(fm_seat_active)
   printf '<!DOCTYPE html>\n<html><head><meta charset="utf-8">\n'
-  printf '<title>Claude and Codex seats</title>\n'
+  printf '<title>Claude, Codex and Grok seats</title>\n'
   printf '<meta http-equiv="refresh" content="%s">\n' "$FM_SEAT_BOARD_CACHE_SECONDS"
   printf '<style>%s</style>\n' "$(board_css)"
   printf '</head><body>\n'
-  printf '<h1>Claude and Codex seats</h1>\n'
+  printf '<h1>Claude, Codex and Grok seats</h1>\n'
   printf '<p class="generated">generated %s</p>\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   pipeline=$(fm_seat_pipeline_report)
   while IFS= read -r line; do
@@ -488,7 +504,7 @@ render_page() {
     (if .blockedReason == null then empty else "pipeline selection HELD: " + .blockedReason end),
     (if .profileRecorded then empty else "pipeline default-seat profile not recorded for this home'"'"'s lead; launches use the wrapper'"'"'s installed default profile until a lead restart records it" end),
     (.liveAgents[] | "live pipeline agent: pid=" + (.pid | tostring) + " seat=" + .seat)')
-  for FM_SEAT_PROVIDER in claude codex; do
+  for FM_SEAT_PROVIDER in claude codex grok; do
     [ "$FM_SEAT_PROVIDER" = claude ] || fm_seat_provider_in_use || continue
     active=$(fm_seat_active)
     printf '<h2>%s</h2>\n' "$FM_SEAT_PROVIDER"

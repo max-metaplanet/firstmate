@@ -1350,7 +1350,7 @@ It is a JSON document, schema 1: `{ schemaVersion, updatedAt, seats: { "<name>":
 Resting is deliberately a separate record from `config/claude-seat-auto-exclude`: the exclusion is the operator's standing choice, is never lifted by a reading, and takes precedence, while resting is written and lifted only by the watch, and `bin/fm-seat.sh status`, `list`, and the seat board each report which of the two is holding a seat back.
 The session-share samples the wake guard measures live in `state/claude-seat-session-share.json` rather than in config, because only the home running the watch measures or wakes.
 Each is absent by default, and a home that configures none of them withholds nothing from rotation on a headroom level and holds no dispatch on an extra-usage policy; the used-up refusal above still applies, because a worker launched on an empty seat cannot run at all.
-A fresh Claude or Codex spawn in a home with at least one named seat of that vendor reads the seat it would launch on, refuses to start the task when that read proves the seat empty, and says where the work goes instead: another seat of the same vendor when one has headroom, otherwise the other vendor's best seat.
+A fresh Claude, Codex or Grok spawn in a home with at least one named seat of that vendor reads the seat it would launch on, refuses to start the task when that read proves the seat empty, and says where the work goes instead: another seat of the same vendor when one has headroom, otherwise the best seat on another vendor this home uses.
 That vendor-wide routing line is also recorded for firstmate once per depletion rather than on every spawn, and `bin/fm-spawn.sh --ignore-seat-hold` starts the task on an empty seat anyway.
 The armed watch and the spawn gate share one record per vendor and one wording, so an armed watch that then refuses a spawn reports that depletion once between them rather than twice; it speaks again as soon as a reset moves or the routing changes.
 A seat whose own reading could not be confirmed leaves the vendor-wide picture undecided rather than shrinking it, so one transient unreadable read never re-announces a depletion that has not changed.
@@ -1403,6 +1403,27 @@ An unset home explicitly clears a runtime daemon's inherited `CODEX_HOME`, prese
 A switch changes future workers only, and a harness change drops the old vendor's seat record.
 The dispatch resolver reads Codex quota against the selected home without refreshing credentials.
 [`claude-seats.md`](claude-seats.md#codex-seats) owns the registration and switching procedure.
+
+## Grok seats
+
+Grok uses the same seat resolver with provider `grok`, separate from Claude's and Codex's settings.
+`config/grok-seat` holds the active seat name for new Grok workers, and `config/grok-seats-root` defaults to `$HOME/.grok-seats`.
+A named seat must resolve to an existing home with `auth.json`, as either a real directory or a directory alias; an invalid configured name or missing home refuses the launch instead of selecting another account.
+The ambient home is exempt from that refusal, because it is not a seat selection: a home managing no Grok seat launches on the ambient login exactly as it did before seats existed.
+`config/grok-seat-threshold`, `config/grok-seat-destination-min`, `config/grok-seat-spare-leader`, and `config/grok-seat-auto-exclude` have the corresponding Claude settings' value formats and rotation semantics above.
+The used-up destination refusal and the spawn gate above apply to Grok unchanged, and when every Grok home reads used up the armed watch moves nothing at all, reporting each home's reset and the seat on another vendor with headroom once per crossing.
+These six files are inherited by local secondmate homes only, and `config/grok-seat-local` declines only Grok inheritance using the same presence semantics as `claude-seat-local`.
+Grok does not support the Claude paid extra-usage, floor, or session-share settings.
+It also has no leader destination: Grok is a crewmate and scout harness, so `lead-restart` and `leader-destination` refuse the provider rather than offering to move firstmate itself onto it.
+
+A Grok account is selected entirely by the config home named in `GROK_HOME`, and quota-axi reports one Grok account per home.
+That is why every per-seat quota read names the home: a read that omits it reports the ambient account whichever seat it was asked about.
+New Grok launches prefer the named seat over ambient `GROK_HOME` and record the resolved directory as `grok_seat=`.
+The firstmate-owned global turn-end hook is installed in that same home, because Grok loads its always-trusted global hooks from the home the worker runs with.
+Grok relaunches preserve that recorded home; an explicit same-harness `fm-control.sh relaunch --seat` validates the destination before stopping the old worker.
+An unset home explicitly clears a runtime daemon's inherited `GROK_HOME`, preserving the ordinary default store.
+Grok has no guarded credential renewal, so the seat board reports its renewal projection with `supported: false` and only a personal sign-in restores a signed-out home.
+[`claude-seats.md`](claude-seats.md#grok-seats) owns the registration and switching procedure.
 
 ## Lavish server address (config/lavish-axi-host)
 

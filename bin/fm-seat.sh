@@ -1,9 +1,13 @@
 #!/usr/bin/env bash
-# Choose which Claude or Codex account NEW workers launch on.
-# Use --provider codex before the command for Codex (default: claude).
-# Codex add <name> --home <absolute-existing-home> registers a directory alias
-# without copying authentication. Pipeline, quota floor, session
-# share, and paid extra-usage policy commands currently support Claude only.
+# Choose which Claude, Codex or Grok account NEW workers launch on.
+# Use --provider codex or --provider grok before the command (default: claude).
+# Codex and Grok add <name> --home <absolute-existing-home> register a directory
+# alias without copying authentication; both select an account by vendor config
+# home, so a named seat must resolve to an existing home holding auth.json.
+# Pipeline, quota floor, session share, and paid extra-usage policy commands
+# currently support Claude only. lead-restart and leader-destination support
+# Claude and Codex only, because Grok is a crewmate and scout harness and
+# firstmate itself never runs on a Grok seat.
 #
 # config/<provider>-seat-no-session-window is written by hand rather than by any
 # command here: it names the seats whose PLAN carries no five-hour window, and
@@ -125,7 +129,9 @@
 #            bin/fm-spawn.sh points that one launch at the answer.
 # add        Create an empty profile directory for a new seat and print the exact
 #            login command the account owner runs. It never logs in, never reads
-#            or writes any credential, and never touches the Keychain.
+#            or writes any credential, and never touches the Keychain. For Codex
+#            and Grok, --home <absolute-existing-home> instead registers an
+#            existing vendor home as a directory alias, copying nothing.
 # threshold  TRIGGER. Print, set, or clear the percent LEFT on the ACTIVE seat
 #            that trips an automatic switch. Absent means no automatic switching.
 # destination-min
@@ -248,7 +254,8 @@
 # seat files and runs its own switch, threshold, and arm against itself.
 # bin/fm-config-inherit-lib.sh owns that decline for every convergence point.
 # bin/fm-seat-lib.sh owns the resolution rules; docs/claude-seats.md owns the
-# operator procedure, including what the account owner must do to add a seat.
+# operator procedure for every provider, including what the account owner must
+# do to add a seat.
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -261,17 +268,24 @@ DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
 FM_SEAT_PROVIDER=${FM_SEAT_PROVIDER:-claude}
 if [ "${1-}" = --provider ]; then
   FM_SEAT_PROVIDER=${2-}
-  [ $# -ge 2 ] || { echo 'error: --provider requires claude or codex' >&2; exit 1; }
+  [ $# -ge 2 ] || { echo 'error: --provider requires claude, codex or grok' >&2; exit 1; }
   shift 2
 fi
 case "$FM_SEAT_PROVIDER" in
-  claude|codex) ;;
+  claude|codex|grok) ;;
   *) echo "error: unsupported seat provider: $FM_SEAT_PROVIDER" >&2; exit 1 ;;
 esac
 export FM_SEAT_PROVIDER
-if [ "$FM_SEAT_PROVIDER" = codex ]; then
+if [ "$FM_SEAT_PROVIDER" != claude ]; then
   case "${1-}" in
     pipeline-*|floor|floor-readd|floor-dwell|session-share|resting|extra-usage) echo "error: $1 supports Claude seats only" >&2; exit 1 ;;
+  esac
+fi
+# Grok is a crewmate and scout harness only, so firstmate itself never runs on a
+# Grok seat and the leader commands have no Grok destination to offer.
+if [ "$FM_SEAT_PROVIDER" = grok ]; then
+  case "${1-}" in
+    lead-restart|leader-destination) echo "error: $1 supports Claude and Codex seats only; Grok runs workers, never firstmate itself" >&2; exit 1 ;;
   esac
 fi
 
@@ -456,7 +470,7 @@ declining_secondmate_homes() {
 cmd_status() {
   local active profile threshold minimum policy reason rows excluded floor pipeline label
   local headroom lead_provider no_session
-  label=Claude; [ "$FM_SEAT_PROVIDER" != codex ] || label=Codex
+  label=$(fm_seat_provider_label)
   active=$(fm_seat_active)
   printf 'active seat for NEW workers: %s\n' "$active"
   profile=$(fm_seat_config_dir "$active")
@@ -738,7 +752,9 @@ cmd_launch_destination() {
     printf '%s\n' "$active"
     return 0
   fi
-  [ -z "$name" ] || mapfile -t waiting <<< "$name"
+  if [ -n "$name" ]; then
+    while IFS= read -r seat; do waiting+=("$seat"); done <<< "$name"
+  fi
   if soonest=$(session_soonest_reset "$trigger" "$active" ${waiting[@]+"${waiting[@]}"}); then
     IFS=$'\t' read -r seat at <<< "$soonest"
     die "no seat has 5-hour room for a new worker and more weekly spare than '$active' (each skipped seat and its reason is printed above); the soonest 5-hour reset is $seat at $(fm_seat_reset_phrase "$at")"
@@ -774,7 +790,8 @@ session_soonest_reset() {
 # seat whose reset cannot be read says so and why rather than being left out.
 seat_resets() {
   local from=$1 name dir verdict reset seen=' ' seats
-  mapfile -t seats < <(fm_seat_list)
+  seats=()
+  while IFS= read -r name || [ -n "$name" ]; do seats+=("$name"); done < <(fm_seat_list)
   for name in "$from" "$FM_SEAT_DEFAULT_NAME" ${seats[@]+"${seats[@]}"}; do
     case "$seen" in *" $name "*) continue ;; esac
     seen="$seen$name "
@@ -1129,7 +1146,8 @@ next_seat() {
     IFS=$'\t' read -r anchor_basis anchor_spare < <(anchor_headroom "$active")
     ! seat_walled "$active" || anchor_walled=walled
   fi
-  mapfile -t seats < <(fm_seat_list)
+  seats=()
+  while IFS= read -r name || [ -n "$name" ]; do seats+=("$name"); done < <(fm_seat_list)
   n=${#seats[@]}
   [ "$n" -gt 0 ] || return 1
   idx=-1
@@ -1146,7 +1164,7 @@ next_seat() {
       printf 'seat %s: skipped, this worker already walled out on it\n' "$name" >&2
       continue
     fi
-    if [ "$FM_SEAT_PROVIDER" = codex ] &&
+    if fm_seat_home_provider &&
       [ "$(fm_seat_credential_identity "$(fm_seat_config_dir "$name")")" = \
         "$(fm_seat_credential_identity "$(fm_seat_config_dir "$active")")" ]; then
       printf 'seat %s: skipped, shares the active credential store\n' "$name" >&2
@@ -1428,25 +1446,27 @@ cmd_add() {
     die "'$FM_SEAT_DEFAULT_NAME' names the ambient login, not a seat directory; choose another name"
   fm_seat_name_valid "$name" || die "invalid seat name: $name"
   dir=$(fm_seat_dir "$name") || die "seat '$name' does not resolve to a profile directory"
-  if [ "$FM_SEAT_PROVIDER" = codex ]; then
+  if fm_seat_home_provider; then
+    local label
+    label=$(fm_seat_provider_label)
     [ $# -eq 1 ] || { [ $# -eq 3 ] && [ "${2-}" = --home ]; } ||
-      die 'usage: fm-seat.sh --provider codex add <name> [--home <existing-home>]'
+      die "usage: fm-seat.sh --provider $FM_SEAT_PROVIDER add <name> [--home <existing-home>]"
     if [ -n "$source_home" ]; then
       case "$source_home" in /*) ;; *) die '--home must be an absolute path' ;; esac
       [ -d "$source_home" ] && [ -f "$source_home/auth.json" ] ||
-        die '--home must name an existing Codex home containing auth.json'
+        die "--home must name an existing $label home containing auth.json"
       if [ -e "$dir" ] || [ -L "$dir" ]; then
         [ -d "$dir" ] && [ "$(cd "$dir" && pwd -P)" = "$(cd "$source_home" && pwd -P)" ] ||
           die "seat '$name' already exists and points elsewhere"
       else
         mkdir -p "$(fm_seat_root)" || die 'could not create seats root'
-        ln -s "$source_home" "$dir" || die 'could not register Codex home'
+        ln -s "$source_home" "$dir" || die "could not register $label home"
       fi
-      printf 'registered existing Codex home: %s -> %s; no authentication copied\n' "$dir" "$source_home"
+      printf 'registered existing %s home: %s -> %s; no authentication copied\n' "$label" "$dir" "$source_home"
     else
       [ ! -L "$dir" ] || [ -d "$dir" ] || die "seat '$name' is a broken alias"
       mkdir -p "$dir" || die "could not create $dir"
-      printf 'Codex home: %s; no authentication copied\n' "$dir"
+      printf '%s home: %s; no authentication copied\n' "$label" "$dir"
     fi
     printf 'login command: '
     fm_seat_login_command "$dir"
@@ -2961,11 +2981,7 @@ cmd_retire() {
   if "$SCRIPT_DIR/fm-procevent-when.sh" source-id "$FM_CHECK_SHIM_ID" >/dev/null 2>&1; then
     "$SCRIPT_DIR/fm-procevent-when.sh" retire "$FM_CHECK_SHIM_ID" >/dev/null 2>&1 || true
   fi
-  if [ "$FM_SEAT_PROVIDER" = codex ]; then
-    printf 'retired: the automatic Codex seat watch\n'
-  else
-    printf 'retired: the automatic Claude seat watch\n'
-  fi
+  printf 'retired: the automatic %s seat watch\n' "$(fm_seat_provider_label)"
 }
 
 case "${1-}" in
