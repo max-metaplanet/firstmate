@@ -375,18 +375,7 @@ while :; do
           TO=$((OFFSET + BYTES))
           copy_prefix "$TMP/source" "$TO" "$TMP/to-prefix"
           TO_HASH=$(sha256_file "$TMP/to-prefix")
-          PAYLOAD_HASH=$(sha256_file "$TMP/payload")
-          printf 'schema=fm-remote-delta.v1\n'
-          printf 'status=delta\n'
-          printf 'path=%s\n' "$REL"
-          printf 'from_offset=%s\n' "$OFFSET"
-          printf 'to_offset=%s\n' "$TO"
-          printf 'from_prefix_sha256=%s\n' "$PREFIX"
-          printf 'to_prefix_sha256=%s\n' "$TO_HASH"
-          printf 'payload_sha256=%s\n' "$PAYLOAD_HASH"
-          printf 'payload_bytes=%s\n' "$BYTES"
-          printf 'reason=\n\n'
-          cat "$TMP/payload"
+          emit_delta "$TO" "$TO_HASH" "$TMP/payload"
           exit 0
         fi
         if [ $((SIZE - OFFSET)) -ge "$MAX_BYTES" ]; then
