@@ -3319,6 +3319,29 @@ prev=
 last=
 last_read=0
 
+# A successor left for main while nobody reads it (FM_WATCH_GAP_SUCCESSOR,
+# bin/fm-supervision-host.sh leave_successor_for_main) skips the check sweep
+# only for that gap. The gap ends once an arm attaches to this watcher
+# (state/.watch-attached, bin/fm-watch-arm.sh report_attached) or once the
+# host's left record, after naming this watcher's arm, no longer does.
+watch_gap=${FM_WATCH_GAP_SUCCESSOR:-0}
+watch_gap_recorded=0
+watch_gap_tick() {
+  local attached left_arm=''
+  [ "$watch_gap" = 1 ] || return 0
+  fm_read_file_to attached "$STATE/.watch-attached" || attached=
+  if [ -f "$STATE/.supervision-host-left" ]; then
+    IFS="$(printf '\t')" read -r left_arm _ < "$STATE/.supervision-host-left" || true
+  fi
+  if [ "$attached" = "$WATCHER_PID" ]; then
+    watch_gap=0
+  elif [ "$left_arm" = "$PPID" ]; then
+    watch_gap_recorded=1
+  elif [ "$watch_gap_recorded" = 1 ]; then
+    watch_gap=0
+  fi
+}
+
 while :; do
   # Home-gone exit: a deleted home, state directory, or code root means this
   # watcher's world is gone (a torn-down temporary home or a discarded
@@ -3450,7 +3473,13 @@ while :; do
   # keeps producing signals - the slow poll (e.g. merge detection) would then
   # never run until the fleet went quiet. Checks are due only every
   # CHECK_INTERVAL, so most cycles skip this block and fall straight through.
-  if [ "$check_age" -ge "$CHECK_INTERVAL" ]; then
+  # A successor left for main skips this sweep while its gap lasts
+  # (watch_gap_tick). A due check here exited the cycle and the append minted a
+  # fresh downtime generation; the next park, finding this arm dead, handed
+  # check: rearm-resurface again. Signals below still close that cycle.
+  # docs/watcher-continuity.md "Generation reuse".
+  watch_gap_tick
+  if [ "$watch_gap" != 1 ] && [ "$check_age" -ge "$CHECK_INTERVAL" ]; then
     rejected_checks=
     contribution_check_output=
     for c in "$STATE"/*.check.sh; do

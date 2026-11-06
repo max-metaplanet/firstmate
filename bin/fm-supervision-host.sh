@@ -67,7 +67,8 @@
 #     conditions under which that restores a single owner and the fallback.
 #     That take-over sets FM_WATCH_KEEP_ANNOUNCED so an episode already
 #     announced is not reopened into another main hand-back
-#     (docs/watcher-continuity.md "Generation reuse").
+#     (docs/watcher-continuity.md "Generation reuse"). The successor left for
+#     main does not run the check sweep while nobody is reading it.
 #   - away (an away record exists): every close goes to the engine.
 # Every turn that starts attended meets that rule again at its start, so a
 # close accepted away whose turn starts attended (the captain returned in
@@ -752,7 +753,10 @@ detach_successor() {
 # downtime (autoarm_commit in bin/fm-claude-stop-autoarm.sh). A failed start
 # returns 1; the caller still prints the close unchanged.
 leave_successor_for_main() {
-  if ! ARM_OWN_GROUP=1 start_successor "$CLOSED_ARM_PID"; then
+  # FM_WATCH_GAP_SUCCESSOR: this cycle is unread until the next park. It keeps
+  # the beacon and does not run the check sweep (bin/fm-watch.sh). A signal
+  # still closes it, so the next park can deliver that close.
+  if ! FM_WATCH_GAP_SUCCESSOR=1 ARM_OWN_GROUP=1 start_successor "$CLOSED_ARM_PID"; then
     log_line "pass-through	successor-unverified	$(printf '%s\n' "$REASON" | head -n 1)"
     return 1
   fi

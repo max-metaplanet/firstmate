@@ -752,6 +752,154 @@ test_take_over_does_not_hand_the_same_resurface_straight_back() {
   pass "host+hook: a takeover does not hand the same rearm-resurface straight back"
 }
 
+# Queue one durable check row in <home>.
+queue_check() {  # <home> <key> <payload>
+  FM_HOME="$1" bash -c '
+    . "$1"
+    fm_wake_append check "$2" "$3"
+  ' _ "$ROOT/bin/fm-wake-lib.sh" "$2" "$3"
+}
+
+# The 2026-11-06 loop, once the successor is still alive. The first
+# pass-through is check: rearm-resurface. A check is due on the next poll
+# (the production successor's .last-check was stale, so its first poll ran
+# the sweep and exited). The successor must stay up, the next park must take
+# it over, and that park must not hand check: rearm-resurface again.
+test_due_check_during_rearm_gap_stays_a_take_over() {
+  local home resurfaces saved_interval
+  saved_interval=${FM_CHECK_INTERVAL:-999999}
+  export FM_CHECK_INTERVAL=0
+  home=$(make_primary_home hook-rearm-due-check)
+  : > "$home/hook.own-group"
+  printf '#!/bin/sh\necho seats out of quota\n' > "$home/state/lab-seat.check.sh"
+  chmod 700 "$home/state/lab-seat.check.sh"
+  start_hook_session "$home"
+  queue_check "$home" resurface-fixture "check: work stranded before the host parked" \
+    || fail "fixture: could not queue the stranded wake"
+  turn_end "$home"
+  wait_until 250 hook_exited "$home" \
+    || fail "due check: the first close never reached the Stop hook: $(cat "$home/state/.supervision-host.log" 2>/dev/null)"
+  assert_re '	pass-through	attended	main-only	check: rearm-resurface' "$home/state/.supervision-host.log" \
+    "fixture: the stranded queue was not handed back once"
+  assert_rewoke_main "$home" "due check (first)"
+  # Main's turn is the gap. On the current code the due check exits the
+  # successor before the next park, so that park is not a take-over.
+  turn_end "$home"
+  wait_until 200 grep -q $'\ttake-over\tarm=' "$home/state/.supervision-host.log" \
+    || fail "due check: the next park did not take the cycle over: $(cat "$home/state/.supervision-host.log"; echo '--- deliveries ---'; cat "$home/state/.watch-deliveries.log" 2>/dev/null)"
+  sleep 3
+  resurfaces=$(grep -c 'check: rearm-resurface' "$home/state/.supervision-host.log" || true)
+  [ "$resurfaces" -eq 1 ] \
+    || fail "due check: recovery was handed back again ($resurfaces times): $(cat "$home/state/.supervision-host.log")"
+  if hook_exited "$home" && grep -q 'check: rearm-resurface' "$home/hook.err" 2>/dev/null; then
+    fail "due check: the takeover handed check: rearm-resurface: $(cat "$home/hook.err")"
+  fi
+  export FM_CHECK_INTERVAL=$saved_interval
+  pass "host+hook: a due check during the re-arm gap does not hand check: rearm-resurface again"
+}
+
+# A row queued after main drained and acknowledged a rearm-resurface is new
+# work. When the successor left for main is already gone at the next park,
+# that park has no cycle to take over, and the row must still reach main once.
+# The host log keeps the earlier rearm-resurface line, as a real home does.
+test_row_queued_after_ack_reaches_main_when_the_left_successor_is_gone() {
+  local home left_arm watcher drained
+  home=$(make_primary_home hook-rearm-dead-successor)
+  : > "$home/hook.own-group"
+  start_hook_session "$home"
+  queue_check "$home" resurface-fixture "check: work stranded before the host parked" \
+    || fail "fixture: could not queue the stranded wake"
+  turn_end "$home"
+  wait_until 250 hook_exited "$home" \
+    || fail "dead successor: the first close never reached the Stop hook: $(cat "$home/state/.supervision-host.log" 2>/dev/null)"
+  assert_re '	pass-through	attended	main-only	check: rearm-resurface' "$home/state/.supervision-host.log" \
+    "fixture: the stranded queue was not handed back once"
+  assert_rewoke_main "$home" "dead successor (first)"
+  watcher_live "$home" || fail "dead successor: the first pass-through left no successor"
+  main_drain_and_ack "$home"
+  left_arm=$(awk -F '\t' 'NR == 1 { print $1 }' "$home/state/.supervision-host-left")
+  [ -n "$left_arm" ] || fail "dead successor: the pass-through recorded no arm"
+  watcher=$(cat "$home/state/.watch.lock/pid" 2>/dev/null || true)
+  kill -TERM "$left_arm" 2>/dev/null || fail "dead successor: could not stop the left arm $left_arm"
+  wait_until 50 bash -c 'if [ -n "$1" ] && kill -0 "$1" 2>/dev/null; then exit 1; fi; exit 0' _ "$watcher" \
+    || fail "dead successor: the left arm did not stop its watcher"
+  queue_check "$home" lab-seat "check: lab-seat: seats are out of quota" \
+    || fail "fixture: could not append the new check"
+  turn_end "$home"
+  wait_until 250 hook_exited "$home" \
+    || fail "dead successor: the new row never reached main: $(cat "$home/state/.supervision-host.log"; cat "$home/state/.watcher-down" 2>/dev/null)"
+  assert_rewoke_main "$home" "dead successor (new row)"
+  drained=$(main_drain "$home")
+  assert_contains "$drained" 'seats are out of quota' "the row queued after the acknowledgement must reach main's drain"
+  pass "host+hook: a row queued after main's acknowledgement reaches main once when the left successor is gone"
+}
+
+# Leave a gap successor for main in <home>: the first park hands a stranded
+# row back as check: rearm-resurface, then an unregistered check is installed.
+# A check sweep that runs rejects it with a wake, so the successor must stay
+# up while nobody reads it.
+leave_gap_successor_with_a_due_check() {  # <home> <label>
+  local home=$1 label=$2
+  start_hook_session "$home"
+  queue_check "$home" resurface-fixture "check: work stranded before the host parked" \
+    || fail "$label: could not queue the stranded wake"
+  turn_end "$home"
+  wait_until 250 hook_exited "$home" \
+    || fail "$label: the first close never reached the Stop hook: $(cat "$home/state/.supervision-host.log" 2>/dev/null)"
+  assert_rewoke_main "$home" "$label (first)"
+  watcher_live "$home" || fail "$label: the pass-through left no successor"
+  GAP_WATCHER=$(cat "$home/state/.watch.lock/pid")
+  printf '#!/bin/sh\necho seats out of quota\n' > "$home/state/lab-seat.check.sh"
+  chmod 700 "$home/state/lab-seat.check.sh"
+  sleep 3
+  if ! kill -0 "$GAP_WATCHER" 2>/dev/null || gap_watcher_ran_checks "$home"; then
+    fail "$label: the gap successor ran the check sweep while nobody was reading"
+  fi
+}
+
+# True once the gap successor's own delivery record shows its check sweep ran
+# (the rejected unregistered check), the watcher's persisted delivery contract.
+gap_watcher_ran_checks() {  # <home>
+  awk -F '\t' -v pid="$GAP_WATCHER" '$1 == pid && $3 ~ /^check: rejected unauthenticated state checks:/ { found = 1 } END { exit !found }' \
+    "$1/state/.watch-deliveries.log" 2>/dev/null
+}
+
+# The host is turned off again while a gap successor runs. The plain Stop-hook
+# arm that follows attaches to that watcher, and its checks must run again.
+test_host_off_attach_ends_the_gap_check_skip() {
+  local home saved_interval
+  saved_interval=${FM_CHECK_INTERVAL:-999999}
+  export FM_CHECK_INTERVAL=0
+  home=$(make_primary_home hook-gap-host-off)
+  : > "$home/hook.own-group"
+  leave_gap_successor_with_a_due_check "$home" "host off"
+  : > "$home/config/supervision-host-off"
+  turn_end "$home"
+  wait_until 150 gap_watcher_ran_checks "$home" \
+    || fail "host off: checks never ran after the Stop hook attached: $(cat "$home/hook.out" "$home/hook.err" 2>/dev/null)"
+  export FM_CHECK_INTERVAL=$saved_interval
+  pass "host+hook: an attach after the host is turned off ends the gap successor's check skip"
+}
+
+# A take-over that cannot confirm the watcher is the named arm's child attaches
+# instead; that attach must end the gap successor's check skip too.
+test_take_over_attach_fallback_ends_the_gap_check_skip() {
+  local home saved_interval arm
+  saved_interval=${FM_CHECK_INTERVAL:-999999}
+  export FM_CHECK_INTERVAL=0
+  home=$(make_primary_home hook-gap-take-over-fallback)
+  : > "$home/hook.own-group"
+  leave_gap_successor_with_a_due_check "$home" "take-over fallback"
+  FM_HOME="$home" "$home/bin/fm-watch-arm.sh" --take-over "$$" > "$home/fallback.out" 2>&1 &
+  arm=$!
+  wait_until 150 gap_watcher_ran_checks "$home" \
+    || fail "take-over fallback: checks never ran after the arm attached: $(cat "$home/fallback.out")"
+  assert_grep 'watcher: attached pid=' "$home/fallback.out" "fixture: the take-over did not fall back to attaching"
+  kill -TERM "$arm" 2>/dev/null || true
+  export FM_CHECK_INTERVAL=$saved_interval
+  pass "host+hook: a take-over that falls back to attaching ends the gap successor's check skip"
+}
+
 # FM_TEST_ONLY runs a single named case, the same entry point the sibling
 # suites expose.
 if [ -n "${FM_TEST_ONLY:-}" ]; then
@@ -774,6 +922,10 @@ test_successor_close_during_main_turn_is_delivered_at_the_next_turn_end
 test_pass_through_successor_survives_the_hook_process_group_teardown
 test_next_park_takes_over_the_cycle_a_pass_through_left_for_main
 test_take_over_does_not_hand_the_same_resurface_straight_back
+test_due_check_during_rearm_gap_stays_a_take_over
+test_row_queued_after_ack_reaches_main_when_the_left_successor_is_gone
+test_host_off_attach_ends_the_gap_check_skip
+test_take_over_attach_fallback_ends_the_gap_check_skip
 test_a_park_stopped_mid_take_over_leaves_the_take_over_to_the_next_park
 test_unrecorded_successor_is_stopped_rather_than_left_for_main
 test_primary_without_a_verified_mirror_runs_away_only

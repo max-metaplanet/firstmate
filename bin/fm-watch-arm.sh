@@ -377,6 +377,7 @@ healthy_watcher() {
 
 report_attached() {
   local age
+  printf '%s\n' "$HEALTHY_PID" > "$STATE/.watch-attached" 2>/dev/null || true
   fm_watcher_beacon_age_to age "$BEAT"
   echo "watcher: attached pid=$HEALTHY_PID (beacon ${age}s)"
 }
