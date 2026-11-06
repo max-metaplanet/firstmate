@@ -1288,9 +1288,19 @@ resolve_relaunch_profile() {
       || die "recorded Codex home aliases another credential owner; use an explicit --seat move to that owner"
 
   fi
+  # A Grok worker selects its account by config home, so a recorded home that
+  # has gone missing refuses here rather than relaunching onto the ambient
+  # account. Grok registers directory aliases only, so there is no separate
+  # auth-file owner to resolve the way Codex must.
+  if [ "$SEAT_SET" = 0 ] && [ "$TARGET_HARNESS" = grok ] && [ "$PRIOR_RECORDED_HARNESS" = grok ]; then
+    local recorded_grok_home
+    recorded_grok_home=$(fm_meta_get "$META" grok_seat)
+    [ -z "$recorded_grok_home" ] || [ -d "$recorded_grok_home" ] \
+      || die "recorded Grok home is missing: $recorded_grok_home; restore it before stopping this worker"
+  fi
   if [ "$SEAT_SET" = 1 ]; then
-    if [ "$PRIOR_RECORDED_HARNESS" != "$TARGET_HARNESS" ] || { [ "$TARGET_HARNESS" != claude ] && [ "$TARGET_HARNESS" != codex ]; }; then
-      die "--seat requires a same-harness Claude or Codex relaunch"
+    if [ "$PRIOR_RECORDED_HARNESS" != "$TARGET_HARNESS" ] || ! fm_seat_vendor_harness "$TARGET_HARNESS"; then
+      die "--seat requires a same-harness Claude, Codex or Grok relaunch"
     fi
     TARGET_SEAT=$(FM_SEAT_PROVIDER=$TARGET_HARNESS fm_seat_relaunch_destination "$NEW_SEAT") || return 1
     account_root=${account#*$'\t'}

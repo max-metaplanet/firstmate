@@ -1,6 +1,6 @@
-# Claude and Codex seats: running workers on a second account
+# Claude, Codex and Grok seats: running workers on a second account
 
-A **seat** is one Claude or Codex account that Firstmate's workers can run on.
+A **seat** is one Claude, Codex or Grok account that Firstmate's workers can run on.
 Switching seats changes which account new workers bill to, without disturbing any worker already running.
 
 Use this when one account's weekly limit is close and a second account is available, or when work should be split across accounts deliberately.
@@ -87,6 +87,46 @@ Claude's paid extra-usage and floor controls and pipeline wrapper are not Codex 
 The separate [leader replacement](#moving-firstmate-itself) supports Claude and Codex destinations without changing worker dispatch.
 The empty-seat refusal described under [the five controls](#the-five-controls) is a Codex operation: a switch onto a home with no quota left is refused with its reset time, and with every Codex home empty the watch moves nothing and names the Claude seat that still has headroom.
 [`configuration.md`](configuration.md#codex-seats) owns the settings and recorded worker-home contract.
+
+## Grok seats
+
+Use `bin/fm-seat.sh --provider grok` for Grok's separate seat selection.
+Grok seats live under `~/.grok-seats`, one directory per seat, the same shape Claude uses under `~/.claude-seats` and Codex under `~/.codex-seats`.
+A Grok account is selected entirely by its config home, the directory named in `GROK_HOME`, so registering a seat means pointing it at an existing signed-in home rather than copying `auth.json`:
+
+```sh
+bin/fm-seat.sh --provider grok add max  --home "$HOME/.grok"
+bin/fm-seat.sh --provider grok add max2 --home "$HOME/.grok-seats/max2"
+bin/fm-seat.sh --provider grok probe max2
+bin/fm-seat.sh --provider grok switch max2
+```
+
+Registration links the existing directory and never copies or renews credentials.
+An existing home must contain `auth.json`; to create a genuinely new login, `add <name>` creates an empty home and prints its exact login command.
+Automatic rotation skips aliases of the active credential store, so registering one home under two names never looks like a second account.
+
+A seat may be either a real directory holding its own `auth.json` or a directory alias to an existing home, and both forms resolve identically.
+The install root `~/.grok` is itself one account's home, so the seat for that account is registered as an alias to it rather than by moving its credential out: moving the credential would break anything already reading `~/.grok`, and Firstmate never copies one.
+
+**Shared install material belongs in one place, linked into each seat; per-seat state must stay separate.**
+Version-scoped, account-free material - `bin`, `bundled`, `completions`, `docs`, `downloads`, `installed-plugins`, `README.md`, `CHANGELOG.*`, `.metadata_version` - can be symlinked from the install root into a seat, so one Grok upgrade reaches every seat.
+Everything that is account- or session-scoped stays a real file or directory in the seat: `auth.json`, `agent_id`, `config.toml`, `sessions`, `active_sessions.*`, `settings_cache.json`, `models_cache.json`, `worktrees.db`, `trusted_folders.toml`, `experiments_remote_opt_out`, the `managed_*` signed configuration, `hooks`, `logs`, `memtrace`, `memory-v2`, and `marketplace-cache`.
+Sharing any of those is how one seat starts writing over the other's state; `hooks` in particular carries one registry entry per running task, so two seats sharing it would merge their turn-end registries.
+
+**Each seat's quota is read against its own home, and that is the only reading that tells two Grok accounts apart.**
+`quota-axi` reports one Grok account per config home, so a read that does not name the home reports whichever account the ambient home holds.
+Confirm two seats really are two accounts by reading each home directly - the account email differs:
+
+```sh
+GROK_HOME="$HOME/.grok"      quota-axi --provider grok --max-age 0 --full --json
+GROK_HOME="$HOME/.grok-max2" quota-axi --provider grok --max-age 0 --full --json
+```
+
+`list`, `status`, `probe`, `name-of`, `threshold`, `destination-min`, `auto-exclude`, `auto-include`, `worker-destination`, `launch-destination`, `auto`, `arm`, and `retire` work with the same provider prefix, and the empty-seat refusal described under [the five controls](#the-five-controls) applies to Grok unchanged.
+Grok reports no OAuth source and no refreshable credential state: a signed-in home publishes `state.authStatus: usable`, which is what the login probe reads, and a home holding no credential reads as signed out.
+So Grok has no guarded renewal at all - only a personal sign-in restores a signed-out home - and the seat board marks its renewal `supported: false`.
+Claude's paid extra-usage and floor controls and pipeline wrapper are not Grok operations, and neither is [leader replacement](#moving-firstmate-itself): Grok runs crewmates and scouts, never firstmate itself, so those commands refuse the provider.
+[`configuration.md`](configuration.md#grok-seats) owns the settings and recorded worker-home contract.
 
 ## Switching now
 

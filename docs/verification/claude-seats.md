@@ -1,4 +1,4 @@
-# Claude seat login-state verification
+# Seat login-state verification
 
 Audience: maintainer verification.
 
@@ -6,7 +6,7 @@ This record supports the seat login-state classifier in
 [`bin/fm-seat-lib.sh`](../../bin/fm-seat-lib.sh)'s `fm_seat_logged_in` and the states
 [`docs/claude-seats.md`](../claude-seats.md) documents.
 It records only the vendor-emitted facts that must be re-established when quota-axi or
-Claude Code changes.
+a vendor CLI changes.
 Task chronology and incident transcripts stay in private reports or PR evidence.
 
 The classifier reads machine-readable fields - `state.authStatus` and each attempt's
@@ -131,10 +131,58 @@ stands down whenever any Claude Code process is running on the machine, and trea
 unlistable process table the same way, so a fleet with crew running almost always trips
 it.
 
+## Grok: the published auth status is the whole verdict
+
+Verified 2026-11-06 against quota-axi 0.1.69 and grok 1.0.77 on darwin-arm64.
+
+Grok reports **no `oauth` source at all**, so the Claude and Codex positive test
+(`.source == "oauth"`) can never pass for it and the classifier keys on
+`state.authStatus` instead. A Grok account is selected entirely by its config home, so
+each read below names that home; a read that omits `GROK_HOME` reports whichever account
+the ambient home holds.
+
+A signed-in home:
+
+```
+$ GROK_HOME=~/.grok-max2 quota-axi --provider grok --no-credential-refresh --full --json
+  "source": "web", "account": {"email": "max2@metaplanet.jp"},
+  "state": {"authStatus": "usable"},
+  "attempts": [{"source": "web", "status": "success", "error": null},
+               {"source": "pi:xai", "status": "skipped", "error": "credentials_missing"}]
+```
+
+A home holding no Grok credential:
+
+```
+$ GROK_HOME=$(mktemp -d) quota-axi --provider grok --no-credential-refresh --full --json
+  "source": "unavailable", "state": {"authStatus": "unusable"},
+  "attempts": [{"source": "auth-json", "status": "skipped", "error": "credentials_missing"},
+               {"source": "pi:xai", "status": "skipped", "error": "credentials_missing"}]
+```
+
+The empty-home shape is already the proven-empty shape the classifier's last test reads -
+`source: unavailable` with every attempt skipped for `credentials_missing` - so Grok's
+signed-out verdict needs no branch of its own. Only its positive verdict does.
+
+Two further facts the implementation depends on:
+
+- **`GROK_HOME` isolates, and quota-axi honours it.** The two homes above report different
+  account emails (`max@metaplanet.jp` and `max2@metaplanet.jp`) and different remaining
+  percentages in the same second, so the home is a real account selector rather than a
+  hint.
+- **`--profile-only` is not available for Grok.** `quota-axi --help` states the flag
+  "requires explicit CLAUDE_CONFIG_DIR or CODEX_HOME"; passing it with `--provider grok`
+  exits 5 and prints no report. The Grok transport therefore passes only
+  `--no-credential-refresh`, and `tests/fm-seat.test.sh`'s Grok fake refuses the flag so a
+  regression that added it fails there.
+
+Grok publishes no `expired_refreshable` state, which is why this fleet has no guarded Grok
+renewal and [`bin/fm-seat-renew.sh`](../../bin/fm-seat-renew.sh) refuses the provider.
+
 ## Refreshing this record
 
-Re-run the two reads above against the installed quota-axi after a quota-axi or Claude
-Code upgrade, and confirm `state.authStatus` and the per-attempt `status` and `error` still carry these
+Re-run the reads above against the installed quota-axi after a quota-axi, Claude Code or
+Grok upgrade, and confirm `state.authStatus` and the per-attempt `status` and `error` still carry these
 values.
 If any of these fields is renamed or dropped, the classifier falls back to reporting `unknown`
 for both states, which is the pre-existing behaviour rather than an unsafe one, and

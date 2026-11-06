@@ -1,15 +1,18 @@
 # shellcheck shell=bash
-# Shared Claude and Codex seat resolution, used by the seat command, spawn and dispatch
-# resolver.
+# Shared Claude, Codex and Grok seat resolution, used by the seat command, spawn
+# and dispatch resolver.
 # Usage: . bin/fm-seat-lib.sh   (after FM_ROOT, FM_HOME, and CONFIG are set, and
 #        after bin/fm-timeout-lib.sh, which bounds every quota read, and
 #        bin/fm-quota-axi-lib.sh, which owns the quota row join)
 #
-# A "seat" is one Claude account, reached through a Claude Code profile
-# directory named by CLAUDE_CONFIG_DIR. Claude Code derives that profile's
-# Keychain service name from the directory path itself, so two seats never share
-# a credential store and a worker pointed at a seat that was never logged in
-# fails with "Not logged in" rather than silently spending the default account.
+# A "seat" is one vendor account, reached through the config directory that
+# vendor's CLI reads. For Claude that is the profile directory named by
+# CLAUDE_CONFIG_DIR: Claude Code derives that profile's Keychain service name
+# from the directory path itself, so two seats never share a credential store
+# and a worker pointed at a seat that was never logged in fails with "Not
+# logged in" rather than silently spending the default account. For Codex and
+# Grok it is the vendor home named by CODEX_HOME or GROK_HOME, which holds that
+# account's own auth.json; the provider section below owns the difference.
 # docs/claude-seats.md owns the operator procedure and the login steps; this
 # library owns only the resolution rules the spawn path and the seat command
 # must agree on.
@@ -60,13 +63,19 @@
 # can spend a separate account; bin/fm-config-inherit-lib.sh owns that decline.
 # docs/configuration.md "Claude seats" owns their schema.
 
-# FM_SEAT_PROVIDER selects claude (the default) or codex for a scoped call.
-# Both providers use config/<provider>-seat* and ~/.<provider>-seats.
-# Codex homes may be registered as directory symlinks; authentication is never
-# copied, and aliases of one auth.json are one credential identity.
+# FM_SEAT_PROVIDER selects claude (the default), codex or grok for a scoped
+# call. Every provider uses config/<provider>-seat* and ~/.<provider>-seats.
+# Codex and Grok homes may be registered as directory symlinks; authentication
+# is never copied, and aliases of one auth.json are one credential identity.
+#
+# A Grok seat is one Grok Build account, reached through the config home named
+# by GROK_HOME and defaulting to ~/.grok. quota-axi reads Grok per config home
+# and reports one account per home, so the home IS the account selector: a read
+# that does not name it reports the ambient seat whichever seat was asked about.
+# That is why every Grok quota read here goes through fm_seat_env_name.
 fm_seat_provider() {
   case "${FM_SEAT_PROVIDER:-claude}" in
-    claude|codex) printf '%s\n' "${FM_SEAT_PROVIDER:-claude}" ;;
+    claude|codex|grok) printf '%s\n' "${FM_SEAT_PROVIDER:-claude}" ;;
     *) printf 'error: unsupported seat provider: %s\n' "$FM_SEAT_PROVIDER" >&2; return 1 ;;
   esac
 }
@@ -75,8 +84,59 @@ fm_seat_env_name() {
   case "$(fm_seat_provider)" in
     claude) printf 'CLAUDE_CONFIG_DIR\n' ;;
     codex) printf 'CODEX_HOME\n' ;;
+    grok) printf 'GROK_HOME\n' ;;
     *) return 1 ;;
   esac
+}
+
+# fm_seat_provider_label [provider]
+# The vendor's name as every firstmate surface prints it. One owner, so a
+# refusal, a rotation line and a board heading can never spell a vendor three
+# ways; an unknown provider prints as it came rather than being mislabelled.
+fm_seat_provider_label() {
+  case "${1:-${FM_SEAT_PROVIDER:-claude}}" in
+    claude) printf 'Claude\n' ;;
+    codex) printf 'Codex\n' ;;
+    grok) printf 'Grok\n' ;;
+    *) printf '%s\n' "${1:-${FM_SEAT_PROVIDER:-claude}}" ;;
+  esac
+}
+
+# fm_seat_vendor_harness <harness>
+# True when a worker on this harness launches on a managed seat, so the spawn
+# path resolves, validates, records and prefixes its account. The one owner of
+# that question: the seat resolution, the depletion gate, the launch-routing
+# gate and the launch prefix must agree about it, and a harness this does not
+# name reaches no seat code at all.
+fm_seat_vendor_harness() {
+  case "${1-}" in
+    claude|codex|grok) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# fm_seat_home_provider
+# True for a provider whose seat IS a vendor config home holding auth.json,
+# rather than Claude's path-keyed credential store. Codex and Grok both select
+# an account by home, so the guards that insist a named seat resolves to an
+# existing home with auth.json apply to both and to nothing else.
+fm_seat_home_provider() {
+  case "${1:-${FM_SEAT_PROVIDER:-claude}}" in
+    codex|grok) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# fm_seat_grok_home [profile-dir]
+# The Grok config home a read or launch must name: the seat's own directory, or
+# the ambient home when no seat is selected. It is always a concrete path, so
+# the quota cache key and the bounded transport name the same home and an empty
+# GROK_HOME can never reach the vendor as "set but empty". Directory aliases are
+# left as they are, exactly as a Codex directory alias is: every write traverses
+# the same parent, and resolving them would report a seat under a name it is not
+# registered as.
+fm_seat_grok_home() {
+  printf '%s\n' "${1:-${GROK_HOME:-${HOME:-}/.grok}}"
 }
 
 # fm_seat_codex_home <profile-dir>
@@ -123,6 +183,8 @@ fm_seat_login_command() {
     [ -n "$dir" ] || dir="${HOME:-}/.codex"
     dir=$(fm_seat_codex_home "$dir") || return 1
     printf 'CODEX_HOME=%q codex login\n' "$dir"
+  elif [ "$provider" = grok ]; then
+    printf 'GROK_HOME=%q grok login\n' "$(fm_seat_grok_home "$dir")"
   elif [ -n "$dir" ]; then
     printf 'env -u CLAUDE_SECURESTORAGE_CONFIG_DIR CLAUDE_CONFIG_DIR=%q claude\n' "$dir"
   else
@@ -231,8 +293,9 @@ fm_seat_active() {
 # ambient profile. The login probe and threshold read use this resolution too.
 fm_seat_config_dir() {
   local name=${1-} dir
-  if [ "${FM_SEAT_PROVIDER:-claude}" = codex ] && [ "$name" != "$FM_SEAT_DEFAULT_NAME" ]; then
-    fm_seat_name_valid "$name" || { echo "error: invalid Codex seat name: $name" >&2; return 1; }
+  if fm_seat_home_provider && [ "$name" != "$FM_SEAT_DEFAULT_NAME" ]; then
+    fm_seat_name_valid "$name" ||
+      { echo "error: invalid $(fm_seat_provider_label) seat name: $name" >&2; return 1; }
   fi
   if [ "$name" != "$FM_SEAT_DEFAULT_NAME" ]; then
     if dir=$(fm_seat_dir "$name"); then
@@ -244,13 +307,13 @@ fm_seat_config_dir() {
       fi
       return $?
     fi
-    [ "${FM_SEAT_PROVIDER:-claude}" != codex ] || return 1
+    ! fm_seat_home_provider || return 1
   fi
-  if [ "$(fm_seat_provider)" = codex ]; then
-    fm_seat_codex_home "${CODEX_HOME:-}"
-  else
-    printf '%s\n' "${FM_AMBIENT_CLAUDE_CONFIG_DIR-${CLAUDE_CONFIG_DIR:-}}"
-  fi
+  case "$(fm_seat_provider)" in
+    codex) fm_seat_codex_home "${CODEX_HOME:-}" ;;
+    grok) fm_seat_grok_home ;;
+    *) printf '%s\n' "${FM_AMBIENT_CLAUDE_CONFIG_DIR-${CLAUDE_CONFIG_DIR:-}}" ;;
+  esac
 }
 
 # fm_seat_relaunch_destination <name> -> profile directory (ambient for default)
@@ -371,21 +434,22 @@ fm_seat_spare_leader_status() {
 # seat's, resolved by fm_seat_config_dir. A fresh spawn or resolver uses this;
 # a relaunch reads the task's recorded value.
 fm_seat_spawn_config_dir() {
-  local name profile raw
-  fm_seat_provider >/dev/null || return 1
+  local name profile raw provider label
+  provider=$(fm_seat_provider) || return 1
+  label=$(fm_seat_provider_label "$provider")
   name=$(fm_seat_active)
-  if [ "$(fm_seat_provider)" = codex ] && [ -f "$CONFIG/codex-seat" ]; then
-    raw=$(sed -n '1p' "$CONFIG/codex-seat")
+  if fm_seat_home_provider "$provider" && [ -f "$CONFIG/$provider-seat" ]; then
+    raw=$(sed -n '1p' "$CONFIG/$provider-seat")
     raw=${raw#"${raw%%[![:space:]]*}"}
     raw=${raw%"${raw##*[![:space:]]}"}
     if [ -z "$raw" ] || ! fm_seat_name_valid "$raw"; then
-      echo 'error: configured Codex seat is malformed; no fallback is allowed' >&2; return 1
+      echo "error: configured $label seat is malformed; no fallback is allowed" >&2; return 1
     fi
   fi
   profile=$(fm_seat_config_dir "$name") || return 1
-  if [ "$(fm_seat_provider)" = codex ] && [ "$name" != "$FM_SEAT_DEFAULT_NAME" ]; then
+  if fm_seat_home_provider "$provider" && [ "$name" != "$FM_SEAT_DEFAULT_NAME" ]; then
     [ -d "$profile" ] && [ -f "$profile/auth.json" ] || {
-      echo "error: Codex seat '$name' is missing its home or auth.json; no fallback is allowed" >&2; return 1;
+      echo "error: $label seat '$name' is missing its home or auth.json; no fallback is allowed" >&2; return 1;
     }
   fi
   printf '%s\n' "$profile"
@@ -507,17 +571,27 @@ fm_seat_provider_in_use() {
 }
 
 # fm_seat_logged_in [config-dir]
-# Exit 0 when the profile holds usable Claude credentials, 3 when its session is
+# Exit 0 when the profile holds usable credentials, 3 when its session is
 # signed in but its access token has lapsed and can still be renewed, 1 when it
 # plainly holds no login, and 2 when the probe could not reach a verdict.
 #
-# The probe is `quota-axi --provider claude`, run with the profile's own
-# CLAUDE_CONFIG_DIR, and a logged-in profile is the one that reports an oauth
-# source. It deliberately does NOT use --profile-only: that flag reads only a
-# credential FILE and never the Keychain, and on macOS a logged-in profile keeps
-# its credentials in the Keychain, so --profile-only reports "credentials
-# missing" for a perfectly good seat. --no-credential-refresh keeps the read
-# from delegating a token renewal to the vendor CLI.
+# The probe is `quota-axi --provider <vendor>`, run with the profile's own
+# config-home variable, and for Claude and Codex a logged-in profile is the one
+# that reports an oauth source. It deliberately does NOT use --profile-only for
+# Claude: that flag reads only a credential FILE and never the Keychain, and on
+# macOS a logged-in profile keeps its credentials in the Keychain, so
+# --profile-only reports "credentials missing" for a perfectly good seat.
+# --no-credential-refresh keeps the read from delegating a token renewal to the
+# vendor CLI.
+#
+# Grok reports no oauth source at all. Measured against quota-axi 0.1.69 on
+# 2026-11-06, a signed-in Grok home reports source `web` with
+# state.authStatus `usable`, and an empty home reports source `unavailable`
+# with authStatus `unusable` and every attempt skipped for
+# credentials_missing - which is already the proven-empty shape the last test
+# below reads. So Grok's positive verdict keys on that published authStatus
+# rather than on a source name, and its negative verdict needs no new branch.
+# docs/verification/claude-seats.md records the measurement.
 #
 # FM_SEAT_LOGIN_EXPIRED_RENEWABLE (3) is a USABLE seat, not a degraded one. A
 # Claude access token lives eight hours from its last refresh, so a seat that
@@ -546,7 +620,10 @@ fm_seat_logged_in() {
   ' >/dev/null 2>&1 && return 1
   printf '%s\n' "$out" | jq -e --arg provider "${FM_SEAT_PROVIDER:-claude}" "$FM_QUOTA_ROW_JQ"'
     quota_row(.; $provider; (if $provider == "codex" then "codex-home" else "" end)) // empty
-    | .source == "oauth" and ((.state.authStatus // "") != "credentials_invalid")
+    | if $provider == "grok"
+      then .source != "unavailable" and ((.state.authStatus // "") == "usable")
+      else .source == "oauth" and ((.state.authStatus // "") != "credentials_invalid")
+      end
   ' >/dev/null 2>&1 && return 0
   # Soft expiry, read from the one field quota-axi publishes for it. Its own
   # type declares the contract this relies on: "Machine-readable local auth
@@ -726,7 +803,7 @@ fm_seat_auto_excluded() {
   local name=${1-} excluded identity
   [ -n "$name" ] || return 1
   identity=''
-  if [ "${FM_SEAT_PROVIDER:-claude}" = codex ]; then
+  if fm_seat_home_provider; then
     identity=$(fm_seat_credential_identity "$(fm_seat_config_dir "$name")") || return 1
   fi
   while IFS= read -r excluded; do
@@ -991,9 +1068,12 @@ fm_seat_quota_read() {
   provider=$(fm_seat_provider) || return 1
   fm_seat_quota_tool_record
   # The profile the cache keys and the transport reads must be the same one, so
-  # resolve codex's ambient default here rather than inside either of them.
+  # resolve a home provider's ambient default here rather than inside either of
+  # them.
   if [ "$provider" = codex ]; then
     dir=${dir:-${HOME:-}/.codex}
+  elif [ "$provider" = grok ]; then
+    dir=$(fm_seat_grok_home "$dir")
   fi
   if [ -n "${FM_SEAT_READ_MEMO_DIR:-}" ] && [ -d "${FM_SEAT_READ_MEMO_DIR:-}" ]; then
     memo="$FM_SEAT_READ_MEMO_DIR/$(fm_seat_memo_key "$dir")"
@@ -1025,6 +1105,13 @@ fm_seat_quota_live() {
   if [ "$provider" = codex ]; then
     dir=${dir:-${HOME:-}/.codex}
     profile_args=(--profile-only)
+  elif [ "$provider" = grok ]; then
+    # Grok takes no --profile-only: quota-axi 0.1.69 accepts that flag only
+    # with CLAUDE_CONFIG_DIR or CODEX_HOME and exits 5 without a report here.
+    # GROK_HOME alone selects the account, which is what makes a per-seat read
+    # per-seat; measured 2026-11-06 and recorded in
+    # docs/verification/claude-seats.md.
+    dir=$(fm_seat_grok_home "$dir")
   fi
   bound=$(fm_seat_read_bound) || return 1
   out=$(fm_run_timed "$bound" env "$env_name=$dir" \
@@ -1748,35 +1835,42 @@ fm_seat_headroom_best() {
 }
 
 # fm_seat_alternative_headroom
-# Where the OTHER vendor's new work would run, as `<provider> <seat> <percent>
-# <active|switch>`, or 1 when this home does not use that vendor or none of its
-# reachable seats has a reading that proves headroom. Its active seat is named
-# whenever that seat has headroom, because that is where its new work launches;
-# otherwise the best rotation seat is named with `switch`, since work only gets
-# there once that vendor is switched to it. It exists so a vendor-wide refusal
-# can name where the work goes instead of only where it cannot go, which is the
-# whole difference between a refusal someone has to explain and one that routes
-# itself.
+# Where ANOTHER vendor's new work would run, as `<provider> <seat> <percent>
+# <active|switch>`, or 1 when this home uses no other vendor and none of their
+# reachable seats has a reading that proves headroom. A vendor's active seat is
+# named whenever that seat has headroom, because that is where its new work
+# launches; otherwise its best rotation seat is named with `switch`, since work
+# only gets there once that vendor is switched to it. It exists so a
+# vendor-wide refusal can name where the work goes instead of only where it
+# cannot go, which is the whole difference between a refusal someone has to
+# explain and one that routes itself.
+#
+# The other vendors are tried in a fixed order and the first with proven
+# headroom answers, so the sentence is stable rather than racing two reads. A
+# home that uses only Claude and Codex reads exactly the one other vendor it
+# always read; Grok joins the search only on a home that actually has Grok.
 fm_seat_alternative_headroom() {
-  local other best active verdict pct
-  case "$(fm_seat_provider)" in
-    claude) other=codex ;;
-    codex) other=claude ;;
-    *) return 1 ;;
-  esac
-  # The other vendor is named for the duration of these two calls only, as a
-  # command-prefix assignment: it reaches each helper's own child processes and
-  # is restored the moment the call returns, so nothing after this sees it.
-  FM_SEAT_PROVIDER=$other fm_seat_provider_in_use || return 1
-  active=$(FM_SEAT_PROVIDER=$other fm_seat_active)
-  IFS=$'\t' read -r verdict pct _ <<< "$(FM_SEAT_PROVIDER=$other fm_seat_quota_verdict \
-    "$(FM_SEAT_PROVIDER=$other fm_seat_config_dir "$active")")"
-  if [ "$verdict" = headroom ]; then
-    printf '%s %s %s active\n' "$other" "$active" "$pct"
-    return 0
-  fi
-  best=$(FM_SEAT_PROVIDER=$other fm_seat_headroom_best) || return 1
-  printf '%s %s switch\n' "$other" "$best"
+  local provider other best active verdict pct
+  provider=$(fm_seat_provider) || return 1
+  for other in claude codex grok; do
+    [ "$other" != "$provider" ] || continue
+    # The other vendor is named for the duration of these calls only, as a
+    # command-prefix assignment: it reaches each helper's own child processes
+    # and is restored the moment the call returns, so nothing after this sees it.
+    FM_SEAT_PROVIDER=$other fm_seat_provider_in_use || continue
+    active=$(FM_SEAT_PROVIDER=$other fm_seat_active)
+    IFS=$'\t' read -r verdict pct _ <<< "$(FM_SEAT_PROVIDER=$other fm_seat_quota_verdict \
+      "$(FM_SEAT_PROVIDER=$other fm_seat_config_dir "$active")")"
+    if [ "$verdict" = headroom ]; then
+      printf '%s %s %s active\n' "$other" "$active" "$pct"
+      return 0
+    fi
+    if best=$(FM_SEAT_PROVIDER=$other fm_seat_headroom_best); then
+      printf '%s %s switch\n' "$other" "$best"
+      return 0
+    fi
+  done
+  return 1
 }
 
 # fm_seat_extra_usage_covers_from <quota-json>
@@ -1830,14 +1924,14 @@ fm_seat_dry() {
 # empty when nothing else has proven headroom.
 fm_seat_dry_notice() {
   local provider=${1-} summary=${2-} alt=${3-} label alt_provider alt_seat alt_pct alt_how alt_label
-  label=Claude; [ "$provider" != codex ] || label=Codex
+  label=$(fm_seat_provider_label "$provider")
   if [ -z "$alt" ]; then
     printf 'all %s seats are out of quota (%s); no seat on the other vendor has readable headroom either, so new work waits for the first reset\n' \
       "$label" "$summary"
     return 0
   fi
   read -r alt_provider alt_seat alt_pct alt_how <<< "$alt"
-  alt_label=Claude; [ "$alt_provider" != codex ] || alt_label=Codex
+  alt_label=$(fm_seat_provider_label "$alt_provider")
   if [ "$alt_how" = active ]; then
     printf 'all %s seats are out of quota (%s); new work routes to %s seat %s, which has %s%% left\n' \
       "$label" "$summary" "$alt_label" "$alt_seat" "$alt_pct"

@@ -39,7 +39,7 @@ export type SeatRenewal = {
 
 /** One seat's record in the board's reading. */
 export type SeatRecord = {
-  readonly provider: "claude" | "codex";
+  readonly provider: "claude" | "codex" | "grok";
   readonly renewal: SeatRenewal | null;
   readonly name: string;
   readonly configDir: string;
@@ -71,7 +71,7 @@ export type SeatFreshness = "fresh" | "stale" | "unknown" | "none";
 
 /** One seat ready to draw. */
 export type SeatRow = {
-  readonly provider: "claude" | "codex";
+  readonly provider: "claude" | "codex" | "grok";
   readonly renewal: string;
   readonly name: string;
   /** True for the seat this session itself spends, whose figures come from the engine. */
@@ -151,7 +151,10 @@ export function parseSeatBoard(stdout: string): SeatBoard | undefined {
   for (const entry of report.seats) {
     if (entry === null || typeof entry !== "object") continue;
     const seat = entry as Record<string, unknown>;
-    if (seat.provider !== undefined && seat.provider !== "claude" && seat.provider !== "codex") continue;
+    if (
+      seat.provider !== undefined && seat.provider !== "claude" &&
+      seat.provider !== "codex" && seat.provider !== "grok"
+    ) continue;
     if (typeof seat.name !== "string" || seat.name === "") continue;
     const windows: SeatWindow[] = [];
     if (Array.isArray(seat.windows)) {
@@ -171,7 +174,11 @@ export function parseSeatBoard(stdout: string): SeatBoard | undefined {
     const renewal = seat.renewal !== null && typeof seat.renewal === "object"
       ? seat.renewal as Record<string, unknown> : null;
     seats.push({
-      provider: seat.provider === "codex" ? "codex" : "claude",
+      // Name the vendor the board named. Defaulting an unknown provider to
+      // "claude" would relabel another vendor's seat as a Claude one, which is
+      // worse than dropping it; the guard above is what drops anything this
+      // version does not know.
+      provider: seat.provider === "codex" ? "codex" : seat.provider === "grok" ? "grok" : "claude",
       renewal: renewal === null ? null : {
         state: asStringOrNull(renewal.state) ?? "unknown",
         reason: asStringOrNull(renewal.reason) ?? "",

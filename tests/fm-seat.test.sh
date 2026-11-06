@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Behavior tests for Claude seat switching: bin/fm-seat.sh and the seat half of
-# bin/fm-spawn.sh.
+# Behavior tests for Claude, Codex and Grok seat switching: bin/fm-seat.sh and
+# the seat half of bin/fm-spawn.sh.
 #
-# Every test here runs with no real Claude account and no network. The login
+# Every test here runs with no real vendor account and no network. The login
 # probe and the quota read both shell out to `quota-axi`, so a fake quota-axi on
 # PATH supplies the report each case needs; the scripts under test are driven
 # through their real interfaces and never inspected as source.
@@ -5774,6 +5774,311 @@ test_declared_seats_are_reported_by_status_and_list() {
   pass 'status and list report which seats have no five-hour window'
 }
 
+# --- Grok seats -------------------------------------------------------------
+#
+# Grok selects an account by config home, so the ONE property these cases exist
+# to protect is that every read and every launch names the seat's own home. A
+# read that ignores GROK_HOME reports the ambient account whichever seat it was
+# asked about, which is a feature that looks like it works and is a lie; the
+# fake below therefore refuses to answer at all unless GROK_HOME names a home
+# holding its own fixture, so a resolution that dropped the home fails loudly
+# instead of silently agreeing with seat one.
+#
+# The fake also refuses --profile-only, which the installed quota-axi rejects
+# for Grok, so passing it would be caught here rather than in production.
+
+make_grok_seat_case() {
+  local name=$1
+  read_seat_case "$(make_seat_case "$name")"
+  printf '%s\n' "$SEATS_DIR" > "$HOME_DIR/config/grok-seats-root"
+  make_grok_quota_fake "$FAKEBIN"
+}
+
+make_grok_quota_fake() {
+  cat > "$1/quota-axi" <<'GROKFAKE'
+#!/usr/bin/env bash
+set -u
+provider='' readonly_probe=0 profile_only=0
+case "${1-}" in --version) printf 'quota-axi 0.1.99\n'; exit 0 ;; esac
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --provider) provider=$2; shift ;;
+    --no-credential-refresh) readonly_probe=1 ;;
+    --profile-only) profile_only=1 ;;
+  esac
+  shift
+done
+[ "$provider" = grok ] && [ "$readonly_probe" = 1 ] || exit 88
+# The installed quota-axi exits non-zero without a report when --profile-only is
+# passed for Grok, so a caller that sends it must fail here too.
+[ "$profile_only" = 0 ] || exit 87
+[ -n "${GROK_HOME:-}" ] || exit 89
+[ -f "$GROK_HOME/quota.json" ] || exit 90
+printf '%s\n' "$GROK_HOME" >> "${FM_GROK_FAKE_CALLS:-/dev/null}"
+cat "$GROK_HOME/quota.json"
+GROKFAKE
+  chmod +x "$1/quota-axi"
+}
+
+# grok_quota_fixture <home> <email> [remaining] [auth]
+# The shape the installed quota-axi 0.1.69 reports for Grok, measured on
+# 2026-11-06: a signed-in home answers from source `web` with
+# state.authStatus `usable`, and each home reports its OWN account email, which
+# is the only thing that tells the two seats apart from outside the pane.
+grok_quota_fixture() {
+  local home=$1 email=$2 remaining=${3:-60} auth=${4:-usable}
+  mkdir -p "$home"
+  : > "$home/auth.json"
+  jq -n --arg email "$email" --argjson remaining "$remaining" --arg auth "$auth" \
+    '{schemaVersion:5,providers:[
+      {provider:"grok",label:"Grok",
+       source:(if $auth == "usable" then "web" else "unavailable" end),
+       account:{email:$email},state:{status:"fresh",authStatus:$auth},
+       attempts:[{source:"web",status:(if $auth == "usable" then "success" else "skipped" end),
+                  error:(if $auth == "usable" then null else "credentials_missing" end)}],
+       quotaSemantics:{status:"known",effectiveAvailability:[
+         {scope:"all_products",status:"known",effectivePercentRemaining:$remaining,
+          runway:{status:"through_reset"}}]}}
+    ]}' > "$home/quota.json"
+}
+
+# A home that holds no Grok credential at all: the exact proven-empty shape the
+# installed tool reports for an empty GROK_HOME, which the shared login probe
+# must read as "not logged in" rather than as an undecided read.
+grok_signed_out_fixture() {
+  local home=$1
+  mkdir -p "$home"
+  jq -n '{schemaVersion:5,providers:[
+    {provider:"grok",label:"Grok",source:"unavailable",windows:[],
+     state:{status:"unavailable",stale:false,authStatus:"unusable"},
+     attempts:[{source:"auth-json",status:"skipped",error:"credentials_missing"},
+               {source:"pi:xai",status:"skipped",error:"credentials_missing"}],
+     quotaSemantics:{status:"unknown",effectiveAvailability:[]}}
+  ]}' > "$home/quota.json"
+}
+
+test_grok_registration_reads_each_seat_against_its_own_account() {
+  local out max_home max2_home identity_a identity_b calls
+  make_grok_seat_case grok-register
+  max_home="$CASE_DIR/grok home"
+  max2_home="$CASE_DIR/grok-max2"
+  grok_quota_fixture "$max_home" max@example.test 40
+  grok_quota_fixture "$max2_home" max2@example.test 90
+
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" --provider grok add max --home "$max_home")
+  expect_code 0 "$?" "registering an existing Grok home must succeed: $out"
+  [ -L "$SEATS_DIR/max" ] || fail 'Grok registration must alias the original home'
+  [ "$SEATS_DIR/max/auth.json" -ef "$max_home/auth.json" ] || fail 'registered auth must remain the original file'
+  assert_contains "$out" 'no authentication copied' 'registration must explain the credential boundary'
+  assert_contains "$out" 'GROK_HOME=' 'the login command must name the home it signs in'
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" --provider grok add max2 --home "$max2_home")
+  expect_code 0 "$?" "registering the second Grok home must succeed: $out"
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" --provider grok add max --home "$max_home")
+  expect_code 0 "$?" "registering the same home twice must converge: $out"
+
+  # The property. Each seat must probe and report ITS OWN account: a read that
+  # dropped GROK_HOME would answer both rows from one home, and two identical
+  # rows are exactly what a silent fallback produces.
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" --provider grok probe max)
+  expect_code 0 "$?" "a registered Grok seat must probe as usable: $out"
+  assert_contains "$out" 'logged-in' 'Grok probe must accept its published usable auth status'
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" --provider grok list)
+  expect_code 0 "$?" "listing Grok seats must succeed: $out"
+  assert_contains "$out" 'max@example.test' 'seat max must report its own account'
+  assert_contains "$out" 'max2@example.test' 'seat max2 must report its own account'
+
+  calls="$CASE_DIR/grok-calls"
+  FM_GROK_FAKE_CALLS="$calls" run_seat "$HOME_DIR" "$FAKEBIN" --provider grok probe max2 >/dev/null
+  assert_grep "$SEATS_DIR/max2" "$calls" 'the quota read must carry the probed seat own home'
+  assert_no_grep "$SEATS_DIR/max\$" "$calls" 'probing max2 must never read the other seat home'
+
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" --provider grok switch max2)
+  expect_code 0 "$?" "switching to a registered Grok home must succeed: $out"
+  assert_grep max2 "$HOME_DIR/config/grok-seat" 'Grok seat selection must use its own config key'
+  assert_absent "$HOME_DIR/config/claude-seat" 'Grok selection must not select a Claude seat'
+  assert_absent "$HOME_DIR/config/codex-seat" 'Grok selection must not select a Codex seat'
+
+  mkdir -p "$SEATS_DIR/alias"
+  ln -s "$max_home/auth.json" "$SEATS_DIR/alias/auth.json"
+  identity_a=$(FM_SEAT_PROVIDER=grok bash -c '. "$1/bin/fm-seat-lib.sh"; fm_seat_credential_identity "$2"' _ "$ROOT" "$SEATS_DIR/max")
+  identity_b=$(FM_SEAT_PROVIDER=grok bash -c '. "$1/bin/fm-seat-lib.sh"; fm_seat_credential_identity "$2"' _ "$ROOT" "$SEATS_DIR/alias")
+  [ "$identity_a" = "$identity_b" ] || fail 'auth.json aliases must share a Grok credential identity'
+  pass 'Grok registration aliases one credential store and reads every seat against its own account'
+}
+
+test_grok_signed_out_home_and_missing_selection_fail_closed() {
+  local out rc
+  make_grok_seat_case grok-closed
+  grok_signed_out_fixture "$SEATS_DIR/empty"
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" --provider grok probe empty)
+  expect_code 1 "$?" "a Grok home with no credential must probe as signed out: $out"
+  # Exit 1 is the proven-signed-out verdict and 2 is an undecided read, so the
+  # status above is the real assertion; the state word must agree with it.
+  assert_contains "$out" 'not-logged-in' 'a proven-empty Grok home must read as signed out, not undecided'
+  assert_contains "$out" 'grok login' 'a signed-out Grok home must print its exact login command'
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" --provider grok switch empty)
+  expect_code 1 "$?" "a signed-out Grok home must not become the active seat: $out"
+  assert_absent "$HOME_DIR/config/grok-seat" 'a signed-out Grok home must not be selected'
+
+  printf 'missing\n' > "$HOME_DIR/config/grok-seat"
+  rc=0
+  out=$(CONFIG="$HOME_DIR/config" FM_SEAT_PROVIDER=grok bash -c '. "$1/bin/fm-seat-lib.sh"; fm_seat_spawn_config_dir' _ "$ROOT" 2>&1) || rc=$?
+  expect_code 1 "$rc" "a missing configured Grok home cannot fall through to the ambient login: $out"
+  printf '../escape\n' > "$HOME_DIR/config/grok-seat"
+  rc=0
+  out=$(CONFIG="$HOME_DIR/config" FM_SEAT_PROVIDER=grok bash -c '. "$1/bin/fm-seat-lib.sh"; fm_seat_spawn_config_dir' _ "$ROOT" 2>&1) || rc=$?
+  expect_code 1 "$rc" "a malformed configured Grok home cannot fall through to the ambient login: $out"
+  pass 'a signed-out Grok home and a missing or malformed selection both fail closed'
+}
+
+test_grok_rotation_and_watch_move_only_their_own_provider() {
+  local out
+  make_grok_seat_case grok-rotation
+  grok_quota_fixture "$SEATS_DIR/max" max@example.test 5
+  grok_quota_fixture "$SEATS_DIR/max2" max2@example.test 90
+  printf 'max\n' > "$HOME_DIR/config/grok-seat"
+  printf '20\n' > "$HOME_DIR/config/grok-seat-destination-min"
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" --provider grok switch --next)
+  expect_code 0 "$?" "Grok rotation must reach the seat with headroom: $out"
+  assert_grep max2 "$HOME_DIR/config/grok-seat" 'rotation must select the Grok seat with real headroom'
+
+  # The automatic handoff: a trigger on the active seat moves NEW workers to the
+  # other account, exactly as it does for Claude, and touches nothing else.
+  printf 'max\n' > "$HOME_DIR/config/grok-seat"
+  printf '10\n' > "$HOME_DIR/config/grok-seat-threshold"
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" --provider grok auto)
+  expect_code 0 "$?" "Grok auto must keep its provider through the child switch: $out"
+  assert_contains "$out" 'grok-seat: switched from max' 'the automatic outcome must identify Grok'
+  assert_grep max2 "$HOME_DIR/config/grok-seat" 'Grok automatic rotation must update its own provider key'
+  assert_absent "$HOME_DIR/config/claude-seat" 'Grok automatic rotation must not move Claude'
+
+  printf 'max2\n' > "$HOME_DIR/config/grok-seat-auto-exclude"
+  printf 'max\n' > "$HOME_DIR/config/grok-seat"
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" --provider grok switch --next)
+  expect_code 1 "$?" "an exclusion must withhold the only Grok destination: $out"
+  assert_contains "$out" 'seat max2: skipped, excluded' 'an excluded Grok seat must be reported as held out'
+  rm -f "$HOME_DIR/config/grok-seat-auto-exclude"
+
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" --provider grok arm)
+  expect_code 0 "$?" "the Grok watch must register independently: $out"
+  [ -f "$HOME_DIR/state/grok-seat.check.sh" ] || fail 'the Grok watch needs its own registration'
+  assert_absent "$HOME_DIR/state/claude-seat.check.sh" 'the Grok watch must not overwrite Claude registration'
+  out=$(run_seat "$HOME_DIR" "$FAKEBIN" --provider grok retire)
+  expect_code 0 "$?" "Grok watch retirement must succeed: $out"
+  assert_contains "$out" 'automatic Grok seat watch' 'retirement must name the vendor it retired'
+  assert_absent "$HOME_DIR/state/grok-seat.check.sh" 'Grok retire must remove its own watch'
+  pass 'Grok rotation, exclusion and the armed watch move only Grok'
+}
+
+test_grok_refuses_claude_only_and_leader_commands() {
+  local out
+  make_grok_seat_case grok-unsupported
+  for cmd in pipeline-move floor session-share resting extra-usage; do
+    out=$(run_seat "$HOME_DIR" "$FAKEBIN" --provider grok "$cmd")
+    expect_code 1 "$?" "$cmd must refuse Grok: $out"
+    assert_contains "$out" 'supports Claude seats only' "$cmd needs an explicit refusal for Grok"
+  done
+  for cmd in lead-restart leader-destination; do
+    out=$(run_seat "$HOME_DIR" "$FAKEBIN" --provider grok "$cmd")
+    expect_code 1 "$?" "$cmd must refuse Grok: $out"
+    assert_contains "$out" 'Grok runs workers, never firstmate itself' "$cmd must say why Grok has no leader destination"
+  done
+  pass 'Claude-only and leader commands refuse Grok with an explicit reason'
+}
+
+# --- Grok spawn integration -------------------------------------------------
+#
+# The part most likely to look right and be wrong. Everything above proves the
+# seat was CHOSEN; only the launch command proves the worker will RUN there.
+
+grok_spawn_case() {
+  local name=$1 id=$2 case_dir home proj wt fakebin launchlog seats
+  case_dir="$TMP_ROOT/$name"
+  home="$case_dir/home"
+  proj="$case_dir/project"
+  wt="$case_dir/wt"
+  launchlog="$case_dir/launch.log"
+  seats="$case_dir/seats"
+  mkdir -p "$seats"
+  fakebin=$(fm_test_make_spawn_fakebin "$case_dir/fake" grok)
+  make_grok_quota_fake "$fakebin"
+  fm_test_spawn_home "$home" grok
+  fm_test_spawn_ship_brief "$home" "$id"
+  fm_git_worktree "$proj" "$wt" "wt-$name"
+  printf '%s\n' "$seats" > "$home/config/grok-seats-root"
+  printf '%s\n' "$case_dir|$home|$proj|$wt|$fakebin|$launchlog|$seats"
+}
+
+run_grok_spawn() {
+  local home=$1 wt=$2 fakebin=$3 launchlog=$4
+  shift 4
+  : > "$launchlog"
+  # The ambient Grok home is pinned at the case's own throwaway path so no case
+  # can reach the operator's real ~/.grok, and so the "no seat configured"
+  # branch is distinguishable from a seat.
+  GROK_HOME="$home/ambient-grok" FM_FAKE_LAUNCH_LOG="$launchlog" \
+    fm_test_run_spawn "$home" "$wt" "$fakebin" "$@" --mode no-mistakes --ticket no-ticket --commit-type chore --yolo off
+}
+
+test_spawn_launches_a_grok_worker_on_its_seat_and_records_it() {
+  local rec id out launch
+  id=grok-seat-active
+  rec=$(grok_spawn_case spawn-grok-seat "$id")
+  read_spawn_case "$rec"
+  grok_quota_fixture "$SEATS_DIR/max2" max2@example.test 90
+  printf 'max2\n' > "$HOME_DIR/config/grok-seat"
+
+  out=$(run_grok_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN" "$LAUNCH_LOG" "$id" "$PROJ_DIR")
+  expect_code 0 "$?" "a Grok spawn on a configured seat should succeed: $out"
+  launch=$(cat "$LAUNCH_LOG")
+  assert_contains "$launch" "GROK_HOME='$SEATS_DIR/max2'" \
+    'the launch must point the Grok worker at the active seat own home'
+  assert_not_contains "$launch" "GROK_HOME='$HOME_DIR/ambient-grok'" \
+    'a seated Grok launch must not carry firstmate own ambient home'
+  assert_grep "grok_seat=$SEATS_DIR/max2" "$HOME_DIR/state/$id.meta" \
+    'the task record must remember the Grok home this worker launched on'
+  # The turn-end hook grok loads is read from the home the WORKER runs with, so
+  # installing it under firstmate's ambient home would leave a seated worker
+  # with no turn-end signal at all.
+  [ -f "$SEATS_DIR/max2/hooks/fm-turn-end.sh" ] ||
+    fail 'the global turn-end hook must be installed in the seat own Grok home'
+  assert_absent "$HOME_DIR/ambient-grok/hooks/fm-turn-end.sh" \
+    'the turn-end hook must not be installed in a home the worker will not read'
+  pass 'a Grok spawn launches on the active seat, records it, and wires turn-end in that same home'
+}
+
+test_spawn_refuses_a_missing_grok_seat_and_leaves_the_default_alone() {
+  local rec id out rc launch
+  id=grok-seat-missing
+  rec=$(grok_spawn_case spawn-grok-missing "$id")
+  read_spawn_case "$rec"
+  printf 'missing\n' > "$HOME_DIR/config/grok-seat"
+  out=$(run_grok_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN" "$LAUNCH_LOG" "$id" "$PROJ_DIR" 2>&1); rc=$?
+  expect_code 1 "$rc" "a missing Grok home must refuse the spawn rather than fall back: $out"
+  assert_absent "$SEATS_DIR/missing" 'spawn must not create the missing Grok home'
+  assert_absent "$HOME_DIR/state/$id.meta" 'a refused spawn must not publish a task record'
+
+  # A home that manages no Grok seat must behave exactly as it did before seats
+  # existed: the ambient home is not a seat selection, so the missing-home
+  # refusal above must not reach it, whether that home exists or not.
+  id=grok-seat-none
+  rec=$(grok_spawn_case spawn-grok-none "$id")
+  read_spawn_case "$rec"
+  mkdir -p "$HOME_DIR/ambient-grok"
+  out=$(run_grok_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN" "$LAUNCH_LOG" "$id" "$PROJ_DIR")
+  expect_code 0 "$?" "a Grok spawn with no seat configured should succeed: $out"
+  launch=$(cat "$LAUNCH_LOG")
+  assert_contains "$launch" "GROK_HOME='$HOME_DIR/ambient-grok'" \
+    'with no named seat the launch must still name the ambient home it resolved'
+
+  id=grok-seat-no-grok
+  rec=$(grok_spawn_case spawn-grok-absent "$id")
+  read_spawn_case "$rec"
+  out=$(run_grok_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN" "$LAUNCH_LOG" "$id" "$PROJ_DIR")
+  expect_code 0 "$?" "a home whose ambient Grok home does not even exist must still spawn: $out"
+  pass 'a missing named Grok home refuses the spawn while an unconfigured home keeps the ambient login'
+}
+
 test_spare_leader_ranks_last_and_falls_back
 test_spare_leader_dispatch_and_watch_depart_early
 test_spare_leader_departure_respects_the_switch_trigger
@@ -5791,5 +6096,11 @@ test_declared_seat_outranks_more_weekly_spare
 test_declared_seat_with_no_weekly_room_is_exhausted
 test_declared_seat_wakes_from_the_floor_on_its_week_alone
 test_declared_seats_are_reported_by_status_and_list
+test_grok_registration_reads_each_seat_against_its_own_account
+test_grok_signed_out_home_and_missing_selection_fail_closed
+test_grok_rotation_and_watch_move_only_their_own_provider
+test_grok_refuses_claude_only_and_leader_commands
+test_spawn_launches_a_grok_worker_on_its_seat_and_records_it
+test_spawn_refuses_a_missing_grok_seat_and_leaves_the_default_alone
 
 echo "# all fm-seat tests passed"

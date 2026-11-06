@@ -11,10 +11,13 @@ reads and backoff but keep their per-pass memo and never receive aged fallback.
 One machine-user cache lives at ~/.cache/firstmate-seat-quota (override with
 FM_SEAT_QUOTA_CACHE_ROOT for isolated tests). SHA-256 of the seat provider, the
 canonical profile directory, and the producer's NFC Keychain selector identifies
-a record, so claude and codex never share one. PROVIDER defaults to claude and
-is passed explicitly because FM_SEAT_PROVIDER reaches callers as a plain or
+a record, so claude, codex and grok never share one. PROVIDER defaults to claude
+and is passed explicitly because FM_SEAT_PROVIDER reaches callers as a plain or
 local shell assignment that no child process inherits; the bounded transport is
-told the same provider this record is keyed to.
+told the same provider this record is keyed to. Only Claude publishes the
+reusable-success and aged-fallback evidence described below: row() binds the
+claude row alone, so a codex or grok read shares this cache's locking and
+endpoint backoff while every verdict comes from a live read.
 PLAN is `standard` (the default) or `no-session-window`, the caller's reading of
 config/<provider>-seat-no-session-window for this profile. A no-session-window
 live read is rewritten by fm_seat_drop_session_report before it is judged,
@@ -229,7 +232,7 @@ def live(profile, bound, lock_fd, provider, plan):
 
 
 def evidence(profile, bound, floor, policy, provider="claude", plan="standard"):
-    if provider not in ("claude", "codex"):
+    if provider not in ("claude", "codex", "grok"):
         raise ValueError("unsupported seat provider")
     if plan not in ("standard", "no-session-window"):
         raise ValueError("unsupported seat plan")
@@ -242,9 +245,9 @@ def evidence(profile, bound, floor, policy, provider="claude", plan="standard"):
     # quota-axi/Claude hash the raw NFC selector for Keychain, not realpath.
     # Include both filesystem identity and secure-store identity; collapsing
     # aliases or the ambient/explicit default would merge distinct accounts.
-    # The secure-store selector and ambient token are Claude's; a codex read is
-    # keyed by its own home, and the provider itself separates the two records
-    # so one profile path can never serve another provider's quota.
+    # The secure-store selector and ambient token are Claude's; a codex or grok
+    # read is keyed by its own home, and the provider itself separates the
+    # records so one profile path can never serve another provider's quota.
     claude = provider == "claude"
     storage = (os.environ.get("CLAUDE_SECURESTORAGE_CONFIG_DIR") if claude else None) or profile or None
     token_selected = claude and bool(os.environ.get("CLAUDE_CODE_OAUTH_TOKEN", "").strip())

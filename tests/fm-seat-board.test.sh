@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Behavior tests for bin/fm-seat-board.sh: the read-only local page that shows
-# quota-axi's report for every Claude and Codex seat.
+# quota-axi's report for every Claude, Codex and Grok seat.
 #
 # Most tests here run against `render`, which prints the generated page once
 # and exits with no server and no port. The `serve` tests at the end drive a
@@ -43,6 +43,7 @@ printf '%s\n' "\$*" >> "\$spec/calls"
 provider=claude
 key="\${CLAUDE_CONFIG_DIR:-}"
 case " \$* " in *" --provider codex "*) provider=codex; key="\${CODEX_HOME:-}" ;; esac
+case " \$* " in *" --provider grok "*) provider=grok; key="\${GROK_HOME:-}" ;; esac
 [ -n "\$key" ] || key='(default)'
 email=\$(awk -F'\t' -v k="\$key" '\$1==k{print \$2; exit}' "\$spec/email_map" 2>/dev/null)
 remaining=\$(awk -F'\t' -v k="\$key" '\$1==k{print \$2; exit}' "\$spec/remaining_map" 2>/dev/null)
@@ -59,6 +60,12 @@ JSON
   exit 1
 fi
 if [ -f "\$spec/oauth" ] && grep -Fxq "\$key" "\$spec/oauth"; then
+  if [ "\$provider" = grok ]; then
+    cat <<JSON
+{"generatedAt":"2026-01-01T00:00:00Z","schemaVersion":5,"providers":[{"provider":"grok","label":"Grok","source":"web","account":{"email":"\$email"},"state":{"status":"fresh","authStatus":"usable"},"windows":\$windows,"quotaSemantics":{"status":"known","effectiveAvailability":[]}}]}
+JSON
+    exit 0
+  fi
   cat <<JSON
 {"generatedAt":"2026-01-01T00:00:00Z","schemaVersion":5,"providers":[{"provider":"\$provider","label":"Claude","source":"oauth","account":{"email":"\$email"},"windows":\$windows,"quotaSemantics":{"status":"known","effectiveAvailability":[]}}]}
 JSON
@@ -779,5 +786,52 @@ test_board_explains_spare_leader() {
   pass 'board names the spared leader seat'
 }
 test_board_explains_spare_leader
+
+test_board_shows_a_grok_seat_with_its_own_account_and_no_renewal_offer() {
+  local rec out
+  rec=$(make_board_case grok-seat)
+  read_board_case "$rec"
+  printf '%s\n' "$CASE_DIR/grok-seats" > "$HOME_DIR/config/grok-seats-root"
+  mkdir -p "$CASE_DIR/grok-seats/max2"
+  : > "$CASE_DIR/grok-seats/max2/auth.json"
+  printf '%s\n' "$CASE_DIR/grok-seats/max2" > "$SPEC_DIR/oauth"
+  printf '%s\tmax2@example.test\n' "$CASE_DIR/grok-seats/max2" > "$SPEC_DIR/email_map"
+  printf 'max2\n' > "$HOME_DIR/config/grok-seat"
+
+  out=$(run_board "$HOME_DIR" "$FAKEBIN" "$CASE_DIR/cache" json)
+  # Grok reports no oauth source, so a board that only accepted oauth would
+  # show this signed-in seat as "not logged in" and offer no account at all.
+  printf '%s' "$out" | jq -e '
+    any(.seats[]; .provider == "grok" and .name == "max2" and .active == true
+      and .account == "max2@example.test" and .attention == null
+      and .renewal.supported == false and .renewal.command == null)
+    and .providers.grok.activeSeat == "max2"
+  ' >/dev/null || fail "a signed-in Grok seat must read as its own usable account with no renewal offer: $out"
+
+  # The quota mod is the board's other consumer. It must name the vendor the
+  # board named: relabelling a Grok seat as Claude would report the wrong
+  # account to the operator.
+  if command -v node >/dev/null 2>&1; then
+    printf '%s' "$out" > "$CASE_DIR/board.json"
+    cat > "$CASE_DIR/grok-band.mjs" <<JS
+import { readFileSync } from "node:fs";
+import { pathToFileURL } from "node:url";
+const seats = await import(pathToFileURL(${ROOT@Q} + "/.claude/mods/firstmate-quota/lib/fm-quota-seats.ts").href);
+const board = seats.parseSeatBoard(readFileSync(${CASE_DIR@Q} + "/board.json", "utf8"));
+const rows = seats.seatRows(board, 0, 0);
+// The Grok lane contributes its ambient default seat as well as the named
+// one, exactly as the Claude and Codex lanes do, so assert on the named seat.
+const named = rows.filter((row) => row.provider === "grok" && row.name === "max2");
+if (named.length !== 1) throw new Error("the mod dropped or duplicated the named Grok seat: " + JSON.stringify(rows));
+if (named[0].account !== "max2@example.test") throw new Error("wrong Grok account: " + named[0].account);
+if (rows.some((row) => row.provider !== "grok" && row.account === "max2@example.test")) {
+  throw new Error("a Grok seat was relabelled as another vendor");
+}
+JS
+    node --input-type=module < "$CASE_DIR/grok-band.mjs" || fail 'the quota mod must name a Grok seat as Grok'
+  fi
+  pass 'the board shows a Grok seat as its own account and the quota mod keeps its vendor'
+}
+test_board_shows_a_grok_seat_with_its_own_account_and_no_renewal_offer
 
 echo "# all fm-seat-board tests passed"
