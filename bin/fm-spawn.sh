@@ -7546,6 +7546,14 @@ if [ -n "$HARNESS" ]; then
           fi
         done <<<"$LAUNCH_ENV_NAMES"
       fi
+      # opencode otherwise runs the worker's tools in the shared background
+      # service, outside this confine. A private server keeps them inside it.
+      fm_confined_launch=${LAUNCH/ opencode / opencode --standalone }
+      if [ "$fm_confined_launch" = "$LAUNCH" ]; then
+        echo "error: cannot pin free OpenCode model '${MODEL:-default}' to a private server; refusing launch" >&2
+        exit 1
+      fi
+      LAUNCH=$fm_confined_launch
       LAUNCH="$(shell_quote "$SCRIPT_DIR/fm-free-model-sensitivity.sh") confine --home $(shell_quote "${HOME:-}") -- /bin/sh -c $(shell_quote "$LAUNCH")"
       ;;
     1) ;;

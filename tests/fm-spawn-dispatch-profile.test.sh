@@ -2777,6 +2777,9 @@ test_free_opencode_launch_is_confined() {
   assert_contains "$launch" "fm-free-model-sensitivity.sh" "a free OpenCode launch is confined"
   assert_contains "$launch" " confine " "a free OpenCode launch runs the confine command"
   assert_contains "$launch" "opencode/glm-5.3-flash-free" "the confined launch still names the free model"
+  # opencode --help: without --standalone the client hands tool execution to
+  # the shared background service, which runs outside the confine.
+  assert_contains "$launch" " opencode --standalone " "a free OpenCode launch runs its tools in a private server inside the confine"
   id=profile-opencode-paid-z8b
   rec=$(make_spawn_case profile-opencode-paid opencode "$id")
   read_case_record "$rec"
@@ -2785,6 +2788,7 @@ test_free_opencode_launch_is_confined() {
   expect_code 0 "$status" "a paid OpenCode launch should succeed"
   paid=$(cat "$LAUNCH_LOG")
   assert_not_contains "$paid" "fm-free-model-sensitivity.sh" "a paid OpenCode launch keeps its environment"
+  assert_not_contains "$paid" "--standalone" "a paid OpenCode launch keeps the shared service"
   pass "only a free OpenCode launch is confined"
 }
 
