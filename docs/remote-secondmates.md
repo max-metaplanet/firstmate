@@ -589,7 +589,7 @@ The [process-to-event operating contract](configuration.md#process-to-event-sour
 
 The source log is never truncated or consumed.
 A shortened or changed prefix stops the relay and surfaces a continuity failure instead of silently resetting the cursor.
-The one exception is a deleted leading emission stamp on a line the cursor already consumed: the reader proves it by putting that stamp back and matching the cursor hash, then delivers only the lines appended after the shift, once, without repeating the consumed line.
+The one exception is a deleted leading emission stamp on a line the cursor already consumed, within the last delta bound (`FM_REMOTE_DELTA_MAX_BYTES`) of bytes before the cursor: the reader proves it by putting that stamp back and matching the cursor hash, then delivers only the lines appended after the shift, once, without repeating the consumed line.
 `bin/fm-remote-delta-read.sh` owns that proof.
 Any other shortened or changed prefix still stops the relay.
 

@@ -171,7 +171,7 @@ emit_delta() { # <to-offset> <to-hash> <payload-file>
 }
 
 # Prove the cursor prefix is the current bytes with one leading emission stamp
-# put back, and stage a delta of only the complete lines after that shift.
+# put back on a line starting within MAX_BYTES of the cursor, and stage a delta of only the complete lines after that shift.
 # Writes $TMP/recover-kind as delta, wait, or bound. Returns 1 when the file
 # is not that one deletion, which includes a hasher that cannot be loaded.
 recover_leading_stamp() {
@@ -196,20 +196,23 @@ close $in;
 $data = '' unless defined $data;
 my $captured = length $data;
 
-my @starts = (0);
-for (my $i = 0; $i < $captured; $i++) {
-  if (substr($data, $i, 1) eq "\n" && $i + 1 < $captured) {
-    push @starts, $i + 1;
-  }
+my $lo = $offset > $max_bytes ? $offset - $max_bytes : 0;
+my $p = 0;
+if ($lo > 0) {
+  my $prev = index($data, "\n", $lo - 1);
+  exit 1 if $prev < 0;
+  $p = $prev + 1;
 }
-
-my $matches = 0;
+my $base = Digest::SHA->new(256);
+$base->add(substr($data, 0, $p));
+my $hashed = $p;
 my $stamp_len = 0;
-START: for my $p (@starts) {
-  last START if $p >= $offset;
+START: while ($p < $offset && $p < $captured) {
   my $nl = index($data, "\n", $p);
-  next START if $nl < 0;
-  my $line = substr($data, $p, $nl - $p);
+  last START if $nl < 0;
+  my $line_start = $p;
+  $p = $nl + 1;
+  my $line = substr($data, $line_start, $nl - $line_start);
   my $colon = index($line, ':');
   next START if $colon < 0;
   my $head = substr($line, 0, $colon);
@@ -226,16 +229,17 @@ START: for my $p (@starts) {
   # The original line, including its newline, sat entirely inside the cursor.
   next START if ($nl + 1 + $slen) > $offset;
   my $need = $offset - $slen;
-  next START if $need > $captured || $p > $need;
-  my $stamp = $epoch . ' ';
-  my $reconstructed = substr($data, 0, $p) . $stamp . substr($data, $p, $need - $p);
-  next START unless length($reconstructed) == $offset;
-  next START unless sha256_hex($reconstructed) eq $want;
-  $matches++;
+  next START if $need > $captured || $line_start > $need;
+  $base->add(substr($data, $hashed, $line_start - $hashed));
+  $hashed = $line_start;
+  my $try = $base->clone;
+  $try->add($epoch . ' ');
+  $try->add(substr($data, $line_start, $need - $line_start));
+  next START unless $try->hexdigest eq $want;
   $stamp_len = $slen;
-  last START if $matches > 1;
+  last START;
 }
-exit 1 unless $matches == 1;
+exit 1 unless $stamp_len;
 
 my $shifted = $offset - $stamp_len;
 my $window_end = $shifted + $max_bytes;
