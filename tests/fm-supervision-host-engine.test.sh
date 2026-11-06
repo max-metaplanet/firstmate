@@ -460,6 +460,212 @@ test_restarted_host_stops_what_a_killed_predecessor_left() {
   pass "host: a restarted host stops, by recorded identity, the cycle a killed predecessor left running"
 }
 
+# A Grok primary's seat, recorded the way bin/fm-lock.sh writes grok_profile,
+# with a dummy login so the turn does not depend on this machine's real one.
+arm_grok_seat() {  # <home> <seat-dir>
+  local home=$1 seat=$2 lock_pid
+  mkdir -p "$seat"
+  printf '{}\n' > "$seat/auth.json"
+  lock_pid=$(cat "$home/state/.lock")
+  printf 'pid=%s\nharness=grok\nprofile=%s\ngrok_profile=%s\n' \
+    "$lock_pid" "$home/seats/seat-a" "$seat" > "$home/state/.lock-runtime"
+}
+
+test_grok_away_wake_is_handled_and_resumed_on_its_own_contract() {
+  local home seat first second session ghome saved
+  home=$(make_home grok-away away grok)
+  seat="$home/seats/grok"
+  saved=$FM_SUPERVISION_HOST_PRIMARY
+  FM_SUPERVISION_HOST_PRIMARY=grok start_host "$home"
+  FM_SUPERVISION_HOST_PRIMARY=$saved
+  wait_until 150 watcher_live "$home" || fail "grok away: the host never started a watcher cycle: $(cat "$home/host.out")"
+  arm_grok_seat "$home" "$seat"
+  append_status "$home" 'step one'
+  wait_until 250 handled_at_least "$home" 1 \
+    || fail "grok away: the wake was not handled: $(cat "$home/state/.supervision-host.log"; cat "$home/host.out")"
+  first="$home/engine-call.1"
+  assert_re '^actor=branch$' "$first" "the Grok engine must run as the branch actor"
+  assert_re '^primary=grok$' "$first" "the Grok engine must carry the primary-harness pin"
+  assert_re '^profile=$' "$first" "the Grok engine must not inherit the Claude seat"
+  assert_re '^arg=--always-approve$' "$first" "the Grok engine must auto-approve tools"
+  assert_re '^arg=--prompt-file$' "$first" "the Grok engine must take its prompt from a file"
+  assert_re '^arg=--verbatim$' "$first" "the Grok engine must send the wake prompt verbatim"
+  assert_re '^arg=grok-4\.7$' "$first" "the Grok engine must default to grok-4.7"
+  assert_re '^arg=--session-id$' "$first" "the first Grok turn must open a new conversation"
+  assert_re '^arg=--no-subagents$' "$first" "the Grok engine must not spawn subagents"
+  assert_re '^arg=--disable-web-search$' "$first" "the Grok engine must not search the web"
+  assert_no_re '^arg=--safe-mode$' "$first" "the Grok engine must not be launched with Claude's safe mode"
+  assert_no_re '^arg=dontAsk$' "$first" "the Grok engine must not be launched with Claude's permission mode"
+  assert_no_re '^arg=-p$' "$first" "the Grok engine must not take a positional prompt beside --prompt-file"
+  assert_no_re '^arg=--trust$' "$first" "the Grok engine must not be told to trust the directory"
+  ghome=$(sed -n 's/^grok_home=//p' "$first")
+  [ "$ghome" = "$(cd "$home/state" && pwd -P)/.supervision-host-grok" ] \
+    || fail "the Grok engine must launch from its private home under state, got: ${ghome:-empty}"
+  [ ! -e "$ghome/hooks" ] || fail "the Grok engine home must not have a hooks directory"
+  [ "$(readlink "$ghome/auth.json")" = "$seat/auth.json" ] \
+    || fail "the Grok engine must link the seat login rather than copy it: $(readlink "$ghome/auth.json" 2>/dev/null)"
+  assert_grep 'hooks = false' "$ghome/config.toml" "the Grok engine home must disable compat hooks"
+  assert_grep "profile=$seat" "$home/state/.supervision-host-engine" \
+    "the conversation must record the Grok seat, not the private home"
+  [ ! -s "$home/host.rc" ] || fail "a handled Grok away wake reached main: $(cat "$home/host.out")"
+
+  append_status "$home" 'step two'
+  wait_until 250 handled_at_least "$home" 2 \
+    || fail "grok away: the second wake was not handled: $(cat "$home/state/.supervision-host.log")"
+  session=$(sed -n '/^arg=--session-id$/{n;s/^arg=//p;}' "$first")
+  second="$home/engine-call.2"
+  assert_re '^arg=--resume$' "$second" "a later Grok turn must resume the conversation"
+  assert_re "^arg=$session\$" "$second" "a later Grok turn must resume the same conversation"
+  assert_no_re '^arg=--session-id$' "$second" "a resumed Grok turn must not also open a session"
+  assert_re '	handled	turn=[^	]*\.2	.* cost=0\.25 conversation_cost=0\.5 ' "$home/state/.supervision-host.log" \
+    "a resumed Grok turn must add its own cost to the conversation"
+  pass "host: a Grok away wake is handled and resumed on Grok's own headless contract"
+}
+
+test_grok_engine_without_a_recorded_seat_hands_the_wake_to_main() {
+  local home lock_pid saved
+  home=$(make_home grok-noseat away grok)
+  saved=$FM_SUPERVISION_HOST_PRIMARY
+  FM_SUPERVISION_HOST_PRIMARY=grok start_host "$home"
+  FM_SUPERVISION_HOST_PRIMARY=$saved
+  wait_until 150 watcher_live "$home" || fail "grok noseat: the host never started a watcher cycle"
+  lock_pid=$(cat "$home/state/.lock")
+  printf 'pid=%s\nharness=grok\nprofile=%s\n' "$lock_pid" "$home/seats/seat-a" > "$home/state/.lock-runtime"
+  append_status "$home" 'needs a seat'
+  wait_until 250 host_exited "$home" || fail "grok noseat: the host did not hand the wake to main: $(cat "$home/state/.supervision-host.log")"
+  assert_grep 'no grok_profile' "$home/host.out" "the handback must name the missing Grok seat"
+  [ "$(engine_calls "$home")" -eq 0 ] || fail "the Grok engine launched without a recorded seat"
+  assert_grep 'demo.status' "$home/state/.wake-queue" "the unhandled wake must stay durable for main"
+  pass "host: a Grok primary with no recorded seat hands the wake to main"
+}
+
+test_grok_engine_without_a_seat_login_does_not_launch() {
+  local home seat saved lock_pid
+  home=$(make_home grok-nologin away grok)
+  seat="$home/seats/grok-empty"
+  mkdir -p "$seat"
+  saved=$FM_SUPERVISION_HOST_PRIMARY
+  FM_SUPERVISION_HOST_PRIMARY=grok start_host "$home"
+  FM_SUPERVISION_HOST_PRIMARY=$saved
+  wait_until 150 watcher_live "$home" || fail "grok nologin: the host never started a watcher cycle"
+  lock_pid=$(cat "$home/state/.lock")
+  printf 'pid=%s\nharness=grok\nprofile=\ngrok_profile=%s\n' "$lock_pid" "$seat" > "$home/state/.lock-runtime"
+  append_status "$home" 'needs a login'
+  wait_until 250 host_exited "$home" \
+    || fail "grok nologin: the host launched or hung: $(cat "$home/state/.supervision-host.log")"
+  assert_grep 'no auth.json' "$home/state/.supervision-host.log" "the failed turn must name the missing login"
+  assert_grep 'could not run' "$home/host.out" "the handback must say the engine could not run"
+  [ "$(engine_calls "$home")" -eq 0 ] || fail "the Grok engine launched without a seat login"
+  pass "host: a Grok seat with no login is not launched"
+}
+
+test_grok_result_adds_each_runs_cost_and_rejects_an_incomplete_one() {
+  local home dir out rc
+  home=$(make_home grok-result away grok)
+  dir="$home/results"
+  mkdir -p "$dir"
+  printf '%s\n' '{"stopReason":"end_turn","sessionId":"s","num_turns":1,"total_cost_usd":0.25,"usage":{"input_tokens":5,"cache_read_input_tokens":100,"cache_creation_input_tokens":10,"output_tokens":20}}' > "$dir/run.json"
+  printf '%s\n' '{"type":"result","subtype":"success","is_error":false,"num_turns":3,"total_cost_usd":0.5,"usage":{"input_tokens":5,"cache_read_input_tokens":100,"cache_creation_input_tokens":10,"output_tokens":20}}' > "$dir/claude.json"
+  printf '%s\n' '{}' > "$dir/empty.json"
+  printf '%s\n' '{"stopReason":"cancelled","sessionId":"s","num_turns":1,"total_cost_usd":0.011,"usage":{"input_tokens":1,"cache_read_input_tokens":0,"cache_creation_input_tokens":0,"output_tokens":1}}' > "$dir/cancelled.json"
+  printf '%s\n' '{"stopReason":"end_turn","sessionId":"s","num_turns":1,"usage":{"input_tokens":1,"cache_read_input_tokens":0,"cache_creation_input_tokens":0,"output_tokens":1}}' > "$dir/nocost.json"
+  printf '%s\n' '{"stopReason":"end_turn","sessionId":"s","num_turns":1,"total_cost_usd":0.25,"usage_is_incomplete":true,"usage":{"input_tokens":5,"cache_read_input_tokens":100,"cache_creation_input_tokens":10,"output_tokens":20}}' > "$dir/partial.json"
+  out=$(bash -c '
+    . "$1"
+    fm_supervision_engine_result grok "$2" 0
+    fm_supervision_engine_result grok "$2" 0.25
+    fm_supervision_engine_result grok "$3" 0 || true
+    fm_supervision_engine_result grok "$4" 0
+    fm_supervision_engine_result grok "$5" 0
+    fm_supervision_engine_result grok "$6" 0
+    fm_supervision_engine_result claude "$7" 0.25
+  ' _ "$ROOT/bin/fm-supervision-engine-lib.sh" "$dir/run.json" "$dir/empty.json" \
+    "$dir/cancelled.json" "$dir/nocost.json" "$dir/partial.json" "$dir/claude.json") || rc=$?
+  [ "${rc:-0}" -eq 0 ] || fail "result: the parser did not run (rc=$rc): $out"
+  printf '%s\n' "$out" | grep -qx 'error=0 cost=0.25 conversation_cost=0.25 input=5 cache_read=100 cache_write=10 output=20 turns=1' \
+    || fail "result: a Grok run's own cost was not reported: $out"
+  printf '%s\n' "$out" | grep -qx 'error=0 cost=0.25 conversation_cost=0.5 input=5 cache_read=100 cache_write=10 output=20 turns=1' \
+    || fail "result: a resumed Grok run did not add its cost: $out"
+  printf '%s\n' "$out" | grep -qx 'error=1 cost=unreported conversation_cost=unreported input=0 cache_read=0 cache_write=0 output=0 turns=0' \
+    || fail "result: an empty Grok result invented a cost: $out"
+  printf '%s\n' "$out" | grep -qx 'error=1 cost=0.011 conversation_cost=0.011 input=1 cache_read=0 cache_write=0 output=1 turns=1' \
+    || fail "result: a cancelled Grok turn was treated as success or dropped its cost: $out"
+  printf '%s\n' "$out" | grep -qx 'error=1 cost=unreported conversation_cost=unreported input=1 cache_read=0 cache_write=0 output=1 turns=1' \
+    || fail "result: a Grok result with no cost became zero: $out"
+  printf '%s\n' "$out" | grep -q 'error=1 cost=0.25 conversation_cost=0.25 input=5 cache_read=100 cache_write=10 output=20 turns=1' \
+    || fail "result: an incomplete Grok usage was accepted: $out"
+  printf '%s\n' "$out" | grep -qx 'error=0 cost=0.25 conversation_cost=0.5 input=5 cache_read=100 cache_write=10 output=20 turns=3' \
+    || fail "result: Claude's running total was no longer subtracted: $out"
+  pass "host: a Grok result adds each run's cost and rejects an incomplete one"
+}
+
+test_empty_supervision_host_file_on_a_grok_primary_selects_grok() {
+  local home out
+  home=$(make_home grok-default away '')
+  out=$(bash -c '
+    . "$1"
+    fm_supervision_host_config "$2" grok || exit 1
+    printf "engine=%s model=%s problem=%s\n" \
+      "$FM_SUPERVISION_ENGINE" "$FM_SUPERVISION_ENGINE_MODEL" "$FM_SUPERVISION_ENGINE_PROBLEM"
+    fm_supervision_host_config "$2" cursor || exit 1
+    printf "cursor_problem=%s\n" "$FM_SUPERVISION_ENGINE_PROBLEM"
+    printf "codex\n" > "$2/supervision-host"
+    fm_supervision_host_config "$2" grok || exit 1
+    printf "named=%s\n" "$FM_SUPERVISION_ENGINE_PROBLEM"
+  ' _ "$ROOT/bin/fm-supervision-engine-lib.sh" "$home/config") || fail "select: config did not resolve: $out"
+  printf '%s\n' "$out" | grep -qx 'engine=grok model=grok-4.7 problem=' \
+    || fail "select: an empty file on a Grok primary did not select grok-4.7: $out"
+  printf '%s\n' "$out" | grep -qx "cursor_problem=the primary harness 'cursor' has no verified supervision engine" \
+    || fail "select: an empty file on Cursor gained an engine: $out"
+  printf '%s\n' "$out" | grep -q "named=config/supervision-host names 'codex', which is not a verified supervision engine" \
+    || fail "select: naming codex became verified: $out"
+  pass "host: an empty file on a Grok primary selects grok, and Cursor and Codex stay unverified"
+}
+
+test_grok_turn_refuses_a_missing_login_and_launches_an_ambient_one() {
+  local home work rc call ghome
+  home=$(make_home grok-direct away grok)
+  work="$home/direct"
+  mkdir -p "$work/empty-home/.grok" "$work/login-home/.grok" "$work/prompt"
+  printf 'wake\n' > "$work/prompt/wake.txt"
+  printf 'branch prompt for the direct turn\n' > "$work/prompt/prompt.txt"
+  printf '{}\n' > "$work/login-home/.grok/auth.json"
+  echo fail > "$home/stub-mode"
+  rc=$(HOME="$work/empty-home" FM_HOME="$home" FM_ROOT="$ROOT" STATE="$home/state" \
+    CLAUDE_CONFIG_DIR="$home/seats/seat-a" bash -c '
+      . "$1/bin/fm-wake-lib.sh"
+      . "$1/bin/fm-timeout-lib.sh"
+      . "$1/bin/fm-supervision-engine-lib.sh"
+      fm_supervision_engine_turn grok grok-4.7 "$2" "$3" \
+        11111111-1111-1111-1111-111111111111 new 30 "$4/out" "$4/err" ""
+      printf "%s\n" "$?"
+    ' _ "$ROOT" "$work/prompt/prompt.txt" "$work/prompt/wake.txt" "$work")
+  [ "$rc" = 127 ] || fail "direct: a missing ambient login must not launch (rc=$rc): $(cat "$work/err" 2>/dev/null)"
+  assert_grep 'no auth.json' "$work/err" "direct: the refusal must name the missing login"
+  [ "$(engine_calls "$home")" -eq 0 ] || fail "direct: the engine launched without a login"
+
+  rc=$(HOME="$work/login-home" FM_HOME="$home" FM_ROOT="$ROOT" STATE="$home/state" \
+    FM_SUPERVISION_ACTOR=branch CLAUDE_CONFIG_DIR="$home/seats/seat-a" bash -c '
+      . "$1/bin/fm-wake-lib.sh"
+      . "$1/bin/fm-timeout-lib.sh"
+      . "$1/bin/fm-supervision-engine-lib.sh"
+      fm_supervision_engine_turn grok grok-4.7 "$2" "$3" \
+        11111111-1111-1111-1111-111111111111 new 30 "$4/out" "$4/err" ""
+      printf "%s\n" "$?"
+    ' _ "$ROOT" "$work/prompt/prompt.txt" "$work/prompt/wake.txt" "$work")
+  [ "$rc" = 3 ] || fail "direct: the ambient login did not reach the stub (rc=$rc): $(cat "$work/err" 2>/dev/null)"
+  call="$home/engine-call.1"
+  assert_re '^actor=branch$' "$call" "direct: the launch must keep the branch actor"
+  assert_re '^profile=$' "$call" "direct: the launch must clear the inherited Claude seat"
+  assert_re '^arg=--always-approve$' "$call" "direct: the launch must auto-approve"
+  assert_re '^arg=--prompt-file$' "$call" "direct: the launch must use the prompt file"
+  ghome=$(sed -n 's/^grok_home=//p' "$call")
+  [ "$(readlink "$ghome/auth.json")" = "$work/login-home/.grok/auth.json" ] \
+    || fail "direct: the private home must link the ambient login: $(readlink "$ghome/auth.json" 2>/dev/null)"
+  [ ! -e "$ghome/hooks" ] || fail "direct: the private home grew a hooks directory"
+  pass "host: a Grok turn refuses a missing login and launches an ambient one"
+}
+
 # FM_TEST_ONLY runs a single named case, the same entry point the sibling
 # suites expose.
 if [ -n "${FM_TEST_ONLY:-}" ]; then
@@ -485,3 +691,9 @@ test_return_during_a_failed_turn_still_hands_its_outcomes_to_main
 test_incomplete_engine_result_hands_the_wake_to_main
 test_engine_turn_is_bounded_and_its_descendants_reaped
 test_restarted_host_stops_what_a_killed_predecessor_left
+test_grok_away_wake_is_handled_and_resumed_on_its_own_contract
+test_grok_engine_without_a_recorded_seat_hands_the_wake_to_main
+test_grok_engine_without_a_seat_login_does_not_launch
+test_grok_result_adds_each_runs_cost_and_rejects_an_incomplete_one
+test_empty_supervision_host_file_on_a_grok_primary_selects_grok
+test_grok_turn_refuses_a_missing_login_and_launches_an_ambient_one

@@ -24,10 +24,11 @@
 # ONE ENGINE TURN (fm_supervision_engine_turn). One prompt to one engine
 # conversation, bounded, from the tracked code root, with the environment the
 # caller exported (the host exports the branch actor, the lease holder pid,
-# the primary-harness pin, and the report-turn id) and on the Claude seat the
-# lead itself is running on, which the caller resolves once per turn
-# (fm_supervision_engine_seat) and passes in rather than letting the launch
-# inherit it. The runner returns the
+# the primary-harness pin, and the report-turn id) and on the seat the caller
+# resolves once per turn (fm_supervision_engine_seat), passed in rather than
+# inherited. A Claude turn launches on that Claude seat. A Grok turn spends
+# that Grok seat's login from a private GROK_HOME under the home's state.
+# The runner returns the
 # process exit status; the host separately requires a complete successful
 # result, a durable report, and acknowledgement before counting a wake handled.
 # The turn is bounded by fm_exec_timed
@@ -43,14 +44,15 @@
 # process group of its own. docs/supervision-host.md "Engines" owns the
 # verified engine facts each argument list below is built from.
 #
-# Test seams: FM_SUPERVISION_ENGINE_CLAUDE_BIN names the claude executable
-# (default: claude on PATH), so a hermetic test can run a stub engine through
-# the real argument construction. FM_TEST_HARNESS pins the primary harness
+# Test seams: FM_SUPERVISION_ENGINE_CLAUDE_BIN names the claude executable and
+# FM_SUPERVISION_ENGINE_GROK_BIN the grok executable (default: that name on
+# PATH), so a hermetic test can run a stub engine through the real argument
+# construction. FM_TEST_HARNESS pins the primary harness
 # fm_supervision_host_primary reports when FM_TEST_SEAM=1 and its value is a
 # known harness token; otherwise detection remains real (tests/lib.sh arms
 # the marker for isolated suites).
 
-FM_SUPERVISION_ENGINES_VERIFIED='claude'
+FM_SUPERVISION_ENGINES_VERIFIED='claude grok'
 
 # fm_supervision_host_primary: print the primary harness the home gate judges
 # (bin/fm-harness.sh, whose supervision-branch pin names the primary inside an
@@ -89,6 +91,7 @@ fm_supervision_engine_verified() {  # <engine>
 fm_supervision_engine_default_model() {  # <engine>
   case "$1" in
     claude) printf 'sonnet\n' ;;
+    grok) printf 'grok-4.7\n' ;;
     *) return 1 ;;
   esac
 }
@@ -246,6 +249,10 @@ fm_supervision_engine_bin() {
       bin=${FM_SUPERVISION_ENGINE_CLAUDE_BIN:-}
       [ -n "$bin" ] || bin=$(command -v claude 2>/dev/null || true)
       ;;
+    grok)
+      bin=${FM_SUPERVISION_ENGINE_GROK_BIN:-}
+      [ -n "$bin" ] || bin=$(command -v grok 2>/dev/null || true)
+      ;;
     *) bin= ;;
   esac
   if [ -z "$bin" ] || [ ! -x "$bin" ]; then
@@ -331,15 +338,20 @@ _fm_engine_reap() {
 }
 
 # fm_supervision_engine_seat <state-dir>
-# The Claude seat the engine's NEXT launch must spend, read from the one
-# lock-owner runtime record (bin/fm-session-lock-lib.sh, which must be sourced
-# first). A Codex primary carries its retained Claude credentials separately in
-# claude_profile; profile names its Codex seat and must never reach Claude.
-# Other primaries and legacy records use profile. Sets
-# FM_SUPERVISION_ENGINE_PROFILE to that profile
-# directory, or to empty for the ambient default login, and returns 0. On no
-# verdict it leaves the profile empty, sets
-# FM_SUPERVISION_ENGINE_SEAT_PROBLEM to one plain sentence, and returns 1.
+# The seat the engine's NEXT launch must spend, read from the one lock-owner
+# runtime record (bin/fm-session-lock-lib.sh, which must be sourced first).
+# Needs fm_supervision_host_config first, so FM_SUPERVISION_ENGINE is set.
+# A Claude engine reads profile, except a Codex primary, which carries its
+# retained Claude credentials separately in claude_profile; profile names its
+# Codex seat and must never reach Claude. A Grok engine reads grok_profile
+# when the primary is Grok, and spends the ambient Grok login when any other
+# primary names grok. An empty grok_profile is that ambient login. A missing
+# grok_profile key on a Grok primary is no verdict. The recorded profile is
+# the seat directory, never the private GROK_HOME the turn launches under.
+# Sets FM_SUPERVISION_ENGINE_PROFILE to that profile directory, or to empty
+# for the ambient default login, and returns 0. On no verdict it leaves the
+# profile empty, sets FM_SUPERVISION_ENGINE_SEAT_PROBLEM to one plain
+# sentence, and returns 1.
 #
 # WHY THE RECORD AND NEVER THE ENVIRONMENT. A host process is started by a
 # primary's arm owner and can outlive the session that started it, including
@@ -367,6 +379,22 @@ fm_supervision_engine_seat() {
   FM_SUPERVISION_ENGINE_PROFILE=''
   FM_SUPERVISION_ENGINE_SEAT_PROBLEM=''
   harness=$(fm_session_lock_runtime_field "$state_dir" harness) || harness=claude
+  if [ "${FM_SUPERVISION_ENGINE:-}" = grok ]; then
+    if [ "$harness" != grok ]; then
+      FM_SUPERVISION_ENGINE_PROFILE=''
+      return 0
+    fi
+    if ! profile=$(fm_session_lock_runtime_field "$state_dir" grok_profile); then
+      FM_SUPERVISION_ENGINE_SEAT_PROBLEM="the Grok session has no grok_profile in its current lock-owner record, so the seat the engine must spend is unknown"
+      return 1
+    fi
+    if [ -n "$profile" ] && [ ! -d "$profile" ]; then
+      FM_SUPERVISION_ENGINE_SEAT_PROBLEM="the Grok seat this session runs on has no profile directory at $profile"
+      return 1
+    fi
+    FM_SUPERVISION_ENGINE_PROFILE=$profile
+    return 0
+  fi
   [ "$harness" != codex ] || field=claude_profile
   if ! profile=$(fm_session_lock_runtime_field "$state_dir" "$field"); then
     if [ "$harness" = codex ]; then
@@ -398,14 +426,93 @@ fm_supervision_engine_seat() {
 # (fm_supervision_engine_seat), empty for the ambient default login. A Claude
 # turn launches under exactly that profile, so the launch, the conversation
 # the caller chose for that seat, and the seat it recorded cannot disagree,
-# and no launch can inherit the host process's CLAUDE_CONFIG_DIR; a Claude
-# turn given no <profile> argument returns 127 rather than launching on
-# whatever the host holds.
+# and no launch can inherit the host process's CLAUDE_CONFIG_DIR. A Grok turn
+# keeps that seat as the recorded profile and launches under a private
+# GROK_HOME, linking the seat's auth.json rather than copying it. A turn given
+# no <profile> argument returns 127 rather than launching on whatever the host
+# holds.
+#
+# _fm_supervision_grok_prepare <profile> <errors>: make that private home and
+# set FM_SUPERVISION_GROK_HOME and FM_SUPERVISION_GROK_LEADER_SOCK. A missing
+# seat login returns 127 with no launch. The home has no hooks directory.
+# shellcheck disable=SC2034 # Output globals, read by the sourcing caller.
+_fm_supervision_grok_prepare() {
+  local profile=$1 errors=$2 auth ghome state_phys
+  FM_SUPERVISION_GROK_HOME=''
+  FM_SUPERVISION_GROK_LEADER_SOCK=''
+  state_phys=$(cd "$STATE" 2>/dev/null && pwd -P) || state_phys=$STATE
+  ghome="$state_phys/.supervision-host-grok"
+  if [ -L "$ghome" ]; then
+    printf 'the Grok engine home %s is a symlink\n' "$ghome" > "$errors"
+    return 127
+  fi
+  mkdir -p "$ghome" 2>/dev/null || {
+    printf 'the Grok engine home could not be created\n' > "$errors"
+    return 127
+  }
+  if [ -e "$ghome/hooks" ] || [ -L "$ghome/hooks" ]; then
+    rm -rf "$ghome/hooks" 2>/dev/null || {
+      printf 'the Grok engine home still has a hooks directory\n' > "$errors"
+      return 127
+    }
+  fi
+  if [ -n "$profile" ]; then
+    auth="$profile/auth.json"
+  else
+    auth="${HOME:-}/.grok/auth.json"
+  fi
+  if [ ! -f "$auth" ]; then
+    printf 'the Grok seat has no auth.json at %s, so the engine was not launched\n' "$auth" > "$errors"
+    return 127
+  fi
+  ln -sfn "$auth" "$ghome/auth.json" || {
+    printf 'the Grok engine home could not link its seat login\n' > "$errors"
+    return 127
+  }
+  if ! cat > "$ghome/config.toml" <<'EOF'
+[skills]
+ignore = ["~/.agents", "~/.grok/skills", "~/.grok/commands", "~/.claude", "~/.cursor", ".agents", ".grok", ".claude", ".cursor"]
+
+[compat.claude]
+hooks = false
+skills = false
+rules = false
+agents = false
+mcps = false
+sessions = false
+
+[compat.cursor]
+hooks = false
+skills = false
+rules = false
+agents = false
+mcps = false
+sessions = false
+
+[compat.codex]
+hooks = false
+skills = false
+rules = false
+agents = false
+mcps = false
+sessions = false
+EOF
+  then
+    printf 'the Grok engine home could not be configured\n' > "$errors"
+    return 127
+  fi
+  rm -f "$state_phys/.supervision-host-grok-leader.sock" \
+    "$state_phys/.supervision-host-grok-leader.sock.daemon" 2>/dev/null || true
+  FM_SUPERVISION_GROK_HOME=$ghome
+  FM_SUPERVISION_GROK_LEADER_SOCK=$state_phys/.supervision-host-grok-leader.sock
+  return 0
+}
+
 fm_supervision_engine_turn() {
   local engine=$1 model=$2 prompt=$3 message=$4 session=$5 mode=$6 timeout=$7 result=$8 errors=$9
   local pid_file=${11:-} bin grace i ledger watched rc home_phys root_phys state_phys identity recorded
-  local profile='' profile_set=0
-  local -a args
+  local profile='' profile_set=0 prompt_text='' grok_launch=0
+  local -a args launch=()
   bin=$(fm_supervision_engine_bin "$engine" 2>"$errors") || return 127
   case "$timeout" in ''|0*|*[!0-9]*) timeout=1200 ;; esac
   grace=${FM_SUPERVISION_ENGINE_GRACE:-30}
@@ -440,6 +547,51 @@ fm_supervision_engine_turn() {
       profile=${10}
       profile_set=1
       ;;
+    grok)
+      # Grok's own headless contract, measured on grok 1.0.77. Do not copy
+      # Claude's flags: --prompt-file is the prompt by itself, permissions are
+      # --always-approve with a tool list, and the system prompt is the branch
+      # prompt text. docs/supervision-host.md "Engines" owns the measured facts.
+      if [ -z "${10+set}" ]; then
+        printf 'no Grok seat was passed for this engine turn\n' > "$errors"
+        return 127
+      fi
+      profile=${10}
+      _fm_supervision_grok_prepare "$profile" "$errors" || return 127
+      if [ ! -r "$prompt" ]; then
+        printf 'the branch prompt could not be read\n' > "$errors"
+        return 127
+      fi
+      prompt_text=$(cat "$prompt") || {
+        printf 'the branch prompt could not be read\n' > "$errors"
+        return 127
+      }
+      # shellcheck disable=SC2054 # The comma-separated tool lists are single values.
+      args=(--prompt-file "$message" --system-prompt-override "$prompt_text" --verbatim
+        --always-approve --output-format json --model "$model"
+        --tools run_terminal_cmd,read_file
+        --disallowed-tools Agent,web_search,web_fetch
+        --deny MCPTool --no-subagents --disable-web-search --no-auto-update --no-leader
+        --leader-socket "$FM_SUPERVISION_GROK_LEADER_SOCK")
+      if [ "$mode" = new ]; then
+        args+=(--session-id "$session")
+      else
+        args+=(--resume "$session")
+      fi
+      # Keep the caller's actor and the rest of the host's exports. Drop only
+      # the Claude seat, which is not this engine's login.
+      launch=(env -u CLAUDE_CONFIG_DIR "GROK_HOME=$FM_SUPERVISION_GROK_HOME"
+        GROK_CLAUDE_HOOKS_ENABLED=false GROK_CLAUDE_SKILLS_ENABLED=false
+        GROK_CLAUDE_RULES_ENABLED=false GROK_CLAUDE_AGENTS_ENABLED=false
+        GROK_CLAUDE_MCPS_ENABLED=false GROK_CLAUDE_SESSIONS_ENABLED=false
+        GROK_CURSOR_HOOKS_ENABLED=false GROK_CURSOR_SKILLS_ENABLED=false
+        GROK_CURSOR_RULES_ENABLED=false GROK_CURSOR_AGENTS_ENABLED=false
+        GROK_CURSOR_MCPS_ENABLED=false GROK_CURSOR_SESSIONS_ENABLED=false
+        GROK_CODEX_HOOKS_ENABLED=false GROK_CODEX_SKILLS_ENABLED=false
+        GROK_CODEX_RULES_ENABLED=false GROK_CODEX_AGENTS_ENABLED=false
+        GROK_CODEX_MCPS_ENABLED=false GROK_CODEX_SESSIONS_ENABLED=false)
+      grok_launch=1
+      ;;
     *)
       printf 'no engine turn is defined for %s\n' "$engine" > "$errors"
       return 127
@@ -449,9 +601,9 @@ fm_supervision_engine_turn() {
   # to this launch alone and nothing in this shell's environment is rewritten:
   # an assignment here would also make CLAUDE_CONFIG_DIR a variable ShellCheck
   # sees modified in a subshell, which it then reports against every other
-  # reader of that name across the tracked tree.
-  local -a launch=()
-  if [ "$profile_set" -eq 1 ]; then
+  # reader of that name across the tracked tree. The Grok branch fills launch
+  # itself, with GROK_HOME rather than CLAUDE_CONFIG_DIR.
+  if [ "$grok_launch" -eq 0 ] && [ "$profile_set" -eq 1 ]; then
     if [ -n "$profile" ]; then
       launch=(env "CLAUDE_CONFIG_DIR=$profile")
     else
@@ -500,11 +652,16 @@ fm_supervision_engine_turn() {
 # machine-readable result, where cost is this turn's and conversation_cost the
 # conversation's running total (the caller records it and passes it back for
 # the next turn; 0 for a new conversation). Claude's total_cost_usd is that
-# running total on a resumed conversation, while its usage and num_turns are
-# per turn. error=0 only for a complete success result: type "result",
-# subtype "success", is_error false, and finite total_cost_usd, num_turns, and
-# the four usage token counts; any other shape is error=1. Returns 1 when the
-# result cannot be read. The host treats both as a failed turn.
+# running total on a resumed conversation, so this subtracts the prior total,
+# while its usage and num_turns are per turn. Grok's total_cost_usd and
+# num_turns are per run, so this adds the prior total. A missing Grok cost is
+# unreported, never zero. error=0 only for a complete success. For Claude that
+# is type "result", subtype "success", is_error false, and finite
+# total_cost_usd, num_turns, and the four usage token counts. For Grok that is
+# stopReason "end_turn", a non-empty sessionId, type other than "error",
+# neither usage_is_incomplete nor cost_is_partial, and those same finite
+# numbers. Any other shape is error=1. Returns 1 when the result cannot be
+# read. The host treats both as a failed turn.
 fm_supervision_engine_result() {
   case "$1" in
     claude)
@@ -526,6 +683,33 @@ fm_supervision_engine_result() {
         const turn = Number.isFinite(prior) && prior >= 0 && prior <= total ? total - prior : total;
         const usd = (v) => Number(v.toFixed(6));
         process.stdout.write(`error=${error} cost=${usd(turn)} conversation_cost=${usd(total)} input=${n(u.input_tokens)} cache_read=${n(u.cache_read_input_tokens)} cache_write=${n(u.cache_creation_input_tokens)} output=${n(u.output_tokens)} turns=${n(j.num_turns)}\n`);
+      ' "$2" "${3:-0}" 2>/dev/null
+      ;;
+    grok)
+      # shellcheck disable=SC2016 # A literal Node program; ${...} is JavaScript.
+      node -e '
+        const fs = require("node:fs");
+        let j;
+        try { j = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); } catch { process.exit(1); }
+        if (!j || typeof j !== "object" || Array.isArray(j)) process.exit(1);
+        const u = j.usage && typeof j.usage === "object" && !Array.isArray(j.usage) ? j.usage : {};
+        const finite = (v) => typeof v === "number" && Number.isFinite(v);
+        const n = (v) => (finite(v) ? v : 0);
+        const flagged = (v) => v === true;
+        const complete = j.type !== "error" && j.stopReason === "end_turn"
+          && typeof j.sessionId === "string" && j.sessionId.length > 0
+          && !flagged(j.usage_is_incomplete) && !flagged(u.usage_is_incomplete)
+          && !flagged(j.cost_is_partial) && !flagged(u.cost_is_partial)
+          && finite(j.total_cost_usd) && finite(j.num_turns) && finite(u.input_tokens)
+          && finite(u.cache_read_input_tokens) && finite(u.cache_creation_input_tokens) && finite(u.output_tokens);
+        const error = complete ? 0 : 1;
+        const prior = Number(process.argv[2]);
+        const usd = (v) => Number(v.toFixed(6));
+        const cost = finite(j.total_cost_usd) ? usd(j.total_cost_usd) : "unreported";
+        const total = finite(j.total_cost_usd)
+          ? usd(Number.isFinite(prior) && prior >= 0 ? prior + j.total_cost_usd : j.total_cost_usd)
+          : "unreported";
+        process.stdout.write(`error=${error} cost=${cost} conversation_cost=${total} input=${n(u.input_tokens)} cache_read=${n(u.cache_read_input_tokens)} cache_write=${n(u.cache_creation_input_tokens)} output=${n(u.output_tokens)} turns=${n(j.num_turns)}\n`);
       ' "$2" "${3:-0}" 2>/dev/null
       ;;
     *) return 1 ;;

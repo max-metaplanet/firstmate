@@ -285,8 +285,9 @@ publish_lock_session() {
   return 0
 }
 
-# Record this session's harness, native profile, retained Claude profile and pane,
-# bound to the pid now on line 1. Best effort by design: it is evidence for the
+# Record this session's harness, native profile, retained Claude profile, Grok
+# seat when this harness is Grok, and pane, bound to the pid now on line 1.
+# Best effort by design: it is evidence for the
 # lead-restart path, never ownership, so a failure to write it must not refuse a
 # lock the session has already verified it owns. The pane is recorded only when
 # bin/fm-supervisor-target-lib.sh established one; its guessed fallback is left
@@ -304,6 +305,9 @@ publish_lock_runtime() {
     printf 'harness=%s\n' "$harness"
     printf 'profile=%s\n' "$profile"
     printf 'claude_profile=%s\n' "${CLAUDE_CONFIG_DIR:-}"
+    # The Grok engine spends this seat. Other harnesses leave the key absent
+    # so a legacy record stays a Claude answer rather than an empty Grok one.
+    [ "$harness" != grok ] || printf 'grok_profile=%s\n' "${GROK_HOME:-}"
     [ -z "${FM_LEAD_LAUNCH_ARGV:-}" ] || printf 'launch_argv=%s\n' "$FM_LEAD_LAUNCH_ARGV"
     printf 'ambient=%s\n' "${FM_AMBIENT_CLAUDE_CONFIG_DIR-${CLAUDE_CONFIG_DIR:-}}"
     if target=$(discover_supervisor_target) && backend=$(discover_supervisor_backend); then

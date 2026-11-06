@@ -465,6 +465,7 @@ fm_session_lock_handover_admits() {  # <state> [<ancestry-pids>]
 #   harness=<detected primary harness; legacy records omitted this for Claude>
 #   profile=<CLAUDE_CONFIG_DIR for Claude, CODEX_HOME for Codex>
 #   claude_profile=<Claude engine profile retained when the leader uses Codex>
+#   grok_profile=<GROK_HOME when the leader's harness is Grok; absent otherwise>
 #   launch_argv=<JSON argv of the leader command, excluding its startup prompt>
 #   ambient=<the profile a worker spawned on the default seat gets from it,
 #           per fm_seat_config_dir; read by pipeline launches on that seat>

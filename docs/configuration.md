@@ -322,10 +322,12 @@ Grok's arm command is rendered at session start, so a change to its host mode ta
 
 `config/supervision-host` may be empty or hold one line `<engine> [<model>]`:
 
-- empty or `default` selects the primary harness's own engine at that engine's default model (`sonnet` for the Claude engine);
-- `<engine> [<model>]` names a verified engine, currently only `claude`, and optionally the engine's own model name or alias; `default <model>` selects the primary harness's engine with that model.
+- empty or `default` selects the primary harness's own engine at that engine's default model (`sonnet` for Claude, `grok-4.7` for Grok);
+- `<engine> [<model>]` names a verified engine, `claude` or `grok`, and optionally the engine's own model name or alias; `default <model>` selects the primary harness's engine with that model.
 
-Only Claude has a verified engine of its own, so a Cursor, OpenCode, omp, Grok, or Codex home names `claude` in the file.
+A Cursor, OpenCode, omp, or Codex home names `claude` in the file, because those primaries have no verified engine of their own.
+A Grok home may name `grok` or `claude`.
+[supervision-host.md](supervision-host.md#engines) owns the verified-engine contract.
 
 ### Failures, when changes apply, and inheritance
 
