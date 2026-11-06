@@ -247,6 +247,7 @@ That handling republication gives a successor exactly one recovery presentation 
 A watcher stopped so an arm can take its cycle over (`bin/fm-watch-arm.sh --take-over`) publishes downtime like any close, but the taking arm restores an acknowledged episode that stop reopened only when the taken-over arm's cycle-ledger row for that exact arm and watcher records the watcher ending by the take-over's TERM and no wake was appended in between.
 The supervision host's take-over sets `FM_WATCH_KEEP_ANNOUNCED`, and the fresh cycle then leaves an already-announced episode announced instead of minting another generation for the same queued work.
 The successor that pass-through leaves for main keeps its beacon and still delivers a signal, and it does not run the check sweep until the next park.
+That skip ends early when any arm attaches to that watcher (the arm writes `state/.watch-attached`), or when the host's left record, once it named the successor's arm, no longer does, so checks run again whenever a reader has returned.
 A due check while nobody is reading used to exit that successor, and the queue append minted a fresh pending generation.
 The next park then found no live arm to take over, so its ordinary arm check announced that generation and handed `check: rearm-resurface` back.
 A pending episode with queued work, including a row appended after main acknowledged the last one, still surfaces once through the ordinary arm check.

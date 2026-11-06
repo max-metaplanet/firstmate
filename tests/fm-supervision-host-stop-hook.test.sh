@@ -834,6 +834,71 @@ test_row_queued_after_ack_reaches_main_when_the_left_successor_is_gone() {
   pass "host+hook: a row queued after main's acknowledgement reaches main once when the left successor is gone"
 }
 
+# Leave a gap successor for main in <home>: the first park hands a stranded
+# row back as check: rearm-resurface, then an unregistered check is installed.
+# A check sweep that runs rejects it with a wake, so the successor must stay
+# up while nobody reads it.
+leave_gap_successor_with_a_due_check() {  # <home> <label>
+  local home=$1 label=$2
+  start_hook_session "$home"
+  queue_check "$home" resurface-fixture "check: work stranded before the host parked" \
+    || fail "$label: could not queue the stranded wake"
+  turn_end "$home"
+  wait_until 250 hook_exited "$home" \
+    || fail "$label: the first close never reached the Stop hook: $(cat "$home/state/.supervision-host.log" 2>/dev/null)"
+  assert_rewoke_main "$home" "$label (first)"
+  watcher_live "$home" || fail "$label: the pass-through left no successor"
+  GAP_WATCHER=$(cat "$home/state/.watch.lock/pid")
+  printf '#!/bin/sh\necho seats out of quota\n' > "$home/state/lab-seat.check.sh"
+  chmod 700 "$home/state/lab-seat.check.sh"
+  sleep 3
+  kill -0 "$GAP_WATCHER" 2>/dev/null && ! gap_watcher_ran_checks "$home" \
+    || fail "$label: the gap successor ran the check sweep while nobody was reading"
+}
+
+# True once the gap successor's own delivery record shows its check sweep ran
+# (the rejected unregistered check), the watcher's persisted delivery contract.
+gap_watcher_ran_checks() {  # <home>
+  awk -F '\t' -v pid="$GAP_WATCHER" '$1 == pid && $3 ~ /^check: rejected unauthenticated state checks:/ { found = 1 } END { exit !found }' \
+    "$1/state/.watch-deliveries.log" 2>/dev/null
+}
+
+# The host is turned off again while a gap successor runs. The plain Stop-hook
+# arm that follows attaches to that watcher, and its checks must run again.
+test_host_off_attach_ends_the_gap_check_skip() {
+  local home saved_interval
+  saved_interval=${FM_CHECK_INTERVAL:-999999}
+  export FM_CHECK_INTERVAL=0
+  home=$(make_primary_home hook-gap-host-off)
+  : > "$home/hook.own-group"
+  leave_gap_successor_with_a_due_check "$home" "host off"
+  : > "$home/config/supervision-host-off"
+  turn_end "$home"
+  wait_until 150 gap_watcher_ran_checks "$home" \
+    || fail "host off: checks never ran after the Stop hook attached: $(cat "$home/hook.out" "$home/hook.err" 2>/dev/null)"
+  export FM_CHECK_INTERVAL=$saved_interval
+  pass "host+hook: an attach after the host is turned off ends the gap successor's check skip"
+}
+
+# A take-over that cannot confirm the watcher is the named arm's child attaches
+# instead; that attach must end the gap successor's check skip too.
+test_take_over_attach_fallback_ends_the_gap_check_skip() {
+  local home saved_interval arm
+  saved_interval=${FM_CHECK_INTERVAL:-999999}
+  export FM_CHECK_INTERVAL=0
+  home=$(make_primary_home hook-gap-take-over-fallback)
+  : > "$home/hook.own-group"
+  leave_gap_successor_with_a_due_check "$home" "take-over fallback"
+  FM_HOME="$home" "$home/bin/fm-watch-arm.sh" --take-over "$$" > "$home/fallback.out" 2>&1 &
+  arm=$!
+  wait_until 150 gap_watcher_ran_checks "$home" \
+    || fail "take-over fallback: checks never ran after the arm attached: $(cat "$home/fallback.out")"
+  assert_grep 'watcher: attached pid=' "$home/fallback.out" "fixture: the take-over did not fall back to attaching"
+  kill -TERM "$arm" 2>/dev/null || true
+  export FM_CHECK_INTERVAL=$saved_interval
+  pass "host+hook: a take-over that falls back to attaching ends the gap successor's check skip"
+}
+
 # FM_TEST_ONLY runs a single named case, the same entry point the sibling
 # suites expose.
 if [ -n "${FM_TEST_ONLY:-}" ]; then
@@ -858,6 +923,8 @@ test_next_park_takes_over_the_cycle_a_pass_through_left_for_main
 test_take_over_does_not_hand_the_same_resurface_straight_back
 test_due_check_during_rearm_gap_stays_a_take_over
 test_row_queued_after_ack_reaches_main_when_the_left_successor_is_gone
+test_host_off_attach_ends_the_gap_check_skip
+test_take_over_attach_fallback_ends_the_gap_check_skip
 test_a_park_stopped_mid_take_over_leaves_the_take_over_to_the_next_park
 test_unrecorded_successor_is_stopped_rather_than_left_for_main
 test_primary_without_a_verified_mirror_runs_away_only
