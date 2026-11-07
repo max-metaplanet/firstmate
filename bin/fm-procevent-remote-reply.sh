@@ -320,6 +320,7 @@ cmd_source() {
   started=$(fm_pending_reply_now)
   if [ -n "$old_line" ]; then
     out=$(umask 077; mktemp "${TMPDIR:-/tmp}/fm-remote-delta.XXXXXX") || die "cannot create delta staging file"
+    trap 'rm -f -- "$out"' EXIT
     "$SCRIPT_DIR/fm-on.sh" "$id" fm-remote-delta-read.sh \
       "$REMOTE_LOG" "$CURSOR_OFFSET" "$CURSOR_HASH" "$WAIT_SECONDS" "$old_line" < /dev/null > "$out" || rc=$?
     # A remote reader that predates the witness argument rejects it with the
@@ -333,6 +334,7 @@ cmd_source() {
       cat -- "$out"
     fi
     rm -f -- "$out"
+    trap - EXIT
   else
     "$SCRIPT_DIR/fm-on.sh" "$id" fm-remote-delta-read.sh \
       "$REMOTE_LOG" "$CURSOR_OFFSET" "$CURSOR_HASH" "$WAIT_SECONDS" < /dev/null || rc=$?
