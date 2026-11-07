@@ -1,0 +1,15 @@
+free-model sensitivity seed=20261106 count=4
+ok - generated paths keep their sensitive class, and routine bin and docs paths stay eligible
+ok - token names cover Doppler, Supabase, cloud, and GitHub-write, and ordinary names stay
+ok - after classification a sensitive path never resolves to the free OpenCode model
+ok - a free-model process cannot read secrets or sensitive paths, and other launches still can
+ok - an O_PATH open neither ends supervision nor reaches a sensitive path
+ok - routine pipelines keep the confined shell supervised
+ok - pipelines end on SIGPIPE under the confine as they do outside it
+ok - documented free OpenCode models and a model-less OpenCode launch are free, and paid ones are not
+ok - mech refuses a sensitive path, a paid OpenCode model, and a Claude id without launching
+ok - mech returns a reviewable diff and leaves the caller's worktree unchanged
+ok - an OpenCode launch that names no model is a mech handoff and still returns only a diff
+ok - mech runs on the caller's current tree and returns only the model's change
+ok - mech refuses a result that changes a protected path inside a declared directory
+# all fm-free-model-sensitivity tests passed

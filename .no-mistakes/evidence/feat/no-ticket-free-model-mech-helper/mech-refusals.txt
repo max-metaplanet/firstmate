@@ -1,0 +1,40 @@
+$ mech --model anthropic/claude-sonnet-4 --path src/app.ts -- rename counter to total
+free-model sensitivity: refusing 'anthropic/claude-sonnet-4' because it is not a documented free OpenCode model
+exit=1
+
+$ mech --model opencode/big-pickle --path src/auth/session.ts -- rename secret
+free-model sensitivity: refusing sensitive path src/auth/session.ts (auth)
+exit=1
+
+$ mech --model opencode/big-pickle --path .env -- format
+free-model sensitivity: refusing sensitive path .env (env)
+exit=1
+
+$ mech --model opencode/big-pickle -- rename counter
+free-model sensitivity: mech needs at least one --path
+exit=2
+
+$ mech --path src/app.ts
+usage: fm-free-model-sensitivity.sh class <path>
+       fm-free-model-sensitivity.sh free-model --harness <h> --model <id>
+       fm-free-model-sensitivity.sh token-name <NAME>
+       fm-free-model-sensitivity.sh brief-sensitive --brief <file>
+       fm-free-model-sensitivity.sh apply-resolution --brief <file>
+       fm-free-model-sensitivity.sh confine --home <dir> -- <command>...
+       fm-free-model-sensitivity.sh mech [--model <id>] --path <path> [--path <path>...] -- <edit>
+
+mech hands a rename, a format, boilerplate, or test scaffolding to a free OpenCode model.
+  --model must be a documented free OpenCode id (last segment free, big-pickle, or ending
+  -free or :free) or be omitted; any other id is refused.
+  Each --path is relative to the repository top level, and the diff carries only
+  changes under those paths. A --path in the ci, migrations, infra, auth, payments,
+  env, or doppler class, or a secrets file or token store, is refused, and so is a
+  result in which the model changed such a path, even inside a declared directory.
+  The model runs confined, with tokens scrubbed, on a scratch copy of your current tree
+  that leaves out refused paths. mech prints only the model's change as a diff against
+  that copy and never touches your worktree; review it, then git apply it at the top level.
+exit=2
+
+caller status after refusals:
+?? notes.txt
+/tmp/fm-mech-live.zFkFfv 79f4384 [main]

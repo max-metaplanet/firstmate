@@ -1,0 +1,6 @@
+$ fm-free-model-sensitivity.sh mech --model opencode/big-pickle --path src/app.ts -- "rename the variable counter to total everywhere in src/app.ts"
+
+real	0m7.490s
+user	0m2.645s
+sys	0m0.771s
+exit=0

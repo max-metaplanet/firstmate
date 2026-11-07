@@ -1,0 +1,10 @@
+== mechdemo1 brief.md (generated) ==
+92:# Mechanical sub-task
+93-For a rename, a format, boilerplate, or test scaffolding, run `~/.no-mistakes/worktrees/c0c4fcacb05a/01M6SMM2XF4W8W523GMTWBZGRX/bin/fm-free-model-sensitivity.sh mech` and review the diff it prints before you apply it.
+94-Its `--help` owns which OpenCode model it may launch and which paths it refuses.
+95-
+== mechdemo2 brief.md (generated) ==
+80:# Mechanical sub-task
+81-For a rename, a format, boilerplate, or test scaffolding, run `~/.no-mistakes/worktrees/c0c4fcacb05a/01M6SMM2XF4W8W523GMTWBZGRX/bin/fm-free-model-sensitivity.sh mech` and review the diff it prints before you apply it.
+82-Its `--help` owns which OpenCode model it may launch and which paths it refuses.
+83-

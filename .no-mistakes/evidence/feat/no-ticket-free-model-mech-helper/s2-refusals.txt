@@ -1,0 +1,14 @@
+$ mech --model anthropic/claude-sonnet-4-5 --path src/app.ts -- "rename x"
+free-model sensitivity: refusing 'anthropic/claude-sonnet-4-5' because it is not a documented free OpenCode model
+exit=1
+$ mech --model opencode/big-pickle --path .github/workflows/ci.yml -- "rename x"
+free-model sensitivity: refusing sensitive path .github/workflows/ci.yml (ci)
+exit=1
+$ mech --model opencode/big-pickle --path src/auth/session.ts -- "rename x"
+free-model sensitivity: refusing sensitive path src/auth/session.ts (auth)
+exit=1
+$ mech --model opencode/big-pickle --path .env -- "rename x"
+free-model sensitivity: refusing sensitive path .env (env)
+exit=1
+--- caller status after refusals:
+M  src/app.ts

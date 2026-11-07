@@ -1,0 +1,8 @@
+# root-cause probe: same call from caller worktree, but env PWD points at the main checkout /tmp/fm-mech-live.7b1r6i
+exit=124
+--- printed diff bytes: 0
+--- caller worktree:
+M  src/app.ts
+--- main checkout:
+?? .env
+?? notes.txt

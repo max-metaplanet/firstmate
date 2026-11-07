@@ -1,0 +1,36 @@
+$ fm-free-model-sensitivity.sh mech --model opencode/big-pickle --path src/app.ts -- 'rename counter to total'
+exit=0
+--- stdout diff ---
+diff --git a/src/app.ts b/src/app.ts
+index 978bed4..f59962a 100644
+--- a/src/app.ts
++++ b/src/app.ts
+@@ -1,8 +1,8 @@
+-export let counter = 0;
++export let total = 0;
+ export function bump() {
+-  counter += 1;
+-  return counter;
++  total += 1;
++  return total;
+ }
+ export function reset() {
+-  counter = 0;
++  total = 0;
+ }
+--- caller tree after ---
+caller src/app.ts unchanged
+caller index unchanged
+M  src/app.ts
+?? notes.txt
+/tmp/fm-mech-live.zFkFfv 79f4384 [main]
+--- git apply --check / apply ---
+apply --check OK
+export let total = 0;
+export function bump() {
+  total += 1;
+  return total;
+}
+export function reset() {
+  total = 0;
+}

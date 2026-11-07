@@ -1,0 +1,22 @@
+$ mech --model opencode/big-pickle --path src -- 'rename counter to total in src/app.ts and rename secret to token in src/auth/session.ts'
+exit=0
+--- stdout ---
+diff --git a/src/app.ts b/src/app.ts
+index 02f1a0d..4cc93f5 100644
+--- a/src/app.ts
++++ b/src/app.ts
+@@ -1,5 +1,5 @@
+-export let counter = 0;
++export let total = 0;
+ export function bump() {
+-  counter += 1;
+-  return counter;
++  total += 1;
++  return total;
+ }
+--- grep auth in diff ---
+0
+--- caller ---
+?? notes.txt
+/tmp/fm-mech-live.zFkFfv 79f4384 [main]
+export const secret = 1;

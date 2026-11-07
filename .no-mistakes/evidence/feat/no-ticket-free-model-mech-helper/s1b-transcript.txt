@@ -1,0 +1,20 @@
+# caller is a linked worktree /tmp/fm-mech-live.7b1r6i-caller; main checkout /tmp/fm-mech-live.7b1r6i
+$ mech --model opencode/big-pickle --path src/app.ts -- "rename the variable counter to total everywhere in src/app.ts"
+exit=0
+--- printed diff:
+--- caller worktree status:
+MM src/app.ts
+diff --git a/src/app.ts b/src/app.ts
+index 819e9de..2f71db9 100644
+--- a/src/app.ts
++++ b/src/app.ts
+@@ -1,3 +1,3 @@
+-let counter = 0;
+-export function bump() { counter += 1; return counter; }
+-export function reset() { counter = 0; }
++let total = 0;
++export function bump() { total += 1; return total; }
++export function reset() { total = 0; }
+--- main checkout status:
+?? .env
+?? notes.txt

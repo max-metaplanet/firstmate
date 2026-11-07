@@ -1,0 +1,2 @@
+received SIGTERM again during shutdown; exiting. Still pending:
+  611.1s  child 3758733 running: ~/.opencode/bin/opencode serve --stdio --port 0
