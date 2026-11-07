@@ -306,12 +306,33 @@ WINDOW_CLOSED_EMPTY=75
 JOB_PREEMPTED=76
 
 cmd_source() {
-  local id=${1:-} started rc=0
+  local id=${1:-} started rc=0 old_line='' source_record
   validate_id "$id"
   read_cursor "$id"
+  # The last mirrored source line is the only witness that can prove a
+  # one-line replacement. The cursor hash does not contain that line.
+  source_record=$(mirrored_source_path "$id")
+  if [ -f "$source_record" ] && [ ! -L "$source_record" ]; then
+    old_line=$(tail -n 1 "$source_record" 2>/dev/null || true)
+    case "$old_line" in ''|*$'\n'*) old_line='' ;; esac
+    [ "${#old_line}" -le 65536 ] || old_line=''
+  fi
   started=$(fm_pending_reply_now)
-  "$SCRIPT_DIR/fm-on.sh" "$id" fm-remote-delta-read.sh \
-    "$REMOTE_LOG" "$CURSOR_OFFSET" "$CURSOR_HASH" "$WAIT_SECONDS" < /dev/null || rc=$?
+  if [ -n "$old_line" ]; then
+    "$SCRIPT_DIR/fm-on.sh" "$id" fm-remote-delta-read.sh \
+      "$REMOTE_LOG" "$CURSOR_OFFSET" "$CURSOR_HASH" "$WAIT_SECONDS" "$old_line" < /dev/null || rc=$?
+    # A remote reader that predates the witness argument rejects it with the
+    # usage status. Read again without the witness so the relay keeps today's
+    # behavior until that host has the same reader.
+    if [ "$rc" -eq 2 ]; then
+      rc=0
+      "$SCRIPT_DIR/fm-on.sh" "$id" fm-remote-delta-read.sh \
+        "$REMOTE_LOG" "$CURSOR_OFFSET" "$CURSOR_HASH" "$WAIT_SECONDS" < /dev/null || rc=$?
+    fi
+  else
+    "$SCRIPT_DIR/fm-on.sh" "$id" fm-remote-delta-read.sh \
+      "$REMOTE_LOG" "$CURSOR_OFFSET" "$CURSOR_HASH" "$WAIT_SECONDS" < /dev/null || rc=$?
+  fi
   if [ "$rc" -eq "$WINDOW_CLOSED_EMPTY" ]; then
     fm_pending_reply_note_remote_channel_caught_up "$STATE" "$id" "$started" || true
   elif [ "$rc" -eq "$JOB_PREEMPTED" ]; then

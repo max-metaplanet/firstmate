@@ -2,7 +2,7 @@
 # Blocking, non-destructive delta read for a remote secondmate append-only log.
 #
 # Usage:
-#   fm-remote-delta-read.sh <relative-log> <offset> <prefix-sha256> [wait-seconds]
+#   fm-remote-delta-read.sh <relative-log> <offset> <prefix-sha256> [wait-seconds] [mirrored-line]
 #
 # The reader validates continuity by hashing the exact prefix represented by the
 # caller's cursor. It then blocks until at least one complete appended line is
@@ -15,10 +15,19 @@
 # putting it back makes the cursor's prefix hash match. The reader then returns
 # only the complete lines appended after the shifted line, never the consumed
 # line again. Its next offset is a position in the file as it exists now.
-# Until those new lines exist it waits, so the relay stays armed. Any other
-# shortened or changed prefix, including a real replacement of earlier bytes
-# or a stamp on an older line, is still a continuity break. If that proof
-# cannot be run, the reader keeps the break.
+# Until those new lines exist it waits, so the relay stays armed.
+# One replaced line is not a break either. The caller passes that already-mirrored
+# line, without its newline, as the optional final argument. The hash alone does
+# not contain it. The proof hashes the live bytes before the line, then the line
+# and its newline, and that digest must equal the cursor. The live file must hold
+# a different line at that position. The reader then returns every complete line
+# from the replaced line's start, including bytes past the old cursor, and its
+# next offset is a position in the file as it exists now. Until that different
+# line exists it waits. A wait that ends with the line still gone is still a
+# continuity break. A deleted stamp is decided first, so that repair is never
+# reported as a replaced line. Any other shortened or changed prefix, including
+# a real replacement of earlier bytes or a stamp on an older line, is still a
+# continuity break. If either proof cannot be run, the reader keeps the break.
 #
 # The log is sampled every FM_REMOTE_DELTA_POLL_SECONDS (default 0.5 seconds).
 # A complete line is visible on the next sample, and the window deadline can
@@ -42,7 +51,7 @@ MAX_BYTES=${FM_REMOTE_DELTA_MAX_BYTES:-65536}
 POLL_SECONDS=${FM_REMOTE_DELTA_POLL_SECONDS:-0.5}
 
 die() { printf 'error: %s\n' "$1" >&2; exit 1; }
-usage() { sed -n '2,21p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
+usage() { sed -n '2,30p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
 
 sha256_file() {
   if command -v shasum >/dev/null 2>&1; then
@@ -289,11 +298,95 @@ exit 0;
 PERL
 }
 
-[ "$#" -ge 3 ] && [ "$#" -le 4 ] || usage
+# Prove the cursor prefix is the live bytes before one already-mirrored line,
+# plus that line, and stage a delta of the different line and the complete
+# lines after it. Writes $TMP/recover-kind as delta, replaced-wait, or bound.
+# Returns 1 when this sample is not that one replacement.
+recover_replaced_line() {
+  [ -n "$OLD_LINE" ] || return 1
+  case "$OLD_LINE" in *$'\n'*) return 1 ;; esac
+  rm -f -- "$TMP/recover-kind" "$TMP/recover-payload" "$TMP/recover-to" \
+    "$TMP/recover-to-hash" "$TMP/recover-bound-hash"
+  FM_DELTA_OLD_LINE="$OLD_LINE" perl -MDigest::SHA - "$TMP/source" "$SIZE" "$OFFSET" "$PREFIX" "$MAX_BYTES" "$TMP" <<'PERL'
+use strict;
+use warnings;
+use Digest::SHA qw(sha256_hex);
+
+my ($path, $size, $offset, $want, $max_bytes, $out_dir) = @ARGV;
+$size += 0;
+$offset += 0;
+$max_bytes += 0;
+$want = lc $want;
+exit 1 unless $want =~ /\A[0-9a-f]{64}\z/;
+exit 1 if $offset < 1 || $size < 0 || $max_bytes < 1;
+my $old_line = $ENV{FM_DELTA_OLD_LINE};
+exit 1 unless defined $old_line && length $old_line;
+exit 1 if index($old_line, "\n") >= 0;
+my $old = $old_line . "\n";
+my $old_len = length $old;
+exit 1 if $old_len > $offset;
+my $line_start = $offset - $old_len;
+exit 1 if $size < $line_start;
+
+open my $in, '<:raw', $path or exit 1;
+my $data = do { local $/; <$in> };
+close $in;
+$data = '' unless defined $data;
+my $captured = length $data;
+exit 1 if $line_start > $captured;
+exit 1 unless sha256_hex(substr($data, 0, $line_start) . $old) eq $want;
+
+my $window_end = $line_start + $max_bytes;
+$window_end = $captured if $window_end > $captured;
+my $region = substr($data, $line_start, $window_end - $line_start);
+my $complete = 0;
+my $scan = 0;
+while (1) {
+  my $nl = index($region, "\n", $scan);
+  last if $nl < 0;
+  $complete = $nl + 1;
+  $scan = $complete;
+}
+
+sub write_text {
+  my ($name, $text) = @_;
+  open my $out, '>', "$out_dir/$name" or exit 1;
+  print {$out} $text or exit 1;
+  close $out or exit 1;
+}
+
+if ($complete == 0) {
+  if (($size - $line_start) >= $max_bytes) {
+    write_text('recover-kind', "bound\n");
+    write_text('recover-bound-hash', sha256_hex(substr($data, 0, $line_start)) . "\n");
+  } else {
+    write_text('recover-kind', "replaced-wait\n");
+  }
+  exit 0;
+}
+
+my $first_nl = index($region, "\n");
+exit 1 if $first_nl < 0;
+exit 1 if substr($region, 0, $first_nl + 1) eq $old;
+
+my $payload = substr($region, 0, $complete);
+my $to = $line_start + $complete;
+write_text('recover-kind', "delta\n");
+write_text('recover-to', "$to\n");
+write_text('recover-to-hash', sha256_hex(substr($data, 0, $to)) . "\n");
+open my $raw, '>:raw', "$out_dir/recover-payload" or exit 1;
+print {$raw} $payload or exit 1;
+close $raw or exit 1;
+exit 0;
+PERL
+}
+
+[ "$#" -ge 3 ] && [ "$#" -le 5 ] || usage
 REL=$1
 OFFSET=$2
 PREFIX=$3
 WAIT=${4:-55}
+OLD_LINE=${5:-}
 case "$OFFSET" in ''|*[!0-9]*) die "offset must be a nonnegative integer" ;; esac
 case "$PREFIX" in *[!A-Fa-f0-9]*|'') die "prefix-sha256 must be hexadecimal" ;; esac
 [ "${#PREFIX}" -eq 64 ] || die "prefix-sha256 must be 64 hexadecimal characters"
@@ -312,11 +405,13 @@ EMPTY_HASH=$(sha256_file "$TMP/empty")
 if stat -c '%s' / >/dev/null 2>&1; then DELTA_KEY_GNU_STAT=1; else DELTA_KEY_GNU_STAT=0; fi
 START=$SECONDS
 LAST_KEY=
+RECOVER=
 while :; do
   if [ -e "$LOG" ] || [ -L "$LOG" ]; then
     [ -f "$LOG" ] && [ ! -L "$LOG" ] || die "log changed into an unsafe file: $REL"
     delta_log_key "$LOG"
     if [ -z "$KEY" ] || [ "$KEY" != "$LAST_KEY" ]; then
+      RECOVER=
       snapshot_log "$LOG" "$TMP/source" "$TMP/size" \
         || die "log could not be captured safely: $REL"
       # The gate stat precedes the capture, so the snapshot is at least as new
@@ -339,6 +434,10 @@ while :; do
         if recover_leading_stamp; then
           IFS= read -r RECOVER < "$TMP/recover-kind"
         fi
+        if [ "$RECOVER" != delta ] && [ "$RECOVER" != bound ] && [ "$RECOVER" != wait ] \
+          && [ -n "$OLD_LINE" ] && recover_replaced_line; then
+          IFS= read -r RECOVER < "$TMP/recover-kind"
+        fi
         case "$RECOVER" in
           delta)
             IFS= read -r TO < "$TMP/recover-to"
@@ -351,7 +450,7 @@ while :; do
             emit_break line-exceeds-bound "$SIZE" "$ACTUAL"
             exit 0
             ;;
-          wait) ;;
+          wait|replaced-wait) ;;
           *)
             if [ "$CONTINUITY" = short ]; then
               copy_prefix "$TMP/source" "$SIZE" "$TMP/prefix"
@@ -388,6 +487,18 @@ while :; do
     emit_break missing 0 "$EMPTY_HASH"
     exit 0
   fi
-  [ $((SECONDS - START)) -lt "$WAIT" ] || exit 75
+  if [ $((SECONDS - START)) -ge "$WAIT" ]; then
+    if [ "$RECOVER" = replaced-wait ]; then
+      if [ "$SIZE" -lt "$OFFSET" ]; then
+        copy_prefix "$TMP/source" "$SIZE" "$TMP/prefix"
+        ACTUAL=$(sha256_file "$TMP/prefix")
+        emit_break truncated "$SIZE" "$ACTUAL"
+      else
+        emit_break prefix-changed "$SIZE" "$ACTUAL"
+      fi
+      exit 0
+    fi
+    exit 75
+  fi
   sleep "$POLL_SECONDS"
 done
