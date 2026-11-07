@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Hold an existing GitHub PR in draft for a conflict-only refresh.
 # Usage: FM_HOME=<home> fm-pr-refresh.sh prepare <task-id> <pr-url> [-- <command> [args...]]
-#        FM_HOME=<home> fm-pr-refresh.sh ready <task-id> <pr-url> --ready-ci reruns|unchanged
+#        FM_HOME=<home> fm-pr-refresh.sh ready <task-id> <pr-url> --ready-ci reruns|unchanged [--hold-reason <reason> --hold-owner <owner>]
 #
 # Conflict-only means replaying the already-authorized change onto its base,
 # including the minimum conflict resolutions needed to preserve that intent.
@@ -20,6 +20,9 @@
 # "Queue-only required checks"). The wait is bounded by FM_PR_READY_TIMEOUT
 # seconds, 3600 by default, and a spent bound retains the hold.
 # Raise FM_PR_READY_TIMEOUT for a legitimately long CI run.
+# Where the project's configured ready-hold label applies, ready refuses, hold
+# retained, unless the PR already carries a `Hold: <reason>; owner <owner>`
+# comment or --hold-reason and --hold-owner supply one for it to post first.
 # --ready-ci states the repository's CI policy:
 # reruns when ready_for_review re-runs draft-skipped checks (the wait adds
 # --after the ready_for_review timeline time, so draft-era skips never count),
@@ -57,10 +60,18 @@ if ! fm_pr_regular_destination_or_absent "$HOLD" || ! fm_pr_regular_destination_
   die 'unsafe refresh hold or status destination'
 fi
 READY_CI=
+HOLD_REASON=
+HOLD_OWNER=
 if [ "$ACTION" = ready ]; then
-  [ "$#" = 2 ] && [ "$1" = --ready-ci ] || die 'ready expects --ready-ci reruns|unchanged'
+  [ "$#" -ge 2 ] && [ "$1" = --ready-ci ] || die 'ready expects --ready-ci reruns|unchanged'
   case "$2" in reruns|unchanged) READY_CI=$2 ;; *) die 'ready expects --ready-ci reruns|unchanged' ;; esac
   shift 2
+  if [ "$#" -gt 0 ]; then
+    [ "$#" = 4 ] && [ "$1" = --hold-reason ] && [ "$3" = --hold-owner ] && [ -n "$2" ] && [ -n "$4" ] \
+      || die 'ready accepts only --hold-reason <reason> --hold-owner <owner> after --ready-ci'
+    HOLD_REASON=$2 HOLD_OWNER=$4
+    shift 4
+  fi
 elif [ "$#" -gt 0 ]; then
   [ "$1" = -- ] && [ "$#" -gt 1 ] || die 'expected -- <publication command>'
   shift
@@ -123,7 +134,7 @@ case "$READY_TIMEOUT" in
   *) [ "${#READY_TIMEOUT}" -le 6 ] || READY_TIMEOUT=3600 ;;
 esac
 if [ -n "$READY_HOLD_LABEL" ]; then
-  fm_ready_hold_apply "$URL" "$READY_HOLD_LABEL" || die 'could not apply ready-hold label; hold retained'
+  fm_ready_hold_apply "$URL" "$READY_HOLD_LABEL" "$HOLD_REASON" "$HOLD_OWNER" || die 'could not apply ready-hold label; hold retained'
 fi
 if [ "$DRAFT" = true ]; then
   gh-axi pr ready "$FM_PR_NUMBER" --repo "$FM_PR_PATH" || die 'could not mark PR ready'
@@ -143,7 +154,7 @@ else
     || die 'ready CI wait did not pass; hold retained; raise FM_PR_READY_TIMEOUT for a legitimately long CI run'
 fi
 if [ -n "$READY_HOLD_LABEL" ]; then
-  fm_ready_hold_verify "$URL" "$READY_HOLD_LABEL" || die 'ready-hold label missing after CI; hold retained'
+  fm_ready_hold_verify "$URL" "$READY_HOLD_LABEL" || die 'ready-hold label or its reason-and-owner comment missing after CI; hold retained'
 fi
 rm "$HOLD"
 printf 'resolved [at=%s]: conflict-refresh hold cleared for %s after ready CI passed\n' "$(date +%s)" "$URL" >> "$STATE/$ID.status"

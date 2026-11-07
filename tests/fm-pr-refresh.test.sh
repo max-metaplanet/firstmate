@@ -35,6 +35,10 @@ case "$1 $2 $3" in
     [ ! -f "$REFRESH_FIXTURE/label-add-fails" ] || exit 1
     [ -f "$REFRESH_FIXTURE/label-add-ignored" ] || echo '{"labels":[{"name":"hold for approval"}]}' > "$REFRESH_FIXTURE/labels.json"
     ;;
+  'pr comment 9')
+    [ "$#" = 7 ] && [ "$4 $5" = '--repo example/repo' ] && [ "$6" = --body ] || exit 92
+    jq --arg body "$7" '.comments += [{body:$body}]' "$REFRESH_FIXTURE/comments.json" > "$REFRESH_FIXTURE/comments.tmp"
+    mv "$REFRESH_FIXTURE/comments.tmp" "$REFRESH_FIXTURE/comments.json" ;;
   'pr ready 9')
     if [ -f "$FM_HOME/config/project-ready-hold-label" ] && ! grep -qx 'yolo=on' "$FM_HOME/state/task.meta"; then
       jq -e '.labels | any(.name == "hold for approval")' "$REFRESH_FIXTURE/labels.json" >/dev/null || exit 93
@@ -49,6 +53,7 @@ cat > "$FAKEBIN/gh" <<'SH'
 printf '%s\n' "$*" >> "$REFRESH_FIXTURE/log"
 case "$*" in
   'pr view '*--json\ labels) cat "$REFRESH_FIXTURE/labels.json" ;;
+  'pr view '*--json\ comments) cat "$REFRESH_FIXTURE/comments.json" ;;
   'pr view '*state,isDraft,id)
     jq -nc --arg state "$(cat "$REFRESH_FIXTURE/state")" --argjson draft "$(cat "$REFRESH_FIXTURE/draft")" --arg id "${PR_NODE_ID:-PR_fixture}" '{state:$state,isDraft:$draft,id:$id}' ;;
   'pr view '*)
@@ -164,6 +169,7 @@ pass 'unchanged policy accepts a legitimate lone skip without waiting for a read
 mkdir -p "$FM_HOME/config"
 printf 'repo\thold for approval\n' > "$FM_HOME/config/project-ready-hold-label"
 printf 'project=/projects/repo\nyolo=off\n' >> "$FM_HOME/state/task.meta"
+echo '{"comments":[{"body":"Hold: awaiting merge approval; owner firstmate"}]}' > "$TASK_TMP/comments.json"
 for failure in label-add-fails label-add-ignored; do
   cp "$TASK_TMP/hold" "$FM_HOME/state/task.pr-refresh"
   echo true > "$TASK_TMP/draft"
@@ -178,6 +184,27 @@ refresh ready task "$URL" --ready-ci unchanged > "$TASK_TMP/ready-out"
 jq -e '.labels | any(.name == "hold for approval")' "$TASK_TMP/labels.json" >/dev/null || fail 'ready PR lost label'
 [ ! -e "$FM_HOME/state/task.pr-refresh" ] || fail 'ready-hold label prevented completing refresh'
 pass 'refresh verifies configured label before ready and preserves draft on label failure'
+
+for bare in '{"comments":[]}' '{"comments":[{"body":"LGTM, please hold off"}]}'; do
+  printf '%s\n' "$bare" > "$TASK_TMP/comments.json"
+  cp "$TASK_TMP/hold" "$FM_HOME/state/task.pr-refresh"
+  echo true > "$TASK_TMP/draft"
+  echo '{"labels":[]}' > "$TASK_TMP/labels.json"
+  expect_refusal ready task "$URL" --ready-ci unchanged
+  assert_grep 'no comment, no hold label' "$TASK_TMP/out" 'a bare label refusal did not say why'
+  assert_grep 'hold retained' "$TASK_TMP/out" 'a bare label refusal did not keep the hold'
+  jq -e '.labels | length == 0' "$TASK_TMP/labels.json" >/dev/null || fail 'the helper added the hold label with no reason-and-owner comment'
+  [ "$(cat "$TASK_TMP/draft")" = true ] || fail 'a bare label refusal still marked the PR ready'
+  [ -f "$FM_HOME/state/task.pr-refresh" ] || fail 'a bare label refusal cleared the refresh hold'
+done
+expect_refusal ready task "$URL" --ready-ci unchanged --hold-reason 'awaiting merge approval'
+jq -e '.labels | length == 0' "$TASK_TMP/labels.json" >/dev/null || fail 'a reason without an owner applied the hold label'
+refresh ready task "$URL" --ready-ci unchanged --hold-reason 'awaiting merge approval' --hold-owner firstmate > "$TASK_TMP/ready-out"
+jq -e '.comments | any(.body == "Hold: awaiting merge approval; owner firstmate")' "$TASK_TMP/comments.json" >/dev/null \
+  || fail 'the supplied reason and owner were not posted as the hold comment'
+jq -e '.labels | any(.name == "hold for approval")' "$TASK_TMP/labels.json" >/dev/null || fail 'a justified hold did not apply the label'
+[ ! -e "$FM_HOME/state/task.pr-refresh" ] || fail 'a justified hold did not complete the refresh'
+pass 'refresh refuses a bare ready-hold label and posts a supplied reason-and-owner comment before applying it'
 
 printf 'yolo=on\n' >> "$FM_HOME/state/task.meta"
 cp "$TASK_TMP/hold" "$FM_HOME/state/task.pr-refresh"
