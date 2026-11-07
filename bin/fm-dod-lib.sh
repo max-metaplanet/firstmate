@@ -686,12 +686,13 @@ fm_dod_ready_hold_block() {  # <config-dir> <project-dir> <yolo> <forge> <mode>
 This section supersedes every earlier instruction that marks a PR ready without first applying its ready-hold label.
 This task requires the configured GitHub ready-hold label \`$label_q\` while it waits for merge approval.
 In the same step as marking the PR ready, derive <number> and <owner>/<repo> from the canonical PR URL; never let the current directory choose the repository.
-First run \`gh-axi pr edit <number> --repo <owner>/<repo> --add-label $label_q\` and verify the label is present with \`gh pr view <PR URL> --json labels\`.
+The label alone never justifies the hold: first post a comment on the PR itself with \`gh-axi pr comment <number> --repo <owner>/<repo> --body '<reason>; owner <owner>'\`, giving the written reason for the hold and naming the specific owner who will release it; no comment, no hold.
+Then run \`gh-axi pr edit <number> --repo <owner>/<repo> --add-label $label_q\` and verify the label is present with \`gh pr view <PR URL> --json labels\`.
 Only after that verification may you run \`gh-axi pr ready <number> --repo <owner>/<repo>\`.
 Apply and verify the label before any ready transition performed on your behalf, including by no-mistakes or \`fm-pr-refresh.sh\`.
 $pipeline
-Before reporting done, read the PR labels again and confirm the configured label is still present.
-If applying or verifying the label fails, keep the PR draft and report the failure to firstmate.
+Before reporting done, read the PR labels and comments again and confirm the configured label and that reason-and-owner comment are both still present.
+If posting the comment or applying or verifying the label fails, keep the PR draft and report the failure to firstmate.
 Never remove the ready-hold label yourself; firstmate's approved merge path releases it to the project's merge bot.
 EOF
 }
@@ -806,8 +807,8 @@ Waiting for a place is expected, not a failure.
   ci_cost="When a required check is red, read its failure log.
 Never push an empty, no-op, or \"retrigger\" commit to rerun CI."
   hold_scope="Do not hold an otherwise-ready PR as a draft, or add a hold label or equivalent marker, as your own default judgment call.
-The only holds allowed are the conflict-refresh hold \`fm-pr-refresh.sh prepare\` sets, which firstmate lifts, this project's configured ready-hold label contract, when one applies, or a hold for which you post a written reason as a comment on the PR itself and name a specific owner responsible for lifting it.
-When you use the written-reason-and-owner hold, append \`paused [at=<epoch>]: {reason}; owner {owner}\` instead of done, matching the comment you posted on the PR."
+Apart from the conflict-refresh hold \`fm-pr-refresh.sh prepare\` sets, which firstmate lifts, every hold is a written-reason-and-owner hold: you post a written reason as a comment on the PR itself and name a specific owner responsible for lifting it, and this project's configured ready-hold label, when its contract applies, is no exception; no comment, no hold.
+When you keep the PR draft under the written-reason-and-owner hold, append \`paused [at=<epoch>]: {reason}; owner {owner}\` instead of done, matching the comment you posted on the PR."
   if [ -n "$base" ]; then
     printf -v base_q '%q' "$base"
     pr_base=", against the base branch \`$base\` (\`--base $base_q\`), not the repository default"

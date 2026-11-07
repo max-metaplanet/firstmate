@@ -482,9 +482,11 @@ test_pr_based_dod_requires_non_draft() {
       "$mode: a draft must be marked ready before done"
     assert_grep "Do not hold an otherwise-ready PR as a draft, or add a hold label or equivalent marker, as your own default judgment call." "$brief" \
       "$mode: a worker must not default to holding a ready PR"
-    assert_grep "a hold for which you post a written reason as a comment on the PR itself and name a specific owner" "$brief" \
-      "$mode: a hold outside the configured ready-hold label needs a written reason and a named owner"
-    assert_grep "When you use the written-reason-and-owner hold, append \`paused [at=<epoch>]: {reason}; owner {owner}\` instead of done" "$brief" \
+    assert_grep "every hold is a written-reason-and-owner hold: you post a written reason as a comment on the PR itself and name a specific owner" "$brief" \
+      "$mode: every hold needs a written reason and a named owner"
+    assert_grep "this project's configured ready-hold label, when its contract applies, is no exception; no comment, no hold." "$brief" \
+      "$mode: the configured ready-hold label must not be exempt from the reason-and-owner rule"
+    assert_grep "When you keep the PR draft under the written-reason-and-owner hold, append \`paused [at=<epoch>]: {reason}; owner {owner}\` instead of done" "$brief" \
       "$mode: a justified hold must still declare a wait instead of done"
   done
   pass "fm-brief.sh: PR-based done requires a non-draft PR; a justified hold declares a wait with a reason and owner"

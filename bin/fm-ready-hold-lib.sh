@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
 # Optional ready-hold label lookup shared by ship instructions and GitHub actions.
 # docs/configuration.md "Ready-hold labels" owns the declaration format.
-# This configured label is one of the few holds the generated worker contract
-# allows on a ready PR; bin/fm-dod-lib.sh owns the others, the firstmate-ordered
-# conflict-refresh hold and a written reason with a named owner posted on the PR
-# itself, and the no-default-hold rule they all follow.
+# Like every other hold bin/fm-dod-lib.sh allows on a ready PR, apart from the
+# firstmate-ordered conflict-refresh hold, this label needs a written reason and
+# a named owner posted as a PR comment; the label alone never justifies a hold.
 
 fm_ready_hold_label() {  # <config-dir> <project-name>
   local file=$1/project-ready-hold-label
