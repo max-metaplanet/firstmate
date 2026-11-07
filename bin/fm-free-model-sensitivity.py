@@ -12,8 +12,9 @@ their read access. A routine path may still resolve to a free model.
 
 `mech` is the handoff a worker runs for a rename, a format, boilerplate,
 or test scaffolding. It launches only a documented free OpenCode model
-under this same scrub and read block in a scratch worktree at HEAD, prints
-a diff against HEAD, and never touches the caller's worktree. The worker reviews that diff before applying it.
+under this same scrub and read block in a scratch copy of the caller's
+current tree, prints only the model's change against that copy, and never
+touches the caller's worktree. The worker reviews that diff before applying it.
 
 The read block is a seccomp user notifier in the parent. Segment classes
 apply inside the task worktree, the directory confine starts in, so toolchain
@@ -730,10 +731,11 @@ def mech_refusal(model: str | None, paths: list[str], prompt: str, home: str) ->
     return None
 
 
-def mech_command(model: str | None, prompt: str) -> list[str]:
+def mech_command(model: str | None, paths: list[str], prompt: str) -> list[str]:
     text = (
         "Mechanical edit only: a rename, a format, boilerplate, or test scaffolding. "
-        "Do not commit, push, or merge. Do not read secrets. Stop when the files are edited.\n\n"
+        "Do not commit, push, or merge. Do not read secrets. Stop when the files are edited.\n"
+        "Edit only these paths: " + ", ".join(paths) + "\n\n"
         + prompt
     )
     command = ["timeout", "--kill-after=30", str(MECH_SECONDS), "opencode", "run", "--standalone"]
@@ -743,18 +745,32 @@ def mech_command(model: str | None, prompt: str) -> list[str]:
     return command
 
 
-def collect_diff(head: str) -> bytes:
-    # A commit the model made is still a change against the recorded HEAD.
-    parts = [git_bytes(["diff", "--binary", head])]
-    for raw in git_bytes(["ls-files", "--others", "--exclude-standard", "-z"]).split(b"\0"):
-        if not raw:
+def seed_tree(top: str, tree: str, home: str) -> str:
+    """Copy the caller's uncommitted and untracked files into tree, except
+    refused paths, and return the tree id of that copy."""
+    listed = git_bytes(["-C", top, "ls-files", "-z", "--modified", "--deleted", "--others", "--exclude-standard"])
+    for raw in sorted(set(listed.split(b"\0"))):
+        rel = os.fsdecode(raw)
+        if not rel or rel.endswith("/") or path_refused(rel, home):
             continue
-        proc = subprocess.run(
-            ["git", "--no-pager", "diff", "--no-index", "--binary", "--", "/dev/null", raw],
-            capture_output=True,
-        )
-        parts.append(proc.stdout)
-    return b"".join(parts)
+        source = os.path.join(top, rel)
+        target = os.path.join(tree, rel)
+        if os.path.lexists(target):
+            os.remove(target)
+        if os.path.islink(source):
+            os.makedirs(os.path.dirname(target), exist_ok=True)
+            os.symlink(os.readlink(source), target)
+        elif os.path.isfile(source):
+            os.makedirs(os.path.dirname(target), exist_ok=True)
+            shutil.copy2(source, target)
+    git_bytes(["-C", tree, "add", "-A"])
+    return git_bytes(["-C", tree, "write-tree"]).decode().strip()
+
+
+def collect_diff(tree: str, base: str) -> bytes:
+    # Staging everything also captures new files and anything the model committed.
+    git_bytes(["-C", tree, "add", "-A"])
+    return git_bytes(["-C", tree, "diff", "--cached", "--binary", base])
 
 
 def confine_quiet(home: str, command: list[str], log_path: str) -> int:
@@ -817,6 +833,7 @@ def mech(argv: list[str]) -> int:
         print("free-model sensitivity: opencode is not on PATH", file=sys.stderr)
         return 2
     try:
+        top = git_bytes(["rev-parse", "--show-toplevel"]).decode().strip()
         head = git_bytes(["rev-parse", "HEAD"]).decode().strip()
     except GitError as exc:
         print(f"free-model sensitivity: mech must run inside a git worktree ({exc})", file=sys.stderr)
@@ -834,11 +851,12 @@ def mech(argv: list[str]) -> int:
         print(f"free-model sensitivity: could not create a scratch worktree: {exc}", file=sys.stderr)
         return 2
     try:
+        base = seed_tree(top, tree, home)
         os.chdir(tree)
         os.environ["OPENCODE_CONFIG_CONTENT"] = '{"permission":{"*":"allow"}}'
-        code = confine_quiet(home, mech_command(model, prompt), log_path)
-        diff = collect_diff(head)
-    except GitError as exc:
+        code = confine_quiet(home, mech_command(model, paths, prompt), log_path)
+        diff = collect_diff(tree, base)
+    except (GitError, OSError) as exc:
         print(f"free-model sensitivity: {exc}", file=sys.stderr)
         code = 1
     finally:
@@ -864,7 +882,16 @@ def usage() -> None:
         "       fm-free-model-sensitivity.sh brief-sensitive --brief <file>\n"
         "       fm-free-model-sensitivity.sh apply-resolution --brief <file>\n"
         "       fm-free-model-sensitivity.sh confine --home <dir> -- <command>...\n"
-        "       fm-free-model-sensitivity.sh mech [--model <id>] --path <path> [--path <path>...] -- <edit>",
+        "       fm-free-model-sensitivity.sh mech [--model <id>] --path <path> [--path <path>...] -- <edit>\n"
+        "\n"
+        "mech hands a rename, a format, boilerplate, or test scaffolding to a free OpenCode model.\n"
+        "  --model must be a documented free OpenCode id (last segment free, big-pickle, or ending\n"
+        "  -free or :free) or be omitted; any other id is refused.\n"
+        "  A --path in the ci, migrations, infra, auth, payments, env, or doppler class, or a\n"
+        "  secrets file or token store, is refused.\n"
+        "  The model runs confined, with tokens scrubbed, on a scratch copy of your current tree\n"
+        "  that leaves out refused paths. mech prints only the model's change as a diff against\n"
+        "  that copy and never touches your worktree; review it, then git apply it at the top level.",
         file=sys.stderr,
     )
 
