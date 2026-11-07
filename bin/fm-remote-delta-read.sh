@@ -23,9 +23,8 @@
 # a different line at that position. The reader then returns every complete line
 # from the replaced line's start, including bytes past the old cursor, and its
 # next offset is a position in the file as it exists now. Until that different
-# line exists it waits. A wait that ends with the line still gone is still a
-# continuity break. A deleted stamp is decided first, so that repair is never
-# reported as a replaced line. Any other shortened or changed prefix, including
+# line exists it waits, so the relay stays armed. A deleted stamp is decided
+# first, so that repair is never reported as a replaced line. Any other shortened or changed prefix, including
 # a real replacement of earlier bytes or a stamp on an older line, is still a
 # continuity break. If either proof cannot be run, the reader keeps the break.
 #
@@ -405,13 +404,11 @@ EMPTY_HASH=$(sha256_file "$TMP/empty")
 if stat -c '%s' / >/dev/null 2>&1; then DELTA_KEY_GNU_STAT=1; else DELTA_KEY_GNU_STAT=0; fi
 START=$SECONDS
 LAST_KEY=
-RECOVER=
 while :; do
   if [ -e "$LOG" ] || [ -L "$LOG" ]; then
     [ -f "$LOG" ] && [ ! -L "$LOG" ] || die "log changed into an unsafe file: $REL"
     delta_log_key "$LOG"
     if [ -z "$KEY" ] || [ "$KEY" != "$LAST_KEY" ]; then
-      RECOVER=
       snapshot_log "$LOG" "$TMP/source" "$TMP/size" \
         || die "log could not be captured safely: $REL"
       # The gate stat precedes the capture, so the snapshot is at least as new
@@ -488,16 +485,6 @@ while :; do
     exit 0
   fi
   if [ $((SECONDS - START)) -ge "$WAIT" ]; then
-    if [ "$RECOVER" = replaced-wait ]; then
-      if [ "$SIZE" -lt "$OFFSET" ]; then
-        copy_prefix "$TMP/source" "$SIZE" "$TMP/prefix"
-        ACTUAL=$(sha256_file "$TMP/prefix")
-        emit_break truncated "$SIZE" "$ACTUAL"
-      else
-        emit_break prefix-changed "$SIZE" "$ACTUAL"
-      fi
-      exit 0
-    fi
     exit 75
   fi
   sleep "$POLL_SECONDS"

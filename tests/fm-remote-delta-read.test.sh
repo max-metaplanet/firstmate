@@ -431,13 +431,29 @@ CHOP_LINE_CURSOR=$(file_bytes "$DELTA_HOME/$DELTA_LOG_REL")
 CHOP_LINE_PREFIX=$(file_sha "$DELTA_HOME/$DELTA_LOG_REL")
 perl -e 'open my $fh, "+<", $ARGV[0] or die $!; binmode $fh; seek $fh, -11, 2 or die $!; truncate $fh, tell $fh or die $!' \
   "$DELTA_HOME/$DELTA_LOG_REL"
+RC=0
 run_reader "$CHOP_LINE_CURSOR" "$CHOP_LINE_PREFIX" 1 "$DELTA_LOG_REL" "$REPLACED_OLD" \
-  > "$TMP_ROOT/line-chop.out" || fail 'a chopped mirrored line did not exit 0'
-OUT=$(<"$TMP_ROOT/line-chop.out")
-assert_contains "$OUT" 'status=continuity-broken' 'a chopped mirrored line was recovered'
-assert_contains "$OUT" 'reason=truncated' 'a chopped mirrored line was not named truncated'
-assert_not_contains "$OUT" 'status=delta' 'a chopped mirrored line was delivered as a delta'
+  > "$TMP_ROOT/line-chop.out" || RC=$?
+[ "$RC" -eq 75 ] || fail "a chopped mirrored line exited $RC instead of waiting with 75"
+[ ! -s "$TMP_ROOT/line-chop.out" ] || fail 'a chopped mirrored line was delivered or reported'
 pass 'a witnessed line is not recovered when earlier bytes change, the witness is wrong, or the line is only chopped'
+
+# A log cut back to the start of the mirrored line can stay short past a whole
+# window. The window closes with 75, so the relay stays armed, and the next read
+# delivers the different line once it lands.
+printf '%s\n' "$REPLACED_KEPT" > "$DELTA_HOME/$DELTA_LOG_REL"
+RC=0
+run_reader "$LINE_CURSOR" "$LINE_PREFIX" 1 "$DELTA_LOG_REL" "$REPLACED_OLD" \
+  > "$TMP_ROOT/line-late.out" || RC=$?
+[ "$RC" -eq 75 ] || fail "a replacement slower than one window exited $RC instead of 75"
+[ ! -s "$TMP_ROOT/line-late.out" ] || fail 'a replacement slower than one window stopped the relay'
+printf '%s\n%s\n' "$REPLACED_NEW" "$REPLACED_AFTER" >> "$DELTA_HOME/$DELTA_LOG_REL"
+run_reader "$LINE_CURSOR" "$LINE_PREFIX" 1 "$DELTA_LOG_REL" "$REPLACED_OLD" \
+  > "$TMP_ROOT/line-late.out" || fail 'a late line replacement did not produce a delta'
+PAYLOAD=$(payload_of "$TMP_ROOT/line-late.out")
+[ "$PAYLOAD" = "$(printf '%s\n%s\n' "$REPLACED_NEW" "$REPLACED_AFTER")" ] \
+  || fail "a late line replacement dropped the new tail: $PAYLOAD"
+pass 'a replaced line that lands after a whole window is still delivered'
 
 # A deleted leading stamp is still that repair when the parent also supplies the
 # old line. The consumed line is not delivered again as a replacement.

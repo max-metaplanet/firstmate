@@ -593,7 +593,7 @@ One exception is a deleted leading emission stamp on a line the cursor already c
 `bin/fm-remote-delta-read.sh` owns that proof.
 A second exception is one already-mirrored line replaced by a different line, and only when the parent supplies that line from its mirror.
 The reader then delivers every complete line from the replaced line's start, including bytes past the old cursor.
-A wait that ends with the line still gone is still a break.
+Until that different line exists, the reader waits and the relay stays armed.
 Any other shortened or changed prefix still stops the relay.
 
 The failure appends one `blocked` line to the parent status stream, which opens a decision.
