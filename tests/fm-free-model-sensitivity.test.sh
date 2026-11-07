@@ -411,6 +411,9 @@ done
   if cat .env >/dev/null 2>&1; then printf 'env=read\n'; else printf 'env=denied\n'; fi
   if [ -f src/wip.ts ] && grep -q WIP src/wip.ts; then printf 'wip=seen\n'; else printf 'wip=missing\n'; fi
   if ls -a | grep -qx .env.local; then printf 'envlocal=copied\n'; else printf 'envlocal=absent\n'; fi
+  if [ -f src/staged.ts ]; then printf 'staged-new=seen\n'; else printf 'staged-new=missing\n'; fi
+  if [ -e README.md ]; then printf 'readme=present\n'; else printf 'readme=deleted\n'; fi
+  if grep -q CALLER-LINE src/app.ts 2>/dev/null; then printf 'caller-line=seen\n'; else printf 'caller-line=missing\n'; fi
 } >> "$MECH_LOG"
 printf 'edited\n' >> src/app.ts
 printf 'scaffold\n' > src/new-scaffold.ts
@@ -476,7 +479,7 @@ pass "mech refuses a sensitive path, a paid OpenCode model, and a Claude id with
 printf 'DIRTY-MARKER\n' >> "$MECH_REPO/README.md"
 git -C "$MECH_REPO" add README.md
 rm -f "$MECH_LOG"
-MECH_CWD=src mech_run mech --model opencode/glm-5.3-flash-free --path src/app.ts -- "don't drop the counter"
+MECH_CWD=src mech_run mech --model opencode/glm-5.3-flash-free --path src/app.ts --path src/new-scaffold.ts -- "don't drop the counter"
 [ "$MECH_STATUS" -eq 0 ] || fail "mech failed on a free model: status=$MECH_STATUS out=$MECH_OUT err=$(cat "$MECH_ERR")"
 [ "$(git -C "$MECH_REPO" diff --cached --name-only)" = README.md ] || fail "mech did not keep the caller's staged edit staged"
 [ "$(git -C "$MECH_REPO" worktree list | wc -l)" -eq 1 ] || fail "mech left its scratch worktree registered"
@@ -514,17 +517,21 @@ log=$(cat "$MECH_LOG")
 assert_contains "$log" "--standalone" "a model-less launch did not pin a private server"
 assert_not_contains "$log" "--model" "a model-less launch pinned a model"
 assert_contains "$MECH_OUT" "edited" "a model-less launch did not return the edit"
+assert_not_contains "$MECH_OUT" "new-scaffold.ts" "the diff carried an edit outside the declared paths"
 [ "$(git -C "$MECH_REPO" rev-parse HEAD)" = "$MECH_HEAD" ] || fail "a model-less launch left a commit"
 grep -q edited "$MECH_REPO/src/app.ts" && fail "a model-less launch left the edit in the worktree"
 pass "an OpenCode launch that names no model is a mech handoff and still returns only a diff"
 
-# The caller's own uncommitted edit to the file the model edits, an untracked
-# work file, and an untracked refused file. The model sees the first two, the
-# refused one is never copied, and the diff carries only the model's change,
+# The caller's own staged edit to the file the model edits, a staged new file,
+# a staged deletion, an untracked work file, and an untracked refused file.
+# The model sees every caller change except the refused file, which is never copied, and the diff carries only the model's change,
 # so git apply onto the caller's current tree succeeds and keeps both edits.
 git -C "$MECH_REPO" reset --hard -q "$MECH_HEAD"
 git -C "$MECH_REPO" clean -fd -q
 printf 'CALLER-LINE\n' >> "$MECH_REPO/src/app.ts"
+printf 'STAGED\n' > "$MECH_REPO/src/staged.ts"
+git -C "$MECH_REPO" add src/app.ts src/staged.ts
+git -C "$MECH_REPO" rm -q README.md
 printf 'WIP\n' > "$MECH_REPO/src/wip.ts"
 printf 'LOCAL-SECRET\n' > "$MECH_REPO/.env.local"
 rm -f "$MECH_LOG"
@@ -532,6 +539,9 @@ mech_run mech --model opencode/big-pickle --path src/app.ts -- "rename the count
 [ "$MECH_STATUS" -eq 0 ] || fail "mech failed over a dirty same-file edit: status=$MECH_STATUS err=$(cat "$MECH_ERR")"
 log=$(cat "$MECH_LOG")
 assert_contains "$log" "wip=seen" "the model did not see the caller's untracked file"
+assert_contains "$log" "caller-line=seen" "the model did not see the caller's staged edit"
+assert_contains "$log" "staged-new=seen" "the model did not see the caller's staged new file"
+assert_contains "$log" "readme=deleted" "the model saw a file the caller staged for deletion"
 assert_contains "$log" "envlocal=absent" "the scratch copy carried the caller's refused .env.local"
 assert_contains "$log" "Edit only these paths: src/app.ts" "the declared path did not reach the model"
 assert_contains "$MECH_OUT" "+edited" "the diff did not carry the model's edit"

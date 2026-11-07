@@ -746,16 +746,22 @@ def mech_command(model: str | None, paths: list[str], prompt: str) -> list[str]:
 
 
 def seed_tree(top: str, tree: str, home: str) -> str:
-    """Copy the caller's uncommitted and untracked files into tree, except
-    refused paths, and return the tree id of that copy."""
-    listed = git_bytes(["-C", top, "ls-files", "-z", "--modified", "--deleted", "--others", "--exclude-standard"])
-    for raw in sorted(set(listed.split(b"\0"))):
+    """Copy every path that differs from HEAD, staged or not, and every
+    untracked file into tree, except refused paths, and return the tree id
+    of that copy."""
+    changed = git_bytes(["-C", top, "diff", "--name-only", "-z", "--no-renames", "HEAD"])
+    untracked = git_bytes(["-C", top, "ls-files", "-z", "--others", "--exclude-standard"])
+    for raw in sorted(set(changed.split(b"\0")) | set(untracked.split(b"\0"))):
         rel = os.fsdecode(raw)
         if not rel or rel.endswith("/") or path_refused(rel, home):
             continue
         source = os.path.join(top, rel)
         target = os.path.join(tree, rel)
-        if os.path.lexists(target):
+        if os.path.isdir(source) and not os.path.islink(source):
+            continue
+        if os.path.isdir(target) and not os.path.islink(target):
+            shutil.rmtree(target)
+        elif os.path.lexists(target):
             os.remove(target)
         if os.path.islink(source):
             os.makedirs(os.path.dirname(target), exist_ok=True)
@@ -767,10 +773,10 @@ def seed_tree(top: str, tree: str, home: str) -> str:
     return git_bytes(["-C", tree, "write-tree"]).decode().strip()
 
 
-def collect_diff(tree: str, base: str) -> bytes:
+def collect_diff(tree: str, base: str, paths: list[str]) -> bytes:
     # Staging everything also captures new files and anything the model committed.
     git_bytes(["-C", tree, "add", "-A"])
-    return git_bytes(["-C", tree, "diff", "--cached", "--binary", base])
+    return git_bytes(["-C", tree, "diff", "--cached", "--binary", base, "--", *paths])
 
 
 def confine_quiet(home: str, command: list[str], log_path: str) -> int:
@@ -855,7 +861,7 @@ def mech(argv: list[str]) -> int:
         os.chdir(tree)
         os.environ["OPENCODE_CONFIG_CONTENT"] = '{"permission":{"*":"allow"}}'
         code = confine_quiet(home, mech_command(model, paths, prompt), log_path)
-        diff = collect_diff(tree, base)
+        diff = collect_diff(tree, base, paths)
     except (GitError, OSError) as exc:
         print(f"free-model sensitivity: {exc}", file=sys.stderr)
         code = 1
@@ -887,7 +893,9 @@ def usage() -> None:
         "mech hands a rename, a format, boilerplate, or test scaffolding to a free OpenCode model.\n"
         "  --model must be a documented free OpenCode id (last segment free, big-pickle, or ending\n"
         "  -free or :free) or be omitted; any other id is refused.\n"
-        "  A --path in the ci, migrations, infra, auth, payments, env, or doppler class, or a\n"
+        "  Each --path is relative to the repository top level, and the diff carries only\n"
+        "  changes under those paths. A --path in the ci, migrations, infra, auth, payments,\n"
+        "  env, or doppler class, or a\n"
         "  secrets file or token store, is refused.\n"
         "  The model runs confined, with tokens scrubbed, on a scratch copy of your current tree\n"
         "  that leaves out refused paths. mech prints only the model's change as a diff against\n"
