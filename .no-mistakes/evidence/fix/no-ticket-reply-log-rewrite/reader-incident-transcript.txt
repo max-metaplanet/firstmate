@@ -1,0 +1,95 @@
+== cursor offset=67 hash=01b6cfa47805 witness='line-2 [at=1700000002] mirrored reply'
+
+== S1 shorten: remote replaced the mirrored line with a shorter placeholder, no newline yet (incident: truncated)
+-- old behavior (no witness), wait=1:
+schema=fm-remote-delta.v1
+status=continuity-broken
+path=state/replies.status
+from_offset=67
+to_offset=39
+from_prefix_sha256=01b6cfa4780595efa4ecb743557017820ea26ad14e85982d731de0be9cee6c1c
+to_prefix_sha256=8a220ac97a7df90a10ba2cb622186a353fcb140b304622057278859d596c9e8f
+payload_sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+payload_bytes=0
+reason=truncated
+
+rc=0
+-- new (witness), wait=1:
+rc=75 (75 = relay stays armed)
+
+== S2 regrowth: placeholder line completed, then two new lines grow past the old cursor
+-- old behavior (no witness):
+schema=fm-remote-delta.v1
+status=continuity-broken
+path=state/replies.status
+from_offset=67
+to_offset=159
+from_prefix_sha256=01b6cfa4780595efa4ecb743557017820ea26ad14e85982d731de0be9cee6c1c
+to_prefix_sha256=82ee09f76e54d810162f4c7d3b9ea078c6e9bb0f0b978c3925598274fa4a18f1
+payload_sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+payload_bytes=0
+reason=prefix-changed
+
+rc=0
+-- new (witness):
+schema=fm-remote-delta.v1
+status=delta
+path=state/replies.status
+from_offset=67
+to_offset=159
+from_prefix_sha256=01b6cfa4780595efa4ecb743557017820ea26ad14e85982d731de0be9cee6c1c
+to_prefix_sha256=da3e0f98298a9f4eca1f6c0b013e1fcf67547f2f78f5c0301180eec7d8916789
+payload_sha256=e6bbe69516409b77ce4e527450072fdbfd09d709b78269bb63919e2fc66a130a
+payload_bytes=130
+reason=
+
+via-helper placeholder
+line-3 [at=1700000003] after cursor A
+line-4 [at=1700000004] after cursor B long enough to pass old offset
+rc=0
+
+== S3 adversarial: wrong witness
+schema=fm-remote-delta.v1
+status=continuity-broken
+path=state/replies.status
+from_offset=67
+to_offset=159
+from_prefix_sha256=01b6cfa4780595efa4ecb743557017820ea26ad14e85982d731de0be9cee6c1c
+to_prefix_sha256=82ee09f76e54d810162f4c7d3b9ea078c6e9bb0f0b978c3925598274fa4a18f1
+payload_sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+payload_bytes=0
+reason=prefix-changed
+
+rc=0
+
+== S4 adversarial: earlier line also changed
+schema=fm-remote-delta.v1
+status=continuity-broken
+path=state/replies.status
+from_offset=67
+to_offset=61
+from_prefix_sha256=01b6cfa4780595efa4ecb743557017820ea26ad14e85982d731de0be9cee6c1c
+to_prefix_sha256=bd75d9a6cb300b1b05e96074c394c44a97eca3cd1b030680436bffef1970d787
+payload_sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+payload_bytes=0
+reason=truncated
+
+rc=0
+
+== S5 adversarial: line rewritten identically (only chopped/regrown same) -> normal append path
+schema=fm-remote-delta.v1
+status=delta
+path=state/replies.status
+from_offset=67
+to_offset=79
+from_prefix_sha256=01b6cfa4780595efa4ecb743557017820ea26ad14e85982d731de0be9cee6c1c
+to_prefix_sha256=51517da5177cbf193277caa4c60cc0aa0c22c3b4c9405750412cc766bc2c4403
+payload_sha256=bb6e7e25139c6e101a1662e202ba2b6fe2c56ad443f9878f149037e9f14ffac2
+payload_bytes=12
+reason=
+
+line-3 next
+rc=0
+
+== S6 usage with 6 args is rejected
+rc=2
