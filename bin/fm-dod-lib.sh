@@ -722,7 +722,7 @@ EOF
 
 fm_dod_block() {  # <mode> <task-id> [branch] [<forge>] [<base>] [<consent>] [<ticket-header>] [<ticket-nm-retitle>] [<project-name>]
   local mode=$1 id=$2 forge=${4:-none} base=${5:-} consent=${6:-} ticket_header=${7:-} ticket_retitle=${8:-} project=${9:-}
-  local branch=${3:-fm/$id} pr_base='' nm_base='' draft_create='--draft' base_q contract_forge='' contract_consent='' forge_cli=gh-axi draft_check origin_steps retitle_cmd adapter ci_wait='' ready_wait='' refresh='' refresh_home_q ci_cost='' local_scope='' prepush='' prepush_home_q prepush_cmd
+  local branch=${3:-fm/$id} pr_base='' nm_base='' draft_create='--draft' base_q contract_forge='' contract_consent='' forge_cli=gh-axi draft_check origin_steps retitle_cmd adapter ci_wait='' ready_wait='' refresh='' refresh_home_q ci_cost='' local_scope='' hold_scope='' prepush='' prepush_home_q prepush_cmd
   fm_forge_valid_for_mode "$forge" "$mode" fm_dod_block || return 1
   fm_base_branch_valid "$base" "$mode" "$forge" fm_dod_block || return 1
   if [ -n "$consent" ]; then
@@ -805,6 +805,9 @@ Waiting for a place is expected, not a failure.
 "
   ci_cost="When a required check is red, read its failure log.
 Never push an empty, no-op, or \"retrigger\" commit to rerun CI."
+  hold_scope="Do not hold an otherwise-ready PR as a draft, or add a hold label or equivalent marker, as your own default judgment call.
+The only holds allowed are this project's configured ready-hold label contract, when one applies, or a hold for which you post a written reason as a comment on the PR itself and name a specific owner responsible for lifting it.
+When you use that second kind of hold, append \`paused [at=<epoch>]: {reason}; owner {owner}\` instead of done, matching the comment you posted on the PR."
   if [ -n "$base" ]; then
     printf -v base_q '%q' "$base"
     pr_base=", against the base branch \`$base\` (\`--base $base_q\`), not the repository default"
@@ -915,7 +918,7 @@ A draft cannot be merged, so a done report on one leaves the merge unasked.
 Then append \`done [at=<epoch>]: PR {url}\` to the status file and stop.
 That \`done:\` is accepted only when the PR is on the repository \`origin\` names and this copy's HEAD - your latest commit - is pushed to your PR branch; the check tests that commit, not merely that a branch moved.
 A PR raised on any other repository is refused rather than recorded, so if the target you resolved is not the one you expected, append \`blocked [at=<epoch>]: {what origin names}\` instead of opening it.
-If you deliberately keep the PR a draft, append \`paused [at=<epoch>]: {why the draft is held}\` instead of done.
+$hold_scope
 Do NOT run /no-mistakes. The configured merge authority decides whether to merge the PR; firstmate relays the outcome.
 EOF
       ;;
@@ -979,7 +982,7 @@ If that read found a draft whose head checks were skipped while draft, wait for 
 A draft cannot be merged, so a done report on one leaves the merge unasked.
 Then append \`done [at=<epoch>]: PR {url} checks green\` and stop. You are finished.
 That CI-ready \`done:\` is accepted only when this copy's HEAD - your latest commit - is one the /no-mistakes run pushed, so commit nothing after the run; the check tests that commit, not merely that a branch moved.
-If you deliberately keep the PR a draft, append \`paused [at=<epoch>]: {why the draft is held}\` instead of done.
+$hold_scope
 EOF
       ;;
     *)

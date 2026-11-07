@@ -1597,6 +1597,7 @@ Per-machine Cursor `cli-config.json` attribution-off is not this contract: it do
 
 ## Ready-hold labels (config/project-ready-hold-label)
 
+A worker never holds an otherwise-ready PR as a draft, or an equivalent hold, as its own default judgment call; the only holds the generated worker contract allows are this configured label and a hold carrying a written reason posted on the PR and a named owner (`bin/fm-dod-lib.sh` owns that contract and its status-line form).
 The optional, gitignored `config/project-ready-hold-label` maps projects in the active Firstmate home to GitHub labels that prevent their merge bots from merging ready pull requests.
 Each entry has the clone directory basename, one literal tab, and the exact label name:
 
