@@ -9,6 +9,12 @@
 #   * a deleted leading emission stamp on an already-consumed line, followed
 #     by new lines, delivers those new lines once and does not repeat the
 #     consumed line; a real prefix replacement still breaks
+#   * one already-mirrored line replaced by a different line, witnessed by
+#     that mirrored line, delivers the new tail from the line start, including
+#     bytes past the old cursor; the hash alone does not recover it, and any
+#     earlier byte that also changed still breaks
+#   * a parent relaying to a host whose reader predates the witness argument
+#     still captures exactly one well-formed delta, not that reader's usage
 #   * an incomplete tail line is withheld until a newline completes it
 #   * exit 75 when the wait window closes with nothing appended
 #   * the per-poll executable boundary: an unchanged log costs one stat per
@@ -32,9 +38,15 @@ READER="$ROOT/bin/fm-remote-delta-read.sh"
 EMPTY_SHA=$(: | shasum -a 256 | awk '{print $1}')
 sha() { printf '%b' "$1" | shasum -a 256 | awk '{print $1}'; }
 
-run_reader() { # <offset> <prefix> <wait> [rel]
-  FM_HOME="$DELTA_HOME" FM_REMOTE_DELTA_POLL_SECONDS=0.05 \
-    "$READER" "${4:-$DELTA_LOG_REL}" "$1" "$2" "$3"
+run_reader() { # <offset> <prefix> <wait> [rel] [mirrored-line]
+  local rel=${4:-$DELTA_LOG_REL}
+  if [ $# -ge 5 ]; then
+    FM_HOME="$DELTA_HOME" FM_REMOTE_DELTA_POLL_SECONDS=0.05 \
+      "$READER" "$rel" "$1" "$2" "$3" "$5"
+  else
+    FM_HOME="$DELTA_HOME" FM_REMOTE_DELTA_POLL_SECONDS=0.05 \
+      "$READER" "$rel" "$1" "$2" "$3"
+  fi
 }
 
 file_sha() { shasum -a 256 "$1" | awk '{print $1}'; }
@@ -332,5 +344,221 @@ assert_contains "$OUT" 'status=continuity-broken' 'a chopped tail did not stop t
 assert_contains "$OUT" 'reason=truncated' 'a chopped tail was not named truncated'
 assert_not_contains "$OUT" 'status=delta' 'a chopped tail was delivered as a delta'
 pass 'chopping the tail still breaks continuity as truncated'
+
+# The incident: the cursor sat on the end of one already-mirrored line, and
+# that line was replaced. The parent mirror still has the old line. The reader
+# must deliver the replacement and every complete line after it, and must not
+# do that from the hash alone or when an earlier byte changed too.
+REPLACED_KEPT='kept before the replaced line'
+REPLACED_OLD='working [corr=5e807b519d0dd703] [at=1794013372]: placeholder (via-helper)'
+REPLACED_NEW='working [at=1794013392]: Two changes are under way.'
+REPLACED_AFTER='done [at=1794013400]: later line that must not be dropped'
+printf '%s\n%s\n' "$REPLACED_KEPT" "$REPLACED_OLD" > "$DELTA_HOME/$DELTA_LOG_REL"
+LINE_CURSOR=$(file_bytes "$DELTA_HOME/$DELTA_LOG_REL")
+LINE_PREFIX=$(file_sha "$DELTA_HOME/$DELTA_LOG_REL")
+printf '%s\n%s\n%s\n' "$REPLACED_KEPT" "$REPLACED_NEW" "$REPLACED_AFTER" > "$DELTA_HOME/$DELTA_LOG_REL"
+run_reader "$LINE_CURSOR" "$LINE_PREFIX" 1 > "$TMP_ROOT/line-unwitnessed.out" \
+  || fail 'a replaced line with no mirrored witness did not exit 0'
+OUT=$(<"$TMP_ROOT/line-unwitnessed.out")
+assert_contains "$OUT" 'status=continuity-broken' 'the hash alone recovered a replaced line'
+assert_not_contains "$OUT" 'status=delta' 'the hash alone delivered a replaced line as a delta'
+assert_not_contains "$OUT" 'later line that must not be dropped' \
+  'the hash alone delivered bytes from after the replaced line'
+run_reader "$LINE_CURSOR" "$LINE_PREFIX" 2 "$DELTA_LOG_REL" "$REPLACED_OLD" \
+  > "$TMP_ROOT/line-replaced.out" \
+  || fail 'a witnessed line replacement did not produce a delta'
+OUT=$(<"$TMP_ROOT/line-replaced.out")
+assert_contains "$OUT" 'status=delta' 'a witnessed line replacement did not produce a delta'
+assert_contains "$OUT" "from_offset=$LINE_CURSOR" \
+  'a witnessed line replacement did not stay anchored at the committed cursor'
+assert_contains "$OUT" "from_prefix_sha256=$LINE_PREFIX" \
+  'a witnessed line replacement did not keep the committed prefix hash'
+LINE_TO=$(printf '%s\n' "$OUT" | sed -n 's/^to_offset=//p')
+LINE_TO_HASH=$(printf '%s\n' "$OUT" | sed -n 's/^to_prefix_sha256=//p')
+[ "$LINE_TO" = "$(file_bytes "$DELTA_HOME/$DELTA_LOG_REL")" ] \
+  || fail "a witnessed line replacement did not advance to the new file end (got $LINE_TO)"
+[ "$LINE_TO_HASH" = "$(file_sha "$DELTA_HOME/$DELTA_LOG_REL")" ] \
+  || fail 'a witnessed line replacement cursor hash is not the new file'
+PAYLOAD=$(payload_of "$TMP_ROOT/line-replaced.out")
+[ "$PAYLOAD" = "$(printf '%s\n%s\n' "$REPLACED_NEW" "$REPLACED_AFTER")" ] \
+  || fail "a witnessed line replacement dropped or rewrote the new tail: $PAYLOAD"
+assert_not_contains "$PAYLOAD" 'placeholder (via-helper)' \
+  'a witnessed line replacement repeated the replaced line'
+run_reader "$LINE_TO" "$LINE_TO_HASH" 1 > "$TMP_ROOT/line-again.out" && \
+  fail 'a second read delivered the replaced-line tail again' || RC=$?
+[ "${RC:-0}" -eq 75 ] || fail "a second read after the line replacement exited $RC instead of 75"
+pass 'one replaced already-mirrored line delivers the new tail, including bytes past the old cursor'
+
+# A shorten that still shares the prefix before that line is the same replacement
+# in progress. The reader waits for the different line instead of stopping.
+printf '%s\n' "$REPLACED_KEPT" > "$DELTA_HOME/$DELTA_LOG_REL"
+run_reader "$LINE_CURSOR" "$LINE_PREFIX" 3 "$DELTA_LOG_REL" "$REPLACED_OLD" \
+  > "$TMP_ROOT/line-inflight.out" &
+READER_PID=$!
+sleep 0.3
+printf '%s\n%s\n' "$REPLACED_NEW" "$REPLACED_AFTER" >> "$DELTA_HOME/$DELTA_LOG_REL"
+wait "$READER_PID" || fail 'a line replacement that landed during the wait did not produce a delta'
+OUT=$(<"$TMP_ROOT/line-inflight.out")
+assert_contains "$OUT" 'status=delta' 'a line replacement in progress stopped the relay'
+assert_not_contains "$OUT" 'continuity-broken' 'a line replacement in progress was reported as a break'
+PAYLOAD=$(payload_of "$TMP_ROOT/line-inflight.out")
+[ "$PAYLOAD" = "$(printf '%s\n%s\n' "$REPLACED_NEW" "$REPLACED_AFTER")" ] \
+  || fail "a line replacement in progress dropped the new tail: $PAYLOAD"
+pass 'a replaced line that appears during the wait is delivered instead of stopping the relay'
+
+# The same witness must not recover a rewrite that also changes an earlier byte,
+# a witness that is not the line the cursor hashed, or a chop that never becomes
+# a different line.
+printf '%s\n%s\n' "$REPLACED_KEPT" "$REPLACED_OLD" > "$DELTA_HOME/$DELTA_LOG_REL"
+BROAD_CURSOR=$(file_bytes "$DELTA_HOME/$DELTA_LOG_REL")
+BROAD_PREFIX=$(file_sha "$DELTA_HOME/$DELTA_LOG_REL")
+printf '%s\n%s\n%s\n' 'changed earlier byte' "$REPLACED_NEW" "$REPLACED_AFTER" \
+  > "$DELTA_HOME/$DELTA_LOG_REL"
+run_reader "$BROAD_CURSOR" "$BROAD_PREFIX" 1 "$DELTA_LOG_REL" "$REPLACED_OLD" \
+  > "$TMP_ROOT/line-broad.out" || fail 'a broader rewrite did not exit 0'
+OUT=$(<"$TMP_ROOT/line-broad.out")
+assert_contains "$OUT" 'status=continuity-broken' 'a broader rewrite was recovered'
+assert_contains "$OUT" 'reason=prefix-changed' 'a broader rewrite was not named prefix-changed'
+assert_not_contains "$OUT" 'status=delta' 'a broader rewrite was delivered as a delta'
+assert_not_contains "$OUT" 'later line that must not be dropped' \
+  'a broader rewrite delivered the lines appended after it'
+run_reader "$BROAD_CURSOR" "$BROAD_PREFIX" 1 "$DELTA_LOG_REL" 'not the mirrored line' \
+  > "$TMP_ROOT/line-wrong-witness.out" || fail 'a wrong mirrored line did not exit 0'
+assert_contains "$(<"$TMP_ROOT/line-wrong-witness.out")" 'status=continuity-broken' \
+  'a wrong mirrored line recovered a prefix break'
+printf '%s\n%s\n' "$REPLACED_KEPT" "$REPLACED_OLD" > "$DELTA_HOME/$DELTA_LOG_REL"
+CHOP_LINE_CURSOR=$(file_bytes "$DELTA_HOME/$DELTA_LOG_REL")
+CHOP_LINE_PREFIX=$(file_sha "$DELTA_HOME/$DELTA_LOG_REL")
+perl -e 'open my $fh, "+<", $ARGV[0] or die $!; binmode $fh; seek $fh, -11, 2 or die $!; truncate $fh, tell $fh or die $!' \
+  "$DELTA_HOME/$DELTA_LOG_REL"
+RC=0
+run_reader "$CHOP_LINE_CURSOR" "$CHOP_LINE_PREFIX" 1 "$DELTA_LOG_REL" "$REPLACED_OLD" \
+  > "$TMP_ROOT/line-chop.out" || RC=$?
+[ "$RC" -eq 75 ] || fail "a chopped mirrored line exited $RC instead of waiting with 75"
+[ ! -s "$TMP_ROOT/line-chop.out" ] || fail 'a chopped mirrored line was delivered or reported'
+pass 'a witnessed line is not recovered when earlier bytes change, the witness is wrong, or the line is only chopped'
+
+# A log cut back to the start of the mirrored line can stay short past a whole
+# window. The window closes with 75, so the relay stays armed, and the next read
+# delivers the different line once it lands.
+printf '%s\n' "$REPLACED_KEPT" > "$DELTA_HOME/$DELTA_LOG_REL"
+RC=0
+run_reader "$LINE_CURSOR" "$LINE_PREFIX" 1 "$DELTA_LOG_REL" "$REPLACED_OLD" \
+  > "$TMP_ROOT/line-late.out" || RC=$?
+[ "$RC" -eq 75 ] || fail "a replacement slower than one window exited $RC instead of 75"
+[ ! -s "$TMP_ROOT/line-late.out" ] || fail 'a replacement slower than one window stopped the relay'
+printf '%s\n%s\n' "$REPLACED_NEW" "$REPLACED_AFTER" >> "$DELTA_HOME/$DELTA_LOG_REL"
+run_reader "$LINE_CURSOR" "$LINE_PREFIX" 1 "$DELTA_LOG_REL" "$REPLACED_OLD" \
+  > "$TMP_ROOT/line-late.out" || fail 'a late line replacement did not produce a delta'
+PAYLOAD=$(payload_of "$TMP_ROOT/line-late.out")
+[ "$PAYLOAD" = "$(printf '%s\n%s\n' "$REPLACED_NEW" "$REPLACED_AFTER")" ] \
+  || fail "a late line replacement dropped the new tail: $PAYLOAD"
+pass 'a replaced line that lands after a whole window is still delivered'
+
+# A deleted leading stamp is still that repair when the parent also supplies the
+# old line. The consumed line is not delivered again as a replacement.
+printf '%s\n%s\n' "$STAMP_KEPT" "$STAMP_MIRRORED" > "$DELTA_HOME/$DELTA_LOG_REL"
+STAMP_WITNESS_CURSOR=$(file_bytes "$DELTA_HOME/$DELTA_LOG_REL")
+STAMP_WITNESS_PREFIX=$(file_sha "$DELTA_HOME/$DELTA_LOG_REL")
+drop_leading_stamp "$DELTA_HOME/$DELTA_LOG_REL" "$STAMP_EPOCH"
+printf '%s\n' 'done [at=1793981000]: after the stamp' >> "$DELTA_HOME/$DELTA_LOG_REL"
+run_reader "$STAMP_WITNESS_CURSOR" "$STAMP_WITNESS_PREFIX" 2 "$DELTA_LOG_REL" "$STAMP_MIRRORED" \
+  > "$TMP_ROOT/stamp-witness.out" \
+  || fail 'a deleted stamp with the old line supplied did not produce a delta'
+PAYLOAD=$(payload_of "$TMP_ROOT/stamp-witness.out")
+[ "$PAYLOAD" = 'done [at=1793981000]: after the stamp' ] \
+  || fail "a deleted stamp with the old line supplied repeated or dropped lines: $PAYLOAD"
+assert_not_contains "$PAYLOAD" 'already mirrored' \
+  'a deleted stamp with the old line supplied was treated as a replaced line'
+pass 'a deleted leading stamp still delivers only the new lines when the old line is supplied'
+
+# Property: for a fixed seed, replacing only the cursor's last line yields
+# exactly the generated tail, and flipping an earlier byte still breaks.
+# The seed and the four lines are the shrunk case a failure prints.
+PROPERTY_SEED=20261106
+RANDOM=$PROPERTY_SEED
+property_token() {
+  local count=$1 out='' draw alphabet=abcdefghijklmnopqrstuvwxyz0123456789
+  while [ "$count" -gt 0 ]; do
+    draw=$((RANDOM % 36))
+    out="${out}${alphabet:$draw:1}"
+    count=$((count - 1))
+  done
+  printf '%s' "$out"
+}
+property_i=0
+while [ "$property_i" -lt 16 ]; do
+  property_i=$((property_i + 1))
+  property_kept=$(property_token 12)
+  property_old=$(property_token 18)
+  property_new=$(property_token 18)
+  property_after=$(property_token 10)
+  printf '%s\n%s\n' "$property_kept" "$property_old" > "$DELTA_HOME/$DELTA_LOG_REL"
+  property_cursor=$(file_bytes "$DELTA_HOME/$DELTA_LOG_REL")
+  property_prefix=$(file_sha "$DELTA_HOME/$DELTA_LOG_REL")
+  printf '%s\n%s\n%s\n' "$property_kept" "$property_new" "$property_after" \
+    > "$DELTA_HOME/$DELTA_LOG_REL"
+  if ! run_reader "$property_cursor" "$property_prefix" 1 "$DELTA_LOG_REL" "$property_old" \
+    > "$TMP_ROOT/property-delta.out"; then
+    fail "seed $PROPERTY_SEED case $property_i kept=$property_kept old=$property_old new=$property_new after=$property_after did not produce a delta"
+  fi
+  property_payload=$(payload_of "$TMP_ROOT/property-delta.out")
+  [ "$property_payload" = "$(printf '%s\n%s\n' "$property_new" "$property_after")" ] \
+    || fail "seed $PROPERTY_SEED case $property_i kept=$property_kept old=$property_old new=$property_new after=$property_after payload=$property_payload"
+  printf '%s\n%s\n%s\n' "x$property_kept" "$property_new" "$property_after" \
+    > "$DELTA_HOME/$DELTA_LOG_REL"
+  run_reader "$property_cursor" "$property_prefix" 1 "$DELTA_LOG_REL" "$property_old" \
+    > "$TMP_ROOT/property-break.out" \
+    || fail "seed $PROPERTY_SEED case $property_i earlier-byte rewrite did not exit 0"
+  assert_contains "$(<"$TMP_ROOT/property-break.out")" 'status=continuity-broken' \
+    "seed $PROPERTY_SEED case $property_i kept=$property_kept old=$property_old recovered an earlier-byte change"
+done
+pass "replacing only the cursor line keeps the generated tail across seed $PROPERTY_SEED"
+
+# A parent relaying to a host that still runs the reader without the witness
+# argument. That reader prints its usage header to stdout and exits 2 when it
+# gets five arguments. The parent's captured source output must be the one
+# well-formed result of the retry without the witness, not that header first.
+COMPAT="$TMP_ROOT/compat"
+COMPAT_REMOTE="$COMPAT/remote"
+mkdir -p "$COMPAT/parent/data" "$COMPAT/parent/state/remote-replies" "$COMPAT_REMOTE/state" "$COMPAT/bin"
+printf -- '- ios - iOS delivery (host: remote-mac; root: %s; home: %s; scope: iOS work; projects: alpha; added 2026-08-02)\n' \
+  "$ROOT" "$COMPAT_REMOTE" > "$COMPAT/parent/data/secondmates.md"
+printf 'working: first mirrored line\n' > "$COMPAT_REMOTE/state/parent-replies.status"
+{
+  printf 'schema=fm-remote-reply-cursor.v1\n'
+  printf 'offset=%s\n' "$(file_bytes "$COMPAT_REMOTE/state/parent-replies.status")"
+  printf 'prefix_sha256=%s\n' "$(file_sha "$COMPAT_REMOTE/state/parent-replies.status")"
+} > "$COMPAT/parent/state/remote-replies/ios.cursor"
+printf 'working: first mirrored line\n' > "$COMPAT/parent/state/.remote-reply-mirrored-ios"
+printf 'working: second line after the cursor\n' >> "$COMPAT_REMOTE/state/parent-replies.status"
+cat > "$COMPAT/bin/fake-ssh" <<'SH'
+#!/usr/bin/env bash
+while [ "$1" != -- ]; do shift; done
+argv=()
+while IFS= read -r -d '' arg; do argv+=("$arg"); done < <(printf '%s' "$7" | base64 --decode)
+printf '%s\n' "${#argv[@]}" >> "$COMPAT_CALLS"
+[ "${argv[0]}" = fm-remote-delta-read.sh ] || exit 93
+if [ "${#argv[@]}" -ne 5 ]; then
+  printf '# Blocking, non-destructive delta read for a remote secondmate append-only log.\n\nUsage:\n  fm-remote-delta-read.sh <relative-log> <offset> <prefix-sha256> [wait-seconds]\n'
+  exit 2
+fi
+FM_HOME="$COMPAT_REMOTE" FM_REMOTE_DELTA_POLL_SECONDS=0.05 exec "$COMPAT_READER" "${argv[@]:1}"
+SH
+chmod +x "$COMPAT/bin/fake-ssh"
+COMPAT_CALLS="$COMPAT/calls" COMPAT_REMOTE="$COMPAT_REMOTE" COMPAT_READER="$READER" \
+  FM_HOME="$COMPAT/parent" FM_ROOT_OVERRIDE="$ROOT" FM_SSH_BIN="$COMPAT/bin/fake-ssh" \
+  FM_REMOTE_REPLY_WAIT_SECONDS=1 \
+  "$ROOT/bin/fm-procevent-remote-reply.sh" source ios > "$COMPAT/result" \
+  || fail 'the relay to a reader without the witness argument did not deliver'
+[ "$(cat "$COMPAT/calls")" = "$(printf '6\n5\n')" ] \
+  || fail "the relay did not offer the witness and then retry without it: $(tr '\n' ' ' < "$COMPAT/calls")"
+[ "$(head -n 1 "$COMPAT/result")" = 'schema=fm-remote-delta.v1' ] \
+  || fail "the captured result does not start with the delta schema: $(head -n 3 "$COMPAT/result")"
+[ "$("$ROOT/bin/fm-procevent-remote-reply.sh" classify "$COMPAT/result")" = delta ] \
+  || fail 'the captured result from a reader without the witness argument is not a delta'
+[ "$(payload_of "$COMPAT/result")" = 'working: second line after the cursor' ] \
+  || fail "the captured result did not carry the line after the cursor: $(payload_of "$COMPAT/result")"
+pass 'a reader without the witness argument still yields one well-formed delta'
 
 printf 'delta-read contract tests complete\n'
