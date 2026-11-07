@@ -306,7 +306,7 @@ WINDOW_CLOSED_EMPTY=75
 JOB_PREEMPTED=76
 
 cmd_source() {
-  local id=${1:-} started rc=0 old_line='' source_record
+  local id=${1:-} started rc=0 old_line='' source_record out
   validate_id "$id"
   read_cursor "$id"
   # The last mirrored source line is the only witness that can prove a
@@ -319,8 +319,9 @@ cmd_source() {
   fi
   started=$(fm_pending_reply_now)
   if [ -n "$old_line" ]; then
+    out=$(umask 077; mktemp "${TMPDIR:-/tmp}/fm-remote-delta.XXXXXX") || die "cannot create delta staging file"
     "$SCRIPT_DIR/fm-on.sh" "$id" fm-remote-delta-read.sh \
-      "$REMOTE_LOG" "$CURSOR_OFFSET" "$CURSOR_HASH" "$WAIT_SECONDS" "$old_line" < /dev/null || rc=$?
+      "$REMOTE_LOG" "$CURSOR_OFFSET" "$CURSOR_HASH" "$WAIT_SECONDS" "$old_line" < /dev/null > "$out" || rc=$?
     # A remote reader that predates the witness argument rejects it with the
     # usage status. Read again without the witness so the relay keeps today's
     # behavior until that host has the same reader.
@@ -328,7 +329,10 @@ cmd_source() {
       rc=0
       "$SCRIPT_DIR/fm-on.sh" "$id" fm-remote-delta-read.sh \
         "$REMOTE_LOG" "$CURSOR_OFFSET" "$CURSOR_HASH" "$WAIT_SECONDS" < /dev/null || rc=$?
+    else
+      cat -- "$out"
     fi
+    rm -f -- "$out"
   else
     "$SCRIPT_DIR/fm-on.sh" "$id" fm-remote-delta-read.sh \
       "$REMOTE_LOG" "$CURSOR_OFFSET" "$CURSOR_HASH" "$WAIT_SECONDS" < /dev/null || rc=$?

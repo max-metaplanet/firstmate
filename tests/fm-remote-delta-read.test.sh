@@ -13,6 +13,8 @@
 #     that mirrored line, delivers the new tail from the line start, including
 #     bytes past the old cursor; the hash alone does not recover it, and any
 #     earlier byte that also changed still breaks
+#   * a parent relaying to a host whose reader predates the witness argument
+#     still captures exactly one well-formed delta, not that reader's usage
 #   * an incomplete tail line is withheld until a newline completes it
 #   * exit 75 when the wait window closes with nothing appended
 #   * the per-poll executable boundary: an unchanged log costs one stat per
@@ -496,5 +498,51 @@ while [ "$property_i" -lt 16 ]; do
     "seed $PROPERTY_SEED case $property_i kept=$property_kept old=$property_old recovered an earlier-byte change"
 done
 pass "replacing only the cursor line keeps the generated tail across seed $PROPERTY_SEED"
+
+# A parent relaying to a host that still runs the reader without the witness
+# argument. That reader prints its usage header to stdout and exits 2 when it
+# gets five arguments. The parent's captured source output must be the one
+# well-formed result of the retry without the witness, not that header first.
+COMPAT="$TMP_ROOT/compat"
+COMPAT_REMOTE="$COMPAT/remote"
+mkdir -p "$COMPAT/parent/data" "$COMPAT/parent/state/remote-replies" "$COMPAT_REMOTE/state" "$COMPAT/bin"
+printf -- '- ios - iOS delivery (host: remote-mac; root: %s; home: %s; scope: iOS work; projects: alpha; added 2026-08-02)\n' \
+  "$ROOT" "$COMPAT_REMOTE" > "$COMPAT/parent/data/secondmates.md"
+printf 'working: first mirrored line\n' > "$COMPAT_REMOTE/state/parent-replies.status"
+{
+  printf 'schema=fm-remote-reply-cursor.v1\n'
+  printf 'offset=%s\n' "$(file_bytes "$COMPAT_REMOTE/state/parent-replies.status")"
+  printf 'prefix_sha256=%s\n' "$(file_sha "$COMPAT_REMOTE/state/parent-replies.status")"
+} > "$COMPAT/parent/state/remote-replies/ios.cursor"
+printf 'working: first mirrored line\n' > "$COMPAT/parent/state/.remote-reply-mirrored-ios"
+printf 'working: second line after the cursor\n' >> "$COMPAT_REMOTE/state/parent-replies.status"
+cat > "$COMPAT/bin/fake-ssh" <<'SH'
+#!/usr/bin/env bash
+while [ "$1" != -- ]; do shift; done
+argv=()
+while IFS= read -r -d '' arg; do argv+=("$arg"); done < <(printf '%s' "$7" | base64 --decode)
+printf '%s\n' "${#argv[@]}" >> "$COMPAT_CALLS"
+[ "${argv[0]}" = fm-remote-delta-read.sh ] || exit 93
+if [ "${#argv[@]}" -ne 5 ]; then
+  printf '# Blocking, non-destructive delta read for a remote secondmate append-only log.\n\nUsage:\n  fm-remote-delta-read.sh <relative-log> <offset> <prefix-sha256> [wait-seconds]\n'
+  exit 2
+fi
+FM_HOME="$COMPAT_REMOTE" FM_REMOTE_DELTA_POLL_SECONDS=0.05 exec "$COMPAT_READER" "${argv[@]:1}"
+SH
+chmod +x "$COMPAT/bin/fake-ssh"
+COMPAT_CALLS="$COMPAT/calls" COMPAT_REMOTE="$COMPAT_REMOTE" COMPAT_READER="$READER" \
+  FM_HOME="$COMPAT/parent" FM_ROOT_OVERRIDE="$ROOT" FM_SSH_BIN="$COMPAT/bin/fake-ssh" \
+  FM_REMOTE_REPLY_WAIT_SECONDS=1 \
+  "$ROOT/bin/fm-procevent-remote-reply.sh" source ios > "$COMPAT/result" \
+  || fail 'the relay to a reader without the witness argument did not deliver'
+[ "$(cat "$COMPAT/calls")" = "$(printf '6\n5\n')" ] \
+  || fail "the relay did not offer the witness and then retry without it: $(tr '\n' ' ' < "$COMPAT/calls")"
+[ "$(head -n 1 "$COMPAT/result")" = 'schema=fm-remote-delta.v1' ] \
+  || fail "the captured result does not start with the delta schema: $(head -n 3 "$COMPAT/result")"
+[ "$("$ROOT/bin/fm-procevent-remote-reply.sh" classify "$COMPAT/result")" = delta ] \
+  || fail 'the captured result from a reader without the witness argument is not a delta'
+[ "$(payload_of "$COMPAT/result")" = 'working: second line after the cursor' ] \
+  || fail "the captured result did not carry the line after the cursor: $(payload_of "$COMPAT/result")"
+pass 'a reader without the witness argument still yields one well-formed delta'
 
 printf 'delta-read contract tests complete\n'
