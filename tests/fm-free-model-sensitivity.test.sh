@@ -394,7 +394,17 @@ MECH_BIN="$TMP_ROOT/mech-bin"
 MECH_LOG="$TMP_ROOT/mech-launch.log"
 MECH_REPO="$TMP_ROOT/mech"
 mkdir -p "$MECH_BIN"
-cat > "$MECH_BIN/opencode" <<EOF
+# The real OpenCode CLI works in the directory named by the inherited $PWD,
+# not its process cwd. sh resets $PWD on startup, so a Python shim does that
+# chdir before the shell body runs.
+cat > "$MECH_BIN/opencode" <<'EOF'
+#!/usr/bin/env python3
+import os, sys
+os.chdir(os.environ.get("PWD") or ".")
+body = os.path.join(os.path.dirname(os.path.abspath(__file__)), "opencode-body")
+os.execv("/bin/sh", ["/bin/sh", body, *sys.argv[1:]])
+EOF
+cat > "$MECH_BIN/opencode-body" <<EOF
 #!/bin/sh
 if [ "\$1" != run ]; then
   printf 'Unrecognized: interactive launch %s\n' "\$*" >&2
@@ -422,7 +432,7 @@ git add src/app.ts
 git -c user.email=t@example.invalid -c user.name=t commit -qm 'model commit' || printf 'commit=fail\n' >> "$MECH_LOG"
 printf 'commit=done\n' >> "$MECH_LOG"
 EOF
-chmod +x "$MECH_BIN/opencode"
+chmod +x "$MECH_BIN/opencode" "$MECH_BIN/opencode-body"
 fm_git_init_commit "$MECH_REPO"
 mkdir -p "$MECH_REPO/src"
 printf 'APP\n' > "$MECH_REPO/src/app.ts"

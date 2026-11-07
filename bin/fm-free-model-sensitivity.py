@@ -851,6 +851,7 @@ def mech(argv: list[str]) -> int:
     tree = os.path.join(scratch, "tree")
     log_path = os.path.join(scratch, "fm-mech.log")
     caller = os.getcwd()
+    caller_pwd = os.environ.get("PWD")
     code = 1
     diff = b""
     try:
@@ -862,6 +863,8 @@ def mech(argv: list[str]) -> int:
     try:
         base = seed_tree(top, tree, home, os.path.join(scratch, "caller.patch"))
         os.chdir(tree)
+        # OpenCode works in the directory named by $PWD, not its process cwd.
+        os.environ["PWD"] = tree
         os.environ["OPENCODE_CONFIG_CONTENT"] = '{"permission":{"*":"allow"}}'
         code = confine_quiet(home, mech_command(model, paths, prompt), log_path)
         diff = collect_diff(tree, base, paths, home)
@@ -870,6 +873,10 @@ def mech(argv: list[str]) -> int:
         code = 1
     finally:
         os.chdir(caller)
+        if caller_pwd is None:
+            os.environ.pop("PWD", None)
+        else:
+            os.environ["PWD"] = caller_pwd
         try:
             git_bytes(["worktree", "remove", "--force", tree])
         except GitError as exc:
