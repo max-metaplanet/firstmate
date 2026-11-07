@@ -1,0 +1,7 @@
+1794018727	start	gen=host-203565-1794018726	primary=claude
+1794018727	pass-through	attended	main-only	check: rearm-resurface
+1794018729	start	gen=host-204856-1794018728	primary=claude
+1794018729	take-over	arm=204321
+1794018729	pass-through	attended	main-only	check: lab-seat during the long turn
+1794018731	start	gen=host-205802-1794018730	primary=claude
+1794018731	take-over	arm=205371

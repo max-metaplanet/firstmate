@@ -1,0 +1,4 @@
+  main drain: 1794018880	1	check	stranded	check: stranded before park
+  main drain: WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 1 --recovery-generation 304643.1794018880.nvIzj1
+  main drain: WARNING: queued wakes pending - drain them with bin/fm-wake-drain.sh before anything else.
+not ok - round 1: got 'check: rearm-resurface'

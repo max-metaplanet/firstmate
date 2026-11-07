@@ -1,0 +1,14 @@
+ok - host+hook: a takeover does not hand the same rearm-resurface straight back
+  [test_take_over_does_not_hand_the_same_resurface_straight_back rc=0]
+ok - host+hook: a due check during the re-arm gap does not hand check: rearm-resurface again
+  [test_due_check_during_rearm_gap_stays_a_take_over rc=0]
+ok - host+hook: a due check during the handling handoff confirms and does not hand check: rearm-resurface
+  [test_due_check_during_handling_handoff_confirms rc=0]
+ok - host+hook: a row queued after main's acknowledgement reaches main once when the left successor is gone
+  [test_row_queued_after_ack_reaches_main_when_the_left_successor_is_gone rc=0]
+ok - host+hook: the next park takes over the cycle a main-only pass-through left, so one arm owns it
+  [test_next_park_takes_over_the_cycle_a_pass_through_left_for_main rc=0]
+ok - host+hook: an attach after the host is turned off ends the gap successor's check skip
+  [test_host_off_attach_ends_the_gap_check_skip rc=0]
+ok - host+hook: a take-over that falls back to attaching ends the gap successor's check skip
+  [test_take_over_attach_fallback_ends_the_gap_check_skip rc=0]

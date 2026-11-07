@@ -1,0 +1,20 @@
+  main drain: 1794018858	1	check	stranded	check: stranded before park
+  main drain: WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 1 --recovery-generation 284673.1794018858.xsZXU4
+  main drain: WARNING: queued wakes pending - drain them with bin/fm-wake-drain.sh before anything else.
+round 1 delivered: check: long-turn wake round 1
+  main drain: 1794018863	2	heartbeat	heartbeat	heartbeat
+  main drain: 1794018863	3	check	seat-1	check: long-turn wake round 1
+  main drain: WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 3 --recovery-generation 289545.1794018863.mem6VA
+  main drain: WARNING: queued wakes pending - drain them with bin/fm-wake-drain.sh before anything else.
+round 2 delivered: stale: worker w2 quiet round 2
+  main drain: 1794018867	4	heartbeat	heartbeat	heartbeat
+  main drain: 1794018867	5	check	seat-2	check: long-turn wake round 2
+  main drain: 1794018867	6	stale	w2	stale: worker w2 quiet round 2
+  main drain: WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 6 --recovery-generation 296686.1794018867.QVoBJP
+  main drain: WARNING: queued wakes pending - drain them with bin/fm-wake-drain.sh before anything else.
+round 3 delivered: check: long-turn wake round 3
+  main drain: 1794018871	7	heartbeat	heartbeat	heartbeat
+  main drain: 1794018871	8	check	seat-3	check: long-turn wake round 3
+  main drain: WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 8 --recovery-generation 300036.1794018871.cHSBOZ
+  main drain: WARNING: queued wakes pending - drain them with bin/fm-wake-drain.sh before anything else.
+ok - three consecutive long turns with gap appends: each delivered as itself, rearm-resurface handed only once

@@ -1,0 +1,11 @@
+1794018859	start	gen=host-285338-1794018859	primary=claude
+1794018860	pass-through	attended	main-only	check: rearm-resurface
+1794018864	start	gen=host-290689-1794018863	primary=claude
+1794018864	take-over	arm=287280
+1794018865	pass-through	attended	main-only	check: long-turn wake round 1
+1794018867	start	gen=host-297657-1794018867	primary=claude
+1794018867	take-over	arm=293599
+1794018869	pass-through	attended	main-only	stale: worker w2 quiet round 2
+1794018871	start	gen=host-300234-1794018871	primary=claude
+1794018871	take-over	arm=298705
+1794018873	pass-through	attended	main-only	check: long-turn wake round 3
