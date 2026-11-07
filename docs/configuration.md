@@ -1597,6 +1597,7 @@ Per-machine Cursor `cli-config.json` attribution-off is not this contract: it do
 
 ## Ready-hold labels (config/project-ready-hold-label)
 
+A worker never holds an otherwise-ready PR as a draft, or an equivalent hold, as its own default judgment call; apart from the firstmate-ordered conflict-refresh hold `bin/fm-pr-refresh.sh prepare` sets, every hold the generated worker contract allows, this configured label included, requires a written reason posted as a `Hold: <reason>; owner <owner>` comment on the PR and a named owner (`bin/fm-dod-lib.sh` owns that contract and its status-line form).
 The optional, gitignored `config/project-ready-hold-label` maps projects in the active Firstmate home to GitHub labels that prevent their merge bots from merging ready pull requests.
 Each entry has the clone directory basename, one literal tab, and the exact label name:
 
@@ -1612,8 +1613,9 @@ Duplicate projects, malformed entries, and an unreadable file fail the lookup ra
 The label must already exist in the GitHub repository, and the project's merge bot must already treat it as a merge hold that still allows full CI.
 Firstmate neither creates the label nor configures the bot.
 
-For yolo-off GitHub ships, the generated launch and promotion instructions require applying and verifying the label before marking a PR ready, including transitions performed by no-mistakes or the conflict-refresh helper.
-The worker verifies it again before reporting done.
+For yolo-off GitHub ships, the generated launch and promotion instructions require posting a PR comment with the hold's written reason and named owner, then applying and verifying the label, before marking a PR ready, including transitions performed by no-mistakes or the conflict-refresh helper.
+The worker verifies the label and that comment again before reporting done.
+`bin/fm-pr-refresh.sh ready` enforces the same rule: it refuses, hold retained, to add the label to a PR without that comment unless `--hold-reason <reason> --hold-owner <owner>` supplies one for it to post first.
 After merge approval, `bin/fm-pr-merge.sh` keeps its existing pre-merge guards and removes the configured label if present, handing landing to the project's bot instead of merging directly.
 It reports the handoff separately from a confirmed merge, leaving the merge poll armed until landing is observed.
 Release is attended-only because the bot may land the PR asynchronously.

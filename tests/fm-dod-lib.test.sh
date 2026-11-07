@@ -487,6 +487,10 @@ test_ready_hold_instructions_follow_task_posture() {
         assert_contains "$out" '--add-label hold\ for\ approval' 'label not shell quoted'
         assert_contains "$out" 'gh-axi pr edit <number> --repo <owner>/<repo>' 'edit must use numeric PR and explicit repository'
         assert_contains "$out" 'gh-axi pr ready <number> --repo <owner>/<repo>' 'ready must use numeric PR and explicit repository'
+        assert_contains "$out" "gh-axi pr comment <number> --repo <owner>/<repo> --body 'Hold: <reason>; owner <owner>'" 'a configured label still needs a reason-and-owner PR comment'
+        assert_contains "$out" 'The label alone never justifies the hold' 'the label alone must not satisfy the hold'
+        assert_contains "$out" '--hold-reason <reason> --hold-owner <owner>' 'the refresh helper path must say how to supply the comment'
+        assert_contains "$out" 'confirm the configured label and that reason-and-owner comment are both still present' 'done must verify the comment too'
         assert_contains "$out" 'Only after that verification' 'ready must follow verified label'
         # shellcheck disable=SC2016 # The generated instruction contains literal command markup.
         assert_contains "$out" 'including by no-mistakes or `fm-pr-refresh.sh`' 'delegated readiness not covered'

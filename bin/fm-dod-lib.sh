@@ -686,12 +686,14 @@ fm_dod_ready_hold_block() {  # <config-dir> <project-dir> <yolo> <forge> <mode>
 This section supersedes every earlier instruction that marks a PR ready without first applying its ready-hold label.
 This task requires the configured GitHub ready-hold label \`$label_q\` while it waits for merge approval.
 In the same step as marking the PR ready, derive <number> and <owner>/<repo> from the canonical PR URL; never let the current directory choose the repository.
-First run \`gh-axi pr edit <number> --repo <owner>/<repo> --add-label $label_q\` and verify the label is present with \`gh pr view <PR URL> --json labels\`.
+The label alone never justifies the hold: first post a comment on the PR itself with \`gh-axi pr comment <number> --repo <owner>/<repo> --body 'Hold: <reason>; owner <owner>'\`, giving the written reason for the hold and naming the specific owner who will release it; no comment, no hold.
+\`fm-pr-refresh.sh ready\` refuses to apply this label, hold retained, until that comment exists or its caller passes \`--hold-reason <reason> --hold-owner <owner>\` for it to post first.
+Then run \`gh-axi pr edit <number> --repo <owner>/<repo> --add-label $label_q\` and verify the label is present with \`gh pr view <PR URL> --json labels\`.
 Only after that verification may you run \`gh-axi pr ready <number> --repo <owner>/<repo>\`.
 Apply and verify the label before any ready transition performed on your behalf, including by no-mistakes or \`fm-pr-refresh.sh\`.
 $pipeline
-Before reporting done, read the PR labels again and confirm the configured label is still present.
-If applying or verifying the label fails, keep the PR draft and report the failure to firstmate.
+Before reporting done, read the PR labels and comments again and confirm the configured label and that reason-and-owner comment are both still present.
+If posting the comment or applying or verifying the label fails, keep the PR draft and report the failure to firstmate.
 Never remove the ready-hold label yourself; firstmate's approved merge path releases it to the project's merge bot.
 EOF
 }
@@ -722,7 +724,7 @@ EOF
 
 fm_dod_block() {  # <mode> <task-id> [branch] [<forge>] [<base>] [<consent>] [<ticket-header>] [<ticket-nm-retitle>] [<project-name>]
   local mode=$1 id=$2 forge=${4:-none} base=${5:-} consent=${6:-} ticket_header=${7:-} ticket_retitle=${8:-} project=${9:-}
-  local branch=${3:-fm/$id} pr_base='' nm_base='' draft_create='--draft' base_q contract_forge='' contract_consent='' forge_cli=gh-axi draft_check origin_steps retitle_cmd adapter ci_wait='' ready_wait='' refresh='' refresh_home_q ci_cost='' local_scope='' prepush='' prepush_home_q prepush_cmd
+  local branch=${3:-fm/$id} pr_base='' nm_base='' draft_create='--draft' base_q contract_forge='' contract_consent='' forge_cli=gh-axi draft_check origin_steps retitle_cmd adapter ci_wait='' ready_wait='' refresh='' refresh_home_q ci_cost='' local_scope='' hold_scope='' prepush='' prepush_home_q prepush_cmd
   fm_forge_valid_for_mode "$forge" "$mode" fm_dod_block || return 1
   fm_base_branch_valid "$base" "$mode" "$forge" fm_dod_block || return 1
   if [ -n "$consent" ]; then
@@ -805,6 +807,9 @@ Waiting for a place is expected, not a failure.
 "
   ci_cost="When a required check is red, read its failure log.
 Never push an empty, no-op, or \"retrigger\" commit to rerun CI."
+  hold_scope="Do not hold an otherwise-ready PR as a draft, or add a hold label or equivalent marker, as your own default judgment call.
+Apart from the conflict-refresh hold \`fm-pr-refresh.sh prepare\` sets, which firstmate lifts, every hold is a written-reason-and-owner hold: you post a written reason as a comment on the PR itself, in the form \`Hold: <reason>; owner <owner>\`, and name a specific owner responsible for lifting it, before any hold label is applied, and this project's configured ready-hold label, when its contract applies, is no exception; no comment, no hold.
+When you keep the PR draft under the written-reason-and-owner hold, append \`paused [at=<epoch>]: {reason}; owner {owner}\` instead of done, matching the comment you posted on the PR."
   if [ -n "$base" ]; then
     printf -v base_q '%q' "$base"
     pr_base=", against the base branch \`$base\` (\`--base $base_q\`), not the repository default"
@@ -915,7 +920,7 @@ A draft cannot be merged, so a done report on one leaves the merge unasked.
 Then append \`done [at=<epoch>]: PR {url}\` to the status file and stop.
 That \`done:\` is accepted only when the PR is on the repository \`origin\` names and this copy's HEAD - your latest commit - is pushed to your PR branch; the check tests that commit, not merely that a branch moved.
 A PR raised on any other repository is refused rather than recorded, so if the target you resolved is not the one you expected, append \`blocked [at=<epoch>]: {what origin names}\` instead of opening it.
-If you deliberately keep the PR a draft, append \`paused [at=<epoch>]: {why the draft is held}\` instead of done.
+$hold_scope
 Do NOT run /no-mistakes. The configured merge authority decides whether to merge the PR; firstmate relays the outcome.
 EOF
       ;;
@@ -979,7 +984,7 @@ If that read found a draft whose head checks were skipped while draft, wait for 
 A draft cannot be merged, so a done report on one leaves the merge unasked.
 Then append \`done [at=<epoch>]: PR {url} checks green\` and stop. You are finished.
 That CI-ready \`done:\` is accepted only when this copy's HEAD - your latest commit - is one the /no-mistakes run pushed, so commit nothing after the run; the check tests that commit, not merely that a branch moved.
-If you deliberately keep the PR a draft, append \`paused [at=<epoch>]: {why the draft is held}\` instead of done.
+$hold_scope
 EOF
       ;;
     *)
