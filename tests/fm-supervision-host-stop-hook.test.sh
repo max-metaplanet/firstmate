@@ -819,6 +819,8 @@ test_append_during_announced_gap_is_delivered_once() {
     "fixture: the stranded queue was not handed back once"
   assert_rewoke_main "$home" "gap append (first)"
   watcher_live "$home" || fail "gap append: the first pass-through left no successor"
+  FM_HOME="$home" bash -c '. "$1"; fm_wake_append heartbeat heartbeat heartbeat' _ "$ROOT/bin/fm-wake-lib.sh" \
+    || fail "gap append: could not append the heartbeat during the gap"
   queue_check "$home" lab-seat "check: lab-seat during the long turn" \
     || fail "gap append: could not append the wake during the gap"
   turn_end "$home"

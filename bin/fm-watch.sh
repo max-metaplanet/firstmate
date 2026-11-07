@@ -3292,8 +3292,8 @@ rerecord_device_shifted_pr_poll() {  # <id>
 RECLAIMED_LOCK_ABSORB_LOGGED=0
 
 # Newest queued reason for a take-over whose gap append reopened the episode.
-# A signal or stale outranks a check, and the generic recovery hand-back is
-# never replayed as itself. Empty when the flag is off or the queue has none.
+# A signal or stale outranks a check, a check outranks a heartbeat, and the
+# generic recovery hand-back is never replayed as itself. Empty when the flag is off or the queue has none.
 appended_episode_reason() {
   [ "${FM_WATCH_APPENDED_EPISODE:-0}" = 1 ] || return 1
   [ -s "${FM_WAKE_QUEUE:-}" ] || return 1
@@ -3306,8 +3306,8 @@ appended_episode_reason() {
     END {
       if (signal != "") print signal
       else if (stale != "") print stale
-      else if (heartbeat != "") print heartbeat
       else if (check != "") print check
+      else if (heartbeat != "") print heartbeat
     }
   ' "$FM_WAKE_QUEUE" 2>/dev/null
 }
