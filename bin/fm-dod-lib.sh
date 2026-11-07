@@ -806,7 +806,7 @@ Waiting for a place is expected, not a failure.
   ci_cost="When a required check is red, read its failure log.
 Never push an empty, no-op, or \"retrigger\" commit to rerun CI."
   hold_scope="Do not hold an otherwise-ready PR as a draft, or add a hold label or equivalent marker, as your own default judgment call.
-The only holds allowed are this project's configured ready-hold label contract, when one applies, or a hold for which you post a written reason as a comment on the PR itself and name a specific owner responsible for lifting it.
+The only holds allowed are the conflict-refresh hold \`fm-pr-refresh.sh prepare\` sets, which firstmate lifts, this project's configured ready-hold label contract, when one applies, or a hold for which you post a written reason as a comment on the PR itself and name a specific owner responsible for lifting it.
 When you use that second kind of hold, append \`paused [at=<epoch>]: {reason}; owner {owner}\` instead of done, matching the comment you posted on the PR."
   if [ -n "$base" ]; then
     printf -v base_q '%q' "$base"
