@@ -484,7 +484,7 @@ test_pr_based_dod_requires_non_draft() {
       "$mode: a worker must not default to holding a ready PR"
     assert_grep "a hold for which you post a written reason as a comment on the PR itself and name a specific owner" "$brief" \
       "$mode: a hold outside the configured ready-hold label needs a written reason and a named owner"
-    assert_grep "append \`paused [at=<epoch>]: {reason}; owner {owner}\` instead of done" "$brief" \
+    assert_grep "When you use the written-reason-and-owner hold, append \`paused [at=<epoch>]: {reason}; owner {owner}\` instead of done" "$brief" \
       "$mode: a justified hold must still declare a wait instead of done"
   done
   pass "fm-brief.sh: PR-based done requires a non-draft PR; a justified hold declares a wait with a reason and owner"
