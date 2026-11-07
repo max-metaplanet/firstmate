@@ -415,6 +415,7 @@ done
   if [ -e README.md ]; then printf 'readme=present\n'; else printf 'readme=deleted\n'; fi
   if grep -q CALLER-LINE src/app.ts 2>/dev/null; then printf 'caller-line=seen\n'; else printf 'caller-line=missing\n'; fi
 } >> "$MECH_LOG"
+case "\$*" in *touch-auth*) rm -f src/auth/session.ts ;; esac
 printf 'edited\n' >> src/app.ts
 printf 'scaffold\n' > src/new-scaffold.ts
 git add src/app.ts
@@ -426,7 +427,9 @@ fm_git_init_commit "$MECH_REPO"
 mkdir -p "$MECH_REPO/src"
 printf 'APP\n' > "$MECH_REPO/src/app.ts"
 printf 'ENV\n' > "$MECH_REPO/.env"
-git -C "$MECH_REPO" add -f src/app.ts .env
+mkdir -p "$MECH_REPO/src/auth"
+printf 'SESSION\n' > "$MECH_REPO/src/auth/session.ts"
+git -C "$MECH_REPO" add -f src/app.ts .env src/auth/session.ts
 git -C "$MECH_REPO" -c user.name='Firstmate Tests' -c user.email='tests@example.invalid' commit -qm seed
 MECH_HEAD=$(git -C "$MECH_REPO" rev-parse HEAD)
 
@@ -556,5 +559,17 @@ grep -q CALLER-LINE "$MECH_REPO/src/app.ts" || fail "mech lost the caller's edit
 [ "$(cat "$MECH_REPO/src/app.ts")" = "$(printf 'APP\nCALLER-LINE\nedited')" ] \
   || fail "applying the diff did not keep the caller's edit and add the model's: $(cat "$MECH_REPO/src/app.ts")"
 pass "mech runs on the caller's current tree and returns only the model's change"
+
+# A declared directory that holds a protected file passes the path check, but
+# the model deleting that file is a change to a refused path, so mech refuses
+# the result and prints no diff that names it.
+git -C "$MECH_REPO" reset --hard -q "$MECH_HEAD"
+git -C "$MECH_REPO" clean -fd -q
+mech_run mech --model opencode/big-pickle --path src -- "touch-auth rename the counter"
+[ "$MECH_STATUS" -eq 1 ] || fail "mech returned a result that deleted a protected file: status=$MECH_STATUS out=$MECH_OUT"
+assert_not_contains "$MECH_OUT" "session.ts" "the diff carried a change to a protected path"
+assert_contains "$(cat "$MECH_ERR")" "src/auth/session.ts" "the refusal did not name the protected path"
+[ -f "$MECH_REPO/src/auth/session.ts" ] || fail "mech removed the caller's protected file"
+pass "mech refuses a result that changes a protected path inside a declared directory"
 
 echo "# all fm-free-model-sensitivity tests passed"

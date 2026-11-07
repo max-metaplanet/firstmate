@@ -745,38 +745,41 @@ def mech_command(model: str | None, paths: list[str], prompt: str) -> list[str]:
     return command
 
 
-def seed_tree(top: str, tree: str, home: str) -> str:
-    """Copy every path that differs from HEAD, staged or not, and every
-    untracked file into tree, except refused paths, and return the tree id
+def seed_tree(top: str, tree: str, home: str, patch_path: str) -> str:
+    """Apply the caller's change against HEAD, staged or not, to tree, then
+    copy untracked files, leaving out refused paths, and return the tree id
     of that copy."""
     changed = git_bytes(["-C", top, "diff", "--name-only", "-z", "--no-renames", "HEAD"])
+    allowed = [n for n in os.fsdecode(changed).split("\0") if n and not path_refused(n, home)]
+    if allowed:
+        patch = git_bytes(["-C", top, "--literal-pathspecs", "diff", "--binary", "--no-renames", "HEAD", "--", *allowed])
+        with open(patch_path, "wb") as handle:
+            handle.write(patch)
+        git_bytes(["-C", tree, "apply", "--binary", patch_path])
     untracked = git_bytes(["-C", top, "ls-files", "-z", "--others", "--exclude-standard"])
-    for raw in sorted(set(changed.split(b"\0")) | set(untracked.split(b"\0"))):
-        rel = os.fsdecode(raw)
+    for rel in os.fsdecode(untracked).split("\0"):
         if not rel or rel.endswith("/") or path_refused(rel, home):
             continue
         source = os.path.join(top, rel)
         target = os.path.join(tree, rel)
-        if os.path.isdir(source) and not os.path.islink(source):
-            continue
-        if os.path.isdir(target) and not os.path.islink(target):
-            shutil.rmtree(target)
-        elif os.path.lexists(target):
-            os.remove(target)
+        os.makedirs(os.path.dirname(target), exist_ok=True)
         if os.path.islink(source):
-            os.makedirs(os.path.dirname(target), exist_ok=True)
             os.symlink(os.readlink(source), target)
-        elif os.path.isfile(source):
-            os.makedirs(os.path.dirname(target), exist_ok=True)
+        else:
             shutil.copy2(source, target)
     git_bytes(["-C", tree, "add", "-A"])
     return git_bytes(["-C", tree, "write-tree"]).decode().strip()
 
 
-def collect_diff(tree: str, base: str, paths: list[str]) -> bytes:
+def collect_diff(tree: str, base: str, paths: list[str], home: str) -> bytes:
     # Staging everything also captures new files and anything the model committed.
     git_bytes(["-C", tree, "add", "-A"])
-    return git_bytes(["-C", tree, "diff", "--cached", "--binary", base, "--", *paths])
+    scope = ["-C", tree, "--literal-pathspecs", "diff", "--cached", "--no-renames", base]
+    names = git_bytes([*scope, "--name-only", "-z", "--", *paths])
+    for name in os.fsdecode(names).split("\0"):
+        if name and path_refused(name, home):
+            raise ValueError(f"refusing the model's change to sensitive path {name}")
+    return git_bytes([*scope, "--binary", "--", *paths])
 
 
 def confine_quiet(home: str, command: list[str], log_path: str) -> int:
@@ -857,12 +860,12 @@ def mech(argv: list[str]) -> int:
         print(f"free-model sensitivity: could not create a scratch worktree: {exc}", file=sys.stderr)
         return 2
     try:
-        base = seed_tree(top, tree, home)
+        base = seed_tree(top, tree, home, os.path.join(scratch, "caller.patch"))
         os.chdir(tree)
         os.environ["OPENCODE_CONFIG_CONTENT"] = '{"permission":{"*":"allow"}}'
         code = confine_quiet(home, mech_command(model, paths, prompt), log_path)
-        diff = collect_diff(tree, base, paths)
-    except (GitError, OSError) as exc:
+        diff = collect_diff(tree, base, paths, home)
+    except (GitError, OSError, ValueError) as exc:
         print(f"free-model sensitivity: {exc}", file=sys.stderr)
         code = 1
     finally:
@@ -895,8 +898,8 @@ def usage() -> None:
         "  -free or :free) or be omitted; any other id is refused.\n"
         "  Each --path is relative to the repository top level, and the diff carries only\n"
         "  changes under those paths. A --path in the ci, migrations, infra, auth, payments,\n"
-        "  env, or doppler class, or a\n"
-        "  secrets file or token store, is refused.\n"
+        "  env, or doppler class, or a secrets file or token store, is refused, and so is a\n"
+        "  result in which the model changed such a path, even inside a declared directory.\n"
         "  The model runs confined, with tokens scrubbed, on a scratch copy of your current tree\n"
         "  that leaves out refused paths. mech prints only the model's change as a diff against\n"
         "  that copy and never touches your worktree; review it, then git apply it at the top level.",
