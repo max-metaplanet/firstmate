@@ -1,0 +1,54 @@
+== fm-brief.sh hold-direct-PR widget --mode direct-PR (rc=0)
+22:1. First action: create your branch: `git checkout -b fm/hold-direct-PR --`
+25:1. Never push to the default branch and never push to any remote but `origin` (push only your `fm/hold-direct-PR` branch, to `origin`). Never merge a PR.
+26:2. Keep project edits inside this worktree; put ad-hoc test and debug output in the scratch directory beside it, `<worktree>/../.fm-test-scratch/`, and durable proof under `/tmp/fm-brief-lab.R8GCQa/data/hold-direct-PR/` - never `/tmp` or `$TMPDIR`.
+31:   `echo "{state} [at=<epoch>]: {one short line}" >> '/tmp/fm-brief-lab.R8GCQa/state/hold-direct-PR.status' && { [ ! -e '/tmp/fm-brief-lab.R8GCQa/config/fleet-ledger' ] || '~/.no-mistakes/worktrees/c0c4fcacb05a/01M6TFMZGPXY55HXS4A5FKV3KN/bin/fm-fleet-ledger.sh' appended '/tmp/fm-brief-lab.R8GCQa/config' '/tmp/fm-brief-lab.R8GCQa/state/hold-direct-PR.status' >/dev/null 2>&1 || true; }`
+85:Firstmate steers you through durable message files in '/tmp/fm-brief-lab.R8GCQa/state/hold-direct-PR.inbox'.
+86:When a terminal message says an instruction is waiting there - and at any natural checkpoint when you are unsure - list them with `find '/tmp/fm-brief-lab.R8GCQa/state/hold-direct-PR.inbox' -maxdepth 1 -name '*.msg' 2>/dev/null | sort -V`, read and act on each message in numeric order, then acknowledge each handled message by moving it: `mv '/tmp/fm-brief-lab.R8GCQa/state/hold-direct-PR.inbox'/NNN.msg '/tmp/fm-brief-lab.R8GCQa/state/hold-direct-PR.inbox'/handled/`.
+105:Ship branch: fm/hold-direct-PR
+120:For a conflict-only rebase or conflict resolution of an already-open PR, use `FM_HOME=/tmp/fm-brief-lab.R8GCQa ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6TFMZGPXY55HXS4A5FKV3KN/bin/fm-pr-refresh.sh prepare hold-direct-PR <pr-url>` before any push or pipeline refresh; its header owns classification, publication wrapping, and the firstmate-controlled ready call.
+122:This hold overrides the ordinary ready/done instructions below: keep the draft and declared wait until firstmate explicitly asks for the helper's `ready` call.
+123:Do not report done or mark it ready while `state/hold-direct-PR.pr-refresh` exists.
+136:3. `git push -u origin fm/hold-direct-PR`, then `gh-axi pr create -R <owner>/<repo> --base <base branch> --head fm/hold-direct-PR --draft --title ... --body ...`.
+142:Do not hold an otherwise-ready PR as a draft, or add a hold label or equivalent marker, as your own default judgment call.
+143:Apart from the conflict-refresh hold `fm-pr-refresh.sh prepare` sets, which firstmate lifts, every hold is a written-reason-and-owner hold: you post a written reason as a comment on the PR itself, in the form `Hold: <reason>; owner <owner>`, and name a specific owner responsible for lifting it, before any hold label is applied, and this project's configured ready-hold label, when its contract applies, is no exception; no comment, no hold.
+144:When you keep the PR draft under the written-reason-and-owner hold, append `paused [at=<epoch>]: {reason}; owner {owner}` instead of done, matching the comment you posted on the PR.
+-- stale ordinal/'deliberately keep' wording present?
+0
+== fm-brief.sh hold-no-mistakes widget --mode no-mistakes (rc=0)
+22:1. First action: create your branch: `git checkout -b fm/hold-no-mistakes --`
+27:2. Keep project edits inside this worktree; put ad-hoc test and debug output in the scratch directory beside it, `<worktree>/../.fm-test-scratch/`, and durable proof under `/tmp/fm-brief-lab.R8GCQa/data/hold-no-mistakes/` - never `/tmp` or `$TMPDIR`.
+32:   `echo "{state} [at=<epoch>]: {one short line}" >> '/tmp/fm-brief-lab.R8GCQa/state/hold-no-mistakes.status' && { [ ! -e '/tmp/fm-brief-lab.R8GCQa/config/fleet-ledger' ] || '~/.no-mistakes/worktrees/c0c4fcacb05a/01M6TFMZGPXY55HXS4A5FKV3KN/bin/fm-fleet-ledger.sh' appended '/tmp/fm-brief-lab.R8GCQa/config' '/tmp/fm-brief-lab.R8GCQa/state/hold-no-mistakes.status' >/dev/null 2>&1 || true; }`
+59:   For a no-mistakes ask-user gate specifically, escalate all ask-user findings as one event plus one snapshot file, using that same shape even when the gate holds only a single ask-user finding: write only the ask-user findings, verbatim and unparaphrased (id, severity, file, line, description, authority), to `/tmp/fm-brief-lab.R8GCQa/data/hold-no-mistakes/nm-<run>-findings.txt`, then report the gate with
+60:   `needs-decision [at=<epoch>] [key=nm-<run>-<step>]: ask-user findings=<id1>,<id2>,... file=/tmp/fm-brief-lab.R8GCQa/data/hold-no-mistakes/nm-<run>-findings.txt`
+88:Firstmate steers you through durable message files in '/tmp/fm-brief-lab.R8GCQa/state/hold-no-mistakes.inbox'.
+89:When a terminal message says an instruction is waiting there - and at any natural checkpoint when you are unsure - list them with `find '/tmp/fm-brief-lab.R8GCQa/state/hold-no-mistakes.inbox' -maxdepth 1 -name '*.msg' 2>/dev/null | sort -V`, read and act on each message in numeric order, then acknowledge each handled message by moving it: `mv '/tmp/fm-brief-lab.R8GCQa/state/hold-no-mistakes.inbox'/NNN.msg '/tmp/fm-brief-lab.R8GCQa/state/hold-no-mistakes.inbox'/handled/`.
+108:Ship branch: fm/hold-no-mistakes
+124:For a conflict-only rebase or conflict resolution of an already-open PR, use `FM_HOME=/tmp/fm-brief-lab.R8GCQa ~/.no-mistakes/worktrees/c0c4fcacb05a/01M6TFMZGPXY55HXS4A5FKV3KN/bin/fm-pr-refresh.sh prepare hold-no-mistakes <pr-url>` before any push or pipeline refresh; its header owns classification, publication wrapping, and the firstmate-controlled ready call.
+126:This hold overrides the ordinary ready/done instructions below: keep the draft and declared wait until firstmate explicitly asks for the helper's `ready` call.
+127:Do not report done or mark it ready while `state/hold-no-mistakes.pr-refresh` exists.
+143:If local reproduction or verification is unavailable or fails, require the pipeline to hold publication and report the blocker to firstmate; do not authorize a speculative push, an empty commit, a restart to reset the budget, or a worker fix outside the pipeline.
+168:So background the drive call instead of sitting in one blocking hold your harness will kill, and read its return when it finishes.
+190:Do not hold an otherwise-ready PR as a draft, or add a hold label or equivalent marker, as your own default judgment call.
+191:Apart from the conflict-refresh hold `fm-pr-refresh.sh prepare` sets, which firstmate lifts, every hold is a written-reason-and-owner hold: you post a written reason as a comment on the PR itself, in the form `Hold: <reason>; owner <owner>`, and name a specific owner responsible for lifting it, before any hold label is applied, and this project's configured ready-hold label, when its contract applies, is no exception; no comment, no hold.
+192:When you keep the PR draft under the written-reason-and-owner hold, append `paused [at=<epoch>]: {reason}; owner {owner}` instead of done, matching the comment you posted on the PR.
+-- stale ordinal/'deliberately keep' wording present?
+0
+
+== ready-hold overlay rendered by fm_dod_ready_hold_block (the renderer fm-spawn.sh/fm-promote.sh call), project widget, yolo=off
+
+# Ready-hold safety contract
+This section supersedes every earlier instruction that marks a PR ready without first applying its ready-hold label.
+This task requires the configured GitHub ready-hold label `hold` while it waits for merge approval.
+In the same step as marking the PR ready, derive <number> and <owner>/<repo> from the canonical PR URL; never let the current directory choose the repository.
+The label alone never justifies the hold: first post a comment on the PR itself with `gh-axi pr comment <number> --repo <owner>/<repo> --body 'Hold: <reason>; owner <owner>'`, giving the written reason for the hold and naming the specific owner who will release it; no comment, no hold.
+`fm-pr-refresh.sh ready` refuses to apply this label, hold retained, until that comment exists or its caller passes `--hold-reason <reason> --hold-owner <owner>` for it to post first.
+Then run `gh-axi pr edit <number> --repo <owner>/<repo> --add-label hold` and verify the label is present with `gh pr view <PR URL> --json labels`.
+Only after that verification may you run `gh-axi pr ready <number> --repo <owner>/<repo>`.
+Apply and verify the label before any ready transition performed on your behalf, including by no-mistakes or `fm-pr-refresh.sh`.
+
+Before reporting done, read the PR labels and comments again and confirm the configured label and that reason-and-owner comment are both still present.
+If posting the comment or applying or verifying the label fails, keep the PR draft and report the failure to firstmate.
+Never remove the ready-hold label yourself; firstmate's approved merge path releases it to the project's merge bot.
+== same, yolo=on (expect empty)
+0

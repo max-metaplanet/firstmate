@@ -1,0 +1,45 @@
+### Configured ready-hold label 'hold for approval' for project repo (yolo=off); PR in conflict-refresh hold from real 'prepare'
+
+## A: no comment on the PR (bare label) -> must refuse, hold retained
+$ fm-pr-refresh.sh ready task https://github.com/example/repo/pull/9 --ready-ci unchanged
+error: https://github.com/example/repo/pull/9 has no "Hold: <reason>; owner <owner>" comment; no comment, no hold label
+fm-pr-refresh: could not apply ready-hold label; hold retained
+exit=1
+--- PR state after: draft=true labels=[] comments=[] refresh-hold=retained
+gh-axi writes: 
+
+## B: unrelated comment 'LGTM, please hold off' -> must refuse
+$ fm-pr-refresh.sh ready task https://github.com/example/repo/pull/9 --ready-ci unchanged
+error: https://github.com/example/repo/pull/9 has no "Hold: <reason>; owner <owner>" comment; no comment, no hold label
+fm-pr-refresh: could not apply ready-hold label; hold retained
+exit=1
+--- PR state after: draft=true labels=[] comments=["LGTM, please hold off"] refresh-hold=retained
+gh-axi writes: 
+
+## C: reason without owner -> must refuse
+$ fm-pr-refresh.sh ready task https://github.com/example/repo/pull/9 --ready-ci unchanged --hold-reason awaiting merge approval
+fm-pr-refresh: ready accepts only --hold-reason <reason> --hold-owner <owner> after --ready-ci
+exit=1
+--- PR state after: draft=true labels=[] comments=[] refresh-hold=retained
+gh-axi writes: 
+
+## D: reason + owner supplied -> comment posted, then label, then ready
+$ fm-pr-refresh.sh ready task https://github.com/example/repo/pull/9 --ready-ci unchanged --hold-reason awaiting merge approval --hold-owner captain
+ready: https://github.com/example/repo/pull/9 checks green (ready CI unchanged)
+exit=0
+--- PR state after: draft=false labels=["hold for approval"] comments=["Hold: awaiting merge approval; owner captain"] refresh-hold=cleared
+gh-axi writes: pr comment 9 --repo example/repo --body Hold: awaiting merge|pr edit 9 --repo example/repo --add-label hold for approval|pr ready 9 --repo example/repo
+
+## E: PR already carries 'Hold: ...; owner ...' comment -> label applied, no extra args
+$ fm-pr-refresh.sh ready task https://github.com/example/repo/pull/9 --ready-ci unchanged
+ready: https://github.com/example/repo/pull/9 checks green (ready CI unchanged)
+exit=0
+--- PR state after: draft=false labels=["hold for approval"] comments=["Hold: awaiting captain sign-off; owner captain"] refresh-hold=cleared
+gh-axi writes: pr edit 9 --repo example/repo --add-label hold for approval|pr ready 9 --repo example/repo
+
+## F: no ready-hold label configured -> PR goes ready with no label and no comment
+$ fm-pr-refresh.sh ready task https://github.com/example/repo/pull/9 --ready-ci unchanged
+ready: https://github.com/example/repo/pull/9 checks green (ready CI unchanged)
+exit=0
+--- PR state after: draft=false labels=[] comments=[] refresh-hold=cleared
+gh-axi writes: pr ready 9 --repo example/repo
