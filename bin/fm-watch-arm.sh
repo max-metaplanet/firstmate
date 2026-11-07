@@ -76,6 +76,9 @@
 # arm would, and otherwise this arm owns a fresh cycle as a plain arm does.
 # Recovery restoration follows docs/watcher-continuity.md "Generation reuse";
 # an unconfirmed stop leaves downtime for the fresh cycle's recovery check.
+# The host's take-over (FM_WATCH_KEEP_ANNOUNCED) of a stopped cycle whose marker
+# is already pending downtime sets FM_WATCH_APPENDED_EPISODE on the fresh cycle
+# so it delivers that queued wake instead of check: rearm-resurface.
 # Any other watcher, or one that outlives the stop,
 # is attached to exactly as a plain arm attaches.
 #
@@ -795,6 +798,19 @@ confirm_extend_deadline() {
   deadline=$candidate
 }
 deadline=$(confirm_pre_lock_deadline)
+# Set only for the supervision host's take-over (FM_WATCH_KEEP_ANNOUNCED) that
+# stopped a live cycle whose marker was already pending downtime: a durable
+# append during the pass-through gap. A plain --take-over keeps its own
+# check: rearm-resurface contract. The fresh
+# cycle delivers that queued wake instead of check: rearm-resurface
+# (docs/watcher-continuity.md "Generation reuse").
+FM_WATCH_APPENDED_EPISODE=0
+if [ "$TAKEN_OVER" = 1 ] && [ "${FM_WATCH_KEEP_ANNOUNCED:-0}" = 1 ]; then
+  case "$FM_RECOVERY_HANDOVER_TOKEN" in
+    pending:downtime:*) FM_WATCH_APPENDED_EPISODE=1 ;;
+  esac
+fi
+export FM_WATCH_APPENDED_EPISODE
 if [ -n "${FM_WATCH_PREDECESSOR_ARM_PID:-}" ]; then
   FM_WATCH_HANDLING_SUCCESSOR=1 "$WATCH" >"$child_out" &
 else

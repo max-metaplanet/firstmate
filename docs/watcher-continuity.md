@@ -251,9 +251,11 @@ The supervision host's take-over sets `FM_WATCH_KEEP_ANNOUNCED`, and the fresh c
 The successor that pass-through leaves for main keeps its beacon and still delivers a signal, and it does not run the check sweep until the next park.
 That skip ends early when any arm attaches to that watcher (the arm writes `state/.watch-attached`), or when the host's left record, once it named the successor's arm, no longer does, so checks run again whenever a reader has returned.
 It keeps an announced downtime episode announced, so the next park's take-over does not announce that same work again.
+A durable append during that gap still opens a fresh pending generation, because the gap successor does not run the check sweep or the recovery wake.
+The take-over that finds the live successor holding that pending episode announces the generation and delivers the queued wake's own reason, so the close is not `check: rearm-resurface` again.
 A due check while nobody is reading used to exit that successor, and the queue append minted a fresh pending generation.
 The next park then found no live arm to take over, so its ordinary arm check announced that generation and handed `check: rearm-resurface` back.
-A pending episode with queued work, including a row appended after main acknowledged the last one, still surfaces once through the ordinary arm check.
+A pending episode with queued work, including a row appended after main acknowledged the last one, still surfaces once through the ordinary arm check when the park has no live successor to take over.
 Without the take-over's `FM_WATCH_KEEP_ANNOUNCED` hold, the fresh cycle's `check: rearm-resurface` is an attended main-only close, and the next turn end hands it straight back.
 The taking arm waits within a short bound for that row; a missing row or any other signal leaves downtime for the fresh cycle's ordinary recovery wake, while take-over still proceeds.
 Any other episode is left for the next cycle's arm check.

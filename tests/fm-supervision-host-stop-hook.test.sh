@@ -798,6 +798,51 @@ test_due_check_during_rearm_gap_stays_a_take_over() {
   pass "host+hook: a due check during the re-arm gap does not hand check: rearm-resurface again"
 }
 
+# The 2026-11-06 long-turn loop, after one batch had already been handled.
+# The pass-through leaves a gap successor holding an announced episode. A
+# durable append during that gap opens a fresh pending generation, and the
+# gap successor does not deliver it. The next Stop takes the live arm over
+# and must hand that wake over once as itself. Handing check: rearm-resurface
+# again leaves another gap, and the next append repeats it.
+test_append_during_announced_gap_is_delivered_once() {
+  local home resurfaces
+  home=$(make_primary_home hook-gap-append)
+  : > "$home/hook.own-group"
+  export FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 FM_SIGNAL_GRACE=0
+  start_hook_session "$home"
+  queue_check "$home" resurface-fixture "check: work stranded before the host parked" \
+    || fail "gap append: could not queue the stranded wake"
+  turn_end "$home"
+  wait_until 250 hook_exited "$home" \
+    || fail "gap append: the first close never reached the Stop hook: $(cat "$home/state/.supervision-host.log" 2>/dev/null)"
+  assert_re '	pass-through	attended	main-only	check: rearm-resurface' "$home/state/.supervision-host.log" \
+    "fixture: the stranded queue was not handed back once"
+  assert_rewoke_main "$home" "gap append (first)"
+  watcher_live "$home" || fail "gap append: the first pass-through left no successor"
+  queue_check "$home" lab-seat "check: lab-seat during the long turn" \
+    || fail "gap append: could not append the wake during the gap"
+  turn_end "$home"
+  wait_until 250 hook_exited "$home" \
+    || fail "gap append: the wake queued during the gap never reached the Stop hook: $(cat "$home/state/.supervision-host.log" 2>/dev/null)"
+  assert_re '	pass-through	attended	main-only	check: lab-seat during the long turn$' "$home/state/.supervision-host.log" \
+    "the wake queued during the gap must reach main as itself: $(cat "$home/state/.supervision-host.log")"
+  resurfaces=$(grep -c 'check: rearm-resurface' "$home/state/.supervision-host.log" || true)
+  [ "$resurfaces" -eq 1 ] \
+    || fail "gap append: recovery was handed back again ($resurfaces times): $(cat "$home/state/.supervision-host.log")"
+  # No further append. The next turn end must not open another recovery hand-back.
+  turn_end "$home"
+  wait_until 200 grep -q $'\ttake-over\tarm=' "$home/state/.supervision-host.log" \
+    || fail "gap append: the following turn end did not take the cycle over: $(cat "$home/state/.supervision-host.log")"
+  sleep 3
+  resurfaces=$(grep -c 'check: rearm-resurface' "$home/state/.supervision-host.log" || true)
+  [ "$resurfaces" -eq 1 ] \
+    || fail "gap append: the quiet takeover handed recovery back ($resurfaces times): $(cat "$home/state/.supervision-host.log")"
+  if hook_exited "$home" && grep -q 'check: rearm-resurface' "$home/hook.err" 2>/dev/null; then
+    fail "gap append: the quiet takeover handed check: rearm-resurface: $(cat "$home/hook.err")"
+  fi
+  pass "host+hook: a wake appended during the announced gap is delivered once and does not hand check: rearm-resurface back"
+}
+
 # A row queued after main drained and acknowledged a rearm-resurface is new
 # work. When the successor left for main is already gone at the next park,
 # that park has no cycle to take over, and the row must still reach main once.
@@ -999,6 +1044,7 @@ test_pass_through_successor_survives_the_hook_process_group_teardown
 test_next_park_takes_over_the_cycle_a_pass_through_left_for_main
 test_take_over_does_not_hand_the_same_resurface_straight_back
 test_due_check_during_rearm_gap_stays_a_take_over
+test_append_during_announced_gap_is_delivered_once
 test_due_check_during_handling_handoff_confirms
 test_row_queued_after_ack_reaches_main_when_the_left_successor_is_gone
 test_host_off_attach_ends_the_gap_check_skip

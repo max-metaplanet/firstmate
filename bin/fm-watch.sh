@@ -3084,7 +3084,12 @@ fi
 # a quarantined malformed marker above all, which is approved over no queue row
 # at all - would otherwise be absorbed and the arm would never report it.
 WATCHER_RECOVERY_MARKER_APPROVED=0
-if [ "${FM_WATCH_HANDLING_SUCCESSOR:-0}" = 1 ]; then
+if [ "${FM_WATCH_HANDLING_SUCCESSOR:-0}" = 1 ] \
+  || [ "${FM_WATCH_APPENDED_EPISODE:-0}" = 1 ]; then
+  # FM_WATCH_APPENDED_EPISODE is the take-over of a gap whose append already
+  # opened a pending generation (docs/watcher-continuity.md "Generation reuse").
+  # The arm check above still announces that generation. Waking
+  # check: rearm-resurface here handed the same episode straight back.
   WATCHER_RECOVERY_PENDING=0
 elif [ "$FM_RECOVERY_MARKER_ACTION" = recover ]; then
   WATCHER_RECOVERY_PENDING=1
@@ -3286,7 +3291,38 @@ rerecord_device_shifted_pr_poll() {  # <id>
 # every cycle, and a line per poll would bury the triage log it shares.
 RECLAIMED_LOCK_ABSORB_LOGGED=0
 
+# Newest queued reason for a take-over whose gap append reopened the episode.
+# A signal or stale outranks a check, and the generic recovery hand-back is
+# never replayed as itself. Empty when the flag is off or the queue has none.
+appended_episode_reason() {
+  [ "${FM_WATCH_APPENDED_EPISODE:-0}" = 1 ] || return 1
+  [ -s "${FM_WAKE_QUEUE:-}" ] || return 1
+  awk -F '\t' '
+    NF < 5 { next }
+    $3 == "signal" { signal = $5 }
+    $3 == "stale" { stale = $5 }
+    $3 == "heartbeat" { heartbeat = $5 }
+    $3 == "check" && $5 != "check: rearm-resurface" { check = $5 }
+    END {
+      if (signal != "") print signal
+      else if (stale != "") print stale
+      else if (heartbeat != "") print heartbeat
+      else if (check != "") print check
+    }
+  ' "$FM_WAKE_QUEUE" 2>/dev/null
+}
+
 resurface_after_downtime() {
+  # A take-over of a pending episode an append opened during the gap delivers
+  # that wake once. check: rearm-resurface from here is the hand-back loop.
+  if [ "${FM_WATCH_APPENDED_EPISODE:-0}" = 1 ]; then
+    local appended_reason=
+    appended_reason=$(appended_episode_reason || true)
+    if [ -n "$appended_reason" ]; then
+      wake "$appended_reason"
+    fi
+    return 0
+  fi
   # Handling successors already have a predecessor-delivered wake on the way.
   # Re-announcing from this cycle is what turned a lost handshake into an
   # unbounded recovery loop; stay in the poll loop and supervise instead.
