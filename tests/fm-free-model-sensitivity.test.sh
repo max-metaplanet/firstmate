@@ -673,8 +673,9 @@ DARWIN_OUT=$(cd "$TREE/work" && STUB_LOG="$DARWIN/log" FM_TEST_CONFINE_SYSTEM=Da
 [ "$DARWIN_STATUS" -eq 2 ] && [ ! -e "$RAN" ] || fail "a home the profile cannot express still ran the model: $DARWIN_STATUS $DARWIN_OUT"
 pass "an unsupported system, a missing or failing sandbox-exec, and an inexpressible home all refuse without running the model"
 
-# Profile content: default allow with a read block, no network or blanket write
-# rule, and the process-information rules standing in for /proc/<pid>/environ.
+# Profile content: default allow with a read block, a network deny that only
+# loopback escapes, no blanket write rule, and the process-information rules
+# standing in for /proc/<pid>/environ.
 "$SENS" confine-profile --home "$TREE/home" --root "$TREE/work" > "$DARWIN/profile.sb" || fail "confine-profile failed"
 profile=$(cat "$DARWIN/profile.sb")
 assert_contains "$profile" "(version 1)" "profile has no version"
@@ -682,13 +683,18 @@ assert_contains "$profile" "(allow default)" "profile is not default-allow"
 assert_contains "$profile" "(deny file-read* file-write-data file-write-create process-exec* (regex" "profile has no read, write, and exec block"
 assert_contains "$profile" "(deny process-info* (target others))" "profile does not block other processes' information"
 assert_contains "$profile" '(deny sysctl-read (sysctl-name "kern.procargs2"))' "profile does not block the process argument and environment sysctl"
-assert_not_contains "$profile" "network" "profile restricts the network, which the Linux confine does not"
+net_lines=$(grep 'network' "$DARWIN/profile.sb")
+expected_net=$'(deny network*)\n(allow network-outbound (remote ip "localhost:*"))\n(allow network-bind (local ip "localhost:*"))\n(allow network-inbound (local ip "localhost:*"))'
+[ "$net_lines" = "$expected_net" ] || fail "profile network rules are not exactly deny-all then loopback: $net_lines"
+deny_line=$(grep -n '^(deny network\*)$' "$DARWIN/profile.sb" | cut -d: -f1)
+first_allow=$(grep -n '^(allow network' "$DARWIN/profile.sb" | head -1 | cut -d: -f1)
+[ "$deny_line" -lt "$first_allow" ] || fail "profile allows loopback before denying the network, so the deny would win"
 assert_not_contains "$profile" "file-write*" "profile blocks writes broadly, which the Linux confine does not"
 assert_not_contains "$profile" "(allow file" "profile adds an allow rule beyond the default"
 if "$SENS" confine-profile --home '/tmp/a"b' --root "$TREE/work" >/dev/null 2>&1; then
   fail "a home with a quote produced a profile"
 fi
-pass "the Darwin profile is default-allow with the read block, process-information rules, and no network or write rule"
+pass "the Darwin profile is default-allow with the read block, process-information rules, loopback-only network, and no write rule"
 
 # Oracle: the Linux read block decides which paths are blocked. The profile's
 # regexes, evaluated with Python's re (the profile uses only constructs shared
@@ -712,6 +718,7 @@ dirs = [
     "src", "auth", "payments", "migrations", "infra", "terraform", ".github", "workflows",
     ".circleci", ".buildkite", ".secrets", "secrets", "pkg", "docs", "bin", "helm", "k8s",
     "deploy", ".doppler", ".aws", ".config", "gh", "gcloud", ".ssh", "node_modules",
+    ".gnupg", ".docker", "Library", "Keychains", ".local", "share", "keyrings", "opencode", "certs",
 ]
 files = [
     ".env", ".env.local", "a.env", "env.local", "env.production", "doppler.yaml", ".doppler.yml",
@@ -721,16 +728,19 @@ files = [
     "a.k8s.yaml", "my-deployment.yaml", "web-ingress.yml", "001_migration_x.sql", "migration.sql",
     "app.ts", "README.md", "hosts.yml", "token", "Jenkinsfile", ".gitlab-ci.yml", "ci.yml",
     "chart.yaml", ".netrc", ".git-credentials", "service-account.json", "x.sql",
+    ".npmrc", "config.json", "service.json", "id_ed25519", "known_hosts", "login.keychain-db",
+    "server.pem", "SERVER.PEM", "token.key", "deep.KEY", "a.pem.bak", "keyfile", "pem", "notes.key.txt",
 ]
-bases = [root, home, os.path.dirname(root), "/opt/tool", "/tmp"]
+bases = [root, home, os.path.dirname(root), "/opt/tool", "/tmp", "/Library", "/System/Library", home + "/Library"]
 rnd = random.Random(int(seed))
 seen = {True: 0, False: 0}
 for _ in range(20000):
     base = rnd.choice(bases)
     rest = "/".join([rnd.choice(dirs) for _ in range(rnd.randrange(0, 4))] + [rnd.choice(files + dirs)])
-    # Token stores under the home are matched case-sensitively on Linux, and
-    # the profile folds case on purpose, so only other bases are upper-cased.
-    if base != home and rnd.random() < 0.2:
+    # Token stores under the home and the system keychains are matched
+    # case-sensitively on Linux, and the profile folds case on purpose, so
+    # only other bases are upper-cased.
+    if not base.startswith((home, "/Library", "/System")) and rnd.random() < 0.2:
         rest = rest.upper()
     path = base + "/" + rest
     expected = sens.path_blocked(path, home, root)
@@ -742,5 +752,374 @@ if not (seen[True] > 500 and seen[False] > 500):
     sys.exit(f"oracle check was vacuous: {seen}")
 PY
 pass "the Darwin profile blocks exactly the paths the Linux read block blocks"
+
+# Home credential stores and key files. Every class below is really executed on
+# Linux: the confined process must get EACCES, while the same files stay
+# readable to an unconfined process and a *.pem or *.key outside the home stays
+# readable too, because the key rule is scoped to the home.
+CRED="$TMP_ROOT/cred"
+mkdir -p "$CRED/home/.ssh" "$CRED/home/.gnupg/private-keys-v1.d" "$CRED/home/.docker" \
+  "$CRED/home/Library/Keychains" "$CRED/home/.local/share/keyrings" "$CRED/home/.config/opencode" \
+  "$CRED/home/certs/nested" "$CRED/work" "$CRED/outside"
+for rel in .ssh/id_ed25519 .ssh/config .gnupg/private-keys-v1.d/k.key .netrc .git-credentials .npmrc \
+  .docker/config.json Library/Keychains/login.keychain-db .local/share/keyrings/login.keyring \
+  .config/opencode/service.json .config/opencode/cliproxy.key certs/server.pem certs/nested/TOKEN.KEY; do
+  printf 'CANARY\n' > "$CRED/home/$rel"
+done
+printf 'OK\n' > "$CRED/home/.docker/other.json"
+printf 'OK\n' > "$CRED/home/certs/notes.pem.txt"
+printf 'OK\n' > "$CRED/home/.config/opencode/opencode.json"
+printf 'OK\n' > "$CRED/outside/server.pem"
+printf 'OK\n' > "$CRED/outside/token.key"
+printf 'OK\n' > "$CRED/work/app.txt"
+ln -s "$CRED/home/.ssh/id_ed25519" "$CRED/work/innocent.txt"
+cred_denied=(
+  "$CRED/home/.ssh/id_ed25519" "$CRED/home/.ssh/config" "$CRED/home/.gnupg/private-keys-v1.d/k.key"
+  "$CRED/home/.netrc" "$CRED/home/.git-credentials" "$CRED/home/.npmrc" "$CRED/home/.docker/config.json"
+  "$CRED/home/Library/Keychains/login.keychain-db" "$CRED/home/.local/share/keyrings/login.keyring"
+  "$CRED/home/.config/opencode/service.json" "$CRED/home/.config/opencode/cliproxy.key"
+  "$CRED/home/certs/server.pem" "$CRED/home/certs/nested/TOKEN.KEY" innocent.txt
+)
+cred_read=(
+  "$CRED/home/.docker/other.json" "$CRED/home/certs/notes.pem.txt" "$CRED/home/.config/opencode/opencode.json"
+  "$CRED/outside/server.pem" "$CRED/outside/token.key" app.txt
+)
+for path in "${cred_denied[@]}"; do
+  [ "$(python3 -c 'import sys; print(len(open(sys.argv[1], "rb").read()))' "$CRED/work/$path" 2>/dev/null || python3 -c 'import sys; print(len(open(sys.argv[1], "rb").read()))' "$path")" -gt 0 ] ||
+    fail "the unconfined process could not read $path, so a denial would prove nothing"
+done
+(cd "$CRED/work" && "$SENS" confine --home "$CRED/home" -- python3 "$TMP_ROOT/probe.py" "${cred_denied[@]}" "${cred_read[@]}") > "$TMP_ROOT/cred.out" ||
+  fail "credential probe failed"
+for path in "${cred_denied[@]}"; do
+  got=$(awk -F'\t' -v p="$path" '$1 != "env" && $2 == p' "$TMP_ROOT/cred.out")
+  [ "$got" = "deny"$'\t'"$path"$'\t'13 ] || fail "confined process should get EACCES for $path, got: ${got:-nothing}"
+done
+for path in "${cred_read[@]}"; do
+  got=$(awk -F'\t' -v p="$path" '$1 != "env" && $2 == p' "$TMP_ROOT/cred.out")
+  [ "$got" = "read"$'\t'"$path" ] || fail "confined process should read $path, got: ${got:-nothing}"
+done
+pass "a confined process cannot read ssh, gpg, netrc, git, npm, docker, keychain, or home key files, and can read a key file outside the home"
+
+# The blocked set has one definition, so a launch from a home reached through a
+# symlink blocks the same files as one from its real path.
+ln -s "$CRED/home" "$CRED/home-link"
+link_out=$(cd "$CRED/work" && "$SENS" confine --home "$CRED/home-link" -- python3 "$TMP_ROOT/probe.py" "$CRED/home/.ssh/id_ed25519" "$CRED/home/certs/server.pem")
+[ "$(printf '%s\n' "$link_out" | grep -c '^deny')" -eq 2 ] || fail "a symlinked home did not block its real paths: $link_out"
+pass "a home named through a symlink blocks the same credential files"
+
+# Network: the confined process has no route off the machine. Loopback TCP, which
+# opencode's private server needs, still works. Executed for real on Linux.
+cat > "$TMP_ROOT/netprobe.py" <<'PY'
+import ctypes, errno, os, signal, socket, threading
+def attempt(label, fn):
+    try:
+        fn()
+        print("ok\t" + label)
+    except OSError as exc:
+        print("err\t" + label + "\t" + errno.errorcode.get(exc.errno, str(exc.errno)))
+def tcp(family, addr):
+    def run():
+        sock = socket.socket(family)
+        sock.settimeout(3)
+        sock.connect(addr)
+    return run
+attempt("tcp-v4", tcp(socket.AF_INET, ("192.0.2.1", 9)))
+attempt("tcp-v6", tcp(socket.AF_INET6, ("2001:db8::1", 9)))
+attempt("tcp-mapped", tcp(socket.AF_INET6, ("::ffff:192.0.2.1", 9)))
+attempt("udp-socket", lambda: socket.socket(socket.AF_INET, socket.SOCK_DGRAM))
+attempt("raw-socket", lambda: socket.socket(socket.AF_INET, socket.SOCK_RAW, 1))
+attempt("unix-dgram", lambda: socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM))
+attempt("unix-connect", lambda: socket.socket(socket.AF_UNIX).connect("/run/systemd/private"))
+attempt("unix-bind", lambda: socket.socket(socket.AF_UNIX).bind("/tmp/fm-confine-test-sock"))
+attempt("sendto", lambda: socket.socket().sendto(b"x", ("192.0.2.1", 9)))
+attempt("fastopen", lambda: socket.socket().sendto(b"x", 0x20000000, ("192.0.2.1", 9)))
+attempt("bind-wildcard", lambda: socket.socket().bind(("0.0.0.0", 0)))
+attempt("bind-wildcard-v6", lambda: socket.socket(socket.AF_INET6).bind(("::", 0)))
+attempt("listen-unbound", lambda: socket.socket().listen(1))
+def loopback():
+    listener = socket.socket()
+    listener.bind(("127.0.0.1", 0))
+    listener.listen(5)
+    client = socket.socket()
+    client.connect(("127.0.0.1", listener.getsockname()[1]))
+    conn, _ = listener.accept()
+    client.sendall(b"hi")
+    assert conn.recv(2) == b"hi"
+attempt("loopback-roundtrip", loopback)
+def loopback_v6():
+    listener = socket.socket(socket.AF_INET6)
+    listener.bind(("::1", 0))
+    listener.listen(5)
+    client = socket.socket(socket.AF_INET6)
+    client.connect(("::1", listener.getsockname()[1]))
+attempt("loopback-v6", loopback_v6)
+def nonblocking():
+    listener = socket.socket()
+    listener.bind(("127.0.0.1", 0))
+    listener.listen(5)
+    client = socket.socket()
+    client.setblocking(False)
+    try:
+        client.connect(("127.0.0.1", listener.getsockname()[1]))
+    except BlockingIOError:
+        pass
+attempt("loopback-nonblocking", nonblocking)
+attempt("socketpair", socket.socketpair)
+attempt("sctp-socket", lambda: socket.socket(socket.AF_INET, socket.SOCK_STREAM, 132))
+attempt("mptcp-socket", lambda: socket.socket(socket.AF_INET, socket.SOCK_STREAM, 262))
+libc_probe = ctypes.CDLL(None, use_errno=True)
+def cross_process(number, *args):
+    def run():
+        if libc_probe.syscall(number, *args) < 0:
+            raise OSError(ctypes.get_errno(), "")
+    return run
+import platform
+arm = platform.machine() in ("aarch64", "arm64")
+attempt("ptrace", cross_process(117 if arm else 101, 0, os.getppid(), 0, 0))
+attempt("process-vm-readv", cross_process(270 if arm else 310, os.getppid(), 0, 0, 0, 0, 0))
+attempt("pidfd-getfd", cross_process(438, 0, 0, 0))
+# A second thread rewrites the address while connect reads it. The supervisor
+# reads the address once and completes the connect itself, so no attempt may
+# reach the off-host address: every outcome is success or EACCES, never a
+# routing error or a hang.
+libc = ctypes.CDLL(None, use_errno=True)
+addr = (ctypes.c_ubyte * 16)()
+def setaddr(ip, port):
+    raw = bytes([2, 0]) + port.to_bytes(2, "big") + bytes(int(x) for x in ip.split(".")) + bytes(8)
+    for i, b in enumerate(raw):
+        addr[i] = b
+listener = socket.socket()
+listener.bind(("127.0.0.1", 0))
+listener.listen(128)
+port = listener.getsockname()[1]
+stop = False
+def drain():
+    while not stop:
+        try:
+            listener.accept()[0].close()
+        except OSError:
+            return
+threading.Thread(target=drain, daemon=True).start()
+def flip():
+    while not stop:
+        setaddr("127.0.0.1", port)
+        setaddr("192.0.2.1", 9)
+threading.Thread(target=flip, daemon=True).start()
+signal.alarm(100)
+outcomes = set()
+for _ in range(400):
+    sock = socket.socket()
+    rc = libc.connect(sock.fileno(), addr, 16)
+    outcomes.add(0 if rc == 0 else ctypes.get_errno())
+    sock.close()
+stop = True
+print("race\t" + ",".join(sorted(errno.errorcode.get(o, str(o)) if o else "OK" for o in outcomes)))
+PY
+(cd "$CRED/work" && timeout 120 "$SENS" confine --home "$CRED/home" -- python3 "$TMP_ROOT/netprobe.py") > "$TMP_ROOT/net.out" 2>&1 || fail "network probe failed: $(cat "$TMP_ROOT/net.out")"
+net_line() { awk -F'\t' -v p="$1" '$2 == p' "$TMP_ROOT/net.out"; }
+for label in sctp-socket mptcp-socket tcp-v4 tcp-v6 tcp-mapped udp-socket raw-socket unix-dgram unix-connect unix-bind sendto fastopen bind-wildcard bind-wildcard-v6 listen-unbound; do
+  got=$(net_line "$label")
+  [ "$got" = "err"$'\t'"$label"$'\t'EACCES ] || fail "confined network case $label should get EACCES, got: ${got:-nothing} ($(cat "$TMP_ROOT/net.out"))"
+done
+for label in ptrace process-vm-readv pidfd-getfd; do
+  got=$(net_line "$label")
+  [ "$got" = "err"$'\t'"$label"$'\t'EPERM ] || fail "confined cross-process call $label should get EPERM, got: ${got:-nothing}"
+done
+for label in loopback-roundtrip loopback-v6 loopback-nonblocking socketpair; do
+  got=$(net_line "$label")
+  [ "$got" = "ok"$'\t'"$label" ] || fail "loopback case $label should work under the confine, got: ${got:-nothing} ($(cat "$TMP_ROOT/net.out"))"
+done
+race=$(awk -F'\t' '$1 == "race" {print $2}' "$TMP_ROOT/net.out")
+case "$race" in
+  *ENETUNREACH*|*ETIMEDOUT*|*EHOSTUNREACH*|"") fail "a thread rewriting the address reached the off-host path: outcomes=$race" ;;
+esac
+pass "a confined process has no off-host network, keeps loopback TCP, and cannot race the address check"
+
+# The same process without the confine can create the sockets the confine refuses.
+python3 - <<'PY' || fail "the unconfined process could not create a UDP socket, so the denial above proved nothing"
+import socket
+socket.socket(socket.AF_INET, socket.SOCK_DGRAM).close()
+PY
+
+# The model proxy is the only way to a model: it runs in the unconfined parent,
+# enforces the hostname itself, and carries nothing but the model calls.
+# FM_TEST_MODEL_UPSTREAM stands in for the real hosts, since this test must not
+# reach the internet; the stand-in records what the proxy forwards.
+cat > "$TMP_ROOT/upstream.py" <<'PY'
+import http.server, json, sys, time
+log_path = sys.argv[1]
+class Handler(http.server.BaseHTTPRequestHandler):
+    protocol_version = "HTTP/1.0"
+    def log_message(self, *args): pass
+    def handle_any(self):
+        length = int(self.headers.get("Content-Length") or 0)
+        body = self.rfile.read(length).decode()
+        with open(log_path, "a", encoding="utf-8") as log:
+            log.write(json.dumps({"method": self.command, "path": self.path, "auth": self.headers.get("Authorization"), "host": self.headers.get("Host"), "body": body}) + "\n")
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.end_headers()
+        for part in ("data: one\n\n", "data: two\n\n"):
+            self.wfile.write(part.encode())
+            self.wfile.flush()
+            time.sleep(0.2)
+    do_GET = do_POST = handle_any
+server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+print(server.server_address[1], flush=True)
+server.serve_forever()
+PY
+UP_LOG="$TMP_ROOT/upstream.log"
+: > "$UP_LOG"
+python3 "$TMP_ROOT/upstream.py" "$UP_LOG" > "$TMP_ROOT/upstream.port" &
+UP_PID=$!
+for _ in $(seq 1 50); do [ -s "$TMP_ROOT/upstream.port" ] && break; sleep 0.1; done
+UP_PORT=$(cat "$TMP_ROOT/upstream.port")
+cat > "$TMP_ROOT/proxyprobe.py" <<'PY'
+import http.client, json, os, urllib.parse
+config = json.load(open(os.environ["OPENCODE_CONFIG"]))
+zen = urllib.parse.urlsplit(config["provider"]["opencode"]["options"]["baseURL"])
+router = urllib.parse.urlsplit(config["provider"]["openrouter"]["options"]["baseURL"])
+models = urllib.parse.urlsplit(os.environ["OPENCODE_MODELS_URL"])
+def call(base, method, path, body=None, headers=None):
+    conn = http.client.HTTPConnection(base.hostname, base.port, timeout=10)
+    conn.request(method, base.path + path if path.startswith("/") else path, body, headers or {})
+    resp = conn.getresponse()
+    data = resp.read().decode()
+    conn.close()
+    return resp.status, data
+def raw(base, path, extra=""):
+    conn = http.client.HTTPConnection(base.hostname, base.port, timeout=10)
+    conn.putrequest("POST", path)
+    conn.putheader("Transfer-Encoding", "chunked")
+    conn.endheaders()
+    resp = conn.getresponse()
+    status = resp.status
+    conn.close()
+    return status
+print("zen", *call(zen, "POST", "/chat/completions?x=1", '{"m":1}', {"Authorization": "Bearer public", "Content-Type": "application/json"}))
+print("openrouter", call(router, "POST", "/chat/completions", "{}")[0])
+print("models", call(models, "GET", "/experimental/v2.0/api.json?type=chat")[0])
+token = zen.path.split("/")[1]
+print("wrong-token", call(zen, "GET", "/zz/zen/v1/x")[0] if False else call(urllib.parse.urlsplit(f"http://{zen.hostname}:{zen.port}/not-it"), "GET", "/zen/v1/chat/completions")[0])
+print("not-v1", call(urllib.parse.urlsplit(f"http://{zen.hostname}:{zen.port}/{token}"), "GET", "/zen/admin/keys")[0])
+print("traversal", call(urllib.parse.urlsplit(f"http://{zen.hostname}:{zen.port}/{token}"), "GET", "/zen/v1/../../etc/passwd")[0])
+print("unknown-kind", call(urllib.parse.urlsplit(f"http://{zen.hostname}:{zen.port}/{token}"), "GET", "/evil/v1/x")[0])
+print("models-other", call(models, "GET", "/secret.json")[0])
+print("chunked", raw(zen, zen.path + "/chat/completions"))
+PY
+proxy_out=$(cd "$CRED/work" && FM_TEST_SEAM=1 FM_TEST_MODEL_UPSTREAM="http://127.0.0.1:$UP_PORT" "$SENS" confine --home "$CRED/home" -- python3 "$TMP_ROOT/proxyprobe.py" 2>&1) ||
+  fail "proxy probe failed: $proxy_out"
+kill "$UP_PID" 2>/dev/null
+wait "$UP_PID" 2>/dev/null
+assert_contains "$proxy_out" $'zen 200 data: one\n\ndata: two' "the proxy did not carry the model call and its streamed answer"
+assert_contains "$proxy_out" "openrouter 200" "the proxy did not route the OpenRouter provider"
+assert_contains "$proxy_out" "models 200" "the proxy did not route the model catalog"
+for refused in wrong-token not-v1 traversal unknown-kind models-other; do
+  assert_contains "$proxy_out" "$refused 403" "the proxy forwarded or mis-answered $refused"
+done
+assert_contains "$proxy_out" "chunked 411" "the proxy accepted a request body it cannot bound"
+[ "$(wc -l < "$UP_LOG")" -eq 3 ] || fail "the proxy sent refused requests upstream: $(cat "$UP_LOG")"
+up_zen=$(sed -n 1p "$UP_LOG")
+assert_contains "$up_zen" '"path": "/zen/v1/chat/completions?x=1"' "the proxy changed the model path"
+assert_contains "$up_zen" '"auth": "Bearer public"' "the proxy dropped the client's authorization"
+assert_contains "$up_zen" '"body": "{\"m\":1}"' "the proxy changed the request body"
+assert_contains "$up_zen" "\"host\": \"127.0.0.1:$UP_PORT\"" "the proxy forwarded the client's Host header instead of the upstream's"
+pass "the model proxy forwards only the model calls and catalog, streams the answer, and refuses every other path"
+
+# Refusals: when the network cannot be denied, or the model route cannot start,
+# the command never runs. Neither is a reason to run unconfined.
+NO_NET_RAN="$TMP_ROOT/no-net-ran"
+for case_name in no-fd-dup proxy-bind; do
+  rm -f "$NO_NET_RAN"
+  rc=0
+  case "$case_name" in
+    no-fd-dup) refusal_out=$(cd "$CRED/work" && FM_TEST_SEAM=1 FM_TEST_NO_FD_DUP=1 "$SENS" confine --home "$CRED/home" -- sh -c "$TOUCH_RAN" _ "$NO_NET_RAN" 2>&1) || rc=$?; want="network egress cannot be denied" ;;
+    proxy-bind) refusal_out=$(cd "$CRED/work" && FM_TEST_SEAM=1 FM_TEST_PROXY_BIND=192.0.2.1 "$SENS" confine --home "$CRED/home" -- sh -c "$TOUCH_RAN" _ "$NO_NET_RAN" 2>&1) || rc=$?; want="model proxy could not start" ;;
+  esac
+  [ "$rc" -eq 2 ] || fail "$case_name should refuse with status 2, got $rc: $refusal_out"
+  [ ! -e "$NO_NET_RAN" ] || fail "$case_name ran the command unconfined"
+  assert_contains "$refusal_out" "$want" "$case_name did not say why it refused"
+done
+rm -f "$NO_NET_RAN"
+rc=0
+refusal_out=$(cd "$CRED/work" && FM_TEST_SEAM=1 FM_TEST_PROXY_BIND=192.0.2.1 FM_TEST_CONFINE_SYSTEM=Darwin FM_TEST_SANDBOX_EXEC="$DARWIN/sandbox-exec" STUB_LOG="$DARWIN/log" \
+  "$SENS" confine --home "$CRED/home" -- sh -c "$TOUCH_RAN" _ "$NO_NET_RAN" 2>&1) || rc=$?
+[ "$rc" -eq 2 ] && [ ! -e "$NO_NET_RAN" ] || fail "a Darwin launch ran without its model route: $rc $refusal_out"
+pass "a confine that cannot deny the network or start the model route refuses without running the command"
+
+# The Darwin selection hands the command the same model-route variables, set by
+# the same code as on Linux. The stand-in sandbox does not confine anything.
+# shellcheck disable=SC2016 # the child shell, not this one, expands the variables
+DARWIN_OUT=$(cd "$CRED/work" && FM_TEST_CONFINE_SYSTEM=Darwin FM_TEST_SANDBOX_EXEC="$DARWIN/sandbox-exec" STUB_LOG="$DARWIN/log" \
+  "$SENS" confine --home "$CRED/home" -- sh -c 'cat "$OPENCODE_CONFIG"; echo; echo "$OPENCODE_MODELS_URL"' 2>&1)
+assert_contains "$DARWIN_OUT" '"baseURL": "http://127.0.0.1:' "the Darwin launch did not point the model client at the proxy"
+assert_contains "$DARWIN_OUT" "/models" "the Darwin launch did not point the model catalog at the proxy"
+pass "a Darwin launch carries the same model-route variables as a Linux launch"
+
+# confine-check is the proof run on the macOS machine. Here it must pass under
+# the real Linux confine, and it must fail against the stand-in sandbox, which
+# confines nothing: a check that passed there would be vacuous.
+check_out=$("$SENS" confine-check 2>&1) || fail "confine-check failed under the Linux confine: $check_out"
+[ "$(printf '%s\n' "$check_out" | grep -c '^PASS')" -ge 15 ] || fail "confine-check reported too few passes: $check_out"
+assert_not_contains "$check_out" "FAIL" "confine-check reported a failure while exiting 0"
+stand_rc=0
+stand_out=$(FM_TEST_CONFINE_SYSTEM=Darwin FM_TEST_SANDBOX_EXEC="$DARWIN/sandbox-exec" STUB_LOG="$DARWIN/log" "$SENS" confine-check 2>&1) || stand_rc=$?
+[ "$stand_rc" -ne 0 ] || fail "confine-check passed against a sandbox that confines nothing: $stand_out"
+assert_contains "$stand_out" "FAIL read blocked" "confine-check did not notice the missing read block"
+assert_contains "$stand_out" "FAIL network denied" "confine-check did not notice the missing network deny"
+pass "confine-check passes under the real confine and fails against a sandbox that confines nothing"
+
+# Properties of the shared definition: every home-relative entry and key suffix
+# is blocked by both platforms' rules at the entry, below it, and in any
+# letter case the profile folds, and no unrelated path is. The loopback
+# predicate that gates connect, bind, and listen accepts exactly 127.0.0.0/8,
+# ::1, and an IPv4-mapped loopback, over generated addresses.
+python3 -I - "$ROOT/bin/fm-free-model-sensitivity.py" "$DARWIN/profile.sb" "$TREE/home" "$TREE/work" "$SEED" <<'PY' || fail "the shared blocked set or the loopback predicate is wrong"
+import importlib.util, random, re, socket, struct, sys
+
+module_path, profile_path, home, root, seed = sys.argv[1:6]
+spec = importlib.util.spec_from_file_location("sens", module_path)
+sens = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(sens)
+patterns = [re.compile(m.group(1)) for m in re.finditer(r'\(regex #"([^"]*)"\)', open(profile_path, encoding="utf-8").read())]
+def darwin(path):
+    return any(p.match(path) for p in patterns)
+def both(path, want):
+    got = (sens.path_blocked(path, home, root), darwin(path))
+    if got != (want, want):
+        sys.exit(f"path={path} linux/darwin={got} want={want}")
+for rel in sens.HOME_BLOCKED:
+    both(f"{home}/{rel}", True)
+    both(f"{home}/{rel}/child/x", True)
+    both(f"{home}/{rel}x", False)
+for suffix in sens.HOME_KEY_SUFFIXES:
+    both(f"{home}/a/b/name{suffix}", True)
+    both(f"{home}/a/b/name{suffix.upper()}", True)
+    both(f"{home}/a/b/name{suffix}x", False)
+    both(f"/opt/elsewhere/name{suffix}", False)
+for system in sens.SYSTEM_BLOCKED:
+    both(system, True)
+    both(system + "/login.keychain-db", True)
+rnd = random.Random(int(seed))
+def sockaddr4(octets):
+    return struct.pack("<H", socket.AF_INET) + struct.pack("!H", 443) + bytes(octets) + bytes(8)
+def sockaddr6(raw16):
+    return struct.pack("<H", socket.AF_INET6) + struct.pack("!H", 443) + bytes(4) + raw16 + bytes(4)
+seen = {True: 0, False: 0}
+for _ in range(5000):
+    octets = [rnd.choice([127, 10, 192, 0, 255, rnd.randrange(256)])] + [rnd.randrange(256) for _ in range(3)]
+    want = octets[0] == 127
+    assert sens.loopback_sockaddr(sockaddr4(octets)) == want, octets
+    assert sens.loopback_sockaddr(sockaddr6(bytes(10) + b"\xff\xff" + bytes(octets))) == want, octets
+    seen[want] += 1
+assert seen[True] > 500 and seen[False] > 500, seen
+assert sens.loopback_sockaddr(sockaddr6(bytes(15) + b"\x01"))
+assert not sens.loopback_sockaddr(sockaddr6(bytes(16)))
+assert not sens.loopback_sockaddr(sockaddr6(bytes(14) + b"\x00\x02"))
+assert not sens.loopback_sockaddr(struct.pack("<H", socket.AF_UNIX) + b"/run/x\0")
+assert not sens.loopback_sockaddr(struct.pack("<H", 0) + bytes(14))
+assert not sens.loopback_sockaddr(b"\x02")
+PY
+pass "the home blocked set agrees across platforms for every entry, and the loopback predicate accepts only loopback"
 
 echo "# all fm-free-model-sensitivity tests passed"

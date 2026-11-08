@@ -2816,7 +2816,26 @@ test_free_opencode_sensitive_target_refuses_launch() {
   pass "a sensitive target path does not launch a free OpenCode model"
 }
 
+test_free_opencode_launch_forwards_model_proxy_variables() {
+  local rec id status launch
+  id=profile-opencode-free-env-z8e
+  rec=$(make_spawn_case profile-opencode-free-env opencode "$id")
+  read_case_record "$rec"
+  printf '# Synthetic credential name\nFM_TEST_ALLOWED\n' > "$HOME_DIR/config/launch-env-allowlist"
+  printf '\nTarget paths: src/app.ts\n' >> "$HOME_DIR/data/$id/brief.md"
+  run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" --model opencode/glm-5.3-flash-free >/dev/null
+  status=$?
+  expect_code 0 "$status" "a free OpenCode launch under an env allowlist should succeed"
+  launch=$(cat "$LAUNCH_LOG")
+  assert_contains "$launch" ' confine ' "the allowlisted free launch is still confined"
+  # shellcheck disable=SC2016
+  assert_contains "$launch" '/usr/bin/env -i ${OPENCODE_CONFIG+"OPENCODE_CONFIG=$OPENCODE_CONFIG"} ${OPENCODE_MODELS_URL+"OPENCODE_MODELS_URL=$OPENCODE_MODELS_URL"} ' \
+    "env -i would drop the confine's model proxy variables, leaving the free model no route"
+  pass "a free OpenCode launch under an env allowlist forwards the model proxy variables the confine sets"
+}
+
 test_free_opencode_launch_is_confined
+test_free_opencode_launch_forwards_model_proxy_variables
 test_free_opencode_sensitive_target_refuses_launch
 
 echo "# all fm-spawn-dispatch-profile tests passed"
